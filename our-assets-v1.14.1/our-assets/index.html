@@ -1271,9 +1271,10 @@ body.selmode .fab{display:none}
 <input type="file" id="importFile" accept="application/json,.json" style="display:none">
 
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.4/kakao.min.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.14.1';
+const APP_VERSION='1.15.0';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 
@@ -1500,27 +1501,77 @@ function emptyDB(){return {
 
 let DB, STORAGE_OK=true;
 const SKEY='asset_app_db_v3';
-/* ===== 계정 · 세션 (로컬 이메일 로그인) =====
-   ▸ 지금은 서버 없이 이 기기(localStorage)에만 저장됩니다. 계정별로 데이터가 분리됩니다.
-   ▸ 진짜 클라우드(이메일 로그인·기기 간 동기화)로 바꾸려면 아래 AUTH를 백엔드(예: Supabase) 호출로 교체하세요.
-     자세한 안내: 메뉴 › 계정·클라우드 동기화 */
+/* ===== 계정 · 세션 (이메일 로그인) =====
+   ▸ Supabase가 설정되지 않으면 이 기기(localStorage)에만 저장됩니다(계정별로 분리).
+   ▸ 메뉴 › 계정 › '이메일 로그인·클라우드 동기화 설정'에서 Supabase 프로젝트를 연결하면,
+     이메일 로그인/가입이 실제 클라우드 계정으로 동작해 다른 기기에서도 같은 데이터를 볼 수 있습니다. */
 let SESSION=localStorage.getItem('asset_app_session')||'';
 let GUEST=localStorage.getItem('asset_app_guest')==='1';
+let CLOUD_UID=null;
 const emailKey=e=>(e||'').trim().toLowerCase();
 function dataKey(){return SESSION?('asset_app_db_v3__'+emailKey(SESSION)):'asset_app_db_v3__guest'}
 function migrateLegacy(){try{const legacy=localStorage.getItem(SKEY);const guest=localStorage.getItem('asset_app_db_v3__guest');if(legacy&&!guest)localStorage.setItem('asset_app_db_v3__guest',legacy)}catch(e){}}
+/* ---- Supabase(클라우드 동기화) 연결: URL·anon 키는 메뉴 › 계정 화면에서 붙여넣습니다 ---- */
+const SUPABASE_URL='';const SUPABASE_ANON_KEY='';/* 선택: 코드에 직접 넣어도 되고, 앱 화면에서 붙여넣어도 됩니다 */
+let SB=null;
+function sbCfg(){try{return{url:(localStorage.getItem('asset_app_sb_url')||'').trim()||SUPABASE_URL,key:(localStorage.getItem('asset_app_sb_key')||'').trim()||SUPABASE_ANON_KEY}}catch(e){return{url:SUPABASE_URL,key:SUPABASE_ANON_KEY}}}
+function sbReady(){const c=sbCfg();if(!c.url||!c.key||!window.supabase)return false;if(!SB){try{SB=window.supabase.createClient(c.url,c.key,{auth:{persistSession:true,autoRefreshToken:true}})}catch(e){return false}}return true}
+function sbErrMsg(e){const m=(e&&e.message)||'';if(/registered|already/i.test(m))return'이미 가입된 이메일이에요';if(/invalid login|invalid.*credentials/i.test(m))return'이메일 또는 비밀번호가 올바르지 않아요';if(/confirm/i.test(m))return'이메일 인증이 필요해요 · 메일함을 확인해 주세요';if(/password/i.test(m))return'비밀번호는 6자 이상이어야 해요';return m||'클라우드 연결에 실패했어요'}
+async function pullCloud(){if(!sbReady()||!CLOUD_UID)return null;try{const{data,error}=await SB.from('user_data').select('data').eq('user_id',CLOUD_UID).maybeSingle();if(error||!data)return null;return data.data||null}catch(e){return null}}
+let SB_PUSH_T=null;
+function scheduleCloudPush(){if(!sbReady()||!CLOUD_UID)return;clearTimeout(SB_PUSH_T);SB_PUSH_T=setTimeout(()=>pushCloud().catch(()=>{}),1200)}
+async function pushCloud(){if(!sbReady()||!CLOUD_UID)return;try{await SB.from('user_data').upsert({user_id:CLOUD_UID,data:DB,updated_at:new Date().toISOString()})}catch(e){}}
+async function afterCloudAuth(uid){
+ CLOUD_UID=uid;
+ const remote=await pullCloud();
+ if(remote){DB=remote;migrate();try{localStorage.setItem(dataKey(),JSON.stringify(DB))}catch(e){}return}
+ const guestRaw=localStorage.getItem('asset_app_db_v3__guest');let guestDB=null,guestHasData=false;
+ try{guestDB=JSON.parse(guestRaw||'{}');guestHasData=(guestDB.assets&&guestDB.assets.length)||(guestDB.txns&&guestDB.txns.length)}catch(e){}
+ if(guestHasData){DB=guestDB;migrate()}else if(!DB||!Array.isArray(DB.assets)){DB=emptyDB()}
+ save();
+}
 const AUTH={
  _accts(){try{return JSON.parse(localStorage.getItem('asset_app_accounts')||'{}')}catch(e){return {}}},
  _write(a){localStorage.setItem('asset_app_accounts',JSON.stringify(a))},
  _hash(s){let h=5381;for(let i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(i))>>>0;return h.toString(16)},
  current(){return SESSION||null},
  exists(email){return !!this._accts()[emailKey(email)]},
- signUp(email,pw){email=(email||'').trim();if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))return{err:'이메일 형식을 확인해 주세요'};if((pw||'').length<4)return{err:'비밀번호는 4자 이상이어야 해요'};const a=this._accts();if(a[emailKey(email)])return{err:'이미 가입된 이메일이에요'};a[emailKey(email)]={email,pass:this._hash(pw),created:Date.now()};this._write(a);return{ok:true,email}},
- signIn(email,pw){const a=this._accts();const rec=a[emailKey(email)];if(!rec)return{err:'가입되지 않은 이메일이에요'};if(rec.pass!==this._hash(pw||''))return{err:'비밀번호가 일치하지 않아요'};return{ok:true,email:rec.email}},
+ async signUp(email,pw){
+  email=(email||'').trim();
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))return{err:'이메일 형식을 확인해 주세요'};
+  if((pw||'').length<4)return{err:'비밀번호는 4자 이상이어야 해요'};
+  if(sbReady()){
+   try{
+    const{data,error}=await SB.auth.signUp({email,password:pw});
+    if(error)return{err:sbErrMsg(error)};
+    const a=this._accts();a[emailKey(email)]=Object.assign({},a[emailKey(email)],{email,cloud:true,created:Date.now()});this._write(a);
+    if(!data||!data.session)return{ok:true,email,needsConfirm:true};
+    return{ok:true,email,cloud:true,uid:data.session.user.id};
+   }catch(e){return{err:'클라우드 연결에 실패했어요 · 인터넷 연결을 확인해 주세요'}}
+  }
+  const a=this._accts();if(a[emailKey(email)])return{err:'이미 가입된 이메일이에요'};a[emailKey(email)]={email,pass:this._hash(pw),created:Date.now()};this._write(a);return{ok:true,email};
+ },
+ async signIn(email,pw){
+  email=(email||'').trim();
+  if(sbReady()){
+   try{
+    const{data,error}=await SB.auth.signInWithPassword({email,password:pw});
+    if(error){
+     const localRec=this._accts()[emailKey(email)];
+     if(localRec&&!localRec.cloud&&localRec.pass)return{err:'클라우드 설정 전에 이 기기에서 만든 계정이에요 · 클라우드에서 다시 회원가입해 주세요'};
+     return{err:sbErrMsg(error)};
+    }
+    if(!data||!data.session)return{err:'로그인에 실패했어요 · 다시 시도해 주세요'};
+    const a=this._accts();a[emailKey(email)]=Object.assign({},a[emailKey(email)],{email,cloud:true});this._write(a);
+    return{ok:true,email,cloud:true,uid:data.session.user.id};
+   }catch(e){return{err:'클라우드 연결에 실패했어요 · 인터넷 연결을 확인해 주세요'}}
+  }
+  const a=this._accts();const rec=a[emailKey(email)];if(!rec)return{err:'가입되지 않은 이메일이에요'};if(rec.pass!==this._hash(pw||''))return{err:'비밀번호가 일치하지 않아요'};return{ok:true,email:rec.email};
+ },
  setSession(email){SESSION=email||'';localStorage.setItem('asset_app_session',SESSION)},
  kakaoUpsert(id,nick){const a=this._accts();if(!a[emailKey(id)])a[emailKey(id)]={email:id,kakao:true,nick:nick||'',created:Date.now()};else if(nick)a[emailKey(id)].nick=nick;this._write(a)},
  rec(email){return this._accts()[emailKey(email)]||null},
- signOut(){SESSION='';localStorage.setItem('asset_app_session','')},
+ signOut(){SESSION='';localStorage.setItem('asset_app_session','');CLOUD_UID=null;if(SB)try{SB.auth.signOut().catch(()=>{})}catch(e){}},
 };
 const KAKAO_JS_KEY=''; /* 선택: 여기에 직접 넣어도 되고, 앱 로그인 화면에서 붙여넣어도 됩니다 */
 function getKakaoKey(){try{return (localStorage.getItem('asset_app_kakao_key')||'').trim()||KAKAO_JS_KEY}catch(e){return KAKAO_JS_KEY}}
@@ -1561,7 +1612,7 @@ function migrate(){
  if(!DB.categories.expense||!DB.categories.expense.length)DB.categories.expense=[...EXP_CATS_DEFAULT];
  DB.inquiries=DB.inquiries||[];
 }
-function save(){invalidateBalances();try{localStorage.setItem(dataKey(),JSON.stringify(DB))}catch(e){STORAGE_OK=false}}
+function save(){invalidateBalances();try{localStorage.setItem(dataKey(),JSON.stringify(DB))}catch(e){STORAGE_OK=false}scheduleCloudPush()}
 
 /* ================= RECURRENCE ================= */
 function shiftWeekend(ds,mode){ /* 주말 조정: earlier=금요일로 당김, later=월요일로 미룸 */
@@ -3273,14 +3324,48 @@ function renderMenu(){
 function maturitySoon(){return DB.assets.filter(a=>a.type==='savings'&&a.maturityDate&&a.maturityDate<=addDays(TODAY,30)).length}
 function openAccountSheet(){
  const kind=accountKind();
+ const cloudOn=!!sbCfg().url;
+ const isCloudAcct=kind==='email'&&!!(AUTH.rec(SESSION)&&AUTH.rec(SESSION).cloud);
  openSheet(`<h3>계정</h3>
   <div class="acct-head" style="margin-bottom:14px"><div class="acct-av">${kind==='kakao'?'💬':kind==='email'?'👤':'🙂'}</div>
-    <div class="acct-i" style="flex:1;min-width:0"><div class="an">${accountName()}</div><div class="ak">${kind==='kakao'?'카카오 계정':kind==='email'?'이메일 계정':'게스트 (로그인 전)'}</div></div></div>
-  <div class="desc">데이터는 이 기기에 저장돼요. 여러 기기에서 함께 보려면 백엔드(서버) 연결이 필요합니다.</div>
+    <div class="acct-i" style="flex:1;min-width:0"><div class="an">${accountName()}</div><div class="ak">${kind==='kakao'?'카카오 계정':kind==='email'?(isCloudAcct?'이메일 계정 · 클라우드 동기화 중':'이메일 계정 (이 기기)'):'게스트 (로그인 전)'}</div></div></div>
+  <div class="desc">${cloudOn?'이메일로 로그인하면 다른 기기에서도 같은 데이터를 볼 수 있어요.':'데이터는 이 기기에 저장돼요. 여러 기기에서 함께 보려면 클라우드 동기화 설정이 필요합니다.'}</div>
   <div class="opt-list">
     ${kind==='guest'?`<button onclick="closeSheet();showAuth()"><div><div>로그인 / 회원가입</div><div class="ol-sub">카카오 또는 이메일</div></div></button>`:`<button onclick="doLogout()"><div><div>로그아웃</div></div></button>`}
+    <button onclick="openHelpCloud()"><div><div>이메일 로그인 · 클라우드 동기화 설정</div><div class="ol-sub">${cloudOn?'Supabase 연결됨':'Supabase 연결하면 다른 기기에서도 같은 데이터를 봐요'}</div></div></button>
     <button onclick="openHelpKakao()"><div><div>카카오 로그인 설정 방법</div><div class="ol-sub">JavaScript 키·도메인 등록 안내</div></div></button>
   </div>`);
+}
+function openHelpCloud(){
+ const c=sbCfg();
+ openSheet(`<h3>이메일 로그인 · 클라우드 동기화</h3>
+  <div class="help-body"><p><b>1) Supabase 프로젝트 준비</b><br>supabase.com 에서 무료 프로젝트를 만들고, <b>Project Settings › API</b>에서 <b>Project URL</b>과 <b>anon public</b> 키를 복사해 아래에 붙여넣으세요.</p></div>
+  <div class="field"><label>Project URL</label><input id="sbUrlIn" placeholder="https://xxxx.supabase.co" value="${(c.url||'').replace(/"/g,'&quot;')}"></div>
+  <div class="field"><label>anon public 키</label><input id="sbKeyIn" placeholder="anon public key" value="${(c.key||'').replace(/"/g,'&quot;')}"></div>
+  <div class="two-btn" style="margin-bottom:16px">${c.url?`<button class="btn btn-soft cancel" onclick="localStorage.removeItem('asset_app_sb_url');localStorage.removeItem('asset_app_sb_key');SB=null;closeSheet();toast('클라우드 설정을 삭제했어요')">설정 삭제</button>`:`<button class="btn btn-soft cancel" onclick="closeSheet()">닫기</button>`}<button class="btn btn-primary" onclick="saveCloudCfg()">저장</button></div>
+  <div class="help-body">
+   <p><b>2) 테이블 만들기</b><br>Supabase <b>SQL Editor</b>에서 아래 SQL을 한 번 실행하세요.</p>
+   <pre style="white-space:pre-wrap;font-size:11px;line-height:1.5;background:var(--sunken);padding:10px;border-radius:8px;overflow-x:auto;color:var(--text-2)">create table public.user_data (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  data jsonb not null,
+  updated_at timestamptz not null default now()
+);
+alter table public.user_data enable row level security;
+create policy "select own" on public.user_data
+  for select using (auth.uid() = user_id);
+create policy "insert own" on public.user_data
+  for insert with check (auth.uid() = user_id);
+create policy "update own" on public.user_data
+  for update using (auth.uid() = user_id);</pre>
+   <p><b>3) 이메일 인증(선택)</b><br><b>Authentication › Providers › Email</b>에서 'Confirm email'을 꺼두면 가입 즉시 로그인돼요. 켜두면 가입 후 메일의 인증 링크를 눌러야 로그인할 수 있어요.</p>
+   <p><b>4) 사용하기</b><br>저장 후 이메일로 가입하면, 그 다음부터는 같은 이메일·비밀번호로 다른 기기에서 로그인해도 같은 데이터를 볼 수 있어요.</p>
+  </div>`);
+}
+function saveCloudCfg(){
+ const url=($('sbUrlIn').value||'').trim(),key=($('sbKeyIn').value||'').trim();
+ if(!url||!key){toast('URL과 키를 모두 입력해 주세요');return}
+ localStorage.setItem('asset_app_sb_url',url);localStorage.setItem('asset_app_sb_key',key);SB=null;
+ closeSheet();toast('클라우드 설정을 저장했어요 · 이메일로 로그인/가입해 보세요');
 }
 function openHelpKakao(){
  const cur=(localStorage.getItem('asset_app_kakao_key')||'');
@@ -3290,7 +3375,7 @@ function openHelpKakao(){
   <div class="two-btn" style="margin-bottom:16px">${cur?`<button class="btn btn-soft cancel" onclick="localStorage.removeItem('asset_app_kakao_key');closeSheet();toast('카카오 키를 삭제했어요')">키 삭제</button>`:`<button class="btn btn-soft cancel" onclick="closeSheet()">닫기</button>`}<button class="btn btn-primary" onclick="var v=($('kkeyIn2').value||'').trim();if(!v){toast('키를 입력해 주세요');return}localStorage.setItem('asset_app_kakao_key',v);closeSheet();toast('카카오 키를 저장했어요 · 로그아웃 후 카카오로 로그인해 보세요')">저장</button></div>
   <div class="help-body">
    <p><b>2) 도메인 등록</b><br>카카오 개발자 [플랫폼 › Web]에 이 앱을 올린 <b>도메인</b>을 등록하고, [카카오 로그인]을 활성화 + 동의항목에서 '닉네임'을 허용하세요.</p>
-   <p><b>3) 기기 간 동기화(진짜 클라우드)</b><br>서버가 필요해요. Supabase·Firebase 같은 BaaS로 사용자별 저장을 붙이면 됩니다. 원하시면 연동까지 만들어 드릴게요.</p>
+   <p><b>3) 기기 간 동기화(진짜 클라우드)</b><br>이메일 로그인으로 기기 간 동기화를 쓰려면 계정 화면의 '이메일 로그인 · 클라우드 동기화 설정'에서 Supabase를 연결하세요.</p>
   </div>`);
 }
 
@@ -4845,10 +4930,19 @@ function startApp(){
  autoSyncRates();                       /* 시작 시 1회 */
  setInterval(autoSyncRates,3*60*1000); /* 3분마다 확인 → 10분 지났으면 갱신 */
 }
-function boot(){
+async function boot(){
  migrateLegacy();
  if(SESSION&&!AUTH.exists(SESSION))AUTH.signOut();
- if(AUTH.current())return startApp();
+ if(AUTH.current()){
+  const rec=AUTH.rec(AUTH.current());
+  if(rec&&rec.cloud&&sbReady()){
+   try{
+    const{data}=await SB.auth.getSession();
+    if(data&&data.session&&data.session.user)await afterCloudAuth(data.session.user.id);
+   }catch(e){}
+  }
+  return startApp();
+ }
  if(GUEST)return startApp();
  showAuth();
 }
@@ -4873,7 +4967,7 @@ function renderAuth(){
    <div id="auErr" class="auth-err" style="display:none"></div>
    <button class="btn btn-primary auth-submit" onclick="${login?'doLogin()':'doSignup()'}">${login?'로그인':'가입하고 시작'}</button>
    <button class="auth-guest" onclick="chooseGuest()">게스트로 둘러보기</button>
-   <div class="auth-note">카카오 로그인은 본인의 카카오 <b>JavaScript 키</b>가 있어야 열려요. 위 '카카오로 시작하기'를 누르면 <b>키를 앱에서 바로 입력</b>할 수 있어요(코드 수정 불필요). 데이터는 이 기기에 저장되며, 기기 간 동기화는 백엔드 연결이 필요합니다.</div>
+   <div class="auth-note">카카오 로그인은 본인의 카카오 <b>JavaScript 키</b>가 있어야 열려요. 위 '카카오로 시작하기'를 누르면 <b>키를 앱에서 바로 입력</b>할 수 있어요(코드 수정 불필요). ${sbCfg().url?'이메일로 가입하면 다른 기기에서도 같은 데이터를 볼 수 있어요.':'데이터는 이 기기에 저장되며, 기기 간 동기화는 클라우드 연결이 필요합니다(로그인 후 메뉴 › 계정에서 설정).'}</div>
  </div>`;
  setTimeout(()=>{const e=$('auEmail');e&&e.focus()},120);
 }
@@ -4898,10 +4992,27 @@ function saveKakaoKey(){const el=$('kkeyIn');const v=(el&&el.value||'').trim();i
 function authSet(m){authMode=m;renderAuth()}
 function authErr(msg){const e=$('auErr');if(e){e.textContent=msg;e.style.display=msg?'block':'none'}}
 function chooseGuest(){GUEST=true;localStorage.setItem('asset_app_guest','1');AUTH.signOut();startApp()}
-function doLogin(){const r=AUTH.signIn($('auEmail').value,$('auPw').value);if(r.err)return authErr(r.err);GUEST=false;localStorage.setItem('asset_app_guest','0');AUTH.setSession(r.email);startApp();toast('로그인했어요 · '+r.email)}
-function doSignup(){const r=AUTH.signUp($('auEmail').value,$('auPw').value);if(r.err)return authErr(r.err);
+async function doLogin(){
+ const email=$('auEmail').value,pw=$('auPw').value;
+ authErr('');const btn=document.querySelector('.auth-submit');if(btn)btn.disabled=true;
+ const r=await AUTH.signIn(email,pw);
+ if(btn)btn.disabled=false;
+ if(r.err)return authErr(r.err);
+ GUEST=false;localStorage.setItem('asset_app_guest','0');AUTH.setSession(r.email);
+ if(r.cloud)await afterCloudAuth(r.uid);
+ startApp();toast('로그인했어요 · '+r.email);
+}
+async function doSignup(){
+ const email=$('auEmail').value,pw=$('auPw').value;
+ authErr('');const btn=document.querySelector('.auth-submit');if(btn)btn.disabled=true;
+ const r=await AUTH.signUp(email,pw);
+ if(btn)btn.disabled=false;
+ if(r.err)return authErr(r.err);
+ if(r.needsConfirm){openSheet(`<h3>이메일 인증이 필요해요</h3><div class="desc">${r.email} 로 인증 메일을 보냈어요. 메일함에서 인증 링크를 누른 뒤 로그인해 주세요.</div><div class="two-btn" style="margin-top:14px"><button class="btn btn-primary" onclick="closeSheet()" style="width:100%">확인</button></div>`);return}
+ GUEST=false;localStorage.setItem('asset_app_guest','0');AUTH.setSession(r.email);
+ if(r.cloud){await afterCloudAuth(r.uid);startApp();toast('가입 완료 · '+r.email);return}
  const guestRaw=localStorage.getItem('asset_app_db_v3__guest');let guestHasData=false;try{const g=JSON.parse(guestRaw||'{}');guestHasData=(g.assets&&g.assets.length)||(g.txns&&g.txns.length)}catch(e){}
- GUEST=false;localStorage.setItem('asset_app_guest','0');AUTH.setSession(r.email);startApp();
+ startApp();
  if(guestHasData)confirmSheet('데이터 가져오기','방금까지 게스트로 입력한 자산·내역이 있어요. 새 계정으로 가져올까요?','가져오기',()=>{try{DB=JSON.parse(guestRaw);migrate();save();renderCurrent();toast('데이터를 가져왔어요')}catch(e){toast('가져오기에 실패했어요')}});
  else toast('가입 완료 · '+r.email);
 }
@@ -4921,12 +5032,12 @@ function refreshToday(){
 }
 function appIsOpen(){const el=$('app');return !!DB&&el&&el.style.display!=='none'}
 function maybeRollDay(){if(!appIsOpen())return;if(refreshToday())renderCurrent();autoSyncRates()}
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)maybeRollDay()});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)maybeRollDay();else if(CLOUD_UID){clearTimeout(SB_PUSH_T);pushCloud().catch(()=>{})}});
 window.addEventListener('focus',maybeRollDay);
 window.addEventListener('pageshow',maybeRollDay);
 setInterval(maybeRollDay,60000);
 matchMedia('(prefers-color-scheme:dark)').addEventListener('change',()=>{if(DB.settings.themeMode==='system')renderCurrent()});
-setTimeout(()=>{const soon=DB.assets.filter(a=>a.type==='savings'&&a.maturityDate&&a.maturityDate<=addDays(TODAY,7));
+setTimeout(()=>{if(!DB)return;const soon=DB.assets.filter(a=>a.type==='savings'&&a.maturityDate&&a.maturityDate<=addDays(TODAY,7));
  if(soon.length)toast(`저축 만기 ${soon.length}건이 임박했어요`)},1200);
 </script>
 <script>
