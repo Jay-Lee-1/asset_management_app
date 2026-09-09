@@ -1,0 +1,19 @@
+{
+  "name": "우리의 자산",
+  "short_name": "우리의 자산",
+  "description": "가볍게 시작하는 우리 가족 자산·가계부",
+  "lang": "ko",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F4F6F4",
+  "theme_color": "#0E8A7D",
+  "categories": ["finance", "productivity", "lifestyle"],
+  "icons": [
+    { "src": "./icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
