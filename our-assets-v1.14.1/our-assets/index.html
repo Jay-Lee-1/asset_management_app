@@ -1274,7 +1274,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.15.1';
+const APP_VERSION='1.15.2';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 
@@ -2356,7 +2356,7 @@ function syncAssetInputs(){const d=asDraft;const g=id=>$(id);
  if(g('asFx'))d.fxAmount=parseFloat((g('asFx').value||'0').replace(/,/g,''))||0;
  if(g('asGold'))d.goldDon=parseFloat((g('asGold').value||'0').replace(/,/g,''))||0;
  if(g('asCode'))d.stockCode=g('asCode').value.trim().toUpperCase();
- if(g('asQty'))d.stockQty=num(g('asQty'));}
+ if(g('asQty'))d.stockQty=parseFloat((g('asQty').value||'0').replace(/,/g,''))||0;}
 function asOpenType(){syncAssetInputs();openTypePicker({current:asDraft.type,back:()=>renderAssetSheet(!!asDraft.id),onPick:k=>{asDraft.type=k;if(k==='pension')asDraft.includeInTotal=false;if(k==='savings'&&!asDraft.maturityTargetId)asDraft.maturityTargetId=firstCash();renderAssetSheet(!!asDraft.id)}})}
 function asOpenOwner(){syncAssetInputs();openOwnerPicker({current:asDraft.owner,back:()=>renderAssetSheet(!!asDraft.id),onPick:o=>{asDraft.owner=o;renderAssetSheet(!!asDraft.id)}})}
 function asOpenMat(){syncAssetInputs();openAssetPicker({current:asDraft.maturityTargetId,title:'만기 시 이체할 통장',cashOnly:true,back:()=>renderAssetSheet(!!asDraft.id),onPick:id=>{asDraft.maturityTargetId=id;renderAssetSheet(!!asDraft.id)}})}
@@ -2388,7 +2388,7 @@ function renderAssetSheet(editing){
    fields=`<div class="field"><label>종목명</label><div class="field-clear"><input id="asName" value="${d.name||''}" placeholder="예: 삼성전자"><button type="button" class="fc-x" onclick="clrInput('asName')">✕</button></div></div>
      <div class="field"><label>종목코드</label><input id="asCode" value="${d.stockCode||''}" placeholder="국내 005930 · 해외 AAPL" autocapitalize="characters" oninput="this.value=this.value.toUpperCase()">
       <p style="font-size:12px;color:var(--text-3);margin-top:6px">국내는 6자리 숫자, 해외는 티커(AAPL·TSLA·NVDA)를 넣어주세요. 해외는 원화로 환산돼요.</p></div>
-     <div class="field"><label>보유 주식 수</label><div class="with-unit"><input id="asQty" class="num" inputmode="numeric" value="${d.stockQty||''}" placeholder="0"><span class="unit">주</span></div></div>
+     <div class="field"><label>보유 주식 수</label><div class="with-unit"><input id="asQty" class="num" inputmode="decimal" value="${d.stockQty||''}" placeholder="0"><span class="unit">주</span></div></div>
      <p style="font-size:12.5px;color:var(--text-2);margin:-4px 0 14px">평가액 = 현재가 × 보유수량 (현재가는 시세 연동 관리에서 입력).</p>`;
  }
  openSheet(`<h3>${editing?'자산 수정':'자산 등록'}</h3>
