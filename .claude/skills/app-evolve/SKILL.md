@@ -13,7 +13,7 @@ description: This skill should be used when the user runs "/app-evolve", asks to
 
 1. `git rev-parse --is-inside-work-tree`로 cwd가 git 저장소인지 확인한다. 아니면 즉시 중단하고 사용자에게 프로젝트 폴더로 이동한 뒤 다시 실행하라고 안내한다.
 2. `git status --porcelain`으로 커밋되지 않은 변경사항이 있는지 확인한다. 이 스킬이 만든 것이 아닌 미완성 작업으로 보이면(직전 사이클 종료 시점에 clean 상태였어야 함) **진행하지 말고** 사용자에게 알린다. 사용자의 진행 중인 작업을 덮어쓰지 않는다.
-3. 상태 파일 `.claude/app-evolve/state.json`을 읽는다. 없으면 아래 스키마로 새로 만들고 `phase: "develop"`, `cycle: 0`부터 시작한다.
+3. 상태 파일은 저장소 루트의 `app-evolve-state.json`이다 (**`.claude/` 아래에 두지 않는다** — 클라우드 실행 환경이 `.claude/` 경로를 "민감한 파일"로 취급해 쓰기 전에 사람 승인을 요구하는데, 무인 루틴에는 승인할 사람이 없어 그 자리에서 영원히 멈춘다. 실제로 이 문제로 클라우드 루틴이 멈춘 적이 있다). 없으면 아래 스키마로 새로 만들고 `phase: "develop"`, `cycle: 0`부터 시작한다.
 
 ```json
 {
@@ -25,6 +25,8 @@ description: This skill should be used when the user runs "/app-evolve", asks to
 ```
 
 `history`는 최근 20개 항목만 유지한다(오래된 항목은 앞에서 잘라낸다). 각 항목: `{ "cycle": n, "phase": "...", "timestamp": "...", "summary": "...", "commit": "<sha 또는 null>" }`.
+
+이 파일은 **git에 커밋된 상태로 유지한다** (아래 2-3 참고). 클라우드 루틴은 매 실행마다 완전히 새로운 컨테이너에 저장소를 새로 클론하므로, 커밋되지 않은 로컬 전용 상태는 다음 실행에서 그냥 사라진다 — git이 유일하게 실행 간에 실제로 이어지는 저장소다. state.json을 못 찾으면 `git log --oneline -5`의 최근 `[app-evolve:...]` 커밋 메시지로 마지막 단계를 추정해 다음 단계부터 이어가고(예: 마지막이 `develop`이면 `review`부터), cycle 번호를 모르면 0으로 시작해도 된다 — 완벽히 못 맞춰도 로테이션이 죽는 것보다 낫다.
 
 4. 프로젝트에 build/lint/test 스크립트가 있는지 확인한다(`package.json`의 scripts, Makefile, CLAUDE.md 등). 있으면 각 단계 끝에 실행해서 검증한다.
 
@@ -48,8 +50,8 @@ description: This skill should be used when the user runs "/app-evolve", asks to
 
 - `git log`/`git diff`로 마지막 develop 커밋 이후의 변경을 확인한다.
 - 정확성, 엣지 케이스, 에러 처리, 기존 코드와의 일관성을 중심으로 검토한다. 필요하면 `code-review` 스킬을 medium 수준으로 이 diff에 대해 호출해도 된다.
-- 실제 버그를 발견하면 그 자리에서 작은 범위로 고치고 커밋한다(`[app-evolve:review] fix: ...`). 고칠 만큼 급하지 않은 지적사항은 커밋하지 말고 `history`의 summary에 기록만 남겨 critique 단계가 참고하게 한다.
-- 변경할 게 없으면(문제 없음) 커밋 없이 "이상 없음"으로 기록하고 넘어간다.
+- 실제 버그를 발견하면 그 자리에서 작은 범위로 고치고 커밋한다(`[app-evolve:review] fix: ...`, state.json 갱신도 같은 커밋에 포함). 고칠 만큼 급하지 않은 지적사항은 코드는 커밋하지 말고 `history`의 summary에 기록만 남겨 critique 단계가 참고하게 한다.
+- 코드 변경이 없으면(문제 없음) "이상 없음"으로 기록하되, state.json 갱신만 담은 작은 커밋은 만든다(`[app-evolve:review] no issues found`).
 
 ### critique (비평)
 
@@ -58,7 +60,7 @@ description: This skill should be used when the user runs "/app-evolve", asks to
 - 아키텍처, UX 흐름, 기술 부채, 성능, 빠진 제품 기능, 일관성 없는 패턴, 접근성, 에러 상태 등을 살핀다.
 - 다음 advance 단계에 투입할 가치가 있는 **가장 우선순위 높은 약점 하나**를 고른다. 사소한 것은 여기서 고치지 않는다(고치는 건 develop/review의 몫).
 - 이 단계에서는 코드를 크게 건드리지 않는다. 대신 구체적이고 실행 가능한 계획을 세워 `state.pending_advance_plan`에 저장한다: `{ "title": "...", "why": "...", "approach": "..." }`.
-- 커밋할 코드 변경이 없으면 커밋을 만들지 않는다(계획은 state.json에만 저장, 이건 다음 단계에서 커밋에 포함됨).
+- 코드 변경은 없지만, state.json은 이제 항상 커밋해야 하므로(2-3 참고) critique도 `app-evolve-state.json` 갱신만 담는 작은 커밋을 만든다(`[app-evolve:critique] plan: ...`). 코드 diff는 비어 있는 게 정상이다.
 
 ### advance (고도화)
 
@@ -72,7 +74,7 @@ description: This skill should be used when the user runs "/app-evolve", asks to
 
 1. 이번 단계의 결과를 `history`에 append하고 20개 넘으면 오래된 것부터 자른다.
 2. 단계를 다음으로 회전시킨다: develop → review → critique → advance → develop. `advance`에서 `develop`으로 돌아갈 때만 `cycle`을 1 증가시킨다.
-3. `state.json`을 저장한다(코드 변경 여부와 무관하게 항상 저장 — state.json 자체는 별도 커밋하지 않고 그냥 워킹트리에 둔다. `.claude/app-evolve/`를 `.gitignore`에 넣을지는 사용자 판단에 맡기고 강제하지 않는다).
+3. `app-evolve-state.json`을 저장하고 **반드시 커밋한다**(코드 변경이 있었으면 같은 커밋에 포함, 코드 변경이 없었으면 state.json만 담은 별도의 작은 커밋). 클라우드 루틴은 매번 새 컨테이너에서 시작해 커밋된 것만 이어받을 수 있으므로, 이 커밋을 건너뛰면 다음 실행이 로테이션 위치를 잃는다.
 4. 사용자에게 짧게 보고한다: 이번에 어떤 단계를 수행했는지, 무엇을 했는지/찾았는지 1~3문장, 커밋 해시(있으면), 다음 단계가 무엇인지.
 
 ## 3. 안전 규칙 (항상 지킨다)
