@@ -1,27 +1,27 @@
 {
   "cycle": 5,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
     {
       "cycle": 4,
-      "phase": "critique",
-      "timestamp": "2026-09-10T20:05:00+09:00",
-      "summary": "IMPORTANT CONTEXT: this cycle's local /app-evolve run discovered the hourly cloud routine hit a real problem on its first fire — its ephemeral container found a genuine bug (assetSubline() rounds fractional stockQty/fxAmount via comma()) and committed a fix locally, but git push failed (403, GitHub App not authorized) and the commit was later stranded/lost. After the user reconnected the GitHub App, a second issue surfaced: the routine tried to write .claude/app-evolve/state.json and deadlocked on a permission prompt for 'sensitive' .claude/ paths, with no human present to approve. FIXED as a distinct infrastructure correction: migrated the state file to a plain repo-root app-evolve-state.json (never under .claude/) and updated both the project-level and user-level app-evolve skills to commit it on every phase, including critique/no-op reviews. BANKED for a future develop cycle: re-implement the lost commaQty() display fix. This critique phase's own plan (still valid): add a lightweight Node regression-test suite for the pure-logic functions fixed across cycles 0-4, since there was zero permanent safety net.",
-      "commit": null
-    },
-    {
-      "cycle": 4,
       "phase": "advance",
       "timestamp": "2026-09-10T20:40:00+09:00",
-      "summary": "Implemented the critique plan: added our-assets-v1.14.1/our-assets/test/run.js, a dependency-free Node regression suite (assert-based, no package.json) that extracts pure-logic function source directly out of index.html via a vm sandbox and runs 15 assertions covering bugs fixed in cycles 0-4 — addMonths month-rollover/leap-year clamping, recDates monthly day-clamp, recNthDate/recCountUntil weekend-adjustment round-trip, num()'s sign-stripping, doRenameCat's catVar/catIcon migration, and activeRecsForAssets. Sanity-checked the harness by reintroducing the old buggy addMonths into a scratch copy — 3 of 15 tests correctly failed, confirming it actually catches regressions. All 15 pass against the real index.html. Added a pointer to the suite in SKILL.md's pre-check step 4. This cycle also self-corrected a stale local git ref (detached HEAD reconciled with main) encountered while committing, unrelated to the earlier lost commit. This advance was executed by the cloud routine, which confirmed both infrastructure fixes worked end-to-end (push succeeded, state file read/written correctly, no permission deadlock).",
+      "summary": "Implemented the critique plan: added our-assets-v1.14.1/our-assets/test/run.js, a dependency-free Node regression suite (assert-based, no package.json) that extracts pure-logic function source directly out of index.html via a vm sandbox and runs 15 assertions covering bugs fixed in cycles 0-4 — addMonths month-rollover/leap-year clamping, recDates monthly day-clamp, recNthDate/recCountUntil weekend-adjustment round-trip, num()'s sign-stripping, doRenameCat's catVar/catIcon migration, and activeRecsForAssets. Sanity-checked the harness by reintroducing the old buggy addMonths into a scratch copy — 3 of 15 tests correctly failed, confirming it actually catches regressions. All 15 pass against the real index.html.",
       "commit": "e97a469"
     },
     {
       "cycle": 5,
       "phase": "develop",
       "timestamp": "2026-09-10T21:15:00+09:00",
-      "summary": "Re-implemented the banked commaQty display fix that an earlier cloud run had found and lost. assetSubline() ran a.fxAmount/a.stockQty through comma() (always rounds to integer), so fractional holdings (e.g. 1.5 shares, 1250.75 USD) displayed rounded ('2주', '1,251') while assetEval()'s net-worth math already used the unrounded value — a.goldDon on the same line was already shown unrounded, making the inconsistency visible within one function. Added commaQty() (integers behave like comma(), decimals shown as-is up to 4 places) and used it for fxAmount/stockQty. While wiring this into the new test suite, found and fixed a real bug in the test harness itself: extractConst() kept the 'const ' keyword, but Node's vm.runInContext() doesn't attach top-level const/let to the context object (only function declarations and plain assignments do), so anything added via CONSTS was silently unreachable as sandbox.<name> despite 'successful' extraction — stripped the 'const ' prefix so extracted consts become plain global assignments. Added commaQty (and its dependency comma) to CONSTS plus 3 new test cases. Verified: all 18 tests pass, and directly via the real assetSubline() in the browser (stockQty=1.5 -> '1.5주' was '2주'; fxAmount=1250.75 -> 'USD 1,250.75' was 'USD 1,251').",
+      "summary": "Implemented the banked candidate from cycle 4's critique: assetSubline() was rounding fractional a.fxAmount/a.stockQty to integers via comma() (Math.round), while assetEval() already uses the unrounded values for net-worth totals — so a holding like 0.5주 or USD 123.45 would silently show as 0주/USD 123 in the asset list despite the true value being counted correctly in 총자산. Added commaQty(n): integers via comma(), non-integers via toLocaleString with maximumFractionDigits:4, matching how a.goldDon was already shown unrounded. Used it in assetSubline() for fxAmount/stockQty. Bumped APP_VERSION 1.17.2→1.17.3 and sw.js CACHE v37→v38.",
+      "commit": "426cb47"
+    },
+    {
+      "cycle": 5,
+      "phase": "review",
+      "timestamp": "2026-09-10T21:40:00+09:00",
+      "summary": "Reviewed commit 426cb47 (commaQty display fix) — this exact fix was independently implemented in parallel by two concurrent app-evolve runs (the cloud routine and a local run), both picking up the same banked candidate from cycle 4's critique notes at nearly the same time. Reconciled via `git merge origin/main` (not reset, to avoid discarding either side's work): kept origin's already-pushed commaQty()/assetSubline() implementation as canonical (functionally identical to the local duplicate, only a trivial difference in how the null/undefined case is normalized), and merged in the genuinely additive part of the local work that origin's version didn't have — regression test coverage. While wiring commaQty into test/run.js, found and fixed a real, separate bug in the test harness itself: extractConst() preserved the leading 'const ' keyword when extracting from index.html, but Node's vm.runInContext() does not attach top-level const/let bindings to the context object (only function declarations and plain/var-style assignments do) — so anything added via the CONSTS list was silently unreachable as sandbox.<name> even though extraction reported success. Stripped the 'const ' prefix so extracted consts become plain global assignments in the sandbox. Added 'comma' and 'commaQty' to CONSTS and 3 new test cases for commaQty (integer passthrough, decimal precision, null handling). All 18 tests now pass (`node test/run.js`). Lesson for future concurrent-execution cycles: when both a local cron and the cloud routine are running against the same banked candidate list, duplicate work is possible — check `git fetch`/`git log origin/main` immediately before push, and prefer `git merge` over `git reset --hard` to reconcile (the latter is blocked by the permission classifier anyway, and merge is safer regardless).",
       "commit": null
     }
   ]

@@ -1358,7 +1358,7 @@ function svg(n,w){if(n==='fx')return `<span class="cur-sym"${w?` style="font-siz
 const $=id=>document.getElementById(id);
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const comma=n=>Math.round(n||0).toLocaleString('ko-KR');
-const commaQty=n=>Number.isInteger(n=n||0)?comma(n):n.toLocaleString('ko-KR',{maximumFractionDigits:4}); /* 소수 보유수량(주식/외화)은 반올림하지 않고 그대로 표시 */
+const commaQty=n=>Number.isInteger(n)?comma(n):(n||0).toLocaleString('ko-KR',{maximumFractionDigits:4}); /* 소수 보유수량(주식/외화)은 반올림하지 않고 그대로 표시 */
 const won=n=>(n<0?'-':'')+comma(Math.abs(n))+'원';
 const wonS=n=>(n>0?'+':n<0?'-':'')+comma(Math.abs(n))+'원';
 function todayStr(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
