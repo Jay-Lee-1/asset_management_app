@@ -38,7 +38,10 @@ function extractConst(name) {
   if (start === -1) throw new Error(`extractConst: "${name}" 선언을 index.html에서 찾지 못함`);
   const end = src.indexOf(';', start);
   if (end === -1) throw new Error(`extractConst: "${name}" 선언에 종료 ";"가 없음`);
-  return src.slice(start, end + 1);
+  // vm.runInContext에서 최상위 const/let 선언은 컨텍스트 객체의 프로퍼티가 되지 않는다
+  // (함수 선언과 달리 글로벌에 붙지 않음) — "const "를 떼서 평범한 대입문으로 바꿔야
+  // sandbox.<name>으로 접근할 수 있다.
+  return src.slice(start + 'const '.length, end + 1);
 }
 
 // 테스트 대상 + 그 대상이 내부에서 호출하는 순수 함수들.
@@ -47,7 +50,7 @@ const FUNCTIONS = [
   'recNthDate', 'recCountUntil', 'isVarCat', 'setCatVar', 'activeRecsForAssets',
   'num', 'doRenameCat',
 ];
-const CONSTS = ['catKey'];
+const CONSTS = ['catKey', 'comma', 'commaQty'];
 
 const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(extractConst).join('\n');
 
@@ -184,6 +187,20 @@ test('activeRecsForAssets: Set을 넘기면 여러 자산을 한 번에 찾는�
   };
   const hit = sandbox.activeRecsForAssets(new Set(['a1', 'a3'])).map(r => r.id).sort();
   assert.deepStrictEqual(hit, [1, 3]);
+});
+
+/* ---------- commaQty: 자산 목록의 소수 보유수량이 반올림되던 버그 ---------- */
+test('commaQty: 정수는 comma()와 동일하게 천단위 콤마만 붙는다', () => {
+  assert.strictEqual(sandbox.commaQty(30), '30');
+  assert.strictEqual(sandbox.commaQty(1250), '1,250');
+});
+test('commaQty: 소수는 반올림하지 않고 그대로 표시한다', () => {
+  assert.strictEqual(sandbox.commaQty(1.5), '1.5');
+  assert.strictEqual(sandbox.commaQty(6.8), '6.8');
+});
+test('commaQty: 값이 없으면 0으로 취급한다', () => {
+  assert.strictEqual(sandbox.commaQty(0), '0');
+  assert.strictEqual(sandbox.commaQty(null), '0');
 });
 
 /* ---------- 실행 ---------- */
