@@ -1271,7 +1271,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.18.1';
+const APP_VERSION='1.19.0';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 
@@ -3923,10 +3923,12 @@ function openHelp(){
 
 /* export / import — 파일명: backup_YYMMDD_HHmm.json */
 /* ===== 데이터 보호 ===== */
-function openCopyBackup(text,reason){
- openSheet(`<h3>백업 데이터 복사</h3>
+function openCopyBackup(text,reason,override){
+ const title=(override&&override.title)||'백업 데이터 복사';
+ const note=(override&&override.note)||'복원할 때는 이 내용을 .json 파일로 저장해 불러오면 돼요.';
+ openSheet(`<h3>${title}</h3>
   <div class="desc">${reason||'파일로 저장할 수 없는 환경이에요.'}<br>아래 내용을 복사해 <b>메모 앱</b>이나 <b>나에게 보내기</b>로 보관해 주세요.<br>
-  <span style="color:var(--text-3);font-size:12.5px">복원할 때는 이 내용을 .json 파일로 저장해 불러오면 돼요.</span></div>
+  <span style="color:var(--text-3);font-size:12.5px">${note}</span></div>
   <textarea id="bkText" readonly style="width:100%;height:150px;font-size:11px;line-height:1.4;padding:12px;border-radius:14px;
    background:var(--glass-field);border:1px solid var(--glass-border);color:var(--text)">${text.replace(/</g,'&lt;')}</textarea>
   <button class="btn btn-primary" style="margin-top:12px" onclick="copyBackup()">${svg('check')} 전체 복사</button>`);
@@ -3953,6 +3955,18 @@ function backupFile(name,text){ /* iOS 공유 시트는 .json 을 거부할 때�
                : new File([text],name,{type:'application/json'});
 }
 function canShareFiles(){try{return !!(navigator.canShare&&navigator.canShare({files:[backupFile('t.json','{}')]}))}catch(e){return false}}
+/* 거래 내역 CSV — 순수 함수(DOM/DB 전역 참조 없음), 자산명은 assets 배열로 조회 */
+function txnsToCSV(txns,assets){
+ const typeLabel={expense:'지출',income:'수입',transfer:'이체',saving:'저축'};
+ const nm=(id,snap)=>{const a=(assets||[]).find(x=>x.id===id);return a?a.name:(snap||'')};
+ const esc=v=>{const s=String(v==null?'':v);return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s};
+ const header=['날짜','구분','카테고리','금액','보내는 자산','받는 자산','메모'].map(esc).join(',');
+ const rows=(txns||[]).slice().sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0).map(t=>[
+  t.date,typeLabel[t.type]||t.type||'',t.category||'',t.amount,
+  nm(t.fromAssetId,t.fromAssetName),nm(t.toAssetId,t.toAssetName),t.memo||''
+ ].map(esc).join(','));
+ return '\ufeff'+[header,...rows].join('\r\n');
+}
 function exportData(){ /* 저장 방식 선택 */
  const sharable=canShareFiles();
  openSheet(`<h3>데이터 내보내기</h3>
@@ -3964,31 +3978,39 @@ function exportData(){ /* 저장 방식 선택 */
   <button class="pk-item" onclick="closeSheet();doExport('download')">
     <div class="pav" style="background:var(--sunken);color:var(--text-2)">${svg('download')}</div>
     <div class="pbody"><div class="pn">파일 열기</div><div class="psub">${IS_IOS?'파일이 열리면 아래 공유 버튼으로 저장':'다운로드 폴더에 저장돼요'}</div></div>
+    <div class="pc">${svg('chev')}</div></button>
+  <button class="pk-item" onclick="closeSheet();doExport('${sharable?'share':'download'}','csv')">
+    <div class="pav" style="background:var(--sunken);color:var(--text-2)">${svg('ledger')}</div>
+    <div class="pbody"><div class="pn">거래 내역 CSV로 내보내기</div><div class="psub">스프레드시트 앱에서 열어볼 수 있어요</div></div>
     <div class="pc">${svg('chev')}</div></button>`);
 }
-async function doExport(mode){
+async function doExport(mode,kind){
+ const isCsv=kind==='csv';
  const d=new Date();const pad=n=>String(n).padStart(2,'0');
  const stamp=`${String(d.getFullYear()).slice(2)}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}`;
- const name=`backup_${stamp}.json`;
- const text=JSON.stringify(DB,null,2);
- const done=msg=>{DB.settings.lastExport=Date.now();DB.settings.backupSnooze=0;save();renderCurrent();toast(msg)};
+ const name=isCsv?`history_${stamp}.csv`:`backup_${stamp}.json`;
+ const text=isCsv?txnsToCSV(DB.txns,DB.assets):JSON.stringify(DB,null,2);
+ const mime=isCsv?'text/csv':'application/json';
+ /* CSV는 복원용 백업이 아니므로 백업 알림 상태(lastExport/backupSnooze)를 건드리지 않는다 */
+ const done=msg=>{if(!isCsv){DB.settings.lastExport=Date.now();DB.settings.backupSnooze=0;save();renderCurrent();}toast(msg)};
+ const copyFallback=reason=>openCopyBackup(text,reason,isCsv?{title:'거래 내역 데이터 복사',note:'스프레드시트 앱에서 열 때는 이 내용을 .csv 파일로 저장해 불러오면 돼요.'}:null);
 
  /* 1) 공유 시트 — 되면 이게 가장 확실 */
  if(mode==='share'){
   try{
-   const file=new File([text],name,{type:'application/json'});
-   await navigator.share({files:[file],title:'우리의 자산 백업'});
-   done('백업 파일을 저장했어요');
+   const file=new File([text],name,{type:mime});
+   await navigator.share({files:[file],title:isCsv?'거래 내역 CSV':'우리의 자산 백업'});
+   done(isCsv?'CSV 파일을 저장했어요':'백업 파일을 저장했어요');
    return;
   }catch(e){
    if(e&&e.name==='AbortError')return; /* 사용자가 취소 */
-   openCopyBackup(text,'공유가 막혀 있어요.'); /* 인앱 브라우저 등 */
+   copyFallback('공유가 막혀 있어요.'); /* 인앱 브라우저 등 */
    return;
   }
  }
 
  /* 2) 파일 열기/다운로드 */
- const blob=new Blob([text],{type:'application/json'});
+ const blob=new Blob([text],{type:mime});
  const url=URL.createObjectURL(blob);
  try{
   if(IS_IOS){
@@ -3997,7 +4019,7 @@ async function doExport(mode){
    const w=window.open(url,'_blank');
    if(!w||w.closed||typeof w.closed==='undefined'){
     URL.revokeObjectURL(url);
-    openCopyBackup(text,'파일 열기가 차단됐어요.');
+    copyFallback('파일 열기가 차단됐어요.');
     return;
    }
    done('파일이 열렸어요 · 공유 버튼으로 저장하세요');
@@ -4010,7 +4032,7 @@ async function doExport(mode){
   setTimeout(()=>URL.revokeObjectURL(url),20000);
  }catch(e){
   URL.revokeObjectURL(url);
-  openCopyBackup(text,'파일로 저장할 수 없어요.');
+  copyFallback('파일로 저장할 수 없어요.');
  }
 }
 

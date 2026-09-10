@@ -49,7 +49,7 @@ const FUNCTIONS = [
   'lastDay', 'addDays', 'shiftWeekend', 'recDates', 'addMonthsStr', 'addMonths',
   'recNthDate', 'recCountUntil', 'isVarCat', 'setCatVar', 'activeRecsForAssets',
   'num', 'doRenameCat', 'doDeleteCat', 'budgetProgress', 'addCat',
-  'updateNwHistory', 'pruneNwHistory', 'nwChartPath',
+  'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV',
 ];
 const CONSTS = ['catKey', 'comma', 'commaQty'];
 
@@ -361,6 +361,49 @@ test('nwChartPath: 모든 값이 같으면(span=0) 0으로 나누지 않고 수�
 test('nwChartPath: 값이 오르면 마지막 y좌표가 첫 y좌표보다 위(작은 값)에 온다', () => {
   const { line } = sandbox.nwChartPath([{ nw: 0 }, { nw: 100 }], 300, 80);
   assert.strictEqual(line, 'M0.0,80.0 L300.0,0.0');
+});
+
+/* ---------- txnsToCSV: 거래 내역 CSV 내보내기 ---------- */
+test('txnsToCSV: 빈 배열이면 BOM과 헤더만 있는 한 줄을 반환한다', () => {
+  const csv = sandbox.txnsToCSV([], []);
+  assert.strictEqual(csv, '﻿날짜,구분,카테고리,금액,보내는 자산,받는 자산,메모');
+});
+test('txnsToCSV: 메모에 콤마가 있으면 필드 전체를 따옴표로 감싼다', () => {
+  const csv = sandbox.txnsToCSV(
+    [{ date: '2026-01-01', type: 'expense', category: '식비', amount: 1000, fromAssetId: null, toAssetId: null, memo: '김밥, 라면' }],
+    []
+  );
+  const lines = csv.slice(1).split('\r\n');
+  assert.strictEqual(lines[1], '2026-01-01,지출,식비,1000,,,"김밥, 라면"');
+});
+test('txnsToCSV: 메모에 큰따옴표가 있으면 두 배로 이스케이프하고 필드 전체를 따옴표로 감싼다', () => {
+  const csv = sandbox.txnsToCSV(
+    [{ date: '2026-01-01', type: 'expense', category: '기타', amount: 500, fromAssetId: null, toAssetId: null, memo: '"급함"' }],
+    []
+  );
+  const lines = csv.slice(1).split('\r\n');
+  assert.strictEqual(lines[1], '2026-01-01,지출,기타,500,,,"""급함"""');
+});
+test('txnsToCSV: 살아있는 자산은 assets 배열에서 이름을 찾고, 삭제된 자산은 *AssetName 스냅샷으로 대체한다', () => {
+  const assets = [{ id: 'a1', name: '우리은행' }];
+  const csv = sandbox.txnsToCSV(
+    [{ date: '2026-01-02', type: 'transfer', category: '이체', amount: 50000, fromAssetId: 'a1', toAssetId: 'a_deleted', toAssetName: '옛 카카오뱅크', memo: '' }],
+    assets
+  );
+  const lines = csv.slice(1).split('\r\n');
+  assert.strictEqual(lines[1], '2026-01-02,이체,이체,50000,우리은행,옛 카카오뱅크,');
+});
+test('txnsToCSV: 날짜 오름차순으로 정렬한다', () => {
+  const csv = sandbox.txnsToCSV(
+    [
+      { date: '2026-02-01', type: 'expense', category: '기타', amount: 1, fromAssetId: null, toAssetId: null, memo: '' },
+      { date: '2026-01-01', type: 'expense', category: '기타', amount: 2, fromAssetId: null, toAssetId: null, memo: '' },
+    ],
+    []
+  );
+  const lines = csv.slice(1).split('\r\n');
+  assert.ok(lines[1].startsWith('2026-01-01'));
+  assert.ok(lines[2].startsWith('2026-02-01'));
 });
 
 /* ---------- 실행 ---------- */
