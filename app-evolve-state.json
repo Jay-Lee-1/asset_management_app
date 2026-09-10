@@ -1,6 +1,6 @@
 {
   "cycle": 7,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
     {
@@ -64,6 +64,13 @@
       "phase": "develop",
       "timestamp": "2026-09-10T13:15:00+00:00",
       "summary": "addCat(k) was the odd one out among the app's 'add/rename named item' flows: addOwner() and doRenameCat() both check for a duplicate name and toast('이미 있는 카테고리예요'/'이미 있는 귀속이에요') before returning, but addCat() just silently skipped the DB.categories[k].push() on a duplicate and still cleared the draft, saved, and reopened the sheet — giving the user zero feedback that nothing happened when they typed an existing category name. Worse, if the user had picked a custom icon in catAddDraft.icon first, the DB.catIcon[catKey(k,v)]=catAddDraft.icon line still ran unconditionally, silently overwriting the icon of the pre-existing category with the same name. Fixed by adding the same early-return-with-toast guard used by addOwner/doRenameCat, which also fixes the icon-overwrite side effect since the function now returns before touching catIcon. Added addCat to the test harness's FUNCTIONS list and gave the sandbox toast() a lastToast recorder (previously a no-op) plus a catAddDraft field so it could be exercised; added 2 new regression tests (duplicate name toasts and leaves array/icon untouched; new name adds normally with no toast) — all 37 tests pass. Verified both inline <script> blocks still parse via new Function(). Bumped APP_VERSION 1.18.0→1.18.1 and sw.js CACHE v41→v42.",
+      "commit": "efe88da"
+    },
+    {
+      "cycle": 7,
+      "phase": "review",
+      "timestamp": "2026-09-10T13:20:00+00:00",
+      "summary": "Reviewed commit efe88da (addCat duplicate-name toast fix). Confirmed the early-return guard matches addOwner/doRenameCat's existing pattern exactly, verified the icon-overwrite side effect is genuinely fixed (function now returns before touching DB.catIcon), checked there's no other code path that calls DB.categories[k].push() bypassing addCat, and confirmed migrate() always initializes DB.categories[k] as an array so .includes() is never called on undefined. Re-ran the regression suite (37/37 pass) and re-validated both inline <script> blocks parse via new Function(). No bugs found — no code changes this phase.",
       "commit": null
     }
   ]
