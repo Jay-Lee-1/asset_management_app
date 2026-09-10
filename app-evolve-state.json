@@ -29,7 +29,7 @@
       "phase": "develop",
       "timestamp": "2026-09-10T21:15:00+09:00",
       "summary": "Implemented the banked candidate from cycle 4's critique: assetSubline() was rounding fractional a.fxAmount/a.stockQty to integers via comma() (Math.round), while assetEval() already uses the unrounded values for net-worth totals — so a holding like 0.5주 or USD 123.45 would silently show as 0주/USD 123 in the asset list despite the true value being counted correctly in 총자산. Added commaQty(n) next to comma() in the UTILS section (index.html:1360-1361): integers still format via comma(), non-integers format via toLocaleString with maximumFractionDigits:4, matching how a.goldDon was already shown unrounded. Swapped assetSubline()'s fx/stock lines to use commaQty(). Verified no other display site uses comma() on these two fields (only the edit-form inputs at asFx/asQty, which are raw <input> values, not comma()-formatted). node --check on both extracted <script> blocks passed; ran test/run.js — 15/15 still pass (this codepath isn't covered by the suite, but nothing broke). Bumped APP_VERSION 1.17.2→1.17.3 and sw.js CACHE v37→v38 since runtime JS changed.",
-      "commit": "PENDING_FILL_AFTER_COMMIT"
+      "commit": "426cb47"
     }
   ]
 }
