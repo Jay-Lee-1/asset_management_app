@@ -101,6 +101,23 @@ test('recDates: 매월 31일 반복은 짧은 달에서 그 달의 마지막 날
   assert.deepStrictEqual(dates, ['2026-01-31', '2026-02-28', '2026-03-31', '2026-04-30']);
 });
 
+/* ---------- recDates: 연간 2/29 시작은 평년에 3/1로 밀리지 않고 2/28로 clamp된다 ---------- */
+test('recDates: 2/29 시작 연간 반복은 평년에 2/28로 clamp되고 3/1로 영구히 밀리지 않는다', () => {
+  const r = { freq: 'yearly', startDate: '2024-02-29', endDate: null, weekend: 'none' };
+  const dates = Array.from(sandbox.recDates(r, '2024-01-01', '2027-12-31'));
+  assert.deepStrictEqual(dates, ['2024-02-29', '2025-02-28', '2026-02-28', '2027-02-28']);
+});
+test('recDates: 2/29 시작 연간 반복은 다음 윤년에 다시 2/29로 돌아온다', () => {
+  const r = { freq: 'yearly', startDate: '2024-02-29', endDate: null, weekend: 'none' };
+  const dates = Array.from(sandbox.recDates(r, '2024-01-01', '2028-12-31'));
+  assert.strictEqual(dates[dates.length - 1], '2028-02-29', '2028년은 윤년이므로 다시 2/29가 나와야 함');
+});
+test('recDates: 윤년 아닌 날짜(예: 6/15)로 시작한 연간 반복은 매년 같은 날짜를 유지한다', () => {
+  const r = { freq: 'yearly', startDate: '2026-06-15', endDate: null, weekend: 'none' };
+  const dates = Array.from(sandbox.recDates(r, '2026-01-01', '2029-12-31'));
+  assert.deepStrictEqual(dates, ['2026-06-15', '2027-06-15', '2028-06-15', '2029-06-15']);
+});
+
 /* ---------- recNthDate/recCountUntil: 주말 조정 무시 버그 (78d96a5) ---------- */
 function nextSaturdayOnOrAfter(y, m, d) {
   const dt = new Date(y, m - 1, d);

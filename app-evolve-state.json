@@ -1,8 +1,15 @@
 {
   "cycle": 8,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 8,
+      "phase": "develop",
+      "timestamp": "2026-09-10T00:00:00+00:00",
+      "summary": "Fixed a real date-drift bug in recDates()'s yearly branch (index.html): it advanced occurrences with cd.setFullYear(cd.getFullYear()+1) on a native Date object, so a yearly recurrence starting on Feb 29 (e.g. an annual insurance premium or subscription) silently rolled over to Mar 1 on its first anniversary in a non-leap year and then stayed on Mar 1 forever, never returning to Feb 29 even in the next leap year — a genuine, permanent, one-time date corruption the user never asked for. This is the same class of month-end rollover bug the monthly branch right above it and addMonths() already guard against via Math.min(day,lastDay(y,m)) clamping (with an explicit '일자 롤오버 방지' comment at index.html:3071), but the yearly branch had never been given the same treatment. Rewrote the yearly branch to compute year/month/day explicitly and clamp the day via lastDay(y,mo) each iteration, mirroring the existing addMonths()/monthly-branch pattern instead of relying on Date rollover semantics — so a Feb-29 start now clamps to Feb 28 in non-leap years and correctly returns to Feb 29 in the next leap year. Added 3 new regression tests to test/run.js (permanent-drift-to-Mar-1 is fixed and clamps to 2/28 across 3 non-leap years, returns to 2/29 in the next leap year 2028, and a plain non-Feb-29 yearly date like 6/15 is unaffected and stays exact every year) — all 45 tests pass. Verified both inline <script> blocks still parse via new Function(). Bumped APP_VERSION 1.19.0→1.19.1 and sw.js CACHE v43→v44 (patch bump, bug fix).",
+      "commit": null
+    },
     {
       "cycle": 5,
       "phase": "develop",
