@@ -28,7 +28,7 @@ description: This skill should be used when the user runs "/app-evolve", asks to
 
 이 파일은 **git에 커밋된 상태로 유지한다** (아래 2-3 참고). 클라우드 루틴은 매 실행마다 완전히 새로운 컨테이너에 저장소를 새로 클론하므로, 커밋되지 않은 로컬 전용 상태는 다음 실행에서 그냥 사라진다 — git이 유일하게 실행 간에 실제로 이어지는 저장소다. state.json을 못 찾으면 `git log --oneline -5`의 최근 `[app-evolve:...]` 커밋 메시지로 마지막 단계를 추정해 다음 단계부터 이어가고(예: 마지막이 `develop`이면 `review`부터), cycle 번호를 모르면 0으로 시작해도 된다 — 완벽히 못 맞춰도 로테이션이 죽는 것보다 낫다.
 
-4. 프로젝트에 build/lint/test 스크립트가 있는지 확인한다(`package.json`의 scripts, Makefile, CLAUDE.md 등). 있으면 각 단계 끝에 실행해서 검증한다.
+4. 프로젝트에 build/lint/test 스크립트가 있는지 확인한다(`package.json`의 scripts, Makefile, CLAUDE.md 등). 있으면 각 단계 끝에 실행해서 검증한다. 이 프로젝트는 별도 스크립트가 없는 대신 `node our-assets-v1.14.1/our-assets/test/run.js`로 돌아가는 경량 회귀 테스트 스위트가 있다 — 날짜/반복거래/카테고리 관련 핵심 순수 로직 함수들을 커버한다. index.html의 관련 로직을 건드린 단계라면 커밋 전에 반드시 실행해서 통과를 확인한다(3번 참고).
 
 ## 1. 단계별 절차
 
@@ -85,7 +85,8 @@ description: This skill should be used when the user runs "/app-evolve", asks to
 - 스킬이 만들지 않은 미완성 변경사항이 있으면 절대 진행하지 말고, 커밋하지 말고 그대로 둔다(0-2 참고). 클라우드 루틴에서는 사용자에게 직접 물어볼 수 없으므로, 이 경우 아무 것도 하지 않고 state.json에 "블로킹됨: 미완성 변경사항 발견"이라고만 기록하고 종료한다.
 - 프로젝트에 이미 있는 컨벤션(린트 설정, 커밋 메시지 스타일, 테스트 프레임워크, CLAUDE.md 지침)을 그대로 따른다.
 - 근거 없이 파괴적인 리팩터링(대규모 삭제, 의존성 대거 교체 등)을 벌이지 않는다. 고도화도 "다음 걸음"이지 "재작성"이 아니다.
-- 이 프로젝트는 서버 없는 단일 HTML 파일 기반 PWA다(`our-assets-v1.14.1/our-assets/index.html`). 별도의 build/lint/test 스크립트가 없으므로, JS 문법 검증은 `<script>` 블록을 추출해 `node --check`로 확인하는 방식을 쓴다. HTML/JS를 수정했다면 `our-assets-v1.14.1/our-assets/sw.js`의 `CACHE` 버전과 `index.html`의 `APP_VERSION`을 함께 올려 배포 시 캐시가 갱신되게 한다.
+- 이 프로젝트는 서버 없는 단일 HTML 파일 기반 PWA다(`our-assets-v1.14.1/our-assets/index.html`). 별도의 build 스크립트가 없으므로, JS 문법 검증은 `<script>` 블록을 추출해 `node --check`로 확인하는 방식을 쓴다. HTML/JS를 수정했다면 `our-assets-v1.14.1/our-assets/sw.js`의 `CACHE` 버전과 `index.html`의 `APP_VERSION`을 함께 올려 배포 시 캐시가 갱신되게 한다.
+- 회귀 테스트는 `node our-assets-v1.14.1/our-assets/test/run.js`로 돌린다. index.html에서 순수 로직 함수 소스를 텍스트로 추출해 실행하는 방식이라(빌드 도구 불필요) 앱 코드와 항상 같은 소스를 테스트한다. 지금까지 고쳐진 날짜/반복거래/카테고리 버그들의 회귀를 막는 안전망이니, 관련 함수(`addMonths`, `recDates`, `recNthDate`/`recCountUntil`, `doRenameCat`, `activeRecsForAssets` 등)를 건드렸다면 커밋 전에 반드시 통과시키고, 새로 고친 버그가 있으면 같은 파일에 케이스를 추가한다. 0이 아닌 exit code로 실패를 알린다.
 
 ## 4. 무인 실행 설정 방법
 
