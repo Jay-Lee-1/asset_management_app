@@ -36,7 +36,7 @@
       "phase": "develop",
       "timestamp": "2026-09-10T23:00:00+09:00",
       "summary": "delCat(k,i) only spliced the category out of DB.categories[k] but never cleaned up DB.catIcon[catKey(k,c)], DB.catVar[catKey(k,c)], or (for expense) DB.budgets[c] — the exact same class of orphaned-parallel-map bug that doRenameCat already had to fix for rename, but delete was never given the same treatment. Since catKey is purely name-based, deleting a category (e.g. '커피' with a custom icon, a '변동' flag, and a 30,000원 budget) and later re-adding one with the same name silently inherited the old icon/variable-flag/budget the user never set. Extracted the deletion body into doDeleteCat(k,i), mirroring doRenameCat's migration pattern, which now also deletes the catIcon/catVar entries and (for k==='expense') the budgets entry for the deleted category name; delCat() just calls it inside the existing confirmSheet callback. Added 3 new regression tests to test/run.js (icon/var/budget cleanup on delete, no inheritance on same-name re-add, and a guard that non-expense types don't touch DB.budgets) — all 27 tests pass. Verified both inline <script> blocks still parse via `new Function()`. Bumped APP_VERSION 1.17.4→1.17.5 and sw.js CACHE v39→v40.",
-      "commit": null
+      "commit": "6aba2c4"
     }
   ]
 }
