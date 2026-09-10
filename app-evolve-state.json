@@ -1,11 +1,7 @@
 {
-  "cycle": 5,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "카테고리별 예산 설정 기능 연결 (스캐폴딩만 있고 실제 기능은 없던 상태)",
-    "why": "DB.budgets가 migrate()에서 빈 객체로 초기화되지만, 코드베이스 전체에서 그 한 줄이 유일한 참조이고 실제로 읽거나 쓰는 곳이 전혀 없다(grep 결과 1건). .budget-card CSS 클래스도 정의만 있고 어떤 템플릿에서도 쓰이지 않는 죽은 CSS다. 반면 spendByCategory()/openSpendAnalysis()는 이미 카테고리별 이번 달 지출을 정확히 계산해서 진행률 바(전체 지출 대비 비중)로 보여주고 있다 — 즉 '가계부' 앱의 핵심 기능 중 하나인 '예산 대비 지출 확인'이 데이터 모델은 준비돼 있는데 실제 기능으로 이어지지 않은 채 반쯤 완성된 상태로 방치되어 있다. 지난 여러 사이클은 자잘한 버그를 고쳐왔지만 이건 버그가 아니라 제품 완성도의 진짜 구멍이고, 이미 있는 인프라(DB.budgets, spendByCategory, openSpendAnalysis의 UI 패턴)를 연결하기만 하면 되므로 '재작성'이 아니라 정확히 critique→advance가 다뤄야 할 '다음 걸음'이다.",
-    "approach": "기존 openSpendAnalysis() 화면(3457행 부근)을 확장한다. 1) 각 카테고리 행(spend-row)을 탭하면 그 카테고리의 이번 달 예산 한도를 입력하는 작은 프롬프트/시트를 띄우고 DB.budgets[category]=amount로 저장한다(지출 카테고리 한정 — DB.categories.expense에 있는 이름들만 대상, spendByCategory와 동일한 범위). 2) 예산이 설정된 카테고리는 진행률 바 폭 계산을 '전체 지출 대비 비중'에서 '예산 대비 사용률'(v/budget*100, 100 넘으면 100으로 clamp해서 바가 안 깨지게)로 바꾸고, 100% 이상이면 --expense 색상으로 강조 표시한다(기존 색상 변수 재사용, 새 색 추가 안 함). 예산이 없는 카테고리는 기존 동작(전체 대비 비중) 그대로 유지 — 하위호환. 3) 총 지출 카드 아래에 예산 설정된 카테고리들의 합계 대비 사용률 요약을 한 줄 추가할 수 있으면 추가한다(필수는 아님, 시간 되면). 4) test/run.js에 예산 퍼센트 계산 로직(0으로 나누기 등 경계값 포함)에 대한 회귀 테스트를 추가한다. 새 화면을 만들지 않고 기존 지출 분석 시트를 확장하는 방식이라 UI 일관성이 유지되고, DB.budgets라는 기존 데이터 구조를 그대로 쓰므로 별도 마이그레이션이 필요 없다."
-  },
+  "cycle": 6,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
     {
       "cycle": 5,
@@ -26,6 +22,13 @@
       "phase": "critique",
       "timestamp": "2026-09-10T22:00:00+09:00",
       "summary": "Stepped back from the bug-fixing pattern of the last several cycles to look for a genuine product gap rather than another small bug. Found one: DB.budgets is initialized as an empty object in migrate() but that single line is its ONLY reference anywhere in the codebase (verified via grep) — nothing ever reads or writes it, and the .budget-card CSS class is likewise defined but never used in any template. Meanwhile spendByCategory()/openSpendAnalysis() (the existing '지출 분석' sheet) already compute and display per-category spending for the month with a progress-bar UI, just relative to total spend rather than any budget limit. This is a half-built core feature of a budget-tracking app — the data model was scaffolded but the actual budget-setting UX was never connected. No code changed this phase (as intended for critique) — wrote a concrete plan to pending_advance_plan: extend the existing openSpendAnalysis() sheet (rather than building a new screen) to let the user tap a category row to set a monthly budget limit stored in DB.budgets[category], switch that row's progress bar to show usage-vs-budget (clamped, highlighted red when over 100%) while categories without a set budget keep today's behavior unchanged, and add regression tests for the percentage math including the divide-by-zero edge case.",
+      "commit": null
+    },
+    {
+      "cycle": 5,
+      "phase": "advance",
+      "timestamp": "2026-09-10T22:30:00+09:00",
+      "summary": "Implemented cycle 5's critique plan: connected the previously-dead DB.budgets scaffolding to a real feature by extending the existing openSpendAnalysis() ('지출 분석') sheet instead of building a new screen. Tapping a category row now opens openBudgetPrompt(idx), which reads/writes DB.budgets[category] via saveBudget()/delBudget(). Extracted the percentage math into a pure budgetProgress(spent,budget) helper: when a budget is set, the row's progress bar switches from 'share of total spend' to 'usage vs budget' (clamped to 100% width so the bar never overflows), turns from --brand to --expense once spending exceeds the budget, and the amount/percentage text also gets the --expense highlight; categories with no budget keep today's total-share behavior unchanged. doRenameCat() now migrates DB.budgets[old]->DB.budgets[new] on expense-category rename, mirroring the existing catIcon/catVar migration pattern (delCat leaves orphaned budget entries alone, same as it already does for catIcon/catVar). Added 6 new regression tests (budgetProgress edge cases including the 0-budget divide-by-zero guard and the >100% clamp, plus the rename-migrates-budget case) — all 24 tests pass. Bumped APP_VERSION 1.17.3->1.17.4 and sw.js CACHE v38->v39.",
       "commit": null
     }
   ]

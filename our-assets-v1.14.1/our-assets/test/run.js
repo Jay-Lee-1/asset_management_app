@@ -48,7 +48,7 @@ function extractConst(name) {
 const FUNCTIONS = [
   'lastDay', 'addDays', 'shiftWeekend', 'recDates', 'addMonthsStr', 'addMonths',
   'recNthDate', 'recCountUntil', 'isVarCat', 'setCatVar', 'activeRecsForAssets',
-  'num', 'doRenameCat',
+  'num', 'doRenameCat', 'budgetProgress',
 ];
 const CONSTS = ['catKey', 'comma', 'commaQty'];
 
@@ -201,6 +201,49 @@ test('commaQty: 소수는 반올림하지 않고 그대로 표시한다', () => 
 test('commaQty: 값이 없으면 0으로 취급한다', () => {
   assert.strictEqual(sandbox.commaQty(0), '0');
   assert.strictEqual(sandbox.commaQty(null), '0');
+});
+
+/* ---------- budgetProgress: 카테고리별 예산 대비 지출 진행률 계산 ---------- */
+test('budgetProgress: 예산 미설정(0)이면 진행률은 항상 0이고 초과가 아니다', () => {
+  // vm 샌드박스에서 만들어진 객체는 host의 Object와 realm이 달라 deepStrictEqual이
+  // 실패하므로(값은 같아도 프로토타입이 다름), 필드별로 비교한다.
+  const a = sandbox.budgetProgress(50000, 0);
+  assert.strictEqual(a.pct, 0); assert.strictEqual(a.barPct, 0); assert.strictEqual(a.over, false);
+  const b = sandbox.budgetProgress(0, 0);
+  assert.strictEqual(b.pct, 0); assert.strictEqual(b.barPct, 0); assert.strictEqual(b.over, false);
+});
+test('budgetProgress: 예산 안에서 쓴 경우 퍼센트와 바 길이가 그대로 반영된다', () => {
+  const r = sandbox.budgetProgress(30000, 100000);
+  assert.strictEqual(r.pct, 30);
+  assert.strictEqual(r.barPct, 30);
+  assert.strictEqual(r.over, false);
+});
+test('budgetProgress: 예산을 정확히 다 쓰면(100%) 아직 초과는 아니다', () => {
+  const r = sandbox.budgetProgress(100000, 100000);
+  assert.strictEqual(r.pct, 100);
+  assert.strictEqual(r.barPct, 100);
+  assert.strictEqual(r.over, false);
+});
+test('budgetProgress: 예산을 초과하면 over=true이고 바 길이는 100%를 넘지 않게 clamp된다', () => {
+  const r = sandbox.budgetProgress(150000, 100000);
+  assert.strictEqual(r.pct, 150, '표시용 퍼센트는 실제 초과분(150%)을 그대로 보여줘야 함');
+  assert.strictEqual(r.barPct, 100, '바 자체는 100%를 넘어 그려지면 안 됨');
+  assert.strictEqual(r.over, true);
+});
+
+/* ---------- doRenameCat: 카테고리 이름변경 시 예산 한도도 함께 이동 ---------- */
+test('doRenameCat: 지출 카테고리 이름변경 시 DB.budgets의 한도가 새 이름으로 이동한다', () => {
+  sandbox.DB = { categories: { expense: ['식비'] }, catIcon: {}, catVar: {}, budgets: { 식비: 300000 }, txns: [], recurrences: [] };
+  sandbox.catRenameDraft = { name: '외식비', icon: '' };
+  sandbox.doRenameCat('expense', 0);
+  assert.strictEqual(sandbox.DB.budgets['외식비'], 300000);
+  assert.strictEqual('식비' in sandbox.DB.budgets, false, '옛 이름의 예산 항목은 제거돼야 함');
+});
+test('doRenameCat: 예산이 설정되지 않은 카테고리를 이름변경해도 오류 없이 통과한다', () => {
+  sandbox.DB = { categories: { expense: ['교통비'] }, catIcon: {}, catVar: {}, budgets: {}, txns: [], recurrences: [] };
+  sandbox.catRenameDraft = { name: '대중교통', icon: '' };
+  sandbox.doRenameCat('expense', 0);
+  assert.strictEqual(Object.keys(sandbox.DB.budgets).length, 0);
 });
 
 /* ---------- 실행 ---------- */

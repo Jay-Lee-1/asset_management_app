@@ -1230,7 +1230,7 @@ body.selmode .fab{display:none}
 
 
 /* spending analysis */
-.spend-row{display:flex;align-items:center;gap:11px;padding:10px 0}
+.spend-row{display:flex;align-items:center;gap:11px;padding:10px 0;cursor:pointer}
 .spend-row+.spend-row{border-top:1px solid var(--line)}
 .spend-av{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;flex-shrink:0}
 .spend-av svg{width:17px;height:17px}
@@ -1238,8 +1238,12 @@ body.selmode .fab{display:none}
 .spend-nm{font-size:14px;font-weight:700}
 .spend-track{height:7px;border-radius:5px;background:var(--sunken);margin-top:6px;overflow:hidden}
 .spend-track i{display:block;height:100%;background:var(--expense);border-radius:5px}
+.spend-track i.budgeted{background:var(--brand)}
+.spend-track i.over{background:var(--expense)}
 .spend-amt{text-align:right;flex-shrink:0}
 .spend-amt .a{font-size:14px;font-weight:700}.spend-amt .p{font-size:11px;color:var(--text-3);font-weight:600;margin-top:1px}
+.spend-amt .a.over,.spend-amt .p.over{color:var(--expense)}
+.spend-amt .a .bgt{font-size:11px;font-weight:600;color:var(--text-3)}
 
 
 @media (prefers-reduced-motion:reduce){*{transition-duration:.01ms!important}}
@@ -1274,7 +1278,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.17.3';
+const APP_VERSION='1.17.4';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 
@@ -3454,17 +3458,47 @@ function spendByCategory(y,m){ /* 지출 분석은 항상 예정 포함 */
  allTxns(monthStartStr(y,m),monthEndStr(y,m)).forEach(t=>{if(t.type!=='expense')return;map[t.category]=(map[t.category]||0)+t.amount});
  return Object.entries(map).map(([c,v])=>({c,v})).sort((a,b)=>b.v-a.v);
 }
+/* budget=0(미설정)이면 진행률은 의미가 없으므로 항상 0으로 clamp — 호출부는 이 경우 전체 대비 비중을 대신 쓴다 */
+function budgetProgress(spent,budget){
+ if(!budget)return{pct:0,barPct:0,over:false};
+ const ratio=spent/budget;
+ return{pct:Math.round(ratio*100),barPct:Math.min(100,ratio*100),over:spent>budget};
+}
 function openSpendAnalysis(){
  const y=ST.ledger.y,m=ST.ledger.m;const rows=spendByCategory(y,m);const total=rows.reduce((s,r)=>s+r.v,0);
- const body=rows.length?rows.map(r=>{const pct=total?Math.round(r.v/total*100):0;
-   return `<div class="spend-row"><div class="spend-av a-food">${catGlyph('expense',r.c,null,'tag')}</div>
-    <div class="spend-mid"><div class="spend-nm">${r.c}</div><div class="spend-track"><i style="width:${total?r.v/total*100:0}%"></i></div></div>
-    <div class="spend-amt"><div class="a num">${comma(r.v)}원</div><div class="p">${pct}%</div></div></div>`}).join('')
+ const body=rows.length?rows.map((r,idx)=>{
+   const budget=(DB.budgets&&DB.budgets[r.c])||0;
+   const bp=budgetProgress(r.v,budget);
+   const pct=budget?bp.pct:(total?Math.round(r.v/total*100):0);
+   const barPct=budget?bp.barPct:(total?r.v/total*100:0);
+   const barCls=budget?(bp.over?'over':'budgeted'):'';
+   const overCls=budget&&bp.over?' over':'';
+   return `<div class="spend-row" onclick="openBudgetPrompt(${idx})"><div class="spend-av a-food">${catGlyph('expense',r.c,null,'tag')}</div>
+    <div class="spend-mid"><div class="spend-nm">${r.c}</div><div class="spend-track"><i class="${barCls}" style="width:${barPct}%"></i></div></div>
+    <div class="spend-amt"><div class="a num${overCls}">${comma(r.v)}${budget?`<span class="bgt">/${comma(budget)}</span>`:''}원</div><div class="p${overCls}">${pct}%${budget?' 사용':''}</div></div></div>`}).join('')
    :`<div class="empty"><div class="ei">${svg('chart')}</div><div class="et">아직 쓴 게 없어요 👏</div><div class="es">이대로만 가면 완벽해요</div></div>`;
- openSheet(`<h3>${m}월 지출 분석</h3><div class="desc">카테고리별 지출 비중이에요 · 예정 포함</div>
+ openSheet(`<h3>${m}월 지출 분석</h3><div class="desc">카테고리를 눌러 예산을 정해보세요 · 예정 포함</div>
   <div class="card" style="text-align:center;padding:16px;margin-bottom:12px"><div style="font-size:12.5px;color:var(--text-3);font-weight:700">총 지출</div><div class="num" style="font-size:26px;font-weight:700;color:var(--expense);margin-top:2px">${comma(total)}원</div></div>
   <div class="card" style="padding:2px 14px">${body}</div>
   <div style="height:12px"></div><button class="btn btn-soft" onclick="closeSheet()">닫기</button>`);
+}
+function openBudgetPrompt(idx){
+ const y=ST.ledger.y,m=ST.ledger.m;const rows=spendByCategory(y,m);const r=rows[idx];if(!r)return;
+ const cur=(DB.budgets&&DB.budgets[r.c])||'';
+ openSheet(`<h3>${r.c} 예산 설정</h3><div class="desc">이번 달 ${r.c}에 쓸 수 있는 한도예요 · 매달 같은 금액으로 적용돼요</div>
+  <div class="field"><input id="budgetIn" type="number" inputmode="numeric" placeholder="예산 금액(원)" value="${cur||''}"></div>
+  <div class="two-btn" style="margin-bottom:16px">${cur?`<button class="btn btn-soft cancel" onclick="delBudget(${idx})">예산 삭제</button>`:`<button class="btn btn-soft cancel" onclick="openSpendAnalysis()">취소</button>`}<button class="btn btn-primary" onclick="saveBudget(${idx})">저장</button></div>`);
+ setTimeout(()=>{const el=$('budgetIn');el&&el.focus()},300);
+}
+function saveBudget(idx){
+ const y=ST.ledger.y,m=ST.ledger.m;const rows=spendByCategory(y,m);const r=rows[idx];if(!r)return;
+ const v=Math.round(Number(($('budgetIn')&&$('budgetIn').value)||0));
+ if(!v||v<0){toast('올바른 금액을 입력해 주세요');return}
+ DB.budgets=DB.budgets||{};DB.budgets[r.c]=v;save();toast('예산을 저장했어요');openSpendAnalysis();
+}
+function delBudget(idx){
+ const y=ST.ledger.y,m=ST.ledger.m;const rows=spendByCategory(y,m);const r=rows[idx];if(!r)return;
+ if(DB.budgets)delete DB.budgets[r.c];save();toast('예산을 삭제했어요');openSpendAnalysis();
 }
 function openMaturity(){
  const sav=DB.assets.filter(a=>a.type==='savings'&&a.maturityDate);
@@ -3564,6 +3598,7 @@ function doRenameCat(k,i){const v=((catRenameDraft.name!=null?catRenameDraft.nam
   DB.categories[k][i]=v;
   DB.txns.forEach(t=>{if(t.type===k&&t.category===old)t.category=v});
   DB.recurrences.forEach(r=>{if(r.type===k&&r.category===old){r.category=v;if(r.memo===old)r.memo=v}});
+  if(k==='expense'&&DB.budgets&&old in DB.budgets){DB.budgets[v]=DB.budgets[old];delete DB.budgets[old]} /* 이름 변경 시 예산 한도도 함께 이동 */
  }
  save();renderCurrent();openCatManage(k);toast('카테고리를 수정했어요')}
 
