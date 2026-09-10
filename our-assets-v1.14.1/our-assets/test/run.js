@@ -48,7 +48,7 @@ function extractConst(name) {
 const FUNCTIONS = [
   'lastDay', 'addDays', 'shiftWeekend', 'recDates', 'addMonthsStr', 'addMonths',
   'recNthDate', 'recCountUntil', 'isVarCat', 'setCatVar', 'activeRecsForAssets',
-  'num', 'doRenameCat', 'doDeleteCat', 'budgetProgress',
+  'num', 'doRenameCat', 'doDeleteCat', 'budgetProgress', 'addCat',
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath',
 ];
 const CONSTS = ['catKey', 'comma', 'commaQty'];
@@ -61,8 +61,10 @@ const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(
 const sandbox = {
   DB: null,
   catRenameDraft: null,
+  catAddDraft: null,
+  lastToast: null,
   $: () => null,
-  toast: () => {},
+  toast: (msg) => { sandbox.lastToast = msg; },
   save: () => {},
   renderCurrent: () => {},
   openCatManage: () => {},
@@ -284,6 +286,26 @@ test('doDeleteCat: 수입/저축 카테고리는 budgets를 건드리지 않는�
   };
   sandbox.doDeleteCat('income', 0);
   assert.strictEqual(sandbox.DB.budgets['용돈'], 100000, 'expense가 아닌 타입은 budgets 키 공간이 겹치지 않으므로 건드리면 안 됨');
+});
+
+/* ---------- addCat: 중복 이름 추가 시 무반응 대신 안내 토스트 ---------- */
+test('addCat: 이미 있는 카테고리명을 추가하면 토스트를 띄우고 배열/아이콘을 건드리지 않는다', () => {
+  sandbox.DB = { categories: { expense: ['식비'] }, catIcon: { 'expense:식비': 'food' }, catVar: {}, txns: [], recurrences: [] };
+  sandbox.catAddDraft = { name: '식비', icon: 'coffee' };
+  sandbox.lastToast = null;
+  sandbox.addCat('expense');
+  assert.strictEqual(sandbox.lastToast, '이미 있는 카테고리예요');
+  assert.deepStrictEqual(sandbox.DB.categories.expense, ['식비'], '중복이면 배열에 추가되면 안 됨');
+  assert.strictEqual(sandbox.DB.catIcon['expense:식비'], 'food', '중복 이름의 기존 아이콘이 덮어써지면 안 됨');
+});
+test('addCat: 새 이름은 정상적으로 추가되고 토스트가 뜨지 않는다', () => {
+  sandbox.DB = { categories: { expense: ['식비'] }, catIcon: {}, catVar: {}, txns: [], recurrences: [] };
+  sandbox.catAddDraft = { name: '교통비', icon: 'car' };
+  sandbox.lastToast = null;
+  sandbox.addCat('expense');
+  assert.strictEqual(sandbox.lastToast, null);
+  assert.deepStrictEqual(sandbox.DB.categories.expense, ['식비', '교통비']);
+  assert.strictEqual(sandbox.DB.catIcon['expense:교통비'], 'car');
 });
 
 /* ---------- updateNwHistory/pruneNwHistory: 순자산 추이 일별 스냅샷 ---------- */

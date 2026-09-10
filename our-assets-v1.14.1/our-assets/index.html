@@ -1271,7 +1271,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.18.0';
+const APP_VERSION='1.18.1';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 
@@ -3612,7 +3612,8 @@ function openCatManage(kind,keep){
   <div style="height:14px"></div><button class="btn btn-primary" onclick="closeSheet()">완료</button>`);
 }
 function addCat(k){const v=(($('newCat')&&$('newCat').value)||catAddDraft.name||'').trim();if(!v)return;
- if(!DB.categories[k].includes(v))DB.categories[k].push(v);
+ if(DB.categories[k].includes(v)){toast('이미 있는 카테고리예요');return}
+ DB.categories[k].push(v);
  if(catAddDraft.icon)DB.catIcon[catKey(k,v)]=catAddDraft.icon;
  catAddDraft={name:'',icon:''};
  save();openCatManage(k)}
