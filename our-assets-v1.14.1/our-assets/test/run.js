@@ -48,7 +48,7 @@ function extractConst(name) {
 const FUNCTIONS = [
   'lastDay', 'addDays', 'shiftWeekend', 'recDates', 'addMonthsStr', 'addMonths',
   'recNthDate', 'recCountUntil', 'isVarCat', 'setCatVar', 'activeRecsForAssets',
-  'num', 'doRenameCat', 'doDeleteCat', 'budgetProgress', 'addCat',
+  'num', 'doRenameCat', 'doDeleteCat', 'budgetProgress', 'totalBudgetSummary', 'addCat',
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV',
 ];
 const CONSTS = ['catKey', 'comma', 'commaQty'];
@@ -249,6 +249,38 @@ test('budgetProgress: 예산을 초과하면 over=true이고 바 길이는 100%�
   assert.strictEqual(r.pct, 150, '표시용 퍼센트는 실제 초과분(150%)을 그대로 보여줘야 함');
   assert.strictEqual(r.barPct, 100, '바 자체는 100%를 넘어 그려지면 안 됨');
   assert.strictEqual(r.over, true);
+});
+
+/* ---------- totalBudgetSummary: 지출 분석의 '이번 달 예산' 요약 카드 집계 ---------- */
+test('totalBudgetSummary: 예산을 하나도 설정하지 않았으면 budgetedTotal=0(집계할 게 없음)', () => {
+  const rows = [{ c: '식비', v: 50000 }, { c: '교통', v: 20000 }];
+  const r = sandbox.totalBudgetSummary(rows, {});
+  assert.strictEqual(r.budgetedTotal, 0);
+  assert.strictEqual(r.spentOnBudgeted, 0);
+  assert.strictEqual(r.overCount, 0);
+  assert.strictEqual(r.unsetCount, 2, '예산이 없으면 지출이 있는 두 카테고리 모두 미설정으로 집계돼야 함');
+});
+test('totalBudgetSummary: 예산이 설정된 카테고리만 합산하고, 미설정 카테고리는 unsetCount로만 센다', () => {
+  const rows = [{ c: '식비', v: 50000 }, { c: '교통', v: 20000 }, { c: '취미', v: 10000 }];
+  const r = sandbox.totalBudgetSummary(rows, { 식비: 100000, 교통: 30000 });
+  assert.strictEqual(r.budgetedTotal, 130000, '예산이 설정된 식비+교통 한도만 합산');
+  assert.strictEqual(r.spentOnBudgeted, 70000, '예산이 설정된 카테고리의 지출만 합산(취미 10000은 제외)');
+  assert.strictEqual(r.overCount, 0);
+  assert.strictEqual(r.unsetCount, 1, '취미만 예산 미설정');
+});
+test('totalBudgetSummary: 예산을 초과한 카테고리 수를 overCount로 센다', () => {
+  const rows = [{ c: '식비', v: 150000 }, { c: '교통', v: 20000 }];
+  const r = sandbox.totalBudgetSummary(rows, { 식비: 100000, 교통: 30000 });
+  assert.strictEqual(r.budgetedTotal, 130000);
+  assert.strictEqual(r.spentOnBudgeted, 170000);
+  assert.strictEqual(r.overCount, 1, '식비만 예산을 초과함');
+  assert.strictEqual(r.unsetCount, 0);
+});
+test('totalBudgetSummary: DB.budgets가 없어도(undefined) 터지지 않고 전부 미설정으로 처리한다', () => {
+  const rows = [{ c: '식비', v: 50000 }];
+  const r = sandbox.totalBudgetSummary(rows, undefined);
+  assert.strictEqual(r.budgetedTotal, 0);
+  assert.strictEqual(r.unsetCount, 1);
 });
 
 /* ---------- doRenameCat: 카테고리 이름변경 시 예산 한도도 함께 이동 ---------- */

@@ -1,12 +1,15 @@
 {
-  "cycle": 8,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "지출 분석 시트에 '총 예산 대비 총 지출' 요약 카드 추가",
-    "why": "cycle 5의 advance에서 DB.budgets(카테고리별 예산 한도)를 openSpendAnalysis()에 연결했지만, 그 화면은 여전히 카테고리 한 줄씩만 보여준다 — 사용자가 예산을 5개 카테고리에 설정했다면 이번 달 전체적으로 괜찮은지 알려면 5개 진행률 막대를 직접 눈으로 합산해야 한다. 화면 맨 위 '총 지출' 카드(index.html:3524)는 예산 개념 없이 전체 지출 합계만 보여줘서, 방금 만든 예산 기능이 '카테고리별로는 보이는데 이번 달 전체로는 안 보이는' 반쪽짜리 상태다. CSV 내보내기(cycle 7)·순자산 추이(cycle 6)와 같은 패턴 — 이미 있는 데이터/인프라를 새로운 집계 관점으로 한 번 더 연결하는 작업이라 한 사이클 안에 안전하게 끝낼 수 있고, 순수함수로 뽑아 회귀 테스트를 붙이기도 좋다.",
-    "approach": "1) 순수함수 totalBudgetSummary(rows, budgets)를 추가한다: rows(spendByCategory 결과)와 budgets(DB.budgets)를 받아 예산이 설정된 카테고리만 골라 budgetedTotal(예산 합계)·spentOnBudgeted(해당 카테고리들의 지출 합계)·overCount(예산 초과 카테고리 수)·unsetCount(예산 미설정 카테고리 수)를 반환한다. 예산이 하나도 없으면 budgetedTotal=0을 반환해 '집계할 게 없음'을 표시한다. 2) openSpendAnalysis()에서 이 함수를 호출해, budgetedTotal>0일 때만 기존 '총 지출' 카드 아래(또는 옆)에 두 번째 요약 카드를 추가한다 — budgetProgress()를 재사용해 진행률/초과 여부를 계산하고 '이번 달 예산 320,000원 중 275,000원 사용 · 86%' 같은 문구와 진행바를 보여주며, unsetCount>0이면 '예산 미설정 카테고리 N개' 같은 작은 안내를 덧붙여 집계 범위를 명확히 한다. budgetedTotal===0(예산을 하나도 안 정한 사용자)이면 지금처럼 카드를 추가하지 않아 기존 화면을 그대로 유지한다. 3) test/run.js에 totalBudgetSummary 회귀 테스트를 추가한다: 예산 미설정 전체(0 반환), 일부만 예산 설정, 예산 총합 초과 케이스. 4) APP_VERSION patch bump + sw.js CACHE 버전 갱신."
-  },
+  "cycle": 9,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 8,
+      "phase": "advance",
+      "timestamp": "2026-09-10T18:30:00+00:00",
+      "summary": "Implemented cycle 8's critique plan: added a pure totalBudgetSummary(rows,budgets) that, given spendByCategory() rows and DB.budgets, sums budgetedTotal/spentOnBudgeted across only the categories that have a budget set, counts overCount (categories over their budget) and unsetCount (categories with spending but no budget), and returns budgetedTotal=0 when no budgets exist at all (nothing to aggregate). Wired it into openSpendAnalysis(): when budgetedTotal>0, a second summary card renders above the per-category list showing '{budget}원 중 {spent}원 사용 · {pct}%' (reusing budgetProgress() for the percentage/over-budget math and the existing .spend-track bar styling) plus a small '예산 미설정 카테고리 N개' note when unsetCount>0; when the user hasn't set any budget yet, no card is added and the screen is unchanged from before. Added 4 new regression tests to test/run.js (all-unset returns budgetedTotal=0, mixed set/unset only sums the set ones, overCount counts categories exceeding their budget, and DB.budgets===undefined doesn't throw) — all 49 tests pass. Verified both inline <script> blocks still parse via new Function(). Bumped APP_VERSION 1.19.1→1.19.2 and sw.js CACHE v44→v45 (patch bump, additive UI feature reusing existing data/helpers).",
+      "commit": null
+    },
     {
       "cycle": 8,
       "phase": "critique",
