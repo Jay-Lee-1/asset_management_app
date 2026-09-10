@@ -29,7 +29,7 @@
       "phase": "advance",
       "timestamp": "2026-09-10T22:30:00+09:00",
       "summary": "Implemented cycle 5's critique plan: connected the previously-dead DB.budgets scaffolding to a real feature by extending the existing openSpendAnalysis() ('지출 분석') sheet instead of building a new screen. Tapping a category row now opens openBudgetPrompt(idx), which reads/writes DB.budgets[category] via saveBudget()/delBudget(). Extracted the percentage math into a pure budgetProgress(spent,budget) helper: when a budget is set, the row's progress bar switches from 'share of total spend' to 'usage vs budget' (clamped to 100% width so the bar never overflows), turns from --brand to --expense once spending exceeds the budget, and the amount/percentage text also gets the --expense highlight; categories with no budget keep today's total-share behavior unchanged. doRenameCat() now migrates DB.budgets[old]->DB.budgets[new] on expense-category rename, mirroring the existing catIcon/catVar migration pattern (delCat leaves orphaned budget entries alone, same as it already does for catIcon/catVar). Added 6 new regression tests (budgetProgress edge cases including the 0-budget divide-by-zero guard and the >100% clamp, plus the rename-migrates-budget case) — all 24 tests pass. Bumped APP_VERSION 1.17.3->1.17.4 and sw.js CACHE v38->v39.",
-      "commit": null
+      "commit": "af5cd70"
     }
   ]
 }
