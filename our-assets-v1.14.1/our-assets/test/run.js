@@ -49,6 +49,7 @@ const FUNCTIONS = [
   'lastDay', 'addDays', 'shiftWeekend', 'recDates', 'addMonthsStr', 'addMonths',
   'recNthDate', 'recCountUntil', 'isVarCat', 'setCatVar', 'activeRecsForAssets',
   'num', 'doRenameCat', 'doDeleteCat', 'budgetProgress',
+  'updateNwHistory', 'pruneNwHistory', 'nwChartPath',
 ];
 const CONSTS = ['catKey', 'comma', 'commaQty'];
 
@@ -283,6 +284,61 @@ test('doDeleteCat: 수입/저축 카테고리는 budgets를 건드리지 않는�
   };
   sandbox.doDeleteCat('income', 0);
   assert.strictEqual(sandbox.DB.budgets['용돈'], 100000, 'expense가 아닌 타입은 budgets 키 공간이 겹치지 않으므로 건드리면 안 됨');
+});
+
+/* ---------- updateNwHistory/pruneNwHistory: 순자산 추이 일별 스냅샷 ---------- */
+test('updateNwHistory: 새 날짜면 스냅샷을 추가한다', () => {
+  const hist = sandbox.updateNwHistory([{ date: '2026-01-01', ta: 100, td: 10, nw: 90 }], '2026-01-02', 120, 10);
+  assert.strictEqual(hist.length, 2);
+  assert.strictEqual(hist[1].date, '2026-01-02');
+  assert.strictEqual(hist[1].ta, 120);
+  assert.strictEqual(hist[1].td, 10);
+  assert.strictEqual(hist[1].nw, 110);
+});
+test('updateNwHistory: 같은 날짜에 다시 호출하면 새로 추가하지 않고 마지막 항목을 덮어쓴다', () => {
+  const hist = sandbox.updateNwHistory([{ date: '2026-01-01', ta: 100, td: 10, nw: 90 }], '2026-01-01', 150, 10);
+  assert.strictEqual(hist.length, 1, '같은 날짜는 새 항목이 아니라 갱신이어야 함');
+  assert.strictEqual(hist[0].ta, 150);
+  assert.strictEqual(hist[0].nw, 140);
+});
+test('updateNwHistory: 원본 배열을 변형하지 않는다(불변)', () => {
+  const orig = [{ date: '2026-01-01', ta: 100, td: 10, nw: 90 }];
+  sandbox.updateNwHistory(orig, '2026-01-02', 120, 10);
+  assert.strictEqual(orig.length, 1, '입력 배열은 그대로 유지돼야 함');
+});
+test('pruneNwHistory: 120개 이하는 그대로 둔다', () => {
+  const hist = Array.from({ length: 120 }, (_, i) => ({ date: `2026-01-${String(i % 28 + 1).padStart(2, '0')}`, ta: i, td: 0, nw: i }));
+  assert.strictEqual(sandbox.pruneNwHistory(hist).length, 120);
+});
+test('pruneNwHistory: 90일보다 오래된 기록은 월 1개로 압축한다', () => {
+  // 2023-01-01부터 2024-01-01까지 일 단위(약 366개) — 최근 90일을 뺀 나머지는 달마다 하나로 줄어야 함
+  const hist = [];
+  let d = new Date('2023-01-01T00:00:00');
+  const end = new Date('2024-01-01T00:00:00');
+  while (d <= end) {
+    const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    hist.push({ date: ds, ta: 0, td: 0, nw: 0 });
+    d.setDate(d.getDate() + 1);
+  }
+  const pruned = sandbox.pruneNwHistory(hist);
+  assert.ok(pruned.length < hist.length, '압축 후 개수가 줄어야 함');
+  const last90Cutoff = sandbox.addDays(hist[hist.length - 1].date, -90);
+  const recentCount = hist.filter(h => h.date > last90Cutoff).length;
+  assert.strictEqual(pruned.filter(h => h.date > last90Cutoff).length, recentCount, '최근 90일 구간은 일 단위 그대로 보존돼야 함');
+});
+test('nwChartPath: 점이 2개 미만이면 빈 경로를 반환한다', () => {
+  const r = sandbox.nwChartPath([{ nw: 100 }], 300, 80);
+  assert.strictEqual(r.line, '');
+  assert.strictEqual(r.area, '');
+});
+test('nwChartPath: 모든 값이 같으면(span=0) 0으로 나누지 않고 수평선을 그린다', () => {
+  const { line } = sandbox.nwChartPath([{ nw: 100 }, { nw: 100 }, { nw: 100 }], 300, 80);
+  assert.ok(!line.includes('NaN'), '값이 모두 같아도 NaN이 나오면 안 됨');
+  assert.strictEqual(line, 'M0.0,80.0 L150.0,80.0 L300.0,80.0');
+});
+test('nwChartPath: 값이 오르면 마지막 y좌표가 첫 y좌표보다 위(작은 값)에 온다', () => {
+  const { line } = sandbox.nwChartPath([{ nw: 0 }, { nw: 100 }], 300, 80);
+  assert.strictEqual(line, 'M0.0,80.0 L300.0,0.0');
 });
 
 /* ---------- 실행 ---------- */

@@ -1,11 +1,7 @@
 {
-  "cycle": 6,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "Net worth history snapshot + trend chart",
-    "why": "The app only ever shows a single 'now' net-worth snapshot (netWorth() line 1817, rendered via nwPane()/renderAssets() line 2129/2207) with no historical trend anywhere. The codebase itself shows this was intended and abandoned: orphaned comments at index.html lines 159/167/1912/1914 ('① 현금흐름 곡선 카드', '현금흐름 곡선 그리기 (canvas)') and a .fc-chart canvas CSS rule exist with zero implementing function or <canvas> element anywhere in the file (verified via grep - only the comments and dead CSS match). Trend-over-time is a baseline expectation for any asset-tracking app and this is a visibly half-built, silently dropped feature.",
-    "approach": "1) Add DB.nwHistory=DB.nwHistory||[] to migrate() (line 1640). 2) Hook a daily snapshot into refreshToday() (line 5144) or maybeRollDay() (line 5152), which already fires exactly once per real calendar day via the existing visibilitychange/focus/pageshow/setInterval wiring (lines 5153-5156) - on each new day, push {date, netWorth, totalAssets, totalDebt} computed via assetEval()/netWorth() (snapshotting the already-evaluated current totals directly, not trying to recompute past FX/gold/stock prices from DB.rates which only stores a current snapshot with no history - recomputing later would silently misvalue non-cash assets). Cap/prune the array (e.g. drop to monthly granularity after 1yr) to bound localStorage growth, matching the local-first storage model in save() (line 1670). 3) Render a simple inline SVG sparkline/line chart (reuse the existing svg() helper pattern already used elsewhere in the file - no external chart library) in nwPane() or a new section near renderHistory()/renderPlan(), replacing the dead .fc-chart CSS with a real implementation. 4) Add regression tests for the snapshot-append/prune logic to test/run.js if it's extracted as a pure function. Keep scope to: schema field + migration + snapshot hook + one render function - do not touch budget/recurrence code."
-  },
+  "cycle": 7,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
     {
       "cycle": 5,
@@ -54,6 +50,13 @@
       "phase": "critique",
       "timestamp": "2026-09-10T23:45:00+09:00",
       "summary": "Stepped back to look at the whole app rather than the last commit. Found the app has no net-worth history/trend view at all — only ever shows a single 'now' snapshot — and the codebase itself shows this was started and abandoned: orphaned comments at index.html lines 159/167/1912/1914 ('① 현금흐름 곡선 카드', '현금흐름 곡선 그리기 (canvas)') plus a dead .fc-chart canvas CSS rule, with zero implementing function or <canvas> element anywhere (confirmed via grep). Also noted a structural gap that constrains the fix: DB.rates only stores a current price snapshot, no history, so any trend implementation must snapshot already-evaluated totals (via assetEval()/netWorth()) rather than trying to recompute past non-cash asset values from today's rates. Runner-up candidates noted but not chosen: accessibility is essentially absent (5 total aria-/role=/alt=/tabindex hits across 5172 lines), local auth password hashing is an unsalted djb2 hash (low real-world risk, local-only), and there's no CSV/spreadsheet export (JSON backup/restore only). Wrote the net-worth-history plan to pending_advance_plan for the next advance cycle. No code changed this phase.",
+      "commit": null
+    },
+    {
+      "cycle": 6,
+      "phase": "advance",
+      "timestamp": "2026-09-10T23:55:00+09:00",
+      "summary": "Implemented cycle 6's critique plan: connected the net-worth history gap by adding DB.nwHistory=DB.nwHistory||[] to migrate() and two pure functions — updateNwHistory(hist,dateStr,ta,td) (append-or-update-today, immutable) and pruneNwHistory(hist) (keeps daily granularity for the most recent 90 days, compresses anything older to one snapshot per month, only kicks in above 120 entries so normal usage never touches it). Wired the snapshot into startApp() (covers first-ever open and every reopen, refreshing today's entry) and into refreshToday()'s day-changed branch (covers the app staying open across midnight) — both call save() right after, matching the existing changed-then-save() convention. Added nwChartPath(pts,W,H), a pure function producing an SVG path string (min/max-normalized, span-zero-safe) with no chart library, and nwHistoryCard() which renders it as an inline <svg> sparkline card (shown only once ≥2 snapshots exist) inserted into renderAssets() right after the net-worth carousel. Replaced the entire dead cash-flow-curve CSS block (.flow-card/.fc-head/.fc-lb/.fc-end/.fc-sub/.fc-chart/.fc-foot/.fc-stat/.fs-k/.fs-v — verified via grep that none of these classes were referenced anywhere outside their own definitions) with real .nwh-card/.nwh-range/.nwh-chart rules, and replaced the orphaned '① 현금흐름 곡선 카드' / '현금흐름 곡선 그리기 (canvas)' comments with the real nwHistoryCard() implementation, putting the previously-unused shortDate2() helper to actual use. Added 8 new regression tests (updateNwHistory append/update-in-place/immutability, pruneNwHistory below-threshold and month-compression behavior, nwChartPath's <2-points/flat-line/rising-line cases) — all 35 tests pass. Verified both inline <script> blocks still parse via new Function(). Bumped APP_VERSION 1.17.5→1.18.0 and sw.js CACHE v40→v41 (minor bump, not patch, since this adds a new schema field and a new UI section rather than fixing a bug).",
       "commit": null
     }
   ]

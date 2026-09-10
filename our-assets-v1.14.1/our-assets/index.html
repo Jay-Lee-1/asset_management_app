@@ -156,19 +156,12 @@ html[data-theme="dark"] .card{box-shadow:var(--sh-md),0 1px 0 rgba(255,255,255,.
 .ms-arrow{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;color:var(--text-2);background:var(--surface-2)}
 .ms-arrow:active{transform:scale(.9);background:var(--sunken)}
 .ms-arrow svg{width:17px;height:17px}
-/* ① 현금흐름 곡선 */
-.flow-card{padding:18px 18px 14px}
-.fc-head{display:flex;flex-direction:column;gap:1px}
-.fc-lb{font-size:12.5px;font-weight:600;color:var(--text-2)}
-.fc-end{font-size:29px;font-weight:700;letter-spacing:-.03em;line-height:1.05;color:var(--text);margin-top:3px}
-.fc-end small{font-size:17px;font-weight:700;color:var(--text-2);margin-left:1px}
-.fc-sub{font-size:11.5px;color:var(--text-3);font-weight:500}
-.fc-chart{position:relative;height:120px;margin:8px 0 4px}
-.fc-chart canvas{display:block}
-.fc-foot{display:flex;gap:18px;padding-top:10px;border-top:1px solid var(--line)}
-.fc-stat{display:flex;flex-direction:column;gap:1px}
-.fs-k{font-size:11px;color:var(--text-3);font-weight:600}
-.fs-v{font-size:13.5px;font-weight:700;color:var(--text)}
+/* 순자산 추이 (스파크라인) */
+.nwh-card{padding:16px 16px 14px}
+.nwh-range{font-size:12px;color:var(--text-3);font-weight:500;margin:2px 0 8px}
+.nwh-range b{font-weight:700;color:var(--text-2)}
+.nwh-chart{height:80px}
+.nwh-chart svg{width:100%;height:100%;display:block}
 /* ② 오늘 브리핑 */
 .brief-card{display:flex;align-items:center;gap:13px;padding:15px 16px;margin-top:11px}
 .brief-ic{font-size:24px;flex-shrink:0;width:42px;height:42px;border-radius:var(--r-md);background:var(--brand-soft);display:grid;place-items:center}
@@ -1278,7 +1271,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.17.5';
+const APP_VERSION='1.18.0';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 
@@ -1644,6 +1637,7 @@ function migrate(){
  delete DB.settings.showScheduled; /* 예정 표시는 홈 '예정 포함'으로 통합 */
  DB.owners=DB.owners||['나','배우자','공용'];
  DB.budgets=DB.budgets||{};
+ DB.nwHistory=DB.nwHistory||[]; /* 순자산 추이: {date,ta,td,nw} 일별 스냅샷 (updateNwHistory) */
  DB.recurrences=(DB.recurrences||[]).map(r=>Object.assign({skip:[],edits:{},endDate:null,autoConfirm:true,confirmedDates:[]},r,{id:r.id||uid(),active:r.active!==false}));
  DB.categories=DB.categories||{};
  DB.catIcon=DB.catIcon||{}; /* '타입:이름' → 아이콘 키 (선택). 없으면 기본 아이콘 */
@@ -1815,6 +1809,35 @@ const isPlanAcct=a=>a.type==='cash'; /* 한달 플랜 대상: 현금예금 통�
 function totalAssets(){return DB.assets.filter(a=>a.includeInTotal&&a.type!=='debt').reduce((s,a)=>s+assetEval(a),0)}
 function totalDebt(){return DB.assets.filter(a=>a.includeInTotal&&a.type==='debt').reduce((s,a)=>s+assetEval(a),0)}
 function netWorth(){return totalAssets()-totalDebt()}
+/* 순자산 추이: 하루 1개 스냅샷을 append/갱신 (DB.rates는 현재가만 보관해 과거를 재계산할 수 없으므로,
+   호출 시점에 이미 평가된 ta/td를 그대로 저장한다). 오래된 기록은 월 1개로 압축해 localStorage 크기를 제한. */
+function updateNwHistory(hist,dateStr,ta,td){
+ hist=(hist||[]).slice();
+ const entry={date:dateStr,ta,td,nw:ta-td};
+ if(hist.length&&hist[hist.length-1].date===dateStr)hist[hist.length-1]=entry;
+ else hist.push(entry);
+ return pruneNwHistory(hist);
+}
+function pruneNwHistory(hist){
+ if(hist.length<=120)return hist; /* 최근 90일 + 그 이전 월별 1개로도 120개를 못 채우는 정상 크기라면 그대로 둠 */
+ const cutoff=addDays(hist[hist.length-1].date,-90);
+ const recent=hist.filter(h=>h.date>cutoff);
+ const byMonth={};
+ hist.filter(h=>h.date<=cutoff).forEach(h=>{byMonth[h.date.slice(0,7)]=h}); /* 월별 마지막 스냅샷만 남김 */
+ return Object.values(byMonth).concat(recent);
+}
+/* 순자산 추이 스파크라인 좌표 계산 (렌더와 분리한 순수 함수) */
+function nwChartPath(pts,W,H){
+ if(pts.length<2)return {line:'',area:''};
+ const vals=pts.map(p=>p.nw);
+ const min=Math.min(...vals),max=Math.max(...vals);
+ const span=(max-min)||1;
+ const stepX=W/(pts.length-1);
+ const coords=pts.map((p,i)=>[i*stepX,H-((p.nw-min)/span)*H]);
+ const line=coords.map((c,i)=>(i===0?'M':'L')+c[0].toFixed(1)+','+c[1].toFixed(1)).join(' ');
+ const area=line+` L${coords[coords.length-1][0].toFixed(1)},${H} L0,${H} Z`;
+ return {line,area};
+}
 function ownerNet(o){let s=0;
  DB.assets.filter(a=>a.owner===o&&a.includeInTotal).forEach(a=>{s+=a.type==='debt'?-assetEval(a):assetEval(a)});
  return s;}
@@ -1909,9 +1932,25 @@ function planGaugeCard(S,y,m){
    ${rows}</div>`;
 }
 
-/* ① 현금흐름 곡선 카드 */
+/* 순자산 추이 카드 (일별 스냅샷 스파크라인) */
 function shortDate2(ds){return ds.slice(5,7)+'/'+ds.slice(8,10)}
-/* 현금흐름 곡선 그리기 (canvas) */
+function nwHistoryCard(){
+ const hist=DB.nwHistory||[];
+ if(hist.length<2)return ''; /* 스냅샷이 1개 이하면 추이를 그릴 수 없음 */
+ const pts=hist.slice(-60);
+ const {line,area}=nwChartPath(pts,300,80);
+ const first=pts[0],last=pts[pts.length-1];
+ const diff=last.nw-first.nw,up=diff>=0;
+ const color=up?'var(--income)':'var(--expense)';
+ return `<div class="card nwh-card">
+   <div class="section-title" style="margin-top:0">순자산 추이</div>
+   <div class="nwh-range">${shortDate2(first.date)} ~ ${shortDate2(last.date)} <b class="${up?'':'minus'}">${up?'+':''}${comma(diff)}원</b></div>
+   <div class="nwh-chart"><svg viewBox="0 0 300 80" preserveAspectRatio="none">
+     <path d="${area}" fill="${color}" opacity="0.12" stroke="none"/>
+     <path d="${line}" fill="none" stroke="${color}" stroke-width="2.2" vector-effect="non-scaling-stroke"/>
+   </svg></div>
+ </div>`;
+}
 
 /* ② 오늘 브리핑 카드 */
 function expenseBreakdownCard(cats,_ignore){
@@ -2214,6 +2253,7 @@ function renderAssets(){
  ${pageHead('assets')}
  <div class="nw-carousel" id="nwCarousel" data-n="${_ol.length}" data-loop="${_ol.length>1?1:0}">${_ol.length>1?nwPane(_ol[_ol.length-1],TA,TD):''}${_ol.map(o=>nwPane(o,TA,TD)).join('')}${_ol.length>1?nwPane(_ol[0],TA,TD):''}</div>
  ${_ol.length>1?`<div class="nw-dots">${_ol.map((o,i)=>`<i class="${i===actIdx?'on':''}"></i>`).join('')}</div>`:''}
+ ${nwHistoryCard()}
  <div class="as-tools${ST.aSel.mode?' hidden':''}">
    <div class="as-actions">${ST.editAssets?`<button class="as-tbtn primary" onclick="ST.editAssets=false;save();renderAssets()">${svg('check')} 완료</button>`:
     `<button class="as-tbtn" onclick="openSortSheet()">${svg('sort')} 정렬</button>
@@ -5038,6 +5078,7 @@ function startApp(){
  load();
  try{localStorage.removeItem('ourassets_snapshots')}catch(e){} /* 구 자동백업 저장소 정리 */
  rollPendingTransfers();
+ DB.nwHistory=updateNwHistory(DB.nwHistory,TODAY,totalAssets(),totalDebt());save();
  ST.hist.sortAsc=!!DB.settings.histSortAsc;
  document.documentElement.setAttribute('data-theme',DB.settings.themeMode);
  document.documentElement.setAttribute('data-accent',DB.settings.accent||'teal');
@@ -5146,6 +5187,7 @@ function refreshToday(){
  if(t===TODAY)return false;
  TODAY=t;TM=ym(TODAY);RANGE_TO=addDays(TODAY,760);DISP_TO=addDays(TODAY,92);
  invalidateBalances();rollPendingTransfers();
+ DB.nwHistory=updateNwHistory(DB.nwHistory,TODAY,totalAssets(),totalDebt());save();
  return true;
 }
 function appIsOpen(){const el=$('app');return !!DB&&el&&el.style.display!=='none'}
