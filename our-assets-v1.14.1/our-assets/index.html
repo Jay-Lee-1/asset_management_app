@@ -1274,7 +1274,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.16.1';
+const APP_VERSION='1.17.0';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 
@@ -1720,12 +1720,12 @@ function recNthDate(base,n){ /* n번째 반복 날짜 */
  else if(f==='yearly')to=addMonthsStr(base.startDate,(n+2)*12);
  else if(f==='weekly')to=addDays(base.startDate,(n+2)*7);
  else to=addDays(base.startDate,n+2);
- const ds=recDates({freq:f,day:base.day,startDate:base.startDate,endDate:null},base.startDate,to);
+ const ds=recDates({freq:f,day:base.day,startDate:base.startDate,endDate:null,weekend:base.weekend},base.startDate,to);
  return ds[n-1]||null;
 }
 function recCountUntil(base,endDate){ /* 시작일~종료일 사이 반복 횟수 */
  if(!endDate||!base.startDate)return null;
- return recDates({freq:base.freq||'monthly',day:base.day,startDate:base.startDate,endDate:null},base.startDate,endDate).length;
+ return recDates({freq:base.freq||'monthly',day:base.day,startDate:base.startDate,endDate:null,weekend:base.weekend},base.startDate,endDate).length;
 }
 const RANGE_FROM='2023-01-01';let RANGE_TO=addDays(TODAY,760);
 let DISP_TO=addDays(TODAY,92);
@@ -2762,7 +2762,7 @@ function txDay(v){syncTxInputs();if(v==='last'){txDraft.day='last';txDraft._cust
    pfx='tx'(내역 입력 반복) 또는 'rec'(반복 설정 편집) */
 function endCondFields(d,pfx){
  const start=d.startDate||d.date;
- const base={freq:d.freq,day:d.day,startDate:start};
+ const base={freq:d.freq,day:d.day,startDate:start,weekend:d.weekend};
  const cnt=(d.count!=null&&d.count!=='')?d.count:(d.endDate?recCountUntil(base,d.endDate):'');
  const has=!!(d.endDate||cnt);
  const hint=(d.endDate&&cnt)?`${fmtDateFull(d.endDate)}까지 총 ${cnt}번 반복돼요`:'종료일이나 횟수 중 하나만 넣으면 나머지가 자동 계산돼요';
@@ -2778,16 +2778,16 @@ function endCondFields(d,pfx){
 function _applyCount(pfx,draft,v,rerender){
  const n=Math.min(999,Math.max(0,Number(String(v).replace(/[^0-9]/g,''))||0));
  draft.count=n||null;
- const ed=n>=1?recNthDate({freq:draft.freq,day:draft.day,startDate:draft.startDate||draft.date},n):null;
+ const ed=n>=1?recNthDate({freq:draft.freq,day:draft.day,startDate:draft.startDate||draft.date,weekend:draft.weekend},n):null;
  draft.endDate=ed;
  const box=$(pfx+'EndDateBox');if(box){box.textContent=ed?ed.replace(/-/g,'.'):'종료일';box.classList.toggle('placeholder',!ed)}
  const h=$(pfx+'EndHint');if(h)h.textContent=(ed&&n)?`${fmtDateFull(ed)}까지 총 ${n}번 반복돼요`:'종료일이나 횟수 중 하나만 넣으면 나머지가 자동 계산돼요';
 }
 function txCount(v){_applyCount('tx',txDraft,v)}
-function txOpenEnd(){syncTxInputs();openFieldDatePicker(txDraft.endDate||TODAY,ds=>{txDraft.endDate=ds;txDraft.count=recCountUntil({freq:txDraft.freq,day:txDraft.day,startDate:txDraft.date},ds);renderTxSheet()})}
+function txOpenEnd(){syncTxInputs();openFieldDatePicker(txDraft.endDate||TODAY,ds=>{txDraft.endDate=ds;txDraft.count=recCountUntil({freq:txDraft.freq,day:txDraft.day,startDate:txDraft.date,weekend:txDraft.weekend},ds);renderTxSheet()})}
 function txClearEnd(){syncTxInputs();txDraft.endDate=null;txDraft.count=null;renderTxSheet()}
 function recCount(v){_applyCount('rec',recDraft,v)}
-function recOpenEnd(){syncRecInputs();openFieldDatePicker(recDraft.endDate||TODAY,ds=>{recDraft.endDate=ds;recDraft.count=recCountUntil({freq:recDraft.freq,day:recDraft.day,startDate:recDraft.startDate},ds);renderRecSheet()})}
+function recOpenEnd(){syncRecInputs();openFieldDatePicker(recDraft.endDate||TODAY,ds=>{recDraft.endDate=ds;recDraft.count=recCountUntil({freq:recDraft.freq,day:recDraft.day,startDate:recDraft.startDate,weekend:recDraft.weekend},ds);renderRecSheet()})}
 function recClearEnd(){syncRecInputs();recDraft.endDate=null;recDraft.count=null;renderRecSheet()}
 function saveTx(){
  if(twGuard())return;
@@ -2802,7 +2802,7 @@ function saveTx(){
   const freq=d.freq||'monthly';
   if(freq==='monthly'){const m=clampDay(d);if(m)toast(m)}
   const day=freq==='monthly'?(d.day||Number(String(d.date).slice(8,10))||1):1;
-  const base={freq,day,startDate:d.date};
+  const base={freq,day,startDate:d.date,weekend:d.weekend};
   let endDate=d.endDate||null,count=d.count||null;
   if(endDate&&!count)count=recCountUntil(base,endDate);
   else if(count&&!endDate)endDate=recNthDate(base,count);
@@ -2957,7 +2957,7 @@ function saveRec(){
  if(d.type==='transfer')d.category='이체';
  if(d.freq==='monthly'&&d.day!=='last'){const m=clampDay(d);if(m)toast(m)}
  d.memo=(d.memo||'').trim()||d.category; /* 메모 없으면 카테고리로 */
- const eb={freq:d.freq,day:d.day,startDate:d.startDate};
+ const eb={freq:d.freq,day:d.day,startDate:d.startDate,weekend:d.weekend};
  if(d.endDate&&!d.count)d.count=recCountUntil(eb,d.endDate);
  else if(d.count&&!d.endDate)d.endDate=recNthDate(eb,d.count);
  else if(!d.endDate)d.count=null;
