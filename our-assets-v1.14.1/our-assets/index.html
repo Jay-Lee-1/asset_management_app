@@ -1274,7 +1274,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.17.1';
+const APP_VERSION='1.17.2';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 
@@ -3021,7 +3021,12 @@ function histPreset(p){const H=ST.hist;H.preset=p;
  if(p==='custom'){histPickDate('from');return;}
  histInvalidate();renderHistory();
 }
-function addMonths(ds,n){const d=new Date(ds);d.setMonth(d.getMonth()+n);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
+function addMonths(ds,n){
+ const d=new Date(ds+'T00:00:00');const day=d.getDate();
+ d.setDate(1);d.setMonth(d.getMonth()+n); /* 월만 먼저 옮기고(일자 롤오버 방지), 그 달의 마지막 날로 일자를 clamp */
+ const y=d.getFullYear(),m=d.getMonth()+1;
+ return `${y}-${String(m).padStart(2,'0')}-${String(Math.min(day,lastDay(y,m))).padStart(2,'0')}`;
+}
 function histPickDate(which){const H=ST.hist;
  openFieldDatePicker(H.range[which],ds=>{
    H.preset='custom';
