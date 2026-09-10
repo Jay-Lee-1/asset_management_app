@@ -1274,7 +1274,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.15.2';
+const APP_VERSION='1.16.0';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 
@@ -2230,10 +2230,21 @@ function openSortSheet(){
  const opts=[['custom','사용자 정의순','그룹 내 등록 순서 유지'],['amount','금액순',''],['owner','귀속순',''],['name','이름순','']];
  openSheet(`<h3>정렬 기준</h3><div class="desc">각 자산 종류 그룹 안의 정렬 기준이에요</div><div class="opt-list">${opts.map(([v,l,s])=>`<button class="${DB.settings.assetSort===v?'on':''}" onclick="DB.settings.assetSort='${v}';save();closeSheet();renderAssets()"><span class="rd"></span><div><div>${l}</div>${s?`<div class="ol-sub">${s}</div>`:''}</div></button>`).join('')}</div>`);
 }
+/* 삭제될 자산(들)을 참조하는 '활성' 반복거래를 찾는다 — id 하나 또는 Set<id> 둘 다 받는다.
+   반복거래는 과거 기록이 아니라 계속 새 항목을 만들어내는 생성기라, 자산 삭제 후에도
+   방치하면 존재하지 않는 계좌로 영원히 '발생'한다(잔액엔 영향 없지만 내역에 유령처럼 남음). */
+function activeRecsForAssets(ids){
+ const hit=ids&&ids.has?id=>ids.has(id):id=>id===ids;
+ return DB.recurrences.filter(r=>r.active&&(hit(r.fromAssetId)||hit(r.toAssetId)));
+}
 function delAsset(id){const a=DB.assets.find(x=>x.id===id);
- confirmSheet('자산 삭제',`'${a.name}'을(를) 삭제할까요? 되돌릴 수 없어요.`,'삭제',()=>{
+ const recs=activeRecsForAssets(id);
+ const msg=`'${a.name}'을(를) 삭제할까요? 되돌릴 수 없어요.`+(recs.length?` 연결된 반복거래 ${recs.length}개도 함께 비활성화돼요.`:'');
+ confirmSheet('자산 삭제',msg,'삭제',()=>{
   snapshotAssetName(id); /* 내역/반복에 통장 이름을 남겨 출처 보존 */
-  DB.assets=DB.assets.filter(x=>x.id!==id);save();renderCurrent();toast('자산을 삭제했어요');});}
+  recs.forEach(r=>r.active=false); /* 미래 생성은 멈추고, 과거 발생분·스냅샷은 그대로 둔다 */
+  DB.assets=DB.assets.filter(x=>x.id!==id);save();renderCurrent();
+  toast('자산을 삭제했어요'+(recs.length?` · 반복거래 ${recs.length}개 비활성화`:''));});}
 /* 삭제됐던 동명·동종 자산의 과거 내역(스냅샷 이름으로 남은 것)을 자산에 재연결 */
 function relinkDeletedAsset(d){
  const nm=d.name;
@@ -4730,9 +4741,13 @@ function undoToast(msg,undoFn){const t=document.createElement('div');t.className
 function deleteTxnsUndo(ids){if(twGuard())return;const removed=DB.txns.filter(t=>ids.has(t.id));
  DB.txns=DB.txns.filter(t=>!ids.has(t.id));save();renderCurrent();
  undoToast(`${removed.length}개 내역을 삭제했어요`,()=>{DB.txns.push(...removed);save();renderCurrent();toast('되돌렸어요')})}
-function deleteAssetsUndo(ids){if(twGuard())return;ids.forEach(snapshotAssetName);const removed=DB.assets.filter(a=>ids.has(a.id));
+function deleteAssetsUndo(ids){if(twGuard())return;
+ const recs=activeRecsForAssets(ids);
+ ids.forEach(snapshotAssetName);const removed=DB.assets.filter(a=>ids.has(a.id));
+ recs.forEach(r=>r.active=false);
  DB.assets=DB.assets.filter(a=>!ids.has(a.id));save();renderCurrent();
- undoToast(`${removed.length}개 자산을 삭제했어요`,()=>{DB.assets.push(...removed);save();renderCurrent();toast('되돌렸어요')})}
+ undoToast(`${removed.length}개 자산을 삭제했어요`+(recs.length?` · 반복거래 ${recs.length}개 비활성화`:''),()=>{
+  DB.assets.push(...removed);recs.forEach(r=>r.active=true);save();renderCurrent();toast('되돌렸어요')})}
 window.addEventListener('resize',()=>requestAnimationFrame(fitAll));
 
 /* ================= PICKERS (탭하면 열리는 선택창) ================= */
