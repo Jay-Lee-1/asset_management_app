@@ -1,6 +1,6 @@
 {
   "cycle": 5,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
@@ -23,6 +23,13 @@
       "timestamp": "2026-09-10T20:40:00+09:00",
       "summary": "Implemented the critique plan: added our-assets-v1.14.1/our-assets/test/run.js, a dependency-free Node regression suite (assert-based, no package.json) that extracts pure-logic function source directly out of index.html via a vm sandbox and runs 15 assertions covering the bugs fixed in cycles 0-4 — addMonths month-rollover/leap-year clamping, recDates monthly day-clamp, recNthDate/recCountUntil weekend-adjustment round-trip, num()'s sign-stripping, doRenameCat's catVar/catIcon migration (including the linked-recurrence category/memo update), and activeRecsForAssets (single id + Set). Sanity-checked the harness by reintroducing the old buggy addMonths into a scratch copy of index.html — 3 of the 15 tests correctly failed, confirming it actually catches regressions rather than being tautological. All 15 pass against the real index.html (`node test/run.js`, exit 0). No app runtime code changed (test/ isn't in sw.js's SHELL cache list), so APP_VERSION/CACHE were left untouched. Added a short pointer to the new suite in both SKILL.md's pre-check step 4 and its safety-rules section so future develop/review/advance phases run it before committing changes to the covered functions. pending_advance_plan cleared.",
       "commit": null
+    },
+    {
+      "cycle": 5,
+      "phase": "develop",
+      "timestamp": "2026-09-10T21:15:00+09:00",
+      "summary": "Implemented the banked candidate from cycle 4's critique: assetSubline() was rounding fractional a.fxAmount/a.stockQty to integers via comma() (Math.round), while assetEval() already uses the unrounded values for net-worth totals — so a holding like 0.5주 or USD 123.45 would silently show as 0주/USD 123 in the asset list despite the true value being counted correctly in 총자산. Added commaQty(n) next to comma() in the UTILS section (index.html:1360-1361): integers still format via comma(), non-integers format via toLocaleString with maximumFractionDigits:4, matching how a.goldDon was already shown unrounded. Swapped assetSubline()'s fx/stock lines to use commaQty(). Verified no other display site uses comma() on these two fields (only the edit-form inputs at asFx/asQty, which are raw <input> values, not comma()-formatted). node --check on both extracted <script> blocks passed; ran test/run.js — 15/15 still pass (this codepath isn't covered by the suite, but nothing broke). Bumped APP_VERSION 1.17.2→1.17.3 and sw.js CACHE v37→v38 since runtime JS changed.",
+      "commit": "PENDING_FILL_AFTER_COMMIT"
     }
   ]
 }

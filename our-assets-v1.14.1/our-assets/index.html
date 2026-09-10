@@ -1274,7 +1274,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.17.2';
+const APP_VERSION='1.17.3';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 
@@ -1358,6 +1358,7 @@ function svg(n,w){if(n==='fx')return `<span class="cur-sym"${w?` style="font-siz
 const $=id=>document.getElementById(id);
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const comma=n=>Math.round(n||0).toLocaleString('ko-KR');
+const commaQty=n=>Number.isInteger(n)?comma(n):(n||0).toLocaleString('ko-KR',{maximumFractionDigits:4});
 const won=n=>(n<0?'-':'')+comma(Math.abs(n))+'원';
 const wonS=n=>(n>0?'+':n<0?'-':'')+comma(Math.abs(n))+'원';
 function todayStr(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
@@ -2111,9 +2112,9 @@ function groupItems(type){
 }
 function assetSubline(a){
  const R=DB.rates;
- if(a.type==='fx')return `${a.currency} ${comma(a.fxAmount)}`;
+ if(a.type==='fx')return `${a.currency} ${commaQty(a.fxAmount)}`;
  if(a.type==='gold')return `${a.goldDon}돈 · ${comma(R.goldPerG||0)}원/g`;
- if(a.type==='stock')return `${comma(a.stockQty)}주`;
+ if(a.type==='stock')return `${commaQty(a.stockQty)}주`;
  if(a.type==='savings')return `만기 ${a.maturityDate||'-'}`;
  return ASSET_TYPES[a.type].label;
 }
