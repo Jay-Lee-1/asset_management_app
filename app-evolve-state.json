@@ -1,6 +1,6 @@
 {
   "cycle": 6,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
     {
@@ -37,6 +37,13 @@
       "timestamp": "2026-09-10T23:00:00+09:00",
       "summary": "delCat(k,i) only spliced the category out of DB.categories[k] but never cleaned up DB.catIcon[catKey(k,c)], DB.catVar[catKey(k,c)], or (for expense) DB.budgets[c] — the exact same class of orphaned-parallel-map bug that doRenameCat already had to fix for rename, but delete was never given the same treatment. Since catKey is purely name-based, deleting a category (e.g. '커피' with a custom icon, a '변동' flag, and a 30,000원 budget) and later re-adding one with the same name silently inherited the old icon/variable-flag/budget the user never set. Extracted the deletion body into doDeleteCat(k,i), mirroring doRenameCat's migration pattern, which now also deletes the catIcon/catVar entries and (for k==='expense') the budgets entry for the deleted category name; delCat() just calls it inside the existing confirmSheet callback. Added 3 new regression tests to test/run.js (icon/var/budget cleanup on delete, no inheritance on same-name re-add, and a guard that non-expense types don't touch DB.budgets) — all 27 tests pass. Verified both inline <script> blocks still parse via `new Function()`. Bumped APP_VERSION 1.17.4→1.17.5 and sw.js CACHE v39→v40.",
       "commit": "6aba2c4"
+    },
+    {
+      "cycle": 6,
+      "phase": "review",
+      "timestamp": "2026-09-10T23:30:00+09:00",
+      "summary": "Reviewed commit 6aba2c4 (doDeleteCat cleanup fix). Verified doDeleteCat mirrors doRenameCat's existing catIcon/catVar/budgets migration pattern correctly (same catKey-based lookups, same expense-only guard for DB.budgets), confirmed migrate() always initializes DB.catIcon/catVar/budgets so the new deletes are never against undefined objects, checked there is no second category-deletion code path that bypasses doDeleteCat (delCat is the only caller of DB.categories[k].splice), re-ran the regression suite (27/27 pass) and re-validated both inline <script> blocks parse via new Function(). No bugs found — no code changes this phase.",
+      "commit": null
     }
   ]
 }
