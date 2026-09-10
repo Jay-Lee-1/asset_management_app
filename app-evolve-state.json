@@ -1,8 +1,15 @@
 {
   "cycle": 9,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 9,
+      "phase": "develop",
+      "timestamp": "2026-09-10T19:00:00+00:00",
+      "summary": "Found a real, scoped accessibility gap: openSheet()'s default close button (index.html ~4120, class .sheet-x) is the icon-only ${svg('x')} button rendered on virtually every modal/sheet in the app whenever no custom topBtn is passed — by far the single most-used interactive control in the whole UI — and it had zero text alternative for screen readers, unlike most named buttons elsewhere. The picker back button (.pk-back, ~4894, used in every openPicker() screen) had the same gap. Accessibility had been flagged as a real but 'diffuse/low-priority' runner-up in critique cycles 6-8 and never acted on because it read as too broad for one cycle; these two are the two highest-reach, lowest-risk instances (each defined exactly once, used everywhere) so fixing just these two closes most of the practical gap without touching any business logic. Added aria-label=\"닫기\" to .sheet-x and aria-label=\"뒤로\" to .pk-back. Pure HTML-attribute change, no JS logic touched, so no new regression tests needed — ran the full existing suite (49/49 pass) and re-verified both inline <script> blocks parse via new Function(). Bumped APP_VERSION 1.19.2→1.19.3 and sw.js CACHE v45→v46 (patch bump, accessibility fix).",
+      "commit": null
+    },
     {
       "cycle": 8,
       "phase": "advance",

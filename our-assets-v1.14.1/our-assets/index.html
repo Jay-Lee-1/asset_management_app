@@ -1271,7 +1271,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.19.2';
+const APP_VERSION='1.19.3';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 
@@ -4117,7 +4117,7 @@ function openSheet(html,topBtn){
  const sh=$('sheet');
  const wasOpen=sh.classList.contains('show');
  if(!wasOpen){_segPrev=null;sh.classList.remove('expanded');sh._expanded=false;sh._lockH=0;}
- const btn=topBtn||`<button class="sheet-x" onclick="closeSheet()">${svg('x')}</button>`;
+ const btn=topBtn||`<button class="sheet-x" onclick="closeSheet()" aria-label="닫기">${svg('x')}</button>`;
  sh.innerHTML=`<div class="sheet-scroll" id="sheetScroll"><div class="grip"></div>${btn}${html}</div>`;
  sh.classList.add('show');$('scrim').classList.add('show');
  const sc=$('sheetScroll');
@@ -4891,7 +4891,7 @@ function assetPickBtn(id,onclick){const a=DB.assets.find(x=>x.id===id);const ty=
 function openPicker(title,bodyHtml,back){window._pkBack=back||null;
  const psc=$('sheetScroll');const savedTop=psc?psc.scrollTop:0; /* 들어갈 때 스크롤 위치 기억 */
  if(back)window._pkBack=()=>{back();const nsc=$('sheetScroll');if(nsc)nsc.scrollTop=savedTop;}; /* 나올 때 복원 */
- const topBtn=back?`<button class="pk-back" onclick="pkBack()">${svg('chevL')}</button>`:'';
+ const topBtn=back?`<button class="pk-back" onclick="pkBack()" aria-label="뒤로">${svg('chevL')}</button>`:'';
  openSheet(`<div class="pk-h">${title}</div>`+bodyHtml, back?topBtn:undefined);}
 function pkBack(){const b=window._pkBack;window._pkBack=null;if(b)sheetSlideBack(b);else closeSheet()}
 function openAssetPicker(o){o=o||{};let html='';
