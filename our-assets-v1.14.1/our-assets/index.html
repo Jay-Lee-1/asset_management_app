@@ -1274,7 +1274,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.16.0';
+const APP_VERSION='1.16.1';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 
@@ -3549,8 +3549,11 @@ function doRenameCat(k,i){const v=((catRenameDraft.name!=null?catRenameDraft.nam
  const old=DB.categories[k][i];
  if(v!==old&&DB.categories[k].includes(v)){toast('이미 있는 카테고리예요');return}
  const ic=catRenameDraft.icon||'';
+ const wasVar=isVarCat(k,old);
  delete DB.catIcon[catKey(k,old)];            /* 이름 변경 시 아이콘 키도 이동 */
  if(ic)DB.catIcon[catKey(k,v)]=ic;
+ delete DB.catVar[catKey(k,old)];             /* 이름 변경 시 '변동' 카테고리 플래그도 이동 */
+ if(wasVar)DB.catVar[catKey(k,v)]=true;
  if(v!==old){
   DB.categories[k][i]=v;
   DB.txns.forEach(t=>{if(t.type===k&&t.category===old)t.category=v});
