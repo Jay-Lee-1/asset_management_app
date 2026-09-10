@@ -48,7 +48,7 @@ function extractConst(name) {
 const FUNCTIONS = [
   'lastDay', 'addDays', 'shiftWeekend', 'recDates', 'addMonthsStr', 'addMonths',
   'recNthDate', 'recCountUntil', 'isVarCat', 'setCatVar', 'activeRecsForAssets',
-  'num', 'doRenameCat', 'budgetProgress',
+  'num', 'doRenameCat', 'doDeleteCat', 'budgetProgress',
 ];
 const CONSTS = ['catKey', 'comma', 'commaQty'];
 
@@ -244,6 +244,45 @@ test('doRenameCat: 예산이 설정되지 않은 카테고리를 이름변경해
   sandbox.catRenameDraft = { name: '대중교통', icon: '' };
   sandbox.doRenameCat('expense', 0);
   assert.strictEqual(Object.keys(sandbox.DB.budgets).length, 0);
+});
+
+/* ---------- doDeleteCat: 카테고리 삭제 시 아이콘/변동/예산 정리 (동명 재생성 시 이전 설정이 남지 않도록) ---------- */
+test('doDeleteCat: 삭제 시 catIcon/catVar/budgets 항목이 함께 제거된다', () => {
+  sandbox.DB = {
+    categories: { expense: ['커피', '식비'] },
+    catIcon: { 'expense:커피': 'coffee' },
+    catVar: { 'expense:커피': true },
+    budgets: { 커피: 30000 },
+    txns: [], recurrences: [],
+  };
+  sandbox.doDeleteCat('expense', 0);
+  assert.deepStrictEqual(sandbox.DB.categories.expense, ['식비']);
+  assert.strictEqual('expense:커피' in sandbox.DB.catIcon, false);
+  assert.strictEqual('expense:커피' in sandbox.DB.catVar, false);
+  assert.strictEqual('커피' in sandbox.DB.budgets, false);
+});
+test('doDeleteCat: 같은 이름으로 다시 추가해도 지워진 카테고리의 이전 아이콘/변동/예산을 물려받지 않는다', () => {
+  sandbox.DB = {
+    categories: { expense: ['커피'] },
+    catIcon: { 'expense:커피': 'coffee' },
+    catVar: { 'expense:커피': true },
+    budgets: { 커피: 30000 },
+    txns: [], recurrences: [],
+  };
+  sandbox.doDeleteCat('expense', 0);
+  sandbox.DB.categories.expense.push('커피'); // 사용자가 같은 이름으로 재생성
+  assert.strictEqual('expense:커피' in sandbox.DB.catIcon, false);
+  assert.strictEqual(sandbox.isVarCat('expense', '커피'), false);
+  assert.strictEqual('커피' in sandbox.DB.budgets, false);
+});
+test('doDeleteCat: 수입/저축 카테고리는 budgets를 건드리지 않는다', () => {
+  sandbox.DB = {
+    categories: { income: ['용돈'] },
+    catIcon: {}, catVar: {}, budgets: { 용돈: 100000 },
+    txns: [], recurrences: [],
+  };
+  sandbox.doDeleteCat('income', 0);
+  assert.strictEqual(sandbox.DB.budgets['용돈'], 100000, 'expense가 아닌 타입은 budgets 키 공간이 겹치지 않으므로 건드리면 안 됨');
 });
 
 /* ---------- 실행 ---------- */

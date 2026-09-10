@@ -1278,7 +1278,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.17.4';
+const APP_VERSION='1.17.5';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 
@@ -3577,7 +3577,13 @@ function addCat(k){const v=(($('newCat')&&$('newCat').value)||catAddDraft.name||
  catAddDraft={name:'',icon:''};
  save();openCatManage(k)}
 function delCat(k,i){const c=DB.categories[k][i];
- confirmSheet('카테고리 삭제',`'${c}' 카테고리를 삭제할까요? 기존 내역의 카테고리명은 그대로 남아요.`,'삭제',()=>{DB.categories[k].splice(i,1);save();openCatManage(k)});}
+ confirmSheet('카테고리 삭제',`'${c}' 카테고리를 삭제할까요? 기존 내역의 카테고리명은 그대로 남아요.`,'삭제',()=>{doDeleteCat(k,i);save();openCatManage(k)});}
+function doDeleteCat(k,i){const c=DB.categories[k][i];
+ DB.categories[k].splice(i,1);
+ delete DB.catIcon[catKey(k,c)];              /* 삭제 시 아이콘/변동/예산도 함께 정리 (동명 카테고리 재생성 시 이전 설정이 남지 않도록) */
+ delete DB.catVar[catKey(k,c)];
+ if(k==='expense'&&DB.budgets&&c in DB.budgets)delete DB.budgets[c];
+}
 function renameCatSheet(k,i,keep){const cur=DB.categories[k][i];
  if(!keep)catRenameDraft={name:cur,icon:catIconOf(k,cur)||CATICON[cur]||'tag'};
  const avCls=k==='income'?'a-in':k==='saving'?'a-save':'a-food';

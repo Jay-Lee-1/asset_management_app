@@ -1,6 +1,6 @@
 {
   "cycle": 6,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
@@ -30,6 +30,13 @@
       "timestamp": "2026-09-10T22:30:00+09:00",
       "summary": "Implemented cycle 5's critique plan: connected the previously-dead DB.budgets scaffolding to a real feature by extending the existing openSpendAnalysis() ('지출 분석') sheet instead of building a new screen. Tapping a category row now opens openBudgetPrompt(idx), which reads/writes DB.budgets[category] via saveBudget()/delBudget(). Extracted the percentage math into a pure budgetProgress(spent,budget) helper: when a budget is set, the row's progress bar switches from 'share of total spend' to 'usage vs budget' (clamped to 100% width so the bar never overflows), turns from --brand to --expense once spending exceeds the budget, and the amount/percentage text also gets the --expense highlight; categories with no budget keep today's total-share behavior unchanged. doRenameCat() now migrates DB.budgets[old]->DB.budgets[new] on expense-category rename, mirroring the existing catIcon/catVar migration pattern (delCat leaves orphaned budget entries alone, same as it already does for catIcon/catVar). Added 6 new regression tests (budgetProgress edge cases including the 0-budget divide-by-zero guard and the >100% clamp, plus the rename-migrates-budget case) — all 24 tests pass. Bumped APP_VERSION 1.17.3->1.17.4 and sw.js CACHE v38->v39.",
       "commit": "af5cd70"
+    },
+    {
+      "cycle": 6,
+      "phase": "develop",
+      "timestamp": "2026-09-10T23:00:00+09:00",
+      "summary": "delCat(k,i) only spliced the category out of DB.categories[k] but never cleaned up DB.catIcon[catKey(k,c)], DB.catVar[catKey(k,c)], or (for expense) DB.budgets[c] — the exact same class of orphaned-parallel-map bug that doRenameCat already had to fix for rename, but delete was never given the same treatment. Since catKey is purely name-based, deleting a category (e.g. '커피' with a custom icon, a '변동' flag, and a 30,000원 budget) and later re-adding one with the same name silently inherited the old icon/variable-flag/budget the user never set. Extracted the deletion body into doDeleteCat(k,i), mirroring doRenameCat's migration pattern, which now also deletes the catIcon/catVar entries and (for k==='expense') the budgets entry for the deleted category name; delCat() just calls it inside the existing confirmSheet callback. Added 3 new regression tests to test/run.js (icon/var/budget cleanup on delete, no inheritance on same-name re-add, and a guard that non-expense types don't touch DB.budgets) — all 27 tests pass. Verified both inline <script> blocks still parse via `new Function()`. Bumped APP_VERSION 1.17.4→1.17.5 and sw.js CACHE v39→v40.",
+      "commit": null
     }
   ]
 }
