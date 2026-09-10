@@ -33,52 +33,63 @@ exports.handler = async (event) => {
   const out = {};
   const debug = { fx: null, tried: {}, errors: {} };
 
-  // 해외 주식이 있으면 환율표를 한 번만 조회 (통화별 → KRW)
-  let fx = null;
-  if (overseas.length) {
-    try { fx = await fetchFxToKrw(debug); debug.fx = fx; }
-    catch (e) { debug.errors.fx = errText(e); }
-  }
+  // 전체 실행시간 상한: 개별 소스가 아무리 느리거나 멈춰있어도(느린 upstream, 네트워크 지연 등)
+  // 서버리스 실행시간 한도(보통 10초)를 넘겨 하드 502가 나는 대신, 그때까지 모인 부분 결과를
+  // 그대로 반환한다 — 이 함수가 애초에 지향하는 '부분/저하 결과' 동작을 보장한다.
+  const HANDLER_BUDGET_MS = 8000;
+  let timedOut = false;
 
-  await Promise.all([
-    ...domestic.map(async (code) => {
-      try {
-        const p = await fetchNaver(code);
-        if (p) out[code] = p; else debug.errors[code] = 'naver: empty';
-      } catch (e) { debug.errors[code] = 'naver: ' + errText(e); }
-    }),
-    ...overseas.map(async (code) => {
-      // 1) 네이버 worldstock
-      try {
-        const q = await fetchOverseasNaver(code);
-        if (q) {
-          debug.tried[code] = q;
-          const krw = toKrw(q, fx);
-          if (krw != null) { out[code] = krw; return; }
-          debug.errors[code] = `환율 없음 (${q.currency})`;
-          return;
-        }
-      } catch (e) { debug.errors[code] = 'naver: ' + errText(e); }
+  const work = (async () => {
+    let fx = null;
+    if (overseas.length) {
+      try { fx = await fetchFxToKrw(debug); debug.fx = fx; }
+      catch (e) { debug.errors.fx = errText(e); }
+    }
 
-      // 2) 폴백: Finnhub (FINNHUB_KEY 있을 때만) — 미국 티커는 USD로 간주
-      try {
-        const q = await fetchOverseasFinnhub(code);
-        if (q) {
-          debug.tried[code] = { ...q, via: 'finnhub' };
-          const krw = toKrw(q, fx);
-          if (krw != null) { out[code] = krw; return; }
-          debug.errors[code] = `환율 없음 (${q.currency})`;
-          return;
+    await Promise.all([
+      ...domestic.map(async (code) => {
+        try {
+          const p = await fetchNaver(code);
+          if (p) out[code] = p; else debug.errors[code] = 'naver: empty';
+        } catch (e) { debug.errors[code] = 'naver: ' + errText(e); }
+      }),
+      ...overseas.map(async (code) => {
+        // 1) 네이버 worldstock
+        try {
+          const q = await fetchOverseasNaver(code);
+          if (q) {
+            debug.tried[code] = q;
+            const krw = toKrw(q, fx);
+            if (krw != null) { out[code] = krw; return; }
+            debug.errors[code] = `환율 없음 (${q.currency})`;
+            return;
+          }
+        } catch (e) { debug.errors[code] = 'naver: ' + errText(e); }
+
+        // 2) 폴백: Finnhub (FINNHUB_KEY 있을 때만) — 미국 티커는 USD로 간주
+        try {
+          const q = await fetchOverseasFinnhub(code);
+          if (q) {
+            debug.tried[code] = { ...q, via: 'finnhub' };
+            const krw = toKrw(q, fx);
+            if (krw != null) { out[code] = krw; return; }
+            debug.errors[code] = `환율 없음 (${q.currency})`;
+            return;
+          }
+          if (!debug.errors[code]) debug.errors[code] = 'not found (naver+finnhub 실패)';
+        } catch (e) {
+          debug.errors[code] = (debug.errors[code] ? debug.errors[code] + ' / ' : '') + 'finnhub: ' + errText(e);
         }
-        if (!debug.errors[code]) debug.errors[code] = 'not found (naver+finnhub 실패)';
-      } catch (e) {
-        debug.errors[code] = (debug.errors[code] ? debug.errors[code] + ' / ' : '') + 'finnhub: ' + errText(e);
-      }
-    })
-  ]);
+      })
+    ]);
+  })();
+
+  const deadline = new Promise(resolve => setTimeout(() => { timedOut = true; resolve(); }, HANDLER_BUDGET_MS));
+  await Promise.race([work, deadline]);
+  if (timedOut) debug.timedOut = true; // 아직 못 받아온 코드는 out에 없고, wantDebug일 때 errors에도 안 남을 수 있음
 
   const wantDebug = (event.queryStringParameters || {}).debug === '1';
-  return json(200, wantDebug ? { ...out, _debug: debug } : out, 60);
+  return json(200, wantDebug ? { ...out, _debug: debug } : out, timedOut ? 0 : 60);
 };
 
 /* 해외 시세 → 원화 변환 */
@@ -101,6 +112,9 @@ const NAVER_SUFFIXES = ['O', 'K', 'N', 'A'];
 async function fetchOverseasNaver(ticker) {
   const hasSuffix = /\.[A-Z]$/.test(ticker);
   const candidates = hasSuffix ? [ticker] : NAVER_SUFFIXES.map(s => `${ticker}.${s}`);
+  // 접미사 후보가 여럿이면(최대 4개) 순차 조회 전체가 서버리스 실행시간 한도를 넘지 않도록
+  // 후보당 제한시간을 나눠 쓴다 (예: 8초 예산을 4개면 2초씩) — 접미사 1개면 기존 그대로 넉넉히 준다.
+  const perMs = candidates.length > 1 ? Math.floor(8000 / candidates.length) : 6000;
 
   let lastErr = null;
   for (const code of candidates) {
@@ -108,7 +122,7 @@ async function fetchOverseasNaver(ticker) {
     try {
       j = await getJSON(
         `https://m.stock.naver.com/api/worldstock/stock/${encodeURIComponent(code)}/basic`,
-        { headers: NAVER_HEADERS, retries: 0 }   // 접미사 여러 개 도니 개별 재시도는 생략
+        { headers: NAVER_HEADERS, retries: 0, ms: perMs }   // 접미사 여러 개 도니 개별 재시도는 생략
       );
     } catch (e) { lastErr = e; continue; }       // HTTP 상태 보존 (404 진단용)
     const price = toNum(j.closePrice || j.currentPrice);
