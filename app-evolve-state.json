@@ -1,15 +1,8 @@
 {
   "cycle": 10,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 9,
-      "phase": "review",
-      "timestamp": "2026-09-10T22:08:26.395Z",
-      "summary": "Reviewed commit d1aaaa4 (aria-label on .sheet-x close button and .pk-back button). Confirmed both are pure HTML-attribute additions with no JS logic touched: openSheet() still builds the same button markup with onclick=\"closeSheet()\" preserved, openPicker() still builds the same onclick=\"pkBack()\" preserved, and the aria-label values (\"닫기\"/\"뒤로\") match the Korean UI language used elsewhere in the app. Checked both call sites are the sole definitions of .sheet-x/.pk-back (each defined once, used everywhere via openSheet/openPicker), so the fix reaches every modal/picker screen as claimed. APP_VERSION 1.19.2->1.19.3 and sw.js CACHE v45->v46 bumps are consistent with the patch-level, accessibility-only nature of the change. Re-ran the full regression suite (49/49 pass) and re-verified both inline <script> blocks parse via new Function(). No bugs found — no code changes this phase.",
-      "commit": null
-    },
     {
       "cycle": 9,
       "phase": "develop",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-11T00:00:00Z",
       "summary": "Implemented cycle 9's critique plan: added esc(s), a small HTML-entity-escaping helper (escapes & < > \" ') placed next to the other lightweight utils (comma/commaQty/won), defined as a plain function (not const) so the existing brace-matching extractFunction() test-harness path can pull it in cleanly -- an earlier const-arrow version broke the naive semicolon-based extractConst() because the entity strings themselves contain literal ';' (e.g. '&amp;'), so it was rewritten as function esc(s){...} instead. Wrapped esc(...) around every user-controlled string found interpolated raw into an innerHTML template literal: asset names (list rows, delete/tidy/maturity confirms, rate sheet, asset picker, asset form name/code inputs, owner field), transaction/recurrence memo-or-category across ledger, history, plan, next-big-outflow card, month-outflow rows, quick-amount sheets and home alerts, category names in category-manage rows, category picker, spend-analysis rows and budget-prompt titles, and owner names in owner-manage rows/rename sheet. Also escaped at two shared sinks that funnel arbitrary text into innerHTML for every caller -- toast(msg) and undoToast(msg) -- so every existing and future toast()/undoToast() call site is covered without having to touch each call individually (verified no existing call site intentionally passes real HTML markup, so this doesn't change any legitimate behavior). Left the existing ad-hoc `.replace(/\"/g,'&quot;')` guards on a few *value=* attributes as-is (smaller diff, already safe for the attribute-breakout case) except where a plain esc() call was equally small and more consistent (asName/asCode/rMemo-style inputs newly touched in this pass). Added esc to test/run.js's FUNCTIONS extraction list plus 5 new regression tests (escapes <script> tags, breaks out of quote/attribute context safely, escapes &, leaves plain text unchanged, treats null/undefined as empty string) -- all 54 tests pass. Verified both inline <script> blocks still parse via new Function(). Bumped APP_VERSION 1.19.3->1.19.4 and sw.js CACHE v46->v47 (patch bump, security fix).",
+      "commit": null
+    },
+    {
+      "cycle": 10,
+      "phase": "develop",
+      "timestamp": "2026-09-11T00:20:00.000Z",
+      "summary": "Fixed an inconsistency flagged as a runner-up in cycle 9's critique: delTx(id,recId,date) (index.html ~2889), the single-transaction delete path used by the ledger row detail sheet -- by far the most common way users delete a transaction, versus the far rarer multi-select bulk delete -- filtered DB.txns and showed a plain, non-undoable toast('삭제했어요'), while ledgerDelSel()/histDelSel() (bulk delete, same data type, same screens) already route through deleteTxnsUndo(ids), which snapshots the removed rows and shows a 6-second undoToast() with a '되돌리기' button that restores them. A user who fat-fingers a delete on a single transaction had no way to recover it without manually re-entering amount/date/category/memo/asset, unlike the identical bulk-delete flow one tap away on the same screen. Changed delTx's confirmSheet callback to call deleteTxnsUndo(new Set([id])) instead of hand-rolling the filter+plain-toast, reusing the existing, already-tested undo infrastructure verbatim rather than duplicating it. As a side effect this also makes delTx respect twGuard() (tutorial-mode guard) the same way every other real-data-mutating action already does -- previously delTx was the one delete path that skipped it and would have actually mutated DB.txns during the tutorial. Scoped narrowly to delTx only; left the structurally similar delAdjust() (adjustment-entry delete) untouched as a distinct, separate candidate for a future cycle to keep this diff small and reviewable. No new pure-logic surface was introduced (delTx/deleteTxnsUndo are DOM/UI glue, consistent with how bulk-delete paths are likewise untested by the pure-function harness), so no new regression tests were added; ran the full existing suite (54/54 pass) and re-verified both inline <script> blocks parse via new Function(). Bumped APP_VERSION 1.19.4->1.19.5 and sw.js CACHE v47->v48 (patch bump, bug fix).",
       "commit": null
     }
   ]
