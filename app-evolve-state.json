@@ -1,12 +1,15 @@
 {
-  "cycle": 13,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "데이터 복원(JSON import)/클라우드 강제 push에 검증+되돌리기(undo) 안전망 추가",
-    "why": "importFile change 핸들러(index.html:4085-4092)는 obj.assets && obj.txns가 truthy인지만 확인하고(배열 여부조차 검증 안 함) 바로 DB=obj로 전체 교체 — 확인창에 '이 작업은 되돌릴 수 없어요'라고 명시돼 있을 만큼 실제로 되돌릴 방법이 없다. resolveCloudForcePush()(index.html:1576)도 로컬 데이터로 클라우드 사본을 그대로 덮어쓰며 사전 스냅샷이 없다. 반면 이번 로테이션에서 delTx/delAdjust/delAsset/recApply/recSave/saveQuickAmount 등 모든 삭제·수정 경로는 이미 undoToast() 패턴으로 통일됐는데, 이 두 개의 '전체 DB 교체'라는 가장 파괴적인 경로만 예외로 남아있다. CSV export(과거 계획)는 이미 txnsToCSV()로 구현 완료된 것을 확인했으므로 재제안하지 않음.",
-    "approach": "1) importFile 핸들러(4085-4092)의 검증을 Array.isArray(obj.assets)/Array.isArray(obj.txns) 체크로 강화하고 실패 시 구체적인 toast 메시지로 구분. 2) DB=obj 대입 직전에 const prev=JSON.parse(JSON.stringify(DB))로 스냅샷을 뜨고, plain toast 대신 undoToast('데이터를 복원했어요', ()=>{DB=prev;save();invalidateBalances();renderCurrent()})로 교체(undoToast는 index.html:4888에 이미 존재, deleteTxnsUndo 등과 동일 패턴). 3) resolveCloudForcePush()(1576)도 push 전에 로컬 DB 스냅샷을 떠서 동일하게 undo 가능하게 하되, 클라우드는 이미 덮어써진 뒤이므로 undo 콜백은 로컬 상태 복원 후 재-push하는 방식임을 주석으로 명시(비대칭성 문서화). 4) migrate()(1635)를 try/catch로 감싸 복원된 obj가 부분적으로 손상돼 migrate 도중 throw하더라도 DB가 절반만 마이그레이션된 상태로 남지 않고 prev 스냅샷으로 롤백되도록 한다. 5) test/run.js에 회귀 테스트 추가: (a) assets/txns가 배열이 아닌 JSON은 DB 변경 없이 거부, (b) 정상 백업 복원 후 undo 시 원래 DB와 deep-equal, (c) resolveCloudForcePush 스냅샷/undo 왕복, (d) 손상된 obj로 migrate()가 throw할 때 DB가 오염되지 않고 prev로 롤백됨. build/lint 없음, 테스트만 실행. APP_VERSION/sw.js CACHE 버전 bump 필요(버그 수정이므로 patch bump)."
-  },
+  "cycle": 14,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 13,
+      "phase": "advance",
+      "timestamp": "2026-09-11T16:30:00.000Z",
+      "summary": "cycle13 critique 계획을 구현하되, 계획의 3번 항목(resolveCloudForcePush에 로컬 DB 스냅샷+undo)은 실제로는 성립하지 않음을 확인하고 더 맞는 방식으로 교정했다: resolveCloudForcePush()(index.html:1576)는 로컬 DB를 전혀 변경하지 않고 로컬→클라우드로 push만 하므로(pushCloud는 원격의 updated_at만 비교하고 data 본문은 읽지 않음), '로컬 스냅샷'을 떠봐야 되돌릴 게 없다 — 진짜 되돌릴 수 없는 건 원격에 있던, 애초에 로컬로 받아온 적 없는 데이터다. 그래서 undoToast 대신 confirmCloudForcePush()라는 확인창을 추가해 실행 전 한 번 더 확인받도록 했다(기존엔 다른 모든 파괴적 동작과 달리 확인창 없이 버튼 한 번으로 바로 실행됐음). 계획의 나머지 항목(1,2,4,5)은 그대로 구현: importFile 핸들러(4085)의 검증을 Array.isArray(obj.assets)/Array.isArray(obj.txns)로 강화했고, DB 교체 직전 JSON 딥클론 스냅샷을 뜨고 plain toast 대신 undoToast로 교체했으며, 이 로직을 restoreBackup(obj) 함수로 추출해 migrate()가 손상된 데이터로 throw해도 try/catch로 스냅샷으로 롤백하게 했다(절반만 마이그레이션된 DB가 남지 않음). test/run.js에 migrate/restoreBackup과 그 의존 상수(ASSET_TYPES 등)를 추출 대상에 추가하고 회귀 테스트 3개 추가(스키마 검증 거부, 정상 복원+스냅샷 반환, migrate 실패 시 롤백) — 76/76 통과. 두 인라인 <script> 블록 모두 new Function()으로 파싱 확인. APP_VERSION 1.19.11->1.19.12, sw.js CACHE v54->v55 (patch bump, 안전망 추가).",
+      "commit": null
+    },
     {
       "cycle": 13,
       "phase": "critique",
@@ -139,13 +142,7 @@
       "timestamp": "2026-09-10T13:15:00+00:00",
       "summary": "addCat(k) was the odd one out among the app's 'add/rename named item' flows: addOwner() and doRenameCat() both check for a duplicate name and toast('이미 있는 카테고리예요'/'이미 있는 귀속이에요') before returning, but addCat() just silently skipped the DB.categories[k].push() on a duplicate and still cleared the draft, saved, and reopened the sheet — giving the user zero feedback that nothing happened when they typed an existing category name. Worse, if the user had picked a custom icon in catAddDraft.icon first, the DB.catIcon[catKey(k,v)]=catAddDraft.icon line still ran unconditionally, silently overwriting the icon of the pre-existing category with the same name. Fixed by adding the same early-return-with-toast guard used by addOwner/doRenameCat, which also fixes the icon-overwrite side effect since the function now returns before touching catIcon. Added addCat to the test harness's FUNCTIONS list and gave the sandbox toast() a lastToast recorder (previously a no-op) plus a catAddDraft field so it could be exercised; added 2 new regression tests (duplicate name toasts and leaves array/icon untouched; new name adds normally with no toast) — all 37 tests pass. Verified both inline <script> blocks still parse via new Function(). Bumped APP_VERSION 1.18.0→1.18.1 and sw.js CACHE v41→v42.",
       "commit": "efe88da"
-    },
-    {
-      "cycle": 7,
-      "phase": "review",
-      "timestamp": "2026-09-10T13:20:00+00:00",
-      "summary": "Reviewed commit efe88da (addCat duplicate-name toast fix). Confirmed the early-return guard matches addOwner/doRenameCat's existing pattern exactly, verified the icon-overwrite side effect is genuinely fixed (function now returns before touching DB.catIcon), checked there's no other code path that calls DB.categories[k].push() bypassing addCat, and confirmed migrate() always initializes DB.categories[k] as an array so .includes() is never called on undefined. Re-ran the regression suite (37/37 pass) and re-validated both inline <script> blocks parse via new Function(). No bugs found — no code changes this phase.",
-      "commit": null
     }
   ]
 }
+
