@@ -51,6 +51,7 @@ const FUNCTIONS = [
   'num', 'doRenameCat', 'doDeleteCat', 'budgetProgress', 'totalBudgetSummary', 'addCat',
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'esc',
   'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo',
+  'recApply', 'recSave',
 ];
 const CONSTS = ['catKey', 'comma', 'commaQty'];
 
@@ -70,11 +71,17 @@ const sandbox = {
   lastUndo: null,
   snapshotCalls: null,
   TWi: -1,
-  $: () => null,
+  window: {},
+  txAmtValue: '',
+  // recSave()는 $('txAmt').value를 읽어 금액을 얻으므로, 'txAmt'만 값을 갖는 입력칸처럼 동작시킨다.
+  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : null,
   toast: (msg) => { sandbox.lastToast = msg; },
   save: () => {},
   renderCurrent: () => {},
   openCatManage: () => {},
+  closeSheet: () => {},
+  renderTxSheet: () => {},
+  uid: () => 'test-uid',
   undoToast: (msg, undoFn) => { sandbox.lastUndo = { msg, undoFn }; },
   snapshotAssetName: (id) => { sandbox.snapshotCalls.push(id); },
 };
@@ -566,6 +573,108 @@ test('deleteAssetsUndo: 튜토리얼 모드 중에는 twGuard가 막아서 실�
   assert.strictEqual(sandbox.DB.assets.length, 1, '튜토리얼 중에는 삭제가 막혀야 함');
   assert.deepStrictEqual(sandbox.snapshotCalls, [], '튜토리얼 중에는 스냅샷도 남기지 않아야 함');
   sandbox.TWi = -1;
+});
+
+/* ---------- recApply(mode='delete'): 부분 삭제(scope='one'/'future')도 twGuard+undo를 쓴다 ---------- */
+test("recApply: scope='one' 삭제는 해당 날짜만 skip에 넣고, undo하면 skip 목록이 원래대로 돌아간다", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', skip: ['2026-01-05'] };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.lastUndo = null;
+  sandbox.recApply('r1', '2026-02-05', 'delete', 'one');
+  assert.deepStrictEqual(r.skip, ['2026-01-05', '2026-02-05'], '지정한 날짜가 skip에 추가되어야 함');
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함');
+  sandbox.lastUndo.undoFn();
+  assert.deepStrictEqual(r.skip, ['2026-01-05'], '되돌리면 skip이 원래 배열로 복원되어야 함');
+});
+test("recApply: scope='future' 삭제는 endDate를 자르고, undo하면 원래 endDate로 돌아간다", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', skip: [], endDate: null };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.lastUndo = null;
+  sandbox.recApply('r1', '2026-02-05', 'delete', 'future');
+  assert.strictEqual(r.endDate, '2026-02-04', '이후 반복을 끊기 위해 하루 전날로 endDate가 설정되어야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(r.endDate, null, '되돌리면 endDate가 원래 값(null)으로 복원되어야 함');
+});
+test("recApply: 튜토리얼 모드 중에는 twGuard가 막아서 scope='one'/'future' 삭제도 실제로 반영되지 않는다", () => {
+  sandbox.TWi = 0;
+  const r1 = { id: 'r1', skip: [] };
+  const r2 = { id: 'r2', skip: [], endDate: null };
+  sandbox.DB = { recurrences: [r1, r2] };
+  sandbox.recApply('r1', '2026-02-05', 'delete', 'one');
+  sandbox.recApply('r2', '2026-02-05', 'delete', 'future');
+  assert.deepStrictEqual(r1.skip, [], "튜토리얼 중에는 scope='one' 삭제가 막혀야 함");
+  assert.strictEqual(r2.endDate, null, "튜토리얼 중에는 scope='future' 삭제가 막혀야 함");
+  sandbox.TWi = -1;
+});
+
+/* ---------- recSave(): 반복 내역 부분 수정(one/future/all)도 twGuard+undo를 쓴다 ---------- */
+test("recSave: scope='one' 수정은 r.edits[date]에 금액을 기록하고, undo하면 이전 상태로 돌아간다", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', amount: 1000, edits: { '2026-01-05': { amount: 999 } } };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.window._recCtx = { recId: 'r1', date: '2026-02-05', scope: 'one' };
+  sandbox.txAmtValue = '5,000';
+  sandbox.lastUndo = null;
+  sandbox.recSave();
+  assert.strictEqual(r.edits['2026-02-05'].amount, 5000, '해당 날짜의 edits에 새 금액이 기록되어야 함');
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(r.edits['2026-02-05'], undefined, '이전에 없던 날짜였다면 되돌릴 때 edits에서 제거되어야 함');
+  assert.deepStrictEqual(r.edits['2026-01-05'], { amount: 999 }, '다른 날짜의 기존 edits는 영향받지 않아야 함');
+});
+test("recSave: scope='one'에서 이미 있던 edits를 덮어쓴 경우, undo하면 이전 값으로 복원된다", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', amount: 1000, edits: { '2026-02-05': { amount: 111 } } };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.window._recCtx = { recId: 'r1', date: '2026-02-05', scope: 'one' };
+  sandbox.txAmtValue = '222';
+  sandbox.recSave();
+  assert.strictEqual(r.edits['2026-02-05'].amount, 222);
+  sandbox.lastUndo.undoFn();
+  assert.deepStrictEqual(r.edits['2026-02-05'], { amount: 111 }, '되돌리면 덮어쓰기 전 값으로 복원되어야 함');
+});
+test("recSave: scope='future' 수정은 endDate를 끊고 새 분리 레코드를 추가하며, undo하면 원상복구된다", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', amount: 1000, endDate: null, skip: ['2026-01-01'], edits: { '2026-01-01': { amount: 1 } } };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.window._recCtx = { recId: 'r1', date: '2026-03-01', scope: 'future' };
+  sandbox.txAmtValue = '7000';
+  sandbox.recSave();
+  assert.strictEqual(r.endDate, '2026-02-28', '기존 반복은 새 반복 시작일 하루 전에 끊겨야 함');
+  assert.strictEqual(sandbox.DB.recurrences.length, 2, '이후 구간을 위한 새 반복 레코드가 추가되어야 함');
+  const newRec = sandbox.DB.recurrences.find(x => x.id !== 'r1');
+  assert.strictEqual(newRec.amount, 7000);
+  assert.strictEqual(newRec.startDate, '2026-03-01');
+  assert.strictEqual(newRec.skip.length, 0, '새 레코드는 원본의 skip/edits를 물려받지 않아야 함');
+  assert.strictEqual(Object.keys(newRec.edits).length, 0, '새 레코드는 원본의 edits를 물려받지 않아야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(r.endDate, null, '되돌리면 기존 반복의 endDate가 복원되어야 함');
+  assert.strictEqual(sandbox.DB.recurrences.length, 1, '되돌리면 새로 만든 분리 레코드가 제거되어야 함');
+});
+test("recSave: scope='all' 수정은 r.amount를 바꾸고, undo하면 이전 금액으로 돌아간다", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', amount: 1000 };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.window._recCtx = { recId: 'r1', date: '2026-02-05', scope: 'all' };
+  sandbox.txAmtValue = '9999';
+  sandbox.recSave();
+  assert.strictEqual(r.amount, 9999);
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(r.amount, 1000, '되돌리면 원래 금액으로 복원되어야 함');
+});
+test('recSave: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 수정되지 않는다', () => {
+  sandbox.TWi = 0;
+  const r = { id: 'r1', amount: 1000 };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.window._recCtx = { recId: 'r1', date: '2026-02-05', scope: 'all' };
+  sandbox.txAmtValue = '9999';
+  sandbox.recSave();
+  assert.strictEqual(r.amount, 1000, '튜토리얼 중에는 수정이 막혀야 함');
+  assert.strictEqual(sandbox.window._recCtx.recId, 'r1', '튜토리얼 중에는 _recCtx도 지워지지 않아야 함(가드가 최상단에서 반환하므로)');
+  sandbox.TWi = -1;
+  sandbox.window._recCtx = null;
 });
 
 /* ---------- 실행 ---------- */

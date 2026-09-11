@@ -1272,7 +1272,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.19.9';
+const APP_VERSION='1.19.10';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 
@@ -2897,10 +2897,17 @@ function recEditScope(recId,date,mode){
   </div>`);
 }
 function recApply(recId,date,mode,scope){
+ if(twGuard())return;
  const r=DB.recurrences.find(x=>x.id===recId);
  if(mode==='delete'){
-  if(scope==='one'){r.skip.push(date);save();closeSheet();renderCurrent();toast('삭제했어요');return}
-  if(scope==='future'){r.endDate=addDays(date,-1);save();closeSheet();renderCurrent();toast('삭제했어요');return}
+  if(scope==='one'){
+   const prevSkip=r.skip.slice();r.skip.push(date);save();closeSheet();renderCurrent();
+   undoToast('삭제했어요',()=>{r.skip=prevSkip;save();renderCurrent();toast('되돌렸어요')});return;
+  }
+  if(scope==='future'){
+   const prevEnd=r.endDate;r.endDate=addDays(date,-1);save();closeSheet();renderCurrent();
+   undoToast('삭제했어요',()=>{r.endDate=prevEnd;save();renderCurrent();toast('되돌렸어요')});return;
+  }
   closeSheet();deleteRecsUndo(new Set([recId]));return;
  }
  const ed=(r.edits||{})[date]||{};
@@ -2912,13 +2919,26 @@ function recApply(recId,date,mode,scope){
 function recCtxDel(){const c=window._recCtx;window._recCtx=null;if(c)recApply(c.recId,c.date,'delete',c.scope)}
 function openRecDetail(recId){window._recCtx=null;editRec(recId)} /* 간편 수정 → 반복 자체 세부 편집 */
 function recSave(){
+ if(twGuard())return;
  const ctx=window._recCtx;if(!ctx)return;const r=DB.recurrences.find(x=>x.id===ctx.recId);
  const amt=num($('txAmt'));if(!amt){toast('금액을 입력해 주세요');return}
- if(ctx.scope==='one'){r.edits[ctx.date]={amount:amt}}
- else if(ctx.scope==='future'){r.endDate=addDays(ctx.date,-1);
-  DB.recurrences.push(Object.assign({},JSON.parse(JSON.stringify(r)),{id:uid(),startDate:ctx.date,endDate:null,amount:amt,skip:[],edits:{}}))}
- else{r.amount=amt}
- window._recCtx=null;save();closeSheet();renderCurrent();toast('반복 내역을 수정했어요');
+ let undoFn;
+ if(ctx.scope==='one'){
+  const edits=(r.edits=r.edits||{});const prevEdit=edits[ctx.date];edits[ctx.date]={amount:amt};
+  undoFn=()=>{if(prevEdit===undefined)delete edits[ctx.date];else edits[ctx.date]=prevEdit;save();renderCurrent();toast('되돌렸어요')};
+ }
+ else if(ctx.scope==='future'){
+  const prevEnd=r.endDate;r.endDate=addDays(ctx.date,-1);
+  const newRec=Object.assign({},JSON.parse(JSON.stringify(r)),{id:uid(),startDate:ctx.date,endDate:null,amount:amt,skip:[],edits:{}});
+  DB.recurrences.push(newRec);
+  undoFn=()=>{r.endDate=prevEnd;DB.recurrences=DB.recurrences.filter(x=>x.id!==newRec.id);save();renderCurrent();toast('되돌렸어요')};
+ }
+ else{
+  const prevAmt=r.amount;r.amount=amt;
+  undoFn=()=>{r.amount=prevAmt;save();renderCurrent();toast('되돌렸어요')};
+ }
+ window._recCtx=null;save();closeSheet();renderCurrent();
+ undoToast('반복 내역을 수정했어요',undoFn);
 }
 
 /* 반복 설정 — 지출/수입/이체/저축, 카테고리 선택 방식 */

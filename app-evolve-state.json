@@ -1,12 +1,15 @@
 {
-  "cycle": 12,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "recApply()/recSave()의 부분 수정 경로(scope='one'/'future')에 twGuard + undo 적용",
-    "why": "cycle11 develop에서 전체 삭제(scope='all')는 deleteRecsUndo로 통일했지만, 같은 함수의 나머지 두 경로는 의도적으로 남겨뒀다: recApply(mode='delete',scope='one'/'future') (index.html:2902-2903)는 twGuard() 없이 바로 r.skip.push(date)/r.endDate=addDays(date,-1) 후 save()하고 plain toast('삭제했어요')만 띄운다 -- 튜토리얼 중에도 실제로 DB에 반영되는 앱 유일의 구멍이고, 되돌리기도 없다. recSave() (index.html:2914-2922, '이 내역만'/'이 날부터 이후 모두'/'전체' 수정 확인 플로우)도 twGuard() 호출이 아예 없이 r.edits/r.endDate/새 분리 레코드/r.amount를 바로 덮어쓴다. 앱의 다른 모든 삭제(delTx/delAdjust/delAsset/전체 반복삭제)는 이미 twGuard+undoToast로 통일됐는데 이 두 부분 수정 경로만 예외로 남아있다.",
-    "approach": "1) recApply()와 recSave() 맨 앞에 if(twGuard())return; 추가. 2) recApply의 scope='one'/'future' delete 분기에서 plain toast('삭제했어요') 대신 undoToast()를 쓰도록 교체 -- r.skip push 전 배열 스냅샷, r.endDate 덮어쓰기 전 값 스냅샷을 떠서 deleteRecsUndo(index.html:4875)와 같은 스냅샷-복원 패턴으로 undo 콜백 작성. 3) recSave()의 세 분기(edits[date] 쓰기, endDate 잘라내고 새 레코드 push, r.amount 덮어쓰기)도 동일하게 수정 전 상태를 스냅샷해서 undoToast로 되돌릴 수 있게 한다. 기존 twGuard/undoToast 헬퍼만 재사용하며 새 인프라는 필요 없음, 두 함수 합쳐 약 20~30줄 변경 규모. test/run.js에 twGuard 튜토리얼 차단 케이스 및 undo 복원 케이스를 recApply/recSave 관련으로 추가."
-  },
+  "cycle": 13,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 12,
+      "phase": "advance",
+      "timestamp": "2026-09-11T12:30:00.000Z",
+      "summary": "cycle12 critique 계획대로 recApply()/recSave()의 부분 수정 경로(scope='one'/'future')에 twGuard+undo를 통일했다. 두 함수 맨 앞에 if(twGuard())return;을 추가해 튜토리얼 중 실제 DB 반영을 막았고, recApply의 scope='one' 삭제(r.skip.push)는 push 전 배열 스냅샷을, scope='future' 삭제(r.endDate 절단)는 이전 endDate 스냅샷을 떠서 각각 undoToast로 되돌릴 수 있게 했다(scope='all'은 기존처럼 deleteRecsUndo로 위임, 변경 없음). recSave()의 세 분기도 동일하게: scope='one'은 edits[date] 덮어쓰기 전 이전 값(없었으면 undefined)을 스냅샷해 undo 시 원래 상태로 복원(이전에 없었으면 키 자체를 delete), scope='future'는 endDate 스냅샷 + 새로 push한 분리 레코드를 undo 시 filter로 제거, scope='all'은 r.amount 스냅샷 후 복원. 두 함수 모두 plain toast 대신 undoToast()로 교체했다. test/run.js에 recApply/recSave를 추출 대상에 추가하고(uid/closeSheet/renderTxSheet 스텁, $('txAmt') 값을 반환하는 $ 스텁, window 전역 신설) 9개 회귀 테스트 추가(scope별 적용+undo 3쌍, edits 덮어쓰기 case, 튜토리얼 차단 2건) -- 69/69 통과. 디버깅 중 vm.createContext 샌드박스에서 만들어진 객체/배열은 메인 realm과 프로토타입이 달라 assert.deepStrictEqual이 실패한다는 걸 발견해, 그런 값은 개별 프로퍼티(assert.strictEqual)나 길이 비교로 검증하도록 테스트를 수정했다(기존 배열 비교 테스트들은 애초에 메인 realm에서 만든 배열을 push/filter만 했기 때문에 문제없이 통과했던 것). 두 인라인 <script> 블록 모두 node --check로 파싱 확인. APP_VERSION 1.19.9->1.19.10, sw.js CACHE v52->v53 (patch bump, bug fix).",
+      "commit": null
+    },
     {
       "cycle": 12,
       "phase": "critique",
@@ -138,13 +141,6 @@
       "phase": "advance",
       "timestamp": "2026-09-11T08:10:21.498Z",
       "summary": "cycle11 critique 계획대로 index.html의 독립 토글 스위치 4곳(2457: 자산 총자산에 포함, 2881: 조정 내역 수지에 포함, 2973: 반복 이체 자동 확인, 3717: 시세 자동 갱신)을 <span class=\"switch\" onclick=...>에서 <button type=\"button\" role=\"switch\" aria-checked aria-label>로 바꿔 키보드/스크린리더로 조작 가능하게 했다. 각 인라인 onclick에 this.setAttribute('aria-checked',...) 한 줄씩 추가해 클릭 시 상태가 같이 갱신되게 했고, .switch CSS에 button 기본 스타일 리셋(appearance/border/padding/cursor)과 :focus-visible 아웃라인을 추가했다. 이미 부모가 button인 menu-item 안의 나머지 switch(3430줄)는 중첩 인터랙티브 요소가 되지 않도록 span은 aria-hidden=true로 두고, 부모 button에 aria-pressed를 추가해 토글 상태를 노출했다. 순수 마크업/속성 변경이라 새 회귀 테스트는 추가하지 않고 기존 58/58 스위트 통과와 두 인라인 <script> 블록의 new Function() 파싱을 확인했다. APP_VERSION 1.19.7->1.19.8, sw.js CACHE v50->v51 (patch bump, accessibility fix).",
-      "commit": null
-    },
-    {
-      "cycle": 12,
-      "phase": "review",
-      "timestamp": "2026-09-11T10:09:21.806Z",
-      "summary": "Reviewed commit c1429d4 (delAsset now routes through deleteAssetsUndo instead of hand-rolled filter+plain-toast+no-twGuard, mirroring delTx/delAdjust/delRecConfirm fixes from cycles 9-11). Verified deleteAssetsUndo(ids) (index.html:4878) gates on twGuard() first, snapshots asset names before removal, disables only the linked *active* recurrences (activeRecsForAssets), filters DB.assets by the given id Set, and its undo callback pushes back the exact same removed object references and reactivates the same recurrences -- identical shape to deleteTxnsUndo/deleteRecsUndo. Confirmed delAsset still computes activeRecsForAssets(id) with a plain id (not a Set) purely for the confirm-dialog count text, which activeRecsForAssets supports via its id===ids fallback, and matches the exact pattern already used at the bulk-select (line 2380) and openTidyAsset (line 4804) call sites -- no new inconsistency introduced. Grepped for any other direct DB.assets=DB.assets.filter(...) delete path and found none remaining outside deleteAssetsUndo itself. Re-ran the regression suite (61/61 pass, including the 3 new deleteAssetsUndo cases added this cycle) and re-verified both inline <script> blocks parse via new Function(). No bugs found -- no code changes this phase.",
       "commit": null
     }
   ]
