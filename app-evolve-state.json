@@ -1,8 +1,19 @@
 {
   "cycle": 10,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "delAdjust() 잔액 조정 삭제도 deleteTxnsUndo 공용 인프라를 쓰도록 통일",
+    "why": "delAdjust(id) (index.html:2887-2888)는 DB.txns.filter로 직접 필터링하고 되돌리기 없는 plain toast('삭제했어요')만 보여준다. 반면 같은 DB.txns를 다루는 형제 삭제 경로들 -- delTx (2891, cycle10 develop에서 이미 고침), ledgerDelSel, histDelSel -- 은 모두 deleteTxnsUndo(ids) (4876-4878)를 거쳐서 (1) twGuard()로 튜토리얼 모드 중 실제 데이터 변경을 막고 (2) 6초짜리 '되돌리기' undoToast를 제공한다. 잔액 조정 내역도 DB.txns의 평범한 행(t.adjust)이고 자산 잔액은 txns 합산으로 파생되므로(assetEval/balanceAt), deleteTxnsUndo가 삭제된 행을 그대로 다시 push하는 방식이 안전하게 잔액을 복원한다. 정확히 cycle10 develop에서 delTx에 고친 것과 같은 버그 패턴이 형제 함수 delAdjust에는 아직 남아있다. 실제 도달 가능한 경로: openAdjustEdit (2875) -> '이 조정 내역 삭제' 버튼 (2883) -> delAdjust.",
+    "approach": "delAdjust(id)의 confirmSheet 콜백 본문을 delTx와 동일하게 deleteTxnsUndo(new Set([id]))로 교체 (직접 filter+save+toast 대신). confirmSheet 자체의 시트 닫힘 동작은 delTx 리팩터 때와 동일하게 유지되는지 확인. deleteTxnsUndo가 현재 어떤 회귀 테스트로도 커버되지 않고 있으므로, test/run.js에 deleteTxnsUndo를 추출해 최소 DB/twGuard 스텁으로 (a) adjust 타입 txn이 제거되고 undo 클로저 호출 시 정확히 복원되는지, (b) twGuard()가 튜토리얼 모드를 시뮬레이션했을 때 삭제를 막는지를 검증하는 테스트 추가. APP_VERSION/sw.js CACHE 패치 버전업."
+  },
   "history": [
+    {
+      "cycle": 10,
+      "phase": "critique",
+      "timestamp": "2026-09-11T02:20:00.000Z",
+      "summary": "전체 앱을 한 걸음 물러나 봤다(백그라운드 조사 에이전트 활용). delAdjust(id) (index.html:2887-2888)가 cycle10 develop에서 이미 고친 delTx의 버그 패턴을 형제 함수로서 여전히 갖고 있음을 확인: DB.txns를 직접 filter하고 되돌리기 없는 plain toast만 보여주며, deleteTxnsUndo가 제공하는 twGuard()(튜토리얼 가드)와 6초 undo 토스트를 전혀 받지 못한다. 실제 도달 경로(openAdjustEdit -> '이 조정 내역 삭제' 버튼)가 있는 진짜 회귀 가능 버그라 다음 advance 사이클 대상으로 선정. 후보로 검토했지만 기각한 것들: 큰 render 함수들(renderPlan 57줄 등)은 파일 전체가 원래 조밀한 스타일이라 명확한 문제로 보기 어려움; 환율/시세 fetch 에러 처리(fetchFxGold/fetchStocks/syncRates)는 이미 Promise.allSettled와 per-source 실패 카운터로 견고하게 구현됨; TODO/FIXME나 예전 cash-flow-curve 같은 새로운 고아 코드는 전체 grep에서 발견되지 않음. 코드 변경 없음 -- pending_advance_plan에 delAdjust 통일 계획을 적어둠.",
+      "commit": null
+    },
     {
       "cycle": 10,
       "phase": "review",
@@ -37,13 +48,6 @@
       "timestamp": "2026-09-10T17:30:00+00:00",
       "summary": "Reviewed commit 8121371 (yearly recDates() Feb-29 clamp fix). Traced through the rewritten loop by hand: mo/day are captured once from rs, d2=Math.min(day,lastDay(y,mo)) correctly clamps per-year (lastDay(y,m)=new Date(y,m,0).getDate() is the same helper already used by the monthly branch and addMonths()), the break condition new Date(y,mo-1,d2)>end terminates since the constructed date strictly increases with y, and ds>=r.startDate/push()'s own from/to/endDate bounds are unchanged from before so windowing behavior is preserved. Checked all 5 call sites of recDates() (index.html:1705,1725,1730,2511,4573) — all consume the returned array the same way as before (forEach/.length/direct array use), so the return type/shape didn't change. Re-ran the regression suite (45/45 pass) and re-validated both inline <script> blocks parse via new Function(). No bugs found — no code changes this phase. Also backfilled the cycle 8 develop history entry's commit hash (was null, actual is 8121371).",
       "commit": null
-    },
-    {
-      "cycle": 8,
-      "phase": "develop",
-      "timestamp": "2026-09-10T00:00:00+00:00",
-      "summary": "Fixed a real date-drift bug in recDates()'s yearly branch (index.html): it advanced occurrences with cd.setFullYear(cd.getFullYear()+1) on a native Date object, so a yearly recurrence starting on Feb 29 (e.g. an annual insurance premium or subscription) silently rolled over to Mar 1 on its first anniversary in a non-leap year and then stayed on Mar 1 forever, never returning to Feb 29 even in the next leap year — a genuine, permanent, one-time date corruption the user never asked for. This is the same class of month-end rollover bug the monthly branch right above it and addMonths() already guard against via Math.min(day,lastDay(y,m)) clamping (with an explicit '일자 롤오버 방지' comment at index.html:3071), but the yearly branch had never been given the same treatment. Rewrote the yearly branch to compute year/month/day explicitly and clamp the day via lastDay(y,mo) each iteration, mirroring the existing addMonths()/monthly-branch pattern instead of relying on Date rollover semantics — so a Feb-29 start now clamps to Feb 28 in non-leap years and correctly returns to Feb 29 in the next leap year. Added 3 new regression tests to test/run.js (permanent-drift-to-Mar-1 is fixed and clamps to 2/28 across 3 non-leap years, returns to 2/29 in the next leap year 2028, and a plain non-Feb-29 yearly date like 6/15 is unaffected and stays exact every year) — all 45 tests pass. Verified both inline <script> blocks still parse via new Function(). Bumped APP_VERSION 1.19.0→1.19.1 and sw.js CACHE v43→v44 (patch bump, bug fix).",
-      "commit": "8121371"
     },
     {
       "cycle": 5,
