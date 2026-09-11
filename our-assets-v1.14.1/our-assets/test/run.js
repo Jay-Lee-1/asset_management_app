@@ -50,6 +50,7 @@ const FUNCTIONS = [
   'recNthDate', 'recCountUntil', 'isVarCat', 'setCatVar', 'activeRecsForAssets',
   'num', 'doRenameCat', 'doDeleteCat', 'budgetProgress', 'totalBudgetSummary', 'addCat',
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'esc',
+  'twActive', 'twGuard', 'deleteTxnsUndo',
 ];
 const CONSTS = ['catKey', 'comma', 'commaQty'];
 
@@ -63,11 +64,14 @@ const sandbox = {
   catRenameDraft: null,
   catAddDraft: null,
   lastToast: null,
+  lastUndo: null,
+  TWi: -1,
   $: () => null,
   toast: (msg) => { sandbox.lastToast = msg; },
   save: () => {},
   renderCurrent: () => {},
   openCatManage: () => {},
+  undoToast: (msg, undoFn) => { sandbox.lastUndo = { msg, undoFn }; },
 };
 vm.createContext(sandbox);
 vm.runInContext(extracted, sandbox, { filename: 'extracted-from-index.html' });
@@ -472,6 +476,29 @@ test('esc: 평범한 텍스트는 그대로 둔다', () => {
 test('esc: null/undefined는 빈 문자열로 처리한다', () => {
   assert.strictEqual(sandbox.esc(null), '');
   assert.strictEqual(sandbox.esc(undefined), '');
+});
+
+/* ---------- deleteTxnsUndo: 단일/대량 삭제 공용 되돌리기 인프라 (delAdjust도 여기 합류) ---------- */
+test('deleteTxnsUndo: 지정한 id의 내역을 삭제하고, undo 콜백을 부르면 정확히 복원한다', () => {
+  sandbox.TWi = -1;
+  const adjust = { id: 'x1', adjust: true, amount: 1000 };
+  const other = { id: 'x2', amount: 500 };
+  sandbox.DB = { txns: [adjust, other] };
+  sandbox.lastUndo = null;
+  sandbox.deleteTxnsUndo(new Set(['x1']));
+  assert.deepStrictEqual(sandbox.DB.txns, [other], '지정한 항목만 제거되어야 함');
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.txns.length, 2, '되돌리기를 부르면 삭제된 항목이 복원되어야 함');
+  assert.ok(sandbox.DB.txns.some(t => t.id === 'x1'), '삭제됐던 조정 내역이 그대로 복원되어야 함');
+});
+test('deleteTxnsUndo: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 삭제되지 않는다', () => {
+  sandbox.TWi = 0;
+  const t = { id: 'x1', adjust: true, amount: 1000 };
+  sandbox.DB = { txns: [t] };
+  sandbox.deleteTxnsUndo(new Set(['x1']));
+  assert.strictEqual(sandbox.DB.txns.length, 1, '튜토리얼 중에는 삭제가 막혀야 함');
+  sandbox.TWi = -1;
 });
 
 /* ---------- 실행 ---------- */

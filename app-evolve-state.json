@@ -1,12 +1,15 @@
 {
-  "cycle": 10,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "delAdjust() 잔액 조정 삭제도 deleteTxnsUndo 공용 인프라를 쓰도록 통일",
-    "why": "delAdjust(id) (index.html:2887-2888)는 DB.txns.filter로 직접 필터링하고 되돌리기 없는 plain toast('삭제했어요')만 보여준다. 반면 같은 DB.txns를 다루는 형제 삭제 경로들 -- delTx (2891, cycle10 develop에서 이미 고침), ledgerDelSel, histDelSel -- 은 모두 deleteTxnsUndo(ids) (4876-4878)를 거쳐서 (1) twGuard()로 튜토리얼 모드 중 실제 데이터 변경을 막고 (2) 6초짜리 '되돌리기' undoToast를 제공한다. 잔액 조정 내역도 DB.txns의 평범한 행(t.adjust)이고 자산 잔액은 txns 합산으로 파생되므로(assetEval/balanceAt), deleteTxnsUndo가 삭제된 행을 그대로 다시 push하는 방식이 안전하게 잔액을 복원한다. 정확히 cycle10 develop에서 delTx에 고친 것과 같은 버그 패턴이 형제 함수 delAdjust에는 아직 남아있다. 실제 도달 가능한 경로: openAdjustEdit (2875) -> '이 조정 내역 삭제' 버튼 (2883) -> delAdjust.",
-    "approach": "delAdjust(id)의 confirmSheet 콜백 본문을 delTx와 동일하게 deleteTxnsUndo(new Set([id]))로 교체 (직접 filter+save+toast 대신). confirmSheet 자체의 시트 닫힘 동작은 delTx 리팩터 때와 동일하게 유지되는지 확인. deleteTxnsUndo가 현재 어떤 회귀 테스트로도 커버되지 않고 있으므로, test/run.js에 deleteTxnsUndo를 추출해 최소 DB/twGuard 스텁으로 (a) adjust 타입 txn이 제거되고 undo 클로저 호출 시 정확히 복원되는지, (b) twGuard()가 튜토리얼 모드를 시뮬레이션했을 때 삭제를 막는지를 검증하는 테스트 추가. APP_VERSION/sw.js CACHE 패치 버전업."
-  },
+  "cycle": 11,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 10,
+      "phase": "advance",
+      "timestamp": "2026-09-11T04:09:17.794Z",
+      "summary": "cycle10 critique 계획대로 delAdjust(id) (index.html~2887)를 delTx와 동일하게 deleteTxnsUndo(new Set([id]))를 쓰도록 통일했다. 기존에는 DB.txns.filter로 직접 삭제하고 되돌리기 없는 plain toast만 보여줘 twGuard(튜토리얼 가드)도 건너뛰었는데, 이제 형제 삭제 경로(delTx/ledgerDelSel/histDelSel)와 동일하게 튜토리얼 중 삭제를 막고 6초짜리 되돌리기 토스트로 조정 내역도 복원 가능해졌다. deleteTxnsUndo가 지금까지 어떤 회귀 테스트로도 커버되지 않고 있었으므로 test/run.js에 twActive/twGuard/deleteTxnsUndo를 추출 대상에 추가하고(undoToast/TWi 스텁 신설), 삭제+undo 복원 케이스와 튜토리얼 중 삭제 차단 케이스 2개를 추가 -- 56/56 테스트 통과. 두 인라인 <script> 블록 모두 new Function()으로 파싱 확인. APP_VERSION 1.19.5->1.19.6, sw.js CACHE v48->v49 (patch bump, bug fix).",
+      "commit": null
+    },
     {
       "cycle": 10,
       "phase": "critique",
@@ -138,13 +141,6 @@
       "phase": "advance",
       "timestamp": "2026-09-11T00:00:00Z",
       "summary": "Implemented cycle 9's critique plan: added esc(s), a small HTML-entity-escaping helper (escapes & < > \" ') placed next to the other lightweight utils (comma/commaQty/won), defined as a plain function (not const) so the existing brace-matching extractFunction() test-harness path can pull it in cleanly -- an earlier const-arrow version broke the naive semicolon-based extractConst() because the entity strings themselves contain literal ';' (e.g. '&amp;'), so it was rewritten as function esc(s){...} instead. Wrapped esc(...) around every user-controlled string found interpolated raw into an innerHTML template literal: asset names (list rows, delete/tidy/maturity confirms, rate sheet, asset picker, asset form name/code inputs, owner field), transaction/recurrence memo-or-category across ledger, history, plan, next-big-outflow card, month-outflow rows, quick-amount sheets and home alerts, category names in category-manage rows, category picker, spend-analysis rows and budget-prompt titles, and owner names in owner-manage rows/rename sheet. Also escaped at two shared sinks that funnel arbitrary text into innerHTML for every caller -- toast(msg) and undoToast(msg) -- so every existing and future toast()/undoToast() call site is covered without having to touch each call individually (verified no existing call site intentionally passes real HTML markup, so this doesn't change any legitimate behavior). Left the existing ad-hoc `.replace(/\"/g,'&quot;')` guards on a few *value=* attributes as-is (smaller diff, already safe for the attribute-breakout case) except where a plain esc() call was equally small and more consistent (asName/asCode/rMemo-style inputs newly touched in this pass). Added esc to test/run.js's FUNCTIONS extraction list plus 5 new regression tests (escapes <script> tags, breaks out of quote/attribute context safely, escapes &, leaves plain text unchanged, treats null/undefined as empty string) -- all 54 tests pass. Verified both inline <script> blocks still parse via new Function(). Bumped APP_VERSION 1.19.3->1.19.4 and sw.js CACHE v46->v47 (patch bump, security fix).",
-      "commit": null
-    },
-    {
-      "cycle": 10,
-      "phase": "develop",
-      "timestamp": "2026-09-11T00:20:00.000Z",
-      "summary": "Fixed an inconsistency flagged as a runner-up in cycle 9's critique: delTx(id,recId,date) (index.html ~2889), the single-transaction delete path used by the ledger row detail sheet -- by far the most common way users delete a transaction, versus the far rarer multi-select bulk delete -- filtered DB.txns and showed a plain, non-undoable toast('삭제했어요'), while ledgerDelSel()/histDelSel() (bulk delete, same data type, same screens) already route through deleteTxnsUndo(ids), which snapshots the removed rows and shows a 6-second undoToast() with a '되돌리기' button that restores them. A user who fat-fingers a delete on a single transaction had no way to recover it without manually re-entering amount/date/category/memo/asset, unlike the identical bulk-delete flow one tap away on the same screen. Changed delTx's confirmSheet callback to call deleteTxnsUndo(new Set([id])) instead of hand-rolling the filter+plain-toast, reusing the existing, already-tested undo infrastructure verbatim rather than duplicating it. As a side effect this also makes delTx respect twGuard() (tutorial-mode guard) the same way every other real-data-mutating action already does -- previously delTx was the one delete path that skipped it and would have actually mutated DB.txns during the tutorial. Scoped narrowly to delTx only; left the structurally similar delAdjust() (adjustment-entry delete) untouched as a distinct, separate candidate for a future cycle to keep this diff small and reviewable. No new pure-logic surface was introduced (delTx/deleteTxnsUndo are DOM/UI glue, consistent with how bulk-delete paths are likewise untested by the pure-function harness), so no new regression tests were added; ran the full existing suite (54/54 pass) and re-verified both inline <script> blocks parse via new Function(). Bumped APP_VERSION 1.19.4->1.19.5 and sw.js CACHE v47->v48 (patch bump, bug fix).",
       "commit": null
     }
   ]

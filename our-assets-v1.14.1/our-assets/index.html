@@ -1271,7 +1271,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.19.5';
+const APP_VERSION='1.19.6';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 
@@ -2885,7 +2885,7 @@ function openAdjustEdit(t){
 function toggleAdjustSurplus(id,el){const t=DB.txns.find(x=>x.id===id);if(!t)return;
  t.inSurplus=!t.inSurplus;el.classList.toggle('on');save();renderCurrent();}
 function delAdjust(id){confirmSheet('조정 내역 삭제','이 잔액 조정 내역을 삭제할까요? 자산 잔액이 조정 전으로 돌아가요.','삭제',
- ()=>{DB.txns=DB.txns.filter(x=>x.id!==id);save();renderCurrent();toast('삭제했어요')})}
+ ()=>{deleteTxnsUndo(new Set([id]))})}
 function delTx(id,recId,date){
  if(recId){recEditScope(recId,date,'delete');return}
  confirmSheet('내역 삭제','이 내역을 삭제할까요?','삭제',()=>{deleteTxnsUndo(new Set([id]))});
