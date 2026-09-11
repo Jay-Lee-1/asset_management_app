@@ -1,8 +1,19 @@
 {
   "cycle": 14,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "save()/load() silently swallow localStorage failures and still show success toasts",
+    "why": "save() at index.html:1674 wraps localStorage.setItem in try/catch and on failure only sets STORAGE_OK=false — the ~69 call sites (saveAsset, saveTx, recSave, category/budget edits, etc.) all immediately show a success toast ('저장했어요'/'수정했어요'/'등록했어요') regardless of whether the write actually succeeded. In Safari private browsing, storage-restricted webviews, or quota-exceeded situations, the in-memory DB still has the edit and the UI still confirms success, but nothing persists — on next reload the data is silently gone. load() at index.html:1640 has the same blind catch on read failure. For a personal finance ledger this is the worst class of bug: the app actively lies about whether the user's money data was saved, and the only trace is a small gray caption in the menu screen (3460) that reads like a preview-mode note, not a live failure warning.",
+    "approach": "Make save() return a boolean (true on successful setItem, false on catch). Add a saveAnd(msg) helper that calls save() and only shows the success toast when it returns true; on failure, show a persistent/distinct failure toast the first time a save fails in a session (e.g. '저장 실패 · 이 기기에 저장 공간이 부족하거나 제한돼 있어요'), reusing existing toast()/confirmSheet() primitives — no new UI system. Replace the repeated save-then-toast pattern at the ~69 call sites (saveAsset ~2508, saveTx ~2871, recSave ~2948, and others) with saveAnd(msg) so failures are never silently reported as success. Distinguish QuotaExceededError (suggest trimming DB.nwHistory or exporting+resetting) from a hard-disabled localStorage (suggest cloud login) where practical. Apply the same not-silent treatment to load() at 1640 so a failed initial read does not silently start the user on an empty DB. Add regression tests for the new saveAnd/failure-signaling pure logic in test/run.js where feasible (e.g. a mockable storage that throws). Bump APP_VERSION and sw.js CACHE per project convention."
+  },
   "history": [
+    {
+      "cycle": 14,
+      "phase": "critique",
+      "timestamp": "2026-09-11T19:00:00.000Z",
+      "summary": "전체 앱을 한 걸음 물러나 봤다(백그라운드 조사 에이전트 활용). save()(index.html:1674)가 localStorage.setItem을 try/catch로 감싸고 실패 시 STORAGE_OK=false만 설정할 뿐, 호출부 ~69곳(saveAsset/saveTx/recSave 등)이 전부 무조건 성공 토스트('저장했어요' 등)를 띄우는 걸 발견 — Safari 프라이빗 모드, 저장소 제한된 웹뷰, 용량 초과 상황에서 실제로는 저장이 실패해도 사용자에게는 '저장됨'으로 보이고 새로고침하면 데이터가 조용히 사라지는, 가계부 앱에 최악인 데이터 손실 클래스. load()(1640)도 읽기 실패 시 동일하게 조용히 삼킴. 유일한 흔적은 메뉴 화면 하단의 작은 회색 문구(3460, 프리뷰 모드 제한처럼 쓰여 있어 실시간 실패 경고로 안 읽힘)뿐. 후보로 검토했지만 기각한 것들: 접근성 스윕(여전히 실재하지만 반복적으로 '한 사이클로 처리하기엔 넓다'는 판단이 유효, 이번 데이터 손실 버그가 더 날카롭고 심각한 단일 타깃); planNegatives()/acctSafety()의 openPlanAsset 렌더 루프 내 반복 재계산(3403-3411, O(n^2)성이지만 계좌 수가 적어 체감 안 됨); 로컬 인증 djb2 해시(로컬 전용이라 위험 낮음, 반복 기각); 클라우드 동기화 충돌 UX(직전 사이클에 확인창 추가돼 이미 개선됨, 추가 폴리싱은 긴급하지 않음). 코드 변경 없음 — pending_advance_plan에 save/load 실패 시 무조건 성공 토스트 문제 수정 계획을 적어둠.",
+      "commit": null
+    },
     {
       "cycle": 14,
       "phase": "review",
@@ -134,13 +145,6 @@
       "phase": "critique",
       "timestamp": "2026-09-10T23:45:00+09:00",
       "summary": "Stepped back to look at the whole app rather than the last commit. Found the app has no net-worth history/trend view at all — only ever shows a single 'now' snapshot — and the codebase itself shows this was started and abandoned: orphaned comments at index.html lines 159/167/1912/1914 ('① 현금흐름 곡선 카드', '현금흐름 곡선 그리기 (canvas)') plus a dead .fc-chart canvas CSS rule, with zero implementing function or <canvas> element anywhere (confirmed via grep). Also noted a structural gap that constrains the fix: DB.rates only stores a current price snapshot, no history, so any trend implementation must snapshot already-evaluated totals (via assetEval()/netWorth()) rather than trying to recompute past non-cash asset values from today's rates. Runner-up candidates noted but not chosen: accessibility is essentially absent (5 total aria-/role=/alt=/tabindex hits across 5172 lines), local auth password hashing is an unsalted djb2 hash (low real-world risk, local-only), and there's no CSV/spreadsheet export (JSON backup/restore only). Wrote the net-worth-history plan to pending_advance_plan for the next advance cycle. No code changed this phase.",
-      "commit": null
-    },
-    {
-      "cycle": 6,
-      "phase": "advance",
-      "timestamp": "2026-09-10T23:55:00+09:00",
-      "summary": "Implemented cycle 6's critique plan: connected the net-worth history gap by adding DB.nwHistory=DB.nwHistory||[] to migrate() and two pure functions — updateNwHistory(hist,dateStr,ta,td) (append-or-update-today, immutable) and pruneNwHistory(hist) (keeps daily granularity for the most recent 90 days, compresses anything older to one snapshot per month, only kicks in above 120 entries so normal usage never touches it). Wired the snapshot into startApp() (covers first-ever open and every reopen, refreshing today's entry) and into refreshToday()'s day-changed branch (covers the app staying open across midnight) — both call save() right after, matching the existing changed-then-save() convention. Added nwChartPath(pts,W,H), a pure function producing an SVG path string (min/max-normalized, span-zero-safe) with no chart library, and nwHistoryCard() which renders it as an inline <svg> sparkline card (shown only once ≥2 snapshots exist) inserted into renderAssets() right after the net-worth carousel. Replaced the entire dead cash-flow-curve CSS block (.flow-card/.fc-head/.fc-lb/.fc-end/.fc-sub/.fc-chart/.fc-foot/.fc-stat/.fs-k/.fs-v — verified via grep that none of these classes were referenced anywhere outside their own definitions) with real .nwh-card/.nwh-range/.nwh-chart rules, and replaced the orphaned '① 현금흐름 곡선 카드' / '현금흐름 곡선 그리기 (canvas)' comments with the real nwHistoryCard() implementation, putting the previously-unused shortDate2() helper to actual use. Added 8 new regression tests (updateNwHistory append/update-in-place/immutability, pruneNwHistory below-threshold and month-compression behavior, nwChartPath's <2-points/flat-line/rising-line cases) — all 35 tests pass. Verified both inline <script> blocks still parse via new Function(). Bumped APP_VERSION 1.17.5→1.18.0 and sw.js CACHE v40→v41 (minor bump, not patch, since this adds a new schema field and a new UI section rather than fixing a bug).",
       "commit": null
     }
   ]
