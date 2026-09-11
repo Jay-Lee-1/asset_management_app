@@ -1,8 +1,15 @@
 {
   "cycle": 14,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 14,
+      "phase": "review",
+      "timestamp": "2026-09-11T18:30:00.000Z",
+      "summary": "Reviewed commit a08b750 (matchTxnQuery extraction for case-insensitive history search). Verified the new hay.toLowerCase().includes(q.toLowerCase()) preserves exact prior behavior for the deleted-asset fallback path: the old code called assetNm(id,snap) when fa was falsy, but assetNm's own DB.assets.find(x=>x.id===id) would also be falsy in that case (same array, same id), so it always fell through to snap||'—' — identical to matchTxnQuery's direct (t.fromAssetName||'—') fallback, just without the redundant second DB scan. Confirmed filteredHist() is the only caller and H.q's only consumer (grepped for other .includes(q)/search-query patterns in index.html — none found, so this was the only case-sensitivity gap in the app). Re-ran the regression suite (81/81 pass) and re-verified both inline <script> blocks parse via new Function(). No bugs found — no code changes this phase.",
+      "commit": null
+    },
     {
       "cycle": 14,
       "phase": "develop",
@@ -135,14 +142,6 @@
       "timestamp": "2026-09-10T23:55:00+09:00",
       "summary": "Implemented cycle 6's critique plan: connected the net-worth history gap by adding DB.nwHistory=DB.nwHistory||[] to migrate() and two pure functions — updateNwHistory(hist,dateStr,ta,td) (append-or-update-today, immutable) and pruneNwHistory(hist) (keeps daily granularity for the most recent 90 days, compresses anything older to one snapshot per month, only kicks in above 120 entries so normal usage never touches it). Wired the snapshot into startApp() (covers first-ever open and every reopen, refreshing today's entry) and into refreshToday()'s day-changed branch (covers the app staying open across midnight) — both call save() right after, matching the existing changed-then-save() convention. Added nwChartPath(pts,W,H), a pure function producing an SVG path string (min/max-normalized, span-zero-safe) with no chart library, and nwHistoryCard() which renders it as an inline <svg> sparkline card (shown only once ≥2 snapshots exist) inserted into renderAssets() right after the net-worth carousel. Replaced the entire dead cash-flow-curve CSS block (.flow-card/.fc-head/.fc-lb/.fc-end/.fc-sub/.fc-chart/.fc-foot/.fc-stat/.fs-k/.fs-v — verified via grep that none of these classes were referenced anywhere outside their own definitions) with real .nwh-card/.nwh-range/.nwh-chart rules, and replaced the orphaned '① 현금흐름 곡선 카드' / '현금흐름 곡선 그리기 (canvas)' comments with the real nwHistoryCard() implementation, putting the previously-unused shortDate2() helper to actual use. Added 8 new regression tests (updateNwHistory append/update-in-place/immutability, pruneNwHistory below-threshold and month-compression behavior, nwChartPath's <2-points/flat-line/rising-line cases) — all 35 tests pass. Verified both inline <script> blocks still parse via new Function(). Bumped APP_VERSION 1.17.5→1.18.0 and sw.js CACHE v40→v41 (minor bump, not patch, since this adds a new schema field and a new UI section rather than fixing a bug).",
       "commit": null
-    },
-    {
-      "cycle": 7,
-      "phase": "develop",
-      "timestamp": "2026-09-10T13:15:00+00:00",
-      "summary": "addCat(k) was the odd one out among the app's 'add/rename named item' flows: addOwner() and doRenameCat() both check for a duplicate name and toast('이미 있는 카테고리예요'/'이미 있는 귀속이에요') before returning, but addCat() just silently skipped the DB.categories[k].push() on a duplicate and still cleared the draft, saved, and reopened the sheet — giving the user zero feedback that nothing happened when they typed an existing category name. Worse, if the user had picked a custom icon in catAddDraft.icon first, the DB.catIcon[catKey(k,v)]=catAddDraft.icon line still ran unconditionally, silently overwriting the icon of the pre-existing category with the same name. Fixed by adding the same early-return-with-toast guard used by addOwner/doRenameCat, which also fixes the icon-overwrite side effect since the function now returns before touching catIcon. Added addCat to the test harness's FUNCTIONS list and gave the sandbox toast() a lastToast recorder (previously a no-op) plus a catAddDraft field so it could be exercised; added 2 new regression tests (duplicate name toasts and leaves array/icon untouched; new name adds normally with no toast) — all 37 tests pass. Verified both inline <script> blocks still parse via new Function(). Bumped APP_VERSION 1.18.0→1.18.1 and sw.js CACHE v41→v42.",
-      "commit": "efe88da"
     }
   ]
 }
-
