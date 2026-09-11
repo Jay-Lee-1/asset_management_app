@@ -1273,7 +1273,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.20.0';
+const APP_VERSION='1.20.1';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 
@@ -2963,7 +2963,8 @@ function recSave(){
  }
  else if(ctx.scope==='future'){
   const prevEnd=r.endDate;r.endDate=addDays(ctx.date,-1);
-  const newRec=Object.assign({},JSON.parse(JSON.stringify(r)),{id:uid(),startDate:ctx.date,endDate:null,amount:amt,skip:[],edits:{}});
+  const newBase={freq:r.freq,day:r.day,startDate:ctx.date,weekend:r.weekend};
+  const newRec=Object.assign({},JSON.parse(JSON.stringify(r)),{id:uid(),startDate:ctx.date,endDate:prevEnd,count:prevEnd?recCountUntil(newBase,prevEnd):null,amount:amt,skip:[],edits:{}});
   DB.recurrences.push(newRec);
   undoFn=()=>{r.endDate=prevEnd;DB.recurrences=DB.recurrences.filter(x=>x.id!==newRec.id);save();renderCurrent();toast('되돌렸어요')};
  }

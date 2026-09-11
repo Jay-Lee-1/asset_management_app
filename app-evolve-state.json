@@ -1,8 +1,15 @@
 {
   "cycle": 15,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 15,
+      "phase": "develop",
+      "timestamp": "2026-09-11T22:13:02.669Z",
+      "summary": "recSave()의 scope='future'(이 날부터 이후 모두) 분기(index.html recSave, ~2964-2969)가 분리된 새 반복 레코드(newRec)의 endDate를 원래 종료일(prevEnd)과 무관하게 무조건 null로 강제해, 종료일/횟수가 정해진 유한한 반복(예: 12개월 할부)의 중간 지점에서 금액을 한 번만 수정해도 그 뒤로는 영원히 반복되는 무한 시리즈로 조용히 바뀌는 실제 버그를 발견해 고쳤다(recDates()는 r.endDate만 보고 r.count는 보지 않으므로 count는 그대로인데 endDate만 null이 되면서 발생). 배경 조사 에이전트가 코드베이스 전체를 훑어 이 버그를 1순위 후보로 제안했고, 2순위였던 doDeleteCat에 undo가 없는 문제(직전 사이클에서 이미 정리 로직만 추가됨)는 최근에 손댄 영역과 겹쳐 보류했다. 수정은 newRec.endDate를 prevEnd로 이어받고, count도 saveRec()이 이미 쓰는 것과 같은 패턴(recCountUntil)으로 재계산하도록 좁게 한정했다 — 같은 분기의 또 다른 잠재 이슈(분할 시점 이후의 기존 skip/edits가 새 레코드로 이관되지 않고 사라지는 것)는 기존 회귀 테스트(recSave future 테스트)가 '새 레코드는 skip/edits를 물려받지 않아야 한다'를 명시적으로 고정해 둔 의도된 동작일 가능성이 있어 이번 사이클에서는 건드리지 않았다(범위를 하나의 명확한 버그로 좁게 유지). test/run.js에 회귀 테스트 2개 추가(원래 종료일이 있으면 새 레코드가 그 종료일과 올바른 count를 물려받는다, 원래 무기한이면 새 레코드도 무기한을 유지한다) — 87/87 통과(기존 85개+신규 2개). 두 인라인 <script> 블록 모두 new Function()으로 파싱 확인. APP_VERSION 1.20.0->1.20.1, sw.js CACHE v57->v58 (patch bump, bug fix).",
+      "commit": null
+    },
     {
       "cycle": 14,
       "phase": "advance",
@@ -135,20 +142,6 @@
       "timestamp": "2026-09-10T23:00:00+09:00",
       "summary": "delCat(k,i) only spliced the category out of DB.categories[k] but never cleaned up DB.catIcon[catKey(k,c)], DB.catVar[catKey(k,c)], or (for expense) DB.budgets[c] — the exact same class of orphaned-parallel-map bug that doRenameCat already had to fix for rename, but delete was never given the same treatment. Since catKey is purely name-based, deleting a category (e.g. '커피' with a custom icon, a '변동' flag, and a 30,000원 budget) and later re-adding one with the same name silently inherited the old icon/variable-flag/budget the user never set. Extracted the deletion body into doDeleteCat(k,i), mirroring doRenameCat's migration pattern, which now also deletes the catIcon/catVar entries and (for k==='expense') the budgets entry for the deleted category name; delCat() just calls it inside the existing confirmSheet callback. Added 3 new regression tests to test/run.js (icon/var/budget cleanup on delete, no inheritance on same-name re-add, and a guard that non-expense types don't touch DB.budgets) — all 27 tests pass. Verified both inline <script> blocks still parse via `new Function()`. Bumped APP_VERSION 1.17.4→1.17.5 and sw.js CACHE v39→v40.",
       "commit": "6aba2c4"
-    },
-    {
-      "cycle": 6,
-      "phase": "review",
-      "timestamp": "2026-09-10T23:30:00+09:00",
-      "summary": "Reviewed commit 6aba2c4 (doDeleteCat cleanup fix). Verified doDeleteCat mirrors doRenameCat's existing catIcon/catVar/budgets migration pattern correctly (same catKey-based lookups, same expense-only guard for DB.budgets), confirmed migrate() always initializes DB.catIcon/catVar/budgets so the new deletes are never against undefined objects, checked there is no second category-deletion code path that bypasses doDeleteCat (delCat is the only caller of DB.categories[k].splice), re-ran the regression suite (27/27 pass) and re-validated both inline <script> blocks parse via new Function(). No bugs found — no code changes this phase.",
-      "commit": null
-    },
-    {
-      "cycle": 6,
-      "phase": "critique",
-      "timestamp": "2026-09-10T23:45:00+09:00",
-      "summary": "Stepped back to look at the whole app rather than the last commit. Found the app has no net-worth history/trend view at all — only ever shows a single 'now' snapshot — and the codebase itself shows this was started and abandoned: orphaned comments at index.html lines 159/167/1912/1914 ('① 현금흐름 곡선 카드', '현금흐름 곡선 그리기 (canvas)') plus a dead .fc-chart canvas CSS rule, with zero implementing function or <canvas> element anywhere (confirmed via grep). Also noted a structural gap that constrains the fix: DB.rates only stores a current price snapshot, no history, so any trend implementation must snapshot already-evaluated totals (via assetEval()/netWorth()) rather than trying to recompute past non-cash asset values from today's rates. Runner-up candidates noted but not chosen: accessibility is essentially absent (5 total aria-/role=/alt=/tabindex hits across 5172 lines), local auth password hashing is an unsalted djb2 hash (low real-world risk, local-only), and there's no CSV/spreadsheet export (JSON backup/restore only). Wrote the net-worth-history plan to pending_advance_plan for the next advance cycle. No code changed this phase.",
-      "commit": null
     }
   ]
 }
