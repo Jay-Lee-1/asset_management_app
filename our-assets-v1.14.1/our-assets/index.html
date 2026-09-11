@@ -290,7 +290,8 @@ html[data-theme="dark"] .alloc-bar i+i::before{background:var(--bg);opacity:.9}
 
 .toggle-row{display:flex;align-items:center;gap:10px;justify-content:space-between;padding:13px 16px}
 .toggle-row .tl{font-size:14px;font-weight:600}
-.switch{width:46px;height:28px;border-radius:var(--r-pill);background:var(--line-2);position:relative;transition:background .2s;flex-shrink:0}
+.switch{width:46px;height:28px;border-radius:var(--r-pill);background:var(--line-2);position:relative;transition:background .2s;flex-shrink:0;appearance:none;-webkit-appearance:none;border:0;padding:0;cursor:pointer}
+.switch:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
 .switch.on{background:var(--brand)}
 .switch i{position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;transition:transform .2s var(--spring);box-shadow:0 1px 3px rgba(0,0,0,.2)}
 .switch.on i{transform:translateX(18px)}
@@ -1271,7 +1272,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.19.7';
+const APP_VERSION='1.19.8';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 
@@ -2454,7 +2455,7 @@ function renderAssetSheet(editing){
  openSheet(`<h3>${editing?'자산 수정':'자산 등록'}</h3>
   ${typePick}${ownerPick}${fields}
   <div class="card" style="box-shadow:none;margin-bottom:16px"><div class="toggle-row"><div><div class="tl">총자산에 포함</div></div>
-    <span class="switch ${d.includeInTotal?'on':''}" onclick="asDraft.includeInTotal=!asDraft.includeInTotal;this.classList.toggle('on')"><i></i></span></div></div>
+    <button type="button" class="switch ${d.includeInTotal?'on':''}" role="switch" aria-checked="${d.includeInTotal?'true':'false'}" aria-label="총자산에 포함" onclick="asDraft.includeInTotal=!asDraft.includeInTotal;this.classList.toggle('on');this.setAttribute('aria-checked',this.classList.contains('on'))"><i></i></button></div></div>
   <div class="two-btn"><button class="btn btn-soft cancel" onclick="closeSheet()">취소</button>
     <button class="btn btn-primary" onclick="saveAsset(${editing})">${editing?'수정하기':'등록하기'}</button></div>
   ${editing?`<button class="del-link" onclick="delAsset('${d.id}')">${svg('trash')} 이 자산 삭제</button>`:''}`);
@@ -2878,12 +2879,12 @@ function openAdjustEdit(t){
    <div class="desc" style="margin-bottom:18px">재등록 때 기록된 잔액 보정 내역이에요.<br>금액은 <b>${sign}${comma(t.amount)}원</b> 이에요.</div>
    <div class="card" style="box-shadow:none;margin-bottom:16px"><div class="toggle-row">
      <div><div class="tl">수지에 포함</div><div style="font-size:12px;color:var(--text-3);margin-top:2px">켜면 이 금액이 수입/지출 합계에 들어가요</div></div>
-     <span class="switch ${t.inSurplus?'on':''}" onclick="toggleAdjustSurplus('${t.id}',this)"><i></i></span>
+     <button type="button" class="switch ${t.inSurplus?'on':''}" role="switch" aria-checked="${t.inSurplus?'true':'false'}" aria-label="수지에 포함" onclick="toggleAdjustSurplus('${t.id}',this)"><i></i></button>
    </div></div>
    <button class="btn btn-danger cancel" style="width:100%" onclick="delAdjust('${t.id}')">${svg('trash')} 이 조정 내역 삭제</button>`);
 }
 function toggleAdjustSurplus(id,el){const t=DB.txns.find(x=>x.id===id);if(!t)return;
- t.inSurplus=!t.inSurplus;el.classList.toggle('on');save();renderCurrent();}
+ t.inSurplus=!t.inSurplus;el.classList.toggle('on');el.setAttribute('aria-checked',el.classList.contains('on'));save();renderCurrent();}
 function delAdjust(id){confirmSheet('조정 내역 삭제','이 잔액 조정 내역을 삭제할까요? 자산 잔액이 조정 전으로 돌아가요.','삭제',
  ()=>{deleteTxnsUndo(new Set([id]))})}
 function delTx(id,recId,date){
@@ -2970,7 +2971,7 @@ function renderRecSheet(){
     <div class="pav a-etc">${svg('ledger')}</div><div class="pbody"><div class="pn">${fmtDateFull(d.startDate)}</div></div><div class="pc">${svg('chev')}</div></button>
     <input id="rStart" type="hidden" value="${d.startDate}"></div>
   ${endCondFields(d,'rec')}
-  ${(d.type==='transfer'&&DB.settings.confirmTransfers)?`<div class="card" style="box-shadow:none;margin-bottom:14px"><div class="toggle-row"><div><div class="tl">이체 자동 확인</div><div style="font-size:12px;color:var(--text-3);margin-top:2px">끄면 이체일마다 완료 확인을 받아요</div></div><span class="switch ${d.autoConfirm!==false?'on':''}" onclick="recDraft.autoConfirm=!(recDraft.autoConfirm!==false);this.classList.toggle('on')"><i></i></span></div></div>`:''}
+  ${(d.type==='transfer'&&DB.settings.confirmTransfers)?`<div class="card" style="box-shadow:none;margin-bottom:14px"><div class="toggle-row"><div><div class="tl">이체 자동 확인</div><div style="font-size:12px;color:var(--text-3);margin-top:2px">끄면 이체일마다 완료 확인을 받아요</div></div><button type="button" class="switch ${d.autoConfirm!==false?'on':''}" role="switch" aria-checked="${d.autoConfirm!==false?'true':'false'}" aria-label="이체 자동 확인" onclick="recDraft.autoConfirm=!(recDraft.autoConfirm!==false);this.classList.toggle('on');this.setAttribute('aria-checked',this.classList.contains('on'))"><i></i></button></div></div>`:''}
   ${d.freq==='monthly'?`<div class="field"><label>주말이면</label><button class="pick" onclick="recOpenWeekend()">
     <div class="pav a-etc">${svg('ledger')}</div>
     <div class="pbody"><div class="pn">${WK[d.weekend||'none'][0]}</div><div class="psub">${WK[d.weekend||'none'][1]}</div></div>
@@ -3426,7 +3427,7 @@ function renderMenu(){
  <div class="promo"><div><div class="pt">Pro로 업그레이드</div><div class="ps">월 900원 · 광고 없이 함께 관리해요</div></div><button class="go" onclick="toast('Pro 안내')">시작하기</button></div>
  ${groups.map(g=>`<div class="menu-group"><div class="menu-cap">${g.cap}</div><div class="card">
    ${g.items.map(it=>it.sw!==undefined
-     ?`<button class="menu-item" onclick="${it.a}"><span class="mi">${svg(it.ic)}</span><span class="ml">${it.l}</span><span class="switch ${it.sw?'on':''}"><i></i></span></button>`
+     ?`<button class="menu-item" onclick="${it.a}" aria-pressed="${it.sw?'true':'false'}"><span class="mi">${svg(it.ic)}</span><span class="ml">${it.l}</span><span class="switch ${it.sw?'on':''}" aria-hidden="true"><i></i></span></button>`
      :`<button class="menu-item" onclick="${it.a}"><span class="mi">${svg(it.ic)}</span><span class="ml">${it.l}</span>${it.v?`<span class="mv">${it.v}</span>`:''}<span class="mc">${svg('chev')}</span></button>`).join('')}</div></div>`).join('')}
  <div style="text-align:center;color:var(--text-3);font-size:12px;margin-top:22px;font-weight:500">우리의 자산 · v${APP_VERSION}${STORAGE_OK?'':'<br>※ 미리보기에서는 자동저장이 제한돼요. 내보내기로 백업하세요.'}</div>
  <div class="menu-foot-actions">
@@ -3714,7 +3715,7 @@ function openRateSheet(){
   <div class="card" style="box-shadow:none;padding:2px 16px;margin-bottom:16px">
    <div class="toggle-row"><div><div class="tl">10분마다 자동 갱신</div>
      <div style="font-size:12px;color:var(--text-3);margin-top:2px">${DB.rates.syncedAt?fmtSynced(DB.rates.syncedAt):'아직 갱신 전'}${inQuietWindow()?' · 주말 휴장':''}</div></div>
-    <span class="switch ${DB.settings.autoRates?'on':''}" onclick="toggleAutoRates();closeSheet();setTimeout(openRateSheet,160)"><i></i></span></div>
+    <button type="button" class="switch ${DB.settings.autoRates?'on':''}" role="switch" aria-checked="${DB.settings.autoRates?'true':'false'}" aria-label="10분마다 자동 갱신" onclick="toggleAutoRates();closeSheet();setTimeout(openRateSheet,160)"><i></i></button></div>
    <div class="toggle-row" style="border-top:1px solid var(--line)"><div class="tl">연동 중인 자산</div>
     <span class="chipmini ${none?'own-x':'own-나'}" style="font-size:12px;height:24px;padding:0 11px">${active}</span></div>
   </div>
