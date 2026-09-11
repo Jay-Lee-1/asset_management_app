@@ -1,8 +1,15 @@
 {
   "cycle": 13,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 13,
+      "phase": "develop",
+      "timestamp": "2026-09-11T13:13:11.000Z",
+      "summary": "saveQuickAmount() (home-screen '실제 금액 입력' quick-entry card for 변동/varying-category recurring items) wrote directly into r.edits[date]={amount} and showed a plain, non-reversible toast, even though recSave()'s scope='one' path performs the exact same mutation and was just given twGuard+undoToast in the immediately preceding cycle (12) — a genuine inconsistency between two near-identical code paths. Fixed by having saveQuickAmount capture the previous edits[date] value and call undoToast(...) with a restore/delete undo function, mirroring recSave's pattern exactly (index.html, function saveQuickAmount, near line 4643). Added 4 new regression tests to test/run.js (fresh-entry+undo, overwrite+undo, empty-amount no-op, tutorial-mode guard) — 73/73 tests pass (was 69/69). Both inline <script> blocks verified to parse via node --check. APP_VERSION 1.19.10->1.19.11, sw.js CACHE v53->v54 (patch bump, bug fix).",
+      "commit": "48e966a"
+    },
     {
       "cycle": 12,
       "phase": "advance",
@@ -65,13 +72,6 @@
       "timestamp": "2026-09-10T17:30:00+00:00",
       "summary": "Reviewed commit 8121371 (yearly recDates() Feb-29 clamp fix). Traced through the rewritten loop by hand: mo/day are captured once from rs, d2=Math.min(day,lastDay(y,mo)) correctly clamps per-year (lastDay(y,m)=new Date(y,m,0).getDate() is the same helper already used by the monthly branch and addMonths()), the break condition new Date(y,mo-1,d2)>end terminates since the constructed date strictly increases with y, and ds>=r.startDate/push()'s own from/to/endDate bounds are unchanged from before so windowing behavior is preserved. Checked all 5 call sites of recDates() (index.html:1705,1725,1730,2511,4573) — all consume the returned array the same way as before (forEach/.length/direct array use), so the return type/shape didn't change. Re-ran the regression suite (45/45 pass) and re-validated both inline <script> blocks parse via new Function(). No bugs found — no code changes this phase. Also backfilled the cycle 8 develop history entry's commit hash (was null, actual is 8121371).",
       "commit": null
-    },
-    {
-      "cycle": 5,
-      "phase": "review",
-      "timestamp": "2026-09-10T21:40:00+09:00",
-      "summary": "Reviewed commit 426cb47 (commaQty display fix) — this exact fix was independently implemented in parallel by two concurrent app-evolve runs (the cloud routine and a local run), both picking up the same banked candidate from cycle 4's critique notes at nearly the same time. Reconciled via `git merge origin/main` (not reset, to avoid discarding either side's work): kept origin's already-pushed implementation as canonical, and merged in the genuinely additive part of the local work — regression test coverage. While wiring commaQty into test/run.js, found and fixed a real, separate bug in the test harness itself: extractConst() preserved the leading 'const ' keyword, but Node's vm.runInContext() does not attach top-level const/let bindings to the context object (only function declarations and plain assignments do), so anything routed through CONSTS was silently unreachable as sandbox.<name>. Stripped the 'const ' prefix so extracted consts become plain global assignments. Added 'comma'/'commaQty' to CONSTS and 3 new test cases. All 18 tests now pass. Lesson recorded for future concurrent-execution cycles: check git fetch/log origin/main immediately before push, prefer git merge over reset --hard (which the permission classifier blocks anyway).",
-      "commit": "ee97922"
     },
     {
       "cycle": 5,
