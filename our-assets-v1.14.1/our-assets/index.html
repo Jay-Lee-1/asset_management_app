@@ -1272,7 +1272,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.19.12';
+const APP_VERSION='1.19.13';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 
@@ -3054,12 +3054,16 @@ function filteredHist(){
  let list=allTxns(R.from,R.to);
  if(H.cat!=='전체')list=list.filter(t=>t.type===TYPEBYLABEL[H.cat]);
  const q=(H.q||'').trim();
- if(q)list=list.filter(t=>{
-   const fa=DB.assets.find(a=>a.id===t.fromAssetId),ta=DB.assets.find(a=>a.id===t.toAssetId);
-   return ((t.memo||'')+' '+t.category+' '+(fa?fa.name:assetNm(t.fromAssetId,t.fromAssetName))+' '+(ta?ta.name:assetNm(t.toAssetId,t.toAssetName))).includes(q);
- });
+ if(q)list=list.filter(t=>matchTxnQuery(t,q,DB.assets));
  _histCache={key,list};
  return list;
+}
+/* 메모·카테고리·자산명 검색을 대소문자 구분 없이 매칭(영문 메모/자산명 대비) */
+function matchTxnQuery(t,q,assets){
+ if(!q)return true;
+ const fa=(assets||[]).find(a=>a.id===t.fromAssetId),ta=(assets||[]).find(a=>a.id===t.toAssetId);
+ const hay=(t.memo||'')+' '+t.category+' '+(fa?fa.name:(t.fromAssetName||'—'))+' '+(ta?ta.name:(t.toAssetName||'—'));
+ return hay.toLowerCase().includes(q.toLowerCase());
 }
 /* 예정(미래·범위 안, 가까운 순) / 실제(오늘 이하, 최신순 기본) 분리 */
 function splitHist(list){

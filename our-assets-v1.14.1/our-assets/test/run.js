@@ -49,7 +49,7 @@ const FUNCTIONS = [
   'lastDay', 'addDays', 'shiftWeekend', 'recDates', 'addMonthsStr', 'addMonths',
   'recNthDate', 'recCountUntil', 'isVarCat', 'setCatVar', 'activeRecsForAssets',
   'num', 'doRenameCat', 'doDeleteCat', 'budgetProgress', 'totalBudgetSummary', 'addCat',
-  'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'esc',
+  'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'esc', 'matchTxnQuery',
   'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo',
   'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'restoreBackup',
 ];
@@ -474,6 +474,30 @@ test('txnsToCSV: 날짜 오름차순으로 정렬한다', () => {
   const lines = csv.slice(1).split('\r\n');
   assert.ok(lines[1].startsWith('2026-01-01'));
   assert.ok(lines[2].startsWith('2026-02-01'));
+});
+
+/* ---------- matchTxnQuery: 거래 검색은 대소문자를 구분하지 않는다 ---------- */
+test('matchTxnQuery: 빈 검색어는 항상 매칭된다', () => {
+  const t = { memo: '', category: '식비', fromAssetId: null, toAssetId: null };
+  assert.strictEqual(sandbox.matchTxnQuery(t, '', []), true);
+});
+test('matchTxnQuery: 메모가 대문자로 저장돼 있어도 소문자 검색어로 찾을 수 있다', () => {
+  const t = { memo: 'Coffee Shop', category: '식비', fromAssetId: null, toAssetId: null };
+  assert.strictEqual(sandbox.matchTxnQuery(t, 'coffee', []), true);
+});
+test('matchTxnQuery: 검색어가 대문자여도 소문자로 저장된 자산명을 찾을 수 있다', () => {
+  const assets = [{ id: 'a1', name: 'kakaobank' }];
+  const t = { memo: '', category: '이체', fromAssetId: 'a1', toAssetId: null };
+  assert.strictEqual(sandbox.matchTxnQuery(t, 'KAKAOBANK', assets), true);
+});
+test('matchTxnQuery: 삭제된 자산은 *AssetName 스냅샷으로 대소문자 구분 없이 매칭된다', () => {
+  const t = { memo: '', category: '이체', fromAssetId: 'gone', fromAssetName: 'OldBank', toAssetId: null };
+  assert.strictEqual(sandbox.matchTxnQuery(t, 'oldbank', []), true);
+});
+test('matchTxnQuery: 메모/카테고리/자산명 어디에도 없으면 매칭되지 않는다', () => {
+  const assets = [{ id: 'a1', name: '우리은행' }];
+  const t = { memo: '점심', category: '식비', fromAssetId: 'a1', toAssetId: null };
+  assert.strictEqual(sandbox.matchTxnQuery(t, 'xyz', assets), false);
 });
 
 /* ---------- esc: 저장형 XSS 방지 (asset/memo/category 등 사용자 입력값을 innerHTML에 넣기 전 이스케이프) ---------- */
