@@ -1,8 +1,15 @@
 {
   "cycle": 15,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 15,
+      "phase": "review",
+      "timestamp": "2026-09-11T23:10:27.459Z",
+      "summary": "Reviewed commit 3caf655 (recSave scope='future' split now inherits the original endDate/count instead of forcing endDate=null). Verified newBase={freq,day,startDate:ctx.date,weekend} is the correct base for recCountUntil(newBase,prevEnd) — matches saveRec's own eb pattern — and confirmed with count=7 for a 2026-06-05~2026-12-05 monthly-day-5 series. While tracing it, found the sibling half of the same truncation was still broken: r.endDate=addDays(ctx.date,-1) on the ORIGINAL (pre-split) record was never paired with a recomputed r.count, breaking the endDate/count sync invariant that saveRec()/_applyCount()/recOpenEnd() maintain everywhere else in the file. Confirmed via a fresh grep of recDates() that count is never read for actual date generation (purely a UI display cache for the end-condition hint text), so this was cosmetic, not a scheduling bug — but re-opening the edit sheet on the truncated original record would show a stale, too-large count next to its new (shorter) endDate, and resaving without touching either field would persist the mismatch. Fixed by recomputing r.count right after truncating r.endDate (same recCountUntil call, using r's own startDate/freq/day/weekend), and restoring the pre-split r.count in the undo closure alongside r.endDate. Extended the existing scope='future' regression test with an initial count:12 and assertions that r.count becomes 5 after the split (2026-01-05~2026-06-04 monthly day 5) and is restored to 12 on undo. 87/87 tests pass (no new test count change — extended an existing test rather than adding one). Both inline <script> blocks verified to parse via new Function(). APP_VERSION 1.20.1->1.20.2, sw.js CACHE v58->v59 (patch bump, bug fix).",
+      "commit": null
+    },
     {
       "cycle": 15,
       "phase": "develop",
@@ -135,13 +142,6 @@
       "timestamp": "2026-09-10T22:30:00+09:00",
       "summary": "Implemented cycle 5's critique plan: connected the previously-dead DB.budgets scaffolding to a real feature by extending the existing openSpendAnalysis() ('지출 분석') sheet instead of building a new screen. Tapping a category row now opens openBudgetPrompt(idx), which reads/writes DB.budgets[category] via saveBudget()/delBudget(). Extracted the percentage math into a pure budgetProgress(spent,budget) helper: when a budget is set, the row's progress bar switches from 'share of total spend' to 'usage vs budget' (clamped to 100% width so the bar never overflows), turns from --brand to --expense once spending exceeds the budget, and the amount/percentage text also gets the --expense highlight; categories with no budget keep today's total-share behavior unchanged. doRenameCat() now migrates DB.budgets[old]->DB.budgets[new] on expense-category rename, mirroring the existing catIcon/catVar migration pattern (delCat leaves orphaned budget entries alone, same as it already does for catIcon/catVar). Added 6 new regression tests (budgetProgress edge cases including the 0-budget divide-by-zero guard and the >100% clamp, plus the rename-migrates-budget case) — all 24 tests pass. Bumped APP_VERSION 1.17.3->1.17.4 and sw.js CACHE v38->v39.",
       "commit": "af5cd70"
-    },
-    {
-      "cycle": 6,
-      "phase": "develop",
-      "timestamp": "2026-09-10T23:00:00+09:00",
-      "summary": "delCat(k,i) only spliced the category out of DB.categories[k] but never cleaned up DB.catIcon[catKey(k,c)], DB.catVar[catKey(k,c)], or (for expense) DB.budgets[c] — the exact same class of orphaned-parallel-map bug that doRenameCat already had to fix for rename, but delete was never given the same treatment. Since catKey is purely name-based, deleting a category (e.g. '커피' with a custom icon, a '변동' flag, and a 30,000원 budget) and later re-adding one with the same name silently inherited the old icon/variable-flag/budget the user never set. Extracted the deletion body into doDeleteCat(k,i), mirroring doRenameCat's migration pattern, which now also deletes the catIcon/catVar entries and (for k==='expense') the budgets entry for the deleted category name; delCat() just calls it inside the existing confirmSheet callback. Added 3 new regression tests to test/run.js (icon/var/budget cleanup on delete, no inheritance on same-name re-add, and a guard that non-expense types don't touch DB.budgets) — all 27 tests pass. Verified both inline <script> blocks still parse via `new Function()`. Bumped APP_VERSION 1.17.4→1.17.5 and sw.js CACHE v39→v40.",
-      "commit": "6aba2c4"
     }
   ]
 }
