@@ -1,8 +1,15 @@
 {
   "cycle": 11,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 11,
+      "phase": "review",
+      "timestamp": "2026-09-11T05:30:00.000Z",
+      "summary": "Reviewed commit a9239e2 (deleteRecsUndo — routes delRecConfirm() and recApply(mode='delete',scope='all') through the same twGuard+undo infra as deleteTxnsUndo/deleteAssetsUndo). Verified deleteRecsUndo(ids) (index.html:4878) gates on twGuard() first, snapshots removed recurrences via DB.recurrences.filter before removing them, and its undo callback re-pushes the same object references and re-saves -- identical shape to deleteTxnsUndo. Confirmed both call sites match the existing delTx/delAdjust closeSheet-then-delete ordering (confirmSheet's own OK button already calls closeSheet() before invoking the delRecConfirm callback; recApply's own closeSheet() call precedes deleteRecsUndo(), same as before the change). Grepped every remaining DB.recurrences write site and confirmed no other direct-filter delete path bypasses deleteRecsUndo -- recApply's 'one'/'future' scopes are genuinely partial edits (skip-push / endDate pull-in), not deletes, so correctly left untouched. Re-ran the regression suite (58/58 pass) and re-verified both inline <script> blocks parse via new Function(). No bugs found -- no code changes this phase.",
+      "commit": null
+    },
     {
       "cycle": 11,
       "phase": "develop",
