@@ -1,8 +1,19 @@
 {
   "cycle": 13,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "데이터 복원(JSON import)/클라우드 강제 push에 검증+되돌리기(undo) 안전망 추가",
+    "why": "importFile change 핸들러(index.html:4085-4092)는 obj.assets && obj.txns가 truthy인지만 확인하고(배열 여부조차 검증 안 함) 바로 DB=obj로 전체 교체 — 확인창에 '이 작업은 되돌릴 수 없어요'라고 명시돼 있을 만큼 실제로 되돌릴 방법이 없다. resolveCloudForcePush()(index.html:1576)도 로컬 데이터로 클라우드 사본을 그대로 덮어쓰며 사전 스냅샷이 없다. 반면 이번 로테이션에서 delTx/delAdjust/delAsset/recApply/recSave/saveQuickAmount 등 모든 삭제·수정 경로는 이미 undoToast() 패턴으로 통일됐는데, 이 두 개의 '전체 DB 교체'라는 가장 파괴적인 경로만 예외로 남아있다. CSV export(과거 계획)는 이미 txnsToCSV()로 구현 완료된 것을 확인했으므로 재제안하지 않음.",
+    "approach": "1) importFile 핸들러(4085-4092)의 검증을 Array.isArray(obj.assets)/Array.isArray(obj.txns) 체크로 강화하고 실패 시 구체적인 toast 메시지로 구분. 2) DB=obj 대입 직전에 const prev=JSON.parse(JSON.stringify(DB))로 스냅샷을 뜨고, plain toast 대신 undoToast('데이터를 복원했어요', ()=>{DB=prev;save();invalidateBalances();renderCurrent()})로 교체(undoToast는 index.html:4888에 이미 존재, deleteTxnsUndo 등과 동일 패턴). 3) resolveCloudForcePush()(1576)도 push 전에 로컬 DB 스냅샷을 떠서 동일하게 undo 가능하게 하되, 클라우드는 이미 덮어써진 뒤이므로 undo 콜백은 로컬 상태 복원 후 재-push하는 방식임을 주석으로 명시(비대칭성 문서화). 4) migrate()(1635)를 try/catch로 감싸 복원된 obj가 부분적으로 손상돼 migrate 도중 throw하더라도 DB가 절반만 마이그레이션된 상태로 남지 않고 prev 스냅샷으로 롤백되도록 한다. 5) test/run.js에 회귀 테스트 추가: (a) assets/txns가 배열이 아닌 JSON은 DB 변경 없이 거부, (b) 정상 백업 복원 후 undo 시 원래 DB와 deep-equal, (c) resolveCloudForcePush 스냅샷/undo 왕복, (d) 손상된 obj로 migrate()가 throw할 때 DB가 오염되지 않고 prev로 롤백됨. build/lint 없음, 테스트만 실행. APP_VERSION/sw.js CACHE 버전 bump 필요(버그 수정이므로 patch bump)."
+  },
   "history": [
+    {
+      "cycle": 13,
+      "phase": "critique",
+      "timestamp": "2026-09-11T16:10:43.542Z",
+      "summary": "전체 앱을 한 걸음 물러나 봤다(백그라운드 조사 에이전트 활용). CSV export는 cycle7 critique에서 계획했으나 cycle8 critique가 pending_advance_plan을 budget summary로 덮어써 유실된 줄 알았지만, 실제로는 txnsToCSV()(index.html:3997)로 이미 구현·배포되어 있음을 확인해 재제안하지 않았다. 대신 이번 로테이션에서 delTx/delAdjust/delAsset/recApply/recSave/saveQuickAmount 등 모든 개별 수정·삭제 경로가 undoToast()로 통일된 것과 대비되게, 가장 파괴적인 두 개의 'DB 전체 교체' 경로 — JSON 백업 복원(importFile change 핸들러, index.html:4085-4092: obj.assets/obj.txns가 truthy인지만 확인하고 바로 DB=obj, 확인창에 '되돌릴 수 없어요'라고 명시)와 클라우드 강제 push(resolveCloudForcePush(), index.html:1576) — 는 스키마 검증도 얕고 되돌리기 수단도 전혀 없음을 확인했다. 후보로 검토했지만 기각한 것들: 클라우드 동기화의 last-write-wins/수동 충돌 해결(이미 CLOUD_SYNC_STATE로 사용자에게 노출되고 있어 별도 UX가 있음, 범위가 큼); 로컬 djb2 해시(Supabase 미설정 시의 폴백 경로로 여전히 라이브이긴 하나 로컬 전용이라 위험 낮고 반복적으로 후순위); 접근성 격차(onclick 213건 대비 aria-label 11건, 여전히 실재하지만 산발적이라 전담 스윕이 더 적합, cycle9에서도 같은 이유로 러너업 처리됨). 코드 변경 없음 — pending_advance_plan에 백업 복원/클라우드 강제 push 검증+undo 계획을 적어둠.",
+      "commit": null
+    },
     {
       "cycle": 13,
       "phase": "review",
@@ -134,13 +145,6 @@
       "phase": "review",
       "timestamp": "2026-09-10T13:20:00+00:00",
       "summary": "Reviewed commit efe88da (addCat duplicate-name toast fix). Confirmed the early-return guard matches addOwner/doRenameCat's existing pattern exactly, verified the icon-overwrite side effect is genuinely fixed (function now returns before touching DB.catIcon), checked there's no other code path that calls DB.categories[k].push() bypassing addCat, and confirmed migrate() always initializes DB.categories[k] as an array so .includes() is never called on undefined. Re-ran the regression suite (37/37 pass) and re-validated both inline <script> blocks parse via new Function(). No bugs found — no code changes this phase.",
-      "commit": null
-    },
-    {
-      "cycle": 7,
-      "phase": "critique",
-      "timestamp": "2026-09-10T22:10:00+09:00",
-      "summary": "Stepped back to look at the whole app rather than the last commit. Data export is JSON-backup-only: exportData()/doExport() (index.html ~3956-4015) produce a full-DB JSON blob meant purely for restoring into this same app — confirmed via grep that 'csv'/'CSV' appear zero times anywhere in index.html. There is no way to get transaction history into a spreadsheet, which is a normal thing to want from a finance tracker and was already flagged as a runner-up in cycle 6's critique (still untouched). Checked other suspects first and ruled them out as either already solid or not scoped for one cycle: delAsset() already snapshots asset names into txns/recurrences and has a relink path for re-added same-name assets (no orphan bug there, unlike the delCat bug fixed in cycle 6); importData() already validates obj.assets/obj.txns before replacing DB and calls migrate() after; the history search/filter UI (histQ, ST.hist) is already implemented, not a stub. Accessibility (still ~5 aria/role/alt/tabindex hits total) and the unsalted djb2 local-auth hash remain real but diffuse/low-priority runner-ups, same as last cycle. Picked CSV export because the JSON export's share/download/copy-fallback plumbing already exists and can be reused as-is for a new payload — a 'connect infra to a new capability' shape that fits one advance cycle, plus it has genuine pure-function surface (CSV field escaping for commas/quotes/newlines in free-text memos) worth regression-testing. No code changed this phase — wrote the CSV-export plan to pending_advance_plan for the next advance cycle.",
       "commit": null
     }
   ]
