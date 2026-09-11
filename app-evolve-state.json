@@ -1,8 +1,15 @@
 {
   "cycle": 10,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 10,
+      "phase": "review",
+      "timestamp": "2026-09-11T01:30:00.000Z",
+      "summary": "Reviewed commit 7c3c59f (delTx now routes through deleteTxnsUndo instead of hand-rolled filter+plain-toast). Verified deleteTxnsUndo(ids) (index.html:4876) correctly gates on twGuard() first, snapshots the removed row via DB.txns.filter before removing it, and its undo callback re-pushes the exact same object reference and re-saves -- so a single-item delete now gets the identical 6-second undo affordance bulk delete already had, with no behavior change to the tutorial-mode guard bypass risk (delTx previously skipped twGuard entirely; now it doesn't, which is the intended fix, not a side effect to worry about). Confirmed delTx's only call site (the ledger row detail sheet's delete button, index.html:2793) passes a single id and expects no return value, which still holds. Checked deleteTxnsUndo has no other caller whose behavior could be altered by delTx now sharing it (ledgerDelSel/histDelSel are the only other callers, unaffected). Re-ran the regression suite (54/54 pass) and re-verified both inline <script> blocks parse via new Function(). No bugs found -- no code changes this phase.",
+      "commit": null
+    },
     {
       "cycle": 9,
       "phase": "develop",
@@ -37,13 +44,6 @@
       "timestamp": "2026-09-10T00:00:00+00:00",
       "summary": "Fixed a real date-drift bug in recDates()'s yearly branch (index.html): it advanced occurrences with cd.setFullYear(cd.getFullYear()+1) on a native Date object, so a yearly recurrence starting on Feb 29 (e.g. an annual insurance premium or subscription) silently rolled over to Mar 1 on its first anniversary in a non-leap year and then stayed on Mar 1 forever, never returning to Feb 29 even in the next leap year — a genuine, permanent, one-time date corruption the user never asked for. This is the same class of month-end rollover bug the monthly branch right above it and addMonths() already guard against via Math.min(day,lastDay(y,m)) clamping (with an explicit '일자 롤오버 방지' comment at index.html:3071), but the yearly branch had never been given the same treatment. Rewrote the yearly branch to compute year/month/day explicitly and clamp the day via lastDay(y,mo) each iteration, mirroring the existing addMonths()/monthly-branch pattern instead of relying on Date rollover semantics — so a Feb-29 start now clamps to Feb 28 in non-leap years and correctly returns to Feb 29 in the next leap year. Added 3 new regression tests to test/run.js (permanent-drift-to-Mar-1 is fixed and clamps to 2/28 across 3 non-leap years, returns to 2/29 in the next leap year 2028, and a plain non-Feb-29 yearly date like 6/15 is unaffected and stays exact every year) — all 45 tests pass. Verified both inline <script> blocks still parse via new Function(). Bumped APP_VERSION 1.19.0→1.19.1 and sw.js CACHE v43→v44 (patch bump, bug fix).",
       "commit": "8121371"
-    },
-    {
-      "cycle": 5,
-      "phase": "develop",
-      "timestamp": "2026-09-10T21:15:00+09:00",
-      "summary": "Implemented the banked candidate from cycle 4's critique: assetSubline() was rounding fractional a.fxAmount/a.stockQty to integers via comma() (Math.round), while assetEval() already uses the unrounded values for net-worth totals — so a holding like 0.5주 or USD 123.45 would silently show as 0주/USD 123 in the asset list despite the true value being counted correctly in 총자산. Added commaQty(n): integers via comma(), non-integers via toLocaleString with maximumFractionDigits:4, matching how a.goldDon was already shown unrounded. Used it in assetSubline() for fxAmount/stockQty. Bumped APP_VERSION 1.17.2→1.17.3 and sw.js CACHE v37→v38.",
-      "commit": "426cb47"
     },
     {
       "cycle": 5,
