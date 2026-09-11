@@ -1,8 +1,19 @@
 {
   "cycle": 11,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "Make the four standalone toggle switches keyboard- and screen-reader-operable",
+    "why": "index.html의 4곳(2457: 자산 '총자산에 포함', 2881: 조정 내역 '수지에 포함', 2973: 반복 이체 '자동 확인', 3717: 시세 '자동 갱신')이 <span class=\"switch\" onclick=...>로만 렌더링돼 tabindex/role/aria-checked가 전혀 없다. span은 기본적으로 포커스도 키보드 활성화도 안 되므로, 이 네 개는 앱에서 마우스/터치 없이는 아예 조작 불가능한 유일한 컨트롤이다(cycle9는 라벨 누락만 고쳤지, 이건 조작 자체가 불가능한 더 심한 케이스). 모두 실질적인 상태를 게이팅한다(순자산 포함 여부, 월 수지 포함 여부, 이체 자동확인, 시세 자동갱신).",
+    "approach": "1) 각 <span class=\"switch ...\">를 <button type=\"button\" class=\"switch ...\">로 변경(네이티브 포커스+Enter/Space 활성화, UA 기본 스타일 리셋 필요시 border:0;background:none;padding:0 추가). 2) 렌더 시 role=\"switch\"와 aria-checked=\"${state?'true':'false'}\"를 기존에 이미 계산돼 있는 on/off 상태(d.includeInTotal, t.inSurplus, d.autoConfirm!==false, DB.settings.autoRates)로 템플릿. 3) 시각 라벨이 없으므로 aria-label 추가(예: '총자산에 포함', '수지에 포함', '이체 자동 확인', '10분마다 자동 갱신'). 4) 기존 inline onclick 핸들러의 this.classList.toggle('on') 옆에 this.setAttribute('aria-checked', this.classList.contains('on')) 한 줄씩 추가. 5) menu-item 버튼 안에 이미 들어있는 나머지 .switch 인스턴스(~3402/3429)도 부모가 이미 버튼이라 키보드 도달은 되지만, 일관성을 위해 aria-checked만 같이 추가. 6) 수동 테스트: 자산 등록/수정, 잔액 조정, 반복 설정, 시세 연동 관리 시트에서 Tab으로 이동 후 Space/Enter로 토글되고 시각 상태와 aria-checked가 같이 바뀌는지 확인. build/test: node --check로 두 인라인 <script> 파싱 확인, node test/run.js 회귀 통과 확인(순수 로직 미변경이라 새 테스트 불필요할 가능성 높음)."
+  },
   "history": [
+    {
+      "cycle": 11,
+      "phase": "critique",
+      "timestamp": "2026-09-11T07:11:18.908Z",
+      "summary": "전체 앱을 한 걸음 물러나 봤다(백그라운드 조사 에이전트 활용, 이미 고쳐진 항목들은 제외하고 재조사). 발견: index.html의 네 개 독립 토글 스위치(2457줄 자산 \"총자산에 포함\", 2881줄 조정 내역 \"수지에 포함\", 2973줄 반복 이체 \"자동 확인\", 3717줄 시세 \"자동 갱신\")가 <span class=\"switch\" onclick=...>로만 구현돼 tabindex/role/aria-checked가 전혀 없음을 확인 -- span은 기본적으로 포커스도 키보드 활성화도 안 되므로 마우스/터치 없이는 아예 조작이 불가능한, cycle9에서 고친 라벨 누락보다 더 심한 케이스. 함께 검토했지만 기각한 후보: 로컬 탭 간 storage 이벤트 미구현(멀티탭은 소수 사용 케이스라 범위가 덜 명확함), saveTx()의 금액 검증(num()이 이미 비숫자를 걸러내므로 실제 버그 아님). 코드 변경 없음 -- pending_advance_plan에 토글 스위치 접근성 계획을 적어둠.",
+      "commit": null
+    },
     {
       "cycle": 11,
       "phase": "review",
@@ -134,20 +145,6 @@
       "phase": "critique",
       "timestamp": "2026-09-10T22:10:00+09:00",
       "summary": "Stepped back to look at the whole app rather than the last commit. Data export is JSON-backup-only: exportData()/doExport() (index.html ~3956-4015) produce a full-DB JSON blob meant purely for restoring into this same app — confirmed via grep that 'csv'/'CSV' appear zero times anywhere in index.html. There is no way to get transaction history into a spreadsheet, which is a normal thing to want from a finance tracker and was already flagged as a runner-up in cycle 6's critique (still untouched). Checked other suspects first and ruled them out as either already solid or not scoped for one cycle: delAsset() already snapshots asset names into txns/recurrences and has a relink path for re-added same-name assets (no orphan bug there, unlike the delCat bug fixed in cycle 6); importData() already validates obj.assets/obj.txns before replacing DB and calls migrate() after; the history search/filter UI (histQ, ST.hist) is already implemented, not a stub. Accessibility (still ~5 aria/role/alt/tabindex hits total) and the unsalted djb2 local-auth hash remain real but diffuse/low-priority runner-ups, same as last cycle. Picked CSV export because the JSON export's share/download/copy-fallback plumbing already exists and can be reused as-is for a new payload — a 'connect infra to a new capability' shape that fits one advance cycle, plus it has genuine pure-function surface (CSV field escaping for commas/quotes/newlines in free-text memos) worth regression-testing. No code changed this phase — wrote the CSV-export plan to pending_advance_plan for the next advance cycle.",
-      "commit": null
-    },
-    {
-      "cycle": 7,
-      "phase": "advance",
-      "timestamp": "2026-09-10T00:00:00+00:00",
-      "summary": "Implemented cycle 7's critique plan: added transaction-history CSV export alongside the existing JSON backup. Added a pure txnsToCSV(txns,assets) function (RFC4180 field escaping — quotes any field containing a comma/quote/newline and doubles embedded quotes; UTF-8 BOM prepended so Excel renders 한글 correctly; resolves fromAssetId/toAssetId to names via the assets array, falling back to the fromAssetName/toAssetName snapshot fields for deleted assets, same pattern assetNm() already uses; sorted by date ascending). Wired it into exportData() as a third button ('거래 내역 CSV로 내보내기') that picks share vs. download automatically based on device capability, reusing doExport()'s existing branching — generalized doExport(mode) to doExport(mode,kind) so both JSON and CSV share the same share/download/copy-fallback code paths, without touching or renaming the existing JSON backup path. The CSV path does not update DB.settings.lastExport/backupSnooze since that nag tracking is specific to the JSON-restore backup, not this. Also parameterized openCopyBackup()'s title/note text (via an optional override arg, JSON behavior unchanged when omitted) so the last-resort copy-to-clipboard fallback shows CSV-appropriate guidance ('.csv 파일로 저장') instead of the JSON-restore wording when it's the CSV export that failed to share/download. Caught and fixed a self-introduced syntax bug during implementation (a stray closing backtick that terminated the exportData() template literal early) by re-verifying both inline <script> blocks parse via vm.Script before committing — this is exactly the class of bug that check exists to catch. Added 5 new regression tests for txnsToCSV (empty-list header-only output, comma-in-memo quoting, double-quote-in-memo escaping, live-asset vs. deleted-asset-snapshot-name resolution, date-ascending sort) — all 42 tests pass. Bumped APP_VERSION 1.18.1→1.19.0 (minor, new feature) and sw.js CACHE v42→v43.",
-      "commit": null
-    },
-    {
-      "cycle": 9,
-      "phase": "critique",
-      "timestamp": "2026-09-10T22:20:00.000Z",
-      "summary": "Stepped back from the last commit to look at the whole app. Found a genuine, previously-unflagged security gap: no esc()/escapeHtml() helper exists anywhere in index.html, and user-controlled strings (asset names, transaction/recurrence memos) are interpolated raw into innerHTML template literals across ~20-25 render sites (verified e.g. at asset list rows ~2236/2241 rendering ${a.name} unescaped, and ledger/history/plan rows rendering ${t.memo||t.category}). A few form value= attributes already guard with an ad-hoc .replace(/\"/g,'&quot;') (line 2964 and others), showing the team knows the risk but applied it narrowly and only for the attribute-breaking case, not general stored-XSS. This is a stored XSS: a malicious asset name or memo (e.g. via a tampered JSON backup import) persists to DB and re-executes on every render of Home/Assets/Ledger/History/Plan, with full DOM access to localStorage/Supabase session tokens. Ruled out other candidates first: cloud sync conflict handling (pushCloud/pullCloud) already has solid updated_at-based conflict detection and resolution UI; rate-fetch error handling (syncRates) already has per-source fail flags, failStreak, and toasts; single-item/recurrence delete lack undo (bulk delete has it) but this is minor UX polish, not as severe as the XSS gap. No code changed this phase (critique doesn't implement) -- wrote the escaping plan to pending_advance_plan for the next advance cycle.",
       "commit": null
     }
   ]
