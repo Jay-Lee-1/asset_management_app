@@ -1,8 +1,15 @@
 {
   "cycle": 11,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 11,
+      "phase": "develop",
+      "timestamp": "2026-09-11T05:00:00.000Z",
+      "summary": "delRecConfirm(id) (index.html:3020, 반복 내역 관리 화면의 삭제 버튼)와 recApply(mode='delete',scope='all') (index.html:2904-2908, 원장/히스토리에서 특정 반복 인스턴스를 탭해 '전체' 범위로 삭제하는 경로)가 delTx/delAdjust가 cycle9-10에서 이미 고친 것과 정확히 같은 버그 패턴을 갖고 있었다: DB.recurrences를 직접 filter로 지우고 되돌리기 없는 plain toast만 보여줘 twGuard(튜토리얼 가드)도 건너뛰었다. deleteTxnsUndo/deleteAssetsUndo와 같은 자리(4875줄 부근)에 deleteRecsUndo(ids)를 새로 추가해(twGuard 체크 + 6초 undo 토스트 + 복원 콜백) 두 진입점 모두 이걸 쓰도록 통일했다. recApply의 나머지 두 scope('one'=해당 날짜만 skip, 'future'=종료일만 당김)는 전체 삭제가 아니라 부분 수정이라 범위가 달라 이번 사이클에서는 건드리지 않음(다음 critique 후보로 남을 수 있음). test/run.js에 deleteRecsUndo를 추출 대상에 추가하고 삭제+undo 복원, 튜토리얼 중 삭제 차단 케이스 2개 추가 -- 58/58 테스트 통과. 두 인라인 <script> 블록 모두 new Function()으로 파싱 확인. APP_VERSION 1.19.6->1.19.7, sw.js CACHE v49->v50 (patch bump, bug fix).",
+      "commit": null
+    },
     {
       "cycle": 10,
       "phase": "advance",
@@ -134,13 +141,6 @@
       "phase": "critique",
       "timestamp": "2026-09-10T22:20:00.000Z",
       "summary": "Stepped back from the last commit to look at the whole app. Found a genuine, previously-unflagged security gap: no esc()/escapeHtml() helper exists anywhere in index.html, and user-controlled strings (asset names, transaction/recurrence memos) are interpolated raw into innerHTML template literals across ~20-25 render sites (verified e.g. at asset list rows ~2236/2241 rendering ${a.name} unescaped, and ledger/history/plan rows rendering ${t.memo||t.category}). A few form value= attributes already guard with an ad-hoc .replace(/\"/g,'&quot;') (line 2964 and others), showing the team knows the risk but applied it narrowly and only for the attribute-breaking case, not general stored-XSS. This is a stored XSS: a malicious asset name or memo (e.g. via a tampered JSON backup import) persists to DB and re-executes on every render of Home/Assets/Ledger/History/Plan, with full DOM access to localStorage/Supabase session tokens. Ruled out other candidates first: cloud sync conflict handling (pushCloud/pullCloud) already has solid updated_at-based conflict detection and resolution UI; rate-fetch error handling (syncRates) already has per-source fail flags, failStreak, and toasts; single-item/recurrence delete lack undo (bulk delete has it) but this is minor UX polish, not as severe as the XSS gap. No code changed this phase (critique doesn't implement) -- wrote the escaping plan to pending_advance_plan for the next advance cycle.",
-      "commit": null
-    },
-    {
-      "cycle": 9,
-      "phase": "advance",
-      "timestamp": "2026-09-11T00:00:00Z",
-      "summary": "Implemented cycle 9's critique plan: added esc(s), a small HTML-entity-escaping helper (escapes & < > \" ') placed next to the other lightweight utils (comma/commaQty/won), defined as a plain function (not const) so the existing brace-matching extractFunction() test-harness path can pull it in cleanly -- an earlier const-arrow version broke the naive semicolon-based extractConst() because the entity strings themselves contain literal ';' (e.g. '&amp;'), so it was rewritten as function esc(s){...} instead. Wrapped esc(...) around every user-controlled string found interpolated raw into an innerHTML template literal: asset names (list rows, delete/tidy/maturity confirms, rate sheet, asset picker, asset form name/code inputs, owner field), transaction/recurrence memo-or-category across ledger, history, plan, next-big-outflow card, month-outflow rows, quick-amount sheets and home alerts, category names in category-manage rows, category picker, spend-analysis rows and budget-prompt titles, and owner names in owner-manage rows/rename sheet. Also escaped at two shared sinks that funnel arbitrary text into innerHTML for every caller -- toast(msg) and undoToast(msg) -- so every existing and future toast()/undoToast() call site is covered without having to touch each call individually (verified no existing call site intentionally passes real HTML markup, so this doesn't change any legitimate behavior). Left the existing ad-hoc `.replace(/\"/g,'&quot;')` guards on a few *value=* attributes as-is (smaller diff, already safe for the attribute-breakout case) except where a plain esc() call was equally small and more consistent (asName/asCode/rMemo-style inputs newly touched in this pass). Added esc to test/run.js's FUNCTIONS extraction list plus 5 new regression tests (escapes <script> tags, breaks out of quote/attribute context safely, escapes &, leaves plain text unchanged, treats null/undefined as empty string) -- all 54 tests pass. Verified both inline <script> blocks still parse via new Function(). Bumped APP_VERSION 1.19.3->1.19.4 and sw.js CACHE v46->v47 (patch bump, security fix).",
       "commit": null
     }
   ]

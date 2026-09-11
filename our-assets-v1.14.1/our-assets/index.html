@@ -1271,7 +1271,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.19.6';
+const APP_VERSION='1.19.7';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 
@@ -2902,10 +2902,9 @@ function recEditScope(recId,date,mode){
 function recApply(recId,date,mode,scope){
  const r=DB.recurrences.find(x=>x.id===recId);
  if(mode==='delete'){
-  if(scope==='one'){r.skip.push(date)}
-  else if(scope==='future'){r.endDate=addDays(date,-1)}
-  else{DB.recurrences=DB.recurrences.filter(x=>x.id!==recId)}
-  save();closeSheet();renderCurrent();toast('삭제했어요');return;
+  if(scope==='one'){r.skip.push(date);save();closeSheet();renderCurrent();toast('삭제했어요');return}
+  if(scope==='future'){r.endDate=addDays(date,-1);save();closeSheet();renderCurrent();toast('삭제했어요');return}
+  closeSheet();deleteRecsUndo(new Set([recId]));return;
  }
  const ed=(r.edits||{})[date]||{};
  _formScroll=0;
@@ -3017,7 +3016,7 @@ function saveRec(){
  else{DB.recurrences.push(Object.assign({},d,{id:uid(),active:d.active!==false,skip:[],edits:{},autoConfirm:d.autoConfirm!==false,confirmedDates:[],varying:!!d.varying}))}
  save();closeSheet();renderCurrent();toast(wasEditing?'반복을 수정했어요':'반복 설정을 저장했어요');
 }
-function delRecConfirm(id){confirmSheet('반복 삭제','이 반복 내역을 삭제할까요? 앞으로 자동 기록이 중단돼요.','삭제',()=>{DB.recurrences=DB.recurrences.filter(x=>x.id!==id);save();renderCurrent();toast('반복을 삭제했어요')})}
+function delRecConfirm(id){confirmSheet('반복 삭제','이 반복 내역을 삭제할까요? 앞으로 자동 기록이 중단돼요.','삭제',()=>{deleteRecsUndo(new Set([id]))})}
 
 /* ================= HISTORY (전체 모드) ================= */
 const TYPEBYLABEL={'수입':'income','지출':'expense','이체':'transfer','저축':'saving'};
@@ -4876,6 +4875,9 @@ function undoToast(msg,undoFn){const t=document.createElement('div');t.className
 function deleteTxnsUndo(ids){if(twGuard())return;const removed=DB.txns.filter(t=>ids.has(t.id));
  DB.txns=DB.txns.filter(t=>!ids.has(t.id));save();renderCurrent();
  undoToast(`${removed.length}개 내역을 삭제했어요`,()=>{DB.txns.push(...removed);save();renderCurrent();toast('되돌렸어요')})}
+function deleteRecsUndo(ids){if(twGuard())return;const removed=DB.recurrences.filter(r=>ids.has(r.id));
+ DB.recurrences=DB.recurrences.filter(r=>!ids.has(r.id));save();renderCurrent();
+ undoToast(`${removed.length}개 반복 내역을 삭제했어요`,()=>{DB.recurrences.push(...removed);save();renderCurrent();toast('되돌렸어요')})}
 function deleteAssetsUndo(ids){if(twGuard())return;
  const recs=activeRecsForAssets(ids);
  ids.forEach(snapshotAssetName);const removed=DB.assets.filter(a=>ids.has(a.id));

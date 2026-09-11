@@ -50,7 +50,7 @@ const FUNCTIONS = [
   'recNthDate', 'recCountUntil', 'isVarCat', 'setCatVar', 'activeRecsForAssets',
   'num', 'doRenameCat', 'doDeleteCat', 'budgetProgress', 'totalBudgetSummary', 'addCat',
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'esc',
-  'twActive', 'twGuard', 'deleteTxnsUndo',
+  'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo',
 ];
 const CONSTS = ['catKey', 'comma', 'commaQty'];
 
@@ -498,6 +498,29 @@ test('deleteTxnsUndo: 튜토리얼 모드 중에는 twGuard가 막아서 실제�
   sandbox.DB = { txns: [t] };
   sandbox.deleteTxnsUndo(new Set(['x1']));
   assert.strictEqual(sandbox.DB.txns.length, 1, '튜토리얼 중에는 삭제가 막혀야 함');
+  sandbox.TWi = -1;
+});
+
+/* ---------- deleteRecsUndo: 반복 삭제(전체) 공용 되돌리기 인프라 (delRecConfirm/recApply 'all' scope) ---------- */
+test('deleteRecsUndo: 지정한 id의 반복을 삭제하고, undo 콜백을 부르면 정확히 복원한다', () => {
+  sandbox.TWi = -1;
+  const rec = { id: 'r1', category: '식비', amount: 1000 };
+  const other = { id: 'r2', category: '월세', amount: 500000 };
+  sandbox.DB = { recurrences: [rec, other] };
+  sandbox.lastUndo = null;
+  sandbox.deleteRecsUndo(new Set(['r1']));
+  assert.deepStrictEqual(sandbox.DB.recurrences, [other], '지정한 반복만 제거되어야 함');
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.recurrences.length, 2, '되돌리기를 부르면 삭제된 반복이 복원되어야 함');
+  assert.ok(sandbox.DB.recurrences.some(r => r.id === 'r1'), '삭제됐던 반복이 그대로 복원되어야 함');
+});
+test('deleteRecsUndo: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 삭제되지 않는다', () => {
+  sandbox.TWi = 0;
+  const rec = { id: 'r1', category: '식비', amount: 1000 };
+  sandbox.DB = { recurrences: [rec] };
+  sandbox.deleteRecsUndo(new Set(['r1']));
+  assert.strictEqual(sandbox.DB.recurrences.length, 1, '튜토리얼 중에는 삭제가 막혀야 함');
   sandbox.TWi = -1;
 });
 
