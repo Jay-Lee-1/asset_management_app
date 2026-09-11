@@ -1,13 +1,17 @@
 {
   "cycle": 12,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "recApply()/recSave()의 부분 수정 경로(scope='one'/'future')에 twGuard + undo 적용",
+    "why": "cycle11 develop에서 전체 삭제(scope='all')는 deleteRecsUndo로 통일했지만, 같은 함수의 나머지 두 경로는 의도적으로 남겨뒀다: recApply(mode='delete',scope='one'/'future') (index.html:2902-2903)는 twGuard() 없이 바로 r.skip.push(date)/r.endDate=addDays(date,-1) 후 save()하고 plain toast('삭제했어요')만 띄운다 -- 튜토리얼 중에도 실제로 DB에 반영되는 앱 유일의 구멍이고, 되돌리기도 없다. recSave() (index.html:2914-2922, '이 내역만'/'이 날부터 이후 모두'/'전체' 수정 확인 플로우)도 twGuard() 호출이 아예 없이 r.edits/r.endDate/새 분리 레코드/r.amount를 바로 덮어쓴다. 앱의 다른 모든 삭제(delTx/delAdjust/delAsset/전체 반복삭제)는 이미 twGuard+undoToast로 통일됐는데 이 두 부분 수정 경로만 예외로 남아있다.",
+    "approach": "1) recApply()와 recSave() 맨 앞에 if(twGuard())return; 추가. 2) recApply의 scope='one'/'future' delete 분기에서 plain toast('삭제했어요') 대신 undoToast()를 쓰도록 교체 -- r.skip push 전 배열 스냅샷, r.endDate 덮어쓰기 전 값 스냅샷을 떠서 deleteRecsUndo(index.html:4875)와 같은 스냅샷-복원 패턴으로 undo 콜백 작성. 3) recSave()의 세 분기(edits[date] 쓰기, endDate 잘라내고 새 레코드 push, r.amount 덮어쓰기)도 동일하게 수정 전 상태를 스냅샷해서 undoToast로 되돌릴 수 있게 한다. 기존 twGuard/undoToast 헬퍼만 재사용하며 새 인프라는 필요 없음, 두 함수 합쳐 약 20~30줄 변경 규모. test/run.js에 twGuard 튜토리얼 차단 케이스 및 undo 복원 케이스를 recApply/recSave 관련으로 추가."
+  },
   "history": [
     {
-      "cycle": 11,
-      "phase": "develop",
-      "timestamp": "2026-09-11T05:00:00.000Z",
-      "summary": "delRecConfirm(id) (index.html:3020, 반복 내역 관리 화면의 삭제 버튼)와 recApply(mode='delete',scope='all') (index.html:2904-2908, 원장/히스토리에서 특정 반복 인스턴스를 탭해 '전체' 범위로 삭제하는 경로)가 delTx/delAdjust가 cycle9-10에서 이미 고친 것과 정확히 같은 버그 패턴을 갖고 있었다: DB.recurrences를 직접 filter로 지우고 되돌리기 없는 plain toast만 보여줘 twGuard(튜토리얼 가드)도 건너뛰었다. deleteTxnsUndo/deleteAssetsUndo와 같은 자리(4875줄 부근)에 deleteRecsUndo(ids)를 새로 추가해(twGuard 체크 + 6초 undo 토스트 + 복원 콜백) 두 진입점 모두 이걸 쓰도록 통일했다. recApply의 나머지 두 scope('one'=해당 날짜만 skip, 'future'=종료일만 당김)는 전체 삭제가 아니라 부분 수정이라 범위가 달라 이번 사이클에서는 건드리지 않음(다음 critique 후보로 남을 수 있음). test/run.js에 deleteRecsUndo를 추출 대상에 추가하고 삭제+undo 복원, 튜토리얼 중 삭제 차단 케이스 2개 추가 -- 58/58 테스트 통과. 두 인라인 <script> 블록 모두 new Function()으로 파싱 확인. APP_VERSION 1.19.6->1.19.7, sw.js CACHE v49->v50 (patch bump, bug fix).",
+      "cycle": 12,
+      "phase": "critique",
+      "timestamp": "2026-09-11T12:00:00.000Z",
+      "summary": "전체 앱을 한 걸음 물러나 봤다(백그라운드 조사 에이전트 활용). cycle11 develop이 명시적으로 감사 보류해둔 recApply()의 부분 수정 경로(scope='one'/'future')를 확인한 결과, 실제로 twGuard(튜토리얼 가드) 없이 튜토리얼 중에도 DB에 실제로 반영되는 이 앱 유일의 구멍이었고, undoToast 없는 plain toast만 있어 되돌리기도 불가능했다. recSave()(반복 내역 수정 확인 플로우)도 twGuard 호출이 아예 없음을 확인. 이미 다른 모든 삭제 경로(delTx/delAdjust/delAsset/반복 전체삭제)가 twGuard+undoToast로 통일된 것과 대비되는 마지막 예외라 다음 advance 사이클 대상으로 선정. 후보로 검토했지만 기각한 것들: 로컬 인증 djb2 unsalted 해시(로컬 전용이라 실질 위험 낮음, 반복적으로 후순위 처리된 게 여전히 타당함); 폭넓은 접근성 격차(aria-label/role=switch 11건뿐, label 없는 input 다수, 여전히 실재하지만 산발적이라 한 사이클로 처리하기엔 범위가 넓음 -- 전담 접근성 스윕이 더 적합); 고아 코드/TODO(grep 결과 TODO/FIXME 0건, 근거 부족). 코드 변경 없음 -- pending_advance_plan에 recApply/recSave twGuard+undo 통일 계획을 적어둠.",
       "commit": null
     },
     {
