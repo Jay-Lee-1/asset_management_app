@@ -1271,7 +1271,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.19.3';
+const APP_VERSION='1.19.4';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 
@@ -1358,6 +1358,7 @@ const comma=n=>Math.round(n||0).toLocaleString('ko-KR');
 const commaQty=n=>Number.isInteger(n)?comma(n):(n||0).toLocaleString('ko-KR',{maximumFractionDigits:4}); /* 소수 보유수량(주식/외화)은 반올림하지 않고 그대로 표시 */
 const won=n=>(n<0?'-':'')+comma(Math.abs(n))+'원';
 const wonS=n=>(n>0?'+':n<0?'-':'')+comma(Math.abs(n))+'원';
+function esc(s){const m={'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'};return String(s==null?'':s).replace(/[&<>"']/g,c=>m[c])}
 function todayStr(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
 let TODAY=todayStr();
 function addDays(s,n){const d=new Date(s);d.setDate(d.getDate()+n);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
@@ -2233,12 +2234,12 @@ function assetBodyHTML(){
          return `<div class="asset-item${on?' sel-on':''}" onclick="assetToggleSel('${a.id}')">
            <div class="sel-check ${on?'on':''}">${svg('check')}</div>
            <div class="avatar ${ty.cls}">${svg(ty.icon)}</div>
-           <div style="flex:1;min-width:0"><div class="nm"><span class="nmt">${a.name}</span>${a.includeInTotal?'':'<span class="chipmini own-x">미포함</span>'}</div>
+           <div style="flex:1;min-width:0"><div class="nm"><span class="nmt">${esc(a.name)}</span>${a.includeInTotal?'':'<span class="chipmini own-x">미포함</span>'}</div>
              <div class="sub"><span class="chipmini own-${a.owner}">${a.owner}</span><span>${assetSubline(a)}</span></div></div>
            <div class="val"><div class="k num ${a.type==='debt'?'minus':''}">${won(val)}</div></div></div>`;}
        return `<div class="asset-item ${a.includeInTotal?'':'excl'}" data-id="${a.id}" data-lp="1" onclick="openAssetSheet('${a.id}')">
          <div class="avatar ${ty.cls}">${svg(ty.icon)}</div>
-         <div style="flex:1;min-width:0"><div class="nm"><span class="nmt">${a.name}</span>${a.includeInTotal?'':'<span class="chipmini own-x">미포함</span>'}</div>
+         <div style="flex:1;min-width:0"><div class="nm"><span class="nmt">${esc(a.name)}</span>${a.includeInTotal?'':'<span class="chipmini own-x">미포함</span>'}</div>
            <div class="sub"><span class="chipmini own-${a.owner}">${a.owner}</span><span>${assetSubline(a)}</span></div></div>
          <div class="val"><div class="k num ${a.type==='debt'?'minus':''}">${won(val)}</div>${showEval?'<div class="s">평가액</div>':''}</div></div>`;
      }).join('')+`</div>`;
@@ -2287,7 +2288,7 @@ function activeRecsForAssets(ids){
 }
 function delAsset(id){const a=DB.assets.find(x=>x.id===id);
  const recs=activeRecsForAssets(id);
- const msg=`'${a.name}'을(를) 삭제할까요? 되돌릴 수 없어요.`+(recs.length?` 연결된 반복거래 ${recs.length}개도 함께 비활성화돼요.`:'');
+ const msg=`'${esc(a.name)}'을(를) 삭제할까요? 되돌릴 수 없어요.`+(recs.length?` 연결된 반복거래 ${recs.length}개도 함께 비활성화돼요.`:'');
  confirmSheet('자산 삭제',msg,'삭제',()=>{
   snapshotAssetName(id); /* 내역/반복에 통장 이름을 남겨 출처 보존 */
   recs.forEach(r=>r.active=false); /* 미래 생성은 멈추고, 과거 발생분·스냅샷은 그대로 둔다 */
@@ -2357,7 +2358,7 @@ function askRelinkDeleted(d,entered,balType,balKey){
    save();closeSheet();renderCurrent();toast('자산을 등록했어요');
  };
  openSheet(`<h3>이전에 삭제한 자산이 있어요</h3>
-   <div class="desc" style="margin-bottom:20px">예전에 '<b>${d.name}</b>' (${ASSET_TYPES[d.type].label}) 자산을 삭제한 기록이 있어요.<br>그때의 <b>과거 내역을 이 자산에 다시 연결</b>할까요?</div>
+   <div class="desc" style="margin-bottom:20px">예전에 '<b>${esc(d.name)}</b>' (${ASSET_TYPES[d.type].label}) 자산을 삭제한 기록이 있어요.<br>그때의 <b>과거 내역을 이 자산에 다시 연결</b>할까요?</div>
    <button class="btn btn-primary" style="width:100%;margin-bottom:9px" onclick="closeSheet();_amLink&&_amLink()">이전 자산과 연동</button>
    <button class="btn btn-soft" style="width:100%;margin-bottom:9px" onclick="closeSheet();_amFresh&&_amFresh()">새 자산으로 시작</button>
    <button class="btn btn-soft cancel" style="width:100%" onclick="closeSheet()">취소</button>`);
@@ -2422,9 +2423,9 @@ function asOpenMat(){syncAssetInputs();openAssetPicker({current:asDraft.maturity
 function renderAssetSheet(editing){
  const d=asDraft;const ty=ASSET_TYPES[d.type];
  const typePick=`<div class="field"><label>자산 종류</label><button class="pick" onclick="asOpenType()"><div class="pav ${ty.cls}">${svg(ty.icon)}</div><div class="pbody"><div class="pn">${ty.label}</div></div><div class="pc">${svg('chevR')}</div></button></div>`;
- const ownerPick=`<div class="field"><label>귀속</label><button class="pick" onclick="asOpenOwner()"><div class="pav" style="background:var(--sunken);color:var(--text-2)">${svg('users')}</div><div class="pbody"><div class="pn">${d.owner}</div></div><div class="pc">${svg('chevR')}</div></button></div>`;
+ const ownerPick=`<div class="field"><label>귀속</label><button class="pick" onclick="asOpenOwner()"><div class="pav" style="background:var(--sunken);color:var(--text-2)">${svg('users')}</div><div class="pbody"><div class="pn">${esc(d.owner)}</div></div><div class="pc">${svg('chevR')}</div></button></div>`;
  let fields='';
- const nameField=`<div class="field"><label>이름</label><div class="field-clear"><input id="asName" value="${d.name||''}" placeholder="예: 우리은행 통장"><button type="button" class="fc-x" onclick="clrInput('asName')">✕</button></div></div>`;
+ const nameField=`<div class="field"><label>이름</label><div class="field-clear"><input id="asName" value="${esc(d.name||'')}" placeholder="예: 우리은행 통장"><button type="button" class="fc-x" onclick="clrInput('asName')">✕</button></div></div>`;
  if(['cash','savings','realestate','etc','pension','debt'].includes(d.type)){
    const lbl=d.type==='debt'?'부채 금액':(d.type==='cash'||d.type==='savings')?'현재 금액':d.type==='realestate'?'현재 평가액':'현재 금액';
    const key=(d.type==='cash'||d.type==='savings')?'baseAmount':'amountKRW';
@@ -2444,8 +2445,8 @@ function renderAssetSheet(editing){
    fields=nameField+`<div class="field"><label>보유 수량</label><div class="with-unit"><input id="asGold" class="num" inputmode="decimal" value="${d.goldDon||''}" placeholder="0"><span class="unit">돈</span></div></div>
      <p style="font-size:12.5px;color:var(--text-2);margin:-4px 0 14px">금 시세 ${comma(DB.rates.goldPerG)}원/g × 3.75g 기준으로 자동 계산돼요.</p>`;
  }else if(d.type==='stock'){
-   fields=`<div class="field"><label>종목명</label><div class="field-clear"><input id="asName" value="${d.name||''}" placeholder="예: 삼성전자"><button type="button" class="fc-x" onclick="clrInput('asName')">✕</button></div></div>
-     <div class="field"><label>종목코드</label><input id="asCode" value="${d.stockCode||''}" placeholder="국내 005930 · 해외 AAPL" autocapitalize="characters" oninput="this.value=this.value.toUpperCase()">
+   fields=`<div class="field"><label>종목명</label><div class="field-clear"><input id="asName" value="${esc(d.name||'')}" placeholder="예: 삼성전자"><button type="button" class="fc-x" onclick="clrInput('asName')">✕</button></div></div>
+     <div class="field"><label>종목코드</label><input id="asCode" value="${esc(d.stockCode||'')}" placeholder="국내 005930 · 해외 AAPL" autocapitalize="characters" oninput="this.value=this.value.toUpperCase()">
       <p style="font-size:12px;color:var(--text-3);margin-top:6px">국내는 6자리 숫자, 해외는 티커(AAPL·TSLA·NVDA)를 넣어주세요. 해외는 원화로 환산돼요.</p></div>
      <div class="field"><label>보유 주식 수</label><div class="with-unit"><input id="asQty" class="num" inputmode="decimal" value="${d.stockQty||''}" placeholder="0"><span class="unit">주</span></div></div>
      <p style="font-size:12.5px;color:var(--text-2);margin:-4px 0 14px">평가액 = 현재가 × 보유수량 (현재가는 시세 연동 관리에서 입력).</p>`;
@@ -2528,7 +2529,7 @@ function openOwnerManage(){
  openSheet(`<h3>귀속 관리</h3><div class="desc">자산 소유 구분이에요. 이름을 바꾸면 그 귀속의 자산도 함께 바뀌어요.</div>
   <div>${DB.owners.map((o,i)=>{const used=DB.assets.filter(a=>a.owner===o).length;
    return `<div class="manage-row"><div class="avatar" style="width:36px;height:36px;border-radius:11px;background:var(--sunken);color:var(--text-2)">${svg('users',18)}</div>
-    <div style="flex:1"><div class="mn">${o}</div><div class="msub">${used}개 자산</div></div>
+    <div style="flex:1"><div class="mn">${esc(o)}</div><div class="msub">${used}개 자산</div></div>
     <div class="row-acts"><button class="act-btn" onclick="renameOwnerSheet(${i})">${svg('edit')}</button><button class="act-btn danger" onclick="delOwner('${o}')">${svg('trash')}</button></div></div>`}).join('')}</div>
   <div class="add-inline"><input id="newOwner" placeholder="새 귀속 (예: 아이)"><button onclick="addOwner()">${svg('plus')}</button></div>
   <div style="height:14px"></div><button class="btn btn-primary" onclick="closeSheet()">완료</button>`);
@@ -2538,10 +2539,10 @@ function addOwner(){const v=$('newOwner').value.trim();if(!v)return;if(DB.owners
 function delOwner(o){if(DB.owners.length<=1){toast('귀속은 최소 1개가 필요해요');return}
  const used=DB.assets.filter(a=>a.owner===o).length;
  if(used){toast(`'${o}' 귀속을 쓰는 자산 ${used}개가 있어요`);return}
- confirmSheet('귀속 삭제',`'${o}' 귀속을 삭제할까요?`,'삭제',()=>{DB.owners=DB.owners.filter(x=>x!==o);save();openOwnerManage()});}
+ confirmSheet('귀속 삭제',`'${esc(o)}' 귀속을 삭제할까요?`,'삭제',()=>{DB.owners=DB.owners.filter(x=>x!==o);save();openOwnerManage()});}
 function renameOwnerSheet(i){const cur=DB.owners[i];
- openSheet(`<h3>귀속 이름 수정</h3><div class="desc">'${cur}'의 이름을 바꾸면 이 귀속의 자산도 함께 바뀌어요.</div>
-  <div class="field"><input id="renameOwner" value="${cur}"></div>
+ openSheet(`<h3>귀속 이름 수정</h3><div class="desc">'${esc(cur)}'의 이름을 바꾸면 이 귀속의 자산도 함께 바뀌어요.</div>
+  <div class="field"><input id="renameOwner" value="${esc(cur)}"></div>
   <div class="two-btn"><button class="btn btn-soft cancel" onclick="openOwnerManage()">취소</button><button class="btn btn-primary" onclick="doRenameOwner(${i})">저장</button></div>`);
  setTimeout(()=>{const el=$('renameOwner');el&&el.focus()},300)}
 function doRenameOwner(i){const v=$('renameOwner').value.trim();if(!v){toast('이름을 입력해 주세요');return}
@@ -2687,11 +2688,11 @@ function txRow(t){
   return `<div class="swipe" data-id="${t.id}"><div class="swipe-content${on?' sel-on':''}" ${selectable?`onclick="ledgerToggleSel('${t.id}')"`:''} style="${selectable?'':'opacity:.45'}">
    <div class="sel-check ${on?'on':''}">${svg('check')}</div>
    <div class="avatar ${av}" style="width:40px;height:40px">${glyph}</div>
-   <div style="flex:1;min-width:0"><div class="nm-row"><span class="nm">${t.memo||t.category}</span>${t.isRec?`<span class="rec-ic" title="반복">${svg('repeat')}</span>`:''}</div>${(t.memo&&t.memo!==t.category)?`<div class="flow-sub"><span class="fl">${t.category}</span></div>`:''}</div>
+   <div style="flex:1;min-width:0"><div class="nm-row"><span class="nm">${esc(t.memo||t.category)}</span>${t.isRec?`<span class="rec-ic" title="반복">${svg('repeat')}</span>`:''}</div>${(t.memo&&t.memo!==t.category)?`<div class="flow-sub"><span class="fl">${esc(t.category)}</span></div>`:''}</div>
    <div class="amt num ${cls}">${sign}${comma(t.amount)}원</div></div></div>`;}
  return `<div class="swipe" data-id="${t.id}" data-rec="${t.isRec?t.recId:''}" data-date="${t.date}" ${t.isRec?'':'data-lp="1"'}>  <div class="swipe-content" onclick="rowTap(this)"><div class="avatar ${av}" style="width:40px;height:40px">${glyph}</div>
-   <div style="flex:1;min-width:0"><div class="nm-row"><span class="nm">${t.memo||t.category}</span>${t.isRec?`<span class="rec-ic" title="반복">${svg('repeat')}</span>`:''}</div>
-    ${asset?`<div class="flow-sub"><span class="fl">${asset}</span>${txScheduled(t)?'<span class="sch-dot"></span>':''}</div>`:(txScheduled(t)?`<div class="flow-sub"><span class="sch-dot"></span><span class="fl">예정</span></div>`:'')}</div>
+   <div style="flex:1;min-width:0"><div class="nm-row"><span class="nm">${esc(t.memo||t.category)}</span>${t.isRec?`<span class="rec-ic" title="반복">${svg('repeat')}</span>`:''}</div>
+    ${asset?`<div class="flow-sub"><span class="fl">${esc(asset)}</span>${txScheduled(t)?'<span class="sch-dot"></span>':''}</div>`:(txScheduled(t)?`<div class="flow-sub"><span class="sch-dot"></span><span class="fl">예정</span></div>`:'')}</div>
    <div class="amt num ${cls}">${sign}${comma(t.amount)}원</div>${isDuePending(t)?`<button class="confirm-btn" onclick="event.stopPropagation();${t.isRec?`confirmRecTransfer('${t.recId}','${t.date}')`:`openConfirmTransfer('${t.id}')`}">확인</button>`:''}</div></div>`;
 }
 function rowTap(el){ /* 내역 탭 → 수정 (길게 누르면 다중 선택·삭제) */
@@ -2743,7 +2744,7 @@ function renderTxSheet(){
  const d=txDraft;const rc=window._recCtx;
  if(rc){ /* 반복 개별/범위 수정: 금액만 */
   const SCOPE={one:'이 내역만',future:'이후 모두',all:'전체'};
-  openFormSheet(`<h3>반복 내역 수정</h3><div class="desc">'${d.memo||d.category}' · ${shortDate(rc.date)} · ${SCOPE[rc.scope]}</div>
+  openFormSheet(`<h3>반복 내역 수정</h3><div class="desc">'${esc(d.memo||d.category)}' · ${shortDate(rc.date)} · ${SCOPE[rc.scope]}</div>
    <div class="field"><label>금액</label><div class="field-clear"><input id="txAmt" class="amount-in num" inputmode="numeric" value="${d.amount?comma(d.amount):''}" placeholder="0" oninput="fmtAmt(this)"><button type="button" class="fc-x" onclick="clrInput('txAmt')">✕</button></div></div>
    ${rc.recId?`<button class="rec-detail-link" onclick="openRecDetail('${rc.recId}')">${svg('repeat')} 반복 자체를 세부 편집 ${svg('chevR')}</button>`:''}
    <div class="two-btn"><button class="btn btn-danger cancel" onclick="recCtxDel()">${svg('trash')} 삭제</button>
@@ -2786,7 +2787,7 @@ function renderTxSheet(){
     <div class="pav a-etc">${svg('ledger')}</div><div class="pbody"><div class="pn">${fmtDateFull(d.date)}</div><div class="psub">${datePsub}</div></div><div class="pc">${svg('chev')}</div></button>
     <input id="txDate" type="hidden" value="${d.date}"></div>
   ${catField}${assetFields}
-  <div class="field"><label>메모</label><div class="field-clear"><input id="txMemo" value="${d.memo||''}" placeholder="${rpt?'예: 넷플릭스 구독':'예: 점심 김밥'}"><button type="button" class="fc-x" onclick="clrInput('txMemo')">✕</button></div></div>
+  <div class="field"><label>메모</label><div class="field-clear"><input id="txMemo" value="${esc(d.memo||'')}" placeholder="${rpt?'예: 넷플릭스 구독':'예: 점심 김밥'}"><button type="button" class="fc-x" onclick="clrInput('txMemo')">✕</button></div></div>
   ${repeatFields}
   ${editing?
    `<div class="two-btn"><button class="btn btn-danger cancel" onclick="delTx('${d.id}','','${d.date}')">${svg('trash')} 삭제</button>
@@ -2891,7 +2892,7 @@ function delTx(id,recId,date){
 }
 function recEditScope(recId,date,mode){
  const r=DB.recurrences.find(x=>x.id===recId);if(!r)return;
- openSheet(`<h3>${mode==='edit'?'반복 내역 수정':'반복 내역 삭제'}</h3><div class="desc">'${r.memo||r.category}' · ${shortDate(date)}</div>
+ openSheet(`<h3>${mode==='edit'?'반복 내역 수정':'반복 내역 삭제'}</h3><div class="desc">'${esc(r.memo||r.category)}' · ${shortDate(date)}</div>
   <div class="opt-list">
    <button onclick="recApply('${recId}','${date}','${mode}','one')"><span class="rd"></span><div><div>이 내역만</div><div class="ol-sub">${shortDate(date)} 하루만 적용</div></div></button>
    <button onclick="recApply('${recId}','${date}','${mode}','future')"><span class="rd"></span><div><div>이 날부터 이후 모두</div><div class="ol-sub">${shortDate(date)} 이후 반복 전체</div></div></button>
@@ -3183,12 +3184,12 @@ function histRow(t){
   return `<div class="swipe" data-id="${t.id}"><div class="swipe-content${on?' sel-on':''}" ${selectable?`onclick="histToggleSel('${t.id}')"`:''} style="${selectable?'':'opacity:.45'}">
    <div class="sel-check ${on?'on':''}">${svg('check')}</div>
    <div class="avatar ${av}" style="width:40px;height:40px">${glyph}</div>
-   <div style="flex:1;min-width:0"><div class="nm-row"><span class="nm">${t.memo||t.category}</span>${t.isRec?`<span class="rec-ic" title="반복">${svg('repeat')}</span>`:''}</div>${(t.memo&&t.memo!==t.category)?`<div class="flow-sub"><span class="fl">${t.category}</span></div>`:''}</div>
+   <div style="flex:1;min-width:0"><div class="nm-row"><span class="nm">${esc(t.memo||t.category)}</span>${t.isRec?`<span class="rec-ic" title="반복">${svg('repeat')}</span>`:''}</div>${(t.memo&&t.memo!==t.category)?`<div class="flow-sub"><span class="fl">${esc(t.category)}</span></div>`:''}</div>
    <div class="amt num ${cls}">${sign}${comma(t.amount)}원</div></div></div>`;
  }
  return `<div class="swipe" data-id="${t.id}" data-rec="${t.isRec?t.recId:''}" data-date="${t.date}" ${t.isRec?'':'data-lp="1"'}>  <div class="swipe-content" onclick="rowTap(this)"><div class="avatar ${av}" style="width:40px;height:40px">${glyph}</div>
-   <div style="flex:1;min-width:0"><div class="nm-row"><span class="nm">${t.memo||t.category}</span>${t.isRec?`<span class="rec-ic" title="반복">${svg('repeat')}</span>`:''}</div>
-    ${asset?`<div class="flow-sub"><span class="fl">${asset}</span>${txScheduled(t)?'<span class="sch-dot"></span>':''}</div>`:(txScheduled(t)?`<div class="flow-sub"><span class="sch-dot"></span><span class="fl">예정</span></div>`:'')}</div>
+   <div style="flex:1;min-width:0"><div class="nm-row"><span class="nm">${esc(t.memo||t.category)}</span>${t.isRec?`<span class="rec-ic" title="반복">${svg('repeat')}</span>`:''}</div>
+    ${asset?`<div class="flow-sub"><span class="fl">${esc(asset)}</span>${txScheduled(t)?'<span class="sch-dot"></span>':''}</div>`:(txScheduled(t)?`<div class="flow-sub"><span class="sch-dot"></span><span class="fl">예정</span></div>`:'')}</div>
    <div class="amt num ${cls}">${sign}${comma(t.amount)}원</div>${isDuePending(t)?`<button class="confirm-btn" onclick="event.stopPropagation();${t.isRec?`confirmRecTransfer('${t.recId}','${t.date}')`:`openConfirmTransfer('${t.id}')`}">확인</button>`:''}</div></div>`;
 }
 function histCat(c){ST.hist.cat=c;histInvalidate();
@@ -3261,12 +3262,12 @@ function lowestInMonth(assetId,y,m){ /* 그 달 중 잔액이 가장 낮은 날 
 function planBalInner(y,m,a,today){
  if(today){ /* 롱프레스 중: 오늘까지의 잔액 */
   const b=balanceAt(a.id,TODAY);
-  return `<div class="k">${a.name} · 오늘까지 잔액</div>
+  return `<div class="k">${esc(a.name)} · 오늘까지 잔액</div>
    <div class="v num fit ${b<0?'minus':''}" data-max="30">${comma(b)}원</div>
    <div class="bh-low"><span class="bl-k">기준일</span><span class="bl-v">${shortDate(TODAY)} 까지 반영</span></div>`;
  }
  const bal=balanceAt(a.id,monthEndStr(y,m)),low=lowestInMonth(a.id,y,m);
- return `<div class="k">${a.name} · ${m}월 말일 기준 잔액</div>
+ return `<div class="k">${esc(a.name)} · ${m}월 말일 기준 잔액</div>
    <div class="v num fit ${bal<0?'minus':''}" data-max="30">${comma(bal)}원</div>
    <button class="bh-low ${low.amount<0?'bad':''}" onclick="event.stopPropagation();scrollToPlanDay('${low.date}')">
      <span class="bl-k">가장 낮을 때</span>
@@ -3329,7 +3330,7 @@ function renderPlan(){
     const flow=t.type==='income'?(taN!=='—'?taN:''):(t.type==='transfer'||t.type==='saving')?`${faN==='—'?'':faN}→${taN==='—'?'':taN}`:(faN!=='—'?faN:'');
     return `<div class="flow-item" onclick="planTap('${t.isRec?'':t.id}','${t.isRec?t.recId:''}','${t.date}')">
      <div class="avatar ${f.delta>=0?'a-in':'a-food'}" style="width:40px;height:40px">${svg(f.delta>=0?'arrowUp':'arrowDn')}</div>
-     <div style="flex:1;min-width:0"><div class="nm-row"><span class="nm">${t.memo||t.category}</span>${t.isRec?`<span class="rec-ic" title="반복">${svg('repeat')}</span>`:''}</div>${flow?`<div class="flow-sub"><span class="fl">${flow}</span></div>`:''}</div>
+     <div style="flex:1;min-width:0"><div class="nm-row"><span class="nm">${esc(t.memo||t.category)}</span>${t.isRec?`<span class="rec-ic" title="반복">${svg('repeat')}</span>`:''}</div>${flow?`<div class="flow-sub"><span class="fl">${esc(flow)}</span></div>`:''}</div>
      <div class="rt"><div class="delta num ${f.delta>=0?'pos':'minus'}">${f.delta>=0?'+':'-'}${comma(Math.abs(f.delta))}원</div></div></div>`;
    }).join(''):`<div class="plan-noflow">오늘은 통장이 평화로워요 🌱</div>`;
    return `<div class="plan-day${isToday?' today':''} ${zone}" data-d="${d}"><div class="card plan-card${bal<0?' neg':''}"><div class="plan-day-head${bal<0?' neg':''}">
@@ -3375,7 +3376,7 @@ function openPlanAsset(){
    return `<button class="${ST.plan.assetId===a.id?'on':''}" onclick="planAsset('${a.id}')">
     <span class="rd"></span>
     <div style="flex:1;min-width:0">
-     <div style="display:flex;align-items:center;gap:7px"><i class="sig ${s.lv}"></i><span>${a.name}</span></div>
+     <div style="display:flex;align-items:center;gap:7px"><i class="sig ${s.lv}"></i><span>${esc(a.name)}</span></div>
      ${s.txt?`<div class="ol-sub sig-t ${s.lv}">${s.txt}</div>`:''}
     </div>
     <span class="pa-bal num">${comma(assetBalance(a.id))}원</span></button>`;
@@ -3529,7 +3530,7 @@ function openSpendAnalysis(){
    const barCls=budget?(bp.over?'over':'budgeted'):'';
    const overCls=budget&&bp.over?' over':'';
    return `<div class="spend-row" onclick="openBudgetPrompt(${idx})"><div class="spend-av a-food">${catGlyph('expense',r.c,null,'tag')}</div>
-    <div class="spend-mid"><div class="spend-nm">${r.c}</div><div class="spend-track"><i class="${barCls}" style="width:${barPct}%"></i></div></div>
+    <div class="spend-mid"><div class="spend-nm">${esc(r.c)}</div><div class="spend-track"><i class="${barCls}" style="width:${barPct}%"></i></div></div>
     <div class="spend-amt"><div class="a num${overCls}">${comma(r.v)}${budget?`<span class="bgt">/${comma(budget)}</span>`:''}원</div><div class="p${overCls}">${pct}%${budget?' 사용':''}</div></div></div>`}).join('')
    :`<div class="empty"><div class="ei">${svg('chart')}</div><div class="et">아직 쓴 게 없어요 👏</div><div class="es">이대로만 가면 완벽해요</div></div>`;
  openSheet(`<h3>${m}월 지출 분석</h3><div class="desc">카테고리를 눌러 예산을 정해보세요 · 예정 포함</div>
@@ -3546,7 +3547,7 @@ function openSpendAnalysis(){
 function openBudgetPrompt(idx){
  const y=ST.ledger.y,m=ST.ledger.m;const rows=spendByCategory(y,m);const r=rows[idx];if(!r)return;
  const cur=(DB.budgets&&DB.budgets[r.c])||'';
- openSheet(`<h3>${r.c} 예산 설정</h3><div class="desc">이번 달 ${r.c}에 쓸 수 있는 한도예요 · 매달 같은 금액으로 적용돼요</div>
+ openSheet(`<h3>${esc(r.c)} 예산 설정</h3><div class="desc">이번 달 ${esc(r.c)}에 쓸 수 있는 한도예요 · 매달 같은 금액으로 적용돼요</div>
   <div class="field"><input id="budgetIn" type="number" inputmode="numeric" placeholder="예산 금액(원)" value="${cur||''}"></div>
   <div class="two-btn" style="margin-bottom:16px">${cur?`<button class="btn btn-soft cancel" onclick="delBudget(${idx})">예산 삭제</button>`:`<button class="btn btn-soft cancel" onclick="openSpendAnalysis()">취소</button>`}<button class="btn btn-primary" onclick="saveBudget(${idx})">저장</button></div>`);
  setTimeout(()=>{const el=$('budgetIn');el&&el.focus()},300);
@@ -3565,7 +3566,7 @@ function openMaturity(){
  const sav=DB.assets.filter(a=>a.type==='savings'&&a.maturityDate);
  openSheet(`<h3>저축 만기 알림</h3><div class="desc">만기 30일 이내 저축을 알려드려요</div>
   ${sav.length?sav.map(a=>{const target=DB.assets.find(x=>x.id===a.maturityTargetId);const soon=a.maturityDate<=addDays(TODAY,30);
-   return `<div class="manage-row"><div style="flex:1"><div class="mn">${a.name} ${soon?'<span class="mini sch">임박</span>':''}</div><div class="msub">만기 ${a.maturityDate} · ${comma(assetEval(a))}원 → ${target?target.name:'미지정'}</div></div>
+   return `<div class="manage-row"><div style="flex:1"><div class="mn">${esc(a.name)} ${soon?'<span class="mini sch">임박</span>':''}</div><div class="msub">만기 ${a.maturityDate} · ${comma(assetEval(a))}원 → ${target?esc(target.name):'미지정'}</div></div>
     ${soon?`<button class="btn-sm btn btn-primary" style="width:auto;padding:0 14px" onclick="doMaturity('${a.id}')">이체</button>`:''}</div>`}).join('')
    :`<div class="empty"><div class="ei">${svg('piggy')}</div><div class="et">아직 모으는 중인 게 없네요</div><div class="es">작게라도 시작해볼까요?</div></div>`}
   <div style="height:12px"></div><button class="btn btn-soft" onclick="closeSheet()">닫기</button>`);
@@ -3627,7 +3628,7 @@ function openCatManage(kind,keep){
   <div class="seg"><div class="seg-blob"></div>${['expense','income','saving'].map(x=>`<button class="${k===x?'on':''}" onclick="openCatManage('${x}')">${CAT_LABEL[x]}</button>`).join('')}</div>
   <div>${DB.categories[k].map((c,i)=>{
     const varPill=k==='saving'?'':`<button class="varpill ${isVarCat(k,c)?'on':''}" onclick="toggleCatVarUI('${k}',${i},this)">${isVarCat(k,c)?'변동':'고정'}</button>`;
-    return `<div class="manage-row"><div class="avatar ${avCls}" style="width:36px;height:36px;border-radius:11px">${catGlyph(k,c,18,'tag')}</div><div class="mn">${c}</div>${varPill}<div class="row-acts"><button class="act-btn" onclick="renameCatSheet('${k}',${i})">${svg('edit')}</button><button class="act-btn danger" onclick="delCat('${k}',${i})">${svg('trash')}</button></div></div>`;
+    return `<div class="manage-row"><div class="avatar ${avCls}" style="width:36px;height:36px;border-radius:11px">${catGlyph(k,c,18,'tag')}</div><div class="mn">${esc(c)}</div>${varPill}<div class="row-acts"><button class="act-btn" onclick="renameCatSheet('${k}',${i})">${svg('edit')}</button><button class="act-btn danger" onclick="delCat('${k}',${i})">${svg('trash')}</button></div></div>`;
    }).join('')}</div>
   <div class="add-inline"><button class="emo-pick ${avCls}" onclick="pickCatAddIcon('${k}')" aria-label="아이콘 선택">${svg(trigIcon,20)}</button><input id="newCat" placeholder="새 ${CAT_LABEL[k]} 카테고리" value="${catAddDraft.name.replace(/"/g,'&quot;')}" oninput="catAddDraft.name=this.value"><button onclick="addCat('${k}')">${svg('plus')}</button></div>
   <div style="height:14px"></div><button class="btn btn-primary" onclick="closeSheet()">완료</button>`);
@@ -3639,7 +3640,7 @@ function addCat(k){const v=(($('newCat')&&$('newCat').value)||catAddDraft.name||
  catAddDraft={name:'',icon:''};
  save();openCatManage(k)}
 function delCat(k,i){const c=DB.categories[k][i];
- confirmSheet('카테고리 삭제',`'${c}' 카테고리를 삭제할까요? 기존 내역의 카테고리명은 그대로 남아요.`,'삭제',()=>{doDeleteCat(k,i);save();openCatManage(k)});}
+ confirmSheet('카테고리 삭제',`'${esc(c)}' 카테고리를 삭제할까요? 기존 내역의 카테고리명은 그대로 남아요.`,'삭제',()=>{doDeleteCat(k,i);save();openCatManage(k)});}
 function doDeleteCat(k,i){const c=DB.categories[k][i];
  DB.categories[k].splice(i,1);
  delete DB.catIcon[catKey(k,c)];              /* 삭제 시 아이콘/변동/예산도 함께 정리 (동명 카테고리 재생성 시 이전 설정이 남지 않도록) */
@@ -3679,7 +3680,7 @@ function openRecManage(){
   body+=`<div class="menu-cap" style="margin-top:8px">${label} · ${list.length}개</div><div class="card" style="margin-bottom:6px">`+list.map(r=>{
    const period=`${(r.startDate||'').slice(0,7).replace('-','.')}${r.endDate?` ~ ${r.endDate.slice(0,7).replace('-','.')}`:' ~'}`;
    return `<div class="manage-row" onclick="editRec('${r.id}')"><div class="avatar ${av}" style="width:38px;height:38px;${r.active?'':'opacity:.4'}">${r.type==='transfer'?svg('transfer'):catGlyph(r.type,r.category,null,'repeat')}</div>
-    <div style="flex:1;min-width:0"><div class="mn">${r.category} ${r.active?'':'<span class="mini">중지</span>'}</div>
+    <div style="flex:1;min-width:0"><div class="mn">${esc(r.category)} ${r.active?'':'<span class="mini">중지</span>'}</div>
      <div class="msub">${recFreqLabel(r)} · ${comma(r.amount)}원</div>
      <div class="msub2">${period}</div></div>
     <div class="row-acts"><button class="act-btn ${r.active?'':'on'}" onclick="event.stopPropagation();toggleRecActive('${r.id}')" title="${r.active?'일시중지':'다시 시작'}">${svg(r.active?'pause':'play')}</button></div>
@@ -3704,7 +3705,7 @@ function rateAutoLabel(){
 function openRateSheet(){
  const R=DB.rates;
  const fxCur=[...new Set(DB.assets.filter(a=>a.type==='fx').map(a=>a.currency))];
- const stockRows=DB.assets.filter(a=>a.type==='stock').map(a=>`<div class="rate-row"><div style="flex:1"><div class="rn">${a.name}</div><div class="rsub">${a.stockCode} 현재가</div></div><input class="num" inputmode="numeric" value="${comma(R.stocks[a.stockCode]||0)}" onchange="setRate('stock','${a.stockCode}',this.value)"></div>`).join('');
+ const stockRows=DB.assets.filter(a=>a.type==='stock').map(a=>`<div class="rate-row"><div style="flex:1"><div class="rn">${esc(a.name)}</div><div class="rsub">${esc(a.stockCode)} 현재가</div></div><input class="num" inputmode="numeric" value="${comma(R.stocks[a.stockCode]||0)}" onchange="setRate('stock','${a.stockCode}',this.value)"></div>`).join('');
  const fxRows=fxCur.map(c=>`<div class="rate-row"><div style="flex:1"><div class="rn">${c}</div><div class="rsub">원/${c}</div></div><input class="num" inputmode="numeric" value="${comma(R.fx[c]||0)}" onchange="setRate('fx','${c}',this.value)"></div>`).join('');
  const active=rateAutoLabel();
  const none=active==='해당 없음';
@@ -4604,14 +4605,14 @@ function openQuickList(){ /* 변동 실제금액 입력 여러 건을 한 시트
  openSheet(`<h3>실제 금액 입력</h3><div class="desc">${TM.m}월 변동 항목 ${vr.length}건이에요. 눌러서 실제 금액을 넣어주세요.</div>
   <div style="display:flex;flex-direction:column;gap:8px">${vr.map(({rec,date})=>`<button class="pick" onclick="openQuickAmount('${rec.id}','${date}')">
     <div class="pav ${catAv(rec.type)}">${catGlyph(rec.type,rec.category,18,'tag')}</div>
-    <div class="pbody"><div class="pn">${rec.memo||rec.category}</div><div class="psub">${shortDate(date)} ${rec.type==='income'?'입금':'결제'}</div></div>
+    <div class="pbody"><div class="pn">${esc(rec.memo||rec.category)}</div><div class="psub">${shortDate(date)} ${rec.type==='income'?'입금':'결제'}</div></div>
     <div class="pc">${svg('chevR')}</div></button>`).join('')}</div>`);
 }
 function openQuickAmount(recId,date){
  const r=DB.recurrences.find(x=>x.id===recId);if(!r)return;
  const inc=r.type==='income';
  const last=lastActualAmount(r,date);
- openSheet(`<h3>${r.memo||r.category} 금액</h3>
+ openSheet(`<h3>${esc(r.memo||r.category)} 금액</h3>
   <div class="desc">${shortDate(date)}에 ${inc?'들어올':'빠져나갈'} 실제 금액을 넣어주세요.${last?`<br><span style="color:var(--text-3);font-size:12.5px">${inc?'지난번':'지난달'}은 ${comma(last)}원이었어요</span>`:''}</div>
   <div class="field"><label>금액 (원)</label>
    <input id="qAmt" class="num" inputmode="numeric" value="${last?comma(last):''}" placeholder="0" oninput="fmtAmt(this)" autofocus></div>
@@ -4637,7 +4638,7 @@ function quickAmountCards(){
  if(!v.length)return '';
  return v.map(({rec,date})=>`<button class="home-alert quick" onclick="openQuickAmount('${rec.id}','${date}')">
    <div class="ha-ic">${svg('edit')}</div>
-   <div class="ha-b"><div class="ha-t">${TM.m}월 ${rec.memo||rec.category} 실제 금액을 넣어주세요</div>
+   <div class="ha-b"><div class="ha-t">${TM.m}월 ${esc(rec.memo||rec.category)} 실제 금액을 넣어주세요</div>
      <div class="ha-s">${shortDate(date)} ${rec.type==='income'?'입금':'결제'} · 눌러서 금액만 넣기</div></div>
    <div class="ha-c">${svg('chev')}</div></button>`).join('');
 }
@@ -4673,7 +4674,7 @@ function openFixShortfall(targetId,date,need){
   body+=`<div class="fix-cap">한 통장에서 한 번에</div><div class="pk-group">`+
    enoughOnes.map(({a,free})=>`<button class="pk-item" onclick="planTransfer('${a.id}','${targetId}','${when}',${need})">
     <div class="pav a-bank">${svg('bank')}</div>
-    <div class="pbody"><div class="pn">${a.name}</div>
+    <div class="pbody"><div class="pn">${esc(a.name)}</div>
       <div class="psub">${shortDate(date)} 잔액 ${comma(free)}원 · 충분해요</div></div>
     <div class="pc">${svg('chev')}</div></button>`).join('')+`</div>`;
  }
@@ -4745,7 +4746,7 @@ function nextOutflowCard(){
     <span class="nc-dd">${d===0?'오늘':d===1?'내일':'D-'+d}</span>
   </div>
   <div class="nc-amt num fit" data-max="34">${comma(t.amount)}<small>원</small></div>
-  <div class="nc-nm">${t.memo||t.category}${acct?` · ${acct.name}`:''}</div>
+  <div class="nc-nm">${esc(t.memo||t.category)}${acct?` · ${esc(acct.name)}`:''}</div>
   <div class="nc-foot ${short?'bad':'good'}">
     ${short
       ? `${shortDate(t.date)} 잔액 <b>${comma(short)}원 부족</b>`
@@ -4761,7 +4762,7 @@ function monthOutflowCard(y,m){
  const open=!!ST.ofOpen;
  const shown=open?list:list.slice(0,6);
  const rows=shown.map(t=>`<div class="of-row" onclick="goLedgerTo('${t.date}','${t.isRec?'':t.id}','${t.isRec?t.recId:''}')">
-   <span class="of-nm">${t.memo||t.category}</span>
+   <span class="of-nm">${esc(t.memo||t.category)}</span>
    <span class="of-dt">${shortDate(t.date)}</span>
    <span class="of-am num">${comma(t.amount)}</span></div>`).join('');
  const more=list.length>6
@@ -4795,14 +4796,14 @@ function emptyAssetCards(){
  if(!list.length)return '';
  return list.map(a=>`<div class="home-alert tidy">
    <div class="ha-ic">${svg('trash')}</div>
-   <div class="ha-b" onclick="openTidyAsset('${a.id}')"><div class="ha-t">${a.name} · 다 썼어요</div>
+   <div class="ha-b" onclick="openTidyAsset('${a.id}')"><div class="ha-t">${esc(a.name)} · 다 썼어요</div>
      <div class="ha-s">${ASSET_TYPES[a.type].label} · 0원 · 정리할까요?</div></div>
    <button class="txt-btn" style="flex-shrink:0;padding:6px 10px" onclick="event.stopPropagation();snoozeTidy('${a.id}')">나중에</button></div>`).join('');
 }
 function openTidyAsset(id){
  const a=DB.assets.find(x=>x.id===id);if(!a)return;
  confirmSheet('자산 정리',
-  `<b>${a.name}</b>은(는) 0원이고 앞으로 예정된 내역도 없어요.<br>목록에서 지울까요?<br>
+  `<b>${esc(a.name)}</b>은(는) 0원이고 앞으로 예정된 내역도 없어요.<br>목록에서 지울까요?<br>
    <span style="color:var(--text-3);font-size:12.5px">지난 내역은 그대로 남아요. 실수로 지워도 되돌릴 수 있어요.</span>`,
   '정리하기',()=>{deleteAssetsUndo(new Set([id]))});
 }
@@ -4828,16 +4829,16 @@ function homeAlertCard(al){
  if(al.kind==='confirm')return `<button class="home-alert confirm" onclick="openConfirmTransfer('${al.id}')">
    <div class="ha-ic">${svg('repeat')}</div>
    <div class="ha-b"><div class="ha-t">이체 확인 · ${comma(al.amount)}원</div>
-     <div class="ha-s">${al.from} → ${al.to} · 이체하셨는지 확인해 주세요</div></div>
+     <div class="ha-s">${esc(al.from)} → ${esc(al.to)} · 이체하셨는지 확인해 주세요</div></div>
    <div class="ha-c">${svg('chev')}</div></button>`;
  if(al.kind==='mat')return `<button class="home-alert mat" onclick="openMaturity()">
    <div class="ha-ic">${svg('bell')}</div>
-   <div class="ha-b"><div class="ha-t">저축 만기 임박 · ${al.name}</div>
+   <div class="ha-b"><div class="ha-t">저축 만기 임박 · ${esc(al.name)}</div>
      <div class="ha-s">${shortDate(al.date)} · ${comma(al.amount)}원 만기예요</div></div>
    <div class="ha-c">${svg('chev')}</div></button>`;
  if(al.kind==='quick')return `<button class="home-alert quick" onclick="openQuickAmount('${al.recId}','${al.date}')">
    <div class="ha-ic">${svg('edit')}</div>
-   <div class="ha-b"><div class="ha-t">${TM.m}월 ${al.name} 실제 금액을 넣어주세요</div>
+   <div class="ha-b"><div class="ha-t">${TM.m}월 ${esc(al.name)} 실제 금액을 넣어주세요</div>
      <div class="ha-s">${shortDate(al.date)} ${al.rtype==='income'?'입금':'결제'} · 눌러서 금액만 넣기</div></div>
    <div class="ha-c">${svg('chev')}</div></button>`;
  if(al.kind==='quickMulti')return `<button class="home-alert quick" onclick="openQuickList()">
@@ -4847,7 +4848,7 @@ function homeAlertCard(al){
    <div class="ha-c">${svg('chev')}</div></button>`;
  return `<button class="home-alert" onclick="goPlanTo('${al.assetId}','${al.date}')">
    <div class="ha-ic">${svg('bell')}</div>
-   <div class="ha-b"><div class="ha-t">잔액 부족 예상 · ${al.name}</div>
+   <div class="ha-b"><div class="ha-t">잔액 부족 예상 · ${esc(al.name)}</div>
      <div class="ha-s">${shortDate(al.date)}부터 · 잔액이 ${comma(al.min)}원까지 내려가요</div></div>
    <div class="ha-c">${svg('chev')}</div></button>`;
 }
@@ -4863,11 +4864,11 @@ function goThisMonth(which){
 }
 
 /* toast */
-function toast(msg){const t=document.createElement('div');t.className='toast';t.innerHTML=svg('check')+`<span>${msg}</span>`;
+function toast(msg){const t=document.createElement('div');t.className='toast';t.innerHTML=svg('check')+`<span>${esc(msg)}</span>`;
  $('toastWrap').appendChild(t);requestAnimationFrame(()=>t.classList.add('show'));
  setTimeout(()=>{t.classList.remove('show');setTimeout(()=>t.remove(),300)},1900)}
 function undoToast(msg,undoFn){const t=document.createElement('div');t.className='toast undo';
- t.innerHTML=svg('check')+`<span>${msg}</span>`;
+ t.innerHTML=svg('check')+`<span>${esc(msg)}</span>`;
  const btn=document.createElement('button');btn.className='toast-undo';btn.textContent='되돌리기';let done=false;
  const tm=setTimeout(()=>{t.classList.remove("show");setTimeout(()=>t.remove(),300)},6000);
  btn.onclick=()=>{if(done)return;done=true;clearTimeout(tm);t.classList.remove('show');setTimeout(()=>t.remove(),300);undoFn()};
@@ -4898,7 +4899,7 @@ function openAssetPicker(o){o=o||{};let html='';
  DB.settings.groupOrder.forEach(t=>{let items=DB.assets.filter(a=>a.type===t);if(o.cashOnly)items=items.filter(isCashLike);if(!items.length)return;
    html+=`<div class="pk-cap">${ASSET_TYPES[t].label}</div>`;
    items.forEach(a=>{const ty=ASSET_TYPES[a.type];const bal=a.type==='debt'?-assetEval(a):assetEval(a);
-     html+=`<button class="pk-item hasamt ${a.id===o.current?'on':''}" data-val="${a.id}" onclick="pkPickAsset('${a.id}')"><div class="pav ${ty.cls}">${svg(ty.icon)}</div><div class="pbody"><div class="pn">${a.name}</div><div class="psub"><span class="chipmini own-${a.owner}">${a.owner}</span>${ty.label}</div></div><div class="amt num">${comma(bal)}원</div></button>`;});
+     html+=`<button class="pk-item hasamt ${a.id===o.current?'on':''}" data-val="${a.id}" onclick="pkPickAsset('${a.id}')"><div class="pav ${ty.cls}">${svg(ty.icon)}</div><div class="pbody"><div class="pn">${esc(a.name)}</div><div class="psub"><span class="chipmini own-${a.owner}">${a.owner}</span>${ty.label}</div></div><div class="amt num">${comma(bal)}원</div></button>`;});
  });
  if(!html)html=`<p style="padding:16px;color:var(--text-3)">선택할 자산이 없어요</p>`;
  window._pkPick=o.onPick;openPicker(o.title||'통장 선택','<div class="pk-group" id="pkGroup"><div class="pk-blob" id="pkBlob"></div>'+html+'</div>',o.back);
@@ -4937,7 +4938,7 @@ function openOwnerPicker(o){let html=DB.owners.map(ow=>`<button class="pk-item $
  requestAnimationFrame(()=>requestAnimationFrame(()=>movePkBlob(false)));}
 function pkPickOwner(ow){pkChoose(ow)}
 function openCatPicker(o){const avc=catAv(o.kind);
- const grid=catListOf(o.kind).map(c=>`<button class="pk-cat ${c===o.current?'on':''}" data-cat="${c}" onclick="pkPickCat('${c}')"><div class="cav ${avc}">${catGlyph(o.kind,c,18,'tag')}</div>${c}</button>`).join('');
+ const grid=catListOf(o.kind).map(c=>`<button class="pk-cat ${c===o.current?'on':''}" data-cat="${c}" onclick="pkPickCat('${c}')"><div class="cav ${avc}">${catGlyph(o.kind,c,18,'tag')}</div>${esc(c)}</button>`).join('');
  window._pkPick=o.onPick;
  openPicker((CAT_LABEL[o.kind]||'')+' 카테고리',`<div class="pk-cat-grid" id="catGrid"><div class="cat-blob" id="catBlob"></div>${grid}</div><div style="height:14px"></div><button class="btn btn-soft" onclick="openCatManage('${o.kind}')">카테고리 추가·관리</button>`,o.back);
  requestAnimationFrame(()=>requestAnimationFrame(()=>moveCatBlob(false)));

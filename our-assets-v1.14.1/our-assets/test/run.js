@@ -49,7 +49,7 @@ const FUNCTIONS = [
   'lastDay', 'addDays', 'shiftWeekend', 'recDates', 'addMonthsStr', 'addMonths',
   'recNthDate', 'recCountUntil', 'isVarCat', 'setCatVar', 'activeRecsForAssets',
   'num', 'doRenameCat', 'doDeleteCat', 'budgetProgress', 'totalBudgetSummary', 'addCat',
-  'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV',
+  'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'esc',
 ];
 const CONSTS = ['catKey', 'comma', 'commaQty'];
 
@@ -453,6 +453,25 @@ test('txnsToCSV: 날짜 오름차순으로 정렬한다', () => {
   const lines = csv.slice(1).split('\r\n');
   assert.ok(lines[1].startsWith('2026-01-01'));
   assert.ok(lines[2].startsWith('2026-02-01'));
+});
+
+/* ---------- esc: 저장형 XSS 방지 (asset/memo/category 등 사용자 입력값을 innerHTML에 넣기 전 이스케이프) ---------- */
+test('esc: 스크립트 태그를 무력화한다', () => {
+  assert.strictEqual(sandbox.esc('<script>alert(1)</script>'), '&lt;script&gt;alert(1)&lt;/script&gt;');
+});
+test('esc: 속성 컨텍스트를 깨는 큰따옴표/작은따옴표를 이스케이프한다', () => {
+  assert.strictEqual(sandbox.esc(`"onmouseover="x`), '&quot;onmouseover=&quot;x');
+  assert.strictEqual(sandbox.esc(`'onclick='x`), '&#39;onclick=&#39;x');
+});
+test('esc: 앰퍼샌드를 이스케이프한다', () => {
+  assert.strictEqual(sandbox.esc('용돈 & 저축'), '용돈 &amp; 저축');
+});
+test('esc: 평범한 텍스트는 그대로 둔다', () => {
+  assert.strictEqual(sandbox.esc('우리은행 통장'), '우리은행 통장');
+});
+test('esc: null/undefined는 빈 문자열로 처리한다', () => {
+  assert.strictEqual(sandbox.esc(null), '');
+  assert.strictEqual(sandbox.esc(undefined), '');
 });
 
 /* ---------- 실행 ---------- */
