@@ -1272,7 +1272,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.19.8';
+const APP_VERSION='1.19.9';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 
@@ -2289,12 +2289,8 @@ function activeRecsForAssets(ids){
 }
 function delAsset(id){const a=DB.assets.find(x=>x.id===id);
  const recs=activeRecsForAssets(id);
- const msg=`'${esc(a.name)}'을(를) 삭제할까요? 되돌릴 수 없어요.`+(recs.length?` 연결된 반복거래 ${recs.length}개도 함께 비활성화돼요.`:'');
- confirmSheet('자산 삭제',msg,'삭제',()=>{
-  snapshotAssetName(id); /* 내역/반복에 통장 이름을 남겨 출처 보존 */
-  recs.forEach(r=>r.active=false); /* 미래 생성은 멈추고, 과거 발생분·스냅샷은 그대로 둔다 */
-  DB.assets=DB.assets.filter(x=>x.id!==id);save();renderCurrent();
-  toast('자산을 삭제했어요'+(recs.length?` · 반복거래 ${recs.length}개 비활성화`:''));});}
+ const msg=`'${esc(a.name)}'을(를) 삭제할까요?`+(recs.length?` 연결된 반복거래 ${recs.length}개도 함께 비활성화돼요.`:'');
+ confirmSheet('자산 삭제',msg,'삭제',()=>{deleteAssetsUndo(new Set([id]))});}
 /* 삭제됐던 동명·동종 자산의 과거 내역(스냅샷 이름으로 남은 것)을 자산에 재연결 */
 function relinkDeletedAsset(d){
  const nm=d.name;

@@ -1,8 +1,15 @@
 {
   "cycle": 12,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 12,
+      "phase": "develop",
+      "timestamp": "2026-09-11T09:00:00.000Z",
+      "summary": "delAsset(id) (index.html 2461줄 자산 편집 화면의 '이 자산 삭제' 버튼)가 delTx/delAdjust/delRecConfirm이 cycle9-11에서 이미 고친 것과 정확히 같은 버그 패턴을 갖고 있었다: DB.assets를 직접 filter로 지우고 되돌리기 없는 plain toast만 보여줘 twGuard(튜토리얼 가드)도 건너뛰었다. 반면 같은 자산 삭제 경로인 대량 삭제(2384줄)와 '자산 정리'(openTidyAsset, 4808줄)는 이미 deleteAssetsUndo(twGuard+6초 undo 토스트)를 쓰고 있었고, openTidyAsset의 확인 문구는 '실수로 지워도 되돌릴 수 있어요'라고 명시하는데 delAsset만 '되돌릴 수 없어요'라고 반대로 말하고 있었다 — 실제로는 튜토리얼 중에도 진짜로 삭제돼버리는 회귀 가능 버그였다. delAsset을 deleteAssetsUndo(new Set([id]))를 쓰도록 통일하고(snapshotAssetName·반복거래 비활성화·undo 로직은 deleteAssetsUndo에 이미 있으므로 중복 코드 제거), 확인 문구에서 '되돌릴 수 없어요' 문구를 뺐다. deleteAssetsUndo는 지금까지 어떤 회귀 테스트로도 커버되지 않고 있었으므로 test/run.js에 추출 대상으로 추가하고(snapshotAssetName은 balanceAt/TODAY 체인을 끌고 와 대상 밖이라 UI 스텁처럼 호출 기록만 남기는 스텁으로 대체), 삭제+undo 복원, 연결 반복거래 비활성화/재활성화, 튜토리얼 중 삭제 차단 케이스 3개 추가 — 61/61 테스트 통과. 두 인라인 <script> 블록 모두 new Function()으로 파싱 확인. APP_VERSION 1.19.8->1.19.9, sw.js CACHE v51->v52 (patch bump, bug fix).",
+      "commit": null
+    },
     {
       "cycle": 11,
       "phase": "review",

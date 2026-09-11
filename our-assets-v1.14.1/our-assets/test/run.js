@@ -50,7 +50,7 @@ const FUNCTIONS = [
   'recNthDate', 'recCountUntil', 'isVarCat', 'setCatVar', 'activeRecsForAssets',
   'num', 'doRenameCat', 'doDeleteCat', 'budgetProgress', 'totalBudgetSummary', 'addCat',
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'esc',
-  'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo',
+  'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo',
 ];
 const CONSTS = ['catKey', 'comma', 'commaQty'];
 
@@ -59,12 +59,16 @@ const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(
 // doRenameCat()은 DB 조작 외에 UI 함수도 몇 개 부르므로($, toast, save, renderCurrent,
 // openCatManage) 여기선 아무 일도 안 하는 스텁으로 채운다 — 우리가 검증하려는 건
 // DB.catVar/DB.catIcon 마이그레이션 로직이지, 화면 갱신이 아니다.
+// snapshotAssetName은 balanceAt/TODAY 등 잔액 계산 체인 전체를 끌고 오므로(이 테스트의
+// 대상이 아님) 실제 소스 대신, 어떤 id로 호출됐는지만 기록하는 스텁으로 대체한다 —
+// doRenameCat의 UI 스텁($, toast 등)과 같은 이유.
 const sandbox = {
   DB: null,
   catRenameDraft: null,
   catAddDraft: null,
   lastToast: null,
   lastUndo: null,
+  snapshotCalls: null,
   TWi: -1,
   $: () => null,
   toast: (msg) => { sandbox.lastToast = msg; },
@@ -72,6 +76,7 @@ const sandbox = {
   renderCurrent: () => {},
   openCatManage: () => {},
   undoToast: (msg, undoFn) => { sandbox.lastUndo = { msg, undoFn }; },
+  snapshotAssetName: (id) => { sandbox.snapshotCalls.push(id); },
 };
 vm.createContext(sandbox);
 vm.runInContext(extracted, sandbox, { filename: 'extracted-from-index.html' });
@@ -521,6 +526,45 @@ test('deleteRecsUndo: 튜토리얼 모드 중에는 twGuard가 막아서 실제�
   sandbox.DB = { recurrences: [rec] };
   sandbox.deleteRecsUndo(new Set(['r1']));
   assert.strictEqual(sandbox.DB.recurrences.length, 1, '튜토리얼 중에는 삭제가 막혀야 함');
+  sandbox.TWi = -1;
+});
+
+/* ---------- deleteAssetsUndo: 자산 삭제(단일/대량) 공용 되돌리기 인프라 (delAsset도 여기 합류) ---------- */
+test('deleteAssetsUndo: 지정한 id의 자산을 삭제하고, undo 콜백을 부르면 정확히 복원한다', () => {
+  sandbox.TWi = -1;
+  const a1 = { id: 'a1', name: '통장1' };
+  const a2 = { id: 'a2', name: '통장2' };
+  sandbox.DB = { assets: [a1, a2], recurrences: [] };
+  sandbox.lastUndo = null;
+  sandbox.snapshotCalls = [];
+  sandbox.deleteAssetsUndo(new Set(['a1']));
+  assert.deepStrictEqual(sandbox.DB.assets, [a2], '지정한 자산만 제거되어야 함');
+  assert.deepStrictEqual(sandbox.snapshotCalls, ['a1'], '삭제 전 이름 스냅샷을 남겨야 함');
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.assets.length, 2, '되돌리기를 부르면 삭제된 자산이 복원되어야 함');
+  assert.ok(sandbox.DB.assets.some(a => a.id === 'a1'), '삭제됐던 자산이 그대로 복원되어야 함');
+});
+test('deleteAssetsUndo: 연결된 활성 반복거래를 비활성화하고, undo 콜백을 부르면 다시 활성화한다', () => {
+  sandbox.TWi = -1;
+  const a1 = { id: 'a1', name: '통장1' };
+  const rec = { id: 'r1', active: true, fromAssetId: 'a1', toAssetId: null };
+  sandbox.DB = { assets: [a1], recurrences: [rec] };
+  sandbox.lastUndo = null;
+  sandbox.snapshotCalls = [];
+  sandbox.deleteAssetsUndo(new Set(['a1']));
+  assert.strictEqual(rec.active, false, '연결된 반복거래는 비활성화되어야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(rec.active, true, '되돌리면 반복거래도 다시 활성화되어야 함');
+});
+test('deleteAssetsUndo: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 삭제되지 않는다', () => {
+  sandbox.TWi = 0;
+  const a1 = { id: 'a1', name: '통장1' };
+  sandbox.DB = { assets: [a1], recurrences: [] };
+  sandbox.snapshotCalls = [];
+  sandbox.deleteAssetsUndo(new Set(['a1']));
+  assert.strictEqual(sandbox.DB.assets.length, 1, '튜토리얼 중에는 삭제가 막혀야 함');
+  assert.deepStrictEqual(sandbox.snapshotCalls, [], '튜토리얼 중에는 스냅샷도 남기지 않아야 함');
   sandbox.TWi = -1;
 });
 
