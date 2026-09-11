@@ -1,8 +1,15 @@
 {
   "cycle": 13,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 13,
+      "phase": "review",
+      "timestamp": "2026-09-11T14:09:20.000Z",
+      "summary": "Reviewed commit 48e966a (saveQuickAmount undo fix). Confirmed twGuard() was already present at the top of saveQuickAmount (added in an earlier cycle) and this change correctly adds only the undo affordance: edits[date] previous value is captured before overwrite, undoFn restores it (or deletes the key if it didn't exist before), mirroring recSave's scope='one' path exactly. Confirmed saveQuickAmount has exactly one call site (the quick-amount card's 저장 button, index.html:4635) expecting no return value, so the added undoToast()/closure change is behavior-safe. Re-ran the regression suite (73/73 pass) and re-verified both inline <script> blocks parse via new Function(). No bugs found — no code changes this phase.",
+      "commit": null
+    },
     {
       "cycle": 13,
       "phase": "develop",
@@ -134,13 +141,6 @@
       "phase": "critique",
       "timestamp": "2026-09-10T22:10:00+09:00",
       "summary": "Stepped back to look at the whole app rather than the last commit. Data export is JSON-backup-only: exportData()/doExport() (index.html ~3956-4015) produce a full-DB JSON blob meant purely for restoring into this same app — confirmed via grep that 'csv'/'CSV' appear zero times anywhere in index.html. There is no way to get transaction history into a spreadsheet, which is a normal thing to want from a finance tracker and was already flagged as a runner-up in cycle 6's critique (still untouched). Checked other suspects first and ruled them out as either already solid or not scoped for one cycle: delAsset() already snapshots asset names into txns/recurrences and has a relink path for re-added same-name assets (no orphan bug there, unlike the delCat bug fixed in cycle 6); importData() already validates obj.assets/obj.txns before replacing DB and calls migrate() after; the history search/filter UI (histQ, ST.hist) is already implemented, not a stub. Accessibility (still ~5 aria/role/alt/tabindex hits total) and the unsalted djb2 local-auth hash remain real but diffuse/low-priority runner-ups, same as last cycle. Picked CSV export because the JSON export's share/download/copy-fallback plumbing already exists and can be reused as-is for a new payload — a 'connect infra to a new capability' shape that fits one advance cycle, plus it has genuine pure-function surface (CSV field escaping for commas/quotes/newlines in free-text memos) worth regression-testing. No code changed this phase — wrote the CSV-export plan to pending_advance_plan for the next advance cycle.",
-      "commit": null
-    },
-    {
-      "cycle": 11,
-      "phase": "advance",
-      "timestamp": "2026-09-11T08:10:21.498Z",
-      "summary": "cycle11 critique 계획대로 index.html의 독립 토글 스위치 4곳(2457: 자산 총자산에 포함, 2881: 조정 내역 수지에 포함, 2973: 반복 이체 자동 확인, 3717: 시세 자동 갱신)을 <span class=\"switch\" onclick=...>에서 <button type=\"button\" role=\"switch\" aria-checked aria-label>로 바꿔 키보드/스크린리더로 조작 가능하게 했다. 각 인라인 onclick에 this.setAttribute('aria-checked',...) 한 줄씩 추가해 클릭 시 상태가 같이 갱신되게 했고, .switch CSS에 button 기본 스타일 리셋(appearance/border/padding/cursor)과 :focus-visible 아웃라인을 추가했다. 이미 부모가 button인 menu-item 안의 나머지 switch(3430줄)는 중첩 인터랙티브 요소가 되지 않도록 span은 aria-hidden=true로 두고, 부모 button에 aria-pressed를 추가해 토글 상태를 노출했다. 순수 마크업/속성 변경이라 새 회귀 테스트는 추가하지 않고 기존 58/58 스위트 통과와 두 인라인 <script> 블록의 new Function() 파싱을 확인했다. APP_VERSION 1.19.7->1.19.8, sw.js CACHE v50->v51 (patch bump, accessibility fix).",
       "commit": null
     }
   ]
