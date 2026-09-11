@@ -51,7 +51,7 @@ const FUNCTIONS = [
   'num', 'doRenameCat', 'doDeleteCat', 'budgetProgress', 'totalBudgetSummary', 'addCat',
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'esc',
   'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo',
-  'recApply', 'recSave',
+  'recApply', 'recSave', 'saveQuickAmount',
 ];
 const CONSTS = ['catKey', 'comma', 'commaQty'];
 
@@ -73,10 +73,13 @@ const sandbox = {
   TWi: -1,
   window: {},
   txAmtValue: '',
-  // recSave()는 $('txAmt').value를 읽어 금액을 얻으므로, 'txAmt'만 값을 갖는 입력칸처럼 동작시킨다.
-  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : null,
+  qAmtValue: '',
+  // recSave()/saveQuickAmount()는 각각 $('txAmt')/$('qAmt').value를 읽어 금액을 얻으므로,
+  // 그 두 id만 값을 갖는 입력칸처럼 동작시킨다.
+  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : null,
   toast: (msg) => { sandbox.lastToast = msg; },
   save: () => {},
+  invalidateBalances: () => {},
   renderCurrent: () => {},
   openCatManage: () => {},
   closeSheet: () => {},
@@ -675,6 +678,53 @@ test('recSave: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 수�
   assert.strictEqual(sandbox.window._recCtx.recId, 'r1', '튜토리얼 중에는 _recCtx도 지워지지 않아야 함(가드가 최상단에서 반환하므로)');
   sandbox.TWi = -1;
   sandbox.window._recCtx = null;
+});
+
+/* ---------- saveQuickAmount: 변동 카테고리 '실제 금액 입력'도 recSave(scope='one')와 동일하게 undo를 지원한다 ---------- */
+test("saveQuickAmount: 실제 금액을 edits에 기록하고, undo하면 이전 상태(없었음)로 돌아간다", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', category: '식비', memo: '식비', edits: {} };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.qAmtValue = '12,000';
+  sandbox.lastUndo = null;
+  sandbox.saveQuickAmount('r1', '2026-02-05');
+  assert.strictEqual(r.edits['2026-02-05'].amount, 12000, '입력한 실제 금액이 edits에 기록되어야 함');
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함(recSave와 동일한 되돌리기 UX)');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(r.edits['2026-02-05'], undefined, '되돌리면 이전에 없던 항목은 edits에서 제거되어야 함');
+});
+test("saveQuickAmount: 이미 있던 edits를 덮어쓴 경우, undo하면 이전 값으로 복원된다", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', category: '식비', memo: '식비', edits: { '2026-02-05': { amount: 111 } } };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.qAmtValue = '222';
+  sandbox.saveQuickAmount('r1', '2026-02-05');
+  assert.strictEqual(r.edits['2026-02-05'].amount, 222);
+  sandbox.lastUndo.undoFn();
+  assert.deepStrictEqual(r.edits['2026-02-05'], { amount: 111 }, '되돌리면 덮어쓰기 전 값으로 복원되어야 함');
+});
+test('saveQuickAmount: 금액을 비워두면 저장하지 않고 안내 토스트만 띄운다', () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', category: '식비', memo: '식비', edits: {} };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.qAmtValue = '';
+  sandbox.lastUndo = null;
+  sandbox.lastToast = null;
+  sandbox.saveQuickAmount('r1', '2026-02-05');
+  assert.strictEqual(sandbox.lastToast, '금액을 넣어주세요');
+  assert.strictEqual(r.edits['2026-02-05'], undefined);
+  assert.strictEqual(sandbox.lastUndo, null, '저장하지 않았으면 undo도 등록되면 안 됨');
+});
+test('saveQuickAmount: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 저장되지 않는다', () => {
+  sandbox.TWi = 0;
+  const r = { id: 'r1', category: '식비', memo: '식비', edits: {} };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.qAmtValue = '9000';
+  sandbox.lastUndo = null;
+  sandbox.saveQuickAmount('r1', '2026-02-05');
+  assert.strictEqual(r.edits['2026-02-05'], undefined, '튜토리얼 중에는 edits에 기록되면 안 됨');
+  assert.strictEqual(sandbox.lastUndo, null);
+  sandbox.TWi = -1;
 });
 
 /* ---------- 실행 ---------- */

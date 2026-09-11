@@ -1272,7 +1272,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.19.10';
+const APP_VERSION='1.19.11';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 
@@ -4645,9 +4645,11 @@ function saveQuickAmount(recId,date){
  const r=DB.recurrences.find(x=>x.id===recId);if(!r)return;
  const amt=num($('qAmt'));
  if(!amt){toast('금액을 넣어주세요');return}
- (r.edits=r.edits||{})[date]={amount:amt};
+ const edits=(r.edits=r.edits||{});const prevEdit=edits[date];edits[date]={amount:amt};
  save();invalidateBalances();closeSheet();renderCurrent();
- toast(`${r.memo||r.category} ${comma(amt)}원으로 저장했어요`);
+ undoToast(`${r.memo||r.category} ${comma(amt)}원으로 저장했어요`,()=>{
+  if(prevEdit===undefined)delete edits[date];else edits[date]=prevEdit;
+  save();invalidateBalances();renderCurrent();toast('되돌렸어요')});
 }
 function quickAmountCards(){
  const v=varyingRecs();
