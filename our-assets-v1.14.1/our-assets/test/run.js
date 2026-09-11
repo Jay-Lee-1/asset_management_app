@@ -51,7 +51,7 @@ const FUNCTIONS = [
   'num', 'doRenameCat', 'doDeleteCat', 'budgetProgress', 'totalBudgetSummary', 'addCat',
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'esc', 'matchTxnQuery',
   'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo',
-  'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'restoreBackup',
+  'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'restoreBackup', 'storageOutcomeMsg',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -751,6 +751,23 @@ test('saveQuickAmount: 튜토리얼 모드 중에는 twGuard가 막아서 실제
   assert.strictEqual(r.edits['2026-02-05'], undefined, '튜토리얼 중에는 edits에 기록되면 안 됨');
   assert.strictEqual(sandbox.lastUndo, null);
   sandbox.TWi = -1;
+});
+
+/* ---------- storageOutcomeMsg: save()가 저장 성공/실패를 더 이상 숨기지 않는지 ---------- */
+test('storageOutcomeMsg: 계속 정상 저장 중이면 토스트를 띄우지 않는다(매 save() 호출마다 스팸 방지)', () => {
+  assert.strictEqual(sandbox.storageOutcomeMsg(true, true), null);
+});
+test('storageOutcomeMsg: 정상→실패로 전환되는 순간 실패 토스트를 띄운다', () => {
+  const notice = sandbox.storageOutcomeMsg(false, true);
+  assert.strictEqual(notice.kind, 'fail');
+  assert.ok(notice.msg.includes('저장 실패'), '실패했다는 사실이 메시지에 명확히 드러나야 함(예전에는 무조건 성공 토스트만 떴음)');
+});
+test('storageOutcomeMsg: 이미 실패 상태로 알고 있으면 매 호출마다 또 띄우지 않는다', () => {
+  assert.strictEqual(sandbox.storageOutcomeMsg(false, false), null);
+});
+test('storageOutcomeMsg: 실패→정상으로 회복되면 회복 토스트를 띄운다', () => {
+  const notice = sandbox.storageOutcomeMsg(true, false);
+  assert.strictEqual(notice.kind, 'ok');
 });
 
 /* ---------- restoreBackup: JSON 백업 복원의 스키마 검증 + 실패 시 롤백 ---------- */

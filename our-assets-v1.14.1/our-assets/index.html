@@ -917,6 +917,7 @@ button.end-box.placeholder,input.end-box::placeholder{color:var(--text-3);font-w
 .toast.show{opacity:1;transform:none}.toast svg{width:17px;height:17px;color:var(--brand)}
 html[data-theme="dark"] .toast{background:var(--surface-2);color:var(--text);border:1px solid var(--line-2)}
 .toast.undo{pointer-events:auto;gap:12px}
+.toast.fail svg{color:var(--expense)}
 .toast-undo{background:transparent;color:var(--brand);font-weight:700;font-size:14px;padding:2px 6px;margin-left:2px;flex-shrink:0}
 html[data-theme="dark"] .toast.undo .toast-undo{color:var(--brand-ink)}
 .empty{text-align:center;padding:40px 20px;color:var(--text-3)}
@@ -1272,7 +1273,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.19.13';
+const APP_VERSION='1.20.0';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 
@@ -1288,6 +1289,7 @@ const I={
  plus:'<path d="M12 5v14M5 12h14"/>',chev:'<path d="M9 6l6 6-6 6"/>',chevD:'<path d="M6 9l6 6 6-6"/>',chevL:'<path d="M15 6l-6 6 6 6"/>',chevR:'<path d="M9 6l6 6-6 6"/>',
  search:'<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/>',filter:'<path d="M4 6h16M7 12h10M10 18h4"/>',
  check:'<path d="M5 12l4.5 4.5L19 6"/>',x:'<path d="M6 6l12 12M18 6L6 18"/>',trash:'<path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13"/>',
+ alert:'<path d="M12 3.5L2.5 20h19z"/><path d="M12 10v4"/><circle cx="12" cy="17" r=".9" fill="currentColor" stroke="none"/>',
  edit:'<path d="M4 20h4L18.5 9.5a2 2 0 0 0-3-3L5 17z"/><path d="M13.5 6.5l3 3"/>',
  gold:'<circle cx="12" cy="12" r="8"/><path d="M12 8v8M9.5 10.5h3.5a1.5 1.5 0 0 1 0 3H9.5"/>',
  fx:'<path d="M4 8h13M14 5l3 3-3 3"/><path d="M20 16H7M10 13l-3 3 3 3"/>',
@@ -1637,7 +1639,21 @@ function kakaoReady(){const k=getKakaoKey();if(window.Kakao&&k&&!window.Kakao.is
 function accountName(){if(!SESSION)return '게스트';const r=AUTH.rec(SESSION);if(r&&r.kakao)return r.nick||'카카오 사용자';return (r&&r.email)||SESSION}
 function accountKind(){if(!SESSION)return 'guest';const r=AUTH.rec(SESSION);return r&&r.kakao?'kakao':'email'}
 function load(){
- try{const raw=localStorage.getItem(dataKey());if(raw){DB=JSON.parse(raw);migrate();return}}catch(e){STORAGE_OK=false}
+ let raw=null;
+ try{raw=localStorage.getItem(dataKey())}
+ catch(e){STORAGE_OK=false;DB=(SESSION?emptyDB():seed());toastFail('저장소를 열지 못했어요 · 이 기기·브라우저에서 자동저장이 제한된 것 같아요');return}
+ if(raw){
+  try{DB=JSON.parse(raw);migrate();return}
+  catch(e){
+   /* JSON.parse/migrate 실패는 저장 공간 문제가 아니라 데이터 자체가 손상된 것이므로,
+    * 예전처럼 곧장 빈 DB로 save()해 버리면 raw에 남아있던 원본이 영영 지워진다.
+    * 복구 시도라도 할 수 있게 타임스탬프 키로 원본을 최대한 남겨 둔다(최선 노력, 실패해도 무시). */
+   try{localStorage.setItem(dataKey()+'__corrupt_'+Date.now(),raw)}catch(e2){}
+   toastFail('저장된 데이터가 손상되어 열지 못했어요 · 백업 파일이 있으면 메뉴에서 복원해 주세요');
+   DB=(SESSION?emptyDB():seed());save();
+   return;
+  }
+ }
  DB=(SESSION?emptyDB():seed());save(); /* 게스트 첫 실행=샘플 체험 · 새 계정=빈 상태 */
 }
 function migrate(){
@@ -1671,7 +1687,17 @@ function migrate(){
  if(!DB.categories.expense||!DB.categories.expense.length)DB.categories.expense=[...EXP_CATS_DEFAULT];
  DB.inquiries=DB.inquiries||[];
 }
-function save(){invalidateBalances();try{localStorage.setItem(dataKey(),JSON.stringify(DB))}catch(e){STORAGE_OK=false}scheduleCloudPush()}
+/* storageOutcomeMsg: localStorage 쓰기 시도 결과(ok)와 직전 상태(wasOk)를 놓고 어떤 토스트를
+ * 띄울지 결정하는 순수 함수. save()가 앱 곳곳(~70곳)에서 호출될 때마다 매번 토스트를 띄우면
+ * 스팸이 되므로, '정상↔실패' 상태가 바뀌는 전환 시점에만 알린다. */
+function storageOutcomeMsg(ok,wasOk){
+ if(ok)return wasOk?null:{kind:'ok',msg:'저장이 다시 정상 작동해요'};
+ return wasOk?{kind:'fail',msg:'저장 실패 · 이 기기에 저장 공간이 부족하거나 저장이 제한돼 있어요. 내보내기로 백업하세요.'}:null;
+}
+function save(){invalidateBalances();let ok;try{localStorage.setItem(dataKey(),JSON.stringify(DB));ok=true}catch(e){ok=false}
+ const notice=storageOutcomeMsg(ok,STORAGE_OK);STORAGE_OK=ok;
+ if(notice)notice.kind==='fail'?toastFail(notice.msg):toast(notice.msg);
+ scheduleCloudPush();return ok}
 
 /* ================= RECURRENCE ================= */
 function shiftWeekend(ds,mode){ /* 주말 조정: earlier=금요일로 당김, later=월요일로 미룸 */
@@ -3457,7 +3483,7 @@ function renderMenu(){
    ${g.items.map(it=>it.sw!==undefined
      ?`<button class="menu-item" onclick="${it.a}" aria-pressed="${it.sw?'true':'false'}"><span class="mi">${svg(it.ic)}</span><span class="ml">${it.l}</span><span class="switch ${it.sw?'on':''}" aria-hidden="true"><i></i></span></button>`
      :`<button class="menu-item" onclick="${it.a}"><span class="mi">${svg(it.ic)}</span><span class="ml">${it.l}</span>${it.v?`<span class="mv">${it.v}</span>`:''}<span class="mc">${svg('chev')}</span></button>`).join('')}</div></div>`).join('')}
- <div style="text-align:center;color:var(--text-3);font-size:12px;margin-top:22px;font-weight:500">우리의 자산 · v${APP_VERSION}${STORAGE_OK?'':'<br>※ 미리보기에서는 자동저장이 제한돼요. 내보내기로 백업하세요.'}</div>
+ <div style="text-align:center;color:var(--text-3);font-size:12px;margin-top:22px;font-weight:500">우리의 자산 · v${APP_VERSION}${STORAGE_OK?'':`<br><span style="color:var(--expense)">⚠ 자동저장이 안 되고 있어요. 내보내기로 백업하세요.</span>`}</div>
  <div class="menu-foot-actions">
    <button class="mfa" onclick="${kind==='guest'?'showAuth()':'doLogout()'}">${svg(kind==='guest'?'users':'restore')} ${kind==='guest'?'로그인':'로그아웃'}</button>
    <button class="mfa danger" onclick="doResetAll()">${svg('trash')} 전체 초기화</button>
@@ -4910,6 +4936,11 @@ function goThisMonth(which){
 function toast(msg){const t=document.createElement('div');t.className='toast';t.innerHTML=svg('check')+`<span>${esc(msg)}</span>`;
  $('toastWrap').appendChild(t);requestAnimationFrame(()=>t.classList.add('show'));
  setTimeout(()=>{t.classList.remove('show');setTimeout(()=>t.remove(),300)},1900)}
+/* toastFail: 저장/불러오기가 실제로 실패했을 때만 쓰는 경고 토스트. 성공 토스트보다 오래
+ * 떠 있어야 사용자가 놓치지 않는다(save()가 화면 전환 직후 호출되는 경우가 많아서). */
+function toastFail(msg){const t=document.createElement('div');t.className='toast fail';t.innerHTML=svg('alert')+`<span>${esc(msg)}</span>`;
+ $('toastWrap').appendChild(t);requestAnimationFrame(()=>t.classList.add('show'));
+ setTimeout(()=>{t.classList.remove('show');setTimeout(()=>t.remove(),300)},4500)}
 function undoToast(msg,undoFn){const t=document.createElement('div');t.className='toast undo';
  t.innerHTML=svg('check')+`<span>${esc(msg)}</span>`;
  const btn=document.createElement('button');btn.className='toast-undo';btn.textContent='되돌리기';let done=false;
