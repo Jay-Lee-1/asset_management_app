@@ -53,7 +53,7 @@ const FUNCTIONS = [
   'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo',
   'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'restoreBackup', 'storageOutcomeMsg',
   'monthStartStr', 'monthEndStr', 'expandRec', 'allTxns', 'spendByCategory', 'histSumTotals',
-  'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount',
+  'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'expenseBreakdownCard',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -561,6 +561,17 @@ test('esc: 평범한 텍스트는 그대로 둔다', () => {
 test('esc: null/undefined는 빈 문자열로 처리한다', () => {
   assert.strictEqual(sandbox.esc(null), '');
   assert.strictEqual(sandbox.esc(undefined), '');
+});
+
+/* ---------- expenseBreakdownCard: 홈 화면 지출 분석 카드는 사용자가 지은 카테고리명을 이스케이프해야 한다 ---------- */
+test('expenseBreakdownCard: 카테고리명에 HTML 특수문자가 있어도 이스케이프되어 렌더링을 깨지 않는다', () => {
+  const html = sandbox.expenseBreakdownCard([{ cat: '외식&카페<script>', v: 10000 }], 10000);
+  assert.ok(html.includes('외식&amp;카페&lt;script&gt;'), 'HTML이 이스케이프되어야 함');
+  assert.ok(!html.includes('<script>'), '원본 태그가 그대로 남아있으면 안 됨');
+});
+test('expenseBreakdownCard: 평범한 카테고리명은 그대로 표시된다', () => {
+  const html = sandbox.expenseBreakdownCard([{ cat: '식비', v: 5000 }], 5000);
+  assert.ok(html.includes('식비'));
 });
 
 /* ---------- deleteTxnsUndo: 단일/대량 삭제 공용 되돌리기 인프라 (delAdjust도 여기 합류) ---------- */

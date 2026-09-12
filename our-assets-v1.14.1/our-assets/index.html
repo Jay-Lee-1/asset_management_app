@@ -1277,7 +1277,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.21.5';
+const APP_VERSION='1.21.6';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1948,7 +1948,7 @@ function renderHome(){
  if(needGold())mkt.push({ic:'gold',cls:'a-gold',nm:'금 (순금 1g)',sub:'자동 연동',price:R.goldPerG});
  [...new Set(DB.assets.filter(a=>a.type==='fx').map(a=>a.currency))].forEach(c=>{mkt.push({ic:'fx',cls:'a-fx',nm:c,sub:'매매기준율',price:R.fx[c]||0});});
  DB.assets.filter(a=>a.type==='stock').forEach(a=>mkt.push({ic:'stock',cls:'a-stock',nm:a.name,sub:a.stockCode,price:R.stocks[a.stockCode]||0}));
- const mktRows=mkt.map(x=>`<div class="mkt-item"><div class="avatar ${x.cls}">${svg(x.ic)}</div><div><div class="nm">${x.nm}</div><div class="sub">${x.sub}</div></div><div class="val"><div class="price num">${comma(x.price)}원</div></div></div>`).join('');
+ const mktRows=mkt.map(x=>`<div class="mkt-item"><div class="avatar ${x.cls}">${svg(x.ic)}</div><div><div class="nm">${esc(x.nm)}</div><div class="sub">${esc(x.sub)}</div></div><div class="val"><div class="price num">${comma(x.price)}원</div></div></div>`).join('');
 
  $('page-home').innerHTML=`
  <div class="hdr"><div class="hd-l"><div class="sub">우리의 자산</div><h1>🌱 이번 달 살림 💸</h1></div></div>
@@ -2020,7 +2020,7 @@ function expenseBreakdownCard(cats,_ignore){
  for(let k=0;k<rem&&k<order.length;k++)floor[order[k].i]++;
  const rows=cats.map((c,i)=>
    `<div class="eb-row"><span class="eb-dot" style="background:${col(i)}"></span>
-     <span class="eb-cat">${c.cat}</span><span class="eb-pc num">${floor[i]}%</span><span class="eb-v num">${comma(c.v)}원</span></div>`).join('');
+     <span class="eb-cat">${esc(c.cat)}</span><span class="eb-pc num">${floor[i]}%</span><span class="eb-v num">${comma(c.v)}원</span></div>`).join('');
  const seg=cats.map((c,i)=>`<i style="width:${c.v/spent*100}%;background:${col(i)}"></i>`).join('');
  return `<div class="section-title">이번 달 지출 분석</div>
    <div class="card eb-card"><div class="eb-total"><span>총 지출</span><b class="num">${comma(spent)}원</b></div>
@@ -2807,7 +2807,7 @@ function renderTxSheet(){
  const showRepeat=!editing; /* 간단: 생성 시에만 반복 토글 노출 (기존 반복 편집은 반복 관리에서) */
  const rpt=showRepeat&&d.repeat;
  const typeSeg=[['expense','지출'],['income','수입'],['transfer','이체'],['saving','저축']].map(([v,l])=>`<button class="${d.type===v?'on':''}" onclick="txType('${v}')">${l}</button>`).join('');
- const catField=d.type!=='transfer'?`<div class="field"><label>카테고리</label><button class="pick" onclick="txOpenCat()"><div class="pav ${catAv(d.type)}">${catGlyph(d.type,d.category,null,'tag')}</div><div class="pbody"><div class="pn">${d.category}</div></div><div class="pc">${svg('chevR')}</div></button></div>`:'';
+ const catField=d.type!=='transfer'?`<div class="field"><label>카테고리</label><button class="pick" onclick="txOpenCat()"><div class="pav ${catAv(d.type)}">${catGlyph(d.type,d.category,null,'tag')}</div><div class="pbody"><div class="pn">${esc(d.category)}</div></div><div class="pc">${svg('chevR')}</div></button></div>`:'';
  let assetFields='';
  if(d.type==='expense')assetFields=`<div class="field"><label>출금 자산</label>${assetPickBtn(d.fromAssetId,"txOpenAsset('from')")}</div>`;
  else if(d.type==='income')assetFields=`<div class="field"><label>입금 자산</label>${assetPickBtn(d.toAssetId,"txOpenAsset('to')")}</div>`;
@@ -3017,7 +3017,7 @@ function setRecWeekend(v){recDraft.weekend=v;renderRecSheet(!!recDraft.id)}
 function renderRecSheet(){
  const d=recDraft;const editing=!!d.id;
  const typeSeg=[['expense','지출'],['income','수입'],['transfer','이체'],['saving','저축']].map(([v,l])=>`<button class="${d.type===v?'on':''}" onclick="recType('${v}')">${l}</button>`).join('');
- const catField=d.type!=='transfer'?`<div class="field"><label>카테고리</label><button class="pick" onclick="recOpenCat()"><div class="pav ${catAv(d.type)}">${catGlyph(d.type,d.category,null,'tag')}</div><div class="pbody"><div class="pn">${d.category}</div></div><div class="pc">${svg('chevR')}</div></button></div>`:'';
+ const catField=d.type!=='transfer'?`<div class="field"><label>카테고리</label><button class="pick" onclick="recOpenCat()"><div class="pav ${catAv(d.type)}">${catGlyph(d.type,d.category,null,'tag')}</div><div class="pbody"><div class="pn">${esc(d.category)}</div></div><div class="pc">${svg('chevR')}</div></button></div>`:'';
  const freqBtns=[['monthly','매월'],['weekly','매주'],['daily','매일'],['yearly','매년']].map(([v,l])=>`<button class="${d.freq===v?'on':''}" onclick="syncRecInputs();recDraft.freq='${v}';renderRecSheet()">${l}</button>`).join('');
  let dayField='';
  if(d.freq==='monthly'){
