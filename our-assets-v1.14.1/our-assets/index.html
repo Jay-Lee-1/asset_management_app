@@ -1277,7 +1277,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.21.6';
+const APP_VERSION='1.21.7';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4810,9 +4810,9 @@ function openFixShortfall(targetId,date,need){
   }
   body+=`<div class="fix-cap">여러 통장에서 나눠서</div>
    <div class="card" style="box-shadow:none;padding:14px 16px">
-    ${plan.map(p=>`<div class="of-row"><span class="of-nm">${p.name}</span><span class="of-am num">${comma(p.amount)}원</span></div>`).join('')}
+    ${plan.map(p=>`<div class="of-row"><span class="of-nm">${esc(p.name)}</span><span class="of-am num">${comma(p.amount)}원</span></div>`).join('')}
    </div>
-   <button class="btn btn-primary" style="margin-top:12px" onclick='planSplitTransfer(${JSON.stringify(plan)},"${targetId}","${when}")'>${svg('transfer')} 이렇게 나눠서 예정 등록</button>`;
+   <button class="btn btn-primary" style="margin-top:12px" onclick='planSplitTransfer(${esc(JSON.stringify(plan))},"${targetId}","${when}")'>${svg('transfer')} 이렇게 나눠서 예정 등록</button>`;
  }
  if(!donors.length||totalFree<need){
   body+=`<div class="fix-cap">부족해요</div>
@@ -4822,7 +4822,7 @@ function openFixShortfall(targetId,date,need){
  }
 
  openSheet(`<h3>${comma(need)}원 부족해요</h3>
-  <div class="desc"><b>${t.name}</b>이 ${shortDate(date)}에 부족해져요.<br>
+  <div class="desc"><b>${esc(t.name)}</b>이 ${shortDate(date)}에 부족해져요.<br>
   <span style="color:var(--text-3);font-size:12.5px">실제로 이체하지는 않아요. 아래 날짜에 <b>예정</b>으로만 기록해 둡니다.</span></div>
   <div class="fix-cap">언제 옮길까요?</div>
   <div class="opt-grid" style="grid-template-columns:repeat(3,1fr)">

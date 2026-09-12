@@ -1,8 +1,15 @@
 {
   "cycle": 18,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 18,
+      "phase": "review",
+      "timestamp": "2026-09-12T13:08:39.612Z",
+      "summary": "Reviewed commit f9ba5e3 (esc() added to expenseBreakdownCard/mktRows/txSheet catField/recSheet catField). Confirmed the 4 fixed sites correctly wrap the existing esc() helper with no behavior change for ordinary names, and the 2 new expenseBreakdownCard regression tests correctly pin the escaping. While tracing every other user-name template-literal render site in the file for the same bug class, found two more genuine misses in openFixShortfall() (asset-shortfall planning sheet, index.html~4813/4825) that the develop commit did not touch: the multi-account split-transfer row list (${p.name}) and the shortfall description (${t.name}) both render user-editable asset names straight into innerHTML unescaped, right next to a sibling line in the same function (${esc(a.name)}) that already does it correctly — an inconsistency within one function, not just a missed function. Fixed both with esc(), matching the sibling line and the rest of the codebase. While in that function also found a more serious variant of the same bug class: the split-transfer button embeds JSON.stringify(plan) (plan entries carry the same unescaped asset name) directly inside a single-quoted onclick attribute (onclick='planSplitTransfer(...)') — an asset name containing a literal apostrophe (e.g. \"O'Brien\") would prematurely terminate the HTML attribute at that quote, letting anything after it be parsed as raw markup/attributes (attribute-breakout, worse than plain-text escaping bugs since it can inject attributes/script, not just break layout). Grepped every JSON.stringify call site in the file — this is the only one embedded inside markup — so fixed it by wrapping in esc(JSON.stringify(plan)); the browser HTML-decodes the attribute before executing it as JS, so the object-literal syntax parses correctly afterward. All three fixes are DOM-rendering logic with no pure-function boundary to unit test (same category as the DOM-coupled sites the develop commit itself left untested), so verified via node --check on both inline <script> blocks and re-ran the full regression suite (106/106 pass, no count change — no new pure-function tests, consistent with how the develop commit handled its own DOM-only fixes). APP_VERSION 1.21.6->1.21.7, sw.js CACHE v66->v67 (patch bump, bug fix).",
+      "commit": null
+    },
     {
       "cycle": 18,
       "phase": "develop",
@@ -134,13 +141,6 @@
       "phase": "critique",
       "timestamp": "2026-09-11T16:10:43.542Z",
       "summary": "전체 앱을 한 걸음 물러나 봤다(백그라운드 조사 에이전트 활용). CSV export는 cycle7 critique에서 계획했으나 cycle8 critique가 pending_advance_plan을 budget summary로 덮어써 유실된 줄 알았지만, 실제로는 txnsToCSV()(index.html:3997)로 이미 구현·배포되어 있음을 확인해 재제안하지 않았다. 대신 이번 로테이션에서 delTx/delAdjust/delAsset/recApply/recSave/saveQuickAmount 등 모든 개별 수정·삭제 경로가 undoToast()로 통일된 것과 대비되게, 가장 파괴적인 두 개의 'DB 전체 교체' 경로 — JSON 백업 복원(importFile change 핸들러, index.html:4085-4092: obj.assets/obj.txns가 truthy인지만 확인하고 바로 DB=obj, 확인창에 '되돌릴 수 없어요'라고 명시)와 클라우드 강제 push(resolveCloudForcePush(), index.html:1576) — 는 스키마 검증도 얕고 되돌리기 수단도 전혀 없음을 확인했다. 후보로 검토했지만 기각한 것들: 클라우드 동기화의 last-write-wins/수동 충돌 해결(이미 CLOUD_SYNC_STATE로 사용자에게 노출되고 있어 별도 UX가 있음, 범위가 큼); 로컬 djb2 해시(Supabase 미설정 시의 폴백 경로로 여전히 라이브이긴 하나 로컬 전용이라 위험 낮고 반복적으로 후순위); 접근성 격차(onclick 213건 대비 aria-label 11건, 여전히 실재하지만 산발적이라 전담 스윕이 더 적합, cycle9에서도 같은 이유로 러너업 처리됨). 코드 변경 없음 — pending_advance_plan에 백업 복원/클라우드 강제 push 검증+undo 계획을 적어둠.",
-      "commit": null
-    },
-    {
-      "cycle": 13,
-      "phase": "review",
-      "timestamp": "2026-09-11T14:09:20.000Z",
-      "summary": "Reviewed commit 48e966a (saveQuickAmount undo fix). Confirmed twGuard() was already present at the top of saveQuickAmount (added in an earlier cycle) and this change correctly adds only the undo affordance: edits[date] previous value is captured before overwrite, undoFn restores it (or deletes the key if it didn't exist before), mirroring recSave's scope='one' path exactly. Confirmed saveQuickAmount has exactly one call site (the quick-amount card's 저장 button, index.html:4635) expecting no return value, so the added undoToast()/closure change is behavior-safe. Re-ran the regression suite (73/73 pass) and re-verified both inline <script> blocks parse via new Function(). No bugs found — no code changes this phase.",
       "commit": null
     }
   ]
