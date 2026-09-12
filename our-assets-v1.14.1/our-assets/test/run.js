@@ -590,6 +590,39 @@ test('txnsToCSV: 날짜 오름차순으로 정렬한다', () => {
   assert.ok(lines[1].startsWith('2026-01-01'));
   assert.ok(lines[2].startsWith('2026-02-01'));
 });
+test('txnsToCSV: 메모가 =,+,-,@ 로 시작하면 앞에 \'를 붙여 수식 인젝션을 막는다', () => {
+  const csv = sandbox.txnsToCSV(
+    [
+      { date: '2026-01-01', type: 'expense', category: '기타', amount: 1, fromAssetId: null, toAssetId: null, memo: "=cmd|'/c calc'!A1" },
+      { date: '2026-01-02', type: 'expense', category: '기타', amount: 1, fromAssetId: null, toAssetId: null, memo: '+1+1' },
+      { date: '2026-01-03', type: 'expense', category: '기타', amount: 1, fromAssetId: null, toAssetId: null, memo: '@SUM(A1)' },
+      { date: '2026-01-04', type: 'expense', category: '기타', amount: -500, fromAssetId: null, toAssetId: null, memo: '-2000원 환불' },
+    ],
+    []
+  );
+  const lines = csv.slice(1).split('\r\n');
+  assert.strictEqual(lines[1], "2026-01-01,지출,기타,1,,,'=cmd|'/c calc'!A1");
+  assert.strictEqual(lines[2], "2026-01-02,지출,기타,1,,,'+1+1");
+  assert.strictEqual(lines[3], "2026-01-03,지출,기타,1,,,'@SUM(A1)");
+  assert.strictEqual(lines[4], "2026-01-04,지출,기타,-500,,,'-2000원 환불");
+});
+test('txnsToCSV: 카테고리/자산명이 =,+,-,@ 로 시작해도 같은 방식으로 방어한다', () => {
+  const assets = [{ id: 'a1', name: '=HYPERLINK("http://evil")' }];
+  const csv = sandbox.txnsToCSV(
+    [{ date: '2026-01-01', type: 'transfer', category: '=1+1', amount: 100, fromAssetId: 'a1', toAssetId: null, memo: '' }],
+    assets
+  );
+  const lines = csv.slice(1).split('\r\n');
+  assert.strictEqual(lines[1], `2026-01-01,이체,'=1+1,100,"'=HYPERLINK(""http://evil"")",,`);
+});
+test('txnsToCSV: 금액이 음수여도 필드 자체는 그대로 두고(guard 대상 아님) 텍스트 필드만 방어한다', () => {
+  const csv = sandbox.txnsToCSV(
+    [{ date: '2026-01-01', type: 'expense', category: '기타', amount: -1000, fromAssetId: null, toAssetId: null, memo: '' }],
+    []
+  );
+  const lines = csv.slice(1).split('\r\n');
+  assert.strictEqual(lines[1], '2026-01-01,지출,기타,-1000,,,');
+});
 
 /* ---------- matchTxnQuery: 거래 검색은 대소문자를 구분하지 않는다 ---------- */
 test('matchTxnQuery: 빈 검색어는 항상 매칭된다', () => {

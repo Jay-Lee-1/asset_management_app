@@ -1277,7 +1277,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.22.4';
+const APP_VERSION='1.22.5';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4091,11 +4091,14 @@ function canShareFiles(){try{return !!(navigator.canShare&&navigator.canShare({f
 function txnsToCSV(txns,assets){
  const typeLabel={expense:'지출',income:'수입',transfer:'이체',saving:'저축'};
  const nm=(id,snap)=>{const a=(assets||[]).find(x=>x.id===id);return a?a.name:(snap||'')};
+ /* 카테고리/자산명/메모는 사용자가 자유롭게 입력하므로 =,+,-,@ 로 시작하면
+    엑셀/스프레드시트가 수식으로 해석할 수 있음(CSV 인젝션) — 앞에 '를 붙여 무력화 */
+ const guard=v=>{const s=String(v==null?'':v);return /^[=+\-@\t\r]/.test(s)?"'"+s:s};
  const esc=v=>{const s=String(v==null?'':v);return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s};
  const header=['날짜','구분','카테고리','금액','보내는 자산','받는 자산','메모'].map(esc).join(',');
  const rows=(txns||[]).slice().sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0).map(t=>[
-  t.date,typeLabel[t.type]||t.type||'',t.category||'',t.amount,
-  nm(t.fromAssetId,t.fromAssetName),nm(t.toAssetId,t.toAssetName),t.memo||''
+  t.date,typeLabel[t.type]||t.type||'',guard(t.category||''),t.amount,
+  guard(nm(t.fromAssetId,t.fromAssetName)),guard(nm(t.toAssetId,t.toAssetName)),guard(t.memo||'')
  ].map(esc).join(','));
  return '\ufeff'+[header,...rows].join('\r\n');
 }
