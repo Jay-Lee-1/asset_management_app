@@ -1,8 +1,19 @@
 {
   "cycle": 15,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "Modal Sheet System — Dialog Semantics, Focus Trap & Keyboard Support",
+    "why": "openSheet/closeSheet (~index.html:4186,4277) is the single shared primitive behind ~60+ call sites (add/edit transaction, asset, recurring, categories, settings, confirmations, date picker) yet has no role=dialog/aria-modal, no focus trap (Tab reaches content behind the scrim), no Escape-to-close, and no focus restore on close. This is a distinct, bounded angle from the previously-rejected broad aria-label sweep: fixing one shared component hardens keyboard/screen-reader usability across the entire app in a single change.",
+    "approach": "In openSheet(html, topBtn) (~4186): add role=\"dialog\" aria-modal=\"true\" to #sheet; capture document.activeElement as _sheetReturnFocus before swapping content; after render, move focus into the sheet via one unified helper (existing focus target, else the sheet container via tabindex=-1) instead of the ad-hoc per-form setTimeout calls scattered across ~10 render*Sheet functions. Add a single keydown handler (wired once) that closes on Escape (calling closeSheet()) and traps Tab/Shift+Tab by recomputing focusable elements inside #sheet on each keypress (content re-renders often). In closeSheet() (~4277): restore focus to _sheetReturnFocus if still attached, then clear it. Toggle inert (or aria-hidden fallback) on the main app root while #sheet has .show, removed in closeSheet(). Because #sheet is also mutated directly by edge-swipe back-gesture logic (~4227-4276), route focus/inert through one small helper called from those mutation points too, not just open/close. DOM-bound, not pure logic, so no test/run.js additions -- verify manually across 3 representative sheets (add-transaction, confirm-delete, account/cloud settings) for tab containment, Escape behavior, and focus return."
+  },
   "history": [
+    {
+      "cycle": 15,
+      "phase": "critique",
+      "timestamp": "2026-09-12T00:11:16.517Z",
+      "summary": "전체 앱을 한 걸음 물러나 봤다(백그라운드 조사 에이전트 활용). 후보로 검토했지만 기각한 것들: (1) 외부 환율/시세 fetch가 Netlify Functions 엔드포인트에 결합되어 실패 시 stale 플래그만 조용히 세우는 문제 -- openRateSheet(3761)에 이미 수동 오버라이드 UI가 있어 실제 제품 갭이 작음; (2) 자산 탭에 History처럼 검색/필터가 없는 문제 -- 자산 개수가 보통 수십 개 수준이라 체감 임팩트가 낮음. 대신 openSheet()/closeSheet()(약 4186, 4277줄)가 거래/자산/반복/카테고리/설정/확인창/날짜선택 등 앱 전체 60여 곳에서 쓰이는 유일한 공유 모달 프리미티브인데도 role=dialog/aria-modal이 전혀 없고, 포커스 트랩이 없어 시트가 떠 있어도 Tab으로 배경 콘텐츠까지 그대로 이동 가능하며, Escape로 닫는 기능도 없고, 닫을 때 포커스 복원도 하지 않음을 발견했다. 이전 사이클들(6,8,9)에서 반복적으로 러너업 처리된 넓은 aria-label 전수 조사와는 다른 각도로, 산발적인 라벨링이 아니라 앱 전체가 공유하는 단일 컴포넌트 하나를 강화하는 것이라 한 사이클에 담기 적합한 범위로 판단해 채택. 코드 변경 없음 -- pending_advance_plan에 모달 시트 다이얼로그 시맨틱스+포커스 트랩+키보드 지원 계획을 적어둠.",
+      "commit": null
+    },
     {
       "cycle": 15,
       "phase": "review",
@@ -135,13 +146,6 @@
       "timestamp": "2026-09-10T17:30:00+00:00",
       "summary": "Reviewed commit 8121371 (yearly recDates() Feb-29 clamp fix). Traced through the rewritten loop by hand: mo/day are captured once from rs, d2=Math.min(day,lastDay(y,mo)) correctly clamps per-year (lastDay(y,m)=new Date(y,m,0).getDate() is the same helper already used by the monthly branch and addMonths()), the break condition new Date(y,mo-1,d2)>end terminates since the constructed date strictly increases with y, and ds>=r.startDate/push()'s own from/to/endDate bounds are unchanged from before so windowing behavior is preserved. Checked all 5 call sites of recDates() (index.html:1705,1725,1730,2511,4573) — all consume the returned array the same way as before (forEach/.length/direct array use), so the return type/shape didn't change. Re-ran the regression suite (45/45 pass) and re-validated both inline <script> blocks parse via new Function(). No bugs found — no code changes this phase. Also backfilled the cycle 8 develop history entry's commit hash (was null, actual is 8121371).",
       "commit": null
-    },
-    {
-      "cycle": 5,
-      "phase": "advance",
-      "timestamp": "2026-09-10T22:30:00+09:00",
-      "summary": "Implemented cycle 5's critique plan: connected the previously-dead DB.budgets scaffolding to a real feature by extending the existing openSpendAnalysis() ('지출 분석') sheet instead of building a new screen. Tapping a category row now opens openBudgetPrompt(idx), which reads/writes DB.budgets[category] via saveBudget()/delBudget(). Extracted the percentage math into a pure budgetProgress(spent,budget) helper: when a budget is set, the row's progress bar switches from 'share of total spend' to 'usage vs budget' (clamped to 100% width so the bar never overflows), turns from --brand to --expense once spending exceeds the budget, and the amount/percentage text also gets the --expense highlight; categories with no budget keep today's total-share behavior unchanged. doRenameCat() now migrates DB.budgets[old]->DB.budgets[new] on expense-category rename, mirroring the existing catIcon/catVar migration pattern (delCat leaves orphaned budget entries alone, same as it already does for catIcon/catVar). Added 6 new regression tests (budgetProgress edge cases including the 0-budget divide-by-zero guard and the >100% clamp, plus the rename-migrates-budget case) — all 24 tests pass. Bumped APP_VERSION 1.17.3->1.17.4 and sw.js CACHE v38->v39.",
-      "commit": "af5cd70"
     }
   ]
 }
