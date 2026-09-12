@@ -920,6 +920,9 @@ html[data-theme="dark"] .toast{background:var(--surface-2);color:var(--text);bor
 .toast.fail svg{color:var(--expense)}
 .toast-undo{background:transparent;color:var(--brand);font-weight:700;font-size:14px;padding:2px 6px;margin-left:2px;flex-shrink:0}
 html[data-theme="dark"] .toast.undo .toast-undo{color:var(--brand-ink)}
+.sw-update-bar{display:none;position:fixed;left:12px;right:12px;bottom:calc(var(--nav-h) + var(--ad-h) + env(safe-area-inset-bottom) + 12px);z-index:199;align-items:center;gap:10px;padding:13px 16px;border-radius:var(--r-md);background:var(--brand);color:var(--on-brand);font-size:13.5px;font-weight:700;box-shadow:var(--sh-lg);cursor:pointer}
+.sw-update-bar.show{display:flex}
+.sw-update-bar svg{width:18px;height:18px;flex-shrink:0}
 .empty{text-align:center;padding:40px 20px;color:var(--text-3)}
 .empty .ei{width:56px;height:56px;border-radius:20px;background:var(--sunken);display:grid;place-items:center;margin:0 auto 14px;color:var(--text-3)}
 .empty .ei svg{width:28px;height:28px}
@@ -1266,6 +1269,7 @@ body.selmode .fab{display:none}
 <div class="fab-pop" id="fabPop"></div>
 <button class="fab" id="fab" onclick="fabTap()" aria-label="추가"></button>
 <div class="selbar-bottom" id="selBarBottom"></div>
+<div class="sw-update-bar" id="swUpdateBar" onclick="location.reload()" role="button" tabindex="0"></div>
 <div class="toast-wrap" id="toastWrap"></div>
 <input type="file" id="importFile" accept="application/json,.json" style="display:none">
 
@@ -1273,9 +1277,18 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.21.4';
+const APP_VERSION='1.21.5';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
+/* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
+ * 하단 배너 노출 + 버전 정보 메뉴 문구 전환에 쓰인다 (index.html 끝부분 SW 등록 스크립트에서 세팅). */
+let SW_UPDATE_AVAILABLE=false;
+function showSwUpdateBar(){
+ const el=$('swUpdateBar');if(!el)return;
+ el.innerHTML=svg('refresh',18)+'<span>새 버전이 있어요 · 탭하여 새로고침</span>';
+ el.classList.add('show');
+ if(document.getElementById('page-menu').classList.contains('active'))renderMenu();
+}
 
 /* ================= ICONS ================= */
 const I={
@@ -3483,7 +3496,7 @@ function renderMenu(){
    {ic:'tag',l:'메인 색',v:accentName(),a:"openAccentSheet()"},
    {ic:'chat',l:'문의하기',a:"openInquiry()"},
    {ic:'help',l:'도움말',a:"openHelp()"},
-   {ic:'info',l:'버전 정보',v:'v'+APP_VERSION,a:"toast('현재 최신 버전이에요 · v'+APP_VERSION)"},
+   {ic:'info',l:'버전 정보',v:SW_UPDATE_AVAILABLE?'새 버전 있음':'v'+APP_VERSION,a:SW_UPDATE_AVAILABLE?"location.reload()":"toast('현재 최신 버전이에요 · v'+APP_VERSION)"},
   ]},
  ];
  $('page-menu').innerHTML=`
@@ -3498,7 +3511,7 @@ function renderMenu(){
    ${g.items.map(it=>it.sw!==undefined
      ?`<button class="menu-item" onclick="${it.a}" aria-pressed="${it.sw?'true':'false'}"><span class="mi">${svg(it.ic)}</span><span class="ml">${it.l}</span><span class="switch ${it.sw?'on':''}" aria-hidden="true"><i></i></span></button>`
      :`<button class="menu-item" onclick="${it.a}"><span class="mi">${svg(it.ic)}</span><span class="ml">${it.l}</span>${it.v?`<span class="mv">${it.v}</span>`:''}<span class="mc">${svg('chev')}</span></button>`).join('')}</div></div>`).join('')}
- <div style="text-align:center;color:var(--text-3);font-size:12px;margin-top:22px;font-weight:500">우리의 자산 · v${APP_VERSION}${STORAGE_OK?'':`<br><span style="color:var(--expense)">⚠ 자동저장이 안 되고 있어요. 내보내기로 백업하세요.</span>`}</div>
+ <div style="text-align:center;color:var(--text-3);font-size:12px;margin-top:22px;font-weight:500">우리의 자산 · v${APP_VERSION}${SW_UPDATE_AVAILABLE?`<br><span style="color:var(--brand)">🆕 새 버전이 있어요 · <a href="javascript:location.reload()" style="text-decoration:underline;font-weight:700">지금 새로고침</a></span>`:''}${STORAGE_OK?'':`<br><span style="color:var(--expense)">⚠ 자동저장이 안 되고 있어요. 내보내기로 백업하세요.</span>`}</div>
  <div class="menu-foot-actions">
    <button class="mfa" onclick="${kind==='guest'?'showAuth()':'doLogout()'}">${svg(kind==='guest'?'users':'restore')} ${kind==='guest'?'로그인':'로그아웃'}</button>
    <button class="mfa danger" onclick="doResetAll()">${svg('trash')} 전체 초기화</button>
@@ -5364,6 +5377,19 @@ setTimeout(()=>{if(!DB)return;const soon=DB.assets.filter(a=>a.type==='savings'&
 <script>
 /* PWA 서비스워커 등록 — 오프라인 지원 및 홈 화면 설치 */
 if('serviceWorker' in navigator){
+  /* 페이지가 이미 어떤 서비스워커의 제어를 받고 있었는지를 등록 전에 미리 캡처해 둔다.
+   * 처음 방문해 서비스워커가 하나도 없던 상태(hadController=false)에서는 sw.js의
+   * clients.claim()이 '무제어→제어됨'으로 바뀌는 것만으로도 controllerchange가 한 번 뜨는데,
+   * 이건 실제 업데이트가 아니라 최초 설치일 뿐이라 이 최초 1회는 무시해야 한다(안 그러면
+   * 모든 신규 방문자가 첫 로드부터 '새 버전이 있어요' 배너를 잘못 보게 된다). 이미 다른
+   * 서비스워커가 이 페이지를 제어 중이던 경우(hadController=true)에만 이후 controllerchange를
+   * 진짜 새 배포로 취급한다. */
+  var hadController=!!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange',function(){
+    if(!hadController){hadController=true;return}
+    SW_UPDATE_AVAILABLE=true;
+    showSwUpdateBar();
+  });
   window.addEventListener('load',function(){
     navigator.serviceWorker.register('./sw.js').catch(function(e){
       console.warn('SW registration failed:', e);

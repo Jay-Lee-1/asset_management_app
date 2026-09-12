@@ -1,12 +1,15 @@
 {
   "cycle": 17,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "SW 업데이트 감지 및 사용자 알림 부재 — 앱이 실제로는 구버전인데 '최신 버전이에요'라고 거짓 응답",
-    "why": "이 앱은 홈 화면에 설치해 오래 열어두는 PWA(README: 설치 시 오프라인 전체화면 앱)인데, sw.js가 무조건 skipWaiting()+clients.claim()을 호출해(21-33줄) 새 배포가 이미 열려 있는 탭을 백그라운드에서 조용히 장악한다. 하지만 페이지의 JS는 리로드 전까지 구버전 코드를 계속 실행하고, 이를 사용자에게 알리는 장치가 전혀 없다. 심지어 '버전 정보' 메뉴(index.html:3486)는 실제 업데이트 여부와 무관하게 항상 \"현재 최신 버전이에요\"라고 하드코딩되어 있어, cycle12~17에서 고친 저장 실패/반복거래/홈알림 버그들도 사용자가 리로드하지 않으면 영영 적용되지 않을 수 있고 확인해봐도 거짓 정보를 받는다.",
-    "approach": "1) index.html ~5364-5372의 SW 등록 스크립트에 navigator.serviceWorker.addEventListener('controllerchange', ...) 리스너를 추가해 모듈 레벨 플래그(예: let SW_UPDATE_AVAILABLE=false)를 true로 세팅. 2) 자동으로 사라지는 toast()/undoToast() 대신, 지속적으로 보이는 작은 배너(새로고침 버튼 포함, location.reload() 호출)를 추가해 감지 즉시 노출. 3) index.html:3486의 '버전 정보' 메뉴와 3501의 하단 버전 표시 둘 다 SW_UPDATE_AVAILABLE을 확인해 참일 때 '새 버전이 있어요 · 탭하여 새로고침' 같은 문구+리로드 액션으로 바꾸고, 거짓인 '이미 최신 버전' 주장은 실제로 업데이트가 없을 때만 보이게 한다. sw.js의 캐싱 전략 자체는 바꿀 필요 없음(skipWaiting/clients.claim이 이미 controllerchange를 신뢰할 수 있는 신호로 만들어줌). test/run.js는 순수 로직만 다루므로 이 변경은 커버 대상이 아니며, sw.js의 CACHE 버전을 올리고 실제 브라우저 탭에서 리로드해 배너 노출과 메뉴 문구 변경을 수동으로 검증해야 한다."
-  },
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 17,
+      "phase": "advance",
+      "timestamp": "2026-09-12T10:15:00.000Z",
+      "summary": "cycle17 critique 계획대로 SW 업데이트 감지+알림을 구현했다. index.html 끝부분 SW 등록 스크립트에서 navigator.serviceWorker.controller의 존재 여부를 등록 전에 hadController로 캡처해 둔 뒤 controllerchange 리스너를 달았다 — 계획에는 없던 부분이지만, 브라우저에서 실제로 테스트해보니 완전히 새로 방문한 사용자도 sw.js의 clients.claim()이 '무제어→제어됨'으로 바뀌는 것만으로 controllerchange가 한 번 뜬다는 걸 발견했다(Playwright로 직접 확인: 최초 방문 시 raw controllerchange 카운트=1). 이걸 그대로 '업데이트 있음'으로 취급하면 모든 신규 사용자가 첫 로드부터 거짓 '새 버전이 있어요' 배너를 보게 되는 새 버그를 만들 뻔했다 — hadController가 false였던 최초 1회는 무시하고, 이미 어떤 SW가 페이지를 제어하고 있던 상태에서 넘어온 controllerchange만 SW_UPDATE_AVAILABLE=true로 처리하도록 가드를 추가했다. 지속형 배너(#swUpdateBar, 하단 고정, 탭하면 location.reload())를 새로 추가하고 CSS(.sw-update-bar)도 함께 넣었다. '버전 정보' 메뉴 항목과 메뉴 하단 버전 표시 둘 다 SW_UPDATE_AVAILABLE을 확인해 참이면 '새 버전 있음'/새로고침 링크로, 거짓이면 기존처럼 'v'+APP_VERSION/최신 버전이에요로 분기하도록 고쳤다. test/run.js는 순수 로직만 다루므로 이 UI 변경은 회귀 테스트 대상에 포함하지 않았고(계획대로), 대신 Playwright(사전 설치 Chromium)로 3가지 시나리오를 직접 검증했다: (1) 완전히 새 방문자는 배너가 안 뜨고 메뉴도 'v1.21.5'/정상 최신 버전 문구를 그대로 보여줌(hadController 가드가 실제로 작동함), (2) 이미 SW가 페이지를 제어 중인 상태에서 sw.js 내용이 실제로 바뀌지 않으면 reg.update()를 불러도 배너가 안 뜸(스푸리어스 아님), (3) sw.js 내용을 실제로 바꾼 뒤(CACHE 문자열 변경) reg.update()로 새 SW가 install/activate/claim되면 배너와 메뉴 문구가 정확히 전환됨. 두 인라인 <script> 블록 모두 node --check 통과, 기존 회귀 테스트 104/104 통과(변경 없음). APP_VERSION 1.21.4->1.21.5, sw.js CACHE v64->v65 (minor bump, PWA 업데이트 알림 추가). pending_advance_plan 비움.",
+      "commit": null
+    },
     {
       "cycle": 17,
       "phase": "critique",
@@ -139,13 +142,6 @@
       "timestamp": "2026-09-11T13:13:11.000Z",
       "summary": "saveQuickAmount() (home-screen '실제 금액 입력' quick-entry card for 변동/varying-category recurring items) wrote directly into r.edits[date]={amount} and showed a plain, non-reversible toast, even though recSave()'s scope='one' path performs the exact same mutation and was just given twGuard+undoToast in the immediately preceding cycle (12) — a genuine inconsistency between two near-identical code paths. Fixed by having saveQuickAmount capture the previous edits[date] value and call undoToast(...) with a restore/delete undo function, mirroring recSave's pattern exactly (index.html, function saveQuickAmount, near line 4643). Added 4 new regression tests to test/run.js (fresh-entry+undo, overwrite+undo, empty-amount no-op, tutorial-mode guard) — 73/73 tests pass (was 69/69). Both inline <script> blocks verified to parse via node --check. APP_VERSION 1.19.10->1.19.11, sw.js CACHE v53->v54 (patch bump, bug fix).",
       "commit": "48e966a"
-    },
-    {
-      "cycle": 12,
-      "phase": "advance",
-      "timestamp": "2026-09-11T12:30:00.000Z",
-      "summary": "cycle12 critique 계획대로 recApply()/recSave()의 부분 수정 경로(scope='one'/'future')에 twGuard+undo를 통일했다. 두 함수 맨 앞에 if(twGuard())return;을 추가해 튜토리얼 중 실제 DB 반영을 막았고, recApply의 scope='one' 삭제(r.skip.push)는 push 전 배열 스냅샷을, scope='future' 삭제(r.endDate 절단)는 이전 endDate 스냅샷을 떠서 각각 undoToast로 되돌릴 수 있게 했다(scope='all'은 기존처럼 deleteRecsUndo로 위임, 변경 없음). recSave()의 세 분기도 동일하게: scope='one'은 edits[date] 덮어쓰기 전 이전 값(없었으면 undefined)을 스냅샷해 undo 시 원래 상태로 복원(이전에 없었으면 키 자체를 delete), scope='future'는 endDate 스냅샷 + 새로 push한 분리 레코드를 undo 시 filter로 제거, scope='all'은 r.amount 스냅샷 후 복원. 두 함수 모두 plain toast 대신 undoToast()로 교체했다. test/run.js에 recApply/recSave를 추출 대상에 추가하고(uid/closeSheet/renderTxSheet 스텁, $('txAmt') 값을 반환하는 $ 스텁, window 전역 신설) 9개 회귀 테스트 추가(scope별 적용+undo 3쌍, edits 덮어쓰기 case, 튜토리얼 차단 2건) -- 69/69 통과. 디버깅 중 vm.createContext 샌드박스에서 만들어진 객체/배열은 메인 realm과 프로토타입이 달라 assert.deepStrictEqual이 실패한다는 걸 발견해, 그런 값은 개별 프로퍼티(assert.strictEqual)나 길이 비교로 검증하도록 테스트를 수정했다(기존 배열 비교 테스트들은 애초에 메인 realm에서 만든 배열을 push/filter만 했기 때문에 문제없이 통과했던 것). 두 인라인 <script> 블록 모두 node --check로 파싱 확인. APP_VERSION 1.19.9->1.19.10, sw.js CACHE v52->v53 (patch bump, bug fix).",
-      "commit": null
     }
   ]
 }
