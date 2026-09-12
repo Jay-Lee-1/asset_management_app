@@ -47,7 +47,7 @@ function extractConst(name) {
 // 테스트 대상 + 그 대상이 내부에서 호출하는 순수 함수들.
 const FUNCTIONS = [
   'lastDay', 'addDays', 'shiftWeekend', 'recDates', 'addMonthsStr', 'addMonths',
-  'recNthDate', 'recCountUntil', 'isVarCat', 'setCatVar', 'activeRecsForAssets',
+  'recNthDate', 'recCountUntil', 'isVarCat', 'setCatVar', 'activeRecsForAssets', 'activeRecsForCat',
   'num', 'doRenameCat', 'doDeleteCat', 'budgetProgress', 'totalBudgetSummary', 'addCat',
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'esc', 'matchTxnQuery',
   'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo',
@@ -401,6 +401,76 @@ test('doDeleteCat: 잔액 조정이 아닌 평범한 수입 카테고리는 그�
   };
   sandbox.doDeleteCat('income', 0);
   assert.deepStrictEqual(sandbox.DB.categories.income, [sandbox.ADJUST_CAT]);
+});
+
+/* ---------- activeRecsForCat: 카테고리 삭제 시 연결된 활성 반복거래를 찾는다 (activeRecsForAssets와 동일 패턴) ---------- */
+test('activeRecsForCat: 같은 타입+이름의 활성 반복거래를 찾아낸다', () => {
+  sandbox.DB = {
+    recurrences: [
+      { id: 'r1', active: true, type: 'expense', category: '외식' },
+      { id: 'r2', active: true, type: 'expense', category: '교통' },
+    ],
+  };
+  const hit = sandbox.activeRecsForCat('expense', '외식');
+  assert.deepStrictEqual(hit.map(r => r.id), ['r1']);
+});
+test('activeRecsForCat: 비활성(active:false) 반복거래는 제외한다', () => {
+  sandbox.DB = {
+    recurrences: [{ id: 'r1', active: false, type: 'expense', category: '외식' }],
+  };
+  assert.deepStrictEqual(sandbox.activeRecsForCat('expense', '외식'), []);
+});
+test('activeRecsForCat: 이름이 같아도 타입이 다르면 제외한다', () => {
+  sandbox.DB = {
+    recurrences: [{ id: 'r1', active: true, type: 'income', category: '외식' }],
+  };
+  assert.deepStrictEqual(sandbox.activeRecsForCat('expense', '외식'), []);
+});
+test('activeRecsForCat: 무관한 카테고리는 빈 배열을 반환한다', () => {
+  sandbox.DB = {
+    recurrences: [{ id: 'r1', active: true, type: 'expense', category: '교통' }],
+  };
+  assert.deepStrictEqual(sandbox.activeRecsForCat('expense', '외식'), []);
+});
+
+/* ---------- doDeleteCat: 연결된 활성 반복거래를 비활성화하고, undo로 카테고리+반복거래 모두 복원한다 ---------- */
+test('doDeleteCat: 연결된 활성 반복거래를 비활성화하고, undo 콜백을 부르면 카테고리와 반복거래 상태를 모두 복원한다', () => {
+  sandbox.DB = {
+    categories: { expense: ['외식', '교통'] },
+    catIcon: { 'expense:외식': 'food' },
+    catVar: { 'expense:외식': true },
+    budgets: { 외식: 50000 },
+    txns: [], recurrences: [
+      { id: 'r1', active: true, type: 'expense', category: '외식' },
+      { id: 'r2', active: false, type: 'expense', category: '외식' }, // 이미 비활성 — 건드리면 안 됨
+      { id: 'r3', active: true, type: 'expense', category: '교통' },  // 무관한 카테고리 — 건드리면 안 됨
+    ],
+  };
+  sandbox.lastUndo = null;
+  sandbox.doDeleteCat('expense', 0);
+  assert.deepStrictEqual(sandbox.DB.categories.expense, ['교통'], '카테고리가 삭제돼야 함');
+  assert.strictEqual(sandbox.DB.recurrences.find(r => r.id === 'r1').active, false, '연결된 활성 반복거래가 비활성화돼야 함');
+  assert.strictEqual(sandbox.DB.recurrences.find(r => r.id === 'r3').active, true, '무관한 카테고리의 반복거래는 건드리면 안 됨');
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함');
+  sandbox.lastUndo.undoFn();
+  assert.deepStrictEqual(sandbox.DB.categories.expense, ['외식', '교통'], '되돌리면 카테고리가 원래 위치로 복원돼야 함');
+  assert.strictEqual(sandbox.DB.recurrences.find(r => r.id === 'r1').active, true, '되돌리면 반복거래도 다시 활성화돼야 함');
+  assert.strictEqual(sandbox.DB.recurrences.find(r => r.id === 'r2').active, false, '원래부터 비활성이던 반복거래는 그대로 비활성 유지');
+  assert.strictEqual(sandbox.DB.catIcon['expense:외식'], 'food', '아이콘도 복원돼야 함');
+  assert.strictEqual(sandbox.isVarCat('expense', '외식'), true, '변동 카테고리 플래그도 복원돼야 함');
+  assert.strictEqual(sandbox.DB.budgets['외식'], 50000, '예산 한도도 복원돼야 함');
+});
+test('doDeleteCat: 연결된 활성 반복거래가 없으면 undo해도 반복거래 배열은 그대로다', () => {
+  sandbox.DB = {
+    categories: { expense: ['교통'] },
+    catIcon: {}, catVar: {}, budgets: {}, txns: [], recurrences: [],
+  };
+  sandbox.lastUndo = null;
+  sandbox.doDeleteCat('expense', 0);
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함');
+  sandbox.lastUndo.undoFn();
+  assert.deepStrictEqual(sandbox.DB.categories.expense, ['교통']);
+  assert.deepStrictEqual(sandbox.DB.recurrences, []);
 });
 
 /* ---------- addCat: 중복 이름 추가 시 무반응 대신 안내 토스트 ---------- */

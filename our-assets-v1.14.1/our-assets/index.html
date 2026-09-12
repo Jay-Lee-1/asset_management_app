@@ -1277,7 +1277,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.22.3';
+const APP_VERSION='1.22.4';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3728,15 +3728,34 @@ function addCat(k){const v=(($('newCat')&&$('newCat').value)||catAddDraft.name||
  if(catAddDraft.icon)DB.catIcon[catKey(k,v)]=catAddDraft.icon;
  catAddDraft={name:'',icon:''};
  save();openCatManage(k)}
+/* 삭제될 카테고리를 참조하는 '활성' 반복거래를 찾는다 — activeRecsForAssets(2334)와 같은 이유:
+   반복거래는 과거 기록이 아니라 계속 새 항목을 만들어내는 생성기라, 카테고리 삭제 후에도
+   방치하면 이미 사라진 카테고리명으로 영원히 '발생'해 집계를 조용히 오염시킨다. */
+function activeRecsForCat(type,name){
+ return DB.recurrences.filter(r=>r.active&&r.type===type&&r.category===name);
+}
 function delCat(k,i){const c=DB.categories[k][i];
- confirmSheet('카테고리 삭제',`'${esc(c)}' 카테고리를 삭제할까요? 기존 내역의 카테고리명은 그대로 남아요.`,'삭제',()=>{doDeleteCat(k,i);save();openCatManage(k)});}
+ const recs=activeRecsForCat(k,c);
+ const msg=`'${esc(c)}' 카테고리를 삭제할까요? 기존 내역의 카테고리명은 그대로 남아요.`+(recs.length?` 연결된 반복거래 ${recs.length}개도 함께 비활성화돼요.`:'');
+ confirmSheet('카테고리 삭제',msg,'삭제',()=>{doDeleteCat(k,i)});}
 function doDeleteCat(k,i){const c=DB.categories[k][i];
  if(k==='income'&&c===ADJUST_CAT){toast('자동으로 생성되는 카테고리라 삭제할 수 없어요');return}
+ const recs=activeRecsForCat(k,c);
+ const icon=DB.catIcon[catKey(k,c)];const wasVar=isVarCat(k,c);
+ const hadBudget=k==='expense'&&DB.budgets&&c in DB.budgets;const budgetVal=hadBudget?DB.budgets[c]:undefined;
+ recs.forEach(r=>r.active=false);
  DB.categories[k].splice(i,1);
  delete DB.catIcon[catKey(k,c)];              /* 삭제 시 아이콘/변동/예산도 함께 정리 (동명 카테고리 재생성 시 이전 설정이 남지 않도록) */
  delete DB.catVar[catKey(k,c)];
- if(k==='expense'&&DB.budgets&&c in DB.budgets)delete DB.budgets[c];
-}
+ if(hadBudget)delete DB.budgets[c];
+ save();renderCurrent();openCatManage(k);
+ undoToast(`'${c}' 카테고리를 삭제했어요`+(recs.length?` · 반복거래 ${recs.length}개 비활성화`:''),()=>{
+  DB.categories[k].splice(i,0,c);
+  if(icon)DB.catIcon[catKey(k,c)]=icon;
+  if(wasVar)DB.catVar[catKey(k,c)]=true;
+  if(hadBudget){DB.budgets=DB.budgets||{};DB.budgets[c]=budgetVal}
+  recs.forEach(r=>r.active=true);
+  save();renderCurrent();openCatManage(k);toast('되돌렸어요')})}
 function renameCatSheet(k,i,keep){const cur=DB.categories[k][i];
  if(!keep)catRenameDraft={name:cur,icon:catIconOf(k,cur)||CATICON[cur]||'tag'};
  const avCls=k==='income'?'a-in':k==='saving'?'a-save':'a-food';

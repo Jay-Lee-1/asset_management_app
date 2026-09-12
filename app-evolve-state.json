@@ -1,19 +1,8 @@
 {
-  "cycle": 20,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "카테고리 삭제 시 연결된 활성 반복거래를 방치 — 삭제된 카테고리로 영원히 거래를 생성하는 유령 반복 레코드",
-    "why": "자산 삭제(delAsset, index.html:2338)에는 이미 activeRecsForAssets()(2334)로 연결된 활성 반복거래를 찾아 함께 비활성화하고 undo까지 지원하는 확립된 패턴이 있는데(deleteAssetsUndo, 5011), 카테고리 삭제(delCat/doDeleteCat, 3731/3733)에는 이 보호가 전혀 없다. doDeleteCat은 DB.categories에서 스플라이스하고 catIcon/catVar/budgets만 정리할 뿐 DB.recurrences는 전혀 확인하지 않고, delCat의 확인 문구도 '기존 내역의 카테고리명은 그대로 남아요'라며 과거 거래만 언급하고 활성 반복거래는 언급하지 않는다. expandRec()(1752)은 r.category를 그대로 써서 매번 새 발생을 만들어내므로, 이미 삭제되어 카테고리 관리 화면과 선택기에 더 이상 나타나지 않는 이름으로 매달 조용히 새 거래가 계속 생성되고, 이 유령 항목이 monthStats/spendByCategory/홈 알림 등 allTxns 기반 모든 집계를 영구히 오염시킨다. doRenameCat(3760)은 이미 DB.recurrences의 r.category를 함께 갱신하는데 doDeleteCat만 이 대칭을 깨고 있어, 코드베이스 자체가 이미 증명한 패턴(자산 삭제 보호, 카테고리 이름변경 시 반복거래 동기화)의 사각지대다. 또한 카테고리 삭제는 자산 삭제/doResetAll/백업 복원과 달리 유일하게 undo가 없는 파괴적 동작이라는 부수적 결함도 있다.",
-    "approach": "1) activeRecsForAssets(2334)를 본떠 activeRecsForCat(type,name){return DB.recurrences.filter(r=>r.active&&r.type===type&&r.category===name)} 추가. 2) delCat(k,i)(3731)에서 영향받는 반복거래를 계산해 delAsset과 동일한 문구 패턴('연결된 반복거래 N개도 함께 비활성화돼요')을 확인창 메시지에 덧붙인다. 3) doDeleteCat+save()를 deleteAssetsUndo(5011)를 본뜬 undo 가능한 흐름으로 교체: 매칭된 반복거래를 r.active=false로 만들면서 카테고리를 제거하고, undoToast(...)로 취소 시 카테고리 배열 항목과 r.active=true 둘 다 복원한다(부수적으로 카테고리 삭제가 유일하게 undo 없는 파괴적 동작이었던 비대칭도 함께 해소됨). 4) test/run.js에 activeRecsForCat 순수 함수 회귀 테스트 추가(활성 반복거래 있는 카테고리 감지/inactive는 제외/무관한 카테고리는 빈 배열). 5) Playwright로 카테고리 생성→활성 월간 반복거래 연결→카테고리 삭제→경고 개수와 반복거래 관리 화면에서 비활성화 확인→undo로 카테고리와 반복거래 active 상태 모두 복원 확인. 6) APP_VERSION/sw.js CACHE patch bump."
-  },
+  "cycle": 21,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 18,
-      "phase": "develop",
-      "timestamp": "2026-09-12T11:15:00.000Z",
-      "summary": "배경 조사 에이전트가 앱 전체를 탐색해 제안한 후보 중, 사용자가 직접 입력하는 카테고리명/자산명이 여러 렌더 지점에서 esc() 없이 그대로 innerHTML에 꽂히는 저장형 XSS/렌더링-깨짐 버그를 채택했다. 이 앱은 openCatManage(esc(c))/renderLedger(esc(t.category))/openSpendAnalysis(esc(r.c)) 등 대부분의 렌더 지점에서 이미 esc()를 쓰고 있는데, 4곳이 빠져 있었다: (1) expenseBreakdownCard()(index.html:2023, 홈 화면 '이번 달 지출 분석' 카드)의 ${c.cat}, (2) renderHome()의 mktRows(index.html:1951, 시세 카드)의 ${x.nm}(주식 자산명)/${x.sub}(종목코드), (3) renderTxSheet()(index.html:2810)와 (4) renderRecSheet()(index.html:3020)의 카테고리 선택 버튼 ${d.category} — 둘 다 거래/반복거래 추가·수정 시트를 열 때마다 렌더링됨. 카테고리명(addCat, index.html:3723)과 자산명(주식 종목명 입력 필드)은 trim() 외에 문자 제한이 전혀 없어, 예를 들어 '외식&카페' 같은 지극히 평범한 한글 카테고리명만 만들어도 &가 깨진 HTML 엔티티로 렌더되어 해당 카드의 레이아웃이 깨지고, 악의적인 문자열(예: '<script>...')을 넣으면 저장형 XSS로 이어질 수 있는 문제였다. 네 곳 모두 이미 코드베이스 전역에서 확립된 동일한 한 줄 패턴(esc() 래핑)으로 고쳤다 — 새 방어 로직이나 추상화를 도입하지 않고 기존 esc() 헬퍼를 빠진 자리에 적용만 함. test/run.js FUNCTIONS에 expenseBreakdownCard를 추가하고(comma/esc 둘 다 이미 추출 대상이라 추가 의존성 없음) 회귀 테스트 2개 추가(HTML 특수문자가 포함된 카테고리명이 이스케이프되어 렌더링을 깨지 않음, 평범한 카테고리명은 정상 표시) — 106/106 통과(기존 104+신규 2). mktRows/catField는 DOM 전역(DB, $, svg 등)에 강하게 결합돼 있어 단위 테스트로 감싸지 않았고, 대신 esc() 자체가 이미 5개의 기존 테스트로 충분히 검증돼 있어 이 네 곳의 수정이 안전함을 별도로 보였다. 두 인라인 <script> 블록 모두 new Function()으로 파싱 확인. APP_VERSION 1.21.5->1.21.6, sw.js CACHE v65->v66 (patch bump, 보안/버그 수정).",
-      "commit": null
-    },
     {
       "cycle": 17,
       "phase": "advance",
@@ -113,13 +102,6 @@
       "commit": null
     },
     {
-      "cycle": 14,
-      "phase": "review",
-      "timestamp": "2026-09-11T18:30:00.000Z",
-      "summary": "Reviewed commit a08b750 (matchTxnQuery extraction for case-insensitive history search). Verified the new hay.toLowerCase().includes(q.toLowerCase()) preserves exact prior behavior for the deleted-asset fallback path: the old code called assetNm(id,snap) when fa was falsy, but assetNm's own DB.assets.find(x=>x.id===id) would also be falsy in that case (same array, same id), so it always fell through to snap||'—' — identical to matchTxnQuery's direct (t.fromAssetName||'—') fallback, just without the redundant second DB scan. Confirmed filteredHist() is the only caller and H.q's only consumer (grepped for other .includes(q)/search-query patterns in index.html — none found, so this was the only case-sensitivity gap in the app). Re-ran the regression suite (81/81 pass) and re-verified both inline <script> blocks parse via new Function(). No bugs found — no code changes this phase.",
-      "commit": null
-    },
-    {
       "cycle": 19,
       "phase": "advance",
       "timestamp": "2026-09-12T17:10:00.000Z",
@@ -145,6 +127,13 @@
       "phase": "critique",
       "timestamp": "2026-09-12T20:14:00.000Z",
       "summary": "전체 앱을 한 걸음 물러나 봤다(백그라운드 조사 에이전트 활용). 검토했지만 기각한 후보: (1) 앱 이름과 owner 태그(나/배우자/공용)가 시사하는 '가구(household)' 공유 전제를 클라우드 동기화가 실제로 지원하지 않고 로그인 하나를 부부가 공유해야 하는 문제 — 실재하는 더 큰 제품 갭이지만 인증/스키마 전면 재설계가 필요해 한 사이클 규모를 크게 초과함, 인접 영역(클라우드 동기화 충돌 UX)은 최근에 이미 의도적으로 좁게 개선됨; (2) 임박한 지출에 대한 백그라운드 알림/푸시 부재 — 정적 단일 HTML PWA+Netlify Functions만으로는 실제 웹 푸시에 필요한 백엔드 인프라가 없어 이전에 기각된 FX/시세 fetch 신뢰성 이슈와 같은 부류로 판단, 채택 안 함; (3) CSV 내보내기에 대응하는 가져오기 경로 부재 — 실재하는 비대칭이지만 CSV는 백업용이 아니라고 명시돼 있고 JSON 백업이 이미 undo 보호까지 갖춘 완전한 복원 경로를 제공해 가치가 낮음. 최종 선택: 자산 삭제(delAsset, index.html:2338)에는 activeRecsForAssets()(2334)로 연결된 활성 반복거래를 찾아 함께 비활성화하고 undo까지 지원하는 확립된 패턴이 있는데, 카테고리 삭제(delCat/doDeleteCat, 3731/3733)에는 이 보호가 전혀 없어 삭제된 카테고리로 활성 반복거래가 매달 조용히 새 거래를 계속 생성하는(expandRec, 1752) 유령 레코드 버그를 발견 — doRenameCat(3760)이 이미 반복거래의 r.category를 동기화하는 것과 대비되는 사각지대이자, 카테고리 삭제가 자산 삭제/doResetAll/백업복원과 달리 유일하게 undo 없는 파괴적 동작이라는 부수적 결함도 있음. activeRecsForCat(type,name) 헬퍼 추가 + delCat 확인 문구 확장 + doDeleteCat을 deleteAssetsUndo(5011) 패턴을 본뜬 undo 가능한 흐름으로 교체하는 계획을 pending_advance_plan에 저장.",
+      "commit": null
+    },
+    {
+      "cycle": 20,
+      "phase": "advance",
+      "timestamp": "2026-09-12T21:20:00.000Z",
+      "summary": "critique 계획대로 카테고리 삭제 시 연결된 활성 반복거래를 방치하는 유령 레코드 버그를 고쳤다. activeRecsForAssets(2334)와 동일한 패턴으로 activeRecsForCat(type,name)을 추가했고, delCat()의 확인 문구가 delAsset과 동일하게 '연결된 반복거래 N개도 함께 비활성화돼요'를 덧붙이도록 확장했다. doDeleteCat()을 deleteAssetsUndo(5011) 패턴을 본떠 재작성해, 연결된 활성 반복거래를 r.active=false로 비활성화하면서 카테고리를 제거하고, 6초 undoToast로 카테고리 배열 위치·아이콘·변동 플래그·예산 한도·반복거래 active 상태를 전부 복원 가능하게 했다(부수적으로 카테고리 삭제가 유일하게 undo 없는 파괴적 동작이었던 비대칭도 해소). test/run.js에 activeRecsForCat 회귀 테스트 4개(타입+이름 일치 매칭/비활성 제외/타입 불일치 제외/무관 카테고리 빈 배열)와 doDeleteCat의 undo 왕복 테스트 2개(연결된 반복거래 비활성화+undo로 카테고리·아이콘·변동·예산·반복거래 active 모두 복원, 연결된 반복거래가 없을 때도 안전) 추가 — 117/117 통과(기존 111+신규 6). Playwright(사전 설치 Chromium, 게스트 모드)로 실제 브라우저에서 카테고리 생성→활성 월간 반복거래 연결→카테고리 삭제→확인창에 '반복거래 1개' 경고 노출 확인→삭제 후 해당 반복거래 active:false 전환+undo 토스트 노출 확인→되돌리기 클릭 시 카테고리와 반복거래 active 상태 모두 원래대로 복원되는 것까지 end-to-end로 확인했다. 이 과정에서 이번 계획 범위 밖의 별개 잠재 버그를 하나 발견해 기록해둔다: 브라우저의 첫 게스트 부팅은 load()가 seed()(또는 emptyDB())로 DB를 채우고 migrate()를 거치지 않은 채 곧장 save()하므로, 그 세션에서 한 번도 새로고침하지 않은 상태로는 DB.catIcon/catVar/budgets이 undefined로 남는다 — doDeleteCat/doRenameCat/addCat의 쓰기 경로(delete DB.catIcon[...] 등)는 이 객체들이 항상 존재한다고 가정하고 무방비로 접근하므로, '설치 후 첫 실행에서 새로고침 없이 곧바로 카테고리를 삭제/이름변경'하면 예외가 던져질 수 있다(이번 advance가 만든 버그 아님 — doRenameCat/원래 doDeleteCat에도 동일하게 있던 기존 결함, afterCloudAuth의 emptyDB() 분기에도 같은 패턴 존재). 범위를 좁게 유지하려 이번 사이클에서는 고치지 않았으니 다음 develop/critique가 참고할 것. 두 인라인 <script> 블록 모두 new Function()으로 파싱 확인. APP_VERSION 1.22.3->1.22.4, sw.js CACHE v71->v72 (patch bump, 버그 수정+undo UX 추가). pending_advance_plan 비움.",
       "commit": null
     }
   ]
