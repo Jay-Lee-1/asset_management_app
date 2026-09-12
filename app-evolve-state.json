@@ -1,15 +1,8 @@
 {
   "cycle": 20,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 18,
-      "phase": "advance",
-      "timestamp": "2026-09-12T14:02:15.138Z",
-      "summary": "cycle18 critique 계획대로 귀속(DB.owners) 이름의 미이스케이프 문제를 고쳤다. delOwner(o)/pkPickOwner(ow)를 카테고리 관리(delCat/doRenameCat)와 동일한 컨벤션으로 전환했다 — 이름 문자열을 onclick에 직접 넣는 대신 배열 인덱스(i)만 넘기고, 함수 내부에서 DB.owners[i]로 실제 이름을 조회하도록 시그니처를 바꿨다(delOwner(i), pkPickOwner(i)→pkChoose(DB.owners[i])). 이렇게 하면 이름에 홑따옴표/큰따옴표가 뭐가 들어있든 onclick 문자열 리터럴이 절대 깨지지 않는다. 순수 텍스트/클래스 렌더 4곳(index.html:2287,2292,3456,5031)을 esc()로 감쌌다. 계획에서 언급된 3878은 실제로는 twScreen()의 튜토리얼 데모 화면에 하드코딩된 고정 문자열('월급통장','나' 등, 소스코드 상수)이라 사용자 입력이 아님을 확인하고 손대지 않았다 — 애초에 계획이 근거로 삼은 전수 grep에 데모 화면이 섞여 들어간 것으로, 실제 배포 후 검증 과정에서 걸러냈다.\n\n브라우저에서 실제로 홑따옴표/큰따옴표/HTML 태그가 섞인 귀속 이름(\"O'Brien\", '외식\"테스트', '<img src=x onerror=\"...\">')을 만들어 자산 목록·귀속 관리·귀속 선택 시트를 렌더링해보며 검증하는 도중, 계획에 없던 다섯 번째 미이스케이프 지점을 새로 발견했다: nwPane(o,TA,TD)(index.html:2221, 자산관리 탭 상단 순자산 캐러셀 카드의 라벨)가 ${o+' 순자산'}으로 귀속 이름을 esc() 없이 그대로 꽂고 있었다. 이 자리는 애초 critique의 전수 grep 패턴(own-${...})에 걸리지 않는 다른 형태(o+' 순자산')였고, 카테고리/자산명 XSS를 고친 지난 두 사이클(develop/review)의 grep에서도 놓쳤던 자리 — 실제 브라우저 렌더로 검증하지 않았다면 발견하지 못했을 진짜 살아있는 저장형 XSS였다(악성 귀속 이름으로 자산을 하나만 등록해도 자산관리 탭을 열자마자 즉시 스크립트가 실행됨을 실측 확인). esc(o)로 고치고 재검증해 스크립트 실행이 완전히 사라짐을 확인했다.\n\n전체 검증 순서: (1) node --check로 두 인라인 <script> 블록 파싱 확인, (2) 회귀 테스트 106/106 통과(신규 테스트 없음 — 전부 DOM 렌더/onclick 문자열 로직이라 계획대로 순수함수 추출 대상이 아님), (3) 브라우저에서 canary 함수(window.triggerXss)를 심어 악성 귀속 이름이 실제 스크립트 실행을 일으키는지 자산 목록/순자산 카드/귀속 관리/귀속 선택 시트/delOwner/pkPickOwner/doRenameOwner 전 경로에서 직접 측정 — 수정 전 canary가 실제로 증가함을 먼저 확인한 뒤, 수정 후 모든 경로에서 canary=0, 실제 <img onerror> 엘리먼트 생성 0건임을 재확인. delOwner(i)/doRenameOwner(i) 정상 삭제·이름변경(연쇄 자산 소유자 갱신 포함)도 회귀 없이 동작 확인. APP_VERSION 1.21.7->1.22.0, sw.js CACHE v67->v68(귀속 관리 컨벤션 전환 + 실사용 XSS 한 곳 추가 발견·수정이라 minor bump). pending_advance_plan 비움.",
-      "commit": null
-    },
     {
       "cycle": 18,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-12T17:10:00.000Z",
       "summary": "critique 계획대로 doResetAll()(index.html)에 undo 안전망을 추가했다. emptyDB()로 교체하기 전 기존 DB 객체 참조를 snapshot 변수에 그대로 보관하고(전역 DB만 새 객체로 교체하므로 deep clone 불필요), plain toast 대신 6초 undoToast('되돌리기')를 띄운다. 클라우드 전파 경합 대응: save()에 opts.deferCloudPush 옵션을 추가해 리셋 직후 즉시 scheduleCloudPush()가 걸리지 않게 하고, 대신 6초짜리 자체 타이머(resetPushT)로 undo 창이 끝난 뒤에만 scheduleCloudPush()를 실행하게 했다. 되돌리기를 누르면 resetPushT를 clearTimeout으로 취소한 뒤 DB=snapshot; save()(정상 push 포함); renderCurrent()로 완전 복원 — 빈 DB가 클라우드에 닿기 전에 취소되도록 했다. confirmSheet 문구도 '되돌릴 수 없어요' -> '초기화 직후 잠깐 동안만 되돌릴 수 있어요'로 갱신. APP_VERSION 1.22.1->1.22.2, sw.js CACHE v69->v70 갱신. 두 인라인 <script> 블록 node --check 통과, 회귀 테스트 111/111 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 20,
+      "phase": "develop",
+      "timestamp": "2026-09-12T18:12:34.712907Z",
+      "summary": "반복거래(recurrence) 생성/편집 폼에서 종료일이 시작일보다 이른 날짜로 저장돼도 아무 검증 없이 통과되는 실제 버그를 발견해 고쳤다. recDates()(index.html)는 freq(monthly/yearly/daily/weekly) 모든 분기에서 endDate<startDate이면 조건 미충족으로 0개 발생일을 반환하고 recCountUntil()도 count=0을 반환하는데, saveRec()/saveTx() 저장 경로는 이 값을 그대로 active:true인 반복 레코드로 저장해버려 사용자는 정상 반복이 설정됐다고 믿지만 실제로는 영원히 거래를 한 번도 만들어내지 않는 조용한 데드 레코드가 생긴다 (예: 월별 할부 반복을 등록하면서 실수로 지난 날짜를 종료일로 고르면 그대로 저장되고 아무 경고도 없음). 기존에 존재하던 fromAssetId===toAssetId 가드와 동일한 컨벤션으로, saveRec()(index.html:3070 부근, type/이체 검증 직후)와 saveTx()의 반복-즉시생성 분기(index.html:2892 부근, base 계산 직후) 두 곳에 d.endDate<d.startDate(또는 d.date) 체크를 추가해 '종료일은 시작일 이후로 선택해 주세요' 토스트와 함께 저장을 막도록 했다. saveRec/saveTx는 recDraft/txDraft 전역 상태와 다수의 DOM 입력(syncRecInputs 등)에 엮여 있는 UI 글루 함수라 test/run.js의 순수함수 하네스(FUNCTIONS 목록)에 새로 편입시키는 비용이 이번 가드 한 줄의 가치에 비해 과했다고 판단해 상설 테스트 케이스는 추가하지 않았다 — 대신 실제 index.html에서 두 함수를 그대로 추출해 vm 샌드박스에 올려 (1) 종료일이 시작일보다 이른 경우 토스트만 뜨고 DB.recurrences/txns가 전혀 늘지 않음, (2) 정상적인(시작일 이후) 종료일은 기존과 동일하게 저장됨 — 두 경로 모두 실측 확인했다. 기존 회귀 테스트(recDates/recCountUntil 포함) 111/111 통과, node --check로 두 인라인 스크립트 블록 파싱도 확인. APP_VERSION 1.22.2->1.22.3, sw.js CACHE v70->v71(버그 수정이라 patch bump).",
       "commit": null
     }
   ]

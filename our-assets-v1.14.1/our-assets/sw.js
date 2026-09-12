@@ -3,7 +3,7 @@
  * 온라인일 때는 항상 최신 index.html 을 먼저 받아옵니다.
  * 파일을 수정하면 아래 CACHE 버전을 올려 주세요. (예: v1 -> v2)
  */
-const CACHE = 'ourassets-v70';
+const CACHE = 'ourassets-v71';
 
 const SHELL = [
   './',

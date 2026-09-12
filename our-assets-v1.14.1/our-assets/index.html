@@ -1277,7 +1277,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.22.2';
+const APP_VERSION='1.22.3';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2904,6 +2904,7 @@ function saveTx(){
   const day=freq==='monthly'?(d.day||Number(String(d.date).slice(8,10))||1):1;
   const base={freq,day,startDate:d.date,weekend:d.weekend};
   let endDate=d.endDate||null,count=d.count||null;
+  if(endDate&&endDate<d.date){toast('종료일은 시작일 이후로 선택해 주세요');return}
   if(endDate&&!count)count=recCountUntil(base,endDate);
   else if(count&&!endDate)endDate=recNthDate(base,count);
   DB.recurrences.push({id:uid(),active:true,type:d.type,category:cat,memo:d.memo||cat,amount:d.amount,
@@ -3076,6 +3077,7 @@ function saveRec(){
  }
  if(d.type==='expense')d.toAssetId=null;else if(d.type==='income')d.fromAssetId=null;
  if(d.type==='transfer')d.category='이체';
+ if(d.endDate&&d.endDate<d.startDate){toast('종료일은 시작일 이후로 선택해 주세요');return}
  if(d.freq==='monthly'&&d.day!=='last'){const m=clampDay(d);if(m)toast(m)}
  d.memo=(d.memo||'').trim()||d.category; /* 메모 없으면 카테고리로 */
  const eb={freq:d.freq,day:d.day,startDate:d.startDate,weekend:d.weekend};
