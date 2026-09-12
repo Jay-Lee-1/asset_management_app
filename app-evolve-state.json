@@ -1,8 +1,15 @@
 {
   "cycle": 17,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 17,
+      "phase": "review",
+      "timestamp": "2026-09-12T06:00:00.000Z",
+      "summary": "Reviewed commit 686a752 (homeAlerts/pendingTransferCount now scan allTxns(RANGE_FROM,TODAY) instead of DB.txns directly, so recurring autoConfirm:false transfers show up as home alerts and count correctly). Verified isPending/isDuePending's existing recurrence branch (t.isRec+recId, checks r.autoConfirm===false and r.confirmedDates) is exactly what the new allTxns-based scan now exposes to these two aggregators, matching the same allTxns(...) pattern already used by monthStats/spendByCategory/histSumTotals/dayTypeTotals. Traced confirmRecNow() to confirm it only pushes into r.confirmedDates (never materializes a real DB.txns row), so the virtual expandRec entry for that date keeps being generated every render but isPending correctly flips to false once confirmed — no double-counting risk. Grepped every other isRec call site (dayTxns/ledgerSelAll/renderLedger/histRow/planNegatives/upcomingOutflows) and confirmed none of them ever create a DB.txns row with isRec:true themselves, so expandRec is the sole source and there's no overlap between virtual and real pending entries. Confirmed the home alert card's onclick branch (al.isRec?confirmRecTransfer(...):openConfirmTransfer(...)) mirrors the same branch already used in renderLedger/histRow. Re-ran the regression suite (104/104 pass, including the 4 new pendingTransferCount tests) and re-verified both inline <script> blocks parse via new Function(). No bugs found — no code changes this phase.",
+      "commit": null
+    },
     {
       "cycle": 17,
       "phase": "develop",
@@ -134,13 +141,6 @@
       "phase": "critique",
       "timestamp": "2026-09-11T12:00:00.000Z",
       "summary": "전체 앱을 한 걸음 물러나 봤다(백그라운드 조사 에이전트 활용). cycle11 develop이 명시적으로 감사 보류해둔 recApply()의 부분 수정 경로(scope='one'/'future')를 확인한 결과, 실제로 twGuard(튜토리얼 가드) 없이 튜토리얼 중에도 DB에 실제로 반영되는 이 앱 유일의 구멍이었고, undoToast 없는 plain toast만 있어 되돌리기도 불가능했다. recSave()(반복 내역 수정 확인 플로우)도 twGuard 호출이 아예 없음을 확인. 이미 다른 모든 삭제 경로(delTx/delAdjust/delAsset/반복 전체삭제)가 twGuard+undoToast로 통일된 것과 대비되는 마지막 예외라 다음 advance 사이클 대상으로 선정. 후보로 검토했지만 기각한 것들: 로컬 인증 djb2 unsalted 해시(로컬 전용이라 실질 위험 낮음, 반복적으로 후순위 처리된 게 여전히 타당함); 폭넓은 접근성 격차(aria-label/role=switch 11건뿐, label 없는 input 다수, 여전히 실재하지만 산발적이라 한 사이클로 처리하기엔 범위가 넓음 -- 전담 접근성 스윕이 더 적합); 고아 코드/TODO(grep 결과 TODO/FIXME 0건, 근거 부족). 코드 변경 없음 -- pending_advance_plan에 recApply/recSave twGuard+undo 통일 계획을 적어둠.",
-      "commit": null
-    },
-    {
-      "cycle": 10,
-      "phase": "advance",
-      "timestamp": "2026-09-11T04:09:17.794Z",
-      "summary": "cycle10 critique 계획대로 delAdjust(id) (index.html~2887)를 delTx와 동일하게 deleteTxnsUndo(new Set([id]))를 쓰도록 통일했다. 기존에는 DB.txns.filter로 직접 삭제하고 되돌리기 없는 plain toast만 보여줘 twGuard(튜토리얼 가드)도 건너뛰었는데, 이제 형제 삭제 경로(delTx/ledgerDelSel/histDelSel)와 동일하게 튜토리얼 중 삭제를 막고 6초짜리 되돌리기 토스트로 조정 내역도 복원 가능해졌다. deleteTxnsUndo가 지금까지 어떤 회귀 테스트로도 커버되지 않고 있었으므로 test/run.js에 twActive/twGuard/deleteTxnsUndo를 추출 대상에 추가하고(undoToast/TWi 스텁 신설), 삭제+undo 복원 케이스와 튜토리얼 중 삭제 차단 케이스 2개를 추가 -- 56/56 테스트 통과. 두 인라인 <script> 블록 모두 new Function()으로 파싱 확인. APP_VERSION 1.19.5->1.19.6, sw.js CACHE v48->v49 (patch bump, bug fix).",
       "commit": null
     }
   ]
