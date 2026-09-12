@@ -1277,7 +1277,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.21.7';
+const APP_VERSION='1.22.0';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2221,7 +2221,7 @@ function ownerListArr(){return ['all',...DB.owners]}
 function nwPane(o,TA,TD){ /* 순자산 카드 한 장 (전체 또는 귀속별) */
  const isAll=(o==='all');
  const ta=isAll?TA:ownerAssets(o), td=isAll?TD:ownerDebt(o);
- return `<div class="hero"><div class="label">${isAll?'순자산':o+' 순자산'}</div>
+ return `<div class="hero"><div class="label">${isAll?'순자산':esc(o)+' 순자산'}</div>
    <div class="total num fit" data-max="34">${comma(ta-td)}<small>원</small></div>
    <div class="hero-split"><div><div class="k">총자산</div><div class="v num fit" data-max="14">${comma(ta)}원</div></div>
      <div><div class="k">부채</div><div class="v num fit minus" data-max="14">${comma(td)}원</div></div></div></div>`;
@@ -2284,12 +2284,12 @@ function assetBodyHTML(){
            <div class="sel-check ${on?'on':''}">${svg('check')}</div>
            <div class="avatar ${ty.cls}">${svg(ty.icon)}</div>
            <div style="flex:1;min-width:0"><div class="nm"><span class="nmt">${esc(a.name)}</span>${a.includeInTotal?'':'<span class="chipmini own-x">미포함</span>'}</div>
-             <div class="sub"><span class="chipmini own-${a.owner}">${a.owner}</span><span>${assetSubline(a)}</span></div></div>
+             <div class="sub"><span class="chipmini own-${esc(a.owner)}">${esc(a.owner)}</span><span>${assetSubline(a)}</span></div></div>
            <div class="val"><div class="k num ${a.type==='debt'?'minus':''}">${won(val)}</div></div></div>`;}
        return `<div class="asset-item ${a.includeInTotal?'':'excl'}" data-id="${a.id}" data-lp="1" onclick="openAssetSheet('${a.id}')">
          <div class="avatar ${ty.cls}">${svg(ty.icon)}</div>
          <div style="flex:1;min-width:0"><div class="nm"><span class="nmt">${esc(a.name)}</span>${a.includeInTotal?'':'<span class="chipmini own-x">미포함</span>'}</div>
-           <div class="sub"><span class="chipmini own-${a.owner}">${a.owner}</span><span>${assetSubline(a)}</span></div></div>
+           <div class="sub"><span class="chipmini own-${esc(a.owner)}">${esc(a.owner)}</span><span>${assetSubline(a)}</span></div></div>
          <div class="val"><div class="k num ${a.type==='debt'?'minus':''}">${won(val)}</div>${showEval?'<div class="s">평가액</div>':''}</div></div>`;
      }).join('')+`</div>`;
    });
@@ -2575,13 +2575,13 @@ function openOwnerManage(){
   <div>${DB.owners.map((o,i)=>{const used=DB.assets.filter(a=>a.owner===o).length;
    return `<div class="manage-row"><div class="avatar" style="width:36px;height:36px;border-radius:11px;background:var(--sunken);color:var(--text-2)">${svg('users',18)}</div>
     <div style="flex:1"><div class="mn">${esc(o)}</div><div class="msub">${used}개 자산</div></div>
-    <div class="row-acts"><button class="act-btn" onclick="renameOwnerSheet(${i})">${svg('edit')}</button><button class="act-btn danger" onclick="delOwner('${o}')">${svg('trash')}</button></div></div>`}).join('')}</div>
+    <div class="row-acts"><button class="act-btn" onclick="renameOwnerSheet(${i})">${svg('edit')}</button><button class="act-btn danger" onclick="delOwner(${i})">${svg('trash')}</button></div></div>`}).join('')}</div>
   <div class="add-inline"><input id="newOwner" placeholder="새 귀속 (예: 아이)"><button onclick="addOwner()">${svg('plus')}</button></div>
   <div style="height:14px"></div><button class="btn btn-primary" onclick="closeSheet()">완료</button>`);
 }
 function openOwnerSheet(){openOwnerManage()}
 function addOwner(){const v=$('newOwner').value.trim();if(!v)return;if(DB.owners.includes(v)){toast('이미 있는 귀속이에요');return}DB.owners.push(v);save();openOwnerManage();}
-function delOwner(o){if(DB.owners.length<=1){toast('귀속은 최소 1개가 필요해요');return}
+function delOwner(i){const o=DB.owners[i];if(DB.owners.length<=1){toast('귀속은 최소 1개가 필요해요');return}
  const used=DB.assets.filter(a=>a.owner===o).length;
  if(used){toast(`'${o}' 귀속을 쓰는 자산 ${used}개가 있어요`);return}
  confirmSheet('귀속 삭제',`'${esc(o)}' 귀속을 삭제할까요?`,'삭제',()=>{DB.owners=DB.owners.filter(x=>x!==o);save();openOwnerManage()});}
@@ -3453,7 +3453,7 @@ function openPlanAsset(){
  DB.owners.forEach(ow=>{
   const list=cash.filter(a=>a.owner===ow);
   if(!list.length)return;
-  html+=`<div class="pa-cap"><span class="chipmini own-${ow}">${ow}</span></div><div class="opt-list">`;
+  html+=`<div class="pa-cap"><span class="chipmini own-${esc(ow)}">${esc(ow)}</span></div><div class="opt-list">`;
   html+=list.map(a=>{const s=acctSafety(a.id);
    return `<button class="${ST.plan.assetId===a.id?'on':''}" onclick="planAsset('${a.id}')">
     <span class="rd"></span>
@@ -5028,7 +5028,7 @@ function openAssetPicker(o){o=o||{};let html='';
  DB.settings.groupOrder.forEach(t=>{let items=DB.assets.filter(a=>a.type===t);if(o.cashOnly)items=items.filter(isCashLike);if(!items.length)return;
    html+=`<div class="pk-cap">${ASSET_TYPES[t].label}</div>`;
    items.forEach(a=>{const ty=ASSET_TYPES[a.type];const bal=a.type==='debt'?-assetEval(a):assetEval(a);
-     html+=`<button class="pk-item hasamt ${a.id===o.current?'on':''}" data-val="${a.id}" onclick="pkPickAsset('${a.id}')"><div class="pav ${ty.cls}">${svg(ty.icon)}</div><div class="pbody"><div class="pn">${esc(a.name)}</div><div class="psub"><span class="chipmini own-${a.owner}">${a.owner}</span>${ty.label}</div></div><div class="amt num">${comma(bal)}원</div></button>`;});
+     html+=`<button class="pk-item hasamt ${a.id===o.current?'on':''}" data-val="${a.id}" onclick="pkPickAsset('${a.id}')"><div class="pav ${ty.cls}">${svg(ty.icon)}</div><div class="pbody"><div class="pn">${esc(a.name)}</div><div class="psub"><span class="chipmini own-${esc(a.owner)}">${esc(a.owner)}</span>${ty.label}</div></div><div class="amt num">${comma(bal)}원</div></button>`;});
  });
  if(!html)html=`<p style="padding:16px;color:var(--text-3)">선택할 자산이 없어요</p>`;
  window._pkPick=o.onPick;openPicker(o.title||'통장 선택','<div class="pk-group" id="pkGroup"><div class="pk-blob" id="pkBlob"></div>'+html+'</div>',o.back);
@@ -5061,11 +5061,11 @@ function openTypePicker(o){const html=DEFAULT_GROUP_ORDER.map(k=>{const ty=ASSET
  window._pkPick=o.onPick;openPicker('자산 종류','<div class="pk-group" id="pkGroup"><div class="pk-blob" id="pkBlob"></div>'+html+'</div>',o.back);
  requestAnimationFrame(()=>requestAnimationFrame(()=>movePkBlob(false)));}
 function pkPickType(k){pkChoose(k)}
-function openOwnerPicker(o){let html=DB.owners.map(ow=>`<button class="pk-item ${ow===o.current?'on':''}" data-val="${ow}" onclick="pkPickOwner('${ow}')"><div class="pav" style="background:var(--sunken);color:var(--text-2)">${svg('users')}</div><div class="pbody"><div class="pn">${ow}</div></div></button>`).join('');
+function openOwnerPicker(o){let html=DB.owners.map((ow,i)=>`<button class="pk-item ${ow===o.current?'on':''}" data-val="${esc(ow)}" onclick="pkPickOwner(${i})"><div class="pav" style="background:var(--sunken);color:var(--text-2)">${svg('users')}</div><div class="pbody"><div class="pn">${esc(ow)}</div></div></button>`).join('');
  html+=`<button class="pk-item" onclick="openOwnerManage()"><div class="pav" style="background:var(--brand-tint);color:var(--brand-ink)">${svg('gear')}</div><div class="pbody"><div class="pn" style="color:var(--brand-ink)">귀속 추가·관리</div></div></button>`;
  window._pkPick=o.onPick;openPicker('귀속 선택','<div class="pk-group" id="pkGroup"><div class="pk-blob" id="pkBlob"></div>'+html+'</div>',o.back);
  requestAnimationFrame(()=>requestAnimationFrame(()=>movePkBlob(false)));}
-function pkPickOwner(ow){pkChoose(ow)}
+function pkPickOwner(i){pkChoose(DB.owners[i])}
 function openCatPicker(o){const avc=catAv(o.kind);
  const grid=catListOf(o.kind).map(c=>`<button class="pk-cat ${c===o.current?'on':''}" data-cat="${c}" onclick="pkPickCat('${c}')"><div class="cav ${avc}">${catGlyph(o.kind,c,18,'tag')}</div>${esc(c)}</button>`).join('');
  window._pkPick=o.onPick;
