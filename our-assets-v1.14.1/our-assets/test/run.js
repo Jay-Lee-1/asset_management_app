@@ -53,11 +53,11 @@ const FUNCTIONS = [
   'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo',
   'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'restoreBackup', 'storageOutcomeMsg',
   'monthStartStr', 'monthEndStr', 'expandRec', 'allTxns', 'spendByCategory', 'histSumTotals',
-  'dayTypeTotals',
+  'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
-const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT'];
+const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM'];
 
 const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(extractConst).join('\n');
 
@@ -69,6 +69,7 @@ const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(
 // doRenameCat의 UI 스텁($, toast 등)과 같은 이유.
 const sandbox = {
   DB: null,
+  TODAY: null,
   catRenameDraft: null,
   catAddDraft: null,
   lastToast: null,
@@ -962,6 +963,40 @@ test('dayTypeTotals: 잔액 조정이 없으면 평범하게 타입별로 합산
   assert.strictEqual(inn, 1000);
   assert.strictEqual(ex, 2000);
   assert.strictEqual(sv, 500);
+});
+
+/* ---------- pendingTransferCount: 반복거래로 만들어지는 미확인 이체도 세어야 한다 ---------- */
+function pendingRec(overrides) {
+  return Object.assign({
+    id: 'r1', active: true, type: 'transfer', category: '이체', memo: '적금이체',
+    amount: 100000, fromAssetId: 'a1', toAssetId: 'a2', fromAssetName: '통장', toAssetName: '적금',
+    freq: 'monthly', day: 15, startDate: '2026-06-15', endDate: null, weekend: 'none',
+    autoConfirm: false, confirmedDates: [],
+  }, overrides);
+}
+test('pendingTransferCount: 반복거래로 생성된 미확인 이체(오늘 도래)도 카운트에 잡힌다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.DB = { settings: { confirmTransfers: true }, txns: [], recurrences: [pendingRec()] };
+  assert.strictEqual(sandbox.pendingTransferCount(), 1);
+});
+test('pendingTransferCount: 이미 확인 처리된(confirmedDates 포함) 회차는 카운트에서 빠진다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.DB = { settings: { confirmTransfers: true }, txns: [], recurrences: [pendingRec({ confirmedDates: ['2026-06-15'] })] };
+  assert.strictEqual(sandbox.pendingTransferCount(), 0);
+});
+test('pendingTransferCount: autoConfirm이 꺼져 있지 않은(자동확인) 반복이면 카운트되지 않는다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.DB = { settings: { confirmTransfers: true }, txns: [], recurrences: [pendingRec({ autoConfirm: true })] };
+  assert.strictEqual(sandbox.pendingTransferCount(), 0);
+});
+test('pendingTransferCount: 일반 미확인 이체(DB.txns)와 반복 미확인 이체를 합쳐서 센다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.DB = {
+    settings: { confirmTransfers: true },
+    txns: [{ id: 't1', type: 'transfer', date: '2026-06-10', confirmed: false, amount: 5000 }],
+    recurrences: [pendingRec()],
+  };
+  assert.strictEqual(sandbox.pendingTransferCount(), 2);
 });
 
 /* ---------- 실행 ---------- */

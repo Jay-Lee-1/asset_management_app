@@ -1273,7 +1273,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.21.3';
+const APP_VERSION='1.21.4';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 
@@ -4667,7 +4667,7 @@ function celebrate(msg){ /* 잘 해냈을 때의 작은 보상 */
  requestAnimationFrame(()=>el.classList.add('show'));
  setTimeout(()=>{el.classList.remove('show');setTimeout(()=>el.remove(),400)},1900);
 }
-function pendingTransferCount(){return DB.txns.filter(t=>isDuePending(t)).length}
+function pendingTransferCount(){return allTxns(RANGE_FROM,TODAY).filter(t=>isDuePending(t)).length}
 /* ===== 큰 지출 중심 분석 (카드값·월세·관리비 컨셉) ===== */
 function bigMin(){return DB.settings.bigMin||100000} /* '큰 지출' 기준 (설정) */
 function upcomingOutflows(days){ /* 앞으로 나갈 큰돈 (기본 45일) */
@@ -4918,7 +4918,7 @@ function openTidyAsset(id){
 function homeAlerts(neg){
  const arr=[];
  if(backupDue()&&DB.txns.length)arr.push({kind:'backup'});
- DB.txns.filter(t=>isDuePending(t)).sort((a,b)=>a.date<b.date?-1:1).forEach(t=>arr.push({kind:'confirm',id:t.id,from:assetNm(t.fromAssetId),to:assetNm(t.toAssetId),amount:t.amount,date:t.date}));
+ allTxns(RANGE_FROM,TODAY).filter(t=>isDuePending(t)).sort((a,b)=>a.date<b.date?-1:1).forEach(t=>arr.push({kind:'confirm',id:t.id,recId:t.recId,isRec:!!t.isRec,from:assetNm(t.fromAssetId,t.fromAssetName),to:assetNm(t.toAssetId,t.toAssetName),amount:t.amount,date:t.date}));
  neg.forEach(n=>arr.push({kind:'neg',assetId:n.assetId,name:n.name,date:n.date,min:n.min}));
  DB.assets.filter(a=>a.type==='savings'&&a.maturityDate&&a.maturityDate<=addDays(TODAY,7))
    .sort((a,b)=>a.maturityDate<b.maturityDate?-1:1)
@@ -4934,7 +4934,7 @@ function homeAlertCard(al){
    <div class="ha-b" onclick="exportData()"><div class="ha-t">백업이 필요해요</div>
      <div class="ha-s">데이터는 이 기기에만 있어요 · 눌러서 iCloud에 저장</div></div>
    <button class="txt-btn" style="flex-shrink:0;padding:6px 10px" onclick="event.stopPropagation();snoozeBackup()">나중에</button></div>`;
- if(al.kind==='confirm')return `<button class="home-alert confirm" onclick="openConfirmTransfer('${al.id}')">
+ if(al.kind==='confirm')return `<button class="home-alert confirm" onclick="${al.isRec?`confirmRecTransfer('${al.recId}','${al.date}')`:`openConfirmTransfer('${al.id}')`}">
    <div class="ha-ic">${svg('repeat')}</div>
    <div class="ha-b"><div class="ha-t">이체 확인 · ${comma(al.amount)}원</div>
      <div class="ha-s">${esc(al.from)} → ${esc(al.to)} · 이체하셨는지 확인해 주세요</div></div>

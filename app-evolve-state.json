@@ -1,8 +1,15 @@
 {
   "cycle": 17,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 17,
+      "phase": "develop",
+      "timestamp": "2026-09-12T05:21:00.000Z",
+      "summary": "배경 조사 에이전트가 앱 전체를 탐색해 제안한 후보 중, 홈 화면의 이체 확인 알림(homeAlerts)과 '이체 전부 완료' 판정(pendingTransferCount)이 반복거래로 생성되는 미확인 이체를 완전히 놓치는 실제 버그를 채택했다. isPending()/isDuePending()(index.html:1379-1385)은 일반 거래와 반복거래(t.isRec+recId, DB.recurrences의 autoConfirm===false+confirmedDates 미포함 여부 확인)를 모두 지원하도록 이미 설계되어 있고, 실제로 renderLedger(2734)/histRow(3262)의 '확인' 버튼은 t.isRec에 따라 confirmRecTransfer(recId,date) vs openConfirmTransfer(id)로 올바르게 분기한다. 하지만 pendingTransferCount()(4670)와 homeAlerts()(4921)는 DB.txns만 직접 filter하고 expandRec()을 거치지 않아, confirmTransfers 설정을 켜고 autoConfirm:false인 반복 이체를 만들면 (1) 홈 화면의 주요 알림 목록에 '이체 확인' 카드가 전혀 뜨지 않고, (2) 이 반복 이체가 유일한 미확인 이체일 때 일반 이체를 확인 처리하면 pendingTransferCount()가 0을 반환해 실제로는 아직 남아있는데도 '이체 전부 완료! 🎉' 축하 메시지가 잘못 뜨는 문제였다. 수정은 두 함수 모두 DB.txns.filter(...) 대신 allTxns(RANGE_FROM,TODAY).filter(isDuePending)로 바꿔 recurrence 확장 결과까지 스캔하도록 좁게 한정했다(다른 곳에서 이미 쓰는 patttern, 예: monthStats의 allTxns(RANGE_FROM,upto)). homeAlerts가 만드는 'confirm' 알림 객체에 isRec/recId를 추가하고, homeAlertCard()의 해당 카드 onclick도 렌더 화면들과 동일하게 al.isRec 여부로 confirmRecTransfer/openConfirmTransfer를 분기하도록 고쳤다(안 그러면 가상 id인 'rec_<recId>_<date>'로 openConfirmTransfer를 불러 아무 일도 안 일어남). test/run.js에 isPending/isDuePending/pendingTransferCount/RANGE_FROM을 추출 대상에 추가하고, sandbox.TODAY를 새로 도입해 회귀 테스트 4개 추가(반복 미확인 이체 카운트됨, confirmedDates 포함 시 제외, autoConfirm true면 제외, 일반+반복 합산) — 104/104 통과(기존 100+신규 4). Playwright(사전 설치 Chromium, 게스트 모드로 부팅해 인증 화면 우회)로 실제 브라우저에서 반복 이체를 하나 만들고 홈 화면에 '이체 확인' 카드가 뜨는 것, 클릭 시 confirmRecTransfer 시트가 열리는 것, 확인 처리 후 카드가 사라지고 pendingTransferCount가 0이 되며 r.confirmedDates에 날짜가 기록되는 것까지 end-to-end로 확인했다. 두 인라인 <script> 블록 모두 node --check 통과. APP_VERSION 1.21.3->1.21.4, sw.js CACHE v63->v64 (patch bump, bug fix).",
+      "commit": null
+    },
     {
       "cycle": 16,
       "phase": "advance",
@@ -134,13 +141,6 @@
       "phase": "advance",
       "timestamp": "2026-09-11T04:09:17.794Z",
       "summary": "cycle10 critique 계획대로 delAdjust(id) (index.html~2887)를 delTx와 동일하게 deleteTxnsUndo(new Set([id]))를 쓰도록 통일했다. 기존에는 DB.txns.filter로 직접 삭제하고 되돌리기 없는 plain toast만 보여줘 twGuard(튜토리얼 가드)도 건너뛰었는데, 이제 형제 삭제 경로(delTx/ledgerDelSel/histDelSel)와 동일하게 튜토리얼 중 삭제를 막고 6초짜리 되돌리기 토스트로 조정 내역도 복원 가능해졌다. deleteTxnsUndo가 지금까지 어떤 회귀 테스트로도 커버되지 않고 있었으므로 test/run.js에 twActive/twGuard/deleteTxnsUndo를 추출 대상에 추가하고(undoToast/TWi 스텁 신설), 삭제+undo 복원 케이스와 튜토리얼 중 삭제 차단 케이스 2개를 추가 -- 56/56 테스트 통과. 두 인라인 <script> 블록 모두 new Function()으로 파싱 확인. APP_VERSION 1.19.5->1.19.6, sw.js CACHE v48->v49 (patch bump, bug fix).",
-      "commit": null
-    },
-    {
-      "cycle": 10,
-      "phase": "critique",
-      "timestamp": "2026-09-11T02:20:00.000Z",
-      "summary": "전체 앱을 한 걸음 물러나 봤다(백그라운드 조사 에이전트 활용). delAdjust(id) (index.html:2887-2888)가 cycle10 develop에서 이미 고친 delTx의 버그 패턴을 형제 함수로서 여전히 갖고 있음을 확인: DB.txns를 직접 filter하고 되돌리기 없는 plain toast만 보여주며, deleteTxnsUndo가 제공하는 twGuard()(튜토리얼 가드)와 6초 undo 토스트를 전혀 받지 못한다. 실제 도달 경로(openAdjustEdit -> '이 조정 내역 삭제' 버튼)가 있는 진짜 회귀 가능 버그라 다음 advance 사이클 대상으로 선정. 후보로 검토했지만 기각한 것들: 큰 render 함수들(renderPlan 57줄 등)은 파일 전체가 원래 조밀한 스타일이라 명확한 문제로 보기 어려움; 환율/시세 fetch 에러 처리(fetchFxGold/fetchStocks/syncRates)는 이미 Promise.allSettled와 per-source 실패 카운터로 견고하게 구현됨; TODO/FIXME나 예전 cash-flow-curve 같은 새로운 고아 코드는 전체 grep에서 발견되지 않음. 코드 변경 없음 -- pending_advance_plan에 delAdjust 통일 계획을 적어둠.",
       "commit": null
     }
   ]
