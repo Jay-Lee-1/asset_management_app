@@ -1,15 +1,8 @@
 {
   "cycle": 19,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 19,
-      "phase": "develop",
-      "timestamp": "2026-09-12T15:00:00.000Z",
-      "summary": "배경 조사 에이전트가 앱 전체를 탐색해 제안한 후보 중, 홈 화면의 '다음에 나갈 큰돈'(upcomingOutflows, nextBigOutflow) 카드와 '이번 달 나갈 돈'(monthOutflows) 카드가 잔액 조정(잔액 조정, adjust:true) 거래를 실제 지출/저축처럼 그대로 합산하는 버그를 채택했다. cycle16~18에서 spendByCategory/histSumTotals/dayTypeTotals/updateHist에 이미 적용한 것과 정확히 같은 버그 클래스(if(t.adjust&&!t.inSurplus)면 제외)인데, 홈 화면 큰 지출 분석 섹션(index.html upcomingOutflows~4686, monthOutflows~4700)만 이 가드가 빠져 있었다 — addBalanceAdjust가 자산 잔액을 자동보정할 때 만드는 거래(예: ₩500,000 잔액 조정)가 amount>=bigMin()(기본 10만원)이고 date=TODAY이면 그대로 걸려, 홈 화면에 실제로는 다가올 지출이 아닌데 'D-0, 500,000원' 큰돈 카드가 뜨고 이번 달 나갈 돈 총액에도 잘못 더해지는 문제였다. 두 함수 모두 기존 코드베이스 전역에서 이미 확립된 동일한 한 줄 가드(.filter(t=>!(t.adjust&&!t.inSurplus)))로 고쳤다 — 새 로직 없이 빠진 자리에 기존 패턴만 적용. test/run.js FUNCTIONS에 bigMin/upcomingOutflows/monthOutflows를 추가하고(의존 함수 allTxns/expandRec/addDays/monthStartStr/monthEndStr는 이미 추출 대상) 회귀 테스트 5개 추가(upcomingOutflows: 잔액조정 제외/일반지출 포함/수지포함 토글 시 포함, monthOutflows: 잔액조정 제외 시 목록·합계 축소/잔액조정 없을 때 정상 합산) — 111/111 통과(기존 106+신규 5). 두 인라인 <script> 블록 모두 node --check(new Function) 파싱 확인. APP_VERSION 1.22.0->1.22.1, sw.js CACHE v68->v69 (patch bump, bug fix).",
-      "commit": null
-    },
     {
       "cycle": 18,
       "phase": "advance",
@@ -141,6 +134,13 @@
       "phase": "review",
       "timestamp": "2026-09-11T18:30:00.000Z",
       "summary": "Reviewed commit a08b750 (matchTxnQuery extraction for case-insensitive history search). Verified the new hay.toLowerCase().includes(q.toLowerCase()) preserves exact prior behavior for the deleted-asset fallback path: the old code called assetNm(id,snap) when fa was falsy, but assetNm's own DB.assets.find(x=>x.id===id) would also be falsy in that case (same array, same id), so it always fell through to snap||'—' — identical to matchTxnQuery's direct (t.fromAssetName||'—') fallback, just without the redundant second DB scan. Confirmed filteredHist() is the only caller and H.q's only consumer (grepped for other .includes(q)/search-query patterns in index.html — none found, so this was the only case-sensitivity gap in the app). Re-ran the regression suite (81/81 pass) and re-verified both inline <script> blocks parse via new Function(). No bugs found — no code changes this phase.",
+      "commit": null
+    },
+    {
+      "cycle": 19,
+      "phase": "review",
+      "timestamp": "2026-09-12T15:08:20.213Z",
+      "summary": "develop 커밋 326c357(upcomingOutflows/monthOutflows에 잔액조정 제외 가드 추가)을 검토했다. 기존에 이 가드가 이미 확립돼 있는 spendByCategory/histSumTotals/dayTypeTotals/updateHist와 정확히 같은 한 줄 패턴(.filter(t=>!(t.adjust&&!t.inSurplus)))을 빠진 두 자리에만 적용한 최소 diff로, 로직·순서(예: upcomingOutflows의 amount>=bigMin() 필터와의 순서) 모두 문제 없음을 확인했다. index.html 전체에서 t.type==='expense' 및 t.amount 집계 패턴을 다시 grep해 이 가드가 빠진 다른 자리가 남아있는지 재점검했다 — renderLedger()의 tx.filter(t=>t.type==='expense')...(~2681)가 걸렸지만, 이는 cycle16 review(0e853af)가 이미 확인한 죽은 코드(cells 변수가 계산만 되고 반환 HTML에서 전혀 쓰이지 않음, 실제 렌더 경로는 calPane/calCellsFor/dayTypeTotals)라 새 버그가 아님을 재확인하고 그대로 두었다(cycle17 critique도 이미 이걸 알고도 규모가 작아 advance 대상에서 제외한 바 있음). 회귀 테스트 스위트 111/111 통과, 두 인라인 <script> 블록 모두 new Function()으로 파싱 확인. 코드 변경 없음 — state.json 갱신만.",
       "commit": null
     }
   ]
