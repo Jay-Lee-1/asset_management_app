@@ -1273,7 +1273,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.21.2';
+const APP_VERSION='1.21.3';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 
@@ -1429,13 +1429,14 @@ const ASSET_TYPES={
 };
 const DEFAULT_GROUP_ORDER=Object.keys(ASSET_TYPES);
 const TYPE_COLOR={cash:'var(--brand)',savings:'var(--save)',stock:'var(--stock)',realestate:'var(--gold)',debt:'var(--expense)',pension:'var(--income)',fx:'#7CC7B8',gold:'#C9A227',etc:'var(--text-3)'};
+const ADJUST_CAT='잔액 조정'; /* 자산 재등록/잔액 수정 시 addBalanceAdjust가 자동 생성하는 시스템 전용 수입 카테고리 — 사용자가 이름변경/삭제 못 하게 openCatManage/doRenameCat/doDeleteCat에서 이 상수로 특별 취급한다 */
 const EXP_CATS_DEFAULT=['고정비','관리비','공용','용돈','십일조','기타'];
-const INC_CATS_DEFAULT=['급여','성과급','지원금','부업','잔액 조정'];
+const INC_CATS_DEFAULT=['급여','성과급','지원금','부업',ADJUST_CAT];
 const SAV_CATS_DEFAULT=['청약','적금','예금','비상금','기타'];
 const CATICON={'고정비':'repeat','관리비':'house','공용':'users','용돈':'wallet','십일조':'gift','기타':'tag',
  '급여':'arrowUp','성과급':'arrowUp','지원금':'arrowUp','부업':'arrowUp','이체':'transfer',
  '청약':'house','적금':'piggy','예금':'bank','비상금':'bell','저축':'piggy',
- '식비':'food','카페/간식':'food','생활':'cart','쇼핑':'cart','교통':'wallet','문화':'chart','의료':'help','고정':'repeat','잔액 조정':'edit'};
+ '식비':'food','카페/간식':'food','생활':'cart','쇼핑':'cart','교통':'wallet','문화':'chart','의료':'help','고정':'repeat',[ADJUST_CAT]:'edit'};
 const TYPE_LABEL={income:'수입',expense:'지출',transfer:'이체',saving:'저축'};
 
 function seed(){
@@ -1676,7 +1677,7 @@ function migrate(){
  DB.settings.accent=DB.settings.accent||'teal'; /* 메인 색 프리셋 */
  if(!DB._schV2){DB.settings.includeScheduled=false;DB._schV2=true} /* 예정 포함 토글 제거 → 확정 잔액 기준 */
  DB.categories.income=(DB.categories.income&&DB.categories.income.length)?DB.categories.income:[...INC_CATS_DEFAULT];
- if(DB.categories.income&&!DB.categories.income.includes('잔액 조정'))DB.categories.income.push('잔액 조정');
+ if(DB.categories.income&&!DB.categories.income.includes(ADJUST_CAT))DB.categories.income.push(ADJUST_CAT);
  DB.categories.saving=(DB.categories.saving&&DB.categories.saving.length)?DB.categories.saving:[...SAV_CATS_DEFAULT];
  if(!DB.catsV2){ /* 지출 기본 카테고리 교체 + 옛 카테고리 내역 일괄 '고정비' 변환 */
   DB.categories.expense=[...EXP_CATS_DEFAULT];
@@ -2342,7 +2343,7 @@ function addBalanceAdjust(asset,gap){
  if(!gap)return;
  const inc=gap>0; /* +면 입금(수입), -면 출금(지출) */
  DB.txns.push({id:uid(),date:TODAY,
-   type:inc?'income':'expense',category:'잔액 조정',memo:'재등록 잔액 조정',
+   type:inc?'income':'expense',category:ADJUST_CAT,memo:'재등록 잔액 조정',
    amount:Math.abs(gap),
    fromAssetId:inc?null:asset.id, toAssetId:inc?asset.id:null,
    adjust:true, adjustAsset:asset.id});
@@ -3698,8 +3699,10 @@ function openCatManage(kind,keep){
  openSheet(`<h3>카테고리 관리</h3><div class="desc">${k==='saving'?'아이콘과 이름으로 추가해요.':'‘변동’은 매달 금액이 달라지는 항목이에요.'}</div>
   <div class="seg"><div class="seg-blob"></div>${['expense','income','saving'].map(x=>`<button class="${k===x?'on':''}" onclick="openCatManage('${x}')">${CAT_LABEL[x]}</button>`).join('')}</div>
   <div>${DB.categories[k].map((c,i)=>{
+    const isSysAdjust=k==='income'&&c===ADJUST_CAT; /* 거래에서 자동 생성되는 시스템 카테고리 — 이름변경/삭제 못 하게 액션 대신 안내만 보여준다 */
     const varPill=k==='saving'?'':`<button class="varpill ${isVarCat(k,c)?'on':''}" onclick="toggleCatVarUI('${k}',${i},this)">${isVarCat(k,c)?'변동':'고정'}</button>`;
-    return `<div class="manage-row"><div class="avatar ${avCls}" style="width:36px;height:36px;border-radius:11px">${catGlyph(k,c,18,'tag')}</div><div class="mn">${esc(c)}</div>${varPill}<div class="row-acts"><button class="act-btn" onclick="renameCatSheet('${k}',${i})">${svg('edit')}</button><button class="act-btn danger" onclick="delCat('${k}',${i})">${svg('trash')}</button></div></div>`;
+    const acts=isSysAdjust?`<span class="mini">자동 생성</span>`:`<div class="row-acts"><button class="act-btn" onclick="renameCatSheet('${k}',${i})">${svg('edit')}</button><button class="act-btn danger" onclick="delCat('${k}',${i})">${svg('trash')}</button></div>`;
+    return `<div class="manage-row"><div class="avatar ${avCls}" style="width:36px;height:36px;border-radius:11px">${catGlyph(k,c,18,'tag')}</div><div class="mn">${esc(c)}</div>${isSysAdjust?'':varPill}${acts}</div>`;
    }).join('')}</div>
   <div class="add-inline"><button class="emo-pick ${avCls}" onclick="pickCatAddIcon('${k}')" aria-label="아이콘 선택">${svg(trigIcon,20)}</button><input id="newCat" placeholder="새 ${CAT_LABEL[k]} 카테고리" value="${catAddDraft.name.replace(/"/g,'&quot;')}" oninput="catAddDraft.name=this.value"><button onclick="addCat('${k}')">${svg('plus')}</button></div>
   <div style="height:14px"></div><button class="btn btn-primary" onclick="closeSheet()">완료</button>`);
@@ -3713,6 +3716,7 @@ function addCat(k){const v=(($('newCat')&&$('newCat').value)||catAddDraft.name||
 function delCat(k,i){const c=DB.categories[k][i];
  confirmSheet('카테고리 삭제',`'${esc(c)}' 카테고리를 삭제할까요? 기존 내역의 카테고리명은 그대로 남아요.`,'삭제',()=>{doDeleteCat(k,i);save();openCatManage(k)});}
 function doDeleteCat(k,i){const c=DB.categories[k][i];
+ if(k==='income'&&c===ADJUST_CAT){toast('자동으로 생성되는 카테고리라 삭제할 수 없어요');return}
  DB.categories[k].splice(i,1);
  delete DB.catIcon[catKey(k,c)];              /* 삭제 시 아이콘/변동/예산도 함께 정리 (동명 카테고리 재생성 시 이전 설정이 남지 않도록) */
  delete DB.catVar[catKey(k,c)];
@@ -3727,6 +3731,7 @@ function renameCatSheet(k,i,keep){const cur=DB.categories[k][i];
  setTimeout(()=>{const el=$('renameCat');el&&el.focus()},300)}
 function doRenameCat(k,i){const v=((catRenameDraft.name!=null?catRenameDraft.name:($('renameCat')&&$('renameCat').value))||'').trim();if(!v){toast('이름을 입력해 주세요');return}
  const old=DB.categories[k][i];
+ if(k==='income'&&old===ADJUST_CAT){toast('자동으로 생성되는 카테고리라 이름을 바꿀 수 없어요');return}
  if(v!==old&&DB.categories[k].includes(v)){toast('이미 있는 카테고리예요');return}
  const ic=catRenameDraft.icon||'';
  const wasVar=isVarCat(k,old);

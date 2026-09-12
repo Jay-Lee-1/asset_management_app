@@ -57,7 +57,7 @@ const FUNCTIONS = [
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
-const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'EXP_CATS_DEFAULT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT'];
+const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT'];
 
 const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(extractConst).join('\n');
 
@@ -358,6 +358,47 @@ test('doDeleteCat: 수입/저축 카테고리는 budgets를 건드리지 않는�
   };
   sandbox.doDeleteCat('income', 0);
   assert.strictEqual(sandbox.DB.budgets['용돈'], 100000, 'expense가 아닌 타입은 budgets 키 공간이 겹치지 않으므로 건드리면 안 됨');
+});
+
+/* ---------- ADJUST_CAT: '잔액 조정' 시스템 카테고리는 이름변경/삭제로부터 보호된다 ---------- */
+test('doDeleteCat: 수입의 잔액 조정 카테고리는 삭제되지 않고 안내 토스트만 뜬다', () => {
+  sandbox.DB = {
+    categories: { income: ['급여', sandbox.ADJUST_CAT] },
+    catIcon: {}, catVar: {}, budgets: {}, txns: [], recurrences: [],
+  };
+  sandbox.lastToast = null;
+  sandbox.doDeleteCat('income', 1);
+  assert.deepStrictEqual(sandbox.DB.categories.income, ['급여', sandbox.ADJUST_CAT], '카테고리 배열이 그대로 유지돼야 함');
+  assert.ok(sandbox.lastToast, '안내 토스트가 떴어야 함');
+});
+test('doRenameCat: 수입의 잔액 조정 카테고리는 이름을 바꿀 수 없다', () => {
+  sandbox.DB = {
+    categories: { income: [sandbox.ADJUST_CAT] },
+    catIcon: {}, catVar: {}, budgets: {}, txns: [], recurrences: [],
+  };
+  sandbox.catRenameDraft = { name: '정정', icon: '' };
+  sandbox.lastToast = null;
+  sandbox.doRenameCat('income', 0);
+  assert.strictEqual(sandbox.DB.categories.income[0], sandbox.ADJUST_CAT, '이름이 바뀌면 안 됨');
+  assert.ok(sandbox.lastToast, '안내 토스트가 떴어야 함');
+});
+test('doDeleteCat/doRenameCat: 같은 이름이어도 지출 카테고리라면(가정) 잔액 조정 가드가 적용되지 않는다', () => {
+  // ADJUST_CAT은 income 전용 시스템 카테고리이므로, k!=='income'이면 이름이 같아도 평범한 카테고리로 취급돼야 함
+  sandbox.DB = {
+    categories: { expense: [sandbox.ADJUST_CAT, '기타'] },
+    catIcon: {}, catVar: {}, budgets: {}, txns: [], recurrences: [],
+  };
+  sandbox.catRenameDraft = { name: '정정', icon: '' };
+  sandbox.doRenameCat('expense', 0);
+  assert.strictEqual(sandbox.DB.categories.expense[0], '정정', '지출 카테고리는 이름 보호 대상이 아님');
+});
+test('doDeleteCat: 잔액 조정이 아닌 평범한 수입 카테고리는 그대로 삭제된다(가드 과잉 적용 아님)', () => {
+  sandbox.DB = {
+    categories: { income: ['급여', sandbox.ADJUST_CAT] },
+    catIcon: {}, catVar: {}, budgets: {}, txns: [], recurrences: [],
+  };
+  sandbox.doDeleteCat('income', 0);
+  assert.deepStrictEqual(sandbox.DB.categories.income, [sandbox.ADJUST_CAT]);
 });
 
 /* ---------- addCat: 중복 이름 추가 시 무반응 대신 안내 토스트 ---------- */

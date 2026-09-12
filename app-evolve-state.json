@@ -1,12 +1,15 @@
 {
-  "cycle": 16,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "'잔액 조정' 시스템 카테고리를 일반 카테고리처럼 이름변경/삭제할 수 있어 데이터 정합성이 깨지는 문제 수정",
-    "why": "migrate()(index.html:1679)는 앱을 실행할 때마다 DB.categories.income에 '잔액 조정'이 없으면 무조건 다시 push한다. 이 문자열은 addBalanceAdjust(2341)/updateBalanceAdjust(2351)가 category:'잔액 조정'으로 하드코딩해 자산 재등록/잔액 수정 시 자동 생성하는 사실상 시스템 전용 카테고리다. 그런데 openCatManage('income')(3693)은 DB.categories.income을 그냥 순회해 렌더링하므로 이 카테고리도 급여/성과급과 똑같이 연필(renameCatSheet)·휴지통(delCat) 버튼이 붙어 노출되고, doRenameCat(3728)/doDeleteCat(3715)에는 이를 보호하는 특수 처리가 전혀 없다. 재현: 카테고리 관리>수입>'잔액 조정'을 예를 들어 '정정'으로 이름변경하면 doRenameCat이 기존 잔액조정 내역 전부를 '정정'으로 일괄 변경하지만, 다음 실행 때 migrate()가 '잔액 조정'을 다시 목록에 push하고 이후 새로 생기는 조정 내역은 여전히 하드코딩된 '잔액 조정'으로 생성돼 같은 기능인데 과거/신규 내역이 영구히 두 이름으로 갈라진다(지출분석·히스토리 검색에서 같은 성격의 항목이 다른 카테고리로 보임). 삭제해도 doDeleteCat이 막지 않고 재실행 시 migrate가 다시 채워 넣어 '왜 자꾸 생기지'라는 혼란도 유발한다. addBalanceAdjust는 gap<0(지출)일 때도 category:'잔액 조정'을 그대로 쓰는데 EXP_CATS_DEFAULT/DB.categories.expense에는 애초에 이 이름이 없어(income에만 migrate가 채워 넣음) 지출 방향 조정은 카테고리 관리 화면에 아예 노출되지도 않는 비대칭도 있다(이건 부수적 관찰, 메인 버그는 income 쪽 rename/delete 무방비).",
-    "approach": "1) 하드코딩 문자열 중복을 없애기 위해 상수 ADJUST_CAT='잔액 조정'을 도입하고 migrate()(1679)/addBalanceAdjust(2345)가 이를 참조하도록 교체. 2) openCatManage(3693)의 manage-row 렌더에서 k==='income'&&c===ADJUST_CAT인 행은 row-acts(연필/휴지통) 버튼 대신 '거래에서 자동 생성되는 카테고리' 같은 안내 텍스트만 보이도록 분기(자산 재등록 흐름에서만 생기므로 사용자가 직접 관리할 이유가 없음). 3) UI 우회 호출까지 막도록 doRenameCat(3728)·doDeleteCat(3715) 시작부에 동일 가드를 추가(k==='income'&&c===ADJUST_CAT이면 toast로 안내 후 return). 4) 이미 손상된 데이터(예: cycle 실행 중 테스트로 만들어졌을 수 있는 분리된 이름) 정리는 이번 스코프에서는 생략하고, 대신 test/run.js에 doRenameCat/doDeleteCat을 ADJUST_CAT에 호출했을 때 무시되는지 확인하는 회귀 테스트 2~3개(이름변경 무시+토스트, 삭제 무시+토스트, 일반 카테고리는 정상 동작 유지) 추가. 5) 지출 방향 비대칭은 이번 사이클 범위 밖(부수적 관찰일 뿐 별도 버그는 아님)이므로 건드리지 않는다."
-  },
+  "cycle": 17,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 16,
+      "phase": "advance",
+      "timestamp": "2026-09-12T05:30:00.000Z",
+      "summary": "cycle16 critique 계획대로 '잔액 조정' 시스템 카테고리를 이름변경/삭제로부터 보호했다. const ADJUST_CAT='잔액 조정' 상수를 도입해 INC_CATS_DEFAULT/CATICON/migrate()/addBalanceAdjust의 하드코딩된 문자열 4곳을 전부 이 상수 참조로 교체(동작 변화 없음, 중복 제거). openCatManage(k==='income'&&c===ADJUST_CAT)에서는 연필/휴지통 버튼과 변동/고정 토글 대신 '자동 생성' 안내만 보이도록 분기 — 정상적인 UI 경로로는 더 이상 도달 불가능. UI 우회 호출까지 막도록 doDeleteCat/doRenameCat 시작부에도 동일 가드(k==='income'&&c===ADJUST_CAT이면 toast 후 return)를 추가해 방어를 이중화했다. test/run.js CONSTS에 ADJUST_CAT 추가, 회귀 테스트 4개 추가(income의 잔액조정 삭제 차단+토스트, 이름변경 차단+토스트, 같은 이름이어도 expense 타입이면 가드 미적용 확인, 잔액조정이 아닌 평범한 수입 카테고리는 정상 삭제되는 과잉적용 방지 확인) — 100/100 통과(기존 96+신규 4). 브라우저에서 실제 카테고리 관리 화면을 열어 '잔액 조정' 행에 '자동 생성' 표시와 버튼 부재를 스크린샷으로 확인했고, 콘솔에서 doRenameCat/doDeleteCat을 직접 호출해도(우회 경로) 카테고리 배열이 그대로 유지됨을 확인, 일반 카테고리는 여전히 정상적으로 이름변경/삭제되는 회귀 없음도 함께 확인했다. 두 인라인 <script> 블록 모두 node --check 통과. APP_VERSION 1.21.2->1.21.3, sw.js CACHE v62->v63. pending_advance_plan 비움.",
+      "commit": null
+    },
     {
       "cycle": 16,
       "phase": "critique",
@@ -138,13 +141,6 @@
       "phase": "critique",
       "timestamp": "2026-09-11T02:20:00.000Z",
       "summary": "전체 앱을 한 걸음 물러나 봤다(백그라운드 조사 에이전트 활용). delAdjust(id) (index.html:2887-2888)가 cycle10 develop에서 이미 고친 delTx의 버그 패턴을 형제 함수로서 여전히 갖고 있음을 확인: DB.txns를 직접 filter하고 되돌리기 없는 plain toast만 보여주며, deleteTxnsUndo가 제공하는 twGuard()(튜토리얼 가드)와 6초 undo 토스트를 전혀 받지 못한다. 실제 도달 경로(openAdjustEdit -> '이 조정 내역 삭제' 버튼)가 있는 진짜 회귀 가능 버그라 다음 advance 사이클 대상으로 선정. 후보로 검토했지만 기각한 것들: 큰 render 함수들(renderPlan 57줄 등)은 파일 전체가 원래 조밀한 스타일이라 명확한 문제로 보기 어려움; 환율/시세 fetch 에러 처리(fetchFxGold/fetchStocks/syncRates)는 이미 Promise.allSettled와 per-source 실패 카운터로 견고하게 구현됨; TODO/FIXME나 예전 cash-flow-curve 같은 새로운 고아 코드는 전체 grep에서 발견되지 않음. 코드 변경 없음 -- pending_advance_plan에 delAdjust 통일 계획을 적어둠.",
-      "commit": null
-    },
-    {
-      "cycle": 10,
-      "phase": "review",
-      "timestamp": "2026-09-11T01:30:00.000Z",
-      "summary": "Reviewed commit 7c3c59f (delTx now routes through deleteTxnsUndo instead of hand-rolled filter+plain-toast). Verified deleteTxnsUndo(ids) (index.html:4876) correctly gates on twGuard() first, snapshots the removed row via DB.txns.filter before removing it, and its undo callback re-pushes the exact same object reference and re-saves -- so a single-item delete now gets the identical 6-second undo affordance bulk delete already had, with no behavior change to the tutorial-mode guard bypass risk (delTx previously skipped twGuard entirely; now it doesn't, which is the intended fix, not a side effect to worry about). Confirmed delTx's only call site (the ledger row detail sheet's delete button, index.html:2793) passes a single id and expects no return value, which still holds. Checked deleteTxnsUndo has no other caller whose behavior could be altered by delTx now sharing it (ledgerDelSel/histDelSel are the only other callers, unaffected). Re-ran the regression suite (54/54 pass) and re-verified both inline <script> blocks parse via new Function(). No bugs found -- no code changes this phase.",
       "commit": null
     }
   ]
