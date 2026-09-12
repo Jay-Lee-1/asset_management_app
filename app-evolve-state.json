@@ -1,8 +1,19 @@
 {
   "cycle": 19,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "doResetAll()에 undo 안전망 추가 + 클라우드 초기화 전파 경합 차단",
+    "why": "doResetAll()(index.html:5356)은 앱에서 가장 파괴적인 단일 동작(계정의 모든 자산/거래/반복/설정을 emptyDB()로 완전히 대체)인데도, deleteTxnsUndo/deleteRecsUndo/deleteAssetsUndo(index.html:5003-5015)가 이미 확립해 둔 6초 undoToast() 안전망이 전혀 없이 confirmSheet 한 번 통과 후 plain toast()로 끝난다 — 단건 거래 삭제보다도 보호가 약함. 게다가 save()(1711-1714 부근)가 무조건 scheduleCloudPush()를 걸어 약 1.2초 뒤 pushCloud()가 last-write-wins upsert로 클라우드 사본을 덮어쓰므로, 로컬에서 실수로 탭 한 번만 잘못해도 몇 초 안에 다른 기기에 동기화된 백업까지 함께 사라진다. 개인 가계부 앱에서 되돌릴 수 없는 전체 데이터 손실 클래스이며, 이번 앱이 반복적으로 강화해 온 '조용한 데이터 손실 방지' 계열(저장 실패 알림, 단건 삭제 undo, 손상 데이터 백업)의 사각지대다.",
+    "approach": "1) doResetAll()의 confirmSheet 콜백에서 emptyDB()로 교체하기 전에 현재 DB를 deep clone해 스냅샷으로 잡는다. 2) plain toast('전체 초기화했어요') 대신 기존 undoToast() 패턴(예: deleteAssetsUndo와 동일한 6초 '되돌리기' 버튼)을 사용해, 되돌리기를 누르면 DB=snapshot; save(); renderCurrent()로 완전 복원한다. 3) 클라우드 전파 경합을 막는다: save()에 옵션 플래그(예: save({deferCloudPush:true}))를 추가해 doResetAll 호출 시에만 즉시 scheduleCloudPush()를 걸지 않게 하고, undo 타임아웃이 되돌리기 없이 만료된 시점에만 실제로 클라우드 push를 예약하거나, 되돌리기를 누르면 예약된 push 타이머(SB_PUSH_T)를 clearTimeout으로 취소해 빈 DB가 애초에 클라우드에 닿지 않게 한다. 4) confirmSheet의 안내 문구('되돌릴 수 없어요')가 이제 사실과 달라지므로, undo 안전망이 생겼다는 사실에 맞게 문구를 조정할지 검토한다(단, undo가 6초 한정임을 감안해 여전히 신중한 확인을 유도하는 톤은 유지). 5) DOM/전역 상태(DB, save, scheduleCloudPush, SB_PUSH_T)에 강하게 결합된 경로이므로 test/run.js 순수함수 테스트 대상은 아니고, node --check로 두 인라인 script 블록 파싱 확인 + 기존 회귀 스위트 전체 통과 + 실제 시나리오 수동/Playwright 검증(초기화 후 undo window 내 되돌리기 시 로컬 데이터 완전 복원 및 클라우드에 빈 DB가 도달하지 않았음 확인, undo 없이 만료 시 클라우드도 정상적으로 초기화 상태를 반영함 확인)으로 검증한다."
+  },
   "history": [
+    {
+      "cycle": 19,
+      "phase": "critique",
+      "timestamp": "2026-09-12T16:10:00.000Z",
+      "summary": "전체 앱을 한 걸음 물러나 봤다(백그라운드 조사 에이전트 활용). doResetAll()(index.html:5356)이 앱에서 가장 파괴적인 단일 동작인데도 deleteTxnsUndo/deleteRecsUndo/deleteAssetsUndo가 이미 확립해 둔 6초 undoToast() 안전망 없이 plain toast()로 끝나는 것을 발견 — 단건 거래 삭제보다도 보호가 약하다. 게다가 save()가 무조건 scheduleCloudPush()를 걸어 약 1.2초 뒤 last-write-wins로 클라우드 사본까지 함께 지워버려, 실수로 탭 한 번만 잘못해도 다른 기기의 동기화된 백업까지 영구 소실될 수 있다. 이번 사이클들이 반복적으로 강화해 온 '조용한 데이터 손실 방지'(저장 실패 알림, 단건 삭제 undo, 손상 데이터 백업) 계열의 사각지대이자, 지금까지 기각된 후보들(household_id 분리, sync 충돌 UX, djb2 해시, 자산 탭 검색 부재 등)과는 다른 새 대상. 코드 변경 없음 — pending_advance_plan에 doResetAll() undo 안전망 + 클라우드 초기화 전파 경합 차단 계획을 적어둠(스냅샷+undoToast 복원, save()의 deferCloudPush 플래그로 undo window 동안 클라우드 push 보류/취소).",
+      "commit": null
+    },
     {
       "cycle": 18,
       "phase": "advance",
@@ -134,13 +145,6 @@
       "phase": "review",
       "timestamp": "2026-09-11T18:30:00.000Z",
       "summary": "Reviewed commit a08b750 (matchTxnQuery extraction for case-insensitive history search). Verified the new hay.toLowerCase().includes(q.toLowerCase()) preserves exact prior behavior for the deleted-asset fallback path: the old code called assetNm(id,snap) when fa was falsy, but assetNm's own DB.assets.find(x=>x.id===id) would also be falsy in that case (same array, same id), so it always fell through to snap||'—' — identical to matchTxnQuery's direct (t.fromAssetName||'—') fallback, just without the redundant second DB scan. Confirmed filteredHist() is the only caller and H.q's only consumer (grepped for other .includes(q)/search-query patterns in index.html — none found, so this was the only case-sensitivity gap in the app). Re-ran the regression suite (81/81 pass) and re-verified both inline <script> blocks parse via new Function(). No bugs found — no code changes this phase.",
-      "commit": null
-    },
-    {
-      "cycle": 19,
-      "phase": "review",
-      "timestamp": "2026-09-12T15:08:20.213Z",
-      "summary": "develop 커밋 326c357(upcomingOutflows/monthOutflows에 잔액조정 제외 가드 추가)을 검토했다. 기존에 이 가드가 이미 확립돼 있는 spendByCategory/histSumTotals/dayTypeTotals/updateHist와 정확히 같은 한 줄 패턴(.filter(t=>!(t.adjust&&!t.inSurplus)))을 빠진 두 자리에만 적용한 최소 diff로, 로직·순서(예: upcomingOutflows의 amount>=bigMin() 필터와의 순서) 모두 문제 없음을 확인했다. index.html 전체에서 t.type==='expense' 및 t.amount 집계 패턴을 다시 grep해 이 가드가 빠진 다른 자리가 남아있는지 재점검했다 — renderLedger()의 tx.filter(t=>t.type==='expense')...(~2681)가 걸렸지만, 이는 cycle16 review(0e853af)가 이미 확인한 죽은 코드(cells 변수가 계산만 되고 반환 HTML에서 전혀 쓰이지 않음, 실제 렌더 경로는 calPane/calCellsFor/dayTypeTotals)라 새 버그가 아님을 재확인하고 그대로 두었다(cycle17 critique도 이미 이걸 알고도 규모가 작아 advance 대상에서 제외한 바 있음). 회귀 테스트 스위트 111/111 통과, 두 인라인 <script> 블록 모두 new Function()으로 파싱 확인. 코드 변경 없음 — state.json 갱신만.",
       "commit": null
     }
   ]
