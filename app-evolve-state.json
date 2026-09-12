@@ -1,8 +1,15 @@
 {
   "cycle": 21,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 21,
+      "phase": "review",
+      "timestamp": "2026-09-12T23:10:00.000Z",
+      "summary": "Reviewed commit 5416ea0 (CSV injection guard added to txnsToCSV's category/asset-name/memo fields). Confirmed guard()'s regex /^[=+\\-@\\t\\r]/ matches the standard OWASP CSV-injection leading-char set, applied only to the 4 free-text fields (category, from/to asset name via nm(), memo) and correctly excluded from amount/date/type so negative amounts stay numeric. Traced nm()'s snapshot fallback (deleted-asset *AssetName) path — also covered by guard() since it wraps nm()'s return value, not just live asset lookups. Grepped the whole file for other CSV/export surfaces (toCSV/text\\/csv/\\.csv) and confirmed txnsToCSV is the only CSV emitter (doExport's isCsv branch is the sole caller, backup/JSON path is unaffected and correctly not guarded — JSON isn't spreadsheet-interpreted). Manually re-derived the escaping order (guard() then esc()) for the header row (no guard, fixed literals) vs data rows, and verified a value that needs both defenses (e.g. asset name '=HYPERLINK(\"http://evil\")') ends up correctly double-escaped: guard prepends ', then esc wraps the whole field in quotes and doubles the inner \". New regression tests (formula-leading memo/category/asset-name cases, negative-amount non-regression) assert the exact resulting CSV lines and match this by-hand trace. Re-ran the full regression suite (120/120 pass) and re-verified both inline <script> blocks parse via node --check. No bugs found — no code changes this phase.",
+      "commit": null
+    },
     {
       "cycle": 17,
       "phase": "advance",
@@ -134,13 +141,6 @@
       "phase": "advance",
       "timestamp": "2026-09-12T21:20:00.000Z",
       "summary": "critique 계획대로 카테고리 삭제 시 연결된 활성 반복거래를 방치하는 유령 레코드 버그를 고쳤다. activeRecsForAssets(2334)와 동일한 패턴으로 activeRecsForCat(type,name)을 추가했고, delCat()의 확인 문구가 delAsset과 동일하게 '연결된 반복거래 N개도 함께 비활성화돼요'를 덧붙이도록 확장했다. doDeleteCat()을 deleteAssetsUndo(5011) 패턴을 본떠 재작성해, 연결된 활성 반복거래를 r.active=false로 비활성화하면서 카테고리를 제거하고, 6초 undoToast로 카테고리 배열 위치·아이콘·변동 플래그·예산 한도·반복거래 active 상태를 전부 복원 가능하게 했다(부수적으로 카테고리 삭제가 유일하게 undo 없는 파괴적 동작이었던 비대칭도 해소). test/run.js에 activeRecsForCat 회귀 테스트 4개(타입+이름 일치 매칭/비활성 제외/타입 불일치 제외/무관 카테고리 빈 배열)와 doDeleteCat의 undo 왕복 테스트 2개(연결된 반복거래 비활성화+undo로 카테고리·아이콘·변동·예산·반복거래 active 모두 복원, 연결된 반복거래가 없을 때도 안전) 추가 — 117/117 통과(기존 111+신규 6). Playwright(사전 설치 Chromium, 게스트 모드)로 실제 브라우저에서 카테고리 생성→활성 월간 반복거래 연결→카테고리 삭제→확인창에 '반복거래 1개' 경고 노출 확인→삭제 후 해당 반복거래 active:false 전환+undo 토스트 노출 확인→되돌리기 클릭 시 카테고리와 반복거래 active 상태 모두 원래대로 복원되는 것까지 end-to-end로 확인했다. 이 과정에서 이번 계획 범위 밖의 별개 잠재 버그를 하나 발견해 기록해둔다: 브라우저의 첫 게스트 부팅은 load()가 seed()(또는 emptyDB())로 DB를 채우고 migrate()를 거치지 않은 채 곧장 save()하므로, 그 세션에서 한 번도 새로고침하지 않은 상태로는 DB.catIcon/catVar/budgets이 undefined로 남는다 — doDeleteCat/doRenameCat/addCat의 쓰기 경로(delete DB.catIcon[...] 등)는 이 객체들이 항상 존재한다고 가정하고 무방비로 접근하므로, '설치 후 첫 실행에서 새로고침 없이 곧바로 카테고리를 삭제/이름변경'하면 예외가 던져질 수 있다(이번 advance가 만든 버그 아님 — doRenameCat/원래 doDeleteCat에도 동일하게 있던 기존 결함, afterCloudAuth의 emptyDB() 분기에도 같은 패턴 존재). 범위를 좁게 유지하려 이번 사이클에서는 고치지 않았으니 다음 develop/critique가 참고할 것. 두 인라인 <script> 블록 모두 new Function()으로 파싱 확인. APP_VERSION 1.22.3->1.22.4, sw.js CACHE v71->v72 (patch bump, 버그 수정+undo UX 추가). pending_advance_plan 비움.",
-      "commit": null
-    },
-    {
-      "cycle": 21,
-      "phase": "develop",
-      "timestamp": "2026-09-12T22:20:00.000Z",
-      "summary": "txnsToCSV()(index.html, CSV 내보내기 pure 함수)의 esc()가 콤마/따옴표/줄바꿈만 처리하고 CSV 인젝션(수식 인젝션)은 막지 않아, 카테고리/자산명/메모가 =,+,-,@ 로 시작하면 엑셀/구글시트에서 수식으로 해석될 수 있는 실제 취약점을 발견해 고쳤다(OWASP CSV Injection). guard()를 추가해 이 4가지 free-text 필드(category, from/to 자산명, memo)에서만 값이 =,+,-,@,tab,CR로 시작하면 앞에 작은따옴표(')를 붙여 텍스트로 강제하도록 했다. amount/date/type은 guard 대상에서 제외해 음수 금액(-1000 등)이 문자열로 바뀌어 엑셀에서 숫자 합산이 깨지는 회귀를 만들지 않았다. 회귀 테스트에 =cmd|.../+1+1/@SUM(.../음수-시작 메모, 카테고리/자산명 케이스, 음수 금액이 guard 대상이 아님을 확인하는 케이스를 추가(120/120 통과). 두 인라인 <script> 블록 모두 node --check 통과. APP_VERSION 1.22.4->1.22.5, sw.js CACHE v72->v73.",
       "commit": null
     }
   ]
