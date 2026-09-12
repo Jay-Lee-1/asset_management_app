@@ -1259,7 +1259,7 @@ body.selmode .fab{display:none}
   <nav class="bottom-nav" id="nav"></nav>
 </div>
 <div class="scrim" id="scrim"></div>
-<div class="sheet" id="sheet"></div>
+<div class="sheet" id="sheet" role="dialog" aria-modal="true" tabindex="-1"></div>
 <div class="dp-scrim" id="dpScrim"></div>
 <div class="dp-modal" id="dpModal"></div>
 <div class="dp-wheel" id="dpWheel"></div>
@@ -1273,7 +1273,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.20.2';
+const APP_VERSION='1.21.0';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 
@@ -4183,10 +4183,25 @@ function attachDetent(sh,sc){ /* 아래로 스크롤하면 확장 (한 번 되�
    if(!sh._expanded&&sc.scrollTop>44){sh._expanded=true;sh.classList.add('expanded');sc.style.transition='max-height .24s cubic-bezier(.32,.72,0,1)';applyHeight(sh,sc);}
  };
 }
+let _sheetReturnFocus=null;
+function sheetFocusables(sh){return [...sh.querySelectorAll('button,[href],input,select,textarea,[tabindex]')].filter(el=>!el.disabled&&el.tabIndex!==-1&&el.offsetParent!==null)}
+function setSheetInert(on){['app','fab'].forEach(id=>{const el=$(id);if(!el)return;if(on){el.setAttribute('inert','');el.setAttribute('aria-hidden','true')}else{el.removeAttribute('inert');el.removeAttribute('aria-hidden')}})}
+function onSheetKeydown(e){
+ const sh=$('sheet');if(!sh||!sh.classList.contains('show'))return;
+ if(e.key==='Escape'){e.preventDefault();closeSheet();return}
+ if(e.key==='Tab'){
+   const f=sheetFocusables(sh);if(!f.length)return;
+   const first=f[0],last=f[f.length-1];
+   if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}
+   else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}
+   else if(!sh.contains(document.activeElement)){e.preventDefault();first.focus()}
+ }
+}
+document.addEventListener('keydown',onSheetKeydown);
 function openSheet(html,topBtn){
  const sh=$('sheet');
  const wasOpen=sh.classList.contains('show');
- if(!wasOpen){_segPrev=null;sh.classList.remove('expanded');sh._expanded=false;sh._lockH=0;}
+ if(!wasOpen){_segPrev=null;sh.classList.remove('expanded');sh._expanded=false;sh._lockH=0;_sheetReturnFocus=document.activeElement;setSheetInert(true);}
  const btn=topBtn||`<button class="sheet-x" onclick="closeSheet()" aria-label="닫기">${svg('x')}</button>`;
  sh.innerHTML=`<div class="sheet-scroll" id="sheetScroll"><div class="grip"></div>${btn}${html}</div>`;
  sh.classList.add('show');$('scrim').classList.add('show');
@@ -4199,6 +4214,7 @@ function openSheet(html,topBtn){
  attachDetent(sh,sc);
  wireSheetGestures(sh,sc);
  requestAnimationFrame(()=>requestAnimationFrame(()=>{moveSegBlobs();try{fcWire()}catch(e){}}));
+ setTimeout(()=>{if(sh.classList.contains('show')&&!sh.contains(document.activeElement)){const f=sheetFocusables(sh)[0];if(f)f.focus();else sh.focus()}},350);
 }
 /* ── 애플식 시트 제스처: 스크롤 컨테이너와 분리된 껍데기에서 처리 ────────────── */
 function sheetSlideBack(renderPrev){if(renderPrev)renderPrev()}
@@ -4267,6 +4283,7 @@ function ensureEdgeGesture(){
          sh.innerHTML=`<div class="sheet-scroll" id="sheetScroll">${inner?inner.innerHTML:''}</div>`;
          cleanupPrev();
          const nsc=$('sheetScroll');applyHeight(sh,nsc);attachDetent(sh,nsc);wireSheetGestures(sh,nsc);nsc.scrollTop=ptop;requestAnimationFrame(()=>{try{moveSegBlobs()}catch(e){}});
+         setTimeout(()=>{if(sh.classList.contains('show')&&!sh.contains(document.activeElement)){const f=sheetFocusables(sh)[0];if(f)f.focus();else sh.focus()}},50);
        }else{sh.style.transition='none';sh.style.transform='';cleanupPrev();closeSheet();}
      },260);
    }else{sh.style.transform=''; /* 되돌리기: 현재 시트가 다시 덮음 */
@@ -4274,7 +4291,7 @@ function ensureEdgeGesture(){
    }
  }x0=null;dx=dy=0;};
  edge.addEventListener('touchend',up);edge.addEventListener('touchcancel',up);
-}function closeSheet(){const sh=$('sheet');sh.style.transition='';sh.style.transform='';sh.style.height='';sh.style.maxHeight='';sh.style.overflow='';sh.classList.remove('expanded','show');$('scrim').classList.remove('show');const eg=$('sheetEdgeGlobal');if(eg)eg.remove()}
+}function closeSheet(){const sh=$('sheet');sh.style.transition='';sh.style.transform='';sh.style.height='';sh.style.maxHeight='';sh.style.overflow='';sh.classList.remove('expanded','show');$('scrim').classList.remove('show');const eg=$('sheetEdgeGlobal');if(eg)eg.remove();setSheetInert(false);const rf=_sheetReturnFocus;_sheetReturnFocus=null;if(rf&&document.contains(rf))rf.focus()}
 $('scrim').addEventListener('click',closeSheet);
 $('dpScrim').addEventListener('click',()=>{
  if($('dpWheel').classList.contains('show')){$('dpWheel').classList.remove('show');

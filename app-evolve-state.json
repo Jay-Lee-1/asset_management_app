@@ -1,12 +1,15 @@
 {
-  "cycle": 15,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "Modal Sheet System — Dialog Semantics, Focus Trap & Keyboard Support",
-    "why": "openSheet/closeSheet (~index.html:4186,4277) is the single shared primitive behind ~60+ call sites (add/edit transaction, asset, recurring, categories, settings, confirmations, date picker) yet has no role=dialog/aria-modal, no focus trap (Tab reaches content behind the scrim), no Escape-to-close, and no focus restore on close. This is a distinct, bounded angle from the previously-rejected broad aria-label sweep: fixing one shared component hardens keyboard/screen-reader usability across the entire app in a single change.",
-    "approach": "In openSheet(html, topBtn) (~4186): add role=\"dialog\" aria-modal=\"true\" to #sheet; capture document.activeElement as _sheetReturnFocus before swapping content; after render, move focus into the sheet via one unified helper (existing focus target, else the sheet container via tabindex=-1) instead of the ad-hoc per-form setTimeout calls scattered across ~10 render*Sheet functions. Add a single keydown handler (wired once) that closes on Escape (calling closeSheet()) and traps Tab/Shift+Tab by recomputing focusable elements inside #sheet on each keypress (content re-renders often). In closeSheet() (~4277): restore focus to _sheetReturnFocus if still attached, then clear it. Toggle inert (or aria-hidden fallback) on the main app root while #sheet has .show, removed in closeSheet(). Because #sheet is also mutated directly by edge-swipe back-gesture logic (~4227-4276), route focus/inert through one small helper called from those mutation points too, not just open/close. DOM-bound, not pure logic, so no test/run.js additions -- verify manually across 3 representative sheets (add-transaction, confirm-delete, account/cloud settings) for tab containment, Escape behavior, and focus return."
-  },
+  "cycle": 16,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 15,
+      "phase": "advance",
+      "timestamp": "2026-09-12T01:15:02.987Z",
+      "summary": "pending_advance_plan(모달 시트 다이얼로그 시맨틱스+포커스 트랩+키보드 지원)을 구현했다. #sheet에 role=dialog/aria-modal=true/tabindex=-1을 정적으로 부여하고, openSheet()가 최초 오픈 시점(!wasOpen)에 document.activeElement를 _sheetReturnFocus로 캡처한 뒤 #app과 #fab에 inert(+aria-hidden 폴백)를 건다(스크림이 시각적으로 가려도 키보드 포커스는 Tab으로 배경까지 넘어가던 문제). 렌더 후 350ms 뒤에도 포커스가 시트 밖이면(개별 render*Sheet의 기존 setTimeout 포커스가 없는 화면 대비 폴백) 시트 내 첫 포커스 가능 요소나 시트 자체로 포커스를 옮긴다 -- 계획은 기존 ~10곳의 개별 setTimeout 포커스 호출을 전부 이 헬퍼로 치환하는 것까지 제안했지만, 각 폼이 의도적으로 특정 입력칸(금액 등)에 포커스를 주는 것은 그대로 두는 게 더 안전하다고 판단해 유지하고 폴백만 추가하는 좁은 방식으로 조정했다. 전역 keydown 핸들러(모듈 최초 1회만 바인딩)를 추가해 Escape는 closeSheet()를 부르고, Tab/Shift+Tab은 매 키 입력마다 시트 내 포커스 가능 요소를 다시 계산해 처음/끝에서 순환시키는 포커스 트랩을 구현했다(콘텐츠가 자주 재렌더되므로 매번 재계산 필요). closeSheet()에서는 inert를 먼저 해제한 뒤 _sheetReturnFocus로 포커스를 복원한다. 엣지 스와이프 뒤로가기 제스처가 시트를 openSheet를 거치지 않고 직접 승격시키는 지점(~4278)에도 동일한 포커스 폴백을 추가했다. DOM 바인딩 로직이라 test/run.js에 새 테스트는 추가하지 않았고(계획대로), 대신 Playwright(사전 설치된 Chromium)로 3개 대표 시트(거래 추가, 자산 상세/삭제 확인, 환율 설정)에서 role/aria-modal, Tab 20회 순환 시 트랩 유지, Escape로 닫힘, 닫은 후 포커스가 트리거 버튼으로 복원됨, #app의 inert가 열림/닫힘에 맞춰 토글됨을 수동 검증했다(첫 시도에서 guest 최초 실행 시 800ms 뒤 자동 시작되는 튜토리얼이 openTutorial() 내부에서 closeSheet()를 호출해 테스트 타이밍과 겹치는 걸 발견-- 실제 버그 아니고 신규 게스트 온보딩 타이밍과 테스트 스크립트의 우연한 경합이라 튜토리얼을 비활성화하고 재검증). 87/87 기존 회귀 테스트 통과, 두 인라인 <script> 블록 모두 new Function()으로 파싱 확인. APP_VERSION 1.20.2->1.21.0, sw.js CACHE v59->v60 (minor bump, 접근성 하드닝).",
+      "commit": null
+    },
     {
       "cycle": 15,
       "phase": "critique",
@@ -138,13 +141,6 @@
       "phase": "critique",
       "timestamp": "2026-09-10T18:00:00+00:00",
       "summary": "전체 앱을 한 걸음 물러나 봤다. 접근성(aria-label 5개뿐, role/alt/tabindex 0개)과 로컬 인증 해시 우려는 이전 사이클(6,7)에서 이미 runner-up으로 반복 언급됐지만, 실제로 코드를 확인해보니 인증은 djb2 로컬 해시가 아니라 Supabase Auth(SB.auth.signUp/signInWithPassword)로 완전히 대체돼 있었다 — 그 runner-up은 더 이상 유효하지 않아 폐기. 대신 cycle 5에서 만든 예산 기능(DB.budgets, openSpendAnalysis 카테고리별 진행률)이 카테고리 단위로만 존재하고 '이번 달 전체적으로 예산 안에서 쓰고 있는가'를 한눈에 보여주는 집계 뷰가 없다는 점을 발견 — openSpendAnalysis()의 '총 지출' 카드(3524줄)는 예산 개념 없이 순수 합계만 보여준다. rateStatusText()/autoSyncRates()의 환율 동기화 실패 처리, delAsset()의 반복거래 연쇄 비활성화, importData()의 검증 등 다른 후보들은 이미 견고하게 구현돼 있음을 확인하고 제외했다. 코드 변경 없음 — pending_advance_plan에 예산 총액 요약 카드 계획을 적어둠.",
-      "commit": null
-    },
-    {
-      "cycle": 8,
-      "phase": "review",
-      "timestamp": "2026-09-10T17:30:00+00:00",
-      "summary": "Reviewed commit 8121371 (yearly recDates() Feb-29 clamp fix). Traced through the rewritten loop by hand: mo/day are captured once from rs, d2=Math.min(day,lastDay(y,mo)) correctly clamps per-year (lastDay(y,m)=new Date(y,m,0).getDate() is the same helper already used by the monthly branch and addMonths()), the break condition new Date(y,mo-1,d2)>end terminates since the constructed date strictly increases with y, and ds>=r.startDate/push()'s own from/to/endDate bounds are unchanged from before so windowing behavior is preserved. Checked all 5 call sites of recDates() (index.html:1705,1725,1730,2511,4573) — all consume the returned array the same way as before (forEach/.length/direct array use), so the return type/shape didn't change. Re-ran the regression suite (45/45 pass) and re-validated both inline <script> blocks parse via new Function(). No bugs found — no code changes this phase. Also backfilled the cycle 8 develop history entry's commit hash (was null, actual is 8121371).",
       "commit": null
     }
   ]
