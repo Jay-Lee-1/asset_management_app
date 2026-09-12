@@ -52,6 +52,7 @@ const FUNCTIONS = [
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'esc', 'matchTxnQuery',
   'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo',
   'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'restoreBackup', 'storageOutcomeMsg',
+  'monthStartStr', 'monthEndStr', 'expandRec', 'allTxns', 'spendByCategory', 'histSumTotals',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -834,6 +835,64 @@ test('restoreBackup: migrate() 도중 손상된 데이터로 throw하면 DB가 �
   } finally {
     sandbox.migrate = realMigrate;
   }
+});
+
+/* ---------- spendByCategory: 지출 분석 카테고리별 합계는 잔액 조정(기본 제외)을 빼야 한다 ---------- */
+test('spendByCategory: 수지에 포함되지 않은 잔액 조정 지출은 카테고리 합계에서 제외된다', () => {
+  sandbox.DB = {
+    txns: [
+      { date: '2026-06-05', type: 'expense', category: '식비', amount: 10000 },
+      { date: '2026-06-10', type: 'expense', category: '잔액 조정', amount: 5000, adjust: true, inSurplus: false },
+    ],
+    recurrences: [],
+  };
+  const rows = sandbox.spendByCategory(2026, 6);
+  assert.deepStrictEqual(Array.from(rows).map(r => ({ c: r.c, v: r.v })), [{ c: '식비', v: 10000 }]);
+});
+test('spendByCategory: 수지 포함으로 켜둔 잔액 조정 지출은 그대로 합산된다', () => {
+  sandbox.DB = {
+    txns: [
+      { date: '2026-06-05', type: 'expense', category: '식비', amount: 10000 },
+      { date: '2026-06-10', type: 'expense', category: '잔액 조정', amount: 5000, adjust: true, inSurplus: true },
+    ],
+    recurrences: [],
+  };
+  const rows = sandbox.spendByCategory(2026, 6);
+  const byCat = Object.fromEntries(Array.from(rows).map(r => [r.c, r.v]));
+  assert.strictEqual(byCat['잔액 조정'], 5000);
+});
+test('spendByCategory: 수입/저축 등 지출이 아닌 거래는 집계하지 않는다', () => {
+  sandbox.DB = {
+    txns: [{ date: '2026-06-05', type: 'income', category: '급여', amount: 3000000 }],
+    recurrences: [],
+  };
+  assert.deepStrictEqual(Array.from(sandbox.spendByCategory(2026, 6)), []);
+});
+
+/* ---------- histSumTotals: 전체내역 검색 합계 카드도 monthStats2()와 같은 규칙으로 잔액 조정을 뺀다 ---------- */
+test('histSumTotals: 수지에 포함되지 않은 잔액 조정은 실제/예정 합계 어느 쪽에서도 제외된다', () => {
+  const actual = [
+    { type: 'expense', amount: 10000 },
+    { type: 'expense', amount: 5000, adjust: true, inSurplus: false },
+  ];
+  const sched = [
+    { type: 'income', amount: 3000 },
+    { type: 'income', amount: 7000, adjust: true, inSurplus: false },
+  ];
+  const { a, sc } = sandbox.histSumTotals(actual, sched);
+  assert.strictEqual(a.expense, 10000);
+  assert.strictEqual(sc.income, 3000);
+});
+test('histSumTotals: 수지 포함으로 켜둔 잔액 조정은 그대로 합산된다', () => {
+  const actual = [{ type: 'income', amount: 5000, adjust: true, inSurplus: true }];
+  const { a } = sandbox.histSumTotals(actual, []);
+  assert.strictEqual(a.income, 5000);
+});
+test('histSumTotals: 잔액 조정이 없으면 평범하게 타입별로 합산된다', () => {
+  const actual = [{ type: 'expense', amount: 1000 }, { type: 'expense', amount: 2000 }, { type: 'saving', amount: 500 }];
+  const { a } = sandbox.histSumTotals(actual, []);
+  assert.strictEqual(a.expense, 3000);
+  assert.strictEqual(a.saving, 500);
 });
 
 /* ---------- 실행 ---------- */

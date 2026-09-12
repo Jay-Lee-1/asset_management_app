@@ -1273,7 +1273,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.21.0';
+const APP_VERSION='1.21.1';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 
@@ -3160,15 +3160,21 @@ function histTotPane(y,m){ /* 옆 달 미리보기 */
  return histTotBox({income:a.income,expense:a.expense,saving:a.saving,transfer:a.transfer},a.suji,sc,sc.suji);
 }
 function histClearFilter(){ST.hist.cat='전체';ST.hist.q='';histInvalidate();renderHistory()}
+/* 히스토리 합계: 잔액 조정은 수지 포함 설정(기본 제외) 전까지 집계에서 뺀다 —
+   monthStats2()와 동일 규칙이어야 홈/가계부와 전체내역 탭의 합계가 일치한다 */
+function histSumTotals(actual,sched){
+ const a={income:0,expense:0,saving:0,transfer:0},sc={income:0,expense:0,saving:0,transfer:0};
+ actual.forEach(t=>{if(t.adjust&&!t.inSurplus)return;a[t.type]+=t.amount});
+ sched.forEach(t=>{if(t.adjust&&!t.inSurplus)return;sc[t.type]+=t.amount});
+ return {a,sc};
+}
 function updateHist(){
  const H=ST.hist;
  const list=filteredHist();
  // 예정/실제 분리
  const {sched,actual}=splitHist(list);
  // 합계: 실제(a) + 예정(sc)로 나눠 첨부 양식(ledSumInner)에 전달
- const a={income:0,expense:0,saving:0,transfer:0},sc={income:0,expense:0,saving:0,transfer:0};
- actual.forEach(t=>a[t.type]+=t.amount);
- sched.forEach(t=>sc[t.type]+=t.amount);
+ const {a,sc}=histSumTotals(actual,sched);
  a.suji=a.income-a.expense-a.saving; sc.suji=sc.income-sc.expense-sc.saving;
  const totEl=$('histTotals');
  if(totEl)totEl.innerHTML=histTotHTML(a,sc,actual.length,sched.length,list);
@@ -3555,7 +3561,10 @@ function openHelpKakao(){
 
 function spendByCategory(y,m){ /* 지출 분석은 항상 예정 포함 */
  const map={};
- allTxns(monthStartStr(y,m),monthEndStr(y,m)).forEach(t=>{if(t.type!=='expense')return;map[t.category]=(map[t.category]||0)+t.amount});
+ allTxns(monthStartStr(y,m),monthEndStr(y,m)).forEach(t=>{
+   if(t.type!=='expense')return;if(t.adjust&&!t.inSurplus)return; /* 잔액 조정: 항목별 포함 설정(기본 제외) */
+   map[t.category]=(map[t.category]||0)+t.amount;
+ });
  return Object.entries(map).map(([c,v])=>({c,v})).sort((a,b)=>b.v-a.v);
 }
 /* budget=0(미설정)이면 진행률은 의미가 없으므로 항상 0으로 clamp — 호출부는 이 경우 전체 대비 비중을 대신 쓴다 */

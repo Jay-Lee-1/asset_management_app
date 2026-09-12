@@ -1,8 +1,15 @@
 {
   "cycle": 16,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 16,
+      "phase": "develop",
+      "timestamp": "2026-09-12T02:15:29.617Z",
+      "summary": "배경 조사 에이전트가 앱 전체를 탐색해 후보를 제안했다. 최우선으로 고른 건 '잔액 조정(balance-adjustment) 거래가 수지에서 기본 제외되어야 한다'는 규칙이 monthStats()/monthStats2()/expenseByCat()에는 이미 적용돼 있는데, 같은 규칙을 놓친 두 군데를 발견한 것: (1) spendByCategory()(index.html:3556, 지출 분석 화면의 카테고리별 합계)가 t.type==='expense'만 걸러내고 adjust/inSurplus 가드 없이 그대로 합산해, 자산 잔액을 수동 보정하면 '잔액 조정'이 실제 지출 카테고리처럼 지출 분석에 잡히고 총지출/예산 초과 판정까지 왜곡되는 문제. (2) updateHist()(index.html:3163, 전체내역 탭 검색 결과 합계 카드)도 actual.forEach(t=>a[t.type]+=t.amount) 식으로 동일한 가드 없이 집계해, 같은 달인데도 홈/가계부(monthStats2 기반)와 전체내역 탭의 수입/지출 합계가 잔액 조정 건수만큼 서로 달라 보이는 문제. 두 곳 모두 같은 패턴의 같은 버그라 한 사이클에 함께 고쳤다: spendByCategory에는 expenseByCat과 동일한 한 줄 가드(if(t.adjust&&!t.inSurplus)return;)를 추가했고, updateHist는 DOM에 강하게 결합돼 있어 합계 로직만 histSumTotals(actual,sched) 순수 함수로 추출한 뒤 monthStats2와 같은 가드를 적용해 updateHist가 그 함수를 호출하도록 교체했다(동작은 그대로, 테스트 가능하게 분리만). 후보 3번(잔액 조정 카테고리가 수입 쪽에만 등록되고 지출 쪽 카테고리 목록엔 없는 비대칭)은 크리틱/어드밴스가 판단할 더 구조적인 이슈로 보여 이번 develop 사이클 범위에서는 건드리지 않았다. test/run.js FUNCTIONS에 monthStartStr/monthEndStr/expandRec/allTxns/spendByCategory/histSumTotals를 추가하고 회귀 테스트 6개 추가(spendByCategory 3개: 제외/포함/비지출타입 무시, histSumTotals 3개: 제외/포함/가드없을때 정상합산) — 93/93 통과(기존 87개+신규 6개). 두 인라인 <script> 블록 모두 new Function()으로 파싱 확인. APP_VERSION 1.21.0->1.21.1, sw.js CACHE v60->v61 (patch bump, bug fix).",
+      "commit": null
+    },
     {
       "cycle": 15,
       "phase": "advance",
@@ -134,13 +141,6 @@
       "phase": "advance",
       "timestamp": "2026-09-10T18:30:00+00:00",
       "summary": "Implemented cycle 8's critique plan: added a pure totalBudgetSummary(rows,budgets) that, given spendByCategory() rows and DB.budgets, sums budgetedTotal/spentOnBudgeted across only the categories that have a budget set, counts overCount (categories over their budget) and unsetCount (categories with spending but no budget), and returns budgetedTotal=0 when no budgets exist at all (nothing to aggregate). Wired it into openSpendAnalysis(): when budgetedTotal>0, a second summary card renders above the per-category list showing '{budget}원 중 {spent}원 사용 · {pct}%' (reusing budgetProgress() for the percentage/over-budget math and the existing .spend-track bar styling) plus a small '예산 미설정 카테고리 N개' note when unsetCount>0; when the user hasn't set any budget yet, no card is added and the screen is unchanged from before. Added 4 new regression tests to test/run.js (all-unset returns budgetedTotal=0, mixed set/unset only sums the set ones, overCount counts categories exceeding their budget, and DB.budgets===undefined doesn't throw) — all 49 tests pass. Verified both inline <script> blocks still parse via new Function(). Bumped APP_VERSION 1.19.1→1.19.2 and sw.js CACHE v44→v45 (patch bump, additive UI feature reusing existing data/helpers).",
-      "commit": null
-    },
-    {
-      "cycle": 8,
-      "phase": "critique",
-      "timestamp": "2026-09-10T18:00:00+00:00",
-      "summary": "전체 앱을 한 걸음 물러나 봤다. 접근성(aria-label 5개뿐, role/alt/tabindex 0개)과 로컬 인증 해시 우려는 이전 사이클(6,7)에서 이미 runner-up으로 반복 언급됐지만, 실제로 코드를 확인해보니 인증은 djb2 로컬 해시가 아니라 Supabase Auth(SB.auth.signUp/signInWithPassword)로 완전히 대체돼 있었다 — 그 runner-up은 더 이상 유효하지 않아 폐기. 대신 cycle 5에서 만든 예산 기능(DB.budgets, openSpendAnalysis 카테고리별 진행률)이 카테고리 단위로만 존재하고 '이번 달 전체적으로 예산 안에서 쓰고 있는가'를 한눈에 보여주는 집계 뷰가 없다는 점을 발견 — openSpendAnalysis()의 '총 지출' 카드(3524줄)는 예산 개념 없이 순수 합계만 보여준다. rateStatusText()/autoSyncRates()의 환율 동기화 실패 처리, delAsset()의 반복거래 연쇄 비활성화, importData()의 검증 등 다른 후보들은 이미 견고하게 구현돼 있음을 확인하고 제외했다. 코드 변경 없음 — pending_advance_plan에 예산 총액 요약 카드 계획을 적어둠.",
       "commit": null
     }
   ]
