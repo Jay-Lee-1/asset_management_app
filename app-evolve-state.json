@@ -1,8 +1,19 @@
 {
   "cycle": 18,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "귀속(DB.owners) 이름이 마지막 남은 미이스케이프 사용자 입력 표면 — onclick 문자열 삽입은 HTML 이스케이프만으론 못 막는 JS 인젝션까지 가능",
+    "why": "cycle16~18에서 카테고리명/자산명은 전부 esc()로 정리됐지만, addOwner()(index.html:2583)/doRenameOwner()(2593-2596)로 만드는 귀속(예: '나','배우자','공용', 또는 사용자가 직접 추가하는 '아이' 등)은 trim() 외에 아무 제약이 없는 동일한 자유 입력인데도 놓쳤다. 렌더 지점을 전수 확인한 결과 두 갈래 문제가 있다: (1) 순수 텍스트/클래스 렌더에서 esc() 누락 — index.html:2287,2292(자산 목록의 own-${a.owner} 클래스+텍스트), 3456(자산 선택 시트), 3878(빠른 금액 입력 시트), 5031(계좌 선택 시트, 자산명은 esc(a.name)으로 이미 처리돼 있는데 바로 옆 소유자 칩만 그대로임) — 평범한 '외식&카페' 급의 이름만 써도 클래스 속성이 깨지고 심하면 저장형 XSS. (2) 더 심각한 onclick 문자열 삽입 — delOwner('${o}')(2578)와 pkPickOwner('${ow}')(5064)는 귀속 이름을 그대로 홑따옴표 JS 문자열 리터럴 인자로 onclick 속성에 꽂는다. 이 자리는 esc()로 못 고친다: 이름에 '(작은따옴표)가 들어가면 HTML 속성(큰따옴표로 감싸져 있음)은 안 깨지더라도 안쪽 JS 문자열 리터럴이 그 자리에서 끝나버려, 그 뒤 문자를 그대로 JS 코드로 실행시킬 수 있다(예: 귀속 이름을 x');alert(1);('로 만들면 onclick 안에서 delOwner('x');alert(1);('') 형태로 파싱됨) — 이름에 \"(큰따옴표)가 들어가면 반대로 바깥 HTML 속성 자체가 깨지는 별개의 경로도 있다. 정확히 같은 조합 버그를 이번 cycle18 review에서 openFixShortfall의 JSON.stringify(plan) onclick 삽입 자리에서 이미 한 번 고쳤지만, 이번엔 esc()로 감싸는 게 애초에 정답이 아니라 접근 자체를 바꿔야 하는 경우다 — 그리고 이 앱은 이미 스스로 정답 패턴을 갖고 있다: 카테고리 관리(openCatManage, 3717/3743)는 정확히 같은 상황에서 카테고리 이름 문자열을 onclick에 직접 넣지 않고 delCat('${k}',${i})/doRenameCat('${k}',${i})처럼 배열 인덱스(숫자 i)만 넘긴다. 귀속 관리(openOwnerManage, 2578)만 이 컨벤션을 따르지 않고 문자열 값을 직접 넘긴다는 게 이번에 발견한 진짜 근본 원인 — 단순히 esc() 하나 빠뜨린 게 아니라 앱 안에 이미 확립된 안전한 패턴을 특정 화면 하나가 따르지 않은 일관성 문제.",
+    "approach": "1) delOwner(o)/pkPickOwner(ow)를 카테고리 관리와 동일한 컨벤션으로 바꾼다: delOwner(i)로 시그니처를 바꿔 DB.owners[i]로 실제 이름을 안에서 조회하게 하고, 호출부 2578을 onclick=\"delOwner(${i})\"로(문자열 인자 자체를 없앰) 교체한다. openOwnerPicker(5064)의 pkPickOwner('${ow}')도 pkPickOwner(${i})로 바꾸고 함수 내부에서 DB.owners[i]를 pkChoose에 넘기도록 수정한다(pkChoose는 최종적으로 실제 이름 문자열이 필요하므로 인덱스→이름 변환은 함수 안에서 1회). renameOwnerSheet/doRenameOwner는 이미 index i를 쓰고 있으니 변경 없음(참고용 정답 사례). 2) 순수 텍스트/클래스 렌더 4곳(2287,2292,3456,3878)과 5031의 소유자 칩을 전부 esc()로 감싼다 — class 속성에 쓰이는 own-${a.owner} 형태는 own-${esc(a.owner)}로, 텍스트 노드도 함께. 3) test/run.js는 이 로직들이 전부 DOM/전역(DB,$,onclick 문자열)에 강하게 결합돼 있어 순수함수 추출이 어려우므로(cycle18 develop/review가 openFixShortfall류 DOM 렌더 수정에 대해 이미 그랬듯) 새 단위 테스트는 추가하지 않고, 대신 브라우저에서 실제로 홑따옴표/큰따옴표/HTML 태그가 섞인 귀속 이름을 만들어(예: \"O'Brien\", '외식\"테스트', '<b>x</b>') 자산 목록/계좌 선택 시트/귀속 관리 화면이 안 깨지는지, delOwner/renameOwner가 정상 동작하는지, 콘솔 에러가 없는지 Playwright나 브라우저 도구로 수동 검증한다(node --check로 두 인라인 <script> 블록 파싱은 항상 확인). 4) 스코프 밖: DB.owners 자체의 구조 변경(household_id 등 다중 사용자 공유 개념 도입)은 하지 않는다 — 이번 사이클은 순수하게 기존 귀속 기능의 인젝션 취약점 제거로 좁게 유지한다."
+  },
   "history": [
+    {
+      "cycle": 18,
+      "phase": "critique",
+      "timestamp": "2026-09-12T13:32:02.384Z",
+      "summary": "전체 앱을 한 걸음 물러나 봤다(백그라운드 조사 에이전트 활용). 후보로 검토했지만 기각한 것들: (1) household_id를 Supabase user_id와 분리해 부부가 로그인 정보를 공유하지 않고도 가계부를 함께 쓰게 하는 안 — cycle16 critique가 남겨둔 후보를 다시 확인한 결과 여전히 미해결이고 저장소 안에서 구현 자체는 가능하지만(Supabase 스키마가 SQL 마이그레이션 파일이 아니라 openHelpCloud의 안내 텍스트 SQL 블록(index.html:3539-3562)으로만 존재해 코드로 편집은 가능), 실제로 반영되려면 사용자가 그 SQL을 자기 Supabase 대시보드에 수동으로 다시 실행해야 해서 무인 사이클로 끝까지 배포될 수 없고, 스키마 재설계+RLS 재작업+초대코드 UX+기존 단일유저 데이터 하위호환까지 겹쳐 반복적으로 기각돼온 전체 접근성 스윕만큼 범위가 큼 — 여러 사이클로 쪼개야 할 후보로 계속 보류; (2) pushCloud()의 동기화 충돌이 CLOUD_LAST_SYNCED_AT을 갱신하지 않아 사용자가 수동으로 계정 화면에서 강제 push/pull하기 전까지 무한히 조용한 no-op이 되는 문제 — cycle13~15에서 이미 검토돼 '계정 화면에 이미 상태가 노출된다'는 이유로 수용 가능하다고 판단된 사안이라 재상정하지 않음. 최종 선택: cycle16~18이 카테고리명/자산명은 esc()로 전부 정리했지만 귀속(DB.owners, addOwner/doRenameOwner)은 동일한 자유 입력인데도 놓쳤음을 발견했다. 순수 텍스트/클래스 렌더 5곳(index.html:2287,2292,3456,3878,5031)은 esc() 누락으로 인한 렌더 깨짐/저장형 XSS 문제고, 더 심각한 건 delOwner('${o}')(2578)/pkPickOwner('${ow}')(5064)가 귀속 이름을 홑따옴표 JS 문자열 리터럴 인자로 onclick에 직접 삽입해 esc()로도 못 막는 JS 인젝션(작은따옴표 포함 이름으로 문자열 리터럴을 조기 종료시켜 임의 JS 실행)이 가능하다는 점 — 그리고 바로 같은 파일의 카테고리 관리(openCatManage, delCat('${k}',${i}))는 정확히 같은 상황에서 이름 대신 배열 인덱스만 onclick에 넘기는 안전한 패턴을 이미 쓰고 있어, 귀속 관리 화면만 이 컨벤션을 따르지 않은 일관성 문제이기도 하다. 코드 변경 없음 — pending_advance_plan에 delOwner/pkPickOwner를 인덱스 기반으로 전환 + 나머지 5곳 esc() 적용 계획을 적어둠.",
+      "commit": null
+    },
     {
       "cycle": 18,
       "phase": "review",
@@ -134,13 +145,6 @@
       "phase": "advance",
       "timestamp": "2026-09-11T16:30:00.000Z",
       "summary": "cycle13 critique 계획을 구현하되, 계획의 3번 항목(resolveCloudForcePush에 로컬 DB 스냅샷+undo)은 실제로는 성립하지 않음을 확인하고 더 맞는 방식으로 교정했다: resolveCloudForcePush()(index.html:1576)는 로컬 DB를 전혀 변경하지 않고 로컬→클라우드로 push만 하므로(pushCloud는 원격의 updated_at만 비교하고 data 본문은 읽지 않음), '로컬 스냅샷'을 떠봐야 되돌릴 게 없다 — 진짜 되돌릴 수 없는 건 원격에 있던, 애초에 로컬로 받아온 적 없는 데이터다. 그래서 undoToast 대신 confirmCloudForcePush()라는 확인창을 추가해 실행 전 한 번 더 확인받도록 했다(기존엔 다른 모든 파괴적 동작과 달리 확인창 없이 버튼 한 번으로 바로 실행됐음). 계획의 나머지 항목(1,2,4,5)은 그대로 구현: importFile 핸들러(4085)의 검증을 Array.isArray(obj.assets)/Array.isArray(obj.txns)로 강화했고, DB 교체 직전 JSON 딥클론 스냅샷을 뜨고 plain toast 대신 undoToast로 교체했으며, 이 로직을 restoreBackup(obj) 함수로 추출해 migrate()가 손상된 데이터로 throw해도 try/catch로 스냅샷으로 롤백하게 했다(절반만 마이그레이션된 DB가 남지 않음). test/run.js에 migrate/restoreBackup과 그 의존 상수(ASSET_TYPES 등)를 추출 대상에 추가하고 회귀 테스트 3개 추가(스키마 검증 거부, 정상 복원+스냅샷 반환, migrate 실패 시 롤백) — 76/76 통과. 두 인라인 <script> 블록 모두 new Function()으로 파싱 확인. APP_VERSION 1.19.11->1.19.12, sw.js CACHE v54->v55 (patch bump, 안전망 추가).",
-      "commit": null
-    },
-    {
-      "cycle": 13,
-      "phase": "critique",
-      "timestamp": "2026-09-11T16:10:43.542Z",
-      "summary": "전체 앱을 한 걸음 물러나 봤다(백그라운드 조사 에이전트 활용). CSV export는 cycle7 critique에서 계획했으나 cycle8 critique가 pending_advance_plan을 budget summary로 덮어써 유실된 줄 알았지만, 실제로는 txnsToCSV()(index.html:3997)로 이미 구현·배포되어 있음을 확인해 재제안하지 않았다. 대신 이번 로테이션에서 delTx/delAdjust/delAsset/recApply/recSave/saveQuickAmount 등 모든 개별 수정·삭제 경로가 undoToast()로 통일된 것과 대비되게, 가장 파괴적인 두 개의 'DB 전체 교체' 경로 — JSON 백업 복원(importFile change 핸들러, index.html:4085-4092: obj.assets/obj.txns가 truthy인지만 확인하고 바로 DB=obj, 확인창에 '되돌릴 수 없어요'라고 명시)와 클라우드 강제 push(resolveCloudForcePush(), index.html:1576) — 는 스키마 검증도 얕고 되돌리기 수단도 전혀 없음을 확인했다. 후보로 검토했지만 기각한 것들: 클라우드 동기화의 last-write-wins/수동 충돌 해결(이미 CLOUD_SYNC_STATE로 사용자에게 노출되고 있어 별도 UX가 있음, 범위가 큼); 로컬 djb2 해시(Supabase 미설정 시의 폴백 경로로 여전히 라이브이긴 하나 로컬 전용이라 위험 낮고 반복적으로 후순위); 접근성 격차(onclick 213건 대비 aria-label 11건, 여전히 실재하지만 산발적이라 전담 스윕이 더 적합, cycle9에서도 같은 이유로 러너업 처리됨). 코드 변경 없음 — pending_advance_plan에 백업 복원/클라우드 강제 push 검증+undo 계획을 적어둠.",
       "commit": null
     }
   ]
