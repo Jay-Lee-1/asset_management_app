@@ -54,6 +54,7 @@ const FUNCTIONS = [
   'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'restoreBackup', 'storageOutcomeMsg',
   'monthStartStr', 'monthEndStr', 'expandRec', 'allTxns', 'spendByCategory', 'histSumTotals',
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'expenseBreakdownCard',
+  'bigMin', 'upcomingOutflows', 'monthOutflows',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -974,6 +975,64 @@ test('dayTypeTotals: 잔액 조정이 없으면 평범하게 타입별로 합산
   assert.strictEqual(inn, 1000);
   assert.strictEqual(ex, 2000);
   assert.strictEqual(sv, 500);
+});
+
+/* ---------- upcomingOutflows/monthOutflows: 잔액 조정은 실제 나갈 돈이 아니므로 제외돼야 한다 ---------- */
+test('upcomingOutflows: 수지에 포함되지 않은 잔액 조정 지출은 다가오는 큰 지출 목록에서 제외된다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.DB = {
+    settings: {},
+    txns: [{ id: 't1', type: 'expense', date: '2026-06-16', amount: 500000, adjust: true, inSurplus: false }],
+    recurrences: [],
+  };
+  assert.strictEqual(sandbox.upcomingOutflows(45).length, 0);
+});
+test('upcomingOutflows: 같은 금액이어도 잔액 조정이 아닌 일반 지출은 그대로 잡힌다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.DB = {
+    settings: {},
+    txns: [{ id: 't1', type: 'expense', date: '2026-06-16', amount: 500000 }],
+    recurrences: [],
+  };
+  assert.strictEqual(sandbox.upcomingOutflows(45).length, 1);
+});
+test('upcomingOutflows: 수지 포함으로 켜둔 잔액 조정은 그대로 포함된다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.DB = {
+    settings: {},
+    txns: [{ id: 't1', type: 'expense', date: '2026-06-16', amount: 500000, adjust: true, inSurplus: true }],
+    recurrences: [],
+  };
+  assert.strictEqual(sandbox.upcomingOutflows(45).length, 1);
+});
+test('monthOutflows: 수지에 포함되지 않은 잔액 조정은 이번 달 나갈 돈 목록/합계에서 제외된다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.DB = {
+    settings: {},
+    txns: [
+      { id: 't1', type: 'expense', date: '2026-06-10', amount: 500000, adjust: true, inSurplus: false },
+      { id: 't2', type: 'expense', date: '2026-06-12', amount: 30000 },
+    ],
+    recurrences: [],
+  };
+  const { list, total } = sandbox.monthOutflows(2026, 6);
+  assert.strictEqual(list.length, 1);
+  assert.strictEqual(total, 30000);
+});
+test('monthOutflows: 잔액 조정이 없으면 지출/저축이 평범하게 합산된다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.DB = {
+    settings: {},
+    txns: [
+      { id: 't1', type: 'expense', date: '2026-06-10', amount: 30000 },
+      { id: 't2', type: 'saving', date: '2026-06-12', amount: 100000 },
+      { id: 't3', type: 'income', date: '2026-06-12', amount: 999999 },
+    ],
+    recurrences: [],
+  };
+  const { list, total } = sandbox.monthOutflows(2026, 6);
+  assert.strictEqual(list.length, 2);
+  assert.strictEqual(total, 130000);
 });
 
 /* ---------- pendingTransferCount: 반복거래로 만들어지는 미확인 이체도 세어야 한다 ---------- */

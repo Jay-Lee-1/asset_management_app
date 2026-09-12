@@ -1277,7 +1277,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.22.0';
+const APP_VERSION='1.22.1';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4687,6 +4687,7 @@ function upcomingOutflows(days){ /* 앞으로 나갈 큰돈 (기본 45일) */
  const to=addDays(TODAY,days||45);
  return allTxns(TODAY,to)
   .filter(t=>(t.type==='expense'||t.type==='saving'||t.type==='transfer')&&t.amount>=bigMin())
+  .filter(t=>!(t.adjust&&!t.inSurplus)) /* 잔액 조정: 항목별 포함 설정(기본 제외) */
   .filter(t=>{ /* 이체는 외부로 나가는 게 아니므로 제외, 단 저축은 포함 */
    if(t.type!=='transfer')return true;return false;
   })
@@ -4699,7 +4700,7 @@ function dday(dateStr){
 }
 function monthOutflows(y,m){ /* 그 달에 통장에서 나갈 돈 (큰 덩어리 나열용) */
  const list=allTxns(monthStartStr(y,m),monthEndStr(y,m))
-  .filter(t=>t.type==='expense'||t.type==='saving')
+  .filter(t=>(t.type==='expense'||t.type==='saving')&&!(t.adjust&&!t.inSurplus)) /* 잔액 조정: 항목별 포함 설정(기본 제외) */
   .sort((a,b)=>b.amount-a.amount);
  const total=list.reduce((s,t)=>s+t.amount,0);
  return {list,total};

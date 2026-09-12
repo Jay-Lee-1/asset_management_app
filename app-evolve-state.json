@@ -1,8 +1,15 @@
 {
   "cycle": 19,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 19,
+      "phase": "develop",
+      "timestamp": "2026-09-12T15:00:00.000Z",
+      "summary": "배경 조사 에이전트가 앱 전체를 탐색해 제안한 후보 중, 홈 화면의 '다음에 나갈 큰돈'(upcomingOutflows, nextBigOutflow) 카드와 '이번 달 나갈 돈'(monthOutflows) 카드가 잔액 조정(잔액 조정, adjust:true) 거래를 실제 지출/저축처럼 그대로 합산하는 버그를 채택했다. cycle16~18에서 spendByCategory/histSumTotals/dayTypeTotals/updateHist에 이미 적용한 것과 정확히 같은 버그 클래스(if(t.adjust&&!t.inSurplus)면 제외)인데, 홈 화면 큰 지출 분석 섹션(index.html upcomingOutflows~4686, monthOutflows~4700)만 이 가드가 빠져 있었다 — addBalanceAdjust가 자산 잔액을 자동보정할 때 만드는 거래(예: ₩500,000 잔액 조정)가 amount>=bigMin()(기본 10만원)이고 date=TODAY이면 그대로 걸려, 홈 화면에 실제로는 다가올 지출이 아닌데 'D-0, 500,000원' 큰돈 카드가 뜨고 이번 달 나갈 돈 총액에도 잘못 더해지는 문제였다. 두 함수 모두 기존 코드베이스 전역에서 이미 확립된 동일한 한 줄 가드(.filter(t=>!(t.adjust&&!t.inSurplus)))로 고쳤다 — 새 로직 없이 빠진 자리에 기존 패턴만 적용. test/run.js FUNCTIONS에 bigMin/upcomingOutflows/monthOutflows를 추가하고(의존 함수 allTxns/expandRec/addDays/monthStartStr/monthEndStr는 이미 추출 대상) 회귀 테스트 5개 추가(upcomingOutflows: 잔액조정 제외/일반지출 포함/수지포함 토글 시 포함, monthOutflows: 잔액조정 제외 시 목록·합계 축소/잔액조정 없을 때 정상 합산) — 111/111 통과(기존 106+신규 5). 두 인라인 <script> 블록 모두 node --check(new Function) 파싱 확인. APP_VERSION 1.22.0->1.22.1, sw.js CACHE v68->v69 (patch bump, bug fix).",
+      "commit": null
+    },
     {
       "cycle": 18,
       "phase": "advance",
@@ -134,13 +141,6 @@
       "phase": "review",
       "timestamp": "2026-09-11T18:30:00.000Z",
       "summary": "Reviewed commit a08b750 (matchTxnQuery extraction for case-insensitive history search). Verified the new hay.toLowerCase().includes(q.toLowerCase()) preserves exact prior behavior for the deleted-asset fallback path: the old code called assetNm(id,snap) when fa was falsy, but assetNm's own DB.assets.find(x=>x.id===id) would also be falsy in that case (same array, same id), so it always fell through to snap||'—' — identical to matchTxnQuery's direct (t.fromAssetName||'—') fallback, just without the redundant second DB scan. Confirmed filteredHist() is the only caller and H.q's only consumer (grepped for other .includes(q)/search-query patterns in index.html — none found, so this was the only case-sensitivity gap in the app). Re-ran the regression suite (81/81 pass) and re-verified both inline <script> blocks parse via new Function(). No bugs found — no code changes this phase.",
-      "commit": null
-    },
-    {
-      "cycle": 14,
-      "phase": "develop",
-      "timestamp": "2026-09-11T17:00:00.000Z",
-      "summary": "filteredHist()의 거래 내역 검색(가계부의 '메모·카테고리·자산 검색')이 메모/카테고리/보내는-받는 자산명을 대소문자 구분 없이 매칭해야 하는데 순수 String.includes(q)로 대소문자를 그대로 비교하고 있어, 영문 메모나 자산명(예: 'Coffee Shop', 'KakaoBank')을 소문자로 검색하면 못 찾는 실제 버그였다(index.html filteredHist, 3050번대). 검색 매칭 로직을 순수 함수 matchTxnQuery(t,q,assets)로 추출해 hay.toLowerCase().includes(q.toLowerCase())로 바꿨다 — 삭제된 자산의 경우 기존엔 fa가 없으면 assetNm(id,snap)을 다시 호출해 DB.assets를 한 번 더(못 찾을 걸 알면서) 훑고 snap으로 폴백했는데, 새 함수는 assets 파라미터로 전달된 배열에서만 찾고 못 찾으면 바로 t.fromAssetName/toAssetName 스냅샷으로 폴백해 동일한 결과를 내면서도 전역 DB에 의존하지 않아 테스트 가능해졌다(동작 변화 없음, 순수화만). filteredHist는 이제 이 함수를 호출하도록 교체. test/run.js에 matchTxnQuery를 추출 대상으로 추가하고 회귀 테스트 5개 추가(빈 검색어, 대문자 메모를 소문자로 검색, 대문자로 검색해 소문자 자산명 찾기, 삭제된 자산의 스냅샷 이름 매칭, 매칭 없음) — 81/81 통과(기존 76개 + 신규 5개). 두 인라인 <script> 블록 모두 new Function()으로 파싱 확인. APP_VERSION 1.19.12->1.19.13, sw.js CACHE v55->v56 (patch bump, bug fix).",
       "commit": null
     }
   ]
