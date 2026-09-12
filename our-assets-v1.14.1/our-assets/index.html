@@ -1273,7 +1273,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.21.1';
+const APP_VERSION='1.21.2';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 
@@ -2582,6 +2582,14 @@ function doRenameOwner(i){const v=$('renameOwner').value.trim();if(!v){toast('�
  DB.owners[i]=v;DB.assets.forEach(a=>{if(a.owner===old)a.owner=v});save();openOwnerManage();toast('귀속을 수정했어요')}
 
 /* ================= LEDGER ================= */
+/* 달력 하루 칸 합계: monthStats2와 동일하게 잔액 조정(기본 제외) 규칙을 적용해야
+   월 수지 카드(수입/지출/저축)와 날짜별 칸에 찍히는 숫자가 어긋나지 않는다 */
+function dayTypeTotals(tx){
+ let inn=0,ex=0,sv=0;
+ tx.forEach(t=>{if(t.adjust&&!t.inSurplus)return;
+  if(t.type==='income')inn+=t.amount;else if(t.type==='expense')ex+=t.amount;else if(t.type==='saving')sv+=t.amount});
+ return {inn,ex,sv};
+}
 function calCellsFor(y,m,sel){
  const first=new Date(y,m-1,1),startDow=first.getDay(),daysIn=lastDay(y,m);
  const prevDays=lastDay(m===1?y-1:y,m===1?12:m-1);
@@ -2593,9 +2601,7 @@ function calCellsFor(y,m,sel){
   let yy=y;if(mm<1){mm=12;yy--}if(mm>12){mm=1;yy++}
   const ds=`${yy}-${String(mm).padStart(2,'0')}-${String(dnum).padStart(2,'0')}`;
   const tx=other?[]:dayTxns(ds); /* 가계부는 예정 항상 포함 */
-  const inn=tx.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
-  const ex=tx.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
-  const sv=tx.filter(t=>t.type==='saving').reduce((s,t)=>s+t.amount,0);
+  const {inn,ex,sv}=dayTypeTotals(tx);
   const hasSch=tx.some(t=>txScheduled(t));
   const hasTr=tx.some(t=>t.type==='transfer');
   const cls=['cal-cell'];if(other)cls.push('other');if(ds===sel)cls.push('sel');if(ds===TODAY)cls.push('today');

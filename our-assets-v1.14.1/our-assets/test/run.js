@@ -53,6 +53,7 @@ const FUNCTIONS = [
   'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo',
   'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'restoreBackup', 'storageOutcomeMsg',
   'monthStartStr', 'monthEndStr', 'expandRec', 'allTxns', 'spendByCategory', 'histSumTotals',
+  'dayTypeTotals',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -893,6 +894,33 @@ test('histSumTotals: 잔액 조정이 없으면 평범하게 타입별로 합산
   const { a } = sandbox.histSumTotals(actual, []);
   assert.strictEqual(a.expense, 3000);
   assert.strictEqual(a.saving, 500);
+});
+
+/* ---------- dayTypeTotals: 달력 하루 칸 합계도 monthStats2()와 같은 규칙으로 잔액 조정을 뺀다 ---------- */
+test('dayTypeTotals: 수지에 포함되지 않은 잔액 조정은 그 날짜 칸 합계에서 제외된다', () => {
+  const tx = [
+    { type: 'expense', amount: 10000 },
+    { type: 'expense', amount: 5000, adjust: true, inSurplus: false },
+  ];
+  const { ex } = sandbox.dayTypeTotals(tx);
+  assert.strictEqual(ex, 10000);
+});
+test('dayTypeTotals: 수지 포함으로 켜둔 잔액 조정은 그대로 합산된다', () => {
+  const tx = [{ type: 'income', amount: 5000, adjust: true, inSurplus: true }];
+  const { inn } = sandbox.dayTypeTotals(tx);
+  assert.strictEqual(inn, 5000);
+});
+test('dayTypeTotals: 잔액 조정이 없으면 평범하게 타입별로 합산된다', () => {
+  const tx = [
+    { type: 'income', amount: 1000 },
+    { type: 'expense', amount: 2000 },
+    { type: 'saving', amount: 500 },
+    { type: 'transfer', amount: 999 },
+  ];
+  const { inn, ex, sv } = sandbox.dayTypeTotals(tx);
+  assert.strictEqual(inn, 1000);
+  assert.strictEqual(ex, 2000);
+  assert.strictEqual(sv, 500);
 });
 
 /* ---------- 실행 ---------- */

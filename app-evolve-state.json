@@ -1,8 +1,15 @@
 {
   "cycle": 16,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 16,
+      "phase": "review",
+      "timestamp": "2026-09-12T03:15:00.000Z",
+      "summary": "Reviewed commit 710ca68 (spendByCategory/histSumTotals now skip adjust&&!inSurplus balance-adjustment txns). The commit message claimed these were 'the only two aggregators missing the guard, unlike monthStats/monthStats2/expenseByCat' — that claim was false. Grepped every t.amount aggregation site in index.html and found a third: calCellsFor(y,m,sel) (~2585), the function that actually renders each day's +수입/-지출/저축 numbers in the ledger calendar grid (called via calPane, which renderLedger uses live — confirmed calCellsFor/calPane are the real render path, not the dead-looking inline loop inside renderLedger itself at ~2653-2669 which builds a `cells` variable that is computed but never referenced in renderLedger's returned HTML; that's a separate, non-behavior-affecting dead-code issue, not a bug, so left alone here and noted below for critique). calCellsFor summed inn/ex/sv straight from tx.filter(...).reduce(...) with no adjust/inSurplus check, so a manual balance-adjustment transaction on a given day showed up in that day's calendar cell as if it were real income/expense/saving, while the same month's summary card (ledSumBox, backed by monthStats2 which does have the guard) excluded it — same bug class as the develop commit just fixed, just in a third location the previous cycle's audit missed. Fixed by extracting a pure dayTypeTotals(tx) helper (mirrors histSumTotals's shape) with the same if(t.adjust&&!t.inSurplus)return; guard, and having calCellsFor call it instead of its three separate filter/reduce calls. Added dayTypeTotals to test/run.js's FUNCTIONS list and 3 new regression tests (excluded/included/no-adjustment-present) — 96/96 passing (93+3). Both inline <script> blocks verified with node --check. Flagging for critique: renderLedger's dead first-pass day-total loop (~2653-2669) computes cells that are discarded — real code, real historicity, but not a correctness bug, more a tech-debt/dead-code cleanup candidate. APP_VERSION 1.21.1->1.21.2, sw.js CACHE v61->v62 (patch bump, bug fix).",
+      "commit": null
+    },
     {
       "cycle": 16,
       "phase": "develop",
