@@ -1277,7 +1277,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.22.1';
+const APP_VERSION='1.22.2';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1708,10 +1708,10 @@ function storageOutcomeMsg(ok,wasOk){
  if(ok)return wasOk?null:{kind:'ok',msg:'저장이 다시 정상 작동해요'};
  return wasOk?{kind:'fail',msg:'저장 실패 · 이 기기에 저장 공간이 부족하거나 저장이 제한돼 있어요. 내보내기로 백업하세요.'}:null;
 }
-function save(){invalidateBalances();let ok;try{localStorage.setItem(dataKey(),JSON.stringify(DB));ok=true}catch(e){ok=false}
+function save(opts){invalidateBalances();let ok;try{localStorage.setItem(dataKey(),JSON.stringify(DB));ok=true}catch(e){ok=false}
  const notice=storageOutcomeMsg(ok,STORAGE_OK);STORAGE_OK=ok;
  if(notice)notice.kind==='fail'?toastFail(notice.msg):toast(notice.msg);
- scheduleCloudPush();return ok}
+ if(!(opts&&opts.deferCloudPush))scheduleCloudPush();return ok}
 
 /* ================= RECURRENCE ================= */
 function shiftWeekend(ds,mode){ /* 주말 조정: earlier=금요일로 당김, later=월요일로 미룸 */
@@ -5353,7 +5353,10 @@ async function doSignup(){
 function doLogout(){confirmSheet('로그아웃','로그아웃하면 로그인 화면으로 돌아가요. 이 기기의 데이터는 그대로 보관돼요.','로그아웃',()=>{
  try{if(accountKind()==='kakao'&&window.Kakao&&window.Kakao.Auth&&typeof window.Kakao.Auth.getAccessToken==='function'&&window.Kakao.Auth.getAccessToken())window.Kakao.Auth.logout(()=>{})}catch(e){}
  AUTH.signOut();GUEST=false;localStorage.setItem('asset_app_guest','0');closeSheet();showAuth()})}
-function doResetAll(){confirmSheet('전체 초기화',`${accountKind()==='guest'?'게스트':accountName()} 계정의 모든 자산·내역·반복·설정이 삭제되고 완전히 빈 상태로 돌아가요. 되돌릴 수 없어요. 정말 초기화할까요?`,'초기화',()=>{DB=emptyDB();save();closeSheet();ST.tab='home';go('home');toast('전체 초기화했어요')})}
+function doResetAll(){confirmSheet('전체 초기화',`${accountKind()==='guest'?'게스트':accountName()} 계정의 모든 자산·내역·반복·설정이 삭제되고 완전히 빈 상태로 돌아가요. 초기화 직후 잠깐 동안만 되돌릴 수 있어요. 정말 초기화할까요?`,'초기화',()=>{
+ const snapshot=DB;DB=emptyDB();save({deferCloudPush:true});closeSheet();ST.tab='home';go('home');
+ const resetPushT=setTimeout(scheduleCloudPush,6000);
+ undoToast('전체 초기화했어요',()=>{clearTimeout(resetPushT);DB=snapshot;save();renderCurrent();toast('되돌렸어요')})})}
 
 boot();
 /* 날짜 넘어감 대응: 앱 복귀/포커스/1분마다 '오늘'을 다시 계산해 화면을 갱신 */
