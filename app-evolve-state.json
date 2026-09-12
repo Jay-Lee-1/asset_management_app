@@ -1,15 +1,8 @@
 {
   "cycle": 20,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 18,
-      "phase": "critique",
-      "timestamp": "2026-09-12T13:32:02.384Z",
-      "summary": "전체 앱을 한 걸음 물러나 봤다(백그라운드 조사 에이전트 활용). 후보로 검토했지만 기각한 것들: (1) household_id를 Supabase user_id와 분리해 부부가 로그인 정보를 공유하지 않고도 가계부를 함께 쓰게 하는 안 — cycle16 critique가 남겨둔 후보를 다시 확인한 결과 여전히 미해결이고 저장소 안에서 구현 자체는 가능하지만(Supabase 스키마가 SQL 마이그레이션 파일이 아니라 openHelpCloud의 안내 텍스트 SQL 블록(index.html:3539-3562)으로만 존재해 코드로 편집은 가능), 실제로 반영되려면 사용자가 그 SQL을 자기 Supabase 대시보드에 수동으로 다시 실행해야 해서 무인 사이클로 끝까지 배포될 수 없고, 스키마 재설계+RLS 재작업+초대코드 UX+기존 단일유저 데이터 하위호환까지 겹쳐 반복적으로 기각돼온 전체 접근성 스윕만큼 범위가 큼 — 여러 사이클로 쪼개야 할 후보로 계속 보류; (2) pushCloud()의 동기화 충돌이 CLOUD_LAST_SYNCED_AT을 갱신하지 않아 사용자가 수동으로 계정 화면에서 강제 push/pull하기 전까지 무한히 조용한 no-op이 되는 문제 — cycle13~15에서 이미 검토돼 '계정 화면에 이미 상태가 노출된다'는 이유로 수용 가능하다고 판단된 사안이라 재상정하지 않음. 최종 선택: cycle16~18이 카테고리명/자산명은 esc()로 전부 정리했지만 귀속(DB.owners, addOwner/doRenameOwner)은 동일한 자유 입력인데도 놓쳤음을 발견했다. 순수 텍스트/클래스 렌더 5곳(index.html:2287,2292,3456,3878,5031)은 esc() 누락으로 인한 렌더 깨짐/저장형 XSS 문제고, 더 심각한 건 delOwner('${o}')(2578)/pkPickOwner('${ow}')(5064)가 귀속 이름을 홑따옴표 JS 문자열 리터럴 인자로 onclick에 직접 삽입해 esc()로도 못 막는 JS 인젝션(작은따옴표 포함 이름으로 문자열 리터럴을 조기 종료시켜 임의 JS 실행)이 가능하다는 점 — 그리고 바로 같은 파일의 카테고리 관리(openCatManage, delCat('${k}',${i}))는 정확히 같은 상황에서 이름 대신 배열 인덱스만 onclick에 넘기는 안전한 패턴을 이미 쓰고 있어, 귀속 관리 화면만 이 컨벤션을 따르지 않은 일관성 문제이기도 하다. 코드 변경 없음 — pending_advance_plan에 delOwner/pkPickOwner를 인덱스 기반으로 전환 + 나머지 5곳 esc() 적용 계획을 적어둠.",
-      "commit": null
-    },
     {
       "cycle": 18,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-12T18:12:34.712907Z",
       "summary": "반복거래(recurrence) 생성/편집 폼에서 종료일이 시작일보다 이른 날짜로 저장돼도 아무 검증 없이 통과되는 실제 버그를 발견해 고쳤다. recDates()(index.html)는 freq(monthly/yearly/daily/weekly) 모든 분기에서 endDate<startDate이면 조건 미충족으로 0개 발생일을 반환하고 recCountUntil()도 count=0을 반환하는데, saveRec()/saveTx() 저장 경로는 이 값을 그대로 active:true인 반복 레코드로 저장해버려 사용자는 정상 반복이 설정됐다고 믿지만 실제로는 영원히 거래를 한 번도 만들어내지 않는 조용한 데드 레코드가 생긴다 (예: 월별 할부 반복을 등록하면서 실수로 지난 날짜를 종료일로 고르면 그대로 저장되고 아무 경고도 없음). 기존에 존재하던 fromAssetId===toAssetId 가드와 동일한 컨벤션으로, saveRec()(index.html:3070 부근, type/이체 검증 직후)와 saveTx()의 반복-즉시생성 분기(index.html:2892 부근, base 계산 직후) 두 곳에 d.endDate<d.startDate(또는 d.date) 체크를 추가해 '종료일은 시작일 이후로 선택해 주세요' 토스트와 함께 저장을 막도록 했다. saveRec/saveTx는 recDraft/txDraft 전역 상태와 다수의 DOM 입력(syncRecInputs 등)에 엮여 있는 UI 글루 함수라 test/run.js의 순수함수 하네스(FUNCTIONS 목록)에 새로 편입시키는 비용이 이번 가드 한 줄의 가치에 비해 과했다고 판단해 상설 테스트 케이스는 추가하지 않았다 — 대신 실제 index.html에서 두 함수를 그대로 추출해 vm 샌드박스에 올려 (1) 종료일이 시작일보다 이른 경우 토스트만 뜨고 DB.recurrences/txns가 전혀 늘지 않음, (2) 정상적인(시작일 이후) 종료일은 기존과 동일하게 저장됨 — 두 경로 모두 실측 확인했다. 기존 회귀 테스트(recDates/recCountUntil 포함) 111/111 통과, node --check로 두 인라인 스크립트 블록 파싱도 확인. APP_VERSION 1.22.2->1.22.3, sw.js CACHE v70->v71(버그 수정이라 patch bump).",
+      "commit": "70e9369"
+    },
+    {
+      "cycle": 20,
+      "phase": "review",
+      "timestamp": "2026-09-12T19:05:00.000Z",
+      "summary": "Reviewed commit 70e9369 (endDate<startDate guard added to saveRec/saveTx). Confirmed the guard is well-placed: both entry points that can produce a recurrence record (the recDraft-based saveRec and the quick-add txDraft repeat branch in saveTx) now reject before DB.recurrences.push. Traced every other .endDate= write site in the file (clampRecurringToMaturity at ~2552, recApply's future-delete/edit-split branches at ~2963/2986) — none of them can produce endDate<startDate as a real defect: clampRecurringToMaturity only ever sets endDate to an occurrence date already >= startDate (guarded earlier by startDate>maturity return), and recApply's future-scope endDate=addDays(date,-1) is a deliberate 'delete this and everything after' mechanism where date is always an already-generated occurrence, not a user-editable form field, so it's a different code path from the bug class this commit targets, not a missed sibling site. Checked the string-comparison assumption (all dates are zero-padded YYYY-MM-DD throughout the file, e.g. addMonthsStr/recDates), so lexicographic '<' matches chronological order correctly. Manually traced the one case where the guard actually earns its keep — a user picks startDate after already having set an earlier endDate (the two date pickers don't cross-validate or auto-clear each other) — and confirmed recCountUntil already independently returns 0 for that state (recDates' monthly/yearly/daily loops all short-circuit when end<start), so the guard and the counting logic agree. Re-ran the regression suite (111/111 pass, unchanged) and re-verified both inline <script> blocks parse via node --check. No bugs found — no code changes this phase.",
       "commit": null
     }
   ]
