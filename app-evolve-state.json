@@ -1,15 +1,8 @@
 {
   "cycle": 24,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 17,
-      "phase": "critique",
-      "timestamp": "2026-09-12T09:12:15.000Z",
-      "summary": "전체 앱을 한 걸음 물러나 봤다(백그라운드 조사 에이전트 활용). 클라우드 동기화/충돌해결, save/load 실패처리, 반복거래 엔진, History/Ledger 페이지네이션, 모달시트 a11y(cycle15), 카테고리 가드(cycle16), FX/금/주식 자산평가 경로, sw.js, manifest, netlify.toml을 훑었다. 검토했지만 기각한 후보: (1) 거래 원장의 다중통화 혼합 버그 의심 — 실제 조사 결과 fx/gold/stock 자산은 수동 입력 보유자산이며 거래 원장과 연결되지 않아 실재하지 않는 문제였음; (2) 전체 innerHTML 재렌더 아키텍처/성능 — cycle14·cycle16 critique에서 이미 '개인 가계부 규모에선 체감 영향 없음/범위 과대'로 기각된 사안이라 재제안하지 않음; (3) 접근성 전면 점검 — cycle9·12·13에서 반복적으로 '한 사이클에 담기엔 너무 넓음'으로 기각되어 온 사안, cycle15가 의도적으로 모달 하나로 범위를 좁혔던 것과 동일한 이유로 이번에도 채택 안 함. 최종 선택: sw.js가 skipWaiting()+clients.claim()으로 이미 열린 탭을 조용히 장악하는데도(21-33줄) 페이지 JS는 리로드 전까지 구버전 코드를 계속 돌리고, 사용자에게 알리는 장치가 전혀 없으며, '버전 정보' 메뉴(index.html:3486)는 실제 상태와 무관하게 무조건 '최신 버전이에요'라고 답하는 문제. controllerchange 이벤트로 업데이트를 감지해 지속형 배너+메뉴 문구 정정을 제안하는 계획을 pending_advance_plan에 저장.",
-      "commit": null
-    },
     {
       "cycle": 17,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-13T09:11:20.000Z",
       "summary": "critique 계획대로 클라우드 로그인/부팅 시(afterCloudAuth, boot()가 로그인 화면 없이 매 실행 자동 호출) 로컬 미동기화 변경사항이 확인 없이 통째로 덮어써지는 데이터 유실 버그를 고쳤다. 이 기기 clock 기준 두 타임스탬프를 dataKey() 아래 localStorage에 영속화: save() 성공 시 dataKey()+\"__savedAt\", pullCloud/pushCloud 성공 시 markCloudSynced()가 dataKey()+\"__syncedAt\". 순수 함수 localHasUnsyncedChanges(savedAt,syncedAt)(savedAt 있고 (!syncedAt||savedAt>syncedAt)면 true)로 판단해, afterCloudAuth()가 remote를 받아오기 전에 이 값을 계산해두고, remote가 있고 로컬에 미동기화 흔적이 있으면 DB/localStorage를 건드리지 않고 CLOUD_SYNC_STATE=\"conflict\"만 세팅한다 — cycle22 advance가 이미 구축해 둔 홈 화면 cloudConflict 카드+계정 시트의 resolveCloudPullRemote(가져오기)/resolveCloudForcePush(덮어쓰기) 흐름을 그대로 재사용해 사용자가 명시적으로 고르게 한다. 미동기화 흔적이 없으면(정상적인 다른 기기 동기화 등) 기존처럼 조용히 remote를 적용해 마찰을 늘리지 않는다. 두 타임스탬프 모두 이 기기의 Date.now() 기준이라 서버-클라이언트 시계 오차 비교 문제가 없다. test/run.js FUNCTIONS에 localHasUnsyncedChanges 추가, 회귀 테스트 4개 추가(미동기화 있음/없음(먼저 또는 동일 시각)/동기화 기록 자체 없음(미동기화로 취급)/저장 기록 자체 없음(최초 부팅, 미동기화 아님)) — 139/139 통과(기존 135+신규 4). 두 인라인 <script> 블록 모두 node --check(vm.Script) 파싱 확인. Playwright(사전 설치 Chromium)로 실제 브라우저에서 afterCloudAuth()의 pullCloud를 스텁으로 교체해 두 시나리오를 직접 실행 검증했다: (A) 로컬에 미동기화 흔적이 있을 때 원격을 스텁해 반환해도 DB와 localStorage가 로컬 값 그대로 유지되고 CLOUD_SYNC_STATE가 conflict로 바뀜, (B) 미동기화 흔적이 없을 때는 기존처럼 DB가 원격 값으로 정상 교체됨. 계획에 있던 레코드 단위 병합 엔진이나 계정 공유(household) 재설계는 이번에도 범위 밖으로 남겼다(과거 cycle15/20/23 critique와 같은 이유). APP_VERSION 1.23.1->1.24.0, sw.js CACHE v77->v78 (minor bump, 데이터 유실 위험 버그 수정). pending_advance_plan 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 24,
+      "phase": "develop",
+      "timestamp": "2026-09-13T10:20:00.000Z",
+      "summary": "cycle16 review/critique가 발견해 두고도(develop 사이즈라 critique에서 계속 넘겨온) cycle23 critique까지 그대로 남아 있던 죽은 코드를 처리했다: renderLedger()(index.html)가 42칸짜리 달력 셀 문자열을 직접 조립하는 첫 번째 for 루프(dayTxns/monthStats 호출 포함)를 실행해 cells 변수에 쌓아두지만, 실제로 렌더링되는 달력은 그 아래 calPane(y,m,sel,true)(이전/이번/다음 달 3개, calCellsFor를 호출하는 진짜 렌더 경로)이고 cells는 innerHTML 템플릿 어디에도 참조되지 않아 통째로 버려지고 있었다. 같은 줄에서 const S=monthStats(y,m)로 계산해 두는 월간 합계도 함수 전체에서 한 번도 읽히지 않아 마찬가지로 폐기되는 값이었다. 두 계산 모두(그 안에서만 쓰이는 first/startDow/daysIn/prevDays 지역변수 포함) 부작용 없는 순수 계산(allTxns/monthStats)이라 제거해도 동작 변화가 없음을 확인한 뒤 통째로 삭제했다 — renderLedger는 이제 dayTxns(sel)만 계산해 바로 템플릿을 만든다. 동작이 그대로인 죽은 코드 제거라 test/run.js에 새 테스트를 추가하진 않았고, 대신 정적 서버(python http.server)+Playwright(사전 설치 Chromium)로 실제 브라우저에서 가계부 탭을 열어 .cal-cell 개수가 여전히 126개(3개월×42칸, calPane 경로 기준)로 동일하고 콘솔에 새 에러가 없음을 확인했다. 두 인라인 <script> 블록 모두 new Function()으로 파싱 확인, 기존 회귀 테스트 139/139 통과(변경 없음, 리렌더 로직은 test 하네스 대상 밖). APP_VERSION 1.24.0->1.24.1, sw.js CACHE v78->v79 (patch bump, 죽은 코드 제거).",
       "commit": null
     }
   ]

@@ -1277,7 +1277,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.24.0';
+const APP_VERSION='1.24.1';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2684,26 +2684,7 @@ function modeSeg(tab){ /* 달력/목록 컴팩트 세그먼트 (헤더용) */
  return `<div class="mseg"><button class="${isCal?'on':''}" onclick="${isCal?'':'toCal()'}">달력</button><button class="${!isCal?'on':''}" onclick="${!isCal?'':'toList()'}">검색${filtered?'<span class="chip-dot"></span>':''}</button></div>`;
 }
 function renderLedger(){
- const {y,m,sel}=ST.ledger;const S=monthStats(y,m);
- const first=new Date(y,m-1,1),startDow=first.getDay(),daysIn=lastDay(y,m),prevDays=lastDay(m===1?y-1:y,m===1?12:m-1);
- let cells='';
- for(let i=0;i<42;i++){let dnum,mm=m,other=false;
-  if(i<startDow){dnum=prevDays-startDow+1+i;mm=m-1;other=true}
-  else if(i>=startDow+daysIn){dnum=i-startDow-daysIn+1;mm=m+1;other=true}
-  else dnum=i-startDow+1;
-  let yy=y;if(mm<1){mm=12;yy--}if(mm>12){mm=1;yy++}
-  const ds=`${yy}-${String(mm).padStart(2,'0')}-${String(dnum).padStart(2,'0')}`;
-  const tx=other?[]:dayTxns(ds); /* 가계부는 예정 항상 포함 */
-  const inn=tx.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
-  const ex=tx.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
-  const sv=tx.filter(t=>t.type==='saving').reduce((s,t)=>s+t.amount,0);
-  const hasSch=tx.some(t=>txScheduled(t));
-  const hasTr=tx.some(t=>t.type==='transfer');
-  const cls=['cal-cell'];if(other)cls.push('other');if(ds===sel)cls.push('sel');if(ds===TODAY)cls.push('today');
-  cells+=`<div class="${cls.join(' ')}" ${other?'':`onclick="selDay('${ds}')"`}>
-   ${hasSch?'<span class="dotp"></span>':''}${hasTr?'<span class="dott"></span>':''}<div class="d">${dnum}</div>
-   ${inn?`<div class="in num">+${abbr(inn)}</div>`:''}${ex?`<div class="ex num">-${abbr(ex)}</div>`:''}${sv?`<div class="sv num">${abbr(sv)}</div>`:''}</div>`;
- }
+ const {y,m,sel}=ST.ledger;
  const selTx=dayTxns(sel);
  const rows=selTx.length?selTx.map(t=>txRow(t)).join(''):`<div class="empty"><div class="ei">${svg('ledger')}</div><div class="et">이 날은 조용하네요 🌱</div><div class="es">쓴 게 있다면 지금 남겨두세요</div><button class="empty-cta" onclick="openTxSheet()">${svg('plus')} 내역 추가하기</button></div>`;
  $('page-ledger').innerHTML=`
