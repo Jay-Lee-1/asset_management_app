@@ -1,15 +1,8 @@
 {
   "cycle": 23,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 22,
-      "phase": "critique",
-      "timestamp": "2026-09-13T04:10:00.000Z",
-      "summary": "전체 앱을 한 걸음 물러나 봤다(백그라운드 조사 에이전트 활용, git log 60개+state.json 히스토리 전체를 먼저 훑어 이미 다룬/기각된 항목과 겹치지 않게 함). 검토했지만 기각한 후보: (1) 카테고리별 예산 한도/알림 부재(현재는 전체 합산 planGaugeCard만 존재) — 실재하는 제품 갭이지만 데이터 모델+여러 화면에 걸친 신규 기능이라 이번 사이클 범위(스코프가 있는 수정)보다는 새 기능 추가에 가까워 보류; (2) 거래 내역 자유 텍스트/금액 검색 부재 — 실재하지만 데이터 유실 위험이 있는 동기화 버그보다 심각도가 낮음; (3) renderLedger의 죽은 cells 루프 — 기존 히스토리에 이미 사소한 정리 대상으로 기록돼 있고 advance 사이클 규모에 못 미침. 최종 선택: pushCloud()(1561-1576)가 서버가 더 최신이면 CLOUD_SYNC_STATE='conflict'로 바꾸고 push를 건너뛰는데, 이 상태를 벗어나는 유일한 방법인 cloudSyncOk()는 성공한 push/pull에서만 호출되므로 conflict 진입 후에는 매번 같은 조건이 재감지되어 스스로 절대 벗어날 수 없는 데드락 상태가 되는 문제. 알림은 CLOUD_CONFLICT_TOASTED 가드로 단 한 번의 토스트뿐이고, homeAlerts()(4959, grep으로 재확인: cloudConflict 종류 없음)에는 지속형 카드가 없어 메뉴>계정을 우연히 열기 전까지 사용자는 이후 모든 로컬 변경이 클라우드에 반영되지 않는다는 사실을 알 방법이 없다. 코드 변경 없음 — pending_advance_plan에 홈 알림 카드 추가 + 포커스 시 재확인 재시도 + conflict 판정 로직의 순수함수 추출 및 테스트 계획을 저장.",
-      "commit": null
-    },
     {
       "cycle": 21,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-09-13T05:10:00.000Z",
       "summary": "critique 계획대로 클라우드 동기화 충돌(conflict) 데드락을 발견 가능하게 만들었다. 범위는 계획의 세 항목 중 안전하게 할 수 있는 부분으로 좁혔다: (1) pushCloud()의 충돌 판정(cur.updated_at>CLOUD_LAST_SYNCED_AT)을 순수 함수 isCloudConflict(curUpdatedAt,lastSyncedAt)로 뽑아 pushCloud가 이를 호출하도록 바꾸고, test/run.js에 5개 회귀 테스트(충돌/동일시각/원격이 더 오래됨/최초 push라 lastSyncedAt 없음/원격에 데이터 없음)를 추가했다 — 132/132 통과(기존 127+신규 5). (2) homeAlerts()에 CLOUD_UID&&CLOUD_SYNC_STATE==='conflict'일 때 최우선순위로 {kind:'cloudConflict'} 항목을 넣고, homeAlertCard()에 openAccountSheet()로 연결되는 지속형 카드(alert 아이콘, 기본 home-alert 빨간 톤)를 추가해, 메뉴>계정을 우연히 열기 전까지 알아챌 방법이 없던 문제를 해소했다. (3) maybeRollDay()에서 홈 탭에 있고 conflict 상태인 동안은 60초 인터벌/포커스 복귀마다 renderCurrent()를 다시 불러 카드가 계속 최신 상태로 보이게 했다 — 단, 로컬 DB나 CLOUD_LAST_SYNCED_AT은 전혀 건드리지 않아 기존 openAccountSheet의 수동 해결 흐름('가져오기'/'덮어쓰기')만이 유일한 실제 해소 경로로 남는다. 계획에 있던 '포커스 시 자동 재동기화 시도'는 구현하지 않았다 — 검토 결과 CLOUD_LAST_SYNCED_AT을 갱신하는 유일한 안전한 방법은 pullCloud()인데, 이는 로컬 미저장 변경을 사용자 동의 없이 원격 데이터로 덮어쓰는 것과 사실상 같아(resolveCloudPullRemote와 동일한 효과) 자동으로 걸면 안전 규칙(파괴적 동작은 사용자 확인 필요)에 어긋난다고 판단, 대신 카드 노출을 신뢰성 있게 만드는 쪽으로 범위를 좁혔다. Playwright(사전 설치 Chromium, 게스트 모드)로 CLOUD_UID/CLOUD_SYNC_STATE를 직접 설정해 카드가 최우선으로 노출되는 것, onclick이 openAccountSheet()를 정확히 호출해 '계정' 시트가 열리는 것, maybeRollDay() 재호출 후에도 카드가 유지되는 것을 확인했다. 두 인라인 <script> 블록 모두 node --check 통과. APP_VERSION 1.22.7->1.23.0, sw.js CACHE v75->v76 (minor bump, 데이터 유실 위험 UX 개선). pending_advance_plan 비움.",
       "commit": null
+    },
+    {
+      "cycle": 23,
+      "phase": "develop",
+      "timestamp": "2026-09-13T06:30:00.000Z",
+      "summary": "배경 조사 에이전트가 앱 전체를 탐색해 제안한 후보 중, addDays/wname/fmtDate/shortDate/fmtDateFull 다섯 함수가 시간 없는 날짜 문자열을 new Date(s)로 파싱하는 실제 버그를 채택했다. new Date(\"YYYY-MM-DD\")는 UTC 자정으로 파싱되는데 getFullYear/getMonth/getDate/getDay는 로컬 시간대로 읽으므로, UTC 오프셋이 음수인 시간대(북중남미 등 — 이 앱은 지역 제한 없는 PWA)에서는 이 다섯 함수가 항상 실제보다 하루 이른 날짜/요일을 반환한다(TZ=America/New_York에서 2026-09-13(일요일)이 \"9월 12일 토요일\"로 표시되는 것을 node로 직접 재현해 확인). recDates(1727-1728)/addMonthsStr(1769)/shiftWeekend(1721) 등은 이미 new Date(s+'T00:00:00')로 로컬 자정에 앵커링해 이 문제를 피해가고 있었는데, 이 다섯 함수만 그 컨벤션이 빠져 있었다. 컨테이너 자체가 UTC/KST(오프셋>=0)라 지금까지 22번의 사이클과 브라우저 검증에서 전혀 드러나지 않았던 사각지대. addDays는 반복거래 만기/이체 알림(maturitySoon, postponeTransfer)·잔액 구간 시작일(balanceAt 호출부)·RANGE_TO/DISP_TO 표시 구간의 공유 primitive라 화면 표시만이 아니라 실제 날짜 계산 자체가 하루씩 밀리는 문제였다. 다섯 함수 모두 동일한 T00:00:00 앵커링으로 고쳤고, 모든 호출부(grep으로 전수 확인)가 항상 시간 없는 bare 날짜 문자열만 넘기므로 이중 앵커링 위험은 없었다. test/run.js FUNCTIONS에 wname/fmtDate/shortDate/fmtDateFull을 추가하고, process.env.TZ를 America/New_York으로 임시 전환하는 withTZ() 헬퍼로 회귀 테스트 3개 추가 — 수정 전 코드로 되돌려 재실행하면 정확히 이 3개가 실패하는 것을 확인한 뒤(회귀 방지 효과 검증) 다시 적용, 135/135 통과. 두 인라인 <script> 블록 모두 node --check 통과. 이 사이클 도중 이 세션의 cwd가 detached HEAD(과거 커밋)에 있었고 로컬에 캐시된 origin/main 참조가 더 오래된 별도 히스토리(eb04c24, unrelated history)를 가리키고 있어 일시 정지하고 조사했다 — git fetch로 확인해보니 origin/main이 이미 우리 쪽(detached HEAD와 동일한 ac6f491)으로 복구돼 있었고 이전 상태는 origin의 recovered-app-evolve-eb04c24/app-evolve-orphaned-work 브랜치에 안전하게 보존돼 있었다 — 단순히 로컬 fetch 캐시가 오래된 것이었을 뿐이라 로컬 main을 origin/main 기준으로 재설정한 뒤 정상 진행했다(파괴적 동작 없음, 로컬 changes 보존해 이어감). APP_VERSION 1.23.0->1.23.1, sw.js CACHE v76->v77 (patch bump, 버그 수정).",
+      "commit": "5c2af39"
     }
   ]
 }
