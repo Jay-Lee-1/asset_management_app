@@ -292,6 +292,7 @@ html[data-theme="dark"] .alloc-bar i+i::before{background:var(--bg);opacity:.9}
 .toggle-row .tl{font-size:14px;font-weight:600}
 .switch{width:46px;height:28px;border-radius:var(--r-pill);background:var(--line-2);position:relative;transition:background .2s;flex-shrink:0;appearance:none;-webkit-appearance:none;border:0;padding:0;cursor:pointer}
 .switch:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.asset-item:focus-visible,.swipe-content:focus-visible,.manage-row:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}
 .switch.on{background:var(--brand)}
 .switch i{position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;transition:transform .2s var(--spring);box-shadow:0 1px 3px rgba(0,0,0,.2)}
 .switch.on i{transform:translateX(18px)}
@@ -1283,7 +1284,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.24.3';
+const APP_VERSION='1.25.0';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1402,6 +1403,8 @@ const commaQty=n=>Number.isInteger(n)?comma(n):(n||0).toLocaleString('ko-KR',{ma
 const won=n=>(n<0?'-':'')+comma(Math.abs(n))+'원';
 const wonS=n=>(n>0?'+':n<0?'-':'')+comma(Math.abs(n))+'원';
 function esc(s){const m={'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'};return String(s==null?'':s).replace(/[&<>"']/g,c=>m[c])}
+/* onclick만 있던 div 기반 행(자산/내역/반복거래 목록)에 키보드 접근성을 붙이는 공용 핸들러 — Enter/Space를 클릭과 동일하게 처리 */
+function rowKeydown(e,fn){if(e.key==='Enter'||e.key===' '){e.preventDefault();fn()}}
 function todayStr(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
 let TODAY=todayStr();
 function addDays(s,n){const d=new Date(s+'T00:00:00');d.setDate(d.getDate()+n);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
@@ -2328,13 +2331,13 @@ function assetBodyHTML(){
      body+=items.map(a=>{const ty=ASSET_TYPES[a.type];const val=a.type==='debt'?-assetEval(a):assetEval(a);
        const showEval=['fx','gold','stock'].includes(a.type);
        if(ST.aSel.mode){const on=ST.aSel.ids.has(a.id);
-         return `<div class="asset-item${on?' sel-on':''}" onclick="assetToggleSel('${a.id}')">
+         return `<div class="asset-item${on?' sel-on':''}" tabindex="0" role="button" aria-pressed="${on}" aria-label="${esc(a.name)} ${won(val)}" onclick="assetToggleSel('${a.id}')" onkeydown="rowKeydown(event,()=>assetToggleSel('${a.id}'))">
            <div class="sel-check ${on?'on':''}">${svg('check')}</div>
            <div class="avatar ${ty.cls}">${svg(ty.icon)}</div>
            <div style="flex:1;min-width:0"><div class="nm"><span class="nmt">${esc(a.name)}</span>${a.includeInTotal?'':'<span class="chipmini own-x">미포함</span>'}</div>
              <div class="sub"><span class="chipmini own-${esc(a.owner)}">${esc(a.owner)}</span><span>${assetSubline(a)}</span></div></div>
            <div class="val"><div class="k num ${a.type==='debt'?'minus':''}">${won(val)}</div></div></div>`;}
-       return `<div class="asset-item ${a.includeInTotal?'':'excl'}" data-id="${a.id}" data-lp="1" onclick="openAssetSheet('${a.id}')">
+       return `<div class="asset-item ${a.includeInTotal?'':'excl'}" data-id="${a.id}" data-lp="1" tabindex="0" role="button" aria-label="${esc(a.name)} ${won(val)}" onclick="openAssetSheet('${a.id}')" onkeydown="rowKeydown(event,()=>openAssetSheet('${a.id}'))">
          <div class="avatar ${ty.cls}">${svg(ty.icon)}</div>
          <div style="flex:1;min-width:0"><div class="nm"><span class="nmt">${esc(a.name)}</span>${a.includeInTotal?'':'<span class="chipmini own-x">미포함</span>'}</div>
            <div class="sub"><span class="chipmini own-${esc(a.owner)}">${esc(a.owner)}</span><span>${assetSubline(a)}</span></div></div>
@@ -2765,12 +2768,12 @@ function txRow(t){
  const faN=assetNm(t.fromAssetId,t.fromAssetName),taN=assetNm(t.toAssetId,t.toAssetName);
  const asset=t.type==='income'?(taN!=='—'?taN:''):(t.type==='transfer'||t.type==='saving')?`${faN==='—'?'':faN}→${taN==='—'?'':taN}`:(faN!=='—'?faN:'');
  if(ST.lSel.mode){const on=ST.lSel.ids.has(t.id);const selectable=!t.isRec;
-  return `<div class="swipe" data-id="${t.id}"><div class="swipe-content${on?' sel-on':''}" ${selectable?`onclick="ledgerToggleSel('${t.id}')"`:''} style="${selectable?'':'opacity:.45'}">
+  return `<div class="swipe" data-id="${t.id}"><div class="swipe-content${on?' sel-on':''}" ${selectable?`onclick="ledgerToggleSel('${t.id}')" tabindex="0" role="button" aria-pressed="${on}" aria-label="${esc(t.memo||t.category)} ${sign}${comma(t.amount)}원" onkeydown="rowKeydown(event,()=>ledgerToggleSel('${t.id}'))"`:''} style="${selectable?'':'opacity:.45'}">
    <div class="sel-check ${on?'on':''}">${svg('check')}</div>
    <div class="avatar ${av}" style="width:40px;height:40px">${glyph}</div>
    <div style="flex:1;min-width:0"><div class="nm-row"><span class="nm">${esc(t.memo||t.category)}</span>${t.isRec?`<span class="rec-ic" title="반복">${svg('repeat')}</span>`:''}</div>${(t.memo&&t.memo!==t.category)?`<div class="flow-sub"><span class="fl">${esc(t.category)}</span></div>`:''}</div>
    <div class="amt num ${cls}">${sign}${comma(t.amount)}원</div></div></div>`;}
- return `<div class="swipe" data-id="${t.id}" data-rec="${t.isRec?t.recId:''}" data-date="${t.date}" ${t.isRec?'':'data-lp="1"'}>  <div class="swipe-content" onclick="rowTap(this)"><div class="avatar ${av}" style="width:40px;height:40px">${glyph}</div>
+ return `<div class="swipe" data-id="${t.id}" data-rec="${t.isRec?t.recId:''}" data-date="${t.date}" ${t.isRec?'':'data-lp="1"'}>  <div class="swipe-content" tabindex="0" role="button" aria-label="${esc(t.memo||t.category)} ${sign}${comma(t.amount)}원" onclick="rowTap(this)" onkeydown="rowKeydown(event,()=>rowTap(this))"><div class="avatar ${av}" style="width:40px;height:40px">${glyph}</div>
    <div style="flex:1;min-width:0"><div class="nm-row"><span class="nm">${esc(t.memo||t.category)}</span>${t.isRec?`<span class="rec-ic" title="반복">${svg('repeat')}</span>`:''}</div>
     ${asset?`<div class="flow-sub"><span class="fl">${esc(asset)}</span>${txScheduled(t)?'<span class="sch-dot"></span>':''}</div>`:(txScheduled(t)?`<div class="flow-sub"><span class="sch-dot"></span><span class="fl">예정</span></div>`:'')}</div>
    <div class="amt num ${cls}">${sign}${comma(t.amount)}원</div>${isDuePending(t)?`<button class="confirm-btn" onclick="event.stopPropagation();${t.isRec?`confirmRecTransfer('${t.recId}','${t.date}')`:`openConfirmTransfer('${t.id}')`}">확인</button>`:''}</div></div>`;
@@ -3294,13 +3297,13 @@ function histRow(t){
  const asset=t.type==='income'?(taN!=='—'?taN:''):(t.type==='transfer'||t.type==='saving')?`${faN==='—'?'':faN}→${taN==='—'?'':taN}`:(faN!=='—'?faN:'');
  if(H.selMode){
   const selectable=!t.isRec;
-  return `<div class="swipe" data-id="${t.id}"><div class="swipe-content${on?' sel-on':''}" ${selectable?`onclick="histToggleSel('${t.id}')"`:''} style="${selectable?'':'opacity:.45'}">
+  return `<div class="swipe" data-id="${t.id}"><div class="swipe-content${on?' sel-on':''}" ${selectable?`onclick="histToggleSel('${t.id}')" tabindex="0" role="button" aria-pressed="${on}" aria-label="${esc(t.memo||t.category)} ${sign}${comma(t.amount)}원" onkeydown="rowKeydown(event,()=>histToggleSel('${t.id}'))"`:''} style="${selectable?'':'opacity:.45'}">
    <div class="sel-check ${on?'on':''}">${svg('check')}</div>
    <div class="avatar ${av}" style="width:40px;height:40px">${glyph}</div>
    <div style="flex:1;min-width:0"><div class="nm-row"><span class="nm">${esc(t.memo||t.category)}</span>${t.isRec?`<span class="rec-ic" title="반복">${svg('repeat')}</span>`:''}</div>${(t.memo&&t.memo!==t.category)?`<div class="flow-sub"><span class="fl">${esc(t.category)}</span></div>`:''}</div>
    <div class="amt num ${cls}">${sign}${comma(t.amount)}원</div></div></div>`;
  }
- return `<div class="swipe" data-id="${t.id}" data-rec="${t.isRec?t.recId:''}" data-date="${t.date}" ${t.isRec?'':'data-lp="1"'}>  <div class="swipe-content" onclick="rowTap(this)"><div class="avatar ${av}" style="width:40px;height:40px">${glyph}</div>
+ return `<div class="swipe" data-id="${t.id}" data-rec="${t.isRec?t.recId:''}" data-date="${t.date}" ${t.isRec?'':'data-lp="1"'}>  <div class="swipe-content" tabindex="0" role="button" aria-label="${esc(t.memo||t.category)} ${sign}${comma(t.amount)}원" onclick="rowTap(this)" onkeydown="rowKeydown(event,()=>rowTap(this))"><div class="avatar ${av}" style="width:40px;height:40px">${glyph}</div>
    <div style="flex:1;min-width:0"><div class="nm-row"><span class="nm">${esc(t.memo||t.category)}</span>${t.isRec?`<span class="rec-ic" title="반복">${svg('repeat')}</span>`:''}</div>
     ${asset?`<div class="flow-sub"><span class="fl">${esc(asset)}</span>${txScheduled(t)?'<span class="sch-dot"></span>':''}</div>`:(txScheduled(t)?`<div class="flow-sub"><span class="sch-dot"></span><span class="fl">예정</span></div>`:'')}</div>
    <div class="amt num ${cls}">${sign}${comma(t.amount)}원</div>${isDuePending(t)?`<button class="confirm-btn" onclick="event.stopPropagation();${t.isRec?`confirmRecTransfer('${t.recId}','${t.date}')`:`openConfirmTransfer('${t.id}')`}">확인</button>`:''}</div></div>`;
@@ -3821,7 +3824,7 @@ function openRecManage(){
   const list=DB.recurrences.filter(r=>r.type===ty);if(!list.length)return;
   body+=`<div class="menu-cap" style="margin-top:8px">${label} · ${list.length}개</div><div class="card" style="margin-bottom:6px">`+list.map(r=>{
    const period=`${(r.startDate||'').slice(0,7).replace('-','.')}${r.endDate?` ~ ${r.endDate.slice(0,7).replace('-','.')}`:' ~'}`;
-   return `<div class="manage-row" onclick="editRec('${r.id}')"><div class="avatar ${av}" style="width:38px;height:38px;${r.active?'':'opacity:.4'}">${r.type==='transfer'?svg('transfer'):catGlyph(r.type,r.category,null,'repeat')}</div>
+   return `<div class="manage-row" tabindex="0" role="button" aria-label="${esc(r.category)} ${recFreqLabel(r)} ${comma(r.amount)}원${r.active?'':' 중지됨'}" onclick="editRec('${r.id}')" onkeydown="rowKeydown(event,()=>editRec('${r.id}'))"><div class="avatar ${av}" style="width:38px;height:38px;${r.active?'':'opacity:.4'}">${r.type==='transfer'?svg('transfer'):catGlyph(r.type,r.category,null,'repeat')}</div>
     <div style="flex:1;min-width:0"><div class="mn">${esc(r.category)} ${r.active?'':'<span class="mini">중지</span>'}</div>
      <div class="msub">${recFreqLabel(r)} · ${comma(r.amount)}원</div>
      <div class="msub2">${period}</div></div>

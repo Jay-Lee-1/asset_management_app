@@ -56,7 +56,7 @@ const FUNCTIONS = [
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'expenseBreakdownCard',
   'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'saveAsset', 'isCloudConflict',
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges',
-  'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent',
+  'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -1380,6 +1380,24 @@ test('renderCurrent: 예외 이후 재렌더가 성공하면 에러 배너가 �
   sandbox.renderers = { home: () => {} };
   sandbox.renderCurrent();
   assert.strictEqual(sandbox.errBannerEl.classList.contains('show'), false, '재렌더 성공 후에도 에러 배너가 남아있음');
+});
+test('rowKeydown: Enter를 누르면 preventDefault 후 콜백을 부른다', () => {
+  let called = 0, prevented = false;
+  sandbox.rowKeydown({ key: 'Enter', preventDefault: () => { prevented = true; } }, () => { called++; });
+  assert.strictEqual(called, 1);
+  assert.strictEqual(prevented, true);
+});
+test('rowKeydown: 스페이스를 누르면 preventDefault 후 콜백을 부른다', () => {
+  let called = 0, prevented = false;
+  sandbox.rowKeydown({ key: ' ', preventDefault: () => { prevented = true; } }, () => { called++; });
+  assert.strictEqual(called, 1);
+  assert.strictEqual(prevented, true);
+});
+test('rowKeydown: 다른 키는 무시하고 콜백을 부르지 않는다', () => {
+  let called = 0, prevented = false;
+  sandbox.rowKeydown({ key: 'Tab', preventDefault: () => { prevented = true; } }, () => { called++; });
+  assert.strictEqual(called, 0);
+  assert.strictEqual(prevented, false);
 });
 /* ---------- 실행 ---------- */
 let pass = 0, fail = 0;
