@@ -1283,7 +1283,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.24.2';
+const APP_VERSION='1.24.3';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1770,25 +1770,29 @@ function recDates(r,from,to){
  const rs=new Date(r.startDate+'T00:00:00');
  const push=ds=>{const d=shiftWeekend(ds,r.weekend);if(d>=from&&d<=to&&d>=r.startDate&&(!r.endDate||d<=r.endDate))out.push(d);};
  if(r.freq==='monthly'){
+   /* endd 이후 한 달을 더 생성한다: weekend 조정이 달을 넘겨 앞당겨지면(예: 매월 1일+earlier가 전달 말일로 이동) 그 달의 후보를 만들어야만 push()가 올바른 달로 걸러낼 수 있다 */
    let cur=new Date(rs.getFullYear(),rs.getMonth(),1);const endd=new Date(end.getFullYear(),end.getMonth(),1);
-   while(cur<=endd){const y=cur.getFullYear(),m=cur.getMonth()+1;
+   while(true){const y=cur.getFullYear(),m=cur.getMonth()+1;
      const day=r.day==='last'?lastDay(y,m):Math.min(r.day,lastDay(y,m));
      const ds=`${y}-${String(m).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
      if(ds>=r.startDate)push(ds);
+     if(cur>endd)break;
      cur.setMonth(cur.getMonth()+1);}
  }else if(r.freq==='yearly'){
    const mo=rs.getMonth()+1,day=rs.getDate(); /* 2/29 시작 등은 윤년 아닌 해에 clamp (setFullYear 롤오버로 3/1로 밀리는 것 방지) */
    for(let y=rs.getFullYear();;y++){
      const d2=Math.min(day,lastDay(y,mo));
-     if(new Date(y,mo-1,d2)>end)break;
+     const raw=new Date(y,mo-1,d2);
      const ds=`${y}-${String(mo).padStart(2,'0')}-${String(d2).padStart(2,'0')}`;
      if(ds>=r.startDate)push(ds);
+     if(raw>end)break; /* end를 넘긴 해도 한 번 더 생성해 weekend 조정으로 앞당겨지는 경우를 놓치지 않는다 */
    }
  }else{
    const step=r.freq==='daily'?1:7;
    let cd=new Date(rs);
-   while(cd<=end){const ds=`${cd.getFullYear()}-${String(cd.getMonth()+1).padStart(2,'0')}-${String(cd.getDate()).padStart(2,'0')}`;
+   while(true){const ds=`${cd.getFullYear()}-${String(cd.getMonth()+1).padStart(2,'0')}-${String(cd.getDate()).padStart(2,'0')}`;
      if(ds>=r.startDate)push(ds);
+     if(cd>end)break; /* 위와 동일한 이유로 end 이후 한 회차를 더 생성 */
      cd.setDate(cd.getDate()+step);}
  }
  return out.sort();

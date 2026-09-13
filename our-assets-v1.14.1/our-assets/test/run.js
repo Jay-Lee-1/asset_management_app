@@ -232,6 +232,25 @@ test('recNthDate/recCountUntil: 주말 조정이 없는 경우는 영향받지 �
   assert.strictEqual(sandbox.recCountUntil(base, sixth), 6);
 });
 
+/* ---------- recDates: weekend 조정이 달/연도 경계를 넘어 앞당겨지는 회차 누락 버그 ---------- */
+test('recDates: 매월 1일+earlier 반복에서 다음달 1일이 일요일이면 이번달 말일로 당겨진 회차가 이번달 조회에 나온다', () => {
+  // 2026-02-01은 일요일이라 2026-01-30(금)으로 당겨짐 — 이 회차는 1월 조회에서 나와야 함
+  const r = { freq: 'monthly', day: 1, startDate: '2025-01-01', endDate: null, weekend: 'earlier' };
+  const jan = Array.from(sandbox.recDates(r, '2026-01-01', '2026-01-31'));
+  assert.deepStrictEqual(jan, ['2026-01-01', '2026-01-30'], '1월 자체 회차와 2월분이 당겨진 회차가 모두 나와야 함');
+  const feb = Array.from(sandbox.recDates(r, '2026-02-01', '2026-02-28'));
+  assert.ok(!feb.includes('2026-01-30'), '당겨진 회차가 2월 조회에 중복으로 나오면 안 됨');
+});
+test('recDates: 매년 1/1+earlier 반복에서 1/1이 일요일이면 전년도 말일로 당겨진 회차가 전년도 조회에 나온다', () => {
+  // 2027-01-01은 금요일이라 shift 없음 예시 대신, 실제로 일요일인 해를 찾아 검증
+  // 2023-01-01은 일요일 -> 2022-12-30(금)으로 당겨짐
+  const r = { freq: 'yearly', startDate: '2020-01-01', endDate: null, weekend: 'earlier' };
+  const y2022 = Array.from(sandbox.recDates(r, '2022-01-01', '2022-12-31'));
+  assert.ok(y2022.includes('2022-12-30'), '다음 해 1/1이 당겨진 회차가 전년도 조회에 나와야 함');
+  const y2023 = Array.from(sandbox.recDates(r, '2023-01-01', '2023-12-31'));
+  assert.ok(!y2023.includes('2022-12-30'), '당겨진 회차가 원래 해 조회에 중복으로 나오면 안 됨');
+});
+
 /* ---------- num(): 음수 입력 처리 ---------- */
 test('num(): 숫자가 아닌 문자(부호 포함)를 제거하고 파싱한다', () => {
   assert.strictEqual(sandbox.num({ value: '-100' }), 100);

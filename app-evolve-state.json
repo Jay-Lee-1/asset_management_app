@@ -1,8 +1,15 @@
 {
   "cycle": 25,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 25,
+      "phase": "develop",
+      "timestamp": "2026-09-13T14:18:47.742Z",
+      "summary": "recDates()(index.html:1768, 반복거래 발생일 계산의 핵심 순수함수)가 weekend 조정(earlier/later)으로 회차 날짜가 달/연도 경계를 넘어가는 경우를 놓치는 실제 데이터 유실 버그를 발견해 고쳤다. 예: 매월 1일+earlier(주말이면 금요일로 당김) 반복에서 2026-02-01(일요일)은 2026-01-30(금)으로 당겨져야 하는데, 기존 monthly 루프는 조회 종료월(endd)까지만 후보를 생성해 그 다음달(2월) 1일 후보 자체를 만들지 않았다 — 그 결과 1월 조회에도(당겨진 날짜를 만들 후보가 없어서), 2월 조회에도(당겨진 결과가 1월로 넘어가버려서) 어느 달에도 나타나지 않고 완전히 사라졌다. 매년 여러 번 발생하는 실사용 시나리오(2026년만 해도 2/3/8/11월이 매월1일 기준 이 케이스에 해당)이고, expandRec을 거쳐 가계부/캘린더/월별 합계/예산 등 사실상 모든 화면이 recDates를 단일 소스로 쓰므로 사라진 거래는 어디에도 보이지 않는다. 같은 구조적 결함이 yearly(연도 경계)와 daily/weekly(주기 경계) 분기에도 있어 세 분기 모두 고쳤다: monthly는 endd 이후 한 달, yearly는 raw>end 이후 한 해, daily/weekly는 end 이후 한 회차를 추가로 생성하도록 각 루프를 while(cur<=endd)/break-before-push 구조에서 처리 후 경계 판정(if(cur>endd)break 등, 위 push()가 최종 from/to/r.endDate 필터를 그대로 담당)으로 바꿨다 — 새로 생성되는 후보가 out 배열에 늘어나긴 하지만 push()의 기존 필터(d>=from&&d<=to&&...)가 그대로 최종 범위를 강제하므로 다른 동작 변화는 없다. recNthDate/recCountUntil은 내부적으로 recDates를 그대로 재사용해 자동으로 함께 고쳐진다. test/run.js에 monthly/yearly 각각 1개씩 회귀 테스트 추가(다음 달/해의 1일이 일요일이라 이번 달/해 말일로 당겨지는 경우가 정확히 그 달/해에만 나오고 중복되지 않음을 검증) — 144/144 통과(기존 142+신규 2). 두 인라인 <script> 블록 모두 vm.Script로 파싱 확인. APP_VERSION 1.24.2->1.24.3, sw.js CACHE v80->v81 (patch bump, bug fix).",
+      "commit": null
+    },
     {
       "cycle": 24,
       "phase": "advance",
@@ -134,13 +141,6 @@
       "phase": "review",
       "timestamp": "2026-09-13T00:00:00.000Z",
       "summary": "cycle23 develop 커밋(5c2af39, addDays/wname/fmtDate/shortDate/fmtDateFull의 'new Date(s+T00:00:00)' 앵커링 수정)을 검토. 다섯 함수 모두 로컬 getter(getFullYear/getMonth/getDate/getDay)를 쓰므로 앵커링이 정확한 수정이며, recDates/addMonthsStr이 이미 쓰던 패턴과 일관됨을 확인. 파일 전체를 grep해 남은 'new Date(' 호출을 모두 점검 — dday()의 'new Date(TODAY)'/'new Date(dateStr)'은 로컬 getter를 쓰지 않고 두 UTC-자정 타임스탬프의 차만 구하므로(날짜 전용 문자열은 스펙상 항상 UTC로 파싱) 시간대와 무관하게 정확 — 버그 아님. 나머지 new Date(y,m,...) 형태는 의도된 로컬 캘린더 생성자 사용. 새로 추가된 TZ=America/New_York 테스트 3개 포함 전체 회귀 스위트 135/135 통과, 두 inline <script> 블록 모두 node --check 통과. 코드 변경 없음 — 이상 없음.",
-      "commit": null
-    },
-    {
-      "cycle": 23,
-      "phase": "critique",
-      "timestamp": "2026-09-13T08:08:00.000Z",
-      "summary": "전체 앱을 한 걸음 물러나 봤다(백그라운드 조사 에이전트 활용). 이 세션 시작 시 로컬 저장소가 detached HEAD 상태였고(cycle23 develop이 남긴 메모 참고) 로컬에 캐시된 main 브랜치 포인터도 오래된 별도 히스토리(eb04c24, cycle23 develop이 발견한 그 unrelated history)를 가리키고 있었다 — git fetch로 origin/main이 이미 detached HEAD와 정확히 같은 커밋(dc6047a)으로 복구돼 있음을 재확인하고 로컬 main을 origin/main 기준으로 재설정해 정상 브랜치 상태로 되돌렸다(파괴적 동작 없음). 이번 기회에 eb04c24 계열(12커밋, v1.17.1까지)이 남긴 5개 수정 각각이 현재 main(dc6047a, 50커밋, v1.23.1)에 이미 존재/대체됐는지 직접 확인했다: stock.js 실행시간 상한(HANDLER_BUDGET_MS=8000 레이스로 이미 있음), FX/금/주식 수량 음수 클램프(Math.max(0,...) 이미 있음), 카테고리 이름변경 시 '변동' 플래그 보존(doRenameCat의 wasVar/DB.catVar 이관 이미 있음), 반복거래 카운트/종료일 변환의 주말조정 반영(recCountUntil이 base.weekend를 그대로 전달 이미 있음), 자산삭제 시 연결 반복거래 비활성화(activeRecsForAssets 패턴 이미 있음) — 다섯 모두 확인됨, 유실된 작업 없음. origin의 recovered-app-evolve-eb04c24/app-evolve-orphaned-work 브랜치는 그대로 보존해뒀다(정리는 범위 밖). 배경 조사 에이전트가 제안한 후보 중 검토했지만 이번엔 기각한 것: (1) 앱 전역에 uncaught exception을 잡는 에러 바운더리(window.onerror 등)가 전혀 없어 렌더러 하나가 죽으면 화면이 그대로 멈추는 문제 — 실재하고 advance 규모로 적당하지만, 이번 사이클엔 아래 항목이 실제 데이터 유실이라는 더 심각한 결과를 낳는 버그라 우선순위가 밀림, 다음 critique 후보로 남겨둠; (2) 원장/자산/카테고리/반복거래 행(.swipe-content/.asset-item/.manage-row)이 전부 클릭만 되고 키보드 조작이 안 되는 문제 — cycle9·12·13·16에서 반복돼 온 '접근성 전면 점검 범위 과다'와 결이 겹치지만 이번 후보는 공유 헬퍼 하나+적용 지점 4곳으로 비교적 좁게 낼 수 있어 보여 완전히 기각하진 않음, 다음 critique 후보로 남겨둠; (3) renderLedger()의 죽은 cells 루프(cycle16 review/critique가 이미 지적) — 여전히 develop 사이즈 항목이라 critique의 선택지에서 제외, 다음 develop이 참고할 것. 최종 선택(최우선): afterCloudAuth()(1579)의 원격 데이터 존재 분기(1582, DB=remote)가 로그인 시점뿐 아니라 boot()(5302)를 통해 클라우드 연결 계정이면 로그인 화면도 없이 앱을 켤 때마다 자동 실행되는데, 확인/경고/되돌리기 없이 로컬 DB를 통째로 덮어쓴다 — 오프라인 편집 후 scheduleCloudPush가 조용히 실패한 상태로 앱을 재시작하면 그 편집분이 영구히 사라지는, 지금까지 발견된 것 중 가장 심각한(실사용자 데이터의 조용한 영구 손실) 버그. CLOUD_LAST_SYNCED_AT이 메모리 변수라 재부팅 시 리셋되므로 지금은 로컬이 마지막 동기화 이후 바뀌었는지 판단할 방법이 없다는 점도 확인. cycle22 advance가 이미 구축해 둔 cloudConflict 홈 알림 카드+resolveCloudPullRemote/resolveCloudForcePush 흐름을 재사용해, 부팅 시 무조건 덮어쓰던 걸 '로컬에 미동기화 흔적이 있으면 그 확인 흐름으로 유도'하는 좁은 범위로 pending_advance_plan에 저장(레코드 단위 병합 엔진이나 계정 공유 재설계는 과거 cycle15/20 critique와 같은 이유로 범위 밖에 남김).",
       "commit": null
     }
   ]
