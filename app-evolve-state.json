@@ -1,15 +1,12 @@
 {
   "cycle": 23,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "클라우드 로그인/부팅 시 로컬 미동기화 변경사항이 경고 없이 통째로 덮어써지는 데이터 유실 버그 수정",
+    "why": "afterCloudAuth()(index.html:1579)의 원격 데이터 존재 분기(1582줄, if(remote){DB=remote;migrate();...;return})는 원격에 데이터가 있으면 확인/경고/되돌리기 없이 로컬 DB 전체를 덮어쓴다. 이 함수는 로그인 시점뿐 아니라 boot()(5302, doSignIn 이전에 실행)가 클라우드 연결 계정이면 로그인 화면조차 거치지 않고 앱을 켤 때마다 자동으로 호출한다 — 즉 사용자가 명시적으로 뭔가를 누른 적이 없어도 매 실행마다 이 덮어쓰기 분기를 통과한다. 오프라인 상태에서 거래를 입력하면 save()(1713)가 부르는 scheduleCloudPush()가 네트워크 실패로 조용히 cloudSyncFailed()에 빠지는데, 그 상태로 앱을 재시작하면 다음 부팅에서 미동기화 편집분이 그대로 영구 소실된다. CLOUD_LAST_SYNCED_AT(1537)은 메모리 변수라 재부팅 시 null로 리셋되므로, 지금은 '로컬이 마지막 확인된 동기화 이후 바뀌었는지'를 판단할 방법 자체가 없다. 기존에 이미 구현된 충돌 감지(isCloudConflict/cloudConflict 홈 알림 카드/resolveCloudPullRemote/resolveCloudForcePush, cycle22 advance)는 로그인된 세션에서 push할 때만 동작하고, 이 로그인·부팅 시 pull 경로는 전혀 보호되지 않는 사각지대로 남아 있다. 이 앱이 실사용자의 실제 자산·거래 데이터를 다루는 개인 가계부라는 점에서, 지금까지 발견된 것 중 가장 심각한(조용하고 되돌릴 수 없는 실데이터 손실) 부류의 버그다.",
+    "approach": "1) save()와 CLOUD_LAST_SYNCED_AT이 세팅되는 두 지점(pullCloud 성공 시 1555, pushCloud 성공 시 1576)에서 같은 기기의 Date.now() 기준 타임스탬프를 계정별로 localStorage에 영속화한다 — 로컬 저장 시각(예: dataKey()+'__savedAt')과 마지막으로 확인된 클라우드 동기화 시각(예: dataKey()+'__syncedAt'). 둘 다 로컬 클럭 기준이라 서버-클라이언트 시계 오차 비교 문제가 없다. 2) afterCloudAuth()의 무조건 DB=remote 분기(1582)를 수정: pullCloud로 remote를 받아오기 전에 저장해둔 savedAt/syncedAt을 비교하는 순수 함수(예: localHasUnsyncedChanges(savedAt,syncedAt) — savedAt이 있고 (!syncedAt||savedAt>syncedAt)이면 true)로 판단해, true면 DB를 조용히 덮어쓰지 않고 로컬 DB를 그대로 유지한 채 CLOUD_SYNC_STATE='conflict'로 세팅한다 — 이미 구현되어 있는 cloudConflict 홈 알림 카드와 계정 시트의 resolveCloudPullRemote(원격 채택)/resolveCloudForcePush(내 데이터로 덮어쓰기) 흐름을 그대로 재사용해 사용자가 명시적으로 선택하게 한다. false면(정상적인 다른 기기 간 동기화 등 로컬에 미동기화 흔적이 없는 일반적인 경우) 기존처럼 조용히 remote를 적용해 마찰을 늘리지 않는다. 3) localHasUnsyncedChanges 등 새 순수 로직은 test/run.js에 회귀 테스트를 추가한다(미동기화 있음/없음/동일 시각/최초 부팅이라 두 값 다 없음 등). 4) 레코드 단위 timestamp 기반 필드별 병합 엔진이나 계정 공유(household) 재설계는 이번에도 범위 밖으로 남긴다 — 과거 cycle15/20 critique가 전면 재설계를 반복적으로 기각한 것과 같은 이유로, '조용한 자동 덮어쓰기'를 '이미 구축된 명시적 확인 흐름'으로 연결하는 것에만 집중해 한 사이클 규모를 지킨다."
+  },
   "history": [
-    {
-      "cycle": 17,
-      "phase": "advance",
-      "timestamp": "2026-09-12T10:15:00.000Z",
-      "summary": "cycle17 critique 계획대로 SW 업데이트 감지+알림을 구현했다. index.html 끝부분 SW 등록 스크립트에서 navigator.serviceWorker.controller의 존재 여부를 등록 전에 hadController로 캡처해 둔 뒤 controllerchange 리스너를 달았다 — 계획에는 없던 부분이지만, 브라우저에서 실제로 테스트해보니 완전히 새로 방문한 사용자도 sw.js의 clients.claim()이 '무제어→제어됨'으로 바뀌는 것만으로 controllerchange가 한 번 뜬다는 걸 발견했다(Playwright로 직접 확인: 최초 방문 시 raw controllerchange 카운트=1). 이걸 그대로 '업데이트 있음'으로 취급하면 모든 신규 사용자가 첫 로드부터 거짓 '새 버전이 있어요' 배너를 보게 되는 새 버그를 만들 뻔했다 — hadController가 false였던 최초 1회는 무시하고, 이미 어떤 SW가 페이지를 제어하고 있던 상태에서 넘어온 controllerchange만 SW_UPDATE_AVAILABLE=true로 처리하도록 가드를 추가했다. 지속형 배너(#swUpdateBar, 하단 고정, 탭하면 location.reload())를 새로 추가하고 CSS(.sw-update-bar)도 함께 넣었다. '버전 정보' 메뉴 항목과 메뉴 하단 버전 표시 둘 다 SW_UPDATE_AVAILABLE을 확인해 참이면 '새 버전 있음'/새로고침 링크로, 거짓이면 기존처럼 'v'+APP_VERSION/최신 버전이에요로 분기하도록 고쳤다. test/run.js는 순수 로직만 다루므로 이 UI 변경은 회귀 테스트 대상에 포함하지 않았고(계획대로), 대신 Playwright(사전 설치 Chromium)로 3가지 시나리오를 직접 검증했다: (1) 완전히 새 방문자는 배너가 안 뜨고 메뉴도 'v1.21.5'/정상 최신 버전 문구를 그대로 보여줌(hadController 가드가 실제로 작동함), (2) 이미 SW가 페이지를 제어 중인 상태에서 sw.js 내용이 실제로 바뀌지 않으면 reg.update()를 불러도 배너가 안 뜸(스푸리어스 아님), (3) sw.js 내용을 실제로 바꾼 뒤(CACHE 문자열 변경) reg.update()로 새 SW가 install/activate/claim되면 배너와 메뉴 문구가 정확히 전환됨. 두 인라인 <script> 블록 모두 node --check 통과, 기존 회귀 테스트 104/104 통과(변경 없음). APP_VERSION 1.21.4->1.21.5, sw.js CACHE v64->v65 (minor bump, PWA 업데이트 알림 추가). pending_advance_plan 비움.",
-      "commit": null
-    },
     {
       "cycle": 17,
       "phase": "critique",
@@ -42,7 +39,7 @@
       "cycle": 16,
       "phase": "critique",
       "timestamp": "2026-09-12T04:30:00.000Z",
-      "summary": "전체 앱을 한 걸음 물러나 봤다(백그라운드 조사 에이전트 활용). 후보로 검토했지만 기각한 것들: (1) renderLedger()의 죽은 코드(~2657-2670, cycle16 review가 이미 발견해둔 cells 루프)는 실재하지만 삭제 몇 줄이면 끝나는 규모라 advance 사이클 단위로는 너무 작음; (2) 앱 전체가 상태 변경마다 render*()로 페이지를 통째로 다시 그리는 innerHTML 풀 리렌더 패턴은 구조적 특징이지만 개인 가계부 수준의 데이터량에선 체감 성능 문제가 없고 아키텍처 전체를 흔드는 규모라 범위 초과; (3) '잔액 조정' 카테고리가 지출 쪽 기본 목록엔 없는 단순 비대칭 자체는 addBalanceAdjust가 카테고리명을 하드코딩해 기능상 깨지지 않아 부수적 관찰 수준. 대신 선정한 건 income 쪽 '잔액 조정' 카테고리가 migrate()(1679)에 의해 매 실행마다 자동으로 다시 채워지는 사실상 시스템 전용 카테고리인데도, openCatManage(3693)가 이를 일반 카테고리와 구분 없이 렌더링해 연필/휴지통 버튼이 그대로 붙고 doRenameCat(3728)/doDeleteCat(3715)에 아무 보호 장치가 없는 문제. 재현 가능한 실제 데이터 정합성 버그로, 이름을 바꾸면 과거 조정 내역은 새 이름으로 바뀌지만 addBalanceAdjust/updateBalanceAdjust(2341/2351)는 여전히 하드코딩된 '잔액 조정'으로 새 내역을 만들어 같은 기능이 두 이름으로 영구히 갈라지고, 삭제해도 다음 실행 때 migrate가 다시 채워 넣어 사용자를 혼란스럽게 한다. 코드 변경 없음 — pending_advance_plan에 ADJUST_CAT 상수화 + openCatManage 시스템 카테고리 UI 숨김 + doRenameCat/doDeleteCat 가드 + 회귀 테스트 계획을 적어둠.",
+      "summary": "전체 앱을 한 걸음 물러나 봤다(백그라운드 조사 에이전트 활용). 후보로 검토했지만 기각한 것들: (1) renderLedger()의 죽은 코드(~2657-2670, cycle16 review가 이미 발견해둔 cells 루프)는 실재하지만 삭제 몇 줄이면 끝나는 규모라 advance 사이클 단위로는 너무 작음(develop 사이클 후보로 남겨둠 — cycle23 critique 시점까지도 아직 처리 안 된 것으로 보임, 다음 develop이 참고할 것); (2) 앱 전체가 상태 변경마다 render*()로 페이지를 통째로 다시 그리는 innerHTML 풀 리렌더 패턴은 구조적 특징이지만 개인 가계부 수준의 데이터량에선 체감 성능 문제가 없고 아키텍처 전체를 흔드는 규모라 범위 초과; (3) '잔액 조정' 카테고리가 지출 쪽 기본 목록엔 없는 단순 비대칭 자체는 addBalanceAdjust가 카테고리명을 하드코딩해 기능상 깨지지 않아 부수적 관찰 수준. 대신 선정한 건 income 쪽 '잔액 조정' 카테고리가 migrate()(1679)에 의해 매 실행마다 자동으로 다시 채워지는 사실상 시스템 전용 카테고리인데도, openCatManage(3693)가 이를 일반 카테고리와 구분 없이 렌더링해 연필/휴지통 버튼이 그대로 붙고 doRenameCat(3728)/doDeleteCat(3715)에 아무 보호 장치가 없는 문제. 재현 가능한 실제 데이터 정합성 버그로, 이름을 바꾸면 과거 조정 내역은 새 이름으로 바뀌지만 addBalanceAdjust/updateBalanceAdjust(2341/2351)는 여전히 하드코딩된 '잔액 조정'으로 새 내역을 만들어 같은 기능이 두 이름으로 영구히 갈라지고, 삭제해도 다음 실행 때 migrate가 다시 채워 넣어 사용자를 혼란스럽게 한다. 코드 변경 없음 — pending_advance_plan에 ADJUST_CAT 상수화 + openCatManage 시스템 카테고리 UI 숨김 + doRenameCat/doDeleteCat 가드 + 회귀 테스트 계획을 적어둠.",
       "commit": null
     },
     {
@@ -64,13 +61,6 @@
       "phase": "advance",
       "timestamp": "2026-09-12T01:15:02.987Z",
       "summary": "pending_advance_plan(모달 시트 다이얼로그 시맨틱스+포커스 트랩+키보드 지원)을 구현했다. #sheet에 role=dialog/aria-modal=true/tabindex=-1을 정적으로 부여하고, openSheet()가 최초 오픈 시점(!wasOpen)에 document.activeElement를 _sheetReturnFocus로 캡처한 뒤 #app과 #fab에 inert(+aria-hidden 폴백)를 건다(스크림이 시각적으로 가려도 키보드 포커스는 Tab으로 배경까지 넘어가던 문제). 렌더 후 350ms 뒤에도 포커스가 시트 밖이면(개별 render*Sheet의 기존 setTimeout 포커스가 없는 화면 대비 폴백) 시트 내 첫 포커스 가능 요소나 시트 자체로 포커스를 옮긴다 -- 계획은 기존 ~10곳의 개별 setTimeout 포커스 호출을 전부 이 헬퍼로 치환하는 것까지 제안했지만, 각 폼이 의도적으로 특정 입력칸(금액 등)에 포커스를 주는 것은 그대로 두는 게 더 안전하다고 판단해 유지하고 폴백만 추가하는 좁은 방식으로 조정했다. 전역 keydown 핸들러(모듈 최초 1회만 바인딩)를 추가해 Escape는 closeSheet()를 부르고, Tab/Shift+Tab은 매 키 입력마다 시트 내 포커스 가능 요소를 다시 계산해 처음/끝에서 순환시키는 포커스 트랩을 구현했다(콘텐츠가 자주 재렌더되므로 매번 재계산 필요). closeSheet()에서는 inert를 먼저 해제한 뒤 _sheetReturnFocus로 포커스를 복원한다. 엣지 스와이프 뒤로가기 제스처가 시트를 openSheet를 거치지 않고 직접 승격시키는 지점(~4278)에도 동일한 포커스 폴백을 추가했다. DOM 바인딩 로직이라 test/run.js에 새 테스트는 추가하지 않았고(계획대로), 대신 Playwright(사전 설치된 Chromium)로 3개 대표 시트(거래 추가, 자산 상세/삭제 확인, 환율 설정)에서 role/aria-modal, Tab 20회 순환 시 트랩 유지, Escape로 닫힘, 닫은 후 포커스가 트리거 버튼으로 복원됨, #app의 inert가 열림/닫힘에 맞춰 토글됨을 수동 검증했다(첫 시도에서 guest 최초 실행 시 800ms 뒤 자동 시작되는 튜토리얼이 openTutorial() 내부에서 closeSheet()를 호출해 테스트 타이밍과 겹치는 걸 발견-- 실제 버그 아니고 신규 게스트 온보딩 타이밍과 테스트 스크립트의 우연한 경합이라 튜토리얼을 비활성화하고 재검증). 87/87 기존 회귀 테스트 통과, 두 인라인 <script> 블록 모두 new Function()으로 파싱 확인. APP_VERSION 1.20.2->1.21.0, sw.js CACHE v59->v60 (minor bump, 접근성 하드닝).",
-      "commit": null
-    },
-    {
-      "cycle": 15,
-      "phase": "critique",
-      "timestamp": "2026-09-12T00:11:16.517Z",
-      "summary": "전체 앱을 한 걸음 물러나 봤다(백그라운드 조사 에이전트 활용). 후보로 검토했지만 기각한 것들: (1) 외부 환율/시세 fetch가 Netlify Functions 엔드포인트에 결합되어 실패 시 stale 플래그만 조용히 세우는 문제 -- openRateSheet(3761)에 이미 수동 오버라이드 UI가 있어 실제 제품 갭이 작음; (2) 자산 탭에 History처럼 검색/필터가 없는 문제 -- 자산 개수가 보통 수십 개 수준이라 체감 임팩트가 낮음. 대신 openSheet()/closeSheet()(약 4186, 4277줄)가 거래/자산/반복/카테고리/설정/확인창/날짜선택 등 앱 전체 60여 곳에서 쓰이는 유일한 공유 모달 프리미티브인데도 role=dialog/aria-modal이 전혀 없고, 포커스 트랩이 없어 시트가 떠 있어도 Tab으로 배경 콘텐츠까지 그대로 이동 가능하며, Escape로 닫는 기능도 없고, 닫을 때 포커스 복원도 하지 않음을 발견했다. 이전 사이클들(6,8,9)에서 반복적으로 러너업 처리된 넓은 aria-label 전수 조사와는 다른 각도로, 산발적인 라벨링이 아니라 앱 전체가 공유하는 단일 컴포넌트 하나를 강화하는 것이라 한 사이클에 담기 적합한 범위로 판단해 채택. 코드 변경 없음 -- pending_advance_plan에 모달 시트 다이얼로그 시맨틱스+포커스 트랩+키보드 지원 계획을 적어둠.",
       "commit": null
     },
     {
@@ -141,6 +131,13 @@
       "phase": "review",
       "timestamp": "2026-09-13T00:00:00.000Z",
       "summary": "cycle23 develop 커밋(5c2af39, addDays/wname/fmtDate/shortDate/fmtDateFull의 'new Date(s+T00:00:00)' 앵커링 수정)을 검토. 다섯 함수 모두 로컬 getter(getFullYear/getMonth/getDate/getDay)를 쓰므로 앵커링이 정확한 수정이며, recDates/addMonthsStr이 이미 쓰던 패턴과 일관됨을 확인. 파일 전체를 grep해 남은 'new Date(' 호출을 모두 점검 — dday()의 'new Date(TODAY)'/'new Date(dateStr)'은 로컬 getter를 쓰지 않고 두 UTC-자정 타임스탬프의 차만 구하므로(날짜 전용 문자열은 스펙상 항상 UTC로 파싱) 시간대와 무관하게 정확 — 버그 아님. 나머지 new Date(y,m,...) 형태는 의도된 로컬 캘린더 생성자 사용. 새로 추가된 TZ=America/New_York 테스트 3개 포함 전체 회귀 스위트 135/135 통과, 두 inline <script> 블록 모두 node --check 통과. 코드 변경 없음 — 이상 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 23,
+      "phase": "critique",
+      "timestamp": "2026-09-13T08:08:00.000Z",
+      "summary": "전체 앱을 한 걸음 물러나 봤다(백그라운드 조사 에이전트 활용). 이 세션 시작 시 로컬 저장소가 detached HEAD 상태였고(cycle23 develop이 남긴 메모 참고) 로컬에 캐시된 main 브랜치 포인터도 오래된 별도 히스토리(eb04c24, cycle23 develop이 발견한 그 unrelated history)를 가리키고 있었다 — git fetch로 origin/main이 이미 detached HEAD와 정확히 같은 커밋(dc6047a)으로 복구돼 있음을 재확인하고 로컬 main을 origin/main 기준으로 재설정해 정상 브랜치 상태로 되돌렸다(파괴적 동작 없음). 이번 기회에 eb04c24 계열(12커밋, v1.17.1까지)이 남긴 5개 수정 각각이 현재 main(dc6047a, 50커밋, v1.23.1)에 이미 존재/대체됐는지 직접 확인했다: stock.js 실행시간 상한(HANDLER_BUDGET_MS=8000 레이스로 이미 있음), FX/금/주식 수량 음수 클램프(Math.max(0,...) 이미 있음), 카테고리 이름변경 시 '변동' 플래그 보존(doRenameCat의 wasVar/DB.catVar 이관 이미 있음), 반복거래 카운트/종료일 변환의 주말조정 반영(recCountUntil이 base.weekend를 그대로 전달 이미 있음), 자산삭제 시 연결 반복거래 비활성화(activeRecsForAssets 패턴 이미 있음) — 다섯 모두 확인됨, 유실된 작업 없음. origin의 recovered-app-evolve-eb04c24/app-evolve-orphaned-work 브랜치는 그대로 보존해뒀다(정리는 범위 밖). 배경 조사 에이전트가 제안한 후보 중 검토했지만 이번엔 기각한 것: (1) 앱 전역에 uncaught exception을 잡는 에러 바운더리(window.onerror 등)가 전혀 없어 렌더러 하나가 죽으면 화면이 그대로 멈추는 문제 — 실재하고 advance 규모로 적당하지만, 이번 사이클엔 아래 항목이 실제 데이터 유실이라는 더 심각한 결과를 낳는 버그라 우선순위가 밀림, 다음 critique 후보로 남겨둠; (2) 원장/자산/카테고리/반복거래 행(.swipe-content/.asset-item/.manage-row)이 전부 클릭만 되고 키보드 조작이 안 되는 문제 — cycle9·12·13·16에서 반복돼 온 '접근성 전면 점검 범위 과다'와 결이 겹치지만 이번 후보는 공유 헬퍼 하나+적용 지점 4곳으로 비교적 좁게 낼 수 있어 보여 완전히 기각하진 않음, 다음 critique 후보로 남겨둠; (3) renderLedger()의 죽은 cells 루프(cycle16 review/critique가 이미 지적) — 여전히 develop 사이즈 항목이라 critique의 선택지에서 제외, 다음 develop이 참고할 것. 최종 선택(최우선): afterCloudAuth()(1579)의 원격 데이터 존재 분기(1582, DB=remote)가 로그인 시점뿐 아니라 boot()(5302)를 통해 클라우드 연결 계정이면 로그인 화면도 없이 앱을 켤 때마다 자동 실행되는데, 확인/경고/되돌리기 없이 로컬 DB를 통째로 덮어쓴다 — 오프라인 편집 후 scheduleCloudPush가 조용히 실패한 상태로 앱을 재시작하면 그 편집분이 영구히 사라지는, 지금까지 발견된 것 중 가장 심각한(실사용자 데이터의 조용한 영구 손실) 버그. CLOUD_LAST_SYNCED_AT이 메모리 변수라 재부팅 시 리셋되므로 지금은 로컬이 마지막 동기화 이후 바뀌었는지 판단할 방법이 없다는 점도 확인. cycle22 advance가 이미 구축해 둔 cloudConflict 홈 알림 카드+resolveCloudPullRemote/resolveCloudForcePush 흐름을 재사용해, 부팅 시 무조건 덮어쓰던 걸 '로컬에 미동기화 흔적이 있으면 그 확인 흐름으로 유도'하는 좁은 범위로 pending_advance_plan에 저장(레코드 단위 병합 엔진이나 계정 공유 재설계는 과거 cycle15/20 critique와 같은 이유로 범위 밖에 남김).",
       "commit": null
     }
   ]
