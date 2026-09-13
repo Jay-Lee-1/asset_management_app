@@ -1,8 +1,19 @@
 {
   "cycle": 21,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "첫 부팅(마이그레이션 미실행) 시 카테고리 관리 함수들이 DB.catIcon/catVar/budgets undefined로 즉시 크래시하는 버그 수정",
+    "why": "load()(index.html ~1655-1672)의 두 분기 — 정상 데이터가 없는 최초 부팅(SESSION?emptyDB():seed())과 저장된 데이터가 손상되어 JSON.parse/migrate가 실패하는 복구 분기 — 모두 DB를 새로 만든 뒤 save()만 부르고 migrate()를 거치지 않는다. seed()/emptyDB()는 DB.catIcon/DB.catVar/DB.budgets을 전혀 채우지 않으며 이 필드들은 오직 migrate()(1673-1703)에서만 초기화되므로, 새로고침을 한 번도 하지 않은 세션에서는 이 세 필드가 undefined로 남는다. addCat(3728)/doDeleteCat(3744,3748-3750)/doRenameCat(3772-3780)/setCatVar(3680, '변동/고정' 토글 핸들러)는 이 필드들이 항상 존재한다고 가정하고 방어 없이 읽고 쓰므로, 신규 게스트가 새로고침 전에 카테고리 이름변경/삭제/변동토글/아이콘지정 중 아무거나 하나만 눌러도 TypeError가 던져지며 시트가 멈춘다. 배경 조사 에이전트가 localStorage.clear()->reload->chooseGuest() 흐름을 Playwright로 그대로 재현해 4개 경로 모두에서 실제 예외를 확인했다(특히 addCat은 예외 전에 DB.categories[k].push(v)가 이미 실행되어 메모리 상 카테고리 배열이 절반만 갱신된 채로 멈추는 부수 손상까지 있음). 신규 사용자의 첫 온보딩 경로에서 발생하는, 지난 advance 사이클(카테고리 삭제 undo 작업 중)이 이미 발견해 '다음 사이클이 참고할 것'으로 미뤄둔 결함이라 이번 advance에서 마무리한다.",
+    "approach": "1) load()의 두 분기(첫 부팅 'DB=(SESSION?emptyDB():seed());save();' 및 손상복구 'DB=(SESSION?emptyDB():seed());save();' catch 블록) 모두 save() 전에 migrate()를 호출하도록 고쳐 정상 새로고침 경로와 동일하게 만든다. 2) 방어책으로 addCat/doDeleteCat/doRenameCat/setCatVar 네 곳에 기존 코드베이스 관례인 DB.budgets||{} 패턴과 동일하게 DB.catIcon=DB.catIcon||{}, DB.catVar=DB.catVar||{}, DB.budgets=DB.budgets||{} 가드를 각 접근 직전에 추가해 이중 방어한다. 3) test/run.js에 seed()/emptyDB()가 실제로 만드는 형태(catIcon/catVar/budgets 필드를 아예 안 넣은 sandbox.DB)로 addCat/doDeleteCat/doRenameCat/setCatVar를 호출해 예외 없이 통과하는 회귀 테스트를 추가하고(수정 전엔 실패, 수정 후 통과), migrate()를 순수 seed() 형태 객체에 돌려 catIcon/catVar/budgets이 객체로 채워지는지 확인하는 테스트도 추가한다. 4) Playwright로 localStorage.clear()->reload->게스트 진입 직후(새로고침 전) addCat/doDeleteCat/doRenameCat/변동토글을 실제로 눌러 더 이상 예외가 없고 상태가 올바르게 저장되는지 수동 검증한다(SESSION 경로도 흉내내어 함께 확인). 5) APP_VERSION과 sw.js CACHE를 patch bump하고 회귀 테스트 전체 통과 확인 후 커밋한다."
+  },
   "history": [
+    {
+      "cycle": 21,
+      "phase": "critique",
+      "timestamp": "2026-09-13T00:00:00.000Z",
+      "summary": "전체 앱을 한 걸음 물러나 봤다(백그라운드 조사 에이전트 활용). 검토했지만 기각한 후보: (1) 지출 전용 예산 기능에 월별 이력/이월이 없는 문제 — 실재하는 제품 갭이지만 UX 형태(이월 규칙, 수입 예산 여부 등)가 불명확한 신규 기능 성격이라 범위가 발산적임; (2) sw.js 캐시 버전을 수동으로 올려야 하는 것 — 이미 업데이트 감지 배너(cycle17)가 있어 기능상 문제 없는 사소한 기술부채; (3) netlify/functions의 stock.js/rates.js가 재시도/백오프 로직과 파싱 코드를 중복 보유 — 이미 기각된 'FX/시세 fetch 신뢰성' 범주에 속하고 중복 자체는 review 단위 정리감; (4) 카테고리 관리에 자산 그룹처럼 드래그 재정렬이 없는 것 — 카테고리 개수가 적어 체감 임팩트 낮은 비대칭. 최종 선택: 직전 advance 사이클(cycle20)이 이미 발견해 '다음 사이클이 참고할 것'으로 남겨둔 결함 — load()(index.html ~1655-1672)의 첫 부팅/손상데이터 복구 두 분기 모두 DB를 새로 만든 뒤 migrate()를 거치지 않고 곧장 save()하므로, DB.catIcon/DB.catVar/DB.budgets이 undefined인 채로 남는다. 배경 조사 에이전트가 Playwright로 localStorage.clear()->reload->게스트 진입 직후(새로고침 전) addCat/doDeleteCat/doRenameCat을 실제로 호출해 세 곳 모두 실제 TypeError로 크래시함을 재현 확인(특히 addCat은 예외 전에 DB.categories[k].push(v)가 이미 실행돼 배열이 절반만 갱신된 채 멈추는 부수 손상도 있음), setCatVar('변동/고정' 토글, 가장 흔히 눌릴 만한 버튼)도 코드 검토로 동일 결함을 확인했다. 신규 사용자의 최초 온보딩 경로에서 발생하는 재현 가능한 실제 크래시라 채택. load()의 두 분기에 migrate() 호출 추가 + addCat/doDeleteCat/doRenameCat/setCatVar 네 곳에 기존 DB.budgets||{} 관례와 동일한 방어적 가드 추가 + seed()/emptyDB() 형태(필드 누락) sandbox.DB로 회귀 테스트 추가하는 계획을 pending_advance_plan에 저장.",
+      "commit": null
+    },
     {
       "cycle": 21,
       "phase": "review",
