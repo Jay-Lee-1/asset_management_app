@@ -1,15 +1,8 @@
 {
   "cycle": 22,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 21,
-      "phase": "critique",
-      "timestamp": "2026-09-13T00:00:00.000Z",
-      "summary": "전체 앱을 한 걸음 물러나 봤다(백그라운드 조사 에이전트 활용). 검토했지만 기각한 후보: (1) 지출 전용 예산 기능에 월별 이력/이월이 없는 문제 — 실재하는 제품 갭이지만 UX 형태(이월 규칙, 수입 예산 여부 등)가 불명확한 신규 기능 성격이라 범위가 발산적임; (2) sw.js 캐시 버전을 수동으로 올려야 하는 것 — 이미 업데이트 감지 배너(cycle17)가 있어 기능상 문제 없는 사소한 기술부채; (3) netlify/functions의 stock.js/rates.js가 재시도/백오프 로직과 파싱 코드를 중복 보유 — 이미 기각된 'FX/시세 fetch 신뢰성' 범주에 속하고 중복 자체는 review 단위 정리감; (4) 카테고리 관리에 자산 그룹처럼 드래그 재정렬이 없는 것 — 카테고리 개수가 적어 체감 임팩트 낮은 비대칭. 최종 선택: 직전 advance 사이클(cycle20)이 이미 발견해 '다음 사이클이 참고할 것'으로 남겨둔 결함 — load()(index.html ~1655-1672)의 첫 부팅/손상데이터 복구 두 분기 모두 DB를 새로 만든 뒤 migrate()를 거치지 않고 곧장 save()하므로, DB.catIcon/DB.catVar/DB.budgets이 undefined인 채로 남는다. 배경 조사 에이전트가 Playwright로 localStorage.clear()->reload->게스트 진입 직후(새로고침 전) addCat/doDeleteCat/doRenameCat을 실제로 호출해 세 곳 모두 실제 TypeError로 크래시함을 재현 확인(특히 addCat은 예외 전에 DB.categories[k].push(v)가 이미 실행돼 배열이 절반만 갱신된 채 멈추는 부수 손상도 있음), setCatVar('변동/고정' 토글, 가장 흔히 눌릴 만한 버튼)도 코드 검토로 동일 결함을 확인했다. 신규 사용자의 최초 온보딩 경로에서 발생하는 재현 가능한 실제 크래시라 채택. load()의 두 분기에 migrate() 호출 추가 + addCat/doDeleteCat/doRenameCat/setCatVar 네 곳에 기존 DB.budgets||{} 관례와 동일한 방어적 가드 추가 + seed()/emptyDB() 형태(필드 누락) sandbox.DB로 회귀 테스트 추가하는 계획을 pending_advance_plan에 저장.",
-      "commit": null
-    },
     {
       "cycle": 21,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-13T02:00:00.000Z",
       "summary": "배경 조사 에이전트가 앱 전체를 탐색해 제안한 후보 중, saveAsset()(index.html)의 실제 버그를 채택했다. 자산 신규 등록 시에는 동명·동종(같은 이름+같은 종류) 자산 중복을 막는 dup 체크가 있었는데, if(editing){...}else{...} 분기에서 이 체크가 else(신규 등록) 분기 안에만 있어 기존 자산을 수정할 때는 전혀 실행되지 않았다 — 자산 A를 수정해 이름·종류를 이미 존재하는 자산 B와 똑같이 바꿔도 경고 없이 저장돼, 이체/반복거래 자산 선택기·CSV 내보내기·검색에서 두 자산이 구분 불가능해지는 문제가 있었다. dup 체크(기존 a.id!==d.id 자기 자신 제외 로직 그대로)를 if(editing) 분기 이전으로 끌어올려 신규/수정 두 경로 모두에 적용되게 하고, else 분기에 남아 있던 중복 코드를 제거했다(동작 변화 없이 위치만 통합). test/run.js FUNCTIONS 목록에 syncAssetInputs/saveAsset을 추가하고 sandbox에 asDraft를 등록해, (1) 기존 자산을 다른 자산과 같은 이름·종류로 수정하면 차단되고 원본이 덮어써지지 않는지, (2) 신규 등록 시 기존과 같은 이름·종류면 여전히 차단되는지(리팩터링 후 회귀 확인) 두 케이스를 추가 — 두 테스트 모두 dup 체크가 조기 return하는 경로만 타므로 balanceAt 등 무거운 잔액 계산 체인은 스텁 없이도 안전. 127/127 통과(기존 125+신규 2). 두 인라인 <script> 블록 모두 node --check 통과. APP_VERSION 1.22.6->1.22.7, sw.js CACHE v74->v75 (patch bump, 버그 수정).",
+      "commit": null
+    },
+    {
+      "cycle": 22,
+      "phase": "review",
+      "timestamp": "2026-09-13T03:00:00.000Z",
+      "summary": "Reviewed commit e2c427b (saveAsset's name+type dup check hoisted above the if(editing) branch so it now also guards asset edits, not just new-asset creation). Confirmed d.id is already the existing asset's own id when editing (asDraft is cloned from DB.assets.find(a=>a.id===id) in the sheet-open handler), so a.id!==d.id correctly excludes the asset being edited from matching itself — no false-positive self-collision. Confirmed DB.assets only ever holds live assets (delAsset/bulk-delete both DB.assets.filter(...) the array outright; there is no soft-delete/tombstone flag), so the dup scan can't false-positive against a deleted namesake — deletedAssetHistoryExists() is a separate txn-history check unaffected by this move. Verified the reordering is behavior-preserving for the else(new-asset) branch: hasDeleted is still computed after the dup check as before, just with the duplicate dup-check block removed rather than restructured. Ran the full regression suite (127/127 pass, including the 2 new saveAsset tests) and re-verified both inline <script> blocks parse via node --check (new Function()). No bugs found — no code changes this phase.",
       "commit": null
     }
   ]
