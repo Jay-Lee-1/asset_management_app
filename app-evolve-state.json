@@ -1,15 +1,8 @@
 {
   "cycle": 22,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 21,
-      "phase": "advance",
-      "timestamp": "2026-09-13T01:00:00.000Z",
-      "summary": "critique 계획대로 load()의 첫 부팅/손상데이터 복구 두 분기(및 조사 중 발견한 localStorage.getItem 자체가 throw하는 세 번째 분기까지 포함해 총 세 곳)가 DB=(SESSION?emptyDB():seed()) 직후 migrate() 없이 곧장 save()/return하던 근본 원인을 고쳤다 — 이제 정상 새로고침 경로(JSON.parse 성공 시)와 동일하게 세 분기 모두 migrate()를 거친 뒤 저장/반환한다. 이중 방어로 addCat/doDeleteCat/doRenameCat/setCatVar 네 곳에 기존 DB.budgets||{} 관례와 동일한 DB.catIcon=DB.catIcon||{}/DB.catVar=DB.catVar||{}/DB.budgets=DB.budgets||{} 가드를 실제 배열/객체 변경 이전 시점에 추가해, 설령 migrate() 호출이 다시 누락되는 회귀가 생기더라도 이 네 함수 자체는 크래시하지 않도록 했다. test/run.js에 회귀 테스트 5개 추가 — seed()/emptyDB() 형태(catIcon/catVar/budgets 필드 자체가 없음)의 sandbox.DB로 addCat/doDeleteCat/doRenameCat/setCatVar 네 함수를 호출해도 예외 없이 정상 동작함을 확인하는 4개, migrate()를 순수 seed() 형태 객체에 돌려 세 필드가 빈 객체로 채워지는지 확인하는 1개(단, vm 컨텍스트 간 realm이 달라 assert.deepStrictEqual(obj,{})이 '구조는 같지만 참조가 다름' 오류를 내는 기존 테스트 파일의 실제 함정에 걸려, 파일에 이미 있던 Object.keys(...).length===0 패턴으로 고쳐서 통과시켰다) — 125/125 통과(기존 120+신규 5). Playwright(사전 설치 Chromium)로 실제 브라우저에서 localStorage.clear()->reload->게스트 진입 직후(수동 새로고침 전) addCat/doRenameCat/toggleCatVarUI(setCatVar)/doDeleteCat 네 경로를 순서대로 실제 호출해 DB.catIcon/catVar/budgets이 이미 객체로 채워져 있고 예외가 전혀 발생하지 않음을 end-to-end로 확인했다(page.on('pageerror')로도 무오류 확인). 두 인라인 <script> 블록 모두 node --check 통과. APP_VERSION 1.22.5->1.22.6, sw.js CACHE v73->v74 (patch bump, 버그 수정). pending_advance_plan 비움.",
-      "commit": null
-    },
     {
       "cycle": 21,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-12T21:20:00.000Z",
       "summary": "critique 계획대로 카테고리 삭제 시 연결된 활성 반복거래를 방치하는 유령 레코드 버그를 고쳤다. activeRecsForAssets(2334)와 동일한 패턴으로 activeRecsForCat(type,name)을 추가했고, delCat()의 확인 문구가 delAsset과 동일하게 '연결된 반복거래 N개도 함께 비활성화돼요'를 덧붙이도록 확장했다. doDeleteCat()을 deleteAssetsUndo(5011) 패턴을 본떠 재작성해, 연결된 활성 반복거래를 r.active=false로 비활성화하면서 카테고리를 제거하고, 6초 undoToast로 카테고리 배열 위치·아이콘·변동 플래그·예산 한도·반복거래 active 상태를 전부 복원 가능하게 했다(부수적으로 카테고리 삭제가 유일하게 undo 없는 파괴적 동작이었던 비대칭도 해소). test/run.js에 activeRecsForCat 회귀 테스트 4개(타입+이름 일치 매칭/비활성 제외/타입 불일치 제외/무관 카테고리 빈 배열)와 doDeleteCat의 undo 왕복 테스트 2개(연결된 반복거래 비활성화+undo로 카테고리·아이콘·변동·예산·반복거래 active 모두 복원, 연결된 반복거래가 없을 때도 안전) 추가 — 117/117 통과(기존 111+신규 6). Playwright(사전 설치 Chromium, 게스트 모드)로 실제 브라우저에서 카테고리 생성→활성 월간 반복거래 연결→카테고리 삭제→확인창에 '반복거래 1개' 경고 노출 확인→삭제 후 해당 반복거래 active:false 전환+undo 토스트 노출 확인→되돌리기 클릭 시 카테고리와 반복거래 active 상태 모두 원래대로 복원되는 것까지 end-to-end로 확인했다. 이 과정에서 이번 계획 범위 밖의 별개 잠재 버그를 하나 발견해 기록해둔다: 브라우저의 첫 게스트 부팅은 load()가 seed()(또는 emptyDB())로 DB를 채우고 migrate()를 거치지 않은 채 곧장 save()하므로, 그 세션에서 한 번도 새로고침하지 않은 상태로는 DB.catIcon/catVar/budgets이 undefined로 남는다 — doDeleteCat/doRenameCat/addCat의 쓰기 경로(delete DB.catIcon[...] 등)는 이 객체들이 항상 존재한다고 가정하고 무방비로 접근하므로, '설치 후 첫 실행에서 새로고침 없이 곧바로 카테고리를 삭제/이름변경'하면 예외가 던져질 수 있다(이번 advance가 만든 버그 아님 — doRenameCat/원래 doDeleteCat에도 동일하게 있던 기존 결함, afterCloudAuth의 emptyDB() 분기에도 같은 패턴 존재). 범위를 좁게 유지하려 이번 사이클에서는 고치지 않았으니 다음 develop/critique가 참고할 것. 두 인라인 <script> 블록 모두 new Function()으로 파싱 확인. APP_VERSION 1.22.3->1.22.4, sw.js CACHE v71->v72 (patch bump, 버그 수정+undo UX 추가). pending_advance_plan 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 22,
+      "phase": "develop",
+      "timestamp": "2026-09-13T02:00:00.000Z",
+      "summary": "배경 조사 에이전트가 앱 전체를 탐색해 제안한 후보 중, saveAsset()(index.html)의 실제 버그를 채택했다. 자산 신규 등록 시에는 동명·동종(같은 이름+같은 종류) 자산 중복을 막는 dup 체크가 있었는데, if(editing){...}else{...} 분기에서 이 체크가 else(신규 등록) 분기 안에만 있어 기존 자산을 수정할 때는 전혀 실행되지 않았다 — 자산 A를 수정해 이름·종류를 이미 존재하는 자산 B와 똑같이 바꿔도 경고 없이 저장돼, 이체/반복거래 자산 선택기·CSV 내보내기·검색에서 두 자산이 구분 불가능해지는 문제가 있었다. dup 체크(기존 a.id!==d.id 자기 자신 제외 로직 그대로)를 if(editing) 분기 이전으로 끌어올려 신규/수정 두 경로 모두에 적용되게 하고, else 분기에 남아 있던 중복 코드를 제거했다(동작 변화 없이 위치만 통합). test/run.js FUNCTIONS 목록에 syncAssetInputs/saveAsset을 추가하고 sandbox에 asDraft를 등록해, (1) 기존 자산을 다른 자산과 같은 이름·종류로 수정하면 차단되고 원본이 덮어써지지 않는지, (2) 신규 등록 시 기존과 같은 이름·종류면 여전히 차단되는지(리팩터링 후 회귀 확인) 두 케이스를 추가 — 두 테스트 모두 dup 체크가 조기 return하는 경로만 타므로 balanceAt 등 무거운 잔액 계산 체인은 스텁 없이도 안전. 127/127 통과(기존 125+신규 2). 두 인라인 <script> 블록 모두 node --check 통과. APP_VERSION 1.22.6->1.22.7, sw.js CACHE v74->v75 (patch bump, 버그 수정).",
       "commit": null
     }
   ]

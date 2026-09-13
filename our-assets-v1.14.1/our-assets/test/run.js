@@ -54,7 +54,7 @@ const FUNCTIONS = [
   'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'restoreBackup', 'storageOutcomeMsg',
   'monthStartStr', 'monthEndStr', 'expandRec', 'allTxns', 'spendByCategory', 'histSumTotals',
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'expenseBreakdownCard',
-  'bigMin', 'upcomingOutflows', 'monthOutflows',
+  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'saveAsset',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -73,6 +73,7 @@ const sandbox = {
   TODAY: null,
   catRenameDraft: null,
   catAddDraft: null,
+  asDraft: null,
   lastToast: null,
   lastUndo: null,
   snapshotCalls: null,
@@ -1214,6 +1215,23 @@ test('pendingTransferCount: 일반 미확인 이체(DB.txns)와 반복 미확인
   assert.strictEqual(sandbox.pendingTransferCount(), 2);
 });
 
+/* ---------- saveAsset: 동명·동종 자산 중복 차단이 수정(edit)에도 적용되는지 (자산 등록 때만 막고 수정 때는 안 막던 버그) ---------- */
+test('saveAsset: 다른 자산을 이미 있는 자산과 같은 이름·종류로 수정하면 차단된다', () => {
+  sandbox.DB = { assets: [{ id: 'a1', name: '비상금', type: 'cash', baseAmount: 1000 }, { id: 'a2', name: '여행자금', type: 'cash', baseAmount: 500 }], rates: { stocks: {} } };
+  sandbox.asDraft = { id: 'a2', name: '비상금', type: 'cash', includeInTotal: true };
+  sandbox.lastToast = null;
+  sandbox.saveAsset(true);
+  assert.ok(sandbox.lastToast, '중복 경고 토스트가 떴어야 함');
+  assert.strictEqual(sandbox.DB.assets[1].name, '여행자금', '중복이면 원래 자산이 덮어써지면 안 됨');
+});
+test('saveAsset: 새로 등록할 자산이 기존 자산과 이름·종류가 같으면 여전히 차단된다', () => {
+  sandbox.DB = { assets: [{ id: 'a1', name: '비상금', type: 'cash', baseAmount: 1000 }], rates: { stocks: {} } };
+  sandbox.asDraft = { name: '비상금', type: 'cash', includeInTotal: true };
+  sandbox.lastToast = null;
+  sandbox.saveAsset(false);
+  assert.ok(sandbox.lastToast, '중복 경고 토스트가 떴어야 함');
+  assert.strictEqual(sandbox.DB.assets.length, 1, '중복이면 새 자산이 추가되면 안 됨');
+});
 /* ---------- 실행 ---------- */
 let pass = 0, fail = 0;
 for (const { name, fn } of tests) {

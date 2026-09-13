@@ -1277,7 +1277,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.22.6';
+const APP_VERSION='1.22.7';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2516,6 +2516,8 @@ function saveAsset(editing){
  const balKey=(d.type==='cash'||d.type==='savings')?'baseAmount':'amountKRW';
  const entered=balType?(d._dispAmt!=null?d._dispAmt:(d[balKey]||0)):0; /* 사용자가 입력한 '현재 금액' */
  delete d._dispAmt;
+ const dup=DB.assets.find(a=>a.id!==d.id&&a.name===d.name&&a.type===d.type); /* 살아있는 동명·동종 (신규/수정 공통) */
+ if(dup){toast('같은 이름·종류의 자산이 이미 있어요');return;} /* 중복 차단 */
  /* 표시 잔액이 입력값과 같도록 기준값 역산 (오늘까지의 순입출금 기여분 제외) */
  const setBase=(origBase)=>{if(!balType)return;invalidateBalances();
    const contrib=balanceAt(d.id,TODAY)-origBase; /* 오늘까지 순입출금(기준값 제외) */
@@ -2536,8 +2538,6 @@ function saveAsset(editing){
      setBase(origBase); /* 원래 기준으로 역산 → 표시 잔액=입력값 */
    }
  }else{
-   const dup=DB.assets.find(a=>a.id!==d.id&&a.name===d.name&&a.type===d.type); /* 살아있는 동명·동종 */
-   if(dup){toast('같은 이름·종류의 자산이 이미 있어요');return;} /* 중복 차단 */
    const hasDeleted=deletedAssetHistoryExists(d.name); /* 삭제된 동명 자산의 내역이 남아있나 */
    d.id=uid();d.order=DB.assets.length;
    if(balType){d[balKey]=entered;if(balKey==='baseAmount')delete d.amountKRW;else delete d.baseAmount;}
