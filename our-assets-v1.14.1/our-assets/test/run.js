@@ -56,6 +56,7 @@ const FUNCTIONS = [
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'expenseBreakdownCard',
   'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'saveAsset', 'isCloudConflict',
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges',
+  'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -82,9 +83,34 @@ const sandbox = {
   window: {},
   txAmtValue: '',
   qAmtValue: '',
+  // renderCurrent()의 에러 바운더리 테스트용 상태 — 실제 index.html의 ST/renderers를
+  // 그대로 끌어오지 않고(그 둘은 화면 상태/렌더 함수 묶음이라 순수 로직이 아님) 이 테스트가
+  // 필요로 하는 최소한의 모양만 흉내낸다(renderers[ST.tab]() 호출 하나만 있으면 됨).
+  ST: { tab: 'home' },
+  renderers: { home: () => {} },
+  updateAlerts: () => {},
+  requestAnimationFrame: () => {},
+  fitAll: () => {},
+  svg: () => '',
+  console: { error: () => {} },
+  lastError: null,
+  // errBanner의 최소 DOM 흉내 — classList.add/remove/contains와, "이미 내용을 채웠는지"를
+  // 판단하는 showErrBanner()의 el.childElementCount 체크만 흉내내면 된다.
+  errBannerEl: {
+    _html: '',
+    classList: {
+      list: [],
+      add(c) { if (!this.list.includes(c)) this.list.push(c); },
+      remove(c) { this.list = this.list.filter((x) => x !== c); },
+      contains(c) { return this.list.includes(c); },
+    },
+    get childElementCount() { return this._html ? 1 : 0; },
+    set innerHTML(v) { this._html = v; },
+    get innerHTML() { return this._html; },
+  },
   // recSave()/saveQuickAmount()는 각각 $('txAmt')/$('qAmt').value를 읽어 금액을 얻으므로,
-  // 그 두 id만 값을 갖는 입력칸처럼 동작시킨다.
-  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : null,
+  // 그 두 id만 값을 갖는 입력칸처럼 동작시킨다. errBanner는 renderCurrent 에러 바운더리 테스트용.
+  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'errBanner' ? sandbox.errBannerEl : null,
   toast: (msg) => { sandbox.lastToast = msg; },
   save: () => {},
   invalidateBalances: () => {},
@@ -1297,6 +1323,44 @@ test('localHasUnsyncedChanges: 동기화 기록 자체가 없으면(이 기기�
 test('localHasUnsyncedChanges: 로컬 저장 기록 자체가 없으면(최초 부팅 등) 미동기화 변경이 없다', () => {
   assert.strictEqual(sandbox.localHasUnsyncedChanges(null, null), false);
   assert.strictEqual(sandbox.localHasUnsyncedChanges(null, 1000), false);
+});
+
+/* ---------- renderCurrent: 전역 에러 바운더리 ---------- */
+function resetErrBanner() {
+  sandbox.errBannerEl._html = '';
+  sandbox.errBannerEl.classList.list = [];
+  sandbox.lastError = null;
+}
+test('renderCurrent: 정상 렌더러는 그대로 실행되고 에러 배너는 뜨지 않는다', () => {
+  resetErrBanner();
+  let rendered = false;
+  sandbox.ST = { tab: 'home' };
+  sandbox.renderers = { home: () => { rendered = true; } };
+  sandbox.renderCurrent();
+  assert.strictEqual(rendered, true, '정상 렌더러가 호출되지 않음');
+  assert.strictEqual(sandbox.errBannerEl.classList.contains('show'), false);
+  assert.strictEqual(sandbox.lastError, null);
+});
+test('renderCurrent: 렌더러가 예외를 던지면 화면이 멈추지 않고(예외가 밖으로 새지 않고) 에러 배너가 뜬다', () => {
+  resetErrBanner();
+  sandbox.ST = { tab: 'home' };
+  sandbox.renderers = { home: () => { throw new Error('강제 렌더 실패'); } };
+  assert.doesNotThrow(() => sandbox.renderCurrent());
+  assert.strictEqual(sandbox.errBannerEl.classList.contains('show'), true, '에러 배너의 show 클래스가 붙지 않음');
+  assert.ok(sandbox.errBannerEl.innerHTML.length > 0, '에러 배너 내용이 채워지지 않음');
+  assert.ok(sandbox.lastError, 'lastError가 기록되지 않음');
+  assert.strictEqual(sandbox.lastError.message, '강제 렌더 실패');
+  assert.strictEqual(sandbox.lastError.kind, 'renderCurrent');
+});
+test('renderCurrent: 예외 이후 재렌더가 성공하면 에러 배너가 다시 사라진다', () => {
+  resetErrBanner();
+  sandbox.ST = { tab: 'home' };
+  sandbox.renderers = { home: () => { throw new Error('일시적 실패'); } };
+  sandbox.renderCurrent();
+  assert.strictEqual(sandbox.errBannerEl.classList.contains('show'), true);
+  sandbox.renderers = { home: () => {} };
+  sandbox.renderCurrent();
+  assert.strictEqual(sandbox.errBannerEl.classList.contains('show'), false, '재렌더 성공 후에도 에러 배너가 남아있음');
 });
 /* ---------- 실행 ---------- */
 let pass = 0, fail = 0;

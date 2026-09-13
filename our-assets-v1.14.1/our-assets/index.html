@@ -923,6 +923,11 @@ html[data-theme="dark"] .toast.undo .toast-undo{color:var(--brand-ink)}
 .sw-update-bar{display:none;position:fixed;left:12px;right:12px;bottom:calc(var(--nav-h) + var(--ad-h) + env(safe-area-inset-bottom) + 12px);z-index:199;align-items:center;gap:10px;padding:13px 16px;border-radius:var(--r-md);background:var(--brand);color:var(--on-brand);font-size:13.5px;font-weight:700;box-shadow:var(--sh-lg);cursor:pointer}
 .sw-update-bar.show{display:flex}
 .sw-update-bar svg{width:18px;height:18px;flex-shrink:0}
+.err-banner{display:none;position:fixed;left:0;right:0;top:0;z-index:400;align-items:center;gap:10px;padding:calc(env(safe-area-inset-top) + 10px) 16px 10px;background:var(--expense);color:#fff;font-size:13.5px;font-weight:700;box-shadow:var(--sh-lg)}
+.err-banner.show{display:flex}
+.err-banner svg{width:18px;height:18px;flex-shrink:0}
+.err-banner span{flex:1}
+.err-banner button{flex-shrink:0;background:rgba(255,255,255,.22);color:#fff;border-radius:var(--r-pill);padding:7px 14px;font-size:13px;font-weight:700}
 .empty{text-align:center;padding:40px 20px;color:var(--text-3)}
 .empty .ei{width:56px;height:56px;border-radius:20px;background:var(--sunken);display:grid;place-items:center;margin:0 auto 14px;color:var(--text-3)}
 .empty .ei svg{width:28px;height:28px}
@@ -1248,6 +1253,7 @@ body.selmode .fab{display:none}
 </style>
 </head>
 <body>
+<div class="err-banner" id="errBanner" role="alert"></div>
 <div id="authView" class="auth-view" style="display:none"></div>
 <div id="app">
   <div class="viewport">
@@ -1277,7 +1283,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.24.1';
+const APP_VERSION='1.24.2';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1288,6 +1294,27 @@ function showSwUpdateBar(){
  el.innerHTML=svg('refresh',18)+'<span>새 버전이 있어요 · 탭하여 새로고침</span>';
  el.classList.add('show');
  if(document.getElementById('page-menu').classList.contains('active'))renderMenu();
+}
+
+/* ================= 전역 에러 바운더리 =================
+ * renderCurrent()가 모든 상태 변화 후 호출되는 유일한 재렌더 디스패처인데, 이를 감싸는
+ * try/catch가 없으면 렌더러 하나가 던진 예외로 화면이 에러 표시 없이 그 자리에서 멈춘다.
+ * window.onerror/unhandledrejection은 진단용 로깅만 담당하고, 실제 화면 보호(배너 노출,
+ * 기존 DOM 유지)는 renderCurrent() 내부 try/catch가 담당한다. */
+let lastError=null;
+function recordError(err,kind){
+ lastError={kind,message:(err&&err.message)||String(err),stack:(err&&err.stack)||'',time:Date.now()};
+ console.error('[app-error]',kind,err);
+}
+window.onerror=(msg,src,line,col,err)=>{recordError(err||msg,'onerror')};
+window.addEventListener('unhandledrejection',e=>{recordError(e&&e.reason,'unhandledrejection')});
+function showErrBanner(){
+ const el=$('errBanner');if(!el)return;
+ if(!el.childElementCount)el.innerHTML=svg('alert',20)+'<span>문제가 발생했어요. 새로고침해 주세요.</span><button onclick="location.reload()">새로고침</button>';
+ el.classList.add('show');
+}
+function hideErrBanner(){
+ const el=$('errBanner');if(el)el.classList.remove('show');
 }
 
 /* ================= ICONS ================= */
@@ -5133,7 +5160,17 @@ function pkPickCat(c){
 
 /* ================= ROUTER ================= */
 const renderers={home:renderHome,assets:renderAssets,ledger:renderLedger,history:renderHistory,plan:renderPlan,menu:renderMenu};
-function renderCurrent(){renderers[ST.tab]();updateAlerts();requestAnimationFrame(fitAll)}
+function renderCurrent(){
+ try{
+  renderers[ST.tab]();
+  updateAlerts();
+  requestAnimationFrame(fitAll);
+  hideErrBanner();
+ }catch(err){
+  recordError(err,'renderCurrent');
+  showErrBanner();
+ }
+}
 function activeSel(){
  if(ST.aSel.mode)return{all:'assetSelAll()',del:'assetDelSel()',size:ST.aSel.ids.size,total:DB.assets.length};
  if(ST.lSel.mode)return{all:'ledgerSelAll()',del:'ledgerDelSel()',size:ST.lSel.ids.size,total:dayTxns(ST.ledger.sel).filter(visibleTx).filter(t=>!t.isRec).length};
