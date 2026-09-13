@@ -1277,7 +1277,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.23.1';
+const APP_VERSION='1.24.0';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1552,7 +1552,7 @@ async function pullCloud(){
   const{data,error}=await SB.from('user_data').select('data,updated_at').eq('user_id',CLOUD_UID).maybeSingle();
   if(error){cloudSyncFailed();return null}
   if(!data)return null;
-  CLOUD_LAST_SYNCED_AT=data.updated_at;cloudSyncOk();
+  CLOUD_LAST_SYNCED_AT=data.updated_at;cloudSyncOk();markCloudSynced();
   return data.data||null;
  }catch(e){cloudSyncFailed();return null}
 }
@@ -1560,6 +1560,11 @@ let SB_PUSH_T=null;
 function scheduleCloudPush(){if(!sbReady()||!CLOUD_UID)return;clearTimeout(SB_PUSH_T);SB_PUSH_T=setTimeout(()=>pushCloud().catch(()=>{}),1200)}
 /* push 직전 순수 충돌 판정 — 원격이 우리가 마지막으로 안전하게 동기화한 시점보다 최신이면 충돌 */
 function isCloudConflict(curUpdatedAt,lastSyncedAt){return !!(curUpdatedAt&&lastSyncedAt&&curUpdatedAt>lastSyncedAt)}
+/* 이 기기 clock 기준으로 로컬 저장 시각(dataKey()+'__savedAt', save()가 갱신)과 마지막으로
+ * 클라우드와 확인된 시각(dataKey()+'__syncedAt', pullCloud/pushCloud 성공 시 갱신)을 비교한다.
+ * 둘 다 서버 시각이 아니라 이 기기의 Date.now()라서 서버-클라이언트 시계 오차 걱정이 없다. */
+function localHasUnsyncedChanges(savedAt,syncedAt){return !!(savedAt&&(!syncedAt||savedAt>syncedAt))}
+function markCloudSynced(){try{localStorage.setItem(dataKey()+'__syncedAt',String(Date.now()))}catch(e){}}
 async function pushCloud(){
  if(!sbReady()||!CLOUD_UID)return;
  CLOUD_SYNC_STATE='syncing';
@@ -1573,13 +1578,22 @@ async function pushCloud(){
   const nowIso=new Date().toISOString();
   const{error}=await SB.from('user_data').upsert({user_id:CLOUD_UID,data:DB,updated_at:nowIso});
   if(error){cloudSyncFailed();return}
-  CLOUD_LAST_SYNCED_AT=nowIso;cloudSyncOk();
+  CLOUD_LAST_SYNCED_AT=nowIso;cloudSyncOk();markCloudSynced();
  }catch(e){cloudSyncFailed()}
 }
 async function afterCloudAuth(uid){
  CLOUD_UID=uid;
+ /* 부팅/로그인마다 자동 실행되는데, 오프라인 편집이 아직 클라우드에 못 올라간 채로
+  * 남아있으면 여기서 곧장 DB=remote로 덮어써 그 편집이 영구히 사라질 수 있다.
+  * 그래서 remote를 적용하기 전에 이 기기에 미동기화 흔적이 있는지부터 확인한다. */
+ const savedAt=+localStorage.getItem(dataKey()+'__savedAt')||null;
+ const syncedAt=+localStorage.getItem(dataKey()+'__syncedAt')||null;
+ const localUnsynced=localHasUnsyncedChanges(savedAt,syncedAt);
  const remote=await pullCloud();
- if(remote){DB=remote;migrate();try{localStorage.setItem(dataKey(),JSON.stringify(DB))}catch(e){}return}
+ if(remote){
+  if(localUnsynced){CLOUD_SYNC_STATE='conflict';return} /* 로컬을 그대로 두고 사용자가 계정 화면에서 명시적으로 선택하게 함 */
+  DB=remote;migrate();try{localStorage.setItem(dataKey(),JSON.stringify(DB))}catch(e){}return;
+ }
  const guestRaw=localStorage.getItem('asset_app_db_v3__guest');let guestDB=null,guestHasData=false;
  try{guestDB=JSON.parse(guestRaw||'{}');guestHasData=(guestDB.assets&&guestDB.assets.length)||(guestDB.txns&&guestDB.txns.length)}catch(e){}
  if(guestHasData){DB=guestDB;migrate()}else if(!DB||!Array.isArray(DB.assets)){DB=emptyDB()}
@@ -1711,6 +1725,7 @@ function storageOutcomeMsg(ok,wasOk){
  return wasOk?{kind:'fail',msg:'저장 실패 · 이 기기에 저장 공간이 부족하거나 저장이 제한돼 있어요. 내보내기로 백업하세요.'}:null;
 }
 function save(opts){invalidateBalances();let ok;try{localStorage.setItem(dataKey(),JSON.stringify(DB));ok=true}catch(e){ok=false}
+ if(ok)try{localStorage.setItem(dataKey()+'__savedAt',String(Date.now()))}catch(e){}
  const notice=storageOutcomeMsg(ok,STORAGE_OK);STORAGE_OK=ok;
  if(notice)notice.kind==='fail'?toastFail(notice.msg):toast(notice.msg);
  if(!(opts&&opts.deferCloudPush))scheduleCloudPush();return ok}

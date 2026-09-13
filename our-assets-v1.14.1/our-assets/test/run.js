@@ -55,7 +55,7 @@ const FUNCTIONS = [
   'monthStartStr', 'monthEndStr', 'expandRec', 'allTxns', 'spendByCategory', 'histSumTotals',
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'expenseBreakdownCard',
   'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'saveAsset', 'isCloudConflict',
-  'wname', 'fmtDate', 'shortDate', 'fmtDateFull',
+  'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -1281,6 +1281,22 @@ test('isCloudConflict: 마지막 동기화 기록이 없으면(첫 push) 충돌�
 });
 test('isCloudConflict: 원격에 데이터가 아직 없으면(updated_at 없음) 충돌이 아니다', () => {
   assert.strictEqual(sandbox.isCloudConflict(null, '2026-06-15T09:00:00.000Z'), false);
+});
+
+/* ---------- localHasUnsyncedChanges: afterCloudAuth()가 부팅 시 로컬을 조용히 덮어쓸지 판단하는 순수 로직 ---------- */
+test('localHasUnsyncedChanges: 마지막 저장이 마지막 동기화보다 나중이면 미동기화 변경이 있다', () => {
+  assert.strictEqual(sandbox.localHasUnsyncedChanges(2000, 1000), true);
+});
+test('localHasUnsyncedChanges: 마지막 저장이 마지막 동기화보다 먼저(또는 같음)면 미동기화 변경이 없다', () => {
+  assert.strictEqual(sandbox.localHasUnsyncedChanges(1000, 2000), false);
+  assert.strictEqual(sandbox.localHasUnsyncedChanges(1000, 1000), false);
+});
+test('localHasUnsyncedChanges: 동기화 기록 자체가 없으면(이 기기에서 한 번도 동기화 못한 채 로컬 저장만 있음) 미동기화로 본다', () => {
+  assert.strictEqual(sandbox.localHasUnsyncedChanges(1000, null), true);
+});
+test('localHasUnsyncedChanges: 로컬 저장 기록 자체가 없으면(최초 부팅 등) 미동기화 변경이 없다', () => {
+  assert.strictEqual(sandbox.localHasUnsyncedChanges(null, null), false);
+  assert.strictEqual(sandbox.localHasUnsyncedChanges(null, 1000), false);
 });
 /* ---------- 실행 ---------- */
 let pass = 0, fail = 0;
