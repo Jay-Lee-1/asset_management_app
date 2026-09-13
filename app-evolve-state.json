@@ -1,8 +1,19 @@
 {
   "cycle": 24,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "renderCurrent()에 전역 에러 바운더리 추가 — uncaught exception 시 화면 완전 정지 방지",
+    "why": "renderCurrent()(index.html:5136, renderers[ST.tab]();updateAlerts();requestAnimationFrame(fitAll))는 탭 전환/저장/시트 열고닫기 등 앱의 거의 모든 상태 변화 후 호출되는 유일한 재렌더 디스패처인데, 이를 감싸는 try/catch가 없고 window.onerror/unhandledrejection 핸들러도 파일 전체에 전무하다(grep 확인, 매치 0건). 기존 38곳의 try/catch는 전부 storage/fetch 등 개별 연산에 국한된 지역 방어일 뿐 렌더 디스패치 자체의 안전망이 아니다. 최근 사이클들이 반복적으로 손보고 있는 마이그레이션/카테고리/반복거래 등 데이터 형태 불변식에 아직 발견 못한 엣지 케이스가 하나라도 렌더 함수 안에서 예외를 던지면, 에러 메시지 없이 화면이 그 자리에서 완전히 멈추거나 절반만 그려진 채 죽은 버튼만 남는다 — 사용자는 데이터가 사라진 건지 그냥 멈춘 건지 알 길이 없고 유일한 복구 수단은 새로고침뿐이다. cycle23 critique가 이미 다음 critique 후보로 남겨뒀던 항목이기도 하다.",
+    "approach": "1) window.onerror와 window.addEventListener('unhandledrejection',...) 전역 핸들러를 추가해 콘솔 로깅 + 가벼운 in-memory lastError 기록(디버그용). 2) renderCurrent() 내부에서 renderers[ST.tab]() 호출을 try/catch로 감싸, 실패 시 (a) 기존 DOM을 그대로 둔 채 화면 상단에 '문제가 발생했어요' + 새로고침 버튼 배너를 띄우고 (b) 이 실패 상태에서는 어떤 파괴적 저장/동기화도 트리거하지 않도록 한다. 3) 렌더 함수들 자체는 건드리지 않고 renderCurrent() 디스패처 한 곳에만 국한해 범위를 좁게 유지한다. 4) 회귀 테스트: 렌더러 중 하나가 강제로 throw하는 스텁을 vm 샌드박스에 심어 renderCurrent가 예외를 삼키고 배너 로직을 타는지, 정상 렌더러는 기존처럼 그대로 동작하는지 확인. 5) index.html APP_VERSION과 sw.js CACHE 버전을 함께 올린다."
+  },
   "history": [
+    {
+      "cycle": 24,
+      "phase": "critique",
+      "timestamp": "2026-09-13T12:20:00.000Z",
+      "summary": "전체 앱을 한 걸음 물러나 봤다(백그라운드 조사 에이전트 활용). cycle23 critique가 다음 후보로 남겨둔 두 항목 중 하나였던 전역 에러 바운더리 부재를 채택했다: window.onerror/unhandledrejection 핸들러가 파일 전체에 전무하고(grep 0건 직접 재확인), renderCurrent()(5136, 모든 상태변화 후 호출되는 유일한 재렌더 디스패처)도 try/catch로 감싸여 있지 않다 — 렌더 함수 안에서 예외가 하나라도 던져지면 에러 표시 없이 화면이 완전히 멈춘다. 같이 검토했지만 기각한 후보: (1) .asset-item/.swipe-content/.manage-row 등 행 요소들의 키보드 접근성 부재(cycle23 critique가 남겨둔 다른 후보이기도 함) — 실재하지만 키보드/스크린리더 사용자로 영향이 국한돼 앱 전체 회복탄력성에 관여하는 에러 바운더리보다 우선순위가 낮다고 판단, 다음 critique 후보로 계속 남겨둠; (2) CSV export에 대응하는 import 경로 부재 — cycle20 critique에서 이미 검토·기각된 사항과 동일(JSON 백업이 undo 보호까지 갖춘 실제 복원 경로). pending_advance_plan에 window.onerror/unhandledrejection 전역 핸들러 + renderCurrent() try/catch + 실패 시 비파괴 배너 UI 계획을 저장했다. 코드 변경 없음.",
+      "commit": null
+    },
     {
       "cycle": 24,
       "phase": "review",
@@ -50,13 +61,6 @@
       "phase": "develop",
       "timestamp": "2026-09-12T02:15:29.617Z",
       "summary": "배경 조사 에이전트가 앱 전체를 탐색해 후보를 제안했다. 최우선으로 고른 건 '잔액 조정(balance-adjustment) 거래가 수지에서 기본 제외되어야 한다'는 규칙이 monthStats()/monthStats2()/expenseByCat()에는 이미 적용돼 있는데, 같은 규칙을 놓친 두 군데를 발견한 것: (1) spendByCategory()(index.html:3556, 지출 분석 화면의 카테고리별 합계)가 t.type==='expense'만 걸러내고 adjust/inSurplus 가드 없이 그대로 합산해, 자산 잔액을 수동 보정하면 '잔액 조정'이 실제 지출 카테고리처럼 지출 분석에 잡히고 총지출/예산 초과 판정까지 왜곡되는 문제. (2) updateHist()(index.html:3163, 전체내역 탭 검색 결과 합계 카드)도 actual.forEach(t=>a[t.type]+=t.amount) 식으로 동일한 가드 없이 집계해, 같은 달인데도 홈/가계부(monthStats2 기반)와 전체내역 탭의 수입/지출 합계가 잔액 조정 건수만큼 서로 달라 보이는 문제. 두 곳 모두 같은 패턴의 같은 버그라 한 사이클에 함께 고쳤다: spendByCategory에는 expenseByCat과 동일한 한 줄 가드(if(t.adjust&&!t.inSurplus)return;)를 추가했고, updateHist는 DOM에 강하게 결합돼 있어 합계 로직만 histSumTotals(actual,sched) 순수 함수로 추출한 뒤 monthStats2와 같은 가드를 적용해 updateHist가 그 함수를 호출하도록 교체했다(동작은 그대로, 테스트 가능하게 분리만). 후보 3번(잔액 조정 카테고리가 수입 쪽에만 등록되고 지출 쪽 카테고리 목록엔 없는 비대칭)은 크리틱/어드밴스가 판단할 더 구조적인 이슈로 보여 이번 develop 사이클 범위에서는 건드리지 않았다. test/run.js FUNCTIONS에 monthStartStr/monthEndStr/expandRec/allTxns/spendByCategory/histSumTotals를 추가하고 회귀 테스트 6개 추가(spendByCategory 3개: 제외/포함/비지출타입 무시, histSumTotals 3개: 제외/포함/가드없을때 정상합산) — 93/93 통과(기존 87개+신규 6개). 두 인라인 <script> 블록 모두 new Function()으로 파싱 확인. APP_VERSION 1.21.0->1.21.1, sw.js CACHE v60->v61 (patch bump, bug fix).",
-      "commit": null
-    },
-    {
-      "cycle": 15,
-      "phase": "advance",
-      "timestamp": "2026-09-12T01:15:02.987Z",
-      "summary": "pending_advance_plan(모달 시트 다이얼로그 시맨틱스+포커스 트랩+키보드 지원)을 구현했다. #sheet에 role=dialog/aria-modal=true/tabindex=-1을 정적으로 부여하고, openSheet()가 최초 오픈 시점(!wasOpen)에 document.activeElement를 _sheetReturnFocus로 캡처한 뒤 #app과 #fab에 inert(+aria-hidden 폴백)를 건다(스크림이 시각적으로 가려도 키보드 포커스는 Tab으로 배경까지 넘어가던 문제). 렌더 후 350ms 뒤에도 포커스가 시트 밖이면(개별 render*Sheet의 기존 setTimeout 포커스가 없는 화면 대비 폴백) 시트 내 첫 포커스 가능 요소나 시트 자체로 포커스를 옮긴다 -- 계획은 기존 ~10곳의 개별 setTimeout 포커스 호출을 전부 이 헬퍼로 치환하는 것까지 제안했지만, 각 폼이 의도적으로 특정 입력칸(금액 등)에 포커스를 주는 것은 그대로 두는 게 더 안전하다고 판단해 유지하고 폴백만 추가하는 좁은 방식으로 조정했다. 전역 keydown 핸들러(모듈 최초 1회만 바인딩)를 추가해 Escape는 closeSheet()를 부르고, Tab/Shift+Tab은 매 키 입력마다 시트 내 포커스 가능 요소를 다시 계산해 처음/끝에서 순환시키는 포커스 트랩을 구현했다(콘텐츠가 자주 재렌더되므로 매번 재계산 필요). closeSheet()에서는 inert를 먼저 해제한 뒤 _sheetReturnFocus로 포커스를 복원한다. 엣지 스와이프 뒤로가기 제스처가 시트를 openSheet를 거치지 않고 직접 승격시키는 지점(~4278)에도 동일한 포커스 폴백을 추가했다. DOM 바인딩 로직이라 test/run.js에 새 테스트는 추가하지 않았고(계획대로), 대신 Playwright(사전 설치된 Chromium)로 3개 대표 시트(거래 추가, 자산 상세/삭제 확인, 환율 설정)에서 role/aria-modal, Tab 20회 순환 시 트랩 유지, Escape로 닫힘, 닫은 후 포커스가 트리거 버튼으로 복원됨, #app의 inert가 열림/닫힘에 맞춰 토글됨을 수동 검증했다(첫 시도에서 guest 최초 실행 시 800ms 뒤 자동 시작되는 튜토리얼이 openTutorial() 내부에서 closeSheet()를 호출해 테스트 타이밍과 겹치는 걸 발견-- 실제 버그 아니고 신규 게스트 온보딩 타이밍과 테스트 스크립트의 우연한 경합이라 튜토리얼을 비활성화하고 재검증). 87/87 기존 회귀 테스트 통과, 두 인라인 <script> 블록 모두 new Function()으로 파싱 확인. APP_VERSION 1.20.2->1.21.0, sw.js CACHE v59->v60 (minor bump, 접근성 하드닝).",
       "commit": null
     },
     {
