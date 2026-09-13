@@ -1,15 +1,8 @@
 {
   "cycle": 23,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 21,
-      "phase": "review",
-      "timestamp": "2026-09-12T23:10:00.000Z",
-      "summary": "Reviewed commit 5416ea0 (CSV injection guard added to txnsToCSV's category/asset-name/memo fields). Confirmed guard()'s regex /^[=+\\-@\\t\\r]/ matches the standard OWASP CSV-injection leading-char set, applied only to the 4 free-text fields (category, from/to asset name via nm(), memo) and correctly excluded from amount/date/type so negative amounts stay numeric. Traced nm()'s snapshot fallback (deleted-asset *AssetName) path — also covered by guard() since it wraps nm()'s return value, not just live asset lookups. Grepped the whole file for other CSV/export surfaces (toCSV/text\\/csv/\\.csv) and confirmed txnsToCSV is the only CSV emitter (doExport's isCsv branch is the sole caller, backup/JSON path is unaffected and correctly not guarded — JSON isn't spreadsheet-interpreted). Manually re-derived the escaping order (guard() then esc()) for the header row (no guard, fixed literals) vs data rows, and verified a value that needs both defenses (e.g. asset name '=HYPERLINK(\"http://evil\")') ends up correctly double-escaped: guard prepends ', then esc wraps the whole field in quotes and doubles the inner \". New regression tests (formula-leading memo/category/asset-name cases, negative-amount non-regression) assert the exact resulting CSV lines and match this by-hand trace. Re-ran the full regression suite (120/120 pass) and re-verified both inline <script> blocks parse via node --check. No bugs found — no code changes this phase.",
-      "commit": null
-    },
     {
       "cycle": 17,
       "phase": "advance",
@@ -142,6 +135,13 @@
       "timestamp": "2026-09-13T06:30:00.000Z",
       "summary": "배경 조사 에이전트가 앱 전체를 탐색해 제안한 후보 중, addDays/wname/fmtDate/shortDate/fmtDateFull 다섯 함수가 시간 없는 날짜 문자열을 new Date(s)로 파싱하는 실제 버그를 채택했다. new Date(\"YYYY-MM-DD\")는 UTC 자정으로 파싱되는데 getFullYear/getMonth/getDate/getDay는 로컬 시간대로 읽으므로, UTC 오프셋이 음수인 시간대(북중남미 등 — 이 앱은 지역 제한 없는 PWA)에서는 이 다섯 함수가 항상 실제보다 하루 이른 날짜/요일을 반환한다(TZ=America/New_York에서 2026-09-13(일요일)이 \"9월 12일 토요일\"로 표시되는 것을 node로 직접 재현해 확인). recDates(1727-1728)/addMonthsStr(1769)/shiftWeekend(1721) 등은 이미 new Date(s+'T00:00:00')로 로컬 자정에 앵커링해 이 문제를 피해가고 있었는데, 이 다섯 함수만 그 컨벤션이 빠져 있었다. 컨테이너 자체가 UTC/KST(오프셋>=0)라 지금까지 22번의 사이클과 브라우저 검증에서 전혀 드러나지 않았던 사각지대. addDays는 반복거래 만기/이체 알림(maturitySoon, postponeTransfer)·잔액 구간 시작일(balanceAt 호출부)·RANGE_TO/DISP_TO 표시 구간의 공유 primitive라 화면 표시만이 아니라 실제 날짜 계산 자체가 하루씩 밀리는 문제였다. 다섯 함수 모두 동일한 T00:00:00 앵커링으로 고쳤고, 모든 호출부(grep으로 전수 확인)가 항상 시간 없는 bare 날짜 문자열만 넘기므로 이중 앵커링 위험은 없었다. test/run.js FUNCTIONS에 wname/fmtDate/shortDate/fmtDateFull을 추가하고, process.env.TZ를 America/New_York으로 임시 전환하는 withTZ() 헬퍼로 회귀 테스트 3개 추가 — 수정 전 코드로 되돌려 재실행하면 정확히 이 3개가 실패하는 것을 확인한 뒤(회귀 방지 효과 검증) 다시 적용, 135/135 통과. 두 인라인 <script> 블록 모두 node --check 통과. 이 사이클 도중 이 세션의 cwd가 detached HEAD(과거 커밋)에 있었고 로컬에 캐시된 origin/main 참조가 더 오래된 별도 히스토리(eb04c24, unrelated history)를 가리키고 있어 일시 정지하고 조사했다 — git fetch로 확인해보니 origin/main이 이미 우리 쪽(detached HEAD와 동일한 ac6f491)으로 복구돼 있었고 이전 상태는 origin의 recovered-app-evolve-eb04c24/app-evolve-orphaned-work 브랜치에 안전하게 보존돼 있었다 — 단순히 로컬 fetch 캐시가 오래된 것이었을 뿐이라 로컬 main을 origin/main 기준으로 재설정한 뒤 정상 진행했다(파괴적 동작 없음, 로컬 changes 보존해 이어감). APP_VERSION 1.23.0->1.23.1, sw.js CACHE v76->v77 (patch bump, 버그 수정).",
       "commit": "5c2af39"
+    },
+    {
+      "cycle": 23,
+      "phase": "review",
+      "timestamp": "2026-09-13T00:00:00.000Z",
+      "summary": "cycle23 develop 커밋(5c2af39, addDays/wname/fmtDate/shortDate/fmtDateFull의 'new Date(s+T00:00:00)' 앵커링 수정)을 검토. 다섯 함수 모두 로컬 getter(getFullYear/getMonth/getDate/getDay)를 쓰므로 앵커링이 정확한 수정이며, recDates/addMonthsStr이 이미 쓰던 패턴과 일관됨을 확인. 파일 전체를 grep해 남은 'new Date(' 호출을 모두 점검 — dday()의 'new Date(TODAY)'/'new Date(dateStr)'은 로컬 getter를 쓰지 않고 두 UTC-자정 타임스탬프의 차만 구하므로(날짜 전용 문자열은 스펙상 항상 UTC로 파싱) 시간대와 무관하게 정확 — 버그 아님. 나머지 new Date(y,m,...) 형태는 의도된 로컬 캘린더 생성자 사용. 새로 추가된 TZ=America/New_York 테스트 3개 포함 전체 회귀 스위트 135/135 통과, 두 inline <script> 블록 모두 node --check 통과. 코드 변경 없음 — 이상 없음.",
+      "commit": null
     }
   ]
 }
