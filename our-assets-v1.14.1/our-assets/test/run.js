@@ -1147,6 +1147,33 @@ test('spendByCategory: 수입/저축 등 지출이 아닌 거래는 집계하지
   };
   assert.deepStrictEqual(Array.from(sandbox.spendByCategory(2026, 6)), []);
 });
+test('spendByCategory: 이번 달에 쓴 게 없어도 예산이 설정된 카테고리는 v:0으로 계속 나타난다 (예산 관리 화면에서 사라지지 않아야 함)', () => {
+  sandbox.DB = {
+    txns: [{ date: '2026-06-05', type: 'expense', category: '식비', amount: 10000 }],
+    recurrences: [],
+    budgets: { 식비: 300000, 여행: 500000 },
+  };
+  const byCat = Object.fromEntries(Array.from(sandbox.spendByCategory(2026, 6)).map(r => [r.c, r.v]));
+  assert.strictEqual(byCat['식비'], 10000, '실제 지출이 있는 예산 카테고리는 기존처럼 실제 합계가 나와야 함');
+  assert.strictEqual(byCat['여행'], 0, '이번 달 지출이 0원이라도 예산이 설정돼 있으면 행이 사라지면 안 됨');
+});
+test('spendByCategory: 예산이 없는 카테고리는 지출이 없으면 여전히 목록에 나타나지 않는다', () => {
+  sandbox.DB = {
+    txns: [],
+    recurrences: [],
+    budgets: { 식비: 300000 },
+  };
+  const rows = Array.from(sandbox.spendByCategory(2026, 6));
+  assert.strictEqual(rows.length, 1);
+  assert.strictEqual(rows[0].c, '식비');
+});
+test('spendByCategory: DB.budgets가 없어도(undefined) 터지지 않는다', () => {
+  sandbox.DB = {
+    txns: [{ date: '2026-06-05', type: 'expense', category: '식비', amount: 10000 }],
+    recurrences: [],
+  };
+  assert.doesNotThrow(() => sandbox.spendByCategory(2026, 6));
+});
 
 /* ---------- histSumTotals: 전체내역 검색 합계 카드도 monthStats2()와 같은 규칙으로 잔액 조정을 뺀다 ---------- */
 test('histSumTotals: 수지에 포함되지 않은 잔액 조정은 실제/예정 합계 어느 쪽에서도 제외된다', () => {
