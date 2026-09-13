@@ -1277,7 +1277,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.22.7';
+const APP_VERSION='1.23.0';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1558,12 +1558,14 @@ async function pullCloud(){
 }
 let SB_PUSH_T=null;
 function scheduleCloudPush(){if(!sbReady()||!CLOUD_UID)return;clearTimeout(SB_PUSH_T);SB_PUSH_T=setTimeout(()=>pushCloud().catch(()=>{}),1200)}
+/* push 직전 순수 충돌 판정 — 원격이 우리가 마지막으로 안전하게 동기화한 시점보다 최신이면 충돌 */
+function isCloudConflict(curUpdatedAt,lastSyncedAt){return !!(curUpdatedAt&&lastSyncedAt&&curUpdatedAt>lastSyncedAt)}
 async function pushCloud(){
  if(!sbReady()||!CLOUD_UID)return;
  CLOUD_SYNC_STATE='syncing';
  try{
   const{data:cur}=await SB.from('user_data').select('updated_at').eq('user_id',CLOUD_UID).maybeSingle();
-  if(cur&&cur.updated_at&&CLOUD_LAST_SYNCED_AT&&cur.updated_at>CLOUD_LAST_SYNCED_AT){
+  if(cur&&isCloudConflict(cur.updated_at,CLOUD_LAST_SYNCED_AT)){
    CLOUD_SYNC_STATE='conflict';
    if(!CLOUD_CONFLICT_TOASTED){CLOUD_CONFLICT_TOASTED=true;toast('다른 기기에 더 최신 데이터가 있어요 · 메뉴 › 계정에서 확인하세요')}
    return;
@@ -4958,6 +4960,7 @@ function openTidyAsset(id){
 }
 function homeAlerts(neg){
  const arr=[];
+ if(CLOUD_UID&&CLOUD_SYNC_STATE==='conflict')arr.push({kind:'cloudConflict'});
  if(backupDue()&&DB.txns.length)arr.push({kind:'backup'});
  allTxns(RANGE_FROM,TODAY).filter(t=>isDuePending(t)).sort((a,b)=>a.date<b.date?-1:1).forEach(t=>arr.push({kind:'confirm',id:t.id,recId:t.recId,isRec:!!t.isRec,from:assetNm(t.fromAssetId,t.fromAssetName),to:assetNm(t.toAssetId,t.toAssetName),amount:t.amount,date:t.date}));
  neg.forEach(n=>arr.push({kind:'neg',assetId:n.assetId,name:n.name,date:n.date,min:n.min}));
@@ -4970,6 +4973,11 @@ function homeAlerts(neg){
  return arr;
 }
 function homeAlertCard(al){
+ if(al.kind==='cloudConflict')return `<button class="home-alert" onclick="openAccountSheet()">
+   <div class="ha-ic">${svg('alert')}</div>
+   <div class="ha-b"><div class="ha-t">클라우드 동기화가 멈췄어요</div>
+     <div class="ha-s">다른 기기에 최신 데이터가 있어요 · 눌러서 확인하세요</div></div>
+   <div class="ha-c">${svg('chev')}</div></button>`;
  if(al.kind==='backup')return `<div class="home-alert mat">
    <div class="ha-ic">${svg('download')}</div>
    <div class="ha-b" onclick="exportData()"><div class="ha-t">백업이 필요해요</div>
@@ -5396,7 +5404,14 @@ function refreshToday(){
  return true;
 }
 function appIsOpen(){const el=$('app');return !!DB&&el&&el.style.display!=='none'}
-function maybeRollDay(){if(!appIsOpen())return;if(refreshToday())renderCurrent();autoSyncRates()}
+function maybeRollDay(){
+ if(!appIsOpen())return;
+ if(refreshToday())renderCurrent();
+ /* 충돌 상태는 push가 다시 시도되지 않는 한 스스로 안 풀리므로(1566 부근 isCloudConflict 참고),
+  * 홈 탭에 있는 동안은 주기적으로 다시 그려서 카드가 계속 보이게 한다 — 로컬 데이터는 건드리지 않음 */
+ if(CLOUD_UID&&CLOUD_SYNC_STATE==='conflict'&&ST.tab==='home')renderCurrent();
+ autoSyncRates()
+}
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)maybeRollDay();else if(CLOUD_UID){clearTimeout(SB_PUSH_T);pushCloud().catch(()=>{})}});
 window.addEventListener('focus',maybeRollDay);
 window.addEventListener('pageshow',maybeRollDay);
