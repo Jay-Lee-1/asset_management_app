@@ -55,6 +55,7 @@ const FUNCTIONS = [
   'monthStartStr', 'monthEndStr', 'expandRec', 'allTxns', 'spendByCategory', 'histSumTotals',
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'expenseBreakdownCard',
   'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'saveAsset', 'isCloudConflict',
+  'wname', 'fmtDate', 'shortDate', 'fmtDateFull',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -116,6 +117,38 @@ test('addMonths: 롤오버가 없는 평범한 날짜는 그대로 이동한다'
 });
 test('addMonths: n이 양수면 앞으로 이동한다', () => {
   assert.strictEqual(sandbox.addMonths('2026-01-15', 2), '2026-03-15');
+});
+
+/* ---------- addDays/wname/fmtDate/shortDate/fmtDateFull: UTC-오프셋 음수 시간대에서 날짜가 하루 밀리던 버그 ----------
+ * `new Date('2026-09-13')`처럼 시간 없는 날짜 문자열은 UTC 자정으로 파싱되는데,
+ * getFullYear/getMonth/getDate/getDay는 로컬 시간대로 읽으므로 UTC-오프셋이 음수인
+ * 시간대(미국 등)에서는 그 값이 하루 전 날짜로 밀린다. recDates/addMonthsStr 등은
+ * 이미 `new Date(s+'T00:00:00')`로 로컬 자정에 앵커링해 이 문제를 피해가지만
+ * addDays/wname/fmtDate/shortDate/fmtDateFull은 그 앵커링이 빠져 있었다.
+ * 컨테이너 자체가 UTC/KST(오프셋>=0)라 문제가 보이지 않으므로, 여기서는 일부러
+ * process.env.TZ를 미국 동부(America/New_York, UTC-4/-5)로 바꿔가며 검증한다. */
+function withTZ(tz, fn) {
+  const prev = process.env.TZ;
+  process.env.TZ = tz;
+  try { return fn(); } finally { process.env.TZ = prev; }
+}
+test('addDays: 음수 UTC 오프셋 시간대에서도 날짜가 하루 밀리지 않는다', () => {
+  withTZ('America/New_York', () => {
+    assert.strictEqual(sandbox.addDays('2026-09-13', 1), '2026-09-14');
+    assert.strictEqual(sandbox.addDays('2026-09-13', 0), '2026-09-13');
+  });
+});
+test('wname: 음수 UTC 오프셋 시간대에서도 요일이 하루 밀리지 않는다(2026-09-13은 일요일)', () => {
+  withTZ('America/New_York', () => {
+    assert.strictEqual(sandbox.wname('2026-09-13'), '일');
+  });
+});
+test('fmtDate/shortDate/fmtDateFull: 음수 UTC 오프셋 시간대에서도 날짜/요일이 하루 밀리지 않는다', () => {
+  withTZ('America/New_York', () => {
+    assert.strictEqual(sandbox.fmtDate('2026-09-13'), '9월 13일 일요일');
+    assert.strictEqual(sandbox.shortDate('2026-09-13'), '09.13 (일)');
+    assert.strictEqual(sandbox.fmtDateFull('2026-09-13'), '2026년 9월 13일 (일)');
+  });
 });
 
 /* ---------- recDates: 월간 day clamp ---------- */

@@ -1277,7 +1277,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.23.0';
+const APP_VERSION='1.23.1';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1377,16 +1377,16 @@ const wonS=n=>(n>0?'+':n<0?'-':'')+comma(Math.abs(n))+'원';
 function esc(s){const m={'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'};return String(s==null?'':s).replace(/[&<>"']/g,c=>m[c])}
 function todayStr(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
 let TODAY=todayStr();
-function addDays(s,n){const d=new Date(s);d.setDate(d.getDate()+n);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
+function addDays(s,n){const d=new Date(s+'T00:00:00');d.setDate(d.getDate()+n);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
 function ym(s){const[Y,M]=s.split('-').map(Number);return{y:Y,m:M}}
 function inMonth(s,y,m){const p=ym(s);return p.y===y&&p.m===m}
 function lastDay(y,m){return new Date(y,m,0).getDate()}
 function monthEndStr(y,m){return `${y}-${String(m).padStart(2,'0')}-${String(lastDay(y,m)).padStart(2,'0')}`}
 function monthStartStr(y,m){return `${y}-${String(m).padStart(2,'0')}-01`}
-function wname(s){return['일','월','화','수','목','금','토'][new Date(s).getDay()]}
-function fmtDate(s){const d=new Date(s);return `${d.getMonth()+1}월 ${d.getDate()}일 ${wname(s)}요일`}
-function shortDate(s){const d=new Date(s);return `${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')} (${wname(s)})`}
-function fmtDateFull(s){if(!s)return '날짜 선택';const d=new Date(s);return `${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일 (${wname(s)})`}
+function wname(s){return['일','월','화','수','목','금','토'][new Date(s+'T00:00:00').getDay()]}
+function fmtDate(s){const d=new Date(s+'T00:00:00');return `${d.getMonth()+1}월 ${d.getDate()}일 ${wname(s)}요일`}
+function shortDate(s){const d=new Date(s+'T00:00:00');return `${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')} (${wname(s)})`}
+function fmtDateFull(s){if(!s)return '날짜 선택';const d=new Date(s+'T00:00:00');return `${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일 (${wname(s)})`}
 const isFuture=s=>s>TODAY;
 /* 이체 확인: 미확인 이체는 '예정'처럼 취급(완료 잔액에서 제외) */
 function isPending(t){
