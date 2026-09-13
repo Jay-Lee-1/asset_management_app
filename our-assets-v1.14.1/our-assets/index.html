@@ -1277,7 +1277,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.22.5';
+const APP_VERSION='1.22.6';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1655,7 +1655,7 @@ function accountKind(){if(!SESSION)return 'guest';const r=AUTH.rec(SESSION);retu
 function load(){
  let raw=null;
  try{raw=localStorage.getItem(dataKey())}
- catch(e){STORAGE_OK=false;DB=(SESSION?emptyDB():seed());toastFail('저장소를 열지 못했어요 · 이 기기·브라우저에서 자동저장이 제한된 것 같아요');return}
+ catch(e){STORAGE_OK=false;DB=(SESSION?emptyDB():seed());migrate();toastFail('저장소를 열지 못했어요 · 이 기기·브라우저에서 자동저장이 제한된 것 같아요');return}
  if(raw){
   try{DB=JSON.parse(raw);migrate();return}
   catch(e){
@@ -1664,11 +1664,11 @@ function load(){
     * 복구 시도라도 할 수 있게 타임스탬프 키로 원본을 최대한 남겨 둔다(최선 노력, 실패해도 무시). */
    try{localStorage.setItem(dataKey()+'__corrupt_'+Date.now(),raw)}catch(e2){}
    toastFail('저장된 데이터가 손상되어 열지 못했어요 · 백업 파일이 있으면 메뉴에서 복원해 주세요');
-   DB=(SESSION?emptyDB():seed());save();
+   DB=(SESSION?emptyDB():seed());migrate();save();
    return;
   }
  }
- DB=(SESSION?emptyDB():seed());save(); /* 게스트 첫 실행=샘플 체험 · 새 계정=빈 상태 */
+ DB=(SESSION?emptyDB():seed());migrate();save(); /* 게스트 첫 실행=샘플 체험 · 새 계정=빈 상태 */
 }
 function migrate(){
  DB.settings=Object.assign({themeMode:'system',includeScheduled:false,assetSort:'custom',histSortAsc:true,confirmTransfers:true,autoRates:true,bigMin:100000},DB.settings||{});
@@ -3677,7 +3677,7 @@ const CAT_LABEL={expense:'지출',income:'수입',saving:'저축'};
 const catKey=(type,name)=>type+':'+name;
 function catIconOf(type,name){return (DB.catIcon&&DB.catIcon[catKey(type,name)])||''}
 function isVarCat(type,name){return !!(DB.catVar&&DB.catVar[catKey(type,name)])} /* 변동 카테고리 여부 */
-function setCatVar(type,name,on){if(on)DB.catVar[catKey(type,name)]=true;else delete DB.catVar[catKey(type,name)]}
+function setCatVar(type,name,on){DB.catVar=DB.catVar||{};if(on)DB.catVar[catKey(type,name)]=true;else delete DB.catVar[catKey(type,name)]}
 function recIsVarying(r){return (r.type==='expense'||r.type==='income')&&isVarCat(r.type,r.category)}
 function toggleCatVarUI(k,i,btn){const c=DB.categories[k][i];const on=!isVarCat(k,c);setCatVar(k,c,on);save();
  if(btn){btn.classList.toggle('on',on);btn.textContent=on?'변동':'고정'}else openCatManage(k)}
@@ -3724,6 +3724,7 @@ function openCatManage(kind,keep){
 }
 function addCat(k){const v=(($('newCat')&&$('newCat').value)||catAddDraft.name||'').trim();if(!v)return;
  if(DB.categories[k].includes(v)){toast('이미 있는 카테고리예요');return}
+ DB.catIcon=DB.catIcon||{};
  DB.categories[k].push(v);
  if(catAddDraft.icon)DB.catIcon[catKey(k,v)]=catAddDraft.icon;
  catAddDraft={name:'',icon:''};
@@ -3740,6 +3741,7 @@ function delCat(k,i){const c=DB.categories[k][i];
  confirmSheet('카테고리 삭제',msg,'삭제',()=>{doDeleteCat(k,i)});}
 function doDeleteCat(k,i){const c=DB.categories[k][i];
  if(k==='income'&&c===ADJUST_CAT){toast('자동으로 생성되는 카테고리라 삭제할 수 없어요');return}
+ DB.catIcon=DB.catIcon||{};DB.catVar=DB.catVar||{};DB.budgets=DB.budgets||{};
  const recs=activeRecsForCat(k,c);
  const icon=DB.catIcon[catKey(k,c)];const wasVar=isVarCat(k,c);
  const hadBudget=k==='expense'&&DB.budgets&&c in DB.budgets;const budgetVal=hadBudget?DB.budgets[c]:undefined;
@@ -3767,6 +3769,7 @@ function doRenameCat(k,i){const v=((catRenameDraft.name!=null?catRenameDraft.nam
  const old=DB.categories[k][i];
  if(k==='income'&&old===ADJUST_CAT){toast('자동으로 생성되는 카테고리라 이름을 바꿀 수 없어요');return}
  if(v!==old&&DB.categories[k].includes(v)){toast('이미 있는 카테고리예요');return}
+ DB.catIcon=DB.catIcon||{};DB.catVar=DB.catVar||{};DB.budgets=DB.budgets||{};
  const ic=catRenameDraft.icon||'';
  const wasVar=isVarCat(k,old);
  delete DB.catIcon[catKey(k,old)];            /* 이름 변경 시 아이콘 키도 이동 */

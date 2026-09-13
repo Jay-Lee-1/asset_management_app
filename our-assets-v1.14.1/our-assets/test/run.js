@@ -493,6 +493,48 @@ test('addCat: 새 이름은 정상적으로 추가되고 토스트가 뜨지 않
   assert.strictEqual(sandbox.DB.catIcon['expense:교통비'], 'car');
 });
 
+/* ---------- migrate() 없이 곧장 쓰는 seed()/emptyDB() 직후 상태(catIcon/catVar/budgets 필드 자체가 없음)에서
+ * addCat/doDeleteCat/doRenameCat/setCatVar를 호출해도 TypeError 없이 안전해야 한다.
+ * load()가 첫 부팅/손상데이터 복구 분기에서 migrate() 호출 없이 곧장 save()하던 과거 버그(신규 게스트가
+ * 새로고침 전에 카테고리를 만지면 그 자리에서 크래시) 재발 방지 — migrate() 호출 추가가 근본 수정,
+ * 아래 네 함수의 방어 가드는 이중 안전망. */
+test('addCat: DB.catIcon 필드가 아예 없어도(migrate 이전 상태) 예외 없이 카테고리를 추가한다', () => {
+  sandbox.DB = { categories: { expense: ['식비'] }, txns: [], recurrences: [] };
+  sandbox.catAddDraft = { name: '교통비', icon: 'car' };
+  assert.doesNotThrow(() => sandbox.addCat('expense'));
+  assert.deepStrictEqual(sandbox.DB.categories.expense, ['식비', '교통비']);
+  assert.strictEqual(sandbox.DB.catIcon['expense:교통비'], 'car');
+});
+test('doDeleteCat: DB.catIcon/catVar/budgets 필드가 아예 없어도(migrate 이전 상태) 예외 없이 삭제한다', () => {
+  sandbox.DB = { categories: { expense: ['외식', '교통'] }, txns: [], recurrences: [] };
+  assert.doesNotThrow(() => sandbox.doDeleteCat('expense', 0));
+  assert.deepStrictEqual(sandbox.DB.categories.expense, ['교통']);
+});
+test('doRenameCat: DB.catIcon/catVar/budgets 필드가 아예 없어도(migrate 이전 상태) 예외 없이 이름을 바꾼다', () => {
+  sandbox.DB = { categories: { expense: ['식비'] }, txns: [], recurrences: [] };
+  sandbox.catRenameDraft = { name: '외식비', icon: '' };
+  assert.doesNotThrow(() => sandbox.doRenameCat('expense', 0));
+  assert.strictEqual(sandbox.DB.categories.expense[0], '외식비');
+});
+test('setCatVar: DB.catVar 필드가 아예 없어도(migrate 이전 상태) 예외 없이 변동 플래그를 켠다', () => {
+  sandbox.DB = {};
+  assert.doesNotThrow(() => sandbox.setCatVar('expense', '식비', true));
+  assert.strictEqual(sandbox.DB.catVar['expense:식비'], true);
+});
+test('migrate: seed()/emptyDB()가 만드는 형태(catIcon/catVar/budgets 필드 없음)에 돌리면 세 필드 모두 빈 객체로 채워진다', () => {
+  sandbox.DB = {
+    version: 5, catsV2: true,
+    settings: { themeMode: 'system', includeScheduled: false, assetSort: 'custom', groupOrder: [...sandbox.DEFAULT_GROUP_ORDER] },
+    owners: ['나', '배우자', '공용'],
+    assets: [], txns: [], recurrences: [], inquiries: [],
+    categories: { expense: [...sandbox.EXP_CATS_DEFAULT], income: [...sandbox.INC_CATS_DEFAULT], saving: [...sandbox.SAV_CATS_DEFAULT] },
+  };
+  sandbox.migrate();
+  assert.strictEqual(Object.keys(sandbox.DB.catIcon).length, 0);
+  assert.strictEqual(Object.keys(sandbox.DB.catVar).length, 0);
+  assert.strictEqual(Object.keys(sandbox.DB.budgets).length, 0);
+});
+
 /* ---------- updateNwHistory/pruneNwHistory: 순자산 추이 일별 스냅샷 ---------- */
 test('updateNwHistory: 새 날짜면 스냅샷을 추가한다', () => {
   const hist = sandbox.updateNwHistory([{ date: '2026-01-01', ta: 100, td: 10, nw: 90 }], '2026-01-02', 120, 10);
