@@ -1,8 +1,19 @@
 {
   "cycle": 25,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "Add keyboard/screen-reader accessibility to interactive row elements (.asset-item, .swipe-content, .manage-row)",
+    "why": "These divs are the app's primary navigation surface — every asset (index.html:2331,2337), every ledger/history transaction row (2768,2773,3297,3303), every category row (3749), every recurring-transaction row (3824), and maturity/owner rows (2624,3685) are plain <div>s with onclick handlers and zero tabindex/role/keydown/aria-label. Only modal dialogs, toggle switches, and a handful of icon buttons have any accessibility treatment (16 total tabindex/role/aria hits in a 5484-line file, versus 10+ row-rendering call sites with none). Keyboard and screen-reader users cannot view, edit, select, or delete a single asset or transaction — a complete exclusion from the app's core loop, not an edge case. Flagged twice already and deprioritized behind safety bugs that are now mostly fixed (recDates boundary bugs, cloud sync conflict visibility, category deletion ghost recurrences, global error boundary, duplicate asset validation); a fresh critique pass found no other correctness/data-integrity bug of comparable severity in budgets, backup/restore, category rename/delete, or transfer planning (all already well-guarded with confirmSheet + undoToast).",
+    "approach": "For each row-template function that emits an onclick div acting as a row (assetBodyHTML ~2331/2337, ledger row builders ~2768/2773, history row builders ~3297/3303, openCatManage row ~3749, openRecManage row ~3824, openMaturity row ~3685, owner manage row ~2624), add tabindex=\"0\", role=\"button\" and aria-label summarizing the row (name + amount, e.g. `aria-label=\"${esc(a.name)} ${won(val)}원\"`). Add a single shared keydown handler (e.g. `function rowKeydown(e,fn){if(e.key==='Enter'||e.key===' '){e.preventDefault();fn()}}`) invoked via `onkeydown=\"rowKeydown(event,()=>openAssetSheet('${a.id}'))\"` etc., mirroring each row's existing onclick target function (assetToggleSel, openAssetSheet, ledgerToggleSel, rowTap, histToggleSel, editRec, doMaturity trigger). Add CSS `.asset-item:focus-visible,.swipe-content:focus-visible,.manage-row:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}` alongside the existing `.switch:focus-visible` rule at line 294. Scope to the ~10 real render call sites; skip the two demo/onboarding illustration blocks (lines 3930, 3943) which are non-interactive marketing mockups. Add regression coverage where feasible (e.g. verifying rowKeydown triggers the same callback as click for Enter/Space and ignores other keys) and re-run the full suite plus node --check on both inline script blocks before committing."
+  },
   "history": [
+    {
+      "cycle": 25,
+      "phase": "critique",
+      "timestamp": "2026-09-13T16:10:00.000Z",
+      "summary": "전체 앱을 한 걸음 물러나 봤다(백그라운드 조사 에이전트 활용). cycle24 critique가 두 번째로 남겨둔 후보였던 .asset-item/.swipe-content/.manage-row 등 행 요소들의 키보드/스크린리더 접근성 부재를 채택했다: assetBodyHTML(~2331/2337), 가계부/전체내역 행(~2768/2773/3297/3303), 카테고리 관리 행(~3749), 반복거래 관리 행(~3824), 자산 만기/소유자 행(~2624/3685) 등 앱의 핵심 탐색 표면이 전부 onclick만 있는 평범한 div로, tabindex/role/keydown/aria-label이 전무하다(파일 전체 16건의 tabindex/role/aria 중 행 렌더 지점은 0건) — 키보드/스크린리더 사용자는 자산이나 거래를 보거나 편집하거나 선택하거나 삭제할 수 없는 완전한 배제 상태. 예산/백업복원/카테고리 삭제/이체 계획 등 나머지 화면은 이미 confirmSheet+undoToast로 잘 보호돼 있어 이보다 우선순위가 높은 새 데이터 정합성 버그는 발견되지 않았다(예산 설정, 카테고리 이름변경/삭제의 아이콘·변동·예산 마이그레이션, 이체 계획 함수 전수 확인, TODO/FIXME 전무 확인). pending_advance_plan에 tabindex=0+role=button+공용 rowKeydown(Enter/Space) 핸들러+aria-label+:focus-visible CSS를 약 10개 행 렌더 지점에 적용하는 구체적 계획을 저장했다(데모/온보딩용 비대화형 목업 2곳은 제외). 코드 변경 없음.",
+      "commit": null
+    },
     {
       "cycle": 25,
       "phase": "review",
@@ -135,13 +146,6 @@
       "timestamp": "2026-09-13T05:10:00.000Z",
       "summary": "critique 계획대로 클라우드 동기화 충돌(conflict) 데드락을 발견 가능하게 만들었다. 범위는 계획의 세 항목 중 안전하게 할 수 있는 부분으로 좁혔다: (1) pushCloud()의 충돌 판정(cur.updated_at>CLOUD_LAST_SYNCED_AT)을 순수 함수 isCloudConflict(curUpdatedAt,lastSyncedAt)로 뽑아 pushCloud가 이를 호출하도록 바꾸고, test/run.js에 5개 회귀 테스트(충돌/동일시각/원격이 더 오래됨/최초 push라 lastSyncedAt 없음/원격에 데이터 없음)를 추가했다 — 132/132 통과(기존 127+신규 5). (2) homeAlerts()에 CLOUD_UID&&CLOUD_SYNC_STATE==='conflict'일 때 최우선순위로 {kind:'cloudConflict'} 항목을 넣고, homeAlertCard()에 openAccountSheet()로 연결되는 지속형 카드(alert 아이콘, 기본 home-alert 빨간 톤)를 추가해, 메뉴>계정을 우연히 열기 전까지 알아챌 방법이 없던 문제를 해소했다. (3) maybeRollDay()에서 홈 탭에 있고 conflict 상태인 동안은 60초 인터벌/포커스 복귀마다 renderCurrent()를 다시 불러 카드가 계속 최신 상태로 보이게 했다 — 단, 로컬 DB나 CLOUD_LAST_SYNCED_AT은 전혀 건드리지 않아 기존 openAccountSheet의 수동 해결 흐름('가져오기'/'덮어쓰기')만이 유일한 실제 해소 경로로 남는다. 계획에 있던 '포커스 시 자동 재동기화 시도'는 구현하지 않았다 — 검토 결과 CLOUD_LAST_SYNCED_AT을 갱신하는 유일한 안전한 방법은 pullCloud()인데, 이는 로컬 미저장 변경을 사용자 동의 없이 원격 데이터로 덮어쓰는 것과 사실상 같아(resolveCloudPullRemote와 동일한 효과) 자동으로 걸면 안전 규칙(파괴적 동작은 사용자 확인 필요)에 어긋난다고 판단, 대신 카드 노출을 신뢰성 있게 만드는 쪽으로 범위를 좁혔다. Playwright(사전 설치 Chromium, 게스트 모드)로 CLOUD_UID/CLOUD_SYNC_STATE를 직접 설정해 카드가 최우선으로 노출되는 것, onclick이 openAccountSheet()를 정확히 호출해 '계정' 시트가 열리는 것, maybeRollDay() 재호출 후에도 카드가 유지되는 것을 확인했다. 두 인라인 <script> 블록 모두 node --check 통과. APP_VERSION 1.22.7->1.23.0, sw.js CACHE v75->v76 (minor bump, 데이터 유실 위험 UX 개선). pending_advance_plan 비움.",
       "commit": null
-    },
-    {
-      "cycle": 23,
-      "phase": "develop",
-      "timestamp": "2026-09-13T06:30:00.000Z",
-      "summary": "배경 조사 에이전트가 앱 전체를 탐색해 제안한 후보 중, addDays/wname/fmtDate/shortDate/fmtDateFull 다섯 함수가 시간 없는 날짜 문자열을 new Date(s)로 파싱하는 실제 버그를 채택했다. new Date(\"YYYY-MM-DD\")는 UTC 자정으로 파싱되는데 getFullYear/getMonth/getDate/getDay는 로컬 시간대로 읽으므로, UTC 오프셋이 음수인 시간대(북중남미 등 — 이 앱은 지역 제한 없는 PWA)에서는 이 다섯 함수가 항상 실제보다 하루 이른 날짜/요일을 반환한다(TZ=America/New_York에서 2026-09-13(일요일)이 \"9월 12일 토요일\"로 표시되는 것을 node로 직접 재현해 확인). recDates(1727-1728)/addMonthsStr(1769)/shiftWeekend(1721) 등은 이미 new Date(s+'T00:00:00')로 로컬 자정에 앵커링해 이 문제를 피해가고 있었는데, 이 다섯 함수만 그 컨벤션이 빠져 있었다. 컨테이너 자체가 UTC/KST(오프셋>=0)라 지금까지 22번의 사이클과 브라우저 검증에서 전혀 드러나지 않았던 사각지대. addDays는 반복거래 만기/이체 알림(maturitySoon, postponeTransfer)·잔액 구간 시작일(balanceAt 호출부)·RANGE_TO/DISP_TO 표시 구간의 공유 primitive라 화면 표시만이 아니라 실제 날짜 계산 자체가 하루씩 밀리는 문제였다. 다섯 함수 모두 동일한 T00:00:00 앵커링으로 고쳤고, 모든 호출부(grep으로 전수 확인)가 항상 시간 없는 bare 날짜 문자열만 넘기므로 이중 앵커링 위험은 없었다. test/run.js FUNCTIONS에 wname/fmtDate/shortDate/fmtDateFull을 추가하고, process.env.TZ를 America/New_York으로 임시 전환하는 withTZ() 헬퍼로 회귀 테스트 3개 추가 — 수정 전 코드로 되돌려 재실행하면 정확히 이 3개가 실패하는 것을 확인한 뒤(회귀 방지 효과 검증) 다시 적용, 135/135 통과. 두 인라인 <script> 블록 모두 node --check 통과. 이 사이클 도중 이 세션의 cwd가 detached HEAD(과거 커밋)에 있었고 로컬에 캐시된 origin/main 참조가 더 오래된 별도 히스토리(eb04c24, unrelated history)를 가리키고 있어 일시 정지하고 조사했다 — git fetch로 확인해보니 origin/main이 이미 우리 쪽(detached HEAD와 동일한 ac6f491)으로 복구돼 있었고 이전 상태는 origin의 recovered-app-evolve-eb04c24/app-evolve-orphaned-work 브랜치에 안전하게 보존돼 있었다 — 단순히 로컬 fetch 캐시가 오래된 것이었을 뿐이라 로컬 main을 origin/main 기준으로 재설정한 뒤 정상 진행했다(파괴적 동작 없음, 로컬 changes 보존해 이어감). APP_VERSION 1.23.0->1.23.1, sw.js CACHE v76->v77 (patch bump, 버그 수정).",
-      "commit": "5c2af39"
     }
   ]
 }
