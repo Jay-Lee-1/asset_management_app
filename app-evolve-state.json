@@ -1,8 +1,19 @@
 {
   "cycle": 22,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "클라우드 동기화 충돌(conflict) 상태에서 영구 정지되는 문제 해결 + 홈 화면 알림 추가",
+    "why": "pushCloud()(index.html:1561-1576)는 매 push 전에 서버 updated_at을 CLOUD_LAST_SYNCED_AT과 비교해, 서버가 더 최신이면 CLOUD_SYNC_STATE='conflict'로 바꾸고 push 없이 return한다. 이 상태를 해제하는 cloudSyncOk()(1539)는 push/pull 성공 시에만 호출되는데, conflict 상태에서는 pushCloud()가 다시는 push를 시도하지 않으므로(같은 CLOUD_LAST_SYNCED_AT vs 같거나 더 최신인 remote updated_at이 매번 재감지됨) 스스로 절대 벗어날 수 없는 데드락이다. 사용자에게는 CLOUD_CONFLICT_TOASTED 가드로 단 한 번의 토스트만 뜨고(1568), 이후 지속적인 안내는 메뉴>계정(openAccountSheet, 3524-3539)에 파묻혀 있다. homeAlerts()(4959-4970)에는 backup/confirm/neg/mat/quick 등 기존 알림 종류가 있지만 cloudConflict 종류는 없어 실제로 grep 확인 결과 없음을 재확인했다. visibilitychange/focus 핸들러(5399-5403 부근)도 pull을 재시도하지 않아 사용자가 우연히 계정 메뉴를 열기 전까지 두 기기 중 한쪽은 그 시점 이후 모든 로컬 변경사항이 클라우드에 영원히 반영되지 않는다(재현: 폰A/B가 같은 계정으로 로그인, B에서 거래 추가(정상 push), A를 포그라운드하지 않은 채 A에서 거래 추가 -> A의 다음 push가 B의 최신 updated_at을 보고 conflict로 전환, 토스트 1회 후 침묵. A를 계속 써도 계정 메뉴를 열기 전까지는 알아챌 방법이 없음).",
+    "approach": "1) homeAlerts()에 CLOUD_UID && CLOUD_SYNC_STATE==='conflict'일 때 {kind:'cloudConflict'} 항목을 추가하고, homeAlertCard()에 openAccountSheet()로 연결되는 지속형 카드를 추가해(backup/mat 카드와 같은 스타일) 사용자가 메뉴를 열지 않아도 알아챌 수 있게 한다. 2) 최소 침습적으로 재동기화 기회를 늘린다: visibilitychange/focus 핸들러(5399 부근)에서 CLOUD_SYNC_STATE==='conflict'일 때 가벼운 재확인(예: 현재 pullCloud/충돌해제 로직 재사용)을 시도해, 다른 기기가 먼저 병합된 경우 자동으로 idle로 돌아올 수 있게 한다 — 단, 사용자의 로컬 미저장 변경을 함부로 덮어쓰지 않도록 기존 openAccountSheet의 수동 해결 흐름(1599의 '내 데이터로 덮어쓰기' 등)은 그대로 유지한다. 3) 가능하면 conflict 판정 로직(cur.updated_at>CLOUD_LAST_SYNCED_AT 비교, 1566)을 순수 함수로 뽑아(예: isCloudConflict(curUpdatedAt,lastSyncedAt)) test/run.js에서 유닛 테스트 가능하게 만든다 — pushCloud/SB 자체는 네트워크 의존이라 하네스로 못 돌리지만 판정 로직은 뽑을 수 있다. 범위는 홈 알림 카드 추가 + 포커스 시 재확인 시도 + (가능하면) 판정 로직 추출 및 테스트로 한정하고, 인증/스키마 재설계나 실시간 병합(operational transform) 같은 것은 다루지 않는다. UI 변경 위주라 Playwright로 conflict 상태를 인위적으로 만들어(CLOUD_SYNC_STATE 직접 설정 등) 카드 노출/클릭 시 계정 시트로 이동/재확인 시 idle 복귀를 수동 검증한다."
+  },
   "history": [
+    {
+      "cycle": 22,
+      "phase": "critique",
+      "timestamp": "2026-09-13T04:10:00.000Z",
+      "summary": "전체 앱을 한 걸음 물러나 봤다(백그라운드 조사 에이전트 활용, git log 60개+state.json 히스토리 전체를 먼저 훑어 이미 다룬/기각된 항목과 겹치지 않게 함). 검토했지만 기각한 후보: (1) 카테고리별 예산 한도/알림 부재(현재는 전체 합산 planGaugeCard만 존재) — 실재하는 제품 갭이지만 데이터 모델+여러 화면에 걸친 신규 기능이라 이번 사이클 범위(스코프가 있는 수정)보다는 새 기능 추가에 가까워 보류; (2) 거래 내역 자유 텍스트/금액 검색 부재 — 실재하지만 데이터 유실 위험이 있는 동기화 버그보다 심각도가 낮음; (3) renderLedger의 죽은 cells 루프 — 기존 히스토리에 이미 사소한 정리 대상으로 기록돼 있고 advance 사이클 규모에 못 미침. 최종 선택: pushCloud()(1561-1576)가 서버가 더 최신이면 CLOUD_SYNC_STATE='conflict'로 바꾸고 push를 건너뛰는데, 이 상태를 벗어나는 유일한 방법인 cloudSyncOk()는 성공한 push/pull에서만 호출되므로 conflict 진입 후에는 매번 같은 조건이 재감지되어 스스로 절대 벗어날 수 없는 데드락 상태가 되는 문제. 알림은 CLOUD_CONFLICT_TOASTED 가드로 단 한 번의 토스트뿐이고, homeAlerts()(4959, grep으로 재확인: cloudConflict 종류 없음)에는 지속형 카드가 없어 메뉴>계정을 우연히 열기 전까지 사용자는 이후 모든 로컬 변경이 클라우드에 반영되지 않는다는 사실을 알 방법이 없다. 코드 변경 없음 — pending_advance_plan에 홈 알림 카드 추가 + 포커스 시 재확인 재시도 + conflict 판정 로직의 순수함수 추출 및 테스트 계획을 저장.",
+      "commit": null
+    },
     {
       "cycle": 21,
       "phase": "review",
@@ -85,13 +96,6 @@
       "phase": "review",
       "timestamp": "2026-09-11T23:10:27.459Z",
       "summary": "Reviewed commit 3caf655 (recSave scope='future' split now inherits the original endDate/count instead of forcing endDate=null). Verified newBase={freq,day,startDate:ctx.date,weekend} is the correct base for recCountUntil(newBase,prevEnd) — matches saveRec's own eb pattern — and confirmed with count=7 for a 2026-06-05~2026-12-05 monthly-day-5 series. While tracing it, found the sibling half of the same truncation was still broken: r.endDate=addDays(ctx.date,-1) on the ORIGINAL (pre-split) record was never paired with a recomputed r.count, breaking the endDate/count sync invariant that saveRec()/_applyCount()/recOpenEnd() maintain everywhere else in the file. Confirmed via a fresh grep of recDates() that count is never read for actual date generation (purely a UI display cache for the end-condition hint text), so this was cosmetic, not a scheduling bug — but re-opening the edit sheet on the truncated original record would show a stale, too-large count next to its new (shorter) endDate, and resaving without touching either field would persist the mismatch. Fixed by recomputing r.count right after truncating r.endDate (same recCountUntil call, using r's own startDate/freq/day/weekend), and restoring the pre-split r.count in the undo closure alongside r.endDate. Extended the existing scope='future' regression test with an initial count:12 and assertions that r.count becomes 5 after the split (2026-01-05~2026-06-04 monthly day 5) and is restored to 12 on undo. 87/87 tests pass (no new test count change — extended an existing test rather than adding one). Both inline <script> blocks verified to parse via new Function(). APP_VERSION 1.20.1->1.20.2, sw.js CACHE v58->v59 (patch bump, bug fix).",
-      "commit": null
-    },
-    {
-      "cycle": 15,
-      "phase": "develop",
-      "timestamp": "2026-09-11T22:13:02.669Z",
-      "summary": "recSave()의 scope='future'(이 날부터 이후 모두) 분기(index.html recSave, ~2964-2969)가 분리된 새 반복 레코드(newRec)의 endDate를 원래 종료일(prevEnd)과 무관하게 무조건 null로 강제해, 종료일/횟수가 정해진 유한한 반복(예: 12개월 할부)의 중간 지점에서 금액을 한 번만 수정해도 그 뒤로는 영원히 반복되는 무한 시리즈로 조용히 바뀌는 실제 버그를 발견해 고쳤다(recDates()는 r.endDate만 보고 r.count는 보지 않으므로 count는 그대로인데 endDate만 null이 되면서 발생). 배경 조사 에이전트가 코드베이스 전체를 훑어 이 버그를 1순위 후보로 제안했고, 2순위였던 doDeleteCat에 undo가 없는 문제(직전 사이클에서 이미 정리 로직만 추가됨)는 최근에 손댄 영역과 겹쳐 보류했다. 수정은 newRec.endDate를 prevEnd로 이어받고, count도 saveRec()이 이미 쓰는 것과 같은 패턴(recCountUntil)으로 재계산하도록 좁게 한정했다 — 같은 분기의 또 다른 잠재 이슈(분할 시점 이후의 기존 skip/edits가 새 레코드로 이관되지 않고 사라지는 것)는 기존 회귀 테스트(recSave future 테스트)가 '새 레코드는 skip/edits를 물려받지 않아야 한다'를 명시적으로 고정해 둔 의도된 동작일 가능성이 있어 이번 사이클에서는 건드리지 않았다(범위를 하나의 명확한 버그로 좁게 유지). test/run.js에 회귀 테스트 2개 추가(원래 종료일이 있으면 새 레코드가 그 종료일과 올바른 count를 물려받는다, 원래 무기한이면 새 레코드도 무기한을 유지한다) — 87/87 통과(기존 85개+신규 2개). 두 인라인 <script> 블록 모두 new Function()으로 파싱 확인. APP_VERSION 1.20.0->1.20.1, sw.js CACHE v57->v58 (patch bump, bug fix).",
       "commit": null
     },
     {
