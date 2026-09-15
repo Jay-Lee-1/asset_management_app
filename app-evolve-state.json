@@ -1,12 +1,15 @@
 {
-  "cycle": 27,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "이체/지출/수입 화면에서 외화·금·주식(fx/gold/stock) 자산을 통장으로 선택하면 순자산이 조용히 어긋나는 구조적 결함 수정",
-    "why": "assetEval()(index.html:1860-1868)은 fx/gold/stock 세 타입만 원장(DB.txns)과 무관하게 qty×rate(fxAmount/goldDon/stockQty×DB.rates)로 평가한다(그 외 cash/savings/realestate/debt/pension/etc는 전부 assetBalance()로 원장을 따라감). 그런데 txOpenAsset()(2915)->openAssetPicker()(5125)는 이체/지출/수입/저축 입력 화면에서 이 세 타입도 다른 통장과 동일하게 선택 가능한 목록에 올린다 — cashOnly 필터(isCashLike, 1933)는 만기이체 picker(asOpenMat, 2549) 한 곳에만 적용되고 일반 거래 입력 경로에는 전혀 적용되지 않는다. saveTx()(2955)는 fromAssetId/toAssetId를 저장만 할 뿐 fxAmount/goldDon/stockQty를 갱신하는 코드가 전혀 없다. 그 결과 사용자가 정상적인 '이체' 화면에서 '현금 → 외화(또는 금/주식)'를 입력하면, 보내는 쪽(현금) 잔액은 원장 기준으로 정확히 줄어들지만 받는 쪽(외화/금/주식) 평가액은 그대로라서 그 금액이 전체 순자산에서 조용히 사라진다(반대 방향이면 조용히 생겨난다). '정확한 잔액 추적'이라는 앱의 핵심 약속을 깨는, 아주 자연스럽고 발견하기 쉬운 흐름(자산 종류가 앱 시드 데이터에도 있는 a_usd/a_gold/a_samsung)에서 터지는 실사용 버그이며, 수동 대사 외에는 감지할 방법이 없다.",
-    "approach": "1) isCashLike(1933) 옆에 isMarketValued=a=>a.type==='fx'||a.type==='gold'||a.type==='stock' 헬퍼 추가. 2) openAssetPicker()(5125)에 excludeMarketValued 옵션을 추가해 켜지면 items에서 isMarketValued 자산을 제외(기존 cashOnly 옵션과 별개로 공존). 3) txOpenAsset()(2915)이 이체/지출/수입/저축 입력 시 이 옵션을 켜서 호출하도록 수정 — 이제 fx/gold/stock은 일반 거래의 통장으로 선택 불가. 다른 openAssetPicker 호출부(만기이체 등)는 그대로 둠. 4) 자산 상세/편집 화면(openAssetSheet)에 fxAmount/goldDon/stockQty를 직접 입력하는 필드가 이미 있는지 확인하고, 있다면 그대로 유지(수량 조정은 그쪽에서), 없다면 최소 안내 문구 추가. 5) migrate()에 기존 DB.txns 중 fromAssetId/toAssetId가 fx/gold/stock 자산을 가리키는 케이스가 있는지 검사해 플래그를 세우고 렌더 시 기존 error banner 패턴으로 '확인이 필요한 과거 이체 기록이 있어요' 안내(자동 정정은 하지 않음 — 사용자마다 의도가 다를 수 있음). 범위가 크면 이번 advance 사이클은 1~3(픽커 제한, 신규 버그 차단)까지만 하고 5(과거 데이터 경고)는 다음 사이클로 미뤄도 됨. 6) test/run.js에 openAssetPicker/isMarketValued 회귀 테스트 추가: excludeMarketValued 켰을 때 fx/gold/stock이 목록에서 빠지는지, 옵션 없을 때(기존 cashOnly 등 다른 호출부)는 회귀 없이 그대로인지 확인."
-  },
+  "cycle": 28,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 27,
+      "phase": "advance",
+      "timestamp": "2026-09-15T18:05:00.000Z",
+      "summary": "critique 계획(1~3번 범위, 5번 과거 데이터 경고는 다음으로 보류)대로 구현했다. isCashLike(1933) 옆에 isMarketValued=a=>a.type==='fx'||a.type==='gold'||a.type==='stock' 헬퍼를 추가하고, openAssetPicker()(5125)에 excludeMarketValued 옵션을 추가해 켜지면 목록에서 이 세 타입을 제외하도록 했다(기존 cashOnly와 독립적으로 공존, and 조건 아님). txOpenAsset()(2915, 이체/지출/수입/저축 입력)과 recOpenAsset()(3070, 반복거래 등록/편집 — saveRec()도 saveTx()와 마찬가지로 fxAmount/goldDon/stockQty를 갱신하지 않아 동일한 버그를 갖고 있음을 확인해 계획에 없었지만 함께 수정) 두 호출부에서 이 옵션을 켰다. 4번(자산 편집 화면에 수량 직접 입력 필드가 있는지)은 asFx/asGold/asQty(2570,2573,2579) 필드가 이미 있음을 확인해 추가 작업 불필요. 5번(과거 잘못된 이체 기록에 대한 migrate() 경고)은 범위가 커서 계획대로 다음 사이클로 미뤘다. test/run.js에 assetEval/assetBalance/schHorizon/ym/openAssetPicker를 새로 추출하고(isCashLike/isMarketValued/GOLD_G_PER_DON도 CONSTS로 끌어옴, openPicker는 bodyHtml만 기록하는 스텁으로 대체) 회귀 테스트 4개 추가: isMarketValued 타입 판정, excludeMarketValued 켰을 때 fx/gold/stock이 실제 렌더된 picker HTML에서 빠지는지, 옵션 없는 기존 호출부(만기이체 등)는 회귀 없이 그대로인지, cashOnly가 excludeMarketValued 없이도 기존처럼 현금성만 남기는지. 170/170 통과(기존 166+신규 4). 두 인라인 <script> 블록 모두 node --check로 파싱 확인. APP_VERSION 1.26.1->1.27.0(구조적 버그 fix + 새 옵션이라 minor bump), sw.js CACHE v89->v90. pending_advance_plan 비움.\n\n[운영 참고] 이번 사이클 실행 중 원격 실행 환경의 repo가 얕은 클론(shallow clone)이었고, 로컬 main 브랜치 ref가 클론 시점의 오래된 커밋(eb04c24, 영문 커밋 메시지 계열)을 가리키고 있어 실제 origin/main 최신 커밋(a92debf, 이 cycle27 history와 동일 계열)과 잠시 달라 보이는 혼란이 있었다. git fetch --unshallow로 origin/main을 전체 갱신해 실제로는 origin/main==a92debf이고 내 새 커밋이 그 바로 위 fast-forward임을 확인한 뒤 로컬 main을 그 커밋으로 맞추고 push했다 — 실제 히스토리 분기나 데이터 손실은 없었음.",
+      "commit": null
+    },
     {
       "cycle": 27,
       "phase": "critique",
@@ -139,13 +142,6 @@
       "timestamp": "2026-09-13T13:12:42.208Z",
       "summary": "critique 계획대로 renderCurrent()에 전역 에러 바운더리(window.onerror/unhandledrejection + try/catch + showErrBanner)를 추가했다. 142/142 통과. Playwright로 실제 브라우저 확인. APP_VERSION 1.24.1->1.24.2, sw.js CACHE v79->v80.",
       "commit": null
-    },
-    {
-      "cycle": 26,
-      "phase": "review",
-      "timestamp": "2026-09-15T13:08:46.523Z",
-      "summary": "develop 커밋(65ec375, updateBalanceAdjust()의 잔액 캐시 미무효화로 조정 금액이 잘못 계산되던 버그 fix)을 검토했다. 실제 호출 경로(openAssetSheet가 편집 진입 시 balanceAt(id,TODAY)로 _balCache를 미리 채우고, saveAsset()의 hasAdj 분기가 바로 그 틱 안에서 updateBalanceAdjust(d,entered)를 호출)를 따라가며 수정 전에는 잘못된 adj.amount가 save()의 invalidateBalances()보다 먼저 DB.txns에 기록돼버려 진짜 버그였음을 확인했고, 추가된 invalidateBalances() 한 줄이 형제 경로 setBase()와 동일한 규칙(재계산 전 캐시 비움)으로 맞춰졌는지, 전역 캐시를 비우는 기존 컨벤션(save()/setBase() 등 다른 8곳)과 일관되는지 대조했다. 새로 추가된 회귀 테스트(캐시를 먼저 채운 뒤 호출해 조정 금액이 1000이 아니라 2000으로 정확히 계산되는지 확인)도 시나리오를 정확히 재현함을 확인. 문제 없음. 157/157 통과.",
-      "commit": "65ec375"
     }
   ]
 }
