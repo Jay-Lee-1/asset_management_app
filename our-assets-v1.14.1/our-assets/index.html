@@ -1284,7 +1284,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.26.1';
+const APP_VERSION='1.27.0';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1931,6 +1931,7 @@ function balanceAt(id,dateStr){ /* 특정 일자 기준 잔액 — 예정·반�
  return map[id]!=null?map[id]:assetBase(a);
 }
 const isCashLike=a=>a.type==='cash'||a.type==='savings';
+const isMarketValued=a=>a.type==='fx'||a.type==='gold'||a.type==='stock'; /* assetEval()이 원장과 무관하게 qty×시세로 평가 — 거래 입력의 통장으로 쓰면 순자산이 조용히 어긋남 */
 const isPlanAcct=a=>a.type==='cash'; /* 한달 플랜 대상: 현금예금 통장만(저축 제외) */
 function totalAssets(){return DB.assets.filter(a=>a.includeInTotal&&a.type!=='debt').reduce((s,a)=>s+assetEval(a),0)}
 function totalDebt(){return DB.assets.filter(a=>a.includeInTotal&&a.type==='debt').reduce((s,a)=>s+assetEval(a),0)}
@@ -2912,7 +2913,7 @@ function renderTxSheet(){
 }
 function syncTxInputs(){const sh=$('sheetScroll');if(sh)_formScroll=sh.scrollTop;const a=$('txAmt'),dt=$('txDate'),m=$('txMemo');if(a)txDraft.amount=num(a);if(dt&&dt.value)txDraft.date=dt.value;if(m)txDraft.memo=m.value}
 function txOpenCat(){syncTxInputs();openCatPicker({kind:txDraft.type,current:txDraft.category,back:renderTxSheet,onPick:c=>{txDraft.category=c;renderTxSheet()}})}
-function txOpenAsset(which){syncTxInputs();openAssetPicker({current:which==='to'?txDraft.toAssetId:txDraft.fromAssetId,title:which==='to'?'받는 자산':'보내는 자산',back:renderTxSheet,onPick:id=>{if(which==='to')txDraft.toAssetId=id;else txDraft.fromAssetId=id;renderTxSheet()}})}
+function txOpenAsset(which){syncTxInputs();openAssetPicker({current:which==='to'?txDraft.toAssetId:txDraft.fromAssetId,title:which==='to'?'받는 자산':'보내는 자산',excludeMarketValued:true,back:renderTxSheet,onPick:id=>{if(which==='to')txDraft.toAssetId=id;else txDraft.fromAssetId=id;renderTxSheet()}})}
 function txType(t){if(navigator.vibrate)navigator.vibrate(6);syncTxInputs();txDraft.type=t;txDraft.category=t==='transfer'?'이체':catListOf(t)[0]||'기타';
  if((t==='income'||t==='transfer'||t==='saving')&&!txDraft.toAssetId)txDraft.toAssetId=firstCash();renderTxSheet()}
 function txToggleRepeat(){syncTxInputs();txDraft.repeat=!txDraft.repeat;
@@ -3067,7 +3068,7 @@ function openRecSheet(){_formScroll=0;recDraft={id:null,active:true,type:'expens
 function editRec(id){const r=DB.recurrences.find(x=>x.id===id);if(!r)return;_formScroll=0;recDraft=JSON.parse(JSON.stringify(r));renderRecSheet()}
 function syncRecInputs(){const _mm=$('rMemo');if(_mm)recDraft.memo=_mm.value;const sh=$('sheetScroll');if(sh)_formScroll=sh.scrollTop;const a=$('rAmt'),s=$('rStart');if(a)recDraft.amount=num(a);if(s&&s.value)recDraft.startDate=s.value}
 function recOpenCat(){syncRecInputs();openCatPicker({kind:recDraft.type,current:recDraft.category,back:renderRecSheet,onPick:c=>{recDraft.category=c;renderRecSheet()}})}
-function recOpenAsset(which){syncRecInputs();openAssetPicker({current:which==='to'?recDraft.toAssetId:recDraft.fromAssetId,title:which==='to'?'받는 자산':'보내는 자산',back:renderRecSheet,onPick:id=>{if(which==='to')recDraft.toAssetId=id;else recDraft.fromAssetId=id;renderRecSheet()}})}
+function recOpenAsset(which){syncRecInputs();openAssetPicker({current:which==='to'?recDraft.toAssetId:recDraft.fromAssetId,title:which==='to'?'받는 자산':'보내는 자산',excludeMarketValued:true,back:renderRecSheet,onPick:id=>{if(which==='to')recDraft.toAssetId=id;else recDraft.fromAssetId=id;renderRecSheet()}})}
 const WK={ /* 주말 조정 어휘 */
  none:['당일 유지','주말이어도 그 날짜에'],
  earlier:['앞당겨 금요일','주말이면 하루 앞 금요일에 (급여)'],
@@ -5123,7 +5124,7 @@ function openPicker(title,bodyHtml,back){window._pkBack=back||null;
  openSheet(`<div class="pk-h">${title}</div>`+bodyHtml, back?topBtn:undefined);}
 function pkBack(){const b=window._pkBack;window._pkBack=null;if(b)sheetSlideBack(b);else closeSheet()}
 function openAssetPicker(o){o=o||{};let html='';
- DB.settings.groupOrder.forEach(t=>{let items=DB.assets.filter(a=>a.type===t);if(o.cashOnly)items=items.filter(isCashLike);if(!items.length)return;
+ DB.settings.groupOrder.forEach(t=>{let items=DB.assets.filter(a=>a.type===t);if(o.cashOnly)items=items.filter(isCashLike);if(o.excludeMarketValued)items=items.filter(a=>!isMarketValued(a));if(!items.length)return;
    html+=`<div class="pk-cap">${ASSET_TYPES[t].label}</div>`;
    items.forEach(a=>{const ty=ASSET_TYPES[a.type];const bal=a.type==='debt'?-assetEval(a):assetEval(a);
      html+=`<button class="pk-item hasamt ${a.id===o.current?'on':''}" data-val="${a.id}" onclick="pkPickAsset('${a.id}')"><div class="pav ${ty.cls}">${svg(ty.icon)}</div><div class="pbody"><div class="pn">${esc(a.name)}</div><div class="psub"><span class="chipmini own-${esc(a.owner)}">${esc(a.owner)}</span>${ty.label}</div></div><div class="amt num">${comma(bal)}원</div></button>`;});

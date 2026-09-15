@@ -59,12 +59,13 @@ const FUNCTIONS = [
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
   'clampDay', 'saveTx', 'assetBase', 'balancesUpTo', 'balanceAt',
   'addBalanceAdjust', 'updateBalanceAdjust', 'toggleConfirmTransfers',
+  'assetEval', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
 // _balCache/BAL_CACHE_MAX는 balancesUpTo()가 참조하는 모듈 스코프 캐시 상태라 같은 방식으로 끌어온다.
 // _recCache/REC_CACHE_MAX는 expandRec()가 참조하는 모듈 스코프 캐시 상태라 같은 방식으로 끌어온다.
-const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache'];
+const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued'];
 
 const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(extractConst).join('\n');
 
@@ -144,6 +145,10 @@ const sandbox = {
   confirmSheet: (title, msg, ok, cb) => { sandbox.confirmSheetCalls.push({ title, msg, ok, cb }); },
   confirmSheetCalls: [],
   rollPendingTransfers: () => {},
+  // openAssetPicker()가 실제로 그리는 시트 DOM 대신, 넘겨받은 bodyHtml을 그대로 기록만 하는
+  // openPicker() 스텁 — excludeMarketValued 필터가 최종 목록 문자열에 반영됐는지 검증하는 데 쓴다.
+  lastPickerHtml: null,
+  openPicker: (title, bodyHtml) => { sandbox.lastPickerHtml = bodyHtml; },
 };
 vm.createContext(sandbox);
 vm.runInContext(extracted, sandbox, { filename: 'extracted-from-index.html' });
@@ -1690,6 +1695,72 @@ test('updateBalanceAdjust: 편집 화면 진입 시 채워진 잔액 캐시가 �
   const adj = sandbox.DB.txns.find((t) => t.adjust && t.adjustAsset === 'a1');
   assert.strictEqual(adj.amount, 2000, '기준값 4000 + 새 조정 2000 = 6000이어야 함(캐시가 남아있으면 1000으로 잘못 계산됨)');
   assert.strictEqual(adj.type, 'income');
+});
+
+/* ---------- isMarketValued/openAssetPicker: fx·금·주식을 일반 거래의 통장으로 선택하면
+ * 순자산이 조용히 어긋나던 구조적 버그(app-evolve cycle27 advance)의 회귀 테스트.
+ * assetEval()은 fx/gold/stock 세 타입만 원장(DB.txns)과 무관하게 qty×시세로 평가하는데,
+ * saveTx()/saveRec()는 fromAssetId/toAssetId를 저장만 할 뿐 fxAmount/goldDon/stockQty를
+ * 갱신하지 않는다. 그런데 openAssetPicker()는 이체/지출/수입 입력 화면(txOpenAsset/recOpenAsset)
+ * 에서 이 세 타입도 다른 통장과 동일하게 선택 목록에 올렸다 — cashOnly 필터는 만기이체 picker
+ * 한 곳에만 있었다. excludeMarketValued 옵션을 추가해 거래 입력 경로에서 이 세 타입을 제외한다. ---------- */
+test('isMarketValued: fx/gold/stock만 참, 그 외 타입은 거짓', () => {
+  assert.strictEqual(sandbox.isMarketValued({ type: 'fx' }), true);
+  assert.strictEqual(sandbox.isMarketValued({ type: 'gold' }), true);
+  assert.strictEqual(sandbox.isMarketValued({ type: 'stock' }), true);
+  assert.strictEqual(sandbox.isMarketValued({ type: 'cash' }), false);
+  assert.strictEqual(sandbox.isMarketValued({ type: 'savings' }), false);
+  assert.strictEqual(sandbox.isMarketValued({ type: 'realestate' }), false);
+  assert.strictEqual(sandbox.isMarketValued({ type: 'debt' }), false);
+});
+function setupAssetPickerDB() {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox.DB = {
+    settings: { groupOrder: ['cash', 'savings', 'fx', 'gold', 'stock'] },
+    assets: [
+      { id: 'a_cash', name: '지갑', type: 'cash', owner: '나', baseAmount: 10000, includeInTotal: true },
+      { id: 'a_sav', name: '적금', type: 'savings', owner: '나', baseAmount: 5000, includeInTotal: true },
+      { id: 'a_usd', name: '달러', type: 'fx', owner: '나', currency: 'USD', fxAmount: 100, includeInTotal: true },
+      { id: 'a_gold', name: '금', type: 'gold', owner: '나', goldDon: 1, includeInTotal: true },
+      { id: 'a_samsung', name: '삼성전자', type: 'stock', owner: '나', stockCode: 'a005930', stockQty: 10, includeInTotal: true },
+    ],
+    txns: [],
+    recurrences: [],
+    rates: { fx: { USD: 1300 }, goldPerG: 90000, stocks: { a005930: 70000 } },
+  };
+  sandbox._balCache.clear();
+}
+test('openAssetPicker: excludeMarketValued 옵션을 켜면 이체/지출/수입 입력 화면(txOpenAsset/recOpenAsset)에서 fx/gold/stock 자산이 목록에서 빠진다', () => {
+  setupAssetPickerDB();
+  sandbox.lastPickerHtml = null;
+  sandbox.openAssetPicker({ excludeMarketValued: true, onPick: () => {} });
+  const html = sandbox.lastPickerHtml;
+  assert.ok(html.includes('data-val="a_cash"'), '현금 자산은 그대로 있어야 함');
+  assert.ok(html.includes('data-val="a_sav"'), '저축 자산은 그대로 있어야 함');
+  assert.ok(!html.includes('data-val="a_usd"'), '외화 자산은 제외돼야 함');
+  assert.ok(!html.includes('data-val="a_gold"'), '금 자산은 제외돼야 함');
+  assert.ok(!html.includes('data-val="a_samsung"'), '주식 자산은 제외돼야 함');
+});
+test('openAssetPicker: 옵션 없이 부르는 기존 호출부는 회귀 없이 fx/gold/stock도 그대로 보인다', () => {
+  setupAssetPickerDB();
+  sandbox.lastPickerHtml = null;
+  sandbox.openAssetPicker({ onPick: () => {} });
+  const html = sandbox.lastPickerHtml;
+  assert.ok(html.includes('data-val="a_usd"'));
+  assert.ok(html.includes('data-val="a_gold"'));
+  assert.ok(html.includes('data-val="a_samsung"'));
+});
+test('openAssetPicker: cashOnly(만기이체 picker)는 excludeMarketValued 없이도 기존처럼 현금성 자산만 남긴다', () => {
+  setupAssetPickerDB();
+  sandbox.lastPickerHtml = null;
+  sandbox.openAssetPicker({ cashOnly: true, onPick: () => {} });
+  const html = sandbox.lastPickerHtml;
+  assert.ok(html.includes('data-val="a_cash"'));
+  assert.ok(html.includes('data-val="a_sav"'));
+  assert.ok(!html.includes('data-val="a_usd"'));
+  assert.ok(!html.includes('data-val="a_gold"'));
+  assert.ok(!html.includes('data-val="a_samsung"'));
 });
 
 /* ---------- 실행 ---------- */
