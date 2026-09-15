@@ -1,8 +1,19 @@
 {
   "cycle": 28,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "과거 데이터에 남아있는 fx/gold/stock 오용 이체·지출·수입·저축 기록 탐지 + 검토 시트",
+    "why": "cycle27(d60cdab)이 excludeMarketValued로 앞으로의 입력만 막았을 뿐(index.html:2919 txOpenAsset, 3074 recOpenAsset), 그 이전에 이미 저장된 DB.txns/DB.recurrences 중 fromAssetId/toAssetId가 fx/gold/stock 자산을 가리키는 기록은 여전히 그대로 남아 있어 그 사용자들의 순자산이 조용히 어긋난 상태로 방치되어 있다. cycle27 advance 요약에 '범위가 커서 다음 사이클로 미뤘다'고 명시된 뒤 이후 어느 사이클에서도 다뤄지지 않은 것을 history 전수 확인했다. isMarketValued(1934)/isCashLike(1933) 헬퍼와 migrate()의 원타임 플래그 패턴(_varMigrated/_sortV2/_schV2/catsV2, 1731-1745)이 이미 있어 감지 자체의 구현 난이도는 낮다. assetEval()이 fx/gold/stock을 원장과 무관하게 qty×시세로 평가하는 구조(1863-1879)라는 게 근본 원인이므로, 데이터 자체를 자동으로 고치는 건 위험하고 '탐지해서 사용자에게 보여주기'가 적절한 범위다.",
+    "approach": "1) migrate()에서 부르는 순수함수 detectStaleMarketValuedTxns(DB)를 추가: DB.txns.concat(DB.recurrences)를 한 번 순회하며 각 항목의 fromAssetId/toAssetId를 DB.assets에서 찾아 isMarketValued(asset)인 경우를 수집(거래/반복 id, date/startDate, amount, 자산명, 방향 from/to). type은 transfer/expense(fromAssetId만)/income(toAssetId만)/saving(양쪽) 모두 대상. 2) 개별 항목 단위로 다시 안 보이게 하려면 1회성 boolean 플래그로는 부족하므로 DB.settings.dismissedStaleMvIds(id 배열)를 새로 두고, 이미 들어있는 id는 재탐지 결과에서 제외. 3) 탐지 결과가 있으면 renderHome() 진입 시 작은 안내 배너 또는 토스트로 '과거 거래 기록 중 N건이 자산 평가액에 반영되지 않았을 수 있어요' 노출, 탭하면 openSheet 기반 목록 화면(1437 이체확인 시트와 동일한 assetNm/shortDate/comma 조합 스타일 재사용)으로 각 건의 날짜/금액/자산명/방향을 보여주고 항목별 '확인함' 버튼으로 dismissedStaleMvIds에 id를 push(금액/수량은 자동으로 절대 고치지 않음 — 재무 기록 임의 변경 방지, 사용자가 직접 해당 자산의 balance-adjust 등으로 정정하도록 안내 문구만 추가). 4) test/run.js에 detectStaleMarketValuedTxns를 새로 추출해 회귀 테스트 추가: 오용 없는 정상 DB는 빈 배열, transfer/expense/income/saving 각 타입에서 market-valued 자산이 걸리는 경우 탐지, dismissedStaleMvIds에 이미 있는 id는 결과에서 빠지는지, 존재하지 않는 assetId 참조(자산 삭제됨)는 크래시 없이 스킵되는지. 5) APP_VERSION/sw.js CACHE 버전 올리기, node --check로 두 스크립트 블록 파싱 확인."
+  },
   "history": [
+    {
+      "cycle": 28,
+      "phase": "critique",
+      "timestamp": "2026-09-15T21:10:00.000Z",
+      "summary": "cycle28 review(e9c5d37)가 문제 없음으로 끝낸 직후, 최근 develop 커밋 재검토보다 앱 전체를 구조적으로 훑는 데 집중해 Explore 서브에이전트로 조사했다. 가장 먼저 cycle27 advance 요약에 '범위가 커서 다음으로 미뤘다'고 명시된 뒤 이후 어느 사이클에서도 다뤄지지 않은 항목 — 과거에 이미 저장된 DB.txns/DB.recurrences 중 fx/gold/stock 자산을 통장으로 오용한 이체·지출·수입·저축 기록이 excludeMarketValued(cycle27, index.html:2919,3074) 적용 이전 데이터에 그대로 남아 순자산이 조용히 어긋난 채 방치돼 있는지 — 를 검증했다. isMarketValued(1934)로 fromAssetId/toAssetId를 자산 조회해 판정하면 한 번의 순회로 탐지 가능함을 확인했고, migrate()의 기존 원타임 플래그 패턴(_varMigrated/_sortV2/_schV2/catsV2, 1731-1745)이 훅 포인트로 그대로 재사용 가능함을 확인. assetEval()이 원장과 무관하게 qty×시세로 평가하는 구조적 원인(1863-1879)이라 자동으로 금액을 고치는 건 위험하며 '탐지 후 노출'이 적절한 범위라고 판단해 채택. 후보로 간단히 훑었으나 기각/보류한 것: CSV import 부재(여전히 편의기능, 정확성 버그 아님), render 함수 테스트 커버리지(여전히 인프라 투자, 우선순위 낮음), 5523줄 단일 모놀리스 구조(여전히 재작성 규모, 범위 밖), toastWrap(1280) aria-live 부재(여전히 develop 사이즈로 충분히 작음). 새로 훑은 fetch 호출(2136,2149)과 자산 삭제/이름변경 경로(2420-2504)는 이미 방어적으로 짜여 있어 새 후보로 채택하지 않음. pending_advance_plan에 detectStaleMarketValuedTxns 순수함수 + migrate() 훅 + dismissedStaleMvIds 개별 dismiss + 검토 시트 UI + 회귀 테스트 계획 저장. 코드 변경 없음.",
+      "commit": null
+    },
     {
       "cycle": 28,
       "phase": "review",
@@ -134,13 +145,6 @@
       "phase": "critique",
       "timestamp": "2026-09-13T16:10:00.000Z",
       "summary": "전체 앱을 한 걸음 물러나 봤다. .asset-item/.swipe-content/.manage-row 등 행 요소들의 키보드/스크린리더 접근성 부재를 채택(cycle24 critique가 남겨둔 후보). pending_advance_plan에 tabindex+rowKeydown+aria-label+focus-visible CSS 계획 저장. 코드 변경 없음.",
-      "commit": null
-    },
-    {
-      "cycle": 25,
-      "phase": "review",
-      "timestamp": "2026-09-13T15:05:00.000Z",
-      "summary": "Reviewed commit 672043b (recDates monthly/yearly/daily/weekly boundary-crossing weekend-shift fix). No bugs found. 144/144 pass.",
       "commit": null
     }
   ]
