@@ -59,7 +59,7 @@ const FUNCTIONS = [
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
   'clampDay', 'saveTx', 'assetBase', 'balancesUpTo', 'balanceAt',
   'addBalanceAdjust', 'updateBalanceAdjust', 'toggleConfirmTransfers',
-  'assetEval', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker',
+  'assetEval', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'delOwner',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -130,6 +130,7 @@ const sandbox = {
   invalidateBalances: () => {},
   renderCurrent: () => {},
   openCatManage: () => {},
+  openOwnerManage: () => {},
   closeSheet: () => {},
   renderTxSheet: () => {},
   uid: () => 'test-uid',
@@ -609,6 +610,38 @@ test('doDeleteCat: 연결된 활성 반복거래가 없으면 undo해도 반복�
   sandbox.lastUndo.undoFn();
   assert.deepStrictEqual(sandbox.DB.categories.expense, ['교통']);
   assert.deepStrictEqual(sandbox.DB.recurrences, []);
+});
+
+/* ---------- delOwner: 귀속 삭제도 delCat/delTx처럼 undo 가능해야 한다 (cycle28) ---------- */
+test('delOwner: 사용 중인 자산이 없으면 확인 시트 후 삭제하고 undoToast로 되돌릴 수 있다', () => {
+  sandbox.DB = { owners: ['나', '아내', '아이'], assets: [] };
+  sandbox.lastUndo = null;
+  sandbox.confirmSheetCalls = [];
+  sandbox.delOwner(1);
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 1, '바로 지우지 않고 확인 시트를 띄워야 함');
+  assert.deepStrictEqual(sandbox.DB.owners, ['나', '아내', '아이'], '확인 전에는 배열이 그대로여야 함');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.deepStrictEqual(sandbox.DB.owners, ['나', '아이'], '확인 후 해당 귀속이 삭제돼야 함');
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함');
+  sandbox.lastUndo.undoFn();
+  assert.deepStrictEqual(sandbox.DB.owners, ['나', '아내', '아이'], '되돌리면 원래 위치로 복원돼야 함');
+});
+test('delOwner: 사용 중인 자산이 있으면 삭제하지 않고 안내 토스트만 띄운다', () => {
+  sandbox.DB = { owners: ['나', '아내'], assets: [{ owner: '아내' }] };
+  sandbox.lastUndo = null;
+  sandbox.confirmSheetCalls = [];
+  sandbox.delOwner(1);
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0, '확인 시트를 띄우면 안 됨');
+  assert.deepStrictEqual(sandbox.DB.owners, ['나', '아내']);
+  assert.ok(sandbox.lastToast.includes('아내'));
+});
+test('delOwner: 마지막 남은 귀속 하나는 삭제할 수 없다', () => {
+  sandbox.DB = { owners: ['나'], assets: [] };
+  sandbox.lastUndo = null;
+  sandbox.confirmSheetCalls = [];
+  sandbox.delOwner(0);
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0);
+  assert.deepStrictEqual(sandbox.DB.owners, ['나']);
 });
 
 /* ---------- addCat: 중복 이름 추가 시 무반응 대신 안내 토스트 ---------- */

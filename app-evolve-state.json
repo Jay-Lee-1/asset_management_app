@@ -1,8 +1,15 @@
 {
   "cycle": 28,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 28,
+      "phase": "develop",
+      "timestamp": "2026-09-15T19:07:50.570Z",
+      "summary": "delOwner()(index.html:2667, 귀속 관리 화면에서 귀속 삭제)가 delCat()/delTx()와 달리 confirmSheet로 확인은 받으면서도 삭제 후 undoToast가 없어 되돌릴 수 없던 실제 UX 일관성 버그를 발견해 수정했다. cycle27 critique가 후보로만 검토하고 보류해둔 항목이었는데, doDeleteCat()(3819)/recApply()(3024,3028)/deleteTxnsUndo 등 이 앱의 다른 모든 삭제 경로가 예외 없이 undoToast로 되돌리기를 제공하는 컨벤션과 delOwner만 어긋나 있었음을 코드로 직접 확인. confirmSheet 콜백 안에서 DB.owners 필터링 직후 undoToast(msg, ()=>{DB.owners.splice(i,0,o);...})를 추가해 삭제 전 인덱스(i)에 원래 이름을 되돌려 넣도록 했다(other 삭제 경로들이 배열 위치를 splice로 복원하는 것과 동일 패턴). 자산이 남아있어 삭제가 막히는 경로와 귀속이 1개뿐이라 삭제 자체가 막히는 경로는 원래도 undo가 필요 없는 조기 return이라 손대지 않음. test/run.js에 delOwner를 새로 추출하고(openOwnerManage 스텁 추가, 기존 confirmSheet/undoToast/lastToast 스텁 재사용) 회귀 테스트 3개 추가: 정상 삭제 후 confirmSheetCalls[0].cb() 실행 시 undoToast가 불리고 undoFn 실행 시 원래 배열(순서 포함)로 복원되는지, 사용 중인 자산이 있으면 confirmSheet 자체가 안 불리고 안내 토스트만 뜨는지, 마지막 1개 귀속은 삭제 자체가 막히는지. 173/173 통과(기존 170+신규 3). 두 인라인 <script> 블록 모두 vm.Script 파싱 확인. APP_VERSION 1.27.0->1.27.1(버그 fix라 patch bump), sw.js CACHE v90->v91.",
+      "commit": null
+    },
     {
       "cycle": 27,
       "phase": "advance",
@@ -134,13 +141,6 @@
       "phase": "develop",
       "timestamp": "2026-09-13T14:18:47.742Z",
       "summary": "recDates()의 weekend 조정(earlier/later)이 달/연도/주기 경계를 넘어가는 회차를 놓쳐 거래가 통째로 사라지는 버그 발견 및 수정(monthly/yearly/daily/weekly 네 분기 모두). 회귀 테스트 2개 추가 — 144/144 통과. APP_VERSION 1.24.2->1.24.3, sw.js CACHE v80->v81.",
-      "commit": null
-    },
-    {
-      "cycle": 24,
-      "phase": "advance",
-      "timestamp": "2026-09-13T13:12:42.208Z",
-      "summary": "critique 계획대로 renderCurrent()에 전역 에러 바운더리(window.onerror/unhandledrejection + try/catch + showErrBanner)를 추가했다. 142/142 통과. Playwright로 실제 브라우저 확인. APP_VERSION 1.24.1->1.24.2, sw.js CACHE v79->v80.",
       "commit": null
     }
   ]
