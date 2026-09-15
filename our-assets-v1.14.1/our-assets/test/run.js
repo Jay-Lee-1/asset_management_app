@@ -57,11 +57,12 @@ const FUNCTIONS = [
   'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'saveAsset', 'isCloudConflict',
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges',
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
-  'clampDay', 'saveTx',
+  'clampDay', 'saveTx', 'assetBase', 'balancesUpTo', 'balanceAt',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
-const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'isFuture'];
+// _balCache/BAL_CACHE_MAX는 balancesUpTo()가 참조하는 모듈 스코프 캐시 상태라 같은 방식으로 끌어온다.
+const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'isFuture', 'BAL_CACHE_MAX', '_balCache'];
 
 const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(extractConst).join('\n');
 
@@ -74,6 +75,10 @@ const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(
 const sandbox = {
   DB: null,
   TODAY: null,
+  // RANGE_TO는 index.html에서 `let RANGE_TO=addDays(TODAY,760)`로 TODAY에 파생되는데,
+  // 이 파일은 addDays 실행 결과를 그대로 재현하기보다(굳이 필요치도 않아) balancesUpTo/balanceAt을
+  // 쓰는 테스트에서 TODAY처럼 직접 값을 세팅하게 둔다.
+  RANGE_TO: null,
   catRenameDraft: null,
   catAddDraft: null,
   asDraft: null,
@@ -1493,6 +1498,52 @@ test('saveTx: 반복 매월 숫자 day가 31 초과면 여전히 31로 clamp된�
   sandbox.saveTx();
   assert.strictEqual(sandbox.DB.recurrences[0].day, 31);
   assert.ok(sandbox.toastCalls.includes('31일로 맞췄어요'), '31일 초과는 여전히 31로 clamp된다는 안내가 떠야 함');
+});
+
+/* ---------- balancesUpTo: 단일 슬롯 캐시를 다중 슬롯(Map)으로 바꾼 회귀 테스트 ----------
+ * 예전 _balCache={key,map} 구조는 슬롯이 하나뿐이라 renderPlan() 한 번의 렌더 안에서
+ * 서로 다른 날짜(startBal/이전달 말일/다음달 말일 등)로 balanceAt을 번갈아 부르면 매번
+ * 이전 결과를 버리고 RANGE_FROM부터 전체 이력을 재스캔했다. Map 기반으로 바꾼 뒤에는
+ * 날짜별로 독립적으로 캐시되어야 하므로, allTxns 호출 횟수를 세어 그걸 직접 확인한다. */
+test('balancesUpTo: 서로 다른 두 날짜를 번갈아 호출해도 각각 한 번만 계산되고 이후엔 캐시에서 반환된다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox.DB = {
+    settings: {},
+    assets: [{ id: 'a1', type: 'cash', baseAmount: 0 }],
+    txns: [{ date: '2026-01-10', type: 'expense', category: '식비', amount: 1000, fromAssetId: 'a1' }],
+    recurrences: [],
+  };
+  sandbox._balCache.clear();
+  const origAllTxns = sandbox.allTxns;
+  let calls = 0;
+  sandbox.allTxns = (...args) => { calls++; return origAllTxns(...args); };
+  try {
+    assert.strictEqual(sandbox.balanceAt('a1', '2026-06-01'), -1000);
+    assert.strictEqual(sandbox.balanceAt('a1', '2026-06-30'), -1000);
+    assert.strictEqual(calls, 2, '서로 다른 두 날짜는 각각 한 번씩 재계산되어야 함');
+    sandbox.balancesUpTo('2026-06-01');
+    sandbox.balancesUpTo('2026-06-30');
+    assert.strictEqual(calls, 2, '이미 계산한 두 날짜를 다시 불러도 캐시에서 반환되어야 함(단일 슬롯 캐시였다면 서로를 밀어내 여기서 2번 더 불렸을 것)');
+  } finally {
+    sandbox.allTxns = origAllTxns;
+  }
+});
+test('balancesUpTo: invalidateBalances 없이도 _balCache를 비우면 다음 호출은 다시 계산된다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox.DB = {
+    settings: {},
+    assets: [{ id: 'a1', type: 'cash', baseAmount: 0 }],
+    txns: [{ date: '2026-01-10', type: 'expense', category: '식비', amount: 1000, fromAssetId: 'a1' }],
+    recurrences: [],
+  };
+  sandbox._balCache.clear();
+  assert.strictEqual(sandbox.balanceAt('a1', '2026-06-01'), -1000);
+  sandbox.DB.txns.push({ date: '2026-02-01', type: 'expense', category: '식비', amount: 500, fromAssetId: 'a1' });
+  assert.strictEqual(sandbox.balanceAt('a1', '2026-06-01'), -1000, '캐시를 비우지 않으면 DB가 바뀌어도 이전 값이 그대로 나와야 함(캐시가 실제로 동작 중임을 확인)');
+  sandbox._balCache.clear();
+  assert.strictEqual(sandbox.balanceAt('a1', '2026-06-01'), -1500, '캐시를 비운 뒤에는 새 거래가 반영되어야 함');
 });
 
 /* ---------- 실행 ---------- */

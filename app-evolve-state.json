@@ -1,12 +1,15 @@
 {
-  "cycle": 25,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "balanceAt()/balancesUpTo()의 단일 슬롯 잔액 캐시(_balCache)를 다중 슬롯(Map)으로 전환해 Plan 탭 렌더마다 반복되는 전체 이력 재계산 제거",
-    "why": "index.html:1888 `_balCache={key,map}`는 슬롯이 하나뿐이라 dateStr이 바뀌면 이전 결과를 그냥 버린다. balancesUpTo()(1890)는 매번 RANGE_FROM(2023-01-01, 1833)부터 upto까지 allTxns+expandRec로 전체 재스캔하는 O(n) 함수인데, renderPlan()(3415) 한 번의 렌더 안에서 startBal(3423, mStart-1), planBalCard가 이전/현재/다음 달 말일 3번(3465~3467 부근, 3397/planBalInner 3385)까지 서로 다른 날짜로 balanceAt을 호출해 키가 매번 바뀌면서 캐시를 계속 무효화시킨다. 결과적으로 Plan 화면 렌더 1번에 전체 이력 재스캔이 3~4번 중복 실행된다. 이 앱은 다년간 계속 쓰는 걸 전제로 한 개인 자산관리 PWA라 RANGE_FROM이 고정이고 데이터(수동 내역+반복거래 expandRec)가 해마다 누적되므로, 월 이동/자산 전환/내역 수정 때마다 이 중복 재계산 비용이 매년 계속 커진다. 실제 검증: index.html:1888-1910에서 단일 슬롯 구조, 3423/3385/3397 등에서 renderPlan 한 렌더 안에 서로 다른 dateStr로 balanceAt이 여러 번 불리는 것을 코드로 확인함.",
-    "approach": "1) `_balCache={key:null,map:null}`을 `_balCache=new Map()`으로 바꾸고, balancesUpTo()에서 `if(_balCache.key===key)return _balCache.map` 대신 `if(_balCache.has(key))return _balCache.get(key)`로, 계산 후 `_balCache={key,map}` 대신 `_balCache.set(key,map)`으로 저장하도록 수정(1888~1904). 2) invalidateBalances()(1889)는 `_balCache.key=null` 대신 `_balCache.clear()`로 변경 — save() 등 기존 무효화 호출부는 그대로 재사용 가능. 3) 세션이 아주 길어질 경우를 대비해 Map 크기가 예: 40을 넘으면 가장 오래된 항목(Map은 삽입 순서를 유지하므로 `_balCache.keys().next().value`)을 하나 지우는 간단한 LRU 캡을 set 직후에 추가. 4) balanceAt/balancesUpTo의 시그니처와 호출부(1861,1885,2419 등 다수)는 전혀 바꾸지 않는다 — 내부 캐시 구조만 교체. 5) test/run.js에 순수함수 레벨 회귀 테스트 추가: allTxns 호출 횟수를 세는 카운터(또는 DB.txns.length를 세는 스파이)를 심어, 같은 렌더 사이클에서 서로 다른 두 날짜로 balancesUpTo를 연달아 호출한 뒤 같은 두 날짜를 다시 호출했을 때 재계산 없이 캐시에서 반환되는지 확인(예: 첫 라운드에서 allTxns가 2번 불리고, 반복 호출에서는 0번 추가로 불림). 6) APP_VERSION/sw.js CACHE 버전을 patch bump."
-  },
+  "cycle": 26,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 25,
+      "phase": "advance",
+      "timestamp": "2026-09-15T11:20:00.000Z",
+      "summary": "critique 계획대로 balancesUpTo()의 단일 슬롯 잔액 캐시(_balCache={key,map})를 Map 기반 다중 슬롯 캐시로 전환했다(index.html:1888-1908). let _balCache를 const _balCache=new Map()로 바꾸고 has/get/set으로 교체, invalidateBalances()는 _balCache.clear()로 변경, BAL_CACHE_MAX=40 크기의 단순 LRU 캡(Map 삽입 순서 기준 가장 오래된 키 삭제)을 추가했다. renderPlan() 한 렌더 안에서 startBal/이전·현재·다음 달 말일 등 서로 다른 날짜로 balanceAt이 여러 번 불려도 이제 각 날짜가 독립적으로 캐시되어 서로를 밀어내지 않는다. balanceAt/balancesUpTo의 시그니처와 기존 9곳의 invalidateBalances() 호출부는 전혀 바꾸지 않아 하위 호환. test/run.js에 balancesUpTo/balanceAt/assetBase를 새로 추출하고(_balCache/BAL_CACHE_MAX도 CONSTS로 끌어옴, RANGE_TO는 TODAY처럼 테스트에서 직접 세팅) 회귀 테스트 2개 추가: allTxns 호출 횟수를 세는 스파이로 서로 다른 두 날짜가 각각 한 번만 계산되고 재호출 시 추가 계산 없이 캐시에서 반환됨을 확인, 캐시를 비우지 않으면 DB가 바뀌어도 이전 값이 나오다가 clear() 후에는 새 값이 반영됨을 확인. 156/156 통과(기존 154+신규 2). 두 인라인 <script> 블록 모두 node --check로 파싱 확인. Playwright(사전 설치 Chromium, 게스트 모드)로 실제 브라우저에서 한달 플랜 탭을 열어 여러 달을 이동해도 잔액이 정상 표시되고 콘솔 에러(pageerror)가 없음을 확인. APP_VERSION 1.25.3->1.25.4, sw.js CACHE v85->v86. pending_advance_plan 비움.",
+      "commit": null
+    },
     {
       "cycle": 25,
       "phase": "critique",
