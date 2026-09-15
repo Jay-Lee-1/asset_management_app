@@ -1,8 +1,15 @@
 {
   "cycle": 25,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 25,
+      "phase": "develop",
+      "timestamp": "2026-09-15T08:10:00.000Z",
+      "summary": "saveTx()(index.html:2935, '내역 입력' 화면에서 반복 켜고 바로 저장하는 경로)가 saveRec()과 달리 `d.day!=='last'` 가드 없이 무조건 clampDay(d)를 호출해, 매월 반복에서 '말일'을 선택해도 day가 숫자가 아니라는 이유로 1로 덮어써지고 '1일로 맞췄어요'라는 잘못된 토스트까지 뜨는 실제 버그를 발견해 수정했다(saveRec의 `d.freq==='monthly'&&d.day!=='last'` 가드와 동일하게 맞춤). 월세·급여처럼 말일에 반복되길 원하는 항목이 저장 즉시 매월 1일로 조용히 바뀌는, 조용한 데이터 오염 버그였음. test/run.js에 saveTx/clampDay를 새로 추출해 회귀 테스트 2개 추가('말일' 선택 시 day가 1로 안 바뀜, 31일 초과 숫자 day는 여전히 31로 clamp되는 정상 케이스 유지) — 수정 전 되돌려서 새 테스트가 실제로 실패함을 확인 후 재적용, 154/154 통과. 두 인라인 <script> 블록 모두 vm.Script 파싱 확인. APP_VERSION 1.25.2->1.25.3, sw.js CACHE v84->v85.",
+      "commit": null
+    },
     {
       "cycle": 25,
       "phase": "advance",

@@ -57,10 +57,11 @@ const FUNCTIONS = [
   'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'saveAsset', 'isCloudConflict',
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges',
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
+  'clampDay', 'saveTx',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
-const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM'];
+const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'isFuture'];
 
 const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(extractConst).join('\n');
 
@@ -111,7 +112,8 @@ const sandbox = {
   // recSave()/saveQuickAmount()는 각각 $('txAmt')/$('qAmt').value를 읽어 금액을 얻으므로,
   // 그 두 id만 값을 갖는 입력칸처럼 동작시킨다. errBanner는 renderCurrent 에러 바운더리 테스트용.
   $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'errBanner' ? sandbox.errBannerEl : null,
-  toast: (msg) => { sandbox.lastToast = msg; },
+  toast: (msg) => { sandbox.lastToast = msg; sandbox.toastCalls.push(msg); },
+  toastCalls: [],
   save: () => {},
   invalidateBalances: () => {},
   renderCurrent: () => {},
@@ -119,6 +121,11 @@ const sandbox = {
   closeSheet: () => {},
   renderTxSheet: () => {},
   uid: () => 'test-uid',
+  // saveTx()는 txDraft(전역 폼 상태)를 다루는데, syncTxInputs()는 DOM 입력칸을 읽어 그
+  // txDraft에 반영하는 순수 로직이 아닌 함수라 여기선 no-op으로 흉내낸다 — saveTx 테스트는
+  // txDraft를 직접 세팅해서 검증하므로 DOM 동기화 자체는 대상이 아니다.
+  txDraft: null,
+  syncTxInputs: () => {},
   undoToast: (msg, undoFn) => { sandbox.lastUndo = { msg, undoFn }; },
   snapshotAssetName: (id) => { sandbox.snapshotCalls.push(id); },
 };
@@ -1456,6 +1463,38 @@ test('rowKeydown: 다른 키는 무시하고 콜백을 부르지 않는다', () 
   assert.strictEqual(called, 0);
   assert.strictEqual(prevented, false);
 });
+/* ---------- saveTx: 반복 매월 '말일(last)' 선택이 clampDay에 의해 1일로 잘못 바뀌던 버그 ----------
+ * saveRec()은 `d.freq==='monthly'&&d.day!=='last'`로 clampDay를 건너뛰지만, saveTx()의
+ * "내역 입력 화면에서 반복 켜고 바로 저장" 경로는 이 가드 없이 무조건 clampDay(d)를 불러
+ * d.day='last'를 숫자가 아니라는 이유로 1로 덮어썼다(잘못된 "1일로 맞췄어요" 토스트까지 뜸). */
+test("saveTx: 반복 매월 '말일' 선택으로 저장하면 day가 1로 잘못 clamp되지 않고 'last'로 유지된다", () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { recurrences: [], settings: {} };
+  sandbox.txDraft = {
+    id: null, type: 'expense', date: '2026-01-15', category: '월세', memo: '',
+    amount: 500000, fromAssetId: 'a1', toAssetId: null,
+    repeat: true, freq: 'monthly', day: 'last', endDate: null, count: null,
+  };
+  sandbox.toastCalls = [];
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.DB.recurrences.length, 1, '반복 항목이 하나 생성되어야 함');
+  assert.strictEqual(sandbox.DB.recurrences[0].day, 'last', "day가 'last'로 유지되어야 함(1로 잘못 clamp되면 안 됨)");
+  assert.ok(!sandbox.toastCalls.includes('1일로 맞췄어요'), "'말일' 선택 시 1일로 맞췄다는 잘못된 안내가 뜨면 안 됨");
+});
+test('saveTx: 반복 매월 숫자 day가 31 초과면 여전히 31로 clamp된다(정상 케이스는 회귀 없음)', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { recurrences: [], settings: {} };
+  sandbox.txDraft = {
+    id: null, type: 'expense', date: '2026-01-15', category: '월세', memo: '',
+    amount: 100000, fromAssetId: 'a1', toAssetId: null,
+    repeat: true, freq: 'monthly', day: 45, endDate: null, count: null,
+  };
+  sandbox.toastCalls = [];
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.DB.recurrences[0].day, 31);
+  assert.ok(sandbox.toastCalls.includes('31일로 맞췄어요'), '31일 초과는 여전히 31로 clamp된다는 안내가 떠야 함');
+});
+
 /* ---------- 실행 ---------- */
 let pass = 0, fail = 0;
 for (const { name, fn } of tests) {
