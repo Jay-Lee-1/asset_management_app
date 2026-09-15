@@ -58,7 +58,7 @@ const FUNCTIONS = [
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges',
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
   'clampDay', 'saveTx', 'assetBase', 'balancesUpTo', 'balanceAt',
-  'addBalanceAdjust', 'updateBalanceAdjust',
+  'addBalanceAdjust', 'updateBalanceAdjust', 'toggleConfirmTransfers',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -139,6 +139,11 @@ const sandbox = {
   syncTxInputs: () => {},
   undoToast: (msg, undoFn) => { sandbox.lastUndo = { msg, undoFn }; },
   snapshotAssetName: (id) => { sandbox.snapshotCalls.push(id); },
+  // toggleConfirmTransfers()가 끄기 전 확인을 받는 confirmSheet() 스텁 — 실제 시트를 띄우는
+  // 대신 호출 인자를 기록하고 콜백만 저장해서, 테스트가 "확인" 버튼을 누른 것처럼 cb를 직접 실행할 수 있게 한다.
+  confirmSheet: (title, msg, ok, cb) => { sandbox.confirmSheetCalls.push({ title, msg, ok, cb }); },
+  confirmSheetCalls: [],
+  rollPendingTransfers: () => {},
 };
 vm.createContext(sandbox);
 vm.runInContext(extracted, sandbox, { filename: 'extracted-from-index.html' });
@@ -1397,6 +1402,48 @@ test('pendingTransferCount: 일반 미확인 이체(DB.txns)와 반복 미확인
     recurrences: [pendingRec()],
   };
   assert.strictEqual(sandbox.pendingTransferCount(), 2);
+});
+
+/* ---------- toggleConfirmTransfers: 이체 확인 끄기 시 일반 이체뿐 아니라 반복 이체의 미확인 회차도 세야 한다 ---------- */
+test('toggleConfirmTransfers: 반복 이체만 미확인(도래)이어도 끄기 전 확인 시트가 뜬다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.confirmSheetCalls = [];
+  sandbox.DB = { settings: { confirmTransfers: true }, txns: [], recurrences: [pendingRec()] };
+  sandbox.toggleConfirmTransfers();
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 1);
+  assert.ok(sandbox.confirmSheetCalls[0].msg.includes('1건'));
+  // 확인 시트가 뜬 시점엔 아직 꺼지지 않아야 한다(사용자가 콜백을 실행해야 실제로 꺼짐)
+  assert.strictEqual(sandbox.DB.settings.confirmTransfers, true);
+});
+test('toggleConfirmTransfers: 확인 시트에서 "끄기"를 누르면 반복 이체의 도래 회차가 confirmedDates에 기록되고 설정이 꺼진다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.confirmSheetCalls = [];
+  const rec = pendingRec();
+  sandbox.DB = { settings: { confirmTransfers: true }, txns: [], recurrences: [rec] };
+  sandbox.toggleConfirmTransfers();
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.settings.confirmTransfers, false);
+  assert.deepStrictEqual(rec.confirmedDates, ['2026-06-15']);
+});
+test('toggleConfirmTransfers: 일반 이체와 반복 이체가 섞여 있으면 둘 다 완료 처리된다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.confirmSheetCalls = [];
+  const rec = pendingRec();
+  const oneOff = { id: 't1', type: 'transfer', date: '2026-06-10', confirmed: false, amount: 5000 };
+  sandbox.DB = { settings: { confirmTransfers: true }, txns: [oneOff], recurrences: [rec] };
+  sandbox.toggleConfirmTransfers();
+  assert.ok(sandbox.confirmSheetCalls[0].msg.includes('2건'));
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(oneOff.confirmed, true);
+  assert.deepStrictEqual(rec.confirmedDates, ['2026-06-15']);
+});
+test('toggleConfirmTransfers: 미확인 이체가 전혀 없으면 확인 시트 없이 바로 꺼진다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.confirmSheetCalls = [];
+  sandbox.DB = { settings: { confirmTransfers: true }, txns: [], recurrences: [] };
+  sandbox.toggleConfirmTransfers();
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0);
+  assert.strictEqual(sandbox.DB.settings.confirmTransfers, false);
 });
 
 /* ---------- saveAsset: 동명·동종 자산 중복 차단이 수정(edit)에도 적용되는지 (자산 등록 때만 막고 수정 때는 안 막던 버그) ---------- */

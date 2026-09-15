@@ -1284,7 +1284,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.26.0';
+const APP_VERSION='1.26.1';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2257,12 +2257,18 @@ function toggleAutoRates(){DB.settings.autoRates=!DB.settings.autoRates;save();r
 function toggleConfirmTransfers(){
  const turningOff=DB.settings.confirmTransfers;
  if(turningOff){
-  const pending=DB.txns.filter(t=>t.type==='transfer'&&t.confirmed===false).length;
+  /* 일반 이체뿐 아니라 반복 이체(autoConfirm:false)의 도래한 미확인 회차도 함께 센다
+     (pendingTransferCount()/일정 화면과 동일하게 '도래한'(date<=TODAY) 것만 대상 — 아직 안 온
+     미래 회차까지 지금 완료 처리해버리면 안 됨) */
+  const pendingOneOff=DB.txns.filter(t=>t.type==='transfer'&&t.confirmed===false);
+  const pendingRecList=allTxns(RANGE_FROM,TODAY).filter(t=>t.isRec&&t.type==='transfer'&&isDuePending(t));
+  const pending=pendingOneOff.length+pendingRecList.length;
   if(pending){
    confirmSheet('이체 확인 끄기',
     `확인 대기 중인 이체 <b style="color:var(--expense)">${pending}건</b>이 모두 완료 처리돼요. 계속할까요?`,
     '끄기',()=>{
-     DB.txns.forEach(t=>{if(t.type==='transfer'&&t.confirmed===false)t.confirmed=true});
+     pendingOneOff.forEach(t=>t.confirmed=true);
+     pendingRecList.forEach(t=>{const r=DB.recurrences.find(x=>x.id===t.recId);if(r)(r.confirmedDates=r.confirmedDates||[]).push(t.date)});
      DB.settings.confirmTransfers=false;save();renderCurrent();toast('이체 확인을 껐어요');
     });
    return;

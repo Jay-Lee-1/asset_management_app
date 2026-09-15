@@ -1,8 +1,15 @@
 {
   "cycle": 27,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 27,
+      "phase": "develop",
+      "timestamp": "2026-09-15T16:15:14.210Z",
+      "summary": "toggleConfirmTransfers()(index.html:2257)가 이체 확인을 끌 때 일반 이체(DB.txns)만 세고 반복 이체(r.autoConfirm===false, 미확인 도래 회차)는 세지 않는 실제 버그를 발견해 수정했다. pendingTransferCount()(line 4768)/일정 화면(line 5021)은 이미 allTxns()+isDuePending()으로 일반+반복 미확인 이체를 함께 세는 게 앱의 기존 컨벤션인데, toggleConfirmTransfers()만 이 컨벤션에서 벗어나 있었다. 그 결과 일반 미확인 이체가 하나도 없이 반복 이체만 도래 미확인 상태로 남아있으면(예: '적금 자동이체'를 자동확인 끄고 등록, 해당 회차가 오늘 도래) 확인 시트 없이(pending===0이라 if문을 그냥 통과) 즉시 설정이 꺼지고, 그 반복 회차는 r.confirmedDates에 기록되지 않은 채 조용히 '해결됨'으로 취급됐다(isPending()이 DB.settings.confirmTransfers를 먼저 검사해 false를 반환하므로) — 나중에 이체 확인을 다시 켜면 그 오래된 도래 날짜가 갑자기 다시 미확인으로 튀어나올 수 있는 잠재 문제도 있었음. pendingOneOff(DB.txns 필터, 기존 로직 그대로)와 pendingRecList(allTxns(RANGE_FROM,TODAY).filter(t=>t.isRec&&t.type==='transfer'&&isDuePending(t)), pendingTransferCount()와 동일한 컨벤션)를 합쳐 카운트하고, 끄기 콜백에서 pendingRecList의 각 회차 date를 해당 recurrence의 confirmedDates에 push하도록 고쳤다(일반 이체는 기존처럼 confirmed=true). RANGE_TO 대신 TODAY를 상한으로 써서 아직 오지 않은 미래 회차까지 한꺼번에 완료 처리해버리는 과도한 부작용은 피함(처음엔 RANGE_TO로 시도했다가 2년치 미래 회차가 전부 '미확인'으로 잡혀 테스트가 실패하는 걸 보고 TODAY로 좁힘). test/run.js에 toggleConfirmTransfers를 새로 추출하고(confirmSheet/rollPendingTransfers 스텁 추가) 회귀 테스트 4개 추가: 반복 이체만 미확인이어도 확인 시트가 뜨는지, 콜백 실행 시 confirmedDates에 기록되고 설정이 꺼지는지, 일반+반복이 섞이면 둘 다 완료 처리되는지, 미확인이 전혀 없으면 시트 없이 바로 꺼지는지. 166/166 통과(기존 162+신규 4). 두 인라인 <script> 블록 모두 new Function()으로 파싱 확인. APP_VERSION 1.26.0->1.26.1(버그 fix라 patch bump), sw.js CACHE v88->v89.",
+      "commit": null
+    },
     {
       "cycle": 26,
       "phase": "advance",
