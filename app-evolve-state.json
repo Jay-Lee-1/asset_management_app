@@ -1,8 +1,15 @@
 {
   "cycle": 26,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 26,
+      "phase": "develop",
+      "timestamp": "2026-09-15T12:15:00.000Z",
+      "summary": "Explore 서브에이전트로 최근에 다루지 않은 영역을 훑어 updateBalanceAdjust()(index.html:2419, 자산 수정 화면에서 기존 잔액-조정 내역을 재계산하는 함수)의 실제 버그를 발견해 수정했다. openAssetSheet()는 편집 진입 시 balanceAt(id,TODAY)를 미리 호출해 _balCache(다중 슬롯 캐시)를 채워두는데, updateBalanceAdjust()는 기존 조정 내역을 DB.txns에서 잠시 제외한 뒤 balanceAt(asset.id,TODAY)로 '조정 제외 잔액'을 다시 구하면서도 invalidateBalances()를 부르지 않아, 방금 채워진 캐시(옛 조정 내역 포함 잔액)를 그대로 돌려받았다 — 형제 경로인 setBase()는 invalidateBalances()를 이미 호출하는데 이쪽만 빠져 있었다. 그 결과 이미 잔액-조정 내역이 있는 자산을 편집해서 표시 금액을 바꾸면(예: 기준값 4000+기존 조정 1000=5000으로 보이던 자산을 6000으로 수정) 새 조정 금액이 올바른 2000이 아니라 1000으로 잘못 계산되어, 저장 직후 표시 잔액이 사용자가 입력한 값과 다르게 조용히 어긋나는 실제 데이터 버그였다. updateBalanceAdjust() 맨 앞에 invalidateBalances() 호출 한 줄을 추가해 setBase()와 동일한 규칙(옛 조정 제외 후 재계산 전에는 항상 캐시를 비움)으로 맞췄다. test/run.js에 addBalanceAdjust/updateBalanceAdjust를 새로 추출하고 회귀 테스트 1개 추가: 편집 진입을 흉내내 캐시를 먼저 채운 뒤 updateBalanceAdjust(asset,6000)을 호출해 새 조정 금액이 2000이 되는지 확인 — 수정 전으로 되돌려서 이 테스트가 실제로 1000!==2000으로 실패함을 확인한 뒤 재적용, 157/157 통과(기존 156+신규 1). 두 인라인 <script> 블록 모두 vm.Script 파싱 확인. APP_VERSION 1.25.4->1.25.5, sw.js CACHE v86->v87.",
+      "commit": null
+    },
     {
       "cycle": 25,
       "phase": "advance",

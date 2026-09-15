@@ -58,6 +58,7 @@ const FUNCTIONS = [
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges',
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
   'clampDay', 'saveTx', 'assetBase', 'balancesUpTo', 'balanceAt',
+  'addBalanceAdjust', 'updateBalanceAdjust',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -1544,6 +1545,37 @@ test('balancesUpTo: invalidateBalances 없이도 _balCache를 비우면 다음 �
   assert.strictEqual(sandbox.balanceAt('a1', '2026-06-01'), -1000, '캐시를 비우지 않으면 DB가 바뀌어도 이전 값이 그대로 나와야 함(캐시가 실제로 동작 중임을 확인)');
   sandbox._balCache.clear();
   assert.strictEqual(sandbox.balanceAt('a1', '2026-06-01'), -1500, '캐시를 비운 뒤에는 새 거래가 반영되어야 함');
+});
+
+/* ---------- updateBalanceAdjust: 자산 수정 화면에서 채워진 잔액 캐시가 조정 내역
+ * 재계산에 그대로 남아 엉뚱한 조정 금액을 만드는 버그의 회귀 테스트.
+ * openAssetSheet()는 편집 진입 시 balanceAt(id,TODAY)를 미리 호출해 _balCache를 채워두는데,
+ * 예전 updateBalanceAdjust()는 기존 조정 내역을 DB.txns에서 잠시 빼고 balanceAt을 다시 불러도
+ * invalidateBalances()를 안 불러 그 캐시를 그대로 돌려받았다 — 그래서 "뺀 조정 내역"이 여전히
+ * 잔액에 포함된 채로 새 조정 금액이 계산됐다(사용자가 입력한 금액과 실제 표시 잔액이 어긋남). */
+test('updateBalanceAdjust: 편집 화면 진입 시 채워진 잔액 캐시가 있어도 기존 조정 내역을 뺀 값으로 새 조정 금액을 계산한다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  const asset = { id: 'a1', type: 'cash', baseAmount: 4000 };
+  sandbox.DB = {
+    settings: {},
+    assets: [asset],
+    txns: [{ id: 'adj1', date: '2026-06-01', type: 'income', category: sandbox.ADJUST_CAT, memo: '재등록 잔액 조정', amount: 1000, fromAssetId: null, toAssetId: 'a1', adjust: true, adjustAsset: 'a1' }],
+    recurrences: [],
+  };
+  sandbox._balCache.clear();
+  // openAssetSheet()가 편집 진입 시 미리 채워두는 캐시를 흉내냄(기존 조정 내역 +1000 포함 → 5000).
+  assert.strictEqual(sandbox.balanceAt('a1', sandbox.TODAY), 5000);
+  const origInvalidate = sandbox.invalidateBalances;
+  sandbox.invalidateBalances = () => sandbox._balCache.clear();
+  try {
+    sandbox.updateBalanceAdjust(asset, 6000); // 사용자가 표시 잔액을 6000으로 수정
+  } finally {
+    sandbox.invalidateBalances = origInvalidate;
+  }
+  const adj = sandbox.DB.txns.find((t) => t.adjust && t.adjustAsset === 'a1');
+  assert.strictEqual(adj.amount, 2000, '기준값 4000 + 새 조정 2000 = 6000이어야 함(캐시가 남아있으면 1000으로 잘못 계산됨)');
+  assert.strictEqual(adj.type, 'income');
 });
 
 /* ---------- 실행 ---------- */

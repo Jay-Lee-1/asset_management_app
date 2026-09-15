@@ -1284,7 +1284,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.25.4';
+const APP_VERSION='1.25.5';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2417,6 +2417,7 @@ function addBalanceAdjust(asset,gap){
 }
 /* 자산 금액을 수정하면, 연결된 조정 내역을 다시 계산해 맞춤 (없으면 새로, 0이면 삭제) */
 function updateBalanceAdjust(asset,entered){
+ invalidateBalances(); /* 자산 수정 화면 진입 시 채워진 캐시에 옛 조정 내역이 남아있을 수 있어 비움 */
  let adj=(DB.txns||[]).find(t=>t.adjust&&t.adjustAsset===asset.id);
  if(adj)DB.txns=DB.txns.filter(t=>t!==adj); /* 잠시 제외하고 순수 잔액 계산 */
  const base=balanceAt(asset.id,TODAY);       /* 조정 제외한 현재 잔액 */
