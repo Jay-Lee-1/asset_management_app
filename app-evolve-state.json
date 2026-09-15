@@ -1,8 +1,19 @@
 {
   "cycle": 27,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "이체/지출/수입 화면에서 외화·금·주식(fx/gold/stock) 자산을 통장으로 선택하면 순자산이 조용히 어긋나는 구조적 결함 수정",
+    "why": "assetEval()(index.html:1860-1868)은 fx/gold/stock 세 타입만 원장(DB.txns)과 무관하게 qty×rate(fxAmount/goldDon/stockQty×DB.rates)로 평가한다(그 외 cash/savings/realestate/debt/pension/etc는 전부 assetBalance()로 원장을 따라감). 그런데 txOpenAsset()(2915)->openAssetPicker()(5125)는 이체/지출/수입/저축 입력 화면에서 이 세 타입도 다른 통장과 동일하게 선택 가능한 목록에 올린다 — cashOnly 필터(isCashLike, 1933)는 만기이체 picker(asOpenMat, 2549) 한 곳에만 적용되고 일반 거래 입력 경로에는 전혀 적용되지 않는다. saveTx()(2955)는 fromAssetId/toAssetId를 저장만 할 뿐 fxAmount/goldDon/stockQty를 갱신하는 코드가 전혀 없다. 그 결과 사용자가 정상적인 '이체' 화면에서 '현금 → 외화(또는 금/주식)'를 입력하면, 보내는 쪽(현금) 잔액은 원장 기준으로 정확히 줄어들지만 받는 쪽(외화/금/주식) 평가액은 그대로라서 그 금액이 전체 순자산에서 조용히 사라진다(반대 방향이면 조용히 생겨난다). '정확한 잔액 추적'이라는 앱의 핵심 약속을 깨는, 아주 자연스럽고 발견하기 쉬운 흐름(자산 종류가 앱 시드 데이터에도 있는 a_usd/a_gold/a_samsung)에서 터지는 실사용 버그이며, 수동 대사 외에는 감지할 방법이 없다.",
+    "approach": "1) isCashLike(1933) 옆에 isMarketValued=a=>a.type==='fx'||a.type==='gold'||a.type==='stock' 헬퍼 추가. 2) openAssetPicker()(5125)에 excludeMarketValued 옵션을 추가해 켜지면 items에서 isMarketValued 자산을 제외(기존 cashOnly 옵션과 별개로 공존). 3) txOpenAsset()(2915)이 이체/지출/수입/저축 입력 시 이 옵션을 켜서 호출하도록 수정 — 이제 fx/gold/stock은 일반 거래의 통장으로 선택 불가. 다른 openAssetPicker 호출부(만기이체 등)는 그대로 둠. 4) 자산 상세/편집 화면(openAssetSheet)에 fxAmount/goldDon/stockQty를 직접 입력하는 필드가 이미 있는지 확인하고, 있다면 그대로 유지(수량 조정은 그쪽에서), 없다면 최소 안내 문구 추가. 5) migrate()에 기존 DB.txns 중 fromAssetId/toAssetId가 fx/gold/stock 자산을 가리키는 케이스가 있는지 검사해 플래그를 세우고 렌더 시 기존 error banner 패턴으로 '확인이 필요한 과거 이체 기록이 있어요' 안내(자동 정정은 하지 않음 — 사용자마다 의도가 다를 수 있음). 범위가 크면 이번 advance 사이클은 1~3(픽커 제한, 신규 버그 차단)까지만 하고 5(과거 데이터 경고)는 다음 사이클로 미뤄도 됨. 6) test/run.js에 openAssetPicker/isMarketValued 회귀 테스트 추가: excludeMarketValued 켰을 때 fx/gold/stock이 목록에서 빠지는지, 옵션 없을 때(기존 cashOnly 등 다른 호출부)는 회귀 없이 그대로인지 확인."
+  },
   "history": [
+    {
+      "cycle": 27,
+      "phase": "critique",
+      "timestamp": "2026-09-15T17:10:00.000Z",
+      "summary": "cycle27 review(1dac59b)가 문제 없음으로 끝낸 직후, 최근 develop 커밋 재검토보다 앱 전체를 구조적으로 훑는 데 집중해 Explore 서브에이전트로 데이터 검증/통화 서식/카테고리 관리/검색·필터/차트/백업·복원/자산-소유자 상호작용/날짜 선택기/빈 상태/로딩 상태/중복 감지 등 이전 사이클들이 다루지 않은 영역을 훑었다. assetEval()(1860-1868)이 fx/gold/stock 세 타입만 원장과 무관하게 qty×rate로 평가하는데, openAssetPicker()(5125)/txOpenAsset()(2915)는 이체·지출·수입 화면에서 이 세 타입도 다른 통장과 똑같이 선택 가능한 이체 대상으로 보여주고 saveTx()(2955)는 fromAssetId/toAssetId만 저장할 뿐 fxAmount/goldDon/stockQty를 전혀 갱신하지 않는 것을 직접 코드로 확인했다 — cashOnly 필터(isCashLike, 1933)가 만기이체 picker(2549) 한 곳에만 적용되고 일반 거래 입력 경로엔 없다는 것도 확인. '현금→외화/금/주식' 이체를 정상 화면에서 입력하면 받는 쪽 평가액이 갱신되지 않아 그 금액이 순자산에서 조용히 사라지는(반대 방향이면 조용히 생기는) 실사용 핵심 버그로 판단해 채택. 후보로 검토했으나 보류한 것: CSV import 부재(원장 정확성 버그가 아니라 편의기능 공백), delOwner()(2666)에 delCat/delTx와 달리 undo 토스트 없음(develop 사이즈로 다음에), 카테고리/소유자 관리·백업복원(undo+injection 방어 포함)·검색필터·시세 동기화 실패 상태는 이미 견고함을 확인. pending_advance_plan에 isMarketValued 헬퍼 + openAssetPicker excludeMarketValued 옵션 + txOpenAsset 적용 + 회귀 테스트 계획 저장. 코드 변경 없음.",
+      "commit": null
+    },
     {
       "cycle": 27,
       "phase": "review",
@@ -127,13 +138,6 @@
       "phase": "advance",
       "timestamp": "2026-09-13T13:12:42.208Z",
       "summary": "critique 계획대로 renderCurrent()에 전역 에러 바운더리(window.onerror/unhandledrejection + try/catch + showErrBanner)를 추가했다. 142/142 통과. Playwright로 실제 브라우저 확인. APP_VERSION 1.24.1->1.24.2, sw.js CACHE v79->v80.",
-      "commit": null
-    },
-    {
-      "cycle": 24,
-      "phase": "critique",
-      "timestamp": "2026-09-13T12:20:00.000Z",
-      "summary": "전체 앱을 한 걸음 물러나 봤다. 전역 에러 바운더리 부재를 채택(다른 후보: 행 요소 키보드 접근성 부재는 다음 critique로 이월). pending_advance_plan에 window.onerror/unhandledrejection + renderCurrent try/catch 계획 저장. 코드 변경 없음.",
       "commit": null
     },
     {
