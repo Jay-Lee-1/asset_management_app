@@ -1,8 +1,24 @@
 {
   "cycle": 26,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "recDates()/expandRec()/allTxns() 반복거래 확장 경로 성능 개선: from 기준 시작점으로 스캔 + 캐시 + planNegatives 중복 호출 제거",
+    "why": "recDates()(index.html:1771-1801)의 daily/weekly 분기(1793-1799)는 항상 r.startDate부터 하루/일주일씩 걸어 to까지 진행한다 — from은 필터링에만 쓰이고 시작점을 앞으로 당기지 않는다. 수년 전 시작된 daily/weekly 반복거래가 있으면 매 호출마다 그 수천 회차를 전부 순회한 뒤 from 이전을 버리는 낭비가 발생하고, 계정이 오래될수록 비용이 계속 커진다. 게다가 expandRec()/allTxns()에는 캐시가 전혀 없어(balanceAt의 _balCache와 달리) 매 호출마다 이 순회를 다시 한다. 여기에 더해 renderHome()(1989: neg=planNegatives())이 이미 계산한 결과를 renderCurrent()(5178)이 홈 탭에서도 무조건 updateAlerts()->planNegatives()를 다시 호출해(4726) 같은 렌더 사이클에서 동일 계산이 두 번 실행된다(다른 탭은 중복이 아니라 updateAlerts()가 유일한 계산처이므로 그대로 둔다). save()->renderCurrent() 경로라 거의 모든 입력 후 실행되는 핫패스.",
+    "approach": [
+      "1) recDates() daily/weekly 분기(1793-1799): cd 초기값을 rs 그대로 두지 말고, from 이전 회차는 건너뛰도록 시작점을 앞으로 당긴다 — step(1 또는 7일) 단위로 rs에서 from까지 필요한 배수만 한 번에 계산해 cd를 그 지점 근처(from 이전 최대 한 스텝)로 이동시킨 뒤 루프 시작. monthly/yearly 분기(1777-1792, 1786-1792)도 같은 방식으로 cur/y를 rs가 아니라 from 기준 월/년 근처로 당길 수 있으면 같이 손보되, 이쪽은 이미 월/년 단위라 비용이 낮으므로 필수는 아니다. push()의 from/to/startDate/endDate 필터링 로직과 '경계 한 회차 더 생성'(1782, 1791, 1798) 규칙은 결과가 바뀌지 않도록 그대로 유지 — 최적화는 오직 '스캔 시작점'만 바꾸는 것.",
+      "2) expandRec()/allTxns()에 캐시 추가: _balCache(1888-1907)와 같은 패턴으로 Map 기반 캐시(예: _recCache, key=from+'|'+to)를 만들고 invalidateBalances()에서 함께 clear()하거나, 이름을 그대로 유지하되 역할을 넓혀 _balCache.clear() 옆에 _recCache.clear()를 추가한다. balanceAt처럼 LRU 캡을 둔다.",
+      "3) renderHome()이 이미 계산한 neg를 재사용하도록 updateAlerts(neg)가 선택적으로 미리 계산된 neg를 받게 하고, renderCurrent()에서 홈 탭일 때는 renderHome()의 결과를 넘겨 이중 계산을 없앤다(다른 탭은 현행 유지).",
+      "4) 회귀 테스트(test/run.js): recDates()가 시작점 최적화 전후로 동일한 날짜 배열을 반환하는지(behavior-preserving) 확인하는 케이스를 daily/weekly/monthly/yearly 각각 추가하고, 특히 startDate가 오래되고 [from,to]가 좁은 경우를 포함한다. expandRec/allTxns 캐시는 allTxns 호출 스파이(또는 expandRec 내부 순회 카운터)로 같은 [from,to] 재호출 시 재계산 없이 캐시에서 반환되는지, DB.recurrences 변경 후 invalidateBalances() 호출 시 캐시가 비워져 새 값이 반영되는지 확인한다."
+    ]
+  },
   "history": [
+    {
+      "cycle": 26,
+      "phase": "critique",
+      "timestamp": "2026-09-15T14:05:00.000Z",
+      "summary": "cycle26 review(977c6e5)가 문제 없음으로 끝낸 직후, 최근 develop/advance 커밋 재검토보다 구조적 결함을 찾는 데 집중해 Explore 서브에이전트로 아키텍처/UX/성능/접근성/에러상태 전반을 훑었다. recDates()(index.html:1771-1801)의 daily/weekly 분기가 from을 필터링에만 쓰고 항상 r.startDate부터 순회를 시작해, 수년 전 시작된 반복거래일수록 매 호출 비용이 커지는 것을 발견해 직접 코드로 확인(1793-1799). expandRec()/allTxns()에는 balanceAt의 _balCache 같은 캐시가 전혀 없다는 점도 확인. 또한 renderHome()(1989)이 계산한 planNegatives()를 renderCurrent()(5175-5178)가 홈 탭에서도 updateAlerts()(4725-4726)를 통해 무조건 재계산하는 중복도 grep으로 직접 확인(다른 5개 탭은 updateAlerts가 유일한 계산처라 중복 아님). save()->renderCurrent()로 거의 모든 입력 후 도는 핫패스라 채택. 후보로 검토했으나 보류한 것: 클라우드 동기화 충돌 처리(이미 isCloudConflict/localHasUnsyncedChanges로 견고, 명백한 결함 아님), render 계열 함수의 테스트 커버리지 부재(실질적 결함이 아니라 인프라 투자라 이번 사이클엔 후순위), 5492줄 단일 모놀리스 구조(고치려면 재작성 규모라 범위 밖). pending_advance_plan에 시작점 최적화 + 캐시 + 중복 호출 제거 계획 저장. 코드 변경 없음.",
+      "commit": null
+    },
     {
       "cycle": 26,
       "phase": "develop",
