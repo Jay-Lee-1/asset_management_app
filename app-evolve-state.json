@@ -1,17 +1,20 @@
 {
   "cycle": 25,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "emptyDB() 직후 migrate() 누락 → 전체초기화/신규 클라우드가입 시 설정 기본값이 조용히 꺼진 채로 남는 버그",
-    "why": "DB를 새 객체로 교체하는 경로는 파일 전체에 6곳(load()의 3개 분기 1704/1713/1717, afterCloudAuth()의 remote/guestHasData 분기 1625/1629, doResetAll() 5433)인데, 이 중 doResetAll()(5433, `DB=emptyDB();save(...)`)과 afterCloudAuth()의 '기존 게스트 데이터도 없는 신규 가입' 분기(1629, `else if(!DB||!Array.isArray(DB.assets)){DB=emptyDB()}`) 단 두 곳만 emptyDB() 뒤에 migrate()를 호출하지 않는다. grep으로 emptyDB()의 6개 호출부를 전수 확인해 이 두 곳이 유이한 예외임을 확인했다. emptyDB()는 owners/categories/inquiries 등 최소 골격만 채우고 DB.settings.confirmTransfers/autoRates/histSortAsc 같은 기본값은 migrate()의 Object.assign({...,confirmTransfers:true,autoRates:true,...}, DB.settings||{})이 채우는 역할이라, migrate()를 건너뛰면 이 값들이 undefined(=falsy)로 남는다. 실제 영향: (1) doResetAll(전체 초기화)을 실행하면 진짜 첫 실행과 달리 '이체 확인'과 '시세 자동 연동' 토글이 조용히 꺼진 채로 리셋되어, 사용자는 방금 초기화했으니 첫 실행과 같은 기본 설정일 거라 믿지만 실제로는 이체가 확인 없이 바로 확정되고 시세가 자동 갱신되지 않는다(다음 새로고침 때 load()의 migrate()가 돌면서 저절로 복구되지만, 그 사이 세션에서는 다르게 동작). (2) 로컬 게스트 데이터가 전혀 없는 상태로 새 이메일/카카오 계정을 만드는 흔한 경로(afterCloudAuth 1629)도 동일한 결함을 겪는다. catIcon/catVar/budgets/nwHistory 쪽은 cycle20 advance가 이미 같은 근본 원인(migrate 스킵)을 부수적으로 관찰해뒀지만 그쪽은 각 쓰기 지점에 이미 `DB.catIcon=DB.catIcon||{}` 류 가드가 있어 크래시로 이어지지 않는다 — 이번 critique가 새로 짚은 건 가드가 없어 값 자체가 틀려버리는 settings 쪽이다. INC_CATS_DEFAULT에 ADJUST_CAT이 이미 포함돼 있어(1477) 카테고리 목록 자체는 emptyDB()만으로도 정상이므로 그 부분은 손댈 필요 없음.",
-    "approach": "doResetAll()의 `DB=emptyDB()` 바로 뒤와 afterCloudAuth()의 `DB=emptyDB()` 분기(else if 안) 두 곳에 각각 `migrate()` 호출을 추가해, load()/guestHasData/remote-pull 분기와 완전히 동일한 'DB 교체 후 항상 migrate()' 규칙으로 통일한다. migrate()가 Object.assign(...,DB.settings||{})처럼 기존 값을 우선시하는 병합 방식이라 emptyDB()가 이미 설정해둔 값(owners/categories/groupOrder 등)과 충돌 없이 안전하게 합쳐지는지 코드로 재확인한 뒤 적용. test/run.js에 emptyDB()+migrate() 조합의 DB.settings.confirmTransfers/autoRates가 true가 되는지 확인하는 순수함수 레벨 회귀 테스트를 추가하고, 가능하면 doResetAll/afterCloudAuth 두 함수도 추출해 vm 샌드박스에서 실행 전/후 settings 값을 검증한다(기존 cycle20/24가 saveRec/renderCurrent 등 DOM-얽힌 함수를 이런 식으로 검증한 선례를 따름). Playwright로 실제 브라우저에서 설정에서 이체확인/자동연동을 끈 상태로 두지 않고 기본값(켜짐)인 채로 전체 초기화를 실행해도 여전히 켜진 상태로 유지되는지, 그리고 게스트 데이터 없이 신규 가입했을 때도 두 토글이 켜진 채로 시작하는지 확인한다. 범위를 이 두 호출부와 그에 대응하는 회귀 테스트로 좁게 유지하고, catIcon/catVar/budgets 가드 관련 코드는(이미 안전하므로) 건드리지 않는다."
-  },
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 25,
+      "phase": "advance",
+      "timestamp": "2026-09-15T07:05:00.000Z",
+      "summary": "critique 계획대로 doResetAll()(index.html:5433)과 afterCloudAuth()의 '게스트 데이터 없는 신규가입' 분기(index.html:1629) 두 곳에 `DB=emptyDB()` 직후 `migrate()` 호출을 추가해, load()의 세 분기/afterCloudAuth의 remote·guestHasData 분기와 동일하게 'DB 교체 후 항상 migrate()' 규칙으로 통일했다. emptyDB()는 owners/categories 등 최소 골격만 채우고 DB.settings.confirmTransfers/autoRates/histSortAsc/bigMin 같은 기본값은 migrate()의 Object.assign({...},DB.settings||{})이 채우는데, migrate()를 건너뛰면 이 값들이 undefined(falsy)로 남아 전체 초기화 직후 '이체 확인'/'시세 자동 연동' 토글이 조용히 꺼진 채로 리셋되는 실제 버그였다. migrate()가 기존 값(DB.settings||{})을 우선 병합하는 방식이라 emptyDB()가 이미 정한 themeMode/assetSort/groupOrder와 충돌 없이 안전하게 합쳐짐을 코드로 확인. test/run.js에 순수함수 레벨 회귀 테스트 2개 추가(emptyDB() 형태 입력에 migrate() 실행 시 confirmTransfers/autoRates/histSortAsc/bigMin이 기본값으로 채워짐, emptyDB()가 이미 정한 themeMode/assetSort는 덮어쓰지 않음) — 152/152 통과(기존 150+신규 2). 두 인라인 <script> 블록 모두 vm.Script 파싱 확인. Playwright(사전 설치 Chromium, 게스트 모드)로 실제 브라우저에서 전체 초기화를 실행해도 confirmTransfers/autoRates가 true로 유지되고 assets가 0으로 리셋됨을 end-to-end 확인. APP_VERSION 1.25.1->1.25.2, sw.js CACHE v83->v84 (patch bump, bug fix). pending_advance_plan 비움.",
+      "commit": null
+    },
     {
       "cycle": 25,
       "phase": "critique",
       "timestamp": "2026-09-15T06:15:00.000Z",
-      "summary": "전체 앱을 한 걸음 물러나 봤다. cycle25 review(ae8b758)가 문제 없음으로 끝낸 직후라 최근 develop 커밋 자체를 다시 보기보다 구조적 결함을 찾는 데 집중했다. DB를 새 객체로 완전히 교체하는 6개 지점(load()의 3분기, afterCloudAuth()의 2분기, doResetAll())을 전수 대조한 결과 doResetAll()과 afterCloudAuth()의 '게스트 데이터 없는 신규가입' 분기, 이 두 곳만 emptyDB() 뒤 migrate()를 호출하지 않아 DB.settings.confirmTransfers/autoRates 등 migrate()가 채우는 기본값이 undefined(falsy)로 남는 실제 버그를 발견했다(전체 초기화 시 '이체 확인'/'시세 자동 연동'이 조용히 꺼진 채 리셋됨). cycle20 advance가 같은 migrate-skip 근본원인을 catIcon/catVar/budgets 관점에서 이미 관찰했었지만 그쪽은 이미 방어 가드(||{})가 있어 크래시 없이 넘어가고, settings 쪽은 가드가 전혀 없어 값 자체가 틀려지는 더 실질적인 회귀임을 새로 확인했다. 다른 후보(카테고리 income/expense 비대칭, CSV import 부재 등)는 과거 cycle16/20 critique에서 이미 검토·기각된 것과 동일해 재검토하지 않았다. pending_advance_plan에 doResetAll/afterCloudAuth 두 곳에 migrate() 호출 추가 + 회귀 테스트 계획을 저장했다. 코드 변경 없음.",
+      "summary": "전체 앱을 한 걸음 물러나 봤다. cycle25 review(ae8b758)가 문제 없음으로 끝낸 직후라 최근 develop 커밋 자체를 다시 보기보다 구조적 결함을 찾는 데 집중했다. DB를 새 객체로 완전히 교체하는 6개 지점(load()의 3분기, afterCloudAuth()의 2분기, doResetAll())을 전수 대조한 결과 doResetAll()과 afterCloudAuth()의 '게스트 데이터 없는 신규가입' 분기, 이 두 곳만 emptyDB() 뒤 migrate()를 호출하지 않아 DB.settings.confirmTransfers/autoRates 등 migrate()가 채우는 기본값이 undefined(falsy)로 남는 실제 버그를 발견했다. pending_advance_plan에 doResetAll/afterCloudAuth 두 곳에 migrate() 호출 추가 + 회귀 테스트 계획을 저장했다. 코드 변경 없음.",
       "commit": null
     },
     {
@@ -25,126 +28,70 @@
       "cycle": 25,
       "phase": "develop",
       "timestamp": "2026-09-13T18:05:00.000Z",
-      "summary": "배경 조사 에이전트가 앱 전체를 탐색해 제안한 후보 중, 예산이 설정된 카테고리가 해당 월 지출이 0원이면 예산 관리 화면(지출 분석)에서 완전히 사라져 조회/수정/삭제가 불가능해지는 실제 버그를 채택했다. spendByCategory(y,m)(index.html:3616)는 그 달 실제 expense 거래가 있는 카테고리만 map에 채워 반환하고, openSpendAnalysis/openBudgetPrompt/saveBudget/delBudget(3641-3683) 전부 이 rows 배열의 idx로만 예산을 다루므로, DB.budgets에 500000원짜리 '여행' 예산을 걸어둔 뒤 그 달에 여행 지출이 없으면(과거/미래 달로 이동해도 마찬가지) 해당 행이 목록에 아예 나타나지 않아 예산을 낮추거나 지울 방법이 없었다(다시 나타나게 하려면 그 카테고리로 가짜 지출을 실제로 기록해야 함) — 카테고리 이름변경/삭제 시 DB.budgets를 마이그레이션하는 기존 보호(doRenameCat/doDeleteCat, 이전 사이클에서 이미 처리)와 대비되는 사각지대. 고침: spendByCategory 끝에서 DB.budgets에 있는 카테고리 중 이번 달 map에 없는 것을 v:0으로 채워 넣어(한 줄, DB.budgets 없으면 가드로 스킵) 예산이 설정된 카테고리는 지출이 0원이어도 계속 행으로 노출되고 예산 수정/삭제가 가능하게 했다. 부수 효과로 totalBudgetSummary()의 '이번 달 예산' 요약 카드도 이전에는 지출 0원인 예산 카테고리의 budgetedTotal을 누락시켰는데 이 fix로 함께 바로잡힘(같은 rows를 재사용하므로). spendByCategory는 이 예산 관리 플로우 4곳에서만 쓰여 다른 화면(가계부/캘린더/합계 등)에는 영향 없음을 grep으로 확인. test/run.js에 회귀 테스트 3개 추가(예산 있고 이번 달 지출 0원인 카테고리가 v:0으로 계속 나타남/예산 없는 카테고리는 지출 0원이면 여전히 안 나타남/DB.budgets undefined여도 안 터짐) — 150/150 통과(기존 147+신규 3). 두 인라인 <script> 블록 모두 vm.Script로 파싱 확인. APP_VERSION 1.25.0->1.25.1, sw.js CACHE v82->v83 (patch bump, bug fix). UI를 직접 조작해보는 브라우저 테스트는 이번 사이클에서 실행하지 않음(순수 로직 함수 변경 + 회귀 테스트로 충분히 검증됐다고 판단).",
+      "summary": "예산이 설정된 카테고리가 해당 월 지출이 0원이면 예산 관리 화면(지출 분석)에서 완전히 사라져 조회/수정/삭제가 불가능해지는 실제 버그를 채택해 spendByCategory 끝에서 DB.budgets에 있는 카테고리 중 이번 달 map에 없는 것을 v:0으로 채워 넣도록 고쳤다. test/run.js에 회귀 테스트 3개 추가 — 150/150 통과. APP_VERSION 1.25.0->1.25.1, sw.js CACHE v82->v83.",
       "commit": null
     },
     {
       "cycle": 25,
       "phase": "advance",
       "timestamp": "2026-09-13T17:10:12.476Z",
-      "summary": "critique 계획대로 자산/가계부/전체내역/반복거래 관리 화면의 핵심 행 요소(.asset-item, .swipe-content, .manage-row)에 키보드/스크린리더 접근성을 추가했다. 공용 rowKeydown(e,fn) 헬퍼(Enter/Space를 클릭과 동일하게 처리, esc() 근처에 추가)를 만들고, 실제로 onclick만 있던 6개 행 렌더 지점에 적용했다: assetBodyHTML의 선택모드(assetToggleSel)/일반모드(openAssetSheet) 두 asset-item, txRow(가계부)/histRow(전체내역)의 선택모드(ledgerToggleSel/histToggleSel)/일반모드(rowTap) 각 swipe-content, openRecManage의 manage-row(editRec) — 각각 tabindex=\"0\", role=\"button\", aria-label(이름+금액, 선택모드는 aria-pressed 포함), onkeydown=\"rowKeydown(event,()=>...)\"을 기존 onclick 대상과 그대로 맞춰 추가했다. 계획에 있던 owner manage row(2624)/cat manage row(3749)/maturity row(3685)는 재검토 결과 행 자체에 onclick이 없고 이미 네이티브 <button>(연필/휴지통/이체 버튼)만 있어 키보드 접근이 이미 가능했으므로 손대지 않았다(계획이 과다 식별한 부분, 실제 값이 없어 skip). CSS는 .switch:focus-visible 옆에 .asset-item/.swipe-content/.manage-row 공용 focus-visible 아웃라인 규칙을 추가했다. 데모/온보딩 목업(3930/3943 부근)은 애초에 onclick이 없는 비대화형 그림이라 그대로 두었다(계획이 미리 배제해둔 대로). test/run.js FUNCTIONS에 rowKeydown 추가하고 회귀 테스트 3개(Enter/Space가 preventDefault 후 콜백 호출, 다른 키는 무시) 추가 — 147/147 통과(기존 144+신규 3). 두 인라인 <script> 블록 모두 node --check 통과. Playwright(사전 설치 Chromium, 게스트 모드)로 실제 브라우저에서 자산/가계부/반복거래 관리 세 화면 모두 행에 tabindex=0+role=button+aria-label이 붙는 것, 첫 행에 focus() 후 Enter를 누르면 클릭과 동일하게 해당 시트(자산 상세/거래 수정/반복거래 수정)가 열리는 것을 end-to-end로 확인했다. APP_VERSION 1.24.3->1.25.0, sw.js CACHE v81->v82 (minor bump, 접근성 기능 추가).",
+      "summary": "critique 계획대로 자산/가계부/전체내역/반복거래 관리 화면의 핵심 행 요소(.asset-item, .swipe-content, .manage-row)에 키보드/스크린리더 접근성을 추가했다(공용 rowKeydown 헬퍼, tabindex/role/aria-label/focus-visible). test/run.js 3개 추가 — 147/147 통과. Playwright로 실제 브라우저 Enter/Space 동작 확인. APP_VERSION 1.24.3->1.25.0, sw.js CACHE v81->v82.",
       "commit": null
     },
     {
       "cycle": 25,
       "phase": "critique",
       "timestamp": "2026-09-13T16:10:00.000Z",
-      "summary": "전체 앱을 한 걸음 물러나 봤다(백그라운드 조사 에이전트 활용). cycle24 critique가 두 번째로 남겨둔 후보였던 .asset-item/.swipe-content/.manage-row 등 행 요소들의 키보드/스크린리더 접근성 부재를 채택했다: assetBodyHTML(~2331/2337), 가계부/전체내역 행(~2768/2773/3297/3303), 카테고리 관리 행(~3749), 반복거래 관리 행(~3824), 자산 만기/소유자 행(~2624/3685) 등 앱의 핵심 탐색 표면이 전부 onclick만 있는 평범한 div로, tabindex/role/keydown/aria-label이 전무하다(파일 전체 16건의 tabindex/role/aria 중 행 렌더 지점은 0건) — 키보드/스크린리더 사용자는 자산이나 거래를 보거나 편집하거나 선택하거나 삭제할 수 없는 완전한 배제 상태. 예산/백업복원/카테고리 삭제/이체 계획 등 나머지 화면은 이미 confirmSheet+undoToast로 잘 보호돼 있어 이보다 우선순위가 높은 새 데이터 정합성 버그는 발견되지 않았다(예산 설정, 카테고리 이름변경/삭제의 아이콘·변동·예산 마이그레이션, 이체 계획 함수 전수 확인, TODO/FIXME 전무 확인). pending_advance_plan에 tabindex=0+role=button+공용 rowKeydown(Enter/Space) 핸들러+aria-label+:focus-visible CSS를 약 10개 행 렌더 지점에 적용하는 구체적 계획을 저장했다(데모/온보딩용 비대화형 목업 2곳은 제외). 코드 변경 없음.",
+      "summary": "전체 앱을 한 걸음 물러나 봤다. .asset-item/.swipe-content/.manage-row 등 행 요소들의 키보드/스크린리더 접근성 부재를 채택(cycle24 critique가 남겨둔 후보). pending_advance_plan에 tabindex+rowKeydown+aria-label+focus-visible CSS 계획 저장. 코드 변경 없음.",
       "commit": null
     },
     {
       "cycle": 25,
       "phase": "review",
       "timestamp": "2026-09-13T15:05:00.000Z",
-      "summary": "Reviewed commit 672043b (recDates monthly/yearly/daily/weekly loops generate one boundary-crossing extra candidate so weekend-shift-earlier occurrences that fall into the queried period from the next month/year/cycle are no longer dropped). Verified all four branches terminate (cur/y/cd strictly advance past a fixed endd/end/raw each iteration before break) — no infinite-loop risk from the while(true) rewrite. Confirmed push()'s existing d>=from&&d<=to&&d>=r.startDate&&(!r.endDate||d<=r.endDate) filter is untouched and still enforces the final range, so the extra generated candidates only matter when their shifted date actually lands inside the query window; traced that recNthDate/recCountUntil (which reuse recDates) already pad `to` by 2 extra months/years/weeks/days independently, so this fix doesn't change their observable output, it just makes recCountUntil correctly count a previously-missed earlier-shifted boundary occurrence. Re-ran the regression suite (144/144 pass, including the 2 new monthly/yearly boundary tests) and re-verified both inline <script> blocks parse via node --check. Confirmed APP_VERSION 1.24.2->1.24.3 and sw.js CACHE v80->v81 were bumped consistently. No bugs found — no code changes this phase.",
+      "summary": "Reviewed commit 672043b (recDates monthly/yearly/daily/weekly boundary-crossing weekend-shift fix). No bugs found. 144/144 pass.",
       "commit": null
     },
     {
       "cycle": 25,
       "phase": "develop",
       "timestamp": "2026-09-13T14:18:47.742Z",
-      "summary": "recDates()(index.html:1768, 반복거래 발생일 계산의 핵심 순수함수)가 weekend 조정(earlier/later)으로 회차 날짜가 달/연도 경계를 넘어가는 경우를 놓치는 실제 데이터 유실 버그를 발견해 고쳤다. 예: 매월 1일+earlier(주말이면 금요일로 당김) 반복에서 2026-02-01(일요일)은 2026-01-30(금)으로 당겨져야 하는데, 기존 monthly 루프는 조회 종료월(endd)까지만 후보를 생성해 그 다음달(2월) 1일 후보 자체를 만들지 않았다 — 그 결과 1월 조회에도(당겨진 날짜를 만들 후보가 없어서), 2월 조회에도(당겨진 결과가 1월로 넘어가버려서) 어느 달에도 나타나지 않고 완전히 사라졌다. 매년 여러 번 발생하는 실사용 시나리오(2026년만 해도 2/3/8/11월이 매월1일 기준 이 케이스에 해당)이고, expandRec을 거쳐 가계부/캘린더/월별 합계/예산 등 사실상 모든 화면이 recDates를 단일 소스로 쓰므로 사라진 거래는 어디에도 보이지 않는다. 같은 구조적 결함이 yearly(연도 경계)와 daily/weekly(주기 경계) 분기에도 있어 세 분기 모두 고쳤다: monthly는 endd 이후 한 달, yearly는 raw>end 이후 한 해, daily/weekly는 end 이후 한 회차를 추가로 생성하도록 각 루프를 while(cur<=endd)/break-before-push 구조에서 처리 후 경계 판정(if(cur>endd)break 등, 위 push()가 최종 from/to/r.endDate 필터를 그대로 담당)으로 바꿨다 — 새로 생성되는 후보가 out 배열에 늘어나긴 하지만 push()의 기존 필터(d>=from&&d<=to&&...)가 그대로 최종 범위를 강제하므로 다른 동작 변화는 없다. recNthDate/recCountUntil은 내부적으로 recDates를 그대로 재사용해 자동으로 함께 고쳐진다. test/run.js에 monthly/yearly 각각 1개씩 회귀 테스트 추가(다음 달/해의 1일이 일요일이라 이번 달/해 말일로 당겨지는 경우가 정확히 그 달/해에만 나오고 중복되지 않음을 검증) — 144/144 통과(기존 142+신규 2). 두 인라인 <script> 블록 모두 vm.Script로 파싱 확인. APP_VERSION 1.24.2->1.24.3, sw.js CACHE v80->v81 (patch bump, bug fix).",
+      "summary": "recDates()의 weekend 조정(earlier/later)이 달/연도/주기 경계를 넘어가는 회차를 놓쳐 거래가 통째로 사라지는 버그 발견 및 수정(monthly/yearly/daily/weekly 네 분기 모두). 회귀 테스트 2개 추가 — 144/144 통과. APP_VERSION 1.24.2->1.24.3, sw.js CACHE v80->v81.",
       "commit": null
     },
     {
       "cycle": 24,
       "phase": "advance",
       "timestamp": "2026-09-13T13:12:42.208Z",
-      "summary": "critique 계획대로 renderCurrent()(index.html:5136 부근, 모든 상태 변화 후 호출되는 유일한 재렌더 디스패처)에 전역 에러 바운더리를 추가했다. window.onerror/window.addEventListener(unhandledrejection,...)를 스크립트 최상단(showSwUpdateBar 근처)에 등록해 콘솔 로깅+in-memory lastError 기록만 담당하게 하고(진단용, 화면 제어 없음), renderCurrent() 본문(renderers[ST.tab]();updateAlerts();requestAnimationFrame(fitAll))을 통째로 try/catch로 감쌌다. 실패 시 recordError()로 로깅하고 showErrBanner()가 화면 상단(z-index:400, 기존 sheet/scrim/toast보다 위)에 '문제가 발생했어요 · 새로고침' 배너를 띄운다 — 렌더 함수들은 문자열을 다 만든 뒤 마지막에 innerHTML을 한 번에 대입하는 기존 패턴이라(renderHome 등 확인) 예외가 중간에 나도 이전 DOM이 그대로 남는다는 계획의 가정이 맞았다. catch 블록은 화면 배너만 띄우고 DB/localStorage/저장/동기화를 전혀 건드리지 않아 '실패 상태에서 파괴적 동작 트리거 금지' 규칙을 자연히 만족한다. 성공적으로 재렌더되면 hideErrBanner()가 배너를 다시 감춘다. 계획에 있던 4)회귀 테스트: test/run.js에 recordError/showErrBanner/hideErrBanner/renderCurrent를 FUNCTIONS에 추가하고, $(errBanner)/renderers/ST/svg/console/fitAll 등 최소 스텁을 sandbox에 추가해 renderCurrent 자체를 실행 가능하게 만든 뒤 3개 테스트(정상 렌더 시 배너 안 뜸/렌더러가 throw하면 예외가 밖으로 새지 않고 배너+lastError 기록/재렌더 성공하면 배너가 다시 사라짐) 추가 — 142/142 통과(기존 139+신규 3). 두 인라인 <script> 블록 모두 vm.Script로 파싱 확인. Playwright(사전 설치 Chromium, 게스트 모드)로 실제 브라우저에서도 확인: 정상 부팅 시 배너 없음, renderers.home을 강제로 throw하게 바꾸고 renderCurrent() 재호출하면 콘솔에 [app-error] 로그+lastError 기록+배너 노출+기존 page-home DOM 보존을 모두 확인, renderers.home을 원상복구하고 다시 렌더하면 배너가 사라짐도 확인. APP_VERSION 1.24.1->1.24.2, sw.js CACHE v79->v80 (patch bump, 회복탄력성 개선).",
+      "summary": "critique 계획대로 renderCurrent()에 전역 에러 바운더리(window.onerror/unhandledrejection + try/catch + showErrBanner)를 추가했다. 142/142 통과. Playwright로 실제 브라우저 확인. APP_VERSION 1.24.1->1.24.2, sw.js CACHE v79->v80.",
       "commit": null
     },
     {
       "cycle": 24,
       "phase": "critique",
       "timestamp": "2026-09-13T12:20:00.000Z",
-      "summary": "전체 앱을 한 걸음 물러나 봤다(백그라운드 조사 에이전트 활용). cycle23 critique가 다음 후보로 남겨둔 두 항목 중 하나였던 전역 에러 바운더리 부재를 채택했다: window.onerror/unhandledrejection 핸들러가 파일 전체에 전무하고(grep 0건 직접 재확인), renderCurrent()(5136, 모든 상태변화 후 호출되는 유일한 재렌더 디스패처)도 try/catch로 감싸여 있지 않다 — 렌더 함수 안에서 예외가 하나라도 던져지면 에러 표시 없이 화면이 완전히 멈춘다. 같이 검토했지만 기각한 후보: (1) .asset-item/.swipe-content/.manage-row 등 행 요소들의 키보드 접근성 부재(cycle23 critique가 남겨둔 다른 후보이기도 함) — 실재하지만 키보드/스크린리더 사용자로 영향이 국한돼 앱 전체 회복탄력성에 관여하는 에러 바운더리보다 우선순위가 낮다고 판단, 다음 critique 후보로 계속 남겨둠; (2) CSV export에 대응하는 import 경로 부재 — cycle20 critique에서 이미 검토·기각된 사항과 동일(JSON 백업이 undo 보호까지 갖춘 실제 복원 경로). pending_advance_plan에 window.onerror/unhandledrejection 전역 핸들러 + renderCurrent() try/catch + 실패 시 비파괴 배너 UI 계획을 저장했다. 코드 변경 없음.",
+      "summary": "전체 앱을 한 걸음 물러나 봤다. 전역 에러 바운더리 부재를 채택(다른 후보: 행 요소 키보드 접근성 부재는 다음 critique로 이월). pending_advance_plan에 window.onerror/unhandledrejection + renderCurrent try/catch 계획 저장. 코드 변경 없음.",
       "commit": null
     },
     {
       "cycle": 24,
       "phase": "review",
       "timestamp": "2026-09-13T11:08:09.237Z",
-      "summary": "Reviewed commit 08361ff (dead calendar-cell computation loop + unused monthStats(y,m) result removed from renderLedger()). Confirmed via grep/read that neither the removed cells string nor the removed S variable was referenced anywhere else in renderLedger() or later in the file — the real render path is calPane/calCellsFor, unchanged by this diff. Ran the full regression suite (139/139 pass, unchanged) and re-verified both inline <script> blocks parse via node --check. No bugs found — no code changes this phase.",
+      "summary": "Reviewed commit 08361ff (dead calendar-cell computation loop removed from renderLedger()). No bugs found. 139/139 pass.",
       "commit": null
     },
     {
       "cycle": 17,
       "phase": "review",
       "timestamp": "2026-09-12T06:00:00.000Z",
-      "summary": "Reviewed commit 686a752 (homeAlerts/pendingTransferCount now scan allTxns(RANGE_FROM,TODAY) instead of DB.txns directly, so recurring autoConfirm:false transfers show up as home alerts and count correctly). Verified isPending/isDuePending's existing recurrence branch (t.isRec+recId, checks r.autoConfirm===false and r.confirmedDates) is exactly what the new allTxns-based scan now exposes to these two aggregators, matching the same allTxns(...) pattern already used by monthStats/spendByCategory/histSumTotals/dayTypeTotals. Traced confirmRecNow() to confirm it only pushes into r.confirmedDates (never materializes a real DB.txns row), so the virtual expandRec entry for that date keeps being generated every render but isPending correctly flips to false once confirmed — no double-counting risk. Grepped every other isRec call site (dayTxns/ledgerSelAll/renderLedger/histRow/planNegatives/upcomingOutflows) and confirmed none of them ever create a DB.txns row with isRec:true themselves, so expandRec is the sole source and there's no overlap between virtual and real pending entries. Confirmed the home alert card's onclick branch (al.isRec?confirmRecTransfer(...):openConfirmTransfer(...)) mirrors the same branch already used in renderLedger/histRow. Re-ran the regression suite (104/104 pass, including the 4 new pendingTransferCount tests) and re-verified both inline <script> blocks parse via new Function(). No bugs found — no code changes this phase.",
+      "summary": "Reviewed commit 686a752 (homeAlerts/pendingTransferCount now scan allTxns via expandRec). No bugs found. 104/104 pass.",
       "commit": null
     },
     {
       "cycle": 17,
       "phase": "develop",
       "timestamp": "2026-09-12T05:21:00.000Z",
-      "summary": "배경 조사 에이전트가 앱 전체를 탐색해 제안한 후보 중, 홈 화면의 이체 확인 알림(homeAlerts)과 '이체 전부 완료' 판정(pendingTransferCount)이 반복거래로 생성되는 미확인 이체를 완전히 놓치는 실제 버그를 채택했다. isPending()/isDuePending()(index.html:1379-1385)은 일반 거래와 반복거래(t.isRec+recId, DB.recurrences의 autoConfirm===false+confirmedDates 미포함 여부 확인)를 모두 지원하도록 이미 설계되어 있고, 실제로 renderLedger(2734)/histRow(3262)의 '확인' 버튼은 t.isRec에 따라 confirmRecTransfer(recId,date) vs openConfirmTransfer(id)로 올바르게 분기한다. 하지만 pendingTransferCount()(4670)와 homeAlerts()(4921)는 DB.txns만 직접 filter하고 expandRec()을 거치지 않아, confirmTransfers 설정을 켜고 autoConfirm:false인 반복 이체를 만들면 (1) 홈 화면의 주요 알림 목록에 '이체 확인' 카드가 전혀 뜨지 않고, (2) 이 반복 이체가 유일한 미확인 이체일 때 일반 이체를 확인 처리하면 pendingTransferCount()가 0을 반환해 실제로는 아직 남아있는데도 '이체 전부 완료! 🎉' 축하 메시지가 잘못 뜨는 문제였다. 수정은 두 함수 모두 DB.txns.filter(...) 대신 allTxns(RANGE_FROM,TODAY).filter(isDuePending)로 바꿔 recurrence 확장 결과까지 스캔하도록 좁게 한정했다(다른 곳에서 이미 쓰는 patttern, 예: monthStats의 allTxns(RANGE_FROM,upto)). homeAlerts가 만드는 'confirm' 알림 객체에 isRec/recId를 추가하고, homeAlertCard()의 해당 카드 onclick도 렌더 화면들과 동일하게 al.isRec 여부로 confirmRecTransfer/openConfirmTransfer를 분기하도록 고쳤다(안 그러면 가상 id인 'rec_<recId>_<date>'로 openConfirmTransfer를 불러 아무 일도 안 일어남). test/run.js에 isPending/isDuePending/pendingTransferCount/RANGE_FROM을 추출 대상에 추가하고, sandbox.TODAY를 새로 도입해 회귀 테스트 4개 추가(반복 미확인 이체 카운트됨, confirmedDates 포함 시 제외, autoConfirm true면 제외, 일반+반복 합산) — 104/104 통과(기존 100+신규 4). Playwright(사전 설치 Chromium, 게스트 모드로 부팅해 인증 화면 우회)로 실제 브라우저에서 반복 이체를 하나 만들고 홈 화면에 '이체 확인' 카드가 뜨는 것, 클릭 시 confirmRecTransfer 시트가 열리는 것, 확인 처리 후 카드가 사라지고 pendingTransferCount가 0이 되며 r.confirmedDates에 날짜가 기록되는 것까지 end-to-end로 확인했다. 두 인라인 <script> 블록 모두 node --check 통과. APP_VERSION 1.21.3->1.21.4, sw.js CACHE v63->v64 (patch bump, bug fix).",
-      "commit": null
-    },
-    {
-      "cycle": 16,
-      "phase": "advance",
-      "timestamp": "2026-09-12T05:30:00.000Z",
-      "summary": "cycle16 critique 계획대로 '잔액 조정' 시스템 카테고리를 이름변경/삭제로부터 보호했다. const ADJUST_CAT='잔액 조정' 상수를 도입해 INC_CATS_DEFAULT/CATICON/migrate()/addBalanceAdjust의 하드코딩된 문자열 4곳을 전부 이 상수 참조로 교체(동작 변화 없음, 중복 제거). openCatManage(k==='income'&&c===ADJUST_CAT)에서는 연필/휴지통 버튼과 변동/고정 토글 대신 '자동 생성' 안내만 보이도록 분기 — 정상적인 UI 경로로는 더 이상 도달 불가능. UI 우회 호출까지 막도록 doDeleteCat/doRenameCat 시작부에도 동일 가드(k==='income'&&c===ADJUST_CAT이면 toast 후 return)를 추가해 방어를 이중화했다. test/run.js CONSTS에 ADJUST_CAT 추가, 회귀 테스트 4개 추가(income의 잔액조정 삭제 차단+토스트, 이름변경 차단+토스트, 같은 이름이어도 expense 타입이면 가드 미적용 확인, 잔액조정이 아닌 평범한 수입 카테고리는 정상 삭제되는 과잉적용 방지 확인) — 100/100 통과(기존 96+신규 4). 브라우저에서 실제 카테고리 관리 화면을 열어 '잔액 조정' 행에 '자동 생성' 표시와 버튼 부재를 스크린샷으로 확인했고, 콘솔에서 doRenameCat/doDeleteCat을 직접 호출해도(우회 경로) 카테고리 배열이 그대로 유지됨을 확인, 일반 카테고리는 여전히 정상적으로 이름변경/삭제되는 회귀 없음도 함께 확인했다. 두 인라인 <script> 블록 모두 node --check 통과. APP_VERSION 1.21.2->1.21.3, sw.js CACHE v62->v63. pending_advance_plan 비움.",
-      "commit": null
-    },
-    {
-      "cycle": 16,
-      "phase": "critique",
-      "timestamp": "2026-09-12T04:30:00.000Z",
-      "summary": "전체 앱을 한 걸음 물러나 봤다(백그라운드 조사 에이전트 활용). 후보로 검토했지만 기각한 것들: (1) renderLedger()의 죽은 코드(~2657-2670, cycle16 review가 이미 발견해둔 cells 루프)는 실재하지만 삭제 몇 줄이면 끝나는 규모라 advance 사이클 단위로는 너무 작음(develop 사이클 후보로 남겨둠 — cycle23 critique 시점까지도 아직 처리 안 된 것으로 보임, 다음 develop이 참고할 것); (2) 앱 전체가 상태 변경마다 render*()로 페이지를 통째로 다시 그리는 innerHTML 풀 리렌더 패턴은 구조적 특징이지만 개인 가계부 수준의 데이터량에선 체감 성능 문제가 없고 아키텍처 전체를 흔드는 규모라 범위 초과; (3) '잔액 조정' 카테고리가 지출 쪽 기본 목록엔 없는 단순 비대칭 자체는 addBalanceAdjust가 카테고리명을 하드코딩해 기능상 깨지지 않아 부수적 관찰 수준. 대신 선정한 건 income 쪽 '잔액 조정' 카테고리가 migrate()(1679)에 의해 매 실행마다 자동으로 다시 채워지는 사실상 시스템 전용 카테고리인데도, openCatManage(3693)가 이를 일반 카테고리와 구분 없이 렌더링해 연필/휴지통 버튼이 그대로 붙고 doRenameCat(3728)/doDeleteCat(3715)에 아무 보호 장치가 없는 문제. 재현 가능한 실제 데이터 정합성 버그로, 이름을 바꾸면 과거 조정 내역은 새 이름으로 바뀌지만 addBalanceAdjust/updateBalanceAdjust(2341/2351)는 여전히 하드코딩된 '잔액 조정'으로 새 내역을 만들어 같은 기능이 두 이름으로 영구히 갈라지고, 삭제해도 다음 실행 때 migrate가 다시 채워 넣어 사용자를 혼란스럽게 한다. 코드 변경 없음 — pending_advance_plan에 ADJUST_CAT 상수화 + openCatManage 시스템 카테고리 UI 숨김 + doRenameCat/doDeleteCat 가드 + 회귀 테스트 계획을 적어둠.",
-      "commit": null
-    },
-    {
-      "cycle": 16,
-      "phase": "review",
-      "timestamp": "2026-09-12T03:15:00.000Z",
-      "summary": "Reviewed commit 710ca68 (spendByCategory/histSumTotals now skip adjust&&!inSurplus balance-adjustment txns). The commit message claimed these were 'the only two aggregators missing the guard, unlike monthStats/monthStats2/expenseByCat' — that claim was false. Grepped every t.amount aggregation site in index.html and found a third: calCellsFor(y,m,sel) (~2585), the function that actually renders each day's +수입/-지출/저축 numbers in the ledger calendar grid (called via calPane, which renderLedger uses live — confirmed calCellsFor/calPane are the real render path, not the dead-looking inline loop inside renderLedger itself at ~2653-2669 which builds a `cells` variable that is computed but never referenced in renderLedger's returned HTML; that's a separate, non-behavior-affecting dead-code issue, not a bug, so left alone here and noted below for critique). calCellsFor summed inn/ex/sv straight from tx.filter(...).reduce(...) with no adjust/inSurplus check, so a manual balance-adjustment transaction on a given day showed up in that day's calendar cell as if it were real income/expense/saving, while the same month's summary card (ledSumBox, backed by monthStats2 which does have the guard) excluded it — same bug class as the develop commit just fixed, just in a third location the previous cycle's audit missed. Fixed by extracting a pure dayTypeTotals(tx) helper (mirrors histSumTotals's shape) with the same if(t.adjust&&!t.inSurplus)return; guard, and having calCellsFor call it instead of its three separate filter/reduce calls. Added dayTypeTotals to test/run.js's FUNCTIONS list and 3 new regression tests (excluded/included/no-adjustment-present) — 96/96 passing (93+3). Both inline <script> blocks verified with node --check. Flagging for critique: renderLedger's dead first-pass day-total loop (~2653-2669) computes cells that are discarded — real code, real historicity, but not a correctness bug, more a tech-debt/dead-code cleanup candidate. APP_VERSION 1.21.1->1.21.2, sw.js CACHE v61->v62 (patch bump, bug fix).",
-      "commit": null
-    },
-    {
-      "cycle": 16,
-      "phase": "develop",
-      "timestamp": "2026-09-12T02:15:29.617Z",
-      "summary": "배경 조사 에이전트가 앱 전체를 탐색해 후보를 제안했다. 최우선으로 고른 건 '잔액 조정(balance-adjustment) 거래가 수지에서 기본 제외되어야 한다'는 규칙이 monthStats()/monthStats2()/expenseByCat()에는 이미 적용돼 있는데, 같은 규칙을 놓친 두 군데를 발견한 것: (1) spendByCategory()(index.html:3556, 지출 분석 화면의 카테고리별 합계)가 t.type==='expense'만 걸러내고 adjust/inSurplus 가드 없이 그대로 합산해, 자산 잔액을 수동 보정하면 '잔액 조정'이 실제 지출 카테고리처럼 지출 분석에 잡히고 총지출/예산 초과 판정까지 왜곡되는 문제. (2) updateHist()(index.html:3163, 전체내역 탭 검색 결과 합계 카드)도 actual.forEach(t=>a[t.type]+=t.amount) 식으로 동일한 가드 없이 집계해, 같은 달인데도 홈/가계부(monthStats2 기반)와 전체내역 탭의 수입/지출 합계가 잔액 조정 건수만큼 서로 달라 보이는 문제. 두 곳 모두 같은 패턴의 같은 버그라 한 사이클에 함께 고쳤다: spendByCategory에는 expenseByCat과 동일한 한 줄 가드(if(t.adjust&&!t.inSurplus)return;)를 추가했고, updateHist는 DOM에 강하게 결합돼 있어 합계 로직만 histSumTotals(actual,sched) 순수 함수로 추출한 뒤 monthStats2와 같은 가드를 적용해 updateHist가 그 함수를 호출하도록 교체했다(동작은 그대로, 테스트 가능하게 분리만). 후보 3번(잔액 조정 카테고리가 수입 쪽에만 등록되고 지출 쪽 카테고리 목록엔 없는 비대칭)은 크리틱/어드밴스가 판단할 더 구조적인 이슈로 보여 이번 develop 사이클 범위에서는 건드리지 않았다. test/run.js FUNCTIONS에 monthStartStr/monthEndStr/expandRec/allTxns/spendByCategory/histSumTotals를 추가하고 회귀 테스트 6개 추가(spendByCategory 3개: 제외/포함/비지출타입 무시, histSumTotals 3개: 제외/포함/가드없을때 정상합산) — 93/93 통과(기존 87개+신규 6개). 두 인라인 <script> 블록 모두 new Function()으로 파싱 확인. APP_VERSION 1.21.0->1.21.1, sw.js CACHE v60->v61 (patch bump, bug fix).",
-      "commit": null
-    },
-    {
-      "cycle": 19,
-      "phase": "advance",
-      "timestamp": "2026-09-12T17:10:00.000Z",
-      "summary": "critique 계획대로 doResetAll()(index.html)에 undo 안전망을 추가했다. emptyDB()로 교체하기 전 기존 DB 객체 참조를 snapshot 변수에 그대로 보관하고(전역 DB만 새 객체로 교체하므로 deep clone 불필요), plain toast 대신 6초 undoToast('되돌리기')를 띄운다. 클라우드 전파 경합 대응: save()에 opts.deferCloudPush 옵션을 추가해 리셋 직후 즉시 scheduleCloudPush()가 걸리지 않게 하고, 대신 6초짜리 자체 타이머(resetPushT)로 undo 창이 끝난 뒤에만 scheduleCloudPush()를 실행하게 했다. 되돌리기를 누르면 resetPushT를 clearTimeout으로 취소한 뒤 DB=snapshot; save()(정상 push 포함); renderCurrent()로 완전 복원 — 빈 DB가 클라우드에 닿기 전에 취소되도록 했다. confirmSheet 문구도 '되돌릴 수 없어요' -> '초기화 직후 잠깐 동안만 되돌릴 수 있어요'로 갱신. APP_VERSION 1.22.1->1.22.2, sw.js CACHE v69->v70 갱신. 두 인라인 <script> 블록 node --check 통과, 회귀 테스트 111/111 통과.",
-      "commit": null
-    },
-    {
-      "cycle": 20,
-      "phase": "develop",
-      "timestamp": "2026-09-12T18:12:34.712907Z",
-      "summary": "반복거래(recurrence) 생성/편집 폼에서 종료일이 시작일보다 이른 날짜로 저장돼도 아무 검증 없이 통과되는 실제 버그를 발견해 고쳤다. recDates()(index.html)는 freq(monthly/yearly/daily/weekly) 모든 분기에서 endDate<startDate이면 조건 미충족으로 0개 발생일을 반환하고 recCountUntil()도 count=0을 반환하는데, saveRec()/saveTx() 저장 경로는 이 값을 그대로 active:true인 반복 레코드로 저장해버려 사용자는 정상 반복이 설정됐다고 믿지만 실제로는 영원히 거래를 한 번도 만들어내지 않는 조용한 데드 레코드가 생긴다 (예: 월별 할부 반복을 등록하면서 실수로 지난 날짜를 종료일로 고르면 그대로 저장되고 아무 경고도 없음). 기존에 존재하던 fromAssetId===toAssetId 가드와 동일한 컨벤션으로, saveRec()(index.html:3070 부근, type/이체 검증 직후)와 saveTx()의 반복-즉시생성 분기(index.html:2892 부근, base 계산 직후) 두 곳에 d.endDate<d.startDate(또는 d.date) 체크를 추가해 '종료일은 시작일 이후로 선택해 주세요' 토스트와 함께 저장을 막도록 했다. saveRec/saveTx는 recDraft/txDraft 전역 상태와 다수의 DOM 입력(syncRecInputs 등)에 엮여 있는 UI 글루 함수라 test/run.js의 순수함수 하네스(FUNCTIONS 목록)에 새로 편입시키는 비용이 이번 가드 한 줄의 가치에 비해 과했다고 판단해 상설 테스트 케이스는 추가하지 않았다 — 대신 실제 index.html에서 두 함수를 그대로 추출해 vm 샌드박스에 올려 (1) 종료일이 시작일보다 이른 경우 토스트만 뜨고 DB.recurrences/txns가 전혀 늘지 않음, (2) 정상적인(시작일 이후) 종료일은 기존과 동일하게 저장됨 — 두 경로 모두 실측 확인했다. 기존 회귀 테스트(recDates/recCountUntil 포함) 111/111 통과, node --check로 두 인라인 스크립트 블록 파싱도 확인. APP_VERSION 1.22.2->1.22.3, sw.js CACHE v70->v71(버그 수정이라 patch bump).",
-      "commit": "70e9369"
-    },
-    {
-      "cycle": 20,
-      "phase": "review",
-      "timestamp": "2026-09-12T19:05:00.000Z",
-      "summary": "Reviewed commit 70e9369 (endDate<startDate guard added to saveRec/saveTx). Confirmed the guard is well-placed: both entry points that can produce a recurrence record (the recDraft-based saveRec and the quick-add txDraft repeat branch in saveTx) now reject before DB.recurrences.push. Traced every other .endDate= write site in the file (clampRecurringToMaturity at ~2552, recApply's future-delete/edit-split branches at ~2963/2986) — none of them can produce endDate<startDate as a real defect: clampRecurringToMaturity only ever sets endDate to an occurrence date already >= startDate (guarded earlier by startDate>maturity return), and recApply's future-scope endDate=addDays(date,-1) is a deliberate 'delete this and everything after' mechanism where date is always an already-generated occurrence, not a user-editable form field, so it's a different code path from the bug class this commit targets, not a missed sibling site. Checked the string-comparison assumption (all dates are zero-padded YYYY-MM-DD throughout the file, e.g. addMonthsStr/recDates), so lexicographic '<' matches chronological order correctly. Manually traced the one case where the guard actually earns its keep — a user picks startDate after already having set an earlier endDate (the two date pickers don't cross-validate or auto-clear each other) — and confirmed recCountUntil already independently returns 0 for that state (recDates' monthly/yearly/daily loops all short-circuit when end<start), so the guard and the counting logic agree. Re-ran the regression suite (111/111 pass, unchanged) and re-verified both inline <script> blocks parse via node --check. No bugs found — no code changes this phase.",
-      "commit": null
-    },
-    {
-      "cycle": 20,
-      "phase": "critique",
-      "timestamp": "2026-09-12T20:14:00.000Z",
-      "summary": "전체 앱을 한 걸음 물러나 봤다(백그라운드 조사 에이전트 활용). 검토했지만 기각한 후보: (1) 앱 이름과 owner 태그(나/배우자/공용)가 시사하는 '가구(household)' 공유 전제를 클라우드 동기화가 실제로 지원하지 않고 로그인 하나를 부부가 공유해야 하는 문제 — 실재하는 더 큰 제품 갭이지만 인증/스키마 전면 재설계가 필요해 한 사이클 규모를 크게 초과함, 인접 영역(클라우드 동기화 충돌 UX)은 최근에 이미 의도적으로 좁게 개선됨; (2) 임박한 지출에 대한 백그라운드 알림/푸시 부재 — 정적 단일 HTML PWA+Netlify Functions만으로는 실제 웹 푸시에 필요한 백엔드 인프라가 없어 이전에 기각된 FX/시세 fetch 신뢰성 이슈와 같은 부류로 판단, 채택 안 함; (3) CSV 내보내기에 대응하는 가져오기 경로 부재 — 실재하는 비대칭이지만 CSV는 백업용이 아니라고 명시돼 있고 JSON 백업이 이미 undo 보호까지 갖춘 완전한 복원 경로를 제공해 가치가 낮음. 최종 선택: 자산 삭제(delAsset, index.html:2338)에는 activeRecsForAssets()(2334)로 연결된 활성 반복거래를 찾아 함께 비활성화하고 undo까지 지원하는 확립된 패턴이 있는데, 카테고리 삭제(delCat/doDeleteCat, 3731/3733)에는 이 보호가 전혀 없어 삭제된 카테고리로 활성 반복거래가 매달 조용히 새 거래를 계속 생성하는(expandRec, 1752) 유령 레코드 버그를 발견 — doRenameCat(3760)이 이미 반복거래의 r.category를 동기화하는 것과 대비되는 사각지대이자, 카테고리 삭제가 자산 삭제/doResetAll/백업복원과 달리 유일하게 undo 없는 파괴적 동작이라는 부수적 결함도 있음. activeRecsForCat(type,name) 헬퍼 추가 + delCat 확인 문구 확장 + doDeleteCat을 deleteAssetsUndo(5011) 패턴을 본떠 undo 가능한 흐름으로 교체하는 계획을 pending_advance_plan에 저장.",
+      "summary": "홈 화면의 이체 확인 알림(homeAlerts)과 '이체 전부 완료' 판정(pendingTransferCount)이 반복거래로 생성되는 미확인 이체를 놓치는 버그 수정. 104/104 통과. APP_VERSION 1.21.3->1.21.4, sw.js CACHE v63->v64.",
       "commit": null
     }
   ]

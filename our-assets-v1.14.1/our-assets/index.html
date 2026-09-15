@@ -1284,7 +1284,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.25.1';
+const APP_VERSION='1.25.2';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1626,7 +1626,7 @@ async function afterCloudAuth(uid){
  }
  const guestRaw=localStorage.getItem('asset_app_db_v3__guest');let guestDB=null,guestHasData=false;
  try{guestDB=JSON.parse(guestRaw||'{}');guestHasData=(guestDB.assets&&guestDB.assets.length)||(guestDB.txns&&guestDB.txns.length)}catch(e){}
- if(guestHasData){DB=guestDB;migrate()}else if(!DB||!Array.isArray(DB.assets)){DB=emptyDB()}
+ if(guestHasData){DB=guestDB;migrate()}else if(!DB||!Array.isArray(DB.assets)){DB=emptyDB();migrate()}
  save();
 }
 async function resolveCloudPullRemote(){
@@ -5430,7 +5430,7 @@ function doLogout(){confirmSheet('로그아웃','로그아웃하면 로그인 �
  try{if(accountKind()==='kakao'&&window.Kakao&&window.Kakao.Auth&&typeof window.Kakao.Auth.getAccessToken==='function'&&window.Kakao.Auth.getAccessToken())window.Kakao.Auth.logout(()=>{})}catch(e){}
  AUTH.signOut();GUEST=false;localStorage.setItem('asset_app_guest','0');closeSheet();showAuth()})}
 function doResetAll(){confirmSheet('전체 초기화',`${accountKind()==='guest'?'게스트':accountName()} 계정의 모든 자산·내역·반복·설정이 삭제되고 완전히 빈 상태로 돌아가요. 초기화 직후 잠깐 동안만 되돌릴 수 있어요. 정말 초기화할까요?`,'초기화',()=>{
- const snapshot=DB;DB=emptyDB();save({deferCloudPush:true});closeSheet();ST.tab='home';go('home');
+ const snapshot=DB;DB=emptyDB();migrate();save({deferCloudPush:true});closeSheet();ST.tab='home';go('home');
  const resetPushT=setTimeout(scheduleCloudPush,6000);
  undoToast('전체 초기화했어요',()=>{clearTimeout(resetPushT);DB=snapshot;save();renderCurrent();toast('되돌렸어요')})})}
 

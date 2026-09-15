@@ -613,6 +613,36 @@ test('migrate: seed()/emptyDB()가 만드는 형태(catIcon/catVar/budgets 필�
   assert.strictEqual(Object.keys(sandbox.DB.catVar).length, 0);
   assert.strictEqual(Object.keys(sandbox.DB.budgets).length, 0);
 });
+/* doResetAll()/afterCloudAuth()가 DB=emptyDB() 직후 migrate()를 빠뜨렸던 버그(전체초기화·게스트데이터 없는
+ * 신규가입 시 '이체 확인'·'시세 자동 연동' 설정이 조용히 꺼진 채 남음) 재발 방지. emptyDB()는 catIcon/catVar/
+ * budgets와 마찬가지로 confirmTransfers/autoRates/histSortAsc/bigMin 등 DB.settings 기본값을 채우지
+ * 않고 migrate()가 채우는 역할이라, migrate()를 건너뛰면 이 값들이 undefined(=falsy)로 남는다. */
+test('migrate: emptyDB() 직후(settings에 confirmTransfers/autoRates 등이 없는 상태)에 돌리면 모두 기본값 true로 채워진다', () => {
+  sandbox.DB = {
+    version: 5, catsV2: true,
+    settings: { themeMode: 'system', includeScheduled: false, assetSort: 'custom', groupOrder: [...sandbox.DEFAULT_GROUP_ORDER] },
+    owners: ['나', '배우자', '공용'],
+    assets: [], txns: [], recurrences: [], inquiries: [],
+    categories: { expense: [...sandbox.EXP_CATS_DEFAULT], income: [...sandbox.INC_CATS_DEFAULT], saving: [...sandbox.SAV_CATS_DEFAULT] },
+  };
+  sandbox.migrate();
+  assert.strictEqual(sandbox.DB.settings.confirmTransfers, true);
+  assert.strictEqual(sandbox.DB.settings.autoRates, true);
+  assert.strictEqual(sandbox.DB.settings.histSortAsc, true);
+  assert.strictEqual(sandbox.DB.settings.bigMin, 100000);
+});
+test('migrate: emptyDB()가 이미 정해둔 themeMode/assetSort/groupOrder는 migrate()가 덮어쓰지 않는다', () => {
+  sandbox.DB = {
+    version: 5, catsV2: true,
+    settings: { themeMode: 'dark', includeScheduled: false, assetSort: 'name', groupOrder: [...sandbox.DEFAULT_GROUP_ORDER] },
+    owners: ['나', '배우자', '공용'],
+    assets: [], txns: [], recurrences: [], inquiries: [],
+    categories: { expense: [...sandbox.EXP_CATS_DEFAULT], income: [...sandbox.INC_CATS_DEFAULT], saving: [...sandbox.SAV_CATS_DEFAULT] },
+  };
+  sandbox.migrate();
+  assert.strictEqual(sandbox.DB.settings.themeMode, 'dark');
+  assert.strictEqual(sandbox.DB.settings.assetSort, 'name');
+});
 
 /* ---------- updateNwHistory/pruneNwHistory: 순자산 추이 일별 스냅샷 ---------- */
 test('updateNwHistory: 새 날짜면 스냅샷을 추가한다', () => {
