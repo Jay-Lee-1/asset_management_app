@@ -60,6 +60,7 @@ const FUNCTIONS = [
   'clampDay', 'saveTx', 'assetBase', 'balancesUpTo', 'balanceAt',
   'addBalanceAdjust', 'updateBalanceAdjust', 'toggleConfirmTransfers',
   'assetEval', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'delOwner',
+  'detectStaleMarketValuedTxns',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -1794,6 +1795,58 @@ test('openAssetPicker: cashOnly(만기이체 picker)는 excludeMarketValued 없�
   assert.ok(!html.includes('data-val="a_usd"'));
   assert.ok(!html.includes('data-val="a_gold"'));
   assert.ok(!html.includes('data-val="a_samsung"'));
+});
+
+/* ---------- detectStaleMarketValuedTxns: excludeMarketValued(cycle27) 적용 이전에 이미
+   저장된 fx/gold/stock 오용 이체·지출·수입·저축 기록 탐지 ---------- */
+function setupStaleMvDB() {
+  sandbox.DB = {
+    settings: { dismissedStaleMvIds: [] },
+    assets: [
+      { id: 'a_cash', name: '주거래통장', type: 'cash', owner: '나' },
+      { id: 'a_usd', name: '달러', type: 'fx', owner: '나', currency: 'USD' },
+      { id: 'a_gold', name: '금', type: 'gold', owner: '나' },
+      { id: 'a_stock', name: '삼성전자', type: 'stock', owner: '나' },
+    ],
+    txns: [],
+    recurrences: [],
+  };
+}
+test('detectStaleMarketValuedTxns: 정상 거래(현금↔현금)만 있으면 빈 배열을 반환한다', () => {
+  setupStaleMvDB();
+  sandbox.DB.txns.push({ id: 't1', type: 'transfer', date: '2026-01-05', amount: 1000, fromAssetId: 'a_cash', toAssetId: 'a_cash' });
+  const out = Array.from(sandbox.detectStaleMarketValuedTxns(sandbox.DB));
+  assert.deepStrictEqual(out, []);
+});
+test('detectStaleMarketValuedTxns: transfer/expense/income/saving 각 타입에서 market-valued 자산을 걸러낸다', () => {
+  setupStaleMvDB();
+  sandbox.DB.txns.push(
+    { id: 't_transfer', type: 'transfer', date: '2026-01-05', amount: 1000, fromAssetId: 'a_cash', toAssetId: 'a_usd' },
+    { id: 't_expense', type: 'expense', date: '2026-01-06', amount: 2000, fromAssetId: 'a_gold', toAssetId: null },
+    { id: 't_income', type: 'income', date: '2026-01-07', amount: 3000, fromAssetId: null, toAssetId: 'a_stock' },
+  );
+  sandbox.DB.recurrences.push(
+    { id: 'r_saving', type: 'saving', startDate: '2026-01-08', amount: 4000, fromAssetId: 'a_cash', toAssetId: 'a_usd' },
+  );
+  const out = Array.from(sandbox.detectStaleMarketValuedTxns(sandbox.DB));
+  const keys = out.map((o) => o.key).sort();
+  assert.deepStrictEqual(keys, ['rec:r_saving:to', 'tx:t_expense:from', 'tx:t_income:to', 'tx:t_transfer:to'].sort());
+  const transferHit = out.find((o) => o.key === 'tx:t_transfer:to');
+  assert.strictEqual(transferHit.assetName, '달러');
+  assert.strictEqual(transferHit.amount, 1000);
+});
+test('detectStaleMarketValuedTxns: dismissedStaleMvIds에 이미 있는 key는 결과에서 빠진다', () => {
+  setupStaleMvDB();
+  sandbox.DB.txns.push({ id: 't1', type: 'transfer', date: '2026-01-05', amount: 1000, fromAssetId: 'a_cash', toAssetId: 'a_usd' });
+  sandbox.DB.settings.dismissedStaleMvIds = ['tx:t1:to'];
+  const out = Array.from(sandbox.detectStaleMarketValuedTxns(sandbox.DB));
+  assert.deepStrictEqual(out, []);
+});
+test('detectStaleMarketValuedTxns: 삭제되어 존재하지 않는 assetId를 참조해도 크래시 없이 건너뛴다', () => {
+  setupStaleMvDB();
+  sandbox.DB.txns.push({ id: 't1', type: 'transfer', date: '2026-01-05', amount: 1000, fromAssetId: 'a_cash', toAssetId: 'a_deleted' });
+  const out = Array.from(sandbox.detectStaleMarketValuedTxns(sandbox.DB));
+  assert.deepStrictEqual(out, []);
 });
 
 /* ---------- 실행 ---------- */

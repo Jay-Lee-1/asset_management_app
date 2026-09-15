@@ -1,12 +1,15 @@
 {
-  "cycle": 28,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "과거 데이터에 남아있는 fx/gold/stock 오용 이체·지출·수입·저축 기록 탐지 + 검토 시트",
-    "why": "cycle27(d60cdab)이 excludeMarketValued로 앞으로의 입력만 막았을 뿐(index.html:2919 txOpenAsset, 3074 recOpenAsset), 그 이전에 이미 저장된 DB.txns/DB.recurrences 중 fromAssetId/toAssetId가 fx/gold/stock 자산을 가리키는 기록은 여전히 그대로 남아 있어 그 사용자들의 순자산이 조용히 어긋난 상태로 방치되어 있다. cycle27 advance 요약에 '범위가 커서 다음 사이클로 미뤘다'고 명시된 뒤 이후 어느 사이클에서도 다뤄지지 않은 것을 history 전수 확인했다. isMarketValued(1934)/isCashLike(1933) 헬퍼와 migrate()의 원타임 플래그 패턴(_varMigrated/_sortV2/_schV2/catsV2, 1731-1745)이 이미 있어 감지 자체의 구현 난이도는 낮다. assetEval()이 fx/gold/stock을 원장과 무관하게 qty×시세로 평가하는 구조(1863-1879)라는 게 근본 원인이므로, 데이터 자체를 자동으로 고치는 건 위험하고 '탐지해서 사용자에게 보여주기'가 적절한 범위다.",
-    "approach": "1) migrate()에서 부르는 순수함수 detectStaleMarketValuedTxns(DB)를 추가: DB.txns.concat(DB.recurrences)를 한 번 순회하며 각 항목의 fromAssetId/toAssetId를 DB.assets에서 찾아 isMarketValued(asset)인 경우를 수집(거래/반복 id, date/startDate, amount, 자산명, 방향 from/to). type은 transfer/expense(fromAssetId만)/income(toAssetId만)/saving(양쪽) 모두 대상. 2) 개별 항목 단위로 다시 안 보이게 하려면 1회성 boolean 플래그로는 부족하므로 DB.settings.dismissedStaleMvIds(id 배열)를 새로 두고, 이미 들어있는 id는 재탐지 결과에서 제외. 3) 탐지 결과가 있으면 renderHome() 진입 시 작은 안내 배너 또는 토스트로 '과거 거래 기록 중 N건이 자산 평가액에 반영되지 않았을 수 있어요' 노출, 탭하면 openSheet 기반 목록 화면(1437 이체확인 시트와 동일한 assetNm/shortDate/comma 조합 스타일 재사용)으로 각 건의 날짜/금액/자산명/방향을 보여주고 항목별 '확인함' 버튼으로 dismissedStaleMvIds에 id를 push(금액/수량은 자동으로 절대 고치지 않음 — 재무 기록 임의 변경 방지, 사용자가 직접 해당 자산의 balance-adjust 등으로 정정하도록 안내 문구만 추가). 4) test/run.js에 detectStaleMarketValuedTxns를 새로 추출해 회귀 테스트 추가: 오용 없는 정상 DB는 빈 배열, transfer/expense/income/saving 각 타입에서 market-valued 자산이 걸리는 경우 탐지, dismissedStaleMvIds에 이미 있는 id는 결과에서 빠지는지, 존재하지 않는 assetId 참조(자산 삭제됨)는 크래시 없이 스킵되는지. 5) APP_VERSION/sw.js CACHE 버전 올리기, node --check로 두 스크립트 블록 파싱 확인."
-  },
+  "cycle": 29,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 28,
+      "phase": "advance",
+      "timestamp": "2026-09-15T22:10:00.000Z",
+      "summary": "critique 계획대로 구현했다. isMarketValued 헬퍼 옆(index.html:1934)에 순수함수 detectStaleMarketValuedTxns(DB)를 추가: DB.txns/DB.recurrences를 순회하며 type별로 실제 자산을 갱신하는 방향만 보고(transfer/saving은 from+to, expense는 from만, income은 to만) fromAssetId/toAssetId가 가리키는 자산이 isMarketValued면 {key,kind,refId,date,type,amount,assetId,assetName,dir}로 수집한다. key='tx|rec:id:from|to' 형태라 fx-to-fx처럼 한 거래에서 두 방향이 모두 걸려도 독립적으로 dismiss 가능. migrate()의 DB.settings 기본값 객체(1720)에 dismissedStaleMvIds:[] 추가하고 detectStaleMarketValuedTxns가 이를 Set으로 걸러낸다. homeAlerts()(5027) 끝에 탐지 결과가 있으면 {kind:'staleMv',count} 추가, homeAlertCard()에 배너 렌더 분기 추가(눌러서 openStaleMvReview() 호출). openStaleMvReview()/dismissStaleMv()를 homeAlertCard 바로 아래 추가: openMaturity()(3720)와 같은 manage-row 목록 패턴으로 각 항목의 자산명/방향/날짜/금액/타입을 보여주고 항목별 '확인함' 버튼으로 dismissedStaleMvIds에 key를 push — 금액/수량은 절대 고치지 않고 자산 관리에서 직접 맞추라는 안내 문구만 추가. restoreBackup()이 이미 migrate()를 거치므로 백업 복원 시에도 기본값이 자동으로 채워짐을 확인. test/run.js에 detectStaleMarketValuedTxns를 새로 추출해 회귀 테스트 4개 추가: 정상 거래만 있으면 빈 배열, transfer/expense/income/saving 각 타입에서 올바른 방향만 걸리는지(transfer는 to만 fx인 경우 등), dismissedStaleMvIds에 있는 key는 제외되는지, 삭제된 assetId 참조는 크래시 없이 스킵되는지. 177/177 통과(기존 173+신규 4). 두 인라인 <script> 블록 모두 node --check 파싱 확인. Playwright(사전 설치 Chromium, 게스트 모드)로 실제 브라우저에서 fx 자산으로의 이체를 직접 DB에 넣고 홈 배너 노출 → 시트 오픈 → '확인함' 클릭 → 배너·탐지 결과 모두 사라짐까지 end-to-end 확인, pageerror 없음. APP_VERSION 1.27.1->1.28.0(새 기능이라 minor bump), sw.js CACHE v91->v92. pending_advance_plan 비움.",
+      "commit": null
+    },
     {
       "cycle": 28,
       "phase": "critique",
@@ -131,20 +134,6 @@
       "phase": "develop",
       "timestamp": "2026-09-13T18:05:00.000Z",
       "summary": "예산이 설정된 카테고리가 해당 월 지출이 0원이면 예산 관리 화면(지출 분석)에서 완전히 사라져 조회/수정/삭제가 불가능해지는 실제 버그를 채택해 spendByCategory 끝에서 DB.budgets에 있는 카테고리 중 이번 달 map에 없는 것을 v:0으로 채워 넣도록 고쳤다. test/run.js에 회귀 테스트 3개 추가 — 150/150 통과. APP_VERSION 1.25.0->1.25.1, sw.js CACHE v82->v83.",
-      "commit": null
-    },
-    {
-      "cycle": 25,
-      "phase": "advance",
-      "timestamp": "2026-09-13T17:10:12.476Z",
-      "summary": "critique 계획대로 자산/가계부/전체내역/반복거래 관리 화면의 핵심 행 요소(.asset-item, .swipe-content, .manage-row)에 키보드/스크린리더 접근성을 추가했다(공용 rowKeydown 헬퍼, tabindex/role/aria-label/focus-visible). test/run.js 3개 추가 — 147/147 통과. Playwright로 실제 브라우저 Enter/Space 동작 확인. APP_VERSION 1.24.3->1.25.0, sw.js CACHE v81->v82.",
-      "commit": null
-    },
-    {
-      "cycle": 25,
-      "phase": "critique",
-      "timestamp": "2026-09-13T16:10:00.000Z",
-      "summary": "전체 앱을 한 걸음 물러나 봤다. .asset-item/.swipe-content/.manage-row 등 행 요소들의 키보드/스크린리더 접근성 부재를 채택(cycle24 critique가 남겨둔 후보). pending_advance_plan에 tabindex+rowKeydown+aria-label+focus-visible CSS 계획 저장. 코드 변경 없음.",
       "commit": null
     }
   ]

@@ -1284,7 +1284,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.27.1';
+const APP_VERSION='1.28.0';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1717,7 +1717,7 @@ function load(){
  DB=(SESSION?emptyDB():seed());migrate();save(); /* 게스트 첫 실행=샘플 체험 · 새 계정=빈 상태 */
 }
 function migrate(){
- DB.settings=Object.assign({themeMode:'system',includeScheduled:false,assetSort:'custom',histSortAsc:true,confirmTransfers:true,autoRates:true,bigMin:100000},DB.settings||{});
+ DB.settings=Object.assign({themeMode:'system',includeScheduled:false,assetSort:'custom',histSortAsc:true,confirmTransfers:true,autoRates:true,bigMin:100000,dismissedStaleMvIds:[]},DB.settings||{});
  if(!Array.isArray(DB.settings.groupOrder)||!DB.settings.groupOrder.length)DB.settings.groupOrder=[...DEFAULT_GROUP_ORDER];
  DEFAULT_GROUP_ORDER.forEach(t=>{if(!DB.settings.groupOrder.includes(t))DB.settings.groupOrder.push(t)});
  delete DB.settings.showScheduled; /* 예정 표시는 홈 '예정 포함'으로 통합 */
@@ -1933,6 +1933,31 @@ function balanceAt(id,dateStr){ /* 특정 일자 기준 잔액 — 예정·반�
 const isCashLike=a=>a.type==='cash'||a.type==='savings';
 const isMarketValued=a=>a.type==='fx'||a.type==='gold'||a.type==='stock'; /* assetEval()이 원장과 무관하게 qty×시세로 평가 — 거래 입력의 통장으로 쓰면 순자산이 조용히 어긋남 */
 const isPlanAcct=a=>a.type==='cash'; /* 한달 플랜 대상: 현금예금 통장만(저축 제외) */
+/* excludeMarketValued(cycle27)는 앞으로의 입력만 막을 뿐, 그 전에 이미 저장된
+   DB.txns/DB.recurrences 중 fx/gold/stock 통장을 이체·지출·수입·저축 대상으로 쓴 기록은
+   그대로 남아 있을 수 있다 — 그런 기록을 찾아 사용자에게 보여주는 순수 함수.
+   type별로 실제로 자산을 갱신하는 방향만 본다(saveTx가 expense는 toAssetId를,
+   income은 fromAssetId를 null로 지운다 — 2966행). 금액은 절대 고치지 않고 탐지만 한다.
+   자산이 삭제돼 assetId를 못 찾으면 조용히 건너뛴다(크래시 방지). */
+function detectStaleMarketValuedTxns(DB){
+ const dismissed=new Set(DB.settings.dismissedStaleMvIds||[]);
+ const assetMap={};DB.assets.forEach(a=>{assetMap[a.id]=a});
+ const out=[];
+ const check=(kind,refId,date,type,amount,fromAssetId,toAssetId)=>{
+  const dirs=[];
+  if((type==='transfer'||type==='saving'||type==='expense')&&fromAssetId!=null)dirs.push(['from',fromAssetId]);
+  if((type==='transfer'||type==='saving'||type==='income')&&toAssetId!=null)dirs.push(['to',toAssetId]);
+  dirs.forEach(([dir,assetId])=>{
+   const a=assetMap[assetId];if(!a||!isMarketValued(a))return;
+   const key=`${kind}:${refId}:${dir}`;
+   if(dismissed.has(key))return;
+   out.push({key,kind,refId,date,type,amount,assetId,assetName:a.name,dir});
+  });
+ };
+ (DB.txns||[]).forEach(t=>check('tx',t.id,t.date,t.type,t.amount,t.fromAssetId,t.toAssetId));
+ (DB.recurrences||[]).forEach(r=>check('rec',r.id,r.startDate,r.type,r.amount,r.fromAssetId,r.toAssetId));
+ return out.sort((a,b)=>a.date<b.date?-1:1);
+}
 function totalAssets(){return DB.assets.filter(a=>a.includeInTotal&&a.type!=='debt').reduce((s,a)=>s+assetEval(a),0)}
 function totalDebt(){return DB.assets.filter(a=>a.includeInTotal&&a.type==='debt').reduce((s,a)=>s+assetEval(a),0)}
 function netWorth(){return totalAssets()-totalDebt()}
@@ -5036,6 +5061,8 @@ function homeAlerts(neg){
  const _vr=varyingRecs(); /* 변동 실제금액 입력: 1건이면 그대로, 여러 건이면 하나로 묶음 */
  if(_vr.length===1){const q=_vr[0];arr.push({kind:'quick',recId:q.rec.id,date:q.date,name:q.rec.memo||q.rec.category,rtype:q.rec.type});}
  else if(_vr.length>1){arr.push({kind:'quickMulti',count:_vr.length});}
+ const staleMv=detectStaleMarketValuedTxns(DB);
+ if(staleMv.length)arr.push({kind:'staleMv',count:staleMv.length});
  return arr;
 }
 function homeAlertCard(al){
@@ -5069,11 +5096,33 @@ function homeAlertCard(al){
    <div class="ha-b"><div class="ha-t">실제 금액 입력 ${al.count}건</div>
      <div class="ha-s">${TM.m}월 변동 항목 · 눌러서 한 번에 입력</div></div>
    <div class="ha-c">${svg('chev')}</div></button>`;
+ if(al.kind==='staleMv')return `<button class="home-alert" onclick="openStaleMvReview()">
+   <div class="ha-ic">${svg('alert')}</div>
+   <div class="ha-b"><div class="ha-t">순자산 계산에서 빠졌을 수 있는 기록 ${al.count}건</div>
+     <div class="ha-s">외화·금·주식 통장을 이체·지출·수입 대상으로 쓴 과거 기록이에요 · 눌러서 확인하세요</div></div>
+   <div class="ha-c">${svg('chev')}</div></button>`;
  return `<button class="home-alert" onclick="goPlanTo('${al.assetId}','${al.date}')">
    <div class="ha-ic">${svg('bell')}</div>
    <div class="ha-b"><div class="ha-t">잔액 부족 예상 · ${esc(al.name)}</div>
      <div class="ha-s">${shortDate(al.date)}부터 · 잔액이 ${comma(al.min)}원까지 내려가요</div></div>
    <div class="ha-c">${svg('chev')}</div></button>`;
+}
+/* 순자산 계산에서 빠졌을 수 있는 기록 검토 시트: 항목별로 '확인함'을 눌러야만 다음부터
+   안 보이게 한다(일괄 dismiss 없음) — 금액은 여기서 절대 고치지 않고, 사용자가 직접
+   해당 자산의 보유 수량을 맞추도록 안내만 한다. */
+function openStaleMvReview(){
+ const items=detectStaleMarketValuedTxns(DB);
+ if(!items.length){closeSheet();return}
+ openSheet(`<h3>순자산 계산에서 빠졌을 수 있는 기록</h3>
+  <div class="desc">외화·금·주식 통장은 보유 수량×시세로 평가돼서, 이 통장들을 이체·지출·수입 대상으로 쓴 기록은 금액이 순자산에 반영되지 않았을 수 있어요.<br>
+   <span style="color:var(--text-3);font-size:12.5px">금액은 여기서 고치지 않아요 · 확인 후 필요하면 자산 관리에서 보유 수량을 직접 맞춰주세요.</span></div>
+  ${items.map(it=>`<div class="manage-row"><div style="flex:1"><div class="mn">${esc(it.assetName)} ${it.dir==='from'?'에서 보냄':'으로 받음'}</div><div class="msub">${shortDate(it.date)} · ${comma(it.amount)}원 · ${TYPE_LABEL[it.type]||it.type}</div></div>
+   <button class="btn-sm btn btn-soft" style="width:auto;padding:0 14px;flex-shrink:0" onclick="dismissStaleMv('${it.key}')">확인함</button></div>`).join('')}
+  <div style="height:12px"></div><button class="btn btn-soft" onclick="closeSheet()">닫기</button>`);
+}
+function dismissStaleMv(key){
+ DB.settings.dismissedStaleMvIds=(DB.settings.dismissedStaleMvIds||[]).concat(key);
+ save();renderCurrent();openStaleMvReview();
 }
 function onAlertScroll(el){const dots=$('alertDots');if(!dots)return;
  const c=el.scrollLeft+el.clientWidth/2;let i=0,best=1e9;
