@@ -60,7 +60,7 @@ const FUNCTIONS = [
   'clampDay', 'saveTx', 'assetBase', 'balancesUpTo', 'balanceAt',
   'addBalanceAdjust', 'updateBalanceAdjust', 'toggleConfirmTransfers',
   'assetEval', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'delOwner',
-  'detectStaleMarketValuedTxns',
+  'detectStaleMarketValuedTxns', 'delBudget',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -132,6 +132,7 @@ const sandbox = {
   renderCurrent: () => {},
   openCatManage: () => {},
   openOwnerManage: () => {},
+  openSpendAnalysis: () => {},
   closeSheet: () => {},
   renderTxSheet: () => {},
   uid: () => 'test-uid',
@@ -643,6 +644,27 @@ test('delOwner: 마지막 남은 귀속 하나는 삭제할 수 없다', () => {
   sandbox.delOwner(0);
   assert.strictEqual(sandbox.confirmSheetCalls.length, 0);
   assert.deepStrictEqual(sandbox.DB.owners, ['나']);
+});
+
+/* ---------- delBudget: 예산 삭제도 delCat/delOwner처럼 undo 가능해야 한다 (cycle29) ---------- */
+test('delBudget: 삭제하면 예산이 지워지고 undoToast로 원래 금액이 되돌아온다', () => {
+  sandbox.DB = { txns: [], recurrences: [], budgets: { 식비: 50000, 교통: 30000 } };
+  sandbox.ST = { ledger: { y: 2026, m: 6 } };
+  sandbox.lastUndo = null;
+  sandbox.delBudget(0); // rows는 budgets 순회 순서상 [{c:'식비',v:0},{c:'교통',v:0}]
+  assert.strictEqual(sandbox.DB.budgets.식비, undefined, '삭제 직후에는 예산이 지워져야 함');
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.budgets.식비, 50000, '되돌리면 원래 금액이 복원돼야 함');
+  assert.strictEqual(sandbox.DB.budgets.교통, 30000, '다른 카테고리 예산은 영향받지 않아야 함');
+});
+test('delBudget: 존재하지 않는 idx를 넘기면 아무것도 하지 않는다', () => {
+  sandbox.DB = { txns: [], recurrences: [], budgets: { 식비: 50000 } };
+  sandbox.ST = { ledger: { y: 2026, m: 6 } };
+  sandbox.lastUndo = null;
+  sandbox.delBudget(5);
+  assert.strictEqual(sandbox.DB.budgets.식비, 50000);
+  assert.strictEqual(sandbox.lastUndo, null, 'undoToast가 호출되면 안 됨');
 });
 
 /* ---------- addCat: 중복 이름 추가 시 무반응 대신 안내 토스트 ---------- */

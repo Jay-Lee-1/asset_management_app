@@ -1284,7 +1284,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.28.0';
+const APP_VERSION='1.28.1';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3740,7 +3740,9 @@ function saveBudget(idx){
 }
 function delBudget(idx){
  const y=ST.ledger.y,m=ST.ledger.m;const rows=spendByCategory(y,m);const r=rows[idx];if(!r)return;
- if(DB.budgets)delete DB.budgets[r.c];save();toast('예산을 삭제했어요');openSpendAnalysis();
+ const prev=DB.budgets&&DB.budgets[r.c];
+ if(DB.budgets)delete DB.budgets[r.c];save();openSpendAnalysis();
+ undoToast(`'${esc(r.c)}' 예산을 삭제했어요`,()=>{DB.budgets=DB.budgets||{};DB.budgets[r.c]=prev;save();renderCurrent();openSpendAnalysis();toast('되돌렸어요')});
 }
 function openMaturity(){
  const sav=DB.assets.filter(a=>a.type==='savings'&&a.maturityDate);
