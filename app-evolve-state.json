@@ -1,8 +1,15 @@
 {
   "cycle": 27,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 27,
+      "phase": "review",
+      "timestamp": "2026-09-15T16:17:21.911Z",
+      "summary": "develop 커밋(93e85b8, toggleConfirmTransfers()가 반복 이체의 미확인 도래 회차를 안 세던 버그 fix)을 검토했다. pendingOneOff는 기존 DB.txns 필터 로직을 그대로 재사용해 회귀 없음을 확인했고, pendingRecList가 allTxns(RANGE_FROM,TODAY)의 합성 occurrence 객체(recId/date만 있고 DB.recurrences 원본이 아님)에서 recId로 실제 recurrence를 다시 찾아 confirmedDates에 push하는 방식이 올바른지(원본 mutate 확인), RANGE_TO 대신 TODAY를 상한으로 쓴 선택이 미래 회차를 과도하게 완료 처리하지 않기 위한 의도적 결정인지 코드 주석과 커밋 로그로 대조했다. confirmSheet 콜백이 button-tap 시점에 캡처한 pendingOneOff/pendingRecList를 클로저로 들고 있어 시트가 떠 있는 동안 DB가 바뀌면 그 사이 변경은 반영 안 되는 미세한 staleness가 있지만, 자산 선택삭제(ST.aSel.ids)/내역 선택삭제(ST.lSel.ids) 등 confirmSheet의 기존 다른 호출부들도 전부 '누르는 시점에 캡처, 확인 시점에 그대로 적용'하는 동일한 컨벤션이라 새로운 버그 패턴이 아니라고 판단해 수정하지 않았다. 새로 추가된 회귀 테스트 4개(시트 노출/confirmedDates 기록/일반+반복 혼합/미확인 없음 시 즉시 off)도 시나리오를 정확히 재현함을 확인. 문제 없음. 166/166 통과.",
+      "commit": "93e85b8"
+    },
     {
       "cycle": 27,
       "phase": "develop",
