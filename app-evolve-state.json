@@ -1,8 +1,15 @@
 {
   "cycle": 28,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 28,
+      "phase": "review",
+      "timestamp": "2026-09-15T20:05:00.000Z",
+      "summary": "develop 커밋(e713afb, delOwner()에 undoToast 추가)을 검토했다. doDeleteCat()(3810-3828)의 확립된 패턴(삭제 전 인덱스 i에 splice(i,0,c)로 값/부가상태 복원)과 delOwner()의 새 undo가 정확히 같은 형태인지 대조: DB.owners는 name 문자열 배열이고 DB.assets.owner도 이름 문자열 참조라 splice 위치 복원이 다른 배열의 참조 무결성에 영향 없음을 확인. undo 시점에 다른 owner가 추가/삭제돼 배열 길이가 바뀌어도 Array.prototype.splice는 인덱스를 clamp하므로 크래시 없이 안전. undoToast 호출부 10곳(2672,3027,3031,3822,4269,4849,5098,5106,5109,5115)과 메시지/콜백 스타일도 일관됨을 확인. 자산 사용 중 early return과 마지막 1개 귀속 early return은 원래 undo 불필요 경로라 손대지 않은 것도 타당. 새 회귀 테스트 3개(정상 삭제+undo 복원, 사용 중 자산 있으면 확인시트 자체가 안 뜸, 마지막 1개는 삭제 자체 불가)도 시나리오를 정확히 재현. 문제 없음. 173/173 통과.",
+      "commit": "e713afb"
+    },
     {
       "cycle": 28,
       "phase": "develop",
@@ -134,13 +141,6 @@
       "phase": "review",
       "timestamp": "2026-09-13T15:05:00.000Z",
       "summary": "Reviewed commit 672043b (recDates monthly/yearly/daily/weekly boundary-crossing weekend-shift fix). No bugs found. 144/144 pass.",
-      "commit": null
-    },
-    {
-      "cycle": 25,
-      "phase": "develop",
-      "timestamp": "2026-09-13T14:18:47.742Z",
-      "summary": "recDates()의 weekend 조정(earlier/later)이 달/연도/주기 경계를 넘어가는 회차를 놓쳐 거래가 통째로 사라지는 버그 발견 및 수정(monthly/yearly/daily/weekly 네 분기 모두). 회귀 테스트 2개 추가 — 144/144 통과. APP_VERSION 1.24.2->1.24.3, sw.js CACHE v80->v81.",
       "commit": null
     }
   ]
