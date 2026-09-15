@@ -1,8 +1,19 @@
 {
   "cycle": 25,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "emptyDB() 직후 migrate() 누락 → 전체초기화/신규 클라우드가입 시 설정 기본값이 조용히 꺼진 채로 남는 버그",
+    "why": "DB를 새 객체로 교체하는 경로는 파일 전체에 6곳(load()의 3개 분기 1704/1713/1717, afterCloudAuth()의 remote/guestHasData 분기 1625/1629, doResetAll() 5433)인데, 이 중 doResetAll()(5433, `DB=emptyDB();save(...)`)과 afterCloudAuth()의 '기존 게스트 데이터도 없는 신규 가입' 분기(1629, `else if(!DB||!Array.isArray(DB.assets)){DB=emptyDB()}`) 단 두 곳만 emptyDB() 뒤에 migrate()를 호출하지 않는다. grep으로 emptyDB()의 6개 호출부를 전수 확인해 이 두 곳이 유이한 예외임을 확인했다. emptyDB()는 owners/categories/inquiries 등 최소 골격만 채우고 DB.settings.confirmTransfers/autoRates/histSortAsc 같은 기본값은 migrate()의 Object.assign({...,confirmTransfers:true,autoRates:true,...}, DB.settings||{})이 채우는 역할이라, migrate()를 건너뛰면 이 값들이 undefined(=falsy)로 남는다. 실제 영향: (1) doResetAll(전체 초기화)을 실행하면 진짜 첫 실행과 달리 '이체 확인'과 '시세 자동 연동' 토글이 조용히 꺼진 채로 리셋되어, 사용자는 방금 초기화했으니 첫 실행과 같은 기본 설정일 거라 믿지만 실제로는 이체가 확인 없이 바로 확정되고 시세가 자동 갱신되지 않는다(다음 새로고침 때 load()의 migrate()가 돌면서 저절로 복구되지만, 그 사이 세션에서는 다르게 동작). (2) 로컬 게스트 데이터가 전혀 없는 상태로 새 이메일/카카오 계정을 만드는 흔한 경로(afterCloudAuth 1629)도 동일한 결함을 겪는다. catIcon/catVar/budgets/nwHistory 쪽은 cycle20 advance가 이미 같은 근본 원인(migrate 스킵)을 부수적으로 관찰해뒀지만 그쪽은 각 쓰기 지점에 이미 `DB.catIcon=DB.catIcon||{}` 류 가드가 있어 크래시로 이어지지 않는다 — 이번 critique가 새로 짚은 건 가드가 없어 값 자체가 틀려버리는 settings 쪽이다. INC_CATS_DEFAULT에 ADJUST_CAT이 이미 포함돼 있어(1477) 카테고리 목록 자체는 emptyDB()만으로도 정상이므로 그 부분은 손댈 필요 없음.",
+    "approach": "doResetAll()의 `DB=emptyDB()` 바로 뒤와 afterCloudAuth()의 `DB=emptyDB()` 분기(else if 안) 두 곳에 각각 `migrate()` 호출을 추가해, load()/guestHasData/remote-pull 분기와 완전히 동일한 'DB 교체 후 항상 migrate()' 규칙으로 통일한다. migrate()가 Object.assign(...,DB.settings||{})처럼 기존 값을 우선시하는 병합 방식이라 emptyDB()가 이미 설정해둔 값(owners/categories/groupOrder 등)과 충돌 없이 안전하게 합쳐지는지 코드로 재확인한 뒤 적용. test/run.js에 emptyDB()+migrate() 조합의 DB.settings.confirmTransfers/autoRates가 true가 되는지 확인하는 순수함수 레벨 회귀 테스트를 추가하고, 가능하면 doResetAll/afterCloudAuth 두 함수도 추출해 vm 샌드박스에서 실행 전/후 settings 값을 검증한다(기존 cycle20/24가 saveRec/renderCurrent 등 DOM-얽힌 함수를 이런 식으로 검증한 선례를 따름). Playwright로 실제 브라우저에서 설정에서 이체확인/자동연동을 끈 상태로 두지 않고 기본값(켜짐)인 채로 전체 초기화를 실행해도 여전히 켜진 상태로 유지되는지, 그리고 게스트 데이터 없이 신규 가입했을 때도 두 토글이 켜진 채로 시작하는지 확인한다. 범위를 이 두 호출부와 그에 대응하는 회귀 테스트로 좁게 유지하고, catIcon/catVar/budgets 가드 관련 코드는(이미 안전하므로) 건드리지 않는다."
+  },
   "history": [
+    {
+      "cycle": 25,
+      "phase": "critique",
+      "timestamp": "2026-09-15T06:15:00.000Z",
+      "summary": "전체 앱을 한 걸음 물러나 봤다. cycle25 review(ae8b758)가 문제 없음으로 끝낸 직후라 최근 develop 커밋 자체를 다시 보기보다 구조적 결함을 찾는 데 집중했다. DB를 새 객체로 완전히 교체하는 6개 지점(load()의 3분기, afterCloudAuth()의 2분기, doResetAll())을 전수 대조한 결과 doResetAll()과 afterCloudAuth()의 '게스트 데이터 없는 신규가입' 분기, 이 두 곳만 emptyDB() 뒤 migrate()를 호출하지 않아 DB.settings.confirmTransfers/autoRates 등 migrate()가 채우는 기본값이 undefined(falsy)로 남는 실제 버그를 발견했다(전체 초기화 시 '이체 확인'/'시세 자동 연동'이 조용히 꺼진 채 리셋됨). cycle20 advance가 같은 migrate-skip 근본원인을 catIcon/catVar/budgets 관점에서 이미 관찰했었지만 그쪽은 이미 방어 가드(||{})가 있어 크래시 없이 넘어가고, settings 쪽은 가드가 전혀 없어 값 자체가 틀려지는 더 실질적인 회귀임을 새로 확인했다. 다른 후보(카테고리 income/expense 비대칭, CSV import 부재 등)는 과거 cycle16/20 critique에서 이미 검토·기각된 것과 동일해 재검토하지 않았다. pending_advance_plan에 doResetAll/afterCloudAuth 두 곳에 migrate() 호출 추가 + 회귀 테스트 계획을 저장했다. 코드 변경 없음.",
+      "commit": null
+    },
     {
       "cycle": 25,
       "phase": "review",
@@ -134,13 +145,6 @@
       "phase": "critique",
       "timestamp": "2026-09-12T20:14:00.000Z",
       "summary": "전체 앱을 한 걸음 물러나 봤다(백그라운드 조사 에이전트 활용). 검토했지만 기각한 후보: (1) 앱 이름과 owner 태그(나/배우자/공용)가 시사하는 '가구(household)' 공유 전제를 클라우드 동기화가 실제로 지원하지 않고 로그인 하나를 부부가 공유해야 하는 문제 — 실재하는 더 큰 제품 갭이지만 인증/스키마 전면 재설계가 필요해 한 사이클 규모를 크게 초과함, 인접 영역(클라우드 동기화 충돌 UX)은 최근에 이미 의도적으로 좁게 개선됨; (2) 임박한 지출에 대한 백그라운드 알림/푸시 부재 — 정적 단일 HTML PWA+Netlify Functions만으로는 실제 웹 푸시에 필요한 백엔드 인프라가 없어 이전에 기각된 FX/시세 fetch 신뢰성 이슈와 같은 부류로 판단, 채택 안 함; (3) CSV 내보내기에 대응하는 가져오기 경로 부재 — 실재하는 비대칭이지만 CSV는 백업용이 아니라고 명시돼 있고 JSON 백업이 이미 undo 보호까지 갖춘 완전한 복원 경로를 제공해 가치가 낮음. 최종 선택: 자산 삭제(delAsset, index.html:2338)에는 activeRecsForAssets()(2334)로 연결된 활성 반복거래를 찾아 함께 비활성화하고 undo까지 지원하는 확립된 패턴이 있는데, 카테고리 삭제(delCat/doDeleteCat, 3731/3733)에는 이 보호가 전혀 없어 삭제된 카테고리로 활성 반복거래가 매달 조용히 새 거래를 계속 생성하는(expandRec, 1752) 유령 레코드 버그를 발견 — doRenameCat(3760)이 이미 반복거래의 r.category를 동기화하는 것과 대비되는 사각지대이자, 카테고리 삭제가 자산 삭제/doResetAll/백업복원과 달리 유일하게 undo 없는 파괴적 동작이라는 부수적 결함도 있음. activeRecsForCat(type,name) 헬퍼 추가 + delCat 확인 문구 확장 + doDeleteCat을 deleteAssetsUndo(5011) 패턴을 본떠 undo 가능한 흐름으로 교체하는 계획을 pending_advance_plan에 저장.",
-      "commit": null
-    },
-    {
-      "cycle": 20,
-      "phase": "advance",
-      "timestamp": "2026-09-12T21:20:00.000Z",
-      "summary": "critique 계획대로 카테고리 삭제 시 연결된 활성 반복거래를 방치하는 유령 레코드 버그를 고쳤다. activeRecsForAssets(2334)와 동일한 패턴으로 activeRecsForCat(type,name)을 추가했고, delCat()의 확인 문구가 delAsset과 동일하게 '연결된 반복거래 N개도 함께 비활성화돼요'를 덧붙이도록 확장했다. doDeleteCat()을 deleteAssetsUndo(5011) 패턴을 본떠 재작성해, 연결된 활성 반복거래를 r.active=false로 비활성화하면서 카테고리를 제거하고, 6초 undoToast로 카테고리 배열 위치·아이콘·변동 플래그·예산 한도·반복거래 active 상태를 전부 복원 가능하게 했다(부수적으로 카테고리 삭제가 유일하게 undo 없는 파괴적 동작이었던 비대칭도 해소). test/run.js에 activeRecsForCat 회귀 테스트 4개(타입+이름 일치 매칭/비활성 제외/타입 불일치 제외/무관 카테고리 빈 배열)와 doDeleteCat의 undo 왕복 테스트 2개(연결된 반복거래 비활성화+undo로 카테고리·아이콘·변동·예산·반복거래 active 모두 복원, 연결된 반복거래가 없을 때도 안전) 추가 — 117/117 통과(기존 111+신규 6). Playwright(사전 설치 Chromium, 게스트 모드)로 실제 브라우저에서 카테고리 생성→활성 월간 반복거래 연결→카테고리 삭제→확인창에 '반복거래 1개' 경고 노출 확인→삭제 후 해당 반복거래 active:false 전환+undo 토스트 노출 확인→되돌리기 클릭 시 카테고리와 반복거래 active 상태 모두 원래대로 복원되는 것까지 end-to-end로 확인했다. 이 과정에서 이번 계획 범위 밖의 별개 잠재 버그를 하나 발견해 기록해둔다: 브라우저의 첫 게스트 부팅은 load()가 seed()(또는 emptyDB())로 DB를 채우고 migrate()를 거치지 않은 채 곧장 save()하므로, 그 세션에서 한 번도 새로고침하지 않은 상태로는 DB.catIcon/catVar/budgets이 undefined로 남는다 — doDeleteCat/doRenameCat/addCat의 쓰기 경로(delete DB.catIcon[...] 등)는 이 객체들이 항상 존재한다고 가정하고 무방비로 접근하므로, '설치 후 첫 실행에서 새로고침 없이 곧바로 카테고리를 삭제/이름변경'하면 예외가 던져질 수 있다(이번 advance가 만든 버그 아님 — doRenameCat/원래 doDeleteCat에도 동일하게 있던 기존 결함, afterCloudAuth의 emptyDB() 분기에도 같은 패턴 존재). 범위를 좁게 유지하려 이번 사이클에서는 고치지 않았으니 다음 develop/critique가 참고할 것. 두 인라인 <script> 블록 모두 new Function()으로 파싱 확인. APP_VERSION 1.22.3->1.22.4, sw.js CACHE v71->v72 (patch bump, 버그 수정+undo UX 추가). pending_advance_plan 비움.",
       "commit": null
     }
   ]
