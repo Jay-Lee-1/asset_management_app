@@ -1,17 +1,15 @@
 {
-  "cycle": 26,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "recDates()/expandRec()/allTxns() 반복거래 확장 경로 성능 개선: from 기준 시작점으로 스캔 + 캐시 + planNegatives 중복 호출 제거",
-    "why": "recDates()(index.html:1771-1801)의 daily/weekly 분기(1793-1799)는 항상 r.startDate부터 하루/일주일씩 걸어 to까지 진행한다 — from은 필터링에만 쓰이고 시작점을 앞으로 당기지 않는다. 수년 전 시작된 daily/weekly 반복거래가 있으면 매 호출마다 그 수천 회차를 전부 순회한 뒤 from 이전을 버리는 낭비가 발생하고, 계정이 오래될수록 비용이 계속 커진다. 게다가 expandRec()/allTxns()에는 캐시가 전혀 없어(balanceAt의 _balCache와 달리) 매 호출마다 이 순회를 다시 한다. 여기에 더해 renderHome()(1989: neg=planNegatives())이 이미 계산한 결과를 renderCurrent()(5178)이 홈 탭에서도 무조건 updateAlerts()->planNegatives()를 다시 호출해(4726) 같은 렌더 사이클에서 동일 계산이 두 번 실행된다(다른 탭은 중복이 아니라 updateAlerts()가 유일한 계산처이므로 그대로 둔다). save()->renderCurrent() 경로라 거의 모든 입력 후 실행되는 핫패스.",
-    "approach": [
-      "1) recDates() daily/weekly 분기(1793-1799): cd 초기값을 rs 그대로 두지 말고, from 이전 회차는 건너뛰도록 시작점을 앞으로 당긴다 — step(1 또는 7일) 단위로 rs에서 from까지 필요한 배수만 한 번에 계산해 cd를 그 지점 근처(from 이전 최대 한 스텝)로 이동시킨 뒤 루프 시작. monthly/yearly 분기(1777-1792, 1786-1792)도 같은 방식으로 cur/y를 rs가 아니라 from 기준 월/년 근처로 당길 수 있으면 같이 손보되, 이쪽은 이미 월/년 단위라 비용이 낮으므로 필수는 아니다. push()의 from/to/startDate/endDate 필터링 로직과 '경계 한 회차 더 생성'(1782, 1791, 1798) 규칙은 결과가 바뀌지 않도록 그대로 유지 — 최적화는 오직 '스캔 시작점'만 바꾸는 것.",
-      "2) expandRec()/allTxns()에 캐시 추가: _balCache(1888-1907)와 같은 패턴으로 Map 기반 캐시(예: _recCache, key=from+'|'+to)를 만들고 invalidateBalances()에서 함께 clear()하거나, 이름을 그대로 유지하되 역할을 넓혀 _balCache.clear() 옆에 _recCache.clear()를 추가한다. balanceAt처럼 LRU 캡을 둔다.",
-      "3) renderHome()이 이미 계산한 neg를 재사용하도록 updateAlerts(neg)가 선택적으로 미리 계산된 neg를 받게 하고, renderCurrent()에서 홈 탭일 때는 renderHome()의 결과를 넘겨 이중 계산을 없앤다(다른 탭은 현행 유지).",
-      "4) 회귀 테스트(test/run.js): recDates()가 시작점 최적화 전후로 동일한 날짜 배열을 반환하는지(behavior-preserving) 확인하는 케이스를 daily/weekly/monthly/yearly 각각 추가하고, 특히 startDate가 오래되고 [from,to]가 좁은 경우를 포함한다. expandRec/allTxns 캐시는 allTxns 호출 스파이(또는 expandRec 내부 순회 카운터)로 같은 [from,to] 재호출 시 재계산 없이 캐시에서 반환되는지, DB.recurrences 변경 후 invalidateBalances() 호출 시 캐시가 비워져 새 값이 반영되는지 확인한다."
-    ]
-  },
+  "cycle": 27,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 26,
+      "phase": "advance",
+      "timestamp": "2026-09-15T15:10:00.000Z",
+      "summary": "critique 계획(recDates()/expandRec() 성능 개선)을 구현했다. 1) recDates()의 daily/weekly 분기(index.html)에서 cd 시작점을 항상 r.startDate로 두지 않고, from-2일(weekend 조정 최대 ±2일 여유) 지점까지는 step 단위로 한 번에 건너뛰도록 했다 — push()의 필터링/경계 규칙은 그대로 두고 오직 스캔 시작점만 앞당김(behavior-preserving, k=floor(diffDays/step) 방식으로 rs+k*step 지점부터 시작). 2) expandRec()에 _recCache(Map, key=from+'|'+to, REC_CACHE_MAX=40 LRU)를 추가하고 invalidateBalances()가 _balCache와 함께 비우도록 확장 — balancesUpTo()가 이미 allTxns()->expandRec() 경유로 DB.recurrences에 의존해 기존 invalidateBalances() 호출 지점들이 이미 이 계약을 만족시킴을 확인하고 진행. 3) renderHome()이 계산한 planNegatives() 결과를 모듈 변수 _homeNeg에 저장하고, updateAlerts(neg)가 선택적 인자를 받게 해 renderCurrent()가 홈 탭일 때 재계산 없이 그 값을 넘기도록 해 같은 렌더 사이클의 이중 planNegatives() 호출을 제거(다른 탭은 기존대로 updateAlerts() 내부에서 계산). test/run.js에 recDates 시작점 최적화 회귀 테스트 3개(daily/weekly weekend-shift 경계 케이스, 좁은 구간 정확성)와 expandRec/_recCache 캐시 회귀 테스트 2개(같은 구간 재호출 시 DB.recurrences 미재순회, 캐시 비움 후 반영) 추가, CONSTS에 REC_CACHE_MAX/_recCache 추가. renderCurrent 관련 기존 테스트 2개가 새 모듈 변수 _homeNeg 미정의로 실패했다가 sandbox에 _homeNeg:null 스텁을 추가해 해결. 162/162 통과(기존 157+신규 5). 두 인라인 <script> 블록 모두 node --check 파싱 확인. Playwright(사전 설치 Chromium, 게스트 모드)로 실제 브라우저에서 홈/자산관리/가계부/한달플랜/메뉴 탭을 반복 왕복해도(캐시/dedup 경로를 여러 번 태움) pageerror 없이 정상 렌더됨을 확인. APP_VERSION 1.25.5->1.26.0(advance라 minor bump), sw.js CACHE v87->v88. pending_advance_plan 비움.",
+      "commit": null
+    },
     {
       "cycle": 26,
       "phase": "critique",
@@ -122,27 +120,6 @@
       "phase": "critique",
       "timestamp": "2026-09-13T12:20:00.000Z",
       "summary": "전체 앱을 한 걸음 물러나 봤다. 전역 에러 바운더리 부재를 채택(다른 후보: 행 요소 키보드 접근성 부재는 다음 critique로 이월). pending_advance_plan에 window.onerror/unhandledrejection + renderCurrent try/catch 계획 저장. 코드 변경 없음.",
-      "commit": null
-    },
-    {
-      "cycle": 24,
-      "phase": "review",
-      "timestamp": "2026-09-13T11:08:09.237Z",
-      "summary": "Reviewed commit 08361ff (dead calendar-cell computation loop removed from renderLedger()). No bugs found. 139/139 pass.",
-      "commit": null
-    },
-    {
-      "cycle": 17,
-      "phase": "review",
-      "timestamp": "2026-09-12T06:00:00.000Z",
-      "summary": "Reviewed commit 686a752 (homeAlerts/pendingTransferCount now scan allTxns via expandRec). No bugs found. 104/104 pass.",
-      "commit": null
-    },
-    {
-      "cycle": 17,
-      "phase": "develop",
-      "timestamp": "2026-09-12T05:21:00.000Z",
-      "summary": "홈 화면의 이체 확인 알림(homeAlerts)과 '이체 전부 완료' 판정(pendingTransferCount)이 반복거래로 생성되는 미확인 이체를 놓치는 버그 수정. 104/104 통과. APP_VERSION 1.21.3->1.21.4, sw.js CACHE v63->v64.",
       "commit": null
     },
     {

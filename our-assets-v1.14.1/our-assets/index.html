@@ -1284,7 +1284,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.25.5';
+const APP_VERSION='1.26.0';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1793,6 +1793,15 @@ function recDates(r,from,to){
  }else{
    const step=r.freq==='daily'?1:7;
    let cd=new Date(rs);
+   /* from 이전 회차는 어차피 push()가 버리므로, weekend 조정(최대 ±2일) 여유를 둔 지점까지는
+      건너뛰고 스캔을 시작한다 — 오래전 시작된 daily/weekly 반복거래를 매번 처음부터 순회하지 않기 위함.
+      결과(out)는 최적화 전후로 동일해야 하며(behavior-preserving), 오직 시작점만 앞당긴다. */
+   const target=addDays(from,-2);
+   if(target>r.startDate){
+     const diffDays=Math.round((new Date(target+'T00:00:00')-rs)/86400000);
+     const k=Math.floor(diffDays/step);
+     if(k>0)cd.setDate(cd.getDate()+k*step);
+   }
    while(true){const ds=`${cd.getFullYear()}-${String(cd.getMonth()+1).padStart(2,'0')}-${String(cd.getDate()).padStart(2,'0')}`;
      if(ds>=r.startDate)push(ds);
      if(cd>end)break; /* 위와 동일한 이유로 end 이후 한 회차를 더 생성 */
@@ -1800,7 +1809,15 @@ function recDates(r,from,to){
  }
  return out.sort();
 }
+/* recDates()/expandRec() 확장 결과 캐시: DB.recurrences가 바뀌지 않는 한 같은 [from,to]는
+   매 렌더/저장마다 다시 순회할 필요가 없다. _balCache와 같은 규칙으로 invalidateBalances()에서
+   함께 비운다(balancesUpTo()가 이미 allTxns()->expandRec()를 거쳐 DB.recurrences에 의존하므로
+   기존 무효화 지점들이 이미 이 캐시에도 유효한 계약이다). */
+const REC_CACHE_MAX=40;
+const _recCache=new Map();
 function expandRec(from,to){
+ const key=from+'|'+to;
+ if(_recCache.has(key))return _recCache.get(key);
  const out=[];
  DB.recurrences.forEach(r=>{if(!r.active)return;
   recDates(r,from,to).forEach(d=>{
@@ -1811,6 +1828,8 @@ function expandRec(from,to){
      fromAssetId:r.fromAssetId,toAssetId:r.toAssetId,fromAssetName:r.fromAssetName,toAssetName:r.toAssetName,isRec:true});
   });
  });
+ _recCache.set(key,out);
+ if(_recCache.size>REC_CACHE_MAX)_recCache.delete(_recCache.keys().next().value);
  return out;
 }
 function allTxns(from,to){return DB.txns.filter(t=>t.date>=from&&t.date<=to).concat(expandRec(from,to))}
@@ -1888,7 +1907,7 @@ function assetBalance(id){ /* 홈/자산관리: 예정 포함 시 이번 달 말
    Map은 삽입 순서를 유지하므로 크기 초과 시 가장 오래된 항목부터 지우는 단순 LRU 캡을 둔다. */
 const BAL_CACHE_MAX=40;
 const _balCache=new Map();
-function invalidateBalances(){_balCache.clear()}
+function invalidateBalances(){_balCache.clear();_recCache.clear()}
 function balancesUpTo(dateStr){
  const upto=dateStr>RANGE_TO?RANGE_TO:dateStr;
  const proj=dateStr>TODAY;
@@ -1980,6 +1999,7 @@ let ST={tab:'home',ledgerMode:'cal',assetOwner:'all',ledger:{y:TM.y,m:TM.m,sel:T
 const TABS=[{id:'home',label:'홈',icon:'home'},{id:'assets',label:'자산관리',icon:'wallet'},{id:'ledger',label:'가계부',icon:'ledger'},{id:'plan',label:'한달 플랜',icon:'plan'},{id:'menu',label:'메뉴',icon:'menu'}];
 
 /* ================= HOME ================= */
+let _homeNeg=null; /* renderHome()이 이번 렌더에서 계산한 planNegatives() 결과, renderCurrent()의 updateAlerts() 재사용용 */
 function renderHome(){
  const y=TM.y,m=TM.m;ST.home={y,m}; /* 홈은 항상 이번 달 */
  const S=monthStats(y,m);
@@ -1987,6 +2007,7 @@ function renderHome(){
 
  // 상단 알림 (잔액 부족 경고 · 만기 · 확인 필요 이체 등)
  const neg=planNegatives();
+ _homeNeg=neg; /* renderCurrent()가 바로 이어서 updateAlerts()를 부를 때 같은 값을 재사용(중복 계산 방지) */
  const alerts=homeAlerts(neg);
  const allClear=!alerts.length&&DB.assets.some(isPlanAcct)&&DB.txns.length;
  const alertBanner=alerts.length?`<div class="alert-stack-wrap">
@@ -4722,8 +4743,8 @@ function planNegatives(){ /* 통장별 · 예정 끝까지 · '하루 합산(일
  });
  return out.sort((x,z)=>x.date<z.date?-1:1);
 }
-function updateAlerts(){
- const neg=planNegatives();
+function updateAlerts(neg){ /* neg를 미리 넘기면(홈 탭 렌더 직후처럼) planNegatives()를 다시 계산하지 않는다 */
+ if(neg===undefined)neg=planNegatives();
  document.querySelectorAll('.nav-btn').forEach(b=>{if(b.dataset.tab==='plan')b.classList.toggle('warn',neg.length>0)});
  const badge=$('planBadge');
  if(badge){badge.textContent=neg.length>9?'9+':String(neg.length);badge.classList.toggle('on',neg.length>0)}
@@ -5175,7 +5196,7 @@ const renderers={home:renderHome,assets:renderAssets,ledger:renderLedger,history
 function renderCurrent(){
  try{
   renderers[ST.tab]();
-  updateAlerts();
+  updateAlerts(ST.tab==='home'?_homeNeg:undefined);
   requestAnimationFrame(fitAll);
   hideErrBanner();
  }catch(err){

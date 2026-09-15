@@ -63,7 +63,8 @@ const FUNCTIONS = [
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
 // _balCache/BAL_CACHE_MAX는 balancesUpTo()가 참조하는 모듈 스코프 캐시 상태라 같은 방식으로 끌어온다.
-const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'isFuture', 'BAL_CACHE_MAX', '_balCache'];
+// _recCache/REC_CACHE_MAX는 expandRec()가 참조하는 모듈 스코프 캐시 상태라 같은 방식으로 끌어온다.
+const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache'];
 
 const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(extractConst).join('\n');
 
@@ -95,6 +96,10 @@ const sandbox = {
   // 필요로 하는 최소한의 모양만 흉내낸다(renderers[ST.tab]() 호출 하나만 있으면 됨).
   ST: { tab: 'home' },
   renderers: { home: () => {} },
+  // renderHome()이 계산해 넣는 모듈 스코프 변수(_homeNeg) — renderHome 자체는 순수 로직이
+  // 아니라 여기선 추출하지 않으므로(위 renderers.home 스텁과 같은 이유), renderCurrent()가
+  // 읽기만 하는 이 값을 최소 상태로 흉내낸다.
+  _homeNeg: null,
   updateAlerts: () => {},
   requestAnimationFrame: () => {},
   fitAll: () => {},
@@ -262,6 +267,37 @@ test('recDates: 매년 1/1+earlier 반복에서 1/1이 일요일이면 전년도
   assert.ok(y2022.includes('2022-12-30'), '다음 해 1/1이 당겨진 회차가 전년도 조회에 나와야 함');
   const y2023 = Array.from(sandbox.recDates(r, '2023-01-01', '2023-12-31'));
   assert.ok(!y2023.includes('2022-12-30'), '당겨진 회차가 원래 해 조회에 중복으로 나오면 안 됨');
+});
+
+/* ---------- recDates: daily/weekly 스캔 시작점을 from 근처로 당기는 최적화의 회귀 테스트 ----------
+ * (app-evolve cycle26 advance) recDates()의 daily/weekly 분기는 예전엔 항상 r.startDate부터
+ * 하루/일주일씩 순회해 to까지 진행했다 — 오래전 시작된 반복거래일수록 매 호출 비용이 컸다.
+ * 최적화 후엔 [from,to] 결과가 완전히 같아야 하며(behavior-preserving), 특히 weekend 조정으로
+ * from 직전 날짜가 범위 안으로 당겨져 들어오는 경계 케이스를 놓치면 안 된다. */
+test('recDates: 오래전 시작한 weekly 반복에서 from 직전 일요일이 later 조정으로 from(월요일)로 들어오면 빠지지 않는다', () => {
+  // startDate(2020-01-05, 일요일)에서 정확히 7의 배수만큼 지난 2026-06-14도 일요일이라,
+  // weekend:'later' 조정으로 2026-06-15(월)로 밀려 들어온다 — from을 바로 그 월요일로 잡는다.
+  const r = { freq: 'weekly', startDate: '2020-01-05', endDate: null, weekend: 'later' };
+  const dates = Array.from(sandbox.recDates(r, '2026-06-15', '2026-06-18'));
+  assert.ok(dates.includes('2026-06-15'), 'from 직전 회차가 later 조정으로 from에 들어오는 경계 케이스가 스캔 시작점 최적화로 누락되면 안 됨');
+});
+test('recDates: 오래전 시작한 daily 반복에서 from 직전 날짜가 later 조정으로 from에 들어오면 빠지지 않는다', () => {
+  // 2026-06-13(토)은 daily 후보이자 later 조정 대상 — 토요일은 +2일이라 2026-06-15(월)로 밀림.
+  const r = { freq: 'daily', startDate: '2010-01-01', endDate: null, weekend: 'later' };
+  const dates = Array.from(sandbox.recDates(r, '2026-06-15', '2026-06-16'));
+  assert.ok(dates.includes('2026-06-15'), '토요일 후보가 later 조정(+2일)으로 from에 들어오는 경계 케이스가 누락되면 안 됨');
+});
+test('recDates: 오래전 시작한 daily/weekly 반복도 좁은 [from,to] 구간에서 매일 회차를 빠짐없이 반환한다', () => {
+  const daily = { freq: 'daily', startDate: '2010-01-01', endDate: null, weekend: 'none' };
+  assert.deepStrictEqual(
+    Array.from(sandbox.recDates(daily, '2026-06-10', '2026-06-13')),
+    ['2026-06-10', '2026-06-11', '2026-06-12', '2026-06-13'],
+  );
+  const weekly = { freq: 'weekly', startDate: '2015-03-02', endDate: null, weekend: 'none' }; // 2015-03-02는 월요일
+  assert.deepStrictEqual(
+    Array.from(sandbox.recDates(weekly, '2026-06-01', '2026-06-30')),
+    ['2026-06-01', '2026-06-08', '2026-06-15', '2026-06-22', '2026-06-29'],
+  );
 });
 
 /* ---------- num(): 음수 입력 처리 ---------- */
@@ -1545,6 +1581,37 @@ test('balancesUpTo: invalidateBalances 없이도 _balCache를 비우면 다음 �
   assert.strictEqual(sandbox.balanceAt('a1', '2026-06-01'), -1000, '캐시를 비우지 않으면 DB가 바뀌어도 이전 값이 그대로 나와야 함(캐시가 실제로 동작 중임을 확인)');
   sandbox._balCache.clear();
   assert.strictEqual(sandbox.balanceAt('a1', '2026-06-01'), -1500, '캐시를 비운 뒤에는 새 거래가 반영되어야 함');
+});
+
+/* ---------- expandRec/_recCache: 반복거래 확장 결과 캐시의 회귀 테스트 (app-evolve cycle26 advance) ----------
+ * balancesUpTo()의 _balCache와 같은 규칙으로 expandRec()에도 [from,to] 키의 Map 캐시를 추가했다.
+ * DB.recurrences 순회 횟수를 직접 세어 같은 구간을 다시 부르면 재계산 없이 캐시에서 반환되는지,
+ * 캐시를 비우면(=invalidateBalances 호출과 같은 계약) 새 반복거래가 반영되는지 확인한다. */
+test('expandRec: 같은 [from,to]를 다시 불러도 DB.recurrences를 다시 순회하지 않고 캐시에서 반환된다', () => {
+  sandbox._recCache.clear();
+  sandbox.DB = {
+    recurrences: [{ id: 'r1', active: true, freq: 'daily', startDate: '2026-01-01', endDate: null, weekend: 'none', type: 'expense', category: '식비', memo: '', amount: 1000, skip: [], edits: {} }],
+  };
+  let scans = 0;
+  const origForEach = Array.prototype.forEach;
+  // DB.recurrences.forEach 호출 횟수만 세면 되므로, 배열 자체를 감싸지 않고 스파이 배열로 교체한다.
+  sandbox.DB.recurrences.forEach = (...args) => { scans++; return origForEach.apply(sandbox.DB.recurrences, args); };
+  const a = sandbox.expandRec('2026-06-01', '2026-06-05');
+  const b = sandbox.expandRec('2026-06-01', '2026-06-05');
+  assert.strictEqual(scans, 1, '같은 구간을 두 번 불러도 DB.recurrences 순회는 한 번만 일어나야 함');
+  assert.strictEqual(a, b, '캐시된 동일 결과(같은 배열 레퍼런스)를 반환해야 함');
+  assert.strictEqual(a.length, 5);
+});
+test('expandRec: _recCache를 비우면 새로 추가된 반복거래가 다음 호출부터 반영된다', () => {
+  sandbox._recCache.clear();
+  sandbox.DB = {
+    recurrences: [{ id: 'r1', active: true, freq: 'daily', startDate: '2026-01-01', endDate: null, weekend: 'none', type: 'expense', category: '식비', memo: '', amount: 1000, skip: [], edits: {} }],
+  };
+  assert.strictEqual(sandbox.expandRec('2026-06-01', '2026-06-01').length, 1, '캐시를 비우지 않으면 DB가 바뀌어도 이전 값이 그대로 나와야 함(캐시가 실제로 동작 중임을 확인)');
+  sandbox.DB.recurrences.push({ id: 'r2', active: true, freq: 'daily', startDate: '2026-01-01', endDate: null, weekend: 'none', type: 'expense', category: '교통', memo: '', amount: 500, skip: [], edits: {} });
+  assert.strictEqual(sandbox.expandRec('2026-06-01', '2026-06-01').length, 1, '캐시를 비우지 않으면 새 반복거래가 반영되면 안 됨(캐시 동작 확인)');
+  sandbox._recCache.clear();
+  assert.strictEqual(sandbox.expandRec('2026-06-01', '2026-06-01').length, 2, '캐시를 비운 뒤에는 새 반복거래가 반영되어야 함');
 });
 
 /* ---------- updateBalanceAdjust: 자산 수정 화면에서 채워진 잔액 캐시가 조정 내역
