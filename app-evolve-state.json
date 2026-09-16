@@ -1,15 +1,12 @@
 {
   "cycle": 29,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "반복 내역 전체 수정(saveRec)이 과거 회차까지 소급 변경하는 버그 수정",
+    "why": "반복거래는 DB.txns에 물리화되지 않고 expandRec(from,to)가 항상 recurrence의 현재 fromAssetId/toAssetId/amount/category로 모든 과거+미래 회차를 실시간 생성한다(index.html:1818 expandRec, 1771 recDates). saveRec()(index.html:3163-3185)은 반복 자체 세부 편집(openRecDetail->editRec->saveRec) 경로에서 DB.recurrences[i]=d로 통째로 덮어쓸 뿐 범위(scope) 개념이 전혀 없다. 반면 홈 화면 빠른 수정 경로(recApply/recSave, index.html:3046-3090)는 이미 \"이 내역만/이날부터 이후/전체\" 3단계 scope를 지원하고 future scope에서는 기존 rec를 endDate로 잘라 count를 재계산한 뒤 새 rec를 분리 생성하는 방식(recSave의 future 분기, 3077-3083)이 이미 검증되어 있다. 예: '관리비'를 우리은행에서 새 카드로 결제 계좌를 바꾸려고 반복 자체 편집에서 fromAssetId만 바꿔 저장하면, startDate까지의 모든 과거 회차가 즉시 새 계좌에서 나간 것으로 재계산되어 두 계좌의 balanceAt/balancesUpTo 히스토리와 순자산 차트가 경고 없이 조용히 틀어진다. 이는 화면 버그가 아니라 재무 이력 자체를 소급 왜곡하는 데이터 정합성 버그다.",
+    "approach": "1) recSave의 future 분기(3077-3083)에 있는 '기존 rec를 endDate=addDays(effectiveDate,-1)+count 재계산으로 자르고, 새 rec를 startDate=effectiveDate로 분리 생성(skip:[],edits:{} 초기화)' 로직을 순수함수 splitRecurrenceAt(r, editedFields, effectiveDate)로 추출해 test/run.js에서 DOM 없이 테스트 가능하게 한다. 2) saveRec()에서 wasEditing이 true일 때, 원본 recurrence(DB.recurrences[i])와 새 draft d를 히스토리에 영향을 주는 필드(fromAssetId, toAssetId, amount, category, day, freq)에 대해 비교한다. 차이가 있고 recDates(원본, 원본.startDate, addDays(TODAY,-1)).length>0(과거 회차가 존재)이면, 곧바로 덮어쓰지 말고 recEditScope와 유사한 확인 시트를 띄워 두 가지만 제시한다: '오늘부터 이후 모두 적용'(기본/권장 — splitRecurrenceAt으로 분리) 과 '전체 적용(과거 기록도 변경됨)'(기존처럼 통째 덮어쓰되 명시적 경고 문구 포함). 과거 회차가 없거나(신규 반복 직후 편집 등) 히스토리 영향 필드가 안 바뀌었으면 기존처럼 즉시 저장(불필요한 확인 시트로 UX를 해치지 않기 위함). 3) test/run.js에 splitRecurrenceAt 회귀 테스트 추가: 기존 rec의 endDate/count가 effectiveDate-1로 올바르게 잘리는지, 새 rec의 startDate/필드가 올바른지, 분리 전/후 recDates가 각각 과거엔 옛 값, 미래엔 새 값을 돌려주는지. saveRec()의 scope 분기 자체도 mock DB로 회귀 테스트: 과거 회차 있는 rec를 fromAssetId 바꿔 '이후 모두'로 저장하면 DB.recurrences가 2개로 나뉘는지, 과거 회차 없는 rec는 확인 시트 없이 바로 in-place 덮어쓰기 되는지, 히스토리 비영향 필드(메모/주말규칙 등)만 바뀌면 확인 시트 없이 바로 적용되는지."
+  },
   "history": [
-    {
-      "cycle": 28,
-      "phase": "advance",
-      "timestamp": "2026-09-15T22:10:00.000Z",
-      "summary": "critique 계획대로 구현했다. isMarketValued 헬퍼 옆(index.html:1934)에 순수함수 detectStaleMarketValuedTxns(DB)를 추가: DB.txns/DB.recurrences를 순회하며 type별로 실제 자산을 갱신하는 방향만 보고(transfer/saving은 from+to, expense는 from만, income은 to만) fromAssetId/toAssetId가 가리키는 자산이 isMarketValued면 {key,kind,refId,date,type,amount,assetId,assetName,dir}로 수집한다. key='tx|rec:id:from|to' 형태라 fx-to-fx처럼 한 거래에서 두 방향이 모두 걸려도 독립적으로 dismiss 가능. migrate()의 DB.settings 기본값 객체(1720)에 dismissedStaleMvIds:[] 추가하고 detectStaleMarketValuedTxns가 이를 Set으로 걸러낸다. homeAlerts()(5027) 끝에 탐지 결과가 있으면 {kind:'staleMv',count} 추가, homeAlertCard()에 배너 렌더 분기 추가(눌러서 openStaleMvReview() 호출). openStaleMvReview()/dismissStaleMv()를 homeAlertCard 바로 아래 추가: openMaturity()(3720)와 같은 manage-row 목록 패턴으로 각 항목의 자산명/방향/날짜/금액/타입을 보여주고 항목별 '확인함' 버튼으로 dismissedStaleMvIds에 key를 push — 금액/수량은 절대 고치지 않고 자산 관리에서 직접 맞추라는 안내 문구만 추가. restoreBackup()이 이미 migrate()를 거치므로 백업 복원 시에도 기본값이 자동으로 채워짐을 확인. test/run.js에 detectStaleMarketValuedTxns를 새로 추출해 회귀 테스트 4개 추가: 정상 거래만 있으면 빈 배열, transfer/expense/income/saving 각 타입에서 올바른 방향만 걸리는지(transfer는 to만 fx인 경우 등), dismissedStaleMvIds에 있는 key는 제외되는지, 삭제된 assetId 참조는 크래시 없이 스킵되는지. 177/177 통과(기존 173+신규 4). 두 인라인 <script> 블록 모두 node --check 파싱 확인. Playwright(사전 설치 Chromium, 게스트 모드)로 실제 브라우저에서 fx 자산으로의 이체를 직접 DB에 넣고 홈 배너 노출 → 시트 오픈 → '확인함' 클릭 → 배너·탐지 결과 모두 사라짐까지 end-to-end 확인, pageerror 없음. APP_VERSION 1.27.1->1.28.0(새 기능이라 minor bump), sw.js CACHE v91->v92. pending_advance_plan 비움.",
-      "commit": null
-    },
     {
       "cycle": 28,
       "phase": "critique",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-09-16T00:07:52.126Z",
       "summary": "develop 커밋(6c71fc2, delBudget에 undoToast 추가)을 검토함. 삭제 버튼(openBudgetPrompt, index.html:3732)이 cur(기존 예산)가 truthy일 때만 렌더되므로 undo 클로저의 prev는 항상 정의됨을 확인 — edge case 없음. 클로저가 idx가 아닌 r.c를 캡처해 openSpendAnalysis() 재정렬로 인한 idx 스테일 문제도 없음. delOwner/delCat의 undoToast 패턴과 일치. 인라인 script 2개 모두 node --check 통과, 179/179 회귀 테스트 통과. 코드 변경 없음 — 이상 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 29,
+      "phase": "critique",
+      "timestamp": "2026-09-16T01:10:35.162Z",
+      "summary": "cycle29 review(93577e5)가 문제 없음으로 끝낸 직후, Explore 서브에이전트로 앱 전체를 구조적으로 훑게 했다(카테고리/예산 관리, 차트, 검색/필터, 날짜 선택기, 반복거래 편집 시맨틱, 자산-소유자 상호작용, 통화 서식, 오프라인/서비스워커, 폼 검증, 중복 감지, 빈/로딩 상태, 접근성, fetch 에러 처리, 백업/복원 등 최근 사이클들이 다루지 않은 영역). 반복거래는 DB.txns에 물리화되지 않고 expandRec(1818)/recDates(1771)가 항상 recurrence의 '현재' 필드값으로 과거+미래 전체 회차를 실시간 생성하는데, saveRec()(3163-3185)의 반복 자체 세부 편집 경로가 DB.recurrences[i]=d로 scope 개념 없이 통째 덮어써, 결제 계좌 등을 바꿔 저장하면 startDate까지의 모든 과거 회차가 조용히 새 값으로 재계산돼 balanceAt/순자산 히스토리가 경고 없이 소급 왜곡되는 실제 버그를 발견해 직접 코드로 확인(3182). 같은 화면의 홈 빠른 수정 경로(recApply/recSave, 3046-3090)는 이미 '이 내역만/이후 모두/전체' scope와 future 분기의 rec 분리 로직(3077-3083)을 갖추고 있어, 이를 재사용 가능한 순수함수로 추출해 saveRec에도 적용하는 방향으로 계획을 세움. 후보로 검토했으나 보류: recApply 빠른 수정이 금액만 바꿀 수 있고 카테고리/자산은 못 바꾸는 제약(근본 원인인 위 버그를 고치면 자연히 subsume됨), saveTx/saveRec의 더블 서밋 가드 부재(동기 핸들러라 실제 영향 불확실), matchTxnQuery가 금액을 검색 대상에 포함하지 않는 것(정확성 문제 아닌 소소한 UX 공백). pending_advance_plan에 saveRec scope 확인 시트 + splitRecurrenceAt 순수함수 추출 + 회귀 테스트 계획 저장. 코드 변경 없음.",
       "commit": null
     }
   ]
