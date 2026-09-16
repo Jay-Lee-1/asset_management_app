@@ -64,7 +64,7 @@ const FUNCTIONS = [
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'esc', 'matchTxnQuery',
   'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo',
   'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'restoreBackup', 'storageOutcomeMsg',
-  'saveRec', 'recHistFieldsChanged', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
+  'saveRec', 'recHistFieldsChanged', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
   'monthStartStr', 'monthEndStr', 'expandRec', 'allTxns', 'spendByCategory', 'histSumTotals',
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'expenseBreakdownCard',
   'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'saveAsset', 'isCloudConflict',
@@ -1245,6 +1245,28 @@ test("recSave: scope='future' 수정은 endDate를 끊고 새 분리 레코드�
   assert.strictEqual(r.endDate, null, '되돌리면 기존 반복의 endDate가 복원되어야 함');
   assert.strictEqual(sandbox.DB.recurrences.length, 1, '되돌리면 새로 만든 분리 레코드가 제거되어야 함');
 });
+test("recSave: scope='future' 분할은 effectiveDate 이후의 skip/edits를 새 레코드로 옮기고, 이전 것은 원본에 남긴다(안 옮기면 개별 삭제·수정 이력이 조용히 사라짐)", () => {
+  sandbox.TWi = -1;
+  const r = {
+    id: 'r1', amount: 1000, endDate: null,
+    skip: ['2026-01-01', '2026-04-01', '2026-05-01'],
+    edits: { '2026-02-01': { amount: 11 }, '2026-06-01': { amount: 22 } },
+  };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.window._recCtx = { recId: 'r1', date: '2026-03-01', scope: 'future' };
+  sandbox.txAmtValue = '7000';
+  sandbox.recSave();
+  const newRec = sandbox.DB.recurrences.find(x => x.id !== 'r1');
+  // vm 샌드박스 안에서 새로 만들어진 edits 객체는 host의 Object와 realm이 달라 deepStrictEqual이
+  // (값은 같아도) 실패하므로, JSON.stringify로 정규화해 비교한다(위 budgetProgress 테스트와 같은 이유).
+  assert.deepStrictEqual(r.skip, ['2026-01-01'], 'effectiveDate 이전의 skip은 원본에 남아야 함');
+  assert.strictEqual(JSON.stringify(r.edits), JSON.stringify({ '2026-02-01': { amount: 11 } }), 'effectiveDate 이전의 edits는 원본에 남아야 함');
+  assert.deepStrictEqual(newRec.skip, ['2026-04-01', '2026-05-01'], 'effectiveDate 이후(포함)의 skip은 새 레코드로 옮겨져야 함');
+  assert.strictEqual(JSON.stringify(newRec.edits), JSON.stringify({ '2026-06-01': { amount: 22 } }), 'effectiveDate 이후(포함)의 edits는 새 레코드로 옮겨져야 함');
+  sandbox.lastUndo.undoFn();
+  assert.deepStrictEqual(r.skip, ['2026-01-01', '2026-04-01', '2026-05-01'], '되돌리면 원본의 skip이 분할 이전 상태로 복원되어야 함');
+  assert.strictEqual(JSON.stringify(r.edits), JSON.stringify({ '2026-02-01': { amount: 11 }, '2026-06-01': { amount: 22 } }), '되돌리면 원본의 edits가 분할 이전 상태로 복원되어야 함');
+});
 test("recSave: scope='future' 분할 시 원래 반복에 종료일이 있었다면 새 레코드도 그 종료일을 물려받아야 한다(무한 반복으로 바뀌면 안 됨)", () => {
   sandbox.TWi = -1;
   const r = { id: 'r1', amount: 1000, freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: '2026-12-05', count: 12, skip: [], edits: {} };
@@ -1337,6 +1359,21 @@ test('splitRecurrenceAt: 원본이 무기한(endDate=null)이면 새 레코드�
   const { newRec } = sandbox.splitRecurrenceAt(orig, { ...orig, amount: 2000 }, '2026-06-05');
   assert.strictEqual(newRec.endDate, null);
   assert.strictEqual(newRec.count, null);
+});
+test('splitRecurrenceAt: effectiveDate 이후(포함)의 skip/edits는 새 레코드로, 이전 것은 원본에 남는다', () => {
+  const orig = {
+    id: 'r1', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: '2026-12-05', count: 12, amount: 1000, fromAssetId: 'a1',
+    skip: ['2026-02-05', '2026-06-05', '2026-09-05'],
+    edits: { '2026-03-05': { amount: 1 }, '2026-08-05': { amount: 2 } },
+  };
+  const draft = { ...orig, amount: 2000, fromAssetId: 'a9' };
+  const { updatedOriginal, newRec } = sandbox.splitRecurrenceAt(orig, draft, '2026-06-05');
+  assert.deepStrictEqual(updatedOriginal.skip, ['2026-02-05'], 'effectiveDate 이전 skip은 원본에 남아야 함');
+  // edits는 vm 샌드박스 안에서 새로 만들어진 객체라 host realm과 프로토타입이 달라 deepStrictEqual이
+  // 값이 같아도 실패한다(위 budgetProgress 테스트와 같은 이유) — JSON.stringify로 정규화해 비교한다.
+  assert.strictEqual(JSON.stringify(updatedOriginal.edits), JSON.stringify({ '2026-03-05': { amount: 1 } }), 'effectiveDate 이전 edits는 원본에 남아야 함');
+  assert.deepStrictEqual(newRec.skip, ['2026-06-05', '2026-09-05'], 'effectiveDate 이후(포함) skip은 새 레코드로 옮겨져야 함(전에는 조용히 사라지는 버그가 있었음)');
+  assert.strictEqual(JSON.stringify(newRec.edits), JSON.stringify({ '2026-08-05': { amount: 2 } }), 'effectiveDate 이후(포함) edits는 새 레코드로 옮겨져야 함(전에는 조용히 사라지는 버그가 있었음)');
 });
 
 test('saveRec: 과거 회차가 있는 반복에서 결제 계좌(fromAssetId)를 바꿔 저장하면, 곧바로 덮어쓰지 않고 범위 확인 시트를 띄운다', () => {

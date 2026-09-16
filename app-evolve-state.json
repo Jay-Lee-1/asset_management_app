@@ -1,15 +1,8 @@
 {
   "cycle": 33,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 27,
-      "phase": "critique",
-      "timestamp": "2026-09-15T17:10:00.000Z",
-      "summary": "cycle27 review(1dac59b)가 문제 없음으로 끝낸 직후, 최근 develop 커밋 재검토보다 앱 전체를 구조적으로 훑는 데 집중해 Explore 서브에이전트로 데이터 검증/통화 서식/카테고리 관리/검색·필터/차트/백업·복원/자산-소유자 상호작용/날짜 선택기/빈 상태/로딩 상태/중복 감지 등 이전 사이클들이 다루지 않은 영역을 훑었다. assetEval()(1860-1868)이 fx/gold/stock 세 타입만 원장과 무관하게 qty×rate로 평가하는데, openAssetPicker()(5125)/txOpenAsset()(2915)는 이체·지출·수입 화면에서 이 세 타입도 다른 통장과 똑같이 선택 가능한 이체 대상으로 보여주고 saveTx()(2955)는 fromAssetId/toAssetId만 저장할 뿐 fxAmount/goldDon/stockQty를 전혀 갱신하지 않는 것을 직접 코드로 확인했다 — cashOnly 필터(isCashLike, 1933)가 만기이체 picker(2549) 한 곳에만 적용되고 일반 거래 입력 경로엔 없다는 것도 확인. '현금→외화/금/주식' 이체를 정상 화면에서 입력하면 받는 쪽 평가액이 갱신되지 않아 그 금액이 순자산에서 조용히 사라지는(반대 방향이면 조용히 생기는) 실사용 핵심 버그로 판단해 채택. 후보로 검토했으나 보류한 것: CSV import 부재(원장 정확성 버그가 아니라 편의기능 공백), delOwner()(2666)에 delCat/delTx와 달리 undo 토스트 없음(develop 사이즈로 다음에), 카테고리/소유자 관리·백업복원(undo+injection 방어 포함)·검색필터·시세 동기화 실패 상태는 이미 견고함을 확인. pending_advance_plan에 isMarketValued 헬퍼 + openAssetPicker excludeMarketValued 옵션 + txOpenAsset 적용 + 회귀 테스트 계획 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 27,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-16T14:10:00.000Z",
       "summary": "critique 계획대로 DB.budgets(flat map) 예산을 DB.budgetHistory[category]=[{from\"YYYY-MM\",amount}] 시점별 이력 구조로 전환했다. budgetKey(y,m)/budgetForMonth(c,y,m)(index.html:3762-3768) 순수함수를 새로 추가해 대상 달 이전(from<=대상)의 가장 최근 이력값을 찾고 없으면 0(미설정)을 반환하도록 했고, setBudgetFrom(c,y,m,amount)로 같은 달 항목은 덮어쓰고 아니면 from 오름차순을 유지하며 삽입한다. spendByCategory/openSpendAnalysis/openBudgetPrompt/totalBudgetSummary(rows,y,m로 시그니처 변경)가 전부 DB.budgets[c] 직접 참조 대신 budgetForMonth(c,y,m)을 쓰도록 바꿨다. saveBudget()은 setBudgetFrom(r.c,y,m,v)로 보고 있는 달부터 적용되는 새 이력 항목을 기록하고, delBudget()은 완전 삭제 대신 보고 있는 달부터 0으로 되돌리는 항목을 추가해(과거 이력 보존) undo 시엔 그 달에 원래 있던 항목이었으면 값을 복원하고 새로 추가된 항목이었으면 그 항목 자체를 제거하도록 구현했다. doDeleteCat/doRenameCat도 DB.budgets 대신 DB.budgetHistory 배열을 통째로 옮기도록 맞췄다. migrate()에 DB._budgetHistV1 가드로 1회성 마이그레이션을 추가해, 기존 DB.budgets(flat)가 있으면 이를 BUDGET_EPOCH(\"2000-01\", 실제 조회 가능한 어떤 달보다도 이른 시점) 이력 항목으로 변환해 마이그레이션 직후에는 과거/현재/미래 어느 달을 조회해도 이전과 동일한 값을 보여주도록(화면 급변 방지) 했다. openBudgetPrompt()의 '이번 달 ~ 매달 같은 금액으로 적용돼요' 문구도 실제 보고 있는 달(m월)과 '바꾸기 전까지 이후 달에도 계속 적용돼요'로 고쳐 실제 동작과 일치시켰다. test/run.js에 budgetForMonth/setBudgetFrom 순수함수 테스트(이력 없는 카테고리 0, from 경계, 과거 달 보정 저장 후 이후 달 영향 없음 등) 9개, totalBudgetSummary/spendByCategory/doRenameCat/doDeleteCat/delBudget/migrate의 기존 DB.budgets 참조 테스트를 전부 budgetHistory 형태로 재작성(신규 마이그레이션 테스트 2개 포함)했다. 221/221 통과(기존 199+신규 22, 기존 테스트 다수 재작성). 두 인라인 <script> 블록 모두 node --check 파싱 확인. Playwright(사전 설치 Chromium, 게스트 모드)로 실제 브라우저에서 saveBudget으로 1월 예산 설정 후 6월에 예산 인상 → 1월 값은 그대로, 8월에 추가 인상 → 6월 값은 영향받지 않음을 확인했고, delBudget으로 6월 예산 삭제 시 6월부터 0이 되면서도 3월 값은 그대로 보존됨을 실제 DOM/함수 호출로 end-to-end 확인, pageerror 없음. APP_VERSION 1.32.1->1.33.0(예산 데이터 모델 변경을 동반한 advance라 minor bump), sw.js CACHE v100->v101. pending_advance_plan 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 33,
+      "phase": "develop",
+      "timestamp": "2026-09-16T15:14:51.362Z",
+      "summary": "반복거래를 future 스코프로 수정하면(recSave() future 분기, index.html:3105-3113 / splitRecurrenceAt(), index.html:3225-3241) 원본을 effectiveDate 직전까지 자르고 그 이후를 새 반복 레코드로 분리하는데, 새 레코드의 skip/edits를 무조건 빈 []/{}로 초기화해 effectiveDate 이후에 있던 개별 회차 삭제(skip)나 개별 회차 금액 수정(edits, 변동 카테고리의 실제 입력 금액 포함)이 분리 순간 조용히 사라지는 버그를 발견해 수정했다. Explore 서브에이전트로 최근 다루지 않은 영역(반복거래 편집 시맨틱, 통화 서식, 서비스워커, 날짜 선택기, 카테고리-반복 상호작용, undo 커버리지)을 훑어 찾아냈다. splitRecOverrides(skip,edits,effectiveDate) 순수 함수를 새로 추가해 두 분리 경로(recSave future 분기, splitRecurrenceAt) 모두에서 effectiveDate 이전 항목은 원본에 남기고 이후(포함) 항목만 새 레코드로 옮기도록 고쳤다. 회귀 테스트 2개(recSave future 분기, splitRecurrenceAt)를 추가했고, vm 샌드박스에서 새로 만들어진 edits 객체가 host realm과 프로토타입이 달라 deepStrictEqual이 실패하는 기존 이슈(budgetProgress 테스트와 동일 패턴)라 JSON.stringify 비교로 우회했다. test/run.js의 FUNCTIONS 화이트리스트에 splitRecOverrides를 추가하지 않으면 recSave/splitRecurrenceAt 추출 시 ReferenceError가 나서 함께 추가함. 223/223 테스트 통과. APP_VERSION 1.33.0→1.34.0, sw.js CACHE v101→v102.",
       "commit": null
     }
   ]

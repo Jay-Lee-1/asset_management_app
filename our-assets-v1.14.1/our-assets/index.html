@@ -1288,7 +1288,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.33.0';
+const APP_VERSION='1.34.0';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3103,12 +3103,14 @@ function recSave(){
   undoFn=()=>{if(prevEdit===undefined)delete edits[ctx.date];else edits[ctx.date]=prevEdit;save();renderCurrent();toast('되돌렸어요')};
  }
  else if(ctx.scope==='future'){
-  const prevEnd=r.endDate,prevCount=r.count;r.endDate=addDays(ctx.date,-1);
+  const prevEnd=r.endDate,prevCount=r.count,prevSkip=r.skip.slice(),prevEdits=Object.assign({},r.edits);
+  const {skipPast,skipFuture,editsPast,editsFuture}=splitRecOverrides(r.skip,r.edits,ctx.date);
+  r.endDate=addDays(ctx.date,-1);r.skip=skipPast;r.edits=editsPast;
   r.count=recCountUntil({freq:r.freq,day:r.day,startDate:r.startDate,weekend:r.weekend},r.endDate); /* 잘린 원래 반복도 endDate와 count를 항상 함께 맞춰둔다(다른 저장 경로들과 동일한 불변식) */
   const newBase={freq:r.freq,day:r.day,startDate:ctx.date,weekend:r.weekend};
-  const newRec=Object.assign({},JSON.parse(JSON.stringify(r)),{id:uid(),startDate:ctx.date,endDate:prevEnd,count:prevEnd?recCountUntil(newBase,prevEnd):null,amount:amt,skip:[],edits:{}});
+  const newRec=Object.assign({},JSON.parse(JSON.stringify(r)),{id:uid(),startDate:ctx.date,endDate:prevEnd,count:prevEnd?recCountUntil(newBase,prevEnd):null,amount:amt,skip:skipFuture,edits:editsFuture});
   DB.recurrences.push(newRec);
-  undoFn=()=>{r.endDate=prevEnd;r.count=prevCount;DB.recurrences=DB.recurrences.filter(x=>x.id!==newRec.id);save();renderCurrent();toast('되돌렸어요')};
+  undoFn=()=>{r.endDate=prevEnd;r.count=prevCount;r.skip=prevSkip;r.edits=prevEdits;DB.recurrences=DB.recurrences.filter(x=>x.id!==newRec.id);save();renderCurrent();toast('되돌렸어요')};
  }
  else{
   const prevAmt=r.amount;r.amount=amt;
@@ -3220,14 +3222,24 @@ function saveRec(){
 }
 /* 반복 이력(과거 회차)에 영향을 주는 필드만 비교: 메모/주말규칙 등은 소급 적용돼도 무해하다 */
 function recHistFieldsChanged(orig,d){return ['fromAssetId','toAssetId','amount','category','day','freq'].some(k=>orig[k]!==d[k])}
-/* recSave()의 future 분기(3077-3083)와 동일한 규칙: 원본을 effectiveDate 직전까지로 자르고,
+/* future 분기(recSave/splitRecurrenceAt)에서 반복을 둘로 쪼갤 때, 개별 회차의 skip(이 날만 삭제)·
+   edits(이 날만 수정)를 effectiveDate 기준으로 나눠준다 — 안 나누고 새 반복에 그냥 []/{}를 주면
+   effectiveDate 이후로 남아있던 삭제·수정 이력이 split 순간 조용히 사라진다(되살아나거나 원상복구됨) */
+function splitRecOverrides(skip,edits,effectiveDate){
+ const skipPast=(skip||[]).filter(dt=>dt<effectiveDate),skipFuture=(skip||[]).filter(dt=>dt>=effectiveDate);
+ const editsPast={},editsFuture={};
+ Object.entries(edits||{}).forEach(([dt,v])=>{(dt<effectiveDate?editsPast:editsFuture)[dt]=v});
+ return {skipPast,skipFuture,editsPast,editsFuture};
+}
+/* recSave()의 future 분기(3105-3112)와 동일한 규칙: 원본을 effectiveDate 직전까지로 자르고,
    그 이후는 draft의 새 필드값으로 별도 반복을 분리 생성한다 */
 function splitRecurrenceAt(original,draft,effectiveDate){
  const prevEnd=original.endDate;
- const updatedOriginal=Object.assign({},original,{endDate:addDays(effectiveDate,-1)});
+ const {skipPast,skipFuture,editsPast,editsFuture}=splitRecOverrides(original.skip,original.edits,effectiveDate);
+ const updatedOriginal=Object.assign({},original,{endDate:addDays(effectiveDate,-1),skip:skipPast,edits:editsPast});
  updatedOriginal.count=recCountUntil({freq:original.freq,day:original.day,startDate:original.startDate,weekend:original.weekend},updatedOriginal.endDate);
  const newBase={freq:draft.freq,day:draft.day,startDate:effectiveDate,weekend:draft.weekend};
- const newRec=Object.assign({},JSON.parse(JSON.stringify(draft)),{id:uid(),startDate:effectiveDate,endDate:prevEnd,count:prevEnd?recCountUntil(newBase,prevEnd):null,skip:[],edits:{}});
+ const newRec=Object.assign({},JSON.parse(JSON.stringify(draft)),{id:uid(),startDate:effectiveDate,endDate:prevEnd,count:prevEnd?recCountUntil(newBase,prevEnd):null,skip:skipFuture,edits:editsFuture});
  return {updatedOriginal,newRec};
 }
 function recSaveScopeConfirm(orig,d,i){
