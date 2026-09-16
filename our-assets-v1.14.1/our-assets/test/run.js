@@ -19,8 +19,11 @@ const src = fs.readFileSync(HTML_PATH, 'utf8');
 
 function extractFunction(name) {
   const marker = `function ${name}(`;
-  const start = src.indexOf(marker);
+  let start = src.indexOf(marker);
   if (start === -1) throw new Error(`extractFunction: "${name}" 함수를 index.html에서 찾지 못함`);
+  // `async function foo(`처럼 marker 앞에 "async "가 붙어 있으면 함께 끌어와야 한다 —
+  // 안 그러면 await만 남고 async가 빠져 vm에서 "await is only valid in async functions" 문법 에러가 난다.
+  if (src.slice(start - 6, start) === 'async ') start -= 6;
   const braceStart = src.indexOf('{', start);
   let depth = 0, i = braceStart;
   for (; i < src.length; i++) {
@@ -76,12 +79,13 @@ const FUNCTIONS = [
   'detectStaleMarketValuedTxns', 'delBudget',
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards',
   'rateUnknown', 'filteredHist', 'histInvalidate',
+  'authHashLegacy', 'authGenSalt', 'authHashPBKDF2', 'authLockRemainMs',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
 // _balCache/BAL_CACHE_MAX는 balancesUpTo()가 참조하는 모듈 스코프 캐시 상태라 같은 방식으로 끌어온다.
 // _recCache/REC_CACHE_MAX는 expandRec()가 참조하는 모듈 스코프 캐시 상태라 같은 방식으로 끌어온다.
-const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL'];
+const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'AUTH_PBKDF2_ITER', 'AUTH_LOCK_THRESHOLD', 'AUTH_LOCK_BASE_MS', 'AUTH_LOCK_MAX_MS'];
 // _histCache는 filteredHist()가 재대입(={key,list})하는 let 선언이라 CONSTS(extractConst)로는
 // 못 끌어오므로 별도의 LETS 목록으로 extractLet을 통해 가져온다.
 const LETS = ['_histCache'];
@@ -189,6 +193,10 @@ const sandbox = {
   // 부르는 즉시 시세 동기화 — 실제 네트워크 호출 대신 호출 여부만 기록한다.
   syncRatesCalls: [],
   syncRates: (silent) => { sandbox.syncRatesCalls.push(silent); },
+  // authGenSalt/authHashPBKDF2가 쓰는 Web Crypto API — Node 19+ 전역과 동일한 구현을 그대로 넘긴다
+  // (브라우저와 다른 걸 흉내내는 스텁이 아니라 실제 crypto.subtle이라 회귀 테스트가 실제 해시값을 검증한다).
+  crypto: globalThis.crypto,
+  TextEncoder: globalThis.TextEncoder,
 };
 vm.createContext(sandbox);
 vm.runInContext(extracted, sandbox, { filename: 'extracted-from-index.html' });
@@ -2354,21 +2362,76 @@ test('renderHistory: 전체 내역 화면을 다시 그릴 때마다 _histCache.
   assert.ok(/^\s*_histCache\.key\s*=\s*null/m.test(body), 'renderHistory()가 함수 맨 앞에서 _histCache.key를 비우지 않음');
 });
 
-/* ---------- 실행 ---------- */
-let pass = 0, fail = 0;
-for (const { name, fn } of tests) {
-  try {
-    fn();
-    pass++;
-    console.log(`  ok - ${name}`);
-  } catch (e) {
-    fail++;
-    console.error(`  FAIL - ${name}`);
-    console.error(`    ${e.message}`);
+/* ---------- authHashLegacy/authGenSalt/authHashPBKDF2/authLockRemainMs: 로컬 계정 비밀번호 보안 강화
+ * (DJB2 무salt 해시 -> PBKDF2-SHA256 salt+반복, 연속 실패 시 잠금) ---------- */
+test('authHashLegacy: 예전 DJB2 해시 결과가 그대로 유지된다(기존 계정 lazy migration이 이 값을 비교 기준으로 씀)', () => {
+  // 구현을 바꿀 일 없는 레거시 함수지만, 실수로 손대면 기존에 저장된 모든 로컬 계정이
+  // 한 번에 로그인 불가가 되므로 알려진 입출력 쌍으로 고정해 둔다.
+  assert.strictEqual(sandbox.authHashLegacy('abcd'), '7c93ee4f');
+  assert.strictEqual(sandbox.authHashLegacy(''), '1505');
+});
+test('authGenSalt: 16바이트(32자 hex) salt를 생성하고, 호출할 때마다 값이 달라진다', () => {
+  const a = sandbox.authGenSalt();
+  const b = sandbox.authGenSalt();
+  assert.strictEqual(a.length, 32);
+  assert.ok(/^[0-9a-f]+$/.test(a));
+  assert.notStrictEqual(a, b, '매번 랜덤이어야 하는데 두 salt가 같음(crypto.getRandomValues 연결 확인)');
+});
+test('authHashPBKDF2: 같은 비밀번호+salt+반복횟수면 항상 같은 해시를 돌려준다(결정적)', async () => {
+  const h1 = await sandbox.authHashPBKDF2('pw1234', 'saltsalt', 1000);
+  const h2 = await sandbox.authHashPBKDF2('pw1234', 'saltsalt', 1000);
+  assert.strictEqual(h1, h2);
+  assert.strictEqual(h1.length, 64, 'SHA-256 256bit = 64자 hex');
+});
+test('authHashPBKDF2: 비밀번호나 salt가 다르면 해시도 달라진다', async () => {
+  const base = await sandbox.authHashPBKDF2('pw1234', 'saltsalt', 1000);
+  const diffPw = await sandbox.authHashPBKDF2('pw12345', 'saltsalt', 1000);
+  const diffSalt = await sandbox.authHashPBKDF2('pw1234', 'saltother', 1000);
+  assert.notStrictEqual(base, diffPw);
+  assert.notStrictEqual(base, diffSalt);
+});
+test('AUTH_PBKDF2_ITER: 반복 횟수가 OWASP 최소 권장치(60만은 아니어도 최소 10만) 이상이다', () => {
+  assert.ok(sandbox.AUTH_PBKDF2_ITER >= 100000, `반복 횟수가 너무 낮으면 salt를 붙여도 무차별 대입에 취약함: ${sandbox.AUTH_PBKDF2_ITER}`);
+});
+test('authLockRemainMs: threshold 미만 실패 횟수는 잠금이 없다(0)', () => {
+  assert.strictEqual(sandbox.authLockRemainMs({ n: 0, t: 0 }, 1000), 0);
+  assert.strictEqual(sandbox.authLockRemainMs({ n: sandbox.AUTH_LOCK_THRESHOLD - 1, t: 1000 }, 1000), 0);
+  assert.strictEqual(sandbox.authLockRemainMs(null, 1000), 0, 'fails 기록이 아예 없는 최초 시도도 잠금 없음');
+});
+test('authLockRemainMs: threshold에 도달하면 마지막 실패 시각으로부터 base 지연이 걸린다', () => {
+  const now = 1_000_000;
+  const fails = { n: sandbox.AUTH_LOCK_THRESHOLD, t: now };
+  assert.strictEqual(sandbox.authLockRemainMs(fails, now), sandbox.AUTH_LOCK_BASE_MS, '잠금 시작 시점엔 base 지연이 그대로 남아있어야 함');
+  assert.strictEqual(sandbox.authLockRemainMs(fails, now + sandbox.AUTH_LOCK_BASE_MS), 0, 'base 지연이 다 지나면 잠금이 풀려야 함');
+});
+test('authLockRemainMs: 실패가 거듭될수록 잠금 시간이 늘어나되 최대치(AUTH_LOCK_MAX_MS)에서 cap된다', () => {
+  const now = 1_000_000;
+  const oneMore = sandbox.authLockRemainMs({ n: sandbox.AUTH_LOCK_THRESHOLD + 1, t: now }, now);
+  assert.strictEqual(oneMore, sandbox.AUTH_LOCK_BASE_MS * 2, '한 번 더 실패하면 잠금 시간이 두 배가 돼야 함');
+  const manyMore = sandbox.authLockRemainMs({ n: sandbox.AUTH_LOCK_THRESHOLD + 20, t: now }, now);
+  assert.strictEqual(manyMore, sandbox.AUTH_LOCK_MAX_MS, '실패가 아주 많이 쌓여도 최대 잠금시간을 넘으면 안 됨');
+});
+
+/* ---------- 실행 ----------
+ * authHashPBKDF2 테스트를 위해 async test(fn이 Promise를 반환할 수 있음)를 지원해야 하므로
+ * 순차 for 루프를 async 함수로 감싸 await한다(동기 테스트는 fn()이 undefined를 반환해 await도 그냥 통과). */
+async function runTests() {
+  let pass = 0, fail = 0;
+  for (const { name, fn } of tests) {
+    try {
+      await fn();
+      pass++;
+      console.log(`  ok - ${name}`);
+    } catch (e) {
+      fail++;
+      console.error(`  FAIL - ${name}`);
+      console.error(`    ${e.message}`);
+    }
+  }
+  console.log(`\n${pass}/${tests.length} passed`);
+  if (fail > 0) {
+    console.error(`${fail} test(s) failed`);
+    process.exit(1);
   }
 }
-console.log(`\n${pass}/${tests.length} passed`);
-if (fail > 0) {
-  console.error(`${fail} test(s) failed`);
-  process.exit(1);
-}
+runTests();
