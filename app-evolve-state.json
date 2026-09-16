@@ -1,15 +1,8 @@
 {
   "cycle": 29,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 29,
-      "phase": "develop",
-      "timestamp": "2026-09-15T23:10:06.000Z",
-      "summary": "delBudget()(index.html:3741, 지출 분석 화면에서 예산 삭제)가 delOwner/delCat/delAsset/delTx/delRec 등 이 앱의 다른 모든 삭제 경로와 달리 confirmSheet 확인도 undoToast도 없이 한 번 탭으로 즉시 영구 삭제되던 실제 UX 일관성 버그를 발견해 수정했다. openBudgetPrompt()의 '예산 삭제' 버튼은 별도 확인 시트 없이 바로 delBudget(idx)을 호출하는 구조라(저장 다이얼로그 자체가 이미 확인 단계 역할), confirmSheet를 새로 추가하는 대신 doDeleteCat/delOwner와 같은 undoToast 패턴만 맞췄다. 기존 값을 prev로 저장해두고 delete 후 undoToast(msg, ()=>{DB.budgets[r.c]=prev;save();renderCurrent();openSpendAnalysis();toast('되돌렸어요')})를 추가 — 삭제 직후 openSpendAnalysis()를 다시 불러 목록이 갱신되고, 되돌리기도 delCat의 'save();renderCurrent();<sheet 재오픈>' 패턴과 동일하게 맞췄다. test/run.js에 delBudget을 새로 추출하고(openSpendAnalysis 스텁 추가, 기존 spendByCategory/undoToast 스텁 재사용) 회귀 테스트 2개 추가: 삭제 후 undoToast가 불리고 undoFn 실행 시 원래 금액이 복원되며 다른 카테고리 예산은 영향받지 않는지, 존재하지 않는 idx를 넘기면 아무 것도 안 하는지. 179/179 통과(기존 177+신규 2). 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.28.0->1.28.1(버그 fix라 patch bump), sw.js CACHE v92->v93.",
-      "commit": null
-    },
     {
       "cycle": 28,
       "phase": "advance",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-13T18:05:00.000Z",
       "summary": "예산이 설정된 카테고리가 해당 월 지출이 0원이면 예산 관리 화면(지출 분석)에서 완전히 사라져 조회/수정/삭제가 불가능해지는 실제 버그를 채택해 spendByCategory 끝에서 DB.budgets에 있는 카테고리 중 이번 달 map에 없는 것을 v:0으로 채워 넣도록 고쳤다. test/run.js에 회귀 테스트 3개 추가 — 150/150 통과. APP_VERSION 1.25.0->1.25.1, sw.js CACHE v82->v83.",
+      "commit": null
+    },
+    {
+      "cycle": 29,
+      "phase": "review",
+      "timestamp": "2026-09-16T00:07:52.126Z",
+      "summary": "develop 커밋(6c71fc2, delBudget에 undoToast 추가)을 검토함. 삭제 버튼(openBudgetPrompt, index.html:3732)이 cur(기존 예산)가 truthy일 때만 렌더되므로 undo 클로저의 prev는 항상 정의됨을 확인 — edge case 없음. 클로저가 idx가 아닌 r.c를 캡처해 openSpendAnalysis() 재정렬로 인한 idx 스테일 문제도 없음. delOwner/delCat의 undoToast 패턴과 일치. 인라인 script 2개 모두 node --check 통과, 179/179 회귀 테스트 통과. 코드 변경 없음 — 이상 없음.",
       "commit": null
     }
   ]
