@@ -1287,7 +1287,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.31.1';
+const APP_VERSION='1.31.2';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5065,8 +5065,9 @@ function monthOutflowCard(y,m){
 }
 function toggleOutflows(){ST.ofOpen=!ST.ofOpen;renderHome();}
 /* ===== 다 쓴 자산 정리 제안 ===== */
-function hasFutureTxns(assetId){ /* 앞으로 예정된 내역(반복 포함)이 남아 있는가 */
- return allTxns(TODAY,DISP_TO).some(t=>t.fromAssetId===assetId||t.toAssetId===assetId);
+function hasFutureTxns(assetId){ /* 앞으로 예정된 내역(반복 포함)이 남아 있는가 — 매년 반복(예: 연 1회 저축)도
+ 놓치지 않도록 짧은 화면 표시용 DISP_TO(92일)가 아니라 앱 전체 반복 확장 범위인 RANGE_TO(760일)까지 본다 */
+ return allTxns(TODAY,RANGE_TO).some(t=>t.fromAssetId===assetId||t.toAssetId===assetId);
 }
 function emptyAssets(){ /* 현금예금 제외 · 잔액 0 · 앞으로 쓸 일 없음 */
  return DB.assets.filter(a=>{

@@ -1,8 +1,15 @@
 {
   "cycle": 31,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 31,
+      "phase": "review",
+      "timestamp": "2026-09-16T08:10:16.000Z",
+      "summary": "develop 커밋(3408ca6, emptyAssetCards()를 renderHome()에 연결)을 검토했다. hasFutureTxns(assetId)가 allTxns(TODAY,DISP_TO)로 앞으로 예정된 내역을 찾는데, DISP_TO는 TODAY+92일짜리 '화면 표시용' 상수라서(index.html:1856) recDates()가 지원하는 freq:'yearly' 반복거래(연 1회 이자/보너스 저축 등, 2917/3121행에서 실제로 선택 가능한 옵션)의 다음 회차가 92일보다 멀면 통째로 놓친다는 것을 코드로 확인했다. 그 결과 0원이면서 연 1회 반복거래가 예정된 savings/기타 자산이 '앞으로 예정된 내역 없음'으로 오판되어 emptyAssetCards()가 홈 화면에 '정리할까요?' 삭제 제안을 잘못 띄우는 실제 버그. RANGE_TO(TODAY+760일, expandRec/balancesUpTo가 쓰는 앱 전체 반복 확장 범위 상수)로 바꿔 연 1회 반복도 놓치지 않게 고쳤다(index.html:5068-5070). openTidyAsset의 삭제 자체는 deleteAssetsUndo로 되돌릴 수 있어 데이터 유실 위험은 없었지만, 정상 사용 중인 자산에 잘못된 삭제 제안을 반복 노출하는 건 실사용 버그로 판단해 그 자리에서 수정. test/run.js에 회귀 테스트 1개 추가: TODAY+92일(DISP_TO) 밖·TODAY+760일(RANGE_TO) 안에 다음 회차가 있는 연 1회 반복거래를 가진 0원 자산이 hasFutureTxns()=true, emptyAssets() 제외 대상임을 검증. 200/200 통과(기존 199+신규 1). 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.31.1->1.31.2(버그 fix라 patch bump), sw.js CACHE v97->v98.",
+      "commit": "3408ca6"
+    },
     {
       "cycle": 31,
       "phase": "develop",
@@ -134,13 +141,6 @@
       "phase": "critique",
       "timestamp": "2026-09-16T01:10:35.162Z",
       "summary": "cycle29 review(93577e5)가 문제 없음으로 끝낸 직후, Explore 서브에이전트로 앱 전체를 구조적으로 훑게 했다(카테고리/예산 관리, 차트, 검색/필터, 날짜 선택기, 반복거래 편집 시맨틱, 자산-소유자 상호작용, 통화 서식, 오프라인/서비스워커, 폼 검증, 중복 감지, 빈/로딩 상태, 접근성, fetch 에러 처리, 백업/복원 등 최근 사이클들이 다루지 않은 영역). 반복거래는 DB.txns에 물리화되지 않고 expandRec(1818)/recDates(1771)가 항상 recurrence의 '현재' 필드값으로 과거+미래 전체 회차를 실시간 생성하는데, saveRec()(3163-3185)의 반복 자체 세부 편집 경로가 DB.recurrences[i]=d로 scope 개념 없이 통째 덮어써, 결제 계좌 등을 바꿔 저장하면 startDate까지의 모든 과거 회차가 조용히 새 값으로 재계산돼 balanceAt/순자산 히스토리가 경고 없이 소급 왜곡되는 실제 버그를 발견해 직접 코드로 확인(3182). 같은 화면의 홈 빠른 수정 경로(recApply/recSave, 3046-3090)는 이미 '이 내역만/이후 모두/전체' scope와 future 분기의 rec 분리 로직(3077-3083)을 갖추고 있어, 이를 재사용 가능한 순수함수로 추출해 saveRec에도 적용하는 방향으로 계획을 세움. 후보로 검토했으나 보류: recApply 빠른 수정이 금액만 바꿀 수 있고 카테고리/자산은 못 바꾸는 제약(근본 원인인 위 버그를 고치면 자연히 subsume됨), saveTx/saveRec의 더블 서밋 가드 부재(동기 핸들러라 실제 영향 불확실), matchTxnQuery가 금액을 검색 대상에 포함하지 않는 것(정확성 문제 아닌 소소한 UX 공백). pending_advance_plan에 saveRec scope 확인 시트 + splitRecurrenceAt 순수함수 추출 + 회귀 테스트 계획 저장. 코드 변경 없음.",
-      "commit": null
-    },
-    {
-      "cycle": 30,
-      "phase": "advance",
-      "timestamp": "2026-09-16T06:00:00.000Z",
-      "summary": "advance: critique(cd36010)가 세운 계획대로 renderHome()(index.html:2032)의 alertBanner 직후에 ${nextOutflowCard()}와 ${monthOutflowCard(y,m)} 호출을 추가해, 이제까지 정의만 되고 어디서도 호출되지 않던 dead code(nextOutflowCard/monthOutflowCard, 5019/5043)를 실제 홈 화면에 연결했다. 이로써 카테고리 예산 설정/삭제(openSpendAnalysis, 이미 완성·테스트된 기능)와 부족 잔액 해결 제안(openFixShortfall)에 홈 화면에서 도달할 수 있게 됐고, 온보딩 튜토리얼(twScreen('home') 목업, #m-next/#m-outflow)이 신규 사용자에게 보여주던 화면과 실제 앱이 다시 일치한다. 두 함수는 내부 로직을 건드리지 않고 호출만 추가했으며, 필요한 CSS(.next-card/.of-card 등)와 의존 함수(goPlanTo/goLedgerTo/toggleOutflows/openFixShortfall/openSpendAnalysis/nextBigOutflow/monthOutflows)는 모두 기존에 이미 정상 정의돼 있었다. node --check로 두 <script> 블록 문법 검증 통과. test/run.js에 renderHome() 소스가 nextOutflowCard()/monthOutflowCard(를 실제로 호출하는지 확인하는 정적 회귀 테스트를 추가해(전체 DOM 렌더를 흉내내는 대신 소스 텍스트 검사로 가볍게 가드) 같은 누락이 다시 생기면 테스트가 즉시 잡도록 했다 — 191/191 전체 통과. index.html의 APP_VERSION을 1.30.0→1.31.0, sw.js의 CACHE를 v95→v96으로 올려 배포 시 캐시가 갱신되게 했다. emptyAssetCards()(5079)도 같은 패턴의 orphan 코드임을 재확인했으나 이번 계획 범위 밖이라 손대지 않았고 다음 critique가 다시 판단하도록 남겨둔다.",
       "commit": null
     }
   ]

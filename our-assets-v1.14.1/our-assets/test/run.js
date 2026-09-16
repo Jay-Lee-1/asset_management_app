@@ -2044,6 +2044,26 @@ test('emptyAssets: 앞으로 예정된 내역이 남아있으면 0원이어도 �
   const ids = sandbox.emptyAssets().map((a) => a.id);
   assert.ok(!ids.includes('a_stockHasTxn'));
 });
+test('hasFutureTxns: DISP_TO(92일) 너머・RANGE_TO(760일) 이내의 연 1회 반복 거래도 "예정 내역"으로 잡힌다', () => {
+  // 회귀: hasFutureTxns()가 화면 표시용 짧은 범위(DISP_TO=92일)만 보면, 다음 회차가
+  // 92일보다 멀리 있는 매년 반복 거래(예: 연 1회 이자/보너스 저축)를 가진 0원 자산이
+  // "예정 내역 없음"으로 오판되어 정리 대상으로 잘못 제안된다.
+  sandbox.DB = {
+    settings: {},
+    assets: [{ id: 'a_yearly', name: '연1회적금', type: 'savings', owner: '나' }],
+    rates: { fx: {}, stocks: {} },
+    txns: [],
+    recurrences: [
+      { id: 'r1', active: true, freq: 'yearly', startDate: '2026-01-10', type: 'income', category: '이자', memo: '', amount: 1000, fromAssetId: null, toAssetId: 'a_yearly' },
+    ],
+  };
+  sandbox.TODAY = '2026-06-15';
+  sandbox.DISP_TO = '2026-09-15'; // TODAY+92일 — 다음 회차(2027-01-10)는 이 범위 밖
+  sandbox.RANGE_TO = '2028-06-15'; // TODAY+760일 — 다음 회차는 이 범위 안
+  assert.ok(sandbox.hasFutureTxns('a_yearly'), 'DISP_TO 너머·RANGE_TO 이내의 연 1회 반복 거래를 놓침');
+  const ids = sandbox.emptyAssets().map((a) => a.id);
+  assert.ok(!ids.includes('a_yearly'), '연 1회 반복 거래가 있는데도 정리 대상으로 잘못 분류됨');
+});
 test('emptyAssets: 만기가 지났고(또는 없고) 0원에 예정 내역도 없는 자산만 정리 대상으로 남는다', () => {
   setupEmptyAssetsDB();
   const ids = sandbox.emptyAssets().map((a) => a.id).sort();
