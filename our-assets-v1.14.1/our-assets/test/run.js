@@ -52,6 +52,7 @@ const FUNCTIONS = [
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'esc', 'matchTxnQuery',
   'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo',
   'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'restoreBackup', 'storageOutcomeMsg',
+  'saveRec', 'recHistFieldsChanged', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
   'monthStartStr', 'monthEndStr', 'expandRec', 'allTxns', 'spendByCategory', 'histSumTotals',
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'expenseBreakdownCard',
   'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'saveAsset', 'isCloudConflict',
@@ -152,6 +153,13 @@ const sandbox = {
   // openPicker() 스텁 — excludeMarketValued 필터가 최종 목록 문자열에 반영됐는지 검증하는 데 쓴다.
   lastPickerHtml: null,
   openPicker: (title, bodyHtml) => { sandbox.lastPickerHtml = bodyHtml; },
+  // saveRec()가 편집 대상 필드를 읽는 recDraft(전역 폼 상태) — syncRecInputs()는 DOM 입력칸을
+  // recDraft에 반영하는 순수 로직이 아닌 함수라 no-op으로 흉내낸다(saveTx/syncTxInputs와 같은 이유).
+  recDraft: null,
+  syncRecInputs: () => {},
+  // recSaveScopeConfirm()이 띄우는 확인 시트 — 실제 DOM 대신 마지막으로 그려진 html만 기록한다.
+  lastSheetHtml: null,
+  openSheet: (html) => { sandbox.lastSheetHtml = html; },
 };
 vm.createContext(sandbox);
 vm.runInContext(extracted, sandbox, { filename: 'extracted-from-index.html' });
@@ -1158,6 +1166,114 @@ test('recSave: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 수�
   assert.strictEqual(sandbox.window._recCtx.recId, 'r1', '튜토리얼 중에는 _recCtx도 지워지지 않아야 함(가드가 최상단에서 반환하므로)');
   sandbox.TWi = -1;
   sandbox.window._recCtx = null;
+});
+
+/* ---------- saveRec(): 반복 자체 세부 편집(openRecDetail→editRec→saveRec)이 과거 회차까지
+   소급 변경하던 버그(cycle29 critique) — recSave()의 future 분기와 같은 분리 규칙을 적용한다 ---------- */
+test('recHistFieldsChanged: fromAssetId/toAssetId/amount/category/day/freq가 바뀌면 true', () => {
+  const orig = { fromAssetId: 'a1', toAssetId: 'a2', amount: 1000, category: '식비', day: 5, freq: 'monthly', memo: 'm', weekend: 'none' };
+  assert.strictEqual(sandbox.recHistFieldsChanged(orig, { ...orig, fromAssetId: 'a9' }), true);
+  assert.strictEqual(sandbox.recHistFieldsChanged(orig, { ...orig, amount: 2000 }), true);
+  assert.strictEqual(sandbox.recHistFieldsChanged(orig, { ...orig, freq: 'weekly' }), true);
+});
+test('recHistFieldsChanged: 메모/주말규칙 등 이력 비영향 필드만 바뀌면 false', () => {
+  const orig = { fromAssetId: 'a1', toAssetId: 'a2', amount: 1000, category: '식비', day: 5, freq: 'monthly', memo: 'm', weekend: 'none' };
+  assert.strictEqual(sandbox.recHistFieldsChanged(orig, { ...orig, memo: '다른 메모', weekend: 'later' }), false);
+});
+
+test('splitRecurrenceAt: 원본은 effectiveDate 직전까지로 잘리고 count가 재계산된다', () => {
+  const orig = { id: 'r1', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: '2026-12-05', count: 12, amount: 1000, fromAssetId: 'a1' };
+  const draft = { ...orig, amount: 2000, fromAssetId: 'a9' };
+  const { updatedOriginal, newRec } = sandbox.splitRecurrenceAt(orig, draft, '2026-06-05');
+  assert.strictEqual(updatedOriginal.endDate, '2026-06-04', '원본은 새 시작일 하루 전에 끊겨야 함');
+  assert.strictEqual(updatedOriginal.count, 5, '2026-01-05~2026-06-04 매월 5일=5회');
+  assert.strictEqual(updatedOriginal.amount, 1000, '원본 필드는 옛 값 그대로 유지되어야 함(소급 변경 금지)');
+});
+test('splitRecurrenceAt: 새 레코드는 effectiveDate부터 새 필드값으로, 원래 종료일을 물려받는다', () => {
+  const orig = { id: 'r1', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: '2026-12-05', count: 12, amount: 1000, fromAssetId: 'a1', skip: ['2026-01-05'], edits: { '2026-01-05': { amount: 1 } } };
+  const draft = { ...orig, amount: 2000, fromAssetId: 'a9' };
+  const { newRec } = sandbox.splitRecurrenceAt(orig, draft, '2026-06-05');
+  assert.notStrictEqual(newRec.id, orig.id, '새 레코드는 별도 id를 가져야 함');
+  assert.strictEqual(newRec.startDate, '2026-06-05');
+  assert.strictEqual(newRec.amount, 2000);
+  assert.strictEqual(newRec.fromAssetId, 'a9');
+  assert.strictEqual(newRec.endDate, '2026-12-05', '원래 종료일을 물려받아야 함');
+  assert.strictEqual(newRec.count, 7, '2026-06-05~2026-12-05 매월 5일=7회');
+  assert.strictEqual(newRec.skip.length, 0, '원본의 skip을 물려받지 않아야 함');
+  assert.strictEqual(Object.keys(newRec.edits).length, 0, '원본의 edits를 물려받지 않아야 함');
+});
+test('splitRecurrenceAt: 원본이 무기한(endDate=null)이면 새 레코드도 무기한으로 유지된다', () => {
+  const orig = { id: 'r1', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, count: null, amount: 1000 };
+  const { newRec } = sandbox.splitRecurrenceAt(orig, { ...orig, amount: 2000 }, '2026-06-05');
+  assert.strictEqual(newRec.endDate, null);
+  assert.strictEqual(newRec.count, null);
+});
+
+test('saveRec: 과거 회차가 있는 반복에서 결제 계좌(fromAssetId)를 바꿔 저장하면, 곧바로 덮어쓰지 않고 범위 확인 시트를 띄운다', () => {
+  sandbox.TWi = -1; sandbox.TODAY = '2026-06-15';
+  const r = { id: 'r1', type: 'expense', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, count: null, amount: 1000, category: '관리비', memo: '관리비', fromAssetId: 'a1', toAssetId: null, skip: [], edits: {}, active: true };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.recDraft = { ...JSON.parse(JSON.stringify(r)), fromAssetId: 'a2' };
+  sandbox.lastSheetHtml = null;
+  sandbox.saveRec();
+  assert.strictEqual(sandbox.DB.recurrences.length, 1, '확인 없이 즉시 분리/덮어쓰기가 일어나면 안 됨');
+  assert.strictEqual(r.fromAssetId, 'a1', '확인 전에는 원본이 그대로여야 함');
+  assert.ok(sandbox.lastSheetHtml, '범위 확인 시트가 떠야 함');
+  assert.ok(sandbox.window._recSaveScope, '확인 시트의 선택을 처리할 컨텍스트가 저장되어야 함');
+});
+test("saveRec: 범위 확인 시트에서 '오늘부터 이후 모두'를 고르면 과거 회차는 원래 값대로 남고 오늘부터만 새 값이 적용된다", () => {
+  sandbox.TWi = -1; sandbox.TODAY = '2026-06-15';
+  const r = { id: 'r1', type: 'expense', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, count: null, amount: 1000, category: '관리비', memo: '관리비', fromAssetId: 'a1', toAssetId: null, skip: [], edits: {}, active: true };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.recDraft = { ...JSON.parse(JSON.stringify(r)), fromAssetId: 'a2' };
+  sandbox.saveRec();
+  sandbox.recSaveScopeApply('future');
+  assert.strictEqual(sandbox.DB.recurrences.length, 2);
+  const pastRec = sandbox.DB.recurrences.find(x => x.id === 'r1');
+  assert.strictEqual(pastRec.fromAssetId, 'a1', '과거 구간(원본)의 결제 계좌는 그대로 유지되어야 함 — 소급 변경 금지');
+  assert.strictEqual(pastRec.endDate, '2026-06-14', '원본은 오늘 하루 전까지로 끊겨야 함');
+  const newRec = sandbox.DB.recurrences.find(x => x.id !== 'r1');
+  assert.strictEqual(newRec.fromAssetId, 'a2', '오늘부터의 새 구간은 새 결제 계좌를 써야 함');
+  assert.strictEqual(newRec.startDate, '2026-06-15');
+});
+test("saveRec: 범위 확인 시트에서 '전체 적용'을 고르면 기존처럼 통째로 덮어쓴다(명시적 선택 시에만)", () => {
+  sandbox.TWi = -1; sandbox.TODAY = '2026-06-15';
+  const r = { id: 'r1', type: 'expense', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, count: null, amount: 1000, category: '관리비', memo: '관리비', fromAssetId: 'a1', toAssetId: null, skip: [], edits: {}, active: true };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.recDraft = { ...JSON.parse(JSON.stringify(r)), fromAssetId: 'a2' };
+  sandbox.saveRec();
+  sandbox.recSaveScopeApply('all');
+  assert.strictEqual(sandbox.DB.recurrences.length, 1);
+  assert.strictEqual(sandbox.DB.recurrences[0].fromAssetId, 'a2');
+});
+test('saveRec: 과거 회차가 없는 반복(시작일이 아직 안 옴)은 확인 시트 없이 즉시 적용된다', () => {
+  sandbox.TWi = -1; sandbox.TODAY = '2026-06-15';
+  const r = { id: 'r1', type: 'expense', freq: 'monthly', day: 5, startDate: '2026-07-05', endDate: null, count: null, amount: 1000, category: '관리비', memo: '관리비', fromAssetId: 'a1', toAssetId: null, skip: [], edits: {}, active: true };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.recDraft = { ...JSON.parse(JSON.stringify(r)), fromAssetId: 'a2' };
+  sandbox.lastSheetHtml = null;
+  sandbox.saveRec();
+  assert.strictEqual(sandbox.lastSheetHtml, null, '아직 지난 회차가 없으므로 확인 시트가 뜨면 안 됨');
+  assert.strictEqual(sandbox.DB.recurrences.length, 1);
+  assert.strictEqual(sandbox.DB.recurrences[0].fromAssetId, 'a2', '즉시 적용되어야 함');
+});
+test('saveRec: 이력 비영향 필드(메모 등)만 바뀌면 과거 회차가 있어도 확인 시트 없이 즉시 적용된다', () => {
+  sandbox.TWi = -1; sandbox.TODAY = '2026-06-15';
+  const r = { id: 'r1', type: 'expense', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, count: null, amount: 1000, category: '관리비', memo: '관리비', fromAssetId: 'a1', toAssetId: null, skip: [], edits: {}, active: true, weekend: 'none' };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.recDraft = { ...JSON.parse(JSON.stringify(r)), memo: '월세' };
+  sandbox.lastSheetHtml = null;
+  sandbox.saveRec();
+  assert.strictEqual(sandbox.lastSheetHtml, null, '이력 비영향 필드만 바뀌면 확인 없이 바로 적용되어야 함');
+  assert.strictEqual(sandbox.DB.recurrences[0].memo, '월세');
+});
+test('saveRec: 신규 반복 등록(id 없음)은 기존처럼 회귀 없이 바로 추가된다', () => {
+  sandbox.TWi = -1; sandbox.TODAY = '2026-06-15';
+  sandbox.DB = { recurrences: [] };
+  sandbox.recDraft = { id: null, type: 'expense', freq: 'monthly', day: 5, startDate: '2026-07-05', endDate: null, count: null, amount: 1000, category: '관리비', memo: '관리비', fromAssetId: 'a1', toAssetId: null, active: true };
+  sandbox.saveRec();
+  assert.strictEqual(sandbox.DB.recurrences.length, 1);
+  assert.strictEqual(sandbox.DB.recurrences[0].id, 'test-uid');
 });
 
 /* ---------- saveQuickAmount: 변동 카테고리 '실제 금액 입력'도 recSave(scope='one')와 동일하게 undo를 지원한다 ---------- */

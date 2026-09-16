@@ -1,11 +1,7 @@
 {
-  "cycle": 29,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "반복 내역 전체 수정(saveRec)이 과거 회차까지 소급 변경하는 버그 수정",
-    "why": "반복거래는 DB.txns에 물리화되지 않고 expandRec(from,to)가 항상 recurrence의 현재 fromAssetId/toAssetId/amount/category로 모든 과거+미래 회차를 실시간 생성한다(index.html:1818 expandRec, 1771 recDates). saveRec()(index.html:3163-3185)은 반복 자체 세부 편집(openRecDetail->editRec->saveRec) 경로에서 DB.recurrences[i]=d로 통째로 덮어쓸 뿐 범위(scope) 개념이 전혀 없다. 반면 홈 화면 빠른 수정 경로(recApply/recSave, index.html:3046-3090)는 이미 \"이 내역만/이날부터 이후/전체\" 3단계 scope를 지원하고 future scope에서는 기존 rec를 endDate로 잘라 count를 재계산한 뒤 새 rec를 분리 생성하는 방식(recSave의 future 분기, 3077-3083)이 이미 검증되어 있다. 예: '관리비'를 우리은행에서 새 카드로 결제 계좌를 바꾸려고 반복 자체 편집에서 fromAssetId만 바꿔 저장하면, startDate까지의 모든 과거 회차가 즉시 새 계좌에서 나간 것으로 재계산되어 두 계좌의 balanceAt/balancesUpTo 히스토리와 순자산 차트가 경고 없이 조용히 틀어진다. 이는 화면 버그가 아니라 재무 이력 자체를 소급 왜곡하는 데이터 정합성 버그다.",
-    "approach": "1) recSave의 future 분기(3077-3083)에 있는 '기존 rec를 endDate=addDays(effectiveDate,-1)+count 재계산으로 자르고, 새 rec를 startDate=effectiveDate로 분리 생성(skip:[],edits:{} 초기화)' 로직을 순수함수 splitRecurrenceAt(r, editedFields, effectiveDate)로 추출해 test/run.js에서 DOM 없이 테스트 가능하게 한다. 2) saveRec()에서 wasEditing이 true일 때, 원본 recurrence(DB.recurrences[i])와 새 draft d를 히스토리에 영향을 주는 필드(fromAssetId, toAssetId, amount, category, day, freq)에 대해 비교한다. 차이가 있고 recDates(원본, 원본.startDate, addDays(TODAY,-1)).length>0(과거 회차가 존재)이면, 곧바로 덮어쓰지 말고 recEditScope와 유사한 확인 시트를 띄워 두 가지만 제시한다: '오늘부터 이후 모두 적용'(기본/권장 — splitRecurrenceAt으로 분리) 과 '전체 적용(과거 기록도 변경됨)'(기존처럼 통째 덮어쓰되 명시적 경고 문구 포함). 과거 회차가 없거나(신규 반복 직후 편집 등) 히스토리 영향 필드가 안 바뀌었으면 기존처럼 즉시 저장(불필요한 확인 시트로 UX를 해치지 않기 위함). 3) test/run.js에 splitRecurrenceAt 회귀 테스트 추가: 기존 rec의 endDate/count가 effectiveDate-1로 올바르게 잘리는지, 새 rec의 startDate/필드가 올바른지, 분리 전/후 recDates가 각각 과거엔 옛 값, 미래엔 새 값을 돌려주는지. saveRec()의 scope 분기 자체도 mock DB로 회귀 테스트: 과거 회차 있는 rec를 fromAssetId 바꿔 '이후 모두'로 저장하면 DB.recurrences가 2개로 나뉘는지, 과거 회차 없는 rec는 확인 시트 없이 바로 in-place 덮어쓰기 되는지, 히스토리 비영향 필드(메모/주말규칙 등)만 바뀌면 확인 시트 없이 바로 적용되는지."
-  },
+  "cycle": 30,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
     {
       "cycle": 28,
@@ -127,13 +123,6 @@
       "commit": null
     },
     {
-      "cycle": 25,
-      "phase": "develop",
-      "timestamp": "2026-09-13T18:05:00.000Z",
-      "summary": "예산이 설정된 카테고리가 해당 월 지출이 0원이면 예산 관리 화면(지출 분석)에서 완전히 사라져 조회/수정/삭제가 불가능해지는 실제 버그를 채택해 spendByCategory 끝에서 DB.budgets에 있는 카테고리 중 이번 달 map에 없는 것을 v:0으로 채워 넣도록 고쳤다. test/run.js에 회귀 테스트 3개 추가 — 150/150 통과. APP_VERSION 1.25.0->1.25.1, sw.js CACHE v82->v83.",
-      "commit": null
-    },
-    {
       "cycle": 29,
       "phase": "review",
       "timestamp": "2026-09-16T00:07:52.126Z",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-16T01:10:35.162Z",
       "summary": "cycle29 review(93577e5)가 문제 없음으로 끝낸 직후, Explore 서브에이전트로 앱 전체를 구조적으로 훑게 했다(카테고리/예산 관리, 차트, 검색/필터, 날짜 선택기, 반복거래 편집 시맨틱, 자산-소유자 상호작용, 통화 서식, 오프라인/서비스워커, 폼 검증, 중복 감지, 빈/로딩 상태, 접근성, fetch 에러 처리, 백업/복원 등 최근 사이클들이 다루지 않은 영역). 반복거래는 DB.txns에 물리화되지 않고 expandRec(1818)/recDates(1771)가 항상 recurrence의 '현재' 필드값으로 과거+미래 전체 회차를 실시간 생성하는데, saveRec()(3163-3185)의 반복 자체 세부 편집 경로가 DB.recurrences[i]=d로 scope 개념 없이 통째 덮어써, 결제 계좌 등을 바꿔 저장하면 startDate까지의 모든 과거 회차가 조용히 새 값으로 재계산돼 balanceAt/순자산 히스토리가 경고 없이 소급 왜곡되는 실제 버그를 발견해 직접 코드로 확인(3182). 같은 화면의 홈 빠른 수정 경로(recApply/recSave, 3046-3090)는 이미 '이 내역만/이후 모두/전체' scope와 future 분기의 rec 분리 로직(3077-3083)을 갖추고 있어, 이를 재사용 가능한 순수함수로 추출해 saveRec에도 적용하는 방향으로 계획을 세움. 후보로 검토했으나 보류: recApply 빠른 수정이 금액만 바꿀 수 있고 카테고리/자산은 못 바꾸는 제약(근본 원인인 위 버그를 고치면 자연히 subsume됨), saveTx/saveRec의 더블 서밋 가드 부재(동기 핸들러라 실제 영향 불확실), matchTxnQuery가 금액을 검색 대상에 포함하지 않는 것(정확성 문제 아닌 소소한 UX 공백). pending_advance_plan에 saveRec scope 확인 시트 + splitRecurrenceAt 순수함수 추출 + 회귀 테스트 계획 저장. 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 29,
+      "phase": "advance",
+      "timestamp": "2026-09-16T02:10:00.000Z",
+      "summary": "critique 계획대로 saveRec()(반복 자체 세부 편집: openRecDetail->editRec->saveRec)이 과거 회차까지 소급 변경하던 버그를 고쳤다. recSave()의 future 분기(recApply 경로)에 있던 '기존 rec를 endDate=effectiveDate-1로 자르고 count를 재계산한 뒤, 새 rec를 startDate=effectiveDate로 분리 생성(skip:[]/edits:{} 초기화, 원래 종료일은 새 rec가 물려받음)' 로직을 순수함수 splitRecurrenceAt(original,draft,effectiveDate)로 추출했다. saveRec()에서 기존 반복을 편집(wasEditing)할 때 원본과 draft를 이력에 영향을 주는 필드(fromAssetId/toAssetId/amount/category/day/freq)로 비교하는 recHistFieldsChanged() 헬퍼를 추가하고, 그 필드가 바뀌었고 recDates(원본, 원본.startDate, TODAY-1일).length>0(과거 회차 존재)이면 곧바로 덮어쓰지 않고 recSaveScopeConfirm()으로 2択 확인 시트('오늘부터 이후 모두' vs '전체 적용(과거 기록도 변경됨)')를 띄우도록 했다 — recSaveScopeApply('future')는 splitRecurrenceAt으로 분리해 DB.recurrences[i]를 자르고 새 rec를 push, ('all')은 기존처럼 DB.recurrences[i]=d로 통째 덮어쓴다. 과거 회차가 없거나(신규 반복 직후 편집, 아직 시작 안 한 반복) 이력 비영향 필드(메모/주말규칙 등)만 바뀌면 확인 시트 없이 기존처럼 즉시 저장해 불필요한 UX 마찰을 피했다. test/run.js에 saveRec/recHistFieldsChanged/splitRecurrenceAt/recSaveScopeConfirm/recSaveScopeApply를 새로 추출하고(recDraft/syncRecInputs/openSheet 스텁 추가) 회귀 테스트 9개 추가: recHistFieldsChanged 참/거짓 판정 2개, splitRecurrenceAt의 원본 cut/count 재계산·새 rec 필드/종료일 상속·skip·edits 리셋·무기한 유지 3개, saveRec() 통합 시나리오 4개(과거 회차 있으면 확인 시트 뜨고 즉시 반영 안 됨, future 선택 시 과거 구간 보존+오늘부터 새 값, all 선택 시 기존처럼 통째 덮어쓰기, 과거 회차 없으면 확인 없이 즉시 적용, 이력 비영향 필드만 바뀌면 확인 없이 즉시 적용, 신규 등록은 회귀 없음). 190/190 통과(기존 181+신규 9). 두 인라인 <script> 블록 모두 node --check 파싱 확인. Playwright(사전 설치 Chromium, 게스트 모드 — 첫 800ms 내 자동 시작되는 튜토리얼이 twGuard로 저장을 막는 것을 발견해 TWi=-1/tutorialDone=true로 우회)로 실제 브라우저에서 과거 회차가 있는 반복의 결제 계좌를 바꿔 저장 → 확인 시트 노출 → '오늘부터 이후 모두' 선택 시 원본이 어제까지로 끊기고 새 rec가 오늘부터 새 계좌로 시작하며, '전체 적용' 선택 시 기존처럼 한 rec가 통째로 바뀌는 것을 end-to-end 확인, pageerror 없음. APP_VERSION 1.28.1->1.29.0(데이터 정합성 버그 fix + 새 확인 UX라 minor bump), sw.js CACHE v93->v94. pending_advance_plan 비움.",
       "commit": null
     }
   ]

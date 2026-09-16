@@ -1284,7 +1284,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.28.1';
+const APP_VERSION='1.29.0';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3179,9 +3179,47 @@ function saveRec(){
  delete d.endMode;
  d.varying=isVarCat(d.type,d.category); /* 변동 여부는 카테고리에서 파생 */
  const wasEditing=!!d.id;
- if(wasEditing){const i=DB.recurrences.findIndex(x=>x.id===d.id);if(i>=0)DB.recurrences[i]=d}
+ if(wasEditing){
+  const i=DB.recurrences.findIndex(x=>x.id===d.id);
+  if(i>=0){
+   const orig=DB.recurrences[i];
+   if(recHistFieldsChanged(orig,d)&&recDates(orig,orig.startDate,addDays(TODAY,-1)).length>0){recSaveScopeConfirm(orig,d,i);return}
+   DB.recurrences[i]=d;
+  }
+ }
  else{DB.recurrences.push(Object.assign({},d,{id:uid(),active:d.active!==false,skip:[],edits:{},autoConfirm:d.autoConfirm!==false,confirmedDates:[],varying:!!d.varying}))}
  save();closeSheet();renderCurrent();toast(wasEditing?'반복을 수정했어요':'반복 설정을 저장했어요');
+}
+/* 반복 이력(과거 회차)에 영향을 주는 필드만 비교: 메모/주말규칙 등은 소급 적용돼도 무해하다 */
+function recHistFieldsChanged(orig,d){return ['fromAssetId','toAssetId','amount','category','day','freq'].some(k=>orig[k]!==d[k])}
+/* recSave()의 future 분기(3077-3083)와 동일한 규칙: 원본을 effectiveDate 직전까지로 자르고,
+   그 이후는 draft의 새 필드값으로 별도 반복을 분리 생성한다 */
+function splitRecurrenceAt(original,draft,effectiveDate){
+ const prevEnd=original.endDate;
+ const updatedOriginal=Object.assign({},original,{endDate:addDays(effectiveDate,-1)});
+ updatedOriginal.count=recCountUntil({freq:original.freq,day:original.day,startDate:original.startDate,weekend:original.weekend},updatedOriginal.endDate);
+ const newBase={freq:draft.freq,day:draft.day,startDate:effectiveDate,weekend:draft.weekend};
+ const newRec=Object.assign({},JSON.parse(JSON.stringify(draft)),{id:uid(),startDate:effectiveDate,endDate:prevEnd,count:prevEnd?recCountUntil(newBase,prevEnd):null,skip:[],edits:{}});
+ return {updatedOriginal,newRec};
+}
+function recSaveScopeConfirm(orig,d,i){
+ window._recSaveScope={orig,d,i};
+ openSheet(`<h3>반복 내역 수정 범위</h3><div class="desc">'${esc(orig.memo||orig.category)}'은 이미 지난 회차가 있어요. 어디까지 적용할까요?</div>
+  <div class="opt-list">
+   <button onclick="recSaveScopeApply('future')"><span class="rd"></span><div><div>오늘부터 이후 모두</div><div class="ol-sub">지난 기록은 그대로 두고, 오늘부터 새 내용을 적용해요</div></div></button>
+   <button onclick="recSaveScopeApply('all')"><span class="rd"></span><div><div>전체 적용</div><div class="ol-sub" style="color:var(--expense)">과거 기록도 함께 바뀌어요 · 잔액 이력이 달라질 수 있어요</div></div></button>
+  </div>`);
+}
+function recSaveScopeApply(scope){
+ const ctx=window._recSaveScope;if(!ctx)return;window._recSaveScope=null;
+ const {orig,d,i}=ctx;
+ if(scope==='future'){
+  const {updatedOriginal,newRec}=splitRecurrenceAt(orig,d,TODAY);
+  DB.recurrences[i]=updatedOriginal;DB.recurrences.push(newRec);
+ }else{
+  DB.recurrences[i]=d;
+ }
+ save();closeSheet();renderCurrent();toast('반복을 수정했어요');
 }
 function delRecConfirm(id){confirmSheet('반복 삭제','이 반복 내역을 삭제할까요? 앞으로 자동 기록이 중단돼요.','삭제',()=>{deleteRecsUndo(new Set([id]))})}
 
