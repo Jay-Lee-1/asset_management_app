@@ -1987,6 +1987,15 @@ test('detectStaleMarketValuedTxns: 삭제되어 존재하지 않는 assetId를 �
   assert.deepStrictEqual(out, []);
 });
 
+test('renderHome: 예산(지출 분석) 진입점인 nextOutflowCard/monthOutflowCard가 실제로 렌더링 템플릿에 포함되어 있다', () => {
+  // renderHome() 자체는 DOM($)·svg 등 화면 전용 의존성이 많아 여기서 직접 실행하지 않고,
+  // 소스 텍스트 수준에서 두 카드 호출이 빠지지 않았는지만 확인한다 — 예전에 리팩터링 중
+  // 이 호출이 통째로 누락되어 예산 기능에 진입할 방법이 없어졌던 회귀를 막기 위한 가드.
+  const body = extractFunction('renderHome');
+  assert.ok(body.includes('nextOutflowCard()'), 'renderHome()이 nextOutflowCard()를 호출하지 않음');
+  assert.ok(body.includes('monthOutflowCard('), 'renderHome()이 monthOutflowCard()를 호출하지 않음');
+});
+
 /* ---------- 실행 ---------- */
 let pass = 0, fail = 0;
 for (const { name, fn } of tests) {

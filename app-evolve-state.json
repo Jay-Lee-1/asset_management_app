@@ -1,19 +1,8 @@
 {
-  "cycle": 30,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "홈 화면에서 예산(지출 분석) 기능에 도달할 방법이 없음 — nextOutflowCard/monthOutflowCard가 orphan 코드",
-    "why": "renderHome()(index.html:2032)은 실제 홈 탭 렌더러(renderers.home)인데 alertBanner/planGaugeCard/expenseBreakdownCard/시세 섹션만 그리고, nextOutflowCard()(5019)와 monthOutflowCard()(5043)는 어디서도 호출되지 않는 완전한 dead code임을 grep으로 확인. 그 결과 카테고리별 예산을 설정/수정/삭제하는 openSpendAnalysis()(3743, saveBudget/delBudget/budgetProgress까지 이미 테스트된 완성 기능)의 유일한 호출부가 이 죽은 monthOutflowCard() 안의 '지출 분석' 링크 하나뿐이라 실사용 화면에서는 예산 기능 자체에 진입할 방법이 전혀 없다. 같은 이유로 openFixShortfall()(4946, 부족 잔액 해결용 이체 제안)도 도달 불가능. 게다가 온보딩 튜토리얼(TW 배열, twScreen('home') 목업, index.html:4025-4080)이 정확히 이 두 카드(#m-next, #m-outflow)를 보여주며 신규 사용자에게 기능을 약속하는데, 실제 홈 화면엔 없어 튜토리얼이 거짓말을 하는 셈이다. renderHome()이 planGaugeCard/homeAlerts 등으로 리팩터링되며 두 카드 호출이 실수로 빠진 것으로 보이는 실제 회귀.",
-    "approach": "renderHome()(index.html:2032-2071)의 alertBanner 렌더링 직후, 기존 '이번 달 예정 대비 오늘까지' section-title 이전 위치에 ${nextOutflowCard()}와 ${monthOutflowCard(y,m)} 호출을 추가해 twScreen('home') 목업과 같은 순서(다음에 나갈 큰돈 -> 이번 달에 나갈 돈)로 실제 렌더링되게 한다. 두 함수는 이미 완성되어 있으므로 내부 로직은 건드리지 않고 renderHome()의 innerHTML 템플릿 리터럴에 호출만 추가하면 된다. 추가 후 카드 내부에서 참조하는 goPlanTo/goLedgerTo/toggleOutflows/openFixShortfall/openSpendAnalysis가 전부 정상 정의되어 있는지, ST.ofOpen 등 관련 상태가 renderHome 재호출 시 안전한지 확인한다. test/run.js에 renderHome이 만든 HTML 문자열에 next-card/of-card 클래스와 '지출 분석' 링크가 포함되는지 확인하는 회귀 테스트를 추가하고, Playwright로 실제 홈 화면에서 두 카드가 보이고 '지출 분석' 클릭 시 openSpendAnalysis 시트가 뜨는지 end-to-end 확인한다. emptyAssetCards()(5079)도 같은 패턴의 orphan인지 확인했다면(현재 조사로는 호출부 없음 확인됨) 범위가 크지 않으면 alertBanner 근처에 함께 배치하고, 범위가 커지면 다음 사이클로 미룬다."
-  },
+  "cycle": 31,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 30,
-      "phase": "critique",
-      "timestamp": "2026-09-16T05:19:00.000Z",
-      "summary": "cycle30 review(6dc53b5)가 문제 없음으로 끝낸 직후, Explore 서브에이전트로 앱 전체를 구조적으로 훑게 했다(날짜/타임존, 통화 서식, 폼 검증, 빈/로딩 상태, 차트, 키보드 내비/포커스, PWA 오프라인, localStorage 용량, 반복거래 skip 시맨틱, 카테고리/예산 한계, 중복 감지, 클라우드 동기화, XSS/esc() 일관성 등 최근 사이클들이 다루지 않은 영역). renderers={home:renderHome,...}(5302)로 실제 홈 탭 렌더러가 renderHome() 하나뿐임을 확인했는데, renderHome()(2032-2071)은 alertBanner/planGaugeCard/expenseBreakdownCard/시세 섹션만 그리고 nextOutflowCard()(5019)/monthOutflowCard()(5043)는 grep으로 전체 파일을 뒤져도 정의부 외에 호출되는 곳이 전혀 없는 완전한 dead code임을 직접 코드로 확인했다. 그 결과 카테고리 예산 설정/수정/삭제 기능(openSpendAnalysis, 3743 — saveBudget/delBudget/budgetProgress까지 이미 테스트되어 있는 완성 기능)의 유일한 호출부가 이 죽은 monthOutflowCard() 안의 '지출 분석' 링크뿐이라 실사용 화면에서는 예산 기능 자체에 도달할 방법이 없고, openFixShortfall()(4946, 부족 잔액 해결 이체 제안)도 마찬가지로 도달 불가능함을 확인. 온보딩 튜토리얼(twScreen('home') 목업, TW 배열 4025-4080)이 정확히 이 두 카드(#m-next, #m-outflow)를 신규 사용자에게 보여주며 약속하는데 실제 홈 화면엔 없어 튜토리얼이 실제 앱과 어긋난다는 것도 확인 — renderHome()이 planGaugeCard/homeAlerts 도입 리팩터링 과정에서 두 카드 호출이 누락된 실제 회귀로 판단해 채택. 후보로 검토했으나 보류한 것: syncRates()가 개별 종목 시세 실패를 조용히 전체 'ok'로 표시(1건 규모라 develop 사이즈), DB.budgets가 월별 값 없이 카테고리명으로만 flat하게 저장돼 과거 달 예산 조회가 불가능(위 진입점 복구 전에는 확인 불가능한 문제라 이번엔 무의미, 복구 후 재검토 필요), 순자산 스파크라인 차트에 스크린리더용 텍스트/표 대안 없음(작아서 develop), 월 선택 wheel(wh-col)이 키보드로 조작 불가(날짜 그리드 picker와 달리 button이 아니라서 접근성 공백이지만 develop 사이즈). pending_advance_plan에 nextOutflowCard/monthOutflowCard를 renderHome()에 다시 연결하는 계획 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 30,
       "phase": "review",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-16T01:10:35.162Z",
       "summary": "cycle29 review(93577e5)가 문제 없음으로 끝낸 직후, Explore 서브에이전트로 앱 전체를 구조적으로 훑게 했다(카테고리/예산 관리, 차트, 검색/필터, 날짜 선택기, 반복거래 편집 시맨틱, 자산-소유자 상호작용, 통화 서식, 오프라인/서비스워커, 폼 검증, 중복 감지, 빈/로딩 상태, 접근성, fetch 에러 처리, 백업/복원 등 최근 사이클들이 다루지 않은 영역). 반복거래는 DB.txns에 물리화되지 않고 expandRec(1818)/recDates(1771)가 항상 recurrence의 '현재' 필드값으로 과거+미래 전체 회차를 실시간 생성하는데, saveRec()(3163-3185)의 반복 자체 세부 편집 경로가 DB.recurrences[i]=d로 scope 개념 없이 통째 덮어써, 결제 계좌 등을 바꿔 저장하면 startDate까지의 모든 과거 회차가 조용히 새 값으로 재계산돼 balanceAt/순자산 히스토리가 경고 없이 소급 왜곡되는 실제 버그를 발견해 직접 코드로 확인(3182). 같은 화면의 홈 빠른 수정 경로(recApply/recSave, 3046-3090)는 이미 '이 내역만/이후 모두/전체' scope와 future 분기의 rec 분리 로직(3077-3083)을 갖추고 있어, 이를 재사용 가능한 순수함수로 추출해 saveRec에도 적용하는 방향으로 계획을 세움. 후보로 검토했으나 보류: recApply 빠른 수정이 금액만 바꿀 수 있고 카테고리/자산은 못 바꾸는 제약(근본 원인인 위 버그를 고치면 자연히 subsume됨), saveTx/saveRec의 더블 서밋 가드 부재(동기 핸들러라 실제 영향 불확실), matchTxnQuery가 금액을 검색 대상에 포함하지 않는 것(정확성 문제 아닌 소소한 UX 공백). pending_advance_plan에 saveRec scope 확인 시트 + splitRecurrenceAt 순수함수 추출 + 회귀 테스트 계획 저장. 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 30,
+      "phase": "advance",
+      "timestamp": "2026-09-16T06:00:00.000Z",
+      "summary": "advance: critique(cd36010)가 세운 계획대로 renderHome()(index.html:2032)의 alertBanner 직후에 ${nextOutflowCard()}와 ${monthOutflowCard(y,m)} 호출을 추가해, 이제까지 정의만 되고 어디서도 호출되지 않던 dead code(nextOutflowCard/monthOutflowCard, 5019/5043)를 실제 홈 화면에 연결했다. 이로써 카테고리 예산 설정/삭제(openSpendAnalysis, 이미 완성·테스트된 기능)와 부족 잔액 해결 제안(openFixShortfall)에 홈 화면에서 도달할 수 있게 됐고, 온보딩 튜토리얼(twScreen('home') 목업, #m-next/#m-outflow)이 신규 사용자에게 보여주던 화면과 실제 앱이 다시 일치한다. 두 함수는 내부 로직을 건드리지 않고 호출만 추가했으며, 필요한 CSS(.next-card/.of-card 등)와 의존 함수(goPlanTo/goLedgerTo/toggleOutflows/openFixShortfall/openSpendAnalysis/nextBigOutflow/monthOutflows)는 모두 기존에 이미 정상 정의돼 있었다. node --check로 두 <script> 블록 문법 검증 통과. test/run.js에 renderHome() 소스가 nextOutflowCard()/monthOutflowCard(를 실제로 호출하는지 확인하는 정적 회귀 테스트를 추가해(전체 DOM 렌더를 흉내내는 대신 소스 텍스트 검사로 가볍게 가드) 같은 누락이 다시 생기면 테스트가 즉시 잡도록 했다 — 191/191 전체 통과. index.html의 APP_VERSION을 1.30.0→1.31.0, sw.js의 CACHE를 v95→v96으로 올려 배포 시 캐시가 갱신되게 했다. emptyAssetCards()(5079)도 같은 패턴의 orphan 코드임을 재확인했으나 이번 계획 범위 밖이라 손대지 않았고 다음 critique가 다시 판단하도록 남겨둔다.",
       "commit": null
     }
   ]
