@@ -62,6 +62,7 @@ const FUNCTIONS = [
   'addBalanceAdjust', 'updateBalanceAdjust', 'toggleConfirmTransfers',
   'assetEval', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'delOwner',
   'detectStaleMarketValuedTxns', 'delBudget',
+  'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -84,6 +85,9 @@ const sandbox = {
   // 이 파일은 addDays 실행 결과를 그대로 재현하기보다(굳이 필요치도 않아) balancesUpTo/balanceAt을
   // 쓰는 테스트에서 TODAY처럼 직접 값을 세팅하게 둔다.
   RANGE_TO: null,
+  // DISP_TO도 RANGE_TO와 같은 이유로 `let DISP_TO=addDays(TODAY,92)` 파생값을 재현하지 않고,
+  // hasFutureTxns()를 쓰는 테스트에서 TODAY처럼 직접 세팅한다.
+  DISP_TO: null,
   catRenameDraft: null,
   catAddDraft: null,
   asDraft: null,
@@ -1994,6 +1998,75 @@ test('renderHome: 예산(지출 분석) 진입점인 nextOutflowCard/monthOutflo
   const body = extractFunction('renderHome');
   assert.ok(body.includes('nextOutflowCard()'), 'renderHome()이 nextOutflowCard()를 호출하지 않음');
   assert.ok(body.includes('monthOutflowCard('), 'renderHome()이 monthOutflowCard()를 호출하지 않음');
+});
+
+/* emptyAssets()/emptyAssetCards() — 0원이 되고 앞으로 쓸 일 없는 자산을 홈에서 "정리할까요?"로
+ * 제안하는 기능. emptyAssetCards()는 예전부터 정의만 돼 있었을 뿐 renderHome()이 호출하지 않아
+ * 실제로는 한 번도 화면에 나온 적 없는 죽은 코드였다(nextOutflowCard/monthOutflowCard와 같은
+ * 패턴) — renderHome()에 연결하면서 로직 자체의 회귀도 함께 가드한다. */
+function setupEmptyAssetsDB() {
+  sandbox.DB = {
+    settings: {},
+    assets: [
+      { id: 'a_cash', name: '주거래통장', type: 'cash', owner: '나' },
+      { id: 'a_savings0', name: '만기지난적금', type: 'savings', owner: '나' },
+      { id: 'a_savingsFuture', name: '진행중적금', type: 'savings', owner: '나', maturityDate: '2099-01-01' },
+      { id: 'a_stockHasTxn', name: '예정거래있는주식', type: 'stock', owner: '나', stockQty: 0, stockCode: 'S1' },
+      { id: 'a_stockNonZero', name: '보유중인주식', type: 'stock', owner: '나', stockQty: 5, stockCode: 'S1' },
+    ],
+    rates: { fx: {}, stocks: { S1: 70000 } },
+    txns: [],
+    recurrences: [],
+  };
+  sandbox.TODAY = '2026-06-15';
+  sandbox.DISP_TO = '2026-09-15';
+  sandbox.RANGE_TO = '2026-09-15';
+  sandbox.RANGE_FROM_OVERRIDE = undefined;
+}
+test('emptyAssets: 현금성 자산은 0원이어도 정리 대상에서 제외된다', () => {
+  setupEmptyAssetsDB();
+  const ids = sandbox.emptyAssets().map((a) => a.id);
+  assert.ok(!ids.includes('a_cash'));
+});
+test('emptyAssets: 잔액이 남아있는 자산은 제외된다', () => {
+  setupEmptyAssetsDB();
+  const ids = sandbox.emptyAssets().map((a) => a.id);
+  assert.ok(!ids.includes('a_stockNonZero'));
+});
+test('emptyAssets: 만기 전 저축은 0원이어도 제외된다', () => {
+  setupEmptyAssetsDB();
+  const ids = sandbox.emptyAssets().map((a) => a.id);
+  assert.ok(!ids.includes('a_savingsFuture'));
+});
+test('emptyAssets: 앞으로 예정된 내역이 남아있으면 0원이어도 제외된다', () => {
+  setupEmptyAssetsDB();
+  sandbox.DB.txns.push({ id: 't1', type: 'income', date: '2026-07-01', amount: 1, fromAssetId: null, toAssetId: 'a_stockHasTxn' });
+  const ids = sandbox.emptyAssets().map((a) => a.id);
+  assert.ok(!ids.includes('a_stockHasTxn'));
+});
+test('emptyAssets: 만기가 지났고(또는 없고) 0원에 예정 내역도 없는 자산만 정리 대상으로 남는다', () => {
+  setupEmptyAssetsDB();
+  const ids = sandbox.emptyAssets().map((a) => a.id).sort();
+  assert.deepStrictEqual(ids, ['a_savings0', 'a_stockHasTxn']);
+});
+test('emptyAssetCards: snoozeTidy()로 미룬 자산은 다음 emptyAssetCards() 출력에서 빠진다', () => {
+  setupEmptyAssetsDB();
+  const before = sandbox.emptyAssetCards();
+  assert.ok(before.includes('만기지난적금'));
+  sandbox.snoozeTidy('a_savings0');
+  const after = sandbox.emptyAssetCards();
+  assert.ok(!after.includes('만기지난적금'), 'snoozeTidy() 이후에도 카드가 계속 노출됨');
+});
+test('emptyAssetCards: 정리할 자산이 없으면 빈 문자열을 반환한다', () => {
+  setupEmptyAssetsDB();
+  sandbox.DB.assets = sandbox.DB.assets.filter((a) => a.id === 'a_cash');
+  assert.strictEqual(sandbox.emptyAssetCards(), '');
+});
+test('renderHome: 다 쓴 자산 정리 제안(emptyAssetCards)이 실제로 렌더링 템플릿에 포함되어 있다', () => {
+  // 예전부터 정의만 돼 있고 어디서도 호출되지 않던 죽은 코드였던 emptyAssetCards()를
+  // renderHome()에 연결했다 — 다시 호출이 빠지면 이 테스트가 잡는다.
+  const body = extractFunction('renderHome');
+  assert.ok(body.includes('emptyAssetCards()'), 'renderHome()이 emptyAssetCards()를 호출하지 않음');
 });
 
 /* ---------- 실행 ---------- */
