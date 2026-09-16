@@ -1,6 +1,6 @@
 {
   "cycle": 34,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
     {
@@ -141,6 +141,13 @@
       "phase": "develop",
       "timestamp": "2026-09-16T21:15:00.000Z",
       "summary": "Explore 서브에이전트로 sibling-function 누락 패턴을 위주로 훑어, 저축 통장을 편집하면서 '만기 시 이체할 통장'으로 자기 자신을 고를 수 있던 실제 버그를 발견해 수정했다. asOpenMat()(index.html:2637)이 여는 openAssetPicker({cashOnly:true,...})는 편집 중인 자산 자신을 목록에서 빼는 필터가 없어, savings 타입이 isCashLike에 포함된다는 점과 맞물려 자기 자신이 선택지에 그대로 나타났다. saveTx()/saveRec()는 저장 시점에 fromAssetId===toAssetId 가드가 있고(3052, 3233) 같은 기능 영역의 findDonors()도 excludeId 개념(target 제외)을 이미 갖고 있는데, 이 경로만 picker 필터와 실행 시점 가드 둘 다 빠져 있었다 — asOpenMat이 그 sibling 격. 그대로 두면 만기 알림 시트(openMaturity)에서 '이체' 버튼을 눌렀을 때 doMaturity()(3897)가 검증 없이 fromAssetId===toAssetId인 자기 자신 이체 거래를 조용히 원장에 남기고 만기일을 지웠다. openAssetPicker(index.html:5328)에 excludeId 옵션을 추가해(o.excludeId면 items에서 해당 id 제외) asOpenMat이 자기 asDraft.id를 넘기도록 고쳤고, doMaturity()에도 target.id===a.id면 거래를 만들지 않고 안내 토스트만 띄우는 방어 가드를 추가했다(이미 self-target으로 저장된 기존 DB 데이터 대비 실행 시점 가드도 필요). test/run.js에 doMaturity를 새로 추출하고 회귀 테스트 3개 추가: openAssetPicker excludeId로 지정한 자산만 목록에서 빠지고 나머지는 남는지, doMaturity가 self-target이면 거래를 안 만들고 안내만 하는지(수정 전으로 되돌려 실제로 자기 자신 이체 거래가 생김을 확인 후 재적용), 정상적인 다른 자산 대상이면 기존처럼 이체 거래가 생기고 만기일이 지워지는지. 230/230 통과(기존 226+신규 4: openAssetPicker excludeId 1개, doMaturity 3개). 두 인라인 <script> 블록 모두 vm.Script 파싱 확인. APP_VERSION 1.35.0->1.35.1, sw.js CACHE v103->v104.",
+      "commit": null
+    },
+    {
+      "cycle": 34,
+      "phase": "review",
+      "timestamp": "2026-09-16T21:20:00.000Z",
+      "summary": "develop 커밋(616a432, asOpenMat 자기 자신 만기 이체 버그 fix)을 검토하다가, 같은 패턴의 sibling 버그를 하나 더 발견해 그 자리에서 고쳤다. asOpenType()(index.html:2635)의 `if(k==='savings'&&!asDraft.maturityTargetId)asDraft.maturityTargetId=firstCash()` 줄이 오늘 고친 openAssetPicker 경로와 별개로 여전히 excludeId 없는 firstCash()를 그대로 썼다. asDraft는 DB.assets를 JSON.parse(JSON.stringify(...))로 뜬 사본이라 asDraft.id는 원본 자산 id와 같고, 저장 전까지 DB.assets엔 여전히 옛 타입(예: cash)의 원본이 남아있다 — 사용자가 기존 cash 자산을 편집해 종류를 savings로 바꾸면, 그 원본이 DB.assets에서 isCashLike를 만족하는 첫 자산일 경우(흔히 사용자의 첫 계좌) firstCash()가 자기 자신의 id를 그대로 돌려줘 maturityTargetId가 저장 화면에 진입하자마자 자기 자신으로 조용히 채워짐을 코드로 확인했다. 오늘 추가한 doMaturity() 방어 가드가 실행 시점엔 막아주지만, 사용자가 만기 이체 대상을 다시 고르지 않는 한 화면엔 이미 틀린 값이 남아있는 문제였다. firstCash(excludeId)로 시그니처를 확장해(x.id!==excludeId 필터, 인자 없으면 기존과 동일하게 동작) asOpenType이 firstCash(asDraft.id)를 넘기도록 고쳤다 — firstCash()의 또 다른 호출부인 openTxSheet()(2946)는 인자를 안 넘기므로 회귀 없음을 테스트로 확인. test/run.js FUNCTIONS에 firstCash 추가, 회귀 테스트 3개 추가(excludeId로 지정한 자산은 건너뛰고 다음 현금성 자산 반환, excludeId가 유일한 현금성 자산이면 null 반환, 인자 없는 기존 호출부는 회귀 없이 첫 현금성 자산 반환). 233/233 통과(기존 230+신규 3). 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.35.1->1.35.2, sw.js CACHE v104->v105.",
       "commit": null
     }
   ]

@@ -1288,7 +1288,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.35.1';
+const APP_VERSION='1.35.2';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2632,7 +2632,7 @@ function syncAssetInputs(){const d=asDraft;const g=id=>$(id);
  if(g('asGold'))d.goldDon=Math.max(0,parseFloat((g('asGold').value||'0').replace(/,/g,''))||0);
  if(g('asCode'))d.stockCode=g('asCode').value.trim().toUpperCase();
  if(g('asQty'))d.stockQty=Math.max(0,parseFloat((g('asQty').value||'0').replace(/,/g,''))||0);}
-function asOpenType(){syncAssetInputs();openTypePicker({current:asDraft.type,back:()=>renderAssetSheet(!!asDraft.id),onPick:k=>{asDraft.type=k;if(k==='pension')asDraft.includeInTotal=false;if(k==='savings'&&!asDraft.maturityTargetId)asDraft.maturityTargetId=firstCash();renderAssetSheet(!!asDraft.id)}})}
+function asOpenType(){syncAssetInputs();openTypePicker({current:asDraft.type,back:()=>renderAssetSheet(!!asDraft.id),onPick:k=>{asDraft.type=k;if(k==='pension')asDraft.includeInTotal=false;if(k==='savings'&&!asDraft.maturityTargetId)asDraft.maturityTargetId=firstCash(asDraft.id);renderAssetSheet(!!asDraft.id)}})}
 function asOpenOwner(){syncAssetInputs();openOwnerPicker({current:asDraft.owner,back:()=>renderAssetSheet(!!asDraft.id),onPick:o=>{asDraft.owner=o;renderAssetSheet(!!asDraft.id)}})}
 function asOpenMat(){syncAssetInputs();openAssetPicker({current:asDraft.maturityTargetId,title:'만기 시 이체할 통장',cashOnly:true,excludeId:asDraft.id,back:()=>renderAssetSheet(!!asDraft.id),onPick:id=>{asDraft.maturityTargetId=id;renderAssetSheet(!!asDraft.id)}})}
 function renderAssetSheet(editing){
@@ -2944,7 +2944,7 @@ document.addEventListener('click',e=>{
  closeFabPop();
 },true);
 function openTxSheet(){window._recCtx=null;_formScroll=0;_txFocusAmt=true;txDraft={id:null,type:'expense',date:ST.ledger.sel,category:DB.categories.expense[0],memo:'',amount:0,fromAssetId:firstCash(),toAssetId:null,repeat:false,freq:'monthly',day:null,endDate:null,count:null};renderTxSheet()}
-function firstCash(){const a=DB.assets.find(isCashLike);return a?a.id:null}
+function firstCash(excludeId){const a=DB.assets.find(x=>isCashLike(x)&&x.id!==excludeId);return a?a.id:null}
 function catListOf(type){return type==='income'?DB.categories.income:type==='saving'?DB.categories.saving:type==='expense'?DB.categories.expense:[]}
 function renderTxSheet(){
  const d=txDraft;const rc=window._recCtx;

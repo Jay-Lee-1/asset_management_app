@@ -79,7 +79,7 @@ const FUNCTIONS = [
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
   'clampDay', 'saveTx', 'assetBase', 'balancesUpTo', 'balanceAt',
   'addBalanceAdjust', 'updateBalanceAdjust', 'toggleConfirmTransfers',
-  'assetEval', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'delOwner', 'doMaturity',
+  'assetEval', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'delOwner', 'doMaturity', 'firstCash',
   'detectStaleMarketValuedTxns', 'delBudget',
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards',
   'rateUnknown', 'filteredHist', 'histInvalidate',
@@ -2182,6 +2182,38 @@ test('openAssetPicker: excludeId(만기이체 picker에서 자기 자신 제외)
   const html = sandbox.lastPickerHtml;
   assert.ok(html.includes('data-val="a_cash"'), '다른 현금성 자산은 그대로 있어야 함');
   assert.ok(!html.includes('data-val="a_sav"'), 'excludeId로 지정한 자산 본인은 빠져야 함');
+});
+
+/* ---------- firstCash: asOpenType()이 자산 종류를 savings로 바꿀 때 maturityTargetId가
+ * 비어있으면 firstCash()로 기본값을 채우는데(index.html 2635), excludeId 없이 DB.assets를
+ * 그대로 훑던 예전 구현은 "지금 편집 중인 자산 자신"을 걸러내지 않았다(app-evolve cycle35 review).
+ * asDraft는 DB.assets에서 JSON.parse(JSON.stringify(...))로 뜬 사본이라 asDraft.id는 원본과
+ * 같고, 저장 전까지 DB.assets엔 여전히 옛 타입(cash 등)의 원본이 남아있다 — 그 원본이
+ * isCashLike를 만족하는 첫 자산이면(흔히 사용자의 첫 계좌) firstCash()가 그 자산 자신의 id를
+ * 돌려줘 maturityTargetId가 자기 자신으로 조용히 채워졌다. doMaturity()의 방어 가드(cycle34)가
+ * 실행 시점에는 막아주지만, 그전에 사용자가 대상을 다시 고르지 않는 한 저장 화면엔 이미
+ * 잘못된 값이 들어가 있었다. firstCash(excludeId)로 자기 자신을 제외하도록 고쳤다 ---------- */
+test('firstCash: excludeId로 지정한 자산은 건너뛰고 그다음 현금성 자산을 반환한다', () => {
+  sandbox.DB = { assets: [
+    { id: 'a_cash1', type: 'cash' },
+    { id: 'a_cash2', type: 'cash' },
+    { id: 'a_gold', type: 'gold' },
+  ] };
+  assert.strictEqual(sandbox.firstCash('a_cash1'), 'a_cash2');
+});
+test('firstCash: excludeId가 유일한 현금성 자산이면 null을 반환한다(자기 자신으로 채워지면 안 됨)', () => {
+  sandbox.DB = { assets: [
+    { id: 'a_cash1', type: 'cash' },
+    { id: 'a_gold', type: 'gold' },
+  ] };
+  assert.strictEqual(sandbox.firstCash('a_cash1'), null);
+});
+test('firstCash: excludeId 없이 부르는 기존 호출부(openTxSheet)는 회귀 없이 첫 현금성 자산을 그대로 반환한다', () => {
+  sandbox.DB = { assets: [
+    { id: 'a_cash1', type: 'cash' },
+    { id: 'a_sav', type: 'savings' },
+  ] };
+  assert.strictEqual(sandbox.firstCash(), 'a_cash1');
 });
 
 /* ---------- doMaturity: 저축 통장 자신을 '만기 시 이체할 통장'으로 골라둔 채 만기 이체를 실행하면
