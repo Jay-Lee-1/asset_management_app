@@ -60,7 +60,7 @@ function extractLet(name) {
 const FUNCTIONS = [
   'lastDay', 'addDays', 'shiftWeekend', 'recDates', 'addMonthsStr', 'addMonths',
   'recNthDate', 'recCountUntil', 'isVarCat', 'setCatVar', 'activeRecsForAssets', 'activeRecsForCat',
-  'num', 'doRenameCat', 'doDeleteCat', 'budgetProgress', 'totalBudgetSummary', 'addCat',
+  'num', 'doRenameCat', 'doDeleteCat', 'budgetProgress', 'totalBudgetSummary', 'budgetKey', 'budgetForMonth', 'setBudgetFrom', 'addCat',
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'esc', 'matchTxnQuery',
   'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo',
   'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'restoreBackup', 'storageOutcomeMsg',
@@ -81,7 +81,7 @@ const FUNCTIONS = [
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
 // _balCache/BAL_CACHE_MAX는 balancesUpTo()가 참조하는 모듈 스코프 캐시 상태라 같은 방식으로 끌어온다.
 // _recCache/REC_CACHE_MAX는 expandRec()가 참조하는 모듈 스코프 캐시 상태라 같은 방식으로 끌어온다.
-const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL'];
+const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL'];
 // _histCache는 filteredHist()가 재대입(={key,list})하는 let 선언이라 CONSTS(extractConst)로는
 // 못 끌어오므로 별도의 LETS 목록으로 extractLet을 통해 가져온다.
 const LETS = ['_histCache'];
@@ -454,97 +454,152 @@ test('budgetProgress: 예산을 초과하면 over=true이고 바 길이는 100%�
   assert.strictEqual(r.over, true);
 });
 
-/* ---------- totalBudgetSummary: 지출 분석의 '이번 달 예산' 요약 카드 집계 ---------- */
+/* ---------- budgetForMonth/setBudgetFrom: 예산은 시점별 이력이라 과거/미래 조회에 서로 다른 값을 돌려줘야 한다 ---------- */
+test('budgetForMonth: 이력이 없는 카테고리는 0(미설정)을 반환한다', () => {
+  sandbox.DB = { budgetHistory: {} };
+  assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 6), 0);
+});
+test('budgetForMonth: DB.budgetHistory 자체가 없어도(undefined) 터지지 않고 0을 반환한다', () => {
+  sandbox.DB = {};
+  assert.doesNotThrow(() => sandbox.budgetForMonth('식비', 2026, 6));
+  assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 6), 0);
+});
+test('budgetForMonth: from 시점 이전 달을 조회하면 아직 그 예산이 적용되지 않아 0이다', () => {
+  sandbox.DB = { budgetHistory: { 식비: [{ from: '2026-06', amount: 300000 }] } };
+  assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 5), 0, '이력 시작 전 달은 미설정이어야 함');
+  assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 6), 300000, 'from 달 자체부터는 적용');
+  assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 7), 300000, '이후 달에도 계속 적용');
+});
+test('setBudgetFrom: 예산을 조정해도 조정 이전 달의 값은 그대로 유지된다(소급 왜곡 방지)', () => {
+  sandbox.DB = {};
+  sandbox.setBudgetFrom('식비', 2026, 3, 200000);
+  sandbox.setBudgetFrom('식비', 2026, 6, 300000); // 6월부터 인상
+  assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 3), 200000);
+  assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 5), 200000, '인상 이전 달은 옛 금액을 유지해야 함');
+  assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 6), 300000);
+  assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 8), 300000);
+});
+test('setBudgetFrom: 같은 달에 다시 저장하면 그 달 항목만 덮어쓰고 새 항목을 추가하지 않는다', () => {
+  sandbox.DB = {};
+  sandbox.setBudgetFrom('식비', 2026, 6, 300000);
+  sandbox.setBudgetFrom('식비', 2026, 6, 350000);
+  assert.strictEqual(sandbox.DB.budgetHistory.식비.length, 1);
+  assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 6), 350000);
+});
+test('setBudgetFrom: 과거 달을 보면서 저장해도(예: 6월을 보다가 5월 값을 조정) 이후 달에는 영향이 없다', () => {
+  sandbox.DB = {};
+  sandbox.setBudgetFrom('식비', 2026, 6, 300000);
+  sandbox.setBudgetFrom('식비', 2026, 3, 100000); // from 오름차순이 아니게 나중에 삽입되는 경우
+  assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 3), 100000);
+  assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 5), 100000);
+  assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 6), 300000, '이후 달 값은 영향받지 않아야 함');
+});
+
+/* ---------- totalBudgetSummary: 지출 분석의 해당 달 '예산' 요약 카드 집계 ---------- */
 test('totalBudgetSummary: 예산을 하나도 설정하지 않았으면 budgetedTotal=0(집계할 게 없음)', () => {
+  sandbox.DB = { budgetHistory: {} };
   const rows = [{ c: '식비', v: 50000 }, { c: '교통', v: 20000 }];
-  const r = sandbox.totalBudgetSummary(rows, {});
+  const r = sandbox.totalBudgetSummary(rows, 2026, 6);
   assert.strictEqual(r.budgetedTotal, 0);
   assert.strictEqual(r.spentOnBudgeted, 0);
   assert.strictEqual(r.overCount, 0);
   assert.strictEqual(r.unsetCount, 2, '예산이 없으면 지출이 있는 두 카테고리 모두 미설정으로 집계돼야 함');
 });
 test('totalBudgetSummary: 예산이 설정된 카테고리만 합산하고, 미설정 카테고리는 unsetCount로만 센다', () => {
+  sandbox.DB = { budgetHistory: { 식비: [{ from: '2026-01', amount: 100000 }], 교통: [{ from: '2026-01', amount: 30000 }] } };
   const rows = [{ c: '식비', v: 50000 }, { c: '교통', v: 20000 }, { c: '취미', v: 10000 }];
-  const r = sandbox.totalBudgetSummary(rows, { 식비: 100000, 교통: 30000 });
+  const r = sandbox.totalBudgetSummary(rows, 2026, 6);
   assert.strictEqual(r.budgetedTotal, 130000, '예산이 설정된 식비+교통 한도만 합산');
   assert.strictEqual(r.spentOnBudgeted, 70000, '예산이 설정된 카테고리의 지출만 합산(취미 10000은 제외)');
   assert.strictEqual(r.overCount, 0);
   assert.strictEqual(r.unsetCount, 1, '취미만 예산 미설정');
 });
 test('totalBudgetSummary: 예산을 초과한 카테고리 수를 overCount로 센다', () => {
+  sandbox.DB = { budgetHistory: { 식비: [{ from: '2026-01', amount: 100000 }], 교통: [{ from: '2026-01', amount: 30000 }] } };
   const rows = [{ c: '식비', v: 150000 }, { c: '교통', v: 20000 }];
-  const r = sandbox.totalBudgetSummary(rows, { 식비: 100000, 교통: 30000 });
+  const r = sandbox.totalBudgetSummary(rows, 2026, 6);
   assert.strictEqual(r.budgetedTotal, 130000);
   assert.strictEqual(r.spentOnBudgeted, 170000);
   assert.strictEqual(r.overCount, 1, '식비만 예산을 초과함');
   assert.strictEqual(r.unsetCount, 0);
 });
-test('totalBudgetSummary: DB.budgets가 없어도(undefined) 터지지 않고 전부 미설정으로 처리한다', () => {
+test('totalBudgetSummary: DB.budgetHistory가 없어도(undefined) 터지지 않고 전부 미설정으로 처리한다', () => {
+  sandbox.DB = {};
   const rows = [{ c: '식비', v: 50000 }];
-  const r = sandbox.totalBudgetSummary(rows, undefined);
+  const r = sandbox.totalBudgetSummary(rows, 2026, 6);
   assert.strictEqual(r.budgetedTotal, 0);
   assert.strictEqual(r.unsetCount, 1);
 });
+test('totalBudgetSummary: 예산을 인상하기 전 과거 달을 조회하면 과거 당시의(인상 전) 예산으로 집계된다', () => {
+  sandbox.DB = { budgetHistory: { 식비: [{ from: '2026-01', amount: 100000 }, { from: '2026-06', amount: 200000 }] } };
+  const rows = [{ c: '식비', v: 150000 }];
+  const past = sandbox.totalBudgetSummary(rows, 2026, 3); // 인상 전: 100000 예산 대비 150000 지출 -> 초과
+  assert.strictEqual(past.budgetedTotal, 100000);
+  assert.strictEqual(past.overCount, 1);
+  const now = sandbox.totalBudgetSummary(rows, 2026, 6); // 인상 후: 200000 예산 대비 150000 지출 -> 이내
+  assert.strictEqual(now.budgetedTotal, 200000);
+  assert.strictEqual(now.overCount, 0, '나중에 예산을 올렸다고 과거 조회가 아니라 인상 이후 조회만 이내로 바뀌어야 함');
+});
 
-/* ---------- doRenameCat: 카테고리 이름변경 시 예산 한도도 함께 이동 ---------- */
-test('doRenameCat: 지출 카테고리 이름변경 시 DB.budgets의 한도가 새 이름으로 이동한다', () => {
-  sandbox.DB = { categories: { expense: ['식비'] }, catIcon: {}, catVar: {}, budgets: { 식비: 300000 }, txns: [], recurrences: [] };
+/* ---------- doRenameCat: 카테고리 이름변경 시 예산 이력도 함께 이동 ---------- */
+test('doRenameCat: 지출 카테고리 이름변경 시 DB.budgetHistory의 이력이 새 이름으로 이동한다', () => {
+  sandbox.DB = { categories: { expense: ['식비'] }, catIcon: {}, catVar: {}, budgetHistory: { 식비: [{ from: '2026-01', amount: 300000 }] }, txns: [], recurrences: [] };
   sandbox.catRenameDraft = { name: '외식비', icon: '' };
   sandbox.doRenameCat('expense', 0);
-  assert.strictEqual(sandbox.DB.budgets['외식비'], 300000);
-  assert.strictEqual('식비' in sandbox.DB.budgets, false, '옛 이름의 예산 항목은 제거돼야 함');
+  assert.strictEqual(sandbox.budgetForMonth('외식비', 2026, 6), 300000);
+  assert.strictEqual('식비' in sandbox.DB.budgetHistory, false, '옛 이름의 예산 이력은 제거돼야 함');
 });
 test('doRenameCat: 예산이 설정되지 않은 카테고리를 이름변경해도 오류 없이 통과한다', () => {
-  sandbox.DB = { categories: { expense: ['교통비'] }, catIcon: {}, catVar: {}, budgets: {}, txns: [], recurrences: [] };
+  sandbox.DB = { categories: { expense: ['교통비'] }, catIcon: {}, catVar: {}, budgetHistory: {}, txns: [], recurrences: [] };
   sandbox.catRenameDraft = { name: '대중교통', icon: '' };
   sandbox.doRenameCat('expense', 0);
-  assert.strictEqual(Object.keys(sandbox.DB.budgets).length, 0);
+  assert.strictEqual(Object.keys(sandbox.DB.budgetHistory).length, 0);
 });
 
 /* ---------- doDeleteCat: 카테고리 삭제 시 아이콘/변동/예산 정리 (동명 재생성 시 이전 설정이 남지 않도록) ---------- */
-test('doDeleteCat: 삭제 시 catIcon/catVar/budgets 항목이 함께 제거된다', () => {
+test('doDeleteCat: 삭제 시 catIcon/catVar/budgetHistory 항목이 함께 제거된다', () => {
   sandbox.DB = {
     categories: { expense: ['커피', '식비'] },
     catIcon: { 'expense:커피': 'coffee' },
     catVar: { 'expense:커피': true },
-    budgets: { 커피: 30000 },
+    budgetHistory: { 커피: [{ from: '2026-01', amount: 30000 }] },
     txns: [], recurrences: [],
   };
   sandbox.doDeleteCat('expense', 0);
   assert.deepStrictEqual(sandbox.DB.categories.expense, ['식비']);
   assert.strictEqual('expense:커피' in sandbox.DB.catIcon, false);
   assert.strictEqual('expense:커피' in sandbox.DB.catVar, false);
-  assert.strictEqual('커피' in sandbox.DB.budgets, false);
+  assert.strictEqual('커피' in sandbox.DB.budgetHistory, false);
 });
 test('doDeleteCat: 같은 이름으로 다시 추가해도 지워진 카테고리의 이전 아이콘/변동/예산을 물려받지 않는다', () => {
   sandbox.DB = {
     categories: { expense: ['커피'] },
     catIcon: { 'expense:커피': 'coffee' },
     catVar: { 'expense:커피': true },
-    budgets: { 커피: 30000 },
+    budgetHistory: { 커피: [{ from: '2026-01', amount: 30000 }] },
     txns: [], recurrences: [],
   };
   sandbox.doDeleteCat('expense', 0);
   sandbox.DB.categories.expense.push('커피'); // 사용자가 같은 이름으로 재생성
   assert.strictEqual('expense:커피' in sandbox.DB.catIcon, false);
   assert.strictEqual(sandbox.isVarCat('expense', '커피'), false);
-  assert.strictEqual('커피' in sandbox.DB.budgets, false);
+  assert.strictEqual('커피' in sandbox.DB.budgetHistory, false);
 });
-test('doDeleteCat: 수입/저축 카테고리는 budgets를 건드리지 않는다', () => {
+test('doDeleteCat: 수입/저축 카테고리는 budgetHistory를 건드리지 않는다', () => {
   sandbox.DB = {
     categories: { income: ['용돈'] },
-    catIcon: {}, catVar: {}, budgets: { 용돈: 100000 },
+    catIcon: {}, catVar: {}, budgetHistory: { 용돈: [{ from: '2026-01', amount: 100000 }] },
     txns: [], recurrences: [],
   };
   sandbox.doDeleteCat('income', 0);
-  assert.strictEqual(sandbox.DB.budgets['용돈'], 100000, 'expense가 아닌 타입은 budgets 키 공간이 겹치지 않으므로 건드리면 안 됨');
+  assert.strictEqual(sandbox.budgetForMonth('용돈', 2026, 6), 100000, 'expense가 아닌 타입은 budgetHistory 키 공간이 겹치지 않으므로 건드리면 안 됨');
 });
 
 /* ---------- ADJUST_CAT: '잔액 조정' 시스템 카테고리는 이름변경/삭제로부터 보호된다 ---------- */
 test('doDeleteCat: 수입의 잔액 조정 카테고리는 삭제되지 않고 안내 토스트만 뜬다', () => {
   sandbox.DB = {
     categories: { income: ['급여', sandbox.ADJUST_CAT] },
-    catIcon: {}, catVar: {}, budgets: {}, txns: [], recurrences: [],
+    catIcon: {}, catVar: {}, budgetHistory: {}, txns: [], recurrences: [],
   };
   sandbox.lastToast = null;
   sandbox.doDeleteCat('income', 1);
@@ -554,7 +609,7 @@ test('doDeleteCat: 수입의 잔액 조정 카테고리는 삭제되지 않고 �
 test('doRenameCat: 수입의 잔액 조정 카테고리는 이름을 바꿀 수 없다', () => {
   sandbox.DB = {
     categories: { income: [sandbox.ADJUST_CAT] },
-    catIcon: {}, catVar: {}, budgets: {}, txns: [], recurrences: [],
+    catIcon: {}, catVar: {}, budgetHistory: {}, txns: [], recurrences: [],
   };
   sandbox.catRenameDraft = { name: '정정', icon: '' };
   sandbox.lastToast = null;
@@ -566,7 +621,7 @@ test('doDeleteCat/doRenameCat: 같은 이름이어도 지출 카테고리라면(
   // ADJUST_CAT은 income 전용 시스템 카테고리이므로, k!=='income'이면 이름이 같아도 평범한 카테고리로 취급돼야 함
   sandbox.DB = {
     categories: { expense: [sandbox.ADJUST_CAT, '기타'] },
-    catIcon: {}, catVar: {}, budgets: {}, txns: [], recurrences: [],
+    catIcon: {}, catVar: {}, budgetHistory: {}, txns: [], recurrences: [],
   };
   sandbox.catRenameDraft = { name: '정정', icon: '' };
   sandbox.doRenameCat('expense', 0);
@@ -575,7 +630,7 @@ test('doDeleteCat/doRenameCat: 같은 이름이어도 지출 카테고리라면(
 test('doDeleteCat: 잔액 조정이 아닌 평범한 수입 카테고리는 그대로 삭제된다(가드 과잉 적용 아님)', () => {
   sandbox.DB = {
     categories: { income: ['급여', sandbox.ADJUST_CAT] },
-    catIcon: {}, catVar: {}, budgets: {}, txns: [], recurrences: [],
+    catIcon: {}, catVar: {}, budgetHistory: {}, txns: [], recurrences: [],
   };
   sandbox.doDeleteCat('income', 0);
   assert.deepStrictEqual(sandbox.DB.categories.income, [sandbox.ADJUST_CAT]);
@@ -617,7 +672,7 @@ test('doDeleteCat: 연결된 활성 반복거래를 비활성화하고, undo 콜
     categories: { expense: ['외식', '교통'] },
     catIcon: { 'expense:외식': 'food' },
     catVar: { 'expense:외식': true },
-    budgets: { 외식: 50000 },
+    budgetHistory: { 외식: [{ from: '2026-01', amount: 50000 }] },
     txns: [], recurrences: [
       { id: 'r1', active: true, type: 'expense', category: '외식' },
       { id: 'r2', active: false, type: 'expense', category: '외식' }, // 이미 비활성 — 건드리면 안 됨
@@ -636,12 +691,12 @@ test('doDeleteCat: 연결된 활성 반복거래를 비활성화하고, undo 콜
   assert.strictEqual(sandbox.DB.recurrences.find(r => r.id === 'r2').active, false, '원래부터 비활성이던 반복거래는 그대로 비활성 유지');
   assert.strictEqual(sandbox.DB.catIcon['expense:외식'], 'food', '아이콘도 복원돼야 함');
   assert.strictEqual(sandbox.isVarCat('expense', '외식'), true, '변동 카테고리 플래그도 복원돼야 함');
-  assert.strictEqual(sandbox.DB.budgets['외식'], 50000, '예산 한도도 복원돼야 함');
+  assert.strictEqual(sandbox.budgetForMonth('외식', 2026, 6), 50000, '예산 이력도 복원돼야 함');
 });
 test('doDeleteCat: 연결된 활성 반복거래가 없으면 undo해도 반복거래 배열은 그대로다', () => {
   sandbox.DB = {
     categories: { expense: ['교통'] },
-    catIcon: {}, catVar: {}, budgets: {}, txns: [], recurrences: [],
+    catIcon: {}, catVar: {}, budgetHistory: {}, txns: [], recurrences: [],
   };
   sandbox.lastUndo = null;
   sandbox.doDeleteCat('expense', 0);
@@ -683,25 +738,41 @@ test('delOwner: 마지막 남은 귀속 하나는 삭제할 수 없다', () => {
   assert.deepStrictEqual(sandbox.DB.owners, ['나']);
 });
 
-/* ---------- delBudget: 예산 삭제도 delCat/delOwner처럼 undo 가능해야 한다 (cycle29) ---------- */
-test('delBudget: 삭제하면 예산이 지워지고 undoToast로 원래 금액이 되돌아온다', () => {
-  sandbox.DB = { txns: [], recurrences: [], budgets: { 식비: 50000, 교통: 30000 } };
+/* ---------- delBudget: 예산 삭제도 delCat/delOwner처럼 undo 가능해야 한다 (cycle29), 이제는 과거 이력을 보존한다 (cycle32) ---------- */
+test('delBudget: 삭제하면 보고 있는 달부터 0(미설정)이 되고 undoToast로 원래 금액이 되돌아온다', () => {
+  sandbox.DB = { txns: [], recurrences: [], budgetHistory: { 식비: [{ from: '2026-01', amount: 50000 }], 교통: [{ from: '2026-01', amount: 30000 }] } };
   sandbox.ST = { ledger: { y: 2026, m: 6 } };
   sandbox.lastUndo = null;
-  sandbox.delBudget(0); // rows는 budgets 순회 순서상 [{c:'식비',v:0},{c:'교통',v:0}]
-  assert.strictEqual(sandbox.DB.budgets.식비, undefined, '삭제 직후에는 예산이 지워져야 함');
+  sandbox.delBudget(0); // rows는 spendByCategory 순회 순서상 [{c:'식비',v:0},{c:'교통',v:0}]
+  assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 6), 0, '삭제 직후에는 보고 있는 달부터 예산이 없어야 함');
   assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함');
   sandbox.lastUndo.undoFn();
-  assert.strictEqual(sandbox.DB.budgets.식비, 50000, '되돌리면 원래 금액이 복원돼야 함');
-  assert.strictEqual(sandbox.DB.budgets.교통, 30000, '다른 카테고리 예산은 영향받지 않아야 함');
+  assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 6), 50000, '되돌리면 원래 금액이 복원돼야 함');
+  assert.strictEqual(sandbox.budgetForMonth('교통', 2026, 6), 30000, '다른 카테고리 예산은 영향받지 않아야 함');
 });
 test('delBudget: 존재하지 않는 idx를 넘기면 아무것도 하지 않는다', () => {
-  sandbox.DB = { txns: [], recurrences: [], budgets: { 식비: 50000 } };
+  sandbox.DB = { txns: [], recurrences: [], budgetHistory: { 식비: [{ from: '2026-01', amount: 50000 }] } };
   sandbox.ST = { ledger: { y: 2026, m: 6 } };
   sandbox.lastUndo = null;
   sandbox.delBudget(5);
-  assert.strictEqual(sandbox.DB.budgets.식비, 50000);
+  assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 6), 50000);
   assert.strictEqual(sandbox.lastUndo, null, 'undoToast가 호출되면 안 됨');
+});
+test('delBudget: 과거 달의 예산 표시는 삭제 이후에도 소급 왜곡되지 않고 그대로 남는다', () => {
+  sandbox.DB = { txns: [], recurrences: [], budgetHistory: { 식비: [{ from: '2026-01', amount: 50000 }] } };
+  sandbox.ST = { ledger: { y: 2026, m: 6 } }; // 6월을 보면서 삭제
+  sandbox.delBudget(0);
+  assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 3), 50000, '삭제 이전 달(3월)의 예산은 그대로 남아야 함');
+  assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 6), 0, '삭제한 달(6월)부터는 미설정이어야 함');
+});
+test('delBudget: undo는 그 달에 원래 있던 값이 아니라 삭제 직전 상태 전체를 복원한다(다른 달에 새로 추가된 항목이 아니었다면 항목 자체를 제거)', () => {
+  sandbox.DB = { txns: [], recurrences: [], budgetHistory: { 식비: [{ from: '2026-01', amount: 50000 }] } };
+  sandbox.ST = { ledger: { y: 2026, m: 6 } }; // 1월 항목만 있고 6월엔 아직 별도 항목이 없는 상태에서 6월을 보며 삭제
+  sandbox.delBudget(0);
+  assert.strictEqual(sandbox.DB.budgetHistory.식비.length, 2, '삭제로 6월부터 0인 새 항목이 추가돼야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.budgetHistory.식비.length, 1, '되돌리면 원래 없던 6월 항목이 제거되고 1월 항목만 남아야 함');
+  assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 8), 50000, '되돌린 뒤에는 8월도 다시 1월부터 이어지는 5만원이어야 함');
 });
 
 /* ---------- addCat: 중복 이름 추가 시 무반응 대신 안내 토스트 ---------- */
@@ -764,6 +835,36 @@ test('migrate: seed()/emptyDB()가 만드는 형태(catIcon/catVar/budgets 필�
   assert.strictEqual(Object.keys(sandbox.DB.catIcon).length, 0);
   assert.strictEqual(Object.keys(sandbox.DB.catVar).length, 0);
   assert.strictEqual(Object.keys(sandbox.DB.budgets).length, 0);
+  assert.strictEqual(Object.keys(sandbox.DB.budgetHistory).length, 0);
+});
+/* 기존 사용자의 DB.budgets(시간 축 없는 flat 값)를 budgetHistory 이력으로 1회 변환 — 변환 직후에는
+ * 어느 달을 조회해도(과거/현재/미래) 옛 값을 그대로 보여줘야 마이그레이션 전후 화면이 달라지지 않는다. */
+test('migrate: 기존 DB.budgets(flat)가 있으면 budgetHistory 이력으로 1회 변환되고, 변환 직후엔 어느 달을 봐도 기존 값과 같다', () => {
+  sandbox.DB = {
+    version: 5, catsV2: true,
+    settings: { themeMode: 'system', includeScheduled: false, assetSort: 'custom', groupOrder: [...sandbox.DEFAULT_GROUP_ORDER] },
+    owners: ['나', '배우자', '공용'],
+    assets: [], txns: [], recurrences: [], inquiries: [],
+    categories: { expense: [...sandbox.EXP_CATS_DEFAULT], income: [...sandbox.INC_CATS_DEFAULT], saving: [...sandbox.SAV_CATS_DEFAULT] },
+    budgets: { 식비: 300000, 교통: 100000 },
+  };
+  sandbox.migrate();
+  assert.strictEqual(sandbox.budgetForMonth('식비', 2020, 1), 300000, '변환 전 과거 달을 조회해도 기존 값과 같아야 함(화면 급변 방지)');
+  assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 6), 300000);
+  assert.strictEqual(sandbox.budgetForMonth('교통', 2026, 6), 100000);
+});
+test('migrate: DB._budgetHistV1이 이미 true면(재실행) DB.budgets를 다시 변환하지 않는다(중복 변환 방지)', () => {
+  sandbox.DB = {
+    version: 5, catsV2: true, _budgetHistV1: true,
+    settings: { themeMode: 'system', includeScheduled: false, assetSort: 'custom', groupOrder: [...sandbox.DEFAULT_GROUP_ORDER] },
+    owners: ['나', '배우자', '공용'],
+    assets: [], txns: [], recurrences: [], inquiries: [],
+    categories: { expense: [...sandbox.EXP_CATS_DEFAULT], income: [...sandbox.INC_CATS_DEFAULT], saving: [...sandbox.SAV_CATS_DEFAULT] },
+    budgets: { 식비: 300000 }, // 이미 삭제해서 남아있지 않아야 할 옛 필드가 아직 있어도
+    budgetHistory: { 식비: [{ from: '2026-06', amount: 500000 }] }, // 사용자가 그 사이 직접 조정한 최신 이력을 덮어쓰면 안 됨
+  };
+  sandbox.migrate();
+  assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 6), 500000, '재실행에서 옛 flat 값으로 되돌리면 안 됨');
 });
 /* doResetAll()/afterCloudAuth()가 DB=emptyDB() 직후 migrate()를 빠뜨렸던 버그(전체초기화·게스트데이터 없는
  * 신규가입 시 '이체 확인'·'시세 자동 연동' 설정이 조용히 꺼진 채 남음) 재발 방지. emptyDB()는 catIcon/catVar/
@@ -1437,11 +1538,11 @@ test('spendByCategory: 수입/저축 등 지출이 아닌 거래는 집계하지
   };
   assert.deepStrictEqual(Array.from(sandbox.spendByCategory(2026, 6)), []);
 });
-test('spendByCategory: 이번 달에 쓴 게 없어도 예산이 설정된 카테고리는 v:0으로 계속 나타난다 (예산 관리 화면에서 사라지지 않아야 함)', () => {
+test('spendByCategory: 이번 달에 쓴 게 없어도 이번 달 기준 예산이 있는 카테고리는 v:0으로 계속 나타난다 (예산 관리 화면에서 사라지지 않아야 함)', () => {
   sandbox.DB = {
     txns: [{ date: '2026-06-05', type: 'expense', category: '식비', amount: 10000 }],
     recurrences: [],
-    budgets: { 식비: 300000, 여행: 500000 },
+    budgetHistory: { 식비: [{ from: '2026-01', amount: 300000 }], 여행: [{ from: '2026-01', amount: 500000 }] },
   };
   const byCat = Object.fromEntries(Array.from(sandbox.spendByCategory(2026, 6)).map(r => [r.c, r.v]));
   assert.strictEqual(byCat['식비'], 10000, '실제 지출이 있는 예산 카테고리는 기존처럼 실제 합계가 나와야 함');
@@ -1451,13 +1552,22 @@ test('spendByCategory: 예산이 없는 카테고리는 지출이 없으면 여�
   sandbox.DB = {
     txns: [],
     recurrences: [],
-    budgets: { 식비: 300000 },
+    budgetHistory: { 식비: [{ from: '2026-01', amount: 300000 }] },
   };
   const rows = Array.from(sandbox.spendByCategory(2026, 6));
   assert.strictEqual(rows.length, 1);
   assert.strictEqual(rows[0].c, '식비');
 });
-test('spendByCategory: DB.budgets가 없어도(undefined) 터지지 않는다', () => {
+test('spendByCategory: 조회 중인 달 이전에만 예산이 있고 아직 그 달부터는 시작되지 않은 카테고리는 나타나지 않는다', () => {
+  sandbox.DB = {
+    txns: [],
+    recurrences: [],
+    budgetHistory: { 식비: [{ from: '2026-08', amount: 300000 }] }, // 8월부터 시작
+  };
+  const rows = Array.from(sandbox.spendByCategory(2026, 6)); // 6월 조회
+  assert.strictEqual(rows.length, 0, '예산 시작 전 달에는 budgetForMonth가 0이라 행이 나오면 안 됨');
+});
+test('spendByCategory: DB.budgetHistory가 없어도(undefined) 터지지 않는다', () => {
   sandbox.DB = {
     txns: [{ date: '2026-06-05', type: 'expense', category: '식비', amount: 10000 }],
     recurrences: [],

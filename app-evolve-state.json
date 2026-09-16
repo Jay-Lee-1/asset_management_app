@@ -1,19 +1,8 @@
 {
-  "cycle": 32,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "예산(DB.budgets)이 시간 축 없는 단일 값이라, 예산을 조정하면 과거 모든 달의 '초과/이내' 판정이 소급 변경되고 지난 달로 이동해서 봐도 항상 '오늘' 예산과 비교됨",
-    "why": "DB.budgets는 index.html:1729에서 카테고리→금액 flat map으로 선언되고, spendByCategory/totalBudgetSummary/openSpendAnalysis/openBudgetPrompt/saveBudget/delBudget(3737-3806)이 전부 이 단일 값을 시점 구분 없이 읽고 쓴다. openSpendAnalysis()(3763)는 ST.ledger.y/m로 임의의 달(과거/미래)을 조회할 수 있는데도 budget=(DB.budgets&&DB.budgets[r.c])(3767)는 항상 '현재' 값이라, 지난 달 지출 분석을 봐도 그 달 당시가 아니라 오늘 설정된 예산과 비교된다. saveBudget()(3800)이 DB.budgets[r.c]=v로 그 자리에서 값을 덮어쓰므로, 예산을 한 번만 조정해도 budgetProgress()의 over 판정(3747)이 바뀌어 과거 모든 달의 '초과' 빨간 표시가 조용히 재계산된다. openBudgetPrompt()의 안내문(3790, '이번 달 ~ 매달 같은 금액으로 적용돼요')도 실제로는 시간 개념이 전혀 없다는 사실과 어긋난다. 예산 조정은 흔한 사용 패턴(월급 인상 후 상향, 구독 해지 후 하향)인데 그때마다 과거 이력이 조용히 왜곡되는 건 핵심 기능(예산 추적)의 신뢰성을 해치는 실제 데이터 모델 결함이라 advance 크기로 다룰 가치가 있다.",
-    "approach": "1) DB.budgets(flat map) 대신 DB.budgetHistory[category]=[{from:'YYYY-MM',amount}, ...]를 from 오름차순으로 유지하는 append-only 이력 구조를 추가한다. 2) budgetForMonth(category,y,m) 순수함수를 새로 만들어 'YYYY-MM' 문자열을 from<=대상 시점인 가장 최근 항목으로 찾고 없으면 0(미설정)을 반환한다. 3) spendByCategory/openSpendAnalysis/openBudgetPrompt/totalBudgetSummary가 DB.budgets[c] 직접 참조 대신 budgetForMonth(c,y,m)을 쓰도록 바꾼다. 4) saveBudget()은 DB.budgets[r.c]=v 대신, 현재 ST.ledger 조회 시점(y,m)을 from으로 하는 새 이력 항목을 push한다(같은 from이면 덮어쓰기, 다르면 추가) — 과거 달을 보면서 예산을 입력하면 그 시점부터 적용되도록. 5) delBudget()은 완전 삭제 대신 '그 시점 이후 0으로 되돌리는' 항목을 추가하거나(과거 기록 보존) 해당 시점 이후 이력만 잘라내는 방식으로 undo와 함께 구현한다. 6) migrate()에 기존 DB.budgets(flat)가 있으면 이를 이 앱의 최초 거래 월(또는 설치 시점)부터 유효한 단일 이력 항목으로 변환하는 1회성 마이그레이션을 추가해 기존 사용자 동작을 보존한다. 7) openBudgetPrompt() 안내 문구에서 '이번 달' 같은 시점 고정 표현을 실제 보고 있는 달(m월)에 맞게 고친다. 8) test/run.js에 budgetForMonth 순수함수 테스트(이력에 없는 이전 달은 0, from 경계, 과거 달 보정 저장 후 이후 달엔 영향 없음 등)를 추가한다."
-  },
+  "cycle": 33,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 27,
-      "phase": "advance",
-      "timestamp": "2026-09-15T18:05:00.000Z",
-      "summary": "critique 계획(1~3번 범위, 5번 과거 데이터 경고는 다음으로 보류)대로 구현했다. isCashLike(1933) 옆에 isMarketValued=a=>a.type==='fx'||a.type==='gold'||a.type==='stock' 헬퍼를 추가하고, openAssetPicker()(5125)에 excludeMarketValued 옵션을 추가해 켜지면 목록에서 이 세 타입을 제외하도록 했다(기존 cashOnly와 독립적으로 공존, and 조건 아님). txOpenAsset()(2915, 이체/지출/수입/저축 입력)과 recOpenAsset()(3070, 반복거래 등록/편집 — saveRec()도 saveTx()와 마찬가지로 fxAmount/goldDon/stockQty를 갱신하지 않아 동일한 버그를 갖고 있음을 확인해 계획에 없었지만 함께 수정) 두 호출부에서 이 옵션을 켰다. 4번(자산 편집 화면에 수량 직접 입력 필드가 있는지)은 asFx/asGold/asQty(2570,2573,2579) 필드가 이미 있음을 확인해 추가 작업 불필요. 5번(과거 잘못된 이체 기록에 대한 migrate() 경고)은 범위가 커서 계획대로 다음 사이클로 미뤘다. test/run.js에 assetEval/assetBalance/schHorizon/ym/openAssetPicker를 새로 추출하고(isCashLike/isMarketValued/GOLD_G_PER_DON도 CONSTS로 끌어옴, openPicker는 bodyHtml만 기록하는 스텁으로 대체) 회귀 테스트 4개 추가: isMarketValued 타입 판정, excludeMarketValued 켰을 때 fx/gold/stock이 실제 렌더된 picker HTML에서 빠지는지, 옵션 없는 기존 호출부(만기이체 등)는 회귀 없이 그대로인지, cashOnly가 excludeMarketValued 없이도 기존처럼 현금성만 남기는지. 170/170 통과(기존 166+신규 4). 두 인라인 <script> 블록 모두 node --check로 파싱 확인. APP_VERSION 1.26.1->1.27.0(구조적 버그 fix + 새 옵션이라 minor bump), sw.js CACHE v89->v90. pending_advance_plan 비움.\n\n[운영 참고] 이번 사이클 실행 중 원격 실행 환경의 repo가 얕은 클론(shallow clone)이었고, 로컬 main 브랜치 ref가 클론 시점의 오래된 커밋(eb04c24, 영문 커밋 메시지 계열)을 가리키고 있어 실제 origin/main 최신 커밋(a92debf, 이 cycle27 history와 동일 계열)과 잠시 달라 보이는 혼란이 있었다. git fetch --unshallow로 origin/main을 전체 갱신해 실제로는 origin/main==a92debf이고 내 새 커밋이 그 바로 위 fast-forward임을 확인한 뒤 로컬 main을 그 커밋으로 맞추고 push했다 — 실제 히스토리 분기나 데이터 손실은 없었음.",
-      "commit": null
-    },
     {
       "cycle": 27,
       "phase": "critique",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-16T13:05:00.000Z",
       "summary": "cycle32 review(ebef70c)가 문제 없음으로 끝낸 직후, 최근 커밋 재검토보다 앱 전체를 구조적으로 훑는 데 집중해 Explore 서브에이전트로 예산 관리, 중복 감지, 대량 선택 접근성 등을 살폈다. DB.budgets(index.html:1729)가 카테고리→금액 flat map으로 시간 축이 전혀 없다는 걸 발견했다 — openSpendAnalysis()(3763)는 ST.ledger.y/m로 임의의 과거/미래 달을 조회할 수 있는데도 budget 값(3767)은 항상 '현재' 값을 참조하고, saveBudget()(3800)이 DB.budgets[r.c]=v로 그 자리에서 덮어써 예산을 한 번만 조정해도 budgetProgress()의 over 판정(3747)이 바뀌면서 과거 모든 달의 '초과' 표시가 소급 왜곡됨을 코드로 직접 확인. openBudgetPrompt() 안내문(3790, '매달 같은 금액으로 적용돼요')도 이 사실과 어긋남. 예산 조정은 흔한 사용 패턴인데 그때마다 과거 이력이 조용히 왜곡되는 건 핵심 기능의 신뢰성을 해치는 실제 데이터 모델 결함으로 판단해 채택. 후보로 검토했으나 보류한 것: saveTx()의 의미론적 중복 거래 미감지(이미 보류된 더블탭 이슈와 인접, 확신도 낮음), Ledger/History 대량 선택이 long-press로만 진입 가능해 키보드 접근 불가(단일 항목 삭제는 이미 키보드로 접근 가능해 심각도 낮음), 지출 분석 문구의 '이번 달' 하드코딩(예산 이력화 작업에 자연히 딸려 고쳐질 사소한 카피 문제). pending_advance_plan에 DB.budgetHistory 배열 기반 이력 구조 + budgetForMonth 순수함수 + migrate 마이그레이션 + 관련 호출부 전환 계획 저장. 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 32,
+      "phase": "advance",
+      "timestamp": "2026-09-16T14:10:00.000Z",
+      "summary": "critique 계획대로 DB.budgets(flat map) 예산을 DB.budgetHistory[category]=[{from\"YYYY-MM\",amount}] 시점별 이력 구조로 전환했다. budgetKey(y,m)/budgetForMonth(c,y,m)(index.html:3762-3768) 순수함수를 새로 추가해 대상 달 이전(from<=대상)의 가장 최근 이력값을 찾고 없으면 0(미설정)을 반환하도록 했고, setBudgetFrom(c,y,m,amount)로 같은 달 항목은 덮어쓰고 아니면 from 오름차순을 유지하며 삽입한다. spendByCategory/openSpendAnalysis/openBudgetPrompt/totalBudgetSummary(rows,y,m로 시그니처 변경)가 전부 DB.budgets[c] 직접 참조 대신 budgetForMonth(c,y,m)을 쓰도록 바꿨다. saveBudget()은 setBudgetFrom(r.c,y,m,v)로 보고 있는 달부터 적용되는 새 이력 항목을 기록하고, delBudget()은 완전 삭제 대신 보고 있는 달부터 0으로 되돌리는 항목을 추가해(과거 이력 보존) undo 시엔 그 달에 원래 있던 항목이었으면 값을 복원하고 새로 추가된 항목이었으면 그 항목 자체를 제거하도록 구현했다. doDeleteCat/doRenameCat도 DB.budgets 대신 DB.budgetHistory 배열을 통째로 옮기도록 맞췄다. migrate()에 DB._budgetHistV1 가드로 1회성 마이그레이션을 추가해, 기존 DB.budgets(flat)가 있으면 이를 BUDGET_EPOCH(\"2000-01\", 실제 조회 가능한 어떤 달보다도 이른 시점) 이력 항목으로 변환해 마이그레이션 직후에는 과거/현재/미래 어느 달을 조회해도 이전과 동일한 값을 보여주도록(화면 급변 방지) 했다. openBudgetPrompt()의 '이번 달 ~ 매달 같은 금액으로 적용돼요' 문구도 실제 보고 있는 달(m월)과 '바꾸기 전까지 이후 달에도 계속 적용돼요'로 고쳐 실제 동작과 일치시켰다. test/run.js에 budgetForMonth/setBudgetFrom 순수함수 테스트(이력 없는 카테고리 0, from 경계, 과거 달 보정 저장 후 이후 달 영향 없음 등) 9개, totalBudgetSummary/spendByCategory/doRenameCat/doDeleteCat/delBudget/migrate의 기존 DB.budgets 참조 테스트를 전부 budgetHistory 형태로 재작성(신규 마이그레이션 테스트 2개 포함)했다. 221/221 통과(기존 199+신규 22, 기존 테스트 다수 재작성). 두 인라인 <script> 블록 모두 node --check 파싱 확인. Playwright(사전 설치 Chromium, 게스트 모드)로 실제 브라우저에서 saveBudget으로 1월 예산 설정 후 6월에 예산 인상 → 1월 값은 그대로, 8월에 추가 인상 → 6월 값은 영향받지 않음을 확인했고, delBudget으로 6월 예산 삭제 시 6월부터 0이 되면서도 3월 값은 그대로 보존됨을 실제 DOM/함수 호출로 end-to-end 확인, pageerror 없음. APP_VERSION 1.32.1->1.33.0(예산 데이터 모델 변경을 동반한 advance라 minor bump), sw.js CACHE v100->v101. pending_advance_plan 비움.",
       "commit": null
     }
   ]

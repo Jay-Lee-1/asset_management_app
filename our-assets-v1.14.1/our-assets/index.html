@@ -1288,7 +1288,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.32.1';
+const APP_VERSION='1.33.0';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1727,6 +1727,11 @@ function migrate(){
  delete DB.settings.showScheduled; /* 예정 표시는 홈 '예정 포함'으로 통합 */
  DB.owners=DB.owners||['나','배우자','공용'];
  DB.budgets=DB.budgets||{};
+ DB.budgetHistory=DB.budgetHistory||{}; /* 카테고리→[{from:"YYYY-MM",amount}] 시점별 예산 이력(오름차순) — budgetForMonth()가 조회 */
+ if(!DB._budgetHistV1){ /* 기존 DB.budgets(시간 축 없는 flat 값)를 그 시절 항상 적용되던 대로 아주 이른 시점부터 유효한 단일 이력 항목으로 1회 변환 — 기존 사용자 화면을 그대로 보존 */
+  Object.keys(DB.budgets).forEach(c=>{if(!DB.budgetHistory[c])DB.budgetHistory[c]=[{from:BUDGET_EPOCH,amount:DB.budgets[c]}]});
+  DB._budgetHistV1=true;
+ }
  DB.nwHistory=DB.nwHistory||[]; /* 순자산 추이: {date,ta,td,nw} 일별 스냅샷 (updateNwHistory) */
  DB.recurrences=(DB.recurrences||[]).map(r=>Object.assign({skip:[],edits:{},endDate:null,autoConfirm:true,confirmedDates:[]},r,{id:r.id||uid(),active:r.active!==false}));
  DB.categories=DB.categories||{};
@@ -1854,6 +1859,7 @@ function recCountUntil(base,endDate){ /* 시작일~종료일 사이 반복 횟�
  return recDates({freq:base.freq||'monthly',day:base.day,startDate:base.startDate,endDate:null,weekend:base.weekend},base.startDate,endDate).length;
 }
 const RANGE_FROM='2023-01-01';let RANGE_TO=addDays(TODAY,760);
+const BUDGET_EPOCH='2000-01'; /* migrate()가 옛 flat DB.budgets를 이력으로 변환할 때 쓰는 '항상 적용' 시작점 — 어떤 실제 조회 달보다도 이르다 */
 let DISP_TO=addDays(TODAY,92);
 function schHorizon(){
  if(!DB.settings.includeScheduled)return TODAY;
@@ -3740,7 +3746,7 @@ function spendByCategory(y,m){ /* 지출 분석은 항상 예정 포함 */
    if(t.type!=='expense')return;if(t.adjust&&!t.inSurplus)return; /* 잔액 조정: 항목별 포함 설정(기본 제외) */
    map[t.category]=(map[t.category]||0)+t.amount;
  });
- if(DB.budgets)Object.keys(DB.budgets).forEach(c=>{if(!(c in map))map[c]=0}); /* 이번 달에 쓴 게 없어도 예산이 설정된 카테고리는 계속 조회/수정/삭제할 수 있게 노출 */
+ if(DB.budgetHistory)Object.keys(DB.budgetHistory).forEach(c=>{if(!(c in map)&&budgetForMonth(c,y,m))map[c]=0}); /* 이번 달에 쓴 게 없어도 이번 달 기준 예산이 있는 카테고리는 계속 조회/수정/삭제할 수 있게 노출 */
  return Object.entries(map).map(([c,v])=>({c,v})).sort((a,b)=>b.v-a.v);
 }
 /* budget=0(미설정)이면 진행률은 의미가 없으므로 항상 0으로 clamp — 호출부는 이 경우 전체 대비 비중을 대신 쓴다 */
@@ -3749,12 +3755,32 @@ function budgetProgress(spent,budget){
  const ratio=spent/budget;
  return{pct:Math.round(ratio*100),barPct:Math.min(100,ratio*100),over:spent>budget};
 }
-/* 예산이 설정된 카테고리만 골라 이번 달 전체 예산 대비 지출을 집계 — 예산이 하나도 없으면 budgetedTotal=0으로 '집계할 게 없음'을 나타낸다 */
-function totalBudgetSummary(rows,budgets){
- budgets=budgets||{};
+/* 예산은 '카테고리→금액' 단일값이 아니라 '카테고리→[{from:"YYYY-MM",amount}]' 시점별 이력이다(오름차순 유지) —
+ * saveBudget()이 그 자리에서 덮어쓰면 과거 달의 초과/이내 판정까지 조용히 소급 변경되던 버그를 막기 위함.
+ * budgetForMonth는 대상 달(y,m) 이전(from<=대상)에 적용된 이력 중 가장 최근 값을 찾고, 없으면 0(미설정)을 반환한다. */
+function budgetKey(y,m){return `${y}-${String(m).padStart(2,'0')}`}
+function budgetForMonth(c,y,m){
+ const h=DB.budgetHistory&&DB.budgetHistory[c];
+ if(!h||!h.length)return 0;
+ const key=budgetKey(y,m);
+ let v=0;
+ for(let i=0;i<h.length;i++){if(h[i].from<=key)v=h[i].amount;else break}
+ return v;
+}
+/* 대상 달(y,m)부터 적용되는 예산을 이력에 기록 — 같은 달에 이미 항목이 있으면 덮어쓰고, 없으면 from 오름차순을 유지하며 삽입 */
+function setBudgetFrom(c,y,m,amount){
+ DB.budgetHistory=DB.budgetHistory||{};
+ const h=DB.budgetHistory[c]=DB.budgetHistory[c]||[];
+ const key=budgetKey(y,m);
+ const idx=h.findIndex(e=>e.from===key);
+ if(idx>=0)h[idx].amount=amount;
+ else{h.push({from:key,amount});h.sort((a,b)=>a.from<b.from?-1:a.from>b.from?1:0)}
+}
+/* 예산이 설정된 카테고리만 골라 해당 달(y,m) 기준 전체 예산 대비 지출을 집계 — 예산이 하나도 없으면 budgetedTotal=0으로 '집계할 게 없음'을 나타낸다 */
+function totalBudgetSummary(rows,y,m){
  let budgetedTotal=0,spentOnBudgeted=0,overCount=0,unsetCount=0;
  rows.forEach(r=>{
-  const b=budgets[r.c]||0;
+  const b=budgetForMonth(r.c,y,m);
   if(b){budgetedTotal+=b;spentOnBudgeted+=r.v;if(r.v>b)overCount++}
   else unsetCount++;
  });
@@ -3762,9 +3788,9 @@ function totalBudgetSummary(rows,budgets){
 }
 function openSpendAnalysis(){
  const y=ST.ledger.y,m=ST.ledger.m;const rows=spendByCategory(y,m);const total=rows.reduce((s,r)=>s+r.v,0);
- const tb=totalBudgetSummary(rows,DB.budgets);const tbp=budgetProgress(tb.spentOnBudgeted,tb.budgetedTotal);
+ const tb=totalBudgetSummary(rows,y,m);const tbp=budgetProgress(tb.spentOnBudgeted,tb.budgetedTotal);
  const body=rows.length?rows.map((r,idx)=>{
-   const budget=(DB.budgets&&DB.budgets[r.c])||0;
+   const budget=budgetForMonth(r.c,y,m);
    const bp=budgetProgress(r.v,budget);
    const pct=budget?bp.pct:(total?Math.round(r.v/total*100):0);
    const barPct=budget?bp.barPct:(total?r.v/total*100:0);
@@ -3787,8 +3813,8 @@ function openSpendAnalysis(){
 }
 function openBudgetPrompt(idx){
  const y=ST.ledger.y,m=ST.ledger.m;const rows=spendByCategory(y,m);const r=rows[idx];if(!r)return;
- const cur=(DB.budgets&&DB.budgets[r.c])||'';
- openSheet(`<h3>${esc(r.c)} 예산 설정</h3><div class="desc">이번 달 ${esc(r.c)}에 쓸 수 있는 한도예요 · 매달 같은 금액으로 적용돼요</div>
+ const cur=budgetForMonth(r.c,y,m)||'';
+ openSheet(`<h3>${esc(r.c)} 예산 설정</h3><div class="desc">${m}월부터 ${esc(r.c)}에 쓸 수 있는 한도예요 · 바꾸기 전까지 이후 달에도 계속 적용돼요</div>
   <div class="field"><input id="budgetIn" type="number" inputmode="numeric" placeholder="예산 금액(원)" value="${cur||''}"></div>
   <div class="two-btn" style="margin-bottom:16px">${cur?`<button class="btn btn-soft cancel" onclick="delBudget(${idx})">예산 삭제</button>`:`<button class="btn btn-soft cancel" onclick="openSpendAnalysis()">취소</button>`}<button class="btn btn-primary" onclick="saveBudget(${idx})">저장</button></div>`);
  setTimeout(()=>{const el=$('budgetIn');el&&el.focus()},300);
@@ -3797,13 +3823,20 @@ function saveBudget(idx){
  const y=ST.ledger.y,m=ST.ledger.m;const rows=spendByCategory(y,m);const r=rows[idx];if(!r)return;
  const v=Math.round(Number(($('budgetIn')&&$('budgetIn').value)||0));
  if(!v||v<0){toast('올바른 금액을 입력해 주세요');return}
- DB.budgets=DB.budgets||{};DB.budgets[r.c]=v;save();toast('예산을 저장했어요');openSpendAnalysis();
+ setBudgetFrom(r.c,y,m,v);save();toast('예산을 저장했어요');openSpendAnalysis();
 }
 function delBudget(idx){
  const y=ST.ledger.y,m=ST.ledger.m;const rows=spendByCategory(y,m);const r=rows[idx];if(!r)return;
- const prev=DB.budgets&&DB.budgets[r.c];
- if(DB.budgets)delete DB.budgets[r.c];save();openSpendAnalysis();
- undoToast(`'${esc(r.c)}' 예산을 삭제했어요`,()=>{DB.budgets=DB.budgets||{};DB.budgets[r.c]=prev;save();renderCurrent();openSpendAnalysis();toast('되돌렸어요')});
+ const key=budgetKey(y,m);
+ const h=DB.budgetHistory&&DB.budgetHistory[r.c];
+ const existing=h?h.find(e=>e.from===key):null; /* 보고 있는 달에 정확히 일치하는 이력 항목이 이미 있었는지(있었다면 되돌릴 때 그 값으로, 없었다면 새로 추가한 0항목을 제거) */
+ const prevAmount=existing?existing.amount:undefined;
+ setBudgetFrom(r.c,y,m,0);save();openSpendAnalysis(); /* 과거 이력은 그대로 두고 이번 달부터 0(미설정)으로 되돌리는 항목만 추가 — 지난 달들의 초과/이내 표시는 보존됨 */
+ undoToast(`'${esc(r.c)}' 예산을 삭제했어요`,()=>{
+  if(existing)setBudgetFrom(r.c,y,m,prevAmount);
+  else{const hh=DB.budgetHistory&&DB.budgetHistory[r.c];if(hh){const i=hh.findIndex(e=>e.from===key);if(i>=0)hh.splice(i,1)}}
+  save();renderCurrent();openSpendAnalysis();toast('되돌렸어요')
+ });
 }
 function openMaturity(){
  const sav=DB.assets.filter(a=>a.type==='savings'&&a.maturityDate);
@@ -3897,21 +3930,21 @@ function delCat(k,i){const c=DB.categories[k][i];
  confirmSheet('카테고리 삭제',msg,'삭제',()=>{doDeleteCat(k,i)});}
 function doDeleteCat(k,i){const c=DB.categories[k][i];
  if(k==='income'&&c===ADJUST_CAT){toast('자동으로 생성되는 카테고리라 삭제할 수 없어요');return}
- DB.catIcon=DB.catIcon||{};DB.catVar=DB.catVar||{};DB.budgets=DB.budgets||{};
+ DB.catIcon=DB.catIcon||{};DB.catVar=DB.catVar||{};DB.budgetHistory=DB.budgetHistory||{};
  const recs=activeRecsForCat(k,c);
  const icon=DB.catIcon[catKey(k,c)];const wasVar=isVarCat(k,c);
- const hadBudget=k==='expense'&&DB.budgets&&c in DB.budgets;const budgetVal=hadBudget?DB.budgets[c]:undefined;
+ const hadBudget=k==='expense'&&DB.budgetHistory&&c in DB.budgetHistory;const budgetVal=hadBudget?DB.budgetHistory[c]:undefined;
  recs.forEach(r=>r.active=false);
  DB.categories[k].splice(i,1);
  delete DB.catIcon[catKey(k,c)];              /* 삭제 시 아이콘/변동/예산도 함께 정리 (동명 카테고리 재생성 시 이전 설정이 남지 않도록) */
  delete DB.catVar[catKey(k,c)];
- if(hadBudget)delete DB.budgets[c];
+ if(hadBudget)delete DB.budgetHistory[c];
  save();renderCurrent();openCatManage(k);
  undoToast(`'${c}' 카테고리를 삭제했어요`+(recs.length?` · 반복거래 ${recs.length}개 비활성화`:''),()=>{
   DB.categories[k].splice(i,0,c);
   if(icon)DB.catIcon[catKey(k,c)]=icon;
   if(wasVar)DB.catVar[catKey(k,c)]=true;
-  if(hadBudget){DB.budgets=DB.budgets||{};DB.budgets[c]=budgetVal}
+  if(hadBudget){DB.budgetHistory=DB.budgetHistory||{};DB.budgetHistory[c]=budgetVal}
   recs.forEach(r=>r.active=true);
   save();renderCurrent();openCatManage(k);toast('되돌렸어요')})}
 function renameCatSheet(k,i,keep){const cur=DB.categories[k][i];
@@ -3925,7 +3958,7 @@ function doRenameCat(k,i){const v=((catRenameDraft.name!=null?catRenameDraft.nam
  const old=DB.categories[k][i];
  if(k==='income'&&old===ADJUST_CAT){toast('자동으로 생성되는 카테고리라 이름을 바꿀 수 없어요');return}
  if(v!==old&&DB.categories[k].includes(v)){toast('이미 있는 카테고리예요');return}
- DB.catIcon=DB.catIcon||{};DB.catVar=DB.catVar||{};DB.budgets=DB.budgets||{};
+ DB.catIcon=DB.catIcon||{};DB.catVar=DB.catVar||{};DB.budgetHistory=DB.budgetHistory||{};
  const ic=catRenameDraft.icon||'';
  const wasVar=isVarCat(k,old);
  delete DB.catIcon[catKey(k,old)];            /* 이름 변경 시 아이콘 키도 이동 */
@@ -3936,7 +3969,7 @@ function doRenameCat(k,i){const v=((catRenameDraft.name!=null?catRenameDraft.nam
   DB.categories[k][i]=v;
   DB.txns.forEach(t=>{if(t.type===k&&t.category===old)t.category=v});
   DB.recurrences.forEach(r=>{if(r.type===k&&r.category===old){r.category=v;if(r.memo===old)r.memo=v}});
-  if(k==='expense'&&DB.budgets&&old in DB.budgets){DB.budgets[v]=DB.budgets[old];delete DB.budgets[old]} /* 이름 변경 시 예산 한도도 함께 이동 */
+  if(k==='expense'&&DB.budgetHistory&&old in DB.budgetHistory){DB.budgetHistory[v]=DB.budgetHistory[old];delete DB.budgetHistory[old]} /* 이름 변경 시 예산 이력도 함께 이동 */
  }
  save();renderCurrent();openCatManage(k);toast('카테고리를 수정했어요')}
 
