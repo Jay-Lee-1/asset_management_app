@@ -1288,7 +1288,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.34.0';
+const APP_VERSION='1.35.0';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1654,16 +1654,33 @@ async function resolveCloudForcePush(){
 function confirmCloudForcePush(){
  confirmSheet('내 데이터로 덮어쓰기','다른 기기에 저장된 더 최신 데이터가 사라져요.<br><span style="color:var(--text-2);font-size:13px">이 작업은 되돌릴 수 없어요.</span>','덮어쓰기',()=>{resolveCloudForcePush()});
 }
+function genSalt(){const b=new Uint8Array(16);crypto.getRandomValues(b);return Array.from(b,x=>x.toString(16).padStart(2,'0')).join('')}
+/* PBKDF2-SHA256 120000회 반복 — Web Crypto는 브라우저와 Node(crypto.webcrypto) 양쪽에서
+ * 같은 API 모양(subtle.importKey/deriveBits)이라 test/run.js에서도 그대로 돌릴 수 있다. */
+async function pbkdf2Hash(pw,saltHex){
+ const salt=new Uint8Array(saltHex.match(/.{2}/g).map(h=>parseInt(h,16)));
+ const keyMaterial=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw),{name:'PBKDF2'},false,['deriveBits']);
+ const bits=await crypto.subtle.deriveBits({name:'PBKDF2',salt,iterations:120000,hash:'SHA-256'},keyMaterial,256);
+ return Array.from(new Uint8Array(bits),b=>b.toString(16).padStart(2,'0')).join('');
+}
 const AUTH={
  _accts(){try{return JSON.parse(localStorage.getItem('asset_app_accounts')||'{}')}catch(e){return {}}},
  _write(a){localStorage.setItem('asset_app_accounts',JSON.stringify(a))},
- _hash(s){let h=5381;for(let i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(i))>>>0;return h.toString(16)},
+ /* 구버전(salt 없는 DJB2) 계정을 로그인 성공 시 PBKDF2로 레이지 마이그레이션하기 위한 구식 해시.
+  * 새 계정은 더 이상 이걸 쓰지 않는다 — 검증에서만 쓰고 신규 저장에는 절대 쓰지 않는다. */
+ _legacyHash(s){let h=5381;for(let i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(i))>>>0;return h.toString(16)},
+ _fails(){try{return JSON.parse(localStorage.getItem('asset_app_login_fails')||'{}')}catch(e){return {}}},
+ _writeFails(f){localStorage.setItem('asset_app_login_fails',JSON.stringify(f))},
+ /* 5회 연속 실패부터 지수 백오프(최대 30초) — 같은 기기를 쓰는 다른 사람의 무차별 대입을 늦춘다. */
+ _lockStatus(key){const f=this._fails()[key];if(!f||f.count<5)return{locked:false};const waitMs=Math.min(30000,1000*Math.pow(2,f.count-5));const elapsed=Date.now()-f.last;if(elapsed>=waitMs)return{locked:false};return{locked:true,waitSec:Math.ceil((waitMs-elapsed)/1000)}},
+ _recordFail(key){const f=this._fails();f[key]={count:((f[key]&&f[key].count)||0)+1,last:Date.now()};this._writeFails(f)},
+ _clearFails(key){const f=this._fails();if(f[key]){delete f[key];this._writeFails(f)}},
  current(){return SESSION||null},
  exists(email){return !!this._accts()[emailKey(email)]},
  async signUp(email,pw){
   email=(email||'').trim();
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))return{err:'이메일 형식을 확인해 주세요'};
-  if((pw||'').length<4)return{err:'비밀번호는 4자 이상이어야 해요'};
+  if((pw||'').length<8)return{err:'비밀번호는 8자 이상이어야 해요'};
   if(sbReady()){
    try{
     const{data,error}=await SB.auth.signUp({email,password:pw});
@@ -1673,7 +1690,9 @@ const AUTH={
     return{ok:true,email,cloud:true,uid:data.session.user.id};
    }catch(e){return{err:'클라우드 연결에 실패했어요 · 인터넷 연결을 확인해 주세요'}}
   }
-  const a=this._accts();if(a[emailKey(email)])return{err:'이미 가입된 이메일이에요'};a[emailKey(email)]={email,pass:this._hash(pw),created:Date.now()};this._write(a);return{ok:true,email};
+  const a=this._accts();if(a[emailKey(email)])return{err:'이미 가입된 이메일이에요'};
+  const salt=genSalt();
+  a[emailKey(email)]={email,salt,pass:await pbkdf2Hash(pw,salt),created:Date.now()};this._write(a);return{ok:true,email};
  },
  async signIn(email,pw){
   email=(email||'').trim();
@@ -1690,7 +1709,23 @@ const AUTH={
     return{ok:true,email,cloud:true,uid:data.session.user.id};
    }catch(e){return{err:'클라우드 연결에 실패했어요 · 인터넷 연결을 확인해 주세요'}}
   }
-  const a=this._accts();const rec=a[emailKey(email)];if(!rec)return{err:'가입되지 않은 이메일이에요'};if(rec.pass!==this._hash(pw||''))return{err:'비밀번호가 일치하지 않아요'};return{ok:true,email:rec.email};
+  const key=emailKey(email);
+  const lock=this._lockStatus(key);
+  if(lock.locked)return{err:`너무 많이 틀렸어요 · ${lock.waitSec}초 후 다시 시도해 주세요`};
+  const a=this._accts();const rec=a[key];
+  if(!rec)return{err:'가입되지 않은 이메일이에요'};
+  let ok=false;
+  if(rec.salt){
+   ok=(await pbkdf2Hash(pw||'',rec.salt))===rec.pass;
+  }else if(rec.pass){
+   ok=rec.pass===this._legacyHash(pw||'');
+   if(ok){
+    const salt=genSalt();rec.salt=salt;rec.pass=await pbkdf2Hash(pw,salt);a[key]=rec;this._write(a);
+   }
+  }
+  if(!ok){this._recordFail(key);return{err:'비밀번호가 일치하지 않아요'}}
+  this._clearFails(key);
+  return{ok:true,email:rec.email};
  },
  setSession(email){SESSION=email||'';localStorage.setItem('asset_app_session',SESSION)},
  kakaoUpsert(id,nick){const a=this._accts();if(!a[emailKey(id)])a[emailKey(id)]={email:id,kakao:true,nick:nick||'',created:Date.now()};else if(nick)a[emailKey(id)].nick=nick;this._write(a)},

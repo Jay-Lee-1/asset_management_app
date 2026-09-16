@@ -19,8 +19,15 @@ const src = fs.readFileSync(HTML_PATH, 'utf8');
 
 function extractFunction(name) {
   const marker = `function ${name}(`;
-  const start = src.indexOf(marker);
+  let start = src.indexOf(marker);
   if (start === -1) throw new Error(`extractFunction: "${name}" 함수를 index.html에서 찾지 못함`);
+  // pbkdf2Hash처럼 `async function name(`으로 선언된 경우 "function name(" 앞의 "async "도
+  // 함께 가져와야 한다 — 안 그러면 추출된 소스에 await만 남고 async가 빠져 vm에서
+  // "await is only valid in async functions" SyntaxError가 난다.
+  const ASYNC_PREFIX = 'async ';
+  if (start >= ASYNC_PREFIX.length && src.slice(start - ASYNC_PREFIX.length, start) === ASYNC_PREFIX) {
+    start -= ASYNC_PREFIX.length;
+  }
   const braceStart = src.indexOf('{', start);
   let depth = 0, i = braceStart;
   for (; i < src.length; i++) {
@@ -76,6 +83,7 @@ const FUNCTIONS = [
   'detectStaleMarketValuedTxns', 'delBudget',
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards',
   'rateUnknown', 'filteredHist', 'histInvalidate',
+  'genSalt', 'pbkdf2Hash',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -189,6 +197,10 @@ const sandbox = {
   // 부르는 즉시 시세 동기화 — 실제 네트워크 호출 대신 호출 여부만 기록한다.
   syncRatesCalls: [],
   syncRates: (silent) => { sandbox.syncRatesCalls.push(silent); },
+  // genSalt/pbkdf2Hash(비밀번호 해싱)는 브라우저와 동일한 Web Crypto API 모양을 쓰므로,
+  // Node 19+의 전역 webcrypto를 그대로 넘기면 index.html과 같은 소스가 그대로 돌아간다.
+  crypto,
+  TextEncoder,
 };
 vm.createContext(sandbox);
 vm.runInContext(extracted, sandbox, { filename: 'extracted-from-index.html' });
@@ -2354,21 +2366,54 @@ test('renderHistory: 전체 내역 화면을 다시 그릴 때마다 _histCache.
   assert.ok(/^\s*_histCache\.key\s*=\s*null/m.test(body), 'renderHistory()가 함수 맨 앞에서 _histCache.key를 비우지 않음');
 });
 
+/* ---------- genSalt/pbkdf2Hash: 로컬 계정 비밀번호가 salt·반복 없는 DJB2 체크섬이라
+ * 같은 기기를 쓰는 다른 사람이 DevTools에서 몇 초 안에 뚫을 수 있던 문제를 PBKDF2로 교체 ---------- */
+test('genSalt: 매번 다른 32자 hex 문자열을 만든다(고정 salt로 레인보우 테이블에 뚫리지 않도록)', () => {
+  const a = sandbox.genSalt();
+  const b = sandbox.genSalt();
+  assert.match(a, /^[0-9a-f]{32}$/);
+  assert.notStrictEqual(a, b, '매 호출마다 랜덤해야 하는데 같은 salt가 나옴');
+});
+test('pbkdf2Hash: 같은 비밀번호·salt면 항상 같은 해시를 돌려준다(로그인 시 재현 가능해야 함)', async () => {
+  const salt = sandbox.genSalt();
+  const h1 = await sandbox.pbkdf2Hash('correct horse battery staple', salt);
+  const h2 = await sandbox.pbkdf2Hash('correct horse battery staple', salt);
+  assert.strictEqual(h1, h2);
+  assert.match(h1, /^[0-9a-f]{64}$/, 'SHA-256 256bit 출력이므로 64자 hex여야 함');
+});
+test('pbkdf2Hash: 비밀번호가 다르면 같은 salt라도 다른 해시가 나온다', async () => {
+  const salt = sandbox.genSalt();
+  const h1 = await sandbox.pbkdf2Hash('password-one', salt);
+  const h2 = await sandbox.pbkdf2Hash('password-two', salt);
+  assert.notStrictEqual(h1, h2);
+});
+test('pbkdf2Hash: 같은 비밀번호라도 salt가 다르면 다른 해시가 나온다(무지개 테이블 방어의 핵심)', async () => {
+  const s1 = sandbox.genSalt();
+  const s2 = sandbox.genSalt();
+  const h1 = await sandbox.pbkdf2Hash('same-password', s1);
+  const h2 = await sandbox.pbkdf2Hash('same-password', s2);
+  assert.notStrictEqual(h1, h2);
+});
+
 /* ---------- 실행 ---------- */
-let pass = 0, fail = 0;
-for (const { name, fn } of tests) {
-  try {
-    fn();
-    pass++;
-    console.log(`  ok - ${name}`);
-  } catch (e) {
-    fail++;
-    console.error(`  FAIL - ${name}`);
-    console.error(`    ${e.message}`);
+// pbkdf2Hash는 Web Crypto(subtle.deriveBits)를 쓰는 비동기 함수라, 러너도 async test를
+// 지원해야 한다 — sync test는 그냥 await해도 즉시 반환되므로 기존 테스트에는 영향 없다.
+(async () => {
+  let pass = 0, fail = 0;
+  for (const { name, fn } of tests) {
+    try {
+      await fn();
+      pass++;
+      console.log(`  ok - ${name}`);
+    } catch (e) {
+      fail++;
+      console.error(`  FAIL - ${name}`);
+      console.error(`    ${e.message}`);
+    }
   }
-}
-console.log(`\n${pass}/${tests.length} passed`);
-if (fail > 0) {
-  console.error(`${fail} test(s) failed`);
-  process.exit(1);
-}
+  console.log(`\n${pass}/${tests.length} passed`);
+  if (fail > 0) {
+    console.error(`${fail} test(s) failed`);
+    process.exit(1);
+  }
+})();
