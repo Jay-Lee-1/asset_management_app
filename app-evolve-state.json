@@ -1,15 +1,8 @@
 {
   "cycle": 34,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 26,
-      "phase": "critique",
-      "timestamp": "2026-09-15T14:05:00.000Z",
-      "summary": "cycle26 review(977c6e5)가 문제 없음으로 끝낸 직후, 최근 develop/advance 커밋 재검토보다 구조적 결함을 찾는 데 집중해 Explore 서브에이전트로 아키텍처/UX/성능/접근성/에러상태 전반을 훑었다. recDates()(index.html:1771-1801)의 daily/weekly 분기가 from을 필터링에만 쓰고 항상 r.startDate부터 순회를 시작해, 수년 전 시작된 반복거래일수록 매 호출 비용이 커지는 것을 발견해 직접 코드로 확인(1793-1799). expandRec()/allTxns()에는 balanceAt의 _balCache 같은 캐시가 전혀 없다는 점도 확인. 또한 renderHome()(1989)이 계산한 planNegatives()를 renderCurrent()(5175-5178)가 홈 탭에서도 updateAlerts()(4725-4726)를 통해 무조건 재계산하는 중복도 grep으로 직접 확인(다른 5개 탭은 updateAlerts가 유일한 계산처라 중복 아님). save()->renderCurrent()로 거의 모든 입력 후 도는 핫패스라 채택. 후보로 검토했으나 보류한 것: 클라우드 동기화 충돌 처리(이미 isCloudConflict/localHasUnsyncedChanges로 견고, 명백한 결함 아님), render 계열 함수의 테스트 커버리지 부재(실질적 결함이 아니라 인프라 투자라 이번 사이클엔 후순위), 5492줄 단일 모놀리스 구조(고치려면 재작성 규모라 범위 밖). pending_advance_plan에 시작점 최적화 + 캐시 + 중복 호출 제거 계획 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 26,
       "phase": "develop",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-16T20:09:07.000Z",
       "summary": "AUTH 로컬 계정 비밀번호 해시를 무salt DJB2에서 salt+PBKDF2-SHA256(120000회)로 교체. 기존 계정은 다음 로그인 성공 시 레이지 마이그레이션. signUp 최소 비밀번호 길이 4->8자. signIn에 계정별 실패 카운트 기반 지수 백오프(5회부터 최대 30초) 추가. genSalt/pbkdf2Hash 회귀 테스트 4개 추가(test/run.js가 async 테스트와 async function 추출을 지원하도록 확장). APP_VERSION 1.35.0, sw.js CACHE v103.",
+      "commit": null
+    },
+    {
+      "cycle": 34,
+      "phase": "develop",
+      "timestamp": "2026-09-16T21:15:00.000Z",
+      "summary": "Explore 서브에이전트로 sibling-function 누락 패턴을 위주로 훑어, 저축 통장을 편집하면서 '만기 시 이체할 통장'으로 자기 자신을 고를 수 있던 실제 버그를 발견해 수정했다. asOpenMat()(index.html:2637)이 여는 openAssetPicker({cashOnly:true,...})는 편집 중인 자산 자신을 목록에서 빼는 필터가 없어, savings 타입이 isCashLike에 포함된다는 점과 맞물려 자기 자신이 선택지에 그대로 나타났다. saveTx()/saveRec()는 저장 시점에 fromAssetId===toAssetId 가드가 있고(3052, 3233) 같은 기능 영역의 findDonors()도 excludeId 개념(target 제외)을 이미 갖고 있는데, 이 경로만 picker 필터와 실행 시점 가드 둘 다 빠져 있었다 — asOpenMat이 그 sibling 격. 그대로 두면 만기 알림 시트(openMaturity)에서 '이체' 버튼을 눌렀을 때 doMaturity()(3897)가 검증 없이 fromAssetId===toAssetId인 자기 자신 이체 거래를 조용히 원장에 남기고 만기일을 지웠다. openAssetPicker(index.html:5328)에 excludeId 옵션을 추가해(o.excludeId면 items에서 해당 id 제외) asOpenMat이 자기 asDraft.id를 넘기도록 고쳤고, doMaturity()에도 target.id===a.id면 거래를 만들지 않고 안내 토스트만 띄우는 방어 가드를 추가했다(이미 self-target으로 저장된 기존 DB 데이터 대비 실행 시점 가드도 필요). test/run.js에 doMaturity를 새로 추출하고 회귀 테스트 3개 추가: openAssetPicker excludeId로 지정한 자산만 목록에서 빠지고 나머지는 남는지, doMaturity가 self-target이면 거래를 안 만들고 안내만 하는지(수정 전으로 되돌려 실제로 자기 자신 이체 거래가 생김을 확인 후 재적용), 정상적인 다른 자산 대상이면 기존처럼 이체 거래가 생기고 만기일이 지워지는지. 230/230 통과(기존 226+신규 4: openAssetPicker excludeId 1개, doMaturity 3개). 두 인라인 <script> 블록 모두 vm.Script 파싱 확인. APP_VERSION 1.35.0->1.35.1, sw.js CACHE v103->v104.",
       "commit": null
     }
   ]

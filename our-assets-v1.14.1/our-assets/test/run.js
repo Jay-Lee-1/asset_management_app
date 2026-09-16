@@ -79,7 +79,7 @@ const FUNCTIONS = [
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
   'clampDay', 'saveTx', 'assetBase', 'balancesUpTo', 'balanceAt',
   'addBalanceAdjust', 'updateBalanceAdjust', 'toggleConfirmTransfers',
-  'assetEval', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'delOwner',
+  'assetEval', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'delOwner', 'doMaturity',
   'detectStaleMarketValuedTxns', 'delBudget',
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards',
   'rateUnknown', 'filteredHist', 'histInvalidate',
@@ -2174,6 +2174,56 @@ test('openAssetPicker: cashOnly(만기이체 picker)는 excludeMarketValued 없�
   assert.ok(!html.includes('data-val="a_usd"'));
   assert.ok(!html.includes('data-val="a_gold"'));
   assert.ok(!html.includes('data-val="a_samsung"'));
+});
+test('openAssetPicker: excludeId(만기이체 picker에서 자기 자신 제외)를 넘기면 그 자산은 목록에서 빠지고 나머지는 그대로 남는다', () => {
+  setupAssetPickerDB();
+  sandbox.lastPickerHtml = null;
+  sandbox.openAssetPicker({ cashOnly: true, excludeId: 'a_sav', onPick: () => {} });
+  const html = sandbox.lastPickerHtml;
+  assert.ok(html.includes('data-val="a_cash"'), '다른 현금성 자산은 그대로 있어야 함');
+  assert.ok(!html.includes('data-val="a_sav"'), 'excludeId로 지정한 자산 본인은 빠져야 함');
+});
+
+/* ---------- doMaturity: 저축 통장 자신을 '만기 시 이체할 통장'으로 골라둔 채 만기 이체를 실행하면
+ * fromAssetId===toAssetId인 자기 자신 이체 거래가 조용히 생기던 버그(app-evolve cycle34 develop).
+ * saveTx()/saveRec()는 저장 시점에 `fromAssetId===toAssetId` 가드가 있는데(3052, 3233),
+ * asOpenMat()이 여는 openAssetPicker(cashOnly)엔 수정 중인 자산 자신을 빼는 필터가 없어서
+ * 골라둘 수 있었고, doMaturity()도 대상 검증 없이 그대로 거래를 push했다. openAssetPicker에
+ * excludeId 옵션을 추가해 picker 단계에서 막고, doMaturity()에도 방어적으로 같은 가드를 추가했다.
+ * (기존 DB에 이미 self-target으로 저장된 자산이 있을 수 있어 실행 시점 가드도 필요) ---------- */
+function setupMaturityDB() {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.DB = {
+    settings: { confirmTransfers: false },
+    assets: [
+      { id: 'a_sav', name: '적금', type: 'savings', owner: '나', baseAmount: 5000, maturityDate: '2026-06-10', maturityTargetId: 'a_sav', includeInTotal: true },
+      { id: 'a_cash', name: '지갑', type: 'cash', owner: '나', baseAmount: 10000, includeInTotal: true },
+    ],
+    txns: [],
+    recurrences: [],
+    rates: {},
+  };
+  sandbox._balCache.clear();
+  sandbox.toastCalls = [];
+}
+test("doMaturity: maturityTargetId가 자기 자신이면 거래를 만들지 않고 안내만 한다", () => {
+  setupMaturityDB();
+  const before = sandbox.DB.txns.length;
+  sandbox.doMaturity('a_sav');
+  assert.strictEqual(sandbox.DB.txns.length, before, '자기 자신 이체 거래가 생기면 안 됨');
+  assert.strictEqual(sandbox.DB.assets.find(a => a.id === 'a_sav').maturityDate, '2026-06-10', '실행 안 됐으니 만기일도 그대로 남아야 함');
+  assert.ok(sandbox.toastCalls.some(m => m.includes('자기 자신')), '자기 자신 이체를 막았다는 안내가 떠야 함');
+});
+test('doMaturity: 정상적인 다른 자산이 대상이면 기존처럼 이체 거래가 생기고 만기일이 지워진다', () => {
+  setupMaturityDB();
+  sandbox.DB.assets.find(a => a.id === 'a_sav').maturityTargetId = 'a_cash';
+  const before = sandbox.DB.txns.length;
+  sandbox.doMaturity('a_sav');
+  assert.strictEqual(sandbox.DB.txns.length, before + 1);
+  const t = sandbox.DB.txns[sandbox.DB.txns.length - 1];
+  assert.strictEqual(t.fromAssetId, 'a_sav');
+  assert.strictEqual(t.toAssetId, 'a_cash');
+  assert.strictEqual(sandbox.DB.assets.find(a => a.id === 'a_sav').maturityDate, null);
 });
 
 /* ---------- detectStaleMarketValuedTxns: excludeMarketValued(cycle27) 적용 이전에 이미

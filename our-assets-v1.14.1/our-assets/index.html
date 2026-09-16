@@ -1288,7 +1288,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.35.0';
+const APP_VERSION='1.35.1';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2634,7 +2634,7 @@ function syncAssetInputs(){const d=asDraft;const g=id=>$(id);
  if(g('asQty'))d.stockQty=Math.max(0,parseFloat((g('asQty').value||'0').replace(/,/g,''))||0);}
 function asOpenType(){syncAssetInputs();openTypePicker({current:asDraft.type,back:()=>renderAssetSheet(!!asDraft.id),onPick:k=>{asDraft.type=k;if(k==='pension')asDraft.includeInTotal=false;if(k==='savings'&&!asDraft.maturityTargetId)asDraft.maturityTargetId=firstCash();renderAssetSheet(!!asDraft.id)}})}
 function asOpenOwner(){syncAssetInputs();openOwnerPicker({current:asDraft.owner,back:()=>renderAssetSheet(!!asDraft.id),onPick:o=>{asDraft.owner=o;renderAssetSheet(!!asDraft.id)}})}
-function asOpenMat(){syncAssetInputs();openAssetPicker({current:asDraft.maturityTargetId,title:'만기 시 이체할 통장',cashOnly:true,back:()=>renderAssetSheet(!!asDraft.id),onPick:id=>{asDraft.maturityTargetId=id;renderAssetSheet(!!asDraft.id)}})}
+function asOpenMat(){syncAssetInputs();openAssetPicker({current:asDraft.maturityTargetId,title:'만기 시 이체할 통장',cashOnly:true,excludeId:asDraft.id,back:()=>renderAssetSheet(!!asDraft.id),onPick:id=>{asDraft.maturityTargetId=id;renderAssetSheet(!!asDraft.id)}})}
 function renderAssetSheet(editing){
  const d=asDraft;const ty=ASSET_TYPES[d.type];
  const typePick=`<div class="field"><label>자산 종류</label><button class="pick" onclick="asOpenType()"><div class="pav ${ty.cls}">${svg(ty.icon)}</div><div class="pbody"><div class="pn">${ty.label}</div></div><div class="pc">${svg('chevR')}</div></button></div>`;
@@ -3896,6 +3896,7 @@ function openMaturity(){
 }
 function doMaturity(id){if(twGuard())return;const a=DB.assets.find(x=>x.id===id);const target=DB.assets.find(x=>x.id===a.maturityTargetId);
  if(!target){toast('이체할 통장을 먼저 지정하세요');return}
+ if(target.id===a.id){toast('자기 자신으로는 이체할 수 없어요. 이체할 통장을 다시 선택해주세요');return}
  const amt=assetEval(a);
  const date=a.maturityDate<=TODAY?a.maturityDate:TODAY;
  DB.txns.push({id:uid(),type:'transfer',date,category:'이체',memo:`${a.name} 만기 이체`,amount:amt,
@@ -5325,7 +5326,7 @@ function openPicker(title,bodyHtml,back){window._pkBack=back||null;
  openSheet(`<div class="pk-h">${title}</div>`+bodyHtml, back?topBtn:undefined);}
 function pkBack(){const b=window._pkBack;window._pkBack=null;if(b)sheetSlideBack(b);else closeSheet()}
 function openAssetPicker(o){o=o||{};let html='';
- DB.settings.groupOrder.forEach(t=>{let items=DB.assets.filter(a=>a.type===t);if(o.cashOnly)items=items.filter(isCashLike);if(o.excludeMarketValued)items=items.filter(a=>!isMarketValued(a));if(!items.length)return;
+ DB.settings.groupOrder.forEach(t=>{let items=DB.assets.filter(a=>a.type===t);if(o.cashOnly)items=items.filter(isCashLike);if(o.excludeMarketValued)items=items.filter(a=>!isMarketValued(a));if(o.excludeId)items=items.filter(a=>a.id!==o.excludeId);if(!items.length)return;
    html+=`<div class="pk-cap">${ASSET_TYPES[t].label}</div>`;
    items.forEach(a=>{const ty=ASSET_TYPES[a.type];const bal=a.type==='debt'?-assetEval(a):assetEval(a);
      html+=`<button class="pk-item hasamt ${a.id===o.current?'on':''}" data-val="${a.id}" onclick="pkPickAsset('${a.id}')"><div class="pav ${ty.cls}">${svg(ty.icon)}</div><div class="pbody"><div class="pn">${esc(a.name)}</div><div class="psub"><span class="chipmini own-${esc(a.owner)}">${esc(a.owner)}</span>${ty.label}</div></div><div class="amt num">${comma(bal)}원</div></button>`;});
