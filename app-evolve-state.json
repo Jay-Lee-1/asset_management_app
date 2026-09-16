@@ -1,15 +1,8 @@
 {
   "cycle": 32,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 30,
-      "phase": "review",
-      "timestamp": "2026-09-16T04:05:00.000Z",
-      "summary": "develop 커밋(189915b, 토스트에 aria-live 리전 추가)을 검토했다. #ariaLivePolite/#ariaLiveAssertive 두 리전이 기존에 중복 없이(grep으로 확인) 새로 추가됐고, announceLive()가 textContent를 비웠다가 30ms 뒤 다시 채우는 방식이 동일 문구 연속 알림 시에도 재공지되도록 하는 표준 패턴임을 확인. toast()/undoToast()는 polite, toastFail()은 assertive로 올바르게 분리됐고, textContent 대입이라 esc() 없이도 XSS 위험 없음. .sr-only 클래스는 CSS 전용 유틸리티라 다른 요소에 영향 없음. 두 인라인 <script> 블록 모두 node --check 통과, 190/190 회귀 테스트 통과(로직 변경이 아니라 신규 테스트 불필요하다는 develop 사이클의 판단에 동의). 문제 없음.",
-      "commit": null
-    },
     {
       "cycle": 28,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-16T10:14:33.026Z",
       "summary": "critique 계획대로 구현했다. rateUnknown(a)(index.html:1940, isMarketValued 옆) 순수 함수를 새로 추가해 fx는 R.fx[currency]==null, gold는 !R.goldPerG, stock은 R.stocks[stockCode]==null로 '시세를 한 번도 못 받아온 상태'를 실제 0원과 구분한다. saveAsset()이 새 stockCode 등록 시 DB.rates.stocks[code]=0으로 미리 채우던 줄을 없애(이제 키 자체가 안 생김) rateUnknown이 오작동하지 않게 했고, 저장 직전(변이 전) rateUnknown(d)를 rateWasUnknown에 저장해뒀다가 save()/closeSheet()/renderCurrent()/toast() 뒤에 그 값이 참이면 autoSyncRates()의 10분 TTL을 우회해 syncRates(true)를 즉시(fire-and-forget) 호출한다 — 이미 시세를 아는 자산 수정/기존 통화 재사용 시엔 호출 안 됨을 테스트로 확인. 삭제된 동명 자산 재연동 플로우(askRelinkDeleted, _amLink/_amFresh)에도 saveAsset()과 동일한 rateWasUnknown 트리거를 넣어 동일 버그가 그 경로에서도 재발하지 않게 했다. UI에도 반영: 자산 목록 카드(assetBodyHTML)에서 rateUnknown(a)이면 기존 '평가액' 라벨 대신 빨간 '가격 미확인' 배지(.mini.warn, --expense 컬러 재사용)를 보여주고, 홈 화면 시세 카드(mktRows)는 0원 대신 '미확인' 배지를, 시세 연동 관리 시트(openRateSheet)는 rsub에 '· 미확인'을 덧붙인다. test/run.js에 rateUnknown 자체 판정 테스트 2개(시세 타입별 참/거짓, 무관 타입은 항상 거짓)와 saveAsset 관련 테스트 4개(새 종목코드 등록 시 stocks[code]가 0으로 채워지지 않고 undefined로 남는지 + syncRates(true) 호출, 이미 아는 종목 수정 시 미호출, 새 통화는 호출·이미 보유 중인 통화는 미호출)를 추가했다. deletedAssetHistoryExists/askRelinkDeleted/clampRecurringToMaturity/syncRates가 이전엔 어떤 테스트에서도 실제로 호출된 적이 없어(둘 다 dup 차단 경로만 테스트) 새로 스텁을 추가해야 했다. 205/205 통과(기존 199+신규 6). 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.31.2->1.32.0(advance라 minor bump), sw.js CACHE v98->v99. pending_advance_plan 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 32,
+      "phase": "develop",
+      "timestamp": "2026-09-16T11:12:51.000Z",
+      "summary": "전체 내역(History) 탭의 _histCache가 날짜범위|카테고리|검색어로만 캐시 키를 만들어, saveTx()/recApply()/deleteTxnsUndo() 등으로 DB.txns가 바뀌어도(내역 추가/수정/삭제) 필터를 안 건드리면 renderHistory()가 예전 목록을 그대로 보여주던 실제 버그를 발견해 수정했다. renderHistory()는 매번 페이지 전체를 innerHTML로 새로 그리면서도 _histCache를 비우지 않아, 전체 내역 탭에서 항목을 편집·삭제·추가한 직후 화면이 갱신되지 않거나(추가 항목 누락) 삭제한 항목이 계속 보이거나, saveTx()가 DB.txns[i]=d로 객체 참조를 통째로 교체하는 경로에서는 캐시가 낡은 객체를 그대로 들고 있는 문제였다. histMore()/avgMode 토글/선택모드처럼 필터를 안 바꾸고 updateHist()만 다시 부르는 다른 호출부들은 캐시가 유효해야 하는 정상 케이스라, 개별 mutation 함수마다 histInvalidate()를 흩뿌리는 대신(누락 위험) renderHistory() 맨 앞에서 _histCache.key만 비우는 방식으로 고쳤다(ST.hist.page는 histInvalidate()와 달리 건드리지 않아 탭 전환 시 스크롤/페이지 유지도 그대로 보존됨). test/run.js에 filteredHist/histInvalidate를 새로 추출하고(let로 재대입되는 _histCache를 끌어오기 위해 extractConst 옆에 extractLet 헬퍼 추가) 회귀 테스트 4개 추가: 캐시 키가 그대로면 DB.txns 변경이 캐싱 전제대로 반영 안 되는지 확인, _histCache.key=null 이후엔 추가/수정 모두 반영되는지, histInvalidate()가 여전히 page도 1로 리셋하는지(필터 변경 시 기존 동작 보존), renderHistory() 소스에 _histCache.key=null 호출이 실제로 남아있는지(수정 전으로 되돌려서 이 마지막 테스트가 실제로 실패함을 확인 후 재적용). 209/209 통과(기존 205+신규 4). 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.32.0->1.32.1(버그 fix라 patch bump), sw.js CACHE v99->v100.",
       "commit": null
     }
   ]

@@ -44,6 +44,18 @@ function extractConst(name) {
   return src.slice(start + 'const '.length, end + 1);
 }
 
+// _histCache처럼 재대입(_histCache={key,list})되는 모듈 스코프 캐시는 const가 아니라
+// let으로 선언돼 있어 extractConst의 "const " 마커로는 못 찾는다 — 같은 이유(realm에 안 붙음)로
+// "let "만 떼서 평범한 대입문으로 바꾼다.
+function extractLet(name) {
+  const marker = `let ${name}=`;
+  const start = src.indexOf(marker);
+  if (start === -1) throw new Error(`extractLet: "${name}" 선언을 index.html에서 찾지 못함`);
+  const end = src.indexOf(';', start);
+  if (end === -1) throw new Error(`extractLet: "${name}" 선언에 종료 ";"가 없음`);
+  return src.slice(start + 'let '.length, end + 1);
+}
+
 // 테스트 대상 + 그 대상이 내부에서 호출하는 순수 함수들.
 const FUNCTIONS = [
   'lastDay', 'addDays', 'shiftWeekend', 'recDates', 'addMonthsStr', 'addMonths',
@@ -63,15 +75,18 @@ const FUNCTIONS = [
   'assetEval', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'delOwner',
   'detectStaleMarketValuedTxns', 'delBudget',
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards',
-  'rateUnknown',
+  'rateUnknown', 'filteredHist', 'histInvalidate',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
 // _balCache/BAL_CACHE_MAX는 balancesUpTo()가 참조하는 모듈 스코프 캐시 상태라 같은 방식으로 끌어온다.
 // _recCache/REC_CACHE_MAX는 expandRec()가 참조하는 모듈 스코프 캐시 상태라 같은 방식으로 끌어온다.
-const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued'];
+const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL'];
+// _histCache는 filteredHist()가 재대입(={key,list})하는 let 선언이라 CONSTS(extractConst)로는
+// 못 끌어오므로 별도의 LETS 목록으로 extractLet을 통해 가져온다.
+const LETS = ['_histCache'];
 
-const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(extractConst).join('\n');
+const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(extractConst).join('\n') + '\n' + LETS.map(extractLet).join('\n');
 
 // doRenameCat()은 DB 조작 외에 UI 함수도 몇 개 부르므로($, toast, save, renderCurrent,
 // openCatManage) 여기선 아무 일도 안 하는 스텁으로 채운다 — 우리가 검증하려는 건
@@ -2150,6 +2165,46 @@ test('renderHome: 다 쓴 자산 정리 제안(emptyAssetCards)이 실제로 렌
   // renderHome()에 연결했다 — 다시 호출이 빠지면 이 테스트가 잡는다.
   const body = extractFunction('renderHome');
   assert.ok(body.includes('emptyAssetCards()'), 'renderHome()이 emptyAssetCards()를 호출하지 않음');
+});
+
+/* ---------- filteredHist/_histCache: 전체 내역 탭에서 내역 추가/수정/삭제 후 캐시가 낡은 목록을 보여주던 버그 ----------
+ * filteredHist()는 날짜범위|카테고리|검색어로만 캐시 키를 만들기 때문에, saveTx()/recApply()/
+ * deleteTxnsUndo() 등으로 DB.txns가 바뀌어도 필터를 안 건드리면 캐시 키가 그대로라 예전 목록을
+ * 계속 돌려줬다. renderHistory()가 매번 전체 페이지를 innerHTML로 새로 그리면서도 이 캐시를
+ * 안 비웠던 게 원인 — renderHistory() 맨 앞에서 _histCache.key=null을 하도록 고쳤다(page는 유지). */
+test('filteredHist: 캐시 키(범위/카테고리/검색어)가 그대로면 DB.txns가 바뀌어도 이전 목록을 그대로 돌려준다(캐싱 동작 자체 확인)', () => {
+  sandbox.DB = { txns: [{ id: 't1', type: 'expense', category: '식비', date: '2026-06-01', amount: 1000 }], recurrences: [] };
+  sandbox.ST = { hist: { range: { from: '2026-06-01', to: '2026-06-30' }, cat: '전체', q: '' } };
+  const first = sandbox.filteredHist();
+  assert.strictEqual(first.length, 1);
+  sandbox.DB.txns.push({ id: 't2', type: 'expense', category: '식비', date: '2026-06-02', amount: 2000 });
+  const second = sandbox.filteredHist();
+  assert.strictEqual(second.length, 1, '필터를 안 건드렸는데 캐시가 갱신됐다면 이 테스트 자체가 캐싱 전제를 잘못 이해한 것');
+});
+test('filteredHist: renderHistory()가 매번 하는 것처럼 _histCache.key를 비우면 DB.txns 최신 상태를 반영한 새 목록을 돌려준다', () => {
+  sandbox.DB = { txns: [{ id: 't1', type: 'expense', category: '식비', date: '2026-07-01', amount: 1000 }], recurrences: [] };
+  sandbox.ST = { hist: { range: { from: '2026-07-01', to: '2026-07-31' }, cat: '전체', q: '' } };
+  sandbox.filteredHist(); // 캐시를 한 번 채운다
+  sandbox.DB.txns[0] = { id: 't1', type: 'expense', category: '식비', date: '2026-07-01', amount: 9999 }; // saveTx()의 DB.txns[i]=d와 동일한 교체
+  sandbox.DB.txns.push({ id: 't2', type: 'income', category: '급여', date: '2026-07-15', amount: 5000 });
+  sandbox._histCache.key = null; // renderHistory()의 수정 부분
+  const list = sandbox.filteredHist();
+  assert.strictEqual(list.length, 2, '추가된 내역이 반영되지 않음');
+  assert.strictEqual(list.find((t) => t.id === 't1').amount, 9999, '수정된 내역이 반영되지 않고 옛 객체를 그대로 들고 있음');
+});
+test('histInvalidate: 캐시 키뿐 아니라 페이지도 1로 리셋한다(필터를 바꿀 때의 기존 동작, renderHistory 수정과 무관하게 유지)', () => {
+  sandbox.ST = { hist: { range: { from: '2026-06-01', to: '2026-06-30' }, cat: '전체', q: '', page: 3 } };
+  sandbox._histCache = { key: 'dummy', list: [] };
+  sandbox.histInvalidate();
+  assert.strictEqual(sandbox._histCache.key, null);
+  assert.strictEqual(sandbox.ST.hist.page, 1);
+});
+test('renderHistory: 전체 내역 화면을 다시 그릴 때마다 _histCache.key를 실제로 비운다(위 filteredHist 테스트들이 검증한 메커니즘이 실제로 연결돼 있는지)', () => {
+  // renderHistory()는 DOM($('page-history').innerHTML=...)을 직접 다루는 화면 함수라 이 테스트
+  // 파일에서 실행 가능한 순수 로직으로 추출하지 않는다(다른 render* 함수들과 동일한 이유) — 대신
+  // renderHome의 emptyAssetCards 연결 테스트와 같은 방식으로, 소스에 그 호출이 실제로 남아있는지 확인한다.
+  const body = extractFunction('renderHistory');
+  assert.ok(/^\s*_histCache\.key\s*=\s*null/m.test(body), 'renderHistory()가 함수 맨 앞에서 _histCache.key를 비우지 않음');
 });
 
 /* ---------- 실행 ---------- */
