@@ -472,6 +472,7 @@ body.dp-open .page{overflow:hidden}
 .flow-sub .sch-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);flex-shrink:0}
 .mini{font-size:11px;font-weight:600;color:var(--text-3);background:var(--sunken);padding:2px 7px;border-radius:var(--r-pill)}
 .mini.sch{background:var(--gold-soft);color:var(--gold)}
+.mini.warn{background:var(--expense-soft);color:var(--expense)}
 .swipe-content .amt{margin-left:auto;font-weight:700;font-size:15px;white-space:nowrap;padding-left:8px}
 .sel-check{width:22px;height:22px;border-radius:50%;border:2px solid var(--line-2);flex-shrink:0;display:grid;place-items:center;transition:transform .4s var(--bounce),background .2s,border-color .2s}
 .sel-check.on{background:var(--brand);border-color:var(--brand);transform:scale(1.12)}
@@ -1287,7 +1288,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.31.2';
+const APP_VERSION='1.32.0';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1935,6 +1936,16 @@ function balanceAt(id,dateStr){ /* 특정 일자 기준 잔액 — 예정·반�
 }
 const isCashLike=a=>a.type==='cash'||a.type==='savings';
 const isMarketValued=a=>a.type==='fx'||a.type==='gold'||a.type==='stock'; /* assetEval()이 원장과 무관하게 qty×시세로 평가 — 거래 입력의 통장으로 쓰면 순자산이 조용히 어긋남 */
+/* assetEval()/totalAssetAt()의 (R.fx[c]||0) 같은 폴백은 '아직 한 번도 시세를 못 받아온 상태'와
+   '실제 시세가 0원'을 구분하지 못해, 새로 등록한 fx/gold/stock 자산이 조용히 ₩0으로 평가돼도
+   어디에도 표시되지 않는다 — 그 미확인 상태만 따로 판정해 카드에 배지로 보여주기 위한 함수. */
+function rateUnknown(a){
+ if(!isMarketValued(a))return false;
+ const R=DB.rates;
+ if(a.type==='fx')return R.fx[a.currency]==null;
+ if(a.type==='gold')return !R.goldPerG;
+ return R.stocks[a.stockCode]==null;
+}
 const isPlanAcct=a=>a.type==='cash'; /* 한달 플랜 대상: 현금예금 통장만(저축 제외) */
 /* excludeMarketValued(cycle27)는 앞으로의 입력만 막을 뿐, 그 전에 이미 저장된
    DB.txns/DB.recurrences 중 fx/gold/stock 통장을 이체·지출·수입·저축 대상으로 쓴 기록은
@@ -2049,10 +2060,10 @@ function renderHome(){
 
  // 시세 (해당 자산 있을 때만)
  const R=DB.rates;const mkt=[];
- if(needGold())mkt.push({ic:'gold',cls:'a-gold',nm:'금 (순금 1g)',sub:'자동 연동',price:R.goldPerG});
- [...new Set(DB.assets.filter(a=>a.type==='fx').map(a=>a.currency))].forEach(c=>{mkt.push({ic:'fx',cls:'a-fx',nm:c,sub:'매매기준율',price:R.fx[c]||0});});
- DB.assets.filter(a=>a.type==='stock').forEach(a=>mkt.push({ic:'stock',cls:'a-stock',nm:a.name,sub:a.stockCode,price:R.stocks[a.stockCode]||0}));
- const mktRows=mkt.map(x=>`<div class="mkt-item"><div class="avatar ${x.cls}">${svg(x.ic)}</div><div><div class="nm">${esc(x.nm)}</div><div class="sub">${esc(x.sub)}</div></div><div class="val"><div class="price num">${comma(x.price)}원</div></div></div>`).join('');
+ if(needGold())mkt.push({ic:'gold',cls:'a-gold',nm:'금 (순금 1g)',sub:'자동 연동',price:R.goldPerG,unknown:rateUnknown({type:'gold'})});
+ [...new Set(DB.assets.filter(a=>a.type==='fx').map(a=>a.currency))].forEach(c=>{mkt.push({ic:'fx',cls:'a-fx',nm:c,sub:'매매기준율',price:R.fx[c]||0,unknown:rateUnknown({type:'fx',currency:c})});});
+ DB.assets.filter(a=>a.type==='stock').forEach(a=>mkt.push({ic:'stock',cls:'a-stock',nm:a.name,sub:a.stockCode,price:R.stocks[a.stockCode]||0,unknown:rateUnknown({type:'stock',stockCode:a.stockCode})}));
+ const mktRows=mkt.map(x=>`<div class="mkt-item"><div class="avatar ${x.cls}">${svg(x.ic)}</div><div><div class="nm">${esc(x.nm)}</div><div class="sub">${esc(x.sub)}</div></div><div class="val">${x.unknown?'<div class="mini warn">미확인</div>':`<div class="price num">${comma(x.price)}원</div>`}</div></div>`).join('');
 
  $('page-home').innerHTML=`
  <div class="hdr"><div class="hd-l"><div class="sub">우리의 자산</div><h1>🌱 이번 달 살림 💸</h1></div></div>
@@ -2404,7 +2415,7 @@ function assetBodyHTML(){
          <div class="avatar ${ty.cls}">${svg(ty.icon)}</div>
          <div style="flex:1;min-width:0"><div class="nm"><span class="nmt">${esc(a.name)}</span>${a.includeInTotal?'':'<span class="chipmini own-x">미포함</span>'}</div>
            <div class="sub"><span class="chipmini own-${esc(a.owner)}">${esc(a.owner)}</span><span>${assetSubline(a)}</span></div></div>
-         <div class="val"><div class="k num ${a.type==='debt'?'minus':''}">${won(val)}</div>${showEval?'<div class="s">평가액</div>':''}</div></div>`;
+         <div class="val"><div class="k num ${a.type==='debt'?'minus':''}">${won(val)}</div>${showEval?(rateUnknown(a)?'<div class="mini warn">가격 미확인</div>':'<div class="s">평가액</div>'):''}</div></div>`;
      }).join('')+`</div>`;
    });
  }
@@ -2498,6 +2509,7 @@ function deletedAssetHistoryExists(nm){
 }
 /* 삭제했던 동명 자산의 과거 내역과 연동할지 선택 */
 function askRelinkDeleted(d,entered,balType,balKey){
+ const rateWasUnknown=rateUnknown(d); /* saveAsset()과 동일하게, fx/gold/stock을 재연결·재등록할 때도 즉시 시세를 당겨온다 */
  window._amLink=()=>{ /* 연동: 과거 내역 재연결 + 삭제 시점 잔액에서 이어감 + 갭은 조정 내역 */
    DB.assets.push(d);relinkDeletedAsset(d);
    if(balType){
@@ -2510,12 +2522,14 @@ function askRelinkDeleted(d,entered,balType,balKey){
    }
    if(d.type==='savings'&&d.maturityDate)clampRecurringToMaturity(d.id,d.maturityDate);
    save();closeSheet();renderCurrent();toast('이전 자산과 연동했어요');
+   if(rateWasUnknown)syncRates(true);
  };
  window._amFresh=()=>{ /* 새로: 재연결 없이 별개 자산으로 */
    DB.assets.push(d);
    if(balType){const contrib=balanceAt(d.id,TODAY)-assetBase(d);d[balKey]=Math.round(entered-contrib);}
    if(d.type==='savings'&&d.maturityDate)clampRecurringToMaturity(d.id,d.maturityDate);
    save();closeSheet();renderCurrent();toast('자산을 등록했어요');
+   if(rateWasUnknown)syncRates(true);
  };
  openSheet(`<h3>이전에 삭제한 자산이 있어요</h3>
    <div class="desc" style="margin-bottom:20px">예전에 '<b>${esc(d.name)}</b>' (${ASSET_TYPES[d.type].label}) 자산을 삭제한 기록이 있어요.<br>그때의 <b>과거 내역을 이 자산에 다시 연결</b>할까요?</div>
@@ -2625,7 +2639,7 @@ function saveAsset(editing){
  if(twGuard())return;
  syncAssetInputs();const d=asDraft;
  d.name=d.name||ASSET_TYPES[d.type].label;
- if(d.type==='stock'&&d.stockCode&&!DB.rates.stocks[d.stockCode])DB.rates.stocks[d.stockCode]=0;
+ const rateWasUnknown=rateUnknown(d); /* stocks[code]를 미리 0으로 채우면 '미확인'과 '실제 0원'을 구분 못 하게 되므로 채우지 않음 — 대신 저장 후 즉시 시세를 당겨온다 */
  const balTypes=['cash','savings','realestate','etc','pension','debt'];
  const balType=balTypes.includes(d.type);
  const balKey=(d.type==='cash'||d.type==='savings')?'baseAmount':'amountKRW';
@@ -2661,6 +2675,7 @@ function saveAsset(editing){
  }
  if(d.type==='savings'&&d.maturityDate)clampRecurringToMaturity(d.id,d.maturityDate); /* 만기 후 이체 방지 */
  save();closeSheet();renderCurrent();toast(editing?'자산을 수정했어요':'자산을 등록했어요');
+ if(rateWasUnknown)syncRates(true); /* autoSyncRates()의 10분 TTL을 기다리지 않고 즉시 당겨와, 방금 등록한 자산이 순자산에서 조용히 ₩0으로 비는 시간을 줄임 */
 }
 /* 저축통장 만기일이 생기면, 그 통장으로 '입금'하는 반복의 종료일을 만기 직전 마지막 이체일로 맞춤.
    - 이미 종료일이 만기보다 이르면(더 빨리 끝나면) 그대로 둠(앞당기지 않음). 조용히 적용. */
@@ -3958,8 +3973,8 @@ function rateAutoLabel(){
 function openRateSheet(){
  const R=DB.rates;
  const fxCur=[...new Set(DB.assets.filter(a=>a.type==='fx').map(a=>a.currency))];
- const stockRows=DB.assets.filter(a=>a.type==='stock').map(a=>`<div class="rate-row"><div style="flex:1"><div class="rn">${esc(a.name)}</div><div class="rsub">${esc(a.stockCode)} 현재가</div></div><input class="num" inputmode="numeric" value="${comma(R.stocks[a.stockCode]||0)}" onchange="setRate('stock','${a.stockCode}',this.value)"></div>`).join('');
- const fxRows=fxCur.map(c=>`<div class="rate-row"><div style="flex:1"><div class="rn">${c}</div><div class="rsub">원/${c}</div></div><input class="num" inputmode="numeric" value="${comma(R.fx[c]||0)}" onchange="setRate('fx','${c}',this.value)"></div>`).join('');
+ const stockRows=DB.assets.filter(a=>a.type==='stock').map(a=>`<div class="rate-row"><div style="flex:1"><div class="rn">${esc(a.name)}</div><div class="rsub">${esc(a.stockCode)} 현재가${rateUnknown(a)?' · 미확인':''}</div></div><input class="num" inputmode="numeric" value="${comma(R.stocks[a.stockCode]||0)}" onchange="setRate('stock','${a.stockCode}',this.value)"></div>`).join('');
+ const fxRows=fxCur.map(c=>`<div class="rate-row"><div style="flex:1"><div class="rn">${c}</div><div class="rsub">원/${c}${rateUnknown({type:'fx',currency:c})?' · 미확인':''}</div></div><input class="num" inputmode="numeric" value="${comma(R.fx[c]||0)}" onchange="setRate('fx','${c}',this.value)"></div>`).join('');
  const active=rateAutoLabel();
  const none=active==='해당 없음';
  openSheet(`<h3>시세 연동 관리 (자동)</h3>

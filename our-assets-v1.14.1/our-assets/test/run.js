@@ -63,6 +63,7 @@ const FUNCTIONS = [
   'assetEval', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'delOwner',
   'detectStaleMarketValuedTxns', 'delBudget',
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards',
+  'rateUnknown',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -164,6 +165,15 @@ const sandbox = {
   // recSaveScopeConfirm()이 띄우는 확인 시트 — 실제 DOM 대신 마지막으로 그려진 html만 기록한다.
   lastSheetHtml: null,
   openSheet: (html) => { sandbox.lastSheetHtml = html; },
+  // saveAsset()의 새 자산 등록 경로가 부르는 "삭제된 동명 자산 재연동" 흐름 — dup 차단 테스트 외에
+  // 실제로 자산을 등록하는 saveAsset 테스트에서만 도달하므로, 항상 "해당 없음"으로 흉내낸다.
+  deletedAssetHistoryExists: () => false,
+  askRelinkDeleted: () => {},
+  clampRecurringToMaturity: () => {},
+  // saveAsset()이 저장 직후 '가격 미확인'인 fx/gold/stock 자산에 대해 TTL을 기다리지 않고
+  // 부르는 즉시 시세 동기화 — 실제 네트워크 호출 대신 호출 여부만 기록한다.
+  syncRatesCalls: [],
+  syncRates: (silent) => { sandbox.syncRatesCalls.push(silent); },
 };
 vm.createContext(sandbox);
 vm.runInContext(extracted, sandbox, { filename: 'extracted-from-index.html' });
@@ -1643,6 +1653,59 @@ test('saveAsset: 새로 등록할 자산이 기존 자산과 이름·종류가 �
   sandbox.saveAsset(false);
   assert.ok(sandbox.lastToast, '중복 경고 토스트가 떴어야 함');
   assert.strictEqual(sandbox.DB.assets.length, 1, '중복이면 새 자산이 추가되면 안 됨');
+});
+
+/* ---------- rateUnknown/saveAsset: 새로 등록한 fx/gold/stock 자산이 시세 미동기화 상태에서
+ * 조용히 ₩0으로 평가되던 버그 (cycle31 critique). assetEval()의 (R.x||0) 폴백은 '아직 시세를
+ * 못 받아온 상태'와 '실제 0원'을 구분하지 못하므로, saveAsset()이 신규 stockCode를 등록할 때
+ * DB.rates.stocks[code]=0으로 미리 채우던 걸 없애 키 부재로 미확인 상태를 구분하고,
+ * 그 상태면 autoSyncRates()의 10분 TTL을 기다리지 않고 즉시 syncRates(true)를 부르게 했다. ---------- */
+test('rateUnknown: fx/gold/stock은 시세를 아직 못 받아왔으면 참, 받아왔으면 거짓', () => {
+  sandbox.DB = { rates: { fx: {}, stocks: {}, goldPerG: 0 } };
+  assert.strictEqual(sandbox.rateUnknown({ type: 'fx', currency: 'USD' }), true);
+  sandbox.DB.rates.fx.USD = 1350;
+  assert.strictEqual(sandbox.rateUnknown({ type: 'fx', currency: 'USD' }), false);
+  assert.strictEqual(sandbox.rateUnknown({ type: 'gold' }), true);
+  sandbox.DB.rates.goldPerG = 550000;
+  assert.strictEqual(sandbox.rateUnknown({ type: 'gold' }), false);
+  assert.strictEqual(sandbox.rateUnknown({ type: 'stock', stockCode: '005930' }), true);
+  sandbox.DB.rates.stocks['005930'] = 70000;
+  assert.strictEqual(sandbox.rateUnknown({ type: 'stock', stockCode: '005930' }), false);
+});
+test('rateUnknown: 시세와 무관한 자산 타입(현금·저축 등)은 항상 거짓', () => {
+  sandbox.DB = { rates: { fx: {}, stocks: {}, goldPerG: 0 } };
+  assert.strictEqual(sandbox.rateUnknown({ type: 'cash' }), false);
+  assert.strictEqual(sandbox.rateUnknown({ type: 'savings' }), false);
+  assert.strictEqual(sandbox.rateUnknown({ type: 'debt' }), false);
+});
+test('saveAsset: 새 종목코드를 등록해도 더 이상 DB.rates.stocks를 0으로 미리 채우지 않고, 미확인 상태라 즉시 시세 동기화를 부른다', () => {
+  sandbox.DB = { assets: [], rates: { fx: {}, stocks: {}, goldPerG: 0 } };
+  sandbox.asDraft = { type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 10 };
+  sandbox.syncRatesCalls = [];
+  sandbox.saveAsset(false);
+  assert.strictEqual(sandbox.DB.assets.length, 1);
+  assert.strictEqual(sandbox.DB.rates.stocks['005930'], undefined, '아직 시세를 못 받아온 종목코드는 0으로 미리 채워지면 안 됨(미확인과 구분 불가해짐)');
+  assert.deepStrictEqual(sandbox.syncRatesCalls, [true], '미확인 상태의 새 자산을 등록하면 TTL을 기다리지 않고 즉시 동기화해야 함');
+});
+test('saveAsset: 이미 시세를 알고 있는 종목을 수정할 때는 즉시 동기화를 부르지 않는다', () => {
+  const asset = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 10 };
+  sandbox.DB = { assets: [asset], rates: { fx: {}, stocks: { '005930': 70000 }, goldPerG: 0 } };
+  sandbox.asDraft = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 20 };
+  sandbox.syncRatesCalls = [];
+  sandbox.saveAsset(true);
+  assert.deepStrictEqual(sandbox.syncRatesCalls, [], '이미 시세를 알고 있으면 즉시 동기화를 부를 필요가 없음');
+});
+test('saveAsset: 처음 보는 fx 통화를 등록하면 즉시 동기화하고, 이미 보유 중이라 알고 있는 통화는 부르지 않는다', () => {
+  sandbox.DB = { assets: [], rates: { fx: { USD: 1350 }, stocks: {}, goldPerG: 0 } };
+  sandbox.asDraft = { type: 'fx', owner: '나', includeInTotal: true, name: '엔화', currency: 'JPY', fxAmount: 1000 };
+  sandbox.syncRatesCalls = [];
+  sandbox.saveAsset(false);
+  assert.deepStrictEqual(sandbox.syncRatesCalls, [true], '처음 등록하는 통화는 시세를 몰라 즉시 동기화해야 함');
+
+  sandbox.asDraft = { type: 'fx', owner: '나', includeInTotal: true, name: '달러', currency: 'USD', fxAmount: 500 };
+  sandbox.syncRatesCalls = [];
+  sandbox.saveAsset(false);
+  assert.deepStrictEqual(sandbox.syncRatesCalls, [], '이미 보유 중인 통화라 시세를 알고 있으면 부를 필요가 없음');
 });
 
 /* ---------- isCloudConflict: pushCloud()가 충돌로 빠지는 조건의 순수 판정 로직 ---------- */
