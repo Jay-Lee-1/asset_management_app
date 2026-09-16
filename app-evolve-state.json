@@ -1,22 +1,12 @@
 {
   "cycle": 34,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "순자산 이력(DB.nwHistory)이 '앱을 처음 연 시각'에만 기록되고 당일 이후 변동은 절대 반영되지 않음",
+    "why": "updateNwHistory(index.html:2021)는 startApp()(5566)과 refreshToday()(5678, maybeRollDay가 실제 자정 날짜 전환을 감지했을 때만 호출)에서만 불린다. save()(index.html:1801, saveTx/saveAsset/saveRec/saveBudget/updateBalanceAdjust 등 ~70곳의 단일 호출 지점)는 invalidateBalances()만 하고 nwHistory는 절대 건드리지 않는다. autoSyncRates/fetchFxGold/fetchStocks(주가·환율·금 시세 갱신, assetEval 결과를 바꿈)도 마찬가지로 호출하지 않는다. 결과: 하루에 한 번 앱을 여는 흔한 사용 패턴에서, 그날의 순자산 스냅샷은 '아침에 앱을 연 순간'의 값으로 영구 고정되고 그날 이후의 지출/자산 매매/이체/시세 변동은 절대 반영되지 않은 채 다음날 자정 전환 시점에 그 값이 굳어버린다. 순자산 추이 차트(nwHistoryCard, 2150)는 이 앱의 핵심 기능인데, 대부분의 실사용 데이터 포인트가 구조적으로 부정확하고 사후에 복구할 방법도 없다(과거 시세를 보관하지 않아 소급 재계산 불가, 2019 근처 주석 참고). 이미 고친 캐시 무효화류 버그들과 달리 이건 결과가 매일 영구적으로 누적되는 데이터 정확성 결함이라 우선순위가 가장 높다고 판단.",
+    "approach": "1) save() 끝부분(index.html:1801-1805)에서, 성공 저장(ok) 시 오늘 날짜(TODAY) 기준으로 DB.nwHistory=updateNwHistory(DB.nwHistory,TODAY,totalAssets(),totalDebt())를 호출해 '오늘' 항목을 항상 최신 상태로 덮어쓰게 한다. updateNwHistory는 같은 날짜 항목을 그냥 덮어쓰는 멱등 함수(2024 근처)라 여러 번 불러도 안전. 무한 재귀/불필요한 중복 저장을 피하려면 이 호출은 save() 내부에서 localStorage.setItem 이후, scheduleCloudPush() 호출 이전에 하고, nwHistory 갱신 자체가 다시 save()를 부르지 않도록 직접 DB 갱신 후 이미 진행 중인 저장 로직에 편승시킨다(재귀 호출 금지). 2) autoSyncRates/fetchFxGold/fetchStocks가 완료되는 지점에서도 동일하게 updateNwHistory 호출 후 save()(혹은 이미 그 경로가 save()를 부르는지 먼저 확인하고, 이미 부른다면 1)의 변경만으로 자동 커버됨). 3) 회귀 테스트: updateNwHistory 자체는 이미 순수 함수라 test/run.js에서 같은 날짜를 두 번 다른 값으로 호출했을 때 최신 값으로 덮어써지는지 확인하는 테스트가 이미 있는지 확인하고 없으면 추가. save() 안의 새 호출부는 통합적이라 순수 함수 단위 테스트로는 커버하기 어려우니, 최소한 updateNwHistory 자체의 idempotent-overwrite 동작은 테스트로 보장한다. 4) 코드에 '오늘 항목은 앱을 연 시점이 아니라 항상 최신 상태를 반영해야 한다'는 불변식을 짧은 주석으로 남겨 회귀 방지."
+  },
   "history": [
-    {
-      "cycle": 26,
-      "phase": "develop",
-      "timestamp": "2026-09-15T12:15:00.000Z",
-      "summary": "Explore 서브에이전트로 최근에 다루지 않은 영역을 훑어 updateBalanceAdjust()(index.html:2419, 자산 수정 화면에서 기존 잔액-조정 내역을 재계산하는 함수)의 실제 버그를 발견해 수정했다. openAssetSheet()는 편집 진입 시 balanceAt(id,TODAY)를 미리 호출해 _balCache(다중 슬롯 캐시)를 채워두는데, updateBalanceAdjust()는 기존 조정 내역을 DB.txns에서 잠시 제외한 뒤 balanceAt(asset.id,TODAY)로 '조정 제외 잔액'을 다시 구하면서도 invalidateBalances()를 부르지 않아, 방금 채워진 캐시(옛 조정 내역 포함 잔액)를 그대로 돌려받았다 — 형제 경로인 setBase()는 invalidateBalances()를 이미 호출하는데 이쪽만 빠져 있었다. 그 결과 이미 잔액-조정 내역이 있는 자산을 편집해서 표시 금액을 바꾸면(예: 기준값 4000+기존 조정 1000=5000으로 보이던 자산을 6000으로 수정) 새 조정 금액이 올바른 2000이 아니라 1000으로 잘못 계산되어, 저장 직후 표시 잔액이 사용자가 입력한 값과 다르게 조용히 어긋나는 실제 데이터 버그였다. updateBalanceAdjust() 맨 앞에 invalidateBalances() 호출 한 줄을 추가해 setBase()와 동일한 규칙(옛 조정 제외 후 재계산 전에는 항상 캐시를 비움)으로 맞췄다. test/run.js에 addBalanceAdjust/updateBalanceAdjust를 새로 추출하고 회귀 테스트 1개 추가: 편집 진입을 흉내내 캐시를 먼저 채운 뒤 updateBalanceAdjust(asset,6000)을 호출해 새 조정 금액이 2000이 되는지 확인 — 수정 전으로 되돌려서 이 테스트가 실제로 1000!==2000으로 실패함을 확인한 뒤 재적용, 157/157 통과(기존 156+신규 1). 두 인라인 <script> 블록 모두 vm.Script 파싱 확인. APP_VERSION 1.25.4->1.25.5, sw.js CACHE v86->v87.",
-      "commit": null
-    },
-    {
-      "cycle": 25,
-      "phase": "advance",
-      "timestamp": "2026-09-15T11:20:00.000Z",
-      "summary": "critique 계획대로 balancesUpTo()의 단일 슬롯 잔액 캐시(_balCache={key,map})를 Map 기반 다중 슬롯 캐시로 전환했다(index.html:1888-1908). let _balCache를 const _balCache=new Map()로 바꾸고 has/get/set으로 교체, invalidateBalances()는 _balCache.clear()로 변경, BAL_CACHE_MAX=40 크기의 단순 LRU 캡(Map 삽입 순서 기준 가장 오래된 키 삭제)을 추가했다. renderPlan() 한 렌더 안에서 startBal/이전·현재·다음 달 말일 등 서로 다른 날짜로 balanceAt이 여러 번 불려도 이제 각 날짜가 독립적으로 캐시되어 서로를 밀어내지 않는다. balanceAt/balancesUpTo의 시그니처와 기존 9곳의 invalidateBalances() 호출부는 전혀 바꾸지 않아 하위 호환. test/run.js에 balancesUpTo/balanceAt/assetBase를 새로 추출하고(_balCache/BAL_CACHE_MAX도 CONSTS로 끌어옴, RANGE_TO는 TODAY처럼 테스트에서 직접 세팅) 회귀 테스트 2개 추가: allTxns 호출 횟수를 세는 스파이로 서로 다른 두 날짜가 각각 한 번만 계산되고 재호출 시 추가 계산 없이 캐시에서 반환됨을 확인, 캐시를 비우지 않으면 DB가 바뀌어도 이전 값이 나오다가 clear() 후에는 새 값이 반영됨을 확인. 156/156 통과(기존 154+신규 2). 두 인라인 <script> 블록 모두 node --check로 파싱 확인. Playwright(사전 설치 Chromium, 게스트 모드)로 실제 브라우저에서 한달 플랜 탭을 열어 여러 달을 이동해도 잔액이 정상 표시되고 콘솔 에러(pageerror)가 없음을 확인. APP_VERSION 1.25.3->1.25.4, sw.js CACHE v85->v86. pending_advance_plan 비움.",
-      "commit": null
-    },
     {
       "cycle": 25,
       "phase": "critique",
@@ -148,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-09-16T21:20:00.000Z",
       "summary": "develop 커밋(616a432, asOpenMat 자기 자신 만기 이체 버그 fix)을 검토하다가, 같은 패턴의 sibling 버그를 하나 더 발견해 그 자리에서 고쳤다. asOpenType()(index.html:2635)의 `if(k==='savings'&&!asDraft.maturityTargetId)asDraft.maturityTargetId=firstCash()` 줄이 오늘 고친 openAssetPicker 경로와 별개로 여전히 excludeId 없는 firstCash()를 그대로 썼다. asDraft는 DB.assets를 JSON.parse(JSON.stringify(...))로 뜬 사본이라 asDraft.id는 원본 자산 id와 같고, 저장 전까지 DB.assets엔 여전히 옛 타입(예: cash)의 원본이 남아있다 — 사용자가 기존 cash 자산을 편집해 종류를 savings로 바꾸면, 그 원본이 DB.assets에서 isCashLike를 만족하는 첫 자산일 경우(흔히 사용자의 첫 계좌) firstCash()가 자기 자신의 id를 그대로 돌려줘 maturityTargetId가 저장 화면에 진입하자마자 자기 자신으로 조용히 채워짐을 코드로 확인했다. 오늘 추가한 doMaturity() 방어 가드가 실행 시점엔 막아주지만, 사용자가 만기 이체 대상을 다시 고르지 않는 한 화면엔 이미 틀린 값이 남아있는 문제였다. firstCash(excludeId)로 시그니처를 확장해(x.id!==excludeId 필터, 인자 없으면 기존과 동일하게 동작) asOpenType이 firstCash(asDraft.id)를 넘기도록 고쳤다 — firstCash()의 또 다른 호출부인 openTxSheet()(2946)는 인자를 안 넘기므로 회귀 없음을 테스트로 확인. test/run.js FUNCTIONS에 firstCash 추가, 회귀 테스트 3개 추가(excludeId로 지정한 자산은 건너뛰고 다음 현금성 자산 반환, excludeId가 유일한 현금성 자산이면 null 반환, 인자 없는 기존 호출부는 회귀 없이 첫 현금성 자산 반환). 233/233 통과(기존 230+신규 3). 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.35.1->1.35.2, sw.js CACHE v104->v105.",
+      "commit": null
+    },
+    {
+      "cycle": 34,
+      "phase": "critique",
+      "timestamp": "2026-09-16T23:10:00.000Z",
+      "summary": "cycle34 review(d5fb2be)가 asOpenMat 자기 자신 만기 이체 버그의 sibling(asOpenType)까지 그 자리에서 고친 직후, 최근 커밋 재검토보다 앱 전체를 구조적으로 훑는 데 집중해 Explore 서브에이전트로 net-worth 이력, 진단 도구, 시세 동기화, 인증 플로우 전반을 살폈다. updateNwHistory(index.html:2021)가 startApp()과 실제 자정 날짜 전환을 감지한 refreshToday()에서만 호출되고, save()(1801, saveTx/saveAsset/saveRec/saveBudget 등 ~70곳의 단일 호출 지점)나 시세 갱신(autoSyncRates 등) 경로에서는 전혀 호출되지 않음을 코드로 확인했다. 그 결과 하루 한 번 앱을 여는 흔한 사용 패턴에서 그날의 순자산 스냅샷이 '앱을 처음 연 순간'으로 영구 고정되고, 이후 지출/자산 매매/시세 변동은 반영되지 않은 채 다음날 자정 전환 때 그 값이 그대로 굳어버려, 앱의 핵심 기능인 순자산 추이 차트가 사실상 항상 부정확하고 사후 복구도 불가능한 데이터 정확성 결함으로 판단해 채택. 후보로 검토했으나 보류한 것: detectStaleMarketValuedTxns(1997, 이미 잘 동작하는 진단 안전망), pruneNwHistory(2028)의 90일 이후 월별 압축(의도된 트레이드오프), Kakao 로그아웃의 조용한 catch(e){} 및 guestHasData 휴리스틱(사소함). pending_advance_plan에 save() 성공 시 TODAY 기준 updateNwHistory 호출 추가 + 시세 갱신 경로 커버 + 회귀 테스트 계획 저장. 코드 변경 없음, state.json만 갱신.",
       "commit": null
     }
   ]
