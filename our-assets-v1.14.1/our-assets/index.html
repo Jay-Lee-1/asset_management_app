@@ -1288,7 +1288,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.39.1';
+const APP_VERSION='1.40.0';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3895,6 +3895,9 @@ function openSpendAnalysis(){
   <div class="card" style="padding:2px 14px">${body}</div>
   <div style="height:12px"></div><button class="btn btn-soft" onclick="closeSheet()">닫기</button>`);
 }
+/* 홈 알림 카드에서 예산 초과 상세를 볼 때는 ST.ledger가 다른(과거) 달을 보던 상태일 수 있으므로
+ * 항상 이번 달로 맞춘 뒤 연다 — 가계부 탭 자체는 이동하지 않는다(openMaturity 등과 동일 패턴). */
+function openSpendAnalysisThisMonth(){ST.ledger.y=TM.y;ST.ledger.m=TM.m;openSpendAnalysis();}
 function openBudgetPrompt(idx){
  const y=ST.ledger.y,m=ST.ledger.m;const rows=spendByCategory(y,m);const r=rows[idx];if(!r)return;
  const cur=budgetForMonth(r.c,y,m)||'';
@@ -5287,6 +5290,9 @@ function homeAlerts(neg){
  else if(_vr.length>1){arr.push({kind:'quickMulti',count:_vr.length});}
  const staleMv=detectStaleMarketValuedTxns(DB);
  if(staleMv.length)arr.push({kind:'staleMv',count:staleMv.length});
+ const _bo=spendByCategory(TM.y,TM.m).filter(r=>{const b=budgetForMonth(r.c,TM.y,TM.m);return b>0&&r.v>b}); /* 예산 초과 카테고리: 1건이면 그대로, 여러 건이면 하나로 묶음(quick/quickMulti와 동일 패턴) */
+ if(_bo.length===1){const r=_bo[0],b=budgetForMonth(r.c,TM.y,TM.m);arr.push({kind:'budgetOver',cat:r.c,spent:r.v,budget:b});}
+ else if(_bo.length>1)arr.push({kind:'budgetOverMulti',count:_bo.length});
  return arr;
 }
 function homeAlertCard(al){
@@ -5324,6 +5330,16 @@ function homeAlertCard(al){
    <div class="ha-ic">${svg('alert')}</div>
    <div class="ha-b"><div class="ha-t">순자산 계산에서 빠졌을 수 있는 기록 ${al.count}건</div>
      <div class="ha-s">외화·금·주식 통장을 이체·지출·수입 대상으로 쓴 과거 기록이에요 · 눌러서 확인하세요</div></div>
+   <div class="ha-c">${svg('chev')}</div></button>`;
+ if(al.kind==='budgetOver')return `<button class="home-alert" onclick="openSpendAnalysisThisMonth()">
+   <div class="ha-ic">${svg('alert')}</div>
+   <div class="ha-b"><div class="ha-t">${esc(al.cat)} 예산을 ${comma(al.spent-al.budget)}원 초과했어요</div>
+     <div class="ha-s">${comma(al.budget)}원 중 ${comma(al.spent)}원 사용 · 눌러서 확인하세요</div></div>
+   <div class="ha-c">${svg('chev')}</div></button>`;
+ if(al.kind==='budgetOverMulti')return `<button class="home-alert" onclick="openSpendAnalysisThisMonth()">
+   <div class="ha-ic">${svg('alert')}</div>
+   <div class="ha-b"><div class="ha-t">예산을 초과한 카테고리 ${al.count}개</div>
+     <div class="ha-s">눌러서 확인하세요</div></div>
    <div class="ha-c">${svg('chev')}</div></button>`;
  return `<button class="home-alert" onclick="goPlanTo('${al.assetId}','${al.date}')">
    <div class="ha-ic">${svg('bell')}</div>
