@@ -1,6 +1,6 @@
 {
   "cycle": 35,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
     {
@@ -120,6 +120,13 @@
       "phase": "develop",
       "timestamp": "2026-09-17T01:20:00.000Z",
       "summary": "Explore 서브에이전트로 최근 사이클들이 다루지 않은 영역(폼 검증, 에러 처리, 접근성, sibling-function 불일치 패턴 등)을 훑어, 회원가입/로그인 비밀번호 입력창(renderAuth, index.html:5615)의 placeholder가 여전히 '4자 이상'으로 표시되는데 실제 검증 로직인 AUTH.signUp()(index.html:1683)은 cycle33 advance(8cefc54, DJB2->salt+PBKDF2 교체)에서 이미 최소 길이를 8자로 올리고 에러 문구도 '8자 이상이어야 해요'로 바꿨지만 placeholder는 그때 같이 안 고쳐졌던 실제 불일치를 발견해 수정했다(git log -S로 8cefc54 diff에서 에러 문구만 바뀌고 placeholder 줄은 손 안 댄 것을 확인). 사용자가 안내대로 5~7자 비밀번호를 입력하면 가입 시점에 안내와 모순되는 에러를 만나는 실제 UX 버그. 로그인 모드에서는 마이그레이션 전 계정이 여전히 8자 미만 비밀번호를 쓸 수 있어(레이지 재해시 전까지) '8자 이상'을 강제 안내하면 오히려 오해를 주므로, login 여부에 따라 placeholder를 분기(가입 모드만 '8자 이상', 로그인 모드는 빈 문자열)하도록 고쳤다. 로직 변경이 없는 단일 문자열/템플릿 수정이라 새 회귀 테스트는 추가하지 않았다. 두 인라인 <script> 블록 모두 node --check 파싱 확인, node test/run.js 233/233 통과(기존 그대로). APP_VERSION 1.36.0->1.36.1, sw.js CACHE v106->v107.",
+      "commit": null
+    },
+    {
+      "cycle": 35,
+      "phase": "review",
+      "timestamp": "2026-09-17T02:05:00.000Z",
+      "summary": "develop 커밋(5c3ac3e, 회원가입 비밀번호 placeholder '4자 이상'->'8자 이상' 수정)을 검토했다. AUTH.signUp()(index.html:1683)의 실제 최소 길이 검증(pw.length<8)과 placeholder 문구가 이제 일치함을 grep으로 확인했고, 앱 전체에 다른 '4자'/'8자' 관련 잔존 문구가 없음도 확인했다. login 모드일 때 placeholder를 빈 문자열로 비운 것도 레이지 재해시 전 기존 계정(4자 이상 비밀번호 허용)에 '8자 이상'을 잘못 강제 안내하지 않기 위한 의도적 분기로 타당함을 확인. 로직 변경 없는 순수 문자열 수정이라 회귀 위험 낮음. 두 인라인 <script> 블록 모두 node --check 파싱 통과, node test/run.js 233/233 통과. 문제 없음.",
       "commit": null
     }
   ]
