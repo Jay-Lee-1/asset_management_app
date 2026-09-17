@@ -1288,7 +1288,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.37.0';
+const APP_VERSION='1.37.1';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1447,7 +1447,8 @@ function confirmTransferNow(id){const t=DB.txns.find(x=>x.id===id);if(!t)return;
 }
 function postponeTransfer(id){const t=DB.txns.find(x=>x.id===id);if(t){t.date=addDays(TODAY,1);save();closeSheet();renderCurrent();toast('내일로 미뤘어요')}}
 function confirmRecTransfer(recId,date){const r=DB.recurrences.find(x=>x.id===recId);if(!r)return;
- openSheet(`<h3>이체 확인</h3><div class="desc"><b style="font-size:16px;color:var(--text)">${comma(r.amount)}원</b> 이체를 완료하셨나요?<br><span style="color:var(--text-2);font-size:13px">${assetNm(r.fromAssetId,r.fromAssetName)} → ${assetNm(r.toAssetId,r.toAssetName)} · ${shortDate(date)}</span></div>
+ const ed=(r.edits||{})[date]||{};
+ openSheet(`<h3>이체 확인</h3><div class="desc"><b style="font-size:16px;color:var(--text)">${comma(ed.amount!=null?ed.amount:r.amount)}원</b> 이체를 완료하셨나요?<br><span style="color:var(--text-2);font-size:13px">${assetNm(r.fromAssetId,r.fromAssetName)} → ${assetNm(r.toAssetId,r.toAssetName)} · ${shortDate(date)}</span></div>
   <div class="two-btn"><button class="btn btn-soft cancel" onclick="postponeRecTransfer('${recId}','${date}')">내일로</button><button class="btn btn-primary" onclick="confirmRecNow('${recId}','${date}')">완료했어요</button></div>`);
 }
 function confirmRecNow(recId,date){const r=DB.recurrences.find(x=>x.id===recId);if(!r)return;
@@ -1455,8 +1456,9 @@ function confirmRecNow(recId,date){const r=DB.recurrences.find(x=>x.id===recId);
  if(pendingTransferCount()===0)celebrate('이체 전부 완료! 🎉');else toast('이체를 완료 처리했어요');
 }
 function postponeRecTransfer(recId,date){const r=DB.recurrences.find(x=>x.id===recId);if(!r)return;
+ const ed=(r.edits||{})[date]||{};
  (r.skip=r.skip||[]).push(date);
- DB.txns.push({id:uid(),type:'transfer',category:'이체',memo:r.memo||'이체',amount:r.amount,fromAssetId:r.fromAssetId,toAssetId:r.toAssetId,date:addDays(TODAY,1),confirmed:false});
+ DB.txns.push({id:uid(),type:'transfer',category:'이체',memo:ed.memo!=null?ed.memo:(r.memo||'이체'),amount:ed.amount!=null?ed.amount:r.amount,fromAssetId:r.fromAssetId,toAssetId:r.toAssetId,date:addDays(TODAY,1),confirmed:false});
  save();closeSheet();renderCurrent();toast('내일로 미뤘어요');
 }
 

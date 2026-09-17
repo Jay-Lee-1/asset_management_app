@@ -83,7 +83,7 @@ const FUNCTIONS = [
   'detectStaleMarketValuedTxns', 'delBudget',
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards',
   'rateUnknown', 'filteredHist', 'histInvalidate',
-  'genSalt', 'pbkdf2Hash',
+  'genSalt', 'pbkdf2Hash', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -2475,6 +2475,52 @@ test('pbkdf2Hash: 같은 비밀번호라도 salt가 다르면 다른 해시가 �
   const h1 = await sandbox.pbkdf2Hash('same-password', s1);
   const h2 = await sandbox.pbkdf2Hash('same-password', s2);
   assert.notStrictEqual(h1, h2);
+});
+
+/* ---------- postponeRecTransfer/confirmRecTransfer: 반복 이체 회차에 개별 금액/메모 수정
+ * (r.edits[date])이 있는 상태에서 "내일로" 미루면, 그 회차를 skip 처리하고 새 일회성 거래를
+ * 대신 만드는데(app-evolve cycle36 develop 이전) recSave scope='one'으로 저장해둔 ed.amount를
+ * 무시하고 반복의 기본값(r.amount)을 그대로 썼다 — expandRec()/recApply() 등 다른 모든
+ * 반복 구체화 지점은 이미 ed 우선 패턴을 쓰는데 이 두 곳만 빠져 있었다. 예: 월 50만원 이체
+ * 반복에서 이번 달만 70만원으로 수정해뒀는데 "내일로"를 누르면 완료 확인 시트도, 새로 생기는
+ * 거래도 조용히 50만원으로 되돌아가 다음날 그 금액대로 이체 완료 처리될 뻔했다. ---------- */
+function setupRecTransferDB() {
+  sandbox.TODAY = '2026-09-17';
+  sandbox.DB = {
+    assets: [
+      { id: 'a_cash', name: '지갑' },
+      { id: 'a_sav', name: '적금' },
+    ],
+    recurrences: [
+      { id: 'r1', type: 'transfer', memo: '적금이체', amount: 500000, fromAssetId: 'a_cash', toAssetId: 'a_sav', skip: [], edits: {} },
+    ],
+    txns: [],
+  };
+  sandbox.lastSheetHtml = null;
+}
+test('confirmRecTransfer: 회차별 금액 수정(edits)이 있으면 확인 시트에 수정된 금액을 보여준다', () => {
+  setupRecTransferDB();
+  sandbox.DB.recurrences[0].edits = { '2026-09-17': { amount: 700000 } };
+  sandbox.confirmRecTransfer('r1', '2026-09-17');
+  assert.ok(sandbox.lastSheetHtml.includes(sandbox.comma(700000)), '기본값(50만)이 아닌 수정된 금액(70만)이 표시돼야 함');
+  assert.ok(!sandbox.lastSheetHtml.includes(sandbox.comma(500000) + '원'), '반복 기본 금액이 그대로 노출되면 안 됨');
+});
+test('postponeRecTransfer: 회차별 금액/메모 수정(edits)이 있으면 새로 생기는 거래도 그 값을 따른다', () => {
+  setupRecTransferDB();
+  sandbox.DB.recurrences[0].edits = { '2026-09-17': { amount: 700000, memo: '보너스 추가이체' } };
+  sandbox.postponeRecTransfer('r1', '2026-09-17');
+  assert.ok(sandbox.DB.recurrences[0].skip.includes('2026-09-17'));
+  const t = sandbox.DB.txns[sandbox.DB.txns.length - 1];
+  assert.strictEqual(t.amount, 700000, '반복 기본 금액(50만)이 아니라 수정된 금액(70만)으로 미뤄져야 함');
+  assert.strictEqual(t.memo, '보너스 추가이체');
+  assert.strictEqual(t.date, sandbox.addDays(sandbox.TODAY, 1));
+});
+test('postponeRecTransfer: 회차별 수정이 없으면 기존처럼 반복의 기본 금액/메모를 그대로 쓴다(회귀 확인)', () => {
+  setupRecTransferDB();
+  sandbox.postponeRecTransfer('r1', '2026-09-17');
+  const t = sandbox.DB.txns[sandbox.DB.txns.length - 1];
+  assert.strictEqual(t.amount, 500000);
+  assert.strictEqual(t.memo, '적금이체');
 });
 
 /* ---------- 실행 ---------- */

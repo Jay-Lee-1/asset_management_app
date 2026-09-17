@@ -1,15 +1,8 @@
 {
   "cycle": 36,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 29,
-      "phase": "review",
-      "timestamp": "2026-09-16T00:07:52.126Z",
-      "summary": "develop 커밋(6c71fc2, delBudget에 undoToast 추가)을 검토함. 삭제 버튼(openBudgetPrompt, index.html:3732)이 cur(기존 예산)가 truthy일 때만 렌더되므로 undo 클로저의 prev는 항상 정의됨을 확인 — edge case 없음. 클로저가 idx가 아닌 r.c를 캡처해 openSpendAnalysis() 재정렬로 인한 idx 스테일 문제도 없음. delOwner/delCat의 undoToast 패턴과 일치. 인라인 script 2개 모두 node --check 통과, 179/179 회귀 테스트 통과. 코드 변경 없음 — 이상 없음.",
-      "commit": null
-    },
     {
       "cycle": 29,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-17T04:05:00.000Z",
       "summary": "critique(6c66261) 계획대로 calCellsFor()(index.html:2786-2805)의 날짜 셀 템플릿을 고쳤다. other(다른 달) 셀이 아닌 42개 중 실제 선택 가능한 셀에 한해 기존 onclick=\"selDay('${ds}')\" 옆에 tabindex=\"0\" role=\"button\" aria-pressed=\"${ds===sel}\" aria-label=\"${dnum}일 [수입 …] [지출 …] [선택됨] [오늘]\" onkeydown=\"rowKeydown(event,()=>selDay('${ds}'))\"를 추가해 앱 전역의 다른 행들(txRow, asset-item, manage-row 등)과 동일한 키보드/스크린리더 접근 패턴으로 맞췄다. 새 JS 헬퍼 없이 기존 rowKeydown(1411)을 그대로 재사용. 계획에서 함께 언급된 다른 bare onclick div들(flow-item, acct-card, spend-row, of-row, ha-b)은 이번 사이클 범위를 넘어서므로 손대지 않았다. 두 인라인 <script> 블록 모두 node --check 파싱 확인, node test/run.js 233/233 통과(로직 변경이 아닌 마크업/속성 추가라 신규 테스트는 추가하지 않음). APP_VERSION 1.36.1->1.37.0(advance라 minor bump), sw.js CACHE v107->v108. pending_advance_plan 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 36,
+      "phase": "develop",
+      "timestamp": "2026-09-17T06:30:00.000Z",
+      "summary": "cycle35 advance(e7b42ff, 캘린더 날짜 셀 접근성)가 문제 없이 끝난 뒤, Explore 서브에이전트로 아직 다루지 않은 영역을 훑어 confirmRecTransfer/postponeRecTransfer(index.html:1449,1457) 버그를 발견해 수정했다. 반복 이체 회차를 recSave scope='one'으로 개별 수정(r.edits[date]={amount:...})해둔 뒤 확인 시트에서 \"내일로\"를 누르면, expandRec()/recApply() 등 다른 모든 반복 구체화 지점이 쓰는 ed 우선(ed.amount!=null?ed.amount:r.amount) 패턴을 이 두 함수만 빼먹어 확인 시트 표시와 새로 생기는 일회성 거래 둘 다 반복의 기본 금액/메모로 조용히 되돌아가던 실제 금액 버그였다(예: 월 50만원 이체를 이번 달만 70만원으로 고쳐뒀는데 미루면 50만원 거래가 생김). 두 함수 모두 const ed=(r.edits||{})[date]||{} 조회를 추가해 ed.amount/ed.memo를 우선하도록 고쳤다. test/run.js FUNCTIONS에 assetNm/confirmRecTransfer/postponeRecTransfer를 추가하고 회귀 테스트 3개(edits 있을 때 확인 시트 표시, edits 있을 때 미룬 거래 금액/메모, edits 없을 때 기존처럼 기본값 사용하는 회귀 확인)를 추가했다. 236/236 통과(기존 233+신규 3). 두 인라인 <script> 블록 모두 vm.Script 파싱 확인. APP_VERSION 1.37.0->1.37.1(버그 fix라 patch bump), sw.js CACHE v108->v109.",
       "commit": null
     }
   ]
