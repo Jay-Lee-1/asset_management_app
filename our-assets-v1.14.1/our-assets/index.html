@@ -1288,7 +1288,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.40.0';
+const APP_VERSION='1.40.1';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5058,6 +5058,7 @@ function varyingRecs(){ /* 변동 카테고리 반복 = 해당일이 되면 실�
   const dates=recDates(r,monthStartStr(TM.y,TM.m),monthEndStr(TM.y,TM.m));
   dates.forEach(d=>{
    if(d>TODAY)return;                       /* 아직 안 온 회차는 제외 (해당일부터 알림) */
+   if((r.skip||[]).includes(d))return;      /* 이번 회차를 삭제/건너뛴 경우 제외 */
    if((r.edits||{})[d])return;              /* 이번 회차 실제 금액을 이미 넣었으면 제외 */
    out.push({rec:r,date:d});
   });

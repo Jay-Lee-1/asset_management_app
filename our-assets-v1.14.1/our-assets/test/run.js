@@ -86,6 +86,7 @@ const FUNCTIONS = [
   'rateUnknown', 'filteredHist', 'histInvalidate',
   'genSalt', 'pbkdf2Hash', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer',
   'foreignSaveIsNewer', 'openCopyBackup', 'copyBackup', 'findDonors',
+  'recIsVarying', 'varyingRecs',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -108,6 +109,9 @@ const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(
 const sandbox = {
   DB: null,
   TODAY: null,
+  // TM은 index.html에서 `let TM=ym(TODAY)`로 파생되는 "현재 보고 있는 달"({y,m})인데,
+  // varyingRecs()가 이걸 직접 참조하므로 TODAY처럼 테스트에서 직접 세팅한다.
+  TM: null,
   // RANGE_TO는 index.html에서 `let RANGE_TO=addDays(TODAY,760)`로 TODAY에 파생되는데,
   // 이 파일은 addDays 실행 결과를 그대로 재현하기보다(굳이 필요치도 않아) balancesUpTo/balanceAt을
   // 쓰는 테스트에서 TODAY처럼 직접 값을 세팅하게 둔다.
@@ -2734,6 +2738,41 @@ test('findDonors: 부족해지는 날 기준으로는 그 사이 들어온 예�
   const d = donors.find((x) => x.a.id === 'donor');
   assert.ok(d, '부족해지는 날 기준이면 그 사이 들어온 수입이 반영돼 donor가 여유 통장으로 나와야 함');
   assert.strictEqual(d.free, 100000);
+});
+
+/* ---------- varyingRecs: 이번 회차를 삭제(r.skip)했는데도 "실제 금액 입력" 알림이
+ * 계속 뜨던 버그의 회귀 테스트(app-evolve cycle40). expandRec()은 r.skip에 있는
+ * 날짜를 항상 걸러내는데(recApply의 scope='one' delete가 r.skip.push(date)로 만듦),
+ * varyingRecs()는 recDates()가 만든 원시 회차 목록만 보고 r.skip을 확인하지 않아
+ * 이미 삭제된 회차에 대해서도 계속 알림을 만들었다 — 사용자가 채워도 expandRec이
+ * skip을 먼저 걸러내므로 아무 거래도 생기지 않는 죽은 알림이었다. */
+function setupVaryingRecsDB() {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.TM = { y: 2026, m: 6 };
+  sandbox.DB = { catVar: {}, recurrences: [] };
+  sandbox.setCatVar('expense', '전기요금', true);
+  sandbox.DB.recurrences.push({
+    id: 'r1', active: true, freq: 'monthly', type: 'expense', category: '전기요금',
+    day: 10, startDate: '2026-01-10', endDate: null, count: null, amount: 50000,
+    weekend: 'none', skip: [], edits: {},
+  });
+}
+test('varyingRecs: 이번 회차를 삭제(skip)했으면 실제 금액 입력 알림에서 빠져야 함', () => {
+  setupVaryingRecsDB();
+  sandbox.DB.recurrences[0].skip = ['2026-06-10'];
+  const vr = sandbox.varyingRecs();
+  assert.ok(!vr.some((x) => x.date === '2026-06-10'), '삭제된 회차는 알림 목록에 남으면 안 됨');
+});
+test('varyingRecs: skip이 없으면 기존처럼 실제 금액 입력 알림에 그대로 나와야 함(회귀 확인)', () => {
+  setupVaryingRecsDB();
+  const vr = sandbox.varyingRecs();
+  assert.ok(vr.some((x) => x.date === '2026-06-10'), 'skip되지 않은 지난 회차는 알림 목록에 있어야 함');
+});
+test('varyingRecs: 이미 실제 금액을 입력(edits)한 회차는 skip과 무관하게 계속 빠져야 함(회귀 확인)', () => {
+  setupVaryingRecsDB();
+  sandbox.DB.recurrences[0].edits = { '2026-06-10': { amount: 45000 } };
+  const vr = sandbox.varyingRecs();
+  assert.ok(!vr.some((x) => x.date === '2026-06-10'), 'edits가 있는 회차는 여전히 알림 목록에서 빠져야 함');
 });
 
 /* ---------- 실행 ---------- */

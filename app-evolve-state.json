@@ -1,15 +1,8 @@
 {
   "cycle": 40,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 34,
-      "phase": "review",
-      "timestamp": "2026-09-16T21:20:00.000Z",
-      "summary": "develop 커밋(616a432, asOpenMat 자기 자신 만기 이체 버그 fix)을 검토하다가, 같은 패턴의 sibling 버그를 하나 더 발견해 그 자리에서 고쳤다. asOpenType()(index.html:2635)의 `if(k==='savings'&&!asDraft.maturityTargetId)asDraft.maturityTargetId=firstCash()` 줄이 오늘 고친 openAssetPicker 경로와 별개로 여전히 excludeId 없는 firstCash()를 그대로 썼다. asDraft는 DB.assets를 JSON.parse(JSON.stringify(...))로 뜬 사본이라 asDraft.id는 원본 자산 id와 같고, 저장 전까지 DB.assets엔 여전히 옛 타입(예: cash)의 원본이 남아있다 — 사용자가 기존 cash 자산을 편집해 종류를 savings로 바꾸면, 그 원본이 DB.assets에서 isCashLike를 만족하는 첫 자산일 경우(흔히 사용자의 첫 계좌) firstCash()가 자기 자신의 id를 그대로 돌려줘 maturityTargetId가 저장 화면에 진입하자마자 자기 자신으로 조용히 채워짐을 코드로 확인했다. 오늘 추가한 doMaturity() 방어 가드가 실행 시점엔 막아주지만, 사용자가 만기 이체 대상을 다시 고르지 않는 한 화면엔 이미 틀린 값이 남아있는 문제였다. firstCash(excludeId)로 시그니처를 확장해(x.id!==excludeId 필터, 인자 없으면 기존과 동일하게 동작) asOpenType이 firstCash(asDraft.id)를 넘기도록 고쳤다 — firstCash()의 또 다른 호출부인 openTxSheet()(2946)는 인자를 안 넘기므로 회귀 없음을 테스트로 확인. test/run.js FUNCTIONS에 firstCash 추가, 회귀 테스트 3개 추가(excludeId로 지정한 자산은 건너뛰고 다음 현금성 자산 반환, excludeId가 유일한 현금성 자산이면 null 반환, 인자 없는 기존 호출부는 회귀 없이 첫 현금성 자산 반환). 233/233 통과(기존 230+신규 3). 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.35.1->1.35.2, sw.js CACHE v104->v105.",
-      "commit": null
-    },
     {
       "cycle": 34,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-17T21:08:32.000Z",
       "summary": "홈 알림 스택에 예산 초과(budgetOver) 알림 추가 — homeAlerts()가 이번 달 카테고리별 예산 초과를 감지해 단일/복수 카드로 노출, 클릭 시 openSpendAnalysisThisMonth()로 지출 분석 시트 이동. APP_VERSION 1.40.0, sw.js CACHE v116으로 올림. 회귀 테스트 262/262 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 40,
+      "phase": "develop",
+      "timestamp": "2026-09-17T22:10:49.892Z",
+      "summary": "Explore 서브에이전트로 아직 다루지 않은 영역을 훑어, 변동(변동성) 카테고리 반복거래의 \"실제 금액 입력\" 알림을 만드는 varyingRecs()(index.html:5055)가 recDates()의 원시 회차만 보고 r.skip을 확인하지 않던 버그를 발견해 수정했다. 반복 이체/지출의 개별 회차를 recApply(scope='one', action='delete')로 삭제하면 r.skip.push(date)만 기록되는데, 실제 거래 목록을 만드는 expandRec()(1897)은 r.skip을 항상 먼저 걸러내는 반면 varyingRecs()는 이 필터가 빠져 있어, 변동 카테고리 반복(예: 전기요금)의 이번 달 회차를 삭제해도 홈 탭 \"실제 금액 입력\" 알림(homeAlerts/openQuickList)에는 계속 남아 있었다. 사용자가 그 알림을 눌러 금액을 입력하면 r.edits[date]에 써지지만 expandRec()이 skip을 먼저 걸러내 아무 효과 없이 조용히 무시되는, 채워도 없어지지 않는 죽은 알림이었다. expandRec()의 기존 skip 체크와 동일한 패턴(if((r.skip||[]).includes(d))return;)을 varyingRecs()의 날짜 루프에 추가해 고쳤다. test/run.js FUNCTIONS에 recIsVarying/varyingRecs를 추가하고 sandbox에 TM({y,m})을 TODAY처럼 직접 세팅 가능하도록 추가, 회귀 테스트 3개(skip된 회차는 알림에서 빠짐, skip 없으면 기존처럼 알림에 남음, edits 있으면 skip과 무관하게 계속 빠짐) 추가. 두 인라인 <script> 블록 모두 vm.Script 파싱 확인, node test/run.js 265/265 통과(기존 262+신규 3). APP_VERSION 1.40.0->1.40.1(버그 fix라 patch bump), sw.js CACHE v116->v117.",
       "commit": null
     }
   ]
