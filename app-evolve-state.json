@@ -1,7 +1,11 @@
 {
   "cycle": 36,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "탭/창 간 localStorage 미동기화로 인한 조용한 데이터 유실 방지",
+    "why": "save()(index.html:1803-1812)는 ~70개 호출 지점 어디서든 localStorage.setItem(dataKey(),JSON.stringify(DB))로 무조건 덮어쓰는데, load()(1742-1759)는 boot() 시점에 딱 한 번만 localStorage를 읽어 메모리 DB에 채운 뒤 이후로는 전혀 재동기화하지 않는다. window의 storage 이벤트나 BroadcastChannel 리스너가 코드 전체에 전혀 없고, visibilitychange/focus 핸들러(5698-5701, maybeRollDay)도 TODAY만 재계산할 뿐 메모리 DB는 그대로 쓴다. 그 결과 같은 브라우저에서 앱을 두 탭(또는 설치된 PWA + 남겨둔 브라우저 탭)으로 열어두면, 탭 A에서 거래를 추가한 뒤 탭 B(부팅 시점의 오래된 DB를 여전히 들고 있는)가 아무 무관한 조작으로든 save()를 한 번 호출하는 순간 탭 B의 오래된 스냅샷이 localStorage를 통째로 덮어써 탭 A의 거래가 에러도 토스트도 undo도 없이 조용히 사라진다. Supabase 클라우드 동기화 경로(1596-1636, isCloudConflict/localHasUnsyncedChanges)는 이미 이 문제를 기기 간 충돌로는 신중하게 다뤄뒀으면서, 훨씬 흔한 같은 브라우저 다중 탭 케이스는 전혀 방어하지 않는 비일관성이 있다. 재무 데이터를 다루는 앱에서 사용자가 인지할 수조차 없는 영구적 데이터 유실이라 우선순위가 가장 높다고 판단.",
+    "approach": "window에 'storage' 이벤트 리스너를 추가해 key===dataKey()인 변경을 감지한다. 신선도 비교를 위해 save()가 DB에 monotonic 카운터(예: DB.settings.__rev, 매 save마다 증가) 또는 저장 시각(__savedAt)을 함께 기록하도록 하고, storage 이벤트 핸들러는 이 값을 이 탭이 마지막으로 알고 있던 값과 비교한다. 진행 중인 미저장 편집(열려 있는 시트/드래프트)이 없고 들어온 값이 더 최신이면 조용히 DB=JSON.parse(e.newValue) 후 migrate(); renderCurrent()로 반영한다(resolveCloudPullRemote와 동일 패턴 재사용). 열려 있는 시트/드래프트가 있으면 덮어쓰지 않고 기존 toastFail/undoToast 패턴을 재사용해 '다른 탭에서 방금 바뀌었어요 · 새로고침해 주세요' 같은 비파괴적 토스트만 띄운다. 최소 버전으로는: 열려 있는 시트가 없을 때 foreign storage 이벤트에 한해 그냥 reload-and-rerender만 해도 저비용으로 조용한 덮어쓰기 구멍을 막을 수 있다. test/run.js에는 신선도 비교/충돌 판정에 쓰이는 순수 함수(있다면)에 대한 회귀 테스트를 추가한다. UI 브라우저 동작(실제 storage 이벤트 발생)은 Playwright로 두 개의 컨텍스트/탭을 열어 e2e로 검증하는 것을 권장."
+  },
   "history": [
     {
       "cycle": 31,
@@ -141,6 +145,13 @@
       "phase": "review",
       "timestamp": "2026-09-17T07:07:53.000Z",
       "summary": "develop 커밋(7f1d8e0, confirmRecTransfer/postponeRecTransfer가 반복 이체 회차별 edits[date].amount/memo 오버라이드를 무시하던 버그 수정)을 검토했다. 수정이 expandRec()(1869)/recApply()/lastActualAmount() 등 기존 코드 전반의 ed-우선 패턴(ed.amount!=null?ed.amount:r.amount)과 정확히 일치함을 확인했고, edits[date]는 recSave()/saveQuickAmount()에서 항상 {amount}만 저장하므로 postponeRecTransfer의 ed.memo 분기는 현재는 도달하지 않지만 expandRec의 동일 패턴과 마찬가지로 해롭지 않은 포워드 호환 코드임을 확인했다. r.amount를 직접 읽는 다른 지점(lastActualAmount, 5017)도 의도된 동작(직전 회차 편집값 우선, 없으면 기본값)임을 grep으로 재확인. 추가된 회귀 테스트 3개(수정된 금액이 확인 시트에 표시, postpone 시 새 거래가 edits 값을 따름, edits 없을 때 기존 동작 유지)가 실제 버그를 정확히 커버하며 236/236 전체 스위트 통과. 코드 변경 없음(이상 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 36,
+      "phase": "critique",
+      "timestamp": "2026-09-17T08:00:00.000Z",
+      "summary": "cycle36 review(f981cd5)가 문제 없음으로 끝낸 직후, 최근 커밋 재검토보다 앱 전체를 구조적으로 훑는 데 집중해 Explore 서브에이전트로 export/import·백업 복원, 멀티통화 엣지케이스, 타임존/날짜 경계, 탭 간 동시성/localStorage 레이스, 차트 렌더링, 오프라인/서비스워커 갱신, 알림/리마인더, 카테고리 삭제 캐스케이드, CSV export 등 아직 다루지 않은 영역을 살폈다. save()(index.html:1803-1812)가 ~70개 호출 지점 어디서든 localStorage를 무조건 덮어쓰는데 load()(1742-1759)는 boot() 시 딱 한 번만 읽고 이후 전혀 재동기화하지 않으며, window storage 이벤트나 BroadcastChannel 리스너가 코드 전체에 전무하고 visibilitychange/focus 핸들러(5698-5701)도 TODAY만 재계산할 뿐 메모리 DB는 그대로 씀을 코드로 확인했다. 그 결과 같은 브라우저에서 앱을 두 탭(설치된 PWA + 남겨둔 브라우저 탭 등)으로 열어두면, 한쪽 탭이 다른 탭의 변경 이후 아무 조작으로든 save()를 호출하는 순간 오래된 스냅샷이 localStorage를 통째로 덮어써 다른 탭에서 추가한 거래가 에러/토스트/undo 없이 조용히 사라진다 — Supabase 클라우드 동기화 경로(1596-1636, isCloudConflict/localHasUnsyncedChanges)는 기기 간 충돌을 신중히 다루면서도 훨씬 흔한 같은 브라우저 다중 탭 케이스는 전혀 방어하지 않는 비일관성이 있다. 재무 데이터의 인지 불가능한 영구 유실이라는 점에서 다른 후보(만기 리마인더 토스트 dedup/snooze 부재 — 코스메틱, pushCloud() SELECT-then-UPSERT TOCTOU 레이스 — 기기 간 서브초 충돌이라 훨씬 드묾)보다 우선순위가 높다고 판단해 채택. advance에서: window storage 이벤트 리스너 추가 + save()에 monotonic rev/savedAt 기록 + 열린 시트 없으면 조용히 재로드·재렌더, 있으면 비파괴 토스트로 안내. 코드 변경 없음, state.json만 갱신.",
       "commit": null
     }
   ]
