@@ -1,6 +1,6 @@
 {
   "cycle": 37,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
     {
@@ -141,6 +141,13 @@
       "phase": "develop",
       "timestamp": "2026-09-17T10:11:19.000Z",
       "summary": "CSV 내보내기가 공유/다운로드 막혀 복사 폴백(copyFallback->openCopyBackup->\"전체 복사\")으로 빠지면, doExport()가 CSV일 때 지키는 isCsv 가드(done()의 if(!isCsv))가 copyBackup()에는 전혀 적용되지 않아 CSV를 텍스트로 복사만 해도 DB.settings.lastExport/backupSnooze가 실제 JSON 백업을 한 것처럼 갱신되어 7일 백업 알림(backupDue)이 조용히 꺼지던 실제 버그를 발견해 수정했다. openCopyBackup(text,reason,override)이 override.isCsv 여부로 모듈 스코프 let _copyIsCsv를 세팅하고, copyBackup()은 doExport의 done()과 동일하게 if(!_copyIsCsv)로 감싸 CSV 복사 시에는 백업 알림 상태를 건드리지 않는다. doExport()의 copyFallback 호출부에서 isCsv:true를 override에 함께 전달하도록 콜사이트도 수정. test/run.js에 openCopyBackup/copyBackup, _copyIsCsv를 새로 추출하고(LETS에 _copyIsCsv 추가, $ 스텁에 bkText textarea 흉내, navigator:{} 스텁 추가) 회귀 테스트 4개 추가: override.isCsv=true/false 각각 _copyIsCsv 세팅 확인, CSV 복사는 lastExport/backupSnooze 건드리지 않음, 실제 JSON 백업 복사는 기존처럼 갱신함(회귀 확인). 가드를 되돌려서 새 테스트가 실제로 실패함을 확인 후 재적용. 243/243 통과(기존 239+신규 4). 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.38.0->1.38.1, sw.js CACHE v110->v111.",
+      "commit": null
+    },
+    {
+      "cycle": 37,
+      "phase": "review",
+      "timestamp": "2026-09-17T11:00:00.000Z",
+      "summary": "develop 커밋(8c0eec7, CSV 복사 폴백이 백업 알림 상태를 조용히 꺼버리던 버그 수정)을 검토했다. openCopyBackup()의 유일한 호출부(doExport()의 copyFallback, index.html:4407)가 isCsv 분기에 따라 override에 isCsv:true를 넘기거나 override 자체를 null로 넘기므로(그 외 openCopyBackup 호출부는 코드베이스 전체에 없음을 grep으로 확인), 모듈 스코프 let _copyIsCsv=!!(override&&override.isCsv)가 매 호출마다 정확히 재설정되어 이전 호출의 CSV 상태가 다음 호출로 새어 들어갈 여지가 없음을 확인했다. copyBackup()의 if(!_copyIsCsv){...save()} 가드가 doExport()의 done()에서 쓰는 if(!isCsv) 패턴과 정확히 대칭임도 확인. 새 회귀 테스트 4개(override.isCsv=true/false 세팅 확인 2개, CSV 복사 시 lastExport/backupSnooze 불변, JSON 복사 시 기존처럼 갱신되는 회귀 확인)가 실제 버그 시나리오를 정확히 재현하고, 가드를 되돌리면 테스트가 실패함을 커밋 로그에서 확인했다고 기록되어 있어 테스트가 실제로 이 수정에 걸려있음을 신뢰할 수 있었다. APP_VERSION(1.38.0->1.38.1)과 sw.js CACHE(v110->v111) 버전 동시 반영도 확인. 두 인라인 <script> 블록 모두 node --check 파싱 통과, node test/run.js 243/243 통과. 문제 없음.",
       "commit": null
     }
   ]
