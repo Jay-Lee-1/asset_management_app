@@ -1,15 +1,8 @@
 {
   "cycle": 39,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 33,
-      "phase": "review",
-      "timestamp": "2026-09-16T16:10:00.000Z",
-      "summary": "develop 커밋(a7e598c, 반복거래 future 분리 시 skip/edits 유실 버그 fix)을 검토했다. splitRecOverrides()의 날짜 비교가 문자열 lexicographic 비교(dt<effectiveDate)인데, skip/edits의 키와 recApply()가 push하는 date/ctx.date가 전부 동일한 'YYYY-MM-DD' 포맷임을 grep으로 직접 확인해 비교가 안전함을 검증했다. 경계 처리(effectiveDate 당일은 >=로 future 쪽에 포함)가 endDate=addDays(effectiveDate,-1)/새 레코드 startDate=effectiveDate 분할 규칙과 정확히 맞아떨어짐을 확인. splitRecurrenceAt()에서 새 레코드의 skip/edits를 draft가 아닌 original에서 분리해 가져오는 점이 의도적인지 editRec()(index.html:3126, recDraft=JSON.parse(JSON.stringify(r)))를 확인해 draft.skip/edits가 항상 원본과 동일한 깊은 복사본이라 데이터 손실이 없음을 검증했다. recSave() future 분기에서 undoFn이 skip/edits까지 함께 복원하도록 고친 것도 기존 endDate/count 복원과 대칭적으로 올바름을 확인. 새 회귀 테스트 2개가 실제 시나리오(effectiveDate 전후 skip/edits 혼재)를 정확히 재현. 두 인라인 <script> 블록 모두 node --check 파싱 확인. 223/223 통과. 문제 없음.",
-      "commit": null
-    },
     {
       "cycle": 33,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-17T17:10:34.427Z",
       "summary": "백업 복원(파일 가져오기)·클라우드 동기화(pullCloud/afterCloudAuth/resolveCloudPullRemote) 경로에 숫자 필드 유효성 검증을 추가했다. sanitizeAmount(v,min) 순수 함수(NaN/비숫자면 0, min이 있으면 그 아래로 클램프)와 sanitizeBackup(obj) 순수 함수(txns.amount, assets의 amount/fxAmount/goldDon/stockQty/baseAmount/amountKRW를 검증·보정하고 id/date 등 필수 필드가 없는 레코드는 제거, {data,fixedCount,droppedCount} 반환)를 index.html에 추가. fxAmount/goldDon/stockQty 같은 보유수량 필드는 음수면 0으로 클램프하되, baseAmount/amountKRW처럼 마이너스도 유효한 잔액성 필드는 클램프하지 않고 유한수 여부만 검증하도록 구분했다. restoreBackup()의 시그니처는 바꾸지 않고(기존 회귀 테스트 보존), 호출부인 importFile 핸들러와 afterCloudAuth/resolveCloudPullRemote에서 DB 대입 전에 sanitizeBackup()을 거치도록 했다. fixedCount/droppedCount>0이면 토스트로 안내. test/run.js에 sanitizeAmount/sanitizeBackup 회귀 테스트 10개(NaN/문자열/음수/필수필드누락/원본불변/빈입력) 추가, FUNCTIONS·CONSTS 화이트리스트에 새 함수/상수 등록. 260/260 테스트 통과. APP_VERSION 1.38.3→1.39.0, sw.js CACHE v113→v114.",
+      "commit": null
+    },
+    {
+      "cycle": 39,
+      "phase": "develop",
+      "timestamp": "2026-09-17T18:15:20.158Z",
+      "summary": "Explore 서브에이전트로 아직 다루지 않은 영역을 훑어, 부족 해결 제안 시트(openFixShortfall, index.html:5126)의 여유 통장 판정이 실제 이체 실행일이 아니라 부족해지는 날짜 기준으로 계산되던 버그를 발견해 수정했다. findDonors(needAmount,targetId,byDate)(5111)는 byDate 기준 balanceAt으로 여유 통장을 고르는 범용 함수인데, openFixShortfall()이 이를 부를 때 사용자가 실제 고른 이체일(when=내일/결제 전날/직접 선택, _fixWhen)이 아니라 통장이 부족해지는 날짜(date)를 그대로 넘기고 있었다(5133). balanceAt은 그 날짜까지의 모든 예정 수입/지출을 포함해 잔액을 계산하므로, when과 date 사이에 들어오는 예정 수입(예: 월급)이 있으면 그 돈이 아직 들어오지 않은 when 시점에도 이미 충분한 것처럼 잘못 표시돼, 사용자가 \"내일\" 옮기기를 눌러도 실제로는 그 통장에 그만한 잔액이 없어 이체가 마이너스로 남는 실제 재무 버그였다(fixSetWhen이 날짜만 바꿔 재호출해도 donors 계산이 항상 date 기준이라 3개 날짜 버튼 중 뭘 골라도 결과가 똑같은 것도 같은 원인). findDonors(need,targetId,date)를 findDonors(need,targetId,when)으로 고쳤고, 여유 통장 표시 문구의 날짜 라벨(5143, shortDate(date))도 실제 잔액을 평가한 날짜와 맞게 shortDate(when)으로 함께 고쳤다. test/run.js FUNCTIONS에 findDonors를 추가하고 회귀 테스트 2개(when=내일 기준으로는 아직 안 들어온 예정 수입이 반영되지 않아 여유 통장에서 빠짐, date=부족해지는 날 기준으로는 그 사이 수입이 반영돼 잘못 충분해 보임)를 추가해 버그 시나리오를 정확히 재현했다. 두 인라인 <script> 블록 모두 node --check 파싱 확인, node test/run.js 262/262 통과(기존 260+신규 2). APP_VERSION 1.39.0->1.39.1(버그 fix라 patch bump), sw.js CACHE v114->v115.",
       "commit": null
     }
   ]

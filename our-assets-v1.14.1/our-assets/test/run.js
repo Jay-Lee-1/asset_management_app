@@ -85,7 +85,7 @@ const FUNCTIONS = [
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards',
   'rateUnknown', 'filteredHist', 'histInvalidate',
   'genSalt', 'pbkdf2Hash', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer',
-  'foreignSaveIsNewer', 'openCopyBackup', 'copyBackup',
+  'foreignSaveIsNewer', 'openCopyBackup', 'copyBackup', 'findDonors',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -2696,6 +2696,44 @@ test('copyBackup: 실제 JSON 백업 복사(_copyIsCsv=false)에서는 기존처
   sandbox.copyBackup();
   assert.notStrictEqual(sandbox.DB.settings.lastExport, 0, 'JSON 백업 복사는 lastExport를 갱신해야 함');
   assert.strictEqual(sandbox.DB.settings.backupSnooze, 0, 'JSON 백업 복사는 backupSnooze를 리셋해야 함');
+});
+
+/* ---------- findDonors: '해결 방법 보기'가 이체가 실행될 날이 아니라 부족해지는 날 기준으로
+ * 여유 통장을 골라 실제로는 아직 안 들어온 돈으로 이체를 권하던 버그의 회귀 테스트(app-evolve cycle39).
+ * openFixShortfall()이 findDonors(need,targetId,date)처럼 부족해지는 날(date)을 넘기면,
+ * date와 이체 실행일(when=내일/결제 전날/직접 고른 날) 사이에 들어오는 예정 수입까지
+ * balanceAt이 미리 반영해버려 "내일 당장 옮겨도 충분하다"고 잘못 권하게 된다.
+ * fix는 openFixShortfall이 findDonors를 date가 아니라 when으로 부르도록 고치는 것이므로,
+ * 여기선 findDonors 자체가 넘겨받은 byDate를 그대로 존중해 날짜별로 다른 결과를 내는지 확인한다. */
+function setupFindDonorsDB() {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox._balCache.clear();
+  sandbox.DB = {
+    settings: {},
+    assets: [
+      { id: 'target', type: 'cash', baseAmount: 0 },
+      { id: 'donor', type: 'cash', baseAmount: 0 },
+    ],
+    // donor 통장은 지금은 0원이지만, 내일(06-16)과 부족해지는 날(06-25) 사이인 06-20에
+    // 10만원 예정 수입이 들어와 그 이후로는 잔액이 충분해진다.
+    txns: [{ id: 'inc1', date: '2026-06-20', type: 'income', category: '월급', amount: 100000, toAssetId: 'donor' }],
+    recurrences: [],
+  };
+}
+test('findDonors: 이체 실행일(내일) 기준으로는 아직 안 들어온 돈이라 여유 통장 목록에서 빠진다', () => {
+  setupFindDonorsDB();
+  const tomorrow = sandbox.addDays(sandbox.TODAY, 1); // 2026-06-16, 예정 수입(06-20)보다 앞선 날
+  const donors = sandbox.findDonors(50000, 'target', tomorrow);
+  assert.ok(!donors.some((x) => x.a.id === 'donor'), '아직 수입이 들어오기 전 날짜 기준이면 donor는 여유 통장 목록에 없어야 함');
+});
+test('findDonors: 부족해지는 날 기준으로는 그 사이 들어온 예정 수입까지 포함돼 충분해 보인다(문제의 원인이 되는 날짜)', () => {
+  setupFindDonorsDB();
+  const shortfallDate = '2026-06-25'; // 예정 수입(06-20)보다 뒤 날짜
+  const donors = sandbox.findDonors(50000, 'target', shortfallDate);
+  const d = donors.find((x) => x.a.id === 'donor');
+  assert.ok(d, '부족해지는 날 기준이면 그 사이 들어온 수입이 반영돼 donor가 여유 통장으로 나와야 함');
+  assert.strictEqual(d.free, 100000);
 });
 
 /* ---------- 실행 ---------- */
