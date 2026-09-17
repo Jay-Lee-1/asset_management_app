@@ -1288,7 +1288,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.36.1';
+const APP_VERSION='1.37.0';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2799,7 +2799,8 @@ function calCellsFor(y,m,sel){
   const hasTr=tx.some(t=>t.type==='transfer');
   const cls=['cal-cell'];if(other)cls.push('other');if(ds===sel)cls.push('sel');if(ds===TODAY)cls.push('today');
   const lineCnt=(inn?1:0)+(ex?1:0)+(sv?1:0);if(lineCnt>=3)cls.push('three'); /* 3줄이면 폰트 축소 */
-  cells+=`<div class="${cls.join(' ')}" ${other?'':`onclick="selDay('${ds}')"`}>
+  const dayLabel=`${dnum}일${inn?` 수입 ${abbr(inn)}`:''}${ex?` 지출 ${abbr(ex)}`:''}${ds===sel?' 선택됨':''}${ds===TODAY?' 오늘':''}`;
+  cells+=`<div class="${cls.join(' ')}" ${other?'':`tabindex="0" role="button" aria-pressed="${ds===sel}" aria-label="${dayLabel}" onclick="selDay('${ds}')" onkeydown="rowKeydown(event,()=>selDay('${ds}'))"`}>
    ${hasSch?'<span class="dotp"></span>':''}${hasTr?'<span class="dott"></span>':''}<div class="d">${dnum}</div>
    <div class="cal-amts">${inn?`<div class="in num">+${abbr(inn)}</div>`:''}${ex?`<div class="ex num">-${abbr(ex)}</div>`:''}${sv?`<div class="sv num">${abbr(sv)}</div>`:''}</div></div>`;
  }
