@@ -2445,6 +2445,20 @@ test('renderPlan: 플랜 탭 일별 거래 행(flow-item)에 키보드/스크린
   assert.ok(body.includes('<div class="flow-item" tabindex="0" role="button"'), 'flow-item에 role="button"이 없음');
   assert.ok(body.includes('onkeydown="rowKeydown(event,()=>planTap('), 'flow-item에 rowKeydown 연결이 없음');
 });
+/* ---------- renderPlan: 귀속(owner) 이름변경/삭제 후 ST.plan.owner가 낡은 값으로 남던 버그 ----------
+ * renderAssets()는 ST.assetOwner가 더 이상 DB.owners에 없으면 'all'로 되돌리는 가드가 있는데,
+ * renderPlan()에는 짝이 되는 가드가 없어서 doRenameOwner()로 귀속 이름을 바꾸면(플랜 탭에서
+ * 그 귀속의 통장을 선택해둔 상태였을 때) ST.plan.owner가 사라진 이름 그대로 남는다. cashAssets
+ * 필터가 그 이름과 일치하는 자산을 못 찾아 0개가 되고, assetId가 null로 떨어져 플랜 탭이
+ * "통장 없음"으로 무너진다 — 통장 선택 시트를 다시 열어야만(planAsset이 owner를 재동기화) 복구됐다.
+ * renderAssets와 동일한 패턴의 가드를 cashAssets 계산 전에 추가해 고쳤다. */
+test('renderPlan: 귀속이 이름변경/삭제로 사라지면 ST.plan.owner를 renderAssets와 동일하게 전체로 되돌린다', () => {
+  const body = extractFunction('renderPlan');
+  const guardIdx = body.indexOf("if(ST.plan.owner!=='전체'&&!DB.owners.includes(ST.plan.owner))ST.plan.owner='전체'");
+  const cashIdx = body.indexOf('const cashAssets=');
+  assert.ok(guardIdx !== -1, "ST.plan.owner 존재 확인 가드가 없음");
+  assert.ok(cashIdx !== -1 && guardIdx < cashIdx, '가드가 cashAssets 필터 계산보다 먼저 실행되지 않음');
+});
 test('renderMenu: 메뉴 탭 계정 진입점(acct-card)에 키보드/스크린리더 접근 패턴이 있다', () => {
   const body = extractFunction('renderMenu');
   assert.ok(/class="card acct-card"[^>]*role="button"/.test(body), 'acct-card에 role="button"이 없음');
