@@ -1,15 +1,8 @@
 {
   "cycle": 40,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 34,
-      "phase": "critique",
-      "timestamp": "2026-09-16T23:10:00.000Z",
-      "summary": "cycle34 review(d5fb2be)가 asOpenMat 자기 자신 만기 이체 버그의 sibling(asOpenType)까지 그 자리에서 고친 직후, 최근 커밋 재검토보다 앱 전체를 구조적으로 훑는 데 집중해 Explore 서브에이전트로 net-worth 이력, 진단 도구, 시세 동기화, 인증 플로우 전반을 살폈다. updateNwHistory(index.html:2021)가 startApp()과 실제 자정 날짜 전환을 감지한 refreshToday()에서만 호출되고, save()(1801, saveTx/saveAsset/saveRec/saveBudget 등 ~70곳의 단일 호출 지점)나 시세 갱신(autoSyncRates 등) 경로에서는 전혀 호출되지 않음을 코드로 확인했다. 그 결과 하루 한 번 앱을 여는 흔한 사용 패턴에서 그날의 순자산 스냅샷이 '앱을 처음 연 순간'으로 영구 고정되고, 이후 지출/자산 매매/시세 변동은 반영되지 않은 채 다음날 자정 전환 때 그 값이 그대로 굳어버려, 앱의 핵심 기능인 순자산 추이 차트가 사실상 항상 부정확하고 사후 복구도 불가능한 데이터 정확성 결함으로 판단해 채택. 후보로 검토했으나 보류한 것: detectStaleMarketValuedTxns(1997, 이미 잘 동작하는 진단 안전망), pruneNwHistory(2028)의 90일 이후 월별 압축(의도된 트레이드오프), Kakao 로그아웃의 조용한 catch(e){} 및 guestHasData 휴리스틱(사소함). pending_advance_plan에 save() 성공 시 TODAY 기준 updateNwHistory 호출 추가 + 시세 갱신 경로 커버 + 회귀 테스트 계획 저장. 코드 변경 없음, state.json만 갱신.",
-      "commit": null
-    },
     {
       "cycle": 34,
       "phase": "advance",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-17T22:10:49.892Z",
       "summary": "Explore 서브에이전트로 아직 다루지 않은 영역을 훑어, 변동(변동성) 카테고리 반복거래의 \"실제 금액 입력\" 알림을 만드는 varyingRecs()(index.html:5055)가 recDates()의 원시 회차만 보고 r.skip을 확인하지 않던 버그를 발견해 수정했다. 반복 이체/지출의 개별 회차를 recApply(scope='one', action='delete')로 삭제하면 r.skip.push(date)만 기록되는데, 실제 거래 목록을 만드는 expandRec()(1897)은 r.skip을 항상 먼저 걸러내는 반면 varyingRecs()는 이 필터가 빠져 있어, 변동 카테고리 반복(예: 전기요금)의 이번 달 회차를 삭제해도 홈 탭 \"실제 금액 입력\" 알림(homeAlerts/openQuickList)에는 계속 남아 있었다. 사용자가 그 알림을 눌러 금액을 입력하면 r.edits[date]에 써지지만 expandRec()이 skip을 먼저 걸러내 아무 효과 없이 조용히 무시되는, 채워도 없어지지 않는 죽은 알림이었다. expandRec()의 기존 skip 체크와 동일한 패턴(if((r.skip||[]).includes(d))return;)을 varyingRecs()의 날짜 루프에 추가해 고쳤다. test/run.js FUNCTIONS에 recIsVarying/varyingRecs를 추가하고 sandbox에 TM({y,m})을 TODAY처럼 직접 세팅 가능하도록 추가, 회귀 테스트 3개(skip된 회차는 알림에서 빠짐, skip 없으면 기존처럼 알림에 남음, edits 있으면 skip과 무관하게 계속 빠짐) 추가. 두 인라인 <script> 블록 모두 vm.Script 파싱 확인, node test/run.js 265/265 통과(기존 262+신규 3). APP_VERSION 1.40.0->1.40.1(버그 fix라 patch bump), sw.js CACHE v116->v117.",
+      "commit": null
+    },
+    {
+      "cycle": 40,
+      "phase": "review",
+      "timestamp": "2026-09-17T23:07:00.000Z",
+      "summary": "develop 커밋(119e68a, varyingRecs()가 recDates() 원시 회차만 보고 r.skip을 확인하지 않아 삭제된 반복거래 회차의 \"실제 금액 입력\" 알림이 죽지 않던 버그 수정)을 검토했다. 추가된 필터(index.html:5061, if((r.skip||[]).includes(d))return;)가 expandRec()(1903)의 기존 skip 필터와 정확히 동일한 패턴이며 edits 체크(5062)보다 먼저 실행돼 skip과 edits 우선순위 충돌이 없음을 확인했다. r.skip을 채우는 다른 지점들(1460 recApply scope=one delete, 3150 개별 회차 삭제, 3179 splitRecOverrides)이 모두 날짜 문자열 배열을 그대로 push/재구성하므로 includes(d) 비교와 형식이 일치함도 확인. 추가된 회귀 테스트 3개(skip된 회차 제외, skip 없으면 기존처럼 노출, edits 있으면 skip과 무관하게 계속 제외)가 실제 버그 시나리오와 두 회귀 케이스를 정확히 커버한다. 두 인라인 <script> 블록 모두 vm.Script 파싱 통과, node test/run.js 265/265 통과. 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
