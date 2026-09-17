@@ -1,15 +1,12 @@
 {
   "cycle": 39,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "예산 초과를 홈 알림에 노출 (budgetOver 알림 추가)",
+    "why": "DB.budgetHistory 기반 카테고리별 예산 시스템(budgetForMonth :3846, budgetProgress :3837, totalBudgetSummary :3864의 overCount)이 이미 존재하지만, 실제로 초과 여부를 보여주는 곳은 사용자가 수동으로 들어가야 하는 지출 분석 화면(openSpendAnalysis :3873)뿐이다. 반면 homeAlerts()(:5276-5291)는 클라우드 충돌, 백업 지연, 이체 확인 대기, 예상 마이너스 잔액(planNegatives), 만기 알림, 변동금액 반복거래, 오래된 시세 자산 등 7가지 위험 신호를 이미 홈 탭에 능동적으로 띄우는 성숙한 알림 스택인데 예산 초과만 여기서 빠져 있다. 사용자가 카테고리 예산을 정해도 다 쓸 때까지 알아채지 못하는 경우가 흔해, 예산 기능의 핵심 목적(조기 경고를 통한 소비 조절)이 무력화되고 있고 다른 알림들과의 패턴 일관성도 깨져 있다.",
+    "approach": "homeAlerts(neg) 안에 budgetOver 알림 종류를 추가한다: 이번 달(TM.y,TM.m) 기준 spendByCategory + totalBudgetSummary로 budgetForMonth(c,y,m)>0이고 spent>budget인 카테고리를 걸러, 기존 quick/quickMulti 패턴처럼 단일 카테고리면 카드 하나(\"외식 예산을 12,000원 초과했어요\"), 다수면 요약 카드(\"예산을 초과한 카테고리 3개\")를 homeAlertCard()로 렌더한다. 클릭 시 openSpendAnalysis()로 이동(cloudConflict/backup 카드의 onclick 패턴 재사용). renderHome()의 기존 homeAlerts(neg) 호출 지점에서 같이 계산해 별도 렌더 패스를 늘리지 않는다. 80/90% 경고 단계 없이 실제 초과(over) 시점만 알림(budgetProgress().over의 기존 이진 의미와 일치). 매 렌더마다 재알림되어 피로감이 크면 backupSnooze와 비슷한 월별 dismiss/snooze를 advance 단계에서 판단해 추가할 수 있음(선택 사항)."
+  },
   "history": [
-    {
-      "cycle": 33,
-      "phase": "advance",
-      "timestamp": "2026-09-16T20:09:07.000Z",
-      "summary": "AUTH 로컬 계정 비밀번호 해시를 무salt DJB2에서 salt+PBKDF2-SHA256(120000회)로 교체. 기존 계정은 다음 로그인 성공 시 레이지 마이그레이션. signUp 최소 비밀번호 길이 4->8자. signIn에 계정별 실패 카운트 기반 지수 백오프(5회부터 최대 30초) 추가. genSalt/pbkdf2Hash 회귀 테스트 4개 추가(test/run.js가 async 테스트와 async function 추출을 지원하도록 확장). APP_VERSION 1.35.0, sw.js CACHE v103.",
-      "commit": null
-    },
     {
       "cycle": 34,
       "phase": "develop",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-09-17T19:00:00.000Z",
       "summary": "develop 커밋(98f5ac0, openFixShortfall()의 findDonors 호출을 date에서 when으로 바꾼 수정)을 검토했다. findDonors의 유일한 호출부가 이번에 고쳐졌고, balanceAt()이 인자로 받은 날짜까지의 누적 잔액을 계산하는 함수라 when(실제 이체 실행일)을 기준으로 여유를 판정하는 게 맞다. 여러 통장 분할 제안(plan.push)과 표시 라벨(shortDate(when))도 같은 날짜로 일관되게 바뀌었고, 추가된 회귀 테스트 2개가 date/when 두 기준의 차이를 정확히 포착한다. 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 39,
+      "phase": "critique",
+      "timestamp": "2026-09-17T20:10:12.222Z",
+      "summary": "cycle39 review(34e0609)가 문제 없음으로 끝낸 직후, 최근 커밋 재검토보다 앱 전체를 구조적으로 훑는 데 집중해 Explore 서브에이전트로 성능/UX/에러 처리/일관성 등 최근 사이클들이 다루지 않은 영역을 살폈다. DB.budgetHistory 기반 카테고리별 예산 시스템(budgetForMonth :3846, budgetProgress :3837, totalBudgetSummary :3864의 overCount)이 이미 존재하지만 실제 초과 여부는 사용자가 수동으로 들어가야 하는 지출 분석 화면(openSpendAnalysis :3873)에서만 확인 가능하고, 클라우드 충돌/백업 지연/이체 확인/예상 마이너스 잔액/만기 알림/변동금액 반복거래/오래된 시세 등 7가지 위험 신호를 능동적으로 홈 탭에 띄우는 homeAlerts()(:5276-5291)에는 예산 초과가 빠져 있음을 확인했다. 예산을 다 쓸 때까지 알아채지 못하는 경우가 흔해 기능의 핵심 목적(조기 경고)이 무력화된다고 판단해 채택. 후보로 검토했으나 기각한 것: fx 자산 멀티통화 이중계산(excludeMarketValued:true로 이미 방지되는 의도된 설계라 실제 버그 아님), CSV export 인젝션/인코딩(txnsToCSV :4371에 BOM/이스케이프/가드가 이미 충실), 반복거래 월말/윤년/주말이동 날짜 계산(recDates :1850에 이미 성숙한 처리와 주석 존재). pending_advance_plan에 homeAlerts에 budgetOver 알림을 추가하는 계획(spendByCategory+totalBudgetSummary로 초과 카테고리 판정, quick/quickMulti 패턴 재사용, openSpendAnalysis로 이동) 저장. 코드 변경 없음, state.json만 갱신.",
       "commit": null
     }
   ]
