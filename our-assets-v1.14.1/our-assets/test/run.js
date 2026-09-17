@@ -84,6 +84,7 @@ const FUNCTIONS = [
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards',
   'rateUnknown', 'filteredHist', 'histInvalidate',
   'genSalt', 'pbkdf2Hash', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer',
+  'foreignSaveIsNewer',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -1913,6 +1914,20 @@ test('localHasUnsyncedChanges: 동기화 기록 자체가 없으면(이 기기�
 test('localHasUnsyncedChanges: 로컬 저장 기록 자체가 없으면(최초 부팅 등) 미동기화 변경이 없다', () => {
   assert.strictEqual(sandbox.localHasUnsyncedChanges(null, null), false);
   assert.strictEqual(sandbox.localHasUnsyncedChanges(null, 1000), false);
+});
+
+/* ---------- foreignSaveIsNewer: handleForeignStorage()가 다른 탭의 save()를 반영할지 판단하는 순수 로직
+ * (탭 간 localStorage 미동기화로 조용히 데이터가 사라지던 버그의 감지 조건) ---------- */
+test('foreignSaveIsNewer: 다른 탭의 저장 시각이 이 탭이 마지막으로 알던 시각보다 나중이면 최신이다', () => {
+  assert.strictEqual(sandbox.foreignSaveIsNewer('2000', 1000), true);
+});
+test('foreignSaveIsNewer: 다른 탭의 저장 시각이 이전이거나 같으면 최신이 아니다(이 탭 자신의 저장 반영 등)', () => {
+  assert.strictEqual(sandbox.foreignSaveIsNewer('1000', 2000), false);
+  assert.strictEqual(sandbox.foreignSaveIsNewer('1000', 1000), false);
+});
+test('foreignSaveIsNewer: storage 이벤트의 newValue가 없으면(키 삭제 등) 최신이 아니다', () => {
+  assert.strictEqual(sandbox.foreignSaveIsNewer(null, 1000), false);
+  assert.strictEqual(sandbox.foreignSaveIsNewer('', 1000), false);
 });
 
 /* ---------- renderCurrent: 전역 에러 바운더리 ---------- */

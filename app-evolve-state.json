@@ -1,26 +1,8 @@
 {
-  "cycle": 36,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "탭/창 간 localStorage 미동기화로 인한 조용한 데이터 유실 방지",
-    "why": "save()(index.html:1803-1812)는 ~70개 호출 지점 어디서든 localStorage.setItem(dataKey(),JSON.stringify(DB))로 무조건 덮어쓰는데, load()(1742-1759)는 boot() 시점에 딱 한 번만 localStorage를 읽어 메모리 DB에 채운 뒤 이후로는 전혀 재동기화하지 않는다. window의 storage 이벤트나 BroadcastChannel 리스너가 코드 전체에 전혀 없고, visibilitychange/focus 핸들러(5698-5701, maybeRollDay)도 TODAY만 재계산할 뿐 메모리 DB는 그대로 쓴다. 그 결과 같은 브라우저에서 앱을 두 탭(또는 설치된 PWA + 남겨둔 브라우저 탭)으로 열어두면, 탭 A에서 거래를 추가한 뒤 탭 B(부팅 시점의 오래된 DB를 여전히 들고 있는)가 아무 무관한 조작으로든 save()를 한 번 호출하는 순간 탭 B의 오래된 스냅샷이 localStorage를 통째로 덮어써 탭 A의 거래가 에러도 토스트도 undo도 없이 조용히 사라진다. Supabase 클라우드 동기화 경로(1596-1636, isCloudConflict/localHasUnsyncedChanges)는 이미 이 문제를 기기 간 충돌로는 신중하게 다뤄뒀으면서, 훨씬 흔한 같은 브라우저 다중 탭 케이스는 전혀 방어하지 않는 비일관성이 있다. 재무 데이터를 다루는 앱에서 사용자가 인지할 수조차 없는 영구적 데이터 유실이라 우선순위가 가장 높다고 판단.",
-    "approach": "window에 'storage' 이벤트 리스너를 추가해 key===dataKey()인 변경을 감지한다. 신선도 비교를 위해 save()가 DB에 monotonic 카운터(예: DB.settings.__rev, 매 save마다 증가) 또는 저장 시각(__savedAt)을 함께 기록하도록 하고, storage 이벤트 핸들러는 이 값을 이 탭이 마지막으로 알고 있던 값과 비교한다. 진행 중인 미저장 편집(열려 있는 시트/드래프트)이 없고 들어온 값이 더 최신이면 조용히 DB=JSON.parse(e.newValue) 후 migrate(); renderCurrent()로 반영한다(resolveCloudPullRemote와 동일 패턴 재사용). 열려 있는 시트/드래프트가 있으면 덮어쓰지 않고 기존 toastFail/undoToast 패턴을 재사용해 '다른 탭에서 방금 바뀌었어요 · 새로고침해 주세요' 같은 비파괴적 토스트만 띄운다. 최소 버전으로는: 열려 있는 시트가 없을 때 foreign storage 이벤트에 한해 그냥 reload-and-rerender만 해도 저비용으로 조용한 덮어쓰기 구멍을 막을 수 있다. test/run.js에는 신선도 비교/충돌 판정에 쓰이는 순수 함수(있다면)에 대한 회귀 테스트를 추가한다. UI 브라우저 동작(실제 storage 이벤트 발생)은 Playwright로 두 개의 컨텍스트/탭을 열어 e2e로 검증하는 것을 권장."
-  },
+  "cycle": 37,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 31,
-      "phase": "critique",
-      "timestamp": "2026-09-16T09:11:51.000Z",
-      "summary": "cycle31 review(38a49e9)가 hasFutureTxns() DISP_TO/RANGE_TO 버그를 고친 직후, 최근 커밋 재검토보다 앱 전체를 구조적으로 훑는 데 집중해 Explore 서브에이전트로 자산 평가/시세 동기화, 차트 접근성, CI 부재, localStorage 쓰기 비용 등을 살폈다. 가장 우선순위 높은 문제로 saveAsset()(index.html:2628)이 새 stock 종목코드 등록 시 DB.rates.stocks[code]=0으로 명시적으로 채우고, 새 fx 통화·최초 gold 자산도 값이 아예 없어 assetEval()/totalAssetAt()의 (R.fx[c]||0) 등 폴백에 걸려 조용히 ₩0으로 평가되는 걸 확인했다. autoSyncRates()는 마지막 '성공 동기화' 시각 기준 10분 TTL로만 게이트되어 방금 동기화 직후 새 자산을 추가하면 최대 10분 가까이 갱신 안 됨. 순자산 추적 앱에서 실제 자산 등록 직후 총자산이 그 금액만큼 조용히 줄어 보이는 핵심 정확성 버그로 판단, advance 단계 계획으로 pending_advance_plan에 저장(즉시 syncRates 트리거 + '가격 미확인' 상태를 실제 0원과 구분해 표시). 코드 변경 없음, state.json만 갱신.",
-      "commit": null
-    },
-    {
-      "cycle": 31,
-      "phase": "advance",
-      "timestamp": "2026-09-16T10:14:33.026Z",
-      "summary": "critique 계획대로 구현했다. rateUnknown(a)(index.html:1940, isMarketValued 옆) 순수 함수를 새로 추가해 fx는 R.fx[currency]==null, gold는 !R.goldPerG, stock은 R.stocks[stockCode]==null로 '시세를 한 번도 못 받아온 상태'를 실제 0원과 구분한다. saveAsset()이 새 stockCode 등록 시 DB.rates.stocks[code]=0으로 미리 채우던 줄을 없애(이제 키 자체가 안 생김) rateUnknown이 오작동하지 않게 했고, 저장 직전(변이 전) rateUnknown(d)를 rateWasUnknown에 저장해뒀다가 save()/closeSheet()/renderCurrent()/toast() 뒤에 그 값이 참이면 autoSyncRates()의 10분 TTL을 우회해 syncRates(true)를 즉시(fire-and-forget) 호출한다 — 이미 시세를 아는 자산 수정/기존 통화 재사용 시엔 호출 안 됨을 테스트로 확인. 삭제된 동명 자산 재연동 플로우(askRelinkDeleted, _amLink/_amFresh)에도 saveAsset()과 동일한 rateWasUnknown 트리거를 넣어 동일 버그가 그 경로에서도 재발하지 않게 했다. UI에도 반영: 자산 목록 카드(assetBodyHTML)에서 rateUnknown(a)이면 기존 '평가액' 라벨 대신 빨간 '가격 미확인' 배지(.mini.warn, --expense 컬러 재사용)를 보여주고, 홈 화면 시세 카드(mktRows)는 0원 대신 '미확인' 배지를, 시세 연동 관리 시트(openRateSheet)는 rsub에 '· 미확인'을 덧붙인다. test/run.js에 rateUnknown 자체 판정 테스트 2개(시세 타입별 참/거짓, 무관 타입은 항상 거짓)와 saveAsset 관련 테스트 4개(새 종목코드 등록 시 stocks[code]가 0으로 채워지지 않고 undefined로 남는지 + syncRates(true) 호출, 이미 아는 종목 수정 시 미호출, 새 통화는 호출·이미 보유 중인 통화는 미호출)를 추가했다. deletedAssetHistoryExists/askRelinkDeleted/clampRecurringToMaturity/syncRates가 이전엔 어떤 테스트에서도 실제로 호출된 적이 없어(둘 다 dup 차단 경로만 테스트) 새로 스텁을 추가해야 했다. 205/205 통과(기존 199+신규 6). 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.31.2->1.32.0(advance라 minor bump), sw.js CACHE v98->v99. pending_advance_plan 비움.",
-      "commit": null
-    },
     {
       "cycle": 32,
       "phase": "develop",
@@ -152,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-17T08:00:00.000Z",
       "summary": "cycle36 review(f981cd5)가 문제 없음으로 끝낸 직후, 최근 커밋 재검토보다 앱 전체를 구조적으로 훑는 데 집중해 Explore 서브에이전트로 export/import·백업 복원, 멀티통화 엣지케이스, 타임존/날짜 경계, 탭 간 동시성/localStorage 레이스, 차트 렌더링, 오프라인/서비스워커 갱신, 알림/리마인더, 카테고리 삭제 캐스케이드, CSV export 등 아직 다루지 않은 영역을 살폈다. save()(index.html:1803-1812)가 ~70개 호출 지점 어디서든 localStorage를 무조건 덮어쓰는데 load()(1742-1759)는 boot() 시 딱 한 번만 읽고 이후 전혀 재동기화하지 않으며, window storage 이벤트나 BroadcastChannel 리스너가 코드 전체에 전무하고 visibilitychange/focus 핸들러(5698-5701)도 TODAY만 재계산할 뿐 메모리 DB는 그대로 씀을 코드로 확인했다. 그 결과 같은 브라우저에서 앱을 두 탭(설치된 PWA + 남겨둔 브라우저 탭 등)으로 열어두면, 한쪽 탭이 다른 탭의 변경 이후 아무 조작으로든 save()를 호출하는 순간 오래된 스냅샷이 localStorage를 통째로 덮어써 다른 탭에서 추가한 거래가 에러/토스트/undo 없이 조용히 사라진다 — Supabase 클라우드 동기화 경로(1596-1636, isCloudConflict/localHasUnsyncedChanges)는 기기 간 충돌을 신중히 다루면서도 훨씬 흔한 같은 브라우저 다중 탭 케이스는 전혀 방어하지 않는 비일관성이 있다. 재무 데이터의 인지 불가능한 영구 유실이라는 점에서 다른 후보(만기 리마인더 토스트 dedup/snooze 부재 — 코스메틱, pushCloud() SELECT-then-UPSERT TOCTOU 레이스 — 기기 간 서브초 충돌이라 훨씬 드묾)보다 우선순위가 높다고 판단해 채택. advance에서: window storage 이벤트 리스너 추가 + save()에 monotonic rev/savedAt 기록 + 열린 시트 없으면 조용히 재로드·재렌더, 있으면 비파괴 토스트로 안내. 코드 변경 없음, state.json만 갱신.",
+      "commit": null
+    },
+    {
+      "cycle": 36,
+      "phase": "advance",
+      "timestamp": "2026-09-17T09:13:13.032Z",
+      "summary": "critique(bc650a3)가 세운 계획대로 탭 간 localStorage 미동기화 데이터 유실을 막았다. save()(index.html)가 __savedAt 기록 시 이 탭이 아는 최신 시각을 TAB_SAVED_AT에도 즉시 반영하도록 했고, load()도 부팅 시 DB를 읽은 직후 TAB_SAVED_AT을 초기화한다. 순수 판정 함수 foreignSaveIsNewer(savedAtStr,knownAt)를 추가해(다른 탭의 __savedAt 문자열이 이 탭이 마지막으로 알던 시각보다 실제로 최신인지만 판정) handleForeignStorage(e)가 storage 이벤트에서 이 값으로 반영 여부를 정한다. 시트가 열려 있지 않으면 resolveCloudPullRemote()와 동일한 패턴(localStorage 재읽기→migrate()→renderCurrent())으로 조용히 반영하고, 열려 있으면(편집 중인 드래프트가 있을 수 있음) 덮어쓰지 않고 토스트만 띄운 뒤 TAB_SYNC_PENDING에 시각을 보류해뒀다가 closeSheet()가 시트를 닫을 때 그제서야 적용한다. window.addEventListener(storage,...)는 기존 visibilitychange/focus 리스너 옆에 등록해 컨벤션을 맞췄다. test/run.js에 foreignSaveIsNewer 순수 판정 회귀 테스트 3개 추가(239/239 통과, 기존 236+신규 3). 두 인라인 <script> 블록 모두 node --check 파싱 확인. 계획이 권장한 대로 Playwright(사전 설치 Chromium)로 같은 컨텍스트 안에 탭 2개를 열어 실제 storage 이벤트로 e2e 검증: 탭2에 시트가 열려 있지 않을 때 탭1의 save()가 만든 새 거래가 탭2에 조용히 반영됨을 확인했고, 탭2에 시트를 열어둔 채로는 탭1이 저장해도 즉시 반영되지 않고 토스트만 뜨며(TAB_SYNC_PENDING에 시각 보류) closeSheet() 후에야 반영됨을 확인, pageerror 없음. APP_VERSION 1.37.1->1.38.0(새 동작 추가라 minor bump), sw.js CACHE v109->v110. pending_advance_plan 비움.",
       "commit": null
     }
   ]

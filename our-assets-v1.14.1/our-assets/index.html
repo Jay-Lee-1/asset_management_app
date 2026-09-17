@@ -1288,7 +1288,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.37.1';
+const APP_VERSION='1.38.0';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1551,7 +1551,7 @@ function emptyDB(){return {
   categories:{expense:[...EXP_CATS_DEFAULT],income:[...INC_CATS_DEFAULT],saving:[...SAV_CATS_DEFAULT]},
  };}
 
-let DB, STORAGE_OK=true;
+let DB, STORAGE_OK=true, TAB_SAVED_AT=0, TAB_SYNC_PENDING=null;
 const SKEY='asset_app_db_v3';
 /* ===== 계정 · 세션 (이메일 로그인) =====
    ▸ Supabase가 설정되지 않으면 이 기기(localStorage)에만 저장됩니다(계정별로 분리).
@@ -1744,7 +1744,7 @@ function load(){
  try{raw=localStorage.getItem(dataKey())}
  catch(e){STORAGE_OK=false;DB=(SESSION?emptyDB():seed());migrate();toastFail('저장소를 열지 못했어요 · 이 기기·브라우저에서 자동저장이 제한된 것 같아요');return}
  if(raw){
-  try{DB=JSON.parse(raw);migrate();return}
+  try{DB=JSON.parse(raw);migrate();TAB_SAVED_AT=+localStorage.getItem(dataKey()+'__savedAt')||0;return}
   catch(e){
    /* JSON.parse/migrate 실패는 저장 공간 문제가 아니라 데이터 자체가 손상된 것이므로,
     * 예전처럼 곧장 빈 DB로 save()해 버리면 raw에 남아있던 원본이 영영 지워진다.
@@ -1806,10 +1806,35 @@ function save(opts){invalidateBalances();
   * localStorage에 쓰기 직전에 반영해야 이번 저장분에 최신 스냅샷이 함께 기록된다. */
  DB.nwHistory=updateNwHistory(DB.nwHistory,TODAY,totalAssets(),totalDebt());
  let ok;try{localStorage.setItem(dataKey(),JSON.stringify(DB));ok=true}catch(e){ok=false}
- if(ok)try{localStorage.setItem(dataKey()+'__savedAt',String(Date.now()))}catch(e){}
+ if(ok){const at=Date.now();try{localStorage.setItem(dataKey()+'__savedAt',String(at))}catch(e){}TAB_SAVED_AT=at}
  const notice=storageOutcomeMsg(ok,STORAGE_OK);STORAGE_OK=ok;
  if(notice)notice.kind==='fail'?toastFail(notice.msg):toast(notice.msg);
  if(!(opts&&opts.deferCloudPush))scheduleCloudPush();return ok}
+/* storage 이벤트로 들어온 다른 탭의 __savedAt 문자열이 이 탭이 마지막으로 알고 있던 시각(TAB_SAVED_AT)보다
+ * 실제로 더 최신인지 판정하는 순수 함수 — handleForeignStorage가 반영 여부를 결정하는 데 쓴다. */
+function foreignSaveIsNewer(savedAtStr,knownAt){const at=+savedAtStr;return !!(savedAtStr&&at>knownAt)}
+/* 같은 브라우저에서 앱을 여러 탭(설치된 PWA + 남겨둔 브라우저 탭 등)으로 열어두면, 부팅 시 딱 한 번만
+ * localStorage를 읽는 다른 탭이 이후 아무 조작으로든 save()를 부르는 순간 자기 메모리 DB(=오래된 스냅샷)로
+ * 방금 이 탭에서 저장한 내용을 조용히 덮어쓸 수 있다. resolveCloudPullRemote()와 동일한 패턴으로
+ * localStorage의 최신 DB를 다시 읽어 반영한다. */
+function applyForeignSave(at){
+ if(!DB)return;
+ let raw;try{raw=localStorage.getItem(dataKey())}catch(e){return}
+ if(!raw)return;
+ let next;try{next=JSON.parse(raw)}catch(e){return}
+ DB=next;migrate();TAB_SAVED_AT=at;TAB_SYNC_PENDING=null;renderCurrent();
+}
+/* 시트가 열려 있으면(편집 중인 드래프트가 있을 수 있음) 곧바로 덮어쓰지 않고 비파괴적으로만 알리고,
+ * 시트를 닫을 때(closeSheet) 그제서야 적용한다 — 시트가 열려 있지 않으면 조용히 바로 반영한다. */
+function handleForeignStorage(e){
+ if(e.key!==dataKey()+'__savedAt'||!foreignSaveIsNewer(e.newValue,TAB_SAVED_AT))return;
+ const at=+e.newValue;
+ if($('sheet')&&$('sheet').classList.contains('show')){
+  if(TAB_SYNC_PENDING==null)toast('다른 탭에서 데이터가 바뀌었어요 · 창을 닫으면 반영돼요');
+  TAB_SYNC_PENDING=at;return;
+ }
+ applyForeignSave(at);
+}
 
 /* ================= RECURRENCE ================= */
 function shiftWeekend(ds,mode){ /* 주말 조정: earlier=금요일로 당김, later=월요일로 미룸 */
@@ -4596,7 +4621,7 @@ function ensureEdgeGesture(){
    }
  }x0=null;dx=dy=0;};
  edge.addEventListener('touchend',up);edge.addEventListener('touchcancel',up);
-}function closeSheet(){const sh=$('sheet');sh.style.transition='';sh.style.transform='';sh.style.height='';sh.style.maxHeight='';sh.style.overflow='';sh.classList.remove('expanded','show');$('scrim').classList.remove('show');const eg=$('sheetEdgeGlobal');if(eg)eg.remove();setSheetInert(false);const rf=_sheetReturnFocus;_sheetReturnFocus=null;if(rf&&document.contains(rf))rf.focus()}
+}function closeSheet(){const sh=$('sheet');sh.style.transition='';sh.style.transform='';sh.style.height='';sh.style.maxHeight='';sh.style.overflow='';sh.classList.remove('expanded','show');$('scrim').classList.remove('show');const eg=$('sheetEdgeGlobal');if(eg)eg.remove();setSheetInert(false);const rf=_sheetReturnFocus;_sheetReturnFocus=null;if(rf&&document.contains(rf))rf.focus();if(TAB_SYNC_PENDING!=null){const at=TAB_SYNC_PENDING;TAB_SYNC_PENDING=null;applyForeignSave(at)}}
 $('scrim').addEventListener('click',closeSheet);
 $('dpScrim').addEventListener('click',()=>{
  if($('dpWheel').classList.contains('show')){$('dpWheel').classList.remove('show');
@@ -5697,6 +5722,7 @@ function maybeRollDay(){
 }
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)maybeRollDay();else if(CLOUD_UID){clearTimeout(SB_PUSH_T);pushCloud().catch(()=>{})}});
 window.addEventListener('focus',maybeRollDay);
+window.addEventListener('storage',handleForeignStorage); /* 다른 탭이 save()로 덮어쓴 걸 감지 — handleForeignStorage 주석 참고 */
 window.addEventListener('pageshow',maybeRollDay);
 setInterval(maybeRollDay,60000);
 matchMedia('(prefers-color-scheme:dark)').addEventListener('change',()=>{if(DB.settings.themeMode==='system')renderCurrent()});
