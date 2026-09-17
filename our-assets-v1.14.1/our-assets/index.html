@@ -1288,7 +1288,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.38.1';
+const APP_VERSION='1.38.2';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3651,7 +3651,7 @@ function renderPlan(){
    const items=dayFlows.length?dayFlows.map(f=>{const t=f.t;
     const faN=assetNm(t.fromAssetId,t.fromAssetName),taN=assetNm(t.toAssetId,t.toAssetName);
     const flow=t.type==='income'?(taN!=='—'?taN:''):(t.type==='transfer'||t.type==='saving')?`${faN==='—'?'':faN}→${taN==='—'?'':taN}`:(faN!=='—'?faN:'');
-    return `<div class="flow-item" onclick="planTap('${t.isRec?'':t.id}','${t.isRec?t.recId:''}','${t.date}')">
+    return `<div class="flow-item" tabindex="0" role="button" aria-label="${esc(t.memo||t.category)} ${f.delta>=0?'+':'-'}${comma(Math.abs(f.delta))}원" onclick="planTap('${t.isRec?'':t.id}','${t.isRec?t.recId:''}','${t.date}')" onkeydown="rowKeydown(event,()=>planTap('${t.isRec?'':t.id}','${t.isRec?t.recId:''}','${t.date}'))">
      <div class="avatar ${f.delta>=0?'a-in':'a-food'}" style="width:40px;height:40px">${svg(f.delta>=0?'arrowUp':'arrowDn')}</div>
      <div style="flex:1;min-width:0"><div class="nm-row"><span class="nm">${esc(t.memo||t.category)}</span>${t.isRec?`<span class="rec-ic" title="반복">${svg('repeat')}</span>`:''}</div>${flow?`<div class="flow-sub"><span class="fl">${esc(flow)}</span></div>`:''}</div>
      <div class="rt"><div class="delta num ${f.delta>=0?'pos':'minus'}">${f.delta>=0?'+':'-'}${comma(Math.abs(f.delta))}원</div></div></div>`;
@@ -3742,7 +3742,7 @@ function renderMenu(){
  ];
  $('page-menu').innerHTML=`
  ${pageHead('menu')}
- <div class="card acct-card" onclick="openAccountSheet()">
+ <div class="card acct-card" tabindex="0" role="button" aria-label="${esc(accountName())} 계정" onclick="openAccountSheet()" onkeydown="rowKeydown(event,()=>openAccountSheet())">
    <div class="acct-head"><div class="acct-av">${kind==='kakao'?'💬':kind==='email'?'👤':'🙂'}</div>
      <div class="acct-i" style="flex:1;min-width:0"><div class="an">${accountName()}</div><div class="ak">${kind==='kakao'?'카카오 계정':kind==='email'?'이메일 계정':'게스트 · 로그인하면 계정별로 보관돼요'}</div></div>
      <span class="mc">${svg('chev')}</span></div>
@@ -3876,7 +3876,7 @@ function openSpendAnalysis(){
    const barPct=budget?bp.barPct:(total?r.v/total*100:0);
    const barCls=budget?(bp.over?'over':'budgeted'):'';
    const overCls=budget&&bp.over?' over':'';
-   return `<div class="spend-row" onclick="openBudgetPrompt(${idx})"><div class="spend-av a-food">${catGlyph('expense',r.c,null,'tag')}</div>
+   return `<div class="spend-row" tabindex="0" role="button" aria-label="${esc(r.c)} ${comma(r.v)}원" onclick="openBudgetPrompt(${idx})" onkeydown="rowKeydown(event,()=>openBudgetPrompt(${idx}))"><div class="spend-av a-food">${catGlyph('expense',r.c,null,'tag')}</div>
     <div class="spend-mid"><div class="spend-nm">${esc(r.c)}</div><div class="spend-track"><i class="${barCls}" style="width:${barPct}%"></i></div></div>
     <div class="spend-amt"><div class="a num${overCls}">${comma(r.v)}${budget?`<span class="bgt">/${comma(budget)}</span>`:''}원</div><div class="p${overCls}">${pct}%${budget?' 사용':''}</div></div></div>`}).join('')
    :`<div class="empty"><div class="ei">${svg('chart')}</div><div class="et">아직 쓴 게 없어요 👏</div><div class="es">이대로만 가면 완벽해요</div></div>`;
@@ -5183,7 +5183,7 @@ function monthOutflowCard(y,m){
  const isNow=(y===TM.y&&m===TM.m);
  const open=!!ST.ofOpen;
  const shown=open?list:list.slice(0,6);
- const rows=shown.map(t=>`<div class="of-row" onclick="goLedgerTo('${t.date}','${t.isRec?'':t.id}','${t.isRec?t.recId:''}')">
+ const rows=shown.map(t=>`<div class="of-row" tabindex="0" role="button" aria-label="${esc(t.memo||t.category)} ${shortDate(t.date)} ${comma(t.amount)}원" onclick="goLedgerTo('${t.date}','${t.isRec?'':t.id}','${t.isRec?t.recId:''}')" onkeydown="rowKeydown(event,()=>goLedgerTo('${t.date}','${t.isRec?'':t.id}','${t.isRec?t.recId:''}'))">
    <span class="of-nm">${esc(t.memo||t.category)}</span>
    <span class="of-dt">${shortDate(t.date)}</span>
    <span class="of-am num">${comma(t.amount)}</span></div>`).join('');
@@ -5219,7 +5219,7 @@ function emptyAssetCards(){
  if(!list.length)return '';
  return list.map(a=>`<div class="home-alert tidy">
    <div class="ha-ic">${svg('trash')}</div>
-   <div class="ha-b" onclick="openTidyAsset('${a.id}')"><div class="ha-t">${esc(a.name)} · 다 썼어요</div>
+   <div class="ha-b" tabindex="0" role="button" aria-label="${esc(a.name)} · 다 썼어요 · 정리할까요?" onclick="openTidyAsset('${a.id}')" onkeydown="rowKeydown(event,()=>openTidyAsset('${a.id}'))"><div class="ha-t">${esc(a.name)} · 다 썼어요</div>
      <div class="ha-s">${ASSET_TYPES[a.type].label} · 0원 · 정리할까요?</div></div>
    <button class="txt-btn" style="flex-shrink:0;padding:6px 10px" onclick="event.stopPropagation();snoozeTidy('${a.id}')">나중에</button></div>`).join('');
 }
@@ -5254,7 +5254,7 @@ function homeAlertCard(al){
    <div class="ha-c">${svg('chev')}</div></button>`;
  if(al.kind==='backup')return `<div class="home-alert mat">
    <div class="ha-ic">${svg('download')}</div>
-   <div class="ha-b" onclick="exportData()"><div class="ha-t">백업이 필요해요</div>
+   <div class="ha-b" tabindex="0" role="button" aria-label="백업이 필요해요 · 눌러서 iCloud에 저장" onclick="exportData()" onkeydown="rowKeydown(event,()=>exportData())"><div class="ha-t">백업이 필요해요</div>
      <div class="ha-s">데이터는 이 기기에만 있어요 · 눌러서 iCloud에 저장</div></div>
    <button class="txt-btn" style="flex-shrink:0;padding:6px 10px" onclick="event.stopPropagation();snoozeBackup()">나중에</button></div>`;
  if(al.kind==='confirm')return `<button class="home-alert confirm" onclick="${al.isRec?`confirmRecTransfer('${al.recId}','${al.date}')`:`openConfirmTransfer('${al.id}')`}">

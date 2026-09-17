@@ -1,19 +1,8 @@
 {
-  "cycle": 37,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "홈/플랜/메뉴 탭의 bare-onclick 행에 기존 키보드/스크린리더 접근성 패턴 적용",
-    "why": "앱 전역(자산 카드 2481/2487, 캘린더 날짜 셀 2830, 원장/내역 스와이프 행 2927-2932/3507-3513, 반복거래 행 4065)에 tabindex=\"0\" role=\"button\" aria-label onkeydown=\"rowKeydown(event,()=>...)\" 패턴이 일관되게 적용되어 rowKeydown()(1411)로 키보드 접근이 되는데, 다음 6곳은 이 패턴이 전혀 없는 bare <div onclick=...>로 남아 있어 키보드/스크린리더 사용자가 조작할 수 없음을 코드로 확인함: flow-item(3654, planTap, Plan 탭 일별 거래 목록), acct-card(3745, openAccountSheet, Menu 탭 계정 진입점), spend-row(3879, openBudgetPrompt, Home 탭 예산 행), of-row(5186, goLedgerTo, Home 탭 이번 달 나갈 돈 행), emptyAssetCards()의 ha-b(5222, openTidyAsset, div.home-alert.tidy 안 — 이 wrapper는 button이 아니라 진짜 문제), homeAlertCard() backup 케이스의 ha-b(5257, exportData, div.home-alert.mat 안 — 이것도 wrapper가 button이 아니라 진짜 문제). homeAlertCard()의 다른 al.kind 케이스(cloudConflict/confirm/mat/quick/quickMulti/staleMv/기본)는 전부 <button class=\"home-alert\">로 감싸져 있어 네이티브로 이미 포커스/Enter/Space 접근 가능함을 직접 읽어 확인했으므로 손대지 않음(agent survey가 이 부분들도 문제로 잘못 지목했으나 재검증 결과 이미 접근 가능함). Home 탭이 가장 자주 보는 화면이고, 이미 검증된 패턴을 나머지 6곳에 그대로 적용하기만 하면 되는 저위험·저비용 수정이라 다른 열린 후보(pushCloud TOCTOU 레이스, 만기 알림 dedup, 리스트 가상화, 의미론적 중복거래 감지)보다 우선순위가 높음.",
-    "approach": "6개 템플릿 문자열 각각에 기존 onclick 옆에 tabindex=\"0\" role=\"button\" aria-label=\"<그 행의 핵심 텍스트>\" onkeydown=\"rowKeydown(event,()=>...)\"를 추가한다(rowKeydown은 1411에 이미 있는 그대로 재사용, 새 헬퍼 불필요). emptyAssetCards(5222)와 homeAlertCard backup(5257)의 ha-b는 옆에 있는 '나중에' 스누즈 버튼이 이미 event.stopPropagation()을 쓰고 있으므로 그 구조는 그대로 두고 ha-b 자체에만 속성을 추가한다. 로직 변경 없는 마크업/속성 추가이므로 test/run.js에는 캘린더 접근성 커밋(6c66261/e7b42ff) 때와 같은 스타일로, 각 렌더러 출력 문자열에 role=\"button\"과 onkeydown이 실제로 포함되는지 확인하는 회귀 테스트를 추가한다. 커밋 전 node --check로 두 인라인 script 블록 파싱 확인, node test/run.js 전체 통과 확인, APP_VERSION/sw.js CACHE 버전 올리기."
-  },
+  "cycle": 38,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 37,
-      "phase": "critique",
-      "timestamp": "2026-09-17T12:00:00.000Z",
-      "summary": "cycle37 review(f9b111a)가 문제 없음으로 끝낸 직후, Explore 서브에이전트로 앱 전체를 구조적으로 훑어 이미 앱 전역에 정착된 키보드/스크린리더 접근성 패턴(tabindex=\"0\" role=\"button\" aria-label onkeydown=\"rowKeydown(...)\", rowKeydown 1411)이 아직 적용 안 된 bare-onclick div가 남아있는지 조사시켰다. 서브에이전트가 flow-item(3654)/acct-card(3745)/spend-row(3879)/of-row(5186)/ha-b(5222,5252-5287 전부)를 후보로 보고했으나, homeAlertCard()(5249)를 직접 읽어 재검증한 결과 al.kind별 케이스 대부분(cloudConflict/confirm/mat/quick/quickMulti/staleMv/기본, 5250-5289)은 이미 <button class=\"home-alert\">로 감싸져 있어 네이티브로 포커스/Enter/Space가 되므로 문제가 아님을 확인했다 — 서브에이전트의 과대 보고를 코드 읽기로 걸러냈다. 실제로 wrapper가 button이 아니라 div인 진짜 문제는 emptyAssetCards()의 ha-b(5222, div.home-alert.tidy 안)와 homeAlertCard backup 케이스의 ha-b(5257, div.home-alert.mat 안) 둘뿐임을 확인, 여기에 flow-item/acct-card/spend-row/of-row 4곳을 더해 총 6곳으로 계획을 확정했다. Home 탭이 가장 빈번히 보는 화면이라 다른 열린 후보(pushCloud TOCTOU 레이스, 만기 알림 dedup, 리스트 가상화, 의미론적 중복거래 감지)보다 우선순위를 높게 판단해 채택. pending_advance_plan에 6곳 목록과 각 위치별 wrapper 구조(스누즈 버튼의 stopPropagation 등) 및 회귀 테스트 계획 저장. 코드 변경 없음, state.json만 갱신.",
-      "commit": null
-    },
     {
       "cycle": 32,
       "phase": "review",
@@ -145,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-17T09:13:13.032Z",
       "summary": "critique(bc650a3)가 세운 계획대로 탭 간 localStorage 미동기화 데이터 유실을 막았다. save()(index.html)가 __savedAt 기록 시 이 탭이 아는 최신 시각을 TAB_SAVED_AT에도 즉시 반영하도록 했고, load()도 부팅 시 DB를 읽은 직후 TAB_SAVED_AT을 초기화한다. 순수 판정 함수 foreignSaveIsNewer(savedAtStr,knownAt)를 추가해(다른 탭의 __savedAt 문자열이 이 탭이 마지막으로 알던 시각보다 실제로 최신인지만 판정) handleForeignStorage(e)가 storage 이벤트에서 이 값으로 반영 여부를 정한다. 시트가 열려 있지 않으면 resolveCloudPullRemote()와 동일한 패턴(localStorage 재읽기→migrate()→renderCurrent())으로 조용히 반영하고, 열려 있으면(편집 중인 드래프트가 있을 수 있음) 덮어쓰지 않고 토스트만 띄운 뒤 TAB_SYNC_PENDING에 시각을 보류해뒀다가 closeSheet()가 시트를 닫을 때 그제서야 적용한다. window.addEventListener(storage,...)는 기존 visibilitychange/focus 리스너 옆에 등록해 컨벤션을 맞췄다. test/run.js에 foreignSaveIsNewer 순수 판정 회귀 테스트 3개 추가(239/239 통과, 기존 236+신규 3). 두 인라인 <script> 블록 모두 node --check 파싱 확인. 계획이 권장한 대로 Playwright(사전 설치 Chromium)로 같은 컨텍스트 안에 탭 2개를 열어 실제 storage 이벤트로 e2e 검증: 탭2에 시트가 열려 있지 않을 때 탭1의 save()가 만든 새 거래가 탭2에 조용히 반영됨을 확인했고, 탭2에 시트를 열어둔 채로는 탭1이 저장해도 즉시 반영되지 않고 토스트만 뜨며(TAB_SYNC_PENDING에 시각 보류) closeSheet() 후에야 반영됨을 확인, pageerror 없음. APP_VERSION 1.37.1->1.38.0(새 동작 추가라 minor bump), sw.js CACHE v109->v110. pending_advance_plan 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 37,
+      "phase": "advance",
+      "timestamp": "2026-09-17T13:10:25.582Z",
+      "summary": "홈/플랜/메뉴 탭의 bare-onclick 행 6곳(flow-item, acct-card, spend-row, of-row, emptyAssetCards ha-b, homeAlertCard backup ha-b)에 tabindex/role=button/aria-label/rowKeydown 키보드-스크린리더 접근성 패턴 적용. 소스 텍스트 기반 회귀 테스트 6개 추가, 전체 249/249 통과. APP_VERSION 1.38.2, sw CACHE v112.",
       "commit": null
     }
   ]

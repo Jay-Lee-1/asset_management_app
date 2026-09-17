@@ -2428,6 +2428,43 @@ test('renderHome: 다 쓴 자산 정리 제안(emptyAssetCards)이 실제로 렌
   const body = extractFunction('renderHome');
   assert.ok(body.includes('emptyAssetCards()'), 'renderHome()이 emptyAssetCards()를 호출하지 않음');
 });
+test('emptyAssetCards: 정리 제안 행(ha-b)에 키보드/스크린리더 접근 패턴이 있다', () => {
+  setupEmptyAssetsDB();
+  const html = sandbox.emptyAssetCards();
+  assert.ok(html.includes('role="button"'), 'ha-b 행에 role="button"이 없음');
+  assert.ok(html.includes('onkeydown="rowKeydown('), 'ha-b 행에 rowKeydown 연결이 없음');
+});
+
+/* ---------- bare onclick 행 키보드/스크린리더 접근성 — flow-item/acct-card/spend-row/of-row/backup ha-b ----------
+ * 자산 카드·캘린더 셀 등 다른 상호작용 행들은 tabindex/role="button"/aria-label과 rowKeydown()을
+ * 함께 쓰는데, 이 5곳은 한동안 bare <div onclick=...>로만 남아 키보드/스크린리더로 조작할 수 없었다.
+ * 이 함수들은 $/openSheet 등 DOM 의존성이 있어 실행 대신 소스 텍스트로 패턴 유지를 확인한다
+ * (renderHome의 emptyAssetCards() 연결 테스트와 같은 방식). */
+test('renderPlan: 플랜 탭 일별 거래 행(flow-item)에 키보드/스크린리더 접근 패턴이 있다', () => {
+  const body = extractFunction('renderPlan');
+  assert.ok(body.includes('<div class="flow-item" tabindex="0" role="button"'), 'flow-item에 role="button"이 없음');
+  assert.ok(body.includes('onkeydown="rowKeydown(event,()=>planTap('), 'flow-item에 rowKeydown 연결이 없음');
+});
+test('renderMenu: 메뉴 탭 계정 진입점(acct-card)에 키보드/스크린리더 접근 패턴이 있다', () => {
+  const body = extractFunction('renderMenu');
+  assert.ok(/class="card acct-card"[^>]*role="button"/.test(body), 'acct-card에 role="button"이 없음');
+  assert.ok(body.includes('onkeydown="rowKeydown(event,()=>openAccountSheet())"'), 'acct-card에 rowKeydown 연결이 없음');
+});
+test('openSpendAnalysis: 지출 분석 카테고리 행(spend-row)에 키보드/스크린리더 접근 패턴이 있다', () => {
+  const body = extractFunction('openSpendAnalysis');
+  assert.ok(/class="spend-row"[^>]*role="button"/.test(body), 'spend-row에 role="button"이 없음');
+  assert.ok(body.includes('onkeydown="rowKeydown(event,()=>openBudgetPrompt('), 'spend-row에 rowKeydown 연결이 없음');
+});
+test('monthOutflowCard: 홈 탭 이번 달 나갈 돈 행(of-row)에 키보드/스크린리더 접근 패턴이 있다', () => {
+  const body = extractFunction('monthOutflowCard');
+  assert.ok(/class="of-row"[^>]*role="button"/.test(body), 'of-row에 role="button"이 없음');
+  assert.ok(body.includes('onkeydown="rowKeydown(event,()=>goLedgerTo('), 'of-row에 rowKeydown 연결이 없음');
+});
+test('homeAlertCard: 백업 알림 행(ha-b)에 키보드/스크린리더 접근 패턴이 있다', () => {
+  const body = extractFunction('homeAlertCard');
+  assert.ok(/class="ha-b"\s+tabindex="0"\s+role="button"[^>]*onclick="exportData\(\)"/.test(body), '백업 ha-b에 role="button"이 없음');
+  assert.ok(body.includes('onkeydown="rowKeydown(event,()=>exportData())"'), '백업 ha-b에 rowKeydown 연결이 없음');
+});
 
 /* ---------- filteredHist/_histCache: 전체 내역 탭에서 내역 추가/수정/삭제 후 캐시가 낡은 목록을 보여주던 버그 ----------
  * filteredHist()는 날짜범위|카테고리|검색어로만 캐시 키를 만들기 때문에, saveTx()/recApply()/
