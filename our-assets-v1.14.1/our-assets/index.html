@@ -1288,7 +1288,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.36.0';
+const APP_VERSION='1.36.1';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5612,7 +5612,7 @@ function renderAuth(){
    <div class="auth-div"><span>또는 이메일로</span></div>
    <div class="auth-seg"><button class="${login?'on':''}" onclick="authSet('login')">로그인</button><button class="${login?'':'on'}" onclick="authSet('signup')">회원가입</button></div>
    <div class="auth-field"><label>이메일</label><input id="auEmail" type="email" inputmode="email" autocomplete="username" placeholder="you@example.com"></div>
-   <div class="auth-field"><label>비밀번호</label><input id="auPw" type="password" autocomplete="${login?'current-password':'new-password'}" placeholder="4자 이상" onkeydown="if(event.key==='Enter'){${login?'doLogin()':'doSignup()'}}"></div>
+   <div class="auth-field"><label>비밀번호</label><input id="auPw" type="password" autocomplete="${login?'current-password':'new-password'}" placeholder="${login?'':'8자 이상'}" onkeydown="if(event.key==='Enter'){${login?'doLogin()':'doSignup()'}}"></div>
    <div id="auErr" class="auth-err" style="display:none"></div>
    <button class="btn btn-primary auth-submit" onclick="${login?'doLogin()':'doSignup()'}">${login?'로그인':'가입하고 시작'}</button>
    <button class="auth-guest" onclick="chooseGuest()">게스트로 둘러보기</button>
