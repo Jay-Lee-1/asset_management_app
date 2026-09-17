@@ -1,15 +1,8 @@
 {
   "cycle": 39,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 33,
-      "phase": "critique",
-      "timestamp": "2026-09-16T18:17:00.000Z",
-      "summary": "cycle33 review(0dfbe7b)가 문제 없음으로 끝낸 직후, 최근 커밋 재검토보다 앱 전체를 구조적으로 훑는 데 집중해 Explore 서브에이전트로 인증/보안, XSS 이스케이핑, 리스트 성능, 백업 검증 등을 살폈다. AUTH._hash(index.html:1660)가 DJB2(32bit, salt 없음, 반복 없음) 체크섬으로 로컬 계정 비밀번호를 해시해 localStorage['asset_app_accounts']에 저장한다는 걸 확인 — signUp(:1676)의 최소 길이도 4자뿐이고 signIn(:1693)은 rec.pass!==this._hash(pw) 단순 비교라 rate limit이 전혀 없다. Supabase 미설정(SUPABASE_URL/KEY 빈 문자열, :1565)이 기본값이라 대부분의 로컬 다중 계정 사용자(가족 공유 기기, 배우자별 분리 계정)가 이 경로를 타는데, 같은 기기에서 DevTools로 해시를 읽어 무차별 대입하거나 AUTH.signIn을 반복 호출하면 사실상 즉시 뚫린다 — 로그인 UI는 보안 경계처럼 보이지만 실질적 방어력이 없음. 다른 후보(반복거래 memo 필드의 수동 escape 불일치 — 실제 주입 경로 없음, 원장/내역 리스트 미가상화 — 점진적 성능 저하일 뿐, 백업 JSON 얕은 검증 — migrate() 실패 시 롤백으로 blast radius 제한됨)보다 매일 조용히 실사용 재무 데이터를 노출한다는 점에서 우선순위가 높다고 판단해 이번 계획으로 채택. advance에서: 1) _hash를 Web Crypto PBKDF2(SHA-256, salt+iteration)로 교체하고 계정 레코드에 salt 필드 추가, 2) 기존 pass 레코드는 다음 로그인 성공 시 레이지 재해시(마이그레이션), 3) 최소 비밀번호 길이를 4자에서 8자로 올리고, 4) signIn 실패 시 간단한 지수 백오프/짧은 잠금(로컬스토리지에 이메일별 실패 카운트+마지막 실패 시각 기록)을 추가.",
-      "commit": null
-    },
     {
       "cycle": 33,
       "phase": "advance",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-17T18:15:20.158Z",
       "summary": "Explore 서브에이전트로 아직 다루지 않은 영역을 훑어, 부족 해결 제안 시트(openFixShortfall, index.html:5126)의 여유 통장 판정이 실제 이체 실행일이 아니라 부족해지는 날짜 기준으로 계산되던 버그를 발견해 수정했다. findDonors(needAmount,targetId,byDate)(5111)는 byDate 기준 balanceAt으로 여유 통장을 고르는 범용 함수인데, openFixShortfall()이 이를 부를 때 사용자가 실제 고른 이체일(when=내일/결제 전날/직접 선택, _fixWhen)이 아니라 통장이 부족해지는 날짜(date)를 그대로 넘기고 있었다(5133). balanceAt은 그 날짜까지의 모든 예정 수입/지출을 포함해 잔액을 계산하므로, when과 date 사이에 들어오는 예정 수입(예: 월급)이 있으면 그 돈이 아직 들어오지 않은 when 시점에도 이미 충분한 것처럼 잘못 표시돼, 사용자가 \"내일\" 옮기기를 눌러도 실제로는 그 통장에 그만한 잔액이 없어 이체가 마이너스로 남는 실제 재무 버그였다(fixSetWhen이 날짜만 바꿔 재호출해도 donors 계산이 항상 date 기준이라 3개 날짜 버튼 중 뭘 골라도 결과가 똑같은 것도 같은 원인). findDonors(need,targetId,date)를 findDonors(need,targetId,when)으로 고쳤고, 여유 통장 표시 문구의 날짜 라벨(5143, shortDate(date))도 실제 잔액을 평가한 날짜와 맞게 shortDate(when)으로 함께 고쳤다. test/run.js FUNCTIONS에 findDonors를 추가하고 회귀 테스트 2개(when=내일 기준으로는 아직 안 들어온 예정 수입이 반영되지 않아 여유 통장에서 빠짐, date=부족해지는 날 기준으로는 그 사이 수입이 반영돼 잘못 충분해 보임)를 추가해 버그 시나리오를 정확히 재현했다. 두 인라인 <script> 블록 모두 node --check 파싱 확인, node test/run.js 262/262 통과(기존 260+신규 2). APP_VERSION 1.39.0->1.39.1(버그 fix라 patch bump), sw.js CACHE v114->v115.",
+      "commit": null
+    },
+    {
+      "cycle": 39,
+      "phase": "review",
+      "timestamp": "2026-09-17T19:00:00.000Z",
+      "summary": "develop 커밋(98f5ac0, openFixShortfall()의 findDonors 호출을 date에서 when으로 바꾼 수정)을 검토했다. findDonors의 유일한 호출부가 이번에 고쳐졌고, balanceAt()이 인자로 받은 날짜까지의 누적 잔액을 계산하는 함수라 when(실제 이체 실행일)을 기준으로 여유를 판정하는 게 맞다. 여러 통장 분할 제안(plan.push)과 표시 라벨(shortDate(when))도 같은 날짜로 일관되게 바뀌었고, 추가된 회귀 테스트 2개가 date/when 두 기준의 차이를 정확히 포착한다. 코드 변경 없음.",
       "commit": null
     }
   ]
