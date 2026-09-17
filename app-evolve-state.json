@@ -1,19 +1,8 @@
 {
-  "cycle": 34,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "순자산 이력(DB.nwHistory)이 '앱을 처음 연 시각'에만 기록되고 당일 이후 변동은 절대 반영되지 않음",
-    "why": "updateNwHistory(index.html:2021)는 startApp()(5566)과 refreshToday()(5678, maybeRollDay가 실제 자정 날짜 전환을 감지했을 때만 호출)에서만 불린다. save()(index.html:1801, saveTx/saveAsset/saveRec/saveBudget/updateBalanceAdjust 등 ~70곳의 단일 호출 지점)는 invalidateBalances()만 하고 nwHistory는 절대 건드리지 않는다. autoSyncRates/fetchFxGold/fetchStocks(주가·환율·금 시세 갱신, assetEval 결과를 바꿈)도 마찬가지로 호출하지 않는다. 결과: 하루에 한 번 앱을 여는 흔한 사용 패턴에서, 그날의 순자산 스냅샷은 '아침에 앱을 연 순간'의 값으로 영구 고정되고 그날 이후의 지출/자산 매매/이체/시세 변동은 절대 반영되지 않은 채 다음날 자정 전환 시점에 그 값이 굳어버린다. 순자산 추이 차트(nwHistoryCard, 2150)는 이 앱의 핵심 기능인데, 대부분의 실사용 데이터 포인트가 구조적으로 부정확하고 사후에 복구할 방법도 없다(과거 시세를 보관하지 않아 소급 재계산 불가, 2019 근처 주석 참고). 이미 고친 캐시 무효화류 버그들과 달리 이건 결과가 매일 영구적으로 누적되는 데이터 정확성 결함이라 우선순위가 가장 높다고 판단.",
-    "approach": "1) save() 끝부분(index.html:1801-1805)에서, 성공 저장(ok) 시 오늘 날짜(TODAY) 기준으로 DB.nwHistory=updateNwHistory(DB.nwHistory,TODAY,totalAssets(),totalDebt())를 호출해 '오늘' 항목을 항상 최신 상태로 덮어쓰게 한다. updateNwHistory는 같은 날짜 항목을 그냥 덮어쓰는 멱등 함수(2024 근처)라 여러 번 불러도 안전. 무한 재귀/불필요한 중복 저장을 피하려면 이 호출은 save() 내부에서 localStorage.setItem 이후, scheduleCloudPush() 호출 이전에 하고, nwHistory 갱신 자체가 다시 save()를 부르지 않도록 직접 DB 갱신 후 이미 진행 중인 저장 로직에 편승시킨다(재귀 호출 금지). 2) autoSyncRates/fetchFxGold/fetchStocks가 완료되는 지점에서도 동일하게 updateNwHistory 호출 후 save()(혹은 이미 그 경로가 save()를 부르는지 먼저 확인하고, 이미 부른다면 1)의 변경만으로 자동 커버됨). 3) 회귀 테스트: updateNwHistory 자체는 이미 순수 함수라 test/run.js에서 같은 날짜를 두 번 다른 값으로 호출했을 때 최신 값으로 덮어써지는지 확인하는 테스트가 이미 있는지 확인하고 없으면 추가. save() 안의 새 호출부는 통합적이라 순수 함수 단위 테스트로는 커버하기 어려우니, 최소한 updateNwHistory 자체의 idempotent-overwrite 동작은 테스트로 보장한다. 4) 코드에 '오늘 항목은 앱을 연 시점이 아니라 항상 최신 상태를 반영해야 한다'는 불변식을 짧은 주석으로 남겨 회귀 방지."
-  },
+  "cycle": 35,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 25,
-      "phase": "critique",
-      "timestamp": "2026-09-15T10:20:00.000Z",
-      "summary": "전체 앱을 한 걸음 물러나 봤다. cycle25 review(503bfd1)가 문제 없음으로 끝낸 직후라 최근 develop 커밋 재검토보다 구조적 결함을 찾는 데 집중, Explore 서브에이전트로 아키텍처/UX/기술부채/성능/접근성/에러상태 전반을 훑었다. index.html:1888의 잔액 캐시(_balCache)가 단일 슬롯이라 renderPlan()(3415)이 한 렌더 안에서 서로 다른 날짜(startBal, 이전/현재/다음 달 말일)로 balanceAt을 여러 번 부를 때마다 RANGE_FROM(2023-01-01)부터의 전체 이력을 반복 재스캔하는 O(n) 낭비를 발견했다. 다년간 누적 사용을 전제로 한 앱이라 해마다 비용이 커지는 실질적 성능 이슈로 판단해 채택. pending_advance_plan에 Map 기반 다중 슬롯 캐시 + LRU 캡 + allTxns 호출 카운터 회귀 테스트 계획을 저장했다. 후보로 검토했으나 보류한 것: toastWrap(1280)의 aria-live 부재(작아서 develop 사이즈), swipe/manage-row 패턴 불일치(실제로는 일관되게 적용되어 있어 기각). 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 25,
       "phase": "review",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-16T23:10:00.000Z",
       "summary": "cycle34 review(d5fb2be)가 asOpenMat 자기 자신 만기 이체 버그의 sibling(asOpenType)까지 그 자리에서 고친 직후, 최근 커밋 재검토보다 앱 전체를 구조적으로 훑는 데 집중해 Explore 서브에이전트로 net-worth 이력, 진단 도구, 시세 동기화, 인증 플로우 전반을 살폈다. updateNwHistory(index.html:2021)가 startApp()과 실제 자정 날짜 전환을 감지한 refreshToday()에서만 호출되고, save()(1801, saveTx/saveAsset/saveRec/saveBudget 등 ~70곳의 단일 호출 지점)나 시세 갱신(autoSyncRates 등) 경로에서는 전혀 호출되지 않음을 코드로 확인했다. 그 결과 하루 한 번 앱을 여는 흔한 사용 패턴에서 그날의 순자산 스냅샷이 '앱을 처음 연 순간'으로 영구 고정되고, 이후 지출/자산 매매/시세 변동은 반영되지 않은 채 다음날 자정 전환 때 그 값이 그대로 굳어버려, 앱의 핵심 기능인 순자산 추이 차트가 사실상 항상 부정확하고 사후 복구도 불가능한 데이터 정확성 결함으로 판단해 채택. 후보로 검토했으나 보류한 것: detectStaleMarketValuedTxns(1997, 이미 잘 동작하는 진단 안전망), pruneNwHistory(2028)의 90일 이후 월별 압축(의도된 트레이드오프), Kakao 로그아웃의 조용한 catch(e){} 및 guestHasData 휴리스틱(사소함). pending_advance_plan에 save() 성공 시 TODAY 기준 updateNwHistory 호출 추가 + 시세 갱신 경로 커버 + 회귀 테스트 계획 저장. 코드 변경 없음, state.json만 갱신.",
+      "commit": null
+    },
+    {
+      "cycle": 34,
+      "phase": "advance",
+      "timestamp": "2026-09-17T00:00:00.000Z",
+      "summary": "critique(0a420c8)가 세운 계획대로, save()(index.html:1801) 안에 localStorage 쓰기 직전 DB.nwHistory=updateNwHistory(DB.nwHistory,TODAY,totalAssets(),totalDebt()) 호출을 추가했다. updateNwHistory는 같은 날짜 항목을 덮어쓰는 멱등 함수라 save()가 불리는 ~70곳 어디서든 매번 호출해도 안전하며, 이제 지출/자산 매매/이체/잔액 조정 등 모든 저장 시점마다 '오늘' 순자산 스냅샷이 최신 상태로 갱신된다. 시세 갱신(autoSyncRates→syncRates)도 이미 내부에서 save()를 부르고 있어 별도 수정 없이 자동으로 커버됨을 확인했다. 기존에 중복으로 updateNwHistory를 직접 부르던 startApp()/refreshToday() 두 호출부는 이제 save()가 대신 처리하므로 단순화했다. updateNwHistory 자체의 idempotent-overwrite 회귀 테스트는 이미 test/run.js에 있어 추가하지 않았다. index.html <script> 블록 node --check 통과, node test/run.js 233/233 통과 확인 후 APP_VERSION 1.35.2→1.36.0, sw.js CACHE v105→v106으로 올려 커밋.",
       "commit": null
     }
   ]

@@ -1288,7 +1288,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.35.2';
+const APP_VERSION='1.36.0';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1798,7 +1798,12 @@ function storageOutcomeMsg(ok,wasOk){
  if(ok)return wasOk?null:{kind:'ok',msg:'저장이 다시 정상 작동해요'};
  return wasOk?{kind:'fail',msg:'저장 실패 · 이 기기에 저장 공간이 부족하거나 저장이 제한돼 있어요. 내보내기로 백업하세요.'}:null;
 }
-function save(opts){invalidateBalances();let ok;try{localStorage.setItem(dataKey(),JSON.stringify(DB));ok=true}catch(e){ok=false}
+function save(opts){invalidateBalances();
+ /* 순자산 이력의 '오늘' 항목은 앱을 연 시각이 아니라 항상 최신 상태를 반영해야 한다:
+  * updateNwHistory는 같은 날짜 항목을 덮어쓰는 멱등 함수라 save() 호출마다 매번 갱신해도 안전하고,
+  * localStorage에 쓰기 직전에 반영해야 이번 저장분에 최신 스냅샷이 함께 기록된다. */
+ DB.nwHistory=updateNwHistory(DB.nwHistory,TODAY,totalAssets(),totalDebt());
+ let ok;try{localStorage.setItem(dataKey(),JSON.stringify(DB));ok=true}catch(e){ok=false}
  if(ok)try{localStorage.setItem(dataKey()+'__savedAt',String(Date.now()))}catch(e){}
  const notice=storageOutcomeMsg(ok,STORAGE_OK);STORAGE_OK=ok;
  if(notice)notice.kind==='fail'?toastFail(notice.msg):toast(notice.msg);
@@ -5563,7 +5568,7 @@ function startApp(){
  load();
  try{localStorage.removeItem('ourassets_snapshots')}catch(e){} /* 구 자동백업 저장소 정리 */
  rollPendingTransfers();
- DB.nwHistory=updateNwHistory(DB.nwHistory,TODAY,totalAssets(),totalDebt());save();
+ save(); /* save()가 오늘 날짜 nwHistory 스냅샷을 항상 갱신한다 */
  ST.hist.sortAsc=!!DB.settings.histSortAsc;
  document.documentElement.setAttribute('data-theme',DB.settings.themeMode);
  document.documentElement.setAttribute('data-accent',DB.settings.accent||'teal');
@@ -5675,7 +5680,7 @@ function refreshToday(){
  if(t===TODAY)return false;
  TODAY=t;TM=ym(TODAY);RANGE_TO=addDays(TODAY,760);DISP_TO=addDays(TODAY,92);
  invalidateBalances();rollPendingTransfers();
- DB.nwHistory=updateNwHistory(DB.nwHistory,TODAY,totalAssets(),totalDebt());save();
+ save(); /* save()가 오늘 날짜 nwHistory 스냅샷을 항상 갱신한다 */
  return true;
 }
 function appIsOpen(){const el=$('app');return !!DB&&el&&el.style.display!=='none'}
