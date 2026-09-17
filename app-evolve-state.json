@@ -1,7 +1,11 @@
 {
   "cycle": 35,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "가계부 캘린더 날짜 셀이 키보드/스크린리더로 전혀 접근 불가능",
+    "why": "calPane()(index.html:2838~, 셀 마크업 2802-2804)이 매달 42개 날짜 셀을 전부 `<div onclick=\"selDay('...')\">`로만 렌더한다. txRow(2904)/자산 카드(2454,2460)/반복거래 행(4037)/이력 행(3479,3485) 등 앱의 다른 모든 상호작용 행은 tabindex=\"0\" role=\"button\" aria-label=\"...\" onkeydown=\"rowKeydown(event,()=>...)\" 패턴을 일관되게 쓰는데, 날짜 선택이라는 가계부 탭의 가장 핵심적인 진입 동작(모든 거래 조회/추가/편집의 시작점)만 이 패턴에서 빠져 있다. 키보드만 쓰거나 스크린리더를 쓰는 사용자는 이 화면에서 날짜를 아예 선택할 수 없다 — 주변 기능이 아니라 앱의 주 사용 흐름이 막히는 것.",
+    "approach": "calPane()의 셀 템플릿(index.html:2802-2804 부근)에서 other(다른 달, 선택 불가) 셀이 아닌 셀에 한해 기존 onclick=\"selDay('${ds}')\" 옆에 tabindex=\"0\" role=\"button\" aria-pressed=\"${ds===sel}\" aria-label=\"${dnum}일${inn?` 수입 ${abbr(inn)}`:''}${ex?` 지출 ${abbr(ex)}`:''}${ds===sel?' 선택됨':''}${ds===TODAY?' 오늘':''}\" onkeydown=\"rowKeydown(event,()=>selDay('${ds}'))\"를 추가한다. 새 JS 헬퍼는 필요 없고 기존 rowKeydown(e,fn)(index.html:1411)을 그대로 재사용한다. 구현 후 node --check로 두 인라인 script 파싱 확인, node test/run.js로 233/233 회귀 통과 확인(순수 로직 변경이 아니라 새 테스트 추가는 선택사항), 가능하면 Playwright로 Tab→Enter/Space로 실제 날짜 선택이 되는지 실측. 여유가 되면 같은 사이클에서 동일 gap이 있는 다른 bare onclick div들(flow-item 3626, acct-card 3717, spend-row 3851, of-row 5155, ha-b 5191/5226)도 같은 패턴으로 정리하되, 캘린더 셀이 핵심 흐름을 막는 가장 심각한 케이스이므로 우선 처리한다. APP_VERSION/sw.js CACHE 버전업 필수."
+  },
   "history": [
     {
       "cycle": 29,
@@ -127,6 +131,13 @@
       "phase": "review",
       "timestamp": "2026-09-17T02:05:00.000Z",
       "summary": "develop 커밋(5c3ac3e, 회원가입 비밀번호 placeholder '4자 이상'->'8자 이상' 수정)을 검토했다. AUTH.signUp()(index.html:1683)의 실제 최소 길이 검증(pw.length<8)과 placeholder 문구가 이제 일치함을 grep으로 확인했고, 앱 전체에 다른 '4자'/'8자' 관련 잔존 문구가 없음도 확인했다. login 모드일 때 placeholder를 빈 문자열로 비운 것도 레이지 재해시 전 기존 계정(4자 이상 비밀번호 허용)에 '8자 이상'을 잘못 강제 안내하지 않기 위한 의도적 분기로 타당함을 확인. 로직 변경 없는 순수 문자열 수정이라 회귀 위험 낮음. 두 인라인 <script> 블록 모두 node --check 파싱 통과, node test/run.js 233/233 통과. 문제 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 35,
+      "phase": "critique",
+      "timestamp": "2026-09-17T03:05:00.000Z",
+      "summary": "cycle35 review(76be88e)가 문제 없음으로 끝낸 직후, 최근 커밋 재검토보다 앱 전체를 구조적으로 훑는 데 집중해 Explore 서브에이전트로 성능/UX/접근성/에러 처리 등 최근 사이클들이 다루지 않은 영역을 살폈다. calPane()(index.html:2838, 셀 마크업 2802-2804)이 가계부 탭의 매달 42개 날짜 셀을 전부 bare <div onclick=\"selDay(...)\">로만 렌더해, txRow(2904)/자산 카드(2454,2460)/반복거래 행(4037)/이력 행(3479,3485) 등 앱 전역에 일관되게 적용된 tabindex=\"0\" role=\"button\" aria-label onkeydown=rowKeydown 패턴에서 유일하게 빠져 있음을 확인했다. 날짜 선택은 거래 조회/추가/편집의 진입점인 핵심 플로우인데 키보드/스크린리더 사용자는 이 화면에서 날짜를 아예 선택할 수 없다 — 다른 4~5곳(flow-item 3626, acct-card 3717, spend-row 3851, of-row 5155, ha-b 5191/5226)도 같은 gap이 있지만 캘린더가 핵심 흐름을 막는 가장 심각한 케이스라 채택. advance에서 기존 rowKeydown(1411) 헬퍼를 재사용해 캘린더 셀에 동일 접근성 속성을 추가하는 계획을 pending_advance_plan에 저장. 코드 변경 없음, state.json만 갱신.",
       "commit": null
     }
   ]
