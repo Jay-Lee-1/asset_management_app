@@ -71,6 +71,7 @@ const FUNCTIONS = [
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'esc', 'matchTxnQuery',
   'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo',
   'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'restoreBackup', 'storageOutcomeMsg',
+  'sanitizeAmount', 'sanitizeBackup',
   'saveRec', 'recHistFieldsChanged', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
   'monthStartStr', 'monthEndStr', 'expandRec', 'allTxns', 'spendByCategory', 'histSumTotals',
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'expenseBreakdownCard',
@@ -90,7 +91,7 @@ const FUNCTIONS = [
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
 // _balCache/BAL_CACHE_MAX는 balancesUpTo()가 참조하는 모듈 스코프 캐시 상태라 같은 방식으로 끌어온다.
 // _recCache/REC_CACHE_MAX는 expandRec()가 참조하는 모듈 스코프 캐시 상태라 같은 방식으로 끌어온다.
-const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL'];
+const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS'];
 // _histCache는 filteredHist()가 재대입(={key,list})하는 let 선언이라 CONSTS(extractConst)로는
 // 못 끌어오므로 별도의 LETS 목록으로 extractLet을 통해 가져온다.
 // _copyIsCsv도 같은 이유(openCopyBackup()이 재대입)로 LETS를 통해 가져온다.
@@ -1561,6 +1562,72 @@ test('restoreBackup: migrate() 도중 손상된 데이터로 throw하면 DB가 �
   } finally {
     sandbox.migrate = realMigrate;
   }
+});
+
+/* ---------- sanitizeAmount/sanitizeBackup: 백업 복원·클라우드 동기화 데이터 숫자 필드 검증 ---------- */
+test('sanitizeAmount: NaN(비숫자 문자열 등)은 0으로 보정한다', () => {
+  assert.strictEqual(sandbox.sanitizeAmount('abc'), 0);
+  assert.strictEqual(sandbox.sanitizeAmount(undefined), 0);
+  assert.strictEqual(sandbox.sanitizeAmount(NaN), 0);
+});
+test('sanitizeAmount: 숫자로 파싱 가능한 문자열은 숫자로 변환한다', () => {
+  assert.strictEqual(sandbox.sanitizeAmount('1234'), 1234);
+});
+test('sanitizeAmount: min이 없으면 음수도 그대로 유효하다(잔액성 필드)', () => {
+  assert.strictEqual(sandbox.sanitizeAmount(-500), -500);
+});
+test('sanitizeAmount: min이 주어지면 그 아래로 클램프한다(수량성 필드)', () => {
+  assert.strictEqual(sandbox.sanitizeAmount(-500, 0), 0);
+  assert.strictEqual(sandbox.sanitizeAmount(3, 0), 3);
+});
+test('sanitizeBackup: 거래의 NaN/문자열 금액을 보정하고 fixedCount를 센다', () => {
+  const { data, fixedCount, droppedCount } = sandbox.sanitizeBackup({
+    assets: [],
+    txns: [{ id: 't1', date: '2026-01-01', amount: 'oops' }, { id: 't2', date: '2026-01-02', amount: '5000' }],
+  });
+  assert.strictEqual(data.txns[0].amount, 0);
+  assert.strictEqual(data.txns[1].amount, 5000);
+  assert.strictEqual(fixedCount, 2);
+  assert.strictEqual(droppedCount, 0);
+});
+test('sanitizeBackup: 자산의 보유수량 필드(fxAmount/goldDon/stockQty)는 음수면 0으로 클램프한다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [],
+    assets: [{ id: 'a1', type: 'fx', fxAmount: -100 }, { id: 'a2', type: 'gold', goldDon: -3 }],
+  });
+  assert.strictEqual(data.assets[0].fxAmount, 0);
+  assert.strictEqual(data.assets[1].goldDon, 0);
+  assert.strictEqual(fixedCount, 2);
+});
+test('sanitizeBackup: 자산의 잔액성 필드(baseAmount/amountKRW)는 음수를 그대로 허용한다(오버드로우 등 유효 상태)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [],
+    assets: [{ id: 'a1', type: 'cash', baseAmount: -1000 }],
+  });
+  assert.strictEqual(data.assets[0].baseAmount, -1000);
+  assert.strictEqual(fixedCount, 0);
+});
+test('sanitizeBackup: id/date 등 필수 필드가 없는 레코드는 통째로 제거하고 droppedCount로 센다', () => {
+  const { data, droppedCount } = sandbox.sanitizeBackup({
+    txns: [{ id: 't1', date: '2026-01-01', amount: 100 }, { id: 't2', amount: 200 }, { date: '2026-01-03', amount: 300 }],
+    assets: [{ id: 'a1', type: 'cash' }, { id: 'a2' }, { type: 'gold' }],
+  });
+  assert.strictEqual(data.txns.length, 1, 'date 없는 거래는 제거되어야 함');
+  assert.strictEqual(data.assets.length, 1, 'type 없는 자산은 제거되어야 함');
+  assert.strictEqual(droppedCount, 4);
+});
+test('sanitizeBackup: assets/txns가 없거나 배열이 아니어도 터지지 않고 빈 배열로 처리한다', () => {
+  const { data, fixedCount, droppedCount } = sandbox.sanitizeBackup({});
+  assert.strictEqual(data.txns.length, 0);
+  assert.strictEqual(data.assets.length, 0);
+  assert.strictEqual(fixedCount, 0);
+  assert.strictEqual(droppedCount, 0);
+});
+test('sanitizeBackup: 원본 obj를 변형하지 않는다', () => {
+  const orig = { txns: [{ id: 't1', date: '2026-01-01', amount: 'bad' }], assets: [] };
+  const origAmount = orig.txns[0].amount;
+  sandbox.sanitizeBackup(orig);
+  assert.strictEqual(orig.txns[0].amount, origAmount, '원본 레코드는 그대로 유지되어야 함');
 });
 
 /* ---------- spendByCategory: 지출 분석 카테고리별 합계는 잔액 조정(기본 제외)을 빼야 한다 ---------- */

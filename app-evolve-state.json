@@ -1,19 +1,8 @@
 {
-  "cycle": 38,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "백업 복원·클라우드 동기화 데이터에 숫자 필드 유효성 검증 추가",
-    "why": "검증 없는 데이터 대입 경로(restoreBackup, pullCloud/afterCloudAuth)가 잔액 계산 전체(balancesUpTo/totalAssetAt/expenseByCat)에 NaN/음수를 무방비로 전파시켜, 재무 데이터 정확성이 조용히·전면적으로 깨질 수 있다. 오염된 DB가 save()를 거쳐 scheduleCloudPush()로 다른 기기까지 전파될 위험도 있다.",
-    "approach": "sanitizeAmount(v) 순수 함수(Number(v)가 Number.isFinite면 그 값, 아니면 0/이전값 반환)와 sanitizeBackup(obj) 순수 함수(txns/assets 각 레코드의 amount/fxAmount/goldDon/stockQty/baseAmount/amountKRW를 sanitizeAmount로 보정, id/date 등 필수 필드 누락 레코드는 제거, {data,fixedCount,droppedCount} 반환)를 index.html에 추가. restoreBackup()과 pullCloud()/afterCloudAuth()가 DB를 대입하기 전에 공통으로 sanitizeBackup()을 거치도록 하고, fixedCount/droppedCount>0이면 토스트로 안내. test/run.js에 NaN 금액/문자열 금액/음수 금액/필수 필드 누락 케이스로 sanitizeAmount/sanitizeBackup 회귀 테스트 추가."
-  },
+  "cycle": 39,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 33,
-      "phase": "develop",
-      "timestamp": "2026-09-16T15:14:51.362Z",
-      "summary": "반복거래를 future 스코프로 수정하면(recSave() future 분기, index.html:3105-3113 / splitRecurrenceAt(), index.html:3225-3241) 원본을 effectiveDate 직전까지 자르고 그 이후를 새 반복 레코드로 분리하는데, 새 레코드의 skip/edits를 무조건 빈 []/{}로 초기화해 effectiveDate 이후에 있던 개별 회차 삭제(skip)나 개별 회차 금액 수정(edits, 변동 카테고리의 실제 입력 금액 포함)이 분리 순간 조용히 사라지는 버그를 발견해 수정했다. Explore 서브에이전트로 최근 다루지 않은 영역(반복거래 편집 시맨틱, 통화 서식, 서비스워커, 날짜 선택기, 카테고리-반복 상호작용, undo 커버리지)을 훑어 찾아냈다. splitRecOverrides(skip,edits,effectiveDate) 순수 함수를 새로 추가해 두 분리 경로(recSave future 분기, splitRecurrenceAt) 모두에서 effectiveDate 이전 항목은 원본에 남기고 이후(포함) 항목만 새 레코드로 옮기도록 고쳤다. 회귀 테스트 2개(recSave future 분기, splitRecurrenceAt)를 추가했고, vm 샌드박스에서 새로 만들어진 edits 객체가 host realm과 프로토타입이 달라 deepStrictEqual이 실패하는 기존 이슈(budgetProgress 테스트와 동일 패턴)라 JSON.stringify 비교로 우회했다. test/run.js의 FUNCTIONS 화이트리스트에 splitRecOverrides를 추가하지 않으면 recSave/splitRecurrenceAt 추출 시 ReferenceError가 나서 함께 추가함. 223/223 테스트 통과. APP_VERSION 1.33.0→1.34.0, sw.js CACHE v101→v102.",
-      "commit": null
-    },
     {
       "cycle": 33,
       "phase": "review",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-17T16:12:43.363Z",
       "summary": "앱 전체를 구조적으로 훑어(Explore 서브에이전트), 최근 20사이클이 다루지 않은 영역 중 restoreBackup()(index.html:4462-4468)과 pullCloud()/afterCloudAuth()(1585-1636)가 obj.assets/obj.txns의 배열 여부만 확인하고 개별 레코드의 amount 등 숫자 필드는 전혀 검증하지 않는 문제를 발견했다. balancesUpTo()/totalAssetAt()/expenseByCat()(1949-2004)가 t.amount를 Number/isFinite 검사 없이 그대로 +=/-=하므로, 손상된 백업 JSON을 직접 수정해 다시 불러오거나 스키마가 다른 기기의 클라우드 데이터를 pullCloud()로 받으면 잔액 전체가 NaN/오값으로 조용히 오염되고, save()를 거쳐 scheduleCloudPush()로 다른 기기에도 재전파될 수 있다. 6초 undo 토스트만으로는 앱을 완전히 닫았다 켠 경우 복구가 안 된다. 다른 후보(저축 만기 알림 하한 없음 - UX 피로, 대량 반복거래 재계산 비용 - 확신도 낮음)보다 재무 데이터 정확성이 전면적으로 조용히 깨진다는 점에서 우선순위가 높다고 판단해 채택. advance에서: sanitizeAmount(v)/sanitizeBackup(obj) 순수 함수를 새로 만들어 restoreBackup()과 pullCloud()/afterCloudAuth() 양쪽 진입점에서 공통 재사용하고, 보정/제외 건수를 토스트로 안내, NaN/문자열/음수/필수필드 누락 케이스 회귀 테스트를 추가한다. 코드 변경 없음, state.json만 갱신.",
+      "commit": null
+    },
+    {
+      "cycle": 38,
+      "phase": "advance",
+      "timestamp": "2026-09-17T17:10:34.427Z",
+      "summary": "백업 복원(파일 가져오기)·클라우드 동기화(pullCloud/afterCloudAuth/resolveCloudPullRemote) 경로에 숫자 필드 유효성 검증을 추가했다. sanitizeAmount(v,min) 순수 함수(NaN/비숫자면 0, min이 있으면 그 아래로 클램프)와 sanitizeBackup(obj) 순수 함수(txns.amount, assets의 amount/fxAmount/goldDon/stockQty/baseAmount/amountKRW를 검증·보정하고 id/date 등 필수 필드가 없는 레코드는 제거, {data,fixedCount,droppedCount} 반환)를 index.html에 추가. fxAmount/goldDon/stockQty 같은 보유수량 필드는 음수면 0으로 클램프하되, baseAmount/amountKRW처럼 마이너스도 유효한 잔액성 필드는 클램프하지 않고 유한수 여부만 검증하도록 구분했다. restoreBackup()의 시그니처는 바꾸지 않고(기존 회귀 테스트 보존), 호출부인 importFile 핸들러와 afterCloudAuth/resolveCloudPullRemote에서 DB 대입 전에 sanitizeBackup()을 거치도록 했다. fixedCount/droppedCount>0이면 토스트로 안내. test/run.js에 sanitizeAmount/sanitizeBackup 회귀 테스트 10개(NaN/문자열/음수/필수필드누락/원본불변/빈입력) 추가, FUNCTIONS·CONSTS 화이트리스트에 새 함수/상수 등록. 260/260 테스트 통과. APP_VERSION 1.38.3→1.39.0, sw.js CACHE v113→v114.",
       "commit": null
     }
   ]
