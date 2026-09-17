@@ -1288,7 +1288,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.38.0';
+const APP_VERSION='1.38.1';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4328,7 +4328,9 @@ function openHelp(){
 
 /* export / import — 파일명: backup_YYMMDD_HHmm.json */
 /* ===== 데이터 보호 ===== */
+let _copyIsCsv=false; /* copyBackup()이 CSV 복사인지 판단(백업 알림 상태를 건드리면 안 됨) */
 function openCopyBackup(text,reason,override){
+ _copyIsCsv=!!(override&&override.isCsv);
  const title=(override&&override.title)||'백업 데이터 복사';
  const note=(override&&override.note)||'복원할 때는 이 내용을 .json 파일로 저장해 불러오면 돼요.';
  openSheet(`<h3>${title}</h3>
@@ -4343,7 +4345,8 @@ function copyBackup(){
  el.select();el.setSelectionRange(0,999999);
  const ok=(()=>{try{return document.execCommand('copy')}catch(e){return false}})();
  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(el.value).catch(()=>{});
- DB.settings.lastExport=Date.now();DB.settings.backupSnooze=0;save();
+ /* CSV는 복원용 백업이 아니므로 백업 알림 상태(lastExport/backupSnooze)를 건드리지 않는다(doExport의 done()과 동일 규칙) */
+ if(!_copyIsCsv){DB.settings.lastExport=Date.now();DB.settings.backupSnooze=0;save();}
  closeSheet();renderCurrent();
  toast(ok?'복사했어요 · 메모 앱에 붙여넣어 주세요':'길게 눌러 복사해 주세요');
 }
@@ -4401,7 +4404,7 @@ async function doExport(mode,kind){
  const mime=isCsv?'text/csv':'application/json';
  /* CSV는 복원용 백업이 아니므로 백업 알림 상태(lastExport/backupSnooze)를 건드리지 않는다 */
  const done=msg=>{if(!isCsv){DB.settings.lastExport=Date.now();DB.settings.backupSnooze=0;save();renderCurrent();}toast(msg)};
- const copyFallback=reason=>openCopyBackup(text,reason,isCsv?{title:'거래 내역 데이터 복사',note:'스프레드시트 앱에서 열 때는 이 내용을 .csv 파일로 저장해 불러오면 돼요.'}:null);
+ const copyFallback=reason=>openCopyBackup(text,reason,isCsv?{title:'거래 내역 데이터 복사',note:'스프레드시트 앱에서 열 때는 이 내용을 .csv 파일로 저장해 불러오면 돼요.',isCsv:true}:null);
 
  /* 1) 공유 시트 — 되면 이게 가장 확실 */
  if(mode==='share'){

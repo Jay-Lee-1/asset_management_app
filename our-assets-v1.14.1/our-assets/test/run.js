@@ -84,7 +84,7 @@ const FUNCTIONS = [
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards',
   'rateUnknown', 'filteredHist', 'histInvalidate',
   'genSalt', 'pbkdf2Hash', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer',
-  'foreignSaveIsNewer',
+  'foreignSaveIsNewer', 'openCopyBackup', 'copyBackup',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -93,7 +93,8 @@ const FUNCTIONS = [
 const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL'];
 // _histCache는 filteredHist()가 재대입(={key,list})하는 let 선언이라 CONSTS(extractConst)로는
 // 못 끌어오므로 별도의 LETS 목록으로 extractLet을 통해 가져온다.
-const LETS = ['_histCache'];
+// _copyIsCsv도 같은 이유(openCopyBackup()이 재대입)로 LETS를 통해 가져온다.
+const LETS = ['_histCache', '_copyIsCsv'];
 
 const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(extractConst).join('\n') + '\n' + LETS.map(extractLet).join('\n');
 
@@ -154,7 +155,12 @@ const sandbox = {
   },
   // recSave()/saveQuickAmount()는 각각 $('txAmt')/$('qAmt').value를 읽어 금액을 얻으므로,
   // 그 두 id만 값을 갖는 입력칸처럼 동작시킨다. errBanner는 renderCurrent 에러 바운더리 테스트용.
-  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'errBanner' ? sandbox.errBannerEl : null,
+  // bkText는 copyBackup()이 select()/setSelectionRange()/.value를 쓰는 백업 복사 textarea 흉내.
+  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : null,
+  bkTextEl: { value: 'backup-text', select: () => {}, setSelectionRange: () => {} },
+  // copyBackup()의 navigator.clipboard 체크가 ReferenceError 없이 "지원 안 함"으로 지나가게
+  // 하는 최소 흉내(document.execCommand는 try/catch로 감싸져 있어 굳이 스텁이 필요 없음).
+  navigator: {},
   toast: (msg) => { sandbox.lastToast = msg; sandbox.toastCalls.push(msg); },
   toastCalls: [],
   save: () => {},
@@ -2536,6 +2542,42 @@ test('postponeRecTransfer: 회차별 수정이 없으면 기존처럼 반복의 
   const t = sandbox.DB.txns[sandbox.DB.txns.length - 1];
   assert.strictEqual(t.amount, 500000);
   assert.strictEqual(t.memo, '적금이체');
+});
+
+/* ---------- copyBackup/openCopyBackup: CSV 복사 폴백이 백업 알림 상태를 건드리던 버그
+ * (app-evolve cycle37 develop) — doExport()는 CSV 내보내기일 때 isCsv 가드로 lastExport/
+ * backupSnooze를 건드리지 않는데(done()의 if(!isCsv) 참고), 공유/다운로드가 막혀
+ * copyFallback()->openCopyBackup()->"전체 복사" 버튼->copyBackup() 경로로 빠지면 그 가드가
+ * 전혀 적용되지 않아 CSV를 복사만 해도 실제 JSON 백업을 한 것처럼 7일 알림이 꺼졌다. ---------- */
+function setupCopyBackupDB() {
+  sandbox.DB = { settings: { lastExport: 0, backupSnooze: 0 } };
+  sandbox.toastCalls = [];
+}
+test('openCopyBackup: override.isCsv가 true면 _copyIsCsv를 true로 세팅한다', () => {
+  setupCopyBackupDB();
+  sandbox.openCopyBackup('csv-text', '이유', { title: 't', isCsv: true });
+  assert.strictEqual(sandbox._copyIsCsv, true);
+});
+test('openCopyBackup: override가 없거나 isCsv가 없으면 _copyIsCsv를 false로 세팅한다', () => {
+  setupCopyBackupDB();
+  sandbox.openCopyBackup('json-text', '이유');
+  assert.strictEqual(sandbox._copyIsCsv, false);
+});
+test('copyBackup: CSV 복사 폴백(_copyIsCsv=true)에서는 lastExport/backupSnooze를 건드리지 않는다', () => {
+  setupCopyBackupDB();
+  sandbox.DB.settings.backupSnooze = 12345;
+  sandbox.openCopyBackup('csv-text', '이유', { title: 't', isCsv: true });
+  sandbox.copyBackup();
+  assert.strictEqual(sandbox.DB.settings.lastExport, 0, 'CSV 복사는 JSON 백업이 아니므로 lastExport가 갱신되면 안 됨');
+  assert.strictEqual(sandbox.DB.settings.backupSnooze, 12345, 'backupSnooze도 CSV 복사로 리셋되면 안 됨');
+});
+test('copyBackup: 실제 JSON 백업 복사(_copyIsCsv=false)에서는 기존처럼 lastExport/backupSnooze를 갱신한다(회귀 확인)', () => {
+  setupCopyBackupDB();
+  sandbox.DB.settings.backupSnooze = 12345;
+  sandbox.openCopyBackup('json-text', '이유');
+  sandbox.copyBackup();
+  assert.notStrictEqual(sandbox.DB.settings.lastExport, 0, 'JSON 백업 복사는 lastExport를 갱신해야 함');
+  assert.strictEqual(sandbox.DB.settings.backupSnooze, 0, 'JSON 백업 복사는 backupSnooze를 리셋해야 함');
 });
 
 /* ---------- 실행 ---------- */
