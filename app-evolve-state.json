@@ -1,22 +1,8 @@
 {
   "cycle": 38,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 32,
-      "phase": "review",
-      "timestamp": "2026-09-16T12:10:00.000Z",
-      "summary": "develop 커밋(a294057, 전체 내역 탭 _histCache 미무효화 버그 fix)을 검토했다. renderHistory()가 매번 페이지 전체를 innerHTML로 새로 그리는데 필터를 안 건드리면 filteredHist()의 키(범위|카테고리|검색어)가 그대로라 saveTx()/recApply()/deleteTxnsUndo() 등으로 DB.txns가 바뀌어도 옛 목록을 그대로 보여주던 실제 버그였음을 코드로 확인(filteredHist, index.html:3252-3261). 수정은 renderHistory() 맨 앞에서 _histCache.key만 null로 비우고 ST.hist.page는 건드리지 않아, histInvalidate()(필터 변경 시 page도 1로 리셋)와 역할이 겹치지 않고 탭 재진입 시 스크롤/페이지 유지가 보존됨을 확인. renderHistory() 호출부 4곳(초기 탭 진입, histClearFilter, histToggleSort, renderCurrent 경유) 모두 전체 재렌더가 필요한 경로라 매번 무효화해도 과도하지 않음 — search input(histInvalidate만 호출, renderHistory는 안 부름)이나 histMore/avgMode 토글처럼 필터 안 바꾸고 updateHist()만 부르는 경로는 이 변경의 영향을 받지 않아 기존 캐시 이점이 그대로 유지됨도 확인. 새 회귀 테스트 4개(캐싱 전제 확인, key=null 후 최신 반영, histInvalidate가 page도 리셋하는지, renderHistory 소스에 무효화 호출이 실제로 남아있는지)가 시나리오를 정확히 재현. 두 인라인 <script> 블록 모두 vm.Script 파싱 확인. 209/209 통과. 문제 없음.",
-      "commit": null
-    },
-    {
-      "cycle": 32,
-      "phase": "critique",
-      "timestamp": "2026-09-16T13:05:00.000Z",
-      "summary": "cycle32 review(ebef70c)가 문제 없음으로 끝낸 직후, 최근 커밋 재검토보다 앱 전체를 구조적으로 훑는 데 집중해 Explore 서브에이전트로 예산 관리, 중복 감지, 대량 선택 접근성 등을 살폈다. DB.budgets(index.html:1729)가 카테고리→금액 flat map으로 시간 축이 전혀 없다는 걸 발견했다 — openSpendAnalysis()(3763)는 ST.ledger.y/m로 임의의 과거/미래 달을 조회할 수 있는데도 budget 값(3767)은 항상 '현재' 값을 참조하고, saveBudget()(3800)이 DB.budgets[r.c]=v로 그 자리에서 덮어써 예산을 한 번만 조정해도 budgetProgress()의 over 판정(3747)이 바뀌면서 과거 모든 달의 '초과' 표시가 소급 왜곡됨을 코드로 직접 확인. openBudgetPrompt() 안내문(3790, '매달 같은 금액으로 적용돼요')도 이 사실과 어긋남. 예산 조정은 흔한 사용 패턴인데 그때마다 과거 이력이 조용히 왜곡되는 건 핵심 기능의 신뢰성을 해치는 실제 데이터 모델 결함으로 판단해 채택. 후보로 검토했으나 보류한 것: saveTx()의 의미론적 중복 거래 미감지(이미 보류된 더블탭 이슈와 인접, 확신도 낮음), Ledger/History 대량 선택이 long-press로만 진입 가능해 키보드 접근 불가(단일 항목 삭제는 이미 키보드로 접근 가능해 심각도 낮음), 지출 분석 문구의 '이번 달' 하드코딩(예산 이력화 작업에 자연히 딸려 고쳐질 사소한 카피 문제). pending_advance_plan에 DB.budgetHistory 배열 기반 이력 구조 + budgetForMonth 순수함수 + migrate 마이그레이션 + 관련 호출부 전환 계획 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 32,
       "phase": "advance",
@@ -148,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-17T14:12:37.000Z",
       "summary": "Explore 서브에이전트로 renderAssets(index.html:2500)와 대응되는 sibling function 누락 패턴을 훑어, renderPlan()(3622-3624)에 renderAssets가 이미 가진 '귀속(owner)이 DB.owners에서 사라지면 필터를 전체로 되돌리는' 가드가 빠져 있는 실제 버그를 발견해 수정했다. planAsset(id)(3711-3713)는 플랜 탭에서 통장을 고를 때마다 ST.plan.owner=a.owner로 동기화하는데, doRenameOwner(i)(2799-2802)는 귀속 이름을 바꾸며 DB.owners와 모든 자산의 .owner 필드는 갱신하지만 ST.plan.owner는 건드리지 않는다. 그 결과 플랜 탭에서 '나' 소속 통장을 선택해둔 상태로 귀속 관리에서 '나'→'남편'으로 이름을 바꾸면(흔한 조작), renderPlan()의 cashAssets 필터가 더 이상 존재하지 않는 owner==='나'로 계속 걸러져 0개가 되고 ST.plan.assetId가 null로 떨어지며 플랜 탭이 '통장 없음' 빈 상태로 조용히 무너진다(통장 선택 시트를 다시 열어야만 planAsset이 owner를 재동기화해 복구됨). delOwner()로 귀속을 삭제하는 경로도 동일하게 영향받는다. renderAssets()(index.html:2500)의 `if(ST.assetOwner!=='all'&&!DB.owners.includes(ST.assetOwner))ST.assetOwner='all'` 가드와 동일한 패턴으로 renderPlan() 맨 앞에 `if(ST.plan.owner!=='전체'&&!DB.owners.includes(ST.plan.owner))ST.plan.owner='전체'`를 추가해 cashAssets 필터 계산 전에 항상 유효한 owner로 되돌아가도록 고쳤다. renderPlan()은 DOM 의존성이 커 실행 기반 테스트가 없는 기존 관행(flow-item 접근성 테스트 등)을 따라, 소스 텍스트 기반 회귀 테스트 1개를 추가해 가드 코드가 존재하고 cashAssets 계산보다 먼저 실행되는지 확인했다. 두 인라인 <script> 블록 모두 node --check 파싱 확인, node test/run.js 250/250 통과(기존 249+신규 1). APP_VERSION 1.38.2->1.38.3, sw.js CACHE v112->v113.",
+      "commit": null
+    },
+    {
+      "cycle": 38,
+      "phase": "review",
+      "timestamp": "2026-09-17T15:08:50.000Z",
+      "summary": "develop 커밋(c1d7887, renderPlan() ST.plan.owner 잔존 버그 fix)을 검토했다. doRenameOwner/delOwner가 ST.plan.owner를 갱신하지 않는다는 진단이 실제 코드(index.html:2799 doRenameOwner, 2787 delOwner, 3712 planAsset)와 일치함을 확인했고, 추가된 가드(index.html:3623)가 renderAssets()의 기존 패턴(assetOwner 센티널 'all')과 동일한 형태로 plan.owner 센티널('전체')을 사용해 cashAssets 필터 계산 전에 실행됨을 확인했다. 가드가 놓인 renderPlan() 진입 지점은 사이드이펙트 없이 매번 안전하게 재평가 가능하고, 다른 갱신 경로(planAsset, planOwner, 4972/5489 라인의 명시적 재설정)와 충돌하지 않음도 확인. 새 회귀 테스트 1개가 가드 존재와 cashAssets 계산보다 먼저 실행되는 순서를 검증. 두 인라인 <script> 블록 모두 node --check 통과, node test/run.js 250/250 통과. 문제 없음.",
       "commit": null
     }
   ]
