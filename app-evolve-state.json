@@ -1,15 +1,8 @@
 {
   "cycle": 46,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 41,
-      "phase": "develop",
-      "timestamp": "2026-09-18T02:14:00.000Z",
-      "summary": "sanitizeBackup()(index.html:4498)이 obj.txns/obj.assets는 검증하면서 obj.recurrences는 통째로 그대로 통과시키던 버그 발견·수정. 반복거래는 recDates()/expandRec()이 매달 새 거래를 계속 만들어내는 생성기라, 손상된 amount 하나가 한 건이 아니라 그 이후 모든 회차를 무한히 오염시킬 수 있었다(파일 복원·클라우드 풀·자동 클라우드 로그인 3개 경로 모두 영향). 반복거래의 top-level amount와 edits[date].amount 오버라이드 각각에 기존 sanitizeAmount(txns와 동일하게 min 없이, 잔액성) 적용, id 없는 레코드는 assets/txns와 동일하게 드롭. 회귀 테스트 3개 추가(반복거래 amount 보정, edits.amount 보정, id 없는 레코드 드롭+recurrences 없어도 안전), 272/272 통과. 두 인라인 <script> 블록 모두 vm.Script 파싱 확인. APP_VERSION 1.41.0->1.41.1, sw.js CACHE v118->v119.",
-      "commit": null
-    },
     {
       "cycle": 41,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-18T22:10:00.000Z",
       "summary": "critique(21cc2a9) 계획대로 pushCloud()(index.html:1604)의 SELECT+UPSERT check-then-act를 조건부 UPDATE(.eq('updated_at',CLOUD_LAST_SYNCED_AT))로 교체해 동시 기기 푸시 race condition을 DB 레벨에서 원자적으로 막았다. CLOUD_LAST_SYNCED_AT이 있으면 update({data:DB,updated_at:nowIso}).eq('user_id',CLOUD_UID).eq('updated_at',CLOUD_LAST_SYNCED_AT).select('updated_at')를 보내 매치된 행 수를 확인하고, 매치 0건이면 행 존재 여부를 별도 조회해 구분한다(행이 있었으면 다른 기기가 이미 갱신한 것이므로 기존 conflict 경로로, 행이 없었으면 upsert로 폴백). 이 판정을 순수 함수 decidePushOutcome(matchedRowCount,rowExistedBefore)로 뽑아 isCloudConflict와 같은 자리에 두고 test/run.js FUNCTIONS에 추가, 회귀 테스트 3개(진행/폴백/충돌) 추가. resolveCloudForcePush()가 강제 덮어쓰기 전에 CLOUD_LAST_SYNCED_AT=null로 비우는 기존 패턴은 그대로 살아있어(조건 없이 upsert로 직행) 의도한 '이번 한 번은 충돌 검사 건너뛰기' 동작이 그대로 유지된다. 두 인라인 <script> 블록 모두 node --check 파싱 확인, 304/304 통과. APP_VERSION 1.42.4->1.43.0, sw.js CACHE v125->v126. pending_advance_plan 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 46,
+      "phase": "develop",
+      "timestamp": "2026-09-18T23:12:00.000Z",
+      "summary": "clampRecurringToMaturity()(index.html:2804)가 저축통장 만기일 때문에 한 번 자동으로 잘라둔 반복입금의 endDate를, 사용자가 나중에 만기일을 더 뒤로 연장해도 절대 다시 늘리지 못하던 버그 발견·수정(Explore 서브에이전트로 발견) — 만기를 앞당겼다가 갱신 등으로 다시 늘려도 자동이체가 예전(짧은) 만기에서 영원히 멈춘 채 무경고로 방치됨. 기존 코드는 \"이미 종료일이 만기 이하면 그대로\"라는 단일 조건이라 자동으로 잘린 endDate와 사용자가 직접 정한 endDate를 구분하지 못했다. saveRec/saveTx는 사용자가 직접 endDate를 정하면 항상 count를 함께 저장하는 반면 이 함수는 자동으로 자를 때 count를 지우는 기존 불변식을 이용해, saveAsset()에서 편집 전 원래 만기(prevMaturity)를 캡처해 clampRecurringToMaturity(assetId,maturity,prevMaturity)로 넘기고, 함수 내부에서 \"만기가 실제로 늘었고(prevMaturity<maturity) 기존 endDate에 count가 없고 그 endDate가 이전 만기 이하였다\"는 조건을 만족할 때만 재계산하도록 좁혔다(사용자가 직접 정한 endDate·prevMaturity 정보 없는 호출(askRelinkDeleted)·만기가 짧아지는 경우는 기존 동작 그대로 보존). 구현 중 recDates()가 인자로 받은 r.endDate를 자체 상한으로도 쓴다는 걸 재확인해(end 계산과 push() 필터 양쪽), 재계산 시 넘기는 base 객체에서 endDate를 지운 사본을 써야 새 만기가 실제로 반영됨을 발견·반영(안 그러면 재계산해도 이전 stale endDate로 다시 같은 값이 나와 조용히 무효했을 것). test/run.js FUNCTIONS에 clampRecurringToMaturity 추가, 회귀 테스트 5개(최초 자동 클램프, 연장 시 재계산, 사용자 endDate 보존, prevMaturity 없을 때 보수적 보존, 단축 시 count 무관 항상 재클램프), 309/309 통과. 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.43.0->1.43.1, sw.js CACHE v126->v127.",
       "commit": null
     }
   ]

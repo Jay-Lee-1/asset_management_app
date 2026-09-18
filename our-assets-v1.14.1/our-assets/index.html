@@ -1288,7 +1288,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.43.0';
+const APP_VERSION='1.43.1';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2773,9 +2773,11 @@ function saveAsset(editing){
  const setBase=(origBase)=>{if(!balType)return;invalidateBalances();
    const contrib=balanceAt(d.id,TODAY)-origBase; /* 오늘까지 순입출금(기준값 제외) */
    d[balKey]=Math.round(entered-contrib);if(balKey==='baseAmount')delete d.amountKRW;else delete d.baseAmount;};
+ let prevMaturity=null;
  if(editing){
    const i=DB.assets.findIndex(a=>a.id===d.id);
    const origBase=assetBase(DB.assets[i]); /* 교체 전 원래 기준값 */
+   prevMaturity=DB.assets[i]&&DB.assets[i].maturityDate; /* 교체 전 원래 만기일 — clampRecurringToMaturity가 만기 연장 여부를 판단하는 데 씀 */
    const hasAdj=balType&&(DB.txns||[]).some(t=>t.adjust&&t.adjustAsset===d.id);
    if(hasAdj){ /* 조정 내역이 있는 자산: 기준값 유지, 조정 내역을 다시 계산 */
      d[balKey]=origBase;
@@ -2795,18 +2797,27 @@ function saveAsset(editing){
    if(hasDeleted){askRelinkDeleted(d,entered,balType,balKey);return;} /* 이전 자산과 연동할지 선택 */
    DB.assets.push(d); /* 새 자산은 내역이 없으므로 기준값=입력값 그대로 */
  }
- if(d.type==='savings'&&d.maturityDate)clampRecurringToMaturity(d.id,d.maturityDate); /* 만기 후 이체 방지 */
+ if(d.type==='savings'&&d.maturityDate)clampRecurringToMaturity(d.id,d.maturityDate,prevMaturity); /* 만기 후 이체 방지 */
  save();closeSheet();renderCurrent();toast(editing?'자산을 수정했어요':'자산을 등록했어요');
  if(rateWasUnknown)syncRates(true); /* autoSyncRates()의 10분 TTL을 기다리지 않고 즉시 당겨와, 방금 등록한 자산이 순자산에서 조용히 ₩0으로 비는 시간을 줄임 */
 }
 /* 저축통장 만기일이 생기면, 그 통장으로 '입금'하는 반복의 종료일을 만기 직전 마지막 이체일로 맞춤.
-   - 이미 종료일이 만기보다 이르면(더 빨리 끝나면) 그대로 둠(앞당기지 않음). 조용히 적용. */
-function clampRecurringToMaturity(assetId,maturity){
+   - 이미 종료일이 만기보다 이르면(더 빨리 끝나면) 그대로 둠(앞당기지 않음). 조용히 적용.
+   - 단, 그 이른 종료일이 '이전 만기' 기준으로 이 함수가 자동으로 잘라둔 값이고(사용자가 직접 종료일을
+     정하면 항상 count가 함께 저장되므로, count 없이 endDate만 있으면 자동으로 잘린 것) 이번에 만기가
+     더 뒤로 연장됐다면, 사용자가 정한 종료일이 아니므로 새 만기까지 다시 늘려준다(그렇지 않으면 만기를
+     한 번 당겼다가 다시 늘려도 자동이체가 영원히 예전 만기에서 멈춘 채로 남는다). */
+function clampRecurringToMaturity(assetId,maturity,prevMaturity){
  (DB.recurrences||[]).forEach(r=>{
    if(r.toAssetId!==assetId)return;                 /* 이 통장으로 들어오는 반복만 */
    if(r.startDate&&r.startDate>maturity)return;      /* 시작이 만기 이후면 대상 아님 */
-   if(r.endDate&&r.endDate<=maturity)return;         /* 이미 만기 전에 끝나면 그대로 */
-   const occ=recDates(r,r.startDate,maturity);       /* 만기일 이하의 실제 발생일들 */
+   if(r.endDate&&r.endDate<=maturity){
+     const autoShortened=prevMaturity&&maturity>prevMaturity&&!r.count&&r.endDate<=prevMaturity;
+     if(!autoShortened)return;                       /* 사용자가 정한 종료일이면 그대로(앞당기지 않음) */
+   }
+   /* r.endDate(이전에 이 함수가 잘라둔 값 포함)를 그대로 넘기면 recDates() 내부가 그 값을 자체
+      상한으로 또 써버려 새 만기를 무시하므로, endDate를 뺀 사본으로 계산한다 */
+   const occ=recDates(Object.assign({},r,{endDate:null}),r.startDate,maturity); /* 만기일 이하의 실제 발생일들 */
    const last=occ.length?occ[occ.length-1]:null;     /* 만기 직전 마지막 이체일 */
    if(last){r.endDate=last;if(r.count)delete r.count;} /* 종료일 지정(횟수 조건은 해제) */
  });

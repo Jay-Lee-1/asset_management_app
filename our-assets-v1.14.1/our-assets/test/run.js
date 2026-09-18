@@ -75,7 +75,7 @@ const FUNCTIONS = [
   'saveRec', 'recHistFieldsChanged', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
   'monthStartStr', 'monthEndStr', 'expandRec', 'allTxns', 'spendByCategory', 'histSumTotals',
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'expenseBreakdownCard',
-  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'saveAsset', 'isCloudConflict', 'decidePushOutcome',
+  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'saveAsset', 'clampRecurringToMaturity', 'isCloudConflict', 'decidePushOutcome',
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges',
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
   'clampDay', 'saveTx', 'assetBase', 'balancesUpTo', 'balanceAt',
@@ -2089,6 +2089,53 @@ test('saveAsset: 처음 보는 fx 통화를 등록하면 즉시 동기화하고,
   sandbox.syncRatesCalls = [];
   sandbox.saveAsset(false);
   assert.deepStrictEqual(sandbox.syncRatesCalls, [], '이미 보유 중인 통화라 시세를 알고 있으면 부를 필요가 없음');
+});
+
+/* ---------- clampRecurringToMaturity: 저축 만기일을 당겼다가 다시 늘려도 자동이체가 예전 만기에
+ * 멈춘 채로 영영 안 늘어나던 버그(cycle46 develop). 종료일만 있고 count가 없는 건 이 함수가 자동으로
+ * 잘라둔 값이라는 기존 불변식(사용자가 직접 정하면 항상 count가 함께 저장됨, saveRec/saveTx 참고)을
+ * 이용해, 만기가 실제로 연장됐고 그 auto-clamp 흔적일 때만 다시 늘려준다. ---------- */
+function maturityRec(overrides) {
+  return Object.assign({
+    id: 'r1', active: true, type: 'saving', category: '저축', memo: '적금이체',
+    amount: 300000, fromAssetId: 'a1', toAssetId: 'a2',
+    freq: 'monthly', day: 15, startDate: '2026-01-15', endDate: null, count: null, weekend: 'none',
+    skip: [], edits: {},
+  }, overrides);
+}
+test('clampRecurringToMaturity: 만기가 생기면 그 만기 이하의 마지막 회차로 종료일을 잘라준다', () => {
+  const rec = maturityRec();
+  sandbox.DB = { recurrences: [rec] };
+  sandbox.clampRecurringToMaturity('a2', '2026-03-01');
+  assert.strictEqual(rec.endDate, '2026-02-15', '3/1 만기 이하의 마지막 회차는 2/15');
+  assert.ok(!rec.count, '자동으로 자른 종료일은 count가 없어(falsy) 사용자가 정한 값과 구분되게 함');
+});
+test('clampRecurringToMaturity: 만기를 당겼다가 다시 늘리면(연장) 자동으로 잘렸던 자동이체가 새 만기까지 다시 늘어난다', () => {
+  const rec = maturityRec();
+  sandbox.DB = { recurrences: [rec] };
+  sandbox.clampRecurringToMaturity('a2', '2026-03-01'); // 1차: 만기가 3/1로 생겨 2/15까지 잘림
+  assert.strictEqual(rec.endDate, '2026-02-15');
+  sandbox.clampRecurringToMaturity('a2', '2026-09-01', '2026-03-01'); // 2차: 만기를 9/1로 연장(prevMaturity=3/1 전달)
+  assert.strictEqual(rec.endDate, '2026-08-15', '연장된 새 만기(9/1) 이하의 마지막 회차까지 다시 늘어나야 함');
+});
+test('clampRecurringToMaturity: 사용자가 직접 정한 종료일(count 동반)은 만기가 늘어나도 건드리지 않는다', () => {
+  const rec = maturityRec({ endDate: '2026-02-15', count: 2 }); // saveRec()이 만든 것처럼 count가 함께 있음
+  sandbox.DB = { recurrences: [rec] };
+  sandbox.clampRecurringToMaturity('a2', '2026-09-01', '2026-03-01');
+  assert.strictEqual(rec.endDate, '2026-02-15', '사용자가 직접 정한 종료일은 만기 연장과 무관하게 그대로 유지돼야 함');
+  assert.strictEqual(rec.count, 2);
+});
+test('clampRecurringToMaturity: prevMaturity가 없으면(신규 자산 연동 등) 기존 종료일을 무조건 보존한다', () => {
+  const rec = maturityRec({ endDate: '2026-02-15' }); // count 없음이지만 prevMaturity 정보가 없는 호출(askRelinkDeleted 경로)
+  sandbox.DB = { recurrences: [rec] };
+  sandbox.clampRecurringToMaturity('a2', '2026-09-01');
+  assert.strictEqual(rec.endDate, '2026-02-15', 'prevMaturity 없이는 연장 여부를 판단할 수 없으므로 보수적으로 그대로 둠');
+});
+test('clampRecurringToMaturity: 만기를 더 당기면(단축) count 유무와 무관하게 항상 새 만기에 맞춰 더 잘린다', () => {
+  const rec = maturityRec({ endDate: '2026-08-15', count: 7 }); // 사용자가 정했더라도
+  sandbox.DB = { recurrences: [rec] };
+  sandbox.clampRecurringToMaturity('a2', '2026-03-01', '2026-09-01');
+  assert.strictEqual(rec.endDate, '2026-02-15', '만기가 당겨지면 만기 이후 이체를 막기 위해 항상 재계산돼야 함');
 });
 
 /* ---------- isCloudConflict: pushCloud()가 충돌로 빠지는 조건의 순수 판정 로직 ---------- */
