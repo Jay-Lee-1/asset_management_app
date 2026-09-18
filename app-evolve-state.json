@@ -1,15 +1,8 @@
 {
   "cycle": 41,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 35,
-      "phase": "review",
-      "timestamp": "2026-09-17T02:05:00.000Z",
-      "summary": "develop 커밋(5c3ac3e, 회원가입 비밀번호 placeholder '4자 이상'->'8자 이상' 수정)을 검토했다. AUTH.signUp()(index.html:1683)의 실제 최소 길이 검증(pw.length<8)과 placeholder 문구가 이제 일치함을 grep으로 확인했고, 앱 전체에 다른 '4자'/'8자' 관련 잔존 문구가 없음도 확인했다. login 모드일 때 placeholder를 빈 문자열로 비운 것도 레이지 재해시 전 기존 계정(4자 이상 비밀번호 허용)에 '8자 이상'을 잘못 강제 안내하지 않기 위한 의도적 분기로 타당함을 확인. 로직 변경 없는 순수 문자열 수정이라 회귀 위험 낮음. 두 인라인 <script> 블록 모두 node --check 파싱 통과, node test/run.js 233/233 통과. 문제 없음.",
-      "commit": null
-    },
     {
       "cycle": 35,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-18T01:15:00.000Z",
       "summary": "critique(bf5a970) 계획대로 브라우저 storage eviction으로부터 로컬 데이터를 보호했다. requestPersistentStorage()(navigator.storage.persist 래퍼)를 startApp()에서 매 부팅 시 호출해 STORAGE_PERSISTED에 결과를 남기고, 순수 판정 함수 shouldWarnUnpersisted(persisted,hasCloud)=persisted===false&&!hasCloud를 추가해 homeAlerts()가 클라우드 미연결이고 실제로 persist 실패가 확인된 경우에만(API 미지원/미확인 null은 제외) 경고 카드를 띄우도록 했다. 카드는 backup 알림과 동일한 UI 패턴(home-alert mat, 클릭 시 재요청, '확인' 버튼으로 DB.settings.persistWarnDismissed=true 영구 dismiss)을 따른다. migrate()에 persistWarnDismissed:false 기본값 추가. test/run.js FUNCTIONS에 shouldWarnUnpersisted 추가하고 storageOutcomeMsg와 동일한 패턴으로 회귀 테스트 4개(로컬만/클라우드 있음/이미 persisted/API 미확인) 추가. 두 인라인 <script> 블록 모두 vm.Script 파싱 확인, node test/run.js 269/269 통과(기존 265+신규 4). APP_VERSION 1.40.1->1.41.0(advance라 minor bump), sw.js CACHE v117->v118. pending_advance_plan 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 41,
+      "phase": "develop",
+      "timestamp": "2026-09-18T02:14:00.000Z",
+      "summary": "sanitizeBackup()(index.html:4498)이 obj.txns/obj.assets는 검증하면서 obj.recurrences는 통째로 그대로 통과시키던 버그 발견·수정. 반복거래는 recDates()/expandRec()이 매달 새 거래를 계속 만들어내는 생성기라, 손상된 amount 하나가 한 건이 아니라 그 이후 모든 회차를 무한히 오염시킬 수 있었다(파일 복원·클라우드 풀·자동 클라우드 로그인 3개 경로 모두 영향). 반복거래의 top-level amount와 edits[date].amount 오버라이드 각각에 기존 sanitizeAmount(txns와 동일하게 min 없이, 잔액성) 적용, id 없는 레코드는 assets/txns와 동일하게 드롭. 회귀 테스트 3개 추가(반복거래 amount 보정, edits.amount 보정, id 없는 레코드 드롭+recurrences 없어도 안전), 272/272 통과. 두 인라인 <script> 블록 모두 vm.Script 파싱 확인. APP_VERSION 1.41.0->1.41.1, sw.js CACHE v118->v119.",
       "commit": null
     }
   ]

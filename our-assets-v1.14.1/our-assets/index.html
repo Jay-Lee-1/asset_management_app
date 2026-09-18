@@ -1288,7 +1288,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.41.0';
+const APP_VERSION='1.41.1';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4514,7 +4514,27 @@ function sanitizeBackup(obj){
   SANITIZE_QTY_FIELDS.forEach(f=>{if(f in d){const n=sanitizeAmount(d[f],0);if(n!==d[f]){d[f]=n;fixedCount++}}});
   assets.push(d);
  });
- return {data:Object.assign({},obj,{txns,assets}),fixedCount,droppedCount};
+ /* 반복거래는 한 레코드가 recDates()로 매달 새 거래를 계속 만들어내므로, amount가 손상되면
+  * txns 한 건이 아니라 이후 모든 회차가 조용히 오염된다(expandRec() 1923줄). edits[date].amount
+  * 오버라이드도 같은 경로로 쓰이므로 동일하게 검증한다. */
+ const srcRecs=Array.isArray(obj&&obj.recurrences)?obj.recurrences:[];
+ const recurrences=[];
+ srcRecs.forEach(r=>{
+  if(!r||!r.id){droppedCount++;return}
+  const d=Object.assign({},r);
+  if('amount' in d){const n=sanitizeAmount(d.amount);if(n!==d.amount){d.amount=n;fixedCount++}}
+  if(d.edits&&typeof d.edits==='object'){
+   const edits={};
+   Object.keys(d.edits).forEach(date=>{
+    const e=Object.assign({},d.edits[date]);
+    if('amount' in e){const n=sanitizeAmount(e.amount);if(n!==e.amount){e.amount=n;fixedCount++}}
+    edits[date]=e;
+   });
+   d.edits=edits;
+  }
+  recurrences.push(d);
+ });
+ return {data:Object.assign({},obj,{txns,assets,recurrences}),fixedCount,droppedCount};
 }
 /* obj.assets/obj.txns가 배열인지까지 검증한 뒤 DB를 통째로 교체한다. migrate()가 손상된
  * obj 때문에 중간에 throw해도 DB가 절반만 마이그레이션된 채로 남지 않도록, 실패 시 교체 전

@@ -1647,6 +1647,32 @@ test('sanitizeBackup: 원본 obj를 변형하지 않는다', () => {
   sandbox.sanitizeBackup(orig);
   assert.strictEqual(orig.txns[0].amount, origAmount, '원본 레코드는 그대로 유지되어야 함');
 });
+test('sanitizeBackup: 반복거래의 NaN/문자열 금액도 보정한다(매달 새로 생기는 거래라 방치하면 무한히 오염됨)', () => {
+  const { data, fixedCount, droppedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    recurrences: [{ id: 'r1', amount: '오만원' }, { id: 'r2', amount: 50000 }],
+  });
+  assert.strictEqual(data.recurrences[0].amount, 0);
+  assert.strictEqual(data.recurrences[1].amount, 50000);
+  assert.strictEqual(fixedCount, 1);
+  assert.strictEqual(droppedCount, 0);
+});
+test('sanitizeBackup: 반복거래 회차별 수정(edits[date].amount)도 검증한다(expandRec이 그대로 소비함)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    recurrences: [{ id: 'r1', amount: 10000, edits: { '2026-02-01': { amount: 'bad' }, '2026-03-01': { amount: 20000 } } }],
+  });
+  assert.strictEqual(data.recurrences[0].edits['2026-02-01'].amount, 0);
+  assert.strictEqual(data.recurrences[0].edits['2026-03-01'].amount, 20000);
+  assert.strictEqual(fixedCount, 1);
+});
+test('sanitizeBackup: id 없는 반복거래는 제거하고, recurrences가 없거나 배열이 아니어도 터지지 않는다', () => {
+  const dropped = sandbox.sanitizeBackup({ txns: [], assets: [], recurrences: [{ amount: 1000 }] });
+  assert.strictEqual(dropped.data.recurrences.length, 0);
+  assert.strictEqual(dropped.droppedCount, 1);
+  const missing = sandbox.sanitizeBackup({});
+  assert.strictEqual(missing.data.recurrences.length, 0);
+});
 
 /* ---------- spendByCategory: 지출 분석 카테고리별 합계는 잔액 조정(기본 제외)을 빼야 한다 ---------- */
 test('spendByCategory: 수지에 포함되지 않은 잔액 조정 지출은 카테고리 합계에서 제외된다', () => {
