@@ -75,7 +75,7 @@ const FUNCTIONS = [
   'saveRec', 'recHistFieldsChanged', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
   'monthStartStr', 'monthEndStr', 'expandRec', 'allTxns', 'spendByCategory', 'histSumTotals',
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'expenseBreakdownCard',
-  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'saveAsset', 'isCloudConflict',
+  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'saveAsset', 'isCloudConflict', 'decidePushOutcome',
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges',
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
   'clampDay', 'saveTx', 'assetBase', 'balancesUpTo', 'balanceAt',
@@ -2106,6 +2106,17 @@ test('isCloudConflict: 마지막 동기화 기록이 없으면(첫 push) 충돌�
 });
 test('isCloudConflict: 원격에 데이터가 아직 없으면(updated_at 없음) 충돌이 아니다', () => {
   assert.strictEqual(sandbox.isCloudConflict(null, '2026-06-15T09:00:00.000Z'), false);
+});
+
+/* ---------- decidePushOutcome: pushCloud()의 조건부 UPDATE 결과 판정(동시 기기 푸시 race condition 방지) ---------- */
+test('decidePushOutcome: 조건부 UPDATE가 행을 매치했으면(우리가 본 updated_at 그대로) 그대로 진행한다', () => {
+  assert.strictEqual(sandbox.decidePushOutcome(1, true), 'proceed');
+});
+test('decidePushOutcome: 매치된 행이 없고 행 자체도 없었으면(첫 push) upsert로 폴백한다', () => {
+  assert.strictEqual(sandbox.decidePushOutcome(0, false), 'fallback');
+});
+test('decidePushOutcome: 매치된 행이 없는데 행은 있었으면(그 사이 다른 기기가 이미 갱신) 충돌이다', () => {
+  assert.strictEqual(sandbox.decidePushOutcome(0, true), 'conflict');
 });
 
 /* ---------- localHasUnsyncedChanges: afterCloudAuth()가 부팅 시 로컬을 조용히 덮어쓸지 판단하는 순수 로직 ---------- */
