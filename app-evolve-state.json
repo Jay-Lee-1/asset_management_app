@@ -1,15 +1,12 @@
 {
   "cycle": 44,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "renderTxSheet() 렌더 스모크 테스트 도입",
+    "why": "cycle43 critique/advance가 render*류 함수(내부 상태+innerHTML 직접 조작이라 순수 함수 회귀망 바깥)를 최우선 구조적 공백으로 지목했고, advance는 안전하게 openCatManage 하나로 범위를 좁혀 첫 사례를 만든 뒤 renderHome/renderAssets/renderTxSheet/renderHistory를 후속 과제로 명시적으로 남겼다. 그중 renderTxSheet()(index.html:3006-3061, 57줄)가 의존 그래프가 가장 얕고(txDraft 전역 상태 + catAv/catGlyph/assetPickBtn/endCondFields/openFormSheet 정도) openCatManage와 같은 패턴을 그대로 재사용할 수 있는 반면, 실제 서비스에서는 지출/수입/이체/저축 4가지 타입과 반복 on/off, monthly 반복일 커스텀 입력 등 분기가 가장 많고 이번 로테이션에서만도 관련 폼 버그가 여러 번 나온 화면(예: cycle42 openFixShortfall stale _fixWhen, cycle40 varyingRecs skip 필터 등도 결국 이 시트로 흘러드는 데이터)이라 안전망 부재의 실질적 위험이 가장 크다.",
+    "approach": "test/run.js FUNCTIONS 추출 목록에 renderTxSheet·txType·txToggleRepeat, 필요한 CONSTS(TYPE_LABEL 등)를 openCatManage 때처럼 추가한다. txDraft/window._recCtx/TODAY/_txFocusAmt 등 모듈 전역을 직접 세팅해 함수를 실제로 호출하고, 반환/부수효과가 아니라 openFormSheet에 전달된 HTML 문자열을 캡처해 검증한다(openSheet 스텁을 캡처용으로 재사용하거나 필요시 openFormSheet 전용 스텁 추가). 케이스 후보: 1) type별(지출/수입/이체/저축)로 자산 필드가 from/to 중 올바른 조합으로 나오는지, 2) 신규 생성 시에만 반복 토글이 보이고 편집(d.id 존재) 시엔 안 보이는지, 3) 반복 on + monthly일 때 day가 1/5/15/25 프리셋에 없으면 custom 입력 필드가 뜨는지, 4) window._recCtx가 있을 때 반복 개별 수정 모드로 빠지며 삭제 버튼이 recCtxDel을 호출하는지. openCatManage 사례처럼 4~5개 정도의 작은 스모크 테스트로 범위를 한정하고, renderHome/renderAssets/renderHistory는 의존이 더 깊으니 이번에도 손대지 말고 다음 사이클 과제로 남긴다."
+  },
   "history": [
-    {
-      "cycle": 39,
-      "phase": "critique",
-      "timestamp": "2026-09-17T20:10:12.222Z",
-      "summary": "예산 시스템(budgetForMonth/budgetProgress/totalBudgetSummary)은 있지만 홈 알림 스택(homeAlerts)에 예산 초과 경고가 빠져 있어 예산을 다 쓸 때까지 조기 경고를 못 받는 문제 발견. advance에서 homeAlerts에 budgetOver/budgetOverMulti 카드 추가 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 39,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-09-18T16:08:59.553Z",
       "summary": "develop 커밋(6c69805)을 검토. saveQuickAmount()가 el.value.trim()으로만 빈 입력을 판정하도록 고친 게 fmtAmt() oninput의 정규화(빈 문자열 또는 콤마 포맷된 숫자 문자열만 남김)와 정확히 일치하고, num()이 콤마를 제거해 파싱하는 것도 확인. 기존 \"빈 입력이면 막힘\" 테스트와 새 \"0원도 저장됨\" 테스트 둘 다 sandbox의 $(\"qAmt\") 스텁이 실제 프로덕션 $() 반환값(.value 보유 객체)과 정확히 일치함을 확인. 290/290 통과. 부수 발견(급하지 않아 코드는 안 고침): openQuickAmount()의 prefill/힌트(index.html:5128,5130)가 lastActualAmount()의 last?...:'' 삼항연산에 의존하는데, lastActualAmount()가 데이터 없음과 실제 0원을 똑같이 0으로 반환해(r.amount||0) 구분 불가라, 지난 회차에 정말 0원을 저장했으면 다음 회차엔 입력창이 빈 채로 열리고 \"지난달은 0원이었어요\" 힌트도 안 뜸(데이터 유실은 아니고 재입력 UX 불편). 제대로 고치려면 lastActualAmount가 null 센티널을 반환하도록 시그니처를 바꿔야 해서 review 범위를 넘어 critique/develop 후속 과제로 남김. 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 44,
+      "phase": "critique",
+      "timestamp": "2026-09-18T17:10:00.000Z",
+      "summary": "cycle43 critique/advance가 남긴 후속 과제(render*류 함수 스모크 테스트 확장)를 이어받아 재검토. renderHome(381줄)·renderAssets(130줄)은 의존 그래프가 훨씬 깊어 무인 사이클에 부담이 크고, renderTxSheet(index.html:3006-3061, 57줄)가 openCatManage와 비슷하게 얕은 의존(txDraft 전역 + catAv/catGlyph/assetPickBtn/endCondFields/openFormSheet)으로 같은 패턴을 재사용할 수 있으면서도, 지출/수입/이체/저축 4타입+반복 on/off+월간 반복일 커스텀 등 분기가 가장 많고 이번 로테이션에서만도 관련 폼 버그가 여러 차례 나온 화면이라 안전망 공백의 실질 위험이 가장 크다고 판단해 채택. lastActualAmount() null 센티널 이슈(cycle44 review 부수 발견)와 balancesUpTo() RANGE_FROM 체크포인트(cycle41에서 부분 완화 후 재평가 대기)도 검토했으나 이번엔 render 스모크 테스트 공백이 더 시급하다고 보고 다음 순번으로 미룸. advance에서 renderTxSheet 렌더 스모크 테스트 도입 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     }
   ]
