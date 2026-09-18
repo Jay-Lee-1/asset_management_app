@@ -1,15 +1,8 @@
 {
   "cycle": 42,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 36,
-      "phase": "critique",
-      "timestamp": "2026-09-17T08:00:00.000Z",
-      "summary": "같은 브라우저 다중 탭에서 한쪽 탭의 save()가 다른 탭의 변경을 조용히 덮어쓰는 문제(storage 이벤트 리스너/BroadcastChannel 전무)를 발견. advance에서 window storage 이벤트 + monotonic savedAt 반영 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 36,
       "phase": "advance",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-18T06:15:24.482Z",
       "summary": "openFixShortfall()(index.html:5175)이 플랜을 실행하지 않고 시트를 닫아도 모듈 스코프 _fixWhen(고른 이체일)을 리셋하지 않던 버그 발견·수정. _fixWhen은 planTransfer/planSplitTransfer가 실제 실행됐을 때만 null로 비워지는데, 사용자가 \"날짜 선택\"으로 임의 날짜를 고르고 취소하면 그 값이 남아, 몇 주 뒤 전혀 다른 자산·날짜의 부족 알림을 열어도 stale한 날짜를 이어써 findDonors가 잘못된 기준일로 여유 통장을 계산하고 그 날짜로 이체가 기록될 위험이 있었다. openFixShortfall() 진입부에 (targetId,date) 컨텍스트가 실제로 바뀔 때만 _fixWhen을 리셋하는 가드 추가(같은 컨텍스트로 재렌더될 때는 고른 날짜 유지). 회귀 테스트 2개 추가(다른 컨텍스트면 리셋, 같은 컨텍스트면 유지), test/run.js FUNCTIONS에 openFixShortfall·LETS에 _fixWhen 추가, 276/276 통과. 두 인라인 <script> 블록 모두 vm.Script 파싱 확인. APP_VERSION 1.42.0->1.42.1, sw.js CACHE v121->v122.",
+      "commit": null
+    },
+    {
+      "cycle": 42,
+      "phase": "review",
+      "timestamp": "2026-09-18T07:08:37.486Z",
+      "summary": "develop 커밋(8f2bb3e)을 검토. openFixShortfall() 진입부 가드가 (targetId,date) 컨텍스트 변경 시에만 _fixWhen을 리셋하도록 정확히 구현됐음을 확인 — closeSheet()는 범용 함수라 _fixWhen/_fixCtx를 건드리지 않으므로 이 가드가 유일한 리셋 경로. 같은 컨텍스트 재렌더(fixSetWhen picker 콜백 경로) 시 값 유지, 다른 컨텍스트 시 결제 전날로 재계산되는 것도 회귀 테스트 2개가 정확히 커버. APP_VERSION/sw.js CACHE 버전 동시 갱신 확인. 276/276 통과. 문제 없음.",
       "commit": null
     }
   ]
