@@ -1,15 +1,12 @@
 {
   "cycle": 45,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "pushCloud() 동시 기기 푸시 시 last-write-wins 데이터 유실 방지 — 조건부 UPDATE로 원자적 충돌 감지",
+    "why": "pushCloud()(index.html:1604-1619)가 SELECT(updated_at 확인)와 UPSERT를 분리된 두 요청으로 실행해, 두 기기가 scheduleCloudPush의 1200ms 디바운스 창 안에 거의 동시에 각각 편집→푸시하면 둘 다 같은 cur.updated_at을 읽고 둘 다 isCloudConflict를 통과한 뒤 UPSERT해 나중에 도착한 쪽이 먼저 쓴 쪽의 거래/자산을 통째로 조용히 덮어쓴다. 앱이 '나/배우자/공용' 다중 소유자·다중 기기 공유를 전제로 하는데, 이 경로는 기존 충돌 UI(afterCloudAuth, 로컬 미동기화 체크)를 완전히 우회하고 토스트도 없이 원격 전용 데이터를 영구 유실시킨다(resolveCloudForcePush 주석이 인정하듯 되돌릴 로컬 스냅샷도 없음). sanitizeBackup 검증 공백·storage eviction보다 더 심각한, 충돌 감지 자체를 우회하는 실사용 시나리오의 무경고 영구 데이터 유실이다.",
+    "approach": "pushCloud()의 SELECT+UPSERT를 단일 조건부 UPDATE로 교체: CLOUD_LAST_SYNCED_AT이 있으면 .update({data:DB,updated_at:nowIso}).eq('user_id',CLOUD_UID).eq('updated_at',CLOUD_LAST_SYNCED_AT).select('updated_at')로 보내 매치 행이 0개면 그 사이 다른 기기가 이미 갱신한 것이므로 기존 CLOUD_SYNC_STATE='conflict' 경로로 보낸다(토스트 포함, 기존 UX 그대로 재사용). CLOUD_LAST_SYNCED_AT이 null(최초 푸시)이거나 매치 실패 후 행 자체가 없으면 기존처럼 upsert로 폴백. '매치 행 수 + 행 존재 여부 → 진행/충돌/폴백' 판정을 isCloudConflict처럼 순수 함수(예: decidePushOutcome(matchedRowCount, rowExistedBefore))로 뽑아 test/run.js에 회귀 테스트 추가. pushCloud() 한 함수만 건드리고 새 스키마·RPC는 불필요."
+  },
   "history": [
-    {
-      "cycle": 40,
-      "phase": "critique",
-      "timestamp": "2026-09-18T00:11:01.753Z",
-      "summary": "Supabase 미설정(기본 배포) 사용자는 100% localStorage 의존인데 navigator.storage.persist()가 전혀 호출되지 않아 브라우저 디스크 압박 축출에 경고 없이 노출되는 문제 발견. '조용한 전체 재무 데이터 영구 유실'이 가장 심각·빈도 높은 실패모드라 채택. advance에서 requestPersistentStorage() + shouldWarnUnpersisted 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 40,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-09-18T20:09:00.000Z",
       "summary": "develop 커밋(a994ee3)을 검토. lastActualAmount()의 실제 버그 소재는 openQuickAmount()의 last?...:'' 삼항연산 두 곳이었고, 커밋이 이를 last!=null?...:''로 정확히 고쳤음을 확인. lastActualAmount() 자체의 fallback 분기(r.amount!=null?r.amount:null)는 saveRec()의 !d.amount 검증 때문에 r.amount가 항상 truthy라 실질적 동작 변화는 없지만 의미상 더 명확해졌고 해롭지 않음. lastActualAmount 호출 지점이 openQuickAmount 한 곳뿐임을 grep으로 확인해 다른 소비자에 영향 없음. 새 회귀 테스트 5개가 pure 함수의 0원/기본값/손상 레코드 케이스와 렌더 결과(힌트 노출 여부, value 속성) 둘 다 커버. 301/301 통과. 문제 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 45,
+      "phase": "critique",
+      "timestamp": "2026-09-18T21:11:00.000Z",
+      "summary": "홈 알림/렌더 스모크 테스트 등 라인 단위 안전망 확충에서 벗어나, Explore 서브에이전트로 클라우드 동기화 레이어(cycle42 critique에서 '이미 성숙, 새 버그 없음'으로 통과시켰던 pushCloud/pullCloud)를 재조사. pushCloud()(index.html:1604-1619)가 원격 updated_at을 SELECT로 읽어 isCloudConflict로 판정한 뒤 별도 UPSERT로 쓰는 check-then-act 구조라, '나/배우자/공용' 다중 기기 동시 편집이라는 앱의 핵심 시나리오에서 두 기기가 scheduleCloudPush의 1200ms 디바운스 창 안에 거의 동시에 푸시하면 둘 다 같은 cur.updated_at을 보고 통과해 나중 쓰기가 먼저 쓴 쪽 데이터를 토스트도 충돌 UI도 없이 통째로 덮어쓰는 race condition을 발견. 충돌 감지 자체를 우회하는 실사용 시나리오의 무경고 영구 데이터 유실이라 최우선으로 채택. renderHome/renderAssets/renderHistory 스모크 테스트 공백(cycle43/44에서 이미 알려진 채 두 차례 미룸)과 long-press 멀티셀렉트·드래그 정렬의 접근성 공백(넓은 범위라 단일 지점 수정 불가), afterCloudAuth의 무경고 sanitizeBackup 보정(낮은 파급력)은 재확인만 하고 기각. advance에서 SELECT+UPSERT를 단일 조건부 UPDATE(.eq('updated_at',CLOUD_LAST_SYNCED_AT))로 교체해 DB 레벨에서 원자적으로 충돌을 판정하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     }
   ]
