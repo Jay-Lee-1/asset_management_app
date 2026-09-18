@@ -86,7 +86,7 @@ const FUNCTIONS = [
   'rateUnknown', 'filteredHist', 'histInvalidate',
   'genSalt', 'pbkdf2Hash', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer',
   'foreignSaveIsNewer', 'openCopyBackup', 'copyBackup', 'findDonors',
-  'recIsVarying', 'varyingRecs',
+  'recIsVarying', 'varyingRecs', 'openFixShortfall',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -96,7 +96,10 @@ const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORD
 // _histCache는 filteredHist()가 재대입(={key,list})하는 let 선언이라 CONSTS(extractConst)로는
 // 못 끌어오므로 별도의 LETS 목록으로 extractLet을 통해 가져온다.
 // _copyIsCsv도 같은 이유(openCopyBackup()이 재대입)로 LETS를 통해 가져온다.
-const LETS = ['_histCache', '_copyIsCsv'];
+// _fixWhen/_fixCtx는 openFixShortfall()이 재대입하는 "부족해요" 시트의 이체일 선택 상태라
+// 같은 이유(let 선언, realm에 안 붙음)로 LETS를 통해 가져온다. 소스에서 두 변수가 한 줄
+// `let _fixWhen=null,_fixCtx=null;`로 선언돼 있어 "_fixWhen"만 추출해도 둘 다 딸려온다.
+const LETS = ['_histCache', '_copyIsCsv', '_fixWhen'];
 
 const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(extractConst).join('\n') + '\n' + LETS.map(extractLet).join('\n');
 
@@ -2851,6 +2854,49 @@ test('varyingRecs: 이미 실제 금액을 입력(edits)한 회차는 skip과 �
   sandbox.DB.recurrences[0].edits = { '2026-06-10': { amount: 45000 } };
   const vr = sandbox.varyingRecs();
   assert.ok(!vr.some((x) => x.date === '2026-06-10'), 'edits가 있는 회차는 여전히 알림 목록에서 빠져야 함');
+});
+
+/* ---------- openFixShortfall: "부족해요/해결 방법"에서 플랜을 실행하지 않고 시트를 닫으면
+ * _fixWhen(고른 이체일)이 초기화되지 않아, 전혀 다른(다른 자산·다른 날짜) 부족 상황을 열어도
+ * 예전에 고른 날짜를 그대로 이어쓰던 버그의 회귀 테스트(app-evolve cycle42).
+ * _fixWhen은 planTransfer/planSplitTransfer가 실제로 실행됐을 때만 null로 리셋되므로,
+ * "날짜 선택"만 하고 취소한 뒤 다른 자산의 알림을 열면 stale한 날짜 기준으로 findDonors가
+ * 계산돼 아직 확정되지 않은 잔액을 보여주고, 그 날짜로 이체가 잘못 기록될 수 있었다. */
+function setupFixShortfallDB() {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox._balCache.clear();
+  sandbox.DB = {
+    settings: {},
+    assets: [
+      { id: 'assetA', name: 'A통장', type: 'cash', baseAmount: 0 },
+      { id: 'assetB', name: 'B통장', type: 'cash', baseAmount: 0 },
+      { id: 'donor', name: '여유통장', type: 'cash', baseAmount: 100000 },
+    ],
+    txns: [],
+    recurrences: [],
+  };
+  sandbox._fixWhen = null;
+  sandbox._fixCtx = null;
+}
+test('openFixShortfall: 실행 없이 닫은 뒤 다른(다른 자산·다른 날짜) 부족 상황을 열면 이전에 고른 이체일을 이어쓰지 않는다(app-evolve cycle42)', () => {
+  setupFixShortfallDB();
+  sandbox.openFixShortfall('assetA', '2026-06-20', 50000);
+  assert.strictEqual(sandbox._fixWhen, sandbox.addDays('2026-06-20', -1), '처음 열면 결제 전날이 기본값이어야 함');
+  // 사용자가 '날짜 선택'으로 임의의 날짜를 고르고, 플랜은 실행하지 않은 채 시트를 닫음
+  // (fixSetWhen('pick')의 openFieldDatePicker 콜백이 하는 일과 동일 — planTransfer를 타지 않으므로 _fixWhen이 리셋되지 않음)
+  sandbox._fixWhen = '2026-01-01';
+  // 몇 주 뒤, 전혀 다른 자산·날짜의 부족 알림을 연다
+  sandbox.openFixShortfall('assetB', '2026-07-25', 30000);
+  assert.strictEqual(sandbox._fixWhen, sandbox.addDays('2026-07-25', -1), '다른 부족 상황을 열면 이전에 고른 날짜가 아니라 새 결제 전날로 기본값이 되어야 함');
+});
+test('openFixShortfall: 같은 부족 상황을 다시 열 때는(날짜 선택 후 재렌더) 고른 이체일을 그대로 유지한다(회귀 확인)', () => {
+  setupFixShortfallDB();
+  sandbox.openFixShortfall('assetA', '2026-06-20', 50000);
+  sandbox._fixWhen = '2026-06-18'; // 사용자가 '날짜 선택'으로 직접 고른 날짜
+  // fixSetWhen('pick')의 콜백은 같은 ctx(_fixCtx.targetId/date)로 openFixShortfall을 다시 부른다
+  sandbox.openFixShortfall('assetA', '2026-06-20', 50000);
+  assert.strictEqual(sandbox._fixWhen, '2026-06-18', '같은 (targetId,date) 컨텍스트면 직접 고른 날짜를 유지해야 함');
 });
 
 /* ---------- 실행 ---------- */

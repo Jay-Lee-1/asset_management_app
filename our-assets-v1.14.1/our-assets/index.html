@@ -1288,7 +1288,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.42.0';
+const APP_VERSION='1.42.1';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5174,6 +5174,7 @@ function fixSetWhen(v){
 }
 function openFixShortfall(targetId,date,need){
  const t=DB.assets.find(a=>a.id===targetId);if(!t)return;
+ if(!_fixCtx||_fixCtx.targetId!==targetId||_fixCtx.date!==date)_fixWhen=null; /* 다른 부족 상황이면 이전에 고른 이체일을 이어쓰지 않는다 */
  _fixCtx={targetId,date,need};
  const dayBefore=addDays(date,-1);
  const tomorrow=addDays(TODAY,1);

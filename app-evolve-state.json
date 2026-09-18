@@ -1,22 +1,8 @@
 {
   "cycle": 42,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 36,
-      "phase": "develop",
-      "timestamp": "2026-09-17T06:30:00.000Z",
-      "summary": "confirmRecTransfer/postponeRecTransfer(index.html:1449,1457)가 반복 이체 회차별 edits[date].amount/memo 오버라이드를 무시하던 실제 금액 버그를 발견해 수정. expandRec() 등과 동일한 ed-우선 패턴으로 고쳤다. 회귀 테스트 3개 추가, 236/236 통과. APP_VERSION 1.37.0->1.37.1, sw.js CACHE v108->v109.",
-      "commit": null
-    },
-    {
-      "cycle": 36,
-      "phase": "review",
-      "timestamp": "2026-09-17T07:07:53.000Z",
-      "summary": "develop 커밋(7f1d8e0)을 검토, expandRec()/recApply() 등 기존 코드 전반의 ed-우선 패턴과 정확히 일치함을 확인. 236/236 통과. 문제 없음.",
-      "commit": null
-    },
     {
       "cycle": 36,
       "phase": "critique",
@@ -148,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-18T05:12:00.000Z",
       "summary": "critique(9c1b409)가 제안한 DB.balCheckpoints 영구 체크포인트안은 소급 편집(과거 날짜 거래 수정·삭제, 미확인 이체를 나중에 확인 등)마다 영향받는 체크포인트를 정확히 무효화해야 하는데, 그 무효화가 saveTx/delTx/saveRec/delRec/confirmRecTransfer/sanitizeBackup 등 수십 개 지점에 걸쳐 있어 한 사이클 안에서 안전하게 끝내기엔 무인 실행 중 잔액 오염 위험이 크다고 판단해 범위를 좁혔다. 실제 병목은 balancesUpTo()가 매 호출마다 allTxns(RANGE_FROM,upto)를 dateStr별로 다른 upto로 불러 expandRec()의 [from,to] 키 캐시(_recCache)가 전혀 재사용되지 못하는 것이었다(플랜/자산 상세 등 한 렌더 안에서 서로 다른 날짜로 balanceAt을 여러 번 부를 때마다 daily/weekly 반복거래를 처음부터 재확장). allTxns 호출을 고정폭 (RANGE_FROM,RANGE_TO)로 통일해 upto 이후는 balancesUpTo 내부에서 걸러내도록 고쳐, 렌더 1회 안의 서로 다른 날짜 조회가 expandRec 결과를 공유하게 했다(기존 save()/invalidateBalances() 무효화 계약 그대로 재사용, 새 캐시나 영속 상태 없음 — 소급 편집 정확성 리스크 없음). RANGE_FROM 자체를 전진시켜 옛 이력을 트리밍하는 체크포인트는 여전히 유효한 개선 방향이라 다음 critique 사이클에서 재평가 가능. 회귀 테스트 1개 추가(서로 다른 두 날짜 조회 시 DB.recurrences.forEach가 1회만 실행됨을 확인), 274/274 통과. 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.41.2->1.42.0, sw.js CACHE v120->v121. pending_advance_plan 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 42,
+      "phase": "develop",
+      "timestamp": "2026-09-18T06:15:24.482Z",
+      "summary": "openFixShortfall()(index.html:5175)이 플랜을 실행하지 않고 시트를 닫아도 모듈 스코프 _fixWhen(고른 이체일)을 리셋하지 않던 버그 발견·수정. _fixWhen은 planTransfer/planSplitTransfer가 실제 실행됐을 때만 null로 비워지는데, 사용자가 \"날짜 선택\"으로 임의 날짜를 고르고 취소하면 그 값이 남아, 몇 주 뒤 전혀 다른 자산·날짜의 부족 알림을 열어도 stale한 날짜를 이어써 findDonors가 잘못된 기준일로 여유 통장을 계산하고 그 날짜로 이체가 기록될 위험이 있었다. openFixShortfall() 진입부에 (targetId,date) 컨텍스트가 실제로 바뀔 때만 _fixWhen을 리셋하는 가드 추가(같은 컨텍스트로 재렌더될 때는 고른 날짜 유지). 회귀 테스트 2개 추가(다른 컨텍스트면 리셋, 같은 컨텍스트면 유지), test/run.js FUNCTIONS에 openFixShortfall·LETS에 _fixWhen 추가, 276/276 통과. 두 인라인 <script> 블록 모두 vm.Script 파싱 확인. APP_VERSION 1.42.0->1.42.1, sw.js CACHE v121->v122.",
       "commit": null
     }
   ]
