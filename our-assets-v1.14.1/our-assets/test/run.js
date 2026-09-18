@@ -89,6 +89,7 @@ const FUNCTIONS = [
   'recIsVarying', 'varyingRecs', 'openFixShortfall',
   'backupDue', 'planNegatives', 'homeAlerts', 'updateAlerts',
   'catIconOf', 'catGlyph', 'openCatManage',
+  'catListOf', 'catAv', 'assetPickBtn', 'endCondFields', 'openFormSheet', 'renderTxSheet', 'txType', 'txToggleRepeat',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -174,6 +175,10 @@ const sandbox = {
     get textContent() { return this._text; },
   },
   requestAnimationFrame: () => {},
+  // renderTxSheet()가 자동포커스용으로 부르는 setTimeout — vm 컨텍스트는 브라우저/Node의
+  // 전역 setTimeout을 자동으로 갖지 않으므로, 콜백은 실행하지 않는 no-op으로 흉내낸다
+  // (테스트는 openFormSheet에 넘겨진 html 문자열만 검증하지 지연 포커스 자체는 대상이 아님).
+  setTimeout: () => {},
   fitAll: () => {},
   svg: () => '',
   console: { error: () => {} },
@@ -3166,6 +3171,96 @@ test('openCatManage: keep=true로 다시 열면 진행 중이던 catAddDraft(이
   sandbox.openCatManage('expense', true);
   assert.strictEqual(sandbox.catAddDraft.name, '새카테', 'keep=true면 입력 중이던 이름이 지워지면 안 됨');
   assert.ok(sandbox.lastSheetHtml.includes('새카테'));
+});
+
+/* ---------- renderTxSheet: 렌더 함수 스모크 테스트 ----------
+ * cycle43 advance의 openCatManage 사례를 이어받는다. renderTxSheet는 openCatManage와 비슷하게
+ * 얕은 의존(txDraft 전역 상태 + catAv/catGlyph/assetPickBtn/endCondFields/openFormSheet)만 있으면서도,
+ * 지출/수입/이체/저축 4타입 + 반복 on/off + 월간 반복일 커스텀 입력 등 분기가 가장 많고 이번
+ * 로테이션에서만도 관련 폼 버그(openFixShortfall stale _fixWhen, varyingRecs skip 필터 등)가 여러 번
+ * 나온 화면이라 안전망 공백의 실질 위험이 가장 크다고 판단해 두 번째 스모크 테스트 대상으로 골랐다.
+ * openFormSheet는 실제 소스를 그대로 추출한다 — $('sheetScroll')이 sandbox.$에서 항상 null을
+ * 돌려주므로 _formScroll을 실제로 건드리지 않고 openSheet(html) 호출만 그대로 통과시킨다. */
+function setupTxSheetDB() {
+  sandbox.DB = {
+    categories: { expense: ['식비'], income: ['급여'], saving: ['적금'] },
+    catIcon: {}, catVar: {},
+    assets: [
+      { id: 'a1', name: '주계좌', type: 'cash', owner: '나' },
+      { id: 'a2', name: '적금통장', type: 'savings', owner: '나' },
+    ],
+  };
+  sandbox.window._recCtx = null;
+  sandbox.lastSheetHtml = null;
+}
+test('renderTxSheet: type별로 자산 필드가 from/to 중 올바른 조합으로 나온다', () => {
+  setupTxSheetDB();
+  sandbox.txDraft = { type: 'expense', category: '식비', date: '2026-01-01', amount: 1000, fromAssetId: 'a1', toAssetId: null, repeat: false };
+  sandbox.renderTxSheet();
+  let html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('출금 자산'));
+  assert.ok(!html.includes('입금 자산') && !html.includes('보내는 자산'), 'expense는 출금 자산만 나와야 함');
+
+  sandbox.txDraft = { type: 'income', category: '급여', date: '2026-01-01', amount: 1000, fromAssetId: null, toAssetId: 'a1', repeat: false };
+  sandbox.renderTxSheet();
+  html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('입금 자산'));
+  assert.ok(!html.includes('출금 자산') && !html.includes('보내는 자산'), 'income은 입금 자산만 나와야 함');
+
+  sandbox.txDraft = { type: 'transfer', category: '이체', date: '2026-01-01', amount: 1000, fromAssetId: 'a1', toAssetId: 'a2', repeat: false };
+  sandbox.renderTxSheet();
+  html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('보내는 자산') && html.includes('받는 자산'));
+  assert.ok(!html.includes('출금 자산') && !html.includes('입금 자산'), 'transfer는 보내는/받는 자산만 나와야 함');
+});
+test('renderTxSheet: 신규 생성(d.id 없음) 시에만 반복 토글이 보이고, 편집 중(d.id 있음)엔 숨긴다', () => {
+  setupTxSheetDB();
+  sandbox.txDraft = { type: 'expense', category: '식비', date: '2026-01-01', amount: 1000, fromAssetId: 'a1', repeat: false };
+  sandbox.renderTxSheet();
+  assert.ok(sandbox.lastSheetHtml.includes('txToggleRepeat()'), '신규 생성 시 반복 토글이 보여야 함');
+
+  sandbox.txDraft = { id: 't1', type: 'expense', category: '식비', date: '2026-01-01', amount: 1000, fromAssetId: 'a1', repeat: false };
+  sandbox.renderTxSheet();
+  assert.ok(!sandbox.lastSheetHtml.includes('txToggleRepeat()'), '편집 중(d.id 있음)엔 반복 토글이 보이면 안 됨');
+});
+test('renderTxSheet: 반복 on + 매월, day가 1/5/15/25 프리셋에 없으면 직접 입력 필드가 뜬다', () => {
+  setupTxSheetDB();
+  sandbox.txDraft = { type: 'expense', category: '식비', date: '2026-01-01', amount: 1000, fromAssetId: 'a1', repeat: true, freq: 'monthly', day: 10 };
+  sandbox.renderTxSheet();
+  assert.ok(sandbox.lastSheetHtml.includes('id="txDayIn"'), 'day=10은 1/5/15/25 프리셋에 없으므로 직접 입력 필드가 떠야 함');
+
+  sandbox.txDraft = { type: 'expense', category: '식비', date: '2026-01-01', amount: 1000, fromAssetId: 'a1', repeat: true, freq: 'monthly', day: 15 };
+  sandbox.renderTxSheet();
+  assert.ok(!sandbox.lastSheetHtml.includes('id="txDayIn"'), 'day=15는 프리셋에 있으므로 직접 입력 필드가 뜨면 안 됨');
+});
+test('renderTxSheet: window._recCtx가 있으면 반복 개별 수정 모드(금액만)로 렌더되고 삭제 버튼이 recCtxDel()을 호출한다', () => {
+  setupTxSheetDB();
+  sandbox.txDraft = { type: 'expense', category: '식비', memo: '넷플릭스', amount: 5000 };
+  sandbox.window._recCtx = { recId: 'r1', date: '2026-02-05', scope: 'one' };
+  sandbox.renderTxSheet();
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('반복 내역 수정'));
+  assert.ok(html.includes('recCtxDel()'), '삭제 버튼은 recCtxDel()을 호출해야 함');
+  assert.ok(!html.includes('txToggleRepeat()'), '반복 개별 수정 모드에선 타입/반복 전체 폼이 아니라 금액 입력만 나와야 함');
+});
+test('txType: 타입 전환 시 카테고리와 입금 자산 기본값이 갱신되고 재렌더된다', () => {
+  setupTxSheetDB();
+  sandbox.txDraft = { type: 'expense', category: '식비', date: '2026-01-01', amount: 1000, fromAssetId: 'a1', toAssetId: null, repeat: false };
+  sandbox.txType('income');
+  assert.strictEqual(sandbox.txDraft.type, 'income');
+  assert.strictEqual(sandbox.txDraft.category, '급여');
+  assert.strictEqual(sandbox.txDraft.toAssetId, 'a1', 'income 전환 시 입금 자산이 비어 있으면 firstCash()로 채워져야 함');
+  assert.ok(sandbox.lastSheetHtml.includes('입금 자산'), 'txType()이 renderTxSheet를 재호출해 income 폼을 그려야 함');
+});
+test('txToggleRepeat: 반복을 켜면 day 기본값이 시작일의 일자로 채워지고 반복 필드가 렌더된다', () => {
+  setupTxSheetDB();
+  sandbox.txDraft = { type: 'expense', category: '식비', date: '2026-01-13', amount: 1000, fromAssetId: 'a1', repeat: false };
+  sandbox.txToggleRepeat();
+  assert.strictEqual(sandbox.txDraft.repeat, true);
+  assert.strictEqual(sandbox.txDraft.day, 13, '반복 첫 on 시 day 기본값은 시작일의 일자(13일)여야 함');
+  // freq는 아직 비어 있어(txToggleRepeat은 day만 채우고 freq는 건드리지 않음) dayField는 안 뜨지만,
+  // rpt=true라 주기 선택(freqBtns)·종료조건은 항상 렌더된다.
+  assert.ok(sandbox.lastSheetHtml.includes('주기'), '반복 on 상태로 재렌더돼 주기 선택 필드가 나와야 함');
 });
 
 /* ---------- 실행 ---------- */
