@@ -1,15 +1,8 @@
 {
   "cycle": 43,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 38,
-      "phase": "review",
-      "timestamp": "2026-09-17T15:08:50.000Z",
-      "summary": "develop 커밋(c1d7887)을 검토, renderAssets() 기존 패턴과 동일한 형태이며 사이드이펙트 없이 안전함을 확인. 250/250 통과. 문제 없음.",
-      "commit": null
-    },
     {
       "cycle": 38,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-18T10:12:19.790Z",
       "summary": "아이폰 시계식 연도·월 선택 휠(dpToggleJump, openYMSheet)이 항상 TM.y-10..TM.y+5 고정 범위로만 연도 목록을 만들어, 그 범위 밖 연도(10년 넘게 전 반복거래 시작일, 5년 넘게 뒤 저축 만기일 등)를 보고 있는 중에 휠을 열면 whScrollTo가 해당 연도 아이템을 못 찾아 scrollTop이 0에 남고, 사용자가 그대로 이동을 누르면 whValue가 최상단 연도(TM.y-10)로 조용히 잘못 이동시키는 버그 발견·수정. 두 함수 모두 yFrom/yTo를 Math.min/Math.max로 현재 보고 있는 연도(_dpYM.y 또는 cur.y)까지 포함하도록 고쳐 항상 그 연도가 휠 범위 안에 들게 했다. 두 함수 모두 DOM 조작 위주라 test/run.js FUNCTIONS 목록에 없어 새 유닛 테스트는 추가하지 않았고, 기존 285/285 회귀 테스트는 그대로 통과 확인. 두 인라인 <script> 블록 모두 vm.Script 파싱 확인. APP_VERSION 1.42.1->1.42.2, sw.js CACHE v122->v123.",
+      "commit": null
+    },
+    {
+      "cycle": 43,
+      "phase": "review",
+      "timestamp": "2026-09-18T12:07:48.362Z",
+      "summary": "develop 커밋(885ffec)을 검토. dpToggleJump()/openYMSheet() 둘 다 _dpYM/cur가 호출 시점에 항상 non-null임을 확인(dpMLabel 버튼은 renderDatePicker() 출력 안에서만 존재하므로 _dpYM 설정 후에만 클릭 가능, openYMSheet의 cur=ST.ledger/ST.home도 항상 정의됨). Math.min/Math.max로 넓힌 범위가 기존 범위를 포함하는 경우엔 no-op이라 회귀 없음. 285/285 통과. 문제 없음.",
       "commit": null
     }
   ]
