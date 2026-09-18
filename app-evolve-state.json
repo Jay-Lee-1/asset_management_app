@@ -1,15 +1,8 @@
 {
   "cycle": 44,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 39,
-      "phase": "develop",
-      "timestamp": "2026-09-17T18:15:20.158Z",
-      "summary": "openFixShortfall()의 여유 통장 판정(findDonors)이 실제 이체 실행일(when)이 아니라 부족해지는 날짜(date) 기준으로 계산되어, 그 사이 예정 수입이 있으면 아직 안 들어온 돈을 있는 것처럼 잘못 표시하던 버그 발견·수정. findDonors 시그니처를 when 기준으로 고침. 회귀 테스트 2개 추가, 262/262 통과. APP_VERSION 1.39.0->1.39.1, sw.js CACHE v114->v115.",
-      "commit": null
-    },
     {
       "cycle": 39,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-18T14:20:00.000Z",
       "summary": "critique(7d9c424) 계획대로 renderHome/renderAssets/renderTxSheet/renderHistory/openCatManage 5개 render* 함수 전체를 한 사이클에 손대는 대신, DOM/캐시 의존이 가장 얕은 openCatManage 하나로 범위를 좁혀 실제 호출 기반 렌더 스모크 테스트를 처음 도입했다(cycle41 advance가 balCheckpoints 계획을 부분 완화로 좁힌 것과 같은 이유 — 5개를 한 번에 스텁하면 무인 사이클 안에서 검증하기 힘든 큰 diff가 된다). FUNCTIONS에 catIconOf/catGlyph/openCatManage, CONSTS에 CAT_LABEL/CATICON 추가(기존 openSheet/catAddDraft/svg 스텁 재사용, 새 DOM 스텁 불필요). 테스트 4개: expense 탭에서 변동/고정 뱃지가 실제로 갈리는지, saving 탭엔 뱃지 자체가 없는지, income 탭의 시스템 카테고리(ADJUST_CAT)엔 삭제/수정 버튼이 안 나오는지, keep=true로 재진입 시 입력 중이던 catAddDraft가 안 지워지는지. 이 테스트들은 기존 관행(extractFunction(name).includes(...) 소스 텍스트 검사)과 달리 함수를 실제로 실행해 렌더 결과 문자열을 검증하는 첫 사례라 critique가 지적한 공백을 실질적으로 메운다. 회귀 테스트 4개 추가, 289/289 통과. index.html 변경 없어 APP_VERSION/sw.js CACHE는 그대로 유지. 나머지 renderHome/renderAssets/renderTxSheet/renderHistory는 monthStats/histRow 등 훨씬 깊은 의존 그래프가 있어 후속 critique/advance 사이클 과제로 남긴다. pending_advance_plan 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 44,
+      "phase": "develop",
+      "timestamp": "2026-09-18T15:11:12.938Z",
+      "summary": "saveQuickAmount()(index.html:5139)이 num($('qAmt'))===0을 빈 입력과 똑같이 !amt로 판정해, 변동 카테고리 반복거래의 실제 금액이 무료/크레딧 처리로 정말 0원인 회차를 영영 저장할 수 없던 버그 발견·수정(edits[date]가 안 생기니 varyingRecs()가 그 회차를 계속 \"입력할 항목\"으로 무한히 재노출). fmtAmt() oninput이 이미 입력값을 숫자만 남기도록 정규화해두므로, num() 대신 raw value의 trim() 여부로 빈 입력만 막고 명시적 0은 통과시키도록 가드를 고쳤다. 회귀 테스트 1개 추가(0원 입력 시 edits에 기록되고 토스트 없이 undo까지 정상 등록됨), 290/290 통과. 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.42.2->1.42.3, sw.js CACHE v123->v124.",
       "commit": null
     }
   ]

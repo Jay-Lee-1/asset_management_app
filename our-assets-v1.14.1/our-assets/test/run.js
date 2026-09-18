@@ -1536,6 +1536,18 @@ test('saveQuickAmount: 금액을 비워두면 저장하지 않고 안내 토스�
   assert.strictEqual(r.edits['2026-02-05'], undefined);
   assert.strictEqual(sandbox.lastUndo, null, '저장하지 않았으면 undo도 등록되면 안 됨');
 });
+test('saveQuickAmount: 실제 금액이 0원(무료/크레딧 처리 등)이어도 정상 저장된다(app-evolve cycle44)', () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', category: '변동비', memo: '변동비', edits: {} };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.qAmtValue = '0';
+  sandbox.lastUndo = null;
+  sandbox.lastToast = null;
+  sandbox.saveQuickAmount('r1', '2026-02-05');
+  assert.strictEqual(r.edits['2026-02-05'].amount, 0, '0원도 유효한 실제 금액으로 edits에 기록되어야 함');
+  assert.strictEqual(sandbox.lastToast, null, '0원 저장은 안내 토스트 없이 성공해야 함');
+  assert.ok(sandbox.lastUndo, '0원 저장도 undoToast가 호출되어야 함');
+});
 test('saveQuickAmount: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 저장되지 않는다', () => {
   sandbox.TWi = 0;
   const r = { id: 'r1', category: '식비', memo: '식비', edits: {} };
