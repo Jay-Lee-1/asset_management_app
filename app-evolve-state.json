@@ -1,15 +1,12 @@
 {
   "cycle": 40,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "브라우저 storage eviction으로 인한 재무 데이터 영구 유실 방지 (navigator.storage.persist 미사용)",
+    "why": "Supabase 자격증명을 직접 설정하지 않은 대부분의 설치(기본 배포)는 100% localStorage에만 데이터를 저장하는데(dataKey() asset_app_db_v3__<email>), navigator.storage.persist()를 코드 전체에서 한 번도 호출하지 않아(grep 0건) 브라우저가 디스크 압박 시 best-effort 버킷을 경고 없이 축출할 수 있다. 백업 넛지(index.html:4360-4366)는 7일 주기이며 무한 스누즈 가능해 실질적 방어가 안 된다. 실패 시나리오: 클라우드 미설정 사용자가 몇 달치 거래/자산을 입력 -> 기기 저장공간 부족 또는 iOS PWA 홈화면 미추가 또는 사이트 데이터 삭제 -> 원장 전체가 조용히, 영구적으로 사라짐. 최근 사이클들이 다룬 탭간 동기화/백업 숫자검증/접근성 버그들보다 훨씬 광범위하고 심각한(조용한 전체 데이터 유실) 아키텍처 공백이라 우선순위가 가장 높다고 판단.",
+    "approach": "1) navigator.storage.persist 래퍼 함수 requestPersistentStorage() 추가(index.html:1745 load() 근처 storage 헬퍼들 옆) - navigator.storage/persist 존재 확인 후 이미 persisted면 스킵, 아니면 persist() 호출, 예외는 무시. 2) boot()(약 5673) 안 startApp() 이후와, doSignup/doLogin/chooseGuest 성공 직후(사용자가 실제 데이터를 갖게 되는 시점)에 호출. 3) 순수 판정 함수 shouldWarnUnpersisted(persisted, hasCloud) = !persisted && !hasCloud 를 추가해 storageOutcomeMsg(index.html:1802)처럼 test/run.js에 회귀 테스트로 커버 가능하게 만든다. 4) 계정/홈 화면(openAccountSheet 근처, 또는 homeAlerts의 backup 알림 패턴 index.html:5305 재사용)에 storage가 persisted 안 됐고 클라우드도 미설정이면 1회성 dismissible 카드로 경고 문구(데이터가 지워질 수 있음을 안내) + CTA(requestPersistentStorage 재호출) 노출. 5) 기존 백업 넛지의 무한 스누즈는 이번 사이클 범위 밖이면 건드리지 않아도 되나, 여유 있으면 !sbReady() && 미persisted 조건에서 스누즈 상한을 두는 것도 고려. 테스트: shouldWarnUnpersisted에 대해 storageOutcomeMsg와 동일한 패턴으로 pure-function 회귀 테스트 추가, node --check 파싱 확인, node test/run.js 전체 통과 확인 후 APP_VERSION/sw.js CACHE 버전 올림."
+  },
   "history": [
-    {
-      "cycle": 34,
-      "phase": "advance",
-      "timestamp": "2026-09-17T00:00:00.000Z",
-      "summary": "critique(0a420c8)가 세운 계획대로, save()(index.html:1801) 안에 localStorage 쓰기 직전 DB.nwHistory=updateNwHistory(DB.nwHistory,TODAY,totalAssets(),totalDebt()) 호출을 추가했다. updateNwHistory는 같은 날짜 항목을 덮어쓰는 멱등 함수라 save()가 불리는 ~70곳 어디서든 매번 호출해도 안전하며, 이제 지출/자산 매매/이체/잔액 조정 등 모든 저장 시점마다 '오늘' 순자산 스냅샷이 최신 상태로 갱신된다. 시세 갱신(autoSyncRates→syncRates)도 이미 내부에서 save()를 부르고 있어 별도 수정 없이 자동으로 커버됨을 확인했다. 기존에 중복으로 updateNwHistory를 직접 부르던 startApp()/refreshToday() 두 호출부는 이제 save()가 대신 처리하므로 단순화했다. updateNwHistory 자체의 idempotent-overwrite 회귀 테스트는 이미 test/run.js에 있어 추가하지 않았다. index.html <script> 블록 node --check 통과, node test/run.js 233/233 통과 확인 후 APP_VERSION 1.35.2→1.36.0, sw.js CACHE v105→v106으로 올려 커밋.",
-      "commit": null
-    },
     {
       "cycle": 35,
       "phase": "develop",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-09-17T23:07:00.000Z",
       "summary": "develop 커밋(119e68a, varyingRecs()가 recDates() 원시 회차만 보고 r.skip을 확인하지 않아 삭제된 반복거래 회차의 \"실제 금액 입력\" 알림이 죽지 않던 버그 수정)을 검토했다. 추가된 필터(index.html:5061, if((r.skip||[]).includes(d))return;)가 expandRec()(1903)의 기존 skip 필터와 정확히 동일한 패턴이며 edits 체크(5062)보다 먼저 실행돼 skip과 edits 우선순위 충돌이 없음을 확인했다. r.skip을 채우는 다른 지점들(1460 recApply scope=one delete, 3150 개별 회차 삭제, 3179 splitRecOverrides)이 모두 날짜 문자열 배열을 그대로 push/재구성하므로 includes(d) 비교와 형식이 일치함도 확인. 추가된 회귀 테스트 3개(skip된 회차 제외, skip 없으면 기존처럼 노출, edits 있으면 skip과 무관하게 계속 제외)가 실제 버그 시나리오와 두 회귀 케이스를 정확히 커버한다. 두 인라인 <script> 블록 모두 vm.Script 파싱 통과, node test/run.js 265/265 통과. 코드 변경 없음(이상 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 40,
+      "phase": "critique",
+      "timestamp": "2026-09-18T00:11:01.753Z",
+      "summary": "cycle40 review(c7efc86)가 문제 없음으로 끝낸 직후, 최근 커밋 재검토보다 앱 전체를 구조적으로 훑는 데 집중해 Explore 서브에이전트로 스토리지 내구성/에러 상태/성능 등 아직 다루지 않은 영역을 살폈다. Supabase 자격증명(SUPABASE_URL/KEY, index.html:1567)을 직접 설정하지 않은 기본 배포에서는 모든 데이터가 100% localStorage(dataKey())에만 존재하는데, navigator.storage.persist()가 코드 전체에서 전혀 호출되지 않아(grep 0건) 브라우저의 디스크 압박 축출(특히 iOS Safari PWA 미설치, Android Chrome LRU)에 경고 없이 노출됨을 확인했다. 백업 넛지(4360-4366)는 7일 주기+무한 스누즈라 실질적 방어가 안 된다. 후보로 검토했으나 기각한 것: pushCloud() SELECT-then-UPSERT TOCTOU 레이스(멀티기기 동시편집이라는 훨씬 좁은 조건에서만 발생), 카테고리/자산 삭제 캐스케이드·FX 시세 스테일니스(이미 activeRecsForCat/failStreak 등으로 성숙하게 처리됨). '조용한 전체 재무 데이터 영구 유실'이라는 실패모드가 가장 심각하고 빈도도 높다고(클라우드 미설정이 기본값) 판단해 채택. advance에서: requestPersistentStorage() 추가, boot/signup/login 시점에 호출, shouldWarnUnpersisted 순수 판정 함수로 홈 알림 카드 노출 여부 결정, storageOutcomeMsg 패턴 따라 회귀 테스트 추가하는 계획을 pending_advance_plan에 저장. 코드 변경 없음, state.json만 갱신.",
       "commit": null
     }
   ]
