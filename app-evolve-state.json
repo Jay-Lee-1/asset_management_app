@@ -1,7 +1,11 @@
 {
   "cycle": 41,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "balancesUpTo()가 고정된 RANGE_FROM(2023-01-01)부터 매번 전체 거래/반복거래를 재계산하는 무제한 성장 구조 — 체크포인트 도입",
+    "why": "balancesUpTo()(index.html:2008-2024, 모든 자산 잔액 계산의 단일 소스, 자산 목록/홈/플랜 캘린더/자산 상세 차트 등 15곳 이상에서 호출)가 allTxns(RANGE_FROM, upto)로 고정 시작일 2023-01-01부터 매번 전체 구간을 재생한다. save()(:1823)가 호출하는 invalidateBalances()(:2007)는 거래/반복거래 추가·수정·삭제 등 거의 모든 변경마다 _recCache/_balCache를 통째로 비우므로, 편집 하나마다 2023년부터 오늘까지 전체를 다시 훑어야 한다. daily/weekly 반복거래가 있으면 recDates()가 그 구간을 하루 단위로 순회한다. 앱 사용 기간이 늘어날수록(현재도 이미 1300일 이상) 코드 변경 없이 매년 조용히 느려지는 구조적 문제라, 버그 헌팅 위주의 develop/review 사이클에서는 절대 드러나지 않는다. 흥미로운 점은 updateNwHistory/pruneNwHistory(:2073-2087)가 순자산 히스토리에 대해서는 '최근 90일 상세 + 월별 스냅샷'으로 이미 이 문제를 해결해뒀다는 것 — balancesUpTo에는 이 패턴이 없다.",
+    "approach": "1) 자산별 잔액 체크포인트 구조 DB.balCheckpoints[assetId]={date,balance} 도입, updateNwHistory/pruneNwHistory와 유사한 주기(예: 월 단위)로 갱신하는 updateBalCheckpoints()를 save() 흐름에 추가. 2) balancesUpTo(dateStr)를 각 자산마다 dateStr 이하의 최신 체크포인트를 찾아 allTxns(checkpoint.date+1일, dateStr)만 재생하도록 변경(RANGE_FROM 전체가 아니라). 3) 체크포인트 자체 갱신은 amortized O(1)이 되도록, 이미 지난 달이 완전히 지났을 때만 캐시된 이전 전체 잔액을 이용해 lazy하게 전진. 4) RANGE_FROM은 자산별 최초 체크포인트 백필(부트스트랩) 용도로만 하한선으로 남김. 5) 과거 날짜 거래를 수정/삭제할 때는 영향받는 체크포인트만 무효화/롤백(전체 맵이 아니라) — 이 부분이 가장 까다로우며 소급 편집 후 정확성을 보장해야 함. 6) test/run.js에 체크포인트 방식과 전체 재생 방식의 잔액이 정확히 일치하는지 확인하는 회귀 테스트 추가(sanitizeBackup/recDates 회귀 테스트와 동일한 패턴)."
+  },
   "history": [
     {
       "cycle": 35,
@@ -141,6 +145,13 @@
       "phase": "review",
       "timestamp": "2026-09-18T03:08:26.695Z",
       "summary": "develop 커밋(9d852b5)을 검토하다 실제 버그 발견·수정: sanitizeBackup()의 recurrences 드롭 조건이 !r.id만 확인해 txns(!t.id||!t.date)와 달리 startDate 없는 레코드를 그대로 통과시켰음. recDates()는 new Date(r.startDate)로 시작하는데 startDate가 없으면 Invalid Date가 되어 monthly/yearly/daily-weekly 세 분기 모두 종료조건(cur>endd 등)이 항상 false이고 setMonth/setDate로도 벗어나지 못해 무한루프로 앱이 완전히 멈춘다(recNthDate/recCountUntil은 !base.startDate 가드가 있지만 expandRec 경로엔 없음). 드롭 조건에 !r.startDate 추가로 수정. 기존 amount 검증 테스트 2개에 startDate 필드 보강, startDate 없는 레코드 드롭 회귀 테스트 1개 추가, 273/273 통과. APP_VERSION 1.41.1->1.41.2, sw.js CACHE v119->v120.",
+      "commit": null
+    },
+    {
+      "cycle": 41,
+      "phase": "critique",
+      "timestamp": "2026-09-18T04:10:00.000Z",
+      "summary": "balancesUpTo()(index.html:2008-2024, 잔액 계산의 단일 소스, 15곳 이상에서 호출)가 고정 시작일 RANGE_FROM='2023-01-01'부터 매번 전체 거래·반복거래를 재생하는 구조적 문제 발견. save()->invalidateBalances()가 거의 모든 편집마다 _recCache/_balCache를 통째로 비워, 편집 하나마다 2023년부터 오늘까지 전체 재계산이 필요하다(daily/weekly 반복거래가 있으면 일 단위 순회). 앱 사용 기간이 늘수록 코드 변경 없이 매년 조용히 느려지는 '나이 들수록 비용 증가' 구조라 버그 헌팅 사이클로는 드러나지 않음. updateNwHistory/pruneNwHistory(:2073-2087)가 순자산 히스토리에는 이미 '최근 90일+월별 스냅샷' 체크포인트 패턴을 써서 해결해둔 것과 대조적. advance에서 DB.balCheckpoints 기반 체크포인트 도입 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     }
   ]
