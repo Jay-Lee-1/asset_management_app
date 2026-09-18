@@ -1288,7 +1288,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.42.1';
+const APP_VERSION='1.42.2';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4900,7 +4900,7 @@ function dpOnScroll(sc){ /* 화면에 가장 많이 보이는 달을 상단에 �
 /* 아이폰 시계 스타일 휠 — 연도·월 선택 팝업 */
 function dpToggleJump(){
  const l=$('dpMLabel');if(l)l.classList.add('open');
- const yFrom=TM.y-10,yTo=TM.y+5;
+ const yFrom=Math.min(TM.y-10,_dpYM.y),yTo=Math.max(TM.y+5,_dpYM.y);
  let ys='';for(let yy=yFrom;yy<=yTo;yy++)ys+=`<div class="wh-item" data-v="${yy}">${yy}년</div>`;
  let ms='';for(let mm=1;mm<=12;mm++)ms+=`<div class="wh-item" data-v="${mm}">${mm}월</div>`;
  $('dpWheel').innerHTML=`
@@ -5001,7 +5001,7 @@ let _ymWhich='home',_ymYear=null;
 function openYMSheet(which){ /* 홈·가계부: 아이폰 시계식 휠로 연도·월 선택 */
  _ymWhich=which;
  const cur=which==='ledger'?ST.ledger:ST.home;
- const yFrom=TM.y-10,yTo=TM.y+5;
+ const yFrom=Math.min(TM.y-10,cur.y),yTo=Math.max(TM.y+5,cur.y);
  let ys='';for(let yy=yFrom;yy<=yTo;yy++)ys+=`<div class="wh-item" data-v="${yy}">${yy}년</div>`;
  let ms='';for(let mm=1;mm<=12;mm++)ms+=`<div class="wh-item" data-v="${mm}">${mm}월</div>`;
  $('dpWheel').innerHTML=`
