@@ -86,7 +86,7 @@ const FUNCTIONS = [
   'rateUnknown', 'filteredHist', 'histInvalidate',
   'genSalt', 'pbkdf2Hash', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer',
   'foreignSaveIsNewer', 'openCopyBackup', 'copyBackup', 'findDonors',
-  'recIsVarying', 'varyingRecs', 'openFixShortfall',
+  'recIsVarying', 'varyingRecs', 'openFixShortfall', 'lastActualAmount', 'openQuickAmount',
   'backupDue', 'planNegatives', 'homeAlerts', 'updateAlerts',
   'catIconOf', 'catGlyph', 'openCatManage',
   'catListOf', 'catAv', 'assetPickBtn', 'endCondFields', 'openFormSheet', 'renderTxSheet', 'txType', 'txToggleRepeat',
@@ -1563,6 +1563,37 @@ test('saveQuickAmount: 튜토리얼 모드 중에는 twGuard가 막아서 실제
   assert.strictEqual(r.edits['2026-02-05'], undefined, '튜토리얼 중에는 edits에 기록되면 안 됨');
   assert.strictEqual(sandbox.lastUndo, null);
   sandbox.TWi = -1;
+});
+
+/* ---------- lastActualAmount/openQuickAmount: 직전 실제 금액이 0원인 경우를 "데이터 없음"과
+   구분해야 한다(app-evolve cycle44 review 부수 발견 -> cycle45 develop에서 수정) ---------- */
+test('lastActualAmount: 직전 회차 실제 금액이 0원이면 0을 그대로 돌려준다(데이터 없음과 구분)', () => {
+  const r = { edits: { '2026-02-05': { amount: 0 } } };
+  assert.strictEqual(sandbox.lastActualAmount(r, '2026-03-05'), 0);
+});
+test('lastActualAmount: 직전 실제 금액 기록이 없으면 반복의 기본 금액을 돌려준다', () => {
+  const r = { amount: 5000, edits: {} };
+  assert.strictEqual(sandbox.lastActualAmount(r, '2026-03-05'), 5000);
+});
+test('lastActualAmount: 기본 금액조차 없는 손상된 레코드면 null을 돌려준다(0원과 구분)', () => {
+  const r = { edits: {} };
+  assert.strictEqual(sandbox.lastActualAmount(r, '2026-03-05'), null);
+});
+test('openQuickAmount: 직전 실제 금액이 0원이었으면 "0원이었어요" 힌트와 함께 입력값도 0으로 미리 채운다', () => {
+  const r = { id: 'r1', type: 'expense', category: '변동비', memo: '변동비', edits: { '2026-02-05': { amount: 0 } } };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.lastSheetHtml = null;
+  sandbox.openQuickAmount('r1', '2026-03-05');
+  assert.ok(sandbox.lastSheetHtml.includes('지난달은 0원이었어요'), '0원도 유효한 지난 기록으로 힌트에 노출되어야 함');
+  assert.ok(sandbox.lastSheetHtml.includes('value="0"'), '입력값도 0으로 미리 채워져야 함');
+});
+test('openQuickAmount: 지난 기록이 전혀 없는 손상된 레코드면 힌트를 띄우지 않고 입력값도 비워둔다', () => {
+  const r = { id: 'r1', type: 'expense', category: '변동비', memo: '변동비', edits: {} };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.lastSheetHtml = null;
+  sandbox.openQuickAmount('r1', '2026-03-05');
+  assert.ok(!sandbox.lastSheetHtml.includes('이었어요'), '지난 기록이 없으면 힌트가 없어야 함');
+  assert.ok(sandbox.lastSheetHtml.includes('value=""'), '지난 기록이 없으면 입력값도 비어 있어야 함');
 });
 
 /* ---------- storageOutcomeMsg: save()가 저장 성공/실패를 더 이상 숨기지 않는지 ---------- */

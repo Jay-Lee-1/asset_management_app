@@ -1,22 +1,8 @@
 {
   "cycle": 45,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 39,
-      "phase": "advance",
-      "timestamp": "2026-09-17T21:08:32.000Z",
-      "summary": "홈 알림 스택에 예산 초과(budgetOver) 알림 추가 — homeAlerts()가 이번 달 카테고리별 예산 초과를 감지해 단일/복수 카드로 노출, 클릭 시 openSpendAnalysisThisMonth()로 지출 분석 시트 이동. APP_VERSION 1.40.0, sw.js CACHE v116으로 올림. 회귀 테스트 262/262 통과.",
-      "commit": null
-    },
-    {
-      "cycle": 40,
-      "phase": "develop",
-      "timestamp": "2026-09-17T22:10:49.892Z",
-      "summary": "변동 카테고리 반복거래의 \"실제 금액 입력\" 알림(varyingRecs())이 r.skip을 확인하지 않아, 개별 회차를 삭제해도 알림이 죽지 않고 채워도 효과 없이 무시되던 버그 발견·수정. expandRec()과 동일한 skip 필터 패턴 추가. 회귀 테스트 3개 추가, 265/265 통과. APP_VERSION 1.40.0->1.40.1, sw.js CACHE v116->v117.",
-      "commit": null
-    },
     {
       "cycle": 40,
       "phase": "review",
@@ -148,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-18T18:12:00.000Z",
       "summary": "critique(2136bfe) 계획대로 renderTxSheet()에 렌더 스모크 테스트를 도입해 openCatManage에 이어 두 번째 render* 안전망 사례를 만들었다. test/run.js FUNCTIONS에 catListOf/catAv/assetPickBtn/endCondFields/openFormSheet/renderTxSheet/txType/txToggleRepeat 추가(새 CONSTS는 불필요 — ASSET_TYPES/CATICON 등 기존 항목 재사용). openFormSheet는 실제 소스를 그대로 추출했는데, sandbox.$가 'sheetScroll'에 항상 null을 돌려줘 _formScroll을 실제로 건드리지 않고 openSheet(html) 호출만 그대로 통과시키는 걸 확인했다. renderTxSheet가 자동포커스에 쓰는 setTimeout이 vm 컨텍스트엔 없어 sandbox에 no-op 스텁 추가. 테스트 6개: 1) 지출/수입/이체 타입별로 출금/입금/보내는·받는 자산 필드가 정확히 배타적으로 나오는지, 2) 신규 생성 시에만 반복 토글이 보이고 편집(d.id 존재) 시엔 숨는지, 3) 반복 on+매월일 때 day가 1/5/15/25 프리셋 밖이면 직접 입력(txDayIn)이 뜨는지, 4) window._recCtx가 있으면 반복 개별 수정 모드(금액만)로 빠지며 삭제 버튼이 recCtxDel()을 호출하는지, 5) txType() 전환 시 카테고리·입금 자산 기본값(firstCash)이 갱신되고 실제 재렌더되는지, 6) txToggleRepeat()으로 반복을 처음 켜면 day가 시작일 일자로 채워지고 재렌더되는지(freq는 아직 비어 있어 dayField는 안 뜨므로 주기 선택 필드 렌더 여부로 확인). 회귀 테스트 6개 추가, 296/296 통과. index.html 변경 없어 APP_VERSION/sw.js CACHE는 그대로 유지. renderHome/renderAssets/renderHistory는 여전히 더 깊은 의존 그래프가 있어 후속 사이클 과제로 남긴다. pending_advance_plan 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 45,
+      "phase": "develop",
+      "timestamp": "2026-09-18T19:11:00.000Z",
+      "summary": "lastActualAmount()(index.html:5134)가 \"직전 실제 금액 기록 없음\"과 \"직전 실제 금액이 정말 0원\"을 똑같이 falsy로 취급하던 버그 발견·수정(cycle44 review 부수 발견 과제). saveQuickAmount() 수정으로 변동 카테고리 실제 금액에 0원이 유효값이 됐는데, openQuickAmount()의 prefill/힌트(5127-5130행)는 여전히 last?...:'' 삼항연산을 써서 지난 회차에 0원을 저장했으면 다음 회차엔 힌트(\"지난달은 0원이었어요\")도 안 뜨고 입력창도 비어 열렸다(데이터 유실은 아니고 재입력 UX 불편). lastActualAmount가 데이터 없음일 땐 null을, 있으면(0 포함) 그 값을 그대로 돌려주도록 고치고, openQuickAmount의 두 삼항연산을 last?→last!=null?로 바꿨다. r.amount는 saveRec()의 !d.amount 검증 때문에 항상 truthy라 이 변경은 \"직전 edits가 0원\" 케이스에만 영향. test/run.js FUNCTIONS에 lastActualAmount·openQuickAmount 추가, 회귀 테스트 5개(pure 함수 0원/기본값/손상 레코드 3개 + openQuickAmount 힌트·prefill 렌더 2개), 301/301 통과. 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.42.3->1.42.4, sw.js CACHE v124->v125.",
       "commit": null
     }
   ]

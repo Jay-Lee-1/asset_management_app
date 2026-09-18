@@ -1288,7 +1288,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.42.3';
+const APP_VERSION='1.42.4';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5125,16 +5125,16 @@ function openQuickAmount(recId,date){
  const inc=r.type==='income';
  const last=lastActualAmount(r,date);
  openSheet(`<h3>${esc(r.memo||r.category)} 금액</h3>
-  <div class="desc">${shortDate(date)}에 ${inc?'들어올':'빠져나갈'} 실제 금액을 넣어주세요.${last?`<br><span style="color:var(--text-3);font-size:12.5px">${inc?'지난번':'지난달'}은 ${comma(last)}원이었어요</span>`:''}</div>
+  <div class="desc">${shortDate(date)}에 ${inc?'들어올':'빠져나갈'} 실제 금액을 넣어주세요.${last!=null?`<br><span style="color:var(--text-3);font-size:12.5px">${inc?'지난번':'지난달'}은 ${comma(last)}원이었어요</span>`:''}</div>
   <div class="field"><label>금액 (원)</label>
-   <input id="qAmt" class="num" inputmode="numeric" value="${last?comma(last):''}" placeholder="0" oninput="fmtAmt(this)" autofocus></div>
+   <input id="qAmt" class="num" inputmode="numeric" value="${last!=null?comma(last):''}" placeholder="0" oninput="fmtAmt(this)" autofocus></div>
   <button class="btn btn-primary" onclick="saveQuickAmount('${recId}','${date}')">${svg('check')} 저장</button>`);
  setTimeout(()=>{const el=$('qAmt');if(el){el.focus();el.select()}},250);
 }
-function lastActualAmount(r,date){ /* 직전 회차에 실제로 넣은 금액 */
+function lastActualAmount(r,date){ /* 직전 회차에 실제로 넣은 금액. 데이터 없으면 null(실제 0원과 구분) */
  const eds=Object.keys(r.edits||{}).filter(d=>d<date).sort();
  if(eds.length)return r.edits[eds[eds.length-1]].amount;
- return r.amount||0;
+ return r.amount!=null?r.amount:null;
 }
 function saveQuickAmount(recId,date){
  if(twGuard())return;
