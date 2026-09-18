@@ -1,19 +1,8 @@
 {
-  "cycle": 41,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "balancesUpTo()가 고정된 RANGE_FROM(2023-01-01)부터 매번 전체 거래/반복거래를 재계산하는 무제한 성장 구조 — 체크포인트 도입",
-    "why": "balancesUpTo()(index.html:2008-2024, 모든 자산 잔액 계산의 단일 소스, 자산 목록/홈/플랜 캘린더/자산 상세 차트 등 15곳 이상에서 호출)가 allTxns(RANGE_FROM, upto)로 고정 시작일 2023-01-01부터 매번 전체 구간을 재생한다. save()(:1823)가 호출하는 invalidateBalances()(:2007)는 거래/반복거래 추가·수정·삭제 등 거의 모든 변경마다 _recCache/_balCache를 통째로 비우므로, 편집 하나마다 2023년부터 오늘까지 전체를 다시 훑어야 한다. daily/weekly 반복거래가 있으면 recDates()가 그 구간을 하루 단위로 순회한다. 앱 사용 기간이 늘어날수록(현재도 이미 1300일 이상) 코드 변경 없이 매년 조용히 느려지는 구조적 문제라, 버그 헌팅 위주의 develop/review 사이클에서는 절대 드러나지 않는다. 흥미로운 점은 updateNwHistory/pruneNwHistory(:2073-2087)가 순자산 히스토리에 대해서는 '최근 90일 상세 + 월별 스냅샷'으로 이미 이 문제를 해결해뒀다는 것 — balancesUpTo에는 이 패턴이 없다.",
-    "approach": "1) 자산별 잔액 체크포인트 구조 DB.balCheckpoints[assetId]={date,balance} 도입, updateNwHistory/pruneNwHistory와 유사한 주기(예: 월 단위)로 갱신하는 updateBalCheckpoints()를 save() 흐름에 추가. 2) balancesUpTo(dateStr)를 각 자산마다 dateStr 이하의 최신 체크포인트를 찾아 allTxns(checkpoint.date+1일, dateStr)만 재생하도록 변경(RANGE_FROM 전체가 아니라). 3) 체크포인트 자체 갱신은 amortized O(1)이 되도록, 이미 지난 달이 완전히 지났을 때만 캐시된 이전 전체 잔액을 이용해 lazy하게 전진. 4) RANGE_FROM은 자산별 최초 체크포인트 백필(부트스트랩) 용도로만 하한선으로 남김. 5) 과거 날짜 거래를 수정/삭제할 때는 영향받는 체크포인트만 무효화/롤백(전체 맵이 아니라) — 이 부분이 가장 까다로우며 소급 편집 후 정확성을 보장해야 함. 6) test/run.js에 체크포인트 방식과 전체 재생 방식의 잔액이 정확히 일치하는지 확인하는 회귀 테스트 추가(sanitizeBackup/recDates 회귀 테스트와 동일한 패턴)."
-  },
+  "cycle": 42,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 35,
-      "phase": "advance",
-      "timestamp": "2026-09-17T04:05:00.000Z",
-      "summary": "critique(6c66261) 계획대로 calCellsFor()(index.html:2786-2805)의 날짜 셀 템플릿을 고쳤다. 선택 가능한 셀에 tabindex/role=button/aria-pressed/aria-label/onkeydown=rowKeydown을 추가해 앱 전역 접근성 패턴과 맞췄다. 233/233 통과. APP_VERSION 1.36.1->1.37.0, sw.js CACHE v107->v108. pending_advance_plan 비움.",
-      "commit": null
-    },
     {
       "cycle": 36,
       "phase": "develop",
@@ -152,6 +141,13 @@
       "phase": "critique",
       "timestamp": "2026-09-18T04:10:00.000Z",
       "summary": "balancesUpTo()(index.html:2008-2024, 잔액 계산의 단일 소스, 15곳 이상에서 호출)가 고정 시작일 RANGE_FROM='2023-01-01'부터 매번 전체 거래·반복거래를 재생하는 구조적 문제 발견. save()->invalidateBalances()가 거의 모든 편집마다 _recCache/_balCache를 통째로 비워, 편집 하나마다 2023년부터 오늘까지 전체 재계산이 필요하다(daily/weekly 반복거래가 있으면 일 단위 순회). 앱 사용 기간이 늘수록 코드 변경 없이 매년 조용히 느려지는 '나이 들수록 비용 증가' 구조라 버그 헌팅 사이클로는 드러나지 않음. updateNwHistory/pruneNwHistory(:2073-2087)가 순자산 히스토리에는 이미 '최근 90일+월별 스냅샷' 체크포인트 패턴을 써서 해결해둔 것과 대조적. advance에서 DB.balCheckpoints 기반 체크포인트 도입 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 41,
+      "phase": "advance",
+      "timestamp": "2026-09-18T05:12:00.000Z",
+      "summary": "critique(9c1b409)가 제안한 DB.balCheckpoints 영구 체크포인트안은 소급 편집(과거 날짜 거래 수정·삭제, 미확인 이체를 나중에 확인 등)마다 영향받는 체크포인트를 정확히 무효화해야 하는데, 그 무효화가 saveTx/delTx/saveRec/delRec/confirmRecTransfer/sanitizeBackup 등 수십 개 지점에 걸쳐 있어 한 사이클 안에서 안전하게 끝내기엔 무인 실행 중 잔액 오염 위험이 크다고 판단해 범위를 좁혔다. 실제 병목은 balancesUpTo()가 매 호출마다 allTxns(RANGE_FROM,upto)를 dateStr별로 다른 upto로 불러 expandRec()의 [from,to] 키 캐시(_recCache)가 전혀 재사용되지 못하는 것이었다(플랜/자산 상세 등 한 렌더 안에서 서로 다른 날짜로 balanceAt을 여러 번 부를 때마다 daily/weekly 반복거래를 처음부터 재확장). allTxns 호출을 고정폭 (RANGE_FROM,RANGE_TO)로 통일해 upto 이후는 balancesUpTo 내부에서 걸러내도록 고쳐, 렌더 1회 안의 서로 다른 날짜 조회가 expandRec 결과를 공유하게 했다(기존 save()/invalidateBalances() 무효화 계약 그대로 재사용, 새 캐시나 영속 상태 없음 — 소급 편집 정확성 리스크 없음). RANGE_FROM 자체를 전진시켜 옛 이력을 트리밍하는 체크포인트는 여전히 유효한 개선 방향이라 다음 critique 사이클에서 재평가 가능. 회귀 테스트 1개 추가(서로 다른 두 날짜 조회 시 DB.recurrences.forEach가 1회만 실행됨을 확인), 274/274 통과. 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.41.2->1.42.0, sw.js CACHE v120->v121. pending_advance_plan 비움.",
       "commit": null
     }
   ]

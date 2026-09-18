@@ -2189,6 +2189,35 @@ test('balancesUpTo: invalidateBalances 없이도 _balCache를 비우면 다음 �
   assert.strictEqual(sandbox.balanceAt('a1', '2026-06-01'), -1500, '캐시를 비운 뒤에는 새 거래가 반영되어야 함');
 });
 
+/* ---------- balancesUpTo: 서로 다른 날짜 조회 간 expandRec 재확장 회귀 테스트 (app-evolve cycle41 advance) ----------
+ * balancesUpTo()가 allTxns(RANGE_FROM,upto)처럼 dateStr마다 다른 upto를 그대로 expandRec에 넘기면,
+ * _recCache가 [from,to] 키로 캐시해도 매 호출마다 키가 달라 캐시가 전혀 재사용되지 않는다 — 플랜/자산
+ * 상세 등 한 번의 렌더 안에서 서로 다른 날짜로 balanceAt을 여러 번 부르면 daily/weekly 반복거래를
+ * 매번 처음부터 다시 확장하는 구조였다(critique cycle41). allTxns를 고정폭 (RANGE_FROM,RANGE_TO)로
+ * 부르도록 고쳐 _recCache가 실제로 공유되는지 DB.recurrences.forEach 호출 횟수로 확인한다. */
+test('balancesUpTo: 서로 다른 두 날짜를 조회해도 반복거래 확장은 한 번만 계산되고 _recCache로 공유된다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox.DB = {
+    settings: {},
+    assets: [{ id: 'a1', type: 'cash', baseAmount: 0 }],
+    txns: [],
+    recurrences: [{ id: 'r1', active: true, freq: 'daily', startDate: '2026-01-01', endDate: null, weekend: 'none', type: 'expense', category: '식비', memo: '', amount: 1000, fromAssetId: 'a1', skip: [], edits: {} }],
+  };
+  sandbox._balCache.clear();
+  sandbox._recCache.clear();
+  let scans = 0;
+  const origForEach = Array.prototype.forEach;
+  sandbox.DB.recurrences.forEach = (...args) => { scans++; return origForEach.apply(sandbox.DB.recurrences, args); };
+  try {
+    assert.strictEqual(sandbox.balanceAt('a1', '2026-06-01'), -152000, '2026-01-01(포함)부터 2026-06-01까지 매일 1000원 지출 = 152일치');
+    assert.strictEqual(sandbox.balanceAt('a1', '2026-06-10'), -161000, '같은 반복거래로 9일 더 = 161일치');
+    assert.strictEqual(scans, 1, 'balancesUpTo가 dateStr마다 다른 upto로 expandRec을 부르면 날짜마다 반복거래를 처음부터 재확장하게 된다 — RANGE_TO까지 고정폭으로 한 번만 확장해 _recCache를 공유해야 함');
+  } finally {
+    delete sandbox.DB.recurrences.forEach;
+  }
+});
+
 /* ---------- expandRec/_recCache: 반복거래 확장 결과 캐시의 회귀 테스트 (app-evolve cycle26 advance) ----------
  * balancesUpTo()의 _balCache와 같은 규칙으로 expandRec()에도 [from,to] 키의 Map 캐시를 추가했다.
  * DB.recurrences 순회 횟수를 직접 세어 같은 구간을 다시 부르면 재계산 없이 캐시에서 반환되는지,

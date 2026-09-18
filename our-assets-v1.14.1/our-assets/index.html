@@ -1288,7 +1288,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.41.2';
+const APP_VERSION='1.42.0';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2012,8 +2012,12 @@ function balancesUpTo(dateStr){
  if(_balCache.has(key))return _balCache.get(key);
  const map={},sign={};
  DB.assets.forEach(a=>{map[a.id]=assetBase(a);sign[a.id]=(a.type==='debt'?-1:1)});
- allTxns(RANGE_FROM,upto).forEach(t=>{
-  if(t.date>dateStr)return;
+ /* allTxns를 항상 고정폭 (RANGE_FROM,RANGE_TO)로 불러 expandRec()의 _recCache가 [from,to] 키를
+    공유하게 한다 — dateStr마다 다른 upto를 그대로 넘기면 매 호출이 새 캐시 키가 되어, 렌더 한 번
+    안에서 서로 다른 날짜로 balanceAt을 여러 번 부를 때마다(플랜/자산 상세 등) daily/weekly
+    반복거래를 처음부터 다시 확장했다. upto 이후 거래는 아래에서 걸러내므로 결과는 동일하다. */
+ allTxns(RANGE_FROM,RANGE_TO).forEach(t=>{
+  if(t.date>upto)return;
   if(!proj&&isPending(t))return; /* 완료 잔액에는 미확인 이체 제외(예정 반영 시에는 포함) */
   if(t.fromAssetId!=null&&map[t.fromAssetId]!=null)map[t.fromAssetId]-=sign[t.fromAssetId]*t.amount;
   if(t.toAssetId!=null&&map[t.toAssetId]!=null)map[t.toAssetId]+=sign[t.toAssetId]*t.amount;
