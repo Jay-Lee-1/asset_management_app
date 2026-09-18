@@ -88,6 +88,7 @@ const FUNCTIONS = [
   'foreignSaveIsNewer', 'openCopyBackup', 'copyBackup', 'findDonors',
   'recIsVarying', 'varyingRecs', 'openFixShortfall',
   'backupDue', 'planNegatives', 'homeAlerts', 'updateAlerts',
+  'catIconOf', 'catGlyph', 'openCatManage',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -95,7 +96,7 @@ const FUNCTIONS = [
 // _recCache/REC_CACHE_MAX는 expandRec()가 참조하는 모듈 스코프 캐시 상태라 같은 방식으로 끌어온다.
 // isPlanAcct는 planNegatives()가 DB.assets.filter(isPlanAcct)로 부르는 "플랜 대상 통장"
 // 판정 상수라 같은 방식(extractConst)으로 끌어온다.
-const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct'];
+const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON'];
 // _histCache는 filteredHist()가 재대입(={key,list})하는 let 선언이라 CONSTS(extractConst)로는
 // 못 끌어오므로 별도의 LETS 목록으로 extractLet을 통해 가져온다.
 // _copyIsCsv도 같은 이유(openCopyBackup()이 재대입)로 LETS를 통해 가져온다.
@@ -3101,6 +3102,58 @@ test('updateAlerts: neg를 미리 넘기면 planNegatives()를 다시 계산하�
   assert.deepStrictEqual(neg, [], '넘겨준 neg를 그대로 반환해야 함(재계산 없음)');
   assert.strictEqual(sandbox.planBadgeEl.textContent, '0');
   assert.strictEqual(sandbox.planBadgeEl.classList.contains('on'), false);
+});
+
+/* ---------- openCatManage: 렌더 함수 스모크 테스트 ----------
+ * test/run.js는 지금까지 순수 로직 함수만 검증했고, innerHTML을 직접 쓰는 렌더 함수는
+ * 전부 커버 밖이었다(renderHome/renderAssets/renderTxSheet/renderHistory 등 파일 함수 대부분).
+ * 빌드/타입체크가 전혀 없는 단일 파일이라 템플릿 리터럴 오타나 정의 안 된 변수 참조가
+ * 순수 로직 테스트를 다 통과하고도 화면에서만 크래시할 수 있다. openCatManage는 렌더 함수 중
+ * DOM/캐시 의존이 가장 얕아(openSheet 결과 문자열만 확인하면 됨) 첫 스모크 테스트 대상으로 골랐다.
+ * 나머지 render*()는 monthStats/expenseByCat/histRow 등 더 깊은 의존 그래프가 있어 후속 사이클 과제로 남긴다. */
+function setupCatManageDB() {
+  sandbox.DB = {
+    categories: { expense: ['식비', '교통'], income: ['급여', sandbox.ADJUST_CAT], saving: ['적금'] },
+    catIcon: {},
+    catVar: {},
+  };
+  sandbox.catAddDraft = null;
+  sandbox.lastSheetHtml = null;
+}
+test('openCatManage: expense 탭 — throw 없이 카테고리 행과 변동/고정 뱃지를 그린다', () => {
+  setupCatManageDB();
+  sandbox.DB.catVar[sandbox.catKey('expense', '식비')] = true;
+  sandbox.openCatManage('expense');
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html, 'openSheet가 호출돼야 함');
+  assert.ok(html.includes('식비'));
+  assert.ok(html.includes('교통'));
+  assert.ok(html.includes('변동'), '변동 카테고리는 "변동" 뱃지를 보여줘야 함');
+  assert.ok(html.includes('고정'), '변동 아닌 카테고리는 "고정" 뱃지를 보여줘야 함');
+});
+test('openCatManage: saving 탭 — 변동/고정 뱃지(varPill) 없이 그린다(회귀 확인)', () => {
+  setupCatManageDB();
+  sandbox.openCatManage('saving');
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('적금'));
+  assert.ok(!html.includes('varpill'), 'saving 탭은 변동/고정 뱃지가 없어야 함');
+});
+test('openCatManage: income 탭의 ADJUST_CAT(잔액 조정)은 "자동 생성" 표시만 하고 수정/삭제 액션은 숨긴다', () => {
+  setupCatManageDB();
+  // 다른 income 카테고리(급여 등)의 delCat(/renameCatSheet( 호출과 뒤섞이지 않도록
+  // ADJUST_CAT 하나만 남겨서 isSysAdjust 분기를 명확히 검증한다.
+  sandbox.DB.categories.income = [sandbox.ADJUST_CAT];
+  sandbox.openCatManage('income');
+  assert.ok(sandbox.lastSheetHtml.includes('자동 생성'));
+  assert.ok(!sandbox.lastSheetHtml.includes('delCat('), 'ADJUST_CAT은 삭제 버튼을 보여주면 안 됨');
+  assert.ok(!sandbox.lastSheetHtml.includes('renameCatSheet('), 'ADJUST_CAT은 수정 버튼을 보여주면 안 됨');
+});
+test('openCatManage: keep=true로 다시 열면 진행 중이던 catAddDraft(이름/아이콘 입력값)를 리셋하지 않는다(회귀 확인)', () => {
+  setupCatManageDB();
+  sandbox.catAddDraft = { name: '새카테', icon: 'gift' };
+  sandbox.openCatManage('expense', true);
+  assert.strictEqual(sandbox.catAddDraft.name, '새카테', 'keep=true면 입력 중이던 이름이 지워지면 안 됨');
+  assert.ok(sandbox.lastSheetHtml.includes('새카테'));
 });
 
 /* ---------- 실행 ---------- */

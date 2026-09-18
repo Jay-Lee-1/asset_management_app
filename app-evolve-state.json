@@ -1,19 +1,8 @@
 {
-  "cycle": 43,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "렌더/UI 레이어(render*/open*Sheet) 스모크 테스트 도입",
-    "why": "test/run.js는 순수 함수 ~100개만 추출해 검증하고, renderHome/renderAssets/renderTxSheet/renderRecSheet/renderHistory/openCatManage/renderDatePicker 등 innerHTML을 직접 쓰는 UI 렌더 함수(파일의 함수 대부분)는 전부 테스트 밖이다. 빌드/타입체크/린트가 전혀 없는 5872줄 단일 파일을 무인 루프가 매 사이클 고치는 구조라, 템플릿 리터럴 오타나 정의 안 된 변수 참조 같은 실수가 285개 회귀 테스트를 다 통과하고도 실제 화면에서만 크래시하거나 조용히 잘못된 화면을 보여줄 수 있다. 다른 후보(balancesUpTo 체크포인트, 히스토리 전체기간 검색 프리셋)보다 이 공백이 앞으로 나올 모든 advance/develop 사이클의 위험을 같이 낮추므로 우선.",
-    "approach": "test/run.js의 기존 sandbox(errBannerEl/planBadgeEl 등 get/set innerHTML 스텁 패턴)를 확장해 #page-home/#page-assets/#page-ledger/#page-history/#sheet 같은 최소 DOM 스텁을 추가하고 $ 스텁에 연결한다. requestAnimationFrame/fitAll/wireLongPress 등 이미 쓰던 no-op 패턴으로 나머지 DOM 호출도 스텁한다. FUNCTIONS 추출 목록에 renderHome/renderAssets/renderTxSheet(or renderLedger)/renderHistory/openCatManage를 추가하고, 각 함수를 대표 DB 픽스처(빈 DB, 시드 DB, 마이너스/예산초과 알림이 있는 DB, 오래된 시가평가 자산이 있는 DB)로 호출해 (a) throw 하지 않음 (b) 결과 innerHTML 문자열에 기대 마커 텍스트(알림 카드 문구, 빈 상태 문구)가 포함되는지 assert한다. jsdom 등 새 의존성 없이 기존 문자열 기반 innerHTML assertion 스타일 유지. index.html 자체 로직 변경은 없거나 최소이므로 APP_VERSION/sw.js CACHE는 테스트 외 실질 변경이 있을 때만 올린다."
-  },
+  "cycle": 44,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 38,
-      "phase": "advance",
-      "timestamp": "2026-09-17T17:10:34.427Z",
-      "summary": "백업 복원·클라우드 동기화 경로에 숫자 필드 유효성 검증 추가. sanitizeAmount(v,min)/sanitizeBackup(obj) 순수 함수로 amount/fxAmount/goldDon/stockQty/baseAmount/amountKRW 검증·보정, 필수 필드 누락 레코드 제거, fixedCount/droppedCount 토스트 안내. 회귀 테스트 10개 추가, 260/260 통과. APP_VERSION 1.38.3->1.39.0, sw.js CACHE v113->v114.",
-      "commit": null
-    },
     {
       "cycle": 39,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-18T13:11:15.000Z",
       "summary": "최근 10사이클의 라인 단위 버그 수정에서 한 걸음 물러나 앱 전체를 구조적으로 재검토. test/run.js가 순수 함수만 추출·검증하고 renderHome/renderAssets/renderTxSheet/renderRecSheet/renderHistory/openCatManage 등 innerHTML을 직접 쓰는 렌더/UI 함수(파일 함수 대부분)는 전혀 테스트 안 되는 공백을 최우선 문제로 채택 — 빌드/타입체크 없는 단일 파일을 무인 루프가 계속 고치는 구조에서, 이 공백은 앞으로 나올 모든 사이클의 위험을 함께 높인다. 후순위 후보로 balancesUpTo() 무제한 재생 구조(RANGE_FROM 체크포인트, cycle 41에서 부분 완화된 채 재평가 대기 중이던 이슈 재확인)와 히스토리 화면의 전체기간 빠른 검색 프리셋 부재를 검토했으나, 안전망 공백이 더 시급하다고 판단해 기각. advance에서 test/run.js sandbox를 확장해 렌더 함수 스모크 테스트(throw 안 함 + 마커 텍스트 assertion)를 추가하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 43,
+      "phase": "advance",
+      "timestamp": "2026-09-18T14:20:00.000Z",
+      "summary": "critique(7d9c424) 계획대로 renderHome/renderAssets/renderTxSheet/renderHistory/openCatManage 5개 render* 함수 전체를 한 사이클에 손대는 대신, DOM/캐시 의존이 가장 얕은 openCatManage 하나로 범위를 좁혀 실제 호출 기반 렌더 스모크 테스트를 처음 도입했다(cycle41 advance가 balCheckpoints 계획을 부분 완화로 좁힌 것과 같은 이유 — 5개를 한 번에 스텁하면 무인 사이클 안에서 검증하기 힘든 큰 diff가 된다). FUNCTIONS에 catIconOf/catGlyph/openCatManage, CONSTS에 CAT_LABEL/CATICON 추가(기존 openSheet/catAddDraft/svg 스텁 재사용, 새 DOM 스텁 불필요). 테스트 4개: expense 탭에서 변동/고정 뱃지가 실제로 갈리는지, saving 탭엔 뱃지 자체가 없는지, income 탭의 시스템 카테고리(ADJUST_CAT)엔 삭제/수정 버튼이 안 나오는지, keep=true로 재진입 시 입력 중이던 catAddDraft가 안 지워지는지. 이 테스트들은 기존 관행(extractFunction(name).includes(...) 소스 텍스트 검사)과 달리 함수를 실제로 실행해 렌더 결과 문자열을 검증하는 첫 사례라 critique가 지적한 공백을 실질적으로 메운다. 회귀 테스트 4개 추가, 289/289 통과. index.html 변경 없어 APP_VERSION/sw.js CACHE는 그대로 유지. 나머지 renderHome/renderAssets/renderTxSheet/renderHistory는 monthStats/histRow 등 훨씬 깊은 의존 그래프가 있어 후속 critique/advance 사이클 과제로 남긴다. pending_advance_plan 비움.",
       "commit": null
     }
   ]
