@@ -1,15 +1,8 @@
 {
   "cycle": 41,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 35,
-      "phase": "critique",
-      "timestamp": "2026-09-17T03:05:00.000Z",
-      "summary": "cycle35 review(76be88e)가 문제 없음으로 끝낸 직후, 최근 커밋 재검토보다 앱 전체를 구조적으로 훑는 데 집중해 Explore 서브에이전트로 성능/UX/접근성/에러 처리 등 최근 사이클들이 다루지 않은 영역을 살폈다. calPane()(index.html:2838, 셀 마크업 2802-2804)이 가계부 탭의 매달 42개 날짜 셀을 전부 bare <div onclick=\"selDay(...)\">로만 렌더해, txRow(2904)/자산 카드(2454,2460)/반복거래 행(4037)/이력 행(3479,3485) 등 앱 전역에 일관되게 적용된 tabindex=\"0\" role=\"button\" aria-label onkeydown=rowKeydown 패턴에서 유일하게 빠져 있음을 확인했다. advance에서 기존 rowKeydown(1411) 헬퍼를 재사용해 캘린더 셀에 동일 접근성 속성을 추가하는 계획을 pending_advance_plan에 저장. 코드 변경 없음, state.json만 갱신.",
-      "commit": null
-    },
     {
       "cycle": 35,
       "phase": "advance",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-18T02:14:00.000Z",
       "summary": "sanitizeBackup()(index.html:4498)이 obj.txns/obj.assets는 검증하면서 obj.recurrences는 통째로 그대로 통과시키던 버그 발견·수정. 반복거래는 recDates()/expandRec()이 매달 새 거래를 계속 만들어내는 생성기라, 손상된 amount 하나가 한 건이 아니라 그 이후 모든 회차를 무한히 오염시킬 수 있었다(파일 복원·클라우드 풀·자동 클라우드 로그인 3개 경로 모두 영향). 반복거래의 top-level amount와 edits[date].amount 오버라이드 각각에 기존 sanitizeAmount(txns와 동일하게 min 없이, 잔액성) 적용, id 없는 레코드는 assets/txns와 동일하게 드롭. 회귀 테스트 3개 추가(반복거래 amount 보정, edits.amount 보정, id 없는 레코드 드롭+recurrences 없어도 안전), 272/272 통과. 두 인라인 <script> 블록 모두 vm.Script 파싱 확인. APP_VERSION 1.41.0->1.41.1, sw.js CACHE v118->v119.",
+      "commit": null
+    },
+    {
+      "cycle": 41,
+      "phase": "review",
+      "timestamp": "2026-09-18T03:08:26.695Z",
+      "summary": "develop 커밋(9d852b5)을 검토하다 실제 버그 발견·수정: sanitizeBackup()의 recurrences 드롭 조건이 !r.id만 확인해 txns(!t.id||!t.date)와 달리 startDate 없는 레코드를 그대로 통과시켰음. recDates()는 new Date(r.startDate)로 시작하는데 startDate가 없으면 Invalid Date가 되어 monthly/yearly/daily-weekly 세 분기 모두 종료조건(cur>endd 등)이 항상 false이고 setMonth/setDate로도 벗어나지 못해 무한루프로 앱이 완전히 멈춘다(recNthDate/recCountUntil은 !base.startDate 가드가 있지만 expandRec 경로엔 없음). 드롭 조건에 !r.startDate 추가로 수정. 기존 amount 검증 테스트 2개에 startDate 필드 보강, startDate 없는 레코드 드롭 회귀 테스트 1개 추가, 273/273 통과. APP_VERSION 1.41.1->1.41.2, sw.js CACHE v119->v120.",
       "commit": null
     }
   ]

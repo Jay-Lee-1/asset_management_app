@@ -1288,7 +1288,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.41.1';
+const APP_VERSION='1.41.2';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4516,11 +4516,14 @@ function sanitizeBackup(obj){
  });
  /* 반복거래는 한 레코드가 recDates()로 매달 새 거래를 계속 만들어내므로, amount가 손상되면
   * txns 한 건이 아니라 이후 모든 회차가 조용히 오염된다(expandRec() 1923줄). edits[date].amount
-  * 오버라이드도 같은 경로로 쓰이므로 동일하게 검증한다. */
+  * 오버라이드도 같은 경로로 쓰이므로 동일하게 검증한다. startDate가 없으면 recDates()의
+  * new Date(r.startDate) 가 Invalid Date가 되어 종료 조건(cur>endd 등)이 항상 false가 되고
+  * setMonth/setDate로도 벗어나지 못해 무한루프로 앱이 완전히 멈춘다 — id/date 없는 txns를
+  * 제거하는 것과 동일한 이유로 startDate 없는 반복거래도 통째로 제거한다. */
  const srcRecs=Array.isArray(obj&&obj.recurrences)?obj.recurrences:[];
  const recurrences=[];
  srcRecs.forEach(r=>{
-  if(!r||!r.id){droppedCount++;return}
+  if(!r||!r.id||!r.startDate){droppedCount++;return}
   const d=Object.assign({},r);
   if('amount' in d){const n=sanitizeAmount(d.amount);if(n!==d.amount){d.amount=n;fixedCount++}}
   if(d.edits&&typeof d.edits==='object'){
