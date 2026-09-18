@@ -1,19 +1,8 @@
 {
-  "cycle": 42,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "planNegatives()/homeAlerts()/updateAlerts() 알림 엔진에 회귀 테스트 전무 — 최근 10사이클 버그가 전부 이 경로에 몰림",
-    "why": "test/run.js의 FUNCTIONS 추출 목록(67-94행)에 planNegatives, homeAlerts, updateAlerts가 빠져 있다. 그런데 최근 develop/advance 사이클에서 나온 버그 수정 최소 5건(budgetOver 알림 누락, varyingRecs skip 필터, findDonors when/date, openFixShortfall stale _fixWhen, stale market-valued txns 감지)이 전부 이 homeAlerts()의 9개 알림 종류(cloudConflict/backup/persist/confirm/neg/mat/quick·quickMulti/staleMv/budgetOver·budgetOverMulti)로 흘러들어가는 코드다. 특히 quick/quickMulti(5336-5338행)와 budgetOver/budgetOverMulti(5341-5343행)는 단일/복수 카운트에 따라 분기하는 복붙 패턴이라, 한쪽만 고치고 다른 쪽을 놓치는 회귀가 나기 쉬운데 이를 잡아줄 테스트가 없다. 사이클마다 이 경로로 되돌아오는데 안전망이 없는 게 가장 시급한 구조적 약점.",
-    "approach": "test/run.js의 FUNCTIONS 추출 목록에 planNegatives, homeAlerts, updateAlerts와 그 의존 함수(balanceAt, isPlanAcct, isDuePending, assetNm, varyingRecs, detectStaleMarketValuedTxns, budgetForMonth, spendByCategory 중 아직 없는 것)를 추가한다. 이후 테스트 케이스 추가: (a) planNegatives가 합성 자산+거래 데이터로 최초 마이너스 날짜/최소 잔액을 정확히 찾는지, '오늘 이미 마이너스'인 엣지케이스(5043행 firstNeg=(run<0?TODAY:null)) 포함. (b) homeAlerts가 9개 kind 각각을 트리거 조건에서 정확히 내보내는지, 특히 quick/quickMulti(5336-5338)와 budgetOver/budgetOverMulti(5341-5343)의 단일↔복수 전환 경계(정확히 1개, 2개일 때)를 커버. 기존 패턴(storageOutcomeMsg 테스트 등)과 동일한 스타일로 작성하고, 두 인라인 script 블록 vm.Script 파싱 확인 후 전체 테스트 통과시킨다."
-  },
+  "cycle": 43,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 36,
-      "phase": "advance",
-      "timestamp": "2026-09-17T09:13:13.032Z",
-      "summary": "critique(bc650a3) 계획대로 탭 간 localStorage 미동기화 데이터 유실을 막았다. TAB_SAVED_AT + foreignSaveIsNewer 순수 판정 + storage 이벤트 리스너로, 시트 미오픈 시 조용히 반영·오픈 시 토스트 후 보류(closeSheet에서 적용). 회귀 테스트 3개 추가, 239/239 통과. Playwright e2e로 실제 탭 2개 검증 완료. APP_VERSION 1.37.1->1.38.0, sw.js CACHE v109->v110. pending_advance_plan 비움.",
-      "commit": null
-    },
     {
       "cycle": 37,
       "phase": "advance",
@@ -152,6 +141,13 @@
       "phase": "critique",
       "timestamp": "2026-09-18T08:12:00.000Z",
       "summary": "홈 알림 엔진 planNegatives()/homeAlerts()/updateAlerts()에 회귀 테스트가 전혀 없는 문제 발견. test/run.js FUNCTIONS 추출 목록(67-94행)에 빠져 있는데, 최근 10사이클 동안 나온 버그 수정 최소 5건(budgetOver 알림 누락, varyingRecs skip 필터, findDonors when/date, openFixShortfall stale _fixWhen, stale market-valued txns 감지)이 전부 homeAlerts()의 9개 알림 kind로 흘러드는 코드라, 이 경로가 반복적으로 회귀 위험에 노출되는데 안전망이 없음. 특히 quick/quickMulti(5336-5338)·budgetOver/budgetOverMulti(5341-5343)의 단일/복수 복붙 분기는 한쪽만 고치는 회귀에 취약. cloud-sync 레이어(pullCloud/pushCloud/AUTH 등)는 이미 성숙해 새 버그 없음을 확인, 이메일 self-XSS와 ledger/history 렌더 중복은 후순위로 기각. advance에서 FUNCTIONS 목록 확장 + planNegatives/homeAlerts 케이스 추가 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 42,
+      "phase": "advance",
+      "timestamp": "2026-09-18T09:13:48.000Z",
+      "summary": "critique(6440b90) 계획대로 홈 알림 엔진에 회귀 테스트 안전망을 깔았다. test/run.js FUNCTIONS에 planNegatives/homeAlerts/updateAlerts/backupDue, CONSTS에 isPlanAcct 추가. planNegatives는 '오늘 이미 마이너스'(run<0?TODAY:null) 분기와 미래 지출로 전환되는 날짜/최소잔액, isPlanAcct=false(저축 등) 제외를 커버. homeAlerts는 quick/quickMulti·budgetOver/budgetOverMulti 각각의 1건→2건 경계(복붙 분기라 한쪽만 고치는 회귀에 가장 취약한 지점), 예산 이내일 때 미노출, neg 그대로 매핑을 커버. updateAlerts는 neg 생략 시 재계산/전달 시 재계산 안 함을 배지 상태로 확인. 실제 소스를 처음 끌어오면서 renderCurrent()가 real updateAlerts를 타게 됐는데, 기존 renderCurrent 에러 바운더리 테스트가 _homeNeg 기본값 null로 인해 neg.length에서 크래시하는 걸 발견해 _homeNeg 기본값을 실제 초기값(null)이 아니라 renderHome() 계약을 흉내낸 []로 바꿔 해결(테스트 인프라 문제였지 실제 앱 버그 아님). document.querySelectorAll/moveBlob/planBadge 최소 DOM 스텁 추가. 회귀 테스트 11개 추가, 285/285 통과. index.html 변경 없어 APP_VERSION/sw.js CACHE는 그대로 유지. pending_advance_plan 비움.",
       "commit": null
     }
   ]

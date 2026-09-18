@@ -87,12 +87,15 @@ const FUNCTIONS = [
   'genSalt', 'pbkdf2Hash', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer',
   'foreignSaveIsNewer', 'openCopyBackup', 'copyBackup', 'findDonors',
   'recIsVarying', 'varyingRecs', 'openFixShortfall',
+  'backupDue', 'planNegatives', 'homeAlerts', 'updateAlerts',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
 // _balCache/BAL_CACHE_MAX는 balancesUpTo()가 참조하는 모듈 스코프 캐시 상태라 같은 방식으로 끌어온다.
 // _recCache/REC_CACHE_MAX는 expandRec()가 참조하는 모듈 스코프 캐시 상태라 같은 방식으로 끌어온다.
-const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS'];
+// isPlanAcct는 planNegatives()가 DB.assets.filter(isPlanAcct)로 부르는 "플랜 대상 통장"
+// 판정 상수라 같은 방식(extractConst)으로 끌어온다.
+const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct'];
 // _histCache는 filteredHist()가 재대입(={key,list})하는 let 선언이라 CONSTS(extractConst)로는
 // 못 끌어오므로 별도의 LETS 목록으로 extractLet을 통해 가져온다.
 // _copyIsCsv도 같은 이유(openCopyBackup()이 재대입)로 LETS를 통해 가져온다.
@@ -122,6 +125,12 @@ const sandbox = {
   // DISP_TO도 RANGE_TO와 같은 이유로 `let DISP_TO=addDays(TODAY,92)` 파생값을 재현하지 않고,
   // hasFutureTxns()를 쓰는 테스트에서 TODAY처럼 직접 세팅한다.
   DISP_TO: null,
+  // CLOUD_UID/CLOUD_SYNC_STATE/STORAGE_PERSISTED는 index.html에서 `let`으로 선언되는 클라우드
+  // 로그인/동기화/저장공간 영속 상태로, homeAlerts()가 직접 참조한다. RANGE_TO/DISP_TO와 같은
+  // 이유(파생·비순수 상태)로 재현하지 않고 테스트에서 직접 세팅한다.
+  CLOUD_UID: null,
+  CLOUD_SYNC_STATE: 'idle',
+  STORAGE_PERSISTED: null,
   catRenameDraft: null,
   catAddDraft: null,
   asDraft: null,
@@ -139,9 +148,30 @@ const sandbox = {
   renderers: { home: () => {} },
   // renderHome()이 계산해 넣는 모듈 스코프 변수(_homeNeg) — renderHome 자체는 순수 로직이
   // 아니라 여기선 추출하지 않으므로(위 renderers.home 스텁과 같은 이유), renderCurrent()가
-  // 읽기만 하는 이 값을 최소 상태로 흉내낸다.
-  _homeNeg: null,
+  // 읽기만 하는 이 값을 최소 상태로 흉내낸다. 실제 소스는 최초 렌더 전엔 null이지만, 'home' 탭일
+  // 때 renderCurrent()가 곧바로 부르는 updateAlerts(_homeNeg)가 이제 실제 로직(neg.length 등)이라
+  // null을 넘기면 renderHome()을 스텁한 다른 테스트들이 매번 크래시하므로 []로 흉내낸다.
+  _homeNeg: [],
+  // updateAlerts는 FUNCTIONS에도 있어 실제 소스로 덮어써지지만, saveQuickAmount 등 이 값을
+  // (real 함수가 정의되기 전에) 참조하는 다른 스텁 호출부가 없도록 안전망으로 남겨둔다.
   updateAlerts: () => {},
+  // updateAlerts()가 부르는 최소 DOM 흉내 — nav-btn 순회는 빈 배열로, planBadge는 errBannerEl과
+  // 같은 패턴의 classList/textContent 흉내 엘리먼트로, moveBlob은 실제 소스가 아니라(FUNCTIONS에
+  // 없음) 호출 여부만 흉내내는 no-op으로 둔다(물방울 이동은 순수 로직 검증 대상이 아님).
+  document: { querySelectorAll: () => [] },
+  moveBlob: () => {},
+  planBadgeEl: {
+    _text: '',
+    classList: {
+      list: [],
+      add(c) { if (!this.list.includes(c)) this.list.push(c); },
+      remove(c) { this.list = this.list.filter((x) => x !== c); },
+      toggle(c, on) { if (on) this.add(c); else this.remove(c); },
+      contains(c) { return this.list.includes(c); },
+    },
+    set textContent(v) { this._text = v; },
+    get textContent() { return this._text; },
+  },
   requestAnimationFrame: () => {},
   fitAll: () => {},
   svg: () => '',
@@ -164,7 +194,7 @@ const sandbox = {
   // recSave()/saveQuickAmount()는 각각 $('txAmt')/$('qAmt').value를 읽어 금액을 얻으므로,
   // 그 두 id만 값을 갖는 입력칸처럼 동작시킨다. errBanner는 renderCurrent 에러 바운더리 테스트용.
   // bkText는 copyBackup()이 select()/setSelectionRange()/.value를 쓰는 백업 복사 textarea 흉내.
-  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : null,
+  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : null,
   bkTextEl: { value: 'backup-text', select: () => {}, setSelectionRange: () => {} },
   // copyBackup()의 navigator.clipboard 체크가 ReferenceError 없이 "지원 안 함"으로 지나가게
   // 하는 최소 흉내(document.execCommand는 try/catch로 감싸져 있어 굳이 스텁이 필요 없음).
@@ -2897,6 +2927,180 @@ test('openFixShortfall: 같은 부족 상황을 다시 열 때는(날짜 선택 
   // fixSetWhen('pick')의 콜백은 같은 ctx(_fixCtx.targetId/date)로 openFixShortfall을 다시 부른다
   sandbox.openFixShortfall('assetA', '2026-06-20', 50000);
   assert.strictEqual(sandbox._fixWhen, '2026-06-18', '같은 (targetId,date) 컨텍스트면 직접 고른 날짜를 유지해야 함');
+});
+
+/* ---------- planNegatives/homeAlerts/updateAlerts: 홈 알림 엔진 회귀 테스트 (app-evolve cycle43)
+ * critique(6440b90)에서 지적한 대로, 최근 10사이클 버그 수정 다수(budgetOver 알림 누락,
+ * varyingRecs skip 필터, findDonors when/date, openFixShortfall stale _fixWhen 등)가 전부
+ * planNegatives()/homeAlerts()의 9개 알림 kind로 흘러드는 코드인데 회귀 테스트가 전혀 없었다.
+ * 특히 quick/quickMulti·budgetOver/budgetOverMulti는 단일/복수 카운트로 분기하는 복붙 패턴이라
+ * 한쪽만 고치는 회귀에 취약해, 정확히 1건↔2건 경계를 명시적으로 커버한다. ---------- */
+function setupHomeAlertsDB() {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.TM = { y: 2026, m: 6 };
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox.DISP_TO = sandbox.addDays(sandbox.TODAY, 92);
+  sandbox._balCache.clear();
+  sandbox._recCache.clear();
+  sandbox.CLOUD_UID = null;
+  sandbox.CLOUD_SYNC_STATE = 'idle';
+  sandbox.STORAGE_PERSISTED = true; // '저장공간 보호 안 됨' 경고를 이번 알림 케이스에서 끄기 위함
+  sandbox.DB = {
+    settings: { lastExport: Date.now(), persistWarnDismissed: true },
+    catVar: {},
+    budgetHistory: {},
+    assets: [],
+    txns: [],
+    recurrences: [],
+  };
+}
+test('planNegatives: 오늘 이미 마이너스인 통장은 첫 마이너스 날짜가 오늘로 잡힌다(run<0?TODAY:null 분기)', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox.DISP_TO = sandbox.addDays(sandbox.TODAY, 92);
+  sandbox._balCache.clear();
+  sandbox.DB = {
+    settings: {},
+    assets: [{ id: 'a1', name: '통장1', owner: '나', type: 'cash', baseAmount: -30000 }],
+    txns: [],
+    recurrences: [],
+  };
+  const out = sandbox.planNegatives();
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].date, sandbox.TODAY, '이미 마이너스면 첫 마이너스 날짜는 오늘이어야 함');
+  assert.strictEqual(out[0].min, -30000);
+});
+test('planNegatives: 지금은 플러스지만 예정 지출로 특정 날짜부터 마이너스로 전환되면 그 날짜와 최소 잔액을 정확히 찾는다(회귀 확인)', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox.DISP_TO = sandbox.addDays(sandbox.TODAY, 92);
+  sandbox._balCache.clear();
+  sandbox.DB = {
+    settings: {},
+    assets: [{ id: 'a1', name: '통장1', owner: '나', type: 'cash', baseAmount: 10000 }],
+    txns: [
+      { id: 't1', date: '2026-06-20', type: 'expense', category: '식비', amount: 15000, fromAssetId: 'a1' },
+      { id: 't2', date: '2026-06-25', type: 'income', category: '용돈', amount: 3000, toAssetId: 'a1' },
+    ],
+    recurrences: [],
+  };
+  const out = sandbox.planNegatives();
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].date, '2026-06-20', '마이너스로 처음 전환되는 날짜를 찾아야 함');
+  assert.strictEqual(out[0].min, -5000, '이후 입금으로 회복돼도 구간 내 최소 잔액을 유지해야 함');
+});
+test('planNegatives: 저축 등 플랜 대상이 아닌 통장(isPlanAcct=false)은 마이너스여도 목록에 포함되지 않는다(회귀 확인)', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox.DISP_TO = sandbox.addDays(sandbox.TODAY, 92);
+  sandbox._balCache.clear();
+  sandbox.DB = {
+    settings: {},
+    assets: [{ id: 's1', name: '적금', owner: '나', type: 'savings', baseAmount: -10000 }],
+    txns: [],
+    recurrences: [],
+  };
+  assert.deepStrictEqual(Array.from(sandbox.planNegatives()), []);
+});
+test('homeAlerts: 변동 항목(quick)이 정확히 1건이면 quick, 2건으로 늘면 quickMulti로 묶인다(app-evolve cycle43)', () => {
+  setupHomeAlertsDB();
+  sandbox.setCatVar('expense', '전기요금', true);
+  sandbox.DB.recurrences.push({
+    id: 'r1', active: true, freq: 'monthly', type: 'expense', category: '전기요금',
+    day: 10, startDate: '2026-01-10', endDate: null, count: null, amount: 50000,
+    weekend: 'none', skip: [], edits: {},
+  });
+  let alerts = sandbox.homeAlerts([]);
+  let quick = alerts.filter((a) => a.kind === 'quick' || a.kind === 'quickMulti');
+  assert.strictEqual(quick.length, 1);
+  assert.strictEqual(quick[0].kind, 'quick', '정확히 1건이면 quick이어야 함');
+  assert.strictEqual(quick[0].recId, 'r1');
+  assert.strictEqual(quick[0].date, '2026-06-10');
+
+  sandbox.setCatVar('expense', '통신비', true);
+  sandbox.DB.recurrences.push({
+    id: 'r2', active: true, freq: 'monthly', type: 'expense', category: '통신비',
+    day: 12, startDate: '2026-01-12', endDate: null, count: null, amount: 30000,
+    weekend: 'none', skip: [], edits: {},
+  });
+  alerts = sandbox.homeAlerts([]);
+  quick = alerts.filter((a) => a.kind === 'quick' || a.kind === 'quickMulti');
+  assert.strictEqual(quick.length, 1);
+  assert.strictEqual(quick[0].kind, 'quickMulti', '2건이 되면 quickMulti 하나로 묶여야 함');
+  assert.strictEqual(quick[0].count, 2);
+});
+test('homeAlerts: 예산 초과 카테고리가 정확히 1개면 budgetOver, 2개로 늘면 budgetOverMulti로 묶인다(app-evolve cycle43)', () => {
+  setupHomeAlertsDB();
+  sandbox.setBudgetFrom('식비', 2026, 6, 100000);
+  sandbox.DB.txns.push({ id: 't1', date: '2026-06-05', type: 'expense', category: '식비', amount: 150000 });
+  let alerts = sandbox.homeAlerts([]);
+  let bo = alerts.filter((a) => a.kind === 'budgetOver' || a.kind === 'budgetOverMulti');
+  assert.strictEqual(bo.length, 1);
+  assert.strictEqual(bo[0].kind, 'budgetOver', '정확히 1개 초과면 budgetOver여야 함');
+  assert.strictEqual(bo[0].cat, '식비');
+  assert.strictEqual(bo[0].spent, 150000);
+  assert.strictEqual(bo[0].budget, 100000);
+
+  sandbox.setBudgetFrom('교통', 2026, 6, 50000);
+  sandbox.DB.txns.push({ id: 't2', date: '2026-06-06', type: 'expense', category: '교통', amount: 80000 });
+  alerts = sandbox.homeAlerts([]);
+  bo = alerts.filter((a) => a.kind === 'budgetOver' || a.kind === 'budgetOverMulti');
+  assert.strictEqual(bo.length, 1);
+  assert.strictEqual(bo[0].kind, 'budgetOverMulti', '2개로 늘면 budgetOverMulti 하나로 묶여야 함');
+  assert.strictEqual(bo[0].count, 2);
+});
+test('homeAlerts: 예산 이내(초과 없음)면 budgetOver/budgetOverMulti 둘 다 나타나지 않는다(회귀 확인)', () => {
+  setupHomeAlertsDB();
+  sandbox.setBudgetFrom('식비', 2026, 6, 100000);
+  sandbox.DB.txns.push({ id: 't1', date: '2026-06-05', type: 'expense', category: '식비', amount: 90000 });
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'budgetOver' || a.kind === 'budgetOverMulti'));
+});
+test('homeAlerts: planNegatives 결과(neg)를 그대로 넘겨받아 자산별 neg 알림으로 변환한다(회귀 확인)', () => {
+  setupHomeAlertsDB();
+  const neg = [{ assetId: 'a1', name: '통장1', owner: '나', date: '2026-06-20', min: -5000 }];
+  const alerts = sandbox.homeAlerts(neg);
+  const negAlerts = alerts.filter((a) => a.kind === 'neg');
+  assert.strictEqual(negAlerts.length, 1);
+  assert.strictEqual(negAlerts[0].assetId, 'a1');
+  assert.strictEqual(negAlerts[0].date, '2026-06-20');
+  assert.strictEqual(negAlerts[0].min, -5000);
+});
+test('updateAlerts: neg를 생략하면 planNegatives()를 다시 계산해서 배지 개수/on 상태에 반영한다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox._balCache.clear();
+  sandbox.DB = {
+    settings: {},
+    assets: [{ id: 'a1', name: '통장1', owner: '나', type: 'cash', baseAmount: -1000 }],
+    txns: [],
+    recurrences: [],
+  };
+  sandbox.planBadgeEl.classList.list = [];
+  sandbox.planBadgeEl._text = '';
+  const neg = sandbox.updateAlerts(undefined);
+  assert.strictEqual(neg.length, 1, 'planNegatives()를 다시 계산해 반환해야 함');
+  assert.strictEqual(sandbox.planBadgeEl.textContent, '1');
+  assert.strictEqual(sandbox.planBadgeEl.classList.contains('on'), true);
+});
+test('updateAlerts: neg를 미리 넘기면 planNegatives()를 다시 계산하지 않고 그대로 써서 배지를 끈다(회귀 확인)', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox._balCache.clear();
+  // planNegatives가 다시 불리면 마이너스로 잡힐 DB를 일부러 넣어두고, neg=[]를 직접 넘겨
+  // updateAlerts가 그 값을 재계산하지 않고 그대로 신뢰하는지 확인한다.
+  sandbox.DB = {
+    settings: {},
+    assets: [{ id: 'a1', name: '통장1', owner: '나', type: 'cash', baseAmount: -1000 }],
+    txns: [],
+    recurrences: [],
+  };
+  sandbox.planBadgeEl.classList.list = ['on'];
+  sandbox.planBadgeEl._text = '3';
+  const neg = sandbox.updateAlerts([]);
+  assert.deepStrictEqual(neg, [], '넘겨준 neg를 그대로 반환해야 함(재계산 없음)');
+  assert.strictEqual(sandbox.planBadgeEl.textContent, '0');
+  assert.strictEqual(sandbox.planBadgeEl.classList.contains('on'), false);
 });
 
 /* ---------- 실행 ---------- */
