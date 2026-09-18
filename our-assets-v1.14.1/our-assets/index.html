@@ -1288,7 +1288,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.40.1';
+const APP_VERSION='1.41.0';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1551,7 +1551,7 @@ function emptyDB(){return {
   categories:{expense:[...EXP_CATS_DEFAULT],income:[...INC_CATS_DEFAULT],saving:[...SAV_CATS_DEFAULT]},
  };}
 
-let DB, STORAGE_OK=true, TAB_SAVED_AT=0, TAB_SYNC_PENDING=null;
+let DB, STORAGE_OK=true, STORAGE_PERSISTED=null, TAB_SAVED_AT=0, TAB_SYNC_PENDING=null;
 const SKEY='asset_app_db_v3';
 /* ===== 계정 · 세션 (이메일 로그인) =====
    ▸ Supabase가 설정되지 않으면 이 기기(localStorage)에만 저장됩니다(계정별로 분리).
@@ -1761,7 +1761,7 @@ function load(){
  DB=(SESSION?emptyDB():seed());migrate();save(); /* 게스트 첫 실행=샘플 체험 · 새 계정=빈 상태 */
 }
 function migrate(){
- DB.settings=Object.assign({themeMode:'system',includeScheduled:false,assetSort:'custom',histSortAsc:true,confirmTransfers:true,autoRates:true,bigMin:100000,dismissedStaleMvIds:[]},DB.settings||{});
+ DB.settings=Object.assign({themeMode:'system',includeScheduled:false,assetSort:'custom',histSortAsc:true,confirmTransfers:true,autoRates:true,bigMin:100000,dismissedStaleMvIds:[],persistWarnDismissed:false},DB.settings||{});
  if(!Array.isArray(DB.settings.groupOrder)||!DB.settings.groupOrder.length)DB.settings.groupOrder=[...DEFAULT_GROUP_ORDER];
  DEFAULT_GROUP_ORDER.forEach(t=>{if(!DB.settings.groupOrder.includes(t))DB.settings.groupOrder.push(t)});
  delete DB.settings.showScheduled; /* 예정 표시는 홈 '예정 포함'으로 통합 */
@@ -1802,6 +1802,23 @@ function migrate(){
 function storageOutcomeMsg(ok,wasOk){
  if(ok)return wasOk?null:{kind:'ok',msg:'저장이 다시 정상 작동해요'};
  return wasOk?{kind:'fail',msg:'저장 실패 · 이 기기에 저장 공간이 부족하거나 저장이 제한돼 있어요. 내보내기로 백업하세요.'}:null;
+}
+/* shouldWarnUnpersisted: navigator.storage.persist() 결과(persisted)와 클라우드 연결 여부(hasCloud)를 보고
+ * 홈 알림에 '저장공간이 보호되지 않았어요' 카드를 띄울지 판정하는 순수 함수. persisted가 아직 확인 전(null,
+ * API 미지원 포함)이거나 이미 persisted됐거나 클라우드에 사본이 있으면(다른 기기·서버에서 복구 가능) 경고하지 않는다 —
+ * best-effort 버킷이 축출될 때 로컬이 유일한 사본인 경우에만 진짜 위험하기 때문. */
+function shouldWarnUnpersisted(persisted,hasCloud){return persisted===false&&!hasCloud}
+/* requestPersistentStorage: Supabase 미설정(=100% localStorage 의존) 사용자가 브라우저의
+ * best-effort storage eviction으로 재무 데이터를 조용히 영구 잃지 않도록, 지원 브라우저에서
+ * "지속 저장소(persistent storage)"를 요청한다. 이미 persisted면 재요청하지 않는다.
+ * 결과를 STORAGE_PERSISTED에 남겨 homeAlerts()가 경고 카드 노출 여부를 판정하는 데 쓴다. */
+async function requestPersistentStorage(){
+ try{
+  if(!(navigator.storage&&navigator.storage.persist&&navigator.storage.persisted)){STORAGE_PERSISTED=null;return}
+  let already=await navigator.storage.persisted();
+  STORAGE_PERSISTED=already||await navigator.storage.persist();
+ }catch(e){STORAGE_PERSISTED=null}
+ if(DB&&ST.tab==='home')renderCurrent();
 }
 function save(opts){invalidateBalances();
  /* 순자산 이력의 '오늘' 항목은 앱을 연 시각이 아니라 항상 최신 상태를 반영해야 한다:
@@ -4358,6 +4375,7 @@ function copyBackup(){
  toast(ok?'복사했어요 · 메모 앱에 붙여넣어 주세요':'길게 눌러 복사해 주세요');
 }
 function snoozeBackup(){DB.settings.backupSnooze=Date.now()+3*24*60*60*1000;save();renderCurrent();toast('3일 뒤에 다시 알려드릴게요')}
+function dismissPersistWarn(){DB.settings.persistWarnDismissed=true;save();renderCurrent();toast('확인했어요 · 정기적으로 백업하는 걸 권장해요')}
 function backupDue(){ /* 마지막 파일 내보내기 후 7일 경과 */
  const snooze=DB.settings.backupSnooze||0;
  if(Date.now()<snooze)return false;
@@ -5281,6 +5299,7 @@ function homeAlerts(neg){
  const arr=[];
  if(CLOUD_UID&&CLOUD_SYNC_STATE==='conflict')arr.push({kind:'cloudConflict'});
  if(backupDue()&&DB.txns.length)arr.push({kind:'backup'});
+ if(shouldWarnUnpersisted(STORAGE_PERSISTED,!!CLOUD_UID)&&!DB.settings.persistWarnDismissed)arr.push({kind:'persist'});
  allTxns(RANGE_FROM,TODAY).filter(t=>isDuePending(t)).sort((a,b)=>a.date<b.date?-1:1).forEach(t=>arr.push({kind:'confirm',id:t.id,recId:t.recId,isRec:!!t.isRec,from:assetNm(t.fromAssetId,t.fromAssetName),to:assetNm(t.toAssetId,t.toAssetName),amount:t.amount,date:t.date}));
  neg.forEach(n=>arr.push({kind:'neg',assetId:n.assetId,name:n.name,date:n.date,min:n.min}));
  DB.assets.filter(a=>a.type==='savings'&&a.maturityDate&&a.maturityDate<=addDays(TODAY,7))
@@ -5307,6 +5326,11 @@ function homeAlertCard(al){
    <div class="ha-b" tabindex="0" role="button" aria-label="백업이 필요해요 · 눌러서 iCloud에 저장" onclick="exportData()" onkeydown="rowKeydown(event,()=>exportData())"><div class="ha-t">백업이 필요해요</div>
      <div class="ha-s">데이터는 이 기기에만 있어요 · 눌러서 iCloud에 저장</div></div>
    <button class="txt-btn" style="flex-shrink:0;padding:6px 10px" onclick="event.stopPropagation();snoozeBackup()">나중에</button></div>`;
+ if(al.kind==='persist')return `<div class="home-alert mat">
+   <div class="ha-ic">${svg('alert')}</div>
+   <div class="ha-b" tabindex="0" role="button" aria-label="저장공간이 보호되지 않았어요 · 눌러서 다시 요청" onclick="requestPersistentStorage()" onkeydown="rowKeydown(event,()=>requestPersistentStorage())"><div class="ha-t">저장공간이 보호되지 않았어요</div>
+     <div class="ha-s">기기 저장공간이 부족해지면 데이터가 지워질 수 있어요 · 클라우드 연결이나 정기 백업을 권장해요</div></div>
+   <button class="txt-btn" style="flex-shrink:0;padding:6px 10px" onclick="event.stopPropagation();dismissPersistWarn()">확인</button></div>`;
  if(al.kind==='confirm')return `<button class="home-alert confirm" onclick="${al.isRec?`confirmRecTransfer('${al.recId}','${al.date}')`:`openConfirmTransfer('${al.id}')`}">
    <div class="ha-ic">${svg('repeat')}</div>
    <div class="ha-b"><div class="ha-t">이체 확인 · ${comma(al.amount)}원</div>
@@ -5667,6 +5691,7 @@ function startApp(){
  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));$('page-home').classList.add('active');
  buildNav();document.body.classList.add('show-fab');renderHome();updateAlerts();showApp();wireHdrFade($('page-home'));
  maybeTutorial(); /* 첫 실행 튜토리얼 */
+ requestPersistentStorage(); /* 브라우저 storage eviction으로부터 로컬 데이터 보호 요청(비동기, 결과는 홈 알림에 반영) */
  autoSyncRates();                       /* 시작 시 1회 */
  setInterval(autoSyncRates,3*60*1000); /* 3분마다 확인 → 10분 지났으면 갱신 */
 }

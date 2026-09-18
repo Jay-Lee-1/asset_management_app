@@ -70,7 +70,7 @@ const FUNCTIONS = [
   'num', 'doRenameCat', 'doDeleteCat', 'budgetProgress', 'totalBudgetSummary', 'budgetKey', 'budgetForMonth', 'setBudgetFrom', 'addCat',
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'esc', 'matchTxnQuery',
   'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo',
-  'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'restoreBackup', 'storageOutcomeMsg',
+  'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'restoreBackup', 'storageOutcomeMsg', 'shouldWarnUnpersisted',
   'sanitizeAmount', 'sanitizeBackup',
   'saveRec', 'recHistFieldsChanged', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
   'monthStartStr', 'monthEndStr', 'expandRec', 'allTxns', 'spendByCategory', 'histSumTotals',
@@ -1529,6 +1529,20 @@ test('storageOutcomeMsg: 이미 실패 상태로 알고 있으면 매 호출마�
 test('storageOutcomeMsg: 실패→정상으로 회복되면 회복 토스트를 띄운다', () => {
   const notice = sandbox.storageOutcomeMsg(true, false);
   assert.strictEqual(notice.kind, 'ok');
+});
+
+/* ---------- shouldWarnUnpersisted: storage eviction 경고 카드 노출 판정 ---------- */
+test('shouldWarnUnpersisted: persisted=false이고 클라우드 미연결이면 경고한다(로컬이 유일한 사본)', () => {
+  assert.strictEqual(sandbox.shouldWarnUnpersisted(false, false), true);
+});
+test('shouldWarnUnpersisted: persisted=false여도 클라우드가 연결돼 있으면 경고하지 않는다(서버에 사본 있음)', () => {
+  assert.strictEqual(sandbox.shouldWarnUnpersisted(false, true), false);
+});
+test('shouldWarnUnpersisted: 이미 persisted면 경고하지 않는다', () => {
+  assert.strictEqual(sandbox.shouldWarnUnpersisted(true, false), false);
+});
+test('shouldWarnUnpersisted: API 미지원 등으로 아직 확인 전(null)이면 경고하지 않는다', () => {
+  assert.strictEqual(sandbox.shouldWarnUnpersisted(null, false), false);
 });
 
 /* ---------- restoreBackup: JSON 백업 복원의 스키마 검증 + 실패 시 롤백 ---------- */

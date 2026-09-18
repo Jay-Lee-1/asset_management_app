@@ -1,19 +1,8 @@
 {
-  "cycle": 40,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "브라우저 storage eviction으로 인한 재무 데이터 영구 유실 방지 (navigator.storage.persist 미사용)",
-    "why": "Supabase 자격증명을 직접 설정하지 않은 대부분의 설치(기본 배포)는 100% localStorage에만 데이터를 저장하는데(dataKey() asset_app_db_v3__<email>), navigator.storage.persist()를 코드 전체에서 한 번도 호출하지 않아(grep 0건) 브라우저가 디스크 압박 시 best-effort 버킷을 경고 없이 축출할 수 있다. 백업 넛지(index.html:4360-4366)는 7일 주기이며 무한 스누즈 가능해 실질적 방어가 안 된다. 실패 시나리오: 클라우드 미설정 사용자가 몇 달치 거래/자산을 입력 -> 기기 저장공간 부족 또는 iOS PWA 홈화면 미추가 또는 사이트 데이터 삭제 -> 원장 전체가 조용히, 영구적으로 사라짐. 최근 사이클들이 다룬 탭간 동기화/백업 숫자검증/접근성 버그들보다 훨씬 광범위하고 심각한(조용한 전체 데이터 유실) 아키텍처 공백이라 우선순위가 가장 높다고 판단.",
-    "approach": "1) navigator.storage.persist 래퍼 함수 requestPersistentStorage() 추가(index.html:1745 load() 근처 storage 헬퍼들 옆) - navigator.storage/persist 존재 확인 후 이미 persisted면 스킵, 아니면 persist() 호출, 예외는 무시. 2) boot()(약 5673) 안 startApp() 이후와, doSignup/doLogin/chooseGuest 성공 직후(사용자가 실제 데이터를 갖게 되는 시점)에 호출. 3) 순수 판정 함수 shouldWarnUnpersisted(persisted, hasCloud) = !persisted && !hasCloud 를 추가해 storageOutcomeMsg(index.html:1802)처럼 test/run.js에 회귀 테스트로 커버 가능하게 만든다. 4) 계정/홈 화면(openAccountSheet 근처, 또는 homeAlerts의 backup 알림 패턴 index.html:5305 재사용)에 storage가 persisted 안 됐고 클라우드도 미설정이면 1회성 dismissible 카드로 경고 문구(데이터가 지워질 수 있음을 안내) + CTA(requestPersistentStorage 재호출) 노출. 5) 기존 백업 넛지의 무한 스누즈는 이번 사이클 범위 밖이면 건드리지 않아도 되나, 여유 있으면 !sbReady() && 미persisted 조건에서 스누즈 상한을 두는 것도 고려. 테스트: shouldWarnUnpersisted에 대해 storageOutcomeMsg와 동일한 패턴으로 pure-function 회귀 테스트 추가, node --check 파싱 확인, node test/run.js 전체 통과 확인 후 APP_VERSION/sw.js CACHE 버전 올림."
-  },
+  "cycle": 41,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 35,
-      "phase": "develop",
-      "timestamp": "2026-09-17T01:20:00.000Z",
-      "summary": "Explore 서브에이전트로 최근 사이클들이 다루지 않은 영역(폼 검증, 에러 처리, 접근성, sibling-function 불일치 패턴 등)을 훑어, 회원가입/로그인 비밀번호 입력창(renderAuth, index.html:5615)의 placeholder가 여전히 '4자 이상'으로 표시되는데 실제 검증 로직인 AUTH.signUp()(index.html:1683)은 cycle33 advance(8cefc54, DJB2->salt+PBKDF2 교체)에서 이미 최소 길이를 8자로 올리고 에러 문구도 '8자 이상이어야 해요'로 바꿨지만 placeholder는 그때 같이 안 고쳐졌던 실제 불일치를 발견해 수정했다(git log -S로 8cefc54 diff에서 에러 문구만 바뀌고 placeholder 줄은 손 안 댄 것을 확인). 사용자가 안내대로 5~7자 비밀번호를 입력하면 가입 시점에 안내와 모순되는 에러를 만나는 실제 UX 버그. 로그인 모드에서는 마이그레이션 전 계정이 여전히 8자 미만 비밀번호를 쓸 수 있어(레이지 재해시 전까지) '8자 이상'을 강제 안내하면 오히려 오해를 주므로, login 여부에 따라 placeholder를 분기(가입 모드만 '8자 이상', 로그인 모드는 빈 문자열)하도록 고쳤다. 로직 변경이 없는 단일 문자열/템플릿 수정이라 새 회귀 테스트는 추가하지 않았다. 두 인라인 <script> 블록 모두 node --check 파싱 확인, node test/run.js 233/233 통과(기존 그대로). APP_VERSION 1.36.0->1.36.1, sw.js CACHE v106->v107.",
-      "commit": null
-    },
     {
       "cycle": 35,
       "phase": "review",
@@ -25,42 +14,42 @@
       "cycle": 35,
       "phase": "critique",
       "timestamp": "2026-09-17T03:05:00.000Z",
-      "summary": "cycle35 review(76be88e)가 문제 없음으로 끝낸 직후, 최근 커밋 재검토보다 앱 전체를 구조적으로 훑는 데 집중해 Explore 서브에이전트로 성능/UX/접근성/에러 처리 등 최근 사이클들이 다루지 않은 영역을 살폈다. calPane()(index.html:2838, 셀 마크업 2802-2804)이 가계부 탭의 매달 42개 날짜 셀을 전부 bare <div onclick=\"selDay(...)\">로만 렌더해, txRow(2904)/자산 카드(2454,2460)/반복거래 행(4037)/이력 행(3479,3485) 등 앱 전역에 일관되게 적용된 tabindex=\"0\" role=\"button\" aria-label onkeydown=rowKeydown 패턴에서 유일하게 빠져 있음을 확인했다. 날짜 선택은 거래 조회/추가/편집의 진입점인 핵심 플로우인데 키보드/스크린리더 사용자는 이 화면에서 날짜를 아예 선택할 수 없다 — 다른 4~5곳(flow-item 3626, acct-card 3717, spend-row 3851, of-row 5155, ha-b 5191/5226)도 같은 gap이 있지만 캘린더가 핵심 흐름을 막는 가장 심각한 케이스라 채택. advance에서 기존 rowKeydown(1411) 헬퍼를 재사용해 캘린더 셀에 동일 접근성 속성을 추가하는 계획을 pending_advance_plan에 저장. 코드 변경 없음, state.json만 갱신.",
+      "summary": "cycle35 review(76be88e)가 문제 없음으로 끝낸 직후, 최근 커밋 재검토보다 앱 전체를 구조적으로 훑는 데 집중해 Explore 서브에이전트로 성능/UX/접근성/에러 처리 등 최근 사이클들이 다루지 않은 영역을 살폈다. calPane()(index.html:2838, 셀 마크업 2802-2804)이 가계부 탭의 매달 42개 날짜 셀을 전부 bare <div onclick=\"selDay(...)\">로만 렌더해, txRow(2904)/자산 카드(2454,2460)/반복거래 행(4037)/이력 행(3479,3485) 등 앱 전역에 일관되게 적용된 tabindex=\"0\" role=\"button\" aria-label onkeydown=rowKeydown 패턴에서 유일하게 빠져 있음을 확인했다. advance에서 기존 rowKeydown(1411) 헬퍼를 재사용해 캘린더 셀에 동일 접근성 속성을 추가하는 계획을 pending_advance_plan에 저장. 코드 변경 없음, state.json만 갱신.",
       "commit": null
     },
     {
       "cycle": 35,
       "phase": "advance",
       "timestamp": "2026-09-17T04:05:00.000Z",
-      "summary": "critique(6c66261) 계획대로 calCellsFor()(index.html:2786-2805)의 날짜 셀 템플릿을 고쳤다. other(다른 달) 셀이 아닌 42개 중 실제 선택 가능한 셀에 한해 기존 onclick=\"selDay('${ds}')\" 옆에 tabindex=\"0\" role=\"button\" aria-pressed=\"${ds===sel}\" aria-label=\"${dnum}일 [수입 …] [지출 …] [선택됨] [오늘]\" onkeydown=\"rowKeydown(event,()=>selDay('${ds}'))\"를 추가해 앱 전역의 다른 행들(txRow, asset-item, manage-row 등)과 동일한 키보드/스크린리더 접근 패턴으로 맞췄다. 새 JS 헬퍼 없이 기존 rowKeydown(1411)을 그대로 재사용. 계획에서 함께 언급된 다른 bare onclick div들(flow-item, acct-card, spend-row, of-row, ha-b)은 이번 사이클 범위를 넘어서므로 손대지 않았다. 두 인라인 <script> 블록 모두 node --check 파싱 확인, node test/run.js 233/233 통과(로직 변경이 아닌 마크업/속성 추가라 신규 테스트는 추가하지 않음). APP_VERSION 1.36.1->1.37.0(advance라 minor bump), sw.js CACHE v107->v108. pending_advance_plan 비움.",
+      "summary": "critique(6c66261) 계획대로 calCellsFor()(index.html:2786-2805)의 날짜 셀 템플릿을 고쳤다. 선택 가능한 셀에 tabindex/role=button/aria-pressed/aria-label/onkeydown=rowKeydown을 추가해 앱 전역 접근성 패턴과 맞췄다. 233/233 통과. APP_VERSION 1.36.1->1.37.0, sw.js CACHE v107->v108. pending_advance_plan 비움.",
       "commit": null
     },
     {
       "cycle": 36,
       "phase": "develop",
       "timestamp": "2026-09-17T06:30:00.000Z",
-      "summary": "cycle35 advance(e7b42ff, 캘린더 날짜 셀 접근성)가 문제 없이 끝난 뒤, Explore 서브에이전트로 아직 다루지 않은 영역을 훑어 confirmRecTransfer/postponeRecTransfer(index.html:1449,1457) 버그를 발견해 수정했다. 반복 이체 회차를 recSave scope='one'으로 개별 수정(r.edits[date]={amount:...})해둔 뒤 확인 시트에서 \"내일로\"를 누르면, expandRec()/recApply() 등 다른 모든 반복 구체화 지점이 쓰는 ed 우선(ed.amount!=null?ed.amount:r.amount) 패턴을 이 두 함수만 빼먹어 확인 시트 표시와 새로 생기는 일회성 거래 둘 다 반복의 기본 금액/메모로 조용히 되돌아가던 실제 금액 버그였다(예: 월 50만원 이체를 이번 달만 70만원으로 고쳐뒀는데 미루면 50만원 거래가 생김). 두 함수 모두 const ed=(r.edits||{})[date]||{} 조회를 추가해 ed.amount/ed.memo를 우선하도록 고쳤다. test/run.js FUNCTIONS에 assetNm/confirmRecTransfer/postponeRecTransfer를 추가하고 회귀 테스트 3개(edits 있을 때 확인 시트 표시, edits 있을 때 미룬 거래 금액/메모, edits 없을 때 기존처럼 기본값 사용하는 회귀 확인)를 추가했다. 236/236 통과(기존 233+신규 3). 두 인라인 <script> 블록 모두 vm.Script 파싱 확인. APP_VERSION 1.37.0->1.37.1(버그 fix라 patch bump), sw.js CACHE v108->v109.",
+      "summary": "confirmRecTransfer/postponeRecTransfer(index.html:1449,1457)가 반복 이체 회차별 edits[date].amount/memo 오버라이드를 무시하던 실제 금액 버그를 발견해 수정. expandRec() 등과 동일한 ed-우선 패턴으로 고쳤다. 회귀 테스트 3개 추가, 236/236 통과. APP_VERSION 1.37.0->1.37.1, sw.js CACHE v108->v109.",
       "commit": null
     },
     {
       "cycle": 36,
       "phase": "review",
       "timestamp": "2026-09-17T07:07:53.000Z",
-      "summary": "develop 커밋(7f1d8e0, confirmRecTransfer/postponeRecTransfer가 반복 이체 회차별 edits[date].amount/memo 오버라이드를 무시하던 버그 수정)을 검토했다. 수정이 expandRec()(1869)/recApply()/lastActualAmount() 등 기존 코드 전반의 ed-우선 패턴(ed.amount!=null?ed.amount:r.amount)과 정확히 일치함을 확인했고, edits[date]는 recSave()/saveQuickAmount()에서 항상 {amount}만 저장하므로 postponeRecTransfer의 ed.memo 분기는 현재는 도달하지 않지만 expandRec의 동일 패턴과 마찬가지로 해롭지 않은 포워드 호환 코드임을 확인했다. r.amount를 직접 읽는 다른 지점(lastActualAmount, 5017)도 의도된 동작(직전 회차 편집값 우선, 없으면 기본값)임을 grep으로 재확인. 추가된 회귀 테스트 3개(수정된 금액이 확인 시트에 표시, postpone 시 새 거래가 edits 값을 따름, edits 없을 때 기존 동작 유지)가 실제 버그를 정확히 커버하며 236/236 전체 스위트 통과. 코드 변경 없음(이상 없음).",
+      "summary": "develop 커밋(7f1d8e0)을 검토, expandRec()/recApply() 등 기존 코드 전반의 ed-우선 패턴과 정확히 일치함을 확인. 236/236 통과. 문제 없음.",
       "commit": null
     },
     {
       "cycle": 36,
       "phase": "critique",
       "timestamp": "2026-09-17T08:00:00.000Z",
-      "summary": "cycle36 review(f981cd5)가 문제 없음으로 끝낸 직후, 최근 커밋 재검토보다 앱 전체를 구조적으로 훑는 데 집중해 Explore 서브에이전트로 export/import·백업 복원, 멀티통화 엣지케이스, 타임존/날짜 경계, 탭 간 동시성/localStorage 레이스, 차트 렌더링, 오프라인/서비스워커 갱신, 알림/리마인더, 카테고리 삭제 캐스케이드, CSV export 등 아직 다루지 않은 영역을 살폈다. save()(index.html:1803-1812)가 ~70개 호출 지점 어디서든 localStorage를 무조건 덮어쓰는데 load()(1742-1759)는 boot() 시 딱 한 번만 읽고 이후 전혀 재동기화하지 않으며, window storage 이벤트나 BroadcastChannel 리스너가 코드 전체에 전무하고 visibilitychange/focus 핸들러(5698-5701)도 TODAY만 재계산할 뿐 메모리 DB는 그대로 씀을 코드로 확인했다. 그 결과 같은 브라우저에서 앱을 두 탭(설치된 PWA + 남겨둔 브라우저 탭 등)으로 열어두면, 한쪽 탭이 다른 탭의 변경 이후 아무 조작으로든 save()를 호출하는 순간 오래된 스냅샷이 localStorage를 통째로 덮어써 다른 탭에서 추가한 거래가 에러/토스트/undo 없이 조용히 사라진다 — Supabase 클라우드 동기화 경로(1596-1636, isCloudConflict/localHasUnsyncedChanges)는 기기 간 충돌을 신중히 다루면서도 훨씬 흔한 같은 브라우저 다중 탭 케이스는 전혀 방어하지 않는 비일관성이 있다. 재무 데이터의 인지 불가능한 영구 유실이라는 점에서 다른 후보(만기 리마인더 토스트 dedup/snooze 부재 — 코스메틱, pushCloud() SELECT-then-UPSERT TOCTOU 레이스 — 기기 간 서브초 충돌이라 훨씬 드묾)보다 우선순위가 높다고 판단해 채택. advance에서: window storage 이벤트 리스너 추가 + save()에 monotonic rev/savedAt 기록 + 열린 시트 없으면 조용히 재로드·재렌더, 있으면 비파괴 토스트로 안내. 코드 변경 없음, state.json만 갱신.",
+      "summary": "같은 브라우저 다중 탭에서 한쪽 탭의 save()가 다른 탭의 변경을 조용히 덮어쓰는 문제(storage 이벤트 리스너/BroadcastChannel 전무)를 발견. advance에서 window storage 이벤트 + monotonic savedAt 반영 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     },
     {
       "cycle": 36,
       "phase": "advance",
       "timestamp": "2026-09-17T09:13:13.032Z",
-      "summary": "critique(bc650a3)가 세운 계획대로 탭 간 localStorage 미동기화 데이터 유실을 막았다. save()(index.html)가 __savedAt 기록 시 이 탭이 아는 최신 시각을 TAB_SAVED_AT에도 즉시 반영하도록 했고, load()도 부팅 시 DB를 읽은 직후 TAB_SAVED_AT을 초기화한다. 순수 판정 함수 foreignSaveIsNewer(savedAtStr,knownAt)를 추가해(다른 탭의 __savedAt 문자열이 이 탭이 마지막으로 알던 시각보다 실제로 최신인지만 판정) handleForeignStorage(e)가 storage 이벤트에서 이 값으로 반영 여부를 정한다. 시트가 열려 있지 않으면 resolveCloudPullRemote()와 동일한 패턴(localStorage 재읽기→migrate()→renderCurrent())으로 조용히 반영하고, 열려 있으면(편집 중인 드래프트가 있을 수 있음) 덮어쓰지 않고 토스트만 띄운 뒤 TAB_SYNC_PENDING에 시각을 보류해뒀다가 closeSheet()가 시트를 닫을 때 그제서야 적용한다. window.addEventListener(storage,...)는 기존 visibilitychange/focus 리스너 옆에 등록해 컨벤션을 맞췄다. test/run.js에 foreignSaveIsNewer 순수 판정 회귀 테스트 3개 추가(239/239 통과, 기존 236+신규 3). 두 인라인 <script> 블록 모두 node --check 파싱 확인. 계획이 권장한 대로 Playwright(사전 설치 Chromium)로 같은 컨텍스트 안에 탭 2개를 열어 실제 storage 이벤트로 e2e 검증: 탭2에 시트가 열려 있지 않을 때 탭1의 save()가 만든 새 거래가 탭2에 조용히 반영됨을 확인했고, 탭2에 시트를 열어둔 채로는 탭1이 저장해도 즉시 반영되지 않고 토스트만 뜨며(TAB_SYNC_PENDING에 시각 보류) closeSheet() 후에야 반영됨을 확인, pageerror 없음. APP_VERSION 1.37.1->1.38.0(새 동작 추가라 minor bump), sw.js CACHE v109->v110. pending_advance_plan 비움.",
+      "summary": "critique(bc650a3) 계획대로 탭 간 localStorage 미동기화 데이터 유실을 막았다. TAB_SAVED_AT + foreignSaveIsNewer 순수 판정 + storage 이벤트 리스너로, 시트 미오픈 시 조용히 반영·오픈 시 토스트 후 보류(closeSheet에서 적용). 회귀 테스트 3개 추가, 239/239 통과. Playwright e2e로 실제 탭 2개 검증 완료. APP_VERSION 1.37.1->1.38.0, sw.js CACHE v109->v110. pending_advance_plan 비움.",
       "commit": null
     },
     {
@@ -74,49 +63,49 @@
       "cycle": 38,
       "phase": "develop",
       "timestamp": "2026-09-17T14:12:37.000Z",
-      "summary": "Explore 서브에이전트로 renderAssets(index.html:2500)와 대응되는 sibling function 누락 패턴을 훑어, renderPlan()(3622-3624)에 renderAssets가 이미 가진 '귀속(owner)이 DB.owners에서 사라지면 필터를 전체로 되돌리는' 가드가 빠져 있는 실제 버그를 발견해 수정했다. planAsset(id)(3711-3713)는 플랜 탭에서 통장을 고를 때마다 ST.plan.owner=a.owner로 동기화하는데, doRenameOwner(i)(2799-2802)는 귀속 이름을 바꾸며 DB.owners와 모든 자산의 .owner 필드는 갱신하지만 ST.plan.owner는 건드리지 않는다. 그 결과 플랜 탭에서 '나' 소속 통장을 선택해둔 상태로 귀속 관리에서 '나'→'남편'으로 이름을 바꾸면(흔한 조작), renderPlan()의 cashAssets 필터가 더 이상 존재하지 않는 owner==='나'로 계속 걸러져 0개가 되고 ST.plan.assetId가 null로 떨어지며 플랜 탭이 '통장 없음' 빈 상태로 조용히 무너진다(통장 선택 시트를 다시 열어야만 planAsset이 owner를 재동기화해 복구됨). delOwner()로 귀속을 삭제하는 경로도 동일하게 영향받는다. renderAssets()(index.html:2500)의 `if(ST.assetOwner!=='all'&&!DB.owners.includes(ST.assetOwner))ST.assetOwner='all'` 가드와 동일한 패턴으로 renderPlan() 맨 앞에 `if(ST.plan.owner!=='전체'&&!DB.owners.includes(ST.plan.owner))ST.plan.owner='전체'`를 추가해 cashAssets 필터 계산 전에 항상 유효한 owner로 되돌아가도록 고쳤다. renderPlan()은 DOM 의존성이 커 실행 기반 테스트가 없는 기존 관행(flow-item 접근성 테스트 등)을 따라, 소스 텍스트 기반 회귀 테스트 1개를 추가해 가드 코드가 존재하고 cashAssets 계산보다 먼저 실행되는지 확인했다. 두 인라인 <script> 블록 모두 node --check 파싱 확인, node test/run.js 250/250 통과(기존 249+신규 1). APP_VERSION 1.38.2->1.38.3, sw.js CACHE v112->v113.",
+      "summary": "doRenameOwner/delOwner가 ST.plan.owner를 갱신하지 않아, 플랜 탭에서 통장 선택 중 귀속 이름을 바꾸면 플랜 탭이 조용히 '통장 없음'으로 무너지던 버그 발견·수정. renderAssets()의 assetOwner 센티널 가드와 동일 패턴으로 renderPlan() 진입부에 가드 추가. 회귀 테스트 1개 추가, 250/250 통과. APP_VERSION 1.38.2->1.38.3, sw.js CACHE v112->v113.",
       "commit": null
     },
     {
       "cycle": 38,
       "phase": "review",
       "timestamp": "2026-09-17T15:08:50.000Z",
-      "summary": "develop 커밋(c1d7887, renderPlan() ST.plan.owner 잔존 버그 fix)을 검토했다. doRenameOwner/delOwner가 ST.plan.owner를 갱신하지 않는다는 진단이 실제 코드(index.html:2799 doRenameOwner, 2787 delOwner, 3712 planAsset)와 일치함을 확인했고, 추가된 가드(index.html:3623)가 renderAssets()의 기존 패턴(assetOwner 센티널 'all')과 동일한 형태로 plan.owner 센티널('전체')을 사용해 cashAssets 필터 계산 전에 실행됨을 확인했다. 가드가 놓인 renderPlan() 진입 지점은 사이드이펙트 없이 매번 안전하게 재평가 가능하고, 다른 갱신 경로(planAsset, planOwner, 4972/5489 라인의 명시적 재설정)와 충돌하지 않음도 확인. 새 회귀 테스트 1개가 가드 존재와 cashAssets 계산보다 먼저 실행되는 순서를 검증. 두 인라인 <script> 블록 모두 node --check 통과, node test/run.js 250/250 통과. 문제 없음.",
+      "summary": "develop 커밋(c1d7887)을 검토, renderAssets() 기존 패턴과 동일한 형태이며 사이드이펙트 없이 안전함을 확인. 250/250 통과. 문제 없음.",
       "commit": null
     },
     {
       "cycle": 38,
       "phase": "critique",
       "timestamp": "2026-09-17T16:12:43.363Z",
-      "summary": "앱 전체를 구조적으로 훑어(Explore 서브에이전트), 최근 20사이클이 다루지 않은 영역 중 restoreBackup()(index.html:4462-4468)과 pullCloud()/afterCloudAuth()(1585-1636)가 obj.assets/obj.txns의 배열 여부만 확인하고 개별 레코드의 amount 등 숫자 필드는 전혀 검증하지 않는 문제를 발견했다. balancesUpTo()/totalAssetAt()/expenseByCat()(1949-2004)가 t.amount를 Number/isFinite 검사 없이 그대로 +=/-=하므로, 손상된 백업 JSON을 직접 수정해 다시 불러오거나 스키마가 다른 기기의 클라우드 데이터를 pullCloud()로 받으면 잔액 전체가 NaN/오값으로 조용히 오염되고, save()를 거쳐 scheduleCloudPush()로 다른 기기에도 재전파될 수 있다. 6초 undo 토스트만으로는 앱을 완전히 닫았다 켠 경우 복구가 안 된다. 다른 후보(저축 만기 알림 하한 없음 - UX 피로, 대량 반복거래 재계산 비용 - 확신도 낮음)보다 재무 데이터 정확성이 전면적으로 조용히 깨진다는 점에서 우선순위가 높다고 판단해 채택. advance에서: sanitizeAmount(v)/sanitizeBackup(obj) 순수 함수를 새로 만들어 restoreBackup()과 pullCloud()/afterCloudAuth() 양쪽 진입점에서 공통 재사용하고, 보정/제외 건수를 토스트로 안내, NaN/문자열/음수/필수필드 누락 케이스 회귀 테스트를 추가한다. 코드 변경 없음, state.json만 갱신.",
+      "summary": "restoreBackup()/pullCloud()/afterCloudAuth()가 개별 레코드의 amount 등 숫자 필드를 전혀 검증하지 않아, 손상된 백업/이형 클라우드 데이터를 불러오면 잔액이 조용히 NaN/오값으로 오염되는 문제를 발견. advance에서 sanitizeAmount/sanitizeBackup 공통 유틸 도입 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     },
     {
       "cycle": 38,
       "phase": "advance",
       "timestamp": "2026-09-17T17:10:34.427Z",
-      "summary": "백업 복원(파일 가져오기)·클라우드 동기화(pullCloud/afterCloudAuth/resolveCloudPullRemote) 경로에 숫자 필드 유효성 검증을 추가했다. sanitizeAmount(v,min) 순수 함수(NaN/비숫자면 0, min이 있으면 그 아래로 클램프)와 sanitizeBackup(obj) 순수 함수(txns.amount, assets의 amount/fxAmount/goldDon/stockQty/baseAmount/amountKRW를 검증·보정하고 id/date 등 필수 필드가 없는 레코드는 제거, {data,fixedCount,droppedCount} 반환)를 index.html에 추가. fxAmount/goldDon/stockQty 같은 보유수량 필드는 음수면 0으로 클램프하되, baseAmount/amountKRW처럼 마이너스도 유효한 잔액성 필드는 클램프하지 않고 유한수 여부만 검증하도록 구분했다. restoreBackup()의 시그니처는 바꾸지 않고(기존 회귀 테스트 보존), 호출부인 importFile 핸들러와 afterCloudAuth/resolveCloudPullRemote에서 DB 대입 전에 sanitizeBackup()을 거치도록 했다. fixedCount/droppedCount>0이면 토스트로 안내. test/run.js에 sanitizeAmount/sanitizeBackup 회귀 테스트 10개(NaN/문자열/음수/필수필드누락/원본불변/빈입력) 추가, FUNCTIONS·CONSTS 화이트리스트에 새 함수/상수 등록. 260/260 테스트 통과. APP_VERSION 1.38.3→1.39.0, sw.js CACHE v113→v114.",
+      "summary": "백업 복원·클라우드 동기화 경로에 숫자 필드 유효성 검증 추가. sanitizeAmount(v,min)/sanitizeBackup(obj) 순수 함수로 amount/fxAmount/goldDon/stockQty/baseAmount/amountKRW 검증·보정, 필수 필드 누락 레코드 제거, fixedCount/droppedCount 토스트 안내. 회귀 테스트 10개 추가, 260/260 통과. APP_VERSION 1.38.3->1.39.0, sw.js CACHE v113->v114.",
       "commit": null
     },
     {
       "cycle": 39,
       "phase": "develop",
       "timestamp": "2026-09-17T18:15:20.158Z",
-      "summary": "Explore 서브에이전트로 아직 다루지 않은 영역을 훑어, 부족 해결 제안 시트(openFixShortfall, index.html:5126)의 여유 통장 판정이 실제 이체 실행일이 아니라 부족해지는 날짜 기준으로 계산되던 버그를 발견해 수정했다. findDonors(needAmount,targetId,byDate)(5111)는 byDate 기준 balanceAt으로 여유 통장을 고르는 범용 함수인데, openFixShortfall()이 이를 부를 때 사용자가 실제 고른 이체일(when=내일/결제 전날/직접 선택, _fixWhen)이 아니라 통장이 부족해지는 날짜(date)를 그대로 넘기고 있었다(5133). balanceAt은 그 날짜까지의 모든 예정 수입/지출을 포함해 잔액을 계산하므로, when과 date 사이에 들어오는 예정 수입(예: 월급)이 있으면 그 돈이 아직 들어오지 않은 when 시점에도 이미 충분한 것처럼 잘못 표시돼, 사용자가 \"내일\" 옮기기를 눌러도 실제로는 그 통장에 그만한 잔액이 없어 이체가 마이너스로 남는 실제 재무 버그였다(fixSetWhen이 날짜만 바꿔 재호출해도 donors 계산이 항상 date 기준이라 3개 날짜 버튼 중 뭘 골라도 결과가 똑같은 것도 같은 원인). findDonors(need,targetId,date)를 findDonors(need,targetId,when)으로 고쳤고, 여유 통장 표시 문구의 날짜 라벨(5143, shortDate(date))도 실제 잔액을 평가한 날짜와 맞게 shortDate(when)으로 함께 고쳤다. test/run.js FUNCTIONS에 findDonors를 추가하고 회귀 테스트 2개(when=내일 기준으로는 아직 안 들어온 예정 수입이 반영되지 않아 여유 통장에서 빠짐, date=부족해지는 날 기준으로는 그 사이 수입이 반영돼 잘못 충분해 보임)를 추가해 버그 시나리오를 정확히 재현했다. 두 인라인 <script> 블록 모두 node --check 파싱 확인, node test/run.js 262/262 통과(기존 260+신규 2). APP_VERSION 1.39.0->1.39.1(버그 fix라 patch bump), sw.js CACHE v114->v115.",
+      "summary": "openFixShortfall()의 여유 통장 판정(findDonors)이 실제 이체 실행일(when)이 아니라 부족해지는 날짜(date) 기준으로 계산되어, 그 사이 예정 수입이 있으면 아직 안 들어온 돈을 있는 것처럼 잘못 표시하던 버그 발견·수정. findDonors 시그니처를 when 기준으로 고침. 회귀 테스트 2개 추가, 262/262 통과. APP_VERSION 1.39.0->1.39.1, sw.js CACHE v114->v115.",
       "commit": null
     },
     {
       "cycle": 39,
       "phase": "review",
       "timestamp": "2026-09-17T19:00:00.000Z",
-      "summary": "develop 커밋(98f5ac0, openFixShortfall()의 findDonors 호출을 date에서 when으로 바꾼 수정)을 검토했다. findDonors의 유일한 호출부가 이번에 고쳐졌고, balanceAt()이 인자로 받은 날짜까지의 누적 잔액을 계산하는 함수라 when(실제 이체 실행일)을 기준으로 여유를 판정하는 게 맞다. 여러 통장 분할 제안(plan.push)과 표시 라벨(shortDate(when))도 같은 날짜로 일관되게 바뀌었고, 추가된 회귀 테스트 2개가 date/when 두 기준의 차이를 정확히 포착한다. 코드 변경 없음.",
+      "summary": "develop 커밋(98f5ac0)을 검토, balanceAt() 시맨틱과 일치하며 여러 통장 분할 제안·표시 라벨도 일관되게 바뀌었음을 확인. 회귀 테스트 2개가 date/when 차이를 정확히 포착. 문제 없음.",
       "commit": null
     },
     {
       "cycle": 39,
       "phase": "critique",
       "timestamp": "2026-09-17T20:10:12.222Z",
-      "summary": "cycle39 review(34e0609)가 문제 없음으로 끝낸 직후, 최근 커밋 재검토보다 앱 전체를 구조적으로 훑는 데 집중해 Explore 서브에이전트로 성능/UX/에러 처리/일관성 등 최근 사이클들이 다루지 않은 영역을 살폈다. DB.budgetHistory 기반 카테고리별 예산 시스템(budgetForMonth :3846, budgetProgress :3837, totalBudgetSummary :3864의 overCount)이 이미 존재하지만 실제 초과 여부는 사용자가 수동으로 들어가야 하는 지출 분석 화면(openSpendAnalysis :3873)에서만 확인 가능하고, 클라우드 충돌/백업 지연/이체 확인/예상 마이너스 잔액/만기 알림/변동금액 반복거래/오래된 시세 등 7가지 위험 신호를 능동적으로 홈 탭에 띄우는 homeAlerts()(:5276-5291)에는 예산 초과가 빠져 있음을 확인했다. 예산을 다 쓸 때까지 알아채지 못하는 경우가 흔해 기능의 핵심 목적(조기 경고)이 무력화된다고 판단해 채택. 후보로 검토했으나 기각한 것: fx 자산 멀티통화 이중계산(excludeMarketValued:true로 이미 방지되는 의도된 설계라 실제 버그 아님), CSV export 인젝션/인코딩(txnsToCSV :4371에 BOM/이스케이프/가드가 이미 충실), 반복거래 월말/윤년/주말이동 날짜 계산(recDates :1850에 이미 성숙한 처리와 주석 존재). pending_advance_plan에 homeAlerts에 budgetOver 알림을 추가하는 계획(spendByCategory+totalBudgetSummary로 초과 카테고리 판정, quick/quickMulti 패턴 재사용, openSpendAnalysis로 이동) 저장. 코드 변경 없음, state.json만 갱신.",
+      "summary": "예산 시스템(budgetForMonth/budgetProgress/totalBudgetSummary)은 있지만 홈 알림 스택(homeAlerts)에 예산 초과 경고가 빠져 있어 예산을 다 쓸 때까지 조기 경고를 못 받는 문제 발견. advance에서 homeAlerts에 budgetOver/budgetOverMulti 카드 추가 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     },
     {
@@ -130,21 +119,28 @@
       "cycle": 40,
       "phase": "develop",
       "timestamp": "2026-09-17T22:10:49.892Z",
-      "summary": "Explore 서브에이전트로 아직 다루지 않은 영역을 훑어, 변동(변동성) 카테고리 반복거래의 \"실제 금액 입력\" 알림을 만드는 varyingRecs()(index.html:5055)가 recDates()의 원시 회차만 보고 r.skip을 확인하지 않던 버그를 발견해 수정했다. 반복 이체/지출의 개별 회차를 recApply(scope='one', action='delete')로 삭제하면 r.skip.push(date)만 기록되는데, 실제 거래 목록을 만드는 expandRec()(1897)은 r.skip을 항상 먼저 걸러내는 반면 varyingRecs()는 이 필터가 빠져 있어, 변동 카테고리 반복(예: 전기요금)의 이번 달 회차를 삭제해도 홈 탭 \"실제 금액 입력\" 알림(homeAlerts/openQuickList)에는 계속 남아 있었다. 사용자가 그 알림을 눌러 금액을 입력하면 r.edits[date]에 써지지만 expandRec()이 skip을 먼저 걸러내 아무 효과 없이 조용히 무시되는, 채워도 없어지지 않는 죽은 알림이었다. expandRec()의 기존 skip 체크와 동일한 패턴(if((r.skip||[]).includes(d))return;)을 varyingRecs()의 날짜 루프에 추가해 고쳤다. test/run.js FUNCTIONS에 recIsVarying/varyingRecs를 추가하고 sandbox에 TM({y,m})을 TODAY처럼 직접 세팅 가능하도록 추가, 회귀 테스트 3개(skip된 회차는 알림에서 빠짐, skip 없으면 기존처럼 알림에 남음, edits 있으면 skip과 무관하게 계속 빠짐) 추가. 두 인라인 <script> 블록 모두 vm.Script 파싱 확인, node test/run.js 265/265 통과(기존 262+신규 3). APP_VERSION 1.40.0->1.40.1(버그 fix라 patch bump), sw.js CACHE v116->v117.",
+      "summary": "변동 카테고리 반복거래의 \"실제 금액 입력\" 알림(varyingRecs())이 r.skip을 확인하지 않아, 개별 회차를 삭제해도 알림이 죽지 않고 채워도 효과 없이 무시되던 버그 발견·수정. expandRec()과 동일한 skip 필터 패턴 추가. 회귀 테스트 3개 추가, 265/265 통과. APP_VERSION 1.40.0->1.40.1, sw.js CACHE v116->v117.",
       "commit": null
     },
     {
       "cycle": 40,
       "phase": "review",
       "timestamp": "2026-09-17T23:07:00.000Z",
-      "summary": "develop 커밋(119e68a, varyingRecs()가 recDates() 원시 회차만 보고 r.skip을 확인하지 않아 삭제된 반복거래 회차의 \"실제 금액 입력\" 알림이 죽지 않던 버그 수정)을 검토했다. 추가된 필터(index.html:5061, if((r.skip||[]).includes(d))return;)가 expandRec()(1903)의 기존 skip 필터와 정확히 동일한 패턴이며 edits 체크(5062)보다 먼저 실행돼 skip과 edits 우선순위 충돌이 없음을 확인했다. r.skip을 채우는 다른 지점들(1460 recApply scope=one delete, 3150 개별 회차 삭제, 3179 splitRecOverrides)이 모두 날짜 문자열 배열을 그대로 push/재구성하므로 includes(d) 비교와 형식이 일치함도 확인. 추가된 회귀 테스트 3개(skip된 회차 제외, skip 없으면 기존처럼 노출, edits 있으면 skip과 무관하게 계속 제외)가 실제 버그 시나리오와 두 회귀 케이스를 정확히 커버한다. 두 인라인 <script> 블록 모두 vm.Script 파싱 통과, node test/run.js 265/265 통과. 코드 변경 없음(이상 없음).",
+      "summary": "develop 커밋(119e68a)을 검토, expandRec()의 기존 skip 필터와 정확히 동일한 패턴이며 edits 체크와 우선순위 충돌 없음을 확인. r.skip을 채우는 다른 지점들과도 형식 일치. 265/265 통과. 문제 없음.",
       "commit": null
     },
     {
       "cycle": 40,
       "phase": "critique",
       "timestamp": "2026-09-18T00:11:01.753Z",
-      "summary": "cycle40 review(c7efc86)가 문제 없음으로 끝낸 직후, 최근 커밋 재검토보다 앱 전체를 구조적으로 훑는 데 집중해 Explore 서브에이전트로 스토리지 내구성/에러 상태/성능 등 아직 다루지 않은 영역을 살폈다. Supabase 자격증명(SUPABASE_URL/KEY, index.html:1567)을 직접 설정하지 않은 기본 배포에서는 모든 데이터가 100% localStorage(dataKey())에만 존재하는데, navigator.storage.persist()가 코드 전체에서 전혀 호출되지 않아(grep 0건) 브라우저의 디스크 압박 축출(특히 iOS Safari PWA 미설치, Android Chrome LRU)에 경고 없이 노출됨을 확인했다. 백업 넛지(4360-4366)는 7일 주기+무한 스누즈라 실질적 방어가 안 된다. 후보로 검토했으나 기각한 것: pushCloud() SELECT-then-UPSERT TOCTOU 레이스(멀티기기 동시편집이라는 훨씬 좁은 조건에서만 발생), 카테고리/자산 삭제 캐스케이드·FX 시세 스테일니스(이미 activeRecsForCat/failStreak 등으로 성숙하게 처리됨). '조용한 전체 재무 데이터 영구 유실'이라는 실패모드가 가장 심각하고 빈도도 높다고(클라우드 미설정이 기본값) 판단해 채택. advance에서: requestPersistentStorage() 추가, boot/signup/login 시점에 호출, shouldWarnUnpersisted 순수 판정 함수로 홈 알림 카드 노출 여부 결정, storageOutcomeMsg 패턴 따라 회귀 테스트 추가하는 계획을 pending_advance_plan에 저장. 코드 변경 없음, state.json만 갱신.",
+      "summary": "Supabase 미설정(기본 배포) 사용자는 100% localStorage 의존인데 navigator.storage.persist()가 전혀 호출되지 않아 브라우저 디스크 압박 축출에 경고 없이 노출되는 문제 발견. '조용한 전체 재무 데이터 영구 유실'이 가장 심각·빈도 높은 실패모드라 채택. advance에서 requestPersistentStorage() + shouldWarnUnpersisted 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 40,
+      "phase": "advance",
+      "timestamp": "2026-09-18T01:15:00.000Z",
+      "summary": "critique(bf5a970) 계획대로 브라우저 storage eviction으로부터 로컬 데이터를 보호했다. requestPersistentStorage()(navigator.storage.persist 래퍼)를 startApp()에서 매 부팅 시 호출해 STORAGE_PERSISTED에 결과를 남기고, 순수 판정 함수 shouldWarnUnpersisted(persisted,hasCloud)=persisted===false&&!hasCloud를 추가해 homeAlerts()가 클라우드 미연결이고 실제로 persist 실패가 확인된 경우에만(API 미지원/미확인 null은 제외) 경고 카드를 띄우도록 했다. 카드는 backup 알림과 동일한 UI 패턴(home-alert mat, 클릭 시 재요청, '확인' 버튼으로 DB.settings.persistWarnDismissed=true 영구 dismiss)을 따른다. migrate()에 persistWarnDismissed:false 기본값 추가. test/run.js FUNCTIONS에 shouldWarnUnpersisted 추가하고 storageOutcomeMsg와 동일한 패턴으로 회귀 테스트 4개(로컬만/클라우드 있음/이미 persisted/API 미확인) 추가. 두 인라인 <script> 블록 모두 vm.Script 파싱 확인, node test/run.js 269/269 통과(기존 265+신규 4). APP_VERSION 1.40.1->1.41.0(advance라 minor bump), sw.js CACHE v117->v118. pending_advance_plan 비움.",
       "commit": null
     }
   ]
