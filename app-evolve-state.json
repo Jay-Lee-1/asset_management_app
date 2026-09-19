@@ -1,15 +1,8 @@
 {
   "cycle": 50,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 45,
-      "phase": "develop",
-      "timestamp": "2026-09-18T19:11:00.000Z",
-      "summary": "lastActualAmount()(index.html:5134)가 \"직전 실제 금액 기록 없음\"과 \"직전 실제 금액이 정말 0원\"을 똑같이 falsy로 취급하던 버그 발견·수정(cycle44 review 부수 발견 과제). saveQuickAmount() 수정으로 변동 카테고리 실제 금액에 0원이 유효값이 됐는데, openQuickAmount()의 prefill/힌트(5127-5130행)는 여전히 last?...:'' 삼항연산을 써서 지난 회차에 0원을 저장했으면 다음 회차엔 힌트(\"지난달은 0원이었어요\")도 안 뜨고 입력창도 비어 열렸다(데이터 유실은 아니고 재입력 UX 불편). lastActualAmount가 데이터 없음일 땐 null을, 있으면(0 포함) 그 값을 그대로 돌려주도록 고치고, openQuickAmount의 두 삼항연산을 last?→last!=null?로 바꿨다. r.amount는 saveRec()의 !d.amount 검증 때문에 항상 truthy라 이 변경은 \"직전 edits가 0원\" 케이스에만 영향. test/run.js FUNCTIONS에 lastActualAmount·openQuickAmount 추가, 회귀 테스트 5개(pure 함수 0원/기본값/손상 레코드 3개 + openQuickAmount 힌트·prefill 렌더 2개), 301/301 통과. 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.42.3->1.42.4, sw.js CACHE v124->v125.",
-      "commit": null
-    },
     {
       "cycle": 45,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-19T14:10:00.000Z",
       "summary": "critique(850a6da) 계획대로 renderAssets()에 렌더 스모크 테스트를 도입해 openCatManage(cycle43)·renderTxSheet(cycle44)·renderHome(cycle47)에 이어 네 번째 render* 안전망 사례를 만들었다. renderAssets가 부르던 실제 부수효과 호출 wireGroupDrag/wireLongPress/wireNwCarousel/restoreNwScroll/animNums/updateSelBottom 여섯 개를 fitAll과 같은 () => {} no-op 스텁으로 sandbox에 추가하고, pageHomeEl과 같은 getter/setter 패턴의 pageAssetsEl을 새로 추가해 $('page-assets')에 연결했다. FUNCTIONS에 아직 없던 순수 문자열 빌더들(totalAssets, totalDebt, ownerAssets, ownerDebt, ownerListArr, nwPane, shortDate2, nwHistoryCard, pageHead, assetSubline, assetBodyHTML, renderAssets 자체)을 추가하고 CONSTS에 won/PAGE_TITLE, LETS에 renderAssets가 재대입하는 _lastNwOwner를 추가했다(groupItems/assetEval/rateUnknown 등은 cycle49 develop에서 이미 있어 재사용). 테스트 4개: 1) 빈 자산 목록에서 예외 없이 실행되고 \"아직 등록한 자산이 없어요\" 빈 상태가 렌더되는지, 2) 자산이 있으면 그룹 타이틀(\"현금예금\")과 자산 이름(\"주계좌\")이 실제로 나오는지, 3) 편집 모드(ST.editAssets)에서는 개별 자산 카드 대신 dragList 그룹 목록(\"1개 자산\")만 렌더되는지, 4) 멀티셀렉트 모드(ST.aSel.mode)에서는 sel-check 체크마크와 assetToggleSel onclick이 렌더되는지. index.html은 전혀 건드리지 않아(테스트 인프라만 확장) APP_VERSION/sw.js CACHE는 그대로 유지. 회귀 테스트 4개 추가, 327/327 통과. renderHistory()는 같은 레시피의 후속 과제로 남긴다. pending_advance_plan 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 50,
+      "phase": "develop",
+      "timestamp": "2026-09-19T15:10:00.000Z",
+      "summary": "Explore 서브에이전트로 발견한 openConfirmTransfer()/confirmRecTransfer()의 이체 확인 시트 self-XSS 수정. assetNm(id,snap)(index.html:1439)이 살아있는 자산이면 a.name을, 삭제된 자산이면 캐시된 fromAssetName/toAssetName 스냅샷을 이스케이프 없이 그대로 반환하는데, openConfirmTransfer(:1441)와 confirmRecTransfer(:1451) 둘 다 이 값을 openSheet()의 innerHTML 템플릿에 그대로 꽂고 있었다 — assetPickBtn()/renderPlan()/accountName() 등 자산명·표시명 관련 XSS는 cycle46/48에서 이미 esc()로 봉합했는데 이 두 지점만 놓쳐 있었다. 이체는 지출/수입 전 어디서나 자동 생성될 수 있고(반복이체 포함) confirmTransfers 설정이 켜져 있으면 홈 화면의 \"확인\" 배지를 탭하기만 해도(즉 평범한 사용 흐름에서) 실행되는 재현 가능한 stored XSS이며, snap 경로는 자산을 삭제/이름변경해도 과거 거래에 남아 있는 캐시된 이름이라 더 오래 남는다. 두 호출부의 assetNm(...) 네 곳(from/to × 2 함수)을 esc(assetNm(...))로 감쌌다. test/run.js FUNCTIONS에 openConfirmTransfer 추가(confirmRecTransfer/assetNm은 이미 있었음), 회귀 테스트 3개 추가(openConfirmTransfer 살아있는 자산명 이스케이프, 삭제된 자산의 캐시된 이름(snap) 이스케이프, confirmRecTransfer 자산명 이스케이프). 두 인라인 <script> 블록 모두 node --check 파싱 확인, 330/330 통과. APP_VERSION 1.43.6->1.43.7, sw.js CACHE v132->v133.",
       "commit": null
     }
   ]

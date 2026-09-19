@@ -84,7 +84,7 @@ const FUNCTIONS = [
   'detectStaleMarketValuedTxns', 'delBudget',
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards',
   'rateUnknown', 'filteredHist', 'histInvalidate',
-  'genSalt', 'pbkdf2Hash', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer',
+  'genSalt', 'pbkdf2Hash', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer', 'openConfirmTransfer',
   'foreignSaveIsNewer', 'openCopyBackup', 'copyBackup', 'findDonors',
   'recIsVarying', 'varyingRecs', 'openFixShortfall', 'lastActualAmount', 'openQuickAmount',
   'backupDue', 'planNegatives', 'homeAlerts', 'updateAlerts',
@@ -2972,6 +2972,39 @@ test('postponeRecTransfer: 미룬 날짜가 이미 내일이면(예: weekly가 �
   sandbox.postponeRecTransfer('r1', tomorrow);
   const skipCount = sandbox.DB.recurrences[0].skip.filter(d => d === tomorrow).length;
   assert.strictEqual(skipCount, 1, 'date와 내일이 같아도 skip 항목은 중복 없이 1개여야 함');
+});
+
+/* ---------- openConfirmTransfer/confirmRecTransfer: 이체 확인 시트에 자산명을 esc() 없이
+ * 꽂던 self-XSS(app-evolve cycle50 develop) — assetPickBtn()/renderPlan()/accountName() 등은
+ * 이미 esc()로 감싸져 있었는데, assetNm()이 반환하는 자산명(살아있는 자산의 a.name 또는
+ * 삭제된 자산의 캐시된 fromAssetName/toAssetName)을 두 확인 시트가 이스케이프 없이 그대로
+ * innerHTML에 넣는 지점만 놓쳐 있었다. 이체 대기(pending) 배지를 확인만 해도 실행되는
+ * 재현 가능한 stored XSS라 우선순위 높게 고쳤다. ---------- */
+test('openConfirmTransfer: 자산명에 담긴 태그가 esc()로 이스케이프된다', () => {
+  sandbox.DB = {
+    assets: [{ id: 'a1', name: '<img src=x onerror=alert(1)>지갑' }, { id: 'a2', name: '적금' }],
+    txns: [{ id: 't1', type: 'transfer', amount: 10000, fromAssetId: 'a1', toAssetId: 'a2', date: '2026-09-17' }],
+  };
+  sandbox.lastSheetHtml = null;
+  sandbox.openConfirmTransfer('t1');
+  assert.ok(sandbox.lastSheetHtml.includes('&lt;img'), '자산명의 태그가 무력화돼 렌더돼야 함');
+  assert.ok(!sandbox.lastSheetHtml.includes('<img src=x onerror=alert(1)>'), '태그가 그대로 삽입되면 안 됨');
+});
+test('openConfirmTransfer: 삭제된 자산의 캐시된 이름(snap)도 esc()로 이스케이프된다', () => {
+  sandbox.DB = {
+    assets: [],
+    txns: [{ id: 't1', type: 'transfer', amount: 10000, fromAssetId: 'gone1', fromAssetName: '<b>옛지갑</b>', toAssetId: 'gone2', toAssetName: '옛적금', date: '2026-09-17' }],
+  };
+  sandbox.lastSheetHtml = null;
+  sandbox.openConfirmTransfer('t1');
+  assert.ok(sandbox.lastSheetHtml.includes('&lt;b&gt;'), '삭제된 자산의 캐시된 이름도 이스케이프돼야 함');
+});
+test('confirmRecTransfer: 자산명에 담긴 태그가 esc()로 이스케이프된다', () => {
+  setupRecTransferDB();
+  sandbox.DB.assets[0].name = '<script>alert(1)</script>지갑';
+  sandbox.confirmRecTransfer('r1', '2026-09-17');
+  assert.ok(sandbox.lastSheetHtml.includes('&lt;script&gt;'), '반복 이체 확인 시트의 자산명도 이스케이프돼야 함');
+  assert.ok(!sandbox.lastSheetHtml.includes('<script>alert(1)</script>'), '태그가 그대로 삽입되면 안 됨');
 });
 
 /* ---------- copyBackup/openCopyBackup: CSV 복사 폴백이 백업 알림 상태를 건드리던 버그
