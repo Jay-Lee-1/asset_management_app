@@ -1,15 +1,8 @@
 {
   "cycle": 49,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 44,
-      "phase": "review",
-      "timestamp": "2026-09-18T16:08:59.553Z",
-      "summary": "develop 커밋(6c69805)을 검토. saveQuickAmount()가 el.value.trim()으로만 빈 입력을 판정하도록 고친 게 fmtAmt() oninput의 정규화(빈 문자열 또는 콤마 포맷된 숫자 문자열만 남김)와 정확히 일치하고, num()이 콤마를 제거해 파싱하는 것도 확인. 기존 \"빈 입력이면 막힘\" 테스트와 새 \"0원도 저장됨\" 테스트 둘 다 sandbox의 $(\"qAmt\") 스텁이 실제 프로덕션 $() 반환값(.value 보유 객체)과 정확히 일치함을 확인. 290/290 통과. 부수 발견(급하지 않아 코드는 안 고침): openQuickAmount()의 prefill/힌트(index.html:5128,5130)가 lastActualAmount()의 last?...:'' 삼항연산에 의존하는데, lastActualAmount()가 데이터 없음과 실제 0원을 똑같이 0으로 반환해(r.amount||0) 구분 불가라, 지난 회차에 정말 0원을 저장했으면 다음 회차엔 입력창이 빈 채로 열리고 \"지난달은 0원이었어요\" 힌트도 안 뜸(데이터 유실은 아니고 재입력 UX 불편). 제대로 고치려면 lastActualAmount가 null 센티널을 반환하도록 시그니처를 바꿔야 해서 review 범위를 넘어 critique/develop 후속 과제로 남김. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 44,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-19T11:15:03.069Z",
       "summary": "Explore 서브에이전트로 발견한 saveAsset()(index.html:2799) order 산정 버그 수정. 자산 등록 시 d.order=DB.assets.length로 매기는데, deleteAssetsUndo() 등 삭제 경로가 살아남은 자산의 order를 재색인하지 않아 배열 length만 줄어든다. 오래된 자산 두 개를 삭제한 뒤(예: order 2,3만 남고 length=2) 새 자산을 등록하면 order=2로 매겨져 이미 order=2인 자산과 겹치거나 그보다 작아지고, groupItems()의 기본(custom) 정렬(a.order-b.order, \"그룹 내 등록 순서 유지\")이 이를 그대로 써서 방금 만든 자산이 훨씬 전에 등록된 자산보다 목록 앞에 뜨는 역전이 조용히 영구적으로 남는다(고칠 UI 없음). d.order를 length 대신 기존 DB.assets의 order 최댓값+1로 계산하도록 고쳐 삭제로 배열이 줄어도 항상 커지게 함. askRelinkDeleted()의 _amLink/_amFresh 두 경로 모두 같은 d 객체를 그대로 push하므로 함께 적용됨. groupItems를 처음으로 test/run.js FUNCTIONS에 추가하고 회귀 테스트 1개 추가(삭제 후 등록 시 order 역전 없음 + custom 정렬 결과 확인), 323/323 통과. 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.43.5->1.43.6, sw.js CACHE v131->v132.",
+      "commit": null
+    },
+    {
+      "cycle": 49,
+      "phase": "review",
+      "timestamp": "2026-09-19T12:10:00.000Z",
+      "summary": "develop 커밋(3710c31)을 검토. d.order=DB.assets.reduce((m,a)=>Math.max(m,a.order||0),0)+1이 push 이전(this.d 계산 시점)의 DB.assets를 기준으로 계산돼 삭제로 배열이 줄어도 항상 기존 최댓값보다 큰 값을 받음을 확인. grep으로 자산의 .order를 할당하는 다른 지점이 없음을 확인(2264행의 order는 소수점 정렬용 지역 변수로 무관). askRelinkDeleted()의 _amLink/_amFresh 두 경로 모두 saveAsset에서 만든 같은 d 객체를 그대로 넘겨받으므로 수정이 자동으로 전파됨을 재확인. 새 회귀 테스트가 삭제 후 등록 시 order 대소 관계와 groupItems() custom 정렬 결과 둘 다 실제로 검증. node test/run.js 재실행해 323/323 통과 재확인. 문제 없음.",
       "commit": null
     }
   ]
