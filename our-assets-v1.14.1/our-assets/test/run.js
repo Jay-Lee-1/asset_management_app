@@ -90,6 +90,7 @@ const FUNCTIONS = [
   'backupDue', 'planNegatives', 'homeAlerts', 'updateAlerts',
   'catIconOf', 'catGlyph', 'openCatManage',
   'catListOf', 'catAv', 'assetPickBtn', 'endCondFields', 'openFormSheet', 'renderTxSheet', 'txType', 'txToggleRepeat',
+  'accountName',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -133,6 +134,12 @@ const sandbox = {
   CLOUD_UID: null,
   CLOUD_SYNC_STATE: 'idle',
   STORAGE_PERSISTED: null,
+  // SESSION은 `let SESSION=localStorage.getItem(...)`으로 파생되는 로그인 이메일/카카오 id고,
+  // AUTH는 localStorage 기반 계정 저장소 객체라(accountName()이 AUTH.rec(SESSION)을 부름) 둘 다
+  // RANGE_TO/CLOUD_UID와 같은 이유(파생·비순수 상태, localStorage 의존)로 재현하지 않고
+  // accountName() 테스트에서 직접 세팅한다.
+  SESSION: null,
+  AUTH: { rec: () => null },
   catRenameDraft: null,
   catAddDraft: null,
   asDraft: null,
@@ -3350,6 +3357,29 @@ test('txToggleRepeat: 반복을 켜면 day 기본값이 시작일의 일자로 �
   // freq는 아직 비어 있어(txToggleRepeat은 day만 채우고 freq는 건드리지 않음) dayField는 안 뜨지만,
   // rpt=true라 주기 선택(freqBtns)·종료조건은 항상 렌더된다.
   assert.ok(sandbox.lastSheetHtml.includes('주기'), '반복 on 상태로 재렌더돼 주기 선택 필드가 나와야 함');
+});
+
+/* ---------- accountName/esc: self-XSS 봉합 회귀 (d3f7bdc) ---------- */
+// 가입 이메일 검증 정규식(/^[^@\s]+@[^@\s]+\.[^@\s]+$/)이 @와 공백만 막고 <,>,"는 걸러내지
+// 않아 <img src=x onerror=...>@a.co 같은 이메일이 가입을 통과해 SESSION에 그대로 남는다.
+// accountName()은 AUTH.rec(SESSION)이 없으면(r=null) SESSION을 그대로 반환하므로, 이 케이스는
+// AUTH 스텁 없이 SESSION만 악성 문자열로 세팅해도 그대로 재현된다.
+test('accountName: 로그인 계정이 없으면(r=null) SESSION 문자열을 그대로 반환한다(이스케이프는 호출부 책임)', () => {
+  sandbox.SESSION = '<img src=x onerror=alert(1)>@a.co';
+  assert.strictEqual(sandbox.accountName(), '<img src=x onerror=alert(1)>@a.co');
+});
+test('esc(accountName()): 악성 이메일이 SESSION에 남아 있어도 esc()를 거치면 태그가 무력화된다', () => {
+  sandbox.SESSION = '<img src=x onerror=alert(1)>@a.co';
+  const out = sandbox.esc(sandbox.accountName());
+  assert.ok(!out.includes('<img'), 'esc() 이후엔 <img 태그가 그대로 남아있으면 안 됨');
+  assert.strictEqual(out, '&lt;img src=x onerror=alert(1)&gt;@a.co');
+});
+test('accountName: 카카오 로그인이면 닉네임(없으면 기본값)을 반환한다', () => {
+  sandbox.SESSION = 'kakao-1';
+  sandbox.AUTH = { rec: () => ({ kakao: true, nick: '<b>닉네임</b>' }) };
+  assert.strictEqual(sandbox.accountName(), '<b>닉네임</b>');
+  assert.ok(sandbox.esc(sandbox.accountName()).includes('&lt;b&gt;'), 'esc()를 거치면 닉네임의 태그도 이스케이프돼야 함');
+  sandbox.AUTH = { rec: () => null };
 });
 
 /* ---------- 실행 ---------- */

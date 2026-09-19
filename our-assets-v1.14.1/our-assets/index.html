@@ -1288,7 +1288,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.43.1';
+const APP_VERSION='1.43.2';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3805,7 +3805,7 @@ function renderMenu(){
  ${pageHead('menu')}
  <div class="card acct-card" tabindex="0" role="button" aria-label="${esc(accountName())} 계정" onclick="openAccountSheet()" onkeydown="rowKeydown(event,()=>openAccountSheet())">
    <div class="acct-head"><div class="acct-av">${kind==='kakao'?'💬':kind==='email'?'👤':'🙂'}</div>
-     <div class="acct-i" style="flex:1;min-width:0"><div class="an">${accountName()}</div><div class="ak">${kind==='kakao'?'카카오 계정':kind==='email'?'이메일 계정':'게스트 · 로그인하면 계정별로 보관돼요'}</div></div>
+     <div class="acct-i" style="flex:1;min-width:0"><div class="an">${esc(accountName())}</div><div class="ak">${kind==='kakao'?'카카오 계정':kind==='email'?'이메일 계정':'게스트 · 로그인하면 계정별로 보관돼요'}</div></div>
      <span class="mc">${svg('chev')}</span></div>
  </div>
  <div class="promo"><div><div class="pt">Pro로 업그레이드</div><div class="ps">월 900원 · 광고 없이 함께 관리해요</div></div><button class="go" onclick="toast('Pro 안내')">시작하기</button></div>
@@ -3828,7 +3828,7 @@ function openAccountSheet(){
  const conflict=isCloudAcct&&CLOUD_SYNC_STATE==='conflict';
  openSheet(`<h3>계정</h3>
   <div class="acct-head" style="margin-bottom:14px"><div class="acct-av">${kind==='kakao'?'💬':kind==='email'?'👤':'🙂'}</div>
-    <div class="acct-i" style="flex:1;min-width:0"><div class="an">${accountName()}</div><div class="ak">${kind==='kakao'?'카카오 계정':kind==='email'?(isCloudAcct?cloudSyncLabel():'이메일 계정 (이 기기)'):'게스트 (로그인 전)'}</div></div></div>
+    <div class="acct-i" style="flex:1;min-width:0"><div class="an">${esc(accountName())}</div><div class="ak">${kind==='kakao'?'카카오 계정':kind==='email'?(isCloudAcct?cloudSyncLabel():'이메일 계정 (이 기기)'):'게스트 (로그인 전)'}</div></div></div>
   ${conflict?`<div class="desc" style="color:var(--expense)">다른 기기에서 더 최근에 저장한 데이터가 있어요. 어느 쪽을 쓸지 골라주세요.</div>
    <div class="two-btn" style="margin-bottom:14px"><button class="btn btn-soft cancel" onclick="resolveCloudPullRemote()">최신 데이터 가져오기</button><button class="btn btn-primary" onclick="confirmCloudForcePush()">내 데이터로 덮어쓰기</button></div>`:''}
   <div class="desc">${cloudOn?'이메일로 로그인하면 다른 기기에서도 같은 데이터를 볼 수 있어요.':'데이터는 이 기기에 저장돼요. 여러 기기에서 함께 보려면 클라우드 동기화 설정이 필요합니다.'}</div>
@@ -5849,7 +5849,7 @@ async function doSignup(){
 function doLogout(){confirmSheet('로그아웃','로그아웃하면 로그인 화면으로 돌아가요. 이 기기의 데이터는 그대로 보관돼요.','로그아웃',()=>{
  try{if(accountKind()==='kakao'&&window.Kakao&&window.Kakao.Auth&&typeof window.Kakao.Auth.getAccessToken==='function'&&window.Kakao.Auth.getAccessToken())window.Kakao.Auth.logout(()=>{})}catch(e){}
  AUTH.signOut();GUEST=false;localStorage.setItem('asset_app_guest','0');closeSheet();showAuth()})}
-function doResetAll(){confirmSheet('전체 초기화',`${accountKind()==='guest'?'게스트':accountName()} 계정의 모든 자산·내역·반복·설정이 삭제되고 완전히 빈 상태로 돌아가요. 초기화 직후 잠깐 동안만 되돌릴 수 있어요. 정말 초기화할까요?`,'초기화',()=>{
+function doResetAll(){confirmSheet('전체 초기화',`${accountKind()==='guest'?'게스트':esc(accountName())} 계정의 모든 자산·내역·반복·설정이 삭제되고 완전히 빈 상태로 돌아가요. 초기화 직후 잠깐 동안만 되돌릴 수 있어요. 정말 초기화할까요?`,'초기화',()=>{
  const snapshot=DB;DB=emptyDB();migrate();save({deferCloudPush:true});closeSheet();ST.tab='home';go('home');
  const resetPushT=setTimeout(scheduleCloudPush,6000);
  undoToast('전체 초기화했어요',()=>{clearTimeout(resetPushT);DB=snapshot;save();renderCurrent();toast('되돌렸어요')})})}

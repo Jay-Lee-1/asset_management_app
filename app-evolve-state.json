@@ -1,19 +1,8 @@
 {
-  "cycle": 46,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "accountName() 이메일/닉네임 이스케이프 없이 innerHTML 삽입되는 self-XSS 수정 (renderMenu/openAccountSheet/doResetAll)",
-    "why": "accountName()(index.html:1768)이 가입 이메일 또는 카카오 닉네임을 그대로 반환하는데, 가입 이메일 검증 정규식(:1711)이 @와 공백만 막고 <,>,\"를 걸러내지 않아 <img src=x onerror=...>@a.co 형태의 이메일이 가입을 통과한다. 이 값이 renderMenu 계정 카드(:3808)와 openAccountSheet 계정 카드(:3831)의 innerHTML에 이스케이프 없이 삽입돼 메뉴/계정 시트를 열 때마다 실행되고, doResetAll()(:5852)에서도 confirmSheet의 msg 인자로 넘어가 동일하게 innerHTML에 꽂힌다(confirmSheet :4762-4765). 바로 옆 aria-label(:3806)은 이미 esc(accountName())로 감싸므로, 이스케이프를 빠뜨린 세 지점만 남은 명확한 불일치이자 재현 가능한 self-XSS다.",
-    "approach": "세 지점(:3808, :3831, :5852)의 accountName() 호출을 모두 esc(accountName())로 감싸 기존 esc() 사용 패턴(예: esc(a.name), :3806)과 통일한다. accountName()·esc() 둘 다 이미 test/run.js FUNCTIONS 추출 대상인지 확인하고 없으면 추가한 뒤, <,>,\"가 포함된 이메일/닉네임을 accountName()이 반환할 때 esc(accountName())의 출력이 &lt;/&gt;/&quot;로 이스케이프됨을 확인하는 회귀 테스트를 추가한다. 세 삽입 지점을 실제로 실행하는 렌더 스모크 테스트(renderMenu 등)가 이미 있으면 같은 케이스로 확장하고, 없으면 pure 함수 조합(esc(accountName()))만 단위 테스트로 검증해도 충분하다 — 이번 사이클의 목표는 취약점 봉합이지 새 렌더 스모크 테스트 인프라 확장이 아니다."
-  },
+  "cycle": 47,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 41,
-      "phase": "advance",
-      "timestamp": "2026-09-18T05:12:00.000Z",
-      "summary": "critique(9c1b409)가 제안한 DB.balCheckpoints 영구 체크포인트안은 소급 편집(과거 날짜 거래 수정·삭제, 미확인 이체를 나중에 확인 등)마다 영향받는 체크포인트를 정확히 무효화해야 하는데, 그 무효화가 saveTx/delTx/saveRec/delRec/confirmRecTransfer/sanitizeBackup 등 수십 개 지점에 걸쳐 있어 한 사이클 안에서 안전하게 끝내기엔 무인 실행 중 잔액 오염 위험이 크다고 판단해 범위를 좁혔다. 실제 병목은 balancesUpTo()가 매 호출마다 allTxns(RANGE_FROM,upto)를 dateStr별로 다른 upto로 불러 expandRec()의 [from,to] 키 캐시(_recCache)가 전혀 재사용되지 못하는 것이었다(플랜/자산 상세 등 한 렌더 안에서 서로 다른 날짜로 balanceAt을 여러 번 부를 때마다 daily/weekly 반복거래를 처음부터 재확장). allTxns 호출을 고정폭 (RANGE_FROM,RANGE_TO)로 통일해 upto 이후는 balancesUpTo 내부에서 걸러내도록 고쳐, 렌더 1회 안의 서로 다른 날짜 조회가 expandRec 결과를 공유하게 했다(기존 save()/invalidateBalances() 무효화 계약 그대로 재사용, 새 캐시나 영속 상태 없음 — 소급 편집 정확성 리스크 없음). RANGE_FROM 자체를 전진시켜 옛 이력을 트리밍하는 체크포인트는 여전히 유효한 개선 방향이라 다음 critique 사이클에서 재평가 가능. 회귀 테스트 1개 추가(서로 다른 두 날짜 조회 시 DB.recurrences.forEach가 1회만 실행됨을 확인), 274/274 통과. 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.41.2->1.42.0, sw.js CACHE v120->v121. pending_advance_plan 비움.",
-      "commit": null
-    },
     {
       "cycle": 42,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-19T01:09:46.472Z",
       "summary": "라인 단위 버그 수정에서 벗어나 앱 전체를 구조적으로 재검토(Explore 서브에이전트 활용). accountName()(index.html:1768, 가입 이메일 또는 카카오 닉네임 원문 반환)이 renderMenu의 계정 카드(:3808)와 openAccountSheet의 계정 카드(:3831) innerHTML에 이스케이프 없이 삽입되는 걸 발견 — 바로 옆 aria-label(:3806)은 동일 값을 esc()로 감싸는데 그 innerHTML 삽입만 빠져 있는 불일치. 가입 이메일 검증 정규식(:1711, /^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/)이 @와 공백만 막고 <,>,\"는 걸러내지 않아 <img src=x onerror=...>@a.co 같은 이메일이 그대로 가입 통과해 메뉴/계정 시트를 열 때마다 실행되는 재현 가능한 self-XSS. doResetAll()(:5852)도 confirmSheet(title,msg,...)의 msg를 openSheet()가 그대로 innerHTML에 꽂는 구조라(confirmSheet :4762-4765) accountName()을 이스케이프 없이 msg에 넣는 세 번째 지점으로 추가 확인. renderHome/renderAssets/renderHistory 스모크 테스트 공백(3차례 이연, 새 근거 없어 유지)과 balancesUpTo RANGE_FROM 체크포인트(cycle41 완화로 현재 데이터 규모엔 충분해 보여 긴급성 낮음), long-press 멀티셀렉트 접근성 공백(여전히 단일 수정 지점 없음)은 이번엔 후순위로 재확인만 하고 기각. advance에서 세 지점 모두 esc(accountName())로 감싸고 회귀 테스트 추가하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 46,
+      "phase": "advance",
+      "timestamp": "2026-09-19T02:08:54.000Z",
+      "summary": "critique(d3f7bdc) 계획대로 accountName()이 이스케이프 없이 innerHTML에 꽂히던 세 지점(renderMenu 계정 카드 :3808, openAccountSheet 계정 카드 :3831, doResetAll()의 confirmSheet msg :5852)을 모두 esc(accountName())로 감싸 self-XSS를 봉합했다. 바로 옆 aria-label(:3806)이 이미 쓰던 esc() 패턴과 통일. accountName()이 test/run.js FUNCTIONS에 없어 추가했는데, AUTH.rec(SESSION)의 AUTH/SESSION이 둘 다 localStorage 파생 비순수 상태라 CLOUD_UID/RANGE_TO와 같은 패턴으로 sandbox에 직접 스텁(SESSION:null, AUTH:{rec:()=>null})을 추가(extractLet으로 실제 SESSION 선언을 끌어오면 vm 실행 시점에 sandbox에 없는 localStorage를 최상위에서 바로 참조해 전체 테스트가 깨지므로 실제 소스 추출 대신 직접 세팅 방식을 택함). 회귀 테스트 3개 추가: AUTH.rec()이 null이면(r=null) accountName()이 SESSION을 그대로 반환함(호출부 책임 확인), esc(accountName())이 <img> 태그를 무력화함(&lt;img.../&gt;), 카카오 로그인 시 닉네임 태그도 esc()로 이스케이프됨. 312/312 통과. 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.43.1->1.43.2, sw.js CACHE v127->v128. pending_advance_plan 비움.",
       "commit": null
     }
   ]
