@@ -1,6 +1,6 @@
 {
   "cycle": 46,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
     {
@@ -141,6 +141,13 @@
       "phase": "develop",
       "timestamp": "2026-09-18T23:12:00.000Z",
       "summary": "clampRecurringToMaturity()(index.html:2804)가 저축통장 만기일 때문에 한 번 자동으로 잘라둔 반복입금의 endDate를, 사용자가 나중에 만기일을 더 뒤로 연장해도 절대 다시 늘리지 못하던 버그 발견·수정(Explore 서브에이전트로 발견) — 만기를 앞당겼다가 갱신 등으로 다시 늘려도 자동이체가 예전(짧은) 만기에서 영원히 멈춘 채 무경고로 방치됨. 기존 코드는 \"이미 종료일이 만기 이하면 그대로\"라는 단일 조건이라 자동으로 잘린 endDate와 사용자가 직접 정한 endDate를 구분하지 못했다. saveRec/saveTx는 사용자가 직접 endDate를 정하면 항상 count를 함께 저장하는 반면 이 함수는 자동으로 자를 때 count를 지우는 기존 불변식을 이용해, saveAsset()에서 편집 전 원래 만기(prevMaturity)를 캡처해 clampRecurringToMaturity(assetId,maturity,prevMaturity)로 넘기고, 함수 내부에서 \"만기가 실제로 늘었고(prevMaturity<maturity) 기존 endDate에 count가 없고 그 endDate가 이전 만기 이하였다\"는 조건을 만족할 때만 재계산하도록 좁혔다(사용자가 직접 정한 endDate·prevMaturity 정보 없는 호출(askRelinkDeleted)·만기가 짧아지는 경우는 기존 동작 그대로 보존). 구현 중 recDates()가 인자로 받은 r.endDate를 자체 상한으로도 쓴다는 걸 재확인해(end 계산과 push() 필터 양쪽), 재계산 시 넘기는 base 객체에서 endDate를 지운 사본을 써야 새 만기가 실제로 반영됨을 발견·반영(안 그러면 재계산해도 이전 stale endDate로 다시 같은 값이 나와 조용히 무효했을 것). test/run.js FUNCTIONS에 clampRecurringToMaturity 추가, 회귀 테스트 5개(최초 자동 클램프, 연장 시 재계산, 사용자 endDate 보존, prevMaturity 없을 때 보수적 보존, 단축 시 count 무관 항상 재클램프), 309/309 통과. 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.43.0->1.43.1, sw.js CACHE v126->v127.",
+      "commit": null
+    },
+    {
+      "cycle": 46,
+      "phase": "review",
+      "timestamp": "2026-09-19T00:10:00.000Z",
+      "summary": "develop 커밋(29dca6b)을 검토. clampRecurringToMaturity()의 autoShortened 판정(prevMaturity&&maturity>prevMaturity&&!r.count&&r.endDate<=prevMaturity)이 사용자 지정 endDate(count 동반)·askRelinkDeleted 등 prevMaturity 없는 호출·만기 단축 케이스 모두에서 기존 보존 동작을 정확히 유지하면서, 자동 클램프 흔적(count 없음+이전 만기 이하)일 때만 확장하도록 정확히 좁혀졌음을 확인. recDates()가 r.endDate를 end 계산(1893행)과 push 필터(1895행) 양쪽에서 자체 상한으로 쓴다는 재확인도 맞아, endDate를 지운 사본을 넘기지 않으면 재계산이 무효했을 것이라는 커밋 설명이 정확함. 두 다른 호출부(askRelinkDeleted의 _amLink/_amFresh, index.html:2645,2652)는 신규 자산 등록 경로라 prevMaturity 없이 호출하는 게 맞고 영향 없음. node our-assets-v1.14.1/our-assets/test/run.js 재실행해 309/309 통과 재확인. 문제 없음.",
       "commit": null
     }
   ]
