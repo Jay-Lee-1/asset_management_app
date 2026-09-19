@@ -1,26 +1,8 @@
 {
-  "cycle": 47,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "renderHome() 렌더 스모크 테스트 도입",
-    "why": "renderHome()(index.html:2169-2212)은 앱을 열 때 가장 먼저 보이는 기본 탭인데 test/run.js FUNCTIONS 추출 목록(67-94행)에 없어 실행 기반 테스트가 전혀 없고, 기존 \"커버리지\"는 extractFunction('renderHome')에 대한 문자열 포함 검사(.includes('nextOutflowCard()') 등)뿐이라 템플릿 리터럴 오타나 조건 분기 깨짐이 있어도 모든 테스트를 통과한 채 브라우저에서만 드러난다. 더구나 renderHome은 cycle42(planNegatives/homeAlerts)·cycle47(postponeRecTransfer로 흘러드는 홈 알림)에서 최근에 고친 순수 로직의 직접 소비처라, 그 로직들이 반환하는 배열/필드가 바뀌어도 homeAlertCard()/alert-stack 렌더 쪽 결합은 지금 아무 것도 검증하지 않는다. renderAssets/renderHistory보다 우선순위가 높은 이유는 (a) 기본 탭이라 깨지면 앱 진입 자체가 막히는 최악의 실패 모드이고, (b) 의존 그래프를 확인해보니 renderHome이 부르는 monthStats/expenseByCat/planNegatives/homeAlerts/emptyAssetCards/nextOutflowCard/monthOutflowCard/planGaugeCard/expenseBreakdownCard/rateUnknown/needGold/homeAlertCard/esc/comma/svg가 전부 순수 문자열/데이터 빌더이고 DOM/포인터 이벤트 의존이 없어(renderAssets가 필요로 하는 wireGroupDrag/wireLongPress/wireNwCarousel 같은, 테스트 샌드박스에 전혀 없는 실제 DOM/드래그 모킹이 필요 없음) openCatManage(cycle43)·renderTxSheet(cycle44) 때 썼던 패턴을 그대로 재사용할 수 있는 가장 좁은 다음 지점이기 때문이다.",
-    "approach": "1) test/run.js FUNCTIONS(67-94행)에 renderHome과 아직 추출 안 된 순수 헬퍼(monthStats, monthStats2, needGold, nextOutflowCard, monthOutflowCard, planGaugeCard, homeAlertCard, rateStatusText)를 openCatManage/renderTxSheet와 같은 방식으로 추가한다. 2) test/run.js의 $ 목(errBannerEl 패턴, 195-206행)에 'page-home' id용 innerHTML getter/setter 스텁을 추가한다. 3) renderHome() 스모크 테스트 3~4개를 renderTxSheet 스타일(3316행+)로 추가: a) 정상 DB로 호출 시 예외 없이 실행되고 기대 섹션 마커('이번 달 예정 대비' 등)를 포함한 non-empty HTML을 만드는지, b) homeAlerts()가 항목을 반환할 때 alert-stack 클래스와 각 알림 내용이 실제로 렌더되는지(최근 알림 엔진 변경에 가장 노출된 분기), c) 알림이 없고 plan 계좌+거래가 있을 때 '모든 통장이 안전해요' all-clear 분기가 렌더되는지, d) 금/환율/주식 등 시장가 자산이 있을 때만 시장 시세 섹션(mkt.length 분기)이 나오는지. requestAnimationFrame(fitAll)은 기존처럼 no-op 스텁으로 둔다. 4) node our-assets-v1.14.1/our-assets/test/run.js로 전체 회귀 통과 확인 후 커밋(index.html 로직 변경 없으면 APP_VERSION/sw.js CACHE는 그대로 유지)."
-  },
+  "cycle": 48,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 42,
-      "phase": "critique",
-      "timestamp": "2026-09-18T08:12:00.000Z",
-      "summary": "홈 알림 엔진 planNegatives()/homeAlerts()/updateAlerts()에 회귀 테스트가 전혀 없는 문제 발견. test/run.js FUNCTIONS 추출 목록(67-94행)에 빠져 있는데, 최근 10사이클 동안 나온 버그 수정 최소 5건(budgetOver 알림 누락, varyingRecs skip 필터, findDonors when/date, openFixShortfall stale _fixWhen, stale market-valued txns 감지)이 전부 homeAlerts()의 9개 알림 kind로 흘러드는 코드라, 이 경로가 반복적으로 회귀 위험에 노출되는데 안전망이 없음. 특히 quick/quickMulti(5336-5338)·budgetOver/budgetOverMulti(5341-5343)의 단일/복수 복붙 분기는 한쪽만 고치는 회귀에 취약. cloud-sync 레이어(pullCloud/pushCloud/AUTH 등)는 이미 성숙해 새 버그 없음을 확인, 이메일 self-XSS와 ledger/history 렌더 중복은 후순위로 기각. advance에서 FUNCTIONS 목록 확장 + planNegatives/homeAlerts 케이스 추가 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
-      "commit": null
-    },
-    {
-      "cycle": 42,
-      "phase": "advance",
-      "timestamp": "2026-09-18T09:13:48.000Z",
-      "summary": "critique(6440b90) 계획대로 홈 알림 엔진에 회귀 테스트 안전망을 깔았다. test/run.js FUNCTIONS에 planNegatives/homeAlerts/updateAlerts/backupDue, CONSTS에 isPlanAcct 추가. planNegatives는 '오늘 이미 마이너스'(run<0?TODAY:null) 분기와 미래 지출로 전환되는 날짜/최소잔액, isPlanAcct=false(저축 등) 제외를 커버. homeAlerts는 quick/quickMulti·budgetOver/budgetOverMulti 각각의 1건→2건 경계(복붙 분기라 한쪽만 고치는 회귀에 가장 취약한 지점), 예산 이내일 때 미노출, neg 그대로 매핑을 커버. updateAlerts는 neg 생략 시 재계산/전달 시 재계산 안 함을 배지 상태로 확인. 실제 소스를 처음 끌어오면서 renderCurrent()가 real updateAlerts를 타게 됐는데, 기존 renderCurrent 에러 바운더리 테스트가 _homeNeg 기본값 null로 인해 neg.length에서 크래시하는 걸 발견해 _homeNeg 기본값을 실제 초기값(null)이 아니라 renderHome() 계약을 흉내낸 []로 바꿔 해결(테스트 인프라 문제였지 실제 앱 버그 아님). document.querySelectorAll/moveBlob/planBadge 최소 DOM 스텁 추가. 회귀 테스트 11개 추가, 285/285 통과. index.html 변경 없어 APP_VERSION/sw.js CACHE는 그대로 유지. pending_advance_plan 비움.",
-      "commit": null
-    },
     {
       "cycle": 43,
       "phase": "develop",
@@ -152,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-19T05:11:00.000Z",
       "summary": "cycle43/44/46에서 세 차례 이연된 render* 스모크 테스트 공백(renderHome/renderAssets/renderHistory 미해결분)을 Explore 서브에이전트로 재조사해 renderHome()(index.html:2169-2212)을 이번 사이클 최우선으로 채택. renderHome은 test/run.js FUNCTIONS(67-94행)에 없어 실행 기반 테스트가 전혀 없고 기존 커버리지는 소스 문자열 포함 검사뿐이라, 앱의 기본 진입 탭임에도 템플릿/분기 오류가 브라우저에서만 드러난다. 특히 cycle42(planNegatives/homeAlerts)·cycle47(postponeRecTransfer)에서 고친 순수 로직의 직접 소비처인데 그 결과를 실제로 DOM에 꽂는 결합부(homeAlertCard/alert-stack)는 아무 것도 검증하지 않는 위험을 확인. 의존 그래프를 확인한 결과 renderHome이 호출하는 헬퍼가 전부 순수 문자열 빌더라 openCatManage/renderTxSheet 때 쓴 패턴을 그대로 재사용 가능한 반면, renderAssets는 wireGroupDrag/wireLongPress/wireNwCarousel 등 샌드박스에 아예 없는 실제 DOM/드래그 모킹이 필요해 훨씬 큰 범위라 이번엔 renderHome으로 좁혔다. balancesUpTo() RANGE_FROM 체크포인트(cycle41/45/46에서 반복 기각, 새 근거 없음)와 long-press 멀티셀렉트 접근성 공백(여전히 단일 수정 지점 없음)은 재확인만 하고 이번에도 후순위로 기각. advance에서 renderHome 렌더 스모크 테스트 도입 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 47,
+      "phase": "advance",
+      "timestamp": "2026-09-19T06:10:00.000Z",
+      "summary": "critique(0bae349) 계획대로 renderHome()에 렌더 스모크 테스트를 도입해 openCatManage(cycle43)·renderTxSheet(cycle44)에 이어 세 번째 render* 안전망 사례를 만들었다. renderHome이 부르던 헬퍼 중 아직 FUNCTIONS에 없던 순수 함수들(txScheduled, monthStats, monthStats2, expenseByCat, needGold, inQuietWindow, fmtSynced, rateStatusText, nextBigOutflow, dday, balanceOn, nextOutflowCard, monthOutflowCard, planGaugeCard, homeAlertCard, renderHome 자체)을 모두 추가했다(monthOutflows는 이미 있었음). $('page-home')이 렌더 함수 중 유일하게 openSheet를 거치지 않고 직접 innerHTML을 쓰므로, errBannerEl과 같은 getter/setter 패턴의 pageHomeEl 스텁을 새로 추가하고 $ 매핑에 'page-home' 분기를 연결했다. 테스트 4개: 1) 정상 DB로 호출 시 예외 없이 실행되고 헤더/플랜 게이지 섹션 타이틀/지출 카테고리명이 실제로 렌더되는지, 2) 예산 초과로 homeAlerts()가 budgetOver 알림을 반환하면 alert-stack이 렌더되고 카드 내용(\"식비 예산을 ...초과했어요\")이 실제로 나오는지(all-clear 문구는 안 나오는지), 3) 알림 없음+plan 계좌+거래 있음 조합에서 \"모든 통장이 안전해요\" all-clear 분기가 렌더되는지(alert-stack은 안 나오는지), 4) 금 보유 자산이 있을 때만(mkt.length>0) 시세 섹션(mkt-list)이 렌더되고 없으면 안 나오는지. index.html은 전혀 건드리지 않아(테스트 인프라만 확장) APP_VERSION/sw.js CACHE는 그대로 유지. 회귀 테스트 4개 추가, 318/318 통과. renderAssets/renderHistory는 wireGroupDrag/wireLongPress/wireNwCarousel 등 실 DOM/드래그 모킹이 필요해 여전히 후속 사이클 과제로 남긴다. pending_advance_plan 비움.",
       "commit": null
     }
   ]

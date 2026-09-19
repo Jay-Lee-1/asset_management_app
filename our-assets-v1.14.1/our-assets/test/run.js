@@ -91,6 +91,8 @@ const FUNCTIONS = [
   'catIconOf', 'catGlyph', 'openCatManage',
   'catListOf', 'catAv', 'assetPickBtn', 'endCondFields', 'openFormSheet', 'renderTxSheet', 'txType', 'txToggleRepeat',
   'accountName',
+  'txScheduled', 'monthStats', 'monthStats2', 'expenseByCat', 'needGold', 'inQuietWindow', 'fmtSynced', 'rateStatusText',
+  'nextBigOutflow', 'dday', 'balanceOn', 'nextOutflowCard', 'monthOutflowCard', 'planGaugeCard', 'homeAlertCard', 'renderHome',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -204,10 +206,17 @@ const sandbox = {
     set innerHTML(v) { this._html = v; },
     get innerHTML() { return this._html; },
   },
+  // page-home의 최소 DOM 흉내 — renderHome()이 $('page-home').innerHTML=... 으로 직접 꽂는
+  // 결과 문자열만 확인하면 되므로 errBannerEl과 같은 getter/setter 패턴을 재사용한다.
+  pageHomeEl: {
+    _html: '',
+    set innerHTML(v) { this._html = v; },
+    get innerHTML() { return this._html; },
+  },
   // recSave()/saveQuickAmount()는 각각 $('txAmt')/$('qAmt').value를 읽어 금액을 얻으므로,
   // 그 두 id만 값을 갖는 입력칸처럼 동작시킨다. errBanner는 renderCurrent 에러 바운더리 테스트용.
   // bkText는 copyBackup()이 select()/setSelectionRange()/.value를 쓰는 백업 복사 textarea 흉내.
-  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : null,
+  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : null,
   bkTextEl: { value: 'backup-text', select: () => {}, setSelectionRange: () => {} },
   // copyBackup()의 navigator.clipboard 체크가 ReferenceError 없이 "지원 안 함"으로 지나가게
   // 하는 최소 흉내(document.execCommand는 try/catch로 감싸져 있어 굳이 스텁이 필요 없음).
@@ -3404,6 +3413,84 @@ test('accountName: 카카오 로그인이면 닉네임(없으면 기본값)을 �
   assert.strictEqual(sandbox.accountName(), '<b>닉네임</b>');
   assert.ok(sandbox.esc(sandbox.accountName()).includes('&lt;b&gt;'), 'esc()를 거치면 닉네임의 태그도 이스케이프돼야 함');
   sandbox.AUTH = { rec: () => null };
+});
+
+/* ---------- renderHome: 렌더 함수 스모크 테스트 (app-evolve cycle47 critique/advance) ----------
+ * openCatManage(cycle43)·renderTxSheet(cycle44)에 이어 세 번째 render* 스모크 테스트 대상.
+ * renderHome은 앱의 기본 진입 탭이라 깨지면 앱 진입 자체가 막히는 최악의 실패 모드인데, 지금까지
+ * FUNCTIONS 목록에 없어 실행 기반 테스트가 전혀 없었고 기존 "커버리지"는 소스 문자열 포함 검사뿐이었다.
+ * renderHome이 부르는 monthStats/expenseByCat/planNegatives/homeAlerts/emptyAssetCards/
+ * nextOutflowCard/monthOutflowCard/planGaugeCard/expenseBreakdownCard/rateUnknown/needGold/
+ * homeAlertCard는 전부 순수 문자열/데이터 빌더라, renderAssets가 필요로 하는 실제 DOM/드래그
+ * 모킹 없이도 $('page-home').innerHTML 결과만 확인하면 검증할 수 있다. */
+function setupHomeDB() {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.TM = { y: 2026, m: 6 };
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox.DISP_TO = sandbox.addDays(sandbox.TODAY, 92);
+  sandbox._balCache.clear();
+  sandbox._recCache.clear();
+  sandbox.CLOUD_UID = null;
+  sandbox.CLOUD_SYNC_STATE = 'idle';
+  sandbox.STORAGE_PERSISTED = true;
+  sandbox.pageHomeEl._html = '';
+  sandbox.DB = {
+    settings: { includeScheduled: true, lastExport: Date.now(), persistWarnDismissed: true },
+    catVar: {},
+    budgetHistory: {},
+    assets: [],
+    txns: [],
+    recurrences: [],
+    rates: { fx: {}, stocks: {}, goldPerG: 0, syncedAt: 0 },
+  };
+}
+test('renderHome: 정상 DB로 호출하면 예외 없이 실행되고 기본 섹션들이 렌더된다', () => {
+  setupHomeDB();
+  sandbox.DB.assets = [{ id: 'a1', name: '주계좌', owner: '나', type: 'cash', baseAmount: 500000 }];
+  sandbox.DB.txns = [
+    { id: 't1', date: '2026-06-05', type: 'expense', category: '식비', amount: 20000, fromAssetId: 'a1' },
+    { id: 't2', date: '2026-06-10', type: 'income', category: '급여', amount: 300000, toAssetId: 'a1' },
+  ];
+  assert.doesNotThrow(() => sandbox.renderHome());
+  const html = sandbox.pageHomeEl.innerHTML;
+  assert.ok(html, "$('page-home').innerHTML이 채워져야 함");
+  assert.ok(html.includes('이번 달 살림'), '홈 헤더가 렌더돼야 함');
+  assert.ok(html.includes('이번 달 예정 대비 오늘까지'), '플랜 게이지 섹션 타이틀이 렌더돼야 함');
+  assert.ok(html.includes('식비'), '지출 분석 카드에 카테고리명이 나와야 함');
+});
+test('renderHome: homeAlerts()가 항목을 반환하면 alert-stack이 렌더되고 알림 내용이 실제로 나온다', () => {
+  setupHomeDB();
+  sandbox.DB.assets = [{ id: 'a1', name: '주계좌', owner: '나', type: 'cash', baseAmount: 500000 }];
+  sandbox.setBudgetFrom('식비', 2026, 6, 100000);
+  sandbox.DB.txns = [{ id: 't1', date: '2026-06-05', type: 'expense', category: '식비', amount: 150000, fromAssetId: 'a1' }];
+  sandbox.renderHome();
+  const html = sandbox.pageHomeEl.innerHTML;
+  assert.ok(html.includes('class="alert-stack"'), '알림이 있으면 alert-stack이 렌더돼야 함');
+  assert.ok(!html.includes('모든 통장이 안전해요'), '알림이 있으면 all-clear 문구는 나오면 안 됨');
+  assert.ok(html.includes('식비 예산을'), 'budgetOver 알림 카드 내용이 실제로 렌더돼야 함');
+});
+test('renderHome: 알림이 없고 plan 계좌+거래가 있으면 all-clear 분기("모든 통장이 안전해요")가 렌더된다', () => {
+  setupHomeDB();
+  sandbox.DB.assets = [{ id: 'a1', name: '주계좌', owner: '나', type: 'cash', baseAmount: 500000 }];
+  sandbox.DB.txns = [{ id: 't1', date: '2026-06-05', type: 'expense', category: '식비', amount: 20000, fromAssetId: 'a1' }];
+  sandbox.renderHome();
+  const html = sandbox.pageHomeEl.innerHTML;
+  assert.ok(html.includes('모든 통장이 안전해요'), '알림 없음+플랜 계좌+거래 있음이면 all-clear가 나와야 함');
+  assert.ok(!html.includes('class="alert-stack"'));
+});
+test('renderHome: 시장가(금/외화/주식) 자산이 있을 때만 시세 섹션이 나온다', () => {
+  setupHomeDB();
+  sandbox.DB.assets = [{ id: 'a1', name: '주계좌', owner: '나', type: 'cash', baseAmount: 500000 }];
+  sandbox.DB.txns = [];
+  sandbox.renderHome();
+  assert.ok(!sandbox.pageHomeEl.innerHTML.includes('mkt-list'), '시장가 자산이 없으면 시세 섹션이 나오면 안 됨');
+
+  sandbox.DB.assets.push({ id: 'g1', name: '금', owner: '나', type: 'gold', baseAmount: 0 });
+  sandbox.DB.rates.goldPerG = 90000;
+  sandbox.renderHome();
+  const html = sandbox.pageHomeEl.innerHTML;
+  assert.ok(html.includes('mkt-list'), '금 보유 자산이 있으면 시세 섹션이 나와야 함');
+  assert.ok(html.includes('금 (순금 1g)'));
 });
 
 /* ---------- 실행 ---------- */
