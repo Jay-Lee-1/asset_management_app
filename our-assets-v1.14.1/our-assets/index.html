@@ -1288,7 +1288,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.43.7';
+const APP_VERSION='1.43.8';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4472,7 +4472,9 @@ async function doExport(mode,kind){
  const d=new Date();const pad=n=>String(n).padStart(2,'0');
  const stamp=`${String(d.getFullYear()).slice(2)}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}`;
  const name=isCsv?`history_${stamp}.csv`:`backup_${stamp}.json`;
- const text=isCsv?txnsToCSV(DB.txns,DB.assets):JSON.stringify(DB,null,2);
+ /* 반복거래는 확인 전까지 DB.txns에 저장되지 않고 expandRec()이 매번 즉석 생성하는
+    가상 행이라(allTxns 패턴 참고, index.html:1960) 합쳐주지 않으면 CSV에서 통째로 빠진다 */
+ const text=isCsv?txnsToCSV(DB.txns.concat(expandRec(RANGE_FROM,RANGE_TO)),DB.assets):JSON.stringify(DB,null,2);
  const mime=isCsv?'text/csv':'application/json';
  /* CSV는 복원용 백업이 아니므로 백업 알림 상태(lastExport/backupSnooze)를 건드리지 않는다 */
  const done=msg=>{if(!isCsv){DB.settings.lastExport=Date.now();DB.settings.backupSnooze=0;save();renderCurrent();}toast(msg)};

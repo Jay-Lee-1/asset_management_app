@@ -1141,6 +1141,37 @@ test('txnsToCSV: 금액이 음수여도 필드 자체는 그대로 두고(guard 
   assert.strictEqual(lines[1], '2026-01-01,지출,기타,-1000,,,');
 });
 
+/* ---------- doExport(csv) 회귀: 반복거래는 확인 전까지 DB.txns에 저장되지 않고 expandRec()이
+ * 매번 즉석 생성하는 가상 행이라(app-evolve cycle51 develop), doExport()가 DB.txns만 CSV로
+ * 내보내면 반복 지출/수입/이체가 CSV에서 통째로 누락된다. 실제 앱 코드(index.html의 doExport)는
+ * DB.txns.concat(expandRec(RANGE_FROM,RANGE_TO))를 txnsToCSV에 넘기므로, 그 조합을 그대로
+ * 재현해 검증한다(allTxns()와 같은 합성 패턴, index.html:1960). */
+test('txnsToCSV+expandRec: doExport(csv)와 같은 방식으로 합치면 반복거래도 CSV에 포함된다', () => {
+  sandbox._recCache.clear();
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox.DB = {
+    txns: [{ id: 't1', date: '2026-01-01', type: 'expense', category: '식비', amount: -5000, fromAssetId: 'a1', memo: '점심' }],
+    recurrences: [{ id: 'r1', active: true, freq: 'monthly', day: 1, startDate: '2026-01-01', endDate: null, weekend: 'none', type: 'expense', category: '월세', memo: '월세', amount: -500000, fromAssetId: 'a1', skip: [], edits: {} }],
+    assets: [{ id: 'a1', name: '주계좌' }],
+  };
+  const merged = sandbox.DB.txns.concat(sandbox.expandRec(sandbox.RANGE_FROM, sandbox.RANGE_TO));
+  const csv = sandbox.txnsToCSV(merged, sandbox.DB.assets);
+  assert.ok(csv.includes('월세'), '반복거래(월세)가 DB.txns에 없어도 CSV에는 포함돼야 함');
+  const rentRows = csv.split('\r\n').filter(l => l.includes('월세'));
+  assert.ok(rentRows.length > 10, `2026-01-01부터 매달 반복이므로 여러 달치가 나와야 함(실제 ${rentRows.length}행)`);
+});
+test('txnsToCSV+expandRec: DB.txns만 넘기면(기존 버그) 반복거래가 CSV에서 빠진다', () => {
+  sandbox._recCache.clear();
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox.DB = {
+    txns: [{ id: 't1', date: '2026-01-01', type: 'expense', category: '식비', amount: -5000, fromAssetId: 'a1', memo: '점심' }],
+    recurrences: [{ id: 'r1', active: true, freq: 'monthly', day: 1, startDate: '2026-01-01', endDate: null, weekend: 'none', type: 'expense', category: '월세', memo: '월세', amount: -500000, fromAssetId: 'a1', skip: [], edits: {} }],
+    assets: [{ id: 'a1', name: '주계좌' }],
+  };
+  const csv = sandbox.txnsToCSV(sandbox.DB.txns, sandbox.DB.assets);
+  assert.ok(!csv.includes('월세'), 'DB.txns만 넘기면 반복거래는 애초에 그 안에 없으므로 CSV에도 없음(수정 전 doExport의 실제 동작)');
+});
+
 /* ---------- matchTxnQuery: 거래 검색은 대소문자를 구분하지 않는다 ---------- */
 test('matchTxnQuery: 빈 검색어는 항상 매칭된다', () => {
   const t = { memo: '', category: '식비', fromAssetId: null, toAssetId: null };
