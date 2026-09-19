@@ -1,15 +1,8 @@
 {
   "cycle": 47,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 42,
-      "phase": "review",
-      "timestamp": "2026-09-18T07:08:37.486Z",
-      "summary": "develop 커밋(8f2bb3e)을 검토. openFixShortfall() 진입부 가드가 (targetId,date) 컨텍스트 변경 시에만 _fixWhen을 리셋하도록 정확히 구현됐음을 확인 — closeSheet()는 범용 함수라 _fixWhen/_fixCtx를 건드리지 않으므로 이 가드가 유일한 리셋 경로. 같은 컨텍스트 재렌더(fixSetWhen picker 콜백 경로) 시 값 유지, 다른 컨텍스트 시 결제 전날로 재계산되는 것도 회귀 테스트 2개가 정확히 커버. APP_VERSION/sw.js CACHE 버전 동시 갱신 확인. 276/276 통과. 문제 없음.",
-      "commit": null
-    },
     {
       "cycle": 42,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-19T03:12:16.303Z",
       "summary": "postponeRecTransfer()(index.html:1458)가 daily 반복 이체를 \"내일로\" 미룰 때 미룬 날짜(date)만 r.skip에 추가하고 새 거래는 내일(TODAY+1) 날짜로 넣는데, daily 반복은 매일이 정상 회차라 expandRec()의 recDates()가 그 내일 날짜도 그대로 자기 회차로 다시 만들어내(app-evolve cycle47 develop, Explore 서브에이전트로 발견) 확인 필요 이체가 무경고로 이중 계상되던 버그 발견·수정(weekly/monthly/yearly는 +1일이 다음 정상 회차와 우연히 겹칠 일이 사실상 없어 영향 없음, sibling postponeTransfer()는 단일 txn 날짜만 바꾸므로 애초에 이 위험이 없음을 확인). 새 거래를 넣는 날짜(nd=addDays(TODAY,1))도 함께 r.skip에 추가하도록 수정하고, date와 nd가 같은 경우(미루려는 날짜가 이미 내일인 경우)를 위해 중복 push 가드 추가. postponeRecTransfer/recDates/expandRec 모두 기존 test/run.js FUNCTIONS에 이미 있어 새 상수 추가 없이 회귀 테스트 2개 추가(daily 반복이 내일 회차를 중복 생성하지 않음을 expandRec 결과로 확인, date===내일인 경우 skip에 중복 없이 1개만 들어감), 314/314 통과. 두 인라인 <script> 블록 모두 vm.Script 파싱 확인. APP_VERSION 1.43.2->1.43.3, sw.js CACHE v128->v129.",
+      "commit": null
+    },
+    {
+      "cycle": 47,
+      "phase": "review",
+      "timestamp": "2026-09-19T04:09:00.000Z",
+      "summary": "develop 커밋(817d004)을 검토. postponeRecTransfer() 호출부가 index.html 전체에서 한 곳(:1452)뿐이고 r.skip 소비처(expandRec :1949, varyingRecs류 :5146)가 skip 배열에 문자열 날짜를 담는 기존 관례와 정확히 일치함을 grep으로 확인. 수정 로직 자체도 맞다: 원래 회차 날짜(date)는 그대로 스킵(돈이 안 움직인 날), 수동으로 넣은 이체 날짜(nd=TODAY+1)도 함께 스킵해야 daily 반복 엔진이 그 날짜에 정상 회차를 또 만들어내 중복 계상되는 걸 막는다 — day+2부터는 skip에 없으니 다음 정상 회차가 그대로 생성돼 반복 자체는 끊기지 않는다. weekly/monthly/yearly에 대해서도 nd를 추가로 skip에 넣는 게 no-op(애초에 해당 날짜가 회차가 아니므로)이라는 커밋 설명도 재확인했고, date===nd(미루려는 날짜가 이미 내일)일 때 중복 push 가드가 정확히 동작함을 두 번째 회귀 테스트로 확인. node test/run.js 재실행해 314/314 통과 재확인. 문제 없음.",
       "commit": null
     }
   ]
