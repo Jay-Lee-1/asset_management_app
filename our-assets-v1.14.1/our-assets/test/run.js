@@ -75,7 +75,7 @@ const FUNCTIONS = [
   'saveRec', 'recHistFieldsChanged', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
   'monthStartStr', 'monthEndStr', 'expandRec', 'allTxns', 'spendByCategory', 'histSumTotals',
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'expenseBreakdownCard',
-  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'saveAsset', 'clampRecurringToMaturity', 'isCloudConflict', 'decidePushOutcome',
+  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'isCloudConflict', 'decidePushOutcome',
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges',
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
   'clampDay', 'saveTx', 'assetBase', 'balancesUpTo', 'balanceAt',
@@ -2066,6 +2066,22 @@ test('saveAsset: 새로 등록할 자산이 기존 자산과 이름·종류가 �
   sandbox.saveAsset(false);
   assert.ok(sandbox.lastToast, '중복 경고 토스트가 떴어야 함');
   assert.strictEqual(sandbox.DB.assets.length, 1, '중복이면 새 자산이 추가되면 안 됨');
+});
+
+/* ---------- saveAsset: 자산 삭제 후 새 자산을 등록하면 order가 DB.assets.length(=줄어든 개수)로
+ * 다시 채워져, 삭제 전에 등록됐던 자산의 order보다 더 작은 값을 받던 버그(app-evolve cycle49 develop).
+ * groupItems()의 기본 정렬(a.order-b.order, "그룹 내 등록 순서 유지")이 이 order를 그대로 쓰므로,
+ * 방금 등록한 자산이 훨씬 전에 등록된 자산보다 앞에 오는 역전이 생겼다. order를 length가 아니라
+ * 기존 order 최댓값+1로 매겨 삭제로 배열이 줄어도 항상 새 값이 됨. ---------- */
+test('saveAsset: 오래된 자산을 삭제한 뒤 등록해도 새 자산의 order가 남은 자산보다 작아지지 않는다', () => {
+  // A(order=0),B(order=1) 삭제 → C(order=2),D(order=3)만 남음(length=2)
+  sandbox.DB = { assets: [{ id: 'c', name: 'C', type: 'cash', order: 2, includeInTotal: true }, { id: 'd', name: 'D', type: 'cash', order: 3, includeInTotal: true }], rates: { stocks: {} }, settings: { assetSort: 'custom' }, owners: ['나'] };
+  sandbox.asDraft = { type: 'cash', owner: '나', includeInTotal: true, name: 'E' };
+  sandbox.saveAsset(false);
+  const e = sandbox.DB.assets.find(a => a.name === 'E');
+  assert.ok(e.order > sandbox.DB.assets.find(a => a.name === 'D').order, '삭제로 배열이 줄어도 새 자산의 order는 기존 최댓값보다 커야 함');
+  const sorted = sandbox.groupItems('cash').map(a => a.name);
+  assert.deepStrictEqual(sorted, ['C', 'D', 'E'], '기본(등록순서) 정렬에서 나중에 만든 자산이 먼저 만든 자산보다 앞서면 안 됨');
 });
 
 /* ---------- rateUnknown/saveAsset: 새로 등록한 fx/gold/stock 자산이 시세 미동기화 상태에서

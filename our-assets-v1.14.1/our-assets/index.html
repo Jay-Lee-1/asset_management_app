@@ -1288,7 +1288,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.43.5';
+const APP_VERSION='1.43.6';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2796,7 +2796,7 @@ function saveAsset(editing){
    }
  }else{
    const hasDeleted=deletedAssetHistoryExists(d.name); /* 삭제된 동명 자산의 내역이 남아있나 */
-   d.id=uid();d.order=DB.assets.length;
+   d.id=uid();d.order=DB.assets.reduce((m,a)=>Math.max(m,a.order||0),0)+1; /* length 기반 order는 삭제 후 재사용돼 등록순서가 뒤섞이므로 최댓값+1 사용 */
    if(balType){d[balKey]=entered;if(balKey==='baseAmount')delete d.amountKRW;else delete d.baseAmount;}
    if(hasDeleted){askRelinkDeleted(d,entered,balType,balKey);return;} /* 이전 자산과 연동할지 선택 */
    DB.assets.push(d); /* 새 자산은 내역이 없으므로 기준값=입력값 그대로 */

@@ -1,15 +1,8 @@
 {
   "cycle": 49,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 44,
-      "phase": "develop",
-      "timestamp": "2026-09-18T15:11:12.938Z",
-      "summary": "saveQuickAmount()(index.html:5139)이 num($('qAmt'))===0을 빈 입력과 똑같이 !amt로 판정해, 변동 카테고리 반복거래의 실제 금액이 무료/크레딧 처리로 정말 0원인 회차를 영영 저장할 수 없던 버그 발견·수정(edits[date]가 안 생기니 varyingRecs()가 그 회차를 계속 \"입력할 항목\"으로 무한히 재노출). fmtAmt() oninput이 이미 입력값을 숫자만 남기도록 정규화해두므로, num() 대신 raw value의 trim() 여부로 빈 입력만 막고 명시적 0은 통과시키도록 가드를 고쳤다. 회귀 테스트 1개 추가(0원 입력 시 edits에 기록되고 토스트 없이 undo까지 정상 등록됨), 290/290 통과. 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.42.2->1.42.3, sw.js CACHE v123->v124.",
-      "commit": null
-    },
     {
       "cycle": 44,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-19T00:00:00.000Z",
       "summary": "assetPickBtn()(index.html)과 renderPlan()의 통장 선택 버튼(fv)에서 a.name/a.owner를 esc() 없이 꽂던 self-XSS 두 곳을 esc()로 감쌈. assetPickBtn 이스케이프 회귀 테스트 2건 + renderPlan esc() 사용 소스 패턴 테스트 1건 추가(322/322 통과). APP_VERSION 1.43.5, sw.js CACHE v131로 갱신.",
+      "commit": null
+    },
+    {
+      "cycle": 49,
+      "phase": "develop",
+      "timestamp": "2026-09-19T11:15:03.069Z",
+      "summary": "Explore 서브에이전트로 발견한 saveAsset()(index.html:2799) order 산정 버그 수정. 자산 등록 시 d.order=DB.assets.length로 매기는데, deleteAssetsUndo() 등 삭제 경로가 살아남은 자산의 order를 재색인하지 않아 배열 length만 줄어든다. 오래된 자산 두 개를 삭제한 뒤(예: order 2,3만 남고 length=2) 새 자산을 등록하면 order=2로 매겨져 이미 order=2인 자산과 겹치거나 그보다 작아지고, groupItems()의 기본(custom) 정렬(a.order-b.order, \"그룹 내 등록 순서 유지\")이 이를 그대로 써서 방금 만든 자산이 훨씬 전에 등록된 자산보다 목록 앞에 뜨는 역전이 조용히 영구적으로 남는다(고칠 UI 없음). d.order를 length 대신 기존 DB.assets의 order 최댓값+1로 계산하도록 고쳐 삭제로 배열이 줄어도 항상 커지게 함. askRelinkDeleted()의 _amLink/_amFresh 두 경로 모두 같은 d 객체를 그대로 push하므로 함께 적용됨. groupItems를 처음으로 test/run.js FUNCTIONS에 추가하고 회귀 테스트 1개 추가(삭제 후 등록 시 order 역전 없음 + custom 정렬 결과 확인), 323/323 통과. 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.43.5->1.43.6, sw.js CACHE v131->v132.",
       "commit": null
     }
   ]
