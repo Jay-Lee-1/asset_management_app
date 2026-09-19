@@ -1,19 +1,8 @@
 {
-  "cycle": 49,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "renderAssets() 렌더 스모크 테스트 도입",
-    "why": "자산관리 탭 진입점인 renderAssets()(index.html:2550-2577)는 openCatManage(cycle43)·renderTxSheet(cycle44)·renderHome(cycle47)과 달리 여전히 실행 기반 테스트가 전혀 없어(cycle43/44/46/47/48에서 다섯 차례 '의존 그래프가 깊어 무인 사이클에 부담' 이유로 이연됨) 앱의 두 번째로 중요한 화면이 템플릿/분기 오류를 브라우저에서만 드러낸다. Explore 서브에이전트 재조사 결과 renderAssets가 호출하는 헬퍼(assetBodyHTML, nwPane, nwHistoryCard, pageHead, totalAssets, totalDebt, ownerListArr 등, index.html:2101-2102,2235-2251,2472-2549,5020-5028)는 전부 순수 문자열 빌더이고, 진짜 부수효과가 있는 호출은 wireGroupDrag/wireLongPress/wireNwCarousel/restoreNwScroll/animNums/updateSelBottom(index.html:2571-2573) 여섯 개뿐임을 확인. test/run.js가 이미 fitAll/openCatManage/closeSheet 등을 no-op 스텁으로 sandbox에 남겨 실제로 추출한 함수가 호출해도 문제없게 하는 동일 패턴을 갖고 있어(191,229,232행), 이 여섯 개도 같은 방식으로 스텁하면 추가 모킹 인프라 없이 기존 패턴을 한 단계 더 적용하는 것만으로 충분하다는 새 근거를 확보해 이연을 풀고 채택. 같은 패스에서 esc() 커버리지 재점검(메모/카테고리/귀속 필드 전수 조사), 클라우드 동기화·백업 복원 흐름의 에러 처리, localStorage.setItem 미보호 지점도 함께 조사했으나 toast()/undoToast()가 메시지 전체를 내부적으로 esc()하고 onclick 핸들러는 모두 id/index만 넘겨 자유 텍스트를 넣지 않는 구조라 새로운 이스케이프 누락은 발견하지 못했고, 클라우드/백업 경로도 이미 주석으로 문서화된 방어 로직이 있어 이번 패스에서는 render 커버리지 공백이 가장 시급한 후보로 재확인됐다.",
-    "approach": "1) test/run.js sandbox에 wireGroupDrag/wireLongPress/wireNwCarousel/restoreNwScroll/animNums/updateSelBottom을 fitAll과 같은 () => {} no-op 스텁으로 추가. 2) pageHomeEl과 같은 getter/setter 패턴으로 pageAssetsEl을 추가하고 $('page-assets')가 이를 반환하도록 연결(nwCarousel 참조가 실제로 필요한지는 스텁 적용 후 실행해서 검증). 3) FUNCTIONS에 renderAssets/assetBodyHTML/nwPane/nwHistoryCard/pageHead/totalAssets/totalDebt/ownerListArr/won/assetSubline 중 아직 없는 것만 추가(groupItems/assetEval/rateUnknown 등은 cycle49 develop에서 이미 추가됨 — 재사용). 4) renderHome 스모크 테스트(cycle47 advance, test/run.js:3504+)를 본으로 3~4개 작성: 빈 DB에서 예외 없이 렌더, 정상 DB에서 그룹 타이틀·자산 카드가 실제로 나오는지, 편집 모드(ST.editAssets)에서 실제 드래그 로직 없이 드래그 리스트가 렌더되는지, 멀티셀렉트 모드(ST.aSel.mode)에서 선택 체크마크가 렌더되는지. 5) index.html 코드 변경은 없으므로 APP_VERSION/sw.js CACHE는 유지. 시간이 남으면 같은 레시피로 renderHistory()도 이어서 시도(2순위 후속 과제로 남겨도 무방)."
-  },
+  "cycle": 50,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 44,
-      "phase": "advance",
-      "timestamp": "2026-09-18T18:12:00.000Z",
-      "summary": "critique(2136bfe) 계획대로 renderTxSheet()에 렌더 스모크 테스트를 도입해 openCatManage에 이어 두 번째 render* 안전망 사례를 만들었다. test/run.js FUNCTIONS에 catListOf/catAv/assetPickBtn/endCondFields/openFormSheet/renderTxSheet/txType/txToggleRepeat 추가(새 CONSTS는 불필요 — ASSET_TYPES/CATICON 등 기존 항목 재사용). openFormSheet는 실제 소스를 그대로 추출했는데, sandbox.$가 'sheetScroll'에 항상 null을 돌려줘 _formScroll을 실제로 건드리지 않고 openSheet(html) 호출만 그대로 통과시키는 걸 확인했다. renderTxSheet가 자동포커스에 쓰는 setTimeout이 vm 컨텍스트엔 없어 sandbox에 no-op 스텁 추가. 테스트 6개: 1) 지출/수입/이체 타입별로 출금/입금/보내는·받는 자산 필드가 정확히 배타적으로 나오는지, 2) 신규 생성 시에만 반복 토글이 보이고 편집(d.id 존재) 시엔 숨는지, 3) 반복 on+매월일 때 day가 1/5/15/25 프리셋 밖이면 직접 입력(txDayIn)이 뜨는지, 4) window._recCtx가 있으면 반복 개별 수정 모드(금액만)로 빠지며 삭제 버튼이 recCtxDel()을 호출하는지, 5) txType() 전환 시 카테고리·입금 자산 기본값(firstCash)이 갱신되고 실제 재렌더되는지, 6) txToggleRepeat()으로 반복을 처음 켜면 day가 시작일 일자로 채워지고 재렌더되는지(freq는 아직 비어 있어 dayField는 안 뜨므로 주기 선택 필드 렌더 여부로 확인). 회귀 테스트 6개 추가, 296/296 통과. index.html 변경 없어 APP_VERSION/sw.js CACHE는 그대로 유지. renderHome/renderAssets/renderHistory는 여전히 더 깊은 의존 그래프가 있어 후속 사이클 과제로 남긴다. pending_advance_plan 비움.",
-      "commit": null
-    },
     {
       "cycle": 45,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-19T13:10:00.000Z",
       "summary": "Explore 서브에이전트로 앱 전체를 구조적으로 재검토. 다섯 차례(cycle43/44/46/47/48) 이연됐던 renderAssets() 렌더 스모크 테스트 공백을 재조사해 이연 근거('DOM/드래그 모킹 필요해 범위 큼')가 실제로는 작다는 걸 확인하고 채택. renderAssets(index.html:2550-2577)가 부르는 실제 부수효과 호출은 wireGroupDrag/wireLongPress/wireNwCarousel/restoreNwScroll/animNums/updateSelBottom 여섯 개뿐이고 나머지(assetBodyHTML, nwPane, nwHistoryCard, pageHead, totalAssets, totalDebt, ownerListArr 등)는 전부 순수 문자열 빌더다. test/run.js가 fitAll/openCatManage/closeSheet 등을 이미 no-op 스텁으로 두는 패턴을 그대로 여섯 개에 한 단계 더 적용하면 되므로 추가 모킹 인프라가 필요없다는 새 근거로 이연을 풀었다. 같은 패스에서 esc() 커버리지 전수 재점검(메모/카테고리/귀속 필드), 클라우드 동기화·백업 복원 에러 처리, localStorage.setItem 미보호 지점도 조사했으나 toast()/undoToast()가 메시지 전체를 내부적으로 esc()하고 onclick 핸들러는 id/index만 넘겨 자유 텍스트를 넣지 않는 구조라 새 이스케이프 누락은 없었고, 클라우드/백업 경로도 이미 방어 로직이 있어 render 커버리지 공백이 가장 시급한 후보로 재확인됐다. balancesUpTo() RANGE_FROM 체크포인트(cycle41/45/46/47/48에서 반복 기각, 새 근거 없음)와 long-press 멀티셀렉트 접근성 공백(여전히 단일 수정 지점 없음)은 이번에도 후순위로 재확인만 하고 기각. renderHistory()는 같은 레시피의 2순위 후속 과제로 남긴다. advance에서 renderAssets 렌더 스모크 테스트 도입 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 49,
+      "phase": "advance",
+      "timestamp": "2026-09-19T14:10:00.000Z",
+      "summary": "critique(850a6da) 계획대로 renderAssets()에 렌더 스모크 테스트를 도입해 openCatManage(cycle43)·renderTxSheet(cycle44)·renderHome(cycle47)에 이어 네 번째 render* 안전망 사례를 만들었다. renderAssets가 부르던 실제 부수효과 호출 wireGroupDrag/wireLongPress/wireNwCarousel/restoreNwScroll/animNums/updateSelBottom 여섯 개를 fitAll과 같은 () => {} no-op 스텁으로 sandbox에 추가하고, pageHomeEl과 같은 getter/setter 패턴의 pageAssetsEl을 새로 추가해 $('page-assets')에 연결했다. FUNCTIONS에 아직 없던 순수 문자열 빌더들(totalAssets, totalDebt, ownerAssets, ownerDebt, ownerListArr, nwPane, shortDate2, nwHistoryCard, pageHead, assetSubline, assetBodyHTML, renderAssets 자체)을 추가하고 CONSTS에 won/PAGE_TITLE, LETS에 renderAssets가 재대입하는 _lastNwOwner를 추가했다(groupItems/assetEval/rateUnknown 등은 cycle49 develop에서 이미 있어 재사용). 테스트 4개: 1) 빈 자산 목록에서 예외 없이 실행되고 \"아직 등록한 자산이 없어요\" 빈 상태가 렌더되는지, 2) 자산이 있으면 그룹 타이틀(\"현금예금\")과 자산 이름(\"주계좌\")이 실제로 나오는지, 3) 편집 모드(ST.editAssets)에서는 개별 자산 카드 대신 dragList 그룹 목록(\"1개 자산\")만 렌더되는지, 4) 멀티셀렉트 모드(ST.aSel.mode)에서는 sel-check 체크마크와 assetToggleSel onclick이 렌더되는지. index.html은 전혀 건드리지 않아(테스트 인프라만 확장) APP_VERSION/sw.js CACHE는 그대로 유지. 회귀 테스트 4개 추가, 327/327 통과. renderHistory()는 같은 레시피의 후속 과제로 남긴다. pending_advance_plan 비움.",
       "commit": null
     }
   ]

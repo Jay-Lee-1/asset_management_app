@@ -93,6 +93,8 @@ const FUNCTIONS = [
   'accountName',
   'txScheduled', 'monthStats', 'monthStats2', 'expenseByCat', 'needGold', 'inQuietWindow', 'fmtSynced', 'rateStatusText',
   'nextBigOutflow', 'dday', 'balanceOn', 'nextOutflowCard', 'monthOutflowCard', 'planGaugeCard', 'homeAlertCard', 'renderHome',
+  'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwHistoryCard',
+  'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -100,14 +102,16 @@ const FUNCTIONS = [
 // _recCache/REC_CACHE_MAX는 expandRec()가 참조하는 모듈 스코프 캐시 상태라 같은 방식으로 끌어온다.
 // isPlanAcct는 planNegatives()가 DB.assets.filter(isPlanAcct)로 부르는 "플랜 대상 통장"
 // 판정 상수라 같은 방식(extractConst)으로 끌어온다.
-const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON'];
+const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE'];
 // _histCache는 filteredHist()가 재대입(={key,list})하는 let 선언이라 CONSTS(extractConst)로는
 // 못 끌어오므로 별도의 LETS 목록으로 extractLet을 통해 가져온다.
 // _copyIsCsv도 같은 이유(openCopyBackup()이 재대입)로 LETS를 통해 가져온다.
 // _fixWhen/_fixCtx는 openFixShortfall()이 재대입하는 "부족해요" 시트의 이체일 선택 상태라
 // 같은 이유(let 선언, realm에 안 붙음)로 LETS를 통해 가져온다. 소스에서 두 변수가 한 줄
 // `let _fixWhen=null,_fixCtx=null;`로 선언돼 있어 "_fixWhen"만 추출해도 둘 다 딸려온다.
-const LETS = ['_histCache', '_copyIsCsv', '_fixWhen'];
+// _lastNwOwner는 renderAssets()가 재대입하는 "마지막으로 렌더한 순자산 카드 귀속" 상태라
+// 같은 이유(let 선언, realm에 안 붙음)로 LETS를 통해 가져온다.
+const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner'];
 
 const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(extractConst).join('\n') + '\n' + LETS.map(extractLet).join('\n');
 
@@ -213,10 +217,17 @@ const sandbox = {
     set innerHTML(v) { this._html = v; },
     get innerHTML() { return this._html; },
   },
+  // page-assets도 pageHomeEl과 같은 이유(renderAssets()가 $('page-assets').innerHTML=...로
+  // 직접 꽂음)로 같은 getter/setter 패턴을 재사용한다.
+  pageAssetsEl: {
+    _html: '',
+    set innerHTML(v) { this._html = v; },
+    get innerHTML() { return this._html; },
+  },
   // recSave()/saveQuickAmount()는 각각 $('txAmt')/$('qAmt').value를 읽어 금액을 얻으므로,
   // 그 두 id만 값을 갖는 입력칸처럼 동작시킨다. errBanner는 renderCurrent 에러 바운더리 테스트용.
   // bkText는 copyBackup()이 select()/setSelectionRange()/.value를 쓰는 백업 복사 textarea 흉내.
-  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : null,
+  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : null,
   bkTextEl: { value: 'backup-text', select: () => {}, setSelectionRange: () => {} },
   // copyBackup()의 navigator.clipboard 체크가 ReferenceError 없이 "지원 안 함"으로 지나가게
   // 하는 최소 흉내(document.execCommand는 try/catch로 감싸져 있어 굳이 스텁이 필요 없음).
@@ -228,6 +239,15 @@ const sandbox = {
   renderCurrent: () => {},
   openCatManage: () => {},
   openOwnerManage: () => {},
+  // renderAssets()가 부수효과로 부르는 실 DOM/드래그/스크롤/애니메이션 와이어링 여섯 개 —
+  // fitAll처럼 화면 전용이라 순수 로직 테스트 대상이 아니므로 전부 no-op으로 흉내낸다
+  // (renderAssets 자체와 그 안의 문자열 빌더 헬퍼들만 실제 소스로 검증하면 충분).
+  wireGroupDrag: () => {},
+  wireLongPress: () => {},
+  wireNwCarousel: () => {},
+  restoreNwScroll: () => {},
+  animNums: () => {},
+  updateSelBottom: () => {},
   openSpendAnalysis: () => {},
   closeSheet: () => {},
   renderTxSheet: () => {},
@@ -3548,6 +3568,71 @@ test('renderHome: 시장가(금/외화/주식) 자산이 있을 때만 시세 �
   const html = sandbox.pageHomeEl.innerHTML;
   assert.ok(html.includes('mkt-list'), '금 보유 자산이 있으면 시세 섹션이 나와야 함');
   assert.ok(html.includes('금 (순금 1g)'));
+});
+
+/* ---------- renderAssets: 렌더 함수 스모크 테스트 (app-evolve cycle49 critique/advance) ----------
+ * openCatManage(cycle43)·renderTxSheet(cycle44)·renderHome(cycle47)에 이어 네 번째 render*
+ * 안전망 대상. cycle43/44/46/47/48에서 "의존 그래프가 깊어 무인 사이클에 부담"이라는 이유로
+ * 다섯 차례 이연됐지만, renderAssets()가 부르는 헬퍼(assetBodyHTML/nwPane/nwHistoryCard/
+ * pageHead/totalAssets/totalDebt/ownerListArr 등)는 실제로는 전부 순수 문자열 빌더이고,
+ * 진짜 부수효과가 있는 호출은 wireGroupDrag/wireLongPress/wireNwCarousel/restoreNwScroll/
+ * animNums/updateSelBottom 여섯 개뿐이다 — fitAll처럼 이 여섯 개를 no-op으로 흉내내면
+ * $('page-assets').innerHTML 결과만으로 검증할 수 있다. */
+function setupAssetsDB() {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.TM = { y: 2026, m: 6 };
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox.DISP_TO = sandbox.addDays(sandbox.TODAY, 92);
+  sandbox._balCache.clear();
+  sandbox._recCache.clear();
+  sandbox._lastNwOwner = null;
+  sandbox.pageAssetsEl._html = '';
+  sandbox.ST = { editAssets: false, aSel: { mode: false, ids: new Set() }, assetOwner: 'all' };
+  sandbox.DB = {
+    settings: { includeScheduled: true, groupOrder: sandbox.DEFAULT_GROUP_ORDER, assetSort: 'custom' },
+    assets: [],
+    owners: ['나'],
+    txns: [],
+    recurrences: [],
+    nwHistory: [],
+    rates: { fx: {}, stocks: {}, goldPerG: 0, syncedAt: 0 },
+  };
+}
+test('renderAssets: 빈 자산 목록에서 예외 없이 실행되고 빈 상태 안내가 렌더된다', () => {
+  setupAssetsDB();
+  assert.doesNotThrow(() => sandbox.renderAssets());
+  const html = sandbox.pageAssetsEl.innerHTML;
+  assert.ok(html, "$('page-assets').innerHTML이 채워져야 함");
+  assert.ok(html.includes('자산 관리'), '자산 탭 헤더가 렌더돼야 함');
+  assert.ok(html.includes('아직 등록한 자산이 없어요'), '자산이 없으면 빈 상태 안내가 나와야 함');
+});
+test('renderAssets: 자산이 있으면 그룹 타이틀과 자산 카드가 실제로 렌더된다', () => {
+  setupAssetsDB();
+  sandbox.DB.assets = [{ id: 'a1', name: '주계좌', owner: '나', type: 'cash', order: 0, includeInTotal: true, baseAmount: 500000 }];
+  sandbox.renderAssets();
+  const html = sandbox.pageAssetsEl.innerHTML;
+  assert.ok(html.includes('현금예금'), '자산 종류 그룹 타이틀이 렌더돼야 함');
+  assert.ok(html.includes('주계좌'), '자산 이름이 렌더돼야 함');
+  assert.ok(!html.includes('아직 등록한 자산이 없어요'));
+});
+test('renderAssets: 편집 모드(ST.editAssets)에서는 드래그용 그룹 목록이 렌더된다', () => {
+  setupAssetsDB();
+  sandbox.DB.assets = [{ id: 'a1', name: '주계좌', owner: '나', type: 'cash', order: 0, includeInTotal: true, baseAmount: 500000 }];
+  sandbox.ST.editAssets = true;
+  sandbox.renderAssets();
+  const html = sandbox.pageAssetsEl.innerHTML;
+  assert.ok(html.includes('id="dragList"'), '편집 모드에서는 그룹 순서 드래그 목록이 렌더돼야 함');
+  assert.ok(html.includes('1개 자산'), '그룹별 자산 개수가 렌더돼야 함');
+  assert.ok(!html.includes('주계좌'), '편집 모드에서는 개별 자산 카드 대신 그룹만 나와야 함');
+});
+test('renderAssets: 멀티셀렉트 모드(ST.aSel.mode)에서는 선택 체크마크가 렌더된다', () => {
+  setupAssetsDB();
+  sandbox.DB.assets = [{ id: 'a1', name: '주계좌', owner: '나', type: 'cash', order: 0, includeInTotal: true, baseAmount: 500000 }];
+  sandbox.ST.aSel.mode = true;
+  sandbox.renderAssets();
+  const html = sandbox.pageAssetsEl.innerHTML;
+  assert.ok(html.includes('sel-check'), '멀티셀렉트 모드에서는 선택 체크마크가 렌더돼야 함');
+  assert.ok(html.includes("onclick=\"assetToggleSel('a1')\""), '자산 행 클릭이 assetToggleSel로 연결돼야 함');
 });
 
 /* ---------- 실행 ---------- */
