@@ -1,22 +1,12 @@
 {
   "cycle": 46,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "accountName() 이메일/닉네임 이스케이프 없이 innerHTML 삽입되는 self-XSS 수정 (renderMenu/openAccountSheet/doResetAll)",
+    "why": "accountName()(index.html:1768)이 가입 이메일 또는 카카오 닉네임을 그대로 반환하는데, 가입 이메일 검증 정규식(:1711)이 @와 공백만 막고 <,>,\"를 걸러내지 않아 <img src=x onerror=...>@a.co 형태의 이메일이 가입을 통과한다. 이 값이 renderMenu 계정 카드(:3808)와 openAccountSheet 계정 카드(:3831)의 innerHTML에 이스케이프 없이 삽입돼 메뉴/계정 시트를 열 때마다 실행되고, doResetAll()(:5852)에서도 confirmSheet의 msg 인자로 넘어가 동일하게 innerHTML에 꽂힌다(confirmSheet :4762-4765). 바로 옆 aria-label(:3806)은 이미 esc(accountName())로 감싸므로, 이스케이프를 빠뜨린 세 지점만 남은 명확한 불일치이자 재현 가능한 self-XSS다.",
+    "approach": "세 지점(:3808, :3831, :5852)의 accountName() 호출을 모두 esc(accountName())로 감싸 기존 esc() 사용 패턴(예: esc(a.name), :3806)과 통일한다. accountName()·esc() 둘 다 이미 test/run.js FUNCTIONS 추출 대상인지 확인하고 없으면 추가한 뒤, <,>,\"가 포함된 이메일/닉네임을 accountName()이 반환할 때 esc(accountName())의 출력이 &lt;/&gt;/&quot;로 이스케이프됨을 확인하는 회귀 테스트를 추가한다. 세 삽입 지점을 실제로 실행하는 렌더 스모크 테스트(renderMenu 등)가 이미 있으면 같은 케이스로 확장하고, 없으면 pure 함수 조합(esc(accountName()))만 단위 테스트로 검증해도 충분하다 — 이번 사이클의 목표는 취약점 봉합이지 새 렌더 스모크 테스트 인프라 확장이 아니다."
+  },
   "history": [
-    {
-      "cycle": 41,
-      "phase": "review",
-      "timestamp": "2026-09-18T03:08:26.695Z",
-      "summary": "develop 커밋(9d852b5)을 검토하다 실제 버그 발견·수정: sanitizeBackup()의 recurrences 드롭 조건이 !r.id만 확인해 txns(!t.id||!t.date)와 달리 startDate 없는 레코드를 그대로 통과시켰음. recDates()는 new Date(r.startDate)로 시작하는데 startDate가 없으면 Invalid Date가 되어 monthly/yearly/daily-weekly 세 분기 모두 종료조건(cur>endd 등)이 항상 false이고 setMonth/setDate로도 벗어나지 못해 무한루프로 앱이 완전히 멈춘다(recNthDate/recCountUntil은 !base.startDate 가드가 있지만 expandRec 경로엔 없음). 드롭 조건에 !r.startDate 추가로 수정. 기존 amount 검증 테스트 2개에 startDate 필드 보강, startDate 없는 레코드 드롭 회귀 테스트 1개 추가, 273/273 통과. APP_VERSION 1.41.1->1.41.2, sw.js CACHE v119->v120.",
-      "commit": null
-    },
-    {
-      "cycle": 41,
-      "phase": "critique",
-      "timestamp": "2026-09-18T04:10:00.000Z",
-      "summary": "balancesUpTo()(index.html:2008-2024, 잔액 계산의 단일 소스, 15곳 이상에서 호출)가 고정 시작일 RANGE_FROM='2023-01-01'부터 매번 전체 거래·반복거래를 재생하는 구조적 문제 발견. save()->invalidateBalances()가 거의 모든 편집마다 _recCache/_balCache를 통째로 비워, 편집 하나마다 2023년부터 오늘까지 전체 재계산이 필요하다(daily/weekly 반복거래가 있으면 일 단위 순회). 앱 사용 기간이 늘수록 코드 변경 없이 매년 조용히 느려지는 '나이 들수록 비용 증가' 구조라 버그 헌팅 사이클로는 드러나지 않음. updateNwHistory/pruneNwHistory(:2073-2087)가 순자산 히스토리에는 이미 '최근 90일+월별 스냅샷' 체크포인트 패턴을 써서 해결해둔 것과 대조적. advance에서 DB.balCheckpoints 기반 체크포인트 도입 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 41,
       "phase": "advance",
@@ -148,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-09-19T00:10:00.000Z",
       "summary": "develop 커밋(29dca6b)을 검토. clampRecurringToMaturity()의 autoShortened 판정(prevMaturity&&maturity>prevMaturity&&!r.count&&r.endDate<=prevMaturity)이 사용자 지정 endDate(count 동반)·askRelinkDeleted 등 prevMaturity 없는 호출·만기 단축 케이스 모두에서 기존 보존 동작을 정확히 유지하면서, 자동 클램프 흔적(count 없음+이전 만기 이하)일 때만 확장하도록 정확히 좁혀졌음을 확인. recDates()가 r.endDate를 end 계산(1893행)과 push 필터(1895행) 양쪽에서 자체 상한으로 쓴다는 재확인도 맞아, endDate를 지운 사본을 넘기지 않으면 재계산이 무효했을 것이라는 커밋 설명이 정확함. 두 다른 호출부(askRelinkDeleted의 _amLink/_amFresh, index.html:2645,2652)는 신규 자산 등록 경로라 prevMaturity 없이 호출하는 게 맞고 영향 없음. node our-assets-v1.14.1/our-assets/test/run.js 재실행해 309/309 통과 재확인. 문제 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 46,
+      "phase": "critique",
+      "timestamp": "2026-09-19T01:09:46.472Z",
+      "summary": "라인 단위 버그 수정에서 벗어나 앱 전체를 구조적으로 재검토(Explore 서브에이전트 활용). accountName()(index.html:1768, 가입 이메일 또는 카카오 닉네임 원문 반환)이 renderMenu의 계정 카드(:3808)와 openAccountSheet의 계정 카드(:3831) innerHTML에 이스케이프 없이 삽입되는 걸 발견 — 바로 옆 aria-label(:3806)은 동일 값을 esc()로 감싸는데 그 innerHTML 삽입만 빠져 있는 불일치. 가입 이메일 검증 정규식(:1711, /^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/)이 @와 공백만 막고 <,>,\"는 걸러내지 않아 <img src=x onerror=...>@a.co 같은 이메일이 그대로 가입 통과해 메뉴/계정 시트를 열 때마다 실행되는 재현 가능한 self-XSS. doResetAll()(:5852)도 confirmSheet(title,msg,...)의 msg를 openSheet()가 그대로 innerHTML에 꽂는 구조라(confirmSheet :4762-4765) accountName()을 이스케이프 없이 msg에 넣는 세 번째 지점으로 추가 확인. renderHome/renderAssets/renderHistory 스모크 테스트 공백(3차례 이연, 새 근거 없어 유지)과 balancesUpTo RANGE_FROM 체크포인트(cycle41 완화로 현재 데이터 규모엔 충분해 보여 긴급성 낮음), long-press 멀티셀렉트 접근성 공백(여전히 단일 수정 지점 없음)은 이번엔 후순위로 재확인만 하고 기각. advance에서 세 지점 모두 esc(accountName())로 감싸고 회귀 테스트 추가하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     }
   ]
