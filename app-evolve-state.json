@@ -1,22 +1,12 @@
 {
   "cycle": 50,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "renderLedger()/renderHistory() 렌더 스모크 테스트 공백 메우기",
+    "why": "이 앱은 빌드/타입체크가 없는 단일 HTML 파일이라 render*() 함수의 템플릿 리터럴 오타나 미정의 변수 참조는 순수 로직 테스트를 다 통과하고도 실제 화면에서만 크래시로 드러난다. openCatManage(cycle43)/renderTxSheet(cycle44)/renderHome(cycle47)/renderAssets(cycle49)는 이미 이 recipe로 커버됐지만, 앱의 핵심 화면인 renderLedger(가계부, index.html:2940)와 renderHistory(전체 내역, index.html:3431)는 여전히 스모크 테스트가 전혀 없다(test/run.js:3338 주석이 이를 명시). renderLedger는 홈 다음으로 가장 많이 보는 메인 탭이라 회귀 파급력이 크다. self-XSS 추가 지점, 클라우드/localStorage 에러 처리, 자산 재연결 이름 매칭 엣지케이스는 이번 critique에서 조사했으나 이미 충분히 안전하거나(esc()/try-catch 이미 적용됨) 파급력이 낮아 기각했다.",
+    "approach": "cycle43(openCatManage)/cycle47(renderHome)/cycle49(renderAssets)와 동일한 recipe를 적용한다: 1) test/run.js STUBS에 renderLedger/renderHistory가 부르는 실제 부수효과 훅(스크롤/드래그 와이어링, 모드 토글 등)을 fitAll류 no-op 스텁으로 추가. 2) $('page-ledger')/$('page-history')가 직접 innerHTML을 쓰는 지점에 대응하는 pageHomeEl/pageAssetsEl과 같은 getter/setter 스텁 엘리먼트를 추가하고 $ 매핑에 연결. 3) 두 함수가 호출하는 순수 문자열 빌더들을 test/run.js FUNCTIONS에 추가(아직 없는 것만). 4) renderLedger()/renderHistory()를 실제 실행해 예외 없이 동작하고 카테고리/거래/필터/선택모드 on-off/빈 목록 등 주요 분기에서 예상 문자열(거래 메모, 자산명, 잔액 등)이 렌더 결과에 포함되는지 검증하는 테스트 추가. 의존 그래프가 더 얕은 쪽(renderLedger 먼저 시도)을 이번 advance에서 우선 처리하고, 나머지는 다음 사이클로 남겨도 된다. index.html 자체는 건드릴 필요 없으면 APP_VERSION/sw.js CACHE는 유지."
+  },
   "history": [
-    {
-      "cycle": 45,
-      "phase": "review",
-      "timestamp": "2026-09-18T20:09:00.000Z",
-      "summary": "develop 커밋(a994ee3)을 검토. lastActualAmount()의 실제 버그 소재는 openQuickAmount()의 last?...:'' 삼항연산 두 곳이었고, 커밋이 이를 last!=null?...:''로 정확히 고쳤음을 확인. lastActualAmount() 자체의 fallback 분기(r.amount!=null?r.amount:null)는 saveRec()의 !d.amount 검증 때문에 r.amount가 항상 truthy라 실질적 동작 변화는 없지만 의미상 더 명확해졌고 해롭지 않음. lastActualAmount 호출 지점이 openQuickAmount 한 곳뿐임을 grep으로 확인해 다른 소비자에 영향 없음. 새 회귀 테스트 5개가 pure 함수의 0원/기본값/손상 레코드 케이스와 렌더 결과(힌트 노출 여부, value 속성) 둘 다 커버. 301/301 통과. 문제 없음.",
-      "commit": null
-    },
-    {
-      "cycle": 45,
-      "phase": "critique",
-      "timestamp": "2026-09-18T21:11:00.000Z",
-      "summary": "홈 알림/렌더 스모크 테스트 등 라인 단위 안전망 확충에서 벗어나, Explore 서브에이전트로 클라우드 동기화 레이어(cycle42 critique에서 '이미 성숙, 새 버그 없음'으로 통과시켰던 pushCloud/pullCloud)를 재조사. pushCloud()(index.html:1604-1619)가 원격 updated_at을 SELECT로 읽어 isCloudConflict로 판정한 뒤 별도 UPSERT로 쓰는 check-then-act 구조라, '나/배우자/공용' 다중 기기 동시 편집이라는 앱의 핵심 시나리오에서 두 기기가 scheduleCloudPush의 1200ms 디바운스 창 안에 거의 동시에 푸시하면 둘 다 같은 cur.updated_at을 보고 통과해 나중 쓰기가 먼저 쓴 쪽 데이터를 토스트도 충돌 UI도 없이 통째로 덮어쓰는 race condition을 발견. 충돌 감지 자체를 우회하는 실사용 시나리오의 무경고 영구 데이터 유실이라 최우선으로 채택. renderHome/renderAssets/renderHistory 스모크 테스트 공백(cycle43/44에서 이미 알려진 채 두 차례 미룸)과 long-press 멀티셀렉트·드래그 정렬의 접근성 공백(넓은 범위라 단일 지점 수정 불가), afterCloudAuth의 무경고 sanitizeBackup 보정(낮은 파급력)은 재확인만 하고 기각. advance에서 SELECT+UPSERT를 단일 조건부 UPDATE(.eq('updated_at',CLOUD_LAST_SYNCED_AT))로 교체해 DB 레벨에서 원자적으로 충돌을 판정하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 45,
       "phase": "advance",
@@ -148,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-09-19T16:09:00.000Z",
       "summary": "develop 커밋(cfe2374)을 검토. assetNm(id,snap)의 두 소비 패턴을 grep으로 전수 확인: (1) txRow/histRow/planRows의 faN/taN은 asset/flow 변수로 합쳐진 뒤 렌더 시점에 이미 esc(asset)/esc(flow)로 감싸져 있고, (2) homeAlerts()가 만드는 'confirm' 알림의 from/to도 homeAlertCard()에서 esc(al.from)/esc(al.to)로 감싸져 있어 이번 develop이 놓친 추가 미이스케이프 소비처는 없음을 확인 — openConfirmTransfer/confirmRecTransfer 두 곳이 유일한 누락이었다는 커밋 설명이 맞다. esc()가 &<>\"'만 치환하는 기존 구현 그대로라 이중 이스케이프나 신규 회귀 없음. node test/run.js 재실행해 330/330 통과 재확인. 문제 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 50,
+      "phase": "critique",
+      "timestamp": "2026-09-19T17:11:00.000Z",
+      "summary": "Explore 서브에이전트로 앱 전체를 구조적으로 재검토. self-XSS 추가 지점(memo/카테고리명/CSV export 등 innerHTML 삽입 전수 확인 — 전부 esc() 또는 속성 컨텍스트라 안전, CSV는 guard()로 수식 인젝션도 이미 방어), 클라우드/localStorage 에러 처리 공백(pushCloud/pullCloud/fetchFxGold 모두 try/catch+Promise.allSettled로 방어, JSON.parse 실패 시 __corrupt_ 백업까지 남김), 자산 재연결(relinkDeletedAsset)의 이름 기반 매칭 엣지케이스(동명 자산 반복 삭제 시 DB.deletedBal 덮어써짐)를 조사했으나 이미 충분히 안전하거나 사용자가 매번 확인 흐름을 거쳐 파급력이 낮아 모두 기각. 대신 test/run.js의 render* 스모크 테스트가 openCatManage(43)/renderTxSheet(44)/renderHome(47)/renderAssets(49)만 커버하고 renderLedger(가계부, 2940)·renderHistory(전체 내역, 3431)는 여전히 전혀 커버 안 됨을 재확인(run.js:3338 주석이 이를 명시) — cycle49에서 renderHistory를 2순위 후속과제로 남겼던 것에 더해, 홈 다음으로 가장 많이 보는 renderLedger가 오히려 회귀 파급력이 더 크다고 판단해 채택. advance에서 기존 recipe(no-op 스텁+순수 문자열 빌더 FUNCTIONS 추가+실제 렌더 실행 검증)를 renderLedger 우선, 이어서 renderHistory에 적용하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     }
   ]
