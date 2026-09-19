@@ -96,6 +96,7 @@ const FUNCTIONS = [
   'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwHistoryCard',
   'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets',
   'modeSeg', 'monthNav', 'abbr', 'calCellsFor', 'ledSumInner', 'ledSumBox', 'calPane', 'txRow', 'dayTxns', 'renderLedger',
+  'fmtDot', 'splitHist', 'histRow', 'histTotHTML', 'updateHist', 'renderHistory',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -235,10 +236,28 @@ const sandbox = {
     set innerHTML(v) { this._html = v; },
     get innerHTML() { return this._html; },
   },
+  // page-history/histTotals/histList도 같은 이유(renderHistory()/updateHist()가
+  // $('page-history')/$('histTotals')/$('histList').innerHTML=...으로 직접 꽂음)로
+  // 같은 getter/setter 패턴을 재사용한다.
+  pageHistoryEl: {
+    _html: '',
+    set innerHTML(v) { this._html = v; },
+    get innerHTML() { return this._html; },
+  },
+  histTotalsEl: {
+    _html: '',
+    set innerHTML(v) { this._html = v; },
+    get innerHTML() { return this._html; },
+  },
+  histListEl: {
+    _html: '',
+    set innerHTML(v) { this._html = v; },
+    get innerHTML() { return this._html; },
+  },
   // recSave()/saveQuickAmount()는 각각 $('txAmt')/$('qAmt').value를 읽어 금액을 얻으므로,
   // 그 두 id만 값을 갖는 입력칸처럼 동작시킨다. errBanner는 renderCurrent 에러 바운더리 테스트용.
   // bkText는 copyBackup()이 select()/setSelectionRange()/.value를 쓰는 백업 복사 textarea 흉내.
-  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : null,
+  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : null,
   bkTextEl: { value: 'backup-text', select: () => {}, setSelectionRange: () => {} },
   // copyBackup()의 navigator.clipboard 체크가 ReferenceError 없이 "지원 안 함"으로 지나가게
   // 하는 최소 흉내(document.execCommand는 try/catch로 감싸져 있어 굳이 스텁이 필요 없음).
@@ -3775,6 +3794,78 @@ test('renderLedger: 오늘보다 미래 날짜를 선택하면 "예정" 라벨�
   sandbox.renderLedger();
   const html = sandbox.pageLedgerEl.innerHTML;
   assert.ok(html.includes('>예정<'), '오늘보다 미래인 날을 선택하면 day-head에 예정 라벨이 나와야 함');
+});
+
+/* ---------- renderHistory: 렌더 함수 스모크 테스트 (app-evolve cycle51 critique/advance) ----------
+ * openCatManage(cycle43)·renderTxSheet(cycle44)·renderHome(cycle47)·renderAssets(cycle49)·
+ * renderLedger(cycle50)에 이어 여섯 번째 render* 안전망 대상. renderHistory()는 내비게이션에서
+ * 바로 접근 가능한 '전체 내역' 탭인데도 test/run.js에는 실행 기반 테스트가 없었다(filteredHist/
+ * histInvalidate 순수 로직 테스트와, 소스 문자열에 '_histCache.key=null'이 있는지만 보는 텍스트
+ * 검사뿐 — sandbox.renderHistory()를 호출한 적이 없음). renderHistory가 동기 호출하는 updateHist()가
+ * 거치는 filteredHist/splitHist/histSumTotals/histTotHTML/histRow는 전부 순수 문자열/데이터
+ * 빌더고, 실제 부수효과 호출은 wireLongPress/requestAnimationFrame(fitAll)/updateSelBottom 세
+ * 개뿐(모두 기존 no-op 스텁 재사용) — $('page-history')/#histTotals/#histList innerHTML
+ * 결과만으로 검증할 수 있다. */
+function setupHistoryDB() {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.TM = { y: 2026, m: 6 };
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox.DISP_TO = sandbox.addDays(sandbox.TODAY, 92);
+  sandbox._balCache.clear();
+  sandbox._recCache.clear();
+  sandbox._histCache = { key: null, list: null };
+  sandbox.pageHistoryEl._html = '';
+  sandbox.histTotalsEl._html = '';
+  sandbox.histListEl._html = '';
+  sandbox.ST = {
+    hist: {
+      cat: '전체', q: '', selMode: false, sel: new Set(), sortAsc: false,
+      range: { from: '2026-01-01', to: '2026-12-31' }, preset: 'year', page: 1, avgMode: false,
+    },
+  };
+  sandbox.DB = {
+    settings: { includeScheduled: true },
+    assets: [],
+    txns: [],
+    recurrences: [],
+  };
+}
+test('renderHistory: 일치하는 거래가 없으면 예외 없이 실행되고 빈 상태 안내가 렌더된다', () => {
+  setupHistoryDB();
+  assert.doesNotThrow(() => sandbox.renderHistory());
+  const html = sandbox.pageHistoryEl.innerHTML;
+  assert.ok(html, "$('page-history').innerHTML이 채워져야 함");
+  assert.ok(html.includes('메모·카테고리·자산 검색'), '전체 내역 탭 검색바가 렌더돼야 함');
+  assert.ok(sandbox.histListEl.innerHTML.includes('이 기간에는 내역이 없어요'), '내역이 없으면 빈 상태 안내가 나와야 함');
+});
+test('renderHistory: 실제 거래가 있으면 메모/금액이 histList에, 건수가 histTotals에 실제로 렌더된다', () => {
+  setupHistoryDB();
+  sandbox.DB.assets = [{ id: 'a1', name: '주계좌', owner: '나', type: 'cash', baseAmount: 500000 }];
+  sandbox.DB.txns = [{ id: 't1', date: '2026-06-10', type: 'expense', category: '식비', memo: '점심 김밥', amount: 8000, fromAssetId: 'a1' }];
+  sandbox.renderHistory();
+  const listHtml = sandbox.histListEl.innerHTML;
+  assert.ok(listHtml.includes('점심 김밥'), '내역 메모가 렌더돼야 함');
+  assert.ok(listHtml.includes('-8,000원'), '지출 금액이 렌더돼야 함');
+  assert.ok(!listHtml.includes('이 기간에는 내역이 없어요'));
+  assert.ok(sandbox.histTotalsEl.innerHTML.includes('검색 결과 1건'), '합계 카드에 검색 결과 건수가 렌더돼야 함');
+});
+test('renderHistory: 멀티셀렉트 모드(ST.hist.selMode)에서는 검색바가 숨겨지고 선택 체크마크가 렌더된다', () => {
+  setupHistoryDB();
+  sandbox.DB.txns = [{ id: 't1', date: '2026-06-10', type: 'expense', category: '식비', memo: '점심 김밥', amount: 8000, fromAssetId: 'a1' }];
+  sandbox.ST.hist.selMode = true;
+  sandbox.renderHistory();
+  assert.ok(!sandbox.pageHistoryEl.innerHTML.includes('메모·카테고리·자산 검색'), '멀티셀렉트 모드에서는 검색바가 숨겨져야 함');
+  const listHtml = sandbox.histListEl.innerHTML;
+  assert.ok(listHtml.includes('sel-check'), '멀티셀렉트 모드에서는 선택 체크마크가 렌더돼야 함');
+  assert.ok(listHtml.includes("onclick=\"histToggleSel('t1')\""), '내역 행 클릭이 histToggleSel로 연결돼야 함');
+});
+test('renderHistory: 오늘보다 미래 날짜의 거래는 예정 라벨(sch-dot)이 렌더된다', () => {
+  setupHistoryDB();
+  sandbox.DB.txns = [{ id: 't1', date: '2026-06-20', type: 'expense', category: '식비', memo: '예정 지출', amount: 5000 }];
+  sandbox.renderHistory();
+  const listHtml = sandbox.histListEl.innerHTML;
+  assert.ok(listHtml.includes('sch-dot'), '오늘보다 미래인 거래는 예정 표시(sch-dot)가 나와야 함');
+  assert.ok(listHtml.includes('>예정<'), '자산 정보가 없는 예정 거래는 "예정" 라벨이 나와야 함');
 });
 
 /* ---------- 실행 ---------- */

@@ -1,19 +1,8 @@
 {
-  "cycle": 51,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "renderHistory() 렌더 스모크 테스트 도입",
-    "why": "test/run.js에 renderHistory(index.html:3431-3447)를 실제로 실행하는 테스트가 전혀 없다. 현재 있는 건 filteredHist()/histInvalidate() 순수 로직 테스트와, extractFunction('renderHistory')로 소스 문자열에 '_histCache.key=null'이 있는지만 확인하는 텍스트 검사뿐(sandbox.renderHistory()를 호출하지 않음). '전체 내역' 탭은 내비게이션에서 바로 접근 가능한 주요 화면인데 openCatManage(43)/renderTxSheet(44)/renderHome(47)/renderAssets(49)/renderLedger(50)와 달리 유일하게 렌더 스모크 테스트가 없는 render* 함수다. renderHistory가 동기 호출하는 updateHist()(index.html:3445)가 filteredHist/splitHist/histSumTotals/histTotHTML/histRow를 거쳐 #histTotals/#histList에 꽂는데, 그 체인 안의 TypeError(예: 거래 필드 변경, null 자산 id, 카테고리 리네임)는 현재 test/run.js 전체 통과에도 잡히지 않고 실제 화면에서만 드러난다.",
-    "approach": "renderLedger(cycle50, test/run.js ~3716-3781) 레시피를 그대로 재사용한다: (1) FUNCTIONS 배열에 renderHistory/updateHist/histRow/histTotHTML/filteredHist/splitHist/histSumTotals 중 아직 없는 것을 추가해 실제 소스로 끌어온다(순수 함수). (2) requestAnimationFrame(fitAll)/wireLongPress/updateSelBottom 등 DOM/애니메이션 부수효과 호출은 fitAll류 no-op 스텁으로 처리(이미 있는 스텁 재사용). (3) pageHomeEl/pageAssetsEl/pageLedgerEl과 같은 패턴으로 #page-history/#histTotals/#histList 최소 DOM 스텁을 추가. (4) 테스트 3~4개: 빈 상태(일치하는 거래 없음)에서 예외 없이 렌더, 실제 DB.txns 메모/금액이 histList에 나오는지, 멀티셀렉트 모드(ST.hist.selMode)에서 체크마크 렌더, 예정(sch-dot/예정) 거래 라벨 렌더 — renderLedger 테스트 형태를 따른다. index.html 변경 없이 테스트 인프라만 확장하는 게 기본 기대이므로 APP_VERSION/sw.js CACHE는 코드 변경이 없으면 그대로 유지."
-  },
+  "cycle": 52,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 46,
-      "phase": "advance",
-      "timestamp": "2026-09-19T02:08:54.000Z",
-      "summary": "critique(d3f7bdc) 계획대로 accountName()이 이스케이프 없이 innerHTML에 꽂히던 세 지점(renderMenu 계정 카드 :3808, openAccountSheet 계정 카드 :3831, doResetAll()의 confirmSheet msg :5852)을 모두 esc(accountName())로 감싸 self-XSS를 봉합했다. 바로 옆 aria-label(:3806)이 이미 쓰던 esc() 패턴과 통일. accountName()이 test/run.js FUNCTIONS에 없어 추가했는데, AUTH.rec(SESSION)의 AUTH/SESSION이 둘 다 localStorage 파생 비순수 상태라 CLOUD_UID/RANGE_TO와 같은 패턴으로 sandbox에 직접 스텁(SESSION:null, AUTH:{rec:()=>null})을 추가(extractLet으로 실제 SESSION 선언을 끌어오면 vm 실행 시점에 sandbox에 없는 localStorage를 최상위에서 바로 참조해 전체 테스트가 깨지므로 실제 소스 추출 대신 직접 세팅 방식을 택함). 회귀 테스트 3개 추가: AUTH.rec()이 null이면(r=null) accountName()이 SESSION을 그대로 반환함(호출부 책임 확인), esc(accountName())이 <img> 태그를 무력화함(&lt;img.../&gt;), 카카오 로그인 시 닉네임 태그도 esc()로 이스케이프됨. 312/312 통과. 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.43.1->1.43.2, sw.js CACHE v127->v128. pending_advance_plan 비움.",
-      "commit": null
-    },
     {
       "cycle": 47,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-19T21:07:00.000Z",
       "summary": "Explore 서브에이전트로 앱 전체를 구조적으로 재검토. render* 렌더 스모크 테스트 시리즈(openCatManage 43, renderTxSheet 44, renderHome 47, renderAssets 49, renderLedger 50)에서 renderHistory()(index.html:3431-3447, '전체 내역' 탭)만 유일하게 실행 기반 커버리지가 없음을 확인 — test/run.js의 기존 커버리지는 filteredHist()/histInvalidate() 순수 로직 테스트와 extractFunction('renderHistory')로 소스 문자열에 '_histCache.key=null'이 있는지만 보는 텍스트 검사뿐, sandbox.renderHistory()를 실제로 호출하는 테스트는 없음. renderHistory가 동기 호출하는 updateHist()(:3445)가 filteredHist/splitHist/histSumTotals/histTotHTML/histRow를 거쳐 #histTotals/#histList에 꽂는 체인 안의 TypeError는 현재 test/run.js 전체 통과에도 잡히지 않고 실제 화면에서만 드러남. 같은 패스에서 innerHTML 삽입 지점 재점검(2194/2556/2944/3434/3733/3811/4361/4675-4752/4817-5114/5670/5791) — cycle46/48/50이 이미 스윕한 계정명/자산명/이체 확인 시트 외 새 미이스케이프 지점 없음 — 및 localStorage try/catch 커버리지(corrupt-data 격리 :1780-1784, storage 불가 토스트 :1777, 클라우드 동기화 실패 처리 :1591-1647 모두 이미 방어)를 조사했으나 새 실행 가능한 결함 없어 기각. advance에서 renderLedger(cycle50) 레시피를 그대로 재사용해 renderHistory() 렌더 스모크 테스트를 도입하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 51,
+      "phase": "advance",
+      "timestamp": "2026-09-19T22:07:00.000Z",
+      "summary": "critique(e104577) 계획대로 renderHistory()에 렌더 스모크 테스트를 도입해 openCatManage(43)·renderTxSheet(44)·renderHome(47)·renderAssets(49)·renderLedger(50)에 이어 여섯 번째(마지막 남은) render* 안전망 사례를 만들었다. renderLedger(cycle50) 레시피를 그대로 재사용: FUNCTIONS에 아직 없던 순수 함수(fmtDot, splitHist, histRow, histTotHTML, updateHist, renderHistory 자체)를 추가했고(filteredHist/histSumTotals/histInvalidate/matchTxnQuery/txScheduled/isDuePending/catGlyph/esc/assetNm은 이미 있어 재사용), pageHomeEl/pageAssetsEl/pageLedgerEl과 같은 getter/setter 패턴으로 pageHistoryEl/histTotalsEl/histListEl 세 개를 추가해 $('page-history')/$('histTotals')/$('histList')에 연결했다(실제 부수효과 호출은 wireLongPress/requestAnimationFrame(fitAll)/updateSelBottom뿐이라 새 스텁 없이 기존 no-op 재사용). 테스트 4개: 1) 일치하는 거래가 없으면 예외 없이 실행되고 검색바+\"이 기간에는 내역이 없어요\" 빈 상태가 렌더되는지, 2) 실제 거래가 있으면 메모(\"점심 김밥\")/금액(\"-8,000원\")이 histList에, 건수(\"검색 결과 1건\")가 histTotals에 렌더되는지, 3) 멀티셀렉트 모드(ST.hist.selMode)에서는 검색바가 숨겨지고 sel-check 체크마크와 histToggleSel onclick이 렌더되는지, 4) 오늘보다 미래 날짜의 거래는 sch-dot과 \">예정<\" 라벨이 렌더되는지. index.html은 전혀 건드리지 않아(테스트 인프라만 확장) APP_VERSION/sw.js CACHE는 그대로 유지. 회귀 테스트 4개 추가, 340/340 통과. 두 인라인 <script> 블록 모두 node --check(new Function) 파싱 확인. pending_advance_plan 비움 — render* 스모크 테스트 시리즈 전 화면(openCatManage/renderTxSheet/renderHome/renderAssets/renderLedger/renderHistory) 완료.",
       "commit": null
     }
   ]
