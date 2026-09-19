@@ -1,6 +1,6 @@
 {
   "cycle": 50,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
     {
@@ -141,6 +141,13 @@
       "phase": "develop",
       "timestamp": "2026-09-19T15:10:00.000Z",
       "summary": "Explore 서브에이전트로 발견한 openConfirmTransfer()/confirmRecTransfer()의 이체 확인 시트 self-XSS 수정. assetNm(id,snap)(index.html:1439)이 살아있는 자산이면 a.name을, 삭제된 자산이면 캐시된 fromAssetName/toAssetName 스냅샷을 이스케이프 없이 그대로 반환하는데, openConfirmTransfer(:1441)와 confirmRecTransfer(:1451) 둘 다 이 값을 openSheet()의 innerHTML 템플릿에 그대로 꽂고 있었다 — assetPickBtn()/renderPlan()/accountName() 등 자산명·표시명 관련 XSS는 cycle46/48에서 이미 esc()로 봉합했는데 이 두 지점만 놓쳐 있었다. 이체는 지출/수입 전 어디서나 자동 생성될 수 있고(반복이체 포함) confirmTransfers 설정이 켜져 있으면 홈 화면의 \"확인\" 배지를 탭하기만 해도(즉 평범한 사용 흐름에서) 실행되는 재현 가능한 stored XSS이며, snap 경로는 자산을 삭제/이름변경해도 과거 거래에 남아 있는 캐시된 이름이라 더 오래 남는다. 두 호출부의 assetNm(...) 네 곳(from/to × 2 함수)을 esc(assetNm(...))로 감쌌다. test/run.js FUNCTIONS에 openConfirmTransfer 추가(confirmRecTransfer/assetNm은 이미 있었음), 회귀 테스트 3개 추가(openConfirmTransfer 살아있는 자산명 이스케이프, 삭제된 자산의 캐시된 이름(snap) 이스케이프, confirmRecTransfer 자산명 이스케이프). 두 인라인 <script> 블록 모두 node --check 파싱 확인, 330/330 통과. APP_VERSION 1.43.6->1.43.7, sw.js CACHE v132->v133.",
+      "commit": null
+    },
+    {
+      "cycle": 50,
+      "phase": "review",
+      "timestamp": "2026-09-19T16:09:00.000Z",
+      "summary": "develop 커밋(cfe2374)을 검토. assetNm(id,snap)의 두 소비 패턴을 grep으로 전수 확인: (1) txRow/histRow/planRows의 faN/taN은 asset/flow 변수로 합쳐진 뒤 렌더 시점에 이미 esc(asset)/esc(flow)로 감싸져 있고, (2) homeAlerts()가 만드는 'confirm' 알림의 from/to도 homeAlertCard()에서 esc(al.from)/esc(al.to)로 감싸져 있어 이번 develop이 놓친 추가 미이스케이프 소비처는 없음을 확인 — openConfirmTransfer/confirmRecTransfer 두 곳이 유일한 누락이었다는 커밋 설명이 맞다. esc()가 &<>\"'만 치환하는 기존 구현 그대로라 이중 이스케이프나 신규 회귀 없음. node test/run.js 재실행해 330/330 통과 재확인. 문제 없음.",
       "commit": null
     }
   ]
