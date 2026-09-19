@@ -2890,6 +2890,30 @@ test('postponeRecTransfer: 회차별 수정이 없으면 기존처럼 반복의 
   assert.strictEqual(t.amount, 500000);
   assert.strictEqual(t.memo, '적금이체');
 });
+/* postponeRecTransfer: daily 반복 이체를 "내일로" 미루면 +1일이 그 반복의 다음 정상 회차
+ * 날짜와 겹쳐(daily는 매일이 회차이므로 항상 겹침), 엔진(expandRec)이 내일 몫 회차를 또
+ * 만들어내 수동으로 넣은 이체와 중복 계상되던 버그(app-evolve cycle47 develop)의 회귀 테스트.
+ * weekly/monthly/yearly는 +1일이 다음 정상 회차와 우연히 겹칠 일이 사실상 없어 영향 없다. */
+test('postponeRecTransfer: daily 반복은 내일 날짜도 skip에 추가해 엔진이 중복 회차를 만들지 않는다', () => {
+  setupRecTransferDB();
+  sandbox.DB.recurrences[0].freq = 'daily';
+  sandbox.DB.recurrences[0].startDate = '2026-01-01';
+  sandbox.DB.recurrences[0].active = true;
+  const tomorrow = sandbox.addDays(sandbox.TODAY, 1);
+  sandbox.postponeRecTransfer('r1', '2026-09-17');
+  assert.ok(sandbox.DB.recurrences[0].skip.includes(tomorrow), '내일 날짜도 skip에 들어가야 엔진이 중복 회차를 안 만듦');
+  const occ = sandbox.expandRec(tomorrow, tomorrow);
+  assert.strictEqual(occ.length, 0, '엔진이 내일 몫 회차를 또 만들면 안 됨(수동으로 넣은 거래와 중복)');
+  const manual = sandbox.DB.txns.filter(t => t.date === tomorrow);
+  assert.strictEqual(manual.length, 1, '수동으로 넣은 거래는 정확히 1건이어야 함');
+});
+test('postponeRecTransfer: 미룬 날짜가 이미 내일이면(예: weekly가 우연히 겹침) skip을 중복으로 넣지 않는다', () => {
+  setupRecTransferDB();
+  const tomorrow = sandbox.addDays(sandbox.TODAY, 1);
+  sandbox.postponeRecTransfer('r1', tomorrow);
+  const skipCount = sandbox.DB.recurrences[0].skip.filter(d => d === tomorrow).length;
+  assert.strictEqual(skipCount, 1, 'date와 내일이 같아도 skip 항목은 중복 없이 1개여야 함');
+});
 
 /* ---------- copyBackup/openCopyBackup: CSV 복사 폴백이 백업 알림 상태를 건드리던 버그
  * (app-evolve cycle37 develop) — doExport()는 CSV 내보내기일 때 isCsv 가드로 lastExport/

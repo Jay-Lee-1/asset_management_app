@@ -1,15 +1,8 @@
 {
   "cycle": 47,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 42,
-      "phase": "develop",
-      "timestamp": "2026-09-18T06:15:24.482Z",
-      "summary": "openFixShortfall()(index.html:5175)이 플랜을 실행하지 않고 시트를 닫아도 모듈 스코프 _fixWhen(고른 이체일)을 리셋하지 않던 버그 발견·수정. _fixWhen은 planTransfer/planSplitTransfer가 실제 실행됐을 때만 null로 비워지는데, 사용자가 \"날짜 선택\"으로 임의 날짜를 고르고 취소하면 그 값이 남아, 몇 주 뒤 전혀 다른 자산·날짜의 부족 알림을 열어도 stale한 날짜를 이어써 findDonors가 잘못된 기준일로 여유 통장을 계산하고 그 날짜로 이체가 기록될 위험이 있었다. openFixShortfall() 진입부에 (targetId,date) 컨텍스트가 실제로 바뀔 때만 _fixWhen을 리셋하는 가드 추가(같은 컨텍스트로 재렌더될 때는 고른 날짜 유지). 회귀 테스트 2개 추가(다른 컨텍스트면 리셋, 같은 컨텍스트면 유지), test/run.js FUNCTIONS에 openFixShortfall·LETS에 _fixWhen 추가, 276/276 통과. 두 인라인 <script> 블록 모두 vm.Script 파싱 확인. APP_VERSION 1.42.0->1.42.1, sw.js CACHE v121->v122.",
-      "commit": null
-    },
     {
       "cycle": 42,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-19T02:08:54.000Z",
       "summary": "critique(d3f7bdc) 계획대로 accountName()이 이스케이프 없이 innerHTML에 꽂히던 세 지점(renderMenu 계정 카드 :3808, openAccountSheet 계정 카드 :3831, doResetAll()의 confirmSheet msg :5852)을 모두 esc(accountName())로 감싸 self-XSS를 봉합했다. 바로 옆 aria-label(:3806)이 이미 쓰던 esc() 패턴과 통일. accountName()이 test/run.js FUNCTIONS에 없어 추가했는데, AUTH.rec(SESSION)의 AUTH/SESSION이 둘 다 localStorage 파생 비순수 상태라 CLOUD_UID/RANGE_TO와 같은 패턴으로 sandbox에 직접 스텁(SESSION:null, AUTH:{rec:()=>null})을 추가(extractLet으로 실제 SESSION 선언을 끌어오면 vm 실행 시점에 sandbox에 없는 localStorage를 최상위에서 바로 참조해 전체 테스트가 깨지므로 실제 소스 추출 대신 직접 세팅 방식을 택함). 회귀 테스트 3개 추가: AUTH.rec()이 null이면(r=null) accountName()이 SESSION을 그대로 반환함(호출부 책임 확인), esc(accountName())이 <img> 태그를 무력화함(&lt;img.../&gt;), 카카오 로그인 시 닉네임 태그도 esc()로 이스케이프됨. 312/312 통과. 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.43.1->1.43.2, sw.js CACHE v127->v128. pending_advance_plan 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 47,
+      "phase": "develop",
+      "timestamp": "2026-09-19T03:12:16.303Z",
+      "summary": "postponeRecTransfer()(index.html:1458)가 daily 반복 이체를 \"내일로\" 미룰 때 미룬 날짜(date)만 r.skip에 추가하고 새 거래는 내일(TODAY+1) 날짜로 넣는데, daily 반복은 매일이 정상 회차라 expandRec()의 recDates()가 그 내일 날짜도 그대로 자기 회차로 다시 만들어내(app-evolve cycle47 develop, Explore 서브에이전트로 발견) 확인 필요 이체가 무경고로 이중 계상되던 버그 발견·수정(weekly/monthly/yearly는 +1일이 다음 정상 회차와 우연히 겹칠 일이 사실상 없어 영향 없음, sibling postponeTransfer()는 단일 txn 날짜만 바꾸므로 애초에 이 위험이 없음을 확인). 새 거래를 넣는 날짜(nd=addDays(TODAY,1))도 함께 r.skip에 추가하도록 수정하고, date와 nd가 같은 경우(미루려는 날짜가 이미 내일인 경우)를 위해 중복 push 가드 추가. postponeRecTransfer/recDates/expandRec 모두 기존 test/run.js FUNCTIONS에 이미 있어 새 상수 추가 없이 회귀 테스트 2개 추가(daily 반복이 내일 회차를 중복 생성하지 않음을 expandRec 결과로 확인, date===내일인 경우 skip에 중복 없이 1개만 들어감), 314/314 통과. 두 인라인 <script> 블록 모두 vm.Script 파싱 확인. APP_VERSION 1.43.2->1.43.3, sw.js CACHE v128->v129.",
       "commit": null
     }
   ]

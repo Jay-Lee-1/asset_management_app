@@ -1288,7 +1288,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.43.2';
+const APP_VERSION='1.43.3';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1457,8 +1457,12 @@ function confirmRecNow(recId,date){const r=DB.recurrences.find(x=>x.id===recId);
 }
 function postponeRecTransfer(recId,date){const r=DB.recurrences.find(x=>x.id===recId);if(!r)return;
  const ed=(r.edits||{})[date]||{};
+ const nd=addDays(TODAY,1);
  (r.skip=r.skip||[]).push(date);
- DB.txns.push({id:uid(),type:'transfer',category:'이체',memo:ed.memo!=null?ed.memo:(r.memo||'이체'),amount:ed.amount!=null?ed.amount:r.amount,fromAssetId:r.fromAssetId,toAssetId:r.toAssetId,date:addDays(TODAY,1),confirmed:false});
+ /* daily 반복은 +1일이 다음 정상 회차 날짜와 겹칠 수 있어, 안 그러면 엔진이 그 날짜에
+    자기 회차를 또 만들어내 수동으로 넣은 이체와 중복(잔액 이중 반영)된다 */
+ if(!r.skip.includes(nd))r.skip.push(nd);
+ DB.txns.push({id:uid(),type:'transfer',category:'이체',memo:ed.memo!=null?ed.memo:(r.memo||'이체'),amount:ed.amount!=null?ed.amount:r.amount,fromAssetId:r.fromAssetId,toAssetId:r.toAssetId,date:nd,confirmed:false});
  save();closeSheet();renderCurrent();toast('내일로 미뤘어요');
 }
 
