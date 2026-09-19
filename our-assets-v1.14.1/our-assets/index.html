@@ -1288,7 +1288,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.43.4';
+const APP_VERSION='1.43.5';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3734,7 +3734,7 @@ function renderPlan(){
  ${pageHead('plan')}
  ${monthNav('plan',`${y}년 ${m}월`)}
  <div class="filter-2">
-   <button onclick="openPlanAsset()"><span class="fk">통장</span><span class="fv">${a?a.name:'없음'} ${svg('chevD')}</span></button>
+   <button onclick="openPlanAsset()"><span class="fk">통장</span><span class="fv">${a?esc(a.name):'없음'} ${svg('chevD')}</span></button>
  </div>
  <div class="mc-viewport" id="planVP"><div class="mc-track">
    ${planBalCard(m===1?y-1:y, m===1?12:m-1, a)}
@@ -5510,7 +5510,7 @@ window.addEventListener('resize',()=>requestAnimationFrame(fitAll));
 /* ================= PICKERS (탭하면 열리는 선택창) ================= */
 function catAv(type){return type==='income'?'a-in':type==='saving'?'a-save':'a-food'}
 function assetPickBtn(id,onclick){const a=DB.assets.find(x=>x.id===id);const ty=a?ASSET_TYPES[a.type]:null;
- return `<button class="pick ${a?'':'placeholder'}" onclick="${onclick}">${a?`<div class="pav ${ty.cls}">${svg(ty.icon)}</div>`:''}<div class="pbody"><div class="pn">${a?a.name:'선택하세요'}</div>${a?`<div class="psub">${ty.label} · ${a.owner}</div>`:''}</div><div class="pc">${svg('chevR')}</div></button>`}
+ return `<button class="pick ${a?'':'placeholder'}" onclick="${onclick}">${a?`<div class="pav ${ty.cls}">${svg(ty.icon)}</div>`:''}<div class="pbody"><div class="pn">${a?esc(a.name):'선택하세요'}</div>${a?`<div class="psub">${ty.label} · ${esc(a.owner)}</div>`:''}</div><div class="pc">${svg('chevR')}</div></button>`}
 function openPicker(title,bodyHtml,back){window._pkBack=back||null;
  const psc=$('sheetScroll');const savedTop=psc?psc.scrollTop:0; /* 들어갈 때 스크롤 위치 기억 */
  if(back)window._pkBack=()=>{back();const nsc=$('sheetScroll');if(nsc)nsc.scrollTop=savedTop;}; /* 나올 때 복원 */

@@ -3406,6 +3406,33 @@ test('txToggleRepeat: 반복을 켜면 day 기본값이 시작일의 일자로 �
   assert.ok(sandbox.lastSheetHtml.includes('주기'), '반복 on 상태로 재렌더돼 주기 선택 필드가 나와야 함');
 });
 
+/* ---------- assetPickBtn/renderPlan: a.name·a.owner 미이스케이프 self-XSS 봉합 회귀 ----------
+ * assetPickBtn()은 지출/수입/이체/저축만기이체/반복거래 폼 등에서 재사용되는 공용 컴포넌트라,
+ * 자산 이름이나 귀속(owner)에 <img onerror=...> 같은 값이 저장되면(saveAsset()이 저장 시
+ * 값을 검증하지 않음) 그 다음 아무 거래 폼을 열 때마다 실행되는 self-XSS였다. 바로 옆
+ * openAssetPicker()의 자산 리스트는 이미 esc()로 감싸져 있어 이건 일관성 공백이었다.
+ * accountName()(d3f7bdc)과 같은 계열이지만 다른 미해결 지점이라 esc-at-render 패턴을 그대로
+ * 적용했다. */
+test('assetPickBtn: 자산명·귀속에 담긴 태그가 esc()로 이스케이프된다', () => {
+  sandbox.DB = { assets: [{ id: 'a1', name: '<img src=x onerror=alert(1)>', type: 'cash', owner: '<b>나</b>' }] };
+  const html = sandbox.assetPickBtn('a1', 'noop()');
+  assert.ok(!html.includes('<img'), 'assetPickBtn()은 자산명의 태그를 이스케이프해야 함');
+  assert.ok(html.includes('&lt;img'), 'assetPickBtn()은 자산명을 esc()로 감싸야 함');
+  assert.ok(!html.includes('<b>나</b>'), 'assetPickBtn()은 귀속(owner)의 태그도 이스케이프해야 함');
+  assert.ok(html.includes('&lt;b&gt;나&lt;/b&gt;'), 'assetPickBtn()은 귀속을 esc()로 감싸야 함');
+});
+test('assetPickBtn: 선택된 자산이 없으면(id 불일치) placeholder만 그리고 크래시하지 않는다', () => {
+  sandbox.DB = { assets: [] };
+  const html = sandbox.assetPickBtn('missing', 'noop()');
+  assert.ok(html.includes('선택하세요'));
+});
+// renderPlan()은 $/monthNav/planBalCard 등 화면 전용 의존성이 많아 실행 대신 소스 텍스트로
+// esc() 사용 여부를 확인한다(위 renderPlan 접근성 테스트들과 같은 방식).
+test('renderPlan: 통장 선택 버튼(fv)의 자산명이 esc()로 감싸져 있다', () => {
+  const body = extractFunction('renderPlan');
+  assert.ok(body.includes("${a?esc(a.name):'없음'}"), 'renderPlan()의 통장 선택 버튼이 a.name을 esc() 없이 그대로 꽂고 있음');
+});
+
 /* ---------- accountName/esc: self-XSS 봉합 회귀 (d3f7bdc) ---------- */
 // 가입 이메일 검증 정규식(/^[^@\s]+@[^@\s]+\.[^@\s]+$/)이 @와 공백만 막고 <,>,"는 걸러내지
 // 않아 <img src=x onerror=...>@a.co 같은 이메일이 가입을 통과해 SESSION에 그대로 남는다.
