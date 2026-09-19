@@ -1,15 +1,12 @@
 {
   "cycle": 51,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "renderHistory() 렌더 스모크 테스트 도입",
+    "why": "test/run.js에 renderHistory(index.html:3431-3447)를 실제로 실행하는 테스트가 전혀 없다. 현재 있는 건 filteredHist()/histInvalidate() 순수 로직 테스트와, extractFunction('renderHistory')로 소스 문자열에 '_histCache.key=null'이 있는지만 확인하는 텍스트 검사뿐(sandbox.renderHistory()를 호출하지 않음). '전체 내역' 탭은 내비게이션에서 바로 접근 가능한 주요 화면인데 openCatManage(43)/renderTxSheet(44)/renderHome(47)/renderAssets(49)/renderLedger(50)와 달리 유일하게 렌더 스모크 테스트가 없는 render* 함수다. renderHistory가 동기 호출하는 updateHist()(index.html:3445)가 filteredHist/splitHist/histSumTotals/histTotHTML/histRow를 거쳐 #histTotals/#histList에 꽂는데, 그 체인 안의 TypeError(예: 거래 필드 변경, null 자산 id, 카테고리 리네임)는 현재 test/run.js 전체 통과에도 잡히지 않고 실제 화면에서만 드러난다.",
+    "approach": "renderLedger(cycle50, test/run.js ~3716-3781) 레시피를 그대로 재사용한다: (1) FUNCTIONS 배열에 renderHistory/updateHist/histRow/histTotHTML/filteredHist/splitHist/histSumTotals 중 아직 없는 것을 추가해 실제 소스로 끌어온다(순수 함수). (2) requestAnimationFrame(fitAll)/wireLongPress/updateSelBottom 등 DOM/애니메이션 부수효과 호출은 fitAll류 no-op 스텁으로 처리(이미 있는 스텁 재사용). (3) pageHomeEl/pageAssetsEl/pageLedgerEl과 같은 패턴으로 #page-history/#histTotals/#histList 최소 DOM 스텁을 추가. (4) 테스트 3~4개: 빈 상태(일치하는 거래 없음)에서 예외 없이 렌더, 실제 DB.txns 메모/금액이 histList에 나오는지, 멀티셀렉트 모드(ST.hist.selMode)에서 체크마크 렌더, 예정(sch-dot/예정) 거래 라벨 렌더 — renderLedger 테스트 형태를 따른다. index.html 변경 없이 테스트 인프라만 확장하는 게 기본 기대이므로 APP_VERSION/sw.js CACHE는 코드 변경이 없으면 그대로 유지."
+  },
   "history": [
-    {
-      "cycle": 46,
-      "phase": "critique",
-      "timestamp": "2026-09-19T01:09:46.472Z",
-      "summary": "라인 단위 버그 수정에서 벗어나 앱 전체를 구조적으로 재검토(Explore 서브에이전트 활용). accountName()(index.html:1768, 가입 이메일 또는 카카오 닉네임 원문 반환)이 renderMenu의 계정 카드(:3808)와 openAccountSheet의 계정 카드(:3831) innerHTML에 이스케이프 없이 삽입되는 걸 발견 — 바로 옆 aria-label(:3806)은 동일 값을 esc()로 감싸는데 그 innerHTML 삽입만 빠져 있는 불일치. 가입 이메일 검증 정규식(:1711, /^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/)이 @와 공백만 막고 <,>,\"는 걸러내지 않아 <img src=x onerror=...>@a.co 같은 이메일이 그대로 가입 통과해 메뉴/계정 시트를 열 때마다 실행되는 재현 가능한 self-XSS. doResetAll()(:5852)도 confirmSheet(title,msg,...)의 msg를 openSheet()가 그대로 innerHTML에 꽂는 구조라(confirmSheet :4762-4765) accountName()을 이스케이프 없이 msg에 넣는 세 번째 지점으로 추가 확인. renderHome/renderAssets/renderHistory 스모크 테스트 공백(3차례 이연, 새 근거 없어 유지)과 balancesUpTo RANGE_FROM 체크포인트(cycle41 완화로 현재 데이터 규모엔 충분해 보여 긴급성 낮음), long-press 멀티셀렉트 접근성 공백(여전히 단일 수정 지점 없음)은 이번엔 후순위로 재확인만 하고 기각. advance에서 세 지점 모두 esc(accountName())로 감싸고 회귀 테스트 추가하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 46,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-09-19T20:07:45.445Z",
       "summary": "develop 커밋(8fd8c63, CSV 내보내기 반복거래 누락 수정)을 검토. doExport의 DB.txns.concat(expandRec(RANGE_FROM,RANGE_TO)) 방식이 allTxns()와 동일한 합성 패턴임을 확인. 반복거래는 confirmRecTransfer로 확인 처리해도 r.confirmedDates만 갱신되고 r.skip에는 들어가지 않으며 DB.txns로도 옮겨지지 않는다(1428행, 2441행) — 즉 expandRec()이 항상 유일한 원천이라 DB.txns와 concat해도 중복이 생기지 않음을 코드로 확인. txnsToCSV는 정렬/이스케이프만 하고 별도 날짜 필터링을 하지 않으므로 RANGE_FROM~RANGE_TO(2023-01-01~오늘+760일) 범위가 그대로 CSV 범위가 됨 — 기존 화면 표시 범위와 일관됨. node test/run.js 재실행해 336/336 통과 재확인. 문제 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 51,
+      "phase": "critique",
+      "timestamp": "2026-09-19T21:07:00.000Z",
+      "summary": "Explore 서브에이전트로 앱 전체를 구조적으로 재검토. render* 렌더 스모크 테스트 시리즈(openCatManage 43, renderTxSheet 44, renderHome 47, renderAssets 49, renderLedger 50)에서 renderHistory()(index.html:3431-3447, '전체 내역' 탭)만 유일하게 실행 기반 커버리지가 없음을 확인 — test/run.js의 기존 커버리지는 filteredHist()/histInvalidate() 순수 로직 테스트와 extractFunction('renderHistory')로 소스 문자열에 '_histCache.key=null'이 있는지만 보는 텍스트 검사뿐, sandbox.renderHistory()를 실제로 호출하는 테스트는 없음. renderHistory가 동기 호출하는 updateHist()(:3445)가 filteredHist/splitHist/histSumTotals/histTotHTML/histRow를 거쳐 #histTotals/#histList에 꽂는 체인 안의 TypeError는 현재 test/run.js 전체 통과에도 잡히지 않고 실제 화면에서만 드러남. 같은 패스에서 innerHTML 삽입 지점 재점검(2194/2556/2944/3434/3733/3811/4361/4675-4752/4817-5114/5670/5791) — cycle46/48/50이 이미 스윕한 계정명/자산명/이체 확인 시트 외 새 미이스케이프 지점 없음 — 및 localStorage try/catch 커버리지(corrupt-data 격리 :1780-1784, storage 불가 토스트 :1777, 클라우드 동기화 실패 처리 :1591-1647 모두 이미 방어)를 조사했으나 새 실행 가능한 결함 없어 기각. advance에서 renderLedger(cycle50) 레시피를 그대로 재사용해 renderHistory() 렌더 스모크 테스트를 도입하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     }
   ]
