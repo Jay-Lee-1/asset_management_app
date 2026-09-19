@@ -1,15 +1,8 @@
 {
   "cycle": 48,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 43,
-      "phase": "develop",
-      "timestamp": "2026-09-18T10:12:19.790Z",
-      "summary": "아이폰 시계식 연도·월 선택 휠(dpToggleJump, openYMSheet)이 항상 TM.y-10..TM.y+5 고정 범위로만 연도 목록을 만들어, 그 범위 밖 연도(10년 넘게 전 반복거래 시작일, 5년 넘게 뒤 저축 만기일 등)를 보고 있는 중에 휠을 열면 whScrollTo가 해당 연도 아이템을 못 찾아 scrollTop이 0에 남고, 사용자가 그대로 이동을 누르면 whValue가 최상단 연도(TM.y-10)로 조용히 잘못 이동시키는 버그 발견·수정. 두 함수 모두 yFrom/yTo를 Math.min/Math.max로 현재 보고 있는 연도(_dpYM.y 또는 cur.y)까지 포함하도록 고쳐 항상 그 연도가 휠 범위 안에 들게 했다. 두 함수 모두 DOM 조작 위주라 test/run.js FUNCTIONS 목록에 없어 새 유닛 테스트는 추가하지 않았고, 기존 285/285 회귀 테스트는 그대로 통과 확인. 두 인라인 <script> 블록 모두 vm.Script 파싱 확인. APP_VERSION 1.42.1->1.42.2, sw.js CACHE v122->v123.",
-      "commit": null
-    },
     {
       "cycle": 43,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-19T06:10:00.000Z",
       "summary": "critique(0bae349) 계획대로 renderHome()에 렌더 스모크 테스트를 도입해 openCatManage(cycle43)·renderTxSheet(cycle44)에 이어 세 번째 render* 안전망 사례를 만들었다. renderHome이 부르던 헬퍼 중 아직 FUNCTIONS에 없던 순수 함수들(txScheduled, monthStats, monthStats2, expenseByCat, needGold, inQuietWindow, fmtSynced, rateStatusText, nextBigOutflow, dday, balanceOn, nextOutflowCard, monthOutflowCard, planGaugeCard, homeAlertCard, renderHome 자체)을 모두 추가했다(monthOutflows는 이미 있었음). $('page-home')이 렌더 함수 중 유일하게 openSheet를 거치지 않고 직접 innerHTML을 쓰므로, errBannerEl과 같은 getter/setter 패턴의 pageHomeEl 스텁을 새로 추가하고 $ 매핑에 'page-home' 분기를 연결했다. 테스트 4개: 1) 정상 DB로 호출 시 예외 없이 실행되고 헤더/플랜 게이지 섹션 타이틀/지출 카테고리명이 실제로 렌더되는지, 2) 예산 초과로 homeAlerts()가 budgetOver 알림을 반환하면 alert-stack이 렌더되고 카드 내용(\"식비 예산을 ...초과했어요\")이 실제로 나오는지(all-clear 문구는 안 나오는지), 3) 알림 없음+plan 계좌+거래 있음 조합에서 \"모든 통장이 안전해요\" all-clear 분기가 렌더되는지(alert-stack은 안 나오는지), 4) 금 보유 자산이 있을 때만(mkt.length>0) 시세 섹션(mkt-list)이 렌더되고 없으면 안 나오는지. index.html은 전혀 건드리지 않아(테스트 인프라만 확장) APP_VERSION/sw.js CACHE는 그대로 유지. 회귀 테스트 4개 추가, 318/318 통과. renderAssets/renderHistory는 wireGroupDrag/wireLongPress/wireNwCarousel 등 실 DOM/드래그 모킹이 필요해 여전히 후속 사이클 과제로 남긴다. pending_advance_plan 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 48,
+      "phase": "develop",
+      "timestamp": "2026-09-19T07:12:50.000Z",
+      "summary": "recApply(recId,date,'delete','future')(index.html:3214)가 사용자가 '이 날부터 이후 모두' 삭제로 반복 저축입금을 자를 때 r.endDate만 하루 전날로 설정하고 r.count는 건드리지 않던 버그 발견·수정(Explore 서브에이전트로 발견) — clampRecurringToMaturity()가 의존하는 불변식(사용자가 직접 endDate를 정하면 항상 count가 함께 저장되고, endDate만 있고 count가 없으면 자동 클램프 흔적이라는 규칙, cycle46 develop 참고)을 이 삭제 경로만 위반해, 나중에 해당 저축통장의 만기일을 연장하면 clampRecurringToMaturity가 이 명시적 삭제를 '자동 클램프'로 오인해 삭제됐던 반복입금 회차들을 무경고로 되살렸다. 같은 파일의 recSave() 'future' scope(index.html:3237-3241)가 이미 endDate 변경 시 r.count=recCountUntil(...)로 재계산하는 동일 불변식 유지 패턴을 쓰고 있어, recApply의 delete/future 분기도 동일하게 endDate 설정 직후 recCountUntil({freq,day,startDate,weekend},endDate)로 count를 재계산하고 undo 시 원래 count도 함께 복원하도록 고쳤다. recApply/clampRecurringToMaturity/recCountUntil 모두 기존 test/run.js FUNCTIONS에 이미 있어 새 함수 추가 없이 회귀 테스트 1개 추가(delete-future 삭제 후 count가 채워짐 확인 + 이후 만기 연장에도 삭제된 회차가 되살아나지 않음을 clampRecurringToMaturity 연계 호출로 확인 + undo 시 endDate·count 둘 다 복원 확인), 319/319 통과. 두 인라인 <script> 블록 모두 vm.Script 파싱 확인. APP_VERSION 1.43.3->1.43.4, sw.js CACHE v129->v130.",
       "commit": null
     }
   ]

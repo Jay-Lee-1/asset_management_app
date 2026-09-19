@@ -1268,6 +1268,20 @@ test("recApply: scope='future' 삭제는 endDate를 자르고, undo하면 원래
   sandbox.lastUndo.undoFn();
   assert.strictEqual(r.endDate, null, '되돌리면 endDate가 원래 값(null)으로 복원되어야 함');
 });
+test("recApply: scope='future' 삭제는 endDate와 함께 count도 재계산해, clampRecurringToMaturity()가 이 명시적 삭제를 '자동 클램프'로 오인해 나중에 만기 연장 시 되살리지 않도록 한다(app-evolve cycle48)", () => {
+  sandbox.TWi = -1;
+  const r = maturityRec({ toAssetId: 'a2', endDate: null, count: null });
+  sandbox.DB = { recurrences: [r] };
+  sandbox.lastUndo = null;
+  sandbox.recApply('r1', '2026-02-15', 'delete', 'future');
+  assert.strictEqual(r.endDate, '2026-02-14', '이후 반복을 끊기 위해 하루 전날로 endDate가 설정되어야 함');
+  assert.ok(r.count, 'endDate만 있고 count가 없으면 자동 클램프로 오인되므로, 명시적 삭제 시에도 다른 저장 경로들처럼 count를 함께 채워야 함');
+  sandbox.clampRecurringToMaturity('a2', '2026-09-01', '2026-03-01'); // 이후 만기를 연장해도
+  assert.strictEqual(r.endDate, '2026-02-14', '사용자가 명시적으로 삭제한 이후 회차가 만기 연장으로 되살아나면 안 됨(회귀 확인)');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(r.endDate, null, '되돌리면 endDate가 원래 값으로 복원되어야 함');
+  assert.strictEqual(r.count, null, '되돌리면 count도 원래 값으로 복원되어야 함');
+});
 test("recApply: 튜토리얼 모드 중에는 twGuard가 막아서 scope='one'/'future' 삭제도 실제로 반영되지 않는다", () => {
   sandbox.TWi = 0;
   const r1 = { id: 'r1', skip: [] };

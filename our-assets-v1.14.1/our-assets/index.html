@@ -1288,7 +1288,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.43.3';
+const APP_VERSION='1.43.4';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3212,8 +3212,11 @@ function recApply(recId,date,mode,scope){
    undoToast('삭제했어요',()=>{r.skip=prevSkip;save();renderCurrent();toast('되돌렸어요')});return;
   }
   if(scope==='future'){
-   const prevEnd=r.endDate;r.endDate=addDays(date,-1);save();closeSheet();renderCurrent();
-   undoToast('삭제했어요',()=>{r.endDate=prevEnd;save();renderCurrent();toast('되돌렸어요')});return;
+   const prevEnd=r.endDate,prevCount=r.count;
+   r.endDate=addDays(date,-1);
+   r.count=recCountUntil({freq:r.freq,day:r.day,startDate:r.startDate,weekend:r.weekend},r.endDate); /* endDate만 있고 count가 없으면 clampRecurringToMaturity()가 '자동 클램프'로 오인해 나중에 만기 연장 시 이 명시적 삭제를 되살리므로, 다른 저장 경로들과 동일하게 endDate·count를 항상 함께 맞춘다 */
+   save();closeSheet();renderCurrent();
+   undoToast('삭제했어요',()=>{r.endDate=prevEnd;r.count=prevCount;save();renderCurrent();toast('되돌렸어요')});return;
   }
   closeSheet();deleteRecsUndo(new Set([recId]));return;
  }
