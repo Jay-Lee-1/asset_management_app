@@ -75,7 +75,7 @@ const FUNCTIONS = [
   'saveRec', 'recHistFieldsChanged', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
   'monthStartStr', 'monthEndStr', 'expandRec', 'allTxns', 'spendByCategory', 'histSumTotals',
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'expenseBreakdownCard',
-  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'isCloudConflict', 'decidePushOutcome',
+  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'isCloudConflict', 'decidePushOutcome',
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges',
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
   'clampDay', 'saveTx', 'assetBase', 'balancesUpTo', 'balanceAt',
@@ -269,6 +269,10 @@ const sandbox = {
   renderCurrent: () => {},
   openCatManage: () => {},
   openOwnerManage: () => {},
+  // asOpenType()이 여는 자산 종류 피커 — 실제 DOM/블롭 렌더는 화면 전용이라 openPicker처럼
+  // no-op으로 흉내내고, onPick 콜백만 캡처해 테스트가 직접 호출할 수 있게 한다.
+  lastTypePickerOnPick: null,
+  openTypePicker: (o) => { sandbox.lastTypePickerOnPick = o.onPick; },
   // renderAssets()가 부수효과로 부르는 실 DOM/드래그/스크롤/애니메이션 와이어링 여섯 개 —
   // fitAll처럼 화면 전용이라 순수 로직 테스트 대상이 아니므로 전부 no-op으로 흉내낸다
   // (renderAssets 자체와 그 안의 문자열 빌더 헬퍼들만 실제 소스로 검증하면 충분).
@@ -284,6 +288,9 @@ const sandbox = {
   openSpendAnalysis: () => {},
   closeSheet: () => {},
   renderTxSheet: () => {},
+  // asOpenType()의 onPick 콜백이 마지막에 부르는 자산 시트 재렌더 — renderTxSheet와 같은 이유
+  // (화면 전용, asOpenType 테스트는 asDraft 변화만 검증)로 no-op으로 흉내낸다.
+  renderAssetSheet: () => {},
   uid: () => 'test-uid',
   // saveTx()는 txDraft(전역 폼 상태)를 다루는데, syncTxInputs()는 DOM 입력칸을 읽어 그
   // txDraft에 반영하는 순수 로직이 아닌 함수라 여기선 no-op으로 흉내낸다 — saveTx 테스트는
@@ -2166,6 +2173,40 @@ test('saveAsset: 오래된 자산을 삭제한 뒤 등록해도 새 자산의 or
   assert.ok(e.order > sandbox.DB.assets.find(a => a.name === 'D').order, '삭제로 배열이 줄어도 새 자산의 order는 기존 최댓값보다 커야 함');
   const sorted = sandbox.groupItems('cash').map(a => a.name);
   assert.deepStrictEqual(sorted, ['C', 'D', 'E'], '기본(등록순서) 정렬에서 나중에 만든 자산이 먼저 만든 자산보다 앞서면 안 됨');
+});
+
+/* ---------- asOpenType: 자산 종류를 연금(pension)으로 바꾸면 총자산 제외(includeInTotal=false)가
+ * 자동으로 켜지는데(연금은 기본적으로 순자산 계산에서 빠짐), 종류를 다시 다른 걸로 바꿔도 이 자동
+ * 제외를 원상복구하지 않던 버그(app-evolve cycle52 develop, Explore 서브에이전트로 발견). 연금이
+ * 만기/전환돼 사용자가 자산 종류를 연금→현금예금 등으로 바꾸는 흔한 편집 흐름에서, 그 자산이 총자산에
+ * 영구히 안 잡히는 조용한 데이터 결함이 됨. onPick에서 연금으로 바꿀 때만 _pensionAutoExcl 플래그를
+ * 남기고, 연금에서 벗어날 때 그 플래그가 있을 때만(=자동으로 꺼진 경우만) includeInTotal을 true로
+ * 되돌리도록 수정 — 사용자가 연금과 무관하게 스스로 이 스위치를 꺼둔 경우(플래그 없음)는 건드리지
+ * 않는다. saveAsset()도 이 임시 플래그가 asDraft._dispAmt처럼 저장 시 DB.assets에 새는 걸 막도록
+ * delete 처리를 추가했다. ---------- */
+test('asOpenType: 자산 종류를 연금으로 바꾸면 총자산 제외가 자동으로 켜지고, 다시 다른 종류로 바꾸면 자동으로 풀린다', () => {
+  sandbox.asDraft = { id: 'a1', type: 'cash', owner: '나', includeInTotal: true, name: '내 통장' };
+  sandbox.asOpenType();
+  sandbox.lastTypePickerOnPick('pension');
+  assert.strictEqual(sandbox.asDraft.type, 'pension');
+  assert.strictEqual(sandbox.asDraft.includeInTotal, false, '연금으로 바꾸면 총자산 제외가 자동으로 켜져야 함');
+  sandbox.lastTypePickerOnPick('cash');
+  assert.strictEqual(sandbox.asDraft.type, 'cash');
+  assert.strictEqual(sandbox.asDraft.includeInTotal, true, '연금에서 벗어나면 자동으로 켜졌던 제외가 자동으로 풀려야 함');
+  assert.strictEqual(sandbox.asDraft._pensionAutoExcl, false, '플래그도 함께 꺼져야 다음 번 연금 전환 때 다시 정확히 동작함');
+});
+test('asOpenType: 사용자가 직접 총자산 제외를 켜둔 자산은 연금을 거치지 않고 종류를 바꿔도 그대로 유지된다', () => {
+  sandbox.asDraft = { id: 'a2', type: 'cash', owner: '나', includeInTotal: false, name: '숨긴 통장' };
+  sandbox.asOpenType();
+  sandbox.lastTypePickerOnPick('savings');
+  assert.strictEqual(sandbox.asDraft.includeInTotal, false, '연금 자동 로직과 무관하게 사용자가 직접 꺼둔 값은 종류 변경만으로 켜지면 안 됨');
+});
+test('saveAsset: 연금 전환 시 임시로 남긴 _pensionAutoExcl 플래그가 저장된 자산 객체에 새지 않는다', () => {
+  sandbox.DB = { assets: [], rates: { stocks: {} }, settings: {}, owners: ['나'] };
+  sandbox.asDraft = { type: 'pension', owner: '나', includeInTotal: false, _pensionAutoExcl: true, name: '연금' };
+  sandbox.saveAsset(false);
+  const saved = sandbox.DB.assets.find(a => a.name === '연금');
+  assert.ok(!('_pensionAutoExcl' in saved), '임시 플래그가 저장 시 DB.assets에 그대로 남으면 안 됨');
 });
 
 /* ---------- rateUnknown/saveAsset: 새로 등록한 fx/gold/stock 자산이 시세 미동기화 상태에서

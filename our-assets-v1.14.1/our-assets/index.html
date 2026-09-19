@@ -1288,7 +1288,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.43.8';
+const APP_VERSION='1.43.9';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2717,7 +2717,7 @@ function syncAssetInputs(){const d=asDraft;const g=id=>$(id);
  if(g('asGold'))d.goldDon=Math.max(0,parseFloat((g('asGold').value||'0').replace(/,/g,''))||0);
  if(g('asCode'))d.stockCode=g('asCode').value.trim().toUpperCase();
  if(g('asQty'))d.stockQty=Math.max(0,parseFloat((g('asQty').value||'0').replace(/,/g,''))||0);}
-function asOpenType(){syncAssetInputs();openTypePicker({current:asDraft.type,back:()=>renderAssetSheet(!!asDraft.id),onPick:k=>{asDraft.type=k;if(k==='pension')asDraft.includeInTotal=false;if(k==='savings'&&!asDraft.maturityTargetId)asDraft.maturityTargetId=firstCash(asDraft.id);renderAssetSheet(!!asDraft.id)}})}
+function asOpenType(){syncAssetInputs();openTypePicker({current:asDraft.type,back:()=>renderAssetSheet(!!asDraft.id),onPick:k=>{if(k==='pension'){asDraft.includeInTotal=false;asDraft._pensionAutoExcl=true}else if(asDraft._pensionAutoExcl){asDraft.includeInTotal=true;asDraft._pensionAutoExcl=false}asDraft.type=k;if(k==='savings'&&!asDraft.maturityTargetId)asDraft.maturityTargetId=firstCash(asDraft.id);renderAssetSheet(!!asDraft.id)}})}
 function asOpenOwner(){syncAssetInputs();openOwnerPicker({current:asDraft.owner,back:()=>renderAssetSheet(!!asDraft.id),onPick:o=>{asDraft.owner=o;renderAssetSheet(!!asDraft.id)}})}
 function asOpenMat(){syncAssetInputs();openAssetPicker({current:asDraft.maturityTargetId,title:'만기 시 이체할 통장',cashOnly:true,excludeId:asDraft.id,back:()=>renderAssetSheet(!!asDraft.id),onPick:id=>{asDraft.maturityTargetId=id;renderAssetSheet(!!asDraft.id)}})}
 function renderAssetSheet(editing){
@@ -2770,7 +2770,7 @@ function saveAsset(editing){
  const balType=balTypes.includes(d.type);
  const balKey=(d.type==='cash'||d.type==='savings')?'baseAmount':'amountKRW';
  const entered=balType?(d._dispAmt!=null?d._dispAmt:(d[balKey]||0)):0; /* 사용자가 입력한 '현재 금액' */
- delete d._dispAmt;
+ delete d._dispAmt;delete d._pensionAutoExcl;
  const dup=DB.assets.find(a=>a.id!==d.id&&a.name===d.name&&a.type===d.type); /* 살아있는 동명·동종 (신규/수정 공통) */
  if(dup){toast('같은 이름·종류의 자산이 이미 있어요');return;} /* 중복 차단 */
  /* 표시 잔액이 입력값과 같도록 기준값 역산 (오늘까지의 순입출금 기여분 제외) */

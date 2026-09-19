@@ -1,15 +1,8 @@
 {
   "cycle": 52,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 47,
-      "phase": "develop",
-      "timestamp": "2026-09-19T03:12:16.303Z",
-      "summary": "postponeRecTransfer()(index.html:1458)가 daily 반복 이체를 \"내일로\" 미룰 때 미룬 날짜(date)만 r.skip에 추가하고 새 거래는 내일(TODAY+1) 날짜로 넣는데, daily 반복은 매일이 정상 회차라 expandRec()의 recDates()가 그 내일 날짜도 그대로 자기 회차로 다시 만들어내(app-evolve cycle47 develop, Explore 서브에이전트로 발견) 확인 필요 이체가 무경고로 이중 계상되던 버그 발견·수정(weekly/monthly/yearly는 +1일이 다음 정상 회차와 우연히 겹칠 일이 사실상 없어 영향 없음, sibling postponeTransfer()는 단일 txn 날짜만 바꾸므로 애초에 이 위험이 없음을 확인). 새 거래를 넣는 날짜(nd=addDays(TODAY,1))도 함께 r.skip에 추가하도록 수정하고, date와 nd가 같은 경우(미루려는 날짜가 이미 내일인 경우)를 위해 중복 push 가드 추가. postponeRecTransfer/recDates/expandRec 모두 기존 test/run.js FUNCTIONS에 이미 있어 새 상수 추가 없이 회귀 테스트 2개 추가(daily 반복이 내일 회차를 중복 생성하지 않음을 expandRec 결과로 확인, date===내일인 경우 skip에 중복 없이 1개만 들어감), 314/314 통과. 두 인라인 <script> 블록 모두 vm.Script 파싱 확인. APP_VERSION 1.43.2->1.43.3, sw.js CACHE v128->v129.",
-      "commit": null
-    },
     {
       "cycle": 47,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-19T22:07:00.000Z",
       "summary": "critique(e104577) 계획대로 renderHistory()에 렌더 스모크 테스트를 도입해 openCatManage(43)·renderTxSheet(44)·renderHome(47)·renderAssets(49)·renderLedger(50)에 이어 여섯 번째(마지막 남은) render* 안전망 사례를 만들었다. renderLedger(cycle50) 레시피를 그대로 재사용: FUNCTIONS에 아직 없던 순수 함수(fmtDot, splitHist, histRow, histTotHTML, updateHist, renderHistory 자체)를 추가했고(filteredHist/histSumTotals/histInvalidate/matchTxnQuery/txScheduled/isDuePending/catGlyph/esc/assetNm은 이미 있어 재사용), pageHomeEl/pageAssetsEl/pageLedgerEl과 같은 getter/setter 패턴으로 pageHistoryEl/histTotalsEl/histListEl 세 개를 추가해 $('page-history')/$('histTotals')/$('histList')에 연결했다(실제 부수효과 호출은 wireLongPress/requestAnimationFrame(fitAll)/updateSelBottom뿐이라 새 스텁 없이 기존 no-op 재사용). 테스트 4개: 1) 일치하는 거래가 없으면 예외 없이 실행되고 검색바+\"이 기간에는 내역이 없어요\" 빈 상태가 렌더되는지, 2) 실제 거래가 있으면 메모(\"점심 김밥\")/금액(\"-8,000원\")이 histList에, 건수(\"검색 결과 1건\")가 histTotals에 렌더되는지, 3) 멀티셀렉트 모드(ST.hist.selMode)에서는 검색바가 숨겨지고 sel-check 체크마크와 histToggleSel onclick이 렌더되는지, 4) 오늘보다 미래 날짜의 거래는 sch-dot과 \">예정<\" 라벨이 렌더되는지. index.html은 전혀 건드리지 않아(테스트 인프라만 확장) APP_VERSION/sw.js CACHE는 그대로 유지. 회귀 테스트 4개 추가, 340/340 통과. 두 인라인 <script> 블록 모두 node --check(new Function) 파싱 확인. pending_advance_plan 비움 — render* 스모크 테스트 시리즈 전 화면(openCatManage/renderTxSheet/renderHome/renderAssets/renderLedger/renderHistory) 완료.",
+      "commit": null
+    },
+    {
+      "cycle": 52,
+      "phase": "develop",
+      "timestamp": "2026-09-19T23:07:00.000Z",
+      "summary": "Explore 서브에이전트로 발견한 asOpenType()(index.html:2720)의 연금(pension) 총자산 제외 자동화 비대칭 버그 수정. onPick 콜백이 자산 종류를 pension으로 바꿀 때는 includeInTotal=false를 강제로 켜지만(연금은 기본적으로 순자산 계산에서 제외), 종류를 다시 다른 걸로 바꿀 때는 이를 원상복구하지 않았다 — 연금이 만기/전환돼 사용자가 종류를 연금→현금예금 등으로 바꾸는 흔한 편집 흐름에서, 그 자산이 총자산/순자산(totalAssets/totalDebt/ownerAssets/ownerDebt 등 includeInTotal로 필터링하는 모든 집계)에 영구히 안 잡히는 조용한 데이터 결함이었다. onPick에서 pension으로 바꿀 때만 asDraft._pensionAutoExcl=true 플래그를 남기고, pension에서 벗어날 때 그 플래그가 있을 때만(=자동으로 꺼진 경우만) includeInTotal을 true로 복원하고 플래그를 지우도록 수정 — 사용자가 연금과 무관하게 스스로 이 스위치를 꺼둔 경우(플래그 없음)는 건드리지 않아, 기존에 이미 있던 정상적인 수동 제외 사용 패턴을 깨지 않는다. saveAsset()에도 d._dispAmt와 같은 이유로 이 임시 플래그가 저장 시 DB.assets에 새지 않도록 delete 처리를 추가했다. asOpenType/openTypePicker/renderAssetSheet는 test/run.js에 실행 기반 커버리지가 전혀 없었어서(openTypePicker는 여전히 화면 전용이라 no-op 스텁, renderAssetSheet도 같은 이유로 신규 no-op 스텁 추가), asOpenType을 처음으로 FUNCTIONS에 추가하고 onPick 콜백만 캡처하는 openTypePicker 스텁을 새로 만들어 회귀 테스트 3개 추가(연금 전환 시 자동 제외+복원, 사용자가 직접 꺼둔 값은 종류 변경만으로 안 켜짐, saveAsset이 임시 플래그를 새지 않게 지움), 343/343 통과. 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.43.8->1.43.9, sw.js CACHE v134->v135.",
       "commit": null
     }
   ]
