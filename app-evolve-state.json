@@ -1,15 +1,8 @@
 {
   "cycle": 51,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 46,
-      "phase": "review",
-      "timestamp": "2026-09-19T00:10:00.000Z",
-      "summary": "develop 커밋(29dca6b)을 검토. clampRecurringToMaturity()의 autoShortened 판정(prevMaturity&&maturity>prevMaturity&&!r.count&&r.endDate<=prevMaturity)이 사용자 지정 endDate(count 동반)·askRelinkDeleted 등 prevMaturity 없는 호출·만기 단축 케이스 모두에서 기존 보존 동작을 정확히 유지하면서, 자동 클램프 흔적(count 없음+이전 만기 이하)일 때만 확장하도록 정확히 좁혀졌음을 확인. recDates()가 r.endDate를 end 계산(1893행)과 push 필터(1895행) 양쪽에서 자체 상한으로 쓴다는 재확인도 맞아, endDate를 지운 사본을 넘기지 않으면 재계산이 무효했을 것이라는 커밋 설명이 정확함. 두 다른 호출부(askRelinkDeleted의 _amLink/_amFresh, index.html:2645,2652)는 신규 자산 등록 경로라 prevMaturity 없이 호출하는 게 맞고 영향 없음. node our-assets-v1.14.1/our-assets/test/run.js 재실행해 309/309 통과 재확인. 문제 없음.",
-      "commit": null
-    },
     {
       "cycle": 46,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-19T19:30:00.000Z",
       "summary": "Explore 서브에이전트로 발견한 doExport('csv')의 거래 내역 CSV 내보내기 버그 수정. doExport()(index.html)가 CSV로 내보낼 때 txnsToCSV(DB.txns,DB.assets)만 호출하는데, 반복거래(월세·구독·급여 등)는 사용자가 개별 회차를 수정하거나 '완료' 확인 처리를 해도 DB.txns에는 전혀 저장되지 않고 expandRec()이 매 조회마다 즉석에서 만들어내는 가상 행이다(allTxns()의 합성 패턴, index.html:1960 참고). 그 결과 가계부/전체내역 탭에는 반복거래가 정상적으로 보이는데도 '거래 내역 CSV로 내보내기'(스프레드시트로 열어보라는 안내 문구가 붙은 기능)로 내보내면 반복거래 전체가 아무 경고 없이 통째로 빠져, 반복이 많은 사용자일수록 대부분의 이력이 CSV에서 사라지는 데이터 완전성 결함이었다. 수정은 doExport()의 해당 한 줄만 DB.txns.concat(expandRec(RANGE_FROM,RANGE_TO))로 바꿔 txnsToCSV에 넘기도록 최소화했다(txnsToCSV 자체는 순수 함수라 무변경). expandRec()이 만드는 가상 행의 id는 'rec_'+recId+'+date' 형태라 실제 DB.txns id와 겹치지 않고, confirmRecTransfer()로 '완료' 처리해도 DB.txns에 새 행을 만들지 않고 r.confirmedDates만 기록하는 것을 확인해 중복 계상 위험이 없음을 검증했다. txnsToCSV/expandRec 모두 기존 test/run.js FUNCTIONS에 있어 새 함수 추가 없이 회귀 테스트 2개 추가(doExport와 동일한 합성 방식으로 월세 반복거래가 CSV에 여러 달치 포함됨을 확인 + DB.txns만 넘기면(수정 전 동작) 반복거래가 CSV에서 빠짐을 대조 확인), 336/336 통과. 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.43.7->1.43.8, sw.js CACHE v133->v134.",
+      "commit": null
+    },
+    {
+      "cycle": 51,
+      "phase": "review",
+      "timestamp": "2026-09-19T20:07:45.445Z",
+      "summary": "develop 커밋(8fd8c63, CSV 내보내기 반복거래 누락 수정)을 검토. doExport의 DB.txns.concat(expandRec(RANGE_FROM,RANGE_TO)) 방식이 allTxns()와 동일한 합성 패턴임을 확인. 반복거래는 confirmRecTransfer로 확인 처리해도 r.confirmedDates만 갱신되고 r.skip에는 들어가지 않으며 DB.txns로도 옮겨지지 않는다(1428행, 2441행) — 즉 expandRec()이 항상 유일한 원천이라 DB.txns와 concat해도 중복이 생기지 않음을 코드로 확인. txnsToCSV는 정렬/이스케이프만 하고 별도 날짜 필터링을 하지 않으므로 RANGE_FROM~RANGE_TO(2023-01-01~오늘+760일) 범위가 그대로 CSV 범위가 됨 — 기존 화면 표시 범위와 일관됨. node test/run.js 재실행해 336/336 통과 재확인. 문제 없음.",
       "commit": null
     }
   ]
