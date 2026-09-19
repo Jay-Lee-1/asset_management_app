@@ -1,22 +1,12 @@
 {
   "cycle": 48,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "assetPickBtn()/openPlanAsset()의 a.name·a.owner 미이스케이프 self-XSS 수정",
+    "why": "assetPickBtn()(index.html:5513)과 openPlanAsset()(index.html:3737)이 자산명/귀속(owner)을 esc() 없이 innerHTML에 꽂는다. 바로 옆 openOwnerPicker 자산 리스트(index.html:5524)는 동일 필드를 이미 esc()로 감싸고 있어 이건 일관성 공백이지 설계 의도가 아니다. assetPickBtn은 지출/수입/이체/저축만기이체/반복거래 폼 7곳(2738,3064-3066,3289-3291)에서 재사용되는 공용 컴포넌트라, 자산 이름이나 귀속에 <img onerror=...> 같은 값이 저장되면(saveAsset/addOwner 모두 저장 시 무검증) 그 다음 아무 거래 폼을 열 때마다 실행되는 self-XSS다. cycle46에서 고친 accountName() XSS와 같은 계열이지만 다른 미해결 지점.",
+    "approach": "index.html:5513의 두 곳(${a.name} → ${esc(a.name)}, ${a.owner} → ${esc(a.owner)})과 index.html:3737의 ${a?a.name:없음} → ${a?esc(a.name):없음} (정적 fallback 문자열은 이스케이프 불필요)만 수정한다. saveAsset()/addOwner()의 저장 로직은 건드리지 않는다(cycle46이 이미 세운 esc-at-render 패턴을 그대로 따름). test/run.js FUNCTIONS에 assetPickBtn이 없으면 추가하고(DB.assets 픽스처로 직접 호출 가능한 순수에 가까운 함수라 openCatManage/renderTxSheet 때처럼 DOM/드래그 모킹 불필요), 자산명에 <script> 또는 <img onerror=...> 태그를 넣었을 때 assetPickBtn()과 openPlanAsset() 출력에 &lt;/&gt;로 이스케이프됨을 확인하는 회귀 테스트를 추가한다. 두 인라인 <script> 블록 node --check 파싱 확인, index.html을 건드리므로 APP_VERSION과 sw.js CACHE 버전을 올린다."
+  },
   "history": [
-    {
-      "cycle": 43,
-      "phase": "review",
-      "timestamp": "2026-09-18T12:07:48.362Z",
-      "summary": "develop 커밋(885ffec)을 검토. dpToggleJump()/openYMSheet() 둘 다 _dpYM/cur가 호출 시점에 항상 non-null임을 확인(dpMLabel 버튼은 renderDatePicker() 출력 안에서만 존재하므로 _dpYM 설정 후에만 클릭 가능, openYMSheet의 cur=ST.ledger/ST.home도 항상 정의됨). Math.min/Math.max로 넓힌 범위가 기존 범위를 포함하는 경우엔 no-op이라 회귀 없음. 285/285 통과. 문제 없음.",
-      "commit": null
-    },
-    {
-      "cycle": 43,
-      "phase": "critique",
-      "timestamp": "2026-09-18T13:11:15.000Z",
-      "summary": "최근 10사이클의 라인 단위 버그 수정에서 한 걸음 물러나 앱 전체를 구조적으로 재검토. test/run.js가 순수 함수만 추출·검증하고 renderHome/renderAssets/renderTxSheet/renderRecSheet/renderHistory/openCatManage 등 innerHTML을 직접 쓰는 렌더/UI 함수(파일 함수 대부분)는 전혀 테스트 안 되는 공백을 최우선 문제로 채택 — 빌드/타입체크 없는 단일 파일을 무인 루프가 계속 고치는 구조에서, 이 공백은 앞으로 나올 모든 사이클의 위험을 함께 높인다. 후순위 후보로 balancesUpTo() 무제한 재생 구조(RANGE_FROM 체크포인트, cycle 41에서 부분 완화된 채 재평가 대기 중이던 이슈 재확인)와 히스토리 화면의 전체기간 빠른 검색 프리셋 부재를 검토했으나, 안전망 공백이 더 시급하다고 판단해 기각. advance에서 test/run.js sandbox를 확장해 렌더 함수 스모크 테스트(throw 안 함 + 마커 텍스트 assertion)를 추가하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 43,
       "phase": "advance",
@@ -148,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-09-19T08:09:00.000Z",
       "summary": "develop 커밋(920db0a)을 검토. recApply()의 delete/future 분기가 새로 추가한 r.count=recCountUntil({freq:r.freq,day:r.day,startDate:r.startDate,weekend:r.weekend},r.endDate)가 recSave()의 동일 scope(index.html:3237-3241)가 이미 쓰는 재계산 패턴과 인자 구성까지 정확히 일치함을 확인. clampRecurringToMaturity()의 autoShortened 판정(index.html:2814, !r.count&&r.endDate<=prevMaturity)을 다시 읽어, count가 채워지면 '자동 클램프 흔적'으로 오인되지 않아 만기 연장 시 재클램프 대상에서 제외된다는 커밋 설명이 정확함을 재확인. undo 클로저가 prevEnd·prevCount 둘 다 캡처해 되돌릴 때 함께 복원하는 것도 확인. recCountUntil()이 endDate/startDate 없으면 null을 반환하는 기존 엣지케이스(r.startDate가 없는 반복이면 count도 null이 됨)는 recSave의 동일 패턴에도 이미 있던 기존 동작이라 이번 커밋이 새로 만든 회귀는 아님. 새 회귀 테스트가 삭제 직후 count 채워짐·만기 연장 후 재살아나지 않음·undo 시 endDate/count 둘 다 원복 세 가지를 모두 커버. node test/run.js 재실행해 319/319 통과 재확인. 문제 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 48,
+      "phase": "critique",
+      "timestamp": "2026-09-19T09:09:21.263Z",
+      "summary": "Explore 서브에이전트로 앱 전체를 구조적으로 재검토. assetPickBtn()(index.html:5513)과 openPlanAsset()(index.html:3737)이 a.name/a.owner를 esc() 없이 innerHTML에 꽂는 걸 발견 — 바로 아래 openOwnerPicker의 자산 선택 리스트(index.html:5524)는 동일 필드(a.name/a.owner)를 esc(a.name)/esc(a.owner)로 이미 감싸고 있어, assetPickBtn만 빠진 불일치임을 확인. assetPickBtn은 지출/수입/이체/저축 만기이체 폼과 반복거래 폼 7곳(index.html:2738,3064-3066,3289-3291)에서 공용으로 쓰여 openSheet()의 innerHTML 삽입을 그대로 타므로, 자산 이름이나 귀속(owner)에 <img src=x onerror=...> 같은 값을 저장하면(saveAsset/addOwner는 이스케이프 없이 그대로 저장) 그 다음 아무 거래 추가 폼을 열 때마다 실행되는 재현 가능한 self-XSS — cycle46에서 고친 accountName() self-XSS(로그인 사용자 표시명 3곳)와 같은 취약점 계열이지만 다른, 아직 안 고쳐진 지점(자산명/귀속 필드)이라 그 스윕이 놓친 잔여 구멍으로 판단해 최우선 채택. renderAssets/renderHistory 렌더 스모크 테스트 공백(4차례 이연, 여전히 DOM/드래그 모킹 필요해 범위 큼)과 balancesUpTo() RANGE_FROM 체크포인트(cycle41/45/46/47에서 반복 기각, 새 근거 없음), long-press 멀티셀렉트 접근성 공백(여전히 단일 수정 지점 없음)은 이번에도 재확인만 하고 후순위로 기각. advance에서 assetPickBtn()의 a.name/a.owner 2곳과 openPlanAsset()의 a.name 1곳을 esc()로 감싸고, esc(a.name) 검증 회귀 테스트를 추가하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     }
   ]
