@@ -1,15 +1,17 @@
 {
   "cycle": 54,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "거래 내역 CSV 가져오기(import) 기능 추가",
+    "why": "JSON 백업 복원(restoreBackup, index.html:4661)과 CSV 내보내기(doExport)만 있고 거래 내역을 앱에 들여오는 경로가 전혀 없다. index.html:4486/4546 주석이 'CSV는 복원용 백업이 아니므로'라며 CSV 가져오기를 의도적으로 범위 밖에 뒀지만 대체 기능이 끝내 추가되지 않았다. 은행/카드 내역 몇 달치를 가진 신규 사용자나 다른 가계부 앱에서 이전하려는 사용자가 이 앱 자체의 정확한 JSON 백업 포맷을 갖고 있지 않는 한 대량으로 데이터를 넣을 방법이 없어(수기 입력 외엔 불가) 온보딩/채택을 막는 실질적인 제품 공백이다.",
+    "approach": "1) importData()(index.html:4593) 옆에 '거래 내역 CSV로 가져오기' 항목과 전용 hidden <input type=file accept=.csv> 추가(#importFile, 1285행 패턴 재사용). 2) 따옴표 필드를 다루는 CSV 파서 순수 함수 작성(기존 CSV export가 이미 memo를 따옴표 처리함, 4510행 CSV-injection 방지 주석 참고) — 이 앱이 내보낸 컬럼 순서를 그대로 받거나, date/amount/category/memo/asset name 최소 스키마 문서화. 3) 자산명은 DB.assets와 매칭, 못 찾으면 openPicker 재사용한 1회성 매핑 화면 제공(무시하지 말 것). 카테고리는 addCat과 같은 방식으로 매칭/필요시 자동 생성. 4) 커밋 전 미리보기 시트: 전체 행 수, 신규/중복(dedupe 키: date+amount+category+asset) 건수, 수동 매핑 필요 건수를 보여준 뒤 DB.txns.push(...)+save()로 반영, doDeleteCat(4162)과 같은 undoToast(...)로 감싸 되돌리기 가능하게. 5) test/run.js에 파싱/dedupe/매핑 순수 함수 회귀 테스트 추가(기존 extractFunction 패턴).",
+    "considered_and_rejected": [
+      "실 푸시/로컬 알림(만기·백업 지연 알림 등, 현재는 홈 카드뿐) — 서버 인프라/iOS 백그라운드 동기화 제약으로 한 사이클엔 리스크가 커서 보류",
+      "FX 통화 선택이 USD/JPY/EUR 버튼(index.html:2752)으로 하드코딩됨 — heldCurrencies() 등 데이터 모델 자체는 통화 무관인데 UI만 제한적, 작은 후속 과제로 남김",
+      "renderPlan() 렌더 스모크 테스트 부재(현재 정규식/텍스트 검사만 있음) — render* 시리즈(43,44,47,49,50,51)의 연장선일 뿐 전략적 advance감은 아니라 부차 메모로만 남김"
+    ]
+  },
   "history": [
-    {
-      "cycle": 49,
-      "phase": "review",
-      "timestamp": "2026-09-19T12:10:00.000Z",
-      "summary": "develop 커밋(3710c31)을 검토. d.order=DB.assets.reduce((m,a)=>Math.max(m,a.order||0),0)+1이 push 이전(this.d 계산 시점)의 DB.assets를 기준으로 계산돼 삭제로 배열이 줄어도 항상 기존 최댓값보다 큰 값을 받음을 확인. grep으로 자산의 .order를 할당하는 다른 지점이 없음을 확인(2264행의 order는 소수점 정렬용 지역 변수로 무관). askRelinkDeleted()의 _amLink/_amFresh 두 경로 모두 saveAsset에서 만든 같은 d 객체를 그대로 넘겨받으므로 수정이 자동으로 전파됨을 재확인. 새 회귀 테스트가 삭제 후 등록 시 order 대소 관계와 groupItems() custom 정렬 결과 둘 다 실제로 검증. node test/run.js 재실행해 323/323 통과 재확인. 문제 없음.",
-      "commit": null
-    },
     {
       "cycle": 49,
       "phase": "critique",
@@ -141,6 +143,13 @@
       "phase": "review",
       "timestamp": "2026-09-20T07:10:00.000Z",
       "summary": "develop 커밋(1300e07)을 검토. syncAssetInputs()에서 asName 입력값을 trim()하는 1줄 수정이 정확함을 확인: saveAsset()의 이름 기본값 대체(d.name=d.name||라벨)는 falsy 체크라 공백만 입력한 이름은 여전히 truthy이므로 이 trim이 없으면 걸러지지 않았을 것 — 수정 후 빈 문자열이 되어 올바르게 기본 라벨로 대체됨을 확인. syncAssetInputs()는 키 입력마다가 아니라 픽커를 열거나 saveAsset() 진입 시에만 호출되므로(2732-2778행), 매 키 입력마다 trim되어 중간에 공백을 못 치는 부작용은 없음을 grep으로 확인. dup 차단(a.name===d.name)과 삭제된 동명 자산 재연동 모두 trim된 이름을 그대로 씀을 확인. 새 회귀 테스트 3개가 trim 자체, falsy 기본값 대체, dup 차단 세 갈래를 각각 실제로 검증. node test/run.js 재실행해 352/352 통과 재확인, 두 인라인 <script> 블록 모두 node --check 파싱 확인, sw.js CACHE(v140->v141)/APP_VERSION(1.44.3->1.44.4) 버전 동반 상승도 확인. 문제 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 54,
+      "phase": "critique",
+      "timestamp": "2026-09-20T09:10:03.000Z",
+      "summary": "Explore 서브에이전트로 앱 전체를 구조적으로 재검토(render* 스모크 테스트 시리즈/esc() 스윕/캘린더 캐싱/selDay 부분갱신/반복종료조건/자산명 trim 등 최근 완료·반복기각 항목은 모두 재탐색 금지 지시). JSON 백업 복원(restoreBackup, index.html:4661)과 CSV 내보내기(doExport)만 있고 거래 내역을 앱에 '들여오는' 경로가 전혀 없음을 발견 — index.html:4486/4546 주석이 'CSV는 복원용 백업이 아니므로'라며 CSV 가져오기를 의도적으로 범위 밖에 뒀지만 대체 기능이 끝내 추가되지 않았다. 은행/카드 내역이나 다른 가계부 앱에서 이전하려는 신규 사용자가 이 앱 자체의 정확한 JSON 백업 포맷 없이는 대량으로 데이터를 넣을 방법이 없어(수기 입력 외 불가) 온보딩/채택을 막는 실질적 제품 공백으로 채택. 예산/목표 기능, 카테고리 관리 엣지케이스, 멀티통화 FX 배관, 포커스/이스케이프 처리, 시트 제스처/뒤로가기는 이미 충분히 견고함을 확인해 기각. 실 푸시/로컬 알림(서버 인프라·iOS 백그라운드 제약으로 리스크 큼), FX 통화 선택 버튼이 USD/JPY/EUR로 하드코딩(index.html:2752, 데이터 모델 자체는 통화 무관)됨, renderPlan() 렌더 스모크 테스트 부재(render* 시리즈의 단순 연장일 뿐 전략적 advance감은 아님)는 후순위로 기각. advance에서 '거래 내역 CSV 가져오기(import)' 기능(파서+자산/카테고리 매칭+미리보기+undoToast 되돌리기)을 구현하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     }
   ]
