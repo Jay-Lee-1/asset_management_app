@@ -1288,7 +1288,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.44.2';
+const APP_VERSION='1.44.3';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2903,7 +2903,7 @@ function calCellsFor(y,m,sel,txMap){
   const cls=['cal-cell'];if(other)cls.push('other');if(ds===sel)cls.push('sel');if(ds===TODAY)cls.push('today');
   const lineCnt=(inn?1:0)+(ex?1:0)+(sv?1:0);if(lineCnt>=3)cls.push('three'); /* 3줄이면 폰트 축소 */
   const dayLabel=`${dnum}일${inn?` 수입 ${abbr(inn)}`:''}${ex?` 지출 ${abbr(ex)}`:''}${ds===sel?' 선택됨':''}${ds===TODAY?' 오늘':''}`;
-  cells+=`<div class="${cls.join(' ')}" ${other?'':`tabindex="0" role="button" aria-pressed="${ds===sel}" aria-label="${dayLabel}" onclick="selDay('${ds}')" onkeydown="rowKeydown(event,()=>selDay('${ds}'))"`}>
+  cells+=`<div class="${cls.join(' ')}" ${other?'':`data-date="${ds}" tabindex="0" role="button" aria-pressed="${ds===sel}" aria-label="${dayLabel}" onclick="selDay('${ds}')" onkeydown="rowKeydown(event,()=>selDay('${ds}'))"`}>
    ${hasSch?'<span class="dotp"></span>':''}${hasTr?'<span class="dott"></span>':''}<div class="d">${dnum}</div>
    <div class="cal-amts">${inn?`<div class="in num">+${abbr(inn)}</div>`:''}${ex?`<div class="ex num">-${abbr(ex)}</div>`:''}${sv?`<div class="sv num">${abbr(sv)}</div>`:''}</div></div>`;
  }
@@ -2949,10 +2949,15 @@ function modeSeg(tab){ /* 달력/목록 컴팩트 세그먼트 (헤더용) */
  const filtered=(ST.hist.cat!=='전체'||ST.hist.q!=='');
  return `<div class="mseg"><button class="${isCal?'on':''}" onclick="${isCal?'':'toCal()'}">달력</button><button class="${!isCal?'on':''}" onclick="${!isCal?'':'toList()'}">검색${filtered?'<span class="chip-dot"></span>':''}</button></div>`;
 }
+function ledgerRowsHtml(d){
+ const selTx=dayTxns(d);
+ return selTx.length?selTx.map(t=>txRow(t)).join(''):`<div class="empty"><div class="ei">${svg('ledger')}</div><div class="et">이 날은 조용하네요 🌱</div><div class="es">쓴 게 있다면 지금 남겨두세요</div><button class="empty-cta" onclick="openTxSheet()">${svg('plus')} 내역 추가하기</button></div>`;
+}
+function ledgerDayHeadHtml(d){
+ return `<div class="d">${fmtDate(d)}</div>${isFuture(d)?'<div class="s" style="color:var(--gold)">예정</div>':''}`;
+}
 function renderLedger(){
  const {y,m,sel}=ST.ledger;
- const selTx=dayTxns(sel);
- const rows=selTx.length?selTx.map(t=>txRow(t)).join(''):`<div class="empty"><div class="ei">${svg('ledger')}</div><div class="et">이 날은 조용하네요 🌱</div><div class="es">쓴 게 있다면 지금 남겨두세요</div><button class="empty-cta" onclick="openTxSheet()">${svg('plus')} 내역 추가하기</button></div>`;
  const py=m===1?y-1:y,pm=m===1?12:m-1,ny=m===12?y+1:y,nm=m===12?1:m+1;
  /* 3개월(이전/현재/다음) 패널이 각자 dayTxns()를 셀마다 다시 스캔하지 않도록,
     캐러셀이 실제로 보여줄 3개월 범위 전체를 한 번만 버킷화해 공유한다 */
@@ -2966,8 +2971,8 @@ function renderLedger(){
    ${calPane(ny,nm,null,false,txMap)}
  </div></div>
  <div class="cal-legend"><span><i class="lg-sc"></i>예정</span><span><i class="lg-tr"></i>내부이체</span></div>
- <div class="day-head"><div class="d">${fmtDate(sel)}</div>${isFuture(sel)?'<div class="s" style="color:var(--gold)">예정</div>':''}</div>
- <div class="card">${rows}</div>
+ <div class="day-head" id="ledgerDayHead">${ledgerDayHeadHtml(sel)}</div>
+ <div class="card" id="ledgerCard">${ledgerRowsHtml(sel)}</div>
  <div style="height:8px"></div>`;
  wireMonthCarousel($('ledgerVP'),'ledger',(yy,mm)=>setNavLabel('ledger',yy,mm));
 
@@ -2978,12 +2983,50 @@ function renderLedger(){
  if(_lastLedYM&&_lastLedYM!==_ym)animNums('page-ledger','#ledsumLive .v'); /* 달 이동 시 수지 숫자 전환 */
  _lastLedYM=_ym;
 }
+/* selDay()가 같은 달 안에서 호출될 때 renderLedger() 전체를 다시 그리지 않고
+   (1) 캘린더 셀의 선택 표시 (2) 날짜 헤더 (3) 거래 목록만 갱신한다.
+   전체 재구축은 탭된 셀의 tabindex 노드를 파괴해 키보드 포커스를 body로 날리고,
+   wireMonthCarousel()의 viewport._c 가드가 매번 새 DOM이라 히트하지 못해
+   ResizeObserver가 매 탭마다 새로 생성·누적되는 문제가 있었다 */
+function selDayPartial(d){
+ const vp=$('ledgerVP');if(!vp)return false;
+ const track=vp.querySelector('.mc-track');if(!track)return false;
+ const live=track.children[1];if(!live)return false;
+ const grid=live.querySelector('.cal-grid');if(!grid)return false;
+ const newCell=grid.querySelector(`[data-date="${d}"]`);if(!newCell)return false;
+ const dayHead=$('ledgerDayHead'),card=$('ledgerCard');if(!dayHead||!card)return false;
+ const oldCell=grid.querySelector('.cal-cell.sel');
+ if(oldCell&&oldCell!==newCell){
+  oldCell.classList.remove('sel');
+  oldCell.setAttribute('aria-pressed','false');
+  const lbl=oldCell.getAttribute('aria-label');
+  if(lbl)oldCell.setAttribute('aria-label',lbl.replace(' 선택됨',''));
+ }
+ if(!newCell.classList.contains('sel')){
+  newCell.classList.add('sel');
+  newCell.setAttribute('aria-pressed','true');
+  const lbl=newCell.getAttribute('aria-label');
+  if(lbl&&!lbl.includes('선택됨'))newCell.setAttribute('aria-label',lbl+' 선택됨');
+ }
+ dayHead.innerHTML=ledgerDayHeadHtml(d);
+ card.innerHTML=ledgerRowsHtml(d);
+ if(!ST.lSel.mode)wireLongPress(card,id=>{ST.lSel.mode=true;ST.lSel.ids.add(id);renderLedger()});
+ updateSelBottom();
+ requestAnimationFrame(fitAll);
+ return true;
+}
 function abbr(n){ /* 1억 이상은 '억', 1만 이상은 '만' */
  const sg=n<0?'-':'',a=Math.abs(n);
  if(a>=1e8){const v=a/1e8;return sg+(Math.abs(v%1)<0.05?v.toFixed(0):v.toFixed(1))+'억'}
  if(a>=10000)return sg+(a/10000).toFixed(a%10000===0||a>=1000000?0:1)+'만';
  return sg+comma(a)}
-function selDay(d){if(ST.lSel.mode){ST.lSel.mode=false;ST.lSel.ids.clear()}ST.ledger.sel=d;renderLedger()}
+function selDay(d){
+ const wasMulti=ST.lSel.mode;
+ if(ST.lSel.mode){ST.lSel.mode=false;ST.lSel.ids.clear()}
+ ST.ledger.sel=d;
+ if(!wasMulti&&selDayPartial(d))return;
+ renderLedger();
+}
 function ledgerToggleSel(id){if(window._lpJustFired){window._lpJustFired=false;return}ST.lSel.ids.has(id)?ST.lSel.ids.delete(id):ST.lSel.ids.add(id);renderLedger()}
 function ledgerSelAll(){const items=dayTxns(ST.ledger.sel).filter(visibleTx).filter(t=>!t.isRec);if(items.length&&ST.lSel.ids.size>=items.length)ST.lSel.ids.clear();else items.forEach(t=>ST.lSel.ids.add(t.id));renderLedger()}
 function ledgerDelSel(){if(!ST.lSel.ids.size){toast('선택된 내역이 없어요');return}

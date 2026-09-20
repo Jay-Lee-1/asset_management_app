@@ -1,19 +1,8 @@
 {
-  "cycle": 53,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "selDay()가 같은 달 안에서도 renderLedger() 전체를 재구축 — 키보드 포커스 유실 + ResizeObserver 누수",
-    "why": "selDay(d)(index.html:2986)는 날짜를 탭/키보드로 선택할 때마다 년/월이 안 바뀌어도 renderLedger()를 통째로 다시 그린다. (1) 캘린더 셀은 tabindex=0 role=button onkeydown=rowKeydown(event,()=>selDay(...))으로 키보드 접근 가능하게 만들어져 있는데(index.html:2907), innerHTML 전체 교체가 포커스된 DOM 노드를 파괴해 Enter/Space로 날짜를 고를 때마다 포커스가 body로 빠져 키보드 사용자가 매번 페이지 맨 위부터 다시 Tab해야 하는 실사용 접근성 회귀다. (2) wireMonthCarousel(viewport,...)(index.html:5699-5714)의 viewport._c 가드는 renderLedger가 매번 새 DOM 노드를 만들기 때문에 selDay 경로에서 절대 히트하지 않아, 탭할 때마다 새 ResizeObserver가 만들어지고 이전 것은 disconnect() 없이 분리된(detached) 뷰포트 노드를 계속 참조한 채 살아남는다 — 하루씩 여러 날짜를 넘겨보는 흔한 사용 패턴에서 세션이 길어질수록 누적되는 메모리 누수. cycle52 advance에서 '월이 안 바뀌었을 때 부분 갱신'을 범위가 크다는 이유로 후속 과제로 미뤘던 항목이며, 이번 critique에서 단순 성능 문제를 넘어 접근성 회귀와 메모리 누수라는 구체적 증거를 확인해 최우선으로 채택.",
-    "approach": "d와 ST.ledger.sel이 같은 년/월일 때만 타는 부분 갱신 경로를 selDay()에 추가한다: (a) 기존 .cal-cell.sel 노드에서 sel 클래스/aria-pressed/aria-label을 떼고 새로 선택된 날짜의 셀에 옮겨 붙인다(달력 그리드 자체는 재사용, querySelector로 라이브 패널 안의 셀을 찾음). (b) 날짜 헤더와 거래 목록(day-head, 카드) 부분만 innerHTML을 교체하도록 renderLedger() 템플릿에 안정적인 id(예: ledgerDayHead, ledgerCard)를 부여하고 그 두 블록만 다시 그린다. (c) 이 경로에서는 wireMonthCarousel/wireLongPress/ResizeObserver 재생성을 아예 건너뛴다. 월이 바뀌는 경우(monthStep)나 ST.lSel.mode 멀티셀렉트 토글 시에는 기존처럼 renderLedger() 전체 재호출로 폴백한다. 테스트: test/run.js의 기존 pageLedgerEl 같은 getter/setter 스텁 패턴으로 ledgerDayHeadEl/ledgerCardEl 목을 추가하고, 같은 달 안에서 selDay()를 두 번 연속 호출했을 때 pageLedgerEl.innerHTML 캡처(=전체 재구축 여부 지표)가 변하지 않으면서 ledgerCardEl 쪽에는 새로 선택한 날짜의 거래가 반영되는지 확인해 부분 갱신 경로가 실제로 탔음을 검증한다."
-  },
+  "cycle": 54,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 48,
-      "phase": "critique",
-      "timestamp": "2026-09-19T09:09:21.263Z",
-      "summary": "Explore 서브에이전트로 앱 전체를 구조적으로 재검토. assetPickBtn()(index.html:5513)과 openPlanAsset()(index.html:3737)이 a.name/a.owner를 esc() 없이 innerHTML에 꽂는 걸 발견 — 바로 아래 openOwnerPicker의 자산 선택 리스트(index.html:5524)는 동일 필드(a.name/a.owner)를 esc(a.name)/esc(a.owner)로 이미 감싸고 있어, assetPickBtn만 빠진 불일치임을 확인. assetPickBtn은 지출/수입/이체/저축 만기이체 폼과 반복거래 폼 7곳(index.html:2738,3064-3066,3289-3291)에서 공용으로 쓰여 openSheet()의 innerHTML 삽입을 그대로 타므로, 자산 이름이나 귀속(owner)에 <img src=x onerror=...> 같은 값을 저장하면(saveAsset/addOwner는 이스케이프 없이 그대로 저장) 그 다음 아무 거래 추가 폼을 열 때마다 실행되는 재현 가능한 self-XSS — cycle46에서 고친 accountName() self-XSS(로그인 사용자 표시명 3곳)와 같은 취약점 계열이지만 다른, 아직 안 고쳐진 지점(자산명/귀속 필드)이라 그 스윕이 놓친 잔여 구멍으로 판단해 최우선 채택. renderAssets/renderHistory 렌더 스모크 테스트 공백(4차례 이연, 여전히 DOM/드래그 모킹 필요해 범위 큼)과 balancesUpTo() RANGE_FROM 체크포인트(cycle41/45/46/47에서 반복 기각, 새 근거 없음), long-press 멀티셀렉트 접근성 공백(여전히 단일 수정 지점 없음)은 이번에도 재확인만 하고 후순위로 기각. advance에서 assetPickBtn()의 a.name/a.owner 2곳과 openPlanAsset()의 a.name 1곳을 esc()로 감싸고, esc(a.name) 검증 회귀 테스트를 추가하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 48,
       "phase": "advance",
@@ -145,6 +134,13 @@
       "phase": "review",
       "timestamp": "2026-09-20T04:10:00.000Z",
       "summary": "develop 커밋(be97f05)을 검토. recalcEndCond가 wiring된 6개 지점(txFreq/txDay/tx 시작일 픽커, recFreq/recDay/setRecWeekend/rec 시작일 픽커)은 모두 정확함을 확인했으나, 반복일을 버튼(1/5/15/25/last)이 아니라 커스텀 숫자 입력창에 직접 타이핑하는 경로 — txDayInput(index.html:3127)/recDayInput(:3338), oninput 핸들러로 매 키 입력마다 txDraft.day/recDraft.day만 갱신하고 재렌더도 recalcEndCond 호출도 없음 — 가 이번 develop이 놓친 동일 계열의 잔여 구멍임을 발견. 이 경로가 실제로 문제가 되는지 saveTx()(:3178-3184)/saveRec()(:3364-3367)를 확인: 둘 다 저장 시 clampDay()로 day를 보정한 뒤 base를 새로 만들지만, endDate와 count가 '둘 다' 이미 채워져 있으면(재계산 없이 저장) 어느 쪽도 건드리지 않아 커스텀 타이핑으로 바뀐 day를 반영 못한 채 그대로 저장됨을 확인 — 매월 반복에서 day 값은 recDates()의 push() 조건(d>=r.startDate)에 걸려 시작일 근처 첫 회차 포함 여부를 바꿀 수 있어(예: startDate=2026-01-10,day=1→첫 회차 2월1일, day=15로 바꾸면 1월15일부터 포함되어 회차 수가 실제로 달라짐) 이론적 엣지케이스가 아니라 재현 가능한 결함으로 판단해 그 자리에서 수정. txDayInput/recDayInput에 day 값이 빈 문자열이 아닐 때만(백스페이스로 지우는 도중 day=''인 임시 상태에서 recNthDate가 day=0으로 오염되는 것 방지) recalcEndCond(txDraft,txDraft.date)/recalcEndCond(recDraft,recDraft.startDate) 호출을 추가. 이 두 함수는 DOM 요소(el)에 의존해 순수 함수 테스트 하네스로 격리하기 어렵고(기존 develop 커밋도 txFreq/txDay 등 동일 계열 wiring 함수들은 unit test 없이 recalcEndCond 자체 테스트로만 커버했음) 재렌더도 하지 않는 기존 설계라, 이미 develop에서 3건 추가된 recalcEndCond 자체 테스트가 이번 수정이 호출하는 로직을 그대로 커버함을 확인하고 새 테스트는 추가하지 않았다(패턴 일관성 유지). node test/run.js 재실행해 349/349 통과, 두 인라인 <script> 블록 모두 vm.Script 파싱 확인. APP_VERSION 1.44.1->1.44.2, sw.js CACHE v138->v139.",
+      "commit": null
+    },
+    {
+      "cycle": 53,
+      "phase": "advance",
+      "timestamp": "2026-09-20T05:10:59.665Z",
+      "summary": "selDay() 같은 달 내 재선택 시 renderLedger() 전체 재구축 대신 부분 갱신(selDayPartial) 도입: 캘린더 셀의 sel 클래스/aria만 옮기고 day-head/card만 innerHTML 교체, wireMonthCarousel/ResizeObserver/wireLongPress 재생성은 건너뜀. DOM 조작 실패 시(cal-cell을 못 찾는 등) renderLedger() 전체 재구축으로 안전하게 폴백. renderLedger()에서 day-head/card HTML 빌더를 ledgerDayHeadHtml()/ledgerRowsHtml()로 추출해 재사용. test/run.js FUNCS에 두 헬퍼+selDayPartial 추가, 회귀 스위트 349/349 통과. sw.js CACHE v139→v140, APP_VERSION 1.44.2→1.44.3.",
       "commit": null
     }
   ]
