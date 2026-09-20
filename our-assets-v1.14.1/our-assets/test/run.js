@@ -73,7 +73,7 @@ const FUNCTIONS = [
   'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'restoreBackup', 'storageOutcomeMsg', 'shouldWarnUnpersisted',
   'sanitizeAmount', 'sanitizeBackup',
   'saveRec', 'recHistFieldsChanged', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
-  'monthStartStr', 'monthEndStr', 'expandRec', 'allTxns', 'spendByCategory', 'histSumTotals',
+  'monthStartStr', 'monthEndStr', 'expandRec', 'allTxns', 'txnsByDateInRange', 'spendByCategory', 'histSumTotals',
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'expenseBreakdownCard',
   'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'openAssetSheet', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'isCloudConflict', 'decidePushOutcome',
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges',
@@ -3860,6 +3860,40 @@ test('renderLedger: 오늘보다 미래 날짜를 선택하면 "예정" 라벨�
   sandbox.renderLedger();
   const html = sandbox.pageLedgerEl.innerHTML;
   assert.ok(html.includes('>예정<'), '오늘보다 미래인 날을 선택하면 day-head에 예정 라벨이 나와야 함');
+});
+
+/* ---------- txnsByDateInRange / calCellsFor 버킷화 회귀 테스트 (app-evolve cycle52 critique/advance) ----------
+ * calCellsFor()가 42개 셀마다 dayTxns()→allTxns()를 개별 호출해, renderLedger()가 이전/현재/
+ * 다음 3개월 패널을 그릴 때마다 DB.txns 전체를 수십 번 다시 스캔하던 문제(_recCache도 단일
+ * 날짜 키 126개로 스래싱돼 무효화)를 없애기 위해 allTxns()를 범위당 한 번만 불러 날짜별로
+ * 버킷화하는 txnsByDateInRange()를 도입했다. calCellsFor/calPane/renderLedger가 이제 이 맵을
+ * 공유해서 쓰므로, 버킷 내용 자체와 그 맵을 실제로 소비하는 이전/다음 달 패널의 날짜 셀 금액이
+ * 기존 셀별 조회(dayTxns)와 동일한 결과를 보여주는지 확인한다. */
+test('txnsByDateInRange: 날짜별 버킷이 해당 날짜의 거래만 정확히 담는다', () => {
+  setupLedgerDB();
+  sandbox.DB.assets = [{ id: 'a1', name: '주계좌', owner: '나', type: 'cash', baseAmount: 500000 }];
+  sandbox.DB.txns = [
+    { id: 't1', date: '2026-06-01', type: 'expense', category: '식비', memo: '점심', amount: 8000, fromAssetId: 'a1' },
+    { id: 't2', date: '2026-06-15', type: 'income', category: '급여', memo: '월급', amount: 3000000, toAssetId: 'a1' },
+  ];
+  const map = sandbox.txnsByDateInRange('2026-06-01', '2026-06-30');
+  // vm 샌드박스에서 만들어진 배열은 host의 Array와 realm이 달라 deepStrictEqual이
+  // (값은 같아도) 실패하므로, Array.from으로 host realm 배열로 정규화한다.
+  assert.deepStrictEqual(Array.from(map.get('2026-06-01') || [], t => t.id), ['t1']);
+  assert.deepStrictEqual(Array.from(map.get('2026-06-15') || [], t => t.id), ['t2']);
+  assert.ok(!map.has('2026-06-02'), '거래가 없는 날짜는 버킷에 아예 없어야 함');
+});
+test('renderLedger: 이전/다음 달 패널의 실제 날짜 셀도 해당 날짜 거래 금액을 정확히 반영한다', () => {
+  setupLedgerDB(); // ST.ledger는 2026-06 → 이전 패널 2026-05, 다음 패널 2026-07
+  sandbox.DB.assets = [{ id: 'a1', name: '주계좌', owner: '나', type: 'cash', baseAmount: 500000 }];
+  sandbox.DB.txns = [
+    { id: 'tp', date: '2026-05-20', type: 'expense', category: '식비', memo: '전달 지출', amount: 12000, fromAssetId: 'a1' },
+    { id: 'tn', date: '2026-07-05', type: 'expense', category: '식비', memo: '다음달 지출', amount: 9000, fromAssetId: 'a1' },
+  ];
+  sandbox.renderLedger();
+  const html = sandbox.pageLedgerEl.innerHTML;
+  assert.ok(html.includes('1.2만'), '이전 달 패널의 실제 날짜 셀에 해당 날짜 지출(축약 표기)이 반영돼야 함');
+  assert.ok(html.includes('9,000'), '다음 달 패널의 실제 날짜 셀에 해당 날짜 지출이 반영돼야 함');
 });
 
 /* ---------- renderHistory: 렌더 함수 스모크 테스트 (app-evolve cycle51 critique/advance) ----------

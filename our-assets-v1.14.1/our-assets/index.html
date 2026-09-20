@@ -1288,7 +1288,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.43.10';
+const APP_VERSION='1.44.0';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1958,6 +1958,17 @@ function expandRec(from,to){
  return out;
 }
 function allTxns(from,to){return DB.txns.filter(t=>t.date>=from&&t.date<=to).concat(expandRec(from,to))}
+/* 가계부 달력: calCellsFor()가 셀(최대 42개)마다 dayTxns()→allTxns()를 개별 호출하면
+   3개월(이전/현재/다음) 패널을 렌더할 때마다 전체 거래를 수십 번 다시 스캔한다.
+   allTxns()를 범위 전체에 한 번만 불러 날짜별로 버킷화해두면 셀마다 Map 조회 한 번으로 끝난다. */
+function txnsByDateInRange(from,to){
+ const map=new Map();
+ allTxns(from,to).forEach(t=>{
+  if(!map.has(t.date))map.set(t.date,[]);
+  map.get(t.date).push(t);
+ });
+ return map;
+}
 /* 반복 종료 조건: 횟수 ↔ 종료일 (엔진 recDates 재사용 → 규칙 100% 일치) */
 function addMonthsStr(ds,m){const d=new Date(ds+'T00:00:00');d.setMonth(d.getMonth()+m);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
 function recNthDate(base,n){ /* n번째 반복 날짜 */
@@ -2875,7 +2886,7 @@ function dayTypeTotals(tx){
   if(t.type==='income')inn+=t.amount;else if(t.type==='expense')ex+=t.amount;else if(t.type==='saving')sv+=t.amount});
  return {inn,ex,sv};
 }
-function calCellsFor(y,m,sel){
+function calCellsFor(y,m,sel,txMap){
  const first=new Date(y,m-1,1),startDow=first.getDay(),daysIn=lastDay(y,m);
  const prevDays=lastDay(m===1?y-1:y,m===1?12:m-1);
  let cells='';
@@ -2885,7 +2896,7 @@ function calCellsFor(y,m,sel){
   else dnum=i-startDow+1;
   let yy=y;if(mm<1){mm=12;yy--}if(mm>12){mm=1;yy++}
   const ds=`${yy}-${String(mm).padStart(2,'0')}-${String(dnum).padStart(2,'0')}`;
-  const tx=other?[]:dayTxns(ds); /* 가계부는 예정 항상 포함 */
+  const tx=other?[]:(txMap.get(ds)||[]); /* 가계부는 예정 항상 포함 */
   const {inn,ex,sv}=dayTypeTotals(tx);
   const hasSch=tx.some(t=>txScheduled(t));
   const hasTr=tx.some(t=>t.type==='transfer');
@@ -2928,9 +2939,9 @@ function sujiPeekStart(){clearTimeout(_sujiTimer);_sujiTimer=setTimeout(()=>{_su
 function sujiPeekMove(){if(!_sujiPeeking)clearTimeout(_sujiTimer)} /* 스와이프면 피크 취소 */
 function sujiPeekEnd(){clearTimeout(_sujiTimer);if(_sujiPeeking){_sujiPeeking=false;setSujiMode(false)}}
 function setSujiMode(today){const card=$('ledsumLive');if(!card)return;const {a,sc}=monthStats2(+card.dataset.y,+card.dataset.m);card.innerHTML=ledSumInner(a,sc,today);card.classList.toggle('peek',today);requestAnimationFrame(fitAll)}
-function calPane(y,m,sel,live){
+function calPane(y,m,sel,live,txMap){
  return `<div class="cal-pane">${ledSumBox(y,m,live)}
-   <div class="cal"><div class="cal-week"><div class="sun">일</div><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div class="sat">토</div></div><div class="cal-grid">${calCellsFor(y,m,sel)}</div></div>
+   <div class="cal"><div class="cal-week"><div class="sun">일</div><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div class="sat">토</div></div><div class="cal-grid">${calCellsFor(y,m,sel,txMap)}</div></div>
  </div>`;
 }
 function modeSeg(tab){ /* 달력/목록 컴팩트 세그먼트 (헤더용) */
@@ -2942,13 +2953,17 @@ function renderLedger(){
  const {y,m,sel}=ST.ledger;
  const selTx=dayTxns(sel);
  const rows=selTx.length?selTx.map(t=>txRow(t)).join(''):`<div class="empty"><div class="ei">${svg('ledger')}</div><div class="et">이 날은 조용하네요 🌱</div><div class="es">쓴 게 있다면 지금 남겨두세요</div><button class="empty-cta" onclick="openTxSheet()">${svg('plus')} 내역 추가하기</button></div>`;
+ const py=m===1?y-1:y,pm=m===1?12:m-1,ny=m===12?y+1:y,nm=m===12?1:m+1;
+ /* 3개월(이전/현재/다음) 패널이 각자 dayTxns()를 셀마다 다시 스캔하지 않도록,
+    캐러셀이 실제로 보여줄 3개월 범위 전체를 한 번만 버킷화해 공유한다 */
+ const txMap=txnsByDateInRange(monthStartStr(py,pm),monthEndStr(ny,nm));
  $('page-ledger').innerHTML=`
  ${pageHead('ledger')}
  ${monthNav('ledger',`${y}년 ${m}월`)}
  <div class="mc-viewport" id="ledgerVP"><div class="mc-track">
-   ${calPane(m===1?y-1:y, m===1?12:m-1, null, false)}
-   ${calPane(y,m,sel,true)}
-   ${calPane(m===12?y+1:y, m===12?1:m+1, null, false)}
+   ${calPane(py,pm,null,false,txMap)}
+   ${calPane(y,m,sel,true,txMap)}
+   ${calPane(ny,nm,null,false,txMap)}
  </div></div>
  <div class="cal-legend"><span><i class="lg-sc"></i>예정</span><span><i class="lg-tr"></i>내부이체</span></div>
  <div class="day-head"><div class="d">${fmtDate(sel)}</div>${isFuture(sel)?'<div class="s" style="color:var(--gold)">예정</div>':''}</div>
