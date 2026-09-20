@@ -1,6 +1,6 @@
 {
   "cycle": 57,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
     {
@@ -142,6 +142,13 @@
       "timestamp": "2026-09-20T19:11:00.000Z",
       "summary": "Explore 서브에이전트로 발견한 sanitizeBackup()의 거래/반복거래 금액(amount) 음수 미차단 버그 수정. sanitizeAmount(v,min)는 min을 넘기지 않으면(자산 잔액 baseAmount/amountKRW처럼 마이너스가 유효한 필드용) 부호를 그대로 통과시키는데, sanitizeBackup()이 백업/클라우드 복원 시 거래·반복거래의 amount와 edits[date].amount에도 동일하게 min 없이 호출하고 있었다 — 이 필드들은 크기(magnitude)만 의미 있고 부호는 항상 type/fromAssetId/toAssetId로 결정되는 값(SANITIZE_QTY_FIELDS와 같은 계열)인데 SANITIZE_FREE_FIELDS에 잘못 묶여 있었다. 손상되거나 오래된 기기의 클라우드 데이터에 {type:'expense',amount:-50000,...}처럼 음수 amount가 섞여 들어오면 복원 시 그대로 저장되고, balancesUpTo()의 map[fromAssetId]-=sign*t.amount 계산이 음수를 빼면서 실제로는 잔액을 늘려버려 사용자 모르게 자산 잔액이 조용히 틀어지는 데이터 결함이었다. txns/recurrences의 amount, edits[*].amount 호출을 sanitizeAmount(d.amount,0)로 min=0 클램프하도록 고치고, 자산 객체에만 순회되어 실질적으로 죽어 있던 SANITIZE_FREE_FIELDS의 'amount' 항목을 제거해 ['baseAmount','amountKRW']만 남겼다. sanitizeBackup은 이미 test/run.js FUNCTIONS에 있어 새 인프라 없이 회귀 테스트 3개 추가(거래 음수 amount→0 클램프, 반복거래 음수 amount→0 클램프, edits[date] 음수 amount→0 클램프). 두 인라인 <script> 블록 모두 vm.Script 파싱 확인, 385/385 통과. APP_VERSION 1.45.5->1.45.6, sw.js CACHE v147->v148. 커밋 884dcff.",
       "commit": "884dcff"
+    },
+    {
+      "cycle": 57,
+      "phase": "review",
+      "timestamp": "2026-09-20T22:19:40.000Z",
+      "summary": "develop 커밋(884dcff)을 검토. sanitizeAmount(d.amount,0) 클램프가 txns/recurrences/edits[date] 세 지점 모두 정확히 적용됐음을 확인. amount가 항상 크기(magnitude)라는 전제를 grep으로 재검증: addBalanceAdjust()/updateBalanceAdjust()가 income/expense 어느 쪽이든 amount:Math.abs(gap)로만 push하고 부호는 type+fromAssetId/toAssetId로만 표현하며, transfer 타입도 :2156/:2166의 합계 로직이 t.amount를 그대로 더하는 등(부호 반전 없음) 코드 전체가 이 관례를 일관되게 따름을 확인 — SANITIZE_FREE_FIELDS에서 amount를 뺀 것도 올바른 수정. node test/run.js 재실행해 385/385 통과 재확인. 문제 없음.",
+      "commit": null
     }
   ]
 }
