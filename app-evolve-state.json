@@ -1,6 +1,6 @@
 {
   "cycle": 56,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
     {
@@ -141,6 +141,13 @@
       "phase": "develop",
       "timestamp": "2026-09-20T17:11:00.000Z",
       "summary": "Explore 서브에이전트로 발견한 자산 등록/수정 시트(asAmt, index.html)의 '현재 금액' 필드가 음수를 입력할 방법이 아예 없던 버그 수정. fmtAmt(inp)(5007행, oninput 핸들러)와 num(el)(2850행)이 둘 다 비숫자 문자를 전부(부호 포함) 제거해, 마이너스통장(오버드래프트)처럼 잔액이 실제로 음수인 현금성 자산을 등록하려 해도 '-'를 치는 즉시 지워져 값이 항상 양수로 저장됐다 — 반면 SANITIZE_FREE_FIELDS(4726행)는 baseAmount/amountKRW를 '마이너스도 유효'라고 명시하고 있고, Plan 탭에는 잔액이 음수가 되는 날부터 경고하는 기능까지 있어 음수 잔액은 원래 앱이 설계상 지원하는 상태였다. fmtAmt(inp,allowNeg)/num(el)에 allowNeg 파라미터 및 선행 '-' 파싱을 추가하되, 거래금액(txAmt)·반복금액(rAmt)·빠른입력(qAmt)·대형자산 임계값(bigMinInput) 등 크기만 의미 있는 다른 모든 fmtAmt 호출부는 인자 없이 그대로 둬 기존 동작(부호 항상 제거)을 유지했다. 부채(debt)는 assetEval에서 별도로 -1을 곱해 총부채 계산에 반영하는 비대칭 부호 규약이라 입력 자체를 음수로 받으면 이중 반전되므로 canNeg=d.type!=='debt'로 명시적으로 제외. 모바일 numeric 키패드에는 대개 '-' 키가 없어 파싱만 고쳐선 실사용에 무력하다는 점을 고려해, asAmt 필드 바로 아래에 기존 '총자산에 포함' 토글과 같은 스타일의 '마이너스 잔액' 스위치를 추가하고 asToggleNeg(editing) 함수(asDraft._dispAmt 부호 반전 후 재렌더)로 연결했다. test/run.js FUNCTIONS에 fmtAmt/asToggleNeg 추가(num은 이미 있었음), num()의 기존 회귀 테스트가 '-100'→100(구버그 동작)을 검증하고 있던 것을 '-100'→-100으로 정정하고 fmtAmt 4개(allowNeg 없음/있음/부호만 입력한 중간 상태/전부 지운 빈 문자열)+asToggleNeg 1개, 회귀 테스트 순증 5개, 379/379 통과. 두 인라인 <script> 블록 모두 new Function 파싱 확인. APP_VERSION 1.45.2->1.45.3, sw.js CACHE v144->v145.",
+      "commit": null
+    },
+    {
+      "cycle": 56,
+      "phase": "review",
+      "timestamp": "2026-09-20T18:11:00.000Z",
+      "summary": "develop 커밋(9888290)을 검토하다 fmtAmt(inp,allowNeg)와 달리 num(el)에는 allowNeg 게이팅이 전혀 없어(무조건 선행 '-'를 부호로 인정) 실사용 회귀를 발견 — develop 자신의 커밋 메시지/테스트 주석은 \"txAmt/rAmt/qAmt/bigMinInput 등은 인자 없이 호출해 기존처럼 부호가 제거되는 동작을 유지한다\"고 주장하지만, 이 필드들이 공유하는 num()이 실제로는 게이팅 없이 항상 부호를 보존하도록 고쳐져 있어 그 주장이 거짓이었다(회귀 테스트도 sandbox.num({value:'-100'})===-100을 무조건으로 단언해 이 사실을 그대로 굳히고 있었음). 재현 경로: t.amount는 SANITIZE_FREE_FIELDS(4737행 부근 주석 \"거래금액/잔액 — 마이너스도 유효\")가 음수를 그대로 통과시켜, 백업 복원이나 클라우드 동기화로 이미 음수가 된 일반 거래(t)가 DB.txns에 존재할 수 있다 — editTx(id)(3245행)가 txDraft=JSON.parse(JSON.stringify(t))로 그 음수를 그대로 복제해 txAmt 입력값을 '-1,234' 형태로 초기 렌더하는데, 사용자가 금액칸을 건드리지 않고(oninput/fmtAmt가 한 번도 안 일어남) 저장만 하면 syncTxInputs()의 num($('txAmt'))가 그 '-'를 그대로 살려 반환 → income/expense/saving/transfer 타입별 부호는 amount 자체가 항상 크기라고 가정하는 앱 전역 관례(다일 합계·잔액 계산 등)를 깨는 음수 거래 금액이 저장됨. rAmt(syncRecInputs)·qAmt·bigMinInput도 이론상 같은 경로에 노출. num(el,allowNeg)로 fmtAmt와 동일하게 게이팅해 기본값은 기존처럼 부호를 제거하고, asAmt를 읽는 유일한 호출부(syncAssetInputs, 2727행)에만 renderAssetSheet와 동일한 canNeg=d.type!=='debt' 규칙으로 num(g('asAmt'),d.type!=='debt')를 전달하도록 수정. 다른 num() 호출부(bigMinInput/txAmt/rAmt/qAmt)는 인자 없이 그대로 둬 원래 develop이 의도했던(그러나 실제로는 지켜지지 않았던) 부호 제거 동작을 실제로 복원했다. num() 회귀 테스트를 allowNeg 없음(부호 제거)/allowNeg=true(부호 보존) 두 갈래로 재작성(기존 무조건 부호보존 단언 삭제) — syncTxInputs/syncRecInputs는 DOM 리더라 테스트에서 no-op 스텁이라 editTx 전체 흐름 재현은 안 되지만, 실제 버그의 근원인 num() 자체는 두 분기 모두 직접 검증됨. node test/run.js 380/380 통과, 두 인라인 <script> 블록 모두 new Function 파싱 확인. APP_VERSION 1.45.3->1.45.4, sw.js CACHE v145->v146.",
       "commit": null
     }
   ]

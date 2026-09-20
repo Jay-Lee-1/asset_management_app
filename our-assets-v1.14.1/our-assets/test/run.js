@@ -529,16 +529,29 @@ test('recDates: 오래전 시작한 daily/weekly 반복도 좁은 [from,to] 구�
   );
 });
 
-/* ---------- num()/fmtAmt(): 음수 입력 처리 (app-evolve cycle56 develop)
+/* ---------- num()/fmtAmt(): 음수 입력 처리 (app-evolve cycle56 develop, cycle56 review에서 num() 수정)
  * 자산 "현재 금액" 필드(asAmt)는 마이너스통장(오버드래프트)처럼 잔액이 음수일 수 있는데,
  * fmtAmt()가 매 키 입력마다 '-' 문자까지 통째로 제거해 사용자가 애초에 음수를 입력할 수 없었다.
  * num()도 부호를 무시하고 절댓값만 파싱해, 설령 값에 '-'가 남아 있어도 양수로 읽혔다.
- * 거래금액(txAmt)·반복금액(rAmt) 등 크기만 의미 있는 필드는 fmtAmt(inp)를 인자 없이(=allowNeg 없음)
- * 그대로 호출해 기존처럼 부호가 제거되는 동작을 유지한다. */
-test('num(): 앞에 붙은 - 부호는 유지하고 나머지 비숫자 문자만 제거해 파싱한다', () => {
-  assert.strictEqual(sandbox.num({ value: '-100' }), -100);
+ * develop 커밋은 fmtAmt(inp,allowNeg)에는 allowNeg 게이팅을 넣었지만 num(el)은 게이팅 없이
+ * 부호를 무조건 보존하도록 고쳐, syncTxInputs()/syncRecInputs()가 num($('txAmt'))/num($('rAmt'))로
+ * 읽는 거래·반복 금액까지 전부 영향을 받았다 — editTx()가 txDraft=JSON.parse(JSON.stringify(t))로
+ * DB.txns의 t.amount를 그대로 복제해 열기 때문에, 백업 복원/클라우드 동기화로 이미 음수가 된
+ * t.amount(SANITIZE_FREE_FIELDS는 amount를 "마이너스도 유효"로 취급해 걸러내지 않음, sanitizeAmount
+ * 부근 주석 참고)를 가진 기존 거래를 열어 금액칸을 건드리지 않고 저장만 해도(oninput이 한 번도
+ * 안 일어나 fmtAmt가 부호를 지울 기회가 없음) num()이 그 음수를 그대로 통과시켜 income/expense/
+ * saving/transfer 타입별 부호 관례(t.amount는 항상 크기, 부호는 type이 결정)를 깨는 회귀였다.
+ * num(el,allowNeg)로 fmtAmt와 동일하게 게이팅해, asAmt(canNeg)만 부호를 보존하고 나머지 모든
+ * 호출부(txAmt/rAmt/qAmt/bigMinInput, 인자 없이 호출)는 기존처럼 부호가 제거되는 동작을 유지한다. */
+test('num(): allowNeg 없이 호출하면(거래금액 등) 앞의 - 부호를 무시하고 절댓값만 파싱한다', () => {
+  assert.strictEqual(sandbox.num({ value: '-100' }), 100);
   assert.strictEqual(sandbox.num({ value: '1,234' }), 1234);
-  assert.strictEqual(sandbox.num({ value: '-1,234' }), -1234);
+  assert.strictEqual(sandbox.num({ value: '-1,234' }), 1234);
+});
+test('num(): allowNeg=true면(자산 잔액) 앞에 붙은 - 부호를 유지하고 나머지 비숫자 문자만 제거해 파싱한다', () => {
+  assert.strictEqual(sandbox.num({ value: '-100' }, true), -100);
+  assert.strictEqual(sandbox.num({ value: '1,234' }, true), 1234);
+  assert.strictEqual(sandbox.num({ value: '-1,234' }, true), -1234);
 });
 test('num(): 값이 없거나 엘리먼트가 없으면 0을 반환한다', () => {
   assert.strictEqual(sandbox.num({ value: '' }), 0);

@@ -1289,7 +1289,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.45.3';
+const APP_VERSION='1.45.4';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2724,7 +2724,7 @@ function openAssetSheet(id){
 }
 function syncAssetInputs(){const d=asDraft;const g=id=>$(id);
  if(g('asName'))d.name=(g('asName').value||'').trim();
- if(g('asAmt'))d._dispAmt=num(g('asAmt'));
+ if(g('asAmt'))d._dispAmt=num(g('asAmt'),d.type!=='debt');
  if(g('asMat'))d.maturityDate=g('asMat').value;
  if(g('asFx'))d.fxAmount=Math.max(0,parseFloat((g('asFx').value||'0').replace(/,/g,''))||0);
  if(g('asGold'))d.goldDon=Math.max(0,parseFloat((g('asGold').value||'0').replace(/,/g,''))||0);
@@ -2851,7 +2851,7 @@ function fcWire(){document.querySelectorAll('.field-clear input').forEach(el=>{f
     el.addEventListener('focus',()=>{if(w)w.classList.add('is-focus')});
     el.addEventListener('blur',()=>{if(w)setTimeout(()=>w.classList.remove('is-focus'),120)}); /* 탭 여유 */
   }});}
-function num(el){if(!el)return 0;const s=el.value||'0';const neg=/^-/.test(s.trim());const digits=s.replace(/[^0-9]/g,'');return(neg?-1:1)*Number(digits||'0')}
+function num(el,allowNeg){if(!el)return 0;const s=el.value||'0';const neg=allowNeg&&/^-/.test(s.trim());const digits=s.replace(/[^0-9]/g,'');return(neg?-1:1)*Number(digits||'0')}
 
 /* 귀속 관리 — 수정(이름)·삭제 */
 function openOwnerManage(){
