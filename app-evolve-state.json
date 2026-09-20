@@ -1,15 +1,8 @@
 {
   "cycle": 56,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 50,
-      "phase": "advance",
-      "timestamp": "2026-09-19T18:30:00.000Z",
-      "summary": "critique(aa99e07) 계획대로 renderLedger()에 렌더 스모크 테스트를 도입해 openCatManage(43)·renderTxSheet(44)·renderHome(47)·renderAssets(49)에 이어 다섯 번째 render* 안전망 사례를 만들었다. renderLedger가 부르던 순수 문자열 빌더(dayTxns, txRow, calPane, calCellsFor, ledSumBox, ledSumInner, monthNav, modeSeg, abbr)를 test/run.js FUNCTIONS에 추가하고(pageHead는 renderAssets 때 이미 있었지만 tab==='ledger' 분기가 modeSeg()를 새로 호출), 실제 부수효과 호출인 wireMonthCarousel 하나만 fitAll류 no-op 스텁으로 새로 추가(wireLongPress/updateSelBottom/fitAll/animNums는 기존 스텁 재사용). CONSTS에 wonS, LETS에 renderLedger가 재대입하는 _lastLedYM을 추가. pageHomeEl/pageAssetsEl과 같은 getter/setter 패턴의 pageLedgerEl을 추가해 $('page-ledger')에 연결. 테스트 4개: 1) 선택한 날에 내역이 없으면 예외 없이 실행되고 \"이 날은 조용하네요\" 빈 상태가 렌더되는지, 2) 내역이 있으면 메모(\"점심 김밥\")와 금액(\"-8,000원\")이 실제로 나오는지, 3) 멀티셀렉트 모드(ST.lSel.mode)에서는 sel-check 체크마크와 ledgerToggleSel onclick이 렌더되는지, 4) 오늘보다 미래 날짜를 선택하면 day-head에 \"예정\" 라벨이 나오는지. 구현 중 calCellsFor()가 부르는 abbr()(달력 셀 금액 축약, 1억/1만 단위)가 순수 함수인데도 FUNCTIONS에 없어 첫 실행에서 'abbr is not defined'로 실패한 걸 발견해 추가로 끌어옴. index.html은 전혀 건드리지 않아(테스트 인프라만 확장) APP_VERSION/sw.js CACHE는 그대로 유지. 회귀 테스트 4개 추가, 334/334 통과. renderHistory()는 같은 레시피의 후속 과제로 남긴다. pending_advance_plan 비움.",
-      "commit": null
-    },
     {
       "cycle": 51,
       "phase": "develop",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-20T16:11:13.766Z",
       "summary": "critique(4971071) 계획대로 recSave()의 반복 거래 회차 편집 시 메모(memo)가 저장되지 않던 버그를 고쳤다. recSave() 시작부에 syncTxInputs() 호출을 추가해(다른 tx 편집 흐름과 동일한 패턴) txDraft.amount/memo를 DOM(#txAmt/#txMemo)에서 최신화하고, saveTx()/saveRec()과 동일한 (memo||'').trim()||r.category 패턴으로 memo를 확정해 세 scope 분기 모두에 반영했다: scope='one'은 edits[date]={amount,memo}로 memo 키를 추가, scope='future'는 새로 분리되는 newRec에 amount 옆에 memo도 함께 override, scope='all'(else)은 r.memo도 r.amount와 함께 갱신하고 undoFn이 prevMemo까지 캡처해 되돌리도록 했다. expandRec()(1953행)의 ed.memo!=null?ed.memo:r.memo 표시 로직과 호환 확인. 테스트 인프라 변경: recSave()가 이제 DOM 직접 조회 대신 txDraft를 통해 값을 읽으므로(mock syncTxInputs는 기존처럼 no-op), 기존 recSave 테스트 8개의 sandbox.txAmtValue 세팅을 sandbox.txDraft={amount:...}로 교체하고 관련 mock 주석을 갱신했다. 회귀 테스트 4개 추가(one/future/all 세 scope의 메모 반영 + 공백 메모 시 카테고리 대체), vm 샌드박스 realm 문제로 1건은 JSON.stringify 정규화 비교로 수정(기존 future 분할 테스트와 같은 패턴). 두 인라인 <script> 블록 모두 node --check 파싱 확인, 374/374 통과. APP_VERSION 1.45.1->1.45.2, sw.js CACHE v143->v144. pending_advance_plan 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 56,
+      "phase": "develop",
+      "timestamp": "2026-09-20T17:11:00.000Z",
+      "summary": "Explore 서브에이전트로 발견한 자산 등록/수정 시트(asAmt, index.html)의 '현재 금액' 필드가 음수를 입력할 방법이 아예 없던 버그 수정. fmtAmt(inp)(5007행, oninput 핸들러)와 num(el)(2850행)이 둘 다 비숫자 문자를 전부(부호 포함) 제거해, 마이너스통장(오버드래프트)처럼 잔액이 실제로 음수인 현금성 자산을 등록하려 해도 '-'를 치는 즉시 지워져 값이 항상 양수로 저장됐다 — 반면 SANITIZE_FREE_FIELDS(4726행)는 baseAmount/amountKRW를 '마이너스도 유효'라고 명시하고 있고, Plan 탭에는 잔액이 음수가 되는 날부터 경고하는 기능까지 있어 음수 잔액은 원래 앱이 설계상 지원하는 상태였다. fmtAmt(inp,allowNeg)/num(el)에 allowNeg 파라미터 및 선행 '-' 파싱을 추가하되, 거래금액(txAmt)·반복금액(rAmt)·빠른입력(qAmt)·대형자산 임계값(bigMinInput) 등 크기만 의미 있는 다른 모든 fmtAmt 호출부는 인자 없이 그대로 둬 기존 동작(부호 항상 제거)을 유지했다. 부채(debt)는 assetEval에서 별도로 -1을 곱해 총부채 계산에 반영하는 비대칭 부호 규약이라 입력 자체를 음수로 받으면 이중 반전되므로 canNeg=d.type!=='debt'로 명시적으로 제외. 모바일 numeric 키패드에는 대개 '-' 키가 없어 파싱만 고쳐선 실사용에 무력하다는 점을 고려해, asAmt 필드 바로 아래에 기존 '총자산에 포함' 토글과 같은 스타일의 '마이너스 잔액' 스위치를 추가하고 asToggleNeg(editing) 함수(asDraft._dispAmt 부호 반전 후 재렌더)로 연결했다. test/run.js FUNCTIONS에 fmtAmt/asToggleNeg 추가(num은 이미 있었음), num()의 기존 회귀 테스트가 '-100'→100(구버그 동작)을 검증하고 있던 것을 '-100'→-100으로 정정하고 fmtAmt 4개(allowNeg 없음/있음/부호만 입력한 중간 상태/전부 지운 빈 문자열)+asToggleNeg 1개, 회귀 테스트 순증 5개, 379/379 통과. 두 인라인 <script> 블록 모두 new Function 파싱 확인. APP_VERSION 1.45.2->1.45.3, sw.js CACHE v144->v145.",
       "commit": null
     }
   ]

@@ -1289,7 +1289,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.45.2';
+const APP_VERSION='1.45.3';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2733,6 +2733,7 @@ function syncAssetInputs(){const d=asDraft;const g=id=>$(id);
 function asOpenType(){syncAssetInputs();openTypePicker({current:asDraft.type,back:()=>renderAssetSheet(!!asDraft.id),onPick:k=>{if(k==='pension'){asDraft.includeInTotal=false;asDraft._pensionAutoExcl=true}else if(asDraft._pensionAutoExcl){asDraft.includeInTotal=true;asDraft._pensionAutoExcl=false}asDraft.type=k;if(k==='savings'&&!asDraft.maturityTargetId)asDraft.maturityTargetId=firstCash(asDraft.id);renderAssetSheet(!!asDraft.id)}})}
 function asOpenOwner(){syncAssetInputs();openOwnerPicker({current:asDraft.owner,back:()=>renderAssetSheet(!!asDraft.id),onPick:o=>{asDraft.owner=o;renderAssetSheet(!!asDraft.id)}})}
 function asOpenMat(){syncAssetInputs();openAssetPicker({current:asDraft.maturityTargetId,title:'만기 시 이체할 통장',cashOnly:true,excludeId:asDraft.id,back:()=>renderAssetSheet(!!asDraft.id),onPick:id=>{asDraft.maturityTargetId=id;renderAssetSheet(!!asDraft.id)}})}
+function asToggleNeg(editing){syncAssetInputs();asDraft._dispAmt=-(asDraft._dispAmt||0);renderAssetSheet(editing)}
 function renderAssetSheet(editing){
  const d=asDraft;const ty=ASSET_TYPES[d.type];
  const typePick=`<div class="field"><label>자산 종류</label><button class="pick" onclick="asOpenType()"><div class="pav ${ty.cls}">${svg(ty.icon)}</div><div class="pbody"><div class="pn">${ty.label}</div></div><div class="pc">${svg('chevR')}</div></button></div>`;
@@ -2743,7 +2744,10 @@ function renderAssetSheet(editing){
    const lbl=d.type==='debt'?'부채 금액':(d.type==='cash'||d.type==='savings')?'현재 금액':d.type==='realestate'?'현재 평가액':'현재 금액';
    const key=(d.type==='cash'||d.type==='savings')?'baseAmount':'amountKRW';
    const shown=d._dispAmt!=null?d._dispAmt:(d[key]||0);
-   fields=nameField+`<div class="field"><label>${lbl} (원)</label><div class="field-clear"><input id="asAmt" class="num" inputmode="numeric" value="${shown?comma(shown):''}" placeholder="0" oninput="fmtAmt(this)"><button type="button" class="fc-x" onclick="clrInput('asAmt')">✕</button></div></div>`;
+   const canNeg=d.type!=='debt'; /* 부채는 별도 부호 규약(assetEval을 -1 곱해 반영)이라 입력 자체를 음수로 받으면 이중 반전됨 */
+   fields=nameField+`<div class="field"><label>${lbl} (원)</label><div class="field-clear"><input id="asAmt" class="num" inputmode="numeric" value="${shown?comma(shown):''}" placeholder="0" oninput="fmtAmt(this,${canNeg})"><button type="button" class="fc-x" onclick="clrInput('asAmt')">✕</button></div></div>`;
+   if(canNeg)fields+=`<div class="card" style="box-shadow:none;margin-bottom:14px"><div class="toggle-row"><div><div class="tl">마이너스 잔액</div><div style="font-size:12px;color:var(--text-3);margin-top:2px">마이너스통장처럼 잔액이 0보다 작을 때 켜주세요</div></div>
+     <button type="button" class="switch ${shown<0?'on':''}" role="switch" aria-checked="${shown<0?'true':'false'}" aria-label="마이너스 잔액" onclick="asToggleNeg(${editing})"><i></i></button></div></div>`;
    fields+=`<p style="font-size:12.5px;color:var(--text-2);margin:-4px 0 14px">오늘 기준 잔액이에요. ‘예정 포함’을 켜면 이달 예정된 이체·입출금까지 반영한 예상액으로 표시돼요.</p>`;
    if(d.type==='savings')fields+=`<div class="field"><label>만기일</label><button class="pick ${d.maturityDate?'':'placeholder'}" onclick="syncAssetInputs();openFieldDatePicker(asDraft.maturityDate||TODAY,ds=>{asDraft.maturityDate=ds;renderAssetSheet(${editing})})">
      <div class="pav a-save">${svg('piggy')}</div><div class="pbody"><div class="pn">${d.maturityDate?fmtDateFull(d.maturityDate):'만기일 선택'}</div></div><div class="pc">${d.maturityDate?`<span class="fc-x" style="display:inline-flex;position:static;transform:none" onclick="event.stopPropagation();asDraft.maturityDate='';renderAssetSheet(${editing})">✕</span>`:svg('chev')}</div></button>
@@ -2847,7 +2851,7 @@ function fcWire(){document.querySelectorAll('.field-clear input').forEach(el=>{f
     el.addEventListener('focus',()=>{if(w)w.classList.add('is-focus')});
     el.addEventListener('blur',()=>{if(w)setTimeout(()=>w.classList.remove('is-focus'),120)}); /* 탭 여유 */
   }});}
-function num(el){return el?Number((el.value||'0').replace(/[^0-9]/g,'')):0}
+function num(el){if(!el)return 0;const s=el.value||'0';const neg=/^-/.test(s.trim());const digits=s.replace(/[^0-9]/g,'');return(neg?-1:1)*Number(digits||'0')}
 
 /* 귀속 관리 — 수정(이름)·삭제 */
 function openOwnerManage(){
@@ -5004,7 +5008,7 @@ function confirmSheet(title,msg,ok,cb){window._cf=cb;
  openSheet(`<h3>${title}</h3><div class="desc" style="margin-bottom:22px">${msg}</div>
   <div class="two-btn"><button class="btn btn-soft cancel" onclick="closeSheet()">취소</button>
    <button class="btn btn-danger" onclick="closeSheet();_cf&&_cf()">${ok}</button></div>`);}
-function fmtAmt(inp){let v=inp.value.replace(/[^0-9]/g,'');inp.value=v?Number(v).toLocaleString('ko-KR'):''}
+function fmtAmt(inp,allowNeg){const neg=allowNeg&&/^-/.test(inp.value);let v=inp.value.replace(/[^0-9]/g,'');inp.value=v?(neg?'-':'')+Number(v).toLocaleString('ko-KR'):(neg?'-':'')}
 
 let openSwipeRow=null;
 function wireLongPress(root,onLong){

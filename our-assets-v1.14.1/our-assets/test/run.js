@@ -76,7 +76,7 @@ const FUNCTIONS = [
   'saveRec', 'recHistFieldsChanged', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
   'monthStartStr', 'monthEndStr', 'expandRec', 'allTxns', 'txnsByDateInRange', 'spendByCategory', 'histSumTotals',
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'expenseBreakdownCard',
-  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'openAssetSheet', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'isCloudConflict', 'decidePushOutcome',
+  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asToggleNeg', 'openAssetSheet', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'isCloudConflict', 'decidePushOutcome', 'fmtAmt',
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges',
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
   'clampDay', 'saveTx', 'assetBase', 'balancesUpTo', 'balanceAt',
@@ -529,14 +529,43 @@ test('recDates: 오래전 시작한 daily/weekly 반복도 좁은 [from,to] 구�
   );
 });
 
-/* ---------- num(): 음수 입력 처리 ---------- */
-test('num(): 숫자가 아닌 문자(부호 포함)를 제거하고 파싱한다', () => {
-  assert.strictEqual(sandbox.num({ value: '-100' }), 100);
+/* ---------- num()/fmtAmt(): 음수 입력 처리 (app-evolve cycle56 develop)
+ * 자산 "현재 금액" 필드(asAmt)는 마이너스통장(오버드래프트)처럼 잔액이 음수일 수 있는데,
+ * fmtAmt()가 매 키 입력마다 '-' 문자까지 통째로 제거해 사용자가 애초에 음수를 입력할 수 없었다.
+ * num()도 부호를 무시하고 절댓값만 파싱해, 설령 값에 '-'가 남아 있어도 양수로 읽혔다.
+ * 거래금액(txAmt)·반복금액(rAmt) 등 크기만 의미 있는 필드는 fmtAmt(inp)를 인자 없이(=allowNeg 없음)
+ * 그대로 호출해 기존처럼 부호가 제거되는 동작을 유지한다. */
+test('num(): 앞에 붙은 - 부호는 유지하고 나머지 비숫자 문자만 제거해 파싱한다', () => {
+  assert.strictEqual(sandbox.num({ value: '-100' }), -100);
   assert.strictEqual(sandbox.num({ value: '1,234' }), 1234);
+  assert.strictEqual(sandbox.num({ value: '-1,234' }), -1234);
 });
 test('num(): 값이 없거나 엘리먼트가 없으면 0을 반환한다', () => {
   assert.strictEqual(sandbox.num({ value: '' }), 0);
   assert.strictEqual(sandbox.num(null), 0);
+});
+test('fmtAmt(): allowNeg 없이 호출하면(거래금액 등) 기존처럼 부호를 제거한 절댓값만 남긴다', () => {
+  const inp = { value: '-500000' };
+  sandbox.fmtAmt(inp);
+  assert.strictEqual(inp.value, '500,000');
+});
+test('fmtAmt(): allowNeg=true면(자산 잔액) 음수 부호를 유지한 채 천단위 콤마를 적용한다', () => {
+  const inp = { value: '-500000' };
+  sandbox.fmtAmt(inp, true);
+  assert.strictEqual(inp.value, '-500,000');
+});
+test('fmtAmt(): allowNeg=true여도 "-"만 입력된 상태에서는 숫자를 마저 입력할 수 있게 부호를 지우지 않는다', () => {
+  const inp = { value: '-' };
+  sandbox.fmtAmt(inp, true);
+  assert.strictEqual(inp.value, '-');
+});
+test('fmtAmt(): 숫자를 모두 지우면 allowNeg 여부와 관계없이 빈 문자열이 된다', () => {
+  const inp1 = { value: '' };
+  sandbox.fmtAmt(inp1, true);
+  assert.strictEqual(inp1.value, '');
+  const inp2 = { value: '' };
+  sandbox.fmtAmt(inp2);
+  assert.strictEqual(inp2.value, '');
 });
 
 /* ---------- catVar / doRenameCat: 카테고리 이름변경 시 '변동' 플래그 마이그레이션 (c38ee65) ---------- */
@@ -2413,6 +2442,18 @@ test('saveAsset: 공백이 붙은 이름은 trim 후 기존 동명 자산과 중
   sandbox.asNameValue = undefined;
   assert.ok(sandbox.lastToast, '앞뒤 공백만 다른 동명 자산도 중복 경고가 떴어야 함');
   assert.strictEqual(sandbox.DB.assets.length, 1, '중복이면 새 자산이 추가되면 안 됨');
+});
+
+/* ---------- asToggleNeg: 자산 잔액 필드의 "마이너스 잔액" 토글 (app-evolve cycle56 develop)
+ * 마이너스통장처럼 잔액이 음수인 자산을 등록/수정할 때, asAmt 입력창의 inputmode="numeric" 모바일
+ * 키패드에는 대개 '-' 키가 없어 fmtAmt(inp,true)만으로는 실제 입력 경로가 없다. asToggleNeg()는
+ * asDraft._dispAmt의 부호를 반전해 renderAssetSheet가 다시 그리는 입력창 값에 그대로 반영되게 한다. */
+test('asToggleNeg: asDraft._dispAmt의 부호를 반전한다(양수→음수→양수)', () => {
+  sandbox.asDraft = { id: 'a1', type: 'cash', _dispAmt: 500000 };
+  sandbox.asToggleNeg(true);
+  assert.strictEqual(sandbox.asDraft._dispAmt, -500000);
+  sandbox.asToggleNeg(true);
+  assert.strictEqual(sandbox.asDraft._dispAmt, 500000);
 });
 
 /* ---------- asOpenType: 자산 종류를 연금(pension)으로 바꾸면 총자산 제외(includeInTotal=false)가
