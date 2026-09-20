@@ -1,15 +1,18 @@
 {
   "cycle": 52,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "renderLedger()/캘린더 셀 집계의 O(days×txns) 무캐시 재계산 제거",
+    "why": "allTxns()(index.html:1960)는 DB.txns 전체를 매 호출마다 필터링하는 캐시 없는 선형 스캔이고, dayTxns()(2156)가 이를 하루 단위로 감싸며, calCellsFor()(2878-2900)가 캘린더 셀 42개마다 dayTxns()를 각각 호출한다. renderLedger()(2941-2965)는 이전/현재/다음 3개월 패널을 매번 렌더링하므로 한 번의 렌더에서 allTxns() 호출이 약 126회, expandRec() 조회도 126회 발생한다. 앱에서 가장 잦은 사용자 동작인 날짜 탭(selDay(), 2971)마다 이 126회 스캔 전체가 다시 실행된다. _recCache(1941, REC_CACHE_MAX=40)는 정확한 from|to 키로만 캐시하는데 한 번의 렌더가 서로 다른 단일 날짜 키 126개를 건드리므로 캐시 용량(40)에 걸려 항상 스래싱되어 사실상 캐시 효과가 없다. DB.txns는 사용 기간이 길어질수록 무한정 커지므로(수년 사용 시 수천 건), 작은 테스트 픽스처로는 드러나지 않는 '실사용 누적에 따라 느려지는' 유형의 성능 결함이며, 잔액(_balCache)·반복거래 전개(_recCache)·전체내역(_histCache)에는 이미 적용된 캐싱 패턴이 유독 가계부(Ledger)의 셀 단위 집계 경로에는 적용되지 않았다는 새로운 근거다.",
+    "approach": "1) allTxns(from,to)를 한 번만 호출해 날짜 문자열을 키로 하는 Map으로 버킷화하는 txnsByDateInRange(from,to) 순수 함수를 추가한다. 2) calCellsFor()/calPane()이 각 셀마다 dayTxns(ds)를 개별 호출하는 대신 이 Map을 인자로 받아 조회하도록 시그니처를 바꾸고, renderLedger()가 3개월 캐러셀 범위 전체(또는 패널당) 1회만 Map을 만들어 넘긴다. 3) dayTxns(d)는 기존 외부 호출부(달력 아래 일별 목록 등) 호환을 위해 그대로 두거나, 가능하면 같은 Map을 재사용하도록 한다. 4) test/run.js에 겹치는 반복거래+일반거래가 섞인 픽스처로 새 버킷화 헬퍼와 기존 셀별 경로의 출력이 동일한지 확인하는 회귀 테스트를 추가한다(특히 expandRec의 주말 이동 로직 관련 off-by-one 방지). 5) (선택, 후순위) selDay()에서 y/m이 안 바뀌었으면 renderLedger() 전체 대신 선택 강조+하단 일별 목록만 갱신하는 최적화는 범위가 커서 이번 advance에서는 필수가 아니며, 버킷화만으로도 126회 스캔이 1~3회로 줄어드는 핵심 효과는 이미 달성된다.",
+    "other_candidates_considered": [
+      "CSV 가져오기(import) 기능 부재 — 내보내기(doExport/txnsToCSV)만 있고 가져오기가 없음. 실제 기능 공백이지만 신규 기능 개발이라 성능 회귀보다 급하지 않다고 판단해 후순위.",
+      "recSave() 'future' scope 분할(3241-3249) — 정확성이 중요한 로직이지만 이미 인라인 주석과 전용 테스트(splitRecOverrides/recSaveScopeApply)로 잘 보호돼 있어 새 근거 없이는 후순위.",
+      "long-press 멀티셀렉트/드래그 재정렬 접근성 공백 — 이전 여러 사이클에서 이미 단일 수정 지점 없음으로 반복 기각된 항목이라 새 근거 없이 재상정하지 않음.",
+      "클라우드 동기화 충돌 해결이 수동 메뉴 방문을 요구하는 점 — 동기화되지 않은 로컬 편집을 조용히 덮어쓰지 않기 위한 의도된 설계로 확인되어 버그 아님."
+    ]
+  },
   "history": [
-    {
-      "cycle": 47,
-      "phase": "critique",
-      "timestamp": "2026-09-19T05:11:00.000Z",
-      "summary": "cycle43/44/46에서 세 차례 이연된 render* 스모크 테스트 공백(renderHome/renderAssets/renderHistory 미해결분)을 Explore 서브에이전트로 재조사해 renderHome()(index.html:2169-2212)을 이번 사이클 최우선으로 채택. renderHome은 test/run.js FUNCTIONS(67-94행)에 없어 실행 기반 테스트가 전혀 없고 기존 커버리지는 소스 문자열 포함 검사뿐이라, 앱의 기본 진입 탭임에도 템플릿/분기 오류가 브라우저에서만 드러난다. 특히 cycle42(planNegatives/homeAlerts)·cycle47(postponeRecTransfer)에서 고친 순수 로직의 직접 소비처인데 그 결과를 실제로 DOM에 꽂는 결합부(homeAlertCard/alert-stack)는 아무 것도 검증하지 않는 위험을 확인. 의존 그래프를 확인한 결과 renderHome이 호출하는 헬퍼가 전부 순수 문자열 빌더라 openCatManage/renderTxSheet 때 쓴 패턴을 그대로 재사용 가능한 반면, renderAssets는 wireGroupDrag/wireLongPress/wireNwCarousel 등 샌드박스에 아예 없는 실제 DOM/드래그 모킹이 필요해 훨씬 큰 범위라 이번엔 renderHome으로 좁혔다. balancesUpTo() RANGE_FROM 체크포인트(cycle41/45/46에서 반복 기각, 새 근거 없음)와 long-press 멀티셀렉트 접근성 공백(여전히 단일 수정 지점 없음)은 재확인만 하고 이번에도 후순위로 기각. advance에서 renderHome 렌더 스모크 테스트 도입 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 47,
       "phase": "advance",
@@ -141,6 +144,13 @@
       "phase": "review",
       "timestamp": "2026-09-20T00:09:32.338Z",
       "summary": "develop 커밋(73892f5)을 검토. asOpenType()의 _pensionAutoExcl 복원 로직이 onPick 콜백 안에서만 플래그를 세팅해, 이번 편집 세션에서 먼저 pension으로 바꿨다가 되돌리는 왕복에서만 동작하고, 커밋 설명이 실제로 겨냥한 흐름 — 이미 DB에 저장돼 있던 기존 연금 자산을 열어 곧장 다른 종류로 바꾸는 만기/전환 편집 — 에서는 openAssetSheet()가 DB.assets에서 asDraft를 그대로 복제하므로(_pensionAutoExcl은 saveAsset()에서 항상 delete돼 DB에 저장되지 않음) 플래그가 애초에 없어 복원이 전혀 동작하지 않는 잔여 버그를 발견. 원래 버그(총자산 영구 제외)가 정작 커밋이 고치려던 실사용 시나리오에서는 그대로 남아있던 것. openAssetSheet()가 편집 대상 자산을 로드할 때 type이 pension이면 _pensionAutoExcl을 true로 다시 간주하도록 한 줄 추가해 실사용 흐름에서도 asOpenType의 복원 로직이 동작하게 수정. openAssetSheet를 처음으로 test/run.js FUNCTIONS에 추가하고, DB에 저장된 기존 연금 자산을 열어 곧장 다른 종류로 바꾸면 총자산 제외가 자동으로 풀리는지 확인하는 회귀 테스트 1개 추가, 344/344 통과. 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.43.9->1.43.10, sw.js CACHE v135->v136.",
+      "commit": null
+    },
+    {
+      "cycle": 52,
+      "phase": "critique",
+      "timestamp": "2026-09-20T01:10:00.000Z",
+      "summary": "Explore 서브에이전트로 앱 전체를 구조적으로 재검토. render* 스모크 테스트 시리즈(43-51)와 esc() 미이스케이프 스윕(46/48/50)은 이제 완료된 것으로 보고, 그 재탕이 아닌 새 각도를 찾도록 지시. allTxns()(index.html:1960)가 DB.txns 전체를 매 호출마다 캐시 없이 필터링하는데, dayTxns()(2156)가 이를 하루 단위로 감싸고 calCellsFor()(2878-2900)가 캘린더 셀 42개마다 각각 호출하며, renderLedger()(2941-2965)는 이전/현재/다음 3개월 패널을 매번 렌더링해 한 번의 렌더에 allTxns()/expandRec() 호출이 약 126회 발생함을 발견 — 앱에서 가장 잦은 사용자 동작인 날짜 탭(selDay(), 2971)마다 이 전체가 재실행된다. _recCache(1941, REC_CACHE_MAX=40)는 정확한 from|to 키로만 캐시하는데 한 렌더가 서로 다른 단일 날짜 키 126개를 건드려 캐시 용량에 걸려 항상 스래싱, 사실상 무효과임을 확인. 잔액(_balCache)·반복거래 전개(_recCache)·전체내역(_histCache)에는 이미 적용된 캐싱 패턴이 가계부 셀 집계 경로에만 빠져 있다는 새 근거로, DB.txns가 무한정 커지는 실사용 환경에서 작은 테스트 픽스처로는 안 드러나는 '누적에 따라 느려지는' 성능 결함으로 채택. CSV 가져오기 기능 부재(신규 기능이라 후순위), recSave() future scope 분할(이미 전용 테스트로 잘 보호됨), long-press 멀티셀렉트 접근성 공백(반복 기각, 새 근거 없음), 클라우드 동기화 수동 해결(의도된 설계로 확인)은 후순위로 기각. advance에서 allTxns() 결과를 날짜별 Map으로 한 번에 버킷화하는 txnsByDateInRange(from,to)를 도입해 calCellsFor/calPane이 셀마다 개별 스캔하는 대신 이 Map을 조회하도록 바꾸고, 기존 셀별 결과와 동일함을 확인하는 회귀 테스트를 추가하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     }
   ]
