@@ -1288,7 +1288,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.44.0';
+const APP_VERSION='1.44.1';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3102,7 +3102,7 @@ function renderTxSheet(){
  openFormSheet(`<div class="tx-head"><h3>${editing?'내역 수정':'내역 입력'}</h3>${repeatChip}</div>
   <div class="seg"><div class="seg-blob"></div>${typeSeg}</div>
   <div class="field"><label>금액</label><div class="field-clear"><input id="txAmt" class="amount-in num" inputmode="numeric" value="${d.amount?comma(d.amount):''}" placeholder="0" oninput="fmtAmt(this)"><button type="button" class="fc-x" onclick="clrInput('txAmt')">✕</button></div></div>
-  <div class="field"><label>${dateLabel}</label><button class="pick" onclick="syncTxInputs();openFieldDatePicker(txDraft.date,ds=>{txDraft.date=ds;renderTxSheet()})">
+  <div class="field"><label>${dateLabel}</label><button class="pick" onclick="syncTxInputs();openFieldDatePicker(txDraft.date,ds=>{txDraft.date=ds;recalcEndCond(txDraft,ds);renderTxSheet()})">
     <div class="pav a-etc">${svg('ledger')}</div><div class="pbody"><div class="pn">${fmtDateFull(d.date)}</div><div class="psub">${datePsub}</div></div><div class="pc">${svg('chev')}</div></button>
     <input id="txDate" type="hidden" value="${d.date}"></div>
   ${catField}${assetFields}
@@ -3123,9 +3123,9 @@ function txType(t){if(navigator.vibrate)navigator.vibrate(6);syncTxInputs();txDr
 function txToggleRepeat(){syncTxInputs();txDraft.repeat=!txDraft.repeat;
  if(txDraft.repeat&&(txDraft.freq==='monthly'||!txDraft.freq)&&!txDraft.day)txDraft.day=Number(String(txDraft.date).slice(8,10))||1;
  renderTxSheet()}
-function txFreq(v){syncTxInputs();txDraft.freq=v;if(v==='monthly'&&!txDraft.day)txDraft.day=Number(String(txDraft.date).slice(8,10))||1;renderTxSheet()}
+function txFreq(v){syncTxInputs();txDraft.freq=v;if(v==='monthly'&&!txDraft.day)txDraft.day=Number(String(txDraft.date).slice(8,10))||1;recalcEndCond(txDraft,txDraft.date);renderTxSheet()}
 function txDayInput(el){const v=(el.value||'').replace(/[^0-9]/g,'').slice(0,2);if(el.value!==v)el.value=v;txDraft.day=v===''?'':Number(v);dayWarn('tx',v)}
-function txDay(v){syncTxInputs();if(v==='last'){txDraft.day='last';txDraft._custom=false}else if(v==='custom'){txDraft._custom=true;if([1,5,15,25].includes(txDraft.day)||txDraft.day==='last'||!txDraft.day)txDraft.day=Number(String(txDraft.date).slice(8,10))||10}else{txDraft.day=Number(v);txDraft._custom=false}renderTxSheet();if(v==='custom')focusDayIn('txDayIn')}
+function txDay(v){syncTxInputs();if(v==='last'){txDraft.day='last';txDraft._custom=false}else if(v==='custom'){txDraft._custom=true;if([1,5,15,25].includes(txDraft.day)||txDraft.day==='last'||!txDraft.day)txDraft.day=Number(String(txDraft.date).slice(8,10))||10}else{txDraft.day=Number(v);txDraft._custom=false}recalcEndCond(txDraft,txDraft.date);renderTxSheet();if(v==='custom')focusDayIn('txDayIn')}
 /* ── 반복 종료조건(선택): [종료일][횟수] 두 박스 한 줄, 양방향 자동 계산 ──────
    pfx='tx'(내역 입력 반복) 또는 'rec'(반복 설정 편집) */
 function endCondFields(d,pfx){
@@ -3141,6 +3141,13 @@ function endCondFields(d,pfx){
   </div>
   <div class="end-foot"><span class="psub" id="${pfx}EndHint">${hint}</span>${has?`<button class="txt-btn" onclick="${pfx}ClearEnd()">지우기</button>`:''}</div>
  </div>`;
+}
+/* 주기/반복일/주말규칙/시작일이 바뀌면 기존 count↔endDate 쌍이 그 조합 기준으로 어긋나므로, count 우선으로 재계산해 둘 다 최신 상태로 맞춘다 */
+function recalcEndCond(d,start){
+ if(!d.count&&!d.endDate)return;
+ const base={freq:d.freq,day:d.day,startDate:start||d.startDate||d.date,weekend:d.weekend};
+ if(d.count)d.endDate=recNthDate(base,d.count);
+ else d.count=recCountUntil(base,d.endDate);
 }
 /* 횟수 입력 → 종료일 실시간 반영 (재렌더 없이 DOM만 갱신, 포커스 유지) */
 function _applyCount(pfx,draft,v,rerender){
@@ -3287,12 +3294,12 @@ function recOpenWeekend(){syncRecInputs();const cur=recDraft.weekend||'none';
  openSheet(`<h3>주말이면</h3><div class="desc">반복일이 토·일요일과 겹칠 때 처리할 방법이에요.</div>
   <div class="opt-list">${Object.entries(WK).map(([v,[t,sub]])=>`<button class="${cur===v?'on':''}" onclick="setRecWeekend('${v}')"><span class="rd"></span><div><div>${t}</div><div class="ol-sub">${sub}</div></div></button>`).join('')}</div>`);
 }
-function setRecWeekend(v){recDraft.weekend=v;renderRecSheet(!!recDraft.id)}
+function setRecWeekend(v){recDraft.weekend=v;recalcEndCond(recDraft,recDraft.startDate);renderRecSheet(!!recDraft.id)}
 function renderRecSheet(){
  const d=recDraft;const editing=!!d.id;
  const typeSeg=[['expense','지출'],['income','수입'],['transfer','이체'],['saving','저축']].map(([v,l])=>`<button class="${d.type===v?'on':''}" onclick="recType('${v}')">${l}</button>`).join('');
  const catField=d.type!=='transfer'?`<div class="field"><label>카테고리</label><button class="pick" onclick="recOpenCat()"><div class="pav ${catAv(d.type)}">${catGlyph(d.type,d.category,null,'tag')}</div><div class="pbody"><div class="pn">${esc(d.category)}</div></div><div class="pc">${svg('chevR')}</div></button></div>`:'';
- const freqBtns=[['monthly','매월'],['weekly','매주'],['daily','매일'],['yearly','매년']].map(([v,l])=>`<button class="${d.freq===v?'on':''}" onclick="syncRecInputs();recDraft.freq='${v}';renderRecSheet()">${l}</button>`).join('');
+ const freqBtns=[['monthly','매월'],['weekly','매주'],['daily','매일'],['yearly','매년']].map(([v,l])=>`<button class="${d.freq===v?'on':''}" onclick="recFreq('${v}')">${l}</button>`).join('');
  let dayField='';
  if(d.freq==='monthly'){
   const isCustom=d._custom||(typeof d.day==='number'&&![1,5,15,25].includes(d.day));
@@ -3313,7 +3320,7 @@ function renderRecSheet(){
   ${assetFields}
   <div class="field"><label>주기</label><div class="opt-grid">${freqBtns}</div></div>
   ${dayField}
-  <div class="field"><label>시작일</label><button class="pick" onclick="syncRecInputs();openFieldDatePicker(recDraft.startDate,ds=>{recDraft.startDate=ds;renderRecSheet(!!recDraft.id)})">
+  <div class="field"><label>시작일</label><button class="pick" onclick="syncRecInputs();openFieldDatePicker(recDraft.startDate,ds=>{recDraft.startDate=ds;recalcEndCond(recDraft,ds);renderRecSheet(!!recDraft.id)})">
     <div class="pav a-etc">${svg('ledger')}</div><div class="pbody"><div class="pn">${fmtDateFull(d.startDate)}</div></div><div class="pc">${svg('chev')}</div></button>
     <input id="rStart" type="hidden" value="${d.startDate}"></div>
   ${endCondFields(d,'rec')}
@@ -3327,6 +3334,7 @@ function renderRecSheet(){
 }
 function recType(t){if(navigator.vibrate)navigator.vibrate(6);syncRecInputs();recDraft.type=t;recDraft.category=t==='transfer'?'이체':catListOf(t)[0]||'기타';
  if((t==='income'||t==='transfer'||t==='saving')&&!recDraft.toAssetId)recDraft.toAssetId=firstCash();renderRecSheet()}
+function recFreq(v){syncRecInputs();recDraft.freq=v;if(v==='monthly'&&!recDraft.day)recDraft.day=Number(String(recDraft.startDate).slice(8,10))||1;recalcEndCond(recDraft,recDraft.startDate);renderRecSheet()}
 function recDayInput(el){const v=(el.value||'').replace(/[^0-9]/g,'').slice(0,2);if(el.value!==v)el.value=v;recDraft.day=v===''?'':Number(v);dayWarn('rec',v)}
 function dayWarn(pfx,v){const w=$(pfx+'DayWarn');if(!w)return;
  const n=Number(v);let msg='';
@@ -3340,7 +3348,7 @@ function clampDay(d){ /* 저장 시 보정 */
  return '';}
 function daySuf(el,show){const sp=el.nextElementSibling;if(sp)sp.style.display=show?'':'none'}
 function focusDayIn(id){setTimeout(()=>{const el=$(id);if(el){el.focus();el.select()}},260)}
-function recDay(v){syncRecInputs();if(v==='last'){recDraft.day='last';recDraft._custom=false}else if(v==='custom'){recDraft._custom=true;if([1,5,15,25].includes(recDraft.day)||recDraft.day==='last'||!recDraft.day)recDraft.day=Number(String(recDraft.startDate).slice(8,10))||10}else{recDraft.day=Number(v);recDraft._custom=false}renderRecSheet();if(v==='custom')focusDayIn('recDayIn')}
+function recDay(v){syncRecInputs();if(v==='last'){recDraft.day='last';recDraft._custom=false}else if(v==='custom'){recDraft._custom=true;if([1,5,15,25].includes(recDraft.day)||recDraft.day==='last'||!recDraft.day)recDraft.day=Number(String(recDraft.startDate).slice(8,10))||10}else{recDraft.day=Number(v);recDraft._custom=false}recalcEndCond(recDraft,recDraft.startDate);renderRecSheet();if(v==='custom')focusDayIn('recDayIn')}
 function saveRec(){
  if(twGuard())return;
  syncRecInputs();const d=recDraft;if(!d.amount){toast('금액을 입력해 주세요');return}

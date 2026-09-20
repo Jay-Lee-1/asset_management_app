@@ -1,15 +1,8 @@
 {
   "cycle": 53,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 48,
-      "phase": "develop",
-      "timestamp": "2026-09-19T07:12:50.000Z",
-      "summary": "recApply(recId,date,'delete','future')(index.html:3214)가 사용자가 '이 날부터 이후 모두' 삭제로 반복 저축입금을 자를 때 r.endDate만 하루 전날로 설정하고 r.count는 건드리지 않던 버그 발견·수정(Explore 서브에이전트로 발견) — clampRecurringToMaturity()가 의존하는 불변식(사용자가 직접 endDate를 정하면 항상 count가 함께 저장되고, endDate만 있고 count가 없으면 자동 클램프 흔적이라는 규칙, cycle46 develop 참고)을 이 삭제 경로만 위반해, 나중에 해당 저축통장의 만기일을 연장하면 clampRecurringToMaturity가 이 명시적 삭제를 '자동 클램프'로 오인해 삭제됐던 반복입금 회차들을 무경고로 되살렸다. 같은 파일의 recSave() 'future' scope(index.html:3237-3241)가 이미 endDate 변경 시 r.count=recCountUntil(...)로 재계산하는 동일 불변식 유지 패턴을 쓰고 있어, recApply의 delete/future 분기도 동일하게 endDate 설정 직후 recCountUntil({freq,day,startDate,weekend},endDate)로 count를 재계산하고 undo 시 원래 count도 함께 복원하도록 고쳤다. recApply/clampRecurringToMaturity/recCountUntil 모두 기존 test/run.js FUNCTIONS에 이미 있어 새 함수 추가 없이 회귀 테스트 1개 추가(delete-future 삭제 후 count가 채워짐 확인 + 이후 만기 연장에도 삭제된 회차가 되살아나지 않음을 clampRecurringToMaturity 연계 호출로 확인 + undo 시 endDate·count 둘 다 복원 확인), 319/319 통과. 두 인라인 <script> 블록 모두 vm.Script 파싱 확인. APP_VERSION 1.43.3->1.43.4, sw.js CACHE v129->v130.",
-      "commit": null
-    },
     {
       "cycle": 48,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-20T02:10:00.000Z",
       "summary": "critique(3c01689) 계획대로 renderLedger()/캘린더 셀 집계의 O(days×txns) 무캐시 재계산을 없앴다. allTxns(from,to)를 범위당 한 번만 호출해 날짜 문자열 키의 Map으로 버킷화하는 txnsByDateInRange(from,to) 순수 함수를 새로 추가하고, calCellsFor(y,m,sel,txMap)/calPane(y,m,sel,live,txMap)이 셀마다 dayTxns(ds)를 개별 호출하는 대신 이 Map을 조회하도록 시그니처를 바꿨다(달력 밖으로 삐져나온 'other' 셀은 기존과 동일하게 항상 [] 유지). renderLedger()는 이전/현재/다음 3개월 캐러셀이 실제로 덮는 범위(monthStartStr(이전달)~monthEndStr(다음달)) 전체를 렌더당 1회만 버킷화해 세 calPane 호출에 공유시켜, 렌더 1회당 allTxns()/expandRec() 호출을 약 126회에서 1회로 줄였다(_recCache도 이제 단일 [from,to] 키만 쓰므로 REC_CACHE_MAX=40 스래싱이 사라짐). dayTxns(d)/renderLedger()의 선택일 표시(selTx)는 순서(비반복 우선, 반복 마지막)가 필요해 기존 그대로 유지. 새로 추가한 txnsByDateInRange를 test/run.js FUNCTIONS에 추가하고 회귀 테스트 2개 추가: 1) 버킷 Map이 각 날짜의 거래만 정확히 담는지(거래 없는 날짜는 키 자체가 없는지), 2) renderLedger()가 실제로 이전/다음 달 패널(각각 2026-05/2026-07)의 실제 날짜 셀에 해당 날짜 거래 금액을 정확히 반영하는지(달력 밖 'other' 셀이 아닌, 인접 달 패널 자신의 진짜 날짜 셀). 두 인라인 <script> 블록 모두 new Function 파싱 확인, 346/346 통과. selDay()에서 달이 안 바뀌었을 때 renderLedger() 전체 대신 부분 갱신만 하는 후속 최적화는 범위가 커서 이번엔 다루지 않고 남겨둔다. pending_advance_plan 비움. APP_VERSION 1.43.10->1.44.0, sw.js CACHE v136->v137.",
+      "commit": null
+    },
+    {
+      "cycle": 53,
+      "phase": "develop",
+      "timestamp": "2026-09-20T03:10:00.000Z",
+      "summary": "endCondFields(index.html:3131)의 반복 종료조건(횟수↔종료일) 파생쌍이 주기(freq)/반복일(day)/주말규칙(weekend)/시작일이 바뀌어도 재계산되지 않는 버그 발견·수정(Explore 서브에이전트로 발견). 예: 매월+반복일1일+시작일2026-01-10에서 횟수12→종료일2027-01-01로 저장된 뒤 사용자가 주기를 매주로 바꾸면, endCondFields가 여전히 \"12\"를 보여주고 saveTx()/saveRec()도 endDate·count가 둘 다 있으면 재계산하지 않아(index.html:3174-3177, :3357-3359) 그대로 저장 — recDates()는 count를 무시하고 endDate만 보므로 실제로는 51회가 생성됨(12회 의도와 어긋남). recNthDate/recCountUntil을 공유하는 순수 함수 recalcEndCond(d,start)를 새로 추가해(count 있으면 count 우선으로 endDate 재계산, count 없이 endDate만 있으면 count를 역산) txFreq/txDay/시작일 픽커(tx), recDay/setRecWeekend/시작일 픽커(rec)에서 호출하도록 연결했고, rec 시트의 주기 버튼 인라인 핸들러도 txFreq와 같은 패턴의 recFreq(v) 함수로 추출해 동일하게 연결. FUNCTIONS에 recalcEndCond 추가, 버그 재현 시나리오(매월12회->매주 전환 시 생성회차가 여전히12개로 유지, endDate만 있을 때 주기 변경 후 count 역산) 회귀 테스트 3개 추가, 349/349 통과. 두 인라인 <script> 블록 모두 new vm.Script()로 파싱 확인. APP_VERSION 1.44.0->1.44.1, sw.js CACHE v137->v138.",
       "commit": null
     }
   ]

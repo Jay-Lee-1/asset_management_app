@@ -66,7 +66,7 @@ function extractLet(name) {
 // 테스트 대상 + 그 대상이 내부에서 호출하는 순수 함수들.
 const FUNCTIONS = [
   'lastDay', 'addDays', 'shiftWeekend', 'recDates', 'addMonthsStr', 'addMonths',
-  'recNthDate', 'recCountUntil', 'isVarCat', 'setCatVar', 'activeRecsForAssets', 'activeRecsForCat',
+  'recNthDate', 'recCountUntil', 'recalcEndCond', 'isVarCat', 'setCatVar', 'activeRecsForAssets', 'activeRecsForCat',
   'num', 'doRenameCat', 'doDeleteCat', 'budgetProgress', 'totalBudgetSummary', 'budgetKey', 'budgetForMonth', 'setBudgetFrom', 'addCat',
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'esc', 'matchTxnQuery',
   'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo',
@@ -437,6 +437,39 @@ test('recNthDate/recCountUntil: 주말 조정이 없는 경우는 영향받지 �
   );
   assert.strictEqual(generated.length, 6);
   assert.strictEqual(sandbox.recCountUntil(base, sixth), 6);
+});
+
+/* ---------- recalcEndCond: 주기/반복일/주말규칙/시작일 변경 시 count↔endDate 쌍이 새 기준으로 재계산돼야 함 (cycle53) ---------- */
+test('recalcEndCond: 매월 반복 횟수 12로 endDate를 고정한 뒤 매주로 주기를 바꾸면 endDate가 새 주기 기준 12회로 재계산된다', () => {
+  const monthly = { freq: 'monthly', day: 1, startDate: '2026-01-10', weekend: 'none', count: 12, endDate: null };
+  sandbox.recalcEndCond(monthly, monthly.startDate);
+  assert.strictEqual(monthly.endDate, '2027-01-01', '매월 12회의 마지막 회차 날짜여야 함');
+  const switched = { freq: 'weekly', day: monthly.day, startDate: monthly.startDate, weekend: monthly.weekend, count: monthly.count, endDate: monthly.endDate };
+  sandbox.recalcEndCond(switched, switched.startDate);
+  const generated = sandbox.recDates(
+    { freq: 'weekly', day: switched.day, startDate: switched.startDate, endDate: null, weekend: switched.weekend },
+    switched.startDate, switched.endDate
+  );
+  assert.strictEqual(generated.length, 12, 'count(12)가 우선이므로 주기를 바꿔도 실제 생성 회차는 여전히 12개여야 함');
+  assert.strictEqual(sandbox.recCountUntil({ freq: 'weekly', day: switched.day, startDate: switched.startDate, weekend: switched.weekend }, switched.endDate), 12);
+});
+test('recalcEndCond: count 없이 endDate만 있으면 새 기준(주기 변경 후)으로 count를 다시 채운다', () => {
+  const d = { freq: 'monthly', day: 1, startDate: '2026-01-10', weekend: 'none', count: null, endDate: '2027-01-01' };
+  sandbox.recalcEndCond(d, d.startDate);
+  assert.strictEqual(d.count, 12, 'endDate 기준으로 count가 역산돼야 함');
+  // endDate가 사용자가 정한 값이므로(count는 방금 파생됐을 뿐) 그대로 두고 주기만 바꾸는 시나리오:
+  // count를 다시 null로 돌려 "endDate가 진짜 기준"인 상태를 재현한다.
+  d.count = null;
+  d.freq = 'weekly';
+  sandbox.recalcEndCond(d, d.startDate);
+  assert.notStrictEqual(d.count, 12, '주기가 바뀌면 같은 endDate라도 회차 수는 12와 달라야 함(매주가 매월보다 훨씬 잦음)');
+  assert.strictEqual(d.endDate, '2027-01-01', 'endDate 자체는 사용자가 정한 값이므로 그대로 유지된다');
+});
+test('recalcEndCond: count/endDate가 둘 다 없으면 아무것도 하지 않는다', () => {
+  const d = { freq: 'monthly', day: 1, startDate: '2026-01-10', weekend: 'none', count: null, endDate: null };
+  sandbox.recalcEndCond(d, d.startDate);
+  assert.strictEqual(d.count, null);
+  assert.strictEqual(d.endDate, null);
 });
 
 /* ---------- recDates: weekend 조정이 달/연도 경계를 넘어 앞당겨지는 회차 누락 버그 ---------- */
