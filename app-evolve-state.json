@@ -1,15 +1,8 @@
 {
   "cycle": 55,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 49,
-      "phase": "advance",
-      "timestamp": "2026-09-19T14:10:00.000Z",
-      "summary": "critique(850a6da) 계획대로 renderAssets()에 렌더 스모크 테스트를 도입해 openCatManage(cycle43)·renderTxSheet(cycle44)·renderHome(cycle47)에 이어 네 번째 render* 안전망 사례를 만들었다. renderAssets가 부르던 실제 부수효과 호출 wireGroupDrag/wireLongPress/wireNwCarousel/restoreNwScroll/animNums/updateSelBottom 여섯 개를 fitAll과 같은 () => {} no-op 스텁으로 sandbox에 추가하고, pageHomeEl과 같은 getter/setter 패턴의 pageAssetsEl을 새로 추가해 $('page-assets')에 연결했다. FUNCTIONS에 아직 없던 순수 문자열 빌더들(totalAssets, totalDebt, ownerAssets, ownerDebt, ownerListArr, nwPane, shortDate2, nwHistoryCard, pageHead, assetSubline, assetBodyHTML, renderAssets 자체)을 추가하고 CONSTS에 won/PAGE_TITLE, LETS에 renderAssets가 재대입하는 _lastNwOwner를 추가했다(groupItems/assetEval/rateUnknown 등은 cycle49 develop에서 이미 있어 재사용). 테스트 4개: 1) 빈 자산 목록에서 예외 없이 실행되고 \"아직 등록한 자산이 없어요\" 빈 상태가 렌더되는지, 2) 자산이 있으면 그룹 타이틀(\"현금예금\")과 자산 이름(\"주계좌\")이 실제로 나오는지, 3) 편집 모드(ST.editAssets)에서는 개별 자산 카드 대신 dragList 그룹 목록(\"1개 자산\")만 렌더되는지, 4) 멀티셀렉트 모드(ST.aSel.mode)에서는 sel-check 체크마크와 assetToggleSel onclick이 렌더되는지. index.html은 전혀 건드리지 않아(테스트 인프라만 확장) APP_VERSION/sw.js CACHE는 그대로 유지. 회귀 테스트 4개 추가, 327/327 통과. renderHistory()는 같은 레시피의 후속 과제로 남긴다. pending_advance_plan 비움.",
-      "commit": null
-    },
     {
       "cycle": 50,
       "phase": "develop",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-20T12:14:08.319Z",
       "summary": "critique(e50cd85) 계획대로 거래 내역 CSV 가져오기(import) 기능을 추가했다. importData() 시트에 '거래 내역 CSV로 가져오기' 버튼(#importCsvFile hidden input)을 새로 달고, txnsToCSV의 역방향에 해당하는 순수 함수들을 도입했다: parseCSV(RFC4180 스타일 파서, 따옴표/콤마/줄바꿈/이스케이프된 큰따옴표 처리, BOM 제거), unguardCsv(guard()가 =,+,-,@ 앞에 붙인 보호용 '를 되돌림), csvDateValid, csvRowToImportTxn(한 행을 txn 후보로 변환 — 자산명은 DB.assets와 정확히 일치하는 이름으로만 매칭하고 못 찾으면 id 없이 *AssetName 스냅샷만 남겨 assetNm(id,snap) 표시 패턴을 그대로 타되 자산 잔액에는 반영되지 않음을 미리보기에 명시, 이체/저축은 양쪽 자산명이 모두 있어야 유효), csvDedupeKey(날짜/구분/금액/카테고리/자산(id 또는 이름)/메모 조합), buildImportPreview(파싱+매칭+중복판정+신규 카테고리 목록까지 한 번에). 미리보기 시트(openCsvImportPreview)가 총 행수/신규/중복/형식오류/자산미매칭 건수와 자동 생성될 카테고리를 보여준 뒤, 확인하면 doCsvImport()가 DB.categories에 없는 카테고리를 addCat과 같은 방식으로 만들고 DB.txns.push(...)+save()로 반영, doDeleteCat과 같은 undoToast(...)로 6초 안에 되돌릴 수 있게 했다(추가된 txn id와 새로 만든 카테고리를 함께 롤백). 당초 계획에 있던 '1회성 수동 매핑 화면'은 기존 자산 매칭 실패 시에도 스냅샷 이름으로 내역이 보존되고 미리보기에 건수가 노출돼(무시하지 않음) 별도 화면 없이도 안전하다고 판단해 단순화했다 — 후속 과제로 남길 수 있음. test/run.js FUNCTIONS에 parseCSV/unguardCsv/csvDateValid/csvRowToImportTxn/csvDedupeKey/buildImportPreview 추가, 회귀 테스트 15개 추가(파서 round-trip, guard 역변환, 날짜 유효성, 자산 매칭/미매칭, 이체·저축 자산 필수, 카테고리 필수, 날짜/구분/금액 검증, dedupe 키 id-vs-이름 구분, doExport 재가져오기 전부 중복 처리, 신규 카테고리 자동 생성, 파일 내 자체 중복). vm 샌드박스 realm 문제로 배열 비교 3건은 JSON round-trip/Array.from으로 정규화(기존 recDates 테스트와 같은 패턴). 두 인라인 <script> 블록 모두 new Function 파싱 확인, 367/367 통과. APP_VERSION 1.44.4->1.45.0, sw.js CACHE v141->v142.",
+      "commit": null
+    },
+    {
+      "cycle": 55,
+      "phase": "develop",
+      "timestamp": "2026-09-20T13:10:00.000Z",
+      "summary": "Explore 서브에이전트로 발견한 saveTx()의 거래 메모 미trim 버그 수정. saveRec()은 `d.memo=(d.memo||'').trim()||d.category`로 공백만 있는 메모를 저장 시 카테고리명으로 대체하는데, saveTx()에는 이 처리가 아예 빠져 있었다: (1) 반복 켜고 저장하는 신규-반복-등록 분기(index.html:3229)는 `memo:d.memo||cat`으로 trim 없이 truthy만 체크해 공백 문자열을 그대로 통과시키고, (2) 일반 일회성 저장 경로(3234-3237)는 memo를 아예 건드리지 않았다. 스페이스 몇 개만 입력하고 저장하면 목록에 빈 이름처럼 보이는 줄이 남고, 반복으로 저장하면 생성되는 모든 회차가 영구히 메모 공백인 채로 남는다 — syncAssetInputs 자산명 trim 수정(cycle54)과 같은 계열의, 형제 저장 함수(saveRec) 간 처리 비대칭 버그다. 두 지점 모두에 saveRec과 동일한 `d.memo=(d.memo||'').trim()||...` 패턴을 적용: 신규-반복 분기는 `d.memo=(d.memo||'').trim()||cat` 후 memo:d.memo로 push, 일회성 경로는 반복 필드 제거 직후 `d.memo=(d.memo||'').trim()||d.category`를 추가. 회귀 테스트 3개 추가(반복 켜고 저장 시 공백 메모→카테고리 대체, 일회성 저장 시 공백 메모→카테고리 대체, 실제 메모 내용은 앞뒤 공백만 trim되고 유지되는 정상 케이스 회귀 확인), 370/370 통과. 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.45.0->1.45.1, sw.js CACHE v142->v143.",
       "commit": null
     }
   ]

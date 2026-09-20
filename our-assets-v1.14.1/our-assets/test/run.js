@@ -2667,6 +2667,44 @@ test('saveTx: 반복 매월 숫자 day가 31 초과면 여전히 31로 clamp된�
   assert.ok(sandbox.toastCalls.includes('31일로 맞췄어요'), '31일 초과는 여전히 31로 clamp된다는 안내가 떠야 함');
 });
 
+/* ---------- saveTx: 메모가 공백만 있으면 trim되어 카테고리로 대체되지 않던 버그 ----------
+ * saveRec()은 `d.memo=(d.memo||'').trim()||d.category`로 공백만 있는 메모를 카테고리로
+ * 대체하는데, saveTx()에는 이 처리가 전혀 없었다 — 신규 반복 등록 분기는 `d.memo||cat`으로
+ * (trim 없이) truthy면 그대로 통과시켰고, 일회성 저장 경로는 memo를 아예 건드리지 않았다.
+ * 그래서 스페이스 몇 개만 입력하고 저장하면 목록에 빈 것처럼 보이는 줄이 남았다(반복이면
+ * 매 회차마다). syncAssetInputs 이름 trim 수정(cycle54)과 같은 종류의 버그. */
+test('saveTx: 반복 켜고 저장 시 메모가 공백만 있으면 trim되어 카테고리로 대체된다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { recurrences: [], settings: {} };
+  sandbox.txDraft = {
+    id: null, type: 'expense', date: '2026-01-15', category: '월세', memo: '   ',
+    amount: 500000, fromAssetId: 'a1', toAssetId: null,
+    repeat: true, freq: 'monthly', day: 10, endDate: null, count: null,
+  };
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.DB.recurrences[0].memo, '월세', '공백만 있는 메모는 trim되어 카테고리로 대체되어야 함');
+});
+test('saveTx: 일회성 내역 저장 시 메모가 공백만 있으면 trim되어 카테고리로 대체된다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { txns: [], settings: {} };
+  sandbox.txDraft = {
+    id: null, type: 'expense', date: '2026-01-15', category: '식비', memo: '   ',
+    amount: 9000, fromAssetId: 'a1', toAssetId: null, repeat: false,
+  };
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.DB.txns[0].memo, '식비', '공백만 있는 메모는 trim되어 카테고리로 대체되어야 함');
+});
+test('saveTx: 실제 메모 내용은 앞뒤 공백만 trim되고 그대로 유지된다(정상 케이스는 회귀 없음)', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { txns: [], settings: {} };
+  sandbox.txDraft = {
+    id: null, type: 'expense', date: '2026-01-15', category: '식비', memo: '  점심 김밥  ',
+    amount: 9000, fromAssetId: 'a1', toAssetId: null, repeat: false,
+  };
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.DB.txns[0].memo, '점심 김밥', '앞뒤 공백은 제거되고 내용은 그대로 유지되어야 함');
+});
+
 /* ---------- balancesUpTo: 단일 슬롯 캐시를 다중 슬롯(Map)으로 바꾼 회귀 테스트 ----------
  * 예전 _balCache={key,map} 구조는 슬롯이 하나뿐이라 renderPlan() 한 번의 렌더 안에서
  * 서로 다른 날짜(startBal/이전달 말일/다음달 말일 등)로 balanceAt을 번갈아 부르면 매번
