@@ -1289,7 +1289,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.45.4';
+const APP_VERSION='1.45.5';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1985,6 +1985,9 @@ function recNthDate(base,n){ /* n번째 반복 날짜 */
 function recCountUntil(base,endDate){ /* 시작일~종료일 사이 반복 횟수 */
  if(!endDate||!base.startDate)return null;
  return recDates({freq:base.freq||'monthly',day:base.day,startDate:base.startDate,endDate:null,weekend:base.weekend},base.startDate,endDate).length;
+}
+function truncateRecEnd(base,cutoffDate){ /* 반복을 cutoffDate까지로 자를 때 endDate·count를 항상 함께 맞춘다 — count 없이 endDate만 남으면 clampRecurringToMaturity()가 이 명시적 절단을 자기 auto-clamp로 오인해 나중에 만기 연장 시 삭제된 회차를 되살린다(recApply/recSave/splitRecurrenceAt이 공유하는 불변식) */
+ return {endDate:cutoffDate,count:recCountUntil(base,cutoffDate)};
 }
 const RANGE_FROM='2023-01-01';let RANGE_TO=addDays(TODAY,760);
 const BUDGET_EPOCH='2000-01'; /* migrate()가 옛 flat DB.budgets를 이력으로 변환할 때 쓰는 '항상 적용' 시작점 — 어떤 실제 조회 달보다도 이르다 */
@@ -2840,7 +2843,7 @@ function clampRecurringToMaturity(assetId,maturity,prevMaturity){
       상한으로 또 써버려 새 만기를 무시하므로, endDate를 뺀 사본으로 계산한다 */
    const occ=recDates(Object.assign({},r,{endDate:null}),r.startDate,maturity); /* 만기일 이하의 실제 발생일들 */
    const last=occ.length?occ[occ.length-1]:null;     /* 만기 직전 마지막 이체일 */
-   if(last){r.endDate=last;if(r.count)delete r.count;} /* 종료일 지정(횟수 조건은 해제) */
+   if(last){r.endDate=last;if(r.count)delete r.count;} /* 종료일 지정(횟수 조건은 해제) — truncateRecEnd()와 반대로 count를 일부러 비워 다음 호출의 autoShortened 판정(위 2839줄) 자체가 이 값에 의존한다. count를 재계산해 채우면 이 함수가 자기 클램프를 사용자가 정한 값으로 오인해 되돌리지 못한다 */
  });
 }
 function clrInput(id){const el=$(id);if(!el)return;el.value='';el.dispatchEvent(new Event('input',{bubbles:true}));el.focus();fcToggle(el);}
@@ -3286,8 +3289,7 @@ function recApply(recId,date,mode,scope){
   }
   if(scope==='future'){
    const prevEnd=r.endDate,prevCount=r.count;
-   r.endDate=addDays(date,-1);
-   r.count=recCountUntil({freq:r.freq,day:r.day,startDate:r.startDate,weekend:r.weekend},r.endDate); /* endDate만 있고 count가 없으면 clampRecurringToMaturity()가 '자동 클램프'로 오인해 나중에 만기 연장 시 이 명시적 삭제를 되살리므로, 다른 저장 경로들과 동일하게 endDate·count를 항상 함께 맞춘다 */
+   Object.assign(r,truncateRecEnd({freq:r.freq,day:r.day,startDate:r.startDate,weekend:r.weekend},addDays(date,-1)));
    save();closeSheet();renderCurrent();
    undoToast('삭제했어요',()=>{r.endDate=prevEnd;r.count=prevCount;save();renderCurrent();toast('되돌렸어요')});return;
   }
@@ -3315,8 +3317,8 @@ function recSave(){
  else if(ctx.scope==='future'){
   const prevEnd=r.endDate,prevCount=r.count,prevSkip=r.skip.slice(),prevEdits=Object.assign({},r.edits);
   const {skipPast,skipFuture,editsPast,editsFuture}=splitRecOverrides(r.skip,r.edits,ctx.date);
-  r.endDate=addDays(ctx.date,-1);r.skip=skipPast;r.edits=editsPast;
-  r.count=recCountUntil({freq:r.freq,day:r.day,startDate:r.startDate,weekend:r.weekend},r.endDate); /* 잘린 원래 반복도 endDate와 count를 항상 함께 맞춰둔다(다른 저장 경로들과 동일한 불변식) */
+  r.skip=skipPast;r.edits=editsPast;
+  Object.assign(r,truncateRecEnd({freq:r.freq,day:r.day,startDate:r.startDate,weekend:r.weekend},addDays(ctx.date,-1)));
   const newBase={freq:r.freq,day:r.day,startDate:ctx.date,weekend:r.weekend};
   const newRec=Object.assign({},JSON.parse(JSON.stringify(r)),{id:uid(),startDate:ctx.date,endDate:prevEnd,count:prevEnd?recCountUntil(newBase,prevEnd):null,amount:amt,memo,skip:skipFuture,edits:editsFuture});
   DB.recurrences.push(newRec);
@@ -3447,8 +3449,7 @@ function splitRecOverrides(skip,edits,effectiveDate){
 function splitRecurrenceAt(original,draft,effectiveDate){
  const prevEnd=original.endDate;
  const {skipPast,skipFuture,editsPast,editsFuture}=splitRecOverrides(original.skip,original.edits,effectiveDate);
- const updatedOriginal=Object.assign({},original,{endDate:addDays(effectiveDate,-1),skip:skipPast,edits:editsPast});
- updatedOriginal.count=recCountUntil({freq:original.freq,day:original.day,startDate:original.startDate,weekend:original.weekend},updatedOriginal.endDate);
+ const updatedOriginal=Object.assign({},original,{skip:skipPast,edits:editsPast},truncateRecEnd({freq:original.freq,day:original.day,startDate:original.startDate,weekend:original.weekend},addDays(effectiveDate,-1)));
  const newBase={freq:draft.freq,day:draft.day,startDate:effectiveDate,weekend:draft.weekend};
  const newRec=Object.assign({},JSON.parse(JSON.stringify(draft)),{id:uid(),startDate:effectiveDate,endDate:prevEnd,count:prevEnd?recCountUntil(newBase,prevEnd):null,skip:skipFuture,edits:editsFuture});
  return {updatedOriginal,newRec};

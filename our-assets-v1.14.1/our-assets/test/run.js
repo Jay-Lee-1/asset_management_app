@@ -66,7 +66,7 @@ function extractLet(name) {
 // 테스트 대상 + 그 대상이 내부에서 호출하는 순수 함수들.
 const FUNCTIONS = [
   'lastDay', 'addDays', 'shiftWeekend', 'recDates', 'addMonthsStr', 'addMonths',
-  'recNthDate', 'recCountUntil', 'recalcEndCond', 'isVarCat', 'setCatVar', 'activeRecsForAssets', 'activeRecsForCat',
+  'recNthDate', 'recCountUntil', 'truncateRecEnd', 'recalcEndCond', 'isVarCat', 'setCatVar', 'activeRecsForAssets', 'activeRecsForCat',
   'num', 'doRenameCat', 'doDeleteCat', 'budgetProgress', 'totalBudgetSummary', 'budgetKey', 'budgetForMonth', 'setBudgetFrom', 'addCat',
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'esc', 'matchTxnQuery',
   'parseCSV', 'unguardCsv', 'csvDateValid', 'csvRowToImportTxn', 'csvDedupeKey', 'buildImportPreview',
@@ -444,6 +444,24 @@ test('recNthDate/recCountUntil: 주말 조정이 없는 경우는 영향받지 �
   );
   assert.strictEqual(generated.length, 6);
   assert.strictEqual(sandbox.recCountUntil(base, sixth), 6);
+});
+
+/* ---------- truncateRecEnd: endDate·count를 항상 함께 맞추는 헬퍼 (cycle56, recApply/recSave/splitRecurrenceAt이 공유) ---------- */
+test('truncateRecEnd: 월간 반복을 cutoff 날짜로 자르면 endDate=cutoff, count는 그 시점까지의 실제 발생 횟수와 일치한다', () => {
+  const base = { freq: 'monthly', day: 1, startDate: '2026-01-10', weekend: 'none' };
+  const cutoff = '2026-06-01';
+  const { endDate, count } = sandbox.truncateRecEnd(base, cutoff);
+  assert.strictEqual(endDate, cutoff, 'endDate는 넘긴 cutoff 그대로여야 함');
+  const generated = sandbox.recDates(Object.assign({}, base, { endDate: null }), base.startDate, cutoff);
+  assert.strictEqual(count, generated.length, 'count는 cutoff까지의 실제 발생 횟수와 일치해야 함');
+});
+test('truncateRecEnd: 주말 조정(later)이 있는 주간 반복도 실제 생성 결과와 count가 정확히 일치한다', () => {
+  const sat = nextSaturdayOnOrAfter(2026, 3, 1);
+  const base = { freq: 'weekly', day: null, startDate: sat, weekend: 'later' };
+  const cutoff = sandbox.recNthDate(base, 4);
+  const { endDate, count } = sandbox.truncateRecEnd(base, cutoff);
+  assert.strictEqual(endDate, cutoff);
+  assert.strictEqual(count, 4, 'recNthDate(base,4)를 cutoff로 넘기면 count는 4여야 함');
 });
 
 /* ---------- recalcEndCond: 주기/반복일/주말규칙/시작일 변경 시 count↔endDate 쌍이 새 기준으로 재계산돼야 함 (cycle53) ---------- */
