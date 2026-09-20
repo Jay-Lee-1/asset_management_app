@@ -1,15 +1,8 @@
 {
   "cycle": 52,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 47,
-      "phase": "review",
-      "timestamp": "2026-09-19T04:09:00.000Z",
-      "summary": "develop 커밋(817d004)을 검토. postponeRecTransfer() 호출부가 index.html 전체에서 한 곳(:1452)뿐이고 r.skip 소비처(expandRec :1949, varyingRecs류 :5146)가 skip 배열에 문자열 날짜를 담는 기존 관례와 정확히 일치함을 grep으로 확인. 수정 로직 자체도 맞다: 원래 회차 날짜(date)는 그대로 스킵(돈이 안 움직인 날), 수동으로 넣은 이체 날짜(nd=TODAY+1)도 함께 스킵해야 daily 반복 엔진이 그 날짜에 정상 회차를 또 만들어내 중복 계상되는 걸 막는다 — day+2부터는 skip에 없으니 다음 정상 회차가 그대로 생성돼 반복 자체는 끊기지 않는다. weekly/monthly/yearly에 대해서도 nd를 추가로 skip에 넣는 게 no-op(애초에 해당 날짜가 회차가 아니므로)이라는 커밋 설명도 재확인했고, date===nd(미루려는 날짜가 이미 내일)일 때 중복 push 가드가 정확히 동작함을 두 번째 회귀 테스트로 확인. node test/run.js 재실행해 314/314 통과 재확인. 문제 없음.",
-      "commit": null
-    },
     {
       "cycle": 47,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-19T23:07:00.000Z",
       "summary": "Explore 서브에이전트로 발견한 asOpenType()(index.html:2720)의 연금(pension) 총자산 제외 자동화 비대칭 버그 수정. onPick 콜백이 자산 종류를 pension으로 바꿀 때는 includeInTotal=false를 강제로 켜지만(연금은 기본적으로 순자산 계산에서 제외), 종류를 다시 다른 걸로 바꿀 때는 이를 원상복구하지 않았다 — 연금이 만기/전환돼 사용자가 종류를 연금→현금예금 등으로 바꾸는 흔한 편집 흐름에서, 그 자산이 총자산/순자산(totalAssets/totalDebt/ownerAssets/ownerDebt 등 includeInTotal로 필터링하는 모든 집계)에 영구히 안 잡히는 조용한 데이터 결함이었다. onPick에서 pension으로 바꿀 때만 asDraft._pensionAutoExcl=true 플래그를 남기고, pension에서 벗어날 때 그 플래그가 있을 때만(=자동으로 꺼진 경우만) includeInTotal을 true로 복원하고 플래그를 지우도록 수정 — 사용자가 연금과 무관하게 스스로 이 스위치를 꺼둔 경우(플래그 없음)는 건드리지 않아, 기존에 이미 있던 정상적인 수동 제외 사용 패턴을 깨지 않는다. saveAsset()에도 d._dispAmt와 같은 이유로 이 임시 플래그가 저장 시 DB.assets에 새지 않도록 delete 처리를 추가했다. asOpenType/openTypePicker/renderAssetSheet는 test/run.js에 실행 기반 커버리지가 전혀 없었어서(openTypePicker는 여전히 화면 전용이라 no-op 스텁, renderAssetSheet도 같은 이유로 신규 no-op 스텁 추가), asOpenType을 처음으로 FUNCTIONS에 추가하고 onPick 콜백만 캡처하는 openTypePicker 스텁을 새로 만들어 회귀 테스트 3개 추가(연금 전환 시 자동 제외+복원, 사용자가 직접 꺼둔 값은 종류 변경만으로 안 켜짐, saveAsset이 임시 플래그를 새지 않게 지움), 343/343 통과. 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.43.8->1.43.9, sw.js CACHE v134->v135.",
+      "commit": null
+    },
+    {
+      "cycle": 52,
+      "phase": "review",
+      "timestamp": "2026-09-20T00:09:32.338Z",
+      "summary": "develop 커밋(73892f5)을 검토. asOpenType()의 _pensionAutoExcl 복원 로직이 onPick 콜백 안에서만 플래그를 세팅해, 이번 편집 세션에서 먼저 pension으로 바꿨다가 되돌리는 왕복에서만 동작하고, 커밋 설명이 실제로 겨냥한 흐름 — 이미 DB에 저장돼 있던 기존 연금 자산을 열어 곧장 다른 종류로 바꾸는 만기/전환 편집 — 에서는 openAssetSheet()가 DB.assets에서 asDraft를 그대로 복제하므로(_pensionAutoExcl은 saveAsset()에서 항상 delete돼 DB에 저장되지 않음) 플래그가 애초에 없어 복원이 전혀 동작하지 않는 잔여 버그를 발견. 원래 버그(총자산 영구 제외)가 정작 커밋이 고치려던 실사용 시나리오에서는 그대로 남아있던 것. openAssetSheet()가 편집 대상 자산을 로드할 때 type이 pension이면 _pensionAutoExcl을 true로 다시 간주하도록 한 줄 추가해 실사용 흐름에서도 asOpenType의 복원 로직이 동작하게 수정. openAssetSheet를 처음으로 test/run.js FUNCTIONS에 추가하고, DB에 저장된 기존 연금 자산을 열어 곧장 다른 종류로 바꾸면 총자산 제외가 자동으로 풀리는지 확인하는 회귀 테스트 1개 추가, 344/344 통과. 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.43.9->1.43.10, sw.js CACHE v135->v136.",
       "commit": null
     }
   ]

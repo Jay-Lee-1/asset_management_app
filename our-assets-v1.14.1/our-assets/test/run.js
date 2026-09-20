@@ -75,7 +75,7 @@ const FUNCTIONS = [
   'saveRec', 'recHistFieldsChanged', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
   'monthStartStr', 'monthEndStr', 'expandRec', 'allTxns', 'spendByCategory', 'histSumTotals',
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'expenseBreakdownCard',
-  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'isCloudConflict', 'decidePushOutcome',
+  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'openAssetSheet', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'isCloudConflict', 'decidePushOutcome',
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges',
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
   'clampDay', 'saveTx', 'assetBase', 'balancesUpTo', 'balanceAt',
@@ -2207,6 +2207,31 @@ test('saveAsset: 연금 전환 시 임시로 남긴 _pensionAutoExcl 플래그�
   sandbox.saveAsset(false);
   const saved = sandbox.DB.assets.find(a => a.name === '연금');
   assert.ok(!('_pensionAutoExcl' in saved), '임시 플래그가 저장 시 DB.assets에 그대로 남으면 안 됨');
+});
+
+/* ---------- openAssetSheet/asOpenType: cycle52 develop 커밋의 _pensionAutoExcl 복원 로직이
+ * 이 플래그를 onPick 호출 안에서만 세팅해, "이번 편집 세션에서 먼저 pension으로 바꿨다가 다시
+ * 되돌리는" 왕복에만 동작하고, 정작 커밋 설명이 든 실사용 흐름 — 이미 DB에 저장돼 있던 기존 연금
+ * 자산을 열어 종류를 곧장 다른 걸로 바꾸는 만기/전환 편집 — 에서는 asDraft가 DB에서 그대로
+ * 복제되므로 _pensionAutoExcl이 애초에 없어 복원이 안 되던 잔여 버그(app-evolve cycle52 review로
+ * 발견). openAssetSheet()가 편집 대상을 연금으로 로드할 때 _pensionAutoExcl을 다시 참으로 간주하게
+ * 고쳐 실사용 흐름에서도 asOpenType의 복원 로직이 동작하게 함. ---------- */
+test('openAssetSheet: DB에 저장돼 있던 기존 연금 자산을 열어 곧장 다른 종류로 바꿔도 총자산 제외가 자동으로 풀린다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox.DB = {
+    settings: {},
+    assets: [{ id: 'p1', type: 'pension', owner: '나', includeInTotal: false, name: '국민연금', amountKRW: 24000000 }],
+    txns: [],
+    recurrences: [],
+  };
+  sandbox._balCache.clear();
+  sandbox.openAssetSheet('p1');
+  assert.strictEqual(sandbox.asDraft._pensionAutoExcl, true, '기존 연금 자산을 열면 이번 세션에서 pension을 거치지 않았어도 자동 제외 상태로 간주해야 함');
+  sandbox.asOpenType();
+  sandbox.lastTypePickerOnPick('cash');
+  assert.strictEqual(sandbox.asDraft.type, 'cash');
+  assert.strictEqual(sandbox.asDraft.includeInTotal, true, '연금을 거치지 않고 곧장 다른 종류로 바꿔도(만기/전환 편집의 실사용 흐름) 총자산 제외가 자동으로 풀려야 함');
 });
 
 /* ---------- rateUnknown/saveAsset: 새로 등록한 fx/gold/stock 자산이 시세 미동기화 상태에서
