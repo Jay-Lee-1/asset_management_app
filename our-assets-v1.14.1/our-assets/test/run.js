@@ -555,10 +555,13 @@ test('recDates: 오래전 시작한 daily/weekly 반복도 좁은 [from,to] 구�
  * 부호를 무조건 보존하도록 고쳐, syncTxInputs()/syncRecInputs()가 num($('txAmt'))/num($('rAmt'))로
  * 읽는 거래·반복 금액까지 전부 영향을 받았다 — editTx()가 txDraft=JSON.parse(JSON.stringify(t))로
  * DB.txns의 t.amount를 그대로 복제해 열기 때문에, 백업 복원/클라우드 동기화로 이미 음수가 된
- * t.amount(SANITIZE_FREE_FIELDS는 amount를 "마이너스도 유효"로 취급해 걸러내지 않음, sanitizeAmount
- * 부근 주석 참고)를 가진 기존 거래를 열어 금액칸을 건드리지 않고 저장만 해도(oninput이 한 번도
- * 안 일어나 fmtAmt가 부호를 지울 기회가 없음) num()이 그 음수를 그대로 통과시켜 income/expense/
- * saving/transfer 타입별 부호 관례(t.amount는 항상 크기, 부호는 type이 결정)를 깨는 회귀였다.
+ * t.amount(당시 SANITIZE_FREE_FIELDS는 amount를 "마이너스도 유효"로 취급해 걸러내지 않았음 —
+ * cycle57 develop에서 sanitizeBackup()이 txns/recurrences amount도 min 0으로 클램프하도록
+ * 고쳐 이 진입 경로 자체는 막혔다. sanitizeAmount 부근 주석 참고)를 가진 기존 거래를 열어
+ * 금액칸을 건드리지 않고 저장만 해도(oninput이 한 번도 안 일어나 fmtAmt가 부호를 지울 기회가
+ * 없음) num()이 그 음수를 그대로 통과시켜 income/expense/saving/transfer 타입별 부호 관례
+ * (t.amount는 항상 크기, 부호는 type이 결정)를 깨는 회귀였다 — 다른 경로로 음수가 섞여 들어올
+ * 가능성에 대비한 방어선으로 여전히 유효하다.
  * num(el,allowNeg)로 fmtAmt와 동일하게 게이팅해, asAmt(canNeg)만 부호를 보존하고 나머지 모든
  * 호출부(txAmt/rAmt/qAmt/bigMinInput, 인자 없이 호출)는 기존처럼 부호가 제거되는 동작을 유지한다. */
 test('num(): allowNeg 없이 호출하면(거래금액 등) 앞의 - 부호를 무시하고 절댓값만 파싱한다', () => {
@@ -2077,6 +2080,23 @@ test('sanitizeBackup: 거래의 NaN/문자열 금액을 보정하고 fixedCount�
   assert.strictEqual(fixedCount, 2);
   assert.strictEqual(droppedCount, 0);
 });
+/* app-evolve cycle57 develop: t.amount는 항상 크기(magnitude)이고 방향은 type/fromAssetId/
+ * toAssetId가 결정하는 관례라(3596/3604줄의 -t.amount 사용, addBalanceAdjust의 Math.abs(gap) 등
+ * 코드 전체가 이 전제로 짜여 있음), 자산의 baseAmount/amountKRW 같은 "마이너스도 유효한 잔액성
+ * 필드"와는 다르다. 이전에는 SANITIZE_FREE_FIELDS에 amount가 끼어 있어(실제로는 assets 루프에서만
+ * 쓰이고 txns/recurrences 루프는 이 배열과 무관하게 직접 sanitizeAmount(d.amount)를 min 없이
+ * 불렀음) 손상된 백업/원격 데이터의 음수 amount가 그대로 통과됐다 — balancesUpTo()의
+ * map[fromAssetId]-=sign*t.amount에서 부호가 뒤집혀 출금이 입금처럼 반영되는 등 잔액 계산이
+ * 조용히 오염됐다(num()의 allowNeg 게이팅으로 UI 입력 경로는 cycle56에서 막았지만, 백업 복원·
+ * 클라우드 풀로 들어오는 경로는 그대로 열려 있었다). min 0으로 클램프해 막는다. */
+test('sanitizeBackup: 거래 금액이 음수면 0으로 클램프한다(방향은 type/fromAssetId/toAssetId가 정하므로 amount 자체의 음수는 무효)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    assets: [],
+    txns: [{ id: 't1', date: '2026-01-01', type: 'expense', amount: -50000 }],
+  });
+  assert.strictEqual(data.txns[0].amount, 0);
+  assert.strictEqual(fixedCount, 1);
+});
 test('sanitizeBackup: 자산의 보유수량 필드(fxAmount/goldDon/stockQty)는 음수면 0으로 클램프한다', () => {
   const { data, fixedCount } = sandbox.sanitizeBackup({
     txns: [],
@@ -2126,6 +2146,14 @@ test('sanitizeBackup: 반복거래의 NaN/문자열 금액도 보정한다(매�
   assert.strictEqual(fixedCount, 1);
   assert.strictEqual(droppedCount, 0);
 });
+test('sanitizeBackup: 반복거래 금액이 음수면 0으로 클램프한다(txns와 동일 이유 — 매달 새로 생기는 회차라 방치하면 계속 오염됨)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    recurrences: [{ id: 'r1', startDate: '2026-01-01', amount: -30000 }],
+  });
+  assert.strictEqual(data.recurrences[0].amount, 0);
+  assert.strictEqual(fixedCount, 1);
+});
 test('sanitizeBackup: 반복거래 회차별 수정(edits[date].amount)도 검증한다(expandRec이 그대로 소비함)', () => {
   const { data, fixedCount } = sandbox.sanitizeBackup({
     txns: [], assets: [],
@@ -2133,6 +2161,14 @@ test('sanitizeBackup: 반복거래 회차별 수정(edits[date].amount)도 검�
   });
   assert.strictEqual(data.recurrences[0].edits['2026-02-01'].amount, 0);
   assert.strictEqual(data.recurrences[0].edits['2026-03-01'].amount, 20000);
+  assert.strictEqual(fixedCount, 1);
+});
+test('sanitizeBackup: 반복거래 회차별 수정(edits[date].amount)이 음수면 0으로 클램프한다(변동 카테고리는 0을 유효값으로 허용하되 음수는 무효)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    recurrences: [{ id: 'r1', startDate: '2026-01-01', amount: 10000, edits: { '2026-02-01': { amount: -5000 } } }],
+  });
+  assert.strictEqual(data.recurrences[0].edits['2026-02-01'].amount, 0);
   assert.strictEqual(fixedCount, 1);
 });
 test('sanitizeBackup: id 없는 반복거래는 제거하고, recurrences가 없거나 배열이 아니어도 터지지 않는다', () => {

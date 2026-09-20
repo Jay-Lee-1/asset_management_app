@@ -1289,7 +1289,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.45.5';
+const APP_VERSION='1.45.6';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4728,7 +4728,7 @@ function sanitizeAmount(v,min){
  return (min!=null&&n<min)?min:n;
 }
 const SANITIZE_QTY_FIELDS=['fxAmount','goldDon','stockQty']; /* 보유수량 — 음수 불가 */
-const SANITIZE_FREE_FIELDS=['amount','baseAmount','amountKRW']; /* 거래금액/잔액 — 마이너스도 유효 */
+const SANITIZE_FREE_FIELDS=['baseAmount','amountKRW']; /* 자산 잔액 — 마이너스도 유효(마이너스통장 등) */
 /* obj를 변형하지 않고 새 객체를 반환한다(restoreBackup의 실패 시 되돌리기 로직과 독립적으로
  * 쓸 수 있게). id(txns는 date도) 없는 레코드는 나머지 로직이 전제하는 최소 형태를 못 갖춘
  * 것으로 보고 통째로 제거한다. */
@@ -4739,7 +4739,11 @@ function sanitizeBackup(obj){
  srcTxns.forEach(t=>{
   if(!t||!t.id||!t.date){droppedCount++;return}
   const d=Object.assign({},t);
-  if('amount' in d){const n=sanitizeAmount(d.amount);if(n!==d.amount){d.amount=n;fixedCount++}}
+  /* t.amount는 항상 크기(magnitude)이고 방향은 type/fromAssetId/toAssetId가 정한다(자산의
+   * baseAmount/amountKRW와 달리 "마이너스도 유효한 잔액성 필드"가 아니다) — min 0으로 클램프하지
+   * 않으면 손상된 백업/원격 데이터의 음수 amount가 balancesUpTo()의 -sign*t.amount 계산에서
+   * 부호가 뒤집혀 반대 방향 입출금으로 조용히 오염된다. */
+  if('amount' in d){const n=sanitizeAmount(d.amount,0);if(n!==d.amount){d.amount=n;fixedCount++}}
   txns.push(d);
  });
  const srcAssets=Array.isArray(obj&&obj.assets)?obj.assets:[];
@@ -4762,12 +4766,12 @@ function sanitizeBackup(obj){
  srcRecs.forEach(r=>{
   if(!r||!r.id||!r.startDate){droppedCount++;return}
   const d=Object.assign({},r);
-  if('amount' in d){const n=sanitizeAmount(d.amount);if(n!==d.amount){d.amount=n;fixedCount++}}
+  if('amount' in d){const n=sanitizeAmount(d.amount,0);if(n!==d.amount){d.amount=n;fixedCount++}} /* txns와 동일: 크기 필드라 음수 불가 */
   if(d.edits&&typeof d.edits==='object'){
    const edits={};
    Object.keys(d.edits).forEach(date=>{
     const e=Object.assign({},d.edits[date]);
-    if('amount' in e){const n=sanitizeAmount(e.amount);if(n!==e.amount){e.amount=n;fixedCount++}}
+    if('amount' in e){const n=sanitizeAmount(e.amount,0);if(n!==e.amount){e.amount=n;fixedCount++}}
     edits[date]=e;
    });
    d.edits=edits;
