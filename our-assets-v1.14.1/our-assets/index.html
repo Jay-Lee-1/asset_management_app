@@ -1283,12 +1283,13 @@ body.selmode .fab{display:none}
 <div class="sr-only" id="ariaLivePolite" role="status" aria-live="polite" aria-atomic="true"></div>
 <div class="sr-only" id="ariaLiveAssertive" role="alert" aria-live="assertive" aria-atomic="true"></div>
 <input type="file" id="importFile" accept="application/json,.json" style="display:none">
+<input type="file" id="importTxnFile" accept="text/csv,.csv" style="display:none">
 
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.4/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.44.4';
+const APP_VERSION='1.45.0';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3865,6 +3866,7 @@ function renderMenu(){
   {cap:'백업 · 데이터',items:[
    {ic:'download',l:'데이터 내보내기',v:'iCloud·파일',a:"exportData()"},
    {ic:'restore',l:'데이터 복원',a:"importData()"},
+   {ic:'ledger',l:'거래 내역 CSV 가져오기',a:"importTxnCsv()"},
    {ic:'bell',l:'저축 만기 알림',v:maturitySoon()+'건',a:"openMaturity()"},
   ]},
   {cap:'화면 · 지원',items:[
@@ -4517,6 +4519,106 @@ function txnsToCSV(txns,assets){
  ].map(esc).join(','));
  return '\ufeff'+[header,...rows].join('\r\n');
 }
+/* \u2500\u2500 \uac70\ub798 \ub0b4\uc5ed CSV \uac00\uc838\uc624\uae30 \u2014 \uc21c\uc218 \ud568\uc218(DOM/DB \uc804\uc5ed \ucc38\uc870 \uc5c6\uc74c) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+ * txnsToCSV\uac00 \ub9cc\ub4dc\ub294 \ud3ec\ub9f7(\ub0a0\uc9dc,\uad6c\ubd84,\uce74\ud14c\uace0\ub9ac,\uae08\uc561,\ubcf4\ub0b4\ub294 \uc790\uc0b0,\ubc1b\ub294 \uc790\uc0b0,\uba54\ubaa8)\uc744 \uadf8\ub300\ub85c
+ * \ub418\uc77d\ub418, \uc740\ud589/\uce74\ub4dc\uc5d0\uc11c \ub0b4\ubcf4\ub0b8 CSV\ucc98\ub7fc \ub0a0\uc9dc \uad6c\ubd84\uc790(.,/,-)\ub098 \uae08\uc561\uc5d0 \uc27c\ud45c/\uc6d0 \ud45c\uc2dc\uac00 \uc11e\uc5ec
+ * \uc788\uc5b4\ub3c4 \ucd5c\ub300\ud55c \uad00\ub300\ud558\uac8c \ubc1b\ub294\ub2e4. */
+function parseCSVRows(text){
+ const s=String(text==null?'':text).replace(/^\ufeff/,'');
+ const rows=[];let row=[];let field='';let inQ=false;
+ for(let i=0;i<s.length;i++){
+  const c=s[i];
+  if(inQ){
+   if(c==='"'){if(s[i+1]==='"'){field+='"';i++}else inQ=false}
+   else field+=c;
+  }else if(c==='"')inQ=true;
+  else if(c===','){row.push(field);field=''}
+  else if(c==='\r'){if(s[i+1]==='\n')continue;row.push(field);field='';rows.push(row);row=[]}
+  else if(c==='\n'){row.push(field);field='';rows.push(row);row=[]}
+  else field+=c;
+ }
+ if(field!==''||row.length){row.push(field);rows.push(row)}
+ return rows.filter(r=>!(r.length===1&&r[0].trim()===''));
+}
+/* guard()\uac00 =,+,-,@,\ud0ed,\uce90\ub9ac\uc9c0\ub9ac\ud134\uc73c\ub85c \uc2dc\uc791\ud558\ub294 \uac12 \uc55e\uc5d0 \ubd99\uc774\ub294 '\ub97c \ub418\ub3cc\ub9b0\ub2e4(CSV \uc778\uc81d\uc158 \ubc29\uc9c0\uc758 \uc5ed\uacfc\uc815) */
+function csvUnguard(v){const s=String(v==null?'':v);return /^'[=+\-@\t\r]/.test(s)?s.slice(1):s}
+function normalizeCSVDate(v){
+ const m=String(v==null?'':v).trim().match(/^(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})$/);
+ if(!m)return null;
+ const y=+m[1],mo=+m[2],d=+m[3];
+ if(mo<1||mo>12||d<1||d>31)return null;
+ return `${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+}
+function normalizeCSVAmount(v){
+ const s=String(v==null?'':v).trim().replace(/^'/,'').replace(/[,\uc6d0\s]/g,'');
+ if(s==='')return NaN;
+ const n=Number(s);
+ return Number.isFinite(n)?n:NaN;
+}
+const CSV_TYPE_BY_LABEL={'\uc9c0\ucd9c':'expense','\uc218\uc785':'income','\uc774\uccb4':'transfer','\uc800\ucd95':'saving'};
+function parseTxnsCSV(text,assets,categories){
+ const rows=parseCSVRows(text);
+ let start=0;
+ if(rows.length&&String(rows[0][0]||'').trim()==='\ub0a0\uc9dc'&&String(rows[0][1]||'').trim()==='\uad6c\ubd84')start=1;
+ const out=[];let errorCount=0;
+ for(let i=start;i<rows.length;i++){
+  const r=rows[i];if(!r||!r.length)continue;
+  const date=normalizeCSVDate(r[0]);
+  const type=CSV_TYPE_BY_LABEL[String(r[1]||'').trim()];
+  const amount=normalizeCSVAmount(r[3]);
+  if(!date||!type||!Number.isFinite(amount)||amount===0){errorCount++;continue}
+  const category=csvUnguard(String(r[2]||'').trim());
+  const fromAssetName=type==='income'?'':csvUnguard(String(r[4]||'').trim());
+  const toAssetName=type==='expense'?'':csvUnguard(String(r[5]||'').trim());
+  const memo=csvUnguard(String(r[6]||'').trim());
+  const findAsset=nm=>nm?((assets||[]).find(a=>a.name===nm)||null):null;
+  const fromA=findAsset(fromAssetName),toA=findAsset(toAssetName);
+  const catList=(type!=='transfer'&&categories&&categories[type])||[];
+  out.push({
+   date,type,category,amount:Math.abs(amount),
+   fromAssetName,toAssetName,
+   fromAssetId:fromA?fromA.id:null,toAssetId:toA?toA.id:null,
+   memo,
+   needsAssetMap:!!((fromAssetName&&!fromA)||(toAssetName&&!toA)),
+   needsCategory:type!=='transfer'&&!!category&&!catList.includes(category)
+  });
+ }
+ return {rows:out,errorCount};
+}
+/* \uae30\uc874 \ub0b4\uc5ed(DB.txns.concat(expandRec(...)))\uacfc \uac19\uc740 \uac12\uc774\uba74 \uc7ac\uac00\uc838\uc624\uae30\ub85c \uc911\ubcf5 \uc0dd\uc131\ub418\uc9c0 \uc54a\ub3c4\ub85d
+ * \uac78\ub7ec\ub0b8\ub2e4 \u2014 assetNm(id,snap)\uacfc \ub3d9\uc77c\ud55c \uc870\ud68c \uaddc\uce59(\uc0b4\uc544\uc788\uc73c\uba74 \uc774\ub984, \uc544\ub2c8\uba74 \uc2a4\ub0c5\uc0f7)\uc744 \uc4f4\ub2e4. */
+function txnDedupeKey(t,assets){
+ const nm=(id,snap)=>{const a=(assets||[]).find(x=>x.id===id);return a?a.name:(snap||'')};
+ return [t.date,t.type,t.amount,t.category||'',nm(t.fromAssetId,t.fromAssetName),nm(t.toAssetId,t.toAssetName)].join('|');
+}
+function dedupeImportRows(rows,existingTxns,assets){
+ const seen=new Set((existingTxns||[]).map(t=>txnDedupeKey(t,assets)));
+ const fresh=[],dup=[];
+ (rows||[]).forEach(r=>{
+  const k=txnDedupeKey(r,assets);
+  if(seen.has(k))dup.push(r);else{fresh.push(r);seen.add(k)}
+ });
+ return {fresh,dup};
+}
+/* addCat()\uacfc \uac19\uc740 \uaddc\uce59(\uc911\ubcf5 \uc5c6\uc774 \ucd94\uac00)\uc73c\ub85c \uc0c8\ub85c \ub9cc\ub4e4 \uce74\ud14c\uace0\ub9ac\ub9cc type\ubcc4\ub85c \ubaa8\uc740\ub2e4 */
+function missingImportCategories(rows){
+ const res={};
+ (rows||[]).forEach(r=>{
+  if(!r.needsCategory)return;
+  (res[r.type]=res[r.type]||[]);
+  if(!res[r.type].includes(r.category))res[r.type].push(r.category);
+ });
+ return res;
+}
+function buildImportTxns(rows,assetMap,idGen){
+ const map=assetMap||{};
+ return (rows||[]).map(r=>({
+  id:idGen(),type:r.type,date:r.date,category:r.category||'',amount:r.amount,
+  fromAssetId:r.type==='income'?null:(r.fromAssetId||map[r.fromAssetName]||null),
+  toAssetId:r.type==='expense'?null:(r.toAssetId||map[r.toAssetName]||null),
+  memo:r.memo||''
+ }));
+}
 function exportData(){ /* 저장 방식 선택 */
  const sharable=canShareFiles();
  openSheet(`<h3>데이터 내보내기</h3>
@@ -4679,6 +4781,82 @@ $('importFile').addEventListener('change',e=>{
  }catch(_){toast('올바른 백업 파일이 아니에요')}finally{e.target.value=''}};
  r.readAsText(f);
 });
+
+function importTxnCsv(){
+ openSheet(`<h3>거래 내역 CSV 가져오기</h3>
+  <div class="desc">은행·카드 내역이나 이 앱에서 내보낸 CSV 파일을 골라 주세요.<br>
+  <span style="color:var(--text-3);font-size:12.5px">날짜,구분,카테고리,금액,보내는 자산,받는 자산,메모 순서의 CSV를 지원해요 · 구분은 지출/수입/이체/저축 중 하나예요.</span></div>
+  <button class="btn btn-primary" onclick="closeSheet();$('importTxnFile').click()">${svg('ledger')} CSV 파일 고르기</button>`);
+}
+$('importTxnFile').addEventListener('change',e=>{
+ const f=e.target.files[0];if(!f)return;const r=new FileReader();
+ r.onload=()=>{
+  try{
+   const{rows,errorCount}=parseTxnsCSV(r.result,DB.assets,DB.categories);
+   if(!rows.length){toast(errorCount?'인식할 수 있는 내역이 없어요':'파일에 내역이 없어요');return}
+   const existing=DB.txns.concat(expandRec(RANGE_FROM,RANGE_TO));
+   const{fresh,dup}=dedupeImportRows(rows,existing,DB.assets);
+   window._csvImport={rows:fresh,errorCount,dupCount:dup.length,assetMap:{}};
+   openImportPreview();
+  }catch(_){toast('CSV 파일을 읽을 수 없어요')}
+  finally{e.target.value=''}
+ };
+ r.readAsText(f);
+});
+/* 매핑 안 된 자산명(보내는/받는 쪽 어느 하나라도) 목록 — 매핑되면 openImportPreview가 재호출되며 사라진다 */
+function importUnmappedAssetNames(){
+ const st=window._csvImport;if(!st)return[];
+ const need={};
+ st.rows.forEach(r=>{
+  if(!r.needsAssetMap)return;
+  if(r.fromAssetName&&!r.fromAssetId&&!st.assetMap[r.fromAssetName])need[r.fromAssetName]=true;
+  if(r.toAssetName&&!r.toAssetId&&!st.assetMap[r.toAssetName])need[r.toAssetName]=true;
+ });
+ return Object.keys(need);
+}
+function openImportPreview(){
+ const st=window._csvImport;if(!st){closeSheet();return}
+ const unmapped=importUnmappedAssetNames();
+ const newCats=missingImportCategories(st.rows);
+ const catCount=Object.keys(newCats).reduce((s,k)=>s+newCats[k].length,0);
+ openSheet(`<h3>가져오기 미리보기</h3>
+  <div class="desc">
+   새 내역 <b>${st.rows.length}건</b>을 추가해요.<br>
+   ${st.dupCount?`이미 있는 내역과 같아 보이는 ${st.dupCount}건은 건너뛰어요.<br>`:''}
+   ${st.errorCount?`형식을 알아볼 수 없는 ${st.errorCount}건은 건너뛰어요.<br>`:''}
+   ${catCount?`새 카테고리 ${catCount}개가 자동으로 만들어져요.<br>`:''}
+   ${unmapped.length?`<span style="color:var(--text-3);font-size:12.5px">아래 자산명은 등록된 자산과 이름이 달라요. 연결하지 않으면 해당 내역은 건너뛰어요.</span>`:''}
+  </div>
+  ${unmapped.length?`<div class="opt-list">${unmapped.map(nm=>`<button class="pk-item" onclick="mapImportAsset(${JSON.stringify(nm)})"><div class="pbody"><div class="pn">'${esc(nm)}' 자산을 찾을 수 없어요</div><div class="psub">탭해서 연결할 자산을 선택하세요</div></div><div class="pc">${svg('chev')}</div></button>`).join('')}</div>`:''}
+  <button class="btn btn-primary" style="margin-top:12px" onclick="commitImportCsv()">${svg('check')} 가져오기</button>`);
+}
+function mapImportAsset(name){
+ openAssetPicker({title:`'${name}' 연결할 자산`,onPick:id=>{window._csvImport.assetMap[name]=id;openImportPreview()},back:openImportPreview});
+}
+function commitImportCsv(){
+ const st=window._csvImport;if(!st){closeSheet();return}
+ const map=st.assetMap;
+ const usable=st.rows.filter(r=>{
+  const needFrom=r.fromAssetName&&!r.fromAssetId&&!map[r.fromAssetName];
+  const needTo=r.toAssetName&&!r.toAssetId&&!map[r.toAssetName];
+  return !(needFrom||needTo);
+ });
+ if(!usable.length){toast('가져올 수 있는 내역이 없어요');closeSheet();return}
+ const newCats=missingImportCategories(usable);
+ DB.catIcon=DB.catIcon||{};
+ Object.keys(newCats).forEach(type=>{
+  DB.categories[type]=DB.categories[type]||[];
+  newCats[type].forEach(c=>{if(!DB.categories[type].includes(c))DB.categories[type].push(c)});
+ });
+ const added=buildImportTxns(usable,map,uid);
+ DB.txns.push(...added);
+ save();closeSheet();renderCurrent();
+ const addedIds=new Set(added.map(t=>t.id));
+ undoToast(`${added.length}건을 가져왔어요`,()=>{
+  DB.txns=DB.txns.filter(t=>!addedIds.has(t.id));save();renderCurrent();toast('되돌렸어요')
+ });
+ window._csvImport=null;
+}
 
 function openThemeSheet(){
  const opts=[['system','시스템 설정','휴대폰 설정을 따라가요'],['light','라이트',''],['dark','다크','프리미엄 다크']];

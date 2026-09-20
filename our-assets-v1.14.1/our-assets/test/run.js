@@ -98,6 +98,8 @@ const FUNCTIONS = [
   'modeSeg', 'monthNav', 'abbr', 'calCellsFor', 'ledSumInner', 'ledSumBox', 'calPane', 'txRow', 'dayTxns',
   'ledgerRowsHtml', 'ledgerDayHeadHtml', 'renderLedger', 'selDayPartial',
   'fmtDot', 'splitHist', 'histRow', 'histTotHTML', 'updateHist', 'renderHistory',
+  'parseCSVRows', 'csvUnguard', 'normalizeCSVDate', 'normalizeCSVAmount', 'parseTxnsCSV',
+  'txnDedupeKey', 'dedupeImportRows', 'missingImportCategories', 'buildImportTxns',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -105,7 +107,7 @@ const FUNCTIONS = [
 // _recCache/REC_CACHE_MAX는 expandRec()가 참조하는 모듈 스코프 캐시 상태라 같은 방식으로 끌어온다.
 // isPlanAcct는 planNegatives()가 DB.assets.filter(isPlanAcct)로 부르는 "플랜 대상 통장"
 // 판정 상수라 같은 방식(extractConst)으로 끌어온다.
-const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS'];
+const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', 'CSV_TYPE_BY_LABEL'];
 // _histCache는 filteredHist()가 재대입(={key,list})하는 let 선언이라 CONSTS(extractConst)로는
 // 못 끌어오므로 별도의 LETS 목록으로 extractLet을 통해 가져온다.
 // _copyIsCsv도 같은 이유(openCopyBackup()이 재대입)로 LETS를 통해 가져온다.
@@ -4037,6 +4039,106 @@ test('renderHistory: 오늘보다 미래 날짜의 거래는 예정 라벨(sch-d
   const listHtml = sandbox.histListEl.innerHTML;
   assert.ok(listHtml.includes('sch-dot'), '오늘보다 미래인 거래는 예정 표시(sch-dot)가 나와야 함');
   assert.ok(listHtml.includes('>예정<'), '자산 정보가 없는 예정 거래는 "예정" 라벨이 나와야 함');
+});
+
+test('parseCSVRows: 따옴표로 감싼 필드의 쉼표/이스케이프된 따옴표를 올바르게 나눈다', () => {
+  // vm 샌드박스 안에서 만들어진 배열(중첩 배열 포함)은 host의 Array와 realm이 달라
+  // deepStrictEqual이 값은 같아도 실패하므로, JSON 왕복으로 host realm으로 정규화한다.
+  const rows = JSON.parse(JSON.stringify(sandbox.parseCSVRows('a,"b,c","d""e"\nf,g,h')));
+  assert.deepStrictEqual(rows, [['a', 'b,c', 'd"e'], ['f', 'g', 'h']]);
+});
+test('csvUnguard: guard()가 =,+,-,@ 앞에 붙인 \'를 되돌리고, 무관한 값은 그대로 둔다', () => {
+  assert.strictEqual(sandbox.csvUnguard("'=SUM(A1)"), '=SUM(A1)');
+  assert.strictEqual(sandbox.csvUnguard("'일반 카테고리"), "'일반 카테고리");
+  assert.strictEqual(sandbox.csvUnguard('식비'), '식비');
+});
+test('parseTxnsCSV: txnsToCSV가 내보낸 형식(헤더+지출/이체)을 그대로 되읽는다', () => {
+  sandbox.DB = {
+    assets: [{ id: 'a1', name: '주계좌' }, { id: 'a2', name: '적금' }],
+    txns: [], recurrences: [],
+    categories: { expense: ['식비'], income: [], saving: [] },
+  };
+  const csv = sandbox.txnsToCSV(
+    [
+      { date: '2026-06-10', type: 'expense', category: '식비', amount: 8000, fromAssetId: 'a1', memo: '점심' },
+      { date: '2026-06-11', type: 'transfer', category: '이체', amount: 50000, fromAssetId: 'a1', toAssetId: 'a2', memo: '' },
+    ],
+    sandbox.DB.assets
+  );
+  const { rows, errorCount } = sandbox.parseTxnsCSV(csv, sandbox.DB.assets, sandbox.DB.categories);
+  assert.strictEqual(errorCount, 0);
+  assert.strictEqual(rows.length, 2);
+  assert.strictEqual(rows[0].type, 'expense');
+  assert.strictEqual(rows[0].amount, 8000);
+  assert.strictEqual(rows[0].fromAssetId, 'a1');
+  assert.strictEqual(rows[0].needsAssetMap, false);
+  assert.strictEqual(rows[1].type, 'transfer');
+  assert.strictEqual(rows[1].toAssetId, 'a2');
+});
+test('parseTxnsCSV: 날짜 구분자가 달라도(2026.6.10, 2026/6/10) 정규화하고, 등록 안 된 자산명은 needsAssetMap을 켠다', () => {
+  sandbox.DB = { assets: [{ id: 'a1', name: '주계좌' }] };
+  const csv = '날짜,구분,카테고리,금액,보내는 자산,받는 자산,메모\n2026.6.10,지출,식비,"8,000원",모르는통장,,점심';
+  const { rows, errorCount } = sandbox.parseTxnsCSV(csv, sandbox.DB.assets, { expense: ['식비'] });
+  assert.strictEqual(errorCount, 0);
+  assert.strictEqual(rows[0].date, '2026-06-10');
+  assert.strictEqual(rows[0].amount, 8000);
+  assert.strictEqual(rows[0].fromAssetId, null);
+  assert.strictEqual(rows[0].needsAssetMap, true);
+});
+test('parseTxnsCSV: 날짜/구분/금액을 알아볼 수 없는 행은 건너뛰고 errorCount에 반영한다', () => {
+  const csv = '2026-13-40,모름,식비,0,,,\n2026-06-10,지출,식비,오만원,,,';
+  const { rows, errorCount } = sandbox.parseTxnsCSV(csv, [], {});
+  assert.strictEqual(rows.length, 0);
+  assert.strictEqual(errorCount, 2);
+});
+test('parseTxnsCSV: 이체는 카테고리가 관리 목록에 없는 "이체"여도 needsCategory를 켜지 않는다', () => {
+  const csv = '2026-06-10,이체,이체,50000,,,';
+  const { rows } = sandbox.parseTxnsCSV(csv, [], {});
+  assert.strictEqual(rows[0].needsCategory, false);
+});
+test('parseTxnsCSV: 지출인데 카테고리 목록에 없는 이름이면 needsCategory를 켠다', () => {
+  const csv = '2026-06-10,지출,신규카테고리,10000,,,';
+  const { rows } = sandbox.parseTxnsCSV(csv, [], { expense: ['식비'] });
+  assert.strictEqual(rows[0].needsCategory, true);
+});
+test('txnDedupeKey/dedupeImportRows: 같은 값의 기존 거래가 있으면 재가져오기 시 중복으로 걸러진다', () => {
+  const assets = [{ id: 'a1', name: '주계좌' }];
+  const existing = [{ id: 't1', date: '2026-06-10', type: 'expense', category: '식비', amount: 8000, fromAssetId: 'a1' }];
+  const parsed = [
+    { date: '2026-06-10', type: 'expense', category: '식비', amount: 8000, fromAssetName: '주계좌', toAssetName: '', fromAssetId: 'a1', toAssetId: null },
+    { date: '2026-06-11', type: 'expense', category: '식비', amount: 3000, fromAssetName: '주계좌', toAssetName: '', fromAssetId: 'a1', toAssetId: null },
+  ];
+  const { fresh, dup } = sandbox.dedupeImportRows(parsed, existing, assets);
+  assert.strictEqual(dup.length, 1);
+  assert.strictEqual(fresh.length, 1);
+  assert.strictEqual(fresh[0].date, '2026-06-11');
+});
+test('missingImportCategories: needsCategory인 행만 type별로 중복 없이 모은다', () => {
+  const rows = [
+    { type: 'expense', category: '신규A', needsCategory: true },
+    { type: 'expense', category: '신규A', needsCategory: true },
+    { type: 'expense', category: '신규B', needsCategory: true },
+    { type: 'income', category: '용돈', needsCategory: true },
+    { type: 'expense', category: '식비', needsCategory: false },
+  ];
+  // missingImportCategories의 반환 객체/배열은 sandbox realm에서 새로 만들어지므로
+  // parseCSVRows 테스트와 같은 이유로 JSON 왕복으로 정규화한다.
+  const res = JSON.parse(JSON.stringify(sandbox.missingImportCategories(rows)));
+  assert.deepStrictEqual(res.expense, ['신규A', '신규B']);
+  assert.deepStrictEqual(res.income, ['용돈']);
+});
+test('buildImportTxns: 매칭된 자산 id를 쓰고, 매칭 안 된 이름은 사용자가 고른 assetMap으로 채운다', () => {
+  const rows = [
+    { type: 'expense', date: '2026-06-10', category: '식비', amount: 8000, fromAssetId: 'a1', fromAssetName: '주계좌', toAssetId: null, toAssetName: '', memo: '점심' },
+    { type: 'transfer', date: '2026-06-11', category: '이체', amount: 50000, fromAssetId: null, fromAssetName: '급여통장', toAssetId: null, toAssetName: '적금', memo: '' },
+  ];
+  let n = 0; const idGen = () => 'gen' + (++n);
+  const added = sandbox.buildImportTxns(rows, { 급여통장: 'a1', 적금: 'a2' }, idGen);
+  assert.strictEqual(added[0].fromAssetId, 'a1');
+  assert.strictEqual(added[0].toAssetId, null);
+  assert.strictEqual(added[1].fromAssetId, 'a1');
+  assert.strictEqual(added[1].toAssetId, 'a2');
+  assert.strictEqual(added[0].id, 'gen1');
 });
 
 /* ---------- 실행 ---------- */
