@@ -1,15 +1,8 @@
 {
   "cycle": 55,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 50,
-      "phase": "develop",
-      "timestamp": "2026-09-19T15:10:00.000Z",
-      "summary": "Explore 서브에이전트로 발견한 openConfirmTransfer()/confirmRecTransfer()의 이체 확인 시트 self-XSS 수정. assetNm(id,snap)(index.html:1439)이 살아있는 자산이면 a.name을, 삭제된 자산이면 캐시된 fromAssetName/toAssetName 스냅샷을 이스케이프 없이 그대로 반환하는데, openConfirmTransfer(:1441)와 confirmRecTransfer(:1451) 둘 다 이 값을 openSheet()의 innerHTML 템플릿에 그대로 꽂고 있었다 — assetPickBtn()/renderPlan()/accountName() 등 자산명·표시명 관련 XSS는 cycle46/48에서 이미 esc()로 봉합했는데 이 두 지점만 놓쳐 있었다. 이체는 지출/수입 전 어디서나 자동 생성될 수 있고(반복이체 포함) confirmTransfers 설정이 켜져 있으면 홈 화면의 \"확인\" 배지를 탭하기만 해도(즉 평범한 사용 흐름에서) 실행되는 재현 가능한 stored XSS이며, snap 경로는 자산을 삭제/이름변경해도 과거 거래에 남아 있는 캐시된 이름이라 더 오래 남는다. 두 호출부의 assetNm(...) 네 곳(from/to × 2 함수)을 esc(assetNm(...))로 감쌌다. test/run.js FUNCTIONS에 openConfirmTransfer 추가(confirmRecTransfer/assetNm은 이미 있었음), 회귀 테스트 3개 추가(openConfirmTransfer 살아있는 자산명 이스케이프, 삭제된 자산의 캐시된 이름(snap) 이스케이프, confirmRecTransfer 자산명 이스케이프). 두 인라인 <script> 블록 모두 node --check 파싱 확인, 330/330 통과. APP_VERSION 1.43.6->1.43.7, sw.js CACHE v132->v133.",
-      "commit": null
-    },
     {
       "cycle": 50,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-20T13:10:00.000Z",
       "summary": "Explore 서브에이전트로 발견한 saveTx()의 거래 메모 미trim 버그 수정. saveRec()은 `d.memo=(d.memo||'').trim()||d.category`로 공백만 있는 메모를 저장 시 카테고리명으로 대체하는데, saveTx()에는 이 처리가 아예 빠져 있었다: (1) 반복 켜고 저장하는 신규-반복-등록 분기(index.html:3229)는 `memo:d.memo||cat`으로 trim 없이 truthy만 체크해 공백 문자열을 그대로 통과시키고, (2) 일반 일회성 저장 경로(3234-3237)는 memo를 아예 건드리지 않았다. 스페이스 몇 개만 입력하고 저장하면 목록에 빈 이름처럼 보이는 줄이 남고, 반복으로 저장하면 생성되는 모든 회차가 영구히 메모 공백인 채로 남는다 — syncAssetInputs 자산명 trim 수정(cycle54)과 같은 계열의, 형제 저장 함수(saveRec) 간 처리 비대칭 버그다. 두 지점 모두에 saveRec과 동일한 `d.memo=(d.memo||'').trim()||...` 패턴을 적용: 신규-반복 분기는 `d.memo=(d.memo||'').trim()||cat` 후 memo:d.memo로 push, 일회성 경로는 반복 필드 제거 직후 `d.memo=(d.memo||'').trim()||d.category`를 추가. 회귀 테스트 3개 추가(반복 켜고 저장 시 공백 메모→카테고리 대체, 일회성 저장 시 공백 메모→카테고리 대체, 실제 메모 내용은 앞뒤 공백만 trim되고 유지되는 정상 케이스 회귀 확인), 370/370 통과. 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.45.0->1.45.1, sw.js CACHE v142->v143.",
+      "commit": null
+    },
+    {
+      "cycle": 55,
+      "phase": "review",
+      "timestamp": "2026-09-20T14:05:00.000Z",
+      "summary": "develop 커밋(e6855e4)을 검토. saveTx()의 두 분기(반복 신규등록/일회성) 모두 saveRec()과 동일한 (d.memo||'').trim()||cat 패턴을 정확히 적용했음을 확인 — 특히 일회성 경로(3236행)의 d.category가 transfer 타입에도 txType()에서 이미 '이체'로 세팅돼 있어(3165행) cat 지역변수 없이 d.category를 직접 써도 문제없음을 grep으로 검증. node test/run.js 370/370 통과 재확인. 코드 diff 자체는 문제 없으나, 리뷰 중 별개의 실재 버그를 발견: recSave()(index.html:3300-3325)는 반복 항목의 단일/이후/전체 회차 수정 시 세 분기 모두 amt(금액)만 읽고 저장하며, recApply()가 연 txDraft.memo 편집 필드는 어디에도 저장하지 않고 통째로 버려진다 — edits[date]에는 {amount:amt}만 쓰여 memo 필드 자체가 없다. 즉 사용자가 반복 내역의 특정 회차 메모를 고쳐도 조용히 무시된다. 이번 diff와 무관한 기존 버그라 review에서는 고치지 않고 critique가 다음 develop 후보로 검토하도록 기록만 남긴다.",
       "commit": null
     }
   ]
