@@ -1,15 +1,8 @@
 {
   "cycle": 53,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 48,
-      "phase": "review",
-      "timestamp": "2026-09-19T08:09:00.000Z",
-      "summary": "develop 커밋(920db0a)을 검토. recApply()의 delete/future 분기가 새로 추가한 r.count=recCountUntil({freq:r.freq,day:r.day,startDate:r.startDate,weekend:r.weekend},r.endDate)가 recSave()의 동일 scope(index.html:3237-3241)가 이미 쓰는 재계산 패턴과 인자 구성까지 정확히 일치함을 확인. clampRecurringToMaturity()의 autoShortened 판정(index.html:2814, !r.count&&r.endDate<=prevMaturity)을 다시 읽어, count가 채워지면 '자동 클램프 흔적'으로 오인되지 않아 만기 연장 시 재클램프 대상에서 제외된다는 커밋 설명이 정확함을 재확인. undo 클로저가 prevEnd·prevCount 둘 다 캡처해 되돌릴 때 함께 복원하는 것도 확인. recCountUntil()이 endDate/startDate 없으면 null을 반환하는 기존 엣지케이스(r.startDate가 없는 반복이면 count도 null이 됨)는 recSave의 동일 패턴에도 이미 있던 기존 동작이라 이번 커밋이 새로 만든 회귀는 아님. 새 회귀 테스트가 삭제 직후 count 채워짐·만기 연장 후 재살아나지 않음·undo 시 endDate/count 둘 다 원복 세 가지를 모두 커버. node test/run.js 재실행해 319/319 통과 재확인. 문제 없음.",
-      "commit": null
-    },
     {
       "cycle": 48,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-20T03:10:00.000Z",
       "summary": "endCondFields(index.html:3131)의 반복 종료조건(횟수↔종료일) 파생쌍이 주기(freq)/반복일(day)/주말규칙(weekend)/시작일이 바뀌어도 재계산되지 않는 버그 발견·수정(Explore 서브에이전트로 발견). 예: 매월+반복일1일+시작일2026-01-10에서 횟수12→종료일2027-01-01로 저장된 뒤 사용자가 주기를 매주로 바꾸면, endCondFields가 여전히 \"12\"를 보여주고 saveTx()/saveRec()도 endDate·count가 둘 다 있으면 재계산하지 않아(index.html:3174-3177, :3357-3359) 그대로 저장 — recDates()는 count를 무시하고 endDate만 보므로 실제로는 51회가 생성됨(12회 의도와 어긋남). recNthDate/recCountUntil을 공유하는 순수 함수 recalcEndCond(d,start)를 새로 추가해(count 있으면 count 우선으로 endDate 재계산, count 없이 endDate만 있으면 count를 역산) txFreq/txDay/시작일 픽커(tx), recDay/setRecWeekend/시작일 픽커(rec)에서 호출하도록 연결했고, rec 시트의 주기 버튼 인라인 핸들러도 txFreq와 같은 패턴의 recFreq(v) 함수로 추출해 동일하게 연결. FUNCTIONS에 recalcEndCond 추가, 버그 재현 시나리오(매월12회->매주 전환 시 생성회차가 여전히12개로 유지, endDate만 있을 때 주기 변경 후 count 역산) 회귀 테스트 3개 추가, 349/349 통과. 두 인라인 <script> 블록 모두 new vm.Script()로 파싱 확인. APP_VERSION 1.44.0->1.44.1, sw.js CACHE v137->v138.",
+      "commit": null
+    },
+    {
+      "cycle": 53,
+      "phase": "review",
+      "timestamp": "2026-09-20T04:10:00.000Z",
+      "summary": "develop 커밋(be97f05)을 검토. recalcEndCond가 wiring된 6개 지점(txFreq/txDay/tx 시작일 픽커, recFreq/recDay/setRecWeekend/rec 시작일 픽커)은 모두 정확함을 확인했으나, 반복일을 버튼(1/5/15/25/last)이 아니라 커스텀 숫자 입력창에 직접 타이핑하는 경로 — txDayInput(index.html:3127)/recDayInput(:3338), oninput 핸들러로 매 키 입력마다 txDraft.day/recDraft.day만 갱신하고 재렌더도 recalcEndCond 호출도 없음 — 가 이번 develop이 놓친 동일 계열의 잔여 구멍임을 발견. 이 경로가 실제로 문제가 되는지 saveTx()(:3178-3184)/saveRec()(:3364-3367)를 확인: 둘 다 저장 시 clampDay()로 day를 보정한 뒤 base를 새로 만들지만, endDate와 count가 '둘 다' 이미 채워져 있으면(재계산 없이 저장) 어느 쪽도 건드리지 않아 커스텀 타이핑으로 바뀐 day를 반영 못한 채 그대로 저장됨을 확인 — 매월 반복에서 day 값은 recDates()의 push() 조건(d>=r.startDate)에 걸려 시작일 근처 첫 회차 포함 여부를 바꿀 수 있어(예: startDate=2026-01-10,day=1→첫 회차 2월1일, day=15로 바꾸면 1월15일부터 포함되어 회차 수가 실제로 달라짐) 이론적 엣지케이스가 아니라 재현 가능한 결함으로 판단해 그 자리에서 수정. txDayInput/recDayInput에 day 값이 빈 문자열이 아닐 때만(백스페이스로 지우는 도중 day=''인 임시 상태에서 recNthDate가 day=0으로 오염되는 것 방지) recalcEndCond(txDraft,txDraft.date)/recalcEndCond(recDraft,recDraft.startDate) 호출을 추가. 이 두 함수는 DOM 요소(el)에 의존해 순수 함수 테스트 하네스로 격리하기 어렵고(기존 develop 커밋도 txFreq/txDay 등 동일 계열 wiring 함수들은 unit test 없이 recalcEndCond 자체 테스트로만 커버했음) 재렌더도 하지 않는 기존 설계라, 이미 develop에서 3건 추가된 recalcEndCond 자체 테스트가 이번 수정이 호출하는 로직을 그대로 커버함을 확인하고 새 테스트는 추가하지 않았다(패턴 일관성 유지). node test/run.js 재실행해 349/349 통과, 두 인라인 <script> 블록 모두 vm.Script 파싱 확인. APP_VERSION 1.44.1->1.44.2, sw.js CACHE v138->v139.",
       "commit": null
     }
   ]

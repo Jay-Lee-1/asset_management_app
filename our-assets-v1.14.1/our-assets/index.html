@@ -1288,7 +1288,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.44.1';
+const APP_VERSION='1.44.2';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3124,7 +3124,7 @@ function txToggleRepeat(){syncTxInputs();txDraft.repeat=!txDraft.repeat;
  if(txDraft.repeat&&(txDraft.freq==='monthly'||!txDraft.freq)&&!txDraft.day)txDraft.day=Number(String(txDraft.date).slice(8,10))||1;
  renderTxSheet()}
 function txFreq(v){syncTxInputs();txDraft.freq=v;if(v==='monthly'&&!txDraft.day)txDraft.day=Number(String(txDraft.date).slice(8,10))||1;recalcEndCond(txDraft,txDraft.date);renderTxSheet()}
-function txDayInput(el){const v=(el.value||'').replace(/[^0-9]/g,'').slice(0,2);if(el.value!==v)el.value=v;txDraft.day=v===''?'':Number(v);dayWarn('tx',v)}
+function txDayInput(el){const v=(el.value||'').replace(/[^0-9]/g,'').slice(0,2);if(el.value!==v)el.value=v;txDraft.day=v===''?'':Number(v);dayWarn('tx',v);if(v!=='')recalcEndCond(txDraft,txDraft.date)}
 function txDay(v){syncTxInputs();if(v==='last'){txDraft.day='last';txDraft._custom=false}else if(v==='custom'){txDraft._custom=true;if([1,5,15,25].includes(txDraft.day)||txDraft.day==='last'||!txDraft.day)txDraft.day=Number(String(txDraft.date).slice(8,10))||10}else{txDraft.day=Number(v);txDraft._custom=false}recalcEndCond(txDraft,txDraft.date);renderTxSheet();if(v==='custom')focusDayIn('txDayIn')}
 /* ── 반복 종료조건(선택): [종료일][횟수] 두 박스 한 줄, 양방향 자동 계산 ──────
    pfx='tx'(내역 입력 반복) 또는 'rec'(반복 설정 편집) */
@@ -3335,7 +3335,7 @@ function renderRecSheet(){
 function recType(t){if(navigator.vibrate)navigator.vibrate(6);syncRecInputs();recDraft.type=t;recDraft.category=t==='transfer'?'이체':catListOf(t)[0]||'기타';
  if((t==='income'||t==='transfer'||t==='saving')&&!recDraft.toAssetId)recDraft.toAssetId=firstCash();renderRecSheet()}
 function recFreq(v){syncRecInputs();recDraft.freq=v;if(v==='monthly'&&!recDraft.day)recDraft.day=Number(String(recDraft.startDate).slice(8,10))||1;recalcEndCond(recDraft,recDraft.startDate);renderRecSheet()}
-function recDayInput(el){const v=(el.value||'').replace(/[^0-9]/g,'').slice(0,2);if(el.value!==v)el.value=v;recDraft.day=v===''?'':Number(v);dayWarn('rec',v)}
+function recDayInput(el){const v=(el.value||'').replace(/[^0-9]/g,'').slice(0,2);if(el.value!==v)el.value=v;recDraft.day=v===''?'':Number(v);dayWarn('rec',v);if(v!=='')recalcEndCond(recDraft,recDraft.startDate)}
 function dayWarn(pfx,v){const w=$(pfx+'DayWarn');if(!w)return;
  const n=Number(v);let msg='';
  if(v!==''&&n>31)msg='한 달은 최대 31일이에요 · 저장하면 31일로 맞춰져요';
