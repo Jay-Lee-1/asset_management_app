@@ -68,7 +68,7 @@ const FUNCTIONS = [
   'lastDay', 'addDays', 'shiftWeekend', 'recDates', 'addMonthsStr', 'addMonths',
   'recNthDate', 'recCountUntil', 'recalcEndCond', 'isVarCat', 'setCatVar', 'activeRecsForAssets', 'activeRecsForCat',
   'num', 'doRenameCat', 'doDeleteCat', 'budgetProgress', 'totalBudgetSummary', 'budgetKey', 'budgetForMonth', 'setBudgetFrom', 'addCat',
-  'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'esc', 'matchTxnQuery',
+  'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'parseCSVText', 'unguardCsvField', 'csvRowsToImportTxns', 'dedupeImportTxns', 'esc', 'matchTxnQuery',
   'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo',
   'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'restoreBackup', 'storageOutcomeMsg', 'shouldWarnUnpersisted',
   'sanitizeAmount', 'sanitizeBackup',
@@ -1233,6 +1233,92 @@ test('txnsToCSV+expandRec: DB.txns만 넘기면(기존 버그) 반복거래가 C
   };
   const csv = sandbox.txnsToCSV(sandbox.DB.txns, sandbox.DB.assets);
   assert.ok(!csv.includes('월세'), 'DB.txns만 넘기면 반복거래는 애초에 그 안에 없으므로 CSV에도 없음(수정 전 doExport의 실제 동작)');
+});
+
+/* ---------- parseCSVText / csvRowsToImportTxns / dedupeImportTxns: 거래 내역 CSV 가져오기 ---------- */
+// vm 샌드박스에서 만들어진 배열/객체는 host realm과 달라 deepStrictEqual이 값이 같아도
+// 실패하므로(recDates 테스트의 Array.from과 같은 이유), JSON 왕복으로 host realm으로 정규화한다.
+const toHost = v => JSON.parse(JSON.stringify(v));
+test('parseCSVText: 콤마로 구분된 일반 필드를 그대로 나눈다', () => {
+  const rows = sandbox.parseCSVText('2026-01-01,지출,식비,1000,,,\r\n');
+  assert.deepStrictEqual(toHost(rows), [['2026-01-01', '지출', '식비', '1000', '', '', '']]);
+});
+test('parseCSVText: 따옴표로 감싼 필드 안의 콤마/줄바꿈/이스케이프된 큰따옴표를 올바르게 읽는다', () => {
+  const rows = sandbox.parseCSVText('2026-01-01,지출,식비,1000,,,"김밥, ""라면""\n한그릇"');
+  assert.deepStrictEqual(toHost(rows), [['2026-01-01', '지출', '식비', '1000', '', '', '김밥, "라면"\n한그릇']]);
+});
+test('parseCSVText: BOM이 있으면 첫 필드에서 제거한다', () => {
+  const rows = sandbox.parseCSVText('﻿날짜,구분\n2026-01-01,지출');
+  assert.strictEqual(rows[0][0], '날짜');
+});
+test('unguardCsvField: txnsToCSV의 guard()가 붙인 접두 \'를 되돌린다', () => {
+  assert.strictEqual(sandbox.unguardCsvField("'=1+1"), '=1+1');
+  assert.strictEqual(sandbox.unguardCsvField("'ㅋㅋ"), "'ㅋㅋ");
+});
+test('csvRowsToImportTxns: txnsToCSV로 내보낸 내용을 그대로 되읽으면 원래 거래로 복원된다', () => {
+  const assets = [{ id: 'a1', name: '우리은행' }, { id: 'a2', name: '카카오뱅크' }];
+  const txns = [
+    { date: '2026-01-01', type: 'expense', category: '식비', amount: 5000, fromAssetId: 'a1', toAssetId: null, memo: '점심' },
+    { date: '2026-01-02', type: 'transfer', category: '이체', amount: 30000, fromAssetId: 'a1', toAssetId: 'a2', memo: '용돈' },
+  ];
+  const csv = sandbox.txnsToCSV(txns, assets);
+  const rows = sandbox.parseCSVText(csv);
+  const { txns: parsed, errors } = sandbox.csvRowsToImportTxns(rows, assets);
+  assert.deepStrictEqual(toHost(errors), []);
+  assert.strictEqual(parsed.length, 2);
+  assert.deepStrictEqual(toHost(parsed[0]), { type: 'expense', category: '식비', memo: '점심', amount: 5000, fromAssetId: 'a1', toAssetId: null, date: '2026-01-01' });
+  assert.deepStrictEqual(toHost(parsed[1]), { type: 'transfer', category: '이체', memo: '용돈', amount: 30000, fromAssetId: 'a1', toAssetId: 'a2', date: '2026-01-02' });
+});
+test('csvRowsToImportTxns: 헤더 줄이 없어도(데이터만) 그대로 파싱한다', () => {
+  const rows = [['2026-01-01', '지출', '식비', '1000', '', '', '']];
+  const { txns, errors } = sandbox.csvRowsToImportTxns(rows, []);
+  assert.strictEqual(errors.length, 0);
+  assert.strictEqual(txns.length, 1);
+});
+test('csvRowsToImportTxns: 날짜 형식이 잘못되면 그 행만 오류로 건너뛴다', () => {
+  const rows = [
+    ['날짜', '구분', '카테고리', '금액', '보내는 자산', '받는 자산', '메모'],
+    ['2026/01/01', '지출', '식비', '1000', '', '', ''],
+  ];
+  const { txns, errors } = sandbox.csvRowsToImportTxns(rows, []);
+  assert.strictEqual(txns.length, 0);
+  assert.strictEqual(errors.length, 1);
+  assert.ok(errors[0].includes('날짜'));
+});
+test('csvRowsToImportTxns: 알 수 없는 구분 레이블은 오류로 건너뛴다', () => {
+  const rows = [['2026-01-01', '알수없음', '식비', '1000', '', '', '']];
+  const { txns, errors } = sandbox.csvRowsToImportTxns(rows, []);
+  assert.strictEqual(txns.length, 0);
+  assert.strictEqual(errors.length, 1);
+});
+test('csvRowsToImportTxns: 등록되지 않은 자산 이름은 오류로 건너뛴다', () => {
+  const rows = [['2026-01-01', '지출', '식비', '1000', '없는은행', '', '']];
+  const { txns, errors } = sandbox.csvRowsToImportTxns(rows, [{ id: 'a1', name: '우리은행' }]);
+  assert.strictEqual(txns.length, 0);
+  assert.ok(errors[0].includes('없는은행'));
+});
+test('csvRowsToImportTxns: 이체인데 보내는·받는 자산 중 하나가 비어 있으면 오류로 건너뛴다', () => {
+  const rows = [['2026-01-01', '이체', '이체', '1000', '우리은행', '', '']];
+  const { txns, errors } = sandbox.csvRowsToImportTxns(rows, [{ id: 'a1', name: '우리은행' }]);
+  assert.strictEqual(txns.length, 0);
+  assert.strictEqual(errors.length, 1);
+});
+test('dedupeImportTxns: 이미 내보낸 CSV를 그대로 다시 가져오면 전부 중복으로 걸러진다', () => {
+  const existing = [{ id: 't1', date: '2026-01-01', type: 'expense', category: '식비', amount: 5000, fromAssetId: 'a1', toAssetId: null }];
+  const candidates = [{ date: '2026-01-01', type: 'expense', category: '식비', amount: 5000, fromAssetId: 'a1', toAssetId: null, memo: '점심' }];
+  const { toAdd, dupCount } = sandbox.dedupeImportTxns(candidates, existing);
+  assert.strictEqual(toAdd.length, 0);
+  assert.strictEqual(dupCount, 1);
+});
+test('dedupeImportTxns: 완전히 같은 조합이 기존 개수보다 많으면 초과분만 새 거래로 취급한다', () => {
+  const existing = [{ date: '2026-01-01', type: 'expense', category: '식비', amount: 5000, fromAssetId: 'a1', toAssetId: null }];
+  const candidates = [
+    { date: '2026-01-01', type: 'expense', category: '식비', amount: 5000, fromAssetId: 'a1', toAssetId: null, memo: '커피1' },
+    { date: '2026-01-01', type: 'expense', category: '식비', amount: 5000, fromAssetId: 'a1', toAssetId: null, memo: '커피2' },
+  ];
+  const { toAdd, dupCount } = sandbox.dedupeImportTxns(candidates, existing);
+  assert.strictEqual(toAdd.length, 1);
+  assert.strictEqual(dupCount, 1);
 });
 
 /* ---------- matchTxnQuery: 거래 검색은 대소문자를 구분하지 않는다 ---------- */
