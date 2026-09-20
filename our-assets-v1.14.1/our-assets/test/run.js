@@ -256,8 +256,10 @@ const sandbox = {
     set innerHTML(v) { this._html = v; },
     get innerHTML() { return this._html; },
   },
-  // recSave()/saveQuickAmount()는 각각 $('txAmt')/$('qAmt').value를 읽어 금액을 얻으므로,
-  // 그 두 id만 값을 갖는 입력칸처럼 동작시킨다. errBanner는 renderCurrent 에러 바운더리 테스트용.
+  // saveQuickAmount()는 $('qAmt').value를 읽어 금액을 얻으므로 그 id만 값을 갖는 입력칸처럼
+  // 동작시킨다(recSave()는 app-evolve cycle55부터 syncTxInputs()를 거쳐 txDraft.amount/memo를
+  // 읽으므로 더는 $('txAmt')를 직접 참조하지 않는다 — syncTxInputs는 no-op 스텁이라 recSave
+  // 테스트는 아래처럼 sandbox.txDraft를 직접 세팅한다). errBanner는 renderCurrent 에러 바운더리 테스트용.
   // bkText는 copyBackup()이 select()/setSelectionRange()/.value를 쓰는 백업 복사 textarea 흉내.
   // asName은 syncAssetInputs()의 이름 trim() 회귀 테스트용(공백만 있는 이름이 그대로 저장되던 버그).
   // asNameValue가 undefined인 기본 상태에서는 null을 반환해, 이 mock 추가 이전처럼 다른 테스트의
@@ -1545,7 +1547,7 @@ test("recSave: scope='one' 수정은 r.edits[date]에 금액을 기록하고, un
   const r = { id: 'r1', amount: 1000, edits: { '2026-01-05': { amount: 999 } } };
   sandbox.DB = { recurrences: [r] };
   sandbox.window._recCtx = { recId: 'r1', date: '2026-02-05', scope: 'one' };
-  sandbox.txAmtValue = '5,000';
+  sandbox.txDraft = { amount: 5000 };
   sandbox.lastUndo = null;
   sandbox.recSave();
   assert.strictEqual(r.edits['2026-02-05'].amount, 5000, '해당 날짜의 edits에 새 금액이 기록되어야 함');
@@ -1559,7 +1561,7 @@ test("recSave: scope='one'에서 이미 있던 edits를 덮어쓴 경우, undo�
   const r = { id: 'r1', amount: 1000, edits: { '2026-02-05': { amount: 111 } } };
   sandbox.DB = { recurrences: [r] };
   sandbox.window._recCtx = { recId: 'r1', date: '2026-02-05', scope: 'one' };
-  sandbox.txAmtValue = '222';
+  sandbox.txDraft = { amount: 222 };
   sandbox.recSave();
   assert.strictEqual(r.edits['2026-02-05'].amount, 222);
   sandbox.lastUndo.undoFn();
@@ -1570,7 +1572,7 @@ test("recSave: scope='future' 수정은 endDate를 끊고 새 분리 레코드�
   const r = { id: 'r1', amount: 1000, endDate: null, skip: ['2026-01-01'], edits: { '2026-01-01': { amount: 1 } } };
   sandbox.DB = { recurrences: [r] };
   sandbox.window._recCtx = { recId: 'r1', date: '2026-03-01', scope: 'future' };
-  sandbox.txAmtValue = '7000';
+  sandbox.txDraft = { amount: 7000 };
   sandbox.recSave();
   assert.strictEqual(r.endDate, '2026-02-28', '기존 반복은 새 반복 시작일 하루 전에 끊겨야 함');
   assert.strictEqual(sandbox.DB.recurrences.length, 2, '이후 구간을 위한 새 반복 레코드가 추가되어야 함');
@@ -1592,7 +1594,7 @@ test("recSave: scope='future' 분할은 effectiveDate 이후의 skip/edits를 �
   };
   sandbox.DB = { recurrences: [r] };
   sandbox.window._recCtx = { recId: 'r1', date: '2026-03-01', scope: 'future' };
-  sandbox.txAmtValue = '7000';
+  sandbox.txDraft = { amount: 7000 };
   sandbox.recSave();
   const newRec = sandbox.DB.recurrences.find(x => x.id !== 'r1');
   // vm 샌드박스 안에서 새로 만들어진 edits 객체는 host의 Object와 realm이 달라 deepStrictEqual이
@@ -1610,7 +1612,7 @@ test("recSave: scope='future' 분할 시 원래 반복에 종료일이 있었다
   const r = { id: 'r1', amount: 1000, freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: '2026-12-05', count: 12, skip: [], edits: {} };
   sandbox.DB = { recurrences: [r] };
   sandbox.window._recCtx = { recId: 'r1', date: '2026-06-05', scope: 'future' };
-  sandbox.txAmtValue = '2000';
+  sandbox.txDraft = { amount: 2000 };
   sandbox.recSave();
   const newRec = sandbox.DB.recurrences.find(x => x.id !== 'r1');
   assert.strictEqual(r.endDate, '2026-06-04', '기존 반복은 새 반복 시작일 하루 전에 끊겨야 함');
@@ -1627,7 +1629,7 @@ test("recSave: scope='future' 분할 시 원래 반복이 무기한(endDate=null
   const r = { id: 'r1', amount: 1000, freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, skip: [], edits: {} };
   sandbox.DB = { recurrences: [r] };
   sandbox.window._recCtx = { recId: 'r1', date: '2026-06-05', scope: 'future' };
-  sandbox.txAmtValue = '2000';
+  sandbox.txDraft = { amount: 2000 };
   sandbox.recSave();
   const newRec = sandbox.DB.recurrences.find(x => x.id !== 'r1');
   assert.strictEqual(newRec.endDate, null, '원래 종료일이 없었다면 새 레코드도 무기한이어야 함');
@@ -1639,18 +1641,68 @@ test("recSave: scope='all' 수정은 r.amount를 바꾸고, undo하면 이전 �
   const r = { id: 'r1', amount: 1000 };
   sandbox.DB = { recurrences: [r] };
   sandbox.window._recCtx = { recId: 'r1', date: '2026-02-05', scope: 'all' };
-  sandbox.txAmtValue = '9999';
+  sandbox.txDraft = { amount: 9999 };
   sandbox.recSave();
   assert.strictEqual(r.amount, 9999);
   sandbox.lastUndo.undoFn();
   assert.strictEqual(r.amount, 1000, '되돌리면 원래 금액으로 복원되어야 함');
+});
+/* recApply()가 여는 반복 편집 시트는 #txMemo를 고쳐 recDraft가 아닌 txDraft.memo에 담는데,
+   recSave()는 (app-evolve cycle55 develop 이전까지) num($('txAmt'))로 금액만 직접 읽고
+   syncTxInputs()를 부르지 않아 이 메모 편집이 세 scope 모두 조용히 버려졌다(cycle55 review 발견,
+   cycle55 critique 채택). recSave()가 이제 시작부에서 syncTxInputs()를 부르므로(mock은 no-op이라
+   아래 테스트들은 실제 DOM 대신 sandbox.txDraft를 직접 세팅해 그 결과를 흉내낸다), 세 scope
+   모두 memo가 실제로 반영되는지 확인한다. */
+test("recSave: scope='one' 수정은 메모 편집도 r.edits[date].memo에 함께 기록한다", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', amount: 1000, category: '월세', memo: '월세', edits: {} };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.window._recCtx = { recId: 'r1', date: '2026-02-05', scope: 'one' };
+  sandbox.txDraft = { amount: 1000, memo: '2월 월세 (관리비 포함)' };
+  sandbox.recSave();
+  // vm 샌드박스 안에서 만들어진 edits[date] 객체는 host Object와 realm이 달라 deepStrictEqual이
+  // (값은 같아도) 실패하므로, JSON.stringify로 정규화해 비교한다(위 future 분할 테스트와 같은 이유).
+  assert.strictEqual(JSON.stringify(r.edits['2026-02-05']), JSON.stringify({ amount: 1000, memo: '2월 월세 (관리비 포함)' }), '해당 날짜 edits에 금액과 메모가 함께 기록되어야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(r.edits['2026-02-05'], undefined, '되돌리면 이전에 없던 날짜의 edits는 제거되어야 함');
+});
+test("recSave: scope='one'에서 메모를 공백만 입력하면 saveTx/saveRec과 동일하게 반복의 카테고리로 대체된다", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', amount: 1000, category: '구독', memo: '넷플릭스', edits: {} };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.window._recCtx = { recId: 'r1', date: '2026-02-05', scope: 'one' };
+  sandbox.txDraft = { amount: 1000, memo: '   ' };
+  sandbox.recSave();
+  assert.strictEqual(r.edits['2026-02-05'].memo, '구독', '공백만 있는 메모는 카테고리로 대체되어야 함');
+});
+test("recSave: scope='future' 수정은 메모 편집을 새로 분리된 레코드의 memo에 반영한다", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', amount: 1000, category: '급여', memo: '급여', endDate: null, skip: [], edits: {} };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.window._recCtx = { recId: 'r1', date: '2026-03-01', scope: 'future' };
+  sandbox.txDraft = { amount: 3000000, memo: '이직 후 급여' };
+  sandbox.recSave();
+  const newRec = sandbox.DB.recurrences.find(x => x.id !== 'r1');
+  assert.strictEqual(newRec.memo, '이직 후 급여', '새로 분리된 레코드의 메모가 편집값을 반영해야 함');
+  assert.strictEqual(r.memo, '급여', '과거로 남는 원본 레코드의 메모는 바뀌지 않아야 함');
+});
+test("recSave: scope='all' 수정은 메모 편집을 r.memo에 반영하고, undo하면 이전 메모로 돌아간다", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', amount: 1000, category: '구독', memo: '넷플릭스' };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.window._recCtx = { recId: 'r1', date: '2026-02-05', scope: 'all' };
+  sandbox.txDraft = { amount: 1000, memo: '넷플릭스 프리미엄' };
+  sandbox.recSave();
+  assert.strictEqual(r.memo, '넷플릭스 프리미엄', '반복 전체의 메모가 편집값으로 바뀌어야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(r.memo, '넷플릭스', '되돌리면 이전 메모로 복원되어야 함');
 });
 test('recSave: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 수정되지 않는다', () => {
   sandbox.TWi = 0;
   const r = { id: 'r1', amount: 1000 };
   sandbox.DB = { recurrences: [r] };
   sandbox.window._recCtx = { recId: 'r1', date: '2026-02-05', scope: 'all' };
-  sandbox.txAmtValue = '9999';
+  sandbox.txDraft = { amount: 9999 };
   sandbox.recSave();
   assert.strictEqual(r.amount, 1000, '튜토리얼 중에는 수정이 막혀야 함');
   assert.strictEqual(sandbox.window._recCtx.recId, 'r1', '튜토리얼 중에는 _recCtx도 지워지지 않아야 함(가드가 최상단에서 반환하므로)');

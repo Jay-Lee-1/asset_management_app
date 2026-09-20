@@ -1289,7 +1289,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.45.1';
+const APP_VERSION='1.45.2';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3300,10 +3300,12 @@ function openRecDetail(recId){window._recCtx=null;editRec(recId)} /* 간편 수�
 function recSave(){
  if(twGuard())return;
  const ctx=window._recCtx;if(!ctx)return;const r=DB.recurrences.find(x=>x.id===ctx.recId);
- const amt=num($('txAmt'));if(!amt){toast('금액을 입력해 주세요');return}
+ syncTxInputs();
+ const amt=txDraft.amount;if(!amt){toast('금액을 입력해 주세요');return}
+ const memo=(txDraft.memo||'').trim()||r.category; /* 메모 없으면 카테고리로 (saveTx/saveRec과 동일) */
  let undoFn;
  if(ctx.scope==='one'){
-  const edits=(r.edits=r.edits||{});const prevEdit=edits[ctx.date];edits[ctx.date]={amount:amt};
+  const edits=(r.edits=r.edits||{});const prevEdit=edits[ctx.date];edits[ctx.date]={amount:amt,memo};
   undoFn=()=>{if(prevEdit===undefined)delete edits[ctx.date];else edits[ctx.date]=prevEdit;save();renderCurrent();toast('되돌렸어요')};
  }
  else if(ctx.scope==='future'){
@@ -3312,13 +3314,13 @@ function recSave(){
   r.endDate=addDays(ctx.date,-1);r.skip=skipPast;r.edits=editsPast;
   r.count=recCountUntil({freq:r.freq,day:r.day,startDate:r.startDate,weekend:r.weekend},r.endDate); /* 잘린 원래 반복도 endDate와 count를 항상 함께 맞춰둔다(다른 저장 경로들과 동일한 불변식) */
   const newBase={freq:r.freq,day:r.day,startDate:ctx.date,weekend:r.weekend};
-  const newRec=Object.assign({},JSON.parse(JSON.stringify(r)),{id:uid(),startDate:ctx.date,endDate:prevEnd,count:prevEnd?recCountUntil(newBase,prevEnd):null,amount:amt,skip:skipFuture,edits:editsFuture});
+  const newRec=Object.assign({},JSON.parse(JSON.stringify(r)),{id:uid(),startDate:ctx.date,endDate:prevEnd,count:prevEnd?recCountUntil(newBase,prevEnd):null,amount:amt,memo,skip:skipFuture,edits:editsFuture});
   DB.recurrences.push(newRec);
   undoFn=()=>{r.endDate=prevEnd;r.count=prevCount;r.skip=prevSkip;r.edits=prevEdits;DB.recurrences=DB.recurrences.filter(x=>x.id!==newRec.id);save();renderCurrent();toast('되돌렸어요')};
  }
  else{
-  const prevAmt=r.amount;r.amount=amt;
-  undoFn=()=>{r.amount=prevAmt;save();renderCurrent();toast('되돌렸어요')};
+  const prevAmt=r.amount,prevMemo=r.memo;r.amount=amt;r.memo=memo;
+  undoFn=()=>{r.amount=prevAmt;r.memo=prevMemo;save();renderCurrent();toast('되돌렸어요')};
  }
  window._recCtx=null;save();closeSheet();renderCurrent();
  undoToast('반복 내역을 수정했어요',undoFn);
