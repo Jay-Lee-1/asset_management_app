@@ -1,15 +1,8 @@
 {
   "cycle": 54,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 48,
-      "phase": "advance",
-      "timestamp": "2026-09-19T00:00:00.000Z",
-      "summary": "assetPickBtn()(index.html)과 renderPlan()의 통장 선택 버튼(fv)에서 a.name/a.owner를 esc() 없이 꽂던 self-XSS 두 곳을 esc()로 감쌈. assetPickBtn 이스케이프 회귀 테스트 2건 + renderPlan esc() 사용 소스 패턴 테스트 1건 추가(322/322 통과). APP_VERSION 1.43.5, sw.js CACHE v131로 갱신.",
-      "commit": null
-    },
     {
       "cycle": 49,
       "phase": "develop",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-20T05:10:59.665Z",
       "summary": "selDay() 같은 달 내 재선택 시 renderLedger() 전체 재구축 대신 부분 갱신(selDayPartial) 도입: 캘린더 셀의 sel 클래스/aria만 옮기고 day-head/card만 innerHTML 교체, wireMonthCarousel/ResizeObserver/wireLongPress 재생성은 건너뜀. DOM 조작 실패 시(cal-cell을 못 찾는 등) renderLedger() 전체 재구축으로 안전하게 폴백. renderLedger()에서 day-head/card HTML 빌더를 ledgerDayHeadHtml()/ledgerRowsHtml()로 추출해 재사용. test/run.js FUNCS에 두 헬퍼+selDayPartial 추가, 회귀 스위트 349/349 통과. sw.js CACHE v139→v140, APP_VERSION 1.44.2→1.44.3.",
+      "commit": null
+    },
+    {
+      "cycle": 54,
+      "phase": "develop",
+      "timestamp": "2026-09-20T06:10:45.000Z",
+      "summary": "Explore 서브에이전트로 발견한 syncAssetInputs()(index.html:2725)의 자산 이름 미trim 버그 수정. category(addCat/doRenameCat)와 달리 자산 이름 입력값은 trim() 없이 그대로 d.name에 저장돼: (1) saveAsset()의 빈 이름 기본값 대체(d.name=d.name||ASSET_TYPES[type].label, :2779)가 falsy 체크라 공백만 입력한 이름(truthy)은 걸러지지 않아 빈 것처럼 보이는 자산이 그대로 저장되고, (2) 동명·동종 중복 차단(a.name===d.name, :2786)과 삭제된 동명 자산 재연동(deletedAssetHistoryExists, :2810)이 둘 다 엄격한 문자열 비교라 앞뒤 공백만 다른 이름은 매칭에 실패해 중복 차단/재연동이 조용히 안 먹힘. syncAssetInputs()에서 g('asName').value를 읽을 때 trim()하도록 한 줄 수정. 테스트 하네스의 sandbox.$ mock에 'asName' 케이스를 추가하되(sandbox.asNameValue가 undefined면 기존처럼 null을 반환해 다른 테스트의 syncAssetInputs/saveAsset 호출에 영향 없음), 회귀 테스트 3개 추가: 1) syncAssetInputs가 값을 trim하는지, 2) 공백만 입력하면 저장 후 종류 기본 라벨로 대체되는지, 3) 공백이 붙은 이름이 trim 후 기존 동명 자산과 중복으로 차단되는지. 두 인라인 <script> 블록 모두 node --check 파싱 확인, 352/352 통과. APP_VERSION 1.44.3->1.44.4, sw.js CACHE v140->v141.",
       "commit": null
     }
   ]

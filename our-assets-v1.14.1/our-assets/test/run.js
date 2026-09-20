@@ -258,7 +258,10 @@ const sandbox = {
   // recSave()/saveQuickAmount()는 각각 $('txAmt')/$('qAmt').value를 읽어 금액을 얻으므로,
   // 그 두 id만 값을 갖는 입력칸처럼 동작시킨다. errBanner는 renderCurrent 에러 바운더리 테스트용.
   // bkText는 copyBackup()이 select()/setSelectionRange()/.value를 쓰는 백업 복사 textarea 흉내.
-  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : null,
+  // asName은 syncAssetInputs()의 이름 trim() 회귀 테스트용(공백만 있는 이름이 그대로 저장되던 버그).
+  // asNameValue가 undefined인 기본 상태에서는 null을 반환해, 이 mock 추가 이전처럼 다른 테스트의
+  // syncAssetInputs()/saveAsset() 호출에서 asDraft.name이 건드려지지 않도록 한다.
+  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : null,
   bkTextEl: { value: 'backup-text', select: () => {}, setSelectionRange: () => {} },
   // copyBackup()의 navigator.clipboard 체크가 ReferenceError 없이 "지원 안 함"으로 지나가게
   // 하는 최소 흉내(document.execCommand는 try/catch로 감싸져 있어 굳이 스텁이 필요 없음).
@@ -2207,6 +2210,40 @@ test('saveAsset: 오래된 자산을 삭제한 뒤 등록해도 새 자산의 or
   assert.ok(e.order > sandbox.DB.assets.find(a => a.name === 'D').order, '삭제로 배열이 줄어도 새 자산의 order는 기존 최댓값보다 커야 함');
   const sorted = sandbox.groupItems('cash').map(a => a.name);
   assert.deepStrictEqual(sorted, ['C', 'D', 'E'], '기본(등록순서) 정렬에서 나중에 만든 자산이 먼저 만든 자산보다 앞서면 안 됨');
+});
+
+/* ---------- syncAssetInputs/saveAsset: 자산 이름 입력값이 category/owner 이름과 달리 trim()되지
+ * 않던 버그(app-evolve cycle54 develop, Explore 서브에이전트로 발견). 공백만 입력해도
+ * saveAsset()의 빈 이름 기본값 대체(d.name=d.name||라벨)가 falsy 체크라 통과하지 못해(공백은
+ * truthy) 빈 것처럼 보이는 자산이 그대로 저장됐고, 앞뒤 공백이 붙은 이름은 dup 차단
+ * (a.name===d.name)과 삭제된 동명 자산 재연동(deletedAssetHistoryExists)도 비껴갔다.
+ * syncAssetInputs()에서 값을 읽을 때 trim()하도록 수정. ---------- */
+test('syncAssetInputs: 이름 입력값의 앞뒤 공백을 제거한다', () => {
+  sandbox.asDraft = { type: 'cash', owner: '나', includeInTotal: true };
+  sandbox.asNameValue = '  우리은행 통장  ';
+  sandbox.syncAssetInputs();
+  assert.strictEqual(sandbox.asDraft.name, '우리은행 통장', '이름 앞뒤 공백이 제거돼야 함');
+  sandbox.asNameValue = undefined;
+});
+test('saveAsset: 공백만 입력한 이름은 trim 후 빈 문자열이 되어 기본 라벨로 대체된다', () => {
+  sandbox.DB = { assets: [], rates: { stocks: {} } };
+  sandbox.asDraft = { type: 'cash', owner: '나', includeInTotal: true };
+  sandbox.asNameValue = '   ';
+  sandbox.saveAsset(false);
+  sandbox.asNameValue = undefined;
+  const a = sandbox.DB.assets[0];
+  assert.ok(a, '자산이 등록됐어야 함');
+  assert.strictEqual(a.name, sandbox.ASSET_TYPES.cash.label, '공백만 입력하면 종류 기본 라벨로 대체돼야 함');
+});
+test('saveAsset: 공백이 붙은 이름은 trim 후 기존 동명 자산과 중복으로 차단된다', () => {
+  sandbox.DB = { assets: [{ id: 'a1', name: '비상금', type: 'cash', baseAmount: 1000 }], rates: { stocks: {} } };
+  sandbox.asDraft = { type: 'cash', owner: '나', includeInTotal: true };
+  sandbox.asNameValue = '  비상금  ';
+  sandbox.lastToast = null;
+  sandbox.saveAsset(false);
+  sandbox.asNameValue = undefined;
+  assert.ok(sandbox.lastToast, '앞뒤 공백만 다른 동명 자산도 중복 경고가 떴어야 함');
+  assert.strictEqual(sandbox.DB.assets.length, 1, '중복이면 새 자산이 추가되면 안 됨');
 });
 
 /* ---------- asOpenType: 자산 종류를 연금(pension)으로 바꾸면 총자산 제외(includeInTotal=false)가

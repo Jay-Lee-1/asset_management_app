@@ -1288,7 +1288,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.44.3';
+const APP_VERSION='1.44.4';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2722,7 +2722,7 @@ function openAssetSheet(id){
  renderAssetSheet(editing);
 }
 function syncAssetInputs(){const d=asDraft;const g=id=>$(id);
- if(g('asName'))d.name=g('asName').value;
+ if(g('asName'))d.name=(g('asName').value||'').trim();
  if(g('asAmt'))d._dispAmt=num(g('asAmt'));
  if(g('asMat'))d.maturityDate=g('asMat').value;
  if(g('asFx'))d.fxAmount=Math.max(0,parseFloat((g('asFx').value||'0').replace(/,/g,''))||0);
