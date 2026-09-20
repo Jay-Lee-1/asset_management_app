@@ -1,15 +1,8 @@
 {
   "cycle": 54,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 49,
-      "phase": "develop",
-      "timestamp": "2026-09-19T11:15:03.069Z",
-      "summary": "Explore 서브에이전트로 발견한 saveAsset()(index.html:2799) order 산정 버그 수정. 자산 등록 시 d.order=DB.assets.length로 매기는데, deleteAssetsUndo() 등 삭제 경로가 살아남은 자산의 order를 재색인하지 않아 배열 length만 줄어든다. 오래된 자산 두 개를 삭제한 뒤(예: order 2,3만 남고 length=2) 새 자산을 등록하면 order=2로 매겨져 이미 order=2인 자산과 겹치거나 그보다 작아지고, groupItems()의 기본(custom) 정렬(a.order-b.order, \"그룹 내 등록 순서 유지\")이 이를 그대로 써서 방금 만든 자산이 훨씬 전에 등록된 자산보다 목록 앞에 뜨는 역전이 조용히 영구적으로 남는다(고칠 UI 없음). d.order를 length 대신 기존 DB.assets의 order 최댓값+1로 계산하도록 고쳐 삭제로 배열이 줄어도 항상 커지게 함. askRelinkDeleted()의 _amLink/_amFresh 두 경로 모두 같은 d 객체를 그대로 push하므로 함께 적용됨. groupItems를 처음으로 test/run.js FUNCTIONS에 추가하고 회귀 테스트 1개 추가(삭제 후 등록 시 order 역전 없음 + custom 정렬 결과 확인), 323/323 통과. 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.43.5->1.43.6, sw.js CACHE v131->v132.",
-      "commit": null
-    },
     {
       "cycle": 49,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-20T06:10:45.000Z",
       "summary": "Explore 서브에이전트로 발견한 syncAssetInputs()(index.html:2725)의 자산 이름 미trim 버그 수정. category(addCat/doRenameCat)와 달리 자산 이름 입력값은 trim() 없이 그대로 d.name에 저장돼: (1) saveAsset()의 빈 이름 기본값 대체(d.name=d.name||ASSET_TYPES[type].label, :2779)가 falsy 체크라 공백만 입력한 이름(truthy)은 걸러지지 않아 빈 것처럼 보이는 자산이 그대로 저장되고, (2) 동명·동종 중복 차단(a.name===d.name, :2786)과 삭제된 동명 자산 재연동(deletedAssetHistoryExists, :2810)이 둘 다 엄격한 문자열 비교라 앞뒤 공백만 다른 이름은 매칭에 실패해 중복 차단/재연동이 조용히 안 먹힘. syncAssetInputs()에서 g('asName').value를 읽을 때 trim()하도록 한 줄 수정. 테스트 하네스의 sandbox.$ mock에 'asName' 케이스를 추가하되(sandbox.asNameValue가 undefined면 기존처럼 null을 반환해 다른 테스트의 syncAssetInputs/saveAsset 호출에 영향 없음), 회귀 테스트 3개 추가: 1) syncAssetInputs가 값을 trim하는지, 2) 공백만 입력하면 저장 후 종류 기본 라벨로 대체되는지, 3) 공백이 붙은 이름이 trim 후 기존 동명 자산과 중복으로 차단되는지. 두 인라인 <script> 블록 모두 node --check 파싱 확인, 352/352 통과. APP_VERSION 1.44.3->1.44.4, sw.js CACHE v140->v141.",
+      "commit": null
+    },
+    {
+      "cycle": 54,
+      "phase": "review",
+      "timestamp": "2026-09-20T07:10:00.000Z",
+      "summary": "develop 커밋(1300e07)을 검토. syncAssetInputs()에서 asName 입력값을 trim()하는 1줄 수정이 정확함을 확인: saveAsset()의 이름 기본값 대체(d.name=d.name||라벨)는 falsy 체크라 공백만 입력한 이름은 여전히 truthy이므로 이 trim이 없으면 걸러지지 않았을 것 — 수정 후 빈 문자열이 되어 올바르게 기본 라벨로 대체됨을 확인. syncAssetInputs()는 키 입력마다가 아니라 픽커를 열거나 saveAsset() 진입 시에만 호출되므로(2732-2778행), 매 키 입력마다 trim되어 중간에 공백을 못 치는 부작용은 없음을 grep으로 확인. dup 차단(a.name===d.name)과 삭제된 동명 자산 재연동 모두 trim된 이름을 그대로 씀을 확인. 새 회귀 테스트 3개가 trim 자체, falsy 기본값 대체, dup 차단 세 갈래를 각각 실제로 검증. node test/run.js 재실행해 352/352 통과 재확인, 두 인라인 <script> 블록 모두 node --check 파싱 확인, sw.js CACHE(v140->v141)/APP_VERSION(1.44.3->1.44.4) 버전 동반 상승도 확인. 문제 없음.",
       "commit": null
     }
   ]
