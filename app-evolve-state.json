@@ -1,7 +1,11 @@
 {
   "cycle": 55,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "recSave()가 반복 거래 회차 수정 시 메모(memo) 변경을 저장하지 않음 (scope: one/future/all 세 갈래 모두)",
+    "why": "cycle55 review가 발견: recApply()(index.html:3275)는 txDraft.memo를 ed.memo!=null?ed.memo:r.memo로 채워 #txMemo 입력창에 보여주고 사용자가 그 값을 고칠 수 있게 하지만, recSave()(index.html:3300)는 const amt=num($('txAmt'))로 금액만 직접 읽을 뿐 syncTxInputs()를 호출하지 않아 txDraft.memo/$('txMemo')의 편집 내용을 전혀 반영하지 않는다. 세 분기 모두 영향받는다: scope='one'은 edits[date]={amount:amt}만 써서 memo 키 자체가 없어 항상 이전 edit 또는 원본 r.memo로 되돌아가고, scope='future'는 새 분리 레코드를 JSON.parse(JSON.stringify(r))로 복제한 뒤 amount:amt만 덮어써 memo는 원본 그대로 복제되며, scope='all'(else 분기)은 r.amount만 바꾸고 r.memo는 아예 손대지 않는다. 반복거래(월세/구독/급여 등)의 특정 회차에 메모를 남기려는 사용자 조작마다 매번 재현되는 실사용 데이터 손실 버그다.",
+    "approach": "1) recSave() 시작부에서 syncTxInputs()를 호출해(다른 tx 편집 흐름과 동일한 패턴) txDraft.memo/amount/date를 최신화하고, saveTx()의 (d.memo||'').trim()||d.category 패턴을 재사용해 memo를 확정한다(빈 문자열이면 r.category로 대체). 2) scope='one': edits[ctx.date]={amount:amt,memo}로 memo 키를 추가하고, undo가 memo까지 포함한 prevEdit을 그대로 복원하는지 확인(기존 undoFn은 이미 edits[ctx.date] 전체를 되돌리므로 구조 변경만 필요). 3) scope='future': newRec 생성 시 amount:amt 옆에 memo도 함께 덮어써 새로 분리된 레코드의 메모가 편집값을 반영하게 한다(기존 필드는 유지, amount/memo만 명시적으로 override). 4) scope='all'(else): r.amount=amt 옆에 r.memo=memo도 반영하고, undoFn이 prevAmt와 함께 prevMemo도 캡처해 되돌리게 한다. 5) index.html:3292의 recApply() ed.memo!=null?ed.memo:r.memo 표시 로직 및 expandRec()(1953행)의 동일 패턴과 호환되는지 확인(memo가 원본과 같아도 그대로 기록하는 단순한 방식으로 충분, 굳이 원본과 같을 때 키를 생략할 필요 없음). 6) test/run.js: recSave/recApply는 이미 FUNCTIONS에 있으므로 새 함수 추가는 불필요. 기존 recSave 테스트(1543행 부근) 옆에 회귀 테스트 추가: one/future/all 세 scope 각각에서 #txMemo를 바꾸고 저장하면 실제로 반영되는지, 그리고 금액만 바꾸고 메모는 그대로 둔 기존 정상 케이스(1543~1648행 기존 테스트들)가 깨지지 않는지. 7) 두 인라인 <script> 블록 node --check 파싱, node test/run.js 전체 통과 확인 후 APP_VERSION/sw.js CACHE 버전 동반 상승."
+  },
   "history": [
     {
       "cycle": 50,
@@ -141,6 +145,13 @@
       "phase": "review",
       "timestamp": "2026-09-20T14:05:00.000Z",
       "summary": "develop 커밋(e6855e4)을 검토. saveTx()의 두 분기(반복 신규등록/일회성) 모두 saveRec()과 동일한 (d.memo||'').trim()||cat 패턴을 정확히 적용했음을 확인 — 특히 일회성 경로(3236행)의 d.category가 transfer 타입에도 txType()에서 이미 '이체'로 세팅돼 있어(3165행) cat 지역변수 없이 d.category를 직접 써도 문제없음을 grep으로 검증. node test/run.js 370/370 통과 재확인. 코드 diff 자체는 문제 없으나, 리뷰 중 별개의 실재 버그를 발견: recSave()(index.html:3300-3325)는 반복 항목의 단일/이후/전체 회차 수정 시 세 분기 모두 amt(금액)만 읽고 저장하며, recApply()가 연 txDraft.memo 편집 필드는 어디에도 저장하지 않고 통째로 버려진다 — edits[date]에는 {amount:amt}만 쓰여 memo 필드 자체가 없다. 즉 사용자가 반복 내역의 특정 회차 메모를 고쳐도 조용히 무시된다. 이번 diff와 무관한 기존 버그라 review에서는 고치지 않고 critique가 다음 develop 후보로 검토하도록 기록만 남긴다.",
+      "commit": null
+    },
+    {
+      "cycle": 55,
+      "phase": "critique",
+      "timestamp": "2026-09-20T15:10:00.000Z",
+      "summary": "이번 critique는 앱 전체를 처음부터 다시 훑는 대신, 같은 cycle55의 review가 이미 코드로 검증해 남긴 구체적 버그를 채택했다: recApply()(index.html:3275)가 열어주는 반복 거래 편집 시트에서 #txMemo를 고쳐도, recSave()(index.html:3300)가 syncTxInputs()를 호출하지 않고 num($('txAmt'))로 금액만 직접 읽어 scope='one'(edits[date]={amount:amt}, memo 키 없음)/'future'(newRec에 amount만 override, memo는 원본 그대로 복제)/'all'(r.amount만 갱신, r.memo 미변경) 세 분기 모두에서 메모 편집이 저장되지 않고 조용히 버려짐을 grep으로 재확인(recSave/recApply는 이미 test/run.js FUNCTIONS에 있어 새 테스트 인프라 없이 바로 추가 가능). render* 스모크 시리즈/esc() 스윕/캘린더 캐싱/반복종료조건/자산명·메모 trim 등 최근 완료 항목은 재탐색하지 않았다. advance에서 recSave() 시작부에 syncTxInputs() 호출을 추가하고 saveTx()와 동일한 trim||category 패턴으로 memo를 확정해 세 분기 모두(edits/newRec/r.memo)에 반영하도록 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     }
   ]
