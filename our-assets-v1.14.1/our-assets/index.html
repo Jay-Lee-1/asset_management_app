@@ -1283,12 +1283,13 @@ body.selmode .fab{display:none}
 <div class="sr-only" id="ariaLivePolite" role="status" aria-live="polite" aria-atomic="true"></div>
 <div class="sr-only" id="ariaLiveAssertive" role="alert" aria-live="assertive" aria-atomic="true"></div>
 <input type="file" id="importFile" accept="application/json,.json" style="display:none">
+<input type="file" id="importCsvFile" accept="text/csv,.csv" style="display:none">
 
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.4/kakao.min.js" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.44.4';
+const APP_VERSION='1.45.0';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4517,6 +4518,108 @@ function txnsToCSV(txns,assets){
  ].map(esc).join(','));
  return '\ufeff'+[header,...rows].join('\r\n');
 }
+/* ===== 거래 내역 CSV 가져오기 — 순수 함수(DOM/DB 전역 참조 없음) ===== */
+/* RFC4180 스타일 CSV 파서. 따옴표로 감싼 필드 안의 콤마/줄바꿈/이스케이프된 큰따옴표("")를
+   처리한다(txnsToCSV의 esc()가 만드는 형식과 대칭). BOM 제거, \r\n과 \n 둘 다 줄바꿈으로 인식. */
+function parseCSV(text){
+ const s=String(text==null?'':text).replace(/^﻿/,'');
+ const rows=[];let row=[];let field='';let inQuotes=false;
+ for(let i=0;i<s.length;i++){
+  const c=s[i];
+  if(inQuotes){
+   if(c==='"'){if(s[i+1]==='"'){field+='"';i++}else inQuotes=false}
+   else field+=c;
+  }else{
+   if(c==='"')inQuotes=true;
+   else if(c===',')row.push(field),field='';
+   else if(c==='\r'){/* \r\n의 \r는 무시, 다음 \n이 행을 끊는다 */}
+   else if(c==='\n'){row.push(field);rows.push(row);row=[];field=''}
+   else field+=c;
+  }
+ }
+ if(field!==''||row.length){row.push(field);rows.push(row)}
+ return rows.filter(r=>!(r.length===1&&r[0].trim()===''));
+}
+/* txnsToCSV의 guard(v)가 =,+,-,@,\t,\r 로 시작하는 값 앞에 붙인 보호용 '를 되돌린다. */
+function unguardCsv(v){return /^'[=+\-@\t\r]/.test(v)?v.slice(1):v}
+function csvDateValid(s){
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(s))return false;
+ const d=new Date(s+'T00:00:00');
+ if(isNaN(d))return false;
+ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`===s;
+}
+/* CSV 한 행(cells)을 txn 후보로 변환한다. 컬럼 순서는 txnsToCSV의 헤더(날짜,구분,카테고리,금액,
+   보내는 자산,받는 자산,메모)와 같다. 자산명은 assets 배열에서 정확히 일치하는 이름을 찾고,
+   못 찾으면(오타/삭제됨/다른 앱에서 가져온 이름) id 없이 *AssetName 스냅샷만 남긴다 —
+   assetNm(id,snap)이 이미 지원하는 패턴이라 화면에는 그대로 표시되지만 자산 잔액에는
+   반영되지 않는다(balancesUpTo가 id!=null인 경우만 갱신). */
+function csvRowToImportTxn(cells,assets){
+ const date=(cells[0]||'').trim();
+ const typeLabel=(cells[1]||'').trim();
+ const category=unguardCsv((cells[2]||'').trim());
+ const amountRaw=(cells[3]||'').trim().replace(/,/g,'');
+ const fromName=unguardCsv((cells[4]||'').trim());
+ const toName=unguardCsv((cells[5]||'').trim());
+ const memo=unguardCsv((cells[6]||'').trim());
+ if(!csvDateValid(date))return{ok:false,error:'date'};
+ const type=TYPEBYLABEL[typeLabel];
+ if(!type)return{ok:false,error:'type'};
+ const amount=Number(amountRaw);
+ if(!Number.isFinite(amount)||amount===0)return{ok:false,error:'amount'};
+ if((type==='transfer'||type==='saving')&&(!fromName||!toName))return{ok:false,error:'asset'};
+ if(type!=='transfer'&&!category)return{ok:false,error:'category'};
+ const findAsset=nm=>nm?(assets||[]).find(a=>a.name.trim()===nm):null;
+ const fromAsset=type!=='income'?findAsset(fromName):null;
+ const toAsset=type!=='expense'?findAsset(toName):null;
+ const unmatched=[];
+ const txn={type,date,category:type==='transfer'?'이체':category,amount,memo};
+ if(type==='income')txn.fromAssetId=null;
+ else{txn.fromAssetId=fromAsset?fromAsset.id:null;if(!fromAsset&&fromName){txn.fromAssetName=fromName;unmatched.push(fromName)}}
+ if(type==='expense')txn.toAssetId=null;
+ else{txn.toAssetId=toAsset?toAsset.id:null;if(!toAsset&&toName){txn.toAssetName=toName;unmatched.push(toName)}}
+ return{ok:true,unmatched,txn};
+}
+/* 중복 판정 키 — 날짜/구분/금액/카테고리/보내는·받는 자산(연결된 자산이면 id, 아니면 이름)/메모가
+   모두 같으면 같은 내역으로 본다. 같은 파일을 두 번 가져오거나, 이미 앱에 있는 내역을 다시
+   가져오려 할 때(예: doExport로 내보낸 CSV를 그대로 재가져오기) 중복 추가를 막기 위함. */
+function csvDedupeKey(t){
+ return [t.date,t.type,t.amount,t.category||'',
+  t.fromAssetName!=null?('n:'+t.fromAssetName):('i:'+(t.fromAssetId||'')),
+  t.toAssetName!=null?('n:'+t.toAssetName):('i:'+(t.toAssetId||'')),
+  t.memo||''].join('|');
+}
+/* CSV 텍스트 전체를 파싱해 가져오기 미리보기를 만든다. existingTxns는 doExport와 같은 방식으로
+   반복거래 회차까지 펼쳐서(DB.txns.concat(expandRec(...))) 넘겨받아야 재가져오기 시 반복거래
+   회차도 중복으로 인식한다. */
+function buildImportPreview(text,assets,categories,existingTxns){
+ const dataRows=parseCSV(text).slice(1);
+ const existingKeys=new Set((existingTxns||[]).map(csvDedupeKey));
+ const seen=new Set();
+ const items=[];
+ let invalidCount=0;
+ const newCats={expense:new Set(),income:new Set(),saving:new Set()};
+ dataRows.forEach(cells=>{
+  const r=csvRowToImportTxn(cells,assets);
+  if(!r.ok){invalidCount++;return}
+  const key=csvDedupeKey(r.txn);
+  const dup=existingKeys.has(key)||seen.has(key);
+  seen.add(key);
+  if(!dup&&r.txn.type!=='transfer'&&categories&&Array.isArray(categories[r.txn.type])&&!categories[r.txn.type].includes(r.txn.category)){
+   newCats[r.txn.type].add(r.txn.category);
+  }
+  items.push({txn:r.txn,dup,unmatched:r.unmatched});
+ });
+ const newCount=items.filter(x=>!x.dup).length;
+ return{
+  items,
+  totalRows:dataRows.length,
+  invalidCount,
+  dupCount:items.length-newCount,
+  newCount,
+  assetUnmatchedCount:items.filter(x=>!x.dup&&x.unmatched.length).length,
+  newCats:{expense:[...newCats.expense],income:[...newCats.income],saving:[...newCats.saving]}
+ };
+}
 function exportData(){ /* 저장 방식 선택 */
  const sharable=canShareFiles();
  openSheet(`<h3>데이터 내보내기</h3>
@@ -4594,7 +4697,16 @@ function importData(){
  openSheet(`<h3>데이터 복원</h3>
   <div class="desc">iCloud Drive(또는 파일 앱)에서 <b>우리의자산_백업_....json</b> 파일을 골라 주세요.<br>
   <span style="color:var(--text-3);font-size:12.5px">복원하면 지금 데이터는 파일 내용으로 <b>교체</b>돼요. 먼저 <b>데이터 내보내기</b>로 현재 상태를 저장해 두는 걸 권해요.</span></div>
-  <button class="btn btn-primary" onclick="closeSheet();$('importFile').click()">${svg('restore')} 백업 파일 고르기</button>`);
+  <button class="btn btn-primary" onclick="closeSheet();$('importFile').click()">${svg('restore')} 백업 파일 고르기</button>
+  <button class="btn btn-soft" style="margin-top:10px" onclick="closeSheet();openCsvImportInfo()">${svg('ledger')} 거래 내역 CSV로 가져오기</button>`);
+}
+/* CSV 가져오기: 백업 복원(교체)과 달리 기존 데이터에 이 앱이 내보낸 CSV(날짜,구분,카테고리,금액,
+   보내는 자산,받는 자산,메모 컬럼)를 추가한다 — 안내 후 파일 선택으로 이어간다. */
+function openCsvImportInfo(){
+ openSheet(`<h3>거래 내역 CSV 가져오기</h3>
+  <div class="desc">이 앱의 <b>거래 내역 CSV로 내보내기</b>로 만든 파일을 골라 주세요.<br>
+  <span style="color:var(--text-3);font-size:12.5px">기존 데이터는 그대로 두고 새 내역만 <b>추가</b>돼요. 이미 있는 내역(같은 날짜·구분·금액·카테고리·자산·메모)은 중복으로 건너뛰고, 가져오기 전에 몇 건이 들어갈지 미리 보여드려요.</span></div>
+  <button class="btn btn-primary" onclick="closeSheet();$('importCsvFile').click()">${svg('ledger')} CSV 파일 고르기</button>`);
 }
 /* 백업 복원(파일)·클라우드 풀(pullCloud) 양쪽이 공유하는 숫자 필드 검증. 검증 없이 DB에
  * 그대로 대입하면 NaN/문자열 금액이 balancesUpTo/totalAssetAt/expenseByCat 등 잔액 계산
@@ -4679,6 +4791,55 @@ $('importFile').addEventListener('change',e=>{
  }catch(_){toast('올바른 백업 파일이 아니에요')}finally{e.target.value=''}};
  r.readAsText(f);
 });
+$('importCsvFile').addEventListener('change',e=>{
+ const f=e.target.files[0];if(!f)return;const r=new FileReader();
+ r.onload=()=>{
+  try{
+   const preview=buildImportPreview(String(r.result),DB.assets,DB.categories,DB.txns.concat(expandRec(RANGE_FROM,RANGE_TO)));
+   if(!preview.totalRows){toast('가져올 내역을 찾지 못했어요');return}
+   openCsvImportPreview(preview);
+  }catch(_){toast('올바른 CSV 파일이 아니에요')}
+  finally{e.target.value=''}
+ };
+ r.readAsText(f);
+});
+/* 가져오기 전 미리보기 — 새 내역/중복/형식 오류/자산 미매칭 건수와 새로 생길 카테고리를 보여준다. */
+function openCsvImportPreview(preview){
+ window._csvImport=preview;
+ const stats=[
+  `총 ${preview.totalRows}행 중 새 내역 ${preview.newCount}건`,
+  preview.dupCount?`이미 있는 내역 ${preview.dupCount}건은 건너뜀`:null,
+  preview.invalidCount?`형식을 알 수 없는 ${preview.invalidCount}행은 제외`:null,
+  preview.assetUnmatchedCount?`자산 매칭 안 됨 ${preview.assetUnmatchedCount}건 · 내역엔 남지만 자산 잔액엔 반영 안 돼요`:null,
+ ].filter(Boolean);
+ const newCatList=[...preview.newCats.expense,...preview.newCats.income,...preview.newCats.saving];
+ openSheet(`<h3>거래 내역 가져오기</h3>
+  <div class="desc">${stats.map(s=>`· ${esc(s)}`).join('<br>')}${newCatList.length?`<br>· 새 카테고리 ${newCatList.length}개 자동 생성: ${esc(newCatList.join(', '))}`:''}</div>
+  ${preview.newCount?`<button class="btn btn-primary" onclick="doCsvImport()">${svg('restore')} ${preview.newCount}건 가져오기</button>`
+   :`<div class="desc" style="color:var(--text-3)">가져올 새 내역이 없어요</div>`}`);
+}
+function doCsvImport(){
+ const preview=window._csvImport;if(!preview)return;
+ const toAdd=preview.items.filter(x=>!x.dup);
+ if(!toAdd.length)return;
+ DB.categories=DB.categories||{};
+ const addedCats=[];
+ ['expense','income','saving'].forEach(ty=>{
+  (preview.newCats[ty]||[]).forEach(name=>{
+   if(!DB.categories[ty].includes(name)){DB.categories[ty].push(name);addedCats.push({type:ty,name})}
+  });
+ });
+ const added=toAdd.map(x=>Object.assign({id:uid()},x.txn));
+ DB.txns.push(...added);
+ save();renderCurrent();closeSheet();
+ const addedIds=new Set(added.map(t=>t.id));
+ window._csvImport=null;
+ undoToast(`${added.length}건을 가져왔어요`,()=>{
+  DB.txns=DB.txns.filter(t=>!addedIds.has(t.id));
+  addedCats.forEach(({type,name})=>{const i=DB.categories[type].indexOf(name);if(i>=0)DB.categories[type].splice(i,1)});
+  save();renderCurrent();toast('되돌렸어요');
+ });
+}
 
 function openThemeSheet(){
  const opts=[['system','시스템 설정','휴대폰 설정을 따라가요'],['light','라이트',''],['dark','다크','프리미엄 다크']];
