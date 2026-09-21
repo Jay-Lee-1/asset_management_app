@@ -1791,14 +1791,15 @@ test('recSave: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 수�
 
 /* ---------- saveRec(): 반복 자체 세부 편집(openRecDetail→editRec→saveRec)이 과거 회차까지
    소급 변경하던 버그(cycle29 critique) — recSave()의 future 분기와 같은 분리 규칙을 적용한다 ---------- */
-test('recHistFieldsChanged: fromAssetId/toAssetId/amount/category/day/freq가 바뀌면 true', () => {
-  const orig = { fromAssetId: 'a1', toAssetId: 'a2', amount: 1000, category: '식비', day: 5, freq: 'monthly', memo: 'm', weekend: 'none' };
+test('recHistFieldsChanged: fromAssetId/toAssetId/amount/category/day/freq/startDate가 바뀌면 true', () => {
+  const orig = { fromAssetId: 'a1', toAssetId: 'a2', amount: 1000, category: '식비', day: 5, freq: 'monthly', startDate: '2026-01-05', memo: 'm', weekend: 'none' };
   assert.strictEqual(sandbox.recHistFieldsChanged(orig, { ...orig, fromAssetId: 'a9' }), true);
   assert.strictEqual(sandbox.recHistFieldsChanged(orig, { ...orig, amount: 2000 }), true);
   assert.strictEqual(sandbox.recHistFieldsChanged(orig, { ...orig, freq: 'weekly' }), true);
+  assert.strictEqual(sandbox.recHistFieldsChanged(orig, { ...orig, startDate: '2026-02-05' }), true);
 });
 test('recHistFieldsChanged: 메모/주말규칙 등 이력 비영향 필드만 바뀌면 false', () => {
-  const orig = { fromAssetId: 'a1', toAssetId: 'a2', amount: 1000, category: '식비', day: 5, freq: 'monthly', memo: 'm', weekend: 'none' };
+  const orig = { fromAssetId: 'a1', toAssetId: 'a2', amount: 1000, category: '식비', day: 5, freq: 'monthly', startDate: '2026-01-05', memo: 'm', weekend: 'none' };
   assert.strictEqual(sandbox.recHistFieldsChanged(orig, { ...orig, memo: '다른 메모', weekend: 'later' }), false);
 });
 
