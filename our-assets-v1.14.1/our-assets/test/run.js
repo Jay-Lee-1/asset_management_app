@@ -1379,6 +1379,17 @@ test('csvRowToImportTxn: 이체/저축인데 보내는·받는 자산 중 하나
   const r2 = sandbox.csvRowToImportTxn(['2026-01-01', '이체', '이체', '10000', '주계좌', '적금통장', ''], assets);
   assert.strictEqual(r2.ok, true);
 });
+// 수동 입력(saveTx/saveRec)은 fromAssetId===toAssetId일 때 toast로 막고 저장을 거부하는데,
+// CSV 임포트에는 같은 가드가 없어 보내는/받는 자산이 같은 이체·저축 행이 그대로 들어올 수 있었다.
+test('csvRowToImportTxn: 이체/저축인데 보내는·받는 자산 이름이 같으면 무효 처리한다', () => {
+  const assets = [{ id: 'a1', name: '주계좌' }];
+  const same = sandbox.csvRowToImportTxn(['2026-01-01', '이체', '이체', '10000', '주계좌', '주계좌', ''], assets);
+  assert.strictEqual(same.ok, false);
+  assert.strictEqual(same.error, 'asset');
+  const sameSaving = sandbox.csvRowToImportTxn(['2026-01-01', '저축', '저축', '10000', '주계좌', '주계좌', ''], assets);
+  assert.strictEqual(sameSaving.ok, false);
+  assert.strictEqual(sameSaving.error, 'asset');
+});
 test('csvRowToImportTxn: 지출/수입/저축인데 카테고리가 비어 있으면 무효, 이체는 카테고리 없어도 "이체"로 고정된다', () => {
   const assets = [{ id: 'a1', name: 'A' }, { id: 'a2', name: 'B' }];
   const bad = sandbox.csvRowToImportTxn(['2026-01-01', '지출', '', '1000', '', '', ''], []);
