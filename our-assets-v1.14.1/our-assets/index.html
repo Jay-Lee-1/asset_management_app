@@ -1289,7 +1289,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.45.9';
+const APP_VERSION='1.45.10';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3883,6 +3883,7 @@ function renderMenu(){
   ]},
   {cap:'알림 · 기준',items:[
    {ic:'check',l:'이체 확인',sw:!!DB.settings.confirmTransfers,a:"toggleConfirmTransfers()"},
+   {ic:'bell',l:'OS 알림',sw:!!DB.settings.osNotify,a:"toggleOsNotify()"},
    {ic:'chart',l:'큰 지출 기준',v:comma(bigMin())+'원',a:"openBigMinSheet()"},
    {ic:'sync',l:'시세 연동',v:rateStatusMenu(),a:"openRateSheet()"},
   ]},
@@ -5644,6 +5645,61 @@ function homeAlerts(neg){
  else if(_bo.length>1)arr.push({kind:'budgetOverMulti',count:_bo.length});
  return arr;
 }
+/* homeAlerts()가 계산한 알림 중 "오늘 확정 대기 이체 / 임박한 저축 만기(1~2일 이내) / 예산 초과"처럼
+ * 앱을 열지 않으면 그날 놓치는 긴급 알림만 골라 OS 알림 문구로 바꾼다. 나머지 kind(backup/persist/neg 등)는
+ * 급하지 않거나 홈 카드로 충분해 대상에서 뺀다. */
+function notifyAlertInfo(al){
+ if(al.kind==='confirm')return{key:`confirm:${al.id}:${al.date}`,title:'이체 확인이 필요해요',body:`${al.from} → ${al.to} · ${comma(al.amount)}원 이체하셨나요?`};
+ if(al.kind==='mat'&&al.date<=addDays(TODAY,1))return{key:`mat:${al.assetId}:${al.date}`,title:'저축 만기가 임박했어요',body:`${al.name} · ${al.date===TODAY?'오늘':'내일'} 만기 · ${comma(al.amount)}원`};
+ if(al.kind==='budgetOver')return{key:`budget:${al.cat}:${TODAY.slice(0,7)}`,title:'예산을 초과했어요',body:`${al.cat} · ${comma(al.spent)}원 / ${comma(al.budget)}원`};
+ if(al.kind==='budgetOverMulti')return{key:`budgetMulti:${TODAY.slice(0,7)}`,title:'예산을 초과했어요',body:`${al.count}개 카테고리가 이번 달 예산을 넘었어요`};
+ return null;
+}
+/* 같은 항목(key)은 상태가 유지되는 한 다시 알리지 않는다 — checkNotifyAlerts가 동기화 주기(수 분)마다
+ * 반복 호출돼도 이미 보낸 이체/만기/예산 알림을 중복 발송하지 않기 위한 dedupe. */
+function pickNotifyAlerts(alerts,notifiedIds){
+ const toNotify=[],newIds={...notifiedIds};
+ alerts.forEach(al=>{
+  const info=notifyAlertInfo(al);
+  if(!info||newIds[info.key])return;
+  toNotify.push(info);newIds[info.key]=Date.now();
+ });
+ return{toNotify,notifiedIds:newIds};
+}
+/* notifiedIds는 키(이체 id·만기일·연월)가 계속 쌓이므로, 30일 지난 항목은 정리해 무한정 커지지 않게 한다 */
+function pruneNotifiedIds(notifiedIds,now){
+ const out={};
+ Object.keys(notifiedIds||{}).forEach(k=>{if(now-notifiedIds[k]<30*24*60*60*1000)out[k]=notifiedIds[k]});
+ return out;
+}
+/* DB.settings.osNotify가 켜져 있고 화면이 백그라운드(document.hidden)일 때만 실제로 알림을 보낸다 —
+ * 앱을 보고 있는 동안은 이미 같은 정보가 홈 알림 카드로 보이므로 중복 알림하지 않는다.
+ * 완전 종료(특히 iOS Safari PWA)까지는 보장하지 못하고, 앱이 백그라운드/최소화된 동안만 동작하는
+ * best-effort 범위다(별도 푸시 서버 없이 로컬 Notification API만 사용). */
+function checkNotifyAlerts(){
+ if(!(DB&&DB.settings.osNotify))return;
+ if(typeof document!=='undefined'&&!document.hidden)return;
+ if(!(typeof Notification!=='undefined'&&Notification.permission==='granted'))return;
+ if(!(navigator.serviceWorker&&navigator.serviceWorker.ready))return;
+ const alerts=homeAlerts(planNegatives());
+ const{toNotify,notifiedIds}=pickNotifyAlerts(alerts,DB.settings.notifiedAlertIds||{});
+ if(!toNotify.length)return;
+ DB.settings.notifiedAlertIds=pruneNotifiedIds(notifiedIds,Date.now());
+ save();
+ navigator.serviceWorker.ready.then(reg=>{
+  toNotify.forEach(n=>reg.showNotification(n.title,{body:n.body,tag:n.key,icon:'./icon-192.png',badge:'./icon-192.png'}));
+ }).catch(()=>{});
+}
+function toggleOsNotify(){
+ if(DB.settings.osNotify){DB.settings.osNotify=false;save();renderCurrent();toast('OS 알림을 껐어요');return}
+ if(typeof Notification==='undefined'){toast('이 브라우저는 알림을 지원하지 않아요');return}
+ Notification.requestPermission().then(perm=>{
+  if(perm!=='granted'){toast('알림 권한이 없으면 켤 수 없어요');return}
+  DB.settings.osNotify=true;save();renderCurrent();
+  toast('OS 알림을 켰어요 · 앱을 닫아둬도 확정 대기 이체·만기·예산 초과를 알려드려요');
+  checkNotifyAlerts();
+ });
+}
 function homeAlertCard(al){
  if(al.kind==='cloudConflict')return `<button class="home-alert" onclick="openAccountSheet()">
    <div class="ha-ic">${svg('alert')}</div>
@@ -6027,6 +6083,7 @@ function startApp(){
  requestPersistentStorage(); /* 브라우저 storage eviction으로부터 로컬 데이터 보호 요청(비동기, 결과는 홈 알림에 반영) */
  autoSyncRates();                       /* 시작 시 1회 */
  setInterval(autoSyncRates,3*60*1000); /* 3분마다 확인 → 10분 지났으면 갱신 */
+ setInterval(checkNotifyAlerts,5*60*1000); /* 5분마다 확인 → 백그라운드일 때만 OS 알림 발송 */
 }
 async function boot(){
  migrateLegacy();
@@ -6141,7 +6198,7 @@ function maybeRollDay(){
  if(CLOUD_UID&&CLOUD_SYNC_STATE==='conflict'&&ST.tab==='home')renderCurrent();
  autoSyncRates()
 }
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)maybeRollDay();else if(CLOUD_UID){clearTimeout(SB_PUSH_T);pushCloud().catch(()=>{})}});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)maybeRollDay();else{if(CLOUD_UID){clearTimeout(SB_PUSH_T);pushCloud().catch(()=>{})}checkNotifyAlerts()}});
 window.addEventListener('focus',maybeRollDay);
 window.addEventListener('storage',handleForeignStorage); /* 다른 탭이 save()로 덮어쓴 걸 감지 — handleForeignStorage 주석 참고 */
 window.addEventListener('pageshow',maybeRollDay);

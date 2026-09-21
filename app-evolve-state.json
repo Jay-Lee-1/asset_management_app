@@ -1,19 +1,8 @@
 {
-  "cycle": 59,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "homeAlerts()의 긴급 항목(오늘 확정 대기 이체, 임박한 저축 만기, 예산 초과)을 OS 레벨 로컬 알림(Notification/showNotification)으로 푸시",
-    "why": "index.html:5627-5645의 homeAlerts()가 이체 확정 대기(isDuePending)/저축 만기 임박/예산 초과(budgetOverMulti)/오래된 시세 자산/클라우드 동기화 충돌을 이미 계산하지만, 오직 앱을 열어야만 보이는 인앱 카드로만 노출된다. 코드 전체에 Notification/showNotification/push/periodicSync 관련 코드가 전무하고(grep 확인), sw.js(74줄)에도 push/notificationclick 핸들러가 없다 - 설치형 PWA(manifest.webmanifest, 서비스워커, iOS 홈화면 아이콘)까지 갖춘 가계부 앱인데 오늘 낼 돈이 있거나 내일 저축이 만기돼도 그날 앱을 열지 않으면 전혀 알 방법이 없는 실질적 제품 공백. app-evolve-state.json 최근 20개 히스토리를 확인해 이전에 제안/보류된 적 없는 새로운 영역임을 확인했다.",
-    "approach": "1) 설정/메뉴 그룹(index.html:3884-3899, '저축 만기 알림' 근처)에 'OS 알림 허용' 토글을 추가해 Notification.requestPermission() 호출. 2) autoSyncRates의 주기적 동기화 및 visibilitychange(hidden 전환) 시점에 checkNotifyAlerts()를 새로 만들어 homeAlerts(neg)의 결과 중 긴급 하위집합만(오늘 confirm 대기, mat 만기 1~2일 이내, budgetOverMulti) navigator.serviceWorker.ready.then(reg=>reg.showNotification(...))로 발송 - 설치된 PWA가 백그라운드/최소화 상태일 때 동작하는 현실적 범위(푸시 서버 없이 가능한 만큼만, 완전 종료 시 iOS Safari에서는 보장 안 됨을 설정 문구에 명시). 3) 같은 항목이 10분 동기화 주기마다 중복 알림되지 않도록 DB.settings.notifiedIds(또는 localStorage)에 알림 id+날짜 키로 dedupe. 4) sw.js에 notificationclick 핸들러를 추가해 clients.openWindow('./')로 관련 화면을 포커스/오픈. 5) test/run.js 패턴을 따라 homeAlerts() 결과 중 어떤 항목이 알림 대상인지 고르는 순수 선택/dedupe 로직에 대한 단위 테스트 추가. 완전한 푸시 서버 구축이 아니라 이미 계산된 homeAlerts()를 로컬 알림으로 얹는 데 스코프를 한정한다."
-  },
+  "cycle": 60,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 54,
-      "phase": "advance",
-      "timestamp": "2026-09-20T12:14:08.319Z",
-      "summary": "critique(e50cd85) 계획대로 거래 내역 CSV 가져오기(import) 기능을 추가했다. importData() 시트에 '거래 내역 CSV로 가져오기' 버튼(#importCsvFile hidden input)을 새로 달고, txnsToCSV의 역방향에 해당하는 순수 함수들을 도입했다: parseCSV(RFC4180 스타일 파서, 따옴표/콤마/줄바꿈/이스케이프된 큰따옴표 처리, BOM 제거), unguardCsv(guard()가 =,+,-,@ 앞에 붙인 보호용 '를 되돌림), csvDateValid, csvRowToImportTxn(한 행을 txn 후보로 변환 — 자산명은 DB.assets와 정확히 일치하는 이름으로만 매칭하고 못 찾으면 id 없이 *AssetName 스냅샷만 남겨 assetNm(id,snap) 표시 패턴을 그대로 타되 자산 잔액에는 반영되지 않음을 미리보기에 명시, 이체/저축은 양쪽 자산명이 모두 있어야 유효), csvDedupeKey(날짜/구분/금액/카테고리/자산(id 또는 이름)/메모 조합), buildImportPreview(파싱+매칭+중복판정+신규 카테고리 목록까지 한 번에). 미리보기 시트(openCsvImportPreview)가 총 행수/신규/중복/형식오류/자산미매칭 건수와 자동 생성될 카테고리를 보여준 뒤, 확인하면 doCsvImport()가 DB.categories에 없는 카테고리를 addCat과 같은 방식으로 만들고 DB.txns.push(...)+save()로 반영, doDeleteCat과 같은 undoToast(...)로 6초 안에 되돌릴 수 있게 했다(추가된 txn id와 새로 만든 카테고리를 함께 롤백). 당초 계획에 있던 '1회성 수동 매핑 화면'은 기존 자산 매칭 실패 시에도 스냅샷 이름으로 내역이 보존되고 미리보기에 건수가 노출돼(무시하지 않음) 별도 화면 없이도 안전하다고 판단해 단순화했다 — 후속 과제로 남길 수 있음. test/run.js FUNCTIONS에 parseCSV/unguardCsv/csvDateValid/csvRowToImportTxn/csvDedupeKey/buildImportPreview 추가, 회귀 테스트 15개 추가(파서 round-trip, guard 역변환, 날짜 유효성, 자산 매칭/미매칭, 이체·저축 자산 필수, 카테고리 필수, 날짜/구분/금액 검증, dedupe 키 id-vs-이름 구분, doExport 재가져오기 전부 중복 처리, 신규 카테고리 자동 생성, 파일 내 자체 중복). vm 샌드박스 realm 문제로 배열 비교 3건은 JSON round-trip/Array.from으로 정규화(기존 recDates 테스트와 같은 패턴). 두 인라인 <script> 블록 모두 new Function 파싱 확인, 367/367 통과. APP_VERSION 1.44.4->1.45.0, sw.js CACHE v141->v142.",
-      "commit": null
-    },
     {
       "cycle": 55,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-21T07:20:00.000Z",
       "summary": "Explore 서브에이전트로 앱 전체를 구조적으로 재검토(render* 스모크/esc 스윕/캘린더 캐싱/반복종료조건/자산명·메모 trim/num 부호/sanitizeBackup/CSV import/FX 통화 피커/stockCode 검증/recHistFieldsChanged startDate 등 최근 완료 항목은 재탐색 금지 지시, 최근 20개 히스토리로 중복 제안 방지). homeAlerts()(index.html:5627-5645)가 오늘 확정 대기 이체(isDuePending)/임박한 저축 만기/예산 초과(budgetOverMulti)/오래된 시세 자산/클라우드 동기화 충돌을 이미 계산하지만 앱을 열어야만 보이는 인앱 카드로만 노출되고, 코드 전체(grep)와 sw.js(74줄) 어디에도 Notification/showNotification/push/notificationclick 핸들러가 전무함을 확인 - manifest.webmanifest·서비스워커·iOS 홈화면 아이콘까지 갖춘 설치형 PWA인데 그날 앱을 열지 않으면 오늘 낼 돈이나 내일 만기되는 저축을 알 길이 없는 실질적 제품 공백으로 채택(이전 히스토리에 없던 신규 영역). Naver 시세 스크래핑 취약성(rates.js/stock.js, 이미 3단 폴백+타임아웃+재시도로 충분히 견고), transfer 거래가 시세평가 자산을 가리켜 desync될 위험(openAssetPicker의 excludeMarketValued:true로 이미 guard돼 버그 아님 확인), 'Pro로 업그레이드' 버튼이 토스트만 띄우는 스텁(의도된 자리표시자로 보여 저위험)은 후순위로 기각. advance에서 homeAlerts()의 긴급 하위집합(오늘 confirm/mat 1~2일 이내/budgetOverMulti)을 설정 토글+Notification.requestPermission()+navigator.serviceWorker.ready.showNotification()+dedupe+sw.js notificationclick 핸들러로 로컬 알림화하는 계획(푸시 서버 없이 백그라운드/최소화 상태에서 동작하는 범위로 한정, iOS 완전종료 시 미보장을 설정 문구에 명시)을 pending_advance_plan에 저장. 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 59,
+      "phase": "advance",
+      "timestamp": "2026-09-21T08:20:00.000Z",
+      "summary": "critique 계획대로 homeAlerts()의 긴급 하위집합(오늘 confirm 대기 이체·1~2일 이내 저축 만기·예산 초과)을 OS 로컬 알림으로 발송하는 기능을 추가했다. 순수 함수 3개: notifyAlertInfo(al)(알림 kind별 dedupe key+제목/본문, backup/persist/neg 등 관계없는 kind는 null), pickNotifyAlerts(alerts,notifiedIds)(이미 보낸 key는 제외하고 새 항목만 골라 notifiedIds를 갱신), pruneNotifiedIds(notifiedIds,now)(30일 지난 key 정리, 무한정 안 커지게). 오케스트레이션 checkNotifyAlerts()는 DB.settings.osNotify+Notification.permission==='granted'+document.hidden(백그라운드일 때만, 포그라운드에선 이미 홈 카드로 보이므로 중복 알림 안 함)을 모두 만족할 때만 homeAlerts(planNegatives())→pickNotifyAlerts→navigator.serviceWorker.ready.showNotification()으로 발송하고 DB.settings.notifiedAlertIds를 저장한다. toggleOsNotify()로 메뉴 '알림 · 기준' 그룹에 토글 추가(Notification.requestPermission() 호출). startApp()에 setInterval(checkNotifyAlerts,5*60*1000) 추가, visibilitychange의 hidden 분기에도 checkNotifyAlerts() 훅. sw.js에 notificationclick 핸들러 추가(기존 창 focus, 없으면 clients.openWindow). 완전 종료(특히 iOS Safari) 시에는 보장 안 되는 백그라운드/최소화 상태 한정 best-effort 범위. test/run.js FUNCTIONS에 notifyAlertInfo/pickNotifyAlerts/pruneNotifiedIds 추가, 회귀 테스트 5개 추가(confirm/budgetOver/budgetOverMulti 즉시 알림 대상, mat은 오늘·내일만 대상이고 이틀 뒤부터는 제외, dedupe로 같은 key 재발송 안 함, 30일 지난 notifiedIds 정리). 두 인라인 <script> 블록 모두 node --check 파싱 확인, 400/400 통과. APP_VERSION 1.45.9->1.45.10, sw.js CACHE v151->v152. pending_advance_plan 비움.",
       "commit": null
     }
   ]

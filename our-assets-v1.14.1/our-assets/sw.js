@@ -3,7 +3,7 @@
  * 온라인일 때는 항상 최신 index.html 을 먼저 받아옵니다.
  * 파일을 수정하면 아래 CACHE 버전을 올려 주세요. (예: v1 -> v2)
  */
-const CACHE = 'ourassets-v151';
+const CACHE = 'ourassets-v152';
 
 const SHELL = [
   './',
@@ -69,6 +69,17 @@ self.addEventListener('fetch', (e) => {
         }
         return res;
       });
+    })
+  );
+});
+
+// 홈 알림(이체 확인/저축 만기/예산 초과) OS 알림을 탭하면 앱 창을 포커스하거나(없으면) 새로 연다.
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  e.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      for (const c of list) { if ('focus' in c) return c.focus(); }
+      if (self.clients.openWindow) return self.clients.openWindow('./');
     })
   );
 });

@@ -89,6 +89,7 @@ const FUNCTIONS = [
   'foreignSaveIsNewer', 'openCopyBackup', 'copyBackup', 'findDonors',
   'recIsVarying', 'varyingRecs', 'openFixShortfall', 'lastActualAmount', 'openQuickAmount',
   'backupDue', 'planNegatives', 'homeAlerts', 'updateAlerts',
+ 'notifyAlertInfo', 'pickNotifyAlerts', 'pruneNotifiedIds',
   'catIconOf', 'catGlyph', 'openCatManage',
   'catListOf', 'catAv', 'assetPickBtn', 'endCondFields', 'openFormSheet', 'renderTxSheet', 'txType', 'txToggleRepeat',
   'accountName',
@@ -3916,6 +3917,52 @@ test('homeAlerts: planNegatives 결과(neg)를 그대로 넘겨받아 자산별 
   assert.strictEqual(negAlerts[0].assetId, 'a1');
   assert.strictEqual(negAlerts[0].date, '2026-06-20');
   assert.strictEqual(negAlerts[0].min, -5000);
+});
+/* ---------- notifyAlertInfo/pickNotifyAlerts/pruneNotifiedIds: OS 알림 대상 선별/dedupe 회귀 테스트
+ * (app-evolve cycle59 advance) — homeAlerts()가 이미 계산해두는 confirm/mat/budgetOver(Multi) 중
+ * "앱을 열지 않으면 그날 놓치는" 긴급 알림만 골라 OS 알림으로 보내되, 같은 항목을 반복 호출마다
+ * 중복 발송하지 않는지가 이 로직의 핵심이라 별도로 커버한다. ---------- */
+test('notifyAlertInfo: confirm/budgetOver(Multi)는 즉시 알림 대상이 되고, backup/neg처럼 관계없는 kind는 대상에서 빠진다', () => {
+  sandbox.TODAY = '2026-06-15';
+  const confirm = sandbox.notifyAlertInfo({ kind: 'confirm', id: 't1', date: '2026-06-15', from: '통장1', to: '통장2', amount: 10000 });
+  assert.ok(confirm && confirm.key === 'confirm:t1:2026-06-15', '이체 확인 알림은 거래 id+날짜로 키가 잡혀야 함');
+  const budgetOver = sandbox.notifyAlertInfo({ kind: 'budgetOver', cat: '식비', spent: 150000, budget: 100000 });
+  assert.ok(budgetOver && budgetOver.key === 'budget:식비:2026-06');
+  const budgetMulti = sandbox.notifyAlertInfo({ kind: 'budgetOverMulti', count: 2 });
+  assert.ok(budgetMulti && budgetMulti.key === 'budgetMulti:2026-06');
+  assert.strictEqual(sandbox.notifyAlertInfo({ kind: 'backup' }), null, 'OS 알림 대상이 아닌 kind는 null이어야 함');
+  assert.strictEqual(sandbox.notifyAlertInfo({ kind: 'neg', assetId: 'a1' }), null);
+});
+test('notifyAlertInfo: 저축 만기(mat)는 오늘·내일만 알림 대상이고, 이틀 뒤부터는 아직 대상이 아니다', () => {
+  sandbox.TODAY = '2026-06-15';
+  const today = sandbox.notifyAlertInfo({ kind: 'mat', assetId: 's1', name: '적금', date: '2026-06-15', amount: 1000000 });
+  assert.ok(today && today.key === 'mat:s1:2026-06-15');
+  const tomorrow = sandbox.notifyAlertInfo({ kind: 'mat', assetId: 's1', name: '적금', date: '2026-06-16', amount: 1000000 });
+  assert.ok(tomorrow, '내일 만기는 아직 임박 알림 대상이어야 함');
+  const dayAfter = sandbox.notifyAlertInfo({ kind: 'mat', assetId: 's1', name: '적금', date: '2026-06-17', amount: 1000000 });
+  assert.strictEqual(dayAfter, null, '이틀 뒤 만기는 아직 알림 대상이 아니어야 함');
+});
+test('pickNotifyAlerts: 이미 알림 보낸 key는 다시 보내지 않고(dedupe), 처음 보는 key만 toNotify에 담긴다', () => {
+  sandbox.TODAY = '2026-06-15';
+  const alerts = [
+    { kind: 'confirm', id: 't1', date: '2026-06-15', from: '통장1', to: '통장2', amount: 10000 },
+    { kind: 'backup' },
+  ];
+  const first = sandbox.pickNotifyAlerts(alerts, {});
+  assert.strictEqual(first.toNotify.length, 1);
+  assert.strictEqual(first.toNotify[0].key, 'confirm:t1:2026-06-15');
+  assert.ok(first.notifiedIds['confirm:t1:2026-06-15'], '보낸 key는 notifiedIds에 기록돼야 함');
+  const second = sandbox.pickNotifyAlerts(alerts, first.notifiedIds);
+  assert.strictEqual(second.toNotify.length, 0, '같은 key는 두 번째 호출에서 다시 보내면 안 됨');
+});
+test('pruneNotifiedIds: 30일 이내 항목은 남기고, 30일 지난 항목은 정리해 무한정 커지지 않게 한다', () => {
+  const now = Date.now();
+  const notifiedIds = {
+    fresh: now - 1000,
+    old: now - 31 * 24 * 60 * 60 * 1000,
+  };
+  const out = sandbox.pruneNotifiedIds(notifiedIds, now);
+  assert.deepStrictEqual(Object.keys(out), ['fresh']);
 });
 test('updateAlerts: neg를 생략하면 planNegatives()를 다시 계산해서 배지 개수/on 상태에 반영한다', () => {
   sandbox.TODAY = '2026-06-15';
