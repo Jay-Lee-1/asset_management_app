@@ -1,15 +1,8 @@
 {
   "cycle": 61,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 56,
-      "phase": "review",
-      "timestamp": "2026-09-20T18:11:00.000Z",
-      "summary": "develop 커밋(9888290)을 검토하다 fmtAmt(inp,allowNeg)와 달리 num(el)에는 allowNeg 게이팅이 전혀 없어(무조건 선행 '-'를 부호로 인정) 실사용 회귀를 발견 — develop 자신의 커밋 메시지/테스트 주석은 \"txAmt/rAmt/qAmt/bigMinInput 등은 인자 없이 호출해 기존처럼 부호가 제거되는 동작을 유지한다\"고 주장하지만, 이 필드들이 공유하는 num()이 실제로는 게이팅 없이 항상 부호를 보존하도록 고쳐져 있어 그 주장이 거짓이었다(회귀 테스트도 sandbox.num({value:'-100'})===-100을 무조건으로 단언해 이 사실을 그대로 굳히고 있었음). 재현 경로: t.amount는 SANITIZE_FREE_FIELDS(4737행 부근 주석 \"거래금액/잔액 — 마이너스도 유효\")가 음수를 그대로 통과시켜, 백업 복원이나 클라우드 동기화로 이미 음수가 된 일반 거래(t)가 DB.txns에 존재할 수 있다 — editTx(id)(3245행)가 txDraft=JSON.parse(JSON.stringify(t))로 그 음수를 그대로 복제해 txAmt 입력값을 '-1,234' 형태로 초기 렌더하는데, 사용자가 금액칸을 건드리지 않고(oninput/fmtAmt가 한 번도 안 일어남) 저장만 하면 syncTxInputs()의 num($('txAmt'))가 그 '-'를 그대로 살려 반환 → income/expense/saving/transfer 타입별 부호는 amount 자체가 항상 크기라고 가정하는 앱 전역 관례(다일 합계·잔액 계산 등)를 깨는 음수 거래 금액이 저장됨. rAmt(syncRecInputs)·qAmt·bigMinInput도 이론상 같은 경로에 노출. num(el,allowNeg)로 fmtAmt와 동일하게 게이팅해 기본값은 기존처럼 부호를 제거하고, asAmt를 읽는 유일한 호출부(syncAssetInputs, 2727행)에만 renderAssetSheet와 동일한 canNeg=d.type!=='debt' 규칙으로 num(g('asAmt'),d.type!=='debt')를 전달하도록 수정. 다른 num() 호출부(bigMinInput/txAmt/rAmt/qAmt)는 인자 없이 그대로 둬 원래 develop이 의도했던(그러나 실제로는 지켜지지 않았던) 부호 제거 동작을 실제로 복원했다. num() 회귀 테스트를 allowNeg 없음(부호 제거)/allowNeg=true(부호 보존) 두 갈래로 재작성(기존 무조건 부호보존 단언 삭제) — syncTxInputs/syncRecInputs는 DOM 리더라 테스트에서 no-op 스텁이라 editTx 전체 흐름 재현은 안 되지만, 실제 버그의 근원인 num() 자체는 두 분기 모두 직접 검증됨. node test/run.js 380/380 통과, 두 인라인 <script> 블록 모두 new Function 파싱 확인. APP_VERSION 1.45.3->1.45.4, sw.js CACHE v145->v146.",
-      "commit": null
-    },
     {
       "cycle": 56,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-21T13:15:00.000Z",
       "summary": "Explore 서브에이전트로 발견한 CSV 임포트(csvRowToImportTxn, index.html:4599)의 이체/저축 행 검증 누락 버그 수정. 수동 입력(saveTx/saveRec)은 fromAssetId===toAssetId면 '보내는 자산과 받는 자산이 같아요' 토스트로 저장을 막지만, CSV 임포트 경로는 fromName/toName이 둘 다 비어있지 않은지만 확인해 같은 자산명(예: '주계좌'→'주계좌')인 이체/저축 CSV 행도 그대로 통과시켜 DB.txns에 fromAssetId===toAssetId인, 수동 UI로는 절대 만들 수 없는 상태의 거래가 들어갈 수 있었다. 기존 !fromName||!toName 체크에 fromName===toName을 추가해 같은 'asset' 에러 버킷으로 거르도록 했다 — buildImportPreview가 이미 error==='asset'을 invalidCount로 집계해 미리보기에 반영하므로 UI 쪽 변경은 불필요. test/run.js에 이체/저축 각각 same-name 케이스 회귀 테스트 2개 추가, 409/409 통과. 두 인라인 <script> 블록 모두 node --check 통과. APP_VERSION 1.45.12->1.45.13, sw.js CACHE v154->v155.",
+      "commit": null
+    },
+    {
+      "cycle": 61,
+      "phase": "review",
+      "timestamp": "2026-09-21T14:08:15.458Z",
+      "summary": "develop 커밋(9e3ea65, CSV 임포트 이체/저축 same-name 차단)을 검토. csvRowToImportTxn()에서 fromName/toName은 둘 다 unguardCsv+trim을 거쳐 일관되게 정규화된 뒤 비교되므로 새 fromName===toName 조건이 공백/가드문자 처리 불일치 없이 정확히 동작함을 코드로 확인. findAsset()이 실패해 fromAssetId/toAssetId가 둘 다 null이 되는 미매칭 케이스까지 포함해, raw 이름이 문자열로 동일하면 saveTx()의 fromAssetId===toAssetId 의도(자기 자신에게 이체 금지)와 일치하는 방향으로 막히는 것을 확인 — 오탐(false positive) 시나리오 없음. buildImportPreview가 이미 error==='asset'을 invalidCount로 집계하므로 UI 쪽 추가 변경 불필요했다는 판단도 맞음. node test/run.js 409/409 통과 재확인. 문제 없음.",
       "commit": null
     }
   ]
