@@ -1,15 +1,8 @@
 {
   "cycle": 63,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 58,
-      "phase": "review",
-      "timestamp": "2026-09-21T03:10:00.000Z",
-      "summary": "develop 커밋(948e909, 주식 자산 저장 시 종목코드 필수 검증)을 검토. saveAsset()의 가드 위치·조건이 transfer 검증과 동일한 패턴으로 정확하고, trim 처리로 공백만 입력한 경우까지 막으며, 다른 자산 타입(cash 등)에는 영향 없음을 회귀 테스트 3개로 확인. node --check로 두 인라인 script 블록 구문도 재확인. 391/391 테스트 통과, 이상 없음.",
-      "commit": null
-    },
     {
       "cycle": 58,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-21T21:20:00.000Z",
       "summary": "탐사(Explore) 서브에이전트로 발견한 openFixShortfall()(index.html:5521-5566)의 '부족해요' 시트 기본 이체일 버그 수정. 부족해지는 날(date)의 '전날'을 이체 기본일로 제안하는 로직이 date가 오늘/내일일 때(잔액이 오늘 바로 마이너스가 되거나 오늘자 거래로 즉시 마이너스가 되는 경우, planNegatives()의 firstNeg가 TODAY가 될 수 있음)의 경우를 고려하지 않아 dayBefore=addDays(date,-1)이 어제(이미 지난 날짜)가 되고, 이 값이 _fixWhen 기본값과 '결제 전날' 퀵픽 버튼에 그대로 노출·선택돼 있어 사용자가 기본값을 그대로 받으면 planTransfer()/planSplitTransfer()가 confirmed:false인 과거 날짜 이체를 DB.txns에 즉시 만들어버렸다(이미 지난 '예정' 이체). 순수 헬퍼 fixShortfallDefaultDate(date,today)를 추가해 dayBefore<today면 today로 올려 잡도록 하고, openFixShortfall()의 _fixWhen 기본값과 '결제 전날'/'날짜 선택' 퀵픽 버튼의 비교·값을 모두 dayBefore 대신 이 fixDefault로 바꿨다. fixDefault가 TODAY로 collapse되면 버튼 라벨도 '결제 전날' 대신 '내일'과 대비되는 '오늘'로 바꿔 사용자에게 어떤 날짜가 선택됐는지 명확히 보이게 했다. 회귀 테스트 4개 추가: 1) fixShortfallDefaultDate가 date===today면 today를 주는지, 2) date===tomorrow(전날=today)여도 today를 주는지, 3) date가 모레 이상이면 기존처럼 결제 전날을 그대로 주는지, 4) openFixShortfall을 date===TODAY로 직접 열어 _fixWhen이 과거가 아닌 오늘로 세팅되는지. node test/run.js 429/429 통과, 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.45.16->1.45.17, sw.js CACHE v158->v159.",
+      "commit": null
+    },
+    {
+      "cycle": 63,
+      "phase": "review",
+      "timestamp": "2026-09-21T21:30:00.000Z",
+      "summary": "develop 커밋(31184d3, openFixShortfall 기본 이체일 오늘/내일 clamp)을 검토. fixShortfallDefaultDate(date,today)가 dayBefore<today일 때만 today로 올려 잡는 단조 clamp임을 확인하고, dayBefore가 today보다 이르게 되는 경우는 date가 today 또는 tomorrow일 때뿐임을 직접 계산으로 재검증(date>=today+2면 dayBefore>=tomorrow>=today라 그대로 통과). 버튼 라벨 분기(fixDefault===TODAY?'오늘':'결제 전날')와 '날짜 선택' 버튼의 on 상태 비교도 dayBefore 대신 fixDefault로 일관되게 바뀌어 있어 그대로 정확함. date가 모레(today+2)일 때 dayBefore(=tomorrow)가 '내일' 버튼과 같은 날짜를 가리켜 두 프리셋 버튼이 같은 날을 표시하는 case를 발견했으나, 이 함수 도입 전에도 dayBefore를 직접 비교하던 동일한 조건이라 이번 커밋이 만든 새 회귀가 아님을 diff 전후 비교로 확인해 기각. 두 인라인 <script> 블록 모두 node --check 파싱 확인, node test/run.js 429/429 통과 재확인. 문제 없음.",
       "commit": null
     }
   ]
