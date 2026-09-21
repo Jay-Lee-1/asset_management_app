@@ -1,15 +1,8 @@
 {
   "cycle": 58,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 53,
-      "phase": "develop",
-      "timestamp": "2026-09-20T03:10:00.000Z",
-      "summary": "endCondFields(index.html:3131)의 반복 종료조건(횟수↔종료일) 파생쌍이 주기(freq)/반복일(day)/주말규칙(weekend)/시작일이 바뀌어도 재계산되지 않는 버그 발견·수정(Explore 서브에이전트로 발견). 예: 매월+반복일1일+시작일2026-01-10에서 횟수12→종료일2027-01-01로 저장된 뒤 사용자가 주기를 매주로 바꾸면, endCondFields가 여전히 \"12\"를 보여주고 saveTx()/saveRec()도 endDate·count가 둘 다 있으면 재계산하지 않아(index.html:3174-3177, :3357-3359) 그대로 저장 — recDates()는 count를 무시하고 endDate만 보므로 실제로는 51회가 생성됨(12회 의도와 어긋남). recNthDate/recCountUntil을 공유하는 순수 함수 recalcEndCond(d,start)를 새로 추가해(count 있으면 count 우선으로 endDate 재계산, count 없이 endDate만 있으면 count를 역산) txFreq/txDay/시작일 픽커(tx), recDay/setRecWeekend/시작일 픽커(rec)에서 호출하도록 연결했고, rec 시트의 주기 버튼 인라인 핸들러도 txFreq와 같은 패턴의 recFreq(v) 함수로 추출해 동일하게 연결. FUNCTIONS에 recalcEndCond 추가, 버그 재현 시나리오(매월12회->매주 전환 시 생성회차가 여전히12개로 유지, endDate만 있을 때 주기 변경 후 count 역산) 회귀 테스트 3개 추가, 349/349 통과. 두 인라인 <script> 블록 모두 new vm.Script()로 파싱 확인. APP_VERSION 1.44.0->1.44.1, sw.js CACHE v137->v138.",
-      "commit": null
-    },
     {
       "cycle": 53,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-21T01:00:00.000Z",
       "summary": "Explore 서브에이전트로 발견한 saveAsset()의 주식 자산 종목코드(stockCode) 필수 검증 누락 버그 수정. syncAssetInputs()(2728행)는 #asCode 입력값을 trim/uppercase만 할 뿐 비어있는지 검사하지 않고, saveAsset()도 transfer의 from/to 자산처럼 다른 필수 조합은 저장 전 토스트로 막으면서 stock 타입의 stockCode는 전혀 검사하지 않았다 — 종목코드를 비워둔 채 저장하면 그대로 stockCode:''인 자산이 생성되고, assetEval()(2006행)의 R.stocks[a.stockCode] 조회가 항상 undefined라 순자산에서 영원히 ₩0으로 평가되며, heldStockCodes()(2303행)가 falsy stockCode를 걸러내 fetchStocks()/syncRates() 자동 동기화 대상에서도 빠져 수동 시세 입력 외에는 복구할 방법이 없었다. saveAsset() 시작부(syncAssetInputs 직후)에 transfer 검증과 동일한 패턴으로 `if(d.type==='stock'&&!(d.stockCode||'').trim()){toast('종목코드를 입력해 주세요');return}` 가드를 추가했다. 회귀 테스트 3개 추가: 1) 빈 stockCode는 토스트로 막고 자산이 추가되지 않는지, 2) 공백만 입력한 stockCode도 trim 후 동일하게 막히는지, 3) stock이 아닌 타입(cash)은 이 검증에 영향받지 않고 정상 저장되는지. node test/run.js 391/391 통과, 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.45.6->1.45.7, sw.js CACHE v148->v149.",
+      "commit": null
+    },
+    {
+      "cycle": 58,
+      "phase": "review",
+      "timestamp": "2026-09-21T03:10:00.000Z",
+      "summary": "develop 커밋(948e909, 주식 자산 저장 시 종목코드 필수 검증)을 검토. saveAsset()의 가드 위치·조건이 transfer 검증과 동일한 패턴으로 정확하고, trim 처리로 공백만 입력한 경우까지 막으며, 다른 자산 타입(cash 등)에는 영향 없음을 회귀 테스트 3개로 확인. node --check로 두 인라인 script 블록 구문도 재확인. 391/391 테스트 통과, 이상 없음.",
       "commit": null
     }
   ]
