@@ -99,8 +99,10 @@ const FUNCTIONS = [
   'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets',
   'modeSeg', 'monthNav', 'abbr', 'calCellsFor', 'ledSumInner', 'ledSumBox', 'calPane', 'txRow', 'dayTxns',
   'ledgerRowsHtml', 'ledgerDayHeadHtml', 'renderLedger', 'selDayPartial',
+  'ledgerSelPartial', 'ledgerToggleSel', 'ledgerSelAll', 'visibleTx',
   'fmtDot', 'splitHist', 'histRow', 'histTotHTML', 'updateHist', 'renderHistory',
-  'lowestInMonth', 'planBalInner', 'planBalCard', 'renderPlan',
+  'lowestInMonth', 'planBalInner', 'planBalCard', 'planTrackHTML', 'planRowsHTML', 'renderPlan',
+  'refreshPlanBody', 'planAsset',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -243,12 +245,24 @@ const sandbox = {
     set innerHTML(v) { this._html = v; },
     get innerHTML() { return this._html; },
   },
+  // ledgerCard는 renderLedger()가 그린 page-ledger 안의 자식 노드를 흉내낸다.
+  // ledgerSelPartial()이 renderLedger() 전체 대신 이 노드만 갱신하는지 확인하는 테스트용
+  // (ledgerCardMissing=true면 $('ledgerCard')가 null을 반환해 fallback 경로를 재현한다).
+  ledgerCardMissing: false,
+  ledgerCardEl: {
+    _html: '',
+    set innerHTML(v) { this._html = v; },
+    get innerHTML() { return this._html; },
+  },
   // page-plan도 같은 이유(renderPlan()이 $('page-plan').innerHTML=...로 직접 꽂음)로
-  // 같은 getter/setter 패턴을 재사용한다.
+  // 같은 getter/setter 패턴을 재사용한다. querySelector는 refreshPlanBody()가 부분 갱신
+  // 대상을 못 찾는 폴백 경로(renderPlan() 전 최초 상태)를 재현하도록 항상 null을 반환한다 —
+  // 실제 자식 구조가 필요한 성공 경로 테스트는 makePlanDom()으로 $ 자체를 바꿔서 검증한다.
   pagePlanEl: {
     _html: '',
     set innerHTML(v) { this._html = v; },
     get innerHTML() { return this._html; },
+    querySelector: () => null,
   },
   // page-history/histTotals/histList도 같은 이유(renderHistory()/updateHist()가
   // $('page-history')/$('histTotals')/$('histList').innerHTML=...으로 직접 꽂음)로
@@ -276,7 +290,7 @@ const sandbox = {
   // asName은 syncAssetInputs()의 이름 trim() 회귀 테스트용(공백만 있는 이름이 그대로 저장되던 버그).
   // asNameValue가 undefined인 기본 상태에서는 null을 반환해, 이 mock 추가 이전처럼 다른 테스트의
   // syncAssetInputs()/saveAsset() 호출에서 asDraft.name이 건드려지지 않도록 한다.
-  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-plan' ? sandbox.pagePlanEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : null,
+  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-plan' ? sandbox.pagePlanEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : id === 'ledgerCard' ? (sandbox.ledgerCardMissing ? null : sandbox.ledgerCardEl) : null,
   bkTextEl: { value: 'backup-text', select: () => {}, setSelectionRange: () => {} },
   // copyBackup()의 navigator.clipboard 체크가 ReferenceError 없이 "지원 안 함"으로 지나가게
   // 하는 최소 흉내(document.execCommand는 try/catch로 감싸져 있어 굳이 스텁이 필요 없음).
@@ -3587,7 +3601,9 @@ test('emptyAssetCards: 정리 제안 행(ha-b)에 키보드/스크린리더 접�
  * 이 함수들은 $/openSheet 등 DOM 의존성이 있어 실행 대신 소스 텍스트로 패턴 유지를 확인한다
  * (renderHome의 emptyAssetCards() 연결 테스트와 같은 방식). */
 test('renderPlan: 플랜 탭 일별 거래 행(flow-item)에 키보드/스크린리더 접근 패턴이 있다', () => {
-  const body = extractFunction('renderPlan');
+  // flow-item 마크업은 renderPlan()이 아니라 그 안에서 호출하는 planRowsHTML()에 있다
+  // (planAsset()이 renderPlan() 전체 대신 refreshPlanBody()로 목록만 갱신할 수 있도록 분리됨).
+  const body = extractFunction('planRowsHTML');
   assert.ok(body.includes('<div class="flow-item" tabindex="0" role="button"'), 'flow-item에 role="button"이 없음');
   assert.ok(body.includes('onkeydown="rowKeydown(event,()=>planTap('), 'flow-item에 rowKeydown 연결이 없음');
 });
@@ -4339,6 +4355,91 @@ test('renderPlan: 통장 선택 버튼(fv)의 자산명이 esc()로 감싸져 �
   assert.ok(body.includes("${a?esc(a.name):'없음'}"), 'renderPlan()의 통장 선택 버튼이 a.name을 esc() 없이 그대로 꽂고 있음');
 });
 
+/* ---------- planAsset/refreshPlanBody: 통장 전환 부분 갱신 (app-evolve cycle62 advance) ----------
+ * planAsset()(통장 선택 시트에서 계좌를 바꿀 때)은 renderPlan() 전체를 다시 그려 page-plan을
+ * 통째로 교체했다. ledgerToggleSel과 같은 결함으로, #planVP가 매번 새 DOM 노드가 돼
+ * wireMonthCarousel()의 viewport._c 가드를 무력화하고 계좌를 바꿀 때마다 ResizeObserver/터치
+ * 리스너가 누적된다. refreshPlanBody()는 #planVP 노드는 그대로 두고 그 안의 .mc-track과
+ * 필터 라벨(.fv)·목록(.plan-list)만 갱신한다. renderPlan()과 달리 실제 DOM 트리(querySelector)를
+ * 다루므로 renderLedger 스모크 테스트와 같은 방식으로 실행 기반으로 검증한다. */
+// 아래 setupPlanDB()는 이 파일 뒤쪽(renderPlan 스모크 테스트)에 이미 정의돼 있고 함수 선언
+// 호이스팅으로 그쪽이 최종 정의가 되므로(둘 다 최상위 function 선언 — 나중 선언이 이긴다),
+// 여기서는 같은 이름을 새로 만들지 않고 그 정의 + 자산 2건 세팅을 각 테스트에서 직접 한다.
+function setPlanTwoAssets() {
+  sandbox.DB.owners = ['나'];
+  sandbox.DB.assets = [
+    { id: 'a1', name: '월급통장', owner: '나', type: 'cash', baseAmount: 500000, includeInTotal: true },
+    { id: 'a2', name: '비상금통장', owner: '나', type: 'cash', baseAmount: 200000, includeInTotal: true },
+  ];
+}
+// planVP는 실제 DOM이 아니라, refreshPlanBody()가 필요로 하는 최소 뼈대(자식 노드 3개:
+// .filter-2 .fv, .mc-viewport > .mc-track, .plan-list)만 흉내내는 극소 querySelector 모형이다.
+// renderPlan()이 innerHTML=...으로 이 뼈대를 만들고, refreshPlanBody()가 querySelector로
+// 찾아 부분 갱신하는 실제 흐름을 그대로 재현해야 "#planVP 노드가 재사용되는지"를 검증할 수 있다.
+function makePlanDom() {
+  const fv = { _html: '', set innerHTML(v) { this._html = v; }, get innerHTML() { return this._html; } };
+  const track = { _html: '', set innerHTML(v) { this._html = v; }, get innerHTML() { return this._html; } };
+  const list = { _html: '', set innerHTML(v) { this._html = v; }, get innerHTML() { return this._html; } };
+  let alignCalls = 0;
+  const vp = { _c: true, _align: () => { alignCalls++; }, querySelector: (sel) => sel === '.mc-track' ? track : null };
+  return {
+    fv, track, list, vp,
+    get alignCalls() { return alignCalls; },
+    querySelector: (sel) => sel === '.filter-2 .fv' ? fv : sel === '.plan-list' ? list : null,
+  };
+}
+test('refreshPlanBody: 통장을 바꾸면 #planVP 노드는 그대로 두고 트랙·라벨·목록만 갱신한다', () => {
+  setupPlanDB();
+  setPlanTwoAssets();
+  sandbox.ST.plan.assetId = 'a1';
+  const page = makePlanDom();
+  const vpBefore = page.vp;
+  const $orig = sandbox.$;
+  sandbox.$ = (id) => id === 'page-plan' ? page : id === 'planVP' ? page.vp : $orig(id);
+  try {
+    sandbox.ST.plan.assetId = 'a2'; // planAsset()이 시트에서 통장을 바꾼 것과 동일한 상태 변화
+    const ok = sandbox.refreshPlanBody();
+    assert.strictEqual(ok, true);
+    assert.strictEqual(page.vp, vpBefore, '#planVP DOM 노드 자체는 재사용돼야 함(wireMonthCarousel 재부착 방지)');
+    assert.ok(page.fv.innerHTML.includes('비상금통장'), '필터 라벨이 새로 고른 통장 이름으로 갱신돼야 함');
+    assert.ok(page.vp.querySelector('.mc-track').innerHTML.includes('비상금통장'), '캐러셀 트랙이 새 통장 기준 잔액 카드로 갱신돼야 함');
+    assert.strictEqual(page.alignCalls > 0, true, '트랙 내용이 바뀌면 viewport._align()으로 재정렬해야 함');
+  } finally {
+    sandbox.$ = $orig;
+  }
+});
+test('refreshPlanBody: #planVP를 못 찾으면(아직 렌더 전 등) false를 반환해 호출부가 전체 렌더로 폴백한다', () => {
+  setupPlanDB();
+  setPlanTwoAssets();
+  // $('planVP')는 기본 $ 디스패처에서 처리하지 않는 id라 렌더 전처럼 그냥 null이 온다.
+  assert.strictEqual(sandbox.refreshPlanBody(), false);
+});
+test('planAsset: 통장을 바꾸면 renderPlan() 전체 대신 refreshPlanBody()로 부분 갱신한다', () => {
+  setupPlanDB();
+  setPlanTwoAssets();
+  sandbox.ST.plan.assetId = 'a1';
+  const page = makePlanDom();
+  const $orig = sandbox.$;
+  sandbox.$ = (id) => id === 'page-plan' ? page : id === 'planVP' ? page.vp : $orig(id);
+  try {
+    sandbox.pagePlanEl._html = '이전 렌더 스냅샷';
+    sandbox.planAsset('a2');
+    assert.strictEqual(sandbox.ST.plan.assetId, 'a2');
+    assert.strictEqual(sandbox.pagePlanEl.innerHTML, '이전 렌더 스냅샷', 'renderPlan() 전체가 다시 호출돼선 안 됨(page-plan이 그대로여야 함)');
+    assert.ok(page.fv.innerHTML.includes('비상금통장'), 'refreshPlanBody()로 필터 라벨이 갱신돼야 함');
+  } finally {
+    sandbox.$ = $orig;
+  }
+});
+test('planAsset: #planVP가 없으면(폴백) renderPlan()으로 전체를 다시 그린다', () => {
+  setupPlanDB();
+  setPlanTwoAssets();
+  sandbox.ST.plan.assetId = 'a1';
+  sandbox.pagePlanEl._html = '';
+  sandbox.planAsset('a2'); // $('planVP')가 기본적으로 null이라 refreshPlanBody()가 false를 반환 → renderPlan() 폴백
+  assert.ok(sandbox.pagePlanEl.innerHTML, '폴백 시 renderPlan()이 page-plan을 다시 채워야 함');
+});
+
 /* ---------- accountName/esc: self-XSS 봉합 회귀 (d3f7bdc) ---------- */
 // 가입 이메일 검증 정규식(/^[^@\s]+@[^@\s]+\.[^@\s]+$/)이 @와 공백만 막고 <,>,"는 걸러내지
 // 않아 <img src=x onerror=...>@a.co 같은 이메일이 가입을 통과해 SESSION에 그대로 남는다.
@@ -4567,6 +4668,70 @@ test('renderLedger: 오늘보다 미래 날짜를 선택하면 "예정" 라벨�
   sandbox.renderLedger();
   const html = sandbox.pageLedgerEl.innerHTML;
   assert.ok(html.includes('>예정<'), '오늘보다 미래인 날을 선택하면 day-head에 예정 라벨이 나와야 함');
+});
+
+/* ---------- ledgerSelPartial/ledgerToggleSel/ledgerSelAll: 다중선택 부분 갱신 (app-evolve cycle62 advance) ----------
+ * ledgerToggleSel()/ledgerSelAll()은 체크박스를 탭할 때마다 renderLedger() 전체를 다시 그려
+ * page-ledger를 통째로 교체했다. selDay()가 selDayPartial()로 우회한 것과 같은 결함으로,
+ * #ledgerVP가 매번 새 DOM 노드가 돼 wireMonthCarousel()의 viewport._c 가드를 무력화하고
+ * ResizeObserver/터치 리스너가 탭마다 누적된다. ledgerSelPartial()은 #ledgerCard 행만
+ * 갱신해 이 문제를 피하므로, 두 함수가 renderLedger() 대신 이걸 먼저 쓰는지 확인한다. */
+test('ledgerSelPartial: #ledgerCard가 있으면 현재 선택 상태로 그 행만 갱신하고 true를 반환한다', () => {
+  setupLedgerDB();
+  sandbox.DB.assets = [{ id: 'a1', name: '주계좌', owner: '나', type: 'cash', baseAmount: 500000 }];
+  sandbox.DB.txns = [{ id: 't1', date: '2026-06-15', type: 'expense', category: '식비', memo: '점심 김밥', amount: 8000, fromAssetId: 'a1' }];
+  sandbox.ST.lSel = { mode: true, ids: new Set(['t1']) };
+  sandbox.pageLedgerEl._html = '이전 렌더 스냅샷'; // 부분 갱신이면 이 값이 그대로 남아있어야 함
+  const ok = sandbox.ledgerSelPartial();
+  assert.strictEqual(ok, true, 'ledgerCard가 있으면 true를 반환해야 함');
+  assert.ok(sandbox.ledgerCardEl.innerHTML.includes('sel-on'), '선택된 행에 sel-on 클래스가 반영돼야 함');
+  assert.strictEqual(sandbox.pageLedgerEl.innerHTML, '이전 렌더 스냅샷', 'renderLedger() 전체가 다시 호출돼선 안 됨(page-ledger가 그대로여야 함)');
+});
+test('ledgerSelPartial: #ledgerCard를 못 찾으면(아직 렌더 전 등) false를 반환해 호출부가 전체 렌더로 폴백한다', () => {
+  setupLedgerDB();
+  sandbox.ledgerCardMissing = true;
+  try {
+    assert.strictEqual(sandbox.ledgerSelPartial(), false);
+  } finally {
+    sandbox.ledgerCardMissing = false;
+  }
+});
+test('ledgerToggleSel: 다중선택 중 항목을 탭해도 renderLedger() 전체를 다시 그리지 않는다', () => {
+  setupLedgerDB();
+  sandbox.DB.assets = [{ id: 'a1', name: '주계좌', owner: '나', type: 'cash', baseAmount: 500000 }];
+  sandbox.DB.txns = [{ id: 't1', date: '2026-06-15', type: 'expense', category: '식비', memo: '점심 김밥', amount: 8000, fromAssetId: 'a1' }];
+  sandbox.ST.lSel = { mode: true, ids: new Set() };
+  sandbox.pageLedgerEl._html = '이전 렌더 스냅샷';
+  sandbox.ledgerToggleSel('t1');
+  assert.ok(sandbox.ST.lSel.ids.has('t1'), 't1이 선택 목록에 추가돼야 함');
+  assert.strictEqual(sandbox.pageLedgerEl.innerHTML, '이전 렌더 스냅샷', 'renderLedger() 전체가 다시 호출돼선 안 됨');
+  assert.ok(sandbox.ledgerCardEl.innerHTML.includes('sel-on'), 'ledgerCard가 새 선택 상태로 갱신돼야 함');
+});
+test('ledgerToggleSel: #ledgerCard가 없으면(폴백) renderLedger()로 전체를 다시 그린다', () => {
+  setupLedgerDB();
+  sandbox.DB.txns = [{ id: 't1', date: '2026-06-15', type: 'expense', category: '식비', memo: '점심 김밥', amount: 8000, fromAssetId: 'a1' }];
+  sandbox.ST.lSel = { mode: true, ids: new Set() };
+  sandbox.ledgerCardMissing = true;
+  try {
+    sandbox.pageLedgerEl._html = '';
+    sandbox.ledgerToggleSel('t1');
+    assert.ok(sandbox.pageLedgerEl.innerHTML, '폴백 시 renderLedger()가 page-ledger를 다시 채워야 함');
+  } finally {
+    sandbox.ledgerCardMissing = false;
+  }
+});
+test('ledgerSelAll: 전체선택 토글도 renderLedger() 전체를 다시 그리지 않는다', () => {
+  setupLedgerDB();
+  sandbox.DB.assets = [{ id: 'a1', name: '주계좌', owner: '나', type: 'cash', baseAmount: 500000 }];
+  sandbox.DB.txns = [
+    { id: 't1', date: '2026-06-15', type: 'expense', category: '식비', memo: '점심', amount: 8000, fromAssetId: 'a1' },
+    { id: 't2', date: '2026-06-15', type: 'expense', category: '식비', memo: '저녁', amount: 12000, fromAssetId: 'a1' },
+  ];
+  sandbox.ST.lSel = { mode: true, ids: new Set() };
+  sandbox.pageLedgerEl._html = '이전 렌더 스냅샷';
+  sandbox.ledgerSelAll();
+  assert.strictEqual(sandbox.ST.lSel.ids.size, 2, '전체선택 시 두 건 모두 선택돼야 함');
+  assert.strictEqual(sandbox.pageLedgerEl.innerHTML, '이전 렌더 스냅샷', 'renderLedger() 전체가 다시 호출돼선 안 됨');
 });
 
 /* ---------- txnsByDateInRange / calCellsFor 버킷화 회귀 테스트 (app-evolve cycle52 critique/advance) ----------

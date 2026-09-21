@@ -1289,7 +1289,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.45.15';
+const APP_VERSION='1.45.16';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3055,8 +3055,19 @@ function selDay(d){
  if(!wasMulti&&selDayPartial(d))return;
  renderLedger();
 }
-function ledgerToggleSel(id){if(window._lpJustFired){window._lpJustFired=false;return}ST.lSel.ids.has(id)?ST.lSel.ids.delete(id):ST.lSel.ids.add(id);renderLedger()}
-function ledgerSelAll(){const items=dayTxns(ST.ledger.sel).filter(visibleTx).filter(t=>!t.isRec);if(items.length&&ST.lSel.ids.size>=items.length)ST.lSel.ids.clear();else items.forEach(t=>ST.lSel.ids.add(t.id));renderLedger()}
+/* 다중선택 체크박스 토글/전체선택은 달·날짜가 바뀌지 않으므로 renderLedger() 전체를 다시 그릴 필요가 없다.
+   전체 재렌더는 page-ledger를 통째로 교체해 #ledgerVP가 매번 새 DOM 노드가 되고,
+   wireMonthCarousel()의 viewport._c 가드를 무력화해 탭마다 ResizeObserver/터치 리스너가 누적된다
+   (selDayPartial이 같은 문제를 우회한 것과 동일한 이유) */
+function ledgerSelPartial(){
+ const card=$('ledgerCard');if(!card)return false;
+ card.innerHTML=ledgerRowsHtml(ST.ledger.sel);
+ updateSelBottom();
+ requestAnimationFrame(fitAll);
+ return true;
+}
+function ledgerToggleSel(id){if(window._lpJustFired){window._lpJustFired=false;return}ST.lSel.ids.has(id)?ST.lSel.ids.delete(id):ST.lSel.ids.add(id);if(!ledgerSelPartial())renderLedger()}
+function ledgerSelAll(){const items=dayTxns(ST.ledger.sel).filter(visibleTx).filter(t=>!t.isRec);if(items.length&&ST.lSel.ids.size>=items.length)ST.lSel.ids.clear();else items.forEach(t=>ST.lSel.ids.add(t.id));if(!ledgerSelPartial())renderLedger()}
 function ledgerDelSel(){if(!ST.lSel.ids.size){toast('선택된 내역이 없어요');return}
  confirmSheet('선택 삭제',`<b style="color:var(--expense);font-size:16px">${ST.lSel.ids.size}개</b> 내역을 삭제할까요?`,'삭제',()=>{
   const ids=new Set(ST.lSel.ids);ST.lSel.mode=false;ST.lSel.ids.clear();deleteTxnsUndo(ids)});}
@@ -3785,64 +3796,81 @@ function scrollToPlanDay(date){
   target.classList.add('flash');setTimeout(()=>target.classList.remove('flash'),1200);
  }
 }
+function planTrackHTML(y,m,a){
+ return `${planBalCard(m===1?y-1:y, m===1?12:m-1, a)}${planBalCard(y,m,a,true)}${planBalCard(m===12?y+1:y, m===12?1:m+1, a)}`;
+}
+function planRowsHTML(a,y,m){
+ if(!a)return '';
+ const mStart=monthStartStr(y,m),mEnd=monthEndStr(y,m);
+ const startBal=balanceAt(a.id,addDays(mStart,-1));
+ const flows=[];
+ allTxns(mStart,mEnd).forEach(t=>{
+  if(t.fromAssetId!==a.id&&t.toAssetId!==a.id)return;
+  const delta=(t.toAssetId===a.id?t.amount:0)-(t.fromAssetId===a.id?t.amount:0);
+  flows.push({t,delta});
+ });
+ flows.sort((x,z)=>x.t.date<z.t.date?-1:x.t.date>z.t.date?1:0);
+ const dates=[...new Set(flows.map(f=>f.t.date))];
+ if(y===TM.y&&m===TM.m&&!dates.includes(TODAY))dates.push(TODAY);
+ dates.sort();
+ let r=startBal;
+ let firstNegIdx=-1; /* 잔액이 처음 마이너스가 되는 날 인덱스 */
+ const dayNeg=[]; /* 날짜별 실제 잔액 마이너스 여부 */
+ {let rr=startBal;dates.forEach((d,i)=>{rr+=flows.filter(f=>f.t.date===d).reduce((s,f)=>s+f.delta,0);dayNeg[i]=rr<0;if(rr<0&&firstNegIdx<0)firstNegIdx=i;});}
+ return dates.length?dates.map((d,i)=>{
+  const dayFlows=flows.filter(f=>f.t.date===d);
+  r+=dayFlows.reduce((s,f)=>s+f.delta,0);
+  const bal=r;
+  const isToday=d===TODAY;
+  const zone=dayNeg[i]?(i===firstNegIdx?'danger danger-start':'danger'):''; /* 실제 마이너스인 날만 빨강 */
+  const items=dayFlows.length?dayFlows.map(f=>{const t=f.t;
+   const faN=assetNm(t.fromAssetId,t.fromAssetName),taN=assetNm(t.toAssetId,t.toAssetName);
+   const flow=t.type==='income'?(taN!=='—'?taN:''):(t.type==='transfer'||t.type==='saving')?`${faN==='—'?'':faN}→${taN==='—'?'':taN}`:(faN!=='—'?faN:'');
+   return `<div class="flow-item" tabindex="0" role="button" aria-label="${esc(t.memo||t.category)} ${f.delta>=0?'+':'-'}${comma(Math.abs(f.delta))}원" onclick="planTap('${t.isRec?'':t.id}','${t.isRec?t.recId:''}','${t.date}')" onkeydown="rowKeydown(event,()=>planTap('${t.isRec?'':t.id}','${t.isRec?t.recId:''}','${t.date}'))">
+    <div class="avatar ${f.delta>=0?'a-in':'a-food'}" style="width:40px;height:40px">${svg(f.delta>=0?'arrowUp':'arrowDn')}</div>
+    <div style="flex:1;min-width:0"><div class="nm-row"><span class="nm">${esc(t.memo||t.category)}</span>${t.isRec?`<span class="rec-ic" title="반복">${svg('repeat')}</span>`:''}</div>${flow?`<div class="flow-sub"><span class="fl">${esc(flow)}</span></div>`:''}</div>
+    <div class="rt"><div class="delta num ${f.delta>=0?'pos':'minus'}">${f.delta>=0?'+':'-'}${comma(Math.abs(f.delta))}원</div></div></div>`;
+  }).join(''):`<div class="plan-noflow">오늘은 통장이 평화로워요 🌱</div>`;
+  return `<div class="plan-day${isToday?' today':''} ${zone}" data-d="${d}"><div class="card plan-card${bal<0?' neg':''}"><div class="plan-day-head${bal<0?' neg':''}">
+    <div class="pd-date">${shortDate(d)}${isToday?' <span class="pd-today">오늘</span>':''}${isFuture(d)?' <span class="mini sch">예정</span>':''}${bal<0?` <span class="pd-bell">${svg('bell')}</span>`:''}</div>
+    <div class="pd-bal num ${bal<0?'minus':''}"><span class="pl">잔액</span>${comma(bal)}원</div></div>${items}</div></div>`;
+ }).join(''):`<div class="empty"><div class="ei">${svg('ledger')}</div><div class="et">${m}월은 통장이 평화로워요</div><div class="es">예정된 이체도, 나갈 돈도 없어요</div></div>`;
+}
 function renderPlan(){
  if(ST.plan.owner!=='전체'&&!DB.owners.includes(ST.plan.owner))ST.plan.owner='전체'; /* 귀속 사라지면 전체로 (renderAssets와 동일 패턴) */
  const cashAssets=DB.assets.filter(a=>isPlanAcct(a)&&(ST.plan.owner==='전체'||a.owner===ST.plan.owner));
  if(!ST.plan.assetId||!cashAssets.find(a=>a.id===ST.plan.assetId))ST.plan.assetId=cashAssets[0]?cashAssets[0].id:null;
  const a=DB.assets.find(x=>x.id===ST.plan.assetId);
  const {y,m}=ST.plan;
- const mStart=monthStartStr(y,m),mEnd=monthEndStr(y,m);
- let rows='';
- if(a){
-  const startBal=balanceAt(a.id,addDays(mStart,-1));
-  const flows=[];
-  allTxns(mStart,mEnd).forEach(t=>{
-   if(t.fromAssetId!==a.id&&t.toAssetId!==a.id)return;
-   const delta=(t.toAssetId===a.id?t.amount:0)-(t.fromAssetId===a.id?t.amount:0);
-   flows.push({t,delta});
-  });
-  flows.sort((x,z)=>x.t.date<z.t.date?-1:x.t.date>z.t.date?1:0);
-  const dates=[...new Set(flows.map(f=>f.t.date))];
-  if(y===TM.y&&m===TM.m&&!dates.includes(TODAY))dates.push(TODAY);
-  dates.sort();
-  let r=startBal;
-  let firstNegIdx=-1; /* 잔액이 처음 마이너스가 되는 날 인덱스 */
-  const dayNeg=[]; /* 날짜별 실제 잔액 마이너스 여부 */
-  {let rr=startBal;dates.forEach((d,i)=>{rr+=flows.filter(f=>f.t.date===d).reduce((s,f)=>s+f.delta,0);dayNeg[i]=rr<0;if(rr<0&&firstNegIdx<0)firstNegIdx=i;});}
-  rows=dates.length?dates.map((d,i)=>{
-   const dayFlows=flows.filter(f=>f.t.date===d);
-   r+=dayFlows.reduce((s,f)=>s+f.delta,0);
-   const bal=r;
-   const isToday=d===TODAY;
-   const zone=dayNeg[i]?(i===firstNegIdx?'danger danger-start':'danger'):''; /* 실제 마이너스인 날만 빨강 */
-   const items=dayFlows.length?dayFlows.map(f=>{const t=f.t;
-    const faN=assetNm(t.fromAssetId,t.fromAssetName),taN=assetNm(t.toAssetId,t.toAssetName);
-    const flow=t.type==='income'?(taN!=='—'?taN:''):(t.type==='transfer'||t.type==='saving')?`${faN==='—'?'':faN}→${taN==='—'?'':taN}`:(faN!=='—'?faN:'');
-    return `<div class="flow-item" tabindex="0" role="button" aria-label="${esc(t.memo||t.category)} ${f.delta>=0?'+':'-'}${comma(Math.abs(f.delta))}원" onclick="planTap('${t.isRec?'':t.id}','${t.isRec?t.recId:''}','${t.date}')" onkeydown="rowKeydown(event,()=>planTap('${t.isRec?'':t.id}','${t.isRec?t.recId:''}','${t.date}'))">
-     <div class="avatar ${f.delta>=0?'a-in':'a-food'}" style="width:40px;height:40px">${svg(f.delta>=0?'arrowUp':'arrowDn')}</div>
-     <div style="flex:1;min-width:0"><div class="nm-row"><span class="nm">${esc(t.memo||t.category)}</span>${t.isRec?`<span class="rec-ic" title="반복">${svg('repeat')}</span>`:''}</div>${flow?`<div class="flow-sub"><span class="fl">${esc(flow)}</span></div>`:''}</div>
-     <div class="rt"><div class="delta num ${f.delta>=0?'pos':'minus'}">${f.delta>=0?'+':'-'}${comma(Math.abs(f.delta))}원</div></div></div>`;
-   }).join(''):`<div class="plan-noflow">오늘은 통장이 평화로워요 🌱</div>`;
-   return `<div class="plan-day${isToday?' today':''} ${zone}" data-d="${d}"><div class="card plan-card${bal<0?' neg':''}"><div class="plan-day-head${bal<0?' neg':''}">
-     <div class="pd-date">${shortDate(d)}${isToday?' <span class="pd-today">오늘</span>':''}${isFuture(d)?' <span class="mini sch">예정</span>':''}${bal<0?` <span class="pd-bell">${svg('bell')}</span>`:''}</div>
-     <div class="pd-bal num ${bal<0?'minus':''}"><span class="pl">잔액</span>${comma(bal)}원</div></div>${items}</div></div>`;
-  }).join(''):`<div class="empty"><div class="ei">${svg('ledger')}</div><div class="et">${m}월은 통장이 평화로워요</div><div class="es">예정된 이체도, 나갈 돈도 없어요</div></div>`;
- }
- const endBal=a?balanceAt(a.id,mEnd):0;
  $('page-plan').innerHTML=`
  ${pageHead('plan')}
  ${monthNav('plan',`${y}년 ${m}월`)}
  <div class="filter-2">
    <button onclick="openPlanAsset()"><span class="fk">통장</span><span class="fv">${a?esc(a.name):'없음'} ${svg('chevD')}</span></button>
  </div>
- <div class="mc-viewport" id="planVP"><div class="mc-track">
-   ${planBalCard(m===1?y-1:y, m===1?12:m-1, a)}
-   ${planBalCard(y,m,a,true)}
-   ${planBalCard(m===12?y+1:y, m===12?1:m+1, a)}
- </div></div>
- <div class="plan-list">${rows}</div><div style="height:8px"></div>`;
+ <div class="mc-viewport" id="planVP"><div class="mc-track">${planTrackHTML(y,m,a)}</div></div>
+ <div class="plan-list">${planRowsHTML(a,y,m)}</div><div style="height:8px"></div>`;
  wireMonthCarousel($('planVP'),'plan',(yy,mm)=>setNavLabel('plan',yy,mm));
  requestAnimationFrame(fitAll);
+}
+/* 통장(계좌)만 바꾸는 경우 달이 그대로라 renderPlan() 전체를 다시 그릴 필요가 없다.
+   전체 재렌더는 page-plan을 통째로 교체해 #planVP가 매번 새 DOM 노드가 되고,
+   wireMonthCarousel()의 viewport._c 가드를 무력화해 계좌를 바꿀 때마다 ResizeObserver/터치
+   리스너가 누적된다 — #planVP 노드는 그대로 두고 트랙 내용만 갱신해 이를 피한다 */
+function refreshPlanBody(){
+ const page=$('page-plan');if(!page)return false;
+ const vp=$('planVP');const track=vp&&vp.querySelector('.mc-track');
+ const fv=page.querySelector('.filter-2 .fv');
+ const listEl=page.querySelector('.plan-list');
+ if(!vp||!track||!fv||!listEl)return false;
+ const a=DB.assets.find(x=>x.id===ST.plan.assetId);
+ const {y,m}=ST.plan;
+ fv.innerHTML=`${a?esc(a.name):'없음'} ${svg('chevD')}`;
+ track.innerHTML=planTrackHTML(y,m,a);
+ if(vp._align){vp._align();requestAnimationFrame(vp._align)}
+ listEl.innerHTML=planRowsHTML(a,y,m);
+ requestAnimationFrame(fitAll);
+ return true;
 }
 function planTap(id,recId,date){
  if(recId){recEditScope(recId,date,'edit');return}
@@ -3877,7 +3905,8 @@ function openPlanAsset(){
 }
 function planAsset(id){const a=DB.assets.find(x=>x.id===id);
  if(a)ST.plan.owner=a.owner; /* 귀속은 선택한 통장을 따라감 */
- ST.plan.assetId=id;closeSheet();renderPlan();}
+ ST.plan.assetId=id;closeSheet();
+ if(!refreshPlanBody())renderPlan();}
 
 /* ================= MENU ================= */
 function renderMenu(){
