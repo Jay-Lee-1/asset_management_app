@@ -1,15 +1,8 @@
 {
   "cycle": 62,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 57,
-      "phase": "review",
-      "timestamp": "2026-09-20T22:19:40.000Z",
-      "summary": "develop 커밋(884dcff)을 검토. sanitizeAmount(d.amount,0) 클램프가 txns/recurrences/edits[date] 세 지점 모두 정확히 적용됐음을 확인. amount가 항상 크기(magnitude)라는 전제를 grep으로 재검증: addBalanceAdjust()/updateBalanceAdjust()가 income/expense 어느 쪽이든 amount:Math.abs(gap)로만 push하고 부호는 type+fromAssetId/toAssetId로만 표현하며, transfer 타입도 :2156/:2166의 합계 로직이 t.amount를 그대로 더하는 등(부호 반전 없음) 코드 전체가 이 관례를 일관되게 따름을 확인 — SANITIZE_FREE_FIELDS에서 amount를 뺀 것도 올바른 수정. node test/run.js 재실행해 385/385 통과 재확인. 문제 없음.",
-      "commit": null
-    },
     {
       "cycle": 57,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-21T17:10:49.185Z",
       "summary": "Explore 서브에이전트로 발견한 csvRowToImportTxn()(index.html:4600-4601)의 CSV 임포트 음수 금액 미차단 버그 수정. amount는 앱 전체에서 항상 크기(magnitude)만 의미 있고 부호는 type/fromAssetId/toAssetId로만 표현하는 관례인데(sanitizeBackup의 SANITIZE_QTY_FIELDS 참고), 수동 입력(num()이 비숫자 문자 제거로 음수 원천 차단)과 백업 복원(sanitizeAmount(v,0) 클램프)은 이미 이 관례를 지키지만 CSV 임포트만 amount===0만 걸러 음수는 그대로 통과시켰다. 손으로 수정했거나 음수 지출을 내보내는 스프레드시트에서 만든 CSV를 가져오면 balancesUpTo()가 부호를 그대로 빼면서 거래 방향이 조용히 뒤집혀 자산 잔액이 틀어지는 데이터 결함. amount===0을 amount<=0으로 바꿔 음수도 zero와 같은 'amount' 에러로 거르도록 수정(코드→UI까지 이미 invalidCount로 집계되므로 buildImportPreview/미리보기 쪽 추가 변경 불필요). 회귀 테스트 2개 추가(지출/이체/저축 각 음수 금액 무효 처리, buildImportPreview에서 음수 금액 행이 invalidCount로 잡히고 newCount에 안 들어가는지) + 기존 dedupe 테스트가 우연히 amount:-5000 픽스처를 쓰고 있어 내 변경으로 깨지길래(내보낸 CSV를 그대로 재가져오는 시나리오가 부호와 무관하다는 본래 의도와 무관한 값이라 판단) 5000으로 교정. 두 인라인 <script> 블록 모두 vm.Script 파싱 확인, 416/416 통과. APP_VERSION 1.45.14->1.45.15, sw.js CACHE v156->v157.",
+      "commit": null
+    },
+    {
+      "cycle": 62,
+      "phase": "review",
+      "timestamp": "2026-09-21T18:05:00.000Z",
+      "summary": "develop 커밋(5ddbd55, CSV 임포트 음수 금액 차단)을 검토. txnsToCSV()가 t.amount를 부호 반전 없이 그대로 출력함을 직접 확인해 amount가 타입과 무관하게 항상 크기(magnitude)라는 전제가 맞음을 재검증 — amount<=0 가드가 지출/이체/저축 어느 타입에도 오탐 없이 적용됨. 유일한 호출부 buildImportPreview가 이미 error==='amount'를 invalidCount로 집계하므로 UI 쪽 추가 변경이 불필요했다는 판단도 코드로 확인. 함께 교정된 dedupe 테스트 픽스처(amount:-5000→5000)도 '내보낸 CSV 재가져오기' 시나리오의 본래 의도와 무관한 값이었음을 확인해 타당. node test/run.js 재실행해 416/416 통과 재확인. 문제 없음.",
       "commit": null
     }
   ]
