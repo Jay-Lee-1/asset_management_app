@@ -1894,6 +1894,41 @@ test('saveRec: 과거 회차가 없는 반복(시작일이 아직 안 옴)은 �
   assert.strictEqual(sandbox.DB.recurrences.length, 1);
   assert.strictEqual(sandbox.DB.recurrences[0].fromAssetId, 'a2', '즉시 적용되어야 함');
 });
+test('saveRec: 과거 회차가 있는 반복에서 시작일(startDate)만 바꿔 저장하면, 곧바로 덮어쓰지 않고 범위 확인 시트를 띄운다(cycle59 develop에서 고친 버그의 회귀 방지)', () => {
+  sandbox.TWi = -1; sandbox.TODAY = '2026-06-15';
+  const r = { id: 'r1', type: 'expense', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, count: null, amount: 1000, category: '관리비', memo: '관리비', fromAssetId: 'a1', toAssetId: null, skip: [], edits: {}, active: true };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.recDraft = { ...JSON.parse(JSON.stringify(r)), startDate: '2026-02-05' };
+  sandbox.lastSheetHtml = null;
+  sandbox.saveRec();
+  assert.strictEqual(sandbox.DB.recurrences.length, 1, '확인 없이 즉시 분리/덮어쓰기가 일어나면 안 됨');
+  assert.strictEqual(r.startDate, '2026-01-05', '확인 전에는 원본이 그대로여야 함');
+  assert.ok(sandbox.lastSheetHtml, '범위 확인 시트가 떠야 함');
+});
+test("saveRec: 시작일 변경에서 '전체 적용'을 고르면 새 시작일이 그대로 반영된다", () => {
+  sandbox.TWi = -1; sandbox.TODAY = '2026-06-15';
+  const r = { id: 'r1', type: 'expense', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, count: null, amount: 1000, category: '관리비', memo: '관리비', fromAssetId: 'a1', toAssetId: null, skip: [], edits: {}, active: true };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.recDraft = { ...JSON.parse(JSON.stringify(r)), startDate: '2026-02-05' };
+  sandbox.saveRec();
+  sandbox.recSaveScopeApply('all');
+  assert.strictEqual(sandbox.DB.recurrences.length, 1);
+  assert.strictEqual(sandbox.DB.recurrences[0].startDate, '2026-02-05');
+});
+test("saveRec: 시작일 변경에서 '오늘부터 이후 모두'를 고르면, 새로 분리되는 구간은 사용자가 입력한 시작일이 아니라 분리 시점(오늘)부터 시작한다(split 시맨틱상 의도된 동작)", () => {
+  sandbox.TWi = -1; sandbox.TODAY = '2026-06-15';
+  const r = { id: 'r1', type: 'expense', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, count: null, amount: 1000, category: '관리비', memo: '관리비', fromAssetId: 'a1', toAssetId: null, skip: [], edits: {}, active: true };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.recDraft = { ...JSON.parse(JSON.stringify(r)), startDate: '2026-02-05' };
+  sandbox.saveRec();
+  sandbox.recSaveScopeApply('future');
+  assert.strictEqual(sandbox.DB.recurrences.length, 2);
+  const pastRec = sandbox.DB.recurrences.find(x => x.id === 'r1');
+  assert.strictEqual(pastRec.startDate, '2026-01-05', '과거 구간(원본)의 시작일은 그대로 유지되어야 함');
+  assert.strictEqual(pastRec.endDate, '2026-06-14', '원본은 오늘 하루 전까지로 끊겨야 함');
+  const newRec = sandbox.DB.recurrences.find(x => x.id !== 'r1');
+  assert.strictEqual(newRec.startDate, '2026-06-15', 'future 분기는 항상 오늘부터 새 구간을 시작함');
+});
 test('saveRec: 이력 비영향 필드(메모 등)만 바뀌면 과거 회차가 있어도 확인 시트 없이 즉시 적용된다', () => {
   sandbox.TWi = -1; sandbox.TODAY = '2026-06-15';
   const r = { id: 'r1', type: 'expense', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, count: null, amount: 1000, category: '관리비', memo: '관리비', fromAssetId: 'a1', toAssetId: null, skip: [], edits: {}, active: true, weekend: 'none' };

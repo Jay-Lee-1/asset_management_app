@@ -1,15 +1,8 @@
 {
   "cycle": 59,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 54,
-      "phase": "review",
-      "timestamp": "2026-09-20T07:10:00.000Z",
-      "summary": "develop 커밋(1300e07)을 검토. syncAssetInputs()에서 asName 입력값을 trim()하는 1줄 수정이 정확함을 확인: saveAsset()의 이름 기본값 대체(d.name=d.name||라벨)는 falsy 체크라 공백만 입력한 이름은 여전히 truthy이므로 이 trim이 없으면 걸러지지 않았을 것 — 수정 후 빈 문자열이 되어 올바르게 기본 라벨로 대체됨을 확인. syncAssetInputs()는 키 입력마다가 아니라 픽커를 열거나 saveAsset() 진입 시에만 호출되므로(2732-2778행), 매 키 입력마다 trim되어 중간에 공백을 못 치는 부작용은 없음을 grep으로 확인. dup 차단(a.name===d.name)과 삭제된 동명 자산 재연동 모두 trim된 이름을 그대로 씀을 확인. 새 회귀 테스트 3개가 trim 자체, falsy 기본값 대체, dup 차단 세 갈래를 각각 실제로 검증. node test/run.js 재실행해 352/352 통과 재확인, 두 인라인 <script> 블록 모두 node --check 파싱 확인, sw.js CACHE(v140->v141)/APP_VERSION(1.44.3->1.44.4) 버전 동반 상승도 확인. 문제 없음.",
-      "commit": null
-    },
     {
       "cycle": 54,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-21T06:20:00.000Z",
       "summary": "Explore 서브에이전트로 발견한 recHistFieldsChanged()(index.html:3451)의 startDate 누락 버그 수정. 이 함수는 반복거래 편집 시 과거 회차에 영향을 주는 필드(fromAssetId/toAssetId/amount/category/day/freq)가 바뀌었는지 검사해, 바뀌었으면 recSaveScopeConfirm()으로 '오늘부터 이후만/전체 적용' 범위 확인 시트를 띄운다(saveRec(), :3443). 그런데 startDate가 이 목록에서 빠져 있었다 — recDates(r,from,to)(:1909)가 모든 가상 회차를 r.startDate 기준으로 생성·필터링하므로 day/freq와 동일하게 과거 회차 존재 여부를 좌우하는 필드인데도, renderRecSheet()에서 편집 중인 반복의 '시작일'을 아무 가드 없이 바꿀 수 있어(:3391-3393) startDate만 바꾸고 저장하면 확인 없이 DB.recurrences[i]=d로 그대로 덮어써졌다. 재현: 과거 회차가 이미 생긴 반복거래의 시작일을 뒤로 미루면 이미 '확정'됐던 과거 월의 거래가 조용히 사라지고(expandRec/recDates가 라이브로 계산하므로 저장된 개별 거래가 없음), 앞으로 당기면 이미 마감된 과거 달에 없던 거래가 소급 생성된다 — undoToast도 없는 편집 경로라 되돌릴 방법도 없다. recHistFieldsChanged의 필드 목록에 'startDate'를 추가해 day/freq와 동일하게 범위 확인 시트를 거치도록 수정. 기존 회귀 테스트 2개(true/false 케이스)의 orig 픽스처에 startDate를 추가하고, startDate만 바뀌면 true를 반환하는 assert를 추가(새 test() 없이 기존 케이스 확장). 두 인라인 <script> 블록 모두 node --check 파싱 확인, 393/393 통과(신규 assert만 추가돼 테스트 개수는 동일). APP_VERSION 1.45.8->1.45.9, sw.js CACHE v150->v151.",
+      "commit": null
+    },
+    {
+      "cycle": 59,
+      "phase": "review",
+      "timestamp": "2026-09-21T06:22:09.545Z",
+      "summary": "develop 커밋(3ee68ae, recHistFieldsChanged에 startDate 추가)을 검토. 로직 자체는 정확함을 확인: recDates()가 모든 가상 회차를 orig.startDate 기준으로 생성하므로 startDate도 day/freq와 동일하게 과거 회차 존재 여부를 좌우하고, orig(원본)의 과거 회차 존재 여부로 confirm 트리거를 판단하는 기존 설계와 자연스럽게 맞물림(orig가 아직 시작 전이면 확인 없이 즉시 적용, 이미 회차가 있으면 확인). splitRecurrenceAt()에서 future 분기 선택 시 새로 분리되는 레코드의 startDate가 draft의 편집값이 아니라 effectiveDate(TODAY)로 강제 override되는 것도 확인했으나, 이는 my fix로 새로 생긴 문제가 아니라 day/freq 등 다른 이력영향 필드가 바뀔 때도 이미 동일하게 적용되던 기존 설계(오늘부터의 새 구간은 항상 오늘을 시작일로 삼는다는 split 시맨틱)라 버그 아님으로 판단. 다만 recHistFieldsChanged 단위 테스트만 있고 saveRec() 실행 기반 end-to-end 테스트(과거 회차가 있는 반복에서 시작일만 바꿨을 때 confirm 시트가 실제로 뜨는지, all/future 각 선택이 실제로 어떻게 반영되는지)가 없어 커버리지 공백으로 판단해 3개 추가: (1) startDate만 바뀌면 즉시 덮어쓰지 않고 확인 시트가 뜨는지, (2) all 선택 시 새 시작일이 그대로 반영되는지, (3) future 선택 시 분리된 새 구간은 사용자가 입력한 시작일이 아니라 분리 시점(오늘)부터 시작한다는 의도된 동작을 명시적으로 문서화. index.html/sw.js는 건드리지 않아 APP_VERSION/CACHE 상승 불필요. 두 인라인 <script> 블록 모두 node --check 파싱 확인, 396/396 통과.",
       "commit": null
     }
   ]
