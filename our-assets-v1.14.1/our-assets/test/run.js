@@ -87,7 +87,7 @@ const FUNCTIONS = [
   'rateUnknown', 'filteredHist', 'histInvalidate',
   'genSalt', 'pbkdf2Hash', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer', 'openConfirmTransfer',
   'foreignSaveIsNewer', 'openCopyBackup', 'copyBackup', 'findDonors',
-  'recIsVarying', 'varyingRecs', 'openFixShortfall', 'lastActualAmount', 'openQuickAmount',
+  'recIsVarying', 'varyingRecs', 'fixShortfallDefaultDate', 'openFixShortfall', 'lastActualAmount', 'openQuickAmount',
   'backupDue', 'planNegatives', 'homeAlerts', 'updateAlerts',
  'notifyAlertInfo', 'pickNotifyAlerts', 'pruneNotifiedIds',
   'catIconOf', 'catGlyph', 'openCatManage',
@@ -3964,6 +3964,25 @@ test('openFixShortfall: 같은 부족 상황을 다시 열 때는(날짜 선택 
   // fixSetWhen('pick')의 콜백은 같은 ctx(_fixCtx.targetId/date)로 openFixShortfall을 다시 부른다
   sandbox.openFixShortfall('assetA', '2026-06-20', 50000);
   assert.strictEqual(sandbox._fixWhen, '2026-06-18', '같은 (targetId,date) 컨텍스트면 직접 고른 날짜를 유지해야 함');
+});
+
+/* ---------- fixShortfallDefaultDate/openFixShortfall: 부족해지는 날이 오늘/내일이면
+ * '결제 전날'이 이미 지난 날짜가 되어, 부족 알림의 기본 이체일과 퀵픽 버튼이 과거 날짜를
+ * 가리키고 그대로 선택하면 confirmed:false인 과거 날짜 이체가 DB.txns에 만들어지던
+ * 버그의 회귀 테스트(app-evolve cycle63). 전날이 오늘보다 이르면 오늘로 올려 잡아야 한다. */
+test('fixShortfallDefaultDate: 부족해지는 날이 오늘이면 전날(=어제)이 아니라 오늘을 기본값으로 준다', () => {
+  assert.strictEqual(sandbox.fixShortfallDefaultDate('2026-06-15', '2026-06-15'), '2026-06-15');
+});
+test('fixShortfallDefaultDate: 부족해지는 날이 내일이면 전날(=오늘)이 오늘과 같으므로 그대로 오늘을 준다', () => {
+  assert.strictEqual(sandbox.fixShortfallDefaultDate('2026-06-16', '2026-06-15'), '2026-06-15');
+});
+test('fixShortfallDefaultDate: 부족해지는 날이 모레 이상이면 평소처럼 결제 전날을 그대로 기본값으로 준다', () => {
+  assert.strictEqual(sandbox.fixShortfallDefaultDate('2026-06-20', '2026-06-15'), sandbox.addDays('2026-06-20', -1));
+});
+test('openFixShortfall: 부족해지는 날이 오늘이면 이체 기본일을 과거(어제)가 아니라 오늘로 잡는다(회귀 확인)', () => {
+  setupFixShortfallDB();
+  sandbox.openFixShortfall('assetA', '2026-06-15', 50000);
+  assert.strictEqual(sandbox._fixWhen, '2026-06-15', '기본 이체일이 오늘보다 이전이면 안 됨');
 });
 
 /* ---------- planNegatives/homeAlerts/updateAlerts: 홈 알림 엔진 회귀 테스트 (app-evolve cycle43)

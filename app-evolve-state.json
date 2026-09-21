@@ -1,15 +1,8 @@
 {
   "cycle": 63,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 58,
-      "phase": "develop",
-      "timestamp": "2026-09-21T01:00:00.000Z",
-      "summary": "Explore 서브에이전트로 발견한 saveAsset()의 주식 자산 종목코드(stockCode) 필수 검증 누락 버그 수정. syncAssetInputs()(2728행)는 #asCode 입력값을 trim/uppercase만 할 뿐 비어있는지 검사하지 않고, saveAsset()도 transfer의 from/to 자산처럼 다른 필수 조합은 저장 전 토스트로 막으면서 stock 타입의 stockCode는 전혀 검사하지 않았다 — 종목코드를 비워둔 채 저장하면 그대로 stockCode:''인 자산이 생성되고, assetEval()(2006행)의 R.stocks[a.stockCode] 조회가 항상 undefined라 순자산에서 영원히 ₩0으로 평가되며, heldStockCodes()(2303행)가 falsy stockCode를 걸러내 fetchStocks()/syncRates() 자동 동기화 대상에서도 빠져 수동 시세 입력 외에는 복구할 방법이 없었다. saveAsset() 시작부(syncAssetInputs 직후)에 transfer 검증과 동일한 패턴으로 `if(d.type==='stock'&&!(d.stockCode||'').trim()){toast('종목코드를 입력해 주세요');return}` 가드를 추가했다. 회귀 테스트 3개 추가: 1) 빈 stockCode는 토스트로 막고 자산이 추가되지 않는지, 2) 공백만 입력한 stockCode도 trim 후 동일하게 막히는지, 3) stock이 아닌 타입(cash)은 이 검증에 영향받지 않고 정상 저장되는지. node test/run.js 391/391 통과, 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.45.6->1.45.7, sw.js CACHE v148->v149.",
-      "commit": null
-    },
     {
       "cycle": 58,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-21T20:10:00.000Z",
       "summary": "critique(fb11881) 계획대로 ledger 다중선택/plan 계좌 전환의 전체 재렌더 문제를 부분 갱신으로 고쳤다. ledgerSelPartial()을 추가해 ledgerToggleSel/ledgerSelAll이 renderLedger() 전체 대신 #ledgerCard 행만 갱신하도록 바꿨다(카드를 못 찾으면 renderLedger()로 폴백). Plan 탭은 renderPlan()에서 캐러셀 트랙(previous/current/next 잔액 카드)과 일별 흐름 목록 로직을 각각 planTrackHTML(y,m,a)/planRowsHTML(a,y,m)로 추출한 뒤, assetBodyHTML/refreshAssetBody 패턴을 본떠 refreshPlanBody()를 추가 — #planVP 노드는 그대로 두고 그 안의 .mc-track과 필터 라벨(.fv)·.plan-list만 querySelector로 찾아 갱신하고 viewport._align()으로 재정렬한다. planAsset()이 renderPlan() 대신 이를 먼저 쓰도록 바꿨다(#planVP를 못 찾으면 renderPlan()으로 폴백). critique가 언급한 planOwner()는 실제로는 filter-2에서 호출부가 전혀 없는 죽은 코드임을 grep으로 확인해 건드리지 않았다(재현 불가능한 경로를 고치는 건 의미가 없어 범위에서 제외). 테스트: FUNCTIONS에 ledgerSelPartial/ledgerToggleSel/ledgerSelAll/visibleTx/planTrackHTML/planRowsHTML/refreshPlanBody/planAsset을 추가하고, 기존 renderPlan 접근성 테스트 중 flow-item 마크업이 이제 planRowsHTML()에 있어 extractFunction 대상을 그쪽으로 옮겼다. 실행 기반 회귀 테스트 9개 추가: ledger 쪽은 ledgerCard mock으로 부분 갱신/폴백을 확인하고, plan 쪽은 .filter-2 .fv/.mc-track/.plan-list를 갖춘 최소 querySelector 모형(makePlanDom)으로 #planVP 노드 재사용·라벨/트랙 갱신·align 재호출·폴백을 확인했다. 두 인라인 <script> 블록 모두 vm.Script 파싱 확인, 425/425 통과(기존 416 + 신규 9). APP_VERSION 1.45.15->1.45.16, sw.js CACHE v157->v158.",
+      "commit": null
+    },
+    {
+      "cycle": 63,
+      "phase": "develop",
+      "timestamp": "2026-09-21T21:20:00.000Z",
+      "summary": "탐사(Explore) 서브에이전트로 발견한 openFixShortfall()(index.html:5521-5566)의 '부족해요' 시트 기본 이체일 버그 수정. 부족해지는 날(date)의 '전날'을 이체 기본일로 제안하는 로직이 date가 오늘/내일일 때(잔액이 오늘 바로 마이너스가 되거나 오늘자 거래로 즉시 마이너스가 되는 경우, planNegatives()의 firstNeg가 TODAY가 될 수 있음)의 경우를 고려하지 않아 dayBefore=addDays(date,-1)이 어제(이미 지난 날짜)가 되고, 이 값이 _fixWhen 기본값과 '결제 전날' 퀵픽 버튼에 그대로 노출·선택돼 있어 사용자가 기본값을 그대로 받으면 planTransfer()/planSplitTransfer()가 confirmed:false인 과거 날짜 이체를 DB.txns에 즉시 만들어버렸다(이미 지난 '예정' 이체). 순수 헬퍼 fixShortfallDefaultDate(date,today)를 추가해 dayBefore<today면 today로 올려 잡도록 하고, openFixShortfall()의 _fixWhen 기본값과 '결제 전날'/'날짜 선택' 퀵픽 버튼의 비교·값을 모두 dayBefore 대신 이 fixDefault로 바꿨다. fixDefault가 TODAY로 collapse되면 버튼 라벨도 '결제 전날' 대신 '내일'과 대비되는 '오늘'로 바꿔 사용자에게 어떤 날짜가 선택됐는지 명확히 보이게 했다. 회귀 테스트 4개 추가: 1) fixShortfallDefaultDate가 date===today면 today를 주는지, 2) date===tomorrow(전날=today)여도 today를 주는지, 3) date가 모레 이상이면 기존처럼 결제 전날을 그대로 주는지, 4) openFixShortfall을 date===TODAY로 직접 열어 _fixWhen이 과거가 아닌 오늘로 세팅되는지. node test/run.js 429/429 통과, 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.45.16->1.45.17, sw.js CACHE v158->v159.",
       "commit": null
     }
   ]

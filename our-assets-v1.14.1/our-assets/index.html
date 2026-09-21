@@ -1289,7 +1289,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.45.16';
+const APP_VERSION='1.45.17';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5506,6 +5506,11 @@ function findDonors(needAmount,targetId,byDate){
   .filter(x=>x.free>0)
   .sort((x,z)=>z.free-x.free);
 }
+function fixShortfallDefaultDate(date,today){
+ /* 부족해지는 날의 '전날'을 기본 이체일로 제안하되, 그 전날이 이미 지난 날짜면(부족한 날이 오늘/내일) 오늘로 올려 잡는다 */
+ const dayBefore=addDays(date,-1);
+ return dayBefore<today?today:dayBefore;
+}
 let _fixWhen=null,_fixCtx=null;
 function fixSetWhen(v){
  if(v==='pick'){
@@ -5518,9 +5523,9 @@ function openFixShortfall(targetId,date,need){
  const t=DB.assets.find(a=>a.id===targetId);if(!t)return;
  if(!_fixCtx||_fixCtx.targetId!==targetId||_fixCtx.date!==date)_fixWhen=null; /* 다른 부족 상황이면 이전에 고른 이체일을 이어쓰지 않는다 */
  _fixCtx={targetId,date,need};
- const dayBefore=addDays(date,-1);
+ const fixDefault=fixShortfallDefaultDate(date,TODAY);
  const tomorrow=addDays(TODAY,1);
- if(!_fixWhen)_fixWhen=dayBefore;
+ if(!_fixWhen)_fixWhen=fixDefault;
  const when=_fixWhen;
  const donors=findDonors(need,targetId,when); /* 실제 이체가 실행될 날(when) 기준 여유 — 부족해지는 날(date) 기준이면 그 사이에 들어오는 돈까지 앞당겨 셈해 아직 안 들어온 돈으로 이체하라고 잘못 권할 수 있다 */
  const enoughOnes=donors.filter(x=>x.free>=need);
@@ -5563,8 +5568,8 @@ function openFixShortfall(targetId,date,need){
   <div class="fix-cap">언제 옮길까요?</div>
   <div class="opt-grid" style="grid-template-columns:repeat(3,1fr)">
     <button class="${when===tomorrow?'on':''}" onclick="fixSetWhen('${tomorrow}')">내일<br><small style="font-weight:600;opacity:.7">${shortDate(tomorrow)}</small></button>
-    <button class="${when===dayBefore?'on':''}" onclick="fixSetWhen('${dayBefore}')">결제 전날<br><small style="font-weight:600;opacity:.7">${shortDate(dayBefore)}</small></button>
-    <button class="${(when!==tomorrow&&when!==dayBefore)?'on':''}" onclick="fixSetWhen('pick')">날짜 선택<br><small style="font-weight:600;opacity:.7">${(when!==tomorrow&&when!==dayBefore)?shortDate(when):'직접'}</small></button>
+    <button class="${when===fixDefault?'on':''}" onclick="fixSetWhen('${fixDefault}')">${fixDefault===TODAY?'오늘':'결제 전날'}<br><small style="font-weight:600;opacity:.7">${shortDate(fixDefault)}</small></button>
+    <button class="${(when!==tomorrow&&when!==fixDefault)?'on':''}" onclick="fixSetWhen('pick')">날짜 선택<br><small style="font-weight:600;opacity:.7">${(when!==tomorrow&&when!==fixDefault)?shortDate(when):'직접'}</small></button>
   </div>
   ${body}`);
 }
