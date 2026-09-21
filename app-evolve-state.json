@@ -1,22 +1,12 @@
 {
   "cycle": 57,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "renderPlan()에 실행 기반 스모크 테스트 추가",
+    "why": "renderPlan()(index.html:3766-3824)은 render* 함수 중 실행 커버리지가 전혀 없는 유이한 함수(다른 하나는 renderMenu, 정적 템플릿이라 저위험) — startBal/flows/dayNeg/firstNegIdx(3789)로 이어지는 잔액 마이너스 전환일 계산과 danger/danger-start 존/bell 아이콘 렌더링(3795,3805), 빈 상태(3807), 오늘 자동삽입(3784) 등 분기 많은 로직인데도 test/run.js의 현재 renderPlan 테스트 2개(3314,3326)+esc 테스트(4016)는 전부 extractFunction()으로 소스 텍스트만 보고 sandbox.renderPlan()을 실제로 호출해 DOM을 검증하는 테스트가 하나도 없음. renderHome/renderAssets/renderLedger/renderHistory는 이미 각 3-5개의 실행 기반 테스트(4073-4348)로 커버됨 — 같은 패턴을 renderPlan에도 적용.",
+    "approach": "test/run.js에 setupHomeDB류를 본뜬 setupPlanDB() 픽스처(DB.assets에 현금성 자산, DB.txns를 한 달치, ST.plan.{y,m,owner,assetId} 세팅) 추가. 테스트: (a) flows 없을 때 빈 상태('평화로워요') 렌더 및 예외 없음, (b) 누적 잔액이 음수로 전환되는 날에 danger/danger-start 클래스와 bell svg가 정확히 그 날에만 나타나는지(dayNeg/firstNegIdx 회귀 방지), (c) income/transfer/expense 항목의 자산명과 +/- 금액 표시(3796-3802), (d) 이번 달에 당일 거래가 없을 때 TODAY가 dates에 자동 삽입되는지(3784). build/test 통과 확인 후 APP_VERSION/sw.js CACHE 동반 상승."
+  },
   "history": [
-    {
-      "cycle": 52,
-      "phase": "develop",
-      "timestamp": "2026-09-19T23:07:00.000Z",
-      "summary": "Explore 서브에이전트로 발견한 asOpenType()(index.html:2720)의 연금(pension) 총자산 제외 자동화 비대칭 버그 수정. onPick 콜백이 자산 종류를 pension으로 바꿀 때는 includeInTotal=false를 강제로 켜지만(연금은 기본적으로 순자산 계산에서 제외), 종류를 다시 다른 걸로 바꿀 때는 이를 원상복구하지 않았다 — 연금이 만기/전환돼 사용자가 종류를 연금→현금예금 등으로 바꾸는 흔한 편집 흐름에서, 그 자산이 총자산/순자산(totalAssets/totalDebt/ownerAssets/ownerDebt 등 includeInTotal로 필터링하는 모든 집계)에 영구히 안 잡히는 조용한 데이터 결함이었다. onPick에서 pension으로 바꿀 때만 asDraft._pensionAutoExcl=true 플래그를 남기고, pension에서 벗어날 때 그 플래그가 있을 때만(=자동으로 꺼진 경우만) includeInTotal을 true로 복원하고 플래그를 지우도록 수정 — 사용자가 연금과 무관하게 스스로 이 스위치를 꺼둔 경우(플래그 없음)는 건드리지 않아, 기존에 이미 있던 정상적인 수동 제외 사용 패턴을 깨지 않는다. saveAsset()에도 d._dispAmt와 같은 이유로 이 임시 플래그가 저장 시 DB.assets에 새지 않도록 delete 처리를 추가했다. asOpenType/openTypePicker/renderAssetSheet는 test/run.js에 실행 기반 커버리지가 전혀 없었어서(openTypePicker는 여전히 화면 전용이라 no-op 스텁, renderAssetSheet도 같은 이유로 신규 no-op 스텁 추가), asOpenType을 처음으로 FUNCTIONS에 추가하고 onPick 콜백만 캡처하는 openTypePicker 스텁을 새로 만들어 회귀 테스트 3개 추가(연금 전환 시 자동 제외+복원, 사용자가 직접 꺼둔 값은 종류 변경만으로 안 켜짐, saveAsset이 임시 플래그를 새지 않게 지움), 343/343 통과. 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.43.8->1.43.9, sw.js CACHE v134->v135.",
-      "commit": null
-    },
-    {
-      "cycle": 52,
-      "phase": "review",
-      "timestamp": "2026-09-20T00:09:32.338Z",
-      "summary": "develop 커밋(73892f5)을 검토. asOpenType()의 _pensionAutoExcl 복원 로직이 onPick 콜백 안에서만 플래그를 세팅해, 이번 편집 세션에서 먼저 pension으로 바꿨다가 되돌리는 왕복에서만 동작하고, 커밋 설명이 실제로 겨냥한 흐름 — 이미 DB에 저장돼 있던 기존 연금 자산을 열어 곧장 다른 종류로 바꾸는 만기/전환 편집 — 에서는 openAssetSheet()가 DB.assets에서 asDraft를 그대로 복제하므로(_pensionAutoExcl은 saveAsset()에서 항상 delete돼 DB에 저장되지 않음) 플래그가 애초에 없어 복원이 전혀 동작하지 않는 잔여 버그를 발견. 원래 버그(총자산 영구 제외)가 정작 커밋이 고치려던 실사용 시나리오에서는 그대로 남아있던 것. openAssetSheet()가 편집 대상 자산을 로드할 때 type이 pension이면 _pensionAutoExcl을 true로 다시 간주하도록 한 줄 추가해 실사용 흐름에서도 asOpenType의 복원 로직이 동작하게 수정. openAssetSheet를 처음으로 test/run.js FUNCTIONS에 추가하고, DB에 저장된 기존 연금 자산을 열어 곧장 다른 종류로 바꾸면 총자산 제외가 자동으로 풀리는지 확인하는 회귀 테스트 1개 추가, 344/344 통과. 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.43.9->1.43.10, sw.js CACHE v135->v136.",
-      "commit": null
-    },
     {
       "cycle": 52,
       "phase": "critique",
@@ -148,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-09-20T22:19:40.000Z",
       "summary": "develop 커밋(884dcff)을 검토. sanitizeAmount(d.amount,0) 클램프가 txns/recurrences/edits[date] 세 지점 모두 정확히 적용됐음을 확인. amount가 항상 크기(magnitude)라는 전제를 grep으로 재검증: addBalanceAdjust()/updateBalanceAdjust()가 income/expense 어느 쪽이든 amount:Math.abs(gap)로만 push하고 부호는 type+fromAssetId/toAssetId로만 표현하며, transfer 타입도 :2156/:2166의 합계 로직이 t.amount를 그대로 더하는 등(부호 반전 없음) 코드 전체가 이 관례를 일관되게 따름을 확인 — SANITIZE_FREE_FIELDS에서 amount를 뺀 것도 올바른 수정. node test/run.js 재실행해 385/385 통과 재확인. 문제 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 57,
+      "phase": "critique",
+      "timestamp": "2026-09-21T00:14:14.467Z",
+      "summary": "Explore 서브에이전트로 앱 전체를 구조적으로 재검토(render* 스모크/esc 스윕/캘린더 캐싱/selDay 부분갱신/반복종료조건/자산명·메모 trim/num 부호/sanitizeBackup/truncateRecEnd/CSV import 기능 자체 등 최근 완료 항목은 재탐색 금지, cycle54/56에서 이월된 후보들만 재검증하도록 지시). renderPlan()(index.html:3766-3824)이 render* 함수 중 실행 기반 테스트가 전혀 없는 유이한 함수(나머지 하나는 renderMenu — 정적 템플릿이라 저위험)임을 확인: test/run.js의 기존 renderPlan 테스트 2개(3314,3326)+esc 테스트(4016)는 모두 extractFunction()으로 소스 텍스트만 검사하고 sandbox.renderPlan()을 실제 호출해 DOM을 검증하는 테스트가 하나도 없음. startBal→flows→dayNeg/firstNegIdx(3789)로 이어지는 잔액 마이너스 전환일 계산과 danger/danger-start 존·bell 아이콘(3795,3805), 빈 상태(3807), 오늘 자동삽입(3784) 등 분기 많은 로직인데 renderHome/renderAssets/renderLedger/renderHistory(각 3-5개 실행 테스트, 4073-4348)와 달리 커버리지 공백으로 채택. CSV import 미리보기/수동매핑 UI 부재(더 큰 신규 UI라 후순위), save() 매 변경 전체 stringify(급하지 않음, 새 증거 없음), FX 통화 하드코딩(이미 2회 보류, 새 버그 없음)은 순위 낮춰 기각. advance에서 setupPlanDB() 픽스처를 새로 만들어 renderPlan()에 실행 기반 회귀 테스트 4개(빈 상태, danger 존/bell 아이콘 정확한 날짜, income/transfer/expense 항목 표시, 오늘 자동삽입)를 추가하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     }
   ]
