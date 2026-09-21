@@ -1,15 +1,12 @@
 {
   "cycle": 62,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "월 캐러셀(ledgerVP/planVP) 부분 갱신 — ledger 다중선택·plan 필터 전환 시 전체 렌더로 인한 ResizeObserver/터치 리스너 누적 및 포커스 손실 수정",
+    "why": "wireMonthCarousel(index.html:6001-6053)은 viewport._c 플래그로 리스너 중복 부착을 막지만, 이 플래그는 DOM 노드에 붙는다. renderLedger()/renderPlan()이 page-ledger/page-plan의 innerHTML을 통째로 교체하면 #ledgerVP/#planVP가 매번 새 노드로 바뀌어 _c 가드가 무력화된다. selDay()는 이미 selDayPartial()(3019-3045)로 이 문제를 회피했지만, ledgerToggleSel/ledgerSelAll(3058-3059, 원장 다중선택 체크박스 탭마다 전체 renderLedger 재호출)과 planOwner(3851)/planAsset(3878-3880, Plan 탭 소유자/계좌 필터 전환마다 전체 renderPlan 재호출)는 같은 결함을 그대로 갖고 있다. 실사용 흐름(거래 여러 건 다중선택 삭제, Plan 필터 전환)에서 탭할 때마다 감지되지 않는 ResizeObserver+터치 리스너가 버려진 DOM 서브트리에 누적되는 실질적 메모리 누수이고, 키보드로 토글한 행(tabindex/role=button/onkeydown=rowKeydown, 3078)은 Enter/Space마다 포커스가 body로 빠진다. selDayPartial 도입 당시 이미 인지된 결함 클래스를 두 호출부에서 마저 끝내는 자연스러운 다음 걸음이라 SVG 차트 aria-label(저영향, 1줄 수정이라 advance감 아님)이나 카테고리/자산 삭제 캐스케이드(이미 undo/relink까지 탄탄해 새 증거 없음)보다 우선순위가 높다.",
+    "approach": "1) ledgerSelPartial(id): selDayPartial과 같은 패턴으로 전체 renderLedger() 대신 이미 DOM에 있는 .swipe-content[data-id] 행을 찾아 sel-on 클래스+aria-pressed+sel-check 표시만 토글하고 updateSelBottom()을 호출. 행을 못 찾을 때만(예: 아직 렌더 안 된 날짜) 전체 renderLedger()로 폴백. ledgerToggleSel/ledgerSelAll이 이를 쓰도록 변경. 2) Plan 탭: assetBodyHTML()/refreshAssetBody()(2516,2544) 패턴을 그대로 따라 planBodyHTML()/refreshPlanBody()를 추출 — #planVP 캐러셀은 한 번만 렌더하고, planOwner/planAsset은 그 아래 본문(#planBody)만 innerHTML 교체해 #planVP와 _c 가드를 건드리지 않는다. 3) 예상 diff 60-90줄. 4) 테스트: test/run.js가 이미 wireMonthCarousel을 스텁(311행)하므로, extractFunction()으로 ledgerToggleSel/ledgerSelAll/planOwner/planAsset 소스를 추출해 renderLedger()/renderPlan()을 직접 호출하지 않고 새 partial 헬퍼를 호출하는지 확인하는 소스텍스트 검사 테스트(기존 esc/owner-guard 테스트와 동일 기법, 3589-3607/4337-4339 참고)와, sandbox.renderLedger()/renderPlan() 실행 후 $('ledgerVP')/$('planVP') 노드 참조를 캡처해 ledgerToggleSel/planOwner 호출 전후로 동일 노드(===)인지 확인하는 실행 기반 스모크 테스트(4537-4600/4704-4747 패턴)를 추가."
+  },
   "history": [
-    {
-      "cycle": 57,
-      "phase": "critique",
-      "timestamp": "2026-09-21T00:14:14.467Z",
-      "summary": "Explore 서브에이전트로 앱 전체를 구조적으로 재검토(render* 스모크/esc 스윕/캘린더 캐싱/selDay 부분갱신/반복종료조건/자산명·메모 trim/num 부호/sanitizeBackup/truncateRecEnd/CSV import 기능 자체 등 최근 완료 항목은 재탐색 금지, cycle54/56에서 이월된 후보들만 재검증하도록 지시). renderPlan()(index.html:3766-3824)이 render* 함수 중 실행 기반 테스트가 전혀 없는 유이한 함수(나머지 하나는 renderMenu — 정적 템플릿이라 저위험)임을 확인: test/run.js의 기존 renderPlan 테스트 2개(3314,3326)+esc 테스트(4016)는 모두 extractFunction()으로 소스 텍스트만 검사하고 sandbox.renderPlan()을 실제 호출해 DOM을 검증하는 테스트가 하나도 없음. startBal→flows→dayNeg/firstNegIdx(3789)로 이어지는 잔액 마이너스 전환일 계산과 danger/danger-start 존·bell 아이콘(3795,3805), 빈 상태(3807), 오늘 자동삽입(3784) 등 분기 많은 로직인데 renderHome/renderAssets/renderLedger/renderHistory(각 3-5개 실행 테스트, 4073-4348)와 달리 커버리지 공백으로 채택. CSV import 미리보기/수동매핑 UI 부재(더 큰 신규 UI라 후순위), save() 매 변경 전체 stringify(급하지 않음, 새 증거 없음), FX 통화 하드코딩(이미 2회 보류, 새 버그 없음)은 순위 낮춰 기각. advance에서 setupPlanDB() 픽스처를 새로 만들어 renderPlan()에 실행 기반 회귀 테스트 4개(빈 상태, danger 존/bell 아이콘 정확한 날짜, income/transfer/expense 항목 표시, 오늘 자동삽입)를 추가하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 57,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-09-21T18:05:00.000Z",
       "summary": "develop 커밋(5ddbd55, CSV 임포트 음수 금액 차단)을 검토. txnsToCSV()가 t.amount를 부호 반전 없이 그대로 출력함을 직접 확인해 amount가 타입과 무관하게 항상 크기(magnitude)라는 전제가 맞음을 재검증 — amount<=0 가드가 지출/이체/저축 어느 타입에도 오탐 없이 적용됨. 유일한 호출부 buildImportPreview가 이미 error==='amount'를 invalidCount로 집계하므로 UI 쪽 추가 변경이 불필요했다는 판단도 코드로 확인. 함께 교정된 dedupe 테스트 픽스처(amount:-5000→5000)도 '내보낸 CSV 재가져오기' 시나리오의 본래 의도와 무관한 값이었음을 확인해 타당. node test/run.js 재실행해 416/416 통과 재확인. 문제 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 62,
+      "phase": "critique",
+      "timestamp": "2026-09-21T19:11:07.549Z",
+      "summary": "탐사 서브에이전트로 앱 전체를 구조적으로 재검토(render* 스모크/esc 스윕/캘린더 캐싱/selDay 부분갱신/반복종료조건/자산명·메모 trim/num 부호/sanitizeBackup/CSV import 흐름·same-name·negative amount·RANGE_FROM 가드/FX 통화 피커/stockCode 검증/recHistFieldsChanged startDate/addBalanceAdjust 부채 방향/homeAlerts OS 알림/cloud sync online 재시도 등 최근 완료 항목은 재탐색 금지 지시). wireMonthCarousel()(index.html:6001-6053)의 viewport._c 중복부착 가드가 DOM 노드에 붙는데, renderLedger()/renderPlan()이 page-ledger/page-plan의 innerHTML을 통째로 교체해 #ledgerVP/#planVP가 매번 새 노드가 되면서 가드가 무력화됨을 확인. selDay()는 이미 selDayPartial()(3019-3045)로 이 결함을 우회했지만, 원장 다중선택(ledgerToggleSel/ledgerSelAll, 3058-3059, 체크박스 탭마다 전체 renderLedger 재호출)과 Plan 탭 소유자/계좌 필터 전환(planOwner 3851/planAsset 3878-3880, 매번 전체 renderPlan 재호출)은 같은 결함을 그대로 갖고 있어, 다중선택 삭제나 필터 전환 같은 실사용 흐름에서 감지 안 되는 ResizeObserver+터치 리스너가 버려진 DOM 서브트리에 누적되고(메모리 누수) 키보드 토글 시 포커스가 body로 빠짐을 확인. SVG 순자산 차트 aria-label 누락(저영향·1줄 수정이라 advance감 아님), 카테고리/자산 삭제 캐스케이드(이미 undo/relink까지 탄탄), save() stringify(새 증거 없음)는 후순위로 기각. advance에서 ledgerSelPartial()(selDayPartial 패턴 재사용)과 assetBodyHTML/refreshAssetBody 패턴을 본뜬 planBodyHTML()/refreshPlanBody()로 #ledgerVP/#planVP 캐러셀 노드를 재사용하며 부분 갱신하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     }
   ]
