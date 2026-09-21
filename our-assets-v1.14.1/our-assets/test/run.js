@@ -77,7 +77,7 @@ const FUNCTIONS = [
   'monthStartStr', 'monthEndStr', 'expandRec', 'allTxns', 'txnsByDateInRange', 'spendByCategory', 'histSumTotals',
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'expenseBreakdownCard',
   'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asOpenCur', 'asCur', 'asToggleNeg', 'openAssetSheet', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'isCloudConflict', 'decidePushOutcome', 'fmtAmt',
-  'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges',
+  'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges', 'shouldRetryCloudSync',
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
   'clampDay', 'saveTx', 'assetBase', 'balancesUpTo', 'balanceAt',
   'addBalanceAdjust', 'updateBalanceAdjust', 'toggleConfirmTransfers',
@@ -2861,6 +2861,23 @@ test('localHasUnsyncedChanges: 동기화 기록 자체가 없으면(이 기기�
 test('localHasUnsyncedChanges: 로컬 저장 기록 자체가 없으면(최초 부팅 등) 미동기화 변경이 없다', () => {
   assert.strictEqual(sandbox.localHasUnsyncedChanges(null, null), false);
   assert.strictEqual(sandbox.localHasUnsyncedChanges(null, 1000), false);
+});
+
+/* ---------- shouldRetryCloudSync: 'online' 이벤트에서 동기화 재시도 여부를 판정하는 순수 로직 ---------- */
+test('shouldRetryCloudSync: 클라우드 계정이 없으면 재시도하지 않는다', () => {
+  assert.strictEqual(sandbox.shouldRetryCloudSync(null, 'error', true), false);
+});
+test('shouldRetryCloudSync: 동기화 상태가 정상이면 재시도할 필요가 없다', () => {
+  assert.strictEqual(sandbox.shouldRetryCloudSync('u1', 'ok', true), false);
+});
+test('shouldRetryCloudSync: 실패 상태에서 온라인으로 복귀하면 재시도한다', () => {
+  assert.strictEqual(sandbox.shouldRetryCloudSync('u1', 'error', true), true);
+});
+test('shouldRetryCloudSync: 실패 상태여도 아직 오프라인이면 재시도하지 않는다', () => {
+  assert.strictEqual(sandbox.shouldRetryCloudSync('u1', 'error', false), false);
+});
+test('shouldRetryCloudSync: 충돌 상태는 사용자의 명시적 해결이 필요하므로 자동 재시도하지 않는다', () => {
+  assert.strictEqual(sandbox.shouldRetryCloudSync('u1', 'conflict', true), false);
 });
 
 /* ---------- foreignSaveIsNewer: handleForeignStorage()가 다른 탭의 save()를 반영할지 판단하는 순수 로직

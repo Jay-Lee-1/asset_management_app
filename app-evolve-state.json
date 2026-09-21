@@ -1,19 +1,8 @@
 {
-  "cycle": 61,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "클라우드 동기화 실패 후 온라인 복귀 시 자동 재시도 부재",
-    "why": "pushCloud()/pullCloud()는 save()의 scheduleCloudPush(1.2초 디바운스)와 visibilitychange(백그라운드 전환) 두 경로로만 트리거되고, window의 'online' 이벤트 리스너가 코드 전체에 전무하다. 오프라인 상태에서 push가 실패하면 cloudSyncFailed()가 CLOUD_SYNC_STATE='error'로 설정하고 토스트 한 번만 띄운 뒤, 네트워크가 복구돼도 그 상태를 아무도 정리하거나 재시도하지 않는다 — 사용자가 다시 값을 수정하거나(우연히 scheduleCloudPush 재트리거) 앱을 백그라운드/포그라운드 전환해야만 재시도된다. 오프라인에서 편집 후 그냥 재연결만 하고 가만히 있으면 로컬 데이터가 무기한 미동기화 상태로 남고 동기화 상태 배지도 계속 실패로 표시되는 실질적 데이터 유실 위험이다.",
-    "approach": "index.html의 기존 visibilitychange/focus 리스너(~6209-6210행) 근처에 window.addEventListener('online', ...) 핸들러를 추가한다. CLOUD_UID가 설정돼 있고 CLOUD_SYNC_STATE가 'error'일 때만(단 'conflict'는 사용자의 명시적 해결이 필요하므로 제외) afterCloudAuth의 unsynced-check 패턴을 참고해 pullCloud() 후 pushCloud()를 호출하고, cloudSyncLabel()을 보여주는 화면이면 renderCurrent()로 상태 UI를 갱신한다. 재시도 여부 판단은 순수 함수 shouldRetryCloudSync(cloudUid, syncState, navigatorOnLine)로 분리해 test/run.js의 FUNCTIONS(약 79-80행 부근, isCloudConflict/decidePushOutcome/localHasUnsyncedChanges와 동일 패턴)에 추가하고, 케이스 5개로 테스트한다: CLOUD_UID 없음→false, state='ok'→false, state='error'&&online→true, state='error'&&!online→false, state='conflict'→false. 실제 네트워크 호출(pullCloud/pushCloud) 자체는 기존 관례대로 테스트하지 않는다."
-  },
+  "cycle": 62,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 56,
-      "phase": "advance",
-      "timestamp": "2026-09-20T18:11:00.000Z",
-      "summary": "critique(45afb9d) 계획대로 반복거래 endDate/count 페어링 로직을 순수 헬퍼 truncateRecEnd(base,cutoffDate)로 통합했다. recCountUntil() 바로 아래에 추가한 truncateRecEnd는 base={freq,day,startDate,weekend}와 cutoffDate를 받아 {endDate:cutoffDate,count:recCountUntil(base,cutoffDate)}를 반환한다 — recApply() scope='future' 삭제분기(구 3288-3290줄), recSave() scope='future' 편집분기(구 3316-3319줄), splitRecurrenceAt()(구 3450-3451줄) 세 곳의 '거의 동일하지만 r.endDate/updatedOriginal.endDate 등 대상 객체와 대입 시점이 조금씩 다른' 인라인 블록을 Object.assign(대상,truncateRecEnd(base,cutoff)) 한 줄로 교체하고, 세 곳에 반복되던 개별 주석을 헬퍼 위 주석 하나로 정리했다. clampRecurringToMaturity()(index.html:2846)는 count를 재계산이 아니라 의도적으로 delete하는 예외라 로직은 그대로 두되, 다음 호출의 autoShortened 판정(!r.count)이 이 값에 의존한다는 점과 truncateRecEnd와의 비대칭 이유를 밝히는 주석 한 줄을 추가했다. recApply/recSave/splitRecurrenceAt은 이미 test/run.js FUNCTIONS에 있어 기존 회귀 테스트(불변식 검증 포함)가 리팩터 후에도 그대로 통과하는 안전망 역할을 했고, truncateRecEnd 자체를 FUNCTIONS에 새로 추가해 단위 테스트 2개(월간 반복 cutoff 절단, weekend='later' 주간 반복에서 recNthDate(4)를 cutoff로 넘겼을 때 count=4 정확히 일치) 추가. 두 인라인 <script> 블록 모두 new Function 파싱 확인, 382/382 통과. pending_advance_plan 비움. APP_VERSION 1.45.4->1.45.5, sw.js CACHE v146->v147.",
-      "commit": null
-    },
     {
       "cycle": 57,
       "phase": "develop",
@@ -130,7 +119,7 @@
       "cycle": 61,
       "phase": "develop",
       "timestamp": "2026-09-21T13:15:00.000Z",
-      "summary": "Explore 서브에이전트로 발견한 CSV 임포트(csvRowToImportTxn, index.html:4599)의 이체/저축 행 검증 누락 버그 수정. 수동 입력(saveTx/saveRec)은 fromAssetId===toAssetId면 '보내는 자산과 받는 자산이 같아요' 토스트로 저장을 막지만, CSV 임포트 경로는 fromName/toName이 둘 다 비어있지 않은지만 확인해 같은 자산명(예: '주계좌'→'주계좌')인 이체/저축 CSV 행도 그대로 통과시켜 DB.txns에 fromAssetId===toAssetId인, 수동 UI로는 절대 만들 수 없는 상태의 거래가 들어갈 수 있었다. 기존 !fromName||!toName 체크에 fromName===toName을 추가해 같은 'asset' 에러 버킷으로 거르도록 했다 — buildImportPreview가 이미 error==='asset'을 invalidCount로 집계해 미리보기에 반영하므로 UI 쪽 변경은 불필요. test/run.js에 이체/저축 각각 same-name 케이스 회귀 테스트 2개 추가, 409/409 통과. 두 인라인 <script> 블록 모두 node --check 통과. APP_VERSION 1.45.12->1.45.13, sw.js CACHE v154->v155.",
+      "summary": "Explore 서브에이전트로 발견한 CSV 임포트(csvRowToImportTxn, index.html:4599)의 이체/저축 행 검증 누락 버그 수정. 수동 입력(saveTx/saveRec)은 fromAssetId===toAssetId면 '보내는 자산과 받는 자산이 같아요' 토스트로 저장을 막지만, CSV 임포트 경로는 fromName/toName이 둘 다 비어있지 않은지만 확인해 같은 자산명(예: '주계좌'→'주계좌')인 이체/저축 CSV 행도 그대로 통과시켜 DB.txns에 fromAssetId===toAssetId인, 수동 UI로는 절대 만들 수 없는 상태의 거래가 들어갈 수 있었다. 기존 !fromName||!toName 체크에 fromName===toName을 추가해 같은 'asset' 에러 버킷으로 거르도록 했다 — buildImportPreview가 이미 error==='asset'을 invalidCount로 집계하므로 UI 쪽 변경은 불필요. test/run.js에 이체/저축 각각 same-name 케이스 회귀 테스트 2개 추가, 409/409 통과. 두 인라인 <script> 블록 모두 node --check 통과. APP_VERSION 1.45.12->1.45.13, sw.js CACHE v154->v155.",
       "commit": null
     },
     {
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-21T15:10:00.000Z",
       "summary": "Explore 서브에이전트로 앱 전체를 구조적으로 재검토(render* 스모크/esc 스윕/캘린더 캐싱/반복종료조건/자산명·메모 trim/num 부호/sanitizeBackup/CSV import 흐름 및 same-name 검증/FX 통화 피커/stockCode 검증/recHistFieldsChanged startDate/addBalanceAdjust 부채 방향/homeAlerts OS 알림/RANGE_FROM 가드 등 최근 완료 항목은 재탐색 금지 지시). 예산(spendByCategory 등), 시세평가 자산 재검토(detectStaleMarketValuedTxns), netlify 함수 폴백 체인은 이미 견고해 기각. 순자산 SVG 차트(nwHistoryCard)의 접근성 공백은 옆에 이미 텍스트 요약(범위+증감)이 있어 손실이 적어 후순위. window에 'online' 이벤트 리스너가 전무해 pushCloud/pullCloud가 CLOUD_SYNC_STATE='error'로 멈춘 뒤 네트워크가 복구돼도 자동 재시도되지 않는(사용자가 다시 편집하거나 앱을 백그라운드/포그라운드 전환해야만 재트리거되는) 클라우드 동기화 공백을 신규 영역으로 채택 — 오프라인 편집 후 재연결만 하고 방치하면 무기한 미동기화 위험. advance에서 online 이벤트 핸들러 추가 + 순수 함수 shouldRetryCloudSync(cloudUid,syncState,navigatorOnLine) 분리 및 테스트 5개 추가하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 61,
+      "phase": "advance",
+      "timestamp": "2026-09-21T16:10:00.000Z",
+      "summary": "critique 계획대로 클라우드 동기화 자동 재시도 기능 추가. 순수 함수 shouldRetryCloudSync(cloudUid,syncState,navigatorOnline)를 localHasUnsyncedChanges 옆에 추가(CLOUD_UID 있고 syncState==='error'이고 온라인일 때만 true, 'conflict'는 사용자의 명시적 해결이 필요해 제외). window.addEventListener('online', ...)를 기존 visibilitychange 리스너 바로 아래에 추가해 조건을 만족하면 pullCloud()→pushCloud() 후 앱이 열려있으면 renderCurrent()로 상태 배지를 갱신한다. test/run.js FUNCTIONS에 shouldRetryCloudSync 추가, 케이스 5개(UID 없음/state=ok/state=error&&online/state=error&&offline/state=conflict) 테스트 추가. 두 인라인 <script> 블록 모두 node --check 파싱 확인, 419/419 통과. APP_VERSION 1.45.13->1.45.14, sw.js CACHE v155->v156.",
       "commit": null
     }
   ]

@@ -1289,7 +1289,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.45.13';
+const APP_VERSION='1.45.14';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1625,6 +1625,9 @@ function decidePushOutcome(matchedRowCount,rowExistedBefore){
  * 클라우드와 확인된 시각(dataKey()+'__syncedAt', pullCloud/pushCloud 성공 시 갱신)을 비교한다.
  * 둘 다 서버 시각이 아니라 이 기기의 Date.now()라서 서버-클라이언트 시계 오차 걱정이 없다. */
 function localHasUnsyncedChanges(savedAt,syncedAt){return !!(savedAt&&(!syncedAt||savedAt>syncedAt))}
+/* 'online' 이벤트에서 동기화를 재시도할지 판정하는 순수 로직. 'conflict'는 사용자가 계정
+ * 화면에서 명시적으로 풀어야 하므로(위 confirmCloudForcePush 등) 여기서 자동으로 건드리지 않는다. */
+function shouldRetryCloudSync(cloudUid,syncState,navigatorOnline){return !!(cloudUid&&syncState==='error'&&navigatorOnline)}
 function markCloudSynced(){try{localStorage.setItem(dataKey()+'__syncedAt',String(Date.now()))}catch(e){}}
 async function pushCloud(){
  if(!sbReady()||!CLOUD_UID)return;
@@ -6207,6 +6210,11 @@ function maybeRollDay(){
  autoSyncRates()
 }
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)maybeRollDay();else{if(CLOUD_UID){clearTimeout(SB_PUSH_T);pushCloud().catch(()=>{})}checkNotifyAlerts()}});
+window.addEventListener('online',async()=>{
+ if(!shouldRetryCloudSync(CLOUD_UID,CLOUD_SYNC_STATE,navigator.onLine))return;
+ await pullCloud();await pushCloud();
+ if(appIsOpen())renderCurrent();
+});
 window.addEventListener('focus',maybeRollDay);
 window.addEventListener('storage',handleForeignStorage); /* 다른 탭이 save()로 덮어쓴 걸 감지 — handleForeignStorage 주석 참고 */
 window.addEventListener('pageshow',maybeRollDay);
