@@ -3108,6 +3108,68 @@ test('updateBalanceAdjust: 편집 화면 진입 시 채워진 잔액 캐시가 �
   assert.strictEqual(adj.type, 'income');
 });
 
+/* ---------- addBalanceAdjust/updateBalanceAdjust: 부채(debt) 자산에 잔액 조정 내역을
+ * 만들 때 방향이 반대로 기록되던 버그의 회귀 테스트.
+ * balancesUpTo()(2070줄)는 부채 자산에 sign=-1을 매겨, toAssetId로 들어오는 금액은 잔액을
+ * 줄이고(상환) fromAssetId로 나가는 금액은 잔액을 늘린다(추가 대출) — balanceAt()가 부채를
+ * "잔여원금(양수)"으로 보여주는 것과 일치하는 관례다. 그런데 addBalanceAdjust/updateBalanceAdjust는
+ * 이 부호 관례를 몰라서 현금 자산과 똑같이 gap>0이면 무조건 toAssetId(입금) 방향으로 기록했다 —
+ * 그 결과 부채가 늘어야 할 상황(gap>0, 빚이 더 생김)에 오히려 잔액이 줄어드는 조정 내역이 만들어졌다. */
+test('addBalanceAdjust: 부채 자산은 gap>0(빚 증가)일 때 toAssetId가 아니라 fromAssetId로 기록해 잔액이 실제로 늘어난다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  const asset = { id: 'd1', type: 'debt', baseAmount: 100000 };
+  sandbox.DB = { settings: {}, assets: [asset], txns: [], recurrences: [] };
+  sandbox._balCache.clear();
+  sandbox.addBalanceAdjust(asset, 50000); // 부채가 100000 -> 150000으로 늘어남
+  assert.strictEqual(sandbox.balanceAt('d1', sandbox.TODAY), 150000, '부채 증가분(gap>0)이 잔액에 그대로 더해져야 함');
+  const adj = sandbox.DB.txns.find((t) => t.adjust && t.adjustAsset === 'd1');
+  assert.strictEqual(adj.type, 'expense');
+  assert.strictEqual(adj.fromAssetId, 'd1');
+  assert.strictEqual(adj.toAssetId, null);
+});
+
+test('addBalanceAdjust: 부채 자산은 gap<0(상환)일 때 toAssetId로 기록해 잔액이 실제로 줄어든다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  const asset = { id: 'd1', type: 'debt', baseAmount: 100000 };
+  sandbox.DB = { settings: {}, assets: [asset], txns: [], recurrences: [] };
+  sandbox._balCache.clear();
+  sandbox.addBalanceAdjust(asset, -30000); // 상환으로 100000 -> 70000
+  assert.strictEqual(sandbox.balanceAt('d1', sandbox.TODAY), 70000, '상환분(gap<0)이 잔액에서 그대로 빠져야 함');
+  const adj = sandbox.DB.txns.find((t) => t.adjust && t.adjustAsset === 'd1');
+  assert.strictEqual(adj.type, 'income');
+  assert.strictEqual(adj.toAssetId, 'd1');
+  assert.strictEqual(adj.fromAssetId, null);
+});
+
+test('updateBalanceAdjust: 부채 자산 수정 시에도(기존 조정 내역 갱신 경로) 방향이 올바르게 뒤집힌다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  const asset = { id: 'd1', type: 'debt', baseAmount: 100000 };
+  sandbox.DB = {
+    settings: {},
+    assets: [asset],
+    txns: [{ id: 'adj1', date: '2026-06-01', type: 'expense', category: sandbox.ADJUST_CAT, memo: '재등록 잔액 조정', amount: 50000, fromAssetId: 'd1', toAssetId: null, adjust: true, adjustAsset: 'd1' }],
+    recurrences: [],
+  };
+  sandbox._balCache.clear();
+  assert.strictEqual(sandbox.balanceAt('d1', sandbox.TODAY), 150000, '기존 조정 포함 잔액(100000+50000)');
+  const origInvalidate = sandbox.invalidateBalances;
+  sandbox.invalidateBalances = () => sandbox._balCache.clear();
+  try {
+    sandbox.updateBalanceAdjust(asset, 200000); // 표시 잔액을 200000으로 더 늘림
+  } finally {
+    sandbox.invalidateBalances = origInvalidate;
+  }
+  const adj = sandbox.DB.txns.find((t) => t.adjust && t.adjustAsset === 'd1');
+  assert.strictEqual(adj.amount, 100000, '기준값 100000 + 조정 100000 = 200000이어야 함');
+  assert.strictEqual(adj.type, 'expense');
+  assert.strictEqual(adj.fromAssetId, 'd1');
+  sandbox._balCache.clear(); // updateBalanceAdjust 내부에서 base 계산 시 캐시된 값(조정 제외)이 아니라 최신 조정 반영값을 확인
+  assert.strictEqual(sandbox.balanceAt('d1', sandbox.TODAY), 200000);
+});
+
 /* ---------- isMarketValued/openAssetPicker: fx·금·주식을 일반 거래의 통장으로 선택하면
  * 순자산이 조용히 어긋나던 구조적 버그(app-evolve cycle27 advance)의 회귀 테스트.
  * assetEval()은 fx/gold/stock 세 타입만 원장(DB.txns)과 무관하게 qty×시세로 평가하는데,

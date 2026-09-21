@@ -1289,7 +1289,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.45.10';
+const APP_VERSION='1.45.11';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2632,7 +2632,7 @@ function relinkDeletedAsset(d){
 /* 재등록 연동 시 이전 잔액과의 차액을 오늘 날짜 조정 내역으로 기록 (자산에 태그) */
 function addBalanceAdjust(asset,gap){
  if(!gap)return;
- const inc=gap>0; /* +면 입금(수입), -면 출금(지출) */
+ const inc=asset.type==='debt'?gap<0:gap>0; /* +면 입금(수입), -면 출금(지출) — 부채는 balancesUpTo()의 sign=-1과 맞춰 반대(상환 시 입금 처리) */
  DB.txns.push({id:uid(),date:TODAY,
    type:inc?'income':'expense',category:ADJUST_CAT,memo:'재등록 잔액 조정',
    amount:Math.abs(gap),
@@ -2647,7 +2647,7 @@ function updateBalanceAdjust(asset,entered){
  const base=balanceAt(asset.id,TODAY);       /* 조정 제외한 현재 잔액 */
  const gap=Math.round(entered-base);
  if(gap!==0){
-   const inc=gap>0;
+   const inc=asset.type==='debt'?gap<0:gap>0;
    if(adj){adj.amount=Math.abs(gap);adj.type=inc?'income':'expense';
      adj.fromAssetId=inc?null:asset.id;adj.toAssetId=inc?asset.id:null;adj.date=adj.date||TODAY;DB.txns.push(adj);}
    else addBalanceAdjust(asset,gap);
