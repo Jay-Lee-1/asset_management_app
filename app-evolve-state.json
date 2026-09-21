@@ -1,15 +1,8 @@
 {
   "cycle": 36,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 29,
-      "phase": "critique",
-      "timestamp": "2026-09-16T01:10:35.162Z",
-      "summary": "cycle29 review(93577e5)가 문제 없음으로 끝낸 직후, Explore 서브에이전트로 앱 전체를 구조적으로 훑게 했다(카테고리/예산 관리, 차트, 검색/필터, 날짜 선택기, 반복거래 편집 시맨틱, 자산-소유자 상호작용, 통화 서식, 오프라인/서비스워커, 폼 검증, 중복 감지, 빈/로딩 상태, 접근성, fetch 에러 처리, 백업/복원 등 최근 사이클들이 다루지 않은 영역). 반복거래는 DB.txns에 물리화되지 않고 expandRec(1818)/recDates(1771)가 항상 recurrence의 '현재' 필드값으로 과거+미래 전체 회차를 실시간 생성하는데, saveRec()(3163-3185)의 반복 자체 세부 편집 경로가 DB.recurrences[i]=d로 scope 개념 없이 통째 덮어써, 결제 계좌 등을 바꿔 저장하면 startDate까지의 모든 과거 회차가 조용히 새 값으로 재계산돼 balanceAt/순자산 히스토리가 경고 없이 소급 왜곡되는 실제 버그를 발견해 직접 코드로 확인(3182). 같은 화면의 홈 빠른 수정 경로(recApply/recSave, 3046-3090)는 이미 '이 내역만/이후 모두/전체' scope와 future 분기의 rec 분리 로직(3077-3083)을 갖추고 있어, 이를 재사용 가능한 순수함수로 추출해 saveRec에도 적용하는 방향으로 계획을 세움. 후보로 검토했으나 보류: recApply 빠른 수정이 금액만 바꿀 수 있고 카테고리/자산은 못 바꾸는 제약(근본 원인인 위 버그를 고치면 자연히 subsume됨), saveTx/saveRec의 더블 서밋 가드 부재(동기 핸들러라 실제 영향 불확실), matchTxnQuery가 금액을 검색 대상에 포함하지 않는 것(정확성 문제 아닌 소소한 UX 공백). pending_advance_plan에 saveRec scope 확인 시트 + splitRecurrenceAt 순수함수 추출 + 회귀 테스트 계획 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 31,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-17T06:30:00.000Z",
       "summary": "cycle35 advance(e7b42ff, 캘린더 날짜 셀 접근성)가 문제 없이 끝난 뒤, Explore 서브에이전트로 아직 다루지 않은 영역을 훑어 confirmRecTransfer/postponeRecTransfer(index.html:1449,1457) 버그를 발견해 수정했다. 반복 이체 회차를 recSave scope='one'으로 개별 수정(r.edits[date]={amount:...})해둔 뒤 확인 시트에서 \"내일로\"를 누르면, expandRec()/recApply() 등 다른 모든 반복 구체화 지점이 쓰는 ed 우선(ed.amount!=null?ed.amount:r.amount) 패턴을 이 두 함수만 빼먹어 확인 시트 표시와 새로 생기는 일회성 거래 둘 다 반복의 기본 금액/메모로 조용히 되돌아가던 실제 금액 버그였다(예: 월 50만원 이체를 이번 달만 70만원으로 고쳐뒀는데 미루면 50만원 거래가 생김). 두 함수 모두 const ed=(r.edits||{})[date]||{} 조회를 추가해 ed.amount/ed.memo를 우선하도록 고쳤다. test/run.js FUNCTIONS에 assetNm/confirmRecTransfer/postponeRecTransfer를 추가하고 회귀 테스트 3개(edits 있을 때 확인 시트 표시, edits 있을 때 미룬 거래 금액/메모, edits 없을 때 기존처럼 기본값 사용하는 회귀 확인)를 추가했다. 236/236 통과(기존 233+신규 3). 두 인라인 <script> 블록 모두 vm.Script 파싱 확인. APP_VERSION 1.37.0->1.37.1(버그 fix라 patch bump), sw.js CACHE v108->v109.",
+      "commit": null
+    },
+    {
+      "cycle": 36,
+      "phase": "review",
+      "timestamp": "2026-09-21T00:10:58.668Z",
+      "summary": "develop 커밋(7f1d8e0)을 검토. confirmRecTransfer/postponeRecTransfer의 ed=(r.edits||{})[date]||{} 우선 패턴이 expandRec(1878)/recApply(3131)가 이미 쓰던 것과 정확히 동일함을 grep으로 확인. postponeRecTransfer가 date를 r.skip에 push한 뒤에도 r.edits[date] 항목 자체는 지우지 않아 그 회차가 영구히 스킵된 후에도 편집 기록이 DB에 orphan으로 남는 것을 발견했으나, 같은 계열의 기존 단일회차 삭제 플로우(3122, prevSkip undoToast)도 동일하게 r.edits를 건드리지 않는 기존 설계 패턴이라 이번 diff가 만든 회귀가 아니고, 스킵된 날짜는 expandRec(1875)에서 이미 필터링되어 값이 다시 읽힐 일이 없어 기능적 영향도 없음(단순 미사용 데이터 잔존) — 코드 수정 없이 관찰만 기록. node test/run.js 재실행해 236/236 통과 재확인, APP_VERSION(1.37.0->1.37.1)/sw.js CACHE(v108->v109) 버전 동반 상승 확인. 문제 없음.",
       "commit": null
     }
   ]
