@@ -1,15 +1,12 @@
 {
   "cycle": 63,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "로그인(doLogin) 경로에 게스트 데이터 가져오기 안내 추가",
+    "why": "게스트 모드로 자산·내역을 쌓은 뒤 '가입'이 아니라 '로그인'을 선택하면 doSignup()과 달리 guestHasData 체크가 전혀 없어(index.html:6195-6203) 게스트 데이터가 아무 안내 없이 버려지거나(클라우드 미설정 계정) afterCloudAuth()가 원격 데이터 없을 때만 확인 없이 silent 덮어쓴다(1665-1682). 원격에 이미 데이터가 있는 기존 계정으로 로그인하면 게스트 데이터는 검토조차 안 돼, 온보딩 이탈 지점에서 사용자가 방금 입력한 데이터를 잃었다고 느끼는 조용한 데이터 유실 시나리오다.",
+    "approach": "1) 1678-1679/6214에 중복된 guestRaw 파싱 로직을 순수 헬퍼 guestHasData()로 추출. 2) DB의 assets/txns가 모두 비어있는지 판정하는 순수 함수 dbIsEmpty(db) 추가. 3) doLogin()에서 startApp() 이후 dbIsEmpty(DB) && guestHasData()면 doSignup()과 동일한 confirmSheet('데이터 가져오기', ...) 패턴을 재사용해 가져올지 확인; 계정에 이미 데이터가 있으면 절대 덮어쓰지 않고 대신 게스트 데이터가 남아있다는 안내 toast만 띄운다. 예상 테스트: dbIsEmpty 빈/비어있지 않은 DB 판정, guestHasData true/false, '빈 계정+게스트 데이터'에서 import confirm 노출, '비어있지 않은 계정+게스트 데이터'에서는 덮어쓰기 없이 toast만."
+  },
   "history": [
-    {
-      "cycle": 58,
-      "phase": "critique",
-      "timestamp": "2026-09-21T04:09:54.282Z",
-      "summary": "Explore 서브에이전트로 앱 전체를 구조적으로 재검토(render* 스모크/esc 스윕/캘린더 캐싱/selDay 부분갱신/반복종료조건/자산명·메모 trim/num 부호/sanitizeBackup/CSV import 기능/stockCode 검증 등 최근 완료 항목은 재탐색 금지 지시). 예산(budget) 기능은 budgetHistory 기반 이력 관리와 탄탄한 테스트가 이미 있어 새 약점 아님을 확인. 기존 백로그 3건 재검토: (1) CSV import 수동 매핑 화면은 현재도 안전하게 실패하는 상태라 이번엔 보류, (2) FX 통화 선택 버튼이 ['USD','JPY','EUR']로 하드코딩된 문제는 netlify/functions/rates.js가 이미 임의의 ISO 통화코드를 네이버→fxapi.app→open.er-api.com 폴백 체인으로 처리하고 시세관리 화면(~4239행)도 보유 통화를 동적으로 순회함을 직접 확인해 '백엔드는 범용인데 자산등록 시트(~2760행) UI만 3종으로 막혀있는' 명확한 기능 공백으로 우선순위 격상, (3) save() 매 변경 전체 stringify는 성능 불만의 새 근거 없어 다시 명시적으로 보류. 기존 openOwnerPicker/openCatPicker 피커 시트 패턴(pk-item/pk-group/pk-blob+openPicker())을 FX 통화 선택에도 재사용 가능함을 확인해 '재작성'이 아닌 '다음 한 걸음'으로 적합 판단. advance에서 CURRENCY_LIST 상수 추가 + openCurrencyPicker(o)/pkPickCurrency(code)로 통화 선택을 피커 시트로 전환하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 58,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-09-21T21:30:00.000Z",
       "summary": "develop 커밋(31184d3, openFixShortfall 기본 이체일 오늘/내일 clamp)을 검토. fixShortfallDefaultDate(date,today)가 dayBefore<today일 때만 today로 올려 잡는 단조 clamp임을 확인하고, dayBefore가 today보다 이르게 되는 경우는 date가 today 또는 tomorrow일 때뿐임을 직접 계산으로 재검증(date>=today+2면 dayBefore>=tomorrow>=today라 그대로 통과). 버튼 라벨 분기(fixDefault===TODAY?'오늘':'결제 전날')와 '날짜 선택' 버튼의 on 상태 비교도 dayBefore 대신 fixDefault로 일관되게 바뀌어 있어 그대로 정확함. date가 모레(today+2)일 때 dayBefore(=tomorrow)가 '내일' 버튼과 같은 날짜를 가리켜 두 프리셋 버튼이 같은 날을 표시하는 case를 발견했으나, 이 함수 도입 전에도 dayBefore를 직접 비교하던 동일한 조건이라 이번 커밋이 만든 새 회귀가 아님을 diff 전후 비교로 확인해 기각. 두 인라인 <script> 블록 모두 node --check 파싱 확인, node test/run.js 429/429 통과 재확인. 문제 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 63,
+      "phase": "critique",
+      "timestamp": "2026-09-21T23:11:41.063Z",
+      "summary": "Explore 서브에이전트로 앱 전체를 구조적으로 재검토(render*/esc/캘린더/부분갱신/반복종료/trim/부호/sanitizeBackup/CSV 전반/FX 피커/stockCode/recHistFieldsChanged startDate/addBalanceAdjust 부채방향/homeAlerts OS알림/RANGE_FROM 가드/same-name/음수금액/ledger·plan 부분갱신/fixShortfall 기본일 등 최근 완료 항목은 재탐색 금지 지시). FX 자산 이체 상대 통화환산(excludeMarketValued로 이미 제외돼 버그 아님), 카테고리 rename/삭제 캐스케이드(이미 탄탄), 클라우드 push/pull 낙관적 동시성 제어(decidePushOutcome, 이미 견고), 앱 내 PIN/생체잠금 부재(완전 신규 인증 계층이라 범위 초과)는 기각. doLogin()(index.html:6195-6203) 경로에 doSignup()(6205-6217)과 달리 guestHasData 체크가 전혀 없어, 게스트 모드로 데이터를 쌓은 뒤 로그인을 선택하면 클라우드 미설정 계정에서는 안내 없이 게스트 데이터가 버려지고, afterCloudAuth()(1665-1682)는 원격 데이터가 없을 때만 확인 없이 silent 덮어쓰며, 원격에 이미 데이터가 있는 기존 계정 로그인 시에는 게스트 데이터가 검토조차 안 되는 조용한 데이터 유실 공백을 신규 영역으로 채택. advance에서 guestHasData()/dbIsEmpty(db) 순수 헬퍼 추출 후 doLogin()에 doSignup()과 동일한 confirmSheet 가져오기 확인 패턴을 재사용하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     }
   ]
