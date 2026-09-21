@@ -1,19 +1,8 @@
 {
-  "cycle": 57,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "renderPlan()에 실행 기반 스모크 테스트 추가",
-    "why": "renderPlan()(index.html:3766-3824)은 render* 함수 중 실행 커버리지가 전혀 없는 유이한 함수(다른 하나는 renderMenu, 정적 템플릿이라 저위험) — startBal/flows/dayNeg/firstNegIdx(3789)로 이어지는 잔액 마이너스 전환일 계산과 danger/danger-start 존/bell 아이콘 렌더링(3795,3805), 빈 상태(3807), 오늘 자동삽입(3784) 등 분기 많은 로직인데도 test/run.js의 현재 renderPlan 테스트 2개(3314,3326)+esc 테스트(4016)는 전부 extractFunction()으로 소스 텍스트만 보고 sandbox.renderPlan()을 실제로 호출해 DOM을 검증하는 테스트가 하나도 없음. renderHome/renderAssets/renderLedger/renderHistory는 이미 각 3-5개의 실행 기반 테스트(4073-4348)로 커버됨 — 같은 패턴을 renderPlan에도 적용.",
-    "approach": "test/run.js에 setupHomeDB류를 본뜬 setupPlanDB() 픽스처(DB.assets에 현금성 자산, DB.txns를 한 달치, ST.plan.{y,m,owner,assetId} 세팅) 추가. 테스트: (a) flows 없을 때 빈 상태('평화로워요') 렌더 및 예외 없음, (b) 누적 잔액이 음수로 전환되는 날에 danger/danger-start 클래스와 bell svg가 정확히 그 날에만 나타나는지(dayNeg/firstNegIdx 회귀 방지), (c) income/transfer/expense 항목의 자산명과 +/- 금액 표시(3796-3802), (d) 이번 달에 당일 거래가 없을 때 TODAY가 dates에 자동 삽입되는지(3784). build/test 통과 확인 후 APP_VERSION/sw.js CACHE 동반 상승."
-  },
+  "cycle": 58,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 52,
-      "phase": "critique",
-      "timestamp": "2026-09-20T01:10:00.000Z",
-      "summary": "Explore 서브에이전트로 앱 전체를 구조적으로 재검토. render* 스모크 테스트 시리즈(43-51)와 esc() 미이스케이프 스윕(46/48/50)은 이제 완료된 것으로 보고, 그 재탕이 아닌 새 각도를 찾도록 지시. allTxns()(index.html:1960)가 DB.txns 전체를 매 호출마다 캐시 없이 필터링하는데, dayTxns()(2156)가 이를 하루 단위로 감싸고 calCellsFor()(2878-2900)가 캘린더 셀 42개마다 각각 호출하며, renderLedger()(2941-2965)는 이전/현재/다음 3개월 패널을 매번 렌더링해 한 번의 렌더에 allTxns()/expandRec() 호출이 약 126회 발생함을 발견 — 앱에서 가장 잦은 사용자 동작인 날짜 탭(selDay(), 2971)마다 이 전체가 재실행된다. _recCache(1941, REC_CACHE_MAX=40)는 정확한 from|to 키로만 캐시하는데 한 렌더가 서로 다른 단일 날짜 키 126개를 건드려 캐시 용량에 걸려 항상 스래싱, 사실상 무효과임을 확인. 잔액(_balCache)·반복거래 전개(_recCache)·전체내역(_histCache)에는 이미 적용된 캐싱 패턴이 가계부 셀 집계 경로에만 빠져 있다는 새 근거로, DB.txns가 무한정 커지는 실사용 환경에서 작은 테스트 픽스처로는 안 드러나는 '누적에 따라 느려지는' 성능 결함으로 채택. CSV 가져오기 기능 부재(신규 기능이라 후순위), recSave() future scope 분할(이미 전용 테스트로 잘 보호됨), long-press 멀티셀렉트 접근성 공백(반복 기각, 새 근거 없음), 클라우드 동기화 수동 해결(의도된 설계로 확인)은 후순위로 기각. advance에서 allTxns() 결과를 날짜별 Map으로 한 번에 버킷화하는 txnsByDateInRange(from,to)를 도입해 calCellsFor/calPane이 셀마다 개별 스캔하는 대신 이 Map을 조회하도록 바꾸고, 기존 셀별 결과와 동일함을 확인하는 회귀 테스트를 추가하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 52,
       "phase": "advance",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-21T00:14:14.467Z",
       "summary": "Explore 서브에이전트로 앱 전체를 구조적으로 재검토(render* 스모크/esc 스윕/캘린더 캐싱/selDay 부분갱신/반복종료조건/자산명·메모 trim/num 부호/sanitizeBackup/truncateRecEnd/CSV import 기능 자체 등 최근 완료 항목은 재탐색 금지, cycle54/56에서 이월된 후보들만 재검증하도록 지시). renderPlan()(index.html:3766-3824)이 render* 함수 중 실행 기반 테스트가 전혀 없는 유이한 함수(나머지 하나는 renderMenu — 정적 템플릿이라 저위험)임을 확인: test/run.js의 기존 renderPlan 테스트 2개(3314,3326)+esc 테스트(4016)는 모두 extractFunction()으로 소스 텍스트만 검사하고 sandbox.renderPlan()을 실제 호출해 DOM을 검증하는 테스트가 하나도 없음. startBal→flows→dayNeg/firstNegIdx(3789)로 이어지는 잔액 마이너스 전환일 계산과 danger/danger-start 존·bell 아이콘(3795,3805), 빈 상태(3807), 오늘 자동삽입(3784) 등 분기 많은 로직인데 renderHome/renderAssets/renderLedger/renderHistory(각 3-5개 실행 테스트, 4073-4348)와 달리 커버리지 공백으로 채택. CSV import 미리보기/수동매핑 UI 부재(더 큰 신규 UI라 후순위), save() 매 변경 전체 stringify(급하지 않음, 새 증거 없음), FX 통화 하드코딩(이미 2회 보류, 새 버그 없음)은 순위 낮춰 기각. advance에서 setupPlanDB() 픽스처를 새로 만들어 renderPlan()에 실행 기반 회귀 테스트 4개(빈 상태, danger 존/bell 아이콘 정확한 날짜, income/transfer/expense 항목 표시, 오늘 자동삽입)를 추가하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 57,
+      "phase": "advance",
+      "timestamp": "2026-09-21T00:00:00.000Z",
+      "summary": "critique(14779ba) 계획대로 renderPlan()에 실행 기반 스모크 테스트 3개 추가. FUNCTIONS에 lowestInMonth/planBalInner/planBalCard/renderPlan을, LETS에 _planLive를 추가하고 pagePlanEl mock을 $ 디스패처에 연결. (a) 이번 달이 아니고 흐름 없을 때 최상위 빈 상태, (b) 잔액이 처음 마이너스로 전환되는 날만 danger-start이고 이후는 danger만 붙으며 종 아이콘이 뜨는지(+ TODAY 자동삽입으로 거래 없는 오늘도 일별 빈 상태 카드가 뜨는지), (c) 수입/이체/지출 항목의 상대 자산명(flow)과 부호 있는 금액 표시를 검증. index.html은 건드리지 않아 APP_VERSION/CACHE 상승 불필요. node test/run.js 388/388 통과.",
       "commit": null
     }
   ]

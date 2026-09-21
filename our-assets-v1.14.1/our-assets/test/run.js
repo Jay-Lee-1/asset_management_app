@@ -99,6 +99,7 @@ const FUNCTIONS = [
   'modeSeg', 'monthNav', 'abbr', 'calCellsFor', 'ledSumInner', 'ledSumBox', 'calPane', 'txRow', 'dayTxns',
   'ledgerRowsHtml', 'ledgerDayHeadHtml', 'renderLedger', 'selDayPartial',
   'fmtDot', 'splitHist', 'histRow', 'histTotHTML', 'updateHist', 'renderHistory',
+  'lowestInMonth', 'planBalInner', 'planBalCard', 'renderPlan',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -118,7 +119,10 @@ const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORD
 // _lastLedYM은 renderLedger()가 재대입하는 "마지막으로 렌더한 가계부 연-월"(숫자 전환 애니메이션
 // 트리거용) 상태라 같은 이유로 LETS를 통해 가져온다. 소스에서 `let _lastLedYM=null,_lastHistYM=null;`
 // 한 줄로 선언돼 있어 "_lastLedYM"만 추출해도 둘 다 딸려온다(_fixWhen/_fixCtx와 같은 패턴).
-const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM'];
+// _planLive는 planBalCard(live=true)가 재대입하는 "롱프레스 대상 플랜 카드" 상태라 같은 이유로
+// LETS를 통해 가져온다. 소스에서 `let _planLive=null,_planT=null,_planPeek=false;` 한 줄로
+// 선언돼 있어 "_planLive"만 추출해도 셋 다 딸려온다(_fixWhen/_fixCtx와 같은 패턴).
+const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive'];
 
 const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(extractConst).join('\n') + '\n' + LETS.map(extractLet).join('\n');
 
@@ -238,6 +242,13 @@ const sandbox = {
     set innerHTML(v) { this._html = v; },
     get innerHTML() { return this._html; },
   },
+  // page-plan도 같은 이유(renderPlan()이 $('page-plan').innerHTML=...로 직접 꽂음)로
+  // 같은 getter/setter 패턴을 재사용한다.
+  pagePlanEl: {
+    _html: '',
+    set innerHTML(v) { this._html = v; },
+    get innerHTML() { return this._html; },
+  },
   // page-history/histTotals/histList도 같은 이유(renderHistory()/updateHist()가
   // $('page-history')/$('histTotals')/$('histList').innerHTML=...으로 직접 꽂음)로
   // 같은 getter/setter 패턴을 재사용한다.
@@ -264,7 +275,7 @@ const sandbox = {
   // asName은 syncAssetInputs()의 이름 trim() 회귀 테스트용(공백만 있는 이름이 그대로 저장되던 버그).
   // asNameValue가 undefined인 기본 상태에서는 null을 반환해, 이 mock 추가 이전처럼 다른 테스트의
   // syncAssetInputs()/saveAsset() 호출에서 asDraft.name이 건드려지지 않도록 한다.
-  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : null,
+  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-plan' ? sandbox.pagePlanEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : null,
   bkTextEl: { value: 'backup-text', select: () => {}, setSelectionRange: () => {} },
   // copyBackup()의 navigator.clipboard 체크가 ReferenceError 없이 "지원 안 함"으로 지나가게
   // 하는 최소 흉내(document.execCommand는 try/catch로 감싸져 있어 굳이 스텁이 필요 없음).
@@ -4352,6 +4363,84 @@ test('renderHistory: 오늘보다 미래 날짜의 거래는 예정 라벨(sch-d
   const listHtml = sandbox.histListEl.innerHTML;
   assert.ok(listHtml.includes('sch-dot'), '오늘보다 미래인 거래는 예정 표시(sch-dot)가 나와야 함');
   assert.ok(listHtml.includes('>예정<'), '자산 정보가 없는 예정 거래는 "예정" 라벨이 나와야 함');
+});
+
+/* ---------- renderPlan: 렌더 함수 스모크 테스트 (app-evolve cycle57 critique/advance) ----------
+ * render* 함수 중 실행 커버리지가 전혀 없던 유이한 함수(다른 하나는 정적 템플릿인 renderMenu)였다.
+ * 지금까지 renderPlan 테스트(위쪽의 esc/접근성/owner 가드 테스트들)는 전부 extractFunction()으로
+ * 소스 텍스트만 확인했을 뿐, sandbox.renderPlan()을 실제로 호출해 startBal/flows/dayNeg/firstNegIdx
+ * 로 이어지는 잔액 마이너스 전환일 계산이나 danger/danger-start 존·bell 아이콘·빈 상태·오늘 자동삽입
+ * 같은 분기 로직을 DOM으로 검증하는 테스트는 없었다. renderHome/renderAssets/renderLedger/
+ * renderHistory와 같은 이유(부수효과는 wireMonthCarousel/requestAnimationFrame(fitAll) 두 개뿐이고
+ * 둘 다 이미 no-op 스텁이 있음)로 같은 패턴을 적용한다. */
+function setupPlanDB() {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.TM = { y: 2026, m: 6 };
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox.DISP_TO = sandbox.addDays(sandbox.TODAY, 92);
+  sandbox._balCache.clear();
+  sandbox._recCache.clear();
+  sandbox._planLive = null;
+  sandbox.pagePlanEl._html = '';
+  sandbox.ST = { plan: { owner: '전체', assetId: null, y: 2026, m: 6 } };
+  sandbox.DB = {
+    settings: { includeScheduled: true },
+    assets: [],
+    owners: ['나'],
+    txns: [],
+    recurrences: [],
+  };
+}
+test('renderPlan: 이번 달이 아니고 흐름도 없으면 예외 없이 실행되고 빈 상태 안내가 렌더된다', () => {
+  setupPlanDB();
+  sandbox.DB.assets = [{ id: 'a1', name: '주계좌', owner: '나', type: 'cash', baseAmount: 10000 }];
+  sandbox.ST.plan.m = 7; // TM은 6월이라 7월은 "이번 달"이 아니므로 TODAY 자동삽입이 없어 dates가 진짜로 빈다
+  assert.doesNotThrow(() => sandbox.renderPlan());
+  const html = sandbox.pagePlanEl.innerHTML;
+  assert.ok(html, "$('page-plan').innerHTML이 채워져야 함");
+  assert.ok(html.includes('7월은 통장이 평화로워요'), '흐름이 전혀 없으면 빈 상태 안내가 나와야 함');
+  assert.ok(html.includes('예정된 이체도, 나갈 돈도 없어요'));
+});
+test('renderPlan: 잔액이 처음 마이너스로 전환되는 날에만 danger-start가 붙고, 이후 마이너스가 유지되는 날은 danger만 붙는다(오늘 자동삽입 포함)', () => {
+  setupPlanDB();
+  sandbox.DB.assets = [{ id: 'a1', name: '주계좌', owner: '나', type: 'cash', baseAmount: 10000 }];
+  sandbox.DB.txns = [
+    { id: 't1', date: '2026-06-10', type: 'expense', category: '쇼핑', memo: '가전제품', amount: 15000, fromAssetId: 'a1' },
+  ];
+  sandbox.renderPlan();
+  const html = sandbox.pagePlanEl.innerHTML;
+  const day10 = html.match(/<div class="([^"]*)" data-d="2026-06-10">/);
+  const day15 = html.match(/<div class="([^"]*)" data-d="2026-06-15">/);
+  assert.ok(day10, '거래가 있는 2026-06-10 플랜 카드가 렌더돼야 함');
+  assert.ok(day15, '거래가 없어도 TODAY(2026-06-15)가 자동 삽입돼 렌더돼야 함');
+  assert.ok(/\bdanger\b/.test(day10[1]) && /\bdanger-start\b/.test(day10[1]), '잔액이 처음 마이너스로 전환되는 날에는 danger-start가 붙어야 함');
+  assert.ok(/\bdanger\b/.test(day15[1]) && !/\bdanger-start\b/.test(day15[1]), '마이너스가 계속 유지되는 날은 danger만 붙고 danger-start가 다시 붙으면 안 됨');
+  assert.ok(day15[1].includes('today'), 'TODAY 카드에는 today 클래스가 붙어야 함');
+  const block10 = html.slice(html.indexOf('data-d="2026-06-10"'), html.indexOf('data-d="2026-06-15"'));
+  const block15 = html.slice(html.indexOf('data-d="2026-06-15"'));
+  assert.ok(block10.includes('pd-bell'), '마이너스인 날에는 종 아이콘이 나와야 함(06-10)');
+  assert.ok(block15.includes('pd-bell'), '마이너스가 유지되는 오늘에도 종 아이콘이 나와야 함(06-15)');
+  assert.ok(block15.includes('오늘은 통장이 평화로워요 🌱'), '자동삽입된 TODAY에 거래가 없으면 일별 빈 상태 문구가 나와야 함');
+});
+test('renderPlan: 수입/이체/지출 항목이 상대 자산명과 부호가 있는 금액으로 렌더된다', () => {
+  setupPlanDB();
+  sandbox.DB.assets = [
+    { id: 'a1', name: '주계좌', owner: '나', type: 'cash', baseAmount: 100000 },
+    { id: 'a2', name: '저축', owner: '나', type: 'savings', baseAmount: 0 },
+  ];
+  sandbox.DB.txns = [
+    { id: 't1', date: '2026-06-05', type: 'income', category: '급여', memo: '월급', amount: 50000, toAssetId: 'a1' },
+    { id: 't2', date: '2026-06-10', type: 'transfer', category: '이체', memo: '저축 이체', amount: 20000, fromAssetId: 'a1', toAssetId: 'a2' },
+    { id: 't3', date: '2026-06-12', type: 'expense', category: '식비', memo: '장보기', amount: 8000, fromAssetId: 'a1' },
+  ];
+  sandbox.ST.plan.assetId = 'a1';
+  sandbox.renderPlan();
+  const html = sandbox.pagePlanEl.innerHTML;
+  assert.ok(html.includes('월급') && html.includes('+50,000원'), '수입 항목의 메모와 + 금액이 렌더돼야 함');
+  assert.ok(html.includes('<span class="fl">주계좌</span>'), '수입 항목의 flow에 입금 자산명이 나와야 함');
+  assert.ok(html.includes('저축 이체') && html.includes('-20,000원'), '이체 항목의 메모와 - 금액(선택 자산 기준 출금)이 렌더돼야 함');
+  assert.ok(html.includes('<span class="fl">주계좌→저축</span>'), '이체 항목의 flow에 출발→도착 자산명이 나와야 함');
+  assert.ok(html.includes('장보기') && html.includes('-8,000원'), '지출 항목의 메모와 - 금액이 렌더돼야 함');
 });
 
 /* ---------- 실행 ---------- */
