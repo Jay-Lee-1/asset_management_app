@@ -1404,6 +1404,18 @@ test('csvRowToImportTxn: 날짜/구분/금액이 잘못되면 무효 처리한�
   assert.strictEqual(sandbox.csvRowToImportTxn(['2026-01-01', '지출', '식비', '0', '', '', ''], []).ok, false);
   assert.strictEqual(sandbox.csvRowToImportTxn(['2026-01-01', '지출', '식비', 'abc', '', '', ''], []).ok, false);
 });
+// amount는 항상 크기(magnitude)이고 부호는 type/fromAssetId/toAssetId로만 표현하는 게 앱 전체 관례
+// (sanitizeBackup의 SANITIZE_QTY_FIELDS 참고) — CSV 임포트만 예외로 음수를 허용하면
+// balancesUpTo()가 부호를 그대로 빼면서 거래 방향이 조용히 뒤집히는 데이터 결함이 생긴다.
+test('csvRowToImportTxn: 음수 금액은 지출/이체/저축 어느 타입이든 무효 처리한다', () => {
+  const assets = [{ id: 'a1', name: 'A' }, { id: 'a2', name: 'B' }];
+  const exp = sandbox.csvRowToImportTxn(['2026-01-01', '지출', '식비', '-5000', '', '', ''], []);
+  assert.strictEqual(exp.ok, false); assert.strictEqual(exp.error, 'amount');
+  const tr = sandbox.csvRowToImportTxn(['2026-01-01', '이체', '이체', '-5000', 'A', 'B', ''], assets);
+  assert.strictEqual(tr.ok, false); assert.strictEqual(tr.error, 'amount');
+  const sav = sandbox.csvRowToImportTxn(['2026-01-01', '저축', '저축', '-5000', 'A', 'B', ''], assets);
+  assert.strictEqual(sav.ok, false); assert.strictEqual(sav.error, 'amount');
+});
 // RANGE_FROM(2023-01-01) 이전 날짜는 balancesUpTo 등 allTxns(RANGE_FROM,*) 기반 집계에서
 // 조용히 빠지므로, 형식은 유효해도 별도의 'range' 에러로 구분해 걸러낸다(형식 오류 'date'와 다름).
 test("csvRowToImportTxn: RANGE_FROM 이전 날짜는 형식은 유효해도 error:'range'로 걸러진다", () => {
@@ -1428,12 +1440,20 @@ test('csvDedupeKey: 연결된 자산은 id로, 스냅샷 이름은 이름으로 
 });
 test('buildImportPreview: doExport가 내보낸 CSV를 그대로 다시 가져오려 하면 전부 중복으로 건너뛴다', () => {
   const assets = [{ id: 'a1', name: '주계좌' }];
-  const txns = [{ id: 't1', date: '2026-01-01', type: 'expense', category: '식비', amount: -5000, fromAssetId: 'a1', toAssetId: null, memo: '점심' }];
+  const txns = [{ id: 't1', date: '2026-01-01', type: 'expense', category: '식비', amount: 5000, fromAssetId: 'a1', toAssetId: null, memo: '점심' }];
   const csv = sandbox.txnsToCSV(txns, assets);
   const preview = sandbox.buildImportPreview(csv, assets, { expense: ['식비'], income: [], saving: [] }, txns);
   assert.strictEqual(preview.totalRows, 1);
   assert.strictEqual(preview.newCount, 0);
   assert.strictEqual(preview.dupCount, 1);
+});
+test('buildImportPreview: 음수 금액 행은 형식 오류와 같은 invalidCount로 잡히고 새 항목으로 세지 않는다', () => {
+  const csv = '날짜,구분,카테고리,금액,보내는 자산,받는 자산,메모\r\n' +
+    '2026-01-01,지출,식비,-5000,,,점심\r\n';
+  const preview = sandbox.buildImportPreview(csv, [], { expense: ['식비'], income: [], saving: [] }, []);
+  assert.strictEqual(preview.totalRows, 1);
+  assert.strictEqual(preview.invalidCount, 1);
+  assert.strictEqual(preview.newCount, 0);
 });
 test('buildImportPreview: 기존에 없는 내역만 새 항목으로 세고, 없는 카테고리는 자동 생성 목록에 담는다', () => {
   const assets = [{ id: 'a1', name: '주계좌' }];
