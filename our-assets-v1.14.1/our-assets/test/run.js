@@ -2633,6 +2633,35 @@ test('saveAsset: 이미 시세를 알고 있는 종목을 수정할 때는 즉�
   sandbox.saveAsset(true);
   assert.deepStrictEqual(sandbox.syncRatesCalls, [], '이미 시세를 알고 있으면 즉시 동기화를 부를 필요가 없음');
 });
+/* ---------- saveAsset: 주식 자산의 종목코드가 비어 있으면 저장을 막는다 (cycle58 develop).
+ * syncAssetInputs()는 종목코드를 trim/uppercase만 할 뿐 필수 여부를 검사하지 않고, saveAsset()도
+ * transfer의 from/to 자산처럼 다른 필수 조합은 저장 전에 막으면서 stockCode는 검사하지 않아
+ * 종목코드 없이 저장된 주식 자산이 assetEval()에서 영원히 ₩0으로 평가되고 heldStockCodes()가
+ * 빈 문자열을 걸러내 시세 자동 동기화 대상에서도 빠지는 문제였다. ---------- */
+test('saveAsset: 종목코드를 비워두고 저장하면 토스트로 막고 자산이 추가되지 않는다', () => {
+  sandbox.DB = { assets: [], rates: { fx: {}, stocks: {}, goldPerG: 0 } };
+  sandbox.asDraft = { type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '', stockQty: 10 };
+  sandbox.toastCalls = [];
+  sandbox.saveAsset(false);
+  assert.strictEqual(sandbox.DB.assets.length, 0, '종목코드 없이는 저장되면 안 됨');
+  assert.ok(sandbox.toastCalls.includes('종목코드를 입력해 주세요'));
+});
+test('saveAsset: 공백만 입력한 종목코드도 trim 후 빈 값으로 취급해 막는다', () => {
+  sandbox.DB = { assets: [], rates: { fx: {}, stocks: {}, goldPerG: 0 } };
+  sandbox.asDraft = { type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '   ', stockQty: 10 };
+  sandbox.toastCalls = [];
+  sandbox.saveAsset(false);
+  assert.strictEqual(sandbox.DB.assets.length, 0);
+  assert.ok(sandbox.toastCalls.includes('종목코드를 입력해 주세요'));
+});
+test('saveAsset: 다른 자산 타입은 종목코드가 없어도 이 검증에 걸리지 않는다', () => {
+  sandbox.DB = { assets: [], rates: { fx: {}, stocks: {}, goldPerG: 0 } };
+  sandbox.asDraft = { type: 'cash', owner: '나', includeInTotal: true, name: '지갑', baseAmount: 10000 };
+  sandbox.toastCalls = [];
+  sandbox.saveAsset(false);
+  assert.strictEqual(sandbox.DB.assets.length, 1);
+  assert.ok(!sandbox.toastCalls.includes('종목코드를 입력해 주세요'));
+});
 test('saveAsset: 처음 보는 fx 통화를 등록하면 즉시 동기화하고, 이미 보유 중이라 알고 있는 통화는 부르지 않는다', () => {
   sandbox.DB = { assets: [], rates: { fx: { USD: 1350 }, stocks: {}, goldPerG: 0 } };
   sandbox.asDraft = { type: 'fx', owner: '나', includeInTotal: true, name: '엔화', currency: 'JPY', fxAmount: 1000 };

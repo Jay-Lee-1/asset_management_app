@@ -1,15 +1,8 @@
 {
   "cycle": 58,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 52,
-      "phase": "advance",
-      "timestamp": "2026-09-20T02:10:00.000Z",
-      "summary": "critique(3c01689) 계획대로 renderLedger()/캘린더 셀 집계의 O(days×txns) 무캐시 재계산을 없앴다. allTxns(from,to)를 범위당 한 번만 호출해 날짜 문자열 키의 Map으로 버킷화하는 txnsByDateInRange(from,to) 순수 함수를 새로 추가하고, calCellsFor(y,m,sel,txMap)/calPane(y,m,sel,live,txMap)이 셀마다 dayTxns(ds)를 개별 호출하는 대신 이 Map을 조회하도록 시그니처를 바꿨다(달력 밖으로 삐져나온 'other' 셀은 기존과 동일하게 항상 [] 유지). renderLedger()는 이전/현재/다음 3개월 캐러셀이 실제로 덮는 범위(monthStartStr(이전달)~monthEndStr(다음달)) 전체를 렌더당 1회만 버킷화해 세 calPane 호출에 공유시켜, 렌더 1회당 allTxns()/expandRec() 호출을 약 126회에서 1회로 줄였다(_recCache도 이제 단일 [from,to] 키만 쓰므로 REC_CACHE_MAX=40 스래싱이 사라짐). dayTxns(d)/renderLedger()의 선택일 표시(selTx)는 순서(비반복 우선, 반복 마지막)가 필요해 기존 그대로 유지. 새로 추가한 txnsByDateInRange를 test/run.js FUNCTIONS에 추가하고 회귀 테스트 2개 추가: 1) 버킷 Map이 각 날짜의 거래만 정확히 담는지(거래 없는 날짜는 키 자체가 없는지), 2) renderLedger()가 실제로 이전/다음 달 패널(각각 2026-05/2026-07)의 실제 날짜 셀에 해당 날짜 거래 금액을 정확히 반영하는지(달력 밖 'other' 셀이 아닌, 인접 달 패널 자신의 진짜 날짜 셀). 두 인라인 <script> 블록 모두 new Function 파싱 확인, 346/346 통과. selDay()에서 달이 안 바뀌었을 때 renderLedger() 전체 대신 부분 갱신만 하는 후속 최적화는 범위가 커서 이번엔 다루지 않고 남겨둔다. pending_advance_plan 비움. APP_VERSION 1.43.10->1.44.0, sw.js CACHE v136->v137.",
-      "commit": null
-    },
     {
       "cycle": 53,
       "phase": "develop",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-21T00:00:00.000Z",
       "summary": "critique(14779ba) 계획대로 renderPlan()에 실행 기반 스모크 테스트 3개 추가. FUNCTIONS에 lowestInMonth/planBalInner/planBalCard/renderPlan을, LETS에 _planLive를 추가하고 pagePlanEl mock을 $ 디스패처에 연결. (a) 이번 달이 아니고 흐름 없을 때 최상위 빈 상태, (b) 잔액이 처음 마이너스로 전환되는 날만 danger-start이고 이후는 danger만 붙으며 종 아이콘이 뜨는지(+ TODAY 자동삽입으로 거래 없는 오늘도 일별 빈 상태 카드가 뜨는지), (c) 수입/이체/지출 항목의 상대 자산명(flow)과 부호 있는 금액 표시를 검증. index.html은 건드리지 않아 APP_VERSION/CACHE 상승 불필요. node test/run.js 388/388 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 58,
+      "phase": "develop",
+      "timestamp": "2026-09-21T01:00:00.000Z",
+      "summary": "Explore 서브에이전트로 발견한 saveAsset()의 주식 자산 종목코드(stockCode) 필수 검증 누락 버그 수정. syncAssetInputs()(2728행)는 #asCode 입력값을 trim/uppercase만 할 뿐 비어있는지 검사하지 않고, saveAsset()도 transfer의 from/to 자산처럼 다른 필수 조합은 저장 전 토스트로 막으면서 stock 타입의 stockCode는 전혀 검사하지 않았다 — 종목코드를 비워둔 채 저장하면 그대로 stockCode:''인 자산이 생성되고, assetEval()(2006행)의 R.stocks[a.stockCode] 조회가 항상 undefined라 순자산에서 영원히 ₩0으로 평가되며, heldStockCodes()(2303행)가 falsy stockCode를 걸러내 fetchStocks()/syncRates() 자동 동기화 대상에서도 빠져 수동 시세 입력 외에는 복구할 방법이 없었다. saveAsset() 시작부(syncAssetInputs 직후)에 transfer 검증과 동일한 패턴으로 `if(d.type==='stock'&&!(d.stockCode||'').trim()){toast('종목코드를 입력해 주세요');return}` 가드를 추가했다. 회귀 테스트 3개 추가: 1) 빈 stockCode는 토스트로 막고 자산이 추가되지 않는지, 2) 공백만 입력한 stockCode도 trim 후 동일하게 막히는지, 3) stock이 아닌 타입(cash)은 이 검증에 영향받지 않고 정상 저장되는지. node test/run.js 391/391 통과, 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.45.6->1.45.7, sw.js CACHE v148->v149.",
       "commit": null
     }
   ]
