@@ -1,15 +1,12 @@
 {
   "cycle": 61,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "클라우드 동기화 실패 후 온라인 복귀 시 자동 재시도 부재",
+    "why": "pushCloud()/pullCloud()는 save()의 scheduleCloudPush(1.2초 디바운스)와 visibilitychange(백그라운드 전환) 두 경로로만 트리거되고, window의 'online' 이벤트 리스너가 코드 전체에 전무하다. 오프라인 상태에서 push가 실패하면 cloudSyncFailed()가 CLOUD_SYNC_STATE='error'로 설정하고 토스트 한 번만 띄운 뒤, 네트워크가 복구돼도 그 상태를 아무도 정리하거나 재시도하지 않는다 — 사용자가 다시 값을 수정하거나(우연히 scheduleCloudPush 재트리거) 앱을 백그라운드/포그라운드 전환해야만 재시도된다. 오프라인에서 편집 후 그냥 재연결만 하고 가만히 있으면 로컬 데이터가 무기한 미동기화 상태로 남고 동기화 상태 배지도 계속 실패로 표시되는 실질적 데이터 유실 위험이다.",
+    "approach": "index.html의 기존 visibilitychange/focus 리스너(~6209-6210행) 근처에 window.addEventListener('online', ...) 핸들러를 추가한다. CLOUD_UID가 설정돼 있고 CLOUD_SYNC_STATE가 'error'일 때만(단 'conflict'는 사용자의 명시적 해결이 필요하므로 제외) afterCloudAuth의 unsynced-check 패턴을 참고해 pullCloud() 후 pushCloud()를 호출하고, cloudSyncLabel()을 보여주는 화면이면 renderCurrent()로 상태 UI를 갱신한다. 재시도 여부 판단은 순수 함수 shouldRetryCloudSync(cloudUid, syncState, navigatorOnLine)로 분리해 test/run.js의 FUNCTIONS(약 79-80행 부근, isCloudConflict/decidePushOutcome/localHasUnsyncedChanges와 동일 패턴)에 추가하고, 케이스 5개로 테스트한다: CLOUD_UID 없음→false, state='ok'→false, state='error'&&online→true, state='error'&&!online→false, state='conflict'→false. 실제 네트워크 호출(pullCloud/pushCloud) 자체는 기존 관례대로 테스트하지 않는다."
+  },
   "history": [
-    {
-      "cycle": 56,
-      "phase": "critique",
-      "timestamp": "2026-09-20T00:00:00.000Z",
-      "summary": "앱 전체를 한 걸음 물러나 살펴봄. 후보: (1) 반복거래 endDate/count 페어링 로직이 recApply/recSave/splitRecurrenceAt 3곳에 복붙되어 있음(cycle48 버그의 근원, 채택), (2) renderPlan/renderMenu에 실행 기반 스모크 테스트 부재, (3) CSV import 미리보기/확인 UI(openCsvImportPreview/doCsvImport)에 실행 테스트 없음 + 자동매칭 실패 시 수동 매핑 화면 미구현(cycle54부터 이월), (4) FX 통화 버튼이 ['USD','JPY','EUR']로 하드코딩(cycle54에서 이미 2번 보류), (5) save()가 매 변경마다 DB 전체를 JSON.stringify하는 확장성 리스크(아직 시급하지 않음). 최우선으로 (1)을 선택 — pending_advance_plan에 구체 계획 저장.",
-      "commit": null
-    },
     {
       "cycle": 56,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-09-21T14:08:15.458Z",
       "summary": "develop 커밋(9e3ea65, CSV 임포트 이체/저축 same-name 차단)을 검토. csvRowToImportTxn()에서 fromName/toName은 둘 다 unguardCsv+trim을 거쳐 일관되게 정규화된 뒤 비교되므로 새 fromName===toName 조건이 공백/가드문자 처리 불일치 없이 정확히 동작함을 코드로 확인. findAsset()이 실패해 fromAssetId/toAssetId가 둘 다 null이 되는 미매칭 케이스까지 포함해, raw 이름이 문자열로 동일하면 saveTx()의 fromAssetId===toAssetId 의도(자기 자신에게 이체 금지)와 일치하는 방향으로 막히는 것을 확인 — 오탐(false positive) 시나리오 없음. buildImportPreview가 이미 error==='asset'을 invalidCount로 집계하므로 UI 쪽 추가 변경 불필요했다는 판단도 맞음. node test/run.js 409/409 통과 재확인. 문제 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 61,
+      "phase": "critique",
+      "timestamp": "2026-09-21T15:10:00.000Z",
+      "summary": "Explore 서브에이전트로 앱 전체를 구조적으로 재검토(render* 스모크/esc 스윕/캘린더 캐싱/반복종료조건/자산명·메모 trim/num 부호/sanitizeBackup/CSV import 흐름 및 same-name 검증/FX 통화 피커/stockCode 검증/recHistFieldsChanged startDate/addBalanceAdjust 부채 방향/homeAlerts OS 알림/RANGE_FROM 가드 등 최근 완료 항목은 재탐색 금지 지시). 예산(spendByCategory 등), 시세평가 자산 재검토(detectStaleMarketValuedTxns), netlify 함수 폴백 체인은 이미 견고해 기각. 순자산 SVG 차트(nwHistoryCard)의 접근성 공백은 옆에 이미 텍스트 요약(범위+증감)이 있어 손실이 적어 후순위. window에 'online' 이벤트 리스너가 전무해 pushCloud/pullCloud가 CLOUD_SYNC_STATE='error'로 멈춘 뒤 네트워크가 복구돼도 자동 재시도되지 않는(사용자가 다시 편집하거나 앱을 백그라운드/포그라운드 전환해야만 재트리거되는) 클라우드 동기화 공백을 신규 영역으로 채택 — 오프라인 편집 후 재연결만 하고 방치하면 무기한 미동기화 위험. advance에서 online 이벤트 핸들러 추가 + 순수 함수 shouldRetryCloudSync(cloudUid,syncState,navigatorOnLine) 분리 및 테스트 5개 추가하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     }
   ]
