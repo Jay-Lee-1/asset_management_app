@@ -1,15 +1,12 @@
 {
   "cycle": 58,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "FX 자산 등록 시 통화 선택을 하드코딩 3종 버튼에서 확장 가능한 피커 시트로 전환",
+    "why": "netlify/functions/rates.js는 이미 임의의 ISO 3자리 통화코드를 네이버→fxapi.app→open.er-api.com 폴백 체인으로 처리하고, 시세 관리 화면(index.html ~4239행 fxRows)도 DB.assets에서 보유 통화를 동적으로 뽑아 렌더링한다. 그런데 자산 등록 시트(index.html ~2760행, renderAssetSheet의 'fx' 분기)만 curBtns=['USD','JPY','EUR'].map(...) 로 하드코딩돼 있어, 백엔드가 지원하는데도 사용자가 GBP/CNY/CHF/AUD/HKD 등 해당 통화 자산을 애초에 등록할 방법이 없다. 즉 '구현은 됐는데 UI가 막고 있는' 명확한 제품 기능 공백이며, 기존 openOwnerPicker/openCatPicker 같은 피커 시트 패턴을 그대로 재사용할 수 있어 리스크 대비 가치가 높다.",
+    "approach": "1) index.html에 CURRENCY_LIST 같은 상수(코드+한글/영문 라벨, 예: USD/JPY/EUR/CNY/GBP/CHF/HKD/AUD/CAD/SGD/THB/VND 등 open.er-api.com이 안정적으로 지원하는 통화 위주로 15~20개 큐레이션)를 ASSET_TYPES 근처에 추가한다. 2) renderAssetSheet()의 d.type==='fx' 분기(~2759-2763행)에서 opt-grid 버튼 3개를 openOwnerPicker/openCatPicker와 같은 'pick' 버튼 + openPicker() 기반 openCurrencyPicker(o) 함수로 교체한다(파일 내 pk-item/pk-group/pk-blob 마크업과 movePkBlob 애니메이션 패턴 재사용). 3) pkPickCurrency(code) 핸들러를 추가해 기존 asCur(c) 로직(asDraft.currency=c; renderAssetSheet(...))을 그대로 호출하도록 연결한다(saveAsset/syncAssetInputs 등 하위 로직은 currency 문자열만 보므로 변경 불필요). 4) DB.rates.fx의 초기값(1544행)이나 rateUnknown()/mkt 리스트(2205행)는 이미 보유 통화 기준으로 동적 순회하므로 손댈 필요 없음을 재확인한다. 5) 테스트: test/run.js에 CURRENCY_LIST가 중복 코드 없이 유효한 3자리 대문자 코드로만 구성되고 기존 USD/JPY/EUR 하위호환을 깨지 않는지 확인하는 순수 데이터 검증 테스트, 그리고 pkPickCurrency가 asDraft.currency를 올바르게 갱신하는지 확인하는 경량 단위 테스트를 추가한다."
+  },
   "history": [
-    {
-      "cycle": 53,
-      "phase": "review",
-      "timestamp": "2026-09-20T04:10:00.000Z",
-      "summary": "develop 커밋(be97f05)을 검토. recalcEndCond가 wiring된 6개 지점(txFreq/txDay/tx 시작일 픽커, recFreq/recDay/setRecWeekend/rec 시작일 픽커)은 모두 정확함을 확인했으나, 반복일을 버튼(1/5/15/25/last)이 아니라 커스텀 숫자 입력창에 직접 타이핑하는 경로 — txDayInput(index.html:3127)/recDayInput(:3338), oninput 핸들러로 매 키 입력마다 txDraft.day/recDraft.day만 갱신하고 재렌더도 recalcEndCond 호출도 없음 — 가 이번 develop이 놓친 동일 계열의 잔여 구멍임을 발견. 이 경로가 실제로 문제가 되는지 saveTx()(:3178-3184)/saveRec()(:3364-3367)를 확인: 둘 다 저장 시 clampDay()로 day를 보정한 뒤 base를 새로 만들지만, endDate와 count가 '둘 다' 이미 채워져 있으면(재계산 없이 저장) 어느 쪽도 건드리지 않아 커스텀 타이핑으로 바뀐 day를 반영 못한 채 그대로 저장됨을 확인 — 매월 반복에서 day 값은 recDates()의 push() 조건(d>=r.startDate)에 걸려 시작일 근처 첫 회차 포함 여부를 바꿀 수 있어(예: startDate=2026-01-10,day=1→첫 회차 2월1일, day=15로 바꾸면 1월15일부터 포함되어 회차 수가 실제로 달라짐) 이론적 엣지케이스가 아니라 재현 가능한 결함으로 판단해 그 자리에서 수정. txDayInput/recDayInput에 day 값이 빈 문자열이 아닐 때만(백스페이스로 지우는 도중 day=''인 임시 상태에서 recNthDate가 day=0으로 오염되는 것 방지) recalcEndCond(txDraft,txDraft.date)/recalcEndCond(recDraft,recDraft.startDate) 호출을 추가. 이 두 함수는 DOM 요소(el)에 의존해 순수 함수 테스트 하네스로 격리하기 어렵고(기존 develop 커밋도 txFreq/txDay 등 동일 계열 wiring 함수들은 unit test 없이 recalcEndCond 자체 테스트로만 커버했음) 재렌더도 하지 않는 기존 설계라, 이미 develop에서 3건 추가된 recalcEndCond 자체 테스트가 이번 수정이 호출하는 로직을 그대로 커버함을 확인하고 새 테스트는 추가하지 않았다(패턴 일관성 유지). node test/run.js 재실행해 349/349 통과, 두 인라인 <script> 블록 모두 vm.Script 파싱 확인. APP_VERSION 1.44.1->1.44.2, sw.js CACHE v138->v139.",
-      "commit": null
-    },
     {
       "cycle": 53,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-09-21T03:10:00.000Z",
       "summary": "develop 커밋(948e909, 주식 자산 저장 시 종목코드 필수 검증)을 검토. saveAsset()의 가드 위치·조건이 transfer 검증과 동일한 패턴으로 정확하고, trim 처리로 공백만 입력한 경우까지 막으며, 다른 자산 타입(cash 등)에는 영향 없음을 회귀 테스트 3개로 확인. node --check로 두 인라인 script 블록 구문도 재확인. 391/391 테스트 통과, 이상 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 58,
+      "phase": "critique",
+      "timestamp": "2026-09-21T04:09:54.282Z",
+      "summary": "Explore 서브에이전트로 앱 전체를 구조적으로 재검토(render* 스모크/esc 스윕/캘린더 캐싱/selDay 부분갱신/반복종료조건/자산명·메모 trim/num 부호/sanitizeBackup/CSV import 기능/stockCode 검증 등 최근 완료 항목은 재탐색 금지 지시). 예산(budget) 기능은 budgetHistory 기반 이력 관리와 탄탄한 테스트가 이미 있어 새 약점 아님을 확인. 기존 백로그 3건 재검토: (1) CSV import 수동 매핑 화면은 현재도 안전하게 실패하는 상태라 이번엔 보류, (2) FX 통화 선택 버튼이 ['USD','JPY','EUR']로 하드코딩된 문제는 netlify/functions/rates.js가 이미 임의의 ISO 통화코드를 네이버→fxapi.app→open.er-api.com 폴백 체인으로 처리하고 시세관리 화면(~4239행)도 보유 통화를 동적으로 순회함을 직접 확인해 '백엔드는 범용인데 자산등록 시트(~2760행) UI만 3종으로 막혀있는' 명확한 기능 공백으로 우선순위 격상, (3) save() 매 변경 전체 stringify는 성능 불만의 새 근거 없어 다시 명시적으로 보류. 기존 openOwnerPicker/openCatPicker 피커 시트 패턴(pk-item/pk-group/pk-blob+openPicker())을 FX 통화 선택에도 재사용 가능함을 확인해 '재작성'이 아닌 '다음 한 걸음'으로 적합 판단. advance에서 CURRENCY_LIST 상수 추가 + openCurrencyPicker(o)/pkPickCurrency(code)로 통화 선택을 피커 시트로 전환하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     }
   ]
