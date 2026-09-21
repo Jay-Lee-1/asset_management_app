@@ -1,26 +1,8 @@
 {
-  "cycle": 60,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "거래/CSV 임포트에 RANGE_FROM(2023-01-01) 이전 날짜 차단 가드 추가",
-    "why": "index.html:2004의 RANGE_FROM='2023-01-01'은 allTxns(RANGE_FROM,RANGE_TO)를 쓰는 balancesUpTo/CSV 내보내기/pendingTransferCount/homeAlerts 등 잔액·집계 경로 전체의 하한선인데, saveTx()(3232행)와 csvRowToImportTxn()(4580행, csvDateValid는 형식만 검사)에는 이 하한을 막는 검증이 전혀 없다. renderLedger()의 달력 뷰는 RANGE_FROM에 매이지 않아 2023년 이전 날짜로 저장한 거래도 원장/히스토리에는 정상적으로 보이므로 사용자는 저장이 잘 됐다고 믿지만, balancesUpTo 기반 자산 잔액·순자산 이력·CSV 백업에는 조용히 누락된다 — 에러도 배너도 없이 핵심 기능인 '잔액이 맞다'는 신뢰를 깨는 데이터 정합성 결함이다. 은행 앱/스프레드시트에서 다년치 CSV를 임포트하거나 과거 날짜로 수동 보정 거래를 입력하는 현실적인 시나리오에서 발생한다.",
-    "approach": "1) 순수 헬퍼 dateBelowRangeFloor(ds){return ds<RANGE_FROM} 추가. 2) saveTx()에서 저장 전 dateBelowRangeFloor(txDraft.date) 이면 toast로 막고 return(다른 필수값 검증과 동일 패턴). 3) csvRowToImportTxn()의 기존 {ok:false,error:'date'} 반환 형태를 확장해 형식은 맞지만 RANGE_FROM 이전이면 {ok:false,error:'range'}를 반환하고, buildImportPreview()의 오류 카운터/메시지에 'range' 케이스를 형식 오류와 구분해 반영. 4) 일관성을 위해 saveRec()/recSave()의 startDate에도 동일 가드를 적용(단, expandRec이 이미 [RANGE_FROM,RANGE_TO] 밖 인스턴스를 잘라내므로 실사용 노출은 saveTx보다 작음 — 우선순위 낮게, 시간 되면 포함). 5) test/run.js: RANGE_FROM은 이미 CONSTS에, saveTx/csvRowToImportTxn은 이미 FUNCTIONS에 있어 새 인프라 없이 회귀 테스트 추가 가능 — (a) 2022-12-31 등 RANGE_FROM 이전 날짜의 csvRowToImportTxn 호출이 {ok:false,error:'range'}를 반환하는지, (b) txDraft.date가 RANGE_FROM 이전인 saveTx() 호출이 toast만 띄우고 DB.txns를 건드리지 않는지(기존 saveTx 테스트의 DOM 스텁 샌드박스 패턴 재사용). 예상 diff 크기: 순수 헬퍼 1개 + 호출부 2~4곳 + CSV 에러 분기 1개, 약 15~25줄."
-  },
+  "cycle": 61,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 55,
-      "phase": "critique",
-      "timestamp": "2026-09-20T15:10:00.000Z",
-      "summary": "이번 critique는 앱 전체를 처음부터 다시 훑는 대신, 같은 cycle55의 review가 이미 코드로 검증해 남긴 구체적 버그를 채택했다: recApply()(index.html:3275)가 열어주는 반복 거래 편집 시트에서 #txMemo를 고쳐도, recSave()(index.html:3300)가 syncTxInputs()를 호출하지 않고 num($('txAmt'))로 금액만 직접 읽어 scope='one'(edits[date]={amount:amt}, memo 키 없음)/'future'(newRec에 amount만 override, memo는 원본 그대로 복제)/'all'(r.amount만 갱신, r.memo 미변경) 세 분기 모두에서 메모 편집이 저장되지 않고 조용히 버려짐을 grep으로 재확인(recSave/recApply는 이미 test/run.js FUNCTIONS에 있어 새 테스트 인프라 없이 바로 추가 가능). render* 스모크 시리즈/esc() 스윕/캘린더 캐싱/반복종료조건/자산명·메모 trim 등 최근 완료 항목은 재탐색하지 않았다. advance에서 recSave() 시작부에 syncTxInputs() 호출을 추가하고 saveTx()와 동일한 trim||category 패턴으로 memo를 확정해 세 분기 모두(edits/newRec/r.memo)에 반영하도록 pending_advance_plan에 저장. 코드 변경 없음.",
-      "commit": null
-    },
-    {
-      "cycle": 55,
-      "phase": "advance",
-      "timestamp": "2026-09-20T16:11:13.766Z",
-      "summary": "critique(4971071) 계획대로 recSave()의 반복 거래 회차 편집 시 메모(memo)가 저장되지 않던 버그를 고쳤다. recSave() 시작부에 syncTxInputs() 호출을 추가해(다른 tx 편집 흐름과 동일한 패턴) txDraft.amount/memo를 DOM(#txAmt/#txMemo)에서 최신화하고, saveTx()/saveRec()과 동일한 (memo||'').trim()||r.category 패턴으로 memo를 확정해 세 scope 분기 모두에 반영했다: scope='one'은 edits[date]={amount,memo}로 memo 키를 추가, scope='future'는 새로 분리되는 newRec에 amount 옆에 memo도 함께 override, scope='all'(else)은 r.memo도 r.amount와 함께 갱신하고 undoFn이 prevMemo까지 캡처해 되돌리도록 했다. expandRec()(1953행)의 ed.memo!=null?ed.memo:r.memo 표시 로직과 호환 확인. 테스트 인프라 변경: recSave()가 이제 DOM 직접 조회 대신 txDraft를 통해 값을 읽으므로(mock syncTxInputs는 기존처럼 no-op), 기존 recSave 테스트 8개의 sandbox.txAmtValue 세팅을 sandbox.txDraft={amount:...}로 교체하고 관련 mock 주석을 갱신했다. 회귀 테스트 4개 추가(one/future/all 세 scope의 메모 반영 + 공백 메모 시 카테고리 대체), vm 샌드박스 realm 문제로 1건은 JSON.stringify 정규화 비교로 수정(기존 future 분할 테스트와 같은 패턴). 두 인라인 <script> 블록 모두 node --check 파싱 확인, 374/374 통과. APP_VERSION 1.45.1->1.45.2, sw.js CACHE v143->v144. pending_advance_plan 비움.",
-      "commit": null
-    },
     {
       "cycle": 56,
       "phase": "develop",
@@ -152,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-21T11:20:00.000Z",
       "summary": "Explore 서브에이전트로 앱 전체를 구조적으로 재검토(render* 스모크/esc 스윕/캘린더 캐싱/반복종료조건/자산명·메모 trim/num 부호/sanitizeBackup/CSV import 기본 흐름/FX 통화 피커/stockCode 검증/recHistFieldsChanged startDate/recSave memo/addBalanceAdjust 부채 방향/homeAlerts OS 알림 등 최근 완료 항목은 재탐색 금지 지시). index.html:2004의 RANGE_FROM='2023-01-01'이 balancesUpTo/CSV 내보내기/pendingTransferCount/homeAlerts 등 allTxns(RANGE_FROM,*) 기반 집계 전체의 하한선인데, saveTx()(3232행)와 csvRowToImportTxn()(4580행, csvDateValid는 형식만 검사)에는 이 하한을 막는 검증이 전혀 없음을 grep으로 확인. renderLedger()의 달력 뷰는 RANGE_FROM에 매이지 않아(txnsByDateInRange가 표시 중인 월만 봄) 2023년 이전 날짜로 저장한 거래도 원장/히스토리에는 정상적으로 보여 사용자는 저장이 잘 됐다고 믿지만, 자산 잔액·순자산 이력·CSV 백업에서는 에러/배너 없이 조용히 누락되는 데이터 정합성 결함으로 채택(다년치 은행 CSV 임포트나 과거 날짜 수동 보정 시나리오에서 실제로 발생 가능, 이전 20개 히스토리에 없던 신규 영역). CSV import 수동 매핑 UI(cycle54부터 이월, 더 큰 신규 UI라 후순위 유지), save() 매 변경 전체 stringify(새 증거 없어 재차 보류)는 기각. advance에서 순수 헬퍼 dateBelowRangeFloor(ds) 추가 + saveTx()/csvRowToImportTxn()(+가능하면 saveRec())에 RANGE_FROM 이전 날짜 차단 가드를 넣는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 60,
+      "phase": "advance",
+      "timestamp": "2026-09-21T12:09:49.288Z",
+      "summary": "critique(6350a25) 계획대로 순수 헬퍼 dateBelowRangeFloor(ds){return ds<RANGE_FROM} 추가 후 saveTx()/saveRec()의 저장 가드(각 date/startDate가 RANGE_FROM=2023-01-01 이전이면 토스트로 막고 return)와 csvRowToImportTxn()의 새 error:'range' 분기(형식은 유효하지만 하한 이전인 날짜를 기존 error:'date'와 구분)를 구현했다. buildImportPreview()에 rangeCount를 invalidCount와 별도로 집계해 반환값에 추가하고, openCsvImportPreview()의 미리보기 통계 줄에 'RANGE_FROM 이전 날짜 N행은 제외'를 별도로 노출해 형식 오류와 혼동되지 않게 했다. 계획에 있던 saveRec()/startDate 가드도 함께 포함(우선순위 낮게 이월하지 않고 이번에 처리). 회귀 테스트 6개 추가: csvRowToImportTxn의 RANGE_FROM 이전/당일 경계, buildImportPreview의 range/invalid 카운트 분리, saveTx의 RANGE_FROM 이전 차단·당일 정상 저장, saveRec의 startDate RANGE_FROM 이전 차단. dateBelowRangeFloor를 test/run.js FUNCTIONS에 추가. 두 인라인 <script> 블록 모두 new Function 파싱 확인, 408/408 통과(기존 402 + 신규 6). APP_VERSION 1.45.11->1.45.12, sw.js CACHE v153->v154.",
       "commit": null
     }
   ]

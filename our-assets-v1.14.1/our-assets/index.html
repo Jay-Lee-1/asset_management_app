@@ -1289,7 +1289,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.45.11';
+const APP_VERSION='1.45.12';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2002,6 +2002,9 @@ function truncateRecEnd(base,cutoffDate){ /* 반복을 cutoffDate까지로 자�
  return {endDate:cutoffDate,count:recCountUntil(base,cutoffDate)};
 }
 const RANGE_FROM='2023-01-01';let RANGE_TO=addDays(TODAY,760);
+/* RANGE_FROM 이전 날짜는 allTxns(RANGE_FROM,*) 기반 잔액·집계(balancesUpTo/CSV 내보내기 등)에서 조용히 빠진다 —
+   저장/가져오기 전에 이 헬퍼로 걸러내 '저장은 됐는데 잔액엔 안 잡히는' 상태를 막는다 */
+function dateBelowRangeFloor(ds){return ds<RANGE_FROM}
 const BUDGET_EPOCH='2000-01'; /* migrate()가 옛 flat DB.budgets를 이력으로 변환할 때 쓰는 '항상 적용' 시작점 — 어떤 실제 조회 달보다도 이르다 */
 let DISP_TO=addDays(TODAY,92);
 function schHorizon(){
@@ -3232,6 +3235,7 @@ function recClearEnd(){syncRecInputs();recDraft.endDate=null;recDraft.count=null
 function saveTx(){
  if(twGuard())return;
  syncTxInputs();const d=txDraft;if(!d.amount){toast('금액을 입력해 주세요');return}
+ if(dateBelowRangeFloor(d.date)){toast(`${RANGE_FROM} 이전 날짜는 저장할 수 없어요`);return}
  if(d.type==='transfer'||d.type==='saving'){
   if(!d.fromAssetId||!d.toAssetId){toast('보내는·받는 자산을 선택해 주세요');return}
   if(d.fromAssetId===d.toAssetId){toast('보내는 자산과 받는 자산이 같아요');return}
@@ -3420,6 +3424,7 @@ function recDay(v){syncRecInputs();if(v==='last'){recDraft.day='last';recDraft._
 function saveRec(){
  if(twGuard())return;
  syncRecInputs();const d=recDraft;if(!d.amount){toast('금액을 입력해 주세요');return}
+ if(dateBelowRangeFloor(d.startDate)){toast(`${RANGE_FROM} 이전 날짜는 저장할 수 없어요`);return}
  if(d.type==='transfer'||d.type==='saving'){
   if(!d.fromAssetId||!d.toAssetId){toast('보내는·받는 자산을 선택해 주세요');return}
   if(d.fromAssetId===d.toAssetId){toast('보내는 자산과 받는 자산이 같아요');return}
@@ -4586,6 +4591,7 @@ function csvRowToImportTxn(cells,assets){
  const toName=unguardCsv((cells[5]||'').trim());
  const memo=unguardCsv((cells[6]||'').trim());
  if(!csvDateValid(date))return{ok:false,error:'date'};
+ if(dateBelowRangeFloor(date))return{ok:false,error:'range'};
  const type=TYPEBYLABEL[typeLabel];
  if(!type)return{ok:false,error:'type'};
  const amount=Number(amountRaw);
@@ -4620,11 +4626,11 @@ function buildImportPreview(text,assets,categories,existingTxns){
  const existingKeys=new Set((existingTxns||[]).map(csvDedupeKey));
  const seen=new Set();
  const items=[];
- let invalidCount=0;
+ let invalidCount=0,rangeCount=0;
  const newCats={expense:new Set(),income:new Set(),saving:new Set()};
  dataRows.forEach(cells=>{
   const r=csvRowToImportTxn(cells,assets);
-  if(!r.ok){invalidCount++;return}
+  if(!r.ok){if(r.error==='range')rangeCount++;else invalidCount++;return}
   const key=csvDedupeKey(r.txn);
   const dup=existingKeys.has(key)||seen.has(key);
   seen.add(key);
@@ -4638,6 +4644,7 @@ function buildImportPreview(text,assets,categories,existingTxns){
   items,
   totalRows:dataRows.length,
   invalidCount,
+  rangeCount,
   dupCount:items.length-newCount,
   newCount,
   assetUnmatchedCount:items.filter(x=>!x.dup&&x.unmatched.length).length,
@@ -4838,6 +4845,7 @@ function openCsvImportPreview(preview){
   `총 ${preview.totalRows}행 중 새 내역 ${preview.newCount}건`,
   preview.dupCount?`이미 있는 내역 ${preview.dupCount}건은 건너뜀`:null,
   preview.invalidCount?`형식을 알 수 없는 ${preview.invalidCount}행은 제외`:null,
+  preview.rangeCount?`${RANGE_FROM} 이전 날짜 ${preview.rangeCount}행은 제외`:null,
   preview.assetUnmatchedCount?`자산 매칭 안 됨 ${preview.assetUnmatchedCount}건 · 내역엔 남지만 자산 잔액엔 반영 안 돼요`:null,
  ].filter(Boolean);
  const newCatList=[...preview.newCats.expense,...preview.newCats.income,...preview.newCats.saving];
