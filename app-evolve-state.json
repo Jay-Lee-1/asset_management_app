@@ -1,19 +1,8 @@
 {
-  "cycle": 58,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "FX 자산 등록 시 통화 선택을 하드코딩 3종 버튼에서 확장 가능한 피커 시트로 전환",
-    "why": "netlify/functions/rates.js는 이미 임의의 ISO 3자리 통화코드를 네이버→fxapi.app→open.er-api.com 폴백 체인으로 처리하고, 시세 관리 화면(index.html ~4239행 fxRows)도 DB.assets에서 보유 통화를 동적으로 뽑아 렌더링한다. 그런데 자산 등록 시트(index.html ~2760행, renderAssetSheet의 'fx' 분기)만 curBtns=['USD','JPY','EUR'].map(...) 로 하드코딩돼 있어, 백엔드가 지원하는데도 사용자가 GBP/CNY/CHF/AUD/HKD 등 해당 통화 자산을 애초에 등록할 방법이 없다. 즉 '구현은 됐는데 UI가 막고 있는' 명확한 제품 기능 공백이며, 기존 openOwnerPicker/openCatPicker 같은 피커 시트 패턴을 그대로 재사용할 수 있어 리스크 대비 가치가 높다.",
-    "approach": "1) index.html에 CURRENCY_LIST 같은 상수(코드+한글/영문 라벨, 예: USD/JPY/EUR/CNY/GBP/CHF/HKD/AUD/CAD/SGD/THB/VND 등 open.er-api.com이 안정적으로 지원하는 통화 위주로 15~20개 큐레이션)를 ASSET_TYPES 근처에 추가한다. 2) renderAssetSheet()의 d.type==='fx' 분기(~2759-2763행)에서 opt-grid 버튼 3개를 openOwnerPicker/openCatPicker와 같은 'pick' 버튼 + openPicker() 기반 openCurrencyPicker(o) 함수로 교체한다(파일 내 pk-item/pk-group/pk-blob 마크업과 movePkBlob 애니메이션 패턴 재사용). 3) pkPickCurrency(code) 핸들러를 추가해 기존 asCur(c) 로직(asDraft.currency=c; renderAssetSheet(...))을 그대로 호출하도록 연결한다(saveAsset/syncAssetInputs 등 하위 로직은 currency 문자열만 보므로 변경 불필요). 4) DB.rates.fx의 초기값(1544행)이나 rateUnknown()/mkt 리스트(2205행)는 이미 보유 통화 기준으로 동적 순회하므로 손댈 필요 없음을 재확인한다. 5) 테스트: test/run.js에 CURRENCY_LIST가 중복 코드 없이 유효한 3자리 대문자 코드로만 구성되고 기존 USD/JPY/EUR 하위호환을 깨지 않는지 확인하는 순수 데이터 검증 테스트, 그리고 pkPickCurrency가 asDraft.currency를 올바르게 갱신하는지 확인하는 경량 단위 테스트를 추가한다."
-  },
+  "cycle": 59,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 53,
-      "phase": "advance",
-      "timestamp": "2026-09-20T05:10:59.665Z",
-      "summary": "selDay() 같은 달 내 재선택 시 renderLedger() 전체 재구축 대신 부분 갱신(selDayPartial) 도입: 캘린더 셀의 sel 클래스/aria만 옮기고 day-head/card만 innerHTML 교체, wireMonthCarousel/ResizeObserver/wireLongPress 재생성은 건너뜀. DOM 조작 실패 시(cal-cell을 못 찾는 등) renderLedger() 전체 재구축으로 안전하게 폴백. renderLedger()에서 day-head/card HTML 빌더를 ledgerDayHeadHtml()/ledgerRowsHtml()로 추출해 재사용. test/run.js FUNCS에 두 헬퍼+selDayPartial 추가, 회귀 스위트 349/349 통과. sw.js CACHE v139→v140, APP_VERSION 1.44.2→1.44.3.",
-      "commit": null
-    },
     {
       "cycle": 54,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-21T04:09:54.282Z",
       "summary": "Explore 서브에이전트로 앱 전체를 구조적으로 재검토(render* 스모크/esc 스윕/캘린더 캐싱/selDay 부분갱신/반복종료조건/자산명·메모 trim/num 부호/sanitizeBackup/CSV import 기능/stockCode 검증 등 최근 완료 항목은 재탐색 금지 지시). 예산(budget) 기능은 budgetHistory 기반 이력 관리와 탄탄한 테스트가 이미 있어 새 약점 아님을 확인. 기존 백로그 3건 재검토: (1) CSV import 수동 매핑 화면은 현재도 안전하게 실패하는 상태라 이번엔 보류, (2) FX 통화 선택 버튼이 ['USD','JPY','EUR']로 하드코딩된 문제는 netlify/functions/rates.js가 이미 임의의 ISO 통화코드를 네이버→fxapi.app→open.er-api.com 폴백 체인으로 처리하고 시세관리 화면(~4239행)도 보유 통화를 동적으로 순회함을 직접 확인해 '백엔드는 범용인데 자산등록 시트(~2760행) UI만 3종으로 막혀있는' 명확한 기능 공백으로 우선순위 격상, (3) save() 매 변경 전체 stringify는 성능 불만의 새 근거 없어 다시 명시적으로 보류. 기존 openOwnerPicker/openCatPicker 피커 시트 패턴(pk-item/pk-group/pk-blob+openPicker())을 FX 통화 선택에도 재사용 가능함을 확인해 '재작성'이 아닌 '다음 한 걸음'으로 적합 판단. advance에서 CURRENCY_LIST 상수 추가 + openCurrencyPicker(o)/pkPickCurrency(code)로 통화 선택을 피커 시트로 전환하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 58,
+      "phase": "advance",
+      "timestamp": "2026-09-21T05:11:53.700Z",
+      "summary": "FX 자산 등록 시 통화 선택을 하드코딩 3종(USD/JPY/EUR) 버튼에서 CURRENCY_LIST(18종) 기반 피커 시트(openCurrencyPicker/pkPickCurrency)로 전환. asOpenCur()가 openOwnerPicker와 같은 패턴으로 asCur()를 호출하도록 연결. CURRENCY_LIST 데이터 검증 테스트와 asOpenCur/asCur 동작 테스트 2개 추가, 393/393 통과.",
       "commit": null
     }
   ]

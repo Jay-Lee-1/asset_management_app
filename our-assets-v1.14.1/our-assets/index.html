@@ -1289,7 +1289,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.45.7';
+const APP_VERSION='1.45.8';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1483,6 +1483,18 @@ const ASSET_TYPES={
 };
 const DEFAULT_GROUP_ORDER=Object.keys(ASSET_TYPES);
 const TYPE_COLOR={cash:'var(--brand)',savings:'var(--save)',stock:'var(--stock)',realestate:'var(--gold)',debt:'var(--expense)',pension:'var(--income)',fx:'#7CC7B8',gold:'#C9A227',etc:'var(--text-3)'};
+/* netlify/functions/rates.js는 임의의 ISO 3자리 통화코드를 폴백 체인으로 처리할 수 있지만,
+   자산 등록 시트에서 고를 수 있는 통화는 이 큐레이션 목록으로 제한한다(무제한 자유입력은
+   오타·미지원 통화로 이어지기 쉬움). 새 통화가 필요하면 이 배열에 코드/라벨만 추가하면 된다 —
+   시세 조회·연동 관리·순자산 계산은 전부 DB.assets에 실제로 쓰인 통화를 동적으로 순회한다. */
+const CURRENCY_LIST=[
+ {code:'USD',label:'미국 달러'},{code:'JPY',label:'일본 엔'},{code:'EUR',label:'유로'},
+ {code:'CNY',label:'중국 위안'},{code:'GBP',label:'영국 파운드'},{code:'CHF',label:'스위스 프랑'},
+ {code:'HKD',label:'홍콩 달러'},{code:'AUD',label:'호주 달러'},{code:'CAD',label:'캐나다 달러'},
+ {code:'SGD',label:'싱가포르 달러'},{code:'NZD',label:'뉴질랜드 달러'},{code:'THB',label:'태국 바트'},
+ {code:'VND',label:'베트남 동'},{code:'IDR',label:'인도네시아 루피아'},{code:'PHP',label:'필리핀 페소'},
+ {code:'MYR',label:'말레이시아 링깃'},{code:'TWD',label:'대만 달러'},{code:'INR',label:'인도 루피'},
+];
 const ADJUST_CAT='잔액 조정'; /* 자산 재등록/잔액 수정 시 addBalanceAdjust가 자동 생성하는 시스템 전용 수입 카테고리 — 사용자가 이름변경/삭제 못 하게 openCatManage/doRenameCat/doDeleteCat에서 이 상수로 특별 취급한다 */
 const EXP_CATS_DEFAULT=['고정비','관리비','공용','용돈','십일조','기타'];
 const INC_CATS_DEFAULT=['급여','성과급','지원금','부업',ADJUST_CAT];
@@ -2735,6 +2747,7 @@ function syncAssetInputs(){const d=asDraft;const g=id=>$(id);
  if(g('asQty'))d.stockQty=Math.max(0,parseFloat((g('asQty').value||'0').replace(/,/g,''))||0);}
 function asOpenType(){syncAssetInputs();openTypePicker({current:asDraft.type,back:()=>renderAssetSheet(!!asDraft.id),onPick:k=>{if(k==='pension'){asDraft.includeInTotal=false;asDraft._pensionAutoExcl=true}else if(asDraft._pensionAutoExcl){asDraft.includeInTotal=true;asDraft._pensionAutoExcl=false}asDraft.type=k;if(k==='savings'&&!asDraft.maturityTargetId)asDraft.maturityTargetId=firstCash(asDraft.id);renderAssetSheet(!!asDraft.id)}})}
 function asOpenOwner(){syncAssetInputs();openOwnerPicker({current:asDraft.owner,back:()=>renderAssetSheet(!!asDraft.id),onPick:o=>{asDraft.owner=o;renderAssetSheet(!!asDraft.id)}})}
+function asOpenCur(){syncAssetInputs();openCurrencyPicker({current:asDraft.currency,back:()=>renderAssetSheet(!!asDraft.id),onPick:c=>asCur(c)})}
 function asOpenMat(){syncAssetInputs();openAssetPicker({current:asDraft.maturityTargetId,title:'만기 시 이체할 통장',cashOnly:true,excludeId:asDraft.id,back:()=>renderAssetSheet(!!asDraft.id),onPick:id=>{asDraft.maturityTargetId=id;renderAssetSheet(!!asDraft.id)}})}
 function asToggleNeg(editing){syncAssetInputs();asDraft._dispAmt=-(asDraft._dispAmt||0);renderAssetSheet(editing)}
 function renderAssetSheet(editing){
@@ -2757,8 +2770,8 @@ function renderAssetSheet(editing){
      <input id="asMat" type="hidden" value="${d.maturityDate||''}"></div>
      <div class="field"><label>만기 시 이체할 통장</label>${assetPickBtn(d.maturityTargetId,'asOpenMat()')}</div>`;
  }else if(d.type==='fx'){
-   const curBtns=['USD','JPY','EUR'].map(c=>`<button class="${d.currency===c?'on':''}" onclick="asCur('${c}')">${c}</button>`).join('');
-   fields=nameField+`<div class="field"><label>통화</label><div class="opt-grid c3">${curBtns}</div></div>
+   const curInfo=CURRENCY_LIST.find(x=>x.code===d.currency)||{code:d.currency,label:d.currency};
+   fields=nameField+`<div class="field"><label>통화</label><button class="pick" onclick="asOpenCur()"><div class="pav a-fx">${svg('fx')}</div><div class="pbody"><div class="pn">${esc(curInfo.code)}</div><div class="psub">${esc(curInfo.label)}</div></div><div class="pc">${svg('chevR')}</div></button></div>
      <div class="field"><label>보유 수량</label><div class="with-unit"><input id="asFx" class="num" inputmode="decimal" value="${d.fxAmount||''}" placeholder="0"><span class="unit">${d.currency}</span></div></div>
      <p style="font-size:12.5px;color:var(--text-2);margin:-4px 0 14px">현재 환율 ${comma(DB.rates.fx[d.currency]||0)}원 기준으로 원화 평가액이 자동 계산돼요.</p>`;
  }else if(d.type==='gold'){
@@ -5803,6 +5816,10 @@ function openOwnerPicker(o){let html=DB.owners.map((ow,i)=>`<button class="pk-it
  window._pkPick=o.onPick;openPicker('귀속 선택','<div class="pk-group" id="pkGroup"><div class="pk-blob" id="pkBlob"></div>'+html+'</div>',o.back);
  requestAnimationFrame(()=>requestAnimationFrame(()=>movePkBlob(false)));}
 function pkPickOwner(i){pkChoose(DB.owners[i])}
+function openCurrencyPicker(o){const html=CURRENCY_LIST.map(c=>`<button class="pk-item ${c.code===o.current?'on':''}" data-val="${c.code}" onclick="pkPickCurrency('${c.code}')"><div class="pav a-fx">${svg('fx')}</div><div class="pbody"><div class="pn">${c.code}</div><div class="psub">${esc(c.label)}</div></div></button>`).join('');
+ window._pkPick=o.onPick;openPicker('통화 선택','<div class="pk-group" id="pkGroup"><div class="pk-blob" id="pkBlob"></div>'+html+'</div>',o.back);
+ requestAnimationFrame(()=>requestAnimationFrame(()=>movePkBlob(false)));}
+function pkPickCurrency(c){pkChoose(c)}
 function openCatPicker(o){const avc=catAv(o.kind);
  const grid=catListOf(o.kind).map(c=>`<button class="pk-cat ${c===o.current?'on':''}" data-cat="${c}" onclick="pkPickCat('${c}')"><div class="cav ${avc}">${catGlyph(o.kind,c,18,'tag')}</div>${esc(c)}</button>`).join('');
  window._pkPick=o.onPick;

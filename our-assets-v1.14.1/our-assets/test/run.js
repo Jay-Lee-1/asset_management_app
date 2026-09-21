@@ -76,7 +76,7 @@ const FUNCTIONS = [
   'saveRec', 'recHistFieldsChanged', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
   'monthStartStr', 'monthEndStr', 'expandRec', 'allTxns', 'txnsByDateInRange', 'spendByCategory', 'histSumTotals',
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'expenseBreakdownCard',
-  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asToggleNeg', 'openAssetSheet', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'isCloudConflict', 'decidePushOutcome', 'fmtAmt',
+  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asOpenCur', 'asCur', 'asToggleNeg', 'openAssetSheet', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'isCloudConflict', 'decidePushOutcome', 'fmtAmt',
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges',
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
   'clampDay', 'saveTx', 'assetBase', 'balancesUpTo', 'balanceAt',
@@ -107,7 +107,7 @@ const FUNCTIONS = [
 // _recCache/REC_CACHE_MAX는 expandRec()가 참조하는 모듈 스코프 캐시 상태라 같은 방식으로 끌어온다.
 // isPlanAcct는 planNegatives()가 DB.assets.filter(isPlanAcct)로 부르는 "플랜 대상 통장"
 // 판정 상수라 같은 방식(extractConst)으로 끌어온다.
-const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS'];
+const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS'];
 // _histCache는 filteredHist()가 재대입(={key,list})하는 let 선언이라 CONSTS(extractConst)로는
 // 못 끌어오므로 별도의 LETS 목록으로 extractLet을 통해 가져온다.
 // _copyIsCsv도 같은 이유(openCopyBackup()이 재대입)로 LETS를 통해 가져온다.
@@ -291,6 +291,11 @@ const sandbox = {
   // no-op으로 흉내내고, onPick 콜백만 캡처해 테스트가 직접 호출할 수 있게 한다.
   lastTypePickerOnPick: null,
   openTypePicker: (o) => { sandbox.lastTypePickerOnPick = o.onPick; },
+  // asOpenCur()이 여는 통화 피커 — openTypePicker와 같은 이유(화면 전용)로 no-op으로
+  // 흉내내고, 넘겨받은 current/onPick만 캡처해 테스트가 검증·직접 호출할 수 있게 한다.
+  lastCurrencyPickerCurrent: null,
+  lastCurrencyPickerOnPick: null,
+  openCurrencyPicker: (o) => { sandbox.lastCurrencyPickerCurrent = o.current; sandbox.lastCurrencyPickerOnPick = o.onPick; },
   // renderAssets()가 부수효과로 부르는 실 DOM/드래그/스크롤/애니메이션 와이어링 여섯 개 —
   // fitAll처럼 화면 전용이라 순수 로직 테스트 대상이 아니므로 전부 no-op으로 흉내낸다
   // (renderAssets 자체와 그 안의 문자열 빌더 헬퍼들만 실제 소스로 검증하면 충분).
@@ -2566,6 +2571,30 @@ test('saveAsset: 연금 전환 시 임시로 남긴 _pensionAutoExcl 플래그�
   sandbox.saveAsset(false);
   const saved = sandbox.DB.assets.find(a => a.name === '연금');
   assert.ok(!('_pensionAutoExcl' in saved), '임시 플래그가 저장 시 DB.assets에 그대로 남으면 안 됨');
+});
+
+/* ---------- CURRENCY_LIST: FX 자산 등록 시트가 하드코딩 3종(USD/JPY/EUR) 버튼 대신 피커
+ * 시트로 골라 쓰는 통화 큐레이션 목록(app-evolve cycle58 advance). netlify/functions/rates.js는
+ * 임의의 ISO 3자리 코드를 다 처리할 수 있지만 UI에서 고를 수 있는 범위는 이 배열이 정한다 —
+ * 코드 형식이 깨지거나 중복되면 시세 조회 URL(cur=A,B,C)과 통화 피커가 조용히 망가지므로
+ * 순수 데이터 형태를 검증한다. ---------- */
+test('CURRENCY_LIST: 모든 코드가 중복 없는 3자리 대문자 ISO 코드이고, 기존 하드코딩 3종(USD/JPY/EUR)을 그대로 포함한다', () => {
+  const codes = sandbox.CURRENCY_LIST.map(c => c.code);
+  assert.ok(codes.every(c => /^[A-Z]{3}$/.test(c)), '모든 통화 코드는 3자리 대문자여야 함');
+  assert.strictEqual(new Set(codes).size, codes.length, '통화 코드가 중복되면 안 됨');
+  assert.ok(sandbox.CURRENCY_LIST.every(c => typeof c.label === 'string' && c.label.length > 0), '모든 통화는 표시용 한글 라벨을 가져야 함');
+  ['USD', 'JPY', 'EUR'].forEach(c => assert.ok(codes.includes(c), `기존에 하드코딩돼 있던 ${c}가 빠지면 하위호환이 깨짐`));
+});
+
+/* ---------- asOpenCur/asCur: FX 자산의 통화 선택이 openCurrencyPicker를 거쳐 asDraft.currency에
+ * 반영되는지 검증한다(asOpenType과 같은 패턴 — 실제 DOM 렌더는 스텁이 대신하고, 여기선 현재값이
+ * 피커에 올바르게 전달되고 onPick 콜백이 asDraft를 갱신하는 순수 로직만 확인). ---------- */
+test('asOpenCur: 현재 통화를 피커에 넘기고, onPick으로 고른 통화가 asDraft.currency에 반영된다', () => {
+  sandbox.asDraft = { id: 'a1', type: 'fx', owner: '나', currency: 'USD', fxAmount: 100 };
+  sandbox.asOpenCur();
+  assert.strictEqual(sandbox.lastCurrencyPickerCurrent, 'USD', '피커를 열 때 현재 선택된 통화를 넘겨야 함');
+  sandbox.lastCurrencyPickerOnPick('THB');
+  assert.strictEqual(sandbox.asDraft.currency, 'THB', 'onPick으로 고른 통화가 asDraft.currency에 반영돼야 함(하드코딩 3종 밖의 통화도 선택 가능해야 함)');
 });
 
 /* ---------- openAssetSheet/asOpenType: cycle52 develop 커밋의 _pensionAutoExcl 복원 로직이
