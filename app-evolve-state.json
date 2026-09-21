@@ -1,15 +1,8 @@
 {
   "cycle": 60,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 55,
-      "phase": "review",
-      "timestamp": "2026-09-20T14:05:00.000Z",
-      "summary": "develop 커밋(e6855e4)을 검토. saveTx()의 두 분기(반복 신규등록/일회성) 모두 saveRec()과 동일한 (d.memo||'').trim()||cat 패턴을 정확히 적용했음을 확인 — 특히 일회성 경로(3236행)의 d.category가 transfer 타입에도 txType()에서 이미 '이체'로 세팅돼 있어(3165행) cat 지역변수 없이 d.category를 직접 써도 문제없음을 grep으로 검증. node test/run.js 370/370 통과 재확인. 코드 diff 자체는 문제 없으나, 리뷰 중 별개의 실재 버그를 발견: recSave()(index.html:3300-3325)는 반복 항목의 단일/이후/전체 회차 수정 시 세 분기 모두 amt(금액)만 읽고 저장하며, recApply()가 연 txDraft.memo 편집 필드는 어디에도 저장하지 않고 통째로 버려진다 — edits[date]에는 {amount:amt}만 쓰여 memo 필드 자체가 없다. 즉 사용자가 반복 내역의 특정 회차 메모를 고쳐도 조용히 무시된다. 이번 diff와 무관한 기존 버그라 review에서는 고치지 않고 critique가 다음 develop 후보로 검토하도록 기록만 남긴다.",
-      "commit": null
-    },
     {
       "cycle": 55,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-21T09:20:17.847Z",
       "summary": "Explore/조사 서브에이전트로 발견한 addBalanceAdjust()/updateBalanceAdjust()(index.html:2633-2654)의 부채(debt) 자산 잔액 조정 방향 버그 수정. balancesUpTo()(2070행)는 부채 자산에 sign=-1을 매겨 toAssetId로 들어오는 금액은 잔액을 줄이고(상환) fromAssetId로 나가는 금액은 잔액을 늘리도록(추가 대출) 설계돼 있고, 이는 balanceAt()이 부채를 항상 잔여원금(양수)으로 보여주는 관례와 일치한다. 그런데 addBalanceAdjust(asset,gap)/updateBalanceAdjust(asset,entered)는 이 부호 관례를 모른 채 현금 자산과 똑같이 const inc=gap>0(참이면 toAssetId=자산, 입금 취급)만으로 방향을 정해, 부채가 늘어야 하는 상황(gap>0, 재등록 시 실제 빚이 base보다 큼)에 오히려 toAssetId=자산으로 기록해 잔액이 줄어드는 조정 내역이 만들어졌다(재현: debt base=100000에서 addBalanceAdjust(asset,+50000) 호출 시 결과 잔액이 150000이 아니라 50000). 두 함수 모두 const inc=asset.type==='debt'?gap<0:gap>0로 부채일 때 방향을 반전하도록 수정(gap>0=빚 증가=fromAssetId 경로, gap<0=상환=toAssetId 경로). 회귀 테스트 3개 추가: addBalanceAdjust의 부채 증가(gap>0)/상환(gap<0) 두 케이스, updateBalanceAdjust의 기존 조정 내역 갱신 경로에서도 방향이 올바른지(_balCache 캐싱 특성상 override invalidateBalances 및 balanceAt 재확인 전 캐시 클리어 필요, 기존 cash 테스트와 동일 패턴). 두 인라인 <script> 블록 모두 node --check 파싱 확인, 403/403 통과. APP_VERSION 1.45.10->1.45.11, sw.js CACHE v152->v153.",
+      "commit": "04ce6cf"
+    },
+    {
+      "cycle": 60,
+      "phase": "review",
+      "timestamp": "2026-09-21T10:05:00.000Z",
+      "summary": "develop 커밋(04ce6cf, addBalanceAdjust/updateBalanceAdjust 부채 방향 수정)을 검토. balancesUpTo()의 sign[a.id]=(type==='debt'?-1:1) 관례와 고쳐진 inc=asset.type==='debt'?gap<0:gap>0 분기를 직접 대조: gap>0(부채 증가)일 때 inc=false→fromAssetId=asset(출금 방향)이 sign=-1과 맞물려 실제로 잔액을 늘리고, gap<0(상환)일 때 inc=true→toAssetId=asset(입금 방향)이 잔액을 줄이는지 논리적으로 재검증해 정확함을 확인. 새로 추가된 테스트 3개도 tautology가 아니라 sandbox.balanceAt()으로 최종 잔액이 실제로 150000/70000/200000이 되는지까지 end-to-end로 검증하고 있어 신뢰할 만함(단순히 inc 플래그만 assert하지 않음). addBalanceAdjust/updateBalanceAdjust 호출부가 index.html 전체에 2633/2647행 정의부 포함 2군데(2674 addBalanceAdjust, 2824 updateBalanceAdjust)뿐임을 grep으로 재확인해 놓친 호출부 없음. node test/run.js 403/403 통과 재확인. 문제 없음.",
       "commit": null
     }
   ]
