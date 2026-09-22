@@ -1,15 +1,8 @@
 {
   "cycle": 68,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 63,
-      "phase": "review",
-      "timestamp": "2026-09-21T21:30:00.000Z",
-      "summary": "develop 커밋(31184d3, openFixShortfall 기본 이체일 오늘/내일 clamp)을 검토. fixShortfallDefaultDate(date,today)가 dayBefore<today일 때만 today로 올려 잡는 단조 clamp임을 확인하고, dayBefore가 today보다 이르게 되는 경우는 date가 today 또는 tomorrow일 때뿐임을 직접 계산으로 재검증(date>=today+2면 dayBefore>=tomorrow>=today라 그대로 통과). 버튼 라벨 분기(fixDefault===TODAY?'오늘':'결제 전날')와 '날짜 선택' 버튼의 on 상태 비교도 dayBefore 대신 fixDefault로 일관되게 바뀌어 있어 그대로 정확함. date가 모레(today+2)일 때 dayBefore(=tomorrow)가 '내일' 버튼과 같은 날짜를 가리켜 두 프리셋 버튼이 같은 날을 표시하는 case를 발견했으나, 이 함수 도입 전에도 dayBefore를 직접 비교하던 동일한 조건이라 이번 커밋이 만든 새 회귀가 아님을 diff 전후 비교로 확인해 기각. 두 인라인 <script> 블록 모두 node --check 파싱 확인, node test/run.js 429/429 통과 재확인. 문제 없음.",
-      "commit": null
-    },
     {
       "cycle": 63,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-22T18:20:00.000Z",
       "summary": "Explore 서브에이전트로 발견한 assetSelAll()(index.html:2739)의 자산 탭 전체선택이 귀속(owner) 필터를 무시하던 버그 수정. assetBodyHTML()은 ST.assetOwner!=='all'이면 다른 귀속의 자산을 아예 렌더하지 않는데(2575행), assetSelAll()과 activeSel()의 total(6038행)은 필터와 무관하게 항상 DB.assets 전체를 대상으로 삼고 있었다 — ledgerSelAll/histSelAll이 이미 각자의 필터링된 목록만 전체선택 대상으로 삼는 것과 다른, 자산 탭만의 예외였다. 재현: 자산 탭에서 귀속 필터를 특정 귀속(예: 아이)으로 좁힌 뒤 다중선택 모드에서 '전체 선택'을 누르면, 화면에 보이지도 않는 다른 귀속(나)의 자산 id까지 ST.aSel.ids에 담기고 하단 바의 개수도 DB.assets.length 그대로 표시되며, 그대로 '선택 삭제'를 누르면 화면에 없던 다른 귀속 자산까지 조용히 삭제된다(되돌리기 토스트는 있지만 화면에 안 보이던 항목이 지워지는 것 자체가 결함). 순수 헬퍼 visibleAssetsForSel()(ST.assetOwner==='all'?DB.assets:DB.assets.filter(a=>a.owner===ST.assetOwner))을 추가해 assetSelAll()의 items와 activeSel()의 total을 모두 이걸로 스코프했다. FUNCTIONS에 visibleAssetsForSel/activeSel 추가, 회귀 테스트 5개 추가(필터 all/특정 귀속에서 visibleAssetsForSel 반환값, 귀속 필터 중 전체선택이 다른 귀속을 건드리지 않는지, 필터된 귀속이 이미 전체선택 상태면 그 귀속만 해제되는지, activeSel의 total이 필터된 개수를 반영하는지). 두 인라인 <script> 블록 모두 node --check 파싱 확인, 468/468 통과(기존 463 + 신규 5). APP_VERSION 1.46.6->1.46.7, sw.js CACHE v168->v169.",
+      "commit": null
+    },
+    {
+      "cycle": 68,
+      "phase": "review",
+      "timestamp": "2026-09-22T19:07:48.607Z",
+      "summary": "develop 커밋(f7e88f2, assetSelAll/activeSel 귀속 필터 스코프)을 검토. visibleAssetsForSel()이 ST.assetOwner==='all'이면 DB.assets 전체를, 아니면 owner 일치 자산만 반환하는 단순하고 순수한 필터라는 점을 확인했고, ledgerSelAll/histSelAll이 이미 각자의 필터된 목록(dayTxns/filteredHist)을 전체선택 대상으로 쓰던 것과 동일한 패턴으로 자산 탭만의 예외를 없앤 일관된 수정임을 재확인. assetSelAll()의 items.length 기준 토글 조건(이미 items.length개 이상 선택돼 있으면 해제)도 필터링된 개수 기준으로 바뀌어 필터 전환 중 선택 개수가 우연히 DB.assets.length를 넘는 edge case는 없음을 확인. assetToggleSel()(개별 토글)은 원래부터 특정 id 하나만 다루므로 이번 수정과 무관하게 그대로 정확. 두 인라인 <script> 블록 모두 node --check 파싱 확인, node test/run.js 468/468 통과 재확인. 문제 없음.",
       "commit": null
     }
   ]
