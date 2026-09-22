@@ -4127,6 +4127,40 @@ test('varyingRecs: 이미 실제 금액을 입력(edits)한 회차는 skip과 �
   assert.ok(!vr.some((x) => x.date === '2026-06-10'), 'edits가 있는 회차는 여전히 알림 목록에서 빠져야 함');
 });
 
+/* ---------- varyingRecs: daily/weekly 반복거래가 필터에서 제외돼 변동 카테고리 "실제 금액 입력"
+ * 알림이 전혀 뜨지 않던 버그의 회귀 테스트(app-evolve cycle67). renderRecSheet()의 주기 선택은
+ * monthly/weekly/daily/yearly를 자유롭게 조합할 수 있는데, varyingRecs()의 필터가
+ * freq==='monthly'||freq==='yearly'로만 걸려 있어 daily/weekly 변동 반복거래는 회차가 도래해도
+ * 절대 알림/빠른입력에 뜨지 않고 expandRec()이 항상 템플릿의 고정 amount로 거래를 만들었다. */
+test('varyingRecs: weekly 변동 반복거래도 도래한 회차가 알림 목록에 포함돼야 함', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.TM = { y: 2026, m: 6 };
+  sandbox.DB = { catVar: {}, recurrences: [] };
+  sandbox.setCatVar('expense', '장보기', true);
+  sandbox.DB.recurrences.push({
+    id: 'w1', active: true, freq: 'weekly', type: 'expense', category: '장보기',
+    startDate: '2026-06-01', endDate: null, count: null, amount: 30000,
+    weekend: 'none', skip: [], edits: {},
+  });
+  const vr = sandbox.varyingRecs();
+  // 2026-06-01(월)부터 매주: 06-01, 06-08, 06-15가 TODAY(06-15)까지 도래
+  assert.deepStrictEqual([...vr].map((x) => x.date).sort(), ['2026-06-01', '2026-06-08', '2026-06-15']);
+});
+test('varyingRecs: daily 변동 반복거래도 도래한 회차가 알림 목록에 포함되고 skip/edits가 여전히 적용돼야 함', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.TM = { y: 2026, m: 6 };
+  sandbox.DB = { catVar: {}, recurrences: [] };
+  sandbox.setCatVar('expense', '커피', true);
+  sandbox.DB.recurrences.push({
+    id: 'd1', active: true, freq: 'daily', type: 'expense', category: '커피',
+    startDate: '2026-06-13', endDate: null, count: null, amount: 5000,
+    weekend: 'none', skip: ['2026-06-14'], edits: { '2026-06-13': { amount: 4500 } },
+  });
+  const vr = sandbox.varyingRecs();
+  // 06-13은 edits로, 06-14는 skip으로 빠지고 06-15만 남아야 함
+  assert.deepStrictEqual([...vr].map((x) => x.date), ['2026-06-15']);
+});
+
 /* ---------- openFixShortfall: "부족해요/해결 방법"에서 플랜을 실행하지 않고 시트를 닫으면
  * _fixWhen(고른 이체일)이 초기화되지 않아, 전혀 다른(다른 자산·다른 날짜) 부족 상황을 열어도
  * 예전에 고른 날짜를 그대로 이어쓰던 버그의 회귀 테스트(app-evolve cycle42).

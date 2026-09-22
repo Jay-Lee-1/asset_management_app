@@ -1,19 +1,8 @@
 {
-  "cycle": 67,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "varyingRecs()가 daily/weekly 반복거래를 제외해 변동 카테고리 '실제 금액 입력' 알림이 전혀 안 뜸",
-    "why": "renderRecSheet()의 주기 선택(monthly/weekly/daily/yearly)과 카테고리 관리의 '변동' 지정(toggleCatVarUI)은 주기와 무관하게 자유롭게 조합할 수 있는데, 실제 금액을 받아 r.edits[date]에 채워 넣는 유일한 경로인 varyingRecs()(index.html:5510)가 r.freq==='monthly'||r.freq==='yearly'로만 필터링한다. 홈 화면 알림 카드(quickAmountCards, 5559/5750)와 빠른입력 시트(openQuickList/openQuickAmount, 5521)가 모두 이 함수 하나에만 의존하므로, daily/weekly 변동 반복거래는 회차가 도래해도 절대 프롬프트가 뜨지 않고 expandRec()(1961)이 항상 템플릿의 고정 amount를 그대로 써서 거래를 생성한다. 재현: 반복거래 추가 -> 주기 '매주' 또는 '매일' 선택 -> 카테고리를 '변동'으로 지정 -> 저장 -> 회차가 지나도 알림/빠른입력에 안 뜨고 고정 금액으로 조용히 거래가 쌓임 -> 이 부정확한 금액이 spendByCategory/budgetForMonth/totalBudgetSummary에 그대로 흘러 들어감. test/run.js:4095-4130의 varyingRecs 회귀 테스트 3건도 전부 freq:'monthly'만 다뤄 daily/weekly 커버리지가 없다.",
-    "approach": "varyingRecs()(index.html:5510)의 필터 조건 (r.freq==='monthly'||r.freq==='yearly')를 recDates()가 실제 지원하는 모든 주기(monthly/weekly/daily/yearly)로 확장한다. 신규 UI는 만들지 않고 기존 quickAmountCards()/openQuickList()의 다건 묶음 시트 패턴(vr.length===1이면 단건, 아니면 목록으로 묶는 기존 로직, 5521-5529)을 그대로 재사용한다. test/run.js에 daily/weekly 케이스의 varyingRecs 회귀 테스트를 기존 monthly 테스트 포맷(4095-4130)을 본떠 추가하고(과거 회차 포함/skip/edits 처리 확인), daily처럼 한 달에 다건이 쌓일 수 있는 경우에도 openQuickList의 기존 다건 묶음 흐름이 그대로 정상 동작하는지 함께 확인한다."
-  },
+  "cycle": 68,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 62,
-      "phase": "advance",
-      "timestamp": "2026-09-21T20:10:00.000Z",
-      "summary": "critique(fb11881) 계획대로 ledger 다중선택/plan 계좌 전환의 전체 재렌더 문제를 부분 갱신으로 고쳤다. ledgerSelPartial()을 추가해 ledgerToggleSel/ledgerSelAll이 renderLedger() 전체 대신 #ledgerCard 행만 갱신하도록 바꿨다(카드를 못 찾으면 renderLedger()로 폴백). Plan 탭은 renderPlan()에서 캐러셀 트랙(previous/current/next 잔액 카드)과 일별 흐름 목록 로직을 각각 planTrackHTML(y,m,a)/planRowsHTML(a,y,m)로 추출한 뒤, assetBodyHTML/refreshAssetBody 패턴을 본떠 refreshPlanBody()를 추가 — #planVP 노드는 그대로 두고 그 안의 .mc-track과 필터 라벨(.fv)·.plan-list만 querySelector로 찾아 갱신하고 viewport._align()으로 재정렬한다. planAsset()이 renderPlan() 대신 이를 먼저 쓰도록 바꿨다(#planVP를 못 찾으면 renderPlan()으로 폴백). critique가 언급한 planOwner()는 실제로는 filter-2에서 호출부가 전혀 없는 죽은 코드임을 grep으로 확인해 건드리지 않았다(재현 불가능한 경로를 고치는 건 의미가 없어 범위에서 제외). 테스트: FUNCTIONS에 ledgerSelPartial/ledgerToggleSel/ledgerSelAll/visibleTx/planTrackHTML/planRowsHTML/refreshPlanBody/planAsset을 추가하고, 기존 renderPlan 접근성 테스트 중 flow-item 마크업이 이제 planRowsHTML()에 있어 extractFunction 대상을 그쪽으로 옮겼다. 실행 기반 회귀 테스트 9개 추가: ledger 쪽은 ledgerCard mock으로 부분 갱신/폴백을 확인하고, plan 쪽은 .filter-2 .fv/.mc-track/.plan-list를 갖춘 최소 querySelector 모형(makePlanDom)으로 #planVP 노드 재사용·라벨/트랙 갱신·align 재호출·폴백을 확인했다. 두 인라인 <script> 블록 모두 vm.Script 파싱 확인, 425/425 통과(기존 416 + 신규 9). APP_VERSION 1.45.15->1.45.16, sw.js CACHE v157->v158.",
-      "commit": null
-    },
     {
       "cycle": 63,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-22T16:10:00.000Z",
       "summary": "Explore 서브에이전트로 앱 전체를 구조적으로 재검토(render*/esc/캘린더/부분갱신 전반(ledger·plan·assets)/반복종료조건/trim/부호/sanitizeBackup/CSV 흐름 전반/FX 피커/stockCode/recHistFieldsChanged startDate/addBalanceAdjust 부채방향/homeAlerts OS알림/cloud sync online 재시도/fixShortfall 기본일/doLogin 게스트데이터/costBasis 손익추적/Naver 시세 폴백/decidePushOutcome/카테고리 rename·삭제 캐스케이드/Pro 업그레이드 스텁/PIN 부재/단일파일 모듈화/CI 미구성/History 페이지네이션/migrate owners/nwHistoryCard aria-label/자산그룹 재정렬 접근성/localStorage 실패 처리/spendTrend 배지/doRenameOwner 필터 동기화 등 최근 완료·기각 항목은 재탐색 금지 지시). varyingRecs()(index.html:5510)가 (r.freq==='monthly'||r.freq==='yearly')로만 필터링해, renderRecSheet()의 주기 선택(monthly/weekly/daily/yearly)과 카테고리 관리의 '변동' 지정이 주기와 무관하게 자유 조합 가능함에도 daily/weekly 변동 반복거래는 회차가 도래해도 홈 화면 알림 카드(quickAmountCards)와 빠른입력 시트(openQuickList/openQuickAmount)에 전혀 뜨지 않아 expandRec()이 항상 템플릿 고정 amount로 거래를 생성함을 확인. 이 부정확한 금액이 spendByCategory/budgetForMonth/totalBudgetSummary에 그대로 흘러 들어감. test/run.js:4095-4130의 varyingRecs 회귀 테스트 3건도 전부 freq:'monthly'만 다뤄 daily/weekly 커버리지 없음을 확인. 예산 기능 전반(이미 촘촘한 테스트 존재), 백업/복원·PWA 등록 로직(표준 패턴, 특이 실패 시나리오 미확인), 카테고리 아이콘 피커 draft 전역변수(재현 가능한 손상 시나리오 미확인, 확신도 낮음)는 기각. advance에서 varyingRecs()의 freq 필터를 recDates()가 지원하는 모든 주기로 확장하고 기존 quickAmountCards/openQuickList 다건 묶음 패턴을 그대로 재사용하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 67,
+      "phase": "advance",
+      "timestamp": "2026-09-22T17:15:00.000Z",
+      "summary": "critique 계획대로 varyingRecs()(index.html:5510)의 필터 (r.freq==='monthly'||r.freq==='yearly')를 제거해 daily/weekly 변동 반복거래도 '실제 금액 입력' 알림 대상에 포함되도록 확장. recDates()가 monthly/yearly 외 모든 freq를 이미 step 기반(daily=1일,나머지=7일)으로 처리하고 renderRecSheet()가 monthly/weekly/daily/yearly만 유효한 선택지로 제공하므로, 필터를 recIsVarying(r) 조건만 남기는 것으로 안전하게 확장 가능함을 확인했다. expandRec()/quickAmountCards()/openQuickList()/openQuickAmount()는 이미 날짜 단위(rec+date 쌍)로 동작해 별도 수정 없이 그대로 재사용됨. test/run.js에 weekly(매주 도래 회차 3건 모두 포함)와 daily(skip/edits가 함께 적용되는지) 회귀 테스트 2건 추가 — 기존 vm 샌드박스 배열 cross-realm 이슈(cycle66에서 발견된 패턴)를 피하려고 [...vr].map(...)으로 host 배열 변환 후 비교. node test/run.js 463/463 통과(기존 461 + 신규 2), 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.46.5->1.46.6, sw.js CACHE v167->v168.",
       "commit": null
     }
   ]
