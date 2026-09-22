@@ -92,7 +92,7 @@ const FUNCTIONS = [
  'notifyAlertInfo', 'pickNotifyAlerts', 'pruneNotifiedIds',
   'catIconOf', 'catGlyph', 'openCatManage',
   'catListOf', 'catAv', 'assetPickBtn', 'endCondFields', 'openFormSheet', 'renderTxSheet', 'txType', 'txToggleRepeat',
-  'accountName',
+  'accountName', 'dbIsEmpty',
   'txScheduled', 'monthStats', 'monthStats2', 'expenseByCat', 'needGold', 'inQuietWindow', 'fmtSynced', 'rateStatusText',
   'nextBigOutflow', 'dday', 'balanceOn', 'nextOutflowCard', 'monthOutflowCard', 'planGaugeCard', 'homeAlertCard', 'renderHome',
   'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwHistoryCard',
@@ -4480,6 +4480,22 @@ test('accountName: 카카오 로그인이면 닉네임(없으면 기본값)을 �
   assert.strictEqual(sandbox.accountName(), '<b>닉네임</b>');
   assert.ok(sandbox.esc(sandbox.accountName()).includes('&lt;b&gt;'), 'esc()를 거치면 닉네임의 태그도 이스케이프돼야 함');
   sandbox.AUTH = { rec: () => null };
+});
+
+/* ---------- dbIsEmpty: 로그인 시 게스트 데이터 자동 병합/안내 판단에 쓰이는 순수 함수
+ * (app-evolve cycle63 critique/advance — doLogin()이 기존 계정 데이터를 게스트 데이터로
+ * 조용히 덮어쓰거나 반대로 게스트 데이터를 안내 없이 버리지 않도록, "이 계정이 비어 있는가"를
+ * 판정하는 로직을 emptyDB()와 나란히 두고 테스트한다) ---------- */
+test('dbIsEmpty: assets/txns가 모두 비어있으면 true', () => {
+  assert.strictEqual(sandbox.dbIsEmpty({ assets: [], txns: [] }), true);
+});
+test('dbIsEmpty: assets나 txns 중 하나라도 항목이 있으면 false', () => {
+  assert.strictEqual(sandbox.dbIsEmpty({ assets: [{ id: 'a1' }], txns: [] }), false);
+  assert.strictEqual(sandbox.dbIsEmpty({ assets: [], txns: [{ id: 't1' }] }), false);
+});
+test('dbIsEmpty: db 자체가 없거나 필드가 비정상이어도 예외 없이 true를 반환한다', () => {
+  assert.strictEqual(sandbox.dbIsEmpty(null), true);
+  assert.strictEqual(sandbox.dbIsEmpty({}), true);
 });
 
 /* ---------- renderHome: 렌더 함수 스모크 테스트 (app-evolve cycle47 critique/advance) ----------

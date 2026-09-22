@@ -1,19 +1,8 @@
 {
-  "cycle": 63,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "로그인(doLogin) 경로에 게스트 데이터 가져오기 안내 추가",
-    "why": "게스트 모드로 자산·내역을 쌓은 뒤 '가입'이 아니라 '로그인'을 선택하면 doSignup()과 달리 guestHasData 체크가 전혀 없어(index.html:6195-6203) 게스트 데이터가 아무 안내 없이 버려지거나(클라우드 미설정 계정) afterCloudAuth()가 원격 데이터 없을 때만 확인 없이 silent 덮어쓴다(1665-1682). 원격에 이미 데이터가 있는 기존 계정으로 로그인하면 게스트 데이터는 검토조차 안 돼, 온보딩 이탈 지점에서 사용자가 방금 입력한 데이터를 잃었다고 느끼는 조용한 데이터 유실 시나리오다.",
-    "approach": "1) 1678-1679/6214에 중복된 guestRaw 파싱 로직을 순수 헬퍼 guestHasData()로 추출. 2) DB의 assets/txns가 모두 비어있는지 판정하는 순수 함수 dbIsEmpty(db) 추가. 3) doLogin()에서 startApp() 이후 dbIsEmpty(DB) && guestHasData()면 doSignup()과 동일한 confirmSheet('데이터 가져오기', ...) 패턴을 재사용해 가져올지 확인; 계정에 이미 데이터가 있으면 절대 덮어쓰지 않고 대신 게스트 데이터가 남아있다는 안내 toast만 띄운다. 예상 테스트: dbIsEmpty 빈/비어있지 않은 DB 판정, guestHasData true/false, '빈 계정+게스트 데이터'에서 import confirm 노출, '비어있지 않은 계정+게스트 데이터'에서는 덮어쓰기 없이 toast만."
-  },
+  "cycle": 64,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 58,
-      "phase": "advance",
-      "timestamp": "2026-09-21T05:11:53.700Z",
-      "summary": "FX 자산 등록 시 통화 선택을 하드코딩 3종(USD/JPY/EUR) 버튼에서 CURRENCY_LIST(18종) 기반 피커 시트(openCurrencyPicker/pkPickCurrency)로 전환. asOpenCur()가 openOwnerPicker와 같은 패턴으로 asCur()를 호출하도록 연결. CURRENCY_LIST 데이터 검증 테스트와 asOpenCur/asCur 동작 테스트 2개 추가, 393/393 통과.",
-      "commit": null
-    },
     {
       "cycle": 59,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-21T23:11:41.063Z",
       "summary": "Explore 서브에이전트로 앱 전체를 구조적으로 재검토(render*/esc/캘린더/부분갱신/반복종료/trim/부호/sanitizeBackup/CSV 전반/FX 피커/stockCode/recHistFieldsChanged startDate/addBalanceAdjust 부채방향/homeAlerts OS알림/RANGE_FROM 가드/same-name/음수금액/ledger·plan 부분갱신/fixShortfall 기본일 등 최근 완료 항목은 재탐색 금지 지시). FX 자산 이체 상대 통화환산(excludeMarketValued로 이미 제외돼 버그 아님), 카테고리 rename/삭제 캐스케이드(이미 탄탄), 클라우드 push/pull 낙관적 동시성 제어(decidePushOutcome, 이미 견고), 앱 내 PIN/생체잠금 부재(완전 신규 인증 계층이라 범위 초과)는 기각. doLogin()(index.html:6195-6203) 경로에 doSignup()(6205-6217)과 달리 guestHasData 체크가 전혀 없어, 게스트 모드로 데이터를 쌓은 뒤 로그인을 선택하면 클라우드 미설정 계정에서는 안내 없이 게스트 데이터가 버려지고, afterCloudAuth()(1665-1682)는 원격 데이터가 없을 때만 확인 없이 silent 덮어쓰며, 원격에 이미 데이터가 있는 기존 계정 로그인 시에는 게스트 데이터가 검토조차 안 되는 조용한 데이터 유실 공백을 신규 영역으로 채택. advance에서 guestHasData()/dbIsEmpty(db) 순수 헬퍼 추출 후 doLogin()에 doSignup()과 동일한 confirmSheet 가져오기 확인 패턴을 재사용하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 63,
+      "phase": "advance",
+      "timestamp": "2026-09-22T00:00:00.000Z",
+      "summary": "doLogin() 경로에 게스트 데이터 처리 추가: 계정이 비어있으면 doSignup과 동일한 가져오기 확인 시트를, 계정에 이미 데이터가 있으면 덮어쓰지 않고 게스트 데이터가 남아있다는 안내 toast를 띄운다. 중복된 게스트 데이터 판정 로직을 순수 헬퍼 dbIsEmpty(db)/guestHasData()로 추출해 afterCloudAuth/doSignup/doLogin이 공유하도록 리팩터링. dbIsEmpty 테스트 3개 추가, 432/432 통과.",
       "commit": null
     }
   ]
