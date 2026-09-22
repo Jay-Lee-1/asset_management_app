@@ -1289,7 +1289,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.1';
+const APP_VERSION='1.46.2';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4647,7 +4647,9 @@ function csvDateValid(s){
    보내는 자산,받는 자산,메모)와 같다. 자산명은 assets 배열에서 정확히 일치하는 이름을 찾고,
    못 찾으면(오타/삭제됨/다른 앱에서 가져온 이름) id 없이 *AssetName 스냅샷만 남긴다 —
    assetNm(id,snap)이 이미 지원하는 패턴이라 화면에는 그대로 표시되지만 자산 잔액에는
-   반영되지 않는다(balancesUpTo가 id!=null인 경우만 갱신). */
+   반영되지 않는다(balancesUpTo가 id!=null인 경우만 갱신). fx/gold/stock 같은 시세평가 자산은
+   assetEval()이 원장과 무관하게 qty×시세로 평가하므로(isMarketValued 주석 참고) 이름이 같아도
+   매칭 후보에서 제외한다 — 매칭시키면 거래가 잔액에 반영되지 않아 순자산이 조용히 어긋난다. */
 function csvRowToImportTxn(cells,assets){
  const date=(cells[0]||'').trim();
  const typeLabel=(cells[1]||'').trim();
@@ -4664,7 +4666,7 @@ function csvRowToImportTxn(cells,assets){
  if(!Number.isFinite(amount)||amount<=0)return{ok:false,error:'amount'};
  if((type==='transfer'||type==='saving')&&(!fromName||!toName||fromName===toName))return{ok:false,error:'asset'};
  if(type!=='transfer'&&!category)return{ok:false,error:'category'};
- const findAsset=nm=>nm?(assets||[]).find(a=>a.name.trim()===nm):null;
+ const findAsset=nm=>nm?(assets||[]).find(a=>a.name.trim()===nm&&!isMarketValued(a)):null;
  const fromAsset=type!=='income'?findAsset(fromName):null;
  const toAsset=type!=='expense'?findAsset(toName):null;
  const unmatched=[];

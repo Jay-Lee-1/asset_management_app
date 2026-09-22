@@ -1,19 +1,8 @@
 {
-  "cycle": 65,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "CSV 임포트가 시세평가 자산(fx/gold/stock)을 거래 상대로 매칭해 순자산이 조용히 어긋나는 결함 차단",
-    "why": "isMarketValued(a)(index.html:2098)는 코드 스스로 'assetEval()이 원장과 무관하게 qty×시세로 평가 — 거래 입력의 통장으로 쓰면 순자산이 조용히 어긋남'이라 경고하고, 이 때문에 cycle27에서 수동 입력 폼의 자산 선택기(txOpenAsset:3234, recOpenAsset:3405)는 openAssetPicker에 excludeMarketValued:true를 넘겨 fx/gold/stock 자산을 아예 목록에서 뺀다. 그런데 CSV 임포트 경로(csvRowToImportTxn, index.html:4651)의 findAsset=nm=>nm?(assets||[]).find(a=>a.name.trim()===nm):null (4667행)는 타입 필터가 전혀 없어 이름만 같으면 시세평가 자산도 그대로 매칭한다. 재현: 사용자가 'stock' 타입 자산 '삼성전자'를 보유 중일 때 CSV 지출/이체 행의 보내는/받는 자산에 '삼성전자'를 적으면 fromAssetId/toAssetId가 그 주식 자산으로 연결돼 저장되지만, assetEval()은 DB.txns를 보지 않고 qty×시세로만 평가하므로 이 거래는 그 자산 잔액에 전혀 반영되지 않아 순자산이 조용히 틀어진다. detectStaleMarketValuedTxns()(2124행)가 사후 탐지는 하지만 dismissStaleMv()(5852행)는 '확인함'으로 닫기만 할 뿐 고치지 못하므로, 애초에 새로 생기는 걸 막는 입구(CSV 임포트) 하나가 빠져있는 일관성 결함이다.",
-    "approach": "csvRowToImportTxn(cells,assets)의 findAsset을 nm=>nm?(assets||[]).find(a=>a.name.trim()===nm && !isMarketValued(a)):null로 바꿔 시세평가 자산을 매칭 후보에서 제외한다. 매칭 실패는 기존 unmatched 배열/assetUnmatchedCount 경로를 그대로 타므로 미리보기에 자연스럽게 노출된다. buildImportPreview()는 내부에서 csvRowToImportTxn을 호출하므로 수정 불필요. test/run.js의 기존 csvRowToImportTxn 테스트 블록(1383행 부근) 옆에 지출/이체 각각 'fx/gold/stock 타입 자산과 이름이 같아도 매칭하지 않고 unmatched로 남긴다' 케이스를 추가(assets 배열에 {id:'s1',name:'삼성전자',type:'stock'} 포함, fromAssetId/toAssetId가 null이고 unmatched에 이름이 담기는지 확인). 과거에 이미 저장된 오염 레코드는 detectStaleMarketValuedTxns가 계속 커버하므로 별도 마이그레이션 불필요."
-  },
+  "cycle": 66,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 60,
-      "phase": "advance",
-      "timestamp": "2026-09-21T12:09:49.288Z",
-      "summary": "critique(6350a25) 계획대로 순수 헬퍼 dateBelowRangeFloor(ds){return ds<RANGE_FROM} 추가 후 saveTx()/saveRec()의 저장 가드(각 date/startDate가 RANGE_FROM=2023-01-01 이전이면 토스트로 막고 return)와 csvRowToImportTxn()의 새 error:'range' 분기(형식은 유효하지만 하한 이전인 날짜를 기존 error:'date'와 구분)를 구현했다. buildImportPreview()에 rangeCount를 invalidCount와 별도로 집계해 반환값에 추가하고, openCsvImportPreview()의 미리보기 통계 줄에 'RANGE_FROM 이전 날짜 N행은 제외'를 별도로 노출해 형식 오류와 혼동되지 않게 했다. 계획에 있던 saveRec()/startDate 가드도 함께 포함(우선순위 낮게 이월하지 않고 이번에 처리). 회귀 테스트 6개 추가: csvRowToImportTxn의 RANGE_FROM 이전/당일 경계, buildImportPreview의 range/invalid 카운트 분리, saveTx의 RANGE_FROM 이전 차단·당일 정상 저장, saveRec의 startDate RANGE_FROM 이전 차단. dateBelowRangeFloor를 test/run.js FUNCTIONS에 추가. 두 인라인 <script> 블록 모두 new Function 파싱 확인, 408/408 통과(기존 402 + 신규 6). APP_VERSION 1.45.11->1.45.12, sw.js CACHE v153->v154.",
-      "commit": null
-    },
     {
       "cycle": 61,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-22T07:20:00.000Z",
       "summary": "Explore 서브에이전트로 앱 전체를 구조적으로 재검토(render*/esc/캘린더/부분갱신 전반(ledger·plan·assets)/반복종료조건/trim/부호/sanitizeBackup/CSV 흐름 전반(same-name·음수금액·RANGE_FROM 가드)/FX 피커/stockCode/recHistFieldsChanged startDate/addBalanceAdjust 부채방향/homeAlerts OS알림/cloud sync online 재시도/fixShortfall 기본일/doLogin 게스트데이터/costBasis 손익추적/Naver 시세 폴백/decidePushOutcome/카테고리 rename·삭제 캐스케이드/Pro 업그레이드 스텁/PIN 부재/단일파일 모듈화/CI 미구성 등 최근 완료·기각 항목은 재탐색 금지 지시). csvRowToImportTxn()(index.html:4651)의 findAsset(4667행, nm=>(assets||[]).find(a=>a.name.trim()===nm))이 타입 필터가 전혀 없어, 수동 입력 폼(txOpenAsset/recOpenAsset, cycle27부터 excludeMarketValued:true로 fx/gold/stock 자산을 아예 선택 못 하게 막음)과 달리 CSV 임포트로는 이름이 같은 시세평가 자산이 거래 상대로 그대로 매칭됨을 grep+코드 읽기로 확인. assetEval()이 DB.txns를 안 보고 qty×시세로만 평가하므로 이렇게 연결된 거래는 자산 잔액에 반영되지 않아 순자산이 조용히 어긋나고, detectStaleMarketValuedTxns()의 사후 탐지 UI(dismissStaleMv)도 '확인함' 닫기만 할 뿐 고쳐주지 않아 애초에 막는 입구 하나가 빠진 일관성 결함으로 채택. 자산그룹 순서 재정렬 키보드 접근성 공백(저빈도 설정 기능, 이미 다룬 접근성 스윕과 중복 영역이라 후순위), localStorage 쓰기 실패 처리(storageOutcomeMsg/requestPersistentStorage로 이미 견고), 카테고리 rename 시 budgetHistory 키 미이전 의심(renameCatSheet에서 이미 정상 이전 확인)은 기각. advance에서 findAsset을 nm=>(assets||[]).find(a=>a.name.trim()===nm && !isMarketValued(a))로 수정(매칭 실패는 기존 unmatched 경로 재사용, buildImportPreview 수정 불필요)하고 test/run.js에 지출/이체 각각 시세평가 자산 이름 매칭 시 unmatched로 남는 회귀 테스트를 추가하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 65,
+      "phase": "advance",
+      "timestamp": "2026-09-22T08:15:00.000Z",
+      "summary": "critique 계획대로 CSV 임포트가 시세평가 자산(fx/gold/stock)을 거래 상대로 매칭하던 결함을 차단. csvRowToImportTxn()의 findAsset을 nm=>(assets||[]).find(a=>a.name.trim()===nm&&!isMarketValued(a))로 바꿔, 이름이 같아도 fx/gold/stock 타입 자산은 매칭 후보에서 제외되고 기존 unmatched 경로로 빠지도록 했다(수동 입력 폼이 이미 openAssetPicker의 excludeMarketValued:true로 취하던 방침과 일치). buildImportPreview/assetUnmatchedCount는 unmatched 배열을 그대로 재사용하므로 수정 불필요. test/run.js에 지출/이체 각각 stock 타입 자산과 이름이 같아도 fromAssetId/toAssetId가 null로 남고 unmatched에 담기는 회귀 테스트 추가, 450/450 통과. 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.46.1->1.46.2, sw.js CACHE v163->v164.",
       "commit": null
     }
   ]

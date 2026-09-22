@@ -1396,6 +1396,21 @@ test('csvRowToImportTxn: 자산명을 못 찾으면 id 없이 이름 스냅샷�
   assert.strictEqual(r.txn.fromAssetName, '없는통장');
   assert.deepStrictEqual(Array.from(r.unmatched), ['없는통장']);
 });
+// isMarketValued(fx/gold/stock)는 assetEval()이 원장과 무관하게 qty×시세로 평가하므로,
+// CSV 임포트가 이름만 보고 매칭해버리면 그 거래가 잔액에 반영되지 않아 순자산이 조용히 어긋난다.
+// 수동 입력 폼(txOpenAsset/recOpenAsset)은 이미 excludeMarketValued로 막고 있으니 CSV 경로도 맞춘다.
+test('csvRowToImportTxn: 시세평가 자산(fx/gold/stock)과 이름이 같아도 매칭하지 않고 unmatched로 남긴다', () => {
+  const assets = [{ id: 's1', name: '삼성전자', type: 'stock' }];
+  const exp = sandbox.csvRowToImportTxn(['2026-01-01', '지출', '식비', '5000', '삼성전자', '', ''], assets);
+  assert.strictEqual(exp.ok, true);
+  assert.strictEqual(exp.txn.fromAssetId, null);
+  assert.strictEqual(exp.txn.fromAssetName, '삼성전자');
+  assert.deepStrictEqual(Array.from(exp.unmatched), ['삼성전자']);
+  const tr = sandbox.csvRowToImportTxn(['2026-01-01', '이체', '이체', '5000', '주계좌', '삼성전자', ''], [{ id: 'a1', name: '주계좌' }, ...assets]);
+  assert.strictEqual(tr.ok, true);
+  assert.strictEqual(tr.txn.toAssetId, null);
+  assert.strictEqual(tr.txn.toAssetName, '삼성전자');
+});
 test('csvRowToImportTxn: 이체/저축인데 보내는·받는 자산 중 하나라도 비어 있으면 무효 처리한다', () => {
   const assets = [{ id: 'a1', name: '주계좌' }];
   const r1 = sandbox.csvRowToImportTxn(['2026-01-01', '이체', '이체', '10000', '주계좌', '', ''], assets);
