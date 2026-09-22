@@ -1,15 +1,8 @@
 {
   "cycle": 67,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 62,
-      "phase": "review",
-      "timestamp": "2026-09-21T18:05:00.000Z",
-      "summary": "develop 커밋(5ddbd55, CSV 임포트 음수 금액 차단)을 검토. txnsToCSV()가 t.amount를 부호 반전 없이 그대로 출력함을 직접 확인해 amount가 타입과 무관하게 항상 크기(magnitude)라는 전제가 맞음을 재검증 — amount<=0 가드가 지출/이체/저축 어느 타입에도 오탐 없이 적용됨. 유일한 호출부 buildImportPreview가 이미 error==='amount'를 invalidCount로 집계하므로 UI 쪽 추가 변경이 불필요했다는 판단도 코드로 확인. 함께 교정된 dedupe 테스트 픽스처(amount:-5000→5000)도 '내보낸 CSV 재가져오기' 시나리오의 본래 의도와 무관한 값이었음을 확인해 타당. node test/run.js 재실행해 416/416 통과 재확인. 문제 없음.",
-      "commit": null
-    },
     {
       "cycle": 62,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-22T14:12:31.168Z",
       "summary": "Explore 서브에이전트로 발견한 doRenameOwner()(index.html:2936-2939)의 귀속 이름변경 시 활성 필터 미동기화 버그 수정. renderAssets()/renderPlan()에는 각각 ST.assetOwner/ST.plan.owner가 더 이상 DB.owners에 없으면 전체/'전체'로 되돌리는 가드가 있는데(delOwner로 실제 삭제됐을 때를 위한 안전망), doRenameOwner()가 DB.owners[i]와 자산들의 owner는 새 이름으로 옮기면서도 ST.assetOwner/ST.plan.owner는 옛 이름 그대로 남겨둬, 이름만 바꿨을 뿐인데도 위 가드가 '귀속이 사라졌다'고 오판했다. 재현: 자산 탭에서 특정 귀속(예: 아빠) 필터를 보고 있는 상태로 설정 > 귀속 관리에서 그 이름을 바꾸면(예: 아버지), 자산 탭으로 돌아왔을 때 방금 바꾼 이름이 아니라 아무 설명 없이 '전체' 필터로 조용히 밀려나 사용자가 보던 맥락을 잃는다. 플랜 탭의 ST.plan.owner도 동일하게 재현됨. doRenameOwner()에 if(ST.assetOwner===old)ST.assetOwner=v; if(ST.plan.owner===old)ST.plan.owner=v;를 추가해 활성 필터가 이름변경을 따라가도록 수정. FUNCTIONS에 doRenameOwner 추가, 회귀 테스트 2개 추가(옛 이름을 보고 있었다면 새 이름으로 함께 옮겨가는지, 무관한 귀속을 보고 있었다면 필터를 건드리지 않는지). 두 인라인 <script> 블록 모두 vm.Script 파싱 확인, 461/461 통과(기존 459 + 신규 2). APP_VERSION 1.46.4->1.46.5, sw.js CACHE v166->v167.",
+      "commit": null
+    },
+    {
+      "cycle": 67,
+      "phase": "review",
+      "timestamp": "2026-09-22T15:05:00.000Z",
+      "summary": "develop 커밋(fcfe1ea, doRenameOwner 활성 필터 동기화)을 검토. ST.assetOwner 기본값 'all'과 ST.plan.owner 기본값 '전체'가 DB.owners에는 결코 존재하지 않는 sentinel 값이라 old===old(DB.owners[i]의 실제 옛 이름)와 우연히 일치할 수 없음을 확인해 필터가 '전체' 상태일 때 의도치 않게 값이 바뀌는 경로가 없음을 재검증. renderAssets(2601행)/renderPlan(3877행)의 '귀속 사라지면 전체로' 가드가 정확히 같은 패턴(DB.owners.includes 체크)을 쓰고 있어 이름변경 직후 새 이름이 DB.owners[i]에 이미 반영된 상태와 맞물려 작동함을 코드로 확인. 새 회귀 테스트 2개(대상 필터가 함께 이동하는 경우/무관한 필터는 그대로인 경우) 포함 두 인라인 <script> 블록 모두 node --check 파싱 통과, node test/run.js 461/461 통과 재확인. 실제 버그 없어 코드 변경 없음.",
       "commit": null
     }
   ]
