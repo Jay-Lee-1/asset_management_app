@@ -1,15 +1,8 @@
 {
   "cycle": 67,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 62,
-      "phase": "develop",
-      "timestamp": "2026-09-21T17:10:49.185Z",
-      "summary": "Explore 서브에이전트로 발견한 csvRowToImportTxn()(index.html:4600-4601)의 CSV 임포트 음수 금액 미차단 버그 수정. amount는 앱 전체에서 항상 크기(magnitude)만 의미 있고 부호는 type/fromAssetId/toAssetId로만 표현하는 관례인데(sanitizeBackup의 SANITIZE_QTY_FIELDS 참고), 수동 입력(num()이 비숫자 문자 제거로 음수 원천 차단)과 백업 복원(sanitizeAmount(v,0) 클램프)은 이미 이 관례를 지키지만 CSV 임포트만 amount===0만 걸러 음수는 그대로 통과시켰다. 손으로 수정했거나 음수 지출을 내보내는 스프레드시트에서 만든 CSV를 가져오면 balancesUpTo()가 부호를 그대로 빼면서 거래 방향이 조용히 뒤집혀 자산 잔액이 틀어지는 데이터 결함. amount===0을 amount<=0으로 바꿔 음수도 zero와 같은 'amount' 에러로 거르도록 수정(코드→UI까지 이미 invalidCount로 집계되므로 buildImportPreview/미리보기 쪽 추가 변경 불필요). 회귀 테스트 2개 추가(지출/이체/저축 각 음수 금액 무효 처리, buildImportPreview에서 음수 금액 행이 invalidCount로 잡히고 newCount에 안 들어가는지) + 기존 dedupe 테스트가 우연히 amount:-5000 픽스처를 쓰고 있어 내 변경으로 깨지길래(내보낸 CSV를 그대로 재가져오는 시나리오가 부호와 무관하다는 본래 의도와 무관한 값이라 판단) 5000으로 교정. 두 인라인 <script> 블록 모두 vm.Script 파싱 확인, 416/416 통과. APP_VERSION 1.45.14->1.45.15, sw.js CACHE v156->v157.",
-      "commit": null
-    },
     {
       "cycle": 62,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-22T13:11:56.000Z",
       "summary": "critique 계획대로 지출 분석에 최근 3개월 평균/지난달 대비 증감 배지 추가. spendByCategory 옆에 순수 함수 spendTrend(c,y,m,n=3)을 추가해 최근 n개월(이번 달 제외) 평균과 지난달 지출을 구하고, spendTrendBadge(deltaPct,label)로 화살표+퍼센트 배지 마크업을 만든다(지출 증가=expense색 ▲, 감소=income색 ▼, assetGainLossBadge와 동일한 색 관례). openSpendAnalysis()의 카테고리별 행(spend-nm)에 카테고리별 배지를, 총 지출 카드에 최근 3개월 평균 대비 전체 배지를 추가했다. test/run.js FUNCTIONS에 spendTrend/spendTrendBadge를 추가하고 회귀 테스트 6개(월 경계 넘기는 케이스 포함) 작성, 459/459 통과. 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.46.3->1.46.4, sw.js CACHE v165->v166.",
+      "commit": null
+    },
+    {
+      "cycle": 67,
+      "phase": "develop",
+      "timestamp": "2026-09-22T14:12:31.168Z",
+      "summary": "Explore 서브에이전트로 발견한 doRenameOwner()(index.html:2936-2939)의 귀속 이름변경 시 활성 필터 미동기화 버그 수정. renderAssets()/renderPlan()에는 각각 ST.assetOwner/ST.plan.owner가 더 이상 DB.owners에 없으면 전체/'전체'로 되돌리는 가드가 있는데(delOwner로 실제 삭제됐을 때를 위한 안전망), doRenameOwner()가 DB.owners[i]와 자산들의 owner는 새 이름으로 옮기면서도 ST.assetOwner/ST.plan.owner는 옛 이름 그대로 남겨둬, 이름만 바꿨을 뿐인데도 위 가드가 '귀속이 사라졌다'고 오판했다. 재현: 자산 탭에서 특정 귀속(예: 아빠) 필터를 보고 있는 상태로 설정 > 귀속 관리에서 그 이름을 바꾸면(예: 아버지), 자산 탭으로 돌아왔을 때 방금 바꾼 이름이 아니라 아무 설명 없이 '전체' 필터로 조용히 밀려나 사용자가 보던 맥락을 잃는다. 플랜 탭의 ST.plan.owner도 동일하게 재현됨. doRenameOwner()에 if(ST.assetOwner===old)ST.assetOwner=v; if(ST.plan.owner===old)ST.plan.owner=v;를 추가해 활성 필터가 이름변경을 따라가도록 수정. FUNCTIONS에 doRenameOwner 추가, 회귀 테스트 2개 추가(옛 이름을 보고 있었다면 새 이름으로 함께 옮겨가는지, 무관한 귀속을 보고 있었다면 필터를 건드리지 않는지). 두 인라인 <script> 블록 모두 vm.Script 파싱 확인, 461/461 통과(기존 459 + 신규 2). APP_VERSION 1.46.4->1.46.5, sw.js CACHE v166->v167.",
       "commit": null
     }
   ]

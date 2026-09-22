@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.4';
+const APP_VERSION='1.46.5';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2936,7 +2936,9 @@ function renameOwnerSheet(i){const cur=DB.owners[i];
 function doRenameOwner(i){const v=$('renameOwner').value.trim();if(!v){toast('이름을 입력해 주세요');return}
  const old=DB.owners[i];if(v===old){openOwnerManage();return}
  if(DB.owners.includes(v)){toast('이미 있는 귀속이에요');return}
- DB.owners[i]=v;DB.assets.forEach(a=>{if(a.owner===old)a.owner=v});save();openOwnerManage();toast('귀속을 수정했어요')}
+ DB.owners[i]=v;DB.assets.forEach(a=>{if(a.owner===old)a.owner=v});
+ if(ST.assetOwner===old)ST.assetOwner=v; if(ST.plan.owner===old)ST.plan.owner=v; /* 활성 귀속 필터가 이름 변경을 따라가도록 */
+ save();openOwnerManage();toast('귀속을 수정했어요')}
 
 /* ================= LEDGER ================= */
 /* 달력 하루 칸 합계: monthStats2와 동일하게 잔액 조정(기본 제외) 규칙을 적용해야

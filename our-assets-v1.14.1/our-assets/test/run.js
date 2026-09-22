@@ -95,7 +95,7 @@ const FUNCTIONS = [
   'accountName', 'dbIsEmpty',
   'txScheduled', 'monthStats', 'monthStats2', 'expenseByCat', 'needGold', 'inQuietWindow', 'fmtSynced', 'rateStatusText',
   'nextBigOutflow', 'dday', 'balanceOn', 'nextOutflowCard', 'monthOutflowCard', 'planGaugeCard', 'homeAlertCard', 'renderHome',
-  'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwHistoryCard',
+  'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwHistoryCard', 'doRenameOwner',
   'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetToggleSel', 'assetSelAll',
   'modeSeg', 'monthNav', 'abbr', 'calCellsFor', 'ledSumInner', 'ledSumBox', 'calPane', 'txRow', 'dayTxns',
   'ledgerRowsHtml', 'ledgerDayHeadHtml', 'renderLedger', 'selDayPartial',
@@ -3790,6 +3790,40 @@ test('renderPlan: 귀속이 이름변경/삭제로 사라지면 ST.plan.owner를
   const cashIdx = body.indexOf('const cashAssets=');
   assert.ok(guardIdx !== -1, "ST.plan.owner 존재 확인 가드가 없음");
   assert.ok(cashIdx !== -1 && guardIdx < cashIdx, '가드가 cashAssets 필터 계산보다 먼저 실행되지 않음');
+});
+/* ---------- doRenameOwner: 귀속 이름변경 시 활성 필터(ST.assetOwner/ST.plan.owner)가 낡은 이름으로 남던 버그 ----------
+ * renderAssets/renderPlan의 "귀속 사라지면 전체로" 가드는 실제 삭제(delOwner)를 위한 안전망인데,
+ * doRenameOwner()가 DB.owners[i]/자산의 owner만 새 이름으로 옮기고 ST.assetOwner/ST.plan.owner는
+ * 옛 이름 그대로 두는 바람에, 이름변경만 했을 뿐인데도 위 가드가 "귀속이 사라졌다"고 오판해
+ * 사용자가 보고 있던 귀속 필터가 아무 설명 없이 전체/'전체'로 조용히 풀렸다. doRenameOwner가
+ * 활성 필터도 함께 새 이름으로 옮기도록 고쳤다. */
+test('doRenameOwner: 이름변경 시 ST.assetOwner/ST.plan.owner가 옛 이름을 가리키고 있었다면 새 이름으로 함께 옮겨간다', () => {
+  sandbox.DB = { owners: ['나', '아빠'], assets: [{ owner: '아빠' }] };
+  sandbox.ST = { assetOwner: '아빠', plan: { owner: '아빠' } };
+  const $orig = sandbox.$;
+  sandbox.$ = (id) => (id === 'renameOwner' ? { value: '아버지' } : $orig(id));
+  try {
+    sandbox.doRenameOwner(1);
+  } finally {
+    sandbox.$ = $orig;
+  }
+  assert.strictEqual(sandbox.DB.owners[1], '아버지');
+  assert.strictEqual(sandbox.DB.assets[0].owner, '아버지');
+  assert.strictEqual(sandbox.ST.assetOwner, '아버지', '자산 탭 귀속 필터가 새 이름을 따라가지 않음');
+  assert.strictEqual(sandbox.ST.plan.owner, '아버지', '플랜 탭 귀속 필터가 새 이름을 따라가지 않음');
+});
+test('doRenameOwner: 이름변경 대상과 무관한 귀속을 보고 있었다면 필터를 건드리지 않는다', () => {
+  sandbox.DB = { owners: ['나', '아빠'], assets: [] };
+  sandbox.ST = { assetOwner: '나', plan: { owner: '전체' } };
+  const $orig = sandbox.$;
+  sandbox.$ = (id) => (id === 'renameOwner' ? { value: '아버지' } : $orig(id));
+  try {
+    sandbox.doRenameOwner(1);
+  } finally {
+    sandbox.$ = $orig;
+  }
+  assert.strictEqual(sandbox.ST.assetOwner, '나');
+  assert.strictEqual(sandbox.ST.plan.owner, '전체');
 });
 test('renderMenu: 메뉴 탭 계정 진입점(acct-card)에 키보드/스크린리더 접근 패턴이 있다', () => {
   const body = extractFunction('renderMenu');
