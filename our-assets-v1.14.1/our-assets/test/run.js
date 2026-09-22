@@ -81,7 +81,7 @@ const FUNCTIONS = [
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
   'clampDay', 'saveTx', 'assetBase', 'balancesUpTo', 'balanceAt',
   'addBalanceAdjust', 'updateBalanceAdjust', 'toggleConfirmTransfers',
-  'assetEval', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'delOwner', 'doMaturity', 'firstCash',
+  'assetEval', 'assetGainLoss', 'assetGainLossBadge', 'costBasisField', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'delOwner', 'doMaturity', 'firstCash',
   'detectStaleMarketValuedTxns', 'delBudget',
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards',
   'rateUnknown', 'filteredHist', 'histInvalidate',
@@ -2814,6 +2814,68 @@ test('saveAsset: 처음 보는 fx 통화를 등록하면 즉시 동기화하고,
   sandbox.syncRatesCalls = [];
   sandbox.saveAsset(false);
   assert.deepStrictEqual(sandbox.syncRatesCalls, [], '이미 보유 중인 통화라 시세를 알고 있으면 부를 필요가 없음');
+});
+
+/* ---------- assetGainLoss: fx/gold/stock 자산의 매입 원가(costBasis) 기반 손익 (cycle64 advance).
+ * costBasis는 옵트인 필드라 미설정 시 undefined를 유지해야 하며, 0으로 기본값을 두면
+ * rateUnknown()과 같은 이유로 "모름"과 "0원에 취득"을 구분하지 못해 손익이 -100%로
+ * 오표시된다 — 그래서 costBasis>0일 때만 값을 인정하고, 그 외에는 null을 반환한다. ---------- */
+test('assetGainLoss: costBasis가 없으면 null (0원 손익으로 오표시하지 않음)', () => {
+  sandbox.DB = { rates: { fx: { USD: 1350 }, stocks: {}, goldPerG: 0 } };
+  assert.strictEqual(sandbox.assetGainLoss({ type: 'fx', currency: 'USD', fxAmount: 100 }), null);
+  assert.strictEqual(sandbox.assetGainLoss({ type: 'fx', currency: 'USD', fxAmount: 100, costBasis: 0 }), null, 'costBasis=0은 미설정과 동일하게 취급');
+});
+test('assetGainLoss: 시세평가 대상이 아닌 자산 타입은 costBasis가 있어도 항상 null', () => {
+  sandbox.DB = { rates: { fx: {}, stocks: {}, goldPerG: 0 } };
+  assert.strictEqual(sandbox.assetGainLoss({ type: 'cash', baseAmount: 10000, costBasis: 5000 }), null);
+});
+test('assetGainLoss: 평가액이 매입가보다 높으면 이익(+금액, +%)을 반환한다', () => {
+  sandbox.DB = { rates: { fx: {}, stocks: { '005930': 12000 }, goldPerG: 0 } }; // 평가액 120,000
+  const gl = sandbox.assetGainLoss({ type: 'stock', stockCode: '005930', stockQty: 10, costBasis: 100000 });
+  assert.strictEqual(gl.amount, 20000);
+  assert.strictEqual(gl.pct, 20);
+});
+test('assetGainLoss: 평가액이 매입가보다 낮으면 손실(음수 금액, 음수 %)을 반환한다', () => {
+  sandbox.DB = { rates: { fx: {}, stocks: { '005930': 8000 }, goldPerG: 0 } };
+  const gl = sandbox.assetGainLoss({ type: 'stock', stockCode: '005930', stockQty: 10, costBasis: 100000 }); // 평가액 80,000
+  assert.strictEqual(gl.amount, -20000);
+  assert.strictEqual(gl.pct, -20);
+});
+test('assetGainLossBadge: 이익이면 income 색상 배지를, 손실이면 expense 색상 배지를 반환한다', () => {
+  sandbox.DB = { rates: { fx: {}, stocks: { '005930': 12000 }, goldPerG: 0 } };
+  const upBadge = sandbox.assetGainLossBadge({ type: 'stock', stockCode: '005930', stockQty: 10, costBasis: 100000 });
+  assert.ok(upBadge.includes('+20.0%'), upBadge);
+  assert.ok(upBadge.includes('var(--income)'), upBadge);
+  sandbox.DB.rates.stocks['005930'] = 8000;
+  const downBadge = sandbox.assetGainLossBadge({ type: 'stock', stockCode: '005930', stockQty: 10, costBasis: 100000 });
+  assert.ok(downBadge.includes('-20.0%'), downBadge);
+  assert.ok(downBadge.includes('var(--expense)'), downBadge);
+});
+test('assetGainLossBadge: costBasis 미설정이면 빈 문자열(배지 없음)', () => {
+  sandbox.DB = { rates: { fx: {}, stocks: { '005930': 12000 }, goldPerG: 0 } };
+  assert.strictEqual(sandbox.assetGainLossBadge({ type: 'stock', stockCode: '005930', stockQty: 10 }), '');
+});
+test('assetSubline: fx/gold/stock은 costBasis가 있을 때만 손익 배지를 덧붙인다', () => {
+  sandbox.DB = { rates: { fx: { USD: 1400 }, stocks: {}, goldPerG: 500000 } };
+  const noBasis = sandbox.assetSubline({ type: 'fx', currency: 'USD', fxAmount: 100 });
+  assert.ok(!noBasis.includes('%'), noBasis);
+  const withBasis = sandbox.assetSubline({ type: 'fx', currency: 'USD', fxAmount: 100, costBasis: 100000 });
+  assert.ok(withBasis.includes('%'), withBasis);
+});
+test('syncAssetInputs: 매입 금액 입력을 costBasis로 저장하고, 비우면 필드를 지운다', () => {
+  const $orig = sandbox.$;
+  const input = { value: '1,000,000' };
+  sandbox.$ = (id) => (id === 'asCostBasis' ? input : null);
+  try {
+    sandbox.asDraft = { type: 'stock', stockCode: '005930', stockQty: 10, costBasis: 999 };
+    sandbox.syncAssetInputs();
+    assert.strictEqual(sandbox.asDraft.costBasis, 1000000);
+    input.value = '';
+    sandbox.syncAssetInputs();
+    assert.strictEqual('costBasis' in sandbox.asDraft, false, '비우면 0으로 남기지 않고 필드 자체를 지워야 undefined와 0을 구분하는 assetGainLoss가 정상 동작함');
+  } finally {
+    sandbox.$ = $orig;
+  }
 });
 
 /* ---------- clampRecurringToMaturity: 저축 만기일을 당겼다가 다시 늘려도 자동이체가 예전 만기에

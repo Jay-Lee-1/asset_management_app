@@ -1,19 +1,8 @@
 {
-  "cycle": 64,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "fx/gold/stock 자산 매입 원가(cost basis) 기반 손익 추적 추가",
-    "why": "assetEval()(index.html:2020-2027)이 qty×현재가로 평가액만 계산할 뿐 매입 원가 필드가 스키마·migrate()·renderAssetSheet()(2771행) 어디에도 없어, 투자자산(fx/gold/stock)의 손익/수익률을 전혀 보여주지 못한다. grep으로 손익/수익률/평가손익/gainLoss/costBasis/avgPrice가 전무함을 확인. 순자산 추이·예산·지출 분석까지 갖춘 '우리의 자산' 앱에서 투자자산의 가장 기본적인 정보(얼마 벌었는지/잃었는지)가 빠진 실질적 제품 공백.",
-    "approach": "fx/gold/stock 자산에 선택적 costBasis(원화, number) 필드 추가 — 미설정 시 undefined 유지, 0으로 기본값을 두지 않는다(rateUnknown()과 동일한 '모름 vs 0원' 구분 패턴, 0으로 두면 손익 -100%로 오표시됨). migrate()는 백필 불필요(옵트인이라 undefined-safe), sanitizeBackup()의 SANITIZE_FREE_FIELDS(~4801행 부근)에 costBasis를 추가해 백업 복원 시 숫자로 정제되게 한다. renderAssetSheet()의 fx/gold/stock 분기(~2792-2807행)에 '매입 금액 (원, 선택)' 입력 하나를 추가하고 syncAssetInputs()/saveAsset()에 연결한다. assetEval() 옆에 순수 함수 assetGainLoss(a) 신설: costBasis 없으면 null, 있으면 {amount, pct} = assetEval(a)-a.costBasis 반환 — test/run.js에서 다른 순수 함수처럼 바로 단위테스트 가능. assetSubline()(2495행)에 assetGainLoss가 non-null일 때 손익 배지(+녹색/-빨강, 예: '+12.4% · +840,000원')를 fx/gold/stock 행에 표시. 테스트: assetGainLoss에 이익/손실/costBasis 미설정→null/0원 경계 케이스 3-4개 추가. 예상 규모: index.html+test/run.js 합쳐 약 120-180줄, 단일 세션에 끝낼 수 있는 크기, 스키마 마이그레이션 위험 없음, txns/balances/sync/CSV 경로 무관."
-  },
+  "cycle": 65,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 59,
-      "phase": "advance",
-      "timestamp": "2026-09-21T08:20:00.000Z",
-      "summary": "critique 계획대로 homeAlerts()의 긴급 하위집합(오늘 confirm 대기 이체·1~2일 이내 저축 만기·예산 초과)을 OS 로컬 알림으로 발송하는 기능을 추가했다. 순수 함수 3개: notifyAlertInfo(al)(알림 kind별 dedupe key+제목/본문, backup/persist/neg 등 관계없는 kind는 null), pickNotifyAlerts(alerts,notifiedIds)(이미 보낸 key는 제외하고 새 항목만 골라 notifiedIds를 갱신), pruneNotifiedIds(notifiedIds,now)(30일 지난 key 정리, 무한정 안 커지게). 오케스트레이션 checkNotifyAlerts()는 DB.settings.osNotify+Notification.permission==='granted'+document.hidden(백그라운드일 때만, 포그라운드에선 이미 홈 카드로 보이므로 중복 알림 안 함)을 모두 만족할 때만 homeAlerts(planNegatives())→pickNotifyAlerts→navigator.serviceWorker.ready.showNotification()으로 발송하고 DB.settings.notifiedAlertIds를 저장한다. toggleOsNotify()로 메뉴 '알림 · 기준' 그룹에 토글 추가(Notification.requestPermission() 호출). startApp()에 setInterval(checkNotifyAlerts,5*60*1000) 추가, visibilitychange의 hidden 분기에도 checkNotifyAlerts() 훅. sw.js에 notificationclick 핸들러 추가(기존 창 focus, 없으면 clients.openWindow). 완전 종료(특히 iOS Safari) 시에는 보장 안 되는 백그라운드/최소화 상태 한정 best-effort 범위. test/run.js FUNCTIONS에 notifyAlertInfo/pickNotifyAlerts/pruneNotifiedIds 추가, 회귀 테스트 5개 추가(confirm/budgetOver/budgetOverMulti 즉시 알림 대상, mat은 오늘·내일만 대상이고 이틀 뒤부터는 제외, dedupe로 같은 key 재발송 안 함, 30일 지난 notifiedIds 정리). 두 인라인 <script> 블록 모두 node --check 파싱 확인, 400/400 통과. APP_VERSION 1.45.9->1.45.10, sw.js CACHE v151->v152. pending_advance_plan 비움.",
-      "commit": null
-    },
     {
       "cycle": 60,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-22T03:20:00.000Z",
       "summary": "Explore 서브에이전트로 앱 전체를 구조적으로 재검토(render*/esc/캘린더/부분갱신 전반(ledger·plan·assets)/반복종료조건/trim/부호/sanitizeBackup/CSV 흐름 전반/FX 피커/stockCode/recHistFieldsChanged startDate/addBalanceAdjust 부채방향/homeAlerts OS알림/cloud sync online 재시도/fixShortfall 기본일/doLogin 게스트데이터/Naver 시세 폴백/decidePushOutcome/카테고리 rename·삭제 캐스케이드/Pro 업그레이드 스텁/PIN 부재 등 최근 완료·기각 항목은 재탐색 금지 지시). fx/gold/stock 자산의 assetEval()(index.html:2020-2027)이 qty×현재가로 평가액만 계산할 뿐, 매입 시점 원가(cost basis) 필드가 스키마·migrate()·renderAssetSheet()(2771행) 어디에도 없어 손익/수익률을 전혀 보여주지 못함을 grep(손익/수익률/평가손익/gainLoss/costBasis/avgPrice 전무)으로 확인 — 순자산 추이·예산·지출 분석까지 갖춘 '우리의 자산' 앱에서 투자자산의 가장 기본적인 정보(얼마 벌었는지/잃었는지)가 빠진 실질적 제품 공백으로 채택. 단일 6299줄 파일의 모듈 경계 부재(리라이트 필요해 범위 초과), CI 미구성(프로세스성이라 저영향), allTxns/balancesUpTo 전체 재계산 부담(_balCache/_histCache/부분갱신으로 이미 완화됨)은 후순위로 기각. advance에서 fx/gold/stock 자산에 선택적 costBasis(원화) 필드 추가(미설정 시 undefined 유지, 0으로 기본값 두지 않음 — rateUnknown()과 동일한 '모름 vs 0원' 구분 패턴), sanitizeBackup()의 SANITIZE_FREE_FIELDS에 포함, renderAssetSheet()의 세 타입 분기에 '매입 금액(선택)' 입력 추가, assetEval() 옆에 순수 함수 assetGainLoss(a)(costBasis 없으면 null, 있으면 {amount,pct}) 신설, assetSubline()(2495행)에 손익 배지 표시하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 64,
+      "phase": "advance",
+      "timestamp": "2026-09-22T00:00:00.000Z",
+      "summary": "fx/gold/stock 자산에 선택적 costBasis(매입 원가) 필드와 assetGainLoss() 손익 계산 함수를 추가하고, assetSubline()에 손익 배지(+/-%, +/-원)를 표시. SANITIZE_QTY_FIELDS에 costBasis 추가, APP_VERSION/SW CACHE 버전 올림, test/run.js에 회귀 테스트 8개 추가(447/447 통과).",
       "commit": null
     }
   ]
