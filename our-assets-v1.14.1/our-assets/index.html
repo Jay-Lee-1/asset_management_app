@@ -1242,6 +1242,7 @@ body.selmode .fab{display:none}
 .spend-av svg{width:17px;height:17px}
 .spend-mid{flex:1;min-width:0}
 .spend-nm{font-size:14px;font-weight:700}
+.trend{font-size:11px;font-weight:600}
 .spend-track{height:7px;border-radius:5px;background:var(--sunken);margin-top:6px;overflow:hidden}
 .spend-track i{display:block;height:100%;background:var(--expense);border-radius:5px}
 .spend-track i.budgeted{background:var(--brand)}
@@ -1289,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.3';
+const APP_VERSION='1.46.4';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4060,6 +4061,22 @@ function spendByCategory(y,m){ /* 지출 분석은 항상 예정 포함 */
  if(DB.budgetHistory)Object.keys(DB.budgetHistory).forEach(c=>{if(!(c in map)&&budgetForMonth(c,y,m))map[c]=0}); /* 이번 달에 쓴 게 없어도 이번 달 기준 예산이 있는 카테고리는 계속 조회/수정/삭제할 수 있게 노출 */
  return Object.entries(map).map(([c,v])=>({c,v})).sort((a,b)=>b.v-a.v);
 }
+/* 카테고리별 최근 n개월(기본 3, 이번 달 제외) 지출 평균/지난달 지출 대비 이번 달 지출 증감 — spendByCategory를
+ * 그대로 재사용해 카테고리 합산 규칙(잔액 조정 제외 등)을 공유한다. 최근 n개월치가 전부 0(비교 기준 없음)이면
+ * deltaPct는 null이라 호출부에서 배지를 숨긴다. */
+function spendTrend(c,y,m,n=3){
+ let py=y,pm=m,total=0,prevMonth=0;
+ for(let i=0;i<n;i++){
+  pm--;if(pm<1){pm=12;py--}
+  const v=(spendByCategory(py,pm).find(r=>r.c===c)||{v:0}).v;
+  total+=v;
+  if(i===0)prevMonth=v;
+ }
+ const avg=Math.round(total/n);
+ const cur=(spendByCategory(y,m).find(r=>r.c===c)||{v:0}).v;
+ const deltaPct=avg?Math.round((cur-avg)/avg*100):null;
+ return{avg,prevMonth,deltaPct};
+}
 /* budget=0(미설정)이면 진행률은 의미가 없으므로 항상 0으로 clamp — 호출부는 이 경우 전체 대비 비중을 대신 쓴다 */
 function budgetProgress(spent,budget){
  if(!budget)return{pct:0,barPct:0,over:false};
@@ -4097,9 +4114,20 @@ function totalBudgetSummary(rows,y,m){
  });
  return{budgetedTotal,spentOnBudgeted,overCount,unsetCount};
 }
+/* deltaPct(null=비교 기준 없음)를 화살표+퍼센트 배지로 렌더 — 지출이 늘면(양수) expense색, 줄면(음수) income색(가계부의 기존 관례, assetGainLossBadge와 동일) */
+function spendTrendBadge(deltaPct,label){
+ if(deltaPct===null)return '';
+ const up=deltaPct>0,flat=deltaPct===0;
+ const color=flat?'var(--text-3)':`var(--${up?'expense':'income'})`;
+ const arrow=flat?'':(up?'▲':'▼');
+ return `<span class="trend" style="color:${color}">${label||''}${arrow}${Math.abs(deltaPct)}%</span>`;
+}
 function openSpendAnalysis(){
  const y=ST.ledger.y,m=ST.ledger.m;const rows=spendByCategory(y,m);const total=rows.reduce((s,r)=>s+r.v,0);
  const tb=totalBudgetSummary(rows,y,m);const tbp=budgetProgress(tb.spentOnBudgeted,tb.budgetedTotal);
+ let py=y,pm=m,totalAvg=0;for(let i=0;i<3;i++){pm--;if(pm<1){pm=12;py--}totalAvg+=spendByCategory(py,pm).reduce((s,r)=>s+r.v,0)}
+ totalAvg=Math.round(totalAvg/3);
+ const totalDeltaPct=totalAvg?Math.round((total-totalAvg)/totalAvg*100):null;
  const body=rows.length?rows.map((r,idx)=>{
    const budget=budgetForMonth(r.c,y,m);
    const bp=budgetProgress(r.v,budget);
@@ -4107,12 +4135,13 @@ function openSpendAnalysis(){
    const barPct=budget?bp.barPct:(total?r.v/total*100:0);
    const barCls=budget?(bp.over?'over':'budgeted'):'';
    const overCls=budget&&bp.over?' over':'';
+   const trend=spendTrend(r.c,y,m);
    return `<div class="spend-row" tabindex="0" role="button" aria-label="${esc(r.c)} ${comma(r.v)}원" onclick="openBudgetPrompt(${idx})" onkeydown="rowKeydown(event,()=>openBudgetPrompt(${idx}))"><div class="spend-av a-food">${catGlyph('expense',r.c,null,'tag')}</div>
-    <div class="spend-mid"><div class="spend-nm">${esc(r.c)}</div><div class="spend-track"><i class="${barCls}" style="width:${barPct}%"></i></div></div>
+    <div class="spend-mid"><div class="spend-nm">${esc(r.c)} ${spendTrendBadge(trend.deltaPct)}</div><div class="spend-track"><i class="${barCls}" style="width:${barPct}%"></i></div></div>
     <div class="spend-amt"><div class="a num${overCls}">${comma(r.v)}${budget?`<span class="bgt">/${comma(budget)}</span>`:''}원</div><div class="p${overCls}">${pct}%${budget?' 사용':''}</div></div></div>`}).join('')
    :`<div class="empty"><div class="ei">${svg('chart')}</div><div class="et">아직 쓴 게 없어요 👏</div><div class="es">이대로만 가면 완벽해요</div></div>`;
  openSheet(`<h3>${m}월 지출 분석</h3><div class="desc">카테고리를 눌러 예산을 정해보세요 · 예정 포함</div>
-  <div class="card" style="text-align:center;padding:16px;margin-bottom:12px"><div style="font-size:12.5px;color:var(--text-3);font-weight:700">총 지출</div><div class="num" style="font-size:26px;font-weight:700;color:var(--expense);margin-top:2px">${comma(total)}원</div></div>
+  <div class="card" style="text-align:center;padding:16px;margin-bottom:12px"><div style="font-size:12.5px;color:var(--text-3);font-weight:700">총 지출</div><div class="num" style="font-size:26px;font-weight:700;color:var(--expense);margin-top:2px">${comma(total)}원</div>${totalDeltaPct!==null?`<div style="margin-top:4px">${spendTrendBadge(totalDeltaPct,'최근 3개월 평균 대비 ')}</div>`:''}</div>
   ${tb.budgetedTotal?`<div class="card" style="text-align:center;padding:16px;margin-bottom:12px">
    <div style="font-size:12.5px;color:var(--text-3);font-weight:700">이번 달 예산</div>
    <div class="num" style="font-size:16px;font-weight:700;margin-top:4px;color:${tbp.over?'var(--expense)':'var(--text)'}">${comma(tb.budgetedTotal)}원 중 ${comma(tb.spentOnBudgeted)}원 사용 · ${tbp.pct}%</div>

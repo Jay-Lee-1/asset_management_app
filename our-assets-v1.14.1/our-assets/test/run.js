@@ -74,7 +74,7 @@ const FUNCTIONS = [
   'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'restoreBackup', 'storageOutcomeMsg', 'shouldWarnUnpersisted',
   'sanitizeAmount', 'sanitizeBackup',
   'saveRec', 'recHistFieldsChanged', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
-  'monthStartStr', 'monthEndStr', 'expandRec', 'allTxns', 'txnsByDateInRange', 'spendByCategory', 'histSumTotals',
+  'monthStartStr', 'monthEndStr', 'expandRec', 'allTxns', 'txnsByDateInRange', 'spendByCategory', 'spendTrend', 'spendTrendBadge', 'histSumTotals',
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'expenseBreakdownCard',
   'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asOpenCur', 'asCur', 'asToggleNeg', 'openAssetSheet', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'isCloudConflict', 'decidePushOutcome', 'fmtAmt',
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges', 'shouldRetryCloudSync',
@@ -2425,6 +2425,61 @@ test('spendByCategory: DB.budgetHistory가 없어도(undefined) 터지지 않는
     recurrences: [],
   };
   assert.doesNotThrow(() => sandbox.spendByCategory(2026, 6));
+});
+
+/* ---------- spendTrend/spendTrendBadge: 지출 분석의 최근 3개월 평균/지난달 대비 증감 배지 ---------- */
+test('spendTrend: 최근 3개월 평균보다 이번 달에 더 썼으면 양수 deltaPct를 반환한다', () => {
+  sandbox.DB = {
+    txns: [
+      { date: '2026-03-05', type: 'expense', category: '식비', amount: 100000 }, // 3월
+      { date: '2026-04-05', type: 'expense', category: '식비', amount: 100000 }, // 4월
+      { date: '2026-05-05', type: 'expense', category: '식비', amount: 100000 }, // 5월(=지난달)
+      { date: '2026-06-05', type: 'expense', category: '식비', amount: 200000 }, // 6월(이번 달)
+    ],
+    recurrences: [],
+  };
+  const t = sandbox.spendTrend('식비', 2026, 6);
+  assert.strictEqual(t.avg, 100000, '최근 3개월(3~5월) 평균은 이번 달을 빼고 계산해야 함');
+  assert.strictEqual(t.prevMonth, 100000, '지난달(5월) 지출');
+  assert.strictEqual(t.deltaPct, 100, '10만원 평균 대비 20만원 지출은 +100%');
+});
+test('spendTrend: 최근 3개월치 지출이 전혀 없으면(avg=0) deltaPct는 비교 기준이 없어 null이다', () => {
+  sandbox.DB = {
+    txns: [{ date: '2026-06-05', type: 'expense', category: '식비', amount: 50000 }],
+    recurrences: [],
+  };
+  const t = sandbox.spendTrend('식비', 2026, 6);
+  assert.strictEqual(t.avg, 0);
+  assert.strictEqual(t.deltaPct, null);
+});
+test('spendTrend: 연초(1월)를 조회하면 이전 해로 넘어가 최근 3개월을 계산한다', () => {
+  sandbox.DB = {
+    txns: [
+      { date: '2025-10-05', type: 'expense', category: '식비', amount: 30000 },
+      { date: '2025-11-05', type: 'expense', category: '식비', amount: 30000 },
+      { date: '2025-12-05', type: 'expense', category: '식비', amount: 30000 },
+      { date: '2026-01-05', type: 'expense', category: '식비', amount: 60000 },
+    ],
+    recurrences: [],
+  };
+  const t = sandbox.spendTrend('식비', 2026, 1);
+  assert.strictEqual(t.avg, 30000);
+  assert.strictEqual(t.prevMonth, 30000, '전월(2025-12) 지출');
+  assert.strictEqual(t.deltaPct, 100);
+});
+test('spendTrendBadge: deltaPct가 null이면 배지를 렌더하지 않는다', () => {
+  assert.strictEqual(sandbox.spendTrendBadge(null), '');
+});
+test('spendTrendBadge: 양수(지출 증가)는 expense색 위쪽 화살표를, 음수(지출 감소)는 income색 아래쪽 화살표를 쓴다', () => {
+  assert.match(sandbox.spendTrendBadge(25), /var\(--expense\)/);
+  assert.match(sandbox.spendTrendBadge(25), /▲25%/);
+  assert.match(sandbox.spendTrendBadge(-10), /var\(--income\)/);
+  assert.match(sandbox.spendTrendBadge(-10), /▼10%/);
+});
+test('spendTrendBadge: deltaPct가 0이면 화살표 없이 중립색으로 표시한다', () => {
+  const html = sandbox.spendTrendBadge(0);
+  assert.match(html, /var\(--text-3\)/);
+  assert.match(html, />0%</);
 });
 
 /* ---------- histSumTotals: 전체내역 검색 합계 카드도 monthStats2()와 같은 규칙으로 잔액 조정을 뺀다 ---------- */

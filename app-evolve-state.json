@@ -1,19 +1,8 @@
 {
-  "cycle": 66,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "지출 분석(Spend Analysis)에 전월/최근 N개월 평균 대비 추세 표시 추가",
-    "why": "openSpendAnalysis()(index.html 근처 4100-4124)가 spendByCategory(y,m)로 항상 딱 한 달치만 보여주고 전월/평균 대비 비교가 전혀 없다. DB.budgetHistory와 budgetForMonth()가 이미 시계열을 다루고, History 탭의 histTotHTML()에 이미 \"월평균\" 토글이 있어 평균 계산 로직 자체는 코드베이스에 이미 존재하는데 카테고리별 분석에는 연결이 안 돼 있다. \"이번 달에 평소보다 많이 썼나\"라는 가계부 앱의 핵심 니즈를 지원하지 못하는 실질적 제품 공백.",
-    "approach": "1) spendTrend(cat,y,m,n=3) 순수 함수를 spendByCategory 옆에 추가 - 최근 n개월 spendByCategory 결과를 집계해 {avg, prevMonth, deltaPct} 반환. 2) openSpendAnalysis()의 카테고리별 행(약 4103-4113행)에 지난달/평균 대비 델타 배지 추가(기존 .spend-row/.p/.bgt 스타일과 over/budgeted 클래스 재사용). 3) totalBudgetSummary 헤더 카드에도 전체 지출 전월 대비 델타 표시. 4) 새 데이터 모델 불필요, 순수 파생 계산 + 마크업이라 한 사이클 내에서 완결 가능. test/run.js에 spendTrend 회귀 테스트 추가."
-  },
+  "cycle": 67,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 61,
-      "phase": "advance",
-      "timestamp": "2026-09-21T16:10:00.000Z",
-      "summary": "critique 계획대로 클라우드 동기화 자동 재시도 기능 추가. 순수 함수 shouldRetryCloudSync(cloudUid,syncState,navigatorOnline)를 localHasUnsyncedChanges 옆에 추가(CLOUD_UID 있고 syncState==='error'이고 온라인일 때만 true, 'conflict'는 사용자의 명시적 해결이 필요해 제외). window.addEventListener('online', ...)를 기존 visibilitychange 리스너 바로 아래에 추가해 조건을 만족하면 pullCloud()→pushCloud() 후 앱이 열려있으면 renderCurrent()로 상태 배지를 갱신한다. test/run.js FUNCTIONS에 shouldRetryCloudSync 추가, 케이스 5개(UID 없음/state=ok/state=error&&online/state=error&&offline/state=conflict) 테스트 추가. 두 인라인 <script> 블록 모두 node --check 파싱 확인, 419/419 통과. APP_VERSION 1.45.13->1.45.14, sw.js CACHE v155->v156.",
-      "commit": null
-    },
     {
       "cycle": 62,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-22T12:09:52.737Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 전략적 시야에서 재검토(render*/부분갱신/CSV/FX/stockCode/recHist/addBalanceAdjust/homeAlerts/cloud sync/fixShortfall/doLogin/costBasis/카테고리 캐스케이드/Pro 스텁/PIN 부재/단일파일 구조/CI/History 페이지네이션/migrate owners/nwHistoryCard aria-label/자산그룹 재정렬 접근성/localStorage 실패 처리 등 최근 완료·기각 항목은 재탐색 금지 지시). openSpendAnalysis()(index.html 4100-4124, spendByCategory/budgetForMonth 기반)가 항상 단일 월만 보여주고 전월/평균 대비 추세 비교가 전혀 없음을 확인 — DB.budgetHistory가 이미 시계열이고 History 탭 histTotHTML()에 이미 월평균 토글이 존재해 평균 계산 로직 자체는 코드베이스에 있는데 카테고리별 분석에는 연결이 안 됨. 3개월 이상 지출 이력이 있는 달에서 카테고리 지출이 평소보다 40% 늘어도 앱 안에서 알 방법이 없고 History 탭을 월별로 수동으로 넘겨봐야 함. 온보딩 플로우 부재(기존 empty-state CTA로 어느 정도 완화됨)와 debt/real-estate 자산의 이체 상대 처리(balancesUpTo의 sign 처리가 이미 정확해 보여 구체적 버그 미발견)는 근거 부족으로 기각. advance에서 spendTrend(cat,y,m,n=3) 순수 함수 추가 후 openSpendAnalysis 카테고리 행과 totalBudgetSummary 헤더에 전월/평균 대비 델타 배지를 표시하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 66,
+      "phase": "advance",
+      "timestamp": "2026-09-22T13:11:56.000Z",
+      "summary": "critique 계획대로 지출 분석에 최근 3개월 평균/지난달 대비 증감 배지 추가. spendByCategory 옆에 순수 함수 spendTrend(c,y,m,n=3)을 추가해 최근 n개월(이번 달 제외) 평균과 지난달 지출을 구하고, spendTrendBadge(deltaPct,label)로 화살표+퍼센트 배지 마크업을 만든다(지출 증가=expense색 ▲, 감소=income색 ▼, assetGainLossBadge와 동일한 색 관례). openSpendAnalysis()의 카테고리별 행(spend-nm)에 카테고리별 배지를, 총 지출 카드에 최근 3개월 평균 대비 전체 배지를 추가했다. test/run.js FUNCTIONS에 spendTrend/spendTrendBadge를 추가하고 회귀 테스트 6개(월 경계 넘기는 케이스 포함) 작성, 459/459 통과. 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.46.3->1.46.4, sw.js CACHE v165->v166.",
       "commit": null
     }
   ]
