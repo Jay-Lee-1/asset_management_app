@@ -1,15 +1,8 @@
 {
   "cycle": 66,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 61,
-      "phase": "review",
-      "timestamp": "2026-09-21T14:08:15.458Z",
-      "summary": "develop 커밋(9e3ea65, CSV 임포트 이체/저축 same-name 차단)을 검토. csvRowToImportTxn()에서 fromName/toName은 둘 다 unguardCsv+trim을 거쳐 일관되게 정규화된 뒤 비교되므로 새 fromName===toName 조건이 공백/가드문자 처리 불일치 없이 정확히 동작함을 코드로 확인. findAsset()이 실패해 fromAssetId/toAssetId가 둘 다 null이 되는 미매칭 케이스까지 포함해, raw 이름이 문자열로 동일하면 saveTx()의 fromAssetId===toAssetId 의도(자기 자신에게 이체 금지)와 일치하는 방향으로 막히는 것을 확인 — 오탐(false positive) 시나리오 없음. buildImportPreview가 이미 error==='asset'을 invalidCount로 집계하므로 UI 쪽 추가 변경 불필요했다는 판단도 맞음. node test/run.js 409/409 통과 재확인. 문제 없음.",
-      "commit": null
-    },
     {
       "cycle": 61,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-22T10:16:48.660Z",
       "summary": "Explore 서브에이전트로 발견한 migrate()(index.html:1814)의 DB.owners 빈 배열 미처리 버그 수정. DB.owners=DB.owners||[...]는 []가 truthy라 owners가 빈 배열일 때 기본값(나/배우자/공용)으로 채워주지 못했다 — 바로 아래 DB.categories.income/expense는 같은 함수 안에서 이미 .length로 검사해 이 패턴을 피하고 있어 같은 함수 내 일관성 결함이었다. 정상 경로(delOwner가 0개로 삭제 못 하게 막음)로는 발생 못 하지만, 백업 JSON 복원(sanitizeBackup이 owners 필드를 전혀 검증하지 않음)으로 owners:[]가 들어오면 재현됨: 자산 등록 시 기본 owner가 DB.owners[0]=undefined가 되고 openOwnerPicker()는 고를 옵션이 0개인 빈 시트를 띄워 사용자가 귀속을 지정할 방법이 아예 없어진다. DB.owners=(DB.owners&&DB.owners.length)?DB.owners:[...]로 categories와 같은 패턴으로 수정. 회귀 테스트 3개 추가: migrate()에 owners:[]를 직접 넣어 기본값 채워지는지, owners에 값이 있으면 그대로 유지되는지, restoreBackup()에 owners:[]인 백업을 통째로 넣어도 기본값이 복구되는지. deepStrictEqual로 vm 샌드박스 배열과 host 배열을 비교할 때 cross-realm 프로토타입 불일치로 오탐 실패하는 걸 발견해([...sandbox.DB.owners]로 host 배열로 변환 후 비교) 테스트를 고쳤다. 두 인라인 <script> 블록 모두 node --check 파싱 확인, 453/453 통과(기존 450 + 신규 3). APP_VERSION 1.46.2->1.46.3, sw.js CACHE v164->v165.",
+      "commit": null
+    },
+    {
+      "cycle": 66,
+      "phase": "review",
+      "timestamp": "2026-09-22T11:07:57.529Z",
+      "summary": "develop 커밋(b795946, migrate()의 DB.owners 빈 배열 미처리 수정)을 검토. DB.owners=(DB.owners&&DB.owners.length)?DB.owners:[...] 패턴이 바로 위 DB.settings.groupOrder(1811행, Array.isArray+.length 검사)와 DB.categories 계열이 이미 쓰던 .length 검사 방식과 일치함을 확인 — []가 truthy라 ||만으로는 못 잡는다는 커밋 설명이 정확함. 정상 경로(delOwner가 0개 삭제를 막음)로는 재현 안 되고 sanitizeBackup()이 owners 필드를 검증하지 않아 백업 복원으로만 재현된다는 분석도 grep으로 재확인. deepStrictEqual 비교 시 vm 샌드박스 배열을 [...sandbox.DB.owners]로 host 배열로 변환해 cross-realm 프로토타입 불일치를 피한 처리도 올바름. node test/run.js 453/453 통과 재확인. 문제 없음.",
       "commit": null
     }
   ]
