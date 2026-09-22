@@ -1,15 +1,8 @@
 {
   "cycle": 68,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 63,
-      "phase": "develop",
-      "timestamp": "2026-09-21T21:20:00.000Z",
-      "summary": "탐사(Explore) 서브에이전트로 발견한 openFixShortfall()(index.html:5521-5566)의 '부족해요' 시트 기본 이체일 버그 수정. 부족해지는 날(date)의 '전날'을 이체 기본일로 제안하는 로직이 date가 오늘/내일일 때(잔액이 오늘 바로 마이너스가 되거나 오늘자 거래로 즉시 마이너스가 되는 경우, planNegatives()의 firstNeg가 TODAY가 될 수 있음)의 경우를 고려하지 않아 dayBefore=addDays(date,-1)이 어제(이미 지난 날짜)가 되고, 이 값이 _fixWhen 기본값과 '결제 전날' 퀵픽 버튼에 그대로 노출·선택돼 있어 사용자가 기본값을 그대로 받으면 planTransfer()/planSplitTransfer()가 confirmed:false인 과거 날짜 이체를 DB.txns에 즉시 만들어버렸다(이미 지난 '예정' 이체). 순수 헬퍼 fixShortfallDefaultDate(date,today)를 추가해 dayBefore<today면 today로 올려 잡도록 하고, openFixShortfall()의 _fixWhen 기본값과 '결제 전날'/'날짜 선택' 퀵픽 버튼의 비교·값을 모두 dayBefore 대신 이 fixDefault로 바꿨다. fixDefault가 TODAY로 collapse되면 버튼 라벨도 '결제 전날' 대신 '내일'과 대비되는 '오늘'로 바꿔 사용자에게 어떤 날짜가 선택됐는지 명확히 보이게 했다. 회귀 테스트 4개 추가: 1) fixShortfallDefaultDate가 date===today면 today를 주는지, 2) date===tomorrow(전날=today)여도 today를 주는지, 3) date가 모레 이상이면 기존처럼 결제 전날을 그대로 주는지, 4) openFixShortfall을 date===TODAY로 직접 열어 _fixWhen이 과거가 아닌 오늘로 세팅되는지. node test/run.js 429/429 통과, 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.45.16->1.45.17, sw.js CACHE v158->v159.",
-      "commit": null
-    },
     {
       "cycle": 63,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-22T17:15:00.000Z",
       "summary": "critique 계획대로 varyingRecs()(index.html:5510)의 필터 (r.freq==='monthly'||r.freq==='yearly')를 제거해 daily/weekly 변동 반복거래도 '실제 금액 입력' 알림 대상에 포함되도록 확장. recDates()가 monthly/yearly 외 모든 freq를 이미 step 기반(daily=1일,나머지=7일)으로 처리하고 renderRecSheet()가 monthly/weekly/daily/yearly만 유효한 선택지로 제공하므로, 필터를 recIsVarying(r) 조건만 남기는 것으로 안전하게 확장 가능함을 확인했다. expandRec()/quickAmountCards()/openQuickList()/openQuickAmount()는 이미 날짜 단위(rec+date 쌍)로 동작해 별도 수정 없이 그대로 재사용됨. test/run.js에 weekly(매주 도래 회차 3건 모두 포함)와 daily(skip/edits가 함께 적용되는지) 회귀 테스트 2건 추가 — 기존 vm 샌드박스 배열 cross-realm 이슈(cycle66에서 발견된 패턴)를 피하려고 [...vr].map(...)으로 host 배열 변환 후 비교. node test/run.js 463/463 통과(기존 461 + 신규 2), 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.46.5->1.46.6, sw.js CACHE v167->v168.",
+      "commit": null
+    },
+    {
+      "cycle": 68,
+      "phase": "develop",
+      "timestamp": "2026-09-22T18:20:00.000Z",
+      "summary": "Explore 서브에이전트로 발견한 assetSelAll()(index.html:2739)의 자산 탭 전체선택이 귀속(owner) 필터를 무시하던 버그 수정. assetBodyHTML()은 ST.assetOwner!=='all'이면 다른 귀속의 자산을 아예 렌더하지 않는데(2575행), assetSelAll()과 activeSel()의 total(6038행)은 필터와 무관하게 항상 DB.assets 전체를 대상으로 삼고 있었다 — ledgerSelAll/histSelAll이 이미 각자의 필터링된 목록만 전체선택 대상으로 삼는 것과 다른, 자산 탭만의 예외였다. 재현: 자산 탭에서 귀속 필터를 특정 귀속(예: 아이)으로 좁힌 뒤 다중선택 모드에서 '전체 선택'을 누르면, 화면에 보이지도 않는 다른 귀속(나)의 자산 id까지 ST.aSel.ids에 담기고 하단 바의 개수도 DB.assets.length 그대로 표시되며, 그대로 '선택 삭제'를 누르면 화면에 없던 다른 귀속 자산까지 조용히 삭제된다(되돌리기 토스트는 있지만 화면에 안 보이던 항목이 지워지는 것 자체가 결함). 순수 헬퍼 visibleAssetsForSel()(ST.assetOwner==='all'?DB.assets:DB.assets.filter(a=>a.owner===ST.assetOwner))을 추가해 assetSelAll()의 items와 activeSel()의 total을 모두 이걸로 스코프했다. FUNCTIONS에 visibleAssetsForSel/activeSel 추가, 회귀 테스트 5개 추가(필터 all/특정 귀속에서 visibleAssetsForSel 반환값, 귀속 필터 중 전체선택이 다른 귀속을 건드리지 않는지, 필터된 귀속이 이미 전체선택 상태면 그 귀속만 해제되는지, activeSel의 total이 필터된 개수를 반영하는지). 두 인라인 <script> 블록 모두 node --check 파싱 확인, 468/468 통과(기존 463 + 신규 5). APP_VERSION 1.46.6->1.46.7, sw.js CACHE v168->v169.",
       "commit": null
     }
   ]

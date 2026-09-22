@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.6';
+const APP_VERSION='1.46.7';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2736,7 +2736,8 @@ function assetSelPartial(){
  return true;
 }
 function assetToggleSel(id){if(window._lpJustFired){window._lpJustFired=false;return}ST.aSel.ids.has(id)?ST.aSel.ids.delete(id):ST.aSel.ids.add(id);if(!assetSelPartial())renderAssets()}
-function assetSelAll(){const total=DB.assets.length;if(total&&ST.aSel.ids.size>=total)ST.aSel.ids.clear();else DB.assets.forEach(a=>ST.aSel.ids.add(a.id));if(!assetSelPartial())renderAssets()}
+function visibleAssetsForSel(){return ST.assetOwner==='all'?DB.assets:DB.assets.filter(a=>a.owner===ST.assetOwner)} /* 귀속 필터가 켜져 있으면 화면에 보이는 자산만 전체선택/삭제 대상으로 삼는다 */
+function assetSelAll(){const items=visibleAssetsForSel();if(items.length&&ST.aSel.ids.size>=items.length)ST.aSel.ids.clear();else items.forEach(a=>ST.aSel.ids.add(a.id));if(!assetSelPartial())renderAssets()}
 function assetDelSel(){if(!ST.aSel.ids.size){toast('선택된 자산이 없어요');return}
  confirmSheet('선택 삭제',`<b style="color:var(--expense);font-size:16px">${ST.aSel.ids.size}개</b> 자산을 삭제할까요?`,'삭제',()=>{
   const ids=new Set(ST.aSel.ids);ST.aSel.mode=false;ST.aSel.ids.clear();deleteAssetsUndo(ids)});}
@@ -6035,7 +6036,7 @@ function renderCurrent(){
  }
 }
 function activeSel(){
- if(ST.aSel.mode)return{all:'assetSelAll()',del:'assetDelSel()',size:ST.aSel.ids.size,total:DB.assets.length};
+ if(ST.aSel.mode)return{all:'assetSelAll()',del:'assetDelSel()',size:ST.aSel.ids.size,total:visibleAssetsForSel().length};
  if(ST.lSel.mode)return{all:'ledgerSelAll()',del:'ledgerDelSel()',size:ST.lSel.ids.size,total:dayTxns(ST.ledger.sel).filter(visibleTx).filter(t=>!t.isRec).length};
  if(ST.hist.selMode)return{all:'histSelAll()',del:'histDelSel()',size:ST.hist.sel.size,total:filteredHist().filter(t=>!t.isRec).length};
  return null;

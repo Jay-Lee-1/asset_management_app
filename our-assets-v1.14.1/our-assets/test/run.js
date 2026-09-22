@@ -96,7 +96,7 @@ const FUNCTIONS = [
   'txScheduled', 'monthStats', 'monthStats2', 'expenseByCat', 'needGold', 'inQuietWindow', 'fmtSynced', 'rateStatusText',
   'nextBigOutflow', 'dday', 'balanceOn', 'nextOutflowCard', 'monthOutflowCard', 'planGaugeCard', 'homeAlertCard', 'renderHome',
   'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwHistoryCard', 'doRenameOwner',
-  'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetToggleSel', 'assetSelAll',
+  'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetToggleSel', 'visibleAssetsForSel', 'assetSelAll', 'activeSel',
   'modeSeg', 'monthNav', 'abbr', 'calCellsFor', 'ledSumInner', 'ledSumBox', 'calPane', 'txRow', 'dayTxns',
   'ledgerRowsHtml', 'ledgerDayHeadHtml', 'renderLedger', 'selDayPartial',
   'ledgerSelPartial', 'ledgerToggleSel', 'ledgerSelAll', 'visibleTx',
@@ -4957,6 +4957,67 @@ test('assetSelAll: 이미 전체선택된 상태에서 다시 부르면 전체 �
   sandbox.ST.aSel = { mode: true, ids: new Set(['a1']) };
   sandbox.assetSelAll();
   assert.strictEqual(sandbox.ST.aSel.ids.size, 0, '전체선택 상태에서 다시 부르면 선택이 모두 해제돼야 함');
+});
+
+/* ---------- assetSelAll/activeSel: 귀속 필터가 켜져 있으면 화면에 보이는 자산만 전체선택 대상이어야 함
+ * (app-evolve cycle68 develop) ----------
+ * assetSelAll()이 ST.assetOwner 귀속 필터를 무시하고 DB.assets 전체를 선택 대상으로 삼고 있었다.
+ * assetBodyHTML()은 귀속 필터가 켜지면 다른 귀속의 자산을 아예 렌더하지 않는데(2575행), "전체 선택"을
+ * 누르면 화면에 보이지도 않는 다른 귀속의 자산 id까지 ST.aSel.ids에 담겨 "선택 삭제"로 함께
+ * 지워질 수 있었다(ledgerSelAll/histSelAll은 이미 각자의 필터링된 목록만 대상으로 삼고 있어 자산 탭만
+ * 예외였다). visibleAssetsForSel()로 assetSelAll()과 activeSel()의 total을 모두 귀속 필터에 맞춰
+ * 스코프했는지 확인한다. */
+test('visibleAssetsForSel: 귀속 필터가 all이면 전체 자산을 그대로 반환한다', () => {
+  setupAssetsDB();
+  sandbox.DB.assets = [
+    { id: 'a1', name: '주계좌', owner: '나', type: 'cash', order: 0, includeInTotal: true, baseAmount: 500000 },
+    { id: 'a2', name: '아이통장', owner: '아이', type: 'cash', order: 1, includeInTotal: true, baseAmount: 100000 },
+  ];
+  sandbox.ST.assetOwner = 'all';
+  assert.strictEqual(sandbox.visibleAssetsForSel().length, 2, '전체 필터에서는 모든 귀속의 자산이 대상이어야 함');
+});
+test('visibleAssetsForSel: 귀속 필터가 켜져 있으면 그 귀속의 자산만 반환한다', () => {
+  setupAssetsDB();
+  sandbox.DB.assets = [
+    { id: 'a1', name: '주계좌', owner: '나', type: 'cash', order: 0, includeInTotal: true, baseAmount: 500000 },
+    { id: 'a2', name: '아이통장', owner: '아이', type: 'cash', order: 1, includeInTotal: true, baseAmount: 100000 },
+  ];
+  sandbox.ST.assetOwner = '나';
+  const ids = sandbox.visibleAssetsForSel().map(a => a.id);
+  assert.deepStrictEqual(ids, ['a1'], '필터된 귀속의 자산 id만 반환해야 함');
+});
+test('assetSelAll: 귀속 필터가 켜져 있으면 다른 귀속의 자산은 선택 대상에서 제외된다', () => {
+  setupAssetsDB();
+  sandbox.DB.assets = [
+    { id: 'a1', name: '주계좌', owner: '나', type: 'cash', order: 0, includeInTotal: true, baseAmount: 500000 },
+    { id: 'a2', name: '아이통장', owner: '아이', type: 'cash', order: 1, includeInTotal: true, baseAmount: 100000 },
+  ];
+  sandbox.ST.assetOwner = '나';
+  sandbox.ST.aSel = { mode: true, ids: new Set() };
+  sandbox.assetSelAll();
+  assert.deepStrictEqual([...sandbox.ST.aSel.ids], ['a1'], '화면에 보이지 않는 다른 귀속(아이)의 자산은 전체선택에 포함되면 안 됨');
+});
+test('assetSelAll: 필터된 귀속이 이미 전체선택된 상태에서 다시 부르면 그 귀속만 해제된다', () => {
+  setupAssetsDB();
+  sandbox.DB.assets = [
+    { id: 'a1', name: '주계좌', owner: '나', type: 'cash', order: 0, includeInTotal: true, baseAmount: 500000 },
+    { id: 'a2', name: '아이통장', owner: '아이', type: 'cash', order: 1, includeInTotal: true, baseAmount: 100000 },
+  ];
+  sandbox.ST.assetOwner = '나';
+  sandbox.ST.aSel = { mode: true, ids: new Set(['a1']) };
+  sandbox.assetSelAll();
+  assert.strictEqual(sandbox.ST.aSel.ids.size, 0, '필터된 귀속이 이미 전체선택 상태면 전체 해제돼야 함');
+});
+test('activeSel: 귀속 필터가 켜져 있으면 자산 선택 total도 필터된 개수를 반영한다', () => {
+  setupAssetsDB();
+  sandbox.DB.assets = [
+    { id: 'a1', name: '주계좌', owner: '나', type: 'cash', order: 0, includeInTotal: true, baseAmount: 500000 },
+    { id: 'a2', name: '아이통장', owner: '아이', type: 'cash', order: 1, includeInTotal: true, baseAmount: 100000 },
+  ];
+  sandbox.ST.assetOwner = '나';
+  sandbox.ST.aSel = { mode: true, ids: new Set(['a1']) };
+  const s = sandbox.activeSel();
+  assert.strictEqual(s.total, 1, '하단 바의 total이 DB.assets 전체가 아니라 필터된 자산 개수여야 함');
 });
 
 /* ---------- renderLedger: 렌더 함수 스모크 테스트 (app-evolve cycle50 critique/advance) ----------
