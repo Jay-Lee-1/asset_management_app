@@ -1289,7 +1289,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.45.18';
+const APP_VERSION='1.45.19';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2710,8 +2710,19 @@ function snapshotAssetName(id){
    if(r.toAssetId===id)r.toAssetName=nm;
  });
 }
-function assetToggleSel(id){if(window._lpJustFired){window._lpJustFired=false;return}ST.aSel.ids.has(id)?ST.aSel.ids.delete(id):ST.aSel.ids.add(id);renderAssets()}
-function assetSelAll(){const total=DB.assets.length;if(total&&ST.aSel.ids.size>=total)ST.aSel.ids.clear();else DB.assets.forEach(a=>ST.aSel.ids.add(a.id));renderAssets()}
+/* 자산 다중선택 체크박스 토글/전체선택은 선택 상태만 바뀌므로 renderAssets() 전체를 다시 그릴 필요가 없다.
+   전체 재렌더는 page-assets를 통째로 교체해 순자산 캐러셀·히스토리 차트까지 체크박스를 탭할 때마다
+   다시 그리고, 방금 탭한 자산 행의 tabindex 노드가 파괴돼 키보드(Enter/Space)로 토글한 경우 포커스가
+   body로 빠진다(ledgerSelPartial/selDayPartial이 가계부에서 같은 문제를 우회한 것과 동일한 이유) */
+function assetSelPartial(){
+ const el=$('assetBody');if(!el)return false;
+ el.innerHTML=assetBodyHTML();
+ updateSelBottom();
+ requestAnimationFrame(fitAll);
+ return true;
+}
+function assetToggleSel(id){if(window._lpJustFired){window._lpJustFired=false;return}ST.aSel.ids.has(id)?ST.aSel.ids.delete(id):ST.aSel.ids.add(id);if(!assetSelPartial())renderAssets()}
+function assetSelAll(){const total=DB.assets.length;if(total&&ST.aSel.ids.size>=total)ST.aSel.ids.clear();else DB.assets.forEach(a=>ST.aSel.ids.add(a.id));if(!assetSelPartial())renderAssets()}
 function assetDelSel(){if(!ST.aSel.ids.size){toast('선택된 자산이 없어요');return}
  confirmSheet('선택 삭제',`<b style="color:var(--expense);font-size:16px">${ST.aSel.ids.size}개</b> 자산을 삭제할까요?`,'삭제',()=>{
   const ids=new Set(ST.aSel.ids);ST.aSel.mode=false;ST.aSel.ids.clear();deleteAssetsUndo(ids)});}

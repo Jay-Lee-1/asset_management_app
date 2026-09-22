@@ -96,7 +96,7 @@ const FUNCTIONS = [
   'txScheduled', 'monthStats', 'monthStats2', 'expenseByCat', 'needGold', 'inQuietWindow', 'fmtSynced', 'rateStatusText',
   'nextBigOutflow', 'dday', 'balanceOn', 'nextOutflowCard', 'monthOutflowCard', 'planGaugeCard', 'homeAlertCard', 'renderHome',
   'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwHistoryCard',
-  'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets',
+  'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetToggleSel', 'assetSelAll',
   'modeSeg', 'monthNav', 'abbr', 'calCellsFor', 'ledSumInner', 'ledSumBox', 'calPane', 'txRow', 'dayTxns',
   'ledgerRowsHtml', 'ledgerDayHeadHtml', 'renderLedger', 'selDayPartial',
   'ledgerSelPartial', 'ledgerToggleSel', 'ledgerSelAll', 'visibleTx',
@@ -238,6 +238,15 @@ const sandbox = {
     set innerHTML(v) { this._html = v; },
     get innerHTML() { return this._html; },
   },
+  // assetBody는 renderAssets()가 그린 page-assets 안의 자식 노드를 흉내낸다.
+  // assetSelPartial()이 renderAssets() 전체 대신 이 노드만 갱신하는지 확인하는 테스트용
+  // (assetBodyMissing=true면 $('assetBody')가 null을 반환해 fallback 경로를 재현한다).
+  assetBodyMissing: false,
+  assetBodyEl: {
+    _html: '',
+    set innerHTML(v) { this._html = v; },
+    get innerHTML() { return this._html; },
+  },
   // page-ledger도 같은 이유(renderLedger()가 $('page-ledger').innerHTML=...로 직접 꽂음)로
   // 같은 getter/setter 패턴을 재사용한다.
   pageLedgerEl: {
@@ -290,7 +299,7 @@ const sandbox = {
   // asName은 syncAssetInputs()의 이름 trim() 회귀 테스트용(공백만 있는 이름이 그대로 저장되던 버그).
   // asNameValue가 undefined인 기본 상태에서는 null을 반환해, 이 mock 추가 이전처럼 다른 테스트의
   // syncAssetInputs()/saveAsset() 호출에서 asDraft.name이 건드려지지 않도록 한다.
-  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-plan' ? sandbox.pagePlanEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : id === 'ledgerCard' ? (sandbox.ledgerCardMissing ? null : sandbox.ledgerCardEl) : null,
+  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-plan' ? sandbox.pagePlanEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : id === 'ledgerCard' ? (sandbox.ledgerCardMissing ? null : sandbox.ledgerCardEl) : id === 'assetBody' ? (sandbox.assetBodyMissing ? null : sandbox.assetBodyEl) : null,
   bkTextEl: { value: 'backup-text', select: () => {}, setSelectionRange: () => {} },
   // copyBackup()의 navigator.clipboard 체크가 ReferenceError 없이 "지원 안 함"으로 지나가게
   // 하는 최소 흉내(document.execCommand는 try/catch로 감싸져 있어 굳이 스텁이 필요 없음).
@@ -319,7 +328,8 @@ const sandbox = {
   wireNwCarousel: () => {},
   restoreNwScroll: () => {},
   animNums: () => {},
-  updateSelBottom: () => {},
+  updateSelBottomCalls: 0,
+  updateSelBottom: () => { sandbox.updateSelBottomCalls++; },
   // renderLedger()가 부수효과로 부르는 달력 캐러셀 스와이프 와이어링 — 같은 이유(화면 전용)로
   // no-op으로 흉내낸다.
   wireMonthCarousel: () => {},
@@ -4639,6 +4649,86 @@ test('renderAssets: 멀티셀렉트 모드(ST.aSel.mode)에서는 선택 체크�
   const html = sandbox.pageAssetsEl.innerHTML;
   assert.ok(html.includes('sel-check'), '멀티셀렉트 모드에서는 선택 체크마크가 렌더돼야 함');
   assert.ok(html.includes("onclick=\"assetToggleSel('a1')\""), '자산 행 클릭이 assetToggleSel로 연결돼야 함');
+});
+
+/* ---------- assetSelPartial/assetToggleSel/assetSelAll: 다중선택 부분 갱신 (app-evolve cycle64 develop) ----------
+ * assetToggleSel()/assetSelAll()은 체크박스를 탭할 때마다 renderAssets() 전체를 다시 그려
+ * page-assets를 통째로 교체했다. ledgerToggleSel()이 고치기 전(cycle62) 겪던 것과 같은 결함으로,
+ * 순자산 캐러셀(#nwCarousel)·히스토리 차트까지 체크박스를 탭할 때마다 다시 그리고, 방금 탭한
+ * 자산 행의 tabindex 노드가 파괴돼 키보드(Enter/Space)로 토글하면 포커스가 body로 빠진다.
+ * assetSelPartial()은 #assetBody만 갱신해 이 문제를 피하므로, 두 함수가 renderAssets() 대신
+ * 이걸 먼저 쓰는지 확인한다(ledgerSelPartial 회귀 테스트와 동일한 구조). */
+test('assetSelPartial: #assetBody가 있으면 현재 선택 상태로 그 목록만 갱신하고 true를 반환한다', () => {
+  setupAssetsDB();
+  sandbox.DB.assets = [{ id: 'a1', name: '주계좌', owner: '나', type: 'cash', order: 0, includeInTotal: true, baseAmount: 500000 }];
+  sandbox.ST.aSel = { mode: true, ids: new Set(['a1']) };
+  sandbox.assetBodyEl._html = '';
+  sandbox.pageAssetsEl._html = '이전 렌더 스냅샷'; // 부분 갱신이면 이 값이 그대로 남아있어야 함
+  sandbox.updateSelBottomCalls = 0;
+  const ok = sandbox.assetSelPartial();
+  assert.strictEqual(ok, true, 'assetBody가 있으면 true를 반환해야 함');
+  assert.ok(sandbox.assetBodyEl.innerHTML.includes('sel-on'), '선택된 자산 행에 sel-on 클래스가 반영돼야 함');
+  assert.strictEqual(sandbox.pageAssetsEl.innerHTML, '이전 렌더 스냅샷', 'renderAssets() 전체가 다시 호출돼선 안 됨(page-assets가 그대로여야 함)');
+  assert.strictEqual(sandbox.updateSelBottomCalls, 1, '선택 개수 바(하단 바)도 함께 갱신돼야 함');
+});
+test('assetSelPartial: #assetBody를 못 찾으면(아직 렌더 전 등) false를 반환해 호출부가 전체 렌더로 폴백한다', () => {
+  setupAssetsDB();
+  sandbox.assetBodyMissing = true;
+  try {
+    assert.strictEqual(sandbox.assetSelPartial(), false);
+  } finally {
+    sandbox.assetBodyMissing = false;
+  }
+});
+test('assetToggleSel: 다중선택 중 항목을 탭해도 renderAssets() 전체를 다시 그리지 않는다', () => {
+  setupAssetsDB();
+  sandbox.DB.assets = [{ id: 'a1', name: '주계좌', owner: '나', type: 'cash', order: 0, includeInTotal: true, baseAmount: 500000 }];
+  sandbox.ST.aSel = { mode: true, ids: new Set() };
+  sandbox.pageAssetsEl._html = '이전 렌더 스냅샷';
+  sandbox.assetToggleSel('a1');
+  assert.ok(sandbox.ST.aSel.ids.has('a1'), 'a1이 선택 목록에 추가돼야 함');
+  assert.strictEqual(sandbox.pageAssetsEl.innerHTML, '이전 렌더 스냅샷', 'renderAssets() 전체가 다시 호출돼선 안 됨');
+  assert.ok(sandbox.assetBodyEl.innerHTML.includes('sel-on'), 'assetBody가 새 선택 상태로 갱신돼야 함');
+});
+test('assetToggleSel: 같은 항목을 다시 탭하면 선택이 해제된다', () => {
+  setupAssetsDB();
+  sandbox.DB.assets = [{ id: 'a1', name: '주계좌', owner: '나', type: 'cash', order: 0, includeInTotal: true, baseAmount: 500000 }];
+  sandbox.ST.aSel = { mode: true, ids: new Set(['a1']) };
+  sandbox.assetToggleSel('a1');
+  assert.ok(!sandbox.ST.aSel.ids.has('a1'), 'a1이 선택 목록에서 제거돼야 함');
+  assert.ok(!sandbox.assetBodyEl.innerHTML.includes('sel-on'), '선택 해제 후에는 sel-on 클래스가 없어야 함');
+});
+test('assetToggleSel: #assetBody가 없으면(폴백) renderAssets()로 전체를 다시 그린다', () => {
+  setupAssetsDB();
+  sandbox.DB.assets = [{ id: 'a1', name: '주계좌', owner: '나', type: 'cash', order: 0, includeInTotal: true, baseAmount: 500000 }];
+  sandbox.ST.aSel = { mode: true, ids: new Set() };
+  sandbox.assetBodyMissing = true;
+  try {
+    sandbox.pageAssetsEl._html = '';
+    sandbox.assetToggleSel('a1');
+    assert.ok(sandbox.pageAssetsEl.innerHTML, '폴백 시 renderAssets()가 page-assets를 다시 채워야 함');
+  } finally {
+    sandbox.assetBodyMissing = false;
+  }
+});
+test('assetSelAll: 전체선택 토글도 renderAssets() 전체를 다시 그리지 않는다', () => {
+  setupAssetsDB();
+  sandbox.DB.assets = [
+    { id: 'a1', name: '주계좌', owner: '나', type: 'cash', order: 0, includeInTotal: true, baseAmount: 500000 },
+    { id: 'a2', name: '적금', owner: '나', type: 'savings', order: 1, includeInTotal: true, baseAmount: 300000 },
+  ];
+  sandbox.ST.aSel = { mode: true, ids: new Set() };
+  sandbox.pageAssetsEl._html = '이전 렌더 스냅샷';
+  sandbox.assetSelAll();
+  assert.strictEqual(sandbox.ST.aSel.ids.size, 2, '전체선택 시 두 건 모두 선택돼야 함');
+  assert.strictEqual(sandbox.pageAssetsEl.innerHTML, '이전 렌더 스냅샷', 'renderAssets() 전체가 다시 호출돼선 안 됨');
+});
+test('assetSelAll: 이미 전체선택된 상태에서 다시 부르면 전체 해제된다', () => {
+  setupAssetsDB();
+  sandbox.DB.assets = [{ id: 'a1', name: '주계좌', owner: '나', type: 'cash', order: 0, includeInTotal: true, baseAmount: 500000 }];
+  sandbox.ST.aSel = { mode: true, ids: new Set(['a1']) };
+  sandbox.assetSelAll();
+  assert.strictEqual(sandbox.ST.aSel.ids.size, 0, '전체선택 상태에서 다시 부르면 선택이 모두 해제돼야 함');
 });
 
 /* ---------- renderLedger: 렌더 함수 스모크 테스트 (app-evolve cycle50 critique/advance) ----------
