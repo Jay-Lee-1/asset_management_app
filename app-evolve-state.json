@@ -1,15 +1,8 @@
 {
   "cycle": 66,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 61,
-      "phase": "develop",
-      "timestamp": "2026-09-21T13:15:00.000Z",
-      "summary": "Explore 서브에이전트로 발견한 CSV 임포트(csvRowToImportTxn, index.html:4599)의 이체/저축 행 검증 누락 버그 수정. 수동 입력(saveTx/saveRec)은 fromAssetId===toAssetId면 '보내는 자산과 받는 자산이 같아요' 토스트로 저장을 막지만, CSV 임포트 경로는 fromName/toName이 둘 다 비어있지 않은지만 확인해 같은 자산명(예: '주계좌'→'주계좌')인 이체/저축 CSV 행도 그대로 통과시켜 DB.txns에 fromAssetId===toAssetId인, 수동 UI로는 절대 만들 수 없는 상태의 거래가 들어갈 수 있었다. 기존 !fromName||!toName 체크에 fromName===toName을 추가해 같은 'asset' 에러 버킷으로 거르도록 했다 — buildImportPreview가 이미 error==='asset'을 invalidCount로 집계하므로 UI 쪽 변경은 불필요. test/run.js에 이체/저축 각각 same-name 케이스 회귀 테스트 2개 추가, 409/409 통과. 두 인라인 <script> 블록 모두 node --check 통과. APP_VERSION 1.45.12->1.45.13, sw.js CACHE v154->v155.",
-      "commit": null
-    },
     {
       "cycle": 61,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-22T08:15:00.000Z",
       "summary": "critique 계획대로 CSV 임포트가 시세평가 자산(fx/gold/stock)을 거래 상대로 매칭하던 결함을 차단. csvRowToImportTxn()의 findAsset을 nm=>(assets||[]).find(a=>a.name.trim()===nm&&!isMarketValued(a))로 바꿔, 이름이 같아도 fx/gold/stock 타입 자산은 매칭 후보에서 제외되고 기존 unmatched 경로로 빠지도록 했다(수동 입력 폼이 이미 openAssetPicker의 excludeMarketValued:true로 취하던 방침과 일치). buildImportPreview/assetUnmatchedCount는 unmatched 배열을 그대로 재사용하므로 수정 불필요. test/run.js에 지출/이체 각각 stock 타입 자산과 이름이 같아도 fromAssetId/toAssetId가 null로 남고 unmatched에 담기는 회귀 테스트 추가, 450/450 통과. 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.46.1->1.46.2, sw.js CACHE v163->v164.",
+      "commit": null
+    },
+    {
+      "cycle": 66,
+      "phase": "develop",
+      "timestamp": "2026-09-22T10:16:48.660Z",
+      "summary": "Explore 서브에이전트로 발견한 migrate()(index.html:1814)의 DB.owners 빈 배열 미처리 버그 수정. DB.owners=DB.owners||[...]는 []가 truthy라 owners가 빈 배열일 때 기본값(나/배우자/공용)으로 채워주지 못했다 — 바로 아래 DB.categories.income/expense는 같은 함수 안에서 이미 .length로 검사해 이 패턴을 피하고 있어 같은 함수 내 일관성 결함이었다. 정상 경로(delOwner가 0개로 삭제 못 하게 막음)로는 발생 못 하지만, 백업 JSON 복원(sanitizeBackup이 owners 필드를 전혀 검증하지 않음)으로 owners:[]가 들어오면 재현됨: 자산 등록 시 기본 owner가 DB.owners[0]=undefined가 되고 openOwnerPicker()는 고를 옵션이 0개인 빈 시트를 띄워 사용자가 귀속을 지정할 방법이 아예 없어진다. DB.owners=(DB.owners&&DB.owners.length)?DB.owners:[...]로 categories와 같은 패턴으로 수정. 회귀 테스트 3개 추가: migrate()에 owners:[]를 직접 넣어 기본값 채워지는지, owners에 값이 있으면 그대로 유지되는지, restoreBackup()에 owners:[]인 백업을 통째로 넣어도 기본값이 복구되는지. deepStrictEqual로 vm 샌드박스 배열과 host 배열을 비교할 때 cross-realm 프로토타입 불일치로 오탐 실패하는 걸 발견해([...sandbox.DB.owners]로 host 배열로 변환 후 비교) 테스트를 고쳤다. 두 인라인 <script> 블록 모두 node --check 파싱 확인, 453/453 통과(기존 450 + 신규 3). APP_VERSION 1.46.2->1.46.3, sw.js CACHE v164->v165.",
       "commit": null
     }
   ]

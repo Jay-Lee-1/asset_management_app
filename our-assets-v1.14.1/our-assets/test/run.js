@@ -1179,6 +1179,28 @@ test('migrate: emptyDB()가 이미 정해둔 themeMode/assetSort/groupOrder는 m
   assert.strictEqual(sandbox.DB.settings.themeMode, 'dark');
   assert.strictEqual(sandbox.DB.settings.assetSort, 'name');
 });
+test('migrate: DB.owners가 빈 배열이면(categories와 마찬가지로) 기본 귀속 3개로 채워진다', () => {
+  sandbox.DB = {
+    version: 5, catsV2: true,
+    settings: { themeMode: 'system', includeScheduled: false, assetSort: 'custom', groupOrder: [...sandbox.DEFAULT_GROUP_ORDER] },
+    owners: [],
+    assets: [], txns: [], recurrences: [], inquiries: [],
+    categories: { expense: [...sandbox.EXP_CATS_DEFAULT], income: [...sandbox.INC_CATS_DEFAULT], saving: [...sandbox.SAV_CATS_DEFAULT] },
+  };
+  sandbox.migrate();
+  assert.deepStrictEqual([...sandbox.DB.owners], ['나', '배우자', '공용'], '[]는 truthy라 ||로는 안 잡히므로 categories처럼 .length로 검사해야 함');
+});
+test('migrate: DB.owners가 이미 값을 가지고 있으면 그대로 유지한다', () => {
+  sandbox.DB = {
+    version: 5, catsV2: true,
+    settings: { themeMode: 'system', includeScheduled: false, assetSort: 'custom', groupOrder: [...sandbox.DEFAULT_GROUP_ORDER] },
+    owners: ['커스텀귀속'],
+    assets: [], txns: [], recurrences: [], inquiries: [],
+    categories: { expense: [...sandbox.EXP_CATS_DEFAULT], income: [...sandbox.INC_CATS_DEFAULT], saving: [...sandbox.SAV_CATS_DEFAULT] },
+  };
+  sandbox.migrate();
+  assert.deepStrictEqual(sandbox.DB.owners, ['커스텀귀속']);
+});
 
 /* ---------- updateNwHistory/pruneNwHistory: 순자산 추이 일별 스냅샷 ---------- */
 test('updateNwHistory: 새 날짜면 스냅샷을 추가한다', () => {
@@ -2195,6 +2217,12 @@ test('restoreBackup: migrate() 도중 손상된 데이터로 throw하면 DB가 �
   } finally {
     sandbox.migrate = realMigrate;
   }
+});
+test('restoreBackup: 백업 JSON에 owners:[]가 들어있어도 migrate()가 기본 귀속 3개로 복구한다', () => {
+  sandbox.DB = { assets: [{ id: 'old' }], txns: [], categories: { expense: ['옛카테고리'] }, catIcon: {}, catVar: {}, budgets: {}, owners: ['나'], recurrences: [] };
+  const backup = { assets: [{ id: 'new1' }], txns: [], owners: [] };
+  sandbox.restoreBackup(backup);
+  assert.deepStrictEqual([...sandbox.DB.owners], ['나', '배우자', '공용'], '빈 owners 배열로 복원해도 자산 등록 시 귀속을 고를 수 있어야 함');
 });
 
 /* ---------- sanitizeAmount/sanitizeBackup: 백업 복원·클라우드 동기화 데이터 숫자 필드 검증 ---------- */

@@ -1289,7 +1289,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.2';
+const APP_VERSION='1.46.3';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1811,7 +1811,7 @@ function migrate(){
  if(!Array.isArray(DB.settings.groupOrder)||!DB.settings.groupOrder.length)DB.settings.groupOrder=[...DEFAULT_GROUP_ORDER];
  DEFAULT_GROUP_ORDER.forEach(t=>{if(!DB.settings.groupOrder.includes(t))DB.settings.groupOrder.push(t)});
  delete DB.settings.showScheduled; /* 예정 표시는 홈 '예정 포함'으로 통합 */
- DB.owners=DB.owners||['나','배우자','공용'];
+ DB.owners=(DB.owners&&DB.owners.length)?DB.owners:['나','배우자','공용'];
  DB.budgets=DB.budgets||{};
  DB.budgetHistory=DB.budgetHistory||{}; /* 카테고리→[{from:"YYYY-MM",amount}] 시점별 예산 이력(오름차순) — budgetForMonth()가 조회 */
  if(!DB._budgetHistV1){ /* 기존 DB.budgets(시간 축 없는 flat 값)를 그 시절 항상 적용되던 대로 아주 이른 시점부터 유효한 단일 이력 항목으로 1회 변환 — 기존 사용자 화면을 그대로 보존 */
