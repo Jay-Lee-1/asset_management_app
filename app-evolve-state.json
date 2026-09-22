@@ -1,15 +1,8 @@
 {
   "cycle": 69,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 64,
-      "phase": "review",
-      "timestamp": "2026-09-22T02:07:42.078Z",
-      "summary": "cycle64 develop 커밋(7e957bf, assetSelPartial)을 검토. ledgerSelPartial(cycle62)과 동일한 검증된 패턴(#assetBody만 갱신, updateSelBottom/fitAll 재호출, #assetBody 못 찾으면 renderAssets()로 폴백)을 그대로 재사용했음을 확인. assetBodyHTML()이 순자산 캐러셀/히스토리 차트와 무관하게 자산 목록/선택 상태만 그리므로 부분 갱신으로도 값이 어긋나지 않고, 선택 모드와 편집 모드(ST.editAssets)가 상호 배타적이라 두 상태가 섞여 깨질 조건도 없음. 신규 테스트 7개 포함 두 인라인 <script> 블록 모두 node --check 통과, 439/439 회귀 테스트 통과 재확인. 실제 버그 없어 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 64,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-22T22:31:00.000Z",
       "summary": "Explore 서브에이전트로 발견한 recHistFieldsChanged()(index.html:3507)의 weekend(주말 보정) 필드 누락 버그 수정. recDates()/shiftWeekend()(1908-1918행)는 range 안의 모든 회차(과거 포함)에 r.weekend를 그대로 적용해 날짜를 재계산하는데, recHistFieldsChanged는 주석에서 '메모/주말규칙 등은 소급 적용돼도 무해하다'고 잘못 전제하고 weekend를 비교 필드에서 빼놓아 weekend만 바뀐 편집은 saveRec()의 recSaveScopeConfirm('이 내역만/이후부터/전체') 분기를 건너뛰고 DB.recurrences[i]=d로 바로 덮어썼다. 재현: 매월 1일 monthly 반복(weekend:'none')을 만들어 토요일에 걸린 과거 회차 하나에 실제 금액을 입력(r.edits)해두고, 이후 그 반복의 weekend만 'later'로 바꾸면 그 과거 회차 날짜가 조용히 월요일로 밀리면서 r.edits/skip/confirmedDates에 저장된 날짜 키가 고아가 되어 사용자 모르게 미확인 기본금액 거래로 되돌아간다. recHistFieldsChanged의 필드 배열에 'weekend'를 추가하고 주석을 정정, test/run.js의 기존 두 테스트를 갱신(weekend 변경 시 true 검증 추가, 메모전용 변경만 false로 남기는 별도 테스트로 분리). 두 인라인 <script> 블록 모두 node --check 파싱 확인, 471/471 통과. APP_VERSION 1.46.8->1.46.9, sw.js CACHE v170->v171.",
+      "commit": null
+    },
+    {
+      "cycle": 69,
+      "phase": "review",
+      "timestamp": "2026-09-22T23:20:00.000Z",
+      "summary": "develop 커밋(62ab575, recHistFieldsChanged에 weekend 필드 추가)을 검토. shiftWeekend()가 recDates()의 push() 경로에서 range 안의 모든 후보 날짜(from~to, 과거 포함)에 r.weekend를 무조건 적용함을 코드로 재확인해, weekend 변경이 과거 회차 날짜도 실제로 재계산한다는 커밋 설명이 정확함을 검증했다. saveRec()이 recHistFieldsChanged()===true일 때만 recSaveScopeConfirm('이 내역만/이후부터/전체')로 분기하고 false면 DB.recurrences[i]=d로 즉시 덮어쓰는 구조를 재확인해, weekend 누락이 실제로 확인창을 건너뛰게 만드는 경로였음을 검증. test/run.js의 분리된 두 테스트(weekend 변경 시 true, 메모만 변경 시 false)가 정확히 대칭적으로 회귀를 커버함을 확인. node test/run.js 471/471 통과, 두 인라인 <script> 블록 모두 node --check 파싱 통과 재확인. 실제 버그 없어 코드 변경 없음.",
       "commit": null
     }
   ]
