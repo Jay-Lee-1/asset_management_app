@@ -1,15 +1,12 @@
 {
   "cycle": 66,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "지출 분석(Spend Analysis)에 전월/최근 N개월 평균 대비 추세 표시 추가",
+    "why": "openSpendAnalysis()(index.html 근처 4100-4124)가 spendByCategory(y,m)로 항상 딱 한 달치만 보여주고 전월/평균 대비 비교가 전혀 없다. DB.budgetHistory와 budgetForMonth()가 이미 시계열을 다루고, History 탭의 histTotHTML()에 이미 \"월평균\" 토글이 있어 평균 계산 로직 자체는 코드베이스에 이미 존재하는데 카테고리별 분석에는 연결이 안 돼 있다. \"이번 달에 평소보다 많이 썼나\"라는 가계부 앱의 핵심 니즈를 지원하지 못하는 실질적 제품 공백.",
+    "approach": "1) spendTrend(cat,y,m,n=3) 순수 함수를 spendByCategory 옆에 추가 - 최근 n개월 spendByCategory 결과를 집계해 {avg, prevMonth, deltaPct} 반환. 2) openSpendAnalysis()의 카테고리별 행(약 4103-4113행)에 지난달/평균 대비 델타 배지 추가(기존 .spend-row/.p/.bgt 스타일과 over/budgeted 클래스 재사용). 3) totalBudgetSummary 헤더 카드에도 전체 지출 전월 대비 델타 표시. 4) 새 데이터 모델 불필요, 순수 파생 계산 + 마크업이라 한 사이클 내에서 완결 가능. test/run.js에 spendTrend 회귀 테스트 추가."
+  },
   "history": [
-    {
-      "cycle": 61,
-      "phase": "critique",
-      "timestamp": "2026-09-21T15:10:00.000Z",
-      "summary": "Explore 서브에이전트로 앱 전체를 구조적으로 재검토(render* 스모크/esc 스윕/캘린더 캐싱/반복종료조건/자산명·메모 trim/num 부호/sanitizeBackup/CSV import 흐름 및 same-name 검증/FX 통화 피커/stockCode 검증/recHistFieldsChanged startDate/addBalanceAdjust 부채 방향/homeAlerts OS 알림/RANGE_FROM 가드 등 최근 완료 항목은 재탐색 금지 지시). 예산(spendByCategory 등), 시세평가 자산 재검토(detectStaleMarketValuedTxns), netlify 함수 폴백 체인은 이미 견고해 기각. 순자산 SVG 차트(nwHistoryCard)의 접근성 공백은 옆에 이미 텍스트 요약(범위+증감)이 있어 손실이 적어 후순위. window에 'online' 이벤트 리스너가 전무해 pushCloud/pullCloud가 CLOUD_SYNC_STATE='error'로 멈춘 뒤 네트워크가 복구돼도 자동 재시도되지 않는(사용자가 다시 편집하거나 앱을 백그라운드/포그라운드 전환해야만 재트리거되는) 클라우드 동기화 공백을 신규 영역으로 채택 — 오프라인 편집 후 재연결만 하고 방치하면 무기한 미동기화 위험. advance에서 online 이벤트 핸들러 추가 + 순수 함수 shouldRetryCloudSync(cloudUid,syncState,navigatorOnLine) 분리 및 테스트 5개 추가하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 61,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-09-22T11:07:57.529Z",
       "summary": "develop 커밋(b795946, migrate()의 DB.owners 빈 배열 미처리 수정)을 검토. DB.owners=(DB.owners&&DB.owners.length)?DB.owners:[...] 패턴이 바로 위 DB.settings.groupOrder(1811행, Array.isArray+.length 검사)와 DB.categories 계열이 이미 쓰던 .length 검사 방식과 일치함을 확인 — []가 truthy라 ||만으로는 못 잡는다는 커밋 설명이 정확함. 정상 경로(delOwner가 0개 삭제를 막음)로는 재현 안 되고 sanitizeBackup()이 owners 필드를 검증하지 않아 백업 복원으로만 재현된다는 분석도 grep으로 재확인. deepStrictEqual 비교 시 vm 샌드박스 배열을 [...sandbox.DB.owners]로 host 배열로 변환해 cross-realm 프로토타입 불일치를 피한 처리도 올바름. node test/run.js 453/453 통과 재확인. 문제 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 66,
+      "phase": "critique",
+      "timestamp": "2026-09-22T12:09:52.737Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 전략적 시야에서 재검토(render*/부분갱신/CSV/FX/stockCode/recHist/addBalanceAdjust/homeAlerts/cloud sync/fixShortfall/doLogin/costBasis/카테고리 캐스케이드/Pro 스텁/PIN 부재/단일파일 구조/CI/History 페이지네이션/migrate owners/nwHistoryCard aria-label/자산그룹 재정렬 접근성/localStorage 실패 처리 등 최근 완료·기각 항목은 재탐색 금지 지시). openSpendAnalysis()(index.html 4100-4124, spendByCategory/budgetForMonth 기반)가 항상 단일 월만 보여주고 전월/평균 대비 추세 비교가 전혀 없음을 확인 — DB.budgetHistory가 이미 시계열이고 History 탭 histTotHTML()에 이미 월평균 토글이 존재해 평균 계산 로직 자체는 코드베이스에 있는데 카테고리별 분석에는 연결이 안 됨. 3개월 이상 지출 이력이 있는 달에서 카테고리 지출이 평소보다 40% 늘어도 앱 안에서 알 방법이 없고 History 탭을 월별로 수동으로 넘겨봐야 함. 온보딩 플로우 부재(기존 empty-state CTA로 어느 정도 완화됨)와 debt/real-estate 자산의 이체 상대 처리(balancesUpTo의 sign 처리가 이미 정확해 보여 구체적 버그 미발견)는 근거 부족으로 기각. advance에서 spendTrend(cat,y,m,n=3) 순수 함수 추가 후 openSpendAnalysis 카테고리 행과 totalBudgetSummary 헤더에 전월/평균 대비 델타 배지를 표시하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     }
   ]
