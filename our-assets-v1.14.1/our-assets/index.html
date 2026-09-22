@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.8';
+const APP_VERSION='1.46.9';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3503,8 +3503,9 @@ function saveRec(){
  else{DB.recurrences.push(Object.assign({},d,{id:uid(),active:d.active!==false,skip:[],edits:{},autoConfirm:d.autoConfirm!==false,confirmedDates:[],varying:!!d.varying}))}
  save();closeSheet();renderCurrent();toast(wasEditing?'반복을 수정했어요':'반복 설정을 저장했어요');
 }
-/* 반복 이력(과거 회차)에 영향을 주는 필드만 비교: 메모/주말규칙 등은 소급 적용돼도 무해하다 */
-function recHistFieldsChanged(orig,d){return ['fromAssetId','toAssetId','amount','category','day','freq','startDate'].some(k=>orig[k]!==d[k])}
+/* 반복 이력(과거 회차)에 영향을 주는 필드만 비교: 메모는 소급 적용돼도 무해하지만,
+   weekend는 recDates()의 shiftWeekend()가 과거 회차의 날짜도 그대로 재계산해 바꾸므로 포함해야 한다 */
+function recHistFieldsChanged(orig,d){return ['fromAssetId','toAssetId','amount','category','day','freq','startDate','weekend'].some(k=>orig[k]!==d[k])}
 /* future 분기(recSave/splitRecurrenceAt)에서 반복을 둘로 쪼갤 때, 개별 회차의 skip(이 날만 삭제)·
    edits(이 날만 수정)를 effectiveDate 기준으로 나눠준다 — 안 나누고 새 반복에 그냥 []/{}를 주면
    effectiveDate 이후로 남아있던 삭제·수정 이력이 split 순간 조용히 사라진다(되살아나거나 원상복구됨) */

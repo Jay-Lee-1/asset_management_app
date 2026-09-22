@@ -1,15 +1,8 @@
 {
   "cycle": 69,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 64,
-      "phase": "develop",
-      "timestamp": "2026-09-22T01:00:00.000Z",
-      "summary": "general-purpose 서브에이전트로 발견한 assetToggleSel()/assetSelAll()(index.html:2713-2714, Assets 탭 다중선택)의 전체 재렌더 버그 수정. cycle62에서 이미 같은 문제를 ledgerSelPartial()(Ledger)과 refreshPlanBody()(Plan)로 고쳤지만, Assets 탭 자체의 다중선택 토글/전체선택 경로는 renderAssets()를 그대로 호출해 체크박스를 탭할 때마다 #page-assets 전체(순자산 캐러셀+히스토리 차트 포함)를 다시 그리고 있었다. 재현: 다중선택 모드에서 여러 자산 행을 연속으로 탭하면 매번 캐러셀/차트가 통째로 재구성돼 화면이 깜빡이고, 키보드(Enter/Space, rowKeydown)로 토글하면 방금 조작한 행의 tabindex 노드가 파괴돼 포커스가 body로 빠져 키보드 탐색이 끊긴다(ledgerSelPartial 도입 사유와 동일한 접근성 회귀). assetBodyHTML/refreshAssetBody 패턴을 본떠 assetSelPartial()을 추가해(#assetBody만 innerHTML 교체 + updateSelBottom() + fitAll()) assetToggleSel/assetSelAll이 이를 우선 쓰고 #assetBody를 못 찾을 때만 renderAssets()로 폴백하도록 수정. test/run.js에 assetBody DOM 스텁(ledgerCard 스텁과 동일 패턴)과 updateSelBottom 카운팅 스파이를 추가하고, assetSelPartial 성공/폴백, assetToggleSel on/off, assetSelAll 전체선택/해제 등 회귀 테스트 7개 추가. 두 인라인 <script> 블록 모두 node --check 파싱 확인, 439/439 통과(기존 432 + 신규 7). APP_VERSION 1.45.18->1.45.19, sw.js CACHE v160->v161.",
-      "commit": null
-    },
     {
       "cycle": 64,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-22T21:12:00.000Z",
       "summary": "critique 계획대로 nwChartPath()(index.html:2165)의 x좌표 계산을 배열 인덱스 기반에서 실제 날짜 간격 기반으로 교체. todayStr/addDays 옆에 순수 헬퍼 daysBetween(a,b) 추가(두 YYYY-MM-DD 문자열의 일수 차, Math.round 사용)하고, stepX=W/(pts.length-1) 방식을 totalDays=Math.max(1,daysBetween(pts[0].date,pts[last].date)) 기준 x=daysBetween(pts[0].date,p.date)/totalDays*W로 재작성했다. y축(min/max/span)과 pts.length<2/span===0 얼리리턴은 그대로 유지, DB 스키마·updateNwHistory·pruneNwHistory·호출부(nwHistoryCard)는 변경 없음. test/run.js의 기존 nwChartPath 테스트 3개에 date 필드를 채워 넣고, 신규 회귀 테스트 3개 추가: 매일 등간격 스냅샷에서는 기존과 동일하게 x도 등간격인지(회귀 방지), 일 단위+월 단위 압축이 섞인 불균등 간격에서 중간 점 x가 인덱스 기준 중앙(W/2)이 아니라 날짜 비율에 정확히 비례하는지, 날짜가 늘수록 x가 단조 비감소이며 daysBetween에 선형 비례하는지. FUNCTIONS 목록에 daysBetween 추가. 두 인라인 <script> 블록 모두 node --check 파싱 확인, 471/471 통과(기존 468 + 신규 3). APP_VERSION 1.46.7->1.46.8, sw.js CACHE v169->v170.",
+      "commit": null
+    },
+    {
+      "cycle": 69,
+      "phase": "develop",
+      "timestamp": "2026-09-22T22:31:00.000Z",
+      "summary": "Explore 서브에이전트로 발견한 recHistFieldsChanged()(index.html:3507)의 weekend(주말 보정) 필드 누락 버그 수정. recDates()/shiftWeekend()(1908-1918행)는 range 안의 모든 회차(과거 포함)에 r.weekend를 그대로 적용해 날짜를 재계산하는데, recHistFieldsChanged는 주석에서 '메모/주말규칙 등은 소급 적용돼도 무해하다'고 잘못 전제하고 weekend를 비교 필드에서 빼놓아 weekend만 바뀐 편집은 saveRec()의 recSaveScopeConfirm('이 내역만/이후부터/전체') 분기를 건너뛰고 DB.recurrences[i]=d로 바로 덮어썼다. 재현: 매월 1일 monthly 반복(weekend:'none')을 만들어 토요일에 걸린 과거 회차 하나에 실제 금액을 입력(r.edits)해두고, 이후 그 반복의 weekend만 'later'로 바꾸면 그 과거 회차 날짜가 조용히 월요일로 밀리면서 r.edits/skip/confirmedDates에 저장된 날짜 키가 고아가 되어 사용자 모르게 미확인 기본금액 거래로 되돌아간다. recHistFieldsChanged의 필드 배열에 'weekend'를 추가하고 주석을 정정, test/run.js의 기존 두 테스트를 갱신(weekend 변경 시 true 검증 추가, 메모전용 변경만 false로 남기는 별도 테스트로 분리). 두 인라인 <script> 블록 모두 node --check 파싱 확인, 471/471 통과. APP_VERSION 1.46.8->1.46.9, sw.js CACHE v170->v171.",
       "commit": null
     }
   ]
