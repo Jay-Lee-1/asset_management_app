@@ -5026,6 +5026,37 @@ test('renderHistory: 오늘보다 미래 날짜의 거래는 예정 라벨(sch-d
   assert.ok(listHtml.includes('sch-dot'), '오늘보다 미래인 거래는 예정 표시(sch-dot)가 나와야 함');
   assert.ok(listHtml.includes('>예정<'), '자산 정보가 없는 예정 거래는 "예정" 라벨이 나와야 함');
 });
+/* app-evolve cycle65 develop: DB.settings.histSortAsc는 기본값도, 기존 사용자 1회 마이그레이션(_sortV2)도
+ * 둘 다 true(오름차순)라 사실상 전체 사용자가 이 상태였는데, updateHist()의 페이징이 actual.slice(0,shown)
+ * 으로 배열 앞(오름차순이면 가장 오래된 기록)부터 잘랐다. 날짜 그룹 렌더(groupHTML)는 항상 최신순 고정이라
+ * "더보기"를 눌러야만 최근 내역에 닿는 역전이 생겼음 — sortAsc일 때는 배열 뒤(최신 쪽)에서 잘라야 한다. */
+test('updateHist: sortAsc(오름차순) 상태에서도 첫 페이지는 가장 최근 내역부터 채워진다(app-evolve cycle65)', () => {
+  setupHistoryDB();
+  sandbox.ST.hist.sortAsc = true;
+  sandbox.DB.assets = [{ id: 'a1', name: '주계좌', owner: '나', type: 'cash', baseAmount: 1000000 }];
+  sandbox.DB.txns = Array.from({ length: 25 }, (_, i) => {
+    const day = String(i + 1).padStart(2, '0');
+    return { id: 't' + day, date: `2026-05-${day}`, type: 'expense', category: '식비', memo: 'd' + day, amount: 1000 + i, fromAssetId: 'a1' };
+  });
+  sandbox.renderHistory();
+  const listHtml = sandbox.histListEl.innerHTML;
+  assert.ok(listHtml.includes('d25'), '첫 페이지에 가장 최근 내역(5/25)이 보여야 함');
+  assert.ok(listHtml.includes('d06'), '20건짜리 첫 페이지는 5/06까지 포함돼야 함(최근 20건)');
+  assert.ok(!listHtml.includes('d05'), '가장 오래된 5건(5/01~5/05)은 "더보기" 전에는 안 보여야 함');
+  assert.ok(listHtml.includes('5건 남음'), '숨겨진 5건이 더보기 배지에 정확히 표시돼야 함');
+});
+test('updateHist: sortAsc:false(기본값)에서는 기존처럼 최신 20건이 첫 페이지에 보인다', () => {
+  setupHistoryDB();
+  sandbox.DB.assets = [{ id: 'a1', name: '주계좌', owner: '나', type: 'cash', baseAmount: 1000000 }];
+  sandbox.DB.txns = Array.from({ length: 25 }, (_, i) => {
+    const day = String(i + 1).padStart(2, '0');
+    return { id: 't' + day, date: `2026-05-${day}`, type: 'expense', category: '식비', memo: 'd' + day, amount: 1000 + i, fromAssetId: 'a1' };
+  });
+  sandbox.renderHistory();
+  const listHtml = sandbox.histListEl.innerHTML;
+  assert.ok(listHtml.includes('d25'), '첫 페이지에 가장 최근 내역이 보여야 함');
+  assert.ok(!listHtml.includes('d05'), '가장 오래된 5건은 아직 안 보여야 함');
+});
 
 /* ---------- renderPlan: 렌더 함수 스모크 테스트 (app-evolve cycle57 critique/advance) ----------
  * render* 함수 중 실행 커버리지가 전혀 없던 유이한 함수(다른 하나는 정적 템플릿인 renderMenu)였다.

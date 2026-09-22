@@ -1289,7 +1289,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.0';
+const APP_VERSION='1.46.1';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3648,9 +3648,11 @@ function updateHist(){
  a.suji=a.income-a.expense-a.saving; sc.suji=sc.income-sc.expense-sc.saving;
  const totEl=$('histTotals');
  if(totEl)totEl.innerHTML=histTotHTML(a,sc,actual.length,sched.length,list);
- // 페이징: 실제 섹션에만 20개씩
+ // 페이징: 실제 섹션에만 20개씩. 날짜 그룹 렌더는 항상 최신순 고정이라(바로 아래),
+ // sortAsc(오름차순=과거→현재)일 때 slice(0,shown)으로 앞에서 자르면 매번 가장 오래된 기록부터
+ // 페이지가 채워져 "더보기"를 눌러야만 최근 내역에 닿는 역전이 생긴다 — 뒤(최신 쪽)에서 자른다.
  const PAGE=20,shown=H.page*PAGE;
- const actualShown=actual.slice(0,shown);
+ const actualShown=H.sortAsc?actual.slice(Math.max(0,actual.length-shown)):actual.slice(0,shown);
  const remain=actual.length-actualShown.length;
  // 날짜 그룹 렌더 (최신순 고정)
  const groupHTML=(arr)=>{

@@ -1,15 +1,8 @@
 {
   "cycle": 65,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 60,
-      "phase": "develop",
-      "timestamp": "2026-09-21T09:20:17.847Z",
-      "summary": "Explore/조사 서브에이전트로 발견한 addBalanceAdjust()/updateBalanceAdjust()(index.html:2633-2654)의 부채(debt) 자산 잔액 조정 방향 버그 수정. balancesUpTo()(2070행)는 부채 자산에 sign=-1을 매겨 toAssetId로 들어오는 금액은 잔액을 줄이고(상환) fromAssetId로 나가는 금액은 잔액을 늘리도록(추가 대출) 설계돼 있고, 이는 balanceAt()이 부채를 항상 잔여원금(양수)으로 보여주는 관례와 일치한다. 그런데 addBalanceAdjust(asset,gap)/updateBalanceAdjust(asset,entered)는 이 부호 관례를 모른 채 현금 자산과 똑같이 const inc=gap>0(참이면 toAssetId=자산, 입금 취급)만으로 방향을 정해, 부채가 늘어야 하는 상황(gap>0, 재등록 시 실제 빚이 base보다 큼)에 오히려 toAssetId=자산으로 기록해 잔액이 줄어드는 조정 내역이 만들어졌다(재현: debt base=100000에서 addBalanceAdjust(asset,+50000) 호출 시 결과 잔액이 150000이 아니라 50000). 두 함수 모두 const inc=asset.type==='debt'?gap<0:gap>0로 부채일 때 방향을 반전하도록 수정(gap>0=빚 증가=fromAssetId 경로, gap<0=상환=toAssetId 경로). 회귀 테스트 3개 추가: addBalanceAdjust의 부채 증가(gap>0)/상환(gap<0) 두 케이스, updateBalanceAdjust의 기존 조정 내역 갱신 경로에서도 방향이 올바른지(_balCache 캐싱 특성상 override invalidateBalances 및 balanceAt 재확인 전 캐시 클리어 필요, 기존 cash 테스트와 동일 패턴). 두 인라인 <script> 블록 모두 node --check 파싱 확인, 403/403 통과. APP_VERSION 1.45.10->1.45.11, sw.js CACHE v152->v153.",
-      "commit": "04ce6cf"
-    },
     {
       "cycle": 60,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-22T00:00:00.000Z",
       "summary": "fx/gold/stock 자산에 선택적 costBasis(매입 원가) 필드와 assetGainLoss() 손익 계산 함수를 추가하고, assetSubline()에 손익 배지(+/-%, +/-원)를 표시. SANITIZE_QTY_FIELDS에 costBasis 추가, APP_VERSION/SW CACHE 버전 올림, test/run.js에 회귀 테스트 8개 추가(447/447 통과).",
+      "commit": null
+    },
+    {
+      "cycle": 65,
+      "phase": "develop",
+      "timestamp": "2026-09-22T05:13:31.336Z",
+      "summary": "Explore 서브에이전트로 발견한 전체내역(History) 탭 페이지네이션 역전 버그 수정. DB.settings 기본값(index.html:1810)과 기존 사용자 1회 마이그레이션(_sortV2, 1830행)이 모두 histSortAsc=true를 강제해 사실상 전체 사용자의 ST.hist.sortAsc가 true(오름차순)였는데, updateHist()(3653행)의 페이징이 actual.slice(0,shown)으로 배열 앞부터 잘라 정렬 방향과 무관하게 오름차순일 때는 가장 오래된 기록부터 페이지를 채웠다. 날짜 그룹 렌더(groupHTML)는 항상 최신순 고정(3656행 주석 '최신순 고정')이라 이 역전이 시각적으로도 어긋났고, 사용자가 정렬을 되돌릴 수 있는 histToggleSort()(3772행)는 어떤 UI에도 연결돼 있지 않은 죽은 코드라 스스로 고칠 방법도 없었다. 재현: 전체내역 탭을 기본 범위(올해)로 열면 올해 완료된 거래가 20건을 넘는 순간부터 첫 화면이 1월 내역부터 보이고, 최근 거래를 보려면 '더보기'를 여러 번 눌러야 했다. actualShown을 H.sortAsc?actual.slice(Math.max(0,actual.length-shown)):actual.slice(0,shown)로 바꿔 정렬 방향과 무관하게 항상 최신 내역부터(뒤에서) 채우도록 수정 — groupHTML이 날짜 그룹을 항상 최신순으로 재정렬하므로 actualShown 내부 순서는 렌더 결과에 영향 없음. 회귀 테스트 2개 추가: sortAsc:true에서 25건 중 최근 20건(5/06~5/25)만 첫 페이지에 보이고 가장 오래된 5건(5/01~5/05)은 '더보기' 배지 뒤에 숨는지, sortAsc:false(기본값)에서도 기존처럼 최신 20건이 보이는지. 두 인라인 <script> 블록 모두 node --check 파싱 확인, 449/449 통과(기존 447 + 신규 2). APP_VERSION 1.46.0->1.46.1, sw.js CACHE v162->v163.",
       "commit": null
     }
   ]
