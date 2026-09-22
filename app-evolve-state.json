@@ -1,15 +1,12 @@
 {
   "cycle": 64,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "fx/gold/stock 자산 매입 원가(cost basis) 기반 손익 추적 추가",
+    "why": "assetEval()(index.html:2020-2027)이 qty×현재가로 평가액만 계산할 뿐 매입 원가 필드가 스키마·migrate()·renderAssetSheet()(2771행) 어디에도 없어, 투자자산(fx/gold/stock)의 손익/수익률을 전혀 보여주지 못한다. grep으로 손익/수익률/평가손익/gainLoss/costBasis/avgPrice가 전무함을 확인. 순자산 추이·예산·지출 분석까지 갖춘 '우리의 자산' 앱에서 투자자산의 가장 기본적인 정보(얼마 벌었는지/잃었는지)가 빠진 실질적 제품 공백.",
+    "approach": "fx/gold/stock 자산에 선택적 costBasis(원화, number) 필드 추가 — 미설정 시 undefined 유지, 0으로 기본값을 두지 않는다(rateUnknown()과 동일한 '모름 vs 0원' 구분 패턴, 0으로 두면 손익 -100%로 오표시됨). migrate()는 백필 불필요(옵트인이라 undefined-safe), sanitizeBackup()의 SANITIZE_FREE_FIELDS(~4801행 부근)에 costBasis를 추가해 백업 복원 시 숫자로 정제되게 한다. renderAssetSheet()의 fx/gold/stock 분기(~2792-2807행)에 '매입 금액 (원, 선택)' 입력 하나를 추가하고 syncAssetInputs()/saveAsset()에 연결한다. assetEval() 옆에 순수 함수 assetGainLoss(a) 신설: costBasis 없으면 null, 있으면 {amount, pct} = assetEval(a)-a.costBasis 반환 — test/run.js에서 다른 순수 함수처럼 바로 단위테스트 가능. assetSubline()(2495행)에 assetGainLoss가 non-null일 때 손익 배지(+녹색/-빨강, 예: '+12.4% · +840,000원')를 fx/gold/stock 행에 표시. 테스트: assetGainLoss에 이익/손실/costBasis 미설정→null/0원 경계 케이스 3-4개 추가. 예상 규모: index.html+test/run.js 합쳐 약 120-180줄, 단일 세션에 끝낼 수 있는 크기, 스키마 마이그레이션 위험 없음, txns/balances/sync/CSV 경로 무관."
+  },
   "history": [
-    {
-      "cycle": 59,
-      "phase": "critique",
-      "timestamp": "2026-09-21T07:20:00.000Z",
-      "summary": "Explore 서브에이전트로 앱 전체를 구조적으로 재검토(render* 스모크/esc 스윕/캘린더 캐싱/반복종료조건/자산명·메모 trim/num 부호/sanitizeBackup/CSV import/FX 통화 피커/stockCode 검증/recHistFieldsChanged startDate 등 최근 완료 항목은 재탐색 금지 지시, 최근 20개 히스토리로 중복 제안 방지). homeAlerts()(index.html:5627-5645)가 오늘 확정 대기 이체(isDuePending)/임박한 저축 만기/예산 초과(budgetOverMulti)/오래된 시세 자산/클라우드 동기화 충돌을 이미 계산하지만 앱을 열어야만 보이는 인앱 카드로만 노출되고, 코드 전체(grep)와 sw.js(74줄) 어디에도 Notification/showNotification/push/notificationclick 핸들러가 전무함을 확인 - manifest.webmanifest·서비스워커·iOS 홈화면 아이콘까지 갖춘 설치형 PWA인데 그날 앱을 열지 않으면 오늘 낼 돈이나 내일 만기되는 저축을 알 길이 없는 실질적 제품 공백으로 채택(이전 히스토리에 없던 신규 영역). Naver 시세 스크래핑 취약성(rates.js/stock.js, 이미 3단 폴백+타임아웃+재시도로 충분히 견고), transfer 거래가 시세평가 자산을 가리켜 desync될 위험(openAssetPicker의 excludeMarketValued:true로 이미 guard돼 버그 아님 확인), 'Pro로 업그레이드' 버튼이 토스트만 띄우는 스텁(의도된 자리표시자로 보여 저위험)은 후순위로 기각. advance에서 homeAlerts()의 긴급 하위집합(오늘 confirm/mat 1~2일 이내/budgetOverMulti)을 설정 토글+Notification.requestPermission()+navigator.serviceWorker.ready.showNotification()+dedupe+sw.js notificationclick 핸들러로 로컬 알림화하는 계획(푸시 서버 없이 백그라운드/최소화 상태에서 동작하는 범위로 한정, iOS 완전종료 시 미보장을 설정 문구에 명시)을 pending_advance_plan에 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 59,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-09-22T02:07:42.078Z",
       "summary": "cycle64 develop 커밋(7e957bf, assetSelPartial)을 검토. ledgerSelPartial(cycle62)과 동일한 검증된 패턴(#assetBody만 갱신, updateSelBottom/fitAll 재호출, #assetBody 못 찾으면 renderAssets()로 폴백)을 그대로 재사용했음을 확인. assetBodyHTML()이 순자산 캐러셀/히스토리 차트와 무관하게 자산 목록/선택 상태만 그리므로 부분 갱신으로도 값이 어긋나지 않고, 선택 모드와 편집 모드(ST.editAssets)가 상호 배타적이라 두 상태가 섞여 깨질 조건도 없음. 신규 테스트 7개 포함 두 인라인 <script> 블록 모두 node --check 통과, 439/439 회귀 테스트 통과 재확인. 실제 버그 없어 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 64,
+      "phase": "critique",
+      "timestamp": "2026-09-22T03:20:00.000Z",
+      "summary": "Explore 서브에이전트로 앱 전체를 구조적으로 재검토(render*/esc/캘린더/부분갱신 전반(ledger·plan·assets)/반복종료조건/trim/부호/sanitizeBackup/CSV 흐름 전반/FX 피커/stockCode/recHistFieldsChanged startDate/addBalanceAdjust 부채방향/homeAlerts OS알림/cloud sync online 재시도/fixShortfall 기본일/doLogin 게스트데이터/Naver 시세 폴백/decidePushOutcome/카테고리 rename·삭제 캐스케이드/Pro 업그레이드 스텁/PIN 부재 등 최근 완료·기각 항목은 재탐색 금지 지시). fx/gold/stock 자산의 assetEval()(index.html:2020-2027)이 qty×현재가로 평가액만 계산할 뿐, 매입 시점 원가(cost basis) 필드가 스키마·migrate()·renderAssetSheet()(2771행) 어디에도 없어 손익/수익률을 전혀 보여주지 못함을 grep(손익/수익률/평가손익/gainLoss/costBasis/avgPrice 전무)으로 확인 — 순자산 추이·예산·지출 분석까지 갖춘 '우리의 자산' 앱에서 투자자산의 가장 기본적인 정보(얼마 벌었는지/잃었는지)가 빠진 실질적 제품 공백으로 채택. 단일 6299줄 파일의 모듈 경계 부재(리라이트 필요해 범위 초과), CI 미구성(프로세스성이라 저영향), allTxns/balancesUpTo 전체 재계산 부담(_balCache/_histCache/부분갱신으로 이미 완화됨)은 후순위로 기각. advance에서 fx/gold/stock 자산에 선택적 costBasis(원화) 필드 추가(미설정 시 undefined 유지, 0으로 기본값 두지 않음 — rateUnknown()과 동일한 '모름 vs 0원' 구분 패턴), sanitizeBackup()의 SANITIZE_FREE_FIELDS에 포함, renderAssetSheet()의 세 타입 분기에 '매입 금액(선택)' 입력 추가, assetEval() 옆에 순수 함수 assetGainLoss(a)(costBasis 없으면 null, 있으면 {amount,pct}) 신설, assetSubline()(2495행)에 손익 배지 표시하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     }
   ]
