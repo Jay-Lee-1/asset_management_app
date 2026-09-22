@@ -1,15 +1,12 @@
 {
   "cycle": 67,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "varyingRecs()가 daily/weekly 반복거래를 제외해 변동 카테고리 '실제 금액 입력' 알림이 전혀 안 뜸",
+    "why": "renderRecSheet()의 주기 선택(monthly/weekly/daily/yearly)과 카테고리 관리의 '변동' 지정(toggleCatVarUI)은 주기와 무관하게 자유롭게 조합할 수 있는데, 실제 금액을 받아 r.edits[date]에 채워 넣는 유일한 경로인 varyingRecs()(index.html:5510)가 r.freq==='monthly'||r.freq==='yearly'로만 필터링한다. 홈 화면 알림 카드(quickAmountCards, 5559/5750)와 빠른입력 시트(openQuickList/openQuickAmount, 5521)가 모두 이 함수 하나에만 의존하므로, daily/weekly 변동 반복거래는 회차가 도래해도 절대 프롬프트가 뜨지 않고 expandRec()(1961)이 항상 템플릿의 고정 amount를 그대로 써서 거래를 생성한다. 재현: 반복거래 추가 -> 주기 '매주' 또는 '매일' 선택 -> 카테고리를 '변동'으로 지정 -> 저장 -> 회차가 지나도 알림/빠른입력에 안 뜨고 고정 금액으로 조용히 거래가 쌓임 -> 이 부정확한 금액이 spendByCategory/budgetForMonth/totalBudgetSummary에 그대로 흘러 들어감. test/run.js:4095-4130의 varyingRecs 회귀 테스트 3건도 전부 freq:'monthly'만 다뤄 daily/weekly 커버리지가 없다.",
+    "approach": "varyingRecs()(index.html:5510)의 필터 조건 (r.freq==='monthly'||r.freq==='yearly')를 recDates()가 실제 지원하는 모든 주기(monthly/weekly/daily/yearly)로 확장한다. 신규 UI는 만들지 않고 기존 quickAmountCards()/openQuickList()의 다건 묶음 시트 패턴(vr.length===1이면 단건, 아니면 목록으로 묶는 기존 로직, 5521-5529)을 그대로 재사용한다. test/run.js에 daily/weekly 케이스의 varyingRecs 회귀 테스트를 기존 monthly 테스트 포맷(4095-4130)을 본떠 추가하고(과거 회차 포함/skip/edits 처리 확인), daily처럼 한 달에 다건이 쌓일 수 있는 경우에도 openQuickList의 기존 다건 묶음 흐름이 그대로 정상 동작하는지 함께 확인한다."
+  },
   "history": [
-    {
-      "cycle": 62,
-      "phase": "critique",
-      "timestamp": "2026-09-21T19:11:07.549Z",
-      "summary": "탐사 서브에이전트로 앱 전체를 구조적으로 재검토(render* 스모크/esc 스윕/캘린더 캐싱/selDay 부분갱신/반복종료조건/자산명·메모 trim/num 부호/sanitizeBackup/CSV import 흐름·same-name·negative amount·RANGE_FROM 가드/FX 통화 피커/stockCode 검증/recHistFieldsChanged startDate/addBalanceAdjust 부채 방향/homeAlerts OS 알림/cloud sync online 재시도 등 최근 완료 항목은 재탐색 금지 지시). wireMonthCarousel()(index.html:6001-6053)의 viewport._c 중복부착 가드가 DOM 노드에 붙는데, renderLedger()/renderPlan()이 page-ledger/page-plan의 innerHTML을 통째로 교체해 #ledgerVP/#planVP가 매번 새 노드가 되면서 가드가 무력화됨을 확인. selDay()는 이미 selDayPartial()(3019-3045)로 이 결함을 우회했지만, 원장 다중선택(ledgerToggleSel/ledgerSelAll, 3058-3059, 체크박스 탭마다 전체 renderLedger 재호출)과 Plan 탭 소유자/계좌 필터 전환(planOwner 3851/planAsset 3878-3880, 매번 전체 renderPlan 재호출)은 같은 결함을 그대로 갖고 있어, 다중선택 삭제나 필터 전환 같은 실사용 흐름에서 감지 안 되는 ResizeObserver+터치 리스너가 버려진 DOM 서브트리에 누적되고(메모리 누수) 키보드 토글 시 포커스가 body로 빠짐을 확인. SVG 순자산 차트 aria-label 누락(저영향·1줄 수정이라 advance감 아님), 카테고리/자산 삭제 캐스케이드(이미 undo/relink까지 탄탄), save() stringify(새 증거 없음)는 후순위로 기각. advance에서 ledgerSelPartial()(selDayPartial 패턴 재사용)과 assetBodyHTML/refreshAssetBody 패턴을 본뜬 planBodyHTML()/refreshPlanBody()로 #ledgerVP/#planVP 캐러셀 노드를 재사용하며 부분 갱신하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 62,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-09-22T15:05:00.000Z",
       "summary": "develop 커밋(fcfe1ea, doRenameOwner 활성 필터 동기화)을 검토. ST.assetOwner 기본값 'all'과 ST.plan.owner 기본값 '전체'가 DB.owners에는 결코 존재하지 않는 sentinel 값이라 old===old(DB.owners[i]의 실제 옛 이름)와 우연히 일치할 수 없음을 확인해 필터가 '전체' 상태일 때 의도치 않게 값이 바뀌는 경로가 없음을 재검증. renderAssets(2601행)/renderPlan(3877행)의 '귀속 사라지면 전체로' 가드가 정확히 같은 패턴(DB.owners.includes 체크)을 쓰고 있어 이름변경 직후 새 이름이 DB.owners[i]에 이미 반영된 상태와 맞물려 작동함을 코드로 확인. 새 회귀 테스트 2개(대상 필터가 함께 이동하는 경우/무관한 필터는 그대로인 경우) 포함 두 인라인 <script> 블록 모두 node --check 파싱 통과, node test/run.js 461/461 통과 재확인. 실제 버그 없어 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 67,
+      "phase": "critique",
+      "timestamp": "2026-09-22T16:10:00.000Z",
+      "summary": "Explore 서브에이전트로 앱 전체를 구조적으로 재검토(render*/esc/캘린더/부분갱신 전반(ledger·plan·assets)/반복종료조건/trim/부호/sanitizeBackup/CSV 흐름 전반/FX 피커/stockCode/recHistFieldsChanged startDate/addBalanceAdjust 부채방향/homeAlerts OS알림/cloud sync online 재시도/fixShortfall 기본일/doLogin 게스트데이터/costBasis 손익추적/Naver 시세 폴백/decidePushOutcome/카테고리 rename·삭제 캐스케이드/Pro 업그레이드 스텁/PIN 부재/단일파일 모듈화/CI 미구성/History 페이지네이션/migrate owners/nwHistoryCard aria-label/자산그룹 재정렬 접근성/localStorage 실패 처리/spendTrend 배지/doRenameOwner 필터 동기화 등 최근 완료·기각 항목은 재탐색 금지 지시). varyingRecs()(index.html:5510)가 (r.freq==='monthly'||r.freq==='yearly')로만 필터링해, renderRecSheet()의 주기 선택(monthly/weekly/daily/yearly)과 카테고리 관리의 '변동' 지정이 주기와 무관하게 자유 조합 가능함에도 daily/weekly 변동 반복거래는 회차가 도래해도 홈 화면 알림 카드(quickAmountCards)와 빠른입력 시트(openQuickList/openQuickAmount)에 전혀 뜨지 않아 expandRec()이 항상 템플릿 고정 amount로 거래를 생성함을 확인. 이 부정확한 금액이 spendByCategory/budgetForMonth/totalBudgetSummary에 그대로 흘러 들어감. test/run.js:4095-4130의 varyingRecs 회귀 테스트 3건도 전부 freq:'monthly'만 다뤄 daily/weekly 커버리지 없음을 확인. 예산 기능 전반(이미 촘촘한 테스트 존재), 백업/복원·PWA 등록 로직(표준 패턴, 특이 실패 시나리오 미확인), 카테고리 아이콘 피커 draft 전역변수(재현 가능한 손상 시나리오 미확인, 확신도 낮음)는 기각. advance에서 varyingRecs()의 freq 필터를 recDates()가 지원하는 모든 주기로 확장하고 기존 quickAmountCards/openQuickList 다건 묶음 패턴을 그대로 재사용하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     }
   ]
