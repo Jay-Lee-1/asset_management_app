@@ -1,15 +1,8 @@
 {
   "cycle": 65,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 60,
-      "phase": "review",
-      "timestamp": "2026-09-21T10:05:00.000Z",
-      "summary": "develop 커밋(04ce6cf, addBalanceAdjust/updateBalanceAdjust 부채 방향 수정)을 검토. balancesUpTo()의 sign[a.id]=(type==='debt'?-1:1) 관례와 고쳐진 inc=asset.type==='debt'?gap<0:gap>0 분기를 직접 대조: gap>0(부채 증가)일 때 inc=false→fromAssetId=asset(출금 방향)이 sign=-1과 맞물려 실제로 잔액을 늘리고, gap<0(상환)일 때 inc=true→toAssetId=asset(입금 방향)이 잔액을 줄이는지 논리적으로 재검증해 정확함을 확인. 새로 추가된 테스트 3개도 tautology가 아니라 sandbox.balanceAt()으로 최종 잔액이 실제로 150000/70000/200000이 되는지까지 end-to-end로 검증하고 있어 신뢰할 만함(단순히 inc 플래그만 assert하지 않음). addBalanceAdjust/updateBalanceAdjust 호출부가 index.html 전체에 2633/2647행 정의부 포함 2군데(2674 addBalanceAdjust, 2824 updateBalanceAdjust)뿐임을 grep으로 재확인해 놓친 호출부 없음. node test/run.js 403/403 통과 재확인. 문제 없음.",
-      "commit": null
-    },
     {
       "cycle": 60,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-22T05:13:31.336Z",
       "summary": "Explore 서브에이전트로 발견한 전체내역(History) 탭 페이지네이션 역전 버그 수정. DB.settings 기본값(index.html:1810)과 기존 사용자 1회 마이그레이션(_sortV2, 1830행)이 모두 histSortAsc=true를 강제해 사실상 전체 사용자의 ST.hist.sortAsc가 true(오름차순)였는데, updateHist()(3653행)의 페이징이 actual.slice(0,shown)으로 배열 앞부터 잘라 정렬 방향과 무관하게 오름차순일 때는 가장 오래된 기록부터 페이지를 채웠다. 날짜 그룹 렌더(groupHTML)는 항상 최신순 고정(3656행 주석 '최신순 고정')이라 이 역전이 시각적으로도 어긋났고, 사용자가 정렬을 되돌릴 수 있는 histToggleSort()(3772행)는 어떤 UI에도 연결돼 있지 않은 죽은 코드라 스스로 고칠 방법도 없었다. 재현: 전체내역 탭을 기본 범위(올해)로 열면 올해 완료된 거래가 20건을 넘는 순간부터 첫 화면이 1월 내역부터 보이고, 최근 거래를 보려면 '더보기'를 여러 번 눌러야 했다. actualShown을 H.sortAsc?actual.slice(Math.max(0,actual.length-shown)):actual.slice(0,shown)로 바꿔 정렬 방향과 무관하게 항상 최신 내역부터(뒤에서) 채우도록 수정 — groupHTML이 날짜 그룹을 항상 최신순으로 재정렬하므로 actualShown 내부 순서는 렌더 결과에 영향 없음. 회귀 테스트 2개 추가: sortAsc:true에서 25건 중 최근 20건(5/06~5/25)만 첫 페이지에 보이고 가장 오래된 5건(5/01~5/05)은 '더보기' 배지 뒤에 숨는지, sortAsc:false(기본값)에서도 기존처럼 최신 20건이 보이는지. 두 인라인 <script> 블록 모두 node --check 파싱 확인, 449/449 통과(기존 447 + 신규 2). APP_VERSION 1.46.0->1.46.1, sw.js CACHE v162->v163.",
+      "commit": null
+    },
+    {
+      "cycle": 65,
+      "phase": "review",
+      "timestamp": "2026-09-22T06:05:00.000Z",
+      "summary": "develop 커밋(325b22c, 전체내역 오름차순 페이지네이션 역전 수정)을 검토. splitHist()의 actual.sort(...)가 sortAsc일 때 배열을 오름차순(과거→최신)으로 정렬함(3570행)을 확인해, 새 slice(Math.max(0,length-shown))가 배열 뒤쪽(=최신 항목)을 정확히 잘라내는지 논리로 재검증 — sortAsc:false(내림차순, 최신이 앞)일 때 기존 slice(0,shown)과 대칭적으로 맞물림. histMore()가 page++만 하고 updateHist()를 재호출하는 구조상 shown이 커질수록 sortAsc 분기의 윈도우도 단조롭게 더 과거까지 넓어져 '더보기'를 눌러도 이미 보이던 최신 항목이 사라지지 않음을 확인. groupHTML은 어차피 항상 최신순으로 재정렬해 렌더하므로 actualShown 내부 순서 자체는 결과 마크업에 영향 없다는 커밋 설명도 코드로 확인. node test/run.js 449/449 통과 재확인. 문제 없음.",
       "commit": null
     }
   ]
