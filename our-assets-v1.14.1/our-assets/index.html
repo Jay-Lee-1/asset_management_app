@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.7';
+const APP_VERSION='1.46.8';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1414,6 +1414,7 @@ function rowKeydown(e,fn){if(e.key==='Enter'||e.key===' '){e.preventDefault();fn
 function todayStr(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
 let TODAY=todayStr();
 function addDays(s,n){const d=new Date(s+'T00:00:00');d.setDate(d.getDate()+n);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
+function daysBetween(a,b){return Math.round((new Date(b+'T00:00:00')-new Date(a+'T00:00:00'))/86400000)}
 function ym(s){const[Y,M]=s.split('-').map(Number);return{y:Y,m:M}}
 function inMonth(s,y,m){const p=ym(s);return p.y===y&&p.m===m}
 function lastDay(y,m){return new Date(y,m,0).getDate()}
@@ -2167,8 +2168,8 @@ function nwChartPath(pts,W,H){
  const vals=pts.map(p=>p.nw);
  const min=Math.min(...vals),max=Math.max(...vals);
  const span=(max-min)||1;
- const stepX=W/(pts.length-1);
- const coords=pts.map((p,i)=>[i*stepX,H-((p.nw-min)/span)*H]);
+ const totalDays=Math.max(1,daysBetween(pts[0].date,pts[pts.length-1].date));
+ const coords=pts.map(p=>[daysBetween(pts[0].date,p.date)/totalDays*W,H-((p.nw-min)/span)*H]);
  const line=coords.map((c,i)=>(i===0?'M':'L')+c[0].toFixed(1)+','+c[1].toFixed(1)).join(' ');
  const area=line+` L${coords[coords.length-1][0].toFixed(1)},${H} L0,${H} Z`;
  return {line,area};

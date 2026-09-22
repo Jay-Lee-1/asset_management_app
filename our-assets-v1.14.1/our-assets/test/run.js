@@ -65,7 +65,7 @@ function extractLet(name) {
 
 // 테스트 대상 + 그 대상이 내부에서 호출하는 순수 함수들.
 const FUNCTIONS = [
-  'lastDay', 'addDays', 'shiftWeekend', 'recDates', 'addMonthsStr', 'addMonths',
+  'lastDay', 'addDays', 'daysBetween', 'shiftWeekend', 'recDates', 'addMonthsStr', 'addMonths',
   'recNthDate', 'recCountUntil', 'truncateRecEnd', 'dateBelowRangeFloor', 'recalcEndCond', 'isVarCat', 'setCatVar', 'activeRecsForAssets', 'activeRecsForCat',
   'num', 'doRenameCat', 'doDeleteCat', 'budgetProgress', 'totalBudgetSummary', 'budgetKey', 'budgetForMonth', 'setBudgetFrom', 'addCat',
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'esc', 'matchTxnQuery',
@@ -1248,13 +1248,44 @@ test('nwChartPath: 점이 2개 미만이면 빈 경로를 반환한다', () => {
   assert.strictEqual(r.area, '');
 });
 test('nwChartPath: 모든 값이 같으면(span=0) 0으로 나누지 않고 수평선을 그린다', () => {
-  const { line } = sandbox.nwChartPath([{ nw: 100 }, { nw: 100 }, { nw: 100 }], 300, 80);
+  const { line } = sandbox.nwChartPath([
+    { date: '2026-01-01', nw: 100 }, { date: '2026-01-02', nw: 100 }, { date: '2026-01-03', nw: 100 },
+  ], 300, 80);
   assert.ok(!line.includes('NaN'), '값이 모두 같아도 NaN이 나오면 안 됨');
   assert.strictEqual(line, 'M0.0,80.0 L150.0,80.0 L300.0,80.0');
 });
 test('nwChartPath: 값이 오르면 마지막 y좌표가 첫 y좌표보다 위(작은 값)에 온다', () => {
-  const { line } = sandbox.nwChartPath([{ nw: 0 }, { nw: 100 }], 300, 80);
+  const { line } = sandbox.nwChartPath([{ date: '2026-01-01', nw: 0 }, { date: '2026-01-02', nw: 100 }], 300, 80);
   assert.strictEqual(line, 'M0.0,80.0 L300.0,0.0');
+});
+test('nwChartPath: 날짜 간격이 등간격이면(매일 스냅샷) 기존처럼 x좌표도 등간격이다', () => {
+  const { line } = sandbox.nwChartPath([
+    { date: '2026-01-01', nw: 0 }, { date: '2026-01-02', nw: 0 }, { date: '2026-01-03', nw: 0 },
+  ], 300, 80);
+  assert.strictEqual(line, 'M0.0,80.0 L150.0,80.0 L300.0,80.0');
+});
+test('nwChartPath: 날짜 간격이 불균등하면(일 단위+월 단위 압축 혼재) x좌표가 인덱스가 아니라 날짜 간격에 비례한다', () => {
+  const { line } = sandbox.nwChartPath([
+    { date: '2026-01-01', nw: 0 }, { date: '2026-01-02', nw: 50 }, { date: '2026-01-31', nw: 100 },
+  ], 300, 80);
+  const coords = line.split(' ').map(c => c.slice(1).split(',').map(Number));
+  assert.notStrictEqual(coords[1][0], 150, '인덱스 기준 등간격(중앙)이 아니어야 함');
+  assert.ok(coords[1][0] < 150, '이틀째 점은 30일 구간 중 하루만 지났으므로 중앙보다 훨씬 왼쪽에 있어야 함');
+  assert.strictEqual(coords[1][0], +((1 / 30 * 300).toFixed(1)));
+});
+test('nwChartPath: 날짜가 늘어날수록 x좌표는 단조 비감소이며 daysBetween에 선형 비례한다', () => {
+  const pts = [
+    { date: '2026-01-01', nw: 10 }, { date: '2026-01-05', nw: 20 },
+    { date: '2026-01-06', nw: 30 }, { date: '2026-02-04', nw: 40 },
+  ];
+  const { line } = sandbox.nwChartPath(pts, 340, 80);
+  const xs = line.split(' ').map(c => +c.slice(1).split(',')[0]);
+  for (let i = 1; i < xs.length; i++) assert.ok(xs[i] >= xs[i - 1], '날짜 순서대로 x좌표가 감소하면 안 됨');
+  const totalDays = sandbox.daysBetween(pts[0].date, pts[pts.length - 1].date);
+  pts.forEach((p, i) => {
+    const expected = +((sandbox.daysBetween(pts[0].date, p.date) / totalDays * 340).toFixed(1));
+    assert.strictEqual(xs[i], expected);
+  });
 });
 
 /* ---------- txnsToCSV: 거래 내역 CSV 내보내기 ---------- */

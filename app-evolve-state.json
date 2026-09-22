@@ -1,19 +1,8 @@
 {
-  "cycle": 68,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "nwChartPath()가 순자산 추이 스파크라인을 날짜 간격이 아니라 배열 인덱스로 등간격 배치해 그래프가 시간축을 왜곡함",
-    "why": "index.html:2165-2174의 nwChartPath(pts,W,H)는 stepX=W/(pts.length-1)로 각 점을 i*stepX에 배치할 뿐 p.date를 전혀 보지 않는다. DB.nwHistory는 앱을 연 날에만 스냅샷이 쌓이고(updateNwHistory, 2149-2155) pruneNwHistory(2156-2164)가 120개 초과 시 90일 이전 구간을 월 1개로 압축하므로, 실제로는 '하루 1점' 구간과 '한 달 1점' 구간이 같은 배열에 섞인다. 그런데도 두 구간이 동일한 폭으로 그려져 장기 추세가 있는 구간(월 단위 압축)이 짧은 변동 구간(일 단위)과 시각적으로 똑같이 압축돼 기울기·저점·회복이 체계적으로 왜곡된다. 이 차트(nwHistoryCard, 2278-2293)는 Home 탭 최상단(2608행)에 항상 보이는, '내 순자산이 오르는지 내리는지'를 답하는 앱의 핵심 위젯이라 영향이 크다. test/run.js:1245-1257의 기존 nwChartPath 테스트 3개는 날짜 간격을 전혀 다루지 않아 이 왜곡을 잡아내지 못한다.",
-    "approach": "1) todayStr/addDays/ym 근처(index.html:1414-1424)에 순수 헬퍼 daysBetween(a,b) 추가(YYYY-MM-DD 문자열 두 개의 일수 차, Math.round 사용). 2) nwChartPath(pts,W,H)(2165행)를 index 기반 stepX 대신 totalDays=Math.max(1,daysBetween(pts[0].date,pts[pts.length-1].date))로 정규화한 x=daysBetween(pts[0].date,p.date)/totalDays*W로 재작성. y축(min/max/span 기반) 로직과 pts.length<2, span===0 얼리리턴은 그대로 유지. DB 스키마·updateNwHistory·pruneNwHistory·nwHistoryCard 호출 규약은 변경 불필요, nwChartPath 내부 좌표 계산만 바뀜. 3) test/run.js의 기존 nwChartPath 테스트(1245-1257 부근)에 date 필드를 채워 넣어 통과하도록 갱신하고, 신규 회귀 테스트 추가: (a) day0/day1/day30처럼 간격이 매우 불균등한 3점에서 중간 점 x좌표가 등간격(W/2)이 아니라 첫 점 쪽에 가깝게 나오는지, (b) 날짜가 늘어날수록 x가 단조 비감소이며 daysBetween에 선형 비례하는지, (c) 매일 등간격 날짜에서는 기존처럼 연속 점 간 x간격이 동일한지(회귀 방지). 4) APP_VERSION과 sw.js CACHE 버전을 관례대로 올리고, node test/run.js 전체 통과와 두 인라인 <script> 블록 node --check 파싱을 커밋 전에 확인."
-  },
+  "cycle": 69,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 63,
-      "phase": "advance",
-      "timestamp": "2026-09-22T00:00:00.000Z",
-      "summary": "doLogin() 경로에 게스트 데이터 처리 추가: 계정이 비어있으면 doSignup과 동일한 가져오기 확인 시트를, 계정에 이미 데이터가 있으면 덮어쓰지 않고 게스트 데이터가 남아있다는 안내 toast를 띄운다. 중복된 게스트 데이터 판정 로직을 순수 헬퍼 dbIsEmpty(db)/guestHasData()로 추출해 afterCloudAuth/doSignup/doLogin이 공유하도록 리팩터링. dbIsEmpty 테스트 3개 추가, 432/432 통과.",
-      "commit": null
-    },
     {
       "cycle": 64,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-22T20:10:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 전략적 시야에서 재검토(render*/부분갱신 전반/CSV/FX/stockCode/recHist/addBalanceAdjust/homeAlerts/cloud sync/fixShortfall/doLogin 게스트데이터/costBasis 손익추적/decidePushOutcome/카테고리 캐스케이드/Pro 스텁/PIN 부재/단일파일 구조/CI/History 페이지네이션/migrate owners/nwHistoryCard aria-label/자산그룹 재정렬 접근성/localStorage 실패 처리/spendTrend 배지/doRenameOwner 필터 동기화/varyingRecs daily·weekly/assetSelAll 귀속 스코프 등 최근 완료·기각 항목은 재탐색 금지 지시). Home 탭 최상단에 항상 보이는 순자산 추이 스파크라인 nwChartPath()(index.html:2165-2174)가 stepX=W/(pts.length-1)로 점을 배열 인덱스 기준 등간격 배치할 뿐 p.date를 전혀 참조하지 않음을 확인 — DB.nwHistory는 앱을 연 날에만 스냅샷이 쌓이고 pruneNwHistory(2156-2164)가 90일 이전 구간을 월 단위로 압축해, 실사용 데이터에는 '일 단위 1점'과 '월 단위 1점' 구간이 섞이는데도 동일한 폭으로 그려져 장기 추세 구간이 실제보다 압축돼 보이는 왜곡을 신규 영역으로 채택. 반복거래 분할/만기 불변식(truncateRecEnd/clampRecurringToMaturity 등)은 이미 여러 사이클 집중 점검·테스트로 다뤄져 한계효용이 낮아 후순위로, 저축목표/목표금액 트래킹 기능 부재는 투기적 신규 기능이라 정정보다 우선순위 낮게 기각. advance에서 daysBetween(a,b) 순수 헬퍼 추가 후 nwChartPath의 x좌표 계산을 인덱스 기반에서 daysBetween 비례 배치로 교체하고, test/run.js의 기존 nwChartPath 테스트에 date 필드를 채우고 불균등 간격/단조성/등간격 회귀 케이스를 추가하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 68,
+      "phase": "advance",
+      "timestamp": "2026-09-22T21:12:00.000Z",
+      "summary": "critique 계획대로 nwChartPath()(index.html:2165)의 x좌표 계산을 배열 인덱스 기반에서 실제 날짜 간격 기반으로 교체. todayStr/addDays 옆에 순수 헬퍼 daysBetween(a,b) 추가(두 YYYY-MM-DD 문자열의 일수 차, Math.round 사용)하고, stepX=W/(pts.length-1) 방식을 totalDays=Math.max(1,daysBetween(pts[0].date,pts[last].date)) 기준 x=daysBetween(pts[0].date,p.date)/totalDays*W로 재작성했다. y축(min/max/span)과 pts.length<2/span===0 얼리리턴은 그대로 유지, DB 스키마·updateNwHistory·pruneNwHistory·호출부(nwHistoryCard)는 변경 없음. test/run.js의 기존 nwChartPath 테스트 3개에 date 필드를 채워 넣고, 신규 회귀 테스트 3개 추가: 매일 등간격 스냅샷에서는 기존과 동일하게 x도 등간격인지(회귀 방지), 일 단위+월 단위 압축이 섞인 불균등 간격에서 중간 점 x가 인덱스 기준 중앙(W/2)이 아니라 날짜 비율에 정확히 비례하는지, 날짜가 늘수록 x가 단조 비감소이며 daysBetween에 선형 비례하는지. FUNCTIONS 목록에 daysBetween 추가. 두 인라인 <script> 블록 모두 node --check 파싱 확인, 471/471 통과(기존 468 + 신규 3). APP_VERSION 1.46.7->1.46.8, sw.js CACHE v169->v170.",
       "commit": null
     }
   ]
