@@ -1,15 +1,8 @@
 {
   "cycle": 66,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 61,
-      "phase": "develop",
-      "timestamp": "2026-09-21T13:15:00.000Z",
-      "summary": "Explore 서브에이전트로 발견한 CSV 임포트(csvRowToImportTxn, index.html:4599)의 이체/저축 행 검증 누락 버그 수정. 수동 입력(saveTx/saveRec)은 fromAssetId===toAssetId면 '보내는 자산과 받는 자산이 같아요' 토스트로 저장을 막지만, CSV 임포트 경로는 fromName/toName이 둘 다 비어있지 않은지만 확인해 같은 자산명(예: '주계좌'→'주계좌')인 이체/저축 CSV 행도 그대로 통과시켜 DB.txns에 fromAssetId===toAssetId인, 수동 UI로는 절대 만들 수 없는 상태의 거래가 들어갈 수 있었다. 기존 !fromName||!toName 체크에 fromName===toName을 추가해 같은 'asset' 에러 버킷으로 거르도록 했다 — buildImportPreview가 이미 error==='asset'을 invalidCount로 집계하므로 UI 쪽 변경은 불필요. test/run.js에 이체/저축 각각 same-name 케이스 회귀 테스트 2개 추가, 409/409 통과. 두 인라인 <script> 블록 모두 node --check 통과. APP_VERSION 1.45.12->1.45.13, sw.js CACHE v154->v155.",
-      "commit": null
-    },
     {
       "cycle": 61,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-22T08:15:00.000Z",
       "summary": "critique 계획대로 CSV 임포트가 시세평가 자산(fx/gold/stock)을 거래 상대로 매칭하던 결함을 차단. csvRowToImportTxn()의 findAsset을 nm=>(assets||[]).find(a=>a.name.trim()===nm&&!isMarketValued(a))로 바꿔, 이름이 같아도 fx/gold/stock 타입 자산은 매칭 후보에서 제외되고 기존 unmatched 경로로 빠지도록 했다(수동 입력 폼이 이미 openAssetPicker의 excludeMarketValued:true로 취하던 방침과 일치). buildImportPreview/assetUnmatchedCount는 unmatched 배열을 그대로 재사용하므로 수정 불필요. test/run.js에 지출/이체 각각 stock 타입 자산과 이름이 같아도 fromAssetId/toAssetId가 null로 남고 unmatched에 담기는 회귀 테스트 추가, 450/450 통과. 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.46.1->1.46.2, sw.js CACHE v163->v164.",
+      "commit": null
+    },
+    {
+      "cycle": 66,
+      "phase": "develop",
+      "timestamp": "2026-09-22T09:15:00.000Z",
+      "summary": "Explore 서브에이전트로 발견한 saveTx()/saveRec()(index.html:3284,3474)의 날짜 상한 미검증 버그 수정. RANGE_FROM(2023-01-01) 이전 날짜는 이미 dateBelowRangeFloor()로 막고 있었지만(주석: allTxns(RANGE_FROM,RANGE_TO) 고정폭 밖 날짜는 balancesUpTo 등에서 조용히 빠짐), 대칭적으로 RANGE_TO(TODAY+760일) 이후 날짜는 어떤 검증도 없었다. 날짜 선택기(dpOnScroll)에 상한이 없어 사용자가 얼마든지 미래로 스크롤해 저장할 수 있고, 그렇게 저장된 일회성/반복 거래는 '저장했어요' 토스트로 성공한 것처럼 보이지만 balancesUpTo/totalAssetAt/Home·Plan 알림/예산 합계 어디에도 반영되지 않다가 실제 TODAY가 그 날짜에 근접해야만(RANGE_TO가 매일 갱신) 뒤늦게 나타나는 '저장은 됐는데 아무 데도 안 잡히는' 상태였다(단, History 탭 커스텀 범위 조회는 allTxns를 그대로 써서 예외적으로 보임 — 저장은 됐지만 앱 핵심 화면에서만 조용히 빠지는 비대칭). 대칭 헬퍼 dateAboveRangeCeil(ds){return ds>RANGE_TO}를 dateBelowRangeFloor 옆에 추가하고, saveTx()는 d.date, saveRec()는 d.startDate에 대해 dateBelowRangeFloor 체크 바로 다음 줄에 동일한 토스트 패턴(`${RANGE_TO} 이후 날짜는 저장할 수 없어요`)으로 막도록 수정. CSV 임포트 경로(csvRowToImportTxn)는 'range' 에러 버킷의 UI 메시지가 '~이전 날짜'로 고정돼 있어 대칭 확장 시 메시지까지 바꿔야 하는 별도 범위라 이번 사이클에서는 제외(수동 입력 폼만 수정). 회귀 테스트 3개 추가: saveTx RANGE_TO 이후 날짜 차단, saveTx RANGE_TO 당일은 정상 저장(경계값 회귀 없음), saveRec 시작일이 RANGE_TO 이후면 차단. 두 인라인 <script> 블록 모두 node --check 파싱 확인, 453/453 통과(기존 450 + 신규 3). APP_VERSION 1.46.2->1.46.3, sw.js CACHE v164->v165.",
       "commit": null
     }
   ]

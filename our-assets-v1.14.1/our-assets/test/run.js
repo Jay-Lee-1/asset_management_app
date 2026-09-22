@@ -66,7 +66,7 @@ function extractLet(name) {
 // 테스트 대상 + 그 대상이 내부에서 호출하는 순수 함수들.
 const FUNCTIONS = [
   'lastDay', 'addDays', 'shiftWeekend', 'recDates', 'addMonthsStr', 'addMonths',
-  'recNthDate', 'recCountUntil', 'truncateRecEnd', 'dateBelowRangeFloor', 'recalcEndCond', 'isVarCat', 'setCatVar', 'activeRecsForAssets', 'activeRecsForCat',
+  'recNthDate', 'recCountUntil', 'truncateRecEnd', 'dateBelowRangeFloor', 'dateAboveRangeCeil', 'recalcEndCond', 'isVarCat', 'setCatVar', 'activeRecsForAssets', 'activeRecsForCat',
   'num', 'doRenameCat', 'doDeleteCat', 'budgetProgress', 'totalBudgetSummary', 'budgetKey', 'budgetForMonth', 'setBudgetFrom', 'addCat',
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'esc', 'matchTxnQuery',
   'parseCSV', 'unguardCsv', 'csvDateValid', 'csvRowToImportTxn', 'csvDedupeKey', 'buildImportPreview',
@@ -3177,6 +3177,48 @@ test('saveRec: 시작일이 RANGE_FROM 이전이면 토스트만 뜨고 저장�
   sandbox.saveRec();
   assert.strictEqual(sandbox.DB.recurrences.length, 0, 'RANGE_FROM 이전 시작일은 저장되면 안 됨');
   assert.ok(sandbox.toastCalls.some(m => m.includes('2023-01-01')), '하한 날짜를 알려주는 토스트가 떠야 함');
+});
+/* ---------- saveTx/saveRec: RANGE_TO(TODAY+760일) 이후 날짜도 대칭적으로 balancesUpTo 등
+ * allTxns(RANGE_FROM,RANGE_TO) 기반 집계에서 조용히 빠지는데, 날짜 선택기(dpOnScroll)엔 상한이
+ * 없어 사용자가 얼마든지 미래로 넘길 수 있었다. dateAboveRangeCeil()로 두 저장 경로 모두
+ * 토스트로 막고 DB를 건드리지 않는지 확인한다(app-evolve cycle66). ---------- */
+test('saveTx: RANGE_TO 이후 날짜는 토스트만 뜨고 저장되지 않는다', () => {
+  sandbox.TWi = -1;
+  sandbox.RANGE_TO = '2028-06-15';
+  sandbox.DB = { txns: [], settings: {} };
+  sandbox.txDraft = {
+    id: null, type: 'expense', date: '2028-06-16', category: '식비', memo: '',
+    amount: 9000, fromAssetId: 'a1', toAssetId: null, repeat: false,
+  };
+  sandbox.toastCalls = [];
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.DB.txns.length, 0, 'RANGE_TO 이후 날짜는 저장되면 안 됨');
+  assert.ok(sandbox.toastCalls.some(m => m.includes('2028-06-15')), '상한 날짜를 알려주는 토스트가 떠야 함');
+});
+test('saveTx: RANGE_TO 당일은 상한선에 포함되어 정상 저장된다(정상 케이스는 회귀 없음)', () => {
+  sandbox.TWi = -1;
+  sandbox.RANGE_TO = '2028-06-15';
+  sandbox.DB = { txns: [], settings: {} };
+  sandbox.txDraft = {
+    id: null, type: 'expense', date: '2028-06-15', category: '식비', memo: '',
+    amount: 9000, fromAssetId: 'a1', toAssetId: null, repeat: false,
+  };
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.DB.txns.length, 1, 'RANGE_TO 당일은 저장되어야 함');
+});
+test('saveRec: 시작일이 RANGE_TO 이후면 토스트만 뜨고 저장되지 않는다', () => {
+  sandbox.TWi = -1;
+  sandbox.RANGE_TO = '2028-06-15';
+  sandbox.DB = { recurrences: [], settings: {} };
+  sandbox.recDraft = {
+    id: null, type: 'expense', category: '식비', memo: '', amount: 9000,
+    fromAssetId: 'a1', toAssetId: null, freq: 'monthly', day: 10,
+    startDate: '2028-07-01', endDate: null, count: null, weekend: 'onDay',
+  };
+  sandbox.toastCalls = [];
+  sandbox.saveRec();
+  assert.strictEqual(sandbox.DB.recurrences.length, 0, 'RANGE_TO 이후 시작일은 저장되면 안 됨');
+  assert.ok(sandbox.toastCalls.some(m => m.includes('2028-06-15')), '상한 날짜를 알려주는 토스트가 떠야 함');
 });
 
 /* ---------- balancesUpTo: 단일 슬롯 캐시를 다중 슬롯(Map)으로 바꾼 회귀 테스트 ----------
