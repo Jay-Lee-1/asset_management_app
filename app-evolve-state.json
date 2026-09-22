@@ -1,15 +1,8 @@
 {
   "cycle": 64,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 59,
-      "phase": "review",
-      "timestamp": "2026-09-21T06:22:09.545Z",
-      "summary": "develop 커밋(3ee68ae, recHistFieldsChanged에 startDate 추가)을 검토. 로직 자체는 정확함을 확인: recDates()가 모든 가상 회차를 orig.startDate 기준으로 생성하므로 startDate도 day/freq와 동일하게 과거 회차 존재 여부를 좌우하고, orig(원본)의 과거 회차 존재 여부로 confirm 트리거를 판단하는 기존 설계와 자연스럽게 맞물림(orig가 아직 시작 전이면 확인 없이 즉시 적용, 이미 회차가 있으면 확인). splitRecurrenceAt()에서 future 분기 선택 시 새로 분리되는 레코드의 startDate가 draft의 편집값이 아니라 effectiveDate(TODAY)로 강제 override되는 것도 확인했으나, 이는 my fix로 새로 생긴 문제가 아니라 day/freq 등 다른 이력영향 필드가 바뀔 때도 이미 동일하게 적용되던 기존 설계(오늘부터의 새 구간은 항상 오늘을 시작일로 삼는다는 split 시맨틱)라 버그 아님으로 판단. 다만 recHistFieldsChanged 단위 테스트만 있고 saveRec() 실행 기반 end-to-end 테스트(과거 회차가 있는 반복에서 시작일만 바꿨을 때 confirm 시트가 실제로 뜨는지, all/future 각 선택이 실제로 어떻게 반영되는지)가 없어 커버리지 공백으로 판단해 3개 추가: (1) startDate만 바뀌면 즉시 덮어쓰지 않고 확인 시트가 뜨는지, (2) all 선택 시 새 시작일이 그대로 반영되는지, (3) future 선택 시 분리된 새 구간은 사용자가 입력한 시작일이 아니라 분리 시점(오늘)부터 시작한다는 의도된 동작을 명시적으로 문서화. index.html/sw.js는 건드리지 않아 APP_VERSION/CACHE 상승 불필요. 두 인라인 <script> 블록 모두 node --check 파싱 확인, 396/396 통과.",
-      "commit": null
-    },
     {
       "cycle": 59,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-22T01:00:00.000Z",
       "summary": "general-purpose 서브에이전트로 발견한 assetToggleSel()/assetSelAll()(index.html:2713-2714, Assets 탭 다중선택)의 전체 재렌더 버그 수정. cycle62에서 이미 같은 문제를 ledgerSelPartial()(Ledger)과 refreshPlanBody()(Plan)로 고쳤지만, Assets 탭 자체의 다중선택 토글/전체선택 경로는 renderAssets()를 그대로 호출해 체크박스를 탭할 때마다 #page-assets 전체(순자산 캐러셀+히스토리 차트 포함)를 다시 그리고 있었다. 재현: 다중선택 모드에서 여러 자산 행을 연속으로 탭하면 매번 캐러셀/차트가 통째로 재구성돼 화면이 깜빡이고, 키보드(Enter/Space, rowKeydown)로 토글하면 방금 조작한 행의 tabindex 노드가 파괴돼 포커스가 body로 빠져 키보드 탐색이 끊긴다(ledgerSelPartial 도입 사유와 동일한 접근성 회귀). assetBodyHTML/refreshAssetBody 패턴을 본떠 assetSelPartial()을 추가해(#assetBody만 innerHTML 교체 + updateSelBottom() + fitAll()) assetToggleSel/assetSelAll이 이를 우선 쓰고 #assetBody를 못 찾을 때만 renderAssets()로 폴백하도록 수정. test/run.js에 assetBody DOM 스텁(ledgerCard 스텁과 동일 패턴)과 updateSelBottom 카운팅 스파이를 추가하고, assetSelPartial 성공/폴백, assetToggleSel on/off, assetSelAll 전체선택/해제 등 회귀 테스트 7개 추가. 두 인라인 <script> 블록 모두 node --check 파싱 확인, 439/439 통과(기존 432 + 신규 7). APP_VERSION 1.45.18->1.45.19, sw.js CACHE v160->v161.",
+      "commit": null
+    },
+    {
+      "cycle": 64,
+      "phase": "review",
+      "timestamp": "2026-09-22T02:07:42.078Z",
+      "summary": "cycle64 develop 커밋(7e957bf, assetSelPartial)을 검토. ledgerSelPartial(cycle62)과 동일한 검증된 패턴(#assetBody만 갱신, updateSelBottom/fitAll 재호출, #assetBody 못 찾으면 renderAssets()로 폴백)을 그대로 재사용했음을 확인. assetBodyHTML()이 순자산 캐러셀/히스토리 차트와 무관하게 자산 목록/선택 상태만 그리므로 부분 갱신으로도 값이 어긋나지 않고, 선택 모드와 편집 모드(ST.editAssets)가 상호 배타적이라 두 상태가 섞여 깨질 조건도 없음. 신규 테스트 7개 포함 두 인라인 <script> 블록 모두 node --check 통과, 439/439 회귀 테스트 통과 재확인. 실제 버그 없어 코드 변경 없음.",
       "commit": null
     }
   ]
