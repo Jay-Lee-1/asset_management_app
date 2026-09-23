@@ -1,26 +1,8 @@
 {
-  "cycle": 70,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "삭제된 자산 재연동(relink)이 타입 검사 없이 동명 자산에 붙는 결함 수정",
-    "why": "deletedAssetHistoryExists(nm)(index.html:2679)와 relinkDeletedAsset(d)(index.html:2643)가 이름만 비교하고 자산 type을 전혀 검사하지 않는다. 현금 자산 '카카오뱅크'로 지출을 남긴 뒤 그 자산을 삭제하고, 같은 이름으로 stock/debt 등 전혀 다른 type의 자산을 새로 만들면 saveAsset()(2872)이 '이전 자산과 연동' 시트를 띄우고, 사용자가 누르면 원래 거래의 fromAssetId가 타입이 다른 새 자산으로 조용히 옮겨간다. stock 등 시세평가 자산은 assetEval()이 DB.txns를 안 보므로 이 재연결이 잔액에 전혀 반영되지 않아 순자산이 조용히 어긋난다. saveAsset의 살아있는 자산 중복 체크(2849, type까지 비교)와 CSV findAsset(cycle65/70에서 이미 type/동명이인 가드 추가)은 이미 타입을 검사하는데, 이 삭제->재등록 연동 경로만 유일하게 타입 무검증으로 남아 일관성 결함이다.",
-    "approach": "1) snapshotAssetName(id)(2716)에서 DB.deletedBal[nm] 기록 옆에 DB.deletedType[nm]=a.type 병렬 맵을 추가. 2) deletedAssetHistoryExists(nm,type)로 확장해 DB.deletedType[nm]===type일 때만 true 반환(타입 기록 없는 기존 데이터는 안전하게 매칭 안 됨 처리), saveAsset() 호출부(2873)를 deletedAssetHistoryExists(d.name,d.type)로 갱신. 3) relinkDeletedAsset(d)(2643)의 forEach 조건에도 DB.deletedType[nm]===d.type 이중가드 추가. 4) test/run.js FUNCTIONS에 snapshotAssetName/deletedAssetHistoryExists/relinkDeletedAsset 추가하고 회귀 테스트: 동일 type 재등록 시 정상 연동(회귀 방지), 다른 type 재등록 시 연동 시트 자체가 안 뜨는지, 방어적 이중가드 직접호출 시 fromAssetId 안 바뀌는지, DB.deletedType 없는 마이그레이션 전 데이터는 안전하게 처리되는지."
-  },
+  "cycle": 71,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 65,
-      "phase": "critique",
-      "timestamp": "2026-09-22T07:20:00.000Z",
-      "summary": "Explore 서브에이전트로 앱 전체를 구조적으로 재검토(render*/esc/캘린더/부분갱신 전반(ledger·plan·assets)/반복종료조건/trim/부호/sanitizeBackup/CSV 흐름 전반(same-name·음수금액·RANGE_FROM 가드)/FX 피커/stockCode/recHistFieldsChanged startDate/addBalanceAdjust 부채방향/homeAlerts OS알림/cloud sync online 재시도/fixShortfall 기본일/doLogin 게스트데이터/costBasis 손익추적/Naver 시세 폴백/decidePushOutcome/카테고리 rename·삭제 캐스케이드/Pro 업그레이드 스텁/PIN 부재/단일파일 모듈화/CI 미구성 등 최근 완료·기각 항목은 재탐색 금지 지시). csvRowToImportTxn()(index.html:4651)의 findAsset(4667행, nm=>(assets||[]).find(a=>a.name.trim()===nm))이 타입 필터가 전혀 없어, 수동 입력 폼(txOpenAsset/recOpenAsset, cycle27부터 excludeMarketValued:true로 fx/gold/stock 자산을 아예 선택 못 하게 막음)과 달리 CSV 임포트로는 이름이 같은 시세평가 자산이 거래 상대로 그대로 매칭됨을 grep+코드 읽기로 확인. assetEval()이 DB.txns를 안 보고 qty×시세로만 평가하므로 이렇게 연결된 거래는 자산 잔액에 반영되지 않아 순자산이 조용히 어긋나고, detectStaleMarketValuedTxns()의 사후 탐지 UI(dismissStaleMv)도 '확인함' 닫기만 할 뿐 고쳐주지 않아 애초에 막는 입구 하나가 빠진 일관성 결함으로 채택. 자산그룹 순서 재정렬 키보드 접근성 공백(저빈도 설정 기능, 이미 다룬 접근성 스윕과 중복 영역이라 후순위), localStorage 쓰기 실패 처리(storageOutcomeMsg/requestPersistentStorage로 이미 견고), 카테고리 rename 시 budgetHistory 키 미이전 의심(renameCatSheet에서 이미 정상 이전 확인)은 기각. advance에서 findAsset을 nm=>(assets||[]).find(a=>a.name.trim()===nm && !isMarketValued(a))로 수정(매칭 실패는 기존 unmatched 경로 재사용, buildImportPreview 수정 불필요)하고 test/run.js에 지출/이체 각각 시세평가 자산 이름 매칭 시 unmatched로 남는 회귀 테스트를 추가하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
-      "commit": null
-    },
-    {
-      "cycle": 65,
-      "phase": "advance",
-      "timestamp": "2026-09-22T08:15:00.000Z",
-      "summary": "critique 계획대로 CSV 임포트가 시세평가 자산(fx/gold/stock)을 거래 상대로 매칭하던 결함을 차단. csvRowToImportTxn()의 findAsset을 nm=>(assets||[]).find(a=>a.name.trim()===nm&&!isMarketValued(a))로 바꿔, 이름이 같아도 fx/gold/stock 타입 자산은 매칭 후보에서 제외되고 기존 unmatched 경로로 빠지도록 했다(수동 입력 폼이 이미 openAssetPicker의 excludeMarketValued:true로 취하던 방침과 일치). buildImportPreview/assetUnmatchedCount는 unmatched 배열을 그대로 재사용하므로 수정 불필요. test/run.js에 지출/이체 각각 stock 타입 자산과 이름이 같아도 fromAssetId/toAssetId가 null로 남고 unmatched에 담기는 회귀 테스트 추가, 450/450 통과. 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.46.1->1.46.2, sw.js CACHE v163->v164.",
-      "commit": null
-    },
     {
       "cycle": 66,
       "phase": "develop",
@@ -152,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-23T03:15:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 전략적 시야에서 재검토(render*/부분갱신/CSV 전반(동명이인·시세평가자산 매칭 차단 포함)/FX/stockCode/recHist(startDate/weekend)/addBalanceAdjust/homeAlerts/cloud sync/fixShortfall/doLogin/costBasis/Naver 폴백/decidePushOutcome/카테고리 rename·삭제 캐스케이드(min-1 가드)/Pro 스텁/PIN 부재/단일파일 구조/CI/History 페이지네이션/migrate owners/nwHistoryCard aria-label/자산그룹 재정렬 접근성/localStorage 실패 처리/spendTrend 배지/doRenameOwner 필터 동기화/varyingRecs daily·weekly/assetSelAll 귀속 스코프/nwChartPath 날짜간격 등 최근 완료·기각 항목은 재탐색 금지 지시). deletedAssetHistoryExists(nm)(index.html:2679)와 relinkDeletedAsset(d)(index.html:2643)가 자산 이름만 비교하고 type을 전혀 검사하지 않음을 확인 — 현금 자산을 삭제 후 같은 이름으로 stock/debt 등 다른 type 자산을 새로 만들면 saveAsset()(2872)이 '이전 자산과 연동' 시트를 띄우고, 연동을 누르면 원래 거래의 fromAssetId가 타입이 다른 새 자산으로 조용히 옮겨간다. 시세평가 자산(stock 등)은 assetEval()이 DB.txns를 안 보므로 이 연결이 잔액에 전혀 반영 안 돼 순자산이 조용히 어긋남. saveAsset의 살아있는 자산 중복 체크(2849, type 비교 포함)와 CSV findAsset(cycle65/70에서 이미 type/동명이인 가드 추가)은 이미 타입을 검사하는데 이 삭제->재등록 연동 경로만 유일한 예외로 남아 일관성 결함으로 채택. findDonors/planTransfer(저축 계좌를 출금원으로 제안하는 설계상 트레이드오프, 구체적 버그 아님), doMaturity(만기 이체 금액 정확히 0으로 떨어짐, 결함 없음), matchTxnQuery/filteredHist(결함 미발견)는 기각. advance에서 snapshotAssetName에 DB.deletedType 병렬 맵 추가, deletedAssetHistoryExists(nm,type)로 확장, relinkDeletedAsset에 이중가드 추가하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 70,
+      "phase": "advance",
+      "timestamp": "2026-09-23T04:10:00.000Z",
+      "summary": "critique 계획(삭제된 자산 재연동이 타입 검사 없이 동명 자산에 붙는 결함)을 구현. snapshotAssetName(id)(2716행)에서 삭제 시점 잔액(DB.deletedBal)과 나란히 DB.deletedType[nm]=a.type을 기록하도록 확장. deletedAssetHistoryExists(nm,type)(2679행)를 type 인자를 받게 확장해 DB.deletedType[nm]===type일 때만 true를 반환하도록 하고(타입 기록이 없는 마이그레이션 이전 데이터는 안전하게 false), saveAsset() 호출부(2873행)를 deletedAssetHistoryExists(d.name,d.type)로 갱신. relinkDeletedAsset(d)(2643행)에도 DB.deletedType[nm]===d.type 이중가드를 함수 시작부에 추가해, deletedAssetHistoryExists 체크를 우회한 직접 호출에서도 타입이 다르면 재연결하지 않도록 방어. 이제 현금 자산을 삭제하고 같은 이름으로 stock 등 다른 type의 자산을 새로 등록하면 재연동 시트 자체가 뜨지 않고 바로 새 자산으로 등록된다. test/run.js FUNCTIONS에 deletedAssetHistoryExists/relinkDeletedAsset 실제 소스를 추가(기존 saveAsset 테스트용 stub는 제거)하고, saveAsset의 askRelinkDeleted 스텁을 호출 인자 기록형으로 바꿔 호출 여부를 검증 가능하게 함. 회귀 테스트 8개 추가: deletedAssetHistoryExists type 일치/불일치/기록없음, relinkDeletedAsset type 일치 시 재연결/불일치 시 미재연결/기록없음 시 미재연결, snapshotAssetName 소스 텍스트 가드(DB.deletedType 대입), saveAsset 통합 테스트(type 같으면 재연동 시트 호출, 다르면 바로 새 자산 등록). 두 인라인 <script> 블록 모두 node --check 파싱 통과, node test/run.js 484/484 통과(기존 477 + 신규 7 테스트, saveAsset 통합 테스트 1개 포함 총 8개 추가 - 이 중 1개는 기존 saveAsset dup 테스트 개수에 포함 안 됨). APP_VERSION 1.46.11->1.46.12, sw.js CACHE v173->v174.",
       "commit": null
     }
   ]

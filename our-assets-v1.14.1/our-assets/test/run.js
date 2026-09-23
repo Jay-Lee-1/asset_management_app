@@ -71,6 +71,7 @@ const FUNCTIONS = [
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'esc', 'matchTxnQuery',
   'parseCSV', 'unguardCsv', 'csvDateValid', 'csvRowToImportTxn', 'csvDedupeKey', 'buildImportPreview',
   'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo',
+  'deletedAssetHistoryExists', 'relinkDeletedAsset',
   'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'restoreBackup', 'storageOutcomeMsg', 'shouldWarnUnpersisted',
   'sanitizeAmount', 'sanitizeBackup',
   'saveRec', 'recHistFieldsChanged', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
@@ -363,10 +364,11 @@ const sandbox = {
   // recSaveScopeConfirm()이 띄우는 확인 시트 — 실제 DOM 대신 마지막으로 그려진 html만 기록한다.
   lastSheetHtml: null,
   openSheet: (html) => { sandbox.lastSheetHtml = html; },
-  // saveAsset()의 새 자산 등록 경로가 부르는 "삭제된 동명 자산 재연동" 흐름 — dup 차단 테스트 외에
-  // 실제로 자산을 등록하는 saveAsset 테스트에서만 도달하므로, 항상 "해당 없음"으로 흉내낸다.
-  deletedAssetHistoryExists: () => false,
-  askRelinkDeleted: () => {},
+  // saveAsset()의 새 자산 등록 경로가 부르는 "삭제된 동명 자산 재연동" 시트 — deletedAssetHistoryExists
+  // 자체는 이제 FUNCTIONS의 실제 소스로 검증하므로(아래 테스트 참고), 여기선 실제 시트(DOM) 대신
+  // 호출 여부와 넘겨받은 draft만 기록하는 스텁으로 흉내낸다.
+  lastAskRelinkDeletedArg: null,
+  askRelinkDeleted: (d) => { sandbox.lastAskRelinkDeletedArg = d; },
   clampRecurringToMaturity: () => {},
   // saveAsset()이 저장 직후 '가격 미확인'인 fx/gold/stock 자산에 대해 TTL을 기다리지 않고
   // 부르는 즉시 시세 동기화 — 실제 네트워크 호출 대신 호출 여부만 기록한다.
@@ -1513,6 +1515,101 @@ test('csvRowToImportTxn: 같은 이름의 자산이 2개 이상이면 추측해�
   assert.strictEqual(tr.ok, true);
   assert.strictEqual(tr.txn.toAssetId, null);
   assert.strictEqual(tr.txn.toAssetName, '우리은행');
+});
+// deletedAssetHistoryExists/relinkDeletedAsset — saveAsset()의 "삭제된 동명 자산 재연동" 경로는
+// 이름만 비교하고 type을 전혀 검사하지 않았다: 현금 자산을 삭제 후 같은 이름으로 완전히 다른
+// type(예: stock)의 자산을 새로 등록하면, 원래 거래의 fromAssetId/toAssetId가 타입이 다른
+// 새 자산으로 조용히 옮겨간다. stock 등 시세평가 자산은 assetEval()이 DB.txns를 안 보므로
+// 이 재연결이 잔액에 전혀 반영되지 않아 순자산이 조용히 어긋난다. saveAsset의 살아있는 자산
+// 중복 체크(dup, type까지 비교)와 CSV findAsset(위 동명이인 테스트)은 이미 타입을 검사하므로,
+// 이 삭제->재등록 연동 경로도 snapshotAssetName이 함께 남기는 DB.deletedType으로 타입을 맞춘다.
+test('deletedAssetHistoryExists: 삭제된 자산과 type까지 같아야 매칭되고, type이 다르면 매칭하지 않는다', () => {
+  sandbox.DB = {
+    deletedType: { '카카오뱅크': 'cash' },
+    txns: [{ fromAssetId: 'gone', fromAssetName: '카카오뱅크', toAssetId: null }],
+    recurrences: [],
+    assets: [],
+  };
+  assert.strictEqual(sandbox.deletedAssetHistoryExists('카카오뱅크', 'cash'), true, 'type이 같으면 매칭되어야 함');
+  assert.strictEqual(sandbox.deletedAssetHistoryExists('카카오뱅크', 'stock'), false, 'type이 다르면 매칭되지 않아야 함');
+});
+test('deletedAssetHistoryExists: DB.deletedType에 기록이 없는(마이그레이션 이전) 데이터는 안전하게 매칭 안 됨 처리한다', () => {
+  sandbox.DB = {
+    txns: [{ fromAssetId: 'gone', fromAssetName: '카카오뱅크', toAssetId: null }],
+    recurrences: [],
+    assets: [],
+  };
+  assert.strictEqual(sandbox.deletedAssetHistoryExists('카카오뱅크', 'cash'), false);
+});
+test('relinkDeletedAsset: type이 같을 때만 과거 내역을 새 자산에 재연결한다', () => {
+  sandbox.DB = {
+    deletedType: { '카카오뱅크': 'cash' },
+    txns: [{ fromAssetId: 'gone', fromAssetName: '카카오뱅크', toAssetId: null }],
+    recurrences: [{ id: 'r1', fromAssetId: 'gone', fromAssetName: '카카오뱅크', toAssetId: null, active: true }],
+    assets: [],
+  };
+  const newCash = { id: 'new1', name: '카카오뱅크', type: 'cash' };
+  sandbox.relinkDeletedAsset(newCash);
+  assert.strictEqual(sandbox.DB.txns[0].fromAssetId, 'new1', '같은 type이면 거래가 새 자산에 재연결되어야 함');
+  assert.strictEqual(sandbox.DB.txns[0].fromAssetName, undefined, '재연결되면 이름 스냅샷은 지워져야 함');
+  assert.strictEqual(sandbox.DB.recurrences[0].fromAssetId, 'new1', '같은 type이면 반복거래도 재연결되어야 함');
+});
+test('relinkDeletedAsset: type이 다른 동명 자산으로는 재연결하지 않는다(deletedAssetHistoryExists 가드를 우회한 직접 호출 방어)', () => {
+  sandbox.DB = {
+    deletedType: { '카카오뱅크': 'cash' },
+    txns: [{ fromAssetId: 'gone', fromAssetName: '카카오뱅크', toAssetId: null }],
+    recurrences: [],
+    assets: [],
+  };
+  const newStock = { id: 'new1', name: '카카오뱅크', type: 'stock' };
+  sandbox.relinkDeletedAsset(newStock);
+  assert.strictEqual(sandbox.DB.txns[0].fromAssetId, 'gone', 'type이 다르면 fromAssetId가 그대로여야 함');
+  assert.strictEqual(sandbox.DB.txns[0].fromAssetName, '카카오뱅크', 'type이 다르면 이름 스냅샷도 지워지지 않아야 함');
+});
+test('relinkDeletedAsset: DB.deletedType 기록이 없으면(마이그레이션 이전 데이터) 재연결하지 않는다', () => {
+  sandbox.DB = {
+    txns: [{ fromAssetId: 'gone', fromAssetName: '카카오뱅크', toAssetId: null }],
+    recurrences: [],
+    assets: [],
+  };
+  const newCash = { id: 'new1', name: '카카오뱅크', type: 'cash' };
+  sandbox.relinkDeletedAsset(newCash);
+  assert.strictEqual(sandbox.DB.txns[0].fromAssetId, 'gone');
+});
+// snapshotAssetName() 자체는 balanceAt 등 잔액 계산 체인 전체를 끌고 와 이 파일에서 스텁으로
+// 대체돼 있어(위 sandbox.snapshotAssetName 참고) 직접 실행 테스트는 못 하지만, deletedType을
+// deletedBal과 나란히 남기지 않으면 위의 relinkDeletedAsset 가드가 항상 false가 되어 재연동
+// 기능 자체가 조용히 죽어버리므로, 소스 텍스트 수준에서 그 대입이 빠지지 않았는지 가드한다.
+test('snapshotAssetName: 삭제 시점 잔액(deletedBal)과 나란히 자산 type(deletedType)도 기록한다', () => {
+  const body = extractFunction('snapshotAssetName');
+  assert.ok(/DB\.deletedType\s*=\s*DB\.deletedType\s*\|\|\s*\{\}/.test(body), 'DB.deletedType 초기화가 빠짐');
+  assert.ok(/DB\.deletedType\[nm\]\s*=\s*a\.type/.test(body), 'DB.deletedType[nm]=a.type 대입이 빠짐');
+});
+test('saveAsset: 새 자산 등록 시 삭제된 동명 자산의 type까지 같아야 재연동 시트를 띄운다', () => {
+  sandbox.DB = {
+    settings: {},
+    assets: [],
+    deletedType: { '카카오뱅크': 'cash' },
+    txns: [{ fromAssetId: 'gone', fromAssetName: '카카오뱅크', toAssetId: null }],
+    recurrences: [],
+    rates: { fx: {}, stocks: {} },
+  };
+  sandbox.asDraft = { type: 'cash', name: '카카오뱅크', baseAmount: 0 };
+  sandbox.lastAskRelinkDeletedArg = null;
+  sandbox.saveAsset();
+  assert.ok(sandbox.lastAskRelinkDeletedArg, 'type이 같으면 askRelinkDeleted(재연동 시트)가 호출되어야 함');
+  assert.strictEqual(sandbox.lastAskRelinkDeletedArg.name, '카카오뱅크');
+  assert.strictEqual(sandbox.DB.assets.length, 0, '재연동 시트가 뜨면 아직 자산이 등록되지 않아야 함(사용자 선택 대기)');
+
+  sandbox.DB.assets = [];
+  sandbox.asDraft = { type: 'stock', name: '카카오뱅크', stockCode: 'S1', stockQty: 0 };
+  sandbox.lastAskRelinkDeletedArg = null;
+  sandbox.saveAsset();
+  assert.strictEqual(sandbox.lastAskRelinkDeletedArg, null, 'type이 다르면 askRelinkDeleted가 호출되지 않고 바로 새 자산으로 등록되어야 함');
+  assert.strictEqual(sandbox.DB.assets.length, 1, '재연동 시트를 안 거치면 saveAsset()이 바로 새 자산을 등록해야 함');
+  assert.strictEqual(sandbox.DB.assets[0].name, '카카오뱅크');
+  assert.strictEqual(sandbox.DB.assets[0].type, 'stock');
+  assert.strictEqual(sandbox.DB.txns[0].fromAssetId, 'gone', 'type이 다르므로 기존 거래는 재연결되지 않고 그대로여야 함');
 });
 test('csvRowToImportTxn: 이체/저축인데 보내는·받는 자산 중 하나라도 비어 있으면 무효 처리한다', () => {
   const assets = [{ id: 'a1', name: '주계좌' }];

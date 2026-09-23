@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.11';
+const APP_VERSION='1.46.12';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2642,6 +2642,7 @@ function delAsset(id){const a=DB.assets.find(x=>x.id===id);
 /* 삭제됐던 동명·동종 자산의 과거 내역(스냅샷 이름으로 남은 것)을 자산에 재연결 */
 function relinkDeletedAsset(d){
  const nm=d.name;
+ if(!(DB.deletedType&&DB.deletedType[nm]===d.type))return; /* 타입이 다르면(또는 기록이 없으면) 재연결하지 않음 — deletedAssetHistoryExists 가드를 우회한 직접 호출도 방어 */
  (DB.txns||[]).forEach(t=>{
    if(t.fromAssetName===nm&&!DB.assets.some(a=>a.id===t.fromAssetId)){t.fromAssetId=d.id;delete t.fromAssetName;}
    if(t.toAssetName===nm&&!DB.assets.some(a=>a.id===t.toAssetId)){t.toAssetId=d.id;delete t.toAssetName;}
@@ -2675,8 +2676,9 @@ function updateBalanceAdjust(asset,entered){
    else addBalanceAdjust(asset,gap);
  } /* gap==0이면 조정 내역 제거된 상태로 둠 */
 }
-/* 삭제된 동명 자산의 내역(스냅샷 이름)이 남아있는지 */
-function deletedAssetHistoryExists(nm){
+/* 삭제된 동명·동종 자산의 내역(스냅샷 이름)이 남아있는지 — type도 같아야 매칭(다른 종류의 동명 자산에 조용히 재연결되는 걸 방지) */
+function deletedAssetHistoryExists(nm,type){
+ if(!(DB.deletedType&&DB.deletedType[nm]===type))return false; /* 타입 기록이 없는(마이그레이션 이전) 데이터는 안전하게 미매칭 처리 */
  const live=id=>DB.assets.some(a=>a.id===id);
  const inTx=(DB.txns||[]).some(t=>(t.fromAssetName===nm&&!live(t.fromAssetId))||(t.toAssetName===nm&&!live(t.toAssetId)));
  const inRec=(DB.recurrences||[]).some(r=>(r.fromAssetName===nm&&!live(r.fromAssetId))||(r.toAssetName===nm&&!live(r.toAssetId)));
@@ -2716,6 +2718,7 @@ function askRelinkDeleted(d,entered,balType,balKey){
 function snapshotAssetName(id){
  const a=DB.assets.find(x=>x.id===id);if(!a)return;const nm=a.name;
  DB.deletedBal=DB.deletedBal||{};DB.deletedBal[nm]=balanceAt(id,TODAY); /* 삭제 시점 실제 잔액 기억 */
+ DB.deletedType=DB.deletedType||{};DB.deletedType[nm]=a.type; /* 재연동 시 타입 일치 검사용 */
  (DB.txns||[]).forEach(t=>{
    if(t.fromAssetId===id)t.fromAssetName=nm;
    if(t.toAssetId===id)t.toAssetName=nm;
@@ -2870,7 +2873,7 @@ function saveAsset(editing){
      setBase(origBase); /* 원래 기준으로 역산 → 표시 잔액=입력값 */
    }
  }else{
-   const hasDeleted=deletedAssetHistoryExists(d.name); /* 삭제된 동명 자산의 내역이 남아있나 */
+   const hasDeleted=deletedAssetHistoryExists(d.name,d.type); /* 삭제된 동명·동종 자산의 내역이 남아있나 */
    d.id=uid();d.order=DB.assets.reduce((m,a)=>Math.max(m,a.order||0),0)+1; /* length 기반 order는 삭제 후 재사용돼 등록순서가 뒤섞이므로 최댓값+1 사용 */
    if(balType){d[balKey]=entered;if(balKey==='baseAmount')delete d.amountKRW;else delete d.baseAmount;}
    if(hasDeleted){askRelinkDeleted(d,entered,balType,balKey);return;} /* 이전 자산과 연동할지 선택 */
