@@ -1,15 +1,12 @@
 {
   "cycle": 74,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "날짜/월-년 선택 오버레이(#dpModal, #dpWheel)가 키보드 접근 불가 + Escape를 잘못된 대상(시트)이 가로챔",
+    "why": "onSheetKeydown(index.html:5053-5063)의 Tab-트랩과 Escape 처리는 오직 $('sheet')만 대상으로 한다. 하지만 openFieldDatePicker/renderDatePicker(5244-5296)가 여는 #dpModal과 openMonthSheet/openYMSheet/dpToggleJump(5207-5225, 5341-5360, 5441-5460)가 여는 #dpWheel은 z-index상 시트보다 위(dp-scrim:150, dp-modal:151, dp-wheel:160 vs sheet:101, index.html:380/384/411/675)에 뜨는 별도 오버레이인데도 role/aria-modal, inert 처리, open시 포커스 이동, 전용 keydown 핸들러가 전혀 없다. 재현: 새 거래 시트를 연 채 날짜 필드를 탭해 #dpModal을 열면(1) Tab으로 달력 셀에 전혀 도달할 수 없고(시트 자식만 트랩됨), (2) Escape를 누르면 캘린더가 아니라 시트 전체가 닫혀 입력 중이던 거래 폼이 통째로 사라진다(onSheetKeydown 5055). (3) 전체내역 화면의 histPickDate(3638)처럼 시트 없이 단독으로 열리는 경우 Escape가 아예 무반응이고 배경 페이지로 Tab이 새어나간다.",
+    "approach": "1) topOverlay() 헬퍼 추가: dpWheel.show > dpModal.show > sheet.show 순으로 현재 최상단 오버레이 엘리먼트를 반환. 2) onSheetKeydown(5053)을 확장해 Tab 트랩 대상을 하드코딩된 $('sheet') 대신 topOverlay()로, Escape 처리도 topOverlay()에 따라 분기(dpWheel -> ymCloseWheel()/dpCloseJump() 중 적절한 것, dpModal -> closeDatePicker(), 그 외 -> closeSheet())하도록 수정. 3) renderDatePicker(5268), openMonthSheet(5207), openYMSheet, dpToggleJump 각 open 지점에서 시트의 _sheetReturnFocus 패턴처럼 진입 시 포커스를 오버레이 내부(예: '오늘로'/'확인' 버튼 또는 선택된 날짜 셀)로 옮기고 닫을 때 복귀시킨다. 4) 오버레이가 열려있는 동안 그 아래 있는 #sheet(또는 #app)에도 setSheetInert류 처리를 적용해 배경으로 Tab이 새지 않게 한다. 5) 마크업(index.html:1276-1278)의 #dpModal/#dpWheel에 role=\"dialog\" aria-modal=\"true\" 추가. 범위: 함수 몇 개 + 마크업 속성 두 곳, 기존 시트 접근성 패턴 재사용, 아키텍처 변경 없음."
+  },
   "history": [
-    {
-      "cycle": 69,
-      "phase": "develop",
-      "timestamp": "2026-09-22T22:31:00.000Z",
-      "summary": "Explore 서브에이전트로 발견한 recHistFieldsChanged()(index.html:3507)의 weekend(주말 보정) 필드 누락 버그 수정. recDates()/shiftWeekend()(1908-1918행)는 range 안의 모든 회차(과거 포함)에 r.weekend를 그대로 적용해 날짜를 재계산하는데, recHistFieldsChanged는 주석에서 '메모/주말규칙 등은 소급 적용돼도 무해하다'고 잘못 전제하고 weekend를 비교 필드에서 빼놓아 weekend만 바뀐 편집은 saveRec()의 recSaveScopeConfirm('이 내역만/이후부터/전체') 분기를 건너뛰고 DB.recurrences[i]=d로 바로 덮어썼다. 재현: 매월 1일 monthly 반복(weekend:'none')을 만들어 토요일에 걸린 과거 회차 하나에 실제 금액을 입력(r.edits)해두고, 이후 그 반복의 weekend만 'later'로 바꾸면 그 과거 회차 날짜가 조용히 월요일로 밀리면서 r.edits/skip/confirmedDates에 저장된 날짜 키가 고아가 되어 사용자 모르게 미확인 기본금액 거래로 되돌아간다. recHistFieldsChanged의 필드 배열에 'weekend'를 추가하고 주석을 정정, test/run.js의 기존 두 테스트를 갱신(weekend 변경 시 true 검증 추가, 메모전용 변경만 false로 남기는 별도 테스트로 분리). 두 인라인 <script> 블록 모두 node --check 파싱 확인, 471/471 통과. APP_VERSION 1.46.8->1.46.9, sw.js CACHE v170->v171.",
-      "commit": null
-    },
     {
       "cycle": 69,
       "phase": "review",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-09-23T18:07:58.000Z",
       "summary": "cycle74 develop 커밋(4ae1d9b, recDates() daily+weekend 3중 카운트 수정)을 검토. diff는 push() 클로저에 out[out.length-1]!==d 가드 한 줄만 추가했고, daily 루프가 ds를 항상 증가하는 날짜 순으로 생성하므로 중복이 항상 연속으로만 발생한다는 전제가 맞는지 shiftWeekend()의 earlier/later 분기를 손으로 추적해 검증(earlier: 금토일이 전부 금요일로, later: 금토일월이 전부 월요일로 non-decreasing하게 모임 -> 연속 dedup으로 충분). recNthDate()/recCountUntil()은 recDates()를 그대로 재사용하므로 자동으로 같이 고쳐졌고 별도 수정 불필요함을 확인. monthly/yearly(원시 후보가 기간당 하나)와 weekly(매번 같은 요일만 후보)는 애초에 연속 충돌이 없어 가드가 no-op이라는 주장도 코드로 확인. APP_VERSION/sw.js CACHE 동시 반영 확인. node test/run.js 504/504 통과. 이 diff 자체에는 버그를 찾지 못했다 — 코드 수정 없음. 다만 커밋 메시지의 재현 경로를 따라가다가 별개의 잠재 이슈를 발견: recFreq()(index.html:3487)가 freq를 바꿀 때 recDraft.weekend를 리셋하지 않고, weekend 필드는 monthly일 때만 UI에 노출된다(3478행 d.freq==='monthly' 조건). 즉 사용자가 monthly에서 주말조정을 켠 뒤 daily/weekly/yearly로 주기를 바꾸면 화면에는 그 설정이 전혀 안 보이는데 저장된 weekend 값은 조용히 남아 계속 적용된다(이번에 고친 3중 카운트 버그의 실제 재현 경로이기도 했음). 지금 당장 급한 건 아니라 이 자리에서 고치지 않고 critique가 우선순위를 판단하도록 기록만 남긴다: freq가 monthly가 아니게 바뀔 때 recDraft.weekend를 'none'으로 리셋하거나, 최소한 화면에 계속 노출해 사용자가 알 수 있게 하는 방향이 후보.",
+      "commit": null
+    },
+    {
+      "cycle": 74,
+      "phase": "critique",
+      "timestamp": "2026-09-23T00:00:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 전략적 시야에서 재검토(render*/부분갱신/CSV/FX/stockCode/recHist 전반/addBalanceAdjust/homeAlerts/cloud sync/fixShortfall/doLogin/costBasis/decidePushOutcome/카테고리 rename·삭제 캐스케이드/Pro 스텁 등 기존에 다룬 영역은 재탐색만 하고 새 발견 우선). 새로 발견한 최우선 항목: 날짜/월-년 선택 오버레이(#dpModal, #dpWheel)가 시트의 포커스 트랩·inert·Escape 처리(onSheetKeydown, 5053-5063)에 포함되지 않아 키보드 사용자가 Tab으로 진입 불가하고, Escape를 누르면 캘린더 대신 배경 시트 전체가 닫혀 입력 중이던 폼이 소실됨. z-index(dp-wheel:160 > dp-modal:151 > sheet:101)상 최상단인데도 접근성 트리에서 빠져있는 구조적 결함. 후순위 후보로 recurrence.edits/skip 무제한 누적(3410/3588/1464-1467, 느린 tech-debt)과 전체내역 검색 인풋 디바운스 부재(3612, 실측 미확인)도 기록. pending_advance_plan에 상세 구현 방향 저장.",
       "commit": null
     }
   ]
