@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.16';
+const APP_VERSION='1.46.17';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2916,7 +2916,7 @@ function clampRecurringToMaturity(assetId,maturity,prevMaturity){
    if(r.toAssetId!==assetId)return;                 /* 이 통장으로 들어오는 반복만 */
    if(r.startDate&&r.startDate>maturity)return;      /* 시작이 만기 이후면 대상 아님 */
    if(r.endDate&&r.endDate<=maturity){
-     const autoShortened=prevMaturity&&maturity>prevMaturity&&!r.count&&r.endDate<=prevMaturity;
+     const autoShortened=prevMaturity&&maturity>prevMaturity&&r.count==null&&r.endDate<=prevMaturity;
      if(!autoShortened)return;                       /* 사용자가 정한 종료일이면 그대로(앞당기지 않음) */
    }
    /* r.endDate(이전에 이 함수가 잘라둔 값 포함)를 그대로 넘기면 recDates() 내부가 그 값을 자체

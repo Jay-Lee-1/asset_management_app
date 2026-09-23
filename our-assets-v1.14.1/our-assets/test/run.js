@@ -3233,6 +3233,13 @@ test('clampRecurringToMaturity: 사용자가 직접 정한 종료일(count 동�
   assert.strictEqual(rec.endDate, '2026-02-15', '사용자가 직접 정한 종료일은 만기 연장과 무관하게 그대로 유지돼야 함');
   assert.strictEqual(rec.count, 2);
 });
+test('clampRecurringToMaturity: count가 0(첫 회차부터 삭제해 실제 발생 0건)이어도 falsy라는 이유로 자동 클램프로 오인해 되살리면 안 된다(app-evolve cycle73)', () => {
+  const rec = maturityRec({ endDate: '2026-01-14', count: 0 }); // recApply future-delete를 반복의 startDate(1/15) 자체에 적용하면 truncateRecEnd()의 recCountUntil이 0을 반환 — 사용자가 명시적으로 정한 실제 값
+  sandbox.DB = { recurrences: [rec] };
+  sandbox.clampRecurringToMaturity('a2', '2026-09-01', '2026-03-01');
+  assert.strictEqual(rec.endDate, '2026-01-14', 'count:0은 !r.count로는 falsy지만 사용자가 명시적으로 정한 종료일이므로 만기 연장으로 되살아나면 안 됨(회귀 확인)');
+  assert.strictEqual(rec.count, 0, 'count 자체도 그대로 보존돼야 함');
+});
 test('clampRecurringToMaturity: prevMaturity가 없으면(신규 자산 연동 등) 기존 종료일을 무조건 보존한다', () => {
   const rec = maturityRec({ endDate: '2026-02-15' }); // count 없음이지만 prevMaturity 정보가 없는 호출(askRelinkDeleted 경로)
   sandbox.DB = { recurrences: [rec] };

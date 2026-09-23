@@ -1,15 +1,8 @@
 {
   "cycle": 73,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 67,
-      "phase": "critique",
-      "timestamp": "2026-09-22T16:10:00.000Z",
-      "summary": "Explore 서브에이전트로 앱 전체를 구조적으로 재검토(render*/esc/캘린더/부분갱신 전반(ledger·plan·assets)/반복종료조건/trim/부호/sanitizeBackup/CSV 흐름 전반/FX 피커/stockCode/recHistFieldsChanged startDate/addBalanceAdjust 부채방향/homeAlerts OS알림/cloud sync online 재시도/fixShortfall 기본일/doLogin 게스트데이터/costBasis 손익추적/Naver 시세 폴백/decidePushOutcome/카테고리 rename·삭제 캐스케이드/Pro 업그레이드 스텁/PIN 부재/단일파일 모듈화/CI 미구성/History 페이지네이션/migrate owners/nwHistoryCard aria-label/자산그룹 재정렬 접근성/localStorage 실패 처리/spendTrend 배지/doRenameOwner 필터 동기화 등 최근 완료·기각 항목은 재탐색 금지 지시). varyingRecs()(index.html:5510)가 (r.freq==='monthly'||r.freq==='yearly')로만 필터링해, renderRecSheet()의 주기 선택(monthly/weekly/daily/yearly)과 카테고리 관리의 '변동' 지정이 주기와 무관하게 자유 조합 가능함에도 daily/weekly 변동 반복거래는 회차가 도래해도 홈 화면 알림 카드(quickAmountCards)와 빠른입력 시트(openQuickList/openQuickAmount)에 전혀 뜨지 않아 expandRec()이 항상 템플릿 고정 amount로 거래를 생성함을 확인. 이 부정확한 금액이 spendByCategory/budgetForMonth/totalBudgetSummary에 그대로 흘러 들어감. test/run.js:4095-4130의 varyingRecs 회귀 테스트 3건도 전부 freq:'monthly'만 다뤄 daily/weekly 커버리지 없음을 확인. 예산 기능 전반(이미 촘촘한 테스트 존재), 백업/복원·PWA 등록 로직(표준 패턴, 특이 실패 시나리오 미확인), 카테고리 아이콘 피커 draft 전역변수(재현 가능한 손상 시나리오 미확인, 확신도 낮음)는 기각. advance에서 varyingRecs()의 freq 필터를 recDates()가 지원하는 모든 주기로 확장하고 기존 quickAmountCards/openQuickList 다건 묶음 패턴을 그대로 재사용하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 67,
       "phase": "advance",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-23T12:10:15.000Z",
       "summary": "critique 단계가 pending_advance_plan에 남긴 계획대로 wireGroupDrag()(index.html:2763, 자산 편집 화면의 그룹 순서 드래그)를 고쳤다. pointercancel을 전혀 처리하지 않아 엣지 스와이프-백/알림 인터럽트 등으로 드래그가 중단되면 document의 pointermove/pointerup 리스너가 영구히 남고, 다음 드래그가 그 위에 또 겹쳐 등록돼 DB.settings.groupOrder가 잘못/중복 저장될 수 있던 버그. (1) pointerdown 핸들러에 if(dragEl)return 가드를 추가해 정리 전 재진입(이중 리스너 등록)을 막고, (2) pointercancel 리스너를 추가해 up()과 동일하게 리스너 해제·dragging 클래스 제거를 수행하되 저장은 하지 않고 DOM 순서만 드래그 시작 시점(startOrder)으로 되돌리도록 했다. (3) up()의 순서 병합 로직(visible.concat(existingOrder.filter(...)))을 nextGroupOrder(existingOrder,visibleTypes) 순수 함수로 분리해 test/run.js가 회귀 테스트할 수 있게 했다(DOM/포인터 배선 자체는 순수 함수가 아니라 직접 테스트 불가, plan에 예정된 대로). setPointerCapture는 기존 코드베이스가 다른 모든 유사 핸들러(스와이프-닫기, 엣지 스와이프-백, peek 카드들)에서 쓰지 않는 패턴이라 컨벤션을 벗어나지 않도록 도입하지 않음. test/run.js에 nextGroupOrder 회귀 테스트 2건 추가, FUNCTIONS 목록에 등록. 두 인라인 <script> 블록 모두 node --check 파싱 확인, node test/run.js 497/497 통과(기존 495 + 신규 2). APP_VERSION 1.46.15->1.46.16, sw.js CACHE v177->v178.",
+      "commit": null
+    },
+    {
+      "cycle": 73,
+      "phase": "develop",
+      "timestamp": "2026-09-23T13:05:00.000Z",
+      "summary": "Explore 서브에이전트로 발견한 clampRecurringToMaturity()(index.html:2919)의 count 0/falsy 혼동 버그 수정. autoShortened 판정이 !r.count로 'count 미설정(자동 클램프)'과 'count:0(사용자가 명시적으로 정한 값)'을 구분하려 했는데, recApply()의 future-delete를 반복의 startDate 자체(첫 회차)에 적용하면 truncateRecEnd()의 recCountUntil()이 실제 발생 0건이라 count:0을 저장한다 — 이 값은 falsy라 !r.count가 true가 되어 자동 클램프로 오인됨. 재현: 적금 반복이체를 첫 회차부터 '이 날부터 이후 모두 삭제'로 지우면 endDate/count:0이 저장되는데, 이후 그 저축 자산의 만기일을 연장하면 clampRecurringToMaturity가 삭제된 회차 전부를 조용히 되살려 잔액/원장을 오염시킴. truncateRecEnd() 바로 위 주석이 이미 이 불변식(count 없이 endDate만 있으면 자동 클램프로 오인)을 경고하고 있었지만 0 값 케이스는 놓치고 있었다. !r.count를 r.count==null로 교체해 0은 '명시적으로 설정됨'으로 정확히 구분되게 했다. test/run.js의 기존 clampRecurringToMaturity 테스트 스위트에 count:0 케이스(만기 연장 시 되살아나면 안 됨) 회귀 테스트 1개 추가, 수정 전 코드로 되돌려 해당 테스트가 실제로 실패함을 확인 후 재적용. 두 인라인 <script> 블록 모두 node --check 파싱 확인, node test/run.js 498/498 통과(기존 497 + 신규 1). APP_VERSION 1.46.16->1.46.17, sw.js CACHE v178->v179.",
       "commit": null
     }
   ]
