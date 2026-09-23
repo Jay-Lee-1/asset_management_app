@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.12';
+const APP_VERSION='1.46.13';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5514,10 +5514,13 @@ function monthOutflows(y,m){ /* 그 달에 통장에서 나갈 돈 (큰 덩어�
  return {list,total};
 }
 function balanceOn(assetId,dateStr){return balanceAt(assetId,dateStr)}
-function varyingRecs(){ /* 변동 카테고리 반복 = 해당일이 되면 실제 금액 입력 필요 */
+function varyingRecs(){ /* 변동 카테고리 반복 = 해당일이 되면 실제 금액 입력 필요.
+  이번 달만 보면 지난달 이전에 미입력 상태로 넘어간 회차가 달이 바뀌는 순간 창밖으로 빠져
+  영원히 알림에서 사라지므로(과거分은 expandRec이 템플릿 amount로 계속 조용히 채움),
+  pendingTransferCount()처럼 RANGE_FROM~TODAY 전체를 스캔한다. */
  const out=[];
  DB.recurrences.filter(r=>r.active!==false&&recIsVarying(r)).forEach(r=>{
-  const dates=recDates(r,monthStartStr(TM.y,TM.m),monthEndStr(TM.y,TM.m));
+  const dates=recDates(r,RANGE_FROM,TODAY);
   dates.forEach(d=>{
    if(d>TODAY)return;                       /* 아직 안 온 회차는 제외 (해당일부터 알림) */
    if((r.skip||[]).includes(d))return;      /* 이번 회차를 삭제/건너뛴 경우 제외 */
@@ -5531,7 +5534,7 @@ function openQuickList(){ /* 변동 실제금액 입력 여러 건을 한 시트
  const vr=varyingRecs();
  if(!vr.length){toast('입력할 항목이 없어요');return}
  if(vr.length===1)return openQuickAmount(vr[0].rec.id,vr[0].date);
- openSheet(`<h3>실제 금액 입력</h3><div class="desc">${TM.m}월 변동 항목 ${vr.length}건이에요. 눌러서 실제 금액을 넣어주세요.</div>
+ openSheet(`<h3>실제 금액 입력</h3><div class="desc">변동 항목 ${vr.length}건이에요. 눌러서 실제 금액을 넣어주세요.</div>
   <div style="display:flex;flex-direction:column;gap:8px">${vr.map(({rec,date})=>`<button class="pick" onclick="openQuickAmount('${rec.id}','${date}')">
     <div class="pav ${catAv(rec.type)}">${catGlyph(rec.type,rec.category,18,'tag')}</div>
     <div class="pbody"><div class="pn">${esc(rec.memo||rec.category)}</div><div class="psub">${shortDate(date)} ${rec.type==='income'?'입금':'결제'}</div></div>
@@ -5570,7 +5573,7 @@ function quickAmountCards(){
  if(!v.length)return '';
  return v.map(({rec,date})=>`<button class="home-alert quick" onclick="openQuickAmount('${rec.id}','${date}')">
    <div class="ha-ic">${svg('edit')}</div>
-   <div class="ha-b"><div class="ha-t">${TM.m}월 ${esc(rec.memo||rec.category)} 실제 금액을 넣어주세요</div>
+   <div class="ha-b"><div class="ha-t">${esc(rec.memo||rec.category)} 실제 금액을 넣어주세요</div>
      <div class="ha-s">${shortDate(date)} ${rec.type==='income'?'입금':'결제'} · 눌러서 금액만 넣기</div></div>
    <div class="ha-c">${svg('chev')}</div></button>`).join('');
 }
@@ -5849,13 +5852,13 @@ function homeAlertCard(al){
    <div class="ha-c">${svg('chev')}</div></button>`;
  if(al.kind==='quick')return `<button class="home-alert quick" onclick="openQuickAmount('${al.recId}','${al.date}')">
    <div class="ha-ic">${svg('edit')}</div>
-   <div class="ha-b"><div class="ha-t">${TM.m}월 ${esc(al.name)} 실제 금액을 넣어주세요</div>
+   <div class="ha-b"><div class="ha-t">${esc(al.name)} 실제 금액을 넣어주세요</div>
      <div class="ha-s">${shortDate(al.date)} ${al.rtype==='income'?'입금':'결제'} · 눌러서 금액만 넣기</div></div>
    <div class="ha-c">${svg('chev')}</div></button>`;
  if(al.kind==='quickMulti')return `<button class="home-alert quick" onclick="openQuickList()">
    <div class="ha-ic">${svg('edit')}</div>
    <div class="ha-b"><div class="ha-t">실제 금액 입력 ${al.count}건</div>
-     <div class="ha-s">${TM.m}월 변동 항목 · 눌러서 한 번에 입력</div></div>
+     <div class="ha-s">변동 항목 · 눌러서 한 번에 입력</div></div>
    <div class="ha-c">${svg('chev')}</div></button>`;
  if(al.kind==='staleMv')return `<button class="home-alert" onclick="openStaleMvReview()">
    <div class="ha-ic">${svg('alert')}</div>

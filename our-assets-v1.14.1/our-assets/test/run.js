@@ -4365,6 +4365,25 @@ test('varyingRecs: daily 변동 반복거래도 도래한 회차가 알림 목�
   assert.deepStrictEqual([...vr].map((x) => x.date), ['2026-06-15']);
 });
 
+/* ---------- varyingRecs: 이번 달로 넘어가면 지난달 이전에 실제 금액을 안 넣은 변동 회차가
+ * 알림 목록에서 영영 사라지던 버그의 회귀 테스트(app-evolve cycle71). varyingRecs()가
+ * recDates()를 monthStartStr(TM.y,TM.m)~monthEndStr(TM.y,TM.m)로만 스캔해, 지난달 회차는
+ * 달이 바뀌는 순간 창밖으로 빠져 사용자가 다시는 실제 금액을 입력할 방법이 없었고
+ * expandRec()은 그 달을 계속 템플릿 amount로 조용히 채웠다. */
+test('varyingRecs: 달이 바뀌어도 지난달의 미입력 변동 회차가 계속 알림에 남아야 함', () => {
+  sandbox.TODAY = '2026-07-05';
+  sandbox.TM = { y: 2026, m: 7 };
+  sandbox.DB = { catVar: {}, recurrences: [] };
+  sandbox.setCatVar('expense', '전기요금', true);
+  sandbox.DB.recurrences.push({
+    id: 'r1', active: true, freq: 'monthly', type: 'expense', category: '전기요금',
+    day: 10, startDate: '2026-01-10', endDate: null, count: null, amount: 50000,
+    weekend: 'none', skip: [], edits: {},
+  });
+  const vr = sandbox.varyingRecs();
+  assert.ok(vr.some((x) => x.date === '2026-06-10'), '지난달(6월) 미입력 회차가 7월이 돼도 알림 목록에 남아 있어야 함');
+});
+
 /* ---------- openFixShortfall: "부족해요/해결 방법"에서 플랜을 실행하지 않고 시트를 닫으면
  * _fixWhen(고른 이체일)이 초기화되지 않아, 전혀 다른(다른 자산·다른 날짜) 부족 상황을 열어도
  * 예전에 고른 날짜를 그대로 이어쓰던 버그의 회귀 테스트(app-evolve cycle42).
@@ -4501,11 +4520,14 @@ test('planNegatives: 저축 등 플랜 대상이 아닌 통장(isPlanAcct=false)
   assert.deepStrictEqual(Array.from(sandbox.planNegatives()), []);
 });
 test('homeAlerts: 변동 항목(quick)이 정확히 1건이면 quick, 2건으로 늘면 quickMulti로 묶인다(app-evolve cycle43)', () => {
+  // varyingRecs()가 RANGE_FROM~TODAY 전체를 스캔하므로(cycle71), 이 테스트의 목적인
+  // "그룹핑 개수(1건 vs 2건)" 검증이 지난달 이전 미입력 회차 섞임에 흔들리지 않도록
+  // startDate를 이번 달로 둬 각 반복거래마다 회차가 정확히 1개씩만 생기게 한다.
   setupHomeAlertsDB();
   sandbox.setCatVar('expense', '전기요금', true);
   sandbox.DB.recurrences.push({
     id: 'r1', active: true, freq: 'monthly', type: 'expense', category: '전기요금',
-    day: 10, startDate: '2026-01-10', endDate: null, count: null, amount: 50000,
+    day: 10, startDate: '2026-06-01', endDate: null, count: null, amount: 50000,
     weekend: 'none', skip: [], edits: {},
   });
   let alerts = sandbox.homeAlerts([]);
@@ -4518,7 +4540,7 @@ test('homeAlerts: 변동 항목(quick)이 정확히 1건이면 quick, 2건으로
   sandbox.setCatVar('expense', '통신비', true);
   sandbox.DB.recurrences.push({
     id: 'r2', active: true, freq: 'monthly', type: 'expense', category: '통신비',
-    day: 12, startDate: '2026-01-12', endDate: null, count: null, amount: 30000,
+    day: 12, startDate: '2026-06-01', endDate: null, count: null, amount: 30000,
     weekend: 'none', skip: [], edits: {},
   });
   alerts = sandbox.homeAlerts([]);

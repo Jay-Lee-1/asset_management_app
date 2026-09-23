@@ -1,15 +1,8 @@
 {
   "cycle": 71,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 66,
-      "phase": "develop",
-      "timestamp": "2026-09-22T10:16:48.660Z",
-      "summary": "Explore 서브에이전트로 발견한 migrate()(index.html:1814)의 DB.owners 빈 배열 미처리 버그 수정. DB.owners=DB.owners||[...]는 []가 truthy라 owners가 빈 배열일 때 기본값(나/배우자/공용)으로 채워주지 못했다 — 바로 아래 DB.categories.income/expense는 같은 함수 안에서 이미 .length로 검사해 이 패턴을 피하고 있어 같은 함수 내 일관성 결함이었다. 정상 경로(delOwner가 0개로 삭제 못 하게 막음)로는 발생 못 하지만, 백업 JSON 복원(sanitizeBackup이 owners 필드를 전혀 검증하지 않음)으로 owners:[]가 들어오면 재현됨: 자산 등록 시 기본 owner가 DB.owners[0]=undefined가 되고 openOwnerPicker()는 고를 옵션이 0개인 빈 시트를 띄워 사용자가 귀속을 지정할 방법이 아예 없어진다. DB.owners=(DB.owners&&DB.owners.length)?DB.owners:[...]로 categories와 같은 패턴으로 수정. 회귀 테스트 3개 추가: migrate()에 owners:[]를 직접 넣어 기본값 채워지는지, owners에 값이 있으면 그대로 유지되는지, restoreBackup()에 owners:[]인 백업을 통째로 넣어도 기본값이 복구되는지. deepStrictEqual로 vm 샌드박스 배열과 host 배열을 비교할 때 cross-realm 프로토타입 불일치로 오탐 실패하는 걸 발견해([...sandbox.DB.owners]로 host 배열로 변환 후 비교) 테스트를 고쳤다. 두 인라인 <script> 블록 모두 node --check 파싱 확인, 453/453 통과(기존 450 + 신규 3). APP_VERSION 1.46.2->1.46.3, sw.js CACHE v164->v165.",
-      "commit": null
-    },
     {
       "cycle": 66,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-23T04:10:00.000Z",
       "summary": "critique 계획(삭제된 자산 재연동이 타입 검사 없이 동명 자산에 붙는 결함)을 구현. snapshotAssetName(id)(2716행)에서 삭제 시점 잔액(DB.deletedBal)과 나란히 DB.deletedType[nm]=a.type을 기록하도록 확장. deletedAssetHistoryExists(nm,type)(2679행)를 type 인자를 받게 확장해 DB.deletedType[nm]===type일 때만 true를 반환하도록 하고(타입 기록이 없는 마이그레이션 이전 데이터는 안전하게 false), saveAsset() 호출부(2873행)를 deletedAssetHistoryExists(d.name,d.type)로 갱신. relinkDeletedAsset(d)(2643행)에도 DB.deletedType[nm]===d.type 이중가드를 함수 시작부에 추가해, deletedAssetHistoryExists 체크를 우회한 직접 호출에서도 타입이 다르면 재연결하지 않도록 방어. 이제 현금 자산을 삭제하고 같은 이름으로 stock 등 다른 type의 자산을 새로 등록하면 재연동 시트 자체가 뜨지 않고 바로 새 자산으로 등록된다. test/run.js FUNCTIONS에 deletedAssetHistoryExists/relinkDeletedAsset 실제 소스를 추가(기존 saveAsset 테스트용 stub는 제거)하고, saveAsset의 askRelinkDeleted 스텁을 호출 인자 기록형으로 바꿔 호출 여부를 검증 가능하게 함. 회귀 테스트 8개 추가: deletedAssetHistoryExists type 일치/불일치/기록없음, relinkDeletedAsset type 일치 시 재연결/불일치 시 미재연결/기록없음 시 미재연결, snapshotAssetName 소스 텍스트 가드(DB.deletedType 대입), saveAsset 통합 테스트(type 같으면 재연동 시트 호출, 다르면 바로 새 자산 등록). 두 인라인 <script> 블록 모두 node --check 파싱 통과, node test/run.js 484/484 통과(기존 477 + 신규 7 테스트, saveAsset 통합 테스트 1개 포함 총 8개 추가 - 이 중 1개는 기존 saveAsset dup 테스트 개수에 포함 안 됨). APP_VERSION 1.46.11->1.46.12, sw.js CACHE v173->v174.",
+      "commit": null
+    },
+    {
+      "cycle": 71,
+      "phase": "develop",
+      "timestamp": "2026-09-23T05:12:57.000Z",
+      "summary": "Explore 서브에이전트로 발견한 varyingRecs()(index.html:5517)의 월별 스캔 창 버그 수정. recDates(r,monthStartStr(TM.y,TM.m),monthEndStr(TM.y,TM.m))로 '변동 카테고리 실제 금액 입력' 대상을 이번 달로만 좁혀서, 지난달 이전에 실제 금액을 안 넣은 회차는 달이 바뀌는 순간 스캔 창 밖으로 빠져 영영 알림에 못 뜨고 expandRec()이 그 달을 계속 템플릿 amount로 조용히 채웠다(pendingTransferCount()는 allTxns(RANGE_FROM,TODAY)로 전체를 보는데 varyingRecs만 월 단위였음). recDates(r,RANGE_FROM,TODAY)로 확장해 pendingTransferCount와 같은 패턴으로 맞췄다(기존 d>TODAY 가드가 미래 회차는 계속 걸러줌). openQuickList/quickAmountCards/homeAlertCard(quick,quickMulti)의 '${TM.m}월' 문구도 항목이 여러 달에 걸칠 수 있어 제거(각 카드는 이미 shortDate(date)로 월.일을 보여줌). 회귀 테스트 1개 추가: TODAY를 다음 달로 넘겨도 지난달 미입력 회차가 여전히 목록에 남는지 검증. 기존 homeAlerts quick/quickMulti 그룹핑 테스트는 startDate가 과거(1월)라 새 스캔 창에서 같은 달에 여러 회차가 섞여 실패해, 테스트 의도(1건↔2건 경계)를 유지하도록 startDate를 이번 달로 조정해 통과시켰다. 두 인라인 <script> 블록 모두 node --check 파싱 확인, 485/485 통과(기존 484 + 신규 1). APP_VERSION 1.46.12->1.46.13, sw.js CACHE v174->v175.",
       "commit": null
     }
   ]
