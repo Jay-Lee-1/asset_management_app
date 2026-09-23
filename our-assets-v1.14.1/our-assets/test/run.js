@@ -1258,6 +1258,14 @@ test('updateNwHistory: 원본 배열을 변형하지 않는다(불변)', () => {
   sandbox.updateNwHistory(orig, '2026-01-02', 120, 10);
   assert.strictEqual(orig.length, 1, '입력 배열은 그대로 유지돼야 함');
 });
+test('updateNwHistory: byOwner 인자를 넘기면 스냅샷에 귀속별 ta/td가 함께 저장된다(nwHistoryCard의 귀속별 추이용)', () => {
+  const hist = sandbox.updateNwHistory([], '2026-01-01', 300, 20, { 나: { ta: 200, td: 10 }, 배우자: { ta: 100, td: 10 } });
+  assert.deepStrictEqual(hist[0].byOwner, { 나: { ta: 200, td: 10 }, 배우자: { ta: 100, td: 10 } });
+});
+test('updateNwHistory: byOwner를 넘기지 않으면(하위호환) 항목에 byOwner 필드가 아예 생기지 않는다', () => {
+  const hist = sandbox.updateNwHistory([], '2026-01-01', 300, 20);
+  assert.strictEqual('byOwner' in hist[0], false);
+});
 test('pruneNwHistory: 120개 이하는 그대로 둔다', () => {
   const hist = Array.from({ length: 120 }, (_, i) => ({ date: `2026-01-${String(i % 28 + 1).padStart(2, '0')}`, ta: i, td: 0, nw: i }));
   assert.strictEqual(sandbox.pruneNwHistory(hist).length, 120);
@@ -1322,6 +1330,42 @@ test('nwChartPath: 날짜가 늘어날수록 x좌표는 단조 비감소이며 d
     const expected = +((sandbox.daysBetween(pts[0].date, p.date) / totalDays * 340).toFixed(1));
     assert.strictEqual(xs[i], expected);
   });
+});
+
+/* ---------- nwHistoryCard: 순자산 추이 카드가 자산 캐러셀의 귀속 전환을 따라가는지 (app-evolve cycle71 critique/advance) ----------
+ * nwCarousel은 owner별 순자산을 스와이프로 보여주는데, nwHistoryCard는 항상 DB.nwHistory의 전체
+ * 합계(ta/td/nw)만 그려 캐러셀에서 보고 있는 귀속과 무관하게 동일한 추이만 보여주던 불일치를 수정.
+ * updateNwHistory가 저장한 byOwner 스냅샷을 owner별로 필터링해 그 귀속만의 추이를 그리도록 한다. */
+test('nwHistoryCard: owner를 생략하거나 "all"이면 기존처럼 전체 합계(byOwner 무시) 추이를 그린다', () => {
+  sandbox.DB = { nwHistory: [
+    { date: '2026-01-01', ta: 300, td: 20, nw: 280, byOwner: { 나: { ta: 200, td: 10 } } },
+    { date: '2026-01-02', ta: 320, td: 20, nw: 300, byOwner: { 나: { ta: 210, td: 10 } } },
+  ] };
+  const html = sandbox.nwHistoryCard();
+  assert.ok(html.includes('순자산 추이'));
+  assert.ok(html.includes('+' + sandbox.comma(20) + '원'), '전체 합계(nw 300-280=20) 증감이 나와야 함 — byOwner 값이 아님');
+});
+test('nwHistoryCard: owner가 지정되면 그 귀속의 byOwner 스냅샷(ta-td)만으로 추이를 그린다', () => {
+  sandbox.DB = { nwHistory: [
+    { date: '2026-01-01', ta: 300, td: 20, nw: 280, byOwner: { 나: { ta: 200, td: 10 }, 배우자: { ta: 100, td: 10 } } },
+    { date: '2026-01-02', ta: 320, td: 20, nw: 300, byOwner: { 나: { ta: 230, td: 10 }, 배우자: { ta: 90, td: 10 } } },
+  ] };
+  const html = sandbox.nwHistoryCard('나');
+  assert.ok(html.includes('순자산 추이'));
+  assert.ok(html.includes('+' + sandbox.comma(30) + '원'), '나의 순자산은 190->220으로 30 증가해야 함(전체 합계 20과 달라야 함)');
+});
+test('nwHistoryCard: 지정한 귀속의 byOwner 스냅샷이 2개 미만이면(막 전환 등) 빈 카드 대신 안내 문구를 보여준다', () => {
+  sandbox.DB = { nwHistory: [
+    { date: '2026-01-01', ta: 300, td: 20, nw: 280, byOwner: { 나: { ta: 200, td: 10 } } },
+    { date: '2026-01-02', ta: 320, td: 20, nw: 300 }, // 마이그레이션 이전 항목: byOwner 없음
+  ] };
+  const html = sandbox.nwHistoryCard('배우자');
+  assert.ok(html.includes('이 귀속의 추이는 곧 쌓여요'));
+  assert.ok(!html.includes('<svg'), '그릴 점이 부족하면 차트 svg는 렌더되지 않아야 함');
+});
+test('nwHistoryCard: 스냅샷이 1개 이하면 owner 지정 여부와 무관하게 빈 문자열을 반환한다(기존 동작 유지)', () => {
+  sandbox.DB = { nwHistory: [{ date: '2026-01-01', ta: 300, td: 20, nw: 280 }] };
+  assert.strictEqual(sandbox.nwHistoryCard('all'), '');
 });
 
 /* ---------- txnsToCSV: 거래 내역 CSV 내보내기 ---------- */
@@ -4028,6 +4072,29 @@ test('doRenameOwner: 이름변경 대상과 무관한 귀속을 보고 있었다
   }
   assert.strictEqual(sandbox.ST.assetOwner, '나');
   assert.strictEqual(sandbox.ST.plan.owner, '전체');
+});
+/* ---------- doRenameOwner: 귀속 이름변경 시 DB.nwHistory의 byOwner 스냅샷 키도 함께 옮기는지 (app-evolve cycle71 advance) ----------
+ * nwHistoryCard(owner)가 DB.nwHistory[i].byOwner[owner] 키로 과거 추이를 조회하므로, 이름변경 후에도
+ * 옛 이름 키만 남아 있으면 새 이름으로는 지금까지 쌓인 추이를 하나도 못 찾아 "곧 쌓여요" 안내만 계속 보게 된다. */
+test('doRenameOwner: DB.nwHistory의 byOwner 키도 옛 이름에서 새 이름으로 옮겨간다', () => {
+  sandbox.DB = {
+    owners: ['나', '아빠'], assets: [{ owner: '아빠' }],
+    nwHistory: [
+      { date: '2026-01-01', ta: 300, td: 20, nw: 280, byOwner: { 나: { ta: 200, td: 10 }, 아빠: { ta: 100, td: 10 } } },
+      { date: '2026-01-02', ta: 320, td: 20, nw: 300 }, // byOwner 없는 마이그레이션 이전 항목도 예외 없이 넘어가야 함
+    ],
+  };
+  sandbox.ST = { assetOwner: '아빠', plan: { owner: '전체' } };
+  const $orig = sandbox.$;
+  sandbox.$ = (id) => (id === 'renameOwner' ? { value: '아버지' } : $orig(id));
+  try {
+    assert.doesNotThrow(() => sandbox.doRenameOwner(1));
+  } finally {
+    sandbox.$ = $orig;
+  }
+  assert.deepStrictEqual(sandbox.DB.nwHistory[0].byOwner, { 나: { ta: 200, td: 10 }, 아버지: { ta: 100, td: 10 } }, '옛 이름(아빠) 키가 새 이름(아버지)으로 이동해야 함');
+  assert.strictEqual('아빠' in sandbox.DB.nwHistory[0].byOwner, false);
+  assert.strictEqual(sandbox.DB.nwHistory[1].byOwner, undefined, 'byOwner가 없던 항목은 그대로 없어야 함');
 });
 test('renderMenu: 메뉴 탭 계정 진입점(acct-card)에 키보드/스크린리더 접근 패턴이 있다', () => {
   const body = extractFunction('renderMenu');

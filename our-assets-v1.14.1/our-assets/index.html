@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.13';
+const APP_VERSION='1.46.14';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1820,7 +1820,7 @@ function migrate(){
   Object.keys(DB.budgets).forEach(c=>{if(!DB.budgetHistory[c])DB.budgetHistory[c]=[{from:BUDGET_EPOCH,amount:DB.budgets[c]}]});
   DB._budgetHistV1=true;
  }
- DB.nwHistory=DB.nwHistory||[]; /* 순자산 추이: {date,ta,td,nw} 일별 스냅샷 (updateNwHistory) */
+ DB.nwHistory=DB.nwHistory||[]; /* 순자산 추이: {date,ta,td,nw,byOwner?} 일별 스냅샷 (updateNwHistory). byOwner는 {owner:{ta,td}} — 이전 항목엔 없을 수 있음(하위호환) */
  DB.recurrences=(DB.recurrences||[]).map(r=>Object.assign({skip:[],edits:{},endDate:null,autoConfirm:true,confirmedDates:[]},r,{id:r.id||uid(),active:r.active!==false}));
  DB.categories=DB.categories||{};
  DB.catIcon=DB.catIcon||{}; /* '타입:이름' → 아이콘 키 (선택). 없으면 기본 아이콘 */
@@ -1872,7 +1872,8 @@ function save(opts){invalidateBalances();
  /* 순자산 이력의 '오늘' 항목은 앱을 연 시각이 아니라 항상 최신 상태를 반영해야 한다:
   * updateNwHistory는 같은 날짜 항목을 덮어쓰는 멱등 함수라 save() 호출마다 매번 갱신해도 안전하고,
   * localStorage에 쓰기 직전에 반영해야 이번 저장분에 최신 스냅샷이 함께 기록된다. */
- DB.nwHistory=updateNwHistory(DB.nwHistory,TODAY,totalAssets(),totalDebt());
+ const byOwner={};DB.owners.forEach(o=>{byOwner[o]={ta:ownerAssets(o),td:ownerDebt(o)}});
+ DB.nwHistory=updateNwHistory(DB.nwHistory,TODAY,totalAssets(),totalDebt(),byOwner);
  let ok;try{localStorage.setItem(dataKey(),JSON.stringify(DB));ok=true}catch(e){ok=false}
  if(ok){const at=Date.now();try{localStorage.setItem(dataKey()+'__savedAt',String(at))}catch(e){}TAB_SAVED_AT=at}
  const notice=storageOutcomeMsg(ok,STORAGE_OK);STORAGE_OK=ok;
@@ -2147,9 +2148,10 @@ function totalDebt(){return DB.assets.filter(a=>a.includeInTotal&&a.type==='debt
 function netWorth(){return totalAssets()-totalDebt()}
 /* 순자산 추이: 하루 1개 스냅샷을 append/갱신 (DB.rates는 현재가만 보관해 과거를 재계산할 수 없으므로,
    호출 시점에 이미 평가된 ta/td를 그대로 저장한다). 오래된 기록은 월 1개로 압축해 localStorage 크기를 제한. */
-function updateNwHistory(hist,dateStr,ta,td){
+function updateNwHistory(hist,dateStr,ta,td,byOwner){
  hist=(hist||[]).slice();
  const entry={date:dateStr,ta,td,nw:ta-td};
+ if(byOwner)entry.byOwner=byOwner;
  if(hist.length&&hist[hist.length-1].date===dateStr)hist[hist.length-1]=entry;
  else hist.push(entry);
  return pruneNwHistory(hist);
@@ -2276,10 +2278,17 @@ function planGaugeCard(S,y,m){
 
 /* 순자산 추이 카드 (일별 스냅샷 스파크라인) */
 function shortDate2(ds){return ds.slice(5,7)+'/'+ds.slice(8,10)}
-function nwHistoryCard(){
+function nwHistoryCard(owner){
+ owner=owner||'all';
  const hist=DB.nwHistory||[];
- if(hist.length<2)return ''; /* 스냅샷이 1개 이하면 추이를 그릴 수 없음 */
- const pts=hist.slice(-60);
+ let pts=hist.slice(-60);
+ if(owner!=='all'){
+   pts=pts.filter(p=>p.byOwner&&p.byOwner[owner]).map(p=>{const b=p.byOwner[owner];return {date:p.date,ta:b.ta,td:b.td,nw:b.ta-b.td}});
+   if(pts.length<2)return `<div class="card nwh-card">
+     <div class="section-title" style="margin-top:0">순자산 추이</div>
+     <div class="empty" style="padding:18px 0"><div class="es">이 귀속의 추이는 곧 쌓여요</div></div>
+   </div>`;
+ }else if(pts.length<2)return ''; /* 스냅샷이 1개 이하면 추이를 그릴 수 없음 */
  const {line,area}=nwChartPath(pts,300,80);
  const first=pts[0],last=pts[pts.length-1];
  const diff=last.nw-first.nw,up=diff>=0;
@@ -2535,6 +2544,10 @@ function refreshAssetBody(){ /* 캐러셀은 그대로 두고 목록만 갱신 �
  if(!ST.editAssets&&!ST.aSel.mode)wireLongPress($('page-assets'),id=>{ST.aSel.mode=true;ST.aSel.ids.add(id);renderAssets()});
  requestAnimationFrame(fitAll);
 }
+function refreshNwHistoryCard(){ /* 캐러셀 귀속 전환 시 추이 카드만 갱신 */
+ const el=$('nwHistBody');if(!el)return;
+ el.innerHTML=nwHistoryCard(ST.assetOwner);
+}
 function wireNwCarousel(){
  const c=$('nwCarousel');if(!c)return;let t=null;
  const realIdx=p=>{const n=+c.dataset.n,loop=c.dataset.loop==='1';if(!loop)return p;if(p<=0)return n-1;if(p>=n+1)return 0;return p-1;};
@@ -2553,6 +2566,7 @@ function wireNwCarousel(){
        ST.assetOwner=owner;_lastNwOwner=owner;
        if(navigator.vibrate)navigator.vibrate(6);
        refreshAssetBody(); /* 전체 재렌더 X → 카드가 튀지 않음 */
+       refreshNwHistoryCard();
      }
    },110);
  },{passive:true});
@@ -2606,7 +2620,7 @@ function renderAssets(){
  ${pageHead('assets')}
  <div class="nw-carousel" id="nwCarousel" data-n="${_ol.length}" data-loop="${_ol.length>1?1:0}">${_ol.length>1?nwPane(_ol[_ol.length-1],TA,TD):''}${_ol.map(o=>nwPane(o,TA,TD)).join('')}${_ol.length>1?nwPane(_ol[0],TA,TD):''}</div>
  ${_ol.length>1?`<div class="nw-dots">${_ol.map((o,i)=>`<i class="${i===actIdx?'on':''}"></i>`).join('')}</div>`:''}
- ${nwHistoryCard()}
+ <div id="nwHistBody">${nwHistoryCard(ST.assetOwner)}</div>
  <div class="as-tools${ST.aSel.mode?' hidden':''}">
    <div class="as-actions">${ST.editAssets?`<button class="as-tbtn primary" onclick="ST.editAssets=false;save();renderAssets()">${svg('check')} 완료</button>`:
     `<button class="as-tbtn" onclick="openSortSheet()">${svg('sort')} 정렬</button>
@@ -2943,6 +2957,7 @@ function doRenameOwner(i){const v=$('renameOwner').value.trim();if(!v){toast('�
  if(DB.owners.includes(v)){toast('이미 있는 귀속이에요');return}
  DB.owners[i]=v;DB.assets.forEach(a=>{if(a.owner===old)a.owner=v});
  if(ST.assetOwner===old)ST.assetOwner=v; if(ST.plan.owner===old)ST.plan.owner=v; /* 활성 귀속 필터가 이름 변경을 따라가도록 */
+ (DB.nwHistory||[]).forEach(h=>{if(h.byOwner&&old in h.byOwner){h.byOwner[v]=h.byOwner[old];delete h.byOwner[old]}}); /* 과거 추이 스냅샷의 귀속별 키도 새 이름으로 이동 */
  save();openOwnerManage();toast('귀속을 수정했어요')}
 
 /* ================= LEDGER ================= */

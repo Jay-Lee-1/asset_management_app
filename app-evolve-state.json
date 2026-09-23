@@ -1,19 +1,8 @@
 {
-  "cycle": 71,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "순자산 추이 차트가 자산 캐러셀의 귀속 전환을 따라가지 않는 문제 수정",
-    "why": "자산관리 탭의 nwCarousel은 전체/귀속별 순자산을 스와이프로 보여주지만(nwPane, ownerAssets/ownerDebt, index.html:2518-2528), 바로 아래 nwHistoryCard(index.html:2279)의 추이 스파크라인은 항상 DB.nwHistory의 합계(ta,td,nw)만 그려 어떤 귀속을 보고 있는지와 무관하게 동일한 전체 추이만 보여준다. DB.nwHistory 자체가 save() 시점(index.html:1875, updateNwHistory index.html:2150)에 합계만 저장해 귀속별 데이터가 없으므로 구조적으로 불가능한 상태다. '나'/'배우자'/'공용'처럼 귀속을 나눠 쓰는 핵심 시나리오에서 캐러셀과 차트가 서로 다른 대상을 보여주는 것은 혼란스러운 불일치이며, 이미 있는 DB.owners/ownerAssets/ownerDebt 구조를 살리면 큰 신규 화면 없이 풀 수 있는 실용적 공백이다.",
-    "approach": "1) updateNwHistory(hist,dateStr,ta,td) 시그니처에 byOwner 인자를 추가(index.html:2150)하고, save()의 호출부(index.html:1875)에서 DB.owners.forEach(o=>{byOwner[o]={ta:ownerAssets(o),td:ownerDebt(o)}}) 형태로 계산해 넘긴다. entry={date,ta,td,nw,byOwner}로 저장하되, 기존 항목엔 byOwner가 없을 수 있으므로 하위 호환은 optional chaining으로 처리. pruneNwHistory(index.html:2157)는 손대지 않아도 됨(byOwner 필드도 그대로 함께 보존/압축됨). 2) nwHistoryCard()(index.html:2279)에 owner 파라미터를 추가: owner==='all'이면 기존처럼 p.nw 사용, 아니면 pts를 byOwner[owner]가 있는 항목만 필터링해 p.nw = byOwner[owner].ta-byOwner[owner].td로 매핑(nwChartPath(index.html:2166)는 {date,nw} 배열만 받으므로 그대로 재사용 가능). 필터 후 2개 미만이면 귀속 전환 후 아직 추이가 쌓이기 전이라는 안내 문구(예: '이 귀속의 추이는 곧 쌓여요')를 빈 카드 대신 표시. 3) renderAssets()(index.html:2599-2626)에서 nwHistoryCard() 호출부를 `<div id=\"nwHistBody\">${nwHistoryCard(ST.assetOwner)}</div>`로 감싸고, 새 함수 refreshNwHistoryCard()를 추가해 그 div의 innerHTML만 nwHistoryCard(ST.assetOwner)로 교체. 4) wireNwCarousel()(index.html:2538) 스크롤 핸들러에서 refreshAssetBody() 호출 직후 refreshNwHistoryCard()도 함께 호출해 캐러셀 전환과 차트가 동시에 갱신되게 한다. 5) doRenameOwner(i)(index.html:2941)에서 기존 자산 owner 필드 rename과 동일하게, DB.nwHistory.forEach(h=>{if(h.byOwner&&old in h.byOwner){h.byOwner[v]=h.byOwner[old];delete h.byOwner[old]}})로 과거 스냅샷의 byOwner 키도 새 이름으로 옮겨준다(귀속 삭제 시에는 기존 히스토리 항목처럼 고아 키를 그대로 둬도 무해하므로 별도 처리 불필요). 6) test/run.js에 updateNwHistory가 byOwner를 함께 저장/갱신하는 케이스, nwHistoryCard가 owner별로 pts를 올바르게 필터링하는 케이스, doRenameOwner가 byOwner 키를 이동시키는 케이스를 추가."
-  },
+  "cycle": 72,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 66,
-      "phase": "advance",
-      "timestamp": "2026-09-22T13:11:56.000Z",
-      "summary": "critique 계획대로 지출 분석에 최근 3개월 평균/지난달 대비 증감 배지 추가. spendByCategory 옆에 순수 함수 spendTrend(c,y,m,n=3)을 추가해 최근 n개월(이번 달 제외) 평균과 지난달 지출을 구하고, spendTrendBadge(deltaPct,label)로 화살표+퍼센트 배지 마크업을 만든다(지출 증가=expense색 ▲, 감소=income색 ▼, assetGainLossBadge와 동일한 색 관례). openSpendAnalysis()의 카테고리별 행(spend-nm)에 카테고리별 배지를, 총 지출 카드에 최근 3개월 평균 대비 전체 배지를 추가했다. test/run.js FUNCTIONS에 spendTrend/spendTrendBadge를 추가하고 회귀 테스트 6개(월 경계 넘기는 케이스 포함) 작성, 459/459 통과. 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.46.3->1.46.4, sw.js CACHE v165->v166.",
-      "commit": null
-    },
     {
       "cycle": 67,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-23T07:00:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 전략적 시야에서 재검토(render*/부분갱신/CSV/FX/stockCode/recHist 전반/addBalanceAdjust/homeAlerts/cloud sync/fixShortfall/doLogin/costBasis/decidePushOutcome/카테고리 rename·삭제 캐스케이드/Pro 스텁/PIN 부재/단일파일 구조/CI/History 페이지네이션/migrate owners/nwHistoryCard aria-label/자산그룹 재정렬 접근성/localStorage 실패 처리/spendTrend 배지/doRenameOwner 필터 동기화/assetSelAll 귀속 스코프/nwChartPath 날짜 기반 x축 등 최근 완료·기각 항목은 재탐색 금지 지시). 자산관리 탭의 nwCarousel(귀속별 스와이프, ownerAssets/ownerDebt, index.html:2518-2528)이 이미 귀속별 순자산 보기를 제공하는데, 바로 아래 nwHistoryCard(index.html:2279) 순자산 추이 스파크라인은 항상 DB.nwHistory 전체 합계(ta/td/nw)만 그려 캐러셀에서 어떤 귀속을 보고 있는지와 무관하게 동일한 추이만 보여주는 불일치를 발견. DB.nwHistory 자체가 save() 시점(index.html:1875, updateNwHistory index.html:2150)에 합계만 스냅샷으로 저장해 귀속별 추이 재구성이 구조적으로 불가능한 상태임을 확인. '나'/'배우자'/'공용' 귀속 분리가 핵심 시나리오인 이 앱에서 캐러셀과 차트가 서로 다른 대상을 보여주는 공백으로 판단해, updateNwHistory에 byOwner 스냅샷 추가 + nwHistoryCard가 ST.assetOwner를 따라가도록 하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 71,
+      "phase": "advance",
+      "timestamp": "2026-09-23T08:11:20.790Z",
+      "summary": "critique 계획대로 순자산 추이 차트가 자산 캐러셀의 귀속 전환을 따라가지 않던 문제 수정. updateNwHistory(hist,dateStr,ta,td,byOwner)에 byOwner 인자를 추가하고 save() 호출부(index.html:1875)에서 DB.owners.forEach로 귀속별 {ta,td} 스냅샷을 함께 저장하도록 확장(기존 항목엔 byOwner 필드 자체가 없어 하위호환 그대로 유지). nwHistoryCard(owner)에 owner 파라미터를 추가해 owner!=='all'이면 pts를 byOwner[owner]가 있는 항목만 필터링해 그 귀속만의 nw로 재계산하고, 필터 후 2개 미만이면 빈 카드 대신 '이 귀속의 추이는 곧 쌓여요' 안내를 보여준다. renderAssets()의 nwHistoryCard() 호출부를 <div id=\"nwHistBody\">로 감싸고 새 함수 refreshNwHistoryCard()를 추가, wireNwCarousel()의 스크롤 핸들러에서 refreshAssetBody() 직후 함께 호출해 캐러셀 전환과 차트가 동시에 갱신되게 했다. doRenameOwner(i)에도 DB.nwHistory의 byOwner 키를 옛 이름에서 새 이름으로 옮기는 로직을 추가. test/run.js에 updateNwHistory byOwner 저장/하위호환 2건, nwHistoryCard owner별 필터링/안내문구/빈문자열 회귀 4건, doRenameOwner byOwner 키 이동 1건 총 7개 추가. 두 인라인 <script> 블록 모두 node --check 파싱 확인, node test/run.js 492/492 통과(기존 485 + 신규 7). APP_VERSION 1.46.13->1.46.14, sw.js CACHE v175->v176.",
       "commit": null
     }
   ]
