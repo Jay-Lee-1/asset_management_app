@@ -1,15 +1,13 @@
 {
   "cycle": 75,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "recurrence.edits 무제한 누적 + lastActualAmount()의 매번 O(n log n) 전체 스캔",
+    "why": "변동 카테고리 반복거래의 '실제 금액 입력' 흐름에서 saveQuickAmount()(index.html:5624-5632)가 회차마다 r.edits[date]={amount}를 영구히 추가하기만 하고 어디에서도 가지치기하지 않는다(grep으로 r.edits/r.skip 전체 참조 확인, 정리 코드 없음). 요금제처럼 매번 금액이 바뀌는 반복거래라면 계정 수명 내내 키가 계속 쌓이는 정상 경로다. 체감 핫스팟은 lastActualAmount(r,date)(index.html:5619-5622): Object.keys(r.edits||{}).filter(d=>d<date).sort()를 openQuickAmount()(5608)가 열릴 때마다(즉 실제 금액 입력 시트를 열 때마다) 매번 전체 재계산한다. 계정이 오래될수록, 특히 하루 단위 변동 반복이 여러 개 있으면 점점 느려지는 실사용자 체감 성능 저하이며, sanitizeBackup()(4919-4928)도 백업/복원 때마다 이를 전부 순회해 CSV/JSON 내보내기 크기도 무한정 커진다.",
+    "approach": "recurrence 객체에 증분 갱신 캐시 필드 r._lastEdit={date,amount}를 추가한다. saveQuickAmount()(5624)와 recSave() scope 'one' 편집 경로(1470행 부근, r.edits에 직접 쓰는 지점)에서 새로 쓰는 날짜가 현재 캐시 날짜 이상이면 O(1)로 캐시를 갱신한다. lastActualAmount(r,date)를 다시 작성해: date > r._lastEdit.date(일반적인 append-only 케이스)면 캐시를 그대로 반환하는 빠른 경로를 타고, 과거 회차를 나중에 편집하는 순서 어긋남(out-of-order) 케이스만 기존 전체 스캔으로 폴백한다. 함수는 순수하게 유지하고 test/run.js에 케이스 추가: (1) edits 없음 -> r.amount, (2) 시간순 edits -> 캐시 히트가 전체스캔과 동일한 결과, (3) 순서 어긋난 편집(최신 날짜가 이미 있는데 더 오래된 날짜를 나중에 편집) -> 여전히 date 직전의 정확한 최신값 반환, (4) 대량(1000+ 키) 합성 edits -> 캐시 경로가 sort를 건너뛰고도 무차별 대입 기준 구현과 동일한 결과를 내는지 검증. APP_VERSION/sw.js CACHE 버전도 함께 올릴 것.",
+    "rejected": "전체내역 검색 인풋 디바운스(3612행) - expandRec()가 [from,to] 범위별로 이미 캐시하므로 타이핑마다 재계산이 없고, 키 입력당 발생하는 건 제한된 페이지네이션 DOM 재구성뿐이라 후순위. r.edits/r.skip을 아예 가지치기(오래된 항목 삭제)하는 방안은 '직전 실제 금액' 제안 기능과 전체 이력 보기를 깨뜨릴 위험이 있어, 안전한 O(1) 캐싱 쪽을 선택."
+  },
   "history": [
-    {
-      "cycle": 70,
-      "phase": "develop",
-      "timestamp": "2026-09-23T02:16:13.102Z",
-      "summary": "Explore 서브에이전트로 발견한 csvRowToImportTxn()의 findAsset (index.html:4706) 동명이인 자산 오매칭 버그 수정. saveAsset()의 중복명 가드(2849행)는 a.type이 같을 때만 중복을 막아, 서로 다른 type(예: cash 계좌와 savings 계좌)이 같은 이름(예: \"우리은행\")을 갖는 건 허용된다. findAsset은 이름만으로 Array.find를 써서 시세평가 자산을 제외한 후보 중 배열상 첫 번째를 그냥 골라버려, 동명이인 자산이 있으면 실제로는 다른 계좌로 갔어야 할 거래가 조용히 엉뚱한 자산에 fromAssetId/toAssetId로 연결된다. txnsToCSV가 자산을 이름으로만 내보내(id/type 없음) 재현 경로도 있다: cash \"우리은행\"과 savings \"우리은행\"을 만들고 거래를 내보낸 뒤 재가져오면 두 계좌 모두 non-market-valued라 findAsset이 둘 다 후보로 보고 그중 하나를 조용히 골라, 거래가 실제 대상이 아닌 계좌의 잔액 이력을 오염시키고 정작 의도한 계좌에는 그 거래가 빠진다 - 매칭 자체는 성공한 것으로 보여 unmatched 경고도 뜨지 않는다. findAsset을 filter 후 candidates.length===1일 때만 매칭하고 2개 이상이면 null을 반환하도록 수정해 기존 unmatched 경로(fromAssetName/toAssetName 스냅샷 + assetUnmatchedCount)로 빠지게 했다. test/run.js에 회귀 테스트 1개 추가: type이 다른 동명이인 자산(cash/savings) 2개가 있을 때 지출/이체 모두 unmatched로 남는지 검증. 두 인라인 <script> 블록 모두 node --check 파싱 확인, 477/477 통과(기존 476 + 신규 1). APP_VERSION 1.46.10->1.46.11, sw.js CACHE v172->v173.",
-      "commit": null
-    },
     {
       "cycle": 70,
       "phase": "review",
@@ -141,6 +139,13 @@
       "phase": "review",
       "timestamp": "2026-09-23T22:05:00.000Z",
       "summary": "develop 커밋(65ebaa2, recFreq() monthly 이탈 시 weekend='none' 리셋)을 검토. weekend 필드가 UI상 freq==='monthly'일 때만 노출된다는 전제(3478행 부근 recOpenWeekend/setRecWeekend 렌더 조건)와 recDates()의 shiftWeekend 적용이 freq와 무관하게 항상 일어난다는 전제(1919행)를 코드로 재확인해 원래 버그 진단이 맞았음을 검증했다. 수정이 monthly->monthly(변화 없음)는 건드리지 않고 monthly->그 외에서만 리셋함을 diff와 신규 테스트로 확인, weekly->monthly로 되돌아올 때 day가 비어있으면 채워지는 기존 동작과도 충돌 없음을 확인. weekend를 참조하는 다른 모든 지점(recNthDate/recCountUntil/truncateRecEnd/recHistFieldsChanged 등, 총 10곳 이상)이 전부 recDraft.weekend를 그대로 읽어 쓰므로 이 리셋 하나로 해당 흐름 전체가 일관되게 고쳐짐을 확인. 이미 저장된 기존 데이터(수정 이전에 monthly+weekend로 만들어졌다가 이미 weekly 등으로 바뀐 반복)는 이번 fix가 소급 적용하지 못하지만, 그건 신규 재현 경로 차단이라는 develop 단계의 원래 범위 밖이라 별도 이슈로 남기지 않음. 두 인라인 <script> 블록 모두 node --check 파싱 통과, node test/run.js 512/512 통과 재확인. 실제 버그 없어 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 75,
+      "phase": "critique",
+      "timestamp": "2026-09-23T23:10:23.723Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 전략적 시야에서 재검토(cycle65-75에서 이미 다룬 render*/CSV/FX/recHist 전반/카테고리 캐스케이드/Pro 스텁/History 페이지네이션/nwHistoryCard byOwner/wireGroupDrag·wireMonthCarousel pointercancel·touchcancel/#dpModal·#dpWheel 접근성 등은 재탐색 금지 지시, cycle74가 남긴 두 후보(recurrence.edits/skip 무제한 누적, 검색 인풋 디바운스)는 자유롭게 파보되 강제하지 않음). saveQuickAmount()(index.html:5624-5632, 변동 카테고리 반복거래 실제 금액 입력)가 회차마다 r.edits[date]={amount}를 영구 추가하고 어디에서도 가지치기하지 않음을 grep으로 확인 - 요금이 매번 바뀌는 반복거래라면 계정 수명 내내 정상적으로 키가 쌓이는 흔한 경로. lastActualAmount(r,date)(index.html:5619-5622)가 Object.keys(r.edits||{}).filter(d=>d<date).sort()로 매번 전체 스캔+정렬을 하는데 이게 openQuickAmount()(5608)를 열 때마다(즉 실제 금액 입력 시트를 열 때마다) 호출되는 실사용 핫스팟이라, 계정이 오래되거나 일단위 변동 반복이 여러 개면 체감 가능한 성능 저하로 채택. sanitizeBackup()(4919-4928)도 백업/복원마다 전체 edits를 순회해 내보내기 크기도 무한정 커짐. 검색 인풋 디바운스는 expandRec()가 [from,to] 범위별로 이미 캐시해 타이핑마다 재계산이 없어 후순위 기각. r._lastEdit={date,amount} 증분 캐시를 saveQuickAmount/recSave 편집 경로에서 O(1) 갱신하고, lastActualAmount가 date > 캐시.date인 일반 append-only 케이스는 캐시를 즉시 반환하고 과거 회차 순서어긋난 편집만 기존 전체스캔으로 폴백하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     }
   ]
