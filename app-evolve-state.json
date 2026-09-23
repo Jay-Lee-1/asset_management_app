@@ -1,15 +1,8 @@
 {
   "cycle": 74,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 68,
-      "phase": "critique",
-      "timestamp": "2026-09-22T20:10:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 전략적 시야에서 재검토(render*/부분갱신 전반/CSV/FX/stockCode/recHist/addBalanceAdjust/homeAlerts/cloud sync/fixShortfall/doLogin 게스트데이터/costBasis 손익추적/decidePushOutcome/카테고리 캐스케이드/Pro 스텁/PIN 부재/단일파일 구조/CI/History 페이지네이션/migrate owners/nwHistoryCard aria-label/자산그룹 재정렬 접근성/localStorage 실패 처리/spendTrend 배지/doRenameOwner 필터 동기화/varyingRecs daily·weekly/assetSelAll 귀속 스코프 등 최근 완료·기각 항목은 재탐색 금지 지시). Home 탭 최상단에 항상 보이는 순자산 추이 스파크라인 nwChartPath()(index.html:2165-2174)가 stepX=W/(pts.length-1)로 점을 배열 인덱스 기준 등간격 배치할 뿐 p.date를 전혀 참조하지 않음을 확인 — DB.nwHistory는 앱을 연 날에만 스냅샷이 쌓이고 pruneNwHistory(2156-2164)가 90일 이전 구간을 월 단위로 압축해, 실사용 데이터에는 '일 단위 1점'과 '월 단위 1점' 구간이 섞이는데도 동일한 폭으로 그려져 장기 추세 구간이 실제보다 압축돼 보이는 왜곡을 신규 영역으로 채택. 반복거래 분할/만기 불변식(truncateRecEnd/clampRecurringToMaturity 등)은 이미 여러 사이클 집중 점검·테스트로 다뤄져 한계효용이 낮아 후순위로, 저축목표/목표금액 트래킹 기능 부재는 투기적 신규 기능이라 정정보다 우선순위 낮게 기각. advance에서 daysBetween(a,b) 순수 헬퍼 추가 후 nwChartPath의 x좌표 계산을 인덱스 기반에서 daysBetween 비례 배치로 교체하고, test/run.js의 기존 nwChartPath 테스트에 date 필드를 채우고 불균등 간격/단조성/등간격 회귀 케이스를 추가하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 68,
       "phase": "advance",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-23T16:08:06.052Z",
       "summary": "wireMonthCarousel() touchcancel 미처리 버그 수정: 엣지 백제스처/알림 배너/전화 수신 등으로 touchend 없이 스와이프가 중단되면 트랙 transform이 마지막 touchmove 값에 고정되고 라벨이 실제 패널과 어긋나던 문제를, touchcancel 리스너를 추가해 항상 중앙으로 스냅백하고 label(0)으로 복구하도록 고쳤다. touchend/touchcancel이 공유하는 커밋 방향 판정을 순수 함수 monthSwipeCommitDir(dx, stepPx, cancelled)로 분리하고 test/run.js에 임계값 미만/이상 양방향/cancelled 케이스 4개 추가(502/502 통과). APP_VERSION 1.46.17→1.46.18, sw.js CACHE v179→v180.",
+      "commit": null
+    },
+    {
+      "cycle": 74,
+      "phase": "develop",
+      "timestamp": "2026-09-23T17:20:00.000Z",
+      "summary": "Explore 서브에이전트로 발견한 recDates()의 daily+weekend 3중 카운트 버그 수정. shiftWeekend(ds,mode)(index.html:1909)는 토요일과 일요일을 같은 평일로 몰아준다(earlier: 둘 다 전주 금요일로 -1/-2일, later: 둘 다 다음주 월요일로 +2/+1일). monthly/yearly는 기간당 원시 후보가 하나뿐이라 무해하고 weekly는 매번 같은 요일만 후보라 충돌이 없지만, daily는 하루 간격으로 원시 후보를 만들어서 주말이 낀 주마다 (조정 없는 금/월요일 자체) + (토요일 조정분) + (일요일 조정분) 3개 후보가 같은 날짜로 겹쳐 recDates()가 그 날짜를 3번 반환했다. expandRec()(1963행)이 이를 그대로 가상 거래로 펼쳐 balancesUpTo()/totalAssets가 해당 금액을 3배로 합산해 잔액이 조용히 틀어진다. 재현: '반복 설정' 시트에서 매월(monthly) 반복에 주말 조정을 켠 뒤 주기를 매일(daily)로 바꾸면 - recFreq()/txFreq()(3487/3271행)가 d.weekend를 초기화하지 않고 weekend 필드는 monthly에서만 UI에 노출되므로(3478행) 저장된 weekend가 조용히 남는다 - 매주 금/월요일 거래가 3배로 잡힌다. recDates()의 push() 클로저(1919행)에 out[out.length-1]!==d 가드를 추가해 직전에 실제로 담긴 날짜와 같으면 건너뛰도록 고쳤다(원시 후보가 항상 증가하는 날짜 순으로 생성되므로 연속 중복만 확인하면 충분, monthly/weekly/yearly는 애초에 연속 중복이 없어 no-op). test/run.js에 daily+earlier/later 각각 토·일요일이 낀 주에서 금/월요일이 한 번만 나오는지 검증하는 회귀 테스트 2개 추가. 두 인라인 <script> 블록 모두 node --check 파싱 확인, node test/run.js 504/504 통과(기존 502 + 신규 2). APP_VERSION 1.46.18->1.46.19, sw.js CACHE v180->v181.",
       "commit": null
     }
   ]

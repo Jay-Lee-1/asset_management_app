@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.18';
+const APP_VERSION='1.46.19';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1916,7 +1916,7 @@ function shiftWeekend(ds,mode){ /* 주말 조정: earlier=금요일로 당김, l
 function recDates(r,from,to){
  const out=[];const end=new Date(((r.endDate&&r.endDate<to)?r.endDate:to)+'T00:00:00');
  const rs=new Date(r.startDate+'T00:00:00');
- const push=ds=>{const d=shiftWeekend(ds,r.weekend);if(d>=from&&d<=to&&d>=r.startDate&&(!r.endDate||d<=r.endDate))out.push(d);};
+ const push=ds=>{const d=shiftWeekend(ds,r.weekend);if(d>=from&&d<=to&&d>=r.startDate&&(!r.endDate||d<=r.endDate)&&out[out.length-1]!==d)out.push(d);};
  if(r.freq==='monthly'){
    /* endd 이후 한 달을 더 생성한다: weekend 조정이 달을 넘겨 앞당겨지면(예: 매월 1일+earlier가 전달 말일로 이동) 그 달의 후보를 만들어야만 push()가 올바른 달로 걸러낼 수 있다 */
    let cur=new Date(rs.getFullYear(),rs.getMonth(),1);const endd=new Date(end.getFullYear(),end.getMonth(),1);

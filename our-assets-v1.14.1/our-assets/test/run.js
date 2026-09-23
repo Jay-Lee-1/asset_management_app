@@ -590,6 +590,25 @@ test('recDates: 오래전 시작한 daily/weekly 반복도 좁은 [from,to] 구�
   );
 });
 
+/* ---------- recDates: daily 반복 + weekend 조정 시 금/월요일 3중 카운트 버그 (app-evolve cycle74 develop)
+ * shiftWeekend()는 토요일과 일요일을 같은 평일로 몰아준다(earlier: 둘 다 금요일로, later: 둘 다 월요일로).
+ * monthly/yearly는 기간당 원시 후보가 하나뿐이고 weekly는 매번 같은 요일만 후보로 나와 충돌이 없지만,
+ * daily는 하루 간격으로 원시 후보를 만들기 때문에 주말이 낀 주에는 (조정 안 된 금요일 또는 월요일) +
+ * (토요일 조정분) + (일요일 조정분)이 같은 날짜로 겹쳐 recDates()가 그 날짜를 3번 반환했다.
+ * expandRec()이 이 결과를 그대로 가상 거래로 펼쳐 balancesUpTo()/totalAssets가 해당 금액을 3배로
+ * 합산해 잔액이 조용히 틀어졌다. push()가 직전에 실제로 담긴 날짜와 같으면 건너뛰도록 고쳤다
+ * (원시 후보가 항상 증가하는 날짜 순으로 생성되므로 연속 중복만 확인하면 충분). */
+test('recDates: daily+weekend earlier에서 토/일 조정이 금요일로 겹쳐도 금요일이 한 번만 나온다', () => {
+  const r = { freq: 'daily', startDate: '2026-06-01', endDate: null, weekend: 'earlier' };
+  const dates = Array.from(sandbox.recDates(r, '2026-06-01', '2026-06-08'));
+  assert.deepStrictEqual(dates, ['2026-06-01', '2026-06-02', '2026-06-03', '2026-06-04', '2026-06-05', '2026-06-08']);
+});
+test('recDates: daily+weekend later에서 토/일 조정이 월요일로 겹쳐도 월요일이 한 번만 나온다', () => {
+  const r = { freq: 'daily', startDate: '2026-06-01', endDate: null, weekend: 'later' };
+  const dates = Array.from(sandbox.recDates(r, '2026-06-01', '2026-06-08'));
+  assert.deepStrictEqual(dates, ['2026-06-01', '2026-06-02', '2026-06-03', '2026-06-04', '2026-06-05', '2026-06-08']);
+});
+
 /* ---------- num()/fmtAmt(): 음수 입력 처리 (app-evolve cycle56 develop, cycle56 review에서 num() 수정)
  * 자산 "현재 금액" 필드(asAmt)는 마이너스통장(오버드래프트)처럼 잔액이 음수일 수 있는데,
  * fmtAmt()가 매 키 입력마다 '-' 문자까지 통째로 제거해 사용자가 애초에 음수를 입력할 수 없었다.
