@@ -5656,6 +5656,23 @@ test('renderPlan: 수입/이체/지출 항목이 상대 자산명과 부호가 �
   assert.ok(html.includes('장보기') && html.includes('-8,000원'), '지출 항목의 메모와 - 금액이 렌더돼야 함');
 });
 
+/* ---------- abbr() 억 단위 반올림 비대칭 버그 회귀 테스트 (app-evolve cycle72 develop) ----------
+ * abbr()의 억 단위 분기가 원래 Math.abs(v%1)<0.05로 "정수보다 살짝 큰" 값(예: 2.02억)만
+ * 반올림 표시("2억")하고, "정수보다 살짝 작은" 값(예: 1.96억)은 같은 정도로 반올림 대상인데도
+ * toFixed(1)로 빠져 "2.0억"처럼 어색한 소수점이 남았다. 두 값 모두 2억에서 2% 이내인데
+ * 한쪽만 정수로 뭉개지는 게 일관성 없어, 정수까지의 거리(Math.min(f,1-f))로 대칭 판정하도록 고쳤다.
+ */
+test('abbr: 정수보다 살짝 작은 값(1.96억)도 살짝 큰 값(2.02억)과 동일하게 반올림돼 "2억"으로 표시된다', () => {
+  assert.strictEqual(sandbox.abbr(196000000), '2억');
+  assert.strictEqual(sandbox.abbr(202000000), '2억');
+});
+test('abbr: 정수와 충분히 먼 소수점 값(1.5억)은 그대로 toFixed(1)로 "1.5억"이 유지된다', () => {
+  assert.strictEqual(sandbox.abbr(150000000), '1.5억');
+});
+test('abbr: 음수도 부호를 유지한 채 동일한 반올림 규칙이 적용된다(-1.96억 -> "-2억")', () => {
+  assert.strictEqual(sandbox.abbr(-196000000), '-2억');
+});
+
 /* ---------- 실행 ---------- */
 // pbkdf2Hash는 Web Crypto(subtle.deriveBits)를 쓰는 비동기 함수라, 러너도 async test를
 // 지원해야 한다 — sync test는 그냥 await해도 즉시 반환되므로 기존 테스트에는 영향 없다.
