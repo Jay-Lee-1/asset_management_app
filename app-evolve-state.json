@@ -1,15 +1,8 @@
 {
   "cycle": 70,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 65,
-      "phase": "develop",
-      "timestamp": "2026-09-22T05:13:31.336Z",
-      "summary": "Explore 서브에이전트로 발견한 전체내역(History) 탭 페이지네이션 역전 버그 수정. DB.settings 기본값(index.html:1810)과 기존 사용자 1회 마이그레이션(_sortV2, 1830행)이 모두 histSortAsc=true를 강제해 사실상 전체 사용자의 ST.hist.sortAsc가 true(오름차순)였는데, updateHist()(3653행)의 페이징이 actual.slice(0,shown)으로 배열 앞부터 잘라 정렬 방향과 무관하게 오름차순일 때는 가장 오래된 기록부터 페이지를 채웠다. 날짜 그룹 렌더(groupHTML)는 항상 최신순 고정(3656행 주석 '최신순 고정')이라 이 역전이 시각적으로도 어긋났고, 사용자가 정렬을 되돌릴 수 있는 histToggleSort()(3772행)는 어떤 UI에도 연결돼 있지 않은 죽은 코드라 스스로 고칠 방법도 없었다. 재현: 전체내역 탭을 기본 범위(올해)로 열면 올해 완료된 거래가 20건을 넘는 순간부터 첫 화면이 1월 내역부터 보이고, 최근 거래를 보려면 '더보기'를 여러 번 눌러야 했다. actualShown을 H.sortAsc?actual.slice(Math.max(0,actual.length-shown)):actual.slice(0,shown)로 바꿔 정렬 방향과 무관하게 항상 최신 내역부터(뒤에서) 채우도록 수정 — groupHTML이 날짜 그룹을 항상 최신순으로 재정렬하므로 actualShown 내부 순서는 렌더 결과에 영향 없음. 회귀 테스트 2개 추가: sortAsc:true에서 25건 중 최근 20건(5/06~5/25)만 첫 페이지에 보이고 가장 오래된 5건(5/01~5/05)은 '더보기' 배지 뒤에 숨는지, sortAsc:false(기본값)에서도 기존처럼 최신 20건이 보이는지. 두 인라인 <script> 블록 모두 node --check 파싱 확인, 449/449 통과(기존 447 + 신규 2). APP_VERSION 1.46.0->1.46.1, sw.js CACHE v162->v163.",
-      "commit": null
-    },
     {
       "cycle": 65,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-23T01:08:28.000Z",
       "summary": "카테고리(expense/income/saving) 삭제 시 마지막 1개는 삭제 못하게 delCat/doDeleteCat에 delOwner와 동일한 최소-1 가드 추가(빈 카테고리 배열로 인한 undefined 카테고리 거래 생성을 원천 차단). saveTx()에도 type!=='transfer'인데 category가 비어있으면 저장을 막는 방어 가드 추가. test/run.js에 min-1 가드 회귀 테스트 3개(expense/income/saving)와 saveTx category 가드 테스트 2개 추가, 기존 단일-카테고리 픽스처 3곳은 새 가드에 맞춰 2개 카테고리로 조정(476/476 통과). APP_VERSION 1.46.10, sw CACHE v172로 갱신.",
+      "commit": null
+    },
+    {
+      "cycle": 70,
+      "phase": "develop",
+      "timestamp": "2026-09-23T02:16:13.102Z",
+      "summary": "Explore 서브에이전트로 발견한 csvRowToImportTxn()의 findAsset (index.html:4706) 동명이인 자산 오매칭 버그 수정. saveAsset()의 중복명 가드(2849행)는 a.type이 같을 때만 중복을 막아, 서로 다른 type(예: cash 계좌와 savings 계좌)이 같은 이름(예: \"우리은행\")을 갖는 건 허용된다. findAsset은 이름만으로 Array.find를 써서 시세평가 자산을 제외한 후보 중 배열상 첫 번째를 그냥 골라버려, 동명이인 자산이 있으면 실제로는 다른 계좌로 갔어야 할 거래가 조용히 엉뚱한 자산에 fromAssetId/toAssetId로 연결된다. txnsToCSV가 자산을 이름으로만 내보내(id/type 없음) 재현 경로도 있다: cash \"우리은행\"과 savings \"우리은행\"을 만들고 거래를 내보낸 뒤 재가져오면 두 계좌 모두 non-market-valued라 findAsset이 둘 다 후보로 보고 그중 하나를 조용히 골라, 거래가 실제 대상이 아닌 계좌의 잔액 이력을 오염시키고 정작 의도한 계좌에는 그 거래가 빠진다 - 매칭 자체는 성공한 것으로 보여 unmatched 경고도 뜨지 않는다. findAsset을 filter 후 candidates.length===1일 때만 매칭하고 2개 이상이면 null을 반환하도록 수정해 기존 unmatched 경로(fromAssetName/toAssetName 스냅샷 + assetUnmatchedCount)로 빠지게 했다. test/run.js에 회귀 테스트 1개 추가: type이 다른 동명이인 자산(cash/savings) 2개가 있을 때 지출/이체 모두 unmatched로 남는지 검증. 두 인라인 <script> 블록 모두 node --check 파싱 확인, 477/477 통과(기존 476 + 신규 1). APP_VERSION 1.46.10->1.46.11, sw.js CACHE v172->v173.",
       "commit": null
     }
   ]

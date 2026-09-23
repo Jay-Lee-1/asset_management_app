@@ -1498,6 +1498,22 @@ test('csvRowToImportTxn: 시세평가 자산(fx/gold/stock)과 이름이 같아�
   assert.strictEqual(tr.txn.toAssetId, null);
   assert.strictEqual(tr.txn.toAssetName, '삼성전자');
 });
+// saveAsset()의 중복명 가드는 같은 type끼리만 막아, 서로 다른 type(예: cash/savings)의
+// 자산이 같은 이름을 갖는 건 막지 않는다. CSV는 이름만으로 매칭하므로 이런 동명이인이 있으면
+// find()가 배열상 첫 번째 자산을 조용히 골라 실제로는 다른 계좌의 거래를 잘못 연결할 수 있다.
+// 후보가 2개 이상이면 추측하지 말고 unmatched로 남겨(기존 "못 찾음" 경로 재사용) 사용자가 알게 한다.
+test('csvRowToImportTxn: 같은 이름의 자산이 2개 이상이면 추측해서 연결하지 않고 unmatched로 남긴다', () => {
+  const assets = [{ id: 'a1', name: '우리은행', type: 'cash' }, { id: 'a2', name: '우리은행', type: 'savings' }];
+  const exp = sandbox.csvRowToImportTxn(['2026-01-01', '지출', '식비', '5000', '우리은행', '', ''], assets);
+  assert.strictEqual(exp.ok, true);
+  assert.strictEqual(exp.txn.fromAssetId, null);
+  assert.strictEqual(exp.txn.fromAssetName, '우리은행');
+  assert.deepStrictEqual(Array.from(exp.unmatched), ['우리은행']);
+  const tr = sandbox.csvRowToImportTxn(['2026-01-01', '이체', '이체', '5000', '주계좌', '우리은행', ''], [{ id: 'a0', name: '주계좌', type: 'cash' }, ...assets]);
+  assert.strictEqual(tr.ok, true);
+  assert.strictEqual(tr.txn.toAssetId, null);
+  assert.strictEqual(tr.txn.toAssetName, '우리은행');
+});
 test('csvRowToImportTxn: 이체/저축인데 보내는·받는 자산 중 하나라도 비어 있으면 무효 처리한다', () => {
   const assets = [{ id: 'a1', name: '주계좌' }];
   const r1 = sandbox.csvRowToImportTxn(['2026-01-01', '이체', '이체', '10000', '주계좌', '', ''], assets);
