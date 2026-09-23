@@ -103,7 +103,7 @@ const FUNCTIONS = [
   'ledgerSelPartial', 'ledgerToggleSel', 'ledgerSelAll', 'visibleTx',
   'fmtDot', 'splitHist', 'histRow', 'histTotHTML', 'updateHist', 'renderHistory',
   'lowestInMonth', 'planBalInner', 'planBalCard', 'planTrackHTML', 'planRowsHTML', 'renderPlan',
-  'refreshPlanBody', 'planAsset', 'nextGroupOrder', 'monthSwipeCommitDir',
+  'refreshPlanBody', 'planAsset', 'nextGroupOrder', 'monthSwipeCommitDir', 'overlayEscapeTarget',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -5740,6 +5740,26 @@ test('monthSwipeCommitDir: 임계값 이상 왼쪽으로 밀면 다음 달(1)', 
 test('monthSwipeCommitDir: cancelled=true면 dx가 임계값을 넘어도 항상 취소(null)', () => {
   assert.strictEqual(sandbox.monthSwipeCommitDir(50, 100, true), null);
   assert.strictEqual(sandbox.monthSwipeCommitDir(-50, 100, true), null);
+});
+
+/* ---------- overlayEscapeTarget: onSheetKeydown()의 Tab 트랩·Escape 대상 판정 (app-evolve cycle74 advance) ----------
+ * #dpModal/#dpWheel(날짜·연월 선택 오버레이)이 시트보다 z-index상 위에 뜨는데도 onSheetKeydown이
+ * 항상 #sheet만 대상으로 해 Tab 진입이 불가능하고 Escape가 캘린더 대신 배경 시트를 통째로 닫던
+ * 버그를 고치면서, "현재 최상단 오버레이가 무엇인가" 판정을 overlayEscapeTarget(dpWheelOpen,
+ * dpModalOpen,sheetOpen)로 분리했다. dpWheel > dpModal > sheet 순으로 우선한다(실제 z-index 순서와
+ * 일치: dp-wheel:160 > dp-modal:151 > sheet:101).
+ */
+test('overlayEscapeTarget: 셋 다 열려 있으면 dpWheel이 최우선', () => {
+  assert.strictEqual(sandbox.overlayEscapeTarget(true, true, true), 'wheel');
+});
+test('overlayEscapeTarget: dpWheel이 닫혀 있고 dpModal이 열려 있으면 modal', () => {
+  assert.strictEqual(sandbox.overlayEscapeTarget(false, true, true), 'modal');
+});
+test('overlayEscapeTarget: dpWheel·dpModal 모두 닫혀 있고 시트만 열려 있으면 sheet', () => {
+  assert.strictEqual(sandbox.overlayEscapeTarget(false, false, true), 'sheet');
+});
+test('overlayEscapeTarget: 아무 오버레이도 열려 있지 않으면 null(onSheetKeydown이 조기 반환)', () => {
+  assert.strictEqual(sandbox.overlayEscapeTarget(false, false, false), null);
 });
 
 /* ---------- 실행 ---------- */

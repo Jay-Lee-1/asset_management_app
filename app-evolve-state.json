@@ -1,11 +1,7 @@
 {
-  "cycle": 74,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "날짜/월-년 선택 오버레이(#dpModal, #dpWheel)가 키보드 접근 불가 + Escape를 잘못된 대상(시트)이 가로챔",
-    "why": "onSheetKeydown(index.html:5053-5063)의 Tab-트랩과 Escape 처리는 오직 $('sheet')만 대상으로 한다. 하지만 openFieldDatePicker/renderDatePicker(5244-5296)가 여는 #dpModal과 openMonthSheet/openYMSheet/dpToggleJump(5207-5225, 5341-5360, 5441-5460)가 여는 #dpWheel은 z-index상 시트보다 위(dp-scrim:150, dp-modal:151, dp-wheel:160 vs sheet:101, index.html:380/384/411/675)에 뜨는 별도 오버레이인데도 role/aria-modal, inert 처리, open시 포커스 이동, 전용 keydown 핸들러가 전혀 없다. 재현: 새 거래 시트를 연 채 날짜 필드를 탭해 #dpModal을 열면(1) Tab으로 달력 셀에 전혀 도달할 수 없고(시트 자식만 트랩됨), (2) Escape를 누르면 캘린더가 아니라 시트 전체가 닫혀 입력 중이던 거래 폼이 통째로 사라진다(onSheetKeydown 5055). (3) 전체내역 화면의 histPickDate(3638)처럼 시트 없이 단독으로 열리는 경우 Escape가 아예 무반응이고 배경 페이지로 Tab이 새어나간다.",
-    "approach": "1) topOverlay() 헬퍼 추가: dpWheel.show > dpModal.show > sheet.show 순으로 현재 최상단 오버레이 엘리먼트를 반환. 2) onSheetKeydown(5053)을 확장해 Tab 트랩 대상을 하드코딩된 $('sheet') 대신 topOverlay()로, Escape 처리도 topOverlay()에 따라 분기(dpWheel -> ymCloseWheel()/dpCloseJump() 중 적절한 것, dpModal -> closeDatePicker(), 그 외 -> closeSheet())하도록 수정. 3) renderDatePicker(5268), openMonthSheet(5207), openYMSheet, dpToggleJump 각 open 지점에서 시트의 _sheetReturnFocus 패턴처럼 진입 시 포커스를 오버레이 내부(예: '오늘로'/'확인' 버튼 또는 선택된 날짜 셀)로 옮기고 닫을 때 복귀시킨다. 4) 오버레이가 열려있는 동안 그 아래 있는 #sheet(또는 #app)에도 setSheetInert류 처리를 적용해 배경으로 Tab이 새지 않게 한다. 5) 마크업(index.html:1276-1278)의 #dpModal/#dpWheel에 role=\"dialog\" aria-modal=\"true\" 추가. 범위: 함수 몇 개 + 마크업 속성 두 곳, 기존 시트 접근성 패턴 재사용, 아키텍처 변경 없음."
-  },
+  "cycle": 75,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
     {
       "cycle": 69,
@@ -145,6 +141,13 @@
       "phase": "critique",
       "timestamp": "2026-09-23T00:00:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 전략적 시야에서 재검토(render*/부분갱신/CSV/FX/stockCode/recHist 전반/addBalanceAdjust/homeAlerts/cloud sync/fixShortfall/doLogin/costBasis/decidePushOutcome/카테고리 rename·삭제 캐스케이드/Pro 스텁 등 기존에 다룬 영역은 재탐색만 하고 새 발견 우선). 새로 발견한 최우선 항목: 날짜/월-년 선택 오버레이(#dpModal, #dpWheel)가 시트의 포커스 트랩·inert·Escape 처리(onSheetKeydown, 5053-5063)에 포함되지 않아 키보드 사용자가 Tab으로 진입 불가하고, Escape를 누르면 캘린더 대신 배경 시트 전체가 닫혀 입력 중이던 폼이 소실됨. z-index(dp-wheel:160 > dp-modal:151 > sheet:101)상 최상단인데도 접근성 트리에서 빠져있는 구조적 결함. 후순위 후보로 recurrence.edits/skip 무제한 누적(3410/3588/1464-1467, 느린 tech-debt)과 전체내역 검색 인풋 디바운스 부재(3612, 실측 미확인)도 기록. pending_advance_plan에 상세 구현 방향 저장.",
+      "commit": null
+    },
+    {
+      "cycle": 74,
+      "phase": "advance",
+      "timestamp": "2026-09-23T19:05:00.000Z",
+      "summary": "critique 계획대로 #dpModal/#dpWheel(날짜·연월 선택 오버레이) 키보드 접근성 결함을 고쳤다. onSheetKeydown()이 항상 $('sheet')만 대상으로 Tab 트랩·Escape를 처리하던 것을, dpWheel>dpModal>sheet 순으로 현재 최상단 오버레이를 고르는 순수 함수 overlayEscapeTarget(dpWheelOpen,dpModalOpen,sheetOpen)로 판정하도록 바꿔, Escape가 항상 최상단 오버레이(dpWheel이면 closeDpWheelLayer, dpModal이면 closeDatePicker, 아니면 closeSheet)만 닫고 Tab 트랩도 그 오버레이 내부(sheetFocusables 재사용)로 좁혔다. renderDatePicker/openMonthSheet/openYMSheet/dpToggleJump 각 진입점에서 ovPushFocus()로 열기 전 포커스를 스택에 쌓고 오버레이 첫 포커스 가능 요소로 이동시키며, closeDatePicker/ymCloseWheel(이제 closeDpWheelLayer 위임)/dpCloseJump에서 ovPopFocus()로 복귀시켜 dpModal 위에 dpWheel이 중첩되는 경우(dpToggleJump)도 스택으로 올바르게 처리된다. setSheetInert('app'/'fab'만 처리하던 기존 함수)를 syncOverlayInert()로 통합해 dpModal/dpWheel이 떠 있는 동안 'app'/'fab'뿐 아니라 '#sheet' 자체에도 inert+aria-hidden을 걸어 배경으로 Tab이 새지 않게 했다(openSheet/closeSheet도 이 함수로 교체). 마크업의 #dpModal/#dpWheel에 role=\"dialog\" aria-modal=\"true\" 추가(#sheet는 이미 있었음). overlayEscapeTarget을 test/run.js FUNCTIONS에 등록하고 우선순위(wheel>modal>sheet>null) 회귀 테스트 4개 추가. 두 인라인 <script> 블록 모두 node --check 파싱 확인, node test/run.js 508/508 통과(기존 504 + 신규 4). APP_VERSION 1.46.19->1.46.20, sw.js CACHE v181->v182.",
       "commit": null
     }
   ]

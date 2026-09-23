@@ -1274,8 +1274,8 @@ body.selmode .fab{display:none}
 <div class="scrim" id="scrim"></div>
 <div class="sheet" id="sheet" role="dialog" aria-modal="true" tabindex="-1"></div>
 <div class="dp-scrim" id="dpScrim"></div>
-<div class="dp-modal" id="dpModal"></div>
-<div class="dp-wheel" id="dpWheel"></div>
+<div class="dp-modal" id="dpModal" role="dialog" aria-modal="true"></div>
+<div class="dp-wheel" id="dpWheel" role="dialog" aria-modal="true"></div>
 <div class="fab-pop" id="fabPop"></div>
 <button class="fab" id="fab" onclick="fabTap()" aria-label="추가"></button>
 <div class="selbar-bottom" id="selBarBottom"></div>
@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.19';
+const APP_VERSION='1.46.20';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5049,26 +5049,59 @@ function attachDetent(sh,sc){ /* 아래로 스크롤하면 확장 (한 번 되�
 }
 let _sheetReturnFocus=null;
 function sheetFocusables(sh){return [...sh.querySelectorAll('button,[href],input,select,textarea,[tabindex]')].filter(el=>!el.disabled&&el.tabIndex!==-1&&el.offsetParent!==null)}
-function setSheetInert(on){['app','fab'].forEach(id=>{const el=$(id);if(!el)return;if(on){el.setAttribute('inert','');el.setAttribute('aria-hidden','true')}else{el.removeAttribute('inert');el.removeAttribute('aria-hidden')}})}
+/* #dpModal/#dpWheel(날짜·연월 선택 오버레이)는 시트보다 위(z-index)에 뜨지만 별도의 포커스 트랩·Escape 처리가 없었음 —
+   topOverlay 개념으로 통합해 항상 '현재 최상단' 오버레이만 Tab 트랩·Escape 대상이 되게 한다. */
+function overlayEscapeTarget(dpWheelOpen,dpModalOpen,sheetOpen){
+ if(dpWheelOpen)return 'wheel';
+ if(dpModalOpen)return 'modal';
+ if(sheetOpen)return 'sheet';
+ return null;
+}
+function syncOverlayInert(){ /* dpModal/dpWheel가 떠 있는 동안 그 아래(app/fab/sheet)로 Tab이 새지 않게 */
+ const dpOn=$('dpModal').classList.contains('show')||$('dpWheel').classList.contains('show');
+ const sh=$('sheet');const shOn=!!(sh&&sh.classList.contains('show'));
+ ['app','fab'].forEach(id=>{const el=$(id);if(!el)return;
+   if(dpOn||shOn){el.setAttribute('inert','');el.setAttribute('aria-hidden','true')}
+   else{el.removeAttribute('inert');el.removeAttribute('aria-hidden')}});
+ if(sh){if(dpOn){sh.setAttribute('inert','');sh.setAttribute('aria-hidden','true')}else{sh.removeAttribute('inert');sh.removeAttribute('aria-hidden')}}
+}
+let _ovFocusStack=[];
+function ovPushFocus(){_ovFocusStack.push(document.activeElement)}
+function ovPopFocus(){const el=_ovFocusStack.pop();if(el&&document.contains(el))el.focus()}
+function closeDpWheelLayer(){ /* dpWheel 닫기 — 단독 사용(월/연월 휠)이든 dpModal 위 점프 휠이든 공통 */
+ $('dpWheel').classList.remove('show');
+ if(!$('dpModal').classList.contains('show'))$('dpScrim').classList.remove('show');
+ const l=$('dpMLabel');if(l)l.classList.remove('open');
+ syncOverlayInert();ovPopFocus();
+}
 function onSheetKeydown(e){
- const sh=$('sheet');if(!sh||!sh.classList.contains('show'))return;
- if(e.key==='Escape'){e.preventDefault();closeSheet();return}
+ const sh=$('sheet');
+ const target=overlayEscapeTarget($('dpWheel').classList.contains('show'),$('dpModal').classList.contains('show'),!!(sh&&sh.classList.contains('show')));
+ if(!target)return;
+ const top=target==='wheel'?$('dpWheel'):target==='modal'?$('dpModal'):sh;
+ if(e.key==='Escape'){e.preventDefault();
+   if(target==='wheel')closeDpWheelLayer();
+   else if(target==='modal')closeDatePicker();
+   else closeSheet();
+   return;
+ }
  if(e.key==='Tab'){
-   const f=sheetFocusables(sh);if(!f.length)return;
+   const f=sheetFocusables(top);if(!f.length)return;
    const first=f[0],last=f[f.length-1];
    if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}
    else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}
-   else if(!sh.contains(document.activeElement)){e.preventDefault();first.focus()}
+   else if(!top.contains(document.activeElement)){e.preventDefault();first.focus()}
  }
 }
 document.addEventListener('keydown',onSheetKeydown);
 function openSheet(html,topBtn){
  const sh=$('sheet');
  const wasOpen=sh.classList.contains('show');
- if(!wasOpen){_segPrev=null;sh.classList.remove('expanded');sh._expanded=false;sh._lockH=0;_sheetReturnFocus=document.activeElement;setSheetInert(true);}
+ if(!wasOpen){_segPrev=null;sh.classList.remove('expanded');sh._expanded=false;sh._lockH=0;_sheetReturnFocus=document.activeElement;}
  const btn=topBtn||`<button class="sheet-x" onclick="closeSheet()" aria-label="닫기">${svg('x')}</button>`;
  sh.innerHTML=`<div class="sheet-scroll" id="sheetScroll"><div class="grip"></div>${btn}${html}</div>`;
  sh.classList.add('show');$('scrim').classList.add('show');
+ syncOverlayInert();
  const sc=$('sheetScroll');
  if(!wasOpen){ /* 첫 화면 높이를 세션 고정값으로 (이후 모든 하위·복귀 화면이 동일 높이) */
    sc.style.maxHeight='88dvh';
@@ -5155,12 +5188,10 @@ function ensureEdgeGesture(){
    }
  }x0=null;dx=dy=0;};
  edge.addEventListener('touchend',up);edge.addEventListener('touchcancel',up);
-}function closeSheet(){const sh=$('sheet');sh.style.transition='';sh.style.transform='';sh.style.height='';sh.style.maxHeight='';sh.style.overflow='';sh.classList.remove('expanded','show');$('scrim').classList.remove('show');const eg=$('sheetEdgeGlobal');if(eg)eg.remove();setSheetInert(false);const rf=_sheetReturnFocus;_sheetReturnFocus=null;if(rf&&document.contains(rf))rf.focus();if(TAB_SYNC_PENDING!=null){const at=TAB_SYNC_PENDING;TAB_SYNC_PENDING=null;applyForeignSave(at)}}
+}function closeSheet(){const sh=$('sheet');sh.style.transition='';sh.style.transform='';sh.style.height='';sh.style.maxHeight='';sh.style.overflow='';sh.classList.remove('expanded','show');$('scrim').classList.remove('show');const eg=$('sheetEdgeGlobal');if(eg)eg.remove();syncOverlayInert();const rf=_sheetReturnFocus;_sheetReturnFocus=null;if(rf&&document.contains(rf))rf.focus();if(TAB_SYNC_PENDING!=null){const at=TAB_SYNC_PENDING;TAB_SYNC_PENDING=null;applyForeignSave(at)}}
 $('scrim').addEventListener('click',closeSheet);
 $('dpScrim').addEventListener('click',()=>{
- if($('dpWheel').classList.contains('show')){$('dpWheel').classList.remove('show');
-  if(!$('dpModal').classList.contains('show'))$('dpScrim').classList.remove('show');
-  const l=$('dpMLabel');if(l)l.classList.remove('open');return}
+ if($('dpWheel').classList.contains('show')){closeDpWheelLayer();return}
  closeDatePicker();
 });
 function confirmSheet(title,msg,ok,cb){window._cf=cb;
@@ -5205,6 +5236,7 @@ function txMonthRange(){
  return {lo:{y:+lo.slice(0,4),m:+lo.slice(5,7)},hi:{y:+hi.slice(0,4),m:+hi.slice(5,7)}};
 }
 function openMonthSheet(which){ /* 전체내역·플랜: 월 단위 휠 (내역 있는 달만) */
+ ovPushFocus();
  const cur=ST.plan;
  const list=monthsWithTx().slice().reverse(); /* 오래된 → 최신 (위가 과거) */
  let items='';
@@ -5220,8 +5252,9 @@ function openMonthSheet(which){ /* 전체내역·플랜: 월 단위 휠 (내역 
      <button class="btn btn-primary" onclick="monthWheelApply('${which}')">이동</button>
    </div>`;
  $('dpWheel').classList.add('show');$('dpScrim').classList.add('show');
+ syncOverlayInert();
  const want=`${cur.y}-${cur.m}`;
- requestAnimationFrame(()=>whScrollToVal($('whMonth'),want));
+ requestAnimationFrame(()=>{whScrollToVal($('whMonth'),want);const f=sheetFocusables($('dpWheel'))[0];if(f)f.focus()});
 }
 function whScrollToVal(col,val){if(!col)return;
  const it=[...col.children].find(c=>c.dataset.v===String(val));
@@ -5266,6 +5299,8 @@ function dpMonthBlock(y,m){
  return `<div class="dp-month" data-ym="${y}-${m}" data-y="${y}" data-m="${m}"><div class="dp-grid">${cells}</div></div>`;
 }
 function renderDatePicker(){
+ const wasOpen=$('dpModal').classList.contains('show');
+ if(!wasOpen)ovPushFocus();
  const base=_dpYM;
  let months='';
  for(let off=-3;off<=3;off++){ /* 초기엔 앞뒤 3개월만 (스크롤하면 자동으로 더 붙음) */
@@ -5285,6 +5320,7 @@ function renderDatePicker(){
   `;
  $('dpModal').classList.add('show');$('dpScrim').classList.add('show');
  document.body.classList.add('dp-open'); /* 뒤 화면 스크롤 잠금 */
+ syncOverlayInert();
  requestAnimationFrame(()=>{
    const sc=$('dpScroll');
    const cur=sc&&sc.querySelector(`.dp-month[data-ym="${base.y}-${base.m}"]`);
@@ -5292,10 +5328,11 @@ function renderDatePicker(){
    moveDpBlob(false);
    if(sc)dpOnScroll(sc); /* 처음부터 보고 있는 달만 진하게 */
    setTimeout(()=>moveDpBlob(false),80); /* 팝업 확대가 끝난 뒤 한 번 더 보정 */
+   if(!wasOpen){const f=sheetFocusables($('dpModal'))[0];if(f)f.focus()}
  });
 }
 function closeDatePicker(){$('dpModal').classList.remove('show');$('dpScrim').classList.remove('show');
- document.body.classList.remove('dp-open')}
+ document.body.classList.remove('dp-open');syncOverlayInert();ovPopFocus()}
 function dpExtend(sc,dir){ /* 끝에 닿으면 달을 더 이어붙임 */
  const months=[...sc.querySelectorAll('.dp-month')];if(!months.length)return;
  const ref=dir>0?months[months.length-1]:months[0];
@@ -5339,6 +5376,8 @@ function dpOnScroll(sc){ /* 화면에 가장 많이 보이는 달을 상단에 �
 }
 /* 아이폰 시계 스타일 휠 — 연도·월 선택 팝업 */
 function dpToggleJump(){
+ const wasOpen=$('dpWheel').classList.contains('show');
+ if(!wasOpen)ovPushFocus();
  const l=$('dpMLabel');if(l)l.classList.add('open');
  const yFrom=Math.min(TM.y-10,_dpYM.y),yTo=Math.max(TM.y+5,_dpYM.y);
  let ys='';for(let yy=yFrom;yy<=yTo;yy++)ys+=`<div class="wh-item" data-v="${yy}">${yy}년</div>`;
@@ -5355,9 +5394,10 @@ function dpToggleJump(){
      <button class="btn btn-primary" onclick="dpJumpApply()">이동</button>
    </div>`;
  $('dpWheel').classList.add('show');
- requestAnimationFrame(()=>{whScrollTo($('whY'),_dpYM.y);whScrollTo($('whM'),_dpYM.m)});
+ syncOverlayInert();
+ requestAnimationFrame(()=>{whScrollTo($('whY'),_dpYM.y);whScrollTo($('whM'),_dpYM.m);const f=sheetFocusables($('dpWheel'))[0];if(f)f.focus()});
 }
-function dpCloseJump(){$('dpWheel').classList.remove('show');const l=$('dpMLabel');if(l)l.classList.remove('open')}
+function dpCloseJump(){closeDpWheelLayer()}
 function whScrollTo(col,val){if(!col)return;
  const it=[...col.children].find(c=>+c.dataset.v===+val);
  if(it)col.scrollTop=it.offsetTop-col.clientHeight/2+it.offsetHeight/2;
@@ -5439,6 +5479,7 @@ function mnLblTap(which){if(_mnLong){_mnLong=false;return}
 /* 홈·가계부: 연도와 월을 따로 고르는 선택창 */
 let _ymWhich='home',_ymYear=null;
 function openYMSheet(which){ /* 홈·가계부: 아이폰 시계식 휠로 연도·월 선택 */
+ ovPushFocus();
  _ymWhich=which;
  const cur=which==='ledger'?ST.ledger:ST.home;
  const yFrom=Math.min(TM.y-10,cur.y),yTo=Math.max(TM.y+5,cur.y);
@@ -5456,9 +5497,10 @@ function openYMSheet(which){ /* 홈·가계부: 아이폰 시계식 휠로 연�
      <button class="btn btn-primary" onclick="ymApplyWheel()">이동</button>
    </div>`;
  $('dpWheel').classList.add('show');$('dpScrim').classList.add('show');
- requestAnimationFrame(()=>{whScrollTo($('whY'),cur.y);whScrollTo($('whM'),cur.m)});
+ syncOverlayInert();
+ requestAnimationFrame(()=>{whScrollTo($('whY'),cur.y);whScrollTo($('whM'),cur.m);const f=sheetFocusables($('dpWheel'))[0];if(f)f.focus()});
 }
-function ymCloseWheel(){$('dpWheel').classList.remove('show');$('dpScrim').classList.remove('show')}
+function ymCloseWheel(){closeDpWheelLayer()}
 function ymApplyWheel(){
  const y=whValue($('whY')),m=whValue($('whM'));
  ymCloseWheel();
