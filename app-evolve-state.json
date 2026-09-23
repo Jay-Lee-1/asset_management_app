@@ -1,22 +1,8 @@
 {
   "cycle": 75,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 69,
-      "phase": "review",
-      "timestamp": "2026-09-22T23:20:00.000Z",
-      "summary": "develop 커밋(62ab575, recHistFieldsChanged에 weekend 필드 추가)을 검토. shiftWeekend()가 recDates()의 push() 경로에서 range 안의 모든 후보 날짜(from~to, 과거 포함)에 r.weekend를 무조건 적용함을 코드로 재확인해, weekend 변경이 과거 회차 날짜도 실제로 재계산한다는 커밋 설명이 정확함을 검증했다. saveRec()이 recHistFieldsChanged()===true일 때만 recSaveScopeConfirm('이 내역만/이후부터/전체')로 분기하고 false면 DB.recurrences[i]=d로 즉시 덮어쓰는 구조를 재확인해, weekend 누락이 실제로 확인창을 건너뛰게 만드는 경로였음을 검증. test/run.js의 분리된 두 테스트(weekend 변경 시 true, 메모만 변경 시 false)가 정확히 대칭적으로 회귀를 커버함을 확인. node test/run.js 471/471 통과, 두 인라인 <script> 블록 모두 node --check 파싱 통과 재확인. 실제 버그 없어 코드 변경 없음.",
-      "commit": null
-    },
-    {
-      "cycle": 69,
-      "phase": "critique",
-      "timestamp": "2026-09-23T00:19:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 전략적 시야에서 재검토(render*/부분갱신/CSV/FX/stockCode/recHist 전반(weekend/varyingRecs daily·weekly 포함)/addBalanceAdjust/homeAlerts/cloud sync/fixShortfall/doLogin/costBasis/decidePushOutcome/카테고리 rename·삭제 캐스케이드/Pro 스텁/PIN 부재/단일파일 구조/CI/History 페이지네이션/migrate owners/nwHistoryCard aria-label/자산그룹 재정렬 접근성/localStorage 실패 처리/spendTrend 배지/doRenameOwner 필터 동기화/assetSelAll 귀속 스코프/nwChartPath 날짜간격 등 최근 완료·기각 항목은 재탐색 금지 지시). delOwner()(index.html:2926)는 '귀속은 최소 1개가 필요해요' 최소개수 가드가 있는데, doDeleteCat()(4280행)/delCat()(4276행)에는 동일한 가드가 없음을 코드 확인 — 지출/수입/저축 카테고리를 하나씩 삭제해 마지막 1개까지 지우면 DB.categories[k]=[]가 되고, openTxSheet()(3178행)의 category:DB.categories.expense[0]가 undefined로 대입되며 saveTx()(3286행)는 category 검증이 없어 그대로 저장돼 빈 카테고리명 거래가 생긴다. 이후 openCatPicker(5994행)도 그리드가 비어 재선택할 방법이 없다. test/run.js에 delOwner 최소개수 테스트는 있으나 delCat/doDeleteCat 쪽은 커버리지가 없음을 확인. advance에서 doDeleteCat(k,i) 시작부에 delOwner와 동일한 패턴(길이<=1이면 toast 후 return)의 가드를 추가하고 saveTx()에도 category 미선택 방어 가드를 추가, test/run.js에 type별(expense/income/saving) 회귀 테스트를 추가하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 69,
       "phase": "advance",
@@ -148,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-23T19:05:00.000Z",
       "summary": "critique 계획대로 #dpModal/#dpWheel(날짜·연월 선택 오버레이) 키보드 접근성 결함을 고쳤다. onSheetKeydown()이 항상 $('sheet')만 대상으로 Tab 트랩·Escape를 처리하던 것을, dpWheel>dpModal>sheet 순으로 현재 최상단 오버레이를 고르는 순수 함수 overlayEscapeTarget(dpWheelOpen,dpModalOpen,sheetOpen)로 판정하도록 바꿔, Escape가 항상 최상단 오버레이(dpWheel이면 closeDpWheelLayer, dpModal이면 closeDatePicker, 아니면 closeSheet)만 닫고 Tab 트랩도 그 오버레이 내부(sheetFocusables 재사용)로 좁혔다. renderDatePicker/openMonthSheet/openYMSheet/dpToggleJump 각 진입점에서 ovPushFocus()로 열기 전 포커스를 스택에 쌓고 오버레이 첫 포커스 가능 요소로 이동시키며, closeDatePicker/ymCloseWheel(이제 closeDpWheelLayer 위임)/dpCloseJump에서 ovPopFocus()로 복귀시켜 dpModal 위에 dpWheel이 중첩되는 경우(dpToggleJump)도 스택으로 올바르게 처리된다. setSheetInert('app'/'fab'만 처리하던 기존 함수)를 syncOverlayInert()로 통합해 dpModal/dpWheel이 떠 있는 동안 'app'/'fab'뿐 아니라 '#sheet' 자체에도 inert+aria-hidden을 걸어 배경으로 Tab이 새지 않게 했다(openSheet/closeSheet도 이 함수로 교체). 마크업의 #dpModal/#dpWheel에 role=\"dialog\" aria-modal=\"true\" 추가(#sheet는 이미 있었음). overlayEscapeTarget을 test/run.js FUNCTIONS에 등록하고 우선순위(wheel>modal>sheet>null) 회귀 테스트 4개 추가. 두 인라인 <script> 블록 모두 node --check 파싱 확인, node test/run.js 508/508 통과(기존 504 + 신규 4). APP_VERSION 1.46.19->1.46.20, sw.js CACHE v181->v182.",
+      "commit": null
+    },
+    {
+      "cycle": 75,
+      "phase": "develop",
+      "timestamp": "2026-09-23T21:09:59.295Z",
+      "summary": "recFreq()(index.html:3487)이 주기를 monthly에서 다른 주기로 바꿀 때 recDraft.weekend를 리셋하지 않던 버그 수정 — weekend 주말조정 필드는 UI에서 freq===monthly일 때만 노출되는데(3478행), recDates()의 shiftWeekend 적용은 freq와 무관하게 항상 일어나(1919행) 매월+주말조정을 켠 뒤 화면에 안 보이는 채로 주기를 바꾸면 저장된 weekend 값이 조용히 남아 매주/매일/매년 회차 날짜를 계속 조정해버렸다(cycle74 review에서 발견해 기록만 해두고 미조치였던 항목). v!==monthly분기에서 recDraft.weekend=none을 대입하도록 한 줄 추가. test/run.js FUNCTIONS에 recFreq 추가, renderRecSheet 스텁 추가, monthly->weekly/daily/yearly 리셋 2건 + monthly->monthly 유지 1건 + weekly->monthly day 채움 유지 1건 총 4개 회귀 테스트 추가. 두 인라인 <script> 블록 모두 node --check 파싱 확인, node test/run.js 512/512 통과(기존 508 + 신규 4). APP_VERSION 1.46.20->1.46.21, sw.js CACHE v182->v183.",
       "commit": null
     }
   ]

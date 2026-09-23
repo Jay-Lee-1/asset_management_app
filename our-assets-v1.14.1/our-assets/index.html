@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.20';
+const APP_VERSION='1.46.21';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3484,7 +3484,7 @@ function renderRecSheet(){
 }
 function recType(t){if(navigator.vibrate)navigator.vibrate(6);syncRecInputs();recDraft.type=t;recDraft.category=t==='transfer'?'이체':catListOf(t)[0]||'기타';
  if((t==='income'||t==='transfer'||t==='saving')&&!recDraft.toAssetId)recDraft.toAssetId=firstCash();renderRecSheet()}
-function recFreq(v){syncRecInputs();recDraft.freq=v;if(v==='monthly'&&!recDraft.day)recDraft.day=Number(String(recDraft.startDate).slice(8,10))||1;recalcEndCond(recDraft,recDraft.startDate);renderRecSheet()}
+function recFreq(v){syncRecInputs();recDraft.freq=v;if(v==='monthly'&&!recDraft.day)recDraft.day=Number(String(recDraft.startDate).slice(8,10))||1;else if(v!=='monthly')recDraft.weekend='none';recalcEndCond(recDraft,recDraft.startDate);renderRecSheet()}
 function recDayInput(el){const v=(el.value||'').replace(/[^0-9]/g,'').slice(0,2);if(el.value!==v)el.value=v;recDraft.day=v===''?'':Number(v);dayWarn('rec',v);if(v!=='')recalcEndCond(recDraft,recDraft.startDate)}
 function dayWarn(pfx,v){const w=$(pfx+'DayWarn');if(!w)return;
  const n=Number(v);let msg='';

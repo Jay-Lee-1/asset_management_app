@@ -103,7 +103,7 @@ const FUNCTIONS = [
   'ledgerSelPartial', 'ledgerToggleSel', 'ledgerSelAll', 'visibleTx',
   'fmtDot', 'splitHist', 'histRow', 'histTotHTML', 'updateHist', 'renderHistory',
   'lowestInMonth', 'planBalInner', 'planBalCard', 'planTrackHTML', 'planRowsHTML', 'renderPlan',
-  'refreshPlanBody', 'planAsset', 'nextGroupOrder', 'monthSwipeCommitDir', 'overlayEscapeTarget',
+  'refreshPlanBody', 'planAsset', 'nextGroupOrder', 'monthSwipeCommitDir', 'overlayEscapeTarget', 'recFreq',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -361,6 +361,9 @@ const sandbox = {
   // recDraft에 반영하는 순수 로직이 아닌 함수라 no-op으로 흉내낸다(saveTx/syncTxInputs와 같은 이유).
   recDraft: null,
   syncRecInputs: () => {},
+  // recFreq()가 끝에 부르는 시트 재렌더 — renderAssetSheet/renderTxSheet와 같은 이유로
+  // no-op으로 흉내낸다(recFreq 테스트는 recDraft 필드 변화만 검증).
+  renderRecSheet: () => {},
   // recSaveScopeConfirm()이 띄우는 확인 시트 — 실제 DOM 대신 마지막으로 그려진 html만 기록한다.
   lastSheetHtml: null,
   openSheet: (html) => { sandbox.lastSheetHtml = html; },
@@ -538,6 +541,38 @@ test('recalcEndCond: count/endDate가 둘 다 없으면 아무것도 하지 않�
   sandbox.recalcEndCond(d, d.startDate);
   assert.strictEqual(d.count, null);
   assert.strictEqual(d.endDate, null);
+});
+
+/* ---------- recFreq: 매월에서 다른 주기로 바꾸면 weekend가 리셋돼야 함 (app-evolve cycle75) ----------
+ * weekend 필드는 UI에서 freq==='monthly'일 때만 노출되는데(index.html:3478), recDates()의
+ * shiftWeekend 적용은 freq와 무관하게 항상 일어난다(1919행). 매월+주말조정을 켠 뒤 화면에서
+ * 안 보이는 채로 주기를 매주/매일/매년으로 바꾸면, 안 보이는 weekend 값이 그대로 남아
+ * 계속 날짜를 조정해버린다(화면엔 원인이 전혀 안 보임) — recFreq()가 monthly를 벗어날 때
+ * weekend를 'none'으로 리셋해 이 불일치를 막는다. */
+test('recFreq: 매월에서 매주로 바꾸면 recDraft.weekend가 none으로 리셋된다', () => {
+  sandbox.recDraft = { freq: 'monthly', weekend: 'later', startDate: '2026-01-10', day: 10 };
+  sandbox.recFreq('weekly');
+  assert.strictEqual(sandbox.recDraft.freq, 'weekly');
+  assert.strictEqual(sandbox.recDraft.weekend, 'none');
+});
+test('recFreq: 매월에서 매일/매년으로 바꿔도 weekend가 none으로 리셋된다', () => {
+  sandbox.recDraft = { freq: 'monthly', weekend: 'earlier', startDate: '2026-01-10', day: 10 };
+  sandbox.recFreq('daily');
+  assert.strictEqual(sandbox.recDraft.weekend, 'none');
+  sandbox.recDraft = { freq: 'monthly', weekend: 'earlier', startDate: '2026-01-10', day: 10 };
+  sandbox.recFreq('yearly');
+  assert.strictEqual(sandbox.recDraft.weekend, 'none');
+});
+test('recFreq: 매월에서 매월로(변화 없음) 유지되면 기존 weekend 값을 건드리지 않는다', () => {
+  sandbox.recDraft = { freq: 'monthly', weekend: 'later', startDate: '2026-01-10', day: 10 };
+  sandbox.recFreq('monthly');
+  assert.strictEqual(sandbox.recDraft.weekend, 'later', 'monthly로 유지되는 한 weekend는 사용자가 고른 값 그대로여야 함');
+});
+test('recFreq: 매주에서 매월로 바꾸면 weekend는 건드리지 않는다(그대로면 사용자가 다시 선택 가능)', () => {
+  sandbox.recDraft = { freq: 'weekly', weekend: 'none', startDate: '2026-01-10', day: null };
+  sandbox.recFreq('monthly');
+  assert.strictEqual(sandbox.recDraft.weekend, 'none');
+  assert.strictEqual(sandbox.recDraft.day, 10, '매월로 바뀌면서 day가 비어있었으므로 시작일 기준으로 채워져야 함');
 });
 
 /* ---------- recDates: weekend 조정이 달/연도 경계를 넘어 앞당겨지는 회차 누락 버그 ---------- */
