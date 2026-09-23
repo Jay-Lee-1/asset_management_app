@@ -1,27 +1,20 @@
 {
   "cycle": 72,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 72,
+      "phase": "review",
+      "timestamp": "2026-09-23T10:02:00.000Z",
+      "summary": "develop 커밋(bff7181, abbr() 억 단위 반올림 비대칭 수정)을 검토. abbr()의 새 대칭 판정 Math.min(f,1-f)<0.05가 f=v%1(항상 0 이상, Math.abs(n)을 거친 v이므로 음수 아님)일 때 정수보다 위/아래 어느 쪽이든 0.05 미만 거리면 동일하게 Math.round(v)로 반올림됨을 코드로 재확인했고, sg(부호)가 Math.abs 이전에 이미 분리돼 있어 음수 케이스도 영향 없음을 확인. 경계값 f=0.05(예 1.95억)는 여전히 toFixed(1)로 빠져 \"2.0억\"이 남지만 이는 기존에도 있던 임의의 임계값 경계이지 이번 수정이 새로 만든 문제가 아님을 확인해 실제 결함으로 채택하지 않음. 1만 단위 분기(toFixed(1) 예외 없이 적용)와 코드 전체를 grep해 동일한 v%1 비대칭 패턴이 abbr() 외에 없음을 확인. node test/run.js 495/495 통과, 두 인라인 <script> 블록 모두 node --check 파싱 통과 재확인. 실제 버그 없어 코드 변경 없음.",
+      "commit": null
+    },
     {
       "cycle": 72,
       "phase": "develop",
       "timestamp": "2026-09-23T09:05:00.000Z",
       "summary": "Explore 서브에이전트로 발견한 abbr()(index.html:3101)의 억 단위 반올림 비대칭 버그 수정. 기존 코드는 Math.abs(v%1)<0.05일 때만(즉 정수보다 살짝 큰 값, 예 2.02억) toFixed(0)로 반올림 표시하고, 정수보다 살짝 작은 값(예 1.96억, v%1=0.96)은 같은 0.04만큼 가까운데도 이 조건을 통과 못 해 toFixed(1)로 빠져 \"2.0억\"이라는 어색한 소수점이 남았다 - abbr(196000000)이 \"2.0억\", abbr(202000000)이 \"2억\"으로 서로 다르게 표시됨을 재현 확인. abbr()은 calCellsFor()의 캘린더 일별 합계 등 앱 곳곳의 압축 금액 표시에 쓰이는데도 test/run.js에 커버리지가 전혀 없었다(0 매치). 수정: v%1 대신 정수까지의 거리 Math.min(f,1-f)<0.05로 대칭 판정하도록 억 단위 분기만 변경(Math.round(v) 사용), 1만 단위 분기는 원래부터 toFixed(1)을 예외 없이 적용해 이런 비대칭이 없어 손대지 않음. abbr은 이미 FUNCTIONS 목록에 있어 추출 로직 변경 불필요. test/run.js에 회귀 테스트 3개 추가(1.96억/2.02억 모두 \"2억\", 1.5억은 그대로 \"1.5억\" 유지, 음수 부호 유지). 두 인라인 <script> 블록 모두 node --check 파싱 확인, node test/run.js 495/495 통과(기존 492 + 신규 3). APP_VERSION 1.46.14->1.46.15, sw.js CACHE v176->v177.",
-      "commit": null
-    },
-    {
-      "cycle": 67,
-      "phase": "develop",
-      "timestamp": "2026-09-22T14:12:31.168Z",
-      "summary": "Explore 서브에이전트로 발견한 doRenameOwner()(index.html:2936-2939)의 귀속 이름변경 시 활성 필터 미동기화 버그 수정. renderAssets()/renderPlan()에는 각각 ST.assetOwner/ST.plan.owner가 더 이상 DB.owners에 없으면 전체/'전체'로 되돌리는 가드가 있는데(delOwner로 실제 삭제됐을 때를 위한 안전망), doRenameOwner()가 DB.owners[i]와 자산들의 owner는 새 이름으로 옮기면서도 ST.assetOwner/ST.plan.owner는 옛 이름 그대로 남겨둬, 이름만 바꿨을 뿐인데도 위 가드가 '귀속이 사라졌다'고 오판했다. 재현: 자산 탭에서 특정 귀속(예: 아빠) 필터를 보고 있는 상태로 설정 > 귀속 관리에서 그 이름을 바꾸면(예: 아버지), 자산 탭으로 돌아왔을 때 방금 바꾼 이름이 아니라 아무 설명 없이 '전체' 필터로 조용히 밀려나 사용자가 보던 맥락을 잃는다. 플랜 탭의 ST.plan.owner도 동일하게 재현됨. doRenameOwner()에 if(ST.assetOwner===old)ST.assetOwner=v; if(ST.plan.owner===old)ST.plan.owner=v;를 추가해 활성 필터가 이름변경을 따라가도록 수정. FUNCTIONS에 doRenameOwner 추가, 회귀 테스트 2개 추가(옛 이름을 보고 있었다면 새 이름으로 함께 옮겨가는지, 무관한 귀속을 보고 있었다면 필터를 건드리지 않는지). 두 인라인 <script> 블록 모두 vm.Script 파싱 확인, 461/461 통과(기존 459 + 신규 2). APP_VERSION 1.46.4->1.46.5, sw.js CACHE v166->v167.",
-      "commit": null
-    },
-    {
-      "cycle": 67,
-      "phase": "review",
-      "timestamp": "2026-09-22T15:05:00.000Z",
-      "summary": "develop 커밋(fcfe1ea, doRenameOwner 활성 필터 동기화)을 검토. ST.assetOwner 기본값 'all'과 ST.plan.owner 기본값 '전체'가 DB.owners에는 결코 존재하지 않는 sentinel 값이라 old===old(DB.owners[i]의 실제 옛 이름)와 우연히 일치할 수 없음을 확인해 필터가 '전체' 상태일 때 의도치 않게 값이 바뀌는 경로가 없음을 재검증. renderAssets(2601행)/renderPlan(3877행)의 '귀속 사라지면 전체로' 가드가 정확히 같은 패턴(DB.owners.includes 체크)을 쓰고 있어 이름변경 직후 새 이름이 DB.owners[i]에 이미 반영된 상태와 맞물려 작동함을 코드로 확인. 새 회귀 테스트 2개(대상 필터가 함께 이동하는 경우/무관한 필터는 그대로인 경우) 포함 두 인라인 <script> 블록 모두 node --check 파싱 통과, node test/run.js 461/461 통과 재확인. 실제 버그 없어 코드 변경 없음.",
       "commit": null
     },
     {
