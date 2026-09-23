@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.17';
+const APP_VERSION='1.46.18';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6134,6 +6134,11 @@ function buildNav(){$('nav').innerHTML=`<div class="nav-blob" id="navBlob"></div
  window.addEventListener('resize',()=>moveBlob(false));
 }
 /* 3패널 캐러셀 — 이전/현재/다음 달이 함께 미끄러짐 (달력·요약박스 공용) */
+function monthSwipeCommitDir(dx,stepPx,cancelled){ /* 순수 함수: 스와이프 커밋 방향 판정. cancelled(touchcancel)이면 항상 취소 */
+ if(cancelled)return null;
+ if(Math.abs(dx)<=stepPx*0.15)return null;
+ return dx>0?-1:1;
+}
 function wireMonthCarousel(viewport,which,onLabel){
  if(!viewport)return;
  if(viewport._c){if(viewport._align){viewport._align();requestAnimationFrame(viewport._align)}return}
@@ -6168,11 +6173,10 @@ function wireMonthCarousel(viewport,which,onLabel){
  },{passive:false});
  viewport.addEventListener('touchend',()=>{if(!drag)return;drag=false;
    if(!horiz)return;
-   const go=Math.abs(dx)>step()*0.15;
-   if(!go){const t=T();t.style.transition='transform .3s cubic-bezier(.32,.72,0,1)';
+   const dir=monthSwipeCommitDir(dx,step(),false);
+   if(dir===null){const t=T();t.style.transition='transform .3s cubic-bezier(.32,.72,0,1)';
      t.style.transform=`translateX(${-step()}px)`;
      label(0);return}
-   const dir=dx>0?-1:1;
    locked=true;label(dir);
    const t=T();t.style.transition='transform .32s cubic-bezier(.32,.72,0,1)'; /* iOS 감성 이징 */
    t.style.transform=`translateX(${-step()+(dir<0?step():-step())}px)`;
@@ -6185,6 +6189,13 @@ function wireMonthCarousel(viewport,which,onLabel){
    };
    t.addEventListener('transitionend',done);
    setTimeout(done,420); /* 안전망 (transitionend 누락 대비) */
+ });
+ viewport.addEventListener('touchcancel',()=>{if(!drag)return;drag=false;decided=false;horiz=false;
+   /* 엣지 백제스처, 알림 배너, 전화 수신 등으로 touchend 없이 중단되는 경우 → 항상 취소하고 중앙으로 스냅백 */
+   monthSwipeCommitDir(dx,step(),true);
+   const t=T();t.style.transition='transform .3s cubic-bezier(.32,.72,0,1)';
+   t.style.transform=`translateX(${-step()}px)`;
+   label(0);
  });
 }
 function curYM(which){

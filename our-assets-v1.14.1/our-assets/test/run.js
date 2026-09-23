@@ -103,7 +103,7 @@ const FUNCTIONS = [
   'ledgerSelPartial', 'ledgerToggleSel', 'ledgerSelAll', 'visibleTx',
   'fmtDot', 'splitHist', 'histRow', 'histTotHTML', 'updateHist', 'renderHistory',
   'lowestInMonth', 'planBalInner', 'planBalCard', 'planTrackHTML', 'planRowsHTML', 'renderPlan',
-  'refreshPlanBody', 'planAsset', 'nextGroupOrder',
+  'refreshPlanBody', 'planAsset', 'nextGroupOrder', 'monthSwipeCommitDir',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -5699,6 +5699,28 @@ test('nextGroupOrder: 모든 그룹이 화면에 보이면 그 순서를 그대�
   const existing = ['cash', 'savings', 'stock'];
   const visible = ['stock', 'savings', 'cash'];
   assert.deepStrictEqual(sandbox.nextGroupOrder(existing, visible), ['stock', 'savings', 'cash']);
+});
+
+/* ---------- monthSwipeCommitDir: wireMonthCarousel() 스와이프 커밋 방향 판정 (app-evolve cycle74 advance) ----------
+ * wireMonthCarousel()이 touchcancel(엣지 백제스처, 알림 배너, 전화 수신 등으로 스와이프 중단)을
+ * 처리하지 않아 drag 상태가 정리되지 않고 트랙이 마지막 touchmove 위치에 고정된 채 라벨과
+ * 패널이 어긋나던 버그를 고치면서, touchend/touchcancel 양쪽이 공유하는 "커밋 방향" 판정을
+ * monthSwipeCommitDir(dx, stepPx, cancelled)로 분리했다. cancelled=true(touchcancel)면 dx와
+ * 무관하게 항상 취소(null)돼야 한다.
+ */
+test('monthSwipeCommitDir: 임계값(15%) 미만으로 밀면 취소(null)', () => {
+  assert.strictEqual(sandbox.monthSwipeCommitDir(10, 100, false), null);
+  assert.strictEqual(sandbox.monthSwipeCommitDir(-15, 100, false), null);
+});
+test('monthSwipeCommitDir: 임계값 이상 오른쪽으로 밀면 이전 달(-1)', () => {
+  assert.strictEqual(sandbox.monthSwipeCommitDir(20, 100, false), -1);
+});
+test('monthSwipeCommitDir: 임계값 이상 왼쪽으로 밀면 다음 달(1)', () => {
+  assert.strictEqual(sandbox.monthSwipeCommitDir(-20, 100, false), 1);
+});
+test('monthSwipeCommitDir: cancelled=true면 dx가 임계값을 넘어도 항상 취소(null)', () => {
+  assert.strictEqual(sandbox.monthSwipeCommitDir(50, 100, true), null);
+  assert.strictEqual(sandbox.monthSwipeCommitDir(-50, 100, true), null);
 });
 
 /* ---------- 실행 ---------- */
