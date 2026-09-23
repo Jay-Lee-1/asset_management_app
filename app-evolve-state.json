@@ -1,15 +1,12 @@
 {
   "cycle": 73,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "wireMonthCarousel() touchcancel 미처리로 월 캐러셀(달력/통장흐름) 스와이프 중단 시 화면 고정",
+    "why": "wireMonthCarousel()(index.html:6137-6189)이 ledger 달력(#ledgerVP)과 플랜/통장흐름(#planVP) 양쪽에서 touchstart/touchmove/touchend만 배선하고 touchcancel은 처리하지 않는다. iOS/Android에서 엣지 백 제스처, 알림 배너, 전화 수신 등으로 스와이프 도중 touchcancel이 오면(touchend가 아니라) drag 상태가 정리되지 않고 track의 transform이 마지막 touchmove 값에 고정되며, label(n)이 이미 다음/이전 달로 미리보기 전환된 상태라면 헤더 라벨과 실제 패널이 서로 다른 달을 가리킨 채 멈춘다. 사이클72의 wireGroupDrag pointercancel 수정과 동일한 버그 클래스이며, 시트 드래그닫기(index.html:5098)와 엣지 백제스처(5157)는 이미 touchcancel을 배선하는데 wireMonthCarousel만 예외.",
+    "approach": "viewport에 touchcancel 리스너(abort)를 추가해 drag/decided/horiz를 리셋하고 align()으로 중앙 정렬 스냅백, label(0)으로 라벨 복구(monthStep 호출 금지). wireGroupDrag 수정 때처럼 '커밋 방향' 판정을 순수 함수 monthSwipeCommitDir(dx, stepPx, cancelled)로 분리해 touchend/touchcancel 양쪽이 호출하도록 하고, cancelled=true면 항상 null 반환. test/run.js에 nextGroupOrder 테스트 패턴을 참고해 임계값 미만/이상/cancelled=true 3케이스 추가. APP_VERSION(1293행, 1.46.17)과 sw.js CACHE(6행, ourassets-v179) 버전 올리기."
+  },
   "history": [
-    {
-      "cycle": 68,
-      "phase": "develop",
-      "timestamp": "2026-09-22T18:20:00.000Z",
-      "summary": "Explore 서브에이전트로 발견한 assetSelAll()(index.html:2739)의 자산 탭 전체선택이 귀속(owner) 필터를 무시하던 버그 수정. assetBodyHTML()은 ST.assetOwner!=='all'이면 다른 귀속의 자산을 아예 렌더하지 않는데(2575행), assetSelAll()과 activeSel()의 total(6038행)은 필터와 무관하게 항상 DB.assets 전체를 대상으로 삼고 있었다 — ledgerSelAll/histSelAll이 이미 각자의 필터링된 목록만 전체선택 대상으로 삼는 것과 다른, 자산 탭만의 예외였다. 재현: 자산 탭에서 귀속 필터를 특정 귀속(예: 아이)으로 좁힌 뒤 다중선택 모드에서 '전체 선택'을 누르면, 화면에 보이지도 않는 다른 귀속(나)의 자산 id까지 ST.aSel.ids에 담기고 하단 바의 개수도 DB.assets.length 그대로 표시되며, 그대로 '선택 삭제'를 누르면 화면에 없던 다른 귀속 자산까지 조용히 삭제된다(되돌리기 토스트는 있지만 화면에 안 보이던 항목이 지워지는 것 자체가 결함). 순수 헬퍼 visibleAssetsForSel()(ST.assetOwner==='all'?DB.assets:DB.assets.filter(a=>a.owner===ST.assetOwner))을 추가해 assetSelAll()의 items와 activeSel()의 total을 모두 이걸로 스코프했다. FUNCTIONS에 visibleAssetsForSel/activeSel 추가, 회귀 테스트 5개 추가(필터 all/특정 귀속에서 visibleAssetsForSel 반환값, 귀속 필터 중 전체선택이 다른 귀속을 건드리지 않는지, 필터된 귀속이 이미 전체선택 상태면 그 귀속만 해제되는지, activeSel의 total이 필터된 개수를 반영하는지). 두 인라인 <script> 블록 모두 node --check 파싱 확인, 468/468 통과(기존 463 + 신규 5). APP_VERSION 1.46.6->1.46.7, sw.js CACHE v168->v169.",
-      "commit": null
-    },
     {
       "cycle": 68,
       "phase": "review",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-09-23T14:08:44.411Z",
       "summary": "cycle73 develop 커밋(1c629c6, clampRecurringToMaturity count 0/falsy 수정)을 검토. 함수 전체 로직(truncateRecEnd가 count:0을 어떻게 만드는지, autoShortened 판정이 prevMaturity 유무에 어떻게 게이팅되는지, 2926줄 auto-clamp 시 count 삭제 조건)을 추적해 수정이 의도한 케이스(첫 회차부터 삭제 -> count:0, endDate<startDate)에서 정확히 동작하고 회귀를 일으키지 않음을 확인. count=0이면서 endDate가 없는 조합은 recDraft 정규화(3516-3518줄, !d.endDate면 count를 null로 리셋)에 의해 애초에 발생하지 않으므로 auto-clamp 경로(2926줄)가 count:0을 잘못 삭제/보존할 여지도 없음. 다른 곳의 유사 !x.count 패턴(3292,3516-3518줄)은 사용자 입력 폼 draft 처리로 문맥이 다르며 이번 diff와 무관해 손대지 않음. 두 인라인 <script> node --check 통과, node test/run.js 498/498 통과(추가된 회귀 테스트 포함). 코드 변경 없음(이상 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 73,
+      "phase": "critique",
+      "timestamp": "2026-09-23T15:05:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 전략적 시야에서 재검토(render*/부분갱신/CSV/FX/stockCode/recHist 전반/addBalanceAdjust/homeAlerts/cloud sync/fixShortfall/doLogin/costBasis/decidePushOutcome/카테고리 rename·삭제 캐스케이드/Pro 스텁/PIN 부재/단일파일 구조/CI/History 페이지네이션/migrate owners/nwHistoryCard aria-label/자산그룹 재정렬 접근성/localStorage 실패 처리/spendTrend 배지/doRenameOwner 필터 동기화/assetSelAll 귀속 스코프/nwChartPath 날짜 기반 x축/delCat 최소-1 가드/CSV findAsset 동명이인/삭제자산 재연동 type/nwHistoryCard byOwner/abbr 반올림/wireGroupDrag pointercancel 등 최근 완료·기각 항목은 재탐색 금지 지시). wireMonthCarousel()(index.html:6137-6189, ledger 달력 #ledgerVP와 플랜/통장흐름 #planVP 공용 월 스와이프)가 touchstart/touchmove/touchend만 배선하고 touchcancel을 처리하지 않음을 확인 — 사이클72에서 고친 wireGroupDrag pointercancel 누락과 동일한 버그 클래스가 형제 터치 핸들러에 남아있던 사례. 엣지 백 제스처/알림 배너/전화 수신 등으로 스와이프 도중 touchcancel이 오면 drag 상태가 정리되지 않아 track transform이 마지막 touchmove 값에 고정되고, label(n)이 이미 다음/이전 달로 미리보기 전환됐다면 헤더 라벨과 실제 패널이 서로 다른 달을 가리킨 채 멈춘다. 시트 드래그닫기(5098행)와 엣지 백제스처(5157행)는 이미 touchcancel을 배선하는데 wireMonthCarousel만 예외임을 코드로 확인. esc() 미사용 등 attribute-escaping 스타일 불일치(실제 악용 불가), dday()의 new Date(dateStr) 사용(타임존 버그처럼 보이나 양쪽 다 UTC 자정 기준이라 실제 결함 없음)은 기각. advance에서 touchcancel 리스너(abort)를 추가해 drag 상태 리셋+align()+label(0) 복구, 커밋 방향 판정을 monthSwipeCommitDir(dx,stepPx,cancelled) 순수 함수로 분리해 test/run.js에서 임계값/취소 케이스를 테스트하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     }
   ]
