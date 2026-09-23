@@ -1,15 +1,8 @@
 {
   "cycle": 74,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 68,
-      "phase": "advance",
-      "timestamp": "2026-09-22T21:12:00.000Z",
-      "summary": "critique 계획대로 nwChartPath()(index.html:2165)의 x좌표 계산을 배열 인덱스 기반에서 실제 날짜 간격 기반으로 교체. todayStr/addDays 옆에 순수 헬퍼 daysBetween(a,b) 추가(두 YYYY-MM-DD 문자열의 일수 차, Math.round 사용)하고, stepX=W/(pts.length-1) 방식을 totalDays=Math.max(1,daysBetween(pts[0].date,pts[last].date)) 기준 x=daysBetween(pts[0].date,p.date)/totalDays*W로 재작성했다. y축(min/max/span)과 pts.length<2/span===0 얼리리턴은 그대로 유지, DB 스키마·updateNwHistory·pruneNwHistory·호출부(nwHistoryCard)는 변경 없음. test/run.js의 기존 nwChartPath 테스트 3개에 date 필드를 채워 넣고, 신규 회귀 테스트 3개 추가: 매일 등간격 스냅샷에서는 기존과 동일하게 x도 등간격인지(회귀 방지), 일 단위+월 단위 압축이 섞인 불균등 간격에서 중간 점 x가 인덱스 기준 중앙(W/2)이 아니라 날짜 비율에 정확히 비례하는지, 날짜가 늘수록 x가 단조 비감소이며 daysBetween에 선형 비례하는지. FUNCTIONS 목록에 daysBetween 추가. 두 인라인 <script> 블록 모두 node --check 파싱 확인, 471/471 통과(기존 468 + 신규 3). APP_VERSION 1.46.7->1.46.8, sw.js CACHE v169->v170.",
-      "commit": null
-    },
     {
       "cycle": 69,
       "phase": "develop",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-23T17:20:00.000Z",
       "summary": "Explore 서브에이전트로 발견한 recDates()의 daily+weekend 3중 카운트 버그 수정. shiftWeekend(ds,mode)(index.html:1909)는 토요일과 일요일을 같은 평일로 몰아준다(earlier: 둘 다 전주 금요일로 -1/-2일, later: 둘 다 다음주 월요일로 +2/+1일). monthly/yearly는 기간당 원시 후보가 하나뿐이라 무해하고 weekly는 매번 같은 요일만 후보라 충돌이 없지만, daily는 하루 간격으로 원시 후보를 만들어서 주말이 낀 주마다 (조정 없는 금/월요일 자체) + (토요일 조정분) + (일요일 조정분) 3개 후보가 같은 날짜로 겹쳐 recDates()가 그 날짜를 3번 반환했다. expandRec()(1963행)이 이를 그대로 가상 거래로 펼쳐 balancesUpTo()/totalAssets가 해당 금액을 3배로 합산해 잔액이 조용히 틀어진다. 재현: '반복 설정' 시트에서 매월(monthly) 반복에 주말 조정을 켠 뒤 주기를 매일(daily)로 바꾸면 - recFreq()/txFreq()(3487/3271행)가 d.weekend를 초기화하지 않고 weekend 필드는 monthly에서만 UI에 노출되므로(3478행) 저장된 weekend가 조용히 남는다 - 매주 금/월요일 거래가 3배로 잡힌다. recDates()의 push() 클로저(1919행)에 out[out.length-1]!==d 가드를 추가해 직전에 실제로 담긴 날짜와 같으면 건너뛰도록 고쳤다(원시 후보가 항상 증가하는 날짜 순으로 생성되므로 연속 중복만 확인하면 충분, monthly/weekly/yearly는 애초에 연속 중복이 없어 no-op). test/run.js에 daily+earlier/later 각각 토·일요일이 낀 주에서 금/월요일이 한 번만 나오는지 검증하는 회귀 테스트 2개 추가. 두 인라인 <script> 블록 모두 node --check 파싱 확인, node test/run.js 504/504 통과(기존 502 + 신규 2). APP_VERSION 1.46.18->1.46.19, sw.js CACHE v180->v181.",
+      "commit": null
+    },
+    {
+      "cycle": 74,
+      "phase": "review",
+      "timestamp": "2026-09-23T18:07:58.000Z",
+      "summary": "cycle74 develop 커밋(4ae1d9b, recDates() daily+weekend 3중 카운트 수정)을 검토. diff는 push() 클로저에 out[out.length-1]!==d 가드 한 줄만 추가했고, daily 루프가 ds를 항상 증가하는 날짜 순으로 생성하므로 중복이 항상 연속으로만 발생한다는 전제가 맞는지 shiftWeekend()의 earlier/later 분기를 손으로 추적해 검증(earlier: 금토일이 전부 금요일로, later: 금토일월이 전부 월요일로 non-decreasing하게 모임 -> 연속 dedup으로 충분). recNthDate()/recCountUntil()은 recDates()를 그대로 재사용하므로 자동으로 같이 고쳐졌고 별도 수정 불필요함을 확인. monthly/yearly(원시 후보가 기간당 하나)와 weekly(매번 같은 요일만 후보)는 애초에 연속 충돌이 없어 가드가 no-op이라는 주장도 코드로 확인. APP_VERSION/sw.js CACHE 동시 반영 확인. node test/run.js 504/504 통과. 이 diff 자체에는 버그를 찾지 못했다 — 코드 수정 없음. 다만 커밋 메시지의 재현 경로를 따라가다가 별개의 잠재 이슈를 발견: recFreq()(index.html:3487)가 freq를 바꿀 때 recDraft.weekend를 리셋하지 않고, weekend 필드는 monthly일 때만 UI에 노출된다(3478행 d.freq==='monthly' 조건). 즉 사용자가 monthly에서 주말조정을 켠 뒤 daily/weekly/yearly로 주기를 바꾸면 화면에는 그 설정이 전혀 안 보이는데 저장된 weekend 값은 조용히 남아 계속 적용된다(이번에 고친 3중 카운트 버그의 실제 재현 경로이기도 했음). 지금 당장 급한 건 아니라 이 자리에서 고치지 않고 critique가 우선순위를 판단하도록 기록만 남긴다: freq가 monthly가 아니게 바뀔 때 recDraft.weekend를 'none'으로 리셋하거나, 최소한 화면에 계속 노출해 사용자가 알 수 있게 하는 방향이 후보.",
       "commit": null
     }
   ]
