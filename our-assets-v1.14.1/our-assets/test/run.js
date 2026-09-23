@@ -856,7 +856,7 @@ test('doDeleteCat: 삭제 시 catIcon/catVar/budgetHistory 항목이 함께 제�
 });
 test('doDeleteCat: 같은 이름으로 다시 추가해도 지워진 카테고리의 이전 아이콘/변동/예산을 물려받지 않는다', () => {
   sandbox.DB = {
-    categories: { expense: ['커피'] },
+    categories: { expense: ['커피', '식비'] },
     catIcon: { 'expense:커피': 'coffee' },
     catVar: { 'expense:커피': true },
     budgetHistory: { 커피: [{ from: '2026-01', amount: 30000 }] },
@@ -870,7 +870,7 @@ test('doDeleteCat: 같은 이름으로 다시 추가해도 지워진 카테고�
 });
 test('doDeleteCat: 수입/저축 카테고리는 budgetHistory를 건드리지 않는다', () => {
   sandbox.DB = {
-    categories: { income: ['용돈'] },
+    categories: { income: ['용돈', '급여'] },
     catIcon: {}, catVar: {}, budgetHistory: { 용돈: [{ from: '2026-01', amount: 100000 }] },
     txns: [], recurrences: [],
   };
@@ -978,15 +978,49 @@ test('doDeleteCat: 연결된 활성 반복거래를 비활성화하고, undo 콜
 });
 test('doDeleteCat: 연결된 활성 반복거래가 없으면 undo해도 반복거래 배열은 그대로다', () => {
   sandbox.DB = {
-    categories: { expense: ['교통'] },
+    categories: { expense: ['교통', '기타'] },
     catIcon: {}, catVar: {}, budgetHistory: {}, txns: [], recurrences: [],
   };
   sandbox.lastUndo = null;
   sandbox.doDeleteCat('expense', 0);
   assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함');
   sandbox.lastUndo.undoFn();
-  assert.deepStrictEqual(sandbox.DB.categories.expense, ['교통']);
+  assert.deepStrictEqual(sandbox.DB.categories.expense, ['교통', '기타']);
   assert.deepStrictEqual(sandbox.DB.recurrences, []);
+});
+
+/* ---------- doDeleteCat: 마지막 카테고리는 삭제되지 않는다 (delOwner와 동일 패턴, cycle69) ----------
+ * 카테고리가 0개가 되면 openTxSheet/txType이 undefined 카테고리로 거래를 만들고, 그 뒤로는
+ * openCatPicker도 고를 카테고리가 없어 되돌릴 방법이 없어진다. */
+test('doDeleteCat: 마지막 남은 지출 카테고리 하나는 삭제할 수 없다', () => {
+  sandbox.DB = {
+    categories: { expense: ['식비'] },
+    catIcon: {}, catVar: {}, budgetHistory: {}, txns: [], recurrences: [],
+  };
+  sandbox.lastToast = null;
+  sandbox.doDeleteCat('expense', 0);
+  assert.deepStrictEqual(sandbox.DB.categories.expense, ['식비']);
+  assert.ok(sandbox.lastToast, '안내 토스트가 떴어야 함');
+});
+test('doDeleteCat: 마지막 남은 수입 카테고리 하나는 삭제할 수 없다', () => {
+  sandbox.DB = {
+    categories: { income: ['급여'] },
+    catIcon: {}, catVar: {}, budgetHistory: {}, txns: [], recurrences: [],
+  };
+  sandbox.lastToast = null;
+  sandbox.doDeleteCat('income', 0);
+  assert.deepStrictEqual(sandbox.DB.categories.income, ['급여']);
+  assert.ok(sandbox.lastToast, '안내 토스트가 떴어야 함');
+});
+test('doDeleteCat: 마지막 남은 저축 카테고리 하나는 삭제할 수 없다', () => {
+  sandbox.DB = {
+    categories: { saving: ['비상금'] },
+    catIcon: {}, catVar: {}, budgetHistory: {}, txns: [], recurrences: [],
+  };
+  sandbox.lastToast = null;
+  sandbox.doDeleteCat('saving', 0);
+  assert.deepStrictEqual(sandbox.DB.categories.saving, ['비상금']);
+  assert.ok(sandbox.lastToast, '안내 토스트가 떴어야 함');
 });
 
 /* ---------- delOwner: 귀속 삭제도 delCat/delTx처럼 undo 가능해야 한다 (cycle28) ---------- */
@@ -3279,6 +3313,31 @@ test('saveTx: RANGE_FROM 당일은 하한선에 포함되어 정상 저장된다
   };
   sandbox.saveTx();
   assert.strictEqual(sandbox.DB.txns.length, 1, 'RANGE_FROM 당일은 저장되어야 함');
+});
+
+/* ---------- saveTx: 카테고리가 비어있으면(예: doDeleteCat 가드를 뚫고 마지막 카테고리가
+ * 지워졌거나, migrate 이전 데이터 등) undefined 카테고리로 저장되지 않게 막는다 (cycle69) ---------- */
+test('saveTx: category가 없으면(undefined) 토스트만 뜨고 저장되지 않는다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { txns: [], settings: {} };
+  sandbox.txDraft = {
+    id: null, type: 'expense', date: '2026-01-15', category: undefined, memo: '',
+    amount: 9000, fromAssetId: 'a1', toAssetId: null, repeat: false,
+  };
+  sandbox.toastCalls = [];
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.DB.txns.length, 0, 'category가 없으면 저장되면 안 됨');
+  assert.ok(sandbox.toastCalls.length, '안내 토스트가 떴어야 함');
+});
+test('saveTx: transfer는 category가 없어도(고정 카테고리 없음) 저장을 막지 않는다(정상 케이스는 회귀 없음)', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { txns: [], settings: {} };
+  sandbox.txDraft = {
+    id: null, type: 'transfer', date: '2026-01-15', category: undefined, memo: '',
+    amount: 9000, fromAssetId: 'a1', toAssetId: 'a2', repeat: false,
+  };
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.DB.txns.length, 1, 'transfer는 category 가드의 영향을 받지 않아야 함');
 });
 test('saveRec: 시작일이 RANGE_FROM 이전이면 토스트만 뜨고 저장되지 않는다', () => {
   sandbox.TWi = -1;

@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.9';
+const APP_VERSION='1.46.10';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3286,6 +3286,7 @@ function recClearEnd(){syncRecInputs();recDraft.endDate=null;recDraft.count=null
 function saveTx(){
  if(twGuard())return;
  syncTxInputs();const d=txDraft;if(!d.amount){toast('금액을 입력해 주세요');return}
+ if(d.type!=='transfer'&&!d.category){toast('카테고리를 선택해 주세요');return}
  if(dateBelowRangeFloor(d.date)){toast(`${RANGE_FROM} 이전 날짜는 저장할 수 없어요`);return}
  if(d.type==='transfer'||d.type==='saving'){
   if(!d.fromAssetId||!d.toAssetId){toast('보내는·받는 자산을 선택해 주세요');return}
@@ -4274,11 +4275,13 @@ function activeRecsForCat(type,name){
  return DB.recurrences.filter(r=>r.active&&r.type===type&&r.category===name);
 }
 function delCat(k,i){const c=DB.categories[k][i];
+ if(DB.categories[k].length<=1){toast('카테고리는 최소 1개가 필요해요');return}
  const recs=activeRecsForCat(k,c);
  const msg=`'${esc(c)}' 카테고리를 삭제할까요? 기존 내역의 카테고리명은 그대로 남아요.`+(recs.length?` 연결된 반복거래 ${recs.length}개도 함께 비활성화돼요.`:'');
  confirmSheet('카테고리 삭제',msg,'삭제',()=>{doDeleteCat(k,i)});}
 function doDeleteCat(k,i){const c=DB.categories[k][i];
  if(k==='income'&&c===ADJUST_CAT){toast('자동으로 생성되는 카테고리라 삭제할 수 없어요');return}
+ if(DB.categories[k].length<=1){toast('카테고리는 최소 1개가 필요해요');return} /* 마지막 카테고리 삭제 방지 (delOwner와 동일 패턴): 비면 openTxSheet/saveTx가 undefined 카테고리로 거래를 만들 수 있음 */
  DB.catIcon=DB.catIcon||{};DB.catVar=DB.catVar||{};DB.budgetHistory=DB.budgetHistory||{};
  const recs=activeRecsForCat(k,c);
  const icon=DB.catIcon[catKey(k,c)];const wasVar=isVarCat(k,c);
