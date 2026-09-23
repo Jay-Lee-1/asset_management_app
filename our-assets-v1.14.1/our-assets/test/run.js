@@ -103,7 +103,7 @@ const FUNCTIONS = [
   'ledgerSelPartial', 'ledgerToggleSel', 'ledgerSelAll', 'visibleTx',
   'fmtDot', 'splitHist', 'histRow', 'histTotHTML', 'updateHist', 'renderHistory',
   'lowestInMonth', 'planBalInner', 'planBalCard', 'planTrackHTML', 'planRowsHTML', 'renderPlan',
-  'refreshPlanBody', 'planAsset',
+  'refreshPlanBody', 'planAsset', 'nextGroupOrder',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -5671,6 +5671,27 @@ test('abbr: 정수와 충분히 먼 소수점 값(1.5억)은 그대로 toFixed(1
 });
 test('abbr: 음수도 부호를 유지한 채 동일한 반올림 규칙이 적용된다(-1.96억 -> "-2억")', () => {
   assert.strictEqual(sandbox.abbr(-196000000), '-2억');
+});
+
+/* ---------- nextGroupOrder: wireGroupDrag() 드래그 완료 시 순서 병합 로직 (app-evolve cycle73 advance) ----------
+ * wireGroupDrag()가 pointercancel(엣지 스와이프-백, 인터럽트 등으로 드래그 중단)을 처리하지 않아
+ * document에 리스너가 영구히 남고, 다음 드래그가 그 위에 또 겹쳐 등록돼 자산 그룹 순서(DB.settings.groupOrder)가
+ * 손상될 수 있던 버그를 고치면서, 드래그 완료 시 화면에 보이는 순서와 숨겨진(자산이 없는) 그룹을
+ * 합치는 순수 로직을 nextGroupOrder(existingOrder, visibleTypes)로 분리했다. DOM/포인터 이벤트 배선 자체는
+ * 순수 함수가 아니라 여기서 직접 테스트할 수 없지만, 이 병합 로직만은 회귀를 막는다.
+ */
+test('nextGroupOrder: 화면에 보이는 순서를 앞에 두고, 화면에 없는(자산 0개) 그룹은 기존 순서 그대로 뒤에 붙인다', () => {
+  const existing = ['cash', 'savings', 'stock', 'realestate', 'debt'];
+  const visible = ['stock', 'cash']; // 드래그로 재배치된 순서, 'savings'는 자산이 없어 화면에 안 보임
+  assert.deepStrictEqual(
+    sandbox.nextGroupOrder(existing, visible),
+    ['stock', 'cash', 'savings', 'realestate', 'debt']
+  );
+});
+test('nextGroupOrder: 모든 그룹이 화면에 보이면 그 순서를 그대로 채택한다', () => {
+  const existing = ['cash', 'savings', 'stock'];
+  const visible = ['stock', 'savings', 'cash'];
+  assert.deepStrictEqual(sandbox.nextGroupOrder(existing, visible), ['stock', 'savings', 'cash']);
 });
 
 /* ---------- 실행 ---------- */

@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.15';
+const APP_VERSION='1.46.16';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2760,21 +2760,29 @@ function assetDelSel(){if(!ST.aSel.ids.size){toast('선택된 자산이 없어�
  confirmSheet('선택 삭제',`<b style="color:var(--expense);font-size:16px">${ST.aSel.ids.size}개</b> 자산을 삭제할까요?`,'삭제',()=>{
   const ids=new Set(ST.aSel.ids);ST.aSel.mode=false;ST.aSel.ids.clear();deleteAssetsUndo(ids)});}
 
+function nextGroupOrder(existingOrder,visibleTypes){return visibleTypes.concat(existingOrder.filter(t=>!visibleTypes.includes(t)))}
 function wireGroupDrag(){
  const listEl=$('dragList');if(!listEl)return;let dragEl=null;
  listEl.querySelectorAll('[data-drag]').forEach(h=>{
   h.addEventListener('pointerdown',e=>{
+   if(dragEl)return; /* 이전 드래그의 정리가 아직 안 끝났으면 새 드래그를 무시해 리스너 이중 등록을 막는다 */
    e.preventDefault();dragEl=h.closest('.asset-item');dragEl.classList.add('dragging');
+   const startOrder=[...listEl.querySelectorAll('.asset-item')].map(r=>r.dataset.type);
    const move=ev=>{
     const y=ev.clientY;const rows=[...listEl.querySelectorAll('.asset-item')];
     for(const r of rows){if(r===dragEl)continue;const rc=r.getBoundingClientRect();
      if(y>rc.top&&y<rc.bottom){listEl.insertBefore(dragEl,y<rc.top+rc.height/2?r:r.nextSibling);break;}}};
-   const up=()=>{document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);
-    dragEl&&dragEl.classList.remove('dragging');
+   const detach=()=>{document.removeEventListener('pointermove',move);document.removeEventListener('pointerup',up);document.removeEventListener('pointercancel',cancel);
+    dragEl&&dragEl.classList.remove('dragging');dragEl=null;};
+   const up=()=>{
     const visible=[...listEl.querySelectorAll('.asset-item')].map(r=>r.dataset.type);
-    DB.settings.groupOrder=visible.concat(DB.settings.groupOrder.filter(t=>!visible.includes(t)));
-    save();dragEl=null;};
-   document.addEventListener('pointermove',move);document.addEventListener('pointerup',up);
+    DB.settings.groupOrder=nextGroupOrder(DB.settings.groupOrder,visible);
+    save();detach();};
+   const cancel=()=>{ /* 엣지 스와이프-백, 인터럽트 등으로 드래그가 중단되면 저장 없이 드래그 전 배치로 되돌린다 */
+    const byType={};listEl.querySelectorAll('.asset-item').forEach(r=>byType[r.dataset.type]=r);
+    startOrder.forEach(t=>{const r=byType[t];if(r)listEl.appendChild(r)});
+    detach();};
+   document.addEventListener('pointermove',move);document.addEventListener('pointerup',up);document.addEventListener('pointercancel',cancel);
   });
  });
 }
