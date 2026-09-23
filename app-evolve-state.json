@@ -1,22 +1,12 @@
 {
   "cycle": 71,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "순자산 추이 차트가 자산 캐러셀의 귀속 전환을 따라가지 않는 문제 수정",
+    "why": "자산관리 탭의 nwCarousel은 전체/귀속별 순자산을 스와이프로 보여주지만(nwPane, ownerAssets/ownerDebt, index.html:2518-2528), 바로 아래 nwHistoryCard(index.html:2279)의 추이 스파크라인은 항상 DB.nwHistory의 합계(ta,td,nw)만 그려 어떤 귀속을 보고 있는지와 무관하게 동일한 전체 추이만 보여준다. DB.nwHistory 자체가 save() 시점(index.html:1875, updateNwHistory index.html:2150)에 합계만 저장해 귀속별 데이터가 없으므로 구조적으로 불가능한 상태다. '나'/'배우자'/'공용'처럼 귀속을 나눠 쓰는 핵심 시나리오에서 캐러셀과 차트가 서로 다른 대상을 보여주는 것은 혼란스러운 불일치이며, 이미 있는 DB.owners/ownerAssets/ownerDebt 구조를 살리면 큰 신규 화면 없이 풀 수 있는 실용적 공백이다.",
+    "approach": "1) updateNwHistory(hist,dateStr,ta,td) 시그니처에 byOwner 인자를 추가(index.html:2150)하고, save()의 호출부(index.html:1875)에서 DB.owners.forEach(o=>{byOwner[o]={ta:ownerAssets(o),td:ownerDebt(o)}}) 형태로 계산해 넘긴다. entry={date,ta,td,nw,byOwner}로 저장하되, 기존 항목엔 byOwner가 없을 수 있으므로 하위 호환은 optional chaining으로 처리. pruneNwHistory(index.html:2157)는 손대지 않아도 됨(byOwner 필드도 그대로 함께 보존/압축됨). 2) nwHistoryCard()(index.html:2279)에 owner 파라미터를 추가: owner==='all'이면 기존처럼 p.nw 사용, 아니면 pts를 byOwner[owner]가 있는 항목만 필터링해 p.nw = byOwner[owner].ta-byOwner[owner].td로 매핑(nwChartPath(index.html:2166)는 {date,nw} 배열만 받으므로 그대로 재사용 가능). 필터 후 2개 미만이면 귀속 전환 후 아직 추이가 쌓이기 전이라는 안내 문구(예: '이 귀속의 추이는 곧 쌓여요')를 빈 카드 대신 표시. 3) renderAssets()(index.html:2599-2626)에서 nwHistoryCard() 호출부를 `<div id=\"nwHistBody\">${nwHistoryCard(ST.assetOwner)}</div>`로 감싸고, 새 함수 refreshNwHistoryCard()를 추가해 그 div의 innerHTML만 nwHistoryCard(ST.assetOwner)로 교체. 4) wireNwCarousel()(index.html:2538) 스크롤 핸들러에서 refreshAssetBody() 호출 직후 refreshNwHistoryCard()도 함께 호출해 캐러셀 전환과 차트가 동시에 갱신되게 한다. 5) doRenameOwner(i)(index.html:2941)에서 기존 자산 owner 필드 rename과 동일하게, DB.nwHistory.forEach(h=>{if(h.byOwner&&old in h.byOwner){h.byOwner[v]=h.byOwner[old];delete h.byOwner[old]}})로 과거 스냅샷의 byOwner 키도 새 이름으로 옮겨준다(귀속 삭제 시에는 기존 히스토리 항목처럼 고아 키를 그대로 둬도 무해하므로 별도 처리 불필요). 6) test/run.js에 updateNwHistory가 byOwner를 함께 저장/갱신하는 케이스, nwHistoryCard가 owner별로 pts를 올바르게 필터링하는 케이스, doRenameOwner가 byOwner 키를 이동시키는 케이스를 추가."
+  },
   "history": [
-    {
-      "cycle": 66,
-      "phase": "review",
-      "timestamp": "2026-09-22T11:07:57.529Z",
-      "summary": "develop 커밋(b795946, migrate()의 DB.owners 빈 배열 미처리 수정)을 검토. DB.owners=(DB.owners&&DB.owners.length)?DB.owners:[...] 패턴이 바로 위 DB.settings.groupOrder(1811행, Array.isArray+.length 검사)와 DB.categories 계열이 이미 쓰던 .length 검사 방식과 일치함을 확인 — []가 truthy라 ||만으로는 못 잡는다는 커밋 설명이 정확함. 정상 경로(delOwner가 0개 삭제를 막음)로는 재현 안 되고 sanitizeBackup()이 owners 필드를 검증하지 않아 백업 복원으로만 재현된다는 분석도 grep으로 재확인. deepStrictEqual 비교 시 vm 샌드박스 배열을 [...sandbox.DB.owners]로 host 배열로 변환해 cross-realm 프로토타입 불일치를 피한 처리도 올바름. node test/run.js 453/453 통과 재확인. 문제 없음.",
-      "commit": null
-    },
-    {
-      "cycle": 66,
-      "phase": "critique",
-      "timestamp": "2026-09-22T12:09:52.737Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 전략적 시야에서 재검토(render*/부분갱신/CSV/FX/stockCode/recHist/addBalanceAdjust/homeAlerts/cloud sync/fixShortfall/doLogin/costBasis/카테고리 캐스케이드/Pro 스텁/PIN 부재/단일파일 구조/CI/History 페이지네이션/migrate owners/nwHistoryCard aria-label/자산그룹 재정렬 접근성/localStorage 실패 처리 등 최근 완료·기각 항목은 재탐색 금지 지시). openSpendAnalysis()(index.html 4100-4124, spendByCategory/budgetForMonth 기반)가 항상 단일 월만 보여주고 전월/평균 대비 추세 비교가 전혀 없음을 확인 — DB.budgetHistory가 이미 시계열이고 History 탭 histTotHTML()에 이미 월평균 토글이 존재해 평균 계산 로직 자체는 코드베이스에 있는데 카테고리별 분석에는 연결이 안 됨. 3개월 이상 지출 이력이 있는 달에서 카테고리 지출이 평소보다 40% 늘어도 앱 안에서 알 방법이 없고 History 탭을 월별로 수동으로 넘겨봐야 함. 온보딩 플로우 부재(기존 empty-state CTA로 어느 정도 완화됨)와 debt/real-estate 자산의 이체 상대 처리(balancesUpTo의 sign 처리가 이미 정확해 보여 구체적 버그 미발견)는 근거 부족으로 기각. advance에서 spendTrend(cat,y,m,n=3) 순수 함수 추가 후 openSpendAnalysis 카테고리 행과 totalBudgetSummary 헤더에 전월/평균 대비 델타 배지를 표시하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 66,
       "phase": "advance",
@@ -148,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-09-23T06:05:00.000Z",
       "summary": "develop 커밋(8f0904a, varyingRecs 월별 스캔 창 확장)을 검토. RANGE_FROM='2023-01-01' 고정 상수를 pendingTransferCount()(5491행, allTxns(RANGE_FROM,TODAY))가 이미 같은 패턴으로 쓰고 있음을 재확인해, varyingRecs()를 recDates(r,RANGE_FROM,TODAY)로 바꾼 게 새로운 스캔 폭이 아니라 기존 확립된 패턴과의 일치임을 검증했다. recDates()(1915행) 자체는 캐시가 없는 순수 함수이고 캐시를 쓰는 _recCache는 expandRec() 전용(1961행)이라 이번 변경이 expandRec의 고정폭 (RANGE_FROM,RANGE_TO) 캐시 키 전략과 충돌하지 않음을 코드로 확인. d>TODAY 가드가 그대로 남아 있어 미래 회차가 알림에 섞이지 않음도 재확인. 신규 회귀 테스트(TODAY를 다음 달로 넘겨도 지난달 미입력 회차가 남는지) 및 startDate를 이번 달로 조정한 기존 quick/quickMulti 그룹핑 테스트 포함 두 인라인 <script> 블록 모두 node --check 파싱 통과, node test/run.js 485/485 통과 재확인. 실제 버그 없어 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 71,
+      "phase": "critique",
+      "timestamp": "2026-09-23T07:00:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 전략적 시야에서 재검토(render*/부분갱신/CSV/FX/stockCode/recHist 전반/addBalanceAdjust/homeAlerts/cloud sync/fixShortfall/doLogin/costBasis/decidePushOutcome/카테고리 rename·삭제 캐스케이드/Pro 스텁/PIN 부재/단일파일 구조/CI/History 페이지네이션/migrate owners/nwHistoryCard aria-label/자산그룹 재정렬 접근성/localStorage 실패 처리/spendTrend 배지/doRenameOwner 필터 동기화/assetSelAll 귀속 스코프/nwChartPath 날짜 기반 x축 등 최근 완료·기각 항목은 재탐색 금지 지시). 자산관리 탭의 nwCarousel(귀속별 스와이프, ownerAssets/ownerDebt, index.html:2518-2528)이 이미 귀속별 순자산 보기를 제공하는데, 바로 아래 nwHistoryCard(index.html:2279) 순자산 추이 스파크라인은 항상 DB.nwHistory 전체 합계(ta/td/nw)만 그려 캐러셀에서 어떤 귀속을 보고 있는지와 무관하게 동일한 추이만 보여주는 불일치를 발견. DB.nwHistory 자체가 save() 시점(index.html:1875, updateNwHistory index.html:2150)에 합계만 스냅샷으로 저장해 귀속별 추이 재구성이 구조적으로 불가능한 상태임을 확인. '나'/'배우자'/'공용' 귀속 분리가 핵심 시나리오인 이 앱에서 캐러셀과 차트가 서로 다른 대상을 보여주는 공백으로 판단해, updateNwHistory에 byOwner 스냅샷 추가 + nwHistoryCard가 ST.assetOwner를 따라가도록 하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     }
   ]
