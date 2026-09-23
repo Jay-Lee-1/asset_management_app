@@ -1,15 +1,12 @@
 {
   "cycle": 69,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "카테고리 전체 삭제 가드 부재 → undefined 카테고리 거래 생성",
+    "why": "index.html:2926 delOwner는 '귀속은 최소 1개가 필요해요' 가드가 있지만, index.html:4276 delCat / 4280 doDeleteCat에는 동일한 최소개수 가드가 없다. 재현: 지출 카테고리를 하나씩 삭제해 마지막 1개까지 지우면 DB.categories.expense=[]. 이후 openTxSheet()(3178)는 category:DB.categories.expense[0]로 undefined를 대입하고, saveTx()(3286)는 category 검증이 없어 그대로 저장된다. 결과적으로 가계부/히스토리/지출분석에서 빈 카테고리명 거래가 생기고, openCatPicker(5994)는 그리드가 비어 카테고리를 다시 고를 방법도 없다. test/run.js에는 delOwner 최소개수 테스트는 있지만 delCat/doDeleteCat 쪽은 없어 이 공백이 검증되지 않은 채 남아있다.",
+    "approach": "doDeleteCat(k,i) 시작부에 delOwner와 동일한 패턴으로 if(DB.categories[k].length<=1){toast('카테고리는 최소 1개가 필요해요');return} 가드를 추가(delCat에서 confirmSheet 열기 전에 먼저 체크해 불필요한 확인창을 막는 편이 UX상 낫다). 방어적으로 saveTx()에도 category 미선택 시 저장을 막는 가드를 추가. test/run.js에 delOwner 최소개수 테스트를 본떠 'doDeleteCat: 마지막 카테고리는 삭제되지 않는다(min 1)' 케이스를 type별(expense/income/saving)로 추가."
+  },
   "history": [
-    {
-      "cycle": 64,
-      "phase": "critique",
-      "timestamp": "2026-09-22T03:20:00.000Z",
-      "summary": "Explore 서브에이전트로 앱 전체를 구조적으로 재검토(render*/esc/캘린더/부분갱신 전반(ledger·plan·assets)/반복종료조건/trim/부호/sanitizeBackup/CSV 흐름 전반/FX 피커/stockCode/recHistFieldsChanged startDate/addBalanceAdjust 부채방향/homeAlerts OS알림/cloud sync online 재시도/fixShortfall 기본일/doLogin 게스트데이터/Naver 시세 폴백/decidePushOutcome/카테고리 rename·삭제 캐스케이드/Pro 업그레이드 스텁/PIN 부재 등 최근 완료·기각 항목은 재탐색 금지 지시). fx/gold/stock 자산의 assetEval()(index.html:2020-2027)이 qty×현재가로 평가액만 계산할 뿐, 매입 시점 원가(cost basis) 필드가 스키마·migrate()·renderAssetSheet()(2771행) 어디에도 없어 손익/수익률을 전혀 보여주지 못함을 grep(손익/수익률/평가손익/gainLoss/costBasis/avgPrice 전무)으로 확인 — 순자산 추이·예산·지출 분석까지 갖춘 '우리의 자산' 앱에서 투자자산의 가장 기본적인 정보(얼마 벌었는지/잃었는지)가 빠진 실질적 제품 공백으로 채택. 단일 6299줄 파일의 모듈 경계 부재(리라이트 필요해 범위 초과), CI 미구성(프로세스성이라 저영향), allTxns/balancesUpTo 전체 재계산 부담(_balCache/_histCache/부분갱신으로 이미 완화됨)은 후순위로 기각. advance에서 fx/gold/stock 자산에 선택적 costBasis(원화) 필드 추가(미설정 시 undefined 유지, 0으로 기본값 두지 않음 — rateUnknown()과 동일한 '모름 vs 0원' 구분 패턴), sanitizeBackup()의 SANITIZE_FREE_FIELDS에 포함, renderAssetSheet()의 세 타입 분기에 '매입 금액(선택)' 입력 추가, assetEval() 옆에 순수 함수 assetGainLoss(a)(costBasis 없으면 null, 있으면 {amount,pct}) 신설, assetSubline()(2495행)에 손익 배지 표시하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 64,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-09-22T23:20:00.000Z",
       "summary": "develop 커밋(62ab575, recHistFieldsChanged에 weekend 필드 추가)을 검토. shiftWeekend()가 recDates()의 push() 경로에서 range 안의 모든 후보 날짜(from~to, 과거 포함)에 r.weekend를 무조건 적용함을 코드로 재확인해, weekend 변경이 과거 회차 날짜도 실제로 재계산한다는 커밋 설명이 정확함을 검증했다. saveRec()이 recHistFieldsChanged()===true일 때만 recSaveScopeConfirm('이 내역만/이후부터/전체')로 분기하고 false면 DB.recurrences[i]=d로 즉시 덮어쓰는 구조를 재확인해, weekend 누락이 실제로 확인창을 건너뛰게 만드는 경로였음을 검증. test/run.js의 분리된 두 테스트(weekend 변경 시 true, 메모만 변경 시 false)가 정확히 대칭적으로 회귀를 커버함을 확인. node test/run.js 471/471 통과, 두 인라인 <script> 블록 모두 node --check 파싱 통과 재확인. 실제 버그 없어 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 69,
+      "phase": "critique",
+      "timestamp": "2026-09-23T00:19:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 전략적 시야에서 재검토(render*/부분갱신/CSV/FX/stockCode/recHist 전반(weekend/varyingRecs daily·weekly 포함)/addBalanceAdjust/homeAlerts/cloud sync/fixShortfall/doLogin/costBasis/decidePushOutcome/카테고리 rename·삭제 캐스케이드/Pro 스텁/PIN 부재/단일파일 구조/CI/History 페이지네이션/migrate owners/nwHistoryCard aria-label/자산그룹 재정렬 접근성/localStorage 실패 처리/spendTrend 배지/doRenameOwner 필터 동기화/assetSelAll 귀속 스코프/nwChartPath 날짜간격 등 최근 완료·기각 항목은 재탐색 금지 지시). delOwner()(index.html:2926)는 '귀속은 최소 1개가 필요해요' 최소개수 가드가 있는데, doDeleteCat()(4280행)/delCat()(4276행)에는 동일한 가드가 없음을 코드 확인 — 지출/수입/저축 카테고리를 하나씩 삭제해 마지막 1개까지 지우면 DB.categories[k]=[]가 되고, openTxSheet()(3178행)의 category:DB.categories.expense[0]가 undefined로 대입되며 saveTx()(3286행)는 category 검증이 없어 그대로 저장돼 빈 카테고리명 거래가 생긴다. 이후 openCatPicker(5994행)도 그리드가 비어 재선택할 방법이 없다. test/run.js에 delOwner 최소개수 테스트는 있으나 delCat/doDeleteCat 쪽은 커버리지가 없음을 확인. advance에서 doDeleteCat(k,i) 시작부에 delOwner와 동일한 패턴(길이<=1이면 toast 후 return)의 가드를 추가하고 saveTx()에도 category 미선택 방어 가드를 추가, test/run.js에 type별(expense/income/saving) 회귀 테스트를 추가하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     }
   ]
