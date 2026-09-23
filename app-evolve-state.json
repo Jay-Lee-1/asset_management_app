@@ -1,15 +1,8 @@
 {
   "cycle": 70,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 65,
-      "phase": "review",
-      "timestamp": "2026-09-22T06:05:00.000Z",
-      "summary": "develop 커밋(325b22c, 전체내역 오름차순 페이지네이션 역전 수정)을 검토. splitHist()의 actual.sort(...)가 sortAsc일 때 배열을 오름차순(과거→최신)으로 정렬함(3570행)을 확인해, 새 slice(Math.max(0,length-shown))가 배열 뒤쪽(=최신 항목)을 정확히 잘라내는지 논리로 재검증 — sortAsc:false(내림차순, 최신이 앞)일 때 기존 slice(0,shown)과 대칭적으로 맞물림. histMore()가 page++만 하고 updateHist()를 재호출하는 구조상 shown이 커질수록 sortAsc 분기의 윈도우도 단조롭게 더 과거까지 넓어져 '더보기'를 눌러도 이미 보이던 최신 항목이 사라지지 않음을 확인. groupHTML은 어차피 항상 최신순으로 재정렬해 렌더하므로 actualShown 내부 순서 자체는 결과 마크업에 영향 없다는 커밋 설명도 코드로 확인. node test/run.js 449/449 통과 재확인. 문제 없음.",
-      "commit": null
-    },
     {
       "cycle": 65,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-23T02:16:13.102Z",
       "summary": "Explore 서브에이전트로 발견한 csvRowToImportTxn()의 findAsset (index.html:4706) 동명이인 자산 오매칭 버그 수정. saveAsset()의 중복명 가드(2849행)는 a.type이 같을 때만 중복을 막아, 서로 다른 type(예: cash 계좌와 savings 계좌)이 같은 이름(예: \"우리은행\")을 갖는 건 허용된다. findAsset은 이름만으로 Array.find를 써서 시세평가 자산을 제외한 후보 중 배열상 첫 번째를 그냥 골라버려, 동명이인 자산이 있으면 실제로는 다른 계좌로 갔어야 할 거래가 조용히 엉뚱한 자산에 fromAssetId/toAssetId로 연결된다. txnsToCSV가 자산을 이름으로만 내보내(id/type 없음) 재현 경로도 있다: cash \"우리은행\"과 savings \"우리은행\"을 만들고 거래를 내보낸 뒤 재가져오면 두 계좌 모두 non-market-valued라 findAsset이 둘 다 후보로 보고 그중 하나를 조용히 골라, 거래가 실제 대상이 아닌 계좌의 잔액 이력을 오염시키고 정작 의도한 계좌에는 그 거래가 빠진다 - 매칭 자체는 성공한 것으로 보여 unmatched 경고도 뜨지 않는다. findAsset을 filter 후 candidates.length===1일 때만 매칭하고 2개 이상이면 null을 반환하도록 수정해 기존 unmatched 경로(fromAssetName/toAssetName 스냅샷 + assetUnmatchedCount)로 빠지게 했다. test/run.js에 회귀 테스트 1개 추가: type이 다른 동명이인 자산(cash/savings) 2개가 있을 때 지출/이체 모두 unmatched로 남는지 검증. 두 인라인 <script> 블록 모두 node --check 파싱 확인, 477/477 통과(기존 476 + 신규 1). APP_VERSION 1.46.10->1.46.11, sw.js CACHE v172->v173.",
+      "commit": null
+    },
+    {
+      "cycle": 70,
+      "phase": "review",
+      "timestamp": "2026-09-23T02:18:19.366Z",
+      "summary": "develop 커밋(319785b, csvRowToImportTxn findAsset 동명이인 오매칭 수정)을 검토. saveAsset()의 중복명 가드(2849행)가 a.type이 같을 때만 중복을 막아 서로 다른 type(cash/savings)의 동명 자산이 실제로 허용됨을 재확인했고, findAsset을 filter 후 candidates.length===1일 때만 매칭하도록 바꾼 게 0개/2개 이상 모두 null로 귀결시켜 기존 \"못 찾음\" 경로(fromAssetName/toAssetName 스냅샷 + unmatched.push)를 그대로 재사용함을 코드로 확인했다. buildImportPreview()의 assetUnmatchedCount(4755행)가 unmatched.length 기준으로 집계되고 4954행에서 \"자산 매칭 안 됨 N건\" 안내로 이어져, 동명이인 케이스도 진짜 못 찾은 경우와 동일하게 사용자에게 시각적으로 노출됨을 확인해 fix가 end-to-end로 일관됨을 검증했다. nm(fromName/toName)이 이미 unguardCsv+trim을 거친 값이라 a.name.trim()===nm 비교에 트리밍 불일치가 없음도 확인. 신규 회귀 테스트(동명이인 cash/savings 2개 시 지출/이체 모두 unmatched) 포함 두 인라인 <script> 블록 모두 node --check 파싱 통과, node test/run.js 477/477 통과 재확인. 실제 버그 없어 코드 변경 없음.",
       "commit": null
     }
   ]
