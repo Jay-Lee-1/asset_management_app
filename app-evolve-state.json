@@ -1,15 +1,8 @@
 {
   "cycle": 73,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 67,
-      "phase": "advance",
-      "timestamp": "2026-09-22T17:15:00.000Z",
-      "summary": "critique 계획대로 varyingRecs()(index.html:5510)의 필터 (r.freq==='monthly'||r.freq==='yearly')를 제거해 daily/weekly 변동 반복거래도 '실제 금액 입력' 알림 대상에 포함되도록 확장. recDates()가 monthly/yearly 외 모든 freq를 이미 step 기반(daily=1일,나머지=7일)으로 처리하고 renderRecSheet()가 monthly/weekly/daily/yearly만 유효한 선택지로 제공하므로, 필터를 recIsVarying(r) 조건만 남기는 것으로 안전하게 확장 가능함을 확인했다. expandRec()/quickAmountCards()/openQuickList()/openQuickAmount()는 이미 날짜 단위(rec+date 쌍)로 동작해 별도 수정 없이 그대로 재사용됨. test/run.js에 weekly(매주 도래 회차 3건 모두 포함)와 daily(skip/edits가 함께 적용되는지) 회귀 테스트 2건 추가 — 기존 vm 샌드박스 배열 cross-realm 이슈(cycle66에서 발견된 패턴)를 피하려고 [...vr].map(...)으로 host 배열 변환 후 비교. node test/run.js 463/463 통과(기존 461 + 신규 2), 두 인라인 <script> 블록 모두 node --check 파싱 확인. APP_VERSION 1.46.5->1.46.6, sw.js CACHE v167->v168.",
-      "commit": null
-    },
     {
       "cycle": 68,
       "phase": "develop",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-23T13:05:00.000Z",
       "summary": "Explore 서브에이전트로 발견한 clampRecurringToMaturity()(index.html:2919)의 count 0/falsy 혼동 버그 수정. autoShortened 판정이 !r.count로 'count 미설정(자동 클램프)'과 'count:0(사용자가 명시적으로 정한 값)'을 구분하려 했는데, recApply()의 future-delete를 반복의 startDate 자체(첫 회차)에 적용하면 truncateRecEnd()의 recCountUntil()이 실제 발생 0건이라 count:0을 저장한다 — 이 값은 falsy라 !r.count가 true가 되어 자동 클램프로 오인됨. 재현: 적금 반복이체를 첫 회차부터 '이 날부터 이후 모두 삭제'로 지우면 endDate/count:0이 저장되는데, 이후 그 저축 자산의 만기일을 연장하면 clampRecurringToMaturity가 삭제된 회차 전부를 조용히 되살려 잔액/원장을 오염시킴. truncateRecEnd() 바로 위 주석이 이미 이 불변식(count 없이 endDate만 있으면 자동 클램프로 오인)을 경고하고 있었지만 0 값 케이스는 놓치고 있었다. !r.count를 r.count==null로 교체해 0은 '명시적으로 설정됨'으로 정확히 구분되게 했다. test/run.js의 기존 clampRecurringToMaturity 테스트 스위트에 count:0 케이스(만기 연장 시 되살아나면 안 됨) 회귀 테스트 1개 추가, 수정 전 코드로 되돌려 해당 테스트가 실제로 실패함을 확인 후 재적용. 두 인라인 <script> 블록 모두 node --check 파싱 확인, node test/run.js 498/498 통과(기존 497 + 신규 1). APP_VERSION 1.46.16->1.46.17, sw.js CACHE v178->v179.",
+      "commit": null
+    },
+    {
+      "cycle": 73,
+      "phase": "review",
+      "timestamp": "2026-09-23T14:08:44.411Z",
+      "summary": "cycle73 develop 커밋(1c629c6, clampRecurringToMaturity count 0/falsy 수정)을 검토. 함수 전체 로직(truncateRecEnd가 count:0을 어떻게 만드는지, autoShortened 판정이 prevMaturity 유무에 어떻게 게이팅되는지, 2926줄 auto-clamp 시 count 삭제 조건)을 추적해 수정이 의도한 케이스(첫 회차부터 삭제 -> count:0, endDate<startDate)에서 정확히 동작하고 회귀를 일으키지 않음을 확인. count=0이면서 endDate가 없는 조합은 recDraft 정규화(3516-3518줄, !d.endDate면 count를 null로 리셋)에 의해 애초에 발생하지 않으므로 auto-clamp 경로(2926줄)가 count:0을 잘못 삭제/보존할 여지도 없음. 다른 곳의 유사 !x.count 패턴(3292,3516-3518줄)은 사용자 입력 폼 draft 처리로 문맥이 다르며 이번 diff와 무관해 손대지 않음. 두 인라인 <script> node --check 통과, node test/run.js 498/498 통과(추가된 회귀 테스트 포함). 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
