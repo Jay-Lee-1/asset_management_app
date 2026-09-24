@@ -87,7 +87,7 @@ const FUNCTIONS = [
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards',
   'rateUnknown', 'filteredHist', 'histInvalidate',
   'genSalt', 'pbkdf2Hash', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer', 'openConfirmTransfer',
-  'foreignSaveIsNewer', 'openCopyBackup', 'copyBackup', 'findDonors',
+  'foreignSaveIsNewer', 'applyForeignSave', 'openCopyBackup', 'copyBackup', 'findDonors',
   'recIsVarying', 'varyingRecs', 'fixShortfallDefaultDate', 'openFixShortfall', 'lastActualAmount', 'openQuickAmount',
   'backupDue', 'planNegatives', 'homeAlerts', 'updateAlerts',
  'notifyAlertInfo', 'pickNotifyAlerts', 'pruneNotifiedIds',
@@ -349,6 +349,15 @@ const sandbox = {
   txDraft: null,
   syncTxInputs: () => {},
   undoToast: (msg, undoFn) => { sandbox.lastUndo = { msg, undoFn }; },
+  // applyForeignSave()가 다른 탭이 남긴 최신 데이터를 읽어오는 localStorage.getItem(dataKey())
+  // 경로 — 실제 dataKey()는 SESSION/AUTH/emailKey에 파생되는 비순수 값이라(위 SESSION 주석과
+  // 같은 이유) 재현하지 않고 고정 키 스텁으로 대체한다. sandbox._lsRaw에 원하는 문자열을
+  // 세팅해 getItem이 그 값을 돌려주게 한다(기본은 아무 것도 없는 것처럼 null).
+  dataKey: () => 'test-key',
+  _lsRaw: null,
+  localStorage: { getItem: () => sandbox._lsRaw },
+  TAB_SAVED_AT: 0,
+  TAB_SYNC_PENDING: null,
   snapshotAssetName: (id) => { sandbox.snapshotCalls.push(id); },
   // toggleConfirmTransfers()가 끄기 전 확인을 받는 confirmSheet() 스텁 — 실제 시트를 띄우는
   // 대신 호출 인자를 기록하고 콜백만 저장해서, 테스트가 "확인" 버튼을 누른 것처럼 cb를 직접 실행할 수 있게 한다.
@@ -3420,6 +3429,40 @@ test('foreignSaveIsNewer: 다른 탭의 저장 시각이 이전이거나 같으�
 test('foreignSaveIsNewer: storage 이벤트의 newValue가 없으면(키 삭제 등) 최신이 아니다', () => {
   assert.strictEqual(sandbox.foreignSaveIsNewer(null, 1000), false);
   assert.strictEqual(sandbox.foreignSaveIsNewer('', 1000), false);
+});
+
+/* ---------- applyForeignSave: 다른 탭이 저장한 최신 DB를 반영할 때 _balCache/_recCache/_lastEditCache를
+ * 함께 비우지 않던 버그의 회귀 테스트(app-evolve cycle76 develop). save()는 항상 맨 앞에서
+ * invalidateBalances()를 부르는데(1871행), applyForeignSave()·resolveCloudPullRemote()·afterCloudAuth()
+ * 는 save()를 거치지 않고 DB를 통째로 갈아치우면서 이 호출을 빠뜨렸다 — 그래서 같은 [from,to]/[upto,dateStr]
+ * 키로 이미 채워진 잔액·반복거래 캐시가 옛 DB 기준 값을 그대로 돌려줘, 다른 탭에서 방금 저장한 거래가
+ * 화면(잔액/순자산/알림)에 반영되지 않는 채로 남았다(로컬스토리지·DB 자체는 최신이라 오직 표시값만 낡음). */
+test('applyForeignSave: localStorage의 최신 데이터로 DB를 교체하며 invalidateBalances를 호출해 낡은 잔액 캐시를 비운다', () => {
+  sandbox.DB = { assets: [{ id: 'old' }], txns: [], categories: { expense: ['옛카테고리'] }, catIcon: {}, catVar: {}, budgets: {}, owners: ['나'], recurrences: [] };
+  sandbox._lsRaw = JSON.stringify({ assets: [{ id: 'new1' }], txns: [{ id: 't1' }], owners: ['나'], recurrences: [] });
+  sandbox.TAB_SAVED_AT = 1000;
+  sandbox.TAB_SYNC_PENDING = 2000;
+  let invalidateCalls = 0, renderCalls = 0;
+  const origInvalidate = sandbox.invalidateBalances, origRender = sandbox.renderCurrent;
+  sandbox.invalidateBalances = () => { invalidateCalls++; };
+  sandbox.renderCurrent = () => { renderCalls++; };
+  try {
+    sandbox.applyForeignSave(3000);
+  } finally {
+    sandbox.invalidateBalances = origInvalidate;
+    sandbox.renderCurrent = origRender;
+  }
+  assert.ok(sandbox.DB.assets.some(a => a.id === 'new1'), 'localStorage에서 읽은 새 DB로 교체되어야 함');
+  assert.strictEqual(sandbox.TAB_SAVED_AT, 3000);
+  assert.strictEqual(sandbox.TAB_SYNC_PENDING, null);
+  assert.strictEqual(invalidateCalls, 1, '다른 탭의 최신 DB를 반영할 때도 save()와 마찬가지로 캐시를 비워야 함 — 안 그러면 같은 날짜 범위 키로 채워진 옛 잔액/반복거래 캐시가 그대로 남는다');
+  assert.strictEqual(renderCalls, 1);
+});
+test('applyForeignSave: localStorage에 저장된 값이 없으면 DB를 건드리지 않는다', () => {
+  const before = sandbox.DB;
+  sandbox._lsRaw = null;
+  sandbox.applyForeignSave(9999);
+  assert.strictEqual(sandbox.DB, before, 'localStorage가 비어있으면 조용히 아무 것도 하지 않아야 함');
 });
 
 /* ---------- renderCurrent: 전역 에러 바운더리 ---------- */
