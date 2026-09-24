@@ -1,7 +1,11 @@
 {
   "cycle": 77,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "클라우드 동기화가 실제로는 계정 1개=데이터 1벌인데, 앱은 부부/가족 공유(owners:['나','배우자','공용'])를 정체성으로 내세움 — 공유 기능 부재",
+    "why": "DB.owners 기본값이 ['나','배우자','공용'](index.html:1557,1567,1826)으로 '우리의 자산'이 부부 공유 가계부를 표방하지만, 클라우드 동기화는 CLOUD_UID(1589) 하나당 Supabase user_data 행 하나(pullCloud 1612/pushCloud 1646이 .eq('user_id',CLOUD_UID)로만 조회·갱신)라 완전히 사적 데이터다. 초대/연결 계정 개념이 코드 어디에도 없음(공유/invite/partner 검색 0건, addOwner/delOwner(2973-2989)는 계정 경계가 아니라 라벨 문자열 배열일 뿐). 자연스러운 사용 흐름대로 부부가 각자 가입(doSignup)해서 owner:'배우자'로 자산을 나눠 기록하면, 서로의 기록이 영원히 보이지 않는다 — 앱의 핵심 사용 시나리오에서 조용하고 영구적인 데이터 비가시성 문제이지 엣지케이스가 아니다. 유일한 우회(로그인 하나를 두 기기가 공유)는 비밀번호 공유라는 보안 문제이자, 정확히 cycle77에서 막 강화한 충돌 경로(decidePushOutcome 1634)를 타는 방식인데도 앱 어디에도 안내가 없다.",
+    "approach": "전체 재작업이 아니라 단계적으로 접근한다(cycle76의 '다음 걸음이지 재작성 아님' 원칙 적용). 1) 이상적 목표: household_id 개념 도입 — 최초 클라우드 가입 시 uid()로 household_id 생성, 계정 시트에 '가족 공유' 초대 흐름 추가(만료 가능한 초대 코드를 저장할 새 Supabase 테이블 household_invites{code, household_id, expires_at} — 앱이 이미 사용자가 Supabase 스키마를 셀프호스팅하는 BYO-backend 패턴이므로 새 SQL 안내 문서 추가가 자연스러움). 초대 수락 시 afterCloudAuth()가 자기 CLOUD_UID 대신 그 household_id/대상 user_id로 읽고 쓰도록 분기 — pullCloud/pushCloud/decidePushOutcome의 동시 쓰기 충돌 처리 로직은 그대로 재사용 가능. 2) 이 작업은 새 스키마+인증 의미론 변경으로 cycle76에서 보류한 hot/archive 분리와 위험도가 비슷하다(로컬 테스트로 실제 Supabase 다중 계정 시나리오 검증 불가). advance 단계 시작 시 위험도를 재평가하고, 한 사이클에 담기 과하다고 판단되면 최소 침습적 대안으로 축소: 로그인/계정 화면에 현재 동작(로그인 1개=데이터 1벌이며 계정 간 공유 없음)을 명확히 안내하는 문구를 추가하고, '로그인을 여러 기기에서 공유'하는 우회로를 쓸 경우의 위험(계정 삭제 금지 등)을 명시하는 순수 UI/문서 변경만 먼저 반영한다 — 백엔드 위험 0, 실사용자 오해를 즉시 줄이고, 진짜 공유 기능은 이후 사이클에 별도로 다시 계획한다."
+  },
   "history": [
     {
       "cycle": 72,
@@ -141,6 +145,13 @@
       "phase": "review",
       "timestamp": "2026-09-24T06:08:44.821Z",
       "summary": "develop 커밋(dfad39a, pullCloud() markCloudSynced 조기 호출 버그 수정)을 검토. pullCloud()의 유일한 부수효과 변경(markCloudSynced 제거)이 CLOUD_LAST_SYNCED_AT/cloudSyncOk() 갱신은 그대로 유지함을 확인. markCloudSynced() 호출부 전수 확인(pushCloud proceed/fallback 2곳, afterCloudAuth 비-conflict 분기, resolveCloudPullRemote) — remote를 실제로 채택하거나 push가 실제로 성공한 경로에만 남아있어 일관됨. online 핸들러(pullCloud();pushCloud())가 pullCloud 반환값을 DB에 반영하지 않는 것은 기존 설계(push 전 CLOUD_LAST_SYNCED_AT만 최신화)이며 이번 수정과 무관. 527/527 통과. 코드 변경 없음(이상 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 77,
+      "phase": "critique",
+      "timestamp": "2026-09-24T07:11:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체 재검토. DB.owners 기본값이 ['나','배우자','공용']으로 부부 공유 가계부를 표방하는데(index.html:1557,1567,1826), 클라우드 동기화는 CLOUD_UID 하나당 Supabase 행 하나(pullCloud/pushCloud가 .eq('user_id',CLOUD_UID)로만 조회)라 계정 간 실제 공유 기능이 전혀 없는 구조적 갭 발견. household_id/초대 코드 기반 연결 계정 계획(위험도가 크면 최소 침습 대안으로 안내 문구부터)을 pending_advance_plan에 저장.",
       "commit": null
     }
   ]
