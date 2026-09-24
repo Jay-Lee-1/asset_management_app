@@ -79,6 +79,7 @@ const FUNCTIONS = [
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'expenseBreakdownCard',
   'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asOpenCur', 'asCur', 'asToggleNeg', 'openAssetSheet', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'isCloudConflict', 'decidePushOutcome', 'fmtAmt',
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges', 'shouldRetryCloudSync',
+  'pullCloud', 'afterCloudAuth', 'resolveCloudPullRemote',
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
   'clampDay', 'saveTx', 'assetBase', 'balancesUpTo', 'balanceAt',
   'addBalanceAdjust', 'updateBalanceAdjust', 'toggleConfirmTransfers',
@@ -156,6 +157,24 @@ const sandbox = {
   // 이유(파생·비순수 상태)로 재현하지 않고 테스트에서 직접 세팅한다.
   CLOUD_UID: null,
   CLOUD_SYNC_STATE: 'idle',
+  CLOUD_LAST_SYNCED_AT: null,
+  // sbReady()는 localStorage(sbCfg)와 window.supabase의 존재 여부를 따지는 비순수 함수라
+  // (SESSION/AUTH와 같은 이유) 재현하지 않고, pullCloud()/afterCloudAuth() 테스트에서
+  // "클라우드 연결됨"을 뜻하는 true 고정 스텁으로 대체한다.
+  sbReady: () => true,
+  cloudSyncOk: () => {},
+  cloudSyncFailed: () => {},
+  // markCloudSynced()는 dataKey()+'__syncedAt'을 실제 시간으로 찍는 부수효과뿐이라(내용 자체는
+  // 검증할 게 없음), pullCloud()/afterCloudAuth()/resolveCloudPullRemote() 테스트에서는 "이
+  // 사이클에 로컬이 remote와 같아졌다고 표시했는가"만 스파이로 기록한다(app-evolve cycle77 develop:
+  // pullCloud()가 remote 채택 여부와 무관하게 이걸 직접 불러 conflict로 되돌아간 뒤에도
+  // '__syncedAt'이 갱신되던 버그의 회귀 테스트).
+  markCloudSyncedCalls: 0,
+  markCloudSynced: () => { sandbox.markCloudSyncedCalls++; },
+  // pullCloud()가 부르는 SB.from('user_data').select(...).eq(...).maybeSingle() 체인만 흉내내는
+  // 최소 목업 — sandbox._sbMaybeSingleResult에 원하는 {data,error}를 세팅해 응답을 흉내낸다.
+  _sbMaybeSingleResult: { data: null, error: null },
+  SB: { from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => sandbox._sbMaybeSingleResult }) }) }) },
   STORAGE_PERSISTED: null,
   // DB_JSON_LEN은 save()/load()가 실제 직렬화 길이로 채우는 파생 상태고, STORAGE_SIZE_*_LEN은
   // 그 문턱 상수다 — homeAlerts()가 shouldWarnStorageSize()에 넘기므로 STORAGE_PERSISTED와
@@ -361,7 +380,15 @@ const sandbox = {
   // 세팅해 getItem이 그 값을 돌려주게 한다(기본은 아무 것도 없는 것처럼 null).
   dataKey: () => 'test-key',
   _lsRaw: null,
-  localStorage: { getItem: () => sandbox._lsRaw },
+  // _lsMap은 afterCloudAuth() 테스트처럼 dataKey()+'__savedAt'/'__syncedAt'같이 서로 다른 키를
+  // 구분해서 읽어야 하는 경우에만 쓴다(null이면 기존처럼 키와 무관하게 _lsRaw를 돌려줌 — applyForeignSave
+  // 테스트 등 단일 키만 쓰던 기존 테스트와 호환). setItem은 실제로 쓰지 않고 호출만 기록한다.
+  _lsMap: null,
+  _lsSetCalls: [],
+  localStorage: {
+    getItem: (k) => (sandbox._lsMap && Object.prototype.hasOwnProperty.call(sandbox._lsMap, k)) ? sandbox._lsMap[k] : sandbox._lsRaw,
+    setItem: (k, v) => { sandbox._lsSetCalls.push([k, v]); },
+  },
   TAB_SAVED_AT: 0,
   TAB_SYNC_PENDING: null,
   snapshotAssetName: (id) => { sandbox.snapshotCalls.push(id); },
@@ -3439,6 +3466,66 @@ test('shouldRetryCloudSync: 실패 상태여도 아직 오프라인이면 재시
 });
 test('shouldRetryCloudSync: 충돌 상태는 사용자의 명시적 해결이 필요하므로 자동 재시도하지 않는다', () => {
   assert.strictEqual(sandbox.shouldRetryCloudSync('u1', 'conflict', true), false);
+});
+
+/* ---------- pullCloud/afterCloudAuth/resolveCloudPullRemote: markCloudSynced() 호출 시점
+ * (app-evolve cycle77 develop 회귀 테스트). pullCloud()는 원래 원격 fetch에 성공하기만 하면
+ * markCloudSynced()(dataKey()+'__syncedAt'을 지금 시각으로 찍음)를 곧장 불렀다. 그런데
+ * afterCloudAuth()는 localUnsynced(로컬에 아직 클라우드로 못 올라간 편집이 있음)일 때 remote를
+ * 버리고 conflict 상태로만 돌아가는데, 이때도 pullCloud()가 이미 markCloudSynced()를 불러버려
+ * '__syncedAt'이 지금 시각으로 갱신된다. 그 다음 재부팅(추가 편집 없이 재실행)에서는
+ * savedAt<syncedAt이 되어 localHasUnsyncedChanges()가 false를 돌려주고, afterCloudAuth()가
+ * 곧장 DB=remote로 덮어써 그 미동기화 편집이 조용히 사라진다. 고친 뒤에는 pullCloud() 자신은
+ * markCloudSynced()를 부르지 않고, 실제로 remote를 채택하는 호출자(afterCloudAuth의 비-conflict
+ * 분기, resolveCloudPullRemote)만 부른다. ---------- */
+test('pullCloud: 원격 fetch에 성공해도 markCloudSynced를 직접 부르지 않는다(호출자가 remote를 실제로 채택할 때만 불러야 함)', async () => {
+  sandbox.CLOUD_UID = 'u1';
+  sandbox.markCloudSyncedCalls = 0;
+  sandbox._sbMaybeSingleResult = { data: { data: { assets: [], txns: [] }, updated_at: '2026-01-01T00:00:00.000Z' }, error: null };
+  const remote = await sandbox.pullCloud();
+  assert.deepStrictEqual(remote, { assets: [], txns: [] });
+  assert.strictEqual(sandbox.CLOUD_LAST_SYNCED_AT, '2026-01-01T00:00:00.000Z', 'pushCloud()의 조건부 UPDATE가 쓰는 기준시각은 그대로 갱신되어야 함');
+  assert.strictEqual(sandbox.markCloudSyncedCalls, 0, 'pullCloud() 스스로는 로컬이 remote와 같아졌다고 표시하면 안 됨');
+});
+test('afterCloudAuth: 로컬에 미동기화 편집이 있으면(localUnsynced) remote를 버리고 conflict로만 돌아가며, __syncedAt을 갱신하지 않는다', async () => {
+  const before = sandbox.DB = { assets: [{ id: 'local-unsynced' }], txns: [] };
+  sandbox.CLOUD_UID = 'u1';
+  sandbox.CLOUD_SYNC_STATE = 'idle';
+  sandbox.markCloudSyncedCalls = 0;
+  sandbox._lsMap = { 'test-key__savedAt': '2000', 'test-key__syncedAt': '1000' }; // savedAt>syncedAt → 미동기화
+  sandbox._sbMaybeSingleResult = { data: { data: { assets: [{ id: 'remote' }], txns: [] }, updated_at: '2026-01-01T00:00:00.000Z' }, error: null };
+  await sandbox.afterCloudAuth('u1');
+  assert.strictEqual(sandbox.CLOUD_SYNC_STATE, 'conflict');
+  assert.strictEqual(sandbox.DB, before, '미동기화 로컬 편집을 remote로 덮어쓰면 안 됨');
+  assert.strictEqual(sandbox.markCloudSyncedCalls, 0, 'remote를 채택하지 않았으니 아직 안 동기화된 로컬을 동기화됐다고 표시하면 안 됨 — 안 그러면 다음 재부팅에서 localHasUnsyncedChanges가 이 편집을 놓치고 remote로 조용히 덮어씀');
+  sandbox._lsMap = null;
+});
+test('afterCloudAuth: 로컬에 미동기화 편집이 없으면 remote를 그대로 채택하고 markCloudSynced를 부른다', async () => {
+  sandbox.DB = { assets: [{ id: 'local-old' }], txns: [] };
+  sandbox.CLOUD_UID = 'u1';
+  sandbox.CLOUD_SYNC_STATE = 'idle';
+  sandbox.markCloudSyncedCalls = 0;
+  sandbox._lsMap = { 'test-key__savedAt': '1000', 'test-key__syncedAt': '2000' }; // savedAt<=syncedAt → 동기화됨
+  sandbox._sbMaybeSingleResult = { data: { data: { assets: [{ id: 'remote', type: 'cash' }], txns: [] }, updated_at: '2026-01-02T00:00:00.000Z' }, error: null };
+  await sandbox.afterCloudAuth('u1');
+  assert.ok(sandbox.DB.assets.some(a => a.id === 'remote'), 'remote 데이터를 채택해야 함');
+  assert.strictEqual(sandbox.markCloudSyncedCalls, 1);
+  sandbox._lsMap = null;
+});
+test('resolveCloudPullRemote(사용자가 명시적으로 누르는 "가져오기"): remote를 채택하며 markCloudSynced를 부른다', async () => {
+  sandbox.DB = { assets: [{ id: 'local-old' }], txns: [] };
+  sandbox.CLOUD_UID = 'u1';
+  sandbox.markCloudSyncedCalls = 0;
+  sandbox._sbMaybeSingleResult = { data: { data: { assets: [{ id: 'remote2', type: 'cash' }], txns: [] }, updated_at: '2026-01-03T00:00:00.000Z' }, error: null };
+  const origRenderCurrent = sandbox.renderCurrent;
+  sandbox.renderCurrent = () => {};
+  try {
+    await sandbox.resolveCloudPullRemote();
+  } finally {
+    sandbox.renderCurrent = origRenderCurrent;
+  }
+  assert.ok(sandbox.DB.assets.some(a => a.id === 'remote2'));
+  assert.strictEqual(sandbox.markCloudSyncedCalls, 1);
 });
 
 /* ---------- foreignSaveIsNewer: handleForeignStorage()가 다른 탭의 save()를 반영할지 판단하는 순수 로직
