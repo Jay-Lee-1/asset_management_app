@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.31';
+const APP_VERSION='1.46.32';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3357,6 +3357,8 @@ function saveTx(){
   if(!d.fromAssetId||!d.toAssetId){toast('보내는·받는 자산을 선택해 주세요');return}
   if(d.fromAssetId===d.toAssetId){toast('보내는 자산과 받는 자산이 같아요');return}
  }
+ if(d.type==='expense'&&!d.fromAssetId){toast('자산을 선택해 주세요');return}
+ if(d.type==='income'&&!d.toAssetId){toast('자산을 선택해 주세요');return}
  if(d.type==='expense')d.toAssetId=null;else if(d.type==='income')d.fromAssetId=null;
  if(!d.id&&d.repeat){ /* 반복 ON → 반복 항목으로 저장 (일회성 내역 대신) */
   const cat=d.type==='transfer'?'이체':d.category;
@@ -3548,6 +3550,8 @@ function saveRec(){
   if(!d.fromAssetId||!d.toAssetId){toast('보내는·받는 자산을 선택해 주세요');return}
   if(d.fromAssetId===d.toAssetId){toast('보내는 자산과 받는 자산이 같아요');return}
  }
+ if(d.type==='expense'&&!d.fromAssetId){toast('자산을 선택해 주세요');return}
+ if(d.type==='income'&&!d.toAssetId){toast('자산을 선택해 주세요');return}
  if(d.type==='expense')d.toAssetId=null;else if(d.type==='income')d.fromAssetId=null;
  if(d.type==='transfer')d.category='이체';
  if(d.endDate&&d.endDate<d.startDate){toast('종료일은 시작일 이후로 선택해 주세요');return}

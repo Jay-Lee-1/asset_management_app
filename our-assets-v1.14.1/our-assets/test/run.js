@@ -3943,6 +3943,75 @@ test('saveTx: transfer는 category가 없어도(고정 카테고리 없음) 저�
   sandbox.saveTx();
   assert.strictEqual(sandbox.DB.txns.length, 1, 'transfer는 category 가드의 영향을 받지 않아야 함');
 });
+/* ---------- saveTx/saveRec: expense/income에 자산 선택 없이 저장되던 버그 (app-evolve cycle81 develop) ----------
+ * transfer/saving은 fromAssetId/toAssetId가 없으면 '보내는·받는 자산을 선택해 주세요' 토스트로
+ * 막았지만, expense/income은 이 가드가 전혀 없이 d.type==='expense'?d.toAssetId=null:... 로 남은
+ * 쪽만 null 처리할 뿐 정작 써야 할 fromAssetId(expense)/toAssetId(income) 자체가 null이어도 그냥
+ * 저장됐다. openTxSheet()/openRecSheet()가 fromAssetId 기본값으로 쓰는 firstCash()는 현금성
+ * 자산이 하나도 없으면(예: 주식·금 등만 보유한 계정, 유일한 현금 자산을 삭제한 직후) null을
+ * 반환하므로, 실사용에서 자산 없이 지출/수입을 저장하는 경로가 실제로 존재했다. 이렇게 저장된
+ * 거래는 balanceAt/balancesUpTo가 fromAssetId/toAssetId 매치로만 잔액에 반영하므로 어떤 자산의
+ * 잔액에도 반영되지 않고, 총자산에서 조용히 빠진 채 지출/수입 총계·카테고리 집계에만 남는다. */
+test('saveTx: 지출인데 fromAssetId가 없으면(현금성 자산 없음) 토스트만 뜨고 저장되지 않는다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { txns: [], settings: {} };
+  sandbox.txDraft = {
+    id: null, type: 'expense', date: '2026-01-15', category: '식비', memo: '',
+    amount: 9000, fromAssetId: null, toAssetId: null, repeat: false,
+  };
+  sandbox.toastCalls = [];
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.DB.txns.length, 0, 'fromAssetId 없이는 저장되면 안 됨');
+  assert.ok(sandbox.toastCalls.includes('자산을 선택해 주세요'));
+});
+test('saveTx: 수입인데 toAssetId가 없으면 토스트만 뜨고 저장되지 않는다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { txns: [], settings: {} };
+  sandbox.txDraft = {
+    id: null, type: 'income', date: '2026-01-15', category: '급여', memo: '',
+    amount: 3000000, fromAssetId: null, toAssetId: null, repeat: false,
+  };
+  sandbox.toastCalls = [];
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.DB.txns.length, 0, 'toAssetId 없이는 저장되면 안 됨');
+  assert.ok(sandbox.toastCalls.includes('자산을 선택해 주세요'));
+});
+test('saveTx: 자산을 정상적으로 고른 지출/수입은 이 가드의 영향을 받지 않는다(정상 케이스는 회귀 없음)', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { txns: [], settings: {} };
+  sandbox.txDraft = {
+    id: null, type: 'expense', date: '2026-01-15', category: '식비', memo: '',
+    amount: 9000, fromAssetId: 'a1', toAssetId: null, repeat: false,
+  };
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.DB.txns.length, 1);
+});
+test('saveRec: 지출인데 fromAssetId가 없으면 토스트만 뜨고 저장되지 않는다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { recurrences: [], settings: {} };
+  sandbox.recDraft = {
+    id: null, type: 'expense', category: '월세', memo: '', amount: 500000,
+    fromAssetId: null, toAssetId: null, freq: 'monthly', day: 10,
+    startDate: '2026-01-15', endDate: null, count: null, weekend: 'onDay',
+  };
+  sandbox.toastCalls = [];
+  sandbox.saveRec();
+  assert.strictEqual(sandbox.DB.recurrences.length, 0, 'fromAssetId 없이는 저장되면 안 됨');
+  assert.ok(sandbox.toastCalls.includes('자산을 선택해 주세요'));
+});
+test('saveRec: 수입인데 toAssetId가 없으면 토스트만 뜨고 저장되지 않는다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { recurrences: [], settings: {} };
+  sandbox.recDraft = {
+    id: null, type: 'income', category: '급여', memo: '', amount: 3000000,
+    fromAssetId: null, toAssetId: null, freq: 'monthly', day: 25,
+    startDate: '2026-01-15', endDate: null, count: null, weekend: 'onDay',
+  };
+  sandbox.toastCalls = [];
+  sandbox.saveRec();
+  assert.strictEqual(sandbox.DB.recurrences.length, 0, 'toAssetId 없이는 저장되면 안 됨');
+  assert.ok(sandbox.toastCalls.includes('자산을 선택해 주세요'));
+});
 test('saveRec: 시작일이 RANGE_FROM 이전이면 토스트만 뜨고 저장되지 않는다', () => {
   sandbox.TWi = -1;
   sandbox.DB = { recurrences: [], settings: {} };
