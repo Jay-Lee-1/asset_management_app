@@ -109,9 +109,11 @@ const FUNCTIONS = [
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
 // _balCache/BAL_CACHE_MAX는 balancesUpTo()가 참조하는 모듈 스코프 캐시 상태라 같은 방식으로 끌어온다.
 // _recCache/REC_CACHE_MAX는 expandRec()가 참조하는 모듈 스코프 캐시 상태라 같은 방식으로 끌어온다.
+// _lastEditCache는 lastActualAmount()가 참조하는 모듈 스코프 캐시 상태라 같은 방식으로 끌어온다
+// (app-evolve cycle75 advance: 매번 r.edits 전체를 스캔하지 않도록 추가).
 // isPlanAcct는 planNegatives()가 DB.assets.filter(isPlanAcct)로 부르는 "플랜 대상 통장"
 // 판정 상수라 같은 방식(extractConst)으로 끌어온다.
-const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS'];
+const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS'];
 // _histCache는 filteredHist()가 재대입(={key,list})하는 let 선언이라 CONSTS(extractConst)로는
 // 못 끌어오므로 별도의 LETS 목록으로 extractLet을 통해 가져온다.
 // _copyIsCsv도 같은 이유(openCopyBackup()이 재대입)로 LETS를 통해 가져온다.
@@ -2406,6 +2408,44 @@ test('lastActualAmount: 직전 회차 실제 금액이 0원이면 0을 그대로
 test('lastActualAmount: 직전 실제 금액 기록이 없으면 반복의 기본 금액을 돌려준다', () => {
   const r = { amount: 5000, edits: {} };
   assert.strictEqual(sandbox.lastActualAmount(r, '2026-03-05'), 5000);
+});
+/* ---------- lastActualAmount: _lastEditCache 회귀 (app-evolve cycle75 advance) ----------
+ * openQuickAmount()를 열 때마다 r.edits 전체를 Object.keys().sort()로 스캔하던 걸 없애려고
+ * "가장 최근 edits 날짜"만 회차별로 기억해 두는 캐시를 추가했다. 캐시는 lastActualAmount() 안에서
+ * 읽기 전용으로만 채워지고, 실제 쓰기 경로(saveQuickAmount/recSave)는 항상 save()->
+ * invalidateBalances()를 거쳐 지워지므로 정상 흐름에서는 낡을 일이 없다 — 그 계약을 balancesUpTo/
+ * _balCache 테스트(위 3600행 부근)와 같은 방식으로 확인한다: 캐시를 비우지 않고 r.edits를 직접
+ * 바꾸면 옛 값이 그대로 나오는 것까지 보여줘야 "캐시가 실제로 동작 중"이라는 게 증명된다. */
+test('lastActualAmount: 캐시 히트(미래 날짜 조회)가 전체 스캔과 같은 결과를 준다', () => {
+  const r = { amount: 1000, edits: { '2026-01-05': { amount: 100 }, '2026-03-05': { amount: 300 }, '2026-02-05': { amount: 200 } } };
+  assert.strictEqual(sandbox.lastActualAmount(r, '2026-04-01'), 300, '가장 최근(2026-03-05) edits 금액이 나와야 함');
+  // vm 샌드박스에서 만들어진 객체는 host의 Object와 realm이 달라 deepStrictEqual이
+  // (값은 같아도 프로토타입이 다름) 실패하므로, 필드별로 비교한다.
+  assert.strictEqual(sandbox._lastEditCache.get(r).date, '2026-03-05', '캐시가 날짜순 정렬 후 가장 최근 날짜로 채워져야 함');
+  assert.strictEqual(sandbox.lastActualAmount(r, '2026-05-01'), 300, '캐시 히트로도 같은 결과여야 함');
+});
+test('lastActualAmount: 캐시된 날짜 이하로 조회하면 폴백 전체 스캔으로 그 시점 직전 값을 정확히 돌려준다', () => {
+  const r = { amount: 1000, edits: { '2026-01-05': { amount: 100 }, '2026-03-05': { amount: 300 } } };
+  assert.strictEqual(sandbox.lastActualAmount(r, '2026-04-01'), 300, '캐시를 먼저 채움(latest=2026-03-05)');
+  assert.strictEqual(sandbox.lastActualAmount(r, '2026-02-01'), 100, '캐시된 날짜(03-05)보다 이전 조회는 폴백 스캔으로 01-05 값을 줘야 함');
+  assert.strictEqual(sandbox.lastActualAmount(r, '2026-01-01'), 1000, '그보다 더 이전이면 edits가 없어 기본 amount로 폴백해야 함');
+});
+test('lastActualAmount: 캐시를 비우지 않으면 그 뒤에 추가된 더 최신 edits가 즉시 반영되지 않는다(캐시가 실제로 동작 중임을 확인) → invalidateBalances 역할의 _lastEditCache.clear() 뒤엔 반영된다', () => {
+  const r = { amount: 1000, edits: { '2026-01-05': { amount: 100 } } };
+  sandbox._lastEditCache.delete(r);
+  assert.strictEqual(sandbox.lastActualAmount(r, '2026-06-01'), 100, '캐시를 채움(latest=2026-01-05)');
+  r.edits['2026-05-05'] = { amount: 500 };
+  assert.strictEqual(sandbox.lastActualAmount(r, '2026-06-01'), 100, '캐시를 비우지 않으면 새로 추가된 edits가 아직 반영 안 됨 — 실사용에선 saveQuickAmount/recSave가 항상 save()->invalidateBalances()를 거쳐 이 캐시를 비우므로 발생하지 않음');
+  sandbox._lastEditCache.clear();
+  assert.strictEqual(sandbox.lastActualAmount(r, '2026-06-01'), 500, '캐시를 비운 뒤에는 새 edits가 반영되어야 함');
+});
+test('lastActualAmount: 서로 다른 recurrence 객체는 캐시가 독립적으로 관리된다', () => {
+  const r1 = { amount: 1, edits: { '2026-01-01': { amount: 11 } } };
+  const r2 = { amount: 2, edits: { '2026-02-01': { amount: 22 } } };
+  assert.strictEqual(sandbox.lastActualAmount(r1, '2026-06-01'), 11);
+  assert.strictEqual(sandbox.lastActualAmount(r2, '2026-06-01'), 22);
+  assert.strictEqual(sandbox._lastEditCache.get(r1).date, '2026-01-01');
+  assert.strictEqual(sandbox._lastEditCache.get(r2).date, '2026-02-01');
 });
 test('lastActualAmount: 기본 금액조차 없는 손상된 레코드면 null을 돌려준다(0원과 구분)', () => {
   const r = { edits: {} };

@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.21';
+const APP_VERSION='1.46.22';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2070,7 +2070,11 @@ function assetBalance(id){ /* 홈/자산관리: 예정 포함 시 이번 달 말
    Map은 삽입 순서를 유지하므로 크기 초과 시 가장 오래된 항목부터 지우는 단순 LRU 캡을 둔다. */
 const BAL_CACHE_MAX=40;
 const _balCache=new Map();
-function invalidateBalances(){_balCache.clear();_recCache.clear()}
+/* lastActualAmount()가 매번 r.edits 전체를 스캔하지 않도록 회차별 "가장 최근 edits 날짜"만
+   기억해 두는 캐시(값은 객체 참조로 키를 잡아 recurrence별로 독립적). _balCache/_recCache와
+   같은 규칙으로 invalidateBalances()에서 함께 비운다. */
+const _lastEditCache=new Map();
+function invalidateBalances(){_balCache.clear();_recCache.clear();_lastEditCache.clear()}
 function balancesUpTo(dateStr){
  const upto=dateStr>RANGE_TO?RANGE_TO:dateStr;
  const proj=dateStr>TODAY;
@@ -5616,9 +5620,25 @@ function openQuickAmount(recId,date){
   <button class="btn btn-primary" onclick="saveQuickAmount('${recId}','${date}')">${svg('check')} 저장</button>`);
  setTimeout(()=>{const el=$('qAmt');if(el){el.focus();el.select()}},250);
 }
-function lastActualAmount(r,date){ /* 직전 회차에 실제로 넣은 금액. 데이터 없으면 null(실제 0원과 구분) */
- const eds=Object.keys(r.edits||{}).filter(d=>d<date).sort();
- if(eds.length)return r.edits[eds[eds.length-1]].amount;
+function lastActualAmount(r,date){ /* 직전 회차에 실제로 넣은 금액. 데이터 없으면 null(실제 0원과 구분).
+  openQuickAmount()를 열 때마다 매번 Object.keys(r.edits).sort()로 전체를 스캔하면 edits가
+  많이 쌓인 반복거래일수록 느려지므로, "가장 최근 edits 날짜"를 _lastEditCache에 기억해 뒀다가
+  물어보는 date가 그보다 미래(가장 흔한 append-only 패턴)면 O(1)로 바로 답한다. edits는 항상
+  save()->invalidateBalances()를 거쳐서만 바뀌므로 캐시가 그 사이에 낡을 일은 없다. 과거 회차를
+  나중에 편집해 date가 캐시된 날짜 이하인 드문 경우만 기존처럼 전체 스캔으로 폴백한다. */
+ const edits=r.edits;
+ if(!edits)return r.amount!=null?r.amount:null;
+ let latest=_lastEditCache.get(r);
+ if(!latest){
+  const keys=Object.keys(edits);
+  if(!keys.length)return r.amount!=null?r.amount:null;
+  keys.sort();
+  latest={date:keys[keys.length-1]};
+  _lastEditCache.set(r,latest);
+ }
+ if(date>latest.date)return edits[latest.date].amount;
+ const eds=Object.keys(edits).filter(d=>d<date).sort();
+ if(eds.length)return edits[eds[eds.length-1]].amount;
  return r.amount!=null?r.amount:null;
 }
 function saveQuickAmount(recId,date){

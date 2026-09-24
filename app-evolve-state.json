@@ -1,20 +1,8 @@
 {
-  "cycle": 75,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "recurrence.edits 무제한 누적 + lastActualAmount()의 매번 O(n log n) 전체 스캔",
-    "why": "변동 카테고리 반복거래의 '실제 금액 입력' 흐름에서 saveQuickAmount()(index.html:5624-5632)가 회차마다 r.edits[date]={amount}를 영구히 추가하기만 하고 어디에서도 가지치기하지 않는다(grep으로 r.edits/r.skip 전체 참조 확인, 정리 코드 없음). 요금제처럼 매번 금액이 바뀌는 반복거래라면 계정 수명 내내 키가 계속 쌓이는 정상 경로다. 체감 핫스팟은 lastActualAmount(r,date)(index.html:5619-5622): Object.keys(r.edits||{}).filter(d=>d<date).sort()를 openQuickAmount()(5608)가 열릴 때마다(즉 실제 금액 입력 시트를 열 때마다) 매번 전체 재계산한다. 계정이 오래될수록, 특히 하루 단위 변동 반복이 여러 개 있으면 점점 느려지는 실사용자 체감 성능 저하이며, sanitizeBackup()(4919-4928)도 백업/복원 때마다 이를 전부 순회해 CSV/JSON 내보내기 크기도 무한정 커진다.",
-    "approach": "recurrence 객체에 증분 갱신 캐시 필드 r._lastEdit={date,amount}를 추가한다. saveQuickAmount()(5624)와 recSave() scope 'one' 편집 경로(1470행 부근, r.edits에 직접 쓰는 지점)에서 새로 쓰는 날짜가 현재 캐시 날짜 이상이면 O(1)로 캐시를 갱신한다. lastActualAmount(r,date)를 다시 작성해: date > r._lastEdit.date(일반적인 append-only 케이스)면 캐시를 그대로 반환하는 빠른 경로를 타고, 과거 회차를 나중에 편집하는 순서 어긋남(out-of-order) 케이스만 기존 전체 스캔으로 폴백한다. 함수는 순수하게 유지하고 test/run.js에 케이스 추가: (1) edits 없음 -> r.amount, (2) 시간순 edits -> 캐시 히트가 전체스캔과 동일한 결과, (3) 순서 어긋난 편집(최신 날짜가 이미 있는데 더 오래된 날짜를 나중에 편집) -> 여전히 date 직전의 정확한 최신값 반환, (4) 대량(1000+ 키) 합성 edits -> 캐시 경로가 sort를 건너뛰고도 무차별 대입 기준 구현과 동일한 결과를 내는지 검증. APP_VERSION/sw.js CACHE 버전도 함께 올릴 것.",
-    "rejected": "전체내역 검색 인풋 디바운스(3612행) - expandRec()가 [from,to] 범위별로 이미 캐시하므로 타이핑마다 재계산이 없고, 키 입력당 발생하는 건 제한된 페이지네이션 DOM 재구성뿐이라 후순위. r.edits/r.skip을 아예 가지치기(오래된 항목 삭제)하는 방안은 '직전 실제 금액' 제안 기능과 전체 이력 보기를 깨뜨릴 위험이 있어, 안전한 O(1) 캐싱 쪽을 선택."
-  },
+  "cycle": 76,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 70,
-      "phase": "review",
-      "timestamp": "2026-09-23T02:18:19.366Z",
-      "summary": "develop 커밋(319785b, csvRowToImportTxn findAsset 동명이인 오매칭 수정)을 검토. saveAsset()의 중복명 가드(2849행)가 a.type이 같을 때만 중복을 막아 서로 다른 type(cash/savings)의 동명 자산이 실제로 허용됨을 재확인했고, findAsset을 filter 후 candidates.length===1일 때만 매칭하도록 바꾼 게 0개/2개 이상 모두 null로 귀결시켜 기존 \"못 찾음\" 경로(fromAssetName/toAssetName 스냅샷 + unmatched.push)를 그대로 재사용함을 코드로 확인했다. buildImportPreview()의 assetUnmatchedCount(4755행)가 unmatched.length 기준으로 집계되고 4954행에서 \"자산 매칭 안 됨 N건\" 안내로 이어져, 동명이인 케이스도 진짜 못 찾은 경우와 동일하게 사용자에게 시각적으로 노출됨을 확인해 fix가 end-to-end로 일관됨을 검증했다. nm(fromName/toName)이 이미 unguardCsv+trim을 거친 값이라 a.name.trim()===nm 비교에 트리밍 불일치가 없음도 확인. 신규 회귀 테스트(동명이인 cash/savings 2개 시 지출/이체 모두 unmatched) 포함 두 인라인 <script> 블록 모두 node --check 파싱 통과, node test/run.js 477/477 통과 재확인. 실제 버그 없어 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 70,
       "phase": "critique",
@@ -146,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-23T23:10:23.723Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 전략적 시야에서 재검토(cycle65-75에서 이미 다룬 render*/CSV/FX/recHist 전반/카테고리 캐스케이드/Pro 스텁/History 페이지네이션/nwHistoryCard byOwner/wireGroupDrag·wireMonthCarousel pointercancel·touchcancel/#dpModal·#dpWheel 접근성 등은 재탐색 금지 지시, cycle74가 남긴 두 후보(recurrence.edits/skip 무제한 누적, 검색 인풋 디바운스)는 자유롭게 파보되 강제하지 않음). saveQuickAmount()(index.html:5624-5632, 변동 카테고리 반복거래 실제 금액 입력)가 회차마다 r.edits[date]={amount}를 영구 추가하고 어디에서도 가지치기하지 않음을 grep으로 확인 - 요금이 매번 바뀌는 반복거래라면 계정 수명 내내 정상적으로 키가 쌓이는 흔한 경로. lastActualAmount(r,date)(index.html:5619-5622)가 Object.keys(r.edits||{}).filter(d=>d<date).sort()로 매번 전체 스캔+정렬을 하는데 이게 openQuickAmount()(5608)를 열 때마다(즉 실제 금액 입력 시트를 열 때마다) 호출되는 실사용 핫스팟이라, 계정이 오래되거나 일단위 변동 반복이 여러 개면 체감 가능한 성능 저하로 채택. sanitizeBackup()(4919-4928)도 백업/복원마다 전체 edits를 순회해 내보내기 크기도 무한정 커짐. 검색 인풋 디바운스는 expandRec()가 [from,to] 범위별로 이미 캐시해 타이핑마다 재계산이 없어 후순위 기각. r._lastEdit={date,amount} 증분 캐시를 saveQuickAmount/recSave 편집 경로에서 O(1) 갱신하고, lastActualAmount가 date > 캐시.date인 일반 append-only 케이스는 캐시를 즉시 반환하고 과거 회차 순서어긋난 편집만 기존 전체스캔으로 폴백하는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 75,
+      "phase": "advance",
+      "timestamp": "2026-09-24T00:00:00.000Z",
+      "summary": "critique 계획(lastActualAmount()가 openQuickAmount()를 열 때마다 r.edits 전체를 스캔+정렬하는 핫스팟)을 구현하되, 계획이 제안한 'r 객체에 필드 추가 + 여러 쓰기 지점에서 수동 무효화' 방식 대신 기존 _recCache/_balCache와 같은 컨벤션(모듈 스코프 Map, invalidateBalances()에서 일괄 clear)을 따르는 쪽으로 설계를 바꿨다. 이유: r.edits를 직접 쓰는 지점이 saveQuickAmount 정방향/undo, recSave scope='one' 정방향/undo, recSave scope='future'의 r.edits 재할당/undo까지 최소 6곳이라 수동 무효화는 누락 위험이 크고, r에 필드를 얹으면 JSON.stringify(DB)로 백업/localStorage에도 그대로 섞여 들어간다. 대신 _lastEditCache(index.html, _balCache 선언부 옆)를 recurrence 객체 참조를 키로 쓰는 Map으로 추가해 r.id 유무나 동명 충돌 걱정 없이 회차별로 독립적이며, invalidateBalances()가 이미 모든 실제 쓰기 경로(save() 시작 시 호출)에서 불리므로 별도 무효화 코드 없이 항상 최신 상태를 보장한다. lastActualAmount(r,date)는 캐시에 없으면 edits 키를 1회 정렬해 가장 최근 날짜만 저장하고, 이후 date가 그 캐시 날짜보다 미래면(가장 흔한 append-only 패턴) O(1)로 반환, 캐시 날짜 이하로 조회하는 드문(과거 회차 늦은 편집) 경우만 기존 전체 스캔으로 폴백한다. edits/sanitizeBackup의 무제한 누적 자체(백업 크기)는 이번 범위 밖으로 남겨둠(critique가 pruning은 위험하다고 이미 기각). test/run.js에 CONSTS로 _lastEditCache를 끌어오고 회귀 테스트 5개 추가: 캐시 히트가 전체 스캔과 동일한 결과, 캐시된 날짜 이하 조회 시 폴백 스캔 정확성, 캐시를 비우지 않으면 새 edits가 반영 안 됨(_balCache 테스트와 같은 방식으로 캐시가 실제로 동작 중임을 증명)+ clear 후 반영, 서로 다른 recurrence 객체 간 캐시 독립성. vm 샌드박스 realm 차이로 deepStrictEqual이 객체 비교에서 실패해(기존 budgetProgress 테스트와 같은 패턴) 필드별 strictEqual로 수정. 두 인라인 <script> 블록 모두 node --check 파싱 통과, node test/run.js 516/516 통과(기존 511 + 신규 5). APP_VERSION 1.46.21->1.46.22, sw.js CACHE v183->v184.",
       "commit": null
     }
   ]
