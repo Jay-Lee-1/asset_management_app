@@ -1,7 +1,11 @@
 {
   "cycle": 78,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "setRate()가 입력을 지우면 확정된 시세값을 조용히 0으로 저장해 자산 가치를 소실시키는 버그 수정",
+    "why": "시세 연동 관리 시트(openRateSheet, index.html:4409-4432)의 fx/금/주식 수동 입력란은 onchange=\"setRate(...)\"로 값을 저장한다. setRate(kind,key,val)(index.html:4435-4436)는 n=Number(String(val).replace(/[^0-9.]/g,''))||0 로 파싱하는데, 입력을 지우고 다른 값을 채우기 전에 포커스를 옮기면 빈 문자열이 그대로 n=0으로 확정 저장된다(DB.rates.fx[key]=0 등). rateUnknown(a)(index.html:2128-2134)는 R.fx[...]==null / !R.goldPerG / R.stocks[...]==null 만 검사하므로, 저장된 값이 정확히 0이면 '미확인' 배지가 뜨지 않고 오히려 '정상 확인됨'으로 보인다. assetEval()/totalAssetAt()이 qty*0=0을 그대로 반영해 해당 fx/금/주식 자산의 평가액과 순자산이 아무 경고 없이 사라진다. 코드 주석(index.html:2125-2127)이 이미 '한 번도 못 받아온 상태'와 '실제 0원'을 구분해야 한다고 명시하고 있는데 setRate는 이 원칙을 위반하는 유일한 쓰기 경로다. setRate는 test/run.js FUNCTIONS/CONSTS에 전혀 등록돼 있지 않아 회귀 커버리지가 0.",
+    "approach": "setRate에서 파싱 결과가 0(빈 입력/비숫자/명시적 0)이면 rateUnknown이 계속 미확인으로 인식하도록 그 키를 값 0으로 대입하는 대신 delete하거나(다른 시세값과 동일한 ==null 관례를 그대로 따름) 아예 쓰기를 건너뛰고 toast로 안내한다. 대칭성을 위해 rateUnknown()도 <=0을 미확인으로 취급하도록 보강 검토. test/run.js FUNCTIONS에 setRate와 갱신된 rateUnknown을 추가하고, (1) 입력을 지워도 기존 정상 값이 0으로 덮이지 않는다, (2) 실제로 결과가 0/빈 값이면 rateUnknown()===true로 남는다, (3) assetEval()/totalAssets()가 그 플래그와 일관되게 동작한다 는 회귀 테스트를 추가한다. 순수 클라이언트 로직만 건드리며 백엔드/스키마 변경 없음."
+  },
   "history": [
     {
       "cycle": 74,
@@ -127,6 +131,13 @@
       "phase": "review",
       "timestamp": "2026-09-24T10:05:00.000Z",
       "summary": "develop 커밋(455b521, buildImportPreview() 멀티셋 중복판정 수정)을 검토. existingCounts/usedCounts 로직 재검증: DB에 키가 n개 있으면 CSV에서 그 키를 가진 첫 n개 행만 중복 매칭되고 이후는 신규 처리되는 멀티셋 의미론이 의도대로 구현됨을 확인. csvDedupeKey/buildImportPreview 호출부는 doCsvImport 한 곳뿐이라 다른 곳과의 불일치 위험 없음. 두 인라인 <script> 블록 node --check 통과, node test/run.js 528/528 통과. 코드 변경 없음(이상 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 78,
+      "phase": "critique",
+      "timestamp": "2026-09-24T11:10:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체 재검토. 시세 연동 관리 시트의 setRate(kind,key,val)(index.html:4435-4436)가 입력이 빈 문자열/비숫자일 때 n=0을 그대로 DB.rates.fx/goldPerG/stocks에 확정 저장하는데, rateUnknown()(index.html:2128-2134)은 값이 null일 때만 '미확인'으로 판정해 저장된 0은 정상 시세로 오인되고 assetEval()이 그 자산 평가액을 경고 없이 0으로 만드는 버그 발견(코드 자체의 주석 2125-2127이 명시한 '미확인 vs 실제 0원' 구분 원칙을 setRate만 위반). setRate는 test/run.js에 회귀 커버리지 0. index.html:4435-4436/2128-2134 인용해 실제 코드로 재확인 완료. pending_advance_plan에 구체 수정 방향(0 결과는 delete로 처리해 rateUnknown 관례 유지, rateUnknown<=0도 미확인 취급 검토, setRate 회귀 테스트 3종 추가) 저장.",
       "commit": null
     }
   ]
