@@ -1,15 +1,8 @@
 {
   "cycle": 76,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 70,
-      "phase": "advance",
-      "timestamp": "2026-09-23T04:10:00.000Z",
-      "summary": "critique 계획(삭제된 자산 재연동이 타입 검사 없이 동명 자산에 붙는 결함)을 구현. snapshotAssetName(id)(2716행)에서 삭제 시점 잔액(DB.deletedBal)과 나란히 DB.deletedType[nm]=a.type을 기록하도록 확장. deletedAssetHistoryExists(nm,type)(2679행)를 type 인자를 받게 확장해 DB.deletedType[nm]===type일 때만 true를 반환하도록 하고(타입 기록이 없는 마이그레이션 이전 데이터는 안전하게 false), saveAsset() 호출부(2873행)를 deletedAssetHistoryExists(d.name,d.type)로 갱신. relinkDeletedAsset(d)(2643행)에도 DB.deletedType[nm]===d.type 이중가드를 함수 시작부에 추가해, deletedAssetHistoryExists 체크를 우회한 직접 호출에서도 타입이 다르면 재연결하지 않도록 방어. 이제 현금 자산을 삭제하고 같은 이름으로 stock 등 다른 type의 자산을 새로 등록하면 재연동 시트 자체가 뜨지 않고 바로 새 자산으로 등록된다. test/run.js FUNCTIONS에 deletedAssetHistoryExists/relinkDeletedAsset 실제 소스를 추가(기존 saveAsset 테스트용 stub는 제거)하고, saveAsset의 askRelinkDeleted 스텁을 호출 인자 기록형으로 바꿔 호출 여부를 검증 가능하게 함. 회귀 테스트 8개 추가. APP_VERSION 1.46.11->1.46.12, sw.js CACHE v173->v174.",
-      "commit": null
-    },
     {
       "cycle": 71,
       "phase": "develop",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-24T01:10:00.000Z",
       "summary": "Explore 서브에이전트로 발견한 DB 전체 교체 경로 3곳(applyForeignSave/resolveCloudPullRemote/afterCloudAuth 원격 분기)의 invalidateBalances() 누락 버그 수정. save()는 항상 맨 앞에서 invalidateBalances()를 부르는데(1871행), 이 세 함수는 save()를 거치지 않고 DB를 통째로 갈아치우면서 이 호출을 빠뜨려, _balCache/_recCache/_lastEditCache가 같은 [from,to]/[upto,dateStr] 키로 옛 DB 기준 값을 그대로 돌려주는 문제였다. 구체적으로는 같은 브라우저의 다른 탭(설치된 PWA + 남겨둔 브라우저 탭)에서 거래를 저장하면 storage 이벤트로 applyForeignSave()가 이 탭의 DB를 최신으로 갈아끼우지만, 캐시가 안 비워져 잔액·순자산·반복거래 알림이 방금 저장된 거래 이전 상태로 화면에 계속 표시된다(localStorage·DB 자체는 최신이라 오직 표시값만 낡음, restoreBackup() 호출부(4956행)가 이미 지키던 save();invalidateBalances() 관례에서 이 세 곳만 예외였음). 세 곳 모두 DB=... 대입 직후 invalidateBalances() 한 줄씩 추가(applyForeignSave 1894행, resolveCloudPullRemote 1691행, afterCloudAuth 원격 분기 1680행). test/run.js FUNCTIONS에 applyForeignSave 실제 소스를 추가하고 dataKey/localStorage(getItem만 흉내내는 최소 스텁)/TAB_SAVED_AT/TAB_SYNC_PENDING을 sandbox에 새로 세팅, invalidateBalances 호출 여부를 스파이로 검증하는 회귀 테스트 2개 추가(localStorage 없음일 때 DB 불변 케이스 포함) — fix를 임시로 되돌려 실제로 실패함을 확인한 뒤 재적용. resolveCloudPullRemote/afterCloudAuth는 pullCloud()가 실제 네트워크 호출을 하는 async 함수라 소스 추출 테스트는 만들지 않고 코드 수정만 함(가장 재현이 쉬운 applyForeignSave로 계약을 회귀 테스트). 두 인라인 <script> 블록 모두 node --check 파싱 통과, node test/run.js 518/518 통과(기존 516 + 신규 2). APP_VERSION 1.46.22->1.46.23, sw.js CACHE v184->v185.",
+      "commit": null
+    },
+    {
+      "cycle": 76,
+      "phase": "review",
+      "timestamp": "2026-09-24T02:05:00.000Z",
+      "summary": "develop 커밋(d3bc1b3, DB 전체 교체 경로 3곳 invalidateBalances() 누락 수정)을 검토. applyForeignSave/resolveCloudPullRemote/afterCloudAuth 원격 분기 외에 DB=로 시작하는 대입부를 전수 확인(1805/1809는 save() 직후 호출로 이미 커버, 4946 restoreBackup은 호출부에서 save();invalidateBalances() 관례를 이미 지킴) — 누락된 4번째 지점 없음을 확인. migrate()가 invalidateBalances()를 자체 호출하지 않아 이번 수정이 중복 무효화가 아님도 확인. 518/518 통과. 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
