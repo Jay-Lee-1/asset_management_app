@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.28';
+const APP_VERSION='1.46.29';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2763,6 +2763,17 @@ function snapshotAssetName(id){
  (DB.recurrences||[]).forEach(r=>{
    if(r.fromAssetId===id)r.fromAssetName=nm;
    if(r.toAssetId===id)r.toAssetName=nm;
+ });
+}
+/* snapshotAssetName의 되돌리기용 짝 — 삭제 취소 시 남은 스냅샷 이름을 지워 id/name 이중상태를 없앤다 */
+function unsnapshotAssetName(id){
+ (DB.txns||[]).forEach(t=>{
+   if(t.fromAssetId===id)delete t.fromAssetName;
+   if(t.toAssetId===id)delete t.toAssetName;
+ });
+ (DB.recurrences||[]).forEach(r=>{
+   if(r.fromAssetId===id)delete r.fromAssetName;
+   if(r.toAssetId===id)delete r.toAssetName;
  });
 }
 /* 자산 다중선택 체크박스 토글/전체선택은 선택 상태만 바뀌므로 renderAssets() 전체를 다시 그릴 필요가 없다.
@@ -6063,7 +6074,7 @@ function deleteAssetsUndo(ids){if(twGuard())return;
  recs.forEach(r=>r.active=false);
  DB.assets=DB.assets.filter(a=>!ids.has(a.id));save();renderCurrent();
  undoToast(`${removed.length}개 자산을 삭제했어요`+(recs.length?` · 반복거래 ${recs.length}개 비활성화`:''),()=>{
-  DB.assets.push(...removed);recs.forEach(r=>r.active=true);save();renderCurrent();toast('되돌렸어요')})}
+  DB.assets.push(...removed);recs.forEach(r=>r.active=true);ids.forEach(unsnapshotAssetName);save();renderCurrent();toast('되돌렸어요')})}
 window.addEventListener('resize',()=>requestAnimationFrame(fitAll));
 
 /* ================= PICKERS (탭하면 열리는 선택창) ================= */

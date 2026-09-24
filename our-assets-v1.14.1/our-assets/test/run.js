@@ -70,7 +70,7 @@ const FUNCTIONS = [
   'num', 'doRenameCat', 'doDeleteCat', 'budgetProgress', 'totalBudgetSummary', 'budgetKey', 'budgetForMonth', 'setBudgetFrom', 'addCat',
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'esc', 'matchTxnQuery',
   'parseCSV', 'unguardCsv', 'csvDateValid', 'csvRowToImportTxn', 'csvDedupeKey', 'buildImportPreview',
-  'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo',
+  'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo', 'unsnapshotAssetName',
   'deletedAssetHistoryExists', 'relinkDeletedAsset',
   'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'restoreBackup', 'storageOutcomeMsg', 'shouldWarnUnpersisted', 'shouldWarnStorageSize',
   'sanitizeAmount', 'sanitizeBackup',
@@ -2011,6 +2011,25 @@ test('deleteAssetsUndo: 튜토리얼 모드 중에는 twGuard가 막아서 실�
   assert.strictEqual(sandbox.DB.assets.length, 1, '튜토리얼 중에는 삭제가 막혀야 함');
   assert.deepStrictEqual(sandbox.snapshotCalls, [], '튜토리얼 중에는 스냅샷도 남기지 않아야 함');
   sandbox.TWi = -1;
+});
+test('deleteAssetsUndo: undo 콜백이 snapshotAssetName이 남긴 fromAssetName/toAssetName을 지워 id/name 이중상태를 없앤다(app-evolve cycle79)', () => {
+  sandbox.TWi = -1;
+  const a1 = { id: 'a1', name: '통장1' };
+  // 실제 snapshotAssetName은 스텁으로 대체돼 있으므로(위 sandbox.snapshotAssetName 참고),
+  // delAsset()이 삭제 직전에 이미 남겨뒀을 상태를 그대로 흉내내 미리 세팅해둔다.
+  const t = { date: '2026-01-01', type: 'expense', amount: 1000, category: '', memo: '',
+    fromAssetId: 'a1', fromAssetName: '통장1', toAssetId: null };
+  sandbox.DB = { assets: [a1], recurrences: [], txns: [t] };
+  sandbox.lastUndo = null;
+  sandbox.snapshotCalls = [];
+  sandbox.deleteAssetsUndo(new Set(['a1']));
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(t.fromAssetName, undefined, 'undo 후에는 fromAssetId가 다시 살아있는 자산을 가리키므로 스냅샷 이름이 남아있으면 안 됨');
+  const sameTxnRebuiltFromId = { ...t, fromAssetName: undefined };
+  assert.strictEqual(
+    sandbox.csvDedupeKey(t), sandbox.csvDedupeKey(sameTxnRebuiltFromId),
+    'undo 후에는 id 기반 키로 비교되어야 CSV 재가져오기 시 같은 거래로 인식됨(수정 전에는 n:통장1 키가 남아 i:a1 키인 새 파싱 결과와 영원히 어긋나 중복 저장됐음)',
+  );
 });
 
 /* ---------- recApply(mode='delete'): 부분 삭제(scope='one'/'future')도 twGuard+undo를 쓴다 ---------- */

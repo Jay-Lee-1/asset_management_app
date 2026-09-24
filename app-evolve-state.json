@@ -1,15 +1,8 @@
 {
   "cycle": 79,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 74,
-      "phase": "develop",
-      "timestamp": "2026-09-23T17:20:00.000Z",
-      "summary": "Explore 서브에이전트로 발견한 recDates()의 daily+weekend 3중 카운트 버그 수정. shiftWeekend가 토/일을 같은 평일로 몰아줘 daily 반복+주말조정 조합에서 금/월요일이 최대 3번 겹쳐 잔액이 3배로 합산되던 문제를 push() 클로저에 연속중복 가드 추가로 해결. 회귀 테스트 2개 추가, 504/504 통과. APP_VERSION 1.46.18->1.46.19, sw.js CACHE v180->v181.",
-      "commit": null
-    },
     {
       "cycle": 74,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-24T12:09:27.035Z",
       "summary": "critique 계획대로 setRate(kind,key,val)의 조용한 0원 확정 저장 버그 수정. 파싱 결과 n<=0(빈 입력/비숫자)이면 fx/stock은 DB.rates.fx[key]/stocks[key]를 delete해 rateUnknown()의 ==null 판정을 그대로 타게 하고, gold는 원래도 rateUnknown이 !goldPerG로 0을 미확인 취급하므로 0을 그대로 두되 명시적으로 처리. rateUnknown() 자체는 수정 불필요(gold 경로는 이미 안전했음을 확인). test/run.js FUNCTIONS에 setRate 추가, 회귀 테스트 4개(fx 빈 입력, stock 비숫자 입력, 정상 입력 저장, gold 빈 입력) 추가 - fix를 stash로 임시 제거해 그중 2개(fx/stock)가 실제로 실패함을 확인한 뒤 복원. 두 인라인 <script> 블록 node --check 통과, node test/run.js 532/532 통과(기존 528 + 신규 4). APP_VERSION 1.46.27->1.46.28, sw.js CACHE v189->v190.",
+      "commit": null
+    },
+    {
+      "cycle": 79,
+      "phase": "develop",
+      "timestamp": "2026-09-24T13:15:21.507Z",
+      "summary": "Explore 서브에이전트로 발견한 자산 삭제->되돌리기(deleteAssetsUndo undo) 경로가 snapshotAssetName()이 남긴 fromAssetName/toAssetName 스냅샷 이름을 지우지 않던 버그 수정. 자산을 삭제했다가 삭제 취소를 누르면 자산은 정상 복원되지만(assetNm()이 항상 살아있는 자산을 우선해 화면상 이상 없음), 해당 자산을 참조하던 거래에는 되살아난 fromAssetId/toAssetId와 별개로 스냅샷 이름이 그대로 남아 id/name 이중상태가 됐다. 이 상태에서 CSV로 내보냈다가 재가져오기하면 csvDedupeKey()가 기존 거래는 남은 스냅샷 이름으로(n:...), 새로 파싱한 CSV 행은 살아있는 id로(i:...) 키를 만들어 영원히 어긋나 같은 거래가 중복 저장됐다(백업 복원이라는 앱이 명시적으로 지원하는 정상 경로에서 실사용 데이터가 이중 계상됨). snapshotAssetName의 짝인 unsnapshotAssetName(id)을 추가해 deleteAssetsUndo()의 undo 콜백에서 복원 대상 id마다 호출, id가 다시 라이브 자산을 가리키게 된 시점에 스냅샷 이름 필드를 지우도록 수정. snapshotAssetName은 balanceAt 체인 때문에 테스트에서 스텁 처리돼 있어 실제 소스로 검증할 수 없지만(기존 관례), unsnapshotAssetName은 순수 함수라 test/run.js FUNCTIONS에 추가해 실제 소스로 회귀 테스트 1개 작성 — undo 콜백의 unsnapshotAssetName 호출을 일시적으로 되돌려 실제로 실패함을(fromAssetName이 안 지워짐) 확인한 뒤 재적용. 두 인라인 <script> 블록 모두 node --check 통과, node test/run.js 533/533 통과(기존 532 + 신규 1). APP_VERSION 1.46.28->1.46.29, sw.js CACHE v190->v191.",
       "commit": null
     }
   ]
