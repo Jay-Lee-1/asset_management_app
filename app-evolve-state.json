@@ -1,36 +1,8 @@
 {
   "cycle": 78,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 73,
-      "phase": "develop",
-      "timestamp": "2026-09-23T13:05:00.000Z",
-      "summary": "Explore 서브에이전트로 발견한 clampRecurringToMaturity()의 count 0/falsy 혼동 버그 수정(!r.count -> r.count==null). 첫 회차부터 삭제해 count:0이 저장된 반복이 만기 연장 시 되살아나던 버그. 회귀 테스트 1개 추가, 498/498 통과. APP_VERSION 1.46.16->1.46.17, sw.js CACHE v178->v179.",
-      "commit": null
-    },
-    {
-      "cycle": 73,
-      "phase": "review",
-      "timestamp": "2026-09-23T14:08:44.411Z",
-      "summary": "cycle73 develop 커밋(1c629c6)을 검토, 로직 정확성 확인. 코드 변경 없음(이상 없음). 다만 recFreq()가 freq 변경 시 recDraft.weekend를 리셋하지 않아 monthly에서 켠 주말조정이 화면에 안 보인 채 다른 주기에 계속 적용되는 별개 이슈를 발견해 기록만 남김(critique가 우선순위 판단하도록).",
-      "commit": null
-    },
-    {
-      "cycle": 73,
-      "phase": "critique",
-      "timestamp": "2026-09-23T15:05:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체 재검토. wireMonthCarousel()이 touchcancel 미처리로 스와이프 인터럽트 시 헤더 라벨과 패널이 어긋나는 버그 발견(wireGroupDrag pointercancel과 동일 버그 클래스). touchcancel 리스너+monthSwipeCommitDir 순수 함수 분리 계획을 pending_advance_plan에 저장.",
-      "commit": null
-    },
-    {
-      "cycle": 73,
-      "phase": "advance",
-      "timestamp": "2026-09-23T16:08:06.052Z",
-      "summary": "wireMonthCarousel() touchcancel 미처리 버그 수정. touchcancel 리스너로 항상 중앙 스냅백+label(0) 복구, monthSwipeCommitDir(dx,stepPx,cancelled) 순수 함수 분리. 회귀 테스트 4개 추가, 502/502 통과. APP_VERSION 1.46.17→1.46.18, sw.js CACHE v179→v180.",
-      "commit": null
-    },
     {
       "cycle": 74,
       "phase": "develop",
@@ -148,6 +120,13 @@
       "phase": "develop",
       "timestamp": "2026-09-24T09:10:00.000Z",
       "summary": "Explore 서브에이전트로 발견한 CSV 가져오기 중복판정 버그 수정. buildImportPreview()가 existingKeys/seen을 둘 다 boolean Set으로 관리해, 한 CSV 파일 안에 dedupe 키(날짜/구분/금액/카테고리/자산/메모)가 완전히 같은 서로 다른 실제 거래가 2건 이상 있으면(예: 같은 날 같은 카페에서 4,500원을 두 번 결제 — saveTx()가 빈 메모를 카테고리명으로 채우는 관례상 흔함) 첫 번째만 신규로 잡고 나머지는 전부 '중복'으로 오판, 조용히 가져오기에서 누락됐다. doExport로 내보낸 CSV를 다른 기기로 재가져오기하는 게 앱이 명시적으로 지원하는 정상 백업 경로라 실사용 데이터 손실로 이어짐. existingKeys/seen(Set)을 existingCounts/usedCounts(Map, 키별 개수)로 바꿔 '기존 DB에 그 키가 몇 개 있는지'만큼만 순서대로 중복 매칭하고 그 예산을 넘는 동일 키 행은 신규로 처리하도록 수정(다대다 멀티셋 판정). 기존 테스트 중 이 버그를 정답으로 잘못 코드화했던 케이스('같은 파일 안에서 완전히 똑같은 행이 반복되면 두 번째부터는 중복으로 건너뛴다')를 올바른 기대값(둘 다 신규)으로 고치고, DB에 키가 1개만 있을 때 CSV에 동일 행이 2개면 1개만 매칭되고 나머지 1개는 신규가 되는 멀티셋 케이스를 신규 테스트로 추가. 순수 함수 내부 로직 변경만이라 doCsvImport/openCsvImportPreview 등 호출부는 무수정. 두 인라인 <script> 블록 node --check 통과, node test/run.js 528/528 통과(기존 526 + 신규 2, 기존 버그 코드화 테스트 1개는 기대값 수정). APP_VERSION 1.46.26->1.46.27, sw.js CACHE v188->v189.",
+      "commit": null
+    },
+    {
+      "cycle": 78,
+      "phase": "review",
+      "timestamp": "2026-09-24T10:05:00.000Z",
+      "summary": "develop 커밋(455b521, buildImportPreview() 멀티셋 중복판정 수정)을 검토. existingCounts/usedCounts 로직 재검증: DB에 키가 n개 있으면 CSV에서 그 키를 가진 첫 n개 행만 중복 매칭되고 이후는 신규 처리되는 멀티셋 의미론이 의도대로 구현됨을 확인. csvDedupeKey/buildImportPreview 호출부는 doCsvImport 한 곳뿐이라 다른 곳과의 불일치 위험 없음. 두 인라인 <script> 블록 node --check 통과, node test/run.js 528/528 통과. 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
