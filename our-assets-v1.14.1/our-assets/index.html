@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.25';
+const APP_VERSION='1.46.26';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2961,7 +2961,7 @@ function num(el,allowNeg){if(!el)return 0;const s=el.value||'0';const neg=allowN
 
 /* 귀속 관리 — 수정(이름)·삭제 */
 function openOwnerManage(){
- openSheet(`<h3>귀속 관리</h3><div class="desc">자산 소유 구분이에요. 이름을 바꾸면 그 귀속의 자산도 함께 바뀌어요.</div>
+ openSheet(`<h3>귀속 관리</h3><div class="desc">자산 소유 구분이에요. 이름을 바꾸면 그 귀속의 자산도 함께 바뀌어요. (같은 로그인 계정 안에서만 쓰는 이름표라, 배우자가 실제로 따로 로그인해 각자 입력하면 서로의 기록이 보이지 않아요 — 계정 화면의 '이메일 로그인·클라우드 동기화 설정' 안내를 확인하세요.)</div>
   <div>${DB.owners.map((o,i)=>{const used=DB.assets.filter(a=>a.owner===o).length;
    return `<div class="manage-row"><div class="avatar" style="width:36px;height:36px;border-radius:11px;background:var(--sunken);color:var(--text-2)">${svg('users',18)}</div>
     <div style="flex:1"><div class="mn">${esc(o)}</div><div class="msub">${used}개 자산</div></div>
@@ -4057,7 +4057,7 @@ function openAccountSheet(){
     <div class="acct-i" style="flex:1;min-width:0"><div class="an">${esc(accountName())}</div><div class="ak">${kind==='kakao'?'카카오 계정':kind==='email'?(isCloudAcct?cloudSyncLabel():'이메일 계정 (이 기기)'):'게스트 (로그인 전)'}</div></div></div>
   ${conflict?`<div class="desc" style="color:var(--expense)">다른 기기에서 더 최근에 저장한 데이터가 있어요. 어느 쪽을 쓸지 골라주세요.</div>
    <div class="two-btn" style="margin-bottom:14px"><button class="btn btn-soft cancel" onclick="resolveCloudPullRemote()">최신 데이터 가져오기</button><button class="btn btn-primary" onclick="confirmCloudForcePush()">내 데이터로 덮어쓰기</button></div>`:''}
-  <div class="desc">${cloudOn?'이메일로 로그인하면 다른 기기에서도 같은 데이터를 볼 수 있어요.':'데이터는 이 기기에 저장돼요. 여러 기기에서 함께 보려면 클라우드 동기화 설정이 필요합니다.'}</div>
+  <div class="desc">${cloudOn?'이메일로 로그인하면 다른 기기에서도 같은 데이터를 볼 수 있어요. 단, 같은 이메일 계정으로 로그인해야만 같은 데이터가 보여요 — 배우자가 계정을 따로 만들면 서로의 기록이 보이지 않아요.':'데이터는 이 기기에 저장돼요. 여러 기기에서 함께 보려면 클라우드 동기화 설정이 필요합니다.'}</div>
   <div class="opt-list">
     ${kind==='guest'?`<button onclick="closeSheet();showAuth()"><div><div>로그인 / 회원가입</div><div class="ol-sub">카카오 또는 이메일</div></div></button>`:`<button onclick="doLogout()"><div><div>로그아웃</div></div></button>`}
     <button onclick="openHelpCloud()"><div><div>이메일 로그인 · 클라우드 동기화 설정</div><div class="ol-sub">${cloudOn?'Supabase 연결됨':'Supabase 연결하면 다른 기기에서도 같은 데이터를 봐요'}</div></div></button>
@@ -4087,6 +4087,7 @@ create policy "update own" on public.user_data
   for update using (auth.uid() = user_id);</pre>
    <p><b>3) 이메일 인증(선택)</b><br><b>Authentication › Providers › Email</b>에서 'Confirm email'을 꺼두면 가입 즉시 로그인돼요. 켜두면 가입 후 메일의 인증 링크를 눌러야 로그인할 수 있어요.</p>
    <p><b>4) 사용하기</b><br>저장 후 이메일로 가입하면, 그 다음부터는 같은 이메일·비밀번호로 다른 기기에서 로그인해도 같은 데이터를 볼 수 있어요.</p>
+   <p><b>5) 배우자·가족과 함께 쓰려면</b><br>지금 구조는 로그인 계정 1개 = 데이터 1벌이에요. 배우자가 이메일을 따로 만들어 가입하면 완전히 별개의 데이터가 생겨서, 각자 입력한 자산·내역이 서로에게 보이지 않아요(귀속을 '배우자'로 나눠 써도 마찬가지예요 — 같은 계정 안의 이름표일 뿐입니다). 함께 보고 쓰려면 <b>같은 이메일·비밀번호로 각자의 기기에서 로그인</b>하세요. 이 방법을 쓸 때는 비밀번호를 신뢰하는 사람과만 공유하고, 비밀번호 변경이나 계정 삭제는 미리 상의한 뒤 진행하세요(다른 기기가 조용히 로그아웃될 수 있어요).</p>
   </div>`);
 }
 function saveCloudCfg(){

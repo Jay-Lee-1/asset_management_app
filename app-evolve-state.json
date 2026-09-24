@@ -1,26 +1,8 @@
 {
-  "cycle": 77,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "클라우드 동기화가 실제로는 계정 1개=데이터 1벌인데, 앱은 부부/가족 공유(owners:['나','배우자','공용'])를 정체성으로 내세움 — 공유 기능 부재",
-    "why": "DB.owners 기본값이 ['나','배우자','공용'](index.html:1557,1567,1826)으로 '우리의 자산'이 부부 공유 가계부를 표방하지만, 클라우드 동기화는 CLOUD_UID(1589) 하나당 Supabase user_data 행 하나(pullCloud 1612/pushCloud 1646이 .eq('user_id',CLOUD_UID)로만 조회·갱신)라 완전히 사적 데이터다. 초대/연결 계정 개념이 코드 어디에도 없음(공유/invite/partner 검색 0건, addOwner/delOwner(2973-2989)는 계정 경계가 아니라 라벨 문자열 배열일 뿐). 자연스러운 사용 흐름대로 부부가 각자 가입(doSignup)해서 owner:'배우자'로 자산을 나눠 기록하면, 서로의 기록이 영원히 보이지 않는다 — 앱의 핵심 사용 시나리오에서 조용하고 영구적인 데이터 비가시성 문제이지 엣지케이스가 아니다. 유일한 우회(로그인 하나를 두 기기가 공유)는 비밀번호 공유라는 보안 문제이자, 정확히 cycle77에서 막 강화한 충돌 경로(decidePushOutcome 1634)를 타는 방식인데도 앱 어디에도 안내가 없다.",
-    "approach": "전체 재작업이 아니라 단계적으로 접근한다(cycle76의 '다음 걸음이지 재작성 아님' 원칙 적용). 1) 이상적 목표: household_id 개념 도입 — 최초 클라우드 가입 시 uid()로 household_id 생성, 계정 시트에 '가족 공유' 초대 흐름 추가(만료 가능한 초대 코드를 저장할 새 Supabase 테이블 household_invites{code, household_id, expires_at} — 앱이 이미 사용자가 Supabase 스키마를 셀프호스팅하는 BYO-backend 패턴이므로 새 SQL 안내 문서 추가가 자연스러움). 초대 수락 시 afterCloudAuth()가 자기 CLOUD_UID 대신 그 household_id/대상 user_id로 읽고 쓰도록 분기 — pullCloud/pushCloud/decidePushOutcome의 동시 쓰기 충돌 처리 로직은 그대로 재사용 가능. 2) 이 작업은 새 스키마+인증 의미론 변경으로 cycle76에서 보류한 hot/archive 분리와 위험도가 비슷하다(로컬 테스트로 실제 Supabase 다중 계정 시나리오 검증 불가). advance 단계 시작 시 위험도를 재평가하고, 한 사이클에 담기 과하다고 판단되면 최소 침습적 대안으로 축소: 로그인/계정 화면에 현재 동작(로그인 1개=데이터 1벌이며 계정 간 공유 없음)을 명확히 안내하는 문구를 추가하고, '로그인을 여러 기기에서 공유'하는 우회로를 쓸 경우의 위험(계정 삭제 금지 등)을 명시하는 순수 UI/문서 변경만 먼저 반영한다 — 백엔드 위험 0, 실사용자 오해를 즉시 줄이고, 진짜 공유 기능은 이후 사이클에 별도로 다시 계획한다."
-  },
+  "cycle": 78,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 72,
-      "phase": "critique",
-      "timestamp": "2026-09-23T11:13:13.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체 재검토. wireGroupDrag()가 pointercancel 미처리로 드래그 인터럽트 시 리스너 누수·groupOrder 오염 가능성 발견. setPointerCapture+pointercancel 정리, order 계산 순수 함수 분리 계획을 pending_advance_plan에 저장.",
-      "commit": null
-    },
-    {
-      "cycle": 72,
-      "phase": "advance",
-      "timestamp": "2026-09-23T12:10:15.000Z",
-      "summary": "wireGroupDrag() pointercancel 미처리 버그 수정. 재진입 가드, pointercancel 리스너로 DOM 복원, nextGroupOrder 순수 함수 분리. 회귀 테스트 2개 추가, 497/497 통과. APP_VERSION 1.46.15->1.46.16, sw.js CACHE v177->v178.",
-      "commit": null
-    },
     {
       "cycle": 73,
       "phase": "develop",
@@ -152,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-24T07:11:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체 재검토. DB.owners 기본값이 ['나','배우자','공용']으로 부부 공유 가계부를 표방하는데(index.html:1557,1567,1826), 클라우드 동기화는 CLOUD_UID 하나당 Supabase 행 하나(pullCloud/pushCloud가 .eq('user_id',CLOUD_UID)로만 조회)라 계정 간 실제 공유 기능이 전혀 없는 구조적 갭 발견. household_id/초대 코드 기반 연결 계정 계획(위험도가 크면 최소 침습 대안으로 안내 문구부터)을 pending_advance_plan에 저장.",
+      "commit": null
+    },
+    {
+      "cycle": 77,
+      "phase": "advance",
+      "timestamp": "2026-09-24T08:10:00.000Z",
+      "summary": "critique 계획(household_id 기반 실제 공유 기능)을 advance 착수 전 재평가: 새 Supabase 테이블(household_invites)과 인증 의미론 변경이 필요해 로컬 테스트로는 실제 다중 계정 시나리오를 검증할 수 없고, 무인 사이클이 운영 중인 사용자의 Supabase 백엔드 스키마를 잘못 건드리면 되돌리기 어려움 — cycle76이 hot/archive 분리를 보류한 것과 같은 이유로 이번 사이클은 계획에 이미 준비돼 있던 최소 침습 대안(백엔드 위험 0)만 구현. '귀속(owner)'이 계정 경계가 아니라 같은 로그인 안의 라벨일 뿐임을 귀속 관리 시트(openOwnerManage) 설명에 명시하고, 계정 화면(openAccountSheet)의 클라우드 안내 문구에 '같은 이메일 계정으로 로그인해야만 데이터가 공유되고, 계정을 따로 만들면 서로의 기록이 보이지 않는다'를 추가했으며, openHelpCloud에 '5) 배우자·가족과 함께 쓰려면' 단락을 새로 넣어 현재 구조의 한계와 유일한 우회(같은 로그인을 여러 기기에서 공유)의 위험(비밀번호 공유, 비밀번호 변경/계정 삭제 시 다른 기기 로그아웃)을 안내했다. 코드 로직·데이터 포맷·클라우드 동기화 경로는 전혀 건드리지 않은 순수 UI 문구 변경이라 회귀 위험 없음(<script> 블록 2개 node --check 통과, node test/run.js 527/527 그대로 통과). APP_VERSION 1.46.25->1.46.26, sw.js CACHE v187->v188. 실제 다계정 household 공유 기능은 이후 critique가 백엔드 검증 방법(예: 스테이징 Supabase 프로젝트)이 갖춰졌을 때 다시 제안할 것.",
       "commit": null
     }
   ]
