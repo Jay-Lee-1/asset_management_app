@@ -1,15 +1,12 @@
 {
   "cycle": 79,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "saveTx()/saveRec()(/saveBudget()) 이중 제출 가드 부재 - 더블탭 시 거래·반복거래가 조용히 중복 저장됨",
+    "why": "saveTx()(index.html:3346-3377)와 saveRec()(index.html:3536-3566)는 검증->DB mutate->save();closeSheet();renderCurrent()가 동기적으로 끝나 핸들러 재진입을 막는 장치가 전혀 없다. .sheet는 transform transition(.46s)으로 닫혀 그 사이 버튼이 계속 클릭 가능해, 터치 더블탭 시 두 click 이벤트가 각각 saveTx/saveRec를 완주해 DB.txns 또는 DB.recurrences에 동일 항목이 2건 push된다. saveAsset()은 name/type 중복 체크로 우연히 막히고 auth 폼(signUp/login, index.html:6420-6435)은 이미 btn.disabled=true/false 가드를 쓰는데, 정작 가장 자주 쓰는 거래/반복거래 입력 폼 두 곳만 그 패턴이 빠져있다. saveTx 중복은 순자산/월지출/예산진행률/카테고리 집계를 조용히 2배로 부풀리고, saveRec 중복은 그 반복거래의 모든 미래 발생을 영구적으로 이중 계상한다(월세/구독/급여 등) - 사용자가 직접 원장에서 똑같은 행 2개를 알아채기 전까지는 드러나지 않는다.",
+    "approach": "auth 폼과 동일한 재진입 가드 패턴을 saveTx/saveRec(/saveBudget)에 적용. 검증 실패로 조기 return하는 경로는 '저장 안 됨'이므로 플래그를 건드릴 필요 없음, 함수 본문 맨 앞에서 이미 busy면 즉시 return하고, DB mutate 직전에 플래그를 세우고, 함수 마지막(save/closeSheet/renderCurrent/toast 이후)에 플래그를 해제 - closeSheet()가 폼을 innerHTML로 언마운트하므로 setTimeout/finally 없이 단순 대입으로 충분. 공유 플래그(_formBusy 등) 또는 saveTx/saveRec 각각 전용 플래그 중 기존 코드 컨벤션에 맞는 쪽으로 선택. 회귀 테스트: test/run.js가 이미 saveTx/saveRec용 DOM/DB 스텁을 갖고 있으므로(371-372, 404-405행 부근), 동일 txDraft/recDraft로 sandbox.saveTx()/saveRec()를 연속 두 번 호출해 DB.txns.length===1 / DB.recurrences.length===1이 되는지 검증하는 테스트를 추가(가드 적용 전엔 실패해야 함). saveBudget()도 동일 패턴이면 함께 적용."
+  },
   "history": [
-    {
-      "cycle": 74,
-      "phase": "critique",
-      "timestamp": "2026-09-23T00:00:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체 재검토. #dpModal/#dpWheel 날짜 선택 오버레이가 시트의 포커스 트랩/Escape 처리에서 빠져있어 키보드 사용자가 진입 불가하고 Escape가 배경 시트를 통째로 닫아버리는 접근성 결함 발견. pending_advance_plan에 상세 구현 방향 저장.",
-      "commit": null
-    },
     {
       "cycle": 74,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-09-24T14:08:50.102Z",
       "summary": "develop 커밋(741f413, deleteAssetsUndo undo 콜백에 unsnapshotAssetName 추가)을 검토. unsnapshotAssetName(id)이 snapshotAssetName(id)과 정확히 대칭(fromAssetId/toAssetId===id인 txns/recurrences의 스냅샷 이름 delete)임을 확인. 자산 id/name 이중상태가 생길 수 있는 다른 경로(relinkDeletedAsset)도 점검 - 이쪽은 삭제 전 자산과 다른 새 id를 발급받아 재연결하는 별개 흐름이고 relinkDeletedAsset 자체가 이미 재연결 시 스냅샷 이름을 지우므로 이번 버그와 무관, 추가 조치 불필요. 533/533 통과. 코드 변경 없음(이상 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 79,
+      "phase": "critique",
+      "timestamp": "2026-09-24T15:12:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체 재검토. saveTx()(index.html:3346-3377)와 saveRec()(index.html:3536-3566)가 검증->DB mutate->save();closeSheet();renderCurrent()를 동기적으로 완주할 뿐 재진입 가드가 전혀 없어, .sheet의 .46s 닫힘 트랜지션 동안 더블탭하면 두 click 이벤트가 각각 완주해 DB.txns/DB.recurrences에 동일 항목이 2건 push되는 버그 발견. saveAsset()은 name/type 중복체크로 우연히 막히고 auth 폼(signUp/login, index.html:6420-6435)은 이미 btn.disabled 가드를 쓰는 동일 패턴이 있는데 가장 자주 쓰는 거래/반복거래 입력 폼 두 곳만 빠져있음. saveRec 중복은 그 반복거래의 모든 미래 발생을 영구 이중계상(월세/구독/급여 등). auth 폼과 동일한 재진입 가드(_formBusy류 플래그, 함수 시작에 체크, mutate 직전 set, 함수 끝에 clear)를 saveTx/saveRec(/saveBudget)에 적용하는 계획을 pending_advance_plan에 저장.",
       "commit": null
     }
   ]
