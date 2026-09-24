@@ -1,19 +1,8 @@
 {
-  "cycle": 76,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "save()/pushCloud()가 매번 DB 전체를 직렬화 — txns/recurrences 무제한 누적, 아카이빙 없음",
-    "why": "save()(index.html:1871-1881)가 거의 모든 mutation(거래 추가/수정/삭제, 설정 토글, 이체 확정 등 70여 호출부)마다 localStorage.setItem(dataKey(), JSON.stringify(DB))로 DB 전체(txns/recurrences 포함)를 매번 통째로 재직렬화한다. scheduleCloudPush()/pushCloud()(1617, 1636-1668)도 동일하게 debounce마다 DB 전체를 Supabase에 업로드한다(델타 아님). DB.nwHistory는 pruneNwHistory()(2163-2170)로 ~120개 상한이 있지만 DB.txns/DB.recurrences는 emptyDB()(1564) 이후 아무 상한/아카이빙이 없어 수년치 사용 시 매 조작마다 O(전체 데이터 크기) JSON.stringify+로컬스토리지 쓰기 + 매 클라우드 동기화마다 전체 히스토리 재업로드가 발생한다. localStorage 5-10MB 쿼터에도 근접할 수 있음(기존 storageOutcomeMsg 쿼터 실패 처리는 증상 완화일 뿐 근본 해결 아님).",
-    "approach": "1) persist 레이어를 hot/archive 2개 localStorage 키로 분리: dataKey()는 최근 ~2년 활성 데이터(자산/반복거래/설정 + 최근 거래), dataKey()+'__archive'는 연/월 버킷으로 나눈 과거 거래. 2) load()에서 두 키를 합쳐 기존처럼 DB.txns를 평평한 배열로 유지 — 렌더링/잔액 계산 코드는 변경 불필요. 3) save()는 기본적으로 active 슬라이스만 재직렬화하고, mutation이 실제 archive 구간에 해당할 때만 archive 키도 갱신(splitTxnsForPersist() 헬퍼를 sanitizeBackup/migrate처럼 test/run.js에서 단위 테스트 가능하게 분리). 4) pushCloud()도 동일하게 버킷 단위로 나눠 바뀐 버킷만 업로드. 5) 회귀 테스트 추가: 라운드트립(분리→병합→원본과 동일), 경계를 넘나드는 편집(archive 구간 거래를 수정하면 버킷 이동), 백업 export/import(sanitizeBackup/restoreBackup)가 병합된 전체 집합에 계속 정상 동작하는지 확인. load/save/migrate/pushCloud/pullCloud 등 persist/sync 레이어에만 국한하고 렌더링/반복거래/UI 코드는 건드리지 않는다."
-  },
+  "cycle": 77,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 71,
-      "phase": "review",
-      "timestamp": "2026-09-23T06:05:00.000Z",
-      "summary": "develop 커밋(8f0904a, varyingRecs 월별 스캔 창 확장)을 검토. RANGE_FROM 패턴 일관성, _recCache 충돌 없음, d>TODAY 가드 유지 확인. 실제 버그 없어 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 71,
       "phase": "critique",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-24T03:11:14.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체 재검토. save()가 mutation마다, pushCloud()가 동기화마다 DB.txns/DB.recurrences를 포함한 전체 DB를 매번 통째로 직렬화/업로드하며 nwHistory와 달리 상한/아카이빙이 전혀 없는 구조적 문제 발견. hot/archive 2-key 분리 + 버킷 단위 저장/업로드 계획을 pending_advance_plan에 저장.",
+      "commit": null
+    },
+    {
+      "cycle": 76,
+      "phase": "advance",
+      "timestamp": "2026-09-24T04:10:00.000Z",
+      "summary": "critique의 hot/archive 2-key 분리 계획은 구현 착수 전 재검토 후 이번 사이클에서는 보류하기로 판단해 축소 구현함: pushCloud()가 Supabase user_data 행 하나를 원자적 조건부 UPDATE(updated_at 매치)로 충돌 판정하는 구조라 DB를 버킷 단위로 쪼개면 그 충돌 판정 자체를 다시 설계해야 하고(로컬 테스트로 검증 불가), 로컬 hot/archive 분리도 '이 save() 호출이 archive 구간을 실제로 건드렸는지'를 문자열 비교 없이 값싸게 판정할 방법이 없어(archive 내 과거 거래 하나를 수정해도 개수/양끝 id는 안 바뀜) 잘못 스킵하면 그 편집이 조용히 디스크에 반영 안 되는(=새로고침/다른 기기에서 소실) 최악의 실패 모드가 생김 — 가계부 앱에서 무인 사이클이 감수하기엔 과한 리스크로 판단(안전 규칙의 '재작성 아닌 다음 걸음' 취지). 대신 같은 critique가 지적한 근본 위험(quota 근접 시 지금은 실패 '이후'에만 반응)을 안전하게 완화하는 선제 경고를 추가: save()/load()가 이미 갖고 있던 직렬화 문자열 길이를 재사용해(추가 stringify 없음) DB_JSON_LEN에 기록하고, shouldWarnStorageSize(len,dismissed,warnLen,critLen) 순수 함수(3MB에서 dismiss 가능한 카드, 4.5MB부터는 dismiss와 무관하게 재경고)로 homeAlerts()에 새 'storageSize' 카드를 추가(persist 카드와 동일 패턴, exportData 유도). 데이터 포맷/클라우드 동기화 로직은 전혀 건드리지 않아 회귀 위험 없음. 회귀 테스트 5개 추가(문턱 미만/이상/dismiss/재경고/경계값), 523/523 통과. APP_VERSION 1.46.23->1.46.24, sw.js CACHE v185->v186. hot/archive 분리 자체는 실제 데이터 volume이 문제가 될 때(예: 몇 년 뒤 실사용 txns가 수천~수만 건) 버킷 dirty-tracking을 호출부 계측 없이 값싸게 판정하는 방법이 정해지면 critique가 다시 제안할 것.",
       "commit": null
     }
   ]

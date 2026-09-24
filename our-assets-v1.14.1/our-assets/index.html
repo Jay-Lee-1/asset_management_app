@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.23';
+const APP_VERSION='1.46.24';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1572,7 +1572,13 @@ function emptyDB(){return {
 function dbIsEmpty(db){return !db||!((db.assets&&db.assets.length)||(db.txns&&db.txns.length))}
 function guestHasData(){try{const g=JSON.parse(localStorage.getItem('asset_app_db_v3__guest')||'{}');return !!((g.assets&&g.assets.length)||(g.txns&&g.txns.length))}catch(e){return false}}
 
-let DB, STORAGE_OK=true, STORAGE_PERSISTED=null, TAB_SAVED_AT=0, TAB_SYNC_PENDING=null;
+let DB, STORAGE_OK=true, STORAGE_PERSISTED=null, TAB_SAVED_AT=0, TAB_SYNC_PENDING=null, DB_JSON_LEN=0;
+/* localStorage는 오리진당 보통 5~10MB로 quota가 걸려 있다(브라우저마다 다름). save()가 매번 DB
+ * 전체를 재직렬화하는 구조라 txns/recurrences가 상한 없이 누적되면 quota 실패에 조금씩 다가갈 수
+ * 있는데, storageOutcomeMsg는 실제로 쓰기가 실패한 "이후"에만 반응한다(증상 완화). 여기 두 문턱은
+ * 그 실패가 나기 "전에" 미리 경고해 사용자가 백업·정리할 시간을 벌어준다 — 문자 길이를 바이트의
+ * 대략적 하한 추정치로 쓴다(UTF-16 저장 시 한글은 코드유닛당 2바이트라 실제로는 더 크다).*/
+const STORAGE_SIZE_WARN_LEN=3000000, STORAGE_SIZE_CRIT_LEN=4500000;
 const SKEY='asset_app_db_v3';
 /* ===== 계정 · 세션 (이메일 로그인) =====
    ▸ Supabase가 설정되지 않으면 이 기기(localStorage)에만 저장됩니다(계정별로 분리).
@@ -1795,7 +1801,7 @@ function load(){
  try{raw=localStorage.getItem(dataKey())}
  catch(e){STORAGE_OK=false;DB=(SESSION?emptyDB():seed());migrate();toastFail('저장소를 열지 못했어요 · 이 기기·브라우저에서 자동저장이 제한된 것 같아요');return}
  if(raw){
-  try{DB=JSON.parse(raw);migrate();TAB_SAVED_AT=+localStorage.getItem(dataKey()+'__savedAt')||0;return}
+  try{DB=JSON.parse(raw);migrate();TAB_SAVED_AT=+localStorage.getItem(dataKey()+'__savedAt')||0;DB_JSON_LEN=raw.length;return}
   catch(e){
    /* JSON.parse/migrate 실패는 저장 공간 문제가 아니라 데이터 자체가 손상된 것이므로,
     * 예전처럼 곧장 빈 DB로 save()해 버리면 raw에 남아있던 원본이 영영 지워진다.
@@ -1809,7 +1815,7 @@ function load(){
  DB=(SESSION?emptyDB():seed());migrate();save(); /* 게스트 첫 실행=샘플 체험 · 새 계정=빈 상태 */
 }
 function migrate(){
- DB.settings=Object.assign({themeMode:'system',includeScheduled:false,assetSort:'custom',histSortAsc:true,confirmTransfers:true,autoRates:true,bigMin:100000,dismissedStaleMvIds:[],persistWarnDismissed:false},DB.settings||{});
+ DB.settings=Object.assign({themeMode:'system',includeScheduled:false,assetSort:'custom',histSortAsc:true,confirmTransfers:true,autoRates:true,bigMin:100000,dismissedStaleMvIds:[],persistWarnDismissed:false,storageSizeWarnDismissed:false},DB.settings||{});
  if(!Array.isArray(DB.settings.groupOrder)||!DB.settings.groupOrder.length)DB.settings.groupOrder=[...DEFAULT_GROUP_ORDER];
  DEFAULT_GROUP_ORDER.forEach(t=>{if(!DB.settings.groupOrder.includes(t))DB.settings.groupOrder.push(t)});
  delete DB.settings.showScheduled; /* 예정 표시는 홈 '예정 포함'으로 통합 */
@@ -1851,6 +1857,15 @@ function storageOutcomeMsg(ok,wasOk){
  if(ok)return wasOk?null:{kind:'ok',msg:'저장이 다시 정상 작동해요'};
  return wasOk?{kind:'fail',msg:'저장 실패 · 이 기기에 저장 공간이 부족하거나 저장이 제한돼 있어요. 내보내기로 백업하세요.'}:null;
 }
+/* shouldWarnStorageSize: 저장된 DB의 직렬화 길이(len)가 quota 문턱에 가까워졌는지 보고 홈 알림
+ * 카드를 띄울지 판정하는 순수 함수. warnLen을 넘으면 한 번 뜨고 dismiss(설정에 기억)하면 가라앉지만,
+ * 그 뒤로도 계속 자라 critLen(더 위험한 문턱)까지 넘으면 dismiss 여부와 상관없이 다시 띄운다 —
+ * 방치하다 실제 quota 실패로 이어지는 걸 막기 위한 재경고. */
+function shouldWarnStorageSize(len,dismissed,warnLen,critLen){
+ if(len>=critLen)return true;
+ if(len>=warnLen)return!dismissed;
+ return false;
+}
 /* shouldWarnUnpersisted: navigator.storage.persist() 결과(persisted)와 클라우드 연결 여부(hasCloud)를 보고
  * 홈 알림에 '저장공간이 보호되지 않았어요' 카드를 띄울지 판정하는 순수 함수. persisted가 아직 확인 전(null,
  * API 미지원 포함)이거나 이미 persisted됐거나 클라우드에 사본이 있으면(다른 기기·서버에서 복구 가능) 경고하지 않는다 —
@@ -1874,8 +1889,8 @@ function save(opts){invalidateBalances();
   * localStorage에 쓰기 직전에 반영해야 이번 저장분에 최신 스냅샷이 함께 기록된다. */
  const byOwner={};DB.owners.forEach(o=>{byOwner[o]={ta:ownerAssets(o),td:ownerDebt(o)}});
  DB.nwHistory=updateNwHistory(DB.nwHistory,TODAY,totalAssets(),totalDebt(),byOwner);
- let ok;try{localStorage.setItem(dataKey(),JSON.stringify(DB));ok=true}catch(e){ok=false}
- if(ok){const at=Date.now();try{localStorage.setItem(dataKey()+'__savedAt',String(at))}catch(e){}TAB_SAVED_AT=at}
+ let ok,json;try{json=JSON.stringify(DB);localStorage.setItem(dataKey(),json);ok=true}catch(e){ok=false}
+ if(ok){DB_JSON_LEN=json.length;const at=Date.now();try{localStorage.setItem(dataKey()+'__savedAt',String(at))}catch(e){}TAB_SAVED_AT=at}
  const notice=storageOutcomeMsg(ok,STORAGE_OK);STORAGE_OK=ok;
  if(notice)notice.kind==='fail'?toastFail(notice.msg):toast(notice.msg);
  if(!(opts&&opts.deferCloudPush))scheduleCloudPush();return ok}
@@ -4653,6 +4668,9 @@ function copyBackup(){
 }
 function snoozeBackup(){DB.settings.backupSnooze=Date.now()+3*24*60*60*1000;save();renderCurrent();toast('3일 뒤에 다시 알려드릴게요')}
 function dismissPersistWarn(){DB.settings.persistWarnDismissed=true;save();renderCurrent();toast('확인했어요 · 정기적으로 백업하는 걸 권장해요')}
+/* 문턱을 넘을 때마다 dismiss해도 shouldWarnStorageSize가 critLen에서 다시 띄우므로, 여기서 영구
+ * dismiss해도 정말 위험해지면 재경고된다(dismissPersistWarn과 달리 한 번 끄면 영영 안 뜨지 않음). */
+function dismissStorageSizeWarn(){DB.settings.storageSizeWarnDismissed=true;save();renderCurrent();toast('확인했어요 · 오래된 데이터는 백업 후 정리하는 걸 권장해요')}
 function backupDue(){ /* 마지막 파일 내보내기 후 7일 경과 */
  const snooze=DB.settings.backupSnooze||0;
  if(Date.now()<snooze)return false;
@@ -5839,6 +5857,7 @@ function homeAlerts(neg){
  if(CLOUD_UID&&CLOUD_SYNC_STATE==='conflict')arr.push({kind:'cloudConflict'});
  if(backupDue()&&DB.txns.length)arr.push({kind:'backup'});
  if(shouldWarnUnpersisted(STORAGE_PERSISTED,!!CLOUD_UID)&&!DB.settings.persistWarnDismissed)arr.push({kind:'persist'});
+ if(shouldWarnStorageSize(DB_JSON_LEN,DB.settings.storageSizeWarnDismissed,STORAGE_SIZE_WARN_LEN,STORAGE_SIZE_CRIT_LEN))arr.push({kind:'storageSize'});
  allTxns(RANGE_FROM,TODAY).filter(t=>isDuePending(t)).sort((a,b)=>a.date<b.date?-1:1).forEach(t=>arr.push({kind:'confirm',id:t.id,recId:t.recId,isRec:!!t.isRec,from:assetNm(t.fromAssetId,t.fromAssetName),to:assetNm(t.toAssetId,t.toAssetName),amount:t.amount,date:t.date}));
  neg.forEach(n=>arr.push({kind:'neg',assetId:n.assetId,name:n.name,date:n.date,min:n.min}));
  DB.assets.filter(a=>a.type==='savings'&&a.maturityDate&&a.maturityDate<=addDays(TODAY,7))
@@ -5925,6 +5944,11 @@ function homeAlertCard(al){
    <div class="ha-b" tabindex="0" role="button" aria-label="저장공간이 보호되지 않았어요 · 눌러서 다시 요청" onclick="requestPersistentStorage()" onkeydown="rowKeydown(event,()=>requestPersistentStorage())"><div class="ha-t">저장공간이 보호되지 않았어요</div>
      <div class="ha-s">기기 저장공간이 부족해지면 데이터가 지워질 수 있어요 · 클라우드 연결이나 정기 백업을 권장해요</div></div>
    <button class="txt-btn" style="flex-shrink:0;padding:6px 10px" onclick="event.stopPropagation();dismissPersistWarn()">확인</button></div>`;
+ if(al.kind==='storageSize')return `<div class="home-alert mat">
+   <div class="ha-ic">${svg('alert')}</div>
+   <div class="ha-b" tabindex="0" role="button" aria-label="저장 용량이 많이 찼어요 · 눌러서 백업" onclick="exportData()" onkeydown="rowKeydown(event,()=>exportData())"><div class="ha-t">저장 용량이 많이 찼어요</div>
+     <div class="ha-s">이 기기의 저장 공간 한도에 가까워지고 있어요 · 백업해 두면 안전해요</div></div>
+   <button class="txt-btn" style="flex-shrink:0;padding:6px 10px" onclick="event.stopPropagation();dismissStorageSizeWarn()">확인</button></div>`;
  if(al.kind==='confirm')return `<button class="home-alert confirm" onclick="${al.isRec?`confirmRecTransfer('${al.recId}','${al.date}')`:`openConfirmTransfer('${al.id}')`}">
    <div class="ha-ic">${svg('repeat')}</div>
    <div class="ha-b"><div class="ha-t">이체 확인 · ${comma(al.amount)}원</div>

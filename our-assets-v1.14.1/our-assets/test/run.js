@@ -72,7 +72,7 @@ const FUNCTIONS = [
   'parseCSV', 'unguardCsv', 'csvDateValid', 'csvRowToImportTxn', 'csvDedupeKey', 'buildImportPreview',
   'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo',
   'deletedAssetHistoryExists', 'relinkDeletedAsset',
-  'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'restoreBackup', 'storageOutcomeMsg', 'shouldWarnUnpersisted',
+  'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'restoreBackup', 'storageOutcomeMsg', 'shouldWarnUnpersisted', 'shouldWarnStorageSize',
   'sanitizeAmount', 'sanitizeBackup',
   'saveRec', 'recHistFieldsChanged', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
   'monthStartStr', 'monthEndStr', 'expandRec', 'allTxns', 'txnsByDateInRange', 'spendByCategory', 'spendTrend', 'spendTrendBadge', 'histSumTotals',
@@ -157,6 +157,12 @@ const sandbox = {
   CLOUD_UID: null,
   CLOUD_SYNC_STATE: 'idle',
   STORAGE_PERSISTED: null,
+  // DB_JSON_LEN은 save()/load()가 실제 직렬화 길이로 채우는 파생 상태고, STORAGE_SIZE_*_LEN은
+  // 그 문턱 상수다 — homeAlerts()가 shouldWarnStorageSize()에 넘기므로 STORAGE_PERSISTED와
+  // 같은 이유로 테스트에서 직접 세팅한다(기본값은 문턱 아래라 평소엔 경고가 안 뜸).
+  DB_JSON_LEN: 0,
+  STORAGE_SIZE_WARN_LEN: 3000000,
+  STORAGE_SIZE_CRIT_LEN: 4500000,
   // SESSION은 `let SESSION=localStorage.getItem(...)`으로 파생되는 로그인 이메일/카카오 id고,
   // AUTH는 localStorage 기반 계정 저장소 객체라(accountName()이 AUTH.rec(SESSION)을 부름) 둘 다
   // RANGE_TO/CLOUD_UID와 같은 이유(파생·비순수 상태, localStorage 의존)로 재현하지 않고
@@ -2506,6 +2512,24 @@ test('shouldWarnUnpersisted: 이미 persisted면 경고하지 않는다', () => 
 });
 test('shouldWarnUnpersisted: API 미지원 등으로 아직 확인 전(null)이면 경고하지 않는다', () => {
   assert.strictEqual(sandbox.shouldWarnUnpersisted(null, false), false);
+});
+
+/* ---------- shouldWarnStorageSize: localStorage quota 근접 경고 카드 노출 판정 ---------- */
+test('shouldWarnStorageSize: warnLen 미만이면 경고하지 않는다', () => {
+  assert.strictEqual(sandbox.shouldWarnStorageSize(1000, false, 3000, 4500), false);
+});
+test('shouldWarnStorageSize: warnLen을 넘고 아직 dismiss 전이면 경고한다', () => {
+  assert.strictEqual(sandbox.shouldWarnStorageSize(3500, false, 3000, 4500), true);
+});
+test('shouldWarnStorageSize: warnLen을 넘었어도 dismiss했으면 조용하다', () => {
+  assert.strictEqual(sandbox.shouldWarnStorageSize(3500, true, 3000, 4500), false);
+});
+test('shouldWarnStorageSize: dismiss했어도 critLen까지 넘으면 다시 경고한다(방치 방지)', () => {
+  assert.strictEqual(sandbox.shouldWarnStorageSize(5000, true, 3000, 4500), true);
+});
+test('shouldWarnStorageSize: 문턱 값 자체(경계)에서는 경고한다', () => {
+  assert.strictEqual(sandbox.shouldWarnStorageSize(3000, false, 3000, 4500), true);
+  assert.strictEqual(sandbox.shouldWarnStorageSize(4500, true, 3000, 4500), true);
 });
 
 /* ---------- restoreBackup: JSON 백업 복원의 스키마 검증 + 실패 시 롤백 ---------- */
