@@ -114,7 +114,9 @@ const FUNCTIONS = [
 // (app-evolve cycle75 advance: 매번 r.edits 전체를 스캔하지 않도록 추가).
 // isPlanAcct는 planNegatives()가 DB.assets.filter(isPlanAcct)로 부르는 "플랜 대상 통장"
 // 판정 상수라 같은 방식(extractConst)으로 끌어온다.
-const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS'];
+// _savedDrafts는 saveTx/saveRec의 더블탭 중복 저장 가드(app-evolve cycle79 advance)가 쓰는
+// WeakSet — 저장 완료된 draft 객체를 표시해 같은 draft로 재호출되면 조용히 무시한다.
+const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts'];
 // _histCache는 filteredHist()가 재대입(={key,list})하는 let 선언이라 CONSTS(extractConst)로는
 // 못 끌어오므로 별도의 LETS 목록으로 extractLet을 통해 가져온다.
 // _copyIsCsv도 같은 이유(openCopyBackup()이 재대입)로 LETS를 통해 가져온다.
@@ -2408,6 +2410,22 @@ test('saveRec: 신규 반복 등록(id 없음)은 기존처럼 회귀 없이 바
   assert.strictEqual(sandbox.DB.recurrences.length, 1);
   assert.strictEqual(sandbox.DB.recurrences[0].id, 'test-uid');
 });
+/* ---------- saveRec: 더블탭 중복 저장 가드 (app-evolve cycle79 critique/advance) ----------
+ * closeSheet()는 .sheet에서 'show' 클래스만 떼고 트랜지션(.46s)을 거는 것이지 innerHTML을
+ * 지우지 않으므로, 저장 버튼은 애니메이션이 끝날 때까지 DOM에 그대로 남아 클릭 가능하다.
+ * 더블탭으로 click 이벤트가 두 번 들어오면 saveRec()이 완전히 동기적으로 두 번 완주해
+ * 같은 반복이 DB.recurrences에 2건 push됐다(월세·구독·급여처럼 매달 자동 계상되는 항목이라
+ * 사용자가 원장에서 우연히 발견하기 전까지 드러나지 않음). _savedDrafts(WeakSet)에 저장
+ * 완료된 recDraft 객체를 표시해 같은 draft로의 재호출을 조용히 무시하도록 고쳤다. */
+test('saveRec: 같은 draft로 두 번 연속 호출해도(더블탭) 반복이 중복 저장되지 않는다', () => {
+  sandbox.TWi = -1; sandbox.TODAY = '2026-06-15';
+  sandbox.DB = { recurrences: [] };
+  sandbox.recDraft = { id: null, type: 'expense', freq: 'monthly', day: 5, startDate: '2026-07-05', endDate: null, count: null, amount: 1000, category: '관리비', memo: '관리비', fromAssetId: 'a1', toAssetId: null, active: true };
+  sandbox.saveRec();
+  sandbox.saveRec();
+  assert.strictEqual(sandbox.DB.recurrences.length, 1, '같은 draft로 다시 저장해도 반복이 1개만 있어야 함');
+  assert.ok(!('_saved' in sandbox.DB.recurrences[0]), '가드 마커가 저장된 레코드에 섞여 들어가면 안 됨(WeakSet이어야 함)');
+});
 
 /* ---------- saveQuickAmount: 변동 카테고리 '실제 금액 입력'도 recSave(scope='one')와 동일하게 undo를 지원한다 ---------- */
 test("saveQuickAmount: 실제 금액을 edits에 기록하고, undo하면 이전 상태(없었음)로 돌아간다", () => {
@@ -3760,6 +3778,49 @@ test('saveTx: 실제 메모 내용은 앞뒤 공백만 trim되고 그대로 유�
   };
   sandbox.saveTx();
   assert.strictEqual(sandbox.DB.txns[0].memo, '점심 김밥', '앞뒤 공백은 제거되고 내용은 그대로 유지되어야 함');
+});
+
+/* ---------- saveTx: 더블탭 중복 저장 가드 (app-evolve cycle79 critique/advance) ----------
+ * saveRec()과 같은 이유(closeSheet()가 innerHTML을 지우지 않아 저장 버튼이 트랜지션 동안
+ * DOM에 남아있음)로, saveTx()도 반복 등록 분기(DB.recurrences.push)와 일회성 내역 분기
+ * (DB.txns.push) 둘 다 더블탭 시 같은 항목이 2건 저장될 수 있었다. _savedDrafts(WeakSet)
+ * 가드로 같은 txDraft 객체로의 재호출을 조용히 무시하도록 고쳤다. */
+test('saveTx: 반복 켜고 저장 시 같은 draft로 두 번 연속 호출해도(더블탭) 반복이 중복 저장되지 않는다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { recurrences: [], settings: {} };
+  sandbox.txDraft = {
+    id: null, type: 'expense', date: '2026-01-15', category: '월세', memo: '',
+    amount: 500000, fromAssetId: 'a1', toAssetId: null,
+    repeat: true, freq: 'monthly', day: 10, endDate: null, count: null,
+  };
+  sandbox.saveTx();
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.DB.recurrences.length, 1, '같은 draft로 다시 저장해도 반복이 1개만 있어야 함');
+});
+test('saveTx: 일회성 내역도 같은 draft로 두 번 연속 호출하면 두 번째는 무시된다(더블탭 가드)', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { txns: [], settings: {} };
+  sandbox.txDraft = {
+    id: null, type: 'expense', date: '2026-01-15', category: '식비', memo: '점심',
+    amount: 9000, fromAssetId: 'a1', toAssetId: null, repeat: false,
+  };
+  sandbox.saveTx();
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.DB.txns.length, 1, '같은 draft로 다시 저장해도 거래가 1개만 있어야 함');
+  assert.ok(!('_saved' in sandbox.DB.txns[0]), '가드 마커가 저장된 레코드에 섞여 들어가면 안 됨(WeakSet이어야 함)');
+});
+test('saveTx: 검증 실패(금액 없음)로 저장이 안 된 draft는 값을 채워 다시 저장하면 정상 저장된다(더블탭 가드가 실패 경로까지 막으면 안 됨)', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { txns: [], settings: {} };
+  sandbox.txDraft = {
+    id: null, type: 'expense', date: '2026-01-15', category: '식비', memo: '',
+    amount: 0, fromAssetId: 'a1', toAssetId: null, repeat: false,
+  };
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.DB.txns.length, 0, '금액 없이는 저장되지 않아야 함');
+  sandbox.txDraft.amount = 9000;
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.DB.txns.length, 1, '값을 채워 같은 draft로 재시도하면 저장되어야 함');
 });
 
 /* ---------- saveTx/saveRec: RANGE_FROM(2023-01-01) 이전 날짜는 balancesUpTo 등

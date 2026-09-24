@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.29';
+const APP_VERSION='1.46.30';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3202,6 +3202,11 @@ function rowTap(el){ /* 내역 탭 → 수정 (길게 누르면 다중 선택·�
 /* 내역 입력/수정 시트 */
 let txDraft=null;
 let _formScroll=0,_txFocusAmt=false; /* 시트 재렌더 시 스크롤 위치 보존 · 자동포커스 1회 제한 */
+/* 더블탭 중복 저장 가드: closeSheet()는 innerHTML을 지우지 않고 트랜지션만 걸어 버튼이
+   DOM에 그대로 남으므로, 저장 완료된 draft 객체를 표시해 같은 draft로 saveTx/saveRec가
+   재실행되는 걸 막는다. 프로퍼티로 얹으면 DB.txns.push(d)처럼 draft 자체가 저장되는
+   경로에서 그 마커가 그대로 레코드에 섞여 들어가므로 WeakSet으로 분리해 둔다. */
+const _savedDrafts=new WeakSet();
 function openFormSheet(html){openSheet(html);const s=$('sheetScroll');if(s)s.scrollTop=_formScroll}
 function buildFabPop(){
  $('fabPop').innerHTML=`
@@ -3345,7 +3350,7 @@ function recOpenEnd(){syncRecInputs();openFieldDatePicker(recDraft.endDate||TODA
 function recClearEnd(){syncRecInputs();recDraft.endDate=null;recDraft.count=null;renderRecSheet()}
 function saveTx(){
  if(twGuard())return;
- syncTxInputs();const d=txDraft;if(!d.amount){toast('금액을 입력해 주세요');return}
+ syncTxInputs();const d=txDraft;if(_savedDrafts.has(d))return;if(!d.amount){toast('금액을 입력해 주세요');return}
  if(d.type!=='transfer'&&!d.category){toast('카테고리를 선택해 주세요');return}
  if(dateBelowRangeFloor(d.date)){toast(`${RANGE_FROM} 이전 날짜는 저장할 수 없어요`);return}
  if(d.type==='transfer'||d.type==='saving'){
@@ -3364,6 +3369,7 @@ function saveTx(){
   if(endDate&&!count)count=recCountUntil(base,endDate);
   else if(count&&!endDate)endDate=recNthDate(base,count);
   d.memo=(d.memo||'').trim()||cat; /* 메모 없으면 카테고리로 (saveRec과 동일) */
+  _savedDrafts.add(d);
   DB.recurrences.push({id:uid(),active:true,type:d.type,category:cat,memo:d.memo,amount:d.amount,
    fromAssetId:d.fromAssetId,toAssetId:d.toAssetId,freq,day,startDate:d.date,endDate,count,
    skip:[],edits:{},autoConfirm:true,confirmedDates:[],varying:isVarCat(d.type,cat)});
@@ -3372,6 +3378,7 @@ function saveTx(){
  ['repeat','freq','day','endDate','endMode','count'].forEach(k=>delete d[k]); /* 일회성 내역엔 반복 필드 제거 */
  d.memo=(d.memo||'').trim()||d.category; /* 메모 없으면 카테고리로 (saveRec과 동일) */
  if(d.type==='transfer'&&d.confirmed===undefined)d.confirmed=!(DB.settings.confirmTransfers&&isFuture(d.date));
+ _savedDrafts.add(d);
  if(d.id){const i=DB.txns.findIndex(x=>x.id===d.id);DB.txns[i]=d}else{d.id=uid();DB.txns.push(d)}
  save();closeSheet();renderCurrent();toast(isFuture(d.date)?'예정 내역으로 저장했어요':'내역을 저장했어요');
 }
@@ -3535,7 +3542,7 @@ function focusDayIn(id){setTimeout(()=>{const el=$(id);if(el){el.focus();el.sele
 function recDay(v){syncRecInputs();if(v==='last'){recDraft.day='last';recDraft._custom=false}else if(v==='custom'){recDraft._custom=true;if([1,5,15,25].includes(recDraft.day)||recDraft.day==='last'||!recDraft.day)recDraft.day=Number(String(recDraft.startDate).slice(8,10))||10}else{recDraft.day=Number(v);recDraft._custom=false}recalcEndCond(recDraft,recDraft.startDate);renderRecSheet();if(v==='custom')focusDayIn('recDayIn')}
 function saveRec(){
  if(twGuard())return;
- syncRecInputs();const d=recDraft;if(!d.amount){toast('금액을 입력해 주세요');return}
+ syncRecInputs();const d=recDraft;if(_savedDrafts.has(d))return;if(!d.amount){toast('금액을 입력해 주세요');return}
  if(dateBelowRangeFloor(d.startDate)){toast(`${RANGE_FROM} 이전 날짜는 저장할 수 없어요`);return}
  if(d.type==='transfer'||d.type==='saving'){
   if(!d.fromAssetId||!d.toAssetId){toast('보내는·받는 자산을 선택해 주세요');return}
@@ -3553,6 +3560,7 @@ function saveRec(){
  delete d.endMode;
  d.varying=isVarCat(d.type,d.category); /* 변동 여부는 카테고리에서 파생 */
  const wasEditing=!!d.id;
+ _savedDrafts.add(d);
  if(wasEditing){
   const i=DB.recurrences.findIndex(x=>x.id===d.id);
   if(i>=0){

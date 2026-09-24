@@ -1,19 +1,8 @@
 {
-  "cycle": 79,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "saveTx()/saveRec()(/saveBudget()) 이중 제출 가드 부재 - 더블탭 시 거래·반복거래가 조용히 중복 저장됨",
-    "why": "saveTx()(index.html:3346-3377)와 saveRec()(index.html:3536-3566)는 검증->DB mutate->save();closeSheet();renderCurrent()가 동기적으로 끝나 핸들러 재진입을 막는 장치가 전혀 없다. .sheet는 transform transition(.46s)으로 닫혀 그 사이 버튼이 계속 클릭 가능해, 터치 더블탭 시 두 click 이벤트가 각각 saveTx/saveRec를 완주해 DB.txns 또는 DB.recurrences에 동일 항목이 2건 push된다. saveAsset()은 name/type 중복 체크로 우연히 막히고 auth 폼(signUp/login, index.html:6420-6435)은 이미 btn.disabled=true/false 가드를 쓰는데, 정작 가장 자주 쓰는 거래/반복거래 입력 폼 두 곳만 그 패턴이 빠져있다. saveTx 중복은 순자산/월지출/예산진행률/카테고리 집계를 조용히 2배로 부풀리고, saveRec 중복은 그 반복거래의 모든 미래 발생을 영구적으로 이중 계상한다(월세/구독/급여 등) - 사용자가 직접 원장에서 똑같은 행 2개를 알아채기 전까지는 드러나지 않는다.",
-    "approach": "auth 폼과 동일한 재진입 가드 패턴을 saveTx/saveRec(/saveBudget)에 적용. 검증 실패로 조기 return하는 경로는 '저장 안 됨'이므로 플래그를 건드릴 필요 없음, 함수 본문 맨 앞에서 이미 busy면 즉시 return하고, DB mutate 직전에 플래그를 세우고, 함수 마지막(save/closeSheet/renderCurrent/toast 이후)에 플래그를 해제 - closeSheet()가 폼을 innerHTML로 언마운트하므로 setTimeout/finally 없이 단순 대입으로 충분. 공유 플래그(_formBusy 등) 또는 saveTx/saveRec 각각 전용 플래그 중 기존 코드 컨벤션에 맞는 쪽으로 선택. 회귀 테스트: test/run.js가 이미 saveTx/saveRec용 DOM/DB 스텁을 갖고 있으므로(371-372, 404-405행 부근), 동일 txDraft/recDraft로 sandbox.saveTx()/saveRec()를 연속 두 번 호출해 DB.txns.length===1 / DB.recurrences.length===1이 되는지 검증하는 테스트를 추가(가드 적용 전엔 실패해야 함). saveBudget()도 동일 패턴이면 함께 적용."
-  },
+  "cycle": 80,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 74,
-      "phase": "advance",
-      "timestamp": "2026-09-23T19:05:00.000Z",
-      "summary": "critique 계획대로 #dpModal/#dpWheel 키보드 접근성 결함 수정. overlayEscapeTarget() 순수 함수로 최상단 오버레이 판정, ovPushFocus/ovPopFocus 포커스 스택, syncOverlayInert()로 배경 inert 통합, role=dialog 추가. 회귀 테스트 4개 추가, 508/508 통과. APP_VERSION 1.46.19->1.46.20, sw.js CACHE v181->v182.",
-      "commit": null
-    },
     {
       "cycle": 75,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-24T15:12:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체 재검토. saveTx()(index.html:3346-3377)와 saveRec()(index.html:3536-3566)가 검증->DB mutate->save();closeSheet();renderCurrent()를 동기적으로 완주할 뿐 재진입 가드가 전혀 없어, .sheet의 .46s 닫힘 트랜지션 동안 더블탭하면 두 click 이벤트가 각각 완주해 DB.txns/DB.recurrences에 동일 항목이 2건 push되는 버그 발견. saveAsset()은 name/type 중복체크로 우연히 막히고 auth 폼(signUp/login, index.html:6420-6435)은 이미 btn.disabled 가드를 쓰는 동일 패턴이 있는데 가장 자주 쓰는 거래/반복거래 입력 폼 두 곳만 빠져있음. saveRec 중복은 그 반복거래의 모든 미래 발생을 영구 이중계상(월세/구독/급여 등). auth 폼과 동일한 재진입 가드(_formBusy류 플래그, 함수 시작에 체크, mutate 직전 set, 함수 끝에 clear)를 saveTx/saveRec(/saveBudget)에 적용하는 계획을 pending_advance_plan에 저장.",
+      "commit": null
+    },
+    {
+      "cycle": 79,
+      "phase": "advance",
+      "timestamp": "2026-09-24T16:10:00.000Z",
+      "summary": "critique 계획의 '함수 끝에서 플래그 해제' 부분만 구현 전 재검토 후 수정: saveTx/saveRec는 완전히 동기 함수라(auth 폼의 doLogin/doSignup과 달리 중간에 await가 없음) click 이벤트 1의 실행이 끝나야 click 이벤트 2가 처리되는 JS 단일 스레드 특성상, 같은 호출 안에서 플래그를 true->false로 되돌리면 두 번째 탭이 처리되는 시점엔 이미 false로 되돌아가 있어 가드가 실질적으로 아무것도 막지 못한다(critique가 전제한 'closeSheet()가 innerHTML로 폼을 언마운트한다'는 것도 실제 소스(index.html:5237)엔 없음 — classList.remove('show')로 트랜지션만 걸 뿐 버튼은 DOM에 그대로 남음). 대신 저장 완료된 draft 객체 자체를 표시해 같은 draft로의 재호출을 막는 방식으로 바꿈: 모듈 스코프 WeakSet _savedDrafts를 추가해 saveTx/saveRec 시작부에서 syncTxInputs/syncRecInputs 직후 `if(_savedDrafts.has(d))return`으로 가드하고, 검증을 모두 통과해 실제 DB mutate로 들어가기 직전(saveTx는 반복 등록 분기·일회성 분기 두 곳, saveRec는 wasEditing 분기 직전 한 곳)에 `_savedDrafts.add(d)`. txDraft/recDraft는 새 폼을 열 때(openTxSheet/editTx/openRecSheet/editRec)마다 새 객체로 교체되므로 별도 리셋 없이 다음 세션에서 자연히 무효화된다. d에 직접 `_saved=true` 같은 프로퍼티를 얹는 대신 WeakSet을 쓴 이유는, DB.txns.push(d)/DB.recurrences[i]=d처럼 draft 객체 자체가 그대로 저장되는 경로가 있어 프로퍼티로 얹으면 그 마커가 실제 레코드에 영구히 섞여 들어가기 때문(cycle79 develop이 고친 스냅샷 이름 잔존 버그와 같은 종류의 데이터 오염 위험). saveBudget()은 setBudgetFrom(카테고리·월 키 기준 upsert)이라 재호출해도 같은 값을 다시 쓸 뿐 append가 아니어서 원래도 멱등 — 계획대로 적용 대상에서 제외. test/run.js CONSTS에 _savedDrafts 추가, 회귀 테스트 4개 추가(saveRec 신규 반복 더블탭 방지, saveTx 반복분기/일회성분기 더블탭 방지, 검증 실패 후 값 채워 재시도하면 정상 저장돼 가드가 실패 경로까지 막지 않음을 확인) — 가드 제거 후 재실행해 더블탭 방지 테스트 2개가 실제로 실패함을 확인한 뒤 재적용. 두 인라인 <script> 블록 node --check 통과, node test/run.js 537/537 통과(기존 533 + 신규 4). APP_VERSION 1.46.29->1.46.30, sw.js CACHE v191->v192.",
       "commit": null
     }
   ]
