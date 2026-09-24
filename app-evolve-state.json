@@ -1,6 +1,6 @@
 {
   "cycle": 77,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
     {
@@ -134,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-24T05:10:00.000Z",
       "summary": "Explore 서브에이전트로 발견한 클라우드 동기화 조용한 데이터손실 버그 수정. pullCloud()는 원격 fetch에 성공하기만 하면(호출자가 그 데이터를 실제로 채택하는지와 무관하게) markCloudSynced()를 불러 dataKey()+'__syncedAt'을 지금 시각으로 찍었다. afterCloudAuth()는 로컬에 미동기화 편집이 있으면(localUnsynced) remote를 버리고 conflict로만 돌아가는데, 이때도 pullCloud() 내부에서 이미 __syncedAt이 갱신돼버려, 추가 편집 없이 앱을 다시 열기만 해도 다음 부팅에서 savedAt<syncedAt이 되어 localHasUnsyncedChanges()가 false를 오판하고 afterCloudAuth()가 DB=remote로 조용히 덮어써 그 미동기화 편집이 영구 소실됐다(로그인마다/부팅마다 자동 실행되는 경로라 재현 조건이 평범한 '오프라인 편집 후 재부팅 두 번'). markCloudSynced() 호출을 pullCloud() 내부에서 제거하고, 실제로 remote를 채택하는 두 호출자(afterCloudAuth의 non-conflict 분기, resolveCloudPullRemote)에서만 명시적으로 부르도록 이동 — 'online' 이벤트 핸들러(pullCloud();pushCloud())에서 pull은 성공했지만 이어지는 push가 실패하는 경우 거짓으로 동기화됨 표시되던 부수적 버그도 같은 수정으로 함께 없어짐. test/run.js FUNCTIONS에 pullCloud/afterCloudAuth/resolveCloudPullRemote 실제 소스를 추가하고, sbReady/cloudSyncOk/cloudSyncFailed/markCloudSynced를 스텁(markCloudSynced는 호출 횟수를 세는 스파이)으로, SB.from().select().eq().maybeSingle() 체인만 흉내내는 최소 목업을 sandbox에 추가, localStorage 스텁을 키별 맵(_lsMap)을 지원하도록 확장(기존 _lsRaw 단일값 방식과 하위호환). 회귀 테스트 4개 추가 — fix를 임시로 되돌려(git stash) 그중 2개가 실제로 실패함을 확인한 뒤 재적용. 두 인라인 <script> 블록 모두 문법 검증 통과, node test/run.js 527/527 통과(기존 523 + 신규 4). APP_VERSION 1.46.24->1.46.25, sw.js CACHE v186->v187.",
+      "commit": null
+    },
+    {
+      "cycle": 77,
+      "phase": "review",
+      "timestamp": "2026-09-24T06:08:44.821Z",
+      "summary": "develop 커밋(dfad39a, pullCloud() markCloudSynced 조기 호출 버그 수정)을 검토. pullCloud()의 유일한 부수효과 변경(markCloudSynced 제거)이 CLOUD_LAST_SYNCED_AT/cloudSyncOk() 갱신은 그대로 유지함을 확인. markCloudSynced() 호출부 전수 확인(pushCloud proceed/fallback 2곳, afterCloudAuth 비-conflict 분기, resolveCloudPullRemote) — remote를 실제로 채택하거나 push가 실제로 성공한 경로에만 남아있어 일관됨. online 핸들러(pullCloud();pushCloud())가 pullCloud 반환값을 DB에 반영하지 않는 것은 기존 설계(push 전 CLOUD_LAST_SYNCED_AT만 최신화)이며 이번 수정과 무관. 527/527 통과. 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
