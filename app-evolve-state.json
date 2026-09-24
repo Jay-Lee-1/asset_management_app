@@ -1,15 +1,12 @@
 {
   "cycle": 81,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "toggleConfirmTransfers()가 이체 확인을 끌 때 아직 도래하지 않은(미래 날짜) 일반(비반복) 이체까지 confirmed=true로 강제 확정하는 버그 수정",
+    "why": "index.html:2509 pendingOneOff = DB.txns.filter(t=>t.type==='transfer'&&t.confirmed===false)에는 날짜 가드가 없다. 바로 아래 2510줄 pendingRecList(반복 이체)는 isDuePending(t)로 date<=TODAY인 것만 골라 pendingTransferCount()(index.html:5614)와 동일한 규칙을 따르는데, 2506-2508줄 주석이 명시한 '아직 안 온 미래 회차까지 지금 완료 처리해버리면 안 됨'이라는 의도된 불변식을 정작 일반 이체(pendingOneOff)만 어긴다. saveTx()(index.html:4279 부근)는 confirmTransfers 설정이 켜져 있으면 미래 날짜 이체도 confirmed:false로 저장하는 정상 경로이므로, 사용자가 미래 날짜 이체를 예약해둔 상태에서 설정을 끄면 그 이체는 실제로 실행되지 않았는데도 날짜가 오기도 전에 조용히 '완료' 처리되어 이후 대기 이체 뱃지/알림에서 영구히 빠진다 — 이체 확인 기능(은행 송금 미실행 포착)의 목적을 그 이체에 한해 영구히 무력화하며, 확인 시트 문구도 이 중 일부가 아직 도래하지 않았음을 알리지 않는다. 유일하게 이 클래스의 버그를 직접 커버하는 test/run.js:3143-3154 테스트는 일반 이체 fixture 날짜(2026-06-10)가 TODAY(2026-06-15)보다 항상 과거라 이 갭을 못 잡는다.",
+    "approach": "1) index.html:2509의 pendingOneOff 필터에 날짜 가드를 추가(&&t.date<=TODAY 추가, 또는 반복 분기와 동일하게 isDuePending(t) 재사용으로 통일해 향후 같은 종류의 drift 재발 방지). 2) test/run.js에 toggleConfirmTransfers 회귀 테스트 추가: 미래 날짜 미확인 일반 이체는 설정 끈 뒤에도 confirmed:false로 남아야 함, 확인 시트의 pending count가 그 건을 제외해야 함, 도래한 것 1건+미래 1건이 섞이면 도래한 것만 카운트/확정돼야 함, 일반 이체와 반복 이체의 미래 회차 처리가 대칭이어야 함. 3) 같은 기능 영역인 rollPendingTransfers()(index.html:1436-1441, 이미 t.date<TODAY 가드가 있어 수정 불필요하지만 test/run.js:401에서 무관한 테스트를 위해 no-op으로 스텁돼 있어 직접 테스트가 0건)에도 시간이 되면 직접 회귀 테스트 1~2개를 같은 패스에서 추가. 범위: 프로덕션 코드 1줄 내외 수정 + 회귀 테스트 4~6개 추가. 백엔드/아키텍처 리스크 없음(순수 로직 수정, 이미 test 하네스가 추출/실행 중인 함수)."
+  },
   "history": [
-    {
-      "cycle": 76,
-      "phase": "critique",
-      "timestamp": "2026-09-24T03:11:14.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체 재검토. save()가 mutation마다, pushCloud()가 동기화마다 DB.txns/DB.recurrences를 포함한 전체 DB를 매번 통째로 직렬화/업로드하며 nwHistory와 달리 상한/아카이빙이 전혀 없는 구조적 문제 발견. hot/archive 2-key 분리 + 버킷 단위 저장/업로드 계획을 pending_advance_plan에 저장.",
-      "commit": null
-    },
     {
       "cycle": 76,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-09-24T22:10:00.000Z",
       "summary": "develop 커밋(0cc3b5f, saveTx()/saveRec() expense/income 자산 미선택 가드 추가)을 검토. transfer/saving 가드와 정확히 같은 형태로 expense는 fromAssetId, income은 toAssetId 미선택 시 저장을 막음을 확인. txOpenAsset/recOpenAsset이 type과 무관하게 항상 열려 있어(3304, 3480줄) 사용자가 expense/income에서도 자산을 고를 UI 경로가 이미 존재함을 확인 — 이번 가드가 기존에 없던 입력경로를 막는 게 아니라 조용한 데이터 누락만 막음. node test/run.js 552/552 통과. 코드 변경 없음(이상 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 81,
+      "phase": "critique",
+      "timestamp": "2026-09-24T23:15:35.201Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체 재검토. toggleConfirmTransfers()(index.html:2503-2525)의 pendingOneOff 필터(2509줄)가 반복 이체 분기(pendingRecList, 2510줄)와 달리 date<=TODAY 가드 없이 DB.txns의 모든 미확인 일반 이체를 대상으로 삼아, 2506-2508줄 주석이 명시한 '미래 회차는 지금 완료 처리하면 안 됨' 불변식을 일반 이체만 위반함을 발견. 이체 확인 설정을 켠 채 미래 날짜 이체를 예약(saveTx가 지원하는 정상 경로)했다가 설정을 끄면 그 이체가 도래 전에 조용히 확정 처리되어 대기 이체 뱃지에서 영구히 빠짐 — 기능의 존재 목적을 무력화. test/run.js:3143-3154의 유일한 관련 테스트는 일반 이체 fixture가 항상 과거 날짜라 이 갭을 못 잡음. pendingOneOff에 date<=TODAY 가드(또는 isDuePending 재사용) 추가 + 회귀 테스트 4~6개 + 여유 있으면 rollPendingTransfers() 직접 테스트 추가 계획을 pending_advance_plan에 저장. 코드 변경 없음(git status/diff 비어있음 확인).",
       "commit": null
     }
   ]
