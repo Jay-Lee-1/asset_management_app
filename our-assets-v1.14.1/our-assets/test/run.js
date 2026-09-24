@@ -86,7 +86,7 @@ const FUNCTIONS = [
   'assetEval', 'assetGainLoss', 'assetGainLossBadge', 'costBasisField', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'delOwner', 'doMaturity', 'firstCash',
   'detectStaleMarketValuedTxns', 'delBudget',
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards',
-  'rateUnknown', 'filteredHist', 'histInvalidate',
+  'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate',
   'genSalt', 'pbkdf2Hash', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer', 'openConfirmTransfer',
   'foreignSaveIsNewer', 'applyForeignSave', 'openCopyBackup', 'copyBackup', 'findDonors',
   'recIsVarying', 'varyingRecs', 'fixShortfallDefaultDate', 'openFixShortfall', 'lastActualAmount', 'openQuickAmount',
@@ -3239,6 +3239,40 @@ test('rateUnknown: 시세와 무관한 자산 타입(현금·저축 등)은 항�
   assert.strictEqual(sandbox.rateUnknown({ type: 'cash' }), false);
   assert.strictEqual(sandbox.rateUnknown({ type: 'savings' }), false);
   assert.strictEqual(sandbox.rateUnknown({ type: 'debt' }), false);
+});
+/* ---------- setRate: 시세 연동 관리 시트에서 입력을 지우면(onchange로 빈 문자열이 넘어옴)
+ * n=Number('')||0 으로 0이 되는데, 이걸 그대로 DB.rates.fx/stocks에 저장하면
+ * rateUnknown()의 ==null 판정을 피해가 '미확인' 배지 없이 조용히 ₩0으로 평가되던 버그
+ * (app-evolve cycle78 critique/advance). fx/stock은 값이 0 이하면 키를 delete해
+ * rateUnknown이 계속 미확인으로 보게 하고, gold는 원래 !goldPerG 판정이라 0을 그대로 둬도
+ * 이미 미확인 취급됨을 함께 검증. ---------- */
+test('setRate: fx 입력을 지우면(빈 문자열) 기존 값이 0으로 저장되지 않고 키가 지워져 미확인 상태로 남는다', () => {
+  sandbox.DB = { rates: { fx: { USD: 1350 }, stocks: {}, goldPerG: 0 } };
+  assert.strictEqual(sandbox.rateUnknown({ type: 'fx', currency: 'USD' }), false);
+  sandbox.setRate('fx', 'USD', '');
+  assert.strictEqual(sandbox.DB.rates.fx.USD, undefined, '빈 입력이 0으로 확정 저장되면 안 됨');
+  assert.strictEqual(sandbox.rateUnknown({ type: 'fx', currency: 'USD' }), true, '값을 지웠으면 다시 미확인으로 인식돼야 함');
+});
+test('setRate: stock 입력에 숫자 아닌 값을 넣어도 0으로 저장되지 않고 미확인 상태로 남는다', () => {
+  sandbox.DB = { rates: { fx: {}, stocks: { '005930': 70000 }, goldPerG: 0 } };
+  sandbox.setRate('stock', '005930', 'abc');
+  assert.strictEqual(sandbox.DB.rates.stocks['005930'], undefined);
+  assert.strictEqual(sandbox.rateUnknown({ type: 'stock', stockCode: '005930' }), true);
+});
+test('setRate: 정상적인 숫자 입력은 그대로 저장되고 미확인 상태가 풀린다', () => {
+  sandbox.DB = { rates: { fx: {}, stocks: {}, goldPerG: 0 } };
+  sandbox.setRate('fx', 'USD', '1,384.5');
+  assert.strictEqual(sandbox.DB.rates.fx.USD, 1384.5);
+  assert.strictEqual(sandbox.rateUnknown({ type: 'fx', currency: 'USD' }), false);
+  sandbox.setRate('gold', '', '152,000');
+  assert.strictEqual(sandbox.DB.rates.goldPerG, 152000);
+  assert.strictEqual(sandbox.rateUnknown({ type: 'gold' }), false);
+});
+test('setRate: gold 입력을 지우면 0으로 저장되지만 rateUnknown은 이미 0을 미확인으로 취급한다', () => {
+  sandbox.DB = { rates: { fx: {}, stocks: {}, goldPerG: 152000 } };
+  sandbox.setRate('gold', '', '');
+  assert.strictEqual(sandbox.DB.rates.goldPerG, 0);
+  assert.strictEqual(sandbox.rateUnknown({ type: 'gold' }), true);
 });
 test('saveAsset: 새 종목코드를 등록해도 더 이상 DB.rates.stocks를 0으로 미리 채우지 않고, 미확인 상태라 즉시 시세 동기화를 부른다', () => {
   sandbox.DB = { assets: [], rates: { fx: {}, stocks: {}, goldPerG: 0 } };

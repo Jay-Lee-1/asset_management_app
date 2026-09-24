@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.27';
+const APP_VERSION='1.46.28';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4433,6 +4433,12 @@ function openRateSheet(){
 }
 
 function setRate(kind,key,val){const n=Number(String(val).replace(/[^0-9.]/g,''))||0;
+ /* 입력을 지우거나 숫자가 아닌 값을 넣으면 n이 0으로 떨어지는데, 이걸 그대로 저장하면
+    rateUnknown()이 '아직 못 받아온 상태'와 '실제 0원'을 구분 못 해 미확인 배지 없이
+    평가액이 조용히 0원이 된다(index.html:2125-2134 주석 참고). fx/stock은 키 자체를
+    지워 다른 시세 미수신 상태와 동일하게 만들고, gold는 원래도 !goldPerG로 0을
+    미확인 취급하므로 0을 그대로 둬도 안전하다. */
+ if(n<=0){if(kind==='gold')DB.rates.goldPerG=0;else if(kind==='fx'||kind==='fx100')delete DB.rates.fx[key];else if(kind==='stock')delete DB.rates.stocks[key];save();return}
  if(kind==='gold')DB.rates.goldPerG=n;else if(kind==='fx')DB.rates.fx[key]=n;else if(kind==='fx100')DB.rates.fx[key]=n/100;else if(kind==='stock')DB.rates.stocks[key]=n;save()}
 /* 문의하기 */
 function openInquiry(){

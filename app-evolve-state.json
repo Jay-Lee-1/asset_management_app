@@ -1,11 +1,7 @@
 {
-  "cycle": 78,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "setRate()가 입력을 지우면 확정된 시세값을 조용히 0으로 저장해 자산 가치를 소실시키는 버그 수정",
-    "why": "시세 연동 관리 시트(openRateSheet, index.html:4409-4432)의 fx/금/주식 수동 입력란은 onchange=\"setRate(...)\"로 값을 저장한다. setRate(kind,key,val)(index.html:4435-4436)는 n=Number(String(val).replace(/[^0-9.]/g,''))||0 로 파싱하는데, 입력을 지우고 다른 값을 채우기 전에 포커스를 옮기면 빈 문자열이 그대로 n=0으로 확정 저장된다(DB.rates.fx[key]=0 등). rateUnknown(a)(index.html:2128-2134)는 R.fx[...]==null / !R.goldPerG / R.stocks[...]==null 만 검사하므로, 저장된 값이 정확히 0이면 '미확인' 배지가 뜨지 않고 오히려 '정상 확인됨'으로 보인다. assetEval()/totalAssetAt()이 qty*0=0을 그대로 반영해 해당 fx/금/주식 자산의 평가액과 순자산이 아무 경고 없이 사라진다. 코드 주석(index.html:2125-2127)이 이미 '한 번도 못 받아온 상태'와 '실제 0원'을 구분해야 한다고 명시하고 있는데 setRate는 이 원칙을 위반하는 유일한 쓰기 경로다. setRate는 test/run.js FUNCTIONS/CONSTS에 전혀 등록돼 있지 않아 회귀 커버리지가 0.",
-    "approach": "setRate에서 파싱 결과가 0(빈 입력/비숫자/명시적 0)이면 rateUnknown이 계속 미확인으로 인식하도록 그 키를 값 0으로 대입하는 대신 delete하거나(다른 시세값과 동일한 ==null 관례를 그대로 따름) 아예 쓰기를 건너뛰고 toast로 안내한다. 대칭성을 위해 rateUnknown()도 <=0을 미확인으로 취급하도록 보강 검토. test/run.js FUNCTIONS에 setRate와 갱신된 rateUnknown을 추가하고, (1) 입력을 지워도 기존 정상 값이 0으로 덮이지 않는다, (2) 실제로 결과가 0/빈 값이면 rateUnknown()===true로 남는다, (3) assetEval()/totalAssets()가 그 플래그와 일관되게 동작한다 는 회귀 테스트를 추가한다. 순수 클라이언트 로직만 건드리며 백엔드/스키마 변경 없음."
-  },
+  "cycle": 79,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
     {
       "cycle": 74,
@@ -138,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-24T11:10:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체 재검토. 시세 연동 관리 시트의 setRate(kind,key,val)(index.html:4435-4436)가 입력이 빈 문자열/비숫자일 때 n=0을 그대로 DB.rates.fx/goldPerG/stocks에 확정 저장하는데, rateUnknown()(index.html:2128-2134)은 값이 null일 때만 '미확인'으로 판정해 저장된 0은 정상 시세로 오인되고 assetEval()이 그 자산 평가액을 경고 없이 0으로 만드는 버그 발견(코드 자체의 주석 2125-2127이 명시한 '미확인 vs 실제 0원' 구분 원칙을 setRate만 위반). setRate는 test/run.js에 회귀 커버리지 0. index.html:4435-4436/2128-2134 인용해 실제 코드로 재확인 완료. pending_advance_plan에 구체 수정 방향(0 결과는 delete로 처리해 rateUnknown 관례 유지, rateUnknown<=0도 미확인 취급 검토, setRate 회귀 테스트 3종 추가) 저장.",
+      "commit": null
+    },
+    {
+      "cycle": 78,
+      "phase": "advance",
+      "timestamp": "2026-09-24T12:09:27.035Z",
+      "summary": "critique 계획대로 setRate(kind,key,val)의 조용한 0원 확정 저장 버그 수정. 파싱 결과 n<=0(빈 입력/비숫자)이면 fx/stock은 DB.rates.fx[key]/stocks[key]를 delete해 rateUnknown()의 ==null 판정을 그대로 타게 하고, gold는 원래도 rateUnknown이 !goldPerG로 0을 미확인 취급하므로 0을 그대로 두되 명시적으로 처리. rateUnknown() 자체는 수정 불필요(gold 경로는 이미 안전했음을 확인). test/run.js FUNCTIONS에 setRate 추가, 회귀 테스트 4개(fx 빈 입력, stock 비숫자 입력, 정상 입력 저장, gold 빈 입력) 추가 - fix를 stash로 임시 제거해 그중 2개(fx/stock)가 실제로 실패함을 확인한 뒤 복원. 두 인라인 <script> 블록 node --check 통과, node test/run.js 532/532 통과(기존 528 + 신규 4). APP_VERSION 1.46.27->1.46.28, sw.js CACHE v189->v190.",
       "commit": null
     }
   ]
