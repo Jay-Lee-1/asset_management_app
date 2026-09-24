@@ -1,15 +1,8 @@
 {
   "cycle": 80,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 75,
-      "phase": "review",
-      "timestamp": "2026-09-23T22:05:00.000Z",
-      "summary": "develop 커밋(65ebaa2, recFreq() monthly 이탈 시 weekend='none' 리셋)을 검토. UI 노출 조건과 shiftWeekend 적용 조건 불일치 전제 재확인, weekend를 참조하는 10여 곳 모두 recDraft.weekend를 그대로 읽어 일관되게 고쳐짐을 확인. 512/512 통과. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 75,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-24T17:10:34.265Z",
       "summary": "doRenameCat()의 txns/recurrences 비대칭 수정. saveTx()가 빈 메모를 카테고리명으로 자동 채우는 관례상(memo===category) 대다수 거래가 이 상태인데, doRenameCat()은 recurrences는 memo===old일 때 memo도 함께 옮기면서 정작 더 흔한 txns는 category만 바꾸고 memo는 그대로 둬, 렌더가 memo||category를 주 이름으로 쓰는 구조상(index.html 여러 곳) 카테고리 이름을 바꾼 뒤에도 과거 거래 목록엔 옛 이름이 계속 주 이름으로 남고 새 이름은 보조 텍스트로만 보이는 눈에 띄는 회귀였다. txns.forEach 분기에 recurrences와 동일한 if(t.memo===old)t.memo=v를 추가. 사용자가 직접 쓴(카테고리명과 다른) 메모는 그대로 보존됨을 별도 테스트로 확인. 회귀 테스트 2개 추가(자동채움 케이스 이동/직접입력 케이스 보존) - fix를 되돌려 1개가 실제로 실패함을 확인한 뒤 재적용. 두 인라인 <script> 블록 node --check 통과, node test/run.js 539/539 통과(기존 537 + 신규 2). APP_VERSION 1.46.30->1.46.31, sw.js CACHE v192->v193.",
+      "commit": null
+    },
+    {
+      "cycle": 80,
+      "phase": "review",
+      "timestamp": "2026-09-24T18:09:00.000Z",
+      "summary": "develop 커밋(8af9fd2, doRenameCat() txns memo 이동 비대칭 수정)을 검토. txns/recurrences 두 forEach 분기가 이제 category 이동 + memo===old일 때 memo 이동으로 완전히 대칭임을 확인. doRenameCat() 전체를 재확인해 icon/catVar 키 이동, budgetHistory 이동까지 포함해 다른 누락 지점 없음. 새 회귀 테스트 2개(자동채움 이동/직접입력 보존)가 실제 의도를 정확히 검증함을 확인. 539/539 통과. 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
