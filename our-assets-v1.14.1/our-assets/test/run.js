@@ -771,6 +771,32 @@ test('doRenameCat: 연결된 반복거래의 category/memo도 함께 이동한�
   assert.strictEqual(sandbox.DB.recurrences[0].category, '외식비');
   assert.strictEqual(sandbox.DB.recurrences[0].memo, '외식비');
 });
+/* ---------- doRenameCat: 거래(txns)의 memo도 반복거래와 대칭으로 이동해야 함 (app-evolve cycle80 develop) ----------
+ * saveTx()는 메모를 비워 두면 카테고리명을 그대로 memo에 채운다(예: memo==='식비'). doRenameCat은
+ * 반복거래는 memo===old일 때 memo도 함께 옮기면서, 정작 훨씬 흔한 일반 거래(txns)는 category만 바꾸고
+ * memo는 그대로 두는 비대칭이 있었다. 그 결과 렌더는 t.memo||t.category를 주 이름으로 쓰므로
+ * (memo가 채워져 있으면 그게 우선 표시), 이름을 바꾼 뒤에도 과거 거래 목록에는 옛 카테고리명이
+ * 계속 주 이름으로 남고 새 이름은 작은 보조 텍스트로만 보이는 눈에 띄는 회귀가 생겼다. */
+test('doRenameCat: 메모가 옛 카테고리명과 같았던(자동 채움) 거래는 memo도 새 이름으로 함께 이동한다', () => {
+  sandbox.DB = {
+    categories: { expense: ['식비'] }, catIcon: {}, catVar: {}, recurrences: [],
+    txns: [{ id: 't1', type: 'expense', category: '식비', memo: '식비' }],
+  };
+  sandbox.catRenameDraft = { name: '외식비', icon: '' };
+  sandbox.doRenameCat('expense', 0);
+  assert.strictEqual(sandbox.DB.txns[0].category, '외식비');
+  assert.strictEqual(sandbox.DB.txns[0].memo, '외식비', '메모가 옛 카테고리명 그대로 남으면 목록에 옛 이름이 주 이름으로 계속 표시됨');
+});
+test('doRenameCat: 사용자가 직접 입력한(카테고리명과 다른) 거래 메모는 이름변경 후에도 그대로 유지된다', () => {
+  sandbox.DB = {
+    categories: { expense: ['식비'] }, catIcon: {}, catVar: {}, recurrences: [],
+    txns: [{ id: 't1', type: 'expense', category: '식비', memo: '점심 김밥' }],
+  };
+  sandbox.catRenameDraft = { name: '외식비', icon: '' };
+  sandbox.doRenameCat('expense', 0);
+  assert.strictEqual(sandbox.DB.txns[0].category, '외식비');
+  assert.strictEqual(sandbox.DB.txns[0].memo, '점심 김밥', '사용자가 직접 쓴 메모는 카테고리 이름변경과 무관하게 보존돼야 함');
+});
 
 /* ---------- activeRecsForAssets: 자산 삭제 시 연결 반복거래 비활성화 (125886a) ---------- */
 test('activeRecsForAssets: 단일 id — 활성 상태이고 해당 자산을 참조하는 반복거래만 찾는다', () => {
