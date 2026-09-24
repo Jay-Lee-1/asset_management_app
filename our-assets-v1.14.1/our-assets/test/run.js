@@ -1847,10 +1847,18 @@ test('buildImportPreview: 기존에 없는 내역만 새 항목으로 세고, �
   assert.strictEqual(preview.newCount, 1);
   assert.deepStrictEqual(Array.from(preview.newCats.expense), ['새카테고리']);
 });
-test('buildImportPreview: 같은 파일 안에서 완전히 똑같은 행이 반복되면 두 번째부터는 중복으로 건너뛴다', () => {
+test('buildImportPreview: 기존 내역에 없으면 같은 파일 안에 완전히 똑같은 행이 반복돼도 전부 새 항목으로 센다(같은 날 같은 금액의 서로 다른 거래 2건)', () => {
   const csv = '날짜,구분,카테고리,금액,보내는 자산,받는 자산,메모\r\n' +
     '2026-01-01,지출,식비,5000,,,점심\r\n2026-01-01,지출,식비,5000,,,점심\r\n';
   const preview = sandbox.buildImportPreview(csv, [], { expense: ['식비'], income: [], saving: [] }, []);
+  assert.strictEqual(preview.newCount, 2);
+  assert.strictEqual(preview.dupCount, 0);
+});
+test('buildImportPreview: 기존 내역에 키가 같은 게 1건만 있으면, CSV에 똑같은 행이 2개 있어도 1건만 중복 매칭되고 나머지 1건은 새 항목이다(다대다 중복판정)', () => {
+  const txns = [{ id: 't1', date: '2026-01-01', type: 'expense', category: '식비', amount: 5000, fromAssetId: null, toAssetId: null, memo: '점심' }];
+  const csv = '날짜,구분,카테고리,금액,보내는 자산,받는 자산,메모\r\n' +
+    '2026-01-01,지출,식비,5000,,,점심\r\n2026-01-01,지출,식비,5000,,,점심\r\n';
+  const preview = sandbox.buildImportPreview(csv, [], { expense: ['식비'], income: [], saving: [] }, txns);
   assert.strictEqual(preview.newCount, 1);
   assert.strictEqual(preview.dupCount, 1);
 });

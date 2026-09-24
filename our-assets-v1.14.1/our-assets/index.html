@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.26';
+const APP_VERSION='1.46.27';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4781,8 +4781,9 @@ function csvDedupeKey(t){
    회차도 중복으로 인식한다. */
 function buildImportPreview(text,assets,categories,existingTxns){
  const dataRows=parseCSV(text).slice(1);
- const existingKeys=new Set((existingTxns||[]).map(csvDedupeKey));
- const seen=new Set();
+ const existingCounts=new Map();
+ (existingTxns||[]).forEach(t=>{const k=csvDedupeKey(t);existingCounts.set(k,(existingCounts.get(k)||0)+1)});
+ const usedCounts=new Map();
  const items=[];
  let invalidCount=0,rangeCount=0;
  const newCats={expense:new Set(),income:new Set(),saving:new Set()};
@@ -4790,8 +4791,9 @@ function buildImportPreview(text,assets,categories,existingTxns){
   const r=csvRowToImportTxn(cells,assets);
   if(!r.ok){if(r.error==='range')rangeCount++;else invalidCount++;return}
   const key=csvDedupeKey(r.txn);
-  const dup=existingKeys.has(key)||seen.has(key);
-  seen.add(key);
+  const used=usedCounts.get(key)||0;
+  const dup=used<(existingCounts.get(key)||0);
+  usedCounts.set(key,used+1);
   if(!dup&&r.txn.type!=='transfer'&&categories&&Array.isArray(categories[r.txn.type])&&!categories[r.txn.type].includes(r.txn.category)){
    newCats[r.txn.type].add(r.txn.category);
   }

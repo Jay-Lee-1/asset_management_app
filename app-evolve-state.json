@@ -1,6 +1,6 @@
 {
   "cycle": 78,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
@@ -141,6 +141,13 @@
       "phase": "advance",
       "timestamp": "2026-09-24T08:10:00.000Z",
       "summary": "critique 계획(household_id 기반 실제 공유 기능)을 advance 착수 전 재평가: 새 Supabase 테이블(household_invites)과 인증 의미론 변경이 필요해 로컬 테스트로는 실제 다중 계정 시나리오를 검증할 수 없고, 무인 사이클이 운영 중인 사용자의 Supabase 백엔드 스키마를 잘못 건드리면 되돌리기 어려움 — cycle76이 hot/archive 분리를 보류한 것과 같은 이유로 이번 사이클은 계획에 이미 준비돼 있던 최소 침습 대안(백엔드 위험 0)만 구현. '귀속(owner)'이 계정 경계가 아니라 같은 로그인 안의 라벨일 뿐임을 귀속 관리 시트(openOwnerManage) 설명에 명시하고, 계정 화면(openAccountSheet)의 클라우드 안내 문구에 '같은 이메일 계정으로 로그인해야만 데이터가 공유되고, 계정을 따로 만들면 서로의 기록이 보이지 않는다'를 추가했으며, openHelpCloud에 '5) 배우자·가족과 함께 쓰려면' 단락을 새로 넣어 현재 구조의 한계와 유일한 우회(같은 로그인을 여러 기기에서 공유)의 위험(비밀번호 공유, 비밀번호 변경/계정 삭제 시 다른 기기 로그아웃)을 안내했다. 코드 로직·데이터 포맷·클라우드 동기화 경로는 전혀 건드리지 않은 순수 UI 문구 변경이라 회귀 위험 없음(<script> 블록 2개 node --check 통과, node test/run.js 527/527 그대로 통과). APP_VERSION 1.46.25->1.46.26, sw.js CACHE v187->v188. 실제 다계정 household 공유 기능은 이후 critique가 백엔드 검증 방법(예: 스테이징 Supabase 프로젝트)이 갖춰졌을 때 다시 제안할 것.",
+      "commit": null
+    },
+    {
+      "cycle": 78,
+      "phase": "develop",
+      "timestamp": "2026-09-24T09:10:00.000Z",
+      "summary": "Explore 서브에이전트로 발견한 CSV 가져오기 중복판정 버그 수정. buildImportPreview()가 existingKeys/seen을 둘 다 boolean Set으로 관리해, 한 CSV 파일 안에 dedupe 키(날짜/구분/금액/카테고리/자산/메모)가 완전히 같은 서로 다른 실제 거래가 2건 이상 있으면(예: 같은 날 같은 카페에서 4,500원을 두 번 결제 — saveTx()가 빈 메모를 카테고리명으로 채우는 관례상 흔함) 첫 번째만 신규로 잡고 나머지는 전부 '중복'으로 오판, 조용히 가져오기에서 누락됐다. doExport로 내보낸 CSV를 다른 기기로 재가져오기하는 게 앱이 명시적으로 지원하는 정상 백업 경로라 실사용 데이터 손실로 이어짐. existingKeys/seen(Set)을 existingCounts/usedCounts(Map, 키별 개수)로 바꿔 '기존 DB에 그 키가 몇 개 있는지'만큼만 순서대로 중복 매칭하고 그 예산을 넘는 동일 키 행은 신규로 처리하도록 수정(다대다 멀티셋 판정). 기존 테스트 중 이 버그를 정답으로 잘못 코드화했던 케이스('같은 파일 안에서 완전히 똑같은 행이 반복되면 두 번째부터는 중복으로 건너뛴다')를 올바른 기대값(둘 다 신규)으로 고치고, DB에 키가 1개만 있을 때 CSV에 동일 행이 2개면 1개만 매칭되고 나머지 1개는 신규가 되는 멀티셋 케이스를 신규 테스트로 추가. 순수 함수 내부 로직 변경만이라 doCsvImport/openCsvImportPreview 등 호출부는 무수정. 두 인라인 <script> 블록 node --check 통과, node test/run.js 528/528 통과(기존 526 + 신규 2, 기존 버그 코드화 테스트 1개는 기대값 수정). APP_VERSION 1.46.26->1.46.27, sw.js CACHE v188->v189.",
       "commit": null
     }
   ]
