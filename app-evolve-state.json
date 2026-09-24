@@ -1,15 +1,8 @@
 {
   "cycle": 79,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 74,
-      "phase": "review",
-      "timestamp": "2026-09-23T18:07:58.000Z",
-      "summary": "cycle74 develop 커밋(4ae1d9b)을 검토, 연속중복 가드 전제 검증. 코드 변경 없음(이상 없음). recFreq()가 monthly 이탈 시 weekend를 리셋 안 하는 문제(cycle73 review가 먼저 기록)가 이번 3중카운트 버그의 실제 재현 경로였음을 재확인, 여전히 미조치로 기록.",
-      "commit": null
-    },
     {
       "cycle": 74,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-24T13:15:21.507Z",
       "summary": "Explore 서브에이전트로 발견한 자산 삭제->되돌리기(deleteAssetsUndo undo) 경로가 snapshotAssetName()이 남긴 fromAssetName/toAssetName 스냅샷 이름을 지우지 않던 버그 수정. 자산을 삭제했다가 삭제 취소를 누르면 자산은 정상 복원되지만(assetNm()이 항상 살아있는 자산을 우선해 화면상 이상 없음), 해당 자산을 참조하던 거래에는 되살아난 fromAssetId/toAssetId와 별개로 스냅샷 이름이 그대로 남아 id/name 이중상태가 됐다. 이 상태에서 CSV로 내보냈다가 재가져오기하면 csvDedupeKey()가 기존 거래는 남은 스냅샷 이름으로(n:...), 새로 파싱한 CSV 행은 살아있는 id로(i:...) 키를 만들어 영원히 어긋나 같은 거래가 중복 저장됐다(백업 복원이라는 앱이 명시적으로 지원하는 정상 경로에서 실사용 데이터가 이중 계상됨). snapshotAssetName의 짝인 unsnapshotAssetName(id)을 추가해 deleteAssetsUndo()의 undo 콜백에서 복원 대상 id마다 호출, id가 다시 라이브 자산을 가리키게 된 시점에 스냅샷 이름 필드를 지우도록 수정. snapshotAssetName은 balanceAt 체인 때문에 테스트에서 스텁 처리돼 있어 실제 소스로 검증할 수 없지만(기존 관례), unsnapshotAssetName은 순수 함수라 test/run.js FUNCTIONS에 추가해 실제 소스로 회귀 테스트 1개 작성 — undo 콜백의 unsnapshotAssetName 호출을 일시적으로 되돌려 실제로 실패함을(fromAssetName이 안 지워짐) 확인한 뒤 재적용. 두 인라인 <script> 블록 모두 node --check 통과, node test/run.js 533/533 통과(기존 532 + 신규 1). APP_VERSION 1.46.28->1.46.29, sw.js CACHE v190->v191.",
+      "commit": null
+    },
+    {
+      "cycle": 79,
+      "phase": "review",
+      "timestamp": "2026-09-24T14:08:50.102Z",
+      "summary": "develop 커밋(741f413, deleteAssetsUndo undo 콜백에 unsnapshotAssetName 추가)을 검토. unsnapshotAssetName(id)이 snapshotAssetName(id)과 정확히 대칭(fromAssetId/toAssetId===id인 txns/recurrences의 스냅샷 이름 delete)임을 확인. 자산 id/name 이중상태가 생길 수 있는 다른 경로(relinkDeletedAsset)도 점검 - 이쪽은 삭제 전 자산과 다른 새 id를 발급받아 재연결하는 별개 흐름이고 relinkDeletedAsset 자체가 이미 재연결 시 스냅샷 이름을 지우므로 이번 버그와 무관, 추가 조치 불필요. 533/533 통과. 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
