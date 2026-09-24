@@ -2335,6 +2335,50 @@ test('splitRecurrenceAt: effectiveDate 이후(포함)의 skip/edits는 새 레�
   assert.strictEqual(JSON.stringify(newRec.edits), JSON.stringify({ '2026-08-05': { amount: 2 } }), 'effectiveDate 이후(포함) edits는 새 레코드로 옮겨져야 함(전에는 조용히 사라지는 버그가 있었음)');
 });
 
+/* splitRecOverrides 자체는 위 splitRecurrenceAt 테스트들이 간접적으로 통과시키지만(app-evolve
+ * cycle80 critique가 지적한 "직접 assertion 0건"), 여기서는 splitRecurrenceAt의 날짜 재계산·
+ * 필드 병합 로직 없이 skip/edits 분기 규칙 자체만 떼어 직접 검증한다. */
+test('splitRecOverrides: skip은 effectiveDate 미만/이상으로 갈라지고, effectiveDate 당일은 future 쪽으로 간다(경계 포함)', () => {
+  const { skipPast, skipFuture } = sandbox.splitRecOverrides(['2026-06-01', '2026-06-05', '2026-06-10'], {}, '2026-06-05');
+  assert.deepStrictEqual(skipPast, ['2026-06-01']);
+  assert.deepStrictEqual(skipFuture, ['2026-06-05', '2026-06-10']);
+});
+test('splitRecOverrides: edits도 같은 경계 규칙(effectiveDate 당일 포함 이후는 future)으로 갈라진다', () => {
+  const { editsPast, editsFuture } = sandbox.splitRecOverrides([], { '2026-06-01': { amount: 1 }, '2026-06-05': { amount: 2 } }, '2026-06-05');
+  assert.strictEqual(JSON.stringify(editsPast), JSON.stringify({ '2026-06-01': { amount: 1 } }));
+  assert.strictEqual(JSON.stringify(editsFuture), JSON.stringify({ '2026-06-05': { amount: 2 } }));
+});
+test('splitRecOverrides: skip/edits가 없으면(null/undefined) 예외 없이 양쪽 다 빈 값을 반환한다', () => {
+  const { skipPast, skipFuture, editsPast, editsFuture } = sandbox.splitRecOverrides(null, undefined, '2026-06-05');
+  // vm 샌드박스 안에서 새로 만들어진 배열/객체는 host realm과 프로토타입이 달라 deepStrictEqual이
+  // 값이 같아도 실패한다(위 splitRecurrenceAt 테스트와 같은 이유) — 길이/JSON으로 비교한다.
+  assert.strictEqual(skipPast.length, 0);
+  assert.strictEqual(skipFuture.length, 0);
+  assert.strictEqual(JSON.stringify(editsPast), '{}');
+  assert.strictEqual(JSON.stringify(editsFuture), '{}');
+});
+
+/* recSaveScopeConfirm 자체도 지금까지 saveRec()을 거쳐서만 실행됐다(app-evolve cycle80 critique) —
+ * 여기서는 saveRec의 "과거 회차 판정" 로직 없이 확인 시트를 띄우는 동작 자체만 직접 검증한다. */
+test('recSaveScopeConfirm: window._recSaveScope에 orig/d/i를 그대로 저장하고, memo(없으면 category)가 들어간 확인 시트를 띄운다', () => {
+  const orig = { id: 'r1', memo: '월세', category: '주거' };
+  const d = { id: 'r1', memo: '월세', category: '주거', amount: 500000 };
+  sandbox.lastSheetHtml = null;
+  sandbox.window._recSaveScope = null;
+  sandbox.recSaveScopeConfirm(orig, d, 2);
+  assert.strictEqual(sandbox.window._recSaveScope.orig, orig);
+  assert.strictEqual(sandbox.window._recSaveScope.d, d);
+  assert.strictEqual(sandbox.window._recSaveScope.i, 2);
+  assert.ok(sandbox.lastSheetHtml.includes('월세'), '메모가 있으면 메모로 안내해야 함');
+  assert.ok(sandbox.lastSheetHtml.includes('오늘부터 이후 모두') && sandbox.lastSheetHtml.includes('전체 적용'), '두 선택지가 모두 보여야 함');
+});
+test('recSaveScopeConfirm: memo가 없으면 category로 안내한다', () => {
+  const orig = { id: 'r1', memo: '', category: '주거' };
+  sandbox.lastSheetHtml = null;
+  sandbox.recSaveScopeConfirm(orig, { ...orig }, 0);
+  assert.ok(sandbox.lastSheetHtml.includes('주거'));
+});
+
 test('saveRec: 과거 회차가 있는 반복에서 결제 계좌(fromAssetId)를 바꿔 저장하면, 곧바로 덮어쓰지 않고 범위 확인 시트를 띄운다', () => {
   sandbox.TWi = -1; sandbox.TODAY = '2026-06-15';
   const r = { id: 'r1', type: 'expense', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, count: null, amount: 1000, category: '관리비', memo: '관리비', fromAssetId: 'a1', toAssetId: null, skip: [], edits: {}, active: true };
@@ -4176,6 +4220,52 @@ test('openAssetPicker: cashOnly(만기이체 picker)는 excludeMarketValued 없�
   assert.ok(!html.includes('data-val="a_usd"'));
   assert.ok(!html.includes('data-val="a_gold"'));
   assert.ok(!html.includes('data-val="a_samsung"'));
+});
+
+/* ---------- totalAssets/totalDebt/ownerAssets/ownerDebt: 순자산 숫자의 유일한 산술 근원인데
+ * 지금까지 다른 테스트(renderHome/renderAssets 등)의 호출 그래프를 통해서만 간접 실행됐을 뿐
+ * 직접 assertion이 없었다(app-evolve cycle80 critique). pruneNwHistory가 오래된 일별 스냅샷을
+ * 월별로 비가역 압축해버리므로, 여기 회귀는 화면 표시가 아니라 과거 순자산 차트에 영구히 박제된다. ---------- */
+function setupNetWorthDB() {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox.DB = {
+    settings: {},
+    assets: [
+      { id: 'a_cash', name: '내지갑', type: 'cash', owner: '나', baseAmount: 10000, includeInTotal: true },
+      { id: 'a_sav', name: '배우자적금', type: 'savings', owner: '배우자', baseAmount: 5000, includeInTotal: true },
+      { id: 'a_usd', name: '달러', type: 'fx', owner: '나', currency: 'USD', fxAmount: 100, includeInTotal: true },
+      { id: 'a_gold', name: '금', type: 'gold', owner: '배우자', goldDon: 1, includeInTotal: true },
+      { id: 'd_card', name: '카드빚', type: 'debt', owner: '나', baseAmount: 3000, includeInTotal: true },
+      { id: 'a_hidden', name: '숨긴통장', type: 'cash', owner: '나', baseAmount: 999999, includeInTotal: false },
+    ],
+    txns: [],
+    recurrences: [],
+    rates: { fx: { USD: 1300 }, goldPerG: 90000, stocks: {} },
+  };
+  sandbox._balCache.clear();
+}
+test('totalAssets/totalDebt: 부채 자산은 totalDebt에만 잡히고 totalAssets에서는 제외되며, 값은 순수 현금성+시세 자산의 합이다', () => {
+  setupNetWorthDB();
+  // 10000(현금) + 5000(적금) + 100*1300(달러) + 1*3.75*90000(금, GOLD_G_PER_DON)
+  const expectedAssets = 10000 + 5000 + 100 * 1300 + 1 * sandbox.GOLD_G_PER_DON * 90000;
+  assert.strictEqual(sandbox.totalAssets(), expectedAssets);
+  assert.strictEqual(sandbox.totalDebt(), 3000);
+});
+test('totalAssets/totalDebt: includeInTotal=false인 자산은 금액이 아무리 커도 어느 쪽 합계에도 잡히지 않는다', () => {
+  setupNetWorthDB();
+  const before = sandbox.totalAssets();
+  sandbox.DB.assets.find(a => a.id === 'a_hidden').includeInTotal = true;
+  sandbox._balCache.clear();
+  assert.strictEqual(sandbox.totalAssets(), before + 999999, 'includeInTotal을 켜면 그제서야 합산에 반영되어야 함(반대로 꺼져 있으면 제외되어야 함을 함께 확인)');
+});
+test('ownerAssets/ownerDebt: owner로 필터링되어 다른 귀속의 자산·부채는 서로 섞이지 않는다', () => {
+  setupNetWorthDB();
+  assert.strictEqual(sandbox.ownerAssets('나'), 10000 + 100 * 1300, '"나"는 현금+달러만 포함(적금·금은 배우자 소유)');
+  assert.strictEqual(sandbox.ownerDebt('나'), 3000);
+  assert.strictEqual(sandbox.ownerAssets('배우자'), 5000 + 1 * sandbox.GOLD_G_PER_DON * 90000, '"배우자"는 적금+금만 포함');
+  assert.strictEqual(sandbox.ownerDebt('배우자'), 0, '배우자 명의 부채가 없으면 0이어야 함(다른 귀속의 부채가 섞이면 안 됨)');
+  assert.strictEqual(sandbox.ownerAssets('나') + sandbox.ownerAssets('배우자'), sandbox.totalAssets(), '귀속별 합은 전체 합과 일치해야 함');
 });
 test('openAssetPicker: excludeId(만기이체 picker에서 자기 자신 제외)를 넘기면 그 자산은 목록에서 빠지고 나머지는 그대로 남는다', () => {
   setupAssetPickerDB();

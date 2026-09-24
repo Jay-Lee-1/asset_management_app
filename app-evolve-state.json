@@ -1,19 +1,8 @@
 {
-  "cycle": 80,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "totalAssets/totalDebt/ownerAssets/ownerDebt/splitRecOverrides/recSaveScopeApply/recSaveScopeConfirm에 직접 회귀 테스트 추가",
-    "why": "test/run.js FUNCTIONS는 이 7개 함수를 다른 테스트의 호출 그래프 의존성으로만 끌어올 뿐, test('totalAssets:...) 같은 직접 assertion은 0건이다. totalAssets()/totalDebt()(index.html:2169-2170)와 ownerAssets()/ownerDebt()(index.html:2550-2551)는 홈 순자산 총액, netWorth(), 오너별 카드, save()가 매일 nwHistory에 찍는 스냅샷까지 모든 순자산 숫자의 유일한 산술 근원인데 pruneNwHistory가 오래된 일별 항목을 월별로 비가역 압축하므로 여기 버그는 화면 표시가 아니라 과거 순자산 차트에 영구히 박제된다. splitRecOverrides/recSaveScopeApply/recSaveScopeConfirm(3581-3616)은 반복거래의 '이번만 수정' vs '이번부터 이후 전부 수정' 분기 로직으로 대표적인 캘린더류 버그 온상인데도 직접 검증이 없다. 지난 80사이클 동안 바로 이 근방(addBalanceAdjust 부채 부호, asOpenType의 includeInTotal 자동 토글)에서 반복적으로 미묘한 버그가 나왔던 만큼, 다음에 조용히 회귀할 가능성이 가장 높으면서 안전망이 없는 지점이다.",
-    "approach": "run.js 기존 스타일을 따라 프로덕션 코드는 건드리지 않고 테스트만 추가한다. totalAssets/totalDebt/ownerAssets/ownerDebt: 부채 부호, includeInTotal 제외, 여러 owner 필터링 케이스. splitRecOverrides/recSaveScopeApply/recSaveScopeConfirm: '이번 회차만 수정' vs '이번부터 이후 전부 수정' 분기, 분할 경계에서 skip/edits 캐리오버 케이스. 테스트 전용 변경이라 리스크가 낮다."
-  },
+  "cycle": 81,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 75,
-      "phase": "advance",
-      "timestamp": "2026-09-24T00:00:00.000Z",
-      "summary": "critique 계획(lastActualAmount 핫스팟)을 구현하되 설계를 _recCache/_balCache와 같은 컨벤션(모듈 스코프 Map, invalidateBalances()에서 일괄 clear)으로 바꿈 — r.edits 직접 쓰기 지점이 6곳이라 수동 무효화는 누락 위험이 크고 r에 필드를 얹으면 백업에도 섞여 들어가기 때문. _lastEditCache(recurrence 객체 참조 키)를 lastActualAmount에 추가, append-only 패턴은 O(1) 반환. 회귀 테스트 5개 추가, 516/516 통과. APP_VERSION 1.46.21->1.46.22, sw.js CACHE v183->v184.",
-      "commit": null
-    },
     {
       "cycle": 76,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-24T19:11:41.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체 재검토. test/run.js가 totalAssets/totalDebt/ownerAssets/ownerDebt(index.html:2169-2170,2550-2551)와 splitRecOverrides/recSaveScopeApply/recSaveScopeConfirm(3581-3616)을 다른 테스트의 호출 그래프 의존성으로만 끌어올 뿐 직접 test() assertion이 0건임을 발견 — 전자는 홈 순자산 총액부터 nwHistory 영구 스냅샷까지 모든 순자산 숫자의 유일한 산술 근원(pruneNwHistory가 오래된 일별 항목을 비가역 월별 압축하므로 버그가 과거 차트에 영구 박제됨)이고, 후자는 반복거래 '이번만 수정' vs '이번부터 이후 전부 수정' 분기라는 대표적 캘린더류 버그 온상. 접근성/XSS/DB 캐시무효화/CSV·localStorage 손상처리/SW 캐시 갱신 등은 재확인 결과 이미 견고해 기각. 프로덕션 코드 변경 없이 두 그룹에 직접 회귀 테스트를 추가하는 계획을 pending_advance_plan에 저장.",
+      "commit": null
+    },
+    {
+      "cycle": 80,
+      "phase": "advance",
+      "timestamp": "2026-09-24T20:10:00.000Z",
+      "summary": "critique 계획대로 totalAssets/totalDebt/ownerAssets/ownerDebt와 splitRecOverrides/recSaveScopeConfirm에 직접 회귀 테스트를 추가(recSaveScopeApply는 이미 saveRec 테스트들이 두 scope 분기를 충분히 직접 실행 중임을 확인해 제외, splitRecurrenceAt 테스트들도 splitRecOverrides를 간접 실행 중이었지만 날짜 재계산 로직 없이 skip/edits 분기 규칙만 떼어 직접 검증하는 편이 다음 회귀의 실패 지점을 더 좁게 짚어줌). setupNetWorthDB()로 owner 다른 cash/savings/fx/gold 자산과 debt 자산, includeInTotal=false 자산을 섞은 DB를 구성해 totalAssets/totalDebt가 부채를 분리 집계하고 includeInTotal=false를 제외함을 확인, ownerAssets('나')+ownerAssets('배우자')===totalAssets()로 귀속별 합이 전체 합과 일치함도 함께 검증. splitRecOverrides는 skip 배열과 edits 객체 모두에서 effectiveDate 당일이 past가 아니라 future 쪽으로 가는 경계 규칙과 null/undefined 입력 시 예외 없이 빈 값을 반환함을 직접 확인. recSaveScopeConfirm은 orig/d/i가 window._recSaveScope에 그대로 저장되고 memo(없으면 category)가 확인 시트에 들어감을 saveRec 경유 없이 직접 호출로 검증. 크로스 vm-realm 배열/객체 비교는 기존 관례대로 deepStrictEqual 대신 length/JSON.stringify로 비교(처음엔 deepStrictEqual로 썼다가 실제로 실패하는 것을 보고 관례를 따르도록 고침). 프로덕션 코드(index.html)는 전혀 건드리지 않은 테스트 전용 변경이라 APP_VERSION/sw.js CACHE 버전업 없음. node test/run.js 547/547 통과(기존 539 + 신규 8).",
       "commit": null
     }
   ]
