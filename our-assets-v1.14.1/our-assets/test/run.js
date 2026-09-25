@@ -1600,6 +1600,29 @@ test('txnsToCSV+expandRec: DB.txns만 넘기면(기존 버그) 반복거래가 C
   assert.ok(!csv.includes('월세'), 'DB.txns만 넘기면 반복거래는 애초에 그 안에 없으므로 CSV에도 없음(수정 전 doExport의 실제 동작)');
 });
 
+/* ---------- doExport(csv) 회귀: 잔액 조정(adjust) 항목은 monthStats/histSumTotals 등
+ * 다른 모든 집계처럼 항목별 포함 설정(inSurplus)을 따라야 한다(app-evolve cycle83 develop).
+ * doExport()는 실제로 filter(t=>!(t.adjust&&!t.inSurplus))를 거친 뒤 txnsToCSV를 호출하므로
+ * 그 조합을 그대로 재현해 검증한다. */
+test('txnsToCSV+doExport 필터: inSurplus가 꺼진 잔액 조정 항목은 CSV에서 제외된다', () => {
+  const assets = [{ id: 'a1', name: '주계좌' }];
+  const txns = [
+    { id: 't1', date: '2026-01-01', type: 'expense', category: '식비', amount: -5000, fromAssetId: 'a1', memo: '점심' },
+    { id: 't2', date: '2026-01-02', type: 'income', category: '잔액 조정', amount: 999999, toAssetId: 'a1', memo: '재등록 잔액 조정', adjust: true, adjustAsset: 'a1' },
+  ];
+  const csv = sandbox.txnsToCSV(txns.filter(t => !(t.adjust && !t.inSurplus)), assets);
+  assert.ok(csv.includes('점심'), '일반 거래는 그대로 포함돼야 함');
+  assert.ok(!csv.includes('잔액 조정'), 'inSurplus가 꺼진(기본값) 잔액 조정 항목은 제외돼야 함');
+});
+test('txnsToCSV+doExport 필터: inSurplus를 켠 잔액 조정 항목은 다른 집계와 동일하게 CSV에 포함된다', () => {
+  const assets = [{ id: 'a1', name: '주계좌' }];
+  const txns = [
+    { id: 't2', date: '2026-01-02', type: 'income', category: '잔액 조정', amount: 999999, toAssetId: 'a1', memo: '재등록 잔액 조정', adjust: true, adjustAsset: 'a1', inSurplus: true },
+  ];
+  const csv = sandbox.txnsToCSV(txns.filter(t => !(t.adjust && !t.inSurplus)), assets);
+  assert.ok(csv.includes('잔액 조정'), 'inSurplus를 켠 잔액 조정 항목은 monthStats 등과 동일하게 포함돼야 함');
+});
+
 /* ---------- 거래 내역 CSV 가져오기 (app-evolve cycle54 advance) ---------- */
 test('parseCSV: 따옴표로 감싼 필드 안의 콤마/줄바꿈/이스케이프된 큰따옴표를 올바르게 되돌린다', () => {
   // vm 샌드박스 안에서 만들어진 배열은 host의 Array와 realm이 달라 deepStrictEqual이
