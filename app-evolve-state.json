@@ -1,7 +1,11 @@
 {
   "cycle": 83,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "RANGE_FROM 고정 날짜 롤링 윈도우화 + 백업 복원 시 범위 밖 데이터 무경고 배제 알림",
+    "why": "RANGE_FROM='2023-01-01'(index.html:2030)이 TODAY 기준 롤링이 아닌 고정 리터럴이라, (1) balancesUpTo/allTxns 등 모든 잔액·집계가 걸리는 조회 윈도우 폭이 앱을 쓸수록(현재 이미 ~3.7년) 무한정 늘어나 expandRec/allTxns 비용이 영구히 커지고, (2) restoreBackup()/sanitizeBackup()(4949-5001)이 CSV 가져오기의 rangeCount(buildImportPreview, 4836)와 달리 RANGE_FROM 이전 날짜 txns/recurrences를 전혀 검사하지 않아, 복원된 데이터가 DB엔 남으면서도 balancesUpTo/CSV export 등 모든 잔액·집계에서 조용히 빠지는데도 fixedCount/droppedCount 어디에도 잡히지 않는다(dateBelowRangeFloor 주석 2031-2032가 명시한 '저장은 됐는데 잔액엔 안 잡히는 상태를 막는다'는 원칙을 백업 복원 경로만 위반). 실사용 중인 데이터 무결성 버그 + 무경계 성능 저하가 겹친 사례로, 지금까지 고쳐온 '백업 복원 경로에서 데이터가 조용히 오염/누락되는' 버그 계열(unsnapshotAssetName, doExport adjust 필터 등)과 같은 부류이면서 아직 다뤄지지 않은 지점.",
+    "approach": "1) index.html:2030의 const RANGE_FROM='2023-01-01'을 TODAY 기준 롤링 값(예: addDays(TODAY,-N*365), N=5~7년)으로 바꾸고, RANGE_TO/DISP_TO가 재계산되는 지점(TODAY 갱신부, index.html:6475 부근)에서 RANGE_FROM도 함께 재계산해 매일 고정폭을 유지하도록 한다(const->let 전환 필요). 이때 BUDGET_EPOCH('2000-01', migrate 전용)처럼 이 변경과 무관한 다른 상수와 혼동하지 않는다. 2) sanitizeBackup()/restoreBackup() 경로에 rangeCount 대응하는 preRangeCount(또는 유사 이름) 카운트를 추가해, 복원될 txns/recurrences 중 새 RANGE_FROM보다 이른 날짜가 몇 건인지 세고, importFile change 핸들러(4996-5013)의 undoToast 메시지(notes 배열)에 그 건수를 노출해 사용자가 '복원은 됐지만 오래된 항목은 집계에 안 잡힌다'는 사실을 알 수 있게 한다. CSV 가져오기 쪽의 rangeCount/buildImportPreview 노출 패턴을 참고해 문구 스타일을 맞춘다. 3) test/run.js에 회귀 테스트 추가: (a) TODAY를 바꿔가며 RANGE_FROM이 그에 맞춰 롤링되고 윈도우 폭이 고정됨을 직접 검증, (b) preRangeCount류 함수가 RANGE_FROM 이전/이후 경계에서 정확히 카운트함을 직접 검증. 4) 윈도우 폭이 넓어지는 것 자체가 기존 pruneNwHistory 등 다른 prune 로직과 상호작용할 수 있는지 확인(다만 이번 변경은 RANGE_FROM만 다루고 nwHistory 압축 로직 자체는 건드리지 않는다)."
+  },
   "history": [
     {
       "cycle": 78,
@@ -141,6 +145,13 @@
       "phase": "review",
       "timestamp": "2026-09-25T06:10:00.000Z",
       "summary": "develop 커밋(527379e, doExport(csv) 잔액 조정 항목 누락 필터링 수정)을 검토. grep으로 `t.adjust&&!t.inSurplus` 패턴이 쓰이는 8개 호출부(2080,2209,2218,3010,3716-3717,4137,5624,5637)를 모두 확인해 doExport()에 추가된 필터가 그 패턴과 정확히 동일함을 검증. txnsToCSV()의 유일한 호출부가 doExport() 하나뿐이라 다른 곳과의 불일치 위험이 없음도 재확인. 필터가 isCsv 분기에만 적용돼 JSON 백업(원장 그대로여야 함)에는 영향이 없음을 diff에서 확인. txnsToCSV 자체가 빈 배열을 넘겨도 헤더만 있는 CSV를 정상 반환함을 소스로 확인해 극단적으로 모든 거래가 필터링되는 경우도 안전함을 검증. 두 인라인 <script> 블록 node --check 통과, node test/run.js 565/565 통과. 코드 변경 없음(이상 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 83,
+      "phase": "critique",
+      "timestamp": "2026-09-25T07:11:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체 재검토. RANGE_FROM='2023-01-01'(index.html:2030)이 TODAY 기준 롤링이 아닌 고정 리터럴이라 allTxns(RANGE_FROM,RANGE_TO) 기반 모든 잔액·집계(balancesUpTo, 홈 알림, 원장, 계획, CSV export 등)의 조회 윈도우 폭이 앱을 쓸수록(현재 이미 약 3.7년) 무한정 늘어나는 구조적 성능 문제 발견. 더 치명적으로, restoreBackup()/sanitizeBackup()(4946-5001)은 CSV 가져오기의 rangeCount(buildImportPreview, 4836)와 달리 RANGE_FROM 이전 날짜 txns/recurrences를 전혀 검사·경고하지 않아, 백업으로 복원된 오래된 데이터가 DB엔 살아있으면서도 dateBelowRangeFloor(2033) 주석이 명시한 대로 모든 잔액·집계에서 조용히 빠지는데도 복원 완료 토스트의 fixedCount/droppedCount(5013-5015) 어디에도 잡히지 않음을 index.html 실제 코드로 확인 완료 — 지금까지 고친 '백업 복원 경로 데이터 오염/누락' 계열(cycle79 unsnapshotAssetName, cycle83 doExport adjust 필터)과 같은 종류이면서 아직 다뤄지지 않은 지점. pending_advance_plan에 (1) RANGE_FROM을 TODAY 기준 롤링 값으로 전환, (2) 복원 시 preRangeCount류 카운트를 추가해 undoToast 메시지에 노출, (3) 관련 회귀 테스트 추가 계획 저장. 코드 변경 없음(git status/diff 비어있음 확인).",
       "commit": null
     }
   ]
