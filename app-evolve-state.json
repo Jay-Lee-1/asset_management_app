@@ -1,15 +1,8 @@
 {
   "cycle": 84,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 79,
-      "phase": "review",
-      "timestamp": "2026-09-24T14:08:50.102Z",
-      "summary": "develop 커밋(741f413, deleteAssetsUndo undo 콜백에 unsnapshotAssetName 추가)을 검토. unsnapshotAssetName(id)이 snapshotAssetName(id)과 정확히 대칭(fromAssetId/toAssetId===id인 txns/recurrences의 스냅샷 이름 delete)임을 확인. 자산 id/name 이중상태가 생길 수 있는 다른 경로(relinkDeletedAsset)도 점검 - 이쪽은 삭제 전 자산과 다른 새 id를 발급받아 재연결하는 별개 흐름이고 relinkDeletedAsset 자체가 이미 재연결 시 스냅샷 이름을 지우므로 이번 버그와 무관, 추가 조치 불필요. 533/533 통과. 코드 변경 없음(이상 없음).",
-      "commit": null
-    },
     {
       "cycle": 79,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-25T10:12:06.615Z",
       "summary": "Explore 서브에이전트로 발견한 csvRowToImportTxn() 금액 검증 누락 수정. num()으로 입력하는 다른 모든 금액 입력 경로(거래/반복거래 폼)는 [^0-9]만 남기는 정규식으로 항상 정수 amount를 만드는게 앱 전체 관례(원 단위 통화라 소수 없음)인데, CSV 가져오기만 유일하게 amount=Number(amountRaw) 후 finite/양수만 검사하고 Number.isInteger 검사가 없어 15000.5 같은 소수 금액이 그대로 통과해 DB.txns에 들어갔다. balancesUpTo/balanceAt은 표시(comma())에서만 반올림하고 저장값 자체는 그대로 누적하므로, 이렇게 들어온 소수 잔여가 계좌 잔액에 영구히 남고 이후 잔액 조정(updateBalanceAdjust, gap=Math.round(...))이 그 잔여를 조용히 흡수해 원인 불명의 자투리 조정 항목으로 위장된다. csvRowToImportTxn()의 금액 검증(index.html:4785)에 !Number.isInteger(amount) 조건을 추가해 소수 금액 행을 error:amount로 거부(기존 0/음수/비숫자와 동일하게 invalidCount로 집계, CSV 가져오기 미리보기에서 걸러짐). 15000.0처럼 정수로 떨어지는 소수 표기는 Number.isInteger가 true라 그대로 허용됨도 확인. test/run.js에 회귀 테스트 1개 추가(소수 금액 거부 + 정수로 떨어지는 소수 표기 허용) — 조건을 임시로 되돌려 실제로 실패함을 확인한 뒤 재적용. 두 인라인 <script> 블록 node --check 통과, node test/run.js 568/568 통과(기존 567 + 신규 1). APP_VERSION 1.46.37->1.46.38, sw.js CACHE v199->v200.",
+      "commit": null
+    },
+    {
+      "cycle": 84,
+      "phase": "review",
+      "timestamp": "2026-09-25T11:10:00.000Z",
+      "summary": "develop 커밋(61b6947, csvRowToImportTxn() 소수 금액 무경고 통과 버그 수정)을 검토. amount=Number(amountRaw) 뒤 !Number.isInteger(amount) 조건이 기존 finite/양수 검사와 자연스럽게 합쳐져 error:'amount'로 거부됨을 확인, 이 error 값이 buildImportPreview()에서 error==='range'가 아닌 모든 경우 invalidCount에 집계되는 기존 분기(index.html:4821)를 그대로 타 미리보기 안내 문구('형식을 알 수 없는 N행은 제외')에 정상 노출됨을 grep으로 확인. amountRaw가 이미 콤마 제거 후 문자열이라 '15,000.5' 같은 입력도 동일하게 걸러짐을 확인. 새 회귀 테스트가 소수 거부/정수로 떨어지는 소수 표기(5000.0) 허용 두 케이스를 함께 검증함을 확인. node test/run.js 568/568 통과. 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
