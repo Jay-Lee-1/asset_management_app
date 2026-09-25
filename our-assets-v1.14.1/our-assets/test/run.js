@@ -3084,6 +3084,27 @@ test('monthOutflows: 잔액 조정이 없으면 지출/저축이 평범하게 �
   assert.strictEqual(total, 130000);
 });
 
+/* ---------- planGaugeCard: 홈 "저축" 게이지는 이체(transfer)를 저축과 섞으면 안 된다 ---------- */
+test('planGaugeCard: 계좌 간 이체가 있어도 저축 게이지의 실제/예정 금액은 saving 금액만 반영한다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.DB = {
+    settings: {},
+    txns: [
+      { id: 't1', type: 'saving', date: '2026-06-05', amount: 50000 },
+      { id: 't2', type: 'transfer', date: '2026-06-10', amount: 500000 },
+      { id: 't3', type: 'saving', date: '2026-06-20', amount: 50000 }, // 미래 회차(예정)
+    ],
+    recurrences: [],
+  };
+  const S = sandbox.monthStats(2026, 6);
+  const html = sandbox.planGaugeCard(S, 2026, 6);
+  const savingRow = html.split('pg-row')[3]; // 수입/지출/저축 순서 중 세 번째 행
+  assert.ok(savingRow.includes(sandbox.comma(50000))); // 실제(오늘까지)는 saving 50000뿐, transfer 500000은 섞이지 않음
+  assert.ok(savingRow.includes(sandbox.comma(100000))); // 예정(plan)도 saving 50000+50000=100000뿐
+  assert.ok(!savingRow.includes(sandbox.comma(550000)));
+  assert.ok(!savingRow.includes(sandbox.comma(600000)));
+});
+
 /* ---------- pendingTransferCount: 반복거래로 만들어지는 미확인 이체도 세어야 한다 ---------- */
 function pendingRec(overrides) {
   return Object.assign({
