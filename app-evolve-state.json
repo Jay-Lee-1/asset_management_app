@@ -1,15 +1,8 @@
 {
   "cycle": 86,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 81,
-      "phase": "develop",
-      "timestamp": "2026-09-24T21:10:00.000Z",
-      "summary": "Explore 서브에이전트로 발견한 saveTx()/saveRec()의 expense/income 자산 미선택 저장 버그 수정. transfer/saving은 fromAssetId/toAssetId가 비어있으면 '보내는·받는 자산을 선택해 주세요' 토스트로 막았지만, expense/income은 이 가드가 전혀 없어 d.type==='expense'?d.toAssetId=null:d.fromAssetId=null 처리만 하고 정작 써야 할 쪽(expense의 fromAssetId, income의 toAssetId)이 null이어도 그냥 저장됐다. openTxSheet()/openRecSheet()가 fromAssetId 기본값으로 쓰는 firstCash()는 현금성 자산이 하나도 없으면(주식·금 등만 보유한 신규 계정, 유일한 현금 자산을 삭제한 직후 등) null을 반환하므로 실사용에서 자산 없이 지출/수입이 저장되는 경로가 실제로 존재했다. balanceAt/balancesUpTo는 fromAssetId/toAssetId 매치로만 잔액을 반영하므로 이렇게 저장된 거래는 어떤 자산 잔액에도 반영되지 않고 총자산에서 조용히 빠진 채 지출/수입 총계·카테고리 집계에만 남는다. saveTx/saveRec 둘 다 transfer/saving 가드 바로 다음, toAssetId/fromAssetId를 null 처리하는 줄 앞에 `if(d.type==='expense'&&!d.fromAssetId){toast('자산을 선택해 주세요');return}`/`if(d.type==='income'&&!d.toAssetId){...}` 두 줄씩 추가. test/run.js에 saveTx/saveRec 각각 지출·수입 자산 미선택 케이스(저장 차단+토스트 확인) 2개씩과 saveTx 정상 케이스(회귀 없음 확인) 1개, 총 회귀 테스트 5개 추가 — 가드를 임시로 제거해 그중 4개(정상 케이스 제외)가 실제로 실패함을 확인한 뒤 재적용. 두 인라인 <script> 블록 node --check 통과, node test/run.js 552/552 통과(기존 547 + 신규 5). APP_VERSION 1.46.31->1.46.32, sw.js CACHE v193->v194.",
-      "commit": null
-    },
     {
       "cycle": 81,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-25T17:15:00.000Z",
       "summary": "critique 계획대로 순수 함수 normName(s) 추가(trim 후 공백류를 단일 공백으로 접고 toLowerCase, esc() 바로 아래에 배치)하고 addCat/doRenameCat/addOwner/doRenameOwner 네 곳의 완전 일치 중복 판정을 normName 기반 비교로 교체 — 이름이 근접 중복이면 '비슷한 카테고리/귀속이 있어요: 기존이름' 토스트로 기존 이름을 노출하고, 정확히 같은 이름이면 기존과 동일한 '이미 있는 ~예요' 문구를 유지. 두 rename 함수는 자기 자신(old/인덱스)을 비교 대상에서 제외해 이름의 대소문자만 바꾸는 셀프 변경은 막지 않음(예: 'Food'->'food'는 허용, 다른 카테고리와의 대소문자 충돌만 차단) — critique 계획엔 명시되지 않았지만 doRenameOwner가 이미 같은 패턴(자기 old 제외)을 쓰고 있어 일관성을 맞춤. test/run.js FUNCTIONS에 normName/addOwner 추가, $ mock에 newOwner/renameOwner id 지원 추가, normName 자체 테스트 3개 + addCat/doRenameCat/addOwner/doRenameOwner 각각 근접중복 차단·자기자신 예외·정상 케이스 검증 테스트 9개, 총 12개 추가 — FUNCTIONS 목록 갱신 전엔 'normName is not defined'로 6개가 실제로 실패함을 확인한 뒤 정상화. 두 인라인 <script> 블록 node --check 통과, node test/run.js 584/584 통과(기존 572 + 신규 12). APP_VERSION 1.46.40->1.46.41, sw.js CACHE v202->v203. 계획에 있던 '기존 근접 중복 데이터 병합 도구'는 범위 밖으로 명시 제외(신규 생성 경로만 차단).",
+      "commit": null
+    },
+    {
+      "cycle": 86,
+      "phase": "develop",
+      "timestamp": "2026-09-25T18:12:00.000Z",
+      "summary": "Explore 서브에이전트로 발견한 doMaturity() 만기 이체 금액 오산정 버그 수정. 저축 자산은 assetEval(a)가 assetBalance(a.id)=balanceAt(a.id,schHorizon())로 흘러, '예정 포함' 설정(includeScheduled)이 켜져 있으면 schHorizon()이 TODAY가 아니라 이번 달 말일까지 투영한 잔액을 반환한다(원래 홈/자산카드 표시용 설계). doMaturity()가 이 투영값을 그대로 실제 이체 금액으로 써서, 만기 처리 시점(오늘 또는 만기일, 항상 <=TODAY)과 이번 달 말 사이에 그 저축 계좌로 들어올 예정인 다른 입금(예: 매달 28일 자동이체)까지 만기 이체 금액에 섞여 부풀려졌다 — 저축 계좌는 삭제되지 않고 만기일만 null로 지워지므로, 나중에 그 예정 입금이 실제로 발생하면 이미 이체된 금액이 같은 돈을 한 번 더 반영해 이중계상됨. doMaturity()에서 date를 먼저 계산한 뒤 amt=balanceAt(a.id,date)로 바꿔 '이체 시점까지 실제 반영된 잔액'만 옮기도록 수정, 미리보기(openMaturity())도 같은 date 기준 balanceAt으로 바꿔 이체 전 금액 표시가 실제 이체될 금액과 어긋나지 않도록 함께 고침. test/run.js에 회귀 테스트 1개 추가(예정 포함 설정 + 6/28 예정 입금 2000이 있는 상태에서 6/15에 만기 이체하면 이체 금액이 baseAmount(5000)만이고 미래 입금은 섞이지 않음 확인) — 고치기 전 코드로 되돌려(git stash) 실제로 실패함을 확인한 뒤 재적용. 두 인라인 <script> 블록 node --check 통과, node test/run.js 585/585 통과(기존 584 + 신규 1). APP_VERSION 1.46.41->1.46.42, sw.js CACHE v203->v204.",
       "commit": null
     }
   ]

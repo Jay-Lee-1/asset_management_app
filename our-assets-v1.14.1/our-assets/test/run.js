@@ -4657,6 +4657,19 @@ test('doMaturity: 정상적인 다른 자산이 대상이면 기존처럼 이체
   assert.strictEqual(t.toAssetId, 'a_cash');
   assert.strictEqual(sandbox.DB.assets.find(a => a.id === 'a_sav').maturityDate, null);
 });
+/* ---------- doMaturity: assetEval()이 저축 자산에 대해 schHorizon() 투영(예정 포함 설정 시
+ * 이번 달 말까지 반영)을 쓰는 assetBalance()로 흐르는데, 만기 이체 금액을 그 값으로 계산해
+ * 아직 도래하지 않은 이번 달 예정 입금까지 실제 이체 금액에 얹던 버그(app-evolve cycle86 develop).
+ * balanceAt(a.id, date)로 바꿔 '만기 이체 시점'까지 실제 반영된 잔액만 옮기도록 고쳤다. ---------- */
+test('doMaturity: 예정 포함 설정에서도 오늘 이후 예정된 입금은 만기 이체 금액에 포함되지 않는다', () => {
+  setupMaturityDB();
+  sandbox.DB.settings.includeScheduled = true;
+  sandbox.DB.assets.find(a => a.id === 'a_sav').maturityTargetId = 'a_cash';
+  sandbox.DB.txns.push({ id: 't_future', type: 'income', date: '2026-06-28', category: '급여', memo: '', amount: 2000, fromAssetId: null, toAssetId: 'a_sav', confirmed: true });
+  sandbox.doMaturity('a_sav');
+  const t = sandbox.DB.txns.find(x => x.type === 'transfer' && x.fromAssetId === 'a_sav');
+  assert.strictEqual(t.amount, 5000, '아직 오지 않은 6/28 예정 입금 2000은 6/15 만기 이체 금액에 섞이면 안 됨');
+});
 
 /* ---------- detectStaleMarketValuedTxns: excludeMarketValued(cycle27) 적용 이전에 이미
    저장된 fx/gold/stock 오용 이체·지출·수입·저축 기록 탐지 ---------- */

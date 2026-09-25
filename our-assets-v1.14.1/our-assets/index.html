@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.41';
+const APP_VERSION='1.46.42';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4270,7 +4270,8 @@ function openMaturity(){
  const sav=DB.assets.filter(a=>a.type==='savings'&&a.maturityDate);
  openSheet(`<h3>저축 만기 알림</h3><div class="desc">만기 30일 이내 저축을 알려드려요</div>
   ${sav.length?sav.map(a=>{const target=DB.assets.find(x=>x.id===a.maturityTargetId);const soon=a.maturityDate<=addDays(TODAY,30);
-   return `<div class="manage-row"><div style="flex:1"><div class="mn">${esc(a.name)} ${soon?'<span class="mini sch">임박</span>':''}</div><div class="msub">만기 ${a.maturityDate} · ${comma(assetEval(a))}원 → ${target?esc(target.name):'미지정'}</div></div>
+   const mDate=a.maturityDate<=TODAY?a.maturityDate:TODAY; /* doMaturity()가 실제로 이체할 금액(만기일 기준 실잔액)과 같은 값을 미리보여줌 — assetEval()의 예정 포함 투영과는 다를 수 있음 */
+   return `<div class="manage-row"><div style="flex:1"><div class="mn">${esc(a.name)} ${soon?'<span class="mini sch">임박</span>':''}</div><div class="msub">만기 ${a.maturityDate} · ${comma(balanceAt(a.id,mDate))}원 → ${target?esc(target.name):'미지정'}</div></div>
     ${soon?`<button class="btn-sm btn btn-primary" style="width:auto;padding:0 14px" onclick="doMaturity('${a.id}')">이체</button>`:''}</div>`}).join('')
    :`<div class="empty"><div class="ei">${svg('piggy')}</div><div class="et">아직 모으는 중인 게 없네요</div><div class="es">작게라도 시작해볼까요?</div></div>`}
   <div style="height:12px"></div><button class="btn btn-soft" onclick="closeSheet()">닫기</button>`);
@@ -4278,8 +4279,8 @@ function openMaturity(){
 function doMaturity(id){if(twGuard())return;const a=DB.assets.find(x=>x.id===id);const target=DB.assets.find(x=>x.id===a.maturityTargetId);
  if(!target){toast('이체할 통장을 먼저 지정하세요');return}
  if(target.id===a.id){toast('자기 자신으로는 이체할 수 없어요. 이체할 통장을 다시 선택해주세요');return}
- const amt=assetEval(a);
  const date=a.maturityDate<=TODAY?a.maturityDate:TODAY;
+ const amt=balanceAt(a.id,date); /* assetEval()의 schHorizon 투영(예정 포함 시 이번 달 말까지)은 만기 이체 시점의 실제 잔액과 다를 수 있어 사용하지 않음 */
  DB.txns.push({id:uid(),type:'transfer',date,category:'이체',memo:`${a.name} 만기 이체`,amount:amt,
   fromAssetId:a.id,toAssetId:target.id,
   confirmed:DB.settings.confirmTransfers?false:true}); /* 실제로 옮겼는지 확인받음 */
