@@ -2815,6 +2815,30 @@ test('sanitizeBackup: assets/txns가 없거나 배열이 아니어도 터지지 
   assert.strictEqual(fixedCount, 0);
   assert.strictEqual(droppedCount, 0);
 });
+/* app-evolve cycle83 advance: CSV 가져오기(buildImportPreview)는 RANGE_FROM 이전 행을
+ * rangeCount로 세어 사용자에게 보여주는데(1915줄), 백업/클라우드 복원(sanitizeBackup) 경로는
+ * 이 카운트가 없어 복원된 txn이 DB엔 남으면서도 잔액·집계에서만 조용히 빠지는 걸 사용자가
+ * 알 방법이 없었다. droppedCount(레코드 자체 제거)와 구분되는 rangeCount를 추가했다. */
+test("sanitizeBackup: RANGE_FROM 이전 날짜 거래는 제거하지 않되 rangeCount로 센다(droppedCount와 구분)", () => {
+  const { data, droppedCount, rangeCount } = sandbox.sanitizeBackup({
+    assets: [],
+    txns: [
+      { id: 't1', date: '2020-01-01', amount: 1000 },
+      { id: 't2', date: sandbox.RANGE_FROM, amount: 2000 },
+      { id: 't3', date: '2026-01-01', amount: 3000 },
+    ],
+  });
+  assert.strictEqual(data.txns.length, 3, 'RANGE_FROM 이전이어도 레코드는 그대로 유지되어야 함');
+  assert.strictEqual(droppedCount, 0);
+  assert.strictEqual(rangeCount, 1, 'RANGE_FROM 당일은 하한선에 포함되어 rangeCount에 안 잡혀야 함');
+});
+test("sanitizeBackup: RANGE_FROM 이전 날짜가 없으면 rangeCount는 0이다(정상 케이스는 회귀 없음)", () => {
+  const { rangeCount } = sandbox.sanitizeBackup({
+    assets: [],
+    txns: [{ id: 't1', date: '2026-01-01', amount: 1000 }],
+  });
+  assert.strictEqual(rangeCount, 0);
+});
 test('sanitizeBackup: 원본 obj를 변형하지 않는다', () => {
   const orig = { txns: [{ id: 't1', date: '2026-01-01', amount: 'bad' }], assets: [] };
   const origAmount = orig.txns[0].amount;

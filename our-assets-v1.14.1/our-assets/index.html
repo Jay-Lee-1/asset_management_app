@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.36';
+const APP_VERSION='1.46.37';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1697,9 +1697,9 @@ async function resolveCloudPullRemote(){
  closeSheet();toast('불러오는 중…');
  const remote=await pullCloud();
  if(remote){
-  const{data,fixedCount,droppedCount}=sanitizeBackup(remote);
+  const{data,fixedCount,droppedCount,rangeCount}=sanitizeBackup(remote);
   DB=data;migrate();invalidateBalances();try{localStorage.setItem(dataKey(),JSON.stringify(DB))}catch(e){}markCloudSynced();renderCurrent();
-  toast((fixedCount||droppedCount)?'최신 클라우드 데이터를 가져왔어요 · 값을 보정했어요':'최신 클라우드 데이터를 가져왔어요');
+  toast((fixedCount||droppedCount)?'최신 클라우드 데이터를 가져왔어요 · 값을 보정했어요':rangeCount?`최신 클라우드 데이터를 가져왔어요 · ${RANGE_FROM} 이전 날짜 ${rangeCount}건은 잔액에 반영 안 돼요`:'최신 클라우드 데이터를 가져왔어요');
  }else toast('가져오기에 실패했어요');
 }
 /* 이 함수는 로컬 DB를 전혀 바꾸지 않는다(로컬→클라우드로 push만 함) — 되돌릴 수 없는 건
@@ -4947,7 +4947,7 @@ const SANITIZE_FREE_FIELDS=['baseAmount','amountKRW']; /* 자산 잔액 — 마�
  * 쓸 수 있게). id(txns는 date도) 없는 레코드는 나머지 로직이 전제하는 최소 형태를 못 갖춘
  * 것으로 보고 통째로 제거한다. */
 function sanitizeBackup(obj){
- let fixedCount=0,droppedCount=0;
+ let fixedCount=0,droppedCount=0,rangeCount=0;
  const srcTxns=Array.isArray(obj&&obj.txns)?obj.txns:[];
  const txns=[];
  srcTxns.forEach(t=>{
@@ -4958,6 +4958,11 @@ function sanitizeBackup(obj){
    * 않으면 손상된 백업/원격 데이터의 음수 amount가 balancesUpTo()의 -sign*t.amount 계산에서
    * 부호가 뒤집혀 반대 방향 입출금으로 조용히 오염된다. */
   if('amount' in d){const n=sanitizeAmount(d.amount,0);if(n!==d.amount){d.amount=n;fixedCount++}}
+  /* CSV 가져오기(buildImportPreview)는 RANGE_FROM 이전 행을 rangeCount로 세어 사용자에게
+   * 보여주는데, 백업/클라우드 복원 경로만 이 카운트가 없었다 — 복원된 txn은 DB엔 그대로
+   * 남지만 dateBelowRangeFloor()보다 이른 날짜라 allTxns(RANGE_FROM,*) 기반 잔액·집계에서는
+   * 조용히 빠지므로, droppedCount(레코드 자체가 사라짐)와는 별도로 세어 알려야 한다. */
+  if(dateBelowRangeFloor(d.date))rangeCount++;
   txns.push(d);
  });
  const srcAssets=Array.isArray(obj&&obj.assets)?obj.assets:[];
@@ -4992,7 +4997,7 @@ function sanitizeBackup(obj){
   }
   recurrences.push(d);
  });
- return {data:Object.assign({},obj,{txns,assets,recurrences}),fixedCount,droppedCount};
+ return {data:Object.assign({},obj,{txns,assets,recurrences}),fixedCount,droppedCount,rangeCount};
 }
 /* obj.assets/obj.txns가 배열인지까지 검증한 뒤 DB를 통째로 교체한다. migrate()가 손상된
  * obj 때문에 중간에 throw해도 DB가 절반만 마이그레이션된 채로 남지 않도록, 실패 시 교체 전
@@ -5007,11 +5012,12 @@ function restoreBackup(obj){
 $('importFile').addEventListener('change',e=>{
  const f=e.target.files[0];if(!f)return;const r=new FileReader();
  r.onload=()=>{try{const raw=JSON.parse(r.result);if(!Array.isArray(raw.assets)||!Array.isArray(raw.txns))throw 0;
-  const{data:obj,fixedCount,droppedCount}=sanitizeBackup(raw);
+  const{data:obj,fixedCount,droppedCount,rangeCount}=sanitizeBackup(raw);
   confirmSheet('데이터 복원','현재 데이터를 백업 파일로 교체할까요?<br><span style="color:var(--text-2);font-size:13px">복원 후 6초 안에는 되돌릴 수 있어요.</span>','복원',()=>{
    let prev;try{prev=restoreBackup(obj)}catch(err){toast('손상된 백업 파일이라 복원할 수 없어요');return}
    save();invalidateBalances();renderCurrent();
    const notes=[];if(fixedCount)notes.push(`값 ${fixedCount}건 보정`);if(droppedCount)notes.push(`${droppedCount}건 제외`);
+   if(rangeCount)notes.push(`${RANGE_FROM} 이전 날짜 ${rangeCount}건은 내역엔 남지만 잔액엔 반영 안 돼요`);
    const msg=notes.length?`데이터를 복원했어요 · ${notes.join(', ')}`:'데이터를 복원했어요';
    undoToast(msg,()=>{DB=prev;save();invalidateBalances();renderCurrent();toast('되돌렸어요')});
   });

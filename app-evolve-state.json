@@ -1,26 +1,8 @@
 {
-  "cycle": 83,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "RANGE_FROM 고정 날짜 롤링 윈도우화 + 백업 복원 시 범위 밖 데이터 무경고 배제 알림",
-    "why": "RANGE_FROM='2023-01-01'(index.html:2030)이 TODAY 기준 롤링이 아닌 고정 리터럴이라, (1) balancesUpTo/allTxns 등 모든 잔액·집계가 걸리는 조회 윈도우 폭이 앱을 쓸수록(현재 이미 ~3.7년) 무한정 늘어나 expandRec/allTxns 비용이 영구히 커지고, (2) restoreBackup()/sanitizeBackup()(4949-5001)이 CSV 가져오기의 rangeCount(buildImportPreview, 4836)와 달리 RANGE_FROM 이전 날짜 txns/recurrences를 전혀 검사하지 않아, 복원된 데이터가 DB엔 남으면서도 balancesUpTo/CSV export 등 모든 잔액·집계에서 조용히 빠지는데도 fixedCount/droppedCount 어디에도 잡히지 않는다(dateBelowRangeFloor 주석 2031-2032가 명시한 '저장은 됐는데 잔액엔 안 잡히는 상태를 막는다'는 원칙을 백업 복원 경로만 위반). 실사용 중인 데이터 무결성 버그 + 무경계 성능 저하가 겹친 사례로, 지금까지 고쳐온 '백업 복원 경로에서 데이터가 조용히 오염/누락되는' 버그 계열(unsnapshotAssetName, doExport adjust 필터 등)과 같은 부류이면서 아직 다뤄지지 않은 지점.",
-    "approach": "1) index.html:2030의 const RANGE_FROM='2023-01-01'을 TODAY 기준 롤링 값(예: addDays(TODAY,-N*365), N=5~7년)으로 바꾸고, RANGE_TO/DISP_TO가 재계산되는 지점(TODAY 갱신부, index.html:6475 부근)에서 RANGE_FROM도 함께 재계산해 매일 고정폭을 유지하도록 한다(const->let 전환 필요). 이때 BUDGET_EPOCH('2000-01', migrate 전용)처럼 이 변경과 무관한 다른 상수와 혼동하지 않는다. 2) sanitizeBackup()/restoreBackup() 경로에 rangeCount 대응하는 preRangeCount(또는 유사 이름) 카운트를 추가해, 복원될 txns/recurrences 중 새 RANGE_FROM보다 이른 날짜가 몇 건인지 세고, importFile change 핸들러(4996-5013)의 undoToast 메시지(notes 배열)에 그 건수를 노출해 사용자가 '복원은 됐지만 오래된 항목은 집계에 안 잡힌다'는 사실을 알 수 있게 한다. CSV 가져오기 쪽의 rangeCount/buildImportPreview 노출 패턴을 참고해 문구 스타일을 맞춘다. 3) test/run.js에 회귀 테스트 추가: (a) TODAY를 바꿔가며 RANGE_FROM이 그에 맞춰 롤링되고 윈도우 폭이 고정됨을 직접 검증, (b) preRangeCount류 함수가 RANGE_FROM 이전/이후 경계에서 정확히 카운트함을 직접 검증. 4) 윈도우 폭이 넓어지는 것 자체가 기존 pruneNwHistory 등 다른 prune 로직과 상호작용할 수 있는지 확인(다만 이번 변경은 RANGE_FROM만 다루고 nwHistory 압축 로직 자체는 건드리지 않는다)."
-  },
+  "cycle": 84,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 78,
-      "phase": "critique",
-      "timestamp": "2026-09-24T11:10:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체 재검토. 시세 연동 관리 시트의 setRate(kind,key,val)(index.html:4435-4436)가 입력이 빈 문자열/비숫자일 때 n=0을 그대로 DB.rates.fx/goldPerG/stocks에 확정 저장하는데, rateUnknown()(index.html:2128-2134)은 값이 null일 때만 '미확인'으로 판정해 저장된 0은 정상 시세로 오인되고 assetEval()이 그 자산 평가액을 경고 없이 0으로 만드는 버그 발견(코드 자체의 주석 2125-2127이 명시한 '미확인 vs 실제 0원' 구분 원칙을 setRate만 위반). setRate는 test/run.js에 회귀 커버리지 0. index.html:4435-4436/2128-2134 인용해 실제 코드로 재확인 완료. pending_advance_plan에 구체 수정 방향(0 결과는 delete로 처리해 rateUnknown 관례 유지, rateUnknown<=0도 미확인 취급 검토, setRate 회귀 테스트 3종 추가) 저장.",
-      "commit": null
-    },
-    {
-      "cycle": 78,
-      "phase": "advance",
-      "timestamp": "2026-09-24T12:09:27.035Z",
-      "summary": "critique 계획대로 setRate(kind,key,val)의 조용한 0원 확정 저장 버그 수정. 파싱 결과 n<=0(빈 입력/비숫자)이면 fx/stock은 DB.rates.fx[key]/stocks[key]를 delete해 rateUnknown()의 ==null 판정을 그대로 타게 하고, gold는 원래도 rateUnknown이 !goldPerG로 0을 미확인 취급하므로 0을 그대로 두되 명시적으로 처리. rateUnknown() 자체는 수정 불필요(gold 경로는 이미 안전했음을 확인). test/run.js FUNCTIONS에 setRate 추가, 회귀 테스트 4개(fx 빈 입력, stock 비숫자 입력, 정상 입력 저장, gold 빈 입력) 추가 - fix를 stash로 임시 제거해 그중 2개(fx/stock)가 실제로 실패함을 확인한 뒤 복원. 두 인라인 <script> 블록 node --check 통과, node test/run.js 532/532 통과(기존 528 + 신규 4). APP_VERSION 1.46.27->1.46.28, sw.js CACHE v189->v190.",
-      "commit": null
-    },
     {
       "cycle": 79,
       "phase": "develop",
@@ -152,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-25T07:11:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체 재검토. RANGE_FROM='2023-01-01'(index.html:2030)이 TODAY 기준 롤링이 아닌 고정 리터럴이라 allTxns(RANGE_FROM,RANGE_TO) 기반 모든 잔액·집계(balancesUpTo, 홈 알림, 원장, 계획, CSV export 등)의 조회 윈도우 폭이 앱을 쓸수록(현재 이미 약 3.7년) 무한정 늘어나는 구조적 성능 문제 발견. 더 치명적으로, restoreBackup()/sanitizeBackup()(4946-5001)은 CSV 가져오기의 rangeCount(buildImportPreview, 4836)와 달리 RANGE_FROM 이전 날짜 txns/recurrences를 전혀 검사·경고하지 않아, 백업으로 복원된 오래된 데이터가 DB엔 살아있으면서도 dateBelowRangeFloor(2033) 주석이 명시한 대로 모든 잔액·집계에서 조용히 빠지는데도 복원 완료 토스트의 fixedCount/droppedCount(5013-5015) 어디에도 잡히지 않음을 index.html 실제 코드로 확인 완료 — 지금까지 고친 '백업 복원 경로 데이터 오염/누락' 계열(cycle79 unsnapshotAssetName, cycle83 doExport adjust 필터)과 같은 종류이면서 아직 다뤄지지 않은 지점. pending_advance_plan에 (1) RANGE_FROM을 TODAY 기준 롤링 값으로 전환, (2) 복원 시 preRangeCount류 카운트를 추가해 undoToast 메시지에 노출, (3) 관련 회귀 테스트 추가 계획 저장. 코드 변경 없음(git status/diff 비어있음 확인).",
+      "commit": null
+    },
+    {
+      "cycle": 83,
+      "phase": "advance",
+      "timestamp": "2026-09-25T08:10:00.000Z",
+      "summary": "critique 계획 중 (2)번(백업/클라우드 복원 시 RANGE_FROM 이전 날짜 무경고 배제)만 구현하고 (1)번(RANGE_FROM 롤링 윈도우화)은 이번 사이클 범위에서 제외했다: (1)을 그대로 적용하면 TODAY가 매일 전진하면서 윈도우 하한이 함께 밀려나 지금까지 정상 집계되던 오래된 실거래가 시간이 지나며 '자동으로' 잔액·집계에서 조용히 빠지게 되는데, 이는 지금까지 이 로테이션이 계속 고쳐온 '백업 복원 경로에서 데이터가 조용히 사라지는' 버그 계열을 상시 발생 경로로 재도입하는 셈이라 완화책(예: 윈도우 밖으로 밀려나는 시점에 사용자에게 알림) 없이 단일 사이클에서 안전하게 끝내기엔 범위가 크다고 판단, critique 자신도 '무경계 성능 저하'로 표현한 부차적 문제라 다음 critique가 완화책까지 포함해 다시 계획하도록 남겨둠. (2)는 그 자체로 완결되는 안전한 수정: sanitizeBackup(obj)(index.html:4949)에 rangeCount를 추가해 dateBelowRangeFloor(d.date)인 txn을 fixedCount/droppedCount와 별도로 세고(레코드는 제거하지 않음), 이를 노출하는 두 호출부(importFile change 핸들러의 undoToast 메시지, resolveCloudPullRemote()의 toast 메시지)에 CSV 가져오기의 rangeCount 문구와 같은 스타일로 'RANGE_FROM 이전 날짜 N건은 내역엔 남지만 잔액엔 반영 안 돼요'를 추가. afterCloudAuth()의 자동 동기화 경로는 사용자에게 보여줄 토스트 자체가 없어(기존 관례) 건드리지 않음. test/run.js에 sanitizeBackup rangeCount 회귀 테스트 2개 추가(RANGE_FROM 이전 날짜가 섞이면 레코드는 유지한 채 정확히 세고, RANGE_FROM 당일은 하한선에 포함되어 안 잡힘 / 이전 날짜가 없으면 0) — fix를 git stash로 임시 제거해 2개 모두 실제로 실패함을 확인한 뒤 재적용. 두 인라인 <script> 블록 node --check 통과, node test/run.js 567/567 통과(기존 565 + 신규 2). APP_VERSION 1.46.36->1.46.37, sw.js CACHE v198->v199.",
       "commit": null
     }
   ]
