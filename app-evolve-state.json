@@ -1,15 +1,8 @@
 {
   "cycle": 86,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 81,
-      "phase": "review",
-      "timestamp": "2026-09-24T22:10:00.000Z",
-      "summary": "develop 커밋(0cc3b5f, saveTx()/saveRec() expense/income 자산 미선택 가드 추가)을 검토. transfer/saving 가드와 정확히 같은 형태로 expense는 fromAssetId, income은 toAssetId 미선택 시 저장을 막음을 확인. txOpenAsset/recOpenAsset이 type과 무관하게 항상 열려 있어(3304, 3480줄) 사용자가 expense/income에서도 자산을 고를 UI 경로가 이미 존재함을 확인 — 이번 가드가 기존에 없던 입력경로를 막는 게 아니라 조용한 데이터 누락만 막음. node test/run.js 552/552 통과. 코드 변경 없음(이상 없음).",
-      "commit": null
-    },
     {
       "cycle": 81,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-25T18:12:00.000Z",
       "summary": "Explore 서브에이전트로 발견한 doMaturity() 만기 이체 금액 오산정 버그 수정. 저축 자산은 assetEval(a)가 assetBalance(a.id)=balanceAt(a.id,schHorizon())로 흘러, '예정 포함' 설정(includeScheduled)이 켜져 있으면 schHorizon()이 TODAY가 아니라 이번 달 말일까지 투영한 잔액을 반환한다(원래 홈/자산카드 표시용 설계). doMaturity()가 이 투영값을 그대로 실제 이체 금액으로 써서, 만기 처리 시점(오늘 또는 만기일, 항상 <=TODAY)과 이번 달 말 사이에 그 저축 계좌로 들어올 예정인 다른 입금(예: 매달 28일 자동이체)까지 만기 이체 금액에 섞여 부풀려졌다 — 저축 계좌는 삭제되지 않고 만기일만 null로 지워지므로, 나중에 그 예정 입금이 실제로 발생하면 이미 이체된 금액이 같은 돈을 한 번 더 반영해 이중계상됨. doMaturity()에서 date를 먼저 계산한 뒤 amt=balanceAt(a.id,date)로 바꿔 '이체 시점까지 실제 반영된 잔액'만 옮기도록 수정, 미리보기(openMaturity())도 같은 date 기준 balanceAt으로 바꿔 이체 전 금액 표시가 실제 이체될 금액과 어긋나지 않도록 함께 고침. test/run.js에 회귀 테스트 1개 추가(예정 포함 설정 + 6/28 예정 입금 2000이 있는 상태에서 6/15에 만기 이체하면 이체 금액이 baseAmount(5000)만이고 미래 입금은 섞이지 않음 확인) — 고치기 전 코드로 되돌려(git stash) 실제로 실패함을 확인한 뒤 재적용. 두 인라인 <script> 블록 node --check 통과, node test/run.js 585/585 통과(기존 584 + 신규 1). APP_VERSION 1.46.41->1.46.42, sw.js CACHE v203->v204.",
+      "commit": null
+    },
+    {
+      "cycle": 86,
+      "phase": "review",
+      "timestamp": "2026-09-25T19:10:00.000Z",
+      "summary": "develop 커밋(7f61f1c, doMaturity() 만기 이체 금액이 예정 포함 투영값을 쓰던 버그 수정)을 검토. schHorizon()/assetBalance()/balanceAt()/balancesUpTo() 소스를 직접 읽어 assetEval()이 저축 자산에 대해 includeScheduled=true일 때 이번 달 말까지 투영한 잔액을 반환하던 경로를 재확인하고, 수정된 doMaturity()가 date(<=TODAY 항상)를 먼저 계산한 뒤 balanceAt(a.id,date)로만 금액을 잡아 그 시점 이후 예정 입금이 섞이지 않음을 확인. balanceAt(id,date<=TODAY)는 balancesUpTo에서 proj=false가 되어 미확인(pending) 이체도 함께 제외됨을 확인 — 기존 confirmTransfers 설계와 일관됨. openMaturity() 미리보기도 동일한 date 기준 balanceAt으로 맞춰 doMaturity() 실제 이체 금액과 표시값이 어긋나지 않게 함께 고쳐진 것도 확인. 새 회귀 테스트가 예정 포함 설정 + 미래 예정 입금이 섞인 상태에서 실제로 baseAmount만 이체됨을 검증함을 확인. node test/run.js 585/585 통과. 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
