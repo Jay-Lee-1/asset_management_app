@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.37';
+const APP_VERSION='1.46.38';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4782,7 +4782,7 @@ function csvRowToImportTxn(cells,assets){
  const type=TYPEBYLABEL[typeLabel];
  if(!type)return{ok:false,error:'type'};
  const amount=Number(amountRaw);
- if(!Number.isFinite(amount)||amount<=0)return{ok:false,error:'amount'};
+ if(!Number.isFinite(amount)||amount<=0||!Number.isInteger(amount))return{ok:false,error:'amount'};
  if((type==='transfer'||type==='saving')&&(!fromName||!toName||fromName===toName))return{ok:false,error:'asset'};
  if(type!=='transfer'&&!category)return{ok:false,error:'category'};
  const findAsset=nm=>{if(!nm)return null;const cands=(assets||[]).filter(a=>a.name.trim()===nm&&!isMarketValued(a));return cands.length===1?cands[0]:null};

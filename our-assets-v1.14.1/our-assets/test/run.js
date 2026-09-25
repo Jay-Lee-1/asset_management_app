@@ -1847,6 +1847,16 @@ test('csvRowToImportTxn: 음수 금액은 지출/이체/저축 어느 타입이�
   const sav = sandbox.csvRowToImportTxn(['2026-01-01', '저축', '저축', '-5000', 'A', 'B', ''], assets);
   assert.strictEqual(sav.ok, false); assert.strictEqual(sav.error, 'amount');
 });
+// num()으로 입력하는 다른 모든 경로(거래/반복거래 폼)는 [^0-9]를 걷어내 amount가 항상 정수인 게
+// 앱 전체 관례(원 단위는 소수가 없음). CSV만 이 검증을 거치지 않고 Number()로 바로 파싱해
+// 15000.5 같은 소수 금액이 그대로 통과하면 balancesUpTo() 잔액에 영구히 소수 잔여가 남는다.
+test('csvRowToImportTxn: 소수 금액은 무효 처리하고, 정수로 떨어지는 소수 표기(예: 5000.0)는 허용한다', () => {
+  const frac = sandbox.csvRowToImportTxn(['2026-01-01', '지출', '식비', '15000.5', '', '', ''], []);
+  assert.strictEqual(frac.ok, false); assert.strictEqual(frac.error, 'amount');
+  const whole = sandbox.csvRowToImportTxn(['2026-01-01', '지출', '식비', '5000.0', '', '', ''], []);
+  assert.strictEqual(whole.ok, true);
+  assert.strictEqual(whole.txn.amount, 5000);
+});
 // RANGE_FROM(2023-01-01) 이전 날짜는 balancesUpTo 등 allTxns(RANGE_FROM,*) 기반 집계에서
 // 조용히 빠지므로, 형식은 유효해도 별도의 'range' 에러로 구분해 걸러낸다(형식 오류 'date'와 다름).
 test("csvRowToImportTxn: RANGE_FROM 이전 날짜는 형식은 유효해도 error:'range'로 걸러진다", () => {
