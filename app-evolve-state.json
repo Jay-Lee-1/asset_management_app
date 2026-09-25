@@ -1,15 +1,8 @@
 {
   "cycle": 85,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 80,
-      "phase": "develop",
-      "timestamp": "2026-09-24T17:10:34.265Z",
-      "summary": "doRenameCat()의 txns/recurrences 비대칭 수정. saveTx()가 빈 메모를 카테고리명으로 자동 채우는 관례상(memo===category) 대다수 거래가 이 상태인데, doRenameCat()은 recurrences는 memo===old일 때 memo도 함께 옮기면서 정작 더 흔한 txns는 category만 바꾸고 memo는 그대로 둬, 렌더가 memo||category를 주 이름으로 쓰는 구조상(index.html 여러 곳) 카테고리 이름을 바꾼 뒤에도 과거 거래 목록엔 옛 이름이 계속 주 이름으로 남고 새 이름은 보조 텍스트로만 보이는 눈에 띄는 회귀였다. txns.forEach 분기에 recurrences와 동일한 if(t.memo===old)t.memo=v를 추가. 사용자가 직접 쓴(카테고리명과 다른) 메모는 그대로 보존됨을 별도 테스트로 확인. 회귀 테스트 2개 추가(자동채움 케이스 이동/직접입력 케이스 보존) - fix를 되돌려 1개가 실제로 실패함을 확인한 뒤 재적용. 두 인라인 <script> 블록 node --check 통과, node test/run.js 539/539 통과(기존 537 + 신규 2). APP_VERSION 1.46.30->1.46.31, sw.js CACHE v192->v193.",
-      "commit": null
-    },
     {
       "cycle": 80,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-25T13:11:33.062Z",
       "summary": "critique(cycle84)가 세운 계획대로 afterCloudAuth(uid)가 remote 채택/충돌/게스트 병합/완전 신규 4갈래 각각에서 {status} 객체를 반환하도록 수정(기존 4개 return 경로에 상태값 추가, 시그니처 유지). doLogin()이 그동안 dbIsEmpty(DB)로 병합 여부를 잘못 추정해(병합 성공 시 DB가 채워져 false가 되는데 오히려 \"합쳐지지 않았어요\"라고 반대로 안내하던 버그) 이제 status===\"guestMerged\"를 직접 확인해 정확한 안내(\"게스트로 입력한 데이터를 이 계정으로 가져왔어요\")를 띄우도록 수정, 기존 dbIsEmpty(DB)&&guestHasData() 확인시트 분기와 비클라우드 로그인 분기는 그대로 유지. doSignup()의 r.cloud 분기도 동일 status를 확인해 비클라우드 분기(confirmSheet로 명시적 동의)와 톤이 맞는 안내 문구를 추가(비클라우드 분기의 확인시트 흐름 자체는 바꾸지 않음 — 클라우드는 이미 조용히 병합되는 게 기존 동작이라 이번 수정은 메시지 정확성만 다룸). test/run.js: FUNCTIONS에 guestHasData 추가, afterCloudAuth 회귀 테스트 2개 추가(remote=null+게스트데이터 있음 -> status:guestMerged로 게스트 DB 채택 확인, remote=null+게스트데이터 없음 -> status:empty 확인) — vm 컨텍스트에서 만들어진 객체라 assert.deepStrictEqual이 프로토타입 불일치로 오탐하는 것을 발견해 strictEqual(result.status,...)로 수정. 두 인라인 <script> 블록 node --check 통과, node test/run.js 570/570 통과(기존 568 + 신규 2). APP_VERSION 1.46.38->1.46.39, sw.js CACHE v200->v201.",
+      "commit": null
+    },
+    {
+      "cycle": 85,
+      "phase": "develop",
+      "timestamp": "2026-09-25T14:14:08.000Z",
+      "summary": "Explore 서브에이전트로 발견한 csvRowToImportTxn() 버그 수정. transfer/saving만 있던 보내는·받는 자산 필수 가드(index.html:4788)가 expense/income에는 없어, CSV의 보내는/받는 자산 칸이 비어 있으면 findAsset('')이 null을 반환하고 unmatched.push도 fromName이 falsy라 건너뛰어 fromAssetId/toAssetId가 null이면서 이름 스냅샷도 없는 완전히 무연결 거래가 그대로 저장됐다 — buildImportPreview의 assetUnmatchedCount에도 안 잡혀(이름이 아예 없으니 unmatched 배열에 안 들어감) 사용자가 알 방법이 없었고, saveTx/saveRec에 이미 있는 동일 가드(cycle81)가 CSV 임포트 경로만 비껴가던 구멍. csvRowToImportTxn()에 type==='expense'&&!fromName / type==='income'&&!toName 가드 2줄 추가해 error:'asset'으로 거부(기존 invalidCount 집계에 자연히 편입). 기존 자산명은 있지만 매칭 안 되는(unmatched) 케이스는 그대로 허용 유지 — 이름 스냅샷이 남아 나중에 수동 매칭 가능하므로 별개 문제. 새 가드가 기존 테스트 5개(소수 금액/RANGE_FROM 경계/buildImportPreview 중복판정·range 카운트 테스트들)에서 의도치 않게 빈 자산명을 쓰고 있던 걸 깨뜨려, 각 테스트가 검증하려던 것과 무관하게 '주계좌' 같은 자산명을 채워 넣어 고침(회귀 없음). 회귀 테스트 2개 추가(빈 자산명 거부 / 이름은 있지만 매칭 안 되는 unmatched는 여전히 허용) — 가드를 git stash로 임시 제거해 신규 테스트 1개가 실제로 실패함을 확인한 뒤 재적용. 두 인라인 <script> 블록 node --check 통과, node test/run.js 572/572 통과(기존 570 + 신규 2). APP_VERSION 1.46.39->1.46.40, sw.js CACHE v201->v202.",
       "commit": null
     }
   ]

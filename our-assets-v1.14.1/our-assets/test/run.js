@@ -1810,6 +1810,27 @@ test('csvRowToImportTxn: 이체/저축인데 보내는·받는 자산 중 하나
   const r2 = sandbox.csvRowToImportTxn(['2026-01-01', '이체', '이체', '10000', '주계좌', '적금통장', ''], assets);
   assert.strictEqual(r2.ok, true);
 });
+// saveTx/saveRec(수동 입력)은 지출/수입에 보내는·받는 자산이 비어 있으면 toast로 막고 저장을 거부하는데
+// (app-evolve cycle81), CSV 임포트는 이 가드가 없어 보내는/받는 자산 칸이 비어도 fromAssetId/toAssetId가
+// null인 채 이름 스냅샷도 없이(findAsset('')이 null을 반환하고 unmatched.push도 fromName이 falsy라 건너뜀)
+// 그대로 통과했다 — buildImportPreview의 assetUnmatchedCount에도 안 잡혀 사용자가 알 방법이 없는 채
+// 잔액에 영영 반영 안 되는 지출/수입이 조용히 저장되는 버그.
+test('csvRowToImportTxn: 지출인데 보내는 자산이 비어 있으면 무효 처리한다(수입은 받는 자산)', () => {
+  const exp = sandbox.csvRowToImportTxn(['2026-01-01', '지출', '식비', '5000', '', '', ''], []);
+  assert.strictEqual(exp.ok, false);
+  assert.strictEqual(exp.error, 'asset');
+  const inc = sandbox.csvRowToImportTxn(['2026-01-01', '수입', '급여', '5000', '', '', ''], []);
+  assert.strictEqual(inc.ok, false);
+  assert.strictEqual(inc.error, 'asset');
+});
+test('csvRowToImportTxn: 지출/수입인데 자산 이름이 있지만 매칭 안 되면(unmatched) 이름 스냅샷으로 여전히 허용한다', () => {
+  const exp = sandbox.csvRowToImportTxn(['2026-01-01', '지출', '식비', '5000', '없는통장', '', ''], []);
+  assert.strictEqual(exp.ok, true);
+  assert.strictEqual(exp.txn.fromAssetName, '없는통장');
+  const inc = sandbox.csvRowToImportTxn(['2026-01-01', '수입', '급여', '5000', '', '없는통장', ''], []);
+  assert.strictEqual(inc.ok, true);
+  assert.strictEqual(inc.txn.toAssetName, '없는통장');
+});
 // 수동 입력(saveTx/saveRec)은 fromAssetId===toAssetId일 때 toast로 막고 저장을 거부하는데,
 // CSV 임포트에는 같은 가드가 없어 보내는/받는 자산이 같은 이체·저축 행이 그대로 들어올 수 있었다.
 test('csvRowToImportTxn: 이체/저축인데 보내는·받는 자산 이름이 같으면 무효 처리한다', () => {
@@ -1853,7 +1874,7 @@ test('csvRowToImportTxn: 음수 금액은 지출/이체/저축 어느 타입이�
 test('csvRowToImportTxn: 소수 금액은 무효 처리하고, 정수로 떨어지는 소수 표기(예: 5000.0)는 허용한다', () => {
   const frac = sandbox.csvRowToImportTxn(['2026-01-01', '지출', '식비', '15000.5', '', '', ''], []);
   assert.strictEqual(frac.ok, false); assert.strictEqual(frac.error, 'amount');
-  const whole = sandbox.csvRowToImportTxn(['2026-01-01', '지출', '식비', '5000.0', '', '', ''], []);
+  const whole = sandbox.csvRowToImportTxn(['2026-01-01', '지출', '식비', '5000.0', '주계좌', '', ''], []);
   assert.strictEqual(whole.ok, true);
   assert.strictEqual(whole.txn.amount, 5000);
 });
@@ -1863,7 +1884,7 @@ test("csvRowToImportTxn: RANGE_FROM 이전 날짜는 형식은 유효해도 erro
   const r = sandbox.csvRowToImportTxn(['2022-12-31', '지출', '식비', '1000', '', '', ''], []);
   assert.strictEqual(r.ok, false);
   assert.strictEqual(r.error, 'range');
-  const ok = sandbox.csvRowToImportTxn(['2023-01-01', '지출', '식비', '1000', '', '', ''], []);
+  const ok = sandbox.csvRowToImportTxn(['2023-01-01', '지출', '식비', '1000', '주계좌', '', ''], []);
   assert.strictEqual(ok.ok, true, 'RANGE_FROM 당일은 하한선에 포함되어야 함');
 });
 test('csvRowToImportTxn: 지출은 fromAssetId만, 수입은 toAssetId만 채우고 반대쪽은 항상 null', () => {
@@ -1909,15 +1930,15 @@ test('buildImportPreview: 기존에 없는 내역만 새 항목으로 세고, �
 });
 test('buildImportPreview: 기존 내역에 없으면 같은 파일 안에 완전히 똑같은 행이 반복돼도 전부 새 항목으로 센다(같은 날 같은 금액의 서로 다른 거래 2건)', () => {
   const csv = '날짜,구분,카테고리,금액,보내는 자산,받는 자산,메모\r\n' +
-    '2026-01-01,지출,식비,5000,,,점심\r\n2026-01-01,지출,식비,5000,,,점심\r\n';
+    '2026-01-01,지출,식비,5000,주계좌,,점심\r\n2026-01-01,지출,식비,5000,주계좌,,점심\r\n';
   const preview = sandbox.buildImportPreview(csv, [], { expense: ['식비'], income: [], saving: [] }, []);
   assert.strictEqual(preview.newCount, 2);
   assert.strictEqual(preview.dupCount, 0);
 });
 test('buildImportPreview: 기존 내역에 키가 같은 게 1건만 있으면, CSV에 똑같은 행이 2개 있어도 1건만 중복 매칭되고 나머지 1건은 새 항목이다(다대다 중복판정)', () => {
-  const txns = [{ id: 't1', date: '2026-01-01', type: 'expense', category: '식비', amount: 5000, fromAssetId: null, toAssetId: null, memo: '점심' }];
+  const txns = [{ id: 't1', date: '2026-01-01', type: 'expense', category: '식비', amount: 5000, fromAssetId: null, toAssetId: null, fromAssetName: '주계좌', memo: '점심' }];
   const csv = '날짜,구분,카테고리,금액,보내는 자산,받는 자산,메모\r\n' +
-    '2026-01-01,지출,식비,5000,,,점심\r\n2026-01-01,지출,식비,5000,,,점심\r\n';
+    '2026-01-01,지출,식비,5000,주계좌,,점심\r\n2026-01-01,지출,식비,5000,주계좌,,점심\r\n';
   const preview = sandbox.buildImportPreview(csv, [], { expense: ['식비'], income: [], saving: [] }, txns);
   assert.strictEqual(preview.newCount, 1);
   assert.strictEqual(preview.dupCount, 1);
@@ -1926,7 +1947,7 @@ test("buildImportPreview: RANGE_FROM 이전 날짜 행은 형식 오류(invalidC
   const csv = '날짜,구분,카테고리,금액,보내는 자산,받는 자산,메모\r\n' +
     '2022-12-31,지출,식비,5000,,,오래된 내역\r\n' +
     'bad-row,지출,식비,abc,,,\r\n' +
-    '2026-01-01,지출,식비,5000,,,정상 내역\r\n';
+    '2026-01-01,지출,식비,5000,주계좌,,정상 내역\r\n';
   const preview = sandbox.buildImportPreview(csv, [], { expense: ['식비'], income: [], saving: [] }, []);
   assert.strictEqual(preview.totalRows, 3);
   assert.strictEqual(preview.rangeCount, 1);
