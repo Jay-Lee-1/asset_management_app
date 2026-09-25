@@ -1,15 +1,12 @@
 {
   "cycle": 85,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "카테고리·귀속 이름 생성/수정 시 대소문자·공백만 다른 유사 중복 방지",
+    "why": "addCat/doRenameCat(카테고리)과 addOwner/doRenameOwner(귀속) 네 곳이 모두 trim() 후 완전 일치만으로 중복을 판정해, 사용자가 대소문자나 내부 공백(연속 공백·전각공백 등)만 다른 이름을 입력해도 경고 없이 별개 항목으로 생성된다. 그 결과 expenseByCat/spendByCategory/budgetForMonth(카테고리)와 ownerAssets/ownerDebt(귀속)를 비롯한 모든 이름 기반 집계·예산·CSV 가져오기의 신규 카테고리 감지가 사용자도 모르게 두 갈래로 쪼개져 실제 지출/저축/자산 현황을 왜곡한다. activeRecsForCat·deletedAssetHistoryExists 등 기존 코드가 이름 불일치 분산을 이미 매우 조심스럽게 다뤄온 것과 대비되는 유일한 예외 지점이다.",
+    "approach": "1) 순수 함수 normName(s) 추가: trim 후 연속 공백류(일반 공백+전각공백 \\u3000 등)를 단일 공백으로 접고 toLowerCase()로 비교용 정규화 문자열만 생성(저장/표시용 원본 이름 v는 절대 바꾸지 않음). 2) addCat(k)의 DB.categories[k].includes(v) 판정을 DB.categories[k].some(c=>normName(c)===normName(v))로 교체하고, 이미 있는 카테고리와 유사하면 '~와(과) 비슷한 카테고리가 있어요: 기존이름' 형태로 토스트에 기존 이름을 노출해 사용자가 기존 것을 재사용하도록 유도. 3) doRenameCat(k,i)의 동일 판정(현재 v!==old && includes(v))도 같은 방식으로 교체. 4) addOwner()/doRenameOwner(i)도 동일 패턴 적용. 5) 완전 동일(정규화 후 같음)인 경우와 대소문자/공백만 다른 경우를 구분할 필요는 없음 — 정규화 일치 시 항상 차단(정확히 같은 이름 재사용 시나리오 포함, 기존 동작과 동일). 6) 기존에 이미 생성된 근접 중복 데이터를 병합하는 도구는 이번 사이클 범위 밖으로 명시적으로 제외(신규 생성 경로만 차단). 7) test/run.js에 normName 자체 회귀 테스트(공백/대소문자 정규화) + addCat/doRenameCat/addOwner/doRenameOwner 각각 대소문자만 다른 이름·내부 공백만 다른 이름을 근접중복으로 차단하는지, 진짜 다른 이름은 그대로 허용하는지 검증하는 테스트 8개 내외 추가. node --check 및 node test/run.js 전체 통과 확인, APP_VERSION/sw.js CACHE 버전업."
+  },
   "history": [
-    {
-      "cycle": 80,
-      "phase": "critique",
-      "timestamp": "2026-09-24T19:11:41.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체 재검토. test/run.js가 totalAssets/totalDebt/ownerAssets/ownerDebt(index.html:2169-2170,2550-2551)와 splitRecOverrides/recSaveScopeApply/recSaveScopeConfirm(3581-3616)을 다른 테스트의 호출 그래프 의존성으로만 끌어올 뿐 직접 test() assertion이 0건임을 발견 — 전자는 홈 순자산 총액부터 nwHistory 영구 스냅샷까지 모든 순자산 숫자의 유일한 산술 근원(pruneNwHistory가 오래된 일별 항목을 비가역 월별 압축하므로 버그가 과거 차트에 영구 박제됨)이고, 후자는 반복거래 '이번만 수정' vs '이번부터 이후 전부 수정' 분기라는 대표적 캘린더류 버그 온상. 접근성/XSS/DB 캐시무효화/CSV·localStorage 손상처리/SW 캐시 갱신 등은 재확인 결과 이미 견고해 기각. 프로덕션 코드 변경 없이 두 그룹에 직접 회귀 테스트를 추가하는 계획을 pending_advance_plan에 저장.",
-      "commit": null
-    },
     {
       "cycle": 80,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-09-25T15:12:00.000Z",
       "summary": "develop 커밋(c27ad1d, csvRowToImportTxn() 지출/수입 자산 미입력 CSV 가져오기 무경고 통과 버그 수정)을 검토. type==='expense'&&!fromName / type==='income'&&!toName 가드가 기존 transfer/saving 가드(fromName/toName/fromName===toName 체크) 및 수동 입력(saveTx/saveRec) 쪽 가드와 동일한 패턴으로 자연스럽게 이어짐을 확인. 이름이 있지만 매칭 안 되는 경우(unmatched 스냅샷 허용)는 그대로 유지되어 의도한 경계와 정확히 일치. buildImportPreview의 invalidCount 집계 분기(error!=='range')에도 정상 편입됨을 확인. 기존 테스트 4건(5000.0 소수/RANGE_FROM 경계/중복판정 2건)이 새 가드에 맞춰 자산명을 채우도록 함께 갱신된 것도 확인. 비슷한 CSV 가져오기 경로(csvRowToImportTxn 외 별도 함수)가 더 있는지 확인했으나 없음. 572/572 통과. 코드 변경 없음(이상 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 85,
+      "phase": "critique",
+      "timestamp": "2026-09-25T16:12:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체 재검토. addCat(4339-4340)/doRenameCat(4384-4387)/addOwner(2986)/doRenameOwner(2999-3001) 네 곳 모두 trim() 후 완전 일치(대소문자·내부 공백 구분)만으로 중복을 판정해, '식비'가 있는 상태에서 'Food'나 내부 공백만 다른 이름을 입력해도 경고 없이 별개 카테고리/귀속으로 생성되는 사각지대를 발견 — expenseByCat/spendByCategory/budgetForMonth(카테고리)와 ownerAssets/ownerDebt(귀속) 등 이름을 키로 쓰는 모든 집계가 조용히 두 갈래로 쪼개짐. activeRecsForCat·deletedAssetHistoryExists·search의 대소문자 무시 매칭 등 기존 코드가 이름 불일치 분산을 조심스럽게 다뤄온 것과 대비되는 예외 지점. 검토 후 기각: CSV 인젝션(guard()로 이미 방어), 클라우드 push/pull 동시성(조건부 UPDATE로 이미 원자적), 접근성(role=button 전부 tabindex+rowKeydown 페어링 확인), RANGE_FROM 롤링 윈도우화(cycle83부터 반복 보류, 이번에도 안전한 단일 사이클 완화책 못 찾아 재보류), CSV 재가져오기 반복거래 회차 중복(csvDedupeKey로 이미 방어). normName(s)로 공백/대소문자 정규화 후 비교하는 근접 중복 차단 + 기존 이름 노출 안내 계획을 pending_advance_plan에 저장. 코드 변경 없음(git status/diff 비어있음 확인).",
       "commit": null
     }
   ]
