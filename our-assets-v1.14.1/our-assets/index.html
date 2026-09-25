@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.40';
+const APP_VERSION='1.46.41';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1409,6 +1409,9 @@ const commaQty=n=>Number.isInteger(n)?comma(n):(n||0).toLocaleString('ko-KR',{ma
 const won=n=>(n<0?'-':'')+comma(Math.abs(n))+'원';
 const wonS=n=>(n>0?'+':n<0?'-':'')+comma(Math.abs(n))+'원';
 function esc(s){const m={'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'};return String(s==null?'':s).replace(/[&<>"']/g,c=>m[c])}
+/* 카테고리/귀속 이름 중복 비교용 정규화 — 대소문자·연속 공백(전각공백 포함)만 다른 이름을 같은 이름으로 취급.
+   저장/표시용 원본 이름은 건드리지 않고 비교할 때만 사용한다. */
+function normName(s){return String(s==null?'':s).trim().replace(/[\s　]+/g,' ').toLowerCase()}
 /* onclick만 있던 div 기반 행(자산/내역/반복거래 목록)에 키보드 접근성을 붙이는 공용 핸들러 — Enter/Space를 클릭과 동일하게 처리 */
 function rowKeydown(e,fn){if(e.key==='Enter'||e.key===' '){e.preventDefault();fn()}}
 function todayStr(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
@@ -2983,7 +2986,7 @@ function openOwnerManage(){
   <div style="height:14px"></div><button class="btn btn-primary" onclick="closeSheet()">완료</button>`);
 }
 function openOwnerSheet(){openOwnerManage()}
-function addOwner(){const v=$('newOwner').value.trim();if(!v)return;if(DB.owners.includes(v)){toast('이미 있는 귀속이에요');return}DB.owners.push(v);save();openOwnerManage();}
+function addOwner(){const v=$('newOwner').value.trim();if(!v)return;const dup=DB.owners.find(o=>normName(o)===normName(v));if(dup){toast(dup===v?'이미 있는 귀속이에요':`비슷한 귀속이 있어요: ${dup}`);return}DB.owners.push(v);save();openOwnerManage();}
 function delOwner(i){const o=DB.owners[i];if(DB.owners.length<=1){toast('귀속은 최소 1개가 필요해요');return}
  const used=DB.assets.filter(a=>a.owner===o).length;
  if(used){toast(`'${o}' 귀속을 쓰는 자산 ${used}개가 있어요`);return}
@@ -2998,7 +3001,8 @@ function renameOwnerSheet(i){const cur=DB.owners[i];
  setTimeout(()=>{const el=$('renameOwner');el&&el.focus()},300)}
 function doRenameOwner(i){const v=$('renameOwner').value.trim();if(!v){toast('이름을 입력해 주세요');return}
  const old=DB.owners[i];if(v===old){openOwnerManage();return}
- if(DB.owners.includes(v)){toast('이미 있는 귀속이에요');return}
+ const dup=DB.owners.find((o,oi)=>oi!==i&&normName(o)===normName(v));
+ if(dup){toast(dup===v?'이미 있는 귀속이에요':`비슷한 귀속이 있어요: ${dup}`);return}
  DB.owners[i]=v;DB.assets.forEach(a=>{if(a.owner===old)a.owner=v});
  if(ST.assetOwner===old)ST.assetOwner=v; if(ST.plan.owner===old)ST.plan.owner=v; /* 활성 귀속 필터가 이름 변경을 따라가도록 */
  (DB.nwHistory||[]).forEach(h=>{if(h.byOwner&&old in h.byOwner){h.byOwner[v]=h.byOwner[old];delete h.byOwner[old]}}); /* 과거 추이 스냅샷의 귀속별 키도 새 이름으로 이동 */
@@ -4337,7 +4341,8 @@ function openCatManage(kind,keep){
   <div style="height:14px"></div><button class="btn btn-primary" onclick="closeSheet()">완료</button>`);
 }
 function addCat(k){const v=(($('newCat')&&$('newCat').value)||catAddDraft.name||'').trim();if(!v)return;
- if(DB.categories[k].includes(v)){toast('이미 있는 카테고리예요');return}
+ const dup=DB.categories[k].find(c=>normName(c)===normName(v));
+ if(dup){toast(dup===v?'이미 있는 카테고리예요':`비슷한 카테고리가 있어요: ${dup}`);return}
  DB.catIcon=DB.catIcon||{};
  DB.categories[k].push(v);
  if(catAddDraft.icon)DB.catIcon[catKey(k,v)]=catAddDraft.icon;
@@ -4384,7 +4389,7 @@ function renameCatSheet(k,i,keep){const cur=DB.categories[k][i];
 function doRenameCat(k,i){const v=((catRenameDraft.name!=null?catRenameDraft.name:($('renameCat')&&$('renameCat').value))||'').trim();if(!v){toast('이름을 입력해 주세요');return}
  const old=DB.categories[k][i];
  if(k==='income'&&old===ADJUST_CAT){toast('자동으로 생성되는 카테고리라 이름을 바꿀 수 없어요');return}
- if(v!==old&&DB.categories[k].includes(v)){toast('이미 있는 카테고리예요');return}
+ if(v!==old){const dup=DB.categories[k].find(c=>c!==old&&normName(c)===normName(v));if(dup){toast(dup===v?'이미 있는 카테고리예요':`비슷한 카테고리가 있어요: ${dup}`);return}}
  DB.catIcon=DB.catIcon||{};DB.catVar=DB.catVar||{};DB.budgetHistory=DB.budgetHistory||{};
  const ic=catRenameDraft.icon||'';
  const wasVar=isVarCat(k,old);

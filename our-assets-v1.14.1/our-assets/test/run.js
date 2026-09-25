@@ -68,7 +68,7 @@ const FUNCTIONS = [
   'lastDay', 'addDays', 'daysBetween', 'shiftWeekend', 'recDates', 'addMonthsStr', 'addMonths',
   'recNthDate', 'recCountUntil', 'truncateRecEnd', 'dateBelowRangeFloor', 'recalcEndCond', 'isVarCat', 'setCatVar', 'activeRecsForAssets', 'activeRecsForCat',
   'num', 'doRenameCat', 'doDeleteCat', 'budgetProgress', 'totalBudgetSummary', 'budgetKey', 'budgetForMonth', 'setBudgetFrom', 'addCat',
-  'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'esc', 'matchTxnQuery',
+  'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'esc', 'normName', 'matchTxnQuery',
   'parseCSV', 'unguardCsv', 'csvDateValid', 'csvRowToImportTxn', 'csvDedupeKey', 'buildImportPreview',
   'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo', 'unsnapshotAssetName',
   'deletedAssetHistoryExists', 'relinkDeletedAsset',
@@ -97,7 +97,7 @@ const FUNCTIONS = [
   'accountName', 'dbIsEmpty', 'guestHasData',
   'txScheduled', 'monthStats', 'monthStats2', 'expenseByCat', 'needGold', 'inQuietWindow', 'fmtSynced', 'rateStatusText',
   'nextBigOutflow', 'dday', 'balanceOn', 'nextOutflowCard', 'monthOutflowCard', 'planGaugeCard', 'homeAlertCard', 'renderHome',
-  'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwHistoryCard', 'doRenameOwner',
+  'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwHistoryCard', 'doRenameOwner', 'addOwner',
   'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetToggleSel', 'visibleAssetsForSel', 'assetSelAll', 'activeSel',
   'modeSeg', 'monthNav', 'abbr', 'calCellsFor', 'ledSumInner', 'ledSumBox', 'calPane', 'txRow', 'dayTxns',
   'ledgerRowsHtml', 'ledgerDayHeadHtml', 'renderLedger', 'selDayPartial',
@@ -329,7 +329,7 @@ const sandbox = {
   // asName은 syncAssetInputs()의 이름 trim() 회귀 테스트용(공백만 있는 이름이 그대로 저장되던 버그).
   // asNameValue가 undefined인 기본 상태에서는 null을 반환해, 이 mock 추가 이전처럼 다른 테스트의
   // syncAssetInputs()/saveAsset() 호출에서 asDraft.name이 건드려지지 않도록 한다.
-  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-plan' ? sandbox.pagePlanEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : id === 'ledgerCard' ? (sandbox.ledgerCardMissing ? null : sandbox.ledgerCardEl) : id === 'assetBody' ? (sandbox.assetBodyMissing ? null : sandbox.assetBodyEl) : null,
+  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-plan' ? sandbox.pagePlanEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : id === 'ledgerCard' ? (sandbox.ledgerCardMissing ? null : sandbox.ledgerCardEl) : id === 'assetBody' ? (sandbox.assetBodyMissing ? null : sandbox.assetBodyEl) : id === 'newOwner' ? (sandbox.newOwnerValue === undefined ? null : { value: sandbox.newOwnerValue }) : id === 'renameOwner' ? (sandbox.renameOwnerValue === undefined ? null : { value: sandbox.renameOwnerValue }) : null,
   bkTextEl: { value: 'backup-text', select: () => {}, setSelectionRange: () => {} },
   // copyBackup()의 navigator.clipboard 체크가 ReferenceError 없이 "지원 안 함"으로 지나가게
   // 하는 최소 흉내(document.execCommand는 try/catch로 감싸져 있어 굳이 스텁이 필요 없음).
@@ -1027,6 +1027,26 @@ test('doRenameCat: 수입의 잔액 조정 카테고리는 이름을 바꿀 수 
   assert.strictEqual(sandbox.DB.categories.income[0], sandbox.ADJUST_CAT, '이름이 바뀌면 안 됨');
   assert.ok(sandbox.lastToast, '안내 토스트가 떴어야 함');
 });
+test('doRenameCat: 대소문자만 다른 이름으로 바꾸면 다른 카테고리와 근접 중복으로 막고 기존 이름을 토스트에 보여준다', () => {
+  sandbox.DB = {
+    categories: { expense: ['Food', '교통비'] },
+    catIcon: {}, catVar: {}, budgetHistory: {}, txns: [], recurrences: [],
+  };
+  sandbox.catRenameDraft = { name: 'food', icon: '' };
+  sandbox.lastToast = null;
+  sandbox.doRenameCat('expense', 1);
+  assert.strictEqual(sandbox.DB.categories.expense[1], '교통비', '근접 중복이면 이름이 바뀌면 안 됨');
+  assert.strictEqual(sandbox.lastToast, '비슷한 카테고리가 있어요: Food');
+});
+test('doRenameCat: 자기 자신의 대소문자만 바꾸는 변경은 근접 중복으로 막지 않는다', () => {
+  sandbox.DB = {
+    categories: { expense: ['Food'] },
+    catIcon: {}, catVar: {}, budgetHistory: {}, txns: [], recurrences: [],
+  };
+  sandbox.catRenameDraft = { name: 'food', icon: '' };
+  sandbox.doRenameCat('expense', 0);
+  assert.strictEqual(sandbox.DB.categories.expense[0], 'food', '자기 자신과의 대소문자 변경은 허용돼야 함');
+});
 test('doDeleteCat/doRenameCat: 같은 이름이어도 지출 카테고리라면(가정) 잔액 조정 가드가 적용되지 않는다', () => {
   // ADJUST_CAT은 income 전용 시스템 카테고리이므로, k!=='income'이면 이름이 같아도 평범한 카테고리로 취급돼야 함
   sandbox.DB = {
@@ -1237,6 +1257,40 @@ test('addCat: 새 이름은 정상적으로 추가되고 토스트가 뜨지 않
   assert.strictEqual(sandbox.lastToast, null);
   assert.deepStrictEqual(sandbox.DB.categories.expense, ['식비', '교통비']);
   assert.strictEqual(sandbox.DB.catIcon['expense:교통비'], 'car');
+});
+
+/* ---------- normName: 카테고리/귀속 근접 중복(대소문자·연속 공백) 판정용 정규화 (app-evolve cycle85 advance) ----------
+ * addCat/doRenameCat/addOwner/doRenameOwner 네 곳 모두 trim() 후 완전 일치로만 중복을 판정해,
+ * "Food"와 "food", "용   돈"과 "용 돈"처럼 대소문자·내부 공백만 다른 이름이 별개 항목으로 조용히
+ * 생성돼 이름 기반 집계(expenseByCat/ownerAssets 등)가 사용자도 모르게 두 갈래로 쪼개지는 문제를 막는다. */
+test('normName: 대소문자만 다르면 같은 정규화 결과를 낸다', () => {
+  assert.strictEqual(sandbox.normName('Food'), sandbox.normName('food'));
+  assert.strictEqual(sandbox.normName('FOOD'), 'food');
+});
+test('normName: 연속 공백·전각공백만 다르면 같은 정규화 결과를 낸다', () => {
+  assert.strictEqual(sandbox.normName('용   돈'), sandbox.normName('용 돈'));
+  assert.strictEqual(sandbox.normName('용　돈'), sandbox.normName('용 돈'));
+});
+test('normName: 앞뒤 공백은 trim되고, 실제로 다른 이름은 다른 결과를 낸다', () => {
+  assert.strictEqual(sandbox.normName('  식비  '), '식비');
+  assert.notStrictEqual(sandbox.normName('식비'), sandbox.normName('교통비'));
+});
+
+test('addCat: 대소문자만 다른 이름은 근접 중복으로 막고 기존 이름을 토스트에 보여준다', () => {
+  sandbox.DB = { categories: { expense: ['Food'] }, catIcon: {}, catVar: {}, txns: [], recurrences: [] };
+  sandbox.catAddDraft = { name: 'food', icon: 'coffee' };
+  sandbox.lastToast = null;
+  sandbox.addCat('expense');
+  assert.strictEqual(sandbox.lastToast, '비슷한 카테고리가 있어요: Food');
+  assert.deepStrictEqual(sandbox.DB.categories.expense, ['Food'], '근접 중복이면 배열에 추가되면 안 됨');
+});
+test('addCat: 내부 공백만 다른 이름도 근접 중복으로 막는다', () => {
+  sandbox.DB = { categories: { expense: ['용 돈'] }, catIcon: {}, catVar: {}, txns: [], recurrences: [] };
+  sandbox.catAddDraft = { name: '용   돈', icon: '' };
+  sandbox.lastToast = null;
+  sandbox.addCat('expense');
+  assert.strictEqual(sandbox.lastToast, '비슷한 카테고리가 있어요: 용 돈');
+  assert.deepStrictEqual(sandbox.DB.categories.expense, ['용 돈']);
 });
 
 /* ---------- migrate() 없이 곧장 쓰는 seed()/emptyDB() 직후 상태(catIcon/catVar/budgets 필드 자체가 없음)에서
@@ -4843,6 +4897,50 @@ test('doRenameOwner: DB.nwHistory의 byOwner 키도 옛 이름에서 새 이름�
   assert.strictEqual('아빠' in sandbox.DB.nwHistory[0].byOwner, false);
   assert.strictEqual(sandbox.DB.nwHistory[1].byOwner, undefined, 'byOwner가 없던 항목은 그대로 없어야 함');
 });
+
+/* ---------- addOwner/doRenameOwner: 대소문자·공백만 다른 근접 중복 귀속명 방지 (app-evolve cycle85 advance) ----------
+ * addCat/doRenameCat과 동일한 이유로, 귀속명도 완전 일치만 보면 "나"와 "Na"가 아니라 "아빠"/"아 빠"처럼
+ * 공백만 다른 이름이 별개 귀속으로 생겨 ownerAssets/ownerDebt 집계가 조용히 쪼개진다. */
+test('addOwner: 대소문자만 다른 이름은 근접 중복으로 막고 기존 이름을 토스트에 보여준다', () => {
+  sandbox.DB = { owners: ['Dad'] };
+  sandbox.newOwnerValue = 'dad';
+  sandbox.lastToast = null;
+  sandbox.addOwner();
+  assert.strictEqual(sandbox.lastToast, '비슷한 귀속이 있어요: Dad');
+  assert.deepStrictEqual(sandbox.DB.owners, ['Dad'], '근접 중복이면 배열에 추가되면 안 됨');
+});
+test('addOwner: 완전히 같은 이름은 기존과 동일한 안내 문구를 띄운다', () => {
+  sandbox.DB = { owners: ['나'] };
+  sandbox.newOwnerValue = '나';
+  sandbox.lastToast = null;
+  sandbox.addOwner();
+  assert.strictEqual(sandbox.lastToast, '이미 있는 귀속이에요');
+});
+test('addOwner: 실제로 다른 이름은 정상적으로 추가된다', () => {
+  sandbox.DB = { owners: ['나'] };
+  sandbox.newOwnerValue = '배우자';
+  sandbox.lastToast = null;
+  sandbox.addOwner();
+  assert.strictEqual(sandbox.lastToast, null);
+  assert.deepStrictEqual(sandbox.DB.owners, ['나', '배우자']);
+});
+test('doRenameOwner: 공백만 다른 이름으로 바꾸면 다른 귀속과 근접 중복으로 막는다', () => {
+  sandbox.DB = { owners: ['용 돈', '배우자'], assets: [] };
+  sandbox.ST = { assetOwner: '전체', plan: { owner: '전체' } };
+  sandbox.renameOwnerValue = '용   돈';
+  sandbox.lastToast = null;
+  sandbox.doRenameOwner(1);
+  assert.strictEqual(sandbox.DB.owners[1], '배우자', '근접 중복이면 이름이 바뀌면 안 됨');
+  assert.strictEqual(sandbox.lastToast, '비슷한 귀속이 있어요: 용 돈');
+});
+test('doRenameOwner: 자기 자신의 대소문자만 바꾸는 변경은 근접 중복으로 막지 않는다', () => {
+  sandbox.DB = { owners: ['Dad'], assets: [] };
+  sandbox.ST = { assetOwner: '전체', plan: { owner: '전체' } };
+  sandbox.renameOwnerValue = 'dad';
+  sandbox.doRenameOwner(0);
+  assert.strictEqual(sandbox.DB.owners[0], 'dad', '자기 자신과의 대소문자 변경은 허용돼야 함');
+});
+
 test('renderMenu: 메뉴 탭 계정 진입점(acct-card)에 키보드/스크린리더 접근 패턴이 있다', () => {
   const body = extractFunction('renderMenu');
   assert.ok(/class="card acct-card"[^>]*role="button"/.test(body), 'acct-card에 role="button"이 없음');
