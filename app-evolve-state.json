@@ -1,6 +1,6 @@
 {
   "cycle": 87,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
@@ -134,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-25T21:12:00.000Z",
       "summary": "critique(cycle86) 계획 중 1단계(touch 헬퍼 도입)만 구현하고 2~3단계(3-way 병합, deletedAt 툼스톤)는 다음 critique/advance로 명시적으로 넘겼다 — 계획 자체가 '범위가 크면 1단계만 먼저 해도 허용'이라 밝혔고, 실제로 DB.recurrences/txns/assets에 직접 push/할당하는 지점이 15곳 이상 흩어져 있어 deletedAt 툼스톤(삭제 시 필터링까지 앱 전역에 영향)과 3-way 병합 로직을 한 사이클에 안전하게 끝내기엔 무리라고 판단. uid() 바로 아래에 순수 함수 touch(obj){obj.updatedAt=Date.now();return obj}를 추가하고, 실제 사용자 CRUD가 몰리는 세 중앙 저장 경로(saveTx의 일회성/반복 등록 분기 둘 다, saveAsset, saveRec)에서 DB에 쓰기 직전에 touch(d)를 호출하도록 배선 — recSaveScopeApply의 과거/미래 분리 저장처럼 더 예외적인 경로는 이번 범위에서 제외(다음 사이클 후보로 history에 남김). 이 커밋은 updatedAt 값을 아무 데도 읽지 않아(동작 변화 없음) 병합 로직이 실제로 들어오기 전까지는 완전히 안전한 준비 단계. sanitizeBackup()이 Object.assign({}, t)로 알 수 없는 필드를 보존함을 확인해 백업/클라우드 왕복에도 updatedAt이 유실되지 않음을 검증. test/run.js: uid와 같은 이유로 sandbox.touch를 고정값('test-updatedAt') 스텁으로 추가(실제 touch()가 FUNCTIONS로 추출되면 이 스텁을 덮어써 결정성이 깨지므로 touch는 FUNCTIONS에 넣지 않음), saveTx/saveAsset/saveRec 각각 신규 등록·기존 수정 양쪽에서 updatedAt이 채워짐을 확인하는 회귀 테스트 3개(saveTx 1개, saveAsset 1개, saveRec 2개) 추가. 두 인라인 <script> 블록 node --check 통과, node test/run.js 589/589 통과(기존 585 + 신규 4, 계산 착오 없음: saveRec 2개+saveAsset 1개+saveTx 1개). APP_VERSION 1.46.42->1.46.43, sw.js CACHE v204->v205. 다음 critique가 이어서 검토할 것: (1) recSaveScopeApply의 스코프 분리 저장(splitRecurrenceAt)에도 touch 배선, (2) deletedAt 툼스톤 도입과 삭제 경로(delTx/delAsset/delRecConfirm 등) 배선, (3) pushCloud()의 충돌 분기를 문서 전체 교체 대신 updatedAt 기반 컬렉션·id 단위 3-way 병합으로 교체.",
+      "commit": null
+    },
+    {
+      "cycle": 87,
+      "phase": "develop",
+      "timestamp": "2026-09-25T22:17:09.831Z",
+      "summary": "Explore 서브에이전트로 발견한 lowestInMonth() 버그 수정. Plan 탭의 '이번 달 가장 낮을 때' 카드가 쓰는 lowestInMonth(assetId,y,m)(index.html:3873)은 거래별 증감(amount)을 직접 byDay에 누적해 running 잔액을 재계산했는데, balancesUpTo()/balanceAt()이 이미 적용 중인 미확인(pending) 이체 제외 규칙(confirmTransfers 설정 시 dateStr<=TODAY면 미확인 이체 제외, 그 이후 날짜(예정 반영)면 포함 — index.html:2120)을 전혀 확인하지 않고 무조건 포함시켰다. 예: 확인 잔액 500,000원인 자산에서 오늘 날짜로 300,000원 미확인 이체를 기록만 해두면, 같은 화면의 '오늘까지 잔액'(balanceAt 기반)은 정확히 500,000원을 보여주는데 바로 옆 '가장 낮을 때' 카드는 lowestInMonth가 미확인 이체를 섞어 200,000원으로 표시해 같은 화면 안에서 숫자가 서로 모순됐다(이 함수는 isPlanAcct로 cash 타입에만 노출되어 별개로 존재하던 부채 부호반전 누락은 도달 불가라 이번 범위에서 제외). 수정: byDay 델타 누적 로직을 제거하고, 그 달에 거래가 걸린 날짜들(및 월초)에 대해 balanceAt(assetId,d)를 직접 호출해 최소값을 찾도록 재작성 — balancesUpTo가 이미 검증된 pending 제외/부채 부호반전 규칙을 그대로 상속받아 로직 중복 자체를 없앴다. test/run.js에 회귀 테스트 2개 추가(오늘 날짜 미확인 이체는 balanceAt(TODAY)처럼 제외되어 최저 잔액이 그대로 유지됨 / 확인된 이체는 그 날짜부터 정상 반영됨) — 수정 전 코드로 되돌려(git stash) 첫 번째 테스트가 실제로 200000!==500000으로 실패함을 확인한 뒤 재적용. 두 인라인 <script> 블록 node --check 통과, node test/run.js 591/591 통과(기존 589 + 신규 2). APP_VERSION 1.46.43->1.46.44, sw.js CACHE v205->v206.",
       "commit": null
     }
   ]

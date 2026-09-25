@@ -4518,6 +4518,46 @@ test('updateBalanceAdjust: 부채 자산 수정 시에도(기존 조정 내역 �
   assert.strictEqual(sandbox.balanceAt('d1', sandbox.TODAY), 200000);
 });
 
+/* ---------- lowestInMonth: 거래별 증감을 직접 누적하지 않고 날짜별 balanceAt()을 불러야
+ * balancesUpTo()가 이미 적용 중인 미확인 이체 제외 규칙이 그대로 반영된다. 예전 코드는
+ * byDay 델타를 amount 그대로 누적해 isPending()을 전혀 확인하지 않았다. */
+test('lowestInMonth: 오늘 날짜의 미확인(pending) 이체는 balanceAt(TODAY)처럼 제외되어야 한다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox.DB = {
+    settings: { confirmTransfers: true },
+    assets: [
+      { id: 'a1', type: 'cash', baseAmount: 500000 },
+      { id: 'a2', type: 'cash', baseAmount: 0 },
+    ],
+    txns: [{ id: 't1', date: '2026-06-15', type: 'transfer', amount: 300000, fromAssetId: 'a1', toAssetId: 'a2', confirmed: false }],
+    recurrences: [],
+  };
+  sandbox._balCache.clear();
+  assert.strictEqual(sandbox.balanceAt('a1', sandbox.TODAY), 500000, '미확인 이체는 오늘 잔액에서 제외되어야 함(기준값)');
+  sandbox._balCache.clear();
+  const low = sandbox.lowestInMonth('a1', 2026, 6);
+  assert.strictEqual(low.amount, 500000, '미확인 이체가 섞이면 안 되므로 이번 달 최저 잔액도 그대로 500000이어야 함');
+  assert.strictEqual(low.date, '2026-06-01');
+});
+test('lowestInMonth: 확인된(pending 아닌) 이체는 그 날짜부터 최저 잔액에 정상 반영된다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox.DB = {
+    settings: { confirmTransfers: true },
+    assets: [
+      { id: 'a1', type: 'cash', baseAmount: 500000 },
+      { id: 'a2', type: 'cash', baseAmount: 0 },
+    ],
+    txns: [{ id: 't1', date: '2026-06-10', type: 'transfer', amount: 300000, fromAssetId: 'a1', toAssetId: 'a2', confirmed: true }],
+    recurrences: [],
+  };
+  sandbox._balCache.clear();
+  const low = sandbox.lowestInMonth('a1', 2026, 6);
+  assert.strictEqual(low.amount, 200000);
+  assert.strictEqual(low.date, '2026-06-10');
+});
+
 /* ---------- isMarketValued/openAssetPicker: fx·금·주식을 일반 거래의 통장으로 선택하면
  * 순자산이 조용히 어긋나던 구조적 버그(app-evolve cycle27 advance)의 회귀 테스트.
  * assetEval()은 fx/gold/stock 세 타입만 원장(DB.txns)과 무관하게 qty×시세로 평가하는데,

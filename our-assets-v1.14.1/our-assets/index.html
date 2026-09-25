@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.43';
+const APP_VERSION='1.46.44';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3872,15 +3872,20 @@ function histDelSel(){if(!ST.hist.sel.size){toast('선택된 내역이 없어요
 /* ================= PLAN ================= */
 function lowestInMonth(assetId,y,m){ /* 그 달 중 잔액이 가장 낮은 날 */
  const st=monthStartStr(y,m),en=monthEndStr(y,m);
- let run=balanceAt(assetId,addDays(st,-1));
- const byDay={};
+ const days=new Set([st]);
  allTxns(st,en).forEach(t=>{
   if(t.fromAssetId!==assetId&&t.toAssetId!==assetId)return;
-  const d=(t.toAssetId===assetId?t.amount:0)-(t.fromAssetId===assetId?t.amount:0);
-  byDay[t.date]=(byDay[t.date]||0)+d;
+  days.add(t.date);
  });
- let low=run,lowDate=st;
- Object.keys(byDay).sort().forEach(d=>{run+=byDay[d];if(run<low){low=run;lowDate=d}});
+ /* 날짜별로 balanceAt()을 직접 불러야 balancesUpTo()가 이미 적용 중인 미확인 이체 제외
+    규칙(예정 반영 여부에 따라 dateStr<=TODAY면 제외, 그 이후면 포함)과 부채 부호 반전이
+    그대로 반영된다 — 예전처럼 거래별 증감을 직접 누적하면 이 규칙을 놓치고 미확인 이체가
+    무조건 섞여 실제 잔액과 다른 값이 나왔다. */
+ let low=null,lowDate=st;
+ Array.from(days).sort().forEach(d=>{
+  const b=balanceAt(assetId,d);
+  if(low===null||b<low){low=b;lowDate=d}
+ });
  return {date:lowDate,amount:low};
 }
 function planBalInner(y,m,a,today){
