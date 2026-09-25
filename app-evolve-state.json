@@ -1,7 +1,11 @@
 {
   "cycle": 84,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "afterCloudAuth() 게스트 데이터 병합 시 로그인/가입 완료 메시지 오류·불일치 수정",
+    "why": "게스트로 입력한 데이터가 있는 상태에서 클라우드 계정(신규 가입 또는 첫 클라우드 동기화)에 로그인/가입하면 afterCloudAuth()(index.html:1679-1695, 특히 1692줄)가 원격이 비어있을 때 게스트 DB를 조용히(확인창 없이) 그대로 채택한다. doLogin()(6441-6453)은 이 병합 이후 dbIsEmpty(DB)가 false가 된 것만 보고 '게스트로 입력한 데이터는 이 계정에 합쳐지지 않았어요'라는 사실과 반대되는 메시지를 띄운다 — 사용자가 데이터가 사라졌다고 오해해 재입력(중복 데이터)하거나 존재하지 않는 복구 경로를 찾아 헤맬 위험. doSignup()의 r.cloud 분기(6462)는 게스트 데이터 병합 여부를 아예 언급하지 않는 반면, 바로 아래 비클라우드 분기(6463-6466)는 confirmSheet로 명시적 동의를 구한다 — 같은 '가입하기' 버튼인데 클라우드 계정만 조용히 병합되는 비대칭. test/run.js의 afterCloudAuth 테스트(3778, 3791)는 conflict/remote-adopted 경로만 다루고 remote===null && guestHasData() 경로는 커버하지 않음.",
+    "approach": "1) afterCloudAuth(uid)가 각 return 지점에서 상태 문자열을 함께 반환하도록 수정: {status:'conflict'|'remote'|'guestMerged'|'empty'} (기존 4개 return 지점에 한 줄씩 추가, 시그니처는 유지). 2) doLogin()에서 dbIsEmpty(DB)로 병합 여부를 재추정하는 대신 이 상태값을 사용: status==='guestMerged'면 '게스트 데이터를 이 계정으로 가져왔어요' 같은 정확한 안내 토스트를 띄우고, 비클라우드(!r.cloud) 경로는 기존 로직 그대로 유지. 3) doSignup()의 r.cloud 분기에도 동일 상태값을 확인해 게스트 병합 시 비클라우드 분기와 톤이 일치하는 안내 문구를 추가. 4) test/run.js의 기존 afterCloudAuth 테스트 블록(~3778) 옆에 remote=null + guestHasData()=true 케이스를 추가해 새 status 값과 DB가 실제로 게스트 데이터로 교체됨을 검증 — 기존 관례대로 DOM 의존적인 doLogin/doSignup이 아닌 afterCloudAuth 자체를 직접 테스트. 완료 후 두 인라인 <script> node --check, node test/run.js 통과 확인, APP_VERSION/sw.js CACHE 버전업."
+  },
   "history": [
     {
       "cycle": 79,
@@ -141,6 +145,13 @@
       "phase": "review",
       "timestamp": "2026-09-25T11:10:00.000Z",
       "summary": "develop 커밋(61b6947, csvRowToImportTxn() 소수 금액 무경고 통과 버그 수정)을 검토. amount=Number(amountRaw) 뒤 !Number.isInteger(amount) 조건이 기존 finite/양수 검사와 자연스럽게 합쳐져 error:'amount'로 거부됨을 확인, 이 error 값이 buildImportPreview()에서 error==='range'가 아닌 모든 경우 invalidCount에 집계되는 기존 분기(index.html:4821)를 그대로 타 미리보기 안내 문구('형식을 알 수 없는 N행은 제외')에 정상 노출됨을 grep으로 확인. amountRaw가 이미 콤마 제거 후 문자열이라 '15,000.5' 같은 입력도 동일하게 걸러짐을 확인. 새 회귀 테스트가 소수 거부/정수로 떨어지는 소수 표기(5000.0) 허용 두 케이스를 함께 검증함을 확인. node test/run.js 568/568 통과. 코드 변경 없음(이상 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 84,
+      "phase": "critique",
+      "timestamp": "2026-09-25T12:15:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체 재검토. afterCloudAuth(uid)(index.html:1679-1695)가 원격 DB가 비어있고 게스트 데이터가 있을 때(신규 클라우드 가입 또는 기존 로컬 계정의 첫 클라우드 동기화) 확인창 없이 게스트 DB를 그대로 채택(1692줄)하는데, doLogin()(6441-6453)은 병합 후 dbIsEmpty(DB)가 false인 것만 보고 '게스트로 입력한 데이터는 합쳐지지 않았어요'라는 사실과 반대되는 메시지를 띄우고, doSignup()의 r.cloud 분기(6462)는 병합 여부를 아예 언급하지 않아 바로 아래 비클라우드 분기(6463-6466, confirmSheet로 명시 동의)와 비대칭임을 발견. test/run.js의 afterCloudAuth 테스트(3778, 3791)는 conflict/remote-adopted 경로만 다루고 이 경로는 미커버. afterCloudAuth가 상태값({status:'conflict'|'remote'|'guestMerged'|'empty'})을 반환하도록 하고 doLogin/doSignup이 dbIsEmpty 재추정 대신 그 값을 써서 정확한 안내 토스트를 띄우는 계획을 pending_advance_plan에 저장. 검토 후 기각한 후보: RANGE_FROM 롤링 윈도우화(안전한 완화책 없이는 여전히 한 사이클 범위 밖), sw.js skipWaiting/clients.claim(이미 업데이트 바로 완화됨), CSV 미매칭 자산 제외(이미 미리보기에 명시적으로 노출됨). 코드 변경 없음(git status/diff 비어있음 확인).",
       "commit": null
     }
   ]
