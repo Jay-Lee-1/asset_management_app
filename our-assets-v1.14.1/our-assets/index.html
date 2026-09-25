@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.38';
+const APP_VERSION='1.46.39';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1686,12 +1686,14 @@ async function afterCloudAuth(uid){
  const localUnsynced=localHasUnsyncedChanges(savedAt,syncedAt);
  const remote=await pullCloud();
  if(remote){
-  if(localUnsynced){CLOUD_SYNC_STATE='conflict';return} /* 로컬을 그대로 두고 사용자가 계정 화면에서 명시적으로 선택하게 함 */
-  DB=sanitizeBackup(remote).data;migrate();invalidateBalances();try{localStorage.setItem(dataKey(),JSON.stringify(DB))}catch(e){}markCloudSynced();return;
+  if(localUnsynced){CLOUD_SYNC_STATE='conflict';return{status:'conflict'}} /* 로컬을 그대로 두고 사용자가 계정 화면에서 명시적으로 선택하게 함 */
+  DB=sanitizeBackup(remote).data;migrate();invalidateBalances();try{localStorage.setItem(dataKey(),JSON.stringify(DB))}catch(e){}markCloudSynced();return{status:'remote'};
  }
- if(guestHasData()){try{DB=JSON.parse(localStorage.getItem('asset_app_db_v3__guest'));migrate()}catch(e){if(!DB||!Array.isArray(DB.assets)){DB=emptyDB();migrate()}}}
+ let status='empty';
+ if(guestHasData()){try{DB=JSON.parse(localStorage.getItem('asset_app_db_v3__guest'));migrate();status='guestMerged'}catch(e){if(!DB||!Array.isArray(DB.assets)){DB=emptyDB();migrate()}}}
  else if(!DB||!Array.isArray(DB.assets)){DB=emptyDB();migrate()}
  save();
+ return{status};
 }
 async function resolveCloudPullRemote(){
  closeSheet();toast('불러오는 중…');
@@ -6445,10 +6447,12 @@ async function doLogin(){
  if(btn)btn.disabled=false;
  if(r.err)return authErr(r.err);
  GUEST=false;localStorage.setItem('asset_app_guest','0');AUTH.setSession(r.email);
- if(r.cloud)await afterCloudAuth(r.uid);
+ let cloudAuthResult=null;
+ if(r.cloud)cloudAuthResult=await afterCloudAuth(r.uid);
  startApp();
  const guestRaw=localStorage.getItem('asset_app_db_v3__guest');
  if(dbIsEmpty(DB)&&guestHasData())confirmSheet('데이터 가져오기','방금까지 게스트로 입력한 자산·내역이 있어요. 이 계정으로 가져올까요?','가져오기',()=>{try{DB=JSON.parse(guestRaw);migrate();save();renderCurrent();toast('데이터를 가져왔어요')}catch(e){toast('가져오기에 실패했어요')}});
+ else if(cloudAuthResult&&cloudAuthResult.status==='guestMerged')toast('로그인했어요 · '+r.email+' · 게스트로 입력한 데이터를 이 계정으로 가져왔어요');
  else{if(!dbIsEmpty(DB)&&guestHasData())toast('로그인했어요 · '+r.email+' · 게스트로 입력한 데이터는 이 계정에 합쳐지지 않았어요');else toast('로그인했어요 · '+r.email)}
 }
 async function doSignup(){
@@ -6459,7 +6463,9 @@ async function doSignup(){
  if(r.err)return authErr(r.err);
  if(r.needsConfirm){openSheet(`<h3>이메일 인증이 필요해요</h3><div class="desc">${r.email} 로 인증 메일을 보냈어요. 메일함에서 인증 링크를 누른 뒤 로그인해 주세요.</div><div class="two-btn" style="margin-top:14px"><button class="btn btn-primary" onclick="closeSheet()" style="width:100%">확인</button></div>`);return}
  GUEST=false;localStorage.setItem('asset_app_guest','0');AUTH.setSession(r.email);
- if(r.cloud){await afterCloudAuth(r.uid);startApp();toast('가입 완료 · '+r.email);return}
+ if(r.cloud){const cloudAuthResult=await afterCloudAuth(r.uid);startApp();
+  toast(cloudAuthResult&&cloudAuthResult.status==='guestMerged'?'가입 완료 · '+r.email+' · 게스트로 입력한 데이터를 이 계정으로 가져왔어요':'가입 완료 · '+r.email);
+  return}
  const guestRaw=localStorage.getItem('asset_app_db_v3__guest');
  startApp();
  if(guestHasData())confirmSheet('데이터 가져오기','방금까지 게스트로 입력한 자산·내역이 있어요. 새 계정으로 가져올까요?','가져오기',()=>{try{DB=JSON.parse(guestRaw);migrate();save();renderCurrent();toast('데이터를 가져왔어요')}catch(e){toast('가져오기에 실패했어요')}});

@@ -1,26 +1,8 @@
 {
-  "cycle": 84,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "afterCloudAuth() 게스트 데이터 병합 시 로그인/가입 완료 메시지 오류·불일치 수정",
-    "why": "게스트로 입력한 데이터가 있는 상태에서 클라우드 계정(신규 가입 또는 첫 클라우드 동기화)에 로그인/가입하면 afterCloudAuth()(index.html:1679-1695, 특히 1692줄)가 원격이 비어있을 때 게스트 DB를 조용히(확인창 없이) 그대로 채택한다. doLogin()(6441-6453)은 이 병합 이후 dbIsEmpty(DB)가 false가 된 것만 보고 '게스트로 입력한 데이터는 이 계정에 합쳐지지 않았어요'라는 사실과 반대되는 메시지를 띄운다 — 사용자가 데이터가 사라졌다고 오해해 재입력(중복 데이터)하거나 존재하지 않는 복구 경로를 찾아 헤맬 위험. doSignup()의 r.cloud 분기(6462)는 게스트 데이터 병합 여부를 아예 언급하지 않는 반면, 바로 아래 비클라우드 분기(6463-6466)는 confirmSheet로 명시적 동의를 구한다 — 같은 '가입하기' 버튼인데 클라우드 계정만 조용히 병합되는 비대칭. test/run.js의 afterCloudAuth 테스트(3778, 3791)는 conflict/remote-adopted 경로만 다루고 remote===null && guestHasData() 경로는 커버하지 않음.",
-    "approach": "1) afterCloudAuth(uid)가 각 return 지점에서 상태 문자열을 함께 반환하도록 수정: {status:'conflict'|'remote'|'guestMerged'|'empty'} (기존 4개 return 지점에 한 줄씩 추가, 시그니처는 유지). 2) doLogin()에서 dbIsEmpty(DB)로 병합 여부를 재추정하는 대신 이 상태값을 사용: status==='guestMerged'면 '게스트 데이터를 이 계정으로 가져왔어요' 같은 정확한 안내 토스트를 띄우고, 비클라우드(!r.cloud) 경로는 기존 로직 그대로 유지. 3) doSignup()의 r.cloud 분기에도 동일 상태값을 확인해 게스트 병합 시 비클라우드 분기와 톤이 일치하는 안내 문구를 추가. 4) test/run.js의 기존 afterCloudAuth 테스트 블록(~3778) 옆에 remote=null + guestHasData()=true 케이스를 추가해 새 status 값과 DB가 실제로 게스트 데이터로 교체됨을 검증 — 기존 관례대로 DOM 의존적인 doLogin/doSignup이 아닌 afterCloudAuth 자체를 직접 테스트. 완료 후 두 인라인 <script> node --check, node test/run.js 통과 확인, APP_VERSION/sw.js CACHE 버전업."
-  },
+  "cycle": 85,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 79,
-      "phase": "critique",
-      "timestamp": "2026-09-24T15:12:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체 재검토. saveTx()(index.html:3346-3377)와 saveRec()(index.html:3536-3566)가 검증->DB mutate->save();closeSheet();renderCurrent()를 동기적으로 완주할 뿐 재진입 가드가 전혀 없어, .sheet의 .46s 닫힘 트랜지션 동안 더블탭하면 두 click 이벤트가 각각 완주해 DB.txns/DB.recurrences에 동일 항목이 2건 push되는 버그 발견. saveAsset()은 name/type 중복체크로 우연히 막히고 auth 폼(signUp/login, index.html:6420-6435)은 이미 btn.disabled 가드를 쓰는 동일 패턴이 있는데 가장 자주 쓰는 거래/반복거래 입력 폼 두 곳만 빠져있음. saveRec 중복은 그 반복거래의 모든 미래 발생을 영구 이중계상(월세/구독/급여 등). auth 폼과 동일한 재진입 가드(_formBusy류 플래그, 함수 시작에 체크, mutate 직전 set, 함수 끝에 clear)를 saveTx/saveRec(/saveBudget)에 적용하는 계획을 pending_advance_plan에 저장.",
-      "commit": null
-    },
-    {
-      "cycle": 79,
-      "phase": "advance",
-      "timestamp": "2026-09-24T16:10:00.000Z",
-      "summary": "critique 계획의 '함수 끝에서 플래그 해제' 부분만 구현 전 재검토 후 수정: saveTx/saveRec는 완전히 동기 함수라(auth 폼의 doLogin/doSignup과 달리 중간에 await가 없음) click 이벤트 1의 실행이 끝나야 click 이벤트 2가 처리되는 JS 단일 스레드 특성상, 같은 호출 안에서 플래그를 true->false로 되돌리면 두 번째 탭이 처리되는 시점엔 이미 false로 되돌아가 있어 가드가 실질적으로 아무것도 막지 못한다(critique가 전제한 'closeSheet()가 innerHTML로 폼을 언마운트한다'는 것도 실제 소스(index.html:5237)엔 없음 — classList.remove('show')로 트랜지션만 걸 뿐 버튼은 DOM에 그대로 남음). 대신 저장 완료된 draft 객체 자체를 표시해 같은 draft로의 재호출을 막는 방식으로 바꿈: 모듈 스코프 WeakSet _savedDrafts를 추가해 saveTx/saveRec 시작부에서 syncTxInputs/syncRecInputs 직후 `if(_savedDrafts.has(d))return`으로 가드하고, 검증을 모두 통과해 실제 DB mutate로 들어가기 직전(saveTx는 반복 등록 분기·일회성 분기 두 곳, saveRec는 wasEditing 분기 직전 한 곳)에 `_savedDrafts.add(d)`. txDraft/recDraft는 새 폼을 열 때(openTxSheet/editTx/openRecSheet/editRec)마다 새 객체로 교체되므로 별도 리셋 없이 다음 세션에서 자연히 무효화된다. d에 직접 `_saved=true` 같은 프로퍼티를 얹는 대신 WeakSet을 쓴 이유는, DB.txns.push(d)/DB.recurrences[i]=d처럼 draft 객체 자체가 그대로 저장되는 경로가 있어 프로퍼티로 얹으면 그 마커가 실제 레코드에 영구히 섞여 들어가기 때문(cycle79 develop이 고친 스냅샷 이름 잔존 버그와 같은 종류의 데이터 오염 위험). saveBudget()은 setBudgetFrom(카테고리·월 키 기준 upsert)이라 재호출해도 같은 값을 다시 쓸 뿐 append가 아니어서 원래도 멱등 — 계획대로 적용 대상에서 제외. test/run.js CONSTS에 _savedDrafts 추가, 회귀 테스트 4개 추가(saveRec 신규 반복 더블탭 방지, saveTx 반복분기/일회성분기 더블탭 방지, 검증 실패 후 값 채워 재시도하면 정상 저장돼 가드가 실패 경로까지 막지 않음을 확인) — 가드 제거 후 재실행해 더블탭 방지 테스트 2개가 실제로 실패함을 확인한 뒤 재적용. 두 인라인 <script> 블록 node --check 통과, node test/run.js 537/537 통과(기존 533 + 신규 4). APP_VERSION 1.46.29->1.46.30, sw.js CACHE v191->v192.",
-      "commit": null
-    },
     {
       "cycle": 80,
       "phase": "develop",
@@ -152,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-25T12:15:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체 재검토. afterCloudAuth(uid)(index.html:1679-1695)가 원격 DB가 비어있고 게스트 데이터가 있을 때(신규 클라우드 가입 또는 기존 로컬 계정의 첫 클라우드 동기화) 확인창 없이 게스트 DB를 그대로 채택(1692줄)하는데, doLogin()(6441-6453)은 병합 후 dbIsEmpty(DB)가 false인 것만 보고 '게스트로 입력한 데이터는 합쳐지지 않았어요'라는 사실과 반대되는 메시지를 띄우고, doSignup()의 r.cloud 분기(6462)는 병합 여부를 아예 언급하지 않아 바로 아래 비클라우드 분기(6463-6466, confirmSheet로 명시 동의)와 비대칭임을 발견. test/run.js의 afterCloudAuth 테스트(3778, 3791)는 conflict/remote-adopted 경로만 다루고 이 경로는 미커버. afterCloudAuth가 상태값({status:'conflict'|'remote'|'guestMerged'|'empty'})을 반환하도록 하고 doLogin/doSignup이 dbIsEmpty 재추정 대신 그 값을 써서 정확한 안내 토스트를 띄우는 계획을 pending_advance_plan에 저장. 검토 후 기각한 후보: RANGE_FROM 롤링 윈도우화(안전한 완화책 없이는 여전히 한 사이클 범위 밖), sw.js skipWaiting/clients.claim(이미 업데이트 바로 완화됨), CSV 미매칭 자산 제외(이미 미리보기에 명시적으로 노출됨). 코드 변경 없음(git status/diff 비어있음 확인).",
+      "commit": null
+    },
+    {
+      "cycle": 84,
+      "phase": "advance",
+      "timestamp": "2026-09-25T13:11:33.062Z",
+      "summary": "critique(cycle84)가 세운 계획대로 afterCloudAuth(uid)가 remote 채택/충돌/게스트 병합/완전 신규 4갈래 각각에서 {status} 객체를 반환하도록 수정(기존 4개 return 경로에 상태값 추가, 시그니처 유지). doLogin()이 그동안 dbIsEmpty(DB)로 병합 여부를 잘못 추정해(병합 성공 시 DB가 채워져 false가 되는데 오히려 \"합쳐지지 않았어요\"라고 반대로 안내하던 버그) 이제 status===\"guestMerged\"를 직접 확인해 정확한 안내(\"게스트로 입력한 데이터를 이 계정으로 가져왔어요\")를 띄우도록 수정, 기존 dbIsEmpty(DB)&&guestHasData() 확인시트 분기와 비클라우드 로그인 분기는 그대로 유지. doSignup()의 r.cloud 분기도 동일 status를 확인해 비클라우드 분기(confirmSheet로 명시적 동의)와 톤이 맞는 안내 문구를 추가(비클라우드 분기의 확인시트 흐름 자체는 바꾸지 않음 — 클라우드는 이미 조용히 병합되는 게 기존 동작이라 이번 수정은 메시지 정확성만 다룸). test/run.js: FUNCTIONS에 guestHasData 추가, afterCloudAuth 회귀 테스트 2개 추가(remote=null+게스트데이터 있음 -> status:guestMerged로 게스트 DB 채택 확인, remote=null+게스트데이터 없음 -> status:empty 확인) — vm 컨텍스트에서 만들어진 객체라 assert.deepStrictEqual이 프로토타입 불일치로 오탐하는 것을 발견해 strictEqual(result.status,...)로 수정. 두 인라인 <script> 블록 node --check 통과, node test/run.js 570/570 통과(기존 568 + 신규 2). APP_VERSION 1.46.38->1.46.39, sw.js CACHE v200->v201.",
       "commit": null
     }
   ]

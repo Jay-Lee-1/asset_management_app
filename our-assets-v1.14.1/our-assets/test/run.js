@@ -94,7 +94,7 @@ const FUNCTIONS = [
  'notifyAlertInfo', 'pickNotifyAlerts', 'pruneNotifiedIds',
   'catIconOf', 'catGlyph', 'openCatManage', 'openCatPicker',
   'catListOf', 'catAv', 'assetPickBtn', 'endCondFields', 'openFormSheet', 'renderTxSheet', 'txType', 'txToggleRepeat',
-  'accountName', 'dbIsEmpty',
+  'accountName', 'dbIsEmpty', 'guestHasData',
   'txScheduled', 'monthStats', 'monthStats2', 'expenseByCat', 'needGold', 'inQuietWindow', 'fmtSynced', 'rateStatusText',
   'nextBigOutflow', 'dday', 'balanceOn', 'nextOutflowCard', 'monthOutflowCard', 'planGaugeCard', 'homeAlertCard', 'renderHome',
   'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwHistoryCard', 'doRenameOwner',
@@ -3798,6 +3798,31 @@ test('afterCloudAuth: 로컬에 미동기화 편집이 없으면 remote를 그�
   await sandbox.afterCloudAuth('u1');
   assert.ok(sandbox.DB.assets.some(a => a.id === 'remote'), 'remote 데이터를 채택해야 함');
   assert.strictEqual(sandbox.markCloudSyncedCalls, 1);
+  sandbox._lsMap = null;
+});
+/* afterCloudAuth()가 remote===null && guestHasData() 경로(신규 클라우드 계정/첫 가입에 게스트
+ * 데이터가 조용히 병합되는 경우)를 status로 알려주지 않아, doLogin()이 dbIsEmpty(DB)만 보고
+ * "게스트 데이터가 합쳐지지 않았어요"라는 사실과 반대되는 메시지를 띄우던 버그
+ * (app-evolve cycle84 critique/advance) 재발 방지. */
+test('afterCloudAuth: remote가 없고(신규 계정) 게스트 데이터가 있으면 게스트 DB를 채택하고 status:"guestMerged"를 반환한다', async () => {
+  sandbox.DB = { assets: [], txns: [] };
+  sandbox.CLOUD_UID = null;
+  sandbox.CLOUD_SYNC_STATE = 'idle';
+  sandbox._sbMaybeSingleResult = { data: null, error: null }; // remote 없음
+  const guestDb = { assets: [{ id: 'guest-1' }], txns: [] };
+  sandbox._lsMap = { 'asset_app_db_v3__guest': JSON.stringify(guestDb) };
+  const result = await sandbox.afterCloudAuth('u1');
+  assert.strictEqual(result.status, 'guestMerged');
+  assert.ok(sandbox.DB.assets.some(a => a.id === 'guest-1'), '게스트 DB를 그대로 채택해야 함');
+  sandbox._lsMap = null;
+});
+test('afterCloudAuth: remote도 없고 게스트 데이터도 없으면(완전 신규 계정) status:"empty"를 반환한다', async () => {
+  sandbox.DB = { assets: [], txns: [] };
+  sandbox.CLOUD_UID = null;
+  sandbox._sbMaybeSingleResult = { data: null, error: null };
+  sandbox._lsMap = { 'asset_app_db_v3__guest': null };
+  const result = await sandbox.afterCloudAuth('u1');
+  assert.strictEqual(result.status, 'empty');
   sandbox._lsMap = null;
 });
 test('resolveCloudPullRemote(사용자가 명시적으로 누르는 "가져오기"): remote를 채택하며 markCloudSynced를 부른다', async () => {
