@@ -82,7 +82,7 @@ const FUNCTIONS = [
   'pullCloud', 'afterCloudAuth', 'resolveCloudPullRemote',
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
   'clampDay', 'saveTx', 'assetBase', 'balancesUpTo', 'balanceAt',
-  'addBalanceAdjust', 'updateBalanceAdjust', 'toggleConfirmTransfers',
+  'addBalanceAdjust', 'updateBalanceAdjust', 'toggleConfirmTransfers', 'rollPendingTransfers',
   'assetEval', 'assetGainLoss', 'assetGainLossBadge', 'costBasisField', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'delOwner', 'doMaturity', 'firstCash',
   'detectStaleMarketValuedTxns', 'delBudget',
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards',
@@ -398,7 +398,6 @@ const sandbox = {
   // 대신 호출 인자를 기록하고 콜백만 저장해서, 테스트가 "확인" 버튼을 누른 것처럼 cb를 직접 실행할 수 있게 한다.
   confirmSheet: (title, msg, ok, cb) => { sandbox.confirmSheetCalls.push({ title, msg, ok, cb }); },
   confirmSheetCalls: [],
-  rollPendingTransfers: () => {},
   // openAssetPicker()가 실제로 그리는 시트 DOM 대신, 넘겨받은 bodyHtml을 그대로 기록만 하는
   // openPicker() 스텁 — excludeMarketValued 필터가 최종 목록 문자열에 반영됐는지 검증하는 데 쓴다.
   lastPickerHtml: null,
@@ -3159,6 +3158,68 @@ test('toggleConfirmTransfers: 미확인 이체가 전혀 없으면 확인 시트
   sandbox.toggleConfirmTransfers();
   assert.strictEqual(sandbox.confirmSheetCalls.length, 0);
   assert.strictEqual(sandbox.DB.settings.confirmTransfers, false);
+});
+test('toggleConfirmTransfers: 아직 도래하지 않은(미래 날짜) 일반 이체만 있으면 확인 시트 없이 바로 꺼지고, 그 이체는 미확정으로 남는다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.confirmSheetCalls = [];
+  const future = { id: 't1', type: 'transfer', date: '2026-06-20', confirmed: false, amount: 5000 };
+  sandbox.DB = { settings: { confirmTransfers: true }, txns: [future], recurrences: [] };
+  sandbox.toggleConfirmTransfers();
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0, '미래 이체만으로는 확인 시트가 뜨면 안 됨');
+  assert.strictEqual(sandbox.DB.settings.confirmTransfers, false);
+  assert.strictEqual(future.confirmed, false, '아직 도래하지 않은 이체는 조기 확정되면 안 됨');
+});
+test('toggleConfirmTransfers: 도래한 이체와 미래 이체가 섞여 있으면 도래한 것만 세고 확정하며, 미래 것은 그대로 둔다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.confirmSheetCalls = [];
+  const due = { id: 't1', type: 'transfer', date: '2026-06-10', confirmed: false, amount: 5000 };
+  const future = { id: 't2', type: 'transfer', date: '2026-06-20', confirmed: false, amount: 7000 };
+  sandbox.DB = { settings: { confirmTransfers: true }, txns: [due, future], recurrences: [] };
+  sandbox.toggleConfirmTransfers();
+  assert.ok(sandbox.confirmSheetCalls[0].msg.includes('1건'), '미래 이체는 대기 건수에서 빠져야 함');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(due.confirmed, true, '도래한 이체는 확정돼야 함');
+  assert.strictEqual(future.confirmed, false, '미래 이체는 확정되면 안 됨');
+});
+test('toggleConfirmTransfers: 오늘 날짜 일반 이체는 도래한 것으로 취급돼 확정 대상에 포함된다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.confirmSheetCalls = [];
+  const today = { id: 't1', type: 'transfer', date: '2026-06-15', confirmed: false, amount: 5000 };
+  sandbox.DB = { settings: { confirmTransfers: true }, txns: [today], recurrences: [] };
+  sandbox.toggleConfirmTransfers();
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 1);
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(today.confirmed, true);
+});
+
+/* ---------- rollPendingTransfers: 이체 확인이 켜진 상태에서 기한이 지난(과거 날짜) 미확인 이체를 오늘로 당긴다 ---------- */
+test('rollPendingTransfers: 이체 확인이 꺼져 있으면 아무것도 하지 않는다', () => {
+  sandbox.TODAY = '2026-06-15';
+  const overdue = { id: 't1', type: 'transfer', date: '2026-06-10', confirmed: false, amount: 5000 };
+  sandbox.DB = { settings: { confirmTransfers: false }, txns: [overdue] };
+  sandbox.rollPendingTransfers();
+  assert.strictEqual(overdue.date, '2026-06-10');
+});
+test('rollPendingTransfers: 기한이 지난 미확인 일반 이체는 오늘 날짜로 당겨진다', () => {
+  sandbox.TODAY = '2026-06-15';
+  const overdue = { id: 't1', type: 'transfer', date: '2026-06-10', confirmed: false, amount: 5000 };
+  sandbox.DB = { settings: { confirmTransfers: true }, txns: [overdue] };
+  sandbox.rollPendingTransfers();
+  assert.strictEqual(overdue.date, '2026-06-15');
+});
+test('rollPendingTransfers: 아직 도래하지 않은(미래) 미확인 이체는 건드리지 않는다', () => {
+  sandbox.TODAY = '2026-06-15';
+  const future = { id: 't1', type: 'transfer', date: '2026-06-20', confirmed: false, amount: 5000 };
+  sandbox.DB = { settings: { confirmTransfers: true }, txns: [future] };
+  sandbox.rollPendingTransfers();
+  assert.strictEqual(future.date, '2026-06-20', '미래 이체는 앞당겨지면 안 됨');
+});
+test('rollPendingTransfers: 이미 확정된(confirmed:true) 이체는 날짜와 무관하게 건드리지 않는다', () => {
+  sandbox.TODAY = '2026-06-15';
+  const confirmed = { id: 't1', type: 'transfer', date: '2026-06-10', confirmed: true, amount: 5000 };
+  sandbox.DB = { settings: { confirmTransfers: true }, txns: [confirmed] };
+  sandbox.rollPendingTransfers();
+  assert.strictEqual(confirmed.date, '2026-06-10');
 });
 
 /* ---------- saveAsset: 동명·동종 자산 중복 차단이 수정(edit)에도 적용되는지 (자산 등록 때만 막고 수정 때는 안 막던 버그) ---------- */
