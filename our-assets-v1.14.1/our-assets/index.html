@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.34';
+const APP_VERSION='1.46.35';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6146,9 +6146,11 @@ function openCurrencyPicker(o){const html=CURRENCY_LIST.map(c=>`<button class="p
  requestAnimationFrame(()=>requestAnimationFrame(()=>movePkBlob(false)));}
 function pkPickCurrency(c){pkChoose(c)}
 function openCatPicker(o){const avc=catAv(o.kind);
- const grid=catListOf(o.kind).map(c=>`<button class="pk-cat ${c===o.current?'on':''}" data-cat="${c}" onclick="pkPickCat('${c}')"><div class="cav ${avc}">${catGlyph(o.kind,c,18,'tag')}</div>${esc(c)}</button>`).join('');
+ const grid=catListOf(o.kind).map(c=>`<button class="pk-cat ${c===o.current?'on':''}" data-cat="${esc(c)}"><div class="cav ${avc}">${catGlyph(o.kind,c,18,'tag')}</div>${esc(c)}</button>`).join('');
  window._pkPick=o.onPick;
  openPicker((CAT_LABEL[o.kind]||'')+' 카테고리',`<div class="pk-cat-grid" id="catGrid"><div class="cat-blob" id="catBlob"></div>${grid}</div><div style="height:14px"></div><button class="btn btn-soft" onclick="openCatManage('${o.kind}')">카테고리 추가·관리</button>`,o.back);
+ const catGridEl=$('catGrid'); /* 카테고리명을 onclick 문자열에 보간하면 인젝션이 되므로, data-cat만 이스케이프해 심고 위임 클릭으로 읽는다 */
+ if(catGridEl)catGridEl.onclick=e=>{const b=e.target.closest('.pk-cat');if(b)pkPickCat(b.dataset.cat)};
  requestAnimationFrame(()=>requestAnimationFrame(()=>moveCatBlob(false)));
 }
 function moveCatBlob(animate){
