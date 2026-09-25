@@ -1,15 +1,8 @@
 {
   "cycle": 82,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 77,
-      "phase": "review",
-      "timestamp": "2026-09-24T06:08:44.821Z",
-      "summary": "develop 커밋(dfad39a, pullCloud() markCloudSynced 조기 호출 버그 수정)을 검토. pullCloud()의 유일한 부수효과 변경(markCloudSynced 제거)이 CLOUD_LAST_SYNCED_AT/cloudSyncOk() 갱신은 그대로 유지함을 확인. markCloudSynced() 호출부 전수 확인(pushCloud proceed/fallback 2곳, afterCloudAuth 비-conflict 분기, resolveCloudPullRemote) — remote를 실제로 채택하거나 push가 실제로 성공한 경로에만 남아있어 일관됨. online 핸들러(pullCloud();pushCloud())가 pullCloud 반환값을 DB에 반영하지 않는 것은 기존 설계(push 전 CLOUD_LAST_SYNCED_AT만 최신화)이며 이번 수정과 무관. 527/527 통과. 코드 변경 없음(이상 없음).",
-      "commit": null
-    },
     {
       "cycle": 77,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-25T01:10:00.000Z",
       "summary": "Explore 서브에이전트로 발견한 홈 '저축' 게이지 카드 버그 수정. planGaugeCard(S,y,m)(index.html:2284-2300)의 저축 행이 mk('저축',a.saving+a.transfer,a.saving+a.transfer+sc.saving+sc.transfer,...)로 monthStats2()가 분리해 둔 saving/transfer 두 버킷을 섞어, 계좌 간 일반 이체(transfer, 저축과 무관한 통장↔통장 이동)가 있을 때마다 홈 화면의 '이번 달 예정 대비 오늘까지 · 저축' 진행률·금액이 실제 저축 목표와 무관한 이체액까지 포함해 과장 표시됐다. transfer는 코드베이스 전반(monthStats/monthStats2/histSumTotals, upcomingOutflows의 주석 '이체는 외부로 나가는 게 아니므로 제외, 단 저축은 포함')에서 saving과 명확히 분리 취급되는데 planGaugeCard만 유일하게 이를 어겼음을 grep으로 확인. mk('저축',a.saving,a.saving+sc.saving,'var(--save)')로 수정해 이체를 제외. test/run.js에 계좌 간 이체(500,000)와 실제 저축(오늘까지 50,000 + 예정 50,000)이 함께 있는 DB로 planGaugeCard()를 직접 호출해 저축 행 렌더 결과가 이체액과 무관하게 saving 금액만 반영함을 확인하는 회귀 테스트 1개 추가 — fix를 git stash로 임시 제거해 실제로 실패함을 확인한 뒤 재적용. 두 인라인 <script> 블록 node --check 통과, node test/run.js 560/560 통과(기존 559 + 신규 1). APP_VERSION 1.46.33->1.46.34, sw.js CACHE v195->v196.",
+      "commit": null
+    },
+    {
+      "cycle": 82,
+      "phase": "review",
+      "timestamp": "2026-09-25T02:10:00.000Z",
+      "summary": "develop 커밋(7a0737d, planGaugeCard() 저축 게이지 이체 오집계 수정)을 검토. 코드베이스 다른 곳(index.html:3043,3052 등 '내부이체' 표시)이 이미 a.saving과 a.transfer를 항상 분리 표시함을 grep으로 재확인 — planGaugeCard가 유일한 예외였고 수정으로 대칭이 맞춰짐. planGaugeCard 전체(수입/지출/저축 3행)를 다시 읽어 다른 행에는 같은 문제(transfer 혼입)가 없음을 확인. 새 회귀 테스트가 이체(500,000)와 저축(오늘까지 50,000/예정 100,000)을 함께 넣어 실제로 분리 검증함을 확인. node test/run.js 560/560 통과. 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
