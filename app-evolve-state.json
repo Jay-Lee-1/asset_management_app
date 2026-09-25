@@ -1,15 +1,12 @@
 {
   "cycle": 86,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "클라우드 동기화 충돌 해결이 문서 전체 단위 last-writer-wins이라 부부 동시 사용(앱의 핵심 시나리오)에서 데이터가 통째로 사라짐",
+    "why": "계정 시트 문구(index.html:4089)가 '배우자가 계정을 따로 만들면 서로의 기록이 안 보여요'라며 부부가 같은 계정을 공유해 동시에 쓰는 걸 전제로 하는데, pushCloud()/isCloudConflict/decidePushOutcome(index.html:1632-1681)는 DB 전체 JSON을 한 덩어리로 취급해 두 사람이 서로 무관한 항목(한쪽은 식비 거래 추가, 다른 쪽은 주식 자산 추가)만 각각 편집해도 충돌로 처리되고, 사용자는 resolveCloudPullRemote(내 편집 버림)나 resolveCloudForcePush(confirmCloudForcePush 경고문대로 '되돌릴 수 없이' 상대방의 동기화 안 된 전체 데이터를 지움) 중 하나만 선택 가능하다. 이는 예외적 엣지케이스가 아니라 이 앱의 주된 사용 패턴에서 일상적으로 발생하는 파괴적 데이터 손실이라 우선순위가 가장 높다.",
+    "approach": "1) 모든 레코드(txn/asset/recurrence/카테고리/귀속 이름)에 updatedAt 타임스탬프와 삭제 시 deletedAt 툼스톤을 남기는 공용 touch(obj) 헬퍼를 추가해 각 CRUD 경로(addTxn/editTxn/delTx, addAsset/editAsset/delAsset, 반복거래 CRUD, 카테고리·귀속 rename/delete 등)에서 호출. 2) pushCloud()의 충돌 분기를 문서 전체 교체 대신, 충돌 시 pullCloud()로 받은 원격 DB와 로컬 DB를 마지막 CLOUD_LAST_SYNCED_AT 스냅샷을 공통 조상 삼아 컬렉션별·id별 3-way 병합(한쪽에만 있는 id는 합집합, 양쪽에 있으면 updatedAt 늦은 쪽 채택, 툼스톤 우선)하도록 교체. 3) 병합 결과를 푸시하고, 같은 레코드의 같은 필드가 양쪽에서 다르게 바뀐 좁은 경우에만 기존 pull/force-push 시트를 레코드 단위로 축소해 노출. 범위가 크므로 한 사이클에 무리라면 1단계(touch 헬퍼 도입)만 먼저 안전하게 끝내고 2~3단계는 다음 critique/advance로 넘기는 것도 허용. test/run.js에 병합 순수 함수 단위테스트(추가/추가, 편집/삭제, 동일 필드 편집 충돌) 추가."
+  },
   "history": [
-    {
-      "cycle": 81,
-      "phase": "critique",
-      "timestamp": "2026-09-24T23:15:35.201Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체 재검토. toggleConfirmTransfers()(index.html:2503-2525)의 pendingOneOff 필터(2509줄)가 반복 이체 분기(pendingRecList, 2510줄)와 달리 date<=TODAY 가드 없이 DB.txns의 모든 미확인 일반 이체를 대상으로 삼아, 2506-2508줄 주석이 명시한 '미래 회차는 지금 완료 처리하면 안 됨' 불변식을 일반 이체만 위반함을 발견. 이체 확인 설정을 켠 채 미래 날짜 이체를 예약(saveTx가 지원하는 정상 경로)했다가 설정을 끄면 그 이체가 도래 전에 조용히 확정 처리되어 대기 이체 뱃지에서 영구히 빠짐 — 기능의 존재 목적을 무력화. test/run.js:3143-3154의 유일한 관련 테스트는 일반 이체 fixture가 항상 과거 날짜라 이 갭을 못 잡음. pendingOneOff에 date<=TODAY 가드(또는 isDuePending 재사용) 추가 + 회귀 테스트 4~6개 + 여유 있으면 rollPendingTransfers() 직접 테스트 추가 계획을 pending_advance_plan에 저장. 코드 변경 없음(git status/diff 비어있음 확인).",
-      "commit": null
-    },
     {
       "cycle": 81,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-09-25T19:10:00.000Z",
       "summary": "develop 커밋(7f61f1c, doMaturity() 만기 이체 금액이 예정 포함 투영값을 쓰던 버그 수정)을 검토. schHorizon()/assetBalance()/balanceAt()/balancesUpTo() 소스를 직접 읽어 assetEval()이 저축 자산에 대해 includeScheduled=true일 때 이번 달 말까지 투영한 잔액을 반환하던 경로를 재확인하고, 수정된 doMaturity()가 date(<=TODAY 항상)를 먼저 계산한 뒤 balanceAt(a.id,date)로만 금액을 잡아 그 시점 이후 예정 입금이 섞이지 않음을 확인. balanceAt(id,date<=TODAY)는 balancesUpTo에서 proj=false가 되어 미확인(pending) 이체도 함께 제외됨을 확인 — 기존 confirmTransfers 설계와 일관됨. openMaturity() 미리보기도 동일한 date 기준 balanceAt으로 맞춰 doMaturity() 실제 이체 금액과 표시값이 어긋나지 않게 함께 고쳐진 것도 확인. 새 회귀 테스트가 예정 포함 설정 + 미래 예정 입금이 섞인 상태에서 실제로 baseAmount만 이체됨을 검증함을 확인. node test/run.js 585/585 통과. 코드 변경 없음(이상 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 86,
+      "phase": "critique",
+      "timestamp": "2026-09-25T20:12:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체 재검토. pushCloud()/afterCloudAuth()(index.html:1649-1700)가 DB 전체를 문서 단위로 동기화해, 계정 시트가 부부 동시 사용을 전제하는데도(4089줄) 서로 무관한 항목을 각자 편집하기만 해도 충돌 처리되고 해결책이 '내 변경 버리기' 또는 '상대방 미동기화 데이터 통째로 삭제(되돌릴 수 없음)' 둘뿐임을 발견 — cycle85 critique가 기각한 '푸시/풀 동시성(조건부 UPDATE로 원자적)'과는 다른 문제로, 원자성이 아니라 병합 단위(문서 전체 vs 레코드 단위)가 근본 원인. touch(obj) 헬퍼로 레코드별 updatedAt/deletedAt을 남기고 충돌 시 컬렉션·id 단위 3-way 병합으로 교체하는 계획을 pending_advance_plan에 저장, 범위가 크면 1단계(touch 헬퍼)만 먼저 하는 것도 허용. 코드 변경 없음(git status/diff 비어있음 확인).",
       "commit": null
     }
   ]
