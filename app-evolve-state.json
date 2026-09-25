@@ -1,26 +1,8 @@
 {
-  "cycle": 86,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "클라우드 동기화 충돌 해결이 문서 전체 단위 last-writer-wins이라 부부 동시 사용(앱의 핵심 시나리오)에서 데이터가 통째로 사라짐",
-    "why": "계정 시트 문구(index.html:4089)가 '배우자가 계정을 따로 만들면 서로의 기록이 안 보여요'라며 부부가 같은 계정을 공유해 동시에 쓰는 걸 전제로 하는데, pushCloud()/isCloudConflict/decidePushOutcome(index.html:1632-1681)는 DB 전체 JSON을 한 덩어리로 취급해 두 사람이 서로 무관한 항목(한쪽은 식비 거래 추가, 다른 쪽은 주식 자산 추가)만 각각 편집해도 충돌로 처리되고, 사용자는 resolveCloudPullRemote(내 편집 버림)나 resolveCloudForcePush(confirmCloudForcePush 경고문대로 '되돌릴 수 없이' 상대방의 동기화 안 된 전체 데이터를 지움) 중 하나만 선택 가능하다. 이는 예외적 엣지케이스가 아니라 이 앱의 주된 사용 패턴에서 일상적으로 발생하는 파괴적 데이터 손실이라 우선순위가 가장 높다.",
-    "approach": "1) 모든 레코드(txn/asset/recurrence/카테고리/귀속 이름)에 updatedAt 타임스탬프와 삭제 시 deletedAt 툼스톤을 남기는 공용 touch(obj) 헬퍼를 추가해 각 CRUD 경로(addTxn/editTxn/delTx, addAsset/editAsset/delAsset, 반복거래 CRUD, 카테고리·귀속 rename/delete 등)에서 호출. 2) pushCloud()의 충돌 분기를 문서 전체 교체 대신, 충돌 시 pullCloud()로 받은 원격 DB와 로컬 DB를 마지막 CLOUD_LAST_SYNCED_AT 스냅샷을 공통 조상 삼아 컬렉션별·id별 3-way 병합(한쪽에만 있는 id는 합집합, 양쪽에 있으면 updatedAt 늦은 쪽 채택, 툼스톤 우선)하도록 교체. 3) 병합 결과를 푸시하고, 같은 레코드의 같은 필드가 양쪽에서 다르게 바뀐 좁은 경우에만 기존 pull/force-push 시트를 레코드 단위로 축소해 노출. 범위가 크므로 한 사이클에 무리라면 1단계(touch 헬퍼 도입)만 먼저 안전하게 끝내고 2~3단계는 다음 critique/advance로 넘기는 것도 허용. test/run.js에 병합 순수 함수 단위테스트(추가/추가, 편집/삭제, 동일 필드 편집 충돌) 추가."
-  },
+  "cycle": 87,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 81,
-      "phase": "advance",
-      "timestamp": "2026-09-25T00:10:00.000Z",
-      "summary": "critique 계획대로 toggleConfirmTransfers()의 pendingOneOff 필터(index.html:2509)에 &&t.date<=TODAY 가드를 추가해 반복 이체 분기(isDuePending)와 동일하게 '도래한' 미확인 일반 이체만 대기/확정 대상으로 삼도록 수정 — 아직 오지 않은 미래 날짜 이체가 설정을 끄는 즉시 조기 확정되던 버그 해결. 계획의 여유 항목이던 rollPendingTransfers() 직접 테스트도 함께 추가: 기존엔 test/run.js:401에서 무관한 toggleConfirmTransfers 테스트를 위해 no-op으로 스텁돼 실제 소스 검증이 0건이었는데, FUNCTIONS 목록에 실제 함수를 추가하고 스텁을 제거함(save()는 이미 별도로 스텁돼 있어 문제 없음). test/run.js에 toggleConfirmTransfers 회귀 테스트 3개(미래만 있으면 시트 없이 바로 꺼지고 미확정 유지 / 도래+미래 혼합 시 도래한 것만 카운트·확정 / 오늘 날짜는 도래로 취급)와 rollPendingTransfers 직접 테스트 4개(설정 꺼져있으면 no-op / 기한 지난 이체는 오늘로 당김 / 미래 이체는 안 건드림 / 이미 확정된 이체는 날짜 무관 안 건드림)를 추가, 총 7개 — fix를 git stash로 임시 제거해 미래/혼합 케이스 2개가 실제로 실패함을 확인한 뒤 재적용. 두 인라인 <script> 블록 node --check 통과, node test/run.js 559/559 통과(기존 552 + 신규 7). APP_VERSION 1.46.32->1.46.33, sw.js CACHE v194->v195.",
-      "commit": null
-    },
-    {
-      "cycle": 82,
-      "phase": "develop",
-      "timestamp": "2026-09-25T01:10:00.000Z",
-      "summary": "Explore 서브에이전트로 발견한 홈 '저축' 게이지 카드 버그 수정. planGaugeCard(S,y,m)(index.html:2284-2300)의 저축 행이 mk('저축',a.saving+a.transfer,a.saving+a.transfer+sc.saving+sc.transfer,...)로 monthStats2()가 분리해 둔 saving/transfer 두 버킷을 섞어, 계좌 간 일반 이체(transfer, 저축과 무관한 통장↔통장 이동)가 있을 때마다 홈 화면의 '이번 달 예정 대비 오늘까지 · 저축' 진행률·금액이 실제 저축 목표와 무관한 이체액까지 포함해 과장 표시됐다. transfer는 코드베이스 전반(monthStats/monthStats2/histSumTotals, upcomingOutflows의 주석 '이체는 외부로 나가는 게 아니므로 제외, 단 저축은 포함')에서 saving과 명확히 분리 취급되는데 planGaugeCard만 유일하게 이를 어겼음을 grep으로 확인. mk('저축',a.saving,a.saving+sc.saving,'var(--save)')로 수정해 이체를 제외. test/run.js에 계좌 간 이체(500,000)와 실제 저축(오늘까지 50,000 + 예정 50,000)이 함께 있는 DB로 planGaugeCard()를 직접 호출해 저축 행 렌더 결과가 이체액과 무관하게 saving 금액만 반영함을 확인하는 회귀 테스트 1개 추가 — fix를 git stash로 임시 제거해 실제로 실패함을 확인한 뒤 재적용. 두 인라인 <script> 블록 node --check 통과, node test/run.js 560/560 통과(기존 559 + 신규 1). APP_VERSION 1.46.33->1.46.34, sw.js CACHE v195->v196.",
-      "commit": null
-    },
     {
       "cycle": 82,
       "phase": "review",
@@ -102,49 +84,56 @@
       "cycle": 85,
       "phase": "develop",
       "timestamp": "2026-09-25T14:14:08.000Z",
-      "summary": "Explore 서브에이전트로 발견한 csvRowToImportTxn() 버그 수정. transfer/saving만 있던 보내는·받는 자산 필수 가드(index.html:4788)가 expense/income에는 없어, CSV의 보내는/받는 자산 칸이 비어 있으면 findAsset('')이 null을 반환하고 unmatched.push도 fromName이 falsy라 건너뛰어 fromAssetId/toAssetId가 null이면서 이름 스냅샷도 없는 완전히 무연결 거래가 그대로 저장됐다 — buildImportPreview의 assetUnmatchedCount에도 안 잡혀(이름이 아예 없으니 unmatched 배열에 안 들어감) 사용자가 알 방법이 없었고, saveTx/saveRec에 이미 있는 동일 가드(cycle81)가 CSV 임포트 경로만 비껴가던 구멍. csvRowToImportTxn()에 type==='expense'&&!fromName / type==='income'&&!toName 가드 2줄 추가해 error:'asset'으로 거부(기존 invalidCount 집계에 자연히 편입). 기존 자산명은 있지만 매칭 안 되는(unmatched) 케이스는 그대로 허용 유지 — 이름 스냅샷이 남아 나중에 수동 매칭 가능하므로 별개 문제. 새 가드가 기존 테스트 5개(소수 금액/RANGE_FROM 경계/buildImportPreview 중복판정·range 카운트 테스트들)에서 의도치 않게 빈 자산명을 쓰고 있던 걸 깨뜨려, 각 테스트가 검증하려던 것과 무관하게 '주계좌' 같은 자산명을 채워 넣어 고침(회귀 없음). 회귀 테스트 2개 추가(빈 자산명 거부 / 이름은 있지만 매칭 안 되는 unmatched는 여전히 허용) — 가드를 git stash로 임시 제거해 신규 테스트 1개가 실제로 실패함을 확인한 뒤 재적용. 두 인라인 <script> 블록 node --check 통과, node test/run.js 572/572 통과(기존 570 + 신규 2). APP_VERSION 1.46.39->1.46.40, sw.js CACHE v201->v202.",
+      "summary": "Explore 서브에이전트로 발견한 csvRowToImportTxn() 버그 수정. transfer/saving만 있던 보내는·받는 자산 필수 가드(index.html:4788)가 expense/income에는 없어, CSV의 보내는/받는 자산 칸이 비어 있으면 findAsset('')이 null을 반환하고 unmatched.push도 fromName이 falsy라 건너뛰어 fromAssetId/toAssetId가 null이면서 이름 스냅샷도 없는 완전히 무연결 거래가 그대로 저장됐다. csvRowToImportTxn()에 type==='expense'&&!fromName / type==='income'&&!toName 가드 2줄 추가해 error:'asset'으로 거부. 두 인라인 <script> 블록 node --check 통과, node test/run.js 572/572 통과(기존 570 + 신규 2). APP_VERSION 1.46.39->1.46.40, sw.js CACHE v201->v202.",
       "commit": null
     },
     {
       "cycle": 85,
       "phase": "review",
       "timestamp": "2026-09-25T15:12:00.000Z",
-      "summary": "develop 커밋(c27ad1d, csvRowToImportTxn() 지출/수입 자산 미입력 CSV 가져오기 무경고 통과 버그 수정)을 검토. type==='expense'&&!fromName / type==='income'&&!toName 가드가 기존 transfer/saving 가드(fromName/toName/fromName===toName 체크) 및 수동 입력(saveTx/saveRec) 쪽 가드와 동일한 패턴으로 자연스럽게 이어짐을 확인. 이름이 있지만 매칭 안 되는 경우(unmatched 스냅샷 허용)는 그대로 유지되어 의도한 경계와 정확히 일치. buildImportPreview의 invalidCount 집계 분기(error!=='range')에도 정상 편입됨을 확인. 기존 테스트 4건(5000.0 소수/RANGE_FROM 경계/중복판정 2건)이 새 가드에 맞춰 자산명을 채우도록 함께 갱신된 것도 확인. 비슷한 CSV 가져오기 경로(csvRowToImportTxn 외 별도 함수)가 더 있는지 확인했으나 없음. 572/572 통과. 코드 변경 없음(이상 없음).",
+      "summary": "develop 커밋(c27ad1d, csvRowToImportTxn() 지출/수입 자산 미입력 CSV 가져오기 무경고 통과 버그 수정)을 검토. 가드가 기존 patterns과 자연스럽게 이어짐을 확인. 572/572 통과. 코드 변경 없음(이상 없음).",
       "commit": null
     },
     {
       "cycle": 85,
       "phase": "critique",
       "timestamp": "2026-09-25T16:12:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체 재검토. addCat(4339-4340)/doRenameCat(4384-4387)/addOwner(2986)/doRenameOwner(2999-3001) 네 곳 모두 trim() 후 완전 일치(대소문자·내부 공백 구분)만으로 중복을 판정해, '식비'가 있는 상태에서 'Food'나 내부 공백만 다른 이름을 입력해도 경고 없이 별개 카테고리/귀속으로 생성되는 사각지대를 발견 — expenseByCat/spendByCategory/budgetForMonth(카테고리)와 ownerAssets/ownerDebt(귀속) 등 이름을 키로 쓰는 모든 집계가 조용히 두 갈래로 쪼개짐. activeRecsForCat·deletedAssetHistoryExists·search의 대소문자 무시 매칭 등 기존 코드가 이름 불일치 분산을 조심스럽게 다뤄온 것과 대비되는 예외 지점. 검토 후 기각: CSV 인젝션(guard()로 이미 방어), 클라우드 push/pull 동시성(조건부 UPDATE로 이미 원자적), 접근성(role=button 전부 tabindex+rowKeydown 페어링 확인), RANGE_FROM 롤링 윈도우화(cycle83부터 반복 보류, 이번에도 안전한 단일 사이클 완화책 못 찾아 재보류), CSV 재가져오기 반복거래 회차 중복(csvDedupeKey로 이미 방어). normName(s)로 공백/대소문자 정규화 후 비교하는 근접 중복 차단 + 기존 이름 노출 안내 계획을 pending_advance_plan에 저장. 코드 변경 없음(git status/diff 비어있음 확인).",
+      "summary": "general-purpose 서브에이전트로 앱 전체 재검토. addCat/doRenameCat/addOwner/doRenameOwner 네 곳 모두 완전 일치만으로 중복을 판정해 대소문자·공백만 다른 이름이 별개로 생성되는 사각지대 발견. normName(s) 기반 근접 중복 차단 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     },
     {
       "cycle": 85,
       "phase": "advance",
       "timestamp": "2026-09-25T17:15:00.000Z",
-      "summary": "critique 계획대로 순수 함수 normName(s) 추가(trim 후 공백류를 단일 공백으로 접고 toLowerCase, esc() 바로 아래에 배치)하고 addCat/doRenameCat/addOwner/doRenameOwner 네 곳의 완전 일치 중복 판정을 normName 기반 비교로 교체 — 이름이 근접 중복이면 '비슷한 카테고리/귀속이 있어요: 기존이름' 토스트로 기존 이름을 노출하고, 정확히 같은 이름이면 기존과 동일한 '이미 있는 ~예요' 문구를 유지. 두 rename 함수는 자기 자신(old/인덱스)을 비교 대상에서 제외해 이름의 대소문자만 바꾸는 셀프 변경은 막지 않음(예: 'Food'->'food'는 허용, 다른 카테고리와의 대소문자 충돌만 차단) — critique 계획엔 명시되지 않았지만 doRenameOwner가 이미 같은 패턴(자기 old 제외)을 쓰고 있어 일관성을 맞춤. test/run.js FUNCTIONS에 normName/addOwner 추가, $ mock에 newOwner/renameOwner id 지원 추가, normName 자체 테스트 3개 + addCat/doRenameCat/addOwner/doRenameOwner 각각 근접중복 차단·자기자신 예외·정상 케이스 검증 테스트 9개, 총 12개 추가 — FUNCTIONS 목록 갱신 전엔 'normName is not defined'로 6개가 실제로 실패함을 확인한 뒤 정상화. 두 인라인 <script> 블록 node --check 통과, node test/run.js 584/584 통과(기존 572 + 신규 12). APP_VERSION 1.46.40->1.46.41, sw.js CACHE v202->v203. 계획에 있던 '기존 근접 중복 데이터 병합 도구'는 범위 밖으로 명시 제외(신규 생성 경로만 차단).",
+      "summary": "critique 계획대로 normName(s) 추가하고 addCat/doRenameCat/addOwner/doRenameOwner 네 곳의 완전 일치 중복 판정을 normName 기반 비교로 교체. test/run.js에 12개 테스트 추가. node test/run.js 584/584 통과. APP_VERSION 1.46.40->1.46.41, sw.js CACHE v202->v203.",
       "commit": null
     },
     {
       "cycle": 86,
       "phase": "develop",
       "timestamp": "2026-09-25T18:12:00.000Z",
-      "summary": "Explore 서브에이전트로 발견한 doMaturity() 만기 이체 금액 오산정 버그 수정. 저축 자산은 assetEval(a)가 assetBalance(a.id)=balanceAt(a.id,schHorizon())로 흘러, '예정 포함' 설정(includeScheduled)이 켜져 있으면 schHorizon()이 TODAY가 아니라 이번 달 말일까지 투영한 잔액을 반환한다(원래 홈/자산카드 표시용 설계). doMaturity()가 이 투영값을 그대로 실제 이체 금액으로 써서, 만기 처리 시점(오늘 또는 만기일, 항상 <=TODAY)과 이번 달 말 사이에 그 저축 계좌로 들어올 예정인 다른 입금(예: 매달 28일 자동이체)까지 만기 이체 금액에 섞여 부풀려졌다 — 저축 계좌는 삭제되지 않고 만기일만 null로 지워지므로, 나중에 그 예정 입금이 실제로 발생하면 이미 이체된 금액이 같은 돈을 한 번 더 반영해 이중계상됨. doMaturity()에서 date를 먼저 계산한 뒤 amt=balanceAt(a.id,date)로 바꿔 '이체 시점까지 실제 반영된 잔액'만 옮기도록 수정, 미리보기(openMaturity())도 같은 date 기준 balanceAt으로 바꿔 이체 전 금액 표시가 실제 이체될 금액과 어긋나지 않도록 함께 고침. test/run.js에 회귀 테스트 1개 추가(예정 포함 설정 + 6/28 예정 입금 2000이 있는 상태에서 6/15에 만기 이체하면 이체 금액이 baseAmount(5000)만이고 미래 입금은 섞이지 않음 확인) — 고치기 전 코드로 되돌려(git stash) 실제로 실패함을 확인한 뒤 재적용. 두 인라인 <script> 블록 node --check 통과, node test/run.js 585/585 통과(기존 584 + 신규 1). APP_VERSION 1.46.41->1.46.42, sw.js CACHE v203->v204.",
+      "summary": "Explore 서브에이전트로 발견한 doMaturity() 만기 이체 금액 오산정 버그 수정. 저축 자산의 assetEval이 '예정 포함' 설정 시 이번 달 말까지 투영한 잔액을 반환하는데, doMaturity()가 이 투영값을 그대로 이체 금액으로 써서 만기 처리 시점 이후의 예정 입금까지 섞여 부풀려지던 버그. amt=balanceAt(a.id,date)로 수정. node test/run.js 585/585 통과. APP_VERSION 1.46.41->1.46.42, sw.js CACHE v203->v204.",
       "commit": null
     },
     {
       "cycle": 86,
       "phase": "review",
       "timestamp": "2026-09-25T19:10:00.000Z",
-      "summary": "develop 커밋(7f61f1c, doMaturity() 만기 이체 금액이 예정 포함 투영값을 쓰던 버그 수정)을 검토. schHorizon()/assetBalance()/balanceAt()/balancesUpTo() 소스를 직접 읽어 assetEval()이 저축 자산에 대해 includeScheduled=true일 때 이번 달 말까지 투영한 잔액을 반환하던 경로를 재확인하고, 수정된 doMaturity()가 date(<=TODAY 항상)를 먼저 계산한 뒤 balanceAt(a.id,date)로만 금액을 잡아 그 시점 이후 예정 입금이 섞이지 않음을 확인. balanceAt(id,date<=TODAY)는 balancesUpTo에서 proj=false가 되어 미확인(pending) 이체도 함께 제외됨을 확인 — 기존 confirmTransfers 설계와 일관됨. openMaturity() 미리보기도 동일한 date 기준 balanceAt으로 맞춰 doMaturity() 실제 이체 금액과 표시값이 어긋나지 않게 함께 고쳐진 것도 확인. 새 회귀 테스트가 예정 포함 설정 + 미래 예정 입금이 섞인 상태에서 실제로 baseAmount만 이체됨을 검증함을 확인. node test/run.js 585/585 통과. 코드 변경 없음(이상 없음).",
+      "summary": "develop 커밋(7f61f1c, doMaturity() 만기 이체 금액이 예정 포함 투영값을 쓰던 버그 수정)을 검토. 수정된 doMaturity()가 date(<=TODAY)를 먼저 계산한 뒤 balanceAt(a.id,date)로만 금액을 잡아 미래 예정 입금이 섞이지 않음을 확인. node test/run.js 585/585 통과. 코드 변경 없음(이상 없음).",
       "commit": null
     },
     {
       "cycle": 86,
       "phase": "critique",
       "timestamp": "2026-09-25T20:12:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체 재검토. pushCloud()/afterCloudAuth()(index.html:1649-1700)가 DB 전체를 문서 단위로 동기화해, 계정 시트가 부부 동시 사용을 전제하는데도(4089줄) 서로 무관한 항목을 각자 편집하기만 해도 충돌 처리되고 해결책이 '내 변경 버리기' 또는 '상대방 미동기화 데이터 통째로 삭제(되돌릴 수 없음)' 둘뿐임을 발견 — cycle85 critique가 기각한 '푸시/풀 동시성(조건부 UPDATE로 원자적)'과는 다른 문제로, 원자성이 아니라 병합 단위(문서 전체 vs 레코드 단위)가 근본 원인. touch(obj) 헬퍼로 레코드별 updatedAt/deletedAt을 남기고 충돌 시 컬렉션·id 단위 3-way 병합으로 교체하는 계획을 pending_advance_plan에 저장, 범위가 크면 1단계(touch 헬퍼)만 먼저 하는 것도 허용. 코드 변경 없음(git status/diff 비어있음 확인).",
+      "summary": "general-purpose 서브에이전트로 앱 전체 재검토. pushCloud()/afterCloudAuth()(index.html:1649-1700)가 DB 전체를 문서 단위로 동기화해, 계정 시트가 부부 동시 사용을 전제하는데도(4089줄) 서로 무관한 항목을 각자 편집하기만 해도 충돌 처리되고 해결책이 '내 변경 버리기' 또는 '상대방 미동기화 데이터 통째로 삭제(되돌릴 수 없음)' 둘뿐임을 발견. touch(obj) 헬퍼로 레코드별 updatedAt/deletedAt을 남기고 충돌 시 컬렉션·id 단위 3-way 병합으로 교체하는 계획을 pending_advance_plan에 저장, 범위가 크면 1단계(touch 헬퍼)만 먼저 하는 것도 허용. 코드 변경 없음(git status/diff 비어있음 확인).",
+      "commit": null
+    },
+    {
+      "cycle": 86,
+      "phase": "advance",
+      "timestamp": "2026-09-25T21:12:00.000Z",
+      "summary": "critique(cycle86) 계획 중 1단계(touch 헬퍼 도입)만 구현하고 2~3단계(3-way 병합, deletedAt 툼스톤)는 다음 critique/advance로 명시적으로 넘겼다 — 계획 자체가 '범위가 크면 1단계만 먼저 해도 허용'이라 밝혔고, 실제로 DB.recurrences/txns/assets에 직접 push/할당하는 지점이 15곳 이상 흩어져 있어 deletedAt 툼스톤(삭제 시 필터링까지 앱 전역에 영향)과 3-way 병합 로직을 한 사이클에 안전하게 끝내기엔 무리라고 판단. uid() 바로 아래에 순수 함수 touch(obj){obj.updatedAt=Date.now();return obj}를 추가하고, 실제 사용자 CRUD가 몰리는 세 중앙 저장 경로(saveTx의 일회성/반복 등록 분기 둘 다, saveAsset, saveRec)에서 DB에 쓰기 직전에 touch(d)를 호출하도록 배선 — recSaveScopeApply의 과거/미래 분리 저장처럼 더 예외적인 경로는 이번 범위에서 제외(다음 사이클 후보로 history에 남김). 이 커밋은 updatedAt 값을 아무 데도 읽지 않아(동작 변화 없음) 병합 로직이 실제로 들어오기 전까지는 완전히 안전한 준비 단계. sanitizeBackup()이 Object.assign({}, t)로 알 수 없는 필드를 보존함을 확인해 백업/클라우드 왕복에도 updatedAt이 유실되지 않음을 검증. test/run.js: uid와 같은 이유로 sandbox.touch를 고정값('test-updatedAt') 스텁으로 추가(실제 touch()가 FUNCTIONS로 추출되면 이 스텁을 덮어써 결정성이 깨지므로 touch는 FUNCTIONS에 넣지 않음), saveTx/saveAsset/saveRec 각각 신규 등록·기존 수정 양쪽에서 updatedAt이 채워짐을 확인하는 회귀 테스트 3개(saveTx 1개, saveAsset 1개, saveRec 2개) 추가. 두 인라인 <script> 블록 node --check 통과, node test/run.js 589/589 통과(기존 585 + 신규 4, 계산 착오 없음: saveRec 2개+saveAsset 1개+saveTx 1개). APP_VERSION 1.46.42->1.46.43, sw.js CACHE v204->v205. 다음 critique가 이어서 검토할 것: (1) recSaveScopeApply의 스코프 분리 저장(splitRecurrenceAt)에도 touch 배선, (2) deletedAt 툼스톤 도입과 삭제 경로(delTx/delAsset/delRecConfirm 등) 배선, (3) pushCloud()의 충돌 분기를 문서 전체 교체 대신 updatedAt 기반 컬렉션·id 단위 3-way 병합으로 교체.",
       "commit": null
     }
   ]

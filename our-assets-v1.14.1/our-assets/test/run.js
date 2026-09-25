@@ -370,6 +370,10 @@ const sandbox = {
   // (화면 전용, asOpenType 테스트는 asDraft 변화만 검증)로 no-op으로 흉내낸다.
   renderAssetSheet: () => {},
   uid: () => 'test-uid',
+  // touch()는 Date.now()를 쓰는데, saveTx/saveAsset/saveRec 테스트에서 매번 값이 달라지면
+  // 그 필드를 assert하기 번거로우므로(assert하지 않는 테스트도 실행 시각마다 스냅샷이 흔들림)
+  // uid와 같은 이유로 고정값 스텁을 쓴다. touch() 자체의 동작(필드 세팅)은 별도 단위 테스트로 검증.
+  touch: (obj) => { obj.updatedAt = 'test-updatedAt'; return obj; },
   // saveTx()는 txDraft(전역 폼 상태)를 다루는데, syncTxInputs()는 DOM 입력칸을 읽어 그
   // txDraft에 반영하는 순수 로직이 아닌 함수라 여기선 no-op으로 흉내낸다 — saveTx 테스트는
   // txDraft를 직접 세팅해서 검증하므로 DOM 동기화 자체는 대상이 아니다.
@@ -2587,6 +2591,26 @@ test('saveRec: 신규 반복 등록(id 없음)은 기존처럼 회귀 없이 바
   assert.strictEqual(sandbox.DB.recurrences.length, 1);
   assert.strictEqual(sandbox.DB.recurrences[0].id, 'test-uid');
 });
+/* ---------- saveTx/saveAsset/saveRec: touch()로 updatedAt 스탬프 (app-evolve cycle86 advance) ----------
+ * 클라우드 동기화가 문서 전체를 한 덩어리로 취급해 서로 무관한 레코드를 고친 두 기기도 충돌로
+ * 처리되는 문제(cycle85/86 critique)를 풀려면 향후 레코드 단위 병합이 필요하고, 그 전제로 생성·
+ * 수정 시점에 레코드마다 updatedAt이 채워져야 한다. 여기선 그 전제(touch 호출)만 검증한다 —
+ * 병합 로직 자체는 아직 없다. */
+test('saveRec: 신규 등록 시 touch()로 updatedAt이 채워진다', () => {
+  sandbox.TWi = -1; sandbox.TODAY = '2026-06-15';
+  sandbox.DB = { recurrences: [] };
+  sandbox.recDraft = { id: null, type: 'expense', freq: 'monthly', day: 5, startDate: '2026-07-05', endDate: null, count: null, amount: 1000, category: '관리비', memo: '관리비', fromAssetId: 'a1', toAssetId: null, active: true };
+  sandbox.saveRec();
+  assert.strictEqual(sandbox.DB.recurrences[0].updatedAt, 'test-updatedAt');
+});
+test('saveRec: 기존 반복 수정 시(이력 비영향 필드) 즉시 적용 경로에서도 updatedAt이 갱신된다', () => {
+  sandbox.TWi = -1; sandbox.TODAY = '2026-06-15';
+  const orig = { id: 'r1', type: 'expense', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, count: null, amount: 1000, category: '관리비', memo: '옛 메모', fromAssetId: 'a1', toAssetId: null, active: true, skip: [], edits: {}, updatedAt: 'old' };
+  sandbox.DB = { recurrences: [orig] };
+  sandbox.recDraft = Object.assign({}, orig, { memo: '새 메모' });
+  sandbox.saveRec();
+  assert.strictEqual(sandbox.DB.recurrences[0].updatedAt, 'test-updatedAt');
+});
 /* ---------- saveRec: 더블탭 중복 저장 가드 (app-evolve cycle79 critique/advance) ----------
  * closeSheet()는 .sheet에서 'show' 클래스만 떼고 트랜지션(.46s)을 거는 것이지 innerHTML을
  * 지우지 않으므로, 저장 버튼은 애니메이션이 끝날 때까지 DOM에 그대로 남아 클릭 가능하다.
@@ -3612,6 +3636,20 @@ test('saveAsset: 이미 시세를 알고 있는 종목을 수정할 때는 즉�
   sandbox.saveAsset(true);
   assert.deepStrictEqual(sandbox.syncRatesCalls, [], '이미 시세를 알고 있으면 즉시 동기화를 부를 필요가 없음');
 });
+/* ---------- saveAsset: touch()로 updatedAt 스탬프 (app-evolve cycle86 advance, saveRec 쪽과 동일 목적) ---------- */
+test('saveAsset: 신규 등록·기존 수정 모두 touch()로 updatedAt이 채워진다', () => {
+  sandbox.DB = { assets: [], rates: { fx: {}, stocks: {}, goldPerG: 0 } };
+  sandbox.asDraft = { type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 10 };
+  sandbox.syncRatesCalls = [];
+  sandbox.saveAsset(false);
+  assert.strictEqual(sandbox.DB.assets[0].updatedAt, 'test-updatedAt', '신규 등록 시 updatedAt이 채워져야 함');
+
+  const asset = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 10 };
+  sandbox.DB = { assets: [asset], rates: { fx: {}, stocks: { '005930': 70000 }, goldPerG: 0 } };
+  sandbox.asDraft = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 20 };
+  sandbox.saveAsset(true);
+  assert.strictEqual(sandbox.DB.assets[0].updatedAt, 'test-updatedAt', '수정 시에도 updatedAt이 갱신되어야 함');
+});
 /* ---------- saveAsset: 주식 자산의 종목코드가 비어 있으면 저장을 막는다 (cycle58 develop).
  * syncAssetInputs()는 종목코드를 trim/uppercase만 할 뿐 필수 여부를 검사하지 않고, saveAsset()도
  * transfer의 from/to 자산처럼 다른 필수 조합은 저장 전에 막으면서 stockCode는 검사하지 않아
@@ -4087,6 +4125,22 @@ test('saveTx: 실제 메모 내용은 앞뒤 공백만 trim되고 그대로 유�
   };
   sandbox.saveTx();
   assert.strictEqual(sandbox.DB.txns[0].memo, '점심 김밥', '앞뒤 공백은 제거되고 내용은 그대로 유지되어야 함');
+});
+
+/* ---------- saveTx: touch()로 updatedAt 스탬프 (app-evolve cycle86 advance, saveRec/saveAsset와 동일 목적) ---------- */
+test('saveTx: 신규 저장·기존 수정 모두 touch()로 updatedAt이 채워진다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { txns: [], settings: {} };
+  sandbox.txDraft = {
+    id: null, type: 'expense', date: '2026-01-15', category: '식비', memo: '점심',
+    amount: 9000, fromAssetId: 'a1', toAssetId: null, repeat: false,
+  };
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.DB.txns[0].updatedAt, 'test-updatedAt', '신규 저장 시 updatedAt이 채워져야 함');
+
+  sandbox.txDraft = Object.assign({}, sandbox.DB.txns[0], { amount: 10000 });
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.DB.txns[0].updatedAt, 'test-updatedAt', '수정 시에도 updatedAt이 갱신되어야 함');
 });
 
 /* ---------- saveTx: 더블탭 중복 저장 가드 (app-evolve cycle79 critique/advance) ----------

@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.42';
+const APP_VERSION='1.46.43';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1404,6 +1404,11 @@ function svg(n,w){if(n==='fx')return `<span class="cur-sym"${w?` style="font-siz
 /* ================= UTILS ================= */
 const $=id=>document.getElementById(id);
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+/* 레코드별 updatedAt 타임스탬프. 지금은 아무 데도 안 읽지만(동작 변화 없음), 클라우드 동기화가
+ * 현재 문서 전체를 한 덩어리로 취급해 두 기기가 서로 다른 레코드만 고쳐도 충돌 처리되는 문제를
+ * 풀려면 향후 레코드 단위 병합이 필요하고, 그 병합은 레코드마다 "언제 바뀌었는지"부터 있어야
+ * 가능하다. 그 전 단계로 생성·수정 시점에 이 값부터 채워둔다. */
+function touch(obj){obj.updatedAt=Date.now();return obj}
 const comma=n=>Math.round(n||0).toLocaleString('ko-KR');
 const commaQty=n=>Number.isInteger(n)?comma(n):(n||0).toLocaleString('ko-KR',{maximumFractionDigits:4}); /* 소수 보유수량(주식/외화)은 반올림하지 않고 그대로 표시 */
 const won=n=>(n<0?'-':'')+comma(Math.abs(n))+'원';
@@ -2916,7 +2921,7 @@ function saveAsset(editing){
  const setBase=(origBase)=>{if(!balType)return;invalidateBalances();
    const contrib=balanceAt(d.id,TODAY)-origBase; /* 오늘까지 순입출금(기준값 제외) */
    d[balKey]=Math.round(entered-contrib);if(balKey==='baseAmount')delete d.amountKRW;else delete d.baseAmount;};
- let prevMaturity=null;
+ let prevMaturity=null;touch(d);
  if(editing){
    const i=DB.assets.findIndex(a=>a.id===d.id);
    const origBase=assetBase(DB.assets[i]); /* 교체 전 원래 기준값 */
@@ -3378,15 +3383,15 @@ function saveTx(){
   else if(count&&!endDate)endDate=recNthDate(base,count);
   d.memo=(d.memo||'').trim()||cat; /* 메모 없으면 카테고리로 (saveRec과 동일) */
   _savedDrafts.add(d);
-  DB.recurrences.push({id:uid(),active:true,type:d.type,category:cat,memo:d.memo,amount:d.amount,
+  DB.recurrences.push(touch({id:uid(),active:true,type:d.type,category:cat,memo:d.memo,amount:d.amount,
    fromAssetId:d.fromAssetId,toAssetId:d.toAssetId,freq,day,startDate:d.date,endDate,count,
-   skip:[],edits:{},autoConfirm:true,confirmedDates:[],varying:isVarCat(d.type,cat)});
+   skip:[],edits:{},autoConfirm:true,confirmedDates:[],varying:isVarCat(d.type,cat)}));
   save();closeSheet();renderCurrent();toast('반복 내역으로 저장했어요');return;
  }
  ['repeat','freq','day','endDate','endMode','count'].forEach(k=>delete d[k]); /* 일회성 내역엔 반복 필드 제거 */
  d.memo=(d.memo||'').trim()||d.category; /* 메모 없으면 카테고리로 (saveRec과 동일) */
  if(d.type==='transfer'&&d.confirmed===undefined)d.confirmed=!(DB.settings.confirmTransfers&&isFuture(d.date));
- _savedDrafts.add(d);
+ _savedDrafts.add(d);touch(d);
  if(d.id){const i=DB.txns.findIndex(x=>x.id===d.id);DB.txns[i]=d}else{d.id=uid();DB.txns.push(d)}
  save();closeSheet();renderCurrent();toast(isFuture(d.date)?'예정 내역으로 저장했어요':'내역을 저장했어요');
 }
@@ -3570,7 +3575,7 @@ function saveRec(){
  delete d.endMode;
  d.varying=isVarCat(d.type,d.category); /* 변동 여부는 카테고리에서 파생 */
  const wasEditing=!!d.id;
- _savedDrafts.add(d);
+ _savedDrafts.add(d);touch(d);
  if(wasEditing){
   const i=DB.recurrences.findIndex(x=>x.id===d.id);
   if(i>=0){
