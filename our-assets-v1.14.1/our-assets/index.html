@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.49';
+const APP_VERSION='1.46.50';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5613,12 +5613,19 @@ function monthStep(which,delta){
 }
 function planNegatives(){ /* 통장별 · 예정 끝까지 · '하루 합산(일 마감)' 잔액 기준 */
  const horizon=DISP_TO,out=[];
+ /* lowestInMonth()/planRowsHTML()과 동일한 이유로 날짜별 balanceAt()을 직접 불러야 한다 —
+    예전처럼 거래별 증감(byDay)을 직접 누적하면 balancesUpTo()가 적용 중인 미확인 이체
+    제외 규칙(dateStr<=TODAY면 제외)을 놓쳐, 오늘 날짜의 미확인 이체 한 건만 기록해도
+    아직 나가지 않은 돈인데 오늘 잔액이 마이너스로 뜬다는 거짓 경고가 나왔다. */
  DB.assets.filter(isPlanAcct).forEach(a=>{
-   let run=balanceAt(a.id,addDays(TODAY,-1));let firstNeg=(run<0?TODAY:null),minBal=run;
-   const byDay={};
-   allTxns(TODAY,horizon).forEach(t=>{if(t.fromAssetId!==a.id&&t.toAssetId!==a.id)return;
-     const d=(t.toAssetId===a.id?t.amount:0)-(t.fromAssetId===a.id?t.amount:0);byDay[t.date]=(byDay[t.date]||0)+d;});
-   Object.keys(byDay).sort().forEach(date=>{run+=byDay[date];if(run<minBal)minBal=run;if(run<0&&!firstNeg)firstNeg=date;});
+   const dates=new Set([TODAY]);
+   allTxns(TODAY,horizon).forEach(t=>{if(t.fromAssetId===a.id||t.toAssetId===a.id)dates.add(t.date)});
+   let firstNeg=null,minBal=Infinity;
+   Array.from(dates).sort().forEach(date=>{
+     const b=balanceAt(a.id,date);
+     if(b<minBal)minBal=b;
+     if(b<0&&!firstNeg)firstNeg=date;
+   });
    if(firstNeg)out.push({assetId:a.id,name:a.name,owner:a.owner,date:firstNeg,min:minBal});
  });
  return out.sort((x,z)=>x.date<z.date?-1:1);

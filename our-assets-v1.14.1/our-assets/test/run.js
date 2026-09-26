@@ -5801,6 +5801,46 @@ test('planNegatives: 저축 등 플랜 대상이 아닌 통장(isPlanAcct=false)
   };
   assert.deepStrictEqual(Array.from(sandbox.planNegatives()), []);
 });
+test('planNegatives: 오늘 날짜의 미확인(pending) 이체는 아직 나간 돈이 아니므로 거짓 마이너스 경고를 만들지 않는다(app-evolve cycle90 회귀 확인)', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox.DISP_TO = sandbox.addDays(sandbox.TODAY, 92);
+  sandbox._balCache.clear();
+  sandbox.DB = {
+    settings: { confirmTransfers: true },
+    assets: [
+      { id: 'a1', name: '통장1', owner: '나', type: 'cash', baseAmount: 500000 },
+      { id: 'a2', name: '통장2', owner: '나', type: 'cash', baseAmount: 0 },
+    ],
+    txns: [
+      { id: 't1', date: sandbox.TODAY, type: 'transfer', amount: 600000, fromAssetId: 'a1', toAssetId: 'a2', confirmed: false },
+    ],
+    recurrences: [],
+  };
+  assert.deepStrictEqual(Array.from(sandbox.planNegatives()), [], '미확인 이체를 확정된 것처럼 반영해 오늘 마이너스로 잘못 표시하면 안 됨');
+});
+test('planNegatives: 같은 이체라도 확인 완료(confirmed:true)면 정상적으로 마이너스를 잡아낸다(app-evolve cycle90 회귀 확인)', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox.DISP_TO = sandbox.addDays(sandbox.TODAY, 92);
+  sandbox._balCache.clear();
+  sandbox.DB = {
+    settings: { confirmTransfers: true },
+    assets: [
+      { id: 'a1', name: '통장1', owner: '나', type: 'cash', baseAmount: 500000 },
+      { id: 'a2', name: '통장2', owner: '나', type: 'cash', baseAmount: 0 },
+    ],
+    txns: [
+      { id: 't1', date: sandbox.TODAY, type: 'transfer', amount: 600000, fromAssetId: 'a1', toAssetId: 'a2', confirmed: true },
+    ],
+    recurrences: [],
+  };
+  const out = sandbox.planNegatives();
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].assetId, 'a1');
+  assert.strictEqual(out[0].date, sandbox.TODAY);
+  assert.strictEqual(out[0].min, -100000);
+});
 test('homeAlerts: 변동 항목(quick)이 정확히 1건이면 quick, 2건으로 늘면 quickMulti로 묶인다(app-evolve cycle43)', () => {
   // varyingRecs()가 RANGE_FROM~TODAY 전체를 스캔하므로(cycle71), 이 테스트의 목적인
   // "그룹핑 개수(1건 vs 2건)" 검증이 지난달 이전 미입력 회차 섞임에 흔들리지 않도록
