@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.45';
+const APP_VERSION='1.46.46';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3934,7 +3934,6 @@ function planTrackHTML(y,m,a){
 function planRowsHTML(a,y,m){
  if(!a)return '';
  const mStart=monthStartStr(y,m),mEnd=monthEndStr(y,m);
- const startBal=balanceAt(a.id,addDays(mStart,-1));
  const flows=[];
  allTxns(mStart,mEnd).forEach(t=>{
   if(t.fromAssetId!==a.id&&t.toAssetId!==a.id)return;
@@ -3945,14 +3944,17 @@ function planRowsHTML(a,y,m){
  const dates=[...new Set(flows.map(f=>f.t.date))];
  if(y===TM.y&&m===TM.m&&!dates.includes(TODAY))dates.push(TODAY);
  dates.sort();
- let r=startBal;
+ /* 표시 잔액은 거래별 증감을 직접 누적하지 않고 날짜별 balanceAt()을 불러 구한다 —
+    lowestInMonth()와 같은 이유(3883줄 주석 참고): 직접 누적하면 balancesUpTo()가 이미 적용
+    중인 미확인 이체 제외 규칙(dateStr<=TODAY면 제외, 그 이후는 예정으로 포함)을 놓쳐,
+    이체 확인 기능을 켠 상태에서 미확인 이체가 있으면 이 날짜별 잔액이 월말/오늘까지 잔액
+    카드(planBalInner)나 '가장 낮을 때' 카드(lowestInMonth)와 서로 다른 값을 보여줬다. */
+ const dayBal=dates.map(d=>balanceAt(a.id,d));
  let firstNegIdx=-1; /* 잔액이 처음 마이너스가 되는 날 인덱스 */
- const dayNeg=[]; /* 날짜별 실제 잔액 마이너스 여부 */
- {let rr=startBal;dates.forEach((d,i)=>{rr+=flows.filter(f=>f.t.date===d).reduce((s,f)=>s+f.delta,0);dayNeg[i]=rr<0;if(rr<0&&firstNegIdx<0)firstNegIdx=i;});}
+ const dayNeg=dayBal.map((b,i)=>{const neg=b<0;if(neg&&firstNegIdx<0)firstNegIdx=i;return neg;}); /* 날짜별 실제 잔액 마이너스 여부 */
  return dates.length?dates.map((d,i)=>{
   const dayFlows=flows.filter(f=>f.t.date===d);
-  r+=dayFlows.reduce((s,f)=>s+f.delta,0);
-  const bal=r;
+  const bal=dayBal[i];
   const isToday=d===TODAY;
   const zone=dayNeg[i]?(i===firstNegIdx?'danger danger-start':'danger'):''; /* 실제 마이너스인 날만 빨강 */
   const items=dayFlows.length?dayFlows.map(f=>{const t=f.t;

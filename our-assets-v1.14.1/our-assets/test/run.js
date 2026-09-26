@@ -4608,6 +4608,55 @@ test('lowestInMonth: 확인된(pending 아닌) 이체는 그 날짜부터 최저
   assert.strictEqual(low.date, '2026-06-10');
 });
 
+/* ---------- planRowsHTML: lowestInMonth와 같은 이유로, 날짜별 표시 잔액을 거래별 증감 직접
+ * 누적이 아니라 balanceAt()으로 구해야 한다. 예전 코드는 startBal에서 flows의 delta를 그대로
+ * 누적해(r+=dayFlows...) isPending()을 전혀 확인하지 않았고, 그 결과 이체 확인 기능을 켠 상태에서
+ * 미확인 이체가 있으면 플랜 탭 일별 카드의 잔액이 같은 화면 상단의 월말/오늘까지 잔액
+ * 카드(planBalInner, balanceAt 사용)와 서로 다른 값을 보여줬다. */
+test('planRowsHTML: 미확인(pending) 이체는 날짜별 표시 잔액에서 balanceAt()과 동일하게 제외되어야 한다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox.TM = { y: 2026, m: 6 };
+  sandbox.DB = {
+    settings: { confirmTransfers: true },
+    assets: [
+      { id: 'a1', type: 'cash', baseAmount: 500000 },
+      { id: 'a2', type: 'cash', baseAmount: 0 },
+    ],
+    txns: [{ id: 't1', date: '2026-06-10', type: 'transfer', amount: 300000, fromAssetId: 'a1', toAssetId: 'a2', confirmed: false }],
+    recurrences: [],
+  };
+  sandbox._balCache.clear();
+  const html = sandbox.planRowsHTML(sandbox.DB.assets[0], 2026, 6);
+  const idx = html.indexOf('data-d="2026-06-10"');
+  assert.ok(idx !== -1, '2026-06-10 날짜 카드가 없음');
+  const nextIdx = html.indexOf('data-d=', idx + 1);
+  const dayHtml = html.slice(idx, nextIdx === -1 ? html.length : nextIdx);
+  assert.ok(dayHtml.includes('500,000원'), `미확인 이체는 표시 잔액에서 빠져야 하는데 500,000원이 없음: ${dayHtml.slice(0, 200)}`);
+  assert.ok(!dayHtml.includes('200,000원'), '미확인 이체 금액이 표시 잔액에 잘못 반영됨(200,000원)');
+});
+test('planRowsHTML: 확인된(pending 아닌) 이체는 그 날짜부터 표시 잔액에 정상 반영된다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox.TM = { y: 2026, m: 6 };
+  sandbox.DB = {
+    settings: { confirmTransfers: true },
+    assets: [
+      { id: 'a1', type: 'cash', baseAmount: 500000 },
+      { id: 'a2', type: 'cash', baseAmount: 0 },
+    ],
+    txns: [{ id: 't1', date: '2026-06-10', type: 'transfer', amount: 300000, fromAssetId: 'a1', toAssetId: 'a2', confirmed: true }],
+    recurrences: [],
+  };
+  sandbox._balCache.clear();
+  const html = sandbox.planRowsHTML(sandbox.DB.assets[0], 2026, 6);
+  const idx = html.indexOf('data-d="2026-06-10"');
+  assert.ok(idx !== -1, '2026-06-10 날짜 카드가 없음');
+  const nextIdx = html.indexOf('data-d=', idx + 1);
+  const dayHtml = html.slice(idx, nextIdx === -1 ? html.length : nextIdx);
+  assert.ok(dayHtml.includes('200,000원'), `확인된 이체는 표시 잔액에 반영돼야 하는데 200,000원이 없음: ${dayHtml.slice(0, 200)}`);
+});
+
 /* ---------- isMarketValued/openAssetPicker: fx·금·주식을 일반 거래의 통장으로 선택하면
  * 순자산이 조용히 어긋나던 구조적 버그(app-evolve cycle27 advance)의 회귀 테스트.
  * assetEval()은 fx/gold/stock 세 타입만 원장(DB.txns)과 무관하게 qty×시세로 평가하는데,
