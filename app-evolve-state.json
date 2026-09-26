@@ -1,15 +1,8 @@
 {
   "cycle": 92,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 87,
-      "phase": "review",
-      "timestamp": "2026-09-25T23:12:00.000Z",
-      "summary": "develop 커밋(859693d, lowestInMonth() 미확인 이체 무조건 포함 버그 수정)을 검토. 새 구현이 그 달에 거래가 걸린 날짜(+월초)에 대해서만 balanceAt()을 호출하는 것으로 충분함을 확인 — 잔액은 거래일에만 변하는 계단함수라 최솟값은 반드시 월초(이전 거래가 없는 구간의 이월 잔액) 또는 각 거래일 직후 값 중 하나에서 나온다. 부수적으로 예전 버그(초기값을 월 시작 전날 balanceAt으로 잡아, 월 첫날에 거래가 있으면 그 거래 반영 전의 전월 잔액이 '이번 달 최저'로 영구 고정되던 문제)도 함께 해소됨을 확인 — 새 코드는 월초 자체를 days 집합에 넣어 balanceAt(월초)로 이월값과 당일 거래 반영값을 모두 올바르게 처리. 유일한 호출부 planBalInner(index.html:3898)의 인자 전달도 이상 없음 확인. 새 회귀 테스트 2개가 미확인 이체 제외/확인된 이체 정상 반영 케이스를 각각 정확히 검증함을 확인. node --check 두 스크립트 블록 통과, node test/run.js 591/591 통과. 코드 변경 없음(이상 없음).",
-      "commit": null
-    },
     {
       "cycle": 87,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-26T18:12:00.000Z",
       "summary": "general-purpose 서브에이전트로 발견한 doRenameOwner() touch() 누락 버그 수정. 귀속(owner) 이름 변경 시 DB.owners[i]=v와 함께 DB.assets.forEach(a=>{if(a.owner===old)a.owner=v})로 관련 자산들의 owner 필드를 바꾸는데, cycle86-91에서 saveAsset/askRelinkDeleted/addBalanceAdjust 등 자산을 건드리는 다른 모든 경로에 이미 배선된 touch(a) 호출이 이 경로에만 빠져 있었다(index.html:3061) — mergeCollection()이 updatedAt만 보고 승자를 고르는 불변식을 이 함수만 깨고 있었음. 시나리오: 기기 A가 귀속 '아빠'→'아버지'로 이름 변경(해당 자산들 owner만 바뀌고 updatedAt은 그대로), 기기 B가 오프라인 상태에서 같은 자산에 다른 필드를 수정해 더 최신 updatedAt을 가짐(owner는 여전히 '아빠'); 다음 클라우드 동기화 시 afterCloudAuth()의 mergeCollection이 updatedAt 더 높은 B의 사본을 채택해 귀속 이름 변경이 경고 없이 조용히 되돌아감. 수정: DB.assets.forEach(a=>{if(a.owner===old){a.owner=v;touch(a)}})로 교체, 왜 필요한지 설명하는 주석 추가(saveAsset/askRelinkDeleted와 같은 불변식이라고 명시). 서브에이전트가 grep으로 이 경로가 touch() 누락의 유일한 사례임을 확인(doRenameCat의 유사한 누락은 별개 함수라 이번 범위에서 제외하고 남겨둠). test/run.js에 회귀 테스트 1개 추가(귀속이 바뀐 자산은 touch() 호출로 updatedAt이 갱신되고, 무관한 자산은 그대로 유지됨) — git stash로 되돌려 새 테스트가 실제 실패(622/623)함을 확인한 뒤 재적용. 두 인라인 <script> 블록 node --check 통과(직접 재검증), node test/run.js 623/623 통과(기존 622 + 신규 1, 직접 재실행으로 확인). APP_VERSION 1.46.53->1.46.54, sw.js CACHE v215->v216.",
+      "commit": null
+    },
+    {
+      "cycle": 92,
+      "phase": "review",
+      "timestamp": "2026-09-26T19:08:25.000Z",
+      "summary": "develop 커밋(65ac2b9, doRenameOwner() 귀속 변경 시 touch() 누락 수정)을 검토. DB.assets.forEach(a=>{if(a.owner===old){a.owner=v;touch(a)}})로 교체한 한 줄 수정이 touch() 정의(index.html:1411, obj.updatedAt=Date.now())를 saveAsset/askRelinkDeleted와 동일한 패턴으로 그대로 재사용함을 확인 — mergeCollection()이 updatedAt만 보고 승자를 고르는 불변식(cycle89 review에서 검증)과 정확히 일치. 새 회귀 테스트 1개가 이름이 바뀐 자산은 touch()로 updatedAt이 'test-updatedAt'으로 갱신되고, 무관한(다른 귀속) 자산은 원래 값(222)을 그대로 유지함을 정확히 검증함을 확인. 유사 함수 doRenameCat()의 touch() 누락 여부는 이번 커밋의 커밋 메시지가 이미 별개 이슈로 명시적으로 범위 밖에 뒀으므로 이번 review에서는 함께 고치지 않고(critique가 별도 후보로 판단할 사안), 이번 diff 자체의 정확성만 검증. 두 인라인 <script> 블록 node --check 통과, node test/run.js 623/623 통과. 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
