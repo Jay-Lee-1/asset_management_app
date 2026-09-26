@@ -4091,24 +4091,16 @@ test('pullCloud: 원격 fetch에 성공해도 markCloudSynced를 직접 부르�
   assert.strictEqual(sandbox.CLOUD_LAST_SYNCED_AT, '2026-01-01T00:00:00.000Z', 'pushCloud()의 조건부 UPDATE가 쓰는 기준시각은 그대로 갱신되어야 함');
   assert.strictEqual(sandbox.markCloudSyncedCalls, 0, 'pullCloud() 스스로는 로컬이 remote와 같아졌다고 표시하면 안 됨');
 });
-test('afterCloudAuth: 로컬에 미동기화 편집이 있으면(localUnsynced) assets/recurrences는 그대로 두고(문서 전체를 remote로 덮어쓰지 않음) CLOUD_SYNC_STATE는 여전히 conflict이며 __syncedAt을 갱신하지 않는다', async () => {
-  const before = sandbox.DB = { assets: [{ id: 'local-unsynced' }], txns: [] };
-  sandbox.CLOUD_UID = 'u1';
-  sandbox.CLOUD_SYNC_STATE = 'idle';
-  sandbox.markCloudSyncedCalls = 0;
-  sandbox._lsMap = { 'test-key__savedAt': '2000', 'test-key__syncedAt': '1000' }; // savedAt>syncedAt → 미동기화
-  sandbox._sbMaybeSingleResult = { data: { data: { assets: [{ id: 'remote' }], txns: [] }, updated_at: '2026-01-01T00:00:00.000Z' }, error: null };
-  await sandbox.afterCloudAuth('u1');
-  assert.strictEqual(sandbox.CLOUD_SYNC_STATE, 'conflict', 'DB.txns는 병합했지만 assets/recurrences는 아직 손대지 않아 confirmCloudForcePush 안내 배너가 계속 떠야 함');
-  assert.strictEqual(sandbox.DB, before, '같은 DB 객체를 계속 참조해야 함(문서 전체 교체 아님)');
-  assert.strictEqual(sandbox.DB.assets.length, 1, '로컬 미동기화 assets는 remote로 덮어쓰면 안 됨');
-  assert.strictEqual(sandbox.DB.assets[0].id, 'local-unsynced');
-  assert.strictEqual(sandbox.markCloudSyncedCalls, 0, 'remote를 통째로 채택한 게 아니니 동기화됐다고 표시하면 안 됨 — 안 그러면 다음 재부팅에서 localHasUnsyncedChanges가 아직 안 합쳐진 assets 편집을 놓치고 remote로 조용히 덮어씀');
-  sandbox._lsMap = null;
-});
-test('afterCloudAuth: 로컬에 미동기화 편집이 있어도 DB.txns는 mergeCollection으로 양쪽을 합치고 status:"merged"를 반환한다', async () => {
+test('afterCloudAuth: 로컬에 미동기화 편집이 있어도 DB.txns/recurrences/assets 세 컬렉션 모두 mergeCollection으로 합치고 status:"merged"·CLOUD_SYNC_STATE:"ok"를 반환한다(app-evolve cycle91 develop 회귀 테스트 — 예전엔 txns만 합치고 assets/recurrences는 방치한 채 CLOUD_SYNC_STATE를 무조건 conflict로 강제해 이미 안전 병합된 상태에서도 파괴적 양자택일 배너가 계속 떴다)', async () => {
   sandbox.DB = {
-    assets: [{ id: 'local-unsynced', type: 'cash' }],
+    assets: [
+      { id: 'local-only-asset', type: 'cash', updatedAt: 100 },
+      { id: 'both-asset', type: 'cash', name: 'stale-local', updatedAt: 100 },
+    ],
+    recurrences: [
+      { id: 'local-only-rec', startDate: '2026-01-01', updatedAt: 100 },
+      { id: 'both-rec', startDate: '2026-01-01', memo: 'stale-local', updatedAt: 100 },
+    ],
     txns: [
       { id: 'local-only', date: '2026-01-01', updatedAt: 100 },
       { id: 'both', date: '2026-01-01', memo: 'stale-local', updatedAt: 100 },
@@ -4121,7 +4113,14 @@ test('afterCloudAuth: 로컬에 미동기화 편집이 있어도 DB.txns는 merg
   sandbox._sbMaybeSingleResult = {
     data: {
       data: {
-        assets: [{ id: 'remote', type: 'cash' }],
+        assets: [
+          { id: 'remote-asset', type: 'cash', updatedAt: 100 },
+          { id: 'both-asset', type: 'cash', name: 'newer-remote', updatedAt: 200 },
+        ],
+        recurrences: [
+          { id: 'remote-rec', startDate: '2026-01-01', updatedAt: 100 },
+          { id: 'both-rec', startDate: '2026-01-01', memo: 'newer-remote', updatedAt: 200 },
+        ],
         txns: [
           { id: 'remote-only', date: '2026-01-01', updatedAt: 100 },
           { id: 'both', date: '2026-01-01', memo: 'newer-remote', updatedAt: 200 },
@@ -4134,10 +4133,22 @@ test('afterCloudAuth: 로컬에 미동기화 편집이 있어도 DB.txns는 merg
   };
   const result = await sandbox.afterCloudAuth('u1');
   assert.strictEqual(result.status, 'merged');
+  // sandbox.cloudSyncOk는 다른 테스트와 동일한 이유로 no-op 스텁이라(위 168행) 실제로 'ok'가
+  // 되는지는 여기서 검증할 수 없다 — 대신 예전처럼 병합 후 강제로 'conflict'를 대입하는 코드가
+  // 없어져 호출 전 값('idle')이 그대로 남아있는지로 "강제 conflict 제거"를 검증한다.
+  assert.strictEqual(sandbox.CLOUD_SYNC_STATE, 'idle', '세 컬렉션 모두 병합됐으니 더 이상 conflict를 강제로 대입하면 안 됨(실제 앱에서는 pullCloud의 cloudSyncOk()가 이미 ok로 둔 상태가 그대로 유지됨)');
   assert.strictEqual(sandbox.DB.txns.length, 3);
   assert.ok(sandbox.DB.txns.some((t) => t.id === 'local-only'));
   assert.ok(sandbox.DB.txns.some((t) => t.id === 'remote-only'));
   assert.strictEqual(sandbox.DB.txns.find((t) => t.id === 'both').memo, 'newer-remote', '더 최근(updatedAt 200)인 remote 쪽이 이겨야 함');
+  assert.strictEqual(sandbox.DB.recurrences.length, 3);
+  assert.ok(sandbox.DB.recurrences.some((r) => r.id === 'local-only-rec'));
+  assert.ok(sandbox.DB.recurrences.some((r) => r.id === 'remote-rec'));
+  assert.strictEqual(sandbox.DB.recurrences.find((r) => r.id === 'both-rec').memo, 'newer-remote');
+  assert.strictEqual(sandbox.DB.assets.length, 3);
+  assert.ok(sandbox.DB.assets.some((a) => a.id === 'local-only-asset'));
+  assert.ok(sandbox.DB.assets.some((a) => a.id === 'remote-asset'));
+  assert.strictEqual(sandbox.DB.assets.find((a) => a.id === 'both-asset').name, 'newer-remote');
   assert.strictEqual(sandbox.DB.deletedIds['local-deleted'], 300, '양쪽 deletedIds가 합쳐져야 함');
   assert.strictEqual(sandbox.DB.deletedIds['remote-deleted'], 400, '양쪽 deletedIds가 합쳐져야 함');
   sandbox._lsMap = null;

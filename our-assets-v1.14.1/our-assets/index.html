@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.52';
+const APP_VERSION='1.46.53';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1728,18 +1728,22 @@ async function afterCloudAuth(uid){
    /* 예전엔 여기서 곧장 {status:'conflict'}만 반환해 사용자가 confirmCloudForcePush로
     * '내 것 유지'/'상대 것 유지' 양자택일만 하게 강제했다(부부 공유 계정처럼 서로 무관한
     * 레코드를 각자 편집했을 뿐인데도 한쪽 기기의 미동기화 편집 전체가 사라질 위험).
-    * DB.txns는 touch()/deletedIds 배선이 이미 끝나 레코드 단위 병합이 가능하므로,
-    * 이 컬렉션만 우선 mergeCollection으로 합치고 나머지(assets/recurrences)는 아직
-    * 문서 전체 충돌 그대로 둔다(각 레코드에 deletedIds 배선이 없어 잘못 병합하면 지금의
-    * 정직한 충돌 배너보다 더 나쁜 무경고 데이터 손실이 될 수 있음 — cycle90 critique 참고). */
+    * touch()/deletedIds 배선이 txns/recurrences/assets 세 컬렉션 모두 끝났으므로
+    * (cycle87~89) 이제 세 컬렉션 전부 mergeCollection으로 레코드 단위 병합한다 — 더
+    * 이상 문서 전체를 충돌 처리할 이유가 없다. */
    const remoteData=sanitizeBackup(remote).data;
-   DB.txns=mergeCollection(DB.txns,remoteData.txns,DB.deletedIds,remoteData.deletedIds);
    DB.deletedIds=DB.deletedIds||{};
    Object.keys(remoteData.deletedIds||{}).forEach(id=>{
     if(!(id in DB.deletedIds)||remoteData.deletedIds[id]>DB.deletedIds[id])DB.deletedIds[id]=remoteData.deletedIds[id];
    });
+   DB.txns=mergeCollection(DB.txns,remoteData.txns,DB.deletedIds,remoteData.deletedIds);
+   DB.recurrences=mergeCollection(DB.recurrences,remoteData.recurrences,DB.deletedIds,remoteData.deletedIds);
+   DB.assets=mergeCollection(DB.assets,remoteData.assets,DB.deletedIds,remoteData.deletedIds);
    migrate();invalidateBalances();save();
-   CLOUD_SYNC_STATE='conflict';return{status:'merged'};
+   /* 세 컬렉션 모두 병합됐으니 더는 강제로 'conflict' 배너를 띄우지 않는다 — pullCloud()가
+    * 이미 cloudSyncOk()를 호출해 CLOUD_SYNC_STATE='ok'로 둔 상태를 그대로 쓴다. save()가
+    * scheduleCloudPush()를 호출하므로 병합 결과는 1.2초 안에 자동으로 클라우드에 되밀린다. */
+   return{status:'merged'};
   }
   DB=sanitizeBackup(remote).data;migrate();invalidateBalances();try{localStorage.setItem(dataKey(),JSON.stringify(DB))}catch(e){}markCloudSynced();return{status:'remote'};
  }
