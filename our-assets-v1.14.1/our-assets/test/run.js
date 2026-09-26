@@ -3490,6 +3490,33 @@ test('saveAsset: 새로 등록할 자산이 기존 자산과 이름·종류가 �
   assert.strictEqual(sandbox.DB.assets.length, 1, '중복이면 새 자산이 추가되면 안 됨');
 });
 
+/* ---------- saveAsset: 동명·동종 중복 차단이 완전 일치(===)만 잡아, 대소문자나 연속 공백
+ * 개수만 다른 이름은 통과시키던 버그(app-evolve cycle89 develop, Explore 서브에이전트로 발견).
+ * addCat/doRenameCat/addOwner/doRenameOwner는 이미 normName()으로 근접 중복을 막는데
+ * (cycle85 advance) saveAsset()만 a.name===d.name 완전일치만 검사해 "Woori Bank"와
+ * "woori   bank"(공백 개수만 다름, normName의 trim+연속공백1칸 축약+소문자화로는 같아짐) 같은
+ * 이름이 같은 종류로 각각 별개 자산으로 등록될 수 있었다(주의: normName은 공백을 아예 없애지
+ * 않고 "연속 공백을 한 칸으로" 축약할 뿐이라 "우리은행"과 "우리 은행"처럼 공백 유무 자체가
+ * 다른 경우는 여전히 서로 다른 이름으로 취급됨). dup 판정을 normName() 비교로 교체하고,
+ * 완전일치일 때는 기존 문구를, 근접 중복일 때는 category/owner와 같은 톤으로 어떤 자산과
+ * 비슷한지 알려주는 문구를 띄우도록 함. ---------- */
+test('saveAsset: 대소문자·연속 공백 개수만 다른 동종 자산 이름도 근접 중복으로 차단된다', () => {
+  sandbox.DB = { assets: [{ id: 'a1', name: 'Woori Bank', type: 'cash', baseAmount: 1000 }], rates: { stocks: {} } };
+  sandbox.asDraft = { name: 'woori   bank', type: 'cash', includeInTotal: true };
+  sandbox.lastToast = null;
+  sandbox.saveAsset(false);
+  assert.ok(sandbox.lastToast, '근접 중복 경고 토스트가 떴어야 함');
+  assert.ok(sandbox.lastToast.includes('Woori Bank'), '어떤 자산과 비슷한지 알려줘야 함');
+  assert.strictEqual(sandbox.DB.assets.length, 1, '근접 중복이면 새 자산이 추가되면 안 됨');
+});
+test('saveAsset: 이름이 같아도 종류(type)가 다르면 여전히 중복이 아니다', () => {
+  sandbox.DB = { assets: [{ id: 'a1', name: '비상금', type: 'cash', baseAmount: 1000 }], rates: { stocks: {} } };
+  sandbox.asDraft = { name: '비상금', type: 'savings', includeInTotal: true };
+  sandbox.saveAsset(false);
+  assert.strictEqual(sandbox.DB.assets.length, 2, '종류가 다르면 새 자산이 등록돼야 함');
+  assert.strictEqual(sandbox.DB.assets[1].name, '비상금', '종류가 다르면 이름이 같아도 그대로 등록돼야 함');
+});
+
 /* ---------- saveAsset: 자산 삭제 후 새 자산을 등록하면 order가 DB.assets.length(=줄어든 개수)로
  * 다시 채워져, 삭제 전에 등록됐던 자산의 order보다 더 작은 값을 받던 버그(app-evolve cycle49 develop).
  * groupItems()의 기본 정렬(a.order-b.order, "그룹 내 등록 순서 유지")이 이 order를 그대로 쓰므로,
