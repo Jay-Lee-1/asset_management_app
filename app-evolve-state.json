@@ -1,15 +1,8 @@
 {
   "cycle": 90,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 85,
-      "phase": "review",
-      "timestamp": "2026-09-25T15:12:00.000Z",
-      "summary": "develop 커밋(c27ad1d, csvRowToImportTxn() 지출/수입 자산 미입력 CSV 가져오기 무경고 통과 버그 수정)을 검토. 가드가 기존 patterns과 자연스럽게 이어짐을 확인. 572/572 통과. 코드 변경 없음(이상 없음).",
-      "commit": null
-    },
     {
       "cycle": 85,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-26T10:12:00.000Z",
       "summary": "general-purpose 서브에이전트로 발견한 planNegatives() 버그 수정. lowestInMonth()(cycle87)/planRowsHTML()(cycle88)와 정확히 같은 계열의 버그가 세 번째 함수에 남아있었다 — 홈 탭 마이너스 경고(homeAlerts/updateAlerts의 planBadge)를 만드는 planNegatives()(index.html:5614)가 balanceAt(a.id,addDays(TODAY,-1))로 어제까지의 확정 잔액을 구한 뒤 오늘부터의 거래 델타(byDay)를 직접 누적해, balancesUpTo()가 confirmTransfers 설정 시 적용하는 미확인 이체 제외 규칙(dateStr<=TODAY면 제외)을 전혀 따르지 않았다. 예: 확인 잔액 500,000원인 통장에서 오늘 날짜로 600,000원 미확인 이체를 기록만 해도(아직 실제로 안 나감), 같은 화면의 다른 잔액 카드들은 balanceAt 기반이라 정확히 500,000원을 보여주는데 이 함수만 -100,000원으로 계산해 '오늘 마이너스' 거짓 경고가 뜨고 홈 배지·Plan 탭 경고 아이콘이 켜졌다. lowestInMonth/planRowsHTML과 동일한 수정 패턴 적용: byDay 델타 누적을 제거하고 그 자산에 거래가 걸린 날짜(+오늘)에 대해 balanceAt(a.id,date)를 직접 호출하도록 재작성. test/run.js에 회귀 테스트 2개 추가(오늘 날짜 미확인 이체는 거짓 마이너스를 만들지 않음 / 확인 완료된 같은 이체는 정상적으로 마이너스를 잡아냄) — git stash로 수정 전 코드를 되돌려 첫 테스트가 실제로 실패함을 확인한 뒤 재적용. 두 인라인 <script> 블록 node --check 통과, node test/run.js 611/611 통과(기존 609 + 신규 2). APP_VERSION 1.46.49->1.46.50, sw.js CACHE v211->v212.",
+      "commit": null
+    },
+    {
+      "cycle": 90,
+      "phase": "review",
+      "timestamp": "2026-09-26T11:12:00.000Z",
+      "summary": "develop 커밋(fa53ebd, planNegatives() 오늘 미확인 이체 무조건 포함 버그 수정)을 검토. 새 구현이 dates=Set([TODAY]) ∪ {이 자산이 걸린 거래일}에 대해서만 balanceAt()을 호출하는 방식으로, lowestInMonth(cycle87)/planRowsHTML(cycle88)와 동일한 계단함수 논리(잔액은 거래일에만 바뀌므로 그 날짜들만 샘플링하면 최솟값을 놓치지 않음)를 그대로 재사용함을 확인. 기존 run=balanceAt(TODAY-1) 시드 방식보다 오히려 정확함(TODAY 당일 자체를 dates에 명시적으로 포함해 balanceAt(TODAY)가 pending 제외 규칙을 직접 적용). 새 회귀 테스트 2개가 미확인/확인된 이체 두 케이스를 정확히 검증함을 확인. 두 인라인 <script> 블록 node --check 통과, node test/run.js 611/611 통과. 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
