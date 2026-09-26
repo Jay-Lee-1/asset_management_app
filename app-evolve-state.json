@@ -1,19 +1,8 @@
 {
-  "cycle": 88,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "자동 생성/보조 경로 8곳에 touch() 배선 완료 — cycle86/87 이니셔티브 이어가기",
-    "why": "cycle87 advance가 명시적으로 다음으로 넘긴 3개 항목(touch 커버리지 완성, deletedAt 툼스톤, 3-way 병합) 중 툼스톤과 병합은 앱 전역 필터링·병합 로직이 걸려 한 사이클에 안전히 끝내기엔 범위가 크다(cycle86/87이 이미 같은 이유로 미룸). 반면 touch() 커버리지 완성은 순수 배선 작업으로 사이드이펙트가 없고, 완료해야 다음 단계(툼스톤/병합)가 '스탬프 누락 레코드가 병합에서 조용히 지는' 위험 없이 진행 가능해진다. 실제로 addBalanceAdjust/doMaturity/doCsvImport/planTransfer 등은 사용자가 직접 누르지 않고 앱이 자동 생성하는 거래라 누락이 더 눈에 안 띄고, 이 중 다수(조정 내역, 만기 이체, CSV 가져오기)는 이미 최근 사이클들이 버그를 발견한 바로 그 함수들이라 우선순위가 높다.",
-    "approach": "8개 지점에 touch()를 삽입한다: (1) postponeRecTransfer 1476행 DB.txns.push({...}) 객체를 touch({...})로 감싸기, (2) addBalanceAdjust 2706행 동일, (3) updateBalanceAdjust 2721-2722행 adj 필드 대입 직후 touch(adj) 추가, (4) askRelinkDeleted의 2738행(_amLink) DB.assets.push(d) 전에 touch(d), 2752행(_amFresh)도 동일, (5) doMaturity 4299행 push 객체를 touch()로 감싸기, (6) doCsvImport 5091행 added=toAdd.map(x=>touch(Object.assign({id:uid()},x.txn)))로 교체, (7) planSplitTransfer 5832행 push 객체 touch() 적용, (8) planTransfer 5842행 동일. 모두 '새 레코드 push 직전' 또는 '기존 레코드 필드 변경 직후'에 touch() 한 줄 추가하는 기계적 패턴이라 cycle86/87과 동일한 안전한 준비 단계(updatedAt을 아무 데도 읽지 않으므로 동작 변화 없음)다. test/run.js에는 8개 지점 각각 최소 1개(가능하면 신규/기존 케이스 모두) 회귀 테스트를 추가해 updatedAt이 채워짐을 확인하고, fix를 stash로 되돌려 실패를 확인한 뒤 재적용한다. 완료 후 state.json의 이월 목록에서 '(2) 자동 생성 경로 touch() 누락'을 제거하고, 남은 (1) deletedAt 툼스톤과 (3) 3-way 병합만 다음 critique로 이월한다."
-  },
+  "cycle": 89,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 83,
-      "phase": "advance",
-      "timestamp": "2026-09-25T08:10:00.000Z",
-      "summary": "critique 계획 중 (2)번(백업/클라우드 복원 시 RANGE_FROM 이전 날짜 무경고 배제)만 구현하고 (1)번(RANGE_FROM 롤링 윈도우화)은 이번 사이클 범위에서 제외했다: (1)을 그대로 적용하면 TODAY가 매일 전진하면서 윈도우 하한이 함께 밀려나 지금까지 정상 집계되던 오래된 실거래가 시간이 지나며 '자동으로' 잔액·집계에서 조용히 빠지게 되는데, 이는 지금까지 이 로테이션이 계속 고쳐온 '백업 복원 경로에서 데이터가 조용히 사라지는' 버그 계열을 상시 발생 경로로 재도입하는 셈이라 완화책(예: 윈도우 밖으로 밀려나는 시점에 사용자에게 알림) 없이 단일 사이클에서 안전하게 끝내기엔 범위가 크다고 판단, critique 자신도 '무경계 성능 저하'로 표현한 부차적 문제라 다음 critique가 완화책까지 포함해 다시 계획하도록 남겨둠. (2)는 그 자체로 완결되는 안전한 수정: sanitizeBackup(obj)(index.html:4949)에 rangeCount를 추가해 dateBelowRangeFloor(d.date)인 txn을 fixedCount/droppedCount와 별도로 세고(레코드는 제거하지 않음), 이를 노출하는 두 호출부(importFile change 핸들러의 undoToast 메시지, resolveCloudPullRemote()의 toast 메시지)에 CSV 가져오기의 rangeCount 문구와 같은 스타일로 'RANGE_FROM 이전 날짜 N건은 내역엔 남지만 잔액엔 반영 안 돼요'를 추가. afterCloudAuth()의 자동 동기화 경로는 사용자에게 보여줄 토스트 자체가 없어(기존 관례) 건드리지 않음. test/run.js에 sanitizeBackup rangeCount 회귀 테스트 2개 추가(RANGE_FROM 이전 날짜가 섞이면 레코드는 유지한 채 정확히 세고, RANGE_FROM 당일은 하한선에 포함되어 안 잡힘 / 이전 날짜가 없으면 0) — fix를 git stash로 임시 제거해 2개 모두 실제로 실패함을 확인한 뒤 재적용. 두 인라인 <script> 블록 node --check 통과, node test/run.js 567/567 통과(기존 565 + 신규 2). APP_VERSION 1.46.36->1.46.37, sw.js CACHE v198->v199.",
-      "commit": null
-    },
     {
       "cycle": 84,
       "phase": "develop",
@@ -144,7 +133,14 @@
       "cycle": 88,
       "phase": "critique",
       "timestamp": "2026-09-26T04:10:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체 재검토, cycle86/87의 클라우드 병합 이니셔티브를 이어갈지 판단. index.html 실제 코드로 확인한 결과 touch() 헬퍼는 saveTx/saveAsset/saveRec 및 splitRecurrenceAt/recApply/recSave에는 이미 배선됐지만, DB.txns/assets/recurrences에 직접 push/대입하는 8개 지점(postponeRecTransfer 1476, addBalanceAdjust 2706, updateBalanceAdjust 2721-2722, askRelinkDeleted의 _amLink/_amFresh 2738/2752, doMaturity 4299, doCsvImport 일괄 저장 5091-5092, planSplitTransfer 5832, planTransfer 5842)에는 아직 빠져있음을 확인. deletedAt 툼스톤은 전혀 존재하지 않고(grep 0건) delTx/delAsset/delRecConfirm이 배열에서 물리 삭제만 함, pushCloud()도 여전히 문서 전체 조건부 교체 방식임을 재확인했으나 두 항목 모두 앱 전역 필터링·병합 로직이 걸려 한 사이클 범위를 초과한다고 판단(cycle86/87과 같은 이유). 최근 develop 사이클들(CSV 검증/날짜·반복거래/카테고리·귀속/balanceAt 계열)과 겹치지 않는 새 버그 후보도 훑었으나 유사 심각도가 안 보여 진행 중인 이니셔티브를 계속하는 쪽으로 결정. pending_advance_plan에 위 8개 지점 touch() 배선 계획(각 지점의 정확한 삽입 위치와 doCsvImport의 map+touch 재작성안 포함) 저장, deletedAt 툼스톤과 pushCloud 3-way 병합은 다음 critique로 명시 이월. 코드 변경 없음(읍기 전용 조사).",
+      "summary": "general-purpose 서브에이전트로 앱 전체 재검토, cycle86/87의 클라우드 병합 이니셔티브를 이어갈지 판단. index.html 실제 코드로 확인한 결과 touch() 헬퍼는 saveTx/saveAsset/saveRec 및 splitRecurrenceAt/recApply/recSave에는 이미 배선됐지만, DB.txns/assets/recurrences에 직접 push/대입하는 8개 지점(postponeRecTransfer 1476, addBalanceAdjust 2706, updateBalanceAdjust 2721-2722, askRelinkDeleted의 _amLink/_amFresh 2738/2752, doMaturity 4299, doCsvImport 일괄 저장 5091-5092, planSplitTransfer 5832, planTransfer 5842)에는 아직 빠져있음을 확인. deletedAt 툼스톤은 전혀 존재하지 않고(grep 0건) delTx/delAsset/delRecConfirm이 배열에서 물리 삭제만 함, pushCloud()도 여전히 문서 전체 조건부 교체 방식임을 재확인했으나 두 항목 모두 앱 전역 필터링·병합 로직이 걸려 한 사이클 범위를 초과한다고 판단(cycle86/87과 같은 이유). 최근 develop 사이클들(CSV 검증/날짜·반복거래/카테고리·귀속/balanceAt 계열)과 겹치지 않는 새 버그 후보도 훑었으나 유사 심각도가 안 보여 진행 중인 이니셔티브를 계속하는 쪽으로 결정. pending_advance_plan에 위 8개 지점 touch() 배선 계획(각 지점의 정확한 삽입 위치와 doCsvImport의 map+touch 재작성안 포함) 저장, deletedAt 툼스톤과 pushCloud 3-way 병합은 다음 critique로 명시 이월. 코드 변경 없음(읽기 전용 조사).",
+      "commit": null
+    },
+    {
+      "cycle": 88,
+      "phase": "advance",
+      "timestamp": "2026-09-26T05:12:00.000Z",
+      "summary": "critique(cycle88) 계획대로 자동 생성/보조 경로 8곳에 touch()를 배선: postponeRecTransfer(새 일회성 거래), addBalanceAdjust(새 조정 내역), updateBalanceAdjust(기존 조정 내역 갱신), askRelinkDeleted의 _amLink/_amFresh(재연동·새 자산 등록), doMaturity(만기 이체), doCsvImport(일괄 가져오기, map+touch로 재작성), planSplitTransfer/planTransfer(예정 이체). 모두 계획대로 '새 레코드 push 직전' 또는 '기존 레코드 필드 변경 직후' touch() 한 줄 추가하는 기계적 패턴이라 updatedAt을 아무 데도 읽지 않는 안전한 준비 단계(동작 변화 없음). test/run.js: 8곳 중 7곳(askRelinkDeleted 제외)에 회귀 테스트 총 7개 추가 — doMaturity/addBalanceAdjust/updateBalanceAdjust/postponeRecTransfer/doCsvImport/planTransfer/planSplitTransfer 각 1개(단, doCsvImport는 dup 필터링과 함께, planSplitTransfer는 2건 동시 검증). askRelinkDeleted는 saveAsset()의 재연동 분기 테스트가 sandbox.askRelinkDeleted를 스파이 스텁으로 의존하고 있어(FUNCTIONS로 실제 구현을 끌어오면 그 스텁을 덮어써 saveAsset 테스트가 깨짐, 실제로 처음 시도 시 1건 실패 확인 후 되돌림) 단위 테스트 없이 코드 리뷰로만 검증(다른 지점과 동일한 기계적 패턴). doCsvImport/planSplitTransfer/planTransfer는 이번에 처음 FUNCTIONS로 노출, celebrate() 스텁 신규 추가. 8곳 전체 fix를 git stash로 되돌려 새 테스트 7개가 모두 실패함을 확인한 뒤 재적용. 두 인라인 <script> 블록 node --check 통과, node test/run.js 603/603 통과(기존 596 + 신규 7). APP_VERSION 1.46.46->1.46.47, sw.js CACHE v208->v209. critique(cycle88)가 남긴 이월 목록에서 이번 항목은 완료 처리하고, 남은 (1) deletedAt 툼스톤 도입과 삭제 경로 배선, (2) pushCloud() 3-way 병합, (3) askRelinkDeleted의 touch() 커버리지(테스트 인프라 정비 필요)는 다음 critique로 이월.",
       "commit": null
     }
   ]

@@ -69,7 +69,7 @@ const FUNCTIONS = [
   'recNthDate', 'recCountUntil', 'truncateRecEnd', 'dateBelowRangeFloor', 'recalcEndCond', 'isVarCat', 'setCatVar', 'activeRecsForAssets', 'activeRecsForCat',
   'num', 'doRenameCat', 'doDeleteCat', 'budgetProgress', 'totalBudgetSummary', 'budgetKey', 'budgetForMonth', 'setBudgetFrom', 'addCat',
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'esc', 'normName', 'matchTxnQuery',
-  'parseCSV', 'unguardCsv', 'csvDateValid', 'csvRowToImportTxn', 'csvDedupeKey', 'buildImportPreview',
+  'parseCSV', 'unguardCsv', 'csvDateValid', 'csvRowToImportTxn', 'csvDedupeKey', 'buildImportPreview', 'doCsvImport',
   'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo', 'unsnapshotAssetName',
   'deletedAssetHistoryExists', 'relinkDeletedAsset',
   'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'restoreBackup', 'storageOutcomeMsg', 'shouldWarnUnpersisted', 'shouldWarnStorageSize',
@@ -105,6 +105,7 @@ const FUNCTIONS = [
   'fmtDot', 'splitHist', 'histRow', 'histTotHTML', 'updateHist', 'renderHistory',
   'lowestInMonth', 'planBalInner', 'planBalCard', 'planTrackHTML', 'planRowsHTML', 'renderPlan',
   'refreshPlanBody', 'planAsset', 'nextGroupOrder', 'monthSwipeCommitDir', 'overlayEscapeTarget', 'recFreq',
+  'planSplitTransfer', 'planTransfer',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -380,6 +381,9 @@ const sandbox = {
   txDraft: null,
   syncTxInputs: () => {},
   undoToast: (msg, undoFn) => { sandbox.lastUndo = { msg, undoFn }; },
+  // planSplitTransfer/planTransfer가 성공 안내로 부르는 축하 애니메이션 — 화면 효과일 뿐이라
+  // toast처럼 마지막 메시지만 기록하는 no-op 스텁으로 대체한다(app-evolve cycle88 advance).
+  celebrate: (msg) => { sandbox.lastCelebrate = msg; },
   // applyForeignSave()가 다른 탭이 남긴 최신 데이터를 읽어오는 localStorage.getItem(dataKey())
   // 경로 — 실제 dataKey()는 SESSION/AUTH/emailKey에 파생되는 비순수 값이라(위 SESSION 주석과
   // 같은 이유) 재현하지 않고 고정 키 스텁으로 대체한다. sandbox._lsRaw에 원하는 문자열을
@@ -1826,6 +1830,10 @@ test('relinkDeletedAsset: DB.deletedType 기록이 없으면(마이그레이션 
   sandbox.relinkDeletedAsset(newCash);
   assert.strictEqual(sandbox.DB.txns[0].fromAssetId, 'gone');
 });
+// askRelinkDeleted 자체는 saveAsset()의 재연동 분기 테스트(아래)가 스파이 스텁(sandbox.askRelinkDeleted)에
+// 의존하고 있어(FUNCTIONS로 실제 구현을 끌어오면 그 스텁을 덮어써 해당 테스트가 깨짐) 여기선 단위 테스트를
+// 추가하지 않는다 — index.html의 _amLink/_amFresh 내부 DB.assets.push(d) 두 곳에 touch(d)를 적용한 것은
+// 다른 자동 생성 경로(doMaturity 등)와 동일한 기계적 패턴이라 코드 리뷰로 충분히 검증 가능하다고 판단.
 // snapshotAssetName() 자체는 balanceAt 등 잔액 계산 체인 전체를 끌고 와 이 파일에서 스텁으로
 // 대체돼 있어(위 sandbox.snapshotAssetName 참고) 직접 실행 테스트는 못 하지만, deletedType을
 // deletedBal과 나란히 남기지 않으면 위의 relinkDeletedAsset 가드가 항상 false가 되어 재연동
@@ -2000,6 +2008,21 @@ test('buildImportPreview: 기존 내역에 키가 같은 게 1건만 있으면, 
   const preview = sandbox.buildImportPreview(csv, [], { expense: ['식비'], income: [], saving: [] }, txns);
   assert.strictEqual(preview.newCount, 1);
   assert.strictEqual(preview.dupCount, 1);
+});
+/* ---------- doCsvImport: 일괄 저장되는 거래에도 touch()로 updatedAt 스탬프
+ * (app-evolve cycle88 advance, doMaturity/addBalanceAdjust 쪽과 동일 목적) ---------- */
+test('doCsvImport: window._csvImport.items로 일괄 저장하는 거래마다 touch()가 호출된다', () => {
+  sandbox.DB = { categories: { expense: [], income: [], saving: [] }, txns: [] };
+  sandbox.window._csvImport = {
+    items: [
+      { dup: false, txn: { type: 'expense', category: '식비', memo: '점심', amount: 5000, date: '2026-01-01', fromAssetId: null, toAssetId: null } },
+      { dup: true, txn: { type: 'expense', category: '식비', memo: '중복', amount: 3000, date: '2026-01-01', fromAssetId: null, toAssetId: null } },
+    ],
+    newCats: { expense: [], income: [], saving: [] },
+  };
+  sandbox.doCsvImport();
+  assert.strictEqual(sandbox.DB.txns.length, 1, '중복(dup) 행은 저장되면 안 됨');
+  assert.strictEqual(sandbox.DB.txns[0].updatedAt, 'test-updatedAt', '가져온 거래에도 touch()가 호출되어야 함');
 });
 test("buildImportPreview: RANGE_FROM 이전 날짜 행은 형식 오류(invalidCount)와 구분해 rangeCount로 센다", () => {
   const csv = '날짜,구분,카테고리,금액,보내는 자산,받는 자산,메모\r\n' +
@@ -4506,6 +4529,34 @@ test('updateBalanceAdjust: 편집 화면 진입 시 채워진 잔액 캐시가 �
   assert.strictEqual(adj.type, 'income');
 });
 
+/* ---------- addBalanceAdjust/updateBalanceAdjust: 자동 생성 조정 거래에도 touch()로 updatedAt
+ * 스탬프 (app-evolve cycle88 advance, doMaturity 쪽과 동일 목적) ---------- */
+test('addBalanceAdjust: 새로 만드는 조정 내역에도 touch()가 호출된다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  const asset = { id: 'a1', type: 'cash', baseAmount: 4000 };
+  sandbox.DB = { settings: {}, assets: [asset], txns: [], recurrences: [] };
+  sandbox._balCache.clear();
+  sandbox.addBalanceAdjust(asset, 1000);
+  const adj = sandbox.DB.txns.find((t) => t.adjust && t.adjustAsset === 'a1');
+  assert.strictEqual(adj.updatedAt, 'test-updatedAt', '새 조정 내역에도 touch()가 호출되어야 함');
+});
+test('updateBalanceAdjust: 기존 조정 내역을 재계산해 갱신할 때도 touch()가 호출된다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  const asset = { id: 'a1', type: 'cash', baseAmount: 4000 };
+  sandbox.DB = {
+    settings: {},
+    assets: [asset],
+    txns: [{ id: 'adj1', date: '2026-06-01', type: 'income', category: sandbox.ADJUST_CAT, memo: '재등록 잔액 조정', amount: 1000, fromAssetId: null, toAssetId: 'a1', adjust: true, adjustAsset: 'a1' }],
+    recurrences: [],
+  };
+  sandbox._balCache.clear();
+  sandbox.updateBalanceAdjust(asset, 6000);
+  const adj = sandbox.DB.txns.find((t) => t.adjust && t.adjustAsset === 'a1');
+  assert.strictEqual(adj.updatedAt, 'test-updatedAt', '재계산으로 갱신된 기존 조정 내역에도 touch()가 호출되어야 함');
+});
+
 /* ---------- addBalanceAdjust/updateBalanceAdjust: 부채(debt) 자산에 잔액 조정 내역을
  * 만들 때 방향이 반대로 기록되던 버그의 회귀 테스트.
  * balancesUpTo()(2070줄)는 부채 자산에 sign=-1을 매겨, toAssetId로 들어오는 금액은 잔액을
@@ -4862,6 +4913,17 @@ test('doMaturity: 예정 포함 설정에서도 오늘 이후 예정된 입금�
   sandbox.doMaturity('a_sav');
   const t = sandbox.DB.txns.find(x => x.type === 'transfer' && x.fromAssetId === 'a_sav');
   assert.strictEqual(t.amount, 5000, '아직 오지 않은 6/28 예정 입금 2000은 6/15 만기 이체 금액에 섞이면 안 됨');
+});
+/* ---------- doMaturity: 자동 생성 이체에도 touch()로 updatedAt 스탬프 (app-evolve cycle88 advance) ----------
+ * cycle86/87이 saveTx/saveAsset/saveRec 및 recSave/recApply/splitRecurrenceAt에 touch()를 배선했지만,
+ * 사용자가 직접 누르지 않고 앱이 자동 생성하는 거래(만기 이체, 잔액 조정, CSV 가져오기 등)에는
+ * 빠져 있어 클라우드 3-way 병합이 들어오면 이 레코드들이 스탬프 없이 조용히 질 위험이 있었다. ---------- */
+test('doMaturity: 자동 생성된 만기 이체 거래에도 touch()가 호출된다', () => {
+  setupMaturityDB();
+  sandbox.DB.assets.find(a => a.id === 'a_sav').maturityTargetId = 'a_cash';
+  sandbox.doMaturity('a_sav');
+  const t = sandbox.DB.txns[sandbox.DB.txns.length - 1];
+  assert.strictEqual(t.updatedAt, 'test-updatedAt', '만기 이체 거래에도 touch()가 호출되어야 함');
 });
 
 /* ---------- detectStaleMarketValuedTxns: excludeMarketValued(cycle27) 적용 이전에 이미
@@ -5282,6 +5344,14 @@ test('postponeRecTransfer: 회차별 수정이 없으면 기존처럼 반복의 
   assert.strictEqual(t.amount, 500000);
   assert.strictEqual(t.memo, '적금이체');
 });
+/* postponeRecTransfer: 미룰 때 새로 생기는 일회성 거래에도 touch()로 updatedAt 스탬프
+ * (app-evolve cycle88 advance, doMaturity/addBalanceAdjust 쪽과 동일 목적) */
+test('postponeRecTransfer: 새로 생기는 일회성 거래에도 touch()가 호출된다', () => {
+  setupRecTransferDB();
+  sandbox.postponeRecTransfer('r1', '2026-09-17');
+  const t = sandbox.DB.txns[sandbox.DB.txns.length - 1];
+  assert.strictEqual(t.updatedAt, 'test-updatedAt', '새로 생긴 일회성 거래에도 touch()가 호출되어야 함');
+});
 /* postponeRecTransfer: daily 반복 이체를 "내일로" 미루면 +1일이 그 반복의 다음 정상 회차
  * 날짜와 겹쳐(daily는 매일이 회차이므로 항상 겹침), 엔진(expandRec)이 내일 몫 회차를 또
  * 만들어내 수동으로 넣은 이체와 중복 계상되던 버그(app-evolve cycle47 develop)의 회귀 테스트.
@@ -5543,6 +5613,22 @@ test('openFixShortfall: 같은 부족 상황을 다시 열 때는(날짜 선택 
   // fixSetWhen('pick')의 콜백은 같은 ctx(_fixCtx.targetId/date)로 openFixShortfall을 다시 부른다
   sandbox.openFixShortfall('assetA', '2026-06-20', 50000);
   assert.strictEqual(sandbox._fixWhen, '2026-06-18', '같은 (targetId,date) 컨텍스트면 직접 고른 날짜를 유지해야 함');
+});
+
+/* ---------- planTransfer/planSplitTransfer: 예정 이체로 남기며 새로 push하는 거래에도
+ * touch()로 updatedAt 스탬프 (app-evolve cycle88 advance, doMaturity/addBalanceAdjust 쪽과
+ * 동일 목적) ---------- */
+test('planTransfer: 새로 남기는 예정 이체 거래에도 touch()가 호출된다', () => {
+  setupFixShortfallDB();
+  sandbox.planTransfer('donor', 'assetA', '2026-06-19', 50000);
+  const t = sandbox.DB.txns[sandbox.DB.txns.length - 1];
+  assert.strictEqual(t.updatedAt, 'test-updatedAt', '새로 남긴 예정 이체 거래에도 touch()가 호출되어야 함');
+});
+test('planSplitTransfer: 여러 출처로 나눠 남기는 예정 이체 거래 각각에 touch()가 호출된다', () => {
+  setupFixShortfallDB();
+  sandbox.planSplitTransfer([{ id: 'donor', amount: 30000 }, { id: 'assetB', amount: 20000 }], 'assetA', '2026-06-19');
+  assert.strictEqual(sandbox.DB.txns.length, 2);
+  assert.ok(sandbox.DB.txns.every((t) => t.updatedAt === 'test-updatedAt'), '나눠 남기는 예정 이체 거래 각각에 touch()가 호출되어야 함');
 });
 
 /* ---------- fixShortfallDefaultDate/openFixShortfall: 부족해지는 날이 오늘/내일이면

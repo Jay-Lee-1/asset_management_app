@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.46';
+const APP_VERSION='1.46.47';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1473,7 +1473,7 @@ function postponeRecTransfer(recId,date){const r=DB.recurrences.find(x=>x.id===r
  /* daily 반복은 +1일이 다음 정상 회차 날짜와 겹칠 수 있어, 안 그러면 엔진이 그 날짜에
     자기 회차를 또 만들어내 수동으로 넣은 이체와 중복(잔액 이중 반영)된다 */
  if(!r.skip.includes(nd))r.skip.push(nd);
- DB.txns.push({id:uid(),type:'transfer',category:'이체',memo:ed.memo!=null?ed.memo:(r.memo||'이체'),amount:ed.amount!=null?ed.amount:r.amount,fromAssetId:r.fromAssetId,toAssetId:r.toAssetId,date:nd,confirmed:false});
+ DB.txns.push(touch({id:uid(),type:'transfer',category:'이체',memo:ed.memo!=null?ed.memo:(r.memo||'이체'),amount:ed.amount!=null?ed.amount:r.amount,fromAssetId:r.fromAssetId,toAssetId:r.toAssetId,date:nd,confirmed:false}));
  save();closeSheet();renderCurrent();toast('내일로 미뤘어요');
 }
 
@@ -2703,11 +2703,11 @@ function relinkDeletedAsset(d){
 function addBalanceAdjust(asset,gap){
  if(!gap)return;
  const inc=asset.type==='debt'?gap<0:gap>0; /* +면 입금(수입), -면 출금(지출) — 부채는 balancesUpTo()의 sign=-1과 맞춰 반대(상환 시 입금 처리) */
- DB.txns.push({id:uid(),date:TODAY,
+ DB.txns.push(touch({id:uid(),date:TODAY,
    type:inc?'income':'expense',category:ADJUST_CAT,memo:'재등록 잔액 조정',
    amount:Math.abs(gap),
    fromAssetId:inc?null:asset.id, toAssetId:inc?asset.id:null,
-   adjust:true, adjustAsset:asset.id});
+   adjust:true, adjustAsset:asset.id}));
 }
 /* 자산 금액을 수정하면, 연결된 조정 내역을 다시 계산해 맞춤 (없으면 새로, 0이면 삭제) */
 function updateBalanceAdjust(asset,entered){
@@ -2719,7 +2719,7 @@ function updateBalanceAdjust(asset,entered){
  if(gap!==0){
    const inc=asset.type==='debt'?gap<0:gap>0;
    if(adj){adj.amount=Math.abs(gap);adj.type=inc?'income':'expense';
-     adj.fromAssetId=inc?null:asset.id;adj.toAssetId=inc?asset.id:null;adj.date=adj.date||TODAY;DB.txns.push(adj);}
+     adj.fromAssetId=inc?null:asset.id;adj.toAssetId=inc?asset.id:null;adj.date=adj.date||TODAY;DB.txns.push(touch(adj));}
    else addBalanceAdjust(asset,gap);
  } /* gap==0이면 조정 내역 제거된 상태로 둠 */
 }
@@ -2735,7 +2735,7 @@ function deletedAssetHistoryExists(nm,type){
 function askRelinkDeleted(d,entered,balType,balKey){
  const rateWasUnknown=rateUnknown(d); /* saveAsset()과 동일하게, fx/gold/stock을 재연결·재등록할 때도 즉시 시세를 당겨온다 */
  window._amLink=()=>{ /* 연동: 과거 내역 재연결 + 삭제 시점 잔액에서 이어감 + 갭은 조정 내역 */
-   DB.assets.push(d);relinkDeletedAsset(d);
+   DB.assets.push(touch(d));relinkDeletedAsset(d);
    if(balType){
      d[balKey]=0;if(balKey==='baseAmount')delete d.amountKRW;else delete d.baseAmount;
      const H=balanceAt(d.id,TODAY);            /* 재연결된 과거 내역만의 잔액(기준값 0) */
@@ -2749,7 +2749,7 @@ function askRelinkDeleted(d,entered,balType,balKey){
    if(rateWasUnknown)syncRates(true);
  };
  window._amFresh=()=>{ /* 새로: 재연결 없이 별개 자산으로 */
-   DB.assets.push(d);
+   DB.assets.push(touch(d));
    if(balType){const contrib=balanceAt(d.id,TODAY)-assetBase(d);d[balKey]=Math.round(entered-contrib);}
    if(d.type==='savings'&&d.maturityDate)clampRecurringToMaturity(d.id,d.maturityDate);
    save();closeSheet();renderCurrent();toast('자산을 등록했어요');
@@ -4296,9 +4296,9 @@ function doMaturity(id){if(twGuard())return;const a=DB.assets.find(x=>x.id===id)
  if(target.id===a.id){toast('자기 자신으로는 이체할 수 없어요. 이체할 통장을 다시 선택해주세요');return}
  const date=a.maturityDate<=TODAY?a.maturityDate:TODAY;
  const amt=balanceAt(a.id,date); /* assetEval()의 schHorizon 투영(예정 포함 시 이번 달 말까지)은 만기 이체 시점의 실제 잔액과 다를 수 있어 사용하지 않음 */
- DB.txns.push({id:uid(),type:'transfer',date,category:'이체',memo:`${a.name} 만기 이체`,amount:amt,
+ DB.txns.push(touch({id:uid(),type:'transfer',date,category:'이체',memo:`${a.name} 만기 이체`,amount:amt,
   fromAssetId:a.id,toAssetId:target.id,
-  confirmed:DB.settings.confirmTransfers?false:true}); /* 실제로 옮겼는지 확인받음 */
+  confirmed:DB.settings.confirmTransfers?false:true})); /* 실제로 옮겼는지 확인받음 */
  a.maturityDate=null;save();invalidateBalances();closeSheet();renderCurrent();
  toast(DB.settings.confirmTransfers?`${target.name}(으)로 이체 예정을 남겼어요`:`${target.name}(으)로 만기 이체했어요`);
 }
@@ -5088,7 +5088,7 @@ function doCsvImport(){
    if(!DB.categories[ty].includes(name)){DB.categories[ty].push(name);addedCats.push({type:ty,name})}
   });
  });
- const added=toAdd.map(x=>Object.assign({id:uid()},x.txn));
+ const added=toAdd.map(x=>touch(Object.assign({id:uid()},x.txn)));
  DB.txns.push(...added);
  save();renderCurrent();closeSheet();
  const addedIds=new Set(added.map(t=>t.id));
@@ -5829,9 +5829,9 @@ function planSplitTransfer(plan,toId,date){
  if(twGuard())return;
  const to=DB.assets.find(a=>a.id===toId);
  plan.forEach(p=>{
-  DB.txns.push({id:uid(),type:'transfer',category:'이체',
+  DB.txns.push(touch({id:uid(),type:'transfer',category:'이체',
    memo:`${to?to.name:''} 채우기`,amount:p.amount,fromAssetId:p.id,toAssetId:toId,date,
-   confirmed:DB.settings.confirmTransfers?false:true});
+   confirmed:DB.settings.confirmTransfers?false:true}));
  });
  save();invalidateBalances();closeSheet();renderCurrent();_fixWhen=null;_fixCtx=null;
  celebrate(`예정 이체 ${plan.length}건을 남겼어요 ✅`);
@@ -5839,9 +5839,9 @@ function planSplitTransfer(plan,toId,date){
 function planTransfer(fromId,toId,date,amount){
  if(twGuard())return;
  const from=DB.assets.find(a=>a.id===fromId),to=DB.assets.find(a=>a.id===toId);
- DB.txns.push({id:uid(),type:'transfer',category:'이체',
+ DB.txns.push(touch({id:uid(),type:'transfer',category:'이체',
   memo:`${to?to.name:''} 채우기`,amount,fromAssetId:fromId,toAssetId:toId,date,
-  confirmed:DB.settings.confirmTransfers?false:true});
+  confirmed:DB.settings.confirmTransfers?false:true}));
  save();invalidateBalances();closeSheet();renderCurrent();_fixWhen=null;_fixCtx=null;
  celebrate('예정 이체로 남겼어요 ✅');
 }
