@@ -5388,6 +5388,32 @@ test('doRenameOwner: 자기 자신의 대소문자만 바꾸는 변경은 근접
   assert.strictEqual(sandbox.DB.owners[0], 'dad', '자기 자신과의 대소문자 변경은 허용돼야 함');
 });
 
+/* ---------- doRenameOwner: 귀속 이름이 바뀐 자산에도 touch()로 updatedAt이 갱신돼야 함 (app-evolve cycle92 develop) ----------
+ * saveAsset/askRelinkDeleted처럼 DB.assets 항목을 고치는 모든 경로는 touch()로 updatedAt을 갱신해야
+ * mergeCollection()의 3-way 병합(위 mergeCollection 테스트 참고: updatedAt이 더 큰 쪽이 이김)이 이
+ * 변경을 "최신"으로 인식한다. doRenameOwner()는 DB.owners[i]와 a.owner만 바꾸고 touch(a)를 부르지
+ * 않아, 클라우드 동기화 전에 다른 기기가 그 자산을 건드리지 않았더라도(즉 자산의 updatedAt이 그대로
+ * 옛 값) 병합 시 그 오래된 updatedAt만으로 비교돼 이름변경이 실제로 반영됐는지와 무관하게 원격의
+ * 더 최근 사본에 조용히 덮여 사라질 수 있었다(예: 원격에서 같은 자산을 다른 필드만 더 나중에 고친
+ * 경우). 이름이 바뀐 자산에는 touch()가 호출되어야 하고, 무관한(다른 귀속) 자산은 건드리지 않아야
+ * 한다. */
+test('doRenameOwner: 귀속 이름이 바뀐 자산에는 touch()가 호출돼 updatedAt이 갱신된다', () => {
+  sandbox.DB = {
+    owners: ['나', '아빠'],
+    assets: [
+      { id: 'a1', owner: '아빠', updatedAt: 111 },
+      { id: 'a2', owner: '나', updatedAt: 222 }, // 무관한 귀속 — 건드리면 안 됨
+    ],
+  };
+  sandbox.ST = { assetOwner: '전체', plan: { owner: '전체' } };
+  sandbox.renameOwnerValue = '아버지';
+  sandbox.doRenameOwner(1);
+  assert.strictEqual(sandbox.DB.assets[0].owner, '아버지');
+  assert.strictEqual(sandbox.DB.assets[0].updatedAt, 'test-updatedAt', '이름이 바뀐 자산에는 touch()가 호출되어야 함');
+  assert.strictEqual(sandbox.DB.assets[1].owner, '나');
+  assert.strictEqual(sandbox.DB.assets[1].updatedAt, 222, '무관한 자산의 updatedAt은 그대로여야 함');
+});
+
 test('renderMenu: 메뉴 탭 계정 진입점(acct-card)에 키보드/스크린리더 접근 패턴이 있다', () => {
   const body = extractFunction('renderMenu');
   assert.ok(/class="card acct-card"[^>]*role="button"/.test(body), 'acct-card에 role="button"이 없음');

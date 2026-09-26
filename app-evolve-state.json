@@ -1,15 +1,8 @@
 {
   "cycle": 92,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 87,
-      "phase": "develop",
-      "timestamp": "2026-09-25T22:17:09.831Z",
-      "summary": "Explore 서브에이전트로 발견한 lowestInMonth() 버그 수정. Plan 탭의 '이번 달 가장 낮을 때' 카드가 쓰는 lowestInMonth(assetId,y,m)(index.html:3873)은 거래별 증감(amount)을 직접 byDay에 누적해 running 잔액을 재계산했는데, balancesUpTo()/balanceAt()이 이미 적용 중인 미확인(pending) 이체 제외 규칙(confirmTransfers 설정 시 dateStr<=TODAY면 미확인 이체 제외, 그 이후 날짜(예정 반영)면 포함 — index.html:2120)을 전혀 확인하지 않고 무조건 포함시켰다. 예: 확인 잔액 500,000원인 자산에서 오늘 날짜로 300,000원 미확인 이체를 기록만 해두면, 같은 화면의 '오늘까지 잔액'(balanceAt 기반)은 정확히 500,000원을 보여주는데 바로 옆 '가장 낮을 때' 카드는 lowestInMonth가 미확인 이체를 섞어 200,000원으로 표시해 같은 화면 안에서 숫자가 서로 모순됐다(이 함수는 isPlanAcct로 cash 타입에만 노출되어 별개로 존재하던 부채 부호반전 누락은 도달 불가라 이번 범위에서 제외). 수정: byDay 델타 누적 로직을 제거하고, 그 달에 거래가 걸린 날짜들(및 월초)에 대해 balanceAt(assetId,d)를 직접 호출해 최소값을 찾도록 재작성 — balancesUpTo가 이미 검증된 pending 제외/부채 부호반전 규칙을 그대로 상속받아 로직 중복 자체를 없앴다. test/run.js에 회귀 테스트 2개 추가(오늘 날짜 미확인 이체는 balanceAt(TODAY)처럼 제외되어 최저 잔액이 그대로 유지됨 / 확인된 이체는 그 날짜부터 정상 반영됨) — 수정 전 코드로 되돌려(git stash) 첫 번째 테스트가 실제로 200000!==500000으로 실패함을 확인한 뒤 재적용. 두 인라인 <script> 블록 node --check 통과, node test/run.js 591/591 통과(기존 589 + 신규 2). APP_VERSION 1.46.43->1.46.44, sw.js CACHE v205->v206.",
-      "commit": null
-    },
     {
       "cycle": 87,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-26T17:12:00.000Z",
       "summary": "critique(cycle91) 계획대로 afterCloudAuth()의 localUnsynced 병합 분기를 DB.recurrences/DB.assets까지 확장했다. index.html:1727-1746 — 병합 전 DB.deletedIds와 remoteData.deletedIds를 먼저 유니온한 뒤(순서 중요: 세 컬렉션이 같은 공유 deletedIds 맵을 참조하므로), DB.txns/DB.recurrences/DB.assets 셋 다 동일한 mergeCollection(local,remote,DB.deletedIds,remoteData.deletedIds) 호출로 병합하도록 교체(기존엔 DB.txns 한 줄만 있었음). 계획의 3번째 항목(병합 직후 pushCloud()를 명시적으로 호출)은 실제로 불필요하다고 판단해 제외했다 — save()(1946줄)가 opts.deferCloudPush가 없으면 이미 무조건 scheduleCloudPush()를 호출하므로(1956줄), migrate();invalidateBalances();save() 호출만으로도 병합 결과가 1.2초 안에 자동으로 클라우드에 되밀린다(계획이 우려한 '다음 자연스러운 편집까지 지연' 시나리오는 애초에 발생하지 않음 — 불필요한 코드 추가를 피함). 세 컬렉션 모두 병합됐으므로 CLOUD_SYNC_STATE='conflict' 강제 대입 줄을 제거 — pullCloud()가 이미 cloudSyncOk()로 'ok' 상태를 만들어둔 것을 그대로 쓰게 되어, cloudBanner/계정 탭 배너(4154줄 CLOUD_SYNC_STATE==='conflict' 조건)/홈 알림(5990줄)이 더 이상 뜨지 않는다 — cycle86부터 이어온 클라우드 병합 이니셔티브의 마지막 확장이 완료됨. status 반환값('merged')을 가정하는 호출부(doLogin/doSignup)는 'guestMerged'만 특별 취급하고 'merged'/'conflict'는 구분하지 않아 별도 수정 불필요함을 grep으로 확인. test/run.js: 기존 txns 전용 통합 테스트 2개(정상 케이스 + '예전엔 assets/recurrences 방치, CLOUD_SYNC_STATE 강제 conflict' 케이스)를 세 컬렉션 모두 검증하는 통합 테스트 1개로 교체 — recurrences 쪽 local/remote 양쪽 신규·both-id 병합, assets 쪽 동일 패턴, CLOUD_SYNC_STATE가 더 이상 강제로 'conflict'가 되지 않음(sandbox.cloudSyncOk는 다른 테스트와 동일한 이유로 no-op 스텁이라 'ok'로 바뀌는 것 자체는 검증 불가 — 대신 호출 전 값 'idle'이 그대로 유지되는지로 강제 대입 제거를 검증)을 확인. 최초 시도에서 recurrences 기대값이 3인데 2가 나와 실패 — sanitizeBackup()(5030행)이 startDate 없는 반복거래는 무한루프 방지를 위해 통째로 드롭함을 코드로 확인하고 remote/local 반복거래 fixture에 startDate를 추가해 해결. 두 인라인 <script> 블록 node --check 통과, node test/run.js 622/622 통과(기존 623 - 교체로 net -1, 신규 검증 항목은 늘었지만 테스트 개수 자체는 줄어듦). APP_VERSION 1.46.52->1.46.53, sw.js CACHE v214->v215. 다음 critique로 명시 이월: (1) pushCloud() 자체의 낙관적 락 충돌(두 기기가 거의 동시에 push하는 경합) 분기는 이번 슬라이스와 다른 시나리오라 별도 설계 필요, (2) deletedIds GC, (3) askRelinkDeleted 테스트 인프라 정비.",
+      "commit": null
+    },
+    {
+      "cycle": 92,
+      "phase": "develop",
+      "timestamp": "2026-09-26T18:12:00.000Z",
+      "summary": "general-purpose 서브에이전트로 발견한 doRenameOwner() touch() 누락 버그 수정. 귀속(owner) 이름 변경 시 DB.owners[i]=v와 함께 DB.assets.forEach(a=>{if(a.owner===old)a.owner=v})로 관련 자산들의 owner 필드를 바꾸는데, cycle86-91에서 saveAsset/askRelinkDeleted/addBalanceAdjust 등 자산을 건드리는 다른 모든 경로에 이미 배선된 touch(a) 호출이 이 경로에만 빠져 있었다(index.html:3061) — mergeCollection()이 updatedAt만 보고 승자를 고르는 불변식을 이 함수만 깨고 있었음. 시나리오: 기기 A가 귀속 '아빠'→'아버지'로 이름 변경(해당 자산들 owner만 바뀌고 updatedAt은 그대로), 기기 B가 오프라인 상태에서 같은 자산에 다른 필드를 수정해 더 최신 updatedAt을 가짐(owner는 여전히 '아빠'); 다음 클라우드 동기화 시 afterCloudAuth()의 mergeCollection이 updatedAt 더 높은 B의 사본을 채택해 귀속 이름 변경이 경고 없이 조용히 되돌아감. 수정: DB.assets.forEach(a=>{if(a.owner===old){a.owner=v;touch(a)}})로 교체, 왜 필요한지 설명하는 주석 추가(saveAsset/askRelinkDeleted와 같은 불변식이라고 명시). 서브에이전트가 grep으로 이 경로가 touch() 누락의 유일한 사례임을 확인(doRenameCat의 유사한 누락은 별개 함수라 이번 범위에서 제외하고 남겨둠). test/run.js에 회귀 테스트 1개 추가(귀속이 바뀐 자산은 touch() 호출로 updatedAt이 갱신되고, 무관한 자산은 그대로 유지됨) — git stash로 되돌려 새 테스트가 실제 실패(622/623)함을 확인한 뒤 재적용. 두 인라인 <script> 블록 node --check 통과(직접 재검증), node test/run.js 623/623 통과(기존 622 + 신규 1, 직접 재실행으로 확인). APP_VERSION 1.46.53->1.46.54, sw.js CACHE v215->v216.",
       "commit": null
     }
   ]

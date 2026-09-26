@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.53';
+const APP_VERSION='1.46.54';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3058,7 +3058,7 @@ function doRenameOwner(i){const v=$('renameOwner').value.trim();if(!v){toast('�
  const old=DB.owners[i];if(v===old){openOwnerManage();return}
  const dup=DB.owners.find((o,oi)=>oi!==i&&normName(o)===normName(v));
  if(dup){toast(dup===v?'이미 있는 귀속이에요':`비슷한 귀속이 있어요: ${dup}`);return}
- DB.owners[i]=v;DB.assets.forEach(a=>{if(a.owner===old)a.owner=v});
+ DB.owners[i]=v;DB.assets.forEach(a=>{if(a.owner===old){a.owner=v;touch(a)}}); /* touch() 누락 시 mergeCollection()이 updatedAt만 보고 병합하다 다른 기기의 동기화 안 된 자산이 이 이름변경을 조용히 되돌릴 수 있음(saveAsset/askRelinkDeleted와 동일한 불변식) */
  if(ST.assetOwner===old)ST.assetOwner=v; if(ST.plan.owner===old)ST.plan.owner=v; /* 활성 귀속 필터가 이름 변경을 따라가도록 */
  (DB.nwHistory||[]).forEach(h=>{if(h.byOwner&&old in h.byOwner){h.byOwner[v]=h.byOwner[old];delete h.byOwner[old]}}); /* 과거 추이 스냅샷의 귀속별 키도 새 이름으로 이동 */
  save();openOwnerManage();toast('귀속을 수정했어요')}
