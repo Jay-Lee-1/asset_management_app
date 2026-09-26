@@ -1,19 +1,8 @@
 {
-  "cycle": 90,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "Add a pure per-collection 3-way merge helper (mergeCollection) for DB.txns, using updatedAt + deletedIds",
-    "why": "pushCloud()/afterCloudAuth() currently treat any concurrent edit as an all-or-nothing conflict requiring the user to manually pick 'keep mine' or 'keep theirs', discarding the other side's edits entirely — dangerous for the couple-shared-account use case. touch() (index.html:1411) already stamps updatedAt on writes to DB.txns, and DB.deletedIds (written at index.html:6120,6125,6133) already tombstones deleted txn ids, but nothing reads either yet. Implementing a merge algorithm for just DB.txns first (the highest-volume, highest-risk collection) is a safely scoped slice matching how prior cycles sliced this work, and gives review/critique something concrete and testable before extending to recurrences/assets/categories in later cycles.",
-    "approach": "1) Add a new pure function mergeCollection(localArr, remoteArr, localDeletedIds, remoteDeletedIds) near touch() (around index.html:1411), operating only on arrays of objects with id and optional updatedAt. Algorithm: build a map from id -> record for both localArr and remoteArr. For the union of all ids seen in either array or either deletedIds map: (a) if id is tombstoned in localDeletedIds with ts_local, and the surviving copy of that id (from remoteArr, if any) has updatedAt <= ts_local, treat as deleted (omit from result) — symmetric check for remoteDeletedIds tombstoning a record surviving in localArr; if the surviving record's updatedAt > the tombstone timestamp, keep the record (edit-wins-over-stale-delete); (b) if id exists in both arrays and neither tombstone applies, keep whichever record has the greater (obj.updatedAt||0), local wins on exact tie; (c) if id exists in only one array (and not tombstoned away), keep that one. Return a plain array of the surviving records (order doesn't matter; existing render code re-sorts by date elsewhere). 2) Write it as a standalone pure function with no DB/global-state access (mirrors decidePushOutcome/isCloudConflict at 1637-1645) so it's directly unit-testable in test/run.js without mocking Supabase. 3) Wire it into exactly ONE call site: afterCloudAuth()'s conflict branch (currently index.html:1697, 'if(localUnsynced){CLOUD_SYNC_STATE=\"conflict\";return{status:\"conflict\"}}'). Change this branch to: pull the remote DB (already have remote from pullCloud() at 1695, sanitized via sanitizeBackup), compute DB.txns = mergeCollection(DB.txns, sanitizeBackup(remote).data.txns, DB.deletedIds||{}, (sanitizeBackup(remote).data.deletedIds)||{}), then merge DB.deletedIds itself as a plain union (later timestamp wins per id), call migrate()/invalidateBalances(), save(), and mark this as a new status e.g. {status:'merged'} instead of leaving the user stuck in a hard conflict block. Do NOT touch pushCloud()'s own optimistic-lock/conflict path in this slice — leave decidePushOutcome's 'conflict' outcome and confirmCloudForcePush as the fallback UI for cases merge doesn't cover (recurrences/assets remain whole-document-replace risk until later cycles). 4) Do NOT merge recurrences, assets, or categories in this slice — only DB.txns. Add regression tests in test/run.js for mergeCollection covering: both-sides-edited-same-id (newer updatedAt wins), one-side-deleted-other-side-edited-newer (edit wins), one-side-deleted-other-side-untouched (delete wins), id-only-on-one-side (kept), and no-updatedAt-legacy-records (should not crash, treat missing updatedAt as 0)."
-  },
+  "cycle": 91,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 85,
-      "phase": "advance",
-      "timestamp": "2026-09-25T17:15:00.000Z",
-      "summary": "critique 계획대로 normName(s) 추가하고 addCat/doRenameCat/addOwner/doRenameOwner 네 곳의 완전 일치 중복 판정을 normName 기반 비교로 교체. test/run.js에 12개 테스트 추가. node test/run.js 584/584 통과. APP_VERSION 1.46.40->1.46.41, sw.js CACHE v202->v203.",
-      "commit": null
-    },
     {
       "cycle": 86,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-26T12:12:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체 재검토, 클라우드 병합 이니셔티브(cycle86 시작)를 이어갈지 판단. pushCloud()(index.html:1654-1686)와 afterCloudAuth()(1687-1705)를 실제로 읽어 재확인 — pushCloud는 여전히 .update({data:DB,...}).eq('updated_at',CLOUD_LAST_SYNCED_AT) 통짜 낙관적 락으로 충돌 시 토스트만 띄우고 멈추고, afterCloudAuth는 로컬에 미동기화 변경이 있으면 병합 없이 그대로 {status:'conflict'}만 반환해 사용자가 confirmCloudForcePush로 '내 것 유지' 또는 '상대 것 유지' 양자택일만 하게 강제함(4089줄 계정 공유 시나리오와 정확히 충돌). grep으로 updatedAt/deletedIds가 touch() 정의(1411)와 3개 삭제 undo 함수(6120,6125,6133) 외에는 어디서도 읽히지 않음을 재확인 — cycle86-89가 깔아둔 배선이 그대로 방치돼 있음. 경쟁 후보 재점검: TODO/FIXME 0건, openCatPicker(6195-6224)는 이미 data-cat 속성+위임 클릭 방식으로 XSS 안전, 최근 사이클들이 CSV 검증/카테고리·자산명 근접중복/balanceAt-pending계열(lowestInMonth·planRowsHTML·planNegatives) 버그를 모두 정리해 유사 심각도의 새 버그 없음. 이니셔티브를 계속하기로 결정, 범위는 DB.txns 한 컬렉션만의 3-way 병합 헬퍼(mergeCollection)로 한정해 pending_advance_plan에 저장 — pushCloud() 자체의 충돌 분기, recurrences/assets 병합, deletedIds GC, askRelinkDeleted 테스트 커버리지는 다음 critique로 명시 이월. 코드 변경 없음(읽기 전용 조사).",
+      "commit": null
+    },
+    {
+      "cycle": 90,
+      "phase": "advance",
+      "timestamp": "2026-09-26T13:12:00.000Z",
+      "summary": "critique(cycle90) 계획대로 mergeCollection(localArr,remoteArr,localDeletedIds,remoteDeletedIds) 순수 함수를 touch() 바로 아래(index.html:1412)에 추가 — id 맵을 만들어 양쪽에 다 있으면 updatedAt 큰 쪽(동률이면 local) 채택, 한쪽만 있고 tombstone도 없으면 그대로 채택, 한쪽이 삭제(tombstone)했는데 다른 쪽이 그 삭제 시각 이후에 수정했으면(updatedAt>tombstone시각) 수정이 삭제를 이기고 살아남게, 아니면 삭제 유지. afterCloudAuth()의 localUnsynced 분기(index.html:1727, 예전엔 곧장 {status:'conflict'}만 반환)를 계획대로 교체: sanitizeBackup(remote).data로 remote를 정제한 뒤 DB.txns=mergeCollection(DB.txns,remoteData.txns,DB.deletedIds,remoteData.deletedIds)로 DB.txns만 병합, DB.deletedIds는 더 늦은 타임스탬프가 이기는 단순 합집합으로 병합, migrate()/invalidateBalances()/save() 호출 후 {status:'merged'} 반환 — assets/recurrences는 계획대로 이번 슬라이스에서 손대지 않아 CLOUD_SYNC_STATE는 그대로 'conflict'로 남겨 confirmCloudForcePush 안내 배너가 계속 뜨게 둠(pushCloud()의 낙관적 락 분기 자체는 손대지 않음). test/run.js: mergeCollection 자체에 계획이 지목한 5가지 케이스(양쪽 수정 시 최신 승, 동률이면 local 승, 삭제 후 미수정이면 삭제 승, 삭제 후 상대가 그 뒤에 수정했으면 수정 승, id 한쪽에만 있으면 채택, updatedAt 없는 레거시 레코드도 크래시 없이 0 취급, 인자 자체가 undefined여도 안전) 총 7개 추가, afterCloudAuth()에 실제 merge 통합 테스트 1개(양쪽 txns가 실제로 합쳐지고 deletedIds도 유니온되며 status:'merged' 반환 확인) 추가 — vm 컨텍스트로 실행되는 함수의 반환 배열/객체를 deepStrictEqual로 통째 비교하면 리얼름이 달라 '구조는 같은데 참조가 다르다'는 오탐이 남을 확인해(sanitizeBackup 테스트들과 동일한 기존 관례) length/find로 개별 필드만 검증하도록 처음부터 그 관례를 따름. 두 인라인 <script> 블록 node --check 통과, node test/run.js 619/619 통과(기존 611 + 신규 8). APP_VERSION 1.46.50->1.46.51, sw.js CACHE v212->v213. critique(cycle90)가 남긴 이월 목록 중 이번 항목(DB.txns 3-way 병합)은 완료 처리, 남은 (1) pushCloud() 자체의 충돌 분기를 3-way 병합으로 교체, (2) recurrences/assets 병합 확장, (3) deletedIds GC, (4) askRelinkDeleted 테스트 커버리지는 다음 critique로 이월.",
       "commit": null
     }
   ]

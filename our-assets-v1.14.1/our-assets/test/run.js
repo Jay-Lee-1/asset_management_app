@@ -77,7 +77,7 @@ const FUNCTIONS = [
   'saveRec', 'recHistFieldsChanged', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
   'monthStartStr', 'monthEndStr', 'expandRec', 'allTxns', 'txnsByDateInRange', 'spendByCategory', 'spendTrend', 'spendTrendBadge', 'histSumTotals',
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'expenseBreakdownCard',
-  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asOpenCur', 'asCur', 'asToggleNeg', 'openAssetSheet', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'isCloudConflict', 'decidePushOutcome', 'fmtAmt',
+  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asOpenCur', 'asCur', 'asToggleNeg', 'openAssetSheet', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'isCloudConflict', 'decidePushOutcome', 'mergeCollection', 'fmtAmt',
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges', 'shouldRetryCloudSync',
   'pullCloud', 'afterCloudAuth', 'resolveCloudPullRemote',
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
@@ -3987,6 +3987,58 @@ test('decidePushOutcome: 매치된 행이 없는데 행은 있었으면(그 사�
   assert.strictEqual(sandbox.decidePushOutcome(0, true), 'conflict');
 });
 
+/* ---------- mergeCollection: afterCloudAuth()의 localUnsynced 충돌 분기가 DB.txns를 문서 전체
+ * 교체 대신 레코드 단위로 합치는 데 쓰는 순수 3-way 병합 함수(app-evolve cycle90 critique/advance).
+ * 두 기기가 서로 무관한 거래만 각자 편집·삭제해도 전체 충돌로 취급돼 한쪽 편집이 통째로 사라지던
+ * 문제(pushCloud/afterCloudAuth가 문서 단위 낙관적 락만 쓰던 것)를 DB.txns 한 컬렉션에 한해 푼다. */
+test('mergeCollection: 양쪽이 같은 id를 각자 수정했으면 updatedAt이 더 큰(더 최근) 쪽이 이긴다', () => {
+  const local = [{ id: 't1', memo: 'local-edit', updatedAt: 100 }];
+  const remote = [{ id: 't1', memo: 'remote-edit', updatedAt: 200 }];
+  const out = sandbox.mergeCollection(local, remote, {}, {});
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].memo, 'remote-edit');
+  assert.strictEqual(out[0].updatedAt, 200);
+});
+test('mergeCollection: updatedAt이 완전히 같으면 local이 이긴다', () => {
+  const local = [{ id: 't1', memo: 'local-edit', updatedAt: 100 }];
+  const remote = [{ id: 't1', memo: 'remote-edit', updatedAt: 100 }];
+  const out = sandbox.mergeCollection(local, remote, {}, {});
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].memo, 'local-edit');
+});
+test('mergeCollection: 한쪽이 삭제(tombstone)했고 다른 쪽은 그 이후 손대지 않았으면 삭제가 이긴다', () => {
+  const local = []; // local이 t1을 삭제
+  const remote = [{ id: 't1', memo: 'untouched', updatedAt: 50 }];
+  const out = sandbox.mergeCollection(local, remote, { t1: 100 }, {}); // 삭제 시각(100) > remote updatedAt(50)
+  assert.strictEqual(out.length, 0);
+});
+test('mergeCollection: 한쪽이 삭제(tombstone)했지만 다른 쪽이 그 삭제 이후에 수정했으면 수정이 삭제를 이긴다', () => {
+  const local = []; // local이 t1을 삭제(시각 100)
+  const remote = [{ id: 't1', memo: 'edited-after-delete', updatedAt: 150 }]; // remote가 그 뒤(150)에 수정
+  const out = sandbox.mergeCollection(local, remote, { t1: 100 }, {});
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].memo, 'edited-after-delete');
+});
+test('mergeCollection: id가 한쪽에만 있고 tombstone도 없으면 그대로 채택한다', () => {
+  const local = [{ id: 't1', memo: 'only-local', updatedAt: 10 }];
+  const remote = [{ id: 't2', memo: 'only-remote', updatedAt: 10 }];
+  const out = sandbox.mergeCollection(local, remote, {}, {});
+  assert.strictEqual(out.length, 2);
+  assert.strictEqual(out.find((r) => r.id === 't1').memo, 'only-local');
+  assert.strictEqual(out.find((r) => r.id === 't2').memo, 'only-remote');
+});
+test('mergeCollection: updatedAt이 없는 레거시 레코드도 크래시하지 않고 0으로 취급한다', () => {
+  const local = [{ id: 't1', memo: 'legacy-no-updatedAt' }];
+  const remote = [{ id: 't1', memo: 'remote-with-updatedAt', updatedAt: 1 }];
+  const out = sandbox.mergeCollection(local, remote, {}, {});
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].memo, 'remote-with-updatedAt');
+});
+test('mergeCollection: localArr/remoteArr/deletedIds가 없어도(undefined) 터지지 않는다', () => {
+  const out = sandbox.mergeCollection(undefined, undefined, undefined, undefined);
+  assert.strictEqual(out.length, 0);
+});
+
 /* ---------- localHasUnsyncedChanges: afterCloudAuth()가 부팅 시 로컬을 조용히 덮어쓸지 판단하는 순수 로직 ---------- */
 test('localHasUnsyncedChanges: 마지막 저장이 마지막 동기화보다 나중이면 미동기화 변경이 있다', () => {
   assert.strictEqual(sandbox.localHasUnsyncedChanges(2000, 1000), true);
@@ -4039,7 +4091,7 @@ test('pullCloud: 원격 fetch에 성공해도 markCloudSynced를 직접 부르�
   assert.strictEqual(sandbox.CLOUD_LAST_SYNCED_AT, '2026-01-01T00:00:00.000Z', 'pushCloud()의 조건부 UPDATE가 쓰는 기준시각은 그대로 갱신되어야 함');
   assert.strictEqual(sandbox.markCloudSyncedCalls, 0, 'pullCloud() 스스로는 로컬이 remote와 같아졌다고 표시하면 안 됨');
 });
-test('afterCloudAuth: 로컬에 미동기화 편집이 있으면(localUnsynced) remote를 버리고 conflict로만 돌아가며, __syncedAt을 갱신하지 않는다', async () => {
+test('afterCloudAuth: 로컬에 미동기화 편집이 있으면(localUnsynced) assets/recurrences는 그대로 두고(문서 전체를 remote로 덮어쓰지 않음) CLOUD_SYNC_STATE는 여전히 conflict이며 __syncedAt을 갱신하지 않는다', async () => {
   const before = sandbox.DB = { assets: [{ id: 'local-unsynced' }], txns: [] };
   sandbox.CLOUD_UID = 'u1';
   sandbox.CLOUD_SYNC_STATE = 'idle';
@@ -4047,9 +4099,47 @@ test('afterCloudAuth: 로컬에 미동기화 편집이 있으면(localUnsynced) 
   sandbox._lsMap = { 'test-key__savedAt': '2000', 'test-key__syncedAt': '1000' }; // savedAt>syncedAt → 미동기화
   sandbox._sbMaybeSingleResult = { data: { data: { assets: [{ id: 'remote' }], txns: [] }, updated_at: '2026-01-01T00:00:00.000Z' }, error: null };
   await sandbox.afterCloudAuth('u1');
-  assert.strictEqual(sandbox.CLOUD_SYNC_STATE, 'conflict');
-  assert.strictEqual(sandbox.DB, before, '미동기화 로컬 편집을 remote로 덮어쓰면 안 됨');
-  assert.strictEqual(sandbox.markCloudSyncedCalls, 0, 'remote를 채택하지 않았으니 아직 안 동기화된 로컬을 동기화됐다고 표시하면 안 됨 — 안 그러면 다음 재부팅에서 localHasUnsyncedChanges가 이 편집을 놓치고 remote로 조용히 덮어씀');
+  assert.strictEqual(sandbox.CLOUD_SYNC_STATE, 'conflict', 'DB.txns는 병합했지만 assets/recurrences는 아직 손대지 않아 confirmCloudForcePush 안내 배너가 계속 떠야 함');
+  assert.strictEqual(sandbox.DB, before, '같은 DB 객체를 계속 참조해야 함(문서 전체 교체 아님)');
+  assert.strictEqual(sandbox.DB.assets.length, 1, '로컬 미동기화 assets는 remote로 덮어쓰면 안 됨');
+  assert.strictEqual(sandbox.DB.assets[0].id, 'local-unsynced');
+  assert.strictEqual(sandbox.markCloudSyncedCalls, 0, 'remote를 통째로 채택한 게 아니니 동기화됐다고 표시하면 안 됨 — 안 그러면 다음 재부팅에서 localHasUnsyncedChanges가 아직 안 합쳐진 assets 편집을 놓치고 remote로 조용히 덮어씀');
+  sandbox._lsMap = null;
+});
+test('afterCloudAuth: 로컬에 미동기화 편집이 있어도 DB.txns는 mergeCollection으로 양쪽을 합치고 status:"merged"를 반환한다', async () => {
+  sandbox.DB = {
+    assets: [{ id: 'local-unsynced', type: 'cash' }],
+    txns: [
+      { id: 'local-only', date: '2026-01-01', updatedAt: 100 },
+      { id: 'both', date: '2026-01-01', memo: 'stale-local', updatedAt: 100 },
+    ],
+    deletedIds: { 'local-deleted': 300 },
+  };
+  sandbox.CLOUD_UID = 'u1';
+  sandbox.CLOUD_SYNC_STATE = 'idle';
+  sandbox._lsMap = { 'test-key__savedAt': '2000', 'test-key__syncedAt': '1000' }; // savedAt>syncedAt → 미동기화
+  sandbox._sbMaybeSingleResult = {
+    data: {
+      data: {
+        assets: [{ id: 'remote', type: 'cash' }],
+        txns: [
+          { id: 'remote-only', date: '2026-01-01', updatedAt: 100 },
+          { id: 'both', date: '2026-01-01', memo: 'newer-remote', updatedAt: 200 },
+        ],
+        deletedIds: { 'remote-deleted': 400 },
+      },
+      updated_at: '2026-01-01T00:00:00.000Z',
+    },
+    error: null,
+  };
+  const result = await sandbox.afterCloudAuth('u1');
+  assert.strictEqual(result.status, 'merged');
+  assert.strictEqual(sandbox.DB.txns.length, 3);
+  assert.ok(sandbox.DB.txns.some((t) => t.id === 'local-only'));
+  assert.ok(sandbox.DB.txns.some((t) => t.id === 'remote-only'));
+  assert.strictEqual(sandbox.DB.txns.find((t) => t.id === 'both').memo, 'newer-remote', '더 최근(updatedAt 200)인 remote 쪽이 이겨야 함');
+  assert.strictEqual(sandbox.DB.deletedIds['local-deleted'], 300, '양쪽 deletedIds가 합쳐져야 함');
+  assert.strictEqual(sandbox.DB.deletedIds['remote-deleted'], 400, '양쪽 deletedIds가 합쳐져야 함');
   sandbox._lsMap = null;
 });
 test('afterCloudAuth: 로컬에 미동기화 편집이 없으면 remote를 그대로 채택하고 markCloudSynced를 부른다', async () => {
