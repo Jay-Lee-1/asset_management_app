@@ -1,6 +1,6 @@
 {
   "cycle": 89,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
     {
@@ -120,6 +120,13 @@
       "phase": "develop",
       "timestamp": "2026-09-26T06:10:00.000Z",
       "summary": "Explore 서브에이전트로 발견한 saveAsset() 중복 자산 판정 버그 수정. addCat/doRenameCat/addOwner/doRenameOwner는 이미 normName()으로 대소문자·연속 공백 차이를 무시하는 근접 중복 차단을 하는데(cycle85 advance), saveAsset()의 동명·동종 자산 중복 판정(index.html:2918)만 a.name===d.name 완전 일치만 검사해 'Woori Bank'와 'woori   bank'처럼 대소문자나 연속 공백 개수만 다른 이름이 같은 종류로 각각 별개 자산으로 등록될 수 있었다(주의: normName은 공백을 아예 지우지 않고 연속 공백만 한 칸으로 축약하므로 '우리은행'과 '우리 은행'처럼 공백 유무 자체가 다른 경우는 여전히 서로 다른 이름으로 남음). dup 판정을 normName(a.name)===normName(d.name) 비교로 교체하고, 완전 일치일 때는 기존 문구를, 근접 중복일 때는 category/owner와 같은 톤으로 어떤 자산과 비슷한지 알려주는 문구(`비슷한 이름의 자산이 있어요: ${dup.name}`)를 추가. test/run.js에 회귀 테스트 2개 추가(대소문자·연속 공백 개수만 다른 동종 자산 이름 근접 중복 차단 + 비교 대상 자산명 노출 / 이름이 같아도 type이 다르면 여전히 중복 아님) — 첫 테스트는 index.html을 git stash로 되돌려 실제로 실패함을 확인한 뒤 재적용. 두 인라인 <script> 블록 node --check 통과, node test/run.js 605/605 통과(기존 603 + 신규 2). APP_VERSION 1.46.47->1.46.48, sw.js CACHE v209->v210.",
+      "commit": null
+    },
+    {
+      "cycle": 89,
+      "phase": "review",
+      "timestamp": "2026-09-26T07:10:00.000Z",
+      "summary": "develop 커밋(46d93c4, saveAsset() 동명·동종 자산 중복 판정을 normName() 근접 중복 검사로 확장)을 검토. normName(a.name)===normName(d.name) 비교가 addCat/doRenameCat(4360, 4408줄)과 동일한 패턴임을 확인, 토스트 문구도 완전일치/근접중복 분기와 '비슷한 카테고리가 있어요' 톤이 일치함을 확인. dup 판정 대상인 DB.assets는 delAsset()이 배열에서 물리 삭제만 해 살아있는 자산만 남으므로(소프트 삭제 플래그 없음) '살아있는' 주석과 실제 동작이 일치함을 grep으로 재확인. 두 인라인 <script> 블록 node --check 통과, node test/run.js 605/605 통과. 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
