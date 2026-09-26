@@ -1,15 +1,8 @@
 {
   "cycle": 93,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 88,
-      "phase": "develop",
-      "timestamp": "2026-09-26T00:00:00.000Z",
-      "summary": "general-purpose 서브에이전트로 발견한 planRowsHTML() 버그 수정. Plan 탭 일별 카드의 표시 잔액(pd-bal)이 그 달 거래 델타를 startBal 위에 직접 누적(r/rr)하는 방식이라, balanceAt()/balancesUpTo()가 confirmTransfers 설정 시 적용하는 미확인(pending) 이체 제외 규칙(dateStr<=TODAY면 제외)을 전혀 따르지 않았다 — 같은 화면의 월말/오늘 잔액 카드(planBalInner)와 \"이번 달 최저\" 카드(lowestInMonth, cycle87에서 동일 계열 버그로 이미 수정됨, index.html:3883 주석 참고)는 balanceAt 기반이라 정확한데, 바로 옆 일별 목록만 미확인 이체를 무조건 반영해 숫자가 어긋나고 심하면 잔액 마이너스 경고 구간이 엉뚱한 날짜에 뜰 수 있었다. lowestInMonth의 수정 방식을 그대로 적용해 dayBal=dates.map(d=>balanceAt(a.id,d))로 교체(수동 누적 로직 제거), 거래 항목 리스트 자체는 건드리지 않음. test/run.js에 lowestInMonth 테스트 바로 아래 회귀 테스트 2개 추가(미확인 이체는 해당 일 표시 잔액에서 제외됨 / 확인된 이체는 정상 반영됨) — git stash로 수정 전 코드 되돌려 첫 테스트가 실제 실패함을 확인 후 재적용. 두 인라인 <script> 블록 node --check 통과, node test/run.js 596/596 통과(기존 594 + 신규 2). APP_VERSION 1.46.45->1.46.46, sw.js CACHE v207->v208.",
-      "commit": "843c92edd269bc6859e619dcaf73d61278bf494f"
-    },
     {
       "cycle": 88,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-26T21:05:00.000Z",
       "summary": "critique(cycle92) 계획대로 doRenameCat() 카테고리 이름 변경 시 DB.txns/DB.recurrences의 touch() 누락을 수정했다. index.html:4474-4475 — 두 forEach 안쪽 필드 대입(t.category=v/if(t.memo===old)t.memo=v, r.category=v/if(r.memo===old)r.memo=v) 직후에 각각 touch(t)/touch(r) 추가, doRenameOwner(3061)와 같은 톤으로 mergeCollection() 불변식을 설명하는 주석을 txns 쪽 한 줄에 추가(두 forEach가 바로 붙어 있어 recurrences 쪽엔 중복 설명 생략). doRenameOwner(cycle92 develop)와 완전히 같은 기계적 패턴이라 updatedAt을 아무 데도 읽지 않는 안전한 배선(동작 변화 없음). test/run.js: doRenameOwner touch() 테스트(5400줄 부근)와 동일한 패턴으로 카테고리가 바뀐 txn 1건+무관한 txn 1건, 카테고리가 바뀐 recurrence 1건+무관한 recurrence 1건 총 4개 레코드를 세팅해 회귀 테스트 1개 추가 — 이름이 바뀐 txn/recurrence는 touch()로 updatedAt이 'test-updatedAt'으로 갱신되고 무관한 레코드(다른 카테고리)는 원래 값(222/444) 그대로 유지됨을 검증. git stash로 index.html만 되돌려 새 테스트가 실제로 실패(623/624)함을 확인한 뒤 재적용. 두 인라인 <script> 블록 node --check 통과, node test/run.js 624/624 통과(기존 623 + 신규 1). APP_VERSION 1.46.54->1.46.55, sw.js CACHE v216->v217. critique(cycle92)가 남긴 이월 목록(pushCloud() 낙관적 락 경합 분기, deletedIds GC, askRelinkDeleted 테스트 인프라)은 그대로 다음 critique로 이월 — 이번 슬라이스는 그 목록 항목이 아니라 review(cycle92)가 새로 지목한 별개 버그였음.",
+      "commit": null
+    },
+    {
+      "cycle": 93,
+      "phase": "develop",
+      "timestamp": "2026-09-26T22:08:45.256Z",
+      "summary": "rollPendingTransfers() touch() 누락 버그 수정. 이체 확인(confirmTransfers) 설정이 켜져 있을 때 기한이 지난 미확인 이체의 date를 오늘로 당기는 이 함수가(index.html:1474, 앱 로드 시 및 설정 토글 시 호출) t.date만 바꾸고 touch(t)를 부르지 않았다 — doRenameOwner/doRenameCat(cycle92)과 완전히 같은 이유로, mergeCollection()의 3-way 병합은 updatedAt만 보고 승자를 고르므로, 다른 기기가 오프라인 중 같은 거래의 다른 필드만 더 나중에 고쳤다면 병합 시 그 기기의(옛 날짜가 실린) 사본이 이겨 방금 앞당긴 날짜가 조용히 되돌아갈 수 있었다. DB.txns.forEach 콜백에 touch(t) 한 줄 추가. test/run.js의 기존 rollPendingTransfers 테스트 블록 바로 아래에 회귀 테스트 2개 추가(날짜가 앞당겨진 이체엔 touch() 호출 확인 / 건드리지 않는 이체는 touch()도 호출 안 됨 확인) — touch(t) 호출을 임시로 제거해 새 테스트가 실제 실패함을 확인한 뒤 재적용. 두 인라인 <script> 블록 node --check 통과, node test/run.js 626/626 통과(기존 624 + 신규 2). APP_VERSION 1.46.55->1.46.56, sw.js CACHE v217->v218.",
       "commit": null
     }
   ]

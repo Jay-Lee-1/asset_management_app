@@ -3550,6 +3550,26 @@ test('rollPendingTransfers: 이미 확정된(confirmed:true) 이체는 날짜와
   sandbox.rollPendingTransfers();
   assert.strictEqual(confirmed.date, '2026-06-10');
 });
+/* ---------- rollPendingTransfers: 날짜를 오늘로 당긴 이체에도 touch()로 updatedAt이 갱신돼야 함 (app-evolve cycle93 develop) ----------
+ * doRenameOwner/doRenameCat과 동일한 이유로, mergeCollection()의 3-way 병합은 updatedAt만 보고 승자를
+ * 고른다. rollPendingTransfers()는 앱 로드 시(및 confirmTransfers 설정 토글 시) 기한이 지난 미확인
+ * 이체의 date를 오늘로 밀지만 touch()를 부르지 않아, 다른 기기가 오프라인 중 같은 이체의 다른 필드만
+ * 더 나중에 고쳤다면(그래서 그 기기의 updatedAt이 더 최신이라면) 병합 시 옛 날짜가 실린 원격 사본이
+ * 이겨 방금 앞당긴 날짜가 조용히 되돌아갈 수 있었다. */
+test('rollPendingTransfers: 날짜가 앞당겨진 이체에는 touch()가 호출돼 updatedAt이 갱신된다', () => {
+  sandbox.TODAY = '2026-06-15';
+  const overdue = { id: 't1', type: 'transfer', date: '2026-06-10', confirmed: false, amount: 5000 };
+  sandbox.DB = { settings: { confirmTransfers: true }, txns: [overdue] };
+  sandbox.rollPendingTransfers();
+  assert.strictEqual(overdue.updatedAt, 'test-updatedAt', '날짜가 앞당겨진 이체에는 touch()가 호출되어야 함');
+});
+test('rollPendingTransfers: 건드리지 않는(미래·확정·기능꺼짐) 이체는 touch()도 호출되지 않는다', () => {
+  sandbox.TODAY = '2026-06-15';
+  const future = { id: 't1', type: 'transfer', date: '2026-06-20', confirmed: false, amount: 5000 };
+  sandbox.DB = { settings: { confirmTransfers: true }, txns: [future] };
+  sandbox.rollPendingTransfers();
+  assert.strictEqual(future.updatedAt, undefined, '건드리지 않은 이체의 updatedAt은 그대로여야 함');
+});
 
 /* ---------- saveAsset: 동명·동종 자산 중복 차단이 수정(edit)에도 적용되는지 (자산 등록 때만 막고 수정 때는 안 막던 버그) ---------- */
 test('saveAsset: 다른 자산을 이미 있는 자산과 같은 이름·종류로 수정하면 차단된다', () => {
