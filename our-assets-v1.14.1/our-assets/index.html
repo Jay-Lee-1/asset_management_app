@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.48';
+const APP_VERSION='1.46.49';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6109,18 +6109,24 @@ function undoToast(msg,undoFn){const t=document.createElement('div');t.className
  btn.onclick=()=>{if(done)return;done=true;clearTimeout(tm);t.classList.remove('show');setTimeout(()=>t.remove(),300);undoFn()};
  t.appendChild(btn);$('toastWrap').appendChild(t);requestAnimationFrame(()=>t.classList.add('show'))}
 function deleteTxnsUndo(ids){if(twGuard())return;const removed=DB.txns.filter(t=>ids.has(t.id));
- DB.txns=DB.txns.filter(t=>!ids.has(t.id));save();renderCurrent();
- undoToast(`${removed.length}개 내역을 삭제했어요`,()=>{DB.txns.push(...removed);save();renderCurrent();toast('되돌렸어요')})}
+ DB.txns=DB.txns.filter(t=>!ids.has(t.id));
+ DB.deletedIds=DB.deletedIds||{};const now=Date.now();ids.forEach(id=>DB.deletedIds[id]=now);
+ save();renderCurrent();
+ undoToast(`${removed.length}개 내역을 삭제했어요`,()=>{DB.txns.push(...removed);ids.forEach(id=>delete DB.deletedIds[id]);save();renderCurrent();toast('되돌렸어요')})}
 function deleteRecsUndo(ids){if(twGuard())return;const removed=DB.recurrences.filter(r=>ids.has(r.id));
- DB.recurrences=DB.recurrences.filter(r=>!ids.has(r.id));save();renderCurrent();
- undoToast(`${removed.length}개 반복 내역을 삭제했어요`,()=>{DB.recurrences.push(...removed);save();renderCurrent();toast('되돌렸어요')})}
+ DB.recurrences=DB.recurrences.filter(r=>!ids.has(r.id));
+ DB.deletedIds=DB.deletedIds||{};const now=Date.now();ids.forEach(id=>DB.deletedIds[id]=now);
+ save();renderCurrent();
+ undoToast(`${removed.length}개 반복 내역을 삭제했어요`,()=>{DB.recurrences.push(...removed);ids.forEach(id=>delete DB.deletedIds[id]);save();renderCurrent();toast('되돌렸어요')})}
 function deleteAssetsUndo(ids){if(twGuard())return;
  const recs=activeRecsForAssets(ids);
  ids.forEach(snapshotAssetName);const removed=DB.assets.filter(a=>ids.has(a.id));
  recs.forEach(r=>r.active=false);
- DB.assets=DB.assets.filter(a=>!ids.has(a.id));save();renderCurrent();
+ DB.assets=DB.assets.filter(a=>!ids.has(a.id));
+ DB.deletedIds=DB.deletedIds||{};const now=Date.now();ids.forEach(id=>DB.deletedIds[id]=now);
+ save();renderCurrent();
  undoToast(`${removed.length}개 자산을 삭제했어요`+(recs.length?` · 반복거래 ${recs.length}개 비활성화`:''),()=>{
-  DB.assets.push(...removed);recs.forEach(r=>r.active=true);ids.forEach(unsnapshotAssetName);save();renderCurrent();toast('되돌렸어요')})}
+  DB.assets.push(...removed);recs.forEach(r=>r.active=true);ids.forEach(unsnapshotAssetName);ids.forEach(id=>delete DB.deletedIds[id]);save();renderCurrent();toast('되돌렸어요')})}
 window.addEventListener('resize',()=>requestAnimationFrame(fitAll));
 
 /* ================= PICKERS (탭하면 열리는 선택창) ================= */

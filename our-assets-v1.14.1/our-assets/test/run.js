@@ -2112,6 +2112,29 @@ test('deleteTxnsUndo: 튜토리얼 모드 중에는 twGuard가 막아서 실제�
   assert.strictEqual(sandbox.DB.txns.length, 1, '튜토리얼 중에는 삭제가 막혀야 함');
   sandbox.TWi = -1;
 });
+test('deleteTxnsUndo: 삭제 시 DB.deletedIds에 시각을 남기고, undo하면 정확히 지운다(app-evolve cycle89)', () => {
+  sandbox.TWi = -1;
+  const t1 = { id: 'x1', amount: 1000 };
+  const t2 = { id: 'x2', amount: 500 };
+  sandbox.DB = { txns: [t1, t2] };
+  sandbox.lastUndo = null;
+  const before = Date.now();
+  sandbox.deleteTxnsUndo(new Set(['x1', 'x2']));
+  assert.ok(typeof sandbox.DB.deletedIds.x1 === 'number' && sandbox.DB.deletedIds.x1 >= before, 'x1에 삭제 시각이 기록되어야 함');
+  assert.ok(typeof sandbox.DB.deletedIds.x2 === 'number' && sandbox.DB.deletedIds.x2 >= before, 'x2에도 삭제 시각이 기록되어야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.deletedIds.x1, undefined, '되돌리면 x1의 툼스톤이 지워져야 함');
+  assert.strictEqual(sandbox.DB.deletedIds.x2, undefined, '되돌리면 x2의 툼스톤도 지워져야 함');
+  sandbox.TWi = -1;
+});
+test('deleteTxnsUndo: 튜토리얼 모드에서 막히면 deletedIds도 전혀 건드리지 않는다(app-evolve cycle89)', () => {
+  sandbox.TWi = 0;
+  const t = { id: 'x1', amount: 1000 };
+  sandbox.DB = { txns: [t] };
+  sandbox.deleteTxnsUndo(new Set(['x1']));
+  assert.strictEqual(sandbox.DB.deletedIds, undefined, '삭제가 막히면 deletedIds가 아예 생기지 않아야 함');
+  sandbox.TWi = -1;
+});
 
 /* ---------- deleteRecsUndo: 반복 삭제(전체) 공용 되돌리기 인프라 (delRecConfirm/recApply 'all' scope) ---------- */
 test('deleteRecsUndo: 지정한 id의 반복을 삭제하고, undo 콜백을 부르면 정확히 복원한다', () => {
@@ -2133,6 +2156,18 @@ test('deleteRecsUndo: 튜토리얼 모드 중에는 twGuard가 막아서 실제�
   sandbox.DB = { recurrences: [rec] };
   sandbox.deleteRecsUndo(new Set(['r1']));
   assert.strictEqual(sandbox.DB.recurrences.length, 1, '튜토리얼 중에는 삭제가 막혀야 함');
+  sandbox.TWi = -1;
+});
+test('deleteRecsUndo: 삭제 시 DB.deletedIds에 시각을 남기고, undo하면 정확히 지운다(app-evolve cycle89)', () => {
+  sandbox.TWi = -1;
+  const rec = { id: 'r1', category: '식비', amount: 1000 };
+  sandbox.DB = { recurrences: [rec] };
+  sandbox.lastUndo = null;
+  const before = Date.now();
+  sandbox.deleteRecsUndo(new Set(['r1']));
+  assert.ok(typeof sandbox.DB.deletedIds.r1 === 'number' && sandbox.DB.deletedIds.r1 >= before, 'r1에 삭제 시각이 기록되어야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.deletedIds.r1, undefined, '되돌리면 r1의 툼스톤이 지워져야 함');
   sandbox.TWi = -1;
 });
 
@@ -2192,6 +2227,22 @@ test('deleteAssetsUndo: undo 콜백이 snapshotAssetName이 남긴 fromAssetName
     sandbox.csvDedupeKey(t), sandbox.csvDedupeKey(sameTxnRebuiltFromId),
     'undo 후에는 id 기반 키로 비교되어야 CSV 재가져오기 시 같은 거래로 인식됨(수정 전에는 n:통장1 키가 남아 i:a1 키인 새 파싱 결과와 영원히 어긋나 중복 저장됐음)',
   );
+});
+test('deleteAssetsUndo: 삭제 시 DB.deletedIds에 시각을 남기고, undo하면 정확히 지운다(app-evolve cycle89)', () => {
+  sandbox.TWi = -1;
+  const a1 = { id: 'a1', name: '통장1' };
+  const a2 = { id: 'a2', name: '통장2' };
+  sandbox.DB = { assets: [a1, a2], recurrences: [] };
+  sandbox.lastUndo = null;
+  sandbox.snapshotCalls = [];
+  const before = Date.now();
+  sandbox.deleteAssetsUndo(new Set(['a1', 'a2']));
+  assert.ok(typeof sandbox.DB.deletedIds.a1 === 'number' && sandbox.DB.deletedIds.a1 >= before, 'a1에 삭제 시각이 기록되어야 함');
+  assert.ok(typeof sandbox.DB.deletedIds.a2 === 'number' && sandbox.DB.deletedIds.a2 >= before, 'a2에도 삭제 시각이 기록되어야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.deletedIds.a1, undefined, '되돌리면 a1의 툼스톤이 지워져야 함');
+  assert.strictEqual(sandbox.DB.deletedIds.a2, undefined, '되돌리면 a2의 툼스톤도 지워져야 함');
+  sandbox.TWi = -1;
 });
 
 /* ---------- recApply(mode='delete'): 부분 삭제(scope='one'/'future')도 twGuard+undo를 쓴다 ---------- */

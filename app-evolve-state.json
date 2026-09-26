@@ -1,11 +1,7 @@
 {
-  "cycle": 89,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "deletedAt 툼스톤 도입 (클라우드 병합 이니셔티브 3단계): deleteTxnsUndo/deleteRecsUndo/deleteAssetsUndo 세 곳에만 한정",
-    "why": "cycle86에서 시작한 클라우드 병합 이니셔티브(부부 동시 사용 시 pushCloud()의 전체 문서 단위 충돌 처리가 '내 변경 버리기' 또는 '상대방 미동기화 데이터 전체 삭제(되돌릴 수 없음)' 둘 중 하나만 강제하는 데이터 손실 위험)를 계속 진행. touch() updatedAt 배선은 cycle86~88에서 전체 완료 확인(16개 호출 지점 모두 grep으로 재검증). 남은 3개 항목 중 (1) deletedAt 툼스톤이 실제 3-way 병합의 전제 조건이라 다음으로 우선, (2) pushCloud() 3-way 병합 자체는 툼스톤이 있어야 안전하게 구현 가능해 이번 사이클 범위 밖, (3) askRelinkDeleted 테스트 커버리지 공백은 테스트 인프라 문제로 경미해 후순위. 앱 전체를 재훑었으나(접근성 45 aria-/28 role= 확인, 에러 바운더리 인프라 존재, TODO/FIXME 없음) 이 데이터 손실 위험보다 시급한 다른 문제는 발견되지 않음.",
-    "approach": "DB.deletedIds = {} (id -> deletedAt ms) 형태의 평평한(flat) 맵 하나만 추가 — uid()가 전역적으로 유일한 id를 생성하므로 컬렉션별로 나눌 필요 없음. 기존 DB.deletedBal/DB.deletedType이 쓰는 지연 초기화 패턴(DB.deletedBal=DB.deletedBal||{})을 그대로 따른다. 수정 대상은 정확히 3개 함수, index.html:6111-6123: (1) deleteTxnsUndo(ids) - 삭제 시 DB.deletedIds=DB.deletedIds||{}; const now=Date.now(); ids.forEach(id=>DB.deletedIds[id]=now); 추가하고, undo 콜백(DB.txns.push(...removed) 하는 곳)에서 ids.forEach(id=>delete DB.deletedIds[id]); 로 되돌리기. (2) deleteRecsUndo(ids) - DB.recurrences에 동일 패턴. (3) deleteAssetsUndo(ids) - DB.assets에 동일 패턴, 단 이 함수가 함께 하는 recs.forEach(r=>r.active=false)(연결된 반복거래 비활성화)는 삭제가 아니라 상태 변경이므로 툼스톤 대상에서 제외(자산 id만 스탬프). 건드리지 말 것: index.html:2716(updateBalanceAdjust 내부 임시 제거-재푸시), 3477(방금 만든 분리 레코드 undo), 5097(CSV 가져오기 undo) — 모두 같은 세션에서 방금 생성된, 아직 동기화 안 됐을 가능성이 높은 레코드의 undo라 이번 슬라이스에서 제외. 확인할 것: sanitizeBackup()이 알 수 없는 최상위 DB 필드를 화이트리스트 방식으로 걸러내는지 확인해서, 걸러낸다면 deletedIds도 보존 대상에 포함시킬 것. 절대 하지 말 것: DB.deletedIds에 대한 pruning/GC(나중에 실제 병합 로직이 들어오고 검증된 뒤에만 고려). 테스트: deleteTxnsUndo/deleteRecsUndo/deleteAssetsUndo는 이미 test/run.js FUNCTIONS에 노출되어 있고 기존 테스트가 test/run.js:2093-2192 부근에 있음 — 새 FUNCTIONS 등록이나 sandbox 스텁 불필요, 기존 describe 블록에 각 함수당 케이스 추가: (a) 삭제 후 DB.deletedIds[id]가 Date.now() 근처의 숫자인지, (b) undo 콜백 실행 후 DB.deletedIds[id]가 undefined로 정확히 지워지는지, (c) 여러 id 동시 삭제/undo, (d) twGuard가 막는 케이스에서는 DB.deletedIds가 전혀 건드려지지 않는지. 이번 슬라이스는 어떤 곳에서도 deletedAt/deletedIds 값을 읽지 않는 순수 기록 단계라 동작 변화 없이 안전(cycle86 touch() 도입과 동일한 안전 패턴). pushCloud() 3-way 병합 자체, budgets/categories 툼스톤, askRelinkDeleted 테스트 인프라 정비는 이번 사이클 범위에서 명시적으로 제외하고 다음 critique로 이월."
-  },
+  "cycle": 90,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
     {
       "cycle": 85,
@@ -138,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-26T08:10:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체 재검토, 클라우드 병합 이니셔티브(cycle86 시작)를 이어갈지 판단. touch() updatedAt 배선이 grep으로 확인한 16개 호출 지점 전부에 완료되어 있음을 재검증(더 이상 손댈 곳 없음). pushCloud()/afterCloudAuth()(index.html:1620-1729)는 여전히 전체 문서 조건부 교체 방식이고, deletedAt/tombstone 관련 코드는 여전히 0건(grep 재확인) — delTx/delAsset/delRecConfirm이 모두 세 중앙 함수(deleteTxnsUndo/deleteRecsUndo/deleteAssetsUndo, index.html:6111-6123)로 수렴해 물리 삭제만 하고 있음을 재확인. askRelinkDeleted의 touch() 자체는 이미 배선돼 있으나(2738/2752) 회귀 테스트만 없음(FUNCTIONS로 추출 시 saveAsset 테스트가 의존하는 스파이 스텁이 깨지는 인프라 문제, 경미하다고 판단). 접근성(45 aria-/28 role=)·에러 바운더리 인프라·TODO/FIXME 부재 등을 훑어 경쟁 후보를 찾았으나 이 클라우드 데이터 손실 위험보다 시급한 문제는 없다고 판단, 이니셔티브를 계속하기로 결정. 다음 슬라이스로 deletedAt 툼스톤(DB.deletedIds 평면 맵, deleteTxnsUndo/deleteRecsUndo/deleteAssetsUndo 3곳 한정, pruning 없이, budgets/categories 제외)을 pending_advance_plan에 저장. pushCloud() 3-way 병합 자체와 askRelinkDeleted 테스트 인프라 정비는 다음 critique로 명시 이월. 코드 변경 없음(읽기 전용 조사).",
+      "commit": null
+    },
+    {
+      "cycle": 89,
+      "phase": "advance",
+      "timestamp": "2026-09-26T09:12:00.000Z",
+      "summary": "critique(cycle89) 계획대로 deletedAt 툼스톤 도입. DB.deletedIds={} (id -> 삭제 시각 ms) 평평한 맵 하나를 DB.deletedBal/DB.deletedType과 동일한 지연 초기화 패턴으로 추가, deleteTxnsUndo/deleteRecsUndo/deleteAssetsUndo(index.html:6111-6123) 정확히 3곳에만 배선 — 삭제 직전 ids.forEach(id=>DB.deletedIds[id]=now), undo 콜백에서 ids.forEach(id=>delete DB.deletedIds[id])로 되돌리기. deleteAssetsUndo의 recs.forEach(r=>r.active=false)(연결된 반복거래 비활성화)는 계획대로 상태 변경이라 툼스톤 대상에서 제외, 자산 id만 스탬프. 계획이 지목한 3곳(updateBalanceAdjust 내부 임시 제거-재푸시, 방금 분리한 레코드 undo, CSV 가져오기 undo)은 방금 생성된 미동기화 레코드 undo라 이번 슬라이스에서 의도적으로 제외. sanitizeBackup()(index.html:5025)이 Object.assign({},obj,{txns,assets,recurrences})로 obj의 알 수 없는 최상위 필드를 그대로 보존함을 코드로 확인해(화이트리스트가 아니라 명시된 세 키만 교체) deletedIds도 백업/클라우드 왕복에 유실 없이 보존됨을 검증. deletedAt/deletedIds 값을 이번 슬라이스 어디에서도 읽지 않아(3-way 병합 로직은 아직 없음) 동작 변화 없이 안전(cycle86 touch() 도입과 동일한 안전 패턴). test/run.js: 세 함수 모두 기존에 FUNCTIONS로 노출돼 있어 신규 등록·스텁 불필요, 기존 describe 블록(2093-2230 부근)에 회귀 테스트 4개 추가 — deleteTxnsUndo(다건 삭제 시 각 id에 시각 기록 + undo 시 정확히 지움, twGuard가 막으면 DB.deletedIds 자체가 생기지 않음 2개), deleteRecsUndo(동일 패턴 1개), deleteAssetsUndo(다건 삭제/undo 1개). 두 인라인 <script> 블록 node --check 통과, node test/run.js 609/609 통과(기존 605 + 신규 4). APP_VERSION 1.46.48->1.46.49, sw.js CACHE v210->v211. critique(cycle89)가 남긴 이월 목록에서 이번 항목은 완료 처리하고, 남은 (1) pushCloud() 3-way 병합(이제 deletedIds 준비 완료로 실제 착수 가능), (2) askRelinkDeleted의 touch() 테스트 커버리지 인프라 정비는 다음 critique로 이월.",
       "commit": null
     }
   ]
