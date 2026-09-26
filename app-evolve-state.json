@@ -1,19 +1,8 @@
 {
-  "cycle": 92,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "doRenameCat() 카테고리 이름 변경 시 txns/recurrences touch() 누락 수정",
-    "why": "doRenameOwner()(index.html:3061, cycle92 develop에서 수정 완료)와 완전히 같은 구조의 doRenameCat()(index.html:4461-4478)이 DB.txns.forEach(...t.category=v...)와 DB.recurrences.forEach(...r.category=v...)(4474-4475) 두 곳에서 필드를 바꾸면서 touch()를 호출하지 않는다. mergeCollection()(1412)이 updatedAt만 보고 병합 승자를 고르므로, 이 경로로 바뀐 레코드가 다른 기기에서 다른 필드가 더 최근에 수정된 채로 동기화되면 카테고리 이름 변경이 해당 레코드에서만 조용히 롤백된다. owner 변경(자산 단위)보다 파급 범위가 커서 한 번의 카테고리 이름 변경이 그 카테고리가 걸린 모든 거래/반복거래에 영향을 준다.",
-    "approach": "index.html:4474 DB.txns.forEach(t=>{if(...){t.category=v;if(t.memo===old)t.memo=v}}) 안에서 대입 직후 touch(t) 추가. index.html:4475 DB.recurrences.forEach(r=>{if(...){r.category=v;if(r.memo===old)r.memo=v}})도 동일하게 touch(r) 추가. 3061의 주석과 같은 톤으로 왜 필요한지 한 줄 주석 추가. test/run.js에 doRenameOwner 회귀 테스트(cycle92 develop)와 동일한 패턴으로 카테고리가 바뀐 txn/recurrence는 touch()로 updatedAt이 갱신되고 무관한 레코드(다른 카테고리)는 원래 값 그대로인지 검증하는 테스트 추가. 두 인라인 <script> 블록 node --check, node test/run.js 통과 확인 후 APP_VERSION과 sw.js CACHE 버전을 올린다."
-  },
+  "cycle": 93,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 87,
-      "phase": "advance",
-      "timestamp": "2026-09-26T01:12:00.000Z",
-      "summary": "critique(cycle87)가 세운 계획대로 splitRecurrenceAt(index.html:3604-3611)의 반환 객체 updatedOriginal/newRec 양쪽에 touch() 적용. recApply(index.html:3432-3453)의 삭제 scope='one'(r.skip.push(date) 직후)과 scope='future'(Object.assign(r,truncateRecEnd(...)) 직후)에 touch(r) 추가. recSave(index.html:3456-3483, _recCtx 기반 개별 수정 경로, saveRec(3556)과는 별개 함수)의 scope='one'(edits[ctx.date]={...} 직후), scope='future'(잘린 원본 r과 새로 분리된 newRec 양쪽), scope='all'(r.amount/r.memo 대입 직후)에 touch() 추가. recSaveScopeApply(3620-3630)는 splitRecurrenceAt이 반환한 이미 스탬프된 객체를 대입만 하므로 수정 불필요(자동으로 커버됨). 이번 커밋도 cycle86과 동일하게 updatedAt 값을 아무 데도 읽지 않는 순수 배선이라 동작 변화 없이 안전. test/run.js: 세 함수 모두 기존에 FUNCTIONS로 이미 노출돼 있어 스텁 touch('test-updatedAt')를 그대로 재사용, recSave 3-scope 통합 테스트 1개(one/future 잘린 원본+새 레코드/all 각각 updatedAt 확인) · recApply 삭제 2-scope 테스트 1개(one/future) · splitRecurrenceAt 테스트 1개(원본+새 레코드) 총 3개 추가 — 기존 590여 개 테스트가 이미 그대로 통과해(deepStrictEqual로 전체 객체를 비교하는 곳이 없어) 회귀 없음을 확인. 두 인라인 <script> 블록 node --check 통과, node test/run.js 594/594 통과(기존 591 + 신규 3). APP_VERSION 1.46.44->1.46.45, sw.js CACHE v206->v207. 다음 critique가 이어서 검토할 것(cycle86 advance가 남긴 목록 중 미해결): (1) deletedAt 툼스톤 도입과 삭제 경로(delTx/delAsset/delRecConfirm 등) 배선, (2) 자동 생성 이체/조정 거래(addBalanceAdjust 등)·자산 생성/수정·CSV 일괄 가져오기 경로의 touch() 누락, (3) pushCloud()의 충돌 분기를 문서 전체 교체 대신 updatedAt 기반 컬렉션·id 단위 3-way 병합으로 교체.",
-      "commit": null
-    },
     {
       "cycle": 88,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-26T20:07:56.859Z",
       "summary": "index.html을 직접 grep/read로 재검토, 클라우드 병합 이니셔티브(cycle86 시작)의 남은 이월 항목(pushCloud() 낙관적 락 경합, deletedIds GC, askRelinkDeleted 테스트 인프라) 대신 review(cycle92)가 새로 지목한 후보를 먼저 평가했다. touch( 전체 호출부(1411,1506,2756,2772,2788,2802,2974,3061,3442,3450,3493,3499,3520,3528,3531,3536,3636,3668,4355,5147,5895,5905)를 grep으로 나열해 doRenameOwner()(3061, cycle92 develop에서 이미 수정됨)와 완전히 같은 구조의 doRenameCat()(4461-4478)만 touch() 호출이 전혀 없음을 확인 — DB.txns.forEach(...t.category=v...)와 DB.recurrences.forEach(...r.category=v...)(4474-4475) 두 곳 모두 필드만 바꾸고 updatedAt을 갱신하지 않는다. doRenameOwner보다 파급 범위가 더 크다고 판단한 이유: owner 변경은 자산 단위로만 영향을 주지만 카테고리 이름 변경은 그 카테고리가 걸린 모든 거래(DB.txns)와 반복거래(DB.recurrences) 레코드 각각에 영향을 주므로, 한 번의 이름 변경이 한 기기에서 수십~수백 건의 레코드를 조용히 갱신시각 없이 고칠 수 있다 — mergeCollection()이 updatedAt만 보고 승자를 고르는 지금 구조에서, 다른 기기가 오프라인 중 같은 레코드의 다른 필드(금액 등)를 수정해두면 다음 동기화 때 그 기기의 사본이 이겨서 카테고리 이름 변경이 해당 레코드들에서만 조용히 롤백될 수 있다(원조 문제였던 cycle86 critique의 부부 공유 계정 시나리오와 동일 계열). 경쟁 후보로 pushCloud() 자체의 낙관적 락 경합 분기와 deletedIds GC를 다시 검토했으나 여전히 앱 전역 설계가 필요해 한 사이클 범위를 넘는다고 판단(cycle86-91과 동일한 이유로 계속 이월), doRenameCat() 쪽이 doRenameOwner와 완전히 같은 패턴(추가 설계 불필요, 기계적 2줄 수정)이면서 실사용 영향은 더 크므로 이번 advance로 확정. pending_advance_plan에 index.html:4474-4475 두 forEach 안쪽에 touch(t)/touch(r) 추가(주석은 doRenameOwner의 3061 주석과 동일한 톤으로 mergeCollection 불변식 설명), test/run.js에 doRenameOwner 회귀 테스트와 동일한 패턴으로 카테고리 이름 변경 시 해당 txn/recurrence의 updatedAt이 갱신되고 무관한 레코드는 그대로인지 검증하는 테스트 추가 계획 저장. pushCloud() 경합 분기, deletedIds GC, askRelinkDeleted 테스트 인프라는 다음 critique로 명시 이월. 코드 변경 없음(읽기 전용 조사).",
+      "commit": null
+    },
+    {
+      "cycle": 92,
+      "phase": "advance",
+      "timestamp": "2026-09-26T21:05:00.000Z",
+      "summary": "critique(cycle92) 계획대로 doRenameCat() 카테고리 이름 변경 시 DB.txns/DB.recurrences의 touch() 누락을 수정했다. index.html:4474-4475 — 두 forEach 안쪽 필드 대입(t.category=v/if(t.memo===old)t.memo=v, r.category=v/if(r.memo===old)r.memo=v) 직후에 각각 touch(t)/touch(r) 추가, doRenameOwner(3061)와 같은 톤으로 mergeCollection() 불변식을 설명하는 주석을 txns 쪽 한 줄에 추가(두 forEach가 바로 붙어 있어 recurrences 쪽엔 중복 설명 생략). doRenameOwner(cycle92 develop)와 완전히 같은 기계적 패턴이라 updatedAt을 아무 데도 읽지 않는 안전한 배선(동작 변화 없음). test/run.js: doRenameOwner touch() 테스트(5400줄 부근)와 동일한 패턴으로 카테고리가 바뀐 txn 1건+무관한 txn 1건, 카테고리가 바뀐 recurrence 1건+무관한 recurrence 1건 총 4개 레코드를 세팅해 회귀 테스트 1개 추가 — 이름이 바뀐 txn/recurrence는 touch()로 updatedAt이 'test-updatedAt'으로 갱신되고 무관한 레코드(다른 카테고리)는 원래 값(222/444) 그대로 유지됨을 검증. git stash로 index.html만 되돌려 새 테스트가 실제로 실패(623/624)함을 확인한 뒤 재적용. 두 인라인 <script> 블록 node --check 통과, node test/run.js 624/624 통과(기존 623 + 신규 1). APP_VERSION 1.46.54->1.46.55, sw.js CACHE v216->v217. critique(cycle92)가 남긴 이월 목록(pushCloud() 낙관적 락 경합 분기, deletedIds GC, askRelinkDeleted 테스트 인프라)은 그대로 다음 critique로 이월 — 이번 슬라이스는 그 목록 항목이 아니라 review(cycle92)가 새로 지목한 별개 버그였음.",
       "commit": null
     }
   ]

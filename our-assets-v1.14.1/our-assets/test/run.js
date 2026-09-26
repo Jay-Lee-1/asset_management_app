@@ -805,6 +805,34 @@ test('doRenameCat: 사용자가 직접 입력한(카테고리명과 다른) 거�
   assert.strictEqual(sandbox.DB.txns[0].memo, '점심 김밥', '사용자가 직접 쓴 메모는 카테고리 이름변경과 무관하게 보존돼야 함');
 });
 
+/* ---------- doRenameCat: 카테고리 이름이 바뀐 txns/recurrences에도 touch()로 updatedAt이 갱신돼야 함 (app-evolve cycle92 advance) ----------
+ * doRenameOwner()와 완전히 같은 이유로(위 doRenameOwner touch() 테스트 참고), mergeCollection()의
+ * 3-way 병합은 updatedAt만 보고 승자를 고른다. doRenameCat()은 DB.txns/DB.recurrences의 category(및
+ * memo)만 바꾸고 touch()를 부르지 않아, 다른 기기가 오프라인 중 같은 레코드의 다른 필드만 더 나중에
+ * 고쳐뒀다면 다음 동기화 때 그 사본이 이겨 카테고리 이름변경이 조용히 되돌아갈 수 있었다. 이름이
+ * 바뀐 레코드에는 touch()가 호출되어야 하고, 무관한(다른 카테고리) 레코드는 건드리지 않아야 한다. */
+test('doRenameCat: 카테고리가 바뀐 거래(txns)/반복거래(recurrences)에는 touch()가 호출돼 updatedAt이 갱신된다', () => {
+  sandbox.DB = {
+    categories: { expense: ['식비'] }, catIcon: {}, catVar: {},
+    txns: [
+      { id: 't1', type: 'expense', category: '식비', memo: '점심', updatedAt: 111 },
+      { id: 't2', type: 'expense', category: '교통비', memo: '버스', updatedAt: 222 }, // 무관한 카테고리 — 건드리면 안 됨
+    ],
+    recurrences: [
+      { id: 'r1', type: 'expense', category: '식비', memo: '월세', updatedAt: 333 },
+      { id: 'r2', type: 'expense', category: '교통비', memo: '지하철', updatedAt: 444 }, // 무관한 카테고리 — 건드리면 안 됨
+    ],
+  };
+  sandbox.catRenameDraft = { name: '외식비', icon: '' };
+  sandbox.doRenameCat('expense', 0);
+  assert.strictEqual(sandbox.DB.txns[0].category, '외식비');
+  assert.strictEqual(sandbox.DB.txns[0].updatedAt, 'test-updatedAt', '이름이 바뀐 거래에는 touch()가 호출되어야 함');
+  assert.strictEqual(sandbox.DB.txns[1].updatedAt, 222, '무관한 거래의 updatedAt은 그대로여야 함');
+  assert.strictEqual(sandbox.DB.recurrences[0].category, '외식비');
+  assert.strictEqual(sandbox.DB.recurrences[0].updatedAt, 'test-updatedAt', '이름이 바뀐 반복거래에는 touch()가 호출되어야 함');
+  assert.strictEqual(sandbox.DB.recurrences[1].updatedAt, 444, '무관한 반복거래의 updatedAt은 그대로여야 함');
+});
+
 /* ---------- activeRecsForAssets: 자산 삭제 시 연결 반복거래 비활성화 (125886a) ---------- */
 test('activeRecsForAssets: 단일 id — 활성 상태이고 해당 자산을 참조하는 반복거래만 찾는다', () => {
   sandbox.DB = {
