@@ -1,15 +1,8 @@
 {
   "cycle": 88,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 83,
-      "phase": "develop",
-      "timestamp": "2026-09-25T05:10:00.000Z",
-      "summary": "Explore 서브에이전트로 발견한 doExport(csv) 버그 수정. txnsToCSV()(index.html:4721)는 잔액 조정(adjust) 항목을 걸러내지 않는데, monthStats/monthStats2/histSumTotals/spendByCategory/upcomingOutflows 등 다른 모든 집계는 항목별 포함 설정(inSurplus)을 따라 adjust&&!inSurplus 항목을 기본 제외하는 `!(t.adjust&&!t.inSurplus)` 패턴을 공유한다(index.html:2080,2209,2218,3010,3716-3717,4137,5621,5634). doExport()(index.html:4867)가 이 필터 없이 DB.txns.concat(expandRec(...))를 그대로 넘겨, 자산 재등록 시 addBalanceAdjust()(2693)가 자동 생성하는 조정용 가상 거래('잔액 조정' 카테고리)가 '거래 내역 CSV로 내보내기'에는 항상 포함됐다 — 스프레드시트에서 합산한 수입/지출이 앱 화면의 합계와 달라지고, 그 CSV를 다른 기기로 재가져오기하면 조정용 항목이 일반 거래로 영구 편입돼 실제 수입/지출 총계를 오염시킨다(다른 항목의 '백업 복원 경로에서 데이터 오염' 버그들과 같은 계열). doExport()의 merge 표현식에 .filter(t=>!(t.adjust&&!t.inSurplus))를 추가해 기존 집계들과 동일한 규칙을 적용. txnsToCSV() 자체는 doExport 외 다른 호출부가 없어 순수 함수로 유지, 필터는 호출부(doExport)에 둠. doExport()가 async/DOM 의존이라 테스트 하네스가 추출하지 못하므로(기존 관례, test/run.js:1572-1601의 doExport+expandRec 재현 테스트와 동일 패턴), txnsToCSV+doExport와 같은 필터 조합을 직접 재현하는 회귀 테스트 2개 추가(inSurplus 꺼진 조정 항목 제외 / inSurplus 켠 항목은 포함) — node -e로 필터 적용 전/후 실제 txnsToCSV 소스를 직접 eval해 미필터 시 '잔액 조정'이 CSV에 포함되고 필터 적용 시 제외됨을 수동 확인. 두 인라인 <script> 블록 node --check 통과, node test/run.js 565/565 통과(기존 563 + 신규 2). APP_VERSION 1.46.35->1.46.36, sw.js CACHE v197->v198.",
-      "commit": null
-    },
     {
       "cycle": 83,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-09-26T01:12:00.000Z",
       "summary": "critique(cycle87)가 세운 계획대로 splitRecurrenceAt(index.html:3604-3611)의 반환 객체 updatedOriginal/newRec 양쪽에 touch() 적용. recApply(index.html:3432-3453)의 삭제 scope='one'(r.skip.push(date) 직후)과 scope='future'(Object.assign(r,truncateRecEnd(...)) 직후)에 touch(r) 추가. recSave(index.html:3456-3483, _recCtx 기반 개별 수정 경로, saveRec(3556)과는 별개 함수)의 scope='one'(edits[ctx.date]={...} 직후), scope='future'(잘린 원본 r과 새로 분리된 newRec 양쪽), scope='all'(r.amount/r.memo 대입 직후)에 touch() 추가. recSaveScopeApply(3620-3630)는 splitRecurrenceAt이 반환한 이미 스탬프된 객체를 대입만 하므로 수정 불필요(자동으로 커버됨). 이번 커밋도 cycle86과 동일하게 updatedAt 값을 아무 데도 읽지 않는 순수 배선이라 동작 변화 없이 안전. test/run.js: 세 함수 모두 기존에 FUNCTIONS로 이미 노출돼 있어 스텁 touch('test-updatedAt')를 그대로 재사용, recSave 3-scope 통합 테스트 1개(one/future 잘린 원본+새 레코드/all 각각 updatedAt 확인) · recApply 삭제 2-scope 테스트 1개(one/future) · splitRecurrenceAt 테스트 1개(원본+새 레코드) 총 3개 추가 — 기존 590여 개 테스트가 이미 그대로 통과해(deepStrictEqual로 전체 객체를 비교하는 곳이 없어) 회귀 없음을 확인. 두 인라인 <script> 블록 node --check 통과, node test/run.js 594/594 통과(기존 591 + 신규 3). APP_VERSION 1.46.44->1.46.45, sw.js CACHE v206->v207. 다음 critique가 이어서 검토할 것(cycle86 advance가 남긴 목록 중 미해결): (1) deletedAt 툼스톤 도입과 삭제 경로(delTx/delAsset/delRecConfirm 등) 배선, (2) 자동 생성 이체/조정 거래(addBalanceAdjust 등)·자산 생성/수정·CSV 일괄 가져오기 경로의 touch() 누락, (3) pushCloud()의 충돌 분기를 문서 전체 교체 대신 updatedAt 기반 컬렉션·id 단위 3-way 병합으로 교체.",
       "commit": null
+    },
+    {
+      "cycle": 88,
+      "phase": "develop",
+      "timestamp": "2026-09-26T00:00:00.000Z",
+      "summary": "general-purpose 서브에이전트로 발견한 planRowsHTML() 버그 수정. Plan 탭 일별 카드의 표시 잔액(pd-bal)이 그 달 거래 델타를 startBal 위에 직접 누적(r/rr)하는 방식이라, balanceAt()/balancesUpTo()가 confirmTransfers 설정 시 적용하는 미확인(pending) 이체 제외 규칙(dateStr<=TODAY면 제외)을 전혀 따르지 않았다 — 같은 화면의 월말/오늘 잔액 카드(planBalInner)와 \"이번 달 최저\" 카드(lowestInMonth, cycle87에서 동일 계열 버그로 이미 수정됨, index.html:3883 주석 참고)는 balanceAt 기반이라 정확한데, 바로 옆 일별 목록만 미확인 이체를 무조건 반영해 숫자가 어긋나고 심하면 잔액 마이너스 경고 구간이 엉뚱한 날짜에 뜰 수 있었다. lowestInMonth의 수정 방식을 그대로 적용해 dayBal=dates.map(d=>balanceAt(a.id,d))로 교체(수동 누적 로직 제거), 거래 항목 리스트 자체는 건드리지 않음. test/run.js에 lowestInMonth 테스트 바로 아래 회귀 테스트 2개 추가(미확인 이체는 해당 일 표시 잔액에서 제외됨 / 확인된 이체는 정상 반영됨) — git stash로 수정 전 코드 되돌려 첫 테스트가 실제 실패함을 확인 후 재적용. 두 인라인 <script> 블록 node --check 통과, node test/run.js 596/596 통과(기존 594 + 신규 2). APP_VERSION 1.46.45->1.46.46, sw.js CACHE v207->v208.",
+      "commit": "843c92edd269bc6859e619dcaf73d61278bf494f"
     }
   ]
 }
