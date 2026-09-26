@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.44';
+const APP_VERSION='1.46.45';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3434,13 +3434,13 @@ function recApply(recId,date,mode,scope){
  const r=DB.recurrences.find(x=>x.id===recId);
  if(mode==='delete'){
   if(scope==='one'){
-   const prevSkip=r.skip.slice();r.skip.push(date);save();closeSheet();renderCurrent();
+   const prevSkip=r.skip.slice();r.skip.push(date);touch(r);save();closeSheet();renderCurrent();
    undoToast('삭제했어요',()=>{r.skip=prevSkip;save();renderCurrent();toast('되돌렸어요')});return;
   }
   if(scope==='future'){
    const prevEnd=r.endDate,prevCount=r.count;
    Object.assign(r,truncateRecEnd({freq:r.freq,day:r.day,startDate:r.startDate,weekend:r.weekend},addDays(date,-1)));
-   save();closeSheet();renderCurrent();
+   touch(r);save();closeSheet();renderCurrent();
    undoToast('삭제했어요',()=>{r.endDate=prevEnd;r.count=prevCount;save();renderCurrent();toast('되돌렸어요')});return;
   }
   closeSheet();deleteRecsUndo(new Set([recId]));return;
@@ -3461,7 +3461,7 @@ function recSave(){
  const memo=(txDraft.memo||'').trim()||r.category; /* 메모 없으면 카테고리로 (saveTx/saveRec과 동일) */
  let undoFn;
  if(ctx.scope==='one'){
-  const edits=(r.edits=r.edits||{});const prevEdit=edits[ctx.date];edits[ctx.date]={amount:amt,memo};
+  const edits=(r.edits=r.edits||{});const prevEdit=edits[ctx.date];edits[ctx.date]={amount:amt,memo};touch(r);
   undoFn=()=>{if(prevEdit===undefined)delete edits[ctx.date];else edits[ctx.date]=prevEdit;save();renderCurrent();toast('되돌렸어요')};
  }
  else if(ctx.scope==='future'){
@@ -3469,13 +3469,15 @@ function recSave(){
   const {skipPast,skipFuture,editsPast,editsFuture}=splitRecOverrides(r.skip,r.edits,ctx.date);
   r.skip=skipPast;r.edits=editsPast;
   Object.assign(r,truncateRecEnd({freq:r.freq,day:r.day,startDate:r.startDate,weekend:r.weekend},addDays(ctx.date,-1)));
+  touch(r);
   const newBase={freq:r.freq,day:r.day,startDate:ctx.date,weekend:r.weekend};
   const newRec=Object.assign({},JSON.parse(JSON.stringify(r)),{id:uid(),startDate:ctx.date,endDate:prevEnd,count:prevEnd?recCountUntil(newBase,prevEnd):null,amount:amt,memo,skip:skipFuture,edits:editsFuture});
+  touch(newRec);
   DB.recurrences.push(newRec);
   undoFn=()=>{r.endDate=prevEnd;r.count=prevCount;r.skip=prevSkip;r.edits=prevEdits;DB.recurrences=DB.recurrences.filter(x=>x.id!==newRec.id);save();renderCurrent();toast('되돌렸어요')};
  }
  else{
-  const prevAmt=r.amount,prevMemo=r.memo;r.amount=amt;r.memo=memo;
+  const prevAmt=r.amount,prevMemo=r.memo;r.amount=amt;r.memo=memo;touch(r);
   undoFn=()=>{r.amount=prevAmt;r.memo=prevMemo;save();renderCurrent();toast('되돌렸어요')};
  }
  window._recCtx=null;save();closeSheet();renderCurrent();
@@ -3607,6 +3609,7 @@ function splitRecurrenceAt(original,draft,effectiveDate){
  const updatedOriginal=Object.assign({},original,{skip:skipPast,edits:editsPast},truncateRecEnd({freq:original.freq,day:original.day,startDate:original.startDate,weekend:original.weekend},addDays(effectiveDate,-1)));
  const newBase={freq:draft.freq,day:draft.day,startDate:effectiveDate,weekend:draft.weekend};
  const newRec=Object.assign({},JSON.parse(JSON.stringify(draft)),{id:uid(),startDate:effectiveDate,endDate:prevEnd,count:prevEnd?recCountUntil(newBase,prevEnd):null,skip:skipFuture,edits:editsFuture});
+ touch(updatedOriginal);touch(newRec);
  return {updatedOriginal,newRec};
 }
 function recSaveScopeConfirm(orig,d,i){

@@ -2325,6 +2325,56 @@ test("recSave: scope='all' 수정은 r.amount를 바꾸고, undo하면 이전 �
   sandbox.lastUndo.undoFn();
   assert.strictEqual(r.amount, 1000, '되돌리면 원래 금액으로 복원되어야 함');
 });
+/* ---------- recSave/recApply/splitRecurrenceAt: touch()로 updatedAt 스탬프 (app-evolve cycle87 advance) ----------
+ * cycle86 advance가 saveTx/saveAsset/saveRec 주경로에만 touch()를 배선했는데, 충돌 위험이 가장 큰
+ * 반복거래 개별수정/분리 경로(이 파일의 recSave='one'/'future'/'all', recApply의 delete 분기,
+ * splitRecurrenceAt)엔 빠져 있어(cycle87 critique) 3-way 병합이 이 경로들을 지나온 레코드에서
+ * 잘못된 승자를 조용히 고를 위험이 있었다. 여기서도 saveRec 테스트와 같은 이유로 touch()의
+ * 스텁 반환값('test-updatedAt')이 호출됐는지만 검증한다. */
+test("recSave: scope='one'/'future'/'all' 모두 수정 대상 레코드(및 future의 새 분리 레코드)에 touch()가 호출된다", () => {
+  sandbox.TWi = -1;
+  let r = { id: 'r1', amount: 1000, edits: {} };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.window._recCtx = { recId: 'r1', date: '2026-02-05', scope: 'one' };
+  sandbox.txDraft = { amount: 5000 };
+  sandbox.recSave();
+  assert.strictEqual(r.updatedAt, 'test-updatedAt', "scope='one'은 r에 touch()가 호출되어야 함");
+
+  r = { id: 'r1', amount: 1000, endDate: null, skip: [], edits: {} };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.window._recCtx = { recId: 'r1', date: '2026-03-01', scope: 'future' };
+  sandbox.txDraft = { amount: 7000 };
+  sandbox.recSave();
+  const newRec = sandbox.DB.recurrences.find(x => x.id !== 'r1');
+  assert.strictEqual(r.updatedAt, 'test-updatedAt', "scope='future'는 잘린 원본에도 touch()가 호출되어야 함");
+  assert.strictEqual(newRec.updatedAt, 'test-updatedAt', "scope='future'는 새로 분리된 레코드에도 touch()가 호출되어야 함");
+
+  r = { id: 'r1', amount: 1000 };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.window._recCtx = { recId: 'r1', date: '2026-02-05', scope: 'all' };
+  sandbox.txDraft = { amount: 9999 };
+  sandbox.recSave();
+  assert.strictEqual(r.updatedAt, 'test-updatedAt', "scope='all'은 r에 touch()가 호출되어야 함");
+});
+test("recApply: scope='one'/'future' 삭제도 대상 레코드에 touch()가 호출된다", () => {
+  sandbox.TWi = -1;
+  let r = { id: 'r1', skip: [] };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.recApply('r1', '2026-02-05', 'delete', 'one');
+  assert.strictEqual(r.updatedAt, 'test-updatedAt', "scope='one' 삭제도 touch()가 호출되어야 함");
+
+  r = { id: 'r1', freq: 'monthly', day: 5, startDate: '2026-01-05', weekend: 'none', endDate: null, count: null };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.recApply('r1', '2026-02-05', 'delete', 'future');
+  assert.strictEqual(r.updatedAt, 'test-updatedAt', "scope='future' 삭제도 touch()가 호출되어야 함");
+});
+test('splitRecurrenceAt: 잘린 원본과 새로 분리된 레코드 모두에 touch()가 호출된다', () => {
+  const orig = { id: 'r1', freq: 'monthly', day: 5, startDate: '2026-01-05', weekend: 'none', endDate: null, skip: [], edits: {} };
+  const draft = { freq: 'monthly', day: 5, startDate: '2026-06-05', weekend: 'none', amount: 2000, skip: [], edits: {} };
+  const { updatedOriginal, newRec } = sandbox.splitRecurrenceAt(orig, draft, '2026-06-05');
+  assert.strictEqual(updatedOriginal.updatedAt, 'test-updatedAt', '잘린 원본에도 touch()가 호출되어야 함');
+  assert.strictEqual(newRec.updatedAt, 'test-updatedAt', '새로 분리된 레코드에도 touch()가 호출되어야 함');
+});
 /* recApply()가 여는 반복 편집 시트는 #txMemo를 고쳐 recDraft가 아닌 txDraft.memo에 담는데,
    recSave()는 (app-evolve cycle55 develop 이전까지) num($('txAmt'))로 금액만 직접 읽고
    syncTxInputs()를 부르지 않아 이 메모 편집이 세 scope 모두 조용히 버려졌다(cycle55 review 발견,
