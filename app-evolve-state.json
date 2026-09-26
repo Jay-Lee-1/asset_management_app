@@ -1,15 +1,12 @@
 {
   "cycle": 92,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "doRenameCat() 카테고리 이름 변경 시 txns/recurrences touch() 누락 수정",
+    "why": "doRenameOwner()(index.html:3061, cycle92 develop에서 수정 완료)와 완전히 같은 구조의 doRenameCat()(index.html:4461-4478)이 DB.txns.forEach(...t.category=v...)와 DB.recurrences.forEach(...r.category=v...)(4474-4475) 두 곳에서 필드를 바꾸면서 touch()를 호출하지 않는다. mergeCollection()(1412)이 updatedAt만 보고 병합 승자를 고르므로, 이 경로로 바뀐 레코드가 다른 기기에서 다른 필드가 더 최근에 수정된 채로 동기화되면 카테고리 이름 변경이 해당 레코드에서만 조용히 롤백된다. owner 변경(자산 단위)보다 파급 범위가 커서 한 번의 카테고리 이름 변경이 그 카테고리가 걸린 모든 거래/반복거래에 영향을 준다.",
+    "approach": "index.html:4474 DB.txns.forEach(t=>{if(...){t.category=v;if(t.memo===old)t.memo=v}}) 안에서 대입 직후 touch(t) 추가. index.html:4475 DB.recurrences.forEach(r=>{if(...){r.category=v;if(r.memo===old)r.memo=v}})도 동일하게 touch(r) 추가. 3061의 주석과 같은 톤으로 왜 필요한지 한 줄 주석 추가. test/run.js에 doRenameOwner 회귀 테스트(cycle92 develop)와 동일한 패턴으로 카테고리가 바뀐 txn/recurrence는 touch()로 updatedAt이 갱신되고 무관한 레코드(다른 카테고리)는 원래 값 그대로인지 검증하는 테스트 추가. 두 인라인 <script> 블록 node --check, node test/run.js 통과 확인 후 APP_VERSION과 sw.js CACHE 버전을 올린다."
+  },
   "history": [
-    {
-      "cycle": 87,
-      "phase": "critique",
-      "timestamp": "2026-09-26T00:09:56.625Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체 재검토, 클라우드 병합 다단계 작업(cycle86에서 시작)을 이어갈지 다른 더 시급한 문제가 있는지 판단. touch() 헬퍼(cycle86 advance, dc973e4)가 saveTx/saveAsset/saveRec 주경로에만 배선돼 있고 충돌 위험이 가장 큰 반복거래 개별수정/분리 경로(splitRecurrenceAt, recApply, recSave)에는 빠져 있음을 index.html 실제 라인으로 확인. 이 상태로 3단계(pushCloud 3-way 병합)가 먼저 들어가면 스탬프 누락 지점에서 병합이 잘못된 승자를 조용히 골라 지금의 정직한 전체문서 충돌 배너보다 더 나쁜 무경고 데이터 손실이 될 위험이 있다고 판단해, 3단계보다 이 배선을 먼저 마치는 쪽을 우선순위로 선택. 경쟁 후보로 다른 사용자 체감 버그가 있는지 최근 develop 사이클 주제(CSV 검증, 날짜/반복거래 엣지케이스, 카테고리/귀속 중복, openCatPicker XSS)와 겹치지 않는지 점검했으나 비슷한 심각도의 새 버그는 발견되지 않아 진행 중인 병합 이니셔티브를 계속하는 쪽으로 결정. pending_advance_plan에 splitRecurrenceAt/recApply/recSave 세 함수의 정확한 touch() 삽입 지점 저장, 나머지(자동생성 거래 다수 지점, deletedAt 툼스톤, 실제 3-way 병합)는 이후 사이클로 명시 이월.",
-      "commit": null
-    },
     {
       "cycle": 87,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-09-26T19:08:25.000Z",
       "summary": "develop 커밋(65ac2b9, doRenameOwner() 귀속 변경 시 touch() 누락 수정)을 검토. DB.assets.forEach(a=>{if(a.owner===old){a.owner=v;touch(a)}})로 교체한 한 줄 수정이 touch() 정의(index.html:1411, obj.updatedAt=Date.now())를 saveAsset/askRelinkDeleted와 동일한 패턴으로 그대로 재사용함을 확인 — mergeCollection()이 updatedAt만 보고 승자를 고르는 불변식(cycle89 review에서 검증)과 정확히 일치. 새 회귀 테스트 1개가 이름이 바뀐 자산은 touch()로 updatedAt이 'test-updatedAt'으로 갱신되고, 무관한(다른 귀속) 자산은 원래 값(222)을 그대로 유지함을 정확히 검증함을 확인. 유사 함수 doRenameCat()의 touch() 누락 여부는 이번 커밋의 커밋 메시지가 이미 별개 이슈로 명시적으로 범위 밖에 뒀으므로 이번 review에서는 함께 고치지 않고(critique가 별도 후보로 판단할 사안), 이번 diff 자체의 정확성만 검증. 두 인라인 <script> 블록 node --check 통과, node test/run.js 623/623 통과. 코드 변경 없음(이상 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 92,
+      "phase": "critique",
+      "timestamp": "2026-09-26T20:07:56.859Z",
+      "summary": "index.html을 직접 grep/read로 재검토, 클라우드 병합 이니셔티브(cycle86 시작)의 남은 이월 항목(pushCloud() 낙관적 락 경합, deletedIds GC, askRelinkDeleted 테스트 인프라) 대신 review(cycle92)가 새로 지목한 후보를 먼저 평가했다. touch( 전체 호출부(1411,1506,2756,2772,2788,2802,2974,3061,3442,3450,3493,3499,3520,3528,3531,3536,3636,3668,4355,5147,5895,5905)를 grep으로 나열해 doRenameOwner()(3061, cycle92 develop에서 이미 수정됨)와 완전히 같은 구조의 doRenameCat()(4461-4478)만 touch() 호출이 전혀 없음을 확인 — DB.txns.forEach(...t.category=v...)와 DB.recurrences.forEach(...r.category=v...)(4474-4475) 두 곳 모두 필드만 바꾸고 updatedAt을 갱신하지 않는다. doRenameOwner보다 파급 범위가 더 크다고 판단한 이유: owner 변경은 자산 단위로만 영향을 주지만 카테고리 이름 변경은 그 카테고리가 걸린 모든 거래(DB.txns)와 반복거래(DB.recurrences) 레코드 각각에 영향을 주므로, 한 번의 이름 변경이 한 기기에서 수십~수백 건의 레코드를 조용히 갱신시각 없이 고칠 수 있다 — mergeCollection()이 updatedAt만 보고 승자를 고르는 지금 구조에서, 다른 기기가 오프라인 중 같은 레코드의 다른 필드(금액 등)를 수정해두면 다음 동기화 때 그 기기의 사본이 이겨서 카테고리 이름 변경이 해당 레코드들에서만 조용히 롤백될 수 있다(원조 문제였던 cycle86 critique의 부부 공유 계정 시나리오와 동일 계열). 경쟁 후보로 pushCloud() 자체의 낙관적 락 경합 분기와 deletedIds GC를 다시 검토했으나 여전히 앱 전역 설계가 필요해 한 사이클 범위를 넘는다고 판단(cycle86-91과 동일한 이유로 계속 이월), doRenameCat() 쪽이 doRenameOwner와 완전히 같은 패턴(추가 설계 불필요, 기계적 2줄 수정)이면서 실사용 영향은 더 크므로 이번 advance로 확정. pending_advance_plan에 index.html:4474-4475 두 forEach 안쪽에 touch(t)/touch(r) 추가(주석은 doRenameOwner의 3061 주석과 동일한 톤으로 mergeCollection 불변식 설명), test/run.js에 doRenameOwner 회귀 테스트와 동일한 패턴으로 카테고리 이름 변경 시 해당 txn/recurrence의 updatedAt이 갱신되고 무관한 레코드는 그대로인지 검증하는 테스트 추가 계획 저장. pushCloud() 경합 분기, deletedIds GC, askRelinkDeleted 테스트 인프라는 다음 critique로 명시 이월. 코드 변경 없음(읽기 전용 조사).",
       "commit": null
     }
   ]
