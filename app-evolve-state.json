@@ -1,15 +1,8 @@
 {
   "cycle": 93,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 88,
-      "phase": "review",
-      "timestamp": "2026-09-26T02:00:00.000Z",
-      "summary": "develop 커밋(843c92e, planRowsHTML() 미확인 이체 무조건 포함 버그 수정)을 검토. dayBal=dates.map(d=>balanceAt(a.id,d)) 방식이 cycle87의 lowestInMonth 수정과 동일한 정당성을 가짐을 확인 — 잔액은 거래일에만 변하는 계단함수라 dates 배열(그 달 거래가 걸린 날짜 + 오늘)에 대해서만 balanceAt을 부르면 충분. 유일한 두 호출부(3986, 4005줄)가 모두 isPlanAcct(cash 타입)로 필터링된 자산만 넘겨 lowestInMonth와 동일하게 부채 부호반전 케이스는 애초에 도달 불가함을 grep으로 재확인(index.html:2153, 3975, 4020). 새 회귀 테스트 2개가 미확인/확인된 이체 두 케이스를 정확히 검증함을 확인. 두 인라인 <script> 블록 node --check 통과, node test/run.js 596/596 통과. 코드 변경 없음(이상 없음).",
-      "commit": null
-    },
     {
       "cycle": 88,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-26T22:08:45.256Z",
       "summary": "rollPendingTransfers() touch() 누락 버그 수정. 이체 확인(confirmTransfers) 설정이 켜져 있을 때 기한이 지난 미확인 이체의 date를 오늘로 당기는 이 함수가(index.html:1474, 앱 로드 시 및 설정 토글 시 호출) t.date만 바꾸고 touch(t)를 부르지 않았다 — doRenameOwner/doRenameCat(cycle92)과 완전히 같은 이유로, mergeCollection()의 3-way 병합은 updatedAt만 보고 승자를 고르므로, 다른 기기가 오프라인 중 같은 거래의 다른 필드만 더 나중에 고쳤다면 병합 시 그 기기의(옛 날짜가 실린) 사본이 이겨 방금 앞당긴 날짜가 조용히 되돌아갈 수 있었다. DB.txns.forEach 콜백에 touch(t) 한 줄 추가. test/run.js의 기존 rollPendingTransfers 테스트 블록 바로 아래에 회귀 테스트 2개 추가(날짜가 앞당겨진 이체엔 touch() 호출 확인 / 건드리지 않는 이체는 touch()도 호출 안 됨 확인) — touch(t) 호출을 임시로 제거해 새 테스트가 실제 실패함을 확인한 뒤 재적용. 두 인라인 <script> 블록 node --check 통과, node test/run.js 626/626 통과(기존 624 + 신규 2). APP_VERSION 1.46.55->1.46.56, sw.js CACHE v217->v218.",
+      "commit": null
+    },
+    {
+      "cycle": 93,
+      "phase": "review",
+      "timestamp": "2026-09-26T23:05:00.000Z",
+      "summary": "develop 커밋(14899c4, rollPendingTransfers() touch() 누락 수정)을 검토. DB.txns.forEach 콜백 안, t.date=TODAY 대입 바로 뒤에 touch(t)를 추가한 한 줄 수정이 doRenameOwner(cycle92)/doRenameCat(cycle92)와 완전히 같은 패턴(필드 대입 직후 touch() 호출)임을 확인, touch() 정의(index.html:1411, obj.updatedAt=Date.now())를 그대로 재사용해 새로운 헬퍼나 부작용을 추가하지 않음. touch(t) 위치가 if 블록 안이라(changed=true와 같은 줄) 조건을 만족하지 않는 이체는 손대지 않음을 재확인 — 새 회귀 테스트 2개가 정확히 이 양쪽 경우(날짜가 앞당겨진 이체엔 touch() 호출/미래·확정·기능꺼짐 이체는 touch() 미호출)를 검증함을 확인. 두 인라인 <script> 블록 node --check 통과, node test/run.js 626/626 통과. 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
