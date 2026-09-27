@@ -1293,7 +1293,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.67';
+const APP_VERSION='1.46.68';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2853,20 +2853,20 @@ function asOpenCur(){syncAssetInputs();openCurrencyPicker({current:asDraft.curre
 function asOpenMat(){syncAssetInputs();openAssetPicker({current:asDraft.maturityTargetId,title:'만기 시 이체할 통장',cashOnly:true,excludeId:asDraft.id,back:()=>renderAssetSheet(!!asDraft.id),onPick:id=>{asDraft.maturityTargetId=id;renderAssetSheet(!!asDraft.id)}})}
 function asToggleNeg(editing){syncAssetInputs();asDraft._dispAmt=-(asDraft._dispAmt||0);renderAssetSheet(editing)}
 function costBasisField(d){ /* fx/gold/stock 공통 — 매입 원가는 선택 입력이라 비워두면 손익을 표시하지 않는다(assetGainLoss) */
- return `<div class="field"><label>매입 금액 (원, 선택)</label><div class="field-clear"><input id="asCostBasis" class="num" inputmode="numeric" value="${d.costBasis?comma(d.costBasis):''}" placeholder="입력 시 손익을 계산해요" oninput="fmtAmt(this,false)"><button type="button" class="fc-x" onclick="clrInput('asCostBasis')">✕</button></div></div>`;
+ return `<div class="field"><label>매입 금액 (원, 선택)</label><div class="field-clear"><input id="asCostBasis" class="num" inputmode="numeric" value="${d.costBasis?comma(d.costBasis):''}" placeholder="입력 시 손익을 계산해요" oninput="fmtAmt(this,false)"><button type="button" class="fc-x" aria-label="매입 금액 지우기" onclick="clrInput('asCostBasis')">✕</button></div></div>`;
 }
 function renderAssetSheet(editing){
  const d=asDraft;const ty=ASSET_TYPES[d.type];
  const typePick=`<div class="field"><label>자산 종류</label><button class="pick" onclick="asOpenType()"><div class="pav ${ty.cls}">${svg(ty.icon)}</div><div class="pbody"><div class="pn">${ty.label}</div></div><div class="pc">${svg('chevR')}</div></button></div>`;
  const ownerPick=`<div class="field"><label>귀속</label><button class="pick" onclick="asOpenOwner()"><div class="pav" style="background:var(--sunken);color:var(--text-2)">${svg('users')}</div><div class="pbody"><div class="pn">${esc(d.owner)}</div></div><div class="pc">${svg('chevR')}</div></button></div>`;
  let fields='';
- const nameField=`<div class="field"><label>이름</label><div class="field-clear"><input id="asName" value="${esc(d.name||'')}" placeholder="예: 우리은행 통장"><button type="button" class="fc-x" onclick="clrInput('asName')">✕</button></div></div>`;
+ const nameField=`<div class="field"><label>이름</label><div class="field-clear"><input id="asName" value="${esc(d.name||'')}" placeholder="예: 우리은행 통장"><button type="button" class="fc-x" aria-label="이름 지우기" onclick="clrInput('asName')">✕</button></div></div>`;
  if(['cash','savings','realestate','etc','pension','debt'].includes(d.type)){
    const lbl=d.type==='debt'?'부채 금액':(d.type==='cash'||d.type==='savings')?'현재 금액':d.type==='realestate'?'현재 평가액':'현재 금액';
    const key=(d.type==='cash'||d.type==='savings')?'baseAmount':'amountKRW';
    const shown=d._dispAmt!=null?d._dispAmt:(d[key]||0);
    const canNeg=d.type!=='debt'; /* 부채는 별도 부호 규약(assetEval을 -1 곱해 반영)이라 입력 자체를 음수로 받으면 이중 반전됨 */
-   fields=nameField+`<div class="field"><label>${lbl} (원)</label><div class="field-clear"><input id="asAmt" class="num" inputmode="numeric" value="${shown?comma(shown):''}" placeholder="0" oninput="fmtAmt(this,${canNeg})"><button type="button" class="fc-x" onclick="clrInput('asAmt')">✕</button></div></div>`;
+   fields=nameField+`<div class="field"><label>${lbl} (원)</label><div class="field-clear"><input id="asAmt" class="num" inputmode="numeric" value="${shown?comma(shown):''}" placeholder="0" oninput="fmtAmt(this,${canNeg})"><button type="button" class="fc-x" aria-label="${lbl} 지우기" onclick="clrInput('asAmt')">✕</button></div></div>`;
    if(canNeg)fields+=`<div class="card" style="box-shadow:none;margin-bottom:14px"><div class="toggle-row"><div><div class="tl">마이너스 잔액</div><div style="font-size:12px;color:var(--text-3);margin-top:2px">마이너스통장처럼 잔액이 0보다 작을 때 켜주세요</div></div>
      <button type="button" class="switch ${shown<0?'on':''}" role="switch" aria-checked="${shown<0?'true':'false'}" aria-label="마이너스 잔액" onclick="asToggleNeg(${editing})"><i></i></button></div></div>`;
    fields+=`<p style="font-size:12.5px;color:var(--text-2);margin:-4px 0 14px">오늘 기준 잔액이에요. ‘예정 포함’을 켜면 이달 예정된 이체·입출금까지 반영한 예상액으로 표시돼요.</p>`;
@@ -2885,7 +2885,7 @@ function renderAssetSheet(editing){
      <p style="font-size:12.5px;color:var(--text-2);margin:-4px 0 14px">금 시세 ${comma(DB.rates.goldPerG)}원/g × 3.75g 기준으로 자동 계산돼요.</p>
      ${costBasisField(d)}`;
  }else if(d.type==='stock'){
-   fields=`<div class="field"><label>종목명</label><div class="field-clear"><input id="asName" value="${esc(d.name||'')}" placeholder="예: 삼성전자"><button type="button" class="fc-x" onclick="clrInput('asName')">✕</button></div></div>
+   fields=`<div class="field"><label>종목명</label><div class="field-clear"><input id="asName" value="${esc(d.name||'')}" placeholder="예: 삼성전자"><button type="button" class="fc-x" aria-label="종목명 지우기" onclick="clrInput('asName')">✕</button></div></div>
      <div class="field"><label>종목코드</label><input id="asCode" value="${esc(d.stockCode||'')}" placeholder="국내 005930 · 해외 AAPL" autocapitalize="characters" oninput="this.value=this.value.toUpperCase()">
       <p style="font-size:12px;color:var(--text-3);margin-top:6px">국내는 6자리 숫자, 해외는 티커(AAPL·TSLA·NVDA)를 넣어주세요. 해외는 원화로 환산돼요.</p></div>
      <div class="field"><label>보유 주식 수</label><div class="with-unit"><input id="asQty" class="num" inputmode="decimal" value="${d.stockQty||''}" placeholder="0"><span class="unit">주</span></div></div>
@@ -3263,7 +3263,7 @@ function renderTxSheet(){
  if(rc){ /* 반복 개별/범위 수정: 금액만 */
   const SCOPE={one:'이 내역만',future:'이후 모두',all:'전체'};
   openFormSheet(`<h3>반복 내역 수정</h3><div class="desc">'${esc(d.memo||d.category)}' · ${shortDate(rc.date)} · ${SCOPE[rc.scope]}</div>
-   <div class="field"><label>금액</label><div class="field-clear"><input id="txAmt" class="amount-in num" inputmode="numeric" value="${d.amount?comma(d.amount):''}" placeholder="0" oninput="fmtAmt(this)"><button type="button" class="fc-x" onclick="clrInput('txAmt')">✕</button></div></div>
+   <div class="field"><label>금액</label><div class="field-clear"><input id="txAmt" class="amount-in num" inputmode="numeric" value="${d.amount?comma(d.amount):''}" placeholder="0" oninput="fmtAmt(this)"><button type="button" class="fc-x" aria-label="금액 지우기" onclick="clrInput('txAmt')">✕</button></div></div>
    ${rc.recId?`<button class="rec-detail-link" onclick="openRecDetail('${rc.recId}')">${svg('repeat')} 반복 자체를 세부 편집 ${svg('chevR')}</button>`:''}
    <div class="two-btn"><button class="btn btn-danger cancel" onclick="recCtxDel()">${svg('trash')} 삭제</button>
     <button class="btn btn-primary" onclick="recSave()">저장하기</button></div>`);
@@ -3300,12 +3300,12 @@ function renderTxSheet(){
  const datePsub=rpt?'':(d.date===TODAY?'오늘':(isFuture(d.date)?'예정':''));
  openFormSheet(`<div class="tx-head"><h3>${editing?'내역 수정':'내역 입력'}</h3>${repeatChip}</div>
   <div class="seg"><div class="seg-blob"></div>${typeSeg}</div>
-  <div class="field"><label>금액</label><div class="field-clear"><input id="txAmt" class="amount-in num" inputmode="numeric" value="${d.amount?comma(d.amount):''}" placeholder="0" oninput="fmtAmt(this)"><button type="button" class="fc-x" onclick="clrInput('txAmt')">✕</button></div></div>
+  <div class="field"><label>금액</label><div class="field-clear"><input id="txAmt" class="amount-in num" inputmode="numeric" value="${d.amount?comma(d.amount):''}" placeholder="0" oninput="fmtAmt(this)"><button type="button" class="fc-x" aria-label="금액 지우기" onclick="clrInput('txAmt')">✕</button></div></div>
   <div class="field"><label>${dateLabel}</label><button class="pick" onclick="syncTxInputs();openFieldDatePicker(txDraft.date,ds=>{txDraft.date=ds;recalcEndCond(txDraft,ds);renderTxSheet()})">
     <div class="pav a-etc">${svg('ledger')}</div><div class="pbody"><div class="pn">${fmtDateFull(d.date)}</div><div class="psub">${datePsub}</div></div><div class="pc">${svg('chev')}</div></button>
     <input id="txDate" type="hidden" value="${d.date}"></div>
   ${catField}${assetFields}
-  <div class="field"><label>메모</label><div class="field-clear"><input id="txMemo" value="${esc(d.memo||'')}" placeholder="${rpt?'예: 넷플릭스 구독':'예: 점심 김밥'}"><button type="button" class="fc-x" onclick="clrInput('txMemo')">✕</button></div></div>
+  <div class="field"><label>메모</label><div class="field-clear"><input id="txMemo" value="${esc(d.memo||'')}" placeholder="${rpt?'예: 넷플릭스 구독':'예: 점심 김밥'}"><button type="button" class="fc-x" aria-label="메모 지우기" onclick="clrInput('txMemo')">✕</button></div></div>
   ${repeatFields}
   ${editing?
    `<div class="two-btn"><button class="btn btn-danger cancel" onclick="delTx('${d.id}','','${d.date}')">${svg('trash')} 삭제</button>
@@ -3525,8 +3525,8 @@ function renderRecSheet(){
  openFormSheet(`<h3>${editing?'반복 수정':'반복 설정'}</h3><div class="desc">고정지출·정기수입·이체·저축을 자동 기록해요</div>
   <div class="seg"><div class="seg-blob"></div>${typeSeg}</div>
   ${catField}
-  <div class="field"><label>메모 <span style="color:var(--text-3);font-weight:600">(선택)</span></label><div class="field-clear"><input id="rMemo" value="${(d.memo&&d.memo!==d.category)?d.memo.replace(/"/g,'&quot;'):''}" placeholder="예: 넷플릭스 구독" oninput="recDraft.memo=this.value"><button type="button" class="fc-x" onclick="clrInput('rMemo')">✕</button></div></div>
-  <div class="field"><label>금액</label><div class="field-clear"><input id="rAmt" class="num" inputmode="numeric" value="${d.amount?comma(d.amount):''}" placeholder="0" oninput="fmtAmt(this)"><button type="button" class="fc-x" onclick="clrInput('rAmt')">✕</button></div></div>
+  <div class="field"><label>메모 <span style="color:var(--text-3);font-weight:600">(선택)</span></label><div class="field-clear"><input id="rMemo" value="${(d.memo&&d.memo!==d.category)?d.memo.replace(/"/g,'&quot;'):''}" placeholder="예: 넷플릭스 구독" oninput="recDraft.memo=this.value"><button type="button" class="fc-x" aria-label="메모 지우기" onclick="clrInput('rMemo')">✕</button></div></div>
+  <div class="field"><label>금액</label><div class="field-clear"><input id="rAmt" class="num" inputmode="numeric" value="${d.amount?comma(d.amount):''}" placeholder="0" oninput="fmtAmt(this)"><button type="button" class="fc-x" aria-label="금액 지우기" onclick="clrInput('rAmt')">✕</button></div></div>
   ${assetFields}
   <div class="field"><label>주기</label><div class="opt-grid">${freqBtns}</div></div>
   ${dayField}

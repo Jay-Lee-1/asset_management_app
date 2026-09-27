@@ -1,15 +1,8 @@
 {
   "cycle": 99,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 94,
-      "phase": "develop",
-      "timestamp": "2026-09-27T02:10:00.000Z",
-      "summary": "general-purpose 서브에이전트로 발견한 saveQuickAmount() touch() 누락 버그 수정. 홈 화면의 '눌러서 금액만 넣기' 퀵 입력 카드가 변동 카테고리 회차의 실제 금액을 r.edits[date]={amount:amt}로 기록하는데(index.html:5824) touch(r)를 빠뜨리고 있었다. edits[date]={amount:amt}; 대입 직후에 touch(r) 추가. test/run.js에 회귀 테스트 2개 추가. 두 인라인 <script> 블록 node --check 통과, node test/run.js 630/630 통과(기존 628 + 신규 2). APP_VERSION 1.46.57->1.46.58, sw.js CACHE v219->v220. 발견했지만 이번 범위 밖으로 남긴 것: undo 콜백들(recApply/doDeleteCat 등)이 이전 상태 복원 시 대체로 touch()를 안 부르는 더 넓은 기존 패턴 — 단일 사이클로 고치기엔 범위가 크다고 판단해 향후 critique 후보로 남김.",
-      "commit": null
-    },
     {
       "cycle": 94,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-27T22:12:53.000Z",
       "summary": "critique(cycle98) 계획대로 클라우드 계정(Supabase 이메일/비밀번호) 비밀번호 변경/재설정 기능을 구현했다. AUTH에 changePassword(newPw)(길이 검증 후 SB.auth.updateUser)·resetPassword(email)(형식 검증 후 SB.auth.resetPasswordForEmail) 두 메서드 추가. openAccountSheet()에 isCloudAcct 전용 '비밀번호 변경' 버튼(→openChangePasswordSheet(false)) 추가, showAuth() 로그인 모드에 '비밀번호를 잊으셨나요?' 링크(→doForgotPassword→doSendResetEmail) 추가(cloudOn일 때만 노출). boot() 시작부에서 sbCfg().url이 있으면 로그인 여부와 무관하게 sbReady()를 항상 호출하도록 바꿔, sbReady()가 SB 클라이언트 생성 시 딱 한 번 바인딩하는 SB.auth.onAuthStateChange 리스너가 PASSWORD_RECOVERY 이벤트를 놓치지 않게 했다 — 재설정 메일 링크를 다른 기기(로컬 세션 없음)에서 열어도 openChangePasswordSheet(true)가 뜬다. 그 시트에서 저장 성공 시 SB.auth.getSession()으로 이미 발급된 복구 세션을 읽어 doLogin()의 클라우드 로그인 분기와 같은 방식으로 로컬 세션 연결+afterCloudAuth+startApp까지 마무리. sbErrMsg()에 changePassword/resetPassword 전용 Supabase 메시지 두 갈래(기존과 같은 비밀번호, 요청 빈도 제한)를 기존 generic '/password/i' 분기보다 앞에 추가(순서가 바뀌면 뭉개짐). openHelpCloud()에 Supabase URL Configuration·Email Templates 설정 안내 6번 문단 추가. sbErrMsg를 test/run.js FUNCTIONS에 추가하고 8개 회귀 테스트 신설(기존 3갈래 + 신규 2갈래 우선순위 검증 + generic passthrough + null 가드) — AUTH.changePassword/resetPassword 자체는 SB 의존이라 계획대로 테스트 대상에서 제외. 두 인라인 <script> 블록과 logic.js 모두 node --check 통과, node test/run.js 665/665 통과(기존 657 + 신규 8). APP_VERSION 1.46.66->1.46.67, sw.js CACHE v228->v229.",
+      "commit": null
+    },
+    {
+      "cycle": 99,
+      "phase": "develop",
+      "timestamp": "2026-09-27T23:10:00.000Z",
+      "summary": "general-purpose 서브에이전트로 접근성 개선: cycle97에서 act-btn 3곳은 고쳤지만 그때 범위 밖으로 남겨둔 fc-x(입력창 지우기 ✕) 아이콘 버튼 9곳(index.html 2856/2863/2869/2888/3266/3303/3308/3528/3529 — 자산 매입금액·이름·금액·종목명, 거래 금액·메모, 반복거래 메모·금액 입력창의 지우기 버튼)에 접근 가능한 이름이 전혀 없어(스크린리더에 '✕' 글자만 읽히거나 빈 버튼으로 읽힘) aria-label 추가(예: \"매입 금액 지우기\", asAmt는 필드 라벨을 그대로 따르는 동적 \"${lbl} 지우기\"). 만기일 지우기(2874)는 button 안에 중첩된 span이라 마크업 구조 변경이 필요해 이번 범위 밖으로 남김(다음 critique 후보). 순수 로직 변경이 아닌 마크업 속성 추가라 새 회귀 테스트는 불필요(cycle97 act-btn 처리와 동일 판단). 두 인라인 <script> 블록과 logic.js 모두 node --check 통과, node test/run.js 665/665 통과(변경 없음). APP_VERSION 1.46.67->1.46.68, sw.js CACHE v229->v230.",
       "commit": null
     }
   ]
