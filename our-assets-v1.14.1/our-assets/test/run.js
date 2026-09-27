@@ -116,6 +116,7 @@ const FUNCTIONS = [
   'lowestInMonth', 'planBalInner', 'planBalCard', 'planTrackHTML', 'planRowsHTML', 'renderPlan',
   'refreshPlanBody', 'planAsset', 'nextGroupOrder', 'monthSwipeCommitDir', 'overlayEscapeTarget', 'recFreq',
   'planSplitTransfer', 'planTransfer',
+  'sbErrMsg',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -7591,6 +7592,43 @@ test('overlayEscapeTarget: dpWheel·dpModal 모두 닫혀 있고 시트만 열�
 });
 test('overlayEscapeTarget: 아무 오버레이도 열려 있지 않으면 null(onSheetKeydown이 조기 반환)', () => {
   assert.strictEqual(sandbox.overlayEscapeTarget(false, false, false), null);
+});
+
+/* ---------- sbErrMsg: Supabase 에러 메시지 매핑 (app-evolve cycle98 advance: 비밀번호 변경/재설정 추가) ----------
+ * changePassword/resetPassword가 추가되면서 signUp/signIn 흐름에는 없던 두 메시지("기존과 같은
+ * 비밀번호"·"요청 빈도 제한")가 새로 생겼다. 이 둘은 generic한 /password/i 분기보다 앞에 있어야 하는데,
+ * 순서가 뒤집히면 "New password should be different from the old password."가 엉뚱하게 "6자 이상"
+ * 메시지로 뭉개진다 — 그 순서 자체를 이 테스트가 지킨다.
+ */
+test('sbErrMsg: 회원가입 중복 이메일', () => {
+  assert.strictEqual(sandbox.sbErrMsg({ message: 'User already registered' }), '이미 가입된 이메일이에요');
+});
+test('sbErrMsg: 로그인 자격 불일치', () => {
+  assert.strictEqual(sandbox.sbErrMsg({ message: 'Invalid login credentials' }), '이메일 또는 비밀번호가 올바르지 않아요');
+});
+test('sbErrMsg: 이메일 인증 필요', () => {
+  assert.strictEqual(sandbox.sbErrMsg({ message: 'Email not confirmed' }), '이메일 인증이 필요해요 · 메일함을 확인해 주세요');
+});
+test('sbErrMsg: 새 비밀번호가 기존과 같음(changePassword) — generic password 분기보다 먼저 매칭돼야 함', () => {
+  assert.strictEqual(
+    sandbox.sbErrMsg({ message: 'New password should be different from the old password.' }),
+    '새 비밀번호는 기존 비밀번호와 달라야 해요'
+  );
+});
+test('sbErrMsg: 재설정 메일 요청 빈도 제한(resetPassword)', () => {
+  assert.strictEqual(
+    sandbox.sbErrMsg({ message: 'For security purposes, you can only request this after 34 seconds.' }),
+    '요청이 너무 잦아요 · 잠시 후 다시 시도해 주세요'
+  );
+});
+test('sbErrMsg: 그 외 비밀번호 관련 메시지는 기존처럼 길이 안내로 매핑', () => {
+  assert.strictEqual(sandbox.sbErrMsg({ message: 'Password should be at least 6 characters.' }), '비밀번호는 6자 이상이어야 해요');
+});
+test('sbErrMsg: 매칭되는 패턴이 없으면 원본 메시지를 그대로 보여준다', () => {
+  assert.strictEqual(sandbox.sbErrMsg({ message: 'Some unmapped error' }), 'Some unmapped error');
+});
+test('sbErrMsg: 에러 객체 자체가 없으면 기본 안내 문구', () => {
+  assert.strictEqual(sandbox.sbErrMsg(null), '클라우드 연결에 실패했어요');
 });
 
 /* ---------- 실행 ---------- */

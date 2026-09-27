@@ -1210,6 +1210,8 @@ body.selmode .fab{display:none}
 .auth-submit{width:100%;margin-top:4px}
 .auth-guest{display:block;width:100%;height:44px;margin-top:10px;font-size:14px;font-weight:700;color:var(--text-2)}
 .auth-guest:active{color:var(--text)}
+.auth-forgot{display:block;width:100%;text-align:center;font-size:12.5px;font-weight:600;color:var(--text-3);text-decoration:underline;margin-top:2px}
+.auth-forgot:active{color:var(--text-2)}
 .auth-note{font-size:11.5px;color:var(--text-3);line-height:1.65;margin-top:16px;text-align:center}
 .auth-note b{color:var(--text-2)}
 .kkey{margin-top:12px;padding:14px;border-radius:14px;background:var(--surface-2);border:1px solid var(--line-2);text-align:left}
@@ -1291,7 +1293,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.66';
+const APP_VERSION='1.46.67';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1616,8 +1618,16 @@ function migrateLegacy(){try{const legacy=localStorage.getItem(SKEY);const guest
 const SUPABASE_URL='';const SUPABASE_ANON_KEY='';/* 선택: 코드에 직접 넣어도 되고, 앱 화면에서 붙여넣어도 됩니다 */
 let SB=null;
 function sbCfg(){try{return{url:(localStorage.getItem('asset_app_sb_url')||'').trim()||SUPABASE_URL,key:(localStorage.getItem('asset_app_sb_key')||'').trim()||SUPABASE_ANON_KEY}}catch(e){return{url:SUPABASE_URL,key:SUPABASE_ANON_KEY}}}
-function sbReady(){const c=sbCfg();if(!c.url||!c.key||!window.supabase)return false;if(!SB){try{SB=window.supabase.createClient(c.url,c.key,{auth:{persistSession:true,autoRefreshToken:true}})}catch(e){return false}}return true}
-function sbErrMsg(e){const m=(e&&e.message)||'';if(/registered|already/i.test(m))return'이미 가입된 이메일이에요';if(/invalid login|invalid.*credentials/i.test(m))return'이메일 또는 비밀번호가 올바르지 않아요';if(/confirm/i.test(m))return'이메일 인증이 필요해요 · 메일함을 확인해 주세요';if(/password/i.test(m))return'비밀번호는 6자 이상이어야 해요';return m||'클라우드 연결에 실패했어요'}
+function sbReady(){const c=sbCfg();if(!c.url||!c.key||!window.supabase)return false;if(!SB){try{SB=window.supabase.createClient(c.url,c.key,{auth:{persistSession:true,autoRefreshToken:true}});
+  /* 비밀번호 재설정 메일의 링크를 열면 Supabase JS가 URL의 복구 토큰을 자동 감지해 이 이벤트를 쏜다 —
+   * 로그인 여부와 무관하게 새 비밀번호 설정 시트를 강제로 띄워야 흐름이 끊기지 않는다(boot()가 sbReady()를
+   * 로그인 전에도 항상 호출해 이 리스너가 바인딩되게 해둠). */
+  SB.auth.onAuthStateChange((event)=>{if(event==='PASSWORD_RECOVERY')openChangePasswordSheet(true)});
+ }catch(e){return false}}return true}
+/* registered/invalid login/confirm 세 갈래는 signUp/signIn 흐름, 나머지 두 갈래(old password/rate limit)는
+ * changePassword/resetPassword 흐름에서만 나오는 Supabase 메시지 — 순서상 generic한 /password/i보다
+ * 앞에 둬야 "새 비밀번호가 기존과 같음" 에러가 엉뚱하게 "6자 이상" 메시지로 뭉개지지 않는다. */
+function sbErrMsg(e){const m=(e&&e.message)||'';if(/registered|already/i.test(m))return'이미 가입된 이메일이에요';if(/invalid login|invalid.*credentials/i.test(m))return'이메일 또는 비밀번호가 올바르지 않아요';if(/confirm/i.test(m))return'이메일 인증이 필요해요 · 메일함을 확인해 주세요';if(/different from the old password/i.test(m))return'새 비밀번호는 기존 비밀번호와 달라야 해요';if(/security purposes|rate limit/i.test(m))return'요청이 너무 잦아요 · 잠시 후 다시 시도해 주세요';if(/password/i.test(m))return'비밀번호는 6자 이상이어야 해요';return m||'클라우드 연결에 실패했어요'}
 /* 동기화 상태: 'idle'|'syncing'|'ok'|'error'|'conflict' — 계정 화면에 표시, 실패/충돌은 1회만 토스트 */
 let CLOUD_SYNC_STATE='idle';let CLOUD_LAST_OK=null;let CLOUD_LAST_SYNCED_AT=null;
 let CLOUD_ERR_TOASTED=false;let CLOUD_CONFLICT_TOASTED=false;
@@ -1832,6 +1842,27 @@ const AUTH={
   if(!ok){this._recordFail(key);return{err:'비밀번호가 일치하지 않아요'}}
   this._clearFails(key);
   return{ok:true,email:rec.email};
+ },
+ /* 클라우드 계정 전용(로컬 계정은 지원 안 함) — 로그인 상태에서 비밀번호를 바꾼다 */
+ async changePassword(newPw){
+  if((newPw||'').length<8)return{err:'비밀번호는 8자 이상이어야 해요'};
+  if(!sbReady())return{err:'클라우드 계정에서만 지원해요'};
+  try{
+   const{error}=await SB.auth.updateUser({password:newPw});
+   if(error)return{err:sbErrMsg(error)};
+   return{ok:true};
+  }catch(e){return{err:'클라우드 연결에 실패했어요 · 인터넷 연결을 확인해 주세요'}}
+ },
+ /* 클라우드 계정 전용 — 로그인 화면에서 비밀번호 재설정 메일을 보낸다 */
+ async resetPassword(email){
+  email=(email||'').trim();
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))return{err:'이메일 형식을 확인해 주세요'};
+  if(!sbReady())return{err:'클라우드 계정에서만 지원해요'};
+  try{
+   const{error}=await SB.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});
+   if(error)return{err:sbErrMsg(error)};
+   return{ok:true};
+  }catch(e){return{err:'클라우드 연결에 실패했어요 · 인터넷 연결을 확인해 주세요'}}
  },
  setSession(email){SESSION=email||'';localStorage.setItem('asset_app_session',SESSION)},
  kakaoUpsert(id,nick){const a=this._accts();if(!a[emailKey(id)])a[emailKey(id)]={email:id,kakao:true,nick:nick||'',created:Date.now()};else if(nick)a[emailKey(id)].nick=nick;this._write(a)},
@@ -4077,6 +4108,7 @@ function openAccountSheet(){
   <div class="desc">${cloudOn?'이메일로 로그인하면 다른 기기에서도 같은 데이터를 볼 수 있어요. 단, 같은 이메일 계정으로 로그인해야만 같은 데이터가 보여요 — 배우자가 계정을 따로 만들면 서로의 기록이 보이지 않아요.':'데이터는 이 기기에 저장돼요. 여러 기기에서 함께 보려면 클라우드 동기화 설정이 필요합니다.'}</div>
   <div class="opt-list">
     ${kind==='guest'?`<button onclick="closeSheet();showAuth()"><div><div>로그인 / 회원가입</div><div class="ol-sub">카카오 또는 이메일</div></div></button>`:`<button onclick="doLogout()"><div><div>로그아웃</div></div></button>`}
+    ${isCloudAcct?`<button onclick="openChangePasswordSheet(false)"><div><div>비밀번호 변경</div></div></button>`:''}
     <button onclick="openHelpCloud()"><div><div>이메일 로그인 · 클라우드 동기화 설정</div><div class="ol-sub">${cloudOn?'Supabase 연결됨':'Supabase 연결하면 다른 기기에서도 같은 데이터를 봐요'}</div></div></button>
     <button onclick="openHelpKakao()"><div><div>카카오 로그인 설정 방법</div><div class="ol-sub">JavaScript 키·도메인 등록 안내</div></div></button>
   </div>`);
@@ -4105,6 +4137,7 @@ create policy "update own" on public.user_data
    <p><b>3) 이메일 인증(선택)</b><br><b>Authentication › Providers › Email</b>에서 'Confirm email'을 꺼두면 가입 즉시 로그인돼요. 켜두면 가입 후 메일의 인증 링크를 눌러야 로그인할 수 있어요.</p>
    <p><b>4) 사용하기</b><br>저장 후 이메일로 가입하면, 그 다음부터는 같은 이메일·비밀번호로 다른 기기에서 로그인해도 같은 데이터를 볼 수 있어요.</p>
    <p><b>5) 배우자·가족과 함께 쓰려면</b><br>지금 구조는 로그인 계정 1개 = 데이터 1벌이에요. 배우자가 이메일을 따로 만들어 가입하면 완전히 별개의 데이터가 생겨서, 각자 입력한 자산·내역이 서로에게 보이지 않아요(귀속을 '배우자'로 나눠 써도 마찬가지예요 — 같은 계정 안의 이름표일 뿐입니다). 함께 보고 쓰려면 <b>같은 이메일·비밀번호로 각자의 기기에서 로그인</b>하세요. 이 방법을 쓸 때는 비밀번호를 신뢰하는 사람과만 공유하고, 비밀번호 변경이나 계정 삭제는 미리 상의한 뒤 진행하세요(다른 기기가 조용히 로그아웃될 수 있어요).</p>
+   <p><b>6) 비밀번호를 잊었을 때</b><br>로그인 화면의 '비밀번호를 잊으셨나요?'로 재설정 메일을 보낼 수 있어요. 다만 Supabase <b>Authentication › URL Configuration</b>의 <b>Site URL</b>·<b>Redirect URLs</b>에 이 앱을 올린 도메인이 등록돼 있어야 메일의 링크가 정상적으로 이 앱으로 돌아와요. 메일 문구를 바꾸고 싶다면 <b>Authentication › Email Templates › Reset Password</b>에서 수정할 수 있어요.</p>
   </div>`);
 }
 function saveCloudCfg(){
@@ -6366,6 +6399,9 @@ function startApp(){
 }
 async function boot(){
  migrateLegacy();
+ /* 로그인 전에도 PASSWORD_RECOVERY 리스너를 미리 바인딩해둬야, 다른 기기에서 재설정 메일 링크를
+  * 열었을 때(이 기기엔 로컬 세션이 없을 수 있음) 새 비밀번호 설정 시트가 뜬다 */
+ if(sbCfg().url)sbReady();
  if(SESSION&&!AUTH.exists(SESSION))AUTH.signOut();
  if(AUTH.current()){
   const rec=AUTH.rec(AUTH.current());
@@ -6398,6 +6434,7 @@ function renderAuth(){
    <div class="auth-seg"><button class="${login?'on':''}" onclick="authSet('login')">로그인</button><button class="${login?'':'on'}" onclick="authSet('signup')">회원가입</button></div>
    <div class="auth-field"><label>이메일</label><input id="auEmail" type="email" inputmode="email" autocomplete="username" placeholder="you@example.com"></div>
    <div class="auth-field"><label>비밀번호</label><input id="auPw" type="password" autocomplete="${login?'current-password':'new-password'}" placeholder="${login?'':'8자 이상'}" onkeydown="if(event.key==='Enter'){${login?'doLogin()':'doSignup()'}}"></div>
+   ${login&&sbCfg().url?`<button type="button" class="auth-forgot" onclick="doForgotPassword()">비밀번호를 잊으셨나요?</button>`:''}
    <div id="auErr" class="auth-err" style="display:none"></div>
    <button class="btn btn-primary auth-submit" onclick="${login?'doLogin()':'doSignup()'}">${login?'로그인':'가입하고 시작'}</button>
    <button class="auth-guest" onclick="chooseGuest()">게스트로 둘러보기</button>
@@ -6456,6 +6493,55 @@ async function doSignup(){
  startApp();
  if(guestHasData())confirmSheet('데이터 가져오기','방금까지 게스트로 입력한 자산·내역이 있어요. 새 계정으로 가져올까요?','가져오기',()=>{try{DB=JSON.parse(guestRaw);migrate();save();renderCurrent();toast('데이터를 가져왔어요')}catch(e){toast('가져오기에 실패했어요')}});
  else toast('가입 완료 · '+r.email);
+}
+function doForgotPassword(){
+ const email=($('auEmail')&&$('auEmail').value)||'';
+ openSheet(`<h3>비밀번호 재설정</h3>
+  <div class="desc">가입하신 이메일로 비밀번호 재설정 링크를 보내드려요.</div>
+  <div class="field"><label>이메일</label><input id="fpEmailIn" type="email" inputmode="email" autocomplete="username" placeholder="you@example.com" value="${esc(email)}"></div>
+  <div id="fpErr" class="auth-err" style="display:none"></div>
+  <div class="two-btn" style="margin-top:14px"><button class="btn btn-soft cancel" onclick="closeSheet()">취소</button><button class="btn btn-primary" id="fpSendBtn" onclick="doSendResetEmail()">재설정 메일 보내기</button></div>`);
+}
+async function doSendResetEmail(){
+ const email=$('fpEmailIn').value;
+ const errEl=$('fpErr');if(errEl)errEl.style.display='none';
+ const btn=$('fpSendBtn');if(btn)btn.disabled=true;
+ const r=await AUTH.resetPassword(email);
+ if(btn)btn.disabled=false;
+ if(r.err){if(errEl){errEl.textContent=r.err;errEl.style.display='block'}return}
+ openSheet(`<h3>메일함을 확인해 주세요</h3><div class="desc">${esc(email)} 로 비밀번호 재설정 링크를 보냈어요. 메일의 링크를 눌러 새 비밀번호를 설정해 주세요.</div><div class="two-btn" style="margin-top:14px"><button class="btn btn-primary" onclick="closeSheet()" style="width:100%">확인</button></div>`);
+}
+/* recovery=true: 다른 기기에서 재설정 메일 링크를 열어 PASSWORD_RECOVERY 이벤트로 뜬 경우.
+ * recovery=false(기본): 계정 시트에서 로그인 상태로 자발적으로 비밀번호를 바꾸는 경우. */
+function openChangePasswordSheet(recovery){
+ openSheet(`<h3>${recovery?'새 비밀번호 설정':'비밀번호 변경'}</h3>
+  <div class="desc">${recovery?'비밀번호 재설정 메일로 들어오셨어요. 새 비밀번호를 설정해 주세요.':'다른 기기는 조용히 로그아웃될 수 있어요.'}</div>
+  <div class="field"><label>새 비밀번호</label><input id="newPwIn" type="password" autocomplete="new-password" placeholder="8자 이상" onkeydown="if(event.key==='Enter')doChangePassword(${!!recovery})"></div>
+  <div id="newPwErr" class="auth-err" style="display:none"></div>
+  <div class="two-btn" style="margin-top:14px"><button class="btn btn-primary" id="pwSaveBtn" onclick="doChangePassword(${!!recovery})" style="width:100%">저장</button></div>`);
+}
+async function doChangePassword(recovery){
+ const pw=($('newPwIn')&&$('newPwIn').value)||'';
+ const errEl=$('newPwErr');if(errEl)errEl.style.display='none';
+ const btn=$('pwSaveBtn');if(btn)btn.disabled=true;
+ const r=await AUTH.changePassword(pw);
+ if(btn)btn.disabled=false;
+ if(r.err){if(errEl){errEl.textContent=r.err;errEl.style.display='block'}return}
+ closeSheet();toast('비밀번호를 변경했어요');
+ if(recovery){
+  /* 복구 링크로 들어와 새 비밀번호를 설정한 경우 Supabase가 이미 정식 세션을 발급한 상태라,
+   * doLogin()의 클라우드 로그인 분기와 같은 방식으로 이 기기의 로컬 세션을 마저 연결한다. */
+  try{
+   const{data}=await SB.auth.getSession();
+   if(data&&data.session&&data.session.user){
+    const email=data.session.user.email;
+    const a=AUTH._accts();a[emailKey(email)]=Object.assign({},a[emailKey(email)],{email,cloud:true});AUTH._write(a);
+    GUEST=false;localStorage.setItem('asset_app_guest','0');AUTH.setSession(email);
+    await afterCloudAuth(data.session.user.id);
+    startApp();
+   }
+  }catch(e){}
+ }
 }
 function doLogout(){confirmSheet('로그아웃','로그아웃하면 로그인 화면으로 돌아가요. 이 기기의 데이터는 그대로 보관돼요.','로그아웃',()=>{
  try{if(accountKind()==='kakao'&&window.Kakao&&window.Kakao.Auth&&typeof window.Kakao.Auth.getAccessToken==='function'&&window.Kakao.Auth.getAccessToken())window.Kakao.Auth.logout(()=>{})}catch(e){}
