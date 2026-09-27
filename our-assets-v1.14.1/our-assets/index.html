@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.56';
+const APP_VERSION='1.46.57';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1438,6 +1438,20 @@ function mergeCollection(localArr,remoteArr,localDeletedIds,remoteDeletedIds){
   if(r){out.push(r)}
  });
  return out;
+}
+/* afterCloudAuth()와 pushCloud()의 conflict 재시도 경로가 공유하는 3-way 병합 실행기 —
+ * remoteData(sanitizeBackup()으로 이미 정제된 원격 DB)를 DB에 병합만 하고 save()는 호출자가
+ * 결정한다(pushCloud()는 병합 직후 곧장 조건부 UPDATE를 재시도해야 하므로 scheduleCloudPush()의
+ * 1.2초 디바운스를 거치지 않고 deferCloudPush로 즉시 진행해야 함). */
+function mergeRemoteDataIntoLocal(remoteData){
+ DB.deletedIds=DB.deletedIds||{};
+ Object.keys(remoteData.deletedIds||{}).forEach(id=>{
+  if(!(id in DB.deletedIds)||remoteData.deletedIds[id]>DB.deletedIds[id])DB.deletedIds[id]=remoteData.deletedIds[id];
+ });
+ DB.txns=mergeCollection(DB.txns,remoteData.txns,DB.deletedIds,remoteData.deletedIds);
+ DB.recurrences=mergeCollection(DB.recurrences,remoteData.recurrences,DB.deletedIds,remoteData.deletedIds);
+ DB.assets=mergeCollection(DB.assets,remoteData.assets,DB.deletedIds,remoteData.deletedIds);
+ migrate();invalidateBalances();
 }
 const comma=n=>Math.round(n||0).toLocaleString('ko-KR');
 const commaQty=n=>Number.isInteger(n)?comma(n):(n||0).toLocaleString('ko-KR',{maximumFractionDigits:4}); /* 소수 보유수량(주식/외화)은 반올림하지 않고 그대로 표시 */
@@ -1681,7 +1695,7 @@ function localHasUnsyncedChanges(savedAt,syncedAt){return !!(savedAt&&(!syncedAt
  * 화면에서 명시적으로 풀어야 하므로(위 confirmCloudForcePush 등) 여기서 자동으로 건드리지 않는다. */
 function shouldRetryCloudSync(cloudUid,syncState,navigatorOnline){return !!(cloudUid&&syncState==='error'&&navigatorOnline)}
 function markCloudSynced(){try{localStorage.setItem(dataKey()+'__syncedAt',String(Date.now()))}catch(e){}}
-async function pushCloud(){
+async function pushCloud(retried){
  if(!sbReady()||!CLOUD_UID)return;
  CLOUD_SYNC_STATE='syncing';
  try{
@@ -1695,14 +1709,29 @@ async function pushCloud(){
    const{data:updated,error:updErr}=await SB.from('user_data').update({data:DB,updated_at:nowIso}).eq('user_id',CLOUD_UID).eq('updated_at',CLOUD_LAST_SYNCED_AT).select('updated_at');
    if(updErr){cloudSyncFailed();return}
    const matchedRowCount=(updated||[]).length;
-   let rowExistedBefore=true;
+   let rowExistedBefore=true,curRow=null;
    if(matchedRowCount===0){
-    const{data:cur}=await SB.from('user_data').select('updated_at').eq('user_id',CLOUD_UID).maybeSingle();
-    rowExistedBefore=!!cur;
+    const{data:cur}=await SB.from('user_data').select('data,updated_at').eq('user_id',CLOUD_UID).maybeSingle();
+    rowExistedBefore=!!cur;curRow=cur;
    }
    const outcome=decidePushOutcome(matchedRowCount,rowExistedBefore);
    if(outcome==='proceed'){CLOUD_LAST_SYNCED_AT=nowIso;cloudSyncOk();markCloudSynced();return}
    if(outcome==='conflict'){
+    /* 곧장 confirmCloudForcePush()의 전부-내것/전부-상대것 양자택일로 멈추는 대신,
+     * afterCloudAuth()가 이미 쓰는 mergeCollection() 인프라로 방금 rowExistedBefore 판정에 쓴
+     * 원격 최신 행(curRow)을 그대로 자동 병합해보고, 그 원격 updated_at을 기준 삼아 조건부 UPDATE를
+     * 딱 1회만 재시도한다(왕복을 아끼려 curRow를 다시 조회하지 않고 재사용). 재시도에서도 충돌이면
+     * (그 사이 세 번째 기기가 또 push한 극단적 경합) retried===true라 더 재귀하지 않고 기존과 동일한
+     * 수동 폴백으로 떨어진다. */
+    if(!retried&&curRow){
+     try{
+      const remoteData=sanitizeBackup(curRow.data).data;
+      mergeRemoteDataIntoLocal(remoteData);
+      save({deferCloudPush:true});
+      CLOUD_LAST_SYNCED_AT=curRow.updated_at;
+      return pushCloud(true);
+     }catch(e){/* 병합 시도 자체가 실패하면 아래 수동 폴백으로 떨어뜨려 계정 화면에서 해결할 길을 남긴다 */}
+    }
     CLOUD_SYNC_STATE='conflict';
     if(!CLOUD_CONFLICT_TOASTED){CLOUD_CONFLICT_TOASTED=true;toast('다른 기기에 더 최신 데이터가 있어요 · 메뉴 › 계정에서 확인하세요')}
     return;
@@ -1732,14 +1761,8 @@ async function afterCloudAuth(uid){
     * (cycle87~89) 이제 세 컬렉션 전부 mergeCollection으로 레코드 단위 병합한다 — 더
     * 이상 문서 전체를 충돌 처리할 이유가 없다. */
    const remoteData=sanitizeBackup(remote).data;
-   DB.deletedIds=DB.deletedIds||{};
-   Object.keys(remoteData.deletedIds||{}).forEach(id=>{
-    if(!(id in DB.deletedIds)||remoteData.deletedIds[id]>DB.deletedIds[id])DB.deletedIds[id]=remoteData.deletedIds[id];
-   });
-   DB.txns=mergeCollection(DB.txns,remoteData.txns,DB.deletedIds,remoteData.deletedIds);
-   DB.recurrences=mergeCollection(DB.recurrences,remoteData.recurrences,DB.deletedIds,remoteData.deletedIds);
-   DB.assets=mergeCollection(DB.assets,remoteData.assets,DB.deletedIds,remoteData.deletedIds);
-   migrate();invalidateBalances();save();
+   mergeRemoteDataIntoLocal(remoteData);
+   save();
    /* 세 컬렉션 모두 병합됐으니 더는 강제로 'conflict' 배너를 띄우지 않는다 — pullCloud()가
     * 이미 cloudSyncOk()를 호출해 CLOUD_SYNC_STATE='ok'로 둔 상태를 그대로 쓴다. save()가
     * scheduleCloudPush()를 호출하므로 병합 결과는 1.2초 안에 자동으로 클라우드에 되밀린다. */

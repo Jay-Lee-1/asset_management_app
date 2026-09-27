@@ -77,9 +77,9 @@ const FUNCTIONS = [
   'saveRec', 'recHistFieldsChanged', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
   'monthStartStr', 'monthEndStr', 'expandRec', 'allTxns', 'txnsByDateInRange', 'spendByCategory', 'spendTrend', 'spendTrendBadge', 'histSumTotals',
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'expenseBreakdownCard',
-  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asOpenCur', 'asCur', 'asToggleNeg', 'openAssetSheet', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'isCloudConflict', 'decidePushOutcome', 'mergeCollection', 'fmtAmt',
+  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asOpenCur', 'asCur', 'asToggleNeg', 'openAssetSheet', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'isCloudConflict', 'decidePushOutcome', 'mergeCollection', 'mergeRemoteDataIntoLocal', 'fmtAmt',
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges', 'shouldRetryCloudSync',
-  'pullCloud', 'afterCloudAuth', 'resolveCloudPullRemote',
+  'pullCloud', 'afterCloudAuth', 'resolveCloudPullRemote', 'pushCloud',
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
   'clampDay', 'saveTx', 'assetBase', 'balancesUpTo', 'balanceAt',
   'addBalanceAdjust', 'updateBalanceAdjust', 'toggleConfirmTransfers', 'rollPendingTransfers',
@@ -177,7 +177,23 @@ const sandbox = {
   // pullCloud()가 부르는 SB.from('user_data').select(...).eq(...).maybeSingle() 체인만 흉내내는
   // 최소 목업 — sandbox._sbMaybeSingleResult에 원하는 {data,error}를 세팅해 응답을 흉내낸다.
   _sbMaybeSingleResult: { data: null, error: null },
-  SB: { from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => sandbox._sbMaybeSingleResult }) }) }) },
+  // pushCloud()의 조건부 UPDATE 체인(.update().eq().eq().select())과 fallback UPSERT
+  // 체인(.upsert())을 흉내내는 목업 — sandbox._sbUpdateResult/_sbUpsertResult에 원하는
+  // {data,error}를 세팅해 응답을 흉내낸다. conflict 시 재시도가 부르는 재조회는 select().eq().
+  // maybeSingle() 체인을 그대로 재사용하므로(_sbMaybeSingleResult), 별도 목업이 필요 없다.
+  // pushCloud()가 conflict→재시도로 같은 호출을 두 번 하는 테스트에서는 매번 다른 응답이
+  // 필요하므로, 배열로 세팅해두면(_sbUpdateResults) 호출마다 하나씩 소비하고, 없으면
+  // 단일값(_sbUpdateResult)을 계속 재사용한다.
+  _sbUpdateResult: { data: [{ updated_at: 'unused' }], error: null },
+  _sbUpdateResults: null,
+  _sbUpsertResult: { error: null },
+  SB: {
+    from: () => ({
+      select: () => ({ eq: () => ({ maybeSingle: async () => sandbox._sbMaybeSingleResult }) }),
+      update: () => ({ eq: () => ({ eq: () => ({ select: async () => (Array.isArray(sandbox._sbUpdateResults) && sandbox._sbUpdateResults.length ? sandbox._sbUpdateResults.shift() : sandbox._sbUpdateResult) }) }) }),
+      upsert: async () => sandbox._sbUpsertResult,
+    }),
+  },
   STORAGE_PERSISTED: null,
   // DB_JSON_LEN은 save()/load()가 실제 직렬화 길이로 채우는 파생 상태고, STORAGE_SIZE_*_LEN은
   // 그 문턱 상수다 — homeAlerts()가 shouldWarnStorageSize()에 넘기므로 STORAGE_PERSISTED와
@@ -4252,6 +4268,69 @@ test('resolveCloudPullRemote(사용자가 명시적으로 누르는 "가져오�
   }
   assert.ok(sandbox.DB.assets.some(a => a.id === 'remote2'));
   assert.strictEqual(sandbox.markCloudSyncedCalls, 1);
+});
+
+/* ---------- pushCloud: 조건부 UPDATE 충돌 시 수동 양자택일로 곧장 멈추는 대신 mergeCollection()으로
+ * 자동 병합 후 1회 재시도한다(app-evolve cycle93 critique/advance). 예전엔 decidePushOutcome()이
+ * 'conflict'를 반환하면 afterCloudAuth()가 이미 쓰는 병합 인프라(touch()/deletedIds/mergeCollection,
+ * 세 컬렉션 모두 완비)를 이 경로만 못 쓰고 CLOUD_SYNC_STATE='conflict'로 멈춰 confirmCloudForcePush()의
+ * 전부-내것/전부-상대것 양자택일만 강제했다 — 부부 등 계정 공유 시나리오에서 서로 무관한 레코드를
+ * 각자 다른 기기에서 거의 동시에 편집했을 뿐인데도 한쪽 기기의 편집 전체가 사라질 위험이 있었다. ---------- */
+test('pushCloud: 첫 조건부 UPDATE가 충돌해도 원격 최신본을 자동 병합해 1회 재시도하면 성공하고, 양쪽 txns가 모두 살아남는다', async () => {
+  sandbox.DB = {
+    txns: [{ id: 'local-only', date: '2026-01-01', updatedAt: 100 }],
+    recurrences: [], assets: [], deletedIds: {},
+  };
+  sandbox.CLOUD_UID = 'u1';
+  sandbox.CLOUD_SYNC_STATE = 'idle';
+  sandbox.CLOUD_LAST_SYNCED_AT = '2026-01-01T00:00:00.000Z';
+  sandbox.CLOUD_CONFLICT_TOASTED = false;
+  sandbox.markCloudSyncedCalls = 0;
+  sandbox.lastToast = null; sandbox.toastCalls = [];
+  // 1번째 조건부 UPDATE는 matchedRowCount=0(충돌), 2번째(재시도)는 matchedRowCount=1(성공).
+  sandbox._sbUpdateResults = [
+    { data: [], error: null },
+    { data: [{ updated_at: 'retry-ok' }], error: null },
+  ];
+  // rowExistedBefore 판정과 병합 재시도가 함께 재사용하는 원격 최신 행.
+  sandbox._sbMaybeSingleResult = {
+    data: { data: { txns: [{ id: 'remote-only', date: '2026-01-02', updatedAt: 100 }], recurrences: [], assets: [], deletedIds: {} }, updated_at: '2026-02-01T00:00:00.000Z' },
+    error: null,
+  };
+  await sandbox.pushCloud();
+  assert.strictEqual(sandbox.DB.txns.length, 2, '충돌 시 로컬 편집을 버리지 않고 원격과 병합해야 함');
+  assert.ok(sandbox.DB.txns.some(t => t.id === 'local-only'), '로컬 전용 거래가 살아남아야 함');
+  assert.ok(sandbox.DB.txns.some(t => t.id === 'remote-only'), '원격 전용 거래도 병합돼야 함');
+  assert.strictEqual(sandbox.markCloudSyncedCalls, 1, '재시도가 최종 성공했으니 markCloudSynced가 불려야 함');
+  assert.notStrictEqual(sandbox.CLOUD_SYNC_STATE, 'conflict', '재시도가 성공했으니 수동 충돌 상태로 남으면 안 됨');
+  assert.strictEqual(sandbox.toastCalls.length, 0, '자동 병합·재시도로 조용히 해결됐으니 충돌 토스트가 뜨면 안 됨');
+});
+test('pushCloud: 재시도까지 두 번 다 충돌이면(극단적 3중 경합) 병합은 반영된 채로 기존처럼 수동 충돌 폴백으로 떨어진다', async () => {
+  sandbox.DB = {
+    txns: [{ id: 'local-only', date: '2026-01-01', updatedAt: 100 }],
+    recurrences: [], assets: [], deletedIds: {},
+  };
+  sandbox.CLOUD_UID = 'u1';
+  sandbox.CLOUD_SYNC_STATE = 'idle';
+  sandbox.CLOUD_LAST_SYNCED_AT = '2026-01-01T00:00:00.000Z';
+  sandbox.CLOUD_CONFLICT_TOASTED = false;
+  sandbox.markCloudSyncedCalls = 0;
+  sandbox.lastToast = null; sandbox.toastCalls = [];
+  // 1번째·2번째(재시도) 조건부 UPDATE 모두 matchedRowCount=0(계속 충돌).
+  sandbox._sbUpdateResults = [
+    { data: [], error: null },
+    { data: [], error: null },
+  ];
+  sandbox._sbMaybeSingleResult = {
+    data: { data: { txns: [{ id: 'remote-only', date: '2026-01-02', updatedAt: 100 }], recurrences: [], assets: [], deletedIds: {} }, updated_at: '2026-02-01T00:00:00.000Z' },
+    error: null,
+  };
+  await sandbox.pushCloud();
+  assert.strictEqual(sandbox.CLOUD_SYNC_STATE, 'conflict', '1회 재시도까지 실패하면 기존처럼 수동 충돌 상태로 떨어져야 함');
+  assert.strictEqual(sandbox.toastCalls.length, 1, '무한 재시도 없이 딱 1번만 충돌 토스트를 띄워야 함');
+  assert.ok(sandbox.lastToast.includes('다른 기기에 더 최신 데이터가 있어요'));
+  assert.ok(sandbox.DB.txns.some(t => t.id === 'remote-only'), '최종 push는 실패했어도 재시도 과정의 병합 자체는 로컬 DB에 남아 데이터 손실이 없어야 함');
+  assert.strictEqual(sandbox.markCloudSyncedCalls, 0, '끝내 성공하지 못했으니 markCloudSynced는 불리면 안 됨');
 });
 
 /* ---------- foreignSaveIsNewer: handleForeignStorage()가 다른 탭의 save()를 반영할지 판단하는 순수 로직
