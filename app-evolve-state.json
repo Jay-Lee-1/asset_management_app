@@ -1,15 +1,8 @@
 {
   "cycle": 98,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 93,
-      "phase": "review",
-      "timestamp": "2026-09-26T23:05:00.000Z",
-      "summary": "develop 커밋(14899c4, rollPendingTransfers() touch() 누락 수정)을 검토. doRenameOwner/doRenameCat과 완전히 같은 패턴임을 확인, 새 회귀 테스트 2개가 정확히 검증함을 확인. 코드 변경 없음(이상 없음).",
-      "commit": null
-    },
     {
       "cycle": 93,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-27T19:10:00.000Z",
       "summary": "general-purpose 서브에이전트로 sanitizeBackup()(index.html:4918-4970, 백업 파일 복원과 클라우드 pull/merge 양쪽에서 공유하는 방어 검증 함수)의 검증 공백을 발견해 수정. 이 함수는 amount/startDate/id는 이미 검증하지만, 정상 앱 플로우에서는 저장 직전 clampDay()가 항상 1~31 숫자 또는 'last'로 맞춰주는 반복거래의 day 필드는 검증하지 않았다 — 백업 파일이나 다른 기기의 클라우드 동기화 데이터는 이 경로를 거치지 않으므로, 문자열·NaN·범위 밖 day가 그대로 들어오면 recDates()의 Math.min(r.day,lastDay(y,m))이 \"2024-01-NaN\" 같은 깨진 날짜를 매달 계속 만들어내며(크래시는 없음) recFreqLabel()도 그대로 표시하는 조용한 데이터 오염이었다. sanitizeBackup() 반복거래 루프에 freq==='monthly'&&day!=='last' 조건으로 clampDay()를 재사용해 정규화, fixedCount에 반영. test/run.js에 회귀 테스트 2개 추가(비정상 day 값 clamp 검증, 'last'/비월간 반복은 그대로 유지 검증). 두 인라인 <script> 블록과 logic.js/sw.js 모두 node --check 통과, node test/run.js 657/657 통과(기존 655 + 신규 2). APP_VERSION 1.46.65->1.46.66, sw.js CACHE v227->v228.",
+      "commit": null
+    },
+    {
+      "cycle": 98,
+      "phase": "review",
+      "timestamp": "2026-09-27T20:09:00.000Z",
+      "summary": "develop 커밋(a8737fc, sanitizeBackup() 반복거래 day 필드 검증 누락 수정)을 검토. clampDay()(index.html:3523)를 직접 확인해 d.day가 typeof 'number'가 아니면(NaN 포함) 1로, 31 초과면 31로, 1 미만이면 1로 맞추는 기존 규약을 그대로 재사용했음을 확인 — freq==='monthly'&&day!=='last' 가드가 weekly 등 다른 반복 유형이나 말일 지정을 건드리지 않게 정확히 범위를 좁혔음도 코드로 재확인. 새 회귀 테스트 2개(비정상 day 4종 clamp 검증 + 'last'/비월간 반복 무변경 검증)가 정확히 이 경계를 검증함을 확인. 두 인라인 <script> 블록과 logic.js 모두 node --check 통과, node test/run.js 657/657 통과. 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
