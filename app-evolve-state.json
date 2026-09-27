@@ -1,7 +1,11 @@
 {
   "cycle": 96,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "askRelinkDeleted() 잔액 연동(balance carry-over) 산술을 순수 함수로 추출해 테스트 커버리지 확보",
+    "why": "index.html:2828-2832의 _amLink 클로저 안에서 remembered(삭제 시점 잔액, DB.deletedBal 없으면 H로 폴백)/H(재연결된 과거 내역만의 현재 잔액)/gap(입력값-remembered) 세 단계로 재등록 시 잔액 연속성을 계산하는 실질적인 화폐 산술인데, 이 코드베이스에서 유일하게 어떤 테스트 커버리지도 없는 순수 로직 조각이다(형제 함수 snapshotAssetName조차 소스텍스트 정규식 가드는 받음). DB.deletedBal 결측 폴백, gap===0일 때 조정 내역 생략, 반올림, addBalanceAdjust와의 부호 규약 일치 등 엣지 케이스가 여러 개라 회귀 안전망 없이 방치돼 있음.",
+    "approach": "index.html:2828-2832의 remembered/H/gap 계산을 DB·클로저 의존 없는 최상위 순수 함수 computeRelinkBaseline(remembered,H,entered)로 추출해 {base,gap}을 반환하게 하고 _amLink에서 그 결과로 d[balKey]와 addBalanceAdjust 호출을 대체한다. 최상위 함수라 extractFunction()으로 test/run.js에 바로 끌어올 수 있고, 기존 sandbox.askRelinkDeleted 스파이 스텁과는 다른 심볼이라 충돌하지 않는다(test/run.js:1878-1885 코멘트가 걱정한 문제와 무관). 회귀 테스트: remembered 있음/DB.deletedBal 결측 시 H로 폴백/gap===0(조정 없음)/gap 양수·음수/소수점 반올림/debt 타입 부호 케이스."
+  },
   "history": [
     {
       "cycle": 91,
@@ -141,6 +145,13 @@
       "phase": "review",
       "timestamp": "2026-09-27T12:10:00.000Z",
       "summary": "develop 커밋(7424a58, confirmTransferNow/postponeTransfer/confirmRecNow/postponeRecTransfer 4곳 touch() 누락 수정)을 검토. 네 곳 모두 rollPendingTransfers/doRenameOwner/doRenameCat과 동일한 불변식(mergeCollection()은 updatedAt만 보고 승자를 고름)을 정확히 겨냥한 최소 diff임을 확인 — confirmTransferNow는 t.confirmed=true 대입 직후, postponeTransfer는 t.date 대입 직후, confirmRecNow는 r.confirmedDates.push 직후, postponeRecTransfer는 r.skip.push 직후(새로 생기는 일회성 거래용 touch({...})와는 별개로 r 자체에도 추가) 각각 touch() 한 줄씩만 추가됐다. 기존에 이미 배선된 형제 함수들과 위치·스타일이 일치함을 확인. sandbox 노출 화이트리스트에 confirmTransferNow/postponeTransfer/confirmRecNow 세 이름이 새로 추가된 것도 테스트 대상 함수와 정확히 일치. 새 회귀 테스트 4개(3개 신규 노출 함수 + postponeRecTransfer의 r 자체 touch 1개)가 각 케이스를 정확히 검증함을 확인. 두 인라인 <script> 블록 node --check 통과, node test/run.js 649/649 통과. 코드 변경 없음(이상 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 96,
+      "phase": "critique",
+      "timestamp": "2026-09-27T13:09:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(touch()/mergeCollection/deletedIds 계열은 이번엔 제외하고 아키텍처·UX·기술부채·성능·접근성·에러상태 위주). 4사이클(92,93,94,95) 연속 이월돼온 'askRelinkDeleted 테스트 인프라 정비' 항목을 재검증한 결과, test/run.js:1878-1885 코멘트(커밋 5f31985, cycle92 이전부터 이미 존재)가 스텁 충돌 문제와 touch() 배선 검증은 이미 충분히 다뤘음을 확인 — 그런데도 정작 index.html:2828-2832(_amLink 안 remembered/H/gap 잔액 연속성 계산, DB.deletedBal 결측 폴백·gap===0 조정 생략·반올림·debt 부호 규약 등 엣지케이스를 가진 실질 화폐 산술)는 이 코드베이스에서 유일하게 어떤 테스트도 없이 방치돼 있었음이 드러남 — '테스트 인프라'라는 막연한 표현 뒤에 이미 해결된 반대 근거만 재확인되고 정작 커버되지 않은 산술 자체는 아무도 다시 들여다보지 않은 채 4번 그대로 복사돼 이월된 것. 이 산술을 DB/클로저 의존 없는 최상위 순수 함수 computeRelinkBaseline(remembered,H,entered)로 추출하면 extractFunction()으로 바로 테스트 가능하고(별개 심볼이라 기존 sandbox.askRelinkDeleted 스파이 스텁과 충돌 없음) 다음 사이클로 미룰 이유가 없다고 판단, pending_advance_plan에 저장하고 이 막연한 이월 항목은 이걸로 종결(다음 critique로 다시 복사하지 않음). 러너업(다음 critique 후보로 기록만): (1) act-btn/fc-x 등 아이콘 전용 액션 버튼 다수(index.html:2945,2952,2958,2977,3076,3355,4446,4529 등)가 자산/가계부 행의 aria-label 패턴과 달리 스크린리더용 대체 텍스트가 전혀 없는 접근성 공백, (2) 6675줄 단일 HTML 파일 + 정규식 기반 소스텍스트 추출 테스트(extractFunction) 구조 자체가 이번 스텁 충돌 사례처럼 취약해 향후 순수 로직 모듈 분리가 필요할 수 있음, (3) renderLedger/renderAssets/dayTxns/monthStats2가 매 렌더마다 DB.txns를 선형 스캔+innerHTML 전체 재구성해 다년치 데이터에서 성능 절벽 가능성(현재 규모에선 문제 없음). 코드 변경 없음(읽기 전용 조사).",
       "commit": null
     }
   ]
