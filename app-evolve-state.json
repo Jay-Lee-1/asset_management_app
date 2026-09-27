@@ -1,7 +1,11 @@
 {
   "cycle": 98,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "클라우드 계정 비밀번호 변경/재설정(찾기) 기능이 전혀 없음 — 잊으면 영구 잠김",
+    "why": "index.html 전체에 changePassword/updateUser/resetPassword/onAuthStateChange/PASSWORD_RECOVERY 관련 코드가 0건(grep으로 확인). 로그인 화면(showAuth(), ~6383-6407)에 '비밀번호를 잊으셨나요?' 링크가 없고, 계정 시트(openAccountSheet(), ~4067-4083)에도 비밀번호 변경 옵션이 없다. AUTH 객체(1772-1840)는 signUp/signIn/signOut만 있다. 이 앱의 핵심 셀링포인트가 Supabase 이메일/비밀번호 인증 기반 다기기 클라우드 동기화인데, 비밀번호를 잊으면 새 기기 로그인도 비밀번호 변경도 불가능해 계정과 클라우드 데이터가 영구적으로 잠긴다. 재정 데이터를 다루는 앱에서 완전한 락아웃 리스크는 지금까지 다룬 touch()/mergeCollection/접근성/성능/logic.js 이관과는 다른 축의 신규 발견이며 심각도가 높다.",
+    "approach": "1) 로그인 상태 비밀번호 변경: openAccountSheet()(4067-4083)에 isCloudAcct일 때만 노출되는 '비밀번호 변경' 버튼 추가 → 새 시트(새 비밀번호 입력, 8자 이상 검증은 AUTH.signUp과 동일 정책)에서 AUTH.changePassword(newPw)(신규 메서드, SB.auth.updateUser({password:newPw}) 호출, 에러는 기존 sbErrMsg(1620) 재사용) 실행. 2) 이메일 재설정: showAuth() 로그인 모드(6398-6402)에 '비밀번호를 잊으셨나요?' 링크 추가 → AUTH.resetPassword(email)(신규 메서드, SB.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname}))이 성공하면 doSignup()의 needsConfirm 안내 시트(6450)와 같은 패턴으로 '메일함을 확인해 주세요' 시트 노출. 3) sbReady()(1619) 또는 boot() 초반에 SB.auth.onAuthStateChange((event,session)=>{if(event==='PASSWORD_RECOVERY')openNewPasswordSheet()}) 리스너 등록 — 없으면 재설정 이메일로 돌아와도 새 비밀번호 설정 UI가 뜨지 않아 흐름이 반쪽이 됨. openNewPasswordSheet()는 1)의 새 비밀번호 시트를 재사용. 로컬(비-클라우드) 계정에는 적용 안 됨을 명시. openHelpCloud()(4084~) 안내문에 Supabase 이메일 템플릿/redirect URL 설정 안내 한 문단 추가. sw.js CACHE·APP_VERSION 상승. 순수 로직(에러 매핑, 비밀번호 길이 검증)만 test/run.js 회귀 테스트 대상, SB 의존 부분은 테스트 대상 아님."
+  },
   "history": [
     {
       "cycle": 93,
@@ -141,6 +145,13 @@
       "phase": "review",
       "timestamp": "2026-09-27T20:09:00.000Z",
       "summary": "develop 커밋(a8737fc, sanitizeBackup() 반복거래 day 필드 검증 누락 수정)을 검토. clampDay()(index.html:3523)를 직접 확인해 d.day가 typeof 'number'가 아니면(NaN 포함) 1로, 31 초과면 31로, 1 미만이면 1로 맞추는 기존 규약을 그대로 재사용했음을 확인 — freq==='monthly'&&day!=='last' 가드가 weekly 등 다른 반복 유형이나 말일 지정을 건드리지 않게 정확히 범위를 좁혔음도 코드로 재확인. 새 회귀 테스트 2개(비정상 day 4종 clamp 검증 + 'last'/비월간 반복 무변경 검증)가 정확히 이 경계를 검증함을 확인. 두 인라인 <script> 블록과 logic.js 모두 node --check 통과, node test/run.js 657/657 통과. 코드 변경 없음(이상 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 98,
+      "phase": "critique",
+      "timestamp": "2026-09-27T21:11:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(touch()/mergeCollection·접근성·성능·logic.js 이관 계열은 이미 다뤄졌으므로 제외). index.html 전체에 changePassword/updateUser/resetPassword/onAuthStateChange/PASSWORD_RECOVERY 관련 코드가 0건임을 grep으로 직접 재확인 — 로그인 화면(showAuth(), ~6383-6407)에 '비밀번호를 잊으셨나요?' 링크가 없고 계정 시트(openAccountSheet(), ~4067-4083)에도 비밀번호 변경 옵션이 없으며 AUTH 객체(1772-1840)는 signUp/signIn/signOut만 있음을 확인. 이 앱의 핵심 셀링포인트인 Supabase 이메일/비밀번호 기반 다기기 클라우드 동기화에서, 비밀번호를 잊으면 새 기기 로그인도 변경도 불가능해 계정과 클라우드 데이터가 영구 잠긴다는 완전한 락아웃 리스크를 신규로 발견 — 지금까지 어떤 사이클에서도 다뤄지지 않은 축(계정 복구 불가능성)이라 채택. pending_advance_plan에 (1) openAccountSheet()에 비밀번호 변경 시트(AUTH.changePassword→SB.auth.updateUser) 추가, (2) showAuth() 로그인 모드에 '비밀번호를 잊으셨나요?' 링크(AUTH.resetPassword→SB.auth.resetPasswordForEmail) 추가, (3) SB.auth.onAuthStateChange로 PASSWORD_RECOVERY 이벤트를 감지해 새 비밀번호 설정 시트를 강제 노출하는 3단계 계획 저장(리스너 없으면 재설정 이메일 흐름이 반쪽이 됨). 러너업(기록만): (1) budget/plan 탭이 카테고리별 예산 초과 알림·추세 없이 얕음(범위 넓어 보류), (2) CSV 내보내기가 거래만 다루고 자산/반복거래는 전체 JSON 백업에만 있어 비일관적, (3) AUTH._legacyHash 구버전 로컬 계정 마이그레이션 경로가 계속 복잡도를 짐(제거 불가), (4) window.onerror/unhandledrejection이 recordError()로만 기록되고 렌더 바깥 예외는 사용자에게 노출 안 됨. 기존 fc-x aria-label(10곳)·렌더 성능·logic.js 잔여 이관(~230개)은 계속 유효한 이월 후보로 존재하나 이번엔 password 이슈가 더 급하다고 판단해 채택하지 않음. 코드 변경 없음(읽기 전용 조사).",
       "commit": null
     }
   ]
