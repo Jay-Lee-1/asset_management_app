@@ -2171,6 +2171,19 @@ test('deleteTxnsUndo: 삭제 시 DB.deletedIds에 시각을 남기고, undo하�
   assert.strictEqual(sandbox.DB.deletedIds.x2, undefined, '되돌리면 x2의 툼스톤도 지워져야 함');
   sandbox.TWi = -1;
 });
+test('deleteTxnsUndo: undo로 되살린 내역에는 touch()가 호출되어 updatedAt이 갱신된다(app-evolve cycle94, mergeCollection이 살아난 레코드를 병합에서 탈락시키지 않게 함)', () => {
+  sandbox.TWi = -1;
+  const t1 = { id: 'x1', amount: 1000, updatedAt: 1 };
+  const other = { id: 'x2', amount: 500, updatedAt: 1 };
+  sandbox.DB = { txns: [t1, other] };
+  sandbox.lastUndo = null;
+  sandbox.deleteTxnsUndo(new Set(['x1']));
+  sandbox.lastUndo.undoFn();
+  const restored = sandbox.DB.txns.find(t => t.id === 'x1');
+  assert.strictEqual(restored.updatedAt, 'test-updatedAt', '되살린 내역에는 touch()가 호출되어야 함');
+  assert.strictEqual(other.updatedAt, 1, '무관한 내역은 그대로 유지되어야 함');
+  sandbox.TWi = -1;
+});
 test('deleteTxnsUndo: 튜토리얼 모드에서 막히면 deletedIds도 전혀 건드리지 않는다(app-evolve cycle89)', () => {
   sandbox.TWi = 0;
   const t = { id: 'x1', amount: 1000 };
@@ -2212,6 +2225,17 @@ test('deleteRecsUndo: 삭제 시 DB.deletedIds에 시각을 남기고, undo하�
   assert.ok(typeof sandbox.DB.deletedIds.r1 === 'number' && sandbox.DB.deletedIds.r1 >= before, 'r1에 삭제 시각이 기록되어야 함');
   sandbox.lastUndo.undoFn();
   assert.strictEqual(sandbox.DB.deletedIds.r1, undefined, '되돌리면 r1의 툼스톤이 지워져야 함');
+  sandbox.TWi = -1;
+});
+test('deleteRecsUndo: undo로 되살린 반복에는 touch()가 호출되어 updatedAt이 갱신된다(app-evolve cycle94)', () => {
+  sandbox.TWi = -1;
+  const rec = { id: 'r1', category: '식비', amount: 1000, updatedAt: 1 };
+  sandbox.DB = { recurrences: [rec] };
+  sandbox.lastUndo = null;
+  sandbox.deleteRecsUndo(new Set(['r1']));
+  sandbox.lastUndo.undoFn();
+  const restored = sandbox.DB.recurrences.find(r => r.id === 'r1');
+  assert.strictEqual(restored.updatedAt, 'test-updatedAt', '되살린 반복에는 touch()가 호출되어야 함');
   sandbox.TWi = -1;
 });
 
@@ -2286,6 +2310,18 @@ test('deleteAssetsUndo: 삭제 시 DB.deletedIds에 시각을 남기고, undo하
   sandbox.lastUndo.undoFn();
   assert.strictEqual(sandbox.DB.deletedIds.a1, undefined, '되돌리면 a1의 툼스톤이 지워져야 함');
   assert.strictEqual(sandbox.DB.deletedIds.a2, undefined, '되돌리면 a2의 툼스톤도 지워져야 함');
+  sandbox.TWi = -1;
+});
+test('deleteAssetsUndo: undo로 되살린 자산에는 touch()가 호출되어 updatedAt이 갱신된다(app-evolve cycle94)', () => {
+  sandbox.TWi = -1;
+  const a1 = { id: 'a1', name: '통장1', updatedAt: 1 };
+  sandbox.DB = { assets: [a1], recurrences: [] };
+  sandbox.lastUndo = null;
+  sandbox.snapshotCalls = [];
+  sandbox.deleteAssetsUndo(new Set(['a1']));
+  sandbox.lastUndo.undoFn();
+  const restored = sandbox.DB.assets.find(a => a.id === 'a1');
+  assert.strictEqual(restored.updatedAt, 'test-updatedAt', '되살린 자산에는 touch()가 호출되어야 함');
   sandbox.TWi = -1;
 });
 
@@ -4127,6 +4163,23 @@ test('mergeCollection: updatedAt이 없는 레거시 레코드도 크래시하�
 test('mergeCollection: localArr/remoteArr/deletedIds가 없어도(undefined) 터지지 않는다', () => {
   const out = sandbox.mergeCollection(undefined, undefined, undefined, undefined);
   assert.strictEqual(out.length, 0);
+});
+test('mergeCollection: 로컬에서 삭제 후 undo로 되살린 내역은(touch()로 updatedAt이 삭제 시각 이후로 갱신됨), 원격이 아직 그 삭제(tombstone)만 알고 있어도 병합에서 살아남는다(app-evolve cycle94 통합 테스트 — 수정 전에는 undo 콜백에 touch()가 없어 되살린 레코드의 updatedAt이 삭제 이전 값 그대로였고, 그 값은 항상 그 삭제 자체의 tombstone 시각보다 작아 mergeCollection의 delRemoteTs!=null&&!r 분기가 l.updatedAt>delRemoteTs 조건을 만족 못 해 병합 결과에서 조용히 완전히 탈락시켰음)', () => {
+  const deleteTs = 1000; // 삭제(및 원격이 알고 있는 tombstone) 시각
+  // touch()가 실제로 하는 일(updatedAt = 삭제 이후의 현재 시각)을 그대로 흉내낸 되살아난 레코드
+  const restoredByUndo = { id: 't1', memo: 'restored-by-undo', updatedAt: deleteTs + 500 };
+  const localDeletedIds = {}; // undo가 로컬 tombstone은 이미 지움
+  const remoteDeletedIds = { t1: deleteTs }; // 원격은 아직 이 삭제만 알고 있음(t1이 remoteArr엔 없음)
+  const out = sandbox.mergeCollection([restoredByUndo], [], localDeletedIds, remoteDeletedIds);
+  assert.strictEqual(out.length, 1, '되살린 내역이 병합 결과에서 사라지면 안 됨');
+  assert.strictEqual(out[0].memo, 'restored-by-undo');
+});
+test('mergeCollection: (회귀 방지) touch() 없이 되살린 내역처럼 updatedAt이 삭제 이전 값 그대로면, 원격의 tombstone에 병합에서 탈락한다 — 수정 전 버그가 실제로 이 조건에서 발생했음을 보여주는 대조군', () => {
+  const deleteTs = 1000;
+  const restoredWithoutTouch = { id: 't1', memo: 'restored-without-touch', updatedAt: 1 }; // 삭제 이전 시각 그대로(버그 상황)
+  const remoteDeletedIds = { t1: deleteTs };
+  const out = sandbox.mergeCollection([restoredWithoutTouch], [], {}, remoteDeletedIds);
+  assert.strictEqual(out.length, 0, 'touch() 없이는 되살린 내역이 tombstone에 져서 사라져야 함(수정 전 버그 재현)');
 });
 
 /* ---------- localHasUnsyncedChanges: afterCloudAuth()가 부팅 시 로컬을 조용히 덮어쓸지 판단하는 순수 로직 ---------- */

@@ -1,19 +1,8 @@
 {
-  "cycle": 94,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "삭제 취소(undo) 시 되살아난 레코드에 touch() 누락 — 병합 시 되돌리기 자체가 조용히 사라지는 버그",
-    "why": "deleteTxnsUndo/deleteRecsUndo/deleteAssetsUndo(index.html:6197,6202,6207의 undo 콜백, 각각 6201/6206/6214-6215줄)는 삭제된 배열을 다시 push하고 DB.deletedIds에서 해당 id를 지우기만 할 뿐 되살린 객체에 touch()를 호출하지 않는다. mergeCollection()의 tombstone 규칙(index.html:1432-1434, `delRemoteTs!=null&&!r` 분기)은 로컬 사본을 살리는 조건을 `l.updatedAt>delRemoteTs`로만 판단하는데, undo로 되살린 객체의 updatedAt은 삭제 이전 시점 그대로라 그 삭제 자체의 tombstone 시각(반드시 그보다 나중에 찍힘)보다 작다. 즉 사용자가 로컬에서 삭제 후 undo 토스트로 되살렸어도, 그 변경이 클라우드에 아직 반영되기 전에 병합이 발생하면(다른 기기가 그 삭제를 먼저 봤거나, 재로그인 시 afterCloudAuth, pushCloud() 충돌 재시도) mergeCollection이 이 레코드를 조용히 완전히 탈락시켜 '되돌리기' 자체가 사라진다. doRenameOwner/doRenameCat/rollPendingTransfers/saveQuickAmount(cycle92-94)와 같은 touch() 누락 계열이지만, 그 사례들은 '오래된 사본이 이긴다'는 값 손실이었던 반면 이번은 삭제 tombstone과 직접 상호작용해 데이터가 통째로 없어지는 더 심각한 결과다. cycle94 develop이 이 넓은 undo-touch() 누락 패턴을 후보로 남겼는데, 이 세 함수가 deletedIds tombstone과 직접 얽혀 있어 그중 가장 심각하고 명확한 사례다.",
-    "approach": "세 undo 콜백(index.html:6201 deleteTxnsUndo, 6206 deleteRecsUndo, 6214-6215 deleteAssetsUndo) 각각에서 배열에 다시 push하기 전에 removed 배열의 각 객체에 touch()를 적용한다(예: `removed.forEach(touch)` 또는 push 인자를 매핑). deletedIds에서 id를 지우는 기존 로직은 그대로 둔다. test/run.js에 회귀 테스트 추가: (1) 세 함수 각각 삭제 후 undo하면 되살아난 레코드의 updatedAt이 삭제 시 찍힌 tombstone 시각보다 커지는지 직접 검증, (2) mergeCollection()에 실제 시나리오를 재현하는 통합 테스트 1개 이상 추가 — 로컬은 undo로 살아있고 local deletedIds엔 해당 id 없음, 원격은 여전히 삭제된 채 tombstone만 갖고 있는 상태를 넣어 이제는 그 레코드가 병합 결과에서 살아남는지(수정 전이라면 사라졌을 것) 확인. 세 함수 중 deleteAssetsUndo는 recs.forEach(r=>r.active=true)도 같이 하므로 그 부분은 건드리지 않는다."
-  },
+  "cycle": 95,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 89,
-      "phase": "advance",
-      "timestamp": "2026-09-26T09:12:00.000Z",
-      "summary": "critique(cycle89) 계획대로 deletedAt 툼스톤 도입. DB.deletedIds={} (id -> 삭제 시각 ms) 평평한 맵 하나를 DB.deletedBal/DB.deletedType과 동일한 지연 초기화 패턴으로 추가, deleteTxnsUndo/deleteRecsUndo/deleteAssetsUndo(index.html:6111-6123) 정확히 3곳에만 배선 — 삭제 직전 ids.forEach(id=>DB.deletedIds[id]=now), undo 콜백에서 ids.forEach(id=>delete DB.deletedIds[id])로 되돌리기. deleteAssetsUndo의 recs.forEach(r=>r.active=false)(연결된 반복거래 비활성화)는 계획대로 상태 변경이라 툼스톤 대상에서 제외, 자산 id만 스탬프. 계획이 지목한 3곳(updateBalanceAdjust 내부 임시 제거-재푸시, 방금 분리한 레코드 undo, CSV 가져오기 undo)은 방금 생성된 미동기화 레코드 undo라 이번 슬라이스에서 의도적으로 제외. sanitizeBackup()(index.html:5025)이 Object.assign({},obj,{txns,assets,recurrences})로 obj의 알 수 없는 최상위 필드를 그대로 보존함을 코드로 확인해(화이트리스트가 아니라 명시된 세 키만 교체) deletedIds도 백업/클라우드 왕복에 유실 없이 보존됨을 검증. deletedAt/deletedIds 값을 이번 슬라이스 어디에서도 읽지 않아(3-way 병합 로직은 아직 없음) 동작 변화 없이 안전(cycle86 touch() 도입과 동일한 안전 패턴). test/run.js: 세 함수 모두 기존에 FUNCTIONS로 노출돼 있어 신규 등록·스텁 불필요, 기존 describe 블록(2093-2230 부근)에 회귀 테스트 4개 추가 — deleteTxnsUndo(다건 삭제 시 각 id에 시각 기록 + undo 시 정확히 지움, twGuard가 막으면 DB.deletedIds 자체가 생기지 않음 2개), deleteRecsUndo(동일 패턴 1개), deleteAssetsUndo(다건 삭제/undo 1개). 두 인라인 <script> 블록 node --check 통과, node test/run.js 609/609 통과(기존 605 + 신규 4). APP_VERSION 1.46.48->1.46.49, sw.js CACHE v210->v211. critique(cycle89)가 남긴 이월 목록에서 이번 항목은 완료 처리하고, 남은 (1) pushCloud() 3-way 병합(이제 deletedIds 준비 완료로 실제 착수 가능), (2) askRelinkDeleted의 touch() 테스트 커버리지 인프라 정비는 다음 critique로 이월.",
-      "commit": null
-    },
     {
       "cycle": 90,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-27T04:07:00.000Z",
       "summary": "index.html을 직접 읽어 재검토, cycle94 develop이 남긴 '넓은 undo-touch() 누락 패턴' 후보와 이월 목록(deletedIds GC, askRelinkDeleted 테스트 인프라)을 비교 평가. deleteTxnsUndo/deleteRecsUndo/deleteAssetsUndo(index.html:6197-6215)의 undo 콜백을 직접 읽어, 되살린 객체에 touch()가 없어 mergeCollection()의 tombstone 살림 조건(`delRemoteTs!=null&&!r`이면 `l.updatedAt>delRemoteTs`일 때만 살림, index.html:1432-1434)을 만족 못 함을 손으로 추적 확인 — undo로 되살아난 객체의 updatedAt이 그 삭제 자체의 tombstone 시각보다 항상 작으므로, 로컬의 undo가 아직 클라우드에 안 올라간 사이 병합이 일어나면 되살린 레코드가 병합 결과에서 통째로 탈락한다(값이 오래된 사본에 지는 doRenameOwner류보다 심각 — 레코드 자체가 사라짐). recApply/recSave의 다른 undo 콜백들(3517/3523/3544/3556/3560)도 같은 계열이지만 deletedIds tombstone과 직접 얽혀 있지 않아 최악의 경우 값이 stale 사본에 지는 수준(기존 사례와 동급)이라 이번엔 제외. 경쟁 후보 재점검: deletedIds GC(오래된 tombstone 정리)는 여전히 순수 정리 작업이라 시급성 낮음, askRelinkDeleted 테스트 인프라는 테스트 커버리지 문제일 뿐 실제 버그가 아님 — 둘 다 이번 발견된 실제 데이터 유실 버그보다 후순위로 판단해 다음 critique로 계속 이월. pending_advance_plan에 세 undo 콜백에 removed.forEach(touch) 추가 + mergeCollection 통합 테스트로 이 시나리오(로컬 undo 후 병합 시 되살아난 레코드 생존) 검증하는 계획 저장. 코드 변경 없음(읽기 전용 조사).",
+      "commit": null
+    },
+    {
+      "cycle": 94,
+      "phase": "advance",
+      "timestamp": "2026-09-27T05:10:00.000Z",
+      "summary": "critique(cycle94) 계획대로 deleteTxnsUndo/deleteRecsUndo/deleteAssetsUndo(index.html:6197-6215) 세 undo 콜백의 touch() 누락을 수정했다. 각 콜백에서 removed 배열을 DB.txns/DB.recurrences/DB.assets에 다시 push하기 직전에 removed.forEach(touch) 한 줄씩 추가(deleteAssetsUndo의 recs.forEach(r=>r.active=true)는 계획대로 그대로 둠). touch()가 되살린 객체들의 updatedAt을 현재 시각으로 갱신해, mergeCollection()의 tombstone 살림 조건(l.updatedAt>delRemoteTs)을 undo 이후 항상 만족하게 됨 — 로컬 undo가 클라우드에 반영되기 전에 병합이 일어나도 되살린 레코드가 더 이상 탈락하지 않는다. test/run.js: 세 함수 각각에 회귀 테스트 1개씩 추가(undo로 되살린 레코드에 touch()가 호출돼 updatedAt이 'test-updatedAt'으로 갱신됨, deleteTxnsUndo는 무관한 내역이 그대로인지도 함께 확인) — sandbox의 touch 스텁이 Date.now() 대신 고정 문자열을 반환하는 기존 관례(doRenameOwner 등과 동일)를 그대로 따름. mergeCollection 통합 테스트 2개 추가 — (i) touch()로 updatedAt이 삭제 시각 이후로 갱신된 되살아난 레코드는 원격이 그 삭제의 tombstone만 갖고 있어도 병합에서 살아남음, (ii) 대조군으로 touch() 없이 updatedAt이 삭제 이전 값 그대로면 같은 tombstone에 병합에서 탈락함(수정 전 버그를 mergeCollection 레벨에서 재현) — 실제 deleteTxnsUndo 호출 체인을 그대로 쓰면 sandbox의 touch 스텁이 문자열을 반환해 숫자 비교가 안 되므로, touch()가 실제로(Date.now() 기반으로) 만들어낼 값을 손으로 구성해 mergeCollection 자체의 순수 로직만 검증. git stash로 index.html만 되돌려 세 직접 테스트가 실제로 실패(632/635, 3개)함을 확인한 뒤 재적용. 두 인라인 <script> 블록 node --check 통과, node test/run.js 635/635 통과(기존 630 + 신규 5). APP_VERSION 1.46.58->1.46.59, sw.js CACHE v220->v221. critique(cycle94)가 남긴 이월 목록(deletedIds GC, askRelinkDeleted 테스트 인프라)은 그대로 다음 critique로 이월.",
       "commit": null
     }
   ]
