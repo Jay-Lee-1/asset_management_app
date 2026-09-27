@@ -77,7 +77,7 @@ const FUNCTIONS = [
   'saveRec', 'recHistFieldsChanged', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
   'monthStartStr', 'monthEndStr', 'expandRec', 'allTxns', 'txnsByDateInRange', 'spendByCategory', 'spendTrend', 'spendTrendBadge', 'histSumTotals',
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'expenseBreakdownCard',
-  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asOpenCur', 'asCur', 'asToggleNeg', 'openAssetSheet', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'isCloudConflict', 'decidePushOutcome', 'mergeCollection', 'mergeRemoteDataIntoLocal', 'fmtAmt',
+  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asOpenCur', 'asCur', 'asToggleNeg', 'openAssetSheet', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'isCloudConflict', 'decidePushOutcome', 'mergeCollection', 'gcTombstones', 'mergeRemoteDataIntoLocal', 'fmtAmt',
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges', 'shouldRetryCloudSync',
   'pullCloud', 'afterCloudAuth', 'resolveCloudPullRemote', 'pushCloud',
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
@@ -4215,6 +4215,64 @@ test('mergeCollection: (회귀 방지) touch() 없이 되살린 내역처럼 upd
   assert.strictEqual(out.length, 0, 'touch() 없이는 되살린 내역이 tombstone에 져서 사라져야 함(수정 전 버그 재현)');
 });
 
+/* ---------- gcTombstones: migrate()가 부팅마다 DB.deletedIds에서 오래된(maxAgeMs 이전) tombstone을
+ * 걸러내는 순수 함수(app-evolve cycle95 advance) — GC 없이는 삭제할 때마다 쌓이기만 해 수년 사용 시
+ * 무한히 커지고, 매 pushCloud/pullCloud마다 전체가 그대로 오간다. ---------- */
+test('gcTombstones: maxAgeMs보다 오래된 tombstone은 제거된다', () => {
+  const now = 10_000;
+  const out = sandbox.gcTombstones({ old: now - 500 - 1 }, now, 500);
+  assert.strictEqual(Object.keys(out).length, 0);
+});
+test('gcTombstones: maxAgeMs 이내인 tombstone은 유지된다', () => {
+  const now = 10_000;
+  const out = sandbox.gcTombstones({ recent: now - 100 }, now, 500);
+  assert.strictEqual(Object.keys(out).length, 1);
+  assert.strictEqual(out.recent, now - 100);
+});
+test('gcTombstones: 경계값(정확히 maxAgeMs만큼 지난 tombstone)은 유지 쪽으로 처리된다(<=)', () => {
+  const now = 10_000;
+  const out = sandbox.gcTombstones({ boundary: now - 500 }, now, 500);
+  assert.strictEqual(Object.keys(out).length, 1);
+  assert.strictEqual(out.boundary, now - 500);
+});
+test('gcTombstones: deletedIds가 비어있거나 undefined여도 안전하다', () => {
+  assert.strictEqual(Object.keys(sandbox.gcTombstones({}, Date.now(), 500)).length, 0);
+  assert.strictEqual(Object.keys(sandbox.gcTombstones(undefined, Date.now(), 500)).length, 0);
+});
+test('gcTombstones: maxAgeMs를 생략하면 기본값(400일)이 적용된다', () => {
+  const now = Date.now();
+  const DAY = 1000 * 60 * 60 * 24;
+  const out = sandbox.gcTombstones({ old: now - 401 * DAY, recent: now - 399 * DAY }, now);
+  assert.strictEqual(Object.keys(out).length, 1);
+  assert.strictEqual(out.recent, now - 399 * DAY);
+});
+test('migrate: DB.deletedIds의 오래된(400일 초과) tombstone은 sanitize되어 사라지고, 그 이내인 것은 유지된다(app-evolve cycle95 advance 통합 테스트)', () => {
+  const now = Date.now();
+  const DAY = 1000 * 60 * 60 * 24;
+  sandbox.DB = {
+    version: 5, catsV2: true,
+    settings: { themeMode: 'system', includeScheduled: false, assetSort: 'custom', groupOrder: [...sandbox.DEFAULT_GROUP_ORDER] },
+    owners: ['나', '배우자', '공용'],
+    assets: [], txns: [], recurrences: [], inquiries: [],
+    categories: { expense: [...sandbox.EXP_CATS_DEFAULT], income: [...sandbox.INC_CATS_DEFAULT], saving: [...sandbox.SAV_CATS_DEFAULT] },
+    deletedIds: { old: now - 500 * DAY, recent: now - 10 * DAY },
+  };
+  sandbox.migrate();
+  assert.strictEqual(Object.keys(sandbox.DB.deletedIds).length, 1);
+  assert.strictEqual(sandbox.DB.deletedIds.recent, now - 10 * DAY);
+});
+test('migrate: DB.deletedIds가 아예 없어도(migrate 이전 상태) 예외 없이 빈 객체로 채워진다', () => {
+  sandbox.DB = {
+    version: 5, catsV2: true,
+    settings: { themeMode: 'system', includeScheduled: false, assetSort: 'custom', groupOrder: [...sandbox.DEFAULT_GROUP_ORDER] },
+    owners: ['나', '배우자', '공용'],
+    assets: [], txns: [], recurrences: [], inquiries: [],
+    categories: { expense: [...sandbox.EXP_CATS_DEFAULT], income: [...sandbox.INC_CATS_DEFAULT], saving: [...sandbox.SAV_CATS_DEFAULT] },
+  };
+  assert.doesNotThrow(() => sandbox.migrate());
+  assert.strictEqual(Object.keys(sandbox.DB.deletedIds).length, 0);
+});
+
 /* ---------- localHasUnsyncedChanges: afterCloudAuth()가 부팅 시 로컬을 조용히 덮어쓸지 판단하는 순수 로직 ---------- */
 test('localHasUnsyncedChanges: 마지막 저장이 마지막 동기화보다 나중이면 미동기화 변경이 있다', () => {
   assert.strictEqual(sandbox.localHasUnsyncedChanges(2000, 1000), true);
@@ -4281,7 +4339,7 @@ test('afterCloudAuth: 로컬에 미동기화 편집이 있어도 DB.txns/recurre
       { id: 'local-only', date: '2026-01-01', updatedAt: 100 },
       { id: 'both', date: '2026-01-01', memo: 'stale-local', updatedAt: 100 },
     ],
-    deletedIds: { 'local-deleted': 300 },
+    deletedIds: { 'local-deleted': Date.now() - 300 }, // gcTombstones(app-evolve cycle95)가 오래된 것으로 오인해 지우지 않도록 현재 시각 근방 값 사용
   };
   sandbox.CLOUD_UID = 'u1';
   sandbox.CLOUD_SYNC_STATE = 'idle';
@@ -4301,7 +4359,7 @@ test('afterCloudAuth: 로컬에 미동기화 편집이 있어도 DB.txns/recurre
           { id: 'remote-only', date: '2026-01-01', updatedAt: 100 },
           { id: 'both', date: '2026-01-01', memo: 'newer-remote', updatedAt: 200 },
         ],
-        deletedIds: { 'remote-deleted': 400 },
+        deletedIds: { 'remote-deleted': Date.now() - 400 },
       },
       updated_at: '2026-01-01T00:00:00.000Z',
     },
@@ -4325,8 +4383,8 @@ test('afterCloudAuth: 로컬에 미동기화 편집이 있어도 DB.txns/recurre
   assert.ok(sandbox.DB.assets.some((a) => a.id === 'local-only-asset'));
   assert.ok(sandbox.DB.assets.some((a) => a.id === 'remote-asset'));
   assert.strictEqual(sandbox.DB.assets.find((a) => a.id === 'both-asset').name, 'newer-remote');
-  assert.strictEqual(sandbox.DB.deletedIds['local-deleted'], 300, '양쪽 deletedIds가 합쳐져야 함');
-  assert.strictEqual(sandbox.DB.deletedIds['remote-deleted'], 400, '양쪽 deletedIds가 합쳐져야 함');
+  assert.ok(sandbox.DB.deletedIds['local-deleted'] != null, '양쪽 deletedIds가 합쳐져야 함');
+  assert.ok(sandbox.DB.deletedIds['remote-deleted'] != null, '양쪽 deletedIds가 합쳐져야 함');
   sandbox._lsMap = null;
 });
 test('afterCloudAuth: 로컬에 미동기화 편집이 없으면 remote를 그대로 채택하고 markCloudSynced를 부른다', async () => {

@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.60';
+const APP_VERSION='1.46.61';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1437,6 +1437,18 @@ function mergeCollection(localArr,remoteArr,localDeletedIds,remoteDeletedIds){
   if(l){out.push(l);return}
   if(r){out.push(r)}
  });
+ return out;
+}
+/* deletedIds는 삭제할 때마다(deleteTxnsUndo 등) 영구히 쌓이기만 하고 지금까지 지우는 경로가
+ * 없어 수년 사용하면 무한히 커지고, 매 pushCloud/pullCloud마다 전체가 그대로 오간다. 순수 함수로
+ * maxAgeMs(기본 400일)보다 오래된 tombstone만 걸러낸 새 객체를 반환한다(원본 불변). 이 기간이면
+ * mergeCollection()의 tombstone 살림 조건(살아있는 사본의 updatedAt>tombstone시각)을 발동시킬 만한
+ * '그 사이 동기화 안 된 오프라인 사본'은 이 앱의 실사용 패턴(매일 열어보는 가계부)에서 사실상
+ * 없다고 보고 안전하게 지운다. */
+function gcTombstones(deletedIds,now,maxAgeMs){
+ maxAgeMs=maxAgeMs==null?1000*60*60*24*400:maxAgeMs;
+ const out={};
+ Object.keys(deletedIds||{}).forEach(id=>{if(now-deletedIds[id]<=maxAgeMs)out[id]=deletedIds[id]});
  return out;
 }
 /* afterCloudAuth()와 pushCloud()의 conflict 재시도 경로가 공유하는 3-way 병합 실행기 —
@@ -1936,6 +1948,7 @@ function migrate(){
  }
  if(!DB.categories.expense||!DB.categories.expense.length)DB.categories.expense=[...EXP_CATS_DEFAULT];
  DB.inquiries=DB.inquiries||[];
+ DB.deletedIds=gcTombstones(DB.deletedIds||{},Date.now()); /* 부팅 때마다 오래된 tombstone 정리(GC) */
 }
 /* storageOutcomeMsg: localStorage 쓰기 시도 결과(ok)와 직전 상태(wasOk)를 놓고 어떤 토스트를
  * 띄울지 결정하는 순수 함수. save()가 앱 곳곳(~70곳)에서 호출될 때마다 매번 토스트를 띄우면
