@@ -1291,7 +1291,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.65';
+const APP_VERSION='1.46.66';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4955,6 +4955,12 @@ function sanitizeBackup(obj){
   if(!r||!r.id||!r.startDate){droppedCount++;return}
   const d=Object.assign({},r);
   if('amount' in d){const n=sanitizeAmount(d.amount,0);if(n!==d.amount){d.amount=n;fixedCount++}} /* txns와 동일: 크기 필드라 음수 불가 */
+  /* 매월 반복의 day는 saveRec/saveTx가 저장 직전 clampDay()로 항상 1~31 숫자 또는 'last'로
+   * 맞춰두지만, 백업 파일/원격 데이터는 그 경로를 거치지 않고 그대로 들어온다. 문자열·NaN·음수
+   * day가 그대로 남으면 recDates()의 Math.min(r.day,lastDay(y,m))이 "2024-01-NaN"·"2024-01--5"
+   * 같은 깨진 날짜 문자열을 매달 계속 만들어내 가계부/캘린더를 조용히 오염시키고(크래시는 안 남),
+   * recFreqLabel()도 "매월 NaN일"처럼 그대로 보여준다 — amount와 같은 이유로 여기서도 정규화한다. */
+  if(d.freq==='monthly'&&d.day!=='last'){const before=d.day;clampDay(d);if(d.day!==before)fixedCount++}
   if(d.edits&&typeof d.edits==='object'){
    const edits={};
    Object.keys(d.edits).forEach(date=>{

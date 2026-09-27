@@ -1,15 +1,8 @@
 {
   "cycle": 98,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 93,
-      "phase": "develop",
-      "timestamp": "2026-09-26T22:08:45.256Z",
-      "summary": "rollPendingTransfers() touch() 누락 버그 수정. 이체 확인 설정이 켜져 있을 때 기한이 지난 미확인 이체의 date를 오늘로 당기는 이 함수가(index.html:1474) t.date만 바꾸고 touch(t)를 부르지 않았다. DB.txns.forEach 콜백에 touch(t) 한 줄 추가. test/run.js에 회귀 테스트 2개 추가. 두 인라인 <script> 블록 node --check 통과, node test/run.js 626/626 통과(기존 624 + 신규 2). APP_VERSION 1.46.55->1.46.56, sw.js CACHE v217->v218.",
-      "commit": null
-    },
     {
       "cycle": 93,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-27T18:14:00.000Z",
       "summary": "critique(cycle97) 계획대로 순수 함수 16개(날짜: addDays/daysBetween/shiftWeekend/recDates/addMonthsStr/recNthDate/recCountUntil/truncateRecEnd, 병합/tombstone: mergeCollection/gcTombstones/isCloudConflict/decidePushOutcome/computeRelinkBaseline, CSV: parseCSV/csvDateValid/csvDedupeKey)를 새 logic.js로 옮겼다. index.html의 두 CDN <script> 태그 뒤·메인 인라인 <script> 앞에 <script src=\"logic.js\"></script> 추가(함수는 일반 전역이 되므로 호출부 변경 없음). sw.js SHELL에 ./logic.js 추가, CACHE v226->v227. test/run.js는 이 16개를 FUNCTIONS 화이트리스트에서 빼고, logic.js를 index.html처럼 그대로 읽어(logicSrc) extracted보다 먼저 같은 vm 컨텍스트에 로드하도록 교체 — 이 함수들에 한해 extractFunction의 정규식 슬라이싱 의존을 완전히 제거했다(단, 남겨둔 lastDay/addMonths 등 의존 함수는 여전히 index.html에 있고 전역이라 문제 없음). 두 인라인 <script> 블록과 logic.js 모두 node --check 통과, node test/run.js 655/655 통과(테스트 개수 변화 없음 — 동작 변경 없는 순수 리팩터링이라 새 테스트도 불필요). APP_VERSION 1.46.64->1.46.65. critique(cycle97)가 밝힌 대로 나머지 FUNCTIONS 화이트리스트(~230여개)의 logic.js 이전은 점진적 과제로 다음 사이클들에 이월.",
+      "commit": null
+    },
+    {
+      "cycle": 98,
+      "phase": "develop",
+      "timestamp": "2026-09-27T19:10:00.000Z",
+      "summary": "general-purpose 서브에이전트로 sanitizeBackup()(index.html:4918-4970, 백업 파일 복원과 클라우드 pull/merge 양쪽에서 공유하는 방어 검증 함수)의 검증 공백을 발견해 수정. 이 함수는 amount/startDate/id는 이미 검증하지만, 정상 앱 플로우에서는 저장 직전 clampDay()가 항상 1~31 숫자 또는 'last'로 맞춰주는 반복거래의 day 필드는 검증하지 않았다 — 백업 파일이나 다른 기기의 클라우드 동기화 데이터는 이 경로를 거치지 않으므로, 문자열·NaN·범위 밖 day가 그대로 들어오면 recDates()의 Math.min(r.day,lastDay(y,m))이 \"2024-01-NaN\" 같은 깨진 날짜를 매달 계속 만들어내며(크래시는 없음) recFreqLabel()도 그대로 표시하는 조용한 데이터 오염이었다. sanitizeBackup() 반복거래 루프에 freq==='monthly'&&day!=='last' 조건으로 clampDay()를 재사용해 정규화, fixedCount에 반영. test/run.js에 회귀 테스트 2개 추가(비정상 day 값 clamp 검증, 'last'/비월간 반복은 그대로 유지 검증). 두 인라인 <script> 블록과 logic.js/sw.js 모두 node --check 통과, node test/run.js 657/657 통과(기존 655 + 신규 2). APP_VERSION 1.46.65->1.46.66, sw.js CACHE v227->v228.",
       "commit": null
     }
   ]

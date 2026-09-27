@@ -3319,6 +3319,34 @@ test('sanitizeBackup: startDate 없는 반복거래는 제거한다(recDates()�
   assert.strictEqual(data.recurrences[0].id, 'r2');
   assert.strictEqual(droppedCount, 1);
 });
+test('sanitizeBackup: 매월 반복의 day가 숫자가 아니거나 범위를 벗어나면 clampDay와 동일하게 보정한다(recDates()의 "2024-01-NaN" 같은 깨진 날짜 생성을 방지)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    recurrences: [
+      { id: 'r1', freq: 'monthly', startDate: '2026-01-01', amount: 1000, day: '오' },
+      { id: 'r2', freq: 'monthly', startDate: '2026-01-01', amount: 1000, day: 500 },
+      { id: 'r3', freq: 'monthly', startDate: '2026-01-01', amount: 1000, day: -5 },
+      { id: 'r4', freq: 'monthly', startDate: '2026-01-01', amount: 1000, day: 15 },
+    ],
+  });
+  assert.strictEqual(data.recurrences[0].day, 1);
+  assert.strictEqual(data.recurrences[1].day, 31);
+  assert.strictEqual(data.recurrences[2].day, 1);
+  assert.strictEqual(data.recurrences[3].day, 15, '정상 범위 값은 그대로 유지되어야 함');
+  assert.strictEqual(fixedCount, 3);
+});
+test("sanitizeBackup: 매월 반복의 day가 'last'(말일)면 그대로 두고(clampDay가 잘못 1일로 바꾸지 않음), 매월이 아닌 반복은 day를 건드리지 않는다", () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    recurrences: [
+      { id: 'r1', freq: 'monthly', startDate: '2026-01-01', amount: 1000, day: 'last' },
+      { id: 'r2', freq: 'weekly', startDate: '2026-01-01', amount: 1000, day: 'garbage' },
+    ],
+  });
+  assert.strictEqual(data.recurrences[0].day, 'last');
+  assert.strictEqual(data.recurrences[1].day, 'garbage');
+  assert.strictEqual(fixedCount, 0);
+});
 
 /* ---------- spendByCategory: 지출 분석 카테고리별 합계는 잔액 조정(기본 제외)을 빼야 한다 ---------- */
 test('spendByCategory: 수지에 포함되지 않은 잔액 조정 지출은 카테고리 합계에서 제외된다', () => {
