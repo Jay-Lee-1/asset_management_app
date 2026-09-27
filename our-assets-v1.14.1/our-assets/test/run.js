@@ -88,6 +88,7 @@ const FUNCTIONS = [
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards',
   'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate',
   'genSalt', 'pbkdf2Hash', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer', 'openConfirmTransfer',
+  'confirmTransferNow', 'postponeTransfer', 'confirmRecNow',
   'foreignSaveIsNewer', 'applyForeignSave', 'openCopyBackup', 'copyBackup', 'findDonors',
   'recIsVarying', 'varyingRecs', 'fixShortfallDefaultDate', 'openFixShortfall', 'lastActualAmount', 'openQuickAmount',
   'backupDue', 'planNegatives', 'homeAlerts', 'updateAlerts',
@@ -5877,6 +5878,43 @@ test('postponeRecTransfer: 미룬 날짜가 이미 내일이면(예: weekly가 �
   sandbox.postponeRecTransfer('r1', tomorrow);
   const skipCount = sandbox.DB.recurrences[0].skip.filter(d => d === tomorrow).length;
   assert.strictEqual(skipCount, 1, 'date와 내일이 같아도 skip 항목은 중복 없이 1개여야 함');
+});
+/* postponeRecTransfer: 새로 생기는 일회성 거래뿐 아니라 r.skip을 두 번 건드리는 반복 자체에도
+ * touch()가 필요함 (app-evolve cycle96 develop) — confirmTransferNow/postponeTransfer/confirmRecNow와
+ * 같은 이유로, r.skip 변경이 touch() 없이 남으면 mergeCollection()이 updatedAt만 보고 병합하다
+ * 다른 기기의 옛 사본이 이겨 미룬 결과(skip 추가)가 조용히 되돌아갈 수 있음. */
+test('postponeRecTransfer: 반복(r) 자체에도 touch()가 호출된다', () => {
+  setupRecTransferDB();
+  sandbox.postponeRecTransfer('r1', '2026-09-17');
+  assert.strictEqual(sandbox.DB.recurrences[0].updatedAt, 'test-updatedAt', 'r.skip이 바뀐 반복 자체에도 touch()가 호출되어야 함');
+});
+
+/* ---------- confirmTransferNow/postponeTransfer/confirmRecNow: 이체 확인/미루기 처리에
+ * touch() 누락 (app-evolve cycle96 develop) — rollPendingTransfers/doRenameOwner/doRenameCat과
+ * 완전히 같은 불변식(mergeCollection()은 updatedAt만 보고 승자를 고름)인데, "이체 확인" 시트의
+ * 세 액션(완료 처리/내일로 미루기 - 일반 이체, 완료 처리 - 반복 이체 회차)만 이 audit에서
+ * 빠져 있었다. ---------- */
+test('confirmTransferNow: 완료 처리한 이체에는 touch()가 호출된다', () => {
+  sandbox.DB = { txns: [{ id: 't1', type: 'transfer', confirmed: false, amount: 5000 }], recurrences: [], settings: {} };
+  sandbox.confirmTransferNow('t1');
+  const t = sandbox.DB.txns[0];
+  assert.strictEqual(t.confirmed, true);
+  assert.strictEqual(t.updatedAt, 'test-updatedAt', '완료 처리된 이체에는 touch()가 호출되어야 함');
+});
+test('postponeTransfer: 내일로 미룬 이체에는 touch()가 호출된다', () => {
+  sandbox.TODAY = '2026-09-17';
+  sandbox.DB = { txns: [{ id: 't1', type: 'transfer', date: '2026-09-17', confirmed: false, amount: 5000 }], recurrences: [], settings: {} };
+  sandbox.postponeTransfer('t1');
+  const t = sandbox.DB.txns[0];
+  assert.strictEqual(t.date, sandbox.addDays('2026-09-17', 1));
+  assert.strictEqual(t.updatedAt, 'test-updatedAt', '날짜가 미뤄진 이체에는 touch()가 호출되어야 함');
+});
+test('confirmRecNow: 완료 처리한 반복 이체 회차의 반복(r)에는 touch()가 호출된다', () => {
+  setupRecTransferDB();
+  sandbox.confirmRecNow('r1', '2026-09-17');
+  const r = sandbox.DB.recurrences[0];
+  assert.ok(r.confirmedDates.includes('2026-09-17'));
+  assert.strictEqual(r.updatedAt, 'test-updatedAt', 'confirmedDates가 바뀐 반복에는 touch()가 호출되어야 함');
 });
 
 /* ---------- openConfirmTransfer/confirmRecTransfer: 이체 확인 시트에 자산명을 esc() 없이

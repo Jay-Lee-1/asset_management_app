@@ -1,15 +1,8 @@
 {
   "cycle": 96,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 91,
-      "phase": "develop",
-      "timestamp": "2026-09-26T14:15:34.384Z",
-      "summary": "abbr() 반올림 경계 버그 수정. calCellsFor()가 달력 일별 합계를 축약 표시할 때 쓰는 abbr(n)(index.html:3200)이 1e8 미만이면 무조건 만 단위(toFixed 반올림)로 표시했는데, 99,995,000~99,999,999원처럼 반올림 결과가 정확히 10000이 되는 구간에서 자연스러운 \"1억\" 대신 \"10000만\"을 그대로 표시(화면 텍스트+aria-label 둘 다)하던 경계값 버그. man=(a/10000).toFixed(...) 계산 후 Number(man)>=10000이면 \"1억\"으로 승격시키는 분기 추가, 10000 미만은 기존 그대로. test/run.js에 경계 안쪽(99999999,99995000)/바로 바깥(99994999)/음수(-99999999) 4개 회귀 테스트 추가 — git stash로 되돌려 새 테스트가 실패함을 확인 후 재적용. 두 인라인 <script> 블록 node --check 통과, node test/run.js 623/623 통과(기존 619+신규4). APP_VERSION 1.46.51->1.46.52, sw.js CACHE v213->v214.",
-      "commit": null
-    },
     {
       "cycle": 91,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-27T10:09:44.000Z",
       "summary": "critique(cycle95) 계획대로 DB.deletedIds tombstone GC를 구현했다. mergeCollection() 바로 아래(index.html:1442 부근)에 순수 함수 gcTombstones(deletedIds,now,maxAgeMs=400일)을 추가 — maxAgeMs보다 오래된 tombstone만 걸러낸 새 객체를 반환(원본 불변, mergeCollection과 동일 스타일). migrate() 끝부분(정상 부팅 경로 포함, 앱을 열 때마다 항상 실행)에 DB.deletedIds=gcTombstones(DB.deletedIds||{},Date.now()) 한 줄 추가 — 별도 스케줄러·마이그레이션 플래그 없이 매 실행마다 자연스럽게 정리됨. test/run.js: gcTombstones 자체에 계획이 지목한 5가지 케이스(오래된 것 제거/이내인 것 유지/경계값<=은 유지/빈 값·undefined 안전/기본값 400일 적용) 추가, migrate() 통합 테스트 2개(오래된 tombstone이 실제로 sanitize됨, deletedIds가 아예 없어도 안전) 추가 — vm 리얼름이 달라 deepStrictEqual로 객체를 통째 비교하면 구조는 같은데 참조가 다르다는 기존에 알려진 오탐(cycle90 관례)이 이번에도 재현되어 Object.keys().length/개별 필드 비교로 전환. 기존 afterCloudAuth() 통합 테스트가 deletedIds 값으로 300/400 같은 작은 정수를 써왔는데, 실제 Date.now() 기준으로는 1970년 근방(400일보다 훨씬 오래됨)이라 새 GC가 정상적으로 지워버려 테스트가 깨짐을 발견 — 버그가 아니라 테스트 픽스처가 비현실적인 타임스탬프를 쓴 것이므로 Date.now()-300/Date.now()-400으로 교체하고 값 비교도 존재 여부(!=null)로 완화. 두 인라인 <script> 블록 node --check 통과, node test/run.js 645/645 통과(기존 638 + 신규 7). APP_VERSION 1.46.60->1.46.61, sw.js CACHE v222->v223. critique(cycle95)가 남긴 이월 목록(askRelinkDeleted 테스트 인프라)은 다음 critique로 이월.",
+      "commit": null
+    },
+    {
+      "cycle": 96,
+      "phase": "develop",
+      "timestamp": "2026-09-27T11:12:00.000Z",
+      "summary": "general-purpose 서브에이전트로 발견한 이체 확인/미루기 3종 touch() 누락 버그 수정. rollPendingTransfers/doRenameOwner/doRenameCat/saveQuickAmount/delete-undo 3종에 이어 같은 '이체 확인' 기능의 나머지 액션들만 이 audit에서 빠져 있었다: confirmTransferNow(1511, t.confirmed=true), postponeTransfer(1515, t.date 이동), confirmRecNow(1521, r.confirmedDates에 push), postponeRecTransfer(1525, r.skip에 두 번 push하는데 새로 생기는 일회성 거래에만 touch()가 있고 r 자체에는 없었음) 네 곳 모두 mergeCollection()이 updatedAt만 보고 승자를 고르는 불변식을 깨고 있었다. 네 곳 모두에 touch(t)/touch(r) 추가. 이 함수들이 test/run.js의 sandbox 노출 화이트리스트에 아예 없어서(confirmRecTransfer/postponeRecTransfer/openConfirmTransfer만 있었음) confirmTransferNow/postponeTransfer/confirmRecNow 세 이름을 화이트리스트에 추가. 회귀 테스트 4개 추가(3개 신규 노출 함수 + postponeRecTransfer의 r 자체 touch 1개). 두 인라인 <script> 블록 node --check 통과, node test/run.js 649/649 통과(기존 645 + 신규 4). APP_VERSION 1.46.61->1.46.62, sw.js CACHE v223->v224.",
       "commit": null
     }
   ]
