@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.63';
+const APP_VERSION='1.46.64';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3079,7 +3079,7 @@ function openOwnerManage(){
   <div>${DB.owners.map((o,i)=>{const used=DB.assets.filter(a=>a.owner===o).length;
    return `<div class="manage-row"><div class="avatar" style="width:36px;height:36px;border-radius:11px;background:var(--sunken);color:var(--text-2)">${svg('users',18)}</div>
     <div style="flex:1"><div class="mn">${esc(o)}</div><div class="msub">${used}개 자산</div></div>
-    <div class="row-acts"><button class="act-btn" onclick="renameOwnerSheet(${i})">${svg('edit')}</button><button class="act-btn danger" onclick="delOwner(${i})">${svg('trash')}</button></div></div>`}).join('')}</div>
+    <div class="row-acts"><button class="act-btn" aria-label="${esc(o)} 수정" onclick="renameOwnerSheet(${i})">${svg('edit')}</button><button class="act-btn danger" aria-label="${esc(o)} 삭제" onclick="delOwner(${i})">${svg('trash')}</button></div></div>`}).join('')}</div>
   <div class="add-inline"><input id="newOwner" placeholder="새 귀속 (예: 아이)"><button onclick="addOwner()">${svg('plus')}</button></div>
   <div style="height:14px"></div><button class="btn btn-primary" onclick="closeSheet()">완료</button>`);
 }
@@ -4449,7 +4449,7 @@ function openCatManage(kind,keep){
   <div>${DB.categories[k].map((c,i)=>{
     const isSysAdjust=k==='income'&&c===ADJUST_CAT; /* 거래에서 자동 생성되는 시스템 카테고리 — 이름변경/삭제 못 하게 액션 대신 안내만 보여준다 */
     const varPill=k==='saving'?'':`<button class="varpill ${isVarCat(k,c)?'on':''}" onclick="toggleCatVarUI('${k}',${i},this)">${isVarCat(k,c)?'변동':'고정'}</button>`;
-    const acts=isSysAdjust?`<span class="mini">자동 생성</span>`:`<div class="row-acts"><button class="act-btn" onclick="renameCatSheet('${k}',${i})">${svg('edit')}</button><button class="act-btn danger" onclick="delCat('${k}',${i})">${svg('trash')}</button></div>`;
+    const acts=isSysAdjust?`<span class="mini">자동 생성</span>`:`<div class="row-acts"><button class="act-btn" aria-label="${esc(c)} 수정" onclick="renameCatSheet('${k}',${i})">${svg('edit')}</button><button class="act-btn danger" aria-label="${esc(c)} 삭제" onclick="delCat('${k}',${i})">${svg('trash')}</button></div>`;
     return `<div class="manage-row"><div class="avatar ${avCls}" style="width:36px;height:36px;border-radius:11px">${catGlyph(k,c,18,'tag')}</div><div class="mn">${esc(c)}</div>${isSysAdjust?'':varPill}${acts}</div>`;
    }).join('')}</div>
   <div class="add-inline"><button class="emo-pick ${avCls}" onclick="pickCatAddIcon('${k}')" aria-label="아이콘 선택">${svg(trigIcon,20)}</button><input id="newCat" placeholder="새 ${CAT_LABEL[k]} 카테고리" value="${catAddDraft.name.replace(/"/g,'&quot;')}" oninput="catAddDraft.name=this.value"><button onclick="addCat('${k}')">${svg('plus')}</button></div>
@@ -4532,7 +4532,7 @@ function openRecManage(){
     <div style="flex:1;min-width:0"><div class="mn">${esc(r.category)} ${r.active?'':'<span class="mini">중지</span>'}</div>
      <div class="msub">${recFreqLabel(r)} · ${comma(r.amount)}원</div>
      <div class="msub2">${period}</div></div>
-    <div class="row-acts"><button class="act-btn ${r.active?'':'on'}" onclick="event.stopPropagation();toggleRecActive('${r.id}')" title="${r.active?'일시중지':'다시 시작'}">${svg(r.active?'pause':'play')}</button></div>
+    <div class="row-acts"><button class="act-btn ${r.active?'':'on'}" onclick="event.stopPropagation();toggleRecActive('${r.id}')" title="${r.active?'일시중지':'다시 시작'}" aria-label="${esc(r.category)} ${r.active?'일시중지':'다시 시작'}">${svg(r.active?'pause':'play')}</button></div>
     <div class="mc">${svg('chev')}</div></div>`;
   }).join('')+`</div>`;
  });
