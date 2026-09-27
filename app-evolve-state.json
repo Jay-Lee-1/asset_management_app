@@ -1,15 +1,8 @@
 {
   "cycle": 97,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 92,
-      "phase": "review",
-      "timestamp": "2026-09-26T19:08:25.000Z",
-      "summary": "develop 커밋(65ac2b9, doRenameOwner() 귀속 변경 시 touch() 누락 수정)을 검토. mergeCollection()이 updatedAt만 보고 승자를 고르는 불변식과 정확히 일치함을 확인, 새 회귀 테스트가 정확함을 확인. 코드 변경 없음(이상 없음).",
-      "commit": null
-    },
     {
       "cycle": 92,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-27T15:09:53.037Z",
       "summary": "접근성 개선: 귀속 관리(3082)·카테고리 관리(4452)의 수정/삭제 act-btn과 반복거래 관리(4535)의 일시중지/다시시작 act-btn 3곳이 아이콘 SVG만 있고 접근 가능한 이름이 전혀 없어(스크린리더에 빈 button으로 읽힘) cycle96 critique의 러너업 목록 1번 항목과 정확히 일치하는 접근성 공백이었다. 코드베이스 전반의 확립된 aria-label 관례(스위치·행 전체 role=button 등)를 그대로 따라 각 버튼에 대상 이름을 포함한 aria-label을 추가: 귀속/카테고리는 \"{이름} 수정\"/\"{이름} 삭제\", 반복거래는 기존 title과 같은 문구를 aria-label로도 추가(\"{카테고리} 일시중지\"/\"{카테고리} 다시 시작\"). 순수 로직 변경이 아닌 템플릿 문자열의 마크업 속성 추가라 새 회귀 테스트는 없음(기존 aria-label 추가들도 동일하게 테스트 대상이 아니었음). 두 인라인 <script> 블록 node --check 통과, node test/run.js 655/655 통과(변경 없음). APP_VERSION 1.46.63->1.46.64, sw.js CACHE v225->v226. fc-x(입력창 지우기, ✕ 텍스트라 완전히 빈 이름은 아님) 10곳은 이번 범위 밖으로 남김 — act-btn보다 심각도가 낮다고 판단.",
+      "commit": null
+    },
+    {
+      "cycle": 97,
+      "phase": "review",
+      "timestamp": "2026-09-27T16:07:00.000Z",
+      "summary": "develop 커밋(a601f3e, 귀속/카테고리 수정·삭제 및 반복거래 일시중지 act-btn 3곳 aria-label 추가)을 검토. 세 곳 모두 값을 담는 esc(o)/esc(c)/esc(r.category)가 index.html:1472의 전역 HTML-escape 함수(따옴표까지 &quot;/&#39;로 이스케이프)를 사용함을 확인 — 4849줄의 지역 CSV-escape용 esc 섀도우는 txnsToCSV() 함수 스코프 안에만 있어 이 세 위치와 무관함을 확인, 속성 이탈(attribute breakout) 위험 없음. 기존 스위치/행 aria-label 관례와 표기 일치. 순수 마크업 추가라 로직 변경 없음이 맞고 새 테스트가 필요 없다는 판단도 타당함. 두 인라인 <script> 블록 node --check 통과, node test/run.js 655/655 통과. 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
