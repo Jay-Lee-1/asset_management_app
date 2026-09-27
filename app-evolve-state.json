@@ -1,15 +1,8 @@
 {
   "cycle": 95,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 90,
-      "phase": "review",
-      "timestamp": "2026-09-26T11:12:00.000Z",
-      "summary": "develop 커밋(fa53ebd, planNegatives() 오늘 미확인 이체 무조건 포함 버그 수정)을 검토. 새 구현이 dates=Set([TODAY]) ∪ {이 자산이 걸린 거래일}에 대해서만 balanceAt()을 호출하는 방식으로, lowestInMonth(cycle87)/planRowsHTML(cycle88)와 동일한 계단함수 논리(잔액은 거래일에만 바뀌므로 그 날짜들만 샘플링하면 최솟값을 놓치지 않음)를 그대로 재사용함을 확인. 기존 run=balanceAt(TODAY-1) 시드 방식보다 오히려 정확함(TODAY 당일 자체를 dates에 명시적으로 포함해 balanceAt(TODAY)가 pending 제외 규칙을 직접 적용). 새 회귀 테스트 2개가 미확인/확인된 이체 두 케이스를 정확히 검증함을 확인. 두 인라인 <script> 블록 node --check 통과, node test/run.js 611/611 통과. 코드 변경 없음(이상 없음).",
-      "commit": null
-    },
     {
       "cycle": 90,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-27T06:14:39.019Z",
       "summary": "general-purpose 서브에이전트로 CSV 가져오기 카테고리 근접중복 버그 수정. buildImportPreview()(index.html:4915)와 doCsvImport()(5164)가 CSV 카테고리 셀을 addCat()/renameCatSheet()(4439,4487)와 달리 normName()(1463, trim+공백정리+소문자) 없이 Array.includes()로 원문 그대로 비교해, 기존 카테고리 \"식비\"가 있어도 CSV 셀이 \"식비 \"(끝공백)·\" 식비\"(앞공백)·\"RENT\" vs \"Rent\"처럼 조금만 달라도 완전히 새로운 카테고리로 조용히 생성됨(토스트/경고 없음) — spendByCategory/budgetForMonth가 문자열 정확매칭이라 지출분석·예산 집계가 두 카테고리로 쪼개져 사용자가 알 방법이 없었다. buildImportPreview()에서 CSV 행을 처리할 때마다 기존 categories[type]과(정확히 같은 패턴, addCat의 dup 판정 재사용) 이번 파일 안에서 이미 신규로 잡힌 newCats[type]에도 normName 매칭을 시도해 일치하면 그 표기로 r.txn.category를 덮어쓰고(dedupe key 계산 전에 canonicalize), 없을 때만 newCats에 추가하도록 재작성 — 같은 파일 안에 변형이 여러 번 나와도 첫 표기 하나로만 합쳐짐. doCsvImport()의 DB.categories 추가 분기도 Array.includes를 normName find로 교체해 방어적으로 일관성 유지. test/run.js에 회귀 테스트 3개 추가(기존 카테고리의 앞/뒤 공백·대소문자 변형은 신규로 안 세고 기존 표기로 맞춤 / 진짜 신규 카테고리인데 같은 파일에 공백 변형이 여러 번 나오면 하나로만 합쳐 신규 생성 / doCsvImport가 newCats에 근접중복이 섞여 있어도 DB.categories에 중복 추가 안 함) — git stash로 index.html만 되돌려 새 테스트 중 2개가 실제로 실패(636/638)함을 확인한 뒤 재적용. 두 인라인 <script> 블록 node --check 통과, node test/run.js 638/638 통과(기존 635 + 신규 3). APP_VERSION 1.46.59->1.46.60, sw.js CACHE v221->v222.",
+      "commit": null
+    },
+    {
+      "cycle": 95,
+      "phase": "review",
+      "timestamp": "2026-09-27T07:09:58.367Z",
+      "summary": "develop 커밋(473a4d1, CSV 가져오기 카테고리 근접중복 버그 수정)을 검토. buildImportPreview()에서 canonicalize 로직을 csvDedupeKey() 계산보다 앞으로 옮겨 r.txn.category를 먼저 정규화한 뒤 key를 만드는 순서 변경이, 부작용으로 기존 dedupe 정확도도 개선함을 확인 — csvDedupeKey()가 category를 키에 포함하므로(index.html:4907), 이전엔 CSV의 \"식비 \"(공백변형)가 앱에 이미 있는 \"식비\" 내역과 문자열이 달라 dup 판정을 놓쳤을 상황도 이제 canonicalize 후 키를 계산해 정확히 dup으로 잡힘(회귀 아님, 의도치 않은 개선). newCats 추가 조건에서 기존 !dup 가드를 뺀 것도 검토 — category가 csvDedupeKey에 포함되므로 진짜 dup 판정이 나려면 애초에 canon이 존재해 category가 이미 치환된 뒤였을 것이라, dup 행에서 canon이 없어 newCats에 잘못 추가되는 경우는 논리적으로 발생하지 않음을 확인(순서 변경이 안전함). categories[type] 우선 매칭 후 newCats[type] 순으로 확인해 같은 파일 안 여러 변형이 첫 표기 하나로만 합쳐짐을 테스트로 재확인. doCsvImport()의 normName find 방어 코드는 buildImportPreview가 이미 newCats를 정규화·유일하게 만들어두므로 사실상 트리거 안 되지만 방어적으로 안전. 두 인라인 <script> 블록 node --check 통과, node test/run.js 638/638 통과(직접 재실행으로 확인). 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
