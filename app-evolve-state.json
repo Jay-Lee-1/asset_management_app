@@ -1,15 +1,12 @@
 {
   "cycle": 95,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "DB.deletedIds tombstone GC (무한 누적 정리)",
+    "why": "cycle86부터 이어온 클라우드 병합 이니셔티브(touch()/mergeCollection/pushCloud 재시도)가 cycle93 advance로 배선상 완료됐고, cycle92~94 critique가 매번 이월해온 두 잔여 항목(deletedIds GC, askRelinkDeleted 테스트 인프라) 중 실제 데이터 문제인 GC를 이번엔 미루지 않기로 함. deleteTxnsUndo/deleteRecsUndo/deleteAssetsUndo(index.html:6206,6211,6219)가 삭제할 때마다 DB.deletedIds[id]=now를 영구히 남기고(undo 시에만 delete로 제거), mergeCollection()의 tombstone 판정을 위해 설계상 필요하긴 하지만 실제로 지워지는 경우는 거의 없어 수년간 사용하면 이 맵이 무한히 커진다 — 매번 클라우드에 push/pull되는 DB.deletedIds 전체 크기가 계속 늘어 localStorage/네트워크 payload가 불필요하게 커지고 언젠가 storageSizeWarnDismissed류 경고에도 영향을 줄 수 있다. mergeCollection()의 tombstone 살림 조건(l.updatedAt>delRemoteTs 또는 r.updatedAt>delLocalTs)은 삭제 시각보다 나중에 수정된 살아있는 사본이 있을 때만 발동하므로, 삭제된 지 충분히 오래(모든 기기가 그 사이 최소 한 번은 정상적으로 온라인 동기화했을 것으로 볼 수 있는 기간, 예: 400일) 지난 tombstone은 지워도 안전하다 — 그 기간이면 어떤 기기에 남아있던 '더 최신' 오프라인 사본도 이미 병합을 거쳤거나, 병합을 거치지 않았다면 그 기기 자체가 400일 넘게 오프라인이었다는 뜻이라 이 앱의 실사용 패턴(가계부, 일상적으로 열어보는 자산관리 앱)에서 감내 가능한 리스크로 판단.",
+    "approach": "1) touch()/mergeCollection 근처(index.html:1411 부근)에 순수 함수 gcTombstones(deletedIds, now, maxAgeMs=1000*60*60*24*400) 추가 — deletedIds 객체를 순회해 now-ts <= maxAgeMs인 항목만 남긴 새 객체를 반환(원본 불변, mergeCollection과 동일 스타일). 2) migrate()(index.html:1904~) 끝부분에 DB.deletedIds=gcTombstones(DB.deletedIds||{}, Date.now()) 한 줄 추가 — migrate()는 정상 부팅 경로(1891행 JSON.parse 이후)를 포함해 앱을 열 때마다 항상 실행되므로 이 한 줄만으로 매 실행마다 자연스럽게 정리됨(별도 스케줄러·마이그레이션 플래그 불필요). 3) test/run.js에 회귀 테스트 추가: (a) maxAgeMs보다 오래된 tombstone은 제거됨, (b) 그 이내인 tombstone은 유지됨, (c) 경계값(정확히 maxAgeMs 차이)은 유지 쪽(<=)으로 처리되는지, (d) deletedIds가 비어있거나 undefined여도 안전, (e) migrate() 통합 테스트로 오래된 DB.deletedIds 항목이 실제로 sanitize되어 사라지는지 확인. 4) 항상 그렇듯 두 인라인 <script> 블록 node --check + node test/run.js 전체 통과 확인 후 APP_VERSION/sw.js CACHE 버전 올리고 커밋. 5) askRelinkDeleted 테스트 인프라 정비는 이번에도 범위 밖 — 다음 critique로 이월."
+  },
   "history": [
-    {
-      "cycle": 90,
-      "phase": "critique",
-      "timestamp": "2026-09-26T12:12:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체 재검토, 클라우드 병합 이니셔티브(cycle86 시작)를 이어갈지 판단. pushCloud()(index.html:1654-1686)와 afterCloudAuth()(1687-1705)를 실제로 읽어 재확인 — pushCloud는 여전히 .update({data:DB,...}).eq('updated_at',CLOUD_LAST_SYNCED_AT) 통짜 낙관적 락으로 충돌 시 토스트만 띄우고 멈추고, afterCloudAuth는 로컬에 미동기화 변경이 있으면 병합 없이 그대로 {status:'conflict'}만 반환해 사용자가 confirmCloudForcePush로 '내 것 유지' 또는 '상대 것 유지' 양자택일만 하게 강제함(4089줄 계정 공유 시나리오와 정확히 충돌). grep으로 updatedAt/deletedIds가 touch() 정의(1411)와 3개 삭제 undo 함수(6120,6125,6133) 외에는 어디서도 읽히지 않음을 재확인 — cycle86-89가 깔아둔 배선이 그대로 방치돼 있음. 경쟁 후보 재점검: TODO/FIXME 0건, openCatPicker(6195-6224)는 이미 data-cat 속성+위임 클릭 방식으로 XSS 안전, 최근 사이클들이 CSV 검증/카테고리·자산명 근접중복/balanceAt-pending계열(lowestInMonth·planRowsHTML·planNegatives) 버그를 모두 정리해 유사 심각도의 새 버그 없음. 이니셔티브를 계속하기로 결정, 범위는 DB.txns 한 컬렉션만의 3-way 병합 헬퍼(mergeCollection)로 한정해 pending_advance_plan에 저장 — pushCloud() 자체의 충돌 분기, recurrences/assets 병합, deletedIds GC, askRelinkDeleted 테스트 커버리지는 다음 critique로 명시 이월. 코드 변경 없음(읽기 전용 조사).",
-      "commit": null
-    },
     {
       "cycle": 90,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-09-27T07:09:58.367Z",
       "summary": "develop 커밋(473a4d1, CSV 가져오기 카테고리 근접중복 버그 수정)을 검토. buildImportPreview()에서 canonicalize 로직을 csvDedupeKey() 계산보다 앞으로 옮겨 r.txn.category를 먼저 정규화한 뒤 key를 만드는 순서 변경이, 부작용으로 기존 dedupe 정확도도 개선함을 확인 — csvDedupeKey()가 category를 키에 포함하므로(index.html:4907), 이전엔 CSV의 \"식비 \"(공백변형)가 앱에 이미 있는 \"식비\" 내역과 문자열이 달라 dup 판정을 놓쳤을 상황도 이제 canonicalize 후 키를 계산해 정확히 dup으로 잡힘(회귀 아님, 의도치 않은 개선). newCats 추가 조건에서 기존 !dup 가드를 뺀 것도 검토 — category가 csvDedupeKey에 포함되므로 진짜 dup 판정이 나려면 애초에 canon이 존재해 category가 이미 치환된 뒤였을 것이라, dup 행에서 canon이 없어 newCats에 잘못 추가되는 경우는 논리적으로 발생하지 않음을 확인(순서 변경이 안전함). categories[type] 우선 매칭 후 newCats[type] 순으로 확인해 같은 파일 안 여러 변형이 첫 표기 하나로만 합쳐짐을 테스트로 재확인. doCsvImport()의 normName find 방어 코드는 buildImportPreview가 이미 newCats를 정규화·유일하게 만들어두므로 사실상 트리거 안 되지만 방어적으로 안전. 두 인라인 <script> 블록 node --check 통과, node test/run.js 638/638 통과(직접 재실행으로 확인). 코드 변경 없음(이상 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 95,
+      "phase": "critique",
+      "timestamp": "2026-09-27T08:07:00.000Z",
+      "summary": "index.html을 직접 읽어 재검토, cycle92~94 critique가 매번 이월해온 두 잔여 항목(deletedIds GC, askRelinkDeleted 테스트 인프라)과 review(cycle95)가 새로 찾은 후보가 있는지 비교 평가. deleteTxnsUndo/deleteRecsUndo/deleteAssetsUndo(index.html:6206,6211,6219)를 다시 읽어, 삭제할 때마다 DB.deletedIds[id]=Date.now()가 영구히 쌓이고 undo할 때만 delete로 제거됨을 재확인 — mergeCollection()의 tombstone 살림 판정(l.updatedAt>delRemoteTs 등, 1428-1434줄)을 위해 필요한 설계지만 실제 GC가 전혀 없어 수년 사용 시 이 맵이 무한히 커지고, 매 pushCloud/pullCloud마다 그 전체가 그대로 오간다 — 성능/스토리지 관점의 실질적 기술부채. 경쟁 후보 재점검: TODO/FIXME 0건, review(cycle95)가 확인한 CSV 근접중복 수정 diff 외에 새로 발견된 버그 없음, askRelinkDeleted 테스트 인프라는 여전히 커버리지 문제일 뿐 실제 버그가 아니라 후순위 유지. GC 쪽이 cycle92부터 3번 연속(92,93,94) 이월되며 '순수 정리 작업이라 시급성 낮음'으로 미뤄져 왔으나, 클라우드 병합 이니셔티브(cycle86-93)가 완전히 마무리된 지금은 더 미룰 경쟁 후보가 없다고 판단해 이번엔 확정. pending_advance_plan에 gcTombstones(deletedIds,now,maxAgeMs=400일) 순수 함수를 추가해 migrate()(1904줄, 정상 부팅마다 항상 실행) 끝에서 DB.deletedIds를 갱신하는 계획 저장 — 400일이라는 임계값은 이 앱의 실사용 패턴(매일 열어보는 가계부)에서 어떤 기기도 그렇게 오래 오프라인 상태로 남아있지 않을 것이라는 가정에 근거한 보수적 선택. askRelinkDeleted 테스트 인프라는 이번에도 다음 critique로 명시 이월. 코드 변경 없음(읽기 전용 조사).",
       "commit": null
     }
   ]
