@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.57';
+const APP_VERSION='1.46.58';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5821,7 +5821,7 @@ function saveQuickAmount(recId,date){
  const el=$('qAmt');
  if(!el||!(el.value||'').trim()){toast('금액을 넣어주세요');return}
  const amt=num(el); /* 변동 카테고리는 실제 금액이 0원인 회차(무료/크레딧 처리)도 있을 수 있어 0을 유효값으로 허용 */
- const edits=(r.edits=r.edits||{});const prevEdit=edits[date];edits[date]={amount:amt};
+ const edits=(r.edits=r.edits||{});const prevEdit=edits[date];edits[date]={amount:amt};touch(r); /* recSave(scope='one')와 동일한 edits 갱신 — touch() 누락 시 mergeCollection()이 updatedAt만 보고 병합하다 다른 기기의 동기화 안 된 내역이 이 실제 금액 입력을 조용히 되돌릴 수 있음(doRenameOwner/doRenameCat/rollPendingTransfers와 동일한 불변식) */
  save();invalidateBalances();closeSheet();renderCurrent();
  undoToast(`${r.memo||r.category} ${comma(amt)}원으로 저장했어요`,()=>{
   if(prevEdit===undefined)delete edits[date];else edits[date]=prevEdit;

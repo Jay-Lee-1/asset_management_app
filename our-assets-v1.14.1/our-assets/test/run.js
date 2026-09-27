@@ -2854,6 +2854,32 @@ test('saveQuickAmount: 튜토리얼 모드 중에는 twGuard가 막아서 실제
   assert.strictEqual(sandbox.lastUndo, null);
   sandbox.TWi = -1;
 });
+/* ---------- saveQuickAmount: 변동 카테고리 실제 금액 입력에도 touch()로 updatedAt이 갱신돼야 함
+ * (app-evolve develop) ----------
+ * recSave()의 scope='one' 경로(3543행: edits[date]={amount,memo};touch(r))는 정확히 같은 모양의
+ * "r.edits에 회차별 실제 금액을 기록"인데도 touch(r)를 호출한다. saveQuickAmount()는 홈 화면의
+ * "눌러서 금액만 넣기" 카드에서 같은 edits 갱신을 하면서도 touch(r)를 빠뜨리고 있었다 —
+ * doRenameOwner/doRenameCat/rollPendingTransfers와 동일한 이유로, mergeCollection()의 3-way 병합은
+ * updatedAt만 보고 승자를 고르므로 touch() 누락 시 이 기기에서 방금 입력한 실제 금액이 클라우드
+ * 동기화 충돌 때 상대 기기의 옛 사본(더 최근에 다른 필드가 바뀌어 updatedAt이 더 큰)에 조용히
+ * 덮여 사라질 수 있다. */
+test('saveQuickAmount: 실제 금액을 저장하면 touch()가 호출돼 updatedAt이 갱신된다', () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', category: '식비', memo: '식비', edits: {}, updatedAt: 111 };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.qAmtValue = '12,000';
+  sandbox.lastUndo = null;
+  sandbox.saveQuickAmount('r1', '2026-02-05');
+  assert.strictEqual(r.updatedAt, 'test-updatedAt', '실제 금액을 기록한 회차에는 touch()가 호출되어야 함');
+});
+test('saveQuickAmount: 금액을 비워두면(저장 실패) touch()가 호출되면 안 된다', () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', category: '식비', memo: '식비', edits: {}, updatedAt: 111 };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.qAmtValue = '';
+  sandbox.saveQuickAmount('r1', '2026-02-05');
+  assert.strictEqual(r.updatedAt, 111, '저장하지 않았으면 updatedAt이 그대로여야 함');
+});
 
 /* ---------- lastActualAmount/openQuickAmount: 직전 실제 금액이 0원인 경우를 "데이터 없음"과
    구분해야 한다(app-evolve cycle44 review 부수 발견 -> cycle45 develop에서 수정) ---------- */
