@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.59';
+const APP_VERSION='1.46.60';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4923,13 +4923,20 @@ function buildImportPreview(text,assets,categories,existingTxns){
  dataRows.forEach(cells=>{
   const r=csvRowToImportTxn(cells,assets);
   if(!r.ok){if(r.error==='range')rangeCount++;else invalidCount++;return}
+  /* addCat/renameCatSheet와 같은 normName() 근접중복 판정을 CSV 카테고리에도 적용 — 그대로 두면
+     "식비 "(공백)·"식비"(연속공백)·대소문자 변형이 원본과 다른 별도 카테고리로 생성돼
+     지출분석/예산 집계가 같은 카테고리인데 둘로 쪼개진다. 일치하는 기존/이번 가져오기 신규
+     카테고리가 있으면 그 표기로 맞춰 하나로 합친다. */
+  if(r.txn.type!=='transfer'&&categories&&Array.isArray(categories[r.txn.type])&&r.txn.category){
+   const canon=categories[r.txn.type].find(c=>normName(c)===normName(r.txn.category))
+    ||[...newCats[r.txn.type]].find(c=>normName(c)===normName(r.txn.category));
+   if(canon)r.txn.category=canon;
+   else newCats[r.txn.type].add(r.txn.category);
+  }
   const key=csvDedupeKey(r.txn);
   const used=usedCounts.get(key)||0;
   const dup=used<(existingCounts.get(key)||0);
   usedCounts.set(key,used+1);
-  if(!dup&&r.txn.type!=='transfer'&&categories&&Array.isArray(categories[r.txn.type])&&!categories[r.txn.type].includes(r.txn.category)){
-   newCats[r.txn.type].add(r.txn.category);
-  }
   items.push({txn:r.txn,dup,unmatched:r.unmatched});
  });
  const newCount=items.filter(x=>!x.dup).length;
@@ -5164,7 +5171,7 @@ function doCsvImport(){
  const addedCats=[];
  ['expense','income','saving'].forEach(ty=>{
   (preview.newCats[ty]||[]).forEach(name=>{
-   if(!DB.categories[ty].includes(name)){DB.categories[ty].push(name);addedCats.push({type:ty,name})}
+   if(!DB.categories[ty].find(c=>normName(c)===normName(name))){DB.categories[ty].push(name);addedCats.push({type:ty,name})}
   });
  });
  const added=toAdd.map(x=>touch(Object.assign({id:uid()},x.txn)));

@@ -2079,6 +2079,39 @@ test("buildImportPreview: RANGE_FROM 이전 날짜 행은 형식 오류(invalidC
   assert.strictEqual(preview.invalidCount, 1, '형식 오류 카운트는 range 행을 포함하지 않아야 함');
   assert.strictEqual(preview.newCount, 1);
 });
+/* ---------- buildImportPreview/doCsvImport: CSV 카테고리도 addCat/renameCatSheet와 같은
+ * normName() 근접중복 판정을 따라야 한다(app-evolve cycle95 develop) ---------- */
+test('buildImportPreview: 기존 카테고리의 앞뒤 공백·대소문자 변형은 새 카테고리로 세지 않고 기존 표기로 맞춘다', () => {
+  const csv = '날짜,구분,카테고리,금액,보내는 자산,받는 자산,메모\r\n' +
+    '2026-01-01,지출,식비 ,5000,주계좌,,뒤 공백\r\n' +
+    '2026-01-01,지출, 식비,3000,주계좌,,앞 공백\r\n' +
+    '2026-01-01,지출,RENT,2000,주계좌,,대문자\r\n';
+  const preview = sandbox.buildImportPreview(csv, [{ id: 'a1', name: '주계좌' }], { expense: ['식비', 'Rent'], income: [], saving: [] }, []);
+  assert.strictEqual(preview.newCats.expense.length, 0, '기존 카테고리의 공백/대소문자 변형은 신규 카테고리로 세면 안 됨');
+  assert.strictEqual(preview.items[0].txn.category, '식비', '가져온 내역의 카테고리도 기존 표기로 맞춰져야 함');
+  assert.strictEqual(preview.items[1].txn.category, '식비');
+  assert.strictEqual(preview.items[2].txn.category, 'Rent');
+});
+test('buildImportPreview: 정말 새 카테고리인데 같은 파일 안에 공백 변형이 여러 번 나오면 하나로만 합쳐서 신규 생성한다', () => {
+  const csv = '날짜,구분,카테고리,금액,보내는 자산,받는 자산,메모\r\n' +
+    '2026-01-01,지출,새카테고리,5000,주계좌,,\r\n' +
+    '2026-01-01,지출,새카테고리 ,3000,주계좌,,\r\n';
+  const preview = sandbox.buildImportPreview(csv, [{ id: 'a1', name: '주계좌' }], { expense: [], income: [], saving: [] }, []);
+  assert.deepStrictEqual(Array.from(preview.newCats.expense), ['새카테고리'], '같은 파일 안의 변형끼리도 첫 표기로 합쳐져 하나만 신규 생성돼야 함');
+  assert.strictEqual(preview.items[0].txn.category, '새카테고리');
+  assert.strictEqual(preview.items[1].txn.category, '새카테고리');
+});
+test('doCsvImport: newCats에 기존 카테고리의 공백/대소문자 변형이 섞여 있어도 DB.categories에 중복 추가하지 않는다', () => {
+  sandbox.DB = { categories: { expense: ['Rent'], income: [], saving: [] }, txns: [] };
+  sandbox.window._csvImport = {
+    items: [
+      { dup: false, txn: { type: 'expense', category: 'rent ', memo: '', amount: 1000, date: '2026-01-01', fromAssetId: null, toAssetId: null } },
+    ],
+    newCats: { expense: ['rent '], income: [], saving: [] },
+  };
+  sandbox.doCsvImport();
+  assert.deepStrictEqual(sandbox.DB.categories.expense, ['Rent'], '기존 카테고리와 근접중복이면 DB.categories에 추가되면 안 됨');
+});
 
 /* ---------- matchTxnQuery: 거래 검색은 대소문자를 구분하지 않는다 ---------- */
 test('matchTxnQuery: 빈 검색어는 항상 매칭된다', () => {
