@@ -1,15 +1,8 @@
 {
   "cycle": 96,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 91,
-      "phase": "review",
-      "timestamp": "2026-09-26T15:12:00.000Z",
-      "summary": "develop 커밋(e2ad7ee, abbr() 만→억 반올림 경계 버그 수정)을 검토. man=(a/10000).toFixed(...) 계산 후 Number(man)>=10000이면 '1억'으로 승격하는 분기가 a>=1e8 분기 바로 다음이라 오직 a<1e8인데 만 단위 반올림 결과가 10000이 되는 좁은 구간(99,995,000~99,999,999)에서만 작동함을 손계산으로 확인 — a>=1000000이라 toFixed(0) 경로를 타므로 a/10000>=9999.5일 때만 반올림되어 10000이 됨(=a>=99995000), 그 아래 경계(99994999)는 여전히 '9999만' 유지됨이 논리적으로 맞음. 음수는 sg가 먼저 분리되고 abs(a)에만 적용되므로 부호 유지도 정확함. 유일한 호출부 calCellsFor()도 이 함수를 그대로 위임해 쓰므로 추가 확인 불필요. 새 회귀 테스트 4개(경계 안쪽 2개/바로 바깥 1개/음수 1개)가 정확히 이 좁은 구간을 검증함을 확인. 두 인라인 <script> 블록 node --check 통과, node test/run.js 623/623 통과. 코드 변경 없음(이상 없음).",
-      "commit": null
-    },
     {
       "cycle": 91,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-27T11:12:00.000Z",
       "summary": "general-purpose 서브에이전트로 발견한 이체 확인/미루기 3종 touch() 누락 버그 수정. rollPendingTransfers/doRenameOwner/doRenameCat/saveQuickAmount/delete-undo 3종에 이어 같은 '이체 확인' 기능의 나머지 액션들만 이 audit에서 빠져 있었다: confirmTransferNow(1511, t.confirmed=true), postponeTransfer(1515, t.date 이동), confirmRecNow(1521, r.confirmedDates에 push), postponeRecTransfer(1525, r.skip에 두 번 push하는데 새로 생기는 일회성 거래에만 touch()가 있고 r 자체에는 없었음) 네 곳 모두 mergeCollection()이 updatedAt만 보고 승자를 고르는 불변식을 깨고 있었다. 네 곳 모두에 touch(t)/touch(r) 추가. 이 함수들이 test/run.js의 sandbox 노출 화이트리스트에 아예 없어서(confirmRecTransfer/postponeRecTransfer/openConfirmTransfer만 있었음) confirmTransferNow/postponeTransfer/confirmRecNow 세 이름을 화이트리스트에 추가. 회귀 테스트 4개 추가(3개 신규 노출 함수 + postponeRecTransfer의 r 자체 touch 1개). 두 인라인 <script> 블록 node --check 통과, node test/run.js 649/649 통과(기존 645 + 신규 4). APP_VERSION 1.46.61->1.46.62, sw.js CACHE v223->v224.",
+      "commit": null
+    },
+    {
+      "cycle": 96,
+      "phase": "review",
+      "timestamp": "2026-09-27T12:10:00.000Z",
+      "summary": "develop 커밋(7424a58, confirmTransferNow/postponeTransfer/confirmRecNow/postponeRecTransfer 4곳 touch() 누락 수정)을 검토. 네 곳 모두 rollPendingTransfers/doRenameOwner/doRenameCat과 동일한 불변식(mergeCollection()은 updatedAt만 보고 승자를 고름)을 정확히 겨냥한 최소 diff임을 확인 — confirmTransferNow는 t.confirmed=true 대입 직후, postponeTransfer는 t.date 대입 직후, confirmRecNow는 r.confirmedDates.push 직후, postponeRecTransfer는 r.skip.push 직후(새로 생기는 일회성 거래용 touch({...})와는 별개로 r 자체에도 추가) 각각 touch() 한 줄씩만 추가됐다. 기존에 이미 배선된 형제 함수들과 위치·스타일이 일치함을 확인. sandbox 노출 화이트리스트에 confirmTransferNow/postponeTransfer/confirmRecNow 세 이름이 새로 추가된 것도 테스트 대상 함수와 정확히 일치. 새 회귀 테스트 4개(3개 신규 노출 함수 + postponeRecTransfer의 r 자체 touch 1개)가 각 케이스를 정확히 검증함을 확인. 두 인라인 <script> 블록 node --check 통과, node test/run.js 649/649 통과. 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
