@@ -1,26 +1,8 @@
 {
-  "cycle": 96,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "askRelinkDeleted() 잔액 연동(balance carry-over) 산술을 순수 함수로 추출해 테스트 커버리지 확보",
-    "why": "index.html:2828-2832의 _amLink 클로저 안에서 remembered(삭제 시점 잔액, DB.deletedBal 없으면 H로 폴백)/H(재연결된 과거 내역만의 현재 잔액)/gap(입력값-remembered) 세 단계로 재등록 시 잔액 연속성을 계산하는 실질적인 화폐 산술인데, 이 코드베이스에서 유일하게 어떤 테스트 커버리지도 없는 순수 로직 조각이다(형제 함수 snapshotAssetName조차 소스텍스트 정규식 가드는 받음). DB.deletedBal 결측 폴백, gap===0일 때 조정 내역 생략, 반올림, addBalanceAdjust와의 부호 규약 일치 등 엣지 케이스가 여러 개라 회귀 안전망 없이 방치돼 있음.",
-    "approach": "index.html:2828-2832의 remembered/H/gap 계산을 DB·클로저 의존 없는 최상위 순수 함수 computeRelinkBaseline(remembered,H,entered)로 추출해 {base,gap}을 반환하게 하고 _amLink에서 그 결과로 d[balKey]와 addBalanceAdjust 호출을 대체한다. 최상위 함수라 extractFunction()으로 test/run.js에 바로 끌어올 수 있고, 기존 sandbox.askRelinkDeleted 스파이 스텁과는 다른 심볼이라 충돌하지 않는다(test/run.js:1878-1885 코멘트가 걱정한 문제와 무관). 회귀 테스트: remembered 있음/DB.deletedBal 결측 시 H로 폴백/gap===0(조정 없음)/gap 양수·음수/소수점 반올림/debt 타입 부호 케이스."
-  },
+  "cycle": 97,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 91,
-      "phase": "critique",
-      "timestamp": "2026-09-26T16:12:00.000Z",
-      "summary": "index.html을 직접 읽어 앱 전체 재검토, 클라우드 병합 이니셔티브(cycle86 시작)를 이어갈지 판단. touch()/deletedIds 배선이 txns/recurrences/assets 세 컬렉션 모두 실제로 완료돼 있음을 재확인(saveAsset 2970, recSave/splitRecurrenceAt/recSaveScopeApply 3508-3680, deleteTxnsUndo/deleteRecsUndo/deleteAssetsUndo 6170-6188 공유 deletedIds 맵). 그런데 afterCloudAuth()(1717-1751)는 여전히 DB.txns 한 컬렉션만 mergeCollection으로 병합하고(1736) recurrences/assets는 그대로 둔 채 CLOUD_SYNC_STATE를 무조건 'conflict'로 강제해(1742), 사용자가 이미 안전 병합된 상태에서도 계정 탭·홈 알림의 파괴적 양자택일 배너를 계속 보게 됨을 확인 — cycle86 critique가 지목한 원 문제(부부 공유 계정 시나리오, 4089줄)가 아직 완전히 해결되지 않음. 경쟁 후보 재점검: 최근 develop/review 사이클(abbr 반올림 경계 등)과 겹치지 않는 새 버그 후보를 훑었으나 유사 심각도가 안 보여, 배선이 이미 끝난 지금 이 마지막 확장을 미룰 이유가 없다고 판단해 이니셔티브를 계속하기로 결정. pending_advance_plan에 afterCloudAuth()의 병합 범위를 recurrences/assets까지 확장하고 완전 병합 시 conflict 강제 대입을 제거·pushCloud()로 즉시 되밀어넣는 계획 저장. pushCloud() 자체의 낙관적 락 충돌(경합) 분기, deletedIds GC, askRelinkDeleted 테스트 인프라는 다음 critique로 명시 이월. 코드 변경 없음(읽기 전용 조사).",
-      "commit": null
-    },
-    {
-      "cycle": 91,
-      "phase": "advance",
-      "timestamp": "2026-09-26T17:12:00.000Z",
-      "summary": "critique(cycle91) 계획대로 afterCloudAuth()의 localUnsynced 병합 분기를 DB.recurrences/DB.assets까지 확장했다. index.html:1727-1746 — 병합 전 DB.deletedIds와 remoteData.deletedIds를 먼저 유니온한 뒤(순서 중요: 세 컬렉션이 같은 공유 deletedIds 맵을 참조하므로), DB.txns/DB.recurrences/DB.assets 셋 다 동일한 mergeCollection(local,remote,DB.deletedIds,remoteData.deletedIds) 호출로 병합하도록 교체(기존엔 DB.txns 한 줄만 있었음). 계획의 3번째 항목(병합 직후 pushCloud()를 명시적으로 호출)은 실제로 불필요하다고 판단해 제외했다 — save()(1946줄)가 opts.deferCloudPush가 없으면 이미 무조건 scheduleCloudPush()를 호출하므로(1956줄), migrate();invalidateBalances();save() 호출만으로도 병합 결과가 1.2초 안에 자동으로 클라우드에 되밀린다(계획이 우려한 '다음 자연스러운 편집까지 지연' 시나리오는 애초에 발생하지 않음 — 불필요한 코드 추가를 피함). 세 컬렉션 모두 병합됐으므로 CLOUD_SYNC_STATE='conflict' 강제 대입 줄을 제거 — pullCloud()가 이미 cloudSyncOk()로 'ok' 상태를 만들어둔 것을 그대로 쓰게 되어, cloudBanner/계정 탭 배너(4154줄 CLOUD_SYNC_STATE==='conflict' 조건)/홈 알림(5990줄)이 더 이상 뜨지 않는다 — cycle86부터 이어온 클라우드 병합 이니셔티브의 마지막 확장이 완료됨. status 반환값('merged')을 가정하는 호출부(doLogin/doSignup)는 'guestMerged'만 특별 취급하고 'merged'/'conflict'는 구분하지 않아 별도 수정 불필요함을 grep으로 확인. test/run.js: 기존 txns 전용 통합 테스트 2개(정상 케이스 + '예전엔 assets/recurrences 방치, CLOUD_SYNC_STATE 강제 conflict' 케이스)를 세 컬렉션 모두 검증하는 통합 테스트 1개로 교체 — recurrences 쪽 local/remote 양쪽 신규·both-id 병합, assets 쪽 동일 패턴, CLOUD_SYNC_STATE가 더 이상 강제로 'conflict'가 되지 않음(sandbox.cloudSyncOk는 다른 테스트와 동일한 이유로 no-op 스텁이라 'ok'로 바뀌는 것 자체는 검증 불가 — 대신 호출 전 값 'idle'이 그대로 유지되는지로 강제 대입 제거를 검증)을 확인. 최초 시도에서 recurrences 기대값이 3인데 2가 나와 실패 — sanitizeBackup()(5030행)이 startDate 없는 반복거래는 무한루프 방지를 위해 통째로 드롭함을 코드로 확인하고 remote/local 반복거래 fixture에 startDate를 추가해 해결. 두 인라인 <script> 블록 node --check 통과, node test/run.js 622/622 통과(기존 623 - 교체로 net -1, 신규 검증 항목은 늘었지만 테스트 개수 자체는 줄어듦). APP_VERSION 1.46.52->1.46.53, sw.js CACHE v214->v215. 다음 critique로 명시 이월: (1) pushCloud() 자체의 낙관적 락 충돌(두 기기가 거의 동시에 push하는 경합) 분기는 이번 슬라이스와 다른 시나리오라 별도 설계 필요, (2) deletedIds GC, (3) askRelinkDeleted 테스트 인프라 정비.",
-      "commit": null
-    },
     {
       "cycle": 92,
       "phase": "develop",
@@ -152,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-27T13:09:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(touch()/mergeCollection/deletedIds 계열은 이번엔 제외하고 아키텍처·UX·기술부채·성능·접근성·에러상태 위주). 4사이클(92,93,94,95) 연속 이월돼온 'askRelinkDeleted 테스트 인프라 정비' 항목을 재검증한 결과, test/run.js:1878-1885 코멘트(커밋 5f31985, cycle92 이전부터 이미 존재)가 스텁 충돌 문제와 touch() 배선 검증은 이미 충분히 다뤘음을 확인 — 그런데도 정작 index.html:2828-2832(_amLink 안 remembered/H/gap 잔액 연속성 계산, DB.deletedBal 결측 폴백·gap===0 조정 생략·반올림·debt 부호 규약 등 엣지케이스를 가진 실질 화폐 산술)는 이 코드베이스에서 유일하게 어떤 테스트도 없이 방치돼 있었음이 드러남 — '테스트 인프라'라는 막연한 표현 뒤에 이미 해결된 반대 근거만 재확인되고 정작 커버되지 않은 산술 자체는 아무도 다시 들여다보지 않은 채 4번 그대로 복사돼 이월된 것. 이 산술을 DB/클로저 의존 없는 최상위 순수 함수 computeRelinkBaseline(remembered,H,entered)로 추출하면 extractFunction()으로 바로 테스트 가능하고(별개 심볼이라 기존 sandbox.askRelinkDeleted 스파이 스텁과 충돌 없음) 다음 사이클로 미룰 이유가 없다고 판단, pending_advance_plan에 저장하고 이 막연한 이월 항목은 이걸로 종결(다음 critique로 다시 복사하지 않음). 러너업(다음 critique 후보로 기록만): (1) act-btn/fc-x 등 아이콘 전용 액션 버튼 다수(index.html:2945,2952,2958,2977,3076,3355,4446,4529 등)가 자산/가계부 행의 aria-label 패턴과 달리 스크린리더용 대체 텍스트가 전혀 없는 접근성 공백, (2) 6675줄 단일 HTML 파일 + 정규식 기반 소스텍스트 추출 테스트(extractFunction) 구조 자체가 이번 스텁 충돌 사례처럼 취약해 향후 순수 로직 모듈 분리가 필요할 수 있음, (3) renderLedger/renderAssets/dayTxns/monthStats2가 매 렌더마다 DB.txns를 선형 스캔+innerHTML 전체 재구성해 다년치 데이터에서 성능 절벽 가능성(현재 규모에선 문제 없음). 코드 변경 없음(읽기 전용 조사).",
+      "commit": null
+    },
+    {
+      "cycle": 96,
+      "phase": "advance",
+      "timestamp": "2026-09-27T14:09:39.180Z",
+      "summary": "critique(cycle96) 계획대로 askRelinkDeleted()의 _amLink 잔액 연동 산술(remembered/H/gap)을 DB·클로저 의존 없는 최상위 순수 함수 computeRelinkBaseline(remembered,H,entered)로 추출했다(index.html, deletedAssetHistoryExists 바로 위) — {base,gap}을 반환하고 _amLink는 그 결과로 d[balKey]=base, gap!==0이면 addBalanceAdjust(d,gap)를 그대로 호출하도록 교체(동작 변화 없음, 순수 리팩터링). FUNCTIONS 화이트리스트에 computeRelinkBaseline 추가 — 기존 sandbox.askRelinkDeleted 스파이 스텁과는 별개 심볼이라 saveAsset 재연동 분기 테스트에 영향 없음을 확인. test/run.js에 계획이 지목한 6가지 케이스(remembered 있음, DB.deletedBal 결측 폴백, gap 양수, gap 음수, 소수점 반올림, 부호 규약 무관성) 회귀 테스트 추가 — 92~95 4사이클 연속 이월돼온 \"테스트 인프라 정비\" 항목이 이걸로 종결됨. 두 인라인 <script> 블록 node --check 통과, node test/run.js 655/655 통과(기존 649 + 신규 6). APP_VERSION 1.46.62->1.46.63, sw.js CACHE v224->v225.",
       "commit": null
     }
   ]

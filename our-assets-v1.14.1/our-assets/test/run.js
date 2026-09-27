@@ -71,7 +71,7 @@ const FUNCTIONS = [
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'esc', 'normName', 'matchTxnQuery',
   'parseCSV', 'unguardCsv', 'csvDateValid', 'csvRowToImportTxn', 'csvDedupeKey', 'buildImportPreview', 'doCsvImport',
   'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo', 'unsnapshotAssetName',
-  'deletedAssetHistoryExists', 'relinkDeletedAsset',
+  'deletedAssetHistoryExists', 'relinkDeletedAsset', 'computeRelinkBaseline',
   'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'restoreBackup', 'storageOutcomeMsg', 'shouldWarnUnpersisted', 'shouldWarnStorageSize',
   'sanitizeAmount', 'sanitizeBackup',
   'saveRec', 'recHistFieldsChanged', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
@@ -1879,10 +1879,48 @@ test('relinkDeletedAsset: DB.deletedType 기록이 없으면(마이그레이션 
 // 의존하고 있어(FUNCTIONS로 실제 구현을 끌어오면 그 스텁을 덮어써 해당 테스트가 깨짐) 여기선 단위 테스트를
 // 추가하지 않는다 — index.html의 _amLink/_amFresh 내부 DB.assets.push(d) 두 곳에 touch(d)를 적용한 것은
 // 다른 자동 생성 경로(doMaturity 등)와 동일한 기계적 패턴이라 코드 리뷰로 충분히 검증 가능하다고 판단.
+// 다만 _amLink 안의 잔액 연동 산술(remembered/H/gap)은 이 화면 전용 기계적 배선이 아니라 실질적인
+// 화폐 계산이라, DB/클로저 의존 없는 순수 함수 computeRelinkBaseline으로 뽑아 아래에서 직접 검증한다
+// (별개 심볼이라 sandbox.askRelinkDeleted 스텁과 충돌하지 않음, app-evolve cycle96).
 // snapshotAssetName() 자체는 balanceAt 등 잔액 계산 체인 전체를 끌고 와 이 파일에서 스텁으로
 // 대체돼 있어(위 sandbox.snapshotAssetName 참고) 직접 실행 테스트는 못 하지만, deletedType을
 // deletedBal과 나란히 남기지 않으면 위의 relinkDeletedAsset 가드가 항상 false가 되어 재연동
 // 기능 자체가 조용히 죽어버리므로, 소스 텍스트 수준에서 그 대입이 빠지지 않았는지 가드한다.
+test('computeRelinkBaseline: remembered(삭제 시점 잔액)가 있으면 그 값으로 기준을 이어간다', () => {
+  // 삭제 시점 잔액 10000, 재연결된 과거 내역만의 현재 잔액(H) 3000 → base=10000-3000=7000
+  const out = sandbox.computeRelinkBaseline(10000, 3000, 10000);
+  assert.strictEqual(out.base, 7000);
+  assert.strictEqual(out.gap, 0, 'entered가 remembered와 같으면 갭 없음');
+});
+test('computeRelinkBaseline: DB.deletedBal 결측 시 호출부가 remembered로 H를 넘기면 base가 0이 된다', () => {
+  // askRelinkDeleted()는 DB.deletedBal[d.name]이 없으면 remembered에 H를 그대로 넘긴다 —
+  // 그 폴백 자체는 호출부 책임이고, 이 함수는 remembered===H일 때 base=0을 보장하기만 하면 된다.
+  const out = sandbox.computeRelinkBaseline(3000, 3000, 5000);
+  assert.strictEqual(out.base, 0);
+  assert.strictEqual(out.gap, 2000);
+});
+test('computeRelinkBaseline: entered가 remembered보다 크면 양수 갭(입금 조정)', () => {
+  const out = sandbox.computeRelinkBaseline(10000, 4000, 12000);
+  assert.strictEqual(out.base, 6000);
+  assert.strictEqual(out.gap, 2000);
+});
+test('computeRelinkBaseline: entered가 remembered보다 작으면 음수 갭(출금 조정)', () => {
+  const out = sandbox.computeRelinkBaseline(10000, 4000, 7000);
+  assert.strictEqual(out.base, 6000);
+  assert.strictEqual(out.gap, -3000);
+});
+test('computeRelinkBaseline: 소수점은 반올림된다(base/gap 각각 독립적으로)', () => {
+  const out = sandbox.computeRelinkBaseline(10000.5, 3000.4, 10000.5);
+  assert.strictEqual(out.base, 7000, 'Math.round(10000.5-3000.4)=Math.round(7000.1)=7000');
+  assert.strictEqual(out.gap, 0);
+});
+test('computeRelinkBaseline: debt 타입도 호출부(addBalanceAdjust)가 부호를 해석하므로 이 함수 자체는 부호 규약과 무관하게 산술만 한다', () => {
+  // addBalanceAdjust(asset,gap)이 asset.type==='debt'일 때 gap<0을 입금으로 해석하는 부호 규약을 갖고
+  // 있지만, computeRelinkBaseline은 asset을 아예 받지 않는 순수 산술이라 타입에 무관하게 같은 결과를 낸다.
+  const out = sandbox.computeRelinkBaseline(-5000, -8000, -5000);
+  assert.strictEqual(out.base, 3000);
+  assert.strictEqual(out.gap, 0);
+});
 test('snapshotAssetName: 삭제 시점 잔액(deletedBal)과 나란히 자산 type(deletedType)도 기록한다', () => {
   const body = extractFunction('snapshotAssetName');
   assert.ok(/DB\.deletedType\s*=\s*DB\.deletedType\s*\|\|\s*\{\}/.test(body), 'DB.deletedType 초기화가 빠짐');

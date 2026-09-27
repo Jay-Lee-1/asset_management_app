@@ -1290,7 +1290,7 @@ body.selmode .fab{display:none}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.62';
+const APP_VERSION='1.46.63';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2810,6 +2810,12 @@ function updateBalanceAdjust(asset,entered){
    else addBalanceAdjust(asset,gap);
  } /* gap==0이면 조정 내역 제거된 상태로 둠 */
 }
+/* askRelinkDeleted()의 _amLink 잔액 연동 산술을 DB/클로저 의존 없이 분리 — remembered(삭제 시점 잔액,
+   결측 시 H로 폴백)/H(재연결된 과거 내역만의 현재 잔액)로 이어갈 기준값과, entered(사용자 입력값) 대비
+   갭(오늘 조정 내역용)을 계산해 반환한다 */
+function computeRelinkBaseline(remembered,H,entered){
+ return {base:Math.round(remembered-H),gap:Math.round(entered-remembered)};
+}
 /* 삭제된 동명·동종 자산의 내역(스냅샷 이름)이 남아있는지 — type도 같아야 매칭(다른 종류의 동명 자산에 조용히 재연결되는 걸 방지) */
 function deletedAssetHistoryExists(nm,type){
  if(!(DB.deletedType&&DB.deletedType[nm]===type))return false; /* 타입 기록이 없는(마이그레이션 이전) 데이터는 안전하게 미매칭 처리 */
@@ -2827,8 +2833,8 @@ function askRelinkDeleted(d,entered,balType,balKey){
      d[balKey]=0;if(balKey==='baseAmount')delete d.amountKRW;else delete d.baseAmount;
      const H=balanceAt(d.id,TODAY);            /* 재연결된 과거 내역만의 잔액(기준값 0) */
      const remembered=(DB.deletedBal&&DB.deletedBal[d.name]!=null)?DB.deletedBal[d.name]:H;
-     d[balKey]=Math.round(remembered-H);       /* 삭제 시점 잔액에서 이어지도록 기준값 설정 */
-     const gap=Math.round(entered-remembered); /* 기억한 잔액 대비 사용자가 입력한 차액 */
+     const {base,gap}=computeRelinkBaseline(remembered,H,entered);
+     d[balKey]=base;                           /* 삭제 시점 잔액에서 이어지도록 기준값 설정 */
      if(gap!==0)addBalanceAdjust(d,gap);        /* 갭 있을 때만 오늘 조정 내역 */
    }
    if(d.type==='savings'&&d.maturityDate)clampRecurringToMaturity(d.id,d.maturityDate);
