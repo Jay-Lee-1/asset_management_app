@@ -1,19 +1,8 @@
 {
-  "cycle": 97,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "pure-logic 함수 일부를 logic.js로 분리해 test/run.js 정규식 추출 취약성 해소",
-    "why": "test/run.js(7577줄)는 index.html의 코드를 import하지 않고 extractFunction/extractConst/extractLet(20-64행)로 문자열을 슬라이싱해 재구성한다. async function만을 위한 ASYNC_PREFIX 특수처리, 'CONSTS가 순차 대입문으로 변환되기 때문에' ASSET_TYPES를 DEFAULT_GROUP_ORDER보다 앞에 둬야 한다는 순서 강제 주석, extractConst가 const만 보므로 재대입되는 모듈스코프 캐시(_histCache 등)만을 위해 따로 만든 LETS 추출 경로 등, 97사이클 동안 쌓인 ~250개 FUNCTIONS 화이트리스트를 지탱하는 이 메커니즘 자체가 이미 여러 특수 케이스로 버티는 중이다. 여러 줄짜리 const/object 리터럴은 첫 ';' 휴리스틱을 깨고, 이름이 다른 'function x(' 마커와 부분 문자열로 겹치면 엉뚱한 구간을 추출할 위험도 있다 — 매 사이클 새 순수 헬퍼를 추가할 때마다 누적되는 유지보수 리스크로, 단발성 버그와 달리 시간이 지날수록 악화된다.",
-    "approach": "이미 화이트리스트에 있고 DOM/전역 상태에 의존하지 않는 순수 함수 일부(날짜: addDays/daysBetween/shiftWeekend/recDates/addMonthsStr/recNthDate/recCountUntil/truncateRecEnd, 병합/tombstone: mergeCollection/gcTombstones/isCloudConflict/decidePushOutcome/computeRelinkBaseline, CSV: parseCSV/csvDateValid/csvDedupeKey)를 앱 루트의 새 logic.js로 옮긴다. index.html의 메인 인라인 <script> 블록 바로 앞에 <script src=\"logic.js\"></script>로 로드(함수들은 일반 전역이 되므로 호출부 변경 불필요). sw.js의 SHELL 배열에 ./logic.js를 추가하고 CACHE 버전을 올린다(현재 v226). test/run.js에서는 이 이전 대상들에 한해 extractFunction/extractConst 호출을 logic.js 실제 소스를 vm으로 직접 로드하는 방식으로 교체하고, 해당 항목들의 ASYNC_PREFIX/순서강제/LETS 특수처리를 제거한다. 빌드 스텝 없이 script 태그만으로 가능하며 점진적으로(다음 사이클들에서 FUNCTIONS 목록의 나머지도 같은 방식으로) 계속 옮길 수 있다."
-  },
+  "cycle": 98,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 92,
-      "phase": "advance",
-      "timestamp": "2026-09-26T21:05:00.000Z",
-      "summary": "critique(cycle92) 계획대로 doRenameCat() 카테고리 이름 변경 시 DB.txns/DB.recurrences의 touch() 누락을 수정했다. 두 forEach 안쪽 필드 대입 직후에 각각 touch(t)/touch(r) 추가. test/run.js에 회귀 테스트 1개 추가. 두 인라인 <script> 블록 node --check 통과, node test/run.js 624/624 통과(기존 623 + 신규 1). APP_VERSION 1.46.54->1.46.55, sw.js CACHE v216->v217. critique(cycle92)가 남긴 이월 목록(pushCloud() 낙관적 락 경합 분기, deletedIds GC, askRelinkDeleted 테스트 인프라)은 그대로 다음 critique로 이월.",
-      "commit": null
-    },
     {
       "cycle": 93,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-27T17:12:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(touch()/mergeCollection 계열 감사는 96에서 종결됐으므로 이번엔 제외). test/run.js(7577줄)가 index.html 코드를 import하지 않고 extractFunction/extractConst/extractLet(20-64행)로 문자열을 슬라이싱해 재구성하는 메커니즘 자체를 재검토 — async function만의 ASYNC_PREFIX 특수처리, CONSTS 변환 순서를 강제하는 주석, extractConst가 못 보는 재대입 모듈스코프 캐시만을 위한 별도 LETS 경로 등, 97사이클 동안 쌓인 ~250개 FUNCTIONS 화이트리스트를 지탱하며 이미 여러 특수 케이스로 버티고 있음을 확인. 여러 줄 const/object 리터럴이 첫 ';' 휴리스틱을 깨거나 이름이 부분 문자열로 겹치는 함수가 엉뚱한 구간을 추출할 위험이 실재하는, 사이클마다 누적되는 유지보수 리스크로 판단해 최우선 과제로 채택. pending_advance_plan에 날짜/병합·tombstone/CSV 계열의 이미 화이트리스트에 있는 순수 함수 일부를 별도 logic.js로 분리해 index.html에 <script src>로 로드하고, sw.js SHELL에 추가+CACHE 버전 상승, test/run.js는 해당 항목들만 vm으로 logic.js 실제 소스를 직접 로드하도록 교체하는 점진적 계획 저장. 러너업(기록만): (1) fc-x 입력창 지우기 아이콘 버튼 10곳 aria-label 부재(재확인, count=10, act-btn보다 낮은 우선순위로 유지), (2) renderLedger/renderAssets/dayTxns/monthStats2의 매 렌더 전체 선형 스캔+innerHTML 재구성(재확인, 현재 규모에선 문제 없음). 코드 변경 없음(읽기 전용 조사).",
+      "commit": null
+    },
+    {
+      "cycle": 97,
+      "phase": "advance",
+      "timestamp": "2026-09-27T18:14:00.000Z",
+      "summary": "critique(cycle97) 계획대로 순수 함수 16개(날짜: addDays/daysBetween/shiftWeekend/recDates/addMonthsStr/recNthDate/recCountUntil/truncateRecEnd, 병합/tombstone: mergeCollection/gcTombstones/isCloudConflict/decidePushOutcome/computeRelinkBaseline, CSV: parseCSV/csvDateValid/csvDedupeKey)를 새 logic.js로 옮겼다. index.html의 두 CDN <script> 태그 뒤·메인 인라인 <script> 앞에 <script src=\"logic.js\"></script> 추가(함수는 일반 전역이 되므로 호출부 변경 없음). sw.js SHELL에 ./logic.js 추가, CACHE v226->v227. test/run.js는 이 16개를 FUNCTIONS 화이트리스트에서 빼고, logic.js를 index.html처럼 그대로 읽어(logicSrc) extracted보다 먼저 같은 vm 컨텍스트에 로드하도록 교체 — 이 함수들에 한해 extractFunction의 정규식 슬라이싱 의존을 완전히 제거했다(단, 남겨둔 lastDay/addMonths 등 의존 함수는 여전히 index.html에 있고 전역이라 문제 없음). 두 인라인 <script> 블록과 logic.js 모두 node --check 통과, node test/run.js 655/655 통과(테스트 개수 변화 없음 — 동작 변경 없는 순수 리팩터링이라 새 테스트도 불필요). APP_VERSION 1.46.64->1.46.65. critique(cycle97)가 밝힌 대로 나머지 FUNCTIONS 화이트리스트(~230여개)의 logic.js 이전은 점진적 과제로 다음 사이클들에 이월.",
       "commit": null
     }
   ]

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /* 경량 회귀 테스트 러너 — 빌드 도구 없이 `node test/run.js`로 바로 실행된다.
- * index.html에서 순수 로직 함수들의 소스를 텍스트로 그대로 추출해 실행하므로,
- * 여기 함수 목록은 실제 앱 코드와 항상 같은 소스를 공유한다(복제/재구현 아님).
+ * 순수 로직 함수의 소스는 두 경로로 들어온다: (1) logic.js는 index.html처럼 그대로 읽어 vm에
+ * 로드하고, (2) 아직 index.html 안에 있는 나머지는 정규식으로 텍스트를 슬라이싱해 추출한다.
+ * 두 경로 모두 실제 앱 코드와 항상 같은 소스를 공유한다(복제/재구현 아님).
  * 지금까지 app-evolve 사이클에서 실제로 고친 버그들의 회귀를 막는 게 목적이라,
  * 새 기능을 찾기보다는 "예전에 고친 게 다시 깨지지 않았는가"를 확인한다.
  * 함수 하나를 실패 없이 실행하려면 필요한 다른 순수 함수들도 함께 추출해야 한다
@@ -16,6 +17,10 @@ const assert = require('assert');
 
 const HTML_PATH = path.join(__dirname, '..', 'index.html');
 const src = fs.readFileSync(HTML_PATH, 'utf8');
+// logic.js는 index.html이 정규식으로 슬라이싱하지 않고 브라우저처럼 그대로 로드하는 순수 로직
+// 모듈이다 — 여기 있는 함수는 extractFunction/extractConst의 특수 케이스에서 벗어난다.
+const LOGIC_PATH = path.join(__dirname, '..', 'logic.js');
+const logicSrc = fs.readFileSync(LOGIC_PATH, 'utf8');
 
 function extractFunction(name) {
   const marker = `function ${name}(`;
@@ -64,20 +69,24 @@ function extractLet(name) {
 }
 
 // 테스트 대상 + 그 대상이 내부에서 호출하는 순수 함수들.
+// addDays/daysBetween/shiftWeekend/recDates/addMonthsStr/recNthDate/recCountUntil/truncateRecEnd,
+// mergeCollection/gcTombstones/isCloudConflict/decidePushOutcome/computeRelinkBaseline,
+// parseCSV/csvDateValid/csvDedupeKey는 index.html이 아니라 logic.js에 있다 — 위 logicSrc로
+// 직접 로드하므로 이 목록에는 없다(app-evolve cycle97 advance).
 const FUNCTIONS = [
-  'lastDay', 'addDays', 'daysBetween', 'shiftWeekend', 'recDates', 'addMonthsStr', 'addMonths',
-  'recNthDate', 'recCountUntil', 'truncateRecEnd', 'dateBelowRangeFloor', 'recalcEndCond', 'isVarCat', 'setCatVar', 'activeRecsForAssets', 'activeRecsForCat',
+  'lastDay', 'addMonths',
+  'dateBelowRangeFloor', 'recalcEndCond', 'isVarCat', 'setCatVar', 'activeRecsForAssets', 'activeRecsForCat',
   'num', 'doRenameCat', 'doDeleteCat', 'budgetProgress', 'totalBudgetSummary', 'budgetKey', 'budgetForMonth', 'setBudgetFrom', 'addCat',
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'esc', 'normName', 'matchTxnQuery',
-  'parseCSV', 'unguardCsv', 'csvDateValid', 'csvRowToImportTxn', 'csvDedupeKey', 'buildImportPreview', 'doCsvImport',
+  'unguardCsv', 'csvRowToImportTxn', 'buildImportPreview', 'doCsvImport',
   'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo', 'unsnapshotAssetName',
-  'deletedAssetHistoryExists', 'relinkDeletedAsset', 'computeRelinkBaseline',
+  'deletedAssetHistoryExists', 'relinkDeletedAsset',
   'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'restoreBackup', 'storageOutcomeMsg', 'shouldWarnUnpersisted', 'shouldWarnStorageSize',
   'sanitizeAmount', 'sanitizeBackup',
   'saveRec', 'recHistFieldsChanged', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
   'monthStartStr', 'monthEndStr', 'expandRec', 'allTxns', 'txnsByDateInRange', 'spendByCategory', 'spendTrend', 'spendTrendBadge', 'histSumTotals',
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'expenseBreakdownCard',
-  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asOpenCur', 'asCur', 'asToggleNeg', 'openAssetSheet', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'isCloudConflict', 'decidePushOutcome', 'mergeCollection', 'gcTombstones', 'mergeRemoteDataIntoLocal', 'fmtAmt',
+  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asOpenCur', 'asCur', 'asToggleNeg', 'openAssetSheet', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'mergeRemoteDataIntoLocal', 'fmtAmt',
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges', 'shouldRetryCloudSync',
   'pullCloud', 'afterCloudAuth', 'resolveCloudPullRemote', 'pushCloud',
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
@@ -453,6 +462,9 @@ const sandbox = {
   TextEncoder,
 };
 vm.createContext(sandbox);
+// index.html이 <script src="logic.js">로 로드하는 순서를 그대로 따라 logic.js를 먼저 실행한다
+// (함수 선언끼리는 순서가 무관하지만, 실제 로드 순서와 맞춰 둔다).
+vm.runInContext(logicSrc, sandbox, { filename: 'logic.js' });
 vm.runInContext(extracted, sandbox, { filename: 'extracted-from-index.html' });
 
 const tests = [];
