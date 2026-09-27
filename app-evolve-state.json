@@ -1,15 +1,8 @@
 {
   "cycle": 94,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 89,
-      "phase": "review",
-      "timestamp": "2026-09-26T07:10:00.000Z",
-      "summary": "develop 커밋(46d93c4, saveAsset() 동명·동종 자산 중복 판정을 normName() 근접 중복 검사로 확장)을 검토. normName(a.name)===normName(d.name) 비교가 addCat/doRenameCat(4360, 4408줄)과 동일한 패턴임을 확인, 토스트 문구도 완전일치/근접중복 분기와 '비슷한 카테고리가 있어요' 톤이 일치함을 확인. dup 판정 대상인 DB.assets는 delAsset()이 배열에서 물리 삭제만 해 살아있는 자산만 남으므로(소프트 삭제 플래그 없음) '살아있는' 주석과 실제 동작이 일치함을 grep으로 재확인. 두 인라인 <script> 블록 node --check 통과, node test/run.js 605/605 통과. 코드 변경 없음(이상 없음).",
-      "commit": null
-    },
     {
       "cycle": 89,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-27T02:10:00.000Z",
       "summary": "general-purpose 서브에이전트로 발견한 saveQuickAmount() touch() 누락 버그 수정. 홈 화면의 '눌러서 금액만 넣기' 퀵 입력 카드가 변동 카테고리 회차의 실제 금액을 r.edits[date]={amount:amt}로 기록하는데(index.html:5824), 정확히 같은 모양의 편집인 recSave() scope='one' 경로(3543행: edits[date]={amount,memo};touch(r))와 달리 touch(r)를 빠뜨리고 있었다 — doRenameOwner/doRenameCat/rollPendingTransfers(cycle92-93)와 동일한 이유로, mergeCollection()의 3-way 병합은 updatedAt만 보고 승자를 고르므로 이 기기에서 방금 입력한 실제 금액이 클라우드 동기화 충돌 때 다른 기기의 더 최근 updatedAt을 가진 옛 사본에 조용히 덮여 사라질 수 있었다. edits[date]={amount:amt}; 대입 직후에 touch(r) 추가, 왜 필요한지 설명하는 주석 추가. test/run.js에 회귀 테스트 2개 추가(실제 금액을 저장하면 touch() 호출로 updatedAt 갱신 / 금액을 비워 저장 실패하면 touch() 미호출) — git stash로 되돌려 첫 테스트가 실제로 실패(629/630)함을 확인한 뒤 재적용. 두 인라인 <script> 블록 node --check 통과, node test/run.js 630/630 통과(기존 628 + 신규 2). APP_VERSION 1.46.57->1.46.58, sw.js CACHE v219->v220. 서브에이전트가 추가로 훑었으나 버그 없음으로 확인한 범위: recDates/expandRec/addMonthsStr/recNthDate/recCountUntil/truncateRecEnd, shiftWeekend, balancesUpTo/balanceAt/assetEval/assetGainLoss, budgetForMonth/setBudgetFrom/budgetProgress, doDeleteCat/doRenameCat, parseCSV/txnsToCSV/csvRowToImportTxn, dday(), findDonors/openFixShortfall/planTransfer, clampDay. 발견했지만 이번 범위 밖으로 남긴 것: undo 콜백들(recApply/doDeleteCat 등)이 이전 상태 복원 시 대체로 touch()를 안 부르는 더 넓은 기존 패턴 — 단일 사이클로 고치기엔 범위가 크다고 판단해 향후 critique 후보로 남김.",
+      "commit": null
+    },
+    {
+      "cycle": 94,
+      "phase": "review",
+      "timestamp": "2026-09-27T03:08:39.000Z",
+      "summary": "develop 커밋(ff37c7b, saveQuickAmount() 실제 금액 입력 시 touch() 누락 수정)을 검토. edits[date]={amount:amt} 대입 직후 touch(r) 추가 위치가 twGuard/입력값 검증(빈 값 early return) 이후임을 확인해 실패 시에는 touch가 호출되지 않음을 코드로 재확인. r은 DB.recurrences.find()로 찾은 원본 객체이므로 touch(r)이 복사본이 아닌 실제 저장 대상을 갱신함을 확인. recSave() scope='one' 경로(3543행)와 동일한 edits 갱신 패턴이며 doRenameOwner/doRenameCat/rollPendingTransfers(cycle92-93)와 같은 이유의 같은 수정 패턴임을 재확인. undo 콜백(edits 되돌리기)이 touch()를 호출하지 않는 점은 새 버그가 아니라 cycle94 develop 요약에 이미 명시된 기존 광범위 패턴(향후 critique 후보)이므로 이번 diff의 범위 밖으로 판단. 두 인라인 <script> 블록 node --check 통과, node test/run.js 630/630 통과(신규 회귀 테스트 2개 포함). 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
