@@ -1,15 +1,8 @@
 {
   "cycle": 100,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 95,
-      "phase": "develop",
-      "timestamp": "2026-09-27T06:14:39.019Z",
-      "summary": "general-purpose 서브에이전트로 CSV 가져오기 카테고리 근접중복 버그 수정. buildImportPreview()(index.html:4915)와 doCsvImport()(5164)가 CSV 카테고리 셀을 normName() 없이 Array.includes()로 원문 그대로 비교해, \"식비 \"(끝공백)·\"RENT\" vs \"Rent\"처럼 조금만 달라도 완전히 새로운 카테고리로 조용히 생성됨. canonicalize 로직을 dedupe key 계산보다 앞으로 옮겨 기존 카테고리/이번 파일 내 newCats와 normName 매칭 후 일치하면 그 표기로 덮어씀. test/run.js에 회귀 테스트 3개 추가. 두 인라인 <script> 블록 node --check 통과, node test/run.js 638/638 통과(기존 635 + 신규 3). APP_VERSION 1.46.59->1.46.60, sw.js CACHE v221->v222.",
-      "commit": null
-    },
     {
       "cycle": 95,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-28T02:12:00.000Z",
       "summary": "critique(cycle99) 계획대로 silent-failure 공백을 해소했다. recordError(err,kind)(index.html:1315-1318 부근)가 lastError 대입/console.error 뒤에 kind==='renderCurrent'이거나 err instanceof Error인 경우에 한해 showErrBanner()를 직접 호출하도록 수정 — crossorigin 없는 서드파티 스크립트(Supabase 등)의 정보 없는 'Script error.'(err가 Error 인스턴스가 아님)는 계획대로 필터링해 소음을 피했다. renderCurrent()의 catch 블록(6221-6224 부근)에서 중복이 된 명시적 showErrBanner() 호출을 제거하고 recordError(err,'renderCurrent') 호출만 남김. 1309-1313 주석을 새 불변식(recordError가 로깅과 사용자 노출을 모두 담당하는 단일 지점)에 맞게 갱신. test/run.js는 계획이 미리 밝힌 대로 DOM/window가 없어 이 경로에 자동 테스트를 추가할 수 없어 새 테스트는 없음(665/665 유지, 변화 없음) — 대신 Playwright(로컬 chromium)로 실제 페이지를 띄워 수동 검증: onclick 흐름을 흉내낸 renderCurrent() 밖의 throw가 렌더 없이도 즉시 배너를 띄우는지, 다음 성공적인 renderCurrent()가 hideErrBanner()로 정상적으로 지우는지, recordError(null,'onerror')가 계획한 대로 배너를 띄우지 않는지(노이즈 필터 동작) 세 가지를 모두 확인 후 통과. 두 인라인 <script> 블록과 logic.js 모두 node --check 통과, node test/run.js 665/665 통과(변경 없음, 순수 로직 함수 변경이 아니므로 예상대로). APP_VERSION 1.46.68->1.46.69, sw.js CACHE v230->v231. pending_advance_plan을 null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 100,
+      "phase": "develop",
+      "timestamp": "2026-09-28T00:00:00.000Z",
+      "summary": "general-purpose 서브에이전트로 접근성 마무리: cycle97/99에서 fc-x 클리어 버튼 9곳은 aria-label만 추가했지만 만기일 지우기(index.html:2874~)는 <button class=\"pick\"> 안에 <span class=\"fc-x\">가 중첩된 잘못된 마크업(버튼 안 버튼 대체)이라 그때 범위 밖으로 남겨뒀던 마지막 1곳. 이번엔 바깥 pick을 <div class=\"pick\" tabindex=0 role=button aria-label=\"만기일 {날짜|선택}\" onkeydown=rowKeydown(...)>으로, 안쪽 클리어를 <button type=button class=\"fc-x\" aria-label=\"만기일 지우기\">✕</button>로 교체해 기존 .asset-item/.manage-row 등에서 쓰는 div-as-row-button + rowKeydown() 관례를 그대로 따랐다 — 이제 두 컨트롤 모두 독립적으로 포커스·키보드 활성화 가능. cursor:pointer를 새 div에 추가(버튼이 아니게 되어 전역 button{cursor:pointer} 리셋을 안 받음). 사전 조사 단계에서 반복거래 날짜 계산·클라우드 병합·CSV 가져오기/내보내기·예산 이력·폼 검증 등 더 나은 후보를 폭넓게 찾았으나 97사이클의 누적 하드닝으로 새로운 실버그를 찾지 못해, cycle97/99에서 명시적으로 이월해둔 이 마지막 접근성 공백을 채택. 마크업 전용 변경이라 회귀 테스트 추가 없음(기존 9곳 fc-x aria-label 처리와 동일 관례). 두 인라인 <script> 블록과 logic.js/sw.js 모두 node --check 통과, node test/run.js 665/665 통과(변경 없음). APP_VERSION 1.46.69->1.46.70, sw.js CACHE v231->v232.",
       "commit": null
     }
   ]
