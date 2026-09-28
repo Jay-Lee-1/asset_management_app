@@ -1,7 +1,11 @@
 {
   "cycle": 104,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "뷰포트 핀치줌 잠금 해제 (index.html:5 viewport meta) — 저시력 사용자의 유일한 확대 수단 복원",
+    "why": "index.html:5의 <meta name=viewport ... maximum-scale=1.0 user-scalable=no>가 모든 모바일 브라우저에서 핀치줌을 원천 차단하는데, 앱 내에 글자 크기/접근성 설정이 전혀 없어(폰트/글자 크기/접근성 grep 결과 0건) 저시력 사용자에게는 핀치줌이 유일한 확대 수단이었다. 동시에 달력 뷰의 일별 수입/지출/저축 라벨(.cal-cell .ex/.in/.sv, index.html:702/712)이 7.5~8px까지 축소되고 그 외에도 9~11px대 라벨이 다수 존재해, 실제로 못 읽는 사용자가 확대할 방법이 없는 도달 가능한 WCAG 1.4.4/1.4.10(200%까지 줌 차단 금지) 위반. 지금까지 고친 aria-label/label-for류는 스크린리더 사용자를 돕는 것이었던 반면, 이 항목은 스크린리더를 쓰지 않는 저시력 사용자를 막고 있어 성격이 다르고 더 근본적인 접근성 결함이라 최우선 채택.",
+    "approach": "1) index.html:5의 viewport meta에서 user-scalable=no를 제거하고 maximum-scale을 5 정도로 올림(initial-scale=1.0, viewport-fit=cover는 그대로 유지). 2) 커스텀 제스처를 쓰는 요소들(.drag-handle, .mc-viewport/.wh-box, 시트 스와이프, 캐러셀, 롱프레스 피커 등 index.html 323/338/413/419/679/680/791/794/1056 부근의 touch-action 선언)을 감사해 이미 touch-action이 명시돼 핀치줌 허용 후에도 네이티브 확대/더블탭줌과 충돌하지 않는지 확인 — 빠진 곳이 있으면 그곳에만 touch-action을 추가. 3) 작은 폰트 크기 자체는 건드리지 않음(줌 잠금 해제가 수정이지 텍스트 리사이징이 아님), 앱 내 글자크기 토글 같은 별도 기능은 이번 범위 밖. 4) 순수 로직 변경이 아니므로 test/run.js 회귀 테스트 추가 대상 아님 — 대신 수동 QA로 100% 줌 상태에서 시트 스와이프 닫기/캐러셀 드래그/그룹 드래그 재정렬/롱프레스 피커가 모두 정상 동작하는지, 실제로 핀치줌이 되는지 확인. APP_VERSION과 sw.js CACHE 버전은 계획대로 함께 올림."
+  },
   "history": [
     {
       "cycle": 99,
@@ -141,6 +145,13 @@
       "phase": "review",
       "timestamp": "2026-09-28T22:09:10.656Z",
       "summary": "develop 커밋(f2459c7, 인증 화면 label-input for 연결 누락 5곳: kkeyIn/auEmail/auPw/fpEmailIn/newPwIn)을 검토. grep으로 5개 id 모두 파일 전체에서 유일함을 재확인(중복 id로 label-for가 엉뚱한 요소를 가리킬 위험 없음) — kkeyIn(6475)/auEmail(6481)/auPw(6482)/fpEmailIn(6547)/newPwIn(6565) 각 for 속성이 바로 옆 input id와 정확히 일치. 자격증명 입력(autocomplete=username/current-password/new-password)이라 스크린리더 접근 가능한 이름 연결의 실효성이 큰 변경. 순수 마크업 속성 추가라 로직 회귀 위험 없음, node --check(두 인라인 script 블록) 통과, node test/run.js 685/685 통과(변경 없음, 예상대로). 코드 변경 없음(이상 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 104,
+      "phase": "critique",
+      "timestamp": "2026-09-28T23:10:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(접근성 전수·silent-failure 배너·클라우드 병합·안드로이드 백버튼 History API·netlify 함수 테스트 커버리지·CSV export 범위·예산탭·AUTH._legacyHash·skip/edits 맵·delOwner 캐스케이드는 모두 이미 다뤄졌거나 재확인 완료라 제외, 새 시야로 조사). index.html:5 viewport meta에 user-scalable=no와 maximum-scale=1.0이 함께 있어 모든 모바일 브라우저에서 핀치줌이 원천 차단되어 있는데, 앱 내에 글자크기/접근성 설정이 전혀 없어(grep 0건) 저시력 사용자에게 핀치줌이 유일한 확대 수단이었음을 발견. 동시에 달력 뷰 일별 라벨(.cal-cell .ex/.in/.sv, index.html:702/712)이 7.5~8px까지 축소되는 등 9~11px대 작은 텍스트가 다수 존재해, 지금까지 고친 aria-label/label-for류(스크린리더 사용자 대상)와는 성격이 다른, 스크린리더를 쓰지 않는 저시력 사용자를 막는 실제 도달 가능한 WCAG 1.4.4/1.4.10 위반이라 최우선 채택. pending_advance_plan에 저장: (1) viewport meta에서 user-scalable=no 제거·maximum-scale을 5로 상향(initial-scale/viewport-fit 유지), (2) 커스텀 제스처 요소(드래그 핸들·캐러셀·시트 스와이프·롱프레스 피커 등 touch-action 선언 지점들)를 감사해 핀치줌 허용 후에도 충돌 없는지 확인, 빠진 곳만 touch-action 추가, (3) 작은 폰트 크기 자체나 별도 글자크기 토글 기능은 범위 밖(줌 잠금 해제가 수정), (4) 순수 로직 변경이 아니라 test/run.js 대상 아님, 수동 QA로 100% 줌에서 제스처 동작 확인. 러너업(기록만): fitText/fitAll 강제 리플로우(.fit이 화면당 소수 합계 숫자에만 적용돼 실사용 성능 문제 아님, 기각), 히스토리 검색 재렌더(포커스/커서 유실 없이 #histList/#histTotals만 교체함 확인, 문제 없음), 클라우드 동기화 충돌/경쟁 재조사(조건부 UPDATE+자동 병합 재시도+visibilitychange 플러시로 이미 해소됨 재확인), PWA 업데이트 플로우(skipWaiting/hadController 가드로 이미 안전, 문제 없음), 자산/반복거래 삭제 캐스케이드(경고 및 비활성화/clamp 이미 구현, 데이터 유실 없음), test/run.js FUNCTIONS 배열 기준 미테스트 541개 함수 diff(대부분 DOM/렌더 함수라 부적합, 순수에 가까운 나머지는 이미 테스트된 기본함수의 얇은 래퍼라 우선순위 낮음), label-for 잔여 백로그(~40곳)/fabPop+탭전환 History API(여전히 유효하지만 이번엔 줌 잠금 건이 더 전략적·미조사 상태라 우선순위 밀림). 코드 변경 없음(읽기 전용 조사).",
       "commit": null
     }
   ]
