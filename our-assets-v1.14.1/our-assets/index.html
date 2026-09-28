@@ -1293,7 +1293,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.77';
+const APP_VERSION='1.46.78';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6471,15 +6471,15 @@ function renderAuth(){
    <div class="auth-sub">가볍게 시작하는 우리 가족 자산·가계부</div>
    <button class="kakao-btn" onclick="kakaoLogin()"><span class="kico">${svg('chat')}</span>카카오로 시작하기</button>
    ${AUTHKEY?`<div class="kkey">
-     <label>카카오 JavaScript 키</label>
+     <label for="kkeyIn">카카오 JavaScript 키</label>
      <input id="kkeyIn" placeholder="카카오 JavaScript 키 붙여넣기" value="${(localStorage.getItem('asset_app_kakao_key')||'').replace(/"/g,'&quot;')}">
      <div class="kkey-row"><button class="btn btn-soft cancel" onclick="AUTHKEY=false;authErr('');renderAuth()">취소</button><button class="btn btn-primary" onclick="saveKakaoKey()">저장하고 로그인</button></div>
      <div class="kkey-help">키가 없다면 <b>developers.kakao.com</b> → 앱 생성 → [앱 키]의 <b>JavaScript 키</b>를 복사해 붙여넣으세요. 이 앱을 올린 <b>도메인 등록</b>과 [카카오 로그인] 활성화도 필요해요.</div>
    </div>`:''}
    <div class="auth-div"><span>또는 이메일로</span></div>
    <div class="auth-seg"><button class="${login?'on':''}" onclick="authSet('login')">로그인</button><button class="${login?'':'on'}" onclick="authSet('signup')">회원가입</button></div>
-   <div class="auth-field"><label>이메일</label><input id="auEmail" type="email" inputmode="email" autocomplete="username" placeholder="you@example.com"></div>
-   <div class="auth-field"><label>비밀번호</label><input id="auPw" type="password" autocomplete="${login?'current-password':'new-password'}" placeholder="${login?'':'8자 이상'}" onkeydown="if(event.key==='Enter'){${login?'doLogin()':'doSignup()'}}"></div>
+   <div class="auth-field"><label for="auEmail">이메일</label><input id="auEmail" type="email" inputmode="email" autocomplete="username" placeholder="you@example.com"></div>
+   <div class="auth-field"><label for="auPw">비밀번호</label><input id="auPw" type="password" autocomplete="${login?'current-password':'new-password'}" placeholder="${login?'':'8자 이상'}" onkeydown="if(event.key==='Enter'){${login?'doLogin()':'doSignup()'}}"></div>
    ${login&&sbCfg().url?`<button type="button" class="auth-forgot" onclick="doForgotPassword()">비밀번호를 잊으셨나요?</button>`:''}
    <div id="auErr" class="auth-err" style="display:none"></div>
    <button class="btn btn-primary auth-submit" onclick="${login?'doLogin()':'doSignup()'}">${login?'로그인':'가입하고 시작'}</button>
@@ -6544,7 +6544,7 @@ function doForgotPassword(){
  const email=($('auEmail')&&$('auEmail').value)||'';
  openSheet(`<h3>비밀번호 재설정</h3>
   <div class="desc">가입하신 이메일로 비밀번호 재설정 링크를 보내드려요.</div>
-  <div class="field"><label>이메일</label><input id="fpEmailIn" type="email" inputmode="email" autocomplete="username" placeholder="you@example.com" value="${esc(email)}"></div>
+  <div class="field"><label for="fpEmailIn">이메일</label><input id="fpEmailIn" type="email" inputmode="email" autocomplete="username" placeholder="you@example.com" value="${esc(email)}"></div>
   <div id="fpErr" class="auth-err" style="display:none"></div>
   <div class="two-btn" style="margin-top:14px"><button class="btn btn-soft cancel" onclick="closeSheet()">취소</button><button class="btn btn-primary" id="fpSendBtn" onclick="doSendResetEmail()">재설정 메일 보내기</button></div>`);
 }
@@ -6562,7 +6562,7 @@ async function doSendResetEmail(){
 function openChangePasswordSheet(recovery){
  openSheet(`<h3>${recovery?'새 비밀번호 설정':'비밀번호 변경'}</h3>
   <div class="desc">${recovery?'비밀번호 재설정 메일로 들어오셨어요. 새 비밀번호를 설정해 주세요.':'다른 기기는 조용히 로그아웃될 수 있어요.'}</div>
-  <div class="field"><label>새 비밀번호</label><input id="newPwIn" type="password" autocomplete="new-password" placeholder="8자 이상" onkeydown="if(event.key==='Enter')doChangePassword(${!!recovery})"></div>
+  <div class="field"><label for="newPwIn">새 비밀번호</label><input id="newPwIn" type="password" autocomplete="new-password" placeholder="8자 이상" onkeydown="if(event.key==='Enter')doChangePassword(${!!recovery})"></div>
   <div id="newPwErr" class="auth-err" style="display:none"></div>
   <div class="two-btn" style="margin-top:14px"><button class="btn btn-primary" id="pwSaveBtn" onclick="doChangePassword(${!!recovery})" style="width:100%">저장</button></div>`);
 }
