@@ -1,15 +1,8 @@
 {
   "cycle": 103,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 98,
-      "phase": "develop",
-      "timestamp": "2026-09-27T19:10:00.000Z",
-      "summary": "general-purpose 서브에이전트로 sanitizeBackup()(index.html:4918-4970, 백업 파일 복원과 클라우드 pull/merge 양쪽에서 공유하는 방어 검증 함수)의 검증 공백을 발견해 수정. 이 함수는 amount/startDate/id는 이미 검증하지만, 정상 앱 플로우에서는 저장 직전 clampDay()가 항상 1~31 숫자 또는 'last'로 맞춰주는 반복거래의 day 필드는 검증하지 않았다 — 백업 파일이나 다른 기기의 클라우드 동기화 데이터는 이 경로를 거치지 않으므로, 문자열·NaN·범위 밖 day가 그대로 들어오면 recDates()의 Math.min(r.day,lastDay(y,m))이 \"2024-01-NaN\" 같은 깨진 날짜를 매달 계속 만들어내며(크래시는 없음) recFreqLabel()도 그대로 표시하는 조용한 데이터 오염이었다. sanitizeBackup() 반복거래 루프에 freq==='monthly'&&day!=='last' 조건으로 clampDay()를 재사용해 정규화, fixedCount에 반영. test/run.js에 회귀 테스트 2개 추가(비정상 day 값 clamp 검증, 'last'/비월간 반복은 그대로 유지 검증). 두 인라인 <script> 블록과 logic.js/sw.js 모두 node --check 통과, node test/run.js 657/657 통과(기존 655 + 신규 2). APP_VERSION 1.46.65->1.46.66, sw.js CACHE v227->v228.",
-      "commit": null
-    },
     {
       "cycle": 98,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-09-28T15:20:00.000Z",
       "summary": "critique(cycle102) 계획대로 클라우드 동기화 병합에서 빠져있던 DB.categories/DB.owners/DB.budgetHistory를 병합 대상에 포함시켰다. logic.js에 순수 함수 2개 신설: mergeNameList(localArr,remoteArr,normalize) — local 순서를 유지한 채 normalize(정규화) 기준으로 local에 없는 remote 이름만 뒤에 추가(addCat/addOwner의 normName 중복 방지 기준과 동일), mergeBudgetHistory(localMap,remoteMap) — 카테고리별 [{from,amount}] 항목을 from 키로 유니온하고 동일 (카테고리,from) 충돌 시 mergeCollection의 'updatedAt 동률이면 local 승'과 동일한 취지로 local 금액을 우선, from 오름차순 재정렬. mergeRemoteDataIntoLocal()(index.html:1423)의 기존 3개 mergeCollection() 호출 뒤, migrate() 호출 전에 DB.categories(expense/income/saving 3종)·DB.owners·DB.budgetHistory에 이 둘을 적용하는 호출 6줄 추가 — normName은 index.html 전역(1440)을 그대로 넘겨 logic.js의 'DOM/DB/전역 무의존' 불변식은 유지. 계획대로 DB.settings(기기별 로컬 선호)·DB.nwHistory(자동 생성 스냅샷)는 이번 범위에서 명시적으로 제외하고 손대지 않음 — 이름/삭제 병합은 다루지 않음(카테고리·귀속 삭제는 사용 중이면 이미 막혀 있어, 상대 기기가 아직 쓰고 있는 이름이 병합 중 사라지는 걸 피하려 삭제 방향은 로컬에서 명시적으로 지운 뒤 다음 push로만 반영되게 둠 — 이번 병합 함수들 주석에 남김). test/run.js에 mergeNameList 3개·mergeBudgetHistory 4개, 총 7개 회귀 테스트 추가(계획한 6개 시나리오 + 빈 입력 방어를 두 함수로 나눠 케이스 분리) — vm 샌드박스에서 인자가 undefined일 때 함수 내부가 새로 만드는 []/{}는 host와 realm이 달라 deepStrictEqual이 그대로는 실패해(recDates/parseCSV 테스트와 동일한 기존 이슈), JSON.parse(JSON.stringify()) 정규화 패턴을 그대로 재사용해 해결. 두 인라인 <script> 블록과 logic.js 모두 node --check 통과, node test/run.js 672/672 통과(기존 665 + 신규 7). APP_VERSION 1.46.75->1.46.76, sw.js CACHE v237->v238. pending_advance_plan을 null로 비움.",
       "commit": null
+    },
+    {
+      "cycle": 103,
+      "phase": "develop",
+      "timestamp": "2026-09-28T17:07:00.000Z",
+      "summary": "general-purpose 서브에이전트로 접근성 공백 발견·수정: 홈 화면의 클릭 가능한 \"링크\" 스팬 2곳(renderHome()의 시세 \"연동 관리\", index.html:2297 / monthOutflowCard()의 \"지출 분석\", index.html:5922)이 <span class=\"link\" onclick=...>로만 구현돼 마우스·터치로만 열리고 키보드 포커스가 전혀 가지 않던 문제. 앱 다른 곳(홈 지출 예정 목록 .of-row)에서 이미 쓰던 role=\"button\" tabindex=\"0\" onkeydown=\"rowKeydown(event,()=>fn())\" 관례를 그대로 적용해 Tab 포커스+Enter/Space 활성화 가능하도록 수정, aria-label도 각각 \"시세 연동 관리\"/\"지출 분석\" 추가. 마크업/속성만 바꾼 순수 UI 변경이라 logic.js는 건드리지 않았고 회귀 테스트 추가 없음. 두 인라인 <script> 블록, logic.js, sw.js 모두 node --check 통과, node test/run.js 672/672 통과(변화 없음, 순수 로직 미변경). APP_VERSION 1.46.76->1.46.77, sw.js CACHE v238->v239.",
+      "commit": "02d80ed"
     }
   ]
 }
