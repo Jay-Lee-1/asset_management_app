@@ -1293,7 +1293,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.75';
+const APP_VERSION='1.46.76';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1428,6 +1428,16 @@ function mergeRemoteDataIntoLocal(remoteData){
  DB.txns=mergeCollection(DB.txns,remoteData.txns,DB.deletedIds,remoteData.deletedIds);
  DB.recurrences=mergeCollection(DB.recurrences,remoteData.recurrences,DB.deletedIds,remoteData.deletedIds);
  DB.assets=mergeCollection(DB.assets,remoteData.assets,DB.deletedIds,remoteData.deletedIds);
+ /* categories/owners/budgetHistory는 id 기반이 아니라 mergeCollection을 쓸 수 없어 전용 순수
+  * 함수로 병합한다 — 이전엔 여기서 전혀 병합되지 않아, 두 기기가 오프라인 상태에서 각자
+  * 카테고리/귀속/예산을 고치면 로컬 값이 조용히 이기고 이어지는 push가 상대 기기의 편집을
+  * 영구히 덮어썼다(settings/nwHistory는 각각 기기별 로컬 선호·자동 생성 스냅샷이라 이번 병합
+  * 대상에서 의도적으로 제외 — app-evolve cycle102). */
+ DB.categories=DB.categories||{expense:[],income:[],saving:[]};
+ const remoteCats=remoteData.categories||{};
+ ['expense','income','saving'].forEach(k=>{DB.categories[k]=mergeNameList(DB.categories[k]||[],remoteCats[k]||[],normName)});
+ DB.owners=mergeNameList(DB.owners||[],remoteData.owners||[],normName);
+ DB.budgetHistory=mergeBudgetHistory(DB.budgetHistory||{},remoteData.budgetHistory||{});
  migrate();invalidateBalances();
 }
 const comma=n=>Math.round(n||0).toLocaleString('ko-KR');

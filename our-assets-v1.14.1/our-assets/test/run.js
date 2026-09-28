@@ -4295,6 +4295,49 @@ test('mergeCollection: (회귀 방지) touch() 없이 되살린 내역처럼 upd
   assert.strictEqual(out.length, 0, 'touch() 없이는 되살린 내역이 tombstone에 져서 사라져야 함(수정 전 버그 재현)');
 });
 
+/* ---------- mergeNameList/mergeBudgetHistory: mergeRemoteDataIntoLocal()이 DB.categories/
+ * DB.owners/DB.budgetHistory를 병합하는 데 쓰는 순수 함수(app-evolve cycle102 critique/advance).
+ * 이전엔 이 셋이 전혀 병합되지 않아, 두 기기가 오프라인 상태에서 각자 카테고리/귀속/예산을
+ * 고치면 로컬 값이 조용히 이기고 이어지는 push가 상대 기기의 편집을 영구히 덮어썼다. ---------- */
+// mergeNameList/mergeBudgetHistory는 local/remote가 undefined일 때 vm 샌드박스 안에서
+// []/{} 리터럴로 기본값을 새로 만드는데, 이 빈 컨테이너는 host의 Array/Object와 realm이 달라
+// deepStrictEqual이 (값은 같아도) 실패한다(recDates/parseCSV 테스트와 같은 이유) — 그래서
+// JSON.parse(JSON.stringify(...))로 host realm 값으로 정규화한 뒤 비교한다.
+const j = (v) => JSON.parse(JSON.stringify(v));
+test('mergeNameList: remote에만 있는 새 이름은 local 순서를 유지한 채 뒤에 추가된다', () => {
+  const out = sandbox.mergeNameList(['식비', '교통'], ['식비', '문화'], sandbox.normName);
+  assert.deepStrictEqual(j(out), ['식비', '교통', '문화']);
+});
+test('mergeNameList: 대소문자·공백만 다른 remote 이름은 중복 추가되지 않는다', () => {
+  const out = sandbox.mergeNameList(['Netflix'], [' netflix '], sandbox.normName);
+  assert.deepStrictEqual(j(out), ['Netflix']);
+});
+test('mergeNameList: local/remote가 비어 있거나 undefined여도 터지지 않는다', () => {
+  assert.deepStrictEqual(j(sandbox.mergeNameList(undefined, undefined, sandbox.normName)), []);
+  assert.deepStrictEqual(j(sandbox.mergeNameList(['A'], undefined, sandbox.normName)), ['A']);
+  assert.deepStrictEqual(j(sandbox.mergeNameList(undefined, ['B'], sandbox.normName)), ['B']);
+});
+test('mergeBudgetHistory: remote에만 있는 카테고리는 그대로 포함된다', () => {
+  const out = sandbox.mergeBudgetHistory({}, { 문화: [{ from: '2026-01', amount: 50000 }] });
+  assert.deepStrictEqual(j(out), { 문화: [{ from: '2026-01', amount: 50000 }] });
+});
+test('mergeBudgetHistory: 같은 카테고리에 remote가 local에 없는 월을 추가하면 합쳐지고 from 오름차순으로 정렬된다', () => {
+  const local = { 식비: [{ from: '2026-03', amount: 300000 }] };
+  const remote = { 식비: [{ from: '2026-01', amount: 250000 }] };
+  const out = sandbox.mergeBudgetHistory(local, remote);
+  assert.deepStrictEqual(j(out), { 식비: [{ from: '2026-01', amount: 250000 }, { from: '2026-03', amount: 300000 }] });
+});
+test('mergeBudgetHistory: 같은 (카테고리,from)이 양쪽에 다른 금액으로 있으면 local 금액이 이기고 중복 항목이 생기지 않는다', () => {
+  const local = { 식비: [{ from: '2026-01', amount: 300000 }] };
+  const remote = { 식비: [{ from: '2026-01', amount: 250000 }] };
+  const out = sandbox.mergeBudgetHistory(local, remote);
+  assert.deepStrictEqual(j(out), { 식비: [{ from: '2026-01', amount: 300000 }] });
+});
+test('mergeBudgetHistory: localMap/remoteMap이 undefined이거나 카테고리 항목이 빈 배열이어도 터지지 않는다', () => {
+  assert.deepStrictEqual(j(sandbox.mergeBudgetHistory(undefined, undefined)), {});
+  assert.deepStrictEqual(j(sandbox.mergeBudgetHistory({ 식비: [] }, { 식비: [] })), { 식비: [] });
+});
+
 /* ---------- gcTombstones: migrate()가 부팅마다 DB.deletedIds에서 오래된(maxAgeMs 이전) tombstone을
  * 걸러내는 순수 함수(app-evolve cycle95 advance) — GC 없이는 삭제할 때마다 쌓이기만 해 수년 사용 시
  * 무한히 커지고, 매 pushCloud/pullCloud마다 전체가 그대로 오간다. ---------- */

@@ -109,6 +109,35 @@ function mergeCollection(localArr,remoteArr,localDeletedIds,remoteDeletedIds){
  });
  return out;
 }
+/* 이름 목록(카테고리/귀속) 병합 — id가 없는 순수 문자열 배열이라 mergeCollection의 tombstone
+ * 방식은 쓸 수 없다. local 순서를 그대로 유지하고, remote에만 있는 이름 중 normalize(정규화)
+ * 기준으로 local에 이미 없는 것만 뒤에 덧붙인다(addCat/addOwner가 normName()으로 중복을
+ * 막는 것과 동일한 기준). 삭제는 병합 대상이 아니다 — 카테고리/귀속 삭제는 사용 중이면 막히므로
+ * (doDeleteCat/delOwner) 상대 기기의 '아직 지우지 않은' 상태를 지우는 쪽으로 병합하면 그 기기가
+ * 쓰고 있던 값이 사라질 수 있어, 이름이 사라지는 방향은 항상 로컬에서 명시적으로 지운 뒤 다음
+ * push로만 반영되게 둔다. */
+function mergeNameList(localArr,remoteArr,normalize){
+ localArr=localArr||[];remoteArr=remoteArr||[];
+ const seen=new Set(localArr.map(normalize));
+ const out=localArr.slice();
+ remoteArr.forEach(name=>{const key=normalize(name);if(!seen.has(key)){seen.add(key);out.push(name)}});
+ return out;
+}
+/* 예산 이력(카테고리→[{from,amount}]) 병합 — 각 카테고리별로 local/remote 항목을 from(월) 키로
+ * 유니온한다. 같은 (카테고리,from)이 양쪽에 다른 금액으로 있으면(동시에 같은 달 예산을 고쳤을 때)
+ * 이 값 자체엔 mergeCollection처럼 항목별 updatedAt이 없어 승패를 가릴 다른 기준이 없으므로,
+ * mergeCollection의 "updatedAt 동률이면 local이 이긴다" 관례를 그대로 따라 local을 우선한다.
+ * setBudgetFrom()과 동일하게 from 오름차순으로 재정렬해 반환한다. */
+function mergeBudgetHistory(localMap,remoteMap){
+ localMap=localMap||{};remoteMap=remoteMap||{};
+ const out={};
+ new Set([...Object.keys(localMap),...Object.keys(remoteMap)]).forEach(cat=>{
+  const merged=new Map((remoteMap[cat]||[]).map(e=>[e.from,e.amount]));
+  (localMap[cat]||[]).forEach(e=>merged.set(e.from,e.amount));
+  out[cat]=[...merged.entries()].map(([from,amount])=>({from,amount})).sort((a,b)=>a.from<b.from?-1:a.from>b.from?1:0);
+ });
+ return out;
+}
 /* deletedIds는 삭제할 때마다(deleteTxnsUndo 등) 영구히 쌓이기만 하고 지금까지 지우는 경로가
  * 없어 수년 사용하면 무한히 커지고, 매 pushCloud/pullCloud마다 전체가 그대로 오간다. 순수 함수로
  * maxAgeMs(기본 400일)보다 오래된 tombstone만 걸러낸 새 객체를 반환한다(원본 불변). 이 기간이면
