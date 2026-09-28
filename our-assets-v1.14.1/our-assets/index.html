@@ -1293,7 +1293,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.71';
+const APP_VERSION='1.46.72';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2659,7 +2659,8 @@ function renderAssets(){
  <div class="as-tools${ST.aSel.mode?' hidden':''}">
    <div class="as-actions">${ST.editAssets?`<button class="as-tbtn primary" onclick="ST.editAssets=false;save();renderAssets()">${svg('check')} 완료</button>`:
     `<button class="as-tbtn" onclick="openSortSheet()">${svg('sort')} 정렬</button>
-     <button class="as-tbtn" onclick="ST.editAssets=true;renderAssets()">${svg('edit')} 편집</button>`}</div>
+     <button class="as-tbtn" onclick="ST.editAssets=true;renderAssets()">${svg('edit')} 편집</button>
+     <button class="as-tbtn" onclick="ST.aSel.mode=true;renderAssets()">${svg('check')} 선택</button>`}</div>
  </div>
  ${ST.editAssets?'<p style="font-size:13px;color:var(--text-2);margin:0 4px 10px">점 아이콘을 잡고 끌어 자산 종류 그룹 순서를 바꾸세요. 자동 저장됩니다.</p>':''}
  <div id="assetBody">${body}</div>
@@ -3092,7 +3093,7 @@ function ledgerRowsHtml(d){
  return selTx.length?selTx.map(t=>txRow(t)).join(''):`<div class="empty"><div class="ei">${svg('ledger')}</div><div class="et">이 날은 조용하네요 🌱</div><div class="es">쓴 게 있다면 지금 남겨두세요</div><button class="empty-cta" onclick="openTxSheet()">${svg('plus')} 내역 추가하기</button></div>`;
 }
 function ledgerDayHeadHtml(d){
- return `<div class="d">${fmtDate(d)}</div>${isFuture(d)?'<div class="s" style="color:var(--gold)">예정</div>':''}`;
+ return `<div><div class="d">${fmtDate(d)}</div>${isFuture(d)?'<div class="s" style="color:var(--gold)">예정</div>':''}</div>${ST.lSel.mode?'':`<button type="button" class="sch-chip" aria-label="내역 선택" onclick="ST.lSel.mode=true;renderLedger()">${svg('check',14)} 선택</button>`}`;
 }
 function renderLedger(){
  const {y,m,sel}=ST.ledger;
@@ -3677,7 +3678,10 @@ function renderHistory(){
  $('page-history').innerHTML=`
  ${pageHead('history')}
  ${H.selMode?'':`
- <div class="searchbar" style="margin-bottom:14px">${svg('search')}<input id="histQ" placeholder="메모·카테고리·자산 검색" value="${H.q}" oninput="ST.hist.q=this.value;histInvalidate();updateHist()"></div>
+ <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+ <div class="searchbar" style="flex:1">${svg('search')}<input id="histQ" placeholder="메모·카테고리·자산 검색" value="${H.q}" oninput="ST.hist.q=this.value;histInvalidate();updateHist()"></div>
+ <button type="button" class="sch-chip" aria-label="내역 선택" onclick="ST.hist.selMode=true;updateHist();updateSelBottom()">${svg('check',14)}</button>
+ </div>
  <div class="rg-pick">
    <button class="rg-date" onclick="histPickDate('from')">${fmtDot(R.from)}</button>
    <span class="rg-tilde">~</span>
