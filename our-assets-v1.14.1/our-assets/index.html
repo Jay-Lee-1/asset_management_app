@@ -1293,7 +1293,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.73';
+const APP_VERSION='1.46.74';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5140,6 +5140,32 @@ function overlayEscapeTarget(dpWheelOpen,dpModalOpen,sheetOpen){
  if(sheetOpen)return 'sheet';
  return null;
 }
+/* 안드로이드 백버튼/뒤로가기 제스처가 시트·날짜피커를 닫는 대신 standalone PWA 자체를
+   종료시키던 문제 수정 — 오버레이(시트/dpModal/dpWheel)를 열 때마다 history entry를
+   하나씩 쌓아 두고, 실제 popstate(백버튼)가 오면 그 중 최상단 오버레이 하나만 닫는다.
+   UI로 직접 닫을 때도 쌓인 entry를 함께 소비해(history.back) 위치가 어긋나지 않게
+   한다 — _ovHistSuppress로 '직접 닫기→history.back()' 자신이 되돌아오는 popstate와
+   '진짜 백버튼' popstate를 구분한다. */
+let _ovHistDepth=0,_ovHistSuppress=false;
+function ovHistPush(){_ovHistDepth++;try{history.pushState({ovl:_ovHistDepth},'')}catch(e){}}
+function ovHistPop(){ /* 오버레이를 직접(버튼/스크림/스와이프/Escape) 닫을 때 호출 */
+ if(_ovHistSuppress||_ovHistDepth<=0)return;
+ _ovHistDepth--;_ovHistSuppress=true;history.back();
+}
+function closeTopOverlayLevel(){
+ const sh=$('sheet');
+ const target=overlayEscapeTarget($('dpWheel').classList.contains('show'),$('dpModal').classList.contains('show'),!!(sh&&sh.classList.contains('show')));
+ if(target==='wheel')closeDpWheelLayer();
+ else if(target==='modal')closeDatePicker();
+ else if(target==='sheet')closeSheet();
+}
+window.addEventListener('popstate',()=>{
+ if(_ovHistSuppress){_ovHistSuppress=false;return}
+ if(_ovHistDepth<=0)return;
+ _ovHistDepth--;_ovHistSuppress=true;
+ closeTopOverlayLevel();
+ _ovHistSuppress=false;
+});
 function syncOverlayInert(){ /* dpModal/dpWheel가 떠 있는 동안 그 아래(app/fab/sheet)로 Tab이 새지 않게 */
  const dpOn=$('dpModal').classList.contains('show')||$('dpWheel').classList.contains('show');
  const sh=$('sheet');const shOn=!!(sh&&sh.classList.contains('show'));
@@ -5152,6 +5178,7 @@ let _ovFocusStack=[];
 function ovPushFocus(){_ovFocusStack.push(document.activeElement)}
 function ovPopFocus(){const el=_ovFocusStack.pop();if(el&&document.contains(el))el.focus()}
 function closeDpWheelLayer(){ /* dpWheel 닫기 — 단독 사용(월/연월 휠)이든 dpModal 위 점프 휠이든 공통 */
+ ovHistPop();
  $('dpWheel').classList.remove('show');
  if(!$('dpModal').classList.contains('show'))$('dpScrim').classList.remove('show');
  const l=$('dpMLabel');if(l)l.classList.remove('open');
@@ -5180,7 +5207,7 @@ document.addEventListener('keydown',onSheetKeydown);
 function openSheet(html,topBtn){
  const sh=$('sheet');
  const wasOpen=sh.classList.contains('show');
- if(!wasOpen){_segPrev=null;sh.classList.remove('expanded');sh._expanded=false;sh._lockH=0;_sheetReturnFocus=document.activeElement;}
+ if(!wasOpen){_segPrev=null;sh.classList.remove('expanded');sh._expanded=false;sh._lockH=0;_sheetReturnFocus=document.activeElement;ovHistPush();}
  const btn=topBtn||`<button class="sheet-x" onclick="closeSheet()" aria-label="닫기">${svg('x')}</button>`;
  sh.innerHTML=`<div class="sheet-scroll" id="sheetScroll"><div class="grip"></div>${btn}${html}</div>`;
  sh.classList.add('show');$('scrim').classList.add('show');
@@ -5271,7 +5298,7 @@ function ensureEdgeGesture(){
    }
  }x0=null;dx=dy=0;};
  edge.addEventListener('touchend',up);edge.addEventListener('touchcancel',up);
-}function closeSheet(){const sh=$('sheet');sh.style.transition='';sh.style.transform='';sh.style.height='';sh.style.maxHeight='';sh.style.overflow='';sh.classList.remove('expanded','show');$('scrim').classList.remove('show');const eg=$('sheetEdgeGlobal');if(eg)eg.remove();syncOverlayInert();const rf=_sheetReturnFocus;_sheetReturnFocus=null;if(rf&&document.contains(rf))rf.focus();if(TAB_SYNC_PENDING!=null){const at=TAB_SYNC_PENDING;TAB_SYNC_PENDING=null;applyForeignSave(at)}}
+}function closeSheet(){ovHistPop();const sh=$('sheet');sh.style.transition='';sh.style.transform='';sh.style.height='';sh.style.maxHeight='';sh.style.overflow='';sh.classList.remove('expanded','show');$('scrim').classList.remove('show');const eg=$('sheetEdgeGlobal');if(eg)eg.remove();syncOverlayInert();const rf=_sheetReturnFocus;_sheetReturnFocus=null;if(rf&&document.contains(rf))rf.focus();if(TAB_SYNC_PENDING!=null){const at=TAB_SYNC_PENDING;TAB_SYNC_PENDING=null;applyForeignSave(at)}}
 $('scrim').addEventListener('click',closeSheet);
 $('dpScrim').addEventListener('click',()=>{
  if($('dpWheel').classList.contains('show')){closeDpWheelLayer();return}
@@ -5319,7 +5346,8 @@ function txMonthRange(){
  return {lo:{y:+lo.slice(0,4),m:+lo.slice(5,7)},hi:{y:+hi.slice(0,4),m:+hi.slice(5,7)}};
 }
 function openMonthSheet(which){ /* 전체내역·플랜: 월 단위 휠 (내역 있는 달만) */
- ovPushFocus();
+ const wasOpen=$('dpWheel').classList.contains('show');
+ ovPushFocus();if(!wasOpen)ovHistPush();
  const cur=ST.plan;
  const list=monthsWithTx().slice().reverse(); /* 오래된 → 최신 (위가 과거) */
  let items='';
@@ -5383,7 +5411,7 @@ function dpMonthBlock(y,m){
 }
 function renderDatePicker(){
  const wasOpen=$('dpModal').classList.contains('show');
- if(!wasOpen)ovPushFocus();
+ if(!wasOpen){ovPushFocus();ovHistPush();}
  const base=_dpYM;
  let months='';
  for(let off=-3;off<=3;off++){ /* 초기엔 앞뒤 3개월만 (스크롤하면 자동으로 더 붙음) */
@@ -5414,7 +5442,7 @@ function renderDatePicker(){
    if(!wasOpen){const f=sheetFocusables($('dpModal'))[0];if(f)f.focus()}
  });
 }
-function closeDatePicker(){$('dpModal').classList.remove('show');$('dpScrim').classList.remove('show');
+function closeDatePicker(){ovHistPop();$('dpModal').classList.remove('show');$('dpScrim').classList.remove('show');
  document.body.classList.remove('dp-open');syncOverlayInert();ovPopFocus()}
 function dpExtend(sc,dir){ /* 끝에 닿으면 달을 더 이어붙임 */
  const months=[...sc.querySelectorAll('.dp-month')];if(!months.length)return;
@@ -5460,7 +5488,7 @@ function dpOnScroll(sc){ /* 화면에 가장 많이 보이는 달을 상단에 �
 /* 아이폰 시계 스타일 휠 — 연도·월 선택 팝업 */
 function dpToggleJump(){
  const wasOpen=$('dpWheel').classList.contains('show');
- if(!wasOpen)ovPushFocus();
+ if(!wasOpen){ovPushFocus();ovHistPush();}
  const l=$('dpMLabel');if(l)l.classList.add('open');
  const yFrom=Math.min(TM.y-10,_dpYM.y),yTo=Math.max(TM.y+5,_dpYM.y);
  let ys='';for(let yy=yFrom;yy<=yTo;yy++)ys+=`<div class="wh-item" data-v="${yy}">${yy}년</div>`;
@@ -5562,7 +5590,8 @@ function mnLblTap(which){if(_mnLong){_mnLong=false;return}
 /* 홈·가계부: 연도와 월을 따로 고르는 선택창 */
 let _ymWhich='home',_ymYear=null;
 function openYMSheet(which){ /* 홈·가계부: 아이폰 시계식 휠로 연도·월 선택 */
- ovPushFocus();
+ const wasOpen=$('dpWheel').classList.contains('show');
+ ovPushFocus();if(!wasOpen)ovHistPush();
  _ymWhich=which;
  const cur=which==='ledger'?ST.ledger:ST.home;
  const yFrom=Math.min(TM.y-10,cur.y),yTo=Math.max(TM.y+5,cur.y);
