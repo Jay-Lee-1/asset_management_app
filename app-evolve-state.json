@@ -1,22 +1,12 @@
 {
   "cycle": 99,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "window.onerror/unhandledrejection이 recordError()로 기록만 되고 사용자에게 노출되지 않는 silent-failure 공백 해소",
+    "why": "index.html:1309-1313 주석이 스스로 명시하듯, renderCurrent() try/catch(약 6221-6224) 안에서 던져진 예외만 errBanner로 노출되고 window.onerror/unhandledrejection(1319-1320)이 잡는 나머지 모든 예외는 recordError()(1315-1318)가 lastError 변수에 적고 console.error만 할 뿐 아무 곳에도 노출되지 않는다(grep 결과 lastError를 읽는 곳이 그 대입부 외엔 전혀 없음, write-only 텔레메트리). onclick 핸들러 100여 개 대부분이 DB를 변경한 뒤 맨 끝에서만 renderCurrent()를 호출하므로, 그 앞에서 던져진 예외는 보호 경로에 전혀 도달하지 못해 사용자는 버튼을 눌러도 '아무 일도 안 일어난' 것처럼 보인다. 이미 존재하는 fire-and-forget 프로미스는 전부 명시적 .catch(()=>{})로 처리돼 있어(scheduleCloudPush, signOut, clipboard write, checkNotifyAlerts, visibilitychange pushCloud) window.onerror/unhandledrejection에 실제로 도달하는 것은 예외 없이 진짜 미처리 버그이므로, 이 경로를 배너로 연결해도 기존에 의도적으로 무시하던 케이스가 새로 노출되어 소음이 생길 위험이 없다. 한 함수만 고치면 앱 전체의 '탭해도 반응 없음' 버그 카테고리를 통째로 없앨 수 있는 단일 지점·저위험·고레버리지 수정이라 다른 후보(예산탭 심화, CSV export 범위, 레거시 해시 마이그레이션, 렌더 성능, 만기일 지우기 버튼 구조 변경)보다 우선한다.",
+    "approach": "1) recordError(err,kind)(index.html:1315-1318 부근)를 lastError 대입/console.error 뒤에 showErrBanner()를 직접 호출하도록 수정한다 — showErrBanner()(1321-1325)는 이미 `if(!el.childElementCount)` 가드로 멱등이고 #errBanner 마크업(1262)은 스크립트 실행 전에 이미 DOM에 있으므로 어디서 호출해도 안전하다. 2) renderCurrent()의 catch 블록(약 6221-6224)에서 이제 중복이 된 명시적 showErrBanner() 호출을 제거하고 recordError(err,'renderCurrent') 호출만 남긴다(1번 변경으로 이미 배너가 뜨므로). 3) 1309-1313 주석을 새 불변식(recordError가 로깅과 사용자 노출을 모두 담당하는 단일 지점이 됨)에 맞게 갱신한다. 4) 선택 사항(구현자 판단): Supabase(1292)처럼 crossorigin 속성 없는 서드파티 스크립트에서 오는 정보 없는 'Script error.'(err가 undefined/null)까지 배너로 띄우면 소음이 될 수 있으므로, kind==='renderCurrent' 이거나 err instanceof Error인 경우에만 showErrBanner()를 부르는 가드를 recordError 안에 추가하는 것을 고려한다. 5) test/run.js는 순수 Node/vm 기반이라 DOM/window가 없어 이 경로는 새 자동 테스트를 추가할 수 없다 — 구현 후 onclick 바인딩된 임의 함수 상단에 임시로 throw new Error('test')를 넣어 배너가 렌더 없이도 즉시 뜨는지, 다음 성공적인 renderCurrent()에서 hideErrBanner()로 정상적으로 사라지는지 수동으로 확인한 뒤 임시 코드를 제거한다. 6) APP_VERSION과 sw.js CACHE를 관례대로 올린다."
+  },
   "history": [
-    {
-      "cycle": 94,
-      "phase": "critique",
-      "timestamp": "2026-09-27T04:07:00.000Z",
-      "summary": "deleteTxnsUndo/deleteRecsUndo/deleteAssetsUndo(index.html:6197-6215)의 undo 콜백을 직접 읽어, 되살린 객체에 touch()가 없어 mergeCollection()의 tombstone 살림 조건을 만족 못 함을 확인 — undo로 되살아난 레코드가 병합 시 통째로 탈락할 수 있는 데이터 유실 버그(값이 stale 사본에 지는 것보다 심각). pending_advance_plan에 세 undo 콜백에 removed.forEach(touch) 추가 + mergeCollection 통합 테스트 계획 저장. deletedIds GC, askRelinkDeleted 테스트 인프라는 다음 critique로 계속 이월. 코드 변경 없음(읽기 전용 조사).",
-      "commit": null
-    },
-    {
-      "cycle": 94,
-      "phase": "advance",
-      "timestamp": "2026-09-27T05:10:00.000Z",
-      "summary": "critique(cycle94) 계획대로 deleteTxnsUndo/deleteRecsUndo/deleteAssetsUndo(index.html:6197-6215) 세 undo 콜백의 touch() 누락을 수정했다. 각 콜백에서 removed 배열을 다시 push하기 직전에 removed.forEach(touch) 한 줄씩 추가. test/run.js에 회귀 테스트 3개 + mergeCollection 통합 테스트 2개 추가. 두 인라인 <script> 블록 node --check 통과, node test/run.js 635/635 통과(기존 630 + 신규 5). APP_VERSION 1.46.58->1.46.59, sw.js CACHE v220->v221. critique(cycle94)가 남긴 이월 목록(deletedIds GC, askRelinkDeleted 테스트 인프라)은 그대로 다음 critique로 이월.",
-      "commit": null
-    },
     {
       "cycle": 95,
       "phase": "develop",
@@ -141,6 +131,13 @@
       "phase": "review",
       "timestamp": "2026-09-28T00:10:00.000Z",
       "summary": "develop 커밋(26262d2, fc-x 입력창 지우기 버튼 9곳 aria-label 추가)을 검토. 9곳 모두 diff를 직접 확인 — 매입 금액/이름/종목명/금액/메모 등은 고정 한글 문자열 aria-label(esc() 미사용)이고, asAmt만 4가지 고정 라벨 중 하나(${lbl})를 쓰는데 lbl이 사용자 입력이 아닌 자산 타입에 따른 상수 삼항식 결과라 속성 이탈(attribute breakout) 위험이 없음을 확인. cycle97 act-btn 처리와 동일한 스타일(값을 담지 않는 곳은 esc() 없이 정적 문자열)로 일관성 있음. 만기일 지우기(2874, button 안 중첩 span이라 구조 변경 필요)를 이번 범위 밖으로 남긴 판단도 타당. 순수 마크업 추가라 새 테스트 불필요하다는 판단도 cycle97과 동일 기준. 두 인라인 <script> 블록과 logic.js 모두 node --check 통과, node test/run.js 665/665 통과. 코드 변경 없음(이상 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 99,
+      "phase": "critique",
+      "timestamp": "2026-09-28T01:11:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(touch()/mergeCollection·접근성·성능·logic.js 이관·비밀번호 복구 계열은 이미 다뤄졌으므로 제외하고 아키텍처·UX·기술부채·에러상태 위주). index.html:1309-1313 주석이 스스로 명시한 설계 공백을 확인: window.onerror/unhandledrejection(1319-1320)이 잡는 예외는 recordError()(1315-1318)가 lastError 변수에 적고 console.error만 할 뿐 어디에도 노출되지 않는 write-only 텔레메트리(grep으로 lastError를 읽는 곳이 대입부 외엔 전혀 없음을 재확인) — renderCurrent() try/catch(6221-6224) 안에서 던져진 예외만 errBanner로 보호되고, 100여 개 onclick 핸들러 대부분이 맨 끝에서만 renderCurrent()를 부르므로 그 앞의 예외는 사용자에게 '탭해도 반응 없음'으로만 보인다. 기존 fire-and-forget 프로미스는 전부 .catch(()=>{})로 이미 처리돼 있어 이 경로에 실제로 도달하는 예외는 예외 없이 진짜 미처리 버그임을 확인, 배너 연결 시 소음 위험 없음. cycle98 critique가 러너업 4번으로 남겨둔 항목을 재검증해 이번엔 채택 — recordError()가 showErrBanner()를 직접 호출하도록 하고 renderCurrent() catch의 중복 호출을 제거하는 단일 함수 수정으로 앱 전체의 silent-failure 카테고리를 없앨 수 있는 저위험·고레버리지 항목이라 판단. pending_advance_plan에 3단계 구현 계획(recordError 수정, renderCurrent catch 정리, 1309-1313 주석 갱신) + 선택 사항(crossorigin 없는 서드파티 'Script error.' 필터링) + 수동 검증 방법 저장. 재검토 후 기각한 기존 러너업: 예산탭(이미 budgetHistory/homeAlerts/spendTrend/sparkline로 충분히 구현돼 있음을 재확인, 종결), CSV export 범위(실제로는 expandRec()로 반복거래 확장 포함, 자산만 누락이라 범위 좁음), 레거시 해시 마이그레이션(변동 없음, 계속 이월), 렌더 성능(_balCache 등 캐시로 완화돼 있음, 계속 이월). 신규 후보 하나 조사 후 기각: skip[]/edits{} 오버라이드 맵 무한 증가(deletedIds와 구조적으로 유사하나 사용자 상호작용당 1건이라 증가 속도가 훨씬 낮음, 우선순위 낮음). 만기일 지우기 버튼 마크업 구조 변경은 계속 낮은 우선순위 이월. 코드 변경 없음(읽기 전용 조사).",
       "commit": null
     }
   ]
