@@ -1,15 +1,8 @@
 {
   "cycle": 102,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 97,
-      "phase": "develop",
-      "timestamp": "2026-09-27T15:09:53.037Z",
-      "summary": "접근성 개선: 귀속 관리(3082)·카테고리 관리(4452)의 수정/삭제 act-btn과 반복거래 관리(4535)의 일시중지/다시시작 act-btn 3곳이 아이콘 SVG만 있고 접근 가능한 이름이 전혀 없어(스크린리더에 빈 button으로 읽힘) cycle96 critique의 러너업 목록 1번 항목과 정확히 일치하는 접근성 공백이었다. 코드베이스 전반의 확립된 aria-label 관례(스위치·행 전체 role=button 등)를 그대로 따라 각 버튼에 대상 이름을 포함한 aria-label을 추가: 귀속/카테고리는 \"{이름} 수정\"/\"{이름} 삭제\", 반복거래는 기존 title과 같은 문구를 aria-label로도 추가(\"{카테고리} 일시중지\"/\"{카테고리} 다시 시작\"). 순수 로직 변경이 아닌 템플릿 문자열의 마크업 속성 추가라 새 회귀 테스트는 없음(기존 aria-label 추가들도 동일하게 테스트 대상이 아니었음). 두 인라인 <script> 블록 node --check 통과, node test/run.js 655/655 통과(변경 없음). APP_VERSION 1.46.63->1.46.64, sw.js CACHE v225->v226. fc-x(입력창 지우기, ✕ 텍스트라 완전히 빈 이름은 아님) 10곳은 이번 범위 밖으로 남김 — act-btn보다 심각도가 낮다고 판단.",
-      "commit": null
-    },
     {
       "cycle": 97,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-28T11:12:00.000Z",
       "summary": "critique(cycle101) 계획대로 안드로이드 백버튼/제스처가 시트·모달을 닫지 않고 앱을 종료시키던 문제를 해소했다. overlayEscapeTarget()(기존 Escape 키 처리가 이미 쓰던 wheel>modal>sheet 우선순위 함수)를 그대로 재사용해 closeTopOverlayLevel()을 추가하고, 오버레이(시트/dpModal/dpWheel)가 '닫힌→열림'으로 전환되는 시점(openSheet의 wasOpen===false, renderDatePicker/dpToggleJump/openMonthSheet/openYMSheet의 동일 조건)마다 history.pushState()로 entry 하나를 쌓는 ovHistPush(), 그 오버레이의 유일한 close 지점(closeSheet/closeDatePicker/closeDpWheelLayer — 스크림 클릭·드래그 닫기·Escape·에지 스와이프 전량이 이미 이 세 함수로만 수렴함을 grep으로 확인)마다 쌓인 entry를 history.back()으로 소비하는 ovHistPop()을 추가했다. _ovHistSuppress 플래그로 'UI가 직접 닫으며 스스로 부른 history.back()이 되돌아오는 popstate'와 '진짜 하드웨어 백버튼/제스처가 일으킨 popstate'를 구분해 이중 소비·이중 pushState를 막음. 시트 안 다단계 피커(openPicker의 window._pkBack 체인)는 별도 history entry 없이 flat 1-depth로 남겨(뒤로가기 시 pkBack()의 한 단계 이동이 아니라 closeSheet() 전체 닫힘) 앱 전역 수십 곳의 직접 openSheet() 재호출 내비게이션까지 전부 건드리는 대규모 리팩터링을 피했다 — 이미 chevL 버튼/에지 스와이프로 단계별 이동이 가능하므로 하드웨어 백은 '앱을 나가는 대신 시트를 닫는다'는 핵심 버그만 해결하면 충분하다고 판단. Playwright(로컬 chromium, http.server로 서빙)로 실제 history.back()을 발생시켜 (1) 시트 단독 오픈 후 1회 back으로 정상 닫힘, (2) 시트+dpModal 중첩 오픈 후 back 1회는 dpModal만 닫고 시트는 유지, back 2회째에 시트까지 닫힘(오버레이 우선순위 정확), (3) UI에서 closeSheet()로 직접 닫은 뒤에도 history 위치가 어긋나지 않아 이후의 진짜 back이 정상 동작(팬텀 entry로 인한 이중 back 필요 없음) 세 가지를 모두 확인. fabPop(작은 팝오버)은 계획 범위 밖으로 그대로 둠. go(tab) 탭 전환은 계획이 명시한 대로 트레이드오프(탭마다 back이 걸리면 불편) 때문에 이번엔 채택하지 않음(이월 후보로 남김). 두 인라인 <script> 블록과 logic.js/sw.js 모두 node --check 통과, node test/run.js 665/665 통과(변경 없음 — DOM 의존 로직이라 순수 함수 테스트 대상 아님, overlayEscapeTarget 기존 테스트로 우선순위 로직은 이미 커버됨). APP_VERSION 1.46.73->1.46.74, sw.js CACHE v235->v236. pending_advance_plan을 null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 102,
+      "phase": "develop",
+      "timestamp": "2026-09-28T12:15:00.000Z",
+      "summary": "general-purpose 서브에이전트로 접근성 개선: 내역(히스토리) 화면 검색창 input#histQ(renderHistory(), index.html:3682)가 시각적 <label> 없이 돋보기 SVG 아이콘과 placeholder(\"메모·카테고리·자산 검색\")만으로 의미를 전달하고 있었는데, placeholder는 입력 즉시 사라지고 스크린리더가 접근 가능한 이름으로 안정적으로 읽지 않는 값이라 이 검색창에도 접근 가능한 이름이 없는 상태였다. #histQ input에 aria-label=\"내역 검색\"을 추가해 해결(바로 옆 \"내역 선택\" 버튼의 aria-label 표현 스타일에 맞춤). 검토했으나 이번엔 채택하지 않은 후보: CSV 내보내기가 자산을 다루지 않는 문제(신규 포맷·가져오기 로직까지 손대야 해 develop 단계치고 범위가 큼, cycle98부터 이월 중인 항목과 동일), 앱 전반의 <label>텍스트</label>-<input> 쌍 대부분에 for 속성이 없어 프로그램적 연결이 안 되는 문제(광범위한 구조 변경 필요). 순수 마크업 속성 추가라 새 회귀 테스트는 불필요(cycle97/99/101의 기존 aria-label 추가와 동일 판단 기준). 두 인라인 <script> 블록과 logic.js 모두 node --check 통과, node test/run.js 665/665 통과(변경 없음, 로직 변경 없으므로 예상대로). APP_VERSION 1.46.74->1.46.75, sw.js CACHE v236->v237.",
       "commit": null
     }
   ]
