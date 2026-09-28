@@ -1293,7 +1293,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.76';
+const APP_VERSION='1.46.77';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2294,7 +2294,7 @@ function renderHome(){
  ${planGaugeCard(S,y,m)}
  ${expenseBreakdownCard(cats,S.expense)}
 
- ${mkt.length?`<div class="section-title">시세 <span class="link" onclick="openRateSheet()">연동 관리 ${svg('chev')}</span></div>
+ ${mkt.length?`<div class="section-title">시세 <span class="link" role="button" tabindex="0" aria-label="시세 연동 관리" onclick="openRateSheet()" onkeydown="rowKeydown(event,()=>openRateSheet())">연동 관리 ${svg('chev')}</span></div>
  <div class="card"><div class="mkt-head"><div><div class="t">시세</div><div class="ts">${rateStatusText()}</div></div>
    <button class="sync-btn" id="syncBtn" onclick="syncRates()">${svg('sync')} 시세 연동</button></div>
    <div class="mkt-list">${mktRows}</div></div>`:''}
@@ -5919,7 +5919,7 @@ function monthOutflowCard(y,m){
  const more=list.length>6
    ? `<button class="of-more" onclick="toggleOutflows()">${open?'접기':`외 ${list.length-6}건 더 보기`} <span class="of-ar ${open?'up':''}">${svg('chevD')}</span></button>`
    : '';
- return `<div class="section-title">${m}월에 나갈 돈${isNow?` <span class="link" onclick="openSpendAnalysis()">지출 분석 ${svg('chev')}</span>`:''}</div>
+ return `<div class="section-title">${m}월에 나갈 돈${isNow?` <span class="link" role="button" tabindex="0" aria-label="지출 분석" onclick="openSpendAnalysis()" onkeydown="rowKeydown(event,()=>openSpendAnalysis())">지출 분석 ${svg('chev')}</span>`:''}</div>
  <div class="card of-card">
    <div class="of-total"><span>합계</span><span class="num">${comma(total)}원</span></div>
    ${rows}${more}
