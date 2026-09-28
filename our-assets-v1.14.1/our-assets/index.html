@@ -1293,7 +1293,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.73';
+const APP_VERSION='1.46.74';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5151,11 +5151,30 @@ function syncOverlayInert(){ /* dpModal/dpWheel가 떠 있는 동안 그 아래(
 let _ovFocusStack=[];
 function ovPushFocus(){_ovFocusStack.push(document.activeElement)}
 function ovPopFocus(){const el=_ovFocusStack.pop();if(el&&document.contains(el))el.focus()}
+/* standalone PWA는 브라우저 주소창이 없어 안드로이드 하드웨어 백/제스처가 history 엔트리로만 잡힌다 —
+   오버레이(시트/dpModal/dpWheel)를 열 때마다 엔트리 하나를 쌓아두지 않으면 뒤로가기가 오버레이를 닫는 대신
+   앱을 통째로 종료시켜버린다. 열릴 때 푸시, X/스크림/드래그 등 어떤 경로로 닫히든 close 함수가 ovHistPop()으로
+   그 엔트리를 되돌려 실제 브라우저 history와 어긋나지 않게 맞춘다. */
+let _ovHistDepth=0,_ovHistPopping=false;
+function ovHistPush(){_ovHistDepth++;history.pushState({ovl:_ovHistDepth},'')}
+function ovHistPop(){if(_ovHistPopping||_ovHistDepth<=0)return;_ovHistDepth--;history.back()}
+window.addEventListener('popstate',()=>{
+ if(_ovHistDepth<=0)return; /* 우리가 안 쌓은 엔트리(외부 네비게이션)는 건드리지 않음 */
+ _ovHistDepth--;
+ const sh=$('sheet');
+ const target=overlayEscapeTarget($('dpWheel').classList.contains('show'),$('dpModal').classList.contains('show'),!!(sh&&sh.classList.contains('show')));
+ if(!target)return;
+ _ovHistPopping=true; /* 이 popstate가 이미 소비한 엔트리를 close 함수가 다시 history.back()으로 지우지 않게 */
+ if(target==='wheel')closeDpWheelLayer();
+ else if(target==='modal')closeDatePicker();
+ else closeSheet();
+ _ovHistPopping=false;
+});
 function closeDpWheelLayer(){ /* dpWheel 닫기 — 단독 사용(월/연월 휠)이든 dpModal 위 점프 휠이든 공통 */
  $('dpWheel').classList.remove('show');
  if(!$('dpModal').classList.contains('show'))$('dpScrim').classList.remove('show');
  const l=$('dpMLabel');if(l)l.classList.remove('open');
- syncOverlayInert();ovPopFocus();
+ syncOverlayInert();ovHistPop();ovPopFocus();
 }
 function onSheetKeydown(e){
  const sh=$('sheet');
@@ -5180,7 +5199,7 @@ document.addEventListener('keydown',onSheetKeydown);
 function openSheet(html,topBtn){
  const sh=$('sheet');
  const wasOpen=sh.classList.contains('show');
- if(!wasOpen){_segPrev=null;sh.classList.remove('expanded');sh._expanded=false;sh._lockH=0;_sheetReturnFocus=document.activeElement;}
+ if(!wasOpen){_segPrev=null;sh.classList.remove('expanded');sh._expanded=false;sh._lockH=0;_sheetReturnFocus=document.activeElement;ovHistPush();}
  const btn=topBtn||`<button class="sheet-x" onclick="closeSheet()" aria-label="닫기">${svg('x')}</button>`;
  sh.innerHTML=`<div class="sheet-scroll" id="sheetScroll"><div class="grip"></div>${btn}${html}</div>`;
  sh.classList.add('show');$('scrim').classList.add('show');
@@ -5271,7 +5290,7 @@ function ensureEdgeGesture(){
    }
  }x0=null;dx=dy=0;};
  edge.addEventListener('touchend',up);edge.addEventListener('touchcancel',up);
-}function closeSheet(){const sh=$('sheet');sh.style.transition='';sh.style.transform='';sh.style.height='';sh.style.maxHeight='';sh.style.overflow='';sh.classList.remove('expanded','show');$('scrim').classList.remove('show');const eg=$('sheetEdgeGlobal');if(eg)eg.remove();syncOverlayInert();const rf=_sheetReturnFocus;_sheetReturnFocus=null;if(rf&&document.contains(rf))rf.focus();if(TAB_SYNC_PENDING!=null){const at=TAB_SYNC_PENDING;TAB_SYNC_PENDING=null;applyForeignSave(at)}}
+}function closeSheet(){const sh=$('sheet');sh.style.transition='';sh.style.transform='';sh.style.height='';sh.style.maxHeight='';sh.style.overflow='';sh.classList.remove('expanded','show');$('scrim').classList.remove('show');const eg=$('sheetEdgeGlobal');if(eg)eg.remove();syncOverlayInert();ovHistPop();const rf=_sheetReturnFocus;_sheetReturnFocus=null;if(rf&&document.contains(rf))rf.focus();if(TAB_SYNC_PENDING!=null){const at=TAB_SYNC_PENDING;TAB_SYNC_PENDING=null;applyForeignSave(at)}}
 $('scrim').addEventListener('click',closeSheet);
 $('dpScrim').addEventListener('click',()=>{
  if($('dpWheel').classList.contains('show')){closeDpWheelLayer();return}
@@ -5319,7 +5338,9 @@ function txMonthRange(){
  return {lo:{y:+lo.slice(0,4),m:+lo.slice(5,7)},hi:{y:+hi.slice(0,4),m:+hi.slice(5,7)}};
 }
 function openMonthSheet(which){ /* 전체내역·플랜: 월 단위 휠 (내역 있는 달만) */
+ const wasOpen=$('dpWheel').classList.contains('show');
  ovPushFocus();
+ if(!wasOpen)ovHistPush();
  const cur=ST.plan;
  const list=monthsWithTx().slice().reverse(); /* 오래된 → 최신 (위가 과거) */
  let items='';
@@ -5383,7 +5404,7 @@ function dpMonthBlock(y,m){
 }
 function renderDatePicker(){
  const wasOpen=$('dpModal').classList.contains('show');
- if(!wasOpen)ovPushFocus();
+ if(!wasOpen){ovPushFocus();ovHistPush();}
  const base=_dpYM;
  let months='';
  for(let off=-3;off<=3;off++){ /* 초기엔 앞뒤 3개월만 (스크롤하면 자동으로 더 붙음) */
@@ -5415,7 +5436,7 @@ function renderDatePicker(){
  });
 }
 function closeDatePicker(){$('dpModal').classList.remove('show');$('dpScrim').classList.remove('show');
- document.body.classList.remove('dp-open');syncOverlayInert();ovPopFocus()}
+ document.body.classList.remove('dp-open');syncOverlayInert();ovHistPop();ovPopFocus()}
 function dpExtend(sc,dir){ /* 끝에 닿으면 달을 더 이어붙임 */
  const months=[...sc.querySelectorAll('.dp-month')];if(!months.length)return;
  const ref=dir>0?months[months.length-1]:months[0];
@@ -5460,7 +5481,7 @@ function dpOnScroll(sc){ /* 화면에 가장 많이 보이는 달을 상단에 �
 /* 아이폰 시계 스타일 휠 — 연도·월 선택 팝업 */
 function dpToggleJump(){
  const wasOpen=$('dpWheel').classList.contains('show');
- if(!wasOpen)ovPushFocus();
+ if(!wasOpen){ovPushFocus();ovHistPush();}
  const l=$('dpMLabel');if(l)l.classList.add('open');
  const yFrom=Math.min(TM.y-10,_dpYM.y),yTo=Math.max(TM.y+5,_dpYM.y);
  let ys='';for(let yy=yFrom;yy<=yTo;yy++)ys+=`<div class="wh-item" data-v="${yy}">${yy}년</div>`;
@@ -5562,7 +5583,9 @@ function mnLblTap(which){if(_mnLong){_mnLong=false;return}
 /* 홈·가계부: 연도와 월을 따로 고르는 선택창 */
 let _ymWhich='home',_ymYear=null;
 function openYMSheet(which){ /* 홈·가계부: 아이폰 시계식 휠로 연도·월 선택 */
+ const wasOpen=$('dpWheel').classList.contains('show');
  ovPushFocus();
+ if(!wasOpen)ovHistPush();
  _ymWhich=which;
  const cur=which==='ledger'?ST.ledger:ST.home;
  const yFrom=Math.min(TM.y-10,cur.y),yTo=Math.max(TM.y+5,cur.y);

@@ -1,19 +1,8 @@
 {
-  "cycle": 101,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "안드로이드 백 버튼/제스처가 시트·모달을 닫지 않고 앱을 종료시킴 (History API 미사용)",
-    "why": "manifest.webmanifest가 display:standalone으로 설치형 PWA를 명시하는데, index.html 전체(6618줄)에 window.history/pushState/replaceState/popstate가 단 한 곳도 없다(grep 0건). openSheet()(약 5180줄)/closeSheet, dpModal/dpWheel 날짜피커(1279-1280줄), go(tab) 탭 전환(6284줄) 등 오버레이가 많고 다단계 입력 흐름(거래/자산 등록, CSV 가져오기 미리보기)이 시트로 이뤄져 있는데, 히스토리 스택이 없어 안드로이드에서 뒤로가기 제스처/하드웨어 백 버튼을 누르면 시트가 닫히는 대신 앱 자체가 종료된다(작성 중이던 입력을 잃음). 모달 접근성(포커스 트랩/Escape/role=dialog)은 이미 잘 되어 있지만 전부 데스크톱 흐름만 커버하는 상태. aria-label 라운드(완료됨)와는 다른 차원의, 모바일 PWA로서 치명적인 미해결 UX 결함.",
-    "approach": "openSheet()/closeSheet() 및 dpModal/dpWheel 오픈 함수들에서 오버레이를 열 때 history.pushState({sheet:true}, '')를 추가하고, 전역 popstate 리스너 하나를 등록해 열린 오버레이가 있으면 기존 close 함수를 호출해 해당 시트/모달만 닫는다. 중첩 시트는 히스토리 엔트리도 스택으로 관리해 한 번에 하나씩만 닫히게 한다. go(tab) 탭 전환에 대한 pushState 적용 여부는 UX 트레이드오프를 검토해 결정(과하면 탭 전환마다 back이 걸려 불편할 수 있음 — 시트/모달을 우선 구현). 구현 후 회귀 테스트(node test/run.js)와 함께, 가능하면 모바일 에뮬레이션으로 back 동작 수동 확인."
-  },
+  "cycle": 102,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 96,
-      "phase": "advance",
-      "timestamp": "2026-09-27T14:09:39.180Z",
-      "summary": "critique(cycle96) 계획대로 askRelinkDeleted()의 _amLink 잔액 연동 산술(remembered/H/gap)을 DB·클로저 의존 없는 최상위 순수 함수 computeRelinkBaseline(remembered,H,entered)로 추출했다(index.html, deletedAssetHistoryExists 바로 위) — {base,gap}을 반환하고 _amLink는 그 결과로 d[balKey]=base, gap!==0이면 addBalanceAdjust(d,gap)를 그대로 호출하도록 교체(동작 변화 없음, 순수 리팩터링). FUNCTIONS 화이트리스트에 computeRelinkBaseline 추가 — 기존 sandbox.askRelinkDeleted 스파이 스텁과는 별개 심볼이라 saveAsset 재연동 분기 테스트에 영향 없음을 확인. test/run.js에 계획이 지목한 6가지 케이스(remembered 있음, DB.deletedBal 결측 폴백, gap 양수, gap 음수, 소수점 반올림, 부호 규약 무관성) 회귀 테스트 추가 — 92~95 4사이클 연속 이월돼온 \"테스트 인프라 정비\" 항목이 이걸로 종결됨. 두 인라인 <script> 블록 node --check 통과, node test/run.js 655/655 통과(기존 649 + 신규 6). APP_VERSION 1.46.62->1.46.63, sw.js CACHE v224->v225.",
-      "commit": null
-    },
     {
       "cycle": 97,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-28T10:10:07.508Z",
       "summary": "앱이 standalone PWA인데도 History API(pushState/popstate)를 전혀 쓰지 않아, 안드로이드에서 시트나 모달이 열린 상태로 뒤로가기를 누르면 UI가 닫히지 않고 앱 자체가 종료돼버리는 심각한 모바일 UX 결함을 발견. openSheet/closeSheet와 날짜피커 오픈 지점에 히스토리 스택 연동을 추가하는 것을 다음 advance 작업으로 계획했다.",
+      "commit": null
+    },
+    {
+      "cycle": 101,
+      "phase": "advance",
+      "timestamp": "2026-09-28T11:15:00.000Z",
+      "summary": "critique(cycle101) 계획대로 오버레이(시트/dpModal/dpWheel)에 History API 연동을 추가해 안드로이드 백 버튼/제스처가 앱을 종료시키는 대신 오버레이를 닫도록 고쳤다. 기존에 Escape 키 처리가 이미 사용하던 우선순위 판별 함수 overlayEscapeTarget(wheel>modal>sheet)을 그대로 재사용: 오버레이가 닫힘→열림으로 전환될 때만(wasOpen이 false일 때) ovHistPush()로 history.pushState 엔트리 하나를 쌓고, 전역 popstate 리스너가 열려있는 최상단 오버레이 하나만 해당 close 함수(closeSheet/closeDatePicker/closeDpWheelLayer)로 닫는다. X 버튼·스크림 클릭·드래그 닫기 등 popstate가 아닌 경로로 닫힐 때도 각 close 함수 안의 ovHistPop()이 history.back()으로 쌓아둔 엔트리를 스스로 소비해 실제 브라우저 history와 어긋나지 않게 맞춘다(popstate 핸들러 안에서는 _ovHistPopping 플래그로 이중 소비를 막음). 적용 지점: openSheet(진입 시 wasOpen 블록), renderDatePicker(dpModal), openMonthSheet/dpToggleJump/openYMSheet(dpWheel, 이전엔 wasOpen 체크가 없어 새로 추가) — 하나의 시트 안에서 화면만 넘어가는 내부 네비게이션(wasOpen=true인 재호출)은 계획대로 새 엔트리를 쌓지 않아 뒤로가기 한 번에 오버레이 전체가 닫힌다(개별 화면 단위 백스택은 범위 밖으로 남김). go(tab) 탭 전환은 critique의 트레이드오프 판단대로 이번 범위에서 제외. DOM/history API 의존이라 순수 로직 테스트로는 커버 불가(cycle99 silent-failure 때와 동일한 사유)해 새 회귀 테스트는 없음 — 대신 Playwright(로컬 chromium, file://)로 세 가지 실제 시나리오를 수동 검증: (1) 시트 open 후 page.goBack() 시뮬레이션 → 시트가 앱 종료 없이 닫힘, (2) closeSheet() 직접 호출(X 버튼과 동일 경로)로 닫은 뒤 쌓아둔 엔트리가 정상 소비돼 다음 실제 back이 페이지를 정상적으로 벗어남, (3) 시트+dpModal이 중첩된 상태에서 back 한 번은 모달만 닫고 시트는 그대로 열려 있음, 그다음 back에서 시트까지 닫힘 — 세 시나리오 모두 기대대로 동작 확인. 두 인라인 <script> 블록 node --check 통과, node test/run.js 665/665 통과(변경 없음, 예상대로). APP_VERSION 1.46.73->1.46.74, sw.js CACHE v235->v236. pending_advance_plan을 null로 비움.",
       "commit": null
     }
   ]
