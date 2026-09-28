@@ -1293,7 +1293,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.72';
+const APP_VERSION='1.46.73';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2990,7 +2990,7 @@ function openOwnerManage(){
    return `<div class="manage-row"><div class="avatar" style="width:36px;height:36px;border-radius:11px;background:var(--sunken);color:var(--text-2)">${svg('users',18)}</div>
     <div style="flex:1"><div class="mn">${esc(o)}</div><div class="msub">${used}개 자산</div></div>
     <div class="row-acts"><button class="act-btn" aria-label="${esc(o)} 수정" onclick="renameOwnerSheet(${i})">${svg('edit')}</button><button class="act-btn danger" aria-label="${esc(o)} 삭제" onclick="delOwner(${i})">${svg('trash')}</button></div></div>`}).join('')}</div>
-  <div class="add-inline"><input id="newOwner" placeholder="새 귀속 (예: 아이)"><button onclick="addOwner()">${svg('plus')}</button></div>
+  <div class="add-inline"><input id="newOwner" placeholder="새 귀속 (예: 아이)"><button onclick="addOwner()" aria-label="귀속 추가">${svg('plus')}</button></div>
   <div style="height:14px"></div><button class="btn btn-primary" onclick="closeSheet()">완료</button>`);
 }
 function openOwnerSheet(){openOwnerManage()}
@@ -4343,7 +4343,7 @@ let _iconCb=null,_iconCancel=null;
 function openIconPicker(type,current,cb,onCancel){_iconCb=cb;_iconCancel=onCancel||null;
  let keys=CAT_ICON_SET[type]||CAT_ICON_SET.expense;
  if(current&&!keys.includes(current))keys=[current,...keys];
- const cells=keys.map(k=>`<button class="icon-cell${k===current?' on':''}" onclick="pickCatIcon('${k}')">${svg(k,22)}</button>`).join('');
+ const cells=keys.map(k=>`<button class="icon-cell${k===current?' on':''}" onclick="pickCatIcon('${k}')" aria-label="${k} 아이콘" aria-pressed="${k===current}">${svg(k,22)}</button>`).join('');
  openSheet(`<h3>아이콘 선택</h3><div class="desc">${CAT_LABEL[type]||''} 카테고리에 어울리는 기호를 골라요</div>
   <div class="icon-grid">${cells}</div>
   <div class="two-btn" style="margin-top:14px"><button class="btn btn-soft" onclick="iconPickerCancel()">취소</button></div>`);
@@ -4367,7 +4367,7 @@ function openCatManage(kind,keep){
     const acts=isSysAdjust?`<span class="mini">자동 생성</span>`:`<div class="row-acts"><button class="act-btn" aria-label="${esc(c)} 수정" onclick="renameCatSheet('${k}',${i})">${svg('edit')}</button><button class="act-btn danger" aria-label="${esc(c)} 삭제" onclick="delCat('${k}',${i})">${svg('trash')}</button></div>`;
     return `<div class="manage-row"><div class="avatar ${avCls}" style="width:36px;height:36px;border-radius:11px">${catGlyph(k,c,18,'tag')}</div><div class="mn">${esc(c)}</div>${isSysAdjust?'':varPill}${acts}</div>`;
    }).join('')}</div>
-  <div class="add-inline"><button class="emo-pick ${avCls}" onclick="pickCatAddIcon('${k}')" aria-label="아이콘 선택">${svg(trigIcon,20)}</button><input id="newCat" placeholder="새 ${CAT_LABEL[k]} 카테고리" value="${catAddDraft.name.replace(/"/g,'&quot;')}" oninput="catAddDraft.name=this.value"><button onclick="addCat('${k}')">${svg('plus')}</button></div>
+  <div class="add-inline"><button class="emo-pick ${avCls}" onclick="pickCatAddIcon('${k}')" aria-label="아이콘 선택">${svg(trigIcon,20)}</button><input id="newCat" placeholder="새 ${CAT_LABEL[k]} 카테고리" value="${catAddDraft.name.replace(/"/g,'&quot;')}" oninput="catAddDraft.name=this.value"><button onclick="addCat('${k}')" aria-label="${CAT_LABEL[k]} 카테고리 추가">${svg('plus')}</button></div>
   <div style="height:14px"></div><button class="btn btn-primary" onclick="closeSheet()">완료</button>`);
 }
 function addCat(k){const v=(($('newCat')&&$('newCat').value)||catAddDraft.name||'').trim();if(!v)return;
