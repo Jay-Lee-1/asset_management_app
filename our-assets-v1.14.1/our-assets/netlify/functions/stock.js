@@ -159,7 +159,7 @@ async function fetchFxToKrw(debug) {
       );
       const rows = pickRows(d);
       const p = toNum(rows && rows[0] && rows[0].closePrice);
-      if (p) out[cur] = cur === 'JPY' ? p / 100 : p; // 엔은 100엔 고시
+      if (p) out[cur] = applyJpyScale(cur, p); // 엔은 100엔 고시
     } catch (e) { if (debug) debug.errors['fx_' + cur] = 'naver: ' + errText(e); }
   }));
 
@@ -232,6 +232,9 @@ function toNum(v) {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
+// 엔(JPY)은 100엔 단위로 고시되므로 원화 환산 전에 100으로 나눈다. 나머지 통화는 그대로.
+function applyJpyScale(cur, price) { return cur === 'JPY' ? price / 100 : price; }
+
 function json(status, body, maxAge) {
   return {
     statusCode: status,
@@ -243,3 +246,7 @@ function json(status, body, maxAge) {
     body: JSON.stringify(body)
   };
 }
+
+// 테스트(test/run.js)에서 순수 함수만 골라 require하기 위한 exports.
+// exports.handler는 그대로 유지되므로 Netlify 배포/동작에는 영향 없다.
+module.exports = { toKrw, toNum, pickRows, errText, applyJpyScale };

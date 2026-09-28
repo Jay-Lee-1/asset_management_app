@@ -15,6 +15,17 @@ const path = require('path');
 const vm = require('vm');
 const assert = require('assert');
 
+// netlify/functions/{stock,rates}.js는 브라우저가 아니라 Node(Netlify Functions)에서 도는
+// 평범한 CommonJS 모듈이라, index.html처럼 정규식 슬라이싱을 할 필요 없이 그냥 require한다
+// (module.exports는 exports.handler와 별개로 순수 함수만 추려 노출한다).
+let stockFns = null, ratesFns = null;
+try {
+  stockFns = require(path.join(__dirname, '..', 'netlify', 'functions', 'stock.js'));
+  ratesFns = require(path.join(__dirname, '..', 'netlify', 'functions', 'rates.js'));
+} catch (e) {
+  console.error('경고: netlify/functions require 실패, 관련 테스트를 건너뜁니다 —', e.message);
+}
+
 const HTML_PATH = path.join(__dirname, '..', 'index.html');
 const src = fs.readFileSync(HTML_PATH, 'utf8');
 // logic.js는 index.html이 정규식으로 슬라이싱하지 않고 브라우저처럼 그대로 로드하는 순수 로직
@@ -7673,6 +7684,81 @@ test('sbErrMsg: 매칭되는 패턴이 없으면 원본 메시지를 그대로 �
 test('sbErrMsg: 에러 객체 자체가 없으면 기본 안내 문구', () => {
   assert.strictEqual(sandbox.sbErrMsg(null), '클라우드 연결에 실패했어요');
 });
+
+/* ---------- netlify/functions/stock.js·rates.js: 시세/환율 프록시 순수 함수 (app-evolve cycle103) ----------
+ * fetch()를 실제로 하는 함수(getJSON 의존 함수들)는 네트워크 모킹 인프라가 없어 범위 밖 —
+ * 여기서는 순수 계산/파싱 함수만 검증한다. stockFns/ratesFns가 null이면(require 실패) 건너뛴다. */
+if (stockFns && ratesFns) {
+  test('stock.toNum: 콤마·통화기호가 섞인 문자열도 숫자만 뽑는다', () => {
+    assert.strictEqual(stockFns.toNum('1,234원'), 1234);
+  });
+  test('stock.toNum: 빈 문자열/쓰레기 값은 0', () => {
+    assert.strictEqual(stockFns.toNum(''), 0);
+    assert.strictEqual(stockFns.toNum('abc'), 0);
+    assert.strictEqual(stockFns.toNum(null), 0);
+    assert.strictEqual(stockFns.toNum(undefined), 0);
+  });
+  test('stock.toNum: 부호는 숫자가 아닌 문자로 걸러지므로 음수 문자열도 절댓값으로 파싱된다(의도된 동작)', () => {
+    assert.strictEqual(stockFns.toNum('-5'), 5);
+  });
+
+  test('stock.toKrw: KRW는 반올림만 하고 그대로 통과', () => {
+    assert.strictEqual(stockFns.toKrw({ currency: 'KRW', price: 1000.6 }, null), 1001);
+  });
+  test('stock.toKrw: 환율이 있으면 곱해서 반올림', () => {
+    assert.strictEqual(stockFns.toKrw({ currency: 'USD', price: 10 }, { USD: 1300 }), 13000);
+  });
+  test('stock.toKrw: 해당 통화의 환율이 없으면 null(가격 표시 안 함, 0원으로 오표시 방지)', () => {
+    assert.strictEqual(stockFns.toKrw({ currency: 'EUR', price: 10 }, { USD: 1300 }), null);
+    assert.strictEqual(stockFns.toKrw({ currency: 'EUR', price: 10 }, null), null);
+  });
+
+  test('stock.applyJpyScale/rates.applyJpyScale: 엔은 100으로 나누고(100엔 고시), 그 외 통화는 그대로', () => {
+    assert.strictEqual(stockFns.applyJpyScale('JPY', 900), 9);
+    assert.strictEqual(stockFns.applyJpyScale('USD', 900), 900);
+    assert.strictEqual(ratesFns.applyJpyScale('JPY', 900), 9);
+    assert.strictEqual(ratesFns.applyJpyScale('USD', 900), 900);
+  });
+
+  test('pickRows: 배열/{result:[...]}/{result:{prices:[...]}}} 세 형태를 모두 행 배열로', () => {
+    assert.deepStrictEqual(stockFns.pickRows([1, 2]), [1, 2]);
+    assert.deepStrictEqual(stockFns.pickRows({ result: [1, 2] }), [1, 2]);
+    assert.deepStrictEqual(stockFns.pickRows({ result: { prices: [1, 2] } }), [1, 2]);
+  });
+  test('pickRows: null/undefined/형태가 다른 값은 빈 배열(예외 던지지 않음)', () => {
+    assert.deepStrictEqual(stockFns.pickRows(null), []);
+    assert.deepStrictEqual(stockFns.pickRows(undefined), []);
+    assert.deepStrictEqual(stockFns.pickRows({}), []);
+    assert.deepStrictEqual(stockFns.pickRows({ result: 'nope' }), []);
+  });
+
+  test('errText: HTTP 상태가 있으면 "HTTP <상태>", 없으면 에러 메시지', () => {
+    assert.strictEqual(stockFns.errText({ status: 404 }), 'HTTP 404');
+    assert.strictEqual(stockFns.errText(new Error('boom')), 'boom');
+  });
+
+  test('rates.ratesUsdBaseToKrw: "1 USD = ? X" 원본을 요청 통화별 원화 환율로 변환(KRW/USD=KRW/X÷KRW/USD... 교차환율)', () => {
+    const m = ratesFns.ratesUsdBaseToKrw({ KRW: 1385, JPY: 150, EUR: 0.92 }, ['USD', 'KRW', 'JPY', 'EUR']);
+    assert.strictEqual(m.USD, 1385);
+    assert.strictEqual(m.KRW, 1);
+    assert.strictEqual(m.JPY, 1385 / 150);
+    assert.strictEqual(m.EUR, 1385 / 0.92);
+    assert.strictEqual(m._usdKrw, 1385);
+  });
+  test('rates.ratesUsdBaseToKrw: 원본 rates에 KRW가 없으면 전체를 신뢰할 수 없다고 보고 null', () => {
+    assert.strictEqual(ratesFns.ratesUsdBaseToKrw({ JPY: 150 }, ['USD']), null);
+    assert.strictEqual(ratesFns.ratesUsdBaseToKrw(null, ['USD']), null);
+  });
+  test('rates.ratesUsdBaseToKrw: 요청한 통화가 원본 rates에 없으면 에러 없이 그 통화만 결과에서 빠진다', () => {
+    const m = ratesFns.ratesUsdBaseToKrw({ KRW: 1385 }, ['USD', 'GBP']);
+    assert.strictEqual(m.USD, 1385);
+    assert.strictEqual('GBP' in m, false);
+  });
+} else {
+  test('netlify/functions require 실패로 stock.js/rates.js 테스트를 건너뜀', () => {
+    throw new Error('stock.js/rates.js를 require하지 못했습니다 — 위 경고 메시지를 확인하세요');
+  });
+}
 
 /* ---------- 실행 ---------- */
 // pbkdf2Hash는 Web Crypto(subtle.deriveBits)를 쓰는 비동기 함수라, 러너도 async test를
