@@ -1303,7 +1303,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.90';
+const APP_VERSION='1.46.91';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2533,7 +2533,7 @@ function goToday(){
 function openBigMinSheet(){
  openSheet(`<h3>큰 지출 기준</h3><div class="desc">이 금액 이상만 홈의 ‘나갈 큰돈’에 보여줘요.</div>
   <div class="field"><label for="bigMinInput">기준 금액 (원)</label>
-   <input id="bigMinInput" class="num" inputmode="numeric" value="${comma(bigMin())}" placeholder="100,000" oninput="fmtAmt(this)"></div>
+   <input id="bigMinInput" class="num" inputmode="numeric" value="${comma(bigMin())}" placeholder="100,000" oninput="fmtAmt(this)" onkeydown="if(event.key==='Enter')setBigMin()"></div>
   <button class="btn btn-primary" onclick="setBigMin()">${svg('check')} 저장</button>`);
  setTimeout(()=>{const el=$('bigMinInput');if(el){el.focus();el.select()}},250);
 }
@@ -5791,7 +5791,7 @@ function openQuickAmount(recId,date){
  openSheet(`<h3>${esc(r.memo||r.category)} 금액</h3>
   <div class="desc">${shortDate(date)}에 ${inc?'들어올':'빠져나갈'} 실제 금액을 넣어주세요.${last!=null?`<br><span style="color:var(--text-3);font-size:12.5px">${inc?'지난번':'지난달'}은 ${comma(last)}원이었어요</span>`:''}</div>
   <div class="field"><label for="qAmt">금액 (원)</label>
-   <input id="qAmt" class="num" inputmode="numeric" value="${last!=null?comma(last):''}" placeholder="0" oninput="fmtAmt(this)" autofocus></div>
+   <input id="qAmt" class="num" inputmode="numeric" value="${last!=null?comma(last):''}" placeholder="0" oninput="fmtAmt(this)" onkeydown="if(event.key==='Enter')saveQuickAmount('${recId}','${date}')" autofocus></div>
   <button class="btn btn-primary" onclick="saveQuickAmount('${recId}','${date}')">${svg('check')} 저장</button>`);
  setTimeout(()=>{const el=$('qAmt');if(el){el.focus();el.select()}},250);
 }
@@ -6522,7 +6522,7 @@ function renderAuth(){
    <button class="kakao-btn" onclick="kakaoLogin()"><span class="kico">${svg('chat')}</span>카카오로 시작하기</button>
    ${AUTHKEY?`<div class="kkey">
      <label for="kkeyIn">카카오 JavaScript 키</label>
-     <input id="kkeyIn" placeholder="카카오 JavaScript 키 붙여넣기" value="${(localStorage.getItem('asset_app_kakao_key')||'').replace(/"/g,'&quot;')}">
+     <input id="kkeyIn" placeholder="카카오 JavaScript 키 붙여넣기" value="${(localStorage.getItem('asset_app_kakao_key')||'').replace(/"/g,'&quot;')}" onkeydown="if(event.key==='Enter')saveKakaoKey()">
      <div class="kkey-row"><button class="btn btn-soft cancel" onclick="AUTHKEY=false;authErr('');renderAuth()">취소</button><button class="btn btn-primary" onclick="saveKakaoKey()">저장하고 로그인</button></div>
      <div class="kkey-help">키가 없다면 <b>developers.kakao.com</b> → 앱 생성 → [앱 키]의 <b>JavaScript 키</b>를 복사해 붙여넣으세요. 이 앱을 올린 <b>도메인 등록</b>과 [카카오 로그인] 활성화도 필요해요.</div>
    </div>`:''}
@@ -6596,7 +6596,7 @@ function doForgotPassword(){
  const email=($('auEmail')&&$('auEmail').value)||'';
  openSheet(`<h3>비밀번호 재설정</h3>
   <div class="desc">가입하신 이메일로 비밀번호 재설정 링크를 보내드려요.</div>
-  <div class="field"><label for="fpEmailIn">이메일</label><input id="fpEmailIn" type="email" inputmode="email" autocomplete="username" placeholder="you@example.com" value="${esc(email)}"></div>
+  <div class="field"><label for="fpEmailIn">이메일</label><input id="fpEmailIn" type="email" inputmode="email" autocomplete="username" placeholder="you@example.com" value="${esc(email)}" onkeydown="if(event.key==='Enter')doSendResetEmail()"></div>
   <div id="fpErr" class="auth-err" style="display:none"></div>
   <div class="two-btn" style="margin-top:14px"><button class="btn btn-soft cancel" onclick="closeSheet()">취소</button><button class="btn btn-primary" id="fpSendBtn" onclick="doSendResetEmail()">재설정 메일 보내기</button></div>`);
 }

@@ -1,15 +1,8 @@
 {
   "cycle": 110,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 105,
-      "phase": "develop",
-      "timestamp": "2026-09-29T00:00:00.000Z",
-      "summary": "FileReader onerror 핸들러 누락으로 인한 silent failure 수정: importFile(JSON 백업 복원, index.html:5038)과 importCsvFile(CSV 내역 가져오기, index.html:5053) 두 change 리스너 모두 r.onload만 설정하고 r.onerror가 없어, 파일 읽기 자체가 실패하면(권한 거부, 선택 후 파일 삭제/이동, 일부 모바일 file-provider 문제 등) onload가 아예 호출되지 않아 사용자에게 아무 피드백도 없이 멈추는 문제가 있었다(finally의 e.target.value='' 도 onload 안에만 있어 실행되지 않아 같은 파일 재선택도 안 먹힐 수 있음). general-purpose 서브에이전트가 과거 cycle에서 반복 언급된 'silent-failure' 후보를 조사해 이 구체적 지점을 찾아냈다(restoreBackup의 손상 백업/JSON.parse 실패 케이스는 이미 toast로 처리되고 있어 문제 없음을 확인 — 공백은 FileReader 레벨 실패 경로였음). 두 리스너 모두에 r.onerror=()=>{toast('파일을 읽지 못했어요');e.target.value=''} 한 줄씩 추가 — 기존 toast() 헬퍼와 동일 함수 내 다른 분기들의 에러 문구 스타일을 그대로 재사용한 순수 추가 변경. 두 인라인 <script> 블록과 logic.js/sw.js 모두 node --check 통과, node test/run.js 685/685 통과(로직 변경 없어 새 테스트 케이스 불필요). APP_VERSION 1.46.79->1.46.80, sw.js CACHE v241->v242.",
-      "commit": null
-    },
     {
       "cycle": 105,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-29T23:00:00.000Z",
       "summary": "critique(cycle109) 계획대로 예산 탭 지출 분석에 귀속(나/배우자/공용) 필터를 추가했다. logic.js에 순수 함수 filterTxnsByOwner(txns,assets,owner) 신설 — owner가 '전체'/falsy면 무필터, expense는 fromAssetId의 owner, income은 toAssetId의 owner, transfer/saving은 fromAssetId 우선 후 toAssetId로 폴백, 기준 자산을 못 찾으면(삭제된 자산 등) 제외. test/run.js에 회귀 테스트 7개 신설(전체/falsy 무필터, expense/income 각 방향, transfer/saving 폴백, 미해결 자산 id, undefined 인자). spendByCategory(y,m,owner='전체') 3번째 파라미터를 추가해 allTxns() 결과를 filterTxnsByOwner로 거른 뒤 집계하되, budgetHistory 기반 카테고리 강제 노출(예산은 귀속 무관 전역)은 그대로 둠 — 기존 호출부(홈 예산초과 알림 등)는 인자 생략으로 그대로 '전체' 기준 유지. spendTrend(c,y,m,n,owner='전체')도 owner를 추가해 avg/cur를 같은 귀속 기준으로 비교하도록 함(계획엔 없었지만, 안 고치면 owner로 필터된 cur를 가구 전체 평균과 비교하는 모순이 생겨 review 없이 advance 단계에서 바로 정정). openSpendAnalysis()에 ST.spendOwner 상태(기본 '전체', ST.plan.owner와 동일 관례) 추가, renderAssets/renderPlan과 동일한 '귀속 사라지면 전체로' 폴백 가드 추가, openCatManage와 동일한 .seg/.seg-blob 세그먼트 UI로 ['전체',...DB.owners] 칩 행을 시트 상단에 추가(moveSegBlobs()가 openSheet 후 자동 배선됨). 칩 onclick은 spendOwnerSel(i) — 소유자 이름을 바로 따옴표 JS 문자열로 넣으면 이름에 아포스트로피가 있을 때 깨지는 기존 코드베이스의 알려진 함정(delOwner/moveGroup 등이 전부 인덱스를 쓰는 이유)을 피해 인덱스만 넘김. openBudgetPrompt/saveBudget/delBudget의 rows=spendByCategory(y,m)도 spendByCategory(y,m,ST.spendOwner)로 맞춰, 지출 분석 화면에 표시된(귀속 필터가 걸린) 목록의 idx가 실제로 같은 카테고리를 가리키도록 정정 — 이 부분을 맞추지 않으면 귀속 필터가 켜진 상태에서 카테고리를 눌렀을 때 정렬 순서 차이로 다른 카테고리의 예산을 잘못 열람/수정하는 실제 버그가 생겼을 것(계획엔 명시 안 됐지만 이번 변경이 만드는 필수 정합성이라 함께 처리). 예산 자체(setBudgetFrom/budgetForMonth/DB.budgetHistory)는 계획대로 귀속과 무관하게 카테고리 전역 그대로 — 스키마 변경 없음. 두 인라인 <script> 블록 모두 new Function() 파싱 통과, logic.js/sw.js 모두 node --check 통과, node test/run.js 696/696 통과(신규 7개 포함). APP_VERSION 1.46.89->1.46.90, sw.js CACHE v251->v252. pending_advance_plan을 null로 비움. 수동 QA(Playwright 등 브라우저 기동)는 이번 사이클에서 수행하지 않음 — 다음 review 단계가 diff를 검토하며 필요시 확인 권장.",
+      "commit": null
+    },
+    {
+      "cycle": 110,
+      "phase": "develop",
+      "timestamp": "2026-09-30T00:00:00.000Z",
+      "summary": "Enter-to-submit 백로그 마무리: 단일 입력 필드 시트 4곳에 Enter 제출 누락 수정. cycle108에서 newOwner/renameOwner/sbKeyIn/budgetIn/newCat/renameCat에 onkeydown=\"if(event.key==='Enter')<저장함수>()\" 관례를 적용했지만, 같은 '단일 입력+옆 저장버튼' 패턴인 4곳이 그 백로그에서 빠져 있었다: openBigMinSheet()의 #bigMinInput(index.html:2536, 저장함수 setBigMin() 존재), openQuickAmount()의 #qAmt(5794, saveQuickAmount(recId,date) 존재), doForgotPassword()의 #fpEmailIn(6599, doSendResetEmail() 존재, 기존 재진입 가드 있음), renderAuth()의 #kkeyIn(6525, saveKakaoKey() 존재). 저장 함수가 이미 named function으로 존재하는데 onkeydown 배선만 빠져 있어, 다른 필드들은 이미 Enter로 저장되는데 이 4곳만 반드시 화면의 저장 버튼을 눌러야 하는 일관성 없는 UX였다. 각 input에 동일 패턴의 onkeydown 한 줄씩 추가(옆 버튼과 동일 함수/인자 재사용). 4곳 모두 숫자/이메일/영숫자 입력이라 IME 조합 이슈 없어 !event.isComposing 가드는 붙이지 않음(budgetIn/sbKeyIn/newPwIn 등 비-한글 필드 관례와 동일). #kkeyIn2(저장 로직이 named function이 아니라 버튼 onclick에 인라인으로 박혀 있어 중복 작성 시 따옴표 이스케이핑 리스크)는 의도적으로 범위 밖(향후 saveKakaoKey2 같은 named function 리팩터링 후 처리 권장, history에 이월). 두 인라인 <script> 블록 모두 new Function() 파싱 통과, logic.js/sw.js 모두 node --check 통과, node test/run.js 696/696 통과(UI 배선만 바꿔 로직 함수 미변경, 새 테스트 케이스 불필요, 예상대로). APP_VERSION 1.46.90->1.46.91, sw.js CACHE v252->v253. (general-purpose 서브에이전트에 위임해 탐색·구현·검증, 오케스트레이팅 세션이 상태 파일 갱신과 커밋을 수행)",
       "commit": null
     }
   ]
