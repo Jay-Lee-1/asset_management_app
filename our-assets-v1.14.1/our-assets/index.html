@@ -1303,7 +1303,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.89';
+const APP_VERSION='1.46.90';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2274,7 +2274,7 @@ let TM=ym(TODAY);TM.d=+TODAY.slice(8,10);
 let ST={tab:'home',ledgerMode:'cal',assetOwner:'all',ledger:{y:TM.y,m:TM.m,sel:TODAY},home:{y:TM.y,m:TM.m},
  hist:{cat:'전체',q:'',selMode:false,sel:new Set(),sortAsc:false,
    range:{from:`${TM.y}-01-01`,to:`${TM.y}-12-31`},preset:'year',page:1,avgMode:false},
- plan:{owner:'전체',assetId:null,y:TM.y,m:TM.m},editAssets:false,aSel:{mode:false,ids:new Set()},lSel:{mode:false,ids:new Set()}};
+ plan:{owner:'전체',assetId:null,y:TM.y,m:TM.m},spendOwner:'전체',editAssets:false,aSel:{mode:false,ids:new Set()},lSel:{mode:false,ids:new Set()}};
 const TABS=[{id:'home',label:'홈',icon:'home'},{id:'assets',label:'자산관리',icon:'wallet'},{id:'ledger',label:'가계부',icon:'ledger'},{id:'plan',label:'한달 플랜',icon:'plan'},{id:'menu',label:'메뉴',icon:'menu'}];
 
 /* ================= HOME ================= */
@@ -4216,9 +4216,9 @@ function openHelpKakao(){
   </div>`);
 }
 
-function spendByCategory(y,m){ /* 지출 분석은 항상 예정 포함 */
+function spendByCategory(y,m,owner='전체'){ /* 지출 분석은 항상 예정 포함. owner를 주면 그 귀속(fromAssetId 기준)의 지출만 집계 — 예산(budgetHistory)은 귀속과 무관하게 전역이라 필터하지 않는다 */
  const map={};
- allTxns(monthStartStr(y,m),monthEndStr(y,m)).forEach(t=>{
+ filterTxnsByOwner(allTxns(monthStartStr(y,m),monthEndStr(y,m)),DB.assets,owner).forEach(t=>{
    if(t.type!=='expense')return;if(t.adjust&&!t.inSurplus)return; /* 잔액 조정: 항목별 포함 설정(기본 제외) */
    map[t.category]=(map[t.category]||0)+t.amount;
  });
@@ -4227,17 +4227,18 @@ function spendByCategory(y,m){ /* 지출 분석은 항상 예정 포함 */
 }
 /* 카테고리별 최근 n개월(기본 3, 이번 달 제외) 지출 평균/지난달 지출 대비 이번 달 지출 증감 — spendByCategory를
  * 그대로 재사용해 카테고리 합산 규칙(잔액 조정 제외 등)을 공유한다. 최근 n개월치가 전부 0(비교 기준 없음)이면
- * deltaPct는 null이라 호출부에서 배지를 숨긴다. */
-function spendTrend(c,y,m,n=3){
+ * deltaPct는 null이라 호출부에서 배지를 숨긴다. owner를 주면 avg/cur 모두 같은 귀속 기준으로 비교한다
+ * (호출부가 이미 귀속으로 필터된 cur를 보여주면서 avg만 가구 전체 기준이면 서로 다른 모수를 비교하게 됨). */
+function spendTrend(c,y,m,n=3,owner='전체'){
  let py=y,pm=m,total=0,prevMonth=0;
  for(let i=0;i<n;i++){
   pm--;if(pm<1){pm=12;py--}
-  const v=(spendByCategory(py,pm).find(r=>r.c===c)||{v:0}).v;
+  const v=(spendByCategory(py,pm,owner).find(r=>r.c===c)||{v:0}).v;
   total+=v;
   if(i===0)prevMonth=v;
  }
  const avg=Math.round(total/n);
- const cur=(spendByCategory(y,m).find(r=>r.c===c)||{v:0}).v;
+ const cur=(spendByCategory(y,m,owner).find(r=>r.c===c)||{v:0}).v;
  const deltaPct=avg?Math.round((cur-avg)/avg*100):null;
  return{avg,prevMonth,deltaPct};
 }
@@ -4287,9 +4288,10 @@ function spendTrendBadge(deltaPct,label){
  return `<span class="trend" style="color:${color}">${label||''}${arrow}${Math.abs(deltaPct)}%</span>`;
 }
 function openSpendAnalysis(){
- const y=ST.ledger.y,m=ST.ledger.m;const rows=spendByCategory(y,m);const total=rows.reduce((s,r)=>s+r.v,0);
+ if(ST.spendOwner!=='전체'&&!DB.owners.includes(ST.spendOwner))ST.spendOwner='전체'; /* 귀속 사라지면 전체로 (renderAssets/renderPlan과 동일 패턴) */
+ const y=ST.ledger.y,m=ST.ledger.m;const rows=spendByCategory(y,m,ST.spendOwner);const total=rows.reduce((s,r)=>s+r.v,0);
  const tb=totalBudgetSummary(rows,y,m);const tbp=budgetProgress(tb.spentOnBudgeted,tb.budgetedTotal);
- let py=y,pm=m,totalAvg=0;for(let i=0;i<3;i++){pm--;if(pm<1){pm=12;py--}totalAvg+=spendByCategory(py,pm).reduce((s,r)=>s+r.v,0)}
+ let py=y,pm=m,totalAvg=0;for(let i=0;i<3;i++){pm--;if(pm<1){pm=12;py--}totalAvg+=spendByCategory(py,pm,ST.spendOwner).reduce((s,r)=>s+r.v,0)}
  totalAvg=Math.round(totalAvg/3);
  const totalDeltaPct=totalAvg?Math.round((total-totalAvg)/totalAvg*100):null;
  const body=rows.length?rows.map((r,idx)=>{
@@ -4299,12 +4301,13 @@ function openSpendAnalysis(){
    const barPct=budget?bp.barPct:(total?r.v/total*100:0);
    const barCls=budget?(bp.over?'over':'budgeted'):'';
    const overCls=budget&&bp.over?' over':'';
-   const trend=spendTrend(r.c,y,m);
+   const trend=spendTrend(r.c,y,m,3,ST.spendOwner);
    return `<div class="spend-row" tabindex="0" role="button" aria-label="${esc(r.c)} ${comma(r.v)}원" onclick="openBudgetPrompt(${idx})" onkeydown="rowKeydown(event,()=>openBudgetPrompt(${idx}))"><div class="spend-av a-food">${catGlyph('expense',r.c,null,'tag')}</div>
     <div class="spend-mid"><div class="spend-nm">${esc(r.c)} ${spendTrendBadge(trend.deltaPct)}</div><div class="spend-track"><i class="${barCls}" style="width:${barPct}%"></i></div></div>
     <div class="spend-amt"><div class="a num${overCls}">${comma(r.v)}${budget?`<span class="bgt">/${comma(budget)}</span>`:''}원</div><div class="p${overCls}">${pct}%${budget?' 사용':''}</div></div></div>`}).join('')
    :`<div class="empty"><div class="ei">${svg('chart')}</div><div class="et">아직 쓴 게 없어요 👏</div><div class="es">이대로만 가면 완벽해요</div></div>`;
  openSheet(`<h3>${m}월 지출 분석</h3><div class="desc">카테고리를 눌러 예산을 정해보세요 · 예정 포함</div>
+  <div class="seg"><div class="seg-blob"></div>${['전체',...DB.owners].map((o,oi)=>`<button class="${ST.spendOwner===o?'on':''}" onclick="spendOwnerSel(${oi})">${esc(o)}</button>`).join('')}</div>
   <div class="card" style="text-align:center;padding:16px;margin-bottom:12px"><div style="font-size:12.5px;color:var(--text-3);font-weight:700">총 지출</div><div class="num" style="font-size:26px;font-weight:700;color:var(--expense);margin-top:2px">${comma(total)}원</div>${totalDeltaPct!==null?`<div style="margin-top:4px">${spendTrendBadge(totalDeltaPct,'최근 3개월 평균 대비 ')}</div>`:''}</div>
   ${tb.budgetedTotal?`<div class="card" style="text-align:center;padding:16px;margin-bottom:12px">
    <div style="font-size:12.5px;color:var(--text-3);font-weight:700">이번 달 예산</div>
@@ -4318,8 +4321,13 @@ function openSpendAnalysis(){
 /* 홈 알림 카드에서 예산 초과 상세를 볼 때는 ST.ledger가 다른(과거) 달을 보던 상태일 수 있으므로
  * 항상 이번 달로 맞춘 뒤 연다 — 가계부 탭 자체는 이동하지 않는다(openMaturity 등과 동일 패턴). */
 function openSpendAnalysisThisMonth(){ST.ledger.y=TM.y;ST.ledger.m=TM.m;openSpendAnalysis();}
+/* 지출 분석 시트의 귀속 세그먼트 전환 — openCatManage(kind)와 동일하게 상태만 바꾸고 시트를 통째로 다시 연다 */
+function spendOwnerSel(i){const list=['전체',...DB.owners];ST.spendOwner=list[i]||'전체';openSpendAnalysis();}
+/* idx는 openSpendAnalysis()가 방금 그린 rows(현재 ST.spendOwner로 필터된 목록)의 인덱스이므로,
+ * 여기서도 반드시 같은 owner로 필터해야 다른 카테고리를 잘못 가리키지 않는다 — 예산 자체는
+ * setBudgetFrom/budgetForMonth가 귀속과 무관하게 카테고리 하나로 전역 적용한다. */
 function openBudgetPrompt(idx){
- const y=ST.ledger.y,m=ST.ledger.m;const rows=spendByCategory(y,m);const r=rows[idx];if(!r)return;
+ const y=ST.ledger.y,m=ST.ledger.m;const rows=spendByCategory(y,m,ST.spendOwner);const r=rows[idx];if(!r)return;
  const cur=budgetForMonth(r.c,y,m)||'';
  openSheet(`<h3>${esc(r.c)} 예산 설정</h3><div class="desc">${m}월부터 ${esc(r.c)}에 쓸 수 있는 한도예요 · 바꾸기 전까지 이후 달에도 계속 적용돼요</div>
   <div class="field"><input id="budgetIn" type="number" inputmode="numeric" placeholder="예산 금액(원)" value="${cur||''}" onkeydown="if(event.key==='Enter')saveBudget(${idx})"></div>
@@ -4327,13 +4335,13 @@ function openBudgetPrompt(idx){
  setTimeout(()=>{const el=$('budgetIn');el&&el.focus()},300);
 }
 function saveBudget(idx){
- const y=ST.ledger.y,m=ST.ledger.m;const rows=spendByCategory(y,m);const r=rows[idx];if(!r)return;
+ const y=ST.ledger.y,m=ST.ledger.m;const rows=spendByCategory(y,m,ST.spendOwner);const r=rows[idx];if(!r)return;
  const v=Math.round(Number(($('budgetIn')&&$('budgetIn').value)||0));
  if(!v||v<0){toast('올바른 금액을 입력해 주세요');return}
  setBudgetFrom(r.c,y,m,v);save();toast('예산을 저장했어요');openSpendAnalysis();
 }
 function delBudget(idx){
- const y=ST.ledger.y,m=ST.ledger.m;const rows=spendByCategory(y,m);const r=rows[idx];if(!r)return;
+ const y=ST.ledger.y,m=ST.ledger.m;const rows=spendByCategory(y,m,ST.spendOwner);const r=rows[idx];if(!r)return;
  const key=budgetKey(y,m);
  const h=DB.budgetHistory&&DB.budgetHistory[r.c];
  const existing=h?h.find(e=>e.from===key):null; /* 보고 있는 달에 정확히 일치하는 이력 항목이 이미 있었는지(있었다면 되돌릴 때 그 값으로, 없었다면 새로 추가한 0항목을 제거) */

@@ -4237,6 +4237,53 @@ test('decidePushOutcome: 매치된 행이 없는데 행은 있었으면(그 사�
   assert.strictEqual(sandbox.decidePushOutcome(0, true), 'conflict');
 });
 
+/* ---------- filterTxnsByOwner: 예산 탭 지출 분석이 자산 탭(ST.assetOwner)/플랜 탭(ST.plan.owner)과
+ * 달리 DB.owners 귀속 모델을 전혀 쓰지 않던 공백을 메운 순수 필터(app-evolve cycle109 critique/advance).
+ * expense는 출금 자산(fromAssetId), income은 입금 자산(toAssetId) 기준이고, transfer/saving은 둘 다
+ * 관여하므로 fromAssetId를 우선하고 없으면 toAssetId로 폴백한다. */
+test('filterTxnsByOwner: owner가 "전체"거나 falsy면 그대로 반환한다(필터 없음)', () => {
+  const txns = [{ type: 'expense', fromAssetId: 'a1' }, { type: 'income', toAssetId: 'a2' }];
+  const assets = [{ id: 'a1', owner: '나' }, { id: 'a2', owner: '배우자' }];
+  assert.strictEqual(sandbox.filterTxnsByOwner(txns, assets, '전체').length, 2);
+  assert.strictEqual(sandbox.filterTxnsByOwner(txns, assets, null).length, 2);
+  assert.strictEqual(sandbox.filterTxnsByOwner(txns, assets, undefined).length, 2);
+});
+test('filterTxnsByOwner: expense는 fromAssetId의 owner로 필터한다', () => {
+  const assets = [{ id: 'a1', owner: '나' }, { id: 'a2', owner: '배우자' }];
+  const txns = [
+    { id: 't1', type: 'expense', fromAssetId: 'a1' },
+    { id: 't2', type: 'expense', fromAssetId: 'a2' },
+  ];
+  const out = sandbox.filterTxnsByOwner(txns, assets, '나');
+  assert.deepStrictEqual(out.map((t) => t.id), ['t1']);
+});
+test('filterTxnsByOwner: income은 toAssetId의 owner로 필터한다(expense와 반대 방향)', () => {
+  const assets = [{ id: 'a1', owner: '나' }, { id: 'a2', owner: '배우자' }];
+  const txns = [
+    { id: 't1', type: 'income', fromAssetId: null, toAssetId: 'a1' },
+    { id: 't2', type: 'income', fromAssetId: null, toAssetId: 'a2' },
+  ];
+  const out = sandbox.filterTxnsByOwner(txns, assets, '배우자');
+  assert.deepStrictEqual(out.map((t) => t.id), ['t2']);
+});
+test('filterTxnsByOwner: transfer/saving은 fromAssetId를 우선하고, 없으면 toAssetId로 폴백한다', () => {
+  const assets = [{ id: 'a1', owner: '나' }, { id: 'a2', owner: '배우자' }, { id: 'a3', owner: '공용' }];
+  const txns = [
+    { id: 't1', type: 'transfer', fromAssetId: 'a1', toAssetId: 'a3' }, // from 우선 -> 나
+    { id: 't2', type: 'saving', fromAssetId: null, toAssetId: 'a3' }, // from 없음 -> to로 폴백 -> 공용
+  ];
+  assert.deepStrictEqual(sandbox.filterTxnsByOwner(txns, assets, '나').map((t) => t.id), ['t1']);
+  assert.deepStrictEqual(sandbox.filterTxnsByOwner(txns, assets, '공용').map((t) => t.id), ['t2']);
+});
+test('filterTxnsByOwner: 기준 자산을 찾을 수 없으면(삭제된 자산 등) 어느 귀속에도 속하지 않는 것으로 보고 제외한다', () => {
+  const assets = [{ id: 'a1', owner: '나' }];
+  const txns = [{ id: 't1', type: 'expense', fromAssetId: 'gone' }];
+  assert.strictEqual(sandbox.filterTxnsByOwner(txns, assets, '나').length, 0);
+});
+test('filterTxnsByOwner: txns/assets가 없어도(undefined) 터지지 않는다', () => {
+  assert.strictEqual(sandbox.filterTxnsByOwner(undefined, undefined, '나').length, 0);
+});
+
 /* ---------- mergeCollection: afterCloudAuth()의 localUnsynced 충돌 분기가 DB.txns를 문서 전체
  * 교체 대신 레코드 단위로 합치는 데 쓰는 순수 3-way 병합 함수(app-evolve cycle90 critique/advance).
  * 두 기기가 서로 무관한 거래만 각자 편집·삭제해도 전체 충돌로 취급돼 한쪽 편집이 통째로 사라지던

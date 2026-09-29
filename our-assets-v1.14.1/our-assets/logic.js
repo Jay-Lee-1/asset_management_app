@@ -78,6 +78,24 @@ function truncateRecEnd(base,cutoffDate){ /* 반복을 cutoffDate까지로 자�
  return {endDate:cutoffDate,count:recCountUntil(base,cutoffDate)};
 }
 
+/* ================= OWNER / SPEND ANALYSIS ================= */
+/* 거래를 귀속(owner)으로 거른다 — assets는 {id,owner} 배열(DB.assets 그대로 넘기면 됨).
+ * owner가 falsy거나 '전체'면 그대로 반환(필터 없음). expense는 출금 자산(fromAssetId)의 owner,
+ * income은 입금 자산(toAssetId)의 owner를 기준으로 삼고, transfer/saving은 두 자산 모두 관여하므로
+ * fromAssetId를 우선하고 없으면(예: 반복거래 확장 등으로 from이 비어있는 경우) toAssetId로 폴백한다.
+ * 기준 자산 자체를 찾을 수 없으면(삭제된 자산 등) 어느 귀속에도 속하지 않는 것으로 보고 제외한다. */
+function filterTxnsByOwner(txns,assets,owner){
+ if(!owner||owner==='전체')return txns||[];
+ const ownerOf=id=>{if(!id)return null;const a=(assets||[]).find(x=>x.id===id);return a?a.owner:null};
+ return (txns||[]).filter(t=>{
+  let o=null;
+  if(t.type==='expense')o=ownerOf(t.fromAssetId);
+  else if(t.type==='income')o=ownerOf(t.toAssetId);
+  else if(t.type==='transfer'||t.type==='saving')o=ownerOf(t.fromAssetId)||ownerOf(t.toAssetId);
+  return o===owner;
+ });
+}
+
 /* ================= CLOUD MERGE / TOMBSTONE ================= */
 /* localArr/remoteArr(둘 다 {id,...,updatedAt?} 배열)를 id 단위로 3-way 병합하는 순수 함수.
  * DB/전역 상태를 전혀 읽지 않아 afterCloudAuth() 밖에서도 그대로 단위 테스트할 수 있다.
