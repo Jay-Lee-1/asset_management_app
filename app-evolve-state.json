@@ -1,15 +1,8 @@
 {
   "cycle": 109,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 104,
-      "phase": "review",
-      "timestamp": "2026-09-28T22:09:10.656Z",
-      "summary": "develop 커밋(f2459c7, 인증 화면 label-input for 연결 누락 5곳: kkeyIn/auEmail/auPw/fpEmailIn/newPwIn)을 검토. grep으로 5개 id 모두 파일 전체에서 유일함을 재확인(중복 id로 label-for가 엉뚱한 요소를 가리킬 위험 없음) — kkeyIn(6475)/auEmail(6481)/auPw(6482)/fpEmailIn(6547)/newPwIn(6565) 각 for 속성이 바로 옆 input id와 정확히 일치. 자격증명 입력(autocomplete=username/current-password/new-password)이라 스크린리더 접근 가능한 이름 연결의 실효성이 큰 변경. 순수 마크업 속성 추가라 로직 회귀 위험 없음, node --check(두 인라인 script 블록) 통과, node test/run.js 685/685 통과(변경 없음, 예상대로). 코드 변경 없음(이상 없음).",
-      "commit": null
-    },
     {
       "cycle": 104,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-29T19:00:00.000Z",
       "summary": "인증 관련 비동기 제출 함수 4곳(doLogin/doSignup/doSendResetEmail/doChangePassword)에 재진입 가드 추가. 각 함수는 시작 시 관련 버튼(.auth-submit / fpSendBtn / pwSaveBtn)을 disabled=true로 바꿔 마우스 클릭 중복 제출은 막고 있었지만, 비밀번호/이메일 입력 필드의 onkeydown=\"if(event.key==='Enter')...\" 핸들러는 버튼의 disabled 상태와 무관하게 항상 함수를 직접 호출하고 있어 — 브라우저가 disabled 버튼에는 click 이벤트를 보내지 않는 것과 달리 keydown은 input에 그대로 걸려 있으므로 — 사용자가 Enter를 빠르게 두 번 누르거나(모바일 키보드 등에서 반복 입력) 누른 상태에서 자동반복(key repeat)이 걸리면 AUTH.signIn/signUp/resetPassword/changePassword가 동시에 두 번 이상 실행돼 중복 네트워크 호출·경쟁 상태(예: 두 번째 로그인 성공 응답이 첫 번째보다 먼저 도착해 startApp()이 두 번 실행)로 이어질 수 있는 문제였다. 각 함수 맨 앞에 btn 참조를 먼저 얻어 if(btn&&btn.disabled)return; 가드를 추가(기존 authErr/errEl 초기화 및 btn.disabled=true 대입은 가드 통과 이후로 순서만 재배치, 로직 자체는 그대로)해 이미 진행 중인 제출은 later Enter/재호출을 조용히 무시하도록 했다. 순수 가드 추가라 회귀 테스트 파일(test/run.js)이 다루는 순수 로직 함수 목록에는 해당 없음 — 두 인라인 <script> 블록(node --check)과 logic.js/sw.js 모두 문법 통과, node test/run.js 690/690 통과(변경 없음, 예상대로). APP_VERSION 1.46.88->1.46.89, sw.js CACHE v250->v251.",
+      "commit": "bbf1f44"
+    },
+    {
+      "cycle": 109,
+      "phase": "review",
+      "timestamp": "2026-09-29T19:08:13.000Z",
+      "summary": "develop 커밋(bbf1f44, doLogin/doSignup/doSendResetEmail/doChangePassword 4곳에 재진입 가드 if(btn&&btn.disabled)return; 추가)을 검토. 각 함수에서 참조하는 버튼 셀렉터를 확인: doLogin/doSignup은 document.querySelector('.auth-submit')를 쓰는데, renderAuth()가 login/signup 중 한 화면만 렌더링하며 .auth-submit 버튼이 화면에 정확히 하나만 존재함을 grep으로 재확인(같은 클래스를 재사용하는 다른 화면 없음) — 로그인/가입 동시 렌더로 잘못된 버튼을 가드하거나 존재하지 않는 버튼을 가드할 위험 없음. doSendResetEmail/doChangePassword는 각각 고유 id(fpSendBtn/pwSaveBtn)라 모호성 없음. 가드 위치가 기존 authErr/errEl 초기화 및 btn.disabled=true 대입보다 앞으로 재배치됐지만 그 대입문들 자체는 그대로라 로직 순서 변경에 따른 부작용 없음(가드 통과 후에는 기존과 동일하게 동작). 버튼이 없는 경우(btn===null)는 기존처럼 가드를 건너뛰어 이전 동작과 동일 — 새로운 실패 모드 추가 없음. onkeydown Enter 핸들러(auPw/newPwIn)가 각각 doLogin/doSignup, doChangePassword를 직접 호출하는 지점도 재확인, 가드가 정확히 그 재호출 경로를 막음. 두 인라인 <script> 블록 모두 new Function() 파싱 통과, sw.js node --check 통과, node test/run.js 690/690 통과(순수 가드 추가라 로직 함수 미변경, 예상대로 변경 없음). 코드 변경 없음(이상 없음). 부수적으로 cycle109 develop 이력 항목에 누락돼 있던 commit 해시(bbf1f44)를 기록.",
       "commit": null
     }
   ]
