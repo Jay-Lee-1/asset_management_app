@@ -1,26 +1,8 @@
 {
-  "cycle": 104,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "뷰포트 핀치줌 잠금 해제 (index.html:5 viewport meta) — 저시력 사용자의 유일한 확대 수단 복원",
-    "why": "index.html:5의 <meta name=viewport ... maximum-scale=1.0 user-scalable=no>가 모든 모바일 브라우저에서 핀치줌을 원천 차단하는데, 앱 내에 글자 크기/접근성 설정이 전혀 없어(폰트/글자 크기/접근성 grep 결과 0건) 저시력 사용자에게는 핀치줌이 유일한 확대 수단이었다. 동시에 달력 뷰의 일별 수입/지출/저축 라벨(.cal-cell .ex/.in/.sv, index.html:702/712)이 7.5~8px까지 축소되고 그 외에도 9~11px대 라벨이 다수 존재해, 실제로 못 읽는 사용자가 확대할 방법이 없는 도달 가능한 WCAG 1.4.4/1.4.10(200%까지 줌 차단 금지) 위반. 지금까지 고친 aria-label/label-for류는 스크린리더 사용자를 돕는 것이었던 반면, 이 항목은 스크린리더를 쓰지 않는 저시력 사용자를 막고 있어 성격이 다르고 더 근본적인 접근성 결함이라 최우선 채택.",
-    "approach": "1) index.html:5의 viewport meta에서 user-scalable=no를 제거하고 maximum-scale을 5 정도로 올림(initial-scale=1.0, viewport-fit=cover는 그대로 유지). 2) 커스텀 제스처를 쓰는 요소들(.drag-handle, .mc-viewport/.wh-box, 시트 스와이프, 캐러셀, 롱프레스 피커 등 index.html 323/338/413/419/679/680/791/794/1056 부근의 touch-action 선언)을 감사해 이미 touch-action이 명시돼 핀치줌 허용 후에도 네이티브 확대/더블탭줌과 충돌하지 않는지 확인 — 빠진 곳이 있으면 그곳에만 touch-action을 추가. 3) 작은 폰트 크기 자체는 건드리지 않음(줌 잠금 해제가 수정이지 텍스트 리사이징이 아님), 앱 내 글자크기 토글 같은 별도 기능은 이번 범위 밖. 4) 순수 로직 변경이 아니므로 test/run.js 회귀 테스트 추가 대상 아님 — 대신 수동 QA로 100% 줌 상태에서 시트 스와이프 닫기/캐러셀 드래그/그룹 드래그 재정렬/롱프레스 피커가 모두 정상 동작하는지, 실제로 핀치줌이 되는지 확인. APP_VERSION과 sw.js CACHE 버전은 계획대로 함께 올림."
-  },
+  "cycle": 105,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 99,
-      "phase": "critique",
-      "timestamp": "2026-09-28T01:11:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(touch()/mergeCollection·접근성·성능·logic.js 이관·비밀번호 복구 계열은 이미 다뤄졌으므로 제외하고 아키텍처·UX·기술부채·에러상태 위주). index.html:1309-1313 주석이 스스로 명시한 설계 공백을 확인: window.onerror/unhandledrejection(1319-1320)이 잡는 예외는 recordError()(1315-1318)가 lastError 변수에 적고 console.error만 할 뿐 어디에도 노출되지 않는 write-only 텔레메트리(grep으로 lastError를 읽는 곳이 대입부 외엔 전혀 없음을 재확인) — renderCurrent() try/catch(6221-6224) 안에서 던져진 예외만 errBanner로 보호되고, 100여 개 onclick 핸들러 대부분이 맨 끝에서만 renderCurrent()를 부르므로 그 앞의 예외는 사용자에게 '탭해도 반응 없음'으로만 보인다. 기존 fire-and-forget 프로미스는 전부 .catch(()=>{})로 이미 처리돼 있어 이 경로에 실제로 도달하는 예외는 예외 없이 진짜 미처리 버그임을 확인, 배너 연결 시 소음 위험 없음. cycle98 critique가 러너업 4번으로 남겨둔 항목을 재검증해 이번엔 채택 — recordError()가 showErrBanner()를 직접 호출하도록 하고 renderCurrent() catch의 중복 호출을 제거하는 단일 함수 수정으로 앱 전체의 silent-failure 카테고리를 없앨 수 있는 저위험·고레버리지 항목이라 판단. pending_advance_plan에 3단계 구현 계획(recordError 수정, renderCurrent catch 정리, 1309-1313 주석 갱신) + 선택 사항(crossorigin 없는 서드파티 'Script error.' 필터링) + 수동 검증 방법 저장. 재검토 후 기각한 기존 러너업: 예산탭(이미 budgetHistory/homeAlerts/spendTrend/sparkline로 충분히 구현돼 있음을 재확인, 종결), CSV export 범위(실제로는 expandRec()로 반복거래 확장 포함, 자산만 누락이라 범위 좁음), 레거시 해시 마이그레이션(변동 없음, 계속 이월), 렌더 성능(_balCache 등 캐시로 완화돼 있음, 계속 이월). 신규 후보 하나 조사 후 기각: skip[]/edits{} 오버라이드 맵 무한 증가(deletedIds와 구조적으로 유사하나 사용자 상호작용당 1건이라 증가 속도가 훨씬 낮음, 우선순위 낮음). 만기일 지우기 버튼 마크업 구조 변경은 계속 낮은 우선순위 이월. 코드 변경 없음(읽기 전용 조사).",
-      "commit": null
-    },
-    {
-      "cycle": 99,
-      "phase": "advance",
-      "timestamp": "2026-09-28T02:12:00.000Z",
-      "summary": "critique(cycle99) 계획대로 silent-failure 공백을 해소했다. recordError(err,kind)(index.html:1315-1318 부근)가 lastError 대입/console.error 뒤에 kind==='renderCurrent'이거나 err instanceof Error인 경우에 한해 showErrBanner()를 직접 호출하도록 수정 — crossorigin 없는 서드파티 스크립트(Supabase 등)의 정보 없는 'Script error.'(err가 Error 인스턴스가 아님)는 계획대로 필터링해 소음을 피했다. renderCurrent()의 catch 블록(6221-6224 부근)에서 중복이 된 명시적 showErrBanner() 호출을 제거하고 recordError(err,'renderCurrent') 호출만 남김. 1309-1313 주석을 새 불변식(recordError가 로깅과 사용자 노출을 모두 담당하는 단일 지점)에 맞게 갱신. test/run.js는 계획이 미리 밝힌 대로 DOM/window가 없어 이 경로에 자동 테스트를 추가할 수 없어 새 테스트는 없음(665/665 유지, 변화 없음) — 대신 Playwright(로컬 chromium)로 실제 페이지를 띄워 수동 검증: onclick 흐름을 흉내낸 renderCurrent() 밖의 throw가 렌더 없이도 즉시 배너를 띄우는지, 다음 성공적인 renderCurrent()가 hideErrBanner()로 정상적으로 지우는지, recordError(null,'onerror')가 계획한 대로 배너를 띄우지 않는지(노이즈 필터 동작) 세 가지를 모두 확인 후 통과. 두 인라인 <script> 블록과 logic.js 모두 node --check 통과, node test/run.js 665/665 통과(변경 없음, 순수 로직 함수 변경이 아니므로 예상대로). APP_VERSION 1.46.68->1.46.69, sw.js CACHE v230->v231. pending_advance_plan을 null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 100,
       "phase": "develop",
@@ -152,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-28T23:10:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(접근성 전수·silent-failure 배너·클라우드 병합·안드로이드 백버튼 History API·netlify 함수 테스트 커버리지·CSV export 범위·예산탭·AUTH._legacyHash·skip/edits 맵·delOwner 캐스케이드는 모두 이미 다뤄졌거나 재확인 완료라 제외, 새 시야로 조사). index.html:5 viewport meta에 user-scalable=no와 maximum-scale=1.0이 함께 있어 모든 모바일 브라우저에서 핀치줌이 원천 차단되어 있는데, 앱 내에 글자크기/접근성 설정이 전혀 없어(grep 0건) 저시력 사용자에게 핀치줌이 유일한 확대 수단이었음을 발견. 동시에 달력 뷰 일별 라벨(.cal-cell .ex/.in/.sv, index.html:702/712)이 7.5~8px까지 축소되는 등 9~11px대 작은 텍스트가 다수 존재해, 지금까지 고친 aria-label/label-for류(스크린리더 사용자 대상)와는 성격이 다른, 스크린리더를 쓰지 않는 저시력 사용자를 막는 실제 도달 가능한 WCAG 1.4.4/1.4.10 위반이라 최우선 채택. pending_advance_plan에 저장: (1) viewport meta에서 user-scalable=no 제거·maximum-scale을 5로 상향(initial-scale/viewport-fit 유지), (2) 커스텀 제스처 요소(드래그 핸들·캐러셀·시트 스와이프·롱프레스 피커 등 touch-action 선언 지점들)를 감사해 핀치줌 허용 후에도 충돌 없는지 확인, 빠진 곳만 touch-action 추가, (3) 작은 폰트 크기 자체나 별도 글자크기 토글 기능은 범위 밖(줌 잠금 해제가 수정), (4) 순수 로직 변경이 아니라 test/run.js 대상 아님, 수동 QA로 100% 줌에서 제스처 동작 확인. 러너업(기록만): fitText/fitAll 강제 리플로우(.fit이 화면당 소수 합계 숫자에만 적용돼 실사용 성능 문제 아님, 기각), 히스토리 검색 재렌더(포커스/커서 유실 없이 #histList/#histTotals만 교체함 확인, 문제 없음), 클라우드 동기화 충돌/경쟁 재조사(조건부 UPDATE+자동 병합 재시도+visibilitychange 플러시로 이미 해소됨 재확인), PWA 업데이트 플로우(skipWaiting/hadController 가드로 이미 안전, 문제 없음), 자산/반복거래 삭제 캐스케이드(경고 및 비활성화/clamp 이미 구현, 데이터 유실 없음), test/run.js FUNCTIONS 배열 기준 미테스트 541개 함수 diff(대부분 DOM/렌더 함수라 부적합, 순수에 가까운 나머지는 이미 테스트된 기본함수의 얇은 래퍼라 우선순위 낮음), label-for 잔여 백로그(~40곳)/fabPop+탭전환 History API(여전히 유효하지만 이번엔 줌 잠금 건이 더 전략적·미조사 상태라 우선순위 밀림). 코드 변경 없음(읽기 전용 조사).",
+      "commit": null
+    },
+    {
+      "cycle": 104,
+      "phase": "advance",
+      "timestamp": "2026-09-29T00:20:00.000Z",
+      "summary": "critique(cycle104) 계획대로 뷰포트 핀치줌 잠금을 해제했다. index.html:5 viewport meta에서 user-scalable=no를 제거하고 maximum-scale을 1.0에서 5.0으로 올림(initial-scale=1.0, viewport-fit=cover는 유지) — 저시력 사용자가 달력 라벨(.cal-cell .ex/.in/.sv 등 7.5~11px대 텍스트)을 포함해 앱 전체를 핀치줌으로 확대할 수 있게 됨. 계획 2단계(커스텀 제스처 touch-action 감사)는 실제로 감사한 결과 수정 불필요로 결론: grep한 9개 touch-action 선언(.drag-handle:none, .mc-viewport/.wh-box/.wh-col/sheet-scroll:pan-y, 캐러셀:pan-x, .tws-live:auto, 시트 루트:none, 라인791:manipulation)이 이미 모두 명시적으로 스코프돼 있어 '빠진 곳'이 없었음 — pan-y/pan-x 단독 값은 스펙상 핀치줌을 별도로 포함하지 않으므로 시트/캐러셀/휠피커 내부에서는 이번 변경 후에도 핀치줌이 여전히 자동으로 비활성 상태로 남는데, 이는 오히려 안전한 부작용(고정 오버레이 레이아웃이 핀치줌으로 깨지는 것을 방지)이라 계획이 말한 '이미 명시된 touch-action이 새 줌 허용과 충돌하지 않는지' 확인 기준을 통과, 별도 touch-action 추가는 하지 않음. e.touches[0]만 읽는 5곳의 커스텀 드래그 핸들러(시트 스와이프/엣지 스와이프/롱프레스/캐러셀, 모두 passive:true)도 재확인해 핀치(2터치) 이벤트와 충돌 없음을 코드 리딩으로 확인. 작은 폰트 크기 자체나 글자크기 토글 기능은 계획대로 범위 밖. 순수 마크업/메타 변경이라 test/run.js 대상 함수 변경 없음 — node test/run.js 685/685 통과(변경 없음, 예상대로). 두 인라인 <script> 블록 모두 new Function()으로 파싱 확인, logic.js/sw.js 모두 node --check 통과. Playwright(로컬 chromium, iPhone 13 에뮬레이션)로 실제 페이지를 로드해 (1) viewport meta content가 'user-scalable=no' 없이 'maximum-scale=5.0'으로 정확히 반영됐는지, (2) 페이지 로드 시 pageerror(JS 예외)가 전혀 없는지(콘솔에 잡힌 에러는 샌드박스 네트워크 제한으로 인한 Supabase 등 외부 리소스 ERR_TUNNEL_CONNECTION_FAILED뿐, 로그인 화면까지는 정상 렌더링됨) 확인 — 로그인 없이는 시트/캐러셀/롱프레스 등 인증 후 화면까지는 자동화 검증 못 함, 실제 기기에서의 핀치줌 동작과 제스처 화면 수동 확인은 사용자에게 권장. APP_VERSION 1.46.78->1.46.79, sw.js CACHE v240->v241. pending_advance_plan을 null로 비움.",
       "commit": null
     }
   ]
