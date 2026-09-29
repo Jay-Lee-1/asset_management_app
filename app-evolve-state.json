@@ -1,15 +1,8 @@
 {
   "cycle": 105,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 100,
-      "phase": "develop",
-      "timestamp": "2026-09-28T00:00:00.000Z",
-      "summary": "general-purpose 서브에이전트로 접근성 마무리: cycle97/99에서 fc-x 클리어 버튼 9곳은 aria-label만 추가했지만 만기일 지우기(index.html:2874~)는 <button class=\"pick\"> 안에 <span class=\"fc-x\">가 중첩된 잘못된 마크업(버튼 안 버튼 대체)이라 그때 범위 밖으로 남겨뒀던 마지막 1곳. 이번엔 바깥 pick을 <div class=\"pick\" tabindex=0 role=button aria-label=\"만기일 {날짜|선택}\" onkeydown=rowKeydown(...)>으로, 안쪽 클리어를 <button type=button class=\"fc-x\" aria-label=\"만기일 지우기\">✕</button>로 교체해 기존 .asset-item/.manage-row 등에서 쓰는 div-as-row-button + rowKeydown() 관례를 그대로 따랐다 — 이제 두 컨트롤 모두 독립적으로 포커스·키보드 활성화 가능. cursor:pointer를 새 div에 추가(버튼이 아니게 되어 전역 button{cursor:pointer} 리셋을 안 받음). 사전 조사 단계에서 반복거래 날짜 계산·클라우드 병합·CSV 가져오기/내보내기·예산 이력·폼 검증 등 더 나은 후보를 폭넓게 찾았으나 97사이클의 누적 하드닝으로 새로운 실버그를 찾지 못해, cycle97/99에서 명시적으로 이월해둔 이 마지막 접근성 공백을 채택. 마크업 전용 변경이라 회귀 테스트 추가 없음(기존 9곳 fc-x aria-label 처리와 동일 관례). 두 인라인 <script> 블록과 logic.js/sw.js 모두 node --check 통과, node test/run.js 665/665 통과(변경 없음). APP_VERSION 1.46.69->1.46.70, sw.js CACHE v231->v232.",
-      "commit": null
-    },
     {
       "cycle": 100,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-29T00:20:00.000Z",
       "summary": "critique(cycle104) 계획대로 뷰포트 핀치줌 잠금을 해제했다. index.html:5 viewport meta에서 user-scalable=no를 제거하고 maximum-scale을 1.0에서 5.0으로 올림(initial-scale=1.0, viewport-fit=cover는 유지) — 저시력 사용자가 달력 라벨(.cal-cell .ex/.in/.sv 등 7.5~11px대 텍스트)을 포함해 앱 전체를 핀치줌으로 확대할 수 있게 됨. 계획 2단계(커스텀 제스처 touch-action 감사)는 실제로 감사한 결과 수정 불필요로 결론: grep한 9개 touch-action 선언(.drag-handle:none, .mc-viewport/.wh-box/.wh-col/sheet-scroll:pan-y, 캐러셀:pan-x, .tws-live:auto, 시트 루트:none, 라인791:manipulation)이 이미 모두 명시적으로 스코프돼 있어 '빠진 곳'이 없었음 — pan-y/pan-x 단독 값은 스펙상 핀치줌을 별도로 포함하지 않으므로 시트/캐러셀/휠피커 내부에서는 이번 변경 후에도 핀치줌이 여전히 자동으로 비활성 상태로 남는데, 이는 오히려 안전한 부작용(고정 오버레이 레이아웃이 핀치줌으로 깨지는 것을 방지)이라 계획이 말한 '이미 명시된 touch-action이 새 줌 허용과 충돌하지 않는지' 확인 기준을 통과, 별도 touch-action 추가는 하지 않음. e.touches[0]만 읽는 5곳의 커스텀 드래그 핸들러(시트 스와이프/엣지 스와이프/롱프레스/캐러셀, 모두 passive:true)도 재확인해 핀치(2터치) 이벤트와 충돌 없음을 코드 리딩으로 확인. 작은 폰트 크기 자체나 글자크기 토글 기능은 계획대로 범위 밖. 순수 마크업/메타 변경이라 test/run.js 대상 함수 변경 없음 — node test/run.js 685/685 통과(변경 없음, 예상대로). 두 인라인 <script> 블록 모두 new Function()으로 파싱 확인, logic.js/sw.js 모두 node --check 통과. Playwright(로컬 chromium, iPhone 13 에뮬레이션)로 실제 페이지를 로드해 (1) viewport meta content가 'user-scalable=no' 없이 'maximum-scale=5.0'으로 정확히 반영됐는지, (2) 페이지 로드 시 pageerror(JS 예외)가 전혀 없는지(콘솔에 잡힌 에러는 샌드박스 네트워크 제한으로 인한 Supabase 등 외부 리소스 ERR_TUNNEL_CONNECTION_FAILED뿐, 로그인 화면까지는 정상 렌더링됨) 확인 — 로그인 없이는 시트/캐러셀/롱프레스 등 인증 후 화면까지는 자동화 검증 못 함, 실제 기기에서의 핀치줌 동작과 제스처 화면 수동 확인은 사용자에게 권장. APP_VERSION 1.46.78->1.46.79, sw.js CACHE v240->v241. pending_advance_plan을 null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 105,
+      "phase": "develop",
+      "timestamp": "2026-09-29T00:00:00.000Z",
+      "summary": "FileReader onerror 핸들러 누락으로 인한 silent failure 수정: importFile(JSON 백업 복원, index.html:5038)과 importCsvFile(CSV 내역 가져오기, index.html:5053) 두 change 리스너 모두 r.onload만 설정하고 r.onerror가 없어, 파일 읽기 자체가 실패하면(권한 거부, 선택 후 파일 삭제/이동, 일부 모바일 file-provider 문제 등) onload가 아예 호출되지 않아 사용자에게 아무 피드백도 없이 멈추는 문제가 있었다(finally의 e.target.value='' 도 onload 안에만 있어 실행되지 않아 같은 파일 재선택도 안 먹힐 수 있음). general-purpose 서브에이전트가 과거 cycle에서 반복 언급된 'silent-failure' 후보를 조사해 이 구체적 지점을 찾아냈다(restoreBackup의 손상 백업/JSON.parse 실패 케이스는 이미 toast로 처리되고 있어 문제 없음을 확인 — 공백은 FileReader 레벨 실패 경로였음). 두 리스너 모두에 r.onerror=()=>{toast('파일을 읽지 못했어요');e.target.value=''} 한 줄씩 추가 — 기존 toast() 헬퍼와 동일 함수 내 다른 분기들의 에러 문구 스타일을 그대로 재사용한 순수 추가 변경. 두 인라인 <script> 블록과 logic.js/sw.js 모두 node --check 통과, node test/run.js 685/685 통과(로직 변경 없어 새 테스트 케이스 불필요). APP_VERSION 1.46.79->1.46.80, sw.js CACHE v241->v242.",
       "commit": null
     }
   ]
