@@ -1,7 +1,11 @@
 {
   "cycle": 108,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "자산 그룹 순서 변경(드래그 재정렬)이 키보드/스크린리더로 전혀 조작 불가능한 문제 수정",
+    "why": "Assets 탭 편집모드의 그룹 재정렬 핸들(index.html:2644 <div class=\"drag-handle\">)이 tabindex/role/aria-label 없는 순수 div이고, wireGroupDrag()(2838-2862)가 pointerdown/pointermove/pointerup/pointercancel만 배선해 드래그 제스처가 유일한 조작 수단이다. 이 설정(DB.settings.groupOrder)은 Assets 화면 전체와 자산 선택기에 쓰이는 앱 전역 영구 설정인데, 키보드 전용/스위치 접근/스크린리더 사용자는 Tab으로 이 요소에 도달조차 할 수 없어 이 기능을 원천적으로 쓸 수 없다(WCAG 2.1.1 키보드 접근성 위반). cycle104/106/107에서 다룬 label-for 백로그(텍스트 입력 라벨 연결)와는 별개로, 이번은 인터랙티브 기능 자체에 대한 대체 입력 경로가 전무한 사례라 cycle108 critique에서 가장 우선순위 높은 항목으로 채택.",
+    "approach": "기존 드래그 로직(wireGroupDrag, nextGroupOrder)은 건드리지 않고 나란히 키보드 대안을 추가한다: (1) 편집모드 행 마크업(~2643-2647)에 각 그룹 옆으로 '위로 이동'/'아래로 이동' <button> 2개를 추가, 목록 경계에서는 disabled 처리, aria-label에 그룹명을 포함(예: \"${ty.label} 위로 이동\"). (2) moveGroup(type, dir) 핸들러를 새로 만들어 DB.settings.groupOrder에서 인접한 두 항목을 swap하되 nextGroupOrder(2837)가 이미 구현한 '숨겨진 타입은 뒤에 유지' 동작을 재사용하고, save() 후 assetBodyHTML()/refreshAssetBody()로 재렌더 — 포인터 up 핸들러가 하는 일과 동일한 최종 상태를 만들어 두 입력 경로 간 동작이 완전히 일치하게 한다. (3) 버튼은 기본적으로 포커스 가능하고 Enter/Space로 실행되는 순수 <button>으로 작성. (4) moveGroup의 swap 로직에서 순수 함수를 분리할 수 있으면(예: swapAdjacent(order, idx1, idx2) 같은 헬퍼) test/run.js에 기존 순수 함수 테스트 패턴을 따라 회귀 테스트 추가. index.html을 건드리므로 APP_VERSION과 sw.js CACHE 버전을 함께 올릴 것."
+  },
   "history": [
     {
       "cycle": 103,
@@ -141,6 +145,13 @@
       "phase": "review",
       "timestamp": "2026-09-29T13:40:00.000Z",
       "summary": "develop 커밋(5bcb384, newOwner/renameOwner/sbKeyIn/budgetIn/newCat/renameCat 6곳에 Enter 제출 배선)을 검토하다 실제 버그 발견: newOwner/renameOwner/newCat/renameCat 4곳은 한글 등 사용자가 IME 조합으로 입력할 가능성이 높은 텍스트 필드인데, 추가된 onkeydown=\"if(event.key==='Enter')...\"가 event.isComposing을 확인하지 않아 마지막 글자를 조합 중(한글 조합 확정을 위해 Enter를 누르는 시점)에 keydown 'Enter'가 그대로 감지되어 조합이 채 끝나기 전에 저장 함수가 호출될 수 있음(예: '아이'를 입력하다 마지막 음절 조합 중 Enter → 미완성 값으로 저장 시도). 기존 auPw/newPwIn의 동일 패턴은 비밀번호 필드라 이 문제가 사실상 없어 지금까지 드러나지 않았던 결함. grep으로 코드베이스 전체에 isComposing/compositionstart 가드가 전무함을 확인. newOwner(3020)/renameOwner(3034)/newCat(4397)/renameCat(4443) 4곳의 onkeydown 조건에 &&!event.isComposing을 추가해 조합 중 Enter는 무시하고 조합이 끝난 뒤의 Enter만 저장을 트리거하도록 수정. budgetIn(숫자 입력)·sbKeyIn(영문/숫자 키 붙여넣기)은 IME 조합 대상이 아니라 그대로 둠(범위 최소화). 두 인라인 <script> 블록 모두 new Function() 통과, node test/run.js 686/686 통과(순수 마크업 조건 추가라 로직 함수 미변경, 새 테스트 불필요). APP_VERSION 1.46.86->1.46.87, sw.js CACHE v248->v249.",
+      "commit": null
+    },
+    {
+      "cycle": 108,
+      "phase": "critique",
+      "timestamp": "2026-09-29T14:00:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(a11y label-for 전수·Enter 제출/IME 조합·silent-failure·클라우드 병합·탭 간 저장 충돌·netlify 함수 테스트 커버리지·CSV export 범위·예산탭·AUTH._legacyHash·skip/edits 맵·delOwner 캐스케이드·안드로이드 백버튼·PWA 업데이트·자산/반복거래 삭제 캐스케이드·뷰포트 핀치줌·CDN crossorigin+SRI(네트워크 차단으로 재도전 무의미 확정)는 모두 이미 다뤄졌거나 재확인 완료라 제외). 새로 발견: Assets 탭 편집모드의 그룹 재정렬 핸들(index.html:2644 <div class=\"drag-handle\">)이 tabindex/role/aria-label 없는 순수 div이고 wireGroupDrag()(2838-2862)가 pointerdown/pointermove/pointerup/pointercancel만 배선해 드래그가 유일한 조작 수단임을 확인 — openSortSheet()(2704)는 그룹 내부 항목을 금액/소유자/이름순으로 정렬하는 별개 기능이라 대체 경로가 아님. DB.settings.groupOrder는 Assets 화면 전체와 자산 선택기에 쓰이는 앱 전역 영구 설정인데 키보드/스위치/스크린리더 사용자는 이 요소에 Tab으로 도달조차 못해(WCAG 2.1.1) 이 기능을 원천적으로 쓸 수 없음 — 지금까지 채택했던 label-for(텍스트 입력 라벨 연결)류와 달리 인터랙티브 기능 자체에 대체 입력 경로가 전무한 사례라 최우선 채택. pending_advance_plan에 저장: 기존 드래그 로직은 그대로 두고 각 그룹 행에 '위로/아래로 이동' 버튼(경계에서 disabled, aria-label에 그룹명 포함)을 추가, moveGroup(type,dir) 핸들러가 nextGroupOrder(2837)를 재사용해 포인터 경로와 동일한 최종 상태를 만들도록 함, 가능하면 swap 로직을 순수 함수로 분리해 test/run.js에 회귀 테스트 추가. 코드 변경 없음(읽기 전용 조사, general-purpose 서브에이전트 위임).",
       "commit": null
     }
   ]
