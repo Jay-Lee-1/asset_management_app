@@ -1,15 +1,12 @@
 {
   "cycle": 106,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "서드파티 CDN 스크립트(SRI 무결성) 미검증 — 금융 데이터/클라우드 자격증명 유출 위험",
+    "why": "index.html이 외부 CDN 스크립트 3개를 integrity(SRI) 속성 없이 로드한다: 28행 pretendard.min.css(jsdelivr), 1291행 kakao.min.js(kakaocdn), 1292행 supabase.js(jsdelivr) — 셋 다 정확한 버전으로 pinned돼 있지만 SRI 해시가 없어 CDN이 탈취/오설정/MITM되면 주입된 스크립트가 풀 페이지 권한으로 실행된다. 이 앱은 사용자가 Kakao API 키(kkeyIn)와 Supabase URL/anon key(sbKeyIn)를 직접 입력하고 DB 전체(거래/자산/소유자)를 localStorage에 담는 개인 금융 앱이라, 이 경로로 조용히 자격증명과 재무 데이터가 유출될 수 있다. 지금까지의 critique는 사용자 입력→innerHTML XSS만 감사했고 서드파티 공급망 무결성은 다룬 적 없는 새로운 영역.",
+    "approach": "1) 세 URL(pretendard@v1.3.9, kakao.min.js@2.7.4, supabase-js@2.45.4 — 이미 exact 버전 pinned)의 실제 리소스를 받아 sha384 SRI 해시를 계산. 2) index.html:28/1291/1292 세 태그에 integrity=\"sha384-...\" 추가, supabase 태그(1292)에는 crossorigin=\"anonymous\"도 추가(다른 둘은 이미 있음). 3) test/run.js에 순수 텍스트 검사(파일 읽어서 정규식/substring 검사, DOM/vm 불필요)로 이 세 태그가 매번 integrity+crossorigin과 정확한 버전 문자열을 유지하는지 확인하는 회귀 테스트 추가 — 나중에 누군가 CDN 버전을 올리면서 해시 갱신을 깜빡하면 이 테스트가 실패해서 잡아냄. 4) window.Kakao && / window.supabase 가드(각각 1888/1635)가 이미 있어 해시 불일치 시에도 앱이 죽지 않고 해당 기능만 비활성화됨을 확인하고 구현 노트에 남김(회귀로 오인 방지). 범위 제외: 페이지 전역 CSP 추가는 하지 않음(사용자가 런타임에 입력하는 Supabase 프로젝트 URL을 connect-src에 정적으로 고정할 수 없어 더 큰 별도 작업), 세 라이브러리의 버전 자체는 올리지 않음, 동일 출처 자산(아이콘/매니페스트)은 손대지 않음, Netlify Functions는 서버사이드라 SRI 대상 아님."
+  },
   "history": [
-    {
-      "cycle": 101,
-      "phase": "critique",
-      "timestamp": "2026-09-28T10:10:07.508Z",
-      "summary": "앱이 standalone PWA인데도 History API(pushState/popstate)를 전혀 쓰지 않아, 안드로이드에서 시트나 모달이 열린 상태로 뒤로가기를 누르면 UI가 닫히지 않고 앱 자체가 종료돼버리는 심각한 모바일 UX 결함을 발견. openSheet/closeSheet와 날짜피커 오픈 지점에 히스토리 스택 연동을 추가하는 것을 다음 advance 작업으로 계획했다.",
-      "commit": null
-    },
     {
       "cycle": 101,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-09-29T05:30:00.000Z",
       "summary": "develop 커밋(a0113ec, Supabase 클라우드 동기화 설정 폼 sbUrlIn/sbKeyIn label-for 연결 누락 수정)을 검토. grep으로 sbUrlIn/sbKeyIn 두 id 모두 파일 전체에서 유일함을 재확인(4150-4151에 정의, 4174의 $('sbUrlIn')/$('sbKeyIn') 참조와 충돌 없음), 각 label의 for 값이 바로 옆 input id와 정확히 일치. cycle104 인증 화면(kkeyIn 등)에 적용한 것과 동일한 for=id 패턴이라 관례 일치. diff의 value=\"${(c.url||'').replace(/\\\"/g,'&quot;')}\" 이스케이프는 이번 변경이 손대지 않은 기존 코드 그대로임을 확인 — 인젝션 위험 없음. 두 인라인 <script> 블록 모두 new Function() 통과, logic.js/sw.js 모두 node --check 통과, node test/run.js 685/685 통과(변경 없음, 순수 마크업 diff라 예상대로). 코드 변경 없음(이상 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 106,
+      "phase": "critique",
+      "timestamp": "2026-09-29T07:13:56.495Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(접근성 전수·silent-failure·클라우드 동기화 병합·안드로이드 백버튼 History API·netlify 함수 테스트 커버리지·CSV export 범위·예산탭·AUTH._legacyHash·skip/edits 맵·delOwner 캐스케이드·뷰포트 핀치줌·탭 간 저장 충돌은 모두 이미 다뤄졌거나 재확인 완료라 제외). 서드파티 공급망 무결성을 새로 조사: index.html이 pretendard CSS(28행, jsdelivr)·kakao.min.js(1291행, kakaocdn)·supabase.js(1292행, jsdelivr) 세 CDN 스크립트를 exact 버전으로 pinned했음에도 integrity(SRI) 속성이 전혀 없음을 발견. 이 앱은 사용자가 Kakao API 키·Supabase URL/anon key를 직접 입력하고 거래/자산 DB 전체를 localStorage에 저장하는 개인 금융 앱이라, CDN 탈취/MITM 시 풀 페이지 권한 스크립트 주입으로 자격증명·재무데이터가 조용히 유출될 수 있는 지금까지 다루지 않은 공급망 리스크라 최우선 채택. pending_advance_plan에 저장: (1) 세 URL의 sha384 SRI 해시 계산 후 integrity 속성 추가(supabase 태그엔 crossorigin도 추가), (2) test/run.js에 세 태그가 integrity+crossorigin+정확한 버전 문자열을 유지하는지 검사하는 순수 텍스트 회귀 테스트 신설(향후 버전업 시 해시 갱신 누락을 잡아냄), (3) window.Kakao/window.supabase 가드가 이미 있어 해시 불일치 시 기능만 비활성화되고 앱이 죽지 않음을 확인해두기, (4) 페이지 전역 CSP 추가·라이브러리 버전 업·Netlify Functions는 명시적으로 범위 밖. 러너업(기록만, 기각): 죽은 순수 함수 5개(totalAssetAt/fixedIncomeOf/ownerNet/txMonthRange/inMonth — 호출부 0건, 안전한 삭제 후보로만 메모), inQuietWindow()가 KST 대신 로컬 기기 시간 사용(해외 사용자 한정 사소한 엣지 케이스), XSS via innerHTML 전수 재감사(esc() 일관 적용 확인, 문제 없음), 알림 스케줄링 신뢰성(기존에 best-effort로 이미 문서화됨, 신규 아님), 백업/CSV import 검증(이미 충분히 강화됨), sw.js 캐시 무효화(문제 없음). 코드 변경 없음(읽기 전용 조사).",
       "commit": null
     }
   ]
