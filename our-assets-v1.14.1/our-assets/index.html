@@ -1303,7 +1303,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.88';
+const APP_VERSION='1.46.89';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6552,8 +6552,9 @@ function authSet(m){authMode=m;renderAuth()}
 function authErr(msg){const e=$('auErr');if(e){e.textContent=msg;e.style.display=msg?'block':'none'}}
 function chooseGuest(){GUEST=true;localStorage.setItem('asset_app_guest','1');AUTH.signOut();startApp()}
 async function doLogin(){
+ const btn=document.querySelector('.auth-submit');if(btn&&btn.disabled)return;
  const email=$('auEmail').value,pw=$('auPw').value;
- authErr('');const btn=document.querySelector('.auth-submit');if(btn)btn.disabled=true;
+ authErr('');if(btn)btn.disabled=true;
  const r=await AUTH.signIn(email,pw);
  if(btn)btn.disabled=false;
  if(r.err)return authErr(r.err);
@@ -6567,8 +6568,9 @@ async function doLogin(){
  else{if(!dbIsEmpty(DB)&&guestHasData())toast('로그인했어요 · '+r.email+' · 게스트로 입력한 데이터는 이 계정에 합쳐지지 않았어요');else toast('로그인했어요 · '+r.email)}
 }
 async function doSignup(){
+ const btn=document.querySelector('.auth-submit');if(btn&&btn.disabled)return;
  const email=$('auEmail').value,pw=$('auPw').value;
- authErr('');const btn=document.querySelector('.auth-submit');if(btn)btn.disabled=true;
+ authErr('');if(btn)btn.disabled=true;
  const r=await AUTH.signUp(email,pw);
  if(btn)btn.disabled=false;
  if(r.err)return authErr(r.err);
@@ -6591,9 +6593,10 @@ function doForgotPassword(){
   <div class="two-btn" style="margin-top:14px"><button class="btn btn-soft cancel" onclick="closeSheet()">취소</button><button class="btn btn-primary" id="fpSendBtn" onclick="doSendResetEmail()">재설정 메일 보내기</button></div>`);
 }
 async function doSendResetEmail(){
+ const btn=$('fpSendBtn');if(btn&&btn.disabled)return;
  const email=$('fpEmailIn').value;
  const errEl=$('fpErr');if(errEl)errEl.style.display='none';
- const btn=$('fpSendBtn');if(btn)btn.disabled=true;
+ if(btn)btn.disabled=true;
  const r=await AUTH.resetPassword(email);
  if(btn)btn.disabled=false;
  if(r.err){if(errEl){errEl.textContent=r.err;errEl.style.display='block'}return}
@@ -6609,9 +6612,10 @@ function openChangePasswordSheet(recovery){
   <div class="two-btn" style="margin-top:14px"><button class="btn btn-primary" id="pwSaveBtn" onclick="doChangePassword(${!!recovery})" style="width:100%">저장</button></div>`);
 }
 async function doChangePassword(recovery){
+ const btn=$('pwSaveBtn');if(btn&&btn.disabled)return;
  const pw=($('newPwIn')&&$('newPwIn').value)||'';
  const errEl=$('newPwErr');if(errEl)errEl.style.display='none';
- const btn=$('pwSaveBtn');if(btn)btn.disabled=true;
+ if(btn)btn.disabled=true;
  const r=await AUTH.changePassword(pw);
  if(btn)btn.disabled=false;
  if(r.err){if(errEl){errEl.textContent=r.err;errEl.style.display='block'}return}
