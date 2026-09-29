@@ -141,7 +141,7 @@
       "phase": "develop",
       "timestamp": "2026-09-29T13:11:14.000Z",
       "summary": "일부 단일필드 입력 시트에 Enter 제출 배선 6곳 추가: 이미 auPw/newPwIn에 쓰이던 onkeydown=\"if(event.key==='Enter')<저장함수>()\" 관례를 같은 '입력 1개+저장 버튼' 패턴인 newOwner->addOwner()(3020), renameOwner->doRenameOwner(i)(3034), sbKeyIn(클라우드 동기화 마지막 필드)->saveCloudCfg()(4156), budgetIn->saveBudget(idx)(4302), newCat->addCat(k)(4397), renameCat->doRenameCat(k,i)(4443)에 적용. 새 로직 없이 옆 버튼과 동일한 기존 저장 함수를 그대로 호출하므로 검증/토스트 등 기존 실패 경로도 그대로 유지됨. sbUrlIn/sbKeyIn 2필드 폼은 기존 auEmail/auPw 관례처럼 마지막 필드에서만 제출하도록 sbKeyIn만 배선. index.html 두 인라인 <script> 블록과 sw.js 모두 node --check 통과, node test/run.js 686/686 통과 (순수 로직 함수 미변경이라 새 테스트 케이스는 추가하지 않음). APP_VERSION 1.46.85->1.46.86, sw.js CACHE v247->v248.",
-      "commit": null
+      "commit": "5bcb384"
     }
   ]
 }
