@@ -141,7 +141,7 @@
       "phase": "advance",
       "timestamp": "2026-09-29T08:00:00.000Z",
       "summary": "critique(cycle106)가 세운 SRI(서드파티 CDN 무결성 해시) 계획을 시도했으나, 이 컨테이너의 네트워크 egress 정책이 cdn.jsdelivr.net과 t1.kakaocdn.net에 대한 CONNECT를 403으로 차단해 실제 응답 바이트를 받아 sha384 해시를 계산할 수 없었다(curl 56/403, /root/.ccr/README.md 확인: \"403/407은 조직 정책 — 재시도하거나 우회하지 말고 보고할 것\"). 틀린 해시를 채우면 브라우저가 무결성 불일치로 해당 스크립트 실행을 막아 Kakao 로그인/Supabase 동기화가 전면 중단되므로(회귀보다 나쁨), 해시는 채우지 않고 범위를 안전하게 축소했다. 실제로 구현한 것: (1) supabase.js 태그(1292행)에 누락돼 있던 crossorigin=\"anonymous\" 추가(pretendard/kakao는 이미 있었음, 이제 셋 다 SRI 추가 시 바로 쓸 수 있는 상태), (2) 세 태그 바로 위에 이유를 설명하는 TODO(SRI) 주석 추가, (3) test/run.js에 세 CDN 태그의 pinned 버전 문자열+crossorigin 속성을 검사하는 순수 텍스트 회귀 테스트 신설(향후 누군가 버전을 올리면서 crossorigin을 빠뜨리거나 실수로 지우면 이 테스트가 잡아냄; SRI 해시 자체는 네트워크 제약상 검사 대상에서 제외). node --check(두 인라인 스크립트 블록 포함)와 node test/run.js 686/686 모두 통과(신규 테스트 1개 포함, 나머지는 무영향 확인). APP_VERSION 1.46.82->1.46.83, sw.js CACHE v244->v245. 남은 작업(실제 sha384 해시 계산+integrity 속성 추가)은 CDN 접근이 가능한 환경에서 수동으로 하거나 향후 critique가 다시 계획을 세워야 함 — pending_advance_plan은 비웠으니 이 항목이 여전히 유효하다면 다음 critique가 재평가할 것.",
-      "commit": null
+      "commit": "f31d94d"
     }
   ]
 }
