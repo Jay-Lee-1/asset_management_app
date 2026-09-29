@@ -1293,7 +1293,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.80';
+const APP_VERSION='1.46.81';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1977,6 +1977,18 @@ async function requestPersistentStorage(){
  if(DB&&ST.tab==='home')renderCurrent();
 }
 function save(opts){invalidateBalances();
+ /* 시트가 열려 있으면 handleForeignStorage가 다른 탭의 저장을 TAB_SYNC_PENDING으로만 쌓아두고
+  * 반영을 closeSheet()로 미루는데, saveTx/saveAsset/saveRec 등 모든 저장 흐름은 closeSheet()보다
+  * save()를 먼저 부르므로 그 사이 이 탭이 save()를 호출하면 병합 없이 자신의(다른 탭 변경을 모르는)
+  * 메모리 DB로 localStorage를 그대로 덮어써 다른 탭의 저장을 조용히 영구 파괴한다. cloud pull과
+  * 동일한 mergeRemoteDataIntoLocal로 먼저 병합해두면 이후 closeSheet()가 TAB_SYNC_PENDING을 소비해도
+  * 이미 병합된 값을 다시 읽을 뿐이라 안전하다(applyForeignSave의 전체 덮어쓰기 대신 병합). */
+ let foreignAtStr;try{foreignAtStr=localStorage.getItem(dataKey()+'__savedAt')}catch(e){foreignAtStr=null}
+ if(foreignSaveIsNewer(foreignAtStr,TAB_SAVED_AT)){
+  let foreignRaw;try{foreignRaw=localStorage.getItem(dataKey())}catch(e){foreignRaw=null}
+  let foreignDB=null;if(foreignRaw){try{foreignDB=JSON.parse(foreignRaw)}catch(e){foreignDB=null}}
+  if(foreignDB){mergeRemoteDataIntoLocal(foreignDB);TAB_SYNC_PENDING=null}
+ }
  /* 순자산 이력의 '오늘' 항목은 앱을 연 시각이 아니라 항상 최신 상태를 반영해야 한다:
   * updateNwHistory는 같은 날짜 항목을 덮어쓰는 멱등 함수라 save() 호출마다 매번 갱신해도 안전하고,
   * localStorage에 쓰기 직전에 반영해야 이번 저장분에 최신 스냅샷이 함께 기록된다. */
