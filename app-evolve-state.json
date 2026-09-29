@@ -1,15 +1,13 @@
 {
   "cycle": 109,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "예산/지출 분석이 앱의 핵심 다인(나/배우자/공용) 데이터 모델을 완전히 무시함",
+    "why": "DB.owners와 asset.owner를 기반으로 자산 탭(ST.assetOwner 칩, index.html:2661/2687)과 플랜 탭(ST.plan.owner, index.html:4036-4037/4075)은 소유자별 필터/분석을 제공하는데, spendByCategory()(index.html:4219-4227)와 openSpendAnalysis()(index.html:4289-4317)는 allTxns() 결과를 오직 t.category로만 집계하고 owner를 전혀 보지 않음 — 앱 기본 시드 데이터 자체가 나/배우자/공용 가구를 모델링함(index.html:1558-1572)에도 예산 탭에서는 '배우자가 이번 달 외식에 얼마 썼는지'를 볼 방법이 전혀 없음. 109 사이클 동안 발견된 명백한 버그·접근성 결함·silent failure·race condition은 대부분 소진되었고(재조사로 재확인), 이 항목은 이미 존재하는 데이터(asset.owner)로 UI 레이어만 확장하면 되어 스키마 마이그레이션 위험이 없으면서도 develop 단계보다 큰 실제 기능 공백이라 최우선으로 채택.",
+    "approach": "1) logic.js에 순수 함수 filterTxnsByOwner(txns, assets, owner) 추가 — owner==='전체'|falsy면 그대로 반환, expense는 fromAssetId의 owner, income은 toAssetId의 owner, transfer/saving은 fromAssetId 우선 후 toAssetId로 폴백, 자산이 안 찾아지면 제외. test/run.js에 회귀 테스트 추가(전체 통과, expense/income/transfer 필터링, 미해결 asset id 제외). 2) spendByCategory(y,m,owner='전체') 3번째 파라미터 추가, allTxns() 결과를 filterTxnsByOwner(txns, DB.assets, owner)로 거른 뒤 카테고리 집계 — 기존 호출부(홈 알림, spendTrend 등)는 기본값 '전체'로 그대로 동작. 3) openSpendAnalysis()에 ST.spendOwner 상태(기본 '전체', 자산 탭의 owner-삭제시 폴백 가드와 동일 패턴) 추가하고, 자산 탭 owner 칩과 동일 스타일의 스와이프 칩 행을 지출 분석 시트에 추가 — 칩 선택 시 spendByCategory(y,m,ST.spendOwner)로 재렌더. 4) 예산 설정(openBudgetPrompt/saveBudget/budgetForMonth, DB.budgetHistory)은 그대로 카테고리 전역 유지 — 스키마 변경 없음. 5) index.html의 APP_VERSION과 sw.js의 CACHE(현재 ourassets-v251) 버전 상향. 6) node --check로 두 인라인 script 블록과 logic.js/sw.js 문법 확인, node test/run.js 전체 통과 확인. 7) 수동 QA: 시드 데이터로 지출 분석 열어 칩 전환 시 총지출/목록이 바뀌는지, 홈 탭 예산 초과 알림은 전역 유지되는지, 선택된 owner가 삭제되면 '전체'로 폴백하는지 확인.",
+    "runner_ups": "rMemo/newCat/renameCat의 ad-hoc replace(/\"/g,'&quot;')가 esc()와 불일치(코스메틱, 속성 이탈 불가, 후순위) / recDates() 월간·연간 분기가 daily/weekly와 달리 항상 startDate부터 순회(실사용 규모에선 캐시로 이미 완화, 조기 최적화로 기각) / 거래 금액 입력에 자릿수 상한 없음(16자리+ 입력 시에만 발생, 확률 낮음) / netlify stock.js·rates.js의 CORS *(이미 이전 사이클에서 out of scope로 확인된 항목 재소환이라 제외)"
+  },
   "history": [
-    {
-      "cycle": 104,
-      "phase": "critique",
-      "timestamp": "2026-09-28T23:10:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(접근성 전수·silent-failure 배너·클라우드 병합·안드로이드 백버튼 History API·netlify 함수 테스트 커버리지·CSV export 범위·예산탭·AUTH._legacyHash·skip/edits 맵·delOwner 캐스케이드는 모두 이미 다뤄졌거나 재확인 완료라 제외, 새 시야로 조사). index.html:5 viewport meta에 user-scalable=no와 maximum-scale=1.0이 함께 있어 모든 모바일 브라우저에서 핀치줌이 원천 차단되어 있는데, 앱 내에 글자크기/접근성 설정이 전혀 없어(grep 0건) 저시력 사용자에게 핀치줌이 유일한 확대 수단이었음을 발견. 동시에 달력 뷰 일별 라벨(.cal-cell .ex/.in/.sv, index.html:702/712)이 7.5~8px까지 축소되는 등 9~11px대 작은 텍스트가 다수 존재해, 지금까지 고친 aria-label/label-for류(스크린리더 사용자 대상)와는 성격이 다른, 스크린리더를 쓰지 않는 저시력 사용자를 막는 실제 도달 가능한 WCAG 1.4.4/1.4.10 위반이라 최우선 채택. pending_advance_plan에 저장: (1) viewport meta에서 user-scalable=no 제거·maximum-scale을 5로 상향(initial-scale/viewport-fit 유지), (2) 커스텀 제스처 요소(드래그 핸들·캐러셀·시트 스와이프·롱프레스 피커 등 touch-action 선언 지점들)를 감사해 핀치줌 허용 후에도 충돌 없는지 확인, 빠진 곳만 touch-action 추가, (3) 작은 폰트 크기 자체나 별도 글자크기 토글 기능은 범위 밖(줌 잠금 해제가 수정), (4) 순수 로직 변경이 아니라 test/run.js 대상 아님, 수동 QA로 100% 줌에서 제스처 동작 확인. 러너업(기록만): fitText/fitAll 강제 리플로우(.fit이 화면당 소수 합계 숫자에만 적용돼 실사용 성능 문제 아님, 기각), 히스토리 검색 재렌더(포커스/커서 유실 없이 #histList/#histTotals만 교체함 확인, 문제 없음), 클라우드 동기화 충돌/경쟁 재조사(조건부 UPDATE+자동 병합 재시도+visibilitychange 플러시로 이미 해소됨 재확인), PWA 업데이트 플로우(skipWaiting/hadController 가드로 이미 안전, 문제 없음), 자산/반복거래 삭제 캐스케이드(경고 및 비활성화/clamp 이미 구현, 데이터 유실 없음), test/run.js FUNCTIONS 배열 기준 미테스트 541개 함수 diff(대부분 DOM/렌더 함수라 부적합, 순수에 가까운 나머지는 이미 테스트된 기본함수의 얇은 래퍼라 우선순위 낮음), label-for 잔여 백로그(~40곳)/fabPop+탭전환 History API(여전히 유효하지만 이번엔 줌 잠금 건이 더 전략적·미조사 상태라 우선순위 밀림). 코드 변경 없음(읽기 전용 조사).",
-      "commit": null
-    },
     {
       "cycle": 104,
       "phase": "advance",
@@ -141,6 +139,13 @@
       "phase": "review",
       "timestamp": "2026-09-29T19:08:13.000Z",
       "summary": "develop 커밋(bbf1f44, doLogin/doSignup/doSendResetEmail/doChangePassword 4곳에 재진입 가드 if(btn&&btn.disabled)return; 추가)을 검토. 각 함수에서 참조하는 버튼 셀렉터를 확인: doLogin/doSignup은 document.querySelector('.auth-submit')를 쓰는데, renderAuth()가 login/signup 중 한 화면만 렌더링하며 .auth-submit 버튼이 화면에 정확히 하나만 존재함을 grep으로 재확인(같은 클래스를 재사용하는 다른 화면 없음) — 로그인/가입 동시 렌더로 잘못된 버튼을 가드하거나 존재하지 않는 버튼을 가드할 위험 없음. doSendResetEmail/doChangePassword는 각각 고유 id(fpSendBtn/pwSaveBtn)라 모호성 없음. 가드 위치가 기존 authErr/errEl 초기화 및 btn.disabled=true 대입보다 앞으로 재배치됐지만 그 대입문들 자체는 그대로라 로직 순서 변경에 따른 부작용 없음(가드 통과 후에는 기존과 동일하게 동작). 버튼이 없는 경우(btn===null)는 기존처럼 가드를 건너뛰어 이전 동작과 동일 — 새로운 실패 모드 추가 없음. onkeydown Enter 핸들러(auPw/newPwIn)가 각각 doLogin/doSignup, doChangePassword를 직접 호출하는 지점도 재확인, 가드가 정확히 그 재호출 경로를 막음. 두 인라인 <script> 블록 모두 new Function() 파싱 통과, sw.js node --check 통과, node test/run.js 690/690 통과(순수 가드 추가라 로직 함수 미변경, 예상대로 변경 없음). 코드 변경 없음(이상 없음). 부수적으로 cycle109 develop 이력 항목에 누락돼 있던 commit 해시(bbf1f44)를 기록.",
+      "commit": null
+    },
+    {
+      "cycle": 109,
+      "phase": "critique",
+      "timestamp": "2026-09-29T21:00:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(라벨-for 전수·Enter 제출/IME 조합·auth 재진입 가드·silent-failure·클라우드 병합·탭 간 저장 충돌·CDN crossorigin+SRI(네트워크 차단으로 재도전 불가 확정)·자산 그룹 재정렬 키보드 접근성·netlify 함수·CSV export/import·예산탭 자체·AUTH._legacyHash·delOwner/삭제 캐스케이드·안드로이드 백버튼·PWA 업데이트·뷰포트 핀치줌·recDates/CSV 인젝션 가드·PBKDF2 auth·esc() XSS 이스케이프 등은 모두 이미 다뤄졌거나 재확인 완료라 제외). 새로 발견: 자산/거래 전체가 DB.owners 기반 나/배우자/공용 소유자 모델로 attributed되고 자산 탭(ST.assetOwner 칩, 2661/2687)과 플랜 탭(ST.plan.owner, 4036-4037/4075)은 이 모델을 활용하는데, 예산 탭의 spendByCategory()(4219-4227)/openSpendAnalysis()(4289-4317)는 allTxns()를 owner 필터 없이 카테고리로만 집계 — 앱 기본 시드 데이터 자체가 나/배우자/공용 가구를 모델링함(1558-1572)에도 '배우자가 이번 달 얼마 썼는지'를 볼 방법이 전혀 없는 실제 제품 공백. 이미 존재하는 asset.owner 데이터로 UI/분석 레이어만 확장하면 되어 스키마 마이그레이션 위험이 없고, 109 사이클 동안 명백한 버그·접근성·silent-failure류는 대부분 소진돼 develop 단계보다 큰 이 기능 공백이 최우선으로 적합해 채택. pending_advance_plan에 저장: (1) logic.js에 순수 함수 filterTxnsByOwner(txns,assets,owner) 추가(expense는 fromAssetId owner, income은 toAssetId owner, transfer/saving은 from 우선 후 to 폴백, 미해결시 제외) + test/run.js 회귀 테스트, (2) spendByCategory(y,m,owner='전체') 3번째 파라미터로 필터 적용(기존 호출부는 기본값 유지), (3) openSpendAnalysis()에 ST.spendOwner 상태+자산탭과 동일 스타일 owner 칩 행 추가, owner 삭제시 '전체' 폴백 가드, (4) 예산 설정(DB.budgetHistory) 자체는 카테고리 전역 유지, 스키마 변경 없음, (5) APP_VERSION/sw.js CACHE 버전 상향, (6) node --check + node test/run.js 전체 통과, 수동 QA로 칩 전환/홈 알림 전역 유지/owner 삭제 폴백 확인. 러너업(기록만, 기각): rMemo/newCat/renameCat의 ad-hoc quote-escape가 esc()와 스타일 불일치(속성 이탈 불가, 코스메틱) / recDates() 월간·연간 분기가 daily/weekly와 달리 항상 startDate부터 순회(캐시로 이미 완화된 조기 최적화 후보) / 거래 금액 입력 자릿수 상한 없음(16자리+ 입력시만 발생, 저확률) / netlify CORS * (이전 사이클에 이미 out of scope로 확인돼 재소환 제외). 코드 변경 없음(읽기 전용 조사, general-purpose 서브에이전트 위임).",
       "commit": null
     }
   ]
