@@ -1298,7 +1298,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.84';
+const APP_VERSION='1.46.85';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2527,7 +2527,7 @@ function goToday(){
 }
 function openBigMinSheet(){
  openSheet(`<h3>큰 지출 기준</h3><div class="desc">이 금액 이상만 홈의 ‘나갈 큰돈’에 보여줘요.</div>
-  <div class="field"><label>기준 금액 (원)</label>
+  <div class="field"><label for="bigMinInput">기준 금액 (원)</label>
    <input id="bigMinInput" class="num" inputmode="numeric" value="${comma(bigMin())}" placeholder="100,000" oninput="fmtAmt(this)"></div>
   <button class="btn btn-primary" onclick="setBigMin()">${svg('check')} 저장</button>`);
  setTimeout(()=>{const el=$('bigMinInput');if(el){el.focus();el.select()}},250);
@@ -3295,7 +3295,7 @@ function renderTxSheet(){
  if(rc){ /* 반복 개별/범위 수정: 금액만 */
   const SCOPE={one:'이 내역만',future:'이후 모두',all:'전체'};
   openFormSheet(`<h3>반복 내역 수정</h3><div class="desc">'${esc(d.memo||d.category)}' · ${shortDate(rc.date)} · ${SCOPE[rc.scope]}</div>
-   <div class="field"><label>금액</label><div class="field-clear"><input id="txAmt" class="amount-in num" inputmode="numeric" value="${d.amount?comma(d.amount):''}" placeholder="0" oninput="fmtAmt(this)"><button type="button" class="fc-x" aria-label="금액 지우기" onclick="clrInput('txAmt')">✕</button></div></div>
+   <div class="field"><label for="txAmt">금액</label><div class="field-clear"><input id="txAmt" class="amount-in num" inputmode="numeric" value="${d.amount?comma(d.amount):''}" placeholder="0" oninput="fmtAmt(this)"><button type="button" class="fc-x" aria-label="금액 지우기" onclick="clrInput('txAmt')">✕</button></div></div>
    ${rc.recId?`<button class="rec-detail-link" onclick="openRecDetail('${rc.recId}')">${svg('repeat')} 반복 자체를 세부 편집 ${svg('chevR')}</button>`:''}
    <div class="two-btn"><button class="btn btn-danger cancel" onclick="recCtxDel()">${svg('trash')} 삭제</button>
     <button class="btn btn-primary" onclick="recSave()">저장하기</button></div>`);
@@ -3332,12 +3332,12 @@ function renderTxSheet(){
  const datePsub=rpt?'':(d.date===TODAY?'오늘':(isFuture(d.date)?'예정':''));
  openFormSheet(`<div class="tx-head"><h3>${editing?'내역 수정':'내역 입력'}</h3>${repeatChip}</div>
   <div class="seg"><div class="seg-blob"></div>${typeSeg}</div>
-  <div class="field"><label>금액</label><div class="field-clear"><input id="txAmt" class="amount-in num" inputmode="numeric" value="${d.amount?comma(d.amount):''}" placeholder="0" oninput="fmtAmt(this)"><button type="button" class="fc-x" aria-label="금액 지우기" onclick="clrInput('txAmt')">✕</button></div></div>
+  <div class="field"><label for="txAmt">금액</label><div class="field-clear"><input id="txAmt" class="amount-in num" inputmode="numeric" value="${d.amount?comma(d.amount):''}" placeholder="0" oninput="fmtAmt(this)"><button type="button" class="fc-x" aria-label="금액 지우기" onclick="clrInput('txAmt')">✕</button></div></div>
   <div class="field"><label>${dateLabel}</label><button class="pick" onclick="syncTxInputs();openFieldDatePicker(txDraft.date,ds=>{txDraft.date=ds;recalcEndCond(txDraft,ds);renderTxSheet()})">
     <div class="pav a-etc">${svg('ledger')}</div><div class="pbody"><div class="pn">${fmtDateFull(d.date)}</div><div class="psub">${datePsub}</div></div><div class="pc">${svg('chev')}</div></button>
     <input id="txDate" type="hidden" value="${d.date}"></div>
   ${catField}${assetFields}
-  <div class="field"><label>메모</label><div class="field-clear"><input id="txMemo" value="${esc(d.memo||'')}" placeholder="${rpt?'예: 넷플릭스 구독':'예: 점심 김밥'}"><button type="button" class="fc-x" aria-label="메모 지우기" onclick="clrInput('txMemo')">✕</button></div></div>
+  <div class="field"><label for="txMemo">메모</label><div class="field-clear"><input id="txMemo" value="${esc(d.memo||'')}" placeholder="${rpt?'예: 넷플릭스 구독':'예: 점심 김밥'}"><button type="button" class="fc-x" aria-label="메모 지우기" onclick="clrInput('txMemo')">✕</button></div></div>
   ${repeatFields}
   ${editing?
    `<div class="two-btn"><button class="btn btn-danger cancel" onclick="delTx('${d.id}','','${d.date}')">${svg('trash')} 삭제</button>
@@ -3557,8 +3557,8 @@ function renderRecSheet(){
  openFormSheet(`<h3>${editing?'반복 수정':'반복 설정'}</h3><div class="desc">고정지출·정기수입·이체·저축을 자동 기록해요</div>
   <div class="seg"><div class="seg-blob"></div>${typeSeg}</div>
   ${catField}
-  <div class="field"><label>메모 <span style="color:var(--text-3);font-weight:600">(선택)</span></label><div class="field-clear"><input id="rMemo" value="${(d.memo&&d.memo!==d.category)?d.memo.replace(/"/g,'&quot;'):''}" placeholder="예: 넷플릭스 구독" oninput="recDraft.memo=this.value"><button type="button" class="fc-x" aria-label="메모 지우기" onclick="clrInput('rMemo')">✕</button></div></div>
-  <div class="field"><label>금액</label><div class="field-clear"><input id="rAmt" class="num" inputmode="numeric" value="${d.amount?comma(d.amount):''}" placeholder="0" oninput="fmtAmt(this)"><button type="button" class="fc-x" aria-label="금액 지우기" onclick="clrInput('rAmt')">✕</button></div></div>
+  <div class="field"><label for="rMemo">메모 <span style="color:var(--text-3);font-weight:600">(선택)</span></label><div class="field-clear"><input id="rMemo" value="${(d.memo&&d.memo!==d.category)?d.memo.replace(/"/g,'&quot;'):''}" placeholder="예: 넷플릭스 구독" oninput="recDraft.memo=this.value"><button type="button" class="fc-x" aria-label="메모 지우기" onclick="clrInput('rMemo')">✕</button></div></div>
+  <div class="field"><label for="rAmt">금액</label><div class="field-clear"><input id="rAmt" class="num" inputmode="numeric" value="${d.amount?comma(d.amount):''}" placeholder="0" oninput="fmtAmt(this)"><button type="button" class="fc-x" aria-label="금액 지우기" onclick="clrInput('rAmt')">✕</button></div></div>
   ${assetFields}
   <div class="field"><label>주기</label><div class="opt-grid">${freqBtns}</div></div>
   ${dayField}
@@ -5759,7 +5759,7 @@ function openQuickAmount(recId,date){
  const last=lastActualAmount(r,date);
  openSheet(`<h3>${esc(r.memo||r.category)} 금액</h3>
   <div class="desc">${shortDate(date)}에 ${inc?'들어올':'빠져나갈'} 실제 금액을 넣어주세요.${last!=null?`<br><span style="color:var(--text-3);font-size:12.5px">${inc?'지난번':'지난달'}은 ${comma(last)}원이었어요</span>`:''}</div>
-  <div class="field"><label>금액 (원)</label>
+  <div class="field"><label for="qAmt">금액 (원)</label>
    <input id="qAmt" class="num" inputmode="numeric" value="${last!=null?comma(last):''}" placeholder="0" oninput="fmtAmt(this)" autofocus></div>
   <button class="btn btn-primary" onclick="saveQuickAmount('${recId}','${date}')">${svg('check')} 저장</button>`);
  setTimeout(()=>{const el=$('qAmt');if(el){el.focus();el.select()}},250);
