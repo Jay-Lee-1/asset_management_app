@@ -1,15 +1,8 @@
 {
   "cycle": 107,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 102,
-      "phase": "develop",
-      "timestamp": "2026-09-28T12:15:00.000Z",
-      "summary": "general-purpose 서브에이전트로 접근성 개선: 내역(히스토리) 화면 검색창 input#histQ(renderHistory(), index.html:3682)가 시각적 <label> 없이 돋보기 SVG 아이콘과 placeholder(\"메모·카테고리·자산 검색\")만으로 의미를 전달하고 있었는데, placeholder는 입력 즉시 사라지고 스크린리더가 접근 가능한 이름으로 안정적으로 읽지 않는 값이라 이 검색창에도 접근 가능한 이름이 없는 상태였다. #histQ input에 aria-label=\"내역 검색\"을 추가해 해결(바로 옆 \"내역 선택\" 버튼의 aria-label 표현 스타일에 맞춤). 검토했으나 이번엔 채택하지 않은 후보: CSV 내보내기가 자산을 다루지 않는 문제(신규 포맷·가져오기 로직까지 손대야 해 develop 단계치고 범위가 큼, cycle98부터 이월 중인 항목과 동일), 앱 전반의 <label>텍스트</label>-<input> 쌍 대부분에 for 속성이 없어 프로그램적 연결이 안 되는 문제(광범위한 구조 변경 필요). 순수 마크업 속성 추가라 새 회귀 테스트는 불필요(cycle97/99/101의 기존 aria-label 추가와 동일 판단 기준). 두 인라인 <script> 블록과 logic.js 모두 node --check 통과, node test/run.js 665/665 통과(변경 없음, 로직 변경 없으므로 예상대로). APP_VERSION 1.46.74->1.46.75, sw.js CACHE v236->v237.",
-      "commit": null
-    },
     {
       "cycle": 102,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-09-29T08:00:00.000Z",
       "summary": "critique(cycle106)가 세운 SRI(서드파티 CDN 무결성 해시) 계획을 시도했으나, 이 컨테이너의 네트워크 egress 정책이 cdn.jsdelivr.net과 t1.kakaocdn.net에 대한 CONNECT를 403으로 차단해 실제 응답 바이트를 받아 sha384 해시를 계산할 수 없었다(curl 56/403, /root/.ccr/README.md 확인: \"403/407은 조직 정책 — 재시도하거나 우회하지 말고 보고할 것\"). 틀린 해시를 채우면 브라우저가 무결성 불일치로 해당 스크립트 실행을 막아 Kakao 로그인/Supabase 동기화가 전면 중단되므로(회귀보다 나쁨), 해시는 채우지 않고 범위를 안전하게 축소했다. 실제로 구현한 것: (1) supabase.js 태그(1292행)에 누락돼 있던 crossorigin=\"anonymous\" 추가(pretendard/kakao는 이미 있었음, 이제 셋 다 SRI 추가 시 바로 쓸 수 있는 상태), (2) 세 태그 바로 위에 이유를 설명하는 TODO(SRI) 주석 추가, (3) test/run.js에 세 CDN 태그의 pinned 버전 문자열+crossorigin 속성을 검사하는 순수 텍스트 회귀 테스트 신설(향후 누군가 버전을 올리면서 crossorigin을 빠뜨리거나 실수로 지우면 이 테스트가 잡아냄; SRI 해시 자체는 네트워크 제약상 검사 대상에서 제외). node --check(두 인라인 스크립트 블록 포함)와 node test/run.js 686/686 모두 통과(신규 테스트 1개 포함, 나머지는 무영향 확인). APP_VERSION 1.46.82->1.46.83, sw.js CACHE v244->v245. 남은 작업(실제 sha384 해시 계산+integrity 속성 추가)은 CDN 접근이 가능한 환경에서 수동으로 하거나 향후 critique가 다시 계획을 세워야 함 — pending_advance_plan은 비웠으니 이 항목이 여전히 유효하다면 다음 critique가 재평가할 것.",
       "commit": "f31d94d"
+    },
+    {
+      "cycle": 107,
+      "phase": "develop",
+      "timestamp": "2026-09-29T09:15:00.000Z",
+      "summary": "general-purpose 서브에이전트로 접근성 개선: cycle98부터 이월돼온 '전역 label-for 누락'(~40곳) 백로그 중 자산 추가/편집 시트(renderAssetSheet()·costBasisField()) 1개 화면으로 범위를 좁혀 처리 — 이름(asName, 공용 nameField 및 주식용 별도 인라인 nameField 2곳)·현재 금액/평가액/부채 금액(asAmt)·매입 금액(asCostBasis)·fx 보유 수량(asFx)·금 보유 수량(asGold)·종목코드(asCode)·보유 주식 수(asQty) 총 7개 label에 for 속성 누락, index.html:2888/2895/2901/2912/2916/2920/2921/2923. cycle104(인증 화면)·cycle106(Supabase 설정 폼)과 동일한 for=id 패턴 적용. renderAssetSheet()의 자산 타입별 if/else-if 분기가 상호 배타적이라(cash/savings/... , fx, gold, stock 중 한 번에 하나만 렌더) asName/asAmt/asFx/asGold 등 동일 id를 여러 분기에서 재사용해도 DOM에 동시에 존재하지 않아 중복 id 위험 없음을 grep+코드 리딩으로 확인. '자산 종류'/'귀속'/'만기일'/'만기 시 이체할 통장' 라벨은 실제 <input>이 아닌 커스텀 <button class=\"pick\">/role=button 위젯이라 for 연결 대상에서 제외(기존 관례와 동일). 러너업(기록만, 미채택): 호출부 0건인 죽은 순수 함수 5개(totalAssetAt/fixedIncomeOf/ownerNet/txMonthRange/inMonth) 삭제 후보 — 안전하지만 사용자 가치가 낮아 이번엔 접근성 개선을 우선, 향후 develop 후보로 이월. CSV export 자산/반복거래 미포함 문제는 여전히 범위가 커 스킵(cycle98부터 계속 이월). 순수 마크업 속성 추가라 새 회귀 테스트 불필요. 두 인라인 <script> 블록과 logic.js/sw.js 모두 node --check(new Function()) 통과, node test/run.js 686/686 통과(변경 없음, 순수 로직 미변경이므로 예상대로). APP_VERSION 1.46.83->1.46.84, sw.js CACHE v245->v246.",
+      "commit": null
     }
   ]
 }
