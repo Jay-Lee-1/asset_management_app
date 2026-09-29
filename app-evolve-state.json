@@ -1,15 +1,12 @@
 {
   "cycle": 105,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "같은 기기에서 시트를 열어둔 채 다른 탭이 저장하면 save()가 병합 없이 그 변경을 조용히 덮어쓰는 탭 간 데이터 유실 수정",
+    "why": "save()(index.html:1979-1989)는 항상 무조건 JSON.stringify(DB)를 localStorage에 덮어쓴다. 같은 기기에서 두 탭(설치된 PWA + 남겨둔 브라우저 탭 등)을 열어두면, 다른 탭이 저장할 때 storage 이벤트로 handleForeignStorage(2006)가 불리는데 이 탭에 시트가 열려있으면 즉시 반영하지 않고 TAB_SYNC_PENDING만 세팅하고 토스트('다른 탭에서 데이터가 바뀌었어요 · 창을 닫으면 반영돼요')로 '창을 닫으면 반영'을 약속한다. 그런데 saveTx/saveAsset/saveRec 등 모든 저장 흐름(20여 곳, 예: 3415/3609/2962)은 closeSheet()보다 save()를 먼저 부른다 — 즉 사용자가 이 탭에서 편집을 마치면: save()가 먼저 실행되어 병합 없이 자신의(다른 탭의 변경을 모르는) 메모리 DB로 localStorage를 그대로 덮어써 다른 탭의 저장을 영구히 파괴한 다음에야, closeSheet()가 TAB_SYNC_PENDING을 소비해 applyForeignSave()를 부르는데 이땐 이미 자신이 방금 쓴(다른 탭 내용이 사라진) localStorage를 다시 읽어 아무 일도 없었던 것처럼 보인다. 완전히 조용하고(토스트/충돌 표시/undo 없음) 실사용 환경(설치된 PWA + 남겨둔 브라우저 탭, 또는 같은 기기의 두 창)에서 그대로 재현 가능한 데이터 유실이라 cycle102의 클라우드 병합 누락 버그와 동급으로 우선 채택. cycle104 critique가 조사한 XSS 의심 지점(4569, 실은 twScreen() 하드코딩 튜토리얼 목업이라 무해 확인)과 memo 수동 이스케이프(3543, 속성 탈출 불가해 무해 확인)는 기각.",
+    "approach": "save()(1979) 맨 앞, invalidateBalances() 직후 ~ nwHistory 갱신 전에: localStorage.getItem(dataKey()+'__savedAt')를 읽어 foreignSaveIsNewer(그 값, TAB_SAVED_AT)(1992, 기존 순수 함수 그대로 재사용)이 참이면 localStorage.getItem(dataKey())를 JSON.parse해 foreign DB를 얻고, 이미 존재하는 mergeRemoteDataIntoLocal(remoteData)(1423 — cloud pull 경로 1713/1748과 완전히 동일한 함수, DB를 제자리에서 병합·mutate)를 그대로 호출한 뒤 TAB_SYNC_PENDING=null로 비운다(이후 closeSheet(5313)가 이미 병합된 걸 모르고 다시 applyForeignSave로 통째 덮어쓰지 않도록). 새 공유 헬퍼를 추출할 필요 없음 — mergeRemoteDataIntoLocal이 이미 '외부 DB 스냅샷을 현재 DB에 병합'하는 범용 함수라 로컬 크로스탭 케이스에도 그대로 맞는다. try/catch로 localStorage 읽기·JSON.parse 실패 시 조용히 스킵(기존 applyForeignSave/save()의 방어 패턴과 동일). logic.js의 mergeCollection/mergeNameList/mergeBudgetHistory는 이미 cycle102에서 7개 테스트로 커버돼 있어 새 순수 함수가 없으므로 test/run.js에 새 테스트는 불필요 — 다만 foreignSaveIsNewer는 현재도 미테스트 순수 함수이니(2줄, 인자 그대로 반환하는 단순 비교) 이번에 함께 추가해도 되고, 로직이 자명해 생략해도 무방(둘 다 허용). 비목표: Supabase/클라우드 push-pull 경로는 손대지 않음, BroadcastChannel/SharedWorker/Web Locks 같은 탭 간 조정 인프라 추가 금지(과한 아키텍처 변경), 두 탭이 '정확히 같은 레코드'를 동시 편집하는 더 드문 경우까지 해결하려 하지 않음(mergeCollection의 기존 updatedAt 동률=로컬 승 규칙을 그대로 따르면 충분, 클라우드 병합과 일관), 토스트 문구는 이제 참이 되므로(창을 닫지 않고 다음 save()에서도 반영됨) 굳이 바꾸지 않아도 되지만 원하면 '자동으로 반영돼요' 정도로 다듬는 것도 허용."
+  },
   "history": [
-    {
-      "cycle": 100,
-      "phase": "critique",
-      "timestamp": "2026-09-28T05:15:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(touch()/mergeCollection·act-btn/fc-x aria-label·logic.js 이관·비밀번호 복구·silent-failure 계열은 이미 다뤄졌으므로 제외). 자산/가계부/전체내역 3곳의 '선택 삭제' 다중선택 모드가 오직 wireLongPress()(index.html:5283-5301, 롱프레스)로만 진입 가능하고 as-tools/ledgerDayHeadHtml/renderHistory 어디에도 selMode 진입용 버튼이 없음을 발견 — selMode 진입 '이후'의 모든 조작(개별 토글 rowKeydown, 전체선택/삭제/취소 updateSelBottom)은 이미 완전히 키보드 접근 가능한데 유일한 입구만 포인터 전용인 WCAG 2.1.1 결함. 지금까지의 접근성 수정(act-btn 3곳, fc-x 10곳)은 모두 '이미 클릭 가능한 요소에 이름 붙이기'였던 반면 이번 건은 '기능 자체가 통째로 도달 불가'인 더 심각한 종류라 채택. pending_advance_plan에 3곳(자산 as-actions, 가계부 ledgerDayHeadHtml, 전체내역 renderHistory)에 기존 selMode 상태를 true로 세팅하는 '선택' 버튼만 추가하는 순수 마크업 계획 저장(기존 exitSelMode/updateSelBottom/activeSel 인프라 재사용, 새 상태·순수함수 불필요). 러너업(기록만): (1) CSV export가 자산을 다루지 않아 범위가 좁음(cycle98부터 이월, 이번에도 우선순위 미상승), (2) 예산/플랜 탭이 카테고리별 초과 알림·추세 비교 없이 얕음(범위 넓어 보류), (3) netlify/functions/stock.js·rates.js(환율·시세 중계, 다단계 폴백)가 test/run.js 커버리지 밖(신규 관찰, 별도 테스트 하네스 필요해 범위 밖). 코드 변경 없음(읽기 전용 조사).",
-      "commit": null
-    },
     {
       "cycle": 100,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-09-29T01:20:00.000Z",
       "summary": "develop 커밋(3a6e41b, FileReader onerror 누락 수정)을 검토. r.onerror 핸들러가 기존 catch/finally 블록과 동일하게 toast('파일을 읽지 못했어요') + e.target.value=''를 호출하는 패턴을 grep으로 재확인(같은 change 리스너의 JSON.parse 실패 분기 catch(_){toast('올바른 백업 파일이 아니에요')}finally{e.target.value=''}와 대칭). toast()는 esc(msg)로 이스케이프한 뒤 innerHTML에 삽입하는데 메시지가 고정 한글 문자열이라 인젝션 위험 없음. onerror와 onload가 상호 배타적으로만 호출되므로(FileReader 스펙상 동일 read에서 둘 다 안 불림) 이중 처리·경쟁 조건 없음. 두 인라인 <script> 블록 모두 node --check 통과, node test/run.js 685/685 통과(변경 없음, 로직 함수 미변경이므로 예상대로). 코드 변경 없음(이상 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 105,
+      "phase": "critique",
+      "timestamp": "2026-09-29T03:13:45.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(접근성 전수·silent-failure·클라우드 동기화 categories/owners/budgetHistory 병합·안드로이드 백버튼 History API·netlify 함수 테스트 커버리지·CSV export 범위·예산탭·AUTH._legacyHash·skip/edits 맵·delOwner 캐스케이드·뷰포트 핀치줌·클라우드 동기화 충돌/경쟁·PWA 업데이트·자산/반복거래 삭제 캐스케이드는 모두 이미 다뤄졌거나 재확인 완료라 제외, 클라우드가 아닌 같은 기기 내 탭 간 저장 경로를 새로 조사). save()(index.html:1979)가 항상 무조건 JSON.stringify(DB)로 localStorage를 덮어쓴다는 점과, handleForeignStorage(2006)가 시트가 열려 있을 때는 TAB_SYNC_PENDING만 세팅하고 closeSheet(5313)에서야 applyForeignSave로 반영한다는 점을 함께 추적: saveTx/saveAsset/saveRec 등 모든 저장 흐름이 closeSheet()보다 save()를 먼저 호출하므로, 사용자가 시트 편집을 마치는 순간 병합 안 된 자신의 메모리 DB로 다른 탭이 방금 저장한 내용을 조용히 영구 삭제한 뒤에야 closeSheet()가 이미 자신이 덮어쓴 값을 다시 읽어 아무 일 없었던 것처럼 보이는, 완전히 조용한(토스트/충돌표시/undo 없음) 탭 간 데이터 유실을 발견. 설치된 PWA + 남겨둔 브라우저 탭처럼 실사용에서 그대로 재현 가능해 cycle102의 클라우드 병합 누락 버그와 동급으로 최우선 채택. pending_advance_plan에 저장: save()에 foreignSaveIsNewer(1992, 기존 순수 함수)로 로컬스토리지의 더 최신 __savedAt을 감지하면, 이미 cloud pull 경로(1713/1748)가 쓰는 mergeRemoteDataIntoLocal(1423)을 그대로 재사용해 병합하고 TAB_SYNC_PENDING을 비우는 방식 — 새 공유 헬퍼 추출이나 새 순수 함수 불필요(mergeRemoteDataIntoLocal이 이미 범용), mergeCollection/mergeNameList/mergeBudgetHistory는 cycle102에서 이미 테스트됨. 러너업(기록만, 기각): `chipmini own-${o}`(index.html:4569) 미이스케이프처럼 보였으나 twScreen()의 하드코딩 튜토리얼 목업이라 사용자 데이터 아님 — 무해. index.html:3543 recurring-memo value=의 수동 quote-escape(esc() 미사용, 스타일 불일치)는 이중따옴표 속성 안이라 실제 이탈 불가 — 코스메틱, 버그 아님. checkNotifyAlerts/autoSyncRates의 setInterval 백그라운드 한계(6012)는 이미 코드 주석에 best-effort로 문서화된 기존 사실, 신규 아님. 코드 변경 없음(읽기 전용 조사).",
       "commit": null
     }
   ]
