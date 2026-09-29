@@ -1,26 +1,8 @@
 {
-  "cycle": 108,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "자산 그룹 순서 변경(드래그 재정렬)이 키보드/스크린리더로 전혀 조작 불가능한 문제 수정",
-    "why": "Assets 탭 편집모드의 그룹 재정렬 핸들(index.html:2644 <div class=\"drag-handle\">)이 tabindex/role/aria-label 없는 순수 div이고, wireGroupDrag()(2838-2862)가 pointerdown/pointermove/pointerup/pointercancel만 배선해 드래그 제스처가 유일한 조작 수단이다. 이 설정(DB.settings.groupOrder)은 Assets 화면 전체와 자산 선택기에 쓰이는 앱 전역 영구 설정인데, 키보드 전용/스위치 접근/스크린리더 사용자는 Tab으로 이 요소에 도달조차 할 수 없어 이 기능을 원천적으로 쓸 수 없다(WCAG 2.1.1 키보드 접근성 위반). cycle104/106/107에서 다룬 label-for 백로그(텍스트 입력 라벨 연결)와는 별개로, 이번은 인터랙티브 기능 자체에 대한 대체 입력 경로가 전무한 사례라 cycle108 critique에서 가장 우선순위 높은 항목으로 채택.",
-    "approach": "기존 드래그 로직(wireGroupDrag, nextGroupOrder)은 건드리지 않고 나란히 키보드 대안을 추가한다: (1) 편집모드 행 마크업(~2643-2647)에 각 그룹 옆으로 '위로 이동'/'아래로 이동' <button> 2개를 추가, 목록 경계에서는 disabled 처리, aria-label에 그룹명을 포함(예: \"${ty.label} 위로 이동\"). (2) moveGroup(type, dir) 핸들러를 새로 만들어 DB.settings.groupOrder에서 인접한 두 항목을 swap하되 nextGroupOrder(2837)가 이미 구현한 '숨겨진 타입은 뒤에 유지' 동작을 재사용하고, save() 후 assetBodyHTML()/refreshAssetBody()로 재렌더 — 포인터 up 핸들러가 하는 일과 동일한 최종 상태를 만들어 두 입력 경로 간 동작이 완전히 일치하게 한다. (3) 버튼은 기본적으로 포커스 가능하고 Enter/Space로 실행되는 순수 <button>으로 작성. (4) moveGroup의 swap 로직에서 순수 함수를 분리할 수 있으면(예: swapAdjacent(order, idx1, idx2) 같은 헬퍼) test/run.js에 기존 순수 함수 테스트 패턴을 따라 회귀 테스트 추가. index.html을 건드리므로 APP_VERSION과 sw.js CACHE 버전을 함께 올릴 것."
-  },
+  "cycle": 109,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 103,
-      "phase": "critique",
-      "timestamp": "2026-09-28T19:20:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(a11y 전수·비밀번호 복구·silent-failure 배너·안드로이드 백버튼 History API·클라우드 병합 categories/owners/budgetHistory·예산탭 얕음(2회 재확인)·CSV import 자산 매칭·delOwner 캐스케이드는 모두 이미 다뤄졌거나 재확인 완료라 제외). 이월 후보 중 '검증 필요'로만 남아있던 항목을 실제로 조사: netlify/functions/stock.js·rates.js(국내/해외 시세·환율 프록시)가 test/run.js(672개 회귀 테스트)의 커버리지 밖임을 grep으로 확인(rates.js를 언급하는 주석 1곳 외 실질적 테스트 0건). stock.js:96 toKrw(q,fx)(자산 평가액에 직접 쓰이는 원화 환산, fx 테이블에 통화 없으면 조용히 null), stock.js:162/rates.js:95의 동일한 인라인 `cur==='JPY'?p/100:p`(엔화 100엔 고시 특수case — 부호 하나 실수하면 모든 엔화 자산이 조용히 100배 틀어짐), rates.js:133 ratesUsdBaseToKrw(교차 환율 역수 계산, 부호 버그 시 모든 비USD/JPY 외화자산 오산정), 양쪽에 바이트 단위로 중복된 pickRows/toNum/errText까지 확인 — 실제 사용자 돈(자산 평가액) 계산에 관여하는 순수 함수인데도 이 앱의 다른 모든 로직과 달리 회귀 안전망이 전혀 없다는 게, 지금까지 채택했던 silent-failure·클라우드 병합 버그들과 같은 급의 '조용히 틀린 숫자' 리스크라 최우선 채택. pending_advance_plan에 4단계 계획 저장: (1) 두 파일에 exports.handler와 공존하는 module.exports로 toKrw/ratesUsdBaseToKrw/toNum/pickRows/errText 노출(배포 무영향), (2) 인라인 JPY 100분의1 스케일링을 양쪽에서 동일한 이름의 applyJpyScale(cur,price)로 추출해 직접 테스트 가능하게(선택), (3) stock.js의 국내/해외 코드 분류 정규식을 classifyCode()로 추출(선택, 위험하면 스킵), (4) test/run.js가 두 파일을 require()로 직접 불러 toNum/pickRows/toKrw/ratesUsdBaseToKrw(+선택한 applyJpyScale) 회귀 테스트 신설. fetch()가 관여하는 네트워크 의존 함수(getJSON/fetchNaver/naverFx 등)와 handler 자체, 그리고 두 파일 간 보일러플레이트 중복 제거는 명시적으로 범위 밖. 러너업(기록만): CSV export가 자산/반복거래를 안 다루는 문제(cycle98부터 계속 이월, UX/스키마 결정이 필요해 여전히 범위가 넓다고 재확인), AUTH._legacyHash 복잡도(제거 불가, 계속 이월), skip[]/edits{} 맵 무한 증가(우선순위 낮음, 재기각), label-for 프로그램적 연결 누락(광범위한 구조 변경, 범위 축소 가능성만 있음, 이번엔 미채택). 코드 변경 없음(읽기 전용 조사, general-purpose 서브에이전트 위임 + 직접 grep으로 파일 경로·라인 번호 재검증).",
-      "commit": null
-    },
-    {
-      "cycle": 103,
-      "phase": "advance",
-      "timestamp": "2026-09-28T20:08:42.224Z",
-      "summary": "critique(cycle103) 계획대로 netlify/functions/stock.js·rates.js(시세/환율 프록시)의 순수 계산 함수에 회귀 테스트 커버리지를 추가했다. 두 파일 모두 exports.handler는 그대로 두고 module.exports로 순수 함수만 추가 노출(toKrw/toNum/pickRows/errText — stock.js, ratesUsdBaseToKrw/toNum/pickRows/errText — rates.js, 배포 동작 영향 없음). JPY 100분의1 스케일링(엔은 100엔 고시)이 양쪽 파일에 동일 인라인 식으로 중복돼 있던 것을 계획대로 applyJpyScale(cur,price) 함수로 추출해 양쪽에서 호출·export — 가장 회귀 위험이 높다고 critique가 짚은 한 줄을 네트워크 없이 직접 테스트 가능하게 만들었다. test/run.js는 계획이 명시한 대로 index.html용 extractFunction/extractConst 텍스트 슬라이싱 대신, 두 파일이 이미 평범한 Node CommonJS 모듈이라는 점을 살려 상단에서 require(guard: try/catch, 실패 시 경고 로그 후 관련 테스트를 별도 fallback 테스트 1개로 대체)하고 20개 신규 테스트 추가: toNum(콤마/통화기호 제거, 빈값/쓰레기값→0, 부호는 숫자 아닌 문자로 걸러져 음수 문자열도 절댓값으로 파싱된다는 실제 동작 — 계획 문서가 \"negative→0\"이라 적었던 건 실제 코드와 달라 실제 동작 기준으로 테스트 작성), toKrw(KRW 반올림 통과/알려진 환율로 곱셈·반올림/환율 없으면 null), pickRows(배열·{result:[...]}·{result:{prices:[...]}}} 세 형태 + null/undefined/malformed→빈 배열), ratesUsdBaseToKrw(교차환율 계산 KRW/USD÷KRW/X, KRW 없으면 null, 요청 통화가 원본에 없으면 에러 없이 결과에서만 빠짐), applyJpyScale(양쪽 파일 모두 JPY만 100분의1, 나머지 통과), errText. 계획이 명시적으로 범위 밖으로 뺀 항목(fetch()를 실제로 하는 함수들에 대한 네트워크 모킹, NAVER_HEADERS/getJSON/sleep/json 중복 제거, stock.js의 classifyCode 추출) 모두 손대지 않음. index.html/logic.js는 건드리지 않아 APP_VERSION/sw.js CACHE 버전업 불필요 — 두 인라인 <script> 블록 모두 new Function()으로 파싱 확인, netlify/functions 두 파일 모두 node --check 통과, node test/run.js 685/685 통과(기존 665 + 신규 20). pending_advance_plan을 null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 104,
       "phase": "develop",
@@ -152,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-29T14:00:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(a11y label-for 전수·Enter 제출/IME 조합·silent-failure·클라우드 병합·탭 간 저장 충돌·netlify 함수 테스트 커버리지·CSV export 범위·예산탭·AUTH._legacyHash·skip/edits 맵·delOwner 캐스케이드·안드로이드 백버튼·PWA 업데이트·자산/반복거래 삭제 캐스케이드·뷰포트 핀치줌·CDN crossorigin+SRI(네트워크 차단으로 재도전 무의미 확정)는 모두 이미 다뤄졌거나 재확인 완료라 제외). 새로 발견: Assets 탭 편집모드의 그룹 재정렬 핸들(index.html:2644 <div class=\"drag-handle\">)이 tabindex/role/aria-label 없는 순수 div이고 wireGroupDrag()(2838-2862)가 pointerdown/pointermove/pointerup/pointercancel만 배선해 드래그가 유일한 조작 수단임을 확인 — openSortSheet()(2704)는 그룹 내부 항목을 금액/소유자/이름순으로 정렬하는 별개 기능이라 대체 경로가 아님. DB.settings.groupOrder는 Assets 화면 전체와 자산 선택기에 쓰이는 앱 전역 영구 설정인데 키보드/스위치/스크린리더 사용자는 이 요소에 Tab으로 도달조차 못해(WCAG 2.1.1) 이 기능을 원천적으로 쓸 수 없음 — 지금까지 채택했던 label-for(텍스트 입력 라벨 연결)류와 달리 인터랙티브 기능 자체에 대체 입력 경로가 전무한 사례라 최우선 채택. pending_advance_plan에 저장: 기존 드래그 로직은 그대로 두고 각 그룹 행에 '위로/아래로 이동' 버튼(경계에서 disabled, aria-label에 그룹명 포함)을 추가, moveGroup(type,dir) 핸들러가 nextGroupOrder(2837)를 재사용해 포인터 경로와 동일한 최종 상태를 만들도록 함, 가능하면 swap 로직을 순수 함수로 분리해 test/run.js에 회귀 테스트 추가. 코드 변경 없음(읽기 전용 조사, general-purpose 서브에이전트 위임).",
+      "commit": null
+    },
+    {
+      "cycle": 108,
+      "phase": "advance",
+      "timestamp": "2026-09-29T17:09:33.682Z",
+      "summary": "critique(cycle108) 계획대로 자산 그룹 순서 변경(드래그 재정렬)에 키보드 대안을 추가했다. 기존 드래그 로직(wireGroupDrag, nextGroupOrder)은 그대로 두고, assetBodyHTML()의 편집모드 그룹 행(index.html:2644 부근) 옆에 '위로 이동'/'아래로 이동' <button class=\"grp-move-btn\"> 2개를 추가 — 각 aria-label에 그룹명을 포함(예: 'OO 위로 이동'), 목록 맨 위/맨 아래 항목에서는 해당 버튼에 disabled를 건다(filter된 visible 배열을 .map((t,i,arr)=>...)로 바꿔 경계를 판별). wireGroupDrag()의 pointerup 핸들러(화면에 보이는 순서 재배치 -> nextGroupOrder로 숨김 그룹과 병합)와 동일한 최종 상태를 만드는 순수 함수 movedGroupOrder(existingOrder,visibleTypes,type,dir)를 새로 분리 -- 인접 인덱스로 swap 후 기존 nextGroupOrder를 그대로 재사용, 경계를 벗어나면 existingOrder를 그대로 반환. moveGroup(type,dir)는 DB.settings.groupOrder에서 현재 보이는 순서를 뽑아 movedGroupOrder에 넘기고 save() 후 renderAssets()로 전체 재렌더(포인터 드래그 완료 시 저장만 하고 DOM은 이미 옮겨져 있던 것과 달리, 버튼 클릭은 DOM 이동이 없으므로 재렌더가 필요 -- renderAssets()가 다시 wireGroupDrag()를 호출해 드래그 핸들도 재배선됨). 버튼은 평범한 <button type=\"button\">이라 별도 tabindex/keydown 배선 없이 기본적으로 Tab 포커스와 Enter/Space 실행이 된다. movedGroupOrder/moveGroup을 test/run.js FUNCTIONS 배열에 추가하고, nextGroupOrder 테스트 바로 뒤에 movedGroupOrder 순수 함수 회귀 테스트 4개 신설(위/아래 인접 교환, 경계에서 무변화, 숨김 그룹 유지) -- moveGroup 자체는 DB/save/renderAssets에 의존해 기존 관례대로 직접 테스트하지 않음. 두 인라인 <script> 블록 모두 new Function() 파싱 통과, sw.js node --check 통과, node test/run.js 690/690 통과(신규 4개 포함). APP_VERSION 1.46.87->1.46.88, sw.js CACHE v249->v250. pending_advance_plan을 null로 비움.",
       "commit": null
     }
   ]

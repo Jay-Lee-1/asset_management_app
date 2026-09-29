@@ -125,7 +125,7 @@ const FUNCTIONS = [
   'ledgerSelPartial', 'ledgerToggleSel', 'ledgerSelAll', 'visibleTx',
   'fmtDot', 'splitHist', 'histRow', 'histTotHTML', 'updateHist', 'renderHistory',
   'lowestInMonth', 'planBalInner', 'planBalCard', 'planTrackHTML', 'planRowsHTML', 'renderPlan',
-  'refreshPlanBody', 'planAsset', 'nextGroupOrder', 'monthSwipeCommitDir', 'overlayEscapeTarget', 'recFreq',
+  'refreshPlanBody', 'planAsset', 'nextGroupOrder', 'movedGroupOrder', 'moveGroup', 'monthSwipeCommitDir', 'overlayEscapeTarget', 'recFreq',
   'planSplitTransfer', 'planTransfer',
   'sbErrMsg',
 ];
@@ -7604,6 +7604,41 @@ test('nextGroupOrder: 모든 그룹이 화면에 보이면 그 순서를 그대�
   const existing = ['cash', 'savings', 'stock'];
   const visible = ['stock', 'savings', 'cash'];
   assert.deepStrictEqual(sandbox.nextGroupOrder(existing, visible), ['stock', 'savings', 'cash']);
+});
+
+/* ---------- movedGroupOrder: 드래그를 쓸 수 없는 키보드/스크린리더 사용자를 위한 '위로/아래로 이동'
+ * 버튼(assetBodyHTML의 .grp-move-btn, moveGroup())이 쓰는 순수 로직 (app-evolve cycle108 advance).
+ * wireGroupDrag()의 pointerup 핸들러가 하는 일(화면에 보이는 순서를 재배치 → nextGroupOrder로 숨김
+ * 그룹과 병합)과 동일한 최종 상태를 인접 교환(swap)만으로 만들어, 두 입력 경로의 결과가 일치하는지 검증한다. */
+test('movedGroupOrder: 위로 이동(dir=-1)하면 바로 앞 항목과 자리를 바꾼다', () => {
+  const existing = ['cash', 'savings', 'stock'];
+  const visible = ['cash', 'savings', 'stock'];
+  assert.deepStrictEqual(
+    sandbox.movedGroupOrder(existing, visible, 'stock', -1),
+    ['cash', 'stock', 'savings']
+  );
+});
+test('movedGroupOrder: 아래로 이동(dir=1)하면 바로 뒤 항목과 자리를 바꾼다', () => {
+  const existing = ['cash', 'savings', 'stock'];
+  const visible = ['cash', 'savings', 'stock'];
+  assert.deepStrictEqual(
+    sandbox.movedGroupOrder(existing, visible, 'cash', 1),
+    ['savings', 'cash', 'stock']
+  );
+});
+test('movedGroupOrder: 맨 위 항목을 위로, 맨 아래 항목을 아래로 이동하려 하면(경계) 기존 순서를 그대로 반환한다', () => {
+  const existing = ['cash', 'savings', 'stock'];
+  const visible = ['cash', 'savings', 'stock'];
+  assert.deepStrictEqual(sandbox.movedGroupOrder(existing, visible, 'cash', -1), existing);
+  assert.deepStrictEqual(sandbox.movedGroupOrder(existing, visible, 'stock', 1), existing);
+});
+test('movedGroupOrder: 화면에 없는(자산 0개) 숨김 그룹은 기존 순서 그대로 뒤에 유지된다', () => {
+  const existing = ['cash', 'savings', 'stock', 'realestate', 'debt'];
+  const visible = ['stock', 'cash']; // 'savings'는 자산이 없어 화면에 안 보임(nextGroupOrder 테스트와 동일 전제)
+  assert.deepStrictEqual(
+    sandbox.movedGroupOrder(existing, visible, 'cash', -1),
+    ['cash', 'stock', 'savings', 'realestate', 'debt']
+  );
 });
 
 /* ---------- monthSwipeCommitDir: wireMonthCarousel() 스와이프 커밋 방향 판정 (app-evolve cycle74 advance) ----------

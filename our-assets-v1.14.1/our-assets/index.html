@@ -323,6 +323,11 @@ html[data-theme="dark"] .alloc-bar i+i::before{background:var(--bg);opacity:.9}
 .drag-handle{color:var(--text-3);touch-action:none;padding:6px;margin-left:-6px;cursor:grab}
 .drag-handle svg{width:20px;height:20px}
 .asset-item.dragging{background:var(--brand-tint);box-shadow:var(--sh-lg);border-radius:var(--r-md);position:relative;z-index:5}
+.grp-move{display:flex;flex-direction:column;gap:2px}
+.grp-move-btn{display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:var(--r-sm,6px);color:var(--text-2)}
+.grp-move-btn svg{width:15px;height:15px}
+.grp-move-btn:disabled{opacity:.3;cursor:default}
+.grp-move-btn:active:not(:disabled){background:var(--surface-2)}
 
 .summary{display:flex;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);box-shadow:var(--sh-sm);padding:12px 2px;margin-bottom:14px}
 .summary>button{flex:1;text-align:center;position:relative;padding:4px 0;border-radius:12px}
@@ -1298,7 +1303,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.87';
+const APP_VERSION='1.46.88';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2636,7 +2641,7 @@ function wireNwCarousel(){
 function assetBodyHTML(){
  let body='';
  if(ST.editAssets){ /* 편집: 자산 종류 그룹 순서 드래그 */
-   body=`<div class="card" id="dragList">`+DB.settings.groupOrder.filter(t=>DB.assets.some(a=>a.type===t)).map(t=>{
+   body=`<div class="card" id="dragList">`+DB.settings.groupOrder.filter(t=>DB.assets.some(a=>a.type===t)).map((t,i,arr)=>{
      const items=DB.assets.filter(a=>a.type===t);
      const sum=items.filter(a=>a.includeInTotal).reduce((s,a)=>s+(a.type==='debt'?-assetEval(a):assetEval(a)),0);
      const ty=ASSET_TYPES[t];
@@ -2644,6 +2649,10 @@ function assetBodyHTML(){
        <div class="drag-handle" data-drag="${t}">${svg('grip')}</div>
        <div class="avatar ${ty.cls}" style="width:40px;height:40px">${svg(ty.icon)}</div>
        <div style="flex:1"><div class="nm">${ty.label}</div><div class="sub">${items.length}개 자산</div></div>
+       <div class="grp-move">
+         <button type="button" class="grp-move-btn" aria-label="${esc(ty.label)} 위로 이동" onclick="moveGroup('${t}',-1)"${i===0?' disabled':''}>${svg('arrowUp')}</button>
+         <button type="button" class="grp-move-btn" aria-label="${esc(ty.label)} 아래로 이동" onclick="moveGroup('${t}',1)"${i===arr.length-1?' disabled':''}>${svg('arrowDn')}</button>
+       </div>
        <div class="val"><div class="k num ${t==='debt'?'minus':''}">${won(sum)}</div></div></div>`;
    }).join('')+`</div>`;
  }else{
@@ -2859,6 +2868,20 @@ function wireGroupDrag(){
    document.addEventListener('pointermove',move);document.addEventListener('pointerup',up);document.addEventListener('pointercancel',cancel);
   });
  });
+}
+/* 드래그(포인터)를 쓸 수 없는 키보드/스크린리더 사용자를 위한 그룹 순서 대안 조작(app-evolve cycle108 advance).
+ * wireGroupDrag()의 up 핸들러와 동일하게 "화면에 보이는 순서 재배치 → nextGroupOrder로 숨김 그룹과 병합"만
+ * 순수 함수로 뽑아 direction(-1=위로,1=아래로)만큼 인접 교환한다. */
+function movedGroupOrder(existingOrder,visibleTypes,type,dir){
+ const visible=visibleTypes.slice();const i=visible.indexOf(type),j=i+dir;
+ if(i<0||j<0||j>=visible.length)return existingOrder;
+ [visible[i],visible[j]]=[visible[j],visible[i]];
+ return nextGroupOrder(existingOrder,visible);
+}
+function moveGroup(type,dir){
+ const visible=DB.settings.groupOrder.filter(t=>DB.assets.some(a=>a.type===t));
+ DB.settings.groupOrder=movedGroupOrder(DB.settings.groupOrder,visible,type,dir);
+ save();renderAssets();
 }
 
 /* 자산 등록/수정 시트 */
