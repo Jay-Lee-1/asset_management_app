@@ -7754,7 +7754,24 @@ if (stockFns && ratesFns) {
     assert.strictEqual(m.USD, 1385);
     assert.strictEqual('GBP' in m, false);
   });
-} else {
+}
+
+test('CDN 리소스: pretendard/kakao/supabase 태그가 pinned 버전과 crossorigin을 유지한다(SRI 준비 회귀 방지)', () => {
+  assert.ok(
+    src.includes('crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css"'),
+    'pretendard link 태그의 pinned 버전(v1.3.9) 또는 crossorigin이 누락되었습니다'
+  );
+  assert.ok(
+    src.includes('src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.4/kakao.min.js" crossorigin="anonymous"'),
+    'kakao.min.js 태그의 pinned 버전(2.7.4) 또는 crossorigin이 누락되었습니다'
+  );
+  assert.ok(
+    src.includes('src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" crossorigin="anonymous"'),
+    'supabase.js 태그의 pinned 버전(2.45.4) 또는 crossorigin이 누락되었습니다'
+  );
+});
+
+if (!stockFns || !ratesFns) {
   test('netlify/functions require 실패로 stock.js/rates.js 테스트를 건너뜀', () => {
     throw new Error('stock.js/rates.js를 require하지 못했습니다 — 위 경고 메시지를 확인하세요');
   });

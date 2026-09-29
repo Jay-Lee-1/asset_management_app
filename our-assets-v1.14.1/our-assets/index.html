@@ -1288,12 +1288,17 @@ body.selmode .fab{display:none}
 <input type="file" id="importFile" accept="application/json,.json" style="display:none">
 <input type="file" id="importCsvFile" accept="text/csv,.csv" style="display:none">
 
+<!-- TODO(SRI): 세 CDN 리소스(pretendard/kakao/supabase, 28행 포함)에 integrity(SRI) 해시를 추가할 것.
+     이 컨테이너의 네트워크 정책이 cdn.jsdelivr.net/t1.kakaocdn.net egress를 차단해 실제 응답 바이트로
+     해시를 계산할 수 없었다 — 틀린 해시를 넣으면 브라우저가 무결성 불일치로 스크립트 실행을 막아
+     Kakao 로그인/Supabase 동기화가 전면 중단되므로(하지 않느니만 못함), 억지로 채우지 않았다.
+     CDN 접근이 가능한 환경에서 각 URL의 실제 응답을 내려받아 sha384 해시를 계산해 채울 것. -->
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.4/kakao.min.js" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" crossorigin="anonymous"></script>
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.82';
+const APP_VERSION='1.46.83';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
