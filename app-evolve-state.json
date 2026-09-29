@@ -1,15 +1,8 @@
 {
   "cycle": 106,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 101,
-      "phase": "review",
-      "timestamp": "2026-09-28T08:20:00.000Z",
-      "summary": "develop 커밋(3f77350, 귀속/카테고리 추가·아이콘 선택 버튼 3곳 aria-label·aria-pressed 추가)을 검토. openOwnerManage/openCatManage의 aria-label 값은 CAT_LABEL={expense:'지출',income:'수입',saving:'저축'}처럼 하드코딩된 내부 상수(index.html:4321)이거나 고정 문자열이라 속성 이탈 위험이 없음을 직접 확인. openIconPicker의 aria-label=\"${k} 아이콘\"/aria-pressed=\"${k===current}\"의 k는 CAT_ICON_SET(4337, 내부에서만 정의된 아이콘 키 목록)에서 온 값이라 마찬가지로 사용자 입력이 아님, aria-pressed는 boolean 표현식이 그대로 \"true\"/\"false\" 문자열로 직렬화되는 유효한 ARIA 불리언 어트리뷰트 사용. cycle97/99의 기존 act-btn/fc-x aria-label 관례와 스타일 일치. 두 인라인 <script> 블록과 logic.js/sw.js 모두 node --check 통과, node test/run.js 665/665 통과(변경 없음, 예상대로 — 마크업 속성 전용 diff). 코드 변경 없음(이상 없음).",
-      "commit": null
-    },
     {
       "cycle": 101,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-09-29T05:09:07.000Z",
       "summary": "general-purpose 서브에이전트로 접근성 개선: cycle98부터 이월돼온 '전역 label-for 누락'(~40곳) 백로그 중 Supabase 클라우드 동기화 설정 폼(openHelpCloud()) 화면 1곳으로 범위를 좁혀 처리 — Project URL 입력(sbUrlIn)과 anon public 키 입력(sbKeyIn) 라벨 2곳에 for 속성이 없어 라벨 클릭/탭으로 포커스 이동이 안 되고 스크린리더가 라벨과 입력을 연결하지 못하던 문제. cycle104에서 인증 화면(kkeyIn/auEmail/auPw/fpEmailIn/newPwIn)에 적용한 것과 동일한 for=id 연결 방식 적용, 2개 id 모두 파일 전체에서 유일함을 확인. 순수 마크업 속성 추가라 새 회귀 테스트 불필요. 두 인라인 <script> 블록과 logic.js/sw.js 모두 node --check(또는 new Function()) 통과, node test/run.js 685/685 통과(변경 없음, 순수 로직 미변경이므로 예상대로). APP_VERSION 1.46.81->1.46.82, sw.js CACHE v243->v244.",
       "commit": "a0113ec"
+    },
+    {
+      "cycle": 106,
+      "phase": "review",
+      "timestamp": "2026-09-29T05:30:00.000Z",
+      "summary": "develop 커밋(a0113ec, Supabase 클라우드 동기화 설정 폼 sbUrlIn/sbKeyIn label-for 연결 누락 수정)을 검토. grep으로 sbUrlIn/sbKeyIn 두 id 모두 파일 전체에서 유일함을 재확인(4150-4151에 정의, 4174의 $('sbUrlIn')/$('sbKeyIn') 참조와 충돌 없음), 각 label의 for 값이 바로 옆 input id와 정확히 일치. cycle104 인증 화면(kkeyIn 등)에 적용한 것과 동일한 for=id 패턴이라 관례 일치. diff의 value=\"${(c.url||'').replace(/\\\"/g,'&quot;')}\" 이스케이프는 이번 변경이 손대지 않은 기존 코드 그대로임을 확인 — 인젝션 위험 없음. 두 인라인 <script> 블록 모두 new Function() 통과, logic.js/sw.js 모두 node --check 통과, node test/run.js 685/685 통과(변경 없음, 순수 마크업 diff라 예상대로). 코드 변경 없음(이상 없음).",
+      "commit": null
     }
   ]
 }
