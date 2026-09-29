@@ -1293,7 +1293,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.81';
+const APP_VERSION='1.46.82';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4147,8 +4147,8 @@ function openHelpCloud(){
  const c=sbCfg();
  openSheet(`<h3>이메일 로그인 · 클라우드 동기화</h3>
   <div class="help-body"><p><b>1) Supabase 프로젝트 준비</b><br>supabase.com 에서 무료 프로젝트를 만들고, <b>Project Settings › API</b>에서 <b>Project URL</b>과 <b>anon public</b> 키를 복사해 아래에 붙여넣으세요.</p></div>
-  <div class="field"><label>Project URL</label><input id="sbUrlIn" placeholder="https://xxxx.supabase.co" value="${(c.url||'').replace(/"/g,'&quot;')}"></div>
-  <div class="field"><label>anon public 키</label><input id="sbKeyIn" placeholder="anon public key" value="${(c.key||'').replace(/"/g,'&quot;')}"></div>
+  <div class="field"><label for="sbUrlIn">Project URL</label><input id="sbUrlIn" placeholder="https://xxxx.supabase.co" value="${(c.url||'').replace(/"/g,'&quot;')}"></div>
+  <div class="field"><label for="sbKeyIn">anon public 키</label><input id="sbKeyIn" placeholder="anon public key" value="${(c.key||'').replace(/"/g,'&quot;')}"></div>
   <div class="two-btn" style="margin-bottom:16px">${c.url?`<button class="btn btn-soft cancel" onclick="localStorage.removeItem('asset_app_sb_url');localStorage.removeItem('asset_app_sb_key');SB=null;closeSheet();toast('클라우드 설정을 삭제했어요')">설정 삭제</button>`:`<button class="btn btn-soft cancel" onclick="closeSheet()">닫기</button>`}<button class="btn btn-primary" onclick="saveCloudCfg()">저장</button></div>
   <div class="help-body">
    <p><b>2) 테이블 만들기</b><br>Supabase <b>SQL Editor</b>에서 아래 SQL을 한 번 실행하세요.</p>
