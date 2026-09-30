@@ -1303,7 +1303,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.92';
+const APP_VERSION='1.46.93';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1454,18 +1454,11 @@ const comma=n=>Math.round(n||0).toLocaleString('ko-KR');
 const commaQty=n=>Number.isInteger(n)?comma(n):(n||0).toLocaleString('ko-KR',{maximumFractionDigits:4}); /* 소수 보유수량(주식/외화)은 반올림하지 않고 그대로 표시 */
 const won=n=>(n<0?'-':'')+comma(Math.abs(n))+'원';
 const wonS=n=>(n>0?'+':n<0?'-':'')+comma(Math.abs(n))+'원';
-function esc(s){const m={'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'};return String(s==null?'':s).replace(/[&<>"']/g,c=>m[c])}
-/* 카테고리/귀속 이름 중복 비교용 정규화 — 대소문자·연속 공백(전각공백 포함)만 다른 이름을 같은 이름으로 취급.
-   저장/표시용 원본 이름은 건드리지 않고 비교할 때만 사용한다. */
-function normName(s){return String(s==null?'':s).trim().replace(/[\s　]+/g,' ').toLowerCase()}
 /* onclick만 있던 div 기반 행(자산/내역/반복거래 목록)에 키보드 접근성을 붙이는 공용 핸들러 — Enter/Space를 클릭과 동일하게 처리 */
 function rowKeydown(e,fn){if(e.key==='Enter'||e.key===' '){e.preventDefault();fn()}}
 function todayStr(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
 let TODAY=todayStr();
 function ym(s){const[Y,M]=s.split('-').map(Number);return{y:Y,m:M}}
-function lastDay(y,m){return new Date(y,m,0).getDate()}
-function monthEndStr(y,m){return `${y}-${String(m).padStart(2,'0')}-${String(lastDay(y,m)).padStart(2,'0')}`}
-function monthStartStr(y,m){return `${y}-${String(m).padStart(2,'0')}-01`}
 function wname(s){return['일','월','화','수','목','금','토'][new Date(s+'T00:00:00').getDay()]}
 function fmtDate(s){const d=new Date(s+'T00:00:00');return `${d.getMonth()+1}월 ${d.getDate()}일 ${wname(s)}요일`}
 function shortDate(s){const d=new Date(s+'T00:00:00');return `${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')} (${wname(s)})`}
@@ -3679,13 +3672,6 @@ function filteredHist(){
  _histCache={key,list};
  return list;
 }
-/* 메모·카테고리·자산명 검색을 대소문자 구분 없이 매칭(영문 메모/자산명 대비) */
-function matchTxnQuery(t,q,assets){
- if(!q)return true;
- const fa=(assets||[]).find(a=>a.id===t.fromAssetId),ta=(assets||[]).find(a=>a.id===t.toAssetId);
- const hay=(t.memo||'')+' '+t.category+' '+(fa?fa.name:(t.fromAssetName||'—'))+' '+(ta?ta.name:(t.toAssetName||'—'));
- return hay.toLowerCase().includes(q.toLowerCase());
-}
 /* 예정(미래·범위 안, 가까운 순) / 실제(오늘 이하, 최신순 기본) 분리 */
 function splitHist(list){
  const sched=[],actual=[];
@@ -4214,16 +4200,9 @@ function spendTrend(c,y,m,n=3,owner='전체'){
  const deltaPct=avg?Math.round((cur-avg)/avg*100):null;
  return{avg,prevMonth,deltaPct};
 }
-/* budget=0(미설정)이면 진행률은 의미가 없으므로 항상 0으로 clamp — 호출부는 이 경우 전체 대비 비중을 대신 쓴다 */
-function budgetProgress(spent,budget){
- if(!budget)return{pct:0,barPct:0,over:false};
- const ratio=spent/budget;
- return{pct:Math.round(ratio*100),barPct:Math.min(100,ratio*100),over:spent>budget};
-}
 /* 예산은 '카테고리→금액' 단일값이 아니라 '카테고리→[{from:"YYYY-MM",amount}]' 시점별 이력이다(오름차순 유지) —
  * saveBudget()이 그 자리에서 덮어쓰면 과거 달의 초과/이내 판정까지 조용히 소급 변경되던 버그를 막기 위함.
  * budgetForMonth는 대상 달(y,m) 이전(from<=대상)에 적용된 이력 중 가장 최근 값을 찾고, 없으면 0(미설정)을 반환한다. */
-function budgetKey(y,m){return `${y}-${String(m).padStart(2,'0')}`}
 function budgetForMonth(c,y,m){
  const h=DB.budgetHistory&&DB.budgetHistory[c];
  if(!h||!h.length)return 0;

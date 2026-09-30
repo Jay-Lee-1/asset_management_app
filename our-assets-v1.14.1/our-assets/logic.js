@@ -185,6 +185,29 @@ function computeRelinkBaseline(remembered,H,entered){
  return {base:Math.round(remembered-H),gap:Math.round(entered-remembered)};
 }
 
+/* ================= DATE/FORMAT/BUDGET (cycle111) ================= */
+function esc(s){const m={'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'};return String(s==null?'':s).replace(/[&<>"']/g,c=>m[c])}
+/* 카테고리/귀속 이름 중복 비교용 정규화 — 대소문자·연속 공백(전각공백 포함)만 다른 이름을 같은 이름으로 취급.
+   저장/표시용 원본 이름은 건드리지 않고 비교할 때만 사용한다. */
+function normName(s){return String(s==null?'':s).trim().replace(/[\s　]+/g,' ').toLowerCase()}
+function lastDay(y,m){return new Date(y,m,0).getDate()}
+function monthEndStr(y,m){return `${y}-${String(m).padStart(2,'0')}-${String(lastDay(y,m)).padStart(2,'0')}`}
+function monthStartStr(y,m){return `${y}-${String(m).padStart(2,'0')}-01`}
+/* 메모·카테고리·자산명 검색을 대소문자 구분 없이 매칭(영문 메모/자산명 대비) */
+function matchTxnQuery(t,q,assets){
+ if(!q)return true;
+ const fa=(assets||[]).find(a=>a.id===t.fromAssetId),ta=(assets||[]).find(a=>a.id===t.toAssetId);
+ const hay=(t.memo||'')+' '+t.category+' '+(fa?fa.name:(t.fromAssetName||'—'))+' '+(ta?ta.name:(t.toAssetName||'—'));
+ return hay.toLowerCase().includes(q.toLowerCase());
+}
+function budgetKey(y,m){return `${y}-${String(m).padStart(2,'0')}`}
+/* budget=0(미설정)이면 진행률은 의미가 없으므로 항상 0으로 clamp — 호출부는 이 경우 전체 대비 비중을 대신 쓴다 */
+function budgetProgress(spent,budget){
+ if(!budget)return{pct:0,barPct:0,over:false};
+ const ratio=spent/budget;
+ return{pct:Math.round(ratio*100),barPct:Math.min(100,ratio*100),over:spent>budget};
+}
+
 /* ================= CSV IMPORT (순수) ================= */
 /* RFC4180 스타일 CSV 파서. 따옴표로 감싼 필드 안의 콤마/줄바꿈/이스케이프된 큰따옴표("")를
    처리한다(txnsToCSV의 esc()가 만드는 형식과 대칭). BOM 제거, \r\n과 \n 둘 다 줄바꿈으로 인식. */
