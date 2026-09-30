@@ -136,7 +136,7 @@ const FUNCTIONS = [
   'backupDue', 'planNegatives', 'homeAlerts', 'updateAlerts',
  'notifyAlertInfo', 'pickNotifyAlerts', 'pruneNotifiedIds',
   'catIconOf', 'catGlyph', 'openCatManage', 'openCatPicker',
-  'catListOf', 'catAv', 'assetPickBtn', 'endCondFields', 'dayPickerHTML', 'openFormSheet', 'renderTxSheet', '_applyType', '_applyFreq', '_applyDay', '_applyOpenCat', '_applyOpenAsset', 'txType', 'txToggleRepeat',
+  'catListOf', 'catAv', 'assetPickBtn', 'endCondFields', 'dayPickerHTML', 'openFormSheet', 'renderTxSheet', '_applyType', '_applyFreq', '_applyDay', '_applyCount', '_applyOpenCat', '_applyOpenAsset', 'txType', 'txToggleRepeat',
   'accountName', 'dbIsEmpty', 'guestHasData',
   'txScheduled', 'monthStats', 'monthStats2', 'expenseByCat', 'needGold', 'inQuietWindow', 'fmtSynced', 'rateStatusText',
   'nextBigOutflow', 'dday', 'balanceOn', 'nextOutflowCard', 'monthOutflowCard', 'planGaugeCard', 'homeAlertCard', 'renderHome',
@@ -689,6 +689,129 @@ test('recFreq: 매주에서 매월로 바꾸면 weekend는 건드리지 않는�
   sandbox.recFreq('monthly');
   assert.strictEqual(sandbox.recDraft.weekend, 'none');
   assert.strictEqual(sandbox.recDraft.day, 10, '매월로 바뀌면서 day가 비어있었으므로 시작일 기준으로 채워져야 함');
+});
+
+/* ---------- _applyType/_applyDay/_applyCount: tx/rec 폼이 공유하는 헬퍼(app-evolve cycle108/114
+ * advance에서 _applyCount/_applyType·_applyFreq·_applyDay·dayPickerHTML로 각각 통합됐지만, recFreq
+ * 테스트(위)가 _applyFreq를 간접으로만 덮을 뿐 나머지는 cycle114 advance 이후 한 번도 직접
+ * 테스트되지 않았다 — 지금은 tx/rec 두 폼이 동시에 의존하므로 이 헬퍼 하나의 회귀가 두 폼을
+ * 한꺼번에 깨뜨린다) ---------- */
+test('_applyType: type을 바꾸면 category가 catListOf(t)의 첫 항목으로 바뀐다', () => {
+  sandbox.DB = { categories: { expense: ['식비', '교통비'], income: ['급여'], saving: ['저축'] }, assets: [] };
+  const d = { type: 'expense', category: '식비' };
+  sandbox._applyType(d, 'income');
+  assert.strictEqual(d.type, 'income');
+  assert.strictEqual(d.category, '급여');
+});
+test("_applyType: type이 'transfer'면 catListOf와 무관하게 category가 항상 '이체'로 고정된다", () => {
+  sandbox.DB = { categories: { expense: ['식비'], income: [], saving: [] }, assets: [] };
+  const d = { type: 'expense', category: '식비' };
+  sandbox._applyType(d, 'transfer');
+  assert.strictEqual(d.category, '이체');
+});
+test("_applyType: catListOf(t)가 빈 배열이면 category가 '기타'로 폴백한다", () => {
+  sandbox.DB = { categories: { expense: ['식비'], income: [], saving: [] }, assets: [] };
+  const d = { type: 'expense', category: '식비' };
+  sandbox._applyType(d, 'income');
+  assert.strictEqual(d.category, '기타');
+});
+test("_applyType: income/transfer/saving으로 바뀌고 toAssetId가 비어있으면 firstCash()로 채워진다", () => {
+  sandbox.DB = { categories: { expense: ['식비'], income: ['급여'], saving: ['저축'] }, assets: [{ id: 'cash1', type: 'cash', owner: '나' }] };
+  const d = { type: 'expense', category: '식비', toAssetId: null };
+  sandbox._applyType(d, 'income');
+  assert.strictEqual(d.toAssetId, 'cash1');
+});
+test('_applyType: toAssetId가 이미 있으면 income/transfer/saving으로 바뀌어도 덮어쓰지 않는다', () => {
+  sandbox.DB = { categories: { expense: ['식비'], income: ['급여'], saving: ['저축'] }, assets: [{ id: 'cash1', type: 'cash', owner: '나' }] };
+  const d = { type: 'expense', category: '식비', toAssetId: 'existing' };
+  sandbox._applyType(d, 'saving');
+  assert.strictEqual(d.toAssetId, 'existing');
+});
+test("_applyType: 'expense'로 바뀌면 toAssetId는 건드리지 않는다(출금 자산은 fromAssetId 몫)", () => {
+  sandbox.DB = { categories: { expense: ['식비'], income: ['급여'], saving: ['저축'] }, assets: [{ id: 'cash1', type: 'cash', owner: '나' }] };
+  const d = { type: 'income', category: '급여', toAssetId: null };
+  sandbox._applyType(d, 'expense');
+  assert.strictEqual(d.toAssetId, null);
+});
+
+test("_applyDay: v='last'면 day='last', _custom=false로 고정된다", () => {
+  const d = { day: 22, _custom: true };
+  sandbox._applyDay(d, '2026-03-07', 'last');
+  assert.strictEqual(d.day, 'last');
+  assert.strictEqual(d._custom, false);
+});
+test("_applyDay: v='custom'이고 기존 day가 프리셋(1/5/15/25)이면 시작일의 일자로 초기화된다", () => {
+  const d = { day: 15, _custom: false };
+  sandbox._applyDay(d, '2026-03-07', 'custom');
+  assert.strictEqual(d._custom, true);
+  assert.strictEqual(d.day, 7, "시작일(2026-03-07)의 일자 7로 초기화돼야 함");
+});
+test("_applyDay: v='custom'이고 기존 day가 'last'거나 비어있어도 시작일 기준으로 초기화된다", () => {
+  const d1 = { day: 'last', _custom: false };
+  sandbox._applyDay(d1, '2026-01-20', 'custom');
+  assert.strictEqual(d1.day, 20);
+  const d2 = { day: null, _custom: false };
+  sandbox._applyDay(d2, '2026-01-20', 'custom');
+  assert.strictEqual(d2.day, 20);
+});
+test("_applyDay: v='custom'인데 시작일에서 유효한 일자를 못 뽑으면(빈 문자열) 10으로 폴백한다", () => {
+  const d = { day: null, _custom: false };
+  sandbox._applyDay(d, '', 'custom');
+  assert.strictEqual(d.day, 10);
+});
+test("_applyDay: v='custom'이고 기존 day가 이미 프리셋 밖의 값(예: 22)이면 그대로 유지된다(이미 커스텀 값)", () => {
+  const d = { day: 22, _custom: false };
+  sandbox._applyDay(d, '2026-03-07', 'custom');
+  assert.strictEqual(d._custom, true);
+  assert.strictEqual(d.day, 22, '이미 프리셋이 아닌 값이므로 시작일로 덮어쓰면 안 됨');
+});
+test("_applyDay: v가 숫자 문자열이면 day=Number(v), _custom=false로 초기화된다", () => {
+  const d = { day: 22, _custom: true };
+  sandbox._applyDay(d, '2026-03-07', '5');
+  assert.strictEqual(d.day, 5);
+  assert.strictEqual(d._custom, false);
+});
+
+test('_applyCount: 횟수가 0이거나 숫자가 아니면 count/endDate가 모두 null이 된다', () => {
+  const d = { freq: 'monthly', day: 10, startDate: '2026-01-01', weekend: 'none' };
+  sandbox._applyCount('tx', d, '0', () => {});
+  assert.strictEqual(d.count, null);
+  assert.strictEqual(d.endDate, null);
+  sandbox._applyCount('tx', d, 'abc', () => {});
+  assert.strictEqual(d.count, null);
+  assert.strictEqual(d.endDate, null);
+});
+test('_applyCount: 숫자가 아닌 문자는 무시하고 숫자만 뽑아 count로 쓴다', () => {
+  const d = { freq: 'monthly', day: 10, startDate: '2026-01-01', weekend: 'none' };
+  sandbox._applyCount('tx', d, 'abc5xyz', () => {});
+  assert.strictEqual(d.count, 5);
+});
+test('_applyCount: 999를 넘는 횟수는 999로 clamp된다', () => {
+  const d = { freq: 'monthly', day: 10, startDate: '2026-01-01', weekend: 'none' };
+  sandbox._applyCount('tx', d, '9999', () => {});
+  assert.strictEqual(d.count, 999);
+});
+test('_applyCount: 횟수가 1 이상이면 recNthDate와 동일한 규칙으로 endDate가 계산된다', () => {
+  const d = { freq: 'monthly', day: 10, startDate: '2026-01-01', weekend: 'none' };
+  sandbox._applyCount('rec', d, '3', () => {});
+  assert.strictEqual(d.count, 3);
+  assert.strictEqual(d.endDate, sandbox.recNthDate({ freq: 'monthly', day: 10, startDate: '2026-01-01', weekend: 'none' }, 3));
+  assert.strictEqual(d.endDate, '2026-03-10');
+});
+
+test('dayPickerHTML: 현재 day가 프리셋이면 해당 버튼에 on 클래스가 붙고 커스텀 입력칸은 없다', () => {
+  const html = sandbox.dayPickerHTML({ day: 15, _custom: false }, 'tx');
+  assert.match(html, /class="on" onclick="txDay\('15'\)"/);
+  assert.doesNotMatch(html, /id="txDayIn"/);
+});
+test("dayPickerHTML: day가 'last'면 말일 버튼에 on 클래스가 붙는다", () => {
+  const html = sandbox.dayPickerHTML({ day: 'last', _custom: false }, 'rec');
+  assert.match(html, /class="on" onclick="recDay\('last'\)"/);
+});
+test('dayPickerHTML: day가 프리셋 밖의 숫자면(직접 입력 상태) 커스텀 입력칸이 렌더되고 현재 값이 채워진다', () => {
+  const html = sandbox.dayPickerHTML({ day: 22, _custom: false }, 'tx');
+  assert.match(html, /id="txDayIn"[^>]*value="22"/);
+  assert.doesNotMatch(html, /class="on"/, '프리셋 버튼 중 어느 것도 22와 일치하지 않으므로 on 클래스가 없어야 함');
 });
 
 /* ---------- recDates: weekend 조정이 달/연도 경계를 넘어 앞당겨지는 회차 누락 버그 ---------- */
