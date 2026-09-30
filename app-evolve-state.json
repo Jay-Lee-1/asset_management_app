@@ -1,7 +1,11 @@
 {
   "cycle": 113,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "Assets 탭 귀속(나/배우자/공용/전체) 캐러셀에 키보드/클릭 경로 추가",
+    "why": "index.html:2690-2691의 .nw-dots는 plain <i> 요소이고 wireNwCarousel()(2617-2637)이 유일하게 배선하는 이벤트도 컨테이너의 scroll 리스너(2619)뿐 -- keydown도, dots에 onclick도 없음. grep으로 ST.assetOwner= 대입이 스크롤 핸들러(2631)/owner rename 추적(3063)/삭제시 폴백(2685) 세 곳뿐임을 확인, 다른 진입점(드롭다운/세그먼트 등) 전무. Assets 탭은 앱의 주 순자산 화면이고 귀속 전환은 그 화면의 핵심 네비게이션(전환 시 refreshAssetBody/refreshNwHistoryCard로 하단 전체가 바뀜)인데, 키보드/스위치 접근 사용자는 기본값('all')에서 영구히 못 벗어남 -- 완전히 도달 불가능한 상태. 동일한 나/배우자/공용/전체 개념이 예산 탭에서는 index.html:4302의 .seg <button> 세그먼트 컨트롤(포커스/키보드 가능)로 이미 올바르게 구현돼 있어, 이건 새 패턴이 필요한 게 아니라 이미 있는 패턴을 캐러셀에 아직 안 붙인 격차.",
+    "approach": "1) .nw-dots의 각 <i>를 <button type=\"button\">으로 바꾸고 aria-label=\"${owner} 보기\", aria-current=\"${i===actIdx}\", onclick=\"gotoNwOwner(${i})\" 부여. 2) 현재 스크롤 settle 타임아웃(2629-2634) 안에 인라인으로 있는 'owner r로 전환' 로직(ownerListArr()[r] 조회 -> ST.assetOwner 대입 -> vibrate -> refreshAssetBody/refreshNwHistoryCard)을 selectNwOwner(r) 공용 함수로 분리해 기존 scroll 핸들러와 신규 gotoNwOwner(i) 양쪽에서 재사용(gotoNwOwner는 추가로 restoreNwScroll(i)를 호출해 카드로 애니메이션 이동, 기존 루프 클론 스냅 로직과 동일 패턴). 3) #nwCarousel에 tabindex=\"0\" + role=\"group\" + aria-label=\"귀속별 자산 보기\" 추가, ArrowLeft/ArrowRight keydown 핸들러가 realIdx()와 동일한 방식으로 인덱스를 clamp/wrap해 selectNwOwner 호출. 4) updateNwDots(idx)(2605)가 .on 클래스뿐 아니라 aria-current도 갱신하도록 수정. 5) 스와이프/스크롤 스냅 자체는 건드리지 않아 리스크 낮음 -- 키보드 단계에서 인덱스 clamp/wrap 순수 헬퍼를 분리하게 되면 logic.js에 추가하고 test/run.js에 회귀 테스트 몇 개 추가(cycle108 그룹 재정렬 moveGroup 패턴과 동일), DOM 배선 자체는 프로젝트의 기존 no-jsdom 제약대로 미검증."
+  },
   "history": [
     {
       "cycle": 108,
@@ -141,6 +145,13 @@
       "phase": "review",
       "timestamp": "2026-09-30T11:08:29.000Z",
       "summary": "cycle113 develop 커밋(753ea1e, resetPasswordLocal에 signIn과 동일한 _lockStatus/_recordFail 브루트포스 잠금 가드 추가)을 검토. _lockStatus/_recordFail/_clearFails가 signIn과 동일한 emailKey(email) 키를 공유해 계정당 하나의 실패 카운터로 로그인 실패와 복구 코드 실패가 함께 누적되는 것을 확인 — 같은 계정을 노리는 공격이라는 점에서 의도된 동작이지 결함이 아님. 성공 경로의 this._clearFails(key) 유지, 실패 시 this._recordFail(key) 위치(비교 직후, 상태 변경 이전), 잠금 메시지 포맷·표시(doLocalRecover의 frErr)까지 signIn과 대칭적으로 맞물려 있음을 확인. genRecoveryCode()의 엔트로피(32자 알파벳 12자리)는 브루트포스 자체가 사실상 불가능한 수준이라 잠금 가드는 방어 심층화 목적으로 타당. node test/run.js 699/699 통과. 코드 변경 없음 — 이상 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 113,
+      "phase": "critique",
+      "timestamp": "2026-09-30T12:00:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(label-for·Enter제출/IME조합·auth 재진입가드·자산그룹 재정렬 키보드대안·예산탭 owner필터·죽은함수 정리·vm.Script 파싱 스모크·index.html→logic.js 이전(addMonths/addMonthsStr 시맨틱 불일치는 기존에 이미 알려진 채 보류 확정, 재소환 아님)·CDN SRI(네트워크 제약 확정)·백그라운드 푸시(서버리스 설계 상충)·로컬 계정 비밀번호 복구+브루트포스 잠금·index.html 파일분할(설계위배)·netlify CORS *·CSV export/import·AUTH._legacyHash·delOwner 캐스케이드·안드로이드 백버튼·PWA 업데이트·뷰포트 핀치줌·recDates·PBKDF2·esc() XSS는 모두 이미 다뤄졌거나 기각 확정이라 제외). 새로 발견: Assets 탭 홈 화면의 귀속(나/배우자/공용/전체) 캐러셀(index.html:2690-2691 .nw-dots)이 순수 <i> 요소이고 wireNwCarousel()(2617-2637)의 유일한 배선이 컨테이너 scroll 리스너(2619)뿐이라 keydown도 dots onclick도 전무 -- grep으로 ST.assetOwner= 대입이 스크롤 핸들러(2631)/owner rename 추적(3063)/삭제시 'all' 폴백(2685) 세 곳뿐이고 다른 진입점이 전혀 없음을 확인. Assets 탭은 앱의 주 순자산 화면이고 귀속 전환은 하단 전체(refreshAssetBody/refreshNwHistoryCard)를 바꾸는 핵심 네비게이션인데 키보드/스위치 접근 사용자는 기본값('all')에서 영구히 못 벗어나 완전히 도달 불가능 -- 동일한 개념이 예산 탭에서는 index.html:4302의 .seg <button> 세그먼트(포커스/키보드 가능, spendOwnerSel)로 이미 올바르게 구현돼 있어 이미 있는 패턴을 캐러셀에 아직 안 붙인 격차로 최우선 채택. 러너업(기록만, 기각): checkNotifyAlerts()가 배경 전환시만 도는 줄 알았으나 index.html:6479에 setInterval(checkNotifyAlerts,5*60*1000)이 이미 있어 오탐으로 기각 / localStorage 쿼터 초과 처리(2032-2035에 이미 try/catch+실패 토스트로 존재, 갭 아님) / 환율·시세 동기화 실효성 표시(2442-2489에 이미 rateStatusText/fmtSynced/failStreak로 존재, 갭 아님) / 삭제류 undo 일관성(delBudget/doDeleteCat/deleteAssetsUndo 등 전부 confirmSheet+undoToast로 일관, 불일치 없음) / mergeCollection/touch 멀티탭 sync 불변식(이미 여러 사이클에서 다룬 영역, 새 지점 아님). pending_advance_plan에 저장: (1) .nw-dots의 각 <i>를 <button type=\"button\"> aria-label/aria-current/onclick=gotoNwOwner(i)로 교체, (2) 스크롤 settle 타임아웃(2629-2634) 안의 owner 전환 로직을 selectNwOwner(r) 공용 함수로 분리해 scroll 핸들러와 gotoNwOwner 양쪽에서 재사용(gotoNwOwner는 추가로 restoreNwScroll(i) 호출), (3) #nwCarousel에 tabindex/role=group/aria-label + ArrowLeft/ArrowRight keydown(realIdx()와 동일 clamp/wrap) 추가, (4) updateNwDots(idx)가 aria-current도 갱신하도록 수정, (5) 스와이프/스냅 자체는 불변이라 리스크 낮음, 인덱스 clamp/wrap 순수 헬퍼를 분리하면 logic.js+test/run.js에 회귀 테스트 추가(cycle108 moveGroup 패턴과 동일), DOM 배선 자체는 기존 no-jsdom 제약대로 미검증. 코드 변경 없음(읽기 전용 조사, general-purpose 서브에이전트 위임).",
       "commit": null
     }
   ]
