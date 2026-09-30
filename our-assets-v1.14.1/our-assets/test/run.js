@@ -142,7 +142,7 @@ const FUNCTIONS = [
   'nextBigOutflow', 'dday', 'balanceOn', 'nextOutflowCard', 'monthOutflowCard', 'planGaugeCard', 'homeAlertCard', 'renderHome',
   'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwHistoryCard', 'doRenameOwner', 'addOwner',
   'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetToggleSel', 'visibleAssetsForSel', 'assetSelAll', 'activeSel',
-  'modeSeg', 'monthNav', 'abbr', 'calCellsFor', 'ledSumInner', 'ledSumBox', 'calPane', 'txRow', 'dayTxns',
+  'modeSeg', 'monthNav', 'abbr', 'calCellsFor', 'ledSumInner', 'ledSumBox', 'ledSumTap', 'calPane', 'txRow', 'dayTxns',
   'ledgerRowsHtml', 'ledgerDayHeadHtml', 'renderLedger', 'selDayPartial',
   'ledgerSelPartial', 'ledgerToggleSel', 'ledgerSelAll', 'visibleTx',
   'fmtDot', 'splitHist', 'histRow', 'histTotHTML', 'updateHist', 'renderHistory',
@@ -176,7 +176,11 @@ const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORD
 // _planLive는 planBalCard(live=true)가 재대입하는 "롱프레스 대상 플랜 카드" 상태라 같은 이유로
 // LETS를 통해 가져온다. 소스에서 `let _planLive=null,_planT=null,_planPeek=false;` 한 줄로
 // 선언돼 있어 "_planLive"만 추출해도 셋 다 딸려온다(_fixWhen/_fixCtx와 같은 패턴).
-const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive'];
+// _sujiTimer는 ledSumTap()이 참조하는 "방금 롱프레스로 오늘까지 미리보기를 했는가" 플래그
+// (_sujiPeeked)를 함께 끌어오기 위한 것 — 소스에서 `let _sujiTimer=null,_sujiPeeking=false,
+// _sujiPeeked=false;` 한 줄로 선언돼 있어 "_sujiTimer"만 추출해도 셋 다 딸려온다
+// (_fixWhen/_fixCtx와 같은 패턴, app-evolve cycle116 develop).
+const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer'];
 
 const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(extractConst).join('\n') + '\n' + LETS.map(extractLet).join('\n');
 
@@ -298,6 +302,10 @@ const sandbox = {
   // (테스트는 openFormSheet에 넘겨진 html 문자열만 검증하지 지연 포커스 자체는 대상이 아님).
   setTimeout: () => {},
   fitAll: () => {},
+  // sumTap()은 go()/histInvalidate() 등 화면 전환 체인을 끌고 오므로(이 테스트의 대상이 아님),
+  // ledSumTap()의 "롱프레스 직후 릴리즈는 삼킨다" 가드 로직만 검증하는 테스트를 위해 스파이로
+  // 대체 가능한 no-op 스텁을 기본값으로 둔다(app-evolve cycle116 develop).
+  sumTap: () => {},
   svg: () => '',
   console: { error: () => {} },
   lastError: null,
@@ -7510,6 +7518,62 @@ test('renderLedger: 오늘보다 미래 날짜를 선택하면 "예정" 라벨�
   sandbox.renderLedger();
   const html = sandbox.pageLedgerEl.innerHTML;
   assert.ok(html.includes('>예정<'), '오늘보다 미래인 날을 선택하면 day-head에 예정 라벨이 나와야 함');
+});
+
+/* ---------- ledSumBox/ledSumInner/ledSumTap: 가계부 요약 카드 탭 → 전체내역 이동 (app-evolve cycle116 develop) ----------
+ * sumTap(kind)은 예전부터 구현돼 있었지만("요약 탭 → 전체내역") 가계부 수지/수입/지출/저축/내부이체
+ * 카드의 버튼 어디에도 onclick으로 배선된 적이 없어, 눌러도 아무 반응 없는 죽은 버튼이었다. 이제
+ * ledSumBox()가 ledSumInner(...,tap=true)로 호출해 각 버튼이 ledSumTap(kind)로 이어지는지,
+ * 그리고 전체내역(history) 탭 자신의 합계 카드(histTotBox → tap 인자 생략)는 여전히 배선되지
+ * 않는지(ST.ledger 기준 범위 리셋이 현재 보고 있는 범위와 어긋나는 걸 피하기 위한 의도적 설계)를
+ * 확인한다. */
+test('ledSumBox: 가계부 카드의 수지/수입/지출/저축/내부이체 버튼이 ledSumTap으로 배선된다', () => {
+  setupLedgerDB();
+  const html = sandbox.ledSumBox(2026, 6, true);
+  ['전체', '수입', '지출', '저축', '이체'].forEach((k) => {
+    assert.ok(html.includes(`onclick="ledSumTap('${k}')"`), `${k} 버튼에 ledSumTap('${k}') 배선이 있어야 함`);
+  });
+});
+test('ledSumBox: 좌우 미리보기 패널(live=false)도 동일하게 배선된다(카드 자체는 pointer-events:none으로만 막힘)', () => {
+  setupLedgerDB();
+  const html = sandbox.ledSumBox(2026, 6, false);
+  assert.ok(html.includes("onclick=\"ledSumTap('수입')\""));
+  assert.ok(html.includes('pointer-events:none'));
+});
+test('ledSumInner: tap 인자를 생략하면(전체내역 탭 자신의 합계 카드) onclick이 전혀 없다', () => {
+  const a = { income: 1000, expense: 500, saving: 0, transfer: 0, suji: 500 };
+  const sc = { income: 0, expense: 0, saving: 0, transfer: 0, suji: 0 };
+  const html = sandbox.ledSumInner(a, sc, false);
+  assert.ok(!html.includes('ledSumTap'), 'tap을 넘기지 않으면 ledSumTap 배선이 없어야 함');
+});
+test('ledSumTap: 롱프레스로 "오늘까지" 미리보기를 했던 직후의 릴리즈 클릭 한 번은 sumTap을 삼킨다', () => {
+  const orig = sandbox.sumTap;
+  const calls = [];
+  sandbox.sumTap = (k) => calls.push(k);
+  try {
+    sandbox._sujiPeeked = true;
+    sandbox.ledSumTap('수입');
+    assert.strictEqual(calls.length, 0, '롱프레스 직후 릴리즈 클릭은 전체내역으로 이동시키면 안 됨');
+    assert.strictEqual(sandbox._sujiPeeked, false, '한 번 삼킨 뒤에는 플래그가 풀려야 다음 탭을 막지 않음');
+    sandbox.ledSumTap('수입');
+    assert.deepStrictEqual(calls, ['수입'], '플래그가 풀린 다음 탭은 정상적으로 sumTap을 불러야 함');
+  } finally {
+    sandbox.sumTap = orig;
+    sandbox._sujiPeeked = false;
+  }
+});
+test('ledSumTap: 평소(롱프레스 없이 가볍게 탭)에는 매번 그대로 sumTap을 부른다', () => {
+  const orig = sandbox.sumTap;
+  const calls = [];
+  sandbox.sumTap = (k) => calls.push(k);
+  try {
+    sandbox._sujiPeeked = false;
+    sandbox.ledSumTap('지출');
+    sandbox.ledSumTap('저축');
+    assert.deepStrictEqual(calls, ['지출', '저축']);
+  } finally {
+    sandbox.sumTap = orig;
+  }
 });
 
 /* ---------- ledgerSelPartial/ledgerToggleSel/ledgerSelAll: 다중선택 부분 갱신 (app-evolve cycle62 advance) ----------

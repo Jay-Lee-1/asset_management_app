@@ -1305,7 +1305,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.99';
+const APP_VERSION='1.47.0';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3131,36 +3131,48 @@ function calCellsFor(y,m,sel,txMap){
  }
  return cells;
 }
-function ledSumInner(a,sc,today){
+/* tap=true(가계부 카드에서만)면 수지/수입/지출/저축/내부이체 버튼이 sumTap()으로 이어져
+ * '해당 월 + 종류' 필터가 걸린 전체내역으로 이동한다. sumTap()은 cycle111~118 사이 이미
+ * 구현돼 있었지만 이 카드에 onclick이 한 번도 배선되지 않아 눌러도 아무 반응 없는 죽은
+ * 버튼이었다(app-evolve cycle116 develop). 전체내역(history) 탭 자신의 합계 카드는
+ * histTotBox()가 ledSumInner를 tap 없이(3번째 인자만) 호출해 그대로 비활성 유지한다 —
+ * 이미 그 탭 안이라 sumTap()이 쓰는 ST.ledger.y/m 기준 범위 리셋이 현재 보고 있는
+ * 범위(연간/커스텀 등)와 어긋날 수 있기 때문. */
+function ledSumInner(a,sc,today,tap){
+ const on=k=>tap?` onclick="ledSumTap('${k}')"`:'';
  if(today){ /* 롱프레스 중: 오늘까지(실제) 사용 금액 */
-  return `<button class="ls1"><span class="k">수지 · 오늘까지</span><span class="v num fit ${a.suji>=0?'pos':'minus'}" data-max="26">${wonS(a.suji)}</span></button>
+  return `<button class="ls1"${on('전체')}><span class="k">수지 · 오늘까지</span><span class="v num fit ${a.suji>=0?'pos':'minus'}" data-max="26">${wonS(a.suji)}</span></button>
    <div class="ls3">
-     <button><span class="k">수입</span><span class="v num plus fit" data-max="16">${a.income?'+'+comma(a.income):'0'}</span></button>
-     <button><span class="k">지출</span><span class="v num minus fit" data-max="16">${a.expense?'-'+comma(a.expense):'0'}</span></button>
-     <button><span class="k">저축</span><span class="v num save fit" data-max="16">${comma(a.saving)||'0'}</span></button>
+     <button${on('수입')}><span class="k">수입</span><span class="v num plus fit" data-max="16">${a.income?'+'+comma(a.income):'0'}</span></button>
+     <button${on('지출')}><span class="k">지출</span><span class="v num minus fit" data-max="16">${a.expense?'-'+comma(a.expense):'0'}</span></button>
+     <button${on('저축')}><span class="k">저축</span><span class="v num save fit" data-max="16">${comma(a.saving)||'0'}</span></button>
    </div>
-   <button class="lsr"><span class="k">내부이체</span><span class="lsr-r"><span class="v num fit" data-max="15">${comma(a.transfer||0)}원</span></span></button>`;
+   <button class="lsr"${on('이체')}><span class="k">내부이체</span><span class="lsr-r"><span class="v num fit" data-max="15">${comma(a.transfer||0)}원</span></span></button>`;
  }
  /* 기본: 예정 포함(전체). '오늘까지'는 롱프레스로 확인 */
- return `<button class="ls1"><span class="k">수지</span><span class="v num fit ${(a.suji+sc.suji)>=0?'pos':'minus'}" data-max="26">${wonS(a.suji+sc.suji)}</span></button>
+ return `<button class="ls1"${on('전체')}><span class="k">수지</span><span class="v num fit ${(a.suji+sc.suji)>=0?'pos':'minus'}" data-max="26">${wonS(a.suji+sc.suji)}</span></button>
    <div class="ls3">
-     <button><span class="k">수입</span><span class="v num plus fit" data-max="16">${(a.income+sc.income)?'+'+comma(a.income+sc.income):'0'}</span></button>
-     <button><span class="k">지출</span><span class="v num minus fit" data-max="16">${(a.expense+sc.expense)?'-'+comma(a.expense+sc.expense):'0'}</span></button>
-     <button><span class="k">저축</span><span class="v num save fit" data-max="16">${comma(a.saving+sc.saving)||'0'}</span></button>
+     <button${on('수입')}><span class="k">수입</span><span class="v num plus fit" data-max="16">${(a.income+sc.income)?'+'+comma(a.income+sc.income):'0'}</span></button>
+     <button${on('지출')}><span class="k">지출</span><span class="v num minus fit" data-max="16">${(a.expense+sc.expense)?'-'+comma(a.expense+sc.expense):'0'}</span></button>
+     <button${on('저축')}><span class="k">저축</span><span class="v num save fit" data-max="16">${comma(a.saving+sc.saving)||'0'}</span></button>
    </div>
-   <button class="lsr"><span class="k">내부이체</span><span class="lsr-r"><span class="v num fit" data-max="15">${comma(a.transfer+sc.transfer||0)}원</span></span></button>`;
+   <button class="lsr"${on('이체')}><span class="k">내부이체</span><span class="lsr-r"><span class="v num fit" data-max="15">${comma(a.transfer+sc.transfer||0)}원</span></span></button>`;
 }
 function ledSumBox(y,m,live){
  const {a,sc}=monthStats2(y,m);
- if(!live)return `<div class="card ledsum" style="pointer-events:none">${ledSumInner(a,sc,false)}</div>`;
+ if(!live)return `<div class="card ledsum" style="pointer-events:none">${ledSumInner(a,sc,false,true)}</div>`;
  /* 라이브 카드: 꾹 누르는 동안 '오늘까지' 금액으로 전환 (릴리즈 시 복귀) */
- return `<div class="card ledsum" id="ledsumLive" data-y="${y}" data-m="${m}" onpointerdown="sujiPeekStart()" onpointermove="sujiPeekMove()" onpointerup="sujiPeekEnd()" onpointercancel="sujiPeekEnd()" onpointerleave="sujiPeekEnd()">${ledSumInner(a,sc,false)}</div>`;
+ return `<div class="card ledsum" id="ledsumLive" data-y="${y}" data-m="${m}" onpointerdown="sujiPeekStart()" onpointermove="sujiPeekMove()" onpointerup="sujiPeekEnd()" onpointercancel="sujiPeekEnd()" onpointerleave="sujiPeekEnd()">${ledSumInner(a,sc,false,true)}</div>`;
 }
-let _sujiTimer=null,_sujiPeeking=false;
-function sujiPeekStart(){clearTimeout(_sujiTimer);_sujiTimer=setTimeout(()=>{_sujiPeeking=true;setSujiMode(true);if(navigator.vibrate)navigator.vibrate(8)},180)}
+let _sujiTimer=null,_sujiPeeking=false,_sujiPeeked=false;
+function sujiPeekStart(){clearTimeout(_sujiTimer);_sujiPeeked=false;_sujiTimer=setTimeout(()=>{_sujiPeeking=true;_sujiPeeked=true;setSujiMode(true);if(navigator.vibrate)navigator.vibrate(8)},180)}
 function sujiPeekMove(){if(!_sujiPeeking)clearTimeout(_sujiTimer)} /* 스와이프면 피크 취소 */
 function sujiPeekEnd(){clearTimeout(_sujiTimer);if(_sujiPeeking){_sujiPeeking=false;setSujiMode(false)}}
-function setSujiMode(today){const card=$('ledsumLive');if(!card)return;const {a,sc}=monthStats2(+card.dataset.y,+card.dataset.m);card.innerHTML=ledSumInner(a,sc,today);card.classList.toggle('peek',today);requestAnimationFrame(fitAll)}
+/* 버튼 onclick(ledSumTap)은 롱프레스 릴리즈 시에도 pointerup 뒤 click이 그대로 발생해 호출된다 —
+ * _sujiPeeked로 '방금 꾹 눌러 오늘까지 미리보기를 했을 뿐인' 릴리즈 한 번만 삼키고(전체내역 이동
+ * 방지), 다음 진짜 탭부터는 sujiPeekStart()가 매 누름 시작마다 다시 false로 되돌려 정상 동작한다. */
+function ledSumTap(kind){if(_sujiPeeked){_sujiPeeked=false;return}sumTap(kind)}
+function setSujiMode(today){const card=$('ledsumLive');if(!card)return;const {a,sc}=monthStats2(+card.dataset.y,+card.dataset.m);card.innerHTML=ledSumInner(a,sc,today,true);card.classList.toggle('peek',today);requestAnimationFrame(fitAll)}
 function calPane(y,m,sel,live,txMap){
  return `<div class="cal-pane">${ledSumBox(y,m,live)}
    <div class="cal"><div class="cal-week"><div class="sun">일</div><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div class="sat">토</div></div><div class="cal-grid">${calCellsFor(y,m,sel,txMap)}</div></div>
