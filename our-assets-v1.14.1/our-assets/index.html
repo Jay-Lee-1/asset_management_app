@@ -1303,7 +1303,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.94';
+const APP_VERSION='1.46.95';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1787,6 +1787,14 @@ function confirmCloudForcePush(){
  confirmSheet('내 데이터로 덮어쓰기','다른 기기에 저장된 더 최신 데이터가 사라져요.<br><span style="color:var(--text-2);font-size:13px">이 작업은 되돌릴 수 없어요.</span>','덮어쓰기',()=>{resolveCloudForcePush()});
 }
 function genSalt(){const b=new Uint8Array(16);crypto.getRandomValues(b);return Array.from(b,x=>x.toString(16).padStart(2,'0')).join('')}
+/* 로컬(비-클라우드) 계정 복구 코드 — 0/O/1/I처럼 헷갈리는 문자를 뺀 32자 알파벳으로 12자를 뽑아
+ * XXXX-XXXX-XXXX 형태로 묶는다. 가입 직후 1회만 보여주고 저장은 하지 않는다(해시만 저장). */
+function genRecoveryCode(){
+ const chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+ const b=new Uint8Array(12);crypto.getRandomValues(b);
+ let s='';for(let i=0;i<12;i++){s+=chars[b[i]%chars.length];if(i%4===3&&i<11)s+='-'}
+ return s;
+}
 /* PBKDF2-SHA256 120000회 반복 — Web Crypto는 브라우저와 Node(crypto.webcrypto) 양쪽에서
  * 같은 API 모양(subtle.importKey/deriveBits)이라 test/run.js에서도 그대로 돌릴 수 있다. */
 async function pbkdf2Hash(pw,saltHex){
@@ -1824,7 +1832,10 @@ const AUTH={
   }
   const a=this._accts();if(a[emailKey(email)])return{err:'이미 가입된 이메일이에요'};
   const salt=genSalt();
-  a[emailKey(email)]={email,salt,pass:await pbkdf2Hash(pw,salt),created:Date.now()};this._write(a);return{ok:true,email};
+  const recoveryCode=genRecoveryCode();
+  const recoverySalt=genSalt();
+  a[emailKey(email)]={email,salt,pass:await pbkdf2Hash(pw,salt),recoverySalt,recoveryHash:await pbkdf2Hash(recoveryCode,recoverySalt),created:Date.now()};
+  this._write(a);return{ok:true,email,recoveryCode};
  },
  async signIn(email,pw){
   email=(email||'').trim();
@@ -1879,6 +1890,26 @@ const AUTH={
    if(error)return{err:sbErrMsg(error)};
    return{ok:true};
   }catch(e){return{err:'클라우드 연결에 실패했어요 · 인터넷 연결을 확인해 주세요'}}
+ },
+ /* 로컬 계정 전용 — 가입 시 발급한 복구 코드로 비밀번호를 재설정한다(이메일 서버가 없으므로
+  * 코드 자체가 신원 증명). 성공하면 코드를 재발급해 다시 1회만 보여준다(재사용 방지). */
+ async resetPasswordLocal(email,code,newPw){
+  email=(email||'').trim();
+  if((newPw||'').length<8)return{err:'비밀번호는 8자 이상이어야 해요'};
+  if(sbReady())return{err:'클라우드 계정은 이메일로 재설정해 주세요'};
+  const key=emailKey(email);
+  const a=this._accts();const rec=a[key];
+  if(!rec)return{err:'가입되지 않은 이메일이에요'};
+  if(!rec.recoveryHash||!rec.recoverySalt)return{err:'이 계정은 복구 코드가 없어 복구할 수 없어요 · 메뉴 › 데이터 관리에서 CSV로 미리 백업해 두세요'};
+  const norm=(code||'').trim().toUpperCase();
+  const ok=(await pbkdf2Hash(norm,rec.recoverySalt))===rec.recoveryHash;
+  if(!ok)return{err:'복구 코드가 일치하지 않아요'};
+  const salt=genSalt();
+  const recoverySalt=genSalt();
+  const recoveryCode=genRecoveryCode();
+  a[key]=Object.assign({},rec,{salt,pass:await pbkdf2Hash(newPw,salt),recoverySalt,recoveryHash:await pbkdf2Hash(recoveryCode,recoverySalt)});
+  this._write(a);this._clearFails(key);
+  return{ok:true,email:rec.email,recoveryCode};
  },
  setSession(email){SESSION=email||'';localStorage.setItem('asset_app_session',SESSION)},
  kakaoUpsert(id,nick){const a=this._accts();if(!a[emailKey(id)])a[emailKey(id)]={email:id,kakao:true,nick:nick||'',created:Date.now()};else if(nick)a[emailKey(id)].nick=nick;this._write(a)},
@@ -6482,7 +6513,7 @@ function renderAuth(){
    <div class="auth-seg"><button class="${login?'on':''}" onclick="authSet('login')">로그인</button><button class="${login?'':'on'}" onclick="authSet('signup')">회원가입</button></div>
    <div class="auth-field"><label for="auEmail">이메일</label><input id="auEmail" type="email" inputmode="email" autocomplete="username" placeholder="you@example.com"></div>
    <div class="auth-field"><label for="auPw">비밀번호</label><input id="auPw" type="password" autocomplete="${login?'current-password':'new-password'}" placeholder="${login?'':'8자 이상'}" onkeydown="if(event.key==='Enter'){${login?'doLogin()':'doSignup()'}}"></div>
-   ${login&&sbCfg().url?`<button type="button" class="auth-forgot" onclick="doForgotPassword()">비밀번호를 잊으셨나요?</button>`:''}
+   ${login?`<button type="button" class="auth-forgot" onclick="doForgotPassword()">비밀번호를 잊으셨나요?</button>`:''}
    <div id="auErr" class="auth-err" style="display:none"></div>
    <button class="btn btn-primary auth-submit" onclick="${login?'doLogin()':'doSignup()'}">${login?'로그인':'가입하고 시작'}</button>
    <button class="auth-guest" onclick="chooseGuest()">게스트로 둘러보기</button>
@@ -6541,11 +6572,16 @@ async function doSignup(){
   return}
  const guestRaw=localStorage.getItem('asset_app_db_v3__guest');
  startApp();
- if(guestHasData())confirmSheet('데이터 가져오기','방금까지 게스트로 입력한 자산·내역이 있어요. 새 계정으로 가져올까요?','가져오기',()=>{try{DB=JSON.parse(guestRaw);migrate();save();renderCurrent();toast('데이터를 가져왔어요')}catch(e){toast('가져오기에 실패했어요')}});
- else toast('가입 완료 · '+r.email);
+ const afterSignupFlow=()=>{
+  if(guestHasData())confirmSheet('데이터 가져오기','방금까지 게스트로 입력한 자산·내역이 있어요. 새 계정으로 가져올까요?','가져오기',()=>{try{DB=JSON.parse(guestRaw);migrate();save();renderCurrent();toast('데이터를 가져왔어요')}catch(e){toast('가져오기에 실패했어요')}});
+  else toast('가입 완료 · '+r.email);
+ };
+ if(r.recoveryCode)showRecoveryCode(r.recoveryCode,'비밀번호를 잊으면 이 코드로만 복구할 수 있어요. 지금 안전한 곳에 적어 두세요 — 다시 보여드리지 않아요.',afterSignupFlow);
+ else afterSignupFlow();
 }
 function doForgotPassword(){
  const email=($('auEmail')&&$('auEmail').value)||'';
+ if(!sbCfg().url)return doForgotPasswordLocal(email);
  openSheet(`<h3>비밀번호 재설정</h3>
   <div class="desc">가입하신 이메일로 비밀번호 재설정 링크를 보내드려요.</div>
   <div class="field"><label for="fpEmailIn">이메일</label><input id="fpEmailIn" type="email" inputmode="email" autocomplete="username" placeholder="you@example.com" value="${esc(email)}" onkeydown="if(event.key==='Enter')doSendResetEmail()"></div>
@@ -6562,6 +6598,41 @@ async function doSendResetEmail(){
  if(r.err){if(errEl){errEl.textContent=r.err;errEl.style.display='block'}return}
  openSheet(`<h3>메일함을 확인해 주세요</h3><div class="desc">${esc(email)} 로 비밀번호 재설정 링크를 보냈어요. 메일의 링크를 눌러 새 비밀번호를 설정해 주세요.</div><div class="two-btn" style="margin-top:14px"><button class="btn btn-primary" onclick="closeSheet()" style="width:100%">확인</button></div>`);
 }
+/* 로컬(비-클라우드) 계정 전용 — 가입 시 발급한 복구 코드 + 새 비밀번호를 한 시트에서 받는다
+ * (이메일 서버가 없어 링크를 보낼 수 없으므로, 코드 자체가 신원 증명 역할). */
+function doForgotPasswordLocal(email){
+ openSheet(`<h3>비밀번호 복구</h3>
+  <div class="desc">가입할 때 딱 한 번 보여드린 복구 코드로 새 비밀번호를 설정해요. 복구 코드가 없다면 이 계정은 복구할 수 없어요 — 메뉴 › 데이터 관리에서 CSV로 미리 백업해 두는 걸 추천해요.</div>
+  <div class="field"><label for="frEmailIn">이메일</label><input id="frEmailIn" type="email" inputmode="email" autocomplete="username" placeholder="you@example.com" value="${esc(email)}"></div>
+  <div class="field"><label for="frCodeIn">복구 코드</label><input id="frCodeIn" autocomplete="off" placeholder="XXXX-XXXX-XXXX"></div>
+  <div class="field"><label for="frPwIn">새 비밀번호</label><input id="frPwIn" type="password" autocomplete="new-password" placeholder="8자 이상" onkeydown="if(event.key==='Enter')doLocalRecover()"></div>
+  <div id="frErr" class="auth-err" style="display:none"></div>
+  <div class="two-btn" style="margin-top:14px"><button class="btn btn-soft cancel" onclick="closeSheet()">취소</button><button class="btn btn-primary" id="frBtn" onclick="doLocalRecover()">복구하기</button></div>`);
+}
+async function doLocalRecover(){
+ const btn=$('frBtn');if(btn&&btn.disabled)return;
+ const email=$('frEmailIn').value,code=$('frCodeIn').value,pw=$('frPwIn').value;
+ const errEl=$('frErr');if(errEl)errEl.style.display='none';
+ if(btn)btn.disabled=true;
+ const r=await AUTH.resetPasswordLocal(email,code,pw);
+ if(btn)btn.disabled=false;
+ if(r.err){if(errEl){errEl.textContent=r.err;errEl.style.display='block'}return}
+ GUEST=false;localStorage.setItem('asset_app_guest','0');AUTH.setSession(r.email);
+ closeSheet();startApp();toast('비밀번호를 재설정했어요');
+ showRecoveryCode(r.recoveryCode,'비밀번호를 재설정했어요. 새 복구 코드를 저장해 주세요 — 방금 쓴 코드는 더 이상 쓸 수 없어요.');
+}
+/* 가입/복구 직후 복구 코드를 1회만 보여주는 시트. onDone은 시트를 닫은 뒤(저장했다고 확인한 뒤)
+ * 이어질 흐름(게스트 데이터 가져오기 안내 등)을 위한 선택적 콜백. */
+let RECOVERY_ONDONE=null;
+function showRecoveryCode(code,msg,onDone){
+ RECOVERY_ONDONE=onDone||null;
+ openSheet(`<h3>복구 코드를 저장해 주세요</h3>
+  <div class="desc">${esc(msg||'비밀번호를 잊으면 이 코드로만 복구할 수 있어요. 지금 안전한 곳에 적어 두세요 — 다시 보여드리지 않아요.')}</div>
+  <div style="font-family:monospace;font-size:20px;letter-spacing:1px;text-align:center;padding:14px;background:var(--glass-field);border:1px solid var(--glass-border);border-radius:10px;margin:12px 0;user-select:all">${esc(code)}</div>
+  <div class="two-btn" style="margin-top:14px"><button class="btn btn-primary" onclick="closeRecoverySheet()" style="width:100%">저장했어요</button></div>`,
+  `<button class="sheet-x" onclick="closeRecoverySheet()" aria-label="닫기">${svg('x')}</button>`);
+}
+function closeRecoverySheet(){closeSheet();const cb=RECOVERY_ONDONE;RECOVERY_ONDONE=null;if(cb)cb()}
 /* recovery=true: 다른 기기에서 재설정 메일 링크를 열어 PASSWORD_RECOVERY 이벤트로 뜬 경우.
  * recovery=false(기본): 계정 시트에서 로그인 상태로 자발적으로 비밀번호를 바꾸는 경우. */
 function openChangePasswordSheet(recovery){

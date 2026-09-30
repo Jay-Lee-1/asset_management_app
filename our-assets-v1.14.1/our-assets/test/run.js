@@ -129,7 +129,7 @@ const FUNCTIONS = [
   'detectStaleMarketValuedTxns', 'delBudget',
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards',
   'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate',
-  'genSalt', 'pbkdf2Hash', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer', 'openConfirmTransfer',
+  'genSalt', 'pbkdf2Hash', 'genRecoveryCode', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer', 'openConfirmTransfer',
   'confirmTransferNow', 'postponeTransfer', 'confirmRecNow',
   'foreignSaveIsNewer', 'applyForeignSave', 'openCopyBackup', 'copyBackup', 'findDonors',
   'recIsVarying', 'varyingRecs', 'fixShortfallDefaultDate', 'openFixShortfall', 'lastActualAmount', 'openQuickAmount',
@@ -6002,6 +6002,17 @@ test('pbkdf2Hash: 같은 비밀번호라도 salt가 다르면 다른 해시가 �
   const h1 = await sandbox.pbkdf2Hash('same-password', s1);
   const h2 = await sandbox.pbkdf2Hash('same-password', s2);
   assert.notStrictEqual(h1, h2);
+});
+
+/* ---------- genRecoveryCode: 로컬 계정 비밀번호 복구 코드(가입 시 1회 발급, 해시만 저장) ---------- */
+test('genRecoveryCode: XXXX-XXXX-XXXX 형태(0/O/1/I 제외 알파벳+숫자)를 만든다', () => {
+  const c = sandbox.genRecoveryCode();
+  assert.match(c, /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$/);
+});
+test('genRecoveryCode: 매번 다른 코드를 만든다', () => {
+  const a = sandbox.genRecoveryCode();
+  const b = sandbox.genRecoveryCode();
+  assert.notStrictEqual(a, b);
 });
 
 /* ---------- postponeRecTransfer/confirmRecTransfer: 반복 이체 회차에 개별 금액/메모 수정
