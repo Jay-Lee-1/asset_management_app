@@ -1303,7 +1303,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.91';
+const APP_VERSION='1.46.92';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1463,7 +1463,6 @@ function rowKeydown(e,fn){if(e.key==='Enter'||e.key===' '){e.preventDefault();fn
 function todayStr(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
 let TODAY=todayStr();
 function ym(s){const[Y,M]=s.split('-').map(Number);return{y:Y,m:M}}
-function inMonth(s,y,m){const p=ym(s);return p.y===y&&p.m===m}
 function lastDay(y,m){return new Date(y,m,0).getDate()}
 function monthEndStr(y,m){return `${y}-${String(m).padStart(2,'0')}-${String(lastDay(y,m)).padStart(2,'0')}`}
 function monthStartStr(y,m){return `${y}-${String(m).padStart(2,'0')}-01`}
@@ -2093,30 +2092,6 @@ function assetEval(a){
  }
 }
 function assetBase(a){return a.baseAmount!=null?a.baseAmount:(a.amountKRW||0)}
-/* ===== 새 홈탭 계산 헬퍼 ===== */
-/* ① 전체 자산 합산 잔액을 특정 일자 기준으로 (시세성 자산은 현재가 고정, 현금성은 그날 잔액) */
-function totalAssetAt(dateStr){
- let s=0;
- DB.assets.forEach(a=>{
-   if(!a.includeInTotal)return;
-   let v;
-   if(a.type==='fx')v=(a.fxAmount||0)*(DB.rates.fx[a.currency]||0);
-   else if(a.type==='gold')v=(a.goldDon||0)*GOLD_G_PER_DON*(DB.rates.goldPerG||0);
-   else if(a.type==='stock')v=(a.stockQty||0)*(DB.rates.stocks[a.stockCode]||0);
-   else v=balanceAt(a.id,dateStr); /* 현금·저축·부동산·연금·부채: 그날 잔액 */
-   if(a.type==='debt')s-=v;else s+=v;
- });
- return s;
-}
-/* 이번 달 1일~말일, 전체 자산 합산 잔액 곡선 (일 단위) */
-function monthKeyOf(y,m){return `${y}-${String(m).padStart(2,'0')}`}
-function fixedIncomeOf(y,m){ /* 급여·성과급 등 정기 수입 추정: 반복(income) + 급여 카테고리 */
- let s=0;const INC_FIXED=['급여','성과급','지원금'];
- allTxns(monthStartStr(y,m),monthEndStr(y,m)).forEach(t=>{
-   if(t.type==='income'&&(t.isRec||INC_FIXED.includes(t.category)))s+=t.amount;
- });
- return s;
-}
 /* ④ 이번 달 지출 카테고리별 합계 (지출만 · 큰 순) */
 function expenseByCat(y,m){
  const map={};
@@ -2166,7 +2141,7 @@ function balanceAt(id,dateStr){ /* 특정 일자 기준 잔액 — 예정·반�
 }
 const isCashLike=a=>a.type==='cash'||a.type==='savings';
 const isMarketValued=a=>a.type==='fx'||a.type==='gold'||a.type==='stock'; /* assetEval()이 원장과 무관하게 qty×시세로 평가 — 거래 입력의 통장으로 쓰면 순자산이 조용히 어긋남 */
-/* assetEval()/totalAssetAt()의 (R.fx[c]||0) 같은 폴백은 '아직 한 번도 시세를 못 받아온 상태'와
+/* assetEval()의 (R.fx[c]||0) 같은 폴백은 '아직 한 번도 시세를 못 받아온 상태'와
    '실제 시세가 0원'을 구분하지 못해, 새로 등록한 fx/gold/stock 자산이 조용히 ₩0으로 평가돼도
    어디에도 표시되지 않는다 — 그 미확인 상태만 따로 판정해 카드에 배지로 보여주기 위한 함수. */
 function rateUnknown(a){
@@ -2243,9 +2218,6 @@ function nwChartPath(pts,W,H){
  const area=line+` L${coords[coords.length-1][0].toFixed(1)},${H} L0,${H} Z`;
  return {line,area};
 }
-function ownerNet(o){let s=0;
- DB.assets.filter(a=>a.owner===o&&a.includeInTotal).forEach(a=>{s+=a.type==='debt'?-assetEval(a):assetEval(a)});
- return s;}
 function monthStats(y,m){
  const inc=DB.settings.includeScheduled;let income=0,expense=0,saving=0,transfer=0;
  allTxns(monthStartStr(y,m),monthEndStr(y,m)).forEach(t=>{
@@ -5000,7 +4972,7 @@ function openCsvImportInfo(){
   <button class="btn btn-primary" onclick="closeSheet();$('importCsvFile').click()">${svg('ledger')} CSV 파일 고르기</button>`);
 }
 /* 백업 복원(파일)·클라우드 풀(pullCloud) 양쪽이 공유하는 숫자 필드 검증. 검증 없이 DB에
- * 그대로 대입하면 NaN/문자열 금액이 balancesUpTo/totalAssetAt/expenseByCat 등 잔액 계산
+ * 그대로 대입하면 NaN/문자열 금액이 balancesUpTo/expenseByCat 등 잔액 계산
  * 전체로 조용히 전파되고, save()를 거쳐 scheduleCloudPush()로 다른 기기까지 오염이 퍼질 수 있다.
  * min을 주면(수량성 필드) 그 아래로는 클램프하고, 안 주면(잔액성 필드는 마이너스도 유효한 상태라)
  * 유한수 여부만 본다. */
@@ -5397,13 +5369,6 @@ function monthsWithTx(){ /* 내역이 있는 달만 (+ 이번 달) — 최신순
  const set=new Set([TM.y*12+TM.m]);
  allTxns(RANGE_FROM,DISP_TO).forEach(t=>set.add((+t.date.slice(0,4))*12+(+t.date.slice(5,7))));
  return [...set].sort((a,b)=>b-a).map(n=>({y:Math.floor((n-1)/12),m:((n-1)%12)+1}));
-}
-function txMonthRange(){
- const list=allTxns(RANGE_FROM,DISP_TO);
- if(!list.length)return {lo:{y:TM.y,m:TM.m},hi:{y:TM.y,m:TM.m}};
- let lo=list[0].date,hi=list[0].date;
- list.forEach(t=>{if(t.date<lo)lo=t.date;if(t.date>hi)hi=t.date});
- return {lo:{y:+lo.slice(0,4),m:+lo.slice(5,7)},hi:{y:+hi.slice(0,4),m:+hi.slice(5,7)}};
 }
 function openMonthSheet(which){ /* 전체내역·플랜: 월 단위 휠 (내역 있는 달만) */
  const wasOpen=$('dpWheel').classList.contains('show');
