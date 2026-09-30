@@ -1,15 +1,8 @@
 {
   "cycle": 114,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 109,
-      "phase": "develop",
-      "timestamp": "2026-09-29T19:00:00.000Z",
-      "summary": "인증 관련 비동기 제출 함수 4곳(doLogin/doSignup/doSendResetEmail/doChangePassword)에 재진입 가드 추가. 각 함수는 시작 시 관련 버튼(.auth-submit / fpSendBtn / pwSaveBtn)을 disabled=true로 바꿔 마우스 클릭 중복 제출은 막고 있었지만, 비밀번호/이메일 입력 필드의 onkeydown=\"if(event.key==='Enter')...\" 핸들러는 버튼의 disabled 상태와 무관하게 항상 함수를 직접 호출하고 있어 — 브라우저가 disabled 버튼에는 click 이벤트를 보내지 않는 것과 달리 keydown은 input에 그대로 걸려 있으므로 — 사용자가 Enter를 빠르게 두 번 누르거나(모바일 키보드 등에서 반복 입력) 누른 상태에서 자동반복(key repeat)이 걸리면 AUTH.signIn/signUp/resetPassword/changePassword가 동시에 두 번 이상 실행돼 중복 네트워크 호출·경쟁 상태(예: 두 번째 로그인 성공 응답이 첫 번째보다 먼저 도착해 startApp()이 두 번 실행)로 이어질 수 있는 문제였다. 각 함수 맨 앞에 btn 참조를 먼저 얻어 if(btn&&btn.disabled)return; 가드를 추가(기존 authErr/errEl 초기화 및 btn.disabled=true 대입은 가드 통과 이후로 순서만 재배치, 로직 자체는 그대로)해 이미 진행 중인 제출은 later Enter/재호출을 조용히 무시하도록 했다. 순수 가드 추가라 회귀 테스트 파일(test/run.js)이 다루는 순수 로직 함수 목록에는 해당 없음 — 두 인라인 <script> 블록(node --check)과 logic.js/sw.js 모두 문법 통과, node test/run.js 690/690 통과(변경 없음, 예상대로). APP_VERSION 1.46.88->1.46.89, sw.js CACHE v250->v251.",
-      "commit": "bbf1f44"
-    },
     {
       "cycle": 109,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-30T13:00:00.000Z",
       "summary": "critique(cycle113) 계획대로 Assets 탭 귀속(나/배우자/공용/전체) 캐러셀에 키보드/클릭 경로를 추가했다. .nw-dots의 각 <i>를 <button type=\"button\">으로 교체(aria-label=\"${owner} 보기\", aria-current, onclick=gotoNwOwner(i)) — CSS(.nw-dots i,.nw-dots button)로 <i>/<button> 양쪽을 동일하게 스타일해, 별개 위젯인 튜토리얼 월별 캐러셀의 #m-dots(여전히 <i> 사용, 손대지 않음)와도 호환 유지. wireNwCarousel()의 스크롤 settle 타임아웃 안에 인라인으로 있던 owner 전환 로직(ownerListArr()[r] 조회 -> ST.assetOwner 대입 -> vibrate -> refreshAssetBody/refreshNwHistoryCard)을 selectNwOwner(r) 공용 함수로 분리해 scroll 핸들러와 신규 gotoNwOwner(i) 양쪽에서 재사용. #nwCarousel에(카드 2장 이상일 때만) tabindex=\"0\"+role=\"group\"+aria-label=\"귀속별 자산 보기\" 추가, ArrowLeft/ArrowRight keydown 리스너가 ownerListArr().indexOf(ST.assetOwner)로 현재 인덱스를 구해 gotoNwOwner(cur±1) 호출. gotoNwOwner(i)는 계획의 restoreNwScroll(i) 재사용 대신(그 함수는 순간 이동이라 '애니메이션 이동' 의도와 안 맞아) c.scrollTo({behavior:'smooth'})로 부드럽게 스크롤하면서 selectNwOwner를 즉시 호출해 상태를 먼저 반영(스크롤 애니메이션 완료를 기다리지 않아, 스크린리더가 aria-current 변화를 바로 읽을 수 있음) — 이 설계 변경은 plan의 의도(키보드/클릭으로 전환 가능해야 함)를 그대로 satisfy하면서 스크린리더 즉시성을 개선한 것이라 review 없이 advance에서 바로 채택. 클론 루프 경계 clamp/wrap은 순수 함수 nwClampIdx(i,n,loop)로 logic.js에 신설(cycle97 이후 관례대로 새 순수 함수는 index.html 대신 logic.js에 직접 추가)하고 gotoNwOwner가 재사용, test/run.js에 회귀 테스트 5개 추가(loop wrap 양방향/non-loop clamp/범위 내 그대로/n<=0 가드). updateNwDots(idx)가 .nw-dots button만 대상으로 삼도록 셀렉터를 좁히고(.on 토글과 함께 aria-current도 갱신) m-dots(<i>)에는 영향 없음을 확인. 스와이프/스크롤 스냅 로직 자체는 건드리지 않아 계획대로 리스크 낮음. node --check로 logic.js/sw.js 통과, vm.Script로 두 인라인 <script> 블록(메인 356KB + SW 등록 883B) 모두 파싱 통과, node test/run.js 704/704 통과(699->704, 신규 5개 전부 포함). APP_VERSION 1.46.96->1.46.97, sw.js CACHE v258->v259. pending_advance_plan을 null로 비움. 수동 QA(Playwright 등 브라우저 기동)는 이번 사이클에서 수행하지 않음 — 다음 review 단계가 diff를 검토하며 필요시 확인 권장.",
+      "commit": null
+    },
+    {
+      "cycle": 114,
+      "phase": "develop",
+      "timestamp": "2026-09-30T15:20:00.000Z",
+      "summary": "cycle111 advance에서 index.html→logic.js로 옮겨진 순수 함수 4개(lastDay/monthStartStr/monthEndStr/budgetKey, logic.js 193-203행)가 이전 이후 단 한 번도 자신을 직접 겨냥한 회귀 테스트가 없었던 격차를 발견해 메웠다 — test/run.js FUNCTIONS 목록 위 주석에 이름만 언급돼 있었을 뿐, recDates/budgetForMonth 같은 다른 함수의 내부 호출을 통해서만 간접적으로 실행돼 왔다. 특히 budgetForMonth()(index.html ~4267)는 budgetKey(y,m)로 만든 'YYYY-MM' 문자열을 사전식(lexicographic) 비교(h[i].from<=key)로 시점 순서를 판정하는데, 이 비교가 실제 월 순서와 일치하려면 budgetKey가 월을 반드시 두 자리로 0-패딩해야 한다는 불변식이 있음에도 그 불변식 자체를 직접 지키는 테스트가 없었다(패딩이 실수로 빠지면 '2025-9' > '2025-10'으로 비교돼 9월 예산이 10월보다 미래로 잘못 판정되는 회귀가 생겨도 기존 테스트로는 못 잡음). test/run.js에 6개 회귀 테스트 신설: lastDay 윤년/평년 2월(28 vs 29) 및 30/31일 달 구분, monthStartStr의 두 자리 월 0-패딩과 항상 '01'일 확인, monthEndStr의 윤년 2월 29일 포함 월말 계산, budgetKey의 'YYYY-MM' 포맷/0-패딩, 그리고 budgetKey(2025,9)<budgetKey(2025,10) 및 budgetKey(2025,12)<budgetKey(2026,1)을 직접 문자열 비교로 검증하는 불변식 테스트. 프로덕션 코드(index.html/logic.js/sw.js)는 전혀 건드리지 않은 테스트 전용 추가라 사용자에게 영향 있는 동작 변경이 없어 APP_VERSION/CACHE는 올리지 않았다(1.46.97 / ourassets-v259 그대로). node test/run.js 704/704 -> 710/710 통과(신규 6개 전부, 기존 704개 무영향). (general-purpose 서브에이전트에 위임해 탐색·구현·검증, 오케스트레이팅 세션이 상태 파일 갱신과 커밋을 수행)",
       "commit": null
     }
   ]

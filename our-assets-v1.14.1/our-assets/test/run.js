@@ -2241,6 +2241,40 @@ test('esc: null/undefined는 빈 문자열로 처리한다', () => {
   assert.strictEqual(sandbox.esc(undefined), '');
 });
 
+/* ---------- lastDay/monthStartStr/monthEndStr/budgetKey: cycle111에서 index.html→logic.js로 옮겨진 뒤
+ * 개별 회귀 테스트가 한 번도 없었다(FUNCTIONS 목록 위 주석에만 이름이 언급됨) — recDates/budgetForMonth 등이
+ * 내부에서 호출해 간접적으로만 실행돼 왔을 뿐, 이 네 함수 자체를 직접 겨냥한 assert는 없었다.
+ * budgetForMonth()는 budgetKey(y,m)로 만든 "YYYY-MM" 문자열을 사전식(lexicographic) 비교(from<=key)로
+ * 시점 순서를 판정하므로, 월을 반드시 두 자리로 0-패딩해야만 그 비교가 실제 시간 순서와 일치한다
+ * (패딩이 빠지면 "2025-9" > "2025-10"이 돼 9월 예산이 10월보다 미래로 잘못 판정된다) — 아래 순서
+ * 비교 테스트가 바로 그 불변식을 지킨다. */
+test('lastDay: 평년 2월은 28일, 윤년 2월은 29일까지', () => {
+  assert.strictEqual(sandbox.lastDay(2026, 2), 28);
+  assert.strictEqual(sandbox.lastDay(2024, 2), 29);
+});
+test('lastDay: 30일/31일 달을 정확히 구분한다', () => {
+  assert.strictEqual(sandbox.lastDay(2026, 4), 30);
+  assert.strictEqual(sandbox.lastDay(2026, 1), 31);
+  assert.strictEqual(sandbox.lastDay(2026, 12), 31);
+});
+test('monthStartStr: 항상 그 달 1일이고 월은 두 자리로 0-패딩된다', () => {
+  assert.strictEqual(sandbox.monthStartStr(2026, 3), '2026-03-01');
+  assert.strictEqual(sandbox.monthStartStr(2026, 11), '2026-11-01');
+});
+test('monthEndStr: 그 달의 마지막 날(윤년 2월 포함)로 끝난다', () => {
+  assert.strictEqual(sandbox.monthEndStr(2026, 2), '2026-02-28');
+  assert.strictEqual(sandbox.monthEndStr(2024, 2), '2024-02-29');
+  assert.strictEqual(sandbox.monthEndStr(2026, 4), '2026-04-30');
+});
+test('budgetKey: "YYYY-MM" 형식이고 월이 한 자리여도 0-패딩된다', () => {
+  assert.strictEqual(sandbox.budgetKey(2026, 3), '2026-03');
+  assert.strictEqual(sandbox.budgetKey(2026, 11), '2026-11');
+});
+test('budgetKey: 0-패딩 덕분에 사전식 비교가 실제 월 순서와 일치한다(budgetForMonth가 기대는 불변식)', () => {
+  assert.ok(sandbox.budgetKey(2025, 9) < sandbox.budgetKey(2025, 10), '9월이 10월보다 사전식으로도 앞서야 함');
+  assert.ok(sandbox.budgetKey(2025, 12) < sandbox.budgetKey(2026, 1), '연도가 바뀌어도 순서가 유지돼야 함');
+});
+
 /* ---------- expenseBreakdownCard: 홈 화면 지출 분석 카드는 사용자가 지은 카테고리명을 이스케이프해야 한다 ---------- */
 test('expenseBreakdownCard: 카테고리명에 HTML 특수문자가 있어도 이스케이프되어 렌더링을 깨지 않는다', () => {
   const html = sandbox.expenseBreakdownCard([{ cat: '외식&카페<script>', v: 10000 }], 10000);
