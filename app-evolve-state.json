@@ -1,15 +1,12 @@
 {
   "cycle": 110,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "렌더링/DOM 계층에 대한 자동 테스트 커버리지 부재",
+    "why": "앱 전체가 index.html 안의 인라인 <script> 하나(6711줄)로 돼 있는데, test/run.js(695개 assertion)는 extractFunction()의 정규식/중괄호 매칭 슬라이서나 logic.js를 vm 샌드박스에 로드하는 방식으로 순수 함수만 골라 테스트한다. index.html 전체를 파싱/실행하거나 render* 함수(renderHistory ~3725, renderAssetSheet ~2891, renderRecSheet ~3548, homeAlerts ~6033 등, 모두 DB/ST를 읽어 중첩 템플릿 리터럴+esc()/comma()/svg() 헬퍼로 innerHTML을 만듦)를 호출하는 테스트는 전무함(jsdom/puppeteer/playwright 미사용, grep으로 확인). 110+ 사이클 동안 이 한 파일을 계속 수정해왔는데, 렌더 함수 어딘가의 backtick 하나 누락이나 헬퍼 함수 이름 변경 누락 같은 실수는 인라인 스크립트 전체를 깨뜨려 모든 탭이 백지로 뜨는 전면 장애가 되지만, 지금의 유일한 검증 수단인 node test/run.js는 문자열로 추출한 순수 함수 조각만 보므로 이런 회귀를 잡아내지 못하고 계속 초록불을 띄운다.",
+    "approach": "1) test/run.js(또는 별도 test/smoke.js를 test/run.js에서 호출)에 스모크 테스트를 추가한다. 먼저 index.html에서 인라인 <script> 전체 소스를 추출해 new vm.Script(src)에 통과시켜 파싱 에러를 즉시 잡는다(템플릿 리터럴/중괄호 깨짐 등 전면 장애를 이 단계에서 이미 대부분 방어). 2) 가능하면 jsdom을 devDependency로 추가해(네트워크 제약으로 설치가 안 되면 이 단계는 생략하고 1단계 파싱 체크만으로 스코프를 좁혀도 됨) #app/#page-home/#page-history/#page-assets/#page-budget/#page-settings 등 $()가 기대하는 최소 DOM을 구성하고, 기존 SEED 데모 데이터(index.html:1570-1616 부근)로 채운 뒤 초기 부팅과 renderCurrent()를 각 탭에서 호출, 주요 시트(openAssetSheet/openTxSheet/openRecSheet/예산 시트/exportData/importData 등) 열기/닫기까지 예외 없이 통과하고 각 페이지 컨테이너의 innerHTML이 비어있지 않은지 assert한다. 3) 새 테스트는 기존 node test/run.js 진입점에 그대로 통합해 app-evolve 루프의 기존 검증 단계가 별도 워크플로 변경 없이 이 커버리지를 얻도록 한다. 4) test/run.js 상단 주석에 기존 스타일대로 왜 이 테스트가 필요한지 간단히 남긴다."
+  },
   "history": [
-    {
-      "cycle": 105,
-      "phase": "critique",
-      "timestamp": "2026-09-29T03:13:45.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(접근성 전수·silent-failure·클라우드 동기화 categories/owners/budgetHistory 병합·안드로이드 백버튼 History API·netlify 함수 테스트 커버리지·CSV export 범위·예산탭·AUTH._legacyHash·skip/edits 맵·delOwner 캐스케이드·뷰포트 핀치줌·클라우드 동기화 충돌/경쟁·PWA 업데이트·자산/반복거래 삭제 캐스케이드는 모두 이미 다뤄졌거나 재확인 완료라 제외, 클라우드가 아닌 같은 기기 내 탭 간 저장 경로를 새로 조사). save()(index.html:1979)가 항상 무조건 JSON.stringify(DB)로 localStorage를 덮어쓴다는 점과, handleForeignStorage(2006)가 시트가 열려 있을 때는 TAB_SYNC_PENDING만 세팅하고 closeSheet(5313)에서야 applyForeignSave로 반영한다는 점을 함께 추적: saveTx/saveAsset/saveRec 등 모든 저장 흐름이 closeSheet()보다 save()를 먼저 호출하므로, 사용자가 시트 편집을 마치는 순간 병합 안 된 자신의 메모리 DB로 다른 탭이 방금 저장한 내용을 조용히 영구 삭제한 뒤에야 closeSheet()가 이미 자신이 덮어쓴 값을 다시 읽어 아무 일 없었던 것처럼 보이는, 완전히 조용한(토스트/충돌표시/undo 없음) 탭 간 데이터 유실을 발견. 설치된 PWA + 남겨둔 브라우저 탭처럼 실사용에서 그대로 재현 가능해 cycle102의 클라우드 병합 누락 버그와 동급으로 최우선 채택. pending_advance_plan에 저장: save()에 foreignSaveIsNewer(1992, 기존 순수 함수)로 로컬스토리지의 더 최신 __savedAt을 감지하면, 이미 cloud pull 경로(1713/1748)가 쓰는 mergeRemoteDataIntoLocal(1423)을 그대로 재사용해 병합하고 TAB_SYNC_PENDING을 비우는 방식 — 새 공유 헬퍼 추출이나 새 순수 함수 불필요(mergeRemoteDataIntoLocal이 이미 범용), mergeCollection/mergeNameList/mergeBudgetHistory는 cycle102에서 이미 테스트됨. 러너업(기록만, 기각): `chipmini own-${o}`(index.html:4569) 미이스케이프처럼 보였으나 twScreen()의 하드코딩 튜토리얼 목업이라 사용자 데이터 아님 — 무해. index.html:3543 recurring-memo value=의 수동 quote-escape(esc() 미사용, 스타일 불일치)는 이중따옴표 속성 안이라 실제 이탈 불가 — 코스메틱, 버그 아님. checkNotifyAlerts/autoSyncRates의 setInterval 백그라운드 한계(6012)는 이미 코드 주석에 best-effort로 문서화된 기존 사실, 신규 아님. 코드 변경 없음(읽기 전용 조사).",
-      "commit": null
-    },
     {
       "cycle": 105,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-09-30T00:30:00.000Z",
       "summary": "develop 커밋(10aa653, bigMinInput/qAmt/fpEmailIn/kkeyIn 4곳에 Enter 제출 배선)을 검토. 4곳 모두 옆 저장 버튼과 정확히 동일한 함수/인자를 그대로 재사용함을 diff로 재확인(setBigMin/saveQuickAmount(recId,date)/doSendResetEmail/saveKakaoKey). 숫자·이메일·영숫자 입력이라 IME 조합 문제 대상 아님(cycle108 review에서 발견된 한글 조합 버그와 무관). qAmt의 onkeydown=\"...saveQuickAmount('${recId}','${date}')\"에 쓰인 recId/date 보간이 같은 파일 5782/5834/6119의 기존 onclick=\"openQuickAmount('${rec.id}','${date}')\" 호출부와 동일한, 이번 커밋이 새로 만든 게 아닌 기존 관례임을 grep으로 확인 — rec.id는 내부 생성 식별자라 사용자 입력 텍스트(아포스트로피 등)가 들어갈 경로 없음, 새 인젝션 리스크 아님. fpEmailIn의 Enter 재호출은 cycle109에서 추가된 doSendResetEmail() 재진입 가드(btn.disabled 체크)로 이미 보호됨을 재확인. 두 인라인 <script> 블록 모두 new Function() 파싱 통과, sw.js node --check 통과, node test/run.js 696/696 통과(순수 마크업 배선 diff라 로직 함수 미변경, 예상대로 변경 없음). 코드 변경 없음(이상 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 110,
+      "phase": "critique",
+      "timestamp": "2026-09-30T01:00:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(a11y label-for·Enter 제출/IME 조합·auth 재진입 가드·클라우드 병합·탭 간 저장 충돌·CDN crossorigin+SRI(네트워크 차단 확정)·자산 그룹 재정렬 키보드 접근성·예산 탭 owner 필터·netlify 함수·CSV export/import·AUTH._legacyHash·delOwner/삭제 캐스케이드·안드로이드 백버튼·PWA 업데이트·뷰포트 핀치줌은 모두 이미 다뤄졌거나 재확인 완료라 제외). 새로 발견: 앱 전체가 index.html 안의 인라인 <script> 하나(6711줄)인데 test/run.js(695개 assertion)는 extractFunction()/vm 샌드박스로 순수 함수만 골라 테스트하고, index.html 전체를 파싱하거나 render*류(renderHistory/renderAssetSheet/renderRecSheet/homeAlerts 등) DOM 렌더 함수를 실제로 호출하는 테스트는 전무함(jsdom/puppeteer/playwright 없음, grep으로 확인). 110+ 사이클 동안 이 한 파일을 계속 고쳐왔는데, 렌더 함수 안 backtick 누락이나 헬퍼 함수 이름 변경 누락 같은 실수는 인라인 스크립트 전체를 깨뜨려 모든 탭이 백지로 뜨는 전면 장애가 되지만 지금의 유일한 검증 수단인 node test/run.js는 문자열로 추출한 순수 함수 조각만 봐서 이런 회귀를 못 잡고 계속 초록불을 띄운다는 점을 최우선 리스크로 채택(다른 로직 버그류보다 파급 범위가 앱 전체라 우선). pending_advance_plan에 저장: (1) index.html 인라인 <script> 전체를 new vm.Script()로 파싱해 문법 에러를 즉시 잡는 스모크 체크 추가, (2) 여력이 되면 jsdom으로 최소 DOM을 구성해 기존 SEED 데이터로 부팅 후 각 탭 renderCurrent()·주요 시트 열기/닫기가 예외 없이 통과하고 컨테이너가 비어있지 않은지 assert, (3) node test/run.js 기존 진입점에 통합해 루프의 기존 검증 단계에 무비용으로 편입, (4) 네트워크 제약으로 jsdom 설치가 안 되면 vm 파싱 체크만으로 스코프 축소. 러너업(기록만, 기각): matchTxnQuery가 금액은 매칭 안 함(실재하지만 지엽적), save()가 매 저장마다 전체 JSON.stringify(perf 우려는 있으나 _balCache로 이미 완화, 프로파일링 근거 없이 우선 못함), 예산 이월/롤오버 기능 부재(신규 기능 요청이지 결함 아님). 코드 변경 없음(읽기 전용 조사, general-purpose 서브에이전트 위임).",
       "commit": null
     }
   ]
