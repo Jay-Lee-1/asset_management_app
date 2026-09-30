@@ -1,15 +1,12 @@
 {
   "cycle": 115,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "시세 동기화(syncRates) 클라이언트 fetch에 타임아웃이 없어 네트워크 행 발생 시 동기화가 영구 잠기는 버그",
+    "why": "index.html:2420-2441의 fetchFxGold()/fetchStocks()가 /.netlify/functions/rates, /.netlify/functions/stock을 호출하는데 AbortController/타임아웃이 전혀 없음(서버 쪽 rates.js:160-172/stock.js:197-200은 이미 AbortController+setTimeout(6000ms)+재시도를 갖춤, 클라이언트만 누락). syncRates()(2443-2471)는 syncing 불리언 mutex로 중복 실행을 막는데 해제가 try/finally 없이 Promise.allSettled 종료 후 한 줄(2469)뿐이라, 네트워크가 영원히 pending(캡티브 포털/모바일 전환/함수 콜드스타트 중 연결 끊김 등)이면 mutex가 영구 고정됨 -> '지금 갱신' 버튼 스핀 고정, autoSyncRates 10분 TTL 자동 갱신 무효화, 신규 fx/gold/stock 자산 등록 시 rateWasUnknown 즉시 동기화(2806/2813/3021)도 무효화되어 새로고침 전까지 세션 전체가 시세 갱신 불능. test/run.js는 syncRates를 mock으로 대체(491-492, 4205-4272)해 실제 fetch/타임아웃/mutex 해제 경로를 전혀 검증하지 않음.",
+    "approach": "1) index.html에 fetchWithTimeout(url,opts,ms=8000) 헬퍼 추가(AbortController -> setTimeout(()=>ctrl.abort(),ms) -> fetch(url,{...opts,signal}) -> finally clearTimeout). fetchFxGold(2420-2433)/fetchStocks(2434-2441)의 bare fetch를 이 헬퍼로 교체. 2) syncRates(2443-2471)의 syncing=false/spin 해제를 try/finally로 감싸 모든 예외 경로에서 mutex가 항상 풀리게 방어. 3) test/run.js에 fetchWithTimeout을 추출해 global.fetch를 영원히 resolve 안 하는 Promise mock으로 교체, 짧은 ms(예 10ms)로 (a) 지정 시간 내 ctrl.signal.aborted===true, (b) 반환 프로미스가 결국 reject되어 상위 allSettled가 멈추지 않는지 검증하는 회귀 테스트 추가."
+  },
   "history": [
-    {
-      "cycle": 110,
-      "phase": "critique",
-      "timestamp": "2026-09-30T01:00:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(a11y label-for·Enter 제출/IME 조합·auth 재진입 가드·클라우드 병합·탭 간 저장 충돌·CDN crossorigin+SRI(네트워크 차단 확정)·자산 그룹 재정렬 키보드 접근성·예산 탭 owner 필터·netlify 함수·CSV export/import·AUTH._legacyHash·delOwner/삭제 캐스케이드·안드로이드 백버튼·PWA 업데이트·뷰포트 핀치줌은 모두 이미 다뤄졌거나 재확인 완료라 제외). 새로 발견: 앱 전체가 index.html 안의 인라인 <script> 하나(6711줄)인데 test/run.js(695개 assertion)는 extractFunction()/vm 샌드박스로 순수 함수만 골라 테스트하고, index.html 전체를 파싱하거나 render*류(renderHistory/renderAssetSheet/renderRecSheet/homeAlerts 등) DOM 렌더 함수를 실제로 호출하는 테스트는 전무함(jsdom/puppeteer/playwright 없음, grep으로 확인). 110+ 사이클 동안 이 한 파일을 계속 고쳐왔는데, 렌더 함수 안 backtick 누락이나 헬퍼 함수 이름 변경 누락 같은 실수는 인라인 스크립트 전체를 깨뜨려 모든 탭이 백지로 뜨는 전면 장애가 되지만 지금의 유일한 검증 수단인 node test/run.js는 문자열로 추출한 순수 함수 조각만 봐서 이런 회귀를 못 잡고 계속 초록불을 띄운다는 점을 최우선 리스크로 채택(다른 로직 버그류보다 파급 범위가 앱 전체라 우선). pending_advance_plan에 저장: (1) index.html 인라인 <script> 전체를 new vm.Script()로 파싱해 문법 에러를 즉시 잡는 스모크 체크 추가, (2) 여력이 되면 jsdom으로 최소 DOM을 구성해 기존 SEED 데이터로 부팅 후 각 탭 renderCurrent()·주요 시트 열기/닫기가 예외 없이 통과하고 컨테이너가 비어있지 않은지 assert, (3) node test/run.js 기존 진입점에 통합해 루프의 기존 검증 단계에 무비용으로 편입, (4) 네트워크 제약으로 jsdom 설치가 안 되면 vm 파싱 체크만으로 스코프 축소. 러너업(기록만, 기각): matchTxnQuery가 금액은 매칭 안 함(실재하지만 지엽적), save()가 매 저장마다 전체 JSON.stringify(perf 우려는 있으나 _balCache로 이미 완화, 프로파일링 근거 없이 우선 못함), 예산 이월/롤오버 기능 부재(신규 기능 요청이지 결함 아님). 코드 변경 없음(읽기 전용 조사, general-purpose 서브에이전트 위임).",
-      "commit": null
-    },
     {
       "cycle": 110,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-09-30T19:40:00.000Z",
       "summary": "develop 커밋(bf6071d, tx/rec 공용 헬퍼 _applyType/_applyDay/_applyCount/dayPickerHTML 회귀 테스트 19개 추가)을 검토. index.html의 실제 구현(3332-3440행)과 신규 테스트 19개를 하나씩 직접 대조: _applyType의 catListOf(t)[0]||'기타' 폴백과 income/transfer/saving 전환 시 firstCash() 채움(이미 있으면 미덮어쓰기) 로직이 6개 테스트 기대값과 정확히 일치, _applyDay의 'last'/'custom'/숫자 세 분기와 custom 전환 시 프리셋(1/5/15/25)·'last'·falsy일 때만 시작일 일자로 재초기화하는 조건이 6개 테스트와 일치, _applyCount의 Math.min(999,Math.max(0,...))clamp와 n>=1일 때만 recNthDate 호출하는 분기가 4개 테스트와 일치(endDate 테스트는 실제 recNthDate 호출 결과를 재사용하는 방식이라 회귀 시 recNthDate 자체가 바뀌면 여전히 같이 통과하는 약점이 있으나 '2026-03-10' 리터럴 비교도 함께 있어 완전 tautology는 아님), dayPickerHTML의 isCustom 판정(_custom 플래그 또는 프리셋 밖 숫자)과 on 클래스/커스텀 입력칸 렌더가 3개 테스트와 일치. firstCash/isCashLike가 test/run.js의 FUNCTIONS/CONSTS 추출 목록에 이미 포함돼 있어 _applyType 테스트가 ReferenceError 없이 동작함을 확인. node test/run.js 재실행해 729/729 전부 통과 재확인(직접 실행으로 커밋 메시지 주장 검증). 코드 변경 없음(이상 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 115,
+      "phase": "critique",
+      "timestamp": "2026-09-30T20:00:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(a11y label-for/Enter제출/IME조합·auth 재진입가드+로컬 복구코드+잠금·클라우드 병합·CDN SRI(네트워크 제약 확정)·Assets탭 owner 캐러셀 키보드경로·예산탭 owner필터·죽은함수 정리·vm.Script 파싱 스모크(jsdom은 빌드리스 설계상 보류 확정)·index.html→logic.js 이전(addMonths/addMonthsStr 불일치 보류 확정)·index.html 파일분할(설계위배)·백그라운드 푸시(서버리스 상충)·checkNotifyAlerts 5분 인터벌/localStorage 쿼터/환율·시세 동기화 상태표시(모두 이미 존재)·삭제류 undo 일관성·tx/rec 폼 중복 통합은 모두 이미 다뤄졌거나 기각 확정이라 제외, 모달/시트 포커스트랩·전체 데이터 백업·긴 리스트 페이지네이션도 이미 존재해 러너업으로 기각). 새로 발견: index.html:2420-2441 fetchFxGold()/fetchStocks()가 /.netlify/functions/rates,/stock 호출에 AbortController/타임아웃이 전혀 없음(서버쪽 netlify/functions/rates.js:160-172, stock.js:197-200은 이미 AbortController+setTimeout(6000ms)+재시도 보유, 클라이언트만 대조적으로 누락). syncRates()(2443-2471)의 syncing 불리언 mutex 해제가 try/finally 없이 Promise.allSettled 종료 후 한 줄(2469)뿐이라, 네트워크 요청이 영원히 pending되면(캡티브 포털/모바일 네트워크 전환/함수 콜드스타트 중 연결 끊김) mutex가 영구 고정돼 '지금 갱신' 버튼 스핀 고정, autoSyncRates 10분 TTL 자동갱신 무효화, 신규 fx/gold/stock 자산 등록 시 rateWasUnknown 즉시동기화(2806/2813/3021)도 무효화되어 새로고침 전까지 세션 전체가 시세 갱신 불능이 되는 실재 리스크. test/run.js는 syncRates를 mock으로 대체(491-492, 4205-4272)해 실제 fetch/타임아웃/mutex 해제 경로를 전혀 검증하지 않음 — 다른 신규기능 제안류보다 '검증 가능한 실재 버그' 쪽이 우선이라 최우선 채택. pending_advance_plan에 저장: (1) fetchWithTimeout(url,opts,ms=8000) 헬퍼 신설(AbortController+setTimeout+finally clearTimeout)로 fetchFxGold/fetchStocks의 bare fetch 교체, (2) syncRates의 syncing=false/spin 해제를 try/finally로 방어, (3) test/run.js에 영원히 resolve 안 하는 fetch mock으로 타임아웃 시 abort/reject 검증하는 회귀 테스트 추가. 코드 변경 없음(읽기 전용 조사, general-purpose 서브에이전트 위임).",
       "commit": null
     }
   ]
