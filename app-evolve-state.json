@@ -1,15 +1,8 @@
 {
   "cycle": 112,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 107,
-      "phase": "review",
-      "timestamp": "2026-09-29T09:20:00.000Z",
-      "summary": "develop 커밋(14e1982, 자산 추가/편집 시트 label-for 연결 누락 7곳 수정)을 검토. renderAssetSheet()/costBasisField()에서 asName/asAmt/asCostBasis/asFx/asGold/asCode/asQty 7개 label에 for 속성을 추가한 순수 마크업 변경. grep으로 index.html 전체에서 각 id가 정확히 한 번씩만 등장함을 재확인(asName은 일반 분기·stock 분기 두 곳에 등장하지만 d.type 기준 if/else-if로 상호 배타적이라 동시 렌더링 시 DOM 중복 없음, 커밋 메시지의 주장과 일치). cycle104/106에서 이미 쓰인 동일 label-for 패턴이라 컨벤션 일관성도 확인됨. APP_VERSION(1.46.83→1.46.84)과 sw.js CACHE(v245→v246) 버전 동시 상향도 정상 반영. node --check로 두 인라인 <script> 블록 문법 검증 통과, node test/run.js 686/686 전부 통과(로직 변경이 없어 케이스 수 그대로). 코드 변경 없음(이상 없음).",
-      "commit": null
-    },
     {
       "cycle": 107,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-30T06:10:01.538Z",
       "summary": "Kakao JS 키 입력(kkeyIn2, openHelpKakao()) 저장 버튼이 index.html:4166-4183께 인라인 onclick 문자열로만 구현돼 있어 cycle110에서 Enter-to-submit 백로그를 마무리할 때 따옴표 이스케이핑 리스크 때문에 의도적으로 범위 밖(이월)으로 남겨뒀던 마지막 한 곳. 인라인 로직을 그대로(동작 변경 없이) 이름 있는 함수 saveKakaoKey2()로 분리해 저장 버튼 onclick과 새로 추가한 #kkeyIn2 onkeydown=\"if(event.key==='Enter')saveKakaoKey2()\" 양쪽에서 재사용 — kkeyIn/sbKeyIn 등 기존 영숫자 필드 관례와 동일하게 isComposing 가드는 불필요(비-한글 입력). '키 삭제' 버튼은 별개 컨트롤이라 손대지 않음. 순수 UI 배선 리팩터라 test/run.js 대상 순수 로직 함수 변경 없음(새 테스트 불필요, 기존 관례와 동일). 두 인라인 <script> 블록 모두 vm.Script로 파싱 통과, logic.js/sw.js node --check 통과, node test/run.js 697/697 통과(케이스 수 불변, 예상대로). APP_VERSION 1.46.93->1.46.94, sw.js CACHE v255->v256. (general-purpose 서브에이전트에 위임해 탐색·구현·검증, 오케스트레이팅 세션이 상태 파일 갱신과 커밋을 수행)",
+      "commit": null
+    },
+    {
+      "cycle": 112,
+      "phase": "review",
+      "timestamp": "2026-09-30T07:08:05.622Z",
+      "summary": "develop 커밋(23c0d36, Kakao JS 키 입력 kkeyIn2에 Enter 제출 배선)을 검토. 인라인 onclick 문자열로만 있던 저장 로직을 saveKakaoKey2()로 분리해 저장 버튼 onclick과 새로 추가한 kkeyIn2 onkeydown 양쪽에서 재사용하는 순수 리팩터. grep으로 함수명 saveKakaoKey2가 기존 auth 화면의 saveKakaoKey()(kkeyIn 대상, 즉시 로그인 시도)와 겹치지 않음을 확인 — 커밋 메시지의 주장(즉시 로그인 시도 없이 저장만)과 코드가 일치. 동작 변경 없이 그대로 함수로 추출됐는지 diff 대조로 확인(toast 문구, localStorage 키, closeSheet 호출 순서 모두 동일). APP_VERSION(1.46.93→1.46.94)과 sw.js CACHE(v255→v256) 동시 상향도 정상 반영. node --check(vm.Script)로 두 인라인 <script> 블록 문법 검증 통과, node test/run.js 697/697 전부 통과(로직 변경이 없어 케이스 수 그대로). 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
