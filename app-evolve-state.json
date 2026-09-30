@@ -1,15 +1,12 @@
 {
   "cycle": 114,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "tx/rec 폼 중복 로직 6쌍을 _applyCount 패턴으로 통합(day/freq/type/openCat/openAsset + 중복 day-picker HTML)",
+    "why": "renderTxSheet(index.html 3334-3389)와 renderRecSheet(3581-3617)이 마크업의 ~70%를 공유하며, day-picker HTML 블록(3362-3364 vs 3589-3591)이 인라인 스타일까지 바이트 단위로 중복돼 있고, txType/recType(3393-3395/3618-3619), txFreq/recFreq(3398/3620), txDayInput/recDayInput(3399/3621), txDay/recDay(3400/3634), txOpenCat/recOpenCat(3391/3569), txOpenAsset/recOpenAsset(3392/3570) 6쌍이 tx->rec/txDraft->recDraft/.date->.startDate 치환만 다른 복붙임. 이미 같은 문제를 겪어 txCount/recCount를 _applyCount(pfx,draft,v,rerender)(3425-3436)로 통합한 전례가 있고 그 결과 래퍼 함수명이 그대로 유지돼 onclick 문자열과 test/run.js의 정규식 추출기 둘 다 안 깨졌음이 증명됨. 실제 드리프트 사고도 이미 한 번 있었음(recFreq 주말 리셋 버그, test/run.js:662-690, cycle75) -- 6쌍이 아직 방치돼 같은 사고가 재발할 위험이 실재.",
+    "approach": "1) index.html에 _applyDay(pfx,draft,v)/_applyFreq(pfx,draft,v)/_applyType(pfx,draft,t)/_applyOpenCat(pfx,draft,render)/_applyOpenAsset(pfx,draft,which,render) 5개 공용 헬퍼를 _applyCount와 동일한 패턴으로 신설. 2) txDay/recDay/txFreq/recFreq/txType/recType/txOpenCat/recOpenCat/txOpenAsset/recOpenAsset는 pfx('tx'/'rec')와 해당 draft만 넘기는 한 줄 래퍼로 남겨 기존 onclick=\"...\" 문자열과 test/run.js FUNCTIONS 추출 모두 이름 변경 없이 유지. 3) 중복된 day-picker HTML(3362-3364/3589-3591)을 dayPickerHTML(d,pfx) 헬퍼로 추출(기존 endCondFields(d,pfx) 패턴 참고, 3403 근방)해 양쪽 render 함수에서 호출. 4) renderTxSheet/renderRecSheet 자체는 구조 차이(반복 토글 유무, scope-edit 서브뷰)가 있어 병합하지 않고 그대로 유지, day/type/freq 세그먼트만 공용 헬퍼 호출로 교체. 5) 매 추출 단계마다 node test/run.js 실행해 기존 recFreq/recDay/txDay 테스트(약 662-690, 6852 근방)가 이름 변경 없이 그대로 통과하는지 확인, 새 _apply* 헬퍼를 직접 겨냥하는 테스트를 추가하면 FUNCTIONS 목록에 이름 등재. 6) APP_VERSION(index.html, 현재 1.46.97)과 sw.js CACHE(현재 v259)를 사용자 동작 변화가 없는 리팩터라도 관례대로 상향. 7) 두 인라인 <script> 블록 vm.Script 파싱 통과 + node --check(logic.js/sw.js) 확인."
+  },
   "history": [
-    {
-      "cycle": 109,
-      "phase": "critique",
-      "timestamp": "2026-09-29T21:00:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(라벨-for 전수·Enter 제출/IME 조합·auth 재진입 가드·silent-failure·클라우드 병합·탭 간 저장 충돌·CDN crossorigin+SRI(네트워크 차단으로 재도전 불가 확정)·자산 그룹 재정렬 키보드 접근성·netlify 함수·CSV export/import·예산탭 자체·AUTH._legacyHash·delOwner/삭제 캐스케이드·안드로이드 백버튼·PWA 업데이트·뷰포트 핀치줌·recDates/CSV 인젝션 가드·PBKDF2 auth·esc() XSS 이스케이프 등은 모두 이미 다뤄졌거나 재확인 완료라 제외). 새로 발견: 자산/거래 전체가 DB.owners 기반 나/배우자/공용 소유자 모델로 attributed되고 자산 탭(ST.assetOwner 칩, 2661/2687)과 플랜 탭(ST.plan.owner, 4036-4037/4075)은 이 모델을 활용하는데, 예산 탭의 spendByCategory()(4219-4227)/openSpendAnalysis()(4289-4317)는 allTxns()를 owner 필터 없이 카테고리로만 집계 — 앱 기본 시드 데이터 자체가 나/배우자/공용 가구를 모델링함(1558-1572)에도 '배우자가 이번 달 얼마 썼는지'를 볼 방법이 전혀 없는 실제 제품 공백. 이미 존재하는 asset.owner 데이터로 UI/분석 레이어만 확장하면 되어 스키마 마이그레이션 위험이 없고, 109 사이클 동안 명백한 버그·접근성·silent-failure류는 대부분 소진돼 develop 단계보다 큰 이 기능 공백이 최우선으로 적합해 채택. pending_advance_plan에 저장: (1) logic.js에 순수 함수 filterTxnsByOwner(txns,assets,owner) 추가(expense는 fromAssetId owner, income은 toAssetId owner, transfer/saving은 from 우선 후 to 폴백, 미해결시 제외) + test/run.js 회귀 테스트, (2) spendByCategory(y,m,owner='전체') 3번째 파라미터로 필터 적용(기존 호출부는 기본값 유지), (3) openSpendAnalysis()에 ST.spendOwner 상태+자산탭과 동일 스타일 owner 칩 행 추가, owner 삭제시 '전체' 폴백 가드, (4) 예산 설정(DB.budgetHistory) 자체는 카테고리 전역 유지, 스키마 변경 없음, (5) APP_VERSION/sw.js CACHE 버전 상향, (6) node --check + node test/run.js 전체 통과, 수동 QA로 칩 전환/홈 알림 전역 유지/owner 삭제 폴백 확인. 러너업(기록만, 기각): rMemo/newCat/renameCat의 ad-hoc quote-escape가 esc()와 스타일 불일치(속성 이탈 불가, 코스메틱) / recDates() 월간·연간 분기가 daily/weekly와 달리 항상 startDate부터 순회(캐시로 이미 완화된 조기 최적화 후보) / 거래 금액 입력 자릿수 상한 없음(16자리+ 입력시만 발생, 저확률) / netlify CORS * (이전 사이클에 이미 out of scope로 확인돼 재소환 제외). 코드 변경 없음(읽기 전용 조사, general-purpose 서브에이전트 위임).",
-      "commit": null
-    },
     {
       "cycle": 109,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-09-30T15:35:00.000Z",
       "summary": "develop 커밋(cf3a3cd, lastDay/monthStartStr/monthEndStr/budgetKey에 회귀 테스트 6개 추가)을 검토. logic.js 193-203행의 실제 구현을 직접 대조: lastDay(y,m)=new Date(y,m,0).getDate()는 JS Date의 day-0 롤백 특성상 monthIndex를 human month 그대로 넘기면 정확히 그 달의 마지막 날을 반환함(예: lastDay(2026,2)->new Date(2026,2,0)->monthIndex2=3월, day0=2월28일)을 재확인, 신규 테스트가 주장하는 윤년(2024-02=29)/평년(2026-02=28)/30일(4월)/31일(1월,12월 롤오버 포함) 케이스 전부 구현과 일치. monthStartStr/monthEndStr/budgetKey도 padStart(2,'0') 사용을 소스에서 직접 확인, budgetKey의 사전식 비교 불변식 테스트(2025-09<2025-10, 2025-12<2026-01)도 실제 문자열 비교로 유효함을 확인. budgetForMonth()(index.html~4267)가 budgetKey로 만든 key를 h[i].from<=key 사전식 비교로 쓰는 실사용 경로도 grep으로 재확인해 이 불변식 테스트가 실제 리스크를 겨냥한 것임을 확인. 프로덕션 코드 변경이 전혀 없는 테스트 전용 diff라 회귀 위험 없음. node test/run.js 710/710 통과. 코드 변경 없음(이상 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 114,
+      "phase": "critique",
+      "timestamp": "2026-09-30T16:00:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(label-for·Enter제출/IME조합·auth 재진입가드+로컬 복구코드+잠금·클라우드 병합·CDN SRI(네트워크 제약 확정)·자산탭 owner 캐러셀·예산탭 owner필터·죽은함수 정리·index.html→logic.js 이전+addMonths/addMonthsStr 불일치(기존에 이미 보류 확정)·vm.Script 파싱 스모크·jsdom(빌드리스 설계상 의도적 보류)·netlify CORS·CSV·delOwner 캐스케이드·안드로이드 백버튼·PWA 업데이트·뷰포트 핀치줌·recDates·esc() XSS·checkNotifyAlerts 5분 인터벌(이미 존재, 오탐 아님)·localStorage 쿼터 처리(이미 존재)·환율/시세 동기화 상태 표시(이미 존재)는 모두 이미 다뤄졌거나 재확인 완료라 제외). 새로 발견: renderTxSheet(index.html 3334-3389)와 renderRecSheet(3581-3617)이 마크업의 ~70%를 공유하고, day-picker HTML 블록(3362-3364 vs 3589-3591)이 인라인 스타일까지 바이트 단위로 중복돼 있으며, txType/recType(3393-3395/3618-3619)·txFreq/recFreq(3398/3620)·txDayInput/recDayInput(3399/3621)·txDay/recDay(3400/3634)·txOpenCat/recOpenCat(3391/3569)·txOpenAsset/recOpenAsset(3392/3570) 6쌍이 tx->rec/txDraft->recDraft/.date->.startDate 치환만 다른 복붙임. 이미 같은 문제(txCount/recCount)를 _applyCount(pfx,draft,v,rerender)(3425-3436)로 통합한 전례가 있어 래퍼 함수명을 그대로 유지하면 onclick 문자열과 test/run.js 정규식 추출기 둘 다 안 깨진다는 게 검증돼 있고, 실제 드리프트 사고도 이미 한 번 있었음(recFreq 주말 리셋 버그, test/run.js:662-690, cycle75 유래) — 다른 신규 기능 제안류보다 '검증된 해법이 있는 실재 반복 위험' 쪽이 우선순위가 높다고 판단해 최우선 채택. pending_advance_plan에 저장(상세 approach는 state.json 참고). 러너업(기록만, 기각): 예산 80% 사전 경고(로터오버 제안과 인접, 우선순위 낮음) / 부부 정산(공용 지출 분담) 기능(신규 기능, 별도 사이클 필요) / 부채 자산 이자율·상환 스케줄(이전에 이미 '상환 스케줄' 제안으로 기각된 것과 겹침, 새 근거 없어 재소환 안함). 코드 변경 없음(읽기 전용 조사, general-purpose 서브에이전트 위임).",
       "commit": null
     }
   ]
