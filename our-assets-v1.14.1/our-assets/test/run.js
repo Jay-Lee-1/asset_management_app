@@ -79,6 +79,26 @@ function extractLet(name) {
   return src.slice(start + 'let '.length, end + 1);
 }
 
+// 위 extractFunction/extractConst/extractLet은 FUNCTIONS/CONSTS/LETS 목록에 이름을 올린
+// 대상만 개별적으로 뽑아 vm에 태운다 — 목록 밖의 코드(이벤트 리스너 등 최상위 문, 또는
+// 아직 FUNCTIONS에 추가되지 않은 새 함수)에 backtick 누락이나 중괄호 짝 안 맞음 같은 구문
+// 오류가 있어도, 그 오류가 하필 어떤 함수의 몸통 밖에 있으면 개별 추출 테스트들은 전혀
+// 건드리지 않고 계속 통과한다. 하지만 브라우저는 <script> 블록 하나를 통째로 한 번에
+// 파싱하므로, 그 구문 오류 하나가 앱 전체(모든 탭)를 백지로 만든다. extractMainScript는
+// 그 간극을 메우려고 메인 인라인 <script> 블록 전체를 원본 그대로(추출/가공 없이) 반환해,
+// 아래 스모크 테스트가 실제 브라우저처럼 전체를 한 번에 구문 검사할 수 있게 한다.
+function extractMainScript() {
+  const afterExternalTags = src.indexOf('<script src="logic.js"></script>');
+  if (afterExternalTags === -1) throw new Error('extractMainScript: logic.js 스크립트 태그를 찾지 못함');
+  const openTag = '<script>';
+  const start = src.indexOf(openTag, afterExternalTags);
+  if (start === -1) throw new Error('extractMainScript: 메인 인라인 <script> 블록의 시작을 찾지 못함');
+  const bodyStart = start + openTag.length;
+  const end = src.indexOf('</script>', bodyStart);
+  if (end === -1) throw new Error('extractMainScript: 메인 인라인 <script> 블록의 끝을 찾지 못함');
+  return src.slice(bodyStart, end);
+}
+
 // 테스트 대상 + 그 대상이 내부에서 호출하는 순수 함수들.
 // addDays/daysBetween/shiftWeekend/recDates/addMonthsStr/recNthDate/recCountUntil/truncateRecEnd,
 // mergeCollection/gcTombstones/isCloudConflict/decidePushOutcome/computeRelinkBaseline,
@@ -7851,6 +7871,20 @@ test('CDN 리소스: pretendard/kakao/supabase 태그가 pinned 버전과 crosso
     src.includes('src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" crossorigin="anonymous"'),
     'supabase.js 태그의 pinned 버전(2.45.4) 또는 crossorigin이 누락되었습니다'
   );
+});
+
+test('index.html 메인 인라인 <script> 전체가 구문 오류 없이 파싱된다(개별 함수 추출 테스트가 못 잡는 전면 장애 회귀 방지)', () => {
+  const mainScript = extractMainScript();
+  // 353KB 안팎(2026-09 기준)인 블록이 어쩌다 몇 줄만 추출되면 경계 로직이 깨진 것이므로,
+  // "짧아도 유효한 JS라 파싱은 통과"하는 거짓 성공을 막기 위해 크기도 함께 확인한다.
+  assert.ok(
+    mainScript.length > 100000,
+    `extractMainScript가 반환한 블록이 비정상적으로 짧습니다(${mainScript.length}자) — 추출 경계(<script src="logic.js"></script> 직후의 <script>~</script>) 확인 필요`
+  );
+  assert.doesNotThrow(() => {
+    new vm.Script(mainScript, { filename: 'index.html (main inline script)' });
+  }, /* 실제 실행은 하지 않는다(브라우저 전역 없이 실행하면 무관한 ReferenceError만 납) — new vm.Script()는
+      * 컴파일만 하므로 SyntaxError(짝 안 맞는 backtick/중괄호/괄호 등)만 정확히 잡아낸다. */);
 });
 
 if (!stockFns || !ratesFns) {

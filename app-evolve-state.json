@@ -1,11 +1,7 @@
 {
-  "cycle": 110,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "렌더링/DOM 계층에 대한 자동 테스트 커버리지 부재",
-    "why": "앱 전체가 index.html 안의 인라인 <script> 하나(6711줄)로 돼 있는데, test/run.js(695개 assertion)는 extractFunction()의 정규식/중괄호 매칭 슬라이서나 logic.js를 vm 샌드박스에 로드하는 방식으로 순수 함수만 골라 테스트한다. index.html 전체를 파싱/실행하거나 render* 함수(renderHistory ~3725, renderAssetSheet ~2891, renderRecSheet ~3548, homeAlerts ~6033 등, 모두 DB/ST를 읽어 중첩 템플릿 리터럴+esc()/comma()/svg() 헬퍼로 innerHTML을 만듦)를 호출하는 테스트는 전무함(jsdom/puppeteer/playwright 미사용, grep으로 확인). 110+ 사이클 동안 이 한 파일을 계속 수정해왔는데, 렌더 함수 어딘가의 backtick 하나 누락이나 헬퍼 함수 이름 변경 누락 같은 실수는 인라인 스크립트 전체를 깨뜨려 모든 탭이 백지로 뜨는 전면 장애가 되지만, 지금의 유일한 검증 수단인 node test/run.js는 문자열로 추출한 순수 함수 조각만 보므로 이런 회귀를 잡아내지 못하고 계속 초록불을 띄운다.",
-    "approach": "1) test/run.js(또는 별도 test/smoke.js를 test/run.js에서 호출)에 스모크 테스트를 추가한다. 먼저 index.html에서 인라인 <script> 전체 소스를 추출해 new vm.Script(src)에 통과시켜 파싱 에러를 즉시 잡는다(템플릿 리터럴/중괄호 깨짐 등 전면 장애를 이 단계에서 이미 대부분 방어). 2) 가능하면 jsdom을 devDependency로 추가해(네트워크 제약으로 설치가 안 되면 이 단계는 생략하고 1단계 파싱 체크만으로 스코프를 좁혀도 됨) #app/#page-home/#page-history/#page-assets/#page-budget/#page-settings 등 $()가 기대하는 최소 DOM을 구성하고, 기존 SEED 데모 데이터(index.html:1570-1616 부근)로 채운 뒤 초기 부팅과 renderCurrent()를 각 탭에서 호출, 주요 시트(openAssetSheet/openTxSheet/openRecSheet/예산 시트/exportData/importData 등) 열기/닫기까지 예외 없이 통과하고 각 페이지 컨테이너의 innerHTML이 비어있지 않은지 assert한다. 3) 새 테스트는 기존 node test/run.js 진입점에 그대로 통합해 app-evolve 루프의 기존 검증 단계가 별도 워크플로 변경 없이 이 커버리지를 얻도록 한다. 4) test/run.js 상단 주석에 기존 스타일대로 왜 이 테스트가 필요한지 간단히 남긴다."
-  },
+  "cycle": 111,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
     {
       "cycle": 105,
@@ -145,6 +141,13 @@
       "phase": "critique",
       "timestamp": "2026-09-30T01:00:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(a11y label-for·Enter 제출/IME 조합·auth 재진입 가드·클라우드 병합·탭 간 저장 충돌·CDN crossorigin+SRI(네트워크 차단 확정)·자산 그룹 재정렬 키보드 접근성·예산 탭 owner 필터·netlify 함수·CSV export/import·AUTH._legacyHash·delOwner/삭제 캐스케이드·안드로이드 백버튼·PWA 업데이트·뷰포트 핀치줌은 모두 이미 다뤄졌거나 재확인 완료라 제외). 새로 발견: 앱 전체가 index.html 안의 인라인 <script> 하나(6711줄)인데 test/run.js(695개 assertion)는 extractFunction()/vm 샌드박스로 순수 함수만 골라 테스트하고, index.html 전체를 파싱하거나 render*류(renderHistory/renderAssetSheet/renderRecSheet/homeAlerts 등) DOM 렌더 함수를 실제로 호출하는 테스트는 전무함(jsdom/puppeteer/playwright 없음, grep으로 확인). 110+ 사이클 동안 이 한 파일을 계속 고쳐왔는데, 렌더 함수 안 backtick 누락이나 헬퍼 함수 이름 변경 누락 같은 실수는 인라인 스크립트 전체를 깨뜨려 모든 탭이 백지로 뜨는 전면 장애가 되지만 지금의 유일한 검증 수단인 node test/run.js는 문자열로 추출한 순수 함수 조각만 봐서 이런 회귀를 못 잡고 계속 초록불을 띄운다는 점을 최우선 리스크로 채택(다른 로직 버그류보다 파급 범위가 앱 전체라 우선). pending_advance_plan에 저장: (1) index.html 인라인 <script> 전체를 new vm.Script()로 파싱해 문법 에러를 즉시 잡는 스모크 체크 추가, (2) 여력이 되면 jsdom으로 최소 DOM을 구성해 기존 SEED 데이터로 부팅 후 각 탭 renderCurrent()·주요 시트 열기/닫기가 예외 없이 통과하고 컨테이너가 비어있지 않은지 assert, (3) node test/run.js 기존 진입점에 통합해 루프의 기존 검증 단계에 무비용으로 편입, (4) 네트워크 제약으로 jsdom 설치가 안 되면 vm 파싱 체크만으로 스코프 축소. 러너업(기록만, 기각): matchTxnQuery가 금액은 매칭 안 함(실재하지만 지엽적), save()가 매 저장마다 전체 JSON.stringify(perf 우려는 있으나 _balCache로 이미 완화, 프로파일링 근거 없이 우선 못함), 예산 이월/롤오버 기능 부재(신규 기능 요청이지 결함 아님). 코드 변경 없음(읽기 전용 조사, general-purpose 서브에이전트 위임).",
+      "commit": null
+    },
+    {
+      "cycle": 110,
+      "phase": "advance",
+      "timestamp": "2026-09-30T02:00:00.000Z",
+      "summary": "critique(cycle110) 계획의 1단계(vm.Script 전체 파싱 스모크 체크)를 구현했다. test/run.js에 extractMainScript() 헬퍼를 신설 — 기존 extractFunction/extractConst/extractLet과 달리 이름 목록에 의존하지 않고 '<script src=\"logic.js\"></script>' 직후의 메인 인라인 <script>~</script> 블록 전체(현재 약 353KB)를 가공 없이 그대로 반환한다. 새 회귀 테스트가 이 블록을 new vm.Script()(실행은 하지 않고 컴파일만)에 통과시켜 backtick/중괄호/괄호 짝이 안 맞는 등 SyntaxError를 즉시 잡고, 추출 경계가 깨져 텍스트가 어쩌다 몇 줄만 잘려도(거짓 성공) 걸리도록 길이(>100000자) assert도 함께 둠. 효과를 직접 검증: 실제 배포된 backtick 하나를 임시로 제거해봤더니 기존 686개 개별 함수 추출 테스트는 전부 그대로 통과했지만 새 테스트만 정확히 실패했다(원상복구 후 재실행해 697/697 정상 확인) — critique가 지적한 '개별 함수 추출 테스트는 함수 몸통 밖의 구문 오류나 FUNCTIONS 목록 밖 코드를 못 잡는다'는 간극이 실재했고 이번 추가로 메워짐. 계획의 2단계(jsdom으로 최소 DOM 구성 후 renderCurrent/시트 열기 등 실제 실행까지 검증)는 의도적으로 보류했다: 이 컨테이너는 npm install jsdom 자체는 네트워크로 성공했지만, 이 프로젝트는 지금까지 package.json/node_modules 없이 완전히 빌드리스로 유지돼 왔고(README/skill 문서에도 '별도 build 스크립트 없음'으로 명시) jsdom을 실제로 쓰려면 package.json 신설+devDependency 고정+매 실행마다 npm install(cloud 루틴은 매번 새 컨테이너라 node_modules를 커밋하지 않는 한 재설치 필요)이라는 새 인프라를 프로젝트에 들이는 일이라 이번 advance 한 사이클 범위를 넘어선다고 판단(계획의 (4)가 '네트워크 제약으로 안 되면 축소'를 명시적으로 허용); jsdom은 테스트 후 제거해 diff에 남기지 않았다. 이 축소 판단과 2단계 잔여 과제는 다음 critique가 재평가할 수 있도록 여기 history에 남긴다. index.html/sw.js는 변경하지 않아 APP_VERSION/CACHE 버전은 그대로 두었다(테스트 인프라 변경만이라 배포 캐시 무효화 불필요). node test/run.js 697/697 통과(신규 1개 포함, 기존 696개 전부 무영향). pending_advance_plan을 null로 비움.",
       "commit": null
     }
   ]
