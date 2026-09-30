@@ -1,15 +1,12 @@
 {
   "cycle": 112,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "Local(비-클라우드) 계정 비밀번호 분실 시 복구 불가 — 영구 잠금",
+    "why": "클라우드(Supabase) 미설정 로컬 계정은 앱 기본 모드(index.html:1624 주석)인데, index.html:6485의 비밀번호 찾기 링크가 sbCfg().url이 있을 때만 렌더되어 로컬 계정에는 아예 노출되지 않는다. AUTH.resetPassword/AUTH.changePassword(~1858,1868)도 !sbReady()면 \"클라우드 계정에서만 지원해요\"로 하드 실패. 로컬 signIn(~1832)은 PBKDF2 해시 비교만 하고 폴백이 없어, 비밀번호를 잊으면 데이터는 localStorage(dataKey())에 그대로 있는데도 영구적으로 접근 불가 — auth 재진입가드/PBKDF2/락아웃/클라우드 병합 등 기존에 다룬 auth 항목과 달리 계정 복구 자체를 다룬 사이클이 없었다.",
+    "approach": "로컬 전용 복구 코드 메커니즘 추가(백엔드 불필요, 빌드리스 설계 유지): 1) AUTH.signUp 로컬 분기(~1817-1819)에서 crypto.getRandomValues로 랜덤 복구코드 생성, 기존 pbkdf2Hash/genSalt로 recoverySalt/recoveryHash를 salt/pass와 함께 저장, 가입 직후 1회만 보여주는 확인 시트 추가('이 복구 코드를 저장해두세요'). 2) AUTH.resetPasswordLocal(email, recoveryCode, newPw) 신설: recoveryHash 검증 후 새 salt+pass 설정, 사용된 복구코드는 새로 재발급해 다시 1회 노출. 3) 로그인 화면에서 sbCfg().url이 비어있고 해당 이메일 로컬 계정에 recoveryHash가 있으면 '비밀번호를 잊으셨나요? (복구 코드 사용)' 링크를 노출, 이메일+복구코드+새 비밀번호 시트로 연결(기존 auth 시트 관례대로 Enter 제출+재진입 가드). 4) 이 기능 이전에 만들어진 계정(recoveryHash 없음)은 복구 불가 문구를 명확히 하고 백업(CSV export) 권장 안내로 대체. 5) recoveryHash 비교 등 순수 로직은 test/run.js에 회귀 테스트 추가."
+  },
   "history": [
-    {
-      "cycle": 107,
-      "phase": "critique",
-      "timestamp": "2026-09-29T09:30:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(클라우드 병합 categories/owners/budgetHistory·탭 간 저장 충돌·FileReader onerror·뷰포트 핀치줌·인증/Supabase설정/자산시트 label-for·netlify 함수 테스트 커버리지·CDN crossorigin+SRI(네트워크 차단으로 재도전 무의미 확정)·예산탭·AUTH._legacyHash·skip/edits 맵·delOwner 캐스케이드·안드로이드 백버튼·PWA 업데이트·자산/반복거래 삭제 캐스케이드·CSV import 자산 매칭은 모두 이미 다뤄졌거나 재확인 완료라 제외). rg로 index.html 전체 <label> 개수(45)와 <label for=(15)를 대조해 cycle98부터 이월돼온 전역 label-for 백로그가 아직 30곳 남아있음을 재확인, 그중 실제 사용 빈도가 가장 높은 화면을 특정: renderTxSheet(거래 입력 시트) L3298/3335 '금액'label→txAmt(반복 여부 두 분기 모두 미연결), L3340 '메모'→txMemo; renderRecSheet(반복거래 시트) L3560 '메모'→rMemo, L3561 '금액'→rAmt; openBigMinSheet(큰 지출 기준) L2530-2531 '기준 금액 (원)'→bigMinInput; 반복거래 실제금액 입력 시트 L5762-5763 '금액 (원)'→qAmt. 거래 입력/수정은 앱에서 가장 빈번한 사용자 동작인데 이미 자산 추가·인증·Supabase 설정 화면은 고쳐져 있어 대칭이 깨진 상태라 최우선 채택. pending_advance_plan에 6개 label에 for 속성 추가(순수 마크업, 로직 변경 없음, id 유일성/상호배타 분기 여부 grep 사전 확인) 저장. 러너업(기록만, 기각): CSV export 자산 스냅샷 추가(매 사이클 반복 기각, 좁혀도 신규성 낮음), 죽은 순수 함수 5개(totalAssetAt 등) 삭제(안전하지만 사용자 영향 0에 가까워 접근성 결함보다 후순위). 코드 변경 없음(읽기 전용 조사).",
-      "commit": null
-    },
     {
       "cycle": 107,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-09-30T07:08:05.622Z",
       "summary": "develop 커밋(23c0d36, Kakao JS 키 입력 kkeyIn2에 Enter 제출 배선)을 검토. 인라인 onclick 문자열로만 있던 저장 로직을 saveKakaoKey2()로 분리해 저장 버튼 onclick과 새로 추가한 kkeyIn2 onkeydown 양쪽에서 재사용하는 순수 리팩터. grep으로 함수명 saveKakaoKey2가 기존 auth 화면의 saveKakaoKey()(kkeyIn 대상, 즉시 로그인 시도)와 겹치지 않음을 확인 — 커밋 메시지의 주장(즉시 로그인 시도 없이 저장만)과 코드가 일치. 동작 변경 없이 그대로 함수로 추출됐는지 diff 대조로 확인(toast 문구, localStorage 키, closeSheet 호출 순서 모두 동일). APP_VERSION(1.46.93→1.46.94)과 sw.js CACHE(v255→v256) 동시 상향도 정상 반영. node --check(vm.Script)로 두 인라인 <script> 블록 문법 검증 통과, node test/run.js 697/697 전부 통과(로직 변경이 없어 케이스 수 그대로). 코드 변경 없음(이상 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 112,
+      "phase": "critique",
+      "timestamp": "2026-09-30T08:10:20.657Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(label-for·Enter제출/IME조합·auth 재진입가드·자산그룹 키보드 대안·예산탭 owner필터·죽은함수 정리·vm.Script 파싱 스모크·index.html→logic.js 이전·CDN SRI(재도전 불가 확정)·백그라운드 푸시(서버리스 상충)·신규기능 제안류(근거부족)·index.html 파일분할(설계위배)는 모두 이미 다뤄졌거나 기각 확정이라 제외). 새로 발견: 로컬(비-클라우드) 계정은 앱 기본 배포 모드인데(index.html:1624 주석) 비밀번호를 잊으면 복구 경로가 전혀 없음 — index.html:6485 비밀번호 찾기 링크가 sbCfg().url 있을 때만 렌더되고, AUTH.resetPassword/changePassword(~1858/1868)는 !sbReady()면 무조건 \"클라우드 계정에서만 지원해요\"로 실패, 로컬 signIn(~1832)은 PBKDF2 비교만 하고 폴백 없음. 데이터는 localStorage(dataKey())에 그대로 남아있는데 정상 경로로는 영구 접근 불가한 실제 데이터 손실 시나리오로, 지금까지 다뤄온 auth 재진입가드/PBKDF2/락아웃/클라우드 병합류와 달리 계정 복구 자체를 다룬 사이클이 없었다는 점에서 최우선 채택. pending_advance_plan에 저장: 로컬 전용 복구 코드 메커니즘(가입 시 recoverySalt/recoveryHash 생성+1회 노출, AUTH.resetPasswordLocal 신설, 로그인 화면에 조건부 복구 링크, 구계정은 복구 불가 안내+백업 권장, 순수 로직 회귀 테스트 추가). 코드 변경 없음(읽기 전용 조사, general-purpose 서브에이전트 위임).",
       "commit": null
     }
   ]
