@@ -1,15 +1,12 @@
 {
   "cycle": 111,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "cycle97에서 시작됐다 멈춘 '순수 로직 → logic.js' 이전 작업 재개",
+    "why": "logic.js 헤더(1-8행)가 cycle97부터 '조건에 맞는 순수 함수는 index.html 대신 여기로 옮긴다'고 명시했지만 12+ 사이클 동안 실행되지 않아 logic.js가 224줄에 정체돼 있다. 그 사이 test/run.js의 FUNCTIONS/CONSTS/LETS 배열(107-177행)은 약 230개 이름으로 계속 불어났고, 각 항목은 index.html 소스 텍스트에 정규식으로 암묵 결합돼 있어 보이지 않게 깨질 수 있다 — cycle97이 logic.js를 만든 이유(정규식 추출의 취약성)가 방치될수록 악화되는 자기모순적 부채다. 실제 드리프트 증거도 있다: index.html의 addMonths(ds,n)(3726행, 월말 클램프)와 logic.js의 addMonthsStr(ds,m)(62행, Date 롤오버 허용)이 같은 의도를 다른 시맨틱으로 독립 유지 중이다.",
+    "approach": "1) index.html에서 순수성 검증된 함수만 이전 후보로 삼는다 — 이미 본문에서 DB./$(/document./ST. 참조가 없음을 확인한 esc(1457행)/normName(1460)/lastDay(1466)/monthStartStr(1468)/monthEndStr(1467)/matchTxnQuery(3683)/budgetKey(4226)/budgetProgress(4218)를 우선 후보로 하되, test/run.js FUNCTIONS 배열의 나머지 항목도 각각 grep으로 DB./$(/document./ST. 참조 여부를 재검증해 순수한 것만 추가로 포함한다(budgetForMonth/isVarCat/dateBelowRangeFloor/num 등은 전역 상태를 읽으므로 제외 확인됨). 2) 각 함수를 index.html에서 그대로 잘라 logic.js에 새 섹션(예: '/* ================= DATE/FORMAT/BUDGET (cycle111) ================= */')으로 붙여넣는다 — logic.js가 메인 인라인 <script>보다 먼저 <script src=\"logic.js\">로 로드되므로 호출부 코드는 전역 함수 참조 그대로 수정 없이 동작한다. 3) test/run.js의 FUNCTIONS 배열(107-151행)에서 이전한 이름을 제거한다 — logic.js 전체가 vm.runInContext로 먼저 로드된 뒤(499행) extracted 평가(500행)가 이어지므로 이관된 함수는 이미 해당 컨텍스트에 존재해 테스트 로직 자체는 바꿀 필요가 없다. 4) node our-assets-v1.14.1/our-assets/test/run.js를 실행해 assertion 총수가 그대로 유지되는지 확인한다(순수 이동이므로 케이스 수 불변이 성공 기준). 5) index.html과 logic.js 양쪽이 바뀌므로 APP_VERSION과 sw.js의 CACHE(현재 ourassets-v254)를 함께 올린다. 6) addMonths/addMonthsStr 시맨틱 불일치는 이번 사이클 범위 밖으로 두고(호출부가 서로 달라 통합에는 별도 검토 필요) history에만 기록해 다음 critique가 재평가하게 한다."
+  },
   "history": [
-    {
-      "cycle": 106,
-      "phase": "critique",
-      "timestamp": "2026-09-29T07:13:56.495Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(접근성 전수·silent-failure·클라우드 동기화 병합·안드로이드 백버튼 History API·netlify 함수 테스트 커버리지·CSV export 범위·예산탭·AUTH._legacyHash·skip/edits 맵·delOwner 캐스케이드·뷰포트 핀치줌·탭 간 저장 충돌은 모두 이미 다뤄졌거나 재확인 완료라 제외). 서드파티 공급망 무결성을 새로 조사: index.html이 pretendard CSS(28행, jsdelivr)·kakao.min.js(1291행, kakaocdn)·supabase.js(1292행, jsdelivr) 세 CDN 스크립트를 exact 버전으로 pinned했음에도 integrity(SRI) 속성이 전혀 없음을 발견. 이 앱은 사용자가 Kakao API 키·Supabase URL/anon key를 직접 입력하고 거래/자산 DB 전체를 localStorage에 저장하는 개인 금융 앱이라, CDN 탈취/MITM 시 풀 페이지 권한 스크립트 주입으로 자격증명·재무데이터가 조용히 유출될 수 있는 지금까지 다루지 않은 공급망 리스크라 최우선 채택. pending_advance_plan에 저장: (1) 세 URL의 sha384 SRI 해시 계산 후 integrity 속성 추가(supabase 태그엔 crossorigin도 추가), (2) test/run.js에 세 태그가 integrity+crossorigin+정확한 버전 문자열을 유지하는지 검사하는 순수 텍스트 회귀 테스트 신설(향후 버전업 시 해시 갱신 누락을 잡아냄), (3) window.Kakao/window.supabase 가드가 이미 있어 해시 불일치 시 기능만 비활성화되고 앱이 죽지 않음을 확인해두기, (4) 페이지 전역 CSP 추가·라이브러리 버전 업·Netlify Functions는 명시적으로 범위 밖. 러너업(기록만, 기각): 죽은 순수 함수 5개(totalAssetAt/fixedIncomeOf/ownerNet/txMonthRange/inMonth — 호출부 0건, 안전한 삭제 후보로만 메모), inQuietWindow()가 KST 대신 로컬 기기 시간 사용(해외 사용자 한정 사소한 엣지 케이스), XSS via innerHTML 전수 재감사(esc() 일관 적용 확인, 문제 없음), 알림 스케줄링 신뢰성(기존에 best-effort로 이미 문서화됨, 신규 아님), 백업/CSV import 검증(이미 충분히 강화됨), sw.js 캐시 무효화(문제 없음). 코드 변경 없음(읽기 전용 조사).",
-      "commit": null
-    },
     {
       "cycle": 106,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-09-30T09:00:00.000Z",
       "summary": "develop 커밋(4f08fec, 죽은 순수 함수 6개 삭제: totalAssetAt/fixedIncomeOf/ownerNet/txMonthRange/inMonth/monthKeyOf)을 검토. 6개 함수명 각각을 \\b워드바운더리\\b로 our-assets-v1.14.1/our-assets/ 전체(index.html·logic.js·sw.js)에 재검색해 정의부를 포함해 단 한 줄도 남아있지 않음을 재확인(diff가 주장한 '정의 외 호출부 0건'이 아니라 정의 자체가 통째로 삭제됐고 잔존 참조가 전무함을 실제로 검증). 삭제 시 함께 정리한 두 주석(isMarketValued 옆, sanitizeAmount 옆)도 죽은 함수 이름이 재등장하지 않음을 확인. diff에 로직 함수 본문 변경은 없고 순수 삭제+주석 정리+APP_VERSION/CACHE 버전 동시 상향(1.46.91->1.46.92, v253->v254)뿐이라 회귀 위험 자체가 낮음. node --check로 logic.js/sw.js 통과, new Function()으로 두 인라인 <script> 블록(353KB 메인 블록 포함) 모두 파싱 통과, node test/run.js 697/697 전부 통과(순수 삭제라 케이스 수 그대로, 예상대로 변화 없음). 코드 변경 없음(이상 없음). 부수적으로 develop(cycle111) 이력 항목에 누락돼 있던 commit 해시(4f08fec)를 기록.",
+      "commit": null
+    },
+    {
+      "cycle": 111,
+      "phase": "critique",
+      "timestamp": "2026-09-30T09:30:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(net worth sparkline SVG alt 텍스트·toast/undo aria-live·선택모드 키보드 대안·시트 focus trap/return-focus·환율 동기화 에러 처리·백그라운드 푸시 알림(서버리스 설계와 상충)·월간요약 공유 카드/대출 상환 스케줄/금액 검색 같은 신규 기능 제안(근거 부족)·index.html 파일 분할(빌드리스 설계에 위배)은 모두 이미 다뤄졌거나 근거 부족/설계상 배제로 기각). 새로 발견: logic.js 헤더(1-8행)가 'cycle97부터 조건에 맞는 순수 함수는 index.html 대신 여기로 옮긴다'고 명시했는데 cycle97 이후 12+ 사이클 동안 실제로 옮겨진 함수가 하나도 없어 logic.js가 여전히 224줄에 머물러 있음. 그 사이 test/run.js는 index.html에서 정규식으로 함수/상수를 뽑아내는 FUNCTIONS/CONSTS/LETS 배열(107-177행)이 약 230개 이름까지 늘어났고 ASYNC_PREFIX/순서 강제/let-vs-const 같은 특수 케이스 주석이 여러 개 붙어있어, cycle97이 logic.js를 만든 이유였던 '정규식 추출 메커니즘의 취약성'이 오히려 계속 커지고 있는 자기모순적 상태. 실제 드리프트 증거도 발견: index.html의 addMonths(ds,n)(3726행, 월말 클램프)와 logic.js의 addMonthsStr(ds,m)(62행, Date 롤오버 허용)이 '날짜 문자열에 N개월 더하기'라는 같은 의도를 각각 다른 시맨틱으로 독립적으로 유지하고 있음 — 로직이 분산되면서 실제로 벌어질 수 있는 혼선의 구체적 사례. 다른 로직 버그류보다 파급 범위가 테스트 인프라 전체의 신뢰성에 걸려 있고, 프로젝트 자신의 과거 결정(cycle97)이 방치되고 있다는 점에서 최우선 채택. pending_advance_plan에 저장: index.html의 순수 함수(esc/normName/lastDay/monthStartStr/monthEndStr/matchTxnQuery/budgetKey/budgetProgress 등, DB./$(/document./ST. 참조 없음을 grep으로 사전 검증한 것만)를 logic.js로 이전하고 test/run.js FUNCTIONS 배열에서 제거(이미 vm.runInContext로 logic.js 전체가 먼저 로드되므로 테스트 로직 변경 불필요), 이전 후 addMonths/addMonthsStr 시맨틱 불일치는 이번 스코프에서 통합하지 않고 존재만 기록(호출부가 서로 달라 통합은 별도 사이클 판단 필요).",
       "commit": null
     }
   ]
