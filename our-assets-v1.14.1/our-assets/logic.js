@@ -245,3 +245,14 @@ function csvDedupeKey(t){
   t.toAssetName!=null?('n:'+t.toAssetName):('i:'+(t.toAssetId||'')),
   t.memo||''].join('|');
 }
+
+/* ================= CAROUSEL INDEX (순수) ================= */
+/* wireNwCarousel()의 클론-루프 스크롤 스냅과 동일한 경계 규칙으로, 화살표 키/점 클릭이 요청한
+ * 인덱스를 실제 카드 인덱스로 정규화한다. loop(카드가 2장 이상이라 앞뒤에 클론을 붙인 경우)면
+ * 양끝을 넘어갈 때 반대쪽으로 감싸고(wrap), loop가 아니면(카드 1장) 0에 고정(clamp)한다.
+ * n<=0(카드 없음)이면 항상 0을 반환해 나눗셈/음수 모듈로 문제를 피한다. */
+function nwClampIdx(i,n,loop){
+ if(!(n>0))return 0;
+ if(loop)return ((i%n)+n)%n;
+ return Math.max(0,Math.min(n-1,i));
+}

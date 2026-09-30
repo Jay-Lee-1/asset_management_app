@@ -1,26 +1,8 @@
 {
-  "cycle": 113,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "Assets 탭 귀속(나/배우자/공용/전체) 캐러셀에 키보드/클릭 경로 추가",
-    "why": "index.html:2690-2691의 .nw-dots는 plain <i> 요소이고 wireNwCarousel()(2617-2637)이 유일하게 배선하는 이벤트도 컨테이너의 scroll 리스너(2619)뿐 -- keydown도, dots에 onclick도 없음. grep으로 ST.assetOwner= 대입이 스크롤 핸들러(2631)/owner rename 추적(3063)/삭제시 폴백(2685) 세 곳뿐임을 확인, 다른 진입점(드롭다운/세그먼트 등) 전무. Assets 탭은 앱의 주 순자산 화면이고 귀속 전환은 그 화면의 핵심 네비게이션(전환 시 refreshAssetBody/refreshNwHistoryCard로 하단 전체가 바뀜)인데, 키보드/스위치 접근 사용자는 기본값('all')에서 영구히 못 벗어남 -- 완전히 도달 불가능한 상태. 동일한 나/배우자/공용/전체 개념이 예산 탭에서는 index.html:4302의 .seg <button> 세그먼트 컨트롤(포커스/키보드 가능)로 이미 올바르게 구현돼 있어, 이건 새 패턴이 필요한 게 아니라 이미 있는 패턴을 캐러셀에 아직 안 붙인 격차.",
-    "approach": "1) .nw-dots의 각 <i>를 <button type=\"button\">으로 바꾸고 aria-label=\"${owner} 보기\", aria-current=\"${i===actIdx}\", onclick=\"gotoNwOwner(${i})\" 부여. 2) 현재 스크롤 settle 타임아웃(2629-2634) 안에 인라인으로 있는 'owner r로 전환' 로직(ownerListArr()[r] 조회 -> ST.assetOwner 대입 -> vibrate -> refreshAssetBody/refreshNwHistoryCard)을 selectNwOwner(r) 공용 함수로 분리해 기존 scroll 핸들러와 신규 gotoNwOwner(i) 양쪽에서 재사용(gotoNwOwner는 추가로 restoreNwScroll(i)를 호출해 카드로 애니메이션 이동, 기존 루프 클론 스냅 로직과 동일 패턴). 3) #nwCarousel에 tabindex=\"0\" + role=\"group\" + aria-label=\"귀속별 자산 보기\" 추가, ArrowLeft/ArrowRight keydown 핸들러가 realIdx()와 동일한 방식으로 인덱스를 clamp/wrap해 selectNwOwner 호출. 4) updateNwDots(idx)(2605)가 .on 클래스뿐 아니라 aria-current도 갱신하도록 수정. 5) 스와이프/스크롤 스냅 자체는 건드리지 않아 리스크 낮음 -- 키보드 단계에서 인덱스 clamp/wrap 순수 헬퍼를 분리하게 되면 logic.js에 추가하고 test/run.js에 회귀 테스트 몇 개 추가(cycle108 그룹 재정렬 moveGroup 패턴과 동일), DOM 배선 자체는 프로젝트의 기존 no-jsdom 제약대로 미검증."
-  },
+  "cycle": 114,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 108,
-      "phase": "critique",
-      "timestamp": "2026-09-29T14:00:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(a11y label-for 전수·Enter 제출/IME 조합·silent-failure·클라우드 병합·탭 간 저장 충돌·netlify 함수 테스트 커버리지·CSV export 범위·예산탭·AUTH._legacyHash·skip/edits 맵·delOwner 캐스케이드·안드로이드 백버튼·PWA 업데이트·자산/반복거래 삭제 캐스케이드·뷰포트 핀치줌·CDN crossorigin+SRI(네트워크 차단으로 재도전 무의미 확정)는 모두 이미 다뤄졌거나 재확인 완료라 제외). 새로 발견: Assets 탭 편집모드의 그룹 재정렬 핸들(index.html:2644 <div class=\"drag-handle\">)이 tabindex/role/aria-label 없는 순수 div이고 wireGroupDrag()(2838-2862)가 pointerdown/pointermove/pointerup/pointercancel만 배선해 드래그가 유일한 조작 수단임을 확인 — openSortSheet()(2704)는 그룹 내부 항목을 금액/소유자/이름순으로 정렬하는 별개 기능이라 대체 경로가 아님. DB.settings.groupOrder는 Assets 화면 전체와 자산 선택기에 쓰이는 앱 전역 영구 설정인데 키보드/스위치/스크린리더 사용자는 이 요소에 Tab으로 도달조차 못해(WCAG 2.1.1) 이 기능을 원천적으로 쓸 수 없음 — 지금까지 채택했던 label-for(텍스트 입력 라벨 연결)류와 달리 인터랙티브 기능 자체에 대체 입력 경로가 전무한 사례라 최우선 채택. pending_advance_plan에 저장: 기존 드래그 로직은 그대로 두고 각 그룹 행에 '위로/아래로 이동' 버튼(경계에서 disabled, aria-label에 그룹명 포함)을 추가, moveGroup(type,dir) 핸들러가 nextGroupOrder(2837)를 재사용해 포인터 경로와 동일한 최종 상태를 만들도록 함, 가능하면 swap 로직을 순수 함수로 분리해 test/run.js에 회귀 테스트 추가. 코드 변경 없음(읽기 전용 조사, general-purpose 서브에이전트 위임).",
-      "commit": null
-    },
-    {
-      "cycle": 108,
-      "phase": "advance",
-      "timestamp": "2026-09-29T17:09:33.682Z",
-      "summary": "critique(cycle108) 계획대로 자산 그룹 순서 변경(드래그 재정렬)에 키보드 대안을 추가했다. 기존 드래그 로직(wireGroupDrag, nextGroupOrder)은 그대로 두고, assetBodyHTML()의 편집모드 그룹 행(index.html:2644 부근) 옆에 '위로 이동'/'아래로 이동' <button class=\"grp-move-btn\"> 2개를 추가 — 각 aria-label에 그룹명을 포함(예: 'OO 위로 이동'), 목록 맨 위/맨 아래 항목에서는 해당 버튼에 disabled를 건다(filter된 visible 배열을 .map((t,i,arr)=>...)로 바꿔 경계를 판별). wireGroupDrag()의 pointerup 핸들러(화면에 보이는 순서 재배치 -> nextGroupOrder로 숨김 그룹과 병합)와 동일한 최종 상태를 만드는 순수 함수 movedGroupOrder(existingOrder,visibleTypes,type,dir)를 새로 분리 -- 인접 인덱스로 swap 후 기존 nextGroupOrder를 그대로 재사용, 경계를 벗어나면 existingOrder를 그대로 반환. moveGroup(type,dir)는 DB.settings.groupOrder에서 현재 보이는 순서를 뽑아 movedGroupOrder에 넘기고 save() 후 renderAssets()로 전체 재렌더(포인터 드래그 완료 시 저장만 하고 DOM은 이미 옮겨져 있던 것과 달리, 버튼 클릭은 DOM 이동이 없으므로 재렌더가 필요 -- renderAssets()가 다시 wireGroupDrag()를 호출해 드래그 핸들도 재배선됨). 버튼은 평범한 <button type=\"button\">이라 별도 tabindex/keydown 배선 없이 기본적으로 Tab 포커스와 Enter/Space 실행이 된다. movedGroupOrder/moveGroup을 test/run.js FUNCTIONS 배열에 추가하고, nextGroupOrder 테스트 바로 뒤에 movedGroupOrder 순수 함수 회귀 테스트 4개 신설(위/아래 인접 교환, 경계에서 무변화, 숨김 그룹 유지) -- moveGroup 자체는 DB/save/renderAssets에 의존해 기존 관례대로 직접 테스트하지 않음. 두 인라인 <script> 블록 모두 new Function() 파싱 통과, sw.js node --check 통과, node test/run.js 690/690 통과(신규 4개 포함). APP_VERSION 1.46.87->1.46.88, sw.js CACHE v249->v250. pending_advance_plan을 null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 109,
       "phase": "develop",
@@ -152,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-30T12:00:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(label-for·Enter제출/IME조합·auth 재진입가드·자산그룹 재정렬 키보드대안·예산탭 owner필터·죽은함수 정리·vm.Script 파싱 스모크·index.html→logic.js 이전(addMonths/addMonthsStr 시맨틱 불일치는 기존에 이미 알려진 채 보류 확정, 재소환 아님)·CDN SRI(네트워크 제약 확정)·백그라운드 푸시(서버리스 설계 상충)·로컬 계정 비밀번호 복구+브루트포스 잠금·index.html 파일분할(설계위배)·netlify CORS *·CSV export/import·AUTH._legacyHash·delOwner 캐스케이드·안드로이드 백버튼·PWA 업데이트·뷰포트 핀치줌·recDates·PBKDF2·esc() XSS는 모두 이미 다뤄졌거나 기각 확정이라 제외). 새로 발견: Assets 탭 홈 화면의 귀속(나/배우자/공용/전체) 캐러셀(index.html:2690-2691 .nw-dots)이 순수 <i> 요소이고 wireNwCarousel()(2617-2637)의 유일한 배선이 컨테이너 scroll 리스너(2619)뿐이라 keydown도 dots onclick도 전무 -- grep으로 ST.assetOwner= 대입이 스크롤 핸들러(2631)/owner rename 추적(3063)/삭제시 'all' 폴백(2685) 세 곳뿐이고 다른 진입점이 전혀 없음을 확인. Assets 탭은 앱의 주 순자산 화면이고 귀속 전환은 하단 전체(refreshAssetBody/refreshNwHistoryCard)를 바꾸는 핵심 네비게이션인데 키보드/스위치 접근 사용자는 기본값('all')에서 영구히 못 벗어나 완전히 도달 불가능 -- 동일한 개념이 예산 탭에서는 index.html:4302의 .seg <button> 세그먼트(포커스/키보드 가능, spendOwnerSel)로 이미 올바르게 구현돼 있어 이미 있는 패턴을 캐러셀에 아직 안 붙인 격차로 최우선 채택. 러너업(기록만, 기각): checkNotifyAlerts()가 배경 전환시만 도는 줄 알았으나 index.html:6479에 setInterval(checkNotifyAlerts,5*60*1000)이 이미 있어 오탐으로 기각 / localStorage 쿼터 초과 처리(2032-2035에 이미 try/catch+실패 토스트로 존재, 갭 아님) / 환율·시세 동기화 실효성 표시(2442-2489에 이미 rateStatusText/fmtSynced/failStreak로 존재, 갭 아님) / 삭제류 undo 일관성(delBudget/doDeleteCat/deleteAssetsUndo 등 전부 confirmSheet+undoToast로 일관, 불일치 없음) / mergeCollection/touch 멀티탭 sync 불변식(이미 여러 사이클에서 다룬 영역, 새 지점 아님). pending_advance_plan에 저장: (1) .nw-dots의 각 <i>를 <button type=\"button\"> aria-label/aria-current/onclick=gotoNwOwner(i)로 교체, (2) 스크롤 settle 타임아웃(2629-2634) 안의 owner 전환 로직을 selectNwOwner(r) 공용 함수로 분리해 scroll 핸들러와 gotoNwOwner 양쪽에서 재사용(gotoNwOwner는 추가로 restoreNwScroll(i) 호출), (3) #nwCarousel에 tabindex/role=group/aria-label + ArrowLeft/ArrowRight keydown(realIdx()와 동일 clamp/wrap) 추가, (4) updateNwDots(idx)가 aria-current도 갱신하도록 수정, (5) 스와이프/스냅 자체는 불변이라 리스크 낮음, 인덱스 clamp/wrap 순수 헬퍼를 분리하면 logic.js+test/run.js에 회귀 테스트 추가(cycle108 moveGroup 패턴과 동일), DOM 배선 자체는 기존 no-jsdom 제약대로 미검증. 코드 변경 없음(읽기 전용 조사, general-purpose 서브에이전트 위임).",
+      "commit": null
+    },
+    {
+      "cycle": 113,
+      "phase": "advance",
+      "timestamp": "2026-09-30T13:00:00.000Z",
+      "summary": "critique(cycle113) 계획대로 Assets 탭 귀속(나/배우자/공용/전체) 캐러셀에 키보드/클릭 경로를 추가했다. .nw-dots의 각 <i>를 <button type=\"button\">으로 교체(aria-label=\"${owner} 보기\", aria-current, onclick=gotoNwOwner(i)) — CSS(.nw-dots i,.nw-dots button)로 <i>/<button> 양쪽을 동일하게 스타일해, 별개 위젯인 튜토리얼 월별 캐러셀의 #m-dots(여전히 <i> 사용, 손대지 않음)와도 호환 유지. wireNwCarousel()의 스크롤 settle 타임아웃 안에 인라인으로 있던 owner 전환 로직(ownerListArr()[r] 조회 -> ST.assetOwner 대입 -> vibrate -> refreshAssetBody/refreshNwHistoryCard)을 selectNwOwner(r) 공용 함수로 분리해 scroll 핸들러와 신규 gotoNwOwner(i) 양쪽에서 재사용. #nwCarousel에(카드 2장 이상일 때만) tabindex=\"0\"+role=\"group\"+aria-label=\"귀속별 자산 보기\" 추가, ArrowLeft/ArrowRight keydown 리스너가 ownerListArr().indexOf(ST.assetOwner)로 현재 인덱스를 구해 gotoNwOwner(cur±1) 호출. gotoNwOwner(i)는 계획의 restoreNwScroll(i) 재사용 대신(그 함수는 순간 이동이라 '애니메이션 이동' 의도와 안 맞아) c.scrollTo({behavior:'smooth'})로 부드럽게 스크롤하면서 selectNwOwner를 즉시 호출해 상태를 먼저 반영(스크롤 애니메이션 완료를 기다리지 않아, 스크린리더가 aria-current 변화를 바로 읽을 수 있음) — 이 설계 변경은 plan의 의도(키보드/클릭으로 전환 가능해야 함)를 그대로 satisfy하면서 스크린리더 즉시성을 개선한 것이라 review 없이 advance에서 바로 채택. 클론 루프 경계 clamp/wrap은 순수 함수 nwClampIdx(i,n,loop)로 logic.js에 신설(cycle97 이후 관례대로 새 순수 함수는 index.html 대신 logic.js에 직접 추가)하고 gotoNwOwner가 재사용, test/run.js에 회귀 테스트 5개 추가(loop wrap 양방향/non-loop clamp/범위 내 그대로/n<=0 가드). updateNwDots(idx)가 .nw-dots button만 대상으로 삼도록 셀렉터를 좁히고(.on 토글과 함께 aria-current도 갱신) m-dots(<i>)에는 영향 없음을 확인. 스와이프/스크롤 스냅 로직 자체는 건드리지 않아 계획대로 리스크 낮음. node --check로 logic.js/sw.js 통과, vm.Script로 두 인라인 <script> 블록(메인 356KB + SW 등록 883B) 모두 파싱 통과, node test/run.js 704/704 통과(699->704, 신규 5개 전부 포함). APP_VERSION 1.46.96->1.46.97, sw.js CACHE v258->v259. pending_advance_plan을 null로 비움. 수동 QA(Playwright 등 브라우저 기동)는 이번 사이클에서 수행하지 않음 — 다음 review 단계가 diff를 검토하며 필요시 확인 권장.",
       "commit": null
     }
   ]

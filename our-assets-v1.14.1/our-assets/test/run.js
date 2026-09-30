@@ -7721,6 +7721,31 @@ test('movedGroupOrder: 화면에 없는(자산 0개) 숨김 그룹은 기존 순
   );
 });
 
+/* ---------- nwClampIdx: Assets 탭 귀속(나/배우자/공용/전체) 캐러셀의 점 클릭/화살표 키가 쓰는
+ * 인덱스 정규화 (app-evolve cycle113 advance, logic.js). wireNwCarousel()의 클론-루프 스크롤 스냅과
+ * 동일한 경계 규칙(loop면 wrap, 아니면 clamp)을 공유해 스크롤/클릭/키보드 세 경로가 항상 같은
+ * 카드를 가리키게 한다. */
+test('nwClampIdx: loop(카드 2장 이상)이면 마지막을 넘어가는 인덱스는 0으로 wrap된다', () => {
+  assert.strictEqual(sandbox.nwClampIdx(3, 3, true), 0);
+  assert.strictEqual(sandbox.nwClampIdx(4, 3, true), 1);
+});
+test('nwClampIdx: loop이면 0 아래로 내려가는 인덱스는 마지막으로 wrap된다', () => {
+  assert.strictEqual(sandbox.nwClampIdx(-1, 3, true), 2);
+  assert.strictEqual(sandbox.nwClampIdx(-4, 3, true), 2);
+});
+test('nwClampIdx: loop이 아니면(카드 1장) 범위를 벗어난 인덱스는 양끝에 고정(clamp)된다', () => {
+  assert.strictEqual(sandbox.nwClampIdx(-1, 1, false), 0);
+  assert.strictEqual(sandbox.nwClampIdx(5, 1, false), 0);
+});
+test('nwClampIdx: 범위 안의 인덱스는 그대로 반환한다', () => {
+  assert.strictEqual(sandbox.nwClampIdx(1, 3, true), 1);
+  assert.strictEqual(sandbox.nwClampIdx(0, 1, false), 0);
+});
+test('nwClampIdx: n<=0(카드 없음)이면 항상 0을 반환한다', () => {
+  assert.strictEqual(sandbox.nwClampIdx(0, 0, true), 0);
+  assert.strictEqual(sandbox.nwClampIdx(2, 0, false), 0);
+});
+
 /* ---------- monthSwipeCommitDir: wireMonthCarousel() 스와이프 커밋 방향 판정 (app-evolve cycle74 advance) ----------
  * wireMonthCarousel()이 touchcancel(엣지 백제스처, 알림 배너, 전화 수신 등으로 스와이프 중단)을
  * 처리하지 않아 drag 상태가 정리되지 않고 트랙이 마지막 touchmove 위치에 고정된 채 라벨과

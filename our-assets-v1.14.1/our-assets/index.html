@@ -1025,8 +1025,10 @@ html[data-theme="dark"] .toast.undo .toast-undo{color:var(--brand-ink)}
 .nw-carousel::-webkit-scrollbar{display:none}
 .nw-carousel>.hero{flex:0 0 100%;scroll-snap-align:start}
 .nw-dots{display:flex;justify-content:center;gap:6px;margin:11px 0 2px}
-.nw-dots i{width:6px;height:6px;border-radius:50%;background:var(--line-2);transition:background .22s,width .22s}
-.nw-dots i.on{background:var(--brand);width:18px;border-radius:3px}
+.nw-dots i,.nw-dots button{width:6px;height:6px;border-radius:50%;background:var(--line-2);transition:background .22s,width .22s;border:none;padding:0;-webkit-appearance:none}
+.nw-dots button{cursor:pointer}
+.nw-dots i.on,.nw-dots button.on{background:var(--brand);width:18px;border-radius:3px}
+#nwCarousel{outline-offset:4px}
 .as-tools.hidden{visibility:hidden;pointer-events:none} /* 자리는 유지 → 선택 모드에서 목록이 밀리지 않음 */
 .as-tbtn{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:40px;padding:0 13px;border-radius:var(--r-md);background:var(--surface-2);border:1px solid var(--line-2);font-size:14px;font-weight:700;color:var(--text-2);transition:transform .15s var(--spring)}
 .as-tbtn svg{width:16px;height:16px}.as-tbtn:active{transform:scale(.96)}
@@ -1303,7 +1305,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.96';
+const APP_VERSION='1.46.97';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2602,7 +2604,7 @@ function nwPane(o,TA,TD){ /* 순자산 카드 한 장 (전체 또는 귀속별) 
 }
 function restoreNwScroll(idx){const c=$('nwCarousel');if(!c)return;const loop=c.dataset.loop==='1';
  const set=()=>{c.scrollLeft=(loop?idx+1:idx)*(c.clientWidth+12)};set();requestAnimationFrame(set)}
-function updateNwDots(idx){document.querySelectorAll('.nw-dots i').forEach((d,i)=>d.classList.toggle('on',i===idx))}
+function updateNwDots(idx){document.querySelectorAll('.nw-dots button').forEach((d,i)=>{const on=i===idx;d.classList.toggle('on',on);d.setAttribute('aria-current',on?'true':'false')})}
 function refreshAssetBody(){ /* 캐러셀은 그대로 두고 목록만 갱신 → 끊김 없음 */
  const el=$('assetBody');if(!el)return;
  el.innerHTML=assetBodyHTML();
@@ -2612,6 +2614,24 @@ function refreshAssetBody(){ /* 캐러셀은 그대로 두고 목록만 갱신 �
 function refreshNwHistoryCard(){ /* 캐러셀 귀속 전환 시 추이 카드만 갱신 */
  const el=$('nwHistBody');if(!el)return;
  el.innerHTML=nwHistoryCard(ST.assetOwner);
+}
+function selectNwOwner(r){ /* 캐러셀 스크롤 정착/점 클릭/키보드 세 경로가 공유하는 귀속 전환 로직 */
+ const owner=ownerListArr()[r]||'all';
+ if(owner!==ST.assetOwner){
+   ST.assetOwner=owner;_lastNwOwner=owner;
+   if(navigator.vibrate)navigator.vibrate(6);
+   refreshAssetBody(); /* 전체 재렌더 X → 카드가 튀지 않음 */
+   refreshNwHistoryCard();
+ }
+}
+function gotoNwOwner(i){ /* 점 클릭/화살표 키 경로 — nwClampIdx로 스크롤 경계와 동일하게 clamp/wrap */
+ const c=$('nwCarousel');if(!c)return;
+ const n=+c.dataset.n,loop=c.dataset.loop==='1';
+ const idx=nwClampIdx(i,n,loop);
+ const step=c.clientWidth+12;
+ c.scrollTo({left:(loop?idx+1:idx)*step,behavior:'smooth'});
+ updateNwDots(idx);
+ selectNwOwner(idx);
 }
 function wireNwCarousel(){
  const c=$('nwCarousel');if(!c)return;let t=null;
@@ -2626,15 +2646,15 @@ function wireNwCarousel(){
        const prev=c.style.scrollBehavior;c.style.scrollBehavior='auto';
        c.scrollLeft=(r+1)*step;c.style.scrollBehavior=prev;
      }
-     const owner=ownerListArr()[r]||'all';
-     if(owner!==ST.assetOwner){
-       ST.assetOwner=owner;_lastNwOwner=owner;
-       if(navigator.vibrate)navigator.vibrate(6);
-       refreshAssetBody(); /* 전체 재렌더 X → 카드가 튀지 않음 */
-       refreshNwHistoryCard();
-     }
+     selectNwOwner(r);
    },110);
  },{passive:true});
+ c.addEventListener('keydown',e=>{
+   if(e.key!=='ArrowLeft'&&e.key!=='ArrowRight')return;
+   e.preventDefault();
+   const cur=Math.max(0,ownerListArr().indexOf(ST.assetOwner));
+   gotoNwOwner(cur+(e.key==='ArrowRight'?1:-1));
+ });
 }
 function assetBodyHTML(){
  let body='';
@@ -2687,8 +2707,8 @@ function renderAssets(){
  const body=assetBodyHTML();
  $('page-assets').innerHTML=`
  ${pageHead('assets')}
- <div class="nw-carousel" id="nwCarousel" data-n="${_ol.length}" data-loop="${_ol.length>1?1:0}">${_ol.length>1?nwPane(_ol[_ol.length-1],TA,TD):''}${_ol.map(o=>nwPane(o,TA,TD)).join('')}${_ol.length>1?nwPane(_ol[0],TA,TD):''}</div>
- ${_ol.length>1?`<div class="nw-dots">${_ol.map((o,i)=>`<i class="${i===actIdx?'on':''}"></i>`).join('')}</div>`:''}
+ <div class="nw-carousel" id="nwCarousel" data-n="${_ol.length}" data-loop="${_ol.length>1?1:0}"${_ol.length>1?' tabindex="0" role="group" aria-label="귀속별 자산 보기"':''}>${_ol.length>1?nwPane(_ol[_ol.length-1],TA,TD):''}${_ol.map(o=>nwPane(o,TA,TD)).join('')}${_ol.length>1?nwPane(_ol[0],TA,TD):''}</div>
+ ${_ol.length>1?`<div class="nw-dots">${_ol.map((o,i)=>`<button type="button" class="${i===actIdx?'on':''}" aria-label="${esc(o==='all'?'전체':o)} 보기" aria-current="${i===actIdx?'true':'false'}" onclick="gotoNwOwner(${i})"></button>`).join('')}</div>`:''}
  <div id="nwHistBody">${nwHistoryCard(ST.assetOwner)}</div>
  <div class="as-tools${ST.aSel.mode?' hidden':''}">
    <div class="as-actions">${ST.editAssets?`<button class="as-tbtn primary" onclick="ST.editAssets=false;save();renderAssets()">${svg('check')} 완료</button>`:
