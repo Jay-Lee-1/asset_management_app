@@ -1303,7 +1303,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.93';
+const APP_VERSION='1.46.94';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4166,12 +4166,20 @@ function openHelpKakao(){
  const cur=(localStorage.getItem('asset_app_kakao_key')||'');
  openSheet(`<h3>카카오 로그인 · 클라우드 설정</h3>
   <div class="help-body"><p><b>1) 카카오 키 입력</b><br>developers.kakao.com에서 앱을 만들고 [앱 키]의 <b>JavaScript 키</b>를 복사해 아래에 붙여넣으세요.</p></div>
-  <div class="field"><input id="kkeyIn2" placeholder="카카오 JavaScript 키" value="${cur.replace(/"/g,'&quot;')}"></div>
-  <div class="two-btn" style="margin-bottom:16px">${cur?`<button class="btn btn-soft cancel" onclick="localStorage.removeItem('asset_app_kakao_key');closeSheet();toast('카카오 키를 삭제했어요')">키 삭제</button>`:`<button class="btn btn-soft cancel" onclick="closeSheet()">닫기</button>`}<button class="btn btn-primary" onclick="var v=($('kkeyIn2').value||'').trim();if(!v){toast('키를 입력해 주세요');return}localStorage.setItem('asset_app_kakao_key',v);closeSheet();toast('카카오 키를 저장했어요 · 로그아웃 후 카카오로 로그인해 보세요')">저장</button></div>
+  <div class="field"><input id="kkeyIn2" placeholder="카카오 JavaScript 키" value="${cur.replace(/"/g,'&quot;')}" onkeydown="if(event.key==='Enter')saveKakaoKey2()"></div>
+  <div class="two-btn" style="margin-bottom:16px">${cur?`<button class="btn btn-soft cancel" onclick="localStorage.removeItem('asset_app_kakao_key');closeSheet();toast('카카오 키를 삭제했어요')">키 삭제</button>`:`<button class="btn btn-soft cancel" onclick="closeSheet()">닫기</button>`}<button class="btn btn-primary" onclick="saveKakaoKey2()">저장</button></div>
   <div class="help-body">
    <p><b>2) 도메인 등록</b><br>카카오 개발자 [플랫폼 › Web]에 이 앱을 올린 <b>도메인</b>을 등록하고, [카카오 로그인]을 활성화 + 동의항목에서 '닉네임'을 허용하세요.</p>
    <p><b>3) 기기 간 동기화(진짜 클라우드)</b><br>이메일 로그인으로 기기 간 동기화를 쓰려면 계정 화면의 '이메일 로그인 · 클라우드 동기화 설정'에서 Supabase를 연결하세요.</p>
   </div>`);
+}
+/* openHelpKakao()의 저장 버튼/Enter 공용 핸들러 — kkeyIn2는 인라인 onclick이라 Enter-to-submit을
+   붙일 수 없었으므로(따옴표 이스케이프 문제) 이름 있는 함수로 분리한다(auth 화면 saveKakaoKey()와
+   달리 여기선 즉시 로그인을 시도하지 않고 키 저장만 한다 — 기존 동작 그대로 유지). */
+function saveKakaoKey2(){
+ const v=($('kkeyIn2').value||'').trim();
+ if(!v){toast('키를 입력해 주세요');return}
+ localStorage.setItem('asset_app_kakao_key',v);closeSheet();toast('카카오 키를 저장했어요 · 로그아웃 후 카카오로 로그인해 보세요');
 }
 
 function spendByCategory(y,m,owner='전체'){ /* 지출 분석은 항상 예정 포함. owner를 주면 그 귀속(fromAssetId 기준)의 지출만 집계 — 예산(budgetHistory)은 귀속과 무관하게 전역이라 필터하지 않는다 */
