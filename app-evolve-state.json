@@ -1,15 +1,8 @@
 {
   "cycle": 113,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 108,
-      "phase": "develop",
-      "timestamp": "2026-09-29T13:11:14.000Z",
-      "summary": "일부 단일필드 입력 시트에 Enter 제출 배선 6곳 추가: 이미 auPw/newPwIn에 쓰이던 onkeydown=\"if(event.key==='Enter')<저장함수>()\" 관례를 같은 '입력 1개+저장 버튼' 패턴인 newOwner->addOwner()(3020), renameOwner->doRenameOwner(i)(3034), sbKeyIn(클라우드 동기화 마지막 필드)->saveCloudCfg()(4156), budgetIn->saveBudget(idx)(4302), newCat->addCat(k)(4397), renameCat->doRenameCat(k,i)(4443)에 적용. 새 로직 없이 옆 버튼과 동일한 기존 저장 함수를 그대로 호출하므로 검증/토스트 등 기존 실패 경로도 그대로 유지됨. sbUrlIn/sbKeyIn 2필드 폼은 기존 auEmail/auPw 관례처럼 마지막 필드에서만 제출하도록 sbKeyIn만 배선. index.html 두 인라인 <script> 블록과 sw.js 모두 node --check 통과, node test/run.js 686/686 통과 (순수 로직 함수 미변경이라 새 테스트 케이스는 추가하지 않음). APP_VERSION 1.46.85->1.46.86, sw.js CACHE v247->v248.",
-      "commit": "5bcb384"
-    },
     {
       "cycle": 108,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-30T09:20:00.000Z",
       "summary": "critique가 세운 계획(로컬 계정 비밀번호 복구)을 구현. index.html: genRecoveryCode() 신설(0/O/1/I 제외 32자 알파벳, XXXX-XXXX-XXXX). AUTH.signUp 로컬 분기에서 가입 시 recoverySalt/recoveryHash를 salt/pass와 함께 저장하고 평문 recoveryCode는 반환값에만 담아 1회 노출(저장 안 함). AUTH.resetPasswordLocal(email,code,newPw) 신설 — sbReady()면 거부, recoveryHash 없는 구계정은 '복구 불가·CSV 백업 권장' 에러, 코드 일치 시 새 salt+pass 설정 후 recoveryCode 재발급(재사용 방지). 로그인 화면의 '비밀번호를 잊으셨나요?' 링크를 sbCfg().url 조건 없이 항상 노출하도록 바꾸고, doForgotPassword()가 !sbCfg().url이면 doForgotPasswordLocal()(이메일+복구코드+새 비밀번호 시트, Enter 제출)로 분기. doLocalRecover()가 성공 시 즉시 로그인 처리 후 새 복구 코드를 보여줌. showRecoveryCode()/closeRecoverySheet()를 공용 1회-노출 시트로 만들어 doSignup()의 로컬 가입 직후에도 재사용(콜백으로 게스트 데이터 가져오기 안내를 이어서 연결). test/run.js: FUNCTIONS에 genRecoveryCode 추가, 형식/유일성 회귀 테스트 2개 추가(AUTH 메서드 자체는 기존 관례대로 전체 객체라 미추출·미테스트, genSalt/pbkdf2Hash와 동일). node test/run.js 699/699 통과(697->699, +2 신규), 메인 인라인 <script> 전체 파싱 스모크도 통과. APP_VERSION 1.46.94->1.46.95, sw.js CACHE v256->v257.",
+      "commit": null
+    },
+    {
+      "cycle": 113,
+      "phase": "develop",
+      "timestamp": "2026-09-30T10:11:08.643Z",
+      "summary": "resetPasswordLocal()(로컬 계정 복구 코드 재설정, cycle112 advance에서 신설)에 signIn()과 달리 브루트포스 잠금 가드가 없던 격차를 발견해 수정. AUTH.signIn()은 비밀번호 비교 전 this._lockStatus(key)로 5회 실패 후 지수백오프(최대 30초) 잠금을 확인하고 실패 시 this._recordFail(key)를 호출하지만, resetPasswordLocal(email,code,newPw)은 복구 코드 비교 앞뒤로 이 가드가 전혀 없어 같은 계정의 복구 코드를 무제한으로 무차별 대입할 수 있었음(정상 로그인 경로는 보호되는데 복구 경로만 뚫려 있던 비대칭). resetPasswordLocal 시작부에 signIn과 동일한 this._lockStatus(key)/잠금 시 동일 문구(너무 많이 틀렸어요 · N초 후 다시 시도해 주세요) 조기 반환을 추가하고, 복구 코드 불일치 시 this._recordFail(key)를 호출하도록 수정(성공 시 this._clearFails(key)는 기존 그대로 유지). 새 저장 스키마나 UI 변경 없이 기존에 이미 테스트된 _lockStatus/_recordFail/_clearFails 프리미티브만 재사용하는 최소 diff. index.html 두 인라인 <script> 블록(vm.Script)과 sw.js/logic.js 모두 node --check 통과, node test/run.js 699/699 통과(AUTH.resetPasswordLocal은 브라우저 전역/localStorage 의존이라 순수 함수 추출 테스트 대상이 아니라 새 케이스는 추가하지 않음). APP_VERSION 1.46.95->1.46.96, sw.js CACHE v257->v258.",
       "commit": null
     }
   ]

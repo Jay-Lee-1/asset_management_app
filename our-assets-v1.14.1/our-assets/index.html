@@ -1303,7 +1303,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.95';
+const APP_VERSION='1.46.96';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1898,12 +1898,14 @@ const AUTH={
   if((newPw||'').length<8)return{err:'비밀번호는 8자 이상이어야 해요'};
   if(sbReady())return{err:'클라우드 계정은 이메일로 재설정해 주세요'};
   const key=emailKey(email);
+  const lock=this._lockStatus(key);
+  if(lock.locked)return{err:`너무 많이 틀렸어요 · ${lock.waitSec}초 후 다시 시도해 주세요`};
   const a=this._accts();const rec=a[key];
   if(!rec)return{err:'가입되지 않은 이메일이에요'};
   if(!rec.recoveryHash||!rec.recoverySalt)return{err:'이 계정은 복구 코드가 없어 복구할 수 없어요 · 메뉴 › 데이터 관리에서 CSV로 미리 백업해 두세요'};
   const norm=(code||'').trim().toUpperCase();
   const ok=(await pbkdf2Hash(norm,rec.recoverySalt))===rec.recoveryHash;
-  if(!ok)return{err:'복구 코드가 일치하지 않아요'};
+  if(!ok){this._recordFail(key);return{err:'복구 코드가 일치하지 않아요'}}
   const salt=genSalt();
   const recoverySalt=genSalt();
   const recoveryCode=genRecoveryCode();
