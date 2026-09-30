@@ -1305,7 +1305,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.98';
+const APP_VERSION='1.46.99';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2416,13 +2416,26 @@ function inQuietWindow(d){ /* 토 06:00 ~ 월 08:00 휴장 */
  return (day===6&&h>=6)||day===0||(day===1&&h<8);
 }
 
+/* 서버 함수가 멎어도(캡티브 포털·모바일 네트워크 전환·콜드스타트 중 연결 끊김) fetch가 영원히
+ * pending 상태로 남지 않도록 AbortController로 강제 타임아웃한다(서버쪽 rates.js/stock.js는
+ * 이미 6초 타임아웃을 갖고 있었는데 클라이언트만 무제한 대기였다). */
+async function fetchWithTimeout(url,opts,ms){
+ ms=ms||8000;
+ const ctrl=new AbortController();
+ const timer=setTimeout(()=>ctrl.abort(),ms);
+ try{
+  return await fetch(url,{...(opts||{}),signal:ctrl.signal});
+ }finally{
+  clearTimeout(timer);
+ }
+}
 /* 환율 + 금 (한 번의 호출로 둘 다) */
 async function fetchFxGold(){
  const curs=heldCurrencies(),gold=needGold();
  if(!curs.length&&!gold)return null;
  /* 브라우저에서 외부 시세 API를 직접 부르면 CORS로 막히므로 중계 함수를 경유합니다. */
  const qs=`cur=${curs.join(',')||'USD'}${gold?'&gold=1':''}`;
- const r=await fetch(`/.netlify/functions/rates?${qs}`);
+ const r=await fetchWithTimeout(`/.netlify/functions/rates?${qs}`);
  if(!r.ok)throw new Error('fx');
  const j=await r.json();
  const out={fx:{},goldPerG:0};
@@ -2435,7 +2448,7 @@ async function fetchFxGold(){
 async function fetchStocks(){
  const codes=heldStockCodes();
  if(!codes.length)return null;
- const r=await fetch(`/.netlify/functions/stock?codes=${codes.join(',')}`);
+ const r=await fetchWithTimeout(`/.netlify/functions/stock?codes=${codes.join(',')}`);
  if(!r.ok)throw new Error('stock');
  return await r.json();
 }
@@ -2445,29 +2458,31 @@ async function syncRates(silent){
  if(syncing||!hasRateAssets())return;
  syncing=true;
  const btn=$('syncBtn');btn&&btn.classList.add('spin');
+ try{
+  const [fg,st]=await Promise.allSettled([fetchFxGold(),fetchStocks()]);
+  const R=DB.rates;
+  let ok=0,fail=0;
 
- const [fg,st]=await Promise.allSettled([fetchFxGold(),fetchStocks()]);
- const R=DB.rates;
- let ok=0,fail=0;
+  if(fg.status==='fulfilled'){
+   if(fg.value){
+    Object.entries(fg.value.fx).forEach(([c,v])=>{R.fx[c]=c==='JPY'?Math.round(v*100)/100:Math.round(v*10)/10});
+    if(fg.value.goldPerG)R.goldPerG=Math.round(fg.value.goldPerG);
+    ok++;
+   }
+   R.fxFail=false;
+  }else{R.fxFail=true;fail++}
 
- if(fg.status==='fulfilled'){
-  if(fg.value){
-   Object.entries(fg.value.fx).forEach(([c,v])=>{R.fx[c]=c==='JPY'?Math.round(v*100)/100:Math.round(v*10)/10});
-   if(fg.value.goldPerG)R.goldPerG=Math.round(fg.value.goldPerG);
-   ok++;
-  }
-  R.fxFail=false;
- }else{R.fxFail=true;fail++}
+  if(st.status==='fulfilled'){
+   if(st.value){Object.entries(st.value).forEach(([code,p])=>{if(code!=='_debug'&&p>0)R.stocks[code]=p});ok++}
+   R.stockFail=false;
+  }else{R.stockFail=true;fail++}
 
- if(st.status==='fulfilled'){
-  if(st.value){Object.entries(st.value).forEach(([code,p])=>{if(code!=='_debug'&&p>0)R.stocks[code]=p});ok++}
-  R.stockFail=false;
- }else{R.stockFail=true;fail++}
-
- if(ok){R.syncedAt=Date.now();R.failStreak=0}else R.failStreak=(R.failStreak||0)+1;
- save();renderCurrent();
- syncing=false;btn&&btn.classList.remove('spin');
- if(!silent)toast(ok?(fail?'일부 시세만 반영했어요':'시세를 반영했어요'):'시세를 가져오지 못했어요');
+  if(ok){R.syncedAt=Date.now();R.failStreak=0}else R.failStreak=(R.failStreak||0)+1;
+  save();renderCurrent();
+  if(!silent)toast(ok?(fail?'일부 시세만 반영했어요':'시세를 반영했어요'):'시세를 가져오지 못했어요');
+ }finally{
+  syncing=false;btn&&btn.classList.remove('spin');
+ }
 }
 function autoSyncRates(){
  if(!DB.settings.autoRates||!hasRateAssets()||inQuietWindow())return;

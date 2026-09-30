@@ -1,19 +1,8 @@
 {
-  "cycle": 115,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "시세 동기화(syncRates) 클라이언트 fetch에 타임아웃이 없어 네트워크 행 발생 시 동기화가 영구 잠기는 버그",
-    "why": "index.html:2420-2441의 fetchFxGold()/fetchStocks()가 /.netlify/functions/rates, /.netlify/functions/stock을 호출하는데 AbortController/타임아웃이 전혀 없음(서버 쪽 rates.js:160-172/stock.js:197-200은 이미 AbortController+setTimeout(6000ms)+재시도를 갖춤, 클라이언트만 누락). syncRates()(2443-2471)는 syncing 불리언 mutex로 중복 실행을 막는데 해제가 try/finally 없이 Promise.allSettled 종료 후 한 줄(2469)뿐이라, 네트워크가 영원히 pending(캡티브 포털/모바일 전환/함수 콜드스타트 중 연결 끊김 등)이면 mutex가 영구 고정됨 -> '지금 갱신' 버튼 스핀 고정, autoSyncRates 10분 TTL 자동 갱신 무효화, 신규 fx/gold/stock 자산 등록 시 rateWasUnknown 즉시 동기화(2806/2813/3021)도 무효화되어 새로고침 전까지 세션 전체가 시세 갱신 불능. test/run.js는 syncRates를 mock으로 대체(491-492, 4205-4272)해 실제 fetch/타임아웃/mutex 해제 경로를 전혀 검증하지 않음.",
-    "approach": "1) index.html에 fetchWithTimeout(url,opts,ms=8000) 헬퍼 추가(AbortController -> setTimeout(()=>ctrl.abort(),ms) -> fetch(url,{...opts,signal}) -> finally clearTimeout). fetchFxGold(2420-2433)/fetchStocks(2434-2441)의 bare fetch를 이 헬퍼로 교체. 2) syncRates(2443-2471)의 syncing=false/spin 해제를 try/finally로 감싸 모든 예외 경로에서 mutex가 항상 풀리게 방어. 3) test/run.js에 fetchWithTimeout을 추출해 global.fetch를 영원히 resolve 안 하는 Promise mock으로 교체, 짧은 ms(예 10ms)로 (a) 지정 시간 내 ctrl.signal.aborted===true, (b) 반환 프로미스가 결국 reject되어 상위 allSettled가 멈추지 않는지 검증하는 회귀 테스트 추가."
-  },
+  "cycle": 116,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 110,
-      "phase": "advance",
-      "timestamp": "2026-09-30T02:00:00.000Z",
-      "summary": "critique(cycle110) 계획의 1단계(vm.Script 전체 파싱 스모크 체크)를 구현했다. test/run.js에 extractMainScript() 헬퍼를 신설 — 기존 extractFunction/extractConst/extractLet과 달리 이름 목록에 의존하지 않고 '<script src=\"logic.js\"></script>' 직후의 메인 인라인 <script>~</script> 블록 전체(현재 약 353KB)를 가공 없이 그대로 반환한다. 새 회귀 테스트가 이 블록을 new vm.Script()(실행은 하지 않고 컴파일만)에 통과시켜 backtick/중괄호/괄호 짝이 안 맞는 등 SyntaxError를 즉시 잡고, 추출 경계가 깨져 텍스트가 어쩌다 몇 줄만 잘려도(거짓 성공) 걸리도록 길이(>100000자) assert도 함께 둠. 효과를 직접 검증: 실제 배포된 backtick 하나를 임시로 제거해봤더니 기존 686개 개별 함수 추출 테스트는 전부 그대로 통과했지만 새 테스트만 정확히 실패했다(원상복구 후 재실행해 697/697 정상 확인) — critique가 지적한 '개별 함수 추출 테스트는 함수 몸통 밖의 구문 오류나 FUNCTIONS 목록 밖 코드를 못 잡는다'는 간극이 실재했고 이번 추가로 메워짐. 계획의 2단계(jsdom으로 최소 DOM 구성 후 renderCurrent/시트 열기 등 실제 실행까지 검증)는 의도적으로 보류했다: 이 컨테이너는 npm install jsdom 자체는 네트워크로 성공했지만, 이 프로젝트는 지금까지 package.json/node_modules 없이 완전히 빌드리스로 유지돼 왔고(README/skill 문서에도 '별도 build 스크립트 없음'으로 명시) jsdom을 실제로 쓰려면 package.json 신설+devDependency 고정+매 실행마다 npm install(cloud 루틴은 매번 새 컨테이너라 node_modules를 커밋하지 않는 한 재설치 필요)이라는 새 인프라를 프로젝트에 들이는 일이라 이번 advance 한 사이클 범위를 넘어선다고 판단(계획의 (4)가 '네트워크 제약으로 안 되면 축소'를 명시적으로 허용); jsdom은 테스트 후 제거해 diff에 남기지 않았다. 이 축소 판단과 2단계 잔여 과제는 다음 critique가 재평가할 수 있도록 여기 history에 남긴다. index.html/sw.js는 변경하지 않아 APP_VERSION/CACHE 버전은 그대로 두었다(테스트 인프라 변경만이라 배포 캐시 무효화 불필요). node test/run.js 697/697 통과(신규 1개 포함, 기존 696개 전부 무영향). pending_advance_plan을 null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 111,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-30T20:00:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(a11y label-for/Enter제출/IME조합·auth 재진입가드+로컬 복구코드+잠금·클라우드 병합·CDN SRI(네트워크 제약 확정)·Assets탭 owner 캐러셀 키보드경로·예산탭 owner필터·죽은함수 정리·vm.Script 파싱 스모크(jsdom은 빌드리스 설계상 보류 확정)·index.html→logic.js 이전(addMonths/addMonthsStr 불일치 보류 확정)·index.html 파일분할(설계위배)·백그라운드 푸시(서버리스 상충)·checkNotifyAlerts 5분 인터벌/localStorage 쿼터/환율·시세 동기화 상태표시(모두 이미 존재)·삭제류 undo 일관성·tx/rec 폼 중복 통합은 모두 이미 다뤄졌거나 기각 확정이라 제외, 모달/시트 포커스트랩·전체 데이터 백업·긴 리스트 페이지네이션도 이미 존재해 러너업으로 기각). 새로 발견: index.html:2420-2441 fetchFxGold()/fetchStocks()가 /.netlify/functions/rates,/stock 호출에 AbortController/타임아웃이 전혀 없음(서버쪽 netlify/functions/rates.js:160-172, stock.js:197-200은 이미 AbortController+setTimeout(6000ms)+재시도 보유, 클라이언트만 대조적으로 누락). syncRates()(2443-2471)의 syncing 불리언 mutex 해제가 try/finally 없이 Promise.allSettled 종료 후 한 줄(2469)뿐이라, 네트워크 요청이 영원히 pending되면(캡티브 포털/모바일 네트워크 전환/함수 콜드스타트 중 연결 끊김) mutex가 영구 고정돼 '지금 갱신' 버튼 스핀 고정, autoSyncRates 10분 TTL 자동갱신 무효화, 신규 fx/gold/stock 자산 등록 시 rateWasUnknown 즉시동기화(2806/2813/3021)도 무효화되어 새로고침 전까지 세션 전체가 시세 갱신 불능이 되는 실재 리스크. test/run.js는 syncRates를 mock으로 대체(491-492, 4205-4272)해 실제 fetch/타임아웃/mutex 해제 경로를 전혀 검증하지 않음 — 다른 신규기능 제안류보다 '검증 가능한 실재 버그' 쪽이 우선이라 최우선 채택. pending_advance_plan에 저장: (1) fetchWithTimeout(url,opts,ms=8000) 헬퍼 신설(AbortController+setTimeout+finally clearTimeout)로 fetchFxGold/fetchStocks의 bare fetch 교체, (2) syncRates의 syncing=false/spin 해제를 try/finally로 방어, (3) test/run.js에 영원히 resolve 안 하는 fetch mock으로 타임아웃 시 abort/reject 검증하는 회귀 테스트 추가. 코드 변경 없음(읽기 전용 조사, general-purpose 서브에이전트 위임).",
+      "commit": null
+    },
+    {
+      "cycle": 115,
+      "phase": "advance",
+      "timestamp": "2026-09-30T21:00:00.000Z",
+      "summary": "critique(cycle115) 계획대로 시세 동기화 fetch에 타임아웃을 추가했다. index.html에 fetchWithTimeout(url,opts,ms=8000) 헬퍼를 신설(AbortController → setTimeout(()=>ctrl.abort(),ms) → fetch(url,{...opts,signal}) → finally clearTimeout(timer))해 fetchFxGold/fetchStocks의 bare fetch를 이 헬퍼 호출로 교체(호출부는 url만 넘기고 opts/ms는 생략 — 기본 8초 타임아웃 적용). syncRates()의 본문(allSettled 이후 로직)을 try/finally로 감싸 syncing=false와 버튼 spin 해제가 fetchFxGold/fetchStocks가 던지는 모든 예외 경로에서도 항상 실행되게 방어(기존엔 try/catch/finally가 전혀 없어 Promise.allSettled 밖에서 예외가 나면 mutex가 영구 고정될 수 있었음 — allSettled 자체는 reject하지 않지만 그 이후 R=DB.rates 등 동기 코드가 예외를 던질 가능성까지 방어). test/run.js FUNCTIONS에 fetchWithTimeout을 추가해 직접 추출·테스트하고, sandbox에 AbortController(Node 전역 그대로)와 clearTimeout(기존 setTimeout처럼 기본 no-op) 전역을 신설. 회귀 테스트 5개 추가: (1) fetch가 영원히 pending이고 signal의 abort 이벤트에 반응해 reject하도록 모킹했을 때 짧은 ms(10ms) 후 실제로 reject되고 signal.aborted===true가 되는지, (2) 응답이 제때 오면 결과를 그대로 반환하고 finally에서 clearTimeout이 호출되는지(늦은 abort가 다음 요청에 새지 않음을 보장), (3) ms 생략 시 기본값 8000이 setTimeout에 전달되는지, (4) 기존 opts(headers 등)가 보존되면서 signal만 병합되는지, (5) opts 자체를 생략해도(fetchFxGold/fetchStocks의 실제 호출 형태) 에러 없이 signal만 담아 호출되는지. sandbox.setTimeout/clearTimeout은 기본 no-op(다른 테스트의 지연 포커스 무력화용)이라 이 5개 테스트 블록 안에서만 실제 Node 타이머로 바꿔주고 매 테스트 종료 시 원복해 다른 테스트에 영향이 없게 했다. syncRates 자체는 DB/save/renderCurrent/toast 등에 깊이 의존하고 기존 다른 테스트들이 sandbox.syncRates를 '호출 여부만 기록하는 스텁'으로 의도적으로 대체해 두고 있어(FUNCTIONS에 추가하면 그 스텁을 실제 구현으로 덮어써 기존 rateWasUnknown 즉시동기화 테스트들이 깨짐) 이번 사이클에서는 extractFunction으로 직접 테스트하지 않음 — try/finally 추가는 diff가 작고 명백해 코드 리딩으로 충분하다고 판단했고, review 단계가 재확인하도록 남긴다. 두 인라인 <script> 블록 모두 vm.Script 파싱 통과, logic.js/sw.js node --check 통과, node test/run.js 729/729 -> 734/734 통과(신규 5개 전부). APP_VERSION 1.46.98->1.46.99, sw.js CACHE v260->v261. pending_advance_plan을 null로 비움.",
       "commit": null
     }
   ]

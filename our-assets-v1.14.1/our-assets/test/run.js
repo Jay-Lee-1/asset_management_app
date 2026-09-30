@@ -107,7 +107,7 @@ function extractMainScript() {
 // index.html이 아니라 logic.js에 있다 — 위 logicSrc로 직접 로드하므로 이 목록에는 없다
 // (app-evolve cycle97 advance, cycle111 advance).
 const FUNCTIONS = [
-  'addMonths',
+  'addMonths', 'fetchWithTimeout',
   'dateBelowRangeFloor', 'recalcEndCond', 'isVarCat', 'setCatVar', 'activeRecsForAssets', 'activeRecsForCat',
   'num', 'doRenameCat', 'doDeleteCat', 'totalBudgetSummary', 'budgetForMonth', 'setBudgetFrom', 'addCat',
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV',
@@ -494,6 +494,11 @@ const sandbox = {
   // Node 19+의 전역 webcrypto를 그대로 넘기면 index.html과 같은 소스가 그대로 돌아간다.
   crypto,
   TextEncoder,
+  // fetchWithTimeout(app-evolve cycle115)이 쓰는 AbortController는 Node 전역 구현 그대로 넘긴다
+  // (브라우저와 동일한 모양). fetch는 기본값을 두지 않고(호출되면 바로 ReferenceError 대신
+  // "sandbox.fetch is not a function" 형태로 실패하게) 각 테스트가 필요한 모양으로 직접 채운다.
+  AbortController,
+  clearTimeout: () => {},
 };
 vm.createContext(sandbox);
 // index.html이 <script src="logic.js">로 로드하는 순서를 그대로 따라 logic.js를 먼저 실행한다
@@ -8052,6 +8057,74 @@ if (stockFns && ratesFns) {
     assert.strictEqual('GBP' in m, false);
   });
 }
+
+/* ---------- fetchWithTimeout (app-evolve cycle115) ----------
+ * fetchFxGold/fetchStocks의 bare fetch가 AbortController/타임아웃이 전혀 없어, 서버가 응답을
+ * 멎으면(캡티브 포털·모바일 네트워크 전환·함수 콜드스타트 중 연결 끊김) syncRates()의 syncing
+ * mutex가 영구 고정되던 버그의 회귀를 막는다. sandbox.setTimeout/clearTimeout은 기본값이
+ * no-op(다른 테스트의 지연 포커스 등을 무력화하기 위함)이라, 이 블록에서만 실제 Node 타이머로
+ * 잠깐 바꿔주고 매 테스트가 끝나면 원복한다. */
+(() => {
+  const origSetTimeout = sandbox.setTimeout, origClearTimeout = sandbox.clearTimeout, origFetch = sandbox.fetch;
+  function restoreTimers() { sandbox.setTimeout = origSetTimeout; sandbox.clearTimeout = origClearTimeout; sandbox.fetch = origFetch; }
+
+  test('fetchWithTimeout: 서버가 응답하지 않으면 지정 시간 후 signal을 abort하고 프로미스가 reject된다(mutex 영구 고정 방지)', async () => {
+    sandbox.setTimeout = setTimeout; sandbox.clearTimeout = clearTimeout;
+    let capturedSignal = null;
+    sandbox.fetch = (url, opts) => new Promise((resolve, reject) => {
+      capturedSignal = opts.signal;
+      opts.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+    });
+    try {
+      await assert.rejects(sandbox.fetchWithTimeout('/x', {}, 10));
+      assert.strictEqual(capturedSignal.aborted, true, '타임아웃 후 signal.aborted가 true여야 함');
+    } finally { restoreTimers(); }
+  });
+
+  test('fetchWithTimeout: 응답이 제때 오면 결과를 그대로 반환하고, finally에서 타이머를 정리한다(늦은 abort가 다음 요청에 새지 않음)', async () => {
+    let clearCalls = 0;
+    sandbox.setTimeout = setTimeout;
+    sandbox.clearTimeout = (t) => { clearCalls++; clearTimeout(t); };
+    sandbox.fetch = async () => ({ ok: true, mock: 'resp' });
+    try {
+      const r = await sandbox.fetchWithTimeout('/x', {}, 50);
+      assert.strictEqual(r.mock, 'resp');
+      assert.strictEqual(clearCalls, 1, '성공 경로에서도 타이머를 정리해야 함');
+    } finally { restoreTimers(); }
+  });
+
+  test('fetchWithTimeout: ms를 생략하면 기본 8000ms를 타임아웃으로 쓴다', async () => {
+    let capturedMs = null;
+    sandbox.setTimeout = (fn, ms) => { capturedMs = ms; return setTimeout(fn, ms); };
+    sandbox.clearTimeout = clearTimeout;
+    sandbox.fetch = async () => ({ ok: true });
+    try {
+      await sandbox.fetchWithTimeout('/x', {});
+      assert.strictEqual(capturedMs, 8000);
+    } finally { restoreTimers(); }
+  });
+
+  test('fetchWithTimeout: 기존 opts(headers 등)를 보존하면서 signal만 추가한다', async () => {
+    let capturedOpts = null;
+    sandbox.setTimeout = setTimeout; sandbox.clearTimeout = clearTimeout;
+    sandbox.fetch = async (url, opts) => { capturedOpts = opts; return { ok: true }; };
+    try {
+      await sandbox.fetchWithTimeout('/x', { headers: { a: 1 } }, 50);
+      assert.strictEqual(capturedOpts.headers.a, 1);
+      assert.ok(capturedOpts.signal, 'signal이 opts에 병합되어야 함');
+    } finally { restoreTimers(); }
+  });
+
+  test('fetchWithTimeout: opts를 생략해도(undefined) 에러 없이 signal만 담아 호출한다(fetchFxGold/fetchStocks의 실제 호출 형태)', async () => {
+    let capturedOpts;
+    sandbox.setTimeout = setTimeout; sandbox.clearTimeout = clearTimeout;
+    sandbox.fetch = async (url, opts) => { capturedOpts = opts; return { ok: true }; };
+    try {
+      await sandbox.fetchWithTimeout('/x');
+      assert.ok(capturedOpts.signal);
+    } finally { restoreTimers(); }
+  });
+})();
 
 test('CDN 리소스: pretendard/kakao/supabase 태그가 pinned 버전과 crossorigin을 유지한다(SRI 준비 회귀 방지)', () => {
   assert.ok(
