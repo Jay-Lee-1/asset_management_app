@@ -1,15 +1,8 @@
 {
   "cycle": 115,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 110,
-      "phase": "review",
-      "timestamp": "2026-09-30T00:30:00.000Z",
-      "summary": "develop 커밋(10aa653, bigMinInput/qAmt/fpEmailIn/kkeyIn 4곳에 Enter 제출 배선)을 검토. 4곳 모두 옆 저장 버튼과 정확히 동일한 함수/인자를 그대로 재사용함을 diff로 재확인(setBigMin/saveQuickAmount(recId,date)/doSendResetEmail/saveKakaoKey). 숫자·이메일·영숫자 입력이라 IME 조합 문제 대상 아님(cycle108 review에서 발견된 한글 조합 버그와 무관). qAmt의 onkeydown=\"...saveQuickAmount('${recId}','${date}')\"에 쓰인 recId/date 보간이 같은 파일 5782/5834/6119의 기존 onclick=\"openQuickAmount('${rec.id}','${date}')\" 호출부와 동일한, 이번 커밋이 새로 만든 게 아닌 기존 관례임을 grep으로 확인 — rec.id는 내부 생성 식별자라 사용자 입력 텍스트(아포스트로피 등)가 들어갈 경로 없음, 새 인젝션 리스크 아님. fpEmailIn의 Enter 재호출은 cycle109에서 추가된 doSendResetEmail() 재진입 가드(btn.disabled 체크)로 이미 보호됨을 재확인. 두 인라인 <script> 블록 모두 new Function() 파싱 통과, sw.js node --check 통과, node test/run.js 696/696 통과(순수 마크업 배선 diff라 로직 함수 미변경, 예상대로 변경 없음). 코드 변경 없음(이상 없음).",
-      "commit": null
-    },
     {
       "cycle": 110,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-30T00:00:00.000Z",
       "summary": "cycle114 advance에서 tx/rec 폼 공용 헬퍼로 새로 통합된 _applyType/_applyFreq/_applyDay/dayPickerHTML(그리고 cycle108에서 통합된 _applyCount)가 통합 이후 단 한 번도 자신을 직접 겨냥한 회귀 테스트가 없었던 격차를 발견해 메웠다(_applyFreq만 recFreq 테스트로 weekend 리셋 동작이 간접적으로 덮여 있었음). test/run.js에 FUNCTIONS 목록에 '_applyCount'를 추가(기존엔 빠져 있었음)하고, 19개 회귀 테스트를 신설: _applyType 6개(catListOf(t) 첫 항목으로 category 갱신, transfer면 항상 '이체' 고정, catListOf가 빈 배열이면 '기타' 폴백, income/transfer/saving 전환 시 toAssetId가 비어있으면 firstCash()로 채워지되 이미 있으면 덮어쓰지 않음, expense 전환은 toAssetId 불변), _applyDay 6개('last'/'custom'/숫자 세 분기, custom 전환 시 기존 day가 프리셋(1/5/15/25)·'last'·falsy면 시작일의 일(日)로 초기화되고 이미 커스텀 값이면 유지되는 조건부 로직, 시작일에서 유효한 일자를 못 뽑으면 10 폴백), _applyCount 4개(0/비숫자 입력은 count/endDate 모두 null, 숫자 외 문자 제거 후 파싱, 999 상한 clamp, recNthDate와 동일한 규칙으로 endDate 계산 확인), dayPickerHTML 3개(프리셋 day는 on 클래스, 'last'는 말일 버튼에 on, 프리셋 밖 숫자는 커스텀 입력칸 렌더 및 현재 값 채움) — HTML 문자열 검증은 정규식 매칭으로 확인. 세 함수 모두 DOM을 건드리는 지점(_applyCount의 $(pfx+'EndDateBox') 등)은 테스트 sandbox의 기본 $ 스텁이 알 수 없는 id에 null을 돌려줘 안전하게 no-op되므로 별도 DOM mock 없이 순수 입출력만 검증했다. 프로덕션 코드(index.html/logic.js/sw.js)는 전혀 건드리지 않은 테스트 전용 추가라 사용자에게 영향 있는 동작 변경이 없어 APP_VERSION/CACHE는 올리지 않았다(cycle114 advance의 1.46.98/v260 그대로). node test/run.js 710/710 -> 729/729 통과(신규 19개 전부, 기존 710개 무영향).",
+      "commit": "bf6071d"
+    },
+    {
+      "cycle": 115,
+      "phase": "review",
+      "timestamp": "2026-09-30T19:40:00.000Z",
+      "summary": "develop 커밋(bf6071d, tx/rec 공용 헬퍼 _applyType/_applyDay/_applyCount/dayPickerHTML 회귀 테스트 19개 추가)을 검토. index.html의 실제 구현(3332-3440행)과 신규 테스트 19개를 하나씩 직접 대조: _applyType의 catListOf(t)[0]||'기타' 폴백과 income/transfer/saving 전환 시 firstCash() 채움(이미 있으면 미덮어쓰기) 로직이 6개 테스트 기대값과 정확히 일치, _applyDay의 'last'/'custom'/숫자 세 분기와 custom 전환 시 프리셋(1/5/15/25)·'last'·falsy일 때만 시작일 일자로 재초기화하는 조건이 6개 테스트와 일치, _applyCount의 Math.min(999,Math.max(0,...))clamp와 n>=1일 때만 recNthDate 호출하는 분기가 4개 테스트와 일치(endDate 테스트는 실제 recNthDate 호출 결과를 재사용하는 방식이라 회귀 시 recNthDate 자체가 바뀌면 여전히 같이 통과하는 약점이 있으나 '2026-03-10' 리터럴 비교도 함께 있어 완전 tautology는 아님), dayPickerHTML의 isCustom 판정(_custom 플래그 또는 프리셋 밖 숫자)과 on 클래스/커스텀 입력칸 렌더가 3개 테스트와 일치. firstCash/isCashLike가 test/run.js의 FUNCTIONS/CONSTS 추출 목록에 이미 포함돼 있어 _applyType 테스트가 ReferenceError 없이 동작함을 확인. node test/run.js 재실행해 729/729 전부 통과 재확인(직접 실행으로 커밋 메시지 주장 검증). 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
