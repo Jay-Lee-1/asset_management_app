@@ -1305,7 +1305,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.46.97';
+const APP_VERSION='1.46.98';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3331,6 +3331,14 @@ document.addEventListener('click',e=>{
 function openTxSheet(){window._recCtx=null;_formScroll=0;_txFocusAmt=true;txDraft={id:null,type:'expense',date:ST.ledger.sel,category:DB.categories.expense[0],memo:'',amount:0,fromAssetId:firstCash(),toAssetId:null,repeat:false,freq:'monthly',day:null,endDate:null,count:null};renderTxSheet()}
 function firstCash(excludeId){const a=DB.assets.find(x=>isCashLike(x)&&x.id!==excludeId);return a?a.id:null}
 function catListOf(type){return type==='income'?DB.categories.income:type==='saving'?DB.categories.saving:type==='expense'?DB.categories.expense:[]}
+/* tx(내역 입력)/rec(반복 설정) 폼이 공유하는 '반복일' 선택 UI. pfx='tx' 또는 'rec' */
+function dayPickerHTML(d,pfx){
+ const isCustom=d._custom||(typeof d.day==='number'&&![1,5,15,25].includes(d.day));
+ const dayBtns=[['1','1일'],['5','5일'],['15','15일'],['25','25일'],['last','말일'],['custom','직접']].map(([v,l])=>v==='custom'&&isCustom
+  ?`<label class="day-cell" style="box-sizing:border-box;display:flex;align-items:center;justify-content:center;gap:2px;height:46px;border-radius:var(--r-sm);background:var(--brand-soft);border:1px solid var(--brand);color:var(--brand-ink);font-size:13px;font-weight:700;overflow:hidden"><input class="day-in num" id="${pfx}DayIn" inputmode="numeric" maxlength="2" value="${d.day}" oninput="${pfx}DayInput(this)" onfocus="daySuf(this,0)" onblur="daySuf(this,1)" style="box-sizing:border-box;display:block;height:44px;min-height:0;width:2.4ch;margin:0;padding:0;line-height:44px;-webkit-appearance:none;appearance:none;border:none;border-radius:0;background:transparent;-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:none;color:var(--brand-ink);text-align:center;font-size:13px;font-weight:700;outline:none"><span class="day-suf" style="font-size:13px;font-weight:700;color:var(--brand-ink);line-height:1">일</span></label>`
+  :`<button class="${String(d.day)===v?'on':''}" onclick="${pfx}Day('${v}')">${l}</button>`).join('');
+ return `<div class="field"><label>반복일</label><div class="opt-grid c3">${dayBtns}</div><div class="day-warn" id="${pfx}DayWarn" style="display:none"></div></div>`;
+}
 function renderTxSheet(){
  const d=txDraft;const rc=window._recCtx;
  if(rc){ /* 반복 개별/범위 수정: 금액만 */
@@ -3357,13 +3365,7 @@ function renderTxSheet(){
  if(rpt){
   const freqBtns=[['monthly','매월'],['weekly','매주'],['daily','매일'],['yearly','매년']].map(([v,l])=>`<button class="${d.freq===v?'on':''}" onclick="txFreq('${v}')">${l}</button>`).join('');
   let dayField='';
-  if(d.freq==='monthly'){
-   const isCustom=d._custom||(typeof d.day==='number'&&![1,5,15,25].includes(d.day));
-   const dayBtns=[['1','1일'],['5','5일'],['15','15일'],['25','25일'],['last','말일'],['custom','직접']].map(([v,l])=>v==='custom'&&isCustom
-    ?`<label class="day-cell" style="box-sizing:border-box;display:flex;align-items:center;justify-content:center;gap:2px;height:46px;border-radius:var(--r-sm);background:var(--brand-soft);border:1px solid var(--brand);color:var(--brand-ink);font-size:13px;font-weight:700;overflow:hidden"><input class="day-in num" id="txDayIn" inputmode="numeric" maxlength="2" value="${d.day}" oninput="txDayInput(this)" onfocus="daySuf(this,0)" onblur="daySuf(this,1)" style="box-sizing:border-box;display:block;height:44px;min-height:0;width:2.4ch;margin:0;padding:0;line-height:44px;-webkit-appearance:none;appearance:none;border:none;border-radius:0;background:transparent;-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:none;color:var(--brand-ink);text-align:center;font-size:13px;font-weight:700;outline:none"><span class="day-suf" style="font-size:13px;font-weight:700;color:var(--brand-ink);line-height:1">일</span></label>`
-    :`<button class="${String(d.day)===v?'on':''}" onclick="txDay('${v}')">${l}</button>`).join('');
-   dayField=`<div class="field"><label>반복일</label><div class="opt-grid c3">${dayBtns}</div><div class="day-warn" id="txDayWarn" style="display:none"></div></div>`;
-  }
+  if(d.freq==='monthly')dayField=dayPickerHTML(d,'tx');
   repeatFields=`
    <div class="field"><label>주기</label><div class="opt-grid">${freqBtns}</div></div>
    ${dayField}
@@ -3388,16 +3390,22 @@ function renderTxSheet(){
  setTimeout(()=>{const a=$('txAmt');if(a&&_txFocusAmt)a.focus();_txFocusAmt=false},300);
 }
 function syncTxInputs(){const sh=$('sheetScroll');if(sh)_formScroll=sh.scrollTop;const a=$('txAmt'),dt=$('txDate'),m=$('txMemo');if(a)txDraft.amount=num(a);if(dt&&dt.value)txDraft.date=dt.value;if(m)txDraft.memo=m.value}
-function txOpenCat(){syncTxInputs();openCatPicker({kind:txDraft.type,current:txDraft.category,back:renderTxSheet,onPick:c=>{txDraft.category=c;renderTxSheet()}})}
-function txOpenAsset(which){syncTxInputs();openAssetPicker({current:which==='to'?txDraft.toAssetId:txDraft.fromAssetId,title:which==='to'?'받는 자산':'보내는 자산',excludeMarketValued:true,back:renderTxSheet,onPick:id=>{if(which==='to')txDraft.toAssetId=id;else txDraft.fromAssetId=id;renderTxSheet()}})}
-function txType(t){if(navigator.vibrate)navigator.vibrate(6);syncTxInputs();txDraft.type=t;txDraft.category=t==='transfer'?'이체':catListOf(t)[0]||'기타';
- if((t==='income'||t==='transfer'||t==='saving')&&!txDraft.toAssetId)txDraft.toAssetId=firstCash();renderTxSheet()}
+/* tx/rec 폼이 공유하는 카테고리/자산/유형/주기/반복일 변경 로직. draft만 다르고 나머지는 동일해 헬퍼로 통합 */
+function _applyOpenCat(draft,syncFn,renderFn){syncFn();openCatPicker({kind:draft.type,current:draft.category,back:renderFn,onPick:c=>{draft.category=c;renderFn()}})}
+function _applyOpenAsset(draft,which,syncFn,renderFn){syncFn();openAssetPicker({current:which==='to'?draft.toAssetId:draft.fromAssetId,title:which==='to'?'받는 자산':'보내는 자산',excludeMarketValued:true,back:renderFn,onPick:id=>{if(which==='to')draft.toAssetId=id;else draft.fromAssetId=id;renderFn()}})}
+function _applyType(draft,t){draft.type=t;draft.category=t==='transfer'?'이체':catListOf(t)[0]||'기타';
+ if((t==='income'||t==='transfer'||t==='saving')&&!draft.toAssetId)draft.toAssetId=firstCash()}
+function _applyFreq(draft,start,v){draft.freq=v;if(v==='monthly'&&!draft.day)draft.day=Number(String(start).slice(8,10))||1}
+function _applyDay(draft,start,v){if(v==='last'){draft.day='last';draft._custom=false}else if(v==='custom'){draft._custom=true;if([1,5,15,25].includes(draft.day)||draft.day==='last'||!draft.day)draft.day=Number(String(start).slice(8,10))||10}else{draft.day=Number(v);draft._custom=false}}
+function txOpenCat(){_applyOpenCat(txDraft,syncTxInputs,renderTxSheet)}
+function txOpenAsset(which){_applyOpenAsset(txDraft,which,syncTxInputs,renderTxSheet)}
+function txType(t){if(navigator.vibrate)navigator.vibrate(6);syncTxInputs();_applyType(txDraft,t);renderTxSheet()}
 function txToggleRepeat(){syncTxInputs();txDraft.repeat=!txDraft.repeat;
  if(txDraft.repeat&&(txDraft.freq==='monthly'||!txDraft.freq)&&!txDraft.day)txDraft.day=Number(String(txDraft.date).slice(8,10))||1;
  renderTxSheet()}
-function txFreq(v){syncTxInputs();txDraft.freq=v;if(v==='monthly'&&!txDraft.day)txDraft.day=Number(String(txDraft.date).slice(8,10))||1;recalcEndCond(txDraft,txDraft.date);renderTxSheet()}
+function txFreq(v){syncTxInputs();_applyFreq(txDraft,txDraft.date,v);recalcEndCond(txDraft,txDraft.date);renderTxSheet()}
 function txDayInput(el){const v=(el.value||'').replace(/[^0-9]/g,'').slice(0,2);if(el.value!==v)el.value=v;txDraft.day=v===''?'':Number(v);dayWarn('tx',v);if(v!=='')recalcEndCond(txDraft,txDraft.date)}
-function txDay(v){syncTxInputs();if(v==='last'){txDraft.day='last';txDraft._custom=false}else if(v==='custom'){txDraft._custom=true;if([1,5,15,25].includes(txDraft.day)||txDraft.day==='last'||!txDraft.day)txDraft.day=Number(String(txDraft.date).slice(8,10))||10}else{txDraft.day=Number(v);txDraft._custom=false}recalcEndCond(txDraft,txDraft.date);renderTxSheet();if(v==='custom')focusDayIn('txDayIn')}
+function txDay(v){syncTxInputs();_applyDay(txDraft,txDraft.date,v);recalcEndCond(txDraft,txDraft.date);renderTxSheet();if(v==='custom')focusDayIn('txDayIn')}
 /* ── 반복 종료조건(선택): [종료일][횟수] 두 박스 한 줄, 양방향 자동 계산 ──────
    pfx='tx'(내역 입력 반복) 또는 'rec'(반복 설정 편집) */
 function endCondFields(d,pfx){
@@ -3566,8 +3574,8 @@ let recDraft=null;
 function openRecSheet(){_formScroll=0;recDraft={id:null,active:true,type:'expense',category:DB.categories.expense[0],amount:0,fromAssetId:firstCash(),toAssetId:null,freq:'monthly',day:1,startDate:ST.ledger.sel,endDate:null,count:null,skip:[],edits:{}};renderRecSheet()}
 function editRec(id){const r=DB.recurrences.find(x=>x.id===id);if(!r)return;_formScroll=0;recDraft=JSON.parse(JSON.stringify(r));renderRecSheet()}
 function syncRecInputs(){const _mm=$('rMemo');if(_mm)recDraft.memo=_mm.value;const sh=$('sheetScroll');if(sh)_formScroll=sh.scrollTop;const a=$('rAmt'),s=$('rStart');if(a)recDraft.amount=num(a);if(s&&s.value)recDraft.startDate=s.value}
-function recOpenCat(){syncRecInputs();openCatPicker({kind:recDraft.type,current:recDraft.category,back:renderRecSheet,onPick:c=>{recDraft.category=c;renderRecSheet()}})}
-function recOpenAsset(which){syncRecInputs();openAssetPicker({current:which==='to'?recDraft.toAssetId:recDraft.fromAssetId,title:which==='to'?'받는 자산':'보내는 자산',excludeMarketValued:true,back:renderRecSheet,onPick:id=>{if(which==='to')recDraft.toAssetId=id;else recDraft.fromAssetId=id;renderRecSheet()}})}
+function recOpenCat(){_applyOpenCat(recDraft,syncRecInputs,renderRecSheet)}
+function recOpenAsset(which){_applyOpenAsset(recDraft,which,syncRecInputs,renderRecSheet)}
 const WK={ /* 주말 조정 어휘 */
  none:['당일 유지','주말이어도 그 날짜에'],
  earlier:['앞당겨 금요일','주말이면 하루 앞 금요일에 (급여)'],
@@ -3584,13 +3592,7 @@ function renderRecSheet(){
  const catField=d.type!=='transfer'?`<div class="field"><label>카테고리</label><button class="pick" onclick="recOpenCat()"><div class="pav ${catAv(d.type)}">${catGlyph(d.type,d.category,null,'tag')}</div><div class="pbody"><div class="pn">${esc(d.category)}</div></div><div class="pc">${svg('chevR')}</div></button></div>`:'';
  const freqBtns=[['monthly','매월'],['weekly','매주'],['daily','매일'],['yearly','매년']].map(([v,l])=>`<button class="${d.freq===v?'on':''}" onclick="recFreq('${v}')">${l}</button>`).join('');
  let dayField='';
- if(d.freq==='monthly'){
-  const isCustom=d._custom||(typeof d.day==='number'&&![1,5,15,25].includes(d.day));
-  const dayBtns=[['1','1일'],['5','5일'],['15','15일'],['25','25일'],['last','말일'],['custom','직접']].map(([v,l])=>v==='custom'&&isCustom
-    ?`<label class="day-cell" style="box-sizing:border-box;display:flex;align-items:center;justify-content:center;gap:2px;height:46px;border-radius:var(--r-sm);background:var(--brand-soft);border:1px solid var(--brand);color:var(--brand-ink);font-size:13px;font-weight:700;overflow:hidden"><input class="day-in num" id="recDayIn" inputmode="numeric" maxlength="2" value="${d.day}" oninput="recDayInput(this)" onfocus="daySuf(this,0)" onblur="daySuf(this,1)" style="box-sizing:border-box;display:block;height:44px;min-height:0;width:2.4ch;margin:0;padding:0;line-height:44px;-webkit-appearance:none;appearance:none;border:none;border-radius:0;background:transparent;-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:none;color:var(--brand-ink);text-align:center;font-size:13px;font-weight:700;outline:none"><span class="day-suf" style="font-size:13px;font-weight:700;color:var(--brand-ink);line-height:1">일</span></label>`
-    :`<button class="${String(d.day)===v?'on':''}" onclick="recDay('${v}')">${l}</button>`).join('');
-  dayField=`<div class="field"><label>반복일</label><div class="opt-grid c3">${dayBtns}</div><div class="day-warn" id="recDayWarn" style="display:none"></div></div>`;
- }
+ if(d.freq==='monthly')dayField=dayPickerHTML(d,'rec');
  let assetFields='';
  if(d.type==='expense')assetFields=`<div class="field"><label>출금 자산</label>${assetPickBtn(d.fromAssetId,"recOpenAsset('from')")}</div>`;
  else if(d.type==='income')assetFields=`<div class="field"><label>입금 자산</label>${assetPickBtn(d.toAssetId,"recOpenAsset('to')")}</div>`;
@@ -3615,9 +3617,8 @@ function renderRecSheet(){
   ${((d.type==='expense'||d.type==='income')&&isVarCat(d.type,d.category))?`<div class="card" style="box-shadow:none;margin-bottom:14px"><div class="toggle-row"><div><div class="tl">변동 카테고리예요</div><div style="font-size:12px;color:var(--text-3);margin-top:2px">해당일이 되면 실제 ${d.type==='income'?'입금':'결제'} 금액을 홈에서 입력받아요</div></div><span class="mc" style="color:var(--text-3)">${svg('bell',20)}</span></div></div>`:''}
   ${editing?`<div class="two-btn"><button class="btn btn-danger cancel" onclick="delRecConfirm('${d.id}')">${svg('trash')} 삭제</button><button class="btn btn-primary" onclick="saveRec()">저장하기</button></div>`:`<div class="two-btn"><button class="btn btn-soft cancel" onclick="closeSheet()">취소</button><button class="btn btn-primary" onclick="saveRec()">저장하기</button></div>`}`);
 }
-function recType(t){if(navigator.vibrate)navigator.vibrate(6);syncRecInputs();recDraft.type=t;recDraft.category=t==='transfer'?'이체':catListOf(t)[0]||'기타';
- if((t==='income'||t==='transfer'||t==='saving')&&!recDraft.toAssetId)recDraft.toAssetId=firstCash();renderRecSheet()}
-function recFreq(v){syncRecInputs();recDraft.freq=v;if(v==='monthly'&&!recDraft.day)recDraft.day=Number(String(recDraft.startDate).slice(8,10))||1;else if(v!=='monthly')recDraft.weekend='none';recalcEndCond(recDraft,recDraft.startDate);renderRecSheet()}
+function recType(t){if(navigator.vibrate)navigator.vibrate(6);syncRecInputs();_applyType(recDraft,t);renderRecSheet()}
+function recFreq(v){syncRecInputs();_applyFreq(recDraft,recDraft.startDate,v);if(v!=='monthly')recDraft.weekend='none';recalcEndCond(recDraft,recDraft.startDate);renderRecSheet()}
 function recDayInput(el){const v=(el.value||'').replace(/[^0-9]/g,'').slice(0,2);if(el.value!==v)el.value=v;recDraft.day=v===''?'':Number(v);dayWarn('rec',v);if(v!=='')recalcEndCond(recDraft,recDraft.startDate)}
 function dayWarn(pfx,v){const w=$(pfx+'DayWarn');if(!w)return;
  const n=Number(v);let msg='';
@@ -3631,7 +3632,7 @@ function clampDay(d){ /* 저장 시 보정 */
  return '';}
 function daySuf(el,show){const sp=el.nextElementSibling;if(sp)sp.style.display=show?'':'none'}
 function focusDayIn(id){setTimeout(()=>{const el=$(id);if(el){el.focus();el.select()}},260)}
-function recDay(v){syncRecInputs();if(v==='last'){recDraft.day='last';recDraft._custom=false}else if(v==='custom'){recDraft._custom=true;if([1,5,15,25].includes(recDraft.day)||recDraft.day==='last'||!recDraft.day)recDraft.day=Number(String(recDraft.startDate).slice(8,10))||10}else{recDraft.day=Number(v);recDraft._custom=false}recalcEndCond(recDraft,recDraft.startDate);renderRecSheet();if(v==='custom')focusDayIn('recDayIn')}
+function recDay(v){syncRecInputs();_applyDay(recDraft,recDraft.startDate,v);recalcEndCond(recDraft,recDraft.startDate);renderRecSheet();if(v==='custom')focusDayIn('recDayIn')}
 function saveRec(){
  if(twGuard())return;
  syncRecInputs();const d=recDraft;if(_savedDrafts.has(d))return;if(!d.amount){toast('금액을 입력해 주세요');return}

@@ -1,19 +1,8 @@
 {
-  "cycle": 114,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "tx/rec 폼 중복 로직 6쌍을 _applyCount 패턴으로 통합(day/freq/type/openCat/openAsset + 중복 day-picker HTML)",
-    "why": "renderTxSheet(index.html 3334-3389)와 renderRecSheet(3581-3617)이 마크업의 ~70%를 공유하며, day-picker HTML 블록(3362-3364 vs 3589-3591)이 인라인 스타일까지 바이트 단위로 중복돼 있고, txType/recType(3393-3395/3618-3619), txFreq/recFreq(3398/3620), txDayInput/recDayInput(3399/3621), txDay/recDay(3400/3634), txOpenCat/recOpenCat(3391/3569), txOpenAsset/recOpenAsset(3392/3570) 6쌍이 tx->rec/txDraft->recDraft/.date->.startDate 치환만 다른 복붙임. 이미 같은 문제를 겪어 txCount/recCount를 _applyCount(pfx,draft,v,rerender)(3425-3436)로 통합한 전례가 있고 그 결과 래퍼 함수명이 그대로 유지돼 onclick 문자열과 test/run.js의 정규식 추출기 둘 다 안 깨졌음이 증명됨. 실제 드리프트 사고도 이미 한 번 있었음(recFreq 주말 리셋 버그, test/run.js:662-690, cycle75) -- 6쌍이 아직 방치돼 같은 사고가 재발할 위험이 실재.",
-    "approach": "1) index.html에 _applyDay(pfx,draft,v)/_applyFreq(pfx,draft,v)/_applyType(pfx,draft,t)/_applyOpenCat(pfx,draft,render)/_applyOpenAsset(pfx,draft,which,render) 5개 공용 헬퍼를 _applyCount와 동일한 패턴으로 신설. 2) txDay/recDay/txFreq/recFreq/txType/recType/txOpenCat/recOpenCat/txOpenAsset/recOpenAsset는 pfx('tx'/'rec')와 해당 draft만 넘기는 한 줄 래퍼로 남겨 기존 onclick=\"...\" 문자열과 test/run.js FUNCTIONS 추출 모두 이름 변경 없이 유지. 3) 중복된 day-picker HTML(3362-3364/3589-3591)을 dayPickerHTML(d,pfx) 헬퍼로 추출(기존 endCondFields(d,pfx) 패턴 참고, 3403 근방)해 양쪽 render 함수에서 호출. 4) renderTxSheet/renderRecSheet 자체는 구조 차이(반복 토글 유무, scope-edit 서브뷰)가 있어 병합하지 않고 그대로 유지, day/type/freq 세그먼트만 공용 헬퍼 호출로 교체. 5) 매 추출 단계마다 node test/run.js 실행해 기존 recFreq/recDay/txDay 테스트(약 662-690, 6852 근방)가 이름 변경 없이 그대로 통과하는지 확인, 새 _apply* 헬퍼를 직접 겨냥하는 테스트를 추가하면 FUNCTIONS 목록에 이름 등재. 6) APP_VERSION(index.html, 현재 1.46.97)과 sw.js CACHE(현재 v259)를 사용자 동작 변화가 없는 리팩터라도 관례대로 상향. 7) 두 인라인 <script> 블록 vm.Script 파싱 통과 + node --check(logic.js/sw.js) 확인."
-  },
+  "cycle": 115,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 109,
-      "phase": "advance",
-      "timestamp": "2026-09-29T23:00:00.000Z",
-      "summary": "critique(cycle109) 계획대로 예산 탭 지출 분석에 귀속(나/배우자/공용) 필터를 추가했다. logic.js에 순수 함수 filterTxnsByOwner(txns,assets,owner) 신설 — owner가 '전체'/falsy면 무필터, expense는 fromAssetId의 owner, income은 toAssetId의 owner, transfer/saving은 fromAssetId 우선 후 toAssetId로 폴백, 기준 자산을 못 찾으면(삭제된 자산 등) 제외. test/run.js에 회귀 테스트 7개 신설(전체/falsy 무필터, expense/income 각 방향, transfer/saving 폴백, 미해결 자산 id, undefined 인자). spendByCategory(y,m,owner='전체') 3번째 파라미터를 추가해 allTxns() 결과를 filterTxnsByOwner로 거른 뒤 집계하되, budgetHistory 기반 카테고리 강제 노출(예산은 귀속 무관 전역)은 그대로 둠 — 기존 호출부(홈 예산초과 알림 등)는 인자 생략으로 그대로 '전체' 기준 유지. spendTrend(c,y,m,n,owner='전체')도 owner를 추가해 avg/cur를 같은 귀속 기준으로 비교하도록 함(계획엔 없었지만, 안 고치면 owner로 필터된 cur를 가구 전체 평균과 비교하는 모순이 생겨 review 없이 advance 단계에서 바로 정정). openSpendAnalysis()에 ST.spendOwner 상태(기본 '전체', ST.plan.owner와 동일 관례) 추가, renderAssets/renderPlan과 동일한 '귀속 사라지면 전체로' 폴백 가드 추가, openCatManage와 동일한 .seg/.seg-blob 세그먼트 UI로 ['전체',...DB.owners] 칩 행을 시트 상단에 추가(moveSegBlobs()가 openSheet 후 자동 배선됨). 칩 onclick은 spendOwnerSel(i) — 소유자 이름을 바로 따옴표 JS 문자열로 넣으면 이름에 아포스트로피가 있을 때 깨지는 기존 코드베이스의 알려진 함정(delOwner/moveGroup 등이 전부 인덱스를 쓰는 이유)을 피해 인덱스만 넘김. openBudgetPrompt/saveBudget/delBudget의 rows=spendByCategory(y,m)도 spendByCategory(y,m,ST.spendOwner)로 맞춰, 지출 분석 화면에 표시된(귀속 필터가 걸린) 목록의 idx가 실제로 같은 카테고리를 가리키도록 정정 — 이 부분을 맞추지 않으면 귀속 필터가 켜진 상태에서 카테고리를 눌렀을 때 정렬 순서 차이로 다른 카테고리의 예산을 잘못 열람/수정하는 실제 버그가 생겼을 것(계획엔 명시 안 됐지만 이번 변경이 만드는 필수 정합성이라 함께 처리). 예산 자체(setBudgetFrom/budgetForMonth/DB.budgetHistory)는 계획대로 귀속과 무관하게 카테고리 전역 그대로 — 스키마 변경 없음. 두 인라인 <script> 블록 모두 new Function() 파싱 통과, logic.js/sw.js 모두 node --check 통과, node test/run.js 696/696 통과(신규 7개 포함). APP_VERSION 1.46.89->1.46.90, sw.js CACHE v251->v252. pending_advance_plan을 null로 비움. 수동 QA(Playwright 등 브라우저 기동)는 이번 사이클에서 수행하지 않음 — 다음 review 단계가 diff를 검토하며 필요시 확인 권장.",
-      "commit": null
-    },
     {
       "cycle": 110,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-09-30T16:00:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(label-for·Enter제출/IME조합·auth 재진입가드+로컬 복구코드+잠금·클라우드 병합·CDN SRI(네트워크 제약 확정)·자산탭 owner 캐러셀·예산탭 owner필터·죽은함수 정리·index.html→logic.js 이전+addMonths/addMonthsStr 불일치(기존에 이미 보류 확정)·vm.Script 파싱 스모크·jsdom(빌드리스 설계상 의도적 보류)·netlify CORS·CSV·delOwner 캐스케이드·안드로이드 백버튼·PWA 업데이트·뷰포트 핀치줌·recDates·esc() XSS·checkNotifyAlerts 5분 인터벌(이미 존재, 오탐 아님)·localStorage 쿼터 처리(이미 존재)·환율/시세 동기화 상태 표시(이미 존재)는 모두 이미 다뤄졌거나 재확인 완료라 제외). 새로 발견: renderTxSheet(index.html 3334-3389)와 renderRecSheet(3581-3617)이 마크업의 ~70%를 공유하고, day-picker HTML 블록(3362-3364 vs 3589-3591)이 인라인 스타일까지 바이트 단위로 중복돼 있으며, txType/recType(3393-3395/3618-3619)·txFreq/recFreq(3398/3620)·txDayInput/recDayInput(3399/3621)·txDay/recDay(3400/3634)·txOpenCat/recOpenCat(3391/3569)·txOpenAsset/recOpenAsset(3392/3570) 6쌍이 tx->rec/txDraft->recDraft/.date->.startDate 치환만 다른 복붙임. 이미 같은 문제(txCount/recCount)를 _applyCount(pfx,draft,v,rerender)(3425-3436)로 통합한 전례가 있어 래퍼 함수명을 그대로 유지하면 onclick 문자열과 test/run.js 정규식 추출기 둘 다 안 깨진다는 게 검증돼 있고, 실제 드리프트 사고도 이미 한 번 있었음(recFreq 주말 리셋 버그, test/run.js:662-690, cycle75 유래) — 다른 신규 기능 제안류보다 '검증된 해법이 있는 실재 반복 위험' 쪽이 우선순위가 높다고 판단해 최우선 채택. pending_advance_plan에 저장(상세 approach는 state.json 참고). 러너업(기록만, 기각): 예산 80% 사전 경고(로터오버 제안과 인접, 우선순위 낮음) / 부부 정산(공용 지출 분담) 기능(신규 기능, 별도 사이클 필요) / 부채 자산 이자율·상환 스케줄(이전에 이미 '상환 스케줄' 제안으로 기각된 것과 겹침, 새 근거 없어 재소환 안함). 코드 변경 없음(읽기 전용 조사, general-purpose 서브에이전트 위임).",
+      "commit": null
+    },
+    {
+      "cycle": 114,
+      "phase": "advance",
+      "timestamp": "2026-09-30T18:12:34.962Z",
+      "summary": "critique(cycle114) 계획대로 tx/rec 폼 중복 로직 6쌍을 공용 헬퍼로 통합했다. index.html에 _applyType(draft,t)/_applyFreq(draft,start,v)/_applyDay(draft,start,v)/_applyOpenCat(draft,syncFn,renderFn)/_applyOpenAsset(draft,which,syncFn,renderFn) 5개 헬퍼를 _applyCount 바로 옆(catListOf 위)에 신설하고, txType/recType·txFreq/recFreq·txDay/recDay·txOpenCat/recOpenCat·txOpenAsset/recOpenAsset 10개 래퍼 함수를 각각 이름 변경 없이 한두 줄짜리 얇은 래퍼로 축소(onclick=\"...\" 문자열과 test/run.js 정규식 추출기 모두 그대로 유지됨). recFreq만 가진 weekend='none' 리셋(txDraft엔 weekend 필드 자체가 없음)은 공용 헬퍼로 옮기지 않고 recFreq 래퍼에 그대로 남겨 tx/rec 시맨틱 차이를 보존. 바이트 단위로 중복돼 있던 day-picker HTML 블록(구 3362-3364/3589-3591)은 dayPickerHTML(d,pfx) 헬퍼로 추출해(endCondFields(d,pfx) 패턴과 동일) renderTxSheet/renderRecSheet 양쪽에서 호출하도록 교체 — renderTxSheet/renderRecSheet 자체 구조(반복 토글 유무, scope-edit 서브뷰)는 계획대로 손대지 않음. test/run.js FUNCTIONS 목록에 dayPickerHTML/_applyType/_applyFreq/_applyDay/_applyOpenCat/_applyOpenAsset 6개를 추가해(txType/recFreq/renderTxSheet가 이제 이들을 호출하므로 필수) 추출 테스트가 깨지지 않게 함. 두 인라인 <script> 블록 모두 node --check 통과, node test/run.js 710/710 유지(로직 이동만이라 케이스 수 불변, 새 _apply* 전용 테스트는 이번 사이클엔 추가하지 않음 — 다음 develop/review가 원하면 추가 가능). APP_VERSION 1.46.97->1.46.98, sw.js CACHE v259->v260. pending_advance_plan을 null로 비움.",
       "commit": null
     }
   ]
