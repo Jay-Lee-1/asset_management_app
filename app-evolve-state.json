@@ -1,15 +1,8 @@
 {
   "cycle": 114,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 109,
-      "phase": "develop",
-      "timestamp": "2026-09-29T19:00:00.000Z",
-      "summary": "인증 관련 비동기 제출 함수 4곳(doLogin/doSignup/doSendResetEmail/doChangePassword)에 재진입 가드 추가. 각 함수는 시작 시 관련 버튼(.auth-submit / fpSendBtn / pwSaveBtn)을 disabled=true로 바꿔 마우스 클릭 중복 제출은 막고 있었지만, 비밀번호/이메일 입력 필드의 onkeydown=\"if(event.key==='Enter')...\" 핸들러는 버튼의 disabled 상태와 무관하게 항상 함수를 직접 호출하고 있어 — 브라우저가 disabled 버튼에는 click 이벤트를 보내지 않는 것과 달리 keydown은 input에 그대로 걸려 있으므로 — 사용자가 Enter를 빠르게 두 번 누르거나(모바일 키보드 등에서 반복 입력) 누른 상태에서 자동반복(key repeat)이 걸리면 AUTH.signIn/signUp/resetPassword/changePassword가 동시에 두 번 이상 실행돼 중복 네트워크 호출·경쟁 상태(예: 두 번째 로그인 성공 응답이 첫 번째보다 먼저 도착해 startApp()이 두 번 실행)로 이어질 수 있는 문제였다. 각 함수 맨 앞에 btn 참조를 먼저 얻어 if(btn&&btn.disabled)return; 가드를 추가(기존 authErr/errEl 초기화 및 btn.disabled=true 대입은 가드 통과 이후로 순서만 재배치, 로직 자체는 그대로)해 이미 진행 중인 제출은 later Enter/재호출을 조용히 무시하도록 했다. 순수 가드 추가라 회귀 테스트 파일(test/run.js)이 다루는 순수 로직 함수 목록에는 해당 없음 — 두 인라인 <script> 블록(node --check)과 logic.js/sw.js 모두 문법 통과, node test/run.js 690/690 통과(변경 없음, 예상대로). APP_VERSION 1.46.88->1.46.89, sw.js CACHE v250->v251.",
-      "commit": "bbf1f44"
-    },
     {
       "cycle": 109,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-09-30T13:00:00.000Z",
       "summary": "critique(cycle113) 계획대로 Assets 탭 귀속(나/배우자/공용/전체) 캐러셀에 키보드/클릭 경로를 추가했다. .nw-dots의 각 <i>를 <button type=\"button\">으로 교체(aria-label=\"${owner} 보기\", aria-current, onclick=gotoNwOwner(i)) — CSS(.nw-dots i,.nw-dots button)로 <i>/<button> 양쪽을 동일하게 스타일해, 별개 위젯인 튜토리얼 월별 캐러셀의 #m-dots(여전히 <i> 사용, 손대지 않음)와도 호환 유지. wireNwCarousel()의 스크롤 settle 타임아웃 안에 인라인으로 있던 owner 전환 로직(ownerListArr()[r] 조회 -> ST.assetOwner 대입 -> vibrate -> refreshAssetBody/refreshNwHistoryCard)을 selectNwOwner(r) 공용 함수로 분리해 scroll 핸들러와 신규 gotoNwOwner(i) 양쪽에서 재사용. #nwCarousel에(카드 2장 이상일 때만) tabindex=\"0\"+role=\"group\"+aria-label=\"귀속별 자산 보기\" 추가, ArrowLeft/ArrowRight keydown 리스너가 ownerListArr().indexOf(ST.assetOwner)로 현재 인덱스를 구해 gotoNwOwner(cur±1) 호출. gotoNwOwner(i)는 계획의 restoreNwScroll(i) 재사용 대신(그 함수는 순간 이동이라 '애니메이션 이동' 의도와 안 맞아) c.scrollTo({behavior:'smooth'})로 부드럽게 스크롤하면서 selectNwOwner를 즉시 호출해 상태를 먼저 반영(스크롤 애니메이션 완료를 기다리지 않아, 스크린리더가 aria-current 변화를 바로 읽을 수 있음) — 이 설계 변경은 plan의 의도(키보드/클릭으로 전환 가능해야 함)를 그대로 satisfy하면서 스크린리더 즉시성을 개선한 것이라 review 없이 advance에서 바로 채택. 클론 루프 경계 clamp/wrap은 순수 함수 nwClampIdx(i,n,loop)로 logic.js에 신설(cycle97 이후 관례대로 새 순수 함수는 index.html 대신 logic.js에 직접 추가)하고 gotoNwOwner가 재사용, test/run.js에 회귀 테스트 5개 추가(loop wrap 양방향/non-loop clamp/범위 내 그대로/n<=0 가드). updateNwDots(idx)가 .nw-dots button만 대상으로 삼도록 셀렉터를 좁히고(.on 토글과 함께 aria-current도 갱신) m-dots(<i>)에는 영향 없음을 확인. 스와이프/스크롤 스냅 로직 자체는 건드리지 않아 계획대로 리스크 낮음. node --check로 logic.js/sw.js 통과, vm.Script로 두 인라인 <script> 블록(메인 356KB + SW 등록 883B) 모두 파싱 통과, node test/run.js 704/704 통과(699->704, 신규 5개 전부 포함). APP_VERSION 1.46.96->1.46.97, sw.js CACHE v258->v259. pending_advance_plan을 null로 비움. 수동 QA(Playwright 등 브라우저 기동)는 이번 사이클에서 수행하지 않음 — 다음 review 단계가 diff를 검토하며 필요시 확인 권장.",
+      "commit": null
+    },
+    {
+      "cycle": 114,
+      "phase": "develop",
+      "timestamp": "2026-09-30T14:13:35.000Z",
+      "summary": "saveAsset()(자산 등록/수정, index.html:2978)에 saveTx/recSave와 달리 이중 제출 가드가 없어 발생하는 데이터 무결성 버그를 수정. asDraft는 openAssetSheet에서 한 번만 만들어지는 단일 mutable 객체이고, 신규 등록 경로는 DB.assets.push(d)로 그 객체 참조 자체를 배열에 넣는다. 중복 검사(dup)는 a.id!==d.id로 걸러내는데, 첫 호출이 이미 d를 배열에 push해둔 뒤 모바일 더블탭/Enter+클릭 등으로 saveAsset이 짧은 시간 안에 두 번째로 실행되면 배열 안의 그 항목이 바로 d 자기 자신이라 a.id!==d.id가 항상 거짓이 되어 중복 검사를 통과해버리고, 같은 객체 참조가 DB.assets에 두 번 들어가 동일 자산이 별칭(aliased)된 상태로 중복 등록된다(순자산 이중 계산, 한쪽을 수정/삭제해도 다른 쪽에 그대로 반영되는 문제로 이어짐). saveTx(3441)/recSave(3637)가 이미 쓰고 있는 _savedDrafts(WeakSet, 3297) 가드를 동일 패턴으로 saveAsset에도 적용: syncAssetInputs 직후 if(_savedDrafts.has(d))return; 추가(유효성 검사 실패로 인한 재시도는 막지 않도록 검증 toast들보다 앞에 배치), 실제 커밋(터치/저장) 직전인 prevMaturity 선언 앞에 _savedDrafts.add(d) 추가. askRelinkDeleted 경로로 빠지는 경우도 이 add 이후이므로 더블탭으로 재연동 다이얼로그가 중복으로 열리는 것도 함께 막힌다(다이얼로그 취소 시 asDraft를 재사용하지 않고 시트를 다시 열어야 하므로 영구 잠김 없음 확인). saveAsset은 DOM/DB 결합 함수라 cycle109 auth 가드와 동일하게 회귀 테스트 대상은 아님(test/run.js는 순수 함수만 추출해 테스트). 두 인라인 <script> 블록(node --check) 및 logic.js/sw.js 문법 통과, node test/run.js 704/704 통과(변경 없음, 예상대로). APP_VERSION 1.46.97->1.46.98, sw.js CACHE v259->v260.",
       "commit": null
     }
   ]
