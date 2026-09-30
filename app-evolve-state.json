@@ -1,15 +1,8 @@
 {
   "cycle": 113,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 108,
-      "phase": "review",
-      "timestamp": "2026-09-29T13:40:00.000Z",
-      "summary": "develop 커밋(5bcb384, newOwner/renameOwner/sbKeyIn/budgetIn/newCat/renameCat 6곳에 Enter 제출 배선)을 검토하다 실제 버그 발견: newOwner/renameOwner/newCat/renameCat 4곳은 한글 등 사용자가 IME 조합으로 입력할 가능성이 높은 텍스트 필드인데, 추가된 onkeydown=\"if(event.key==='Enter')...\"가 event.isComposing을 확인하지 않아 마지막 글자를 조합 중(한글 조합 확정을 위해 Enter를 누르는 시점)에 keydown 'Enter'가 그대로 감지되어 조합이 채 끝나기 전에 저장 함수가 호출될 수 있음(예: '아이'를 입력하다 마지막 음절 조합 중 Enter → 미완성 값으로 저장 시도). 기존 auPw/newPwIn의 동일 패턴은 비밀번호 필드라 이 문제가 사실상 없어 지금까지 드러나지 않았던 결함. grep으로 코드베이스 전체에 isComposing/compositionstart 가드가 전무함을 확인. newOwner(3020)/renameOwner(3034)/newCat(4397)/renameCat(4443) 4곳의 onkeydown 조건에 &&!event.isComposing을 추가해 조합 중 Enter는 무시하고 조합이 끝난 뒤의 Enter만 저장을 트리거하도록 수정. budgetIn(숫자 입력)·sbKeyIn(영문/숫자 키 붙여넣기)은 IME 조합 대상이 아니라 그대로 둠(범위 최소화). 두 인라인 <script> 블록 모두 new Function() 통과, node test/run.js 686/686 통과(순수 마크업 조건 추가라 로직 함수 미변경, 새 테스트 불필요). APP_VERSION 1.46.86->1.46.87, sw.js CACHE v248->v249.",
-      "commit": null
-    },
     {
       "cycle": 108,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-30T10:11:08.643Z",
       "summary": "resetPasswordLocal()(로컬 계정 복구 코드 재설정, cycle112 advance에서 신설)에 signIn()과 달리 브루트포스 잠금 가드가 없던 격차를 발견해 수정. AUTH.signIn()은 비밀번호 비교 전 this._lockStatus(key)로 5회 실패 후 지수백오프(최대 30초) 잠금을 확인하고 실패 시 this._recordFail(key)를 호출하지만, resetPasswordLocal(email,code,newPw)은 복구 코드 비교 앞뒤로 이 가드가 전혀 없어 같은 계정의 복구 코드를 무제한으로 무차별 대입할 수 있었음(정상 로그인 경로는 보호되는데 복구 경로만 뚫려 있던 비대칭). resetPasswordLocal 시작부에 signIn과 동일한 this._lockStatus(key)/잠금 시 동일 문구(너무 많이 틀렸어요 · N초 후 다시 시도해 주세요) 조기 반환을 추가하고, 복구 코드 불일치 시 this._recordFail(key)를 호출하도록 수정(성공 시 this._clearFails(key)는 기존 그대로 유지). 새 저장 스키마나 UI 변경 없이 기존에 이미 테스트된 _lockStatus/_recordFail/_clearFails 프리미티브만 재사용하는 최소 diff. index.html 두 인라인 <script> 블록(vm.Script)과 sw.js/logic.js 모두 node --check 통과, node test/run.js 699/699 통과(AUTH.resetPasswordLocal은 브라우저 전역/localStorage 의존이라 순수 함수 추출 테스트 대상이 아니라 새 케이스는 추가하지 않음). APP_VERSION 1.46.95->1.46.96, sw.js CACHE v257->v258.",
+      "commit": null
+    },
+    {
+      "cycle": 113,
+      "phase": "review",
+      "timestamp": "2026-09-30T11:08:29.000Z",
+      "summary": "cycle113 develop 커밋(753ea1e, resetPasswordLocal에 signIn과 동일한 _lockStatus/_recordFail 브루트포스 잠금 가드 추가)을 검토. _lockStatus/_recordFail/_clearFails가 signIn과 동일한 emailKey(email) 키를 공유해 계정당 하나의 실패 카운터로 로그인 실패와 복구 코드 실패가 함께 누적되는 것을 확인 — 같은 계정을 노리는 공격이라는 점에서 의도된 동작이지 결함이 아님. 성공 경로의 this._clearFails(key) 유지, 실패 시 this._recordFail(key) 위치(비교 직후, 상태 변경 이전), 잠금 메시지 포맷·표시(doLocalRecover의 frErr)까지 signIn과 대칭적으로 맞물려 있음을 확인. genRecoveryCode()의 엔트로피(32자 알파벳 12자리)는 브루트포스 자체가 사실상 불가능한 수준이라 잠금 가드는 방어 심층화 목적으로 타당. node test/run.js 699/699 통과. 코드 변경 없음 — 이상 없음.",
       "commit": null
     }
   ]
