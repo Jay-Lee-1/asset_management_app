@@ -2362,6 +2362,25 @@ test('matchTxnQuery: 메모/카테고리/자산명 어디에도 없으면 매칭
   assert.strictEqual(sandbox.matchTxnQuery(t, 'xyz', assets), false);
 });
 
+/* ---------- matchesAssetId: 자산 행 '내역' 버튼(openAssetHistory)이 쓰는 계좌 필터 ---------- */
+test('matchesAssetId: assetId가 없으면(전체) 항상 매칭된다', () => {
+  const t = { fromAssetId: 'a1', toAssetId: null };
+  assert.strictEqual(sandbox.matchesAssetId(t, null), true);
+  assert.strictEqual(sandbox.matchesAssetId(t, ''), true);
+});
+test('matchesAssetId: fromAssetId가 일치하면 매칭된다', () => {
+  const t = { fromAssetId: 'a1', toAssetId: null };
+  assert.strictEqual(sandbox.matchesAssetId(t, 'a1'), true);
+});
+test('matchesAssetId: toAssetId가 일치하면 매칭된다(이체 받는 쪽)', () => {
+  const t = { fromAssetId: 'a1', toAssetId: 'a2' };
+  assert.strictEqual(sandbox.matchesAssetId(t, 'a2'), true);
+});
+test('matchesAssetId: fromAssetId/toAssetId 둘 다 불일치하면 매칭되지 않는다', () => {
+  const t = { fromAssetId: 'a1', toAssetId: 'a2' };
+  assert.strictEqual(sandbox.matchesAssetId(t, 'a3'), false);
+});
+
 /* ---------- esc: 저장형 XSS 방지 (asset/memo/category 등 사용자 입력값을 innerHTML에 넣기 전 이스케이프) ---------- */
 test('esc: 스크립트 태그를 무력화한다', () => {
   assert.strictEqual(sandbox.esc('<script>alert(1)</script>'), '&lt;script&gt;alert(1)&lt;/script&gt;');

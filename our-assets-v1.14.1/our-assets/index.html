@@ -1305,7 +1305,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.2';
+const APP_VERSION='1.47.3';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2293,7 +2293,7 @@ function visibleTx(t){return DB.settings.includeScheduled||!txScheduled(t)}
 /* ================= STATE ================= */
 let TM=ym(TODAY);TM.d=+TODAY.slice(8,10);
 let ST={tab:'home',ledgerMode:'cal',assetOwner:'all',ledger:{y:TM.y,m:TM.m,sel:TODAY},home:{y:TM.y,m:TM.m},
- hist:{cat:'전체',q:'',selMode:false,sel:new Set(),sortAsc:false,
+ hist:{cat:'전체',q:'',assetId:null,selMode:false,sel:new Set(),sortAsc:false,
    range:{from:`${TM.y}-01-01`,to:`${TM.y}-12-31`},preset:'year',page:1,avgMode:false},
  plan:{owner:'전체',assetId:null,y:TM.y,m:TM.m},spendOwner:'전체',editAssets:false,aSel:{mode:false,ids:new Set()},lSel:{mode:false,ids:new Set()}};
 const TABS=[{id:'home',label:'홈',icon:'home'},{id:'assets',label:'자산관리',icon:'wallet'},{id:'ledger',label:'가계부',icon:'ledger'},{id:'plan',label:'한달 플랜',icon:'plan'},{id:'menu',label:'메뉴',icon:'menu'}];
@@ -2728,6 +2728,7 @@ function assetBodyHTML(){
          <div class="avatar ${ty.cls}">${svg(ty.icon)}</div>
          <div style="flex:1;min-width:0"><div class="nm"><span class="nmt">${esc(a.name)}</span>${a.includeInTotal?'':'<span class="chipmini own-x">미포함</span>'}</div>
            <div class="sub"><span class="chipmini own-${esc(a.owner)}">${esc(a.owner)}</span><span>${assetSubline(a)}</span></div></div>
+         <div class="row-acts"><button type="button" class="act-btn" aria-label="${esc(a.name)} 내역 보기" onclick="event.stopPropagation();openAssetHistory('${a.id}')">${svg('receipt')}</button></div>
          <div class="val"><div class="k num ${a.type==='debt'?'minus':''}">${won(val)}</div>${showEval?(rateUnknown(a)?'<div class="mini warn">가격 미확인</div>':'<div class="s">평가액</div>'):''}</div></div>`;
      }).join('')+`</div>`;
    });
@@ -3200,7 +3201,7 @@ function calPane(y,m,sel,live,txMap){
 }
 function modeSeg(tab){ /* 달력/목록 컴팩트 세그먼트 (헤더용) */
  const isCal=(tab==='ledger');
- const filtered=(ST.hist.cat!=='전체'||ST.hist.q!=='');
+ const filtered=(ST.hist.cat!=='전체'||ST.hist.q!==''||!!ST.hist.assetId);
  return `<div class="mseg"><button class="${isCal?'on':''}" onclick="${isCal?'':'toCal()'}">달력</button><button class="${!isCal?'on':''}" onclick="${!isCal?'':'toList()'}">검색${filtered?'<span class="chip-dot"></span>':''}</button></div>`;
 }
 function ledgerRowsHtml(d){
@@ -3305,7 +3306,7 @@ function ledgerDelSel(){if(!ST.lSel.ids.size){toast('선택된 내역이 없어�
   const ids=new Set(ST.lSel.ids);ST.lSel.mode=false;ST.lSel.ids.clear();deleteTxnsUndo(ids)});}
 function sumTap(kind){ /* 요약 탭 → 전체내역 (해당 월 + 종류 필터) */
  const _y=ST.ledger.y,_m=ST.ledger.m;ST.hist.range={from:monthStartStr(_y,_m),to:monthEndStr(_y,_m)};ST.hist.preset='custom';
- ST.hist.cat=kind==='전체'?'전체':kind;ST.hist.q='';ST.hist.selMode=false;ST.hist.sel.clear();histInvalidate();
+ ST.hist.cat=kind==='전체'?'전체':kind;ST.hist.q='';ST.hist.assetId=null;ST.hist.selMode=false;ST.hist.sel.clear();histInvalidate();
  go('history');
 }
 
@@ -3764,14 +3765,20 @@ let _histCache={key:null,list:null};
 function histEnsureRange(date){const R=ST.hist.range;let ch=false;if(date<R.from){R.from=date.slice(0,4)+'-01-01';ch=true}if(date>R.to){R.to=date.slice(0,4)+'-12-31';ch=true}if(ch){ST.hist.preset='custom';histInvalidate()}}
 function filteredHist(){
  const H=ST.hist,R=H.range;
- const key=`${R.from}|${R.to}|${H.cat}|${(H.q||'').trim()}`;
+ const key=`${R.from}|${R.to}|${H.cat}|${(H.q||'').trim()}|${H.assetId||''}`;
  if(_histCache.key===key)return _histCache.list;
  let list=allTxns(R.from,R.to);
  if(H.cat!=='전체')list=list.filter(t=>t.type===TYPEBYLABEL[H.cat]);
  const q=(H.q||'').trim();
  if(q)list=list.filter(t=>matchTxnQuery(t,q,DB.assets));
+ if(H.assetId)list=list.filter(t=>matchesAssetId(t,H.assetId));
  _histCache={key,list};
  return list;
+}
+/* 자산 행의 '내역' 버튼 → 전체내역을 해당 계좌로만 필터해서 연다 (sumTap과 달리 날짜 범위는 건드리지 않음) */
+function openAssetHistory(assetId){
+ ST.hist.assetId=assetId;ST.hist.cat='전체';ST.hist.q='';ST.hist.selMode=false;ST.hist.sel.clear();histInvalidate();
+ go('history');
 }
 /* 예정(미래·범위 안, 가까운 순) / 실제(오늘 이하, 최신순 기본) 분리 */
 function splitHist(list){
@@ -3791,6 +3798,7 @@ function renderHistory(){
  <div class="searchbar" style="flex:1">${svg('search')}<input id="histQ" aria-label="내역 검색" placeholder="메모·카테고리·자산 검색" value="${H.q}" oninput="ST.hist.q=this.value;histInvalidate();updateHist()"></div>
  <button type="button" class="sch-chip" aria-label="내역 선택" onclick="ST.hist.selMode=true;updateHist();updateSelBottom()">${svg('check',14)}</button>
  </div>
+ ${H.assetId?`<button type="button" class="sch-chip on" style="margin-bottom:14px" onclick="histClearAssetFilter()" aria-label="${esc((DB.assets.find(a=>a.id===H.assetId)||{}).name||'계좌')} 필터 해제">${esc((DB.assets.find(a=>a.id===H.assetId)||{}).name||'계좌')} ${svg('x',14)}</button>`:''}
  <div class="rg-pick">
    <button class="rg-date" onclick="histPickDate('from')">${fmtDot(R.from)}</button>
    <span class="rg-tilde">~</span>
@@ -3839,7 +3847,8 @@ function histPeekStart(){clearTimeout(_histTimer);_histTimer=setTimeout(()=>{_hi
 function histPeekMove(){if(!_histPeeking)clearTimeout(_histTimer)}
 function histPeekEnd(){clearTimeout(_histTimer);if(_histPeeking){_histPeeking=false;setHistMode(false)}}
 function setHistMode(today){const c=$('histTotLive');if(!c||!_histLive)return;const L=_histLive;c.innerHTML=ledSumInner(L.a,L.sc,today);c.classList.toggle('peek',today);requestAnimationFrame(fitAll)}
-function histClearFilter(){ST.hist.cat='전체';ST.hist.q='';histInvalidate();renderHistory()}
+function histClearFilter(){ST.hist.cat='전체';ST.hist.q='';ST.hist.assetId=null;histInvalidate();renderHistory()}
+function histClearAssetFilter(){ST.hist.assetId=null;histInvalidate();renderHistory()}
 /* 히스토리 합계: 잔액 조정은 수지 포함 설정(기본 제외) 전까지 집계에서 뺀다 —
    monthStats2()와 동일 규칙이어야 홈/가계부와 전체내역 탭의 합계가 일치한다 */
 function histSumTotals(actual,sched){

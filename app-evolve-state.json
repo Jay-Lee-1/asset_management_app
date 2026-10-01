@@ -1,26 +1,8 @@
 {
-  "cycle": 117,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "자산별 거래내역 조회(계좌 명세서 뷰) 진입점 추가",
-    "why": "Assets 탭의 자산 행은 탭하면 편집 폼(openAssetSheet, index.html:2726-2727)만 열리고 롱프레스는 다중선택 삭제 모드(wireLongPress->assetToggleSel)로만 이어져, 특정 계좌의 거래내역만 걸러보는 경로가 앱 어디에도 없다. History 탭(renderHistory, ~3784)의 필터는 ST.hist.cat(유형)과 ST.hist.q(자유 텍스트)뿐이고 ST.hist.assetId 같은 구조적 계좌 필터는 코드베이스 전체에 존재하지 않는다(grep으로 확인). 검색창이 matchTxnQuery(logic.js:197-201)를 통해 자산명을 부분일치시키는 부수효과가 있긴 하지만, 발견 불가능하고 이름이 겹치면 노이즈가 생기는 우회로일 뿐 Plan 탭의 openPlanAsset(index.html:4119-4136)처럼 목록에서 고르는 진짜 필터가 아니다. 자산/가계부 앱에서 '계좌를 탭하면 명세서를 본다'는 가장 기본적인 흐름이 117 사이클의 정교한 기능 다듬기에도 불구하고 완전히 빠져 있는 실재 제품 공백이다.",
-    "approach": "(1) logic.js matchTxnQuery 옆에 순수 함수 matchesAssetId(t,assetId){return !assetId||t.fromAssetId===assetId||t.toAssetId===assetId;} 신설. (2) index.html ST.hist(2296-2297)에 assetId:null 필드 추가. (3) filteredHist()(3765-3775)의 캐시 key에 H.assetId 포함시키고 cat/q 필터 뒤에 if(H.assetId)list=list.filter(t=>matchesAssetId(t,H.assetId)); 추가. (4) openAssetHistory(assetId) 신설 — ST.hist.assetId=assetId 설정 + cat/q/selMode 리셋 + go('history') (기존 histOpenFromLedger류 직접 ST.hist.* 대입 패턴 재사용). (5) 자산 행(2726 부근)에 event.stopPropagation() 버튼('내역' 칩, toggleRecActive 버튼 idiom 재사용)을 추가해 openAssetHistory('${a.id}') 호출, 기존 행 탭->편집 동작은 보존. (6) renderHistory() 필터바(3787-3794 부근)에 ST.hist.assetId가 설정되면 자산명 칩+✕ 버튼(histClearAssetFilter() 신설, assetId만 해제 후 재렌더) 표시, modeSeg()의 filtered 판정(3203)과 histClearFilter()(3842)에도 assetId를 포함시켜 '전체 필터 해제'가 계좌 필터도 같이 지우게 함. (7) test/run.js에 matchesAssetId 회귀 테스트 추가(matchTxnQuery 테스트 옆, 2341 부근): assetId 없으면 항상 매치, fromAssetId 일치, toAssetId 일치, 둘 다 불일치 시 미매치. (8) APP_VERSION 1.47.2->1.47.3, sw.js CACHE v264->v265."
-  },
+  "cycle": 118,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 112,
-      "phase": "critique",
-      "timestamp": "2026-09-30T08:10:20.657Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(label-for·Enter제출/IME조합·auth 재진입가드·자산그룹 키보드 대안·예산탭 owner필터·죽은함수 정리·vm.Script 파싱 스모크·index.html→logic.js 이전·CDN SRI(재도전 불가 확정)·백그라운드 푸시(서버리스 상충)·신규기능 제안류(근거부족)·index.html 파일분할(설계위배)는 모두 이미 다뤄졌거나 기각 확정이라 제외). 새로 발견: 로컬(비-클라우드) 계정은 앱 기본 배포 모드인데(index.html:1624 주석) 비밀번호를 잊으면 복구 경로가 전혀 없음 — index.html:6485 비밀번호 찾기 링크가 sbCfg().url 있을 때만 렌더되고, AUTH.resetPassword/changePassword(~1858/1868)는 !sbReady()면 무조건 \"클라우드 계정에서만 지원해요\"로 실패, 로컬 signIn(~1832)은 PBKDF2 비교만 하고 폴백 없음. 데이터는 localStorage(dataKey())에 그대로 남아있는데 정상 경로로는 영구 접근 불가한 실제 데이터 손실 시나리오로, 지금까지 다뤄온 auth 재진입가드/PBKDF2/락아웃/클라우드 병합류와 달리 계정 복구 자체를 다룬 사이클이 없었다는 점에서 최우선 채택. pending_advance_plan에 저장: 로컬 전용 복구 코드 메커니즘(가입 시 recoverySalt/recoveryHash 생성+1회 노출, AUTH.resetPasswordLocal 신설, 로그인 화면에 조건부 복구 링크, 구계정은 복구 불가 안내+백업 권장, 순수 로직 회귀 테스트 추가). 코드 변경 없음(읽기 전용 조사, general-purpose 서브에이전트 위임).",
-      "commit": null
-    },
-    {
-      "cycle": 112,
-      "phase": "advance",
-      "timestamp": "2026-09-30T09:20:00.000Z",
-      "summary": "critique가 세운 계획(로컬 계정 비밀번호 복구)을 구현. index.html: genRecoveryCode() 신설(0/O/1/I 제외 32자 알파벳, XXXX-XXXX-XXXX). AUTH.signUp 로컬 분기에서 가입 시 recoverySalt/recoveryHash를 salt/pass와 함께 저장하고 평문 recoveryCode는 반환값에만 담아 1회 노출(저장 안 함). AUTH.resetPasswordLocal(email,code,newPw) 신설 — sbReady()면 거부, recoveryHash 없는 구계정은 '복구 불가·CSV 백업 권장' 에러, 코드 일치 시 새 salt+pass 설정 후 recoveryCode 재발급(재사용 방지). 로그인 화면의 '비밀번호를 잊으셨나요?' 링크를 sbCfg().url 조건 없이 항상 노출하도록 바꾸고, doForgotPassword()가 !sbCfg().url이면 doForgotPasswordLocal()(이메일+복구코드+새 비밀번호 시트, Enter 제출)로 분기. doLocalRecover()가 성공 시 즉시 로그인 처리 후 새 복구 코드를 보여줌. showRecoveryCode()/closeRecoverySheet()를 공용 1회-노출 시트로 만들어 doSignup()의 로컬 가입 직후에도 재사용(콜백으로 게스트 데이터 가져오기 안내를 이어서 연결). test/run.js: FUNCTIONS에 genRecoveryCode 추가, 형식/유일성 회귀 테스트 2개 추가(AUTH 메서드 자체는 기존 관례대로 전체 객체라 미추출·미테스트, genSalt/pbkdf2Hash와 동일). node test/run.js 699/699 통과(697->699, +2 신규), 메인 인라인 <script> 전체 파싱 스모크도 통과. APP_VERSION 1.46.94->1.46.95, sw.js CACHE v256->v257.",
-      "commit": null
-    },
     {
       "cycle": 113,
       "phase": "develop",
@@ -152,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-01T05:40:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(계정안전 sig 점 색상전용 표기(서브텍스트 병기돼 있어 색전용 아님, 기각)·홈 알림 캐러셀 키보드접근(이미 실제 button+자연스러운 tab순서, 기각)·주식/FX/금 단일 평단가(의도된 단순설계 주석 확인, 기각)·자산그룹 드래그정렬만 가능(정렬모드 스위치가 대체, 기각)·검색이 금액 미매치(근거 약한 feature-request성, 기각)·test/run.js 규모/취약성(이미 보류확정된 index.html→logic.js 이전과 같은 영역, 재소환 아님)·filteredHist/balancesUpTo/expandRec 성능 추측(이미 기각 확정, 새 근거 없음)·esc() XSS 커버리지 재스윕(전수 확인 결과 누락 없음)·migrate()/boot() 매 실행 성능(1회성 가드 확인, 기각)·클라우드 동기화 포워드호환(DB 객체 통째 push라 데이터유실 근거 없음, 기각)은 모두 이미 다뤄졌거나 근거부족으로 기각). 새로 발견: Assets 탭 자산 행(index.html:2726-2727)을 탭하면 openAssetSheet(편집 폼)만 열리고 롱프레스는 다중선택 삭제 모드(wireLongPress->assetToggleSel)로만 이어져, 특정 계좌의 거래내역만 걸러보는 '명세서' 진입점이 앱 전체에 전무함을 확인. History 탭(renderHistory, filteredHist 3765-3775)의 필터는 ST.hist.cat(유형)·ST.hist.q(자유텍스트)뿐이고 ST.hist.assetId 같은 구조적 계좌 필터는 grep으로 전체 코드베이스에 존재하지 않음을 확인 — 검색창이 matchTxnQuery(logic.js:197-201)로 자산명을 부분일치시키는 우회 경로는 있으나 발견 불가능하고 이름 겹침 시 노이즈가 생겨 Plan 탭의 openPlanAsset(4119-4136)처럼 목록에서 고르는 진짜 필터가 아님. 자산/가계부 앱의 가장 기본적인 흐름('계좌 탭하면 명세서 보기')이 117 사이클 동안 빠져 있던 실재 제품 공백으로 최우선 채택. pending_advance_plan에 저장(상세 approach는 state.json pending_advance_plan 참고): matchesAssetId 순수 함수 신설, ST.hist.assetId 필드 추가, filteredHist 캐시키/필터에 반영, openAssetHistory(assetId) 진입 함수 신설, 자산 행에 stopPropagation 버튼으로 배선, History 필터바에 계좌 칩+해제 버튼, test/run.js 회귀 테스트 추가. 코드 변경 없음(읽기 전용 조사, general-purpose 서브에이전트 위임, 핵심 라인 번호는 오케스트레이팅 세션이 직접 grep/Read로 재확인).",
+      "commit": null
+    },
+    {
+      "cycle": 117,
+      "phase": "advance",
+      "timestamp": "2026-10-01T06:10:23.594Z",
+      "summary": "critique(cycle117) 계획대로 자산별 거래내역(계좌 명세서) 뷰 진입점을 추가했다. logic.js에 순수 함수 matchesAssetId(t,assetId) 신설(assetId 없으면 항상 매치, 있으면 fromAssetId/toAssetId 중 하나라도 일치해야 매치). index.html ST.hist에 assetId:null 필드 추가하고 filteredHist()의 캐시 key와 필터 체인에 반영(cat/q 필터 뒤에 추가, 캐시 무효화 포함). openAssetHistory(assetId) 신설 — ST.hist.assetId 설정 + cat/q/selMode 리셋 + go('history')(sumTap과 달리 날짜 범위는 건드리지 않아 계좌의 전체 기간 내역을 그대로 보여줌). Assets 탭 자산 행(openAssetSheet로 가는 기존 탭 동작)에 .row-acts > .act-btn(toggleRecActive와 동일한 event.stopPropagation() idiom, receipt 아이콘) 버튼을 추가해 openAssetHistory(a.id) 호출 — 다중선택 모드(aSel.mode) 행에는 추가하지 않음(목적이 다름). renderHistory() 검색바 아래에 ST.hist.assetId가 설정되면 자산명 칩(sch-chip on, ✕ 아이콘)을 표시하고 histClearAssetFilter()로 계좌 필터만 해제 가능하게 했다. modeSeg()의 filtered 판정과 histClearFilter()(전체 필터 해제)·sumTap()(요약카드→전체내역 이동 시 이전 계좌 필터 잔류 방지)에도 assetId를 포함시켜 일관성을 맞췄다. test/run.js에 matchesAssetId 회귀 테스트 4개 추가(assetId 없으면 항상 매치, fromAssetId 일치, toAssetId 일치, 둘 다 불일치 시 미매치) — matchesAssetId는 logic.js가 통째로 vm 샌드박스에 로드되므로 FUNCTIONS 추출 목록에 별도 등재 불필요. node --check로 logic.js/sw.js 통과, node test/run.js 743/743 -> 747/747 통과(신규 4개 전부). APP_VERSION 1.47.2->1.47.3, sw.js CACHE v264->v265. pending_advance_plan을 null로 비움.",
       "commit": null
     }
   ]

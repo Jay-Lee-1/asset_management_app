@@ -200,6 +200,11 @@ function matchTxnQuery(t,q,assets){
  const hay=(t.memo||'')+' '+t.category+' '+(fa?fa.name:(t.fromAssetName||'—'))+' '+(ta?ta.name:(t.toAssetName||'—'));
  return hay.toLowerCase().includes(q.toLowerCase());
 }
+/* 계좌(자산) 단위 거래내역 필터 — assetId가 없으면(전체) 항상 통과, 있으면 보내거나 받은 쪽 중 하나라도 일치해야 함 */
+function matchesAssetId(t,assetId){
+ if(!assetId)return true;
+ return t.fromAssetId===assetId||t.toAssetId===assetId;
+}
 function budgetKey(y,m){return `${y}-${String(m).padStart(2,'0')}`}
 /* budget=0(미설정)이면 진행률은 의미가 없으므로 항상 0으로 clamp — 호출부는 이 경우 전체 대비 비중을 대신 쓴다 */
 function budgetProgress(spent,budget){
