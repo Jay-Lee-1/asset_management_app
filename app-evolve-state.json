@@ -1,15 +1,12 @@
 {
   "cycle": 116,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "boot()/pullCloud()/pushCloud()의 Supabase await에 타임아웃 가드 추가(cycle115 fetchWithTimeout과 동일 패턴을 cloud-sync 경로로 확장)",
+    "why": "cloud:true로 설정된(클라우드 동기화를 켠) 계정이 앱을 열 때마다 거치는 boot()(index.html 6529-6547)가 SB.auth.getSession()과 afterCloudAuth(uid)(내부적으로 pullCloud()의 SB.from('user_data')...maybeSingle() 호출, 1662-1675)를 타임아웃/AbortController 없이 await하고 있어, 캡티브 포털·죽은 와이파이·Supabase 응답 지연처럼 요청이 성공도 실패도 하지 않고 pending인 상태가 되면 두 await가 영원히 안 풀려 return startApp()가 호출되지 않는다. #app(1271)은 빈 div로 시작하고 startApp()이 처음으로 내용을 채우므로, 이 경로가 멈추면 사용자는 로컬에 전체 데이터가 멀쩡히 있는데도 흰 화면만 보게 된다 - 기존 recordError/showErrBanner(1329-1344) 에러 바운더리는 동기 throw/unhandledrejection만 잡아 pending await는 못 잡는다. 같은 무가드 패턴이 로그인 분기(6604/6620)와 비밀번호 복구 분기(6708-6716)에도 반복되고, pushCloud()(1686)에도 타임아웃 부재 + in-flight 가드 부재가 겹쳐 scheduleCloudPush()와 visibilitychange 핸들러(6746)가 겹쳐 호출되면 CLOUD_SYNC_STATE가 'syncing'에 영구 고정될 수 있다 - cycle115에서 이미 고친 syncRates mutex 버그와 동일한 증상 클래스지만, 이번엔 가격 갱신이 멈추는 정도가 아니라 앱 전체가 멈추는 더 심각한 실패 모드. 러너업으로 검토했던 filteredHist/balancesUpTo 성능 추측은 프로파일링 근거가 없어 기각(filteredHist는 이미 필터 시그니처 캐시 보유, 3743-3753)하고, 재현 가능한 코드 증거와 입증된 해법 패턴(cycle115)이 있는 이 경로를 최우선 채택.",
+    "approach": "(1) Promise.race 기반 withTimeout(promise, ms=8000) 헬퍼 신설(supabase-js 호출은 signal 옵션이 없어 fetchWithTimeout의 AbortController 대신 reject-after 타이머 사용). (2) boot()의 SB.auth.getSession()/afterCloudAuth(uid)(6539-6540), 로그인 분기(6604, 6620), 비밀번호 복구 분기(6708-6713)를 withTimeout으로 감싸 타임아웃 시 기존 cloudSyncFailed()/toast 경로로 빠지고 startApp()/showAuth()가 반드시 호출되게 한다. (3) pullCloud()의 SB.from(...) 호출(1665)과 pushCloud()의 SB.from(...) 호출들(1697/1702/1729)도 동일하게 감싸고, pushCloud()에 불리언 in-flight 가드를 추가해(try/finally로 해제) scheduleCloudPush()와 visibilitychange 핸들러(6746)의 중복 호출을 막는다. (4) test/run.js에 withTimeout을 순수 함수로 추출해 cycle115의 fetchWithTimeout 테스트 5개와 동일한 패턴(정상 settle 시 결과 반환, ms 내 미응답 시 reject, 기본 ms 확인 등)으로 회귀 테스트를 추가한다. boot()/afterCloudAuth 자체는 AUTH.*와 동일하게 전역 의존이라 추출 테스트 대상이 아니므로, 호출부 감싸기는 코드 리딩 검증으로 충분(cycle115의 syncRates try/finally와 동일 기준)."
+  },
   "history": [
-    {
-      "cycle": 111,
-      "phase": "critique",
-      "timestamp": "2026-09-30T09:30:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(net worth sparkline SVG alt 텍스트·toast/undo aria-live·선택모드 키보드 대안·시트 focus trap/return-focus·환율 동기화 에러 처리·백그라운드 푸시 알림(서버리스 설계와 상충)·월간요약 공유 카드/대출 상환 스케줄/금액 검색 같은 신규 기능 제안(근거 부족)·index.html 파일 분할(빌드리스 설계에 위배)은 모두 이미 다뤄졌거나 근거 부족/설계상 배제로 기각). 새로 발견: logic.js 헤더(1-8행)가 'cycle97부터 조건에 맞는 순수 함수는 index.html 대신 여기로 옮긴다'고 명시했는데 cycle97 이후 12+ 사이클 동안 실제로 옮겨진 함수가 하나도 없어 logic.js가 여전히 224줄에 머물러 있음. 그 사이 test/run.js는 index.html에서 정규식으로 함수/상수를 뽑아내는 FUNCTIONS/CONSTS/LETS 배열(107-177행)이 약 230개 이름까지 늘어났고 ASYNC_PREFIX/순서 강제/let-vs-const 같은 특수 케이스 주석이 여러 개 붙어있어, cycle97이 logic.js를 만든 이유였던 '정규식 추출 메커니즘의 취약성'이 오히려 계속 커지고 있는 자기모순적 상태. 실제 드리프트 증거도 발견: index.html의 addMonths(ds,n)(3726행, 월말 클램프)와 logic.js의 addMonthsStr(ds,m)(62행, Date 롤오버 허용)이 '날짜 문자열에 N개월 더하기'라는 같은 의도를 각각 다른 시맨틱으로 독립적으로 유지하고 있음 — 로직이 분산되면서 실제로 벌어질 수 있는 혼선의 구체적 사례. 다른 로직 버그류보다 파급 범위가 테스트 인프라 전체의 신뢰성에 걸려 있고, 프로젝트 자신의 과거 결정(cycle97)이 방치되고 있다는 점에서 최우선 채택. pending_advance_plan에 저장: index.html의 순수 함수(esc/normName/lastDay/monthStartStr/monthEndStr/matchTxnQuery/budgetKey/budgetProgress 등, DB./$(/document./ST. 참조 없음을 grep으로 사전 검증한 것만)를 logic.js로 이전하고 test/run.js FUNCTIONS 배열에서 제거(이미 vm.runInContext로 logic.js 전체가 먼저 로드되므로 테스트 로직 변경 불필요), 이전 후 addMonths/addMonthsStr 시맨틱 불일치는 이번 스코프에서 통합하지 않고 존재만 기록(호출부가 서로 달라 통합은 별도 사이클 판단 필요).",
-      "commit": null
-    },
     {
       "cycle": 111,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-01T00:00:00.000Z",
       "summary": "develop 커밋(8afd3c6, 가계부 요약 카드 수지/수입/지출/저축/이체 버튼에 sumTap 배선)을 검토. ledSumInner(a,sc,today,tap) 4번째 인자와 on(k) 헬퍼로 tap=true일 때만 onclick=\"ledSumTap('<k>')\"가 붙는 구현을 소스에서 직접 대조, 버튼 5개(전체/수입/지출/저축/이체)의 kind 문자열이 TYPEBYLABEL({'수입':'income','지출':'expense','이체':'transfer','저축':'saving'})과 sumTap() 본문(kind==='전체'?'전체':kind를 ST.hist.cat에 대입)의 처리 양쪽과 정확히 일치함을 grep으로 재확인(filteredHist의 TYPEBYLABEL[H.cat] 조회 경로까지 추적). histTotBox()(전체내역 탭 자신의 합계 카드)가 ledSumInner를 3개 인자로만(tap 생략) 호출해 의도대로 미배선 상태임을 재확인 — 커밋 메시지가 주장한 '범위 충돌 방지' 설계와 일치. _sujiPeeked 가드 로직(sujiPeekStart가 매 pointerdown마다 false로 리셋 → 180ms 타이머가 실제로 발동해야만 true가 되고, click은 pointerup 뒤에 발생하므로 롱프레스 릴리즈의 click 한 번만 정확히 삼키고 그 다음 탭부터는 정상 동작)을 코드 흐름으로 직접 추적해 레이스 컨디션이나 더블카운트 없음을 확인. 신규 회귀 테스트 5개(ledSumBox 배선 2개, ledSumInner tap 생략 시 미배선 1개, ledSumTap 삼킴/정상탭 2개)를 실제 구현과 하나씩 대조해 기대값이 소스와 일치함을 확인. sw.js diff는 CACHE 버전(v261->v262) 한 줄뿐임을 확인. node --check로 logic.js/sw.js 재통과, node test/run.js 재실행해 739/739 전부 통과 재확인(직접 실행으로 커밋 메시지 주장 검증). 코드 변경 없음(이상 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 116,
+      "phase": "critique",
+      "timestamp": "2026-10-01T01:10:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(a11y 전반(label-for/Enter제출/IME/auth재진입/캐러셀 키보드)·index.html→logic.js 이전+addMonths/addMonthsStr 불일치(보류 확정, 재소환 아님)·CDN SRI(네트워크 제약 확정)·백그라운드 푸시(서버리스 상충)·index.html 파일분할(설계위배)·netlify CORS·CSV·AUTH._legacyHash·delOwner 캐스케이드·안드로이드 백버튼·PWA 업데이트·핀치줌·recDates·PBKDF2·esc() XSS·로컬 비밀번호 복구+잠금(이미 구현)·tx/rec 폼 중복(이미 통합+테스트)·fetchFxGold/fetchStocks 타임아웃+syncRates mutex(cycle115에서 이미 수정)·checkNotifyAlerts 인터벌/localStorage 쿼터/환율·시세 동기화 상태표시(모두 이미 존재)·삭제류 undo 일관성·mergeCollection/touch 멀티탭 sync·근거 부족한 신규기능 제안류(월간요약 공유카드/대출상환스케줄/부부정산/예산 80%경고)·가계부 요약카드 sumTap 배선(cycle116 develop에서 방금 수정)은 모두 이미 다뤄졌거나 기각/보류 확정이라 제외). 새로 발견: cloud:true로 설정된 계정이 앱을 열 때마다 거치는 boot()(index.html 6529-6547)가 SB.auth.getSession()과 afterCloudAuth(uid)(내부적으로 pullCloud()의 SB.from('user_data')...maybeSingle(), 1662-1675)를 타임아웃/AbortController 전혀 없이 await — cycle115에서 fetchFxGold/fetchStocks에 적용한 fetchWithTimeout() 패턴이 이 cloud-sync 경로에는 전혀 안 들어가 있음을 grep으로 확인(AbortController가 코드베이스에서 fetchWithTimeout 근처에만 존재). #app(1271)은 빈 div로 시작해 startApp()이 처음 내용을 채우므로, 캡티브 포털/죽은 와이파이/Supabase 응답 지연처럼 요청이 영원히 pending되면 return startApp()가 호출되지 않아 로컬에 데이터가 멀쩡함에도 흰 화면이 무기한 지속 — 기존 recordError/showErrBanner(1329-1344) 에러 바운더리는 동기 throw/unhandledrejection만 잡고 pending await는 못 잡음. 같은 무가드 패턴이 로그인 분기(6604/6620)·비밀번호 복구 분기(6708-6716)에도 반복되고, pushCloud()(1686)도 타임아웃 부재+in-flight 가드 부재가 겹쳐 scheduleCloudPush()와 visibilitychange 핸들러(6746)가 겹치면 CLOUD_SYNC_STATE가 'syncing'에 영구 고정될 수 있음(cycle115에서 고친 syncRates mutex 버그와 동일 증상 클래스지만 가격 갱신이 아니라 앱 전체가 멈추는 더 심각한 실패 모드). 러너업(기록만, 기각): filteredHist/balancesUpTo 성능 추측(filteredHist는 이미 필터 시그니처 캐시 보유, 프로파일링 근거 없이 추측이라 기각) / lowestInMonth-planRowsHTML의 balancesUpTo 반복 호출 비용(실제 비용은 있을 수 있으나 근거 없는 추측이라 기각). pending_advance_plan에 저장(상세 approach는 state.json pending_advance_plan 참고): withTimeout(promise,ms=8000) 헬퍼 신설 후 boot()/로그인/복구 분기의 SB.auth.getSession()·afterCloudAuth(uid)와 pullCloud()/pushCloud()의 SB.from(...) 호출을 감싸고, pushCloud()에 in-flight 가드 추가, test/run.js에 cycle115 fetchWithTimeout 패턴과 동일한 회귀 테스트 추가. 코드 변경 없음(읽기 전용 조사, general-purpose 서브에이전트 위임).",
       "commit": null
     }
   ]
