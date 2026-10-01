@@ -7998,6 +7998,36 @@ test('nwClampIdx: n<=0(카드 없음)이면 항상 0을 반환한다', () => {
   assert.strictEqual(sandbox.nwClampIdx(2, 0, false), 0);
 });
 
+/* ---------- whTargetIdx: 연/월 휠 피커(wh-col)의 ArrowUp/ArrowDown/Home/End 키가 쓰는 인덱스
+ * 계산 (app-evolve cycle118 advance, logic.js). nwClampIdx(캐러셀)와 달리 wrap 없이 양끝에서
+ * 멈춘다(clamp) — 휠은 "루프"가 아니라 유한한 연/월 목록이기 때문. */
+test('whTargetIdx: Home/End는 각각 0과 마지막 인덱스로 이동한다', () => {
+  assert.strictEqual(sandbox.whTargetIdx(5, 12, 'Home'), 0);
+  assert.strictEqual(sandbox.whTargetIdx(5, 12, 'End'), 11);
+});
+test('whTargetIdx: ArrowUp/ArrowDown은 한 칸씩 이동한다', () => {
+  assert.strictEqual(sandbox.whTargetIdx(5, 12, 'ArrowUp'), 4);
+  assert.strictEqual(sandbox.whTargetIdx(5, 12, 'ArrowDown'), 6);
+});
+test('whTargetIdx: 양끝을 넘어가면 wrap 없이 그 자리에 고정(clamp)된다', () => {
+  assert.strictEqual(sandbox.whTargetIdx(0, 12, 'ArrowUp'), 0);
+  assert.strictEqual(sandbox.whTargetIdx(11, 12, 'ArrowDown'), 11);
+});
+test('whTargetIdx: cur===-1(아직 선택 안 됨)은 0으로 취급해 이동을 계산한다', () => {
+  assert.strictEqual(sandbox.whTargetIdx(-1, 12, 'ArrowDown'), 1);
+  assert.strictEqual(sandbox.whTargetIdx(-1, 12, 'ArrowUp'), 0);
+  assert.strictEqual(sandbox.whTargetIdx(-1, 12, 'Home'), 0);
+  assert.strictEqual(sandbox.whTargetIdx(-1, 12, 'End'), 11);
+});
+test('whTargetIdx: n<=0(항목 없음)이면 항상 0을 반환한다', () => {
+  assert.strictEqual(sandbox.whTargetIdx(3, 0, 'ArrowDown'), 0);
+  assert.strictEqual(sandbox.whTargetIdx(-1, 0, 'Home'), 0);
+});
+test('whTargetIdx: 모르는 key는 cur를 그대로 돌려준다(호출부가 "이동 없음"으로 처리)', () => {
+  assert.strictEqual(sandbox.whTargetIdx(5, 12, 'PageUp'), 5);
+  assert.strictEqual(sandbox.whTargetIdx(-1, 12, 'Tab'), -1);
+});
+
 /* ---------- monthSwipeCommitDir: wireMonthCarousel() 스와이프 커밋 방향 판정 (app-evolve cycle74 advance) ----------
  * wireMonthCarousel()이 touchcancel(엣지 백제스처, 알림 배너, 전화 수신 등으로 스와이프 중단)을
  * 처리하지 않아 drag 상태가 정리되지 않고 트랙이 마지막 touchmove 위치에 고정된 채 라벨과

@@ -1305,7 +1305,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.4';
+const APP_VERSION='1.47.5';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5461,12 +5461,12 @@ function openMonthSheet(which){ /* 전체내역·플랜: 월 단위 휠 (내역 
  const cur=ST.plan;
  const list=monthsWithTx().slice().reverse(); /* 오래된 → 최신 (위가 과거) */
  let items='';
- list.forEach(({y,m})=>{items+=`<div class="wh-item wide" data-v="${y}-${m}">${y}년 ${m}월</div>`});
+ list.forEach(({y,m},idx)=>{items+=`<div class="wh-item wide" id="whMonth-opt-${idx}" role="option" data-v="${y}-${m}">${y}년 ${m}월</div>`});
  $('dpWheel').innerHTML=`
    <div class="wh-head">월 선택</div>
    <div class="wh-box">
      <div class="wh-sel"></div>
-     <div class="wh-col" id="whMonth" onscroll="whSnap(this)">${items}</div>
+     <div class="wh-col" id="whMonth" tabindex="0" role="listbox" aria-label="월 선택" onscroll="whSnap(this)" onkeydown="whKeydown(event,this)">${items}</div>
    </div>
    <div class="two-btn" style="margin-top:12px">
      <button class="btn btn-soft cancel" onclick="ymCloseWheel()">취소</button>
@@ -5477,9 +5477,9 @@ function openMonthSheet(which){ /* 전체내역·플랜: 월 단위 휠 (내역 
  const want=`${cur.y}-${cur.m}`;
  requestAnimationFrame(()=>{whScrollToVal($('whMonth'),want);const f=sheetFocusables($('dpWheel'))[0];if(f)f.focus()});
 }
+function whCenterOn(col,it){if(it)col.scrollTop=it.offsetTop-col.clientHeight/2+it.offsetHeight/2}
 function whScrollToVal(col,val){if(!col)return;
- const it=[...col.children].find(c=>c.dataset.v===String(val));
- if(it)col.scrollTop=it.offsetTop-col.clientHeight/2+it.offsetHeight/2;
+ whCenterOn(col,[...col.children].find(c=>c.dataset.v===String(val)));
  whValue(col);
 }
 function monthWheelApply(which){
@@ -5601,14 +5601,14 @@ function dpToggleJump(){
  if(!wasOpen){ovPushFocus();ovHistPush();}
  const l=$('dpMLabel');if(l)l.classList.add('open');
  const yFrom=Math.min(TM.y-10,_dpYM.y),yTo=Math.max(TM.y+5,_dpYM.y);
- let ys='';for(let yy=yFrom;yy<=yTo;yy++)ys+=`<div class="wh-item" data-v="${yy}">${yy}년</div>`;
- let ms='';for(let mm=1;mm<=12;mm++)ms+=`<div class="wh-item" data-v="${mm}">${mm}월</div>`;
+ let ys='';for(let yy=yFrom;yy<=yTo;yy++)ys+=`<div class="wh-item" id="whY-opt-${yy}" role="option" data-v="${yy}">${yy}년</div>`;
+ let ms='';for(let mm=1;mm<=12;mm++)ms+=`<div class="wh-item" id="whM-opt-${mm}" role="option" data-v="${mm}">${mm}월</div>`;
  $('dpWheel').innerHTML=`
    <div class="wh-head">연도 · 월 선택</div>
    <div class="wh-box">
      <div class="wh-sel"></div>
-     <div class="wh-col" id="whY" onscroll="whSnap(this)">${ys}</div>
-     <div class="wh-col" id="whM" onscroll="whSnap(this)">${ms}</div>
+     <div class="wh-col" id="whY" tabindex="0" role="listbox" aria-label="연도 선택" onscroll="whSnap(this)" onkeydown="whKeydown(event,this)">${ys}</div>
+     <div class="wh-col" id="whM" tabindex="0" role="listbox" aria-label="월 선택" onscroll="whSnap(this)" onkeydown="whKeydown(event,this)">${ms}</div>
    </div>
    <div class="two-btn" style="margin-top:12px">
      <button class="btn btn-soft cancel" onclick="dpCloseJump()">취소</button>
@@ -5620,18 +5620,28 @@ function dpToggleJump(){
 }
 function dpCloseJump(){closeDpWheelLayer()}
 function whScrollTo(col,val){if(!col)return;
- const it=[...col.children].find(c=>+c.dataset.v===+val);
- if(it)col.scrollTop=it.offsetTop-col.clientHeight/2+it.offsetHeight/2;
+ whCenterOn(col,[...col.children].find(c=>+c.dataset.v===+val));
 }
 function whValue(col){if(!col)return null;
  const mid=col.scrollTop+col.clientHeight/2;let best=null,bd=1e9;
  [...col.children].forEach(c=>{const cm=c.offsetTop+c.offsetHeight/2;const d=Math.abs(cm-mid);
-  c.classList.toggle('on',false);
+  c.classList.toggle('on',false);c.setAttribute('aria-selected','false');
   if(d<bd){bd=d;best=c}});
- if(best)best.classList.add('on');
+ if(best){best.classList.add('on');best.setAttribute('aria-selected','true');col.setAttribute('aria-activedescendant',best.id)}
  if(!best)return null;
  const v=best.dataset.v;
  return /^-?\d+$/.test(v)?+v:v; /* 숫자면 숫자, 아니면 문자열('all','2026-5') */
+}
+/* 휠 피커(wh-col) 키보드 이동 — ArrowUp/Down/Home/End만 가로채고 나머지(Tab 등)는 그대로 둔다.
+ * 네이티브 scroll 이벤트가 기존 whSnap→whValue 파이프라인을 그대로 타므로 haptic/snap 로직은
+ * 손대지 않는다. */
+function whKeydown(e,col){
+ if(!['ArrowUp','ArrowDown','Home','End'].includes(e.key))return;
+ e.preventDefault();
+ const items=[...col.children];
+ const cur=items.findIndex(c=>c.classList.contains('on'));
+ whCenterOn(col,items[whTargetIdx(cur,items.length,e.key)]);
+ whValue(col);
 }
 function whSnap(col){if(col._raf)return;col._raf=requestAnimationFrame(()=>{col._raf=null;
  const v=whValue(col);
@@ -5705,14 +5715,14 @@ function openYMSheet(which){ /* 홈·가계부: 아이폰 시계식 휠로 연�
  _ymWhich=which;
  const cur=which==='ledger'?ST.ledger:ST.home;
  const yFrom=Math.min(TM.y-10,cur.y),yTo=Math.max(TM.y+5,cur.y);
- let ys='';for(let yy=yFrom;yy<=yTo;yy++)ys+=`<div class="wh-item" data-v="${yy}">${yy}년</div>`;
- let ms='';for(let mm=1;mm<=12;mm++)ms+=`<div class="wh-item" data-v="${mm}">${mm}월</div>`;
+ let ys='';for(let yy=yFrom;yy<=yTo;yy++)ys+=`<div class="wh-item" id="whY-opt-${yy}" role="option" data-v="${yy}">${yy}년</div>`;
+ let ms='';for(let mm=1;mm<=12;mm++)ms+=`<div class="wh-item" id="whM-opt-${mm}" role="option" data-v="${mm}">${mm}월</div>`;
  $('dpWheel').innerHTML=`
    <div class="wh-head">연도 · 월 선택</div>
    <div class="wh-box">
      <div class="wh-sel"></div>
-     <div class="wh-col" id="whY" onscroll="whSnap(this)">${ys}</div>
-     <div class="wh-col" id="whM" onscroll="whSnap(this)">${ms}</div>
+     <div class="wh-col" id="whY" tabindex="0" role="listbox" aria-label="연도 선택" onscroll="whSnap(this)" onkeydown="whKeydown(event,this)">${ys}</div>
+     <div class="wh-col" id="whM" tabindex="0" role="listbox" aria-label="월 선택" onscroll="whSnap(this)" onkeydown="whKeydown(event,this)">${ms}</div>
    </div>
    <div class="two-btn" style="margin-top:12px">
      <button class="btn btn-soft cancel" onclick="ymCloseWheel()">취소</button>

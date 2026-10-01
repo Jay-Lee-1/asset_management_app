@@ -1,19 +1,8 @@
 {
-  "cycle": 118,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "Home/가계부/전체내역/Plan 월 선택 wheel picker(wh-col) 5곳에 키보드 경로 추가",
-    "why": "monthNav()(index.html:5689)가 '좌우 스와이프로 달 이동 — 화살표 없음'이라 명시할 만큼 화살표 버튼이 전혀 없고, wireMonthCarousel()(6433-6491)은 touchstart/move/end/cancel만 배선돼 keydown/pointer 경로가 없다. 월 라벨을 탭하면 열리는 openYMSheet(5702-5724)·openMonthSheet(5458-5479)·dpToggleJump(5599-5620)의 wh-col들은 순수 <div class=wh-item> 스크롤 휠이라 tabindex/onkeydown이 전무함을 grep으로 확인(0건) — sheetFocusables()(5251)가 tabindex 없는 요소를 못 잡아 Tab이 바로 Cancel/이동 버튼으로 건너뛴다. 결과적으로 키보드/스위치 전용 사용자는 Home/가계부/전체내역/Plan 4개 핵심 탭에서 보는 달을 아예 바꿀 방법이 없다. 같은 버그 클래스를 cycle113에서 Assets탭 owner 캐러셀(.nw-dots/#nwCarousel)에 이미 고쳤지만 이 더 핵심적인 월 네비게이션 경로는 118사이클 동안 미발견이었다. whScrollTo/whScrollToVal/whSnap/whValue는 test/run.js FUNCTIONS에 테스트가 전혀 없음.",
-    "approach": "1) logic.js에 순수 함수 whTargetIdx(cur,n,key) 신설(Home/End/ArrowUp/ArrowDown만 처리, n<=0이면 항상 0, cur===-1은 0으로 취급, 끝에서 clamp하고 wrap 없음, 모르는 key는 cur 그대로) + test/run.js에 8~10개 회귀 테스트(Home/End, 양끝 clamp, cur=-1, n=0, 알 수 없는 key). 2) index.html의 whSnap 근처(~5645)에 whKeydown(e,col) 신설: ArrowUp/ArrowDown/Home/End에서만 e.preventDefault(), whTargetIdx로 idx 계산 후 해당 wh-item으로 col.scrollTop을 즉시(스무스 아님, 연타 시 애니메이션 큐잉 방지) 이동 — whScrollTo/whScrollToVal에 중복된 offsetTop 센터링 공식을 센터링 헬퍼로 뽑아 재사용 고려. 네이티브 scroll 이벤트가 기존 whSnap→whValue 파이프라인을 그대로 타게 둬서 .on 클래스/haptic/snap 로직은 안 건드림. 3) openYMSheet(5714-5715 whY/whM), openMonthSheet(5469 whMonth), dpToggleJump(5610-5611 whY/whM) 5곳의 .wh-col에 tabindex=0 role=listbox aria-label(연도/월) + onkeydown=whKeydown(event,this) 추가. 각 wh-item 생성 루프(5604-5605,5463-5464,5708-5709)에 안정적 id+role=option 부여. whValue()의 .on 토글 지점(5629-5631)에서 aria-selected와 col.aria-activedescendant도 같이 갱신(updateNwDots의 aria-current 패턴과 동일). 4) tabindex=0 부여만으로 sheetFocusables()가 wh-col을 DOM 순서상 첫 포커스로 잡아줄 것이므로 기존 sheetFocusables($('dpWheel'))[0].focus() 호출부(5723,5478,5619)는 손대지 않고 review에서 확인만. 5) 스코프 제외: dpModal 날짜 그리드 자체의 화살표 키 이동, wireMonthCarousel 스와이프에 마우스/포인터 지원 추가(둘 다 별도 이슈로 보류). 6) 검증: node --check(logic.js/sw.js), vm.Script로 index.html 인라인 스크립트 2블록 파싱, node test/run.js 전체 통과, grep으로 wh-col 5곳 전부 속성 부여 확인, APP_VERSION/sw.js CACHE 버전 상향."
-  },
+  "cycle": 119,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 113,
-      "phase": "advance",
-      "timestamp": "2026-09-30T13:00:00.000Z",
-      "summary": "critique(cycle113) 계획대로 Assets 탭 귀속(나/배우자/공용/전체) 캐러셀에 키보드/클릭 경로를 추가했다. .nw-dots의 각 <i>를 <button type=\"button\">으로 교체(aria-label=\"${owner} 보기\", aria-current, onclick=gotoNwOwner(i)) — CSS(.nw-dots i,.nw-dots button)로 <i>/<button> 양쪽을 동일하게 스타일해, 별개 위젯인 튜토리얼 월별 캐러셀의 #m-dots(여전히 <i> 사용, 손대지 않음)와도 호환 유지. wireNwCarousel()의 스크롤 settle 타임아웃 안에 인라인으로 있던 owner 전환 로직(ownerListArr()[r] 조회 -> ST.assetOwner 대입 -> vibrate -> refreshAssetBody/refreshNwHistoryCard)을 selectNwOwner(r) 공용 함수로 분리해 scroll 핸들러와 신규 gotoNwOwner(i) 양쪽에서 재사용. #nwCarousel에(카드 2장 이상일 때만) tabindex=\"0\"+role=\"group\"+aria-label=\"귀속별 자산 보기\" 추가, ArrowLeft/ArrowRight keydown 리스너가 ownerListArr().indexOf(ST.assetOwner)로 현재 인덱스를 구해 gotoNwOwner(cur±1) 호출. gotoNwOwner(i)는 계획의 restoreNwScroll(i) 재사용 대신(그 함수는 순간 이동이라 '애니메이션 이동' 의도와 안 맞아) c.scrollTo({behavior:'smooth'})로 부드럽게 스크롤하면서 selectNwOwner를 즉시 호출해 상태를 먼저 반영(스크롤 애니메이션 완료를 기다리지 않아, 스크린리더가 aria-current 변화를 바로 읽을 수 있음) — 이 설계 변경은 plan의 의도(키보드/클릭으로 전환 가능해야 함)를 그대로 satisfy하면서 스크린리더 즉시성을 개선한 것이라 review 없이 advance에서 바로 채택. 클론 루프 경계 clamp/wrap은 순수 함수 nwClampIdx(i,n,loop)로 logic.js에 신설(cycle97 이후 관례대로 새 순수 함수는 index.html 대신 logic.js에 직접 추가)하고 gotoNwOwner가 재사용, test/run.js에 회귀 테스트 5개 추가(loop wrap 양방향/non-loop clamp/범위 내 그대로/n<=0 가드). updateNwDots(idx)가 .nw-dots button만 대상으로 삼도록 셀렉터를 좁히고(.on 토글과 함께 aria-current도 갱신) m-dots(<i>)에는 영향 없음을 확인. 스와이프/스크롤 스냅 로직 자체는 건드리지 않아 계획대로 리스크 낮음. node --check로 logic.js/sw.js 통과, vm.Script로 두 인라인 <script> 블록(메인 356KB + SW 등록 883B) 모두 파싱 통과, node test/run.js 704/704 통과(699->704, 신규 5개 전부 포함). APP_VERSION 1.46.96->1.46.97, sw.js CACHE v258->v259. pending_advance_plan을 null로 비움. 수동 QA(Playwright 등 브라우저 기동)는 이번 사이클에서 수행하지 않음 — 다음 review 단계가 diff를 검토하며 필요시 확인 권장.",
-      "commit": null
-    },
     {
       "cycle": 114,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-01T09:18:24.270Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(CSV export/import·multi-tab localStorage sync·asset 삭제/relink·recDates/recNthDate/addMonths vs addMonthsStr 불일치(기존 보류 확정 재확인)·homeAlerts negative kind 제외(의도적, 버그 아님)·netlify stock/rates 함수 성숙도·filteredHist/balancesUpTo/expandRec 성능 추측(근거없어 기각)·부부 정산 기능(여전히 부재 확인했으나 별도 사이클 필요라 보류)·순자산 추이 SVG aria-label 누락(경미, 숫자 텍스트 병기돼 있어 우선순위 낮음)·undo 6초 토스트/장기 휴지통 없음(의도된 tombstone 설계)는 모두 이미 다뤄졌거나 근거부족/의도된 설계라 제외). 새로 발견: Home/가계부/전체내역/Plan 4개 핵심 탭의 월 선택이 monthNav()(index.html:5689, 주석에 \"화살표 없음\" 명시)처럼 화살표 버튼이 전혀 없고 wireMonthCarousel()(6433-6491)은 touch 이벤트만 배선, 월 라벨 탭 시 열리는 wheel picker(openYMSheet 5702-5724/openMonthSheet 5458-5479/dpToggleJump 5599-5620)의 wh-col들도 tabindex/onkeydown이 전무(grep 0건)해 sheetFocusables()가 못 잡고 Tab이 바로 Cancel/이동 버튼으로 건너뜀 — 키보드/스위치 사용자가 이 4개 탭에서 보는 달을 아예 바꿀 방법이 없는 실재 접근성 단절. cycle113에서 Assets탭 owner 캐러셀에 고친 것과 동일한 버그 클래스지만 훨씬 핵심적인 네비게이션 경로이며 118사이클 동안 미발견이었음. whScrollTo/whScrollToVal/whSnap/whValue는 test/run.js에 테스트 전무. pending_advance_plan에 저장(상세 approach는 state.json 참고): whTargetIdx(cur,n,key) 순수 함수 신설+테스트, whKeydown(e,col) DOM 글루 신설, wh-col 5곳에 tabindex/role/aria-label/onkeydown 배선, whValue()에서 aria-selected/aria-activedescendant 갱신. 코드 변경 없음(읽기 전용 조사, general-purpose 서브에이전트 위임, 핵심 라인 번호는 서브에이전트가 직접 grep/Read로 확인).",
+      "commit": null
+    },
+    {
+      "cycle": 118,
+      "phase": "advance",
+      "timestamp": "2026-10-01T10:08:00.000Z",
+      "summary": "critique(cycle118) 계획대로 Home/가계부/전체내역/Plan 4개 탭의 월 선택 wheel picker(wh-col) 5곳(openMonthSheet의 whMonth, dpToggleJump와 openYMSheet 각각의 whY/whM)에 키보드 경로를 추가했다. logic.js에 순수 함수 whTargetIdx(cur,n,key) 신설 — Home/End/ArrowUp/ArrowDown만 처리, n<=0이면 항상 0, cur===-1은 0으로 취급해 계산, 양끝은 wrap 없이 clamp, 모르는 key는 cur 그대로 반환(캐러셀용 nwClampIdx와 달리 wrap하지 않는 점이 차이) — test/run.js에 7개 회귀 테스트 추가. index.html에 whKeydown(e,col) 신설: ArrowUp/ArrowDown/Home/End만 preventDefault 후 whTargetIdx로 다음 인덱스를 구해 해당 wh-item으로 즉시 스크롤. whScrollTo/whScrollToVal에 중복돼 있던 offsetTop 센터링 공식을 whCenterOn(col,it) 헬퍼로 추출해 둘 다와 whKeydown이 공유하도록 리팩터링(계획의 '고려' 항목 채택). wh-col 5곳 모두에 tabindex=0 role=listbox aria-label(연도 선택/월 선택) onkeydown=whKeydown(event,this) 추가, 각 wh-item 생성 루프 3곳에 안정적 id(예: whY-opt-${yy})+role=option 부여. whValue()의 .on 토글 지점에서 aria-selected와 col.aria-activedescendant도 함께 갱신. tabindex=0만으로 기존 sheetFocusables($('dpWheel'))[0].focus() 호출부(3곳, 손대지 않음)가 wh-col을 DOM상 첫 포커스로 자동으로 잡아준다 — 계획대로 review에서 재확인 권장. 스코프 제외(계획대로): dpModal 날짜 그리드 자체의 화살표 키 이동, wireMonthCarousel 스와이프의 마우스/포인터 지원. node --check(logic.js/sw.js) 통과, vm.Script로 index.html 인라인 스크립트 파싱 통과, node test/run.js 753/753 통과(기존 746+신규 7개). APP_VERSION 1.47.4->1.47.5, sw.js CACHE v266->v267. pending_advance_plan을 null로 비움.",
       "commit": null
     }
   ]

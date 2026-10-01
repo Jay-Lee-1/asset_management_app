@@ -261,3 +261,18 @@ function nwClampIdx(i,n,loop){
  if(loop)return ((i%n)+n)%n;
  return Math.max(0,Math.min(n-1,i));
 }
+
+/* ================= WHEEL PICKER KEY NAV (순수) ================= */
+/* 아이폰 시계식 휠(wh-col)의 ArrowUp/ArrowDown/Home/End 키가 현재 선택 인덱스(cur, 아직 아무것도
+ * 선택 안 됐으면 -1)에서 다음에 선택할 인덱스를 고른다. 캐러셀(nwClampIdx)과 달리 휠은 wrap 없이
+ * 양끝에서 멈춘다(clamp). n<=0(항목 없음)이면 항상 0. 모르는 key는 cur를 그대로 돌려줘
+ * 호출부가 "이동 없음"으로 처리하게 한다. */
+function whTargetIdx(cur,n,key){
+ if(!(n>0))return 0;
+ const c=cur===-1?0:cur;
+ if(key==='Home')return 0;
+ if(key==='End')return n-1;
+ if(key==='ArrowUp')return Math.max(0,c-1);
+ if(key==='ArrowDown')return Math.min(n-1,c+1);
+ return cur;
+}
