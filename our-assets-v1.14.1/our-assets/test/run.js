@@ -119,7 +119,7 @@ const FUNCTIONS = [
   'saveRec', 'recHistFieldsChanged', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
   'expandRec', 'allTxns', 'txnsByDateInRange', 'spendByCategory', 'spendTrend', 'spendTrendBadge', 'histSumTotals',
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'expenseBreakdownCard',
-  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asOpenCur', 'asCur', 'asToggleNeg', 'openAssetSheet', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'mergeRemoteDataIntoLocal', 'fmtAmt',
+  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asOpenCur', 'asCur', 'asToggleNeg', 'openAssetSheet', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'mergeRemoteDataIntoLocal', 'fmtAmt', 'fmtQty',
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges', 'shouldRetryCloudSync',
   'pullCloud', 'afterCloudAuth', 'resolveCloudPullRemote', 'pushCloud',
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
@@ -953,6 +953,31 @@ test('fmtAmt(): 숫자를 모두 지우면 allowNeg 여부와 관계없이 빈 �
   const inp2 = { value: '' };
   sandbox.fmtAmt(inp2);
   assert.strictEqual(inp2.value, '');
+});
+
+/* ---------- fmtQty(): FX/금/주식 보유 수량 입력란 실시간 정제 (app-evolve cycle119 advance)
+ * fmtAmt는 콤마 포맷용이라 소수점을 아예 지워버려 보유 수량(소수 가능)엔 못 쓴다. 문자/기호는
+ * 제거하되 소수점은 하나까지만 허용 — syncAssetInputs()가 이미 콤마 제거 후 parseFloat하므로
+ * 콤마 포맷은 불필요. */
+test('fmtQty(): 숫자가 아닌 문자/기호를 제거한다', () => {
+  const inp = { value: '12a,3bc' };
+  sandbox.fmtQty(inp);
+  assert.strictEqual(inp.value, '123');
+});
+test('fmtQty(): 소수점 하나는 그대로 유지한다', () => {
+  const inp = { value: '12.5' };
+  sandbox.fmtQty(inp);
+  assert.strictEqual(inp.value, '12.5');
+});
+test('fmtQty(): 소수점이 여러 개면 첫 번째만 남기고 나머지는 제거한다', () => {
+  const inp = { value: '1.2.3.4' };
+  sandbox.fmtQty(inp);
+  assert.strictEqual(inp.value, '1.234');
+});
+test('fmtQty(): 빈 문자열은 그대로 빈 문자열로 남는다', () => {
+  const inp = { value: '' };
+  sandbox.fmtQty(inp);
+  assert.strictEqual(inp.value, '');
 });
 
 /* ---------- catVar / doRenameCat: 카테고리 이름변경 시 '변동' 플래그 마이그레이션 (c38ee65) ---------- */
@@ -2141,7 +2166,7 @@ test('saveAsset: 새 자산 등록 시 삭제된 동명 자산의 type까지 같
   assert.strictEqual(sandbox.DB.assets.length, 0, '재연동 시트가 뜨면 아직 자산이 등록되지 않아야 함(사용자 선택 대기)');
 
   sandbox.DB.assets = [];
-  sandbox.asDraft = { type: 'stock', name: '카카오뱅크', stockCode: 'S1', stockQty: 0 };
+  sandbox.asDraft = { type: 'stock', name: '카카오뱅크', stockCode: 'S1', stockQty: 10 };
   sandbox.lastAskRelinkDeletedArg = null;
   sandbox.saveAsset();
   assert.strictEqual(sandbox.lastAskRelinkDeletedArg, null, 'type이 다르면 askRelinkDeleted가 호출되지 않고 바로 새 자산으로 등록되어야 함');
@@ -4306,6 +4331,42 @@ test('saveAsset: 다른 자산 타입은 종목코드가 없어도 이 검증에
   sandbox.saveAsset(false);
   assert.strictEqual(sandbox.DB.assets.length, 1);
   assert.ok(!sandbox.toastCalls.includes('종목코드를 입력해 주세요'));
+});
+/* ---------- saveAsset: FX/금/주식의 보유 수량이 0(또는 미입력)이면 저장을 막는다 (app-evolve
+ * cycle119 advance). 다른 모든 숫자 입력란은 oninput="fmtAmt(this,...)"로 실시간 정제되는데
+ * 이 세 입력란만 그런 정제가 없었고, syncAssetInputs()의 parseFloat(...)||0이 파싱 불가 입력을
+ * 조용히 0으로 바꿔도 saveAsset()은 stockCode만 검사해 수량 0인 자산이 에러 없이 저장됐다. ---------- */
+test('saveAsset: fx 보유 수량이 0이면 토스트로 막고 자산이 추가되지 않는다', () => {
+  sandbox.DB = { assets: [], rates: { fx: {}, stocks: {}, goldPerG: 0 } };
+  sandbox.asDraft = { type: 'fx', owner: '나', includeInTotal: true, name: '달러', currency: 'USD', fxAmount: 0 };
+  sandbox.toastCalls = [];
+  sandbox.saveAsset(false);
+  assert.strictEqual(sandbox.DB.assets.length, 0);
+  assert.ok(sandbox.toastCalls.includes('보유 수량을 입력해 주세요'));
+});
+test('saveAsset: 금 보유 수량이 미입력(undefined)이면 토스트로 막고 자산이 추가되지 않는다', () => {
+  sandbox.DB = { assets: [], rates: { fx: {}, stocks: {}, goldPerG: 0 } };
+  sandbox.asDraft = { type: 'gold', owner: '나', includeInTotal: true, name: '금' };
+  sandbox.toastCalls = [];
+  sandbox.saveAsset(false);
+  assert.strictEqual(sandbox.DB.assets.length, 0);
+  assert.ok(sandbox.toastCalls.includes('보유 수량을 입력해 주세요'));
+});
+test('saveAsset: 주식 보유 수가 0이면 종목코드가 있어도 토스트로 막고 자산이 추가되지 않는다', () => {
+  sandbox.DB = { assets: [], rates: { fx: {}, stocks: {}, goldPerG: 0 } };
+  sandbox.asDraft = { type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 0 };
+  sandbox.toastCalls = [];
+  sandbox.saveAsset(false);
+  assert.strictEqual(sandbox.DB.assets.length, 0);
+  assert.ok(sandbox.toastCalls.includes('보유 수량을 입력해 주세요'));
+});
+test('saveAsset: fx/금/주식이 아닌 자산 타입은 보유 수량 검증에 걸리지 않는다', () => {
+  sandbox.DB = { assets: [], rates: { fx: {}, stocks: {}, goldPerG: 0 } };
+  sandbox.asDraft = { type: 'cash', owner: '나', includeInTotal: true, name: '지갑', baseAmount: 0 };
+  sandbox.toastCalls = [];
+  sandbox.saveAsset(false);
+  assert.strictEqual(sandbox.DB.assets.length, 1);
+  assert.ok(!sandbox.toastCalls.includes('보유 수량을 입력해 주세요'));
 });
 test('saveAsset: 처음 보는 fx 통화를 등록하면 즉시 동기화하고, 이미 보유 중이라 알고 있는 통화는 부르지 않는다', () => {
   sandbox.DB = { assets: [], rates: { fx: { USD: 1350 }, stocks: {}, goldPerG: 0 } };
