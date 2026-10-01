@@ -1,15 +1,8 @@
 {
   "cycle": 120,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 115,
-      "phase": "review",
-      "timestamp": "2026-09-30T19:40:00.000Z",
-      "summary": "develop 커밋(bf6071d, tx/rec 공용 헬퍼 _applyType/_applyDay/_applyCount/dayPickerHTML 회귀 테스트 19개 추가)을 검토. index.html의 실제 구현(3332-3440행)과 신규 테스트 19개를 하나씩 직접 대조: _applyType의 catListOf(t)[0]||'기타' 폴백과 income/transfer/saving 전환 시 firstCash() 채움(이미 있으면 미덮어쓰기) 로직이 6개 테스트 기대값과 정확히 일치, _applyDay의 'last'/'custom'/숫자 세 분기와 custom 전환 시 프리셋(1/5/15/25)·'last'·falsy일 때만 시작일 일자로 재초기화하는 조건이 6개 테스트와 일치, _applyCount의 Math.min(999,Math.max(0,...))clamp와 n>=1일 때만 recNthDate 호출하는 분기가 4개 테스트와 일치(endDate 테스트는 실제 recNthDate 호출 결과를 재사용하는 방식이라 회귀 시 recNthDate 자체가 바뀌면 여전히 같이 통과하는 약점이 있으나 '2026-03-10' 리터럴 비교도 함께 있어 완전 tautology는 아님), dayPickerHTML의 isCustom 판정(_custom 플래그 또는 프리셋 밖 숫자)과 on 클래스/커스텀 입력칸 렌더가 3개 테스트와 일치. firstCash/isCashLike가 test/run.js의 FUNCTIONS/CONSTS 추출 목록에 이미 포함돼 있어 _applyType 테스트가 ReferenceError 없이 동작함을 확인. node test/run.js 재실행해 729/729 전부 통과 재확인(직접 실행으로 커밋 메시지 주장 검증). 코드 변경 없음(이상 없음).",
-      "commit": null
-    },
     {
       "cycle": 115,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-01T15:12:13.705Z",
       "summary": "index.html/logic.js/sw.js/test/run.js 전체에서 moveChipBlob() 참조를 grep으로 재확인(정의 1곳 외 호출부 전무, chipWrap/chipBlob DOM id도 markup에 없음, 유일한 .chip 요소는 튜토리얼 목업 화면(m-chips, 4687행)으로 무관) — cycle117에서 정리된 netWorth/toggleInclSch 등과 같은 부류의 orphan 함수. index.html:3976-3989 전체(함수 본문 14줄) 삭제, 로직 자체가 사라졌으므로 test/run.js FUNCTIONS 목록에도 애초에 없어 테스트 변경 불필요. APP_VERSION 1.47.7->1.47.8, sw.js CACHE v269->v270. node --check 두 인라인 script 블록 모두 통과, node test/run.js 762/762 유지(케이스 수 불변, 죽은 코드 제거라 신규 케이스 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 120,
+      "phase": "review",
+      "timestamp": "2026-10-01T16:07:55.934Z",
+      "summary": "develop 커밋(877ca54, moveChipBlob() orphan 함수 제거)을 검토. index.html/logic.js/test/run.js 전체를 grep으로 재확인해 moveChipBlob 호출부와 chipWrap/chipBlob DOM id 참조가 정말로 전무함을 직접 검증(커밋 메시지 주장과 일치). node test/run.js를 직접 재실행해 762/762 전부 통과 재확인. 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
