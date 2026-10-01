@@ -108,7 +108,7 @@ function extractMainScript() {
 // (app-evolve cycle97 advance, cycle111 advance).
 const FUNCTIONS = [
   'addMonths', 'fetchWithTimeout', 'withTimeout',
-  'dateBelowRangeFloor', 'recalcEndCond', 'isVarCat', 'setCatVar', 'activeRecsForAssets', 'activeRecsForCat',
+  'dateBelowRangeFloor', 'dateAboveRangeCeil', 'recalcEndCond', 'isVarCat', 'setCatVar', 'activeRecsForAssets', 'activeRecsForCat',
   'num', 'doRenameCat', 'doDeleteCat', 'totalBudgetSummary', 'budgetForMonth', 'setBudgetFrom', 'addCat',
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV',
   'unguardCsv', 'csvRowToImportTxn', 'buildImportPreview', 'doCsvImport',
@@ -2259,6 +2259,16 @@ test("csvRowToImportTxn: RANGE_FROM 이전 날짜는 형식은 유효해도 erro
   const ok = sandbox.csvRowToImportTxn(['2023-01-01', '지출', '식비', '1000', '주계좌', '', ''], []);
   assert.strictEqual(ok.ok, true, 'RANGE_FROM 당일은 하한선에 포함되어야 함');
 });
+// app-evolve cycle120 advance: RANGE_TO(상한)는 RANGE_FROM(하한)과 대칭으로 검증되지 않던
+// 경계버그 — dateAboveRangeCeil() 신설 후 csvRowToImportTxn에도 동일하게 적용했는지 확인한다.
+test("csvRowToImportTxn: RANGE_TO 이후 날짜는 형식은 유효해도 error:'range'로 걸러진다", () => {
+  sandbox.RANGE_TO = '2028-06-15';
+  const r = sandbox.csvRowToImportTxn(['2028-06-16', '지출', '식비', '1000', '', '', ''], []);
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.error, 'range');
+  const ok = sandbox.csvRowToImportTxn(['2028-06-15', '지출', '식비', '1000', '주계좌', '', ''], []);
+  assert.strictEqual(ok.ok, true, 'RANGE_TO 당일은 상한선에 포함되어야 함');
+});
 test('csvRowToImportTxn: 지출은 fromAssetId만, 수입은 toAssetId만 채우고 반대쪽은 항상 null', () => {
   const assets = [{ id: 'a1', name: 'A' }];
   const exp = sandbox.csvRowToImportTxn(['2026-01-01', '지출', '식비', '1000', 'A', 'A', ''], assets);
@@ -2333,6 +2343,19 @@ test('doCsvImport: window._csvImport.items로 일괄 저장하는 거래마다 t
 test("buildImportPreview: RANGE_FROM 이전 날짜 행은 형식 오류(invalidCount)와 구분해 rangeCount로 센다", () => {
   const csv = '날짜,구분,카테고리,금액,보내는 자산,받는 자산,메모\r\n' +
     '2022-12-31,지출,식비,5000,,,오래된 내역\r\n' +
+    'bad-row,지출,식비,abc,,,\r\n' +
+    '2026-01-01,지출,식비,5000,주계좌,,정상 내역\r\n';
+  const preview = sandbox.buildImportPreview(csv, [], { expense: ['식비'], income: [], saving: [] }, []);
+  assert.strictEqual(preview.totalRows, 3);
+  assert.strictEqual(preview.rangeCount, 1);
+  assert.strictEqual(preview.invalidCount, 1, '형식 오류 카운트는 range 행을 포함하지 않아야 함');
+  assert.strictEqual(preview.newCount, 1);
+});
+// app-evolve cycle120 advance: RANGE_TO 이후 날짜도 RANGE_FROM 이전과 동일하게 rangeCount로 센다.
+test("buildImportPreview: RANGE_TO 이후 날짜 행도 형식 오류(invalidCount)와 구분해 rangeCount로 센다", () => {
+  sandbox.RANGE_TO = '2028-06-15';
+  const csv = '날짜,구분,카테고리,금액,보내는 자산,받는 자산,메모\r\n' +
+    '2028-06-16,지출,식비,5000,,,먼 미래 내역\r\n' +
     'bad-row,지출,식비,abc,,,\r\n' +
     '2026-01-01,지출,식비,5000,주계좌,,정상 내역\r\n';
   const preview = sandbox.buildImportPreview(csv, [], { expense: ['식비'], income: [], saving: [] }, []);
@@ -3518,6 +3541,21 @@ test("sanitizeBackup: RANGE_FROM 이전 날짜 거래는 제거하지 않되 ran
   assert.strictEqual(data.txns.length, 3, 'RANGE_FROM 이전이어도 레코드는 그대로 유지되어야 함');
   assert.strictEqual(droppedCount, 0);
   assert.strictEqual(rangeCount, 1, 'RANGE_FROM 당일은 하한선에 포함되어 rangeCount에 안 잡혀야 함');
+});
+// app-evolve cycle120 advance: RANGE_TO(상한)도 RANGE_FROM(하한)과 대칭으로 rangeCount에 잡혀야 한다.
+test("sanitizeBackup: RANGE_TO 이후 날짜 거래도 제거하지 않되 rangeCount로 센다(droppedCount와 구분)", () => {
+  sandbox.RANGE_TO = '2028-06-15';
+  const { data, droppedCount, rangeCount } = sandbox.sanitizeBackup({
+    assets: [],
+    txns: [
+      { id: 't1', date: '2028-06-16', amount: 1000 },
+      { id: 't2', date: sandbox.RANGE_TO, amount: 2000 },
+      { id: 't3', date: '2026-01-01', amount: 3000 },
+    ],
+  });
+  assert.strictEqual(data.txns.length, 3, 'RANGE_TO 이후여도 레코드는 그대로 유지되어야 함');
+  assert.strictEqual(droppedCount, 0);
+  assert.strictEqual(rangeCount, 1, 'RANGE_TO 당일은 상한선에 포함되어 rangeCount에 안 잡혀야 함');
 });
 test("sanitizeBackup: RANGE_FROM 이전 날짜가 없으면 rangeCount는 0이다(정상 케이스는 회귀 없음)", () => {
   const { rangeCount } = sandbox.sanitizeBackup({
@@ -5229,6 +5267,31 @@ test('saveTx: RANGE_FROM 당일은 하한선에 포함되어 정상 저장된다
   sandbox.saveTx();
   assert.strictEqual(sandbox.DB.txns.length, 1, 'RANGE_FROM 당일은 저장되어야 함');
 });
+// app-evolve cycle120 advance: RANGE_TO(상한)도 RANGE_FROM(하한)과 대칭으로 저장 시점에 막아야 한다.
+test('saveTx: RANGE_TO 이후 날짜는 토스트만 뜨고 저장되지 않는다', () => {
+  sandbox.TWi = -1;
+  sandbox.RANGE_TO = '2028-06-15';
+  sandbox.DB = { txns: [], settings: {} };
+  sandbox.txDraft = {
+    id: null, type: 'expense', date: '2028-06-16', category: '식비', memo: '',
+    amount: 9000, fromAssetId: 'a1', toAssetId: null, repeat: false,
+  };
+  sandbox.toastCalls = [];
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.DB.txns.length, 0, 'RANGE_TO 이후 날짜는 저장되면 안 됨');
+  assert.ok(sandbox.toastCalls.some(m => m.includes('2028-06-15')), '상한 날짜를 알려주는 토스트가 떠야 함');
+});
+test('saveTx: RANGE_TO 당일은 상한선에 포함되어 정상 저장된다(정상 케이스는 회귀 없음)', () => {
+  sandbox.TWi = -1;
+  sandbox.RANGE_TO = '2028-06-15';
+  sandbox.DB = { txns: [], settings: {} };
+  sandbox.txDraft = {
+    id: null, type: 'expense', date: '2028-06-15', category: '식비', memo: '',
+    amount: 9000, fromAssetId: 'a1', toAssetId: null, repeat: false,
+  };
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.DB.txns.length, 1, 'RANGE_TO 당일은 저장되어야 함');
+});
 
 /* ---------- saveTx: 카테고리가 비어있으면(예: doDeleteCat 가드를 뚫고 마지막 카테고리가
  * 지워졌거나, migrate 이전 데이터 등) undefined 카테고리로 저장되지 않게 막는다 (cycle69) ---------- */
@@ -5335,6 +5398,21 @@ test('saveRec: 시작일이 RANGE_FROM 이전이면 토스트만 뜨고 저장�
   sandbox.saveRec();
   assert.strictEqual(sandbox.DB.recurrences.length, 0, 'RANGE_FROM 이전 시작일은 저장되면 안 됨');
   assert.ok(sandbox.toastCalls.some(m => m.includes('2023-01-01')), '하한 날짜를 알려주는 토스트가 떠야 함');
+});
+// app-evolve cycle120 advance: RANGE_TO(상한)도 RANGE_FROM(하한)과 대칭으로 저장 시점에 막아야 한다.
+test('saveRec: 시작일이 RANGE_TO 이후이면 토스트만 뜨고 저장되지 않는다', () => {
+  sandbox.TWi = -1;
+  sandbox.RANGE_TO = '2028-06-15';
+  sandbox.DB = { recurrences: [], settings: {} };
+  sandbox.recDraft = {
+    id: null, type: 'expense', category: '식비', memo: '', amount: 9000,
+    fromAssetId: 'a1', toAssetId: null, freq: 'monthly', day: 10,
+    startDate: '2028-06-16', endDate: null, count: null, weekend: 'onDay',
+  };
+  sandbox.toastCalls = [];
+  sandbox.saveRec();
+  assert.strictEqual(sandbox.DB.recurrences.length, 0, 'RANGE_TO 이후 시작일은 저장되면 안 됨');
+  assert.ok(sandbox.toastCalls.some(m => m.includes('2028-06-15')), '상한 날짜를 알려주는 토스트가 떠야 함');
 });
 
 /* ---------- balancesUpTo: 단일 슬롯 캐시를 다중 슬롯(Map)으로 바꾼 회귀 테스트 ----------

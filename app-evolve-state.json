@@ -1,19 +1,8 @@
 {
-  "cycle": 120,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "RANGE_TO(미래 760일) 상한 미검증 — dateBelowRangeFloor의 대칭짝 dateAboveRangeCeil 부재",
-    "why": "index.html:2123 RANGE_FROM/RANGE_TO가 balancesUpTo/allTxns(2177)의 고정 집계창을 정의하고, 이 창 밖 날짜는 잔액·집계에서 조용히 빠진다는 주석(2124-2125)까지 있음에도 하한(RANGE_FROM) 쪽만 dateBelowRangeFloor()(2126)로 saveTx(3502)/saveRec(3690)/csvRowToImportTxn(4895)/sanitizeBackup(5079) 네 곳 모두에서 막혀 있고, 상한(RANGE_TO)은 어디서도 검증되지 않는 한쪽만 고친 경계버그. 날짜 피커(openFieldDatePicker/dpExtend, 5547-5557)는 미래 쪽 상한이 전혀 없고 dpToggleJump(5593)의 연도 점프 기본 범위가 TM.y+5까지라 반복거래 설정 없이 단발 거래 하나로도 2~3년 뒤 날짜를 두 번의 탭으로 저장 가능 — saveTx()가 하한만 체크하므로 그대로 저장되지만 allTxns(RANGE_FROM,RANGE_TO)가 애초에 가져오지 않아 balancesUpTo/hasFutureTxns(6023)/emptyAssets(6025)에서 영구히 안 보이는 실재 데이터 유실(+잘못된 '정리 제안')이 됨. CSV 가져오기 경로는 하한 위반 시 'range'로 거부+카운트해 사용자에게 알리는데 상한 위반은 경고조차 없이 그대로 들어가 더 나쁜 비대칭. test/run.js 전수 확인 결과 RANGE_TO 관련 테스트는 전부 sandbox.RANGE_TO='2099-12-31'로 경계를 치워버리는 스텁뿐이라 실제 경계 코드/테스트가 전무함을 grep으로 재확인(critique 서브에이전트 보고 + 오케스트레이팅 세션이 index.html:2123-2177,3502,3690,4895,5075-5141 라인 전부 직접 재확인).",
-    "approach": "(1) index.html의 dateBelowRangeFloor(2126) 바로 옆에 `function dateAboveRangeCeil(ds){return ds>RANGE_TO}` 신설. (2) saveTx() 기존 하한 체크(3502) 바로 뒤에 `if(dateAboveRangeCeil(d.date)){toast(...);return}` 추가(메시지는 하한 메시지와 톤 일치, RANGE_TO 값 포함). saveRec()의 d.startDate(3690)도 동일 패턴. (3) csvRowToImportTxn()(4895) 조건을 `if(dateBelowRangeFloor(date)||dateAboveRangeCeil(date))return{ok:false,error:'range'}`로 확장, buildImportPreview()의 rangeCount 카운팅은 이미 범용이라 추가 수정 불필요, preview 메시지(5168)를 '${RANGE_FROM} 이전 날짜 N행 제외'에서 방향 비한정 문구(예: '날짜 범위를 벗어난 N행은 제외')로 수정. (4) sanitizeBackup()(5079) 조건도 동일하게 `||dateAboveRangeCeil(d.date)`로 확장, 복원 안내 메시지(5141, 1795)도 방향 비한정 문구로 수정. (5) test/run.js: FUNCTIONS 추출 목록에 dateAboveRangeCeil 추가(111 인근), dateAboveRangeCeil 단위테스트 몇 개, saveTx/saveRec에 sandbox.RANGE_TO를 명시적으로 설정한 뒤 RANGE_TO 다음날 저장 시도→토스트+미저장 확인 테스트(+ RANGE_TO 당일은 저장되는 경계 포함 테스트), csvRowToImportTxn/buildImportPreview에 RANGE_TO 초과 날짜가 error:'range'/rangeCount로 처리되는 테스트(+ 당일 경계는 정상 처리), sanitizeBackup에 RANGE_TO 초과 픽스처가 rangeCount만 증가하고 레코드 자체는 유지되는(드롭 안 됨) 테스트. 주의: sandbox.RANGE_TO 기본값이 null(202행 부근)이라 ds>null 비교는 항상 false이므로 RANGE_TO를 명시적으로 세팅하지 않는 기존 테스트는 전혀 영향 없음 — 새 테스트에서만 sandbox.RANGE_TO를 명시 설정. 스코프 제외: dpExtend/dpToggleJump 등 날짜 피커 UI 자체의 미래 쪽 캡은 더 큰 UX 결정이라 이번 범위 밖(반복거래가 미래로 흘러가며 RANGE_TO를 넘는 정상 케이스가 있어 UI 자체를 막으면 안 됨 — 경계는 저장/가져오기/복원 4곳에서만 막는다), recApply의 scope:'future' 경로(3607-3613)는 이미 생성된 occurrence 기반이라 무관."
-  },
+  "cycle": 121,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 115,
-      "phase": "advance",
-      "timestamp": "2026-09-30T21:00:00.000Z",
-      "summary": "critique(cycle115) 계획대로 시세 동기화 fetch에 타임아웃을 추가했다. index.html에 fetchWithTimeout(url,opts,ms=8000) 헬퍼를 신설(AbortController → setTimeout(()=>ctrl.abort(),ms) → fetch(url,{...opts,signal}) → finally clearTimeout(timer))해 fetchFxGold/fetchStocks의 bare fetch를 이 헬퍼 호출로 교체(호출부는 url만 넘기고 opts/ms는 생략 — 기본 8초 타임아웃 적용). syncRates()의 본문(allSettled 이후 로직)을 try/finally로 감싸 syncing=false와 버튼 spin 해제가 fetchFxGold/fetchStocks가 던지는 모든 예외 경로에서도 항상 실행되게 방어. test/run.js FUNCTIONS에 fetchWithTimeout을 추가해 회귀 테스트 5개 추가. node test/run.js 729/729 -> 734/734 통과. APP_VERSION 1.46.98->1.46.99, sw.js CACHE v260->v261. pending_advance_plan을 null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 116,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-01T17:10:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(a11y 전반·cloud sync 타임아웃/mutex·CDN SRI·파일분할/jsdom·백그라운드 푸시·tx/rec 폼 통합·owner 이름변경 마이그레이션·orphan 함수·자산별 거래내역·요약카드 탭 배선·wheel picker 키보드·스파크라인 aria-hidden·FX/금/주식 수량 가드·CSV/삭제cascade/백버튼/PWA/핀치줌/날짜로직/PBKDF2/복구코드/알림인터벌/쿼터/undo tombstone/성능추측/부부정산·대출상환·예산경고류/검색금액매칭/평단가단순설계/정렬모드는 모두 이미 다뤄졌거나 근거부족·의도된 설계로 기각 확정이라 제외). 새로 발견: index.html:2123 RANGE_FROM(하한)은 dateBelowRangeFloor()(2126)로 saveTx(3502)/saveRec(3690)/csvRowToImportTxn(4895)/sanitizeBackup(5079) 네 곳 모두에서 막혀 있는데, RANGE_TO(상한, TODAY+760일)는 대칭 검증 함수가 아예 없어 네 곳 어디서도 상한을 체크하지 않음 — allTxns(RANGE_FROM,RANGE_TO)가 상한 밖 날짜를 애초에 안 가져온다는 주석(2124-2125)까지 있는 한쪽만 고친 경계버그. 날짜 피커(dpExtend 5547-5557)는 미래 상한이 전혀 없고 dpToggleJump(5593)의 연도 점프가 기본 TM.y+5까지라 단발 거래 하나로도 두 번의 탭으로 2~3년 뒤 날짜를 저장 가능, saveTx가 하한만 체크하므로 그대로 저장되지만 balancesUpTo/hasFutureTxns(6023)/emptyAssets(6025)에서 영구히 안 보이는 실재 데이터 유실(+잘못된 자산 정리 제안)로 이어짐. CSV는 하한 위반만 경고하고 상한 위반은 무경고로 더 나쁜 비대칭. test/run.js 전수 확인 결과 RANGE_TO 관련 테스트는 전부 sandbox.RANGE_TO를 2099년으로 치워버리는 스텁뿐이라 실제 경계 코드/테스트 전무. 러너업(기록만, 기각): 주식 티커 포맷 클라/서버 불일치(rateUnknown 배지+수동 설정으로 이미 복구 가능해 우선순위 낮음) / netlify rates.js·stock.js 성숙도(AbortController+재시도+예산+폴백 모두 이미 확인, 변경 없음) / undo 토스트 스택 동작(독립 DOM+타이머로 정상, 버그 아님). pending_advance_plan에 저장(상세 approach는 state.json pending_advance_plan 참고): dateAboveRangeCeil(ds) 순수함수 신설 후 saveTx/saveRec/csvRowToImportTxn/sanitizeBackup 네 곳에 하한과 대칭으로 적용, 관련 안내 메시지를 방향 비한정 문구로 수정, test/run.js에 경계 포함 회귀 테스트 추가. 날짜 피커 UI 자체의 미래 상한은 반복거래가 정상적으로 RANGE_TO를 넘나드는 케이스가 있어 스코프 제외(저장/가져오기/복원 경계만 막음). 코드 변경 없음(읽기 전용 조사, general-purpose 서브에이전트 위임, 핵심 라인 번호는 오케스트레이팅 세션이 직접 grep으로 재확인).",
+      "commit": null
+    },
+    {
+      "cycle": 120,
+      "phase": "advance",
+      "timestamp": "2026-10-01T18:10:58.883Z",
+      "summary": "critique(cycle120) 계획대로 RANGE_TO(상한) 대칭 검증을 추가했다. index.html에 dateAboveRangeCeil(ds){return ds>RANGE_TO} 신설(dateBelowRangeFloor 바로 옆). saveTx()/saveRec()의 기존 하한 체크 직후에 상한 체크를 추가(d.date/d.startDate, RANGE_TO 값을 포함한 토스트). csvRowToImportTxn()의 range 조건을 dateBelowRangeFloor||dateAboveRangeCeil로 확장. sanitizeBackup()도 동일 패턴으로 확장. 네 곳 모두에서 쓰던 방향 한정 안내 문구('RANGE_FROM 이전 날짜 N건')를 방향 비한정 문구('날짜 범위를 벗어난 N건')로 통일(클라우드 pull 토스트/백업 복원 notes/CSV 미리보기 stats 3곳). test/run.js: FUNCTIONS에 dateAboveRangeCeil 추가, csvRowToImportTxn/buildImportPreview/sanitizeBackup/saveTx/saveRec 각각에 RANGE_TO 경계(초과 시 거부, 당일은 허용) 테스트 6개 추가. node test/run.js 762/762 -> 768/768 통과. APP_VERSION 1.47.8->1.47.9, sw.js CACHE v270->v271. 스코프 제외: 날짜 피커(dpExtend/dpToggleJump) UI 자체의 미래 상한은 반복거래가 정상적으로 RANGE_TO를 넘나드는 케이스가 있어 건드리지 않음(저장/가져오기/복원 경계만 막음). pending_advance_plan을 null로 비움.",
       "commit": null
     }
   ]
