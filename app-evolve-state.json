@@ -1,15 +1,8 @@
 {
   "cycle": 116,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 111,
-      "phase": "review",
-      "timestamp": "2026-09-30T09:00:00.000Z",
-      "summary": "develop 커밋(4f08fec, 죽은 순수 함수 6개 삭제: totalAssetAt/fixedIncomeOf/ownerNet/txMonthRange/inMonth/monthKeyOf)을 검토. 6개 함수명 각각을 \\b워드바운더리\\b로 our-assets-v1.14.1/our-assets/ 전체(index.html·logic.js·sw.js)에 재검색해 정의부를 포함해 단 한 줄도 남아있지 않음을 재확인(diff가 주장한 '정의 외 호출부 0건'이 아니라 정의 자체가 통째로 삭제됐고 잔존 참조가 전무함을 실제로 검증). 삭제 시 함께 정리한 두 주석(isMarketValued 옆, sanitizeAmount 옆)도 죽은 함수 이름이 재등장하지 않음을 확인. diff에 로직 함수 본문 변경은 없고 순수 삭제+주석 정리+APP_VERSION/CACHE 버전 동시 상향(1.46.91->1.46.92, v253->v254)뿐이라 회귀 위험 자체가 낮음. node --check로 logic.js/sw.js 통과, new Function()으로 두 인라인 <script> 블록(353KB 메인 블록 포함) 모두 파싱 통과, node test/run.js 697/697 전부 통과(순수 삭제라 케이스 수 그대로, 예상대로 변화 없음). 코드 변경 없음(이상 없음). 부수적으로 develop(cycle111) 이력 항목에 누락돼 있던 commit 해시(4f08fec)를 기록.",
-      "commit": null
-    },
     {
       "cycle": 111,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-09-30T22:00:00.000Z",
       "summary": "가계부 탭 상단 요약 카드(수지·수입·지출·저축·내부이체)가 전부 <button>으로 마크업돼 있었지만 클릭 핸들러가 전혀 배선돼 있지 않아 눌러도 아무 반응 없는 죽은 버튼이었다. index.html:3286 sumTap(kind)는 '해당 월+종류 필터가 걸린 전체내역으로 이동'하는 완성된 함수인데 정의부 1곳 외 참조가 0건인 orphan 함수였음(전체 함수 598개 정규식 스캔으로 발견). ledSumInner(a,sc,today)에 4번째 인자 tap을 추가해 tap=true일 때만 각 버튼에 onclick=\"ledSumTap('<kind>')\"를 배선(kind는 TYPEBYLABEL과 맞춘 '전체'/'수입'/'지출'/'저축'/'이체'). ledSumBox()(가계부 탭 카드)는 tap=true로 호출하도록 수정해 탭하면 필터된 전체내역으로 이동하게 했고, histTotBox()(전체내역 탭 자신의 합계 카드)는 의도적으로 tap을 생략해 미배선 유지 — sumTap()이 ST.ledger.y/m 기준으로 범위를 리셋하므로 이미 전체내역 탭 안(연간/커스텀 범위 등)에서 잘못된 범위로 튕기는 것을 방지. 가계부 카드엔 기존에 롱프레스 피크 제스처(sujiPeekStart/Move/End)가 있어 릴리즈 시 브라우저가 click을 추가로 쏘는 문제가 있어, _sujiPeeked 플래그와 ledSumTap(kind) 래퍼를 신설해 롱프레스 직후의 릴리즈 클릭 한 번만 삼키고(sumTap 미호출) 다음 진짜 탭부터는 정상 동작하게 했다(sujiPeekStart가 매 누름 시작마다 플래그 리셋). setSujiMode()도 tap=true로 재렌더하도록 수정. TYPEBYLABEL 매핑(수입/지출/이체/저축)과 sumTap의 kind 처리를 grep으로 대조해 버튼 5개의 kind 인자가 모두 유효한 필터 값으로 이어짐을 확인. test/run.js에 회귀 테스트 5개 추가(ledSumBox 버튼 배선 확인 2개, ledSumInner의 tap 생략 시 미배선 확인 1개, ledSumTap의 롱프레스 직후 클릭 삼킴/평소 탭 정상 동작 확인 2개). node --check로 logic.js/sw.js 통과, vm.Script로 두 인라인 <script> 블록 파싱 통과, node test/run.js 734/734 -> 739/739 통과(오케스트레이팅 세션이 직접 재실행해 재확인). APP_VERSION 1.46.99->1.47.0, sw.js CACHE v261->v262. (general-purpose 서브에이전트에 위임해 탐색·구현·검증, 오케스트레이팅 세션이 diff 대조 검증·상태 파일 갱신·커밋을 수행)",
+      "commit": null
+    },
+    {
+      "cycle": 116,
+      "phase": "review",
+      "timestamp": "2026-10-01T00:00:00.000Z",
+      "summary": "develop 커밋(8afd3c6, 가계부 요약 카드 수지/수입/지출/저축/이체 버튼에 sumTap 배선)을 검토. ledSumInner(a,sc,today,tap) 4번째 인자와 on(k) 헬퍼로 tap=true일 때만 onclick=\"ledSumTap('<k>')\"가 붙는 구현을 소스에서 직접 대조, 버튼 5개(전체/수입/지출/저축/이체)의 kind 문자열이 TYPEBYLABEL({'수입':'income','지출':'expense','이체':'transfer','저축':'saving'})과 sumTap() 본문(kind==='전체'?'전체':kind를 ST.hist.cat에 대입)의 처리 양쪽과 정확히 일치함을 grep으로 재확인(filteredHist의 TYPEBYLABEL[H.cat] 조회 경로까지 추적). histTotBox()(전체내역 탭 자신의 합계 카드)가 ledSumInner를 3개 인자로만(tap 생략) 호출해 의도대로 미배선 상태임을 재확인 — 커밋 메시지가 주장한 '범위 충돌 방지' 설계와 일치. _sujiPeeked 가드 로직(sujiPeekStart가 매 pointerdown마다 false로 리셋 → 180ms 타이머가 실제로 발동해야만 true가 되고, click은 pointerup 뒤에 발생하므로 롱프레스 릴리즈의 click 한 번만 정확히 삼키고 그 다음 탭부터는 정상 동작)을 코드 흐름으로 직접 추적해 레이스 컨디션이나 더블카운트 없음을 확인. 신규 회귀 테스트 5개(ledSumBox 배선 2개, ledSumInner tap 생략 시 미배선 1개, ledSumTap 삼킴/정상탭 2개)를 실제 구현과 하나씩 대조해 기대값이 소스와 일치함을 확인. sw.js diff는 CACHE 버전(v261->v262) 한 줄뿐임을 확인. node --check로 logic.js/sw.js 재통과, node test/run.js 재실행해 739/739 전부 통과 재확인(직접 실행으로 커밋 메시지 주장 검증). 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
