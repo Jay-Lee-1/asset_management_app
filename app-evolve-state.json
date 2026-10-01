@@ -1,15 +1,8 @@
 {
   "cycle": 118,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 113,
-      "phase": "develop",
-      "timestamp": "2026-09-30T10:11:08.643Z",
-      "summary": "resetPasswordLocal()(로컬 계정 복구 코드 재설정, cycle112 advance에서 신설)에 signIn()과 달리 브루트포스 잠금 가드가 없던 격차를 발견해 수정. AUTH.signIn()은 비밀번호 비교 전 this._lockStatus(key)로 5회 실패 후 지수백오프(최대 30초) 잠금을 확인하고 실패 시 this._recordFail(key)를 호출하지만, resetPasswordLocal(email,code,newPw)은 복구 코드 비교 앞뒤로 이 가드가 전혀 없어 같은 계정의 복구 코드를 무제한으로 무차별 대입할 수 있었음(정상 로그인 경로는 보호되는데 복구 경로만 뚫려 있던 비대칭). resetPasswordLocal 시작부에 signIn과 동일한 this._lockStatus(key)/잠금 시 동일 문구(너무 많이 틀렸어요 · N초 후 다시 시도해 주세요) 조기 반환을 추가하고, 복구 코드 불일치 시 this._recordFail(key)를 호출하도록 수정(성공 시 this._clearFails(key)는 기존 그대로 유지). 새 저장 스키마나 UI 변경 없이 기존에 이미 테스트된 _lockStatus/_recordFail/_clearFails 프리미티브만 재사용하는 최소 diff. index.html 두 인라인 <script> 블록(vm.Script)과 sw.js/logic.js 모두 node --check 통과, node test/run.js 699/699 통과(AUTH.resetPasswordLocal은 브라우저 전역/localStorage 의존이라 순수 함수 추출 테스트 대상이 아니라 새 케이스는 추가하지 않음). APP_VERSION 1.46.95->1.46.96, sw.js CACHE v257->v258.",
-      "commit": null
-    },
     {
       "cycle": 113,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-01T06:10:23.594Z",
       "summary": "critique(cycle117) 계획대로 자산별 거래내역(계좌 명세서) 뷰 진입점을 추가했다. logic.js에 순수 함수 matchesAssetId(t,assetId) 신설(assetId 없으면 항상 매치, 있으면 fromAssetId/toAssetId 중 하나라도 일치해야 매치). index.html ST.hist에 assetId:null 필드 추가하고 filteredHist()의 캐시 key와 필터 체인에 반영(cat/q 필터 뒤에 추가, 캐시 무효화 포함). openAssetHistory(assetId) 신설 — ST.hist.assetId 설정 + cat/q/selMode 리셋 + go('history')(sumTap과 달리 날짜 범위는 건드리지 않아 계좌의 전체 기간 내역을 그대로 보여줌). Assets 탭 자산 행(openAssetSheet로 가는 기존 탭 동작)에 .row-acts > .act-btn(toggleRecActive와 동일한 event.stopPropagation() idiom, receipt 아이콘) 버튼을 추가해 openAssetHistory(a.id) 호출 — 다중선택 모드(aSel.mode) 행에는 추가하지 않음(목적이 다름). renderHistory() 검색바 아래에 ST.hist.assetId가 설정되면 자산명 칩(sch-chip on, ✕ 아이콘)을 표시하고 histClearAssetFilter()로 계좌 필터만 해제 가능하게 했다. modeSeg()의 filtered 판정과 histClearFilter()(전체 필터 해제)·sumTap()(요약카드→전체내역 이동 시 이전 계좌 필터 잔류 방지)에도 assetId를 포함시켜 일관성을 맞췄다. test/run.js에 matchesAssetId 회귀 테스트 4개 추가(assetId 없으면 항상 매치, fromAssetId 일치, toAssetId 일치, 둘 다 불일치 시 미매치) — matchesAssetId는 logic.js가 통째로 vm 샌드박스에 로드되므로 FUNCTIONS 추출 목록에 별도 등재 불필요. node --check로 logic.js/sw.js 통과, node test/run.js 743/743 -> 747/747 통과(신규 4개 전부). APP_VERSION 1.47.2->1.47.3, sw.js CACHE v264->v265. pending_advance_plan을 null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 118,
+      "phase": "develop",
+      "timestamp": "2026-10-01T07:20:00.000Z",
+      "summary": "doRenameOwner()가 귀속 이름 변경 시 ST.assetOwner/ST.plan.owner는 새 이름으로 옮기도록 이미 고쳐져 있었는데(cycle 이전 fix), 나중에 추가된 예산 탭 지출분석 귀속 필터 ST.spendOwner(index.html:2298, openSpendAnalysis에서 사용)는 이 마이그레이션에서 빠져 있었음을 발견. openSpendAnalysis()의 \"귀속이 사라지면 전체로\" 가드(index.html:4348, renderAssets/renderPlan과 동일 패턴)가 실제 삭제(delOwner)를 위한 안전망인데, 이름변경만 해도 ST.spendOwner가 옛 이름 그대로 남아 이 가드에 걸려 조용히 '전체'로 풀리는 동일한 버그 클래스였음(assetOwner/plan.owner는 이미 수정된 바로 그 문제). doRenameOwner(index.html:3119)에 `if(ST.spendOwner===old)ST.spendOwner=v;`를 기존 두 필터와 같은 줄에 추가. test/run.js의 기존 doRenameOwner 테스트 2개(귀속 필터 이동/무관 귀속 보존)에 spendOwner 필드와 단언을 추가해 같은 패턴으로 커버(새 test() 블록 대신 기존 테스트 확장 — 동일 코드 경로이므로). node --check(sw.js/logic.js) 통과, index.html 두 인라인 <script> vm.Script 파싱 통과, node test/run.js 747/747 통과. APP_VERSION 1.47.3->1.47.4, sw.js CACHE v265->v266.",
       "commit": null
     }
   ]

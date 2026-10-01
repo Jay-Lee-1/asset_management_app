@@ -5980,15 +5980,16 @@ test('renderPlan: 귀속이 이름변경/삭제로 사라지면 ST.plan.owner를
   assert.ok(guardIdx !== -1, "ST.plan.owner 존재 확인 가드가 없음");
   assert.ok(cashIdx !== -1 && guardIdx < cashIdx, '가드가 cashAssets 필터 계산보다 먼저 실행되지 않음');
 });
-/* ---------- doRenameOwner: 귀속 이름변경 시 활성 필터(ST.assetOwner/ST.plan.owner)가 낡은 이름으로 남던 버그 ----------
- * renderAssets/renderPlan의 "귀속 사라지면 전체로" 가드는 실제 삭제(delOwner)를 위한 안전망인데,
- * doRenameOwner()가 DB.owners[i]/자산의 owner만 새 이름으로 옮기고 ST.assetOwner/ST.plan.owner는
- * 옛 이름 그대로 두는 바람에, 이름변경만 했을 뿐인데도 위 가드가 "귀속이 사라졌다"고 오판해
+/* ---------- doRenameOwner: 귀속 이름변경 시 활성 필터(ST.assetOwner/ST.plan.owner/ST.spendOwner)가 낡은 이름으로 남던 버그 ----------
+ * renderAssets/renderPlan/openSpendAnalysis의 "귀속 사라지면 전체로" 가드는 실제 삭제(delOwner)를 위한
+ * 안전망인데, doRenameOwner()가 DB.owners[i]/자산의 owner만 새 이름으로 옮기고 ST.assetOwner/ST.plan.owner/
+ * ST.spendOwner는 옛 이름 그대로 두는 바람에, 이름변경만 했을 뿐인데도 위 가드가 "귀속이 사라졌다"고 오판해
  * 사용자가 보고 있던 귀속 필터가 아무 설명 없이 전체/'전체'로 조용히 풀렸다. doRenameOwner가
- * 활성 필터도 함께 새 이름으로 옮기도록 고쳤다. */
-test('doRenameOwner: 이름변경 시 ST.assetOwner/ST.plan.owner가 옛 이름을 가리키고 있었다면 새 이름으로 함께 옮겨간다', () => {
+ * 활성 필터도 함께 새 이름으로 옮기도록 고쳤다. (ST.spendOwner는 cycle118에서 추가 — assetOwner/plan.owner는
+ * 이미 고쳐져 있었는데 나중에 생긴 예산탭 지출분석 귀속 필터만 이 마이그레이션에서 빠져 있었음) */
+test('doRenameOwner: 이름변경 시 ST.assetOwner/ST.plan.owner/ST.spendOwner가 옛 이름을 가리키고 있었다면 새 이름으로 함께 옮겨간다', () => {
   sandbox.DB = { owners: ['나', '아빠'], assets: [{ owner: '아빠' }] };
-  sandbox.ST = { assetOwner: '아빠', plan: { owner: '아빠' } };
+  sandbox.ST = { assetOwner: '아빠', plan: { owner: '아빠' }, spendOwner: '아빠' };
   const $orig = sandbox.$;
   sandbox.$ = (id) => (id === 'renameOwner' ? { value: '아버지' } : $orig(id));
   try {
@@ -6000,10 +6001,11 @@ test('doRenameOwner: 이름변경 시 ST.assetOwner/ST.plan.owner가 옛 이름�
   assert.strictEqual(sandbox.DB.assets[0].owner, '아버지');
   assert.strictEqual(sandbox.ST.assetOwner, '아버지', '자산 탭 귀속 필터가 새 이름을 따라가지 않음');
   assert.strictEqual(sandbox.ST.plan.owner, '아버지', '플랜 탭 귀속 필터가 새 이름을 따라가지 않음');
+  assert.strictEqual(sandbox.ST.spendOwner, '아버지', '예산 탭 지출분석 귀속 필터가 새 이름을 따라가지 않음');
 });
 test('doRenameOwner: 이름변경 대상과 무관한 귀속을 보고 있었다면 필터를 건드리지 않는다', () => {
   sandbox.DB = { owners: ['나', '아빠'], assets: [] };
-  sandbox.ST = { assetOwner: '나', plan: { owner: '전체' } };
+  sandbox.ST = { assetOwner: '나', plan: { owner: '전체' }, spendOwner: '전체' };
   const $orig = sandbox.$;
   sandbox.$ = (id) => (id === 'renameOwner' ? { value: '아버지' } : $orig(id));
   try {
@@ -6013,6 +6015,7 @@ test('doRenameOwner: 이름변경 대상과 무관한 귀속을 보고 있었다
   }
   assert.strictEqual(sandbox.ST.assetOwner, '나');
   assert.strictEqual(sandbox.ST.plan.owner, '전체');
+  assert.strictEqual(sandbox.ST.spendOwner, '전체');
 });
 /* ---------- doRenameOwner: 귀속 이름변경 시 DB.nwHistory의 byOwner 스냅샷 키도 함께 옮기는지 (app-evolve cycle71 advance) ----------
  * nwHistoryCard(owner)가 DB.nwHistory[i].byOwner[owner] 키로 과거 추이를 조회하므로, 이름변경 후에도
