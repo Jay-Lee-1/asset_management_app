@@ -107,7 +107,7 @@ function extractMainScript() {
 // index.html이 아니라 logic.js에 있다 — 위 logicSrc로 직접 로드하므로 이 목록에는 없다
 // (app-evolve cycle97 advance, cycle111 advance).
 const FUNCTIONS = [
-  'addMonths', 'fetchWithTimeout',
+  'addMonths', 'fetchWithTimeout', 'withTimeout',
   'dateBelowRangeFloor', 'recalcEndCond', 'isVarCat', 'setCatVar', 'activeRecsForAssets', 'activeRecsForCat',
   'num', 'doRenameCat', 'doDeleteCat', 'totalBudgetSummary', 'budgetForMonth', 'setBudgetFrom', 'addCat',
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV',
@@ -209,6 +209,10 @@ const sandbox = {
   CLOUD_UID: null,
   CLOUD_SYNC_STATE: 'idle',
   CLOUD_LAST_SYNCED_AT: null,
+  // PUSH_CLOUD_INFLIGHT(app-evolve cycle116)도 같은 이유로 pushCloud() 테스트에서 직접 세팅한다
+  // (scheduleCloudPush()의 디바운스와 visibilitychange 핸들러가 겹쳐도 SB.from()을 중복 호출하지
+  // 않도록 막는 가드 플래그).
+  PUSH_CLOUD_INFLIGHT: false,
   // sbReady()는 localStorage(sbCfg)와 window.supabase의 존재 여부를 따지는 비순수 함수라
   // (SESSION/AUTH와 같은 이유) 재현하지 않고, pullCloud()/afterCloudAuth() 테스트에서
   // "클라우드 연결됨"을 뜻하는 true 고정 스텁으로 대체한다.
@@ -8186,6 +8190,58 @@ if (stockFns && ratesFns) {
     try {
       await sandbox.fetchWithTimeout('/x');
       assert.ok(capturedOpts.signal);
+    } finally { restoreTimers(); }
+  });
+})();
+
+/* ---------- withTimeout (app-evolve cycle116) ----------
+ * boot()/pullCloud()/pushCloud()가 쓰는 supabase-js 호출(SB.auth.getSession()/SB.from(...))은
+ * fetch와 달리 signal 옵션이 없어 fetchWithTimeout의 AbortController 방식을 못 쓴다. 대신
+ * reject-after 타이머로 감싸, 캡티브 포털·죽은 와이파이·Supabase 응답 지연으로 원래 프로미스가
+ * 영원히 pending이어도 호출자가 ms 뒤에 reject를 받아 #app이 빈 화면으로 멈추지 않게 한다.
+ * sandbox.setTimeout/clearTimeout은 기본값이 no-op이라, 이 블록에서만 실제 Node 타이머로
+ * 잠깐 바꿔주고 매 테스트가 끝나면 원복한다. */
+(() => {
+  const origSetTimeout = sandbox.setTimeout, origClearTimeout = sandbox.clearTimeout;
+  function restoreTimers() { sandbox.setTimeout = origSetTimeout; sandbox.clearTimeout = origClearTimeout; }
+
+  test('withTimeout: 원래 프로미스가 영원히 pending이면 지정 시간 후 reject된다(boot()/afterCloudAuth 무기한 흰 화면 방지)', async () => {
+    sandbox.setTimeout = setTimeout; sandbox.clearTimeout = clearTimeout;
+    try {
+      const neverSettles = new Promise(() => {});
+      await assert.rejects(sandbox.withTimeout(neverSettles, 10));
+    } finally { restoreTimers(); }
+  });
+
+  test('withTimeout: 원래 프로미스가 제때 resolve하면 그 값을 그대로 반환하고 타이머를 정리한다', async () => {
+    let clearCalls = 0;
+    sandbox.setTimeout = setTimeout;
+    sandbox.clearTimeout = (t) => { clearCalls++; clearTimeout(t); };
+    try {
+      const r = await sandbox.withTimeout(Promise.resolve({ data: 'ok' }), 50);
+      assert.strictEqual(r.data, 'ok');
+      assert.strictEqual(clearCalls, 1, '성공 경로에서도 타이머를 정리해야 함');
+    } finally { restoreTimers(); }
+  });
+
+  test('withTimeout: 원래 프로미스가 제때 reject하면 그 reject를 그대로 전파하고 타이머를 정리한다(타임아웃 에러로 덮어쓰지 않음)', async () => {
+    let clearCalls = 0;
+    sandbox.setTimeout = setTimeout;
+    sandbox.clearTimeout = (t) => { clearCalls++; clearTimeout(t); };
+    try {
+      const origErr = new Error('network down');
+      await assert.rejects(sandbox.withTimeout(Promise.reject(origErr), 50), (e) => e === origErr);
+      assert.strictEqual(clearCalls, 1, '실패 경로에서도 타이머를 정리해야 함');
+    } finally { restoreTimers(); }
+  });
+
+  test('withTimeout: ms를 생략하면 기본 8000ms를 타임아웃으로 쓴다', async () => {
+    let capturedMs = null;
+    sandbox.setTimeout = (fn, ms) => { capturedMs = ms; return setTimeout(fn, ms); };
+    sandbox.clearTimeout = clearTimeout;
+    try {
+      await sandbox.withTimeout(Promise.resolve(1));
+      assert.strictEqual(capturedMs, 8000);
     } finally { restoreTimers(); }
   });
 })();

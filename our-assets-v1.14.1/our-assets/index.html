@@ -1305,7 +1305,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.0';
+const APP_VERSION='1.47.1';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1659,10 +1659,22 @@ function cloudSyncLabel(){
  if(CLOUD_LAST_OK)return '클라우드 동기화됨 · '+fmtSynced(CLOUD_LAST_OK);
  return '클라우드 연결됨';
 }
+/* supabase-js 호출(SB.auth.getSession()/SB.from(...)...)은 fetch와 달리 signal 옵션이 없어
+ * fetchWithTimeout의 AbortController 방식을 못 쓴다. 대신 reject-after 타이머를 Promise.race처럼
+ * 경합시켜, 원래 프로미스가 캡티브 포털·죽은 와이파이·서버 응답 지연으로 영원히 pending이어도
+ * 호출자는 ms 뒤에 reject를 받아 다음 단계(에러 처리/화면 전환)로 넘어갈 수 있다(원래 프로미스
+ * 자체가 취소되는 건 아니고 백그라운드에서 계속 대기하지만, 그 결과는 더 이상 아무도 안 기다린다). */
+function withTimeout(promise,ms){
+ ms=ms||8000;
+ return new Promise((resolve,reject)=>{
+  const timer=setTimeout(()=>reject(new Error('timeout')),ms);
+  promise.then(v=>{clearTimeout(timer);resolve(v)},e=>{clearTimeout(timer);reject(e)});
+ });
+}
 async function pullCloud(){
  if(!sbReady()||!CLOUD_UID)return null;
  try{
-  const{data,error}=await SB.from('user_data').select('data,updated_at').eq('user_id',CLOUD_UID).maybeSingle();
+  const{data,error}=await withTimeout(SB.from('user_data').select('data,updated_at').eq('user_id',CLOUD_UID).maybeSingle());
   if(error){cloudSyncFailed();return null}
   if(!data)return null;
   /* 여기선 로컬 DB가 실제로 remote와 같아졌는지 알 수 없다(호출자가 conflict로 판단해
@@ -1683,8 +1695,17 @@ function localHasUnsyncedChanges(savedAt,syncedAt){return !!(savedAt&&(!syncedAt
  * 화면에서 명시적으로 풀어야 하므로(위 confirmCloudForcePush 등) 여기서 자동으로 건드리지 않는다. */
 function shouldRetryCloudSync(cloudUid,syncState,navigatorOnline){return !!(cloudUid&&syncState==='error'&&navigatorOnline)}
 function markCloudSynced(){try{localStorage.setItem(dataKey()+'__syncedAt',String(Date.now()))}catch(e){}}
+/* scheduleCloudPush()의 1.2초 디바운스 타이머와 visibilitychange 핸들러(탭을 숨길 때 곧장
+ * pushCloud()를 부름)가 거의 동시에 겹치면, 이전엔 두 호출이 똑같이 CLOUD_LAST_SYNCED_AT을 보고
+ * 동시에 SB.from(...)을 날려 경합할 수 있었다. retried===true(아래 conflict 자동 병합 재시도)는
+ * 같은 논리적 push의 연장이라 가드에 걸리면 안 되므로, 최초 진입(!retried)에서만 켜고 끈다. */
+let PUSH_CLOUD_INFLIGHT=false;
 async function pushCloud(retried){
  if(!sbReady()||!CLOUD_UID)return;
+ if(!retried){
+  if(PUSH_CLOUD_INFLIGHT)return;
+  PUSH_CLOUD_INFLIGHT=true;
+ }
  CLOUD_SYNC_STATE='syncing';
  try{
   const nowIso=new Date().toISOString();
@@ -1694,12 +1715,12 @@ async function pushCloud(retried){
    * DB가 원자적으로 매치 여부를 판정하게 한다. CLOUD_LAST_SYNCED_AT이 없으면(첫 push, 또는
    * resolveCloudForcePush가 의도적으로 비운 강제 덮어쓰기) 보호할 기준이 없으니 곧장 upsert한다. */
   if(CLOUD_LAST_SYNCED_AT){
-   const{data:updated,error:updErr}=await SB.from('user_data').update({data:DB,updated_at:nowIso}).eq('user_id',CLOUD_UID).eq('updated_at',CLOUD_LAST_SYNCED_AT).select('updated_at');
+   const{data:updated,error:updErr}=await withTimeout(SB.from('user_data').update({data:DB,updated_at:nowIso}).eq('user_id',CLOUD_UID).eq('updated_at',CLOUD_LAST_SYNCED_AT).select('updated_at'));
    if(updErr){cloudSyncFailed();return}
    const matchedRowCount=(updated||[]).length;
    let rowExistedBefore=true,curRow=null;
    if(matchedRowCount===0){
-    const{data:cur}=await SB.from('user_data').select('data,updated_at').eq('user_id',CLOUD_UID).maybeSingle();
+    const{data:cur}=await withTimeout(SB.from('user_data').select('data,updated_at').eq('user_id',CLOUD_UID).maybeSingle());
     rowExistedBefore=!!cur;curRow=cur;
    }
    const outcome=decidePushOutcome(matchedRowCount,rowExistedBefore);
@@ -1726,10 +1747,11 @@ async function pushCloud(retried){
    }
    /* outcome==='fallback' → 아래 upsert로 진행 */
   }
-  const{error}=await SB.from('user_data').upsert({user_id:CLOUD_UID,data:DB,updated_at:nowIso});
+  const{error}=await withTimeout(SB.from('user_data').upsert({user_id:CLOUD_UID,data:DB,updated_at:nowIso}));
   if(error){cloudSyncFailed();return}
   CLOUD_LAST_SYNCED_AT=nowIso;cloudSyncOk();markCloudSynced();
  }catch(e){cloudSyncFailed()}
+ finally{if(!retried)PUSH_CLOUD_INFLIGHT=false}
 }
 async function afterCloudAuth(uid){
  CLOUD_UID=uid;
@@ -6536,7 +6558,7 @@ async function boot(){
   const rec=AUTH.rec(AUTH.current());
   if(rec&&rec.cloud&&sbReady()){
    try{
-    const{data}=await SB.auth.getSession();
+    const{data}=await withTimeout(SB.auth.getSession());
     if(data&&data.session&&data.session.user)await afterCloudAuth(data.session.user.id);
    }catch(e){}
   }
@@ -6705,7 +6727,7 @@ async function doChangePassword(recovery){
   /* 복구 링크로 들어와 새 비밀번호를 설정한 경우 Supabase가 이미 정식 세션을 발급한 상태라,
    * doLogin()의 클라우드 로그인 분기와 같은 방식으로 이 기기의 로컬 세션을 마저 연결한다. */
   try{
-   const{data}=await SB.auth.getSession();
+   const{data}=await withTimeout(SB.auth.getSession());
    if(data&&data.session&&data.session.user){
     const email=data.session.user.email;
     const a=AUTH._accts();a[emailKey(email)]=Object.assign({},a[emailKey(email)],{email,cloud:true});AUTH._write(a);
