@@ -1,7 +1,11 @@
 {
   "cycle": 117,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "자산별 거래내역 조회(계좌 명세서 뷰) 진입점 추가",
+    "why": "Assets 탭의 자산 행은 탭하면 편집 폼(openAssetSheet, index.html:2726-2727)만 열리고 롱프레스는 다중선택 삭제 모드(wireLongPress->assetToggleSel)로만 이어져, 특정 계좌의 거래내역만 걸러보는 경로가 앱 어디에도 없다. History 탭(renderHistory, ~3784)의 필터는 ST.hist.cat(유형)과 ST.hist.q(자유 텍스트)뿐이고 ST.hist.assetId 같은 구조적 계좌 필터는 코드베이스 전체에 존재하지 않는다(grep으로 확인). 검색창이 matchTxnQuery(logic.js:197-201)를 통해 자산명을 부분일치시키는 부수효과가 있긴 하지만, 발견 불가능하고 이름이 겹치면 노이즈가 생기는 우회로일 뿐 Plan 탭의 openPlanAsset(index.html:4119-4136)처럼 목록에서 고르는 진짜 필터가 아니다. 자산/가계부 앱에서 '계좌를 탭하면 명세서를 본다'는 가장 기본적인 흐름이 117 사이클의 정교한 기능 다듬기에도 불구하고 완전히 빠져 있는 실재 제품 공백이다.",
+    "approach": "(1) logic.js matchTxnQuery 옆에 순수 함수 matchesAssetId(t,assetId){return !assetId||t.fromAssetId===assetId||t.toAssetId===assetId;} 신설. (2) index.html ST.hist(2296-2297)에 assetId:null 필드 추가. (3) filteredHist()(3765-3775)의 캐시 key에 H.assetId 포함시키고 cat/q 필터 뒤에 if(H.assetId)list=list.filter(t=>matchesAssetId(t,H.assetId)); 추가. (4) openAssetHistory(assetId) 신설 — ST.hist.assetId=assetId 설정 + cat/q/selMode 리셋 + go('history') (기존 histOpenFromLedger류 직접 ST.hist.* 대입 패턴 재사용). (5) 자산 행(2726 부근)에 event.stopPropagation() 버튼('내역' 칩, toggleRecActive 버튼 idiom 재사용)을 추가해 openAssetHistory('${a.id}') 호출, 기존 행 탭->편집 동작은 보존. (6) renderHistory() 필터바(3787-3794 부근)에 ST.hist.assetId가 설정되면 자산명 칩+✕ 버튼(histClearAssetFilter() 신설, assetId만 해제 후 재렌더) 표시, modeSeg()의 filtered 판정(3203)과 histClearFilter()(3842)에도 assetId를 포함시켜 '전체 필터 해제'가 계좌 필터도 같이 지우게 함. (7) test/run.js에 matchesAssetId 회귀 테스트 추가(matchTxnQuery 테스트 옆, 2341 부근): assetId 없으면 항상 매치, fromAssetId 일치, toAssetId 일치, 둘 다 불일치 시 미매치. (8) APP_VERSION 1.47.2->1.47.3, sw.js CACHE v264->v265."
+  },
   "history": [
     {
       "cycle": 112,
@@ -141,6 +145,13 @@
       "phase": "review",
       "timestamp": "2026-10-01T03:30:00.000Z",
       "summary": "develop 커밋(7c935f0, orphan 함수 7개(netWorth/toggleInclSch/histTotPane/histCat/histToggleSort/planOwner/quickAmountCards) 삭제)을 검토. 삭제 전 커밋(7c935f0^)의 index.html을 따로 추출해 7개 함수명 각각을 단어 경계 정규식으로 세어 삭제 전엔 정확히 1회(자기 자신의 정의)만 등장했음을 재확인(즉 실제로 호출부가 0건이었다는 커밋 메시지 주장을 독립적으로 검증), 삭제 후 현재 파일에서도 7개 전부 0회로 완전히 사라져 깨진 참조가 남지 않았음을 확인. diff가 함수 정의 7개 삭제와 APP_VERSION(1.47.1->1.47.2)/CACHE(v263->v264) 상향 외에 다른 변경이 없음을 git show stat으로 확인. vm.Script로 두 인라인 <script> 블록 재파싱 통과, node test/run.js 재실행해 743/743 전부 통과 재확인. 코드 변경 없음(이상 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 117,
+      "phase": "critique",
+      "timestamp": "2026-10-01T05:40:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(계정안전 sig 점 색상전용 표기(서브텍스트 병기돼 있어 색전용 아님, 기각)·홈 알림 캐러셀 키보드접근(이미 실제 button+자연스러운 tab순서, 기각)·주식/FX/금 단일 평단가(의도된 단순설계 주석 확인, 기각)·자산그룹 드래그정렬만 가능(정렬모드 스위치가 대체, 기각)·검색이 금액 미매치(근거 약한 feature-request성, 기각)·test/run.js 규모/취약성(이미 보류확정된 index.html→logic.js 이전과 같은 영역, 재소환 아님)·filteredHist/balancesUpTo/expandRec 성능 추측(이미 기각 확정, 새 근거 없음)·esc() XSS 커버리지 재스윕(전수 확인 결과 누락 없음)·migrate()/boot() 매 실행 성능(1회성 가드 확인, 기각)·클라우드 동기화 포워드호환(DB 객체 통째 push라 데이터유실 근거 없음, 기각)은 모두 이미 다뤄졌거나 근거부족으로 기각). 새로 발견: Assets 탭 자산 행(index.html:2726-2727)을 탭하면 openAssetSheet(편집 폼)만 열리고 롱프레스는 다중선택 삭제 모드(wireLongPress->assetToggleSel)로만 이어져, 특정 계좌의 거래내역만 걸러보는 '명세서' 진입점이 앱 전체에 전무함을 확인. History 탭(renderHistory, filteredHist 3765-3775)의 필터는 ST.hist.cat(유형)·ST.hist.q(자유텍스트)뿐이고 ST.hist.assetId 같은 구조적 계좌 필터는 grep으로 전체 코드베이스에 존재하지 않음을 확인 — 검색창이 matchTxnQuery(logic.js:197-201)로 자산명을 부분일치시키는 우회 경로는 있으나 발견 불가능하고 이름 겹침 시 노이즈가 생겨 Plan 탭의 openPlanAsset(4119-4136)처럼 목록에서 고르는 진짜 필터가 아님. 자산/가계부 앱의 가장 기본적인 흐름('계좌 탭하면 명세서 보기')이 117 사이클 동안 빠져 있던 실재 제품 공백으로 최우선 채택. pending_advance_plan에 저장(상세 approach는 state.json pending_advance_plan 참고): matchesAssetId 순수 함수 신설, ST.hist.assetId 필드 추가, filteredHist 캐시키/필터에 반영, openAssetHistory(assetId) 진입 함수 신설, 자산 행에 stopPropagation 버튼으로 배선, History 필터바에 계좌 칩+해제 버튼, test/run.js 회귀 테스트 추가. 코드 변경 없음(읽기 전용 조사, general-purpose 서브에이전트 위임, 핵심 라인 번호는 오케스트레이팅 세션이 직접 grep/Read로 재확인).",
       "commit": null
     }
   ]
