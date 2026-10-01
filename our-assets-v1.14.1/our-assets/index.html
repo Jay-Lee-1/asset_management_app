@@ -1305,7 +1305,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.1';
+const APP_VERSION='1.47.2';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2237,7 +2237,6 @@ function detectStaleMarketValuedTxns(DB){
 }
 function totalAssets(){return DB.assets.filter(a=>a.includeInTotal&&a.type!=='debt').reduce((s,a)=>s+assetEval(a),0)}
 function totalDebt(){return DB.assets.filter(a=>a.includeInTotal&&a.type==='debt').reduce((s,a)=>s+assetEval(a),0)}
-function netWorth(){return totalAssets()-totalDebt()}
 /* 순자산 추이: 하루 1개 스냅샷을 append/갱신 (DB.rates는 현재가만 보관해 과거를 재계산할 수 없으므로,
    호출 시점에 이미 평가된 ta/td를 그대로 저장한다). 오래된 기록은 월 1개로 압축해 localStorage 크기를 제한. */
 function updateNwHistory(hist,dateStr,ta,td,byOwner){
@@ -2526,7 +2525,6 @@ function rateStatusText(){
  if(stale)return base+' · <span style="color:var(--text-2)">최신 아님</span>'; /* 마지막 성공값 유지 + 차분한 안내 */
  return base+(inQuietWindow()?' · 주말 휴장':' · 10분마다 자동');
 }
-function toggleInclSch(){DB.settings.includeScheduled=!DB.settings.includeScheduled;save();renderCurrent(); toast(DB.settings.includeScheduled?'예정 내역을 포함해요':'예정 내역을 제외해요')}
 function scrollToAnchor(pageId,sel,delay){
  setTimeout(()=>{const p=$(pageId);if(!p)return;const el=p.querySelector(sel);
   if(el)el.scrollIntoView({behavior:'smooth',block:'center'});else p.scrollTo({top:0,behavior:'smooth'});
@@ -3841,10 +3839,6 @@ function histPeekStart(){clearTimeout(_histTimer);_histTimer=setTimeout(()=>{_hi
 function histPeekMove(){if(!_histPeeking)clearTimeout(_histTimer)}
 function histPeekEnd(){clearTimeout(_histTimer);if(_histPeeking){_histPeeking=false;setHistMode(false)}}
 function setHistMode(today){const c=$('histTotLive');if(!c||!_histLive)return;const L=_histLive;c.innerHTML=ledSumInner(L.a,L.sc,today);c.classList.toggle('peek',today);requestAnimationFrame(fitAll)}
-function histTotPane(y,m){ /* 옆 달 미리보기 */
- const {a,sc}=monthStats2(y,m);
- return histTotBox({income:a.income,expense:a.expense,saving:a.saving,transfer:a.transfer},a.suji,sc,sc.suji);
-}
 function histClearFilter(){ST.hist.cat='전체';ST.hist.q='';histInvalidate();renderHistory()}
 /* 히스토리 합계: 잔액 조정은 수지 포함 설정(기본 제외) 전까지 집계에서 뺀다 —
    monthStats2()와 동일 규칙이어야 홈/가계부와 전체내역 탭의 합계가 일치한다 */
@@ -3942,12 +3936,6 @@ function histRow(t){
     ${asset?`<div class="flow-sub"><span class="fl">${esc(asset)}</span>${txScheduled(t)?'<span class="sch-dot"></span>':''}</div>`:(txScheduled(t)?`<div class="flow-sub"><span class="sch-dot"></span><span class="fl">예정</span></div>`:'')}</div>
    <div class="amt num ${cls}">${sign}${comma(t.amount)}원</div>${isDuePending(t)?`<button class="confirm-btn" onclick="event.stopPropagation();${t.isRec?`confirmRecTransfer('${t.recId}','${t.date}')`:`openConfirmTransfer('${t.id}')`}">확인</button>`:''}</div></div>`;
 }
-function histCat(c){ST.hist.cat=c;histInvalidate();
- const wrap=$('chipWrap');
- if(wrap){wrap.querySelectorAll('.chip').forEach(b=>b.classList.toggle('on',b.dataset.cat===c));moveChipBlob(true)}
- if(navigator.vibrate)navigator.vibrate(6);
- updateHist();
-}
 let _segPrev=null; /* 시트 재렌더 시에도 물방울이 이어서 미끄러지도록 이전 위치 기억 */
 function moveSegBlobs(){
  document.querySelectorAll('.seg').forEach(seg=>{
@@ -3987,7 +3975,6 @@ function moveChipBlob(animate){
  if(!animate){blob.offsetHeight;blob.style.transition=''}
  else{blob.classList.add('squish');clearTimeout(blob._t);blob._t=setTimeout(()=>blob.classList.remove('squish'),260)}
 }
-function histToggleSort(){ST.hist.sortAsc=!ST.hist.sortAsc;DB.settings.histSortAsc=ST.hist.sortAsc;ST.hist.page=1;save();renderHistory()}
 function histToggleSel(id){ST.hist.sel.has(id)?ST.hist.sel.delete(id):ST.hist.sel.add(id);
  updateHist()}
 function histSelAll(){const items=filteredHist().filter(t=>!t.isRec);if(items.length&&ST.hist.sel.size>=items.length)ST.hist.sel.clear();else items.forEach(t=>ST.hist.sel.add(t.id));
@@ -4133,7 +4120,6 @@ function planTap(id,recId,date){
  if(recId){recEditScope(recId,date,'edit');return}
  if(id)editTx(id,'',date);
 }
-function planOwner(o){ST.plan.owner=o;ST.plan.assetId=null;closeSheet();renderPlan()}
 function acctSafety(id){ /* 통장 안전 신호등 — 위험할 때만 말합니다 */
  const neg=planNegatives().find(n=>n.assetId===id);
  if(neg)return {lv:'bad',txt:`${shortDate(neg.date)} ${comma(neg.min)}원`};
@@ -5882,15 +5868,6 @@ function saveQuickAmount(recId,date){
  undoToast(`${r.memo||r.category} ${comma(amt)}원으로 저장했어요`,()=>{
   if(prevEdit===undefined)delete edits[date];else edits[date]=prevEdit;
   save();invalidateBalances();renderCurrent();toast('되돌렸어요')});
-}
-function quickAmountCards(){
- const v=varyingRecs();
- if(!v.length)return '';
- return v.map(({rec,date})=>`<button class="home-alert quick" onclick="openQuickAmount('${rec.id}','${date}')">
-   <div class="ha-ic">${svg('edit')}</div>
-   <div class="ha-b"><div class="ha-t">${esc(rec.memo||rec.category)} 실제 금액을 넣어주세요</div>
-     <div class="ha-s">${shortDate(date)} ${rec.type==='income'?'입금':'결제'} · 눌러서 금액만 넣기</div></div>
-   <div class="ha-c">${svg('chev')}</div></button>`).join('');
 }
 /* ===== 해결 제안: 여유 통장에서 미리 옮겨두기 (실제 이체가 아니라 '예정'으로 기록) ===== */
 function findDonors(needAmount,targetId,byDate){
