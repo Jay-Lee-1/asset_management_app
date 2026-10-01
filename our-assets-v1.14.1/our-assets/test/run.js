@@ -5911,6 +5911,52 @@ test('openAssetPicker: excludeId(만기이체 picker에서 자기 자신 제외)
   assert.ok(!html.includes('data-val="a_sav"'), 'excludeId로 지정한 자산 본인은 빠져야 함');
 });
 
+/* ---------- _applyOpenAsset: 이체/저축 입력 화면(txOpenAsset/recOpenAsset)에서 보내는/받는
+ * 자산 picker가 이미 고른 반대쪽 자산을 제외하지 않던 버그(app-evolve cycle122 develop).
+ * asOpenMat()이 여는 만기이체 picker는 excludeId로 자기 자신을 걸러내는데(cycle34), 같은
+ * self-reference 문제가 이체/저축 폼의 from/to picker에는 전혀 막혀있지 않아 같은 자산을
+ * 양쪽에 고를 수 있었다 — saveTx/saveRec의 fromAssetId===toAssetId 가드(3507/3698)가 저장
+ * 시점에야 막아 사용자가 저장 버튼을 누른 뒤에야 실수를 알게 됐다. excludeId를 type이
+ * transfer/saving일 때만 반대쪽 필드로 넘기도록 고쳤다 — expense/income은 fromAssetId/
+ * toAssetId 중 하나만 쓰므로(저장 시점에야 나머지가 null로 치워짐, 3511/3704) 무조건
+ * 반대쪽을 excludeId로 쓰면 그 사이 남아있는 값 때문에 멀쩡한 자산이 숨을 수 있어 제외했다. ---------- */
+test("_applyOpenAsset: type='transfer'면 'to' picker에서 이미 고른 fromAssetId가 목록에서 빠진다", () => {
+  setupAssetPickerDB();
+  sandbox.lastPickerHtml = null;
+  const d = { type: 'transfer', fromAssetId: 'a_cash', toAssetId: null };
+  sandbox._applyOpenAsset(d, 'to', () => {}, () => {});
+  const html = sandbox.lastPickerHtml;
+  assert.ok(!html.includes('data-val="a_cash"'), '이미 보내는 자산으로 고른 a_cash는 받는 자산 후보에서 빠져야 함');
+  assert.ok(html.includes('data-val="a_sav"'), '다른 자산은 그대로 남아야 함');
+});
+test("_applyOpenAsset: type='saving'이면 'from' picker에서 이미 고른 toAssetId가 목록에서 빠진다", () => {
+  setupAssetPickerDB();
+  sandbox.lastPickerHtml = null;
+  const d = { type: 'saving', fromAssetId: null, toAssetId: 'a_sav' };
+  sandbox._applyOpenAsset(d, 'from', () => {}, () => {});
+  const html = sandbox.lastPickerHtml;
+  assert.ok(!html.includes('data-val="a_sav"'), '이미 받는 자산으로 고른 a_sav는 보내는 자산 후보에서 빠져야 함');
+  assert.ok(html.includes('data-val="a_cash"'), '다른 자산은 그대로 남아야 함');
+});
+test("_applyOpenAsset: type='expense'면 반대쪽(toAssetId)에 값이 남아있어도 'from' picker에서 제외하지 않는다", () => {
+  setupAssetPickerDB();
+  sandbox.lastPickerHtml = null;
+  // expense는 toAssetId를 쓰지 않지만 saveTx가 저장 시점에야 null로 치우므로(3511) 폼 편집
+  // 도중엔 다른 타입에서 넘어온 값이 남아있을 수 있다 — 그 값으로 자산이 숨으면 안 된다.
+  const d = { type: 'expense', fromAssetId: null, toAssetId: 'a_cash' };
+  sandbox._applyOpenAsset(d, 'from', () => {}, () => {});
+  const html = sandbox.lastPickerHtml;
+  assert.ok(html.includes('data-val="a_cash"'), 'expense에서는 남아있는 toAssetId로 자산이 숨으면 안 됨');
+});
+test("_applyOpenAsset: type='income'이면 반대쪽(fromAssetId)에 값이 남아있어도 'to' picker에서 제외하지 않는다", () => {
+  setupAssetPickerDB();
+  sandbox.lastPickerHtml = null;
+  const d = { type: 'income', fromAssetId: 'a_cash', toAssetId: null };
+  sandbox._applyOpenAsset(d, 'to', () => {}, () => {});
+  const html = sandbox.lastPickerHtml;
+  assert.ok(html.includes('data-val="a_cash"'), 'income에서는 남아있는 fromAssetId로 자산이 숨으면 안 됨');
+});
+
 /* ---------- firstCash: asOpenType()이 자산 종류를 savings로 바꿀 때 maturityTargetId가
  * 비어있으면 firstCash()로 기본값을 채우는데(index.html 2635), excludeId 없이 DB.assets를
  * 그대로 훑던 예전 구현은 "지금 편집 중인 자산 자신"을 걸러내지 않았다(app-evolve cycle35 review).

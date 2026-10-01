@@ -1305,7 +1305,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.11';
+const APP_VERSION='1.47.12';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3444,7 +3444,7 @@ function renderTxSheet(){
 function syncTxInputs(){const sh=$('sheetScroll');if(sh)_formScroll=sh.scrollTop;const a=$('txAmt'),dt=$('txDate'),m=$('txMemo');if(a)txDraft.amount=num(a);if(dt&&dt.value)txDraft.date=dt.value;if(m)txDraft.memo=m.value}
 /* tx/rec 폼이 공유하는 카테고리/자산/유형/주기/반복일 변경 로직. draft만 다르고 나머지는 동일해 헬퍼로 통합 */
 function _applyOpenCat(draft,syncFn,renderFn){syncFn();openCatPicker({kind:draft.type,current:draft.category,back:renderFn,onPick:c=>{draft.category=c;renderFn()}})}
-function _applyOpenAsset(draft,which,syncFn,renderFn){syncFn();openAssetPicker({current:which==='to'?draft.toAssetId:draft.fromAssetId,title:which==='to'?'받는 자산':'보내는 자산',excludeMarketValued:true,back:renderFn,onPick:id=>{if(which==='to')draft.toAssetId=id;else draft.fromAssetId=id;renderFn()}})}
+function _applyOpenAsset(draft,which,syncFn,renderFn){syncFn();const isTransferLike=draft.type==='transfer'||draft.type==='saving';openAssetPicker({current:which==='to'?draft.toAssetId:draft.fromAssetId,title:which==='to'?'받는 자산':'보내는 자산',excludeMarketValued:true,excludeId:isTransferLike?(which==='to'?draft.fromAssetId:draft.toAssetId):null,back:renderFn,onPick:id=>{if(which==='to')draft.toAssetId=id;else draft.fromAssetId=id;renderFn()}})}
 function _applyType(draft,t){draft.type=t;draft.category=t==='transfer'?'이체':catListOf(t)[0]||'기타';
  if((t==='income'||t==='transfer'||t==='saving')&&!draft.toAssetId)draft.toAssetId=firstCash()}
 function _applyFreq(draft,start,v){draft.freq=v;if(v==='monthly'&&!draft.day)draft.day=Number(String(start).slice(8,10))||1}
