@@ -1,15 +1,8 @@
 {
   "cycle": 118,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 113,
-      "phase": "review",
-      "timestamp": "2026-09-30T11:08:29.000Z",
-      "summary": "cycle113 develop 커밋(753ea1e, resetPasswordLocal에 signIn과 동일한 _lockStatus/_recordFail 브루트포스 잠금 가드 추가)을 검토. _lockStatus/_recordFail/_clearFails가 signIn과 동일한 emailKey(email) 키를 공유해 계정당 하나의 실패 카운터로 로그인 실패와 복구 코드 실패가 함께 누적되는 것을 확인 — 같은 계정을 노리는 공격이라는 점에서 의도된 동작이지 결함이 아님. 성공 경로의 this._clearFails(key) 유지, 실패 시 this._recordFail(key) 위치(비교 직후, 상태 변경 이전), 잠금 메시지 포맷·표시(doLocalRecover의 frErr)까지 signIn과 대칭적으로 맞물려 있음을 확인. genRecoveryCode()의 엔트로피(32자 알파벳 12자리)는 브루트포스 자체가 사실상 불가능한 수준이라 잠금 가드는 방어 심층화 목적으로 타당. node test/run.js 699/699 통과. 코드 변경 없음 — 이상 없음.",
-      "commit": null
-    },
     {
       "cycle": 113,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-01T07:20:00.000Z",
       "summary": "doRenameOwner()가 귀속 이름 변경 시 ST.assetOwner/ST.plan.owner는 새 이름으로 옮기도록 이미 고쳐져 있었는데(cycle 이전 fix), 나중에 추가된 예산 탭 지출분석 귀속 필터 ST.spendOwner(index.html:2298, openSpendAnalysis에서 사용)는 이 마이그레이션에서 빠져 있었음을 발견. openSpendAnalysis()의 \"귀속이 사라지면 전체로\" 가드(index.html:4348, renderAssets/renderPlan과 동일 패턴)가 실제 삭제(delOwner)를 위한 안전망인데, 이름변경만 해도 ST.spendOwner가 옛 이름 그대로 남아 이 가드에 걸려 조용히 '전체'로 풀리는 동일한 버그 클래스였음(assetOwner/plan.owner는 이미 수정된 바로 그 문제). doRenameOwner(index.html:3119)에 `if(ST.spendOwner===old)ST.spendOwner=v;`를 기존 두 필터와 같은 줄에 추가. test/run.js의 기존 doRenameOwner 테스트 2개(귀속 필터 이동/무관 귀속 보존)에 spendOwner 필드와 단언을 추가해 같은 패턴으로 커버(새 test() 블록 대신 기존 테스트 확장 — 동일 코드 경로이므로). node --check(sw.js/logic.js) 통과, index.html 두 인라인 <script> vm.Script 파싱 통과, node test/run.js 747/747 통과. APP_VERSION 1.47.3->1.47.4, sw.js CACHE v265->v266.",
+      "commit": null
+    },
+    {
+      "cycle": 118,
+      "phase": "review",
+      "timestamp": "2026-10-01T08:00:00.000Z",
+      "summary": "cycle118 develop 커밋(88d415c, doRenameOwner()의 ST.spendOwner 이름변경 마이그레이션 누락 수정)을 검토. ST.spendOwner 초기값(index.html:2298, 전체)과 openSpendAnalysis()의 귀속사라짐 가드(4348, !==전체 && !DB.owners.includes 면 전체로 리셋)를 직접 확인한 결과, 추가된 한 줄이 기존 ST.assetOwner/ST.plan.owner와 완전히 같은 위치(doRenameOwner 3119)·같은 조건식 패턴이라 새 버그 유입 가능성이 낮음. 회귀 테스트도 같은 doRenameOwner 테스트 2개에 spendOwner 단언이 자연스럽게 확장되어 있어 중복 테스트 블록을 만들지 않은 점도 적절. node --check(logic.js/sw.js) 통과, node test/run.js 747/747 통과. 코드 변경 없음 — 이상 없음.",
       "commit": null
     }
   ]
