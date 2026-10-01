@@ -1,15 +1,12 @@
 {
   "cycle": 121,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "recApply delete/future 분기의 skip/edits 정리 누락 수정",
+    "why": "recApply(mode='delete',scope='future')(index.html:3578-3583)는 truncateRecEnd로 endDate/count만 자르고 r.skip/r.edits는 전혀 건드리지 않는다. 형제 경로인 recSave의 future 분기(3605-3608)와 splitRecurrenceAt(3738-3746)은 둘 다 splitRecOverrides로 effectiveDate 이후의 skip/edits를 분리/제거하는데 recApply만 빠져 있다. recHistFieldsChanged(3726)가 endDate를 추적하지 않아, 나중에 editRec/saveRec로 endDate를 다시 미래로 늘리면 recSaveScopeConfirm을 거치지 않고 DB.recurrences[i]=d로 그대로 치환되며(d는 JSON.parse(JSON.stringify(r)) 깊은 복사라 과거의 미정리 skip/edits를 그대로 보존), recDates가 그 날짜를 재생성하는 순간 휴면 상태였던 skip/edits가 조용히 되살아나 거래가 사라지거나 금액/메모가 오염된다. saveTx/saveRec 레벨의 날짜 경계 검증과는 다른 종류의, 반복거래 상태기계 자체의 비대칭 버그.",
+    "approach": "logic.js의 truncateRecEnd/splitRecOverrides 옆에 두 동작을 결합한 공용 순수 헬퍼(예: truncateRecEndAndPrune(base,cutoffDate,skip,edits) 또는 recApply 안에서 splitRecOverrides(r.skip,r.edits,date) 호출 후 skipPast/editsPast만 남기고 truncateRecEnd 적용)를 만들어 recApply의 delete/future 분기(3578-3583)에 적용한다. saveRec의 direct-edit 경로(3713-3719)에서도 endDate만 과거로 당기는 케이스가 동일 위험군인지 점검해 필요하면 대칭 처리한다. test/run.js에 skip/edits가 cutoff 이후 날짜를 가진 반복을 만들어 delete-future 적용 후 해당 항목이 제거되는지, 그리고 이후 endDate를 다시 늘렸을 때 recDates가 그 날짜를 복원하지 않는지 검증하는 회귀 테스트를 추가한다."
+  },
   "history": [
-    {
-      "cycle": 116,
-      "phase": "critique",
-      "timestamp": "2026-10-01T01:10:00.000Z",
-      "summary": "앱 전체 재조망(다수 영역 기각/보류 확정이라 제외). 새로 발견: boot()(6529-6547)의 SB.auth.getSession()/afterCloudAuth(uid, 내부 pullCloud 1662-1675)가 타임아웃 없이 await돼, 네트워크가 영원히 pending되면 startApp()이 호출 안 돼 흰 화면이 무기한 지속. 로그인(6604/6620)·비밀번호 복구(6708-6716) 분기도 동일 패턴 반복, pushCloud()(1686)도 타임아웃+in-flight 가드 부재로 CLOUD_SYNC_STATE가 'syncing'에 영구 고정될 수 있음(cycle115 syncRates mutex와 동일 증상 클래스, 더 심각). pending_advance_plan에 withTimeout(promise,ms=8000) 헬퍼 신설+boot/pullCloud/pushCloud 적용+in-flight 가드+회귀 테스트 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 116,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-01T20:07:28.911Z",
       "summary": "develop 커밋(b1150bf, budgetIn 콤마 포맷 통일)을 검토. num()/fmtAmt() 정의 확인 결과 콤마 제거 후 파싱하는 공용 경로와 정확히 일치, txAmt/rAmt/asAmt와 동일한 class=\"num\"+oninput 패턴임을 소스 대조로 확인. 빈 값/존재하지 않는 idx 가드도 기존 saveBudget 로직 유지. node test/run.js 771/771 재통과. 코드 변경 없음(이상 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 121,
+      "phase": "critique",
+      "timestamp": "2026-10-01T21:16:45.077Z",
+      "summary": "앱 전체보다 반복거래 상태기계를 general-purpose 서브에이전트로 재조망(기존 121사이클 동안 다룬 영역은 전부 기각 확정이라 제외 지시). 새로 발견 후 직접 소스 재검증: recApply(mode='delete',scope='future')(3578-3583)가 truncateRecEnd로 endDate/count만 자르고 r.skip/r.edits는 방치 — 형제 경로인 recSave future 분기(3605-3608)·splitRecurrenceAt(3738-3746)은 둘 다 splitRecOverrides로 effectiveDate 이후 skip/edits를 분리하는데 recApply만 빠짐. recHistFieldsChanged(3726)가 endDate 미포함이라 이후 editRec/saveRec로 endDate를 다시 늘리면 recSaveScopeConfirm 안 뜨고 DB.recurrences[i]=d로 그대로 치환(d는 깊은 복사로 과거 미정리 skip/edits 보존) → recDates 재생성 시 휴면 skip/edits가 되살아나 거래 소실/오염. pending_advance_plan에 splitRecOverrides 기반 공용 정리 적용+saveRec direct-edit 대칭 점검+회귀 테스트 저장. 코드 변경 없음.",
       "commit": null
     }
   ]
