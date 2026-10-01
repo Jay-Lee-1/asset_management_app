@@ -1305,7 +1305,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.7';
+const APP_VERSION='1.47.8';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3972,20 +3972,6 @@ function moveSegBlobs(){
   });
   _segPrev=target;
  });
-}
-function moveChipBlob(animate){
- const wrap=$('chipWrap'),blob=$('chipBlob');if(!wrap||!blob)return;
- const on=wrap.querySelector('.chip.on');
- if(!on){blob.classList.remove('on');return}
- if(!animate)blob.style.transition='none';
- blob.style.width=on.offsetWidth+'px';
- blob.style.height=on.offsetHeight+'px';
- const t=`translate(${on.offsetLeft}px,${on.offsetTop}px)`;
- blob.style.setProperty('--cbT',t);
- blob.style.transform=t;
- blob.classList.add('on');
- if(!animate){blob.offsetHeight;blob.style.transition=''}
- else{blob.classList.add('squish');clearTimeout(blob._t);blob._t=setTimeout(()=>blob.classList.remove('squish'),260)}
 }
 function histToggleSel(id){ST.hist.sel.has(id)?ST.hist.sel.delete(id):ST.hist.sel.add(id);
  updateHist()}

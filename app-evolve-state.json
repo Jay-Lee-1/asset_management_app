@@ -1,22 +1,8 @@
 {
   "cycle": 120,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 114,
-      "phase": "advance",
-      "timestamp": "2026-09-30T18:12:34.962Z",
-      "summary": "critique(cycle114) 계획대로 tx/rec 폼 중복 로직 6쌍을 공용 헬퍼로 통합했다. index.html에 _applyType(draft,t)/_applyFreq(draft,start,v)/_applyDay(draft,start,v)/_applyOpenCat(draft,syncFn,renderFn)/_applyOpenAsset(draft,which,syncFn,renderFn) 5개 헬퍼를 _applyCount 바로 옆(catListOf 위)에 신설하고, txType/recType·txFreq/recFreq·txDay/recDay·txOpenCat/recOpenCat·txOpenAsset/recOpenAsset 10개 래퍼 함수를 각각 이름 변경 없이 한두 줄짜리 얇은 래퍼로 축소(onclick=\"...\" 문자열과 test/run.js 정규식 추출기 모두 그대로 유지됨). recFreq만 가진 weekend='none' 리셋(txDraft엔 weekend 필드 자체가 없음)은 공용 헬퍼로 옮기지 않고 recFreq 래퍼에 그대로 남겨 tx/rec 시맨틱 차이를 보존. 바이트 단위로 중복돼 있던 day-picker HTML 블록(구 3362-3364/3589-3591)은 dayPickerHTML(d,pfx) 헬퍼로 추출해(endCondFields(d,pfx) 패턴과 동일) renderTxSheet/renderRecSheet 양쪽에서 호출하도록 교체 — renderTxSheet/renderRecSheet 자체 구조(반복 토글 유무, scope-edit 서브뷰)는 계획대로 손대지 않음. test/run.js FUNCTIONS 목록에 dayPickerHTML/_applyType/_applyFreq/_applyDay/_applyOpenCat/_applyOpenAsset 6개를 추가해(txType/recFreq/renderTxSheet가 이제 이들을 호출하므로 필수) 추출 테스트가 깨지지 않게 함. 두 인라인 <script> 블록 모두 node --check 통과, node test/run.js 710/710 유지(로직 이동만이라 케이스 수 불변, 새 _apply* 전용 테스트는 이번 사이클엔 추가하지 않음 — 다음 develop/review가 원하면 추가 가능). APP_VERSION 1.46.97->1.46.98, sw.js CACHE v259->v260. pending_advance_plan을 null로 비움.",
-      "commit": null
-    },
-    {
-      "cycle": 115,
-      "phase": "develop",
-      "timestamp": "2026-09-30T00:00:00.000Z",
-      "summary": "cycle114 advance에서 tx/rec 폼 공용 헬퍼로 새로 통합된 _applyType/_applyFreq/_applyDay/dayPickerHTML(그리고 cycle108에서 통합된 _applyCount)가 통합 이후 단 한 번도 자신을 직접 겨냥한 회귀 테스트가 없었던 격차를 발견해 메웠다(_applyFreq만 recFreq 테스트로 weekend 리셋 동작이 간접적으로 덮여 있었음). test/run.js에 FUNCTIONS 목록에 '_applyCount'를 추가(기존엔 빠져 있었음)하고, 19개 회귀 테스트를 신설: _applyType 6개(catListOf(t) 첫 항목으로 category 갱신, transfer면 항상 '이체' 고정, catListOf가 빈 배열이면 '기타' 폴백, income/transfer/saving 전환 시 toAssetId가 비어있으면 firstCash()로 채워지되 이미 있으면 덮어쓰지 않음, expense 전환은 toAssetId 불변), _applyDay 6개('last'/'custom'/숫자 세 분기, custom 전환 시 기존 day가 프리셋(1/5/15/25)·'last'·falsy면 시작일의 일(日)로 초기화되고 이미 커스텀 값이면 유지되는 조건부 로직, 시작일에서 유효한 일자를 못 뽑으면 10 폴백), _applyCount 4개(0/비숫자 입력은 count/endDate 모두 null, 숫자 외 문자 제거 후 파싱, 999 상한 clamp, recNthDate와 동일한 규칙으로 endDate 계산 확인), dayPickerHTML 3개(프리셋 day는 on 클래스, 'last'는 말일 버튼에 on, 프리셋 밖 숫자는 커스텀 입력칸 렌더 및 현재 값 채움) — HTML 문자열 검증은 정규식 매칭으로 확인. 세 함수 모두 DOM을 건드리는 지점(_applyCount의 $(pfx+'EndDateBox') 등)은 테스트 sandbox의 기본 $ 스텁이 알 수 없는 id에 null을 돌려줘 안전하게 no-op되므로 별도 DOM mock 없이 순수 입출력만 검증했다. 프로덕션 코드(index.html/logic.js/sw.js)는 전혀 건드리지 않은 테스트 전용 추가라 사용자에게 영향 있는 동작 변경이 없어 APP_VERSION/CACHE는 올리지 않았다(cycle114 advance의 1.46.98/v260 그대로). node test/run.js 710/710 -> 729/729 통과(신규 19개 전부, 기존 710개 무영향).",
-      "commit": "bf6071d"
-    },
     {
       "cycle": 115,
       "phase": "review",
@@ -148,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-01T14:00:00.000Z",
       "summary": "critique(cycle119) 계획대로 FX/금/주식 보유 수량 입력란 3곳에 실시간 정제와 저장 시 0수량 가드를 추가했다. index.html에 fmtAmt 옆에 fmtQty(inp) 신설(숫자/소수점 하나만 남기고 나머지 제거, 콤마 포맷은 불필요 — syncAssetInputs가 이미 콤마 제거 후 parseFloat). asFx(2989)/asGold(2993)/asQty(3000) 세 입력란에 oninput=\"fmtQty(this)\" 배선. saveAsset()의 stockCode 체크(3017) 바로 뒤에 fx/gold/stock 타입별로 d.fxAmount/d.goldDon/d.stockQty가 0보다 큰지 확인하는 가드 3줄 추가, 실패 시 toast('보유 수량을 입력해 주세요')+return. test/run.js FUNCTIONS에 fmtQty 추가하고 fmtAmt 테스트 패턴으로 fmtQty 단위 테스트 4개(문자/기호 제거, 유효 소수 통과, 소수점 여러개→하나로 축약, 빈 문자열 유지) 신설. saveAsset 가드 회귀 테스트 4개 추가(fx/gold/stock 각 타입 수량 0·미입력 시 토스트+DB.assets 미추가 3개, cash처럼 무관한 타입은 가드에 안 걸림 1개). test/run.js:2144의 기존 askRelinkDeleted 디스패치 테스트가 saveAsset()을 stockQty:0으로 호출하고 있어 새 가드에 걸려 깨지는 걸 발견 — 그 테스트의 목적(type이 다르면 재연동 시트 없이 바로 등록)과 수량 가드는 무관하므로 픽스처를 stockQty:10으로 수정해 고쳤다. 다른 saveAsset 경유 fx/gold/stock 픽스처(총 9곳)는 모두 이미 0이 아닌 수량이라 영향 없음을 grep으로 스윕 확인; emptyAssets() 테스트(test/run.js:5885 stockQty:0)는 DB.assets 직접 주입이라 saveAsset()을 거치지 않아 가드와 무관함도 확인. node --check(logic.js/sw.js) 통과, vm.Script로 index.html 두 인라인 <script> 파싱 통과, node test/run.js 754/754 -> 762/762 통과(신규 8개 전부, 오케스트레이팅 세션이 직접 실행해 확인). APP_VERSION 1.47.6->1.47.7, sw.js CACHE v268->v269. pending_advance_plan을 null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 120,
+      "phase": "develop",
+      "timestamp": "2026-10-01T15:12:13.705Z",
+      "summary": "index.html/logic.js/sw.js/test/run.js 전체에서 moveChipBlob() 참조를 grep으로 재확인(정의 1곳 외 호출부 전무, chipWrap/chipBlob DOM id도 markup에 없음, 유일한 .chip 요소는 튜토리얼 목업 화면(m-chips, 4687행)으로 무관) — cycle117에서 정리된 netWorth/toggleInclSch 등과 같은 부류의 orphan 함수. index.html:3976-3989 전체(함수 본문 14줄) 삭제, 로직 자체가 사라졌으므로 test/run.js FUNCTIONS 목록에도 애초에 없어 테스트 변경 불필요. APP_VERSION 1.47.7->1.47.8, sw.js CACHE v269->v270. node --check 두 인라인 script 블록 모두 통과, node test/run.js 762/762 유지(케이스 수 불변, 죽은 코드 제거라 신규 케이스 없음).",
       "commit": null
     }
   ]
