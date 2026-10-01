@@ -1785,6 +1785,18 @@ test('nwHistoryCard: 스냅샷이 1개 이하면 owner 지정 여부와 무관�
   sandbox.DB = { nwHistory: [{ date: '2026-01-01', ta: 300, td: 20, nw: 280 }] };
   assert.strictEqual(sandbox.nwHistoryCard('all'), '');
 });
+/* 차트 svg는 증감/기간이 이미 바로 위 텍스트(nwh-range)로 전부 노출되는 순수 장식용 스파크라인이라,
+ * 스크린리더가 unlabeled <svg>를 별도 이미지/문서로 잡아 중복·의미없는 소음을 내지 않도록 보조기술에서
+ * 숨겨야 한다(app-evolve cycle119 develop). */
+test('nwHistoryCard: 차트 svg는 장식용이라 aria-hidden="true"로 보조기술에서 숨긴다(증감/기간은 이미 옆 텍스트로 노출됨)', () => {
+  sandbox.DB = { nwHistory: [
+    { date: '2026-01-01', ta: 300, td: 20, nw: 280 },
+    { date: '2026-01-02', ta: 320, td: 20, nw: 300 },
+  ] };
+  const html = sandbox.nwHistoryCard();
+  assert.ok(html.includes('<svg'), '점이 2개 이상이면 차트 svg가 렌더돼야 함');
+  assert.ok(/<svg[^>]*\baria-hidden="true"/.test(html), 'svg 태그 자체에 aria-hidden="true"가 있어야 함');
+});
 
 /* ---------- txnsToCSV: 거래 내역 CSV 내보내기 ---------- */
 test('txnsToCSV: 빈 배열이면 BOM과 헤더만 있는 한 줄을 반환한다', () => {

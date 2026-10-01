@@ -1,15 +1,8 @@
 {
   "cycle": 119,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 114,
-      "phase": "develop",
-      "timestamp": "2026-09-30T15:20:00.000Z",
-      "summary": "cycle111 advance에서 index.html→logic.js로 옮겨진 순수 함수 4개(lastDay/monthStartStr/monthEndStr/budgetKey, logic.js 193-203행)가 이전 이후 단 한 번도 자신을 직접 겨냥한 회귀 테스트가 없었던 격차를 발견해 메웠다 — test/run.js FUNCTIONS 목록 위 주석에 이름만 언급돼 있었을 뿐, recDates/budgetForMonth 같은 다른 함수의 내부 호출을 통해서만 간접적으로 실행돼 왔다. 특히 budgetForMonth()(index.html ~4267)는 budgetKey(y,m)로 만든 'YYYY-MM' 문자열을 사전식(lexicographic) 비교(h[i].from<=key)로 시점 순서를 판정하는데, 이 비교가 실제 월 순서와 일치하려면 budgetKey가 월을 반드시 두 자리로 0-패딩해야 한다는 불변식이 있음에도 그 불변식 자체를 직접 지키는 테스트가 없었다(패딩이 실수로 빠지면 '2025-9' > '2025-10'으로 비교돼 9월 예산이 10월보다 미래로 잘못 판정되는 회귀가 생겨도 기존 테스트로는 못 잡음). test/run.js에 6개 회귀 테스트 신설: lastDay 윤년/평년 2월(28 vs 29) 및 30/31일 달 구분, monthStartStr의 두 자리 월 0-패딩과 항상 '01'일 확인, monthEndStr의 윤년 2월 29일 포함 월말 계산, budgetKey의 'YYYY-MM' 포맷/0-패딩, 그리고 budgetKey(2025,9)<budgetKey(2025,10) 및 budgetKey(2025,12)<budgetKey(2026,1)을 직접 문자열 비교로 검증하는 불변식 테스트. 프로덕션 코드(index.html/logic.js/sw.js)는 전혀 건드리지 않은 테스트 전용 추가라 사용자에게 영향 있는 동작 변경이 없어 APP_VERSION/CACHE는 올리지 않았다(1.46.97 / ourassets-v259 그대로). node test/run.js 704/704 -> 710/710 통과(신규 6개 전부, 기존 704개 무영향). (general-purpose 서브에이전트에 위임해 탐색·구현·검증, 오케스트레이팅 세션이 상태 파일 갱신과 커밋을 수행)",
-      "commit": null
-    },
     {
       "cycle": 114,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-01T10:08:00.000Z",
       "summary": "critique(cycle118) 계획대로 Home/가계부/전체내역/Plan 4개 탭의 월 선택 wheel picker(wh-col) 5곳(openMonthSheet의 whMonth, dpToggleJump와 openYMSheet 각각의 whY/whM)에 키보드 경로를 추가했다. logic.js에 순수 함수 whTargetIdx(cur,n,key) 신설 — Home/End/ArrowUp/ArrowDown만 처리, n<=0이면 항상 0, cur===-1은 0으로 취급해 계산, 양끝은 wrap 없이 clamp, 모르는 key는 cur 그대로 반환(캐러셀용 nwClampIdx와 달리 wrap하지 않는 점이 차이) — test/run.js에 7개 회귀 테스트 추가. index.html에 whKeydown(e,col) 신설: ArrowUp/ArrowDown/Home/End만 preventDefault 후 whTargetIdx로 다음 인덱스를 구해 해당 wh-item으로 즉시 스크롤. whScrollTo/whScrollToVal에 중복돼 있던 offsetTop 센터링 공식을 whCenterOn(col,it) 헬퍼로 추출해 둘 다와 whKeydown이 공유하도록 리팩터링(계획의 '고려' 항목 채택). wh-col 5곳 모두에 tabindex=0 role=listbox aria-label(연도 선택/월 선택) onkeydown=whKeydown(event,this) 추가, 각 wh-item 생성 루프 3곳에 안정적 id(예: whY-opt-${yy})+role=option 부여. whValue()의 .on 토글 지점에서 aria-selected와 col.aria-activedescendant도 함께 갱신. tabindex=0만으로 기존 sheetFocusables($('dpWheel'))[0].focus() 호출부(3곳, 손대지 않음)가 wh-col을 DOM상 첫 포커스로 자동으로 잡아준다 — 계획대로 review에서 재확인 권장. 스코프 제외(계획대로): dpModal 날짜 그리드 자체의 화살표 키 이동, wireMonthCarousel 스와이프의 마우스/포인터 지원. node --check(logic.js/sw.js) 통과, vm.Script로 index.html 인라인 스크립트 파싱 통과, node test/run.js 753/753 통과(기존 746+신규 7개). APP_VERSION 1.47.4->1.47.5, sw.js CACHE v266->v267. pending_advance_plan을 null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 119,
+      "phase": "develop",
+      "timestamp": "2026-10-01T12:00:00.000Z",
+      "summary": "cycle118 critique에서 '경미, 우선순위 낮음'으로 기각 보류됐던 순자산 추이 스파크라인 SVG(nwHistoryCard(), index.html:2387)의 aria-hidden 누락을 집어 수정. 이 차트는 증감폭/기간이 바로 위 .nwh-range 텍스트로 이미 전부 노출되는 순수 장식용이라, 스크린리더가 unlabeled <svg>를 별도의 의미 있는 그래픽으로 잡아 중복·무의미한 소음을 내는 걸 막기 위해 svg 태그에 aria-hidden=\"true\" focusable=\"false\"를 추가. test/run.js에 회귀 테스트 1개 추가(스냅샷 2개 이상일 때 렌더되는 svg가 aria-hidden=\"true\"를 갖는지 확인). 동작(렌더 결과 마크업) 변경이라 APP_VERSION 1.47.5->1.47.6, sw.js CACHE v267->v268 올림. node --check(logic.js/sw.js) 통과, 두 인라인 <script> 블록 vm.Script 파싱 통과, node test/run.js 753/753 -> 754/754 통과(오케스트레이팅 세션이 diff 직접 대조 및 테스트 재실행으로 재확인). (general-purpose 서브에이전트에 위임해 탐색·구현·검증, 오케스트레이팅 세션이 diff 검증·상태 파일 갱신·커밋을 수행)",
       "commit": null
     }
   ]

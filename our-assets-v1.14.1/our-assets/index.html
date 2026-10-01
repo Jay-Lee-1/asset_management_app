@@ -1305,7 +1305,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.5';
+const APP_VERSION='1.47.6';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2384,7 +2384,7 @@ function nwHistoryCard(owner){
  return `<div class="card nwh-card">
    <div class="section-title" style="margin-top:0">순자산 추이</div>
    <div class="nwh-range">${shortDate2(first.date)} ~ ${shortDate2(last.date)} <b class="${up?'':'minus'}">${up?'+':''}${comma(diff)}원</b></div>
-   <div class="nwh-chart"><svg viewBox="0 0 300 80" preserveAspectRatio="none">
+   <div class="nwh-chart"><svg viewBox="0 0 300 80" preserveAspectRatio="none" aria-hidden="true" focusable="false">
      <path d="${area}" fill="${color}" opacity="0.12" stroke="none"/>
      <path d="${line}" fill="none" stroke="${color}" stroke-width="2.2" vector-effect="non-scaling-stroke"/>
    </svg></div>
