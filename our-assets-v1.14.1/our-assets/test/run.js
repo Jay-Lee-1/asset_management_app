@@ -126,7 +126,7 @@ const FUNCTIONS = [
   'clampDay', 'saveTx', 'assetBase', 'balancesUpTo', 'balanceAt',
   'addBalanceAdjust', 'updateBalanceAdjust', 'toggleConfirmTransfers', 'rollPendingTransfers',
   'assetEval', 'assetGainLoss', 'assetGainLossBadge', 'costBasisField', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'delOwner', 'doMaturity', 'firstCash',
-  'detectStaleMarketValuedTxns', 'delBudget',
+  'detectStaleMarketValuedTxns', 'delBudget', 'saveBudget',
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards',
   'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate',
   'genSalt', 'pbkdf2Hash', 'genRecoveryCode', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer', 'openConfirmTransfer',
@@ -402,7 +402,7 @@ const sandbox = {
   // asName은 syncAssetInputs()의 이름 trim() 회귀 테스트용(공백만 있는 이름이 그대로 저장되던 버그).
   // asNameValue가 undefined인 기본 상태에서는 null을 반환해, 이 mock 추가 이전처럼 다른 테스트의
   // syncAssetInputs()/saveAsset() 호출에서 asDraft.name이 건드려지지 않도록 한다.
-  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-plan' ? sandbox.pagePlanEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : id === 'ledgerCard' ? (sandbox.ledgerCardMissing ? null : sandbox.ledgerCardEl) : id === 'assetBody' ? (sandbox.assetBodyMissing ? null : sandbox.assetBodyEl) : id === 'newOwner' ? (sandbox.newOwnerValue === undefined ? null : { value: sandbox.newOwnerValue }) : id === 'renameOwner' ? (sandbox.renameOwnerValue === undefined ? null : { value: sandbox.renameOwnerValue }) : null,
+  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'budgetIn' ? { value: sandbox.budgetInValue } : id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-plan' ? sandbox.pagePlanEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : id === 'ledgerCard' ? (sandbox.ledgerCardMissing ? null : sandbox.ledgerCardEl) : id === 'assetBody' ? (sandbox.assetBodyMissing ? null : sandbox.assetBodyEl) : id === 'newOwner' ? (sandbox.newOwnerValue === undefined ? null : { value: sandbox.newOwnerValue }) : id === 'renameOwner' ? (sandbox.renameOwnerValue === undefined ? null : { value: sandbox.renameOwnerValue }) : null,
   bkTextEl: { value: 'backup-text', select: () => {}, setSelectionRange: () => {} },
   // copyBackup()의 navigator.clipboard 체크가 ReferenceError 없이 "지원 안 함"으로 지나가게
   // 하는 최소 흉내(document.execCommand는 try/catch로 감싸져 있어 굳이 스텁이 필요 없음).
@@ -1501,6 +1501,35 @@ test('delBudget: undo는 그 달에 원래 있던 값이 아니라 삭제 직전
   sandbox.lastUndo.undoFn();
   assert.strictEqual(sandbox.DB.budgetHistory.식비.length, 1, '되돌리면 원래 없던 6월 항목이 제거되고 1월 항목만 남아야 함');
   assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 8), 50000, '되돌린 뒤에는 8월도 다시 1월부터 이어지는 5만원이어야 함');
+});
+
+/* ---------- saveBudget: budgetIn 입력란이 다른 금액 입력란(txAmt/rAmt/asAmt 등)처럼 천단위
+ * 콤마 포맷(fmtAmt)+공용 num() 파서를 쓰도록 통일 (app-evolve cycle121 develop) — 이전에는
+ * budgetIn만 유일하게 type="number" 네이티브 입력란이라 콤마 표시가 전혀 없었고, saveBudget()도
+ * Math.round(Number(el.value))로 직접 파싱해 다른 모든 save*류가 쓰는 num()과 다른 경로였다.
+ * num()은 콤마를 제거하고 파싱하므로, 포맷된 "1,500,000" 문자열을 그대로 줘도 올바르게 읽혀야 한다. */
+test('saveBudget: 천단위 콤마가 포함된 budgetIn 값(num() 파서 경로)을 올바르게 저장한다', () => {
+  sandbox.DB = { txns: [{ type: 'expense', category: '식비', amount: 10000, date: '2026-06-10' }], recurrences: [], budgetHistory: {} };
+  sandbox.ST = { ledger: { y: 2026, m: 6 } };
+  sandbox.budgetInValue = '1,500,000';
+  sandbox.saveBudget(0); // rows[0] === {c:'식비',v:10000} (이번 달 지출이 있는 유일한 카테고리)
+  assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 6), 1500000);
+});
+test('saveBudget: 빈 값이면 저장하지 않고 안내 토스트만 띄운다', () => {
+  sandbox.DB = { txns: [{ type: 'expense', category: '식비', amount: 10000, date: '2026-06-10' }], recurrences: [], budgetHistory: {} };
+  sandbox.ST = { ledger: { y: 2026, m: 6 } };
+  sandbox.budgetInValue = '';
+  sandbox.lastToast = null;
+  sandbox.saveBudget(0);
+  assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 6), 0, '저장되지 않아야 함');
+  assert.ok(sandbox.lastToast, '안내 토스트가 떴어야 함');
+});
+test('saveBudget: 존재하지 않는 idx를 넘기면 아무것도 하지 않는다', () => {
+  sandbox.DB = { txns: [{ type: 'expense', category: '식비', amount: 10000, date: '2026-06-10' }], recurrences: [], budgetHistory: {} };
+  sandbox.ST = { ledger: { y: 2026, m: 6 } };
+  sandbox.budgetInValue = '100000';
+  sandbox.saveBudget(99);
+  assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 6), 0);
 });
 
 /* ---------- addCat: 중복 이름 추가 시 무반응 대신 안내 토스트 ---------- */

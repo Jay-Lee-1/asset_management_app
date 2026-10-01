@@ -1,15 +1,8 @@
 {
   "cycle": 121,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 116,
-      "phase": "develop",
-      "timestamp": "2026-09-30T22:00:00.000Z",
-      "summary": "가계부 탭 상단 요약 카드(수지·수입·지출·저축·내부이체)가 전부 <button>으로 마크업돼 있었지만 클릭 핸들러가 전혀 배선돼 있지 않아 눌러도 아무 반응 없는 죽은 버튼이었다. sumTap(kind)(3286)를 ledSumInner(a,sc,today,tap) 4번째 인자로 배선해 ledSumBox()에서 tap=true로 호출, histTotBox()는 범위 충돌 방지를 위해 의도적으로 미배선 유지. 롱프레스 피크 제스처와의 충돌은 _sujiPeeked 플래그+ledSumTap 래퍼로 방지. test/run.js 회귀 테스트 5개 추가. node test/run.js 734/734 -> 739/739 통과. APP_VERSION 1.46.99->1.47.0, sw.js CACHE v261->v262.",
-      "commit": null
-    },
     {
       "cycle": 116,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-01T18:10:58.883Z",
       "summary": "critique(cycle120) 계획대로 RANGE_TO(상한) 대칭 검증을 추가했다. index.html에 dateAboveRangeCeil(ds){return ds>RANGE_TO} 신설(dateBelowRangeFloor 바로 옆). saveTx()/saveRec()의 기존 하한 체크 직후에 상한 체크를 추가(d.date/d.startDate, RANGE_TO 값을 포함한 토스트). csvRowToImportTxn()의 range 조건을 dateBelowRangeFloor||dateAboveRangeCeil로 확장. sanitizeBackup()도 동일 패턴으로 확장. 네 곳 모두에서 쓰던 방향 한정 안내 문구('RANGE_FROM 이전 날짜 N건')를 방향 비한정 문구('날짜 범위를 벗어난 N건')로 통일(클라우드 pull 토스트/백업 복원 notes/CSV 미리보기 stats 3곳). test/run.js: FUNCTIONS에 dateAboveRangeCeil 추가, csvRowToImportTxn/buildImportPreview/sanitizeBackup/saveTx/saveRec 각각에 RANGE_TO 경계(초과 시 거부, 당일은 허용) 테스트 6개 추가. node test/run.js 762/762 -> 768/768 통과. APP_VERSION 1.47.8->1.47.9, sw.js CACHE v270->v271. 스코프 제외: 날짜 피커(dpExtend/dpToggleJump) UI 자체의 미래 상한은 반복거래가 정상적으로 RANGE_TO를 넘나드는 케이스가 있어 건드리지 않음(저장/가져오기/복원 경계만 막음). pending_advance_plan을 null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 121,
+      "phase": "develop",
+      "timestamp": "2026-10-01T19:13:04.397Z",
+      "summary": "budgetIn(예산 설정 입력란)이 다른 모든 금액 입력란(txAmt/rAmt/asAmt 등)과 달리 유일하게 네이티브 type=\"number\"였던 불일치 수정 — 천단위 콤마 포맷(fmtAmt)이 전혀 없고, saveBudget()도 Math.round(Number(el.value))로 직접 파싱해 공용 num() 경로를 안 쓰고 있었다(네이티브 number 입력은 \"1e7\" 같은 지수표기도 경고 없이 통과). openBudgetPrompt()의 budgetIn을 class=\"num\"+oninput=fmtAmt(this)+value=comma(cur)로 다른 금액칸과 동일하게 맞추고, saveBudget()의 파싱을 num($('budgetIn'))로 교체. test/run.js에 saveBudget을 FUNCTIONS에 추가하고 콤마 파싱/빈값 토스트/존재하지 않는 idx 회귀 테스트 3개 추가. node test/run.js 768/768 -> 771/771 통과. APP_VERSION 1.47.9->1.47.10, sw.js CACHE v271->v272.",
       "commit": null
     }
   ]

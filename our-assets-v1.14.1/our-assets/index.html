@@ -1305,7 +1305,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.9';
+const APP_VERSION='1.47.10';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4379,13 +4379,13 @@ function openBudgetPrompt(idx){
  const y=ST.ledger.y,m=ST.ledger.m;const rows=spendByCategory(y,m,ST.spendOwner);const r=rows[idx];if(!r)return;
  const cur=budgetForMonth(r.c,y,m)||'';
  openSheet(`<h3>${esc(r.c)} 예산 설정</h3><div class="desc">${m}월부터 ${esc(r.c)}에 쓸 수 있는 한도예요 · 바꾸기 전까지 이후 달에도 계속 적용돼요</div>
-  <div class="field"><input id="budgetIn" type="number" inputmode="numeric" placeholder="예산 금액(원)" value="${cur||''}" onkeydown="if(event.key==='Enter')saveBudget(${idx})"></div>
+  <div class="field"><input id="budgetIn" class="num" inputmode="numeric" placeholder="예산 금액(원)" value="${cur?comma(cur):''}" oninput="fmtAmt(this)" onkeydown="if(event.key==='Enter')saveBudget(${idx})"></div>
   <div class="two-btn" style="margin-bottom:16px">${cur?`<button class="btn btn-soft cancel" onclick="delBudget(${idx})">예산 삭제</button>`:`<button class="btn btn-soft cancel" onclick="openSpendAnalysis()">취소</button>`}<button class="btn btn-primary" onclick="saveBudget(${idx})">저장</button></div>`);
  setTimeout(()=>{const el=$('budgetIn');el&&el.focus()},300);
 }
 function saveBudget(idx){
  const y=ST.ledger.y,m=ST.ledger.m;const rows=spendByCategory(y,m,ST.spendOwner);const r=rows[idx];if(!r)return;
- const v=Math.round(Number(($('budgetIn')&&$('budgetIn').value)||0));
+ const v=Math.round(num($('budgetIn')));
  if(!v||v<0){toast('올바른 금액을 입력해 주세요');return}
  setBudgetFrom(r.c,y,m,v);save();toast('예산을 저장했어요');openSpendAnalysis();
 }
