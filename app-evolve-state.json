@@ -1,15 +1,8 @@
 {
   "cycle": 121,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 116,
-      "phase": "review",
-      "timestamp": "2026-10-01T00:00:00.000Z",
-      "summary": "develop 커밋(8afd3c6, 가계부 요약 카드 sumTap 배선)을 검토. ledSumInner tap 배선, TYPEBYLABEL 매핑 일치, histTotBox 의도적 미배선, _sujiPeeked 가드 레이스 없음을 소스 대조로 확인. node test/run.js 739/739 재통과 확인. 코드 변경 없음(이상 없음).",
-      "commit": null
-    },
     {
       "cycle": 116,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-01T19:13:04.397Z",
       "summary": "budgetIn(예산 설정 입력란)이 다른 모든 금액 입력란(txAmt/rAmt/asAmt 등)과 달리 유일하게 네이티브 type=\"number\"였던 불일치 수정 — 천단위 콤마 포맷(fmtAmt)이 전혀 없고, saveBudget()도 Math.round(Number(el.value))로 직접 파싱해 공용 num() 경로를 안 쓰고 있었다(네이티브 number 입력은 \"1e7\" 같은 지수표기도 경고 없이 통과). openBudgetPrompt()의 budgetIn을 class=\"num\"+oninput=fmtAmt(this)+value=comma(cur)로 다른 금액칸과 동일하게 맞추고, saveBudget()의 파싱을 num($('budgetIn'))로 교체. test/run.js에 saveBudget을 FUNCTIONS에 추가하고 콤마 파싱/빈값 토스트/존재하지 않는 idx 회귀 테스트 3개 추가. node test/run.js 768/768 -> 771/771 통과. APP_VERSION 1.47.9->1.47.10, sw.js CACHE v271->v272.",
+      "commit": null
+    },
+    {
+      "cycle": 121,
+      "phase": "review",
+      "timestamp": "2026-10-01T20:07:28.911Z",
+      "summary": "develop 커밋(b1150bf, budgetIn 콤마 포맷 통일)을 검토. num()/fmtAmt() 정의 확인 결과 콤마 제거 후 파싱하는 공용 경로와 정확히 일치, txAmt/rAmt/asAmt와 동일한 class=\"num\"+oninput 패턴임을 소스 대조로 확인. 빈 값/존재하지 않는 idx 가드도 기존 saveBudget 로직 유지. node test/run.js 771/771 재통과. 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
