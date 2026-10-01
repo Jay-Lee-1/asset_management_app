@@ -1,15 +1,8 @@
 {
   "cycle": 117,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 112,
-      "phase": "review",
-      "timestamp": "2026-09-30T07:08:05.622Z",
-      "summary": "develop 커밋(23c0d36, Kakao JS 키 입력 kkeyIn2에 Enter 제출 배선)을 검토. 인라인 onclick 문자열로만 있던 저장 로직을 saveKakaoKey2()로 분리해 저장 버튼 onclick과 새로 추가한 kkeyIn2 onkeydown 양쪽에서 재사용하는 순수 리팩터. grep으로 함수명 saveKakaoKey2가 기존 auth 화면의 saveKakaoKey()(kkeyIn 대상, 즉시 로그인 시도)와 겹치지 않음을 확인 — 커밋 메시지의 주장(즉시 로그인 시도 없이 저장만)과 코드가 일치. 동작 변경 없이 그대로 함수로 추출됐는지 diff 대조로 확인(toast 문구, localStorage 키, closeSheet 호출 순서 모두 동일). APP_VERSION(1.46.93→1.46.94)과 sw.js CACHE(v255→v256) 동시 상향도 정상 반영. node --check(vm.Script)로 두 인라인 <script> 블록 문법 검증 통과, node test/run.js 697/697 전부 통과(로직 변경이 없어 케이스 수 그대로). 코드 변경 없음(이상 없음).",
-      "commit": null
-    },
     {
       "cycle": 112,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-01T03:11:24.679Z",
       "summary": "index.html 전체 함수 598+개를 정규식으로 스캔해 호출부가 전혀 없는(index.html/logic.js/sw.js/test/run.js 어디서도 참조되지 않는, window[...]/eval 같은 동적 호출 패턴도 없음을 확인한) orphan 함수 7개를 삭제: netWorth()(nwPane/mNwPane이 TA/TD를 인자로 직접 받아 대체), toggleInclSch()(index.html:1991 주석에 \"예정 포함 토글 제거→확정 잔액 기준\"으로 이미 UI에서 제거됐다고 명시돼 있었음), histTotPane(y,m)(옆 달 미리보기, 호출부 없음), histCat(c)(sumTap이 ST.hist.cat을 직접 설정하는 경로로 대체), histToggleSort()(연결된 UI 컨트롤 없음), planOwner(o)(ST.plan.owner= 직접 대입으로 대체), quickAmountCards()(홈 alerts의 quick 카드 경로로 대체). 순수 삭제라 동작 변경 없음, 회귀 테스트 대상 함수는 하나도 포함되지 않아 테스트 추가 불필요. 두 인라인 <script> 블록 vm.Script 파싱 통과, logic.js/sw.js node --check 통과, node test/run.js 743/743 통과. APP_VERSION 1.47.1->1.47.2, sw.js CACHE v263->v264. (general-purpose 서브에이전트에 위임해 탐색·구현·검증, 오케스트레이팅 세션이 diff 검증(grep으로 7개 함수명 전부 재확인)·상태 파일 갱신·커밋을 수행)",
+      "commit": null
+    },
+    {
+      "cycle": 117,
+      "phase": "review",
+      "timestamp": "2026-10-01T03:30:00.000Z",
+      "summary": "develop 커밋(7c935f0, orphan 함수 7개(netWorth/toggleInclSch/histTotPane/histCat/histToggleSort/planOwner/quickAmountCards) 삭제)을 검토. 삭제 전 커밋(7c935f0^)의 index.html을 따로 추출해 7개 함수명 각각을 단어 경계 정규식으로 세어 삭제 전엔 정확히 1회(자기 자신의 정의)만 등장했음을 재확인(즉 실제로 호출부가 0건이었다는 커밋 메시지 주장을 독립적으로 검증), 삭제 후 현재 파일에서도 7개 전부 0회로 완전히 사라져 깨진 참조가 남지 않았음을 확인. diff가 함수 정의 7개 삭제와 APP_VERSION(1.47.1->1.47.2)/CACHE(v263->v264) 상향 외에 다른 변경이 없음을 git show stat으로 확인. vm.Script로 두 인라인 <script> 블록 재파싱 통과, node test/run.js 재실행해 743/743 전부 통과 재확인. 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
