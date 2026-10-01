@@ -1,15 +1,8 @@
 {
   "cycle": 119,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 114,
-      "phase": "review",
-      "timestamp": "2026-09-30T15:35:00.000Z",
-      "summary": "develop 커밋(cf3a3cd, lastDay/monthStartStr/monthEndStr/budgetKey에 회귀 테스트 6개 추가)을 검토. logic.js 193-203행의 실제 구현을 직접 대조: lastDay(y,m)=new Date(y,m,0).getDate()는 JS Date의 day-0 롤백 특성상 monthIndex를 human month 그대로 넘기면 정확히 그 달의 마지막 날을 반환함(예: lastDay(2026,2)->new Date(2026,2,0)->monthIndex2=3월, day0=2월28일)을 재확인, 신규 테스트가 주장하는 윤년(2024-02=29)/평년(2026-02=28)/30일(4월)/31일(1월,12월 롤오버 포함) 케이스 전부 구현과 일치. monthStartStr/monthEndStr/budgetKey도 padStart(2,'0') 사용을 소스에서 직접 확인, budgetKey의 사전식 비교 불변식 테스트(2025-09<2025-10, 2025-12<2026-01)도 실제 문자열 비교로 유효함을 확인. budgetForMonth()(index.html~4267)가 budgetKey로 만든 key를 h[i].from<=key 사전식 비교로 쓰는 실사용 경로도 grep으로 재확인해 이 불변식 테스트가 실제 리스크를 겨냥한 것임을 확인. 프로덕션 코드 변경이 전혀 없는 테스트 전용 diff라 회귀 위험 없음. node test/run.js 710/710 통과. 코드 변경 없음(이상 없음).",
-      "commit": null
-    },
     {
       "cycle": 114,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-01T12:00:00.000Z",
       "summary": "cycle118 critique에서 '경미, 우선순위 낮음'으로 기각 보류됐던 순자산 추이 스파크라인 SVG(nwHistoryCard(), index.html:2387)의 aria-hidden 누락을 집어 수정. 이 차트는 증감폭/기간이 바로 위 .nwh-range 텍스트로 이미 전부 노출되는 순수 장식용이라, 스크린리더가 unlabeled <svg>를 별도의 의미 있는 그래픽으로 잡아 중복·무의미한 소음을 내는 걸 막기 위해 svg 태그에 aria-hidden=\"true\" focusable=\"false\"를 추가. test/run.js에 회귀 테스트 1개 추가(스냅샷 2개 이상일 때 렌더되는 svg가 aria-hidden=\"true\"를 갖는지 확인). 동작(렌더 결과 마크업) 변경이라 APP_VERSION 1.47.5->1.47.6, sw.js CACHE v267->v268 올림. node --check(logic.js/sw.js) 통과, 두 인라인 <script> 블록 vm.Script 파싱 통과, node test/run.js 753/753 -> 754/754 통과(오케스트레이팅 세션이 diff 직접 대조 및 테스트 재실행으로 재확인). (general-purpose 서브에이전트에 위임해 탐색·구현·검증, 오케스트레이팅 세션이 diff 검증·상태 파일 갱신·커밋을 수행)",
+      "commit": null
+    },
+    {
+      "cycle": 119,
+      "phase": "review",
+      "timestamp": "2026-10-01T12:30:00.000Z",
+      "summary": "develop 커밋(200c2d7, nwHistoryCard() 순자산 추이 스파크라인 svg에 aria-hidden=\"true\" focusable=\"false\" 추가)을 검토. index.html:2387 실제 마크업을 직접 대조해 속성이 svg 태그 자체(내부 path 아님)에 정확히 붙었음을 확인, 이 차트 바로 위 .nwh-range가 증감액/기간을 이미 텍스트로 노출하므로 장식용 판단이 타당함. 신규 회귀 테스트가 렌더된 html에서 <svg aria-hidden=\"true\">를 정규식으로 직접 검사해 속성 누락/오타를 잡을 수 있는 실효성 있는 테스트임을 확인. node test/run.js 754/754 전체 통과(신규 1개 포함) 재확인. 추가로 svg(n,w) 아이콘 헬퍼(index.html:1421, 네비/버튼 아이콘 전반에 쓰임)는 이번 범위 밖이라 손대지 않았지만, 각 사용처가 버튼 텍스트/aria-label로 이미 이름이 있는지 전수 확인은 안 된 상태라 critique에서 접근성 전수 점검 후보로 남겨둔다. 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
