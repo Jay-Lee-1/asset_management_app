@@ -2761,6 +2761,37 @@ test("recApply: scope='future' 삭제는 endDate와 함께 count도 재계산해
   assert.strictEqual(r.endDate, null, '되돌리면 endDate가 원래 값으로 복원되어야 함');
   assert.strictEqual(r.count, null, '되돌리면 count도 원래 값으로 복원되어야 함');
 });
+test("recApply: scope='future' 삭제는 cutoff 이후의 skip/edits도 함께 버리고, undo하면 원래대로 복원된다(app-evolve cycle121)", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', skip: ['2026-01-05', '2026-03-05'], edits: { '2026-01-10': { amount: 1 }, '2026-03-10': { amount: 2 } }, endDate: null };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.lastUndo = null;
+  sandbox.recApply('r1', '2026-02-05', 'delete', 'future');
+  // splitRecOverrides의 editsPast/editsFuture는 vm 샌드박스 안에서 새로 만든 객체 리터럴이라
+  // host의 Object와 realm이 달라 deepStrictEqual이 (값은 같아도) 실패하므로, JSON.stringify로
+  // 정규화해 비교한다(위 recSave future 분할 테스트와 같은 이유). skip은 원본 배열을 filter()해
+  // species로 realm이 보존되므로 그대로 deepStrictEqual을 쓸 수 있다.
+  assert.deepStrictEqual(r.skip, ['2026-01-05'], 'cutoff(2/5) 이후 skip(3/5)은 끊어낸 구간이므로 함께 버려지고, 이전 skip(1/5)만 남아야 함');
+  assert.strictEqual(JSON.stringify(r.edits), JSON.stringify({ '2026-01-10': { amount: 1 } }), 'cutoff 이후 edits(3/10)도 함께 버려지고, 이전 edits(1/10)만 남아야 함');
+  sandbox.lastUndo.undoFn();
+  assert.deepStrictEqual(r.skip, ['2026-01-05', '2026-03-05'], '되돌리면 skip이 원래 배열로 복원되어야 함');
+  assert.strictEqual(JSON.stringify(r.edits), JSON.stringify({ '2026-01-10': { amount: 1 }, '2026-03-10': { amount: 2 } }), '되돌리면 edits도 원래 객체로 복원되어야 함');
+});
+test("recApply: scope='future' 삭제로 끊어낸 구간의 skip이 가지치기되어 있어, 나중에 endDate를 다시 늘려도(DB.recurrences[i]=d 직접 치환과 동일한 상태) 삭제됐던 회차가 skip으로 되살아나 거래가 사라지지 않는다(app-evolve cycle121 회귀)", () => {
+  sandbox.TWi = -1;
+  sandbox._recCache.clear();
+  const r = { id: 'r1', active: true, freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, count: null, weekend: 'none', type: 'expense', category: '식비', memo: '', amount: 1000, skip: ['2026-05-05'], edits: {} };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.recApply('r1', '2026-03-01', 'delete', 'future');
+  assert.deepStrictEqual(r.skip, [], '3/1부터 끊었으므로 그 이후 날짜였던 5/5 skip은 더 이상 의미가 없어 함께 제거되어야 함');
+  r.endDate = null; r.count = null; // 사용자가 나중에 다시 무기한으로 늘렸다고 가정
+  sandbox._recCache.clear();
+  // expandRec()의 반환 배열은 vm 샌드박스 안에서 만든 것이라 host의 Array와 realm이 달라
+  // deepStrictEqual이 실패하므로(위 edits와 같은 이유), JSON.stringify로 정규화해 비교한다.
+  const dates = sandbox.expandRec('2026-05-01', '2026-05-31').map(t => t.date);
+  assert.strictEqual(JSON.stringify(dates), JSON.stringify(['2026-05-05']), '끊어낸 뒤 버려졌어야 할 skip이 남아있었다면 5/5 회차가 되살아난 skip에 가려져 사라졌을 것(회귀 확인)');
+  sandbox._recCache.clear(); // 이 테스트가 채운 '2026-05-01|2026-05-31' 캐시 항목이 이후 다른 테스트(spendTrend 등)의 같은 구간 조회에 새지 않도록 정리
+});
 test("recApply: 튜토리얼 모드 중에는 twGuard가 막아서 scope='one'/'future' 삭제도 실제로 반영되지 않는다", () => {
   sandbox.TWi = 0;
   const r1 = { id: 'r1', skip: [] };
@@ -2917,7 +2948,7 @@ test("recApply: scope='one'/'future' 삭제도 대상 레코드에 touch()가 �
   sandbox.recApply('r1', '2026-02-05', 'delete', 'one');
   assert.strictEqual(r.updatedAt, 'test-updatedAt', "scope='one' 삭제도 touch()가 호출되어야 함");
 
-  r = { id: 'r1', freq: 'monthly', day: 5, startDate: '2026-01-05', weekend: 'none', endDate: null, count: null };
+  r = { id: 'r1', freq: 'monthly', day: 5, startDate: '2026-01-05', weekend: 'none', endDate: null, count: null, skip: [], edits: {} };
   sandbox.DB = { recurrences: [r] };
   sandbox.recApply('r1', '2026-02-05', 'delete', 'future');
   assert.strictEqual(r.updatedAt, 'test-updatedAt', "scope='future' 삭제도 touch()가 호출되어야 함");

@@ -1305,7 +1305,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.10';
+const APP_VERSION='1.47.11';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3576,10 +3576,12 @@ function recApply(recId,date,mode,scope){
    undoToast('삭제했어요',()=>{r.skip=prevSkip;save();renderCurrent();toast('되돌렸어요')});return;
   }
   if(scope==='future'){
-   const prevEnd=r.endDate,prevCount=r.count;
+   const prevEnd=r.endDate,prevCount=r.count,prevSkip=r.skip.slice(),prevEdits=Object.assign({},r.edits);
+   const {skipPast,editsPast}=splitRecOverrides(r.skip,r.edits,date); /* date 이후 skip/edits도 함께 버려야 함(끊어낸 회차 자체이므로 recSave future처럼 분리 보관할 곳이 없다) — 안 그러면 나중에 endDate를 다시 늘릴 때 되살아남(app-evolve cycle121) */
+   r.skip=skipPast;r.edits=editsPast;
    Object.assign(r,truncateRecEnd({freq:r.freq,day:r.day,startDate:r.startDate,weekend:r.weekend},addDays(date,-1)));
    touch(r);save();closeSheet();renderCurrent();
-   undoToast('삭제했어요',()=>{r.endDate=prevEnd;r.count=prevCount;save();renderCurrent();toast('되돌렸어요')});return;
+   undoToast('삭제했어요',()=>{r.endDate=prevEnd;r.count=prevCount;r.skip=prevSkip;r.edits=prevEdits;save();renderCurrent();toast('되돌렸어요')});return;
   }
   closeSheet();deleteRecsUndo(new Set([recId]));return;
  }
