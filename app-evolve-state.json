@@ -1,15 +1,8 @@
 {
   "cycle": 128,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 123,
-      "phase": "develop",
-      "timestamp": "2026-10-02T03:10:00.000Z",
-      "summary": "general-purpose 서브에이전트 조사로 planTransfer/planSplitTransfer(Plan 탭 '부족해요' 시트의 예정 이체 남기기)가 saveTx/saveRec/csvRowToImportTxn/sanitizeBackup과 달리 RANGE_FROM/RANGE_TO 경계검증을 전혀 안 거치고 DB.txns.push로 직접 적재되던 버그 발견·수정(cycle120에서 다룬 네 경로에 포함 안 됐던 별도 저장 경로). 날짜피커('날짜 선택')는 과거/미래 무제한 스크롤이 가능해 범위 밖 날짜를 고르면 '예정 이체를 남겼어요' 토스트는 뜨지만 allTxns(RANGE_FROM,RANGE_TO) 조회 범위 밖이라 가계부/홈/잔액계산 어디에도 다시 나타나지 않는 조용한 데이터 유실로 이어졌다. planTransfer(6049)·planSplitTransfer(6038) 시작부에 dateBelowRangeFloor/dateAboveRangeCeil 체크를 saveTx와 동일한 토스트로 추가. test/run.js에 네 함수×상하한 경계 회귀 테스트 4개 추가. node test/run.js 797/797 -> 801/801 통과. APP_VERSION 1.47.13->1.47.14, sw.js CACHE v275->v276.",
-      "commit": null
-    },
     {
       "cycle": 123,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-02T22:10:00.000Z",
       "summary": "critique(cycle127) 계획대로 doMaturity()/saveAsset()의 만기일(maturityDate)에 RANGE_FROM/RANGE_TO 경계검증을 추가했다. saveAsset()에 d.maturityDate가 있을 때 saveTx/saveRec와 동일한 토스트 문구로 dateBelowRangeFloor/dateAboveRangeCeil 검증을 추가해 신규 오입력을 저장 시점에 거부. doMaturity()는 자동 플로우라 사용자가 날짜를 다시 고를 수 없으므로 거부 대신 sanitizeBackup의 endDate 정규화 관례를 따라, 레거시/복원된 범위 밖 maturityDate가 RANGE_FROM보다 이르면 이체 거래 날짜를 RANGE_FROM으로 클램프하고(RANGE_TO는 date<=TODAY이고 TODAY가 항상 RANGE_TO 안이라 상한 클램프는 불필요) 보정 안내 토스트를 추가했다. sanitizeBackup() assets 루프에 반복거래 startDate/endDate와 동일하게 csvDateValid() 재사용 검증을 추가해, 형식/달력상 무효한 maturityDate를 null로 정규화(저축 자산에 만기일 없음은 기존에도 정상 상태)하고 fixedCount에 반영. test/run.js: saveAsset의 RANGE_FROM/RANGE_TO 경계 거부 2개+정상 범위 통과 1개, doMaturity의 RANGE_FROM 클램프 1개+정상 범위 무클램프 1개, sanitizeBackup의 maturityDate 정규화 1개+정상/미설정 안전 1개 — 총 7개 추가. node test/run.js 851/851 -> 858/858 통과. APP_VERSION 1.47.23->1.47.24, sw.js CACHE v285->v286. pending_advance_plan을 null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 128,
+      "phase": "develop",
+      "timestamp": "2026-10-02T23:30:00.000Z",
+      "summary": "sanitizeBackup()의 DB.goals targetDate 검증이 다른 날짜 필드(startDate/endDate/maturityDate)와 달리 csvDateValid()가 아닌 형식 전용 정규식(/^\\d{4}-\\d{2}-\\d{2}$/)만 써서, 모양은 맞지만 달력상 존재하지 않는 값(예: '2026-13-01', '2026-02-30')이 그대로 통과하던 불일치를 발견·수정. 이런 값이 fmtDateFull()의 new Date(s+'T00:00:00')에 들어가면 월/일 롤오버로 전혀 엉뚱한 날짜(예: 2027년 1월 1일, 2026년 3월 2일)가 목표일로 조용히 표시되는 문제였다. index.html sanitizeBackup()의 targetDate 검증을 csvDateValid(d.targetDate)로 교체해 startDate/endDate/maturityDate와 동일 기준으로 통일하고 주석도 갱신. test/run.js에 13월/32일 두 케이스를 검증하는 회귀 테스트 1개 추가(둘 다 null로 보정되고 fixedCount=2). node test/run.js 858/858 -> 859/859 통과. APP_VERSION 1.47.24->1.47.25, sw.js CACHE v286->v287.",
       "commit": null
     }
   ]

@@ -4218,6 +4218,21 @@ test('sanitizeBackup: 목표일(targetDate)이 YYYY-MM-DD 형식이 아니면 nu
   assert.strictEqual(data.goals[0].targetDate, null);
   assert.strictEqual(fixedCount, 1);
 });
+/* app-evolve cycle128: 형식(YYYY-MM-DD)만 보던 정규식은 "2026-13-45"·"2026-02-30"처럼 모양은
+ * 맞지만 달력상 존재하지 않는 날짜를 그대로 통과시켰다 — startDate/endDate/maturityDate는 이미
+ * csvDateValid()로 달력 유효성까지 검증하는데 targetDate만 빠져 있던 불일치를 수정. */
+test('sanitizeBackup: 목표일이 형식은 맞지만 달력상 존재하지 않으면(13월/32일 등) null로 보정한다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    goals: [
+      { id: 'g1', name: '목표1', targetAmount: 1000, targetDate: '2026-13-01' },
+      { id: 'g2', name: '목표2', targetAmount: 1000, targetDate: '2026-02-30' },
+    ],
+  });
+  assert.strictEqual(data.goals[0].targetDate, null);
+  assert.strictEqual(data.goals[1].targetDate, null);
+  assert.strictEqual(fixedCount, 2);
+});
 test('sanitizeBackup: 목표일이 올바른 형식이거나 null이면 그대로 둔다(정상 케이스는 회귀 없음)', () => {
   const { data, fixedCount } = sandbox.sanitizeBackup({
     txns: [], assets: [],

@@ -1305,7 +1305,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.24';
+const APP_VERSION='1.47.25';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5259,8 +5259,8 @@ function sanitizeBackup(obj){
   recurrences.push(d);
  });
  /* DB.goals(순자산 목표, app-evolve cycle122)도 신설 당시 여기 검증 분기가 없었다 — targetAmount가
-  * 손상되면 goalPct/goalProgress의 진행률·투사가 조용히 오염되고, targetDate가 날짜 형식이 아니면
-  * fmtDateFull()이 Invalid Date를 그대로 보여준다. amount류와 동일하게 여기서 정규화한다. */
+  * 손상되면 goalPct/goalProgress의 진행률·투사가 조용히 오염되고, targetDate가 달력상 무효하면
+  * fmtDateFull()이 롤오버된 엉뚱한 날짜를 그대로 보여준다. amount류와 동일하게 여기서 정규화한다. */
  const srcGoals=Array.isArray(obj&&obj.goals)?obj.goals:[];
  const goals=[];
  /* owner(app-evolve cycle124 신설)도 goalOwnerEff가 믿는 'DB.owners 또는 all' 불변식을 백업 복원
@@ -5271,7 +5271,7 @@ function sanitizeBackup(obj){
   if(!g||!g.id){droppedCount++;return}
   const d=Object.assign({},g);
   if('targetAmount' in d){const n=sanitizeAmount(d.targetAmount,0);if(n!==d.targetAmount){d.targetAmount=n;fixedCount++}}
-  if(d.targetDate&&!/^\d{4}-\d{2}-\d{2}$/.test(d.targetDate)){d.targetDate=null;fixedCount++}
+  if(d.targetDate&&!csvDateValid(d.targetDate)){d.targetDate=null;fixedCount++} /* 형식만 보던 정규식은 "2026-13-45"처럼 모양은 맞지만 달력상 존재하지 않는 날짜를 그대로 통과시켜 fmtDateFull()이 자바스크립트의 월/일 롤오버 때문에 전혀 엉뚱한 날짜(예: 2027년 2월 14일)를 보여줬다 — startDate/endDate/maturityDate와 동일하게 csvDateValid()로 달력 유효성까지 검증 */
   if(!d.owner){d.owner='all'}
   else if(d.owner!=='all'&&!validOwners.includes(d.owner)){d.owner='all';fixedCount++}
   goals.push(d);
