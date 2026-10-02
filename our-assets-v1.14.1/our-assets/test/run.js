@@ -5251,6 +5251,42 @@ test('mergeBudgetHistory: localMap/remoteMap이 undefined이거나 카테고리 
   assert.deepStrictEqual(j(sandbox.mergeBudgetHistory({ 식비: [] }, { 식비: [] })), { 식비: [] });
 });
 
+/* ---------- mergeFlatMap: DB.catIcon/DB.catVar(카테고리 아이콘·변동 카테고리, '타입:이름'→값
+ * 평평한 맵) 병합(app-evolve cycle125 develop). mergeRemoteDataIntoLocal이 신설(cycle97/111)
+ * 이래로 이 두 맵을 전혀 병합하지 않고 로컬 값을 그대로 둬서, 한 기기가 오프라인에서 고른
+ * 아이콘/변동 플래그가 다른 기기의 병합 경로 동기화 시 조용히 사라지던 버그. ---------- */
+test('mergeFlatMap: remote에만 있는 키는 그대로 포함된다', () => {
+  const out = sandbox.mergeFlatMap({}, { 'expense:문화': 'movie' });
+  assert.deepStrictEqual(j(out), { 'expense:문화': 'movie' });
+});
+test('mergeFlatMap: local에만 있는 키도 그대로 유지된다', () => {
+  const out = sandbox.mergeFlatMap({ 'expense:식비': 'food' }, {});
+  assert.deepStrictEqual(j(out), { 'expense:식비': 'food' });
+});
+test('mergeFlatMap: 같은 키가 양쪽에 다른 값으로 있으면 local 값이 이긴다', () => {
+  const out = sandbox.mergeFlatMap({ 'expense:식비': 'food' }, { 'expense:식비': 'rice' });
+  assert.deepStrictEqual(j(out), { 'expense:식비': 'food' });
+});
+test('mergeFlatMap: localMap/remoteMap이 undefined여도 터지지 않는다', () => {
+  assert.deepStrictEqual(j(sandbox.mergeFlatMap(undefined, undefined)), {});
+  assert.deepStrictEqual(j(sandbox.mergeFlatMap({ a: 1 }, undefined)), { a: 1 });
+  assert.deepStrictEqual(j(sandbox.mergeFlatMap(undefined, { b: 2 })), { b: 2 });
+});
+test('mergeRemoteDataIntoLocal: DB.catIcon/DB.catVar도 mergeFlatMap으로 병합된다(이전엔 전혀 병합 안 돼 로컬 값이 조용히 원격 변경을 덮어씀)', () => {
+  sandbox.DB = minimalMergeDB({
+    catIcon: { 'expense:식비': 'food' },
+    catVar: { 'expense:식비': true },
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    catIcon: { 'expense:문화': 'movie', 'expense:식비': 'rice' },
+    catVar: { 'expense:교통': true },
+    deletedIds: {},
+  });
+  assert.strictEqual(sandbox.DB.catIcon['expense:문화'], 'movie', 'remote에만 있던 아이콘도 들어와야 함');
+  assert.strictEqual(sandbox.DB.catIcon['expense:식비'], 'food', '같은 키는 local 값이 이겨야 함');
+  assert.strictEqual(sandbox.DB.catVar['expense:교통'], true, 'remote에만 있던 변동 플래그도 들어와야 함');
+});
+
 /* ---------- gcTombstones: migrate()가 부팅마다 DB.deletedIds에서 오래된(maxAgeMs 이전) tombstone을
  * 걸러내는 순수 함수(app-evolve cycle95 advance) — GC 없이는 삭제할 때마다 쌓이기만 해 수년 사용 시
  * 무한히 커지고, 매 pushCloud/pullCloud마다 전체가 그대로 오간다. ---------- */

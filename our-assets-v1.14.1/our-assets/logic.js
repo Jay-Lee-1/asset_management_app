@@ -156,6 +156,19 @@ function mergeBudgetHistory(localMap,remoteMap){
  });
  return out;
 }
+/* DB.catIcon('타입:이름'→아이콘 키)·DB.catVar('타입:이름'→true, 변동 카테고리)처럼 id도 updatedAt도
+ * 없는 평평한 문자열 키 맵을 병합한다(app-evolve cycle125) — mergeRemoteDataIntoLocal이 이전엔 이
+ * 두 맵을 아예 병합하지 않고 로컬 값을 그대로 둬서, 한 기기가 오프라인에서 카테고리 아이콘을
+ * 고르거나 변동 카테고리로 지정한 뒤 다른 기기가 나중에 병합 경로로 동기화하면 그 변경이 조용히
+ * 사라지고(로컬 맵에 없는 키는 버려짐) 뒤이은 push가 사라진 상태를 클라우드에 영구히 되밀었다.
+ * mergeBudgetHistory와 동일한 관례(같은 키가 양쪽에 다른 값이면 local이 이김, 한쪽에만 있는 키는
+ * 그대로 포함)를 쓰되 항목이 배열이 아니라 단일 값이라 더 단순하다. 삭제는 대상이 아니다 —
+ * mergeNameList와 동일한 이유로(doDeleteCat/doRenameCat이 지운 키를 상대 기기의 '아직 안 지운'
+ * 값으로 되살리면 그 기기가 쓰던 값이 사라질 수 있음) 키가 사라지는 방향은 로컬에서 명시적으로
+ * 지운 뒤 다음 push로만 반영되게 둔다. */
+function mergeFlatMap(localMap,remoteMap){
+ return Object.assign({},remoteMap||{},localMap||{});
+}
 /* deletedIds는 삭제할 때마다(deleteTxnsUndo 등) 영구히 쌓이기만 하고 지금까지 지우는 경로가
  * 없어 수년 사용하면 무한히 커지고, 매 pushCloud/pullCloud마다 전체가 그대로 오간다. 순수 함수로
  * maxAgeMs(기본 400일)보다 오래된 tombstone만 걸러낸 새 객체를 반환한다(원본 불변). 이 기간이면

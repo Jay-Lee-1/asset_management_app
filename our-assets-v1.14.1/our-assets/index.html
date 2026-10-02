@@ -1305,7 +1305,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.17';
+const APP_VERSION='1.47.18';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1451,6 +1451,11 @@ function mergeRemoteDataIntoLocal(remoteData){
  ['expense','income','saving'].forEach(k=>{DB.categories[k]=mergeNameList(DB.categories[k]||[],remoteCats[k]||[],normName)});
  DB.owners=mergeNameList(DB.owners||[],remoteData.owners||[],normName);
  DB.budgetHistory=mergeBudgetHistory(DB.budgetHistory||{},remoteData.budgetHistory||{});
+ /* catIcon/catVar(카테고리 아이콘·변동 카테고리 플래그)도 budgetHistory와 같은 '카테고리 커스터마이징'
+  * 데이터인데 cycle122 goals 신설 이전부터 여기서 전혀 병합되지 않고 있었다(app-evolve cycle125) —
+  * mergeFlatMap()으로 budgetHistory와 동일한 병합 관례를 적용한다. */
+ DB.catIcon=mergeFlatMap(DB.catIcon,remoteData.catIcon);
+ DB.catVar=mergeFlatMap(DB.catVar,remoteData.catVar);
  migrate();invalidateBalances();
 }
 const comma=n=>Math.round(n||0).toLocaleString('ko-KR');
