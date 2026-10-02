@@ -1,15 +1,8 @@
 {
   "cycle": 123,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 118,
-      "phase": "develop",
-      "timestamp": "2026-10-01T07:20:00.000Z",
-      "summary": "doRenameOwner()가 ST.assetOwner/ST.plan.owner는 새 이름으로 옮기지만 예산 탭 ST.spendOwner(2298)는 이름변경 마이그레이션에서 빠져 있던 동일 버그 클래스 발견·수정. doRenameOwner(3119)에 `if(ST.spendOwner===old)ST.spendOwner=v` 추가. 기존 doRenameOwner 테스트 2개에 spendOwner 단언 확장. node test/run.js 747/747 통과. APP_VERSION 1.47.3->1.47.4, sw.js CACHE v265->v266.",
-      "commit": null
-    },
     {
       "cycle": 118,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-02T02:16:48.016Z",
       "summary": "critique(cycle122) 계획대로 순자산 목표(goal) 추적 기능을 신설했다. DB.goals=[](emptyDB/migrate 마이그레이션 안전) 필드 추가. logic.js에 goalPct(cur,target)와 goalProgress(goal,nwHistory,today) 순수함수 신설 — nwHistory 처음·끝 두 점으로 일평균 증가량을 구해 선형 투사(spendTrend류와 동일 원칙), 정체·감소 추세면 추측 투사 없이 projectedDate=null. index.html에 goalsSummaryCard()(목표 없으면 nwHistoryCard처럼 광고 없이 빈 문자열)·openGoalsList()·openGoalForm(id)·saveGoal(editing)·delGoal(id)를 asDraft/openBudgetPrompt/openRecManage/confirmSheet 등 기존 관례 그대로 추가. 진입점: 자산관리 탭 nwHistBody 바로 아래(목표 있을 때만)와 메뉴 › 가계부 그룹 › \"목표 관리\". MVP는 순자산 목표 1종으로 한정(카테고리별/자산별 목표는 다음 사이클 후보). test/run.js: FUNCTIONS에 신규 함수 9개 추가, 샌드박스에 goalDraft/goalNameValue/goalAmtValue 배선, goalPct/goalProgress 경계(0%·100%+·이력없음·음수진행·미래스냅샷무시) 7개+UI 13개 총 20개 테스트 추가. node test/run.js 777/777 -> 797/797 통과. APP_VERSION 1.47.12->1.47.13, sw.js CACHE v274->v275. pending_advance_plan을 null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 123,
+      "phase": "develop",
+      "timestamp": "2026-10-02T03:10:00.000Z",
+      "summary": "general-purpose 서브에이전트 조사로 planTransfer/planSplitTransfer(Plan 탭 '부족해요' 시트의 예정 이체 남기기)가 saveTx/saveRec/csvRowToImportTxn/sanitizeBackup과 달리 RANGE_FROM/RANGE_TO 경계검증을 전혀 안 거치고 DB.txns.push로 직접 적재되던 버그 발견·수정(cycle120에서 다룬 네 경로에 포함 안 됐던 별도 저장 경로). 날짜피커('날짜 선택')는 과거/미래 무제한 스크롤이 가능해 범위 밖 날짜를 고르면 '예정 이체를 남겼어요' 토스트는 뜨지만 allTxns(RANGE_FROM,RANGE_TO) 조회 범위 밖이라 가계부/홈/잔액계산 어디에도 다시 나타나지 않는 조용한 데이터 유실로 이어졌다. planTransfer(6049)·planSplitTransfer(6038) 시작부에 dateBelowRangeFloor/dateAboveRangeCeil 체크를 saveTx와 동일한 토스트로 추가. test/run.js에 네 함수×상하한 경계 회귀 테스트 4개 추가. node test/run.js 797/797 -> 801/801 통과. APP_VERSION 1.47.13->1.47.14, sw.js CACHE v275->v276.",
       "commit": null
     }
   ]

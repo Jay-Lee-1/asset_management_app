@@ -1305,7 +1305,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.13';
+const APP_VERSION='1.47.14';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6037,6 +6037,8 @@ function openFixShortfall(targetId,date,need){
 }
 function planSplitTransfer(plan,toId,date){
  if(twGuard())return;
+ if(dateBelowRangeFloor(date)){toast(`${RANGE_FROM} 이전 날짜는 저장할 수 없어요`);return}
+ if(dateAboveRangeCeil(date)){toast(`${RANGE_TO} 이후 날짜는 저장할 수 없어요`);return}
  const to=DB.assets.find(a=>a.id===toId);
  plan.forEach(p=>{
   DB.txns.push(touch({id:uid(),type:'transfer',category:'이체',
@@ -6048,6 +6050,8 @@ function planSplitTransfer(plan,toId,date){
 }
 function planTransfer(fromId,toId,date,amount){
  if(twGuard())return;
+ if(dateBelowRangeFloor(date)){toast(`${RANGE_FROM} 이전 날짜는 저장할 수 없어요`);return}
+ if(dateAboveRangeCeil(date)){toast(`${RANGE_TO} 이후 날짜는 저장할 수 없어요`);return}
  const from=DB.assets.find(a=>a.id===fromId),to=DB.assets.find(a=>a.id===toId);
  DB.txns.push(touch({id:uid(),type:'transfer',category:'이체',
   memo:`${to?to.name:''} 채우기`,amount,fromAssetId:fromId,toAssetId:toId,date,

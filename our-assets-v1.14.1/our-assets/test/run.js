@@ -7003,6 +7003,44 @@ test('planSplitTransfer: 여러 출처로 나눠 남기는 예정 이체 거래 
   assert.ok(sandbox.DB.txns.every((t) => t.updatedAt === 'test-updatedAt'), '나눠 남기는 예정 이체 거래 각각에 touch()가 호출되어야 함');
 });
 
+/* ---------- planTransfer/planSplitTransfer: 날짜피커('날짜 선택')로 고른 날짜가
+ * RANGE_FROM/RANGE_TO 범위를 벗어나도 saveTx/saveRec과 달리 아무 검증 없이 DB.txns.push로
+ * 직접 적재되던 경계버그(app-evolve cycle123 develop). 이 두 함수는 saveTx를 거치지 않아
+ * cycle120에서 saveTx/saveRec/csvRowToImportTxn/sanitizeBackup 네 곳에 추가한 대칭 검증이
+ * 전혀 적용되지 않았고, 범위 밖으로 저장된 거래는 allTxns(RANGE_FROM,RANGE_TO) 조회 범위
+ * 밖이라 "남겼어요" 토스트만 뜨고 가계부/홈 어디에도 다시 나타나지 않는 조용한 데이터 유실로
+ * 이어졌다. */
+test('planTransfer: RANGE_FROM 이전 날짜는 토스트만 뜨고 저장되지 않는다', () => {
+  setupFixShortfallDB();
+  sandbox.toastCalls = [];
+  sandbox.planTransfer('donor', 'assetA', '2022-12-31', 50000);
+  assert.strictEqual(sandbox.DB.txns.length, 0, 'RANGE_FROM 이전 날짜는 저장되면 안 됨');
+  assert.ok(sandbox.toastCalls.some((m) => m.includes('2023-01-01')), '하한 날짜를 알려주는 토스트가 떠야 함');
+});
+test('planTransfer: RANGE_TO 이후 날짜는 토스트만 뜨고 저장되지 않는다', () => {
+  setupFixShortfallDB();
+  sandbox.RANGE_TO = '2028-06-15';
+  sandbox.toastCalls = [];
+  sandbox.planTransfer('donor', 'assetA', '2028-06-16', 50000);
+  assert.strictEqual(sandbox.DB.txns.length, 0, 'RANGE_TO 이후 날짜는 저장되면 안 됨');
+  assert.ok(sandbox.toastCalls.some((m) => m.includes('2028-06-15')), '상한 날짜를 알려주는 토스트가 떠야 함');
+});
+test('planSplitTransfer: RANGE_FROM 이전 날짜는 토스트만 뜨고 저장되지 않는다', () => {
+  setupFixShortfallDB();
+  sandbox.toastCalls = [];
+  sandbox.planSplitTransfer([{ id: 'donor', amount: 30000 }], 'assetA', '2022-12-31');
+  assert.strictEqual(sandbox.DB.txns.length, 0, 'RANGE_FROM 이전 날짜는 저장되면 안 됨');
+  assert.ok(sandbox.toastCalls.some((m) => m.includes('2023-01-01')), '하한 날짜를 알려주는 토스트가 떠야 함');
+});
+test('planSplitTransfer: RANGE_TO 이후 날짜는 토스트만 뜨고 저장되지 않는다', () => {
+  setupFixShortfallDB();
+  sandbox.RANGE_TO = '2028-06-15';
+  sandbox.toastCalls = [];
+  sandbox.planSplitTransfer([{ id: 'donor', amount: 30000 }], 'assetA', '2028-06-16');
+  assert.strictEqual(sandbox.DB.txns.length, 0, 'RANGE_TO 이후 날짜는 저장되면 안 됨');
+  assert.ok(sandbox.toastCalls.some((m) => m.includes('2028-06-15')), '상한 날짜를 알려주는 토스트가 떠야 함');
+});
+
 /* ---------- fixShortfallDefaultDate/openFixShortfall: 부족해지는 날이 오늘/내일이면
  * '결제 전날'이 이미 지난 날짜가 되어, 부족 알림의 기본 이체일과 퀵픽 버튼이 과거 날짜를
  * 가리키고 그대로 선택하면 confirmed:false인 과거 날짜 이체가 DB.txns에 만들어지던
