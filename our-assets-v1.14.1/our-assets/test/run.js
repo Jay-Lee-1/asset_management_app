@@ -141,6 +141,7 @@ const FUNCTIONS = [
   'txScheduled', 'monthStats', 'monthStats2', 'expenseByCat', 'needGold', 'inQuietWindow', 'fmtSynced', 'rateStatusText',
   'nextBigOutflow', 'dday', 'balanceOn', 'nextOutflowCard', 'monthOutflowCard', 'planGaugeCard', 'homeAlertCard', 'renderHome',
   'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwHistoryCard', 'doRenameOwner', 'addOwner',
+  'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'syncGoalInputs', 'renderGoalForm', 'openGoalForm', 'saveGoal', 'delGoal',
   'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetToggleSel', 'visibleAssetsForSel', 'assetSelAll', 'activeSel',
   'modeSeg', 'monthNav', 'abbr', 'calCellsFor', 'ledSumInner', 'ledSumBox', 'ledSumTap', 'calPane', 'txRow', 'dayTxns',
   'ledgerRowsHtml', 'ledgerDayHeadHtml', 'renderLedger', 'selDayPartial',
@@ -262,6 +263,7 @@ const sandbox = {
   catRenameDraft: null,
   catAddDraft: null,
   asDraft: null,
+  goalDraft: null,
   lastToast: null,
   lastUndo: null,
   snapshotCalls: null,
@@ -402,7 +404,7 @@ const sandbox = {
   // asName은 syncAssetInputs()의 이름 trim() 회귀 테스트용(공백만 있는 이름이 그대로 저장되던 버그).
   // asNameValue가 undefined인 기본 상태에서는 null을 반환해, 이 mock 추가 이전처럼 다른 테스트의
   // syncAssetInputs()/saveAsset() 호출에서 asDraft.name이 건드려지지 않도록 한다.
-  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'budgetIn' ? { value: sandbox.budgetInValue } : id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-plan' ? sandbox.pagePlanEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : id === 'ledgerCard' ? (sandbox.ledgerCardMissing ? null : sandbox.ledgerCardEl) : id === 'assetBody' ? (sandbox.assetBodyMissing ? null : sandbox.assetBodyEl) : id === 'newOwner' ? (sandbox.newOwnerValue === undefined ? null : { value: sandbox.newOwnerValue }) : id === 'renameOwner' ? (sandbox.renameOwnerValue === undefined ? null : { value: sandbox.renameOwnerValue }) : null,
+  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'budgetIn' ? { value: sandbox.budgetInValue } : id === 'goalName' ? (sandbox.goalNameValue === undefined ? null : { value: sandbox.goalNameValue }) : id === 'goalAmt' ? (sandbox.goalAmtValue === undefined ? null : { value: sandbox.goalAmtValue }) : id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-plan' ? sandbox.pagePlanEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : id === 'ledgerCard' ? (sandbox.ledgerCardMissing ? null : sandbox.ledgerCardEl) : id === 'assetBody' ? (sandbox.assetBodyMissing ? null : sandbox.assetBodyEl) : id === 'newOwner' ? (sandbox.newOwnerValue === undefined ? null : { value: sandbox.newOwnerValue }) : id === 'renameOwner' ? (sandbox.renameOwnerValue === undefined ? null : { value: sandbox.renameOwnerValue }) : null,
   bkTextEl: { value: 'backup-text', select: () => {}, setSelectionRange: () => {} },
   // copyBackup()의 navigator.clipboard 체크가 ReferenceError 없이 "지원 안 함"으로 지나가게
   // 하는 최소 흉내(document.execCommand는 try/catch로 감싸져 있어 굳이 스텁이 필요 없음).
@@ -1128,6 +1130,64 @@ test('budgetProgress: 예산을 초과하면 over=true이고 바 길이는 100%�
   assert.strictEqual(r.over, true);
 });
 
+/* ---------- goalPct/goalProgress: 순자산 목표 진행률 + 추세 투사 (app-evolve cycle122 advance) ----------
+ * Plan 탭 광고 문구가 광고하던 '목표 달성' 기능이 실제로는 전혀 없었던 공백을 메우는 MVP.
+ * goalProgress는 nwHistory(일별 {date,nw} 스냅샷)의 처음·끝 두 점만으로 선형 추세를 투사하므로,
+ * 0%/100%+(이미 달성)/이력 없음/정체·감소(음수 진행) 네 경계를 모두 검증해 둔다. */
+test('goalPct: 목표 금액이 설정돼 있으면 0~100%로 선형 계산한다(0% 경계)', () => {
+  assert.strictEqual(sandbox.goalPct(0, 1000000), 0);
+  assert.strictEqual(sandbox.goalPct(500000, 1000000), 50);
+});
+test('goalPct: 100%를 넘으면 clamp한다(100%+ 경계) — 초과분을 그대로 보여주는 budgetProgress와 달리 바 하나뿐이라 clamp', () => {
+  assert.strictEqual(sandbox.goalPct(1000000, 1000000), 100);
+  assert.strictEqual(sandbox.goalPct(1500000, 1000000), 100);
+});
+test('goalPct: 목표 금액이 0 이하(미설정)면 모은 돈이 있으면 100%, 없으면 0%로 방어적으로 처리한다', () => {
+  assert.strictEqual(sandbox.goalPct(0, 0), 0);
+  assert.strictEqual(sandbox.goalPct(500, 0), 100);
+});
+test('goalProgress: 순자산 이력이 없으면(0건) 현재값 0·진행률 0%·투사 날짜 없음', () => {
+  const p = sandbox.goalProgress({ targetAmount: 1000000 }, [], '2026-02-01');
+  assert.strictEqual(p.cur, 0);
+  assert.strictEqual(p.pct, 0);
+  assert.strictEqual(p.remaining, 1000000);
+  assert.strictEqual(p.achieved, false);
+  assert.strictEqual(p.projectedDate, null);
+});
+test('goalProgress: 이미 목표를 달성했으면(100%+) achieved=true이고 투사 날짜는 null이다', () => {
+  const hist = [{ date: '2026-01-01', nw: 500000 }, { date: '2026-02-01', nw: 1200000 }];
+  const p = sandbox.goalProgress({ targetAmount: 1000000 }, hist, '2026-02-01');
+  assert.strictEqual(p.cur, 1200000);
+  assert.strictEqual(p.pct, 100);
+  assert.strictEqual(p.remaining, -200000);
+  assert.strictEqual(p.achieved, true);
+  assert.strictEqual(p.projectedDate, null);
+});
+test('goalProgress: 순자산이 꾸준히 늘고 있으면 일평균 증가량으로 도달일을 투사한다', () => {
+  const hist = [{ date: '2026-01-01', nw: 0 }, { date: '2026-01-11', nw: 100000 }]; // 10일간 10만원 증가 = 1만원/일
+  const p = sandbox.goalProgress({ targetAmount: 300000 }, hist, '2026-01-11');
+  assert.strictEqual(p.cur, 100000);
+  assert.strictEqual(p.remaining, 200000);
+  assert.strictEqual(p.achieved, false);
+  assert.strictEqual(p.projectedDate, '2026-01-31', '남은 20만원 ÷ 1만원/일 = 20일 뒤');
+});
+test('goalProgress: 순자산이 정체·감소 중(음수 진행)이면 추측 투사 없이 null을 돌려준다', () => {
+  const hist = [{ date: '2026-01-01', nw: 500000 }, { date: '2026-02-01', nw: 400000 }]; // 감소 추세
+  const p = sandbox.goalProgress({ targetAmount: 1000000 }, hist, '2026-02-01');
+  assert.strictEqual(p.cur, 400000);
+  assert.strictEqual(p.pct, 40);
+  assert.strictEqual(p.remaining, 600000);
+  assert.strictEqual(p.achieved, false);
+  assert.strictEqual(p.projectedDate, null, '감소 추세로는 도달일을 예측할 수 없다고 말해야 함(추측 금지)');
+});
+test('goalProgress: today 이후의 미래 스냅샷은 무시하고 그 시점까지의 이력만 본다', () => {
+  const hist = [{ date: '2026-01-01', nw: 100000 }, { date: '2026-06-01', nw: 999999 }];
+  const p = sandbox.goalProgress({ targetAmount: 200000 }, hist, '2026-01-01');
+  assert.strictEqual(p.cur, 100000, '미래 스냅샷을 섞어 쓰면 안 됨');
+  assert.strictEqual(p.pct, 50);
+  assert.strictEqual(p.projectedDate, null, '필터 후 이력이 1건뿐이면 추세를 계산할 수 없음');
+});
+
 /* ---------- budgetForMonth/setBudgetFrom: 예산은 시점별 이력이라 과거/미래 조회에 서로 다른 값을 돌려줘야 한다 ---------- */
 test('budgetForMonth: 이력이 없는 카테고리는 0(미설정)을 반환한다', () => {
   sandbox.DB = { budgetHistory: {} };
@@ -1850,6 +1910,112 @@ test('nwHistoryCard: 차트 svg는 장식용이라 aria-hidden="true"로 보조�
   const html = sandbox.nwHistoryCard();
   assert.ok(html.includes('<svg'), '점이 2개 이상이면 차트 svg가 렌더돼야 함');
   assert.ok(/<svg[^>]*\baria-hidden="true"/.test(html), 'svg 태그 자체에 aria-hidden="true"가 있어야 함');
+});
+
+/* ---------- 목표(Goals) UI: goalsSummaryCard/openGoalsList/openGoalForm/saveGoal/delGoal (app-evolve cycle122 advance) ---------- */
+test('goalsSummaryCard: 목표가 없으면 nwHistoryCard와 같은 원칙으로 아무것도 광고하지 않고 빈 문자열을 반환한다', () => {
+  sandbox.DB = { goals: [], nwHistory: [] };
+  assert.strictEqual(sandbox.goalsSummaryCard(), '');
+});
+test('goalsSummaryCard: 목표가 있으면 가장 가까운 목표의 진행률 카드를 보여준다', () => {
+  sandbox.DB = { goals: [{ id: 'g1', name: '내 집 마련', targetAmount: 1000000, targetDate: null }],
+    nwHistory: [{ date: '2026-01-01', nw: 500000 }] };
+  sandbox.TODAY = '2026-01-01';
+  const html = sandbox.goalsSummaryCard();
+  assert.ok(html.includes('내 집 마련'));
+  assert.ok(html.includes('50%'));
+});
+test('openGoalsList: 목표가 없으면 빈 상태 안내를 보여준다', () => {
+  sandbox.DB = { goals: [], nwHistory: [] };
+  sandbox.lastSheetHtml = null;
+  sandbox.openGoalsList();
+  assert.ok(sandbox.lastSheetHtml.includes('아직 목표가 없어요'));
+});
+test('openGoalsList: 목표가 있으면 목표별 진행률·목표일을 목록으로 보여준다', () => {
+  sandbox.DB = { goals: [{ id: 'g1', name: '비상금 1000만원', targetAmount: 10000000, targetDate: '2026-12-31' }],
+    nwHistory: [{ date: '2026-01-01', nw: 2000000 }] };
+  sandbox.TODAY = '2026-01-01';
+  sandbox.lastSheetHtml = null;
+  sandbox.openGoalsList();
+  assert.ok(sandbox.lastSheetHtml.includes('비상금 1000만원'));
+  assert.ok(sandbox.lastSheetHtml.includes('20%'));
+  assert.ok(sandbox.lastSheetHtml.includes('2026-12-31'));
+});
+test('openGoalForm: id 없이 열면 goalDraft가 빈 새 목표로 초기화된다(uid 스텁 경로)', () => {
+  sandbox.DB = { goals: [] };
+  sandbox.goalDraft = null;
+  sandbox.openGoalForm();
+  assert.strictEqual(sandbox.goalDraft.id, 'test-uid');
+  assert.strictEqual(sandbox.goalDraft.name, '');
+  assert.strictEqual(sandbox.goalDraft.targetAmount, 0);
+});
+test('openGoalForm: id를 넘기면 기존 목표를 복사해 goalDraft로 연다(원본은 수정되지 않음)', () => {
+  const g = { id: 'g1', name: '여행자금', type: 'networth', targetAmount: 3000000, targetDate: '2026-08-01' };
+  sandbox.DB = { goals: [g] };
+  sandbox.goalDraft = null;
+  sandbox.openGoalForm('g1');
+  assert.strictEqual(sandbox.goalDraft.name, '여행자금');
+  sandbox.goalDraft.name = '변경됨';
+  assert.strictEqual(g.name, '여행자금', '원본 DB.goals 항목이 그대로 보존돼야 함');
+});
+test('saveGoal: 이름이 비어 있으면 저장하지 않고 안내 토스트만 띄운다', () => {
+  sandbox.DB = { goals: [] };
+  sandbox.goalDraft = { id: 'test-uid', name: '', type: 'networth', targetAmount: 1000000, targetDate: null };
+  sandbox.goalNameValue = '   ';
+  sandbox.goalAmtValue = '1,000,000';
+  sandbox.lastToast = null;
+  sandbox.saveGoal(false);
+  assert.strictEqual(sandbox.DB.goals.length, 0);
+  assert.ok(sandbox.lastToast.includes('이름'));
+});
+test('saveGoal: 목표 금액이 0이면 저장하지 않고 안내 토스트만 띄운다', () => {
+  sandbox.DB = { goals: [] };
+  sandbox.goalDraft = { id: 'test-uid', name: '내 집 마련', type: 'networth', targetAmount: 0, targetDate: null };
+  sandbox.goalNameValue = '내 집 마련';
+  sandbox.goalAmtValue = '';
+  sandbox.lastToast = null;
+  sandbox.saveGoal(false);
+  assert.strictEqual(sandbox.DB.goals.length, 0);
+  assert.ok(sandbox.lastToast.includes('금액'));
+});
+test('saveGoal: 새 목표는 천단위 콤마가 섞인 입력(num() 파서 경로)도 올바르게 저장되고 폼을 닫는다', () => {
+  sandbox.DB = { goals: [] };
+  sandbox.goalDraft = { id: 'test-uid', name: '', type: 'networth', targetAmount: 0, targetDate: '2026-12-31' };
+  sandbox.goalNameValue = '내 집 마련';
+  sandbox.goalAmtValue = '1,000,000';
+  sandbox.saveGoal(false);
+  assert.strictEqual(sandbox.DB.goals.length, 1);
+  assert.strictEqual(sandbox.DB.goals[0].name, '내 집 마련');
+  assert.strictEqual(sandbox.DB.goals[0].targetAmount, 1000000);
+  assert.strictEqual(sandbox.DB.goals[0].targetDate, '2026-12-31');
+  assert.strictEqual(sandbox.goalDraft, null, '저장 후 draft는 비워야 함');
+});
+test('saveGoal: 기존 목표를 수정하면(id 일치) 같은 자리에서 교체되고 새 항목이 추가되지 않는다', () => {
+  sandbox.DB = { goals: [{ id: 'g1', name: '여행자금', type: 'networth', targetAmount: 3000000, targetDate: null }] };
+  sandbox.goalDraft = { id: 'g1', name: '', type: 'networth', targetAmount: 0, targetDate: null };
+  sandbox.goalNameValue = '여행자금(유럽)';
+  sandbox.goalAmtValue = '5,000,000';
+  sandbox.saveGoal(true);
+  assert.strictEqual(sandbox.DB.goals.length, 1);
+  assert.strictEqual(sandbox.DB.goals[0].id, 'g1');
+  assert.strictEqual(sandbox.DB.goals[0].name, '여행자금(유럽)');
+  assert.strictEqual(sandbox.DB.goals[0].targetAmount, 5000000);
+});
+test('delGoal: 바로 지우지 않고 확인 시트를 띄우며, 확인해야 DB.goals에서 제거된다', () => {
+  sandbox.DB = { goals: [{ id: 'g1', name: '여행자금', type: 'networth', targetAmount: 3000000, targetDate: null }] };
+  sandbox.confirmSheetCalls = [];
+  sandbox.delGoal('g1');
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 1, '바로 지우지 않고 확인 시트를 띄워야 함');
+  assert.strictEqual(sandbox.DB.goals.length, 1, '확인 전에는 그대로여야 함');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.goals.length, 0);
+});
+test('delGoal: 존재하지 않는 id를 넘기면 확인 시트조차 띄우지 않는다', () => {
+  sandbox.DB = { goals: [{ id: 'g1', name: '여행자금', type: 'networth', targetAmount: 3000000, targetDate: null }] };
+  sandbox.confirmSheetCalls = [];
+  sandbox.delGoal('없는id');
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0);
+  assert.strictEqual(sandbox.DB.goals.length, 1);
 });
 
 /* ---------- txnsToCSV: 거래 내역 CSV 내보내기 ---------- */

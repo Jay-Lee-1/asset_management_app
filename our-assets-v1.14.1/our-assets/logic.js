@@ -213,6 +213,34 @@ function budgetProgress(spent,budget){
  return{pct:Math.round(ratio*100),barPct:Math.min(100,ratio*100),over:spent>budget};
 }
 
+/* ================= GOALS (순자산 목표, 순수) ================= */
+/* target<=0(설정 전/잘못된 값)이면 비율이 무의미하므로, 현재 금액이 있으면 100%, 없으면 0%로 본다
+ * (budgetProgress의 '미설정=0%'과 달리 음수 목표는 원래 saveGoal이 막아 생기지 않지만, 방어적으로 처리) */
+function goalPct(cur,target){
+ if(!(target>0))return cur>0?100:0;
+ return Math.max(0,Math.min(100,Math.round(cur/target*100)));
+}
+/* 순자산 목표 진행률 + 추세 투사. nwHistory(일별 {date,nw} 스냅샷)의 처음·끝 두 점으로 하루 평균
+ * 증가량을 구해 남은 금액을 나누는 단순 선형 투사(spendTrend류와 동일하게 복잡한 회귀는 쓰지 않음).
+ * 이력이 1개 이하거나 증가세가 0 이하(정체·감소)면 목표 도달 시점을 예측할 수 없으므로 null —
+ * '못 간다'를 추측으로 단정하지 않고 모른다고 말하는 쪽을 택함. */
+function goalProgress(goal,nwHistory,today){
+ const hist=(nwHistory||[]).filter(h=>h.date<=today);
+ const cur=hist.length?hist[hist.length-1].nw:0;
+ const target=goal&&goal.targetAmount||0;
+ const pct=goalPct(cur,target);
+ const remaining=target-cur;
+ const achieved=target>0&&cur>=target;
+ let projectedDate=null;
+ if(!achieved&&remaining>0&&hist.length>=2){
+  const first=hist[0],last=hist[hist.length-1];
+  const days=daysBetween(first.date,last.date);
+  const rate=days>0?(last.nw-first.nw)/days:0;
+  if(rate>0)projectedDate=addDays(last.date,Math.ceil(remaining/rate));
+ }
+ return {cur,target,pct,remaining,achieved,projectedDate};
+}
+
 /* ================= CSV IMPORT (순수) ================= */
 /* RFC4180 스타일 CSV 파서. 따옴표로 감싼 필드 안의 콤마/줄바꿈/이스케이프된 큰따옴표("")를
    처리한다(txnsToCSV의 esc()가 만드는 형식과 대칭). BOM 제거, \r\n과 \n 둘 다 줄바꿈으로 인식. */

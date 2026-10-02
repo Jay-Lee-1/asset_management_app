@@ -1,19 +1,8 @@
 {
-  "cycle": 122,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "순자산 목표(goal) 추적 기능 신설 — DB.goals + goalProgress/goalPct + 목표 화면",
-    "why": "앱 전체 grep 결과 목표/goal/targetAmount/targetDate 관련 코드가 전무함에도 Plan 탭 광고 문구(index.html:6426)가 '통장 흐름 · 목표 달성 도우미'라며 존재하지 않는 기능을 광고 중. 122사이클 동안 버그 수정·a11y·날짜 경계·owner 마이그레이션 등은 집중적으로 다뤄졌지만 신규 기능 확장은 한 번도 없었던 공백. DB.nwHistory(1980, 일별 {date,ta,td,nw,byOwner} 스냅샷)와 spendTrend(4290)류의 추세 계산 패턴이 이미 있어 재사용 가능, tx/rec/asset 상태기계를 건드리지 않는 순수 추가라 리스크 낮음.",
-    "approach": "DB.goals=DB.goals||[] 필드 신설({id,name,type:'networth',targetAmount,targetDate,createdAt}), 마이그레이션 안전(기본값 []). logic.js에 goalProgress(goal,nwHistory,today)→{pct,remaining,projectedDate}(최근 nwHistory 델타로 spendTrend류 평균 추세 투사) 및 goalPct(cur,target) clamp 순수함수 신설. index.html에 openGoalsList()/openGoalForm()/saveGoal()/deleteGoal()을 기존 openSheet/field-card 패턴으로 추가, .budget-progress 바 마크업 재사용, Home의 nwHistoryCard(2749) 근처와 Menu에 진입점 추가. MVP는 순자산 목표 1종으로 한정(카테고리별/자산별 목표는 이후 사이클). test/run.js에 goalProgress/goalPct를 FUNCTIONS에 추가하고 0%/100%+/이력없음/음수진행 경계 테스트 작성. build/test(node test/run.js) 통과 확인 후 APP_VERSION과 sw.js CACHE 버전 올리고 커밋."
-  },
+  "cycle": 123,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 117,
-      "phase": "advance",
-      "timestamp": "2026-10-01T06:10:23.594Z",
-      "summary": "critique(cycle117) 계획대로 자산별 거래내역(계좌 명세서) 뷰 진입점을 추가했다. logic.js에 matchesAssetId(t,assetId) 신설, ST.hist.assetId 필드+filteredHist 캐시키/필터 반영, openAssetHistory(assetId) 신설(go('history'), 날짜범위 불변), Assets 탭 자산 행에 stopPropagation act-btn 추가, History 필터바에 계좌 칩+해제 버튼(histClearAssetFilter). modeSeg/histClearFilter/sumTap에도 assetId 일관 반영. test/run.js 회귀 테스트 4개 추가. node test/run.js 743/743 -> 747/747 통과. APP_VERSION 1.47.2->1.47.3, sw.js CACHE v264->v265. pending_advance_plan을 null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 118,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-02T01:15:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(a11y·cloud sync·CDN SRI·파일분할/jsdom·백그라운드 푸시·tx/rec 폼 통합·owner 마이그레이션·orphan 함수·자산별 거래내역·요약카드 탭 배선·FX/금/주식 수량 가드·CSV/삭제cascade/백버튼/PWA/핀치줌·RANGE_FROM/RANGE_TO 날짜 경계·PBKDF2/복구코드/알림인터벌/쿼터·undo tombstone·성능추측·부부정산/대출상환/예산경고류·검색금액매칭/평단가단순설계/정렬모드·recApply skip/edits·이체/저축 picker self-exclusion·주식 티커 포맷·netlify rates/stock 재시도는 모두 이미 다뤄졌거나 근거부족·의도된 설계로 기각 확정이라 제외 지시). 새로 발견: DB 스키마/코드 전체에 목표(goal/target) 관련 필드·함수가 전무한데 Plan 탭 광고 문구(index.html:6426, adSlot.plan)가 '통장 흐름 · 목표 달성 도우미'라며 존재하지 않는 목표 달성 기능을 광고 중임을 grep으로 확인(직접 재검증: '목표' 전체 검색 결과 이 광고 문구 1곳뿐). DB.nwHistory(1980, 일별 순자산 스냅샷)·spendTrend(4290) 등 재사용 가능한 추세 인프라는 이미 존재. 122사이클 동안 버그 수정/a11y/날짜 경계류에 집중되어 신규 기능 확장 사이클이 전무했던 공백으로 최우선 채택. pending_advance_plan에 DB.goals+goalProgress/goalPct 순수함수+openGoalsList/openGoalForm/saveGoal/deleteGoal+진입점+테스트(순자산 목표 MVP 한정) 저장. 러너업(기각): 카테고리 지출 파이차트(이미 비율 막대+추세 배지로 충분, 저가치) / CSV에서 반복거래 템플릿 제외(JSON 백업이 이미 커버, 사소) / 오프라인·동기화 상태 배너(이미 CLOUD_SYNC_STATE/fmtSynced/홈 알림카드로 충분히 성숙). 코드 변경 없음(읽기 전용 조사, 서브에이전트 보고 핵심 사실은 오케스트레이팅 세션이 grep으로 재확인).",
+      "commit": null
+    },
+    {
+      "cycle": 122,
+      "phase": "advance",
+      "timestamp": "2026-10-02T02:16:48.016Z",
+      "summary": "critique(cycle122) 계획대로 순자산 목표(goal) 추적 기능을 신설했다. DB.goals=[](emptyDB/migrate 마이그레이션 안전) 필드 추가. logic.js에 goalPct(cur,target)와 goalProgress(goal,nwHistory,today) 순수함수 신설 — nwHistory 처음·끝 두 점으로 일평균 증가량을 구해 선형 투사(spendTrend류와 동일 원칙), 정체·감소 추세면 추측 투사 없이 projectedDate=null. index.html에 goalsSummaryCard()(목표 없으면 nwHistoryCard처럼 광고 없이 빈 문자열)·openGoalsList()·openGoalForm(id)·saveGoal(editing)·delGoal(id)를 asDraft/openBudgetPrompt/openRecManage/confirmSheet 등 기존 관례 그대로 추가. 진입점: 자산관리 탭 nwHistBody 바로 아래(목표 있을 때만)와 메뉴 › 가계부 그룹 › \"목표 관리\". MVP는 순자산 목표 1종으로 한정(카테고리별/자산별 목표는 다음 사이클 후보). test/run.js: FUNCTIONS에 신규 함수 9개 추가, 샌드박스에 goalDraft/goalNameValue/goalAmtValue 배선, goalPct/goalProgress 경계(0%·100%+·이력없음·음수진행·미래스냅샷무시) 7개+UI 13개 총 20개 테스트 추가. node test/run.js 777/777 -> 797/797 통과. APP_VERSION 1.47.12->1.47.13, sw.js CACHE v274->v275. pending_advance_plan을 null로 비움.",
       "commit": null
     }
   ]

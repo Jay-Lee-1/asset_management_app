@@ -1305,7 +1305,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.12';
+const APP_VERSION='1.47.13';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1608,7 +1608,7 @@ function emptyDB(){return {
   settings:{themeMode:(typeof DB!=='undefined'&&DB&&DB.settings&&DB.settings.themeMode)||'system',includeScheduled:false,assetSort:'custom',groupOrder:[...DEFAULT_GROUP_ORDER]},
   owners:['나','배우자','공용'],
   rates:{goldPerG:0,fx:{USD:0,JPY:0,EUR:0},stocks:{}},
-  assets:[],txns:[],recurrences:[],inquiries:[],
+  assets:[],txns:[],recurrences:[],inquiries:[],goals:[],
   categories:{expense:[...EXP_CATS_DEFAULT],income:[...INC_CATS_DEFAULT],saving:[...SAV_CATS_DEFAULT]},
  };}
 function dbIsEmpty(db){return !db||!((db.assets&&db.assets.length)||(db.txns&&db.txns.length))}
@@ -2000,6 +2000,7 @@ function migrate(){
  }
  if(!DB.categories.expense||!DB.categories.expense.length)DB.categories.expense=[...EXP_CATS_DEFAULT];
  DB.inquiries=DB.inquiries||[];
+ DB.goals=DB.goals||[]; /* 순자산 목표: [{id,name,type:'networth',targetAmount,targetDate,createdAt}] */
  DB.deletedIds=gcTombstones(DB.deletedIds||{},Date.now()); /* 부팅 때마다 오래된 tombstone 정리(GC) */
 }
 /* storageOutcomeMsg: localStorage 쓰기 시도 결과(ok)와 직전 상태(wasOk)를 놓고 어떤 토스트를
@@ -2392,6 +2393,80 @@ function nwHistoryCard(owner){
  </div>`;
 }
 
+/* ===== 순자산 목표 (MVP: 순자산 1종, DB.goals) =====
+   진행률·투사(goalProgress)는 logic.js 순수 함수 — 여기는 렌더/폼만 담당. */
+function nearestGoal(){ /* 목표일 있는 것 중 가장 가까운 것 → 없으면 등록된 첫 목표 */
+ const gs=DB.goals||[];if(!gs.length)return null;
+ const withDate=gs.filter(g=>g.targetDate).sort((a,b)=>a.targetDate<b.targetDate?-1:1);
+ return withDate[0]||gs[0];
+}
+function goalRowHTML(g){
+ const p=goalProgress(g,DB.nwHistory,TODAY);
+ const color=p.achieved?'var(--income)':'var(--brand)';
+ return `<div class="pg-row" tabindex="0" role="button" aria-label="${esc(g.name)} 목표 진행률 ${p.pct}%" onclick="openGoalForm('${g.id}')" onkeydown="rowKeydown(event,()=>openGoalForm('${g.id}'))">
+   <div class="pg-head"><span class="pg-k">${esc(g.name)}${p.achieved?`<span class="pg-done" style="color:${color};background:color-mix(in srgb,${color} 15%,transparent)">달성</span>`:''}</span>
+     <span class="pg-nums"><b class="num">${comma(p.cur)}</b><span class="pg-of num"> / ${comma(p.target)}원</span></span></div>
+   <div class="pg-bar"><i style="width:${p.pct}%;background:${color}"></i></div>
+   ${!p.achieved&&p.projectedDate?`<div class="msub2" style="margin-top:4px">이대로면 ${shortDate2(p.projectedDate)}쯤 달성 예상</div>`:''}
+ </div>`;
+}
+/* 자산관리 탭 순자산 추이 카드 아래에 꽂는 요약 — 목표가 없으면 광고하지 않고 그냥 숨김(nwHistoryCard와 동일 원칙) */
+function goalsSummaryCard(){
+ const gs=DB.goals||[];
+ if(!gs.length)return '';
+ return `<div class="section-title">목표 <span class="link" role="button" tabindex="0" aria-label="목표 관리" onclick="openGoalsList()" onkeydown="rowKeydown(event,()=>openGoalsList())">${gs.length>1?'모두 보기':'관리'} ${svg('chev')}</span></div>
+  <div class="card pg-card">${goalRowHTML(nearestGoal())}</div>`;
+}
+function openGoalsList(){
+ const gs=DB.goals||[];
+ const body=gs.length?`<div class="card" style="margin-bottom:6px">${gs.map(g=>{
+   const p=goalProgress(g,DB.nwHistory,TODAY);
+   return `<div class="manage-row" tabindex="0" role="button" aria-label="${esc(g.name)} 목표 진행률 ${p.pct}%" onclick="openGoalForm('${g.id}')" onkeydown="rowKeydown(event,()=>openGoalForm('${g.id}'))">
+    <div class="avatar a-save" style="width:38px;height:38px">${svg('target')}</div>
+    <div style="flex:1;min-width:0"><div class="mn">${esc(g.name)} ${p.achieved?'<span class="mini">달성</span>':''}</div>
+     <div class="msub">${comma(p.cur)} / ${comma(p.target)}원 · ${p.pct}%</div>
+     ${g.targetDate?`<div class="msub2">목표일 ${g.targetDate}</div>`:''}</div>
+    <div class="mc">${svg('chev')}</div></div>`;
+ }).join('')}</div>`:`<div class="empty"><div class="ei">${svg('target')}</div><div class="et">아직 목표가 없어요</div><div class="es">순자산 목표를 세우면 진행 상황을 추적할 수 있어요</div></div>`;
+ openSheet(`<h3>목표 관리</h3><div class="desc">탭하면 수정·삭제할 수 있어요</div>${body}
+  <div style="height:14px"></div><button class="btn btn-primary" onclick="openGoalForm()">${svg('plus')} 목표 추가</button>`);
+}
+let goalDraft=null;
+function openGoalForm(id){
+ const g=id?(DB.goals||[]).find(x=>x.id===id):null;
+ goalDraft=g?{...g}:{id:uid(),name:'',type:'networth',targetAmount:0,targetDate:'',createdAt:Date.now()};
+ renderGoalForm(!!g);
+}
+function syncGoalInputs(){const d=goalDraft;if(!d)return;if($('goalName'))d.name=$('goalName').value||'';if($('goalAmt'))d.targetAmount=num($('goalAmt'))}
+function renderGoalForm(editing){
+ const d=goalDraft;
+ openSheet(`<h3>${editing?'목표 수정':'목표 추가'}</h3><div class="desc">순자산이 이 금액에 도달하는 걸 목표로 추적해요</div>
+  <div class="field"><label for="goalName">목표 이름</label><div class="field-clear"><input id="goalName" value="${esc(d.name||'')}" placeholder="예: 내 집 마련 자금"><button type="button" class="fc-x" aria-label="이름 지우기" onclick="clrInput('goalName')">✕</button></div></div>
+  <div class="field"><label for="goalAmt">목표 순자산 (원)</label><div class="field-clear"><input id="goalAmt" class="num" inputmode="numeric" value="${d.targetAmount?comma(d.targetAmount):''}" placeholder="0" oninput="fmtAmt(this)"><button type="button" class="fc-x" aria-label="목표 금액 지우기" onclick="clrInput('goalAmt')">✕</button></div></div>
+  <div class="field"><label>목표일 (선택)</label><div class="pick ${d.targetDate?'':'placeholder'}" style="cursor:pointer" tabindex="0" role="button" aria-label="목표일 ${d.targetDate?fmtDateFull(d.targetDate):'선택'}" onclick="syncGoalInputs();openFieldDatePicker(goalDraft.targetDate||TODAY,ds=>{goalDraft.targetDate=ds;renderGoalForm(${editing})})" onkeydown="rowKeydown(event,()=>{syncGoalInputs();openFieldDatePicker(goalDraft.targetDate||TODAY,ds=>{goalDraft.targetDate=ds;renderGoalForm(${editing})})})">
+    <div class="pav a-save">${svg('calendar')}</div><div class="pbody"><div class="pn">${d.targetDate?fmtDateFull(d.targetDate):'목표일 선택'}</div></div><div class="pc">${d.targetDate?`<button type="button" class="fc-x" style="display:inline-flex;position:static;transform:none" aria-label="목표일 지우기" onclick="event.stopPropagation();goalDraft.targetDate='';renderGoalForm(${editing})" onkeydown="event.stopPropagation()">✕</button>`:svg('chev')}</div></div></div>
+  <div class="two-btn"><button class="btn btn-soft cancel" onclick="closeSheet()">취소</button>
+    <button class="btn btn-primary" onclick="saveGoal(${editing})">${editing?'수정하기':'추가하기'}</button></div>
+  ${editing?`<button class="del-link" onclick="delGoal('${d.id}')">${svg('trash')} 이 목표 삭제</button>`:''}`);
+ setTimeout(()=>{const n=$('goalName');if(n&&!editing)n.focus()},300);
+}
+function saveGoal(editing){
+ syncGoalInputs();const d=goalDraft;if(!d)return;
+ d.name=(d.name||'').trim();
+ if(!d.name){toast('목표 이름을 입력해 주세요');return}
+ if(!(d.targetAmount>0)){toast('목표 금액을 입력해 주세요');return}
+ const rec={id:d.id,name:d.name,type:'networth',targetAmount:Math.round(d.targetAmount),targetDate:d.targetDate||null,createdAt:d.createdAt||Date.now()};
+ const i=(DB.goals||[]).findIndex(x=>x.id===d.id);
+ if(i>=0)DB.goals[i]=rec;else DB.goals.push(rec);
+ save();goalDraft=null;closeSheet();renderCurrent();toast(editing?'목표를 수정했어요':'목표를 추가했어요');
+}
+function delGoal(id){
+ const g=(DB.goals||[]).find(x=>x.id===id);if(!g)return;
+ confirmSheet('목표를 삭제할까요?',`'${esc(g.name)}' 목표를 더 이상 추적하지 않아요.`,'삭제',()=>{
+  DB.goals=(DB.goals||[]).filter(x=>x.id!==id);goalDraft=null;save();renderCurrent();toast('목표를 삭제했어요');
+ });
+}
+
 /* ② 오늘 브리핑 카드 */
 function expenseBreakdownCard(cats,_ignore){
  if(!cats.length)return '';
@@ -2747,6 +2822,7 @@ function renderAssets(){
  <div class="nw-carousel" id="nwCarousel" data-n="${_ol.length}" data-loop="${_ol.length>1?1:0}"${_ol.length>1?' tabindex="0" role="group" aria-label="귀속별 자산 보기"':''}>${_ol.length>1?nwPane(_ol[_ol.length-1],TA,TD):''}${_ol.map(o=>nwPane(o,TA,TD)).join('')}${_ol.length>1?nwPane(_ol[0],TA,TD):''}</div>
  ${_ol.length>1?`<div class="nw-dots">${_ol.map((o,i)=>`<button type="button" class="${i===actIdx?'on':''}" aria-label="${esc(o==='all'?'전체':o)} 보기" aria-current="${i===actIdx?'true':'false'}" onclick="gotoNwOwner(${i})"></button>`).join('')}</div>`:''}
  <div id="nwHistBody">${nwHistoryCard(ST.assetOwner)}</div>
+ ${goalsSummaryCard()}
  <div class="as-tools${ST.aSel.mode?' hidden':''}">
    <div class="as-actions">${ST.editAssets?`<button class="as-tbtn primary" onclick="ST.editAssets=false;save();renderAssets()">${svg('check')} 완료</button>`:
     `<button class="as-tbtn" onclick="openSortSheet()">${svg('sort')} 정렬</button>
@@ -4163,6 +4239,7 @@ function renderMenu(){
    {ic:'tag',l:'카테고리 관리',a:"openCatManage('expense')"},
    {ic:'users',l:'귀속 관리',v:DB.owners.length+'개',a:"asDraft=null;openOwnerSheet()"},
    {ic:'repeat',l:'반복 내역 관리',v:DB.recurrences.length+'개',a:"openRecManage()"},
+   {ic:'target',l:'목표 관리',v:DB.goals.length+'개',a:"openGoalsList()"},
   ]},
   {cap:'알림 · 기준',items:[
    {ic:'check',l:'이체 확인',sw:!!DB.settings.confirmTransfers,a:"toggleConfirmTransfers()"},
