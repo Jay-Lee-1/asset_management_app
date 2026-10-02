@@ -1,6 +1,6 @@
 {
   "cycle": 127,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
@@ -134,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-02T17:05:00.000Z",
       "summary": "critique(cycle126) 계획대로 txRow()/histRow()의 중복을 공용 txRowCore(t,sel) 헬퍼로 통합했다. sel={mode,has(id),onToggle}로 선택 상태 소스와 토글 핸들러 이름만 호출부가 주입하도록 캡슐화 — sign/cls/av/ic/glyph/faN/taN/asset 계산, 선택모드 마크업(sel-check/swipe-content), 일반모드 마크업(confirm-btn 포함)을 한 곳에만 작성. txRow(t){return txRowCore(t,{mode:ST.lSel.mode,has:id=>ST.lSel.ids.has(id),onToggle:'ledgerToggleSel'})}, histRow(t){...ledgerToggleSel 대신 ST.hist.selMode/ST.hist.sel/'histToggleSel'...}로 얇은 래퍼화해 기존 호출부(ledgerRowsHtml/updateHist groupHTML/wireLongPress 대상)는 손대지 않음. test/run.js FUNCTIONS에 txRowCore 등록. 회귀 테스트 3개 추가: 비선택 모드는 txRow/histRow가 바이트 단위로 완전히 동일한 문자열을 내야 함, 선택 모드(미선택/선택됨 두 상태)는 토글 핸들러 이름만 바꿔치면 나머지가 완전히 같아야 함 — 향후 누군가 한쪽 함수만 손대 다시 갈라지는 걸 실행 기반으로 잡아낸다. node test/run.js 847/847 -> 850/850 통과. APP_VERSION 1.47.21->1.47.22, sw.js CACHE v283->v284. pending_advance_plan을 null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 127,
+      "phase": "develop",
+      "timestamp": "2026-10-02T19:27:51.468Z",
+      "summary": "general-purpose 서브에이전트 조사로 notifyAlertInfo()(index.html homeAlerts 근처)의 저축 만기(mat) OS 알림 문구 버그 발견·수정. homeAlerts()의 mat 포함 조건(a.maturityDate<=addDays(TODAY,7))은 하한이 없어 doMaturity()로 아직 처리하지 않은 지난 만기도 계속 알림 대상에 남는데, notifyAlertInfo는 al.date<=addDays(TODAY,1)이면 날짜가 TODAY가 아니기만 하면 무조건 \"내일 만기\"로 단정해, 실제로는 여러 날 지난 만기를 \"내일 만기\"라고 잘못 알리고 있었다(TODAY=2026-06-15, date=2026-06-05로 실제 함수 재현해 확인). overdue=al.date<TODAY 분기를 추가해 지난 만기는 제목/본문을 \"저축 만기가 지났어요\"로 구분하고, 오늘/내일 동작은 그대로 유지. 홈 카드(homeAlertCard)는 shortDate로 실제 날짜를 보여줘 이 버그의 영향을 받지 않음(OS 푸시 알림 경로만 해당). test/run.js: 기존 mat 테스트에 본문 텍스트 단언 보강 + overdue(10일 지남/1일 지남 두 케이스) 신규 테스트 1개 추가. node test/run.js 850/850 -> 851/851 통과. APP_VERSION 1.47.22->1.47.23, sw.js CACHE v284->v285.",
       "commit": null
     }
   ]

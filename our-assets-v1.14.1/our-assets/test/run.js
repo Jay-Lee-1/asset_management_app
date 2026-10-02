@@ -7683,10 +7683,28 @@ test('notifyAlertInfo: 저축 만기(mat)는 오늘·내일만 알림 대상이�
   sandbox.TODAY = '2026-06-15';
   const today = sandbox.notifyAlertInfo({ kind: 'mat', assetId: 's1', name: '적금', date: '2026-06-15', amount: 1000000 });
   assert.ok(today && today.key === 'mat:s1:2026-06-15');
+  assert.ok(today.body.includes('오늘'), '오늘 만기면 본문에 "오늘"이 들어가야 함');
   const tomorrow = sandbox.notifyAlertInfo({ kind: 'mat', assetId: 's1', name: '적금', date: '2026-06-16', amount: 1000000 });
   assert.ok(tomorrow, '내일 만기는 아직 임박 알림 대상이어야 함');
+  assert.ok(tomorrow.body.includes('내일'), '내일 만기면 본문에 "내일"이 들어가야 함');
   const dayAfter = sandbox.notifyAlertInfo({ kind: 'mat', assetId: 's1', name: '적금', date: '2026-06-17', amount: 1000000 });
   assert.strictEqual(dayAfter, null, '이틀 뒤 만기는 아직 알림 대상이 아니어야 함');
+});
+/* homeAlerts()의 'mat' 포함 조건(a.maturityDate<=addDays(TODAY,7))은 하한이 없어, doMaturity()로
+ * 아직 처리하지 않은 지난 만기(overdue)도 계속 포함된다 — notifyAlertInfo가 날짜만 보고
+ * "오늘이 아니면 내일"로 단정하면 이미 여러 날 지난 만기를 "내일 만기"라고 잘못 알리게 된다
+ * (app-evolve cycleN develop에서 발견). overdue는 별도 문구("만기가 지났어요")로 구분해야 한다. */
+test('notifyAlertInfo: 이미 지난 저축 만기(overdue, doMaturity 미처리)는 "내일"이 아니라 "지났어요"로 알린다', () => {
+  sandbox.TODAY = '2026-06-15';
+  const overdue = sandbox.notifyAlertInfo({ kind: 'mat', assetId: 's1', name: '적금', date: '2026-06-05', amount: 1000000 });
+  assert.ok(overdue, '지난 만기도 계속 알림 대상이어야 함(사용자가 아직 이체 처리를 안 했으므로)');
+  assert.ok(!overdue.body.includes('내일'), '10일 지난 만기를 "내일 만기"라고 말하면 안 됨');
+  assert.ok(overdue.body.includes('지났'), '지난 만기는 본문에 "지났다"는 사실이 드러나야 함');
+  assert.ok(overdue.title.includes('지났'), '제목도 "임박"이 아니라 "지났다"로 구분돼야 함');
+  // 지난 지 하루뿐(어제)이어도 overdue 분기를 타야 한다(오늘/내일이 아님)
+  const yesterday = sandbox.notifyAlertInfo({ kind: 'mat', assetId: 's1', name: '적금', date: '2026-06-14', amount: 1000000 });
+  assert.ok(yesterday.body.includes('지났'));
+  assert.ok(!yesterday.body.includes('내일'));
 });
 test('pickNotifyAlerts: 이미 알림 보낸 key는 다시 보내지 않고(dedupe), 처음 보는 key만 toNotify에 담긴다', () => {
   sandbox.TODAY = '2026-06-15';

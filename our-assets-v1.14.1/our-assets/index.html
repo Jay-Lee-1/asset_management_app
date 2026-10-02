@@ -1305,7 +1305,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.22';
+const APP_VERSION='1.47.23';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6227,7 +6227,11 @@ function homeAlerts(neg){
  * 급하지 않거나 홈 카드로 충분해 대상에서 뺀다. */
 function notifyAlertInfo(al){
  if(al.kind==='confirm')return{key:`confirm:${al.id}:${al.date}`,title:'이체 확인이 필요해요',body:`${al.from} → ${al.to} · ${comma(al.amount)}원 이체하셨나요?`};
- if(al.kind==='mat'&&al.date<=addDays(TODAY,1))return{key:`mat:${al.assetId}:${al.date}`,title:'저축 만기가 임박했어요',body:`${al.name} · ${al.date===TODAY?'오늘':'내일'} 만기 · ${comma(al.amount)}원`};
+ if(al.kind==='mat'&&al.date<=addDays(TODAY,1)){ /* date<TODAY(아직 doMaturity()로 처리 안 된 지난 만기)까지 포함되므로 '내일'로 잘못 말하지 않게 분기 */
+  const overdue=al.date<TODAY;
+  const when=overdue?'만기가 지났어요':(al.date===TODAY?'오늘':'내일');
+  return{key:`mat:${al.assetId}:${al.date}`,title:overdue?'저축 만기가 지났어요':'저축 만기가 임박했어요',body:overdue?`${al.name} · ${when} · ${comma(al.amount)}원`:`${al.name} · ${when} 만기 · ${comma(al.amount)}원`};
+ }
  if(al.kind==='budgetOver')return{key:`budget:${al.cat}:${TODAY.slice(0,7)}`,title:'예산을 초과했어요',body:`${al.cat} · ${comma(al.spent)}원 / ${comma(al.budget)}원`};
  if(al.kind==='budgetOverMulti')return{key:`budgetMulti:${TODAY.slice(0,7)}`,title:'예산을 초과했어요',body:`${al.count}개 카테고리가 이번 달 예산을 넘었어요`};
  return null;
