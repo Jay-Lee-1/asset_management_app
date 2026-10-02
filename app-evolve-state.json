@@ -1,6 +1,6 @@
 {
   "cycle": 122,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
     {
@@ -141,6 +141,13 @@
       "phase": "develop",
       "timestamp": "2026-10-01T23:15:18.377Z",
       "summary": "이체/저축 입력 화면(txOpenAsset/recOpenAsset)의 보내는/받는 자산 picker가 이미 고른 반대쪽 자산을 제외하지 않던 self-reference 버그 발견·수정 — asOpenMat()의 만기이체 picker는 excludeId로 자기 자신을 걸러내는데(cycle34) 같은 문제가 이체/저축 폼 from/to picker엔 전혀 막혀있지 않아 saveTx/saveRec의 fromAssetId===toAssetId 가드(저장 시점)에야 걸렸다. _applyOpenAsset(index.html:3447)에 excludeId를 추가하되 type이 transfer/saving일 때만 반대쪽 필드를 넘기도록 스코프 제한(expense/income은 저장 시점에야 반대쪽 필드가 null로 치워지므로 무조건 적용하면 스테일 값으로 자산이 숨을 위험). test/run.js에 _applyOpenAsset 회귀 테스트 4개 추가(transfer/saving은 제외 확인, expense/income은 스테일 값 무시 확인). node test/run.js 773/773 -> 777/777 통과. APP_VERSION 1.47.11->1.47.12, sw.js CACHE v273->v274.",
+      "commit": null
+    },
+    {
+      "cycle": 122,
+      "phase": "review",
+      "timestamp": "2026-10-02T00:10:00.000Z",
+      "summary": "develop 커밋(7ede719, 이체/저축 자산 picker self-exclusion 수정)을 검토. openAssetPicker의 excludeId 필터링(6276)과 호출 경로(txOpenAsset/recOpenAsset→_applyOpenAsset, 유일한 두 호출부) 소스 대조로 재검증, expense/income을 스코프에서 뺀 이유(저장 전까지 반대쪽 필드가 비워지지 않음)도 saveTx/saveRec 코드로 재확인. node test/run.js 777/777 재통과. 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
