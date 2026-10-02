@@ -1,22 +1,12 @@
 {
   "cycle": 126,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "txRow(index.html:3453)/histRow(index.html:4070) 중복 제거 — 공용 txRowCore 헬퍼로 통합",
+    "why": "가계부 탭의 txRow()와 전체내역 탭의 histRow()가 sign/cls/av/ic/glyph/faN/taN/asset 계산과 선택모드/일반모드 마크업(swipe-content, avatar, nm-row, flow-sub, amt, confirm-btn)을 완전히 동일하게 중복 구현. 둘의 유일한 차이는 선택 상태 소스(ST.lSel vs ST.hist)와 토글 핸들러 이름(ledgerToggleSel vs histToggleSel)뿐. 현재는 두 함수가 우연히 동기화되어 있을 뿐 구조적으로 보장되지 않아, 향후 행 렌더링을 바꿀 때(새 아이콘 규칙, 배지, a11y 라벨, 새 거래 타입) 한쪽만 고치고 다른 쪽을 빠뜨리면 가계부와 전체내역이 같은 거래를 다르게 보여주는 조용한 불일치가 생길 수 있음. ledSumInner()(index.html:3302, 캘린더+내역 합계 카드가 공유)가 이미 이 앱에서 확립된 '공용 순수 렌더 헬퍼' 패턴이라 같은 원칙을 행 렌더링에도 적용.",
+    "approach": "txRowCore(t, sel) 헬퍼 신설 — sel={mode, has(id), onToggle}로 선택 상태를 캡슐화. 함수 내부에서 sign/cls/av/ic/glyph/faN/taN/asset을 한 번만 계산하고, sel.mode 분기(선택모드 마크업)와 일반모드 마크업(confirm-btn 포함)을 공용으로 렌더. 기존 txRow(t){return txRowCore(t,{mode:ST.lSel.mode, has:id=>ST.lSel.ids.has(id), onToggle:'ledgerToggleSel'})}, histRow(t){return txRowCore(t,{mode:ST.hist.selMode, has:id=>ST.hist.sel.has(id), onToggle:'histToggleSel'})}로 얇은 래퍼화해 기존 호출부(ledgerRowsHtml, updateHist의 groupHTML, wireLongPress 대상)는 전혀 안 건드림. test/run.js에 FUNCTIONS로 txRowCore 등록하고, 같은 거래/선택상태에 대해 txRow와 histRow가 동일 마크업을 내는지 확인하는 회귀 테스트 추가(이후 둘이 다시 갈라지는 걸 방지). build/lint 없음 — node test/run.js 통과 확인 후 APP_VERSION/sw.js CACHE 버전업."
+  },
   "history": [
-    {
-      "cycle": 121,
-      "phase": "critique",
-      "timestamp": "2026-10-01T21:16:45.077Z",
-      "summary": "앱 전체보다 반복거래 상태기계를 general-purpose 서브에이전트로 재조망(기존 121사이클 동안 다룬 영역은 전부 기각 확정이라 제외 지시). 새로 발견 후 직접 소스 재검증: recApply(mode='delete',scope='future')(3578-3583)가 truncateRecEnd로 endDate/count만 자르고 r.skip/r.edits는 방치 — 형제 경로인 recSave future 분기(3605-3608)·splitRecurrenceAt(3738-3746)은 둘 다 splitRecOverrides로 effectiveDate 이후 skip/edits를 분리하는데 recApply만 빠짐. recHistFieldsChanged(3726)가 endDate 미포함이라 이후 editRec/saveRec로 endDate를 다시 늘리면 recSaveScopeConfirm 안 뜨고 DB.recurrences[i]=d로 그대로 치환(d는 깊은 복사로 과거 미정리 skip/edits 보존) → recDates 재생성 시 휴면 skip/edits가 되살아나 거래 소실/오염. pending_advance_plan에 splitRecOverrides 기반 공용 정리 적용+saveRec direct-edit 대칭 점검+회귀 테스트 저장. 코드 변경 없음.",
-      "commit": null
-    },
-    {
-      "cycle": 121,
-      "phase": "critique",
-      "timestamp": "2026-10-01T21:16:45.077Z",
-      "summary": "앱 전체보다 반복거래 상태기계를 general-purpose 서브에이전트로 재조망(기존 121사이클 동안 다룬 영역은 전부 기각 확정이라 제외 지시). 새로 발견 후 직접 소스 재검증: recApply(mode='delete',scope='future')(3578-3583)가 truncateRecEnd로 endDate/count만 자르고 r.skip/r.edits는 방치 — 형제 경로인 recSave future 분기(3605-3608)·splitRecurrenceAt(3738-3746)은 둘 다 splitRecOverrides로 effectiveDate 이후 skip/edits를 분리하는데 recApply만 빠짐. recHistFieldsChanged(3726)가 endDate 미포함이라 이후 editRec/saveRec로 endDate를 다시 늘리면 recSaveScopeConfirm 안 뜨고 DB.recurrences[i]=d로 그대로 치환(d는 깊은 복사로 과거 미정리 skip/edits 보존) → recDates 재생성 시 휴면 skip/edits가 되살아나 거래 소실/오염. pending_advance_plan에 splitRecOverrides 기반 공용 정리 적용+saveRec direct-edit 대칭 점검+회귀 테스트 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 121,
       "phase": "advance",
@@ -148,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-02T15:14:45.000Z",
       "summary": "develop 커밋(e95e8d5, sanitizeBackup startDate 검증 교체)을 검토하며 csvDateValid 재사용이 CSV 임포트와 동일 기준임을 소스 대조로 확인(이상 없음). 다만 같은 함수의 endDate 검증이 전혀 없다는 걸 발견해 직접 재현: r.endDate가 형식은 맞지만 달력상 무효하고(예: \"2026-01-32\") `to`보다 문자열상 작으면, recDates()가 end=new Date(r.endDate+...) 를 Invalid Date로 만들고 그 뒤 endd=new Date(end.getFullYear(),...)도 NaN이 되어 monthly/daily/weekly 분기의 유일한 탈출조건(cur>endd / cd>end)이 항상 false가 되는 걸 logic.js의 실제 recDates()로 timeout 5 node 재현해 exit 124로 확인(startDate 버그와 평행한, develop 단계가 놓친 동일 함수의 자매 버그). 급한 실사용 버그라 범위를 작게 유지해 그 자리에서 수정: csvDateValid(d.endDate)가 거짓이면(값이 있을 때만) startDate처럼 레코드를 버리지 않고 endDate를 null로 떨어뜨림(migrate()의 기존 기본값·무기한 반복과 동일한 '정상 상태'이므로 fixedCount로 집계, droppedCount 아님). test/run.js에 레코드 유지+endDate만 null 보정+유효한 값/이미 null인 값은 그대로 유지되는 걸 확인하는 회귀 테스트 1개 추가. node test/run.js 846/846 -> 847/847 통과. APP_VERSION 1.47.20->1.47.21, sw.js CACHE v282->v283.",
+      "commit": null
+    },
+    {
+      "cycle": 126,
+      "phase": "critique",
+      "timestamp": "2026-10-02T16:00:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(126사이클 동안 다뤄진 a11y·cloud sync·CDN SRI·파일분할/jsdom·백그라운드 푸시·tx/rec 폼 통합·owner 마이그레이션/orphan 함수·FX/금/주식 수량 가드·CSV/삭제cascade/백버튼/PWA/핀치줌·RANGE_FROM/RANGE_TO 경계(backup 포함)·PBKDF2/복구코드/알림인터벌/쿼터·undo tombstone(tx/rec/asset/goals/catIcon/catVar)·부부정산/대출상환/예산경고·검색금액매칭/평단가/정렬모드·recApply skip/edits·이체/저축 picker self-exclusion·주식 티커·netlify 재시도·goal 기능(owner 스코프)·catIcon/catVar cloud sync·자산유형별 비중(allocation) 카드·sanitizeBackup 반복거래 startDate/endDate 유효성은 전부 기각/완료 처리되어 제외 지시). 새로 발견 후 직접 소스 재검증: txRow()(index.html:3453-3471, 가계부 탭)와 histRow()(index.html:4070-4091, 전체내역 탭)가 sign/cls/av/ic/glyph/faN/taN/asset 계산과 선택모드·일반모드 마크업(swipe-content/avatar/nm-row/flow-sub/amt/confirm-btn)을 완전히 동일하게 중복 구현 — 유일한 차이는 선택 상태 소스(ST.lSel vs ST.hist)와 토글 핸들러 이름(ledgerToggleSel vs histToggleSel)뿐임을 두 함수 전문을 직접 읽어 라인 단위로 대조 확인. 현재는 우연히 동기화되어 있을 뿐 구조적 보장이 없어 향후 행 렌더링 변경 시 한쪽만 고치면 가계부/전체내역이 같은 거래를 다르게 보여주는 불일치 위험. ledSumInner()(3302, 캘린더+내역 합계 카드가 공유)가 이미 이 앱의 확립된 공용 순수 렌더 헬퍼 패턴이라 같은 원칙을 적용. pending_advance_plan에 txRowCore(t,sel) 공용 헬퍼 추출+txRow/histRow 얇은 래퍼화+동일 마크업 회귀 테스트 저장. 러너업(기각): CSV 임포트 findAsset이 strict name match인데 카테고리 매칭은 normName() fuzzy라 비일관(narrow/cosmetic, 사소한 재임포트 엣지케이스만 영향) / 자산 삭제 시 다른 저축자산의 maturityTargetId가 dangling으로 남음(양쪽 읽기 지점이 이미 방어 코드로 크래시 없음, 너무 사소) / 전체내역 검색 input에 debounce 없음(expandRec가 날짜범위로 캐시되고 수천 건 필터링도 5ms 미만이라 실증된 랙 아님, 이론적 우려). 코드 변경 없음(읽기 전용 조사, txRow/histRow 라인 번호·중복 내용은 오케스트레이팅 세션이 Read로 직접 재확인).",
       "commit": null
     }
   ]
