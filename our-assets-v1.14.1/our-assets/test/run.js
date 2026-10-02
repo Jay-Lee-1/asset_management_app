@@ -4105,6 +4105,19 @@ test('sanitizeBackup: startDate 없는 반복거래는 제거한다(recDates()�
   assert.strictEqual(data.recurrences[0].id, 'r2');
   assert.strictEqual(droppedCount, 1);
 });
+test('sanitizeBackup: startDate가 비어있지 않아도 형식이 깨졌거나 달력상 존재하지 않으면 제거한다(csvDateValid와 동일 기준 — "2026-13-01"처럼 정규식만 통과하는 값도 recDates()를 무한루프에 빠뜨림)', () => {
+  const { data, droppedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    recurrences: [
+      { id: 'r1', startDate: 'not-a-date', amount: 1000 },
+      { id: 'r2', startDate: '2026-13-01', amount: 1000 },
+      { id: 'r3', startDate: '2026-01-01', amount: 2000 },
+    ],
+  });
+  assert.strictEqual(data.recurrences.length, 1, '형식/달력상 유효하지 않은 startDate는 제거되어야 함');
+  assert.strictEqual(data.recurrences[0].id, 'r3');
+  assert.strictEqual(droppedCount, 2);
+});
 test('sanitizeBackup: 매월 반복의 day가 숫자가 아니거나 범위를 벗어나면 clampDay와 동일하게 보정한다(recDates()의 "2024-01-NaN" 같은 깨진 날짜 생성을 방지)', () => {
   const { data, fixedCount } = sandbox.sanitizeBackup({
     txns: [], assets: [],
