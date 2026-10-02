@@ -1,6 +1,6 @@
 {
   "cycle": 127,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
     {
@@ -141,6 +141,13 @@
       "phase": "develop",
       "timestamp": "2026-10-02T19:27:51.468Z",
       "summary": "general-purpose 서브에이전트 조사로 notifyAlertInfo()(index.html homeAlerts 근처)의 저축 만기(mat) OS 알림 문구 버그 발견·수정. homeAlerts()의 mat 포함 조건(a.maturityDate<=addDays(TODAY,7))은 하한이 없어 doMaturity()로 아직 처리하지 않은 지난 만기도 계속 알림 대상에 남는데, notifyAlertInfo는 al.date<=addDays(TODAY,1)이면 날짜가 TODAY가 아니기만 하면 무조건 \"내일 만기\"로 단정해, 실제로는 여러 날 지난 만기를 \"내일 만기\"라고 잘못 알리고 있었다(TODAY=2026-06-15, date=2026-06-05로 실제 함수 재현해 확인). overdue=al.date<TODAY 분기를 추가해 지난 만기는 제목/본문을 \"저축 만기가 지났어요\"로 구분하고, 오늘/내일 동작은 그대로 유지. 홈 카드(homeAlertCard)는 shortDate로 실제 날짜를 보여줘 이 버그의 영향을 받지 않음(OS 푸시 알림 경로만 해당). test/run.js: 기존 mat 테스트에 본문 텍스트 단언 보강 + overdue(10일 지남/1일 지남 두 케이스) 신규 테스트 1개 추가. node test/run.js 850/850 -> 851/851 통과. APP_VERSION 1.47.22->1.47.23, sw.js CACHE v284->v285.",
+      "commit": null
+    },
+    {
+      "cycle": 127,
+      "phase": "review",
+      "timestamp": "2026-10-02T20:05:00.000Z",
+      "summary": "develop 커밋(38bc592, notifyAlertInfo 저축 만기 overdue 알림 문구 버그 수정)을 검토. overdue=al.date<TODAY 분기와 when/title/body 조합을 소스 대조로 확인 — overdue 분기는 title '저축 만기가 지났어요'+body `${al.name} · 만기가 지났어요 · ${comma(al.amount)}원`, 기존 오늘/내일 분기는 문구·동작 그대로 유지됨을 확인. key(`mat:${al.assetId}:${al.date}`)는 변경 없어 al.date가 고정값(만기일)인 자산의 dedupe 동작도 그대로임을 확인(새 버그 아님, 스코프 밖). 테스트도 '지났다'/'내일 아님' 경계를 어제(1일 지남)·10일 지남 두 케이스로 적절히 커버. node test/run.js 851/851 재통과. 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
