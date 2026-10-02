@@ -264,6 +264,22 @@ function goalProgress(goal,nwHistory,today){
  return {cur,target,pct,remaining,achieved,projectedDate};
 }
 
+/* ================= ASSET ALLOCATION (자산유형별 비중, 순수) ================= */
+/* items: [{type,amount}] — 호출부(allocationCard)가 owner/includeInTotal/부채 제외 필터링과
+ * assetEval(DB.rates에 의존하는 index.html 쪽 함수) 평가를 이미 끝낸 뒤 넘긴다(여기선 DB를 몰라야
+ * 하므로 assetEval을 직접 부르지 않는다 — nwHistoryForOwner가 DOM/전역 없이 데이터만 받는 것과
+ * 동일한 분리). type별로 합산해 amount 내림차순 pct(%)를 매긴다. amount<=0인 항목(가격 미확인
+ * fx/gold/stock 등)은 분모(total)에는 포함하되 집계 맵에서는 제외해 0% 세그먼트로 목록이 지저분해지지
+ * 않게 한다. total<=0(자산 없음/전부 0)이면 비중이 무의미하므로 빈 배열(호출부가 카드 자체를 숨김). */
+function assetAllocation(items){
+ items=items||[];
+ const total=items.reduce((s,it)=>s+(it.amount||0),0);
+ if(!(total>0))return [];
+ const map=new Map();
+ items.forEach(it=>{if(!(it.amount>0))return;map.set(it.type,(map.get(it.type)||0)+it.amount)});
+ return [...map.entries()].map(([type,amount])=>({type,amount,pct:amount/total*100})).sort((a,b)=>b.amount-a.amount);
+}
+
 /* ================= CSV IMPORT (순수) ================= */
 /* RFC4180 스타일 CSV 파서. 따옴표로 감싼 필드 안의 콤마/줄바꿈/이스케이프된 큰따옴표("")를
    처리한다(txnsToCSV의 esc()가 만드는 형식과 대칭). BOM 제거, \r\n과 \n 둘 다 줄바꿈으로 인식. */

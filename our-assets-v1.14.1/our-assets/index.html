@@ -1305,7 +1305,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.18';
+const APP_VERSION='1.47.19';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2400,6 +2400,29 @@ function nwHistoryCard(owner){
  </div>`;
 }
 
+/* 자산관리 탭 순자산 추이 카드 아래에 꽂는 자산유형별 비중(allocation) 카드 — expenseBreakdownCard와
+ * 같은 스택형 가로 막대+범례(eb-* 클래스)를 재사용한다. 집계 자체(assetAllocation)는 logic.js 순수
+ * 함수이고, 여기선 owner/includeInTotal/부채 제외 필터링과 assetEval 평가(DB.rates 의존)만 맡는다
+ * (app-evolve cycle125 critique/advance — TYPE_COLOR 상수가 정의된 채 미사용으로 남아있던 공백). */
+function allocationCard(owner){
+ owner=owner||'all';
+ let items=DB.assets.filter(a=>a.includeInTotal&&a.type!=='debt');
+ if(owner!=='all')items=items.filter(a=>a.owner===owner);
+ const alloc=assetAllocation(items.map(a=>({type:a.type,amount:assetEval(a)})));
+ if(!alloc.length)return '';
+ // 퍼센트 합이 정확히 100이 되도록 보정 (expenseBreakdownCard와 동일한 최대 잔여법)
+ const floor=alloc.map(x=>Math.floor(x.pct));
+ let rem=100-floor.reduce((s,v)=>s+v,0);
+ const order=alloc.map((x,i)=>({i,frac:x.pct-Math.floor(x.pct)})).sort((a,b)=>b.frac-a.frac);
+ for(let k=0;k<rem&&k<order.length;k++)floor[order[k].i]++;
+ const seg=alloc.map(x=>`<i style="width:${x.pct}%;background:${TYPE_COLOR[x.type]}"></i>`).join('');
+ const rows=alloc.map((x,i)=>
+   `<div class="eb-row"><span class="eb-dot" style="background:${TYPE_COLOR[x.type]}"></span>
+     <span class="eb-cat">${esc(ASSET_TYPES[x.type].label)}</span><span class="eb-pc num">${floor[i]}%</span><span class="eb-v num">${comma(Math.round(x.amount))}원</span></div>`).join('');
+ return `<div class="section-title">자산 비중</div>
+   <div class="card eb-card"><div class="eb-bar">${seg}</div><div class="eb-list">${rows}</div></div>`;
+}
+
 /* ===== 순자산 목표 (MVP: 순자산 1종, DB.goals) =====
    진행률·투사(goalProgress)는 logic.js 순수 함수 — 여기는 렌더/폼만 담당. */
 function goalOwnerEff(g){ /* goal.owner가 'all'이거나 이미 사라진 귀속이면 전체로 간주 — ST.assetOwner/renderAssets의
@@ -2755,6 +2778,10 @@ function refreshGoalsSummary(){ /* 캐러셀 귀속 전환 시 목표 요약도 
  const el=$('goalsSummaryBody');if(!el)return;
  el.innerHTML=goalsSummaryCard(ST.assetOwner);
 }
+function refreshAllocationCard(){ /* 캐러셀 귀속 전환 시 자산 비중 카드도 함께 갱신 — nwHistoryCard/goalsSummaryCard와 같은 귀속을 보여줘야 함 */
+ const el=$('allocBody');if(!el)return;
+ el.innerHTML=allocationCard(ST.assetOwner);
+}
 function selectNwOwner(r){ /* 캐러셀 스크롤 정착/점 클릭/키보드 세 경로가 공유하는 귀속 전환 로직 */
  const owner=ownerListArr()[r]||'all';
  if(owner!==ST.assetOwner){
@@ -2763,6 +2790,7 @@ function selectNwOwner(r){ /* 캐러셀 스크롤 정착/점 클릭/키보드 �
    refreshAssetBody(); /* 전체 재렌더 X → 카드가 튀지 않음 */
    refreshNwHistoryCard();
    refreshGoalsSummary();
+   refreshAllocationCard();
  }
 }
 function gotoNwOwner(i){ /* 점 클릭/화살표 키 경로 — nwClampIdx로 스크롤 경계와 동일하게 clamp/wrap */
@@ -2852,6 +2880,7 @@ function renderAssets(){
  <div class="nw-carousel" id="nwCarousel" data-n="${_ol.length}" data-loop="${_ol.length>1?1:0}"${_ol.length>1?' tabindex="0" role="group" aria-label="귀속별 자산 보기"':''}>${_ol.length>1?nwPane(_ol[_ol.length-1],TA,TD):''}${_ol.map(o=>nwPane(o,TA,TD)).join('')}${_ol.length>1?nwPane(_ol[0],TA,TD):''}</div>
  ${_ol.length>1?`<div class="nw-dots">${_ol.map((o,i)=>`<button type="button" class="${i===actIdx?'on':''}" aria-label="${esc(o==='all'?'전체':o)} 보기" aria-current="${i===actIdx?'true':'false'}" onclick="gotoNwOwner(${i})"></button>`).join('')}</div>`:''}
  <div id="nwHistBody">${nwHistoryCard(ST.assetOwner)}</div>
+ <div id="allocBody">${allocationCard(ST.assetOwner)}</div>
  <div id="goalsSummaryBody">${goalsSummaryCard(ST.assetOwner)}</div>
  <div class="as-tools${ST.aSel.mode?' hidden':''}">
    <div class="as-actions">${ST.editAssets?`<button class="as-tbtn primary" onclick="ST.editAssets=false;save();renderAssets()">${svg('check')} 완료</button>`:

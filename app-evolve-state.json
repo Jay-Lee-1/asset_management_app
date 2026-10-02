@@ -1,19 +1,8 @@
 {
-  "cycle": 125,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "자산관리 탭에 자산유형별 비중(allocation) 시각화 추가",
-    "why": "8개 자산유형(ASSET_TYPES)을 추적하면서도 유형별 비중을 보여주는 곳이 전무함. assetBodyHTML()이 유형별 sum을 계산하지만 원화 합계만 출력하고 버림(퍼센트 미산출). nwPane()도 순자산/총자산/부채 세 숫자뿐. index.html:1535의 TYPE_COLOR={cash,savings,stock,realestate,debt,pension,fx,gold,etc: ...} 상수가 정의된 채 파일 전체에서 단 한 번도(정의 자체 제외) 참조되지 않음 — 비중 차트용으로 준비되었다가 미완성으로 남은 증거. grep으로 '비중|allocation|포트폴리오' 전체 0건 확인. 데이터는 이미 렌더 경로에 다 계산되어 있어 스키마/cloud-sync 리스크 없는 순수 프레젠테이션 공백.",
-    "approach": "1) logic.js에 assetAllocation(assets, owner) 순수함수 신설: owner!=='all'이면 ownerAssets와 동일 필터 적용, a.includeInTotal&&a.type!=='debt'인 자산만 assetEval(a) 기준 type별 합산, total=0이면 []. [{type,label,amount,pct}] amount desc 정렬, pct=total?amount/total*100:0. 2) UI: nwHistBody/goalsSummaryBody 패턴을 그대로 따라 allocationCard(owner) 함수 신설(ASSET_TYPES[t].label/.icon + 기존에 미사용이던 TYPE_COLOR[t]로 세그먼트 색상) — 스택형 가로 막대 + 범례. renderAssets()의 nwHistBody와 goalsSummaryBody 사이(또는 바로 아래)에 <div id=\"allocBody\">${allocationCard(ST.assetOwner)}</div> 삽입. 3) refreshAllocationCard() 신설 후 selectNwOwner()에서 refreshNwHistoryCard()/refreshGoalsSummary()와 나란히 호출해 귀속(나/배우자/전체) 캐러셀 전환 시 같이 갱신되게 배선. 4) test/run.js FUNCTIONS에 assetAllocation(+allocationCard 등 신설 함수) 등록, 케이스: 혼합 포트폴리오 pct 합≈100 / 빈 자산 []·divide-by-zero 없음 / debt는 분모·세그먼트에서 제외 확인 / owner 필터가 ownerAssets와 동일하게 동작 / 단일 유형이면 100%. 5) APP_VERSION과 sw.js CACHE 버전 올리기(기존 관례). 기각된 후보: 거래 복제/즐겨찾기 단축입력(편의 기능, 증거 약함) / DB.inquiries(건의함) 조회 UI 부재(실사용 임팩트 낮은 관리자용 채널) / Pro 업그레이드/광고 버튼이 영구 스텁(결제 백엔드 없는 데모 앱의 의도된 플레이스홀더, 스코프 밖)."
-  },
+  "cycle": 126,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 120,
-      "phase": "advance",
-      "timestamp": "2026-10-01T18:10:58.883Z",
-      "summary": "critique(cycle120) 계획대로 RANGE_TO(상한) 대칭 검증을 추가했다. index.html에 dateAboveRangeCeil(ds){return ds>RANGE_TO} 신설(dateBelowRangeFloor 바로 옆). saveTx()/saveRec()의 기존 하한 체크 직후에 상한 체크를 추가(d.date/d.startDate, RANGE_TO 값을 포함한 토스트). csvRowToImportTxn()의 range 조건을 dateBelowRangeFloor||dateAboveRangeCeil로 확장. sanitizeBackup()도 동일 패턴으로 확장. 네 곳 모두에서 쓰던 방향 한정 안내 문구('RANGE_FROM 이전 날짜 N건')를 방향 비한정 문구('날짜 범위를 벗어난 N건')로 통일(클라우드 pull 토스트/백업 복원 notes/CSV 미리보기 stats 3곳). test/run.js: FUNCTIONS에 dateAboveRangeCeil 추가, csvRowToImportTxn/buildImportPreview/sanitizeBackup/saveTx/saveRec 각각에 RANGE_TO 경계(초과 시 거부, 당일은 허용) 테스트 6개 추가. node test/run.js 762/762 -> 768/768 통과. APP_VERSION 1.47.8->1.47.9, sw.js CACHE v270->v271. 스코프 제외: 날짜 피커(dpExtend/dpToggleJump) UI 자체의 미래 상한은 반복거래가 정상적으로 RANGE_TO를 넘나드는 케이스가 있어 건드리지 않음(저장/가져오기/복원 경계만 막음). pending_advance_plan을 null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 121,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-02T13:11:43.295Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(a11y·cloud sync·CDN SRI·파일분할/jsdom·백그라운드 푸시·tx/rec 폼 통합·owner 마이그레이션/orphan 함수·FX/금/주식 수량 가드·CSV/삭제cascade/백버튼/PWA/핀치줌·RANGE_FROM/RANGE_TO 경계·PBKDF2/복구코드/알림인터벌/쿼터·undo tombstone(tx/rec/asset/goals/catIcon/catVar)·부부정산/대출상환/예산경고·검색금액매칭/평단가/정렬모드·recApply skip/edits·이체/저축 picker self-exclusion·주식 티커·netlify 재시도·goal 기능(owner 스코프 포함)·catIcon/catVar cloud sync는 모두 기각/완료 처리되어 제외 지시). 새로 발견 후 직접 소스 재검증: 자산관리 탭에 자산유형별 비중(allocation) 시각화가 전무함 — assetBodyHTML()(2800-2843)이 유형별 sum을 계산하지만 원화 합계만 출력하고 버림(퍼센트 미산출), nwPane()도 순자산/총자산/부채 세 숫자뿐. index.html:1535의 TYPE_COLOR 상수(유형별 색상 맵)가 정의된 채 파일 전체에서 정의 자체 외 단 한 번도 참조되지 않는 orphan — 비중 차트용으로 준비되다 미완성으로 남은 증거를 grep으로 확인. grep '비중|allocation|포트폴리오' 전체 0건. 기존 지출 카테고리 비율 막대(cycle122 기각 사유)와는 다른 자산 탭 전용 표면이라 중복 아님. 데이터는 이미 렌더 경로(assetBodyHTML의 sum, nwPane의 TA/TD)에 계산되어 있어 스키마/cloud-sync 리스크 없는 순수 프레젠테이션 공백. pending_advance_plan에 assetAllocation 순수함수+allocationCard(owner) UI+refreshAllocationCard를 selectNwOwner에 배선+테스트 저장(상세는 state.json pending_advance_plan 참고). 러너업(기각): 거래 복제/즐겨찾기 단축입력(편의 기능, 증거 약함) / DB.inquiries(건의함) 조회 UI 부재(관리자용 채널, 임팩트 낮음) / Pro 업그레이드 광고 버튼 영구 스텁(결제 백엔드 없는 데모 앱의 의도된 플레이스홀더). 코드 변경 없음(읽기 전용 조사, 서브에이전트 보고의 TYPE_COLOR orphan·assetBodyHTML·nwHistoryCard/goalsSummaryCard/selectNwOwner 배선 패턴은 오케스트레이팅 세션이 grep/Read로 직접 재확인).",
+      "commit": null
+    },
+    {
+      "cycle": 125,
+      "phase": "advance",
+      "timestamp": "2026-10-02T14:10:00.000Z",
+      "summary": "critique(cycle125) 계획대로 자산관리 탭에 자산유형별 비중(allocation) 카드를 신설했다. logic.js에 assetAllocation(items) 순수함수 추가 — 계획의 assetAllocation(assets,owner) 서명 대신, DB.rates에 의존하는 assetEval 평가와 owner/includeInTotal/부채 제외 필터링은 index.html(allocationCard)에 맡기고 logic.js는 이미 평가·필터링된 [{type,amount}] 목록을 type별로 합산해 amount 내림차순 pct(%)를 매기는 순수 집계만 담당하도록 분리(nwHistoryForOwner가 DOM/전역을 몰라야 하는 것과 동일한 원칙); amount<=0인 항목은 분모(total)엔 포함하되 집계 목록에선 제외해 0% 세그먼트가 안 생기게 했고, total<=0이면 빈 배열. index.html에 allocationCard(owner) 신설 — expenseBreakdownCard와 동일한 스택형 가로 막대+범례(eb-* 클래스, 최대 잔여법으로 pct 합 100 보정)를 그대로 재사용해 TYPE_COLOR(그동안 정의된 채 미사용이던 상수)로 세그먼트 색을 입혔다. renderAssets()의 nwHistBody와 goalsSummaryBody 사이에 <div id=\"allocBody\">${allocationCard(ST.assetOwner)}</div> 삽입, refreshAllocationCard() 신설 후 selectNwOwner()에서 refreshNwHistoryCard()/refreshGoalsSummary()와 나란히 호출해 귀속 캐러셀 전환 시 같이 갱신되게 배선. test/run.js: FUNCTIONS에 allocationCard 등록(assetAllocation은 logic.js에서 직접 로드되어 등록 불필요), CONSTS에 TYPE_COLOR 추가. assetAllocation 단위 테스트 5개(혼합 포트폴리오 정렬+pct 합 100/같은 type 합산/빈 배열·전부 0 안전/단일 유형 100%/amount<=0 항목 분모 포함·목록 제외) + allocationCard 통합 테스트 3개(owner='all' 전체 비중·owner 필터가 ownerAssets와 동일하게 동작·부채만 있으면 빈 문자열) — 총 8개 추가. vm 샌드박스 cross-realm으로 배열 deepStrictEqual이 거짓 실패하는 기존 이슈(cycle121)와 동일하게 걸려 JSON.stringify 비교로 전환해 통과시켰다. node test/run.js 837/837 -> 845/845 통과. APP_VERSION 1.47.18->1.47.19, sw.js CACHE v280->v281. pending_advance_plan을 null로 비움.",
       "commit": null
     }
   ]

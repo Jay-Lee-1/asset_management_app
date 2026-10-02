@@ -140,7 +140,7 @@ const FUNCTIONS = [
   'accountName', 'dbIsEmpty', 'guestHasData',
   'txScheduled', 'monthStats', 'monthStats2', 'expenseByCat', 'needGold', 'inQuietWindow', 'fmtSynced', 'rateStatusText',
   'nextBigOutflow', 'dday', 'balanceOn', 'nextOutflowCard', 'monthOutflowCard', 'planGaugeCard', 'homeAlertCard', 'renderHome',
-  'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwHistoryCard', 'doRenameOwner', 'addOwner',
+  'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwHistoryCard', 'allocationCard', 'doRenameOwner', 'addOwner',
   'goalOwnerEff', 'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'syncGoalInputs', 'goalClearDate', 'goalOwnerSel', 'renderGoalForm', 'openGoalForm', 'saveGoal', 'delGoal',
   'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetToggleSel', 'visibleAssetsForSel', 'assetSelAll', 'activeSel',
   'modeSeg', 'monthNav', 'abbr', 'calCellsFor', 'ledSumInner', 'ledSumBox', 'ledSumTap', 'calPane', 'txRow', 'dayTxns',
@@ -162,7 +162,7 @@ const FUNCTIONS = [
 // 판정 상수라 같은 방식(extractConst)으로 끌어온다.
 // _savedDrafts는 saveTx/saveRec의 더블탭 중복 저장 가드(app-evolve cycle79 advance)가 쓰는
 // WeakSet — 저장 완료된 draft 객체를 표시해 같은 draft로 재호출되면 조용히 무시한다.
-const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts'];
+const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts'];
 // _histCache는 filteredHist()가 재대입(={key,list})하는 let 선언이라 CONSTS(extractConst)로는
 // 못 끌어오므로 별도의 LETS 목록으로 extractLet을 통해 가져온다.
 // _copyIsCsv도 같은 이유(openCopyBackup()이 재대입)로 LETS를 통해 가져온다.
@@ -6406,6 +6406,61 @@ test('ownerAssets/ownerDebt: owner로 필터링되어 다른 귀속의 자산·�
   assert.strictEqual(sandbox.ownerAssets('배우자'), 5000 + 1 * sandbox.GOLD_G_PER_DON * 90000, '"배우자"는 적금+금만 포함');
   assert.strictEqual(sandbox.ownerDebt('배우자'), 0, '배우자 명의 부채가 없으면 0이어야 함(다른 귀속의 부채가 섞이면 안 됨)');
   assert.strictEqual(sandbox.ownerAssets('나') + sandbox.ownerAssets('배우자'), sandbox.totalAssets(), '귀속별 합은 전체 합과 일치해야 함');
+});
+/* ---------- assetAllocation(logic.js)/allocationCard: 자산유형별 비중 카드 (app-evolve cycle125 critique/advance) ---------- */
+test('assetAllocation: 혼합 포트폴리오는 금액 내림차순으로 정렬되고 pct 합이 100에 근접한다', () => {
+  const r = sandbox.assetAllocation([{ type: 'cash', amount: 10000 }, { type: 'stock', amount: 70000 }, { type: 'gold', amount: 20000 }]);
+  assert.strictEqual(r.length, 3);
+  // r은 vm 샌드박스(다른 realm)에서 만들어진 배열이라 deepStrictEqual이 프로토타입 불일치로
+  // 거짓 실패한다(cycle121 advance에서 겪은 것과 동일한 cross-realm 문제) — JSON.stringify로 비교.
+  assert.strictEqual(JSON.stringify(r.map(x => x.type)), JSON.stringify(['stock', 'gold', 'cash']), '금액 큰 순으로 정렬되어야 함');
+  const pctSum = r.reduce((s, x) => s + x.pct, 0);
+  assert.ok(Math.abs(pctSum - 100) < 1e-9, `부동소수점 오차 안에서 pct 합은 100이어야 함(실제 ${pctSum})`);
+  assert.strictEqual(r.find(x => x.type === 'stock').pct, 70);
+});
+test('assetAllocation: 같은 type이 여러 항목이면 합산한다', () => {
+  const r = sandbox.assetAllocation([{ type: 'cash', amount: 3000 }, { type: 'cash', amount: 7000 }, { type: 'stock', amount: 10000 }]);
+  assert.strictEqual(r.length, 2);
+  assert.strictEqual(r.find(x => x.type === 'cash').amount, 10000);
+  assert.strictEqual(r.find(x => x.type === 'cash').pct, 50);
+});
+test('assetAllocation: 빈 배열/전부 0이면 divide-by-zero 없이 빈 배열을 반환한다', () => {
+  assert.strictEqual(sandbox.assetAllocation([]).length, 0);
+  assert.strictEqual(sandbox.assetAllocation([{ type: 'cash', amount: 0 }]).length, 0);
+  assert.strictEqual(sandbox.assetAllocation(null).length, 0);
+});
+test('assetAllocation: 단일 유형이면 100%', () => {
+  const r = sandbox.assetAllocation([{ type: 'cash', amount: 50000 }]);
+  assert.strictEqual(r.length, 1);
+  assert.strictEqual(r[0].pct, 100);
+});
+test('assetAllocation: amount가 0 이하인 항목(가격 미확인 등)은 분모에 포함되지만 집계 목록에는 나타나지 않는다', () => {
+  const r = sandbox.assetAllocation([{ type: 'cash', amount: 10000 }, { type: 'stock', amount: 0 }]);
+  assert.strictEqual(r.length, 1);
+  assert.strictEqual(r[0].type, 'cash');
+  assert.strictEqual(r[0].pct, 100, 'amount=0인 항목은 분모(total)에도 안 잡혀야 cash가 100%가 됨');
+});
+test('allocationCard: owner="all"(기본)이면 includeInTotal 자산 중 부채를 뺀 나머지를 유형별로 보여준다(배우자 포함 가구 전체)', () => {
+  setupNetWorthDB();
+  const html = sandbox.allocationCard();
+  assert.ok(html.includes('자산 비중'));
+  assert.ok(html.includes('금'), '배우자 소유 금도 전체(all) 보기에는 포함되어야 함');
+  assert.ok(html.includes('70%'), '금(337500) / 전체(482500) ≈ 70%가 되어야 함');
+  assert.ok(html.includes('337,500원'));
+  assert.ok(!html.includes('카드빚'), '부채는 비중 집계에서 제외되어야 함');
+});
+test('allocationCard: owner를 넘기면 ownerAssets와 동일하게 그 귀속의 자산만 집계하고, includeInTotal=false 자산은 제외한다', () => {
+  setupNetWorthDB();
+  const html = sandbox.allocationCard('나');
+  assert.ok(html.includes('외화'), '"나"는 현금+달러(외화)만 보유');
+  assert.ok(!html.includes('저축'), '적금(배우자 소유)은 "나" 비중에 안 섞여야 함');
+  assert.ok(!html.includes('999,999원'), 'includeInTotal=false인 숨긴통장은 금액이 커도 집계에서 빠져야 함');
+});
+test('allocationCard: 집계 대상 자산이 전혀 없으면(모두 부채거나 미포함) 카드를 광고하지 않고 빈 문자열을 반환한다', () => {
+  sandbox.DB = { settings: {}, assets: [{ id: 'd1', type: 'debt', owner: '나', baseAmount: 1000, includeInTotal: true }], txns: [], recurrences: [], rates: { fx: {}, goldPerG: 0, stocks: {} } };
+  sandbox._balCache.clear();
+  assert.strictEqual(sandbox.allocationCard(), '', '부채만 있으면 비중 카드는 숨겨야 함(nwHistoryCard/goalsSummaryCard와 동일한 빈 상태 원칙)');
+  assert.strictEqual(sandbox.allocationCard('없는귀속'), '', '아무도 소유하지 않은 귀속이면 빈 문자열');
 });
 test('openAssetPicker: excludeId(만기이체 picker에서 자기 자신 제외)를 넘기면 그 자산은 목록에서 빠지고 나머지는 그대로 남는다', () => {
   setupAssetPickerDB();
