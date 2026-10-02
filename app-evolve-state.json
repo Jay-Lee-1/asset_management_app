@@ -1,15 +1,13 @@
 {
   "cycle": 123,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "DB.goals가 cloud sync 병합(mergeRemoteDataIntoLocal)과 sanitizeBackup에서 전혀 다뤄지지 않아 기기 간 충돌 시 조용히 소실/복원됨",
+    "why": "cycle122에서 신설된 DB.goals(순자산 목표)가 mergeRemoteDataIntoLocal(1435-1454)에서 누락됨을 소스로 직접 재확인 — txns/recurrences/assets는 mergeCollection으로, categories/owners/budgetHistory는 전용 머저로 병합되는데 goals는 함수 어디에도 등장하지 않음(1443-1447 주석도 settings/nwHistory만 '의도적 제외'로 명시, goals는 언급 자체가 없어 단순 누락). saveGoal(2453-2461)은 updatedAt 스탬프가 없고 delGoal(2463-2467)은 DB.deletedIds 톰스톤을 전혀 남기지 않음(deleteTxnsUndo/deleteAssetsUndo류와 대조적). 두 기기가 오프라인 상태에서 각자 목표를 추가/수정/삭제하면 다음 동기화 시 한쪽의 goals 변경이 조용히 사라지거나, 삭제된 목표가 되살아날 수 있음 — cycle87-102에서 categories/owners에 대해 고쳤던 바로 그 버그 패턴이 최신 기능에 재발한 것. sanitizeBackup에도 goals 분기가 전혀 없어(grep 결과 'goals' 전체 출현 11곳 중 sanitizeBackup 근처 0건) 손상된 백업/원격 payload의 goals가 검증 없이 통과함.",
+    "approach": "1) saveGoal의 rec 생성 시 updatedAt:Date.now() 추가(touch() 패턴과 일관). 2) delGoal에서 DB.deletedIds=DB.deletedIds||{}; DB.deletedIds[id]=Date.now(); 를 filter 전/함께 추가(가능하면 undoToast로 삭제 되돌리기도 다른 삭제류와 동일하게 추가). 3) mergeRemoteDataIntoLocal의 DB.assets=mergeCollection(...) 바로 아래에 DB.goals=mergeCollection(DB.goals,remoteData.goals,DB.deletedIds,remoteData.deletedIds) 추가(DB.deletedIds 병합은 함수 최상단에서 이미 처리되므로 추가 배선 불필요). 4) sanitizeBackup에 assets/recurrences와 동일한 패턴으로 goals 분기 추가 — id/targetAmount 없는 레코드 드롭, targetAmount는 sanitizeAmount로 clamp, targetDate는 유효한 날짜 문자열 또는 null만 허용. 5) test/run.js에 mergeRemoteDataIntoLocal의 기존 테스트 패턴을 따라 goals 충돌(로컬 최신 유지/원격 최신 유지/삭제 후 타기기 재생성 저항) 케이스와 sanitizeBackup의 손상된 goals 레코드 케이스 회귀 테스트 추가.",
+    "note": "advance 단계에서 구현 시작. 완료 후 pending_advance_plan을 null로 비운다."
+  },
   "history": [
-    {
-      "cycle": 118,
-      "phase": "critique",
-      "timestamp": "2026-10-01T09:18:24.270Z",
-      "summary": "앱 전체 재조망(다수 영역 기각 확정 제외). 새로 발견: Home/가계부/전체내역/Plan 4개 핵심 탭의 월 선택에 화살표 버튼이 없고 wheel picker(wh-col 5곳)도 tabindex/onkeydown이 전무해 키보드/스위치 사용자가 달을 바꿀 방법이 아예 없는 실재 접근성 단절(118사이클 동안 미발견). pending_advance_plan에 whTargetIdx 순수함수+whKeydown+wh-col 5곳 tabindex/role/aria 배선+테스트 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 118,
       "phase": "advance",
@@ -141,6 +139,13 @@
       "phase": "review",
       "timestamp": "2026-10-02T04:05:00.000Z",
       "summary": "develop 커밋(cc001d9, planTransfer/planSplitTransfer RANGE_FROM/RANGE_TO 경계검증 추가)을 검토. 새 체크 두 줄이 saveTx(3579-3580)/saveRec(3770-3771)의 dateBelowRangeFloor/dateAboveRangeCeil 토스트 문구·순서와 정확히 동일함을 소스 대조로 확인, twGuard() 통과 직후·txns.push 이전이라 조기 반환 위치도 올바름. node test/run.js 801/801 재통과. 코드 변경 없음(이상 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 123,
+      "phase": "critique",
+      "timestamp": "2026-10-02T05:10:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(122사이클 동안 다뤄진 a11y·cloud sync 타임아웃/mutex·CDN SRI·파일분할/jsdom·백그라운드 푸시·tx/rec 폼 통합·owner 마이그레이션·orphan 함수·FX/금/주식 수량 가드·CSV/삭제cascade/백버튼/PWA/핀치줌·RANGE_FROM/RANGE_TO 경계·PBKDF2/복구코드/알림인터벌/쿼터·undo tombstone(tx/rec/asset)·부부정산/대출상환/예산경고·검색금액매칭/평단가/정렬모드·recApply skip/edits·이체/저축 picker self-exclusion·주식 티커·netlify 재시도·순자산 goal 신규 기능 자체는 모두 기각/완료 처리되어 제외 지시). 새로 발견 후 직접 소스 재검증: cycle122에 신설된 DB.goals가 mergeRemoteDataIntoLocal(1435-1454)에서 전혀 병합되지 않음(txns/recurrences/assets는 mergeCollection, categories/owners/budgetHistory는 전용 머저로 병합되는데 goals는 함수에 등장 자체가 없음 — 1443-1447 주석은 settings/nwHistory만 '의도적 제외'로 명시, goals는 단순 누락). saveGoal(2453-2461)은 updatedAt 없고 delGoal(2463-2467)은 DB.deletedIds 톰스톤을 전혀 안 남김(grep 결과 'goals' 전체 11곳 중 deletedIds/mergeCollection/sanitizeBackup 근처 0건). 두 기기 오프라인 충돌 시 goals 변경이 조용히 소실되거나 삭제된 목표가 되살아날 수 있는, cycle87-102에 categories/owners에서 고쳤던 바로 그 패턴의 재발. pending_advance_plan에 saveGoal updatedAt 스탬프+delGoal 톰스톤(+undo)+mergeRemoteDataIntoLocal에 DB.goals mergeCollection 배선+sanitizeBackup goals 검증 분기+회귀 테스트 저장(상세는 state.json pending_advance_plan 참고). 러너업(기각): localStorage 전체 재직렬화 쓰기 증폭(이미 STORAGE_SIZE_WARN/CRIT로 다뤄짐, 저우선) / 산발적 빈 catch(e){} 패턴(범위가 광범위해 단일 advance 크기를 넘음) / 연금 자산의 은퇴시점 투사 모델링(근거 부족한 제품 방향성 제안, goal 확장 아이디어와 중복). 코드 변경 없음(읽기 전용 조사, 서브에이전트 보고의 핵심 라인/주장은 오케스트레이팅 세션이 grep/Read로 직접 재확인).",
       "commit": null
     }
   ]
