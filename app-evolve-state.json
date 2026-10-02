@@ -1,26 +1,8 @@
 {
-  "cycle": 126,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "txRow(index.html:3453)/histRow(index.html:4070) 중복 제거 — 공용 txRowCore 헬퍼로 통합",
-    "why": "가계부 탭의 txRow()와 전체내역 탭의 histRow()가 sign/cls/av/ic/glyph/faN/taN/asset 계산과 선택모드/일반모드 마크업(swipe-content, avatar, nm-row, flow-sub, amt, confirm-btn)을 완전히 동일하게 중복 구현. 둘의 유일한 차이는 선택 상태 소스(ST.lSel vs ST.hist)와 토글 핸들러 이름(ledgerToggleSel vs histToggleSel)뿐. 현재는 두 함수가 우연히 동기화되어 있을 뿐 구조적으로 보장되지 않아, 향후 행 렌더링을 바꿀 때(새 아이콘 규칙, 배지, a11y 라벨, 새 거래 타입) 한쪽만 고치고 다른 쪽을 빠뜨리면 가계부와 전체내역이 같은 거래를 다르게 보여주는 조용한 불일치가 생길 수 있음. ledSumInner()(index.html:3302, 캘린더+내역 합계 카드가 공유)가 이미 이 앱에서 확립된 '공용 순수 렌더 헬퍼' 패턴이라 같은 원칙을 행 렌더링에도 적용.",
-    "approach": "txRowCore(t, sel) 헬퍼 신설 — sel={mode, has(id), onToggle}로 선택 상태를 캡슐화. 함수 내부에서 sign/cls/av/ic/glyph/faN/taN/asset을 한 번만 계산하고, sel.mode 분기(선택모드 마크업)와 일반모드 마크업(confirm-btn 포함)을 공용으로 렌더. 기존 txRow(t){return txRowCore(t,{mode:ST.lSel.mode, has:id=>ST.lSel.ids.has(id), onToggle:'ledgerToggleSel'})}, histRow(t){return txRowCore(t,{mode:ST.hist.selMode, has:id=>ST.hist.sel.has(id), onToggle:'histToggleSel'})}로 얇은 래퍼화해 기존 호출부(ledgerRowsHtml, updateHist의 groupHTML, wireLongPress 대상)는 전혀 안 건드림. test/run.js에 FUNCTIONS로 txRowCore 등록하고, 같은 거래/선택상태에 대해 txRow와 histRow가 동일 마크업을 내는지 확인하는 회귀 테스트 추가(이후 둘이 다시 갈라지는 걸 방지). build/lint 없음 — node test/run.js 통과 확인 후 APP_VERSION/sw.js CACHE 버전업."
-  },
+  "cycle": 127,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 121,
-      "phase": "advance",
-      "timestamp": "2026-10-01T22:20:00.000Z",
-      "summary": "critique(cycle121) 계획대로 recApply(mode='delete',scope='future')의 skip/edits 정리 누락을 수정했다. splitRecOverrides(r.skip,r.edits,date)로 cutoff 이전/이후를 나눠 skipPast/editsPast만 r에 남기고(이전처럼 전체 보존 안 함), undoToast에서 prevSkip/prevEdits로 복원하도록 배선(recApply 3578-3584). saveRec의 direct-edit 경로(endDate만 직접 당기는 케이스)는 점검 후 스코프 제외— recApply의 '삭제' 의도와 달리 일반 편집은 skip/edits를 건드리지 않는 기존 동작이 이미 일관적이라 변경 불필요로 판단. test/run.js: skip/edits 가지치기+undo 복원 회귀 테스트 1개, endDate 재연장 후 recDates/expandRec가 끊어낸 날짜를 되살리지 않는 회귀 테스트 1개 추가. 기존 touch() 테스트 fixture(cycle87)가 skip/edits 없이 쓰던 걸 skip:[],edits:{}로 보강(새 코드가 r.skip.slice()를 호출하므로 미초기화 fixture는 크래시 — 실제 앱에서는 recDraft/saveRec이 항상 skip:[]/edits:{}를 채우므로 재현되지 않는 테스트 전용 간극). vm 샌드박스 cross-realm으로 edits 객체와 expandRec 반환 배열의 deepStrictEqual이 거짓 실패해, 기존 recSave future 테스트와 같은 JSON.stringify 비교로 전환. node test/run.js 771/771 -> 773/773 통과. APP_VERSION 1.47.10->1.47.11, sw.js CACHE v272->v273. pending_advance_plan을 null로 비움.",
-      "commit": null
-    },
-    {
-      "cycle": 122,
-      "phase": "develop",
-      "timestamp": "2026-10-01T23:15:18.377Z",
-      "summary": "이체/저축 입력 화면(txOpenAsset/recOpenAsset)의 보내는/받는 자산 picker가 이미 고른 반대쪽 자산을 제외하지 않던 self-reference 버그 발견·수정 — asOpenMat()의 만기이체 picker는 excludeId로 자기 자신을 걸러내는데(cycle34) 같은 문제가 이체/저축 폼 from/to picker엔 전혀 막혀있지 않아 saveTx/saveRec의 fromAssetId===toAssetId 가드(저장 시점)에야 걸렸다. _applyOpenAsset(index.html:3447)에 excludeId를 추가하되 type이 transfer/saving일 때만 반대쪽 필드를 넘기도록 스코프 제한(expense/income은 저장 시점에야 반대쪽 필드가 null로 치워지므로 무조건 적용하면 스테일 값으로 자산이 숨을 위험). test/run.js에 _applyOpenAsset 회귀 테스트 4개 추가(transfer/saving은 제외 확인, expense/income은 스테일 값 무시 확인). node test/run.js 773/773 -> 777/777 통과. APP_VERSION 1.47.11->1.47.12, sw.js CACHE v273->v274.",
-      "commit": null
-    },
     {
       "cycle": 122,
       "phase": "review",
@@ -60,7 +42,7 @@
       "cycle": 123,
       "phase": "critique",
       "timestamp": "2026-10-02T05:10:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(122사이클 동안 다뤄진 a11y·cloud sync 타임아웃/mutex·CDN SRI·파일분할/jsdom·백그라운드 푸시·tx/rec 폼 통합·owner 마이그레이션·orphan 함수·FX/금/주식 수량 가드·CSV/삭제cascade/백버튼/PWA/핀치줌·RANGE_FROM/RANGE_TO 경계·PBKDF2/복구코드/알림인터벌/쿼터·undo tombstone(tx/rec/asset)·부부정산/대출상환/예산경고·검색금액매칭/평단가/정렬모드·recApply skip/edits·이체/저축 picker self-exclusion·주식 티커·netlify 재시도·순자산 goal 신규 기능 자체는 모두 기각/완료 처리되어 제외 지시). 새로 발견 후 직접 소스 재검증: cycle122에 신설된 DB.goals가 mergeRemoteDataIntoLocal(1435-1454)에서 전혀 병합되지 않음(txns/recurrences/assets는 mergeCollection, categories/owners/budgetHistory는 전용 머저로 병합되는데 goals는 함수에 등장 자체가 없음 — 1443-1447 주석은 settings/nwHistory만 '의도적 제외'로 명시, goals는 단순 누락). saveGoal(2453-2461)은 updatedAt 없고 delGoal(2463-2467)은 DB.deletedIds 톰스톤을 전혀 안 남김(grep 결과 'goals' 전체 11곳 중 deletedIds/mergeCollection/sanitizeBackup 근처 0건). 두 기기 오프라인 충돌 시 goals 변경이 조용히 소실되거나 삭제된 목표가 되살아날 수 있는, cycle87-102에 categories/owners에서 고쳤던 바로 그 패턴의 재발. pending_advance_plan에 saveGoal updatedAt 스탬프+delGoal 톰스톤(+undo)+mergeRemoteDataIntoLocal에 DB.goals mergeCollection 배선+sanitizeBackup goals 검증 분기+회귀 테스트 저장(상세는 state.json pending_advance_plan 참고). 러너업(기각): localStorage 전체 재직렬화 쓰기 증폭(이미 STORAGE_SIZE_WARN/CRIT로 다뤄짐, 저우선) / 산발적 빈 catch(e){} 패턴(범위가 광범위해 단일 advance 크기를 넘음) / 연금 자산의 은퇴시점 투사 모델링(근거 부족한 제품 방향성 제안, goal 확장 아이디어와 중복). 코드 변경 없음(읽기 전용 조사, 서브에이전트 보고의 핵심 라인/주장은 오케스트레이팅 세션이 grep/Read로 직접 재확인).",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(122사이클 동안 다뤄진 a11y·cloud sync 타임아웃/mutex·CDN SRI·파일분할/jsdom·백그라운드 푸시·tx/rec 폼 통합·owner 마이그레이션/orphan 함수·FX/금/주식 수량 가드·CSV/삭제cascade/백버튼/PWA/핀치줌·RANGE_FROM/RANGE_TO 경계·PBKDF2/복구코드/알림인터벌/쿼터·undo tombstone(tx/rec/asset)·부부정산/대출상환/예산경고·검색금액매칭/평단가/정렬모드·recApply skip/edits·이체/저축 picker self-exclusion·주식 티커·netlify 재시도·순자산 goal 신규 기능 자체는 모두 기각/완료 처리되어 제외 지시). 새로 발견 후 직접 소스 재검증: cycle122에 신설된 DB.goals가 mergeRemoteDataIntoLocal(1435-1454)에서 전혀 병합되지 않음(txns/recurrences/assets는 mergeCollection, categories/owners/budgetHistory는 전용 머저로 병합되는데 goals는 함수에 등장 자체가 없음 — 1443-1447 주석은 settings/nwHistory만 '의도적 제외'로 명시, goals는 단순 누락). saveGoal(2453-2461)은 updatedAt 없고 delGoal(2463-2467)은 DB.deletedIds 톰스톤을 전혀 안 남김(grep 결과 'goals' 전체 11곳 중 deletedIds/mergeCollection/sanitizeBackup 근처 0건). 두 기기 오프라인 충돌 시 goals 변경이 조용히 소실되거나 삭제된 목표가 되살아날 수 있는, cycle87-102에 categories/owners에서 고쳤던 바로 그 패턴의 재발. pending_advance_plan에 saveGoal updatedAt 스탬프+delGoal 톰스톤(+undo)+mergeRemoteDataIntoLocal에 DB.goals mergeCollection 배선+sanitizeBackup goals 검증 분기+회귀 테스트 저장(상세는 state.json pending_advance_plan 참고). 러너업(기각): localStorage 전체 재직렬화 쓰기 증폭(이미 STORAGE_SIZE_WARN/CRIT로 다뤄짐, 저우선) / 산발적 빈 catch(e){} 패턴(범위가 광범위해 단일 advance 크기를 넘음) / 연금 자산의 은퇴시점 투사 모델링(근거 부족한 제품 방향성 제안, goal 확장 아이디어와 중복). 코드 변경 없음(읽기 전용 조사, 서브에이전트 보고의 핵심 라인/주장은 오케스트레이팅 세션이 grep/Read로 직접 재확인).",
       "commit": null
     },
     {
@@ -116,7 +98,7 @@
       "cycle": 125,
       "phase": "critique",
       "timestamp": "2026-10-02T13:11:43.295Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(a11y·cloud sync·CDN SRI·파일분할/jsdom·백그라운드 푸시·tx/rec 폼 통합·owner 마이그레이션/orphan 함수·FX/금/주식 수량 가드·CSV/삭제cascade/백버튼/PWA/핀치줌·RANGE_FROM/RANGE_TO 경계·PBKDF2/복구코드/알림인터벌/쿼터·undo tombstone(tx/rec/asset/goals/catIcon/catVar)·부부정산/대출상환/예산경고·검색금액매칭/평단가/정렬모드·recApply skip/edits·이체/저축 picker self-exclusion·주식 티커·netlify 재시도·goal 기능(owner 스코프 포함)·catIcon/catVar cloud sync는 모두 기각/완료 처리되어 제외 지시). 새로 발견 후 직접 소스 재검증: 자산관리 탭에 자산유형별 비중(allocation) 시각화가 전무함 — assetBodyHTML()(2800-2843)이 유형별 sum을 계산하지만 원화 합계만 출력하고 버림(퍼센트 미산출), nwPane()도 순자산/총자산/부채 세 숫자뿐. index.html:1535의 TYPE_COLOR 상수(유형별 색상 맵)가 정의된 채 파일 전체에서 정의 자체 외 단 한 번도 참조되지 않는 orphan — 비중 차트용으로 준비되다 미완성으로 남은 증거를 grep으로 확인. grep '비중|allocation|포트폴리오' 전체 0건. 기존 지출 카테고리 비율 막대(cycle122 기각 사유)와는 다른 자산 탭 전용 표면이라 중복 아님. 데이터는 이미 렌더 경로(assetBodyHTML의 sum, nwPane의 TA/TD)에 계산되어 있어 스키마/cloud-sync 리스크 없는 순수 프레젠테이션 공백. pending_advance_plan에 assetAllocation 순수함수+allocationCard(owner) UI+refreshAllocationCard를 selectNwOwner에 배선+테스트 저장(상세는 state.json pending_advance_plan 참고). 러너업(기각): 거래 복제/즐겨찾기 단축입력(편의 기능, 증거 약함) / DB.inquiries(건의함) 조회 UI 부재(관리자용 채널, 임팩트 낮음) / Pro 업그레이드 광고 버튼 영구 스텁(결제 백엔드 없는 데모 앱의 의도된 플레이스홀더). 코드 변경 없음(읽기 전용 조사, 서브에이전트 보고의 TYPE_COLOR orphan·assetBodyHTML·nwHistoryCard/goalsSummaryCard/selectNwOwner 배선 패턴은 오케스트레이팅 세션이 grep/Read로 직접 재확인).",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(a11y·cloud sync·CDN SRI·파일분할/jsdom·백그라운드 푸시·tx/rec 폼 통합·owner 마이그레이션/orphan 함수·FX/금/주식 수량 가드·CSV/삭제cascade/백버튼/PWA/핀치줌·RANGE_FROM/RANGE_TO 경계·PBKDF2/복구코드/알림인터벌/쿼터·undo tombstone(tx/rec/asset/goals/catIcon/catVar)·부부정산/대출상환/예산경고·검색금액매칭/평단가/정렬모드·recApply skip/edits·이체/저축 picker self-exclusion·주식 티커·netlify 재시도·goal 기능(owner 스코프)·catIcon/catVar cloud sync는 모두 기각/완료 처리되어 제외 지시). 새로 발견 후 직접 소스 재검증: 자산관리 탭에 자산유형별 비중(allocation) 시각화가 전무함 — assetBodyHTML()(2800-2843)이 유형별 sum을 계산하지만 원화 합계만 출력하고 버림(퍼센트 미산출), nwPane()도 순자산/총자산/부채 세 숫자뿐. index.html:1535의 TYPE_COLOR 상수(유형별 색상 맵)가 정의된 채 파일 전체에서 정의 자체 외 단 한 번도 참조되지 않는 orphan — 비중 차트용으로 준비되다 미완성으로 남은 증거를 grep으로 확인. grep '비중|allocation|포트폴리오' 전체 0건. 기존 지출 카테고리 비율 막대(cycle122 기각 사유)와는 다른 자산 탭 전용 표면이라 중복 아님. 데이터는 이미 렌더 경로(assetBodyHTML의 sum, nwPane의 TA/TD)에 계산되어 있어 스키마/cloud-sync 리스크 없는 순수 프레젠테이션 공백. pending_advance_plan에 assetAllocation 순수함수+allocationCard(owner) UI+refreshAllocationCard를 selectNwOwner에 배선+테스트 저장(상세는 state.json pending_advance_plan 참고). 러너업(기각): 거래 복제/즐겨찾기 단축입력(편의 기능, 증거 약함) / DB.inquiries(건의함) 조회 UI 부재(관리자용 채널, 임팩트 낮음) / Pro 업그레이드 광고 버튼 영구 스텁(결제 백엔드 없는 데모 앱의 의도된 플레이스홀더). 코드 변경 없음(읽기 전용 조사, 서브에이전트 보고의 TYPE_COLOR orphan·assetBodyHTML·nwHistoryCard/goalsSummaryCard/selectNwOwner 배선 패턴은 오케스트레이팅 세션이 grep/Read로 직접 재확인).",
       "commit": null
     },
     {
@@ -145,6 +127,13 @@
       "phase": "critique",
       "timestamp": "2026-10-02T16:00:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(126사이클 동안 다뤄진 a11y·cloud sync·CDN SRI·파일분할/jsdom·백그라운드 푸시·tx/rec 폼 통합·owner 마이그레이션/orphan 함수·FX/금/주식 수량 가드·CSV/삭제cascade/백버튼/PWA/핀치줌·RANGE_FROM/RANGE_TO 경계(backup 포함)·PBKDF2/복구코드/알림인터벌/쿼터·undo tombstone(tx/rec/asset/goals/catIcon/catVar)·부부정산/대출상환/예산경고·검색금액매칭/평단가/정렬모드·recApply skip/edits·이체/저축 picker self-exclusion·주식 티커·netlify 재시도·goal 기능(owner 스코프)·catIcon/catVar cloud sync·자산유형별 비중(allocation) 카드·sanitizeBackup 반복거래 startDate/endDate 유효성은 전부 기각/완료 처리되어 제외 지시). 새로 발견 후 직접 소스 재검증: txRow()(index.html:3453-3471, 가계부 탭)와 histRow()(index.html:4070-4091, 전체내역 탭)가 sign/cls/av/ic/glyph/faN/taN/asset 계산과 선택모드·일반모드 마크업(swipe-content/avatar/nm-row/flow-sub/amt/confirm-btn)을 완전히 동일하게 중복 구현 — 유일한 차이는 선택 상태 소스(ST.lSel vs ST.hist)와 토글 핸들러 이름(ledgerToggleSel vs histToggleSel)뿐임을 두 함수 전문을 직접 읽어 라인 단위로 대조 확인. 현재는 우연히 동기화되어 있을 뿐 구조적 보장이 없어 향후 행 렌더링 변경 시 한쪽만 고치면 가계부/전체내역이 같은 거래를 다르게 보여주는 불일치 위험. ledSumInner()(3302, 캘린더+내역 합계 카드가 공유)가 이미 이 앱의 확립된 공용 순수 렌더 헬퍼 패턴이라 같은 원칙을 적용. pending_advance_plan에 txRowCore(t,sel) 공용 헬퍼 추출+txRow/histRow 얇은 래퍼화+동일 마크업 회귀 테스트 저장. 러너업(기각): CSV 임포트 findAsset이 strict name match인데 카테고리 매칭은 normName() fuzzy라 비일관(narrow/cosmetic, 사소한 재임포트 엣지케이스만 영향) / 자산 삭제 시 다른 저축자산의 maturityTargetId가 dangling으로 남음(양쪽 읽기 지점이 이미 방어 코드로 크래시 없음, 너무 사소) / 전체내역 검색 input에 debounce 없음(expandRec가 날짜범위로 캐시되고 수천 건 필터링도 5ms 미만이라 실증된 랙 아님, 이론적 우려). 코드 변경 없음(읽기 전용 조사, txRow/histRow 라인 번호·중복 내용은 오케스트레이팅 세션이 Read로 직접 재확인).",
+      "commit": null
+    },
+    {
+      "cycle": 126,
+      "phase": "advance",
+      "timestamp": "2026-10-02T17:05:00.000Z",
+      "summary": "critique(cycle126) 계획대로 txRow()/histRow()의 중복을 공용 txRowCore(t,sel) 헬퍼로 통합했다. sel={mode,has(id),onToggle}로 선택 상태 소스와 토글 핸들러 이름만 호출부가 주입하도록 캡슐화 — sign/cls/av/ic/glyph/faN/taN/asset 계산, 선택모드 마크업(sel-check/swipe-content), 일반모드 마크업(confirm-btn 포함)을 한 곳에만 작성. txRow(t){return txRowCore(t,{mode:ST.lSel.mode,has:id=>ST.lSel.ids.has(id),onToggle:'ledgerToggleSel'})}, histRow(t){...ledgerToggleSel 대신 ST.hist.selMode/ST.hist.sel/'histToggleSel'...}로 얇은 래퍼화해 기존 호출부(ledgerRowsHtml/updateHist groupHTML/wireLongPress 대상)는 손대지 않음. test/run.js FUNCTIONS에 txRowCore 등록. 회귀 테스트 3개 추가: 비선택 모드는 txRow/histRow가 바이트 단위로 완전히 동일한 문자열을 내야 함, 선택 모드(미선택/선택됨 두 상태)는 토글 핸들러 이름만 바꿔치면 나머지가 완전히 같아야 함 — 향후 누군가 한쪽 함수만 손대 다시 갈라지는 걸 실행 기반으로 잡아낸다. node test/run.js 847/847 -> 850/850 통과. APP_VERSION 1.47.21->1.47.22, sw.js CACHE v283->v284. pending_advance_plan을 null로 비움.",
       "commit": null
     }
   ]

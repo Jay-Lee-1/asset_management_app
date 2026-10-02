@@ -1305,7 +1305,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.21';
+const APP_VERSION='1.47.22';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3450,7 +3450,7 @@ function sumTap(kind){ /* 요약 탭 → 전체내역 (해당 월 + 종류 필�
  go('history');
 }
 
-function txRow(t){
+function txRowCore(t,sel){
  const sign=t.type==='income'?'+':(t.type==='transfer'||t.type==='saving')?'':'-';
  const cls=t.type==='income'?'plus':t.type==='saving'?'save':t.type==='transfer'?'':'minus';
  const av=t.type==='income'?'a-in':t.type==='saving'?'a-save':t.type==='transfer'?'a-etc':'a-food';
@@ -3458,8 +3458,8 @@ function txRow(t){
  const glyph=t.type==='transfer'?svg('transfer'):catGlyph(t.type,t.category,null,t.type==='saving'?'piggy':'wallet');
  const faN=assetNm(t.fromAssetId,t.fromAssetName),taN=assetNm(t.toAssetId,t.toAssetName);
  const asset=t.type==='income'?(taN!=='—'?taN:''):(t.type==='transfer'||t.type==='saving')?`${faN==='—'?'':faN}→${taN==='—'?'':taN}`:(faN!=='—'?faN:'');
- if(ST.lSel.mode){const on=ST.lSel.ids.has(t.id);const selectable=!t.isRec;
-  return `<div class="swipe" data-id="${t.id}"><div class="swipe-content${on?' sel-on':''}" ${selectable?`onclick="ledgerToggleSel('${t.id}')" tabindex="0" role="button" aria-pressed="${on}" aria-label="${esc(t.memo||t.category)} ${sign}${comma(t.amount)}원" onkeydown="rowKeydown(event,()=>ledgerToggleSel('${t.id}'))"`:''} style="${selectable?'':'opacity:.45'}">
+ if(sel.mode){const on=sel.has(t.id);const selectable=!t.isRec;
+  return `<div class="swipe" data-id="${t.id}"><div class="swipe-content${on?' sel-on':''}" ${selectable?`onclick="${sel.onToggle}('${t.id}')" tabindex="0" role="button" aria-pressed="${on}" aria-label="${esc(t.memo||t.category)} ${sign}${comma(t.amount)}원" onkeydown="rowKeydown(event,()=>${sel.onToggle}('${t.id}'))"`:''} style="${selectable?'':'opacity:.45'}">
    <div class="sel-check ${on?'on':''}">${svg('check')}</div>
    <div class="avatar ${av}" style="width:40px;height:40px">${glyph}</div>
    <div style="flex:1;min-width:0"><div class="nm-row"><span class="nm">${esc(t.memo||t.category)}</span>${t.isRec?`<span class="rec-ic" title="반복">${svg('repeat')}</span>`:''}</div>${(t.memo&&t.memo!==t.category)?`<div class="flow-sub"><span class="fl">${esc(t.category)}</span></div>`:''}</div>
@@ -3469,6 +3469,7 @@ function txRow(t){
     ${asset?`<div class="flow-sub"><span class="fl">${esc(asset)}</span>${txScheduled(t)?'<span class="sch-dot"></span>':''}</div>`:(txScheduled(t)?`<div class="flow-sub"><span class="sch-dot"></span><span class="fl">예정</span></div>`:'')}</div>
    <div class="amt num ${cls}">${sign}${comma(t.amount)}원</div>${isDuePending(t)?`<button class="confirm-btn" onclick="event.stopPropagation();${t.isRec?`confirmRecTransfer('${t.recId}','${t.date}')`:`openConfirmTransfer('${t.id}')`}">확인</button>`:''}</div></div>`;
 }
+function txRow(t){return txRowCore(t,{mode:ST.lSel.mode,has:id=>ST.lSel.ids.has(id),onToggle:'ledgerToggleSel'})}
 function rowTap(el){ /* 내역 탭 → 수정 (길게 누르면 다중 선택·삭제) */
  if(window._lpJustFired){window._lpJustFired=false;return}
  const sw=el.closest('.swipe');if(!sw)return;
@@ -4067,28 +4068,7 @@ function histTotDown(){clearTimeout(_htTimer);_htTimer=setTimeout(()=>{
  ST.hist.avgMode=!ST.hist.avgMode;if(navigator.vibrate)navigator.vibrate(10);updateHist();requestAnimationFrame(fitAll);
 },450)}
 function histTotUp(){clearTimeout(_htTimer)}
-function histRow(t){
- const H=ST.hist;const on=H.sel.has(t.id);
- const sign=t.type==='income'?'+':(t.type==='transfer'||t.type==='saving')?'':'-';
- const cls=t.type==='income'?'plus':t.type==='saving'?'save':t.type==='transfer'?'':'minus';
- const av=t.type==='income'?'a-in':t.type==='saving'?'a-save':t.type==='transfer'?'a-etc':'a-food';
- const ic=t.type==='transfer'?'transfer':CATICON[t.category]||(t.type==='saving'?'piggy':'wallet');
- const glyph=t.type==='transfer'?svg('transfer'):catGlyph(t.type,t.category,null,t.type==='saving'?'piggy':'wallet');
- const faN=assetNm(t.fromAssetId,t.fromAssetName),taN=assetNm(t.toAssetId,t.toAssetName);
- const asset=t.type==='income'?(taN!=='—'?taN:''):(t.type==='transfer'||t.type==='saving')?`${faN==='—'?'':faN}→${taN==='—'?'':taN}`:(faN!=='—'?faN:'');
- if(H.selMode){
-  const selectable=!t.isRec;
-  return `<div class="swipe" data-id="${t.id}"><div class="swipe-content${on?' sel-on':''}" ${selectable?`onclick="histToggleSel('${t.id}')" tabindex="0" role="button" aria-pressed="${on}" aria-label="${esc(t.memo||t.category)} ${sign}${comma(t.amount)}원" onkeydown="rowKeydown(event,()=>histToggleSel('${t.id}'))"`:''} style="${selectable?'':'opacity:.45'}">
-   <div class="sel-check ${on?'on':''}">${svg('check')}</div>
-   <div class="avatar ${av}" style="width:40px;height:40px">${glyph}</div>
-   <div style="flex:1;min-width:0"><div class="nm-row"><span class="nm">${esc(t.memo||t.category)}</span>${t.isRec?`<span class="rec-ic" title="반복">${svg('repeat')}</span>`:''}</div>${(t.memo&&t.memo!==t.category)?`<div class="flow-sub"><span class="fl">${esc(t.category)}</span></div>`:''}</div>
-   <div class="amt num ${cls}">${sign}${comma(t.amount)}원</div></div></div>`;
- }
- return `<div class="swipe" data-id="${t.id}" data-rec="${t.isRec?t.recId:''}" data-date="${t.date}" ${t.isRec?'':'data-lp="1"'}>  <div class="swipe-content" tabindex="0" role="button" aria-label="${esc(t.memo||t.category)} ${sign}${comma(t.amount)}원" onclick="rowTap(this)" onkeydown="rowKeydown(event,()=>rowTap(this))"><div class="avatar ${av}" style="width:40px;height:40px">${glyph}</div>
-   <div style="flex:1;min-width:0"><div class="nm-row"><span class="nm">${esc(t.memo||t.category)}</span>${t.isRec?`<span class="rec-ic" title="반복">${svg('repeat')}</span>`:''}</div>
-    ${asset?`<div class="flow-sub"><span class="fl">${esc(asset)}</span>${txScheduled(t)?'<span class="sch-dot"></span>':''}</div>`:(txScheduled(t)?`<div class="flow-sub"><span class="sch-dot"></span><span class="fl">예정</span></div>`:'')}</div>
-   <div class="amt num ${cls}">${sign}${comma(t.amount)}원</div>${isDuePending(t)?`<button class="confirm-btn" onclick="event.stopPropagation();${t.isRec?`confirmRecTransfer('${t.recId}','${t.date}')`:`openConfirmTransfer('${t.id}')`}">확인</button>`:''}</div></div>`;
-}
+function histRow(t){return txRowCore(t,{mode:ST.hist.selMode,has:id=>ST.hist.sel.has(id),onToggle:'histToggleSel'})}
 let _segPrev=null; /* 시트 재렌더 시에도 물방울이 이어서 미끄러지도록 이전 위치 기억 */
 function moveSegBlobs(){
  document.querySelectorAll('.seg').forEach(seg=>{

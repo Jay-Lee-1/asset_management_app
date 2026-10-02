@@ -143,7 +143,7 @@ const FUNCTIONS = [
   'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwHistoryCard', 'allocationCard', 'doRenameOwner', 'addOwner',
   'goalOwnerEff', 'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'syncGoalInputs', 'goalClearDate', 'goalOwnerSel', 'renderGoalForm', 'openGoalForm', 'saveGoal', 'delGoal',
   'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetToggleSel', 'visibleAssetsForSel', 'assetSelAll', 'activeSel',
-  'modeSeg', 'monthNav', 'abbr', 'calCellsFor', 'ledSumInner', 'ledSumBox', 'ledSumTap', 'calPane', 'txRow', 'dayTxns',
+  'modeSeg', 'monthNav', 'abbr', 'calCellsFor', 'ledSumInner', 'ledSumBox', 'ledSumTap', 'calPane', 'txRowCore', 'txRow', 'dayTxns',
   'ledgerRowsHtml', 'ledgerDayHeadHtml', 'renderLedger', 'selDayPartial',
   'ledgerSelPartial', 'ledgerToggleSel', 'ledgerSelAll', 'visibleTx',
   'fmtDot', 'splitHist', 'histRow', 'histTotHTML', 'updateHist', 'renderHistory',
@@ -8686,6 +8686,60 @@ test('updateHist: sortAsc:false(기본값)에서는 기존처럼 최신 20건이
   const listHtml = sandbox.histListEl.innerHTML;
   assert.ok(listHtml.includes('d25'), '첫 페이지에 가장 최근 내역이 보여야 함');
   assert.ok(!listHtml.includes('d05'), '가장 오래된 5건은 아직 안 보여야 함');
+});
+
+/* ---------- txRow/histRow: 공용 txRowCore 동기화 회귀 (app-evolve cycle126 advance) ----------
+ * 가계부 탭의 txRow()와 전체내역 탭의 histRow()가 sign/cls/av/ic/glyph/faN/taN/asset 계산과
+ * 선택모드/일반모드 마크업을 완전히 동일하게 중복 구현해오다, 이번 사이클에 공용 txRowCore(t,sel)
+ * 헬퍼로 통합하고 txRow/histRow를 얇은 래퍼로 바꿨다(선택 상태 소스만 ST.lSel vs ST.hist, 토글
+ * 핸들러 이름만 ledgerToggleSel vs histToggleSel로 다름). 이 테스트는 향후 누군가 txRow나 histRow
+ * 쪽에만 마크업을 손대 다시 갈라지는 걸 잡아낸다: 일반(비선택) 모드는 토글 핸들러 자체가 안 쓰여
+ * 완전히 같은 문자열이어야 하고, 선택 모드는 핸들러 이름만 서로 바꿔치면 같은 문자열이어야 한다. */
+function makeTxRowFixture() {
+  return { id: 't1', date: '2026-06-10', type: 'expense', category: '식비', memo: '점심 김밥', amount: 8000, fromAssetId: 'a1' };
+}
+test('txRow/histRow: 일반(비선택) 모드에서는 완전히 동일한 마크업을 낸다', () => {
+  const t = makeTxRowFixture();
+  sandbox.ST = {
+    lSel: { mode: false, ids: new Set() },
+    hist: { selMode: false, sel: new Set() },
+  };
+  const ledgerHtml = sandbox.txRow(t);
+  const histHtml = sandbox.histRow(t);
+  assert.strictEqual(ledgerHtml, histHtml, 'txRow와 histRow는 비선택 모드에서 토글 핸들러를 쓰지 않으므로 바이트 단위로 같아야 함');
+  assert.ok(ledgerHtml.includes('점심 김밥'), '회귀 테스트 자체가 의미 있으려면 실제 내용이 렌더돼야 함');
+});
+test('txRow/histRow: 선택 모드에서는 토글 핸들러 이름만 다르고 나머지는 동일하다 (선택 안 됨)', () => {
+  const t = makeTxRowFixture();
+  sandbox.ST = {
+    lSel: { mode: true, ids: new Set() },
+    hist: { selMode: true, sel: new Set() },
+  };
+  const ledgerHtml = sandbox.txRow(t);
+  const histHtml = sandbox.histRow(t);
+  assert.ok(ledgerHtml.includes("ledgerToggleSel('t1')"), 'txRow는 ledgerToggleSel을 호출해야 함');
+  assert.ok(histHtml.includes("histToggleSel('t1')"), 'histRow는 histToggleSel을 호출해야 함');
+  assert.strictEqual(
+    ledgerHtml.split('ledgerToggleSel').join('TOGGLE'),
+    histHtml.split('histToggleSel').join('TOGGLE'),
+    '토글 핸들러 이름만 바꿔치면 나머지 마크업은 완전히 같아야 함'
+  );
+});
+test('txRow/histRow: 선택 모드에서 선택된 상태(on)도 두 함수가 동일하게 반영한다', () => {
+  const t = makeTxRowFixture();
+  sandbox.ST = {
+    lSel: { mode: true, ids: new Set(['t1']) },
+    hist: { selMode: true, sel: new Set(['t1']) },
+  };
+  const ledgerHtml = sandbox.txRow(t);
+  const histHtml = sandbox.histRow(t);
+  assert.ok(ledgerHtml.includes('sel-on'), '선택된 항목은 txRow에서 sel-on 클래스가 붙어야 함');
+  assert.ok(histHtml.includes('sel-on'), '선택된 항목은 histRow에서도 sel-on 클래스가 붙어야 함');
+  assert.strictEqual(
+    ledgerHtml.split('ledgerToggleSel').join('TOGGLE'),
+    histHtml.split('histToggleSel').join('TOGGLE'),
+    '선택된 상태(on)에서도 토글 핸들러 이름만 바꿔치면 나머지 마크업은 완전히 같아야 함'
+  );
 });
 
 /* ---------- renderPlan: 렌더 함수 스모크 테스트 (app-evolve cycle57 critique/advance) ----------
