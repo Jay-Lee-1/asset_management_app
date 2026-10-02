@@ -141,7 +141,7 @@ const FUNCTIONS = [
   'txScheduled', 'monthStats', 'monthStats2', 'expenseByCat', 'needGold', 'inQuietWindow', 'fmtSynced', 'rateStatusText',
   'nextBigOutflow', 'dday', 'balanceOn', 'nextOutflowCard', 'monthOutflowCard', 'planGaugeCard', 'homeAlertCard', 'renderHome',
   'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwHistoryCard', 'doRenameOwner', 'addOwner',
-  'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'syncGoalInputs', 'renderGoalForm', 'openGoalForm', 'saveGoal', 'delGoal',
+  'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'syncGoalInputs', 'goalClearDate', 'renderGoalForm', 'openGoalForm', 'saveGoal', 'delGoal',
   'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetToggleSel', 'visibleAssetsForSel', 'assetSelAll', 'activeSel',
   'modeSeg', 'monthNav', 'abbr', 'calCellsFor', 'ledSumInner', 'ledSumBox', 'ledSumTap', 'calPane', 'txRow', 'dayTxns',
   'ledgerRowsHtml', 'ledgerDayHeadHtml', 'renderLedger', 'selDayPartial',
@@ -2056,6 +2056,19 @@ test('delGoal: undoToast의 되돌리기를 누르면 목표가 되살아나고(
   assert.strictEqual(sandbox.DB.goals[0].id, 'g1');
   assert.strictEqual(sandbox.DB.goals[0].updatedAt, 'test-updatedAt', '되살린 레코드는 다시 touch()되어야 mergeCollection에서 안 탈락함');
   assert.strictEqual('g1' in sandbox.DB.deletedIds, false, '되돌리면 톰스톤도 지워져야 함');
+});
+/* app-evolve cycle124 develop가 발견한 버그의 회귀 테스트: 목표일 지우기(✕) 버튼이 txClearEnd/recClearEnd와
+ * 달리 syncGoalInputs()를 안 부르고 바로 goalDraft.targetDate를 지운 뒤 renderGoalForm을 다시 그렸다.
+ * renderGoalForm은 입력칸 value를 goalDraft에서 그대로 읽으므로, 이름/금액을 고친 뒤 날짜만 지우면
+ * 그 사이 입력한 값이 동기화 전 상태로 되돌려써져 조용히 사라졌다. */
+test('goalClearDate: 날짜를 지우기 전에 이름/금액 입력을 먼저 동기화해 사용자가 입력한 값을 보존한다', () => {
+  sandbox.goalDraft = { id: 'g1', name: '여행자금', type: 'networth', targetAmount: 3000000, targetDate: '2026-12-31' };
+  sandbox.goalNameValue = '여행자금(유럽)';
+  sandbox.goalAmtValue = '5,000,000';
+  sandbox.goalClearDate(true);
+  assert.strictEqual(sandbox.goalDraft.targetDate, '', '목표일은 지워져야 함');
+  assert.strictEqual(sandbox.goalDraft.name, '여행자금(유럽)', '지우기 전에 동기화되지 않으면 이 값이 되돌려써짐');
+  assert.strictEqual(sandbox.goalDraft.targetAmount, 5000000, '지우기 전에 동기화되지 않으면 이 값이 되돌려써짐');
 });
 /* mergeRemoteDataIntoLocal이 DB.txns/recurrences/assets처럼 DB.goals도 mergeCollection으로
  * 병합하는지 직접 확인 — cycle122가 DB.goals를 신설할 때 이 배선이 누락됐었다(critique cycle123). */

@@ -1305,7 +1305,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.15';
+const APP_VERSION='1.47.16';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2439,13 +2439,14 @@ function openGoalForm(id){
  renderGoalForm(!!g);
 }
 function syncGoalInputs(){const d=goalDraft;if(!d)return;if($('goalName'))d.name=$('goalName').value||'';if($('goalAmt'))d.targetAmount=num($('goalAmt'))}
+function goalClearDate(editing){syncGoalInputs();goalDraft.targetDate='';renderGoalForm(editing)}
 function renderGoalForm(editing){
  const d=goalDraft;
  openSheet(`<h3>${editing?'목표 수정':'목표 추가'}</h3><div class="desc">순자산이 이 금액에 도달하는 걸 목표로 추적해요</div>
   <div class="field"><label for="goalName">목표 이름</label><div class="field-clear"><input id="goalName" value="${esc(d.name||'')}" placeholder="예: 내 집 마련 자금"><button type="button" class="fc-x" aria-label="이름 지우기" onclick="clrInput('goalName')">✕</button></div></div>
   <div class="field"><label for="goalAmt">목표 순자산 (원)</label><div class="field-clear"><input id="goalAmt" class="num" inputmode="numeric" value="${d.targetAmount?comma(d.targetAmount):''}" placeholder="0" oninput="fmtAmt(this)"><button type="button" class="fc-x" aria-label="목표 금액 지우기" onclick="clrInput('goalAmt')">✕</button></div></div>
   <div class="field"><label>목표일 (선택)</label><div class="pick ${d.targetDate?'':'placeholder'}" style="cursor:pointer" tabindex="0" role="button" aria-label="목표일 ${d.targetDate?fmtDateFull(d.targetDate):'선택'}" onclick="syncGoalInputs();openFieldDatePicker(goalDraft.targetDate||TODAY,ds=>{goalDraft.targetDate=ds;renderGoalForm(${editing})})" onkeydown="rowKeydown(event,()=>{syncGoalInputs();openFieldDatePicker(goalDraft.targetDate||TODAY,ds=>{goalDraft.targetDate=ds;renderGoalForm(${editing})})})">
-    <div class="pav a-save">${svg('calendar')}</div><div class="pbody"><div class="pn">${d.targetDate?fmtDateFull(d.targetDate):'목표일 선택'}</div></div><div class="pc">${d.targetDate?`<button type="button" class="fc-x" style="display:inline-flex;position:static;transform:none" aria-label="목표일 지우기" onclick="event.stopPropagation();goalDraft.targetDate='';renderGoalForm(${editing})" onkeydown="event.stopPropagation()">✕</button>`:svg('chev')}</div></div></div>
+    <div class="pav a-save">${svg('calendar')}</div><div class="pbody"><div class="pn">${d.targetDate?fmtDateFull(d.targetDate):'목표일 선택'}</div></div><div class="pc">${d.targetDate?`<button type="button" class="fc-x" style="display:inline-flex;position:static;transform:none" aria-label="목표일 지우기" onclick="event.stopPropagation();goalClearDate(${editing})" onkeydown="event.stopPropagation()">✕</button>`:svg('chev')}</div></div></div>
   <div class="two-btn"><button class="btn btn-soft cancel" onclick="closeSheet()">취소</button>
     <button class="btn btn-primary" onclick="saveGoal(${editing})">${editing?'수정하기':'추가하기'}</button></div>
   ${editing?`<button class="del-link" onclick="delGoal('${d.id}')">${svg('trash')} 이 목표 삭제</button>`:''}`);

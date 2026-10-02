@@ -1,15 +1,8 @@
 {
   "cycle": 124,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 119,
-      "phase": "develop",
-      "timestamp": "2026-10-01T12:00:00.000Z",
-      "summary": "cycle118 critique 러너업(경미, 보류)이던 순자산 추이 스파크라인 SVG(nwHistoryCard, 2387)의 aria-hidden 누락 수정 — 장식용 차트에 aria-hidden=\"true\" focusable=\"false\" 추가, 회귀 테스트 1개. node test/run.js 753/753 -> 754/754 통과. APP_VERSION 1.47.5->1.47.6, sw.js CACHE v267->v268.",
-      "commit": null
-    },
     {
       "cycle": 119,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-02T06:12:27.678Z",
       "summary": "critique(cycle123) 계획대로 DB.goals의 cloud sync 병합/백업 검증 누락을 수정했다. saveGoal()의 rec 생성을 touch()로 감싸 updatedAt 스탬프 추가. delGoal()에 DB.deletedIds 톰스톤(now 타임스탬프)과 undoToast 되돌리기(touch()로 재스탬프 후 goals에 복원, 톰스톤 제거)를 deleteTxnsUndo 등과 동일한 패턴으로 추가 — 기존엔 confirmSheet만 있고 톰스톤/undo가 전혀 없었음. mergeRemoteDataIntoLocal()의 DB.assets=mergeCollection(...) 바로 아래에 DB.goals=mergeCollection(DB.goals,remoteData.goals,DB.deletedIds,remoteData.deletedIds) 추가. sanitizeBackup()에 assets/recurrences와 동일한 패턴으로 goals 분기 추가 — id 없는 레코드 드롭, targetAmount는 sanitizeAmount(min 0)로 clamp, targetDate는 /^\\d{4}-\\d{2}-\\d{2}$/ 아니면 null로 보정. test/run.js: saveGoal/delGoal touch·톰스톤·undo 회귀 4개, mergeRemoteDataIntoLocal의 goals 라우팅(양쪽 존재 시 updatedAt 승자/로컬 삭제 후 원격 재생성 저항) 2개, sanitizeBackup의 goals 검증(금액 보정/음수 클램프/날짜 형식/필수 id/빈 입력) 5개 — 총 11개 추가. node test/run.js 801/801 -> 812/812 통과. APP_VERSION 1.47.14->1.47.15, sw.js CACHE v276->v277. pending_advance_plan을 null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 124,
+      "phase": "develop",
+      "timestamp": "2026-10-02T07:15:00.000Z",
+      "summary": "general-purpose 서브에이전트 조사로 목표(goal) 폼의 목표일 지우기(✕) 버튼이 txClearEnd/recClearEnd와 달리 syncGoalInputs()를 호출하지 않고 바로 goalDraft.targetDate를 지운 뒤 renderGoalForm을 재호출하던 버그 발견·수정(cycle122가 목표 기능을 신설할 때 날짜 피커 진입(onclick, syncGoalInputs 포함)과 달리 ✕ 버튼만 인라인으로 작성되며 동기화가 빠짐). renderGoalForm은 모든 입력칸 value를 goalDraft에서 직접 읽으므로, 이름/금액을 고친 뒤(날짜 피커를 열지 않고) ✕만 누르면 방금 입력한 값이 동기화 전 상태로 되돌려써져 조용히 사라졌다. goalClearDate(editing){syncGoalInputs();goalDraft.targetDate='';renderGoalForm(editing)} 신설(syncGoalInputs/renderGoalForm 사이), ✕ 버튼 onclick을 인라인 대신 goalClearDate(${editing}) 호출로 교체(txClearEnd/recClearEnd와 동일 패턴). test/run.js FUNCTIONS에 goalClearDate 추가, 날짜를 지우기 전 동기화되지 않으면 그대로 되돌려써지는 걸 증명하는 회귀 테스트 1개 추가(함수 없이는 extractFunction이 바로 에러를 내 실제 소스와 연결됨을 확인). node test/run.js 812/812 -> 813/813 통과. APP_VERSION 1.47.15->1.47.16, sw.js CACHE v277->v278.",
       "commit": null
     }
   ]
