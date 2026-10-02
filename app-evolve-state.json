@@ -1,15 +1,8 @@
 {
   "cycle": 125,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 120,
-      "phase": "review",
-      "timestamp": "2026-10-01T16:07:55.934Z",
-      "summary": "develop 커밋(877ca54, moveChipBlob() orphan 함수 제거)을 검토. 호출부/DOM id 참조 전무를 grep으로 독립 재검증. node test/run.js 762/762 재통과. 코드 변경 없음(이상 없음).",
-      "commit": null
-    },
     {
       "cycle": 120,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-02T11:44:18.000Z",
       "summary": "general-purpose 서브에이전트 조사로 cycle122에 신설된 DB.catIcon('타입:이름'→아이콘)·DB.catVar('타입:이름'→변동 카테고리 플래그)가 mergeRemoteDataIntoLocal()(index.html ~1435-1460)에서 전혀 병합되지 않던 버그 발견·수정 — DB.categories/owners/budgetHistory는 전용 순수 함수로 병합되는데 같은 '카테고리 커스터마이징' 성격의 flat 맵인 catIcon/catVar는 함수에 등장 자체가 없었음(settings/nwHistory는 주석으로 의도적 제외가 명시된 반면 이 둘은 단순 누락, DB.goals가 cycle123에서 겪은 것과 동일한 패턴). pushCloud()가 DB 전체를 밀기 때문에 평상시엔 문제없지만, afterCloudAuth()의 미동기화-로컬 병합 경로/pushCloud() 충돌 재시도에서는 이 두 맵이 로컬 값 그대로 유지되어 원격 기기의 아이콘·변동 플래그 변경이 조용히 버려지고, 뒤이은 save()의 재푸시가 그 사라진 상태를 클라우드에 되밀어 영구 소실로 이어짐. logic.js에 mergeFlatMap(localMap,remoteMap) 순수함수 신설(mergeBudgetHistory와 동일한 '동률이면 local 승리' 키 유니온 규칙). mergeRemoteDataIntoLocal()의 DB.budgetHistory 병합 바로 아래에 DB.catIcon=mergeFlatMap(...)/DB.catVar=mergeFlatMap(...) 추가(migrate() 호출보다 먼저 배치해 기본값 채움이 병합을 덮어쓰지 않게 함). sanitizeBackup()은 점검 후 변경 없음(잘못된 catIcon/catVar 항목은 catIconOf/isVarCat에서 단순 no-op이라 크래시/금액 손상 위험이 없어 스코프 제외). test/run.js: mergeFlatMap 단위 테스트 4개(원격전용 키 유지/로컬전용 키 유지/충돌 시 로컬 승리/양쪽 undefined 안전)+mergeRemoteDataIntoLocal의 catIcon/catVar 병합 통합 테스트 1개 — 총 5개 추가. node test/run.js 832/832 -> 837/837 통과. APP_VERSION 1.47.17->1.47.18, sw.js CACHE v279->v280.",
       "commit": "62bc169500d6193b27a1701ad9500913ea5a7a42"
+    },
+    {
+      "cycle": 125,
+      "phase": "review",
+      "timestamp": "2026-10-02T12:10:00.000Z",
+      "summary": "develop 커밋(62bc169, DB.catIcon/catVar cloud sync 병합 누락 수정)을 검토. mergeFlatMap(Object.assign({},remote,local))이 mergeBudgetHistory와 동일한 '동률이면 local 승리, 키 유니온' 관례임을 소스 대조로 확인. mergeRemoteDataIntoLocal에서 DB.catIcon/DB.catVar 병합이 migrate() 호출보다 먼저 배치되어 기본값 채움이 병합 결과를 덮어쓰지 않음을 재확인, mergeFlatMap이 undefined 입력에도 안전해 migrate() 실행 전 DB.catIcon/catVar가 아직 없는 상태에서도 문제없음을 확인. node test/run.js 837/837 재통과. 코드 변경 없음(이상 없음).",
+      "commit": null
     }
   ]
 }
