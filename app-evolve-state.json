@@ -1,15 +1,8 @@
 {
   "cycle": 123,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 118,
-      "phase": "review",
-      "timestamp": "2026-10-01T08:00:00.000Z",
-      "summary": "cycle118 develop 커밋(88d415c, ST.spendOwner 이름변경 마이그레이션 수정)을 검토. 기존 assetOwner/plan.owner와 동일 위치·패턴이라 새 버그 유입 가능성 낮음 확인. node test/run.js 747/747 통과. 코드 변경 없음(이상 없음).",
-      "commit": null
-    },
     {
       "cycle": 118,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-02T03:10:00.000Z",
       "summary": "general-purpose 서브에이전트 조사로 planTransfer/planSplitTransfer(Plan 탭 '부족해요' 시트의 예정 이체 남기기)가 saveTx/saveRec/csvRowToImportTxn/sanitizeBackup과 달리 RANGE_FROM/RANGE_TO 경계검증을 전혀 안 거치고 DB.txns.push로 직접 적재되던 버그 발견·수정(cycle120에서 다룬 네 경로에 포함 안 됐던 별도 저장 경로). 날짜피커('날짜 선택')는 과거/미래 무제한 스크롤이 가능해 범위 밖 날짜를 고르면 '예정 이체를 남겼어요' 토스트는 뜨지만 allTxns(RANGE_FROM,RANGE_TO) 조회 범위 밖이라 가계부/홈/잔액계산 어디에도 다시 나타나지 않는 조용한 데이터 유실로 이어졌다. planTransfer(6049)·planSplitTransfer(6038) 시작부에 dateBelowRangeFloor/dateAboveRangeCeil 체크를 saveTx와 동일한 토스트로 추가. test/run.js에 네 함수×상하한 경계 회귀 테스트 4개 추가. node test/run.js 797/797 -> 801/801 통과. APP_VERSION 1.47.13->1.47.14, sw.js CACHE v275->v276.",
+      "commit": null
+    },
+    {
+      "cycle": 123,
+      "phase": "review",
+      "timestamp": "2026-10-02T04:05:00.000Z",
+      "summary": "develop 커밋(cc001d9, planTransfer/planSplitTransfer RANGE_FROM/RANGE_TO 경계검증 추가)을 검토. 새 체크 두 줄이 saveTx(3579-3580)/saveRec(3770-3771)의 dateBelowRangeFloor/dateAboveRangeCeil 토스트 문구·순서와 정확히 동일함을 소스 대조로 확인, twGuard() 통과 직후·txns.push 이전이라 조기 반환 위치도 올바름. node test/run.js 801/801 재통과. 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
