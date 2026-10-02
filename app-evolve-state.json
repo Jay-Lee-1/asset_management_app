@@ -1,15 +1,8 @@
 {
   "cycle": 124,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 119,
-      "phase": "review",
-      "timestamp": "2026-10-01T12:30:00.000Z",
-      "summary": "develop 커밋(200c2d7, 순자산 스파크라인 aria-hidden 추가)을 검토. 속성 위치·장식용 판단 타당성 확인, 신규 테스트 실효성 확인. node test/run.js 754/754 통과. 추가로 svg(n,w) 아이콘 헬퍼 전수 a11y 점검은 범위 밖이라 critique 후보로 남김. 코드 변경 없음(이상 없음).",
-      "commit": null
-    },
     {
       "cycle": 119,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-02T07:15:00.000Z",
       "summary": "general-purpose 서브에이전트 조사로 목표(goal) 폼의 목표일 지우기(✕) 버튼이 txClearEnd/recClearEnd와 달리 syncGoalInputs()를 호출하지 않고 바로 goalDraft.targetDate를 지운 뒤 renderGoalForm을 재호출하던 버그 발견·수정(cycle122가 목표 기능을 신설할 때 날짜 피커 진입(onclick, syncGoalInputs 포함)과 달리 ✕ 버튼만 인라인으로 작성되며 동기화가 빠짐). renderGoalForm은 모든 입력칸 value를 goalDraft에서 직접 읽으므로, 이름/금액을 고친 뒤(날짜 피커를 열지 않고) ✕만 누르면 방금 입력한 값이 동기화 전 상태로 되돌려써져 조용히 사라졌다. goalClearDate(editing){syncGoalInputs();goalDraft.targetDate='';renderGoalForm(editing)} 신설(syncGoalInputs/renderGoalForm 사이), ✕ 버튼 onclick을 인라인 대신 goalClearDate(${editing}) 호출로 교체(txClearEnd/recClearEnd와 동일 패턴). test/run.js FUNCTIONS에 goalClearDate 추가, 날짜를 지우기 전 동기화되지 않으면 그대로 되돌려써지는 걸 증명하는 회귀 테스트 1개 추가(함수 없이는 extractFunction이 바로 에러를 내 실제 소스와 연결됨을 확인). node test/run.js 812/812 -> 813/813 통과. APP_VERSION 1.47.15->1.47.16, sw.js CACHE v277->v278.",
+      "commit": null
+    },
+    {
+      "cycle": 124,
+      "phase": "review",
+      "timestamp": "2026-10-02T08:12:00.000Z",
+      "summary": "develop 커밋(fd9c6eb, goalClearDate 신설로 목표일 지우기 동기화 버그 수정)을 검토. goalClearDate가 txClearEnd/recClearEnd와 동일한 sync-then-clear-then-rerender 패턴임을 소스 대조로 확인(grep 결과 ✕ 버튼 onclick도 goalClearDate 호출 1곳으로 일관, 인라인 targetDate='' 잔존 없음). node test/run.js 813/813 재통과. 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
