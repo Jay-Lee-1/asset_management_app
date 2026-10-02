@@ -3985,6 +3985,35 @@ test('sanitizeBackup: 자산의 보유수량 필드(fxAmount/goldDon/stockQty)�
   assert.strictEqual(data.assets[1].goldDon, 0);
   assert.strictEqual(fixedCount, 2);
 });
+/* ---------- sanitizeBackup: 저축 자산의 maturityDate도 반복거래 startDate/endDate와 동일하게
+ * csvDateValid()로 형식/달력 유효성을 검증한다(app-evolve cycle127 advance). 만기일 없음은
+ * 기존에도 정상 상태라(만기 미설정) 레코드를 버리지 않고 깨진 값만 null로 정규화한다. ---------- */
+test('sanitizeBackup: 형식/달력상 무효한 자산 maturityDate는 null로 정규화하고 fixedCount를 센다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [],
+    assets: [
+      { id: 'a1', type: 'savings', maturityDate: 'not-a-date' },
+      { id: 'a2', type: 'savings', maturityDate: '2026-13-01' },
+    ],
+  });
+  assert.strictEqual(data.assets[0].maturityDate, null);
+  assert.strictEqual(data.assets[1].maturityDate, null);
+  assert.strictEqual(fixedCount, 2);
+});
+test('sanitizeBackup: 유효한 자산 maturityDate와 만기 미설정(없음/null)은 그대로 둔다(정상 케이스는 회귀 없음)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [],
+    assets: [
+      { id: 'a1', type: 'savings', maturityDate: '2026-06-15' },
+      { id: 'a2', type: 'savings', maturityDate: null },
+      { id: 'a3', type: 'cash' },
+    ],
+  });
+  assert.strictEqual(data.assets[0].maturityDate, '2026-06-15');
+  assert.strictEqual(data.assets[1].maturityDate, null);
+  assert.strictEqual(data.assets[2].maturityDate, undefined);
+  assert.strictEqual(fixedCount, 0);
+});
 test('sanitizeBackup: 자산의 잔액성 필드(baseAmount/amountKRW)는 음수를 그대로 허용한다(오버드로우 등 유효 상태)', () => {
   const { data, fixedCount } = sandbox.sanitizeBackup({
     txns: [],
@@ -4964,6 +4993,36 @@ test('saveAsset: fx/금/주식이 아닌 자산 타입은 보유 수량 검증�
   sandbox.saveAsset(false);
   assert.strictEqual(sandbox.DB.assets.length, 1);
   assert.ok(!sandbox.toastCalls.includes('보유 수량을 입력해 주세요'));
+});
+/* ---------- saveAsset: 만기일(maturityDate)도 saveTx/saveRec/planTransfer 등과 동일하게
+ * RANGE_FROM/RANGE_TO 경계를 벗어나면 저장을 막는다(app-evolve cycle127 advance). 날짜피커가
+ * 무제한 스크롤이라 범위 밖 만기일을 그대로 저장하면, doMaturity()가 만든 이체 거래가
+ * allTxns(RANGE_FROM,RANGE_TO) 조회 범위 밖에 쌓여 가계부/전체내역/잔액 어디에도 다시
+ * 나타나지 않는 조용한 소실로 이어진다(cycle123 planTransfer 버그와 동일 패턴). ---------- */
+test('saveAsset: RANGE_FROM 이전 만기일은 토스트만 뜨고 저장되지 않는다', () => {
+  sandbox.DB = { assets: [], rates: { fx: {}, stocks: {}, goldPerG: 0 } };
+  sandbox.asDraft = { type: 'savings', owner: '나', includeInTotal: true, name: '적금', baseAmount: 0, maturityDate: '2022-12-31' };
+  sandbox.toastCalls = [];
+  sandbox.saveAsset(false);
+  assert.strictEqual(sandbox.DB.assets.length, 0, 'RANGE_FROM 이전 만기일은 저장되면 안 됨');
+  assert.ok(sandbox.toastCalls.some(m => m.includes('2023-01-01')), '하한 날짜를 알려주는 토스트가 떠야 함');
+});
+test('saveAsset: RANGE_TO 이후 만기일은 토스트만 뜨고 저장되지 않는다', () => {
+  sandbox.RANGE_TO = '2028-06-15';
+  sandbox.DB = { assets: [], rates: { fx: {}, stocks: {}, goldPerG: 0 } };
+  sandbox.asDraft = { type: 'savings', owner: '나', includeInTotal: true, name: '적금', baseAmount: 0, maturityDate: '2028-06-16' };
+  sandbox.toastCalls = [];
+  sandbox.saveAsset(false);
+  assert.strictEqual(sandbox.DB.assets.length, 0, 'RANGE_TO 이후 만기일은 저장되면 안 됨');
+  assert.ok(sandbox.toastCalls.some(m => m.includes('2028-06-15')), '상한 날짜를 알려주는 토스트가 떠야 함');
+});
+test('saveAsset: 범위 안 만기일은 정상 저장된다(정상 케이스는 회귀 없음)', () => {
+  sandbox.DB = { assets: [], rates: { fx: {}, stocks: {}, goldPerG: 0 } };
+  sandbox.asDraft = { type: 'savings', owner: '나', includeInTotal: true, name: '적금', baseAmount: 0, maturityDate: '2026-06-15' };
+  sandbox.toastCalls = [];
+  sandbox.saveAsset(false);
+  assert.strictEqual(sandbox.DB.assets.length, 1);
+  assert.strictEqual(sandbox.DB.assets[0].maturityDate, '2026-06-15');
 });
 test('saveAsset: 처음 보는 fx 통화를 등록하면 즉시 동기화하고, 이미 보유 중이라 알고 있는 통화는 부르지 않는다', () => {
   sandbox.DB = { assets: [], rates: { fx: { USD: 1350 }, stocks: {}, goldPerG: 0 } };
@@ -6643,6 +6702,28 @@ test('doMaturity: 자동 생성된 만기 이체 거래에도 touch()가 호출�
   sandbox.doMaturity('a_sav');
   const t = sandbox.DB.txns[sandbox.DB.txns.length - 1];
   assert.strictEqual(t.updatedAt, 'test-updatedAt', '만기 이체 거래에도 touch()가 호출되어야 함');
+});
+/* ---------- doMaturity: 레거시 백업/오입력으로 만기일이 RANGE_FROM(2023-01-01) 이전이면,
+ * 기존엔 그 범위 밖 날짜로 거래를 그대로 push해 allTxns(RANGE_FROM,RANGE_TO) 조회 범위 밖에
+ * 쌓이고 가계부/전체내역/잔액 어디에도 다시 나타나지 않는 조용한 소실로 이어졌다(cycle123
+ * planTransfer 버그와 동일 패턴). 자동 플로우라 saveTx처럼 저장을 거부할 수 없으므로,
+ * sanitizeBackup의 endDate 정규화 관례를 따라 RANGE_FROM으로 클램프한다(app-evolve cycle127 advance). ---------- */
+test('doMaturity: RANGE_FROM 이전 레거시 만기일은 거래 날짜를 RANGE_FROM으로 클램프해 가시 범위 안에 남긴다', () => {
+  setupMaturityDB();
+  sandbox.DB.assets.find(a => a.id === 'a_sav').maturityTargetId = 'a_cash';
+  sandbox.DB.assets.find(a => a.id === 'a_sav').maturityDate = '2020-01-01';
+  sandbox.toastCalls = [];
+  sandbox.doMaturity('a_sav');
+  const t = sandbox.DB.txns[sandbox.DB.txns.length - 1];
+  assert.strictEqual(t.date, sandbox.RANGE_FROM, 'RANGE_FROM 이전 만기일은 RANGE_FROM으로 보정되어야 함');
+  assert.ok(sandbox.toastCalls.some(m => m.includes(sandbox.RANGE_FROM)), '보정했다는 안내가 떠야 함');
+});
+test('doMaturity: 정상 범위 안 만기일은 클램프 없이 그대로 이체 날짜로 쓰인다(정상 케이스는 회귀 없음)', () => {
+  setupMaturityDB();
+  sandbox.DB.assets.find(a => a.id === 'a_sav').maturityTargetId = 'a_cash';
+  sandbox.doMaturity('a_sav');
+  const t = sandbox.DB.txns[sandbox.DB.txns.length - 1];
+  assert.strictEqual(t.date, '2026-06-10');
 });
 
 /* ---------- detectStaleMarketValuedTxns: excludeMarketValued(cycle27) 적용 이전에 이미

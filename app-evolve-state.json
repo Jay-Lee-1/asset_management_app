@@ -1,24 +1,8 @@
 {
-  "cycle": 127,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "doMaturity()/saveAsset() 만기일 RANGE_FROM/RANGE_TO 경계검증 추가",
-    "why": "만기 이체(doMaturity)가 saveTx/saveRec/csv/backup/planTransfer/planSplitTransfer와 달리 유일하게 범위검증 없이 DB.txns.push하는 경로이고, 만기일 입력 자체(saveAsset)도 전혀 검증되지 않아 무제한 스크롤 날짜피커 오입력이나 레거시 백업의 범위 밖 maturityDate가 '만기 이체했어요' 토스트는 뜨지만 allTxns(RANGE_FROM,RANGE_TO) 밖이라 가계부/전체내역/잔액 어디에도 다시 나타나지 않는 조용한 데이터 소실로 이어질 수 있다(cycle123 planTransfer 버그와 동일 패턴의 여섯 번째 미점검 경로).",
-    "approach": [
-      "index.html saveAsset() (~3089, ~3150-3200): d.maturityDate가 있을 때 saveTx와 동일한 toast 문구로 dateBelowRangeFloor/dateAboveRangeCeil 검증 추가해 신규 오입력을 저장 시점에 거부.",
-      "index.html doMaturity() (~4537-4539): 레거시/복원된 범위 밖 maturityDate에 대한 방어로 date가 dateBelowRangeFloor면 RANGE_FROM으로 클램프(이 자동 플로우에서는 사용자가 날짜를 다시 고를 수 없으므로 saveTx식 거부보다 sanitizeBackup의 endDate 정규화 관례를 따름), 클램프 시 안내 토스트 보강.",
-      "index.html sanitizeBackup() assets 루프 (~5204-5212): recurrences startDate에 쓰는 csvDateValid() 재사용해 assets[].maturityDate 형식도 검증, 무효하면 null로 정규화(저축 자산에 만기일 없음은 기존에도 정상 상태)하고 fixedCount에 반영.",
-      "test/run.js: saveAsset가 범위 밖 maturityDate를 거부, doMaturity가 레거시 범위 밖 maturityDate를 RANGE_FROM으로 클램프해 거래를 가시 범위 안에 남기는지, sanitizeBackup이 깨진 maturityDate 문자열을 null로 정규화하는지 회귀 테스트 3종 추가, node test/run.js 통과 확인."
-    ]
-  },
+  "cycle": 128,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 122,
-      "phase": "advance",
-      "timestamp": "2026-10-02T02:16:48.016Z",
-      "summary": "critique(cycle122) 계획대로 순자산 목표(goal) 추적 기능을 신설했다. DB.goals=[](emptyDB/migrate 마이그레이션 안전) 필드 추가. logic.js에 goalPct(cur,target)와 goalProgress(goal,nwHistory,today) 순수함수 신설 — nwHistory 처음·끝 두 점으로 일평균 증가량을 구해 선형 투사(spendTrend류와 동일 원칙), 정체·감소 추세면 추측 투사 없이 projectedDate=null. index.html에 goalsSummaryCard()(목표 없으면 nwHistoryCard처럼 광고 없이 빈 문자열)·openGoalsList()·openGoalForm(id)·saveGoal(editing)·delGoal(id)를 asDraft/openBudgetPrompt/openRecManage/confirmSheet 등 기존 관례 그대로 추가. 진입점: 자산관리 탭 nwHistBody 바로 아래(목표 있을 때만)와 메뉴 › 가계부 그룹 › \"목표 관리\". MVP는 순자산 목표 1종으로 한정(카테고리별/자산별 목표는 다음 사이클 후보). test/run.js: FUNCTIONS에 신규 함수 9개 추가, 샌드박스에 goalDraft/goalNameValue/goalAmtValue 배선, goalPct/goalProgress 경계(0%·100%+·이력없음·음수진행·미래스냅샷무시) 7개+UI 13개 총 20개 테스트 추가. node test/run.js 777/777 -> 797/797 통과. APP_VERSION 1.47.12->1.47.13, sw.js CACHE v274->v275. pending_advance_plan을 null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 123,
       "phase": "develop",
@@ -150,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-02T21:05:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(127사이클 동안 다뤄진 항목 전부 제외 지시, 최근 goal owner 스코프/catIcon·catVar sync/allocation 카드/txRow·histRow 통합/만기 알림 overdue 문구 포함). 새로 발견 후 직접 소스 재검증: doMaturity()(index.html:4534-4543)가 saveTx/saveRec/csv/backup/planTransfer/planSplitTransfer와 달리 DB.txns.push 전에 RANGE_FROM/RANGE_TO 경계검증을 전혀 안 거치는 유일한 남은 경로임을 grep 'DB.txns.push|dateBelowRangeFloor'로 확인(line 4539 push 바로 위에 가드 없음, 다른 6개 경로는 모두 있음). saveAsset()도 maturityDate를 전혀 검증 안 함(3089, g('asMat').value 그대로 저장) — 만기일 입력 자체가 날짜피커(openFieldDatePicker, 무제한 스크롤, cycle123 planTransfer 버그의 원인이던 바로 그 피커)로 이뤄지는데 아무 가드가 없다. openMaturity()의 soon 조건(a.maturityDate<=addDays(TODAY,30))도 하한이 없어 RANGE_FROM 이전의 레거시 만기일도 '임박' 이체 버튼이 뜬다. 레거시 백업/오입력으로 만기일이 범위 밖이면 '이체했어요' 토스트는 뜨지만 거래가 allTxns(RANGE_FROM,RANGE_TO) 밖이라 가계부/전체내역/잔액 어디에도 다시 나타나지 않는 조용한 소실로 이어지는, cycle123 planTransfer 버그와 동일 패턴의 여섯 번째 미점검 경로. pending_advance_plan에 saveAsset maturityDate 검증(저장시 거부)+doMaturity RANGE_FROM 클램프(자동 플로우라 거부 대신 보정)+sanitizeBackup assets[].maturityDate csvDateValid 검증+테스트 3종 저장(상세는 pending_advance_plan 참고). 러너업(기각): addCat/doRenameCat 중복 이름 체크 로직 중복(화장품급, 기능 리스크 없음) / sanitizeBackup의 maturityDate 형식 미검증 단독(위 계획에 이미 포함되어 별도 사이클 불필요). 코드 변경 없음(읽기 전용 조사, doMaturity 4534-4543·saveAsset 3089·soon 조건 4527 모두 오케스트레이팅 세션이 grep/Read로 직접 재확인).",
+      "commit": null
+    },
+    {
+      "cycle": 127,
+      "phase": "advance",
+      "timestamp": "2026-10-02T22:10:00.000Z",
+      "summary": "critique(cycle127) 계획대로 doMaturity()/saveAsset()의 만기일(maturityDate)에 RANGE_FROM/RANGE_TO 경계검증을 추가했다. saveAsset()에 d.maturityDate가 있을 때 saveTx/saveRec와 동일한 토스트 문구로 dateBelowRangeFloor/dateAboveRangeCeil 검증을 추가해 신규 오입력을 저장 시점에 거부. doMaturity()는 자동 플로우라 사용자가 날짜를 다시 고를 수 없으므로 거부 대신 sanitizeBackup의 endDate 정규화 관례를 따라, 레거시/복원된 범위 밖 maturityDate가 RANGE_FROM보다 이르면 이체 거래 날짜를 RANGE_FROM으로 클램프하고(RANGE_TO는 date<=TODAY이고 TODAY가 항상 RANGE_TO 안이라 상한 클램프는 불필요) 보정 안내 토스트를 추가했다. sanitizeBackup() assets 루프에 반복거래 startDate/endDate와 동일하게 csvDateValid() 재사용 검증을 추가해, 형식/달력상 무효한 maturityDate를 null로 정규화(저축 자산에 만기일 없음은 기존에도 정상 상태)하고 fixedCount에 반영. test/run.js: saveAsset의 RANGE_FROM/RANGE_TO 경계 거부 2개+정상 범위 통과 1개, doMaturity의 RANGE_FROM 클램프 1개+정상 범위 무클램프 1개, sanitizeBackup의 maturityDate 정규화 1개+정상/미설정 안전 1개 — 총 7개 추가. node test/run.js 851/851 -> 858/858 통과. APP_VERSION 1.47.23->1.47.24, sw.js CACHE v285->v286. pending_advance_plan을 null로 비움.",
       "commit": null
     }
   ]

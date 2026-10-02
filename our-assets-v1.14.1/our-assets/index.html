@@ -1305,7 +1305,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.23';
+const APP_VERSION='1.47.24';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3154,6 +3154,8 @@ function saveAsset(editing){
  if(d.type==='fx'&&!(d.fxAmount>0)){toast('보유 수량을 입력해 주세요');return}
  if(d.type==='gold'&&!(d.goldDon>0)){toast('보유 수량을 입력해 주세요');return}
  if(d.type==='stock'&&!(d.stockQty>0)){toast('보유 수량을 입력해 주세요');return}
+ if(d.maturityDate&&dateBelowRangeFloor(d.maturityDate)){toast(`${RANGE_FROM} 이전 날짜는 저장할 수 없어요`);return}
+ if(d.maturityDate&&dateAboveRangeCeil(d.maturityDate)){toast(`${RANGE_TO} 이후 날짜는 저장할 수 없어요`);return}
  d.name=d.name||ASSET_TYPES[d.type].label;
  const rateWasUnknown=rateUnknown(d); /* stocks[code]를 미리 0으로 채우면 '미확인'과 '실제 0원'을 구분 못 하게 되므로 채우지 않음 — 대신 저장 후 즉시 시세를 당겨온다 */
  const balTypes=['cash','savings','realestate','etc','pension','debt'];
@@ -4534,13 +4536,19 @@ function openMaturity(){
 function doMaturity(id){if(twGuard())return;const a=DB.assets.find(x=>x.id===id);const target=DB.assets.find(x=>x.id===a.maturityTargetId);
  if(!target){toast('이체할 통장을 먼저 지정하세요');return}
  if(target.id===a.id){toast('자기 자신으로는 이체할 수 없어요. 이체할 통장을 다시 선택해주세요');return}
- const date=a.maturityDate<=TODAY?a.maturityDate:TODAY;
+ let date=a.maturityDate<=TODAY?a.maturityDate:TODAY;
+ /* 레거시 백업/오입력으로 만기일이 RANGE_FROM 이전이면 거래가 allTxns(RANGE_FROM,RANGE_TO) 조회
+  * 범위 밖에 쌓여 가계부/전체내역/잔액 어디에도 다시 나타나지 않는 조용한 소실로 이어진다
+  * (saveTx 등은 저장 자체를 거부하지만, 이 자동 플로우는 사용자가 날짜를 다시 고를 수 없으므로
+  * sanitizeBackup의 endDate 정규화처럼 RANGE_FROM으로 보정한다). */
+ const clamped=dateBelowRangeFloor(date);
+ if(clamped)date=RANGE_FROM;
  const amt=balanceAt(a.id,date); /* assetEval()의 schHorizon 투영(예정 포함 시 이번 달 말까지)은 만기 이체 시점의 실제 잔액과 다를 수 있어 사용하지 않음 */
  DB.txns.push(touch({id:uid(),type:'transfer',date,category:'이체',memo:`${a.name} 만기 이체`,amount:amt,
   fromAssetId:a.id,toAssetId:target.id,
   confirmed:DB.settings.confirmTransfers?false:true})); /* 실제로 옮겼는지 확인받음 */
  a.maturityDate=null;save();invalidateBalances();closeSheet();renderCurrent();
- toast(DB.settings.confirmTransfers?`${target.name}(으)로 이체 예정을 남겼어요`:`${target.name}(으)로 만기 이체했어요`);
+ toast(clamped?`만기일이 오래돼 ${RANGE_FROM}로 보정해 이체했어요`:(DB.settings.confirmTransfers?`${target.name}(으)로 이체 예정을 남겼어요`:`${target.name}(으)로 만기 이체했어요`));
 }
 
 /* 카테고리 관리 — 지출/수입/저축 */
@@ -5208,6 +5216,10 @@ function sanitizeBackup(obj){
   const d=Object.assign({},a);
   SANITIZE_FREE_FIELDS.forEach(f=>{if(f in d){const n=sanitizeAmount(d[f]);if(n!==d[f]){d[f]=n;fixedCount++}}});
   SANITIZE_QTY_FIELDS.forEach(f=>{if(f in d){const n=sanitizeAmount(d[f],0);if(n!==d[f]){d[f]=n;fixedCount++}}});
+  /* maturityDate는 저축 자산에 없는 게 정상 상태라(만기 미설정) 레코드를 버리지 않고,
+   * startDate/endDate와 동일하게 csvDateValid()로 형식/달력 유효성만 검증해 깨졌으면 null로
+   * 정규화한다 — 그대로 두면 doMaturity/openMaturity의 날짜 비교가 깨진 문자열을 그대로 쓴다. */
+  if(d.maturityDate&&!csvDateValid(d.maturityDate)){d.maturityDate=null;fixedCount++}
   assets.push(d);
  });
  /* 반복거래는 한 레코드가 recDates()로 매달 새 거래를 계속 만들어내므로, amount가 손상되면
