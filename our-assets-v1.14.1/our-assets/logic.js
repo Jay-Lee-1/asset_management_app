@@ -214,6 +214,16 @@ function budgetProgress(spent,budget){
 }
 
 /* ================= GOALS (순자산 목표, 순수) ================= */
+/* nwHistory(일별 {date,ta,td,nw,byOwner?} 스냅샷)를 귀속(owner) 하나의 추이로 좁힌다.
+ * nwHistoryCard(index.html)의 캐러셀 귀속별 추이 필터와 goalProgress에 넘길 귀속별 nwHistory를
+ * 똑같은 byOwner[owner].ta/td 기준으로 계산해야 해서(어느 한쪽만 고치면 "목표"와 "순자산 추이"
+ * 카드가 같은 귀속을 보면서도 서로 다른 숫자를 보여주게 됨) 양쪽이 공유하는 순수 함수로 뽑았다.
+ * owner가 'all'(또는 생략)이면 가구 전체 집계인 hist를 그대로 돌려준다. */
+function nwHistoryForOwner(hist,owner){
+ hist=hist||[];
+ if(!owner||owner==='all')return hist;
+ return hist.filter(p=>p.byOwner&&p.byOwner[owner]).map(p=>{const b=p.byOwner[owner];return {date:p.date,ta:b.ta,td:b.td,nw:b.ta-b.td}});
+}
 /* target<=0(설정 전/잘못된 값)이면 비율이 무의미하므로, 현재 금액이 있으면 100%, 없으면 0%로 본다
  * (budgetProgress의 '미설정=0%'과 달리 음수 목표는 원래 saveGoal이 막아 생기지 않지만, 방어적으로 처리) */
 function goalPct(cur,target){

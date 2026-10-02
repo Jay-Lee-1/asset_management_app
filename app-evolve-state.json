@@ -1,19 +1,8 @@
 {
-  "cycle": 124,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "목표(Goal) 기능에 owner(귀속) 스코프 추가",
-    "why": "이 앱은 부부/가구용으로 자산(ST.assetOwner)·순자산추이(nwHistory.byOwner)·지출분석(ST.spendOwner)·귀속 이름변경(doRenameOwner)까지 전부 owner-aware인데, cycle122에 신설된 DB.goals는 owner 필드가 전무하고 goalProgress(logic.js:227)가 항상 가구 전체 DB.nwHistory만 본다. nwHistoryCard(owner)(index.html:2372)는 캐러셀 스와이프마다 재렌더(2732)되는데 바로 아래 goalsSummaryCard()는 그대로라 '나/배우자/전체' 전환 시 목표 카드만 안 바뀌는 게 눈에 바로 보임. doRenameOwner(3199)도 assets/nwHistory.byOwner만 옮기고 goal.owner는 없어 마이그레이션 대상에서 빠짐.",
-    "approach": "1) openGoalForm(index.html:2436)에서 goalDraft 초기값에 owner:'all' 추가, renderGoalForm(2443)에 asset 폼의 ownerPick과 같은 패턴으로 귀속 선택 UI 추가. 2) logic.js의 goalProgress(227)가 받는 nwHistory를 owner로 필터링하는 과정을 nwHistoryCard(2372-2378)의 pts.filter(p=>p.byOwner&&p.byOwner[owner]) 로직과 동일하게 소형 헬퍼(예: nwHistoryForOwner(hist,owner))로 추출해 양쪽에서 재사용. 3) nearestGoal/goalsSummaryCard/openGoalsList(2399-2434)가 현재 ST.assetOwner 기준으로 각 목표의 goal.owner와 매칭해 진행률을 계산하도록 수정, 캐러셀 스와이프 시(2732 근처) goalsSummaryCard도 함께 재렌더되게 배선. 4) migrate()(2004 근처)에서 DB.goals 항목에 owner 없으면 'all'로 기본값 채움. doRenameOwner(3199-3205)에 goal.owner===old 이름변경 처리 추가(assets.owner와 같은 패턴). 5) sanitizeBackup의 goals 분기(5210-5218 근처)에 owner 값이 DB.owners 또는 'all'이 아니면 'all'로 clamp하는 검증 추가. 6) test/run.js: owner별로 다른 nwHistory 추이에서 goalProgress가 다른 결과를 내는 테스트, doRenameOwner가 goal.owner를 이름변경하는 테스트, sanitizeBackup이 알 수 없는 owner를 clamp하는 테스트, 캐러셀 owner 전환 시 goalsSummaryCard 재렌더 테스트 추가."
-  },
+  "cycle": 125,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 119,
-      "phase": "advance",
-      "timestamp": "2026-10-01T14:00:00.000Z",
-      "summary": "critique(cycle119) 계획대로 FX/금/주식 보유 수량 입력란 3곳에 실시간 정제(fmtQty)와 저장 시 0수량 가드를 추가했다. saveAsset()의 stockCode 체크 뒤에 타입별 수량>0 가드 3줄 추가(실패 시 토스트+return). test/run.js에 fmtQty 단위 테스트 4개+saveAsset 가드 회귀 테스트 4개 추가, 기존 askRelinkDeleted 테스트 픽스처 수정(stockQty:0->10). node test/run.js 754/754 -> 762/762 통과. APP_VERSION 1.47.6->1.47.7, sw.js CACHE v268->v269. pending_advance_plan을 null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 120,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-02T09:10:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(a11y·cloud sync·CDN SRI·파일분할/jsdom·백그라운드 푸시·tx/rec 폼 통합·owner 이름변경/orphan 함수·FX/금/주식 수량 가드·CSV/삭제cascade/백버튼/PWA/핀치줌·RANGE_FROM/RANGE_TO 경계(saveTx/saveRec/csv/backup/planTransfer 포함)·PBKDF2/복구코드/알림인터벌/쿼터·undo tombstone(tx/rec/asset/goals)·부부정산/대출상환/예산경고·검색금액매칭/평단가/정렬모드·recApply skip/edits·이체/저축 picker self-exclusion·주식 티커·netlify 재시도·goal 기능 자체(cloud sync 병합+goalClearDate 동기화 포함)는 모두 기각/완료 처리되어 제외 지시). 새로 발견 후 직접 소스 재검증: cycle122에 신설된 DB.goals에 owner 필드가 전무해 이 앱의 확립된 귀속(owner) 데이터 모델에서 유일하게 벗어나 있음 — 자산(ST.assetOwner)·순자산추이(nwHistory.byOwner, nwHistoryCard(owner) index.html:2372)·지출분석(ST.spendOwner)·귀속 이름변경(doRenameOwner 3199-3205, assets.owner와 nwHistory[].byOwner 키를 마이그레이션)까지 전부 owner-aware인데 goalProgress(logic.js:227)는 항상 가구 전체 DB.nwHistory만 봄. nwHistoryCard(owner)는 캐러셀 스와이프마다 재렌더(2732)되는데 바로 아래 goalsSummaryCard()는 그대로라 '나/배우자/전체' 전환 시 목표 카드만 안 바뀌는 게 바로 눈에 보이는 불일치. doRenameOwner도 goal.owner 마이그레이션이 빠져 있음(goal.owner 필드 자체가 없으니 당연히). pending_advance_plan에 goal.owner 필드+폼 UI+goalProgress owner 필터링(nwHistoryForOwner 헬퍼로 nwHistoryCard와 공유)+캐러셀 재렌더 배선+doRenameOwner 마이그레이션+sanitizeBackup owner 검증+테스트 저장(상세는 pending_advance_plan 참고). 러너업(기각): ASSET_TYPES 미래 스키마 포워드컴팟 크래시 위험(추측성·저빈도) / memo·category·goal명 렌더링 stored-XSS 재점검(esc() 일관 사용 확인, 새 발견 없음) / netlify stock.js 티커 SSRF/인젝션(정규식 검증 이미 충분) / goalProgress 선형투사가 전체 nwHistory 두 점만 쓰는 모델링 디테일(이미 기각된 '연금 투사 모델링' 범주와 중복). 코드 변경 없음(읽기 전용 조사, 서브에이전트 보고의 핵심 라인/주장은 오케스트레이팅 세션이 grep/Read로 직접 재확인: goalProgress 227, nwHistoryCard 2372/2732/2829, doRenameOwner 3199-3205 모두 확인).",
+      "commit": null
+    },
+    {
+      "cycle": 124,
+      "phase": "advance",
+      "timestamp": "2026-10-02T10:15:00.000Z",
+      "summary": "critique(cycle124) 계획대로 목표(Goal)에 owner(귀속) 스코프를 추가했다. logic.js에 nwHistoryForOwner(hist,owner) 순수 함수 신설(nwHistory를 귀속별 byOwner[owner].ta/td로 좁힘) — nwHistoryCard(index.html)의 기존 인라인 필터를 이 헬퍼 호출로 교체해 양쪽이 같은 로직을 공유. goalOwnerEff(g) 헬퍼 신설(owner 없음/'all'/이미 사라진 귀속명이면 'all'로 간주, ST.assetOwner와 동일한 '귀속 사라지면 전체로' 원칙). nearestGoal/goalRowHTML/openGoalsList가 각 목표의 goalOwnerEff(g)로 nwHistoryForOwner(DB.nwHistory,...)를 걸러 goalProgress에 넘기도록 수정(목표 자신의 귀속만의 추이로 진행률·투사 계산). goalsSummaryCard(owner)가 그 귀속이 소유한 목표만 보여주도록 변경하고, #goalsSummaryBody로 감싸 refreshGoalsSummary()를 신설해 selectNwOwner()(캐러셀 스와이프/점 클릭/키보드 공통 경로)에서 refreshNwHistoryCard()와 함께 호출되게 배선 — 이제 귀속 전환 시 추이 카드와 목표 카드가 같은 귀속을 본다. renderGoalForm에 asset 폼과 달리 '전체'(가구 공동) 선택지가 있는 seg 귀속 선택 UI 추가(goalOwnerSel), openGoalForm은 새 목표 기본 owner='all', 기존 목표는 goalOwnerEff로 보정해서 연다. saveGoal이 owner를 저장(미지정 시 'all'). migrate()에서 owner 없는 기존 목표에 'all' 기본값 채움. doRenameOwner에 assets.forEach와 동일한 패턴으로 DB.goals의 owner 이름변경+touch() 추가. sanitizeBackup의 goals 분기에 owner 검증 추가(obj.owners 기준, 없으면 현재 DB.owners로 대체 — 알 수 없는 owner/누락은 'all'로 보정). test/run.js: nwHistoryForOwner 2개, goalOwnerEff 3개, openGoalsList/goalsSummaryCard가 귀속별로 다른 진행률·가시성을 보이는 테스트 4개, openGoalForm owner 보정/기본값 2개, renderGoalForm seg 선택상태 1개, goalOwnerSel 1개, saveGoal owner 저장 1개, doRenameOwner goal.owner 마이그레이션 1개, migrate 기본값 1개, sanitizeBackup owner 검증 4개 — 총 20개 추가(FUNCTIONS에 goalOwnerEff/goalOwnerSel도 등록). node test/run.js 813/813 -> 832/832 통과. APP_VERSION 1.47.16->1.47.17, sw.js CACHE v278->v279. pending_advance_plan을 null로 비움.",
       "commit": null
     }
   ]

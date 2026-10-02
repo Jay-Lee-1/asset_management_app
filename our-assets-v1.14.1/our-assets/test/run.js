@@ -141,7 +141,7 @@ const FUNCTIONS = [
   'txScheduled', 'monthStats', 'monthStats2', 'expenseByCat', 'needGold', 'inQuietWindow', 'fmtSynced', 'rateStatusText',
   'nextBigOutflow', 'dday', 'balanceOn', 'nextOutflowCard', 'monthOutflowCard', 'planGaugeCard', 'homeAlertCard', 'renderHome',
   'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwHistoryCard', 'doRenameOwner', 'addOwner',
-  'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'syncGoalInputs', 'goalClearDate', 'renderGoalForm', 'openGoalForm', 'saveGoal', 'delGoal',
+  'goalOwnerEff', 'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'syncGoalInputs', 'goalClearDate', 'goalOwnerSel', 'renderGoalForm', 'openGoalForm', 'saveGoal', 'delGoal',
   'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetToggleSel', 'visibleAssetsForSel', 'assetSelAll', 'activeSel',
   'modeSeg', 'monthNav', 'abbr', 'calCellsFor', 'ledSumInner', 'ledSumBox', 'ledSumTap', 'calPane', 'txRow', 'dayTxns',
   'ledgerRowsHtml', 'ledgerDayHeadHtml', 'renderLedger', 'selDayPartial',
@@ -2070,6 +2070,176 @@ test('goalClearDate: 날짜를 지우기 전에 이름/금액 입력을 먼저 �
   assert.strictEqual(sandbox.goalDraft.name, '여행자금(유럽)', '지우기 전에 동기화되지 않으면 이 값이 되돌려써짐');
   assert.strictEqual(sandbox.goalDraft.targetAmount, 5000000, '지우기 전에 동기화되지 않으면 이 값이 되돌려써짐');
 });
+
+/* ---------- 목표(Goals)에 owner(귀속) 스코프 추가 (app-evolve cycle124 advance) ----------
+ * 자산(ST.assetOwner)·순자산추이(nwHistory.byOwner)·지출분석(ST.spendOwner)까지 전부 owner-aware인데
+ * DB.goals(cycle122 신설)만 owner가 없어 캐러셀에서 귀속을 바꿔도 목표 카드가 전체 순자산 기준
+ * 진행률만 보여주던 불일치를 수정. nwHistoryForOwner(logic.js)를 nwHistoryCard와 공유해 같은 귀속을
+ * 보면 같은 숫자를 보도록 한다. */
+test('nwHistoryForOwner: owner가 생략되거나 "all"이면 원본 nwHistory를 그대로 돌려준다(가구 전체 집계)', () => {
+  const hist = [{ date: '2026-01-01', ta: 300, td: 20, nw: 280, byOwner: { 나: { ta: 200, td: 10 } } }];
+  assert.strictEqual(sandbox.nwHistoryForOwner(hist, 'all'), hist);
+  assert.strictEqual(sandbox.nwHistoryForOwner(hist), hist);
+  assert.strictEqual(sandbox.nwHistoryForOwner(null, 'all').length, 0);
+});
+test('nwHistoryForOwner: owner를 지정하면 그 귀속의 byOwner 스냅샷(ta-td)만 추려 새 배열로 돌려준다', () => {
+  const hist = [
+    { date: '2026-01-01', ta: 300, td: 20, nw: 280, byOwner: { 나: { ta: 200, td: 10 }, 배우자: { ta: 100, td: 10 } } },
+    { date: '2026-01-02', ta: 320, td: 20, nw: 300 }, // byOwner 없는(마이그레이션 이전) 항목은 제외
+  ];
+  const out = sandbox.nwHistoryForOwner(hist, '나');
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].nw, 190);
+});
+test('goalOwnerEff: owner가 없거나 "all"이면 "all"(전체)로 본다', () => {
+  sandbox.DB = { owners: ['나', '배우자'] };
+  assert.strictEqual(sandbox.goalOwnerEff({}), 'all');
+  assert.strictEqual(sandbox.goalOwnerEff({ owner: 'all' }), 'all');
+});
+test('goalOwnerEff: owner가 지금의 DB.owners에 있으면 그대로, 이미 사라진 귀속명이면 "all"로 간주한다(ST.assetOwner와 동일한 "귀속 사라지면 전체로" 원칙)', () => {
+  sandbox.DB = { owners: ['나', '배우자'] };
+  assert.strictEqual(sandbox.goalOwnerEff({ owner: '나' }), '나');
+  assert.strictEqual(sandbox.goalOwnerEff({ owner: '삭제된귀속' }), 'all');
+});
+test('goalOwnerEff: DB.owners가 아예 없어도(최소 테스트 DB) 예외 없이 "all"로 처리한다', () => {
+  sandbox.DB = {};
+  assert.strictEqual(sandbox.goalOwnerEff({ owner: '나' }), 'all');
+});
+test('openGoalsList: owner가 지정된 목표는 전체 순자산이 아니라 그 귀속만의 byOwner 추이로 진행률을 계산한다(전체 합계와 달라야 함)', () => {
+  sandbox.DB = {
+    owners: ['나', '배우자'],
+    goals: [{ id: 'g1', name: '내 명의 비상금', targetAmount: 200000, targetDate: null, owner: '나' }],
+    nwHistory: [{ date: '2026-01-01', ta: 300, td: 20, nw: 280, byOwner: { 나: { ta: 100000 + 100, td: 0 }, 배우자: { ta: 180, td: 0 } } }],
+  };
+  sandbox.TODAY = '2026-01-01';
+  sandbox.lastSheetHtml = null;
+  sandbox.openGoalsList();
+  // 나의 byOwner.ta=100100 → 목표 200000 대비 50%. 전체 합계(ta-td=280)로 계산했다면 0%가 나왔을 것.
+  assert.ok(sandbox.lastSheetHtml.includes('50%'), '귀속별 byOwner 추이로 진행률이 계산돼야 함');
+  assert.ok(sandbox.lastSheetHtml.includes(' · 나'), '목표가 특정 귀속에 속해 있으면 그 귀속명을 함께 보여줘야 함');
+});
+test('goalsSummaryCard: owner를 넘기면 그 귀속이 소유한 목표만 보여주고, 다른 귀속의 목표는 보이지 않는다', () => {
+  sandbox.DB = {
+    owners: ['나', '배우자'],
+    goals: [
+      { id: 'g1', name: '내 목표', targetAmount: 100000, targetDate: null, owner: '나' },
+      { id: 'g2', name: '배우자 목표', targetAmount: 100000, targetDate: null, owner: '배우자' },
+    ],
+    nwHistory: [],
+  };
+  sandbox.TODAY = '2026-01-01';
+  assert.ok(sandbox.goalsSummaryCard('나').includes('내 목표'));
+  assert.ok(!sandbox.goalsSummaryCard('나').includes('배우자 목표'));
+  assert.strictEqual(sandbox.goalsSummaryCard('배우자').includes('내 목표'), false);
+});
+test('goalsSummaryCard: owner를 생략하면(기본 "all") 가구 전체(owner:"all") 목표만 보여주고, 특정 귀속 목표는 숨긴다', () => {
+  sandbox.DB = {
+    owners: ['나'],
+    goals: [{ id: 'g1', name: '내 전용 목표', targetAmount: 100000, targetDate: null, owner: '나' }],
+    nwHistory: [],
+  };
+  sandbox.TODAY = '2026-01-01';
+  assert.strictEqual(sandbox.goalsSummaryCard(), '', '전체(all) 보기에는 귀속 전용 목표를 광고하지 않아야 함');
+});
+test('openGoalForm: 기존 목표의 owner가 이미 사라진 귀속이면 "all"로 보정해서 연다', () => {
+  sandbox.DB = { owners: ['나'], goals: [{ id: 'g1', name: '여행자금', owner: '삭제된귀속', targetAmount: 100 }] };
+  sandbox.goalDraft = null;
+  sandbox.openGoalForm('g1');
+  assert.strictEqual(sandbox.goalDraft.owner, 'all');
+});
+test('openGoalForm: id 없이 새로 열면 owner 기본값은 "all"(가구 공동 목표)이다', () => {
+  sandbox.DB = { owners: ['나'], goals: [] };
+  sandbox.goalDraft = null;
+  sandbox.openGoalForm();
+  assert.strictEqual(sandbox.goalDraft.owner, 'all');
+});
+test('renderGoalForm: 귀속 세그먼트가 goalDraft.owner와 일치하는 버튼에 on 클래스를 준다', () => {
+  sandbox.DB = { owners: ['나', '배우자'] };
+  sandbox.goalDraft = { id: 'g1', name: '', targetAmount: 0, targetDate: '', owner: '배우자' };
+  sandbox.lastSheetHtml = null;
+  sandbox.renderGoalForm(true);
+  assert.ok(/class="on"[^>]*>배우자/.test(sandbox.lastSheetHtml), '배우자 버튼이 선택 상태여야 함');
+  assert.ok(!/class="on"[^>]*>전체/.test(sandbox.lastSheetHtml), '전체 버튼은 선택 상태가 아니어야 함');
+});
+test('goalOwnerSel: 귀속 버튼을 고르면 입력값을 먼저 동기화한 뒤 goalDraft.owner를 바꾸고 폼을 다시 연다', () => {
+  sandbox.DB = { owners: ['나', '배우자'] };
+  sandbox.goalDraft = { id: 'g1', name: '', targetAmount: 0, targetDate: '', owner: 'all' };
+  sandbox.goalNameValue = '동기화된이름';
+  sandbox.goalAmtValue = '';
+  sandbox.lastSheetHtml = null;
+  sandbox.goalOwnerSel(1, true); // ['all','나','배우자'][1] === '나'
+  assert.strictEqual(sandbox.goalDraft.owner, '나');
+  assert.strictEqual(sandbox.goalDraft.name, '동기화된이름', 'onclick 순서상 전환 전 입력값이 보존돼야 함');
+  assert.ok(sandbox.lastSheetHtml, '폼이 다시 열려야 함');
+});
+test('saveGoal: 저장 시 goalDraft.owner를 그대로 담고, 지정하지 않았으면 "all"로 저장한다', () => {
+  sandbox.DB = { owners: ['나'], goals: [] };
+  sandbox.goalDraft = { id: 'test-uid', name: '', type: 'networth', targetAmount: 0, targetDate: null, owner: '나' };
+  sandbox.goalNameValue = '내 집 마련';
+  sandbox.goalAmtValue = '1,000,000';
+  sandbox.saveGoal(false);
+  assert.strictEqual(sandbox.DB.goals[0].owner, '나');
+
+  sandbox.DB = { owners: ['나'], goals: [] };
+  sandbox.goalDraft = { id: 'test-uid-2', name: '', type: 'networth', targetAmount: 0, targetDate: null };
+  sandbox.goalNameValue = '공동 목표';
+  sandbox.goalAmtValue = '1,000,000';
+  sandbox.saveGoal(false);
+  assert.strictEqual(sandbox.DB.goals[0].owner, 'all', 'owner를 지정하지 않으면 전체(가구 공동)로 저장돼야 함');
+});
+test('doRenameOwner: 이름변경 시 DB.goals의 owner도 함께 옮기고 touch()로 updatedAt을 다시 찍는다(mergeCollection 병합 불변식)', () => {
+  sandbox.DB = {
+    owners: ['나', '아빠'], assets: [],
+    goals: [{ id: 'g1', name: '아빠 전용 목표', owner: '아빠', updatedAt: 1 }, { id: 'g2', name: '내 목표', owner: '나', updatedAt: 1 }],
+  };
+  sandbox.ST = { assetOwner: '전체', plan: { owner: '전체' }, spendOwner: '전체' };
+  const $orig = sandbox.$;
+  sandbox.$ = (id) => (id === 'renameOwner' ? { value: '아버지' } : $orig(id));
+  try {
+    sandbox.doRenameOwner(1);
+  } finally {
+    sandbox.$ = $orig;
+  }
+  assert.strictEqual(sandbox.DB.goals[0].owner, '아버지', '옛 이름을 가리키던 목표가 새 이름을 따라가야 함');
+  assert.strictEqual(sandbox.DB.goals[0].updatedAt, 'test-updatedAt', 'touch()로 다시 찍혀야 병합 시 이 변경이 보존됨');
+  assert.strictEqual(sandbox.DB.goals[1].owner, '나', '무관한 귀속의 목표는 건드리지 않아야 함');
+});
+test('migrate: owner 필드가 없는 기존 목표(cycle124 이전 생성분)는 "all"로 채워진다', () => {
+  sandbox.DB = {
+    version: 5, catsV2: true,
+    settings: { themeMode: 'system', includeScheduled: false, assetSort: 'custom', groupOrder: [...sandbox.DEFAULT_GROUP_ORDER] },
+    owners: ['나', '배우자', '공용'],
+    assets: [], txns: [], recurrences: [], inquiries: [],
+    categories: { expense: [...sandbox.EXP_CATS_DEFAULT], income: [...sandbox.INC_CATS_DEFAULT], saving: [...sandbox.SAV_CATS_DEFAULT] },
+    goals: [{ id: 'g1', name: '옛 목표', targetAmount: 1000 }],
+  };
+  sandbox.migrate();
+  assert.strictEqual(sandbox.DB.goals[0].owner, 'all');
+});
+test('sanitizeBackup: 목표의 owner가 이 백업(obj.owners) 기준으로 존재하지 않는 귀속이면 "all"로 clamp하고 fixedCount를 센다', () => {
+  const r = sandbox.sanitizeBackup({ txns: [], assets: [], owners: ['나'], goals: [{ id: 'g1', name: '목표', owner: '없는귀속' }] });
+  assert.strictEqual(r.data.goals[0].owner, 'all');
+  assert.strictEqual(r.fixedCount, 1);
+});
+test('sanitizeBackup: 목표의 owner가 "all"이거나 obj.owners에 실제로 있으면 그대로 둔다(정상 케이스는 회귀 없음)', () => {
+  const r = sandbox.sanitizeBackup({ txns: [], assets: [], owners: ['나'], goals: [
+    { id: 'g1', name: '전체목표', owner: 'all' },
+    { id: 'g2', name: '내목표', owner: '나' },
+  ] });
+  assert.strictEqual(r.data.goals[0].owner, 'all');
+  assert.strictEqual(r.data.goals[1].owner, '나');
+  assert.strictEqual(r.fixedCount, 0);
+});
+test('sanitizeBackup: 목표에 owner가 없으면(구버전 백업) "all"로 기본값을 채운다', () => {
+  const r = sandbox.sanitizeBackup({ txns: [], assets: [], owners: ['나'], goals: [{ id: 'g1', name: '목표' }] });
+  assert.strictEqual(r.data.goals[0].owner, 'all');
+});
+test('sanitizeBackup: 백업에 owners 목록이 없으면 지금 이 기기의 DB.owners를 기준으로 owner를 검증한다', () => {
+  sandbox.DB = { owners: ['나'] };
+  const r = sandbox.sanitizeBackup({ txns: [], assets: [], goals: [{ id: 'g1', name: '목표', owner: '나' }] });
+  assert.strictEqual(r.data.goals[0].owner, '나', 'obj.owners가 없을 때 현재 DB.owners에 있는 이름은 유지돼야 함');
+});
+
 /* mergeRemoteDataIntoLocal이 DB.txns/recurrences/assets처럼 DB.goals도 mergeCollection으로
  * 병합하는지 직접 확인 — cycle122가 DB.goals를 신설할 때 이 배선이 누락됐었다(critique cycle123). */
 function minimalMergeDB(overrides) {

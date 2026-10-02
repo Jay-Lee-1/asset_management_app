@@ -1305,7 +1305,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.16';
+const APP_VERSION='1.47.17';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2001,7 +2001,8 @@ function migrate(){
  }
  if(!DB.categories.expense||!DB.categories.expense.length)DB.categories.expense=[...EXP_CATS_DEFAULT];
  DB.inquiries=DB.inquiries||[];
- DB.goals=DB.goals||[]; /* 순자산 목표: [{id,name,type:'networth',targetAmount,targetDate,createdAt}] */
+ DB.goals=DB.goals||[]; /* 순자산 목표: [{id,name,type:'networth',targetAmount,targetDate,owner,createdAt}] */
+ DB.goals.forEach(g=>{if(!g.owner)g.owner='all'}); /* owner는 cycle124에 추가된 필드라 그 전에 생긴 목표엔 없음 — 'all'(전체)로 채워야 goalOwnerEff/nwHistoryForOwner가 가구 전체 추이로 올바르게 처리함 */
  DB.deletedIds=gcTombstones(DB.deletedIds||{},Date.now()); /* 부팅 때마다 오래된 tombstone 정리(GC) */
 }
 /* storageOutcomeMsg: localStorage 쓰기 시도 결과(ok)와 직전 상태(wasOk)를 놓고 어떤 토스트를
@@ -2374,7 +2375,7 @@ function nwHistoryCard(owner){
  const hist=DB.nwHistory||[];
  let pts=hist.slice(-60);
  if(owner!=='all'){
-   pts=pts.filter(p=>p.byOwner&&p.byOwner[owner]).map(p=>{const b=p.byOwner[owner];return {date:p.date,ta:b.ta,td:b.td,nw:b.ta-b.td}});
+   pts=nwHistoryForOwner(pts,owner);
    if(pts.length<2)return `<div class="card nwh-card">
      <div class="section-title" style="margin-top:0">순자산 추이</div>
      <div class="empty" style="padding:18px 0"><div class="es">이 귀속의 추이는 곧 쌓여요</div></div>
@@ -2396,13 +2397,20 @@ function nwHistoryCard(owner){
 
 /* ===== 순자산 목표 (MVP: 순자산 1종, DB.goals) =====
    진행률·투사(goalProgress)는 logic.js 순수 함수 — 여기는 렌더/폼만 담당. */
-function nearestGoal(){ /* 목표일 있는 것 중 가장 가까운 것 → 없으면 등록된 첫 목표 */
- const gs=DB.goals||[];if(!gs.length)return null;
+function goalOwnerEff(g){ /* goal.owner가 'all'이거나 이미 사라진 귀속이면 전체로 간주 — ST.assetOwner/renderAssets의
+ "귀속 사라지면 전체로" 가드(doRenameOwner는 이름변경 시 goal.owner를 함께 옮기지만, delOwner처럼 자산이 하나도
+ 없는 귀속은 삭제가 가능해 goal.owner만 낡은 이름으로 남을 수 있음)와 동일한 원칙을 목표에도 적용한다. */
+ const o=g&&g.owner;
+ return (o&&o!=='all'&&(DB.owners||[]).includes(o))?o:'all';
+}
+function nearestGoal(owner){ /* owner(기본 'all')가 추적하는 목표 중 목표일 있는 것 중 가장 가까운 것 → 없으면 등록된 첫 목표 */
+ owner=owner||'all';
+ const gs=(DB.goals||[]).filter(g=>goalOwnerEff(g)===owner);if(!gs.length)return null;
  const withDate=gs.filter(g=>g.targetDate).sort((a,b)=>a.targetDate<b.targetDate?-1:1);
  return withDate[0]||gs[0];
 }
 function goalRowHTML(g){
- const p=goalProgress(g,DB.nwHistory,TODAY);
+ const p=goalProgress(g,nwHistoryForOwner(DB.nwHistory,goalOwnerEff(g)),TODAY); /* 목표가 귀속별(owner)이면 그 귀속만의 순자산 추이로 진행률·투사를 계산 — nwHistoryCard(owner)와 동일한 nwHistoryForOwner를 공유 */
  const color=p.achieved?'var(--income)':'var(--brand)';
  return `<div class="pg-row" tabindex="0" role="button" aria-label="${esc(g.name)} 목표 진행률 ${p.pct}%" onclick="openGoalForm('${g.id}')" onkeydown="rowKeydown(event,()=>openGoalForm('${g.id}'))">
    <div class="pg-head"><span class="pg-k">${esc(g.name)}${p.achieved?`<span class="pg-done" style="color:${color};background:color-mix(in srgb,${color} 15%,transparent)">달성</span>`:''}</span>
@@ -2411,21 +2419,25 @@ function goalRowHTML(g){
    ${!p.achieved&&p.projectedDate?`<div class="msub2" style="margin-top:4px">이대로면 ${shortDate2(p.projectedDate)}쯤 달성 예상</div>`:''}
  </div>`;
 }
-/* 자산관리 탭 순자산 추이 카드 아래에 꽂는 요약 — 목표가 없으면 광고하지 않고 그냥 숨김(nwHistoryCard와 동일 원칙) */
-function goalsSummaryCard(){
- const gs=DB.goals||[];
+/* 자산관리 탭 순자산 추이 카드 아래에 꽂는 요약 — 지금 캐러셀에서 보고 있는 귀속(owner)의 목표만 보여준다(nwHistoryCard와
+ * 같은 귀속을 봐야 "목표" 카드만 전환이 안 따라가는 불일치가 없다). 해당 귀속에 목표가 없으면 광고하지 않고 숨김
+ * (nwHistoryCard와 동일 원칙). */
+function goalsSummaryCard(owner){
+ owner=owner||'all';
+ const gs=(DB.goals||[]).filter(g=>goalOwnerEff(g)===owner);
  if(!gs.length)return '';
  return `<div class="section-title">목표 <span class="link" role="button" tabindex="0" aria-label="목표 관리" onclick="openGoalsList()" onkeydown="rowKeydown(event,()=>openGoalsList())">${gs.length>1?'모두 보기':'관리'} ${svg('chev')}</span></div>
-  <div class="card pg-card">${goalRowHTML(nearestGoal())}</div>`;
+  <div class="card pg-card">${goalRowHTML(nearestGoal(owner))}</div>`;
 }
-function openGoalsList(){
+function openGoalsList(){ /* 관리 목록은 캐러셀 귀속과 무관하게 전체 목표를 보여준다 — 각 줄의 진행률만 그 목표 자신의 귀속(goalOwnerEff)을 쓴다 */
  const gs=DB.goals||[];
  const body=gs.length?`<div class="card" style="margin-bottom:6px">${gs.map(g=>{
-   const p=goalProgress(g,DB.nwHistory,TODAY);
+   const p=goalProgress(g,nwHistoryForOwner(DB.nwHistory,goalOwnerEff(g)),TODAY);
+   const ownerBadge=goalOwnerEff(g)!=='all'?` · ${esc(g.owner)}`:'';
    return `<div class="manage-row" tabindex="0" role="button" aria-label="${esc(g.name)} 목표 진행률 ${p.pct}%" onclick="openGoalForm('${g.id}')" onkeydown="rowKeydown(event,()=>openGoalForm('${g.id}'))">
     <div class="avatar a-save" style="width:38px;height:38px">${svg('target')}</div>
     <div style="flex:1;min-width:0"><div class="mn">${esc(g.name)} ${p.achieved?'<span class="mini">달성</span>':''}</div>
-     <div class="msub">${comma(p.cur)} / ${comma(p.target)}원 · ${p.pct}%</div>
+     <div class="msub">${comma(p.cur)} / ${comma(p.target)}원 · ${p.pct}%${ownerBadge}</div>
      ${g.targetDate?`<div class="msub2">목표일 ${g.targetDate}</div>`:''}</div>
     <div class="mc">${svg('chev')}</div></div>`;
  }).join('')}</div>`:`<div class="empty"><div class="ei">${svg('target')}</div><div class="et">아직 목표가 없어요</div><div class="es">순자산 목표를 세우면 진행 상황을 추적할 수 있어요</div></div>`;
@@ -2435,15 +2447,18 @@ function openGoalsList(){
 let goalDraft=null;
 function openGoalForm(id){
  const g=id?(DB.goals||[]).find(x=>x.id===id):null;
- goalDraft=g?{...g}:{id:uid(),name:'',type:'networth',targetAmount:0,targetDate:'',createdAt:Date.now()};
+ goalDraft=g?{...g,owner:goalOwnerEff(g)}:{id:uid(),name:'',type:'networth',targetAmount:0,targetDate:'',owner:'all',createdAt:Date.now()};
  renderGoalForm(!!g);
 }
 function syncGoalInputs(){const d=goalDraft;if(!d)return;if($('goalName'))d.name=$('goalName').value||'';if($('goalAmt'))d.targetAmount=num($('goalAmt'))}
 function goalClearDate(editing){syncGoalInputs();goalDraft.targetDate='';renderGoalForm(editing)}
+function goalOwnerSel(i,editing){syncGoalInputs();const list=['all',...(DB.owners||[])];goalDraft.owner=list[i]||'all';renderGoalForm(editing)} /* 자산 ownerPick과 달리 '전체'(가구 공동 목표) 선택지가 있어 asOpenOwner의 전용 시트 대신 spendOwnerSel과 같은 인라인 seg를 쓴다 */
 function renderGoalForm(editing){
  const d=goalDraft;
+ const ownerSeg=`<div class="field"><label>귀속</label><div class="seg"><div class="seg-blob"></div>${['all',...(DB.owners||[])].map((o,oi)=>`<button class="${(d.owner||'all')===o?'on':''}" onclick="goalOwnerSel(${oi},${editing})">${o==='all'?'전체':esc(o)}</button>`).join('')}</div></div>`;
  openSheet(`<h3>${editing?'목표 수정':'목표 추가'}</h3><div class="desc">순자산이 이 금액에 도달하는 걸 목표로 추적해요</div>
   <div class="field"><label for="goalName">목표 이름</label><div class="field-clear"><input id="goalName" value="${esc(d.name||'')}" placeholder="예: 내 집 마련 자금"><button type="button" class="fc-x" aria-label="이름 지우기" onclick="clrInput('goalName')">✕</button></div></div>
+  ${ownerSeg}
   <div class="field"><label for="goalAmt">목표 순자산 (원)</label><div class="field-clear"><input id="goalAmt" class="num" inputmode="numeric" value="${d.targetAmount?comma(d.targetAmount):''}" placeholder="0" oninput="fmtAmt(this)"><button type="button" class="fc-x" aria-label="목표 금액 지우기" onclick="clrInput('goalAmt')">✕</button></div></div>
   <div class="field"><label>목표일 (선택)</label><div class="pick ${d.targetDate?'':'placeholder'}" style="cursor:pointer" tabindex="0" role="button" aria-label="목표일 ${d.targetDate?fmtDateFull(d.targetDate):'선택'}" onclick="syncGoalInputs();openFieldDatePicker(goalDraft.targetDate||TODAY,ds=>{goalDraft.targetDate=ds;renderGoalForm(${editing})})" onkeydown="rowKeydown(event,()=>{syncGoalInputs();openFieldDatePicker(goalDraft.targetDate||TODAY,ds=>{goalDraft.targetDate=ds;renderGoalForm(${editing})})})">
     <div class="pav a-save">${svg('calendar')}</div><div class="pbody"><div class="pn">${d.targetDate?fmtDateFull(d.targetDate):'목표일 선택'}</div></div><div class="pc">${d.targetDate?`<button type="button" class="fc-x" style="display:inline-flex;position:static;transform:none" aria-label="목표일 지우기" onclick="event.stopPropagation();goalClearDate(${editing})" onkeydown="event.stopPropagation()">✕</button>`:svg('chev')}</div></div></div>
@@ -2457,7 +2472,7 @@ function saveGoal(editing){
  d.name=(d.name||'').trim();
  if(!d.name){toast('목표 이름을 입력해 주세요');return}
  if(!(d.targetAmount>0)){toast('목표 금액을 입력해 주세요');return}
- const rec=touch({id:d.id,name:d.name,type:'networth',targetAmount:Math.round(d.targetAmount),targetDate:d.targetDate||null,createdAt:d.createdAt||Date.now()}); /* touch() 누락 시 mergeRemoteDataIntoLocal의 mergeCollection()이 updatedAt만 보고 병합하다 다른 기기의 동기화 안 된 목표를 이 저장이 조용히 되돌릴 수 있음(saveAsset 등과 동일한 불변식) */
+ const rec=touch({id:d.id,name:d.name,type:'networth',targetAmount:Math.round(d.targetAmount),targetDate:d.targetDate||null,owner:d.owner||'all',createdAt:d.createdAt||Date.now()}); /* touch() 누락 시 mergeRemoteDataIntoLocal의 mergeCollection()이 updatedAt만 보고 병합하다 다른 기기의 동기화 안 된 목표를 이 저장이 조용히 되돌릴 수 있음(saveAsset 등과 동일한 불변식) */
  const i=(DB.goals||[]).findIndex(x=>x.id===d.id);
  if(i>=0)DB.goals[i]=rec;else DB.goals.push(rec);
  save();goalDraft=null;closeSheet();renderCurrent();toast(editing?'목표를 수정했어요':'목표를 추가했어요');
@@ -2731,6 +2746,10 @@ function refreshNwHistoryCard(){ /* 캐러셀 귀속 전환 시 추이 카드만
  const el=$('nwHistBody');if(!el)return;
  el.innerHTML=nwHistoryCard(ST.assetOwner);
 }
+function refreshGoalsSummary(){ /* 캐러셀 귀속 전환 시 목표 요약도 함께 갱신 — nwHistoryCard와 같은 귀속을 보여줘야 함 */
+ const el=$('goalsSummaryBody');if(!el)return;
+ el.innerHTML=goalsSummaryCard(ST.assetOwner);
+}
 function selectNwOwner(r){ /* 캐러셀 스크롤 정착/점 클릭/키보드 세 경로가 공유하는 귀속 전환 로직 */
  const owner=ownerListArr()[r]||'all';
  if(owner!==ST.assetOwner){
@@ -2738,6 +2757,7 @@ function selectNwOwner(r){ /* 캐러셀 스크롤 정착/점 클릭/키보드 �
    if(navigator.vibrate)navigator.vibrate(6);
    refreshAssetBody(); /* 전체 재렌더 X → 카드가 튀지 않음 */
    refreshNwHistoryCard();
+   refreshGoalsSummary();
  }
 }
 function gotoNwOwner(i){ /* 점 클릭/화살표 키 경로 — nwClampIdx로 스크롤 경계와 동일하게 clamp/wrap */
@@ -2827,7 +2847,7 @@ function renderAssets(){
  <div class="nw-carousel" id="nwCarousel" data-n="${_ol.length}" data-loop="${_ol.length>1?1:0}"${_ol.length>1?' tabindex="0" role="group" aria-label="귀속별 자산 보기"':''}>${_ol.length>1?nwPane(_ol[_ol.length-1],TA,TD):''}${_ol.map(o=>nwPane(o,TA,TD)).join('')}${_ol.length>1?nwPane(_ol[0],TA,TD):''}</div>
  ${_ol.length>1?`<div class="nw-dots">${_ol.map((o,i)=>`<button type="button" class="${i===actIdx?'on':''}" aria-label="${esc(o==='all'?'전체':o)} 보기" aria-current="${i===actIdx?'true':'false'}" onclick="gotoNwOwner(${i})"></button>`).join('')}</div>`:''}
  <div id="nwHistBody">${nwHistoryCard(ST.assetOwner)}</div>
- ${goalsSummaryCard()}
+ <div id="goalsSummaryBody">${goalsSummaryCard(ST.assetOwner)}</div>
  <div class="as-tools${ST.aSel.mode?' hidden':''}">
    <div class="as-actions">${ST.editAssets?`<button class="as-tbtn primary" onclick="ST.editAssets=false;save();renderAssets()">${svg('check')} 완료</button>`:
     `<button class="as-tbtn" onclick="openSortSheet()">${svg('sort')} 정렬</button>
@@ -3201,6 +3221,7 @@ function doRenameOwner(i){const v=$('renameOwner').value.trim();if(!v){toast('�
  const dup=DB.owners.find((o,oi)=>oi!==i&&normName(o)===normName(v));
  if(dup){toast(dup===v?'이미 있는 귀속이에요':`비슷한 귀속이 있어요: ${dup}`);return}
  DB.owners[i]=v;DB.assets.forEach(a=>{if(a.owner===old){a.owner=v;touch(a)}}); /* touch() 누락 시 mergeCollection()이 updatedAt만 보고 병합하다 다른 기기의 동기화 안 된 자산이 이 이름변경을 조용히 되돌릴 수 있음(saveAsset/askRelinkDeleted와 동일한 불변식) */
+ (DB.goals||[]).forEach(g=>{if(g.owner===old){g.owner=v;touch(g)}}); /* assets와 동일한 이유 — 목표(goal)도 owner가 생긴 뒤로 이름변경을 따라가야 함(app-evolve cycle124) */
  if(ST.assetOwner===old)ST.assetOwner=v; if(ST.plan.owner===old)ST.plan.owner=v; if(ST.spendOwner===old)ST.spendOwner=v; /* 활성 귀속 필터가 이름 변경을 따라가도록 */
  (DB.nwHistory||[]).forEach(h=>{if(h.byOwner&&old in h.byOwner){h.byOwner[v]=h.byOwner[old];delete h.byOwner[old]}}); /* 과거 추이 스냅샷의 귀속별 키도 새 이름으로 이동 */
  save();openOwnerManage();toast('귀속을 수정했어요')}
@@ -5209,11 +5230,17 @@ function sanitizeBackup(obj){
   * fmtDateFull()이 Invalid Date를 그대로 보여준다. amount류와 동일하게 여기서 정규화한다. */
  const srcGoals=Array.isArray(obj&&obj.goals)?obj.goals:[];
  const goals=[];
+ /* owner(app-evolve cycle124 신설)도 goalOwnerEff가 믿는 'DB.owners 또는 all' 불변식을 백업 복원
+  * 경로에서는 아무도 지켜주지 않는다 — 이 백업 자신의 owners 목록(obj.owners)을 기준으로 삼고,
+  * 백업에 owners가 없으면 지금 이 기기의 DB.owners로 대체한다. */
+ const validOwners=Array.isArray(obj&&obj.owners)?obj.owners:(DB.owners||[]);
  srcGoals.forEach(g=>{
   if(!g||!g.id){droppedCount++;return}
   const d=Object.assign({},g);
   if('targetAmount' in d){const n=sanitizeAmount(d.targetAmount,0);if(n!==d.targetAmount){d.targetAmount=n;fixedCount++}}
   if(d.targetDate&&!/^\d{4}-\d{2}-\d{2}$/.test(d.targetDate)){d.targetDate=null;fixedCount++}
+  if(!d.owner){d.owner='all'}
+  else if(d.owner!=='all'&&!validOwners.includes(d.owner)){d.owner='all';fixedCount++}
   goals.push(d);
  });
  return {data:Object.assign({},obj,{txns,assets,recurrences,goals}),fixedCount,droppedCount,rangeCount};
