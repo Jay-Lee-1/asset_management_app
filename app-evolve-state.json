@@ -1,13 +1,13 @@
 {
   "cycle": 126,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
     {
       "cycle": 121,
-      "phase": "review",
-      "timestamp": "2026-10-01T20:07:28.911Z",
-      "summary": "develop 커밋(b1150bf, budgetIn 콤마 포맷 통일)을 검토. num()/fmtAmt() 정의 확인 결과 콤마 제거 후 파싱하는 공용 경로와 정확히 일치, txAmt/rAmt/asAmt와 동일한 class=\"num\"+oninput 패턴임을 소스 대조로 확인. 빈 값/존재하지 않는 idx 가드도 기존 saveBudget 로직 유지. node test/run.js 771/771 재통과. 코드 변경 없음(이상 없음).",
+      "phase": "critique",
+      "timestamp": "2026-10-01T21:16:45.077Z",
+      "summary": "앱 전체보다 반복거래 상태기계를 general-purpose 서브에이전트로 재조망(기존 121사이클 동안 다룬 영역은 전부 기각 확정이라 제외 지시). 새로 발견 후 직접 소스 재검증: recApply(mode='delete',scope='future')(3578-3583)가 truncateRecEnd로 endDate/count만 자르고 r.skip/r.edits는 방치 — 형제 경로인 recSave future 분기(3605-3608)·splitRecurrenceAt(3738-3746)은 둘 다 splitRecOverrides로 effectiveDate 이후 skip/edits를 분리하는데 recApply만 빠짐. recHistFieldsChanged(3726)가 endDate 미포함이라 이후 editRec/saveRec로 endDate를 다시 늘리면 recSaveScopeConfirm 안 뜨고 DB.recurrences[i]=d로 그대로 치환(d는 깊은 복사로 과거 미정리 skip/edits 보존) → recDates 재생성 시 휴면 skip/edits가 되살아나 거래 소실/오염. pending_advance_plan에 splitRecOverrides 기반 공용 정리 적용+saveRec direct-edit 대칭 점검+회귀 테스트 저장. 코드 변경 없음.",
       "commit": null
     },
     {
@@ -141,6 +141,13 @@
       "phase": "develop",
       "timestamp": "2026-10-02T15:10:00.000Z",
       "summary": "general-purpose 서브에이전트 조사로 sanitizeBackup()의 반복거래 startDate 검증이 !r.startDate(존재 여부)만 확인해, 비어있지 않지만 형식이 깨졌거나(\"not-a-date\") 달력상 존재하지 않는(\"2026-13-01\") 값은 그대로 통과시키던 버그 발견·수정. 코드 주석(index.html:5233-5238)이 명시한 대로 startDate가 Invalid Date가 되면 recDates()의 종료조건(cur>endd)이 항상 false가 되어 무한루프로 앱이 멈추는데, 이 가드는 '없음'만 막고 '있지만 깨짐'은 전혀 못 막고 있었다(csvDateValid({...startDate:'not-a-date'})로 직접 재현: timeout 5 node에서 exit 124로 무한루프 확인). CSV 임포트가 이미 같은 목적으로 쓰는 csvDateValid()(logic.js:305, 형식+달력 유효성 모두 검증하는 기존 순수함수)를 재사용해 index.html:5242의 가드를 !r.startDate에서 !csvDateValid(r.startDate)로 교체. 주석도 '없거나 형식/달력상 유효하지 않으면'으로 보강. test/run.js에 'not-a-date'와 '2026-13-01'(정규식만 통과, 달력상 무효) 두 케이스가 모두 제거되는 회귀 테스트 1개 추가. node test/run.js 845/845 -> 846/846 통과. APP_VERSION 1.47.19->1.47.20, sw.js CACHE v281->v282.",
+      "commit": null
+    },
+    {
+      "cycle": 126,
+      "phase": "review",
+      "timestamp": "2026-10-02T15:14:45.000Z",
+      "summary": "develop 커밋(e95e8d5, sanitizeBackup startDate 검증 교체)을 검토하며 csvDateValid 재사용이 CSV 임포트와 동일 기준임을 소스 대조로 확인(이상 없음). 다만 같은 함수의 endDate 검증이 전혀 없다는 걸 발견해 직접 재현: r.endDate가 형식은 맞지만 달력상 무효하고(예: \"2026-01-32\") `to`보다 문자열상 작으면, recDates()가 end=new Date(r.endDate+...) 를 Invalid Date로 만들고 그 뒤 endd=new Date(end.getFullYear(),...)도 NaN이 되어 monthly/daily/weekly 분기의 유일한 탈출조건(cur>endd / cd>end)이 항상 false가 되는 걸 logic.js의 실제 recDates()로 timeout 5 node 재현해 exit 124로 확인(startDate 버그와 평행한, develop 단계가 놓친 동일 함수의 자매 버그). 급한 실사용 버그라 범위를 작게 유지해 그 자리에서 수정: csvDateValid(d.endDate)가 거짓이면(값이 있을 때만) startDate처럼 레코드를 버리지 않고 endDate를 null로 떨어뜨림(migrate()의 기존 기본값·무기한 반복과 동일한 '정상 상태'이므로 fixedCount로 집계, droppedCount 아님). test/run.js에 레코드 유지+endDate만 null 보정+유효한 값/이미 null인 값은 그대로 유지되는 걸 확인하는 회귀 테스트 1개 추가. node test/run.js 846/846 -> 847/847 통과. APP_VERSION 1.47.20->1.47.21, sw.js CACHE v282->v283.",
       "commit": null
     }
   ]

@@ -1305,7 +1305,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.20';
+const APP_VERSION='1.47.21';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5243,6 +5243,12 @@ function sanitizeBackup(obj){
   if(!r||!r.id||!csvDateValid(r.startDate)){droppedCount++;return}
   const d=Object.assign({},r);
   if('amount' in d){const n=sanitizeAmount(d.amount,0);if(n!==d.amount){d.amount=n;fixedCount++}} /* txns와 동일: 크기 필드라 음수 불가 */
+  /* endDate는 startDate와 달리 비어있는 게 정상(= 무기한 반복, migrate()의 기본값도 null)이라
+   * 레코드를 통째로 버리진 않지만, 값이 있는데 형식/달력상 무효하면(예: "2026-01-32") 위
+   * startDate와 똑같이 recDates()를 무한루프에 빠뜨린다 — monthly/daily/weekly 분기 모두
+   * end가 Invalid Date가 되면 cur>endd/cd>end 비교가 항상 false라 루프를 못 벗어난다.
+   * 무기한 반복과 동일하게 null로 떨어뜨려 안전한 상태로 정규화한다. */
+  if(d.endDate&&!csvDateValid(d.endDate)){d.endDate=null;fixedCount++}
   /* 매월 반복의 day는 saveRec/saveTx가 저장 직전 clampDay()로 항상 1~31 숫자 또는 'last'로
    * 맞춰두지만, 백업 파일/원격 데이터는 그 경로를 거치지 않고 그대로 들어온다. 문자열·NaN·음수
    * day가 그대로 남으면 recDates()의 Math.min(r.day,lastDay(y,m))이 "2024-01-NaN"·"2024-01--5"

@@ -4118,6 +4118,23 @@ test('sanitizeBackup: startDate가 비어있지 않아도 형식이 깨졌거나
   assert.strictEqual(data.recurrences[0].id, 'r3');
   assert.strictEqual(droppedCount, 2);
 });
+test('sanitizeBackup: endDate가 형식/달력상 무효하면 레코드는 유지하되 null로 떨어뜨린다(endDate는 비어있는 게 정상인 무기한 반복이라 startDate처럼 통째로 버리진 않지만, "2026-01-32" 같은 값이 남으면 recDates()의 end가 Invalid Date가 되어 cur>endd 비교가 항상 false라 무한루프에 빠짐)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    recurrences: [
+      { id: 'r1', startDate: '2026-01-01', endDate: '2026-01-32', amount: 1000 },
+      { id: 'r2', startDate: '2026-01-01', endDate: 'not-a-date', amount: 1000 },
+      { id: 'r3', startDate: '2026-01-01', endDate: '2026-06-30', amount: 1000 },
+      { id: 'r4', startDate: '2026-01-01', endDate: null, amount: 1000 },
+    ],
+  });
+  assert.strictEqual(data.recurrences.length, 4, '무효한 endDate가 있어도 레코드는 제거되지 않아야 함');
+  assert.strictEqual(data.recurrences[0].endDate, null, '무효한 endDate("2026-01-32")는 null로 보정되어야 함');
+  assert.strictEqual(data.recurrences[1].endDate, null, '무효한 endDate("not-a-date")는 null로 보정되어야 함');
+  assert.strictEqual(data.recurrences[2].endDate, '2026-06-30', '유효한 endDate는 그대로 유지되어야 함');
+  assert.strictEqual(data.recurrences[3].endDate, null, '이미 null인 endDate는 그대로 유지되어야 함');
+  assert.strictEqual(fixedCount, 2);
+});
 test('sanitizeBackup: 매월 반복의 day가 숫자가 아니거나 범위를 벗어나면 clampDay와 동일하게 보정한다(recDates()의 "2024-01-NaN" 같은 깨진 날짜 생성을 방지)', () => {
   const { data, fixedCount } = sandbox.sanitizeBackup({
     txns: [], assets: [],
