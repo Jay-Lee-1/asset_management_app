@@ -1305,7 +1305,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.14';
+const APP_VERSION='1.47.15';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1440,6 +1440,7 @@ function mergeRemoteDataIntoLocal(remoteData){
  DB.txns=mergeCollection(DB.txns,remoteData.txns,DB.deletedIds,remoteData.deletedIds);
  DB.recurrences=mergeCollection(DB.recurrences,remoteData.recurrences,DB.deletedIds,remoteData.deletedIds);
  DB.assets=mergeCollection(DB.assets,remoteData.assets,DB.deletedIds,remoteData.deletedIds);
+ DB.goals=mergeCollection(DB.goals,remoteData.goals,DB.deletedIds,remoteData.deletedIds); /* app-evolve cycle123: 신설(cycle122) 당시 여기 누락돼 두 기기가 오프라인에서 각자 목표를 고치면 한쪽이 조용히 소실/복원되던 버그 */
  /* categories/owners/budgetHistory는 id 기반이 아니라 mergeCollection을 쓸 수 없어 전용 순수
   * 함수로 병합한다 — 이전엔 여기서 전혀 병합되지 않아, 두 기기가 오프라인 상태에서 각자
   * 카테고리/귀속/예산을 고치면 로컬 값이 조용히 이기고 이어지는 push가 상대 기기의 편집을
@@ -2455,7 +2456,7 @@ function saveGoal(editing){
  d.name=(d.name||'').trim();
  if(!d.name){toast('목표 이름을 입력해 주세요');return}
  if(!(d.targetAmount>0)){toast('목표 금액을 입력해 주세요');return}
- const rec={id:d.id,name:d.name,type:'networth',targetAmount:Math.round(d.targetAmount),targetDate:d.targetDate||null,createdAt:d.createdAt||Date.now()};
+ const rec=touch({id:d.id,name:d.name,type:'networth',targetAmount:Math.round(d.targetAmount),targetDate:d.targetDate||null,createdAt:d.createdAt||Date.now()}); /* touch() 누락 시 mergeRemoteDataIntoLocal의 mergeCollection()이 updatedAt만 보고 병합하다 다른 기기의 동기화 안 된 목표를 이 저장이 조용히 되돌릴 수 있음(saveAsset 등과 동일한 불변식) */
  const i=(DB.goals||[]).findIndex(x=>x.id===d.id);
  if(i>=0)DB.goals[i]=rec;else DB.goals.push(rec);
  save();goalDraft=null;closeSheet();renderCurrent();toast(editing?'목표를 수정했어요':'목표를 추가했어요');
@@ -2463,7 +2464,10 @@ function saveGoal(editing){
 function delGoal(id){
  const g=(DB.goals||[]).find(x=>x.id===id);if(!g)return;
  confirmSheet('목표를 삭제할까요?',`'${esc(g.name)}' 목표를 더 이상 추적하지 않아요.`,'삭제',()=>{
-  DB.goals=(DB.goals||[]).filter(x=>x.id!==id);goalDraft=null;save();renderCurrent();toast('목표를 삭제했어요');
+  DB.goals=(DB.goals||[]).filter(x=>x.id!==id);
+  DB.deletedIds=DB.deletedIds||{};DB.deletedIds[id]=Date.now(); /* deleteTxnsUndo 등과 동일한 톰스톤 — 없으면 mergeRemoteDataIntoLocal이 이 삭제를 모르고 다른 기기의 사본을 되살림 */
+  goalDraft=null;save();renderCurrent();
+  undoToast('목표를 삭제했어요',()=>{touch(g);DB.goals.push(g);delete DB.deletedIds[id];save();renderCurrent();toast('되돌렸어요')});
  });
 }
 
@@ -5199,7 +5203,19 @@ function sanitizeBackup(obj){
   }
   recurrences.push(d);
  });
- return {data:Object.assign({},obj,{txns,assets,recurrences}),fixedCount,droppedCount,rangeCount};
+ /* DB.goals(순자산 목표, app-evolve cycle122)도 신설 당시 여기 검증 분기가 없었다 — targetAmount가
+  * 손상되면 goalPct/goalProgress의 진행률·투사가 조용히 오염되고, targetDate가 날짜 형식이 아니면
+  * fmtDateFull()이 Invalid Date를 그대로 보여준다. amount류와 동일하게 여기서 정규화한다. */
+ const srcGoals=Array.isArray(obj&&obj.goals)?obj.goals:[];
+ const goals=[];
+ srcGoals.forEach(g=>{
+  if(!g||!g.id){droppedCount++;return}
+  const d=Object.assign({},g);
+  if('targetAmount' in d){const n=sanitizeAmount(d.targetAmount,0);if(n!==d.targetAmount){d.targetAmount=n;fixedCount++}}
+  if(d.targetDate&&!/^\d{4}-\d{2}-\d{2}$/.test(d.targetDate)){d.targetDate=null;fixedCount++}
+  goals.push(d);
+ });
+ return {data:Object.assign({},obj,{txns,assets,recurrences,goals}),fixedCount,droppedCount,rangeCount};
 }
 /* obj.assets/obj.txns가 배열인지까지 검증한 뒤 DB를 통째로 교체한다. migrate()가 손상된
  * obj 때문에 중간에 throw해도 DB가 절반만 마이그레이션된 채로 남지 않도록, 실패 시 교체 전

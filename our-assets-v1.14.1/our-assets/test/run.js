@@ -2017,6 +2017,81 @@ test('delGoal: 존재하지 않는 id를 넘기면 확인 시트조차 띄우지
   assert.strictEqual(sandbox.confirmSheetCalls.length, 0);
   assert.strictEqual(sandbox.DB.goals.length, 1);
 });
+/* app-evolve cycle123 critique가 발견한 버그의 회귀 테스트: DB.goals(cycle122 신설)가 saveGoal에
+ * touch()가 없어 updatedAt을 안 찍고, delGoal도 DB.deletedIds 톰스톤을 안 남겨 mergeRemoteDataIntoLocal
+ * (mergeCollection 기반 3-way 병합)에서 다른 기기의 변경과 충돌 시 조용히 소실/복원될 수 있었다. */
+test('saveGoal: 새 목표를 저장하면 touch()로 updatedAt이 찍힌다(mergeCollection이 다른 기기와 병합할 때 승자를 고르는 유일한 근거)', () => {
+  sandbox.DB = { goals: [] };
+  sandbox.goalDraft = { id: 'test-uid', name: '', type: 'networth', targetAmount: 0, targetDate: null };
+  sandbox.goalNameValue = '내 집 마련';
+  sandbox.goalAmtValue = '1,000,000';
+  sandbox.saveGoal(false);
+  assert.strictEqual(sandbox.DB.goals[0].updatedAt, 'test-updatedAt');
+});
+test('saveGoal: 기존 목표를 수정해도 touch()로 updatedAt이 다시 찍힌다', () => {
+  sandbox.DB = { goals: [{ id: 'g1', name: '여행자금', type: 'networth', targetAmount: 3000000, targetDate: null, updatedAt: 100 }] };
+  sandbox.goalDraft = { id: 'g1', name: '', type: 'networth', targetAmount: 0, targetDate: null };
+  sandbox.goalNameValue = '여행자금(유럽)';
+  sandbox.goalAmtValue = '5,000,000';
+  sandbox.saveGoal(true);
+  assert.strictEqual(sandbox.DB.goals[0].updatedAt, 'test-updatedAt');
+});
+test('delGoal: 확인하면 DB.deletedIds에 삭제 시각 톰스톤을 남긴다(deleteTxnsUndo 등과 동일 — 없으면 병합 시 다른 기기가 모르고 되살림)', () => {
+  sandbox.DB = { goals: [{ id: 'g1', name: '여행자금', type: 'networth', targetAmount: 3000000, targetDate: null }], deletedIds: {} };
+  sandbox.confirmSheetCalls = [];
+  sandbox.delGoal('g1');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.goals.length, 0);
+  assert.ok(typeof sandbox.DB.deletedIds.g1 === 'number', 'deletedIds에 숫자 타임스탬프가 남아야 함');
+});
+test('delGoal: undoToast의 되돌리기를 누르면 목표가 되살아나고(touch()로 updatedAt 재갱신) 톰스톤도 지워진다', () => {
+  sandbox.DB = { goals: [{ id: 'g1', name: '여행자금', type: 'networth', targetAmount: 3000000, targetDate: null, updatedAt: 1 }], deletedIds: {} };
+  sandbox.confirmSheetCalls = [];
+  sandbox.lastUndo = null;
+  sandbox.delGoal('g1');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.ok(sandbox.lastUndo && typeof sandbox.lastUndo.undoFn === 'function', 'undoToast가 호출되어야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.goals.length, 1);
+  assert.strictEqual(sandbox.DB.goals[0].id, 'g1');
+  assert.strictEqual(sandbox.DB.goals[0].updatedAt, 'test-updatedAt', '되살린 레코드는 다시 touch()되어야 mergeCollection에서 안 탈락함');
+  assert.strictEqual('g1' in sandbox.DB.deletedIds, false, '되돌리면 톰스톤도 지워져야 함');
+});
+/* mergeRemoteDataIntoLocal이 DB.txns/recurrences/assets처럼 DB.goals도 mergeCollection으로
+ * 병합하는지 직접 확인 — cycle122가 DB.goals를 신설할 때 이 배선이 누락됐었다(critique cycle123). */
+function minimalMergeDB(overrides) {
+  return Object.assign({
+    txns: [], recurrences: [], assets: [], categories: {}, owners: [],
+    budgetHistory: {}, settings: {}, inquiries: [], nwHistory: [], goals: [], deletedIds: {},
+  }, overrides);
+}
+test('mergeRemoteDataIntoLocal: DB.goals도 다른 컬렉션과 동일하게 mergeCollection으로 병합된다(둘 다 있으면 updatedAt이 더 큰 쪽이 이김)', () => {
+  sandbox.DB = minimalMergeDB({
+    goals: [
+      { id: 'local-only', name: 'local', targetAmount: 1000, updatedAt: 100 },
+      { id: 'both', name: 'stale-local', targetAmount: 1000, updatedAt: 100 },
+    ],
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    goals: [
+      { id: 'remote-only', name: 'remote', targetAmount: 2000, updatedAt: 100 },
+      { id: 'both', name: 'fresh-remote', targetAmount: 3000, updatedAt: 200 },
+    ],
+    deletedIds: {},
+  });
+  const byId = Object.fromEntries(sandbox.DB.goals.map(g => [g.id, g]));
+  assert.ok(byId['local-only'], 'local에만 있던 목표는 그대로 남아야 함');
+  assert.ok(byId['remote-only'], 'remote에만 있던 목표도 들어와야 함');
+  assert.strictEqual(byId['both'].name, 'fresh-remote', 'updatedAt이 더 큰 remote 쪽이 이겨야 함');
+});
+test('mergeRemoteDataIntoLocal: 로컬에서 삭제한(톰스톤) 목표는 원격이 그 이후 수정하지 않았으면 병합 후에도 되살아나지 않는다', () => {
+  sandbox.DB = minimalMergeDB({ goals: [], deletedIds: { g1: 200 } });
+  sandbox.mergeRemoteDataIntoLocal({
+    goals: [{ id: 'g1', name: '여행자금', targetAmount: 1000, updatedAt: 100 }],
+    deletedIds: {},
+  });
+  assert.strictEqual(sandbox.DB.goals.find(g => g.id === 'g1'), undefined, '삭제 이후 원격이 손대지 않은 사본은 되살리면 안 됨');
+});
 
 /* ---------- txnsToCSV: 거래 내역 CSV 내보내기 ---------- */
 test('txnsToCSV: 빈 배열이면 BOM과 헤더만 있는 한 줄을 반환한다', () => {
@@ -3874,6 +3949,51 @@ test("sanitizeBackup: 매월 반복의 day가 'last'(말일)면 그대로 두고
   assert.strictEqual(data.recurrences[0].day, 'last');
   assert.strictEqual(data.recurrences[1].day, 'garbage');
   assert.strictEqual(fixedCount, 0);
+});
+/* DB.goals(app-evolve cycle122 신설)는 sanitizeBackup에 검증 분기가 전혀 없어 손상된 백업/원격
+ * payload의 targetAmount/targetDate가 그대로 통과했었다(critique cycle123이 발견). */
+test('sanitizeBackup: 목표의 NaN/문자열 목표금액을 보정하고 fixedCount를 센다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    goals: [{ id: 'g1', name: '목표', targetAmount: 'NaN이상한값' }],
+  });
+  assert.strictEqual(data.goals[0].targetAmount, 0);
+  assert.strictEqual(fixedCount, 1);
+});
+test('sanitizeBackup: 목표금액이 음수면 0으로 클램프한다(크기 필드라 음수 무효)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    goals: [{ id: 'g1', name: '목표', targetAmount: -5000 }],
+  });
+  assert.strictEqual(data.goals[0].targetAmount, 0);
+  assert.strictEqual(fixedCount, 1);
+});
+test('sanitizeBackup: 목표일(targetDate)이 YYYY-MM-DD 형식이 아니면 null로 보정한다(fmtDateFull이 Invalid Date를 보여주는 것을 방지)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    goals: [{ id: 'g1', name: '목표', targetAmount: 1000, targetDate: 'not-a-date' }],
+  });
+  assert.strictEqual(data.goals[0].targetDate, null);
+  assert.strictEqual(fixedCount, 1);
+});
+test('sanitizeBackup: 목표일이 올바른 형식이거나 null이면 그대로 둔다(정상 케이스는 회귀 없음)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    goals: [
+      { id: 'g1', name: '목표1', targetAmount: 1000, targetDate: '2026-12-31' },
+      { id: 'g2', name: '목표2', targetAmount: 1000, targetDate: null },
+    ],
+  });
+  assert.strictEqual(data.goals[0].targetDate, '2026-12-31');
+  assert.strictEqual(data.goals[1].targetDate, null);
+  assert.strictEqual(fixedCount, 0);
+});
+test('sanitizeBackup: id 없는 목표는 통째로 제거하고, goals가 없거나 배열이 아니어도 터지지 않는다', () => {
+  const dropped = sandbox.sanitizeBackup({ txns: [], assets: [], goals: [{ name: '목표', targetAmount: 1000 }] });
+  assert.strictEqual(dropped.data.goals.length, 0);
+  assert.strictEqual(dropped.droppedCount, 1);
+  const missing = sandbox.sanitizeBackup({ txns: [], assets: [] });
+  assert.strictEqual(missing.data.goals.length, 0);
 });
 
 /* ---------- spendByCategory: 지출 분석 카테고리별 합계는 잔액 조정(기본 제외)을 빼야 한다 ---------- */
