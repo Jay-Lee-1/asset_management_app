@@ -1,15 +1,12 @@
 {
   "cycle": 125,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "자산관리 탭에 자산유형별 비중(allocation) 시각화 추가",
+    "why": "8개 자산유형(ASSET_TYPES)을 추적하면서도 유형별 비중을 보여주는 곳이 전무함. assetBodyHTML()이 유형별 sum을 계산하지만 원화 합계만 출력하고 버림(퍼센트 미산출). nwPane()도 순자산/총자산/부채 세 숫자뿐. index.html:1535의 TYPE_COLOR={cash,savings,stock,realestate,debt,pension,fx,gold,etc: ...} 상수가 정의된 채 파일 전체에서 단 한 번도(정의 자체 제외) 참조되지 않음 — 비중 차트용으로 준비되었다가 미완성으로 남은 증거. grep으로 '비중|allocation|포트폴리오' 전체 0건 확인. 데이터는 이미 렌더 경로에 다 계산되어 있어 스키마/cloud-sync 리스크 없는 순수 프레젠테이션 공백.",
+    "approach": "1) logic.js에 assetAllocation(assets, owner) 순수함수 신설: owner!=='all'이면 ownerAssets와 동일 필터 적용, a.includeInTotal&&a.type!=='debt'인 자산만 assetEval(a) 기준 type별 합산, total=0이면 []. [{type,label,amount,pct}] amount desc 정렬, pct=total?amount/total*100:0. 2) UI: nwHistBody/goalsSummaryBody 패턴을 그대로 따라 allocationCard(owner) 함수 신설(ASSET_TYPES[t].label/.icon + 기존에 미사용이던 TYPE_COLOR[t]로 세그먼트 색상) — 스택형 가로 막대 + 범례. renderAssets()의 nwHistBody와 goalsSummaryBody 사이(또는 바로 아래)에 <div id=\"allocBody\">${allocationCard(ST.assetOwner)}</div> 삽입. 3) refreshAllocationCard() 신설 후 selectNwOwner()에서 refreshNwHistoryCard()/refreshGoalsSummary()와 나란히 호출해 귀속(나/배우자/전체) 캐러셀 전환 시 같이 갱신되게 배선. 4) test/run.js FUNCTIONS에 assetAllocation(+allocationCard 등 신설 함수) 등록, 케이스: 혼합 포트폴리오 pct 합≈100 / 빈 자산 []·divide-by-zero 없음 / debt는 분모·세그먼트에서 제외 확인 / owner 필터가 ownerAssets와 동일하게 동작 / 단일 유형이면 100%. 5) APP_VERSION과 sw.js CACHE 버전 올리기(기존 관례). 기각된 후보: 거래 복제/즐겨찾기 단축입력(편의 기능, 증거 약함) / DB.inquiries(건의함) 조회 UI 부재(실사용 임팩트 낮은 관리자용 채널) / Pro 업그레이드/광고 버튼이 영구 스텁(결제 백엔드 없는 데모 앱의 의도된 플레이스홀더, 스코프 밖)."
+  },
   "history": [
-    {
-      "cycle": 120,
-      "phase": "critique",
-      "timestamp": "2026-10-01T17:10:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(a11y 전반·cloud sync 타임아웃/mutex·CDN SRI·파일분할/jsdom·백그라운드 푸시·tx/rec 폼 통합·owner 이름변경 마이그레이션·orphan 함수·자산별 거래내역·요약카드 탭 배선·wheel picker 키보드·스파크라인 aria-hidden·FX/금/주식 수량 가드·CSV/삭제cascade/백버튼/PWA/핀치줌/날짜로직/PBKDF2/복구코드/알림인터벌/쿼터/undo tombstone/성능추측/부부정산·대출상환·예산경고류/검색금액매칭/평단가단순설계/정렬모드는 모두 이미 다뤄졌거나 근거부족·의도된 설계로 기각 확정이라 제외). 새로 발견: index.html:2123 RANGE_FROM(하한)은 dateBelowRangeFloor()(2126)로 saveTx(3502)/saveRec(3690)/csvRowToImportTxn(4895)/sanitizeBackup(5079) 네 곳 모두에서 막혀 있는데, RANGE_TO(상한, TODAY+760일)는 대칭 검증 함수가 아예 없어 네 곳 어디서도 상한을 체크하지 않음 — allTxns(RANGE_FROM,RANGE_TO)가 상한 밖 날짜를 애초에 안 가져온다는 주석(2124-2125)까지 있는 한쪽만 고친 경계버그. 날짜 피커(dpExtend 5547-5557)는 미래 상한이 전혀 없고 dpToggleJump(5593)의 연도 점프가 기본 TM.y+5까지라 단발 거래 하나로도 두 번의 탭으로 2~3년 뒤 날짜를 저장 가능, saveTx가 하한만 체크하므로 그대로 저장되지만 balancesUpTo/hasFutureTxns(6023)/emptyAssets(6025)에서 영구히 안 보이는 실재 데이터 유실(+잘못된 자산 정리 제안)로 이어짐. CSV는 하한 위반만 경고하고 상한 위반은 무경고로 더 나쁜 비대칭. test/run.js 전수 확인 결과 RANGE_TO 관련 테스트는 전부 sandbox.RANGE_TO를 2099년으로 치워버리는 스텁뿐이라 실제 경계 코드/테스트 전무. 러너업(기록만, 기각): 주식 티커 포맷 클라/서버 불일치(rateUnknown 배지+수동 설정으로 이미 복구 가능해 우선순위 낮음) / netlify rates.js·stock.js 성숙도(AbortController+재시도+예산+폴백 모두 이미 확인, 변경 없음) / undo 토스트 스택 동작(독립 DOM+타이머로 정상, 버그 아님). pending_advance_plan에 저장(상세 approach는 state.json pending_advance_plan 참고): dateAboveRangeCeil(ds) 순수함수 신설 후 saveTx/saveRec/csvRowToImportTxn/sanitizeBackup 네 곳에 하한과 대칭으로 적용, 관련 안내 메시지를 방향 비한정 문구로 수정, test/run.js에 경계 포함 회귀 테스트 추가. 날짜 피커 UI 자체의 미래 상한은 반복거래가 정상적으로 RANGE_TO를 넘나드는 케이스가 있어 스코프 제외(저장/가져오기/복원 경계만 막음). 코드 변경 없음(읽기 전용 조사, general-purpose 서브에이전트 위임, 핵심 라인 번호는 오케스트레이팅 세션이 직접 grep으로 재확인).",
-      "commit": null
-    },
     {
       "cycle": 120,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-02T12:10:00.000Z",
       "summary": "develop 커밋(62bc169, DB.catIcon/catVar cloud sync 병합 누락 수정)을 검토. mergeFlatMap(Object.assign({},remote,local))이 mergeBudgetHistory와 동일한 '동률이면 local 승리, 키 유니온' 관례임을 소스 대조로 확인. mergeRemoteDataIntoLocal에서 DB.catIcon/DB.catVar 병합이 migrate() 호출보다 먼저 배치되어 기본값 채움이 병합 결과를 덮어쓰지 않음을 재확인, mergeFlatMap이 undefined 입력에도 안전해 migrate() 실행 전 DB.catIcon/catVar가 아직 없는 상태에서도 문제없음을 확인. node test/run.js 837/837 재통과. 코드 변경 없음(이상 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 125,
+      "phase": "critique",
+      "timestamp": "2026-10-02T13:11:43.295Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(a11y·cloud sync·CDN SRI·파일분할/jsdom·백그라운드 푸시·tx/rec 폼 통합·owner 마이그레이션/orphan 함수·FX/금/주식 수량 가드·CSV/삭제cascade/백버튼/PWA/핀치줌·RANGE_FROM/RANGE_TO 경계·PBKDF2/복구코드/알림인터벌/쿼터·undo tombstone(tx/rec/asset/goals/catIcon/catVar)·부부정산/대출상환/예산경고·검색금액매칭/평단가/정렬모드·recApply skip/edits·이체/저축 picker self-exclusion·주식 티커·netlify 재시도·goal 기능(owner 스코프 포함)·catIcon/catVar cloud sync는 모두 기각/완료 처리되어 제외 지시). 새로 발견 후 직접 소스 재검증: 자산관리 탭에 자산유형별 비중(allocation) 시각화가 전무함 — assetBodyHTML()(2800-2843)이 유형별 sum을 계산하지만 원화 합계만 출력하고 버림(퍼센트 미산출), nwPane()도 순자산/총자산/부채 세 숫자뿐. index.html:1535의 TYPE_COLOR 상수(유형별 색상 맵)가 정의된 채 파일 전체에서 정의 자체 외 단 한 번도 참조되지 않는 orphan — 비중 차트용으로 준비되다 미완성으로 남은 증거를 grep으로 확인. grep '비중|allocation|포트폴리오' 전체 0건. 기존 지출 카테고리 비율 막대(cycle122 기각 사유)와는 다른 자산 탭 전용 표면이라 중복 아님. 데이터는 이미 렌더 경로(assetBodyHTML의 sum, nwPane의 TA/TD)에 계산되어 있어 스키마/cloud-sync 리스크 없는 순수 프레젠테이션 공백. pending_advance_plan에 assetAllocation 순수함수+allocationCard(owner) UI+refreshAllocationCard를 selectNwOwner에 배선+테스트 저장(상세는 state.json pending_advance_plan 참고). 러너업(기각): 거래 복제/즐겨찾기 단축입력(편의 기능, 증거 약함) / DB.inquiries(건의함) 조회 UI 부재(관리자용 채널, 임팩트 낮음) / Pro 업그레이드 광고 버튼 영구 스텁(결제 백엔드 없는 데모 앱의 의도된 플레이스홀더). 코드 변경 없음(읽기 전용 조사, 서브에이전트 보고의 TYPE_COLOR orphan·assetBodyHTML·nwHistoryCard/goalsSummaryCard/selectNwOwner 배선 패턴은 오케스트레이팅 세션이 grep/Read로 직접 재확인).",
       "commit": null
     }
   ]
