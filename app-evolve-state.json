@@ -1,15 +1,8 @@
 {
   "cycle": 128,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 123,
-      "phase": "review",
-      "timestamp": "2026-10-02T04:05:00.000Z",
-      "summary": "develop 커밋(cc001d9, planTransfer/planSplitTransfer RANGE_FROM/RANGE_TO 경계검증 추가)을 검토. 새 체크 두 줄이 saveTx(3579-3580)/saveRec(3770-3771)의 dateBelowRangeFloor/dateAboveRangeCeil 토스트 문구·순서와 정확히 동일함을 소스 대조로 확인, twGuard() 통과 직후·txns.push 이전이라 조기 반환 위치도 올바름. node test/run.js 801/801 재통과. 코드 변경 없음(이상 없음).",
-      "commit": null
-    },
     {
       "cycle": 123,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-02T23:30:00.000Z",
       "summary": "sanitizeBackup()의 DB.goals targetDate 검증이 다른 날짜 필드(startDate/endDate/maturityDate)와 달리 csvDateValid()가 아닌 형식 전용 정규식(/^\\d{4}-\\d{2}-\\d{2}$/)만 써서, 모양은 맞지만 달력상 존재하지 않는 값(예: '2026-13-01', '2026-02-30')이 그대로 통과하던 불일치를 발견·수정. 이런 값이 fmtDateFull()의 new Date(s+'T00:00:00')에 들어가면 월/일 롤오버로 전혀 엉뚱한 날짜(예: 2027년 1월 1일, 2026년 3월 2일)가 목표일로 조용히 표시되는 문제였다. index.html sanitizeBackup()의 targetDate 검증을 csvDateValid(d.targetDate)로 교체해 startDate/endDate/maturityDate와 동일 기준으로 통일하고 주석도 갱신. test/run.js에 13월/32일 두 케이스를 검증하는 회귀 테스트 1개 추가(둘 다 null로 보정되고 fixedCount=2). node test/run.js 858/858 -> 859/859 통과. APP_VERSION 1.47.24->1.47.25, sw.js CACHE v286->v287.",
+      "commit": null
+    },
+    {
+      "cycle": 128,
+      "phase": "review",
+      "timestamp": "2026-10-03T00:07:55.742Z",
+      "summary": "develop 커밋(2a5d7c5, sanitizeBackup() 목표일(targetDate) 달력 유효성 검증 누락 수정)을 검토. 변경이 기존 startDate/endDate/maturityDate와 동일하게 csvDateValid()를 재사용함을 소스 대조로 확인(logic.js:305-310, 형식+달력 유효성 모두 검증), 다른 날짜 필드 검증부(index.html:5222,5235,5243)와 위치·패턴이 일치. 새 회귀 테스트(2026-13-01/2026-02-30 두 케이스, fixedCount=2)도 올바르게 null 보정을 검증함을 확인. APP_VERSION 1.47.24->1.47.25, sw.js CACHE v286->v287 동반 반영 확인. node test/run.js 859/859 재통과. 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
