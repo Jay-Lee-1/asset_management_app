@@ -1305,7 +1305,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.35';
+const APP_VERSION='1.47.36';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1446,6 +1446,7 @@ function mergeRemoteDataIntoLocal(remoteData){
  DB.recurrences=mergeCollection(DB.recurrences,remoteData.recurrences,DB.deletedIds,remoteData.deletedIds);
  DB.assets=mergeCollection(DB.assets,remoteData.assets,DB.deletedIds,remoteData.deletedIds);
  DB.goals=mergeCollection(DB.goals,remoteData.goals,DB.deletedIds,remoteData.deletedIds); /* app-evolve cycle123: 신설(cycle122) 당시 여기 누락돼 두 기기가 오프라인에서 각자 목표를 고치면 한쪽이 조용히 소실/복원되던 버그 */
+ DB.inquiries=mergeCollection(DB.inquiries,remoteData.inquiries,DB.deletedIds,remoteData.deletedIds); /* app-evolve cycle133: goals와 동일한 누락 — 문의 메모에 id/updatedAt이 없을 때부터 여기서 전혀 병합되지 않고 있었음 */
  /* categories/owners/budgetHistory는 id 기반이 아니라 mergeCollection을 쓸 수 없어 전용 순수
   * 함수로 병합한다 — 이전엔 여기서 전혀 병합되지 않아, 두 기기가 오프라인 상태에서 각자
   * 카테고리/귀속/예산을 고치면 로컬 값이 조용히 이기고 이어지는 push가 상대 기기의 편집을
@@ -2010,6 +2011,7 @@ function migrate(){
  }
  if(!DB.categories.expense||!DB.categories.expense.length)DB.categories.expense=[...EXP_CATS_DEFAULT];
  DB.inquiries=DB.inquiries||[];
+ DB.inquiries.forEach(q=>{if(!q.id)q.id=uid();if(!q.updatedAt)q.updatedAt=Date.now()}); /* id/updatedAt은 cycle133에 추가된 필드라 그 전에 저장된 메모엔 없음 — 없으면 mergeCollection()이 모든 레코드를 같은 undefined id로 취급해 하나로 뭉개버림 */
  DB.goals=DB.goals||[]; /* 순자산 목표: [{id,name,type:'networth',targetAmount,targetDate,owner,createdAt}] */
  DB.goals.forEach(g=>{if(!g.owner)g.owner='all'}); /* owner는 cycle124에 추가된 필드라 그 전에 생긴 목표엔 없음 — 'all'(전체)로 채워야 goalOwnerEff/nwHistoryForOwner가 가구 전체 추이로 올바르게 처리함 */
  DB.deletedIds=gcTombstones(DB.deletedIds||{},Date.now()); /* 부팅 때마다 오래된 tombstone 정리(GC) */
@@ -4754,18 +4756,40 @@ function setRate(kind,key,val){const n=Number(String(val).replace(/[^0-9.]/g,'')
     미확인 취급하므로 0을 그대로 둬도 안전하다. */
  if(n<=0){if(kind==='gold')DB.rates.goldPerG=0;else if(kind==='fx'||kind==='fx100')delete DB.rates.fx[key];else if(kind==='stock')delete DB.rates.stocks[key];save();return}
  if(kind==='gold')DB.rates.goldPerG=n;else if(kind==='fx')DB.rates.fx[key]=n;else if(kind==='fx100')DB.rates.fx[key]=n/100;else if(kind==='stock')DB.rates.stocks[key]=n;save()}
-/* 문의하기 */
+/* 문의하기 — 셀프호스트 구조상 받는 쪽이 없는 '접수' 채널이 아니라, 이 기기(계정)에 저장되고
+ * 백업/동기화에 포함되는 개인 메모임을 문구로 명확히 한다(app-evolve cycle133). */
 function openInquiry(){
- openSheet(`<h3>문의하기</h3><div class="desc">불편한 점이나 필요한 기능을 남겨주세요</div>
+ const n=(DB.inquiries||[]).length;
+ openSheet(`<h3>문의하기</h3><div class="desc">불편한 점이나 필요한 기능을 적어두면 이 기기에 저장돼요(백업에도 포함돼요)</div>
   <div class="field"><textarea id="inqText" placeholder="내용을 입력해 주세요 (예: 이런 기능이 있으면 좋겠어요)"></textarea></div>
-  <button class="btn btn-primary" onclick="sendInquiry()">보내기</button>`);
+  <button class="btn btn-primary" onclick="sendInquiry()">저장하기</button>
+  ${n?`<button class="btn btn-soft" style="margin-top:9px" onclick="openInquiryList()">저장한 메모 보기 (${n})</button>`:''}`);
  setTimeout(()=>{const t=$('inqText');t&&t.focus()},300);
 }
 function sendInquiry(){
  const t=$('inqText');const v=(t&&t.value||'').trim();
- if(!v){toast('문의 내용을 입력해 주세요');return}
- DB.inquiries.push({date:TODAY,text:v});save();
- closeSheet();toast('문의가 접수됐어요. 감사합니다!');
+ if(!v){toast('메모 내용을 입력해 주세요');return}
+ DB.inquiries=DB.inquiries||[];
+ DB.inquiries.push(touch({id:uid(),date:TODAY,text:v})); /* id/updatedAt 없이는 mergeRemoteDataIntoLocal()의 mergeCollection()에 등록할 수 없음(goals/catIcon과 동일한 '최상위 DB 필드 병합 누락' 버그 클래스) */
+ save();closeSheet();toast('저장했어요');
+}
+function openInquiryList(){
+ const items=[...(DB.inquiries||[])].sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+ openSheet(`<h3>저장한 메모</h3><div class="desc">문의하기에서 적어둔 메모예요. 백업에 포함돼요</div>
+  ${items.length?items.map(q=>`<div class="manage-row" style="align-items:flex-start"><div style="flex:1;min-width:0"><div class="mn" style="white-space:pre-wrap;word-break:break-word">${esc(q.text)}</div><div class="msub">${q.date||''}</div></div><div class="row-acts"><button class="act-btn danger" aria-label="메모 삭제" onclick="delInquiry('${q.id}')">${svg('trash')}</button></div></div>`).join('')
+   :`<div class="empty"><div class="ei">${svg('chat')}</div><div class="et">저장한 메모가 없어요</div></div>`}
+  <div style="height:12px"></div><button class="btn btn-soft" onclick="openInquiry()">+ 새 메모 작성</button>
+  <button class="btn btn-primary" style="margin-top:9px" onclick="closeSheet()">닫기</button>`);
+}
+function delInquiry(id){
+ const q=(DB.inquiries||[]).find(x=>x.id===id);if(!q)return;
+ const preview=q.text.length>40?q.text.slice(0,40)+'…':q.text;
+ confirmSheet('메모를 삭제할까요?',`'${esc(preview)}' 메모를 지워요.`,'삭제',()=>{
+  DB.inquiries=(DB.inquiries||[]).filter(x=>x.id!==id);
+  DB.deletedIds=DB.deletedIds||{};DB.deletedIds[id]=Date.now(); /* delGoal 등과 동일한 톰스톤 — 없으면 mergeRemoteDataIntoLocal이 이 삭제를 모르고 다른 기기의 사본을 되살림 */
+  save();openInquiryList();
+  undoToast('메모를 삭제했어요',()=>{DB.inquiries.push(q);delete DB.deletedIds[id];touchSave(q);openInquiryList();toast('되돌렸어요')});
+ });
 }
 
 /* 도움말 */

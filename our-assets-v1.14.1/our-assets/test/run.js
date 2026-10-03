@@ -142,6 +142,7 @@ const FUNCTIONS = [
   'nextBigOutflow', 'dday', 'balanceOn', 'nextOutflowCard', 'monthOutflowCard', 'planGaugeCard', 'homeAlertCard', 'renderHome',
   'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwHistoryCard', 'allocationCard', 'doRenameOwner', 'addOwner',
   'goalOwnerEff', 'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'syncGoalInputs', 'goalClearDate', 'goalOwnerSel', 'renderGoalForm', 'openGoalForm', 'saveGoal', 'delGoal',
+  'openInquiry', 'sendInquiry', 'openInquiryList', 'delInquiry',
   'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetToggleSel', 'visibleAssetsForSel', 'assetSelAll', 'activeSel',
   'modeSeg', 'monthNav', 'abbr', 'calCellsFor', 'ledSumInner', 'ledSumBox', 'ledSumTap', 'calPane', 'txRowCore', 'txRow', 'dayTxns',
   'ledgerRowsHtml', 'ledgerDayHeadHtml', 'renderLedger', 'selDayPartial',
@@ -404,7 +405,7 @@ const sandbox = {
   // asName은 syncAssetInputs()의 이름 trim() 회귀 테스트용(공백만 있는 이름이 그대로 저장되던 버그).
   // asNameValue가 undefined인 기본 상태에서는 null을 반환해, 이 mock 추가 이전처럼 다른 테스트의
   // syncAssetInputs()/saveAsset() 호출에서 asDraft.name이 건드려지지 않도록 한다.
-  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'budgetIn' ? { value: sandbox.budgetInValue } : id === 'goalName' ? (sandbox.goalNameValue === undefined ? null : { value: sandbox.goalNameValue }) : id === 'goalAmt' ? (sandbox.goalAmtValue === undefined ? null : { value: sandbox.goalAmtValue }) : id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-plan' ? sandbox.pagePlanEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : id === 'ledgerCard' ? (sandbox.ledgerCardMissing ? null : sandbox.ledgerCardEl) : id === 'assetBody' ? (sandbox.assetBodyMissing ? null : sandbox.assetBodyEl) : id === 'newOwner' ? (sandbox.newOwnerValue === undefined ? null : { value: sandbox.newOwnerValue }) : id === 'renameOwner' ? (sandbox.renameOwnerValue === undefined ? null : { value: sandbox.renameOwnerValue }) : null,
+  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'budgetIn' ? { value: sandbox.budgetInValue } : id === 'goalName' ? (sandbox.goalNameValue === undefined ? null : { value: sandbox.goalNameValue }) : id === 'goalAmt' ? (sandbox.goalAmtValue === undefined ? null : { value: sandbox.goalAmtValue }) : id === 'inqText' ? (sandbox.inqTextValue === undefined ? null : { value: sandbox.inqTextValue }) : id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-plan' ? sandbox.pagePlanEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : id === 'ledgerCard' ? (sandbox.ledgerCardMissing ? null : sandbox.ledgerCardEl) : id === 'assetBody' ? (sandbox.assetBodyMissing ? null : sandbox.assetBodyEl) : id === 'newOwner' ? (sandbox.newOwnerValue === undefined ? null : { value: sandbox.newOwnerValue }) : id === 'renameOwner' ? (sandbox.renameOwnerValue === undefined ? null : { value: sandbox.renameOwnerValue }) : null,
   bkTextEl: { value: 'backup-text', select: () => {}, setSelectionRange: () => {} },
   // copyBackup()의 navigator.clipboard 체크가 ReferenceError 없이 "지원 안 함"으로 지나가게
   // 하는 최소 흉내(document.execCommand는 try/catch로 감싸져 있어 굳이 스텁이 필요 없음).
@@ -2355,6 +2356,99 @@ test('mergeRemoteDataIntoLocal: 로컬에서 삭제한(톰스톤) 목표는 원�
     deletedIds: {},
   });
   assert.strictEqual(sandbox.DB.goals.find(g => g.id === 'g1'), undefined, '삭제 이후 원격이 손대지 않은 사본은 되살리면 안 됨');
+});
+
+/* ---------- 문의하기(개인 메모): openInquiry/sendInquiry/openInquiryList/delInquiry (app-evolve cycle133 advance)
+ * '문의 접수' write-only dead end를 '이 기기에 저장되는 메모'로 재정의하면서 id/touch()/mergeCollection
+ * 등록/목록·삭제 화면을 추가했다 — delGoal과 동일한 확인 시트+undoToast+톰스톤 패턴. ---------- */
+test('sendInquiry: 내용이 비어 있으면 저장하지 않고 안내 토스트만 띄운다', () => {
+  sandbox.DB = { inquiries: [] };
+  sandbox.inqTextValue = '   ';
+  sandbox.sendInquiry();
+  assert.strictEqual(sandbox.DB.inquiries.length, 0);
+  assert.strictEqual(sandbox.lastToast, '메모 내용을 입력해 주세요');
+});
+test('sendInquiry: 저장하면 id와 touch()로 찍은 updatedAt을 채운 레코드가 들어간다(mergeCollection이 다른 기기와 병합할 때 쓰는 유일한 식별자/근거 — 예전엔 둘 다 없어 write-only였고 병합 대상에도 등록될 수 없었음)', () => {
+  sandbox.DB = { inquiries: [] };
+  sandbox.inqTextValue = '다크모드에 OLED 블랙 옵션도 있으면 좋겠어요';
+  sandbox.sendInquiry();
+  assert.strictEqual(sandbox.DB.inquiries.length, 1);
+  assert.strictEqual(sandbox.DB.inquiries[0].id, 'test-uid');
+  assert.strictEqual(sandbox.DB.inquiries[0].updatedAt, 'test-updatedAt');
+  assert.strictEqual(sandbox.DB.inquiries[0].text, '다크모드에 OLED 블랙 옵션도 있으면 좋겠어요');
+});
+test('openInquiryList: 최신(updatedAt이 큰) 메모가 먼저 나오도록 정렬된다', () => {
+  sandbox.DB = { inquiries: [
+    { id: 'old', text: '오래된메모', updatedAt: 100 },
+    { id: 'new', text: '최신메모', updatedAt: 300 },
+    { id: 'mid', text: '중간메모', updatedAt: 200 },
+  ] };
+  sandbox.openInquiryList();
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.indexOf('최신메모') < html.indexOf('중간메모'), '최신 메모가 중간 메모보다 먼저 나와야 함');
+  assert.ok(html.indexOf('중간메모') < html.indexOf('오래된메모'), '중간 메모가 오래된 메모보다 먼저 나와야 함');
+});
+test('delInquiry: 바로 지우지 않고 확인 시트를 띄우며, 확인해야 DB.inquiries에서 제거되고 DB.deletedIds에 톰스톤이 남는다', () => {
+  sandbox.DB = { inquiries: [{ id: 'q1', text: '메모', updatedAt: 1 }], deletedIds: {} };
+  sandbox.confirmSheetCalls = [];
+  sandbox.delInquiry('q1');
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 1, '바로 지우지 않고 확인 시트를 띄워야 함');
+  assert.strictEqual(sandbox.DB.inquiries.length, 1, '확인 전에는 그대로여야 함');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.inquiries.length, 0);
+  assert.ok(typeof sandbox.DB.deletedIds.q1 === 'number', 'deletedIds에 숫자 타임스탬프가 남아야 함');
+});
+test('delInquiry: 존재하지 않는 id를 넘기면 확인 시트조차 띄우지 않는다', () => {
+  sandbox.DB = { inquiries: [{ id: 'q1', text: '메모', updatedAt: 1 }], deletedIds: {} };
+  sandbox.confirmSheetCalls = [];
+  sandbox.delInquiry('없는id');
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0);
+  assert.strictEqual(sandbox.DB.inquiries.length, 1);
+});
+test('delInquiry: undoToast의 되돌리기를 누르면 메모가 되살아나고(touch()로 updatedAt 재갱신) 톰스톤도 지워진다', () => {
+  sandbox.DB = { inquiries: [{ id: 'q1', text: '메모', updatedAt: 1 }], deletedIds: {} };
+  sandbox.confirmSheetCalls = [];
+  sandbox.lastUndo = null;
+  sandbox.delInquiry('q1');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.inquiries.length, 0);
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출돼야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.inquiries.length, 1);
+  assert.strictEqual(sandbox.DB.inquiries[0].id, 'q1');
+  assert.strictEqual(sandbox.DB.inquiries[0].updatedAt, 'test-updatedAt');
+  assert.strictEqual(sandbox.DB.deletedIds.q1, undefined, '되돌리면 톰스톤도 지워져야 함');
+});
+
+/* mergeRemoteDataIntoLocal이 DB.goals처럼 DB.inquiries도 mergeCollection으로 병합하는지 확인
+ * (app-evolve cycle133 critique: id/updatedAt 없이 push만 하던 write-only 구조라 애초에 이 배선에
+ * 등록돼 있지 않았음 — goals가 cycle122 신설 당시 겪었던 것과 동일한 버그 클래스). */
+test('mergeRemoteDataIntoLocal: DB.inquiries도 다른 컬렉션과 동일하게 mergeCollection으로 병합된다(둘 다 있으면 updatedAt이 더 큰 쪽이 이김)', () => {
+  sandbox.DB = minimalMergeDB({
+    inquiries: [
+      { id: 'local-only', text: 'local', updatedAt: 100 },
+      { id: 'both', text: 'stale-local', updatedAt: 100 },
+    ],
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    inquiries: [
+      { id: 'remote-only', text: 'remote', updatedAt: 100 },
+      { id: 'both', text: 'fresh-remote', updatedAt: 200 },
+    ],
+    deletedIds: {},
+  });
+  const byId = Object.fromEntries(sandbox.DB.inquiries.map(q => [q.id, q]));
+  assert.ok(byId['local-only'], 'local에만 있던 메모는 그대로 남아야 함');
+  assert.ok(byId['remote-only'], 'remote에만 있던 메모도 들어와야 함');
+  assert.strictEqual(byId['both'].text, 'fresh-remote', 'updatedAt이 더 큰 remote 쪽이 이겨야 함');
+});
+test('mergeRemoteDataIntoLocal: 로컬에서 삭제한(톰스톤) 메모는 원격이 그 이후 수정하지 않았으면 병합 후에도 되살아나지 않는다', () => {
+  sandbox.DB = minimalMergeDB({ inquiries: [], deletedIds: { q1: 200 } });
+  sandbox.mergeRemoteDataIntoLocal({
+    inquiries: [{ id: 'q1', text: '불편사항', updatedAt: 100 }],
+    deletedIds: {},
+  });
+  assert.strictEqual(sandbox.DB.inquiries.find(q => q.id === 'q1'), undefined, '삭제 이후 원격이 손대지 않은 사본은 되살리면 안 됨');
 });
 
 /* ---------- txnsToCSV: 거래 내역 CSV 내보내기 ---------- */

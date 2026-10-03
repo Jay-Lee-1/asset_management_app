@@ -1,19 +1,8 @@
 {
-  "cycle": 133,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "'문의하기'(inquiry) 기능이 write-only dead end + 동기화 미병합 + 테스트 0건",
-    "why": "openInquiry()/sendInquiry()(index.html:4757-4769)는 사용자가 적은 문의를 DB.inquiries에 push만 하고 그 뒤 어디서도 읽지 않는다(grep 'DB.inquiries' index.html test/run.js 결과는 emptyDB 초기화(1620 inquiries:[]), migrate() 백필(2012), push(4767) 세 곳뿐 — 조회 화면·export-only-view·개발자 전달 경로가 전혀 없음). 이 템플릿은 README.txt:38-58·openHelpCloud()(index.html:4362-4387)가 보여주듯 배포자마다 자기 Supabase 프로젝트를 쓰는 완전 셀프호스트 구조라 애초에 '문의를 받는 쪽'이 존재하지 않고, netlify/functions/엔 stock.js·rates.js만 있어 문의 전달용 함수도 없다. 그런데도 sendInquiry()의 성공 토스트는 '문의가 접수됐어요. 감사합니다!'(index.html:4768)라고 단정해 실제로는 아무도 받지 않는 걸 받았다고 거짓 안내한다. 게다가 push된 객체에 id/updatedAt이 없어(index.html:4767) mergeRemoteDataIntoLocal()(index.html:1440-1464)에 아예 등록돼 있지 않다 — 지난 10여 사이클 동안 바로 이 '최상위 DB 필드가 3-way 병합에서 빠짐' 버그 클래스를 goals(cycle123, 1448행)·catIcon/catVar(cycle125, 1462-1463행)·budgetHistory 순으로 반복 발견·수정해온 바로 그 패턴이 DB.inquiries에는 아직 적용 안 된 것. test/run.js(9733줄) 전체에 'inquir' 문자열이 0건으로, 앱에서 유일하게 회귀 테스트가 전혀 없는 사용자 기능이기도 하다.",
-    "approach": "write-only 지원 채널이라는 거짓 전제를 버리고 '개인 메모/위시리스트' 기능으로 정직하게 재정의한다. (1) sendInquiry()에서 push하는 객체에 id:uid()와 touch() 동일 관례(updatedAt 스탬프)를 추가. (2) mergeRemoteDataIntoLocal()(index.html:1440-1464)에 DB.inquiries=mergeCollection(DB.inquiries,remoteData.inquiries,DB.deletedIds,remoteData.deletedIds)를 DB.goals 바로 아래 추가해 goals와 동일한 병합 관례를 적용. (3) openInquiryList() 같은 목록 화면을 신설해 openInquiry() 시트에서 진입 가능하게 하고, delGoal()(index.html:2512-2520)/delRecConfirm()(index.html:3913)과 동일한 confirmSheet()+undoToast() 패턴으로 개별 삭제+되돌리기를 지원, 최신순 정렬. (4) openInquiry() 설명 문구(index.html:4759)와 sendInquiry() 성공 토스트(index.html:4768)를 '저장돼요/백업에 포함돼요' 식의 정직한 문구로 수정 — '접수'·'감사합니다' 같은 응답 주체가 있다는 뉘앙스 제거. (5) test/run.js에 회귀 테스트 추가: sendInquiry가 id/updatedAt을 채우는지, 목록이 최신순인지, 삭제+undo 왕복이 올바른지, mergeRemoteDataIntoLocal이 DB.inquiries를 mergeCollection으로 병합하는지(cycle123의 goals 병합 테스트를 거울상으로). 범위는 재무/잔액 로직에 손대지 않아 리스크가 낮다. 러너업으로 검토했으나 채택 안 한 DB.deletedType(index.html:3001 설정, 2925·2961 읽음)도 mergeRemoteDataIntoLocal()에 전혀 병합 안 되는 동일 버그 클래스지만, 영향 범위가 '동일 이름으로 재생성한 자산의 과거 이력 자동 재연결'이라는 편의 기능 하나로 좁고 수정도 한 줄(mergeFlatMap 한 줄 추가)에 가까워 advance보다 develop 스코프에 가까우므로 이번엔 보류."
-  },
+  "cycle": 134,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 128,
-      "phase": "advance",
-      "timestamp": "2026-10-03T03:10:26.183Z",
-      "summary": "critique(cycle128) 계획대로 mergeCollection() 병합 불변식(touch() 호출)이 빠져 있던 4개 지점을 수정했다. doMaturity() 4550 a.maturityDate=null;save() -> touch(a) 추가(만기 처리가 동기화로 되돌아가면 만기 임박 알림 재발+재이체 시 중복 거래 생성 위험, 최우선). toggleRecActive() 4692 r.active=!r.active;save() -> touch(r) 추가(반복거래 일시중지/재시작이 동기화로 되돌아가는 문제). toggleAdjustSurplus() 3693 t.inSurplus=!t.inSurplus;...save() -> touch(t) 추가(수지포함 토글이 동기화로 되돌아가는 문제). 이체확인 설정 끄기 콜백(toggleConfirmTransfers) 2719-2720 pendingOneOff.forEach/pendingRecList.forEach 각각에 touch(t)/touch(r) 추가(일괄 확인 처리가 동기화로 되돌아가 확인 대기가 되살아나는 문제). test/run.js FUNCTIONS에 toggleRecActive/toggleAdjustSurplus 등록, openRecManage 스텁 추가(toggleRecActive가 호출). 회귀 테스트 4개 추가: doMaturity 만기 처리된 자산 자체의 touch() 확인, toggleRecActive 일시중지/재시작 양방향 touch() 확인, toggleAdjustSurplus 토글 touch() 확인, toggleConfirmTransfers 끄기 콜백이 일반 이체/반복거래 양쪽 모두에 touch()를 호출하는지 확인. node test/run.js 859/859 -> 863/863 통과. APP_VERSION 1.47.25->1.47.26, sw.js CACHE v287->v288. pending_advance_plan을 null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 129,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-03T21:10:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(133사이클 동안 다뤄진 항목 전부 제외 지시, Enter-to-submit 시리즈/지출분석 drill-down/touchSave 구조적 가드 포함). 새로 발견 후 직접 소스 재검증: '문의하기' 기능(openInquiry/sendInquiry, index.html:4757-4769)이 DB.inquiries에 push만 할 뿐 어디서도 읽히지 않는 write-only dead end임을 확인(grep 'DB.inquiries' index.html test/run.js가 emptyDB 초기화 1620·migrate 백필 2012·push 4767 세 곳뿐, 목록 화면·전달 경로 전무). README.txt:38-58·openHelpCloud()(4362-4387)로 이 템플릿이 배포자별 셀프호스트 Supabase 구조임을, netlify/functions/엔 stock.js·rates.js뿐 문의 전달 함수가 없음을 확인해, '문의가 접수됐어요. 감사합니다!'(4768) 토스트가 실제로는 아무도 받지 않는데도 받았다고 단정하는 거짓 안내임을 검증. push 객체에 id/updatedAt이 없어 mergeRemoteDataIntoLocal()(1440-1464)에도 전혀 등록 안 돼 있음을 확인 — goals(cycle123, 1448행)·catIcon/catVar(cycle125, 1462-1463행)에서 반복 수정해온 '최상위 DB 필드 병합 누락' 버그 클래스가 DB.inquiries엔 아직 미적용. test/run.js 9733줄 중 'inquir' 매칭 0건(앱에서 유일하게 테스트 전무한 사용자 기능)도 확인. pending_advance_plan에 inquiries id/touch화+mergeCollection 등록+목록/삭제 화면+문구 수정+회귀 테스트 4개 저장(상세는 pending_advance_plan 참고). 러너업(기각): DB.deletedType(3001 설정, 2925·2961 읽음)도 mergeRemoteDataIntoLocal에 미병합이나 영향 범위가 '동일 이름 자산 재연결' 편의기능 하나로 좁고 수정도 한 줄에 가까워 develop 스코프에 더 가까움 / Enter-to-submit 패턴 중복(renderAssetSheet/renderTxSheet/renderRecSheet/renderGoalForm)을 공용 헬퍼로 통합 — 중복이 작고 이미 테스트로 잘 커버돼 광범위 리팩터링 리스크 대비 이득 적음 / 앱 잠금·연간 지출분석 뷰 — cycle131/132에서 이미 기각(기능 스코프 과대), 재확인해도 새 근거 없음. 코드 변경 없음(읽기 전용 조사, 오케스트레이팅 세션이 index.html 1615-1625(emptyDB)·1438-1464(mergeRemoteDataIntoLocal)·2925·2961·3001(deletedType)·4315-4325·4755-4772(openInquiry/sendInquiry)를 직접 Read/grep으로 재확인).",
+      "commit": null
+    },
+    {
+      "cycle": 133,
+      "phase": "advance",
+      "timestamp": "2026-10-03T23:13:08.648Z",
+      "summary": "critique(cycle133) 계획대로 '문의하기' write-only dead end를 고쳤다. (1) sendInquiry()의 push 객체에 id:uid()+touch() 적용(index.html:4772). (2) mergeRemoteDataIntoLocal()에 DB.goals 바로 아래 DB.inquiries=mergeCollection(...) 추가(1449행) — goals/catIcon과 동일했던 '최상위 DB 필드 병합 누락' 버그 클래스 해소. (3) migrate()에 레거시 백필 추가: id/updatedAt 없는 기존 메모에 uid()/Date.now() 채움(2014행) — 없으면 mergeCollection()이 undefined id로 여러 레코드를 하나로 뭉갰을 것. (4) openInquiryList() 신설(최신순 정렬, manage-row+row-acts 패턴)과 delInquiry()(delGoal과 동일한 confirmSheet+톰스톤+undoToast 패턴) 추가, openInquiry()에서 '저장한 메모 보기' 링크로 진입. (5) openInquiry() 설명과 sendInquiry() 토스트 문구를 '접수됐어요. 감사합니다!' → '저장했어요'/'이 기기에 저장돼요(백업에도 포함)'로 교정해 받는 사람이 있다는 암시 제거. test/run.js: FUNCTIONS에 openInquiry/sendInquiry/openInquiryList/delInquiry 등록, $ 스텁에 inqText 추가, 회귀 테스트 8개 추가(빈 입력 토스트, id/touch 채움, 목록 최신순 정렬, 삭제 확인시트+톰스톤, 존재하지 않는 id 가드, undo 왕복, mergeRemoteDataIntoLocal의 inquiries 병합 2개 — goals 테스트의 거울상). node test/run.js 878/878 -> 886/886 통과. APP_VERSION 1.47.35->1.47.36, sw.js CACHE v297->v298. pending_advance_plan을 null로 비움.",
       "commit": null
     }
   ]
