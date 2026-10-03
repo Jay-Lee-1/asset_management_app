@@ -1,15 +1,12 @@
 {
   "cycle": 133,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "'문의하기'(inquiry) 기능이 write-only dead end + 동기화 미병합 + 테스트 0건",
+    "why": "openInquiry()/sendInquiry()(index.html:4757-4769)는 사용자가 적은 문의를 DB.inquiries에 push만 하고 그 뒤 어디서도 읽지 않는다(grep 'DB.inquiries' index.html test/run.js 결과는 emptyDB 초기화(1620 inquiries:[]), migrate() 백필(2012), push(4767) 세 곳뿐 — 조회 화면·export-only-view·개발자 전달 경로가 전혀 없음). 이 템플릿은 README.txt:38-58·openHelpCloud()(index.html:4362-4387)가 보여주듯 배포자마다 자기 Supabase 프로젝트를 쓰는 완전 셀프호스트 구조라 애초에 '문의를 받는 쪽'이 존재하지 않고, netlify/functions/엔 stock.js·rates.js만 있어 문의 전달용 함수도 없다. 그런데도 sendInquiry()의 성공 토스트는 '문의가 접수됐어요. 감사합니다!'(index.html:4768)라고 단정해 실제로는 아무도 받지 않는 걸 받았다고 거짓 안내한다. 게다가 push된 객체에 id/updatedAt이 없어(index.html:4767) mergeRemoteDataIntoLocal()(index.html:1440-1464)에 아예 등록돼 있지 않다 — 지난 10여 사이클 동안 바로 이 '최상위 DB 필드가 3-way 병합에서 빠짐' 버그 클래스를 goals(cycle123, 1448행)·catIcon/catVar(cycle125, 1462-1463행)·budgetHistory 순으로 반복 발견·수정해온 바로 그 패턴이 DB.inquiries에는 아직 적용 안 된 것. test/run.js(9733줄) 전체에 'inquir' 문자열이 0건으로, 앱에서 유일하게 회귀 테스트가 전혀 없는 사용자 기능이기도 하다.",
+    "approach": "write-only 지원 채널이라는 거짓 전제를 버리고 '개인 메모/위시리스트' 기능으로 정직하게 재정의한다. (1) sendInquiry()에서 push하는 객체에 id:uid()와 touch() 동일 관례(updatedAt 스탬프)를 추가. (2) mergeRemoteDataIntoLocal()(index.html:1440-1464)에 DB.inquiries=mergeCollection(DB.inquiries,remoteData.inquiries,DB.deletedIds,remoteData.deletedIds)를 DB.goals 바로 아래 추가해 goals와 동일한 병합 관례를 적용. (3) openInquiryList() 같은 목록 화면을 신설해 openInquiry() 시트에서 진입 가능하게 하고, delGoal()(index.html:2512-2520)/delRecConfirm()(index.html:3913)과 동일한 confirmSheet()+undoToast() 패턴으로 개별 삭제+되돌리기를 지원, 최신순 정렬. (4) openInquiry() 설명 문구(index.html:4759)와 sendInquiry() 성공 토스트(index.html:4768)를 '저장돼요/백업에 포함돼요' 식의 정직한 문구로 수정 — '접수'·'감사합니다' 같은 응답 주체가 있다는 뉘앙스 제거. (5) test/run.js에 회귀 테스트 추가: sendInquiry가 id/updatedAt을 채우는지, 목록이 최신순인지, 삭제+undo 왕복이 올바른지, mergeRemoteDataIntoLocal이 DB.inquiries를 mergeCollection으로 병합하는지(cycle123의 goals 병합 테스트를 거울상으로). 범위는 재무/잔액 로직에 손대지 않아 리스크가 낮다. 러너업으로 검토했으나 채택 안 한 DB.deletedType(index.html:3001 설정, 2925·2961 읽음)도 mergeRemoteDataIntoLocal()에 전혀 병합 안 되는 동일 버그 클래스지만, 영향 범위가 '동일 이름으로 재생성한 자산의 과거 이력 자동 재연결'이라는 편의 기능 하나로 좁고 수정도 한 줄(mergeFlatMap 한 줄 추가)에 가까워 advance보다 develop 스코프에 가까우므로 이번엔 보류."
+  },
   "history": [
-    {
-      "cycle": 128,
-      "phase": "critique",
-      "timestamp": "2026-10-03T00:40:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(128사이클 동안 다뤄진 항목 전부 제외 지시, 최근 goal owner 스코프/catIcon·catVar sync/allocation 카드/txRow·histRow 통합/만기 알림 overdue 문구/doMaturity·saveAsset maturityDate RANGE 경계/sanitizeBackup targetDate 달력 유효성 포함). 새로 발견 후 직접 소스 재검증: mergeCollection()(logic.js:107-129)이 updatedAt만으로 승자를 고르는 구조상, 레코드를 바꾸면서 touch()를 빠뜨리면 교차기기 동기화 시 그 변경이 조용히 되돌아가는 패턴(confirmTransferNow/postponeTransfer/rollPendingTransfers/doRenameOwner/doRenameCat/catIcon·catVar 등 6곳 이상에서 이미 반복 발견·수정됨)의 미수정 지점 4곳을 grep 'DB.(assets|txns|recurrences).find('로 전체 mutation 지점을 재확인해 직접 소스(index.html)로 검증: doMaturity() 4550 `a.maturityDate=null;save();`에 touch(a) 없음(되돌아가면 만기 임박 알림 재발+재이체 시 동일 금액 중복 생성 위험, 최우선) / toggleRecActive() 4692 `r.active=!r.active;save();`에 touch(r) 없음 / toggleAdjustSurplus() 3692-3693 `t.inSurplus=!t.inSurplus;...save();`에 touch(t) 없음 / 이체확인 설정 끄기 콜백 2719-2720 `pendingOneOff.forEach(t=>t.confirmed=true)`·`pendingRecList...push(t.date)` 모두 touch 없음. pending_advance_plan에 4곳 touch() 추가+회귀 테스트 4개 저장(상세는 state.json pending_advance_plan 참고). 러너업(기각): recApply confirmedDates 다른 경로 전체 재조사(이미 전부 touch 적용돼 신규 발견 없음) / doMaturity target 삭제 케이스 추가 처리(4537에 이미 null 가드+토스트 있어 공백 아님). 코드 변경 없음(읽기 전용 조사, 서브에이전트가 지목한 4곳 모두 오케스트레이팅 세션이 Read로 직접 재확인: 3692-3693, 4536-4551, 4692, 2719-2720).",
-      "commit": null
-    },
     {
       "cycle": 128,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-03T20:30:00.000Z",
       "summary": "develop 커밋(c0a18fd, renderGoalForm() goalAmt Enter-to-submit 추가)을 검토. onkeydown=\"if(event.key==='Enter'&&!event.isComposing)saveGoal(${editing})\"가 cycle130-132의 costBasisField/rAmt와 동일한 패턴임을 소스 대조로 확인. saveGoal()(2502-2511)을 직접 Read해 !d.name/!(d.targetAmount>0) 모두 toast+return으로 안전하게 처리되어 Enter 제출이 크래시나 데이터 손상으로 이어지지 않음을 확인, 대입 순서상 ownerSeg가 goalAmt보다 앞서고 그 뒤엔 타이핑이 필요 없는 날짜 피커만 이어짐도 재확인. saveGoal()이 touch()+save()(mergeCollection() 불변식)를 올바르게 쓰고 있음도 확인(diff 범위 밖이라 영향 없음이지만 겸사겸사 점검). 새 회귀 테스트(extractFunction 소스 패턴 검사)도 costBasisField/rAmt 테스트와 동일 방식으로 적절. node test/run.js 878/878 재통과. 코드 변경 없음(이상 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 133,
+      "phase": "critique",
+      "timestamp": "2026-10-03T21:10:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(133사이클 동안 다뤄진 항목 전부 제외 지시, Enter-to-submit 시리즈/지출분석 drill-down/touchSave 구조적 가드 포함). 새로 발견 후 직접 소스 재검증: '문의하기' 기능(openInquiry/sendInquiry, index.html:4757-4769)이 DB.inquiries에 push만 할 뿐 어디서도 읽히지 않는 write-only dead end임을 확인(grep 'DB.inquiries' index.html test/run.js가 emptyDB 초기화 1620·migrate 백필 2012·push 4767 세 곳뿐, 목록 화면·전달 경로 전무). README.txt:38-58·openHelpCloud()(4362-4387)로 이 템플릿이 배포자별 셀프호스트 Supabase 구조임을, netlify/functions/엔 stock.js·rates.js뿐 문의 전달 함수가 없음을 확인해, '문의가 접수됐어요. 감사합니다!'(4768) 토스트가 실제로는 아무도 받지 않는데도 받았다고 단정하는 거짓 안내임을 검증. push 객체에 id/updatedAt이 없어 mergeRemoteDataIntoLocal()(1440-1464)에도 전혀 등록 안 돼 있음을 확인 — goals(cycle123, 1448행)·catIcon/catVar(cycle125, 1462-1463행)에서 반복 수정해온 '최상위 DB 필드 병합 누락' 버그 클래스가 DB.inquiries엔 아직 미적용. test/run.js 9733줄 중 'inquir' 매칭 0건(앱에서 유일하게 테스트 전무한 사용자 기능)도 확인. pending_advance_plan에 inquiries id/touch화+mergeCollection 등록+목록/삭제 화면+문구 수정+회귀 테스트 4개 저장(상세는 pending_advance_plan 참고). 러너업(기각): DB.deletedType(3001 설정, 2925·2961 읽음)도 mergeRemoteDataIntoLocal에 미병합이나 영향 범위가 '동일 이름 자산 재연결' 편의기능 하나로 좁고 수정도 한 줄에 가까워 develop 스코프에 더 가까움 / Enter-to-submit 패턴 중복(renderAssetSheet/renderTxSheet/renderRecSheet/renderGoalForm)을 공용 헬퍼로 통합 — 중복이 작고 이미 테스트로 잘 커버돼 광범위 리팩터링 리스크 대비 이득 적음 / 앱 잠금·연간 지출분석 뷰 — cycle131/132에서 이미 기각(기능 스코프 과대), 재확인해도 새 근거 없음. 코드 변경 없음(읽기 전용 조사, 오케스트레이팅 세션이 index.html 1615-1625(emptyDB)·1438-1464(mergeRemoteDataIntoLocal)·2925·2961·3001(deletedType)·4315-4325·4755-4772(openInquiry/sendInquiry)를 직접 Read/grep으로 재확인).",
       "commit": null
     }
   ]
