@@ -1,15 +1,8 @@
 {
   "cycle": 132,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 127,
-      "phase": "develop",
-      "timestamp": "2026-10-02T19:27:51.468Z",
-      "summary": "general-purpose 서브에이전트 조사로 notifyAlertInfo()(index.html homeAlerts 근처)의 저축 만기(mat) OS 알림 문구 버그 발견·수정. homeAlerts()의 mat 포함 조건(a.maturityDate<=addDays(TODAY,7))은 하한이 없어 doMaturity()로 아직 처리하지 않은 지난 만기도 계속 알림 대상에 남는데, notifyAlertInfo는 al.date<=addDays(TODAY,1)이면 날짜가 TODAY가 아니기만 하면 무조건 \"내일 만기\"로 단정해, 실제로는 여러 날 지난 만기를 \"내일 만기\"라고 잘못 알리고 있었다(TODAY=2026-06-15, date=2026-06-05로 실제 함수 재현해 확인). overdue=al.date<TODAY 분기를 추가해 지난 만기는 제목/본문을 \"저축 만기가 지났어요\"로 구분하고, 오늘/내일 동작은 그대로 유지. 홈 카드(homeAlertCard)는 shortDate로 실제 날짜를 보여줘 이 버그의 영향을 받지 않음(OS 푸시 알림 경로만 해당). test/run.js: 기존 mat 테스트에 본문 텍스트 단언 보강 + overdue(10일 지남/1일 지남 두 케이스) 신규 테스트 1개 추가. node test/run.js 850/850 -> 851/851 통과. APP_VERSION 1.47.22->1.47.23, sw.js CACHE v284->v285.",
-      "commit": null
-    },
     {
       "cycle": 127,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-03T15:16:28.131Z",
       "summary": "critique(cycle131) 계획대로 지출 분석(Spend Analysis) 카테고리 행에서 전체내역으로 drill-down을 추가했다. ST.hist(index.html:2305)에 catExact:null/owner:'전체' 필드를 추가하고 filteredHist()(3916-3927)의 캐시 키와 필터 체인에 반영 — H.catExact가 있으면 t.type==='expense'&&t.category===H.catExact로 지출만+카테고리명 정확 매칭(유형이 다른 동일 이름과 안 섞이게), H.owner가 '전체'가 아니면 기존 filterTxnsByOwner()(logic.js)를 그대로 재사용해 귀속으로도 거른다. openCatHistory(idx) 신규 함수: openAssetHistory와 동일 관례로 spendByCategory(ST.ledger.y,m,ST.spendOwner)의 rows[idx]를 찾아 catExact/owner/range(월 시작~끝)를 세팅하고 cat/q/assetId는 리셋한 뒤 histInvalidate();closeSheet();go('history'). spend-row(4482)에는 기존 openBudgetPrompt(idx)를 그대로 두고, 자산 행의 '내역' 버튼(row-acts/act-btn, 2865)과 동일한 패턴으로 stopPropagation 버튼을 추가해 두 동작이 충돌 없이 공존하게 했다(기존 7188 접근성 테스트도 그대로 통과). renderHistory()에 H.assetId 칩과 같은 자리에 H.catExact 칩(카테고리명+귀속 표시, histClearCatFilter)을 추가했고, sumTap/openAssetHistory/histClearFilter 등 기존 필터 리셋 지점에도 catExact/owner 리셋을 추가해 진입 경로가 바뀔 때 이전 필터가 새지 않게 했다. test/run.js: filteredHist의 catExact(유형 분리 포함)+owner 조합 테스트 3개, openCatHistory의 필터 세팅/리셋/idx 없음 가드 테스트 2개, openAssetHistory의 catExact/owner 리셋 테스트 1개 — 총 6개 추가(sandbox에 go() 스파이 스텁 신규 추가). vm 컨텍스트에서 만든 객체 리터럴(ST.hist.range)은 메인 realm 리터럴과 deepStrictEqual 비교 시 'same structure but not reference-equal'로 실패하는 걸 발견해 필드별 strictEqual로 수정. node test/run.js 869/869 -> 875/875 통과. APP_VERSION 1.47.31->1.47.32, sw.js CACHE v293->v294. pending_advance_plan을 null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 132,
+      "phase": "develop",
+      "timestamp": "2026-10-03T16:10:11.673Z",
+      "summary": "general-purpose 서브에이전트 조사로 renderRecSheet()(index.html:3785)의 금액 입력(rAmt)이 cycle130/131에서 renderAssetSheet/renderTxSheet에 적용한 Enter-to-submit 패턴을 놓치고 있었음을 발견·수정. openRecSheet()의 기본값(category:첫 카테고리, fromAssetId:firstCash(), freq:monthly, day:1, startDate:ST.ledger.sel)과 saveRec()의 유일한 필수 검사(!d.amount)를 대조해, amount가 사실상 사용자가 반드시 입력해야 하는 유일한 필드임을 확인(이체/저축은 toAssetId 선택이 추가로 필요하지만 Enter 시 saveRec()의 기존 토스트 검증이 그대로 안내함, 새 버그 아님). renderAssetSheet asCostBasis(3101)/costBasisField와 동일한 onkeydown=\"if(event.key==='Enter'&&!event.isComposing)saveRec()\"를 rAmt에 추가. test/run.js: extractFunction('renderRecSheet')로 rAmt 입력 문자열에 해당 onkeydown이 포함되는지 확인하는 테스트 1개 추가(FUNCTIONS 목록 추가 불필요, costBasisField/renderTxSheet 테스트와 동일하게 소스 텍스트만 검사). node test/run.js 875/875 -> 876/876 통과. APP_VERSION 1.47.32->1.47.33, sw.js CACHE v294->v295.",
       "commit": null
     }
   ]
