@@ -1,7 +1,11 @@
 {
   "cycle": 132,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "touch()-before-save() 동기화 불변식에 구조적 가드 추가 + touchSave() 헬퍼로 마이그레이션",
+    "why": "mergeCollection()(logic.js:107-129)은 DB.assets/txns/recurrences/goals의 교차기기 충돌을 updatedAt 비교만으로 해소한다. 레코드를 바꾸면서 touch()를 빠뜨리면 동기화 시 그 변경이 조용히 되돌아가는데, 이 버그 클래스가 cycle128/129에서 독립적으로 두 번 재발견되어 이미 14곳(doMaturity, toggleRecActive, toggleAdjustSurplus, toggleConfirmTransfers-off, doDeleteCat, deleteAssetsUndo, recApply/recSave/saveQuickAmount undo 6곳)을 고쳤다. grep 결과 index.html에 touch( 49회 vs save() 99회로, save() 호출의 절반 이상이 touch 유무를 수동으로 판단해야 하는 구조다. 매 critique마다 전체 재감사를 반복하는 대신 테스트가 자동으로 잡아내게 해야 한다.",
+    "approach": "1) test/run.js에 index.html 본문 스크립트를 정적으로 스캔하는 회귀 테스트를 추가: 'DB.(assets|txns|recurrences|goals).find(...)'로 바인딩된 변수가 필드 대입을 받은 뒤 중간에 touch(그변수) 없이 save()가 호출되는 패턴을 정규식/토큰 매칭으로 탐지해, 발견되면 테스트 실패(사이트 목록을 메시지에 출력). cycle129 advance 시점(866/863 기준)에서 위반 0건임을 먼저 확인해 가드가 거짓양성 없이 깨끗한 상태를 통과시키는지 검증. 2) 작은 헬퍼 function touchSave(...records){records.forEach(touch);return save()} 를 touch() 정의 근처에 추가하고, 이미 고쳐진 14곳 이상의 'touch(x);...save()' 패턴을 touchSave(x)로 마이그레이션해 올바른 사용이 기본 경로가 되게 한다(마이그레이션 대상과 범위는 advance 시작 시 grep으로 재확인). 3) 기존 touch() 단위 테스트들이 touchSave 경유로도 동일하게 통과하는지 확인하고, node test/run.js로 전체 스위트 통과 확인 후 APP_VERSION/sw.js CACHE 올림."
+  },
   "history": [
     {
       "cycle": 127,
@@ -134,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-03T17:05:00.000Z",
       "summary": "develop 커밋(83077a5, renderRecSheet() rAmt Enter-to-submit 추가)을 검토. onkeydown=\"if(event.key==='Enter'&&!event.isComposing)saveRec()\"가 cycle130의 costBasisField/asCostBasis 패턴과 정확히 일치함을 소스 대조로 확인. saveRec()(3832-3866)을 직접 Read해 !d.amount 외의 누락 필드(transfer/saving의 toAssetId, expense/income의 fromAssetId 등)도 모두 toast+return으로 안전하게 처리되어 Enter 제출이 크래시나 데이터 손상으로 이어지지 않음을 확인. 새 회귀 테스트(extractFunction 소스 패턴 검사)도 costBasisField/renderTxSheet 테스트와 동일 방식으로 적절. node test/run.js 876/876 재통과. 코드 변경 없음(이상 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 132,
+      "phase": "critique",
+      "timestamp": "2026-10-03T18:08:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(132사이클 동안 다뤄진 항목 전부 제외 지시, Enter-to-submit 시리즈+지출분석 drill-down+touch() 누락 14곳 수정 포함). 이번엔 특정 신규 버그가 아니라 반복되는 버그 '클래스'를 지목: touch()-before-save() 동기화 불변식이 코드로 강제되지 않는 수동 관례라는 점. grep으로 직접 재확인(touch( 49회 vs save() 99회, index.html), mergeCollection()(logic.js:107-129)이 updatedAt만으로 승자를 고르는 구조상 touch() 누락은 매번 cycle128/129처럼 전체 재감사(수 시간)로만 잡혀왔음을 history 대조로 확인 — 같은 비용을 critique마다 반복 지불하고 있다. pending_advance_plan에 (1) test/run.js에 index.html 본문을 정적 스캔해 'find()로 바인딩한 변수가 field 대입 후 touch() 없이 save() 호출'되는 패턴을 탐지하는 회귀 가드 테스트 추가, (2) touchSave(...records) 헬퍼 도입 및 기존 14곳 이상 마이그레이션을 저장(상세는 pending_advance_plan 참고). 러너업(기각): CDN SRI 해시 TODO(index.html:1298-1304) — 이미 코드 주석에 네트워크 정책상 보류 명시, 신규 발견 아님 / 앱 완전 종료 시 알림 신뢰성(6294-6297) — 이미 best-effort로 코드에 문서화된 수용된 한계 / 부채(debt) 자산의 이자율·상환 projection 부재 — 실재하나 새 기능 스코프(앱잠금 등 기각 항목과 동일 범주) / CSV import findAsset() 동명 비시가평가 자산 모호성(5050) — 한 줄 수정 규모라 advance 스코프보다 작음. 코드 변경 없음(읽기 전용 조사, 오케스트레이팅 세션이 grep -c touch(/save()로 직접 재확인: 49/99, touch() 정의 1430행).",
       "commit": null
     }
   ]
