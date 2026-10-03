@@ -1,22 +1,12 @@
 {
   "cycle": 130,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "자산 등록/수정 폼(renderAssetSheet)에 Enter-to-submit 누락",
+    "why": "앱의 다른 모든 인라인 입력 폼(addOwner newOwner:3238, doRenameOwner renameOwner:3252, addCat newCat:4604, doRenameCat renameCat:4650)은 마지막 입력에 onkeydown=\"if(event.key==='Enter'&&!event.isComposing)...\" 패턴으로 Enter 제출을 지원하는데, renderAssetSheet()(index.html:3103-3148)의 자산 등록/수정 폼(asName:3108, asAmt:3114, asFx:3125/costBasisField, asGold:3129/costBasisField, asCode:3134/asQty:3136/costBasisField)은 전부 onkeydown 핸들러가 없음을 grep 'isComposing'과 해당 라인 직접 Read로 확인. onSheetKeydown(5462 부근)도 Escape/Tab만 처리해 전역 Enter-submit도 없음. 자산 추가가 가장 빈번한 초기 설정 동작인데 매번 수동으로 '등록하기/수정하기' 버튼을 눌러야 하는 반복적 마찰.",
+    "approach": "각 자산 타입 분기의 '마지막' 의미있는 입력에 onkeydown=\"if(event.key==='Enter'&&!event.isComposing)saveAsset(${editing})\"를 추가, 기존 renameCat/addCat과 동일한 isComposing 가드 스타일을 그대로 사용(IME 조합 중 중복 제출 방지). cash/debt/realestate/etc/pension: asAmt에 추가(그 뒤 필드 없음). savings: asAmt는 제외(그 뒤 만기일 버튼이 이어지는 흐름이라 Enter로 바로 제출하면 만기일 입력 기회를 건너뜀, 기존 goalAmt/goalName과 동일한 논리). fx: costBasisField(asCostBasis, 선택 입력)가 항상 마지막이므로 거기에 추가, asFx 자체엔 추가 안 함(그 뒤 매입금액 필드가 이어짐). gold: 동일하게 costBasisField의 asCostBasis에 추가. stock: costBasisField의 asCostBasis가 마지막이므로 거기에 추가(asName/asCode/asQty는 제외 — 각각 다음 필드로 이어짐). costBasisField(d)는 fx/gold/stock 3곳에서 공유되므로 함수 자체에 onkeydown을 넣으면 세 타입 모두 자동 적용됨. 각 분기 테스트(또는 renderAssetSheet 렌더 결과 문자열에 해당 onkeydown이 포함되는지 확인하는 테스트) 추가, node test/run.js 통과 확인, APP_VERSION/sw.js CACHE 버전 증가."
+  },
   "history": [
-    {
-      "cycle": 125,
-      "phase": "review",
-      "timestamp": "2026-10-02T12:10:00.000Z",
-      "summary": "develop 커밋(62bc169, DB.catIcon/catVar cloud sync 병합 누락 수정)을 검토. mergeFlatMap(Object.assign({},remote,local))이 mergeBudgetHistory와 동일한 '동률이면 local 승리, 키 유니온' 관례임을 소스 대조로 확인. mergeRemoteDataIntoLocal에서 DB.catIcon/DB.catVar 병합이 migrate() 호출보다 먼저 배치되어 기본값 채움이 병합 결과를 덮어쓰지 않음을 재확인, mergeFlatMap이 undefined 입력에도 안전해 migrate() 실행 전 DB.catIcon/catVar가 아직 없는 상태에서도 문제없음을 확인. node test/run.js 837/837 재통과. 코드 변경 없음(이상 없음).",
-      "commit": null
-    },
-    {
-      "cycle": 125,
-      "phase": "critique",
-      "timestamp": "2026-10-02T13:11:43.295Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(a11y·cloud sync·CDN SRI·파일분할/jsdom·백그라운드 푸시·tx/rec 폼 통합·owner 마이그레이션/orphan 함수·FX/금/주식 수량 가드·CSV/삭제cascade/백버튼/PWA/핀치줌·RANGE_FROM/RANGE_TO 경계·PBKDF2/복구코드/알림인터벌/쿼터·undo tombstone(tx/rec/asset/goals/catIcon/catVar)·부부정산/대출상환/예산경고·검색금액매칭/평단가/정렬모드·recApply skip/edits·이체/저축 picker self-exclusion·주식 티커·netlify 재시도·goal 기능(owner 스코프)·catIcon/catVar cloud sync는 모두 기각/완료 처리되어 제외 지시). 새로 발견 후 직접 소스 재검증: 자산관리 탭에 자산유형별 비중(allocation) 시각화가 전무함 — assetBodyHTML()(2800-2843)이 유형별 sum을 계산하지만 원화 합계만 출력하고 버림(퍼센트 미산출), nwPane()도 순자산/총자산/부채 세 숫자뿐. index.html:1535의 TYPE_COLOR 상수(유형별 색상 맵)가 정의된 채 파일 전체에서 정의 자체 외 단 한 번도 참조되지 않는 orphan — 비중 차트용으로 준비되다 미완성으로 남은 증거를 grep으로 확인. grep '비중|allocation|포트폴리오' 전체 0건. 기존 지출 카테고리 비율 막대(cycle122 기각 사유)와는 다른 자산 탭 전용 표면이라 중복 아님. 데이터는 이미 렌더 경로(assetBodyHTML의 sum, nwPane의 TA/TD)에 계산되어 있어 스키마/cloud-sync 리스크 없는 순수 프레젠테이션 공백. pending_advance_plan에 assetAllocation 순수함수+allocationCard(owner) UI+refreshAllocationCard를 selectNwOwner에 배선+테스트 저장(상세는 state.json pending_advance_plan 참고). 러너업(기각): 거래 복제/즐겨찾기 단축입력(편의 기능, 증거 약함) / DB.inquiries(건의함) 조회 UI 부재(관리자용 채널, 임팩트 낮음) / Pro 업그레이드 광고 버튼 영구 스텁(결제 백엔드 없는 데모 앱의 의도된 플레이스홀더). 코드 변경 없음(읽기 전용 조사, 서브에이전트 보고의 TYPE_COLOR orphan·assetBodyHTML·nwHistoryCard/goalsSummaryCard/selectNwOwner 배선 패턴은 오케스트레이팅 세션이 grep/Read로 직접 재확인).",
-      "commit": null
-    },
     {
       "cycle": 125,
       "phase": "advance",
@@ -148,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-03T08:45:00.000Z",
       "summary": "develop 커밋(9516714, doCsvImport() 이체 confirmed 기본값 누락 수정)을 검토. 새 default 규칙(t.type==='transfer'&&t.confirmed===undefined일 때 !(DB.settings.confirmTransfers&&isFuture(t.date)))이 saveTx()(3670행)의 기존 규칙과 조건·대상(transfer만, undefined일 때만) 모두 일치함을 소스 대조로 확인. CSV가 다루는 건 일반 거래뿐이라(반복거래 CSV import 없음) saveTx의 다른 transfer 전용 필드 중 CSV import가 추가로 놓친 기본값은 없음을 3650-3674행 재확인. 새 회귀 테스트 3개(미래+on→false/과거·오늘+on→true/off→항상 true)가 경계를 적절히 커버함을 확인. node test/run.js 866/866 재통과. 코드 변경 없음(이상 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 130,
+      "phase": "critique",
+      "timestamp": "2026-10-03T11:15:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(130사이클 동안 다뤄진 항목 전부 제외 지시, cycle128-130의 touch() 누락 패턴/doCsvImport confirmed 기본값/sanitizeBackup 날짜 검증 통일 포함). 새로 발견 후 직접 소스 재검증: renderAssetSheet()(index.html:3103-3148)의 자산 등록/수정 폼이 앱의 다른 모든 인라인 폼(addOwner newOwner:3238, doRenameOwner renameOwner:3252, addCat newCat:4604, doRenameCat renameCat:4650 — 전부 onkeydown=\"if(event.key==='Enter'&&!event.isComposing)...\" 패턴 보유)과 달리 Enter 제출을 전혀 지원하지 않음을 grep 'isComposing'과 해당 라인 직접 Read로 확인(asName/asAmt/asFx/asGold/asCode/asQty/costBasisField의 asCostBasis 모두 onkeydown 없음, 전역 onSheetKeydown도 Escape/Tab만 처리). 가장 빈번한 초기 설정 동작(자산 추가)에서 매번 버튼을 눌러야 하는 반복 마찰. pending_advance_plan에 costBasisField(fx/gold/stock 공유)와 cash/debt/realestate/etc/pension의 asAmt에 Enter-submit 추가(savings는 그 뒤 만기일 선택이 이어지므로 제외, stock/fx/gold의 중간 필드도 제외) 저장(상세는 pending_advance_plan 참고). 러너업(기각): sanitizeBackup이 DB.budgetHistory 구조를 검증 안 함(budgetForMonth가 malformed 입력에도 v=0으로 안전 축소, 크래시/무한루프 없어 날짜 버그들과 다름) / 클라우드 계정 삭제 UI 부재(service-role 키 필요, 정적 클라이언트 전용 아키텍처 범위 밖) / 연간 지출 분석 뷰 부재(실재하는 공백이나 새 기능 성격이 강해 더 큰 스코프). 코드 변경 없음(읽기 전용 조사, 오케스트레이팅 세션이 index.html 3103-3148·3238·3252·4604·4650을 직접 Read/grep으로 재확인).",
       "commit": null
     }
   ]
