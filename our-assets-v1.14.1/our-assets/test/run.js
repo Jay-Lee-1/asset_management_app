@@ -7389,6 +7389,13 @@ test('renderRecSheet: rAmt(금액)에 Enter-제출이 있다(saveRec()가 요구
     'rAmt에 Enter→saveRec() 연결이 없음'
   );
 });
+test('renderGoalForm: goalAmt(목표 금액)에 Enter-제출이 있다(saveGoal()의 유일한 필수 수치 입력이고, 목표일은 선택 항목이라 그 뒤에 이어지지 않음)', () => {
+  const body = extractFunction('renderGoalForm');
+  assert.ok(
+    body.includes(`id="goalAmt" class="num" inputmode="numeric" value="${'${d.targetAmount?comma(d.targetAmount):\'\'}'}" placeholder="0" oninput="fmtAmt(this)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveGoal(${'${editing}'})"`),
+    'goalAmt에 Enter→saveGoal() 연결이 없음'
+  );
+});
 
 /* ---------- filteredHist/_histCache: 전체 내역 탭에서 내역 추가/수정/삭제 후 캐시가 낡은 목록을 보여주던 버그 ----------
  * filteredHist()는 날짜범위|카테고리|검색어로만 캐시 키를 만들기 때문에, saveTx()/recApply()/
