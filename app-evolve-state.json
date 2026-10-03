@@ -1,19 +1,8 @@
 {
-  "cycle": 131,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "지출 분석(Spend Analysis) 카테고리 행에서 실제 내역으로 drill-down 추가",
-    "why": "openSpendAnalysis()(index.html:4462)의 각 spend-row는 onclick이 openBudgetPrompt(idx) 하나뿐이라 카테고리 합계를 이룬 실제 거래 목록을 볼 경로가 전혀 없다. 예산 추적이 핵심 기능인데 '왜 초과했는지'를 보는 가장 자연스러운 진입점이 막혀있다. 자산(계좌)에는 이미 동일한 drill-down(openAssetHistory, ST.hist.assetId, histClearAssetFilter 칩)이 있으니 카테고리에도 같은 패턴을 적용하면 된다. filteredHist()의 H.cat(index.html:3920)은 카테고리명이 아니라 TYPEBYLABEL 거래유형(수입/지출/이체/저축)만 거르므로 카테고리 정확 매칭 필드가 ST.hist(2305)에 아예 없다는 것도 확인됨.",
-    "approach": "1) ST.hist(index.html:2305)에 catExact:null 필드 추가(assetId와 같은 패턴). 2) filteredHist()(3916-3924)의 캐시 키와 필터 체인에 H.catExact 필터 추가(t.type==='expense'&&t.category===H.catExact). 3) openCatHistory(idx) 신규 함수: openAssetHistory(3928)와 동일한 관례로 rows[idx].c를 ST.hist.catExact에, ST.ledger.y/m을 ST.hist.range(monthStart~monthEnd)에, ST.spendOwner를 owner 필터에 반영하고 ST.hist.cat='전체'/q=''로 리셋 후 histInvalidate();closeSheet();go('history'). 4) spend-row(4477)에 openBudgetPrompt(idx)는 유지하고, 별도 탭 타겟(금액 영역 등)에 onclick=\"event.stopPropagation();openCatHistory(${idx})\" 추가 — 기존 7188-7192 접근성 테스트 깨지지 않게. 5) renderHistory()(3950)에 H.assetId 칩과 같은 패턴으로 H.catExact 칩 + histClearCatFilter() 추가(histClearFilter에도 catExact=null 포함). 6) test/run.js: filteredHist의 catExact 필터(유형이 다른 동일 카테고리명과 안 섞이는지 포함)+owner 조합 테스트, openCatHistory가 ST.hist/ST.ledger를 올바르게 세팅하는 테스트, spend-row에 openBudgetPrompt와 openCatHistory 두 핸들러가 공존하는 패턴 테스트 추가."
-  },
+  "cycle": 132,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 126,
-      "phase": "advance",
-      "timestamp": "2026-10-02T17:05:00.000Z",
-      "summary": "critique(cycle126) 계획대로 txRow()/histRow()의 중복을 공용 txRowCore(t,sel) 헬퍼로 통합했다. sel={mode,has(id),onToggle}로 선택 상태 소스와 토글 핸들러 이름만 호출부가 주입하도록 캡슐화 — sign/cls/av/ic/glyph/faN/taN/asset 계산, 선택모드 마크업(sel-check/swipe-content), 일반모드 마크업(confirm-btn 포함)을 한 곳에만 작성. txRow(t){return txRowCore(t,{mode:ST.lSel.mode,has:id=>ST.lSel.ids.has(id),onToggle:'ledgerToggleSel'})}, histRow(t){...ledgerToggleSel 대신 ST.hist.selMode/ST.hist.sel/'histToggleSel'...}로 얇은 래퍼화해 기존 호출부(ledgerRowsHtml/updateHist groupHTML/wireLongPress 대상)는 손대지 않음. test/run.js FUNCTIONS에 txRowCore 등록. 회귀 테스트 3개 추가: 비선택 모드는 txRow/histRow가 바이트 단위로 완전히 동일한 문자열을 내야 함, 선택 모드(미선택/선택됨 두 상태)는 토글 핸들러 이름만 바꬀치면 나머지가 완전히 같아야 함 — 향후 누군가 한쪽 함수만 손대 다시 갈라지는 걸 실행 기반으로 잡아낸다. node test/run.js 847/847 -> 850/850 통과. APP_VERSION 1.47.21->1.47.22, sw.js CACHE v283->v284. pending_advance_plan을 null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 127,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-03T14:16:29.607Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(131사이클 동안 다뤄진 항목 전부 제외 지시). 새로 발견 후 직접 소스 재검증: openSpendAnalysis()(index.html:4462-4492)의 spend-row가 onclick=openBudgetPrompt(idx) 하나뿐이라 카테고리 합계를 이룬 실제 거래 목록으로 drill-down할 경로가 전혀 없음을 확인 — wireLongPress도 .spend-row에 연결 안 됨(다른 화면들은 다 있음), filteredHist()의 H.cat(3920)은 카테고리명이 아니라 TYPEBYLABEL 거래유형만 거르므로 카테고리 정확 매칭 필드 자체가 ST.hist(2305)에 없음도 확인. 자산(계좌)에는 이미 동일 패턴(openAssetHistory 3928, ST.hist.assetId, histClearAssetFilter 칩)이 있어 그대로 재사용 가능. 예산 추적이 핵심 기능인데 초과 이유를 보는 진입점이 막혀있는 실질적 공백. pending_advance_plan에 ST.hist.catExact 추가+filteredHist 필터+openCatHistory()+spend-row 두번째 탭 타겟+renderHistory 칩+테스트 저장(상세는 pending_advance_plan 참고). 러너업(기각): 앱 잠금(PIN/생체인증) — 실재하는 공백이나 새 화면/복구흐름/플랫폼 API까지 필요해 한 사이클 범위를 넘는 더 큰 기능 / CSV 내보내기가 반복거래 규칙 미포함 — 전체 JSON 백업이 이미 담당하는 의도된 설계 분리, 공백 아님 / 전체내역 검색 디바운스 없음 — cycle126에서 이미 조사·기각(수천 건도 5ms 미만, 실증된 랙 없음). 코드 변경 없음(읽기 전용 조사, 오케스트레이팅 세션이 openSpendAnalysis 4462-4492·openBudgetPrompt 4501-4507·filteredHist 3916-3924·ST.hist 2305·openAssetHistory 3928-3931·histClearAssetFilter 4000을 직접 Read/grep으로 재확인).",
+      "commit": null
+    },
+    {
+      "cycle": 131,
+      "phase": "advance",
+      "timestamp": "2026-10-03T15:16:28.131Z",
+      "summary": "critique(cycle131) 계획대로 지출 분석(Spend Analysis) 카테고리 행에서 전체내역으로 drill-down을 추가했다. ST.hist(index.html:2305)에 catExact:null/owner:'전체' 필드를 추가하고 filteredHist()(3916-3927)의 캐시 키와 필터 체인에 반영 — H.catExact가 있으면 t.type==='expense'&&t.category===H.catExact로 지출만+카테고리명 정확 매칭(유형이 다른 동일 이름과 안 섞이게), H.owner가 '전체'가 아니면 기존 filterTxnsByOwner()(logic.js)를 그대로 재사용해 귀속으로도 거른다. openCatHistory(idx) 신규 함수: openAssetHistory와 동일 관례로 spendByCategory(ST.ledger.y,m,ST.spendOwner)의 rows[idx]를 찾아 catExact/owner/range(월 시작~끝)를 세팅하고 cat/q/assetId는 리셋한 뒤 histInvalidate();closeSheet();go('history'). spend-row(4482)에는 기존 openBudgetPrompt(idx)를 그대로 두고, 자산 행의 '내역' 버튼(row-acts/act-btn, 2865)과 동일한 패턴으로 stopPropagation 버튼을 추가해 두 동작이 충돌 없이 공존하게 했다(기존 7188 접근성 테스트도 그대로 통과). renderHistory()에 H.assetId 칩과 같은 자리에 H.catExact 칩(카테고리명+귀속 표시, histClearCatFilter)을 추가했고, sumTap/openAssetHistory/histClearFilter 등 기존 필터 리셋 지점에도 catExact/owner 리셋을 추가해 진입 경로가 바뀔 때 이전 필터가 새지 않게 했다. test/run.js: filteredHist의 catExact(유형 분리 포함)+owner 조합 테스트 3개, openCatHistory의 필터 세팅/리셋/idx 없음 가드 테스트 2개, openAssetHistory의 catExact/owner 리셋 테스트 1개 — 총 6개 추가(sandbox에 go() 스파이 스텁 신규 추가). vm 컨텍스트에서 만든 객체 리터럴(ST.hist.range)은 메인 realm 리터럴과 deepStrictEqual 비교 시 'same structure but not reference-equal'로 실패하는 걸 발견해 필드별 strictEqual로 수정. node test/run.js 869/869 -> 875/875 통과. APP_VERSION 1.47.31->1.47.32, sw.js CACHE v293->v294. pending_advance_plan을 null로 비움.",
       "commit": null
     }
   ]

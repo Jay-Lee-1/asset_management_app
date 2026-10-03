@@ -128,7 +128,7 @@ const FUNCTIONS = [
   'assetEval', 'assetGainLoss', 'assetGainLossBadge', 'costBasisField', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'delOwner', 'doMaturity', 'firstCash',
   'detectStaleMarketValuedTxns', 'delBudget', 'saveBudget',
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards',
-  'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate',
+  'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate', 'openAssetHistory', 'openCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter',
   'genSalt', 'pbkdf2Hash', 'genRecoveryCode', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer', 'openConfirmTransfer',
   'confirmTransferNow', 'postponeTransfer', 'confirmRecNow',
   'foreignSaveIsNewer', 'applyForeignSave', 'openCopyBackup', 'copyBackup', 'findDonors',
@@ -441,6 +441,11 @@ const sandbox = {
   wireMonthCarousel: () => {},
   openSpendAnalysis: () => {},
   closeSheet: () => {},
+  // openAssetHistory/openCatHistory가 필터 세팅 후 부르는 탭 전환 — closeSheet와 같은 이유(화면
+  // 전용, 이 함수들의 테스트 대상은 ST.hist/ST.ledger 필터 세팅뿐)로 호출 여부만 기록하는 스파이로
+  // 흉내낸다.
+  goCalls: [],
+  go: (tab) => { sandbox.goCalls.push(tab); },
   renderTxSheet: () => {},
   // asOpenType()의 onPick 콜백이 마지막에 부르는 자산 시트 재렌더 — renderTxSheet와 같은 이유
   // (화면 전용, asOpenType 테스트는 asDraft 변화만 검증)로 no-op으로 흉내낸다.
@@ -2940,6 +2945,90 @@ test('matchesAssetId: toAssetId가 일치하면 매칭된다(이체 받는 쪽)'
 test('matchesAssetId: fromAssetId/toAssetId 둘 다 불일치하면 매칭되지 않는다', () => {
   const t = { fromAssetId: 'a1', toAssetId: 'a2' };
   assert.strictEqual(sandbox.matchesAssetId(t, 'a3'), false);
+});
+
+/* ---------- filteredHist: ST.hist.catExact(+owner) — 지출 분석 카테고리 행에서 전체내역으로
+ * drill-down(openCatHistory, app-evolve cycle131 advance)할 때 쓰는 필터. H.cat(TYPEBYLABEL)은
+ * 거래유형(수입/지출/이체/저축)만 거르고 카테고리명 자체는 못 거르므로, 별도 필드로 추가했다.
+ * spendByCategory()와 동일하게 지출(expense)만 대상으로 고정해야 다른 유형의 동일 카테고리명과
+ * 안 섞인다(예: '생활' 지출 카테고리와 같은 이름의 저축 목적). */
+test('filteredHist: catExact는 지출(expense)만, 카테고리명이 정확히 일치하는 것만 매칭한다', () => {
+  setupHistoryDB();
+  sandbox.DB.txns = [
+    { id: 't1', date: '2026-06-01', type: 'expense', category: '식비', amount: 1000 },
+    { id: 't2', date: '2026-06-02', type: 'expense', category: '교통', amount: 2000 },
+    { id: 't3', date: '2026-06-03', type: 'saving', category: '식비', amount: 3000 }, // 유형이 다른 동일 카테고리명
+  ];
+  sandbox.ST.hist.catExact = '식비';
+  const list = sandbox.filteredHist();
+  assert.deepStrictEqual(list.map((t) => t.id), ['t1'], 'expense+카테고리명이 정확히 일치하는 것만 남아야 함');
+});
+test('filteredHist: catExact가 비어있으면(null) 평소처럼 걸러지지 않는다', () => {
+  setupHistoryDB();
+  sandbox.DB.txns = [{ id: 't1', date: '2026-06-01', type: 'expense', category: '식비', amount: 1000 }];
+  assert.strictEqual(sandbox.filteredHist().length, 1);
+});
+test('filteredHist: owner는 filterTxnsByOwner()와 동일 규칙으로 걸러진다(catExact와 조합)', () => {
+  setupHistoryDB();
+  sandbox.DB.assets = [
+    { id: 'a1', name: '내 카드', owner: '나' },
+    { id: 'a2', name: '배우자 카드', owner: '배우자' },
+  ];
+  sandbox.DB.txns = [
+    { id: 't1', date: '2026-06-01', type: 'expense', category: '식비', amount: 1000, fromAssetId: 'a1' },
+    { id: 't2', date: '2026-06-02', type: 'expense', category: '식비', amount: 2000, fromAssetId: 'a2' },
+  ];
+  sandbox.ST.hist.catExact = '식비';
+  sandbox.ST.hist.owner = '나';
+  assert.deepStrictEqual(sandbox.filteredHist().map((t) => t.id), ['t1'], '해당 귀속의 거래만 남아야 함');
+  sandbox.ST.hist.owner = '전체';
+  sandbox.histInvalidate();
+  assert.deepStrictEqual(sandbox.filteredHist().map((t) => t.id), ['t1', 't2'], "owner가 '전체'면 귀속 필터가 없어야 함");
+});
+
+/* ---------- openCatHistory/openAssetHistory: 지출 분석/자산 행의 '내역' 버튼이 ST.hist(+ST.ledger
+ * 기준 범위)를 올바르게 세팅하고 화면만 전환하는지(go 호출) 검증 (app-evolve cycle131 advance) ---------- */
+test('openCatHistory: ST.ledger 월 기준 범위로 좁히고 ST.spendOwner를 귀속 필터로 반영하며, 다른 필터는 리셋한다', () => {
+  setupHistoryDB();
+  sandbox.goCalls = [];
+  sandbox.ST.spendOwner = '나';
+  sandbox.ST.ledger = { y: 2026, m: 5 };
+  sandbox.ST.hist.assetId = 'a1'; sandbox.ST.hist.cat = '지출'; sandbox.ST.hist.q = 'abc';
+  sandbox.DB.budgetHistory = null;
+  sandbox.DB.assets = [{ id: 'a1', name: '내 카드', owner: '나' }];
+  sandbox.DB.txns = [{ id: 't1', date: '2026-05-10', type: 'expense', category: '교통', amount: 5000, fromAssetId: 'a1' }];
+  sandbox.openCatHistory(0); // spendByCategory(2026,5,'나')의 유일한 행(교통)
+  assert.strictEqual(sandbox.ST.hist.catExact, '교통');
+  assert.strictEqual(sandbox.ST.hist.owner, '나');
+  assert.strictEqual(sandbox.ST.hist.cat, '전체', '거래유형 필터는 리셋돼야 함');
+  assert.strictEqual(sandbox.ST.hist.q, '', '검색어는 리셋돼야 함');
+  assert.strictEqual(sandbox.ST.hist.assetId, null, '계좌 필터는 리셋돼야 함');
+  // ST.hist.range={from,to}는 openCatHistory() 내부(vm 컨텍스트)에서 새로 만든 객체 리터럴이라
+  // 테스트 파일(메인 realm)의 리터럴과 deepStrictEqual로 비교하면 내용이 같아도 프로토타입이 달라
+  // "same structure but not reference-equal"로 실패한다 — 필드별로 비교한다.
+  assert.strictEqual(sandbox.ST.hist.range.from, '2026-05-01', '지출 분석이 보던 달로 범위가 좁혀져야 함(from)');
+  assert.strictEqual(sandbox.ST.hist.range.to, '2026-05-31', '지출 분석이 보던 달로 범위가 좁혀져야 함(to)');
+  assert.deepStrictEqual(sandbox.goCalls, ['history'], "화면만 전체내역 탭으로 전환해야 함(go('history'))");
+});
+test('openCatHistory: idx가 가리키는 행이 없으면(삭제/재정렬 등) 아무 것도 바꾸지 않는다', () => {
+  setupHistoryDB();
+  sandbox.goCalls = [];
+  sandbox.ST.spendOwner = '전체';
+  sandbox.ST.ledger = { y: 2026, m: 5 };
+  sandbox.DB.txns = [];
+  sandbox.openCatHistory(0);
+  assert.strictEqual(sandbox.ST.hist.catExact, null);
+  assert.deepStrictEqual(sandbox.goCalls, [], 'go()가 호출되지 않아야 함');
+});
+test('openAssetHistory: catExact/owner 필터도 함께 리셋한다(openCatHistory 이후 재진입 대비)', () => {
+  setupHistoryDB();
+  sandbox.goCalls = [];
+  sandbox.ST.hist.catExact = '식비'; sandbox.ST.hist.owner = '나';
+  sandbox.openAssetHistory('a1');
+  assert.strictEqual(sandbox.ST.hist.assetId, 'a1');
+  assert.strictEqual(sandbox.ST.hist.catExact, null);
+  assert.strictEqual(sandbox.ST.hist.owner, '전체');
+  assert.deepStrictEqual(sandbox.goCalls, ['history']);
 });
 
 /* ---------- esc: 저장형 XSS 방지 (asset/memo/category 등 사용자 입력값을 innerHTML에 넣기 전 이스케이프) ---------- */
@@ -8870,7 +8959,7 @@ function setupHistoryDB() {
   sandbox.histListEl._html = '';
   sandbox.ST = {
     hist: {
-      cat: '전체', q: '', selMode: false, sel: new Set(), sortAsc: false,
+      cat: '전체', q: '', assetId: null, catExact: null, owner: '전체', selMode: false, sel: new Set(), sortAsc: false,
       range: { from: '2026-01-01', to: '2026-12-31' }, preset: 'year', page: 1, avgMode: false,
     },
   };
