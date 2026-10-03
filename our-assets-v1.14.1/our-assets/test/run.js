@@ -7200,6 +7200,20 @@ test('homeAlertCard: 백업 알림 행(ha-b)에 키보드/스크린리더 접근
   assert.ok(/class="ha-b"\s+tabindex="0"\s+role="button"[^>]*onclick="exportData\(\)"/.test(body), '백업 ha-b에 role="button"이 없음');
   assert.ok(body.includes('onkeydown="rowKeydown(event,()=>exportData())"'), '백업 ha-b에 rowKeydown 연결이 없음');
 });
+test('renderAssetSheet: cash/debt/realestate/etc/pension의 asAmt에 Enter-제출이 있고, savings는 제외된다(만기일 입력이 이어지므로)', () => {
+  const body = extractFunction('renderAssetSheet');
+  assert.ok(
+    /savings'\?'':`\s*onkeydown="if\(event\.key==='Enter'&&!event\.isComposing\)saveAsset\(\$\{editing\}\)"`/.test(body),
+    'asAmt의 Enter-제출이 savings를 제외하고 나머지 balType에만 적용되지 않음'
+  );
+});
+test("costBasisField: fx/gold/stock 공용 매입금액 입력(asCostBasis)에 Enter-제출이 있다(세 타입 모두의 마지막 입력)", () => {
+  assert.strictEqual(
+    sandbox.costBasisField({ costBasis: 0 }, false),
+    '<div class="field"><label for="asCostBasis">매입 금액 (원, 선택)</label><div class="field-clear"><input id="asCostBasis" class="num" inputmode="numeric" value="" placeholder="입력 시 손익을 계산해요" oninput="fmtAmt(this,false)" onkeydown="if(event.key===\'Enter\'&&!event.isComposing)saveAsset(false)"><button type="button" class="fc-x" aria-label="매입 금액 지우기" onclick="clrInput(\'asCostBasis\')">✕</button></div></div>'
+  );
+  assert.ok(sandbox.costBasisField({ costBasis: 0 }, true).includes('saveAsset(true)'), 'editing=true(수정 모드)일 때 saveAsset 호출에 전달되지 않음');
+});
 
 /* ---------- filteredHist/_histCache: 전체 내역 탭에서 내역 추가/수정/삭제 후 캐시가 낡은 목록을 보여주던 버그 ----------
  * filteredHist()는 날짜범위|카테고리|검색어로만 캐시 키를 만들기 때문에, saveTx()/recApply()/

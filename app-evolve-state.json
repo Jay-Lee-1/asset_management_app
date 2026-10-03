@@ -1,19 +1,8 @@
 {
-  "cycle": 130,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "자산 등록/수정 폼(renderAssetSheet)에 Enter-to-submit 누락",
-    "why": "앱의 다른 모든 인라인 입력 폼(addOwner newOwner:3238, doRenameOwner renameOwner:3252, addCat newCat:4604, doRenameCat renameCat:4650)은 마지막 입력에 onkeydown=\"if(event.key==='Enter'&&!event.isComposing)...\" 패턴으로 Enter 제출을 지원하는데, renderAssetSheet()(index.html:3103-3148)의 자산 등록/수정 폼(asName:3108, asAmt:3114, asFx:3125/costBasisField, asGold:3129/costBasisField, asCode:3134/asQty:3136/costBasisField)은 전부 onkeydown 핸들러가 없음을 grep 'isComposing'과 해당 라인 직접 Read로 확인. onSheetKeydown(5462 부근)도 Escape/Tab만 처리해 전역 Enter-submit도 없음. 자산 추가가 가장 빈번한 초기 설정 동작인데 매번 수동으로 '등록하기/수정하기' 버튼을 눌러야 하는 반복적 마찰.",
-    "approach": "각 자산 타입 분기의 '마지막' 의미있는 입력에 onkeydown=\"if(event.key==='Enter'&&!event.isComposing)saveAsset(${editing})\"를 추가, 기존 renameCat/addCat과 동일한 isComposing 가드 스타일을 그대로 사용(IME 조합 중 중복 제출 방지). cash/debt/realestate/etc/pension: asAmt에 추가(그 뒤 필드 없음). savings: asAmt는 제외(그 뒤 만기일 버튼이 이어지는 흐름이라 Enter로 바로 제출하면 만기일 입력 기회를 건너뜀, 기존 goalAmt/goalName과 동일한 논리). fx: costBasisField(asCostBasis, 선택 입력)가 항상 마지막이므로 거기에 추가, asFx 자체엔 추가 안 함(그 뒤 매입금액 필드가 이어짐). gold: 동일하게 costBasisField의 asCostBasis에 추가. stock: costBasisField의 asCostBasis가 마지막이므로 거기에 추가(asName/asCode/asQty는 제외 — 각각 다음 필드로 이어짐). costBasisField(d)는 fx/gold/stock 3곳에서 공유되므로 함수 자체에 onkeydown을 넣으면 세 타입 모두 자동 적용됨. 각 분기 테스트(또는 renderAssetSheet 렌더 결과 문자열에 해당 onkeydown이 포함되는지 확인하는 테스트) 추가, node test/run.js 통과 확인, APP_VERSION/sw.js CACHE 버전 증가."
-  },
+  "cycle": 131,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 125,
-      "phase": "advance",
-      "timestamp": "2026-10-02T14:10:00.000Z",
-      "summary": "critique(cycle125) 계획대로 자산관리 탭에 자산유형별 비중(allocation) 카드를 신설했다. logic.js에 assetAllocation(items) 순수함수 추가 — 계획의 assetAllocation(assets,owner) 서명 대신, DB.rates에 의존하는 assetEval 평가와 owner/includeInTotal/부채 제외 필터링은 index.html(allocationCard)에 맡기고 logic.js는 이미 평가·필터링된 [{type,amount}] 목록을 type별로 합산해 amount 내림차순 pct(%)를 매기는 순수 집계만 담당하도록 분리(nwHistoryForOwner가 DOM/전역을 몰라야 하는 것과 동일한 원칙); amount<=0인 항목은 분모(total)엔 포함하되 집계 목록에선 제외해 0% 세그먼트가 안 생기게 했고, total<=0이면 빈 배열. index.html에 allocationCard(owner) 신설 — expenseBreakdownCard와 동일한 스택형 가로 막대+범례(eb-* 클래스, 최대 잔여법으로 pct 합 100 보정)를 그대로 재사용해 TYPE_COLOR(그동안 정의된 채 미사용이던 상수)로 세그먼트 색을 입혔다. renderAssets()의 nwHistBody와 goalsSummaryBody 사이에 <div id=\"allocBody\">${allocationCard(ST.assetOwner)}</div> 삽입, refreshAllocationCard() 신설 후 selectNwOwner()에서 refreshNwHistoryCard()/refreshGoalsSummary()와 나란히 호출해 귀속 캐러셀 전환 시 같이 갱신되게 배선. test/run.js: FUNCTIONS에 allocationCard 등록(assetAllocation은 logic.js에서 직접 로드되어 등록 불필요), CONSTS에 TYPE_COLOR 추가. assetAllocation 단위 테스트 5개(혼합 포트폴리오 정렬+pct 합 100/같은 type 합산/빈 배열·전부 0 안전/단일 유형 100%/amount<=0 항목 분모 포함·목록 제외) + allocationCard 통합 테스트 3개(owner='all' 전체 비중·owner 필터가 ownerAssets와 동일하게 동작·부채만 있으면 빈 문자열) — 총 8개 추가. vm 샌드박스 cross-realm으로 배열 deepStrictEqual이 거짓 실패하는 기존 이슈(cycle121)와 동일하게 걸려 JSON.stringify 비교로 전환해 통과시켰다. node test/run.js 837/837 -> 845/845 통과. APP_VERSION 1.47.18->1.47.19, sw.js CACHE v280->v281. pending_advance_plan을 null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 126,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-03T11:15:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(130사이클 동안 다뤄진 항목 전부 제외 지시, cycle128-130의 touch() 누락 패턴/doCsvImport confirmed 기본값/sanitizeBackup 날짜 검증 통일 포함). 새로 발견 후 직접 소스 재검증: renderAssetSheet()(index.html:3103-3148)의 자산 등록/수정 폼이 앱의 다른 모든 인라인 폼(addOwner newOwner:3238, doRenameOwner renameOwner:3252, addCat newCat:4604, doRenameCat renameCat:4650 — 전부 onkeydown=\"if(event.key==='Enter'&&!event.isComposing)...\" 패턴 보유)과 달리 Enter 제출을 전혀 지원하지 않음을 grep 'isComposing'과 해당 라인 직접 Read로 확인(asName/asAmt/asFx/asGold/asCode/asQty/costBasisField의 asCostBasis 모두 onkeydown 없음, 전역 onSheetKeydown도 Escape/Tab만 처리). 가장 빈번한 초기 설정 동작(자산 추가)에서 매번 버튼을 눌러야 하는 반복 마찰. pending_advance_plan에 costBasisField(fx/gold/stock 공유)와 cash/debt/realestate/etc/pension의 asAmt에 Enter-submit 추가(savings는 그 뒤 만기일 선택이 이어지므로 제외, stock/fx/gold의 중간 필드도 제외) 저장(상세는 pending_advance_plan 참고). 러너업(기각): sanitizeBackup이 DB.budgetHistory 구조를 검증 안 함(budgetForMonth가 malformed 입력에도 v=0으로 안전 축소, 크래시/무한루프 없어 날짜 버그들과 다름) / 클라우드 계정 삭제 UI 부재(service-role 키 필요, 정적 클라이언트 전용 아키텍처 범위 밖) / 연간 지출 분석 뷰 부재(실재하는 공백이나 새 기능 성격이 강해 더 큰 스코프). 코드 변경 없음(읽기 전용 조사, 오케스트레이팅 세션이 index.html 3103-3148·3238·3252·4604·4650을 직접 Read/grep으로 재확인).",
+      "commit": null
+    },
+    {
+      "cycle": 130,
+      "phase": "advance",
+      "timestamp": "2026-10-03T12:00:00.000Z",
+      "summary": "critique(cycle130) 계획대로 renderAssetSheet()의 자산 등록/수정 폼에 Enter-to-submit을 추가했다. costBasisField(d,editing)로 함수 시그니처를 확장해 공용 매입금액 입력(asCostBasis)에 onkeydown=\"if(event.key==='Enter'&&!event.isComposing)saveAsset(${editing})\"를 추가 — fx/gold/stock 세 타입 모두의 마지막 입력이라 이 한 곳만 고치면 세 분기 모두 자동 적용됨, 세 호출부(fx/gold/stock)를 costBasisField(d,editing)으로 갱신. cash/debt/realestate/etc/pension/savings 공용 asAmt 필드에는 d.type==='savings'일 때만 onkeydown을 비우는 조건부 문자열(amtEnterSubmit)을 추가 — savings는 그 뒤 만기일 선택 버튼이 이어지므로 계획대로 제외. test/run.js: renderAssetSheet를 extractFunction()으로 추출해 asAmt의 조건부 onkeydown 패턴을 정규식으로 검증하는 테스트 1개(renderAssetSheet는 FUNCTIONS 목록 밖이라 실행이 아닌 소스 패턴 검증, renderMenu/openSpendAnalysis 등 기존 rowKeydown 패턴 테스트와 동일 방식) + costBasisField(FUNCTIONS에 이미 등록되어 실제 실행 가능)를 직접 호출해 반환 문자열 전체를 strictEqual로 검증하는 테스트 1개와 editing=true 전파를 확인하는 테스트 1개, 총 2개 테스트 추가. node test/run.js 866/866 -> 868/868 통과. APP_VERSION 1.47.29->1.47.30, sw.js CACHE v291->v292. pending_advance_plan을 null로 비움.",
       "commit": null
     }
   ]
