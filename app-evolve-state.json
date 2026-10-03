@@ -1,15 +1,8 @@
 {
   "cycle": 133,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 128,
-      "phase": "review",
-      "timestamp": "2026-10-03T00:07:55.742Z",
-      "summary": "develop 커밋(2a5d7c5, sanitizeBackup() 목표일(targetDate) 달력 유효성 검증 누락 수정)을 검토. 변경이 기존 startDate/endDate/maturityDate와 동일하게 csvDateValid()를 재사용함을 소스 대조로 확인(logic.js:305-310, 형식+달력 유효성 모두 검증), 다른 날짜 필드 검증부(index.html:5222,5235,5243)와 위치·패턴이 일치. 새 회귀 테스트(2026-13-01/2026-02-30 두 케이스, fixedCount=2)도 올바르게 null 보정을 검증함을 확인. APP_VERSION 1.47.24->1.47.25, sw.js CACHE v286->v287 동반 반영 확인. node test/run.js 859/859 재통과. 코드 변경 없음(이상 없음).",
-      "commit": null
-    },
     {
       "cycle": 128,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-03T19:45:00.000Z",
       "summary": "general-purpose 서브에이전트 조사로 renderGoalForm()(index.html:2488)의 목표 금액 입력(goalAmt)이 cycle130-132에서 renderAssetSheet/renderTxSheet/renderRecSheet에 적용한 Enter-to-submit 패턴을 놓치고 있었음을 발견·수정. saveGoal(editing)(2502)의 유일한 필수 검증은 d.name과 d.targetAmount>0이고, targetDate는 '목표일 (선택)'로 명시된 선택 필드라 별도 날짜 피커로 고르므로(타이핑 없음), goalAmt가 폼의 사실상 마지막 필수 텍스트 입력임을 확인(goalName은 asName과 동일하게 Enter-제출 제외 유지). renderAssetSheet asCostBasis/renderRecSheet rAmt와 동일한 onkeydown=\"if(event.key==='Enter'&&!event.isComposing)saveGoal(${editing})\"를 goalAmt에 추가. test/run.js에 extractFunction('renderGoalForm')로 goalAmt 입력 문자열에 해당 onkeydown이 포함되는지 확인하는 테스트 1개 추가(rAmt 테스트와 동일 방식). node test/run.js 877/877 -> 878/878 통과. APP_VERSION 1.47.34->1.47.35, sw.js CACHE v296->v297.",
+      "commit": null
+    },
+    {
+      "cycle": 133,
+      "phase": "review",
+      "timestamp": "2026-10-03T20:30:00.000Z",
+      "summary": "develop 커밋(c0a18fd, renderGoalForm() goalAmt Enter-to-submit 추가)을 검토. onkeydown=\"if(event.key==='Enter'&&!event.isComposing)saveGoal(${editing})\"가 cycle130-132의 costBasisField/rAmt와 동일한 패턴임을 소스 대조로 확인. saveGoal()(2502-2511)을 직접 Read해 !d.name/!(d.targetAmount>0) 모두 toast+return으로 안전하게 처리되어 Enter 제출이 크래시나 데이터 손상으로 이어지지 않음을 확인, 대입 순서상 ownerSeg가 goalAmt보다 앞서고 그 뒤엔 타이핑이 필요 없는 날짜 피커만 이어짐도 재확인. saveGoal()이 touch()+save()(mergeCollection() 불변식)를 올바르게 쓰고 있음도 확인(diff 범위 밖이라 영향 없음이지만 겸사겸사 점검). 새 회귀 테스트(extractFunction 소스 패턴 검사)도 costBasisField/rAmt 테스트와 동일 방식으로 적절. node test/run.js 878/878 재통과. 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
