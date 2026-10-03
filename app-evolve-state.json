@@ -1,19 +1,8 @@
 {
-  "cycle": 129,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "recApply/recSave/saveQuickAmount의 undo(되돌리기) 콜백에 touch() 누락 수정 — touch-before-save 불변식의 되돌리기 경로 미적용 지점",
-    "why": "mergeCollection()(logic.js:107-129)은 DB.recurrences 레코드의 updatedAt만으로 동기화 승자를 고른다. cycle128-129에서 doMaturity/toggleRecActive/toggleAdjustSurplus/toggleConfirmTransfers-off/doDeleteCat/deleteAssetsUndo 등 포워드 mutation 경로의 touch() 누락을 찾아 고쳤는데, 같은 패턴이 '되돌리기(undo)' 콜백 6곳에 그대로 남아있음을 발견: recApply delete scope='one'(index.html:3715)·scope='future'(3723), recSave scope='one'(3744)·scope='future'(3756)·scope='all'(3760), saveQuickAmount(6037) — 전부 forward 액션에서는 touch(r)을 올바르게 호출하면서(3714/3722/3743/3751·3754/3759/6034) undo 클로저만 save() 전에 touch(r)이 빠져있다. 실패 시나리오: 사용자가 반복거래 삭제/수정을 undoToast의 되돌리기 버튼으로 되돌린 직후(또는 몇 초~몇 분 내) 다른 기기와 클라우드 동기화가 겹치면, mergeCollection()은 이 레코드의 updatedAt이 되돌리기 이전과 같다고 보고 되돌리기 전(삭제/수정된) 버전을 승자로 선택할 수 있어 '되돌렸어요' 토스트가 뜬 뒤에도 사용자의 복구가 동기화로 조용히 사라짐.",
-    "approach": "index.html의 6개 undo 클로저 각각에서 save() 호출 직전에 touch(r) 추가(recSave future의 undo는 newRec은 배열에서 제거되므로 r만 touch 필요): (1) recApply delete one, ~3715 `r.skip=prevSkip;touch(r);save();...`, (2) recApply delete future, ~3723 `r.endDate=prevEnd;...;r.edits=prevEdits;touch(r);save();...`, (3) recSave scope='one' undo, ~3744, (4) recSave scope='future' undo, ~3756 (newRec 제거 후 r만 touch), (5) recSave scope='all' undo, ~3760, (6) saveQuickAmount undo, ~6037. 기존 스타일은 index.html:4644(`recs.forEach(r=>{r.active=true;touch(r)})`)·6410(`removed.forEach(touch)`)을 따른다. test/run.js에 6곳 각각 undoFn/lastUndo 호출 후 r.updatedAt이 갱신됐는지(기존 포워드-touch 테스트 블록 3344-3391과 동일 패턴) 확인하는 회귀 테스트를 recApply delete(~3159-3236)/recSave(~3238-3344)/saveQuickAmount(~3697-3719) 근처에 추가. node test/run.js로 기존 863개 전부 통과 확인 후 추가분 포함 재통과 확인. APP_VERSION(index.html, 현재 1.47.27)과 sw.js CACHE(현재 v289) 버전업."
-  },
+  "cycle": 130,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 124,
-      "phase": "advance",
-      "timestamp": "2026-10-02T10:15:00.000Z",
-      "summary": "critique(cycle124) 계획대로 목표(Goal)에 owner(귀속) 스코프를 추가했다. logic.js에 nwHistoryForOwner(hist,owner) 순수 함수 신설(nwHistory를 귀속별 byOwner[owner].ta/td로 좁힘) — nwHistoryCard(index.html)의 기존 인라인 필터를 이 헬퍼 호출로 교체해 양쪽이 같은 로직을 공유. goalOwnerEff(g) 헬퍼 신설(owner 없음/'all'/이미 사라진 귀속명이면 'all'로 간주, ST.assetOwner와 동일한 '귀속 사라지면 전체로' 원칙). nearestGoal/goalRowHTML/openGoalsList가 각 목표의 goalOwnerEff(g)로 nwHistoryForOwner(DB.nwHistory,...)를 걸러 goalProgress에 넘기도록 수정(목표 자신의 귀속만의 추이로 진행률·투사 계산). goalsSummaryCard(owner)가 그 귀속이 소유한 목표만 보여주도록 변경하고, #goalsSummaryBody로 감싸 refreshGoalsSummary()를 신설해 selectNwOwner()(캐러셀 스와이프/점 클릭/키보드 공통 경로)에서 refreshNwHistoryCard()와 함께 호출되게 배선 — 이제 귀속 전환 시 추이 카드와 목표 카드가 같은 귀속을 본다. renderGoalForm에 asset 폼과 달리 '전체'(가구 공동) 선택지가 있는 seg 귀속 선택 UI 추가(goalOwnerSel), openGoalForm은 새 목표 기본 owner='all', 기존 목표는 goalOwnerEff로 보정해서 연다. saveGoal이 owner를 저장(미지정 시 'all'). migrate()에서 owner 없는 기존 목표에 'all' 기본값 채움. doRenameOwner에 assets.forEach와 동일한 패턴으로 DB.goals의 owner 이름변경+touch() 추가. sanitizeBackup의 goals 분기에 owner 검증 추가(obj.owners 기준, 없으면 현재 DB.owners로 대체 — 알 수 없는 owner/누락은 'all'로 보정). test/run.js: nwHistoryForOwner 2개, goalOwnerEff 3개, openGoalsList/goalsSummaryCard가 귀속별로 다른 진행률·가시성을 보이는 테스트 4개, openGoalForm owner 보정/기본값 2개, renderGoalForm seg 선택상태 1개, goalOwnerSel 1개, saveGoal owner 저장 1개, doRenameOwner goal.owner 마이그레이션 1개, migrate 기본값 1개, sanitizeBackup owner 검증 4개 — 총 20개 추가(FUNCTIONS에 goalOwnerEff/goalOwnerSel도 등록). node test/run.js 813/813 -> 832/832 통과. APP_VERSION 1.47.16->1.47.17, sw.js CACHE v278->v279. pending_advance_plan을 null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 125,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-03T06:05:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(129사이클 동안 다뤄진 항목 전부 제외 지시, cycle128-129의 touch() 누락 패턴 수정 대상 8곳 포함). 새로 발견 후 직접 소스 재검증: 같은 touch-before-save 불변식이 forward mutation이 아닌 '되돌리기(undo)' 콜백 6곳에 그대로 남아있음을 확인 — recApply delete scope='one'(index.html:3715)·scope='future'(3723), recSave scope='one'(3744)·scope='future'(3756)·scope='all'(3760), saveQuickAmount(6037). 전부 forward 액션에서는 touch(r)을 올바르게 호출(3714/3722/3743/3751·3754/3759/6034)하면서 undo 클로저만 save() 전 touch(r)이 빠져있음을 라인 단위로 직접 확인(sed로 3695-3765, 6025-6040 전문 대조). test/run.js의 기존 'touch()로 updatedAt 스탬프' 테스트 블록(3344-3391)이 forward 쪽만 검증하고 undo 쪽은 전혀 단언하지 않음도 확인. pending_advance_plan에 6곳 touch(r) 추가+회귀 테스트 저장(상세는 pending_advance_plan 참고). 러너업(기각): 거래 분할(분할 이체처럼 하나의 거래를 여러 카테고리로 나누는 기능) — 실재하는 제품 공백이지만 데이터 모델+saveTx/txRowCore/spendByCategory/CSV/sanitizeBackup 동시 변경이 필요해 한 사이클 범위를 넘음 / DB.nwHistory 무제한 일별 적립 성장 — 이미 기각된 '쿼터' 범주와 중복, 성장 속도도 느림 / netlify 환율·시세 동기화 실패 UX 재점검 — quiet-window/TTL/visibilitychange 훅(6913-6930)으로 이미 충분히 처리됨을 확인, 새 공백 없음(false lead). 코드 변경 없음(읽기 전용 조사, 오케스트레이팅 세션이 index.html 3695-3765/6025-6040을 sed로 직접 재확인).",
+      "commit": null
+    },
+    {
+      "cycle": 129,
+      "phase": "advance",
+      "timestamp": "2026-10-03T07:10:00.000Z",
+      "summary": "critique(cycle129) 계획대로 recApply/recSave/saveQuickAmount의 undo(되돌리기) 콜백 6곳에 빠져 있던 touch(r) 호출을 추가했다. recApply delete scope='one'(index.html:3715)·scope='future'(3723)의 undo 클로저, recSave scope='one'(3744)·scope='future'(3756, newRec은 undo 시 배열에서 제거되므로 r만 touch)·scope='all'(3760)의 undoFn, saveQuickAmount(6037)의 undo 클로저 — 전부 save() 호출 직전에 touch(r) 추가. forward 액션은 이미 touch(r)을 올바르게 호출하고 있었고(cycle128-129에서 고친 8곳과 같은 mergeCollection() 3-way 병합 불변식), 되돌리기 경로만 빠져 있던 비대칭을 해소. test/run.js: touch() 스텁이 호출 전 값과 무관하게 항상 'test-updatedAt'을 찍는 특성 때문에, forward 호출의 잔류값만으로 거짓양성이 나지 않도록 각 undo 호출 직전 updatedAt을 센티널(1)로 리셋한 뒤 undo 호출 후 'test-updatedAt'로 복귀하는지 확인하는 방식(deleteAssetsUndo 테스트와 동일 패턴)으로 6개 지점(recApply delete one/future 2개, recSave one/future/all 3개, saveQuickAmount 1개)에 undo 단언을 기존 테스트에 추가. node test/run.js 863/863 재통과(테스트 개수는 기존 테스트에 단언만 추가해 동일). APP_VERSION 1.47.27->1.47.28, sw.js CACHE v289->v290. pending_advance_plan을 null로 비움.",
       "commit": null
     }
   ]

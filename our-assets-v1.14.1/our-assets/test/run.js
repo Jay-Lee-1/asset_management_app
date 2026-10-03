@@ -3355,6 +3355,11 @@ test("recSave: scope='one'/'future'/'all' 모두 수정 대상 레코드(및 fut
   sandbox.txDraft = { amount: 5000 };
   sandbox.recSave();
   assert.strictEqual(r.updatedAt, 'test-updatedAt', "scope='one'은 r에 touch()가 호출되어야 함");
+  // forward 경로의 touch() 스텁 값이 그대로 남아있어 undo를 안 불러도 통과하는 거짓양성을 막기 위해
+  // undo 호출 직전에 센티널로 리셋한다(app-evolve cycle129 advance).
+  r.updatedAt = 1;
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(r.updatedAt, 'test-updatedAt', "scope='one'의 되돌리기(undo)에도 touch()가 호출되어야 함");
 
   r = { id: 'r1', amount: 1000, endDate: null, skip: [], edits: {} };
   sandbox.DB = { recurrences: [r] };
@@ -3364,6 +3369,9 @@ test("recSave: scope='one'/'future'/'all' 모두 수정 대상 레코드(및 fut
   const newRec = sandbox.DB.recurrences.find(x => x.id !== 'r1');
   assert.strictEqual(r.updatedAt, 'test-updatedAt', "scope='future'는 잘린 원본에도 touch()가 호출되어야 함");
   assert.strictEqual(newRec.updatedAt, 'test-updatedAt', "scope='future'는 새로 분리된 레코드에도 touch()가 호출되어야 함");
+  r.updatedAt = 1;
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(r.updatedAt, 'test-updatedAt', "scope='future'의 되돌리기(undo)에도 잘린 원본에 touch()가 호출되어야 함");
 
   r = { id: 'r1', amount: 1000 };
   sandbox.DB = { recurrences: [r] };
@@ -3371,18 +3379,31 @@ test("recSave: scope='one'/'future'/'all' 모두 수정 대상 레코드(및 fut
   sandbox.txDraft = { amount: 9999 };
   sandbox.recSave();
   assert.strictEqual(r.updatedAt, 'test-updatedAt', "scope='all'은 r에 touch()가 호출되어야 함");
+  r.updatedAt = 1;
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(r.updatedAt, 'test-updatedAt', "scope='all'의 되돌리기(undo)에도 touch()가 호출되어야 함");
 });
 test("recApply: scope='one'/'future' 삭제도 대상 레코드에 touch()가 호출된다", () => {
   sandbox.TWi = -1;
   let r = { id: 'r1', skip: [] };
   sandbox.DB = { recurrences: [r] };
+  sandbox.lastUndo = null;
   sandbox.recApply('r1', '2026-02-05', 'delete', 'one');
   assert.strictEqual(r.updatedAt, 'test-updatedAt', "scope='one' 삭제도 touch()가 호출되어야 함");
+  // forward 경로의 touch() 스텁 값이 그대로 남아있어 undo를 안 불러도 통과하는 거짓양성을 막기 위해
+  // undo 호출 직전에 센티널로 리셋한다(app-evolve cycle129 advance).
+  r.updatedAt = 1;
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(r.updatedAt, 'test-updatedAt', "scope='one' 삭제의 되돌리기(undo)에도 touch()가 호출되어야 함");
 
   r = { id: 'r1', freq: 'monthly', day: 5, startDate: '2026-01-05', weekend: 'none', endDate: null, count: null, skip: [], edits: {} };
   sandbox.DB = { recurrences: [r] };
+  sandbox.lastUndo = null;
   sandbox.recApply('r1', '2026-02-05', 'delete', 'future');
   assert.strictEqual(r.updatedAt, 'test-updatedAt', "scope='future' 삭제도 touch()가 호출되어야 함");
+  r.updatedAt = 1;
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(r.updatedAt, 'test-updatedAt', "scope='future' 삭제의 되돌리기(undo)에도 touch()가 호출되어야 함");
 });
 test('splitRecurrenceAt: 잘린 원본과 새로 분리된 레코드 모두에 touch()가 호출된다', () => {
   const orig = { id: 'r1', freq: 'monthly', day: 5, startDate: '2026-01-05', weekend: 'none', endDate: null, skip: [], edits: {} };
@@ -3769,6 +3790,11 @@ test('saveQuickAmount: 실제 금액을 저장하면 touch()가 호출돼 update
   sandbox.lastUndo = null;
   sandbox.saveQuickAmount('r1', '2026-02-05');
   assert.strictEqual(r.updatedAt, 'test-updatedAt', '실제 금액을 기록한 회차에는 touch()가 호출되어야 함');
+  // forward 경로의 touch() 스텁 값이 그대로 남아있어 undo를 안 불러도 통과하는 거짓양성을 막기 위해
+  // undo 호출 직전에 센티널로 리셋한다(app-evolve cycle129 advance, deleteAssetsUndo 테스트와 동일 패턴).
+  r.updatedAt = 1;
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(r.updatedAt, 'test-updatedAt', '되돌리기(undo)에도 touch()가 호출되어야 함 — 안 그러면 되돌린 직후 다른 기기와의 동기화가 이 복구를 조용히 덮어씀');
 });
 test('saveQuickAmount: 금액을 비워두면(저장 실패) touch()가 호출되면 안 된다', () => {
   sandbox.TWi = -1;

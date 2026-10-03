@@ -1305,7 +1305,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.27';
+const APP_VERSION='1.47.28';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3712,7 +3712,7 @@ function recApply(recId,date,mode,scope){
  if(mode==='delete'){
   if(scope==='one'){
    const prevSkip=r.skip.slice();r.skip.push(date);touch(r);save();closeSheet();renderCurrent();
-   undoToast('삭제했어요',()=>{r.skip=prevSkip;save();renderCurrent();toast('되돌렸어요')});return;
+   undoToast('삭제했어요',()=>{r.skip=prevSkip;touch(r);save();renderCurrent();toast('되돌렸어요')});return;
   }
   if(scope==='future'){
    const prevEnd=r.endDate,prevCount=r.count,prevSkip=r.skip.slice(),prevEdits=Object.assign({},r.edits);
@@ -3720,7 +3720,7 @@ function recApply(recId,date,mode,scope){
    r.skip=skipPast;r.edits=editsPast;
    Object.assign(r,truncateRecEnd({freq:r.freq,day:r.day,startDate:r.startDate,weekend:r.weekend},addDays(date,-1)));
    touch(r);save();closeSheet();renderCurrent();
-   undoToast('삭제했어요',()=>{r.endDate=prevEnd;r.count=prevCount;r.skip=prevSkip;r.edits=prevEdits;save();renderCurrent();toast('되돌렸어요')});return;
+   undoToast('삭제했어요',()=>{r.endDate=prevEnd;r.count=prevCount;r.skip=prevSkip;r.edits=prevEdits;touch(r);save();renderCurrent();toast('되돌렸어요')});return;
   }
   closeSheet();deleteRecsUndo(new Set([recId]));return;
  }
@@ -3741,7 +3741,7 @@ function recSave(){
  let undoFn;
  if(ctx.scope==='one'){
   const edits=(r.edits=r.edits||{});const prevEdit=edits[ctx.date];edits[ctx.date]={amount:amt,memo};touch(r);
-  undoFn=()=>{if(prevEdit===undefined)delete edits[ctx.date];else edits[ctx.date]=prevEdit;save();renderCurrent();toast('되돌렸어요')};
+  undoFn=()=>{if(prevEdit===undefined)delete edits[ctx.date];else edits[ctx.date]=prevEdit;touch(r);save();renderCurrent();toast('되돌렸어요')};
  }
  else if(ctx.scope==='future'){
   const prevEnd=r.endDate,prevCount=r.count,prevSkip=r.skip.slice(),prevEdits=Object.assign({},r.edits);
@@ -3753,11 +3753,11 @@ function recSave(){
   const newRec=Object.assign({},JSON.parse(JSON.stringify(r)),{id:uid(),startDate:ctx.date,endDate:prevEnd,count:prevEnd?recCountUntil(newBase,prevEnd):null,amount:amt,memo,skip:skipFuture,edits:editsFuture});
   touch(newRec);
   DB.recurrences.push(newRec);
-  undoFn=()=>{r.endDate=prevEnd;r.count=prevCount;r.skip=prevSkip;r.edits=prevEdits;DB.recurrences=DB.recurrences.filter(x=>x.id!==newRec.id);save();renderCurrent();toast('되돌렸어요')};
+  undoFn=()=>{r.endDate=prevEnd;r.count=prevCount;r.skip=prevSkip;r.edits=prevEdits;touch(r);DB.recurrences=DB.recurrences.filter(x=>x.id!==newRec.id);save();renderCurrent();toast('되돌렸어요')};
  }
  else{
   const prevAmt=r.amount,prevMemo=r.memo;r.amount=amt;r.memo=memo;touch(r);
-  undoFn=()=>{r.amount=prevAmt;r.memo=prevMemo;save();renderCurrent();toast('되돌렸어요')};
+  undoFn=()=>{r.amount=prevAmt;r.memo=prevMemo;touch(r);save();renderCurrent();toast('되돌렸어요')};
  }
  window._recCtx=null;save();closeSheet();renderCurrent();
  undoToast('반복 내역을 수정했어요',undoFn);
@@ -6035,7 +6035,7 @@ function saveQuickAmount(recId,date){
  save();invalidateBalances();closeSheet();renderCurrent();
  undoToast(`${r.memo||r.category} ${comma(amt)}원으로 저장했어요`,()=>{
   if(prevEdit===undefined)delete edits[date];else edits[date]=prevEdit;
-  save();invalidateBalances();renderCurrent();toast('되돌렸어요')});
+  touch(r);save();invalidateBalances();renderCurrent();toast('되돌렸어요')});
 }
 /* ===== 해결 제안: 여유 통장에서 미리 옮겨두기 (실제 이체가 아니라 '예정'으로 기록) ===== */
 function findDonors(needAmount,targetId,byDate){
