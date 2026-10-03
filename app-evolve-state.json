@@ -1,15 +1,22 @@
 {
   "cycle": 128,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "touch() 누락으로 cloud merge 시 조용히 되돌아가는 4개 지점 수정 (doMaturity 중복 이체 위험 포함)",
+    "why": "mergeCollection()(logic.js:107-129)은 레코드의 updatedAt만 보고 승자를 고르므로, 필드를 바꾸면서 touch()를 빠뜨리면 다른 기기의 더 오래된 사본이 이겨 그 변경을 조용히 되돌린다. 이 불변식은 이미 confirmTransferNow/postponeTransfer/rollPendingTransfers/doRenameOwner/doRenameCat/catIcon·catVar 등에서 지켜지고 있는데, grep 'DB.(assets|txns|recurrences).find('로 모든 mutation 지점을 재확인한 결과 같은 패턴의 미적용 지점 4곳을 index.html에서 직접 소스로 확인했다: (1) doMaturity() 4536-4551 — 4550 `a.maturityDate=null;save();`에 touch(a) 없음. 만기 처리(이체 생성+플래그 클리어)가 동기화로 되돌려지면 maturityDate가 되살아나 '만기 임박' 알림이 재발하고, 사용자가 다시 '이체'를 누르면 동일 금액의 이체 거래가 중복 생성될 위험(cycle127에서 이 함수의 RANGE 경계만 고쳤고 touch는 손대지 않음). (2) toggleRecActive() 4692 — `r.active=!r.active;save();`에 touch(r) 없음(반복거래 일시중지/재시작이 동기화로 되돌아감). (3) toggleAdjustSurplus() 3692-3693 — `t.inSurplus=!t.inSurplus;...save();`에 touch(t) 없음(수지포함 토글이 동기화로 되돌아감). (4) 이체확인 설정 끄기 콜백 2719-2720 — `pendingOneOff.forEach(t=>t.confirmed=true)`와 `pendingRecList...push(t.date)` 모두 touch(t)/touch(r) 없음(일괄 확인 처리가 동기화로 되돌아가 '확인 대기'가 되살아남). 네 곳 모두 직접 Read로 재확인했으며(index.html:3692-3693, 4536-4551, 4692, 2719-2720), (1)이 실제 금액 중복 생성 위험이라 최우선.",
+    "approach": "index.html에서 4곳에 touch() 추가: 4550 `a.maturityDate=null;save();` → `a.maturityDate=null;touch(a);save();`. 4692 `r.active=!r.active;save();` → `r.active=!r.active;touch(r);save();`. 3693 `t.inSurplus=!t.inSurplus;...save();` → touch(t) 추가(el.classList.toggle 등 DOM 조작 이후, save() 이전). 2719-2720 forEach 콜백 각각에 touch(t)/touch(r) 추가(r.confirmedDates push 이후). test/run.js에 기존 confirmTransferNow/postponeTransfer/confirmRecNow touch 테스트와 동일한 스타일로 4개 추가: doMaturity 호출 전후 DB.assets[0].updatedAt 변경 확인, toggleRecActive 호출 전후 DB.recurrences[0].updatedAt 변경 확인, toggleAdjustSurplus 호출 전후 DB.txns[0].updatedAt 변경 확인, 이체확인 끄기 콜백 호출 후 영향받은 txn/rec 모두 updatedAt 갱신 확인. 기존 test harness의 touch 모킹/'test-updatedAt' 패턴 재사용. 완료 후 node test/run.js 전체 통과 확인, APP_VERSION/sw.js CACHE 버전 증가.",
+    "runner_ups": [
+      {
+        "idea": "recApply의 confirmedDates 관련 다른 변형 경로 전체 재조사",
+        "reason_rejected": "confirmRecNow/postponeRecTransfer 등 이미 touch() 적용돼 있어 신규 발견 없음"
+      },
+      {
+        "idea": "doMaturity에서 target 자산이 삭제된 경우 추가 처리",
+        "reason_rejected": "4537에서 이미 null 가드+안내 토스트로 처리되어 공백이 아님"
+      }
+    ]
+  },
   "history": [
-    {
-      "cycle": 123,
-      "phase": "critique",
-      "timestamp": "2026-10-02T05:10:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(122사이클 동안 다뤄진 a11y·cloud sync 타임아웃/mutex·CDN SRI·파일분할/jsdom·백그라운드 푸시·tx/rec 폼 통합·owner 마이그레이션/orphan 함수·FX/금/주식 수량 가드·CSV/삭제cascade/백버튼/PWA/핀치줌·RANGE_FROM/RANGE_TO 경계·PBKDF2/복구코드/알림인터벌/쿼터·undo tombstone(tx/rec/asset)·부부정산/대출상환/예산경고·검색금액매칭/평단가/정렬모드·recApply skip/edits·이체/저축 picker self-exclusion·주식 티커·netlify 재시도·순자산 goal 신규 기능 자체는 모두 기각/완료 처리되어 제외 지시). 새로 발견 후 직접 소스 재검증: cycle122에 신설된 DB.goals가 mergeRemoteDataIntoLocal(1435-1454)에서 전혀 병합되지 않음(txns/recurrences/assets는 mergeCollection, categories/owners/budgetHistory는 전용 머저로 병합되는데 goals는 함수에 등장 자체가 없음 — 1443-1447 주석은 settings/nwHistory만 '의도적 제외'로 명시, goals는 단순 누락). saveGoal(2453-2461)은 updatedAt 없고 delGoal(2463-2467)은 DB.deletedIds 톰스톤을 전혀 안 남김(grep 결과 'goals' 전체 11곳 중 deletedIds/mergeCollection/sanitizeBackup 근처 0건). 두 기기 오프라인 충돌 시 goals 변경이 조용히 소실되거나 삭제된 목표가 되살아날 수 있는, cycle87-102에 categories/owners에서 고쳤던 바로 그 패턴의 재발. pending_advance_plan에 saveGoal updatedAt 스탬프+delGoal 톰스톤(+undo)+mergeRemoteDataIntoLocal에 DB.goals mergeCollection 배선+sanitizeBackup goals 검증 분기+회귀 테스트 저장(상세는 state.json pending_advance_plan 참고). 러너업(기각): localStorage 전체 재직렬화 쓰기 증폭(이미 STORAGE_SIZE_WARN/CRIT로 다뤄짐, 저우선) / 산발적 빈 catch(e){} 패턴(범위가 광범위해 단일 advance 크기를 넘음) / 연금 자산의 은퇴시점 투사 모델링(근거 부족한 제품 방향성 제안, goal 확장 아이디어와 중복). 코드 변경 없음(읽기 전용 조사, 서브에이전트 보고의 핵심 라인/주장은 오케스트레이팅 세션이 grep/Read로 직접 재확인).",
-      "commit": null
-    },
     {
       "cycle": 123,
       "phase": "advance",
@@ -141,6 +148,13 @@
       "phase": "review",
       "timestamp": "2026-10-03T00:07:55.742Z",
       "summary": "develop 커밋(2a5d7c5, sanitizeBackup() 목표일(targetDate) 달력 유효성 검증 누락 수정)을 검토. 변경이 기존 startDate/endDate/maturityDate와 동일하게 csvDateValid()를 재사용함을 소스 대조로 확인(logic.js:305-310, 형식+달력 유효성 모두 검증), 다른 날짜 필드 검증부(index.html:5222,5235,5243)와 위치·패턴이 일치. 새 회귀 테스트(2026-13-01/2026-02-30 두 케이스, fixedCount=2)도 올바르게 null 보정을 검증함을 확인. APP_VERSION 1.47.24->1.47.25, sw.js CACHE v286->v287 동반 반영 확인. node test/run.js 859/859 재통과. 코드 변경 없음(이상 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 128,
+      "phase": "critique",
+      "timestamp": "2026-10-03T00:40:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(128사이클 동안 다뤄진 항목 전부 제외 지시, 최근 goal owner 스코프/catIcon·catVar sync/allocation 카드/txRow·histRow 통합/만기 알림 overdue 문구/doMaturity·saveAsset maturityDate RANGE 경계/sanitizeBackup targetDate 달력 유효성 포함). 새로 발견 후 직접 소스 재검증: mergeCollection()(logic.js:107-129)이 updatedAt만으로 승자를 고르는 구조상, 레코드를 바꾸면서 touch()를 빠뜨리면 교차기기 동기화 시 그 변경이 조용히 되돌아가는 패턴(confirmTransferNow/postponeTransfer/rollPendingTransfers/doRenameOwner/doRenameCat/catIcon·catVar 등 6곳 이상에서 이미 반복 발견·수정됨)의 미수정 지점 4곳을 grep 'DB.(assets|txns|recurrences).find('로 전체 mutation 지점을 재확인해 직접 소스(index.html)로 검증: doMaturity() 4550 `a.maturityDate=null;save();`에 touch(a) 없음(되돌아가면 만기 임박 알림 재발+재이체 시 동일 금액 중복 생성 위험, 최우선) / toggleRecActive() 4692 `r.active=!r.active;save();`에 touch(r) 없음 / toggleAdjustSurplus() 3692-3693 `t.inSurplus=!t.inSurplus;...save();`에 touch(t) 없음 / 이체확인 설정 끄기 콜백 2719-2720 `pendingOneOff.forEach(t=>t.confirmed=true)`·`pendingRecList...push(t.date)` 모두 touch 없음. pending_advance_plan에 4곳 touch() 추가+회귀 테스트 4개 저장(상세는 state.json pending_advance_plan 참고). 러너업(기각): recApply confirmedDates 다른 경로 전체 재조사(이미 전부 touch 적용돼 신규 발견 없음) / doMaturity target 삭제 케이스 추가 처리(4537에 이미 null 가드+토스트 있어 공백 아님). 코드 변경 없음(읽기 전용 조사, 서브에이전트가 지목한 4곳 모두 오케스트레이팅 세션이 Read로 직접 재확인: 3692-3693, 4536-4551, 4692, 2719-2720).",
       "commit": null
     }
   ]
