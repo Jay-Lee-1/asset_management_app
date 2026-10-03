@@ -1305,7 +1305,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.25';
+const APP_VERSION='1.47.26';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2716,8 +2716,8 @@ function toggleConfirmTransfers(){
    confirmSheet('이체 확인 끄기',
     `확인 대기 중인 이체 <b style="color:var(--expense)">${pending}건</b>이 모두 완료 처리돼요. 계속할까요?`,
     '끄기',()=>{
-     pendingOneOff.forEach(t=>t.confirmed=true);
-     pendingRecList.forEach(t=>{const r=DB.recurrences.find(x=>x.id===t.recId);if(r)(r.confirmedDates=r.confirmedDates||[]).push(t.date)});
+     pendingOneOff.forEach(t=>{t.confirmed=true;touch(t)});
+     pendingRecList.forEach(t=>{const r=DB.recurrences.find(x=>x.id===t.recId);if(r){(r.confirmedDates=r.confirmedDates||[]).push(t.date);touch(r)}});
      DB.settings.confirmTransfers=false;save();renderCurrent();toast('이체 확인을 껐어요');
     });
    return;
@@ -3690,7 +3690,7 @@ function openAdjustEdit(t){
    <button class="btn btn-danger cancel" style="width:100%" onclick="delAdjust('${t.id}')">${svg('trash')} 이 조정 내역 삭제</button>`);
 }
 function toggleAdjustSurplus(id,el){const t=DB.txns.find(x=>x.id===id);if(!t)return;
- t.inSurplus=!t.inSurplus;el.classList.toggle('on');el.setAttribute('aria-checked',el.classList.contains('on'));save();renderCurrent();}
+ t.inSurplus=!t.inSurplus;el.classList.toggle('on');el.setAttribute('aria-checked',el.classList.contains('on'));touch(t);save();renderCurrent();}
 function delAdjust(id){confirmSheet('조정 내역 삭제','이 잔액 조정 내역을 삭제할까요? 자산 잔액이 조정 전으로 돌아가요.','삭제',
  ()=>{deleteTxnsUndo(new Set([id]))})}
 function delTx(id,recId,date){
@@ -4547,7 +4547,7 @@ function doMaturity(id){if(twGuard())return;const a=DB.assets.find(x=>x.id===id)
  DB.txns.push(touch({id:uid(),type:'transfer',date,category:'이체',memo:`${a.name} 만기 이체`,amount:amt,
   fromAssetId:a.id,toAssetId:target.id,
   confirmed:DB.settings.confirmTransfers?false:true})); /* 실제로 옮겼는지 확인받음 */
- a.maturityDate=null;save();invalidateBalances();closeSheet();renderCurrent();
+ a.maturityDate=null;touch(a);save();invalidateBalances();closeSheet();renderCurrent();
  toast(clamped?`만기일이 오래돼 ${RANGE_FROM}로 보정해 이체했어요`:(DB.settings.confirmTransfers?`${target.name}(으)로 이체 예정을 남겼어요`:`${target.name}(으)로 만기 이체했어요`));
 }
 
@@ -4689,7 +4689,7 @@ function openRecManage(){
  openSheet(`<h3>반복 내역 관리</h3><div class="desc">탭하면 수정·삭제할 수 있어요 · ▶/⏸로 일시중지</div>${body}
   <div style="height:14px"></div><button class="btn btn-primary" onclick="openRecSheet()">${svg('plus')} 반복 추가</button>`);
 }
-function toggleRecActive(id){const r=DB.recurrences.find(x=>x.id===id);if(!r)return;r.active=!r.active;save();renderCurrent();openRecManage();toast(r.active?'반복을 다시 시작했어요':'반복을 일시중지했어요')}
+function toggleRecActive(id){const r=DB.recurrences.find(x=>x.id===id);if(!r)return;r.active=!r.active;touch(r);save();renderCurrent();openRecManage();toast(r.active?'반복을 다시 시작했어요':'반복을 일시중지했어요')}
 
 function rateStatusMenu(){
  const l=rateAutoLabel();

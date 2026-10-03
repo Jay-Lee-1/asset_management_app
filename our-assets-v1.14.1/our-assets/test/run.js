@@ -114,7 +114,7 @@ const FUNCTIONS = [
   'unguardCsv', 'csvRowToImportTxn', 'buildImportPreview', 'doCsvImport',
   'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo', 'unsnapshotAssetName',
   'deletedAssetHistoryExists', 'relinkDeletedAsset',
-  'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'restoreBackup', 'storageOutcomeMsg', 'shouldWarnUnpersisted', 'shouldWarnStorageSize',
+  'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'restoreBackup', 'storageOutcomeMsg', 'shouldWarnUnpersisted', 'shouldWarnStorageSize', 'toggleRecActive', 'toggleAdjustSurplus',
   'sanitizeAmount', 'sanitizeBackup',
   'saveRec', 'recHistFieldsChanged', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
   'expandRec', 'allTxns', 'txnsByDateInRange', 'spendByCategory', 'spendTrend', 'spendTrendBadge', 'histSumTotals',
@@ -416,6 +416,7 @@ const sandbox = {
   renderCurrent: () => {},
   openCatManage: () => {},
   openOwnerManage: () => {},
+  openRecManage: () => {},
   // asOpenType()이 여는 자산 종류 피커 — 실제 DOM/블롭 렌더는 화면 전용이라 openPicker처럼
   // no-op으로 흉내내고, onPick 콜백만 캡처해 테스트가 직접 호출할 수 있게 한다.
   lastTypePickerOnPick: null,
@@ -4615,6 +4616,22 @@ test('toggleConfirmTransfers: 오늘 날짜 일반 이체는 도래한 것으로
   sandbox.confirmSheetCalls[0].cb();
   assert.strictEqual(today.confirmed, true);
 });
+/* ---------- toggleConfirmTransfers: "끄기" 콜백이 pendingOneOff/pendingRecList를 일괄
+ * confirmed=true/confirmedDates.push()로 고치면서 touch()를 전혀 안 불러, mergeCollection()이
+ * updatedAt만 보고 승자를 고르는 cloud sync에서 다른 기기의 더 오래된 사본이 이겨 이 일괄 확인
+ * 처리가 조용히 되돌아갈 위험이 있었다(app-evolve cycle128 advance, doMaturity/toggleRecActive/
+ * toggleAdjustSurplus 쪽과 같은 패턴). ---------- */
+test('toggleConfirmTransfers: "끄기"를 누르면 일괄 확인 처리된 일반 이체/반복거래 모두에 touch()가 호출된다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.confirmSheetCalls = [];
+  const rec = pendingRec();
+  const oneOff = { id: 't1', type: 'transfer', date: '2026-06-10', confirmed: false, amount: 5000 };
+  sandbox.DB = { settings: { confirmTransfers: true }, txns: [oneOff], recurrences: [rec] };
+  sandbox.toggleConfirmTransfers();
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(oneOff.updatedAt, 'test-updatedAt', '일괄 확인된 일반 이체에도 touch()가 호출되어야 함');
+  assert.strictEqual(rec.updatedAt, 'test-updatedAt', '도래 회차가 기록된 반복거래에도 touch()가 호출되어야 함');
+});
 
 /* ---------- rollPendingTransfers: 이체 확인이 켜진 상태에서 기한이 지난(과거 날짜) 미확인 이체를 오늘로 당긴다 ---------- */
 test('rollPendingTransfers: 이체 확인이 꺼져 있으면 아무것도 하지 않는다', () => {
@@ -6249,6 +6266,29 @@ test('updateBalanceAdjust: 기존 조정 내역을 재계산해 갱신할 때도
   assert.strictEqual(adj.updatedAt, 'test-updatedAt', '재계산으로 갱신된 기존 조정 내역에도 touch()가 호출되어야 함');
 });
 
+/* ---------- toggleRecActive/toggleAdjustSurplus: 반복거래 일시중지·재시작 토글과 조정 내역의
+ * "수지에 포함" 토글이 각각 r.active/t.inSurplus만 바꾸고 touch()를 안 불러, mergeCollection()이
+ * updatedAt만 보고 승자를 고르는 cloud sync에서 다른 기기의 더 오래된 사본이 이겨 이 토글이
+ * 조용히 되돌아갈 위험이 있었다(app-evolve cycle128 advance, doMaturity 쪽과 동일 패턴). ---------- */
+test('toggleRecActive: 반복거래 일시중지/재시작 토글에도 touch()가 호출된다', () => {
+  const rec = { id: 'r1', active: true };
+  sandbox.DB = { settings: {}, recurrences: [rec] };
+  sandbox.toggleRecActive('r1');
+  assert.strictEqual(rec.active, false, '토글로 active가 꺼져야 함');
+  assert.strictEqual(rec.updatedAt, 'test-updatedAt', '일시중지 토글에도 touch()가 호출되어야 함');
+  sandbox.toggleRecActive('r1');
+  assert.strictEqual(rec.active, true, '다시 토글하면 재시작돼야 함');
+  assert.strictEqual(rec.updatedAt, 'test-updatedAt', '재시작 토글에도 touch()가 호출되어야 함');
+});
+test('toggleAdjustSurplus: 조정 내역의 "수지에 포함" 토글에도 touch()가 호출된다', () => {
+  const t = { id: 't1', inSurplus: false };
+  sandbox.DB = { settings: {}, txns: [t] };
+  const el = { classList: { _on: false, toggle(c) { this._on = !this._on; }, contains() { return this._on; } }, setAttribute: () => {} };
+  sandbox.toggleAdjustSurplus('t1', el);
+  assert.strictEqual(t.inSurplus, true, '토글로 inSurplus가 켜져야 함');
+  assert.strictEqual(t.updatedAt, 'test-updatedAt', '"수지에 포함" 토글에도 touch()가 호출되어야 함');
+});
+
 /* ---------- addBalanceAdjust/updateBalanceAdjust: 부채(debt) 자산에 잔액 조정 내역을
  * 만들 때 방향이 반대로 기록되던 버그의 회귀 테스트.
  * balancesUpTo()(2070줄)는 부채 자산에 sign=-1을 매겨, toAssetId로 들어오는 금액은 잔액을
@@ -6739,6 +6779,17 @@ test('doMaturity: 정상 범위 안 만기일은 클램프 없이 그대로 이�
   sandbox.doMaturity('a_sav');
   const t = sandbox.DB.txns[sandbox.DB.txns.length - 1];
   assert.strictEqual(t.date, '2026-06-10');
+});
+/* ---------- doMaturity: maturityDate=null로 지우는 자산 자체에는 touch()가 없어, cloud sync
+ * 병합 시 다른 기기의 더 오래된 사본이 이겨 만기 처리(이체 생성+플래그 클리어)가 되돌아가면
+ * maturityDate가 되살아나 '만기 임박' 알림이 재발하고, 사용자가 다시 '이체'를 누르면 동일 금액의
+ * 이체 거래가 중복 생성될 위험이 있었다(app-evolve cycle128 advance). ---------- */
+test('doMaturity: 만기 처리된 자산(maturityDate=null) 자체에도 touch()가 호출된다', () => {
+  setupMaturityDB();
+  sandbox.DB.assets.find(a => a.id === 'a_sav').maturityTargetId = 'a_cash';
+  sandbox.doMaturity('a_sav');
+  const a = sandbox.DB.assets.find(x => x.id === 'a_sav');
+  assert.strictEqual(a.updatedAt, 'test-updatedAt', '만기 처리된 자산에도 touch()가 호출되어야 함');
 });
 
 /* ---------- detectStaleMarketValuedTxns: excludeMarketValued(cycle27) 적용 이전에 이미
