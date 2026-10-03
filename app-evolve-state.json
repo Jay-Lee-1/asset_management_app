@@ -1,22 +1,8 @@
 {
   "cycle": 132,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 127,
-      "phase": "review",
-      "timestamp": "2026-10-02T20:05:00.000Z",
-      "summary": "develop 커밋(38bc592, notifyAlertInfo 저축 만기 overdue 알림 문구 버그 수정)을 검토. overdue=al.date<TODAY 분기와 when/title/body 조합을 소스 대조로 확인 — overdue 분기는 title '저축 만기가 지났어요'+body `${al.name} · 만기가 지났어요 · ${comma(al.amount)}원`, 기존 오늘/내일 분기는 문구·동작 그대로 유지됨을 확인. key(`mat:${al.assetId}:${al.date}`)는 변경 없어 al.date가 고정값(만기일)인 자산의 dedupe 동작도 그대로임을 확인(새 버그 아님, 스코프 밖). 테스트도 '지났다'/'내일 아님' 경계를 어제(1일 지남)·10일 지남 두 케이스로 적절히 커버. node test/run.js 851/851 재통과. 코드 변경 없음(이상 없음).",
-      "commit": null
-    },
-    {
-      "cycle": 127,
-      "phase": "critique",
-      "timestamp": "2026-10-02T21:05:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(127사이클 동안 다뤄진 항목 전부 제외 지시, 최근 goal owner 스코프/catIcon·catVar sync/allocation 카드/txRow·histRow 통합/만기 알림 overdue 문구 포함). 새로 발견 후 직접 소스 재검증: doMaturity()(index.html:4534-4543)가 saveTx/saveRec/csv/backup/planTransfer/planSplitTransfer와 달리 DB.txns.push 전에 RANGE_FROM/RANGE_TO 경계검증을 전혀 안 거치는 유일한 남은 경로임을 grep 'DB.txns.push|dateBelowRangeFloor'로 확인(line 4539 push 바로 위에 가드 없음, 다른 6개 경로는 모두 있음). saveAsset()도 maturityDate를 전혀 검증 안 함(3089, g('asMat').value 그대로 저장) — 만기일 입력 자체가 날짜피커(openFieldDatePicker, 무제한 스크롤, cycle123 planTransfer 버그의 원인이던 바로 그 피커)로 이뤄지는데 아무 가드가 없다. openMaturity()의 soon 조건(a.maturityDate<=addDays(TODAY,30))도 하한이 없어 RANGE_FROM 이전의 레거시 만기일도 '임박' 이체 버튼이 뜬다. 레거시 백업/오입력으로 만기일이 범위 밖이면 '이체했어요' 토스트는 뜨지만 거래가 allTxns(RANGE_FROM,RANGE_TO) 밖이라 가계부/전체내역/잔액 어디에도 다시 나타나지 않는 조용한 소실로 이어지는, cycle123 planTransfer 버그와 동일 패턴의 여섯 번째 미점검 경로. pending_advance_plan에 saveAsset maturityDate 검증(저장시 거부)+doMaturity RANGE_FROM 클램프(자동 플로우라 거부 대신 보정)+sanitizeBackup assets[].maturityDate csvDateValid 검증+테스트 3종 저장(상세는 pending_advance_plan 참고). 러너업(기각): addCat/doRenameCat 중복 이름 체크 로직 중복(화장품급, 기능 리스크 없음) / sanitizeBackup의 maturityDate 형식 미검증 단독(위 계획에 이미 포함되어 별도 사이클 불필요). 코드 변경 없음(읽기 전용 조사, doMaturity 4534-4543·saveAsset 3089·soon 조건 4527 모두 오케스트레이팅 세션이 grep/Read로 직접 재확인).",
-      "commit": null
-    },
     {
       "cycle": 127,
       "phase": "advance",
@@ -141,6 +127,13 @@
       "phase": "develop",
       "timestamp": "2026-10-03T16:10:11.673Z",
       "summary": "general-purpose 서브에이전트 조사로 renderRecSheet()(index.html:3785)의 금액 입력(rAmt)이 cycle130/131에서 renderAssetSheet/renderTxSheet에 적용한 Enter-to-submit 패턴을 놓치고 있었음을 발견·수정. openRecSheet()의 기본값(category:첫 카테고리, fromAssetId:firstCash(), freq:monthly, day:1, startDate:ST.ledger.sel)과 saveRec()의 유일한 필수 검사(!d.amount)를 대조해, amount가 사실상 사용자가 반드시 입력해야 하는 유일한 필드임을 확인(이체/저축은 toAssetId 선택이 추가로 필요하지만 Enter 시 saveRec()의 기존 토스트 검증이 그대로 안내함, 새 버그 아님). renderAssetSheet asCostBasis(3101)/costBasisField와 동일한 onkeydown=\"if(event.key==='Enter'&&!event.isComposing)saveRec()\"를 rAmt에 추가. test/run.js: extractFunction('renderRecSheet')로 rAmt 입력 문자열에 해당 onkeydown이 포함되는지 확인하는 테스트 1개 추가(FUNCTIONS 목록 추가 불필요, costBasisField/renderTxSheet 테스트와 동일하게 소스 텍스트만 검사). node test/run.js 875/875 -> 876/876 통과. APP_VERSION 1.47.32->1.47.33, sw.js CACHE v294->v295.",
+      "commit": null
+    },
+    {
+      "cycle": 132,
+      "phase": "review",
+      "timestamp": "2026-10-03T17:05:00.000Z",
+      "summary": "develop 커밋(83077a5, renderRecSheet() rAmt Enter-to-submit 추가)을 검토. onkeydown=\"if(event.key==='Enter'&&!event.isComposing)saveRec()\"가 cycle130의 costBasisField/asCostBasis 패턴과 정확히 일치함을 소스 대조로 확인. saveRec()(3832-3866)을 직접 Read해 !d.amount 외의 누락 필드(transfer/saving의 toAssetId, expense/income의 fromAssetId 등)도 모두 toast+return으로 안전하게 처리되어 Enter 제출이 크래시나 데이터 손상으로 이어지지 않음을 확인. 새 회귀 테스트(extractFunction 소스 패턴 검사)도 costBasisField/renderTxSheet 테스트와 동일 방식으로 적절. node test/run.js 876/876 재통과. 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
