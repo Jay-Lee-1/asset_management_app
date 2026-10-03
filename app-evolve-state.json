@@ -1,15 +1,8 @@
 {
   "cycle": 129,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 124,
-      "phase": "develop",
-      "timestamp": "2026-10-02T07:15:00.000Z",
-      "summary": "general-purpose 서브에이전트 조사로 목표(goal) 폼의 목표일 지우기(✕) 버튼이 txClearEnd/recClearEnd와 달리 syncGoalInputs()를 호출하지 않고 바로 goalDraft.targetDate를 지운 뒤 renderGoalForm을 재호출하던 버그 발견·수정(cycle122가 목표 기능을 신설할 때 날짜 피커 진입(onclick, syncGoalInputs 포함)과 달리 ✕ 버튼만 인라인으로 작성되며 동기화가 빠짐). renderGoalForm은 모든 입력칸 value를 goalDraft에서 직접 읽으므로, 이름/금액을 고친 뒤(날짜 피커를 열지 않고) ✕만 누르면 방금 입력한 값이 동기화 전 상태로 되돌려써져 조용히 사라졌다. goalClearDate(editing){syncGoalInputs();goalDraft.targetDate='';renderGoalForm(editing)} 신설(syncGoalInputs/renderGoalForm 사이), ✕ 버튼 onclick을 인라인 대신 goalClearDate(${editing}) 호출로 교체(txClearEnd/recClearEnd와 동일 패턴). test/run.js FUNCTIONS에 goalClearDate 추가, 날짜를 지우기 전 동기화되지 않으면 그대로 되돌려써지는 걸 증명하는 회귀 테스트 1개 추가(함수 없이는 extractFunction이 바로 에러를 내 실제 소스와 연결됨을 확인). node test/run.js 812/812 -> 813/813 통과. APP_VERSION 1.47.15->1.47.16, sw.js CACHE v277->v278.",
-      "commit": null
-    },
     {
       "cycle": 124,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-03T03:10:26.183Z",
       "summary": "critique(cycle128) 계획대로 mergeCollection() 병합 불변식(touch() 호출)이 빠져 있던 4개 지점을 수정했다. doMaturity() 4550 a.maturityDate=null;save() -> touch(a) 추가(만기 처리가 동기화로 되돌아가면 만기 임박 알림 재발+재이체 시 중복 거래 생성 위험, 최우선). toggleRecActive() 4692 r.active=!r.active;save() -> touch(r) 추가(반복거래 일시중지/재시작이 동기화로 되돌아가는 문제). toggleAdjustSurplus() 3693 t.inSurplus=!t.inSurplus;...save() -> touch(t) 추가(수지포함 토글이 동기화로 되돌아가는 문제). 이체확인 설정 끄기 콜백(toggleConfirmTransfers) 2719-2720 pendingOneOff.forEach/pendingRecList.forEach 각각에 touch(t)/touch(r) 추가(일괄 확인 처리가 동기화로 되돌아가 확인 대기가 되살아나는 문제). test/run.js FUNCTIONS에 toggleRecActive/toggleAdjustSurplus 등록, openRecManage 스텁 추가(toggleRecActive가 호출). 회귀 테스트 4개 추가: doMaturity 만기 처리된 자산 자체의 touch() 확인, toggleRecActive 일시중지/재시작 양방향 touch() 확인, toggleAdjustSurplus 토글 touch() 확인, toggleConfirmTransfers 끄기 콜백이 일반 이체/반복거래 양쪽 모두에 touch()를 호출하는지 확인. node test/run.js 859/859 -> 863/863 통과. APP_VERSION 1.47.25->1.47.26, sw.js CACHE v287->v288. pending_advance_plan을 null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 129,
+      "phase": "develop",
+      "timestamp": "2026-10-03T04:05:00.000Z",
+      "summary": "general-purpose 서브에이전트 조사로 cycle128에서 고친 'touch() 누락' 버그 패턴(doMaturity/toggleRecActive/toggleAdjustSurplus/toggleConfirmTransfers-off)의 미수정 지점 2곳을 추가 발견·수정. doDeleteCat()(index.html:4633,4644)과 deleteAssetsUndo()(index.html:6419,6424)가 각각 카테고리/자산 삭제 시 연결된 반복거래를 activeRecsForCat/activeRecsForAssets로 찾아 recs.forEach(r=>r.active=false)로 비활성화하고(undo 콜백에서는 다시 active=true), 두 곳 모두 touch(r) 없이 save()를 호출해 mergeCollection()의 updatedAt 비교에서 이 비활성화/재활성화가 다른 기기의 미동기화 상태에 밀려 조용히 되돌아갈 수 있는 상태였다(deleteAssetsUndo는 자산 자체(removed)는 이미 touch()하면서 같이 건드리는 recs만 빠뜨린 비대칭이 특히 뚜렷). 4곳 모두 r.active=false/true 대입 직후 touch(r)을 추가(doDeleteCat 2곳, deleteAssetsUndo 2곳) — toggleRecActive와 동일한 'mutate 직후 touch' 패턴. test/run.js의 기존 두 테스트('doDeleteCat: 연결된 활성 반복거래를...', 'deleteAssetsUndo: 연결된 활성 반복거래를...')에 touch() 스텁('test-updatedAt') 호출 여부를 확인하는 updatedAt 단언 추가(무관한 카테고리/자산의 반복거래는 touch()되면 안 됨도 함께 검증). node test/run.js 863/863 통과(테스트 개수는 기존 2개 테스트에 단언만 추가해 동일). APP_VERSION 1.47.26->1.47.27, sw.js CACHE v288->v289.",
       "commit": null
     }
   ]

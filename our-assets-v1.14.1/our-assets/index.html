@@ -1305,7 +1305,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.26';
+const APP_VERSION='1.47.27';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4630,7 +4630,7 @@ function doDeleteCat(k,i){const c=DB.categories[k][i];
  const recs=activeRecsForCat(k,c);
  const icon=DB.catIcon[catKey(k,c)];const wasVar=isVarCat(k,c);
  const hadBudget=k==='expense'&&DB.budgetHistory&&c in DB.budgetHistory;const budgetVal=hadBudget?DB.budgetHistory[c]:undefined;
- recs.forEach(r=>r.active=false);
+ recs.forEach(r=>{r.active=false;touch(r)});
  DB.categories[k].splice(i,1);
  delete DB.catIcon[catKey(k,c)];              /* 삭제 시 아이콘/변동/예산도 함께 정리 (동명 카테고리 재생성 시 이전 설정이 남지 않도록) */
  delete DB.catVar[catKey(k,c)];
@@ -4641,7 +4641,7 @@ function doDeleteCat(k,i){const c=DB.categories[k][i];
   if(icon)DB.catIcon[catKey(k,c)]=icon;
   if(wasVar)DB.catVar[catKey(k,c)]=true;
   if(hadBudget){DB.budgetHistory=DB.budgetHistory||{};DB.budgetHistory[c]=budgetVal}
-  recs.forEach(r=>r.active=true);
+  recs.forEach(r=>{r.active=true;touch(r)});
   save();renderCurrent();openCatManage(k);toast('되돌렸어요')})}
 function renameCatSheet(k,i,keep){const cur=DB.categories[k][i];
  if(!keep)catRenameDraft={name:cur,icon:catIconOf(k,cur)||CATICON[cur]||'tag'};
@@ -6416,12 +6416,12 @@ function deleteRecsUndo(ids){if(twGuard())return;const removed=DB.recurrences.fi
 function deleteAssetsUndo(ids){if(twGuard())return;
  const recs=activeRecsForAssets(ids);
  ids.forEach(snapshotAssetName);const removed=DB.assets.filter(a=>ids.has(a.id));
- recs.forEach(r=>r.active=false);
+ recs.forEach(r=>{r.active=false;touch(r)});
  DB.assets=DB.assets.filter(a=>!ids.has(a.id));
  DB.deletedIds=DB.deletedIds||{};const now=Date.now();ids.forEach(id=>DB.deletedIds[id]=now);
  save();renderCurrent();
  undoToast(`${removed.length}개 자산을 삭제했어요`+(recs.length?` · 반복거래 ${recs.length}개 비활성화`:''),()=>{
-  removed.forEach(touch);DB.assets.push(...removed);recs.forEach(r=>r.active=true);ids.forEach(unsnapshotAssetName);ids.forEach(id=>delete DB.deletedIds[id]);save();renderCurrent();toast('되돌렸어요')})}
+  removed.forEach(touch);DB.assets.push(...removed);recs.forEach(r=>{r.active=true;touch(r)});ids.forEach(unsnapshotAssetName);ids.forEach(id=>delete DB.deletedIds[id]);save();renderCurrent();toast('되돌렸어요')})}
 window.addEventListener('resize',()=>requestAnimationFrame(fitAll));
 
 /* ================= PICKERS (탭하면 열리는 선택창) ================= */

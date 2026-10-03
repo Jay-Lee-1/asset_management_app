@@ -1429,20 +1429,23 @@ test('doDeleteCat: 연결된 활성 반복거래를 비활성화하고, undo 콜
     catVar: { 'expense:외식': true },
     budgetHistory: { 외식: [{ from: '2026-01', amount: 50000 }] },
     txns: [], recurrences: [
-      { id: 'r1', active: true, type: 'expense', category: '외식' },
-      { id: 'r2', active: false, type: 'expense', category: '외식' }, // 이미 비활성 — 건드리면 안 됨
-      { id: 'r3', active: true, type: 'expense', category: '교통' },  // 무관한 카테고리 — 건드리면 안 됨
+      { id: 'r1', active: true, type: 'expense', category: '외식', updatedAt: 1 },
+      { id: 'r2', active: false, type: 'expense', category: '외식', updatedAt: 1 }, // 이미 비활성 — 건드리면 안 됨
+      { id: 'r3', active: true, type: 'expense', category: '교통', updatedAt: 1 },  // 무관한 카테고리 — 건드리면 안 됨
     ],
   };
   sandbox.lastUndo = null;
   sandbox.doDeleteCat('expense', 0);
   assert.deepStrictEqual(sandbox.DB.categories.expense, ['교통'], '카테고리가 삭제돼야 함');
   assert.strictEqual(sandbox.DB.recurrences.find(r => r.id === 'r1').active, false, '연결된 활성 반복거래가 비활성화돼야 함');
+  assert.strictEqual(sandbox.DB.recurrences.find(r => r.id === 'r1').updatedAt, 'test-updatedAt', '비활성화된 반복거래는 touch()되어야 함 (클라우드 동기화 시 되돌아가지 않도록)');
   assert.strictEqual(sandbox.DB.recurrences.find(r => r.id === 'r3').active, true, '무관한 카테고리의 반복거래는 건드리면 안 됨');
+  assert.strictEqual(sandbox.DB.recurrences.find(r => r.id === 'r3').updatedAt, 1, '무관한 카테고리의 반복거래는 touch()되면 안 됨');
   assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함');
   sandbox.lastUndo.undoFn();
   assert.deepStrictEqual(sandbox.DB.categories.expense, ['외식', '교통'], '되돌리면 카테고리가 원래 위치로 복원돼야 함');
   assert.strictEqual(sandbox.DB.recurrences.find(r => r.id === 'r1').active, true, '되돌리면 반복거래도 다시 활성화돼야 함');
+  assert.strictEqual(sandbox.DB.recurrences.find(r => r.id === 'r1').updatedAt, 'test-updatedAt', '되돌릴 때도 touch()되어야 함');
   assert.strictEqual(sandbox.DB.recurrences.find(r => r.id === 'r2').active, false, '원래부터 비활성이던 반복거래는 그대로 비활성 유지');
   assert.strictEqual(sandbox.DB.catIcon['expense:외식'], 'food', '아이콘도 복원돼야 함');
   assert.strictEqual(sandbox.isVarCat('expense', '외식'), true, '변동 카테고리 플래그도 복원돼야 함');
@@ -3083,14 +3086,17 @@ test('deleteAssetsUndo: 지정한 id의 자산을 삭제하고, undo 콜백을 �
 test('deleteAssetsUndo: 연결된 활성 반복거래를 비활성화하고, undo 콜백을 부르면 다시 활성화한다', () => {
   sandbox.TWi = -1;
   const a1 = { id: 'a1', name: '통장1' };
-  const rec = { id: 'r1', active: true, fromAssetId: 'a1', toAssetId: null };
+  const rec = { id: 'r1', active: true, fromAssetId: 'a1', toAssetId: null, updatedAt: 1 };
   sandbox.DB = { assets: [a1], recurrences: [rec] };
   sandbox.lastUndo = null;
   sandbox.snapshotCalls = [];
   sandbox.deleteAssetsUndo(new Set(['a1']));
   assert.strictEqual(rec.active, false, '연결된 반복거래는 비활성화되어야 함');
+  assert.strictEqual(rec.updatedAt, 'test-updatedAt', '비활성화된 반복거래는 touch()되어야 함 (클라우드 동기화 시 되돌아가지 않도록)');
+  rec.updatedAt = 1;
   sandbox.lastUndo.undoFn();
   assert.strictEqual(rec.active, true, '되돌리면 반복거래도 다시 활성화되어야 함');
+  assert.strictEqual(rec.updatedAt, 'test-updatedAt', '되돌릴 때도 touch()되어야 함');
 });
 test('deleteAssetsUndo: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 삭제되지 않는다', () => {
   sandbox.TWi = 0;
