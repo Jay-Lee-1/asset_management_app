@@ -1,15 +1,8 @@
 {
   "cycle": 131,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 126,
-      "phase": "develop",
-      "timestamp": "2026-10-02T15:10:00.000Z",
-      "summary": "general-purpose 서브에이전트 조사로 sanitizeBackup()의 반복거래 startDate 검증이 !r.startDate(존재 여부)만 확인해, 비어있지 않지만 형식이 깨졌거나(\"not-a-date\") 달력상 존재하지 않는(\"2026-13-01\") 값은 그대로 통과시키던 버그 발견·수정. 코드 주석(index.html:5233-5238)이 명시한 대로 startDate가 Invalid Date가 되면 recDates()의 종료조건(cur>endd)이 항상 false가 되어 무한루프로 앱이 멈추는데, 이 가드는 '없음'만 막고 '있지만 깨짐'은 전혀 못 막고 있었다(csvDateValid({...startDate:'not-a-date'})로 직접 재현: timeout 5 node에서 exit 124로 무한루프 확인). CSV 임포트가 이미 같은 목적으로 쓰는 csvDateValid()(logic.js:305, 형식+달력 유효성 모두 검증하는 기존 순수함수)를 재사용해 index.html:5242의 가드를 !r.startDate에서 !csvDateValid(r.startDate)로 교체. 주석도 '없거나 형식/달력상 유효하지 않으면'으로 보강. test/run.js에 'not-a-date'와 '2026-13-01'(정규식만 통과, 달력상 무효) 두 케이스가 모두 제거되는 회귀 테스트 1개 추가. node test/run.js 845/845 -> 846/846 통과. APP_VERSION 1.47.19->1.47.20, sw.js CACHE v281->v282.",
-      "commit": null
-    },
     {
       "cycle": 126,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-03T12:00:00.000Z",
       "summary": "critique(cycle130) 계획대로 renderAssetSheet()의 자산 등록/수정 폼에 Enter-to-submit을 추가했다. costBasisField(d,editing)로 함수 시그니처를 확장해 공용 매입금액 입력(asCostBasis)에 onkeydown=\"if(event.key==='Enter'&&!event.isComposing)saveAsset(${editing})\"를 추가 — fx/gold/stock 세 타입 모두의 마지막 입력이라 이 한 곳만 고치면 세 분기 모두 자동 적용됨, 세 호출부(fx/gold/stock)를 costBasisField(d,editing)으로 갱신. cash/debt/realestate/etc/pension/savings 공용 asAmt 필드에는 d.type==='savings'일 때만 onkeydown을 비우는 조건부 문자열(amtEnterSubmit)을 추가 — savings는 그 뒤 만기일 선택 버튼이 이어지므로 계획대로 제외. test/run.js: renderAssetSheet를 extractFunction()으로 추출해 asAmt의 조건부 onkeydown 패턴을 정규식으로 검증하는 테스트 1개(renderAssetSheet는 FUNCTIONS 목록 밖이라 실행이 아닌 소스 패턴 검증, renderMenu/openSpendAnalysis 등 기존 rowKeydown 패턴 테스트와 동일 방식) + costBasisField(FUNCTIONS에 이미 등록되어 실제 실행 가능)를 직접 호출해 반환 문자열 전체를 strictEqual로 검증하는 테스트 1개와 editing=true 전파를 확인하는 테스트 1개, 총 2개 테스트 추가. node test/run.js 866/866 -> 868/868 통과. APP_VERSION 1.47.29->1.47.30, sw.js CACHE v291->v292. pending_advance_plan을 null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 131,
+      "phase": "develop",
+      "timestamp": "2026-10-03T13:10:30.743Z",
+      "summary": "general-purpose 서브에이전트 조사로 renderTxSheet()(index.html:3534)의 메모 필드(txMemo)가 cycle130에서 renderAssetSheet()/costBasisField()에 적용한 Enter-to-submit 패턴을 놓치고 있었음을 발견·수정. 반복(rpt) 토글이 꺼져 있을 때는(일반 입력/기존 거래 수정 둘 다, showRepeat=!editing && rpt=showRepeat&&d.repeat) txMemo 다음에 바로 저장/삭제 버튼이 이어지는 폼의 마지막 입력 필드인데도 onkeydown이 전혀 없어 메모를 입력한 뒤 Enter로 저장할 수 없었다. 가장 많이 쓰는 거래 입력 폼에서의 UX 공백. rpt가 true(신규 입력에서 반복 켜짐)일 때는 주기/날짜/종료조건 필드가 더 이어지므로 asAmt의 savings 제외와 동일한 원리로 그대로 제외. memoEnterSubmit 변수를 추가해(rpt?\"\":onkeydown 문자열) txMemo input에 스플라이스. saveTx()가 이미 syncTxInputs()로 DOM에서 직접 읽어들이는 걸 확인해 별도 oninput 없이도 안전함을 검증. test/run.js에 extractFunction(\"renderTxSheet\") 소스 패턴으로 rpt 조건부 onkeydown 존재를 확인하는 회귀 테스트 1개 추가(renderAssetSheet Enter-제출 테스트와 동일 방식). node test/run.js 868/868 -> 869/869 통과. APP_VERSION 1.47.30->1.47.31, sw.js CACHE v292->v293.",
       "commit": null
     }
   ]

@@ -7214,6 +7214,13 @@ test("costBasisField: fx/gold/stock 공용 매입금액 입력(asCostBasis)에 E
   );
   assert.ok(sandbox.costBasisField({ costBasis: 0 }, true).includes('saveAsset(true)'), 'editing=true(수정 모드)일 때 saveAsset 호출에 전달되지 않음');
 });
+test('renderTxSheet: 반복이 꺼져 있으면(일반 입력/수정) txMemo가 마지막 필드라 Enter-제출이 있고, 반복이 켜져 있으면(주기/종료조건 필드가 뒤따름) 제외된다', () => {
+  const body = extractFunction('renderTxSheet');
+  assert.ok(
+    /rpt\?'':`\s*onkeydown="if\(event\.key==='Enter'&&!event\.isComposing\)saveTx\(\)"`/.test(body),
+    'txMemo의 Enter-제출이 rpt(반복 켜짐)를 제외하고 나머지에만 적용되지 않음'
+  );
+});
 
 /* ---------- filteredHist/_histCache: 전체 내역 탭에서 내역 추가/수정/삭제 후 캐시가 낡은 목록을 보여주던 버그 ----------
  * filteredHist()는 날짜범위|카테고리|검색어로만 캐시 키를 만들기 때문에, saveTx()/recApply()/

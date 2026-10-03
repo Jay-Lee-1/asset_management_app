@@ -1305,7 +1305,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.30';
+const APP_VERSION='1.47.31';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3565,6 +3565,7 @@ function renderTxSheet(){
  }
  const dateLabel=rpt?'시작일':'날짜';
  const datePsub=rpt?'':(d.date===TODAY?'오늘':(isFuture(d.date)?'예정':''));
+ const memoEnterSubmit=rpt?'':` onkeydown="if(event.key==='Enter'&&!event.isComposing)saveTx()"`; /* 반복 켜짐이면 뒤에 주기/종료조건 필드가 더 있어 제외 */
  openFormSheet(`<div class="tx-head"><h3>${editing?'내역 수정':'내역 입력'}</h3>${repeatChip}</div>
   <div class="seg"><div class="seg-blob"></div>${typeSeg}</div>
   <div class="field"><label for="txAmt">금액</label><div class="field-clear"><input id="txAmt" class="amount-in num" inputmode="numeric" value="${d.amount?comma(d.amount):''}" placeholder="0" oninput="fmtAmt(this)"><button type="button" class="fc-x" aria-label="금액 지우기" onclick="clrInput('txAmt')">✕</button></div></div>
@@ -3572,7 +3573,7 @@ function renderTxSheet(){
     <div class="pav a-etc">${svg('ledger')}</div><div class="pbody"><div class="pn">${fmtDateFull(d.date)}</div><div class="psub">${datePsub}</div></div><div class="pc">${svg('chev')}</div></button>
     <input id="txDate" type="hidden" value="${d.date}"></div>
   ${catField}${assetFields}
-  <div class="field"><label for="txMemo">메모</label><div class="field-clear"><input id="txMemo" value="${esc(d.memo||'')}" placeholder="${rpt?'예: 넷플릭스 구독':'예: 점심 김밥'}"><button type="button" class="fc-x" aria-label="메모 지우기" onclick="clrInput('txMemo')">✕</button></div></div>
+  <div class="field"><label for="txMemo">메모</label><div class="field-clear"><input id="txMemo" value="${esc(d.memo||'')}" placeholder="${rpt?'예: 넷플릭스 구독':'예: 점심 김밥'}"${memoEnterSubmit}><button type="button" class="fc-x" aria-label="메모 지우기" onclick="clrInput('txMemo')">✕</button></div></div>
   ${repeatFields}
   ${editing?
    `<div class="two-btn"><button class="btn btn-danger cancel" onclick="delTx('${d.id}','','${d.date}')">${svg('trash')} 삭제</button>
