@@ -2797,6 +2797,50 @@ test('doCsvImport: window._csvImport.items로 일괄 저장하는 거래마다 t
   assert.strictEqual(sandbox.DB.txns.length, 1, '중복(dup) 행은 저장되면 안 됨');
   assert.strictEqual(sandbox.DB.txns[0].updatedAt, 'test-updatedAt', '가져온 거래에도 touch()가 호출되어야 함');
 });
+/* saveTx()는 새 이체를 저장할 때 confirmed가 비어 있으면 !(confirmTransfers&&isFuture(date))로
+ * 기본값을 채우는데(app-evolve cycle81 이전부터의 규칙), CSV는 이 컬럼이 없어(txnsToCSV 헤더에
+ * confirmed가 없음) csvRowToImportTxn이 만든 txn에는 confirmed가 항상 undefined로 들어왔다.
+ * isPending()은 t.confirmed===false일 때만 미확인으로 보므로, confirmTransfers가 켜진 상태에서
+ * 미래 날짜 이체를 CSV로 가져오면 수동 입력(saveTx)과 달리 확인 과정 없이 조용히 '확인 완료'로
+ * 저장되고, 이체 확인 홈 알림/가계부 확인 버튼에도 영영 나타나지 않았다. */
+test('doCsvImport: confirmTransfers가 켜져 있으면 미래 날짜 이체는 saveTx()와 동일하게 confirmed:false(미확인)로 들어온다', () => {
+  sandbox.DB = { categories: { expense: [], income: [], saving: [] }, txns: [], settings: { confirmTransfers: true } };
+  sandbox.TODAY = '2026-06-15';
+  sandbox.window._csvImport = {
+    items: [
+      { dup: false, txn: { type: 'transfer', category: '이체', memo: '', amount: 50000, date: '2026-06-20', fromAssetId: 'a1', toAssetId: 'a2' } },
+    ],
+    newCats: { expense: [], income: [], saving: [] },
+  };
+  sandbox.doCsvImport();
+  assert.strictEqual(sandbox.DB.txns[0].confirmed, false, 'confirmTransfers가 켜진 상태의 미래 이체는 미확인으로 들어와야 함');
+});
+test('doCsvImport: confirmTransfers가 켜져 있어도 오늘/과거 날짜 이체는 saveTx()와 동일하게 confirmed:true로 들어온다', () => {
+  sandbox.DB = { categories: { expense: [], income: [], saving: [] }, txns: [], settings: { confirmTransfers: true } };
+  sandbox.TODAY = '2026-06-15';
+  sandbox.window._csvImport = {
+    items: [
+      { dup: false, txn: { type: 'transfer', category: '이체', memo: '', amount: 10000, date: '2026-06-10', fromAssetId: 'a1', toAssetId: 'a2' } },
+      { dup: false, txn: { type: 'transfer', category: '이체', memo: '', amount: 20000, date: '2026-06-15', fromAssetId: 'a1', toAssetId: 'a2' } },
+    ],
+    newCats: { expense: [], income: [], saving: [] },
+  };
+  sandbox.doCsvImport();
+  assert.strictEqual(sandbox.DB.txns[0].confirmed, true, '과거 날짜 이체는 이미 끝난 일로 보고 확인 완료로 들어와야 함');
+  assert.strictEqual(sandbox.DB.txns[1].confirmed, true, '오늘 날짜 이체도 확인 완료로 들어와야 함');
+});
+test('doCsvImport: confirmTransfers가 꺼져 있으면 이체 날짜와 무관하게 confirmed:true로 들어온다', () => {
+  sandbox.DB = { categories: { expense: [], income: [], saving: [] }, txns: [], settings: { confirmTransfers: false } };
+  sandbox.TODAY = '2026-06-15';
+  sandbox.window._csvImport = {
+    items: [
+      { dup: false, txn: { type: 'transfer', category: '이체', memo: '', amount: 50000, date: '2026-06-20', fromAssetId: 'a1', toAssetId: 'a2' } },
+    ],
+    newCats: { expense: [], income: [], saving: [] },
+  };
+  sandbox.doCsvImport();
+  assert.strictEqual(sandbox.DB.txns[0].confirmed, true, '이체 확인 기능 자체가 꺼져 있으면 항상 확인 완료여야 함');
+});
 test("buildImportPreview: RANGE_FROM 이전 날짜 행은 형식 오류(invalidCount)와 구분해 rangeCount로 센다", () => {
   const csv = '날짜,구분,카테고리,금액,보내는 자산,받는 자산,메모\r\n' +
     '2022-12-31,지출,식비,5000,,,오래된 내역\r\n' +
