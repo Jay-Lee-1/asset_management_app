@@ -1,6 +1,6 @@
 {
   "cycle": 130,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
     {
@@ -141,6 +141,13 @@
       "phase": "develop",
       "timestamp": "2026-10-03T08:19:38.000Z",
       "summary": "general-purpose 서브에이전트 조사로 doCsvImport()(index.html ~5336-5360)가 CSV로 가져온 이체 거래의 confirmed 필드를 전혀 채우지 않던 버그 발견·수정. saveTx()(3670)는 새 이체 저장 시 confirmed가 undefined면 !(confirmTransfers&&isFuture(date))로 기본값을 채우는데, CSV 포맷엔 confirmed 컬럼 자체가 없어(txnsToCSV 헤더에 없음) csvRowToImportTxn이 만든 txn.confirmed가 항상 undefined로 들어왔다. isPending()(1476-1480)은 t.confirmed===false일 때만 미확인으로 보므로, confirmTransfers가 켜진 상태에서 미래 날짜 이체를 CSV로 가져오면 수동 입력과 달리 확인 과정 없이 조용히 '확인 완료'로 저장되어 이체 확인 버튼/홈 알림에 영영 나타나지 않는 문제였다. doCsvImport()의 added 매핑에 saveTx()와 동일한 기본값 규칙을 적용(transfer타입이고 confirmed===undefined일 때만). test/run.js에 미래+confirmTransfers on(confirmed:false)/과거·오늘+on(confirmed:true)/confirmTransfers off(항상 confirmed:true) 3개 회귀 테스트 추가. node test/run.js 863/863 -> 866/866 통과. APP_VERSION 1.47.28->1.47.29, sw.js CACHE v290->v291.",
+      "commit": null
+    },
+    {
+      "cycle": 130,
+      "phase": "review",
+      "timestamp": "2026-10-03T08:45:00.000Z",
+      "summary": "develop 커밋(9516714, doCsvImport() 이체 confirmed 기본값 누락 수정)을 검토. 새 default 규칙(t.type==='transfer'&&t.confirmed===undefined일 때 !(DB.settings.confirmTransfers&&isFuture(t.date)))이 saveTx()(3670행)의 기존 규칙과 조건·대상(transfer만, undefined일 때만) 모두 일치함을 소스 대조로 확인. CSV가 다루는 건 일반 거래뿐이라(반복거래 CSV import 없음) saveTx의 다른 transfer 전용 필드 중 CSV import가 추가로 놓친 기본값은 없음을 3650-3674행 재확인. 새 회귀 테스트 3개(미래+on→false/과거·오늘+on→true/off→항상 true)가 경계를 적절히 커버함을 확인. node test/run.js 866/866 재통과. 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
