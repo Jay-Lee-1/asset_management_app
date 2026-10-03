@@ -1,15 +1,8 @@
 {
   "cycle": 129,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 124,
-      "phase": "review",
-      "timestamp": "2026-10-02T08:12:00.000Z",
-      "summary": "develop 커밋(fd9c6eb, goalClearDate 신설로 목표일 지우기 동기화 버그 수정)을 검토. goalClearDate가 txClearEnd/recClearEnd와 동일한 sync-then-clear-then-rerender 패턴임을 소스 대조로 확인(grep 결과 ✕ 버튼 onclick도 goalClearDate 호출 1곳으로 일관, 인라인 targetDate='' 잔존 없음). node test/run.js 813/813 재통과. 코드 변경 없음(이상 없음).",
-      "commit": null
-    },
     {
       "cycle": 124,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-03T04:05:00.000Z",
       "summary": "general-purpose 서브에이전트 조사로 cycle128에서 고친 'touch() 누락' 버그 패턴(doMaturity/toggleRecActive/toggleAdjustSurplus/toggleConfirmTransfers-off)의 미수정 지점 2곳을 추가 발견·수정. doDeleteCat()(index.html:4633,4644)과 deleteAssetsUndo()(index.html:6419,6424)가 각각 카테고리/자산 삭제 시 연결된 반복거래를 activeRecsForCat/activeRecsForAssets로 찾아 recs.forEach(r=>r.active=false)로 비활성화하고(undo 콜백에서는 다시 active=true), 두 곳 모두 touch(r) 없이 save()를 호출해 mergeCollection()의 updatedAt 비교에서 이 비활성화/재활성화가 다른 기기의 미동기화 상태에 밀려 조용히 되돌아갈 수 있는 상태였다(deleteAssetsUndo는 자산 자체(removed)는 이미 touch()하면서 같이 건드리는 recs만 빠뜨린 비대칭이 특히 뚜렷). 4곳 모두 r.active=false/true 대입 직후 touch(r)을 추가(doDeleteCat 2곳, deleteAssetsUndo 2곳) — toggleRecActive와 동일한 'mutate 직후 touch' 패턴. test/run.js의 기존 두 테스트('doDeleteCat: 연결된 활성 반복거래를...', 'deleteAssetsUndo: 연결된 활성 반복거래를...')에 touch() 스텁('test-updatedAt') 호출 여부를 확인하는 updatedAt 단언 추가(무관한 카테고리/자산의 반복거래는 touch()되면 안 됨도 함께 검증). node test/run.js 863/863 통과(테스트 개수는 기존 2개 테스트에 단언만 추가해 동일). APP_VERSION 1.47.26->1.47.27, sw.js CACHE v288->v289.",
+      "commit": null
+    },
+    {
+      "cycle": 129,
+      "phase": "review",
+      "timestamp": "2026-10-03T05:07:11.228Z",
+      "summary": "develop 커밋(8e9f528, doDeleteCat/deleteAssetsUndo 반복거래 비활성화에 touch() 누락 수정)을 검토. doDeleteCat() 4633/4644와 deleteAssetsUndo() 6419/6424 각각 r.active=false/true 대입 직후 touch(r)이 추가되어 cycle128의 toggleRecActive와 동일한 mutate-then-touch 패턴임을 소스 대조로 확인. 테스트도 영향받는 반복거래(r1)는 touch(updatedAt='test-updatedAt')되고, 무관한 카테고리/비활성 반복거래(r2/r3)는 건드리지 않음을 적절히 검증. deleteAssetsUndo 테스트는 undo 후 rec.updatedAt을 1로 리셋해 되돌리기 쪽 touch()도 독립적으로 검증. node test/run.js 863/863 재통과. 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
