@@ -1,19 +1,8 @@
 {
-  "cycle": 132,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "touch()-before-save() 동기화 불변식에 구조적 가드 추가 + touchSave() 헬퍼로 마이그레이션",
-    "why": "mergeCollection()(logic.js:107-129)은 DB.assets/txns/recurrences/goals의 교차기기 충돌을 updatedAt 비교만으로 해소한다. 레코드를 바꾸면서 touch()를 빠뜨리면 동기화 시 그 변경이 조용히 되돌아가는데, 이 버그 클래스가 cycle128/129에서 독립적으로 두 번 재발견되어 이미 14곳(doMaturity, toggleRecActive, toggleAdjustSurplus, toggleConfirmTransfers-off, doDeleteCat, deleteAssetsUndo, recApply/recSave/saveQuickAmount undo 6곳)을 고쳤다. grep 결과 index.html에 touch( 49회 vs save() 99회로, save() 호출의 절반 이상이 touch 유무를 수동으로 판단해야 하는 구조다. 매 critique마다 전체 재감사를 반복하는 대신 테스트가 자동으로 잡아내게 해야 한다.",
-    "approach": "1) test/run.js에 index.html 본문 스크립트를 정적으로 스캔하는 회귀 테스트를 추가: 'DB.(assets|txns|recurrences|goals).find(...)'로 바인딩된 변수가 필드 대입을 받은 뒤 중간에 touch(그변수) 없이 save()가 호출되는 패턴을 정규식/토큰 매칭으로 탐지해, 발견되면 테스트 실패(사이트 목록을 메시지에 출력). cycle129 advance 시점(866/863 기준)에서 위반 0건임을 먼저 확인해 가드가 거짓양성 없이 깨끗한 상태를 통과시키는지 검증. 2) 작은 헬퍼 function touchSave(...records){records.forEach(touch);return save()} 를 touch() 정의 근처에 추가하고, 이미 고쳐진 14곳 이상의 'touch(x);...save()' 패턴을 touchSave(x)로 마이그레이션해 올바른 사용이 기본 경로가 되게 한다(마이그레이션 대상과 범위는 advance 시작 시 grep으로 재확인). 3) 기존 touch() 단위 테스트들이 touchSave 경유로도 동일하게 통과하는지 확인하고, node test/run.js로 전체 스위트 통과 확인 후 APP_VERSION/sw.js CACHE 올림."
-  },
+  "cycle": 133,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 127,
-      "phase": "advance",
-      "timestamp": "2026-10-02T22:10:00.000Z",
-      "summary": "critique(cycle127) 계획대로 doMaturity()/saveAsset()의 만기일(maturityDate)에 RANGE_FROM/RANGE_TO 경계검증을 추가했다. saveAsset()에 d.maturityDate가 있을 때 saveTx/saveRec와 동일한 토스트 문구로 dateBelowRangeFloor/dateAboveRangeCeil 검증을 추가해 신규 오입력을 저장 시점에 거부. doMaturity()는 자동 플로우라 사용자가 날짜를 다시 고를 수 없으므로 거부 대신 sanitizeBackup의 endDate 정규화 관례를 따라, 레거시/복원된 범위 밖 maturityDate가 RANGE_FROM보다 이르면 이체 거래 날짜를 RANGE_FROM으로 클램프하고(RANGE_TO는 date<=TODAY이고 TODAY가 항상 RANGE_TO 안이라 상한 클램프는 불필요) 보정 안내 토스트를 추가했다. sanitizeBackup() assets 루프에 반복거래 startDate/endDate와 동일하게 csvDateValid() 재사용 검증을 추가해, 형식/달력상 무효한 maturityDate를 null로 정규화(저축 자산에 만기일 없음은 기존에도 정상 상태)하고 fixedCount에 반영. test/run.js: saveAsset의 RANGE_FROM/RANGE_TO 경계 거부 2개+정상 범위 통과 1개, doMaturity의 RANGE_FROM 클램프 1개+정상 범위 무클램프 1개, sanitizeBackup의 maturityDate 정규화 1개+정상/미설정 안전 1개 — 총 7개 추가. node test/run.js 851/851 -> 858/858 통과. APP_VERSION 1.47.23->1.47.24, sw.js CACHE v285->v286. pending_advance_plan을 null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 128,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-03T18:08:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(132사이클 동안 다뤄진 항목 전부 제외 지시, Enter-to-submit 시리즈+지출분석 drill-down+touch() 누락 14곳 수정 포함). 이번엔 특정 신규 버그가 아니라 반복되는 버그 '클래스'를 지목: touch()-before-save() 동기화 불변식이 코드로 강제되지 않는 수동 관례라는 점. grep으로 직접 재확인(touch( 49회 vs save() 99회, index.html), mergeCollection()(logic.js:107-129)이 updatedAt만으로 승자를 고르는 구조상 touch() 누락은 매번 cycle128/129처럼 전체 재감사(수 시간)로만 잡혀왔음을 history 대조로 확인 — 같은 비용을 critique마다 반복 지불하고 있다. pending_advance_plan에 (1) test/run.js에 index.html 본문을 정적 스캔해 'find()로 바인딩한 변수가 field 대입 후 touch() 없이 save() 호출'되는 패턴을 탐지하는 회귀 가드 테스트 추가, (2) touchSave(...records) 헬퍼 도입 및 기존 14곳 이상 마이그레이션을 저장(상세는 pending_advance_plan 참고). 러너업(기각): CDN SRI 해시 TODO(index.html:1298-1304) — 이미 코드 주석에 네트워크 정책상 보류 명시, 신규 발견 아님 / 앱 완전 종료 시 알림 신뢰성(6294-6297) — 이미 best-effort로 코드에 문서화된 수용된 한계 / 부채(debt) 자산의 이자율·상환 projection 부재 — 실재하나 새 기능 스코프(앱잠금 등 기각 항목과 동일 범주) / CSV import findAsset() 동명 비시가평가 자산 모호성(5050) — 한 줄 수정 규모라 advance 스코프보다 작음. 코드 변경 없음(읽기 전용 조사, 오케스트레이팅 세션이 grep -c touch(/save()로 직접 재확인: 49/99, touch() 정의 1430행).",
+      "commit": null
+    },
+    {
+      "cycle": 132,
+      "phase": "advance",
+      "timestamp": "2026-10-03T19:10:00.000Z",
+      "summary": "critique(cycle132) 계획대로 touch()-before-save() 동기화 불변식에 구조적 가드를 추가했다. (1) touch() 정의 바로 뒤에 function touchSave(...records){records.forEach(touch);return save()} 헬퍼를 추가. (2) test/run.js에 index.html 본문을 정적 스캔하는 회귀 테스트를 추가: top-level 함수 본문 안에서 'DB.(assets|txns|recurrences|goals).find(...)'로 바인딩된 변수 V가 V.prop= 대입을 받은 뒤, 그 함수 안에서 처음 만나는 save(/touchSave( 호출 전에 touch(V)가 없거나(save 경로) touchSave(...)의 인자에 V가 없으면(touchSave 경로) 위반으로 기록 — 토큰 매칭이라 완벽한 제어흐름 분석은 아니지만 실행 중인 real/stub touch/save로 주입 테스트(toggleRecActive에서 touchSave(r)을 save()로 되돌려 실제로 FAIL하는지 확인)해 탐지력을 검증했다. 주석(/* ... */) 안에 'touchSave()'/'save()'라는 말이 그대로 적혀 있으면 실제 호출로 오인되는 거짓양성을 발견해(saveQuickAmount 설명 주석), 길이를 보존한 공백으로 먼저 지우도록 수정. cycle129 이전 추정과 달리 현재 코드(876/876 통과 시점)에서는 위반이 이미 0건이었음(cycle128/129 advance에서 모두 고쳐짐) — 가드는 거짓양성 없이 깨끗한 상태를 통과시킴을 먼저 확인. (3) 이미 올바르게 touch();...save()를 쓰던 자리들을 touchSave()로 마이그레이션해 올바른 사용을 기본 경로로 만들었다: confirmTransferNow/postponeTransfer/confirmRecNow/postponeRecTransfer, toggleAdjustSurplus, recApply(delete one/future, forward+undo), recSave(one/future/all의 undo 클로저), doMaturity, toggleRecActive, doDeleteCat(forward+undo), saveQuickAmount(forward+undo), deleteTxnsUndo/deleteRecsUndo/deleteAssetsUndo(undo 클로저), delGoal undo — 총 20여 곳. toggleConfirmTransfers(이체확인 끄기) 콜백은 pendingRecList에서 찾은 r을 배열에 모아 나중에 touchSave(...array)로 펼치려 했으나, 이 간접 수집 패턴은 정적 가드가 추적할 수 없어(V가 다른 변수명 배열 안에 들어감) 거짓양성을 냈고, 실제로도 코드가 더 복잡해지기만 해서 원래의 직접 touch(t)/touch(r) 방식으로 되돌렸다(이미 정확했던 코드였음). test/run.js FUNCTIONS에 'touchSave' 추가(sandbox의 touch/save 스텁을 거쳐 실행됨). node test/run.js 876/876 -> 877/877 통과(+1: 새 구조적 가드 테스트). APP_VERSION 1.47.33->1.47.34, sw.js CACHE v295->v296. pending_advance_plan을 null로 비움.",
       "commit": null
     }
   ]

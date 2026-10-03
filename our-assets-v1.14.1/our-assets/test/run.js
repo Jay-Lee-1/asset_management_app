@@ -114,7 +114,7 @@ const FUNCTIONS = [
   'unguardCsv', 'csvRowToImportTxn', 'buildImportPreview', 'doCsvImport',
   'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo', 'unsnapshotAssetName',
   'deletedAssetHistoryExists', 'relinkDeletedAsset',
-  'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'restoreBackup', 'storageOutcomeMsg', 'shouldWarnUnpersisted', 'shouldWarnStorageSize', 'toggleRecActive', 'toggleAdjustSurplus',
+  'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'restoreBackup', 'storageOutcomeMsg', 'shouldWarnUnpersisted', 'shouldWarnStorageSize', 'toggleRecActive', 'toggleAdjustSurplus', 'touchSave',
   'sanitizeAmount', 'sanitizeBackup',
   'saveRec', 'recHistFieldsChanged', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
   'expandRec', 'allTxns', 'txnsByDateInRange', 'spendByCategory', 'spendTrend', 'spendTrendBadge', 'histSumTotals',
@@ -528,6 +528,78 @@ vm.runInContext(extracted, sandbox, { filename: 'extracted-from-index.html' });
 
 const tests = [];
 function test(name, fn) { tests.push({ name, fn }); }
+
+/* ---------- touch()-before-save() 동기화 불변식 구조적 가드 (app-evolve cycle132 advance) ----------
+ * mergeCollection()(logic.js)은 DB.assets/txns/recurrences/goals의 교차기기 충돌을 updatedAt
+ * 비교만으로 해소한다. 레코드를 바꾸면서 touch()를 빠뜨리면 동기화 시 그 변경이 조용히 되돌아가는데,
+ * 이 버그 클래스가 cycle128/129에서 독립적으로 두 번 재발견돼 전체 재감사(수 시간)로만 잡혔다.
+ * 매번 비싼 재감사를 반복하는 대신, index.html 본문을 정적으로 스캔해 "DB.(assets|txns|recurrences|
+ * goals).find(...)로 바인딩한 변수가 필드 대입을 받은 뒤 touch(그변수)/touchSave(그변수) 없이
+ * save()나 touchSave(...)가 호출되는" 패턴을 토큰 매칭으로 찾아낸다. 완벽한 정적 분석이 아니라
+ * 텍스트 기반 휴리스틱이라(실제 제어흐름을 실행하지 않음) 놓치는 경우는 있을 수 있지만, 지금까지
+ * 고쳐진 패턴들을 회귀로 다시 깨뜨리면 확실히 잡아낸다. */
+function findTouchBeforeSaveViolations() {
+  // 주석(/* ... */) 안에 "touchSave()"/"save()"라는 말이 그대로 등장하면(이 테스트 코드 자신의
+  // 설명 주석 포함) 실제 호출로 오인되므로, 길이를 보존한 공백으로 먼저 지워 라인 번호/오프셋에는
+  // 영향을 주지 않으면서 텍스트 매칭에서만 제외한다.
+  const body = src.replace(/\/\*[\s\S]*?\*\//g, (m) => ' '.repeat(m.length));
+  const fnStartRe = /^(?:async function|function) (\w+)\(/gm;
+  const fns = [];
+  let fm;
+  while ((fm = fnStartRe.exec(body))) {
+    const start = fm.index;
+    const braceStart = body.indexOf('{', start);
+    let depth = 0, i = braceStart;
+    for (; i < body.length; i++) {
+      if (body[i] === '{') depth++;
+      else if (body[i] === '}') { depth--; if (depth === 0) { i++; break; } }
+    }
+    fns.push({ name: fm[1], text: body.slice(start, i) });
+  }
+  const BIND_RE = /(?:const|let|var)\s+(\w+)\s*=\s*DB\.(?:assets|txns|recurrences|goals)\.find\(/g;
+  const violations = [];
+  for (const fn of fns) {
+    const text = fn.text;
+    BIND_RE.lastIndex = 0;
+    let bm;
+    while ((bm = BIND_RE.exec(text))) {
+      const V = bm[1];
+      const bindPos = bm.index + bm[0].length;
+      const mutRe = new RegExp('\\b' + V + '\\.(\\w+)\\s*=(?!=)', 'g');
+      mutRe.lastIndex = bindPos;
+      let mm;
+      while ((mm = mutRe.exec(text))) {
+        const mutPos = mm.index + mm[0].length;
+        const commitRe = /\b(touchSave|save)\(/g;
+        commitRe.lastIndex = mutPos;
+        const cm = commitRe.exec(text);
+        if (!cm) continue; // 이 함수에서 해당 대입 뒤로 save()/touchSave()가 전혀 안 불리면 위험 없음
+        if (cm[1] === 'touchSave') {
+          const argsStart = cm.index + cm[0].length;
+          let depth = 1, j = argsStart;
+          for (; j < text.length; j++) {
+            if (text[j] === '(') depth++;
+            else if (text[j] === ')') { depth--; if (depth === 0) break; }
+          }
+          const argsText = text.slice(argsStart, j);
+          if (!new RegExp('\\b' + V + '\\b').test(argsText)) {
+            violations.push(`${fn.name}(): ${V}.${mm[1]} 대입 후 touchSave(${argsText})에 ${V}가 없음`);
+          }
+        } else {
+          const between = text.slice(mutPos, cm.index);
+          if (!new RegExp('\\btouch\\(\\s*' + V + '\\s*[,)]').test(between)) {
+            violations.push(`${fn.name}(): ${V}.${mm[1]} 대입 후 save() 전에 touch(${V})가 없음`);
+          }
+        }
+      }
+    }
+  }
+  return violations;
+}
+test('touch()-before-save() 동기화 불변식: DB.assets/txns/recurrences/goals를 find()로 찾아 필드를 바꾸는 모든 함수가 save() 전에 touch()(또는 touchSave())를 호출한다', () => {
+  const violations = findTouchBeforeSaveViolations();
+  assert.deepStrictEqual(violations, [], `touch()-before-save() 위반 발견:\n${violations.join('\n')}`);
+});
 
 /* ---------- addMonths: 월말 롤오버 버그 (72ce67f) ---------- */
 test('addMonths: 5/31에서 -3개월은 윤년 아닌 해 2월 말(2/28)로 클램프된다', () => {

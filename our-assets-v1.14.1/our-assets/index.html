@@ -1305,7 +1305,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.33';
+const APP_VERSION='1.47.34';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1428,6 +1428,11 @@ const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
  * 풀려면 향후 레코드 단위 병합이 필요하고, 그 병합은 레코드마다 "언제 바뀌었는지"부터 있어야
  * 가능하다. 그 전 단계로 생성·수정 시점에 이 값부터 채워둔다. */
 function touch(obj){obj.updatedAt=Date.now();return obj}
+/* touch() 뒤에 save()를 부르는 흐름을 하나로 묶는 헬퍼 — cycle128/129에서 이 호출 순서를
+ * 빠뜨린 버그가 독립적으로 두 차례 재발견돼(총 14곳) 매번 전체 재감사로만 잡혔다. 호출자가
+ * 둘 다 쓰는 자리를 이 함수로 옮기면 "touch 빠뜨림"이 구조적으로 불가능해진다(save(opts)의
+ * opts는 이 호출부들이 쓰지 않아 받지 않음). */
+function touchSave(...records){records.forEach(touch);return save()}
 /* afterCloudAuth()와 pushCloud()의 conflict 재시도 경로가 공유하는 3-way 병합 실행기 —
  * remoteData(sanitizeBackup()으로 이미 정제된 원격 DB)를 DB에 병합만 하고 save()는 호출자가
  * 결정한다(pushCloud()는 병합 직후 곧장 조건부 UPDATE를 재시도해야 하므로 scheduleCloudPush()의
@@ -1492,17 +1497,17 @@ function openConfirmTransfer(id){const t=DB.txns.find(x=>x.id===id);if(!t)return
   <div class="two-btn"><button class="btn btn-soft cancel" onclick="postponeTransfer('${id}')">내일로</button><button class="btn btn-primary" onclick="confirmTransferNow('${id}')">완료했어요</button></div>`);
 }
 function confirmTransferNow(id){const t=DB.txns.find(x=>x.id===id);if(!t)return;
- t.confirmed=true;touch(t);save();closeSheet();renderCurrent(); /* touch() 누락 시 mergeCollection()이 updatedAt만 보고 병합하다 다른 기기의 동기화 안 된 내역이 이 확인 처리를 조용히 되돌릴 수 있음(rollPendingTransfers와 동일한 불변식) */
+ t.confirmed=true;touchSave(t);closeSheet();renderCurrent(); /* touchSave()가 touch() 다음 save()를 묶어서, mergeCollection()이 updatedAt만 보고 병합하다 다른 기기의 동기화 안 된 내역이 이 확인 처리를 조용히 되돌리는 걸 구조적으로 막는다(rollPendingTransfers와 동일한 불변식) */
  if(pendingTransferCount()===0)celebrate('이체 전부 완료! 🎉');else toast('이체를 완료 처리했어요');
 }
-function postponeTransfer(id){const t=DB.txns.find(x=>x.id===id);if(t){t.date=addDays(TODAY,1);touch(t);save();closeSheet();renderCurrent();toast('내일로 미뤘어요')}}
+function postponeTransfer(id){const t=DB.txns.find(x=>x.id===id);if(t){t.date=addDays(TODAY,1);touchSave(t);closeSheet();renderCurrent();toast('내일로 미뤘어요')}}
 function confirmRecTransfer(recId,date){const r=DB.recurrences.find(x=>x.id===recId);if(!r)return;
  const ed=(r.edits||{})[date]||{};
  openSheet(`<h3>이체 확인</h3><div class="desc"><b style="font-size:16px;color:var(--text)">${comma(ed.amount!=null?ed.amount:r.amount)}원</b> 이체를 완료하셨나요?<br><span style="color:var(--text-2);font-size:13px">${esc(assetNm(r.fromAssetId,r.fromAssetName))} → ${esc(assetNm(r.toAssetId,r.toAssetName))} · ${shortDate(date)}</span></div>
   <div class="two-btn"><button class="btn btn-soft cancel" onclick="postponeRecTransfer('${recId}','${date}')">내일로</button><button class="btn btn-primary" onclick="confirmRecNow('${recId}','${date}')">완료했어요</button></div>`);
 }
 function confirmRecNow(recId,date){const r=DB.recurrences.find(x=>x.id===recId);if(!r)return;
- (r.confirmedDates=r.confirmedDates||[]).push(date);touch(r);save();closeSheet();renderCurrent(); /* touch() 누락 시 mergeCollection()이 updatedAt만 보고 병합하다 이 확인 처리를 조용히 되돌릴 수 있음 */
+ (r.confirmedDates=r.confirmedDates||[]).push(date);touchSave(r);closeSheet();renderCurrent();
  if(pendingTransferCount()===0)celebrate('이체 전부 완료! 🎉');else toast('이체를 완료 처리했어요');
 }
 function postponeRecTransfer(recId,date){const r=DB.recurrences.find(x=>x.id===recId);if(!r)return;
@@ -1512,9 +1517,8 @@ function postponeRecTransfer(recId,date){const r=DB.recurrences.find(x=>x.id===r
  /* daily 반복은 +1일이 다음 정상 회차 날짜와 겹칠 수 있어, 안 그러면 엔진이 그 날짜에
     자기 회차를 또 만들어내 수동으로 넣은 이체와 중복(잔액 이중 반영)된다 */
  if(!r.skip.includes(nd))r.skip.push(nd);
- touch(r); /* r.skip을 두 번 건드리므로 마찬가지로 touch 필요 */
  DB.txns.push(touch({id:uid(),type:'transfer',category:'이체',memo:ed.memo!=null?ed.memo:(r.memo||'이체'),amount:ed.amount!=null?ed.amount:r.amount,fromAssetId:r.fromAssetId,toAssetId:r.toAssetId,date:nd,confirmed:false}));
- save();closeSheet();renderCurrent();toast('내일로 미뤘어요');
+ touchSave(r);closeSheet();renderCurrent();toast('내일로 미뤘어요'); /* r.skip을 두 번 건드리므로 touch 필요 — touchSave(r)이 묶어서 처리 */
 }
 
 /* ================= DATA MODEL ================= */
@@ -2511,7 +2515,7 @@ function delGoal(id){
   DB.goals=(DB.goals||[]).filter(x=>x.id!==id);
   DB.deletedIds=DB.deletedIds||{};DB.deletedIds[id]=Date.now(); /* deleteTxnsUndo 등과 동일한 톰스톤 — 없으면 mergeRemoteDataIntoLocal이 이 삭제를 모르고 다른 기기의 사본을 되살림 */
   goalDraft=null;save();renderCurrent();
-  undoToast('목표를 삭제했어요',()=>{touch(g);DB.goals.push(g);delete DB.deletedIds[id];save();renderCurrent();toast('되돌렸어요')});
+  undoToast('목표를 삭제했어요',()=>{DB.goals.push(g);delete DB.deletedIds[id];touchSave(g);renderCurrent();toast('되돌렸어요')});
  });
 }
 
@@ -3713,16 +3717,16 @@ function recApply(recId,date,mode,scope){
  const r=DB.recurrences.find(x=>x.id===recId);
  if(mode==='delete'){
   if(scope==='one'){
-   const prevSkip=r.skip.slice();r.skip.push(date);touch(r);save();closeSheet();renderCurrent();
-   undoToast('삭제했어요',()=>{r.skip=prevSkip;touch(r);save();renderCurrent();toast('되돌렸어요')});return;
+   const prevSkip=r.skip.slice();r.skip.push(date);touchSave(r);closeSheet();renderCurrent();
+   undoToast('삭제했어요',()=>{r.skip=prevSkip;touchSave(r);renderCurrent();toast('되돌렸어요')});return;
   }
   if(scope==='future'){
    const prevEnd=r.endDate,prevCount=r.count,prevSkip=r.skip.slice(),prevEdits=Object.assign({},r.edits);
    const {skipPast,editsPast}=splitRecOverrides(r.skip,r.edits,date); /* date 이후 skip/edits도 함께 버려야 함(끊어낸 회차 자체이므로 recSave future처럼 분리 보관할 곳이 없다) — 안 그러면 나중에 endDate를 다시 늘릴 때 되살아남(app-evolve cycle121) */
    r.skip=skipPast;r.edits=editsPast;
    Object.assign(r,truncateRecEnd({freq:r.freq,day:r.day,startDate:r.startDate,weekend:r.weekend},addDays(date,-1)));
-   touch(r);save();closeSheet();renderCurrent();
-   undoToast('삭제했어요',()=>{r.endDate=prevEnd;r.count=prevCount;r.skip=prevSkip;r.edits=prevEdits;touch(r);save();renderCurrent();toast('되돌렸어요')});return;
+   touchSave(r);closeSheet();renderCurrent();
+   undoToast('삭제했어요',()=>{r.endDate=prevEnd;r.count=prevCount;r.skip=prevSkip;r.edits=prevEdits;touchSave(r);renderCurrent();toast('되돌렸어요')});return;
   }
   closeSheet();deleteRecsUndo(new Set([recId]));return;
  }
@@ -3743,7 +3747,7 @@ function recSave(){
  let undoFn;
  if(ctx.scope==='one'){
   const edits=(r.edits=r.edits||{});const prevEdit=edits[ctx.date];edits[ctx.date]={amount:amt,memo};touch(r);
-  undoFn=()=>{if(prevEdit===undefined)delete edits[ctx.date];else edits[ctx.date]=prevEdit;touch(r);save();renderCurrent();toast('되돌렸어요')};
+  undoFn=()=>{if(prevEdit===undefined)delete edits[ctx.date];else edits[ctx.date]=prevEdit;touchSave(r);renderCurrent();toast('되돌렸어요')};
  }
  else if(ctx.scope==='future'){
   const prevEnd=r.endDate,prevCount=r.count,prevSkip=r.skip.slice(),prevEdits=Object.assign({},r.edits);
@@ -3755,11 +3759,11 @@ function recSave(){
   const newRec=Object.assign({},JSON.parse(JSON.stringify(r)),{id:uid(),startDate:ctx.date,endDate:prevEnd,count:prevEnd?recCountUntil(newBase,prevEnd):null,amount:amt,memo,skip:skipFuture,edits:editsFuture});
   touch(newRec);
   DB.recurrences.push(newRec);
-  undoFn=()=>{r.endDate=prevEnd;r.count=prevCount;r.skip=prevSkip;r.edits=prevEdits;touch(r);DB.recurrences=DB.recurrences.filter(x=>x.id!==newRec.id);save();renderCurrent();toast('되돌렸어요')};
+  undoFn=()=>{r.endDate=prevEnd;r.count=prevCount;r.skip=prevSkip;r.edits=prevEdits;DB.recurrences=DB.recurrences.filter(x=>x.id!==newRec.id);touchSave(r);renderCurrent();toast('되돌렸어요')};
  }
  else{
   const prevAmt=r.amount,prevMemo=r.memo;r.amount=amt;r.memo=memo;touch(r);
-  undoFn=()=>{r.amount=prevAmt;r.memo=prevMemo;touch(r);save();renderCurrent();toast('되돌렸어요')};
+  undoFn=()=>{r.amount=prevAmt;r.memo=prevMemo;touchSave(r);renderCurrent();toast('되돌렸어요')};
  }
  window._recCtx=null;save();closeSheet();renderCurrent();
  undoToast('반복 내역을 수정했어요',undoFn);
@@ -4563,7 +4567,7 @@ function doMaturity(id){if(twGuard())return;const a=DB.assets.find(x=>x.id===id)
  DB.txns.push(touch({id:uid(),type:'transfer',date,category:'이체',memo:`${a.name} 만기 이체`,amount:amt,
   fromAssetId:a.id,toAssetId:target.id,
   confirmed:DB.settings.confirmTransfers?false:true})); /* 실제로 옮겼는지 확인받음 */
- a.maturityDate=null;touch(a);save();invalidateBalances();closeSheet();renderCurrent();
+ a.maturityDate=null;touchSave(a);invalidateBalances();closeSheet();renderCurrent();
  toast(clamped?`만기일이 오래돼 ${RANGE_FROM}로 보정해 이체했어요`:(DB.settings.confirmTransfers?`${target.name}(으)로 이체 예정을 남겼어요`:`${target.name}(으)로 만기 이체했어요`));
 }
 
@@ -4646,19 +4650,19 @@ function doDeleteCat(k,i){const c=DB.categories[k][i];
  const recs=activeRecsForCat(k,c);
  const icon=DB.catIcon[catKey(k,c)];const wasVar=isVarCat(k,c);
  const hadBudget=k==='expense'&&DB.budgetHistory&&c in DB.budgetHistory;const budgetVal=hadBudget?DB.budgetHistory[c]:undefined;
- recs.forEach(r=>{r.active=false;touch(r)});
+ recs.forEach(r=>{r.active=false});
  DB.categories[k].splice(i,1);
  delete DB.catIcon[catKey(k,c)];              /* 삭제 시 아이콘/변동/예산도 함께 정리 (동명 카테고리 재생성 시 이전 설정이 남지 않도록) */
  delete DB.catVar[catKey(k,c)];
  if(hadBudget)delete DB.budgetHistory[c];
- save();renderCurrent();openCatManage(k);
+ touchSave(...recs);renderCurrent();openCatManage(k);
  undoToast(`'${c}' 카테고리를 삭제했어요`+(recs.length?` · 반복거래 ${recs.length}개 비활성화`:''),()=>{
   DB.categories[k].splice(i,0,c);
   if(icon)DB.catIcon[catKey(k,c)]=icon;
   if(wasVar)DB.catVar[catKey(k,c)]=true;
   if(hadBudget){DB.budgetHistory=DB.budgetHistory||{};DB.budgetHistory[c]=budgetVal}
-  recs.forEach(r=>{r.active=true;touch(r)});
-  save();renderCurrent();openCatManage(k);toast('되돌렸어요')})}
+  recs.forEach(r=>{r.active=true});
+  touchSave(...recs);renderCurrent();openCatManage(k);toast('되돌렸어요')})}
 function renameCatSheet(k,i,keep){const cur=DB.categories[k][i];
  if(!keep)catRenameDraft={name:cur,icon:catIconOf(k,cur)||CATICON[cur]||'tag'};
  const avCls=k==='income'?'a-in':k==='saving'?'a-save':'a-food';
@@ -4705,7 +4709,7 @@ function openRecManage(){
  openSheet(`<h3>반복 내역 관리</h3><div class="desc">탭하면 수정·삭제할 수 있어요 · ▶/⏸로 일시중지</div>${body}
   <div style="height:14px"></div><button class="btn btn-primary" onclick="openRecSheet()">${svg('plus')} 반복 추가</button>`);
 }
-function toggleRecActive(id){const r=DB.recurrences.find(x=>x.id===id);if(!r)return;r.active=!r.active;touch(r);save();renderCurrent();openRecManage();toast(r.active?'반복을 다시 시작했어요':'반복을 일시중지했어요')}
+function toggleRecActive(id){const r=DB.recurrences.find(x=>x.id===id);if(!r)return;r.active=!r.active;touchSave(r);renderCurrent();openRecManage();toast(r.active?'반복을 다시 시작했어요':'반복을 일시중지했어요')}
 
 function rateStatusMenu(){
  const l=rateAutoLabel();
@@ -6057,11 +6061,11 @@ function saveQuickAmount(recId,date){
  const el=$('qAmt');
  if(!el||!(el.value||'').trim()){toast('금액을 넣어주세요');return}
  const amt=num(el); /* 변동 카테고리는 실제 금액이 0원인 회차(무료/크레딧 처리)도 있을 수 있어 0을 유효값으로 허용 */
- const edits=(r.edits=r.edits||{});const prevEdit=edits[date];edits[date]={amount:amt};touch(r); /* recSave(scope='one')와 동일한 edits 갱신 — touch() 누락 시 mergeCollection()이 updatedAt만 보고 병합하다 다른 기기의 동기화 안 된 내역이 이 실제 금액 입력을 조용히 되돌릴 수 있음(doRenameOwner/doRenameCat/rollPendingTransfers와 동일한 불변식) */
- save();invalidateBalances();closeSheet();renderCurrent();
+ const edits=(r.edits=r.edits||{});const prevEdit=edits[date];edits[date]={amount:amt}; /* recSave(scope='one')와 동일한 edits 갱신 — touchSave()가 touch() 다음 save()를 묶어서, mergeCollection()이 updatedAt만 보고 병합하다 다른 기기의 동기화 안 된 내역이 이 실제 금액 입력을 조용히 되돌리는 걸 구조적으로 막는다(doRenameOwner/doRenameCat/rollPendingTransfers와 동일한 불변식) */
+ touchSave(r);invalidateBalances();closeSheet();renderCurrent();
  undoToast(`${r.memo||r.category} ${comma(amt)}원으로 저장했어요`,()=>{
   if(prevEdit===undefined)delete edits[date];else edits[date]=prevEdit;
-  touch(r);save();invalidateBalances();renderCurrent();toast('되돌렸어요')});
+  touchSave(r);invalidateBalances();renderCurrent();toast('되돌렸어요')});
 }
 /* ===== 해결 제안: 여유 통장에서 미리 옮겨두기 (실제 이체가 아니라 '예정'으로 기록) ===== */
 function findDonors(needAmount,targetId,byDate){
@@ -6433,21 +6437,21 @@ function deleteTxnsUndo(ids){if(twGuard())return;const removed=DB.txns.filter(t=
  DB.txns=DB.txns.filter(t=>!ids.has(t.id));
  DB.deletedIds=DB.deletedIds||{};const now=Date.now();ids.forEach(id=>DB.deletedIds[id]=now);
  save();renderCurrent();
- undoToast(`${removed.length}개 내역을 삭제했어요`,()=>{removed.forEach(touch);DB.txns.push(...removed);ids.forEach(id=>delete DB.deletedIds[id]);save();renderCurrent();toast('되돌렸어요')})}
+ undoToast(`${removed.length}개 내역을 삭제했어요`,()=>{DB.txns.push(...removed);ids.forEach(id=>delete DB.deletedIds[id]);touchSave(...removed);renderCurrent();toast('되돌렸어요')})}
 function deleteRecsUndo(ids){if(twGuard())return;const removed=DB.recurrences.filter(r=>ids.has(r.id));
  DB.recurrences=DB.recurrences.filter(r=>!ids.has(r.id));
  DB.deletedIds=DB.deletedIds||{};const now=Date.now();ids.forEach(id=>DB.deletedIds[id]=now);
  save();renderCurrent();
- undoToast(`${removed.length}개 반복 내역을 삭제했어요`,()=>{removed.forEach(touch);DB.recurrences.push(...removed);ids.forEach(id=>delete DB.deletedIds[id]);save();renderCurrent();toast('되돌렸어요')})}
+ undoToast(`${removed.length}개 반복 내역을 삭제했어요`,()=>{DB.recurrences.push(...removed);ids.forEach(id=>delete DB.deletedIds[id]);touchSave(...removed);renderCurrent();toast('되돌렸어요')})}
 function deleteAssetsUndo(ids){if(twGuard())return;
  const recs=activeRecsForAssets(ids);
  ids.forEach(snapshotAssetName);const removed=DB.assets.filter(a=>ids.has(a.id));
- recs.forEach(r=>{r.active=false;touch(r)});
+ recs.forEach(r=>{r.active=false});
  DB.assets=DB.assets.filter(a=>!ids.has(a.id));
  DB.deletedIds=DB.deletedIds||{};const now=Date.now();ids.forEach(id=>DB.deletedIds[id]=now);
- save();renderCurrent();
+ touchSave(...recs);renderCurrent();
  undoToast(`${removed.length}개 자산을 삭제했어요`+(recs.length?` · 반복거래 ${recs.length}개 비활성화`:''),()=>{
-  removed.forEach(touch);DB.assets.push(...removed);recs.forEach(r=>{r.active=true;touch(r)});ids.forEach(unsnapshotAssetName);ids.forEach(id=>delete DB.deletedIds[id]);save();renderCurrent();toast('되돌렸어요')})}
+  DB.assets.push(...removed);recs.forEach(r=>{r.active=true});ids.forEach(unsnapshotAssetName);ids.forEach(id=>delete DB.deletedIds[id]);touchSave(...removed,...recs);renderCurrent();toast('되돌렸어요')})}
 window.addEventListener('resize',()=>requestAnimationFrame(fitAll));
 
 /* ================= PICKERS (탭하면 열리는 선택창) ================= */
