@@ -4826,6 +4826,38 @@ test('sanitizeBackup: id 없는 목표는 통째로 제거하고, goals가 없�
   assert.strictEqual(missing.data.goals.length, 0);
 });
 
+/* ---------- sanitizeBackup: DB.inquiries(문의하기 메모, cycle133)도 txns/assets/recurrences/goals와
+ * 동일하게 백업 복원·클라우드 풀 경로에서 검증돼야 한다 — 이전에는 이 블록이 아예 없어서
+ * id/text 없는 레코드가 그대로 통과됐고, text 없는 레코드는 delInquiry()의 q.text.length에서
+ * TypeError로 터졌다(app-evolve cycle137 develop). ---------- */
+test('sanitizeBackup: id 없는 문의 메모는 통째로 제거하고, inquiries가 없거나 배열이 아니어도 터지지 않는다', () => {
+  const dropped = sandbox.sanitizeBackup({ txns: [], assets: [], inquiries: [{ date: '2026-01-01', text: '메모' }] });
+  assert.strictEqual(dropped.data.inquiries.length, 0);
+  assert.strictEqual(dropped.droppedCount, 1);
+  const missing = sandbox.sanitizeBackup({ txns: [], assets: [] });
+  assert.strictEqual(missing.data.inquiries.length, 0);
+  const notArray = sandbox.sanitizeBackup({ txns: [], assets: [], inquiries: { oops: true } });
+  assert.strictEqual(notArray.data.inquiries.length, 0);
+});
+test('sanitizeBackup: text 필드가 없거나 문자열이 아닌 문의 메모는 빈 문자열로 정규화하고 fixedCount를 센다(delInquiry의 q.text.length가 TypeError로 터지는 것을 방지)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    inquiries: [{ id: 'q1', date: '2026-01-01' }, { id: 'q2', date: '2026-01-02', text: 123 }],
+  });
+  assert.strictEqual(data.inquiries[0].text, '');
+  assert.strictEqual(data.inquiries[1].text, '123');
+  assert.strictEqual(fixedCount, 2);
+});
+test('sanitizeBackup: text가 정상 문자열인 문의 메모는 그대로 둔다(정상 케이스는 회귀 없음)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    inquiries: [{ id: 'q1', date: '2026-01-01', text: '기능 요청' }],
+  });
+  assert.strictEqual(data.inquiries[0].text, '기능 요청');
+  assert.strictEqual(data.inquiries[0].id, 'q1');
+  assert.strictEqual(fixedCount, 0);
+});
+
 /* ---------- spendByCategory: 지출 분석 카테고리별 합계는 잔액 조정(기본 제외)을 빼야 한다 ---------- */
 test('spendByCategory: 수지에 포함되지 않은 잔액 조정 지출은 카테고리 합계에서 제외된다', () => {
   sandbox.DB = {

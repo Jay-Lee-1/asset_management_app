@@ -1318,7 +1318,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.42';
+const APP_VERSION='1.47.43';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5421,7 +5421,23 @@ function sanitizeBackup(obj){
   else if(d.owner!=='all'&&!validOwners.includes(d.owner)){d.owner='all';fixedCount++}
   goals.push(d);
  });
- return {data:Object.assign({},obj,{txns,assets,recurrences,goals}),fixedCount,droppedCount,rangeCount};
+ /* DB.inquiries(문의하기 메모, cycle133)도 txns/assets/recurrences/goals와 같은 검증 분기가
+  * 여태 하나도 없었다 — 클라우드 풀(pullCloud)·백업 복원(restoreBackup) 모두 remote/obj를 반드시
+  * 이 sanitizeBackup()에 먼저 통과시키는데(mergeRemoteDataIntoLocal 호출부 참고), 이 블록이
+  * 없으면 obj.inquiries가 배열이 아니거나(예: {} · 문자열) id/text 없는 레코드가 섞여 있어도
+  * 그대로 통과된다. migrate()의 DB.inquiries 처리(2032줄)는 없는 id/updatedAt을 채워줄 뿐
+  * 레코드를 버리거나 text를 정규화하지 않으므로, text 없는 레코드가 하나라도 들어오면
+  * delInquiry()의 q.text.length가 그대로 TypeError로 터진다(다른 기기가 text 없이 만든 메모가
+  * 클라우드로 동기화되는 경우 등). amount류와 동일하게 여기서 정규화한다. */
+ const srcInquiries=Array.isArray(obj&&obj.inquiries)?obj.inquiries:[];
+ const inquiries=[];
+ srcInquiries.forEach(q=>{
+  if(!q||!q.id){droppedCount++;return}
+  const d=Object.assign({},q);
+  if(typeof d.text!=='string'){d.text=d.text==null?'':String(d.text);fixedCount++}
+  inquiries.push(d);
+ });
+ return {data:Object.assign({},obj,{txns,assets,recurrences,goals,inquiries}),fixedCount,droppedCount,rangeCount};
 }
 /* obj.assets/obj.txns가 배열인지까지 검증한 뒤 DB를 통째로 교체한다. migrate()가 손상된
  * obj 때문에 중간에 throw해도 DB가 절반만 마이그레이션된 채로 남지 않도록, 실패 시 교체 전
