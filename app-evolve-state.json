@@ -1,15 +1,8 @@
 {
   "cycle": 137,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 132,
-      "phase": "develop",
-      "timestamp": "2026-10-03T16:10:11.673Z",
-      "summary": "general-purpose 서브에이전트 조사로 renderRecSheet()(index.html:3785)의 금액 입력(rAmt)이 cycle130/131에서 renderAssetSheet/renderTxSheet에 적용한 Enter-to-submit 패턴을 놓치고 있었음을 발견·수정. openRecSheet()의 기본값(category:첫 카테고리, fromAssetId:firstCash(), freq:monthly, day:1, startDate:ST.ledger.sel)과 saveRec()의 유일한 필수 검사(!d.amount)를 대조해, amount가 사실상 사용자가 반드시 입력해야 하는 유일한 필드임을 확인(이체/저축은 toAssetId 선택이 추가로 필요하지만 Enter 시 saveRec()의 기존 토스트 검증이 그대로 안내함, 새 버그 아님). renderAssetSheet asCostBasis(3101)/costBasisField와 동일한 onkeydown=\"if(event.key==='Enter'&&!event.isComposing)saveRec()\"를 rAmt에 추가. test/run.js: extractFunction('renderRecSheet')로 rAmt 입력 문자열에 해당 onkeydown이 포함되는지 확인하는 테스트 1개 추가(FUNCTIONS 목록 추가 불필요, costBasisField/renderTxSheet 테스트와 동일하게 소스 텍스트만 검사). node test/run.js 875/875 -> 876/876 통과. APP_VERSION 1.47.32->1.47.33, sw.js CACHE v294->v295.",
-      "commit": null
-    },
     {
       "cycle": 132,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-04T12:17:13.950Z",
       "summary": "critique(cycle136) 계획대로 선택 모드(일별거래/전체내역)에 다건 카테고리 일괄 변경을 추가했다. (1) logic.js에 순수 함수 bulkCatTargets(txns,ids) 추가 — ids가 비었거나 실제 거래와 하나도 안 맞으면 reason:'empty', transfer가 하나라도 섞이면 reason:'transfer'(이체는 catListOf에서도 항상 [] — 카테고리 개념이 없음), type(expense/income/saving)이 섞이면 reason:'mixed', 통과하면 {ok:true,kind,items}. (2) activeSel()에 lSel/hist 모드에서만 cat:'ledgerCatSel()'/'histCatSel()' 키 추가(aSel은 자산엔 카테고리 개념이 없어 스코프 제외, 주석으로 이유 명시). (3) updateSelBottom()에 s.cat 있을 때 svg('tag')+'카테고리' 4번째 버튼(.sbb-cat) 추가, #selBarBottom에 has-cat 클래스 토글 — 좁은 화면에서 4버튼이 넘치지 않도록 .selbar-bottom.has-cat .sbb{min-width:0;padding:0 12px;font-size:13px} CSS 추가(클래스 3개 조합이라 명시도가 개별 .sbb-* 규칙보다 항상 높아 소스 순서와 무관하게 적용됨). (4) ledgerCatSel()/histCatSel() 추가(ledgerDelSel/histDelSel 바로 아래) — ledgerDelSel의 snapshot 관례(new Set(ST.lSel.ids)로 복제 후 mode/ids를 지우기 전에 넘김)를 그대로 따름. bulkCatPickFor(ids,afterApply)는 pkPickCat/openCatPicker 블록 바로 아래 배치 — bulkCatTargets로 먼저 검증해 실패 사유별 토스트(선택 없음/이체 포함/종류 혼합)를 보여주거나, 통과 시 openCatPicker({kind,current:null,onPick:c=>{closeSheet();doBulkCat(ids,c);afterApply()}})를 연다. _applyOpenCat()과 달리 되돌아갈 이전 시트가 없는 단독 피커라 onPick에서 직접 closeSheet() 호출이 필요함을 발견(back 파라미터를 안 넘기면 pkPickCat()이 닫지 않고 그대로 열려 있음). doBulkCat(ids,cat)은 deleteTxnsUndo 바로 아래 배치 — doRenameCat()과 동일한 memo-follows-category 관례(메모가 이전 카테고리명과 같았다면 자동 채움으로 보고 메모도 같이 옮김)를 따르고 touchSave(...items)로 touch+save, undoToast로 category/memo를 원복. (5) test/run.js: FUNCTIONS에 doBulkCat/bulkCatPickFor 등록, closeSheet 스텁을 closeSheetCalls 스파이로 교체. bulkCatTargets 5개(empty 2종/transfer/mixed/성공) + doBulkCat 4개(적용+memo-follow/undo/twGuard/bulkCatTargets 실패 시 안전망) + bulkCatPickFor 4개(toast 3종+성공 플로우 전체: 피커 열림→pick→closeSheet→afterApply→undoToast까지) + activeSel 3개(aSel엔 cat 없음/lSel·hist엔 있음) 총 16개 테스트 추가. vm 컨텍스트 객체 리터럴 deepStrictEqual 실패(cycle131에서 처음 발견한 realm 경계 문제)가 bulkCatTargets의 실패 케이스 4개에서도 재발해 필드별 strictEqual로 수정. node test/run.js 906/906 -> 922/922 통과. APP_VERSION 1.47.41->1.47.42, sw.js CACHE v303->v304. pending_advance_plan을 null로 비움.",
       "commit": null
+    },
+    {
+      "cycle": 137,
+      "phase": "develop",
+      "timestamp": "2026-10-04T00:00:00.000Z",
+      "summary": "general-purpose 서브에이전트 조사로 sanitizeBackup()(cloud-pull/backup-restore 경로가 공통으로 거치는 원격 데이터 정제 함수)에 txns/assets/recurrences/goals와 달리 DB.inquiries(cycle133에 추가된 '문의하기'/저장한 메모) 검증 블록이 아예 없었음을 발견·수정. migrate()는 기존 레코드에 id/updatedAt만 백필할 뿐 손상 레코드를 걸러내거나 text를 정규화하지 않고, sanitizeBackup()이 Object.assign({},obj,...)로 inquiries를 그대로 통과시켜온 탓에 다른 기기/버전에서 온 id 없는 레코드나 비문자열 text, 배열이 아닌 inquiries가 그대로 병합될 수 있었다 — 이후 '저장한 메모 보기'에서 delInquiry()가 q.text.length에서 TypeError로 터질 수 있는 경로. goals 블록 바로 뒤에 inquiries 검증 블록 추가(id 없는 레코드는 droppedCount, 비문자열 text는 빈 문자열로 coerce 후 fixedCount, 비배열 inquiries도 안전 처리)하고 sanitizeBackup() 반환 객체에 inquiries를 명시 포함. test/run.js에 회귀 테스트 3개 추가(id 없는 레코드 drop/비배열 처리, 비문자열 text 정규화+fixedCount, 정상 케이스 무회귀). node test/run.js 922/922 -> 925/925 통과. APP_VERSION 1.47.42->1.47.43, sw.js CACHE v304->v305. 커밋 38290d0. (오케스트레이팅 세션 메모: 서브에이전트가 커밋할 당시 컨테이너가 detached HEAD였고 로컬 main 레프가 오래된 분기(c76ce67, 이 state.json 히스토리에 없는 별도 사이클들)를 가리키고 있었다 — git fetch origin main으로 origin/main이 이미 fe93cfb로 force-update돼 있음을 확인(즉 실제 origin 최신 상태는 cycle136 advance와 일치), 38290d0이 그 fe93cfb의 직계 자식이라 fast-forward 가능함을 merge-base --is-ancestor로 검증 후 로컬 main을 38290d0으로 재설정하고 origin에 push 완료. origin/main이 유일한 지속 경로이므로 향후 세션은 origin/main 기준으로 계속 이어가면 됨.)",
+      "commit": "38290d0d2acf548469ff877f1e3fcf10035485f0"
     }
   ]
 }
