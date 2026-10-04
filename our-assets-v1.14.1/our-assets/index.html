@@ -1315,7 +1315,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.45';
+const APP_VERSION='1.47.46';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5635,8 +5635,13 @@ function overlayEscapeTarget(dpWheelOpen,dpModalOpen,sheetOpen){
    하나씩 쌓아 두고, 실제 popstate(백버튼)가 오면 그 중 최상단 오버레이 하나만 닫는다.
    UI로 직접 닫을 때도 쌓인 entry를 함께 소비해(history.back) 위치가 어긋나지 않게
    한다 — _ovHistSuppress로 '직접 닫기→history.back()' 자신이 되돌아오는 popstate와
-   '진짜 백버튼' popstate를 구분한다. */
-let _ovHistDepth=0,_ovHistSuppress=false;
+   '진짜 백버튼' popstate를 구분한다.
+   go(tab)의 하단 탭 전환은 이 메커니즘 밖에 있었음(app-evolve cycle138 critique/advance) —
+   _tabNavPushed가 '홈 진입용 entry가 지금 쌓여 있는가'를 기억하는 1단 플래그로, _ovHistDepth와
+   별개 카운터를 둔다(탭 전환은 여러 번 일어나도 entry는 최대 1개만 유지하면 되고, 오버레이가
+   탭 위에 열리면 history 스택 순서상 오버레이 entry가 더 나중에 쌓여 백버튼이 자연히 먼저
+   소비하므로 두 카운터를 합칠 필요가 없다). */
+let _ovHistDepth=0,_ovHistSuppress=false,_tabNavPushed=false;
 function ovHistPush(){_ovHistDepth++;try{history.pushState({ovl:_ovHistDepth},'')}catch(e){}}
 function ovHistPop(){ /* 오버레이를 직접(버튼/스크림/스와이프/Escape) 닫을 때 호출 */
  if(_ovHistSuppress||_ovHistDepth<=0)return;
@@ -5651,10 +5656,13 @@ function closeTopOverlayLevel(){
 }
 window.addEventListener('popstate',()=>{
  if(_ovHistSuppress){_ovHistSuppress=false;return}
- if(_ovHistDepth<=0)return;
- _ovHistDepth--;_ovHistSuppress=true;
- closeTopOverlayLevel();
- _ovHistSuppress=false;
+ if(_ovHistDepth>0){
+  _ovHistDepth--;_ovHistSuppress=true;
+  closeTopOverlayLevel();
+  _ovHistSuppress=false;
+  return;
+ }
+ if(_tabNavPushed){_tabNavPushed=false;go('home');} /* 비홈 탭에서 진짜 백버튼 — 홈으로 복귀 */
 });
 function syncOverlayInert(){ /* dpModal/dpWheel가 떠 있는 동안 그 아래(app/fab/sheet)로 Tab이 새지 않게 */
  const dpOn=$('dpModal').classList.contains('show')||$('dpWheel').classList.contains('show');
@@ -6832,7 +6840,11 @@ function navGo(t){ /* 가계부 탭 누르면 마지막 보던 모드(달력/목
 /* 달력↔목록 전환 시 보고 있는 월을 공유 */
 function toList(){histInvalidate();go('history')} /* 달력→전체 */
 function toCal(){go('ledger')} /* 전체→달력 */
-function go(tab){if(ST.aSel.mode){ST.aSel.mode=false;ST.aSel.ids.clear()}if(ST.lSel.mode){ST.lSel.mode=false;ST.lSel.ids.clear()}if(ST.hist.selMode){ST.hist.selMode=false;ST.hist.sel.clear()}ST.tab=tab;
+function go(tab){if(ST.aSel.mode){ST.aSel.mode=false;ST.aSel.ids.clear()}if(ST.lSel.mode){ST.lSel.mode=false;ST.lSel.ids.clear()}if(ST.hist.selMode){ST.hist.selMode=false;ST.hist.sel.clear()}
+ const _tnAction=tabNavAction(tab,_tabNavPushed); /* 탭 레벨 백버튼 history entry 판정(logic.js) */
+ if(_tnAction==='push'){_tabNavPushed=true;try{history.pushState({tabNav:true},'')}catch(e){}}
+ else if(_tnAction==='pop'){_tabNavPushed=false;if(!_ovHistSuppress){_ovHistSuppress=true;history.back();}}
+ ST.tab=tab;
  if(tab==='ledger')ST.ledgerMode='cal';else if(tab==='history')ST.ledgerMode='list'; /* 마지막 모드 기억 */
  document.body.classList.toggle('show-fab',tab!=='menu');renderers[tab]();updateSelBottom();
  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));$('page-'+tab).classList.add('active');$('page-'+tab).scrollTop=0;

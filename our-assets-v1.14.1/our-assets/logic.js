@@ -388,3 +388,17 @@ function whTargetIdx(cur,n,key){
  if(key==='ArrowDown')return Math.min(n-1,c+1);
  return cur;
 }
+
+/* ================= TAB NAV HISTORY (순수) ================= */
+/* 설치형 PWA(manifest display:standalone)에서 안드로이드 백버튼은 history 스택이 비면 바로 앱을
+ * 종료시킨다. _ovHistDepth/ovHistPush()(index.html)는 시트·날짜피커 같은 오버레이를 열 때마다
+ * entry를 쌓아 이 문제를 막아왔지만, 하단 탭 전환(go(tab))은 pushState를 전혀 호출하지 않아 같은
+ * 버그 클래스가 그대로 남아 있었다(app-evolve cycle138 critique) — 시트가 안 열린 비홈 탭에서
+ * 뒤로가기를 누르면 홈으로 안 돌아가고 앱이 종료됨. go(tab)가 이 함수로 매 호출마다 '홈 진입 1단
+ * entry'를 push/pop할지 판정한다: 홈→비홈 최초 진입이면 'push'(entry 하나만 쌓음, 이후 비홈↔비홈
+ * 전환은 재사용), 비홈→홈 복귀인데 entry가 쌓여 있으면 그 entry를 'pop'(소비), 그 외(이미 쌓인
+ * 채로 또 비홈, entry 없이 홈 재진입 등)는 'none'. */
+function tabNavAction(tab,alreadyPushed){
+ if(tab==='home')return alreadyPushed?'pop':'none';
+ return alreadyPushed?'none':'push';
+}

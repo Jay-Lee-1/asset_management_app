@@ -10064,6 +10064,41 @@ test('overlayEscapeTarget: 아무 오버레이도 열려 있지 않으면 null(o
   assert.strictEqual(sandbox.overlayEscapeTarget(false, false, false), null);
 });
 
+/* ---------- tabNavAction: go(tab) 하단 탭 전환의 백버튼 history entry 판정 (app-evolve cycle138 advance, logic.js) ----------
+ * 안드로이드 백버튼은 history 스택이 비면 standalone PWA를 바로 종료시킨다. _ovHistDepth/
+ * ovHistPush()는 오버레이(시트/dpModal/dpWheel)에만 적용돼 있어, 시트가 안 열린 비홈 탭(자산관리·
+ * 가계부·전체내역·플랜·메뉴)에서 뒤로가기를 누르면 홈으로 안 돌아가고 앱이 종료되는 비대칭이
+ * 있었다. go(tab)가 매 호출마다 이 함수로 홈 진입용 history entry를 push/pop할지 판정한다. */
+test('tabNavAction: 홈→비홈 최초 진입이면 push(entry를 쌓음)', () => {
+  assert.strictEqual(sandbox.tabNavAction('ledger', false), 'push');
+  assert.strictEqual(sandbox.tabNavAction('assets', false), 'push');
+  assert.strictEqual(sandbox.tabNavAction('menu', false), 'push');
+});
+test('tabNavAction: entry가 이미 쌓인 채로 다른 비홈 탭으로 또 전환하면 none(재사용, 또 안 쌓음)', () => {
+  assert.strictEqual(sandbox.tabNavAction('assets', true), 'none');
+  assert.strictEqual(sandbox.tabNavAction('plan', true), 'none');
+});
+test('tabNavAction: entry가 쌓인 채로 홈 복귀면 pop(그 entry를 소비)', () => {
+  assert.strictEqual(sandbox.tabNavAction('home', true), 'pop');
+});
+test('tabNavAction: entry가 없는데 홈이면(이미 홈이거나 entry를 이미 소비) none', () => {
+  assert.strictEqual(sandbox.tabNavAction('home', false), 'none');
+});
+
+/* ---------- go(tab)/popstate: 위 tabNavAction 판정이 실제로 history.pushState/back과 연결돼
+ * 있는지(소스 패턴 대조) — go/popstate 리스너는 DOM API(history)를 직접 쓰므로 vm 실행 대상인
+ * FUNCTIONS 목록에 넣지 않고(다른 테스트들의 sandbox.go는 스파이로 남겨둠), 실제 배선이 빠지지
+ * 않았는지만 원본 텍스트로 확인한다. */
+test('go(tab): tabNavAction 판정에 따라 history.pushState/back이 호출되도록 배선돼 있다', () => {
+  const body = extractFunction('go');
+  assert.ok(body.includes('tabNavAction(tab,_tabNavPushed)'), 'go(tab)가 tabNavAction으로 판정하지 않음');
+  assert.ok(/push.*history\.pushState\(\{tabNav:true\},''\)/.test(body), "'push' 판정 시 history.pushState가 호출되지 않음");
+  assert.ok(/pop.*history\.back\(\)/.test(body), "'pop' 판정 시 history.back()이 호출되지 않음");
+});
+test('popstate: _ovHistDepth가 0이고 _tabNavPushed면 진짜 백버튼으로 간주해 go(\'home\')으로 복귀한다', () => {
+  assert.ok(src.includes("if(_tabNavPushed){_tabNavPushed=false;go('home');}"), 'popstate 리스너에 _tabNavPushed 소비 후 go(\'home\') 호출이 없음');
+});
+
 /* ---------- sbErrMsg: Supabase 에러 메시지 매핑 (app-evolve cycle98 advance: 비밀번호 변경/재설정 추가) ----------
  * changePassword/resetPassword가 추가되면서 signUp/signIn 흐름에는 없던 두 메시지("기존과 같은
  * 비밀번호"·"요청 빈도 제한")가 새로 생겼다. 이 둘은 generic한 /password/i 분기보다 앞에 있어야 하는데,
