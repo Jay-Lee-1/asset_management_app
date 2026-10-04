@@ -149,7 +149,7 @@ const FUNCTIONS = [
   'ledgerSelPartial', 'ledgerToggleSel', 'ledgerSelAll', 'visibleTx',
   'fmtDot', 'splitHist', 'histRow', 'histTotHTML', 'updateHist', 'renderHistory',
   'lowestInMonth', 'planBalInner', 'planBalCard', 'planTrackHTML', 'planRowsHTML', 'renderPlan',
-  'refreshPlanBody', 'planAsset', 'nextGroupOrder', 'movedGroupOrder', 'moveGroup', 'monthSwipeCommitDir', 'overlayEscapeTarget', 'recFreq',
+  'refreshPlanBody', 'planAsset', 'nextGroupOrder', 'movedGroupOrder', 'moveGroup', 'movedAssetOrder', 'moveAsset', 'monthSwipeCommitDir', 'overlayEscapeTarget', 'recFreq',
   'planSplitTransfer', 'planTransfer',
   'sbErrMsg',
 ];
@@ -8748,15 +8748,35 @@ test('renderAssets: 자산이 있으면 그룹 타이틀과 자산 카드가 실
   assert.ok(html.includes('주계좌'), '자산 이름이 렌더돼야 함');
   assert.ok(!html.includes('아직 등록한 자산이 없어요'));
 });
-test('renderAssets: 편집 모드(ST.editAssets)에서는 드래그용 그룹 목록이 렌더된다', () => {
-  setupAssetsDB();
-  sandbox.DB.assets = [{ id: 'a1', name: '주계좌', owner: '나', type: 'cash', order: 0, includeInTotal: true, baseAmount: 500000 }];
+test('renderAssets: 편집 모드(ST.editAssets)에서는 드래그용 그룹 목록이 렌더되고, assetSort가 custom이면 그룹 헤더 아래 개별 자산 위/아래 버튼도 함께 렌더된다(app-evolve cycle134 advance 전에는 그룹만 나왔음)', () => {
+  setupAssetsDB(); // setupAssetsDB()는 assetSort:'custom'
+  sandbox.DB.assets = [
+    { id: 'a1', name: '주계좌', owner: '나', type: 'cash', order: 0, includeInTotal: true, baseAmount: 500000 },
+    { id: 'a2', name: '비상금', owner: '나', type: 'cash', order: 1, includeInTotal: true, baseAmount: 100000 },
+  ];
   sandbox.ST.editAssets = true;
   sandbox.renderAssets();
   const html = sandbox.pageAssetsEl.innerHTML;
   assert.ok(html.includes('id="dragList"'), '편집 모드에서는 그룹 순서 드래그 목록이 렌더돼야 함');
-  assert.ok(html.includes('1개 자산'), '그룹별 자산 개수가 렌더돼야 함');
-  assert.ok(!html.includes('주계좌'), '편집 모드에서는 개별 자산 카드 대신 그룹만 나와야 함');
+  assert.ok(html.includes('2개 자산'), '그룹별 자산 개수가 렌더돼야 함');
+  assert.ok(html.includes('주계좌') && html.includes('비상금'), 'custom 정렬에서는 그룹 안 개별 자산 이름도 나와야 함');
+  assert.ok(html.includes("onclick=\"moveAsset('a1',1)\""), '첫 자산은 아래로 이동 버튼이 있어야 함');
+  assert.ok(html.includes("onclick=\"moveAsset('a2',-1)\""), '둘째 자산은 위로 이동 버튼이 있어야 함');
+  const firstUpBtn = html.indexOf("moveAsset('a1',-1)");
+  const lastDnBtn = html.indexOf("moveAsset('a2',1)");
+  assert.ok(html.slice(firstUpBtn, firstUpBtn + 40).includes('disabled'), '그룹 안 첫 자산의 위로 버튼은 disabled여야 함');
+  assert.ok(html.slice(lastDnBtn, lastDnBtn + 40).includes('disabled'), '그룹 안 마지막 자산의 아래로 버튼은 disabled여야 함');
+});
+test('renderAssets: 편집 모드에서 assetSort가 custom이 아니면(예: amount) 그룹 내 개별 자산 버튼은 렌더되지 않는다(a.order가 화면에 반영 안 돼 버튼이 무의미하므로)', () => {
+  setupAssetsDB();
+  sandbox.DB.settings.assetSort = 'amount';
+  sandbox.DB.assets = [{ id: 'a1', name: '주계좌', owner: '나', type: 'cash', order: 0, includeInTotal: true, baseAmount: 500000 }];
+  sandbox.ST.editAssets = true;
+  sandbox.renderAssets();
+  const html = sandbox.pageAssetsEl.innerHTML;
+  assert.ok(html.includes('id="dragList"'));
+  assert.ok(!html.includes('주계좌'), 'custom이 아니면 개별 자산 이름/버튼이 나오지 않아야 함');
+  assert.ok(!html.includes('asset-sub-list'));
 });
 test('renderAssets: 멀티셀렉트 모드(ST.aSel.mode)에서는 선택 체크마크가 렌더된다', () => {
   setupAssetsDB();
@@ -9452,6 +9472,41 @@ test('movedGroupOrder: 화면에 없는(자산 0개) 숨김 그룹은 기존 순
     sandbox.movedGroupOrder(existing, visible, 'cash', -1),
     ['cash', 'stock', 'savings', 'realestate', 'debt']
   );
+});
+
+/* ---------- movedAssetOrder: '사용자 정의순'일 때 그룹 '안'의 개별 자산을 재배열하는 .asset-sub-row
+ * 위/아래 버튼(moveAsset())이 쓰는 순수 로직 (app-evolve cycle134 advance). movedGroupOrder와 똑같이
+ * 인접 교환(swap)만 하지만, 대상이 "화면에 보이는 그룹들"이 아니라 "한 그룹 안의 자산 id들"이고
+ * 반환값도 순서 배열이 아니라 {id:순번} order 맵이라는 점이 다르다(moveAsset()이 이 맵의 값만
+ * 해당 자산들의 a.order에 대입하므로 다른 그룹 자산의 order는 전혀 건드리지 않는다). */
+// vm 컨텍스트에서 만든 객체 리터럴은 메인 realm 리터럴과 deepStrictEqual 비교 시
+// "same structure but not reference-equal"로 실패하므로(cycle131 advance에서 처음 발견한 realm 경계
+// 문제와 동일) 필드별 strictEqual로 비교한다.
+test('movedAssetOrder: 중간 항목을 위로 이동하면 바로 앞 항목과 자리를 바꾼다', () => {
+  const ids = ['a1', 'a2', 'a3'];
+  const map = sandbox.movedAssetOrder(ids, 'a2', -1);
+  assert.strictEqual(map.a2, 0);
+  assert.strictEqual(map.a1, 1);
+  assert.strictEqual(map.a3, 2);
+});
+test('movedAssetOrder: 중간 항목을 아래로 이동하면 바로 뒤 항목과 자리를 바꾼다', () => {
+  const ids = ['a1', 'a2', 'a3'];
+  const map = sandbox.movedAssetOrder(ids, 'a2', 1);
+  assert.strictEqual(map.a1, 0);
+  assert.strictEqual(map.a3, 1);
+  assert.strictEqual(map.a2, 2);
+});
+test('movedAssetOrder: 맨 위 항목을 위로, 맨 아래 항목을 아래로 이동하려 하면(경계) null을 반환한다', () => {
+  const ids = ['a1', 'a2', 'a3'];
+  assert.strictEqual(sandbox.movedAssetOrder(ids, 'a1', -1), null);
+  assert.strictEqual(sandbox.movedAssetOrder(ids, 'a3', 1), null);
+});
+test('movedAssetOrder: 반환된 order 맵은 넘겨준 ids(그 그룹 안 자산들)에만 있고, 다른 그룹 자산의 order엔 영향이 없다(moveAsset()이 groupItems(type)으로 같은 타입만 넘기므로)', () => {
+  const ids = ['cash1', 'cash2']; // 다른 타입(stock 등) 자산 id는 애초에 이 배열에 들어오지 않는다
+  const map = sandbox.movedAssetOrder(ids, 'cash1', 1);
+  assert.strictEqual(map.cash2, 0);
+  assert.strictEqual(map.cash1, 1);
+  assert.strictEqual(Object.keys(map).sort().join(','), ids.slice().sort().join(','));
 });
 
 /* ---------- nwClampIdx: Assets 탭 귀속(나/배우자/공용/전체) 캐러셀의 점 클릭/화살표 키가 쓰는

@@ -328,6 +328,10 @@ html[data-theme="dark"] .alloc-bar i+i::before{background:var(--bg);opacity:.9}
 .grp-move-btn svg{width:15px;height:15px}
 .grp-move-btn:disabled{opacity:.3;cursor:default}
 .grp-move-btn:active:not(:disabled){background:var(--surface-2)}
+.asset-sub-list{border-top:1px dashed var(--line)}
+.asset-sub-row{display:flex;align-items:center;gap:10px;padding:9px 16px 9px 40px}
+.asset-sub-row+.asset-sub-row{border-top:1px solid var(--line)}
+.asset-sub-row .nmt{font-size:13px;font-weight:600;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 .summary{display:flex;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);box-shadow:var(--sh-sm);padding:12px 2px;margin-bottom:14px}
 .summary>button{flex:1;text-align:center;position:relative;padding:4px 0;border-radius:12px}
@@ -1305,7 +1309,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.37';
+const APP_VERSION='1.47.38';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2833,12 +2837,15 @@ function wireNwCarousel(){
 }
 function assetBodyHTML(){
  let body='';
- if(ST.editAssets){ /* 편집: 자산 종류 그룹 순서 드래그 */
+ if(ST.editAssets){ /* 편집: 자산 종류 그룹 순서 드래그 (+ '사용자 정의순'일 땐 그룹 내 자산 순서도 버튼으로) */
+   const customSort=DB.settings.assetSort==='custom'; /* amount/name/owner 정렬일 땐 a.order가 화면에 반영 안 돼 버튼이 무의미함 */
    body=`<div class="card" id="dragList">`+DB.settings.groupOrder.filter(t=>DB.assets.some(a=>a.type===t)).map((t,i,arr)=>{
      const items=DB.assets.filter(a=>a.type===t);
      const sum=items.filter(a=>a.includeInTotal).reduce((s,a)=>s+(a.type==='debt'?-assetEval(a):assetEval(a)),0);
      const ty=ASSET_TYPES[t];
-     return `<div class="asset-item" data-type="${t}">
+     const assetRows=customSort?groupItems(t):[];
+     return `<div class="asset-item" data-type="${t}" style="display:block;padding:0">
+       <div style="display:flex;align-items:center;gap:13px;padding:14px 16px">
        <div class="drag-handle" data-drag="${t}">${svg('grip')}</div>
        <div class="avatar ${ty.cls}" style="width:40px;height:40px">${svg(ty.icon)}</div>
        <div style="flex:1"><div class="nm">${ty.label}</div><div class="sub">${items.length}개 자산</div></div>
@@ -2846,7 +2853,14 @@ function assetBodyHTML(){
          <button type="button" class="grp-move-btn" aria-label="${esc(ty.label)} 위로 이동" onclick="moveGroup('${t}',-1)"${i===0?' disabled':''}>${svg('arrowUp')}</button>
          <button type="button" class="grp-move-btn" aria-label="${esc(ty.label)} 아래로 이동" onclick="moveGroup('${t}',1)"${i===arr.length-1?' disabled':''}>${svg('arrowDn')}</button>
        </div>
-       <div class="val"><div class="k num ${t==='debt'?'minus':''}">${won(sum)}</div></div></div>`;
+       <div class="val"><div class="k num ${t==='debt'?'minus':''}">${won(sum)}</div></div>
+       </div>${assetRows.length?`<div class="asset-sub-list">${assetRows.map((a,ai,aarr)=>`<div class="asset-sub-row">
+         <div class="avatar ${ty.cls}" style="width:26px;height:26px">${svg(ty.icon)}</div>
+         <div style="flex:1;min-width:0"><span class="nmt">${esc(a.name)}</span></div>
+         <div class="grp-move">
+           <button type="button" class="grp-move-btn" aria-label="${esc(a.name)} 위로 이동" onclick="moveAsset('${a.id}',-1)"${ai===0?' disabled':''}>${svg('arrowUp')}</button>
+           <button type="button" class="grp-move-btn" aria-label="${esc(a.name)} 아래로 이동" onclick="moveAsset('${a.id}',1)"${ai===aarr.length-1?' disabled':''}>${svg('arrowDn')}</button>
+         </div></div>`).join('')}</div>`:''}</div>`;
    }).join('')+`</div>`;
  }else{
    DB.settings.groupOrder.forEach(t=>{
@@ -2907,7 +2921,7 @@ function renderAssets(){
  requestAnimationFrame(fitAll);
 }
 function openSortSheet(){
- const opts=[['custom','사용자 정의순','그룹 내 등록 순서 유지'],['amount','금액순',''],['owner','귀속순',''],['name','이름순','']];
+ const opts=[['custom','사용자 정의순','편집 모드에서 그룹 내 순서를 직접 바꿀 수 있어요'],['amount','금액순',''],['owner','귀속순',''],['name','이름순','']];
  openSheet(`<h3>정렬 기준</h3><div class="desc">각 자산 종류 그룹 안의 정렬 기준이에요</div><div class="opt-list">${opts.map(([v,l,s])=>`<button class="${DB.settings.assetSort===v?'on':''}" onclick="DB.settings.assetSort='${v}';save();closeSheet();renderAssets()"><span class="rd"></span><div><div>${l}</div>${s?`<div class="ol-sub">${s}</div>`:''}</div></button>`).join('')}</div>`);
 }
 /* 삭제될 자산(들)을 참조하는 '활성' 반복거래를 찾는다 — id 하나 또는 Set<id> 둘 다 받는다.
@@ -3077,6 +3091,28 @@ function movedGroupOrder(existingOrder,visibleTypes,type,dir){
 function moveGroup(type,dir){
  const visible=DB.settings.groupOrder.filter(t=>DB.assets.some(a=>a.type===t));
  DB.settings.groupOrder=movedGroupOrder(DB.settings.groupOrder,visible,type,dir);
+ save();renderAssets();
+}
+/* movedGroupOrder와 같은 모양의 순수 함수 — '사용자 정의순'일 때 그룹 '안'의 개별 자산을 재배열하는
+ * .asset-sub-row 위/아래 버튼(moveAsset())이 쓴다(app-evolve cycle134 advance). ids는 그 그룹 안
+ * 자산들의 현재 표시 순서(groupItems(type)에서 뽑은 id 배열)이고, 반환값은 그 id들만 담은
+ * {id:0,1,2...} order 맵이라 다른 그룹 자산의 order는 전혀 건드리지 않는다. */
+function movedAssetOrder(ids,id,dir){
+ const arr=ids.slice();const i=arr.indexOf(id),j=i+dir;
+ if(i<0||j<0||j>=arr.length)return null;
+ [arr[i],arr[j]]=[arr[j],arr[i]];
+ const map={};arr.forEach((aid,idx)=>map[aid]=idx);
+ return map;
+}
+function moveAsset(id,dir){
+ const a=DB.assets.find(x=>x.id===id);if(!a)return;
+ const ids=groupItems(a.type).map(x=>x.id);
+ const map=movedAssetOrder(ids,id,dir);
+ if(!map)return;
+ Object.keys(map).forEach(aid=>{
+  const asset=DB.assets.find(x=>x.id===aid);
+  if(asset){asset.order=map[aid];touch(asset)}
+ });
  save();renderAssets();
 }
 
