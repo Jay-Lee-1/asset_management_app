@@ -1,7 +1,11 @@
 {
   "cycle": 138,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "탭 전환이 안드로이드 백버튼 history 스택에 참여하지 않음 — 비홈 탭에서 뒤로가기 시 PWA가 바로 종료됨",
+    "why": "manifest.webmanifest display:standalone인 실제 설치형 PWA. index.html:5633-5658에 '안드로이드 백버튼이 시트·날짜피커를 닫는 대신 앱을 종료시키던 문제'를 고친 _ovHistDepth/ovHistPush()/popstate 리스너가 있으나 이는 오버레이(시트/dpModal/dpWheel)에만 적용되고, 탭 전환 go(tab)/navGo(t)(6813-6831, 6835)는 history.pushState를 전혀 호출하지 않는다. popstate 리스너는 _ovHistDepth<=0이면 즉시 return(5654)하므로 시트가 안 열린 상태에서 자산관리/가계부/전체내역/플랜/메뉴 등 비홈 탭에서 뒤로가기를 누르면 홈으로 안 돌아가고 브라우저 기본 동작대로 앱이 종료된다 — 바로 이 코드가 고치려던 것과 동일한 버그 클래스가 탭 레벨엔 미적용인 비대칭. test/run.js에 popstate/ovHistPush/navGo 매칭 0건으로 미검증 상태.",
+    "approach": "(1) logic.js 또는 index.html에 순수 판정 함수(예: tabBackTarget(curTab, tabNavPushed) 유사) 추가해 테스트 가능하게 분리. (2) go(tab)에 _tabNavPushed 1단 플래그를 둬서 home→비home 최초 진입 시 ovHistPush()와 동일한 방식(try{history.pushState({tabNav:true},'')}catch(e){})으로 엔트리 1개만 쌓고, 홈 탭을 직접 누르면 ovHistPop()과 동일하게 history.back()으로 그 엔트리 소비(_ovHistSuppress 재사용 관례 그대로). (3) popstate 리스너에서 _ovHistDepth>0이면 기존 오버레이 처리 그대로 두고, 아니고 _tabNavPushed면 go('home')으로 리다이렉트 후 플래그 해제 — 오버레이가 탭 위에 열려 있으면 history 스택 순서상 오버레이 엔트리가 나중에 쌓이므로 자연히 먼저 소비돼 두 스택을 합칠 필요 없음. DB 스키마 변경 없음(런타임 UI 상태일 뿐 DB에 저장 안 함) — migrate()/mergeRemoteDataIntoLocal()/sanitizeBackup() 교차배선 불필요."
+  },
   "history": [
     {
       "cycle": 133,
@@ -141,6 +145,13 @@
       "phase": "review",
       "timestamp": "2026-10-04T18:10:00.000Z",
       "summary": "develop 커밋(e643175, 메뉴의 동작 없는 \"Pro로 업그레이드\" 프로모 카드 제거)을 검토. git show로 전체 diff 확인: renderMenu()에서 .promo div 제거, 전용 CSS 3줄(.promo/.promo .pt/.promo .ps/.promo .go) 및 공용 트랜지션/active 선택자 목록(144/147행)에 섞여 있던 .promo .go 참조 2곳까지 함께 제거됨을 확인. grep으로 index.html 전체에 \"promo\" 문자열이 완전히 사라졌음을 재확인(죽은 CSS/참조 잔존 없음). renderMenu() 주변 구조(acct-card div 닫힘, groups.map 직후 이어지는 템플릿 리터럴)를 직접 Read해 마크업이 깨지지 않았음을 확인. 결제 백엔드 부재(README/netlify functions엔 stock.js·rates.js뿐) 판단도 타당. 새 회귀 테스트(.promo 클래스/toast('Pro 안내')/문구 부재 검사)도 적절. node test/run.js 재실행 938/938 통과. 코드 변경 없음(이상 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 138,
+      "phase": "critique",
+      "timestamp": "2026-10-04T19:00:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(138사이클 동안 다뤄진 항목 전부 제외 지시: Enter-to-submit 시리즈/touchSave 구조적 가드/지출분석 drill-down/문의하기 dead end+sanitizeBackup 검증/자산 그룹 내 개별 재배열/DB 병합 누락 수정 5건/순자산 추이 기간선택+탭/날짜선택기 접근성/선택모드 일괄 카테고리 변경/assetQtyLog/Pro 프로모 카드 제거 포함, 기각 이력도 전달). 새로 발견 후 직접 재검증: manifest.webmanifest display:standalone인 설치형 PWA에서, index.html:5633-5658의 _ovHistDepth/ovHistPush()/popstate 메커니즘(안드로이드 백버튼이 시트/날짜피커를 닫는 대신 앱을 종료시키던 문제를 고치려고 만든 것)이 오버레이에만 적용되고 탭 전환 go(tab)/navGo(t)(6813-6831, 6835)는 history.pushState를 전혀 호출하지 않아, popstate 리스너가 _ovHistDepth<=0이면 즉시 return(5654)함을 확인 — 비홈 탭(자산관리/가계부/전체내역/플랜/메뉴)에서 시트가 안 열린 채 뒤로가기를 누르면 홈으로 안 돌아가고 앱이 그대로 종료되는, 바로 그 수정이 의도한 버그 클래스의 미적용 비대칭. test/run.js에 popstate/ovHistPush/navGo 매칭 0건으로 미검증임도 확인. pending_advance_plan에 go(tab)용 _tabNavPushed 1단 history 플래그 + 순수 판정 함수 + popstate 라우팅(오버레이 우선순위 유지) 저장(상세는 pending_advance_plan 참고). DB 스키마 변경 없음(런타임 상태라 교차배선 불필요). 러너업(기각): 월 네비게이션 화살표 부재(휠피커가 이미 키보드 접근 가능해 dead end 아님) / 카테고리 관리 순서 재배열 UI 부재(구체적 불편 사례 없어 추측성) / .ad-slot의 죽은 \"Pro\" 문자열(SHOW_AD=false로 비노출, trivial) / 로컬 전용 이메일 인증 클라이언트 우회 가능성(앱 잠금과 동일한 '클라이언트 사이드 보안 경계' 테마로 재기각) / netlify stock.js·rates.js 폴백(cycle103에서 이미 충분). 코드 변경 없음(읽기 전용 조사, 서브에이전트가 index.html 1440-1482·1887-1963·1990-2035·2125-2164·2260-2300·2630-2720·3471-3560·4366-4520·5620-5680·5800-5870·5979-6115·6668-6710·6813-6845·6941-6966·7151-7187, logic.js 전체, netlify/functions/stock.js 전체를 직접 Read/grep으로 재확인).",
       "commit": null
     }
   ]
