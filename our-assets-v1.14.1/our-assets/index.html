@@ -582,8 +582,13 @@ body.dp-open .page{overflow:hidden}
   box-shadow:0 10px 30px rgba(20,25,22,.26),var(--glass-sh);transition:transform .38s var(--bounce)}
 .sbb svg{width:16px;height:16px}
 .sbb-all{background:var(--glass-panel);color:var(--text)}
+.sbb-cat{background:var(--glass-panel);color:var(--text)}
 .sbb-del{background:var(--expense);color:#fff;border-color:var(--glass-border)}
 .sbb:active{transform:scale(.95)}
+/* 선택바에 카테고리 버튼까지 4개(전체선택/카테고리/닫기/삭제)가 들어가는 lSel/hist 모드에선
+   min-width 114px 고정으로 좁은 화면에서 넘칠 수 있어, 그 모드에서만 폭을 콘텐츠에 맞게
+   줄인다(app-evolve cycle136 advance) */
+.selbar-bottom.has-cat .sbb{min-width:0;padding:0 12px;font-size:13px}
 .sbb-x{width:46px;height:46px;flex-shrink:0;border-radius:50%;display:grid;place-items:center;color:var(--text-2);
   background:var(--glass-panel);-webkit-backdrop-filter:saturate(180%) blur(30px);backdrop-filter:saturate(180%) blur(30px);
   border:1px solid var(--glass-border);box-shadow:0 8px 24px rgba(20,25,22,.2);transition:transform .38s var(--bounce)}
@@ -1313,7 +1318,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.41';
+const APP_VERSION='1.47.42';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3547,6 +3552,7 @@ function ledgerSelAll(){const items=dayTxns(ST.ledger.sel).filter(visibleTx).fil
 function ledgerDelSel(){if(!ST.lSel.ids.size){toast('선택된 내역이 없어요');return}
  confirmSheet('선택 삭제',`<b style="color:var(--expense);font-size:16px">${ST.lSel.ids.size}개</b> 내역을 삭제할까요?`,'삭제',()=>{
   const ids=new Set(ST.lSel.ids);ST.lSel.mode=false;ST.lSel.ids.clear();deleteTxnsUndo(ids)});}
+function ledgerCatSel(){bulkCatPickFor(new Set(ST.lSel.ids),()=>{ST.lSel.mode=false;ST.lSel.ids.clear();renderLedger()})}
 function sumTap(kind){ /* 요약 탭 → 전체내역 (해당 월 + 종류 필터) */
  const _y=ST.ledger.y,_m=ST.ledger.m;ST.hist.range={from:monthStartStr(_y,_m),to:monthEndStr(_y,_m)};ST.hist.preset='custom';
  ST.hist.cat=kind==='전체'?'전체':kind;ST.hist.q='';ST.hist.assetId=null;ST.hist.catExact=null;ST.hist.owner='전체';ST.hist.selMode=false;ST.hist.sel.clear();histInvalidate();
@@ -4218,6 +4224,7 @@ function histSelAll(){const items=filteredHist().filter(t=>!t.isRec);if(items.le
 function histDelSel(){if(!ST.hist.sel.size){toast('선택된 내역이 없어요');return}
  confirmSheet('선택 삭제',`<b style="color:var(--expense);font-size:16px">${ST.hist.sel.size}개</b> 내역을 삭제할까요?`,'삭제',()=>{
   const ids=new Set(ST.hist.sel);ST.hist.selMode=false;ST.hist.sel.clear();deleteTxnsUndo(ids)});}
+function histCatSel(){bulkCatPickFor(new Set(ST.hist.sel),()=>{ST.hist.selMode=false;ST.hist.sel.clear();updateHist()})}
 /* ================= PLAN ================= */
 function lowestInMonth(assetId,y,m){ /* 그 달 중 잔액이 가장 낮은 날 */
  const st=monthStartStr(y,m),en=monthEndStr(y,m);
@@ -6557,6 +6564,19 @@ function deleteTxnsUndo(ids){if(twGuard())return;const removed=DB.txns.filter(t=
  DB.deletedIds=DB.deletedIds||{};const now=Date.now();ids.forEach(id=>DB.deletedIds[id]=now);
  save();renderCurrent();
  undoToast(`${removed.length}개 내역을 삭제했어요`,()=>{DB.txns.push(...removed);ids.forEach(id=>delete DB.deletedIds[id]);touchSave(...removed);renderCurrent();toast('되돌렸어요')})}
+/* 선택 모드(일별거래/전체내역)의 '카테고리' 버튼이 피커에서 고른 카테고리를 실제로 적용하는
+ * 지점(app-evolve cycle136 advance). bulkCatPickFor()가 이미 bulkCatTargets()로 검증해 넘긴
+ * ids/cat만 다루므로 여기선 재검증 없이 바로 적용. doRenameCat()과 동일한 memo-follows-category
+ * 관례(메모가 이전 카테고리명과 같았다면 자동 채움으로 보고 메모도 같이 옮김)를 따르고,
+ * deleteTxnsUndo와 동일하게 touchSave(...)로 한 번에 touch+save한 뒤 undoToast로 되돌릴 수 있게 한다. */
+function doBulkCat(ids,cat){if(twGuard())return;
+ const r=bulkCatTargets(DB.txns,ids);if(!r.ok)return;
+ const items=r.items,prev=items.map(t=>({category:t.category,memo:t.memo}));
+ items.forEach(t=>{if(t.memo===t.category)t.memo=cat;t.category=cat});
+ touchSave(...items);renderCurrent();
+ undoToast(`${items.length}개 카테고리를 변경했어요`,()=>{
+  items.forEach((t,i)=>{t.category=prev[i].category;t.memo=prev[i].memo});
+  touchSave(...items);renderCurrent();toast('되돌렸어요')})}
 function deleteRecsUndo(ids){if(twGuard())return;const removed=DB.recurrences.filter(r=>ids.has(r.id));
  DB.recurrences=DB.recurrences.filter(r=>!ids.has(r.id));
  DB.deletedIds=DB.deletedIds||{};const now=Date.now();ids.forEach(id=>DB.deletedIds[id]=now);
@@ -6663,6 +6683,16 @@ function pkPickCat(c){
  }
  const f=window._pkPick;window._pkPick=null;window._pkBack=null;if(f)f(c);
 }
+/* ledgerCatSel()/histCatSel()이 선택바의 '카테고리' 버튼에서 호출 — bulkCatTargets()로 먼저
+ * 검증해 실패 사유별 토스트를 보여주거나(선택 없음/이체 포함/종류 혼합), 통과하면 단건 카테고리
+ * 변경과 동일한 openCatPicker()를 띄워 고른 카테고리를 doBulkCat()으로 적용한다(app-evolve
+ * cycle136 advance). 이 피커는 폼 시트 위에 열리는 _applyOpenCat()과 달리 되돌아갈 이전 시트가
+ * 없는 단독 호출이라 onPick에서 직접 closeSheet()로 닫아야 한다. */
+function bulkCatPickFor(ids,afterApply){
+ const r=bulkCatTargets(DB.txns,ids);
+ if(!r.ok){toast(r.reason==='transfer'?'이체 내역은 카테고리를 바꿀 수 없어요':r.reason==='mixed'?'같은 종류의 내역만 한번에 바꿀 수 있어요':'선택된 내역이 없어요');return}
+ openCatPicker({kind:r.kind,current:null,onPick:c=>{closeSheet();doBulkCat(ids,c);if(afterApply)afterApply()}});
+}
 
 /* ================= ROUTER ================= */
 const renderers={home:renderHome,assets:renderAssets,ledger:renderLedger,history:renderHistory,plan:renderPlan,menu:renderMenu};
@@ -6677,16 +6707,21 @@ function renderCurrent(){
  }
 }
 function activeSel(){
+ /* cat(일괄 카테고리 변경)은 자산목록(aSel)엔 없음 — 자산엔 "카테고리" 개념이 아니라 종류/귀속이
+    있고, 그 변경은 이미 자산 수정 시트에서 건당 처리되므로 선택삭제와 짝지을 대상이 아님.
+    일별거래(lSel)/전체내역(hist)만 카테고리가 있는 거래를 다룬다(app-evolve cycle136 advance). */
  if(ST.aSel.mode)return{all:'assetSelAll()',del:'assetDelSel()',size:ST.aSel.ids.size,total:visibleAssetsForSel().length};
- if(ST.lSel.mode)return{all:'ledgerSelAll()',del:'ledgerDelSel()',size:ST.lSel.ids.size,total:dayTxns(ST.ledger.sel).filter(visibleTx).filter(t=>!t.isRec).length};
- if(ST.hist.selMode)return{all:'histSelAll()',del:'histDelSel()',size:ST.hist.sel.size,total:filteredHist().filter(t=>!t.isRec).length};
+ if(ST.lSel.mode)return{all:'ledgerSelAll()',del:'ledgerDelSel()',cat:'ledgerCatSel()',size:ST.lSel.ids.size,total:dayTxns(ST.ledger.sel).filter(visibleTx).filter(t=>!t.isRec).length};
+ if(ST.hist.selMode)return{all:'histSelAll()',del:'histDelSel()',cat:'histCatSel()',size:ST.hist.sel.size,total:filteredHist().filter(t=>!t.isRec).length};
  return null;
 }
 function updateSelBottom(){const el=$('selBarBottom');if(!el)return;const s=activeSel();
  document.body.classList.toggle('selmode',!!s);
  if(!s){el.classList.remove('show');return}
  const allOn=s.total>0&&s.size>=s.total;
+ el.classList.toggle('has-cat',!!s.cat);
  el.innerHTML=`<button class="sbb sbb-all" onclick="${s.all}">${allOn?'전체 해제':'전체 선택'}</button>`
+  +(s.cat?`<button class="sbb sbb-cat" onclick="${s.cat}">${svg('tag')} 카테고리</button>`:'')
   +`<button class="sbb-x" onclick="exitSelMode()" aria-label="선택 취소">${svg('x')}</button>`
   +`<button class="sbb sbb-del" onclick="${s.del}">${svg('trash')} 삭제${s.size?' '+s.size:''}</button>`;
  el.classList.add('show');

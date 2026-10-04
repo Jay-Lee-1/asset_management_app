@@ -345,6 +345,24 @@ function csvDedupeKey(t){
   t.memo||''].join('|');
 }
 
+/* 선택 모드(일별거래/전체내역)에서 고른 거래들에 카테고리 일괄 변경을 적용할 수 있는지 판정한다
+ * (app-evolve cycle136 critique/advance — activeSel()/updateSelBottom()이 전체선택/닫기/삭제
+ * 3개뿐이라 일괄 카테고리 변경 경로가 없던 공백 해소). 선택이 비었거나 ids가 실제 거래와 하나도
+ * 안 맞으면 reason:'empty', transfer가 하나라도 섞이면 reason:'transfer'(이체는 category가 없는
+ * 종류라 카테고리 피커 대상이 아님 — catListOf('transfer')도 항상 []), type(expense/income/saving)이
+ * 섞여 있으면 reason:'mixed'(카테고리 집합이 종류별로 달라 하나의 피커로 고를 수 없음). 통과하면
+ * {ok:true,kind,items}로 피커에 넘길 종류와 실제 적용 대상 거래 배열을 돌려준다. */
+function bulkCatTargets(txns,ids){
+ const idSet=ids instanceof Set?ids:new Set(ids||[]);
+ if(!idSet.size)return{ok:false,reason:'empty'};
+ const items=(txns||[]).filter(t=>idSet.has(t.id));
+ if(!items.length)return{ok:false,reason:'empty'};
+ if(items.some(t=>t.type==='transfer'))return{ok:false,reason:'transfer'};
+ const kind=items[0].type;
+ if(items.some(t=>t.type!==kind))return{ok:false,reason:'mixed'};
+ return{ok:true,kind,items};
+}
+
 /* ================= CAROUSEL INDEX (순수) ================= */
 /* wireNwCarousel()의 클론-루프 스크롤 스냅과 동일한 경계 규칙으로, 화살표 키/점 클릭이 요청한
  * 인덱스를 실제 카드 인덱스로 정규화한다. loop(카드가 2장 이상이라 앞뒤에 클론을 붙인 경우)면

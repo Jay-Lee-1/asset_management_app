@@ -112,7 +112,7 @@ const FUNCTIONS = [
   'num', 'doRenameCat', 'doDeleteCat', 'totalBudgetSummary', 'budgetForMonth', 'setBudgetFrom', 'addCat',
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV',
   'unguardCsv', 'csvRowToImportTxn', 'buildImportPreview', 'doCsvImport',
-  'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo', 'unsnapshotAssetName',
+  'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo', 'unsnapshotAssetName', 'doBulkCat', 'bulkCatPickFor',
   'deletedAssetHistoryExists', 'relinkDeletedAsset',
   'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'restoreBackup', 'storageOutcomeMsg', 'shouldWarnUnpersisted', 'shouldWarnStorageSize', 'toggleRecActive', 'toggleAdjustSurplus', 'touchSave',
   'sanitizeAmount', 'sanitizeBackup',
@@ -441,7 +441,10 @@ const sandbox = {
   // no-op으로 흉내낸다.
   wireMonthCarousel: () => {},
   openSpendAnalysis: () => {},
-  closeSheet: () => {},
+  // bulkCatPickFor()의 onPick이 되돌아갈 이전 시트가 없는 피커를 직접 닫는 호출 — goCalls와
+  // 같은 이유(화면 전용)로 호출 여부만 기록하는 스파이로 흉내낸다.
+  closeSheetCalls: 0,
+  closeSheet: () => { sandbox.closeSheetCalls++; },
   // openAssetHistory/openCatHistory가 필터 세팅 후 부르는 탭 전환 — closeSheet와 같은 이유(화면
   // 전용, 이 함수들의 테스트 대상은 ST.hist/ST.ledger 필터 세팅뿐)로 호출 여부만 기록하는 스파이로
   // 흉내낸다.
@@ -3417,6 +3420,134 @@ test('deleteTxnsUndo: 튜토리얼 모드에서 막히면 deletedIds도 전혀 �
   sandbox.deleteTxnsUndo(new Set(['x1']));
   assert.strictEqual(sandbox.DB.deletedIds, undefined, '삭제가 막히면 deletedIds가 아예 생기지 않아야 함');
   sandbox.TWi = -1;
+});
+
+/* ---------- bulkCatTargets(logic.js)/doBulkCat/bulkCatPickFor: 선택 모드(일별거래/전체내역)
+   일괄 카테고리 변경 (app-evolve cycle136 advance — activeSel()/updateSelBottom()이 전체선택/닫기/
+   삭제 3개뿐이라 일괄 카테고리 변경 경로가 없던 공백 해소) ---------- */
+// vm 컨텍스트에서 만든 객체 리터럴은 메인 realm 리터럴과 deepStrictEqual 비교 시 "same
+// structure but not reference-equal"로 실패한다(cycle131에서 처음 발견한 realm 경계 문제와
+// 동일) — 필드별 strictEqual로 비교한다.
+test('bulkCatTargets: 선택이 비었으면 reason:empty', () => {
+  const txns = [{ id: 'a', type: 'expense', category: '식비' }];
+  const r = sandbox.bulkCatTargets(txns, new Set());
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.reason, 'empty');
+});
+test('bulkCatTargets: ids가 실제 거래와 하나도 안 맞아도 reason:empty', () => {
+  const txns = [{ id: 'a', type: 'expense', category: '식비' }];
+  const r = sandbox.bulkCatTargets(txns, new Set(['없는id']));
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.reason, 'empty');
+});
+test('bulkCatTargets: 선택에 이체가 하나라도 섞이면 reason:transfer(이체는 카테고리 개념이 없음)', () => {
+  const txns = [
+    { id: 'a', type: 'expense', category: '식비' },
+    { id: 'b', type: 'transfer' },
+  ];
+  const r = sandbox.bulkCatTargets(txns, new Set(['a', 'b']));
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.reason, 'transfer');
+});
+test('bulkCatTargets: 선택한 거래들의 종류(expense/income/saving)가 섞이면 reason:mixed', () => {
+  const txns = [
+    { id: 'a', type: 'expense', category: '식비' },
+    { id: 'b', type: 'income', category: '급여' },
+  ];
+  const r = sandbox.bulkCatTargets(txns, new Set(['a', 'b']));
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.reason, 'mixed');
+});
+test('bulkCatTargets: 같은 종류끼리만 선택하면 ok:true로 해당 거래들을 돌려준다', () => {
+  const a = { id: 'a', type: 'expense', category: '식비' };
+  const b = { id: 'b', type: 'expense', category: '교통' };
+  const c = { id: 'c', type: 'expense', category: '기타' }; // 선택 안 됨
+  const r = sandbox.bulkCatTargets([a, b, c], new Set(['a', 'b']));
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.kind, 'expense');
+  assert.deepStrictEqual(r.items, [a, b], '선택되지 않은 거래는 포함되지 않아야 함');
+});
+
+test('doBulkCat: 선택한 거래들의 카테고리를 바꾸고, 메모가 이전 카테고리명과 같았다면(자동 채움) 메모도 함께 옮긴다', () => {
+  sandbox.TWi = -1;
+  const t1 = { id: 'x1', type: 'expense', category: '식비', memo: '식비', updatedAt: 1 };
+  const t2 = { id: 'x2', type: 'expense', category: '식비', memo: '편의점 간식', updatedAt: 1 }; // 메모를 직접 입력한 경우
+  sandbox.DB = { txns: [t1, t2] };
+  sandbox.lastUndo = null;
+  sandbox.doBulkCat(new Set(['x1', 'x2']), '외식');
+  assert.strictEqual(t1.category, '외식');
+  assert.strictEqual(t1.memo, '외식', '메모가 카테고리명과 같았던 경우(자동 채움)엔 메모도 같이 이동해야 함');
+  assert.strictEqual(t2.category, '외식');
+  assert.strictEqual(t2.memo, '편의점 간식', '사용자가 직접 입력한 메모는 그대로 유지돼야 함');
+  assert.strictEqual(t1.updatedAt, 'test-updatedAt', 'touchSave로 touch()가 호출되어야 함(mergeCollection 동기화 불변식)');
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함');
+});
+test('doBulkCat: undo 콜백을 부르면 카테고리/메모를 정확히 원복한다', () => {
+  sandbox.TWi = -1;
+  const t1 = { id: 'x1', type: 'expense', category: '식비', memo: '식비', updatedAt: 1 };
+  sandbox.DB = { txns: [t1] };
+  sandbox.lastUndo = null;
+  sandbox.doBulkCat(new Set(['x1']), '외식');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(t1.category, '식비', '되돌리면 카테고리가 원래대로 복원되어야 함');
+  assert.strictEqual(t1.memo, '식비', '되돌리면 메모도 원래대로 복원되어야 함');
+});
+test('doBulkCat: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 바뀌지 않는다', () => {
+  sandbox.TWi = 0;
+  const t1 = { id: 'x1', type: 'expense', category: '식비' };
+  sandbox.DB = { txns: [t1] };
+  sandbox.doBulkCat(new Set(['x1']), '외식');
+  assert.strictEqual(t1.category, '식비');
+  sandbox.TWi = -1;
+});
+test('doBulkCat: bulkCatTargets이 실패(이체 포함/혼합/빈 선택)로 판정하면 아무 것도 바꾸지 않는다(bulkCatPickFor가 먼저 걸러내므로 여기선 안전망)', () => {
+  sandbox.TWi = -1;
+  const t1 = { id: 'x1', type: 'transfer' };
+  sandbox.DB = { txns: [t1] };
+  sandbox.lastUndo = null;
+  sandbox.doBulkCat(new Set(['x1']), '외식');
+  assert.strictEqual(t1.category, undefined, '이체는 category 자체가 없으니 손대면 안 됨');
+  assert.strictEqual(sandbox.lastUndo, null, 'undoToast도 호출되지 않아야 함');
+});
+
+test('bulkCatPickFor: 선택이 비어 있으면 안내 토스트만 띄우고 카테고리 피커를 열지 않는다', () => {
+  sandbox.DB = { txns: [] };
+  sandbox.lastPickerHtml = null;
+  sandbox.toastCalls = [];
+  sandbox.bulkCatPickFor(new Set(), () => {});
+  assert.strictEqual(sandbox.lastToast, '선택된 내역이 없어요');
+  assert.strictEqual(sandbox.lastPickerHtml, null, '피커를 열지 않아야 함');
+});
+test('bulkCatPickFor: 선택에 이체가 섞여 있으면 이체 전용 안내를 띄우고 피커를 열지 않는다', () => {
+  sandbox.DB = { txns: [{ id: 'a', type: 'transfer' }] };
+  sandbox.lastPickerHtml = null;
+  sandbox.bulkCatPickFor(new Set(['a']), () => {});
+  assert.strictEqual(sandbox.lastToast, '이체 내역은 카테고리를 바꿀 수 없어요');
+  assert.strictEqual(sandbox.lastPickerHtml, null);
+});
+test('bulkCatPickFor: 선택한 거래들의 종류가 섞여 있으면 안내를 띄우고 피커를 열지 않는다', () => {
+  sandbox.DB = { txns: [{ id: 'a', type: 'expense', category: '식비' }, { id: 'b', type: 'income', category: '급여' }] };
+  sandbox.lastPickerHtml = null;
+  sandbox.bulkCatPickFor(new Set(['a', 'b']), () => {});
+  assert.strictEqual(sandbox.lastToast, '같은 종류의 내역만 한번에 바꿀 수 있어요');
+  assert.strictEqual(sandbox.lastPickerHtml, null);
+});
+test('bulkCatPickFor: 유효한 선택이면 해당 종류의 카테고리 피커를 열고, 고르면 적용→시트 닫기→afterApply까지 이어진다', () => {
+  sandbox.TWi = -1;
+  const t1 = { id: 'x1', type: 'expense', category: '식비', memo: '식비', updatedAt: 1 };
+  sandbox.DB = { txns: [t1], categories: { expense: ['식비', '외식', '교통'] } };
+  sandbox.lastPickerHtml = null;
+  sandbox.closeSheetCalls = 0;
+  sandbox.lastUndo = null;
+  let afterApplyCalled = false;
+  sandbox.bulkCatPickFor(new Set(['x1']), () => { afterApplyCalled = true; });
+  assert.ok(sandbox.lastPickerHtml, '카테고리 피커(openCatPicker)가 열려야 함');
+  assert.strictEqual(typeof sandbox.window._pkPick, 'function', 'onPick 콜백이 피커에 전달되어야 함');
+  sandbox.window._pkPick('외식'); // 사용자가 피커에서 '외식'을 고른 상황을 흉내냄
+  assert.strictEqual(t1.category, '외식', '고른 카테고리가 실제로 적용되어야 함');
+  assert.strictEqual(sandbox.closeSheetCalls, 1, '되돌아갈 이전 시트가 없는 단독 피커이므로 onPick이 직접 closeSheet를 불러야 함');
+  assert.ok(afterApplyCalled, 'afterApply(선택모드 종료)가 호출되어야 함');
+  assert.ok(sandbox.lastUndo, 'doBulkCat의 undoToast까지 그대로 이어져야 함');
 });
 
 /* ---------- deleteRecsUndo: 반복 삭제(전체) 공용 되돌리기 인프라 (delRecConfirm/recApply 'all' scope) ---------- */
@@ -9040,6 +9171,27 @@ test('activeSel: 귀속 필터가 켜져 있으면 자산 선택 total도 필터
   sandbox.ST.aSel = { mode: true, ids: new Set(['a1']) };
   const s = sandbox.activeSel();
   assert.strictEqual(s.total, 1, '하단 바의 total이 DB.assets 전체가 아니라 필터된 자산 개수여야 함');
+});
+test('activeSel: 자산목록 선택모드(aSel)엔 일괄 카테고리 변경 버튼(cat)이 없다(자산엔 카테고리 개념이 없음, app-evolve cycle136 advance)', () => {
+  setupAssetsDB();
+  sandbox.ST.aSel = { mode: true, ids: new Set() };
+  const s = sandbox.activeSel();
+  assert.strictEqual(s.cat, undefined);
+});
+test('activeSel: 일별거래 선택모드(lSel)엔 일괄 카테고리 변경 버튼(cat)이 있다(app-evolve cycle136 advance)', () => {
+  setupLedgerDB();
+  sandbox.ST.aSel = { mode: false, ids: new Set() }; // activeSel()이 aSel.mode를 먼저 확인하므로 있어야 함
+  sandbox.ST.lSel = { mode: true, ids: new Set() };
+  const s = sandbox.activeSel();
+  assert.strictEqual(s.cat, 'ledgerCatSel()');
+});
+test('activeSel: 전체내역 선택모드(hist.selMode)엔 일괄 카테고리 변경 버튼(cat)이 있다(app-evolve cycle136 advance)', () => {
+  setupHistoryDB();
+  sandbox.ST.aSel = { mode: false, ids: new Set() };
+  sandbox.ST.lSel = { mode: false, ids: new Set() };
+  sandbox.ST.hist.selMode = true;
+  const s = sandbox.activeSel();
+  assert.strictEqual(s.cat, 'histCatSel()');
 });
 
 /* ---------- renderLedger: 렌더 함수 스모크 테스트 (app-evolve cycle50 critique/advance) ----------

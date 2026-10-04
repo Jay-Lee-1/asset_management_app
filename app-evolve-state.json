@@ -1,19 +1,8 @@
 {
-  "cycle": 136,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "선택 모드(ledger day / 전체내역) 다건 카테고리 일괄 변경 추가",
-    "why": "자산목록(ST.aSel)/일별거래(ST.lSel)/전체내역(ST.hist.sel) 세 선택모드 모두 activeSel()(index.html:6679-6684)·updateSelBottom()(6685-6693)이 전체선택/닫기/삭제 3개 버튼만 내보내 일괄 카테고리 변경 경로가 전혀 없음(grep '일괄|bulk|batchCat|selCat|selMove' 결과 무관한 1건뿐). CSV 임포트 오분류나 카테고리 정리 후 재태깅처럼 흔한 반복작업이 거래 1건씩 수정 시트를 열어야만 가능한 실질적 마찰. 단건 카테고리 변경 UI(openCatPicker/pkPickCat, 6632-6663)는 이미 범용으로 존재해 재사용 가능.",
-    "approach": "1) logic.js에 순수 함수 bulkCatTargets(txns,ids) 추가 — 선택된 거래들이 비었으면 reason:'empty', transfer 포함 시 reason:'transfer', type이 섞여있으면 reason:'mixed', 아니면 {ok:true,kind,items}. test/run.js FUNCTIONS에 등록. 2) activeSel()(6679-6684)에 lSel/hist 모드에서만 cat:'ledgerCatSel()'/'histCatSel()' 키 추가(aSel은 스코프 제외). 3) updateSelBottom()(6685-6693)에 s.cat 있을 때 4번째 버튼(.sbb-cat) 추가 — 좁은 화면 대응으로 .selbar-bottom.has-cat .sbb{min-width:0;padding:0 12px;font-size:13px} CSS 추가하고 #selBarBottom에 has-cat 클래스 토글. 4) ledgerCatSel()/histCatSel()/bulkCatPickFor(ids,afterApply)/doBulkCat(ids,cat) 신규 함수(ledgerDelSel/histDelSel 근처에 배치) — bulkCatPickFor가 bulkCatTargets로 검증 후 실패 시 사유별 toast, 성공 시 openCatPicker({kind,current:null,onPick:cat=>{doBulkCat(...)}}) 호출. doBulkCat은 각 거래의 memo===category였다면 doRenameCat()(4772-4790)과 동일하게 memo도 같이 바꾸고, touch()-before-save() 규칙을 반드시 touchSave(...items)로 지켜 저장, undoToast로 category/memo 원복. 5) 회귀 테스트: bulkCatTargets 4케이스(단일타입/mixed/transfer/empty), doBulkCat과 undo 콜백 모두 touchSave(...items) 호출하는지 소스패턴 검사(기존 touchSave 가드와 동일 방식), activeSel()이 lSel/hist일 때 cat 키 존재·aSel일 때 부재 확인. APP_VERSION/sw.js CACHE 버전 동기화 올리기."
-  },
+  "cycle": 137,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 131,
-      "phase": "advance",
-      "timestamp": "2026-10-03T15:16:28.131Z",
-      "summary": "critique(cycle131) 계획대로 지출 분석(Spend Analysis) 카테고리 행에서 전체내역으로 drill-down을 추가했다. ST.hist(index.html:2305)에 catExact:null/owner:'전체' 필드를 추가하고 filteredHist()(3916-3927)의 캐시 키와 필터 체인에 반영 — H.catExact가 있으면 t.type==='expense'&&t.category===H.catExact로 지출만+카테고리명 정확 매칭(유형이 다른 동일 이름과 안 섞이게), H.owner가 '전체'가 아니면 기존 filterTxnsByOwner()(logic.js)를 그대로 재사용해 귀속으로도 거른다. openCatHistory(idx) 신규 함수: openAssetHistory와 동일 관례로 spendByCategory(ST.ledger.y,m,ST.spendOwner)의 rows[idx]를 찾아 catExact/owner/range(월 시작~끝)를 세팅하고 cat/q/assetId는 리셋한 뒤 histInvalidate();closeSheet();go('history'). spend-row(4482)에는 기존 openBudgetPrompt(idx)를 그대로 두고, 자산 행의 '내역' 버튼(row-acts/act-btn, 2865)과 동일한 패턴으로 stopPropagation 버튼을 추가해 두 동작이 충돌 없이 공존하게 했다(기존 7188 접근성 테스트도 그대로 통과). renderHistory()에 H.assetId 칩과 같은 자리에 H.catExact 칩(카테고리명+귀속 표시, histClearCatFilter)을 추가했고, sumTap/openAssetHistory/histClearFilter 등 기존 필터 리셋 지점에도 catExact/owner 리셋을 추가해 진입 경로가 바뀔 때 이전 필터가 새지 않게 했다. test/run.js: filteredHist의 catExact(유형 분리 포함)+owner 조합 테스트 3개, openCatHistory의 필터 세팅/리셋/idx 없음 가드 테스트 2개, openAssetHistory의 catExact/owner 리셋 테스트 1개 — 총 6개 추가(sandbox에 go() 스파이 스텁 신규 추가). vm 컨텍스트에서 만든 객체 리터럴(ST.hist.range)은 메인 realm 리터럴과 deepStrictEqual 비교 시 'same structure but not reference-equal'로 실패하는 걸 발견해 필드별 strictEqual로 수정. node test/run.js 869/869 -> 875/875 통과. APP_VERSION 1.47.31->1.47.32, sw.js CACHE v293->v294. pending_advance_plan을 null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 132,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-04T11:16:39.229Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(136사이클 동안 다뤄진 항목 전부 제외 지시: Enter-to-submit 시리즈/touchSave 구조적 가드/지출분석 drill-down/문의하기 dead end/자산 그룹 내 개별 재배열/DB 병합 누락 수정들/순자산 추이 기간선택+탭/날짜선택기 접근성 포함). 새로 발견 후 직접 소스 재검증: 자산목록(ST.aSel)/일별거래(ST.lSel)/전체내역(ST.hist.sel) 세 선택모드 모두 activeSel()(index.html:6679-6684)·updateSelBottom()(6685-6693)이 전체선택/닫기/삭제 3개 버튼만 내보내 일괄 카테고리 변경 경로가 전혀 없음을 grep('일괄|bulk|batchCat|selCat|selMove', 무관한 1건뿐)으로 확인. 단건 카테고리 변경 경로(txOpenCat/_applyOpenCat 3693·3687, openCatPicker/pkPickCat 6632-6663)는 이미 범용으로 존재해 재사용 가능함도 확인. doRenameCat()(4772-4790)의 memo-follows-category 관례와 touchSave 패턴을 반드시 따르도록 계획에 명시. pending_advance_plan에 logic.js bulkCatTargets 순수함수+activeSel/updateSelBottom 확장(lSel/hist만, aSel 제외)+ledgerCatSel/histCatSel/bulkCatPickFor/doBulkCat+회귀테스트 저장(상세는 pending_advance_plan 참고). 러너업(기각): OS 알림이 앱 종료 후에도 온다고 과장 안내 — 실재하나 진짜 수정은 Push/Periodic-Background-Sync API 포팅이 필요해 앱잠금·이자모델링과 동일한 과대 스코프 / 시가평가 자산 코스트베이시스가 단일 스칼라라 복수 매입 평균단가 미지원 — 실재하나 신규 데이터모델+거래흐름 필요해 부채 이자모델링과 동일 사유로 과대 스코프 / fitText/fitAll의 동기 scrollWidth 측정 — 실측 느려짐 증거 없어 추측성 기각. 코드 변경 없음(읽기 전용 조사, 서브에이전트가 index.html 6679-6693·3693·3687·6632-6663·4772-4790을 직접 Read/grep으로 재확인).",
+      "commit": null
+    },
+    {
+      "cycle": 136,
+      "phase": "advance",
+      "timestamp": "2026-10-04T12:17:13.950Z",
+      "summary": "critique(cycle136) 계획대로 선택 모드(일별거래/전체내역)에 다건 카테고리 일괄 변경을 추가했다. (1) logic.js에 순수 함수 bulkCatTargets(txns,ids) 추가 — ids가 비었거나 실제 거래와 하나도 안 맞으면 reason:'empty', transfer가 하나라도 섞이면 reason:'transfer'(이체는 catListOf에서도 항상 [] — 카테고리 개념이 없음), type(expense/income/saving)이 섞이면 reason:'mixed', 통과하면 {ok:true,kind,items}. (2) activeSel()에 lSel/hist 모드에서만 cat:'ledgerCatSel()'/'histCatSel()' 키 추가(aSel은 자산엔 카테고리 개념이 없어 스코프 제외, 주석으로 이유 명시). (3) updateSelBottom()에 s.cat 있을 때 svg('tag')+'카테고리' 4번째 버튼(.sbb-cat) 추가, #selBarBottom에 has-cat 클래스 토글 — 좁은 화면에서 4버튼이 넘치지 않도록 .selbar-bottom.has-cat .sbb{min-width:0;padding:0 12px;font-size:13px} CSS 추가(클래스 3개 조합이라 명시도가 개별 .sbb-* 규칙보다 항상 높아 소스 순서와 무관하게 적용됨). (4) ledgerCatSel()/histCatSel() 추가(ledgerDelSel/histDelSel 바로 아래) — ledgerDelSel의 snapshot 관례(new Set(ST.lSel.ids)로 복제 후 mode/ids를 지우기 전에 넘김)를 그대로 따름. bulkCatPickFor(ids,afterApply)는 pkPickCat/openCatPicker 블록 바로 아래 배치 — bulkCatTargets로 먼저 검증해 실패 사유별 토스트(선택 없음/이체 포함/종류 혼합)를 보여주거나, 통과 시 openCatPicker({kind,current:null,onPick:c=>{closeSheet();doBulkCat(ids,c);afterApply()}})를 연다. _applyOpenCat()과 달리 되돌아갈 이전 시트가 없는 단독 피커라 onPick에서 직접 closeSheet() 호출이 필요함을 발견(back 파라미터를 안 넘기면 pkPickCat()이 닫지 않고 그대로 열려 있음). doBulkCat(ids,cat)은 deleteTxnsUndo 바로 아래 배치 — doRenameCat()과 동일한 memo-follows-category 관례(메모가 이전 카테고리명과 같았다면 자동 채움으로 보고 메모도 같이 옮김)를 따르고 touchSave(...items)로 touch+save, undoToast로 category/memo를 원복. (5) test/run.js: FUNCTIONS에 doBulkCat/bulkCatPickFor 등록, closeSheet 스텁을 closeSheetCalls 스파이로 교체. bulkCatTargets 5개(empty 2종/transfer/mixed/성공) + doBulkCat 4개(적용+memo-follow/undo/twGuard/bulkCatTargets 실패 시 안전망) + bulkCatPickFor 4개(toast 3종+성공 플로우 전체: 피커 열림→pick→closeSheet→afterApply→undoToast까지) + activeSel 3개(aSel엔 cat 없음/lSel·hist엔 있음) 총 16개 테스트 추가. vm 컨텍스트 객체 리터럴 deepStrictEqual 실패(cycle131에서 처음 발견한 realm 경계 문제)가 bulkCatTargets의 실패 케이스 4개에서도 재발해 필드별 strictEqual로 수정. node test/run.js 906/906 -> 922/922 통과. APP_VERSION 1.47.41->1.47.42, sw.js CACHE v303->v304. pending_advance_plan을 null로 비움.",
       "commit": null
     }
   ]
