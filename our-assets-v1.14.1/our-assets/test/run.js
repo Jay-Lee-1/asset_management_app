@@ -9962,6 +9962,32 @@ test('CDN 리소스: pretendard/kakao/supabase 태그가 pinned 버전과 crosso
   );
 });
 
+test('dpMonthBlock: 날짜 선택기의 일(day) 버튼에 연·월이 포함된 aria-label이 있다(여러 달이 동시에 DOM에 붙어 "15" 같은 숫자만으로는 스크린리더가 어느 달의 15일인지 구분 못 함)', () => {
+  const body = extractFunction('dpMonthBlock');
+  assert.ok(
+    /aria-label="\$\{y\}년 \$\{m\}월 \$\{dn\}일"/.test(body),
+    'dpMonthBlock의 일 버튼에 연/월/일을 모두 담은 aria-label이 없음'
+  );
+  assert.ok(
+    /isToday\?' aria-current="date"':''/.test(body),
+    '오늘 날짜 셀에 aria-current="date"가 없음'
+  );
+  assert.ok(
+    /aria-pressed="\$\{sel\}"/.test(body),
+    '선택된 날짜 셀에 aria-pressed 상태가 반영되지 않음'
+  );
+});
+test('dpPick: 날짜를 다시 선택하면 이전 선택 셀의 aria-pressed가 false로 풀리고 새 선택 셀만 true가 된다', () => {
+  const body = extractFunction('dpPick');
+  assert.ok(
+    body.includes(`c.classList.remove('sel');c.setAttribute('aria-pressed','false')`),
+    'dpPick이 기존 선택 셀들의 aria-pressed를 false로 되돌리지 않음'
+  );
+  assert.ok(
+    body.includes(`cell.classList.add('sel');cell.setAttribute('aria-pressed','true')`),
+    'dpPick이 새로 선택된 셀의 aria-pressed를 true로 설정하지 않음'
+  );
+});
 test('index.html 메인 인라인 <script> 전체가 구문 오류 없이 파싱된다(개별 함수 추출 테스트가 못 잡는 전면 장애 회귀 방지)', () => {
   const mainScript = extractMainScript();
   // 353KB 안팎(2026-09 기준)인 블록이 어쩌다 몇 줄만 추출되면 경계 로직이 깨진 것이므로,

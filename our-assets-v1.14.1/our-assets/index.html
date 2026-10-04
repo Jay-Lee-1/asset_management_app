@@ -1313,7 +1313,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.40';
+const APP_VERSION='1.47.41';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5797,9 +5797,9 @@ function openFieldDatePicker(cur,onPick){_dpTarget='field';_dpSel=cur||TODAY;_dp
 function dpPick(ds){ /* 날짜만 선택 — 창은 '확인'을 눌러야 닫힘 */
  _dpSel=ds;
  const grid=$('dpScroll');if(!grid)return;
- grid.querySelectorAll('.dp-cell').forEach(c=>c.classList.remove('sel'));
+ grid.querySelectorAll('.dp-cell').forEach(c=>{c.classList.remove('sel');c.setAttribute('aria-pressed','false')});
  const cell=[...grid.querySelectorAll('.dp-cell')].find(c=>c.getAttribute('onclick')===`dpPick('${ds}')`);
- if(cell)cell.classList.add('sel');
+ if(cell){cell.classList.add('sel');cell.setAttribute('aria-pressed','true')}
  moveDpBlob(true);
  if(navigator.vibrate)navigator.vibrate(8);
 }
@@ -5810,8 +5810,9 @@ function dpMonthBlock(y,m){
  for(let i=0;i<startDow;i++)cells+=`<div class="dp-cell empty"></div>`;
  for(let dn=1;dn<=daysIn;dn++){
   const ds=`${y}-${String(m).padStart(2,'0')}-${String(dn).padStart(2,'0')}`;
-  const cls=['dp-cell'];if(ds===_dpSel)cls.push('sel');if(ds===TODAY)cls.push('today');
-  cells+=`<button class="${cls.join(' ')}" onclick="dpPick('${ds}')">${dn}</button>`;
+  const sel=ds===_dpSel,isToday=ds===TODAY;
+  const cls=['dp-cell'];if(sel)cls.push('sel');if(isToday)cls.push('today');
+  cells+=`<button class="${cls.join(' ')}" onclick="dpPick('${ds}')" aria-label="${y}년 ${m}월 ${dn}일"${isToday?' aria-current="date"':''} aria-pressed="${sel}">${dn}</button>`;
  }
  /* 마지막 줄은 다음 달 블록이 이어받으므로 채우지 않음 (빈칸 없이 연속) */
  return `<div class="dp-month" data-ym="${y}-${m}" data-y="${y}" data-m="${m}"><div class="dp-grid">${cells}</div></div>`;
