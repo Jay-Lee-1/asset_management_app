@@ -1,15 +1,8 @@
 {
   "cycle": 135,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 130,
-      "phase": "review",
-      "timestamp": "2026-10-03T08:45:00.000Z",
-      "summary": "develop 커밋(9516714, doCsvImport() 이체 confirmed 기본값 누락 수정)을 검토. 새 default 규칙(t.type==='transfer'&&t.confirmed===undefined일 때 !(DB.settings.confirmTransfers&&isFuture(t.date)))이 saveTx()(3670행)의 기존 규칙과 조건·대상(transfer만, undefined일 때만) 모두 일치함을 소스 대조로 확인. CSV가 다루는 건 일반 거래뿐이라(반복거래 CSV import 없음) saveTx의 다른 transfer 전용 필드 중 CSV import가 추가로 놓친 기본값은 없음을 3650-3674행 재확인. 새 회귀 테스트 3개(미래+on→false/과거·오늘+on→true/off→항상 true)가 경계를 적절히 커버함을 확인. node test/run.js 866/866 재통과. 코드 변경 없음(이상 없음).",
-      "commit": null
-    },
     {
       "cycle": 130,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-04T05:00:00.000Z",
       "summary": "general-purpose 서브에이전트 조사로 mergeRemoteDataIntoLocal()(index.html:1444-1470)이 DB.deletedType/DB.deletedBal(삭제한 자산의 재연동용 타입·삭제시점잔액 기억, snapshotAssetName이 3016-3017행에서 기록)을 전혀 병합하지 않고 있었음을 발견·수정. cycle125에서 catIcon/catVar에 동일 버그를 고친 선례, cycle133 critique에서 deletedType이 \"영향 범위가 좁아 develop 스코프\"로 러너업 기각됐던 기록을 근거로 재조사 — relinkDeletedAsset(2941)/deletedAssetHistoryExists(2977)/askRelinkDeleted(2991)가 이 두 맵을 읽는데 pushCloud가 DB 전체를 업로드하면서도 병합 경로(afterCloudAuth localUnsynced 분기 1789행, pushCloud 충돌 재시도 1753행)에선 조용히 로컬 값으로 덮어써, 한 기기가 삭제한 자산의 재연동 기록이 다른 기기로 전달되지 않고 역병합 push 시 영구 소실될 수 있었다. catIcon/catVar와 동일한 mergeFlatMap()을 deletedType/deletedBal에 그대로 적용(두 줄 추가, 1472-1473행). test/run.js에 minimalMergeDB 기반 회귀 테스트 1개 추가(remote-only 키 유입 + 동일 키는 local 우선 확인) — 수정 전 코드로 되돌려 해당 테스트가 실제로 FAIL함을 직접 검증한 뒤 복구. node test/run.js 892/892 -> 893/893 통과. APP_VERSION 1.47.38->1.47.39, sw.js CACHE v300->v301.",
+      "commit": null
+    },
+    {
+      "cycle": 135,
+      "phase": "review",
+      "timestamp": "2026-10-04T05:30:00.000Z",
+      "summary": "develop 커밋(f5bab05, mergeRemoteDataIntoLocal()에 DB.deletedType/DB.deletedBal mergeFlatMap 병합 추가)을 검토. mergeFlatMap(localMap,remoteMap)(logic.js:169-171, Object.assign({},remoteMap||{},localMap||{}) — remote로 채우고 local이 같은 키를 덮어씀)이 직전 catIcon/catVar(1467-1468행) 적용과 정확히 동일한 패턴·위치(1472-1473행)임을 소스 대조로 확인. relinkDeletedAsset/deletedAssetHistoryExists/askRelinkDeleted가 이 두 맵을 읽는 쪽일 뿐 여기서 추가로 쓰기 경로를 만들지 않아 사이드이펙트 없음을 확인. 새 회귀 테스트(minimalMergeDB 기반, remote-only 키 유입 + 동일 키 local 우선)도 catIcon/catVar 테스트와 동일 방식으로 적절. node test/run.js 893/893 재통과. 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
