@@ -4172,6 +4172,17 @@ test('openQuickAmount: 지난 기록이 전혀 없는 손상된 레코드면 힌
   assert.ok(!sandbox.lastSheetHtml.includes('이었어요'), '지난 기록이 없으면 힌트가 없어야 함');
   assert.ok(sandbox.lastSheetHtml.includes('value=""'), '지난 기록이 없으면 입력값도 비어 있어야 함');
 });
+test('openQuickAmount: qAmt(실제 금액)의 Enter-제출도 다른 금액 입력(rAmt/goalAmt/asCostBasis)과 동일하게 isComposing 가드를 쓴다' +
+  '(한글 IME 조합 중 엔터로 조합을 확정하려다 금액이 덜 입력된 채로 saveQuickAmount가 먼저 불리는 걸 방지)', () => {
+  const r = { id: 'r1', type: 'expense', category: '변동비', memo: '변동비', edits: {} };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.lastSheetHtml = null;
+  sandbox.openQuickAmount('r1', '2026-03-05');
+  assert.ok(
+    sandbox.lastSheetHtml.includes(`onkeydown="if(event.key==='Enter'&&!event.isComposing)saveQuickAmount('r1','2026-03-05')"`),
+    'qAmt의 Enter→saveQuickAmount() 연결에 !event.isComposing 가드가 없음'
+  );
+});
 
 /* ---------- storageOutcomeMsg: save()가 저장 성공/실패를 더 이상 숨기지 않는지 ---------- */
 test('storageOutcomeMsg: 계속 정상 저장 중이면 토스트를 띄우지 않는다(매 save() 호출마다 스팸 방지)', () => {

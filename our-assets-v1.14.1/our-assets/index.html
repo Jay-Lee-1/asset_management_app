@@ -1305,7 +1305,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.36';
+const APP_VERSION='1.47.37';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6054,7 +6054,7 @@ function openQuickAmount(recId,date){
  openSheet(`<h3>${esc(r.memo||r.category)} 금액</h3>
   <div class="desc">${shortDate(date)}에 ${inc?'들어올':'빠져나갈'} 실제 금액을 넣어주세요.${last!=null?`<br><span style="color:var(--text-3);font-size:12.5px">${inc?'지난번':'지난달'}은 ${comma(last)}원이었어요</span>`:''}</div>
   <div class="field"><label for="qAmt">금액 (원)</label>
-   <input id="qAmt" class="num" inputmode="numeric" value="${last!=null?comma(last):''}" placeholder="0" oninput="fmtAmt(this)" onkeydown="if(event.key==='Enter')saveQuickAmount('${recId}','${date}')" autofocus></div>
+   <input id="qAmt" class="num" inputmode="numeric" value="${last!=null?comma(last):''}" placeholder="0" oninput="fmtAmt(this)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveQuickAmount('${recId}','${date}')" autofocus></div>
   <button class="btn btn-primary" onclick="saveQuickAmount('${recId}','${date}')">${svg('check')} 저장</button>`);
  setTimeout(()=>{const el=$('qAmt');if(el){el.focus();el.select()}},250);
 }
