@@ -141,10 +141,10 @@ input,select,textarea{font-family:inherit}
 .month-chip:active{background:var(--sunken)}.month-chip svg{width:18px;height:18px;color:var(--text-2)}
 
 /* iOS-like press animations */
-.icon-btn,.txt-btn,.chip,.mnav button,.sch-chip,.month-chip,.summary>button,.filter-2 button,.seg button,.opt-grid button,.sync-btn,.menu-item,.promo .go,.add-inline button,.swipe-actions button{transition:transform .18s var(--spring),background .15s,color .15s,border-color .15s,box-shadow .15s}
+.icon-btn,.txt-btn,.chip,.mnav button,.sch-chip,.month-chip,.summary>button,.filter-2 button,.seg button,.opt-grid button,.sync-btn,.menu-item,.add-inline button,.swipe-actions button{transition:transform .18s var(--spring),background .15s,color .15s,border-color .15s,box-shadow .15s}
 .icon-btn:active,.mnav button:active{transform:scale(.88)}
 .sch-chip:active,.chip:active,.sync-btn:active,.add-inline button:active{transform:scale(.93)}
-.txt-btn:active,.month-chip:active,.summary>button:active,.promo .go:active{transform:scale(.95)}
+.txt-btn:active,.month-chip:active,.summary>button:active{transform:scale(.95)}
 .filter-2 button:active,.opt-grid button:active,.seg button:active{transform:scale(.96)}
 .menu-item:active{transform:scale(.985)}
 
@@ -660,9 +660,6 @@ body.selmode .page{padding-bottom:calc(104px + var(--ad-h) + env(safe-area-inset
 .balance-head.neg{border-color:var(--brand)}
 .balance-head.peek{background:var(--surface-2)}
 
-.promo{background:linear-gradient(135deg,var(--brand),var(--brand-ink));border-radius:var(--r-lg);padding:20px 22px;color:#fff;display:flex;align-items:center;justify-content:space-between;gap:14px;box-shadow:0 10px 24px -10px var(--brand)}
-.promo .pt{font-size:17px;font-weight:700}.promo .ps{font-size:13px;opacity:.9;margin-top:3px;font-weight:500}
-.promo .go{background:rgba(255,255,255,.95);color:var(--brand-ink);height:38px;padding:0 16px;border-radius:var(--r-pill);font-weight:700;font-size:13.5px;flex-shrink:0}
 .menu-group{margin-top:16px}.menu-cap{font-size:12px;font-weight:600;color:var(--text-3);margin:0 4px 8px;letter-spacing:.02em}
 .menu-item{display:flex;align-items:center;gap:14px;padding:15px 18px;width:100%;text-align:left}
 .menu-item+.menu-item{border-top:1px solid var(--line)}.menu-item:active{background:var(--surface-2)}
@@ -1318,7 +1315,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.44';
+const APP_VERSION='1.47.45';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4474,7 +4471,6 @@ function renderMenu(){
      <div class="acct-i" style="flex:1;min-width:0"><div class="an">${esc(accountName())}</div><div class="ak">${kind==='kakao'?'카카오 계정':kind==='email'?'이메일 계정':'게스트 · 로그인하면 계정별로 보관돼요'}</div></div>
      <span class="mc">${svg('chev')}</span></div>
  </div>
- <div class="promo"><div><div class="pt">Pro로 업그레이드</div><div class="ps">월 900원 · 광고 없이 함께 관리해요</div></div><button class="go" onclick="toast('Pro 안내')">시작하기</button></div>
  ${groups.map(g=>`<div class="menu-group"><div class="menu-cap">${g.cap}</div><div class="card">
    ${g.items.map(it=>it.sw!==undefined
      ?`<button class="menu-item" onclick="${it.a}" aria-pressed="${it.sw?'true':'false'}"><span class="mi">${svg(it.ic)}</span><span class="ml">${it.l}</span><span class="switch ${it.sw?'on':''}" aria-hidden="true"><i></i></span></button>`

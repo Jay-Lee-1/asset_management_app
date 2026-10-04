@@ -7882,6 +7882,12 @@ test('renderMenu: 메뉴 탭 계정 진입점(acct-card)에 키보드/스크린�
   assert.ok(/class="card acct-card"[^>]*role="button"/.test(body), 'acct-card에 role="button"이 없음');
   assert.ok(body.includes('onkeydown="rowKeydown(event,()=>openAccountSheet())"'), 'acct-card에 rowKeydown 연결이 없음');
 });
+test('renderMenu: 결제 연동 없이 toast만 띄우던 "Pro로 업그레이드" 프로모 카드가 제거됐다', () => {
+  const body = extractFunction('renderMenu');
+  assert.ok(!body.includes('class="promo"'), 'Pro 업그레이드 프로모 카드(.promo)가 아직 남아있음');
+  assert.ok(!body.includes("toast('Pro 안내')"), "동작 없는 toast('Pro 안내') 더미 핸들러가 아직 남아있음");
+  assert.ok(!body.includes('Pro로 업그레이드'), '"Pro로 업그레이드" 문구가 아직 남아있음');
+});
 test('openSpendAnalysis: 지출 분석 카테고리 행(spend-row)에 키보드/스크린리더 접근 패턴이 있다', () => {
   const body = extractFunction('openSpendAnalysis');
   assert.ok(/class="spend-row"[^>]*role="button"/.test(body), 'spend-row에 role="button"이 없음');

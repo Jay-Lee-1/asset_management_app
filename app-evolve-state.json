@@ -1,15 +1,8 @@
 {
   "cycle": 138,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 133,
-      "phase": "develop",
-      "timestamp": "2026-10-03T19:45:00.000Z",
-      "summary": "general-purpose 서브에이전트 조사로 renderGoalForm()(index.html:2488)의 목표 금액 입력(goalAmt)이 cycle130-132에서 renderAssetSheet/renderTxSheet/renderRecSheet에 적용한 Enter-to-submit 패턴을 놓치고 있었음을 발견·수정. saveGoal(editing)(2502)의 유일한 필수 검증은 d.name과 d.targetAmount>0이고, targetDate는 '목표일 (선택)'로 명시된 선택 필드라 별도 날짜 피커로 고르므로(타이핑 없음), goalAmt가 폼의 사실상 마지막 필수 텍스트 입력임을 확인(goalName은 asName과 동일하게 Enter-제출 제외 유지). renderAssetSheet asCostBasis/renderRecSheet rAmt와 동일한 onkeydown=\"if(event.key==='Enter'&&!event.isComposing)saveGoal(${editing})\"를 goalAmt에 추가. test/run.js에 extractFunction('renderGoalForm')로 goalAmt 입력 문자열에 해당 onkeydown이 포함되는지 확인하는 테스트 1개 추가(rAmt 테스트와 동일 방식). node test/run.js 877/877 -> 878/878 통과. APP_VERSION 1.47.34->1.47.35, sw.js CACHE v296->v297.",
-      "commit": null
-    },
     {
       "cycle": 133,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-04T16:30:00.000Z",
       "summary": "critique(cycle137) 계획대로 isMarketValued(fx/gold/stock) 자산의 수량 변경 기록 부재를 고쳤다(fallback이 아닌 전체 계획 구현). (1) 신규 최상위 DB.assetQtyLog 배열, 각 항목 {id,assetId,date,prevQty,newQty,field}(field는 'fxAmount'|'goldDon'|'stockQty'). (2) saveAsset() editing 분기에 기존 balType 조정 분기의 형제로 else if(isMarketValued(d)) 추가(3288행 부근) — DB.assets[i]=d로 덮어쓰기 전에 qtyField별 prevQty/newQty를 비교해 다르면 touch()된 로그 항목을 push. (3) openAssetHistory(assetId)(4044행 부근)를 isMarketValued(asset) 분기로 갈라 신규 openAssetQtyLog(assetId) 시트(날짜, 부호 있는 Δ, 자산타입별 단위: fx는 통화코드/gold는 '돈'/stock은 '주')로 라우팅해 영원히 빈 화면이던 '내역 보기' 버튼의 dead end를 해소, delGoal/delInquiry와 동일한 confirmSheet+톰스톤+undoToast 패턴의 delAssetQtyLog(id) 추가. (4) 교차 배선: migrate()에 DB.assetQtyLog=DB.assetQtyLog||[] 백필(2035행), mergeRemoteDataIntoLocal()에 goals/inquiries 옆에 DB.assetQtyLog=mergeCollection(...) 추가(1464행), sanitizeBackup()에 id/assetId 없는 레코드 drop+prevQty/newQty를 sanitizeAmount(v,0)로 클램프하는 검증 블록 추가(5480행 부근, inquiries 블록과 동일 모양) — goals/inquiries/catIcon/catVar/deletedType·deletedBal에서 5번 반복된 '신설 컬렉션 병합 배선 누락' 버그 클래스가 이번엔 신설 시점에 바로 막힘. 자산 삭제 시 qty-log는 cascade 삭제하지 않고 보존(txns의 snapshotAssetName과 동일 철학). (5) test/run.js: FUNCTIONS에 openAssetQtyLog/delAssetQtyLog 등록, minimalMergeDB()에 assetQtyLog:[] 추가, 테스트 12개 추가(계획의 5-8개보다 넓게: 수량 변경시 로그 1건 생성 정확성/무변경시 미생성/balType 자산엔 로그 안 남는 회귀가드/openAssetHistory 라우팅/목록 표시 최신순+부호/삭제 확인시트+톰스톤/undo 왕복/두 기기 독립 생성 항목 무손실 병합(local-only+remote-only+둘다 있을 때 최신 우선, 이 버그 클래스를 재현하지 않음을 증명)/톰스톤된 항목이 되살아나지 않음/sanitizeBackup의 id·assetId 누락 drop+배열 아님 방어/prevQty·newQty 음수·비숫자 클램프/정상 케이스 무회귀). node test/run.js 925/925 -> 937/937 통과. APP_VERSION 1.47.43->1.47.44, sw.js CACHE v305->v306. pending_advance_plan을 null로 비움. (general-purpose 서브에이전트에 구현을 위임하고, 오케스트레이팅 세션이 git diff 전체와 테스트 재실행으로 직접 검증함.)",
+      "commit": null
+    },
+    {
+      "cycle": 138,
+      "phase": "develop",
+      "timestamp": "2026-10-04T17:13:35.400Z",
+      "summary": "cycle137 critique 러너업으로 기각됐던(규모가 develop 스코프에 맞는다고 평가된) 메뉴의 \"Pro로 업그레이드\" 프로모 카드(renderMenu(), index.html:4477 부근)를 직접 재검증 후 제거했다. 이 자가-호스트 개인 자산관리 템플릿에는 결제 백엔드가 전혀 없고(README/netlify functions엔 stock.js·rates.js뿐), 버튼의 onclick은 toast('Pro 안내')만 띄우는 더미라 '시작하기'를 눌러도 아무 일도 일어나지 않는 완전한 dead end임을 grep으로 재확인('Pro'/'결제'/'payment' 매칭 전무). 광고 배너(.ad-slot)는 SHOW_AD 플래그로 의도적으로 끈 것과 달리 이 카드는 끄는 스위치조차 없이 항상 렌더되는 거짓 기능이라 판단해 숨김 플래그 추가 대신 완전 제거를 택함(cycle133 문의하기 dead-end 수정 때는 실제 저장 기능을 추가했지만, 이번엔 뒤에 구현할 결제 연동 자체가 존재하지 않아 관망형 UI를 남길 이유가 없음). renderMenu()에서 .promo div 전체 삭제, 전용 CSS 규칙(.promo/.promo .pt/.promo .ps/.promo .go, index.html 663-665행)과 공용 트랜지션 선택자 목록(144/147행)에 섞여 있던 .promo .go 참조도 함께 제거해 완전한 dead CSS를 남기지 않았다. test/run.js에 renderMenu 소스 패턴 검사 회귀 테스트 1개 추가(.promo 클래스/toast('Pro 안내')/'Pro로 업그레이드' 문구가 더 이상 없는지 확인, 기존 acct-card 테스트와 동일한 extractFunction 방식). node test/run.js 937/937 -> 938/938 통과, 메인 인라인 <script> node --check 구문 검사도 별도로 통과. APP_VERSION 1.47.44->1.47.45, sw.js CACHE v306->v307.",
       "commit": null
     }
   ]
