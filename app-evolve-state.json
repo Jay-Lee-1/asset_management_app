@@ -1,15 +1,8 @@
 {
   "cycle": 139,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 134,
-      "phase": "develop",
-      "timestamp": "2026-10-04T00:12:30.450Z",
-      "summary": "general-purpose 서브에이전트 조사로 openQuickAmount()(index.html:6057)의 금액 입력(qAmt)이 cycle130-133에서 asCostBasis/txMemo/rAmt/goalAmt에 적용한 Enter-to-submit에 !event.isComposing 가드를 놓치고 있었음을 발견·수정. qAmt는 당시 작업 범위 밖(FUNCTIONS 등록은 돼 있었으나 그때 손대지 않은 기존 코드)이라 onkeydown=\"if(event.key==='Enter')saveQuickAmount(...)\"로 가드 없이 남아있어, 한글 등 IME 조합 확정용 Enter가 조합 중 그대로 saveQuickAmount()를 호출해버리는 버그였다(옆 형제 필드 rAmt와 직접 대조로 확인). onkeydown에 &&!event.isComposing 추가. budgetIn/bigMinInput 등 설정류 입력에도 같은 패턴이 있으나 이번엔 가장 빈번한 qAmt 하나로 스코프를 좁혔다(touch()-before-save() 구조적 가드와 달리 이건 개별 input이라 구조적 가드 대상이 아니라 중복 제안 아님). test/run.js에 openQuickAmount의 qAmt onkeydown 정확 매칭 회귀 테스트 1개 추가. node test/run.js 886/886 -> 887/887 통과. APP_VERSION 1.47.36->1.47.37, sw.js CACHE v298->v299.",
-      "commit": null
-    },
     {
       "cycle": 134,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-04T20:05:00.000Z",
       "summary": "critique(cycle138) 계획대로 go(tab) 하단 탭 전환이 안드로이드 백버튼 history 스택에 참여하지 않던 비대칭을 고쳤다. (1) logic.js에 순수 판정 함수 tabNavAction(tab,alreadyPushed) 추가 — 홈→비홈 최초 진입이면 'push', entry가 이미 쌓인 채로 비홈↔비홈 전환이거나 entry 없이 홈이면 'none', entry가 쌓인 채로 홈 복귀면 'pop'. (2) index.html에 모듈 스코프 플래그 _tabNavPushed=false 추가(_ovHistDepth와 별개 카운터 — 탭 전환은 여러 번 일어나도 entry는 최대 1개만 유지). (3) go(tab) 맨 앞에서 tabNavAction(tab,_tabNavPushed)를 호출해 'push'면 ovHistPush()와 동일한 방식(try{history.pushState({tabNav:true},'')}catch(e){})으로 entry 하나를 쌓고, 'pop'이면 ovHistPop()과 동일한 _ovHistSuppress 가드(이미 suppress 중이면 건너뜀 — popstate가 먼저 _tabNavPushed를 비우고 go('home')을 호출하는 경로와의 이중 소비 방지)로 history.back()을 호출. (4) popstate 리스너를 '_ovHistDepth>0이면 기존 오버레이 처리' 분기에 early return을 추가해 재구성하고, 그 아래에 '_tabNavPushed면 플래그를 비우고 go(\"home\")으로 복귀' 분기를 추가 — 오버레이가 탭 위에 열려 있으면 history 스택 순서상 오버레이 entry가 더 나중에 쌓여 백버튼이 자연히 먼저 소비하므로 두 카운터를 합칠 필요가 없음(계획대로). DB 스키마 변경 없음(런타임 UI 상태). (5) test/run.js: tabNavAction 4개(push/재사용 시 none/pop/entry 없이 홈이면 none) 추가, go(tab)/popstate 배선이 빠지지 않았는지 extractFunction('go') 텍스트 패턴 + src.includes로 popstate 분기 2개 추가 — 실제 history API를 쓰는 go/popstate는 다른 DOM 전용 함수들과 같은 이유로 FUNCTIONS(vm 실행 목록)엔 넣지 않고 sandbox.go 스파이는 그대로 둠. node test/run.js 938/938 -> 944/944 통과, 메인 인라인 <script> node --check 구문 검사도 별도로 통과. APP_VERSION 1.47.45->1.47.46, sw.js CACHE v307->v308. pending_advance_plan을 null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 139,
+      "phase": "develop",
+      "timestamp": "2026-10-04T21:35:00.000Z",
+      "summary": "general-purpose 서브에이전트 조사로 assetBodyHTML()의 ST.editAssets+assetSort==='custom' 분기(cycle134 advance에서 추가된 .asset-sub-row 위/아래 이동 버튼, index.html:2918-2924)가 그룹의 절대 양끝에서만 disabled될 뿐, groupItems()(2800-2808)가 a.order 정렬 뒤 includeInTotal 여부로 다시 안정정렬해 '총자산 미포함' 자산을 그룹 맨 뒤로 고정하는 두 번째 정렬 경계는 전혀 고려하지 않고 있었음을 발견·수정. 포함 자산 그룹의 마지막 항목에서 '아래로' 또는 미포함 자산 그룹의 첫 항목에서 '위로'를 누르면 moveAsset()이 order는 바꾸지만 다음 렌더에서 groupItems()의 includeInTotal 안정정렬이 그대로 되돌려 화면 순서가 바뀌지 않는, 버튼만 활성화돼 있고 눌러도 아무 효과 없는 죽은 컨트롤이었다(숫자 스크립트로 두 정렬 패스를 직접 재현해 재현 확인). assetBodyHTML()에서 assetRows.findIndex(x=>!x.includeInTotal)로 포함/미포함 경계(splitIdx)를 구해, 위로 버튼은 ai===0||ai===splitIdx, 아래로 버튼은 ai===aarr.length-1||ai===splitIdx-1일 때도 disabled 처리(전부 포함/전부 미포함이면 splitIdx=-1이라 기존 양끝 처리만 남아 회귀 없음). test/run.js에 포함 2개+미포함 2개 혼합 그룹 회귀 테스트 1개 추가 — 수정 전 코드로 되돌려 해당 테스트가 실제로 FAIL함을 직접 검증한 뒤 복구. node test/run.js 944/944 -> 945/945 통과. APP_VERSION 1.47.46->1.47.47, sw.js CACHE v308->v309.",
       "commit": null
     }
   ]

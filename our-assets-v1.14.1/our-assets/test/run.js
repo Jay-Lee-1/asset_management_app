@@ -9204,6 +9204,30 @@ test('renderAssets: 편집 모드(ST.editAssets)에서는 드래그용 그룹 �
   assert.ok(html.slice(firstUpBtn, firstUpBtn + 40).includes('disabled'), '그룹 안 첫 자산의 위로 버튼은 disabled여야 함');
   assert.ok(html.slice(lastDnBtn, lastDnBtn + 40).includes('disabled'), '그룹 안 마지막 자산의 아래로 버튼은 disabled여야 함');
 });
+test('renderAssets: 편집 모드에서 그룹 안에 "총자산 미포함" 자산이 섞여 있으면, 포함/미포함 경계를 넘는 위/아래 버튼도 양끝처럼 disabled여야 한다(groupItems()가 order 정렬 뒤 includeInTotal로 다시 안정정렬해 경계를 못 넘으므로, 안 그러면 눌러도 화면이 그대로인 죽은 버튼이 된다 — app-evolve cycle139 develop)', () => {
+  setupAssetsDB(); // setupAssetsDB()는 assetSort:'custom'
+  sandbox.DB.assets = [
+    { id: 'a1', name: '포함1', owner: '나', type: 'cash', order: 0, includeInTotal: true, baseAmount: 500000 },
+    { id: 'a2', name: '포함2', owner: '나', type: 'cash', order: 1, includeInTotal: true, baseAmount: 100000 },
+    { id: 'a3', name: '미포함1', owner: '나', type: 'cash', order: 2, includeInTotal: false, baseAmount: 10000 },
+    { id: 'a4', name: '미포함2', owner: '나', type: 'cash', order: 3, includeInTotal: false, baseAmount: 20000 },
+  ];
+  sandbox.ST.editAssets = true;
+  sandbox.renderAssets();
+  const html = sandbox.pageAssetsEl.innerHTML;
+  const dnA2 = html.indexOf("moveAsset('a2',1)"); // 포함 쪽 마지막 → 경계를 넘어가므로 disabled여야 함
+  const upA3 = html.indexOf("moveAsset('a3',-1)"); // 미포함 쪽 첫 → 경계를 넘어가므로 disabled여야 함
+  const upA1 = html.indexOf("moveAsset('a1',-1)"); // 그룹 절대 맨 위 → 기존 양끝 규칙으로 disabled
+  const dnA4 = html.indexOf("moveAsset('a4',1)"); // 그룹 절대 맨 아래 → 기존 양끝 규칙으로 disabled
+  const dnA1 = html.indexOf("moveAsset('a1',1)"); // 포함1→포함2는 경계 안 → 그대로 활성
+  const upA4 = html.indexOf("moveAsset('a4',-1)"); // 미포함2→미포함1은 경계 안 → 그대로 활성
+  assert.ok(html.slice(dnA2, dnA2 + 40).includes('disabled'), '포함 쪽 마지막(a2) 아래로 버튼은 disabled여야 함');
+  assert.ok(html.slice(upA3, upA3 + 40).includes('disabled'), '미포함 쪽 첫(a3) 위로 버튼은 disabled여야 함');
+  assert.ok(html.slice(upA1, upA1 + 40).includes('disabled'), '그룹 절대 맨 위(a1) 위로 버튼은 disabled여야 함');
+  assert.ok(html.slice(dnA4, dnA4 + 40).includes('disabled'), '그룹 절대 맨 아래(a4) 아래로 버튼은 disabled여야 함');
+  assert.ok(!html.slice(dnA1, dnA1 + 40).includes('disabled'), '포함1→포함2(경계 안)는 활성 상태여야 함');
+  assert.ok(!html.slice(upA4, upA4 + 40).includes('disabled'), '미포함2→미포함1(경계 안)은 활성 상태여야 함');
+});
 test('renderAssets: 편집 모드에서 assetSort가 custom이 아니면(예: amount) 그룹 내 개별 자산 버튼은 렌더되지 않는다(a.order가 화면에 반영 안 돼 버튼이 무의미하므로)', () => {
   setupAssetsDB();
   sandbox.DB.settings.assetSort = 'amount';
