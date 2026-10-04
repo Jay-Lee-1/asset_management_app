@@ -1,15 +1,12 @@
 {
   "cycle": 135,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "순자산 추이 카드가 60일 고정 스파크라인이라 기간 조절·탭 인터랙션이 없음",
+    "why": "nwHistoryCard(owner)(index.html:2393-2416)가 항상 hist.slice(-60)(2396행)로 최근 60일만 보여주고 기간을 1개월/3개월/1년/전체로 바꿀 UI가 전혀 없다. 하지만 pruneNwHistory(2274-2281)는 최근 90일 일별 스냅샷 + 그 이전은 월 1회 스냅샷을 무기한 보존하도록 이미 설계돼 있어, 수개월~수년치 데이터가 실제로 쌓이는데도 홈 카드에서는 영원히 닿을 수 없다. 렌더된 <svg>(2411-2414)는 aria-hidden=\"true\"에 onclick/onpointer 등 어떤 인터랙션 핸들러도 없어, 점을 눌러 날짜·금액을 확인할 수 없다 — 전체내역의 histPeek류(4053-4057 근방, 누르고 있기 패턴)처럼 앱의 다른 숫자 표면은 대부분 탭/롱프레스로 상세를 보여주는 것과 대조된다. goalProgress의 '목표일 예상' 로직과 nwHistoryForOwner가 이미 DB.nwHistory 전체를 소비하고 있어 데이터 파이프라인 자체는 장기 구간을 다룰 수 있음이 증명됨 — 문제는 순전히 홈 카드 표시 레이어가 인위적으로 60일/비대화형으로 잘라내고 있다는 것. Enter-to-submit 시리즈/touchSave 가드/지출분석 drill-down/문의하기/자산 개별 재배열 등 기존 35개 사이클의 어떤 항목과도 겹치지 않는, 순자산 추이 시각화 자체의 공백이다.",
+    "approach": "(1) nwHistoryCard에 기간 선택 세그먼트 컨트롤(1개월/3개월/1년/전체)을 추가하고 선택값을 ST.nwRange(기본값은 현재 동작과 같은 3개월 또는 60일) 같은 상태에 저장해 전체 화면 전환 없이 바로 리렌더되게 한다. (2) logic.js에 순수 함수 nwHistoryRange(hist, preset)를 추가 — DB.nwHistory를 preset에 맞게 슬라이스/집계하고, '전체'처럼 긴 구간은 pruneNwHistory가 이미 보존해둔 월별 포인트로 다운샘플링해 nwChartPath가 매일 포인트를 다 그릴 필요가 없게 한다. (3) 차트를 인터랙티브하게 만든다 — svg/컨테이너에 pointer/touch 핸들러를 달아 x좌표로 가장 가까운 포인트를 찾아 날짜+금액을 보여주는 작은 툴팁/라벨을 띄우되, 파일에 이미 있는 histPeekStart/histPeekMove/histPeekEnd 누르고 있기 패턴과 일관되게 구현하고, aria-hidden을 무조건 유지하는 대신 인접한 live-region 텍스트나 접근 가능한 대체 표현을 추가한다. (4) refreshNwHistoryCard()(2788-2790 근방)가 기간 변경 시에도 리렌더되도록 갱신한다. (5) test/run.js에 nwHistoryRange 유닛 테스트를 추가 — 짧은 이력, 정확히 60일 경계, 다년치 다운샘플링, owner 필터(nwHistoryForOwner 재사용) 케이스를 커버한다."
+  },
   "history": [
-    {
-      "cycle": 130,
-      "phase": "critique",
-      "timestamp": "2026-10-03T11:15:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(130사이클 동안 다뤄진 항목 전부 제외 지시, cycle128-130의 touch() 누락 패턴/doCsvImport confirmed 기본값/sanitizeBackup 날짜 검증 통일 포함). 새로 발견 후 직접 소스 재검증: renderAssetSheet()(index.html:3103-3148)의 자산 등록/수정 폼이 앱의 다른 모든 인라인 폼(addOwner newOwner:3238, doRenameOwner renameOwner:3252, addCat newCat:4604, doRenameCat renameCat:4650 — 전부 onkeydown=\"if(event.key==='Enter'&&!event.isComposing)...\" 패턴 보유)과 달리 Enter 제출을 전혀 지원하지 않음을 grep 'isComposing'과 해당 라인 직접 Read로 확인(asName/asAmt/asFx/asGold/asCode/asQty/costBasisField의 asCostBasis 모두 onkeydown 없음, 전역 onSheetKeydown도 Escape/Tab만 처리). 가장 빈번한 초기 설정 동작(자산 추가)에서 매번 버튼을 눌러야 하는 반복 마찰. pending_advance_plan에 costBasisField(fx/gold/stock 공유)와 cash/debt/realestate/etc/pension의 asAmt에 Enter-submit 추가(savings는 그 뒤 만기일 선택이 이어지므로 제외, stock/fx/gold의 중간 필드도 제외) 저장(상세는 pending_advance_plan 참고). 러너업(기각): sanitizeBackup이 DB.budgetHistory 구조를 검증 안 함(budgetForMonth가 malformed 입력에도 v=0으로 안전 축소, 크래시/무한루프 없어 날짜 버그들과 다름) / 클라우드 계정 삭제 UI 부재(service-role 키 필요, 정적 클라이언트 전용 아키텍처 범위 밖) / 연간 지출 분석 뷰 부재(실재하는 공백이나 새 기능 성격이 강해 더 큰 스코프). 코드 변경 없음(읽기 전용 조사, 오케스트레이팅 세션이 index.html 3103-3148·3238·3252·4604·4650을 직접 Read/grep으로 재확인).",
-      "commit": null
-    },
     {
       "cycle": 130,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-04T05:30:00.000Z",
       "summary": "develop 커밋(f5bab05, mergeRemoteDataIntoLocal()에 DB.deletedType/DB.deletedBal mergeFlatMap 병합 추가)을 검토. mergeFlatMap(localMap,remoteMap)(logic.js:169-171, Object.assign({},remoteMap||{},localMap||{}) — remote로 채우고 local이 같은 키를 덮어씀)이 직전 catIcon/catVar(1467-1468행) 적용과 정확히 동일한 패턴·위치(1472-1473행)임을 소스 대조로 확인. relinkDeletedAsset/deletedAssetHistoryExists/askRelinkDeleted가 이 두 맵을 읽는 쪽일 뿐 여기서 추가로 쓰기 경로를 만들지 않아 사이드이펙트 없음을 확인. 새 회귀 테스트(minimalMergeDB 기반, remote-only 키 유입 + 동일 키 local 우선)도 catIcon/catVar 테스트와 동일 방식으로 적절. node test/run.js 893/893 재통과. 코드 변경 없음(이상 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 135,
+      "phase": "critique",
+      "timestamp": "2026-10-04T06:10:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(135사이클 동안 다뤄진 항목 전부 제외 지시: Enter-to-submit 시리즈/touchSave 구조적 가드/지출분석 drill-down/문의하기 dead end/자산 그룹 내 개별 재배열/DB.deletedType·deletedBal 병합 포함). 새로 발견 후 직접 소스 재검증: nwHistoryCard(owner)(index.html:2393-2416)가 hist.slice(-60)(2396행)로 항상 최근 60일 고정 스파크라인만 보여주고 기간을 바꿀 UI가 전혀 없음을 확인 — 반면 pruneNwHistory(2274-2281)는 최근 90일 일별 + 그 이전 월 1회 스냅샷을 무기한 보존하도록 이미 설계돼 있어 수개월~수년치 데이터가 쌓여도 홈 카드에서는 닿을 수 없음을 grep·Read로 재확인. 렌더된 <svg>(2411-2414)에 aria-hidden=\"true\"뿐 onclick/onpointer 등 인터랙션 핸들러가 전무해 점을 눌러 날짜·금액을 볼 수 없음도 확인(앱의 다른 숫자 표면 대부분은 histPeek류 누르고 있기 패턴으로 상세를 보여주는 것과 대조). goalProgress/nwHistoryForOwner가 이미 DB.nwHistory 전체를 소비해 데이터 파이프라인은 장기 구간을 다룰 수 있음이 증명됨 — 문제는 순전히 홈 카드 표시 레이어의 인위적 절단. pending_advance_plan에 기간 선택 세그먼트+logic.js nwHistoryRange(hist,preset) 순수함수(장기 구간은 월별 다운샘플링)+차트 탭/롱프레스 인터랙션(histPeek 패턴 재사용)+refreshNwHistoryCard 갱신+회귀 테스트 저장(상세는 pending_advance_plan 참고). 러너업(기각): 부채/연금 자산의 이자율·상환 스케줄 모델링 부재 — 실재하나 새 데이터 모델 필드·화면까지 필요해 재작성에 가까운 과대 스코프(cycle132/134에서도 동일 사유로 반복 기각) / 전체내역 검색(histQ) 성능 — 이미 PAGE=20 페이지네이션(4082-4084)과 _histCache 무효화 캐싱(3999)이 있어 실측 문제 없음(cycle126 기각과 일치) / 목표(goals) 다중 목표 UX — owner별 진행률·예상일·role=button/aria-label/keydown까지 이미 갖춰져(2455-2480) 재손볼 여지 적음 / 접근성 전수 점검 — grep 결과 aria-/role-/tabindex 102건이 이미 전반에 분포돼 막연한 전수 점검보다 이번처럼 구체적 공백 하나가 더 실행 가능. 코드 변경 없음(읽기 전용 조사, 서브에이전트가 index.html 2274-2281·2393-2416·2455-2480·4082-4084를 직접 Read/grep으로 재확인, 오케스트레이팅 세션은 서브에이전트 보고를 검토해 채택).",
       "commit": null
     }
   ]
