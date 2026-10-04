@@ -128,7 +128,7 @@ const FUNCTIONS = [
   'assetEval', 'assetGainLoss', 'assetGainLossBadge', 'costBasisField', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'delOwner', 'doMaturity', 'firstCash',
   'detectStaleMarketValuedTxns', 'delBudget', 'saveBudget',
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards',
-  'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate', 'openAssetHistory', 'openCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter',
+  'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'openCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter',
   'genSalt', 'pbkdf2Hash', 'genRecoveryCode', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer', 'openConfirmTransfer',
   'confirmTransferNow', 'postponeTransfer', 'confirmRecNow',
   'foreignSaveIsNewer', 'applyForeignSave', 'openCopyBackup', 'copyBackup', 'findDonors',
@@ -2429,7 +2429,7 @@ test('sanitizeBackup: 백업에 owners 목록이 없으면 지금 이 기기의 
 function minimalMergeDB(overrides) {
   return Object.assign({
     txns: [], recurrences: [], assets: [], categories: {}, owners: [],
-    budgetHistory: {}, settings: {}, inquiries: [], nwHistory: [], goals: [], deletedIds: {},
+    budgetHistory: {}, settings: {}, inquiries: [], nwHistory: [], goals: [], assetQtyLog: [], deletedIds: {},
   }, overrides);
 }
 test('mergeRemoteDataIntoLocal: DB.goals도 다른 컬렉션과 동일하게 mergeCollection으로 병합된다(둘 다 있으면 updatedAt이 더 큰 쪽이 이김)', () => {
@@ -2551,6 +2551,39 @@ test('mergeRemoteDataIntoLocal: 로컬에서 삭제한(톰스톤) 메모는 원�
     deletedIds: {},
   });
   assert.strictEqual(sandbox.DB.inquiries.find(q => q.id === 'q1'), undefined, '삭제 이후 원격이 손대지 않은 사본은 되살리면 안 됨');
+});
+
+/* mergeRemoteDataIntoLocal이 DB.goals/DB.inquiries와 동일하게 DB.assetQtyLog도 mergeCollection으로
+ * 병합하는지 확인한다(app-evolve cycle138 advance) — 이 버그 클래스(새 최상위 DB 컬렉션을 이 함수에
+ * 등록하는 걸 빠뜨림)가 goals(cycle123 critique)/inquiries(cycle137 develop)에 이어 또 반복되지
+ * 않도록, 신설 시점에 바로 배선하고 그 증거로 "두 기기가 오프라인에서 각자 독립적으로 수량 변경
+ * 기록을 남겨도 한쪽이 소실되지 않는다"를 직접 검증한다. */
+test('mergeRemoteDataIntoLocal: DB.assetQtyLog도 다른 컬렉션과 동일하게 mergeCollection으로 병합된다(두 기기가 각자 만든 기록이 소실 없이 합쳐짐)', () => {
+  sandbox.DB = minimalMergeDB({
+    assetQtyLog: [
+      { id: 'local-only', assetId: 'a1', date: '2026-01-01', prevQty: 0, newQty: 10, field: 'stockQty', updatedAt: 100 },
+      { id: 'both', assetId: 'a1', date: '2026-01-02', prevQty: 10, newQty: 20, field: 'stockQty', updatedAt: 100 },
+    ],
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    assetQtyLog: [
+      { id: 'remote-only', assetId: 'a2', date: '2026-01-03', prevQty: 0, newQty: 5, field: 'goldDon', updatedAt: 100 },
+      { id: 'both', assetId: 'a1', date: '2026-01-02', prevQty: 10, newQty: 30, field: 'stockQty', updatedAt: 200 },
+    ],
+    deletedIds: {},
+  });
+  const byId = Object.fromEntries(sandbox.DB.assetQtyLog.map(q => [q.id, q]));
+  assert.ok(byId['local-only'], '이 기기에서만 만든 기록은 그대로 남아야 함(소실되면 안 됨)');
+  assert.ok(byId['remote-only'], '다른 기기에서만 만든 기록도 들어와야 함(소실되면 안 됨)');
+  assert.strictEqual(byId['both'].newQty, 30, 'updatedAt이 더 큰 remote 쪽이 이겨야 함');
+});
+test('mergeRemoteDataIntoLocal: 로컬에서 삭제한(톰스톤) 수량 변경 기록은 원격이 그 이후 수정하지 않았으면 병합 후에도 되살아나지 않는다', () => {
+  sandbox.DB = minimalMergeDB({ assetQtyLog: [], deletedIds: { q1: 200 } });
+  sandbox.mergeRemoteDataIntoLocal({
+    assetQtyLog: [{ id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 0, newQty: 10, field: 'stockQty', updatedAt: 100 }],
+    deletedIds: {},
+  });
+  assert.strictEqual(sandbox.DB.assetQtyLog.find(q => q.id === 'q1'), undefined, '삭제 이후 원격이 손대지 않은 사본은 되살리면 안 됨');
 });
 
 /* ---------- txnsToCSV: 거래 내역 CSV 내보내기 ---------- */
@@ -3297,6 +3330,59 @@ test('openAssetHistory: catExact/owner 필터도 함께 리셋한다(openCatHist
   assert.strictEqual(sandbox.ST.hist.catExact, null);
   assert.strictEqual(sandbox.ST.hist.owner, '전체');
   assert.deepStrictEqual(sandbox.goCalls, ['history']);
+});
+
+/* ---------- openAssetHistory가 fx/gold/stock에선 전체내역 대신 수량 변경 기록(openAssetQtyLog)으로
+ * 가고, 그 시트의 delAssetQtyLog가 delGoal/delInquiry와 동일한 확인+undoToast+톰스톤 패턴을
+ * 따르는지 확인한다(app-evolve cycle138 advance). openAssetPicker(excludeMarketValued:true)가
+ * 이 자산들을 거래의 from/to로 영원히 못 쓰게 막아 matchesAssetId()가 항상 빈 목록을 돌려주므로,
+ * '내역 보기' 버튼이 그대로였다면 영구히 빈 화면이었다. ---------- */
+test('openAssetHistory: fx/gold/stock(시가평가) 자산은 전체내역 탭 대신 수량 변경 기록 시트를 연다', () => {
+  sandbox.DB = { assets: [{ id: 'mv1', type: 'stock', name: '삼성전자', stockCode: '005930', stockQty: 10 }], assetQtyLog: [] };
+  sandbox.goCalls = [];
+  sandbox.lastSheetHtml = null;
+  sandbox.openAssetHistory('mv1');
+  assert.deepStrictEqual(sandbox.goCalls, [], "전체내역 탭으로 가면 안 됨(go('history')가 불리면 안 됨)");
+  assert.ok(sandbox.lastSheetHtml && sandbox.lastSheetHtml.includes('삼성전자'), '수량 변경 기록 시트가 열려야 함');
+});
+test('openAssetQtyLog: 날짜·부호 있는 변화량을 보여주고, 최신(updatedAt이 큰) 기록이 먼저 나온다', () => {
+  sandbox.DB = {
+    assets: [{ id: 'a1', type: 'fx', name: '달러통장', currency: 'USD' }],
+    assetQtyLog: [
+      { id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 100, newQty: 150, field: 'fxAmount', updatedAt: 100 },
+      { id: 'q2', assetId: 'a1', date: '2026-02-01', prevQty: 150, newQty: 120, field: 'fxAmount', updatedAt: 200 },
+    ],
+  };
+  sandbox.openAssetQtyLog('a1');
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('달러통장'));
+  assert.ok(html.indexOf('-30') < html.indexOf('+50'), '최신 기록(q2, -30)이 더 오래된 기록(q1, +50)보다 먼저 나와야 함');
+});
+test('delAssetQtyLog: 바로 지우지 않고 확인 시트를 띄우며, 확인해야 DB.assetQtyLog에서 제거되고 DB.deletedIds에 톰스톤이 남는다', () => {
+  sandbox.DB = { assets: [{ id: 'a1', type: 'stock', name: '삼성전자', stockCode: '005930', stockQty: 10 }],
+    assetQtyLog: [{ id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 5, newQty: 10, field: 'stockQty', updatedAt: 1 }], deletedIds: {} };
+  sandbox.confirmSheetCalls = [];
+  sandbox.delAssetQtyLog('q1');
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 1, '바로 지우지 않고 확인 시트를 띄워야 함');
+  assert.strictEqual(sandbox.DB.assetQtyLog.length, 1, '확인 전에는 그대로여야 함');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.assetQtyLog.length, 0);
+  assert.ok(typeof sandbox.DB.deletedIds.q1 === 'number', 'deletedIds에 숫자 타임스탬프가 남아야 함');
+});
+test('delAssetQtyLog: undoToast의 되돌리기를 누르면 기록이 되살아나고(touch()로 updatedAt 재갱신) 톰스톤도 지워진다', () => {
+  sandbox.DB = { assets: [{ id: 'a1', type: 'stock', name: '삼성전자', stockCode: '005930', stockQty: 10 }],
+    assetQtyLog: [{ id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 5, newQty: 10, field: 'stockQty', updatedAt: 1 }], deletedIds: {} };
+  sandbox.confirmSheetCalls = [];
+  sandbox.lastUndo = null;
+  sandbox.delAssetQtyLog('q1');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.assetQtyLog.length, 0);
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출돼야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.assetQtyLog.length, 1);
+  assert.strictEqual(sandbox.DB.assetQtyLog[0].id, 'q1');
+  assert.strictEqual(sandbox.DB.assetQtyLog[0].updatedAt, 'test-updatedAt');
+  assert.strictEqual(sandbox.DB.deletedIds.q1, undefined, '되돌리면 톰스톤도 지워져야 함');
 });
 
 /* ---------- esc: 저장형 XSS 방지 (asset/memo/category 등 사용자 입력값을 innerHTML에 넣기 전 이스케이프) ---------- */
@@ -4858,6 +4944,42 @@ test('sanitizeBackup: text가 정상 문자열인 문의 메모는 그대로 둔
   assert.strictEqual(fixedCount, 0);
 });
 
+/* ---------- sanitizeBackup: DB.assetQtyLog(fx/gold/stock 수량 변경 기록, app-evolve cycle138)도
+ * txns/assets/recurrences/goals/inquiries와 동일하게 백업 복원·클라우드 풀 경로에서 검증돼야
+ * 한다 — assetId 없는 레코드는 openAssetQtyLog()가 어느 자산의 기록인지 알 수 없어 무의미하므로
+ * 통째로 제거하고, prevQty/newQty는 SANITIZE_QTY_FIELDS와 동일한 수량성 필드라 min 0으로
+ * 클램프한다. ---------- */
+test('sanitizeBackup: id나 assetId 없는 수량 변경 기록은 통째로 제거하고, assetQtyLog가 없거나 배열이 아니어도 터지지 않는다', () => {
+  const droppedNoId = sandbox.sanitizeBackup({ txns: [], assets: [], assetQtyLog: [{ assetId: 'a1', date: '2026-01-01', prevQty: 0, newQty: 10, field: 'stockQty' }] });
+  assert.strictEqual(droppedNoId.data.assetQtyLog.length, 0);
+  assert.strictEqual(droppedNoId.droppedCount, 1);
+  const droppedNoAssetId = sandbox.sanitizeBackup({ txns: [], assets: [], assetQtyLog: [{ id: 'q1', date: '2026-01-01', prevQty: 0, newQty: 10, field: 'stockQty' }] });
+  assert.strictEqual(droppedNoAssetId.data.assetQtyLog.length, 0);
+  assert.strictEqual(droppedNoAssetId.droppedCount, 1);
+  const missing = sandbox.sanitizeBackup({ txns: [], assets: [] });
+  assert.strictEqual(missing.data.assetQtyLog.length, 0);
+  const notArray = sandbox.sanitizeBackup({ txns: [], assets: [], assetQtyLog: { oops: true } });
+  assert.strictEqual(notArray.data.assetQtyLog.length, 0);
+});
+test('sanitizeBackup: 수량 변경 기록의 prevQty/newQty가 음수·비정상이면 0으로 클램프하고 fixedCount를 센다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    assetQtyLog: [{ id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: -5, newQty: 'oops', field: 'stockQty' }],
+  });
+  assert.strictEqual(data.assetQtyLog[0].prevQty, 0);
+  assert.strictEqual(data.assetQtyLog[0].newQty, 0);
+  assert.strictEqual(fixedCount, 2);
+});
+test('sanitizeBackup: 정상적인 수량 변경 기록은 그대로 둔다(정상 케이스는 회귀 없음)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    assetQtyLog: [{ id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 10, newQty: 25, field: 'stockQty' }],
+  });
+  assert.strictEqual(data.assetQtyLog[0].prevQty, 10);
+  assert.strictEqual(data.assetQtyLog[0].newQty, 25);
+  assert.strictEqual(fixedCount, 0);
+});
+
 /* ---------- spendByCategory: 지출 분석 카테고리별 합계는 잔액 조정(기본 제외)을 빼야 한다 ---------- */
 test('spendByCategory: 수지에 포함되지 않은 잔액 조정 지출은 카테고리 합계에서 제외된다', () => {
   sandbox.DB = {
@@ -5564,6 +5686,39 @@ test('saveAsset: 신규 등록·기존 수정 모두 touch()로 updatedAt이 채
   sandbox.asDraft = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 20 };
   sandbox.saveAsset(true);
   assert.strictEqual(sandbox.DB.assets[0].updatedAt, 'test-updatedAt', '수정 시에도 updatedAt이 갱신되어야 함');
+});
+/* ---------- saveAsset: fx/gold/stock(isMarketValued) 수량을 수정하면 DB.assetQtyLog에 변경 전/후
+ * 수량이 기록된다(app-evolve cycle138 advance). cash/savings 등(balType)은 수정 시 addBalanceAdjust/
+ * updateBalanceAdjust로 거래가 남아 '내역 보기'에서 추적되는데, fx/gold/stock은 saveAsset()이
+ * 수량을 그냥 덮어써서 언제·얼마나 바뀌었는지 아무 기록도 없었고, 그 '내역 보기' 버튼도
+ * matchesAssetId()가 거래에서 못 찾아 항상 빈 화면으로 가는 막다른 길이었다. ---------- */
+test('saveAsset: 주식 보유 수량을 수정하면 DB.assetQtyLog에 변경 전/후 수량이 기록된다', () => {
+  const asset = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 10 };
+  sandbox.DB = { assets: [asset], assetQtyLog: [], rates: { fx: {}, stocks: { '005930': 70000 }, goldPerG: 0 } };
+  sandbox.asDraft = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 25 };
+  sandbox.saveAsset(true);
+  assert.strictEqual(sandbox.DB.assets[0].stockQty, 25, '자산의 실제 보유수량도 새 값으로 저장돼야 함');
+  assert.strictEqual(sandbox.DB.assetQtyLog.length, 1, '수량이 바뀌었으니 기록이 정확히 한 건 남아야 함');
+  const log = sandbox.DB.assetQtyLog[0];
+  assert.strictEqual(log.assetId, 'a1');
+  assert.strictEqual(log.field, 'stockQty');
+  assert.strictEqual(log.prevQty, 10);
+  assert.strictEqual(log.newQty, 25);
+  assert.strictEqual(log.updatedAt, 'test-updatedAt', 'touch()로 찍혀야 mergeCollection이 병합할 수 있음');
+});
+test('saveAsset: fx/gold/stock 수량이 그대로면(바뀌지 않았으면) DB.assetQtyLog에 기록을 남기지 않는다', () => {
+  const asset = { id: 'a1', type: 'gold', owner: '나', includeInTotal: true, name: '금', goldDon: 5 };
+  sandbox.DB = { assets: [asset], assetQtyLog: [], rates: { fx: {}, stocks: {}, goldPerG: 80000 } };
+  sandbox.asDraft = { id: 'a1', type: 'gold', owner: '나', includeInTotal: true, name: '금', goldDon: 5 };
+  sandbox.saveAsset(true);
+  assert.strictEqual(sandbox.DB.assetQtyLog.length, 0, '수량 변화가 없으면 기록할 게 없음');
+});
+test('saveAsset: cash 등 balType 자산을 수정해도 DB.assetQtyLog는 건드리지 않는다(잔액 조정 내역으로 이미 별도 추적됨)', () => {
+  const asset = { id: 'a1', type: 'cash', owner: '나', includeInTotal: true, name: '지갑', baseAmount: 10000 };
+  sandbox.DB = { assets: [asset], assetQtyLog: [], txns: [], rates: { fx: {}, stocks: {}, goldPerG: 0 } };
+  sandbox.asDraft = { id: 'a1', type: 'cash', owner: '나', includeInTotal: true, name: '지갑', baseAmount: 10000, _dispAmt: 20000 };
+  sandbox.saveAsset(true);
+  assert.strictEqual(sandbox.DB.assetQtyLog.length, 0, 'balType 자산은 isMarketValued가 아니므로 이 분기를 타면 안 됨');
 });
 /* ---------- saveAsset: 주식 자산의 종목코드가 비어 있으면 저장을 막는다 (cycle58 develop).
  * syncAssetInputs()는 종목코드를 trim/uppercase만 할 뿐 필수 여부를 검사하지 않고, saveAsset()도

@@ -1318,7 +1318,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.43';
+const APP_VERSION='1.47.44';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1460,6 +1460,7 @@ function mergeRemoteDataIntoLocal(remoteData){
  DB.assets=mergeCollection(DB.assets,remoteData.assets,DB.deletedIds,remoteData.deletedIds);
  DB.goals=mergeCollection(DB.goals,remoteData.goals,DB.deletedIds,remoteData.deletedIds); /* app-evolve cycle123: 신설(cycle122) 당시 여기 누락돼 두 기기가 오프라인에서 각자 목표를 고치면 한쪽이 조용히 소실/복원되던 버그 */
  DB.inquiries=mergeCollection(DB.inquiries,remoteData.inquiries,DB.deletedIds,remoteData.deletedIds); /* app-evolve cycle133: goals와 동일한 누락 — 문의 메모에 id/updatedAt이 없을 때부터 여기서 전혀 병합되지 않고 있었음 */
+ DB.assetQtyLog=mergeCollection(DB.assetQtyLog,remoteData.assetQtyLog,DB.deletedIds,remoteData.deletedIds); /* app-evolve cycle138: goals/inquiries와 동일한 '신설 컬렉션 병합 배선 누락' 버그 클래스가 처음부터 반복되지 않도록 신설 시점에 바로 추가 */
  /* categories/owners/budgetHistory는 id 기반이 아니라 mergeCollection을 쓸 수 없어 전용 순수
   * 함수로 병합한다 — 이전엔 여기서 전혀 병합되지 않아, 두 기기가 오프라인 상태에서 각자
   * 카테고리/귀속/예산을 고치면 로컬 값이 조용히 이기고 이어지는 push가 상대 기기의 편집을
@@ -2032,6 +2033,7 @@ function migrate(){
  DB.inquiries.forEach(q=>{if(!q.id)q.id=uid();if(!q.updatedAt)q.updatedAt=Date.now()}); /* id/updatedAt은 cycle133에 추가된 필드라 그 전에 저장된 메모엔 없음 — 없으면 mergeCollection()이 모든 레코드를 같은 undefined id로 취급해 하나로 뭉개버림 */
  DB.goals=DB.goals||[]; /* 순자산 목표: [{id,name,type:'networth',targetAmount,targetDate,owner,createdAt}] */
  DB.goals.forEach(g=>{if(!g.owner)g.owner='all'}); /* owner는 cycle124에 추가된 필드라 그 전에 생긴 목표엔 없음 — 'all'(전체)로 채워야 goalOwnerEff/nwHistoryForOwner가 가구 전체 추이로 올바르게 처리함 */
+ DB.assetQtyLog=DB.assetQtyLog||[]; /* fx/gold/stock 보유수량 변경 기록: [{id,assetId,date,prevQty,newQty,field}] — field는 'fxAmount'|'goldDon'|'stockQty' (app-evolve cycle138) */
  DB.deletedIds=gcTombstones(DB.deletedIds||{},Date.now()); /* 부팅 때마다 오래된 tombstone 정리(GC) */
 }
 /* storageOutcomeMsg: localStorage 쓰기 시도 결과(ok)와 직전 상태(wasOk)를 놓고 어떤 토스트를
@@ -3286,6 +3288,16 @@ function saveAsset(editing){
      if(balKey==='baseAmount')delete d.amountKRW;else delete d.baseAmount;
      DB.assets[i]=d;
      updateBalanceAdjust(d,entered); /* 입력 금액에 맞춰 조정 내역 수정 */
+   }else if(isMarketValued(d)){ /* fx/gold/stock: balType처럼 거래로 남는 조정 내역이 없어, 수량을
+       덮어쓰기 전에 변경폭을 DB.assetQtyLog에 기록해둔다 — 이전엔 saveAsset()이 그냥 덮어써서
+       수량이 언제·얼마나 바뀌었는지 아무 기록도 남지 않았다(app-evolve cycle138 advance) */
+     const qtyField=d.type==='fx'?'fxAmount':d.type==='gold'?'goldDon':'stockQty';
+     const prevQty=DB.assets[i][qtyField]||0,newQty=d[qtyField]||0;
+     DB.assets[i]=d;
+     if(prevQty!==newQty){
+       DB.assetQtyLog=DB.assetQtyLog||[];
+       DB.assetQtyLog.push(touch({id:uid(),assetId:d.id,date:TODAY,prevQty,newQty,field:qtyField}));
+     }
    }else{
      d[balKey]=origBase; /* 원래 기준값 유지한 채 교체 */
      if(balKey==='baseAmount')delete d.amountKRW;else delete d.baseAmount;
@@ -4032,10 +4044,41 @@ function filteredHist(){
  _histCache={key,list};
  return list;
 }
-/* 자산 행의 '내역' 버튼 → 전체내역을 해당 계좌로만 필터해서 연다 (sumTap과 달리 날짜 범위는 건드리지 않음) */
+/* 자산 행의 '내역' 버튼 → 전체내역을 해당 계좌로만 필터해서 연다 (sumTap과 달리 날짜 범위는 건드리지 않음).
+ * fx/gold/stock(isMarketValued)은 openAssetPicker(excludeMarketValued:true)에 막혀 거래의
+ * from/to로 전혀 쓰일 수 없어 matchesAssetId()가 항상 빈 목록을 돌려준다 — 이 버튼이 그 자산들에선
+ * 영원히 빈 화면으로 가는 막다른 길이었다. 대신 그 자산들만 보유수량 변경 기록(DB.assetQtyLog)
+ * 시트로 보낸다(app-evolve cycle138 advance). */
 function openAssetHistory(assetId){
+ const a=DB.assets.find(x=>x.id===assetId);
+ if(a&&isMarketValued(a)){openAssetQtyLog(assetId);return}
  ST.hist.assetId=assetId;ST.hist.cat='전체';ST.hist.q='';ST.hist.catExact=null;ST.hist.owner='전체';ST.hist.selMode=false;ST.hist.sel.clear();histInvalidate();
  go('history');
+}
+/* fx/gold/stock 전용 보유수량 변경 기록 목록 — openAssetHistory()가 이 자산들에 한해 전체내역
+ * 대신 연다. 거래로 남지 않는 saveAsset()의 수량 덮어쓰기를 날짜·변화량으로 보여주고,
+ * delGoal/delInquiry와 동일한 확인 시트+undoToast+톰스톤 패턴으로 개별 기록을 지울 수 있게 한다. */
+function openAssetQtyLog(assetId){
+ const a=DB.assets.find(x=>x.id===assetId);if(!a)return;
+ const unit=a.type==='fx'?a.currency:(a.type==='gold'?'돈':'주');
+ const items=(DB.assetQtyLog||[]).filter(q=>q.assetId===assetId).sort((x,y)=>(y.updatedAt||0)-(x.updatedAt||0));
+ const row=q=>{const delta=q.newQty-q.prevQty;const sign=delta>0?'+':'';
+  return `<div class="manage-row" style="align-items:flex-start"><div style="flex:1;min-width:0">
+    <div class="mn num">${sign}${commaQty(delta)} ${esc(unit)}</div>
+    <div class="msub">${q.date||''} · ${commaQty(q.prevQty)} → ${commaQty(q.newQty)} ${esc(unit)}</div></div>
+   <div class="row-acts"><button class="act-btn danger" aria-label="수량 변경 기록 삭제" onclick="delAssetQtyLog('${q.id}')">${svg('trash')}</button></div></div>`};
+ openSheet(`<h3>${esc(a.name)} 수량 변경 기록</h3><div class="desc">보유 수량을 직접 수정할 때마다 남는 기록이에요. 거래 내역과는 별도예요</div>
+  ${items.length?items.map(row).join(''):`<div class="empty"><div class="ei">${svg('receipt')}</div><div class="et">아직 수량 변경 기록이 없어요</div></div>`}
+  <div style="height:12px"></div><button class="btn btn-primary" onclick="closeSheet()">닫기</button>`);
+}
+function delAssetQtyLog(id){
+ const q=(DB.assetQtyLog||[]).find(x=>x.id===id);if(!q)return;
+ confirmSheet('기록을 삭제할까요?','이 수량 변경 기록만 지워요. 자산의 현재 보유 수량은 바뀌지 않아요.','삭제',()=>{
+  DB.assetQtyLog=(DB.assetQtyLog||[]).filter(x=>x.id!==id);
+  DB.deletedIds=DB.deletedIds||{};DB.deletedIds[id]=Date.now(); /* delGoal/delInquiry와 동일한 톰스톤 — 없으면 mergeRemoteDataIntoLocal이 이 삭제를 모르고 다른 기기의 사본을 되살림 */
+  save();openAssetQtyLog(q.assetId);
+  undoToast('기록을 삭제했어요',()=>{DB.assetQtyLog.push(q);delete DB.deletedIds[id];touchSave(q);openAssetQtyLog(q.assetId);toast('되돌렸어요')});
+ });
 }
 /* 지출 분석 카테고리 행의 '내역' 버튼 → 전체내역을 해당 카테고리(지출)+이번 달+해당 귀속으로 필터해서 연다.
    openAssetHistory와 같은 관례지만, 지출 분석은 늘 ST.ledger의 달과 ST.spendOwner 기준으로 집계하므로
@@ -5437,7 +5480,22 @@ function sanitizeBackup(obj){
   if(typeof d.text!=='string'){d.text=d.text==null?'':String(d.text);fixedCount++}
   inquiries.push(d);
  });
- return {data:Object.assign({},obj,{txns,assets,recurrences,goals,inquiries}),fixedCount,droppedCount,rangeCount};
+ /* DB.assetQtyLog(fx/gold/stock 보유수량 변경 기록, app-evolve cycle138)도 txns/assets/recurrences/
+  * goals/inquiries와 동일하게 백업 복원·클라우드 풀 경로에서 검증해야 한다. assetId 없는 레코드는
+  * openAssetQtyLog()가 어느 자산의 기록인지 알 수 없어 무의미하므로(자산이 삭제된 뒤에도 남는 건
+  * 의도된 동작이지만 그건 assetId가 있고 그 자산만 못 찾는 경우다 — assetId 자체가 없는 건 손상된
+  * 데이터) 통째로 제거한다. prevQty/newQty는 SANITIZE_QTY_FIELDS와 동일한 수량성 필드라 min 0으로
+  * 클램프한다. */
+ const srcQtyLog=Array.isArray(obj&&obj.assetQtyLog)?obj.assetQtyLog:[];
+ const assetQtyLog=[];
+ srcQtyLog.forEach(q=>{
+  if(!q||!q.id||!q.assetId){droppedCount++;return}
+  const d=Object.assign({},q);
+  if('prevQty' in d){const n=sanitizeAmount(d.prevQty,0);if(n!==d.prevQty){d.prevQty=n;fixedCount++}}
+  if('newQty' in d){const n=sanitizeAmount(d.newQty,0);if(n!==d.newQty){d.newQty=n;fixedCount++}}
+  assetQtyLog.push(d);
+ });
+ return {data:Object.assign({},obj,{txns,assets,recurrences,goals,inquiries,assetQtyLog}),fixedCount,droppedCount,rangeCount};
 }
 /* obj.assets/obj.txns가 배열인지까지 검증한 뒤 DB를 통째로 교체한다. migrate()가 손상된
  * obj 때문에 중간에 throw해도 DB가 절반만 마이그레이션된 채로 남지 않도록, 실패 시 교체 전
