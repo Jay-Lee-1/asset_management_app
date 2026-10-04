@@ -1,15 +1,8 @@
 {
   "cycle": 139,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 134,
-      "phase": "review",
-      "timestamp": "2026-10-04T01:07:51.859Z",
-      "summary": "develop 커밋(ce71e59, openQuickAmount() qAmt Enter-to-submit에 isComposing 가드 추가)을 검토. onkeydown=\"if(event.key==='Enter'&&!event.isComposing)saveQuickAmount(...)\"가 cycle130-133의 asCostBasis/txMemo/rAmt/goalAmt와 동일한 가드 패턴임을 소스 대조로 확인. saveQuickAmount() 호출 인자(recId,date)도 버튼의 onclick과 정확히 일치. 새 회귀 테스트(qAmt onkeydown 문자열 정확 매칭)도 기존 패턴과 동일 방식. node test/run.js 887/887 재통과. 코드 변경 없음(이상 없음).",
-      "commit": null
-    },
     {
       "cycle": 134,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-04T21:35:00.000Z",
       "summary": "general-purpose 서브에이전트 조사로 assetBodyHTML()의 ST.editAssets+assetSort==='custom' 분기(cycle134 advance에서 추가된 .asset-sub-row 위/아래 이동 버튼, index.html:2918-2924)가 그룹의 절대 양끝에서만 disabled될 뿐, groupItems()(2800-2808)가 a.order 정렬 뒤 includeInTotal 여부로 다시 안정정렬해 '총자산 미포함' 자산을 그룹 맨 뒤로 고정하는 두 번째 정렬 경계는 전혀 고려하지 않고 있었음을 발견·수정. 포함 자산 그룹의 마지막 항목에서 '아래로' 또는 미포함 자산 그룹의 첫 항목에서 '위로'를 누르면 moveAsset()이 order는 바꾸지만 다음 렌더에서 groupItems()의 includeInTotal 안정정렬이 그대로 되돌려 화면 순서가 바뀌지 않는, 버튼만 활성화돼 있고 눌러도 아무 효과 없는 죽은 컨트롤이었다(숫자 스크립트로 두 정렬 패스를 직접 재현해 재현 확인). assetBodyHTML()에서 assetRows.findIndex(x=>!x.includeInTotal)로 포함/미포함 경계(splitIdx)를 구해, 위로 버튼은 ai===0||ai===splitIdx, 아래로 버튼은 ai===aarr.length-1||ai===splitIdx-1일 때도 disabled 처리(전부 포함/전부 미포함이면 splitIdx=-1이라 기존 양끝 처리만 남아 회귀 없음). test/run.js에 포함 2개+미포함 2개 혼합 그룹 회귀 테스트 1개 추가 — 수정 전 코드로 되돌려 해당 테스트가 실제로 FAIL함을 직접 검증한 뒤 복구. node test/run.js 944/944 -> 945/945 통과. APP_VERSION 1.47.46->1.47.47, sw.js CACHE v308->v309.",
+      "commit": null
+    },
+    {
+      "cycle": 139,
+      "phase": "review",
+      "timestamp": "2026-10-04T22:10:00.000Z",
+      "summary": "develop 커밋(141a04a, 그룹 내 자산 재배열 버튼이 포함/미포함 경계에서 조용히 죽던 버그 수정)을 검토. groupItems()(2800-2808)가 order 정렬 후 includeInTotal로 안정 재정렬해 미포함 자산을 그룹 맨 뒤로 고정한다는 전제, assetBodyHTML()에서 customSort일 때만 assetRows=groupItems(t)를 쓴다는 점, splitIdx=assetRows.findIndex(x=>!x.includeInTotal)가 이미 정렬된 배열의 포함/미포함 경계를 정확히 가리킨다는 점을 소스 대조로 확인. 양끝+경계 disabled 조건(ai===0||ai===splitIdx, ai===aarr.length-1||ai===splitIdx-1)을 전부 포함/전부 미포함/혼합 세 경우로 손으로 추적: 전부 포함(splitIdx=-1)과 전부 미포함(splitIdx=0, 코드 주석은 이 경우도 -1이라고 잘못 적어뒀으나 실제론 findIndex가 0을 반환함)에서 공식이 둘 다 기존 양끝 규칙으로만 축소되어 회귀 없음을 확인, 혼합 케이스는 새 테스트로 커버. node test/run.js 945/945 통과. 코드 버그 없음 — 다만 주석의 \"splitIdx=-1(전부 포함 또는 전부 미포함)\" 서술이 부정확함(전부 미포함이면 실제로는 splitIdx=0)을 critique 참고용으로 기록. 코드 변경 없음(이상 없음, 주석 오류는 사소하여 이번엔 고치지 않음).",
       "commit": null
     }
   ]
