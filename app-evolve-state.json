@@ -1,15 +1,8 @@
 {
   "cycle": 137,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 132,
-      "phase": "review",
-      "timestamp": "2026-10-03T17:05:00.000Z",
-      "summary": "develop 커밋(83077a5, renderRecSheet() rAmt Enter-to-submit 추가)을 검토. onkeydown=\"if(event.key==='Enter'&&!event.isComposing)saveRec()\"가 cycle130의 costBasisField/asCostBasis 패턴과 정확히 일치함을 소스 대조로 확인. saveRec()(3832-3866)을 직접 Read해 !d.amount 외의 누락 필드(transfer/saving의 toAssetId, expense/income의 fromAssetId 등)도 모두 toast+return으로 안전하게 처리되어 Enter 제출이 크래시나 데이터 손상으로 이어지지 않음을 확인. 새 회귀 테스트(extractFunction 소스 패턴 검사)도 costBasisField/renderTxSheet 테스트와 동일 방식으로 적절. node test/run.js 876/876 재통과. 코드 변경 없음(이상 없음).",
-      "commit": null
-    },
     {
       "cycle": 132,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-04T00:00:00.000Z",
       "summary": "general-purpose 서브에이전트 조사로 sanitizeBackup()(cloud-pull/backup-restore 경로가 공통으로 거치는 원격 데이터 정제 함수)에 txns/assets/recurrences/goals와 달리 DB.inquiries(cycle133에 추가된 '문의하기'/저장한 메모) 검증 블록이 아예 없었음을 발견·수정. migrate()는 기존 레코드에 id/updatedAt만 백필할 뿐 손상 레코드를 걸러내거나 text를 정규화하지 않고, sanitizeBackup()이 Object.assign({},obj,...)로 inquiries를 그대로 통과시켜온 탓에 다른 기기/버전에서 온 id 없는 레코드나 비문자열 text, 배열이 아닌 inquiries가 그대로 병합될 수 있었다 — 이후 '저장한 메모 보기'에서 delInquiry()가 q.text.length에서 TypeError로 터질 수 있는 경로. goals 블록 바로 뒤에 inquiries 검증 블록 추가(id 없는 레코드는 droppedCount, 비문자열 text는 빈 문자열로 coerce 후 fixedCount, 비배열 inquiries도 안전 처리)하고 sanitizeBackup() 반환 객체에 inquiries를 명시 포함. test/run.js에 회귀 테스트 3개 추가(id 없는 레코드 drop/비배열 처리, 비문자열 text 정규화+fixedCount, 정상 케이스 무회귀). node test/run.js 922/922 -> 925/925 통과. APP_VERSION 1.47.42->1.47.43, sw.js CACHE v304->v305. 커밋 38290d0. (오케스트레이팅 세션 메모: 서브에이전트가 커밋할 당시 컨테이너가 detached HEAD였고 로컬 main 레프가 오래된 분기(c76ce67, 이 state.json 히스토리에 없는 별도 사이클들)를 가리키고 있었다 — git fetch origin main으로 origin/main이 이미 fe93cfb로 force-update돼 있음을 확인(즉 실제 origin 최신 상태는 cycle136 advance와 일치), 38290d0이 그 fe93cfb의 직계 자식이라 fast-forward 가능함을 merge-base --is-ancestor로 검증 후 로컬 main을 38290d0으로 재설정하고 origin에 push 완료. origin/main이 유일한 지속 경로이므로 향후 세션은 origin/main 기준으로 계속 이어가면 됨.)",
       "commit": "38290d0d2acf548469ff877f1e3fcf10035485f0"
+    },
+    {
+      "cycle": 137,
+      "phase": "review",
+      "timestamp": "2026-10-04T14:08:28.848Z",
+      "summary": "develop 커밋(38290d0, sanitizeBackup()에 DB.inquiries 검증 추가)을 검토. goals 블록(5406-5423)과 정확히 동일한 패턴(id 없는 레코드 드랍, 배열 아님 방어, text 비문자열 정규화)으로 작성됐음을 소스 대조로 확인. 커밋 메시지가 지목한 크래시 지점(delInquiry() q.text.length, index.html:4886)을 직접 Read해 재확인 — text가 문자열이 아니면 TypeError가 맞음. 호출부 3곳(1766/1802/1810/1822) 모두 sanitizeBackup().data를 거친 뒤 migrate()가 뒤따르므로 누락된 id/updatedAt은 기존 goals 패턴과 동일하게 안전. mergeCollection()(logic.js:107-129)이 updatedAt 누락을 ||0으로 안전 처리함도 확인(신규 버그 아님, goals와 동일한 기존 한계). fixedCount/droppedCount도 resolveCloudPullRemote() 토스트(1824)에 이미 반영되어 사용자에게 노출됨. node test/run.js 925/925 통과(신규 3건 포함). 코드 변경 없음(이상 없음).",
+      "commit": null
     }
   ]
 }
