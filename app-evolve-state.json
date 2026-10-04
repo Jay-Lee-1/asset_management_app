@@ -1,19 +1,8 @@
 {
-  "cycle": 135,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "순자산 추이 카드가 60일 고정 스파크라인이라 기간 조절·탭 인터랙션이 없음",
-    "why": "nwHistoryCard(owner)(index.html:2393-2416)가 항상 hist.slice(-60)(2396행)로 최근 60일만 보여주고 기간을 1개월/3개월/1년/전체로 바꿀 UI가 전혀 없다. 하지만 pruneNwHistory(2274-2281)는 최근 90일 일별 스냅샷 + 그 이전은 월 1회 스냅샷을 무기한 보존하도록 이미 설계돼 있어, 수개월~수년치 데이터가 실제로 쌓이는데도 홈 카드에서는 영원히 닿을 수 없다. 렌더된 <svg>(2411-2414)는 aria-hidden=\"true\"에 onclick/onpointer 등 어떤 인터랙션 핸들러도 없어, 점을 눌러 날짜·금액을 확인할 수 없다 — 전체내역의 histPeek류(4053-4057 근방, 누르고 있기 패턴)처럼 앱의 다른 숫자 표면은 대부분 탭/롱프레스로 상세를 보여주는 것과 대조된다. goalProgress의 '목표일 예상' 로직과 nwHistoryForOwner가 이미 DB.nwHistory 전체를 소비하고 있어 데이터 파이프라인 자체는 장기 구간을 다룰 수 있음이 증명됨 — 문제는 순전히 홈 카드 표시 레이어가 인위적으로 60일/비대화형으로 잘라내고 있다는 것. Enter-to-submit 시리즈/touchSave 가드/지출분석 drill-down/문의하기/자산 개별 재배열 등 기존 35개 사이클의 어떤 항목과도 겹치지 않는, 순자산 추이 시각화 자체의 공백이다.",
-    "approach": "(1) nwHistoryCard에 기간 선택 세그먼트 컨트롤(1개월/3개월/1년/전체)을 추가하고 선택값을 ST.nwRange(기본값은 현재 동작과 같은 3개월 또는 60일) 같은 상태에 저장해 전체 화면 전환 없이 바로 리렌더되게 한다. (2) logic.js에 순수 함수 nwHistoryRange(hist, preset)를 추가 — DB.nwHistory를 preset에 맞게 슬라이스/집계하고, '전체'처럼 긴 구간은 pruneNwHistory가 이미 보존해둔 월별 포인트로 다운샘플링해 nwChartPath가 매일 포인트를 다 그릴 필요가 없게 한다. (3) 차트를 인터랙티브하게 만든다 — svg/컨테이너에 pointer/touch 핸들러를 달아 x좌표로 가장 가까운 포인트를 찾아 날짜+금액을 보여주는 작은 툴팁/라벨을 띄우되, 파일에 이미 있는 histPeekStart/histPeekMove/histPeekEnd 누르고 있기 패턴과 일관되게 구현하고, aria-hidden을 무조건 유지하는 대신 인접한 live-region 텍스트나 접근 가능한 대체 표현을 추가한다. (4) refreshNwHistoryCard()(2788-2790 근방)가 기간 변경 시에도 리렌더되도록 갱신한다. (5) test/run.js에 nwHistoryRange 유닛 테스트를 추가 — 짧은 이력, 정확히 60일 경계, 다년치 다운샘플링, owner 필터(nwHistoryForOwner 재사용) 케이스를 커버한다."
-  },
+  "cycle": 136,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 130,
-      "phase": "advance",
-      "timestamp": "2026-10-03T12:00:00.000Z",
-      "summary": "critique(cycle130) 계획대로 renderAssetSheet()의 자산 등록/수정 폼에 Enter-to-submit을 추가했다. costBasisField(d,editing)로 함수 시그니처를 확장해 공용 매입금액 입력(asCostBasis)에 onkeydown=\"if(event.key==='Enter'&&!event.isComposing)saveAsset(${editing})\"를 추가 — fx/gold/stock 세 타입 모두의 마지막 입력이라 이 한 곳만 고치면 세 분기 모두 자동 적용됨, 세 호출부(fx/gold/stock)를 costBasisField(d,editing)으로 갱신. cash/debt/realestate/etc/pension/savings 공용 asAmt 필드에는 d.type==='savings'일 때만 onkeydown을 비우는 조건부 문자열(amtEnterSubmit)을 추가 — savings는 그 뒤 만기일 선택 버튼이 이어지므로 계획대로 제외. test/run.js: renderAssetSheet를 extractFunction()으로 추출해 asAmt의 조건부 onkeydown 패턴을 정규식으로 검증하는 테스트 1개(renderAssetSheet는 FUNCTIONS 목록 밖이라 실행이 아닌 소스 패턴 검증, renderMenu/openSpendAnalysis 등 기존 rowKeydown 패턴 테스트와 동일 방식) + costBasisField(FUNCTIONS에 이미 등록되어 실제 실행 가능)를 직접 호출해 반환 문자열 전체를 strictEqual로 검증하는 테스트 1개와 editing=true 전파를 확인하는 테스트 1개, 총 2개 테스트 추가. node test/run.js 866/866 -> 868/868 통과. APP_VERSION 1.47.29->1.47.30, sw.js CACHE v291->v292. pending_advance_plan을 null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 131,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-04T06:10:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(135사이클 동안 다뤄진 항목 전부 제외 지시: Enter-to-submit 시리즈/touchSave 구조적 가드/지출분석 drill-down/문의하기 dead end/자산 그룹 내 개별 재배열/DB.deletedType·deletedBal 병합 포함). 새로 발견 후 직접 소스 재검증: nwHistoryCard(owner)(index.html:2393-2416)가 hist.slice(-60)(2396행)로 항상 최근 60일 고정 스파크라인만 보여주고 기간을 바꿀 UI가 전혀 없음을 확인 — 반면 pruneNwHistory(2274-2281)는 최근 90일 일별 + 그 이전 월 1회 스냅샷을 무기한 보존하도록 이미 설계돼 있어 수개월~수년치 데이터가 쌓여도 홈 카드에서는 닿을 수 없음을 grep·Read로 재확인. 렌더된 <svg>(2411-2414)에 aria-hidden=\"true\"뿐 onclick/onpointer 등 인터랙션 핸들러가 전무해 점을 눌러 날짜·금액을 볼 수 없음도 확인(앱의 다른 숫자 표면 대부분은 histPeek류 누르고 있기 패턴으로 상세를 보여주는 것과 대조). goalProgress/nwHistoryForOwner가 이미 DB.nwHistory 전체를 소비해 데이터 파이프라인은 장기 구간을 다룰 수 있음이 증명됨 — 문제는 순전히 홈 카드 표시 레이어의 인위적 절단. pending_advance_plan에 기간 선택 세그먼트+logic.js nwHistoryRange(hist,preset) 순수함수(장기 구간은 월별 다운샘플링)+차트 탭/롱프레스 인터랙션(histPeek 패턴 재사용)+refreshNwHistoryCard 갱신+회귀 테스트 저장(상세는 pending_advance_plan 참고). 러너업(기각): 부채/연금 자산의 이자율·상환 스케줄 모델링 부재 — 실재하나 새 데이터 모델 필드·화면까지 필요해 재작성에 가까운 과대 스코프(cycle132/134에서도 동일 사유로 반복 기각) / 전체내역 검색(histQ) 성능 — 이미 PAGE=20 페이지네이션(4082-4084)과 _histCache 무효화 캐싱(3999)이 있어 실측 문제 없음(cycle126 기각과 일치) / 목표(goals) 다중 목표 UX — owner별 진행률·예상일·role=button/aria-label/keydown까지 이미 갖춰져(2455-2480) 재손볼 여지 적음 / 접근성 전수 점검 — grep 결과 aria-/role-/tabindex 102건이 이미 전반에 분포돼 막연한 전수 점검보다 이번처럼 구체적 공백 하나가 더 실행 가능. 코드 변경 없음(읽기 전용 조사, 서브에이전트가 index.html 2274-2281·2393-2416·2455-2480·4082-4084를 직접 Read/grep으로 재확인, 오케스트레이팅 세션은 서브에이전트 보고를 검토해 채택).",
+      "commit": null
+    },
+    {
+      "cycle": 135,
+      "phase": "advance",
+      "timestamp": "2026-10-04T07:10:00.000Z",
+      "summary": "critique(cycle135) 계획대로 순자산 추이 카드에 기간 선택 세그먼트와 차트 탭 인터랙션을 추가했다. (1) logic.js에 순수 함수 nwHistoryRange(hist,preset,today) 추가 — preset('m1'=30일/'m3'=90일 기본값/'y1'=365일/'all'=전체)에 맞는 cutoff로 hist를 날짜 필터링. pruneNwHistory가 90일 이후는 이미 월별로 압축해 저장해두므로 별도 다운샘플링 없이 필터만으로 'all'도 포인트 수가 자연히 적어짐. today가 없으면(테스트 편의) hist 마지막 항목 날짜를 기준으로 삼아 기존 nwHistoryCard 테스트들이 sandbox.TODAY를 안 세팅해도 그대로 통과하게 함. (2) nwNearestPointIndex(pts,ratio) 추가 — nwChartPath와 동일한 '날짜 간격 비례' x좌표 매핑으로 탭한 위치에 가장 가까운 스냅샷 인덱스를 찾음(포인트 개수 균등분할이 아님). (3) nwHistoryCard(owner,preset)로 시그니처 확장, hist.slice(-60) 대신 nwHistoryRange(DB.nwHistory,preset,TODAY) 사용, 기본 preset은 'm3'(이전 60일 고정보다 넓은 기본 범위). nwPresetSegHTML(preset) 헬퍼로 1개월/3개월/1년/전체 네 버튼(기존 .seg/.seg-blob 패턴 재사용)을 섹션 타이틀 바로 아래(빈 상태 카드 포함)에 추가, onclick=\"nwPresetSel(preset)\". (4) 차트를 nwChartPeekStart/Move/End로 인터랙티브하게 만듦 — pointerdown/move 시 nwNearestPointIndex로 가장 가까운 점을 찾아 svg 안의 점선 가이드라인(nwhPeekLine)과 날짜·금액 라벨(nwhPeekLabel)을 보여주고, announceLive()로 화면엔 안 보이는 aria-live 리전에도 같은 정보를 읽어줌(svg 자체의 aria-hidden=\"true\"는 유지, 기존 cycle119 결정과 일관). histPeekStart류와 달리 롱프레스 지연 없이 누르는 즉시 반응하는 스크러버 방식(그래프는 토글이 아니라 값 조회이므로). (5) refreshNwHistoryCard()/renderAssets()에 moveSegBlobs() 호출 추가(기존 sheet 전용 호출 패턴과 동일하게 requestAnimationFrame+try/catch) — 세그먼트 물방울이 버튼 위치로 애니메이션되도록 함. CSS: .nwh-seg(버튼 높이 32px로 압축), .nwh-chart에 position:relative, .nwh-peek-label 추가(모두 .nwh-card 아래 compound 선택자로 .seg/.seg button 기본 규칙보다 높은 specificity 확보 — 안 그러면 CSS 선언 순서상 나중에 나오는 범용 .seg 규칙에 덮임). test/run.js: FUNCTIONS에 nwPresetSegHTML 추가(nwHistoryCard가 호출하므로 extractFunction 단독 추출 시 필요), nwHistoryRange 5개+nwNearestPointIndex 2개(logic.js라 FUNCTIONS 등록 불필요)+nwHistoryCard 신규 동작 4개(기본 preset 필터링/preset=all/세그먼트 on 클래스/빈 상태에도 세그먼트 노출) 테스트 추가, vm 빈 배열 리터럴 deepStrictEqual 실패(cycle131에서 처음 발견한 realm 경계 문제)를 length 비교로 회피, nwNearestPointIndex 테스트 초안의 ratio=0.5 기대값이 직접 계산 오류였음을 발견해 올바른 ratio=0.95 케이스로 교정. node test/run.js 893/893 -> 904/904 통과. APP_VERSION 1.47.39->1.47.40, sw.js CACHE v301->v302. pending_advance_plan을 null로 비움.",
       "commit": null
     }
   ]

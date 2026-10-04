@@ -140,7 +140,7 @@ const FUNCTIONS = [
   'accountName', 'dbIsEmpty', 'guestHasData',
   'txScheduled', 'monthStats', 'monthStats2', 'expenseByCat', 'needGold', 'inQuietWindow', 'fmtSynced', 'rateStatusText',
   'nextBigOutflow', 'dday', 'balanceOn', 'nextOutflowCard', 'monthOutflowCard', 'planGaugeCard', 'homeAlertCard', 'renderHome',
-  'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwHistoryCard', 'allocationCard', 'doRenameOwner', 'addOwner',
+  'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwPresetSegHTML', 'nwHistoryCard', 'allocationCard', 'doRenameOwner', 'addOwner',
   'goalOwnerEff', 'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'syncGoalInputs', 'goalClearDate', 'goalOwnerSel', 'renderGoalForm', 'openGoalForm', 'saveGoal', 'delGoal',
   'openInquiry', 'sendInquiry', 'openInquiryList', 'delInquiry',
   'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetToggleSel', 'visibleAssetsForSel', 'assetSelAll', 'activeSel',
@@ -1900,6 +1900,61 @@ test('pruneNwHistory: 90일보다 오래된 기록은 월 1개로 압축한다',
   const recentCount = hist.filter(h => h.date > last90Cutoff).length;
   assert.strictEqual(pruned.filter(h => h.date > last90Cutoff).length, recentCount, '최근 90일 구간은 일 단위 그대로 보존돼야 함');
 });
+/* ---------- nwHistoryRange/nwNearestPointIndex: 순자산 추이 카드 기간 선택 (app-evolve cycle135 critique/advance) ----------
+ * nwHistoryCard가 항상 hist.slice(-60)으로 최근 60일 고정 스파크라인만 보여주던 걸 1개월/3개월/1년/전체
+ * 프리셋으로 바꿀 수 있게 한 순수 함수. pruneNwHistory가 이미 90일 이후를 월별로 압축해두므로
+ * 추가 다운샘플링 없이 날짜 cutoff로 거르기만 한다. */
+test('nwHistoryRange: preset이 "all"이면 다운샘플링 없이 원본을 그대로 돌려준다', () => {
+  const hist = [{ date: '2020-01-01', nw: 1 }, { date: '2026-01-01', nw: 2 }];
+  assert.strictEqual(sandbox.nwHistoryRange(hist, 'all', '2026-06-15'), hist);
+});
+test('nwHistoryRange: hist가 비어있으면 preset과 무관하게 빈 배열을 그대로 돌려준다', () => {
+  // vm 컨텍스트에서 만든 배열 리터럴은 메인 realm의 []와 "같은 구조지만 참조가 다름"으로
+  // deepStrictEqual이 실패한다(cycle131에서 처음 발견한 realm 경계 문제와 동일) — length만 비교.
+  assert.strictEqual(sandbox.nwHistoryRange([], 'm1', '2026-06-15').length, 0);
+  assert.strictEqual(sandbox.nwHistoryRange(null, 'y1', '2026-06-15').length, 0);
+});
+test('nwHistoryRange: "m1"은 today 기준 최근 30일보다 오래된 스냅샷을 제외한다(경계는 포함하지 않음)', () => {
+  const hist = [
+    { date: '2026-05-16', nw: 0 }, // today-30일: cutoff와 정확히 같은 날 → h.date>cutoff가 false라 제외
+    { date: '2026-05-17', nw: 1 },
+    { date: '2026-06-15', nw: 2 },
+  ];
+  const out = sandbox.nwHistoryRange(hist, 'm1', '2026-06-15');
+  assert.deepStrictEqual(out.map(h => h.date), ['2026-05-17', '2026-06-15']);
+});
+test('nwHistoryRange: "y1"은 최근 1년치만, "m3"(기본값)은 최근 90일치만 남긴다', () => {
+  const hist = [
+    { date: '2024-01-01', nw: 0 },
+    { date: '2025-07-01', nw: 1 }, // 2026-06-15 기준 1년(365일) 이내
+    { date: '2026-04-01', nw: 2 }, // 90일 이내는 아님(약 75일 전이라 포함)
+    { date: '2026-06-15', nw: 3 },
+  ];
+  const y1 = sandbox.nwHistoryRange(hist, 'y1', '2026-06-15');
+  assert.deepStrictEqual(y1.map(h => h.date), ['2025-07-01', '2026-04-01', '2026-06-15']);
+  const m3 = sandbox.nwHistoryRange(hist, 'm3', '2026-06-15');
+  assert.deepStrictEqual(m3.map(h => h.date), ['2026-04-01', '2026-06-15'], '90일보다 오래된 2024/2025 스냅샷은 제외돼야 함');
+});
+test('nwHistoryRange: today를 생략하면(falsy) hist의 마지막 항목 날짜를 기준으로 삼는다', () => {
+  const hist = [{ date: '2026-01-01', nw: 0 }, { date: '2026-01-02', nw: 1 }];
+  const out = sandbox.nwHistoryRange(hist, 'm1');
+  assert.deepStrictEqual(out.map(h => h.date), ['2026-01-01', '2026-01-02'], '둘 다 마지막 날짜(01-02) 기준 30일 이내라 그대로 남아야 함');
+});
+test('nwNearestPointIndex: 점이 없으면 -1, 1개면 0을 돌려준다', () => {
+  assert.strictEqual(sandbox.nwNearestPointIndex([], 0.5), -1);
+  assert.strictEqual(sandbox.nwNearestPointIndex(null, 0.5), -1);
+  assert.strictEqual(sandbox.nwNearestPointIndex([{ date: '2026-01-01' }], 0.9), 0);
+});
+test('nwNearestPointIndex: ratio 0/1이면 첫/마지막 점을, 날짜 간격이 불균등해도 비율 기준으로 가장 가까운 점을 돌려준다', () => {
+  const pts = [
+    { date: '2026-01-01' }, { date: '2026-01-02' }, { date: '2026-01-31' }, // 30일 구간, 둘째 점은 1/30 지점
+  ];
+  assert.strictEqual(sandbox.nwNearestPointIndex(pts, 0), 0);
+  assert.strictEqual(sandbox.nwNearestPointIndex(pts, 1), 2);
+  // 28.5일째(ratio 0.95)는 셋째 점(30일째)이 첫째/둘째 점보다 훨씬 가까워야 함 — 날짜 간격 기준 거리임을 확인
+  assert.strictEqual(sandbox.nwNearestPointIndex(pts, 0.95), 2, '28.5일째는 30일째 점이 가장 가까워야 함');
+  assert.strictEqual(sandbox.nwNearestPointIndex(pts, 0.02), 1, '1일째 근처는 둘째 점(1/30일)이 가장 가까워야 함');
+});
 test('nwChartPath: 점이 2개 미만이면 빈 경로를 반환한다', () => {
   const r = sandbox.nwChartPath([{ nw: 100 }], 300, 80);
   assert.strictEqual(r.line, '');
@@ -1992,6 +2047,50 @@ test('nwHistoryCard: 차트 svg는 장식용이라 aria-hidden="true"로 보조�
   const html = sandbox.nwHistoryCard();
   assert.ok(html.includes('<svg'), '점이 2개 이상이면 차트 svg가 렌더돼야 함');
   assert.ok(/<svg[^>]*\baria-hidden="true"/.test(html), 'svg 태그 자체에 aria-hidden="true"가 있어야 함');
+});
+/* ---------- nwHistoryCard 기간 선택(preset) (app-evolve cycle135 critique/advance) ----------
+ * 전엔 항상 최근 60일(hist.slice(-60))만 보여줬는데, 1개월/3개월/1년/전체 세그먼트를 추가해
+ * nwHistoryRange(logic.js)로 보이는 구간을 바꿀 수 있게 했다. */
+test('nwHistoryCard: preset을 생략하면 기본값 "m3"(최근 90일)로 거른다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.DB = { nwHistory: [
+    { date: '2024-01-01', ta: 100, td: 0, nw: 100 }, // 90일보다 훨씬 오래돼 preset 기본값에서 제외돼야 함
+    { date: '2026-06-01', ta: 300, td: 20, nw: 280 },
+    { date: '2026-06-15', ta: 320, td: 20, nw: 300 },
+  ] };
+  const html = sandbox.nwHistoryCard();
+  assert.ok(html.includes('06/01 ~ 06/15'), '기본 preset(m3)은 90일 이내만 남겨 2024년 스냅샷은 범위 밖이어야 함');
+});
+test('nwHistoryCard: preset="all"이면 다운샘플링 없이 가장 오래된 스냅샷부터 보여준다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.DB = { nwHistory: [
+    { date: '2024-01-01', ta: 100, td: 0, nw: 100 },
+    { date: '2026-06-15', ta: 320, td: 20, nw: 300 },
+  ] };
+  const html = sandbox.nwHistoryCard('all', 'all');
+  assert.ok(html.includes('01/01 ~ 06/15'), 'preset="all"이면 2024년 스냅샷도 포함돼야 함');
+});
+test('nwHistoryCard: 선택한 preset에 맞는 세그먼트 버튼에만 "on" 클래스가 붙는다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.DB = { nwHistory: [
+    { date: '2026-06-01', ta: 300, td: 20, nw: 280 },
+    { date: '2026-06-15', ta: 320, td: 20, nw: 300 },
+  ] };
+  const html = sandbox.nwHistoryCard('all', 'y1');
+  // 버튼 태그 자체를 파싱해 "on" 클래스가 정확히 preset과 일치하는 버튼에만 붙는지 확인
+  const buttons = [...html.matchAll(/<button[^>]*onclick="nwPresetSel\('(\w+)'\)"[^>]*>([^<]+)<\/button>/g)];
+  assert.strictEqual(buttons.length, 4, '1개월/3개월/1년/전체 네 개 세그먼트 버튼이 렌더돼야 함');
+  buttons.forEach(([full, p]) => {
+    const isOn = full.includes('class="on"');
+    assert.strictEqual(isOn, p === 'y1', `preset="y1"일 때는 ${p} 버튼의 on 여부가 (${p === 'y1'})이어야 함`);
+  });
+});
+test('nwHistoryCard: 귀속별 추이가 비어있는 빈 상태 카드에도 기간 세그먼트가 함께 렌더된다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.DB = { nwHistory: [{ date: '2026-06-15', ta: 300, td: 20, nw: 280, byOwner: { 나: { ta: 200, td: 10 } } }] };
+  const html = sandbox.nwHistoryCard('배우자', 'y1');
+  assert.ok(html.includes('이 귀속의 추이는 곧 쌓여요'));
+  assert.ok(html.includes("onclick=\"nwPresetSel('y1')\""), '데이터가 없어도 기간을 바꿔볼 수 있는 세그먼트는 보여야 함');
 });
 
 /* ---------- 목표(Goals) UI: goalsSummaryCard/openGoalsList/openGoalForm/saveGoal/delGoal (app-evolve cycle122 advance) ---------- */

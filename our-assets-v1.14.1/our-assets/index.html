@@ -158,10 +158,14 @@ html[data-theme="dark"] .card{box-shadow:var(--sh-md),0 1px 0 rgba(255,255,255,.
 .ms-arrow svg{width:17px;height:17px}
 /* 순자산 추이 (스파크라인) */
 .nwh-card{padding:16px 16px 14px}
+.nwh-card .nwh-seg{margin-bottom:8px}
+.nwh-card .nwh-seg button{height:32px;font-size:12px}
 .nwh-range{font-size:12px;color:var(--text-3);font-weight:500;margin:2px 0 8px}
 .nwh-range b{font-weight:700;color:var(--text-2)}
-.nwh-chart{height:80px}
+.nwh-chart{height:80px;position:relative}
 .nwh-chart svg{width:100%;height:100%;display:block}
+.nwh-peek-label{position:absolute;top:-2px;left:0;transform:translate(-50%,-100%);background:var(--surface);border:1px solid var(--line-2);border-radius:8px;padding:3px 7px;font-size:11px;font-weight:700;white-space:nowrap;color:var(--text-2);opacity:0;pointer-events:none;transition:opacity .12s;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+.nwh-peek-label.on{opacity:1}
 /* ② 오늘 브리핑 */
 .brief-card{display:flex;align-items:center;gap:13px;padding:15px 16px;margin-top:11px}
 .brief-ic{font-size:24px;flex-shrink:0;width:42px;height:42px;border-radius:var(--r-md);background:var(--brand-soft);display:grid;place-items:center}
@@ -1309,7 +1313,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.39';
+const APP_VERSION='1.47.40';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2316,7 +2320,7 @@ function visibleTx(t){return DB.settings.includeScheduled||!txScheduled(t)}
 
 /* ================= STATE ================= */
 let TM=ym(TODAY);TM.d=+TODAY.slice(8,10);
-let ST={tab:'home',ledgerMode:'cal',assetOwner:'all',ledger:{y:TM.y,m:TM.m,sel:TODAY},home:{y:TM.y,m:TM.m},
+let ST={tab:'home',ledgerMode:'cal',assetOwner:'all',nwPreset:'m3',ledger:{y:TM.y,m:TM.m,sel:TODAY},home:{y:TM.y,m:TM.m},
  hist:{cat:'전체',q:'',assetId:null,catExact:null,owner:'전체',selMode:false,sel:new Set(),sortAsc:false,
    range:{from:`${TM.y}-01-01`,to:`${TM.y}-12-31`},preset:'year',page:1,avgMode:false},
  plan:{owner:'전체',assetId:null,y:TM.y,m:TM.m},spendOwner:'전체',editAssets:false,aSel:{mode:false,ids:new Set()},lSel:{mode:false,ids:new Set()}};
@@ -2388,16 +2392,23 @@ function planGaugeCard(S,y,m){
    ${rows}</div>`;
 }
 
-/* 순자산 추이 카드 (일별 스냅샷 스파크라인) */
+/* 순자산 추이 카드 (일별 스냅샷 스파크라인). preset(m1/m3/y1/all)으로 보이는 기간을 바꿀 수 있고
+ * (app-evolve cycle135 critique/advance — 전엔 항상 최근 60일만 보여줬음), 차트를 누르고 있으면
+ * nwChartPeekStart/Move/End가 가장 가까운 날짜·금액을 보여준다(histPeekStart류와 동일한 원칙). */
 function shortDate2(ds){return ds.slice(5,7)+'/'+ds.slice(8,10)}
-function nwHistoryCard(owner){
- owner=owner||'all';
- const hist=DB.nwHistory||[];
- let pts=hist.slice(-60);
+function nwPresetSegHTML(preset){
+ const presets=[['m1','1개월'],['m3','3개월'],['y1','1년'],['all','전체']];
+ return `<div class="seg nwh-seg"><div class="seg-blob"></div>${presets.map(([p,l])=>`<button type="button" class="${preset===p?'on':''}" onclick="nwPresetSel('${p}')">${l}</button>`).join('')}</div>`;
+}
+function nwHistoryCard(owner,preset){
+ owner=owner||'all';preset=preset||'m3';
+ const segHTML=nwPresetSegHTML(preset);
+ let pts=nwHistoryRange(DB.nwHistory||[],preset,TODAY);
  if(owner!=='all'){
    pts=nwHistoryForOwner(pts,owner);
    if(pts.length<2)return `<div class="card nwh-card">
      <div class="section-title" style="margin-top:0">순자산 추이</div>
+     ${segHTML}
      <div class="empty" style="padding:18px 0"><div class="es">이 귀속의 추이는 곧 쌓여요</div></div>
    </div>`;
  }else if(pts.length<2)return ''; /* 스냅샷이 1개 이하면 추이를 그릴 수 없음 */
@@ -2405,14 +2416,54 @@ function nwHistoryCard(owner){
  const first=pts[0],last=pts[pts.length-1];
  const diff=last.nw-first.nw,up=diff>=0;
  const color=up?'var(--income)':'var(--expense)';
+ _nwChartPts=pts;
  return `<div class="card nwh-card">
    <div class="section-title" style="margin-top:0">순자산 추이</div>
+   ${segHTML}
    <div class="nwh-range">${shortDate2(first.date)} ~ ${shortDate2(last.date)} <b class="${up?'':'minus'}">${up?'+':''}${comma(diff)}원</b></div>
-   <div class="nwh-chart"><svg viewBox="0 0 300 80" preserveAspectRatio="none" aria-hidden="true" focusable="false">
-     <path d="${area}" fill="${color}" opacity="0.12" stroke="none"/>
-     <path d="${line}" fill="none" stroke="${color}" stroke-width="2.2" vector-effect="non-scaling-stroke"/>
-   </svg></div>
+   <div class="nwh-chart" id="nwhChart" onpointerdown="nwChartPeekStart(event)" onpointermove="nwChartPeekMove(event)" onpointerup="nwChartPeekEnd()" onpointercancel="nwChartPeekEnd()" onpointerleave="nwChartPeekEnd()">
+     <svg viewBox="0 0 300 80" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+       <path d="${area}" fill="${color}" opacity="0.12" stroke="none"/>
+       <path d="${line}" fill="none" stroke="${color}" stroke-width="2.2" vector-effect="non-scaling-stroke"/>
+       <line id="nwhPeekLine" x1="0" x2="0" y1="0" y2="80" stroke="var(--text-3)" stroke-dasharray="2,2" style="display:none"/>
+     </svg>
+     <div class="nwh-peek-label" id="nwhPeekLabel" aria-hidden="true"></div>
+   </div>
  </div>`;
+}
+function nwPresetSel(p){
+ if(ST.nwPreset===p)return;
+ ST.nwPreset=p;
+ refreshNwHistoryCard();
+}
+let _nwChartPts=null,_nwPeekIdx=null;
+/* 차트를 누르고 있는 동안 가장 가까운 스냅샷의 날짜·금액을 보여준다(포인터 이동마다, 손 떼면 숨김).
+ * 좌표 매핑은 nwChartPath가 그릴 때 쓰는 것과 똑같이 '날짜 간격 비례'라야(nwNearestPointIndex,
+ * logic.js) 손가락 위치와 그려진 점이 실제로 맞아떨어진다. svg는 장식용이라 aria-hidden을 그대로
+ * 유지하고, 대신 announceLive()로 화면엔 안 보이는 aria-live 리전에 같은 정보를 읽어준다. */
+function nwChartPeekStart(e){
+ const el=$('nwhChart');if(!el||!_nwChartPts||_nwChartPts.length<2)return;
+ if(el.setPointerCapture&&e.pointerId!=null)try{el.setPointerCapture(e.pointerId)}catch(err){}
+ nwChartPeekMove(e);
+}
+function nwChartPeekMove(e){
+ const el=$('nwhChart');if(!el||!_nwChartPts||_nwChartPts.length<2)return;
+ const rect=el.getBoundingClientRect();if(!rect.width)return;
+ const ratio=(e.clientX-rect.left)/rect.width;
+ const idx=nwNearestPointIndex(_nwChartPts,ratio);
+ if(idx<0||idx===_nwPeekIdx)return;
+ _nwPeekIdx=idx;
+ const p=_nwChartPts[idx];
+ const totalDays=Math.max(1,daysBetween(_nwChartPts[0].date,_nwChartPts[_nwChartPts.length-1].date));
+ const x=daysBetween(_nwChartPts[0].date,p.date)/totalDays*300;
+ const line=$('nwhPeekLine');if(line){line.setAttribute('x1',x.toFixed(1));line.setAttribute('x2',x.toFixed(1));line.style.display='';}
+ const label=$('nwhPeekLabel');if(label){label.textContent=`${shortDate2(p.date)} · ${comma(p.nw)}원`;label.style.left=Math.max(4,Math.min(96,x/300*100))+'%';label.classList.add('on');}
+ announceLive(`${shortDate2(p.date)} 순자산 ${comma(p.nw)}원`);
+}
+function nwChartPeekEnd(){
+ _nwPeekIdx=null;
+ const line=$('nwhPeekLine');if(line)line.style.display='none';
+ const label=$('nwhPeekLabel');if(label)label.classList.remove('on');
 }
 
 /* 자산관리 탭 순자산 추이 카드 아래에 꽂는 자산유형별 비중(allocation) 카드 — expenseBreakdownCard와
@@ -2785,9 +2836,10 @@ function refreshAssetBody(){ /* 캐러셀은 그대로 두고 목록만 갱신 �
  if(!ST.editAssets&&!ST.aSel.mode)wireLongPress($('page-assets'),id=>{ST.aSel.mode=true;ST.aSel.ids.add(id);renderAssets()});
  requestAnimationFrame(fitAll);
 }
-function refreshNwHistoryCard(){ /* 캐러셀 귀속 전환 시 추이 카드만 갱신 */
+function refreshNwHistoryCard(){ /* 캐러셀 귀속 전환 시, 또는 기간 세그먼트 전환 시 추이 카드만 갱신 */
  const el=$('nwHistBody');if(!el)return;
- el.innerHTML=nwHistoryCard(ST.assetOwner);
+ el.innerHTML=nwHistoryCard(ST.assetOwner,ST.nwPreset);
+ requestAnimationFrame(()=>{try{moveSegBlobs()}catch(e){}});
 }
 function refreshGoalsSummary(){ /* 캐러셀 귀속 전환 시 목표 요약도 함께 갱신 — nwHistoryCard와 같은 귀속을 보여줘야 함 */
  const el=$('goalsSummaryBody');if(!el)return;
@@ -2904,7 +2956,7 @@ function renderAssets(){
  ${pageHead('assets')}
  <div class="nw-carousel" id="nwCarousel" data-n="${_ol.length}" data-loop="${_ol.length>1?1:0}"${_ol.length>1?' tabindex="0" role="group" aria-label="귀속별 자산 보기"':''}>${_ol.length>1?nwPane(_ol[_ol.length-1],TA,TD):''}${_ol.map(o=>nwPane(o,TA,TD)).join('')}${_ol.length>1?nwPane(_ol[0],TA,TD):''}</div>
  ${_ol.length>1?`<div class="nw-dots">${_ol.map((o,i)=>`<button type="button" class="${i===actIdx?'on':''}" aria-label="${esc(o==='all'?'전체':o)} 보기" aria-current="${i===actIdx?'true':'false'}" onclick="gotoNwOwner(${i})"></button>`).join('')}</div>`:''}
- <div id="nwHistBody">${nwHistoryCard(ST.assetOwner)}</div>
+ <div id="nwHistBody">${nwHistoryCard(ST.assetOwner,ST.nwPreset)}</div>
  <div id="allocBody">${allocationCard(ST.assetOwner)}</div>
  <div id="goalsSummaryBody">${goalsSummaryCard(ST.assetOwner)}</div>
  <div class="as-tools${ST.aSel.mode?' hidden':''}">
@@ -2924,6 +2976,7 @@ function renderAssets(){
  if(_lastNwOwner!==ST.assetOwner){_lastNwOwner=ST.assetOwner;animNums('page-assets','.hero .total,.hero .hero-split .v')}
  updateSelBottom();
  requestAnimationFrame(fitAll);
+ requestAnimationFrame(()=>{try{moveSegBlobs()}catch(e){}});
 }
 function openSortSheet(){
  const opts=[['custom','사용자 정의순','편집 모드에서 그룹 내 순서를 직접 바꿀 수 있어요'],['amount','금액순',''],['owner','귀속순',''],['name','이름순','']];

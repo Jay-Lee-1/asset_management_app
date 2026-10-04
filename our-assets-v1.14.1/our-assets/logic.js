@@ -237,6 +237,33 @@ function nwHistoryForOwner(hist,owner){
  if(!owner||owner==='all')return hist;
  return hist.filter(p=>p.byOwner&&p.byOwner[owner]).map(p=>{const b=p.byOwner[owner];return {date:p.date,ta:b.ta,td:b.td,nw:b.ta-b.td}});
 }
+/* 순자산 추이 카드 기간 선택(1개월/3개월/1년/전체). pruneNwHistory가 이미 최근 90일은 일별,
+ * 그 이전은 월 1회로 압축해 저장해두므로 preset을 날짜 cutoff로 거르기만 하면 긴 구간도 포인트도
+ * 자연히 월 단위로 듬성듬성해져 추가 다운샘플링이 필요 없다(app-evolve cycle135 critique/advance —
+ * nwHistoryCard가 항상 hist.slice(-60)으로 최근 60일 고정 스파크라인만 보여주던 공백 해소).
+ * today를 안 주면 hist의 마지막 날짜를 기준으로 삼는다(호출부는 항상 TODAY를 넘기므로 실사용에는
+ * 영향 없고, 테스트에서 고정된 과거 날짜 데이터를 쓸 때의 기본값 용도). */
+function nwHistoryRange(hist,preset,today){
+ hist=hist||[];
+ if(!hist.length||preset==='all')return hist;
+ const end=today||hist[hist.length-1].date;
+ const days={m1:30,m3:90,y1:365}[preset]||90;
+ const cutoff=addDays(end,-days);
+ return hist.filter(h=>h.date>cutoff);
+}
+/* 순자산 추이 차트에서 탭/드래그한 x좌표(컨테이너 너비 기준 0~1 비율)에 가장 가까운 스냅샷의
+ * 인덱스를 찾는다. nwChartPath(index.html)가 쓰는 것과 동일한 '날짜 간격 비례' x좌표 매핑을
+ * 그대로 따라야 손가락 위치가 실제로 그려진 점과 맞아떨어진다(포인트 개수 기준 균등분할이면
+ * 일별+월별 압축이 섞인 구간에서 어긋남). */
+function nwNearestPointIndex(pts,ratio){
+ if(!pts||!pts.length)return -1;
+ if(pts.length===1)return 0;
+ const totalDays=Math.max(1,daysBetween(pts[0].date,pts[pts.length-1].date));
+ const target=Math.max(0,Math.min(1,ratio))*totalDays;
+ let best=0,bestDist=Infinity;
+ pts.forEach((p,i)=>{const dist=Math.abs(daysBetween(pts[0].date,p.date)-target);if(dist<bestDist){bestDist=dist;best=i;}});
+ return best;
+}
 /* target<=0(설정 전/잘못된 값)이면 비율이 무의미하므로, 현재 금액이 있으면 100%, 없으면 0%로 본다
  * (budgetProgress의 '미설정=0%'과 달리 음수 목표는 원래 saveGoal이 막아 생기지 않지만, 방어적으로 처리) */
 function goalPct(cur,target){
