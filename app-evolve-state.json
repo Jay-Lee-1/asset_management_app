@@ -1,15 +1,8 @@
 {
   "cycle": 138,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 133,
-      "phase": "review",
-      "timestamp": "2026-10-03T20:30:00.000Z",
-      "summary": "develop 커밋(c0a18fd, renderGoalForm() goalAmt Enter-to-submit 추가)을 검토. onkeydown=\"if(event.key==='Enter'&&!event.isComposing)saveGoal(${editing})\"가 cycle130-132의 costBasisField/rAmt와 동일한 패턴임을 소스 대조로 확인. saveGoal()(2502-2511)을 직접 Read해 !d.name/!(d.targetAmount>0) 모두 toast+return으로 안전하게 처리되어 Enter 제출이 크래시나 데이터 손상으로 이어지지 않음을 확인, 대입 순서상 ownerSeg가 goalAmt보다 앞서고 그 뒤엔 타이핑이 필요 없는 날짜 피커만 이어짐도 재확인. saveGoal()이 touch()+save()(mergeCollection() 불변식)를 올바르게 쓰고 있음도 확인(diff 범위 밖이라 영향 없음이지만 겸사겸사 점검). 새 회귀 테스트(extractFunction 소스 패턴 검사)도 costBasisField/rAmt 테스트와 동일 방식으로 적절. node test/run.js 878/878 재통과. 코드 변경 없음(이상 없음).",
-      "commit": null
-    },
     {
       "cycle": 133,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-04T17:13:35.400Z",
       "summary": "cycle137 critique 러너업으로 기각됐던(규모가 develop 스코프에 맞는다고 평가된) 메뉴의 \"Pro로 업그레이드\" 프로모 카드(renderMenu(), index.html:4477 부근)를 직접 재검증 후 제거했다. 이 자가-호스트 개인 자산관리 템플릿에는 결제 백엔드가 전혀 없고(README/netlify functions엔 stock.js·rates.js뿐), 버튼의 onclick은 toast('Pro 안내')만 띄우는 더미라 '시작하기'를 눌러도 아무 일도 일어나지 않는 완전한 dead end임을 grep으로 재확인('Pro'/'결제'/'payment' 매칭 전무). 광고 배너(.ad-slot)는 SHOW_AD 플래그로 의도적으로 끈 것과 달리 이 카드는 끄는 스위치조차 없이 항상 렌더되는 거짓 기능이라 판단해 숨김 플래그 추가 대신 완전 제거를 택함(cycle133 문의하기 dead-end 수정 때는 실제 저장 기능을 추가했지만, 이번엔 뒤에 구현할 결제 연동 자체가 존재하지 않아 관망형 UI를 남길 이유가 없음). renderMenu()에서 .promo div 전체 삭제, 전용 CSS 규칙(.promo/.promo .pt/.promo .ps/.promo .go, index.html 663-665행)과 공용 트랜지션 선택자 목록(144/147행)에 섞여 있던 .promo .go 참조도 함께 제거해 완전한 dead CSS를 남기지 않았다. test/run.js에 renderMenu 소스 패턴 검사 회귀 테스트 1개 추가(.promo 클래스/toast('Pro 안내')/'Pro로 업그레이드' 문구가 더 이상 없는지 확인, 기존 acct-card 테스트와 동일한 extractFunction 방식). node test/run.js 937/937 -> 938/938 통과, 메인 인라인 <script> node --check 구문 검사도 별도로 통과. APP_VERSION 1.47.44->1.47.45, sw.js CACHE v306->v307.",
+      "commit": null
+    },
+    {
+      "cycle": 138,
+      "phase": "review",
+      "timestamp": "2026-10-04T18:10:00.000Z",
+      "summary": "develop 커밋(e643175, 메뉴의 동작 없는 \"Pro로 업그레이드\" 프로모 카드 제거)을 검토. git show로 전체 diff 확인: renderMenu()에서 .promo div 제거, 전용 CSS 3줄(.promo/.promo .pt/.promo .ps/.promo .go) 및 공용 트랜지션/active 선택자 목록(144/147행)에 섞여 있던 .promo .go 참조 2곳까지 함께 제거됨을 확인. grep으로 index.html 전체에 \"promo\" 문자열이 완전히 사라졌음을 재확인(죽은 CSS/참조 잔존 없음). renderMenu() 주변 구조(acct-card div 닫힘, groups.map 직후 이어지는 템플릿 리터럴)를 직접 Read해 마크업이 깨지지 않았음을 확인. 결제 백엔드 부재(README/netlify functions엔 stock.js·rates.js뿐) 판단도 타당. 새 회귀 테스트(.promo 클래스/toast('Pro 안내')/문구 부재 검사)도 적절. node test/run.js 재실행 938/938 통과. 코드 변경 없음(이상 없음).",
       "commit": null
     }
   ]
