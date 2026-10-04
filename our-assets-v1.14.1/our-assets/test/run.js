@@ -5749,6 +5749,20 @@ test('mergeRemoteDataIntoLocal: DB.catIcon/DB.catVar도 mergeFlatMap으로 병�
   assert.strictEqual(sandbox.DB.catIcon['expense:식비'], 'food', '같은 키는 local 값이 이겨야 함');
   assert.strictEqual(sandbox.DB.catVar['expense:교통'], true, 'remote에만 있던 변동 플래그도 들어와야 함');
 });
+test('mergeRemoteDataIntoLocal: DB.deletedType/DB.deletedBal도 mergeFlatMap으로 병합된다(이전엔 전혀 병합 안 돼 재연동 기록이 기기 간에 사라짐)', () => {
+  sandbox.DB = minimalMergeDB({
+    deletedType: { '카카오뱅크': 'cash' },
+    deletedBal: { '카카오뱅크': 10000 },
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    deletedType: { '증권계좌': 'stock', '카카오뱅크': 'savings' },
+    deletedBal: { '증권계좌': 5000 },
+    deletedIds: {},
+  });
+  assert.strictEqual(sandbox.DB.deletedType['증권계좌'], 'stock', 'remote에만 있던 기록도 들어와야 함');
+  assert.strictEqual(sandbox.DB.deletedType['카카오뱅크'], 'cash', '같은 키는 local 값이 이겨야 함');
+  assert.strictEqual(sandbox.DB.deletedBal['증권계좌'], 5000, 'remote에만 있던 잔액 기록도 들어와야 함');
+});
 
 /* ---------- gcTombstones: migrate()가 부팅마다 DB.deletedIds에서 오래된(maxAgeMs 이전) tombstone을
  * 걸러내는 순수 함수(app-evolve cycle95 advance) — GC 없이는 삭제할 때마다 쌓이기만 해 수년 사용 시

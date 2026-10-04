@@ -1309,7 +1309,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.38';
+const APP_VERSION='1.47.39';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1466,6 +1466,11 @@ function mergeRemoteDataIntoLocal(remoteData){
   * mergeFlatMap()으로 budgetHistory와 동일한 병합 관례를 적용한다. */
  DB.catIcon=mergeFlatMap(DB.catIcon,remoteData.catIcon);
  DB.catVar=mergeFlatMap(DB.catVar,remoteData.catVar);
+ /* deletedType/deletedBal(삭제한 자산의 재연동용 타입·잔액 기억, snapshotAssetName)도 catIcon/catVar와
+  * 같은 flat map인데 여기서 전혀 병합되지 않고 있었다(app-evolve cycle135) — 한쪽 기기가 삭제한 자산의
+  * 기록이 병합 후에도 반영되지 않아 재연동 안내가 뜨지 않고, 그대로 push하면 상대 기기 기록을 덮어썼다. */
+ DB.deletedType=mergeFlatMap(DB.deletedType,remoteData.deletedType);
+ DB.deletedBal=mergeFlatMap(DB.deletedBal,remoteData.deletedBal);
  migrate();invalidateBalances();
 }
 const comma=n=>Math.round(n||0).toLocaleString('ko-KR');
