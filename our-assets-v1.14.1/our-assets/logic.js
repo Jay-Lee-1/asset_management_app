@@ -207,15 +207,15 @@ function lastDay(y,m){return new Date(y,m,0).getDate()}
 function monthEndStr(y,m){return `${y}-${String(m).padStart(2,'0')}-${String(lastDay(y,m)).padStart(2,'0')}`}
 function monthStartStr(y,m){return `${y}-${String(m).padStart(2,'0')}-01`}
 /* 메모·카테고리·자산명·금액 검색을 대소문자 구분 없이 매칭(영문 메모/자산명 대비).
- * 금액은 쉼표 없는 숫자 그대로 넣어두고, 비교 양쪽에서 쉼표를 지워 "50000"이든 "50,000"이든
- * 똑같이 찾을 수 있게 한다(메모에 쉼표가 들어 있어도 양쪽을 동일하게 지우므로 매칭 결과는 그대로). */
+ * 금액은 쉼표 없는 숫자 그대로 들어있으므로, 검색어 쪽 쉼표만 지워 "50000"이든 "50,000"이든
+ * 똑같이 찾을 수 있게 한다(haystack 쪽까지 쉼표를 지우면 메모/자산명에 들어있는 실제 쉼표가
+ * 사라지면서 원래라면 안 걸릴 단어가 우연히 이어 붙어 매칭되는 오탐이 생길 수 있어 제외). */
 function matchTxnQuery(t,q,assets){
  if(!q)return true;
  const fa=(assets||[]).find(a=>a.id===t.fromAssetId),ta=(assets||[]).find(a=>a.id===t.toAssetId);
  const amt=t.amount!=null?String(t.amount):'';
  const hay=(t.memo||'')+' '+t.category+' '+(fa?fa.name:(t.fromAssetName||'—'))+' '+(ta?ta.name:(t.toAssetName||'—'))+' '+amt;
- const norm=s=>String(s).toLowerCase().replace(/,/g,'');
- return norm(hay).includes(norm(q));
+ return hay.toLowerCase().includes(q.toLowerCase().replace(/,/g,''));
 }
 /* 계좌(자산) 단위 거래내역 필터 — assetId가 없으면(전체) 항상 통과, 있으면 보내거나 받은 쪽 중 하나라도 일치해야 함 */
 function matchesAssetId(t,assetId){

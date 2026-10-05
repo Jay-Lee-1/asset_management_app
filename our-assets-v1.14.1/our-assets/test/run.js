@@ -3330,6 +3330,10 @@ test('matchTxnQuery: 금액이 일치하지 않고 메모/카테고리/자산명
   const t = { memo: '점심', category: '식비', amount: 12000, fromAssetId: null, toAssetId: null };
   assert.strictEqual(sandbox.matchTxnQuery(t, '99999', []), false);
 });
+test('matchTxnQuery: 메모에 실제 쉼표가 들어있어도 쉼표를 사이에 둔 글자들이 이어 붙어 오탐되지 않는다', () => {
+  const t = { memo: '우유,계란', category: '식비', amount: 3000, fromAssetId: null, toAssetId: null };
+  assert.strictEqual(sandbox.matchTxnQuery(t, '유계', []), false);
+});
 
 /* ---------- matchesAssetId: 자산 행 '내역' 버튼(openAssetHistory)이 쓰는 계좌 필터 ---------- */
 test('matchesAssetId: assetId가 없으면(전체) 항상 매칭된다', () => {
