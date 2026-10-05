@@ -1,15 +1,12 @@
 {
   "cycle": 140,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "자산 상세 화면(openAssetHistory/renderAssetSheet)에 개별 자산 잔액 추이 미니 차트 추가",
+    "why": "renderAssetSheet()(index.html:3214-3260)와 assetSubline()(2814-2821)은 cash/savings/realestate/etc/pension/debt 자산에 대해 현재 금액만 보여주고 과거 추이가 전혀 없다. 홈의 nwHistoryCard(2393-2416, cycle135에서 기간선택+탭까지 완성)는 가구 전체/귀속별 합계 추이만 다루고, openAssetHistory()(4056-4061)도 cash류는 거래 리스트, isMarketValued 자산은 수량 변경 로그(assetQtyLog, cycle137)만 보여줄 뿐 그래프가 없다. 개별 통장 하나가 시간에 따라 늘고 있는지 줄고 있는지 한눈에 보는, 가계부 앱의 핵심 효용이 자산 단위에서 비어 있다.",
+    "approach": "새 데이터모델/스키마 변경 불필요. balanceAt(id,date)/balancesUpTo(dateStr)(index.html:2167-2210)가 이미 거래 재생으로 임의 과거 날짜의 자산별 잔액을 순수 계산하므로, logic.js에 assetBalanceSeries(txns,assetId,dates) 같은 순수 함수를 추가해(테스트 가능하게 분리) 월간/주간 샘플 포인트 배열({date,bal} 형태)을 만든다. nwChartPath(pts,W,H)(2283-2301)는 {date,nw} 형태를 받는 범용 svg path 계산 순수함수이므로 bal을 nw로 매핑해 그대로 재사용. cycle135의 nwHistoryCard 기간 세그먼트(1개월/3개월/1년/전체)+nwChartPeekStart/Move/End 탭 스크러버 패턴(aria-live 공지 포함)을 그대로 차용해 openAssetHistory()나 renderAssetSheet() 상단에 미니 차트 섹션을 추가한다. 대상 자산 타입은 cash/savings/realestate/etc/pension/debt로 한정(isMarketValued인 fx/gold/stock은 보유수량이 아니라 평가액이 변하는 다른 성격이라 이번 스코프에서 제외 — 과대 스코프 방지). 거래가 1건도 없거나 샘플 포인트가 1개뿐인 신규 자산은 차트 대신 기존 .empty류 안내로 대체(빈 상태 일관성, cycle139 openAssetPicker 패턴 참고). test/run.js에 assetBalanceSeries 순수함수 테스트(거래 추가/삭제/날짜 경계) + 차트 진입점 소스 패턴 테스트 추가. node test/run.js 통과 확인, APP_VERSION/sw.js CACHE 버전 증가."
+  },
   "history": [
-    {
-      "cycle": 135,
-      "phase": "critique",
-      "timestamp": "2026-10-04T06:10:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(135사이클 동안 다뤄진 항목 전부 제외 지시: Enter-to-submit 시리즈/touchSave 구조적 가드/지출분석 drill-down/문의하기 dead end/자산 그룹 내 개별 재배열/DB.deletedType·deletedBal 병합 포함). 새로 발견 후 직접 소스 재검증: nwHistoryCard(owner)(index.html:2393-2416)가 hist.slice(-60)(2396행)로 항상 최근 60일 고정 스파크라인만 보여주고 기간을 바꿀 UI가 전혀 없음을 확인 — 반면 pruneNwHistory(2274-2281)는 최근 90일 일별 + 그 이전 월 1회 스냅샷을 무기한 보존하도록 이미 설계돼 있어 수개월~수년치 데이터가 쌓여도 홈 카드에서는 닿을 수 없음을 grep·Read로 재확인. 렌더된 <svg>(2411-2414)에 aria-hidden=\"true\"뿐 onclick/onpointer 등 인터랙션 핸들러가 전무해 점을 눌러 날짜·금액을 볼 수 없음도 확인(앱의 다른 숫자 표면 대부분은 histPeek류 누르고 있기 패턴으로 상세를 보여주는 것과 대조). goalProgress/nwHistoryForOwner가 이미 DB.nwHistory 전체를 소비해 데이터 파이프라인은 장기 구간을 다룰 수 있음이 증명됨 — 문제는 순전히 홈 카드 표시 레이어의 인위적 절단. pending_advance_plan에 기간 선택 세그먼트+logic.js nwHistoryRange(hist,preset) 순수함수(장기 구간은 월별 다운샘플링)+차트 탭/롱프레스 인터랙션(histPeek 패턴 재사용)+refreshNwHistoryCard 갱신+회귀 테스트 저장(상세는 pending_advance_plan 참고). 러너업(기각): 부채/연금 자산의 이자율·상환 스케줄 모델링 부재 — 실재하나 새 데이터 모델 필드·화면까지 필요해 재작성에 가까운 과대 스코프(cycle132/134에서도 동일 사유로 반복 기각) / 전체내역 검색(histQ) 성능 — 이미 PAGE=20 페이지네이션(4082-4084)과 _histCache 무효화 캐싱(3999)이 있어 실측 문제 없음(cycle126 기각과 일치) / 목표(goals) 다중 목표 UX — owner별 진행률·예상일·role=button/aria-label/keydown까지 이미 갖춰져(2455-2480) 재손볼 여지 적음 / 접근성 전수 점검 — grep 결과 aria-/role-/tabindex 102건이 이미 전반에 분포돼 막연한 전수 점검보다 이번처럼 구체적 공백 하나가 더 실행 가능. 코드 변경 없음(읽기 전용 조사, 서브에이전트가 index.html 2274-2281·2393-2416·2455-2480·4082-4084를 직접 Read/grep으로 재확인, 오케스트레이팅 세션은 서브에이전트 보고를 검토해 채택).",
-      "commit": null
-    },
     {
       "cycle": 135,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-05T03:24:18.000Z",
       "summary": "develop 커밋(163888c, doRenameOwner()에 ST.hist.owner 동기화 추가)을 검토. ST.hist.owner가 실제로 세팅되는 지점들(index.html:3574 histOpenCat류/4059 asset drill-down/4092 지출분석 카테고리 드릴다운 ST.hist.owner=ST.spendOwner/4164 histClearFilter/4166 histClearCatFilter)을 grep으로 전부 추적해, filterTxnsByOwner(logic.js)가 이 필드를 DB.assets[].owner와 정확매칭한다는 전제와 자산들은 이미 새 이름으로 옮겨간 뒤 이 필터만 옛 이름에 남는다는 버그 서술이 정확함을 확인. 새 가드(ST.hist&&ST.hist.owner===old)가 ST.assetOwner/ST.plan.owner/ST.spendOwner 세 캐스케이드와 같은 줄·같은 조건부 대입 스타일로 추가돼 기존 패턴과 일치하고, ST.hist 자체가 없는 기존 테스트 fixture 호출부도 단락평가로 TypeError 없이 통과함을 확인. 새 회귀 테스트 2건(이동/무관+.hist 없음 안전) 모두 의도대로 구성됨. node test/run.js 재실행 949/949 통과. 코드 변경 없음(이상 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 140,
+      "phase": "critique",
+      "timestamp": "2026-10-05T04:10:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(140사이클 동안 다뤄진 항목 전부 제외 지시: Enter-to-submit 시리즈/touchSave 가드/CSV 이체/지출분석 drill-down/문의하기+sanitizeBackup/자산 그룹 내 재배열+경계버그/DB 병합 누락 5건/순자산 추이 기간선택+탭/날짜선택기 접근성/선택모드 일괄 카테고리 변경/Pro 프로모 제거/탭전환 백버튼/assetQtyLog/openAssetPicker 빈 상태/ST.hist.owner 동기화 포함, 기각 이력도 전달). 새로 발견 후 서브에이전트가 직접 소스 재검증: renderAssetSheet()(index.html:3214-3260)는 cash/savings/realestate/etc/pension/debt 자산에 \"현재 금액\" 입력 필드와 토글만 보여주고, assetSubline()(2814-2821)도 fx/gold/stock/savings 외 타입은 라벨만 반환해 과거 추이 정보가 전혀 없음을 확인. 홈의 순자산 추이 카드(nwHistoryCard, cycle135에서 기간선택+탭 인터랙션까지 완성됨)는 가구 전체/귀속별 \"합계\" 추이만 보여주고, openAssetHistory()(4056-4061)도 cash류는 거래 리스트만·isMarketValued는 수량 변경 로그만 보여줄 뿐 개별 통장 하나의 잔액이 시간에 따라 어떻게 움직여왔는지는 앱 어디서도 그래프로 볼 수 없음을 재확인 — 가계부 앱의 핵심 효용(이 통장이 늘고 있는지/줄고 있는지 한눈에)이 자산 단위에서 비어 있음. balanceAt/balancesUpTo(2167-2210)가 이미 거래 재생으로 임의 과거 날짜의 자산별 잔액을 순수 계산하고 nwChartPath(2283-2301)가 이미 범용 svg path 순수함수라 저장 스키마 변경 없이 구현 가능함도 확인. pending_advance_plan에 자산 상세(openAssetHistory/renderAssetSheet)에 미니 잔액 추이 차트 추가 계획 저장(상세는 pending_advance_plan 참고, fx/gold/stock은 평가액 성격이 달라 스코프 제외). 러너업(기각): SRI 미작성 TODO(1308-1315) — curl로 cdn.jsdelivr.net/t1.kakaocdn.net이 이 환경 proxy에서 여전히 403(CONNECT tunnel failed)으로 막혀 있음을 재확인, 이전 사이클 블로커 그대로라 해시 계산 불가 / cycle139 review가 지적한 splitIdx 주석 오류(2918-2924 부근, 기능 영향 없는 순수 주석 오탈자) — 우선순위 낮아 보류 / fx/gold/stock 시세 미확인 표시 부재 — rateWasUnknown 즉시 동기화(3320)+rateStatusText(2714-2721)로 공백 작음. 코드 변경 없음(읽기 전용 조사, 서브에이전트가 index.html 2167-2210·2283-2301·2393-2416·2602-2721·2809-2821·2900-2985·3065-3074·3214-3260·3320·3365-3385·4036-4125·4593-4687·5183-5260·1308-1315, sw.js, logic.js 전체를 직접 Read/grep으로 재확인, SRI curl 재검증 포함).",
       "commit": null
     }
   ]
