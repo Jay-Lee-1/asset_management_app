@@ -1,15 +1,12 @@
 {
   "cycle": 142,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "nwHistoryCard/assetBalCard 미니차트 스크러버가 포인터 전용 — 키보드 접근 경로 전혀 없음",
+    "why": "홈 순자산추이 카드(#nwhChart, index.html:2428, cycle135)와 전체내역 계좌필터 잔액추이 카드(#assetBalChart, index.html:2508, cycle140) 둘 다 onpointerdown/move/up/cancel/leave로만 스크러버가 동작하고 tabindex/role/onkeydown이 전혀 없다. rowKeydown(e,fn)(index.html:1488, Enter/Space 처리)이 앱 전역의 다른 모든 커스텀 인터랙티브 행/칩(2372,2593,2607,2615,3023,3029,3493,3667,3672,4444,4557,4724,6554,6561,6590,6689,6694,6699)과 wheel 날짜/월 피커(whKeydown, 6172, 화살표/Home/End)에 일관되게 적용돼 있는데, 이 두 차트 스크러버만 예외. 키보드/스위치 접근 사용자는 기간 세그먼트 버튼과 첫→끝 요약은 보지만 개별 날짜 값을 드릴다운하는 핵심 인터랙션 자체에 닿을 방법이 없음 — 이미 출시된 두 핵심 분석 기능에 걸친 실사용 차단 수준 접근성 공백. test/run.js에 nwChartPeek/assetBalPeek 매칭 0건으로 회귀 커버리지도 없음.",
+    "approach": "1) logic.js에 순수 함수 nwChartKeyStep(curIdx,key,len) 추가 — ArrowRight/ArrowLeft/Home/End를 0..len-1로 클램프해 다음 인덱스 반환(ArrowRight from null은 len-1에서 시작), nwNearestPointIndex처럼 단위테스트 가능하게 side-effect free로 유지. 2) index.html에서 nwChartPeekMove(~2453-2466)/assetBalPeekMove(~2533-2546)에 중복된 \"피크 UI를 idx로 세팅\"(line x1/x2, 라벨 텍스트/위치/클래스, announceLive) 바디를 공용 setter(예: chartPeekRenderAt(ptsArr,lineElId,labelElId,announcePrefix,idx))로 추출해 포인터 핸들러와 신규 키보드 핸들러 양쪽에서 재사용. 3) #nwhChart(2428)에 tabindex=\"0\" role=\"img\" aria-label=\"순자산 추이 차트, 화살표 키로 날짜별 값 탐색\" onkeydown=\"nwChartPeekKey(event)\" 추가, #assetBalChart(2508)에 동일 패턴으로 assetBalPeekKey 추가. 신규 핸들러는 Arrow/Home/End면 공용 setter+nwChartKeyStep 호출, Escape/blur면 기존 *PeekEnd()로 라인/라벨 숨김(기존 pointerleave와 동일). 4) test/run.js에 nwChartKeyStep 순수 테스트 4-6개(첫/끝 클램프, Home/End, null 시작)+ .promo 제거/go popstate 배선 테스트와 같은 extractFunction 문자열패턴검사로 nwHistoryCard/assetBalCard 마크업에 tabindex=\"0\"·onkeydown이 있고 신규 키핸들러가 존재해 step 함수를 호출하는지 확인. 5) 여유가 있으면 runner-up 1(refreshNwHistoryCard 2923-2927 / assetBalPresetSel 2518-2524가 세그먼트 버튼 클릭 후 innerHTML 재렌더로 포커스를 잃는 문제, index.html:3189 주석의 기존 포커스복원 패턴과 동일하게)도 같이 묶어 고칠 수 있음 — 다만 범위 밖이면 생략 가능. DB/스키마 변경 없음(런타임 UI 상태만). APP_VERSION/sw.js CACHE 버전 올림."
+  },
   "history": [
-    {
-      "cycle": 137,
-      "phase": "critique",
-      "timestamp": "2026-10-04T15:00:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(137사이클 동안 다뤄진 항목 전부 제외 지시: Enter-to-submit 시리즈/touchSave 구조적 가드/지출분석 drill-down/문의하기 dead end+sanitizeBackup 검증/자산 그룹 내 개별 재배열/DB 병합 누락 수정 5건(goals·catIcon·catVar·deletedType·deletedBal)/순자산 추이 기간선택+탭/날짜선택기 접근성/선택모드 일괄 카테고리 변경 포함). 새로 발견 후 직접 소스 재검증: fx/gold/stock 등 isMarketValued() 자산은 cycle27 설계상 거래의 from/to가 될 수 없게 막혀 있어(openAssetPicker excludeMarketValued:true, index.html:2226/2246-2251/6623) 자산목록의 모든 행에 무조건 렌더되는 '내역 보기' 버튼(assetBodyHTML, 2947)이 openAssetHistory()->matchesAssetId()(logic.js:217-220)를 거쳐 영원히 빈 화면만 보여줌을 확인. 이 자산들의 수량(fxAmount/goldDon/stockQty)은 renderAssetSheet() 편집 폼에서 직접 덮어쓰기만 가능하고(3230-3244) saveAsset()이 그대로 저장할 뿐, cash류 자산의 '잔액 조정' 거래(addBalanceAdjust/updateBalanceAdjust, 3015-3036, balType만 해당 3267-3268)와 달리 어떤 변경 기록도 남기지 않음을 확인 — 이미 기각된 'cost basis 단일 스칼라'(평균단가 계산 문제)와 orthogonal한, 변경 이벤트 로그 자체의 부재. pending_advance_plan에 신규 DB.assetQtyLog 컬렉션+saveAsset() 쓰기 분기+openAssetQtyLog() 읽기 시트+migrate/mergeRemoteDataIntoLocal/sanitizeBackup 교차배선(반복된 병합누락 버그 클래스 재발 방지 테스트 포함)+회귀테스트 5-8개 저장(상세는 pending_advance_plan 참고, 너무 크면 '내역 보기' 버튼 숨김/안내 시트로의 fallback도 명시). 러너업(기각): 메뉴의 동작 안 하는 'Pro로 업그레이드' 프로모 카드(4434, toast만 뜨고 결제 연동 전무) — 실재하나 단순 삭제/문구 수정 규모라 develop 스코프에 더 가까움 / .ad-slot 장식용 배너(1293/6788) — SHOW_AD=false로 이미 명시적으로 꺼져 있어 버그 아님 / DB.budgets 레거시 플랫 필드 — migrate()의 1회성 마이그레이션 시드일 뿐 진행중 병합 공백 아님(budgetHistory는 이미 해결됨) / recDates/shiftWeekend DST·월말·주말이동 엣지케이스 — 기존 테스트 커버리지로 재현 가능한 결함 못 찾음 / openSheet() 포커스트랩 커버리지 — role=dialog aria-modal 이미 존재, 기각된 '접근성 전수 점검'과 동일 범주. 코드 변경 없음(읽기 전용 조사, 서브에이전트가 index.html 2226/2246-2251/2947/3015-3036/3230-3244/3267-3268/4036-4039/6623, logic.js:217-220을 직접 Read/grep으로 재확인).",
-      "commit": null
-    },
     {
       "cycle": 137,
       "phase": "advance",
@@ -140,6 +137,13 @@
       "phase": "review",
       "timestamp": "2026-10-05T11:08:30.456Z",
       "summary": "cycle142 develop(202690d, CSV import findAsset() normName() 통일)을 diff/코드 검토. normName()이 NFC 정규화+trim+공백축약+lowercase를 수행함을 확인, csvRowToImportTxn의 category 매칭(buildImportPreview)이 이미 같은 normName() 패턴을 쓰고 있어 일관성 있는 수정임을 확인. node test/run.js 973/973 통과. 추가로 고칠 버그 없음 — 이상 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 142,
+      "phase": "critique",
+      "timestamp": "2026-10-05T12:15:10.397Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(142사이클 동안 다뤄진 항목 전부 + 기각 이력 전달, normName NFC/CSV findAsset 통일 포함). 새로 발견 후 서브에이전트가 직접 재검증: 홈 순자산추이 카드(#nwhChart, index.html:2428, cycle135)와 전체내역 계좌필터 잔액추이 카드(#assetBalChart, index.html:2508, cycle140)의 스크러버가 onpointerdown/move/up/cancel/leave로만 동작하고 tabindex/role/onkeydown이 전혀 없음을 확인 — rowKeydown()(1488)이 앱 전역 다른 모든 커스텀 인터랙티브 요소와 wheel 피커(whKeydown, 6172)에 일관 적용된 것과 달리 이 두 차트만 예외. 키보드 사용자가 두 핵심 분석 기능의 \"스크럽해서 값 보기\" 인터랙션에 전혀 닿을 수 없는 실사용 차단 접근성 공백. test/run.js에 nwChartPeek/assetBalPeek 매칭 0건으로 회귀 커버리지도 없음. pending_advance_plan에 nwChartKeyStep() 순수함수+공용 피크렌더 setter 추출+두 차트 div에 tabindex/onkeydown 추가+회귀테스트 계획 저장. 러너업(참고용, 이번엔 메인 아님): refreshNwHistoryCard/assetBalPresetSel의 세그먼트버튼 클릭 후 innerHTML 재렌더로 포커스 소실(여유 있으면 같이 묶어 고치되 범위 밖이면 생략 가능) / checkNotifyAlerts()의 showNotification 실패 silent catch(주석상 best-effort로 명시돼 계약 내). 이번 패스에서 재확인했으나 버그 아님: tombstone/merge 배선(goals/inquiries/assetQtyLog)은 DB.deletedIds+gcTombstones로 완전 배선됨, exportData는 풀 DB 덤프라 신규 컬렉션 병합 공백 없음. 코드 변경 없음(읽기 전용 조사, 서브에이전트가 index.html 1488·2372·2428·2448·2453·2467·2508·2518-2546·2593-2699·2923-2927·3023-3029·3189·3493·3667-3672·4444·4557·4724·6172·6554-6699 및 test/run.js grep을 직접 Read/확인).",
       "commit": null
     }
   ]
