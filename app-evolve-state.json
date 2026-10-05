@@ -1,6 +1,6 @@
 {
   "cycle": 143,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
     {
@@ -120,6 +120,13 @@
       "timestamp": "2026-10-05T14:05:00.000Z",
       "summary": "general-purpose 서브에이전트로 cycle142 critique가 러너업(이번엔 메인 아님, 여유 있으면 같이 묶어 고치되 범위 밖이면 생략 가능)으로 남겨뒀던 세그먼트 버튼 클릭 후 포커스 소실을 해소. refreshNwHistoryCard()(nwHistoryCard)와 assetBalPresetSel()(assetBalCard) 둘 다 1개월/3개월/1년/전체 기간 세그먼트 버튼을 누르면 컨테이너 전체를 innerHTML로 통째로 교체하는데, 이때 클릭/키보드 포커스를 받고 있던 버튼 DOM 노드 자체가 사라져 브라우저가 포커스를 조용히 <body>로 떨어뜨림을 확인 — cycle139(날짜선택기)·cycle142(차트 스크러버) 접근성이 바로 다음 상호작용에서 끊기는 상황. closeSheet()의 _sheetReturnFocus 복귀(5976행)와 같은 원칙으로 수정: innerHTML 교체 직전 el.contains(document.activeElement)로 포커스가 카드 안에 있었는지만 기억해두고, 재렌더 후 포커스가 있었을 때만 새로 그려진 .on(현재 선택 preset) 버튼으로 focus() 복귀(카드 밖에서 트리거된 호출 경로는 hadFocus=false라 기존 동작과 동일, 회귀 없음). test/run.js에 두 함수 모두 DOM-mutating이라 FUNCTIONS vm 추출 대상이 아니므로 cycle142 키보드 접근 테스트와 동일한 소스 패턴 검사 방식으로 회귀 테스트 2개 추가 — 수정 전 코드로 되돌려 둘 다 실제 FAIL함을 직접 검증한 뒤 복구. node test/run.js 983/983 -> 985/985 통과(메인 인라인 script 구문 검사 포함). APP_VERSION 1.47.54->1.47.55, sw.js CACHE v316->v317.",
       "commit": "f71c40bafefaa8c15388ac220fcd688882e49a4d"
+    },
+    {
+      "cycle": 143,
+      "phase": "review",
+      "timestamp": "2026-10-05T16:00:00.000Z",
+      "summary": "develop 커밋(f71c40b, refreshNwHistoryCard/assetBalPresetSel 세그먼트 버튼 포커스 보존)을 검토. nwHistoryCard()/assetBalCard()가 내부에 세그먼트 컨테이너를 '.seg nwh-seg' 하나만 렌더한다는 전제(각각 index.html:2406/2505)를 grep으로 확인해, el.querySelector('.seg button.on')이 카드마다 유일한 선택된 버튼을 정확히 가리킴을 검증. closeSheet()의 _sheetReturnFocus와 동일한 '재렌더 전에 el.contains(document.activeElement)로만 기억, 포커스가 없었으면 아무 것도 안 함' 패턴이 두 함수에 동일하게 적용돼 캐러셀/점 전환 등 카드 밖에서 트리거되는 기존 호출 경로에는 영향이 없음을 확인. nwHistoryCard가 pts.length<2(owner==='all')일 때 ''를 반환하는 경로, assetBalCard가 자산 미존재/타입 제외 시 ''를 반환하는 경로 모두 el.innerHTML=''이 되어도 querySelector가 null을 반환해 if(on) 가드로 안전함을 확인. node test/run.js 985/985 통과(신규 2건 포함). 코드 변경 없음 — 이상 없음.",
+      "commit": null
     }
   ]
 }
