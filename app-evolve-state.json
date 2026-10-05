@@ -1,22 +1,8 @@
 {
   "cycle": 142,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 137,
-      "phase": "develop",
-      "timestamp": "2026-10-04T00:00:00.000Z",
-      "summary": "general-purpose 서브에이전트 조사로 sanitizeBackup()(cloud-pull/backup-restore 경로가 공통으로 거치는 원격 데이터 정제 함수)에 txns/assets/recurrences/goals와 달리 DB.inquiries(cycle133에 추가된 '문의하기'/저장한 메모) 검증 블록이 아예 없었음을 발견·수정. migrate()는 기존 레코드에 id/updatedAt만 백필할 뿐 손상 레코드를 걸러내거나 text를 정규화하지 않고, sanitizeBackup()이 Object.assign({},obj,...)로 inquiries를 그대로 통과시켜온 탓에 다른 기기/버전에서 온 id 없는 레코드나 비문자열 text, 배열이 아닌 inquiries가 그대로 병합될 수 있었다 — 이후 '저장한 메모 보기'에서 delInquiry()가 q.text.length에서 TypeError로 터질 수 있는 경로. goals 블록 바로 뒤에 inquiries 검증 블록 추가(id 없는 레코드는 droppedCount, 비문자열 text는 빈 문자열로 coerce 후 fixedCount, 비배열 inquiries도 안전 처리)하고 sanitizeBackup() 반환 객체에 inquiries를 명시 포함. test/run.js에 회귀 테스트 3개 추가(id 없는 레코드 drop/비배열 처리, 비문자열 text 정규화+fixedCount, 정상 케이스 무회귀). node test/run.js 922/922 -> 925/925 통과. APP_VERSION 1.47.42->1.47.43, sw.js CACHE v304->v305. 커밋 38290d0. (오케스트레이팅 세션 메모: 서브에이전트가 커밋할 당시 컨테이너가 detached HEAD였고 로컬 main 레프가 오래된 분기(c76ce67, 이 state.json 히스토리에 없는 별도 사이클들)를 가리키고 있었다 — git fetch origin main으로 origin/main이 이미 fe93cfb로 force-update돼 있음을 확인(즉 실제 origin 최신 상태는 cycle136 advance와 일치), 38290d0이 그 fe93cfb의 직계 자식이라 fast-forward 가능함을 merge-base --is-ancestor로 검증 후 로컬 main을 38290d0으로 재설정하고 origin에 push 완료. origin/main이 유일한 지속 경로이므로 향후 세션은 origin/main 기준으로 계속 이어가면 됨.)",
-      "commit": "38290d0d2acf548469ff877f1e3fcf10035485f0"
-    },
-    {
-      "cycle": 137,
-      "phase": "review",
-      "timestamp": "2026-10-04T14:08:28.848Z",
-      "summary": "develop 커밋(38290d0, sanitizeBackup()에 DB.inquiries 검증 추가)을 검토. goals 블록(5406-5423)과 정확히 동일한 패턴(id 없는 레코드 드랍, 배열 아님 방어, text 비문자열 정규화)으로 작성됐음을 소스 대조로 확인. 커밋 메시지가 지목한 크래시 지점(delInquiry() q.text.length, index.html:4886)을 직접 Read해 재확인 — text가 문자열이 아니면 TypeError가 맞음. 호출부 3곳(1766/1802/1810/1822) 모두 sanitizeBackup().data를 거친 뒤 migrate()가 뒤따르므로 누락된 id/updatedAt은 기존 goals 패턴과 동일하게 안전. mergeCollection()(logic.js:107-129)이 updatedAt 누락을 ||0으로 안전 처리함도 확인(신규 버그 아님, goals와 동일한 기존 한계). fixedCount/droppedCount도 resolveCloudPullRemote() 토스트(1824)에 이미 반영되어 사용자에게 노출됨. node test/run.js 925/925 통과(신규 3건 포함). 코드 변경 없음(이상 없음).",
-      "commit": null
-    },
     {
       "cycle": 137,
       "phase": "critique",
@@ -147,6 +133,13 @@
       "phase": "develop",
       "timestamp": "2026-10-05T10:10:00.000Z",
       "summary": "general-purpose 서브에이전트로 cycle141 critique가 '보너스 항목, 범위 밖'으로 남겨뒀던 CSV import의 findAsset() 완전일치 불일치를 해소. csvRowToImportTxn()(index.html:5306 부근)의 findAsset이 a.name.trim()===nm 식 대소문자·유니코드 미정규화 완전일치를 쓰는 반면, saveAsset() 동명 자산 가드(3358)/addOwner·doRenameOwner(3444,3459)/addCat·doRenameCat(4858,4906)/CSV import의 카테고리 매칭(buildImportPreview, 5336, 바로 두 줄 아래)까지 전부 normName()(logic.js:205, cycle141에서 NFC 정규화까지 추가됨) 기준 근접일치를 쓰고 있어, 이 한 곳만 비일관적임을 소스 대조로 재확인. 효과: 이 앱이 내보낸 CSV를 macOS(파일시스템이 NFD로 정규화)에서 다시 가져오거나 대소문자/공백만 다른 자산명이 섞인 CSV를 가져오면 실제로 존재하는 자산인데도 매칭 실패해 이름 스냅샷만 남는 unmatched 거래로 떨어져 해당 자산 잔액이 조용히 갱신되지 않음. findAsset의 비교를 normName(a.name)===normName(nm)으로 변경(isMarketValued 제외, 후보 2개 이상이면 미매칭 유지하는 안전장치는 그대로 보존), 일관성 근거를 설명하는 주석 추가. test/run.js에 회귀 테스트 1개 추가(연속 공백/대소문자/NFD 저장 자산명 세 케이스 모두 normName 기준 매칭 확인). node test/run.js 972/972 -> 973/973 통과(메인 인라인 script 구문 검사 포함, 오케스트레이팅 세션이 직접 재실행해 재확인). APP_VERSION 1.47.52->1.47.53, sw.js CACHE v314->v315.",
+      "commit": null
+    },
+    {
+      "cycle": 142,
+      "phase": "review",
+      "timestamp": "2026-10-05T11:08:30.456Z",
+      "summary": "cycle142 develop(202690d, CSV import findAsset() normName() 통일)을 diff/코드 검토. normName()이 NFC 정규화+trim+공백축약+lowercase를 수행함을 확인, csvRowToImportTxn의 category 매칭(buildImportPreview)이 이미 같은 normName() 패턴을 쓰고 있어 일관성 있는 수정임을 확인. node test/run.js 973/973 통과. 추가로 고칠 버그 없음 — 이상 없음.",
       "commit": null
     }
   ]
