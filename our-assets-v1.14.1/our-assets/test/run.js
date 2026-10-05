@@ -8298,6 +8298,13 @@ test('renderTxSheet: 반복이 꺼져 있으면(일반 입력/수정) txMemo가 
     'txMemo의 Enter-제출이 rpt(반복 켜짐)를 제외하고 나머지에만 적용되지 않음'
   );
 });
+test('renderTxSheet: 반복 개별/범위 수정 시트(rc 분기)의 txAmt(금액)에 Enter-제출이 있다(recSave()가 요구하는 유일한 입력이고, 삭제/저장하기 버튼뿐 뒤따르는 필드가 없음, app-evolve cycle145 develop)', () => {
+  const body = extractFunction('renderTxSheet');
+  assert.ok(
+    body.includes(`id="txAmt" class="amount-in num" inputmode="numeric" value="${'${d.amount?comma(d.amount):\'\'}'}" placeholder="0" oninput="fmtAmt(this)" onkeydown="if(event.key==='Enter'&&!event.isComposing)recSave()"`),
+    'rc 분기의 txAmt에 Enter→recSave() 연결이 없음'
+  );
+});
 test('renderRecSheet: rAmt(금액)에 Enter-제출이 있다(saveRec()가 요구하는 유일한 필수 입력이고, 나머지 필드는 모두 기본값이 있음)', () => {
   const body = extractFunction('renderRecSheet');
   assert.ok(

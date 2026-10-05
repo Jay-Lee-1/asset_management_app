@@ -1316,7 +1316,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.59';
+const APP_VERSION='1.47.60';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3784,7 +3784,7 @@ function renderTxSheet(){
  if(rc){ /* 반복 개별/범위 수정: 금액만 */
   const SCOPE={one:'이 내역만',future:'이후 모두',all:'전체'};
   openFormSheet(`<h3>반복 내역 수정</h3><div class="desc">'${esc(d.memo||d.category)}' · ${shortDate(rc.date)} · ${SCOPE[rc.scope]}</div>
-   <div class="field"><label for="txAmt">금액</label><div class="field-clear"><input id="txAmt" class="amount-in num" inputmode="numeric" value="${d.amount?comma(d.amount):''}" placeholder="0" oninput="fmtAmt(this)"><button type="button" class="fc-x" aria-label="금액 지우기" onclick="clrInput('txAmt')">✕</button></div></div>
+   <div class="field"><label for="txAmt">금액</label><div class="field-clear"><input id="txAmt" class="amount-in num" inputmode="numeric" value="${d.amount?comma(d.amount):''}" placeholder="0" oninput="fmtAmt(this)" onkeydown="if(event.key==='Enter'&&!event.isComposing)recSave()"><button type="button" class="fc-x" aria-label="금액 지우기" onclick="clrInput('txAmt')">✕</button></div></div>
    ${rc.recId?`<button class="rec-detail-link" onclick="openRecDetail('${rc.recId}')">${svg('repeat')} 반복 자체를 세부 편집 ${svg('chevR')}</button>`:''}
    <div class="two-btn"><button class="btn btn-danger cancel" onclick="recCtxDel()">${svg('trash')} 삭제</button>
     <button class="btn btn-primary" onclick="recSave()">저장하기</button></div>`);
