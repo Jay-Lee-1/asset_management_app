@@ -10745,6 +10745,16 @@ test('nwChartKeyStep: 모르는 key는 curIdx를 그대로 돌려준다(호출�
   assert.strictEqual(sandbox.nwChartKeyStep(5, 'PageUp', 12), 5);
   assert.strictEqual(sandbox.nwChartKeyStep(null, 'Tab', 12), null);
 });
+/* 기간 세그먼트(1개월/3개월/1년/전체)나 귀속 캐러셀을 바꾸면 _nwPeekIdx/_assetBalPeekIdx(index.html)는
+ * 리셋되지 않은 채 더 짧아진 새 포인트 배열에 그대로 남는다 — 예를 들어 1년 보기에서 59번째(마지막)
+ * 포인트를 스크러빙해 둔 채 1개월 보기(포인트 30개)로 바꾸고 다시 ArrowLeft/Right를 누르면, 이 함수가
+ * curIdx=59를 그대로 c로 써서 58 같은 len(30)을 훌쩍 넘는 값을 돌려주고, 호출부(chartPeekRenderAt)가
+ * pts[58]을 읽어 undefined.date에서 그대로 터진다. len-1을 넘는 curIdx도 현재 배열 기준으로 clamp해야
+ * 한다(이 회귀 테스트는 수정 전 코드로 되돌리면 두 assert 모두 FAIL — 58/59를 반환함). */
+test('nwChartKeyStep: curIdx가 len-1보다 큰 값(더 긴 이전 배열 기준의 낡은 인덱스)이어도 현재 len 안으로 clamp한다', () => {
+  assert.strictEqual(sandbox.nwChartKeyStep(59, 'ArrowLeft', 30), 28);
+  assert.strictEqual(sandbox.nwChartKeyStep(59, 'ArrowRight', 30), 29);
+});
 
 /* ---------- nwhChart/assetBalChart 마크업: 키보드로 스크러버에 닿을 수 있는지(tabindex+onkeydown)
  * 확인하는 회귀 테스트. 포인터 핸들러만 있던 것(app-evolve cycle135/140)을 cycle142에서 고쳤다 —

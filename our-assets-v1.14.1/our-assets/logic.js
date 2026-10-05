@@ -395,13 +395,19 @@ function whTargetIdx(cur,n,key){
  * 방향키를 누르면 가장 최근 포인트(len-1, 차트 맨 오른쪽=오늘)에서 시작해 거기서부터 좌우로
  * 움직이는 게, 포인터로 차트를 짚었을 때 보통 맨 끝부터 보게 되는 것과 가장 가깝다
  * (app-evolve cycle142 critique/advance — 두 차트 스크러버가 onpointer*로만 동작해 키보드/
- * 스위치 접근 사용자는 드릴다운 인터랙션에 전혀 닿을 수 없던 공백 해소). */
+ * 스위치 접근 사용자는 드릴다운 인터랙션에 전혀 닿을 수 없던 공백 해소).
+ * curIdx는 호출부(index.html의 _nwPeekIdx/_assetBalPeekIdx)가 기간 세그먼트·귀속 전환으로
+ * 더 짧아진 새 포인트 배열에 대해서도 리셋 없이 그대로 들고 있을 수 있다(예: 1년 보기에서
+ * 59번째 포인트를 짚은 채 1개월 보기로 바꾸면 새 배열은 30개뿐). 그런 "이전 배열 기준"의
+ * 낡은 인덱스를 그대로 c에 대입하면 c+1/c-1이 len을 넘는 값을 반환해, 호출부가 그 인덱스로
+ * pts[idx]를 읽을 때 undefined.date에서 그대로 터진다 — 그래서 음수/null뿐 아니라 len-1을
+ * 넘는 값도 여기서 현재 배열 기준으로 clamp해 호출부가 항상 유효한 인덱스만 받게 한다. */
 function nwChartKeyStep(curIdx,key,len){
  if(!(len>0))return -1;
  if(key==='Home')return 0;
  if(key==='End')return len-1;
  if(key!=='ArrowLeft'&&key!=='ArrowRight')return curIdx;
- const c=(curIdx==null||curIdx<0)?len-1:curIdx;
+ const c=(curIdx==null||curIdx<0)?len-1:Math.min(curIdx,len-1);
  if(key==='ArrowRight')return Math.min(len-1,c+1);
  return Math.max(0,c-1);
 }

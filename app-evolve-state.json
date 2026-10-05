@@ -1,15 +1,8 @@
 {
   "cycle": 143,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 138,
-      "phase": "develop",
-      "timestamp": "2026-10-04T17:13:35.400Z",
-      "summary": "cycle137 critique 러너업으로 기각됐던(규모가 develop 스코프에 맞는다고 평가된) 메뉴의 \"Pro로 업그레이드\" 프로모 카드(renderMenu(), index.html:4477 부근)를 직접 재검증 후 제거했다. 이 자가-호스트 개인 자산관리 템플릿에는 결제 백엔드가 전혀 없고(README/netlify functions엔 stock.js·rates.js뿐), 버튼의 onclick은 toast('Pro 안내')만 띄우는 더미라 '시작하기'를 눌러도 아무 일도 일어나지 않는 완전한 dead end임을 grep으로 재확인('Pro'/'결제'/'payment' 매칭 전무). 광고 배너(.ad-slot)는 SHOW_AD 플래그로 의도적으로 끈 것과 달리 이 카드는 끄는 스위치조차 없이 항상 렌더되는 거짓 기능이라 판단해 숨김 플래그 추가 대신 완전 제거를 택함(cycle133 문의하기 dead-end 수정 때는 실제 저장 기능을 추가했지만, 이번엔 뒤에 구현할 결제 연동 자체가 존재하지 않아 관망형 UI를 남길 이유가 없음). renderMenu()에서 .promo div 전체 삭제, 전용 CSS 규칙(.promo/.promo .pt/.promo .ps/.promo .go, index.html 663-665행)과 공용 트랜지션 선택자 목록(144/147행)에 섞여 있던 .promo .go 참조도 함께 제거해 완전한 dead CSS를 남기지 않았다. test/run.js에 renderMenu 소스 패턴 검사 회귀 테스트 1개 추가(.promo 클래스/toast('Pro 안내')/'Pro로 업그레이드' 문구가 더 이상 없는지 확인, 기존 acct-card 테스트와 동일한 extractFunction 방식). node test/run.js 937/937 -> 938/938 통과, 메인 인라인 <script> node --check 구문 검사도 별도로 통과. APP_VERSION 1.47.44->1.47.45, sw.js CACHE v306->v307.",
-      "commit": null
-    },
     {
       "cycle": 138,
       "phase": "review",
@@ -140,6 +133,13 @@
       "phase": "advance",
       "timestamp": "2026-10-05T13:12:43Z",
       "summary": "critique(cycle142) 계획대로 nwHistoryCard(#nwhChart, index.html)와 assetBalCard(#assetBalChart) 두 미니차트 스크러버에 키보드 접근 경로를 추가했다. logic.js에 순수 함수 nwChartKeyStep(curIdx,key,len) 추가(whTargetIdx와 같은 clamp 원칙이되, curIdx가 null/-1인 시작 상태에선 가장 최근 포인트(len-1)에서 시작). index.html에서 nwChartPeekMove/assetBalPeekMove에 중복돼 있던 '피크 라인/라벨을 idx로 그리기' 바디를 공용 chartPeekRenderAt(pts,lineElId,labelElId,prefix,idx)로 추출해 포인터 핸들러와 신규 키보드 핸들러(nwChartPeekKey/assetBalPeekKey) 양쪽에서 재사용. 두 차트 div에 tabindex=\"0\" role=\"img\" aria-label 추가, onkeydown으로 ArrowLeft/ArrowRight/Home/End 처리, Escape/blur는 기존 *PeekEnd()로 숨김(pointerleave와 동일 동작). CSS에 .nwh-chart:focus-visible 아웃라인도 asset-item 등 기존 커스텀 인터랙티브 요소와 같은 패턴으로 추가. test/run.js에 nwChartKeyStep 순수 테스트 7개 + 마크업/배선 확인 테스트 3개(총 10개) 추가. critique가 러너업으로 남긴 '세그먼트 버튼 클릭 후 포커스 소실'은 범위 밖으로 보류. APP_VERSION 1.47.53→1.47.54, sw.js CACHE v315→v316. node test/run.js 973/973 -> 983/983 통과 (메인 인라인 script 구문 검사 포함).",
+      "commit": null
+    },
+    {
+      "cycle": 143,
+      "phase": "develop",
+      "timestamp": "2026-10-05T00:00:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 조사. cycle142 advance가 추가한 nwChartKeyStep() 키보드 스크러버에서 len을 넘는 낡은 curIdx를 clamp하지 않는 실버그를 발견·수정. _nwPeekIdx/_assetBalPeekIdx(index.html)는 기간 세그먼트(1개월/3개월/1년/전체) 전환이나 귀속 캐러셀 스와이프로 pts 배열이 짧아져도 리셋되지 않는다 — 예: 1년 보기(59개 포인트)에서 마지막 포인트를 스크러빙해 둔 채 1개월 보기(30개)로 바꾸고 ArrowLeft/Right를 다시 누르면 nwChartKeyStep(59,'ArrowLeft',30)이 58을 반환, 호출부 chartPeekRenderAt()이 pts[58]을 읽어 undefined.date에서 TypeError로 터져 cycle142가 추가한 키보드 접근 기능 자체가 깨짐. logic.js의 nwChartKeyStep()에서 curIdx를 c로 대입할 때 Math.min(curIdx,len-1)로 현재 len 기준 clamp 추가(음수/null뿐 아니라 len-1 초과도 처리). test/run.js에 회귀 테스트 1개 추가 (nwChartKeyStep(59,'ArrowLeft',30)===28, nwChartKeyStep(59,'ArrowRight',30)===29), 수정 전 코드로는 두 assert 모두 FAIL함을 확인. node test/run.js 983/984 -> 984/984 통과, 메인 인라인 <script> node --check 구문 검사도 통과. APP_VERSION 1.47.54->1.47.55, sw.js CACHE v316->v317.",
       "commit": null
     }
   ]
