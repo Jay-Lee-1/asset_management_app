@@ -295,6 +295,26 @@ function goalProgress(goal,nwHistory,today){
  return {cur,target,pct,remaining,achieved,projectedDate};
 }
 
+/* debt 자산의 상환완료 예상일 투사 — goalProgress와 동일한 '처음·끝 두 점 선형투사' 철학을 공유한다.
+ * pts는 assetBalanceSeries(assetId,...,sign=-1)가 반환하는 날짜순 {date,bal} 배열을 그대로 받는다
+ * (부채 잔액은 양수로 표현되고 갚을수록 줄어듦). 잔액이 이미 0 이하면 완납. 포인트가 2개 미만이거나
+ * 처음·끝 구간의 일별 감소율이 0 이하(안 갚고 있거나 오히려 늘고 있음)면 projectedDate:null —
+ * goalProgress와 마찬가지로 '못 갚는다'를 추측으로 단정하지 않고 모른다고 말하는 쪽을 택한다. */
+function debtPayoffProjection(pts,today){
+ const hist=(pts||[]).filter(p=>p.date<=today);
+ if(!hist.length)return {achieved:false,projectedDate:null};
+ const last=hist[hist.length-1];
+ if(last.bal<=0)return {achieved:true,projectedDate:null};
+ let projectedDate=null;
+ if(hist.length>=2){
+  const first=hist[0];
+  const days=daysBetween(first.date,last.date);
+  const rate=days>0?(first.bal-last.bal)/days:0;
+  if(rate>0)projectedDate=addDays(last.date,Math.ceil(last.bal/rate));
+ }
+ return {achieved:false,projectedDate};
+}
+
 /* ================= ASSET ALLOCATION (자산유형별 비중, 순수) ================= */
 /* items: [{type,amount}] — 호출부(allocationCard)가 owner/includeInTotal/부채 제외 필터링과
  * assetEval(DB.rates에 의존하는 index.html 쪽 함수) 평가를 이미 끝낸 뒤 넘긴다(여기선 DB를 몰라야

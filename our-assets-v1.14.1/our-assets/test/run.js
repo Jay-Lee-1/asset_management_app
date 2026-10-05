@@ -1270,6 +1270,34 @@ test('goalProgress: today 이후의 미래 스냅샷은 무시하고 그 시점�
   assert.strictEqual(p.projectedDate, null, '필터 후 이력이 1건뿐이면 추세를 계산할 수 없음');
 });
 
+/* ---------- debtPayoffProjection: debt 자산 상환완료 예상일 투사 (app-evolve cycle144 advance) ----------
+ * goalProgress와 대칭되는 부채 쪽 선형투사. pts는 assetBalanceSeries(sign=-1)가 반환하는 날짜순
+ * {date,bal} 배열(bal은 양수=남은 빚)을 그대로 받는다고 가정해 네 경계를 검증한다. */
+test('debtPayoffProjection: 잔액이 이미 0 이하면 achieved=true이고 투사 날짜는 null이다', () => {
+  const pts = [{ date: '2026-01-01', bal: 100000 }, { date: '2026-02-01', bal: 0 }];
+  const p = sandbox.debtPayoffProjection(pts, '2026-02-01');
+  assert.strictEqual(p.achieved, true);
+  assert.strictEqual(p.projectedDate, null);
+});
+test('debtPayoffProjection: 포인트가 1개뿐이면(이력 부족) 투사할 수 없다', () => {
+  const pts = [{ date: '2026-01-01', bal: 500000 }];
+  const p = sandbox.debtPayoffProjection(pts, '2026-01-01');
+  assert.strictEqual(p.achieved, false);
+  assert.strictEqual(p.projectedDate, null);
+});
+test('debtPayoffProjection: 잔액이 정체·증가 중이면 추측 투사 없이 null을 돌려준다', () => {
+  const pts = [{ date: '2026-01-01', bal: 400000 }, { date: '2026-02-01', bal: 500000 }]; // 오히려 늘어남
+  const p = sandbox.debtPayoffProjection(pts, '2026-02-01');
+  assert.strictEqual(p.achieved, false);
+  assert.strictEqual(p.projectedDate, null, '증가 추세로는 완납일을 예측할 수 없다고 말해야 함(추측 금지)');
+});
+test('debtPayoffProjection: 꾸준히 갚고 있으면 일평균 감소량으로 완납일을 투사한다', () => {
+  const pts = [{ date: '2026-01-01', bal: 300000 }, { date: '2026-01-11', bal: 200000 }]; // 10일간 10만원 감소 = 1만원/일
+  const p = sandbox.debtPayoffProjection(pts, '2026-01-11');
+  assert.strictEqual(p.achieved, false);
+  assert.strictEqual(p.projectedDate, '2026-01-31', '남은 20만원 ÷ 1만원/일 = 20일 뒤');
+});
+
 /* ---------- budgetForMonth/setBudgetFrom: 예산은 시점별 이력이라 과거/미래 조회에 서로 다른 값을 돌려줘야 한다 ---------- */
 test('budgetForMonth: 이력이 없는 카테고리는 0(미설정)을 반환한다', () => {
   sandbox.DB = { budgetHistory: {} };

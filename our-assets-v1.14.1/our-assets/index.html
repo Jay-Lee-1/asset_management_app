@@ -1316,7 +1316,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.58';
+const APP_VERSION='1.47.59';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2521,6 +2521,13 @@ function assetBalCard(assetId,preset){
  const diff=last.nw-first.nw,up=diff>=0;
  const color=up?'var(--income)':'var(--expense)';
  _assetBalChartPts=pts;
+ /* debt 전용 상환완료 예상일 투사 — goalRowHTML의 '이대로면 YYYY쯤 달성 예상' 문구 패턴과 어조를 맞춘다.
+    assetBalanceSeries가 debt면 sign=-1로 이미 뒤집어둔 pts(bal, 양수=남은 빚)를 그대로 재사용. */
+ let payoffHTML='';
+ if(a.type==='debt'){
+  const pf=debtPayoffProjection(pts.map(p=>({date:p.date,bal:p.nw})),TODAY);
+  payoffHTML=`<div class="msub2" style="margin-top:4px">${pf.achieved?'이미 다 갚았어요':pf.projectedDate?`이 속도로 갚으면 ${shortDate2(pf.projectedDate)}쯤 다 갚아요`:'최근엔 줄어들고 있지 않아요'}</div>`;
+ }
  return `<div class="card nwh-card">
    <div class="section-title" style="margin-top:0">잔액 추이</div>
    ${segHTML}
@@ -2533,6 +2540,7 @@ function assetBalCard(assetId,preset){
      </svg>
      <div class="nwh-peek-label" id="assetBalPeekLabel" aria-hidden="true"></div>
    </div>
+   ${payoffHTML}
  </div>`;
 }
 function assetBalPresetSel(assetId,p){
