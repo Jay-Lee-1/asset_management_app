@@ -1,15 +1,8 @@
 {
   "cycle": 140,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 135,
-      "phase": "review",
-      "timestamp": "2026-10-04T05:30:00.000Z",
-      "summary": "develop 커밋(f5bab05, mergeRemoteDataIntoLocal()에 DB.deletedType/DB.deletedBal mergeFlatMap 병합 추가)을 검토. mergeFlatMap(localMap,remoteMap)(logic.js:169-171, Object.assign({},remoteMap||{},localMap||{}) — remote로 채우고 local이 같은 키를 덮어씀)이 직전 catIcon/catVar(1467-1468행) 적용과 정확히 동일한 패턴·위치(1472-1473행)임을 소스 대조로 확인. relinkDeletedAsset/deletedAssetHistoryExists/askRelinkDeleted가 이 두 맵을 읽는 쪽일 뿐 여기서 추가로 쓰기 경로를 만들지 않아 사이드이펙트 없음을 확인. 새 회귀 테스트(minimalMergeDB 기반, remote-only 키 유입 + 동일 키 local 우선)도 catIcon/catVar 테스트와 동일 방식으로 적절. node test/run.js 893/893 재통과. 코드 변경 없음(이상 없음).",
-      "commit": null
-    },
     {
       "cycle": 135,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-05T02:21:40.408Z",
       "summary": "general-purpose 서브에이전트 조사로 doRenameOwner()(index.html:3383 부근)가 이름 변경 시 ST.assetOwner/ST.plan.owner/ST.spendOwner 세 상태는 새 이름으로 갱신하면서 ST.hist.owner(전체내역 탭의 귀속 필터, spendOwner 드릴다운에서 설정됨)는 빠뜨리고 있었음을 발견·수정. filterTxnsByOwner(logic.js)가 ST.hist.owner와 자산의 .owner를 정확매칭하는데, 자산들의 .owner는 이미 새 이름이지만 ST.hist.owner는 존재하지 않는 옛 이름을 계속 가리켜 전체내역 목록이 조용히 텅 비어버리는(에러 없이, 필터를 직접 해제해야만 복구되는) 버그였다. doRenameOwner()의 기존 세 캐스케이드와 같은 줄에 ST.hist&&ST.hist.owner===old일 때만 갱신하는 가드를 추가(기존 테스트들이 .hist 없는 부분 ST fixture를 쓰는 경우와의 하위호환 유지). test/run.js에 회귀 테스트 2개 추가(옛 이름을 가리키던 경우 새 이름으로 따라감 / 무관한 이름이면 그대로 유지+ .hist 자체가 없어도 안 터짐) — 수정 전 코드로 되돌려 첫 테스트가 실제로 FAIL함을 직접 검증한 뒤 복구. node test/run.js 947/947 -> 949/949 통과. APP_VERSION 1.47.48->1.47.49, sw.js CACHE v310->v311.",
       "commit": "163888c"
+    },
+    {
+      "cycle": 140,
+      "phase": "review",
+      "timestamp": "2026-10-05T03:24:18.000Z",
+      "summary": "develop 커밋(163888c, doRenameOwner()에 ST.hist.owner 동기화 추가)을 검토. ST.hist.owner가 실제로 세팅되는 지점들(index.html:3574 histOpenCat류/4059 asset drill-down/4092 지출분석 카테고리 드릴다운 ST.hist.owner=ST.spendOwner/4164 histClearFilter/4166 histClearCatFilter)을 grep으로 전부 추적해, filterTxnsByOwner(logic.js)가 이 필드를 DB.assets[].owner와 정확매칭한다는 전제와 자산들은 이미 새 이름으로 옮겨간 뒤 이 필터만 옛 이름에 남는다는 버그 서술이 정확함을 확인. 새 가드(ST.hist&&ST.hist.owner===old)가 ST.assetOwner/ST.plan.owner/ST.spendOwner 세 캐스케이드와 같은 줄·같은 조건부 대입 스타일로 추가돼 기존 패턴과 일치하고, ST.hist 자체가 없는 기존 테스트 fixture 호출부도 단락평가로 TypeError 없이 통과함을 확인. 새 회귀 테스트 2건(이동/무관+.hist 없음 안전) 모두 의도대로 구성됨. node test/run.js 재실행 949/949 통과. 코드 변경 없음(이상 없음).",
+      "commit": null
     }
   ]
 }
