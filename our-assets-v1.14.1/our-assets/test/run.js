@@ -7812,6 +7812,45 @@ test('doRenameOwner: 이름변경 대상과 무관한 귀속을 보고 있었다
   assert.strictEqual(sandbox.ST.plan.owner, '전체');
   assert.strictEqual(sandbox.ST.spendOwner, '전체');
 });
+/* ---------- doRenameOwner: 귀속 이름변경 시 ST.hist.owner(전체내역 탭 귀속 필터)가 낡은 이름으로 남던 버그 (app-evolve cycle140 develop) ----------
+ * 위 ST.assetOwner/ST.plan.owner/ST.spendOwner와 똑같은 사연의 네 번째 자리인데, 이번엔 doRenameOwner 자체가
+ * 챙기지 않고 있었다. ST.hist.owner는 지출분석 카테고리 드릴다운(openSpendAnalysis → histClear...이 아니라
+ * 4092번째 줄 "ST.hist.owner=ST.spendOwner")에서 세팅돼 전체내역 탭의 활성 칩으로 남는데, 그 상태로 귀속
+ * 이름을 바꾸면 ST.hist.owner만 옛 이름 그대로 남는다. filterTxnsByOwner(logic.js)는 owner 문자열을
+ * DB.assets[].owner와 정확히 비교하므로, 자산들은 이미 새 이름으로 옮겨간 뒤라 옛 이름과는 아무것도 매칭되지
+ * 않아 전체내역이 설명 없이 텅 비어 보인다. */
+test('doRenameOwner: 이름변경 시 ST.hist.owner(전체내역 탭 귀속 필터)가 옛 이름을 가리키고 있었다면 새 이름으로 함께 옮겨간다', () => {
+  sandbox.DB = { owners: ['나', '아빠'], assets: [{ owner: '아빠' }] };
+  sandbox.ST = { assetOwner: '아빠', plan: { owner: '아빠' }, spendOwner: '아빠', hist: { owner: '아빠' } };
+  const $orig = sandbox.$;
+  sandbox.$ = (id) => (id === 'renameOwner' ? { value: '아버지' } : $orig(id));
+  try {
+    sandbox.doRenameOwner(1);
+  } finally {
+    sandbox.$ = $orig;
+  }
+  assert.strictEqual(sandbox.ST.hist.owner, '아버지', '전체내역 탭 귀속 필터가 새 이름을 따라가지 않음');
+});
+test('doRenameOwner: ST.hist가 다른 귀속을 보고 있었다면(또는 아예 없어도) 건드리지 않고 에러도 내지 않는다', () => {
+  sandbox.DB = { owners: ['나', '아빠'], assets: [] };
+  sandbox.ST = { assetOwner: '나', plan: { owner: '전체' }, spendOwner: '전체', hist: { owner: '전체' } };
+  const $orig = sandbox.$;
+  sandbox.$ = (id) => (id === 'renameOwner' ? { value: '아버지' } : $orig(id));
+  try {
+    sandbox.doRenameOwner(1);
+  } finally {
+    sandbox.$ = $orig;
+  }
+  assert.strictEqual(sandbox.ST.hist.owner, '전체');
+  // ST.hist 자체가 없는 호출부(이 파일의 다른 doRenameOwner 테스트들)에서도 TypeError 없이 끝나야 함
+  sandbox.ST = { assetOwner: '나', plan: { owner: '전체' }, spendOwner: '전체' };
+  sandbox.$ = (id) => (id === 'renameOwner' ? { value: '아버지2' } : $orig(id));
+  try {
+    assert.doesNotThrow(() => sandbox.doRenameOwner(1));
+  } finally {
+    sandbox.$ = $orig;
+  }
+});
 /* ---------- doRenameOwner: 귀속 이름변경 시 DB.nwHistory의 byOwner 스냅샷 키도 함께 옮기는지 (app-evolve cycle71 advance) ----------
  * nwHistoryCard(owner)가 DB.nwHistory[i].byOwner[owner] 키로 과거 추이를 조회하므로, 이름변경 후에도
  * 옛 이름 키만 남아 있으면 새 이름으로는 지금까지 쌓인 추이를 하나도 못 찾아 "곧 쌓여요" 안내만 계속 보게 된다. */
