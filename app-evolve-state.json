@@ -1,36 +1,8 @@
 {
   "cycle": 143,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 138,
-      "phase": "develop",
-      "timestamp": "2026-10-04T17:13:35.400Z",
-      "summary": "cycle137 critique 러너업으로 기각됐던(규모가 develop 스코프에 맞는다고 평가된) 메뉴의 \"Pro로 업그레이드\" 프로모 카드(renderMenu(), index.html:4477 부근)를 직접 재검증 후 제거했다. 이 자가-호스트 개인 자산관리 템플릿에는 결제 백엔드가 전혀 없고(README/netlify functions엔 stock.js·rates.js뿐), 버튼의 onclick은 toast('Pro 안내')만 띄우는 더미라 '시작하기'를 눌러도 아무 일도 일어나지 않는 완전한 dead end임을 grep으로 재확인('Pro'/'결제'/'payment' 매칭 전무). 광고 배너(.ad-slot)는 SHOW_AD 플래그로 의도적으로 끈 것과 달리 이 카드는 끄는 스위치조차 없이 항상 렌더되는 거짓 기능이라 판단해 숨김 플래그 추가 대신 완전 제거를 택함(cycle133 문의하기 dead-end 수정 때는 실제 저장 기능을 추가했지만, 이번엔 뒤에 구현할 결제 연동 자체가 존재하지 않아 관망형 UI를 남길 이유가 없음). renderMenu()에서 .promo div 전체 삭제, 전용 CSS 규칙(.promo/.promo .pt/.promo .ps/.promo .go, index.html 663-665행)과 공용 트랜지션 선택자 목록(144/147행)에 섞여 있던 .promo .go 참조도 함께 제거해 완전한 dead CSS를 남기지 않았다. test/run.js에 renderMenu 소스 패턴 검사 회귀 테스트 1개 추가(.promo 클래스/toast('Pro 안내')/'Pro로 업그레이드' 문구가 더 이상 없는지 확인, 기존 acct-card 테스트와 동일한 extractFunction 방식). node test/run.js 937/937 -> 938/938 통과, 메인 인라인 <script> node --check 구문 검사도 별도로 통과. APP_VERSION 1.47.44->1.47.45, sw.js CACHE v306->v307.",
-      "commit": null
-    },
-    {
-      "cycle": 138,
-      "phase": "review",
-      "timestamp": "2026-10-04T18:10:00.000Z",
-      "summary": "develop 커밋(e643175, 메뉴의 동작 없는 \"Pro로 업그레이드\" 프로모 카드 제거)을 검토. git show로 전체 diff 확인: renderMenu()에서 .promo div 제거, 전용 CSS 3줄(.promo/.promo .pt/.promo .ps/.promo .go) 및 공용 트랜지션/active 선택자 목록(144/147행)에 섞여 있던 .promo .go 참조 2곳까지 함께 제거됨을 확인. grep으로 index.html 전체에 \"promo\" 문자열이 완전히 사라졌음을 재확인(죽은 CSS/참조 잔존 없음). renderMenu() 주변 구조(acct-card div 닫힘, groups.map 직후 이어지는 템플릿 리터럴)를 직접 Read해 마크업이 깨지지 않았음을 확인. 결제 백엔드 부재(README/netlify functions엔 stock.js·rates.js뿐) 판단도 타당. 새 회귀 테스트(.promo 클래스/toast('Pro 안내')/문구 부재 검사)도 적절. node test/run.js 재실행 938/938 통과. 코드 변경 없음(이상 없음).",
-      "commit": null
-    },
-    {
-      "cycle": 138,
-      "phase": "critique",
-      "timestamp": "2026-10-04T19:00:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(138사이클 동안 다뤄진 항목 전부 제외 지시: Enter-to-submit 시리즈/touchSave 구조적 가드/지출분석 drill-down/문의하기 dead end+sanitizeBackup 검증/자산 그룹 내 개별 재배열/DB 병합 누락 수정 5건/순자산 추이 기간선택+탭/날짜선택기 접근성/선택모드 일괄 카테고리 변경/assetQtyLog/Pro 프로모 카드 제거 포함, 기각 이력도 전달). 새로 발견 후 직접 재검증: manifest.webmanifest display:standalone인 설치형 PWA에서, index.html:5633-5658의 _ovHistDepth/ovHistPush()/popstate 메커니즘(안드로이드 백버튼이 시트/날짜피커를 닫는 대신 앱을 종료시키던 문제를 고치려고 만든 것)이 오버레이에만 적용되고 탭 전환 go(tab)/navGo(t)(6813-6831, 6835)는 history.pushState를 전혀 호출하지 않아, popstate 리스너가 _ovHistDepth<=0이면 즉시 return(5654)함을 확인 — 비홈 탭(자산관리/가계부/전체내역/플랜/메뉴)에서 시트가 안 열린 채 뒤로가기를 누르면 홈으로 안 돌아가고 앱이 그대로 종료되는, 바로 그 수정이 의도한 버그 클래스의 미적용 비대칭. test/run.js에 popstate/ovHistPush/navGo 매칭 0건으로 미검증임도 확인. pending_advance_plan에 go(tab)용 _tabNavPushed 1단 history 플래그 + 순수 판정 함수 + popstate 라우팅(오버레이 우선순위 유지) 저장(상세는 pending_advance_plan 참고). DB 스키마 변경 없음(런타임 상태라 교차배선 불필요). 러너업(기각): 월 네비게이션 화살표 부재(휠피커가 이미 키보드 접근 가능해 dead end 아님) / 카테고리 관리 순서 재배열 UI 부재(구체적 불편 사례 없어 추측성) / .ad-slot의 죽은 \"Pro\" 문자열(SHOW_AD=false로 비노출, trivial) / 로컬 전용 이메일 인증 클라이언트 우회 가능성(앱 잠금과 동일한 '클라이언트 사이드 보안 경계' 테마로 재기각) / netlify stock.js·rates.js 폴백(cycle103에서 이미 충분). 코드 변경 없음(읽기 전용 조사, 서브에이전트가 index.html 1440-1482·1887-1963·1990-2035·2125-2164·2260-2300·2630-2720·3471-3560·4366-4520·5620-5680·5800-5870·5979-6115·6668-6710·6813-6845·6941-6966·7151-7187, logic.js 전체, netlify/functions/stock.js 전체를 직접 Read/grep으로 재확인).",
-      "commit": null
-    },
-    {
-      "cycle": 138,
-      "phase": "advance",
-      "timestamp": "2026-10-04T20:05:00.000Z",
-      "summary": "critique(cycle138) 계획대로 go(tab) 하단 탭 전환이 안드로이드 백버튼 history 스택에 참여하지 않던 비대칭을 고쳤다. (1) logic.js에 순수 판정 함수 tabNavAction(tab,alreadyPushed) 추가 — 홈→비홈 최초 진입이면 'push', entry가 이미 쌓인 채로 비홈↔비홈 전환이거나 entry 없이 홈이면 'none', entry가 쌓인 채로 홈 복귀면 'pop'. (2) index.html에 모듈 스코프 플래그 _tabNavPushed=false 추가(_ovHistDepth와 별개 카운터 — 탭 전환은 여러 번 일어나도 entry는 최대 1개만 유지). (3) go(tab) 맨 앞에서 tabNavAction(tab,_tabNavPushed)를 호출해 'push'면 ovHistPush()와 동일한 방식(try{history.pushState({tabNav:true},'')}catch(e){})으로 entry 하나를 쌓고, 'pop'이면 ovHistPop()과 동일한 _ovHistSuppress 가드(이미 suppress 중이면 건너뜀 — popstate가 먼저 _tabNavPushed를 비우고 go('home')을 호출하는 경로와의 이중 소비 방지)로 history.back()을 호출. (4) popstate 리스너를 '_ovHistDepth>0이면 기존 오버레이 처리' 분기에 early return을 추가해 재구성하고, 그 아래에 '_tabNavPushed면 플래그를 비우고 go(\"home\")으로 복귀' 분기를 추가 — 오버레이가 탭 위에 열려 있으면 history 스택 순서상 오버레이 entry가 더 나중에 쌓여 백버튼이 자연히 먼저 소비하므로 두 카운터를 합칠 필요가 없음(계획대로). DB 스키마 변경 없음(런타임 UI 상태). (5) test/run.js: tabNavAction 4개(push/재사용 시 none/pop/entry 없이 홈이면 none) 추가, go(tab)/popstate 배선이 빠지지 않았는지 extractFunction('go') 텍스트 패턴 + src.includes로 popstate 분기 2개 추가 — 실제 history API를 쓰는 go/popstate는 다른 DOM 전용 함수들과 같은 이유로 FUNCTIONS(vm 실행 목록)엔 넣지 않고 sandbox.go 스파이는 그대로 둠. node test/run.js 938/938 -> 944/944 통과, 메인 인라인 <script> node --check 구문 검사도 별도로 통과. APP_VERSION 1.47.45->1.47.46, sw.js CACHE v307->v308. pending_advance_plan을 null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 139,
       "phase": "develop",
@@ -141,6 +113,13 @@
       "timestamp": "2026-10-05T13:12:43Z",
       "summary": "critique(cycle142) 계획대로 nwHistoryCard(#nwhChart, index.html)와 assetBalCard(#assetBalChart) 두 미니차트 스크러버에 키보드 접근 경로를 추가했다. logic.js에 순수 함수 nwChartKeyStep(curIdx,key,len) 추가(whTargetIdx와 같은 clamp 원칙이되, curIdx가 null/-1인 시작 상태에선 가장 최근 포인트(len-1)에서 시작). index.html에서 nwChartPeekMove/assetBalPeekMove에 중복돼 있던 '피크 라인/라벨을 idx로 그리기' 바디를 공용 chartPeekRenderAt(pts,lineElId,labelElId,prefix,idx)로 추출해 포인터 핸들러와 신규 키보드 핸들러(nwChartPeekKey/assetBalPeekKey) 양쪽에서 재사용. 두 차트 div에 tabindex=\"0\" role=\"img\" aria-label 추가, onkeydown으로 ArrowLeft/ArrowRight/Home/End 처리, Escape/blur는 기존 *PeekEnd()로 숨김(pointerleave와 동일 동작). CSS에 .nwh-chart:focus-visible 아웃라인도 asset-item 등 기존 커스텀 인터랙티브 요소와 같은 패턴으로 추가. test/run.js에 nwChartKeyStep 순수 테스트 7개 + 마크업/배선 확인 테스트 3개(총 10개) 추가. critique가 러너업으로 남긴 '세그먼트 버튼 클릭 후 포커스 소실'은 범위 밖으로 보류. APP_VERSION 1.47.53→1.47.54, sw.js CACHE v315→v316. node test/run.js 973/973 -> 983/983 통과 (메인 인라인 script 구문 검사 포함).",
       "commit": null
+    },
+    {
+      "cycle": 143,
+      "phase": "develop",
+      "timestamp": "2026-10-05T14:05:00.000Z",
+      "summary": "general-purpose 서브에이전트로 cycle142 critique가 러너업(이번엔 메인 아님, 여유 있으면 같이 묶어 고치되 범위 밖이면 생략 가능)으로 남겨뒀던 세그먼트 버튼 클릭 후 포커스 소실을 해소. refreshNwHistoryCard()(nwHistoryCard)와 assetBalPresetSel()(assetBalCard) 둘 다 1개월/3개월/1년/전체 기간 세그먼트 버튼을 누르면 컨테이너 전체를 innerHTML로 통째로 교체하는데, 이때 클릭/키보드 포커스를 받고 있던 버튼 DOM 노드 자체가 사라져 브라우저가 포커스를 조용히 <body>로 떨어뜨림을 확인 — cycle139(날짜선택기)·cycle142(차트 스크러버) 접근성이 바로 다음 상호작용에서 끊기는 상황. closeSheet()의 _sheetReturnFocus 복귀(5976행)와 같은 원칙으로 수정: innerHTML 교체 직전 el.contains(document.activeElement)로 포커스가 카드 안에 있었는지만 기억해두고, 재렌더 후 포커스가 있었을 때만 새로 그려진 .on(현재 선택 preset) 버튼으로 focus() 복귀(카드 밖에서 트리거된 호출 경로는 hadFocus=false라 기존 동작과 동일, 회귀 없음). test/run.js에 두 함수 모두 DOM-mutating이라 FUNCTIONS vm 추출 대상이 아니므로 cycle142 키보드 접근 테스트와 동일한 소스 패턴 검사 방식으로 회귀 테스트 2개 추가 — 수정 전 코드로 되돌려 둘 다 실제 FAIL함을 직접 검증한 뒤 복구. node test/run.js 983/983 -> 985/985 통과(메인 인라인 script 구문 검사 포함). APP_VERSION 1.47.54->1.47.55, sw.js CACHE v316->v317.",
+      "commit": "f71c40bafefaa8c15388ac220fcd688882e49a4d"
     }
   ]
 }
