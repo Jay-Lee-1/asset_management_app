@@ -10766,6 +10766,23 @@ test('nwChartPeekKey/assetBalPeekKey가 nwChartKeyStep을 호출해 다음 인�
   assert.ok(src.includes('nwChartKeyStep(_assetBalPeekIdx,e.key,_assetBalChartPts.length)'), 'assetBalPeekKey가 nwChartKeyStep을 호출하지 않음');
 });
 
+/* ---------- refreshNwHistoryCard/assetBalPresetSel 포커스 보존: 기간 세그먼트(1개월/3개월/...)
+ * 버튼을 눌렀을 때 innerHTML 재렌더로 그 버튼 자체가 사라지며 포커스가 <body>로 떨어지던 문제
+ * (app-evolve cycle142 critique가 러너업으로 남기고 cycle143에서 고침). 두 함수 모두 DOM 전역을
+ * 직접 건드려(FUNCTIONS로 추출해 vm에서 실행하지 않음) 위 nwhChart/assetBalChart 마크업
+ * 테스트와 같은 소스 패턴 검사로 "재렌더 전 포커스가 카드 안에 있었는지 기억했다가, 재렌더 후
+ * 새 preset의 .on 버튼으로 되돌리는 코드"가 빠지지 않았는지 지킨다. */
+test('refreshNwHistoryCard: 세그먼트 버튼에 포커스가 있었으면 재렌더 후 새 .on 버튼으로 되돌린다', () => {
+  const body = extractFunction('refreshNwHistoryCard');
+  assert.ok(body.includes('el.contains(document.activeElement)'), 'refreshNwHistoryCard가 재렌더 전 포커스 위치를 기억하지 않음');
+  assert.ok(body.includes(`el.querySelector('.seg button.on')`), 'refreshNwHistoryCard가 재렌더 후 새 .on 버튼을 찾지 않음');
+});
+test('assetBalPresetSel: 세그먼트 버튼에 포커스가 있었으면 재렌더 후 새 .on 버튼으로 되돌린다', () => {
+  const body = extractFunction('assetBalPresetSel');
+  assert.ok(body.includes('el.contains(document.activeElement)'), 'assetBalPresetSel이 재렌더 전 포커스 위치를 기억하지 않음');
+  assert.ok(body.includes(`el.querySelector('.seg button.on')`), 'assetBalPresetSel이 재렌더 후 새 .on 버튼을 찾지 않음');
+});
+
 /* ---------- 실행 ---------- */
 // pbkdf2Hash는 Web Crypto(subtle.deriveBits)를 쓰는 비동기 함수라, 러너도 async test를
 // 지원해야 한다 — sync test는 그냥 await해도 즉시 반환되므로 기존 테스트에는 영향 없다.

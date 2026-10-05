@@ -1316,7 +1316,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.54';
+const APP_VERSION='1.47.55';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2539,7 +2539,11 @@ function assetBalPresetSel(assetId,p){
  if(ST.hist.balPreset===p)return;
  ST.hist.balPreset=p;
  const el=$('assetBalCard');if(!el)return;
+ /* refreshNwHistoryCard(2949행 부근)와 동일한 포커스 보존 — 세그먼트 버튼을 누른 직후 그
+    버튼이 innerHTML 교체로 사라지며 포커스가 <body>로 떨어지던 문제를 고친다. */
+ const hadFocus=el.contains(document.activeElement);
  el.innerHTML=assetBalCard(assetId,p);
+ if(hadFocus){const on=el.querySelector('.seg button.on');if(on)on.focus()}
  requestAnimationFrame(()=>{try{moveSegBlobs()}catch(e){}});
 }
 let _assetBalChartPts=null,_assetBalPeekIdx=null;
@@ -2948,7 +2952,15 @@ function refreshAssetBody(){ /* 캐러셀은 그대로 두고 목록만 갱신 �
 }
 function refreshNwHistoryCard(){ /* 캐러셀 귀속 전환 시, 또는 기간 세그먼트 전환 시 추이 카드만 갱신 */
  const el=$('nwHistBody');if(!el)return;
+ /* 기간 세그먼트 버튼(1개월/3개월/...)을 눌러 호출된 경우, 그 버튼이 innerHTML 교체로 통째로
+    사라지면서 포커스가 조용히 <body>로 떨어져 키보드/스크린리더 사용자가 탭 순서를 처음부터
+    다시 더듬어야 했다(app-evolve cycle143 critique/develop — closeSheet의 _sheetReturnFocus
+    복귀와 같은 원칙으로, 재렌더 전 포커스가 이 카드 안에 있었는지만 기억해뒀다가 재렌더 후
+    같은 자리(새 preset의 .on 버튼)로 되돌려준다). 캐러셀 귀속 전환처럼 포커스가 이 카드
+    밖(점/캐러셀)에 있었을 땐 아무 동작도 하지 않아 기존 동작과 동일하다. */
+ const hadFocus=el.contains(document.activeElement);
  el.innerHTML=nwHistoryCard(ST.assetOwner,ST.nwPreset);
+ if(hadFocus){const on=el.querySelector('.seg button.on');if(on)on.focus()}
  requestAnimationFrame(()=>{try{moveSegBlobs()}catch(e){}});
 }
 function refreshGoalsSummary(){ /* 캐러셀 귀속 전환 시 목표 요약도 함께 갱신 — nwHistoryCard와 같은 귀속을 보여줘야 함 */
