@@ -5028,6 +5028,151 @@ test('sanitizeBackup: 정상적인 수량 변경 기록은 그대로 둔다(정�
   assert.strictEqual(fixedCount, 0);
 });
 
+/* ---------- sanitizeBackup: DB.categories/DB.owners(카테고리·귀속 이름 목록)도 txns/assets/
+ * recurrences/goals/inquiries/assetQtyLog와 동일하게 검증돼야 한다 — 이전에는 이 블록이 아예
+ * 없어서, obj.categories.income/expense/saving나 obj.owners가 배열이 아니면(손상된 백업·레거시
+ * 포맷·오염된 클라우드 문서) 그대로 통과됐다. 파일 복원(restoreBackup)은 migrate()를 try/catch로
+ * 감싸 실패해도 되돌리지만, 클라우드 풀 경로(afterCloudAuth 등)는 보호 없이 migrate()를 바로
+ * 불러 DB.categories.income.push(ADJUST_CAT)이나 DB.owners.forEach(...)에서 그대로 TypeError로
+ * 터진다(app-evolve cycle141 develop). ---------- */
+test('sanitizeBackup 없이 손상된 categories를 그대로 migrate()에 넘기면 TypeError로 터진다(버그 재현 — 클라우드 풀 경로는 migrate()를 try/catch 없이 바로 부른다)', () => {
+  sandbox.DB = { txns: [], assets: [], recurrences: [], categories: { income: '손상됨', expense: [], saving: [] }, owners: ['나'] };
+  assert.throws(() => sandbox.migrate());
+});
+test('sanitizeBackup 없이 손상된 owners를 그대로 addOwner()에 넘기면 TypeError로 터진다(버그 재현 — DB.owners.find/push가 문자열엔 없음)', () => {
+  sandbox.DB = { owners: '손상됨' };
+  sandbox.newOwnerValue = '배우자';
+  assert.throws(() => sandbox.addOwner());
+});
+// vm 샌드박스 안에서 만들어진 배열은 host의 Array와 realm이 달라 deepStrictEqual이
+// (값은 같아도) 실패하므로(위 recDates와 동일한 이유), Array.from으로 host realm 배열로
+// 정규화한 뒤 비교한다.
+test('sanitizeBackup: categories.expense/income/saving가 배열이 아니면 빈 배열로 되돌리고 fixedCount를 센다(migrate()가 이어서 기본 카테고리로 채움)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    categories: { expense: '식비,교통', income: ['급여'], saving: null },
+  });
+  assert.deepStrictEqual(Array.from(data.categories.expense), []);
+  assert.deepStrictEqual(Array.from(data.categories.income), ['급여']);
+  assert.deepStrictEqual(Array.from(data.categories.saving), []);
+  assert.strictEqual(fixedCount, 1, 'saving:null은 undefined와 동일하게 migrate()가 조용히 기본값으로 메우므로 fixedCount에 넣지 않는다');
+  assert.doesNotThrow(() => { sandbox.DB = data; sandbox.migrate(); });
+});
+test('sanitizeBackup: categories 배열 안의 문자열이 아니거나 빈 값인 항목은 걸러내고 fixedCount를 센다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    categories: { expense: ['식비', 123, '', '  ', null], income: [], saving: [] },
+  });
+  assert.deepStrictEqual(Array.from(data.categories.expense), ['식비']);
+  assert.strictEqual(fixedCount, 1);
+});
+test('sanitizeBackup: 정상적인 categories는 그대로 두고, categories가 없어도 터지지 않는다(정상 케이스는 회귀 없음)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    categories: { expense: ['식비', '교통'], income: ['급여'], saving: ['저축'] },
+  });
+  assert.deepStrictEqual(Array.from(data.categories.expense), ['식비', '교통']);
+  assert.deepStrictEqual(Array.from(data.categories.income), ['급여']);
+  assert.deepStrictEqual(Array.from(data.categories.saving), ['저축']);
+  assert.strictEqual(fixedCount, 0);
+  const missing = sandbox.sanitizeBackup({ txns: [], assets: [] });
+  assert.deepStrictEqual(Array.from(missing.data.categories.expense), []);
+  assert.deepStrictEqual(Array.from(missing.data.categories.income), []);
+  assert.deepStrictEqual(Array.from(missing.data.categories.saving), []);
+  assert.strictEqual(missing.fixedCount, 0);
+});
+test('sanitizeBackup: owners가 배열이 아니면 빈 배열로 되돌리고 fixedCount를 센다(migrate()가 이어서 기본 귀속으로 채움)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({ txns: [], assets: [], owners: '나,배우자' });
+  assert.deepStrictEqual(Array.from(data.owners), []);
+  assert.strictEqual(fixedCount, 1);
+  assert.doesNotThrow(() => { sandbox.DB = data; sandbox.migrate(); });
+});
+test('sanitizeBackup: owners 배열 안의 문자열이 아니거나 빈 값인 항목은 걸러낸다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({ txns: [], assets: [], owners: ['나', '', 42, '배우자'] });
+  assert.deepStrictEqual(Array.from(data.owners), ['나', '배우자']);
+  assert.strictEqual(fixedCount, 1);
+});
+test('sanitizeBackup: 정상적인 owners는 그대로 둔다(정상 케이스는 회귀 없음)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({ txns: [], assets: [], owners: ['나', '배우자'] });
+  assert.deepStrictEqual(Array.from(data.owners), ['나', '배우자']);
+  assert.strictEqual(fixedCount, 0);
+});
+
+/* ---------- sanitizeBackup: DB.budgetHistory(카테고리→[{from:"YYYY-MM",amount}])도 같은 이유로
+ * 검증이 없었다 — from이 깨지면 budgetForMonth()가, amount가 음수/NaN이면 budgetProgress()·
+ * totalBudgetSummary()가 조용히 오염(NaN 전파)된다. ---------- */
+test('sanitizeBackup: budgetHistory 항목의 from이 "YYYY-MM" 형식이 아니면 그 항목만 제거하고 fixedCount를 센다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    budgetHistory: { 식비: [{ from: '2026-01', amount: 300000 }, { from: 'not-a-month', amount: 100000 }, { from: '2026-13', amount: 1 }] },
+  });
+  assert.strictEqual(data.budgetHistory['식비'].length, 1);
+  assert.strictEqual(data.budgetHistory['식비'][0].from, '2026-01');
+  assert.strictEqual(data.budgetHistory['식비'][0].amount, 300000);
+  assert.strictEqual(fixedCount, 2);
+});
+test('sanitizeBackup: budgetHistory amount가 음수/NaN이면 0으로 클램프하고 fixedCount를 센다(크기 필드라 음수 무효)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    budgetHistory: { 식비: [{ from: '2026-01', amount: -5000 }, { from: '2026-02', amount: 'NaN이상한값' }] },
+  });
+  assert.strictEqual(data.budgetHistory['식비'][0].amount, 0);
+  assert.strictEqual(data.budgetHistory['식비'][1].amount, 0);
+  assert.strictEqual(fixedCount, 2);
+});
+test('sanitizeBackup: budgetHistory 카테고리 값이 배열이 아니면 빈 배열로 되돌리고, budgetHistory가 없거나 객체가 아니어도 터지지 않는다', () => {
+  const notArrayPerCat = sandbox.sanitizeBackup({ txns: [], assets: [], budgetHistory: { 식비: 'oops' } });
+  assert.strictEqual(notArrayPerCat.data.budgetHistory['식비'].length, 0);
+  assert.strictEqual(notArrayPerCat.fixedCount, 1);
+  const notObject = sandbox.sanitizeBackup({ txns: [], assets: [], budgetHistory: ['oops'] });
+  assert.strictEqual(Object.keys(notObject.data.budgetHistory).length, 0);
+  assert.strictEqual(notObject.fixedCount, 1);
+  const missing = sandbox.sanitizeBackup({ txns: [], assets: [] });
+  assert.strictEqual(Object.keys(missing.data.budgetHistory).length, 0);
+  assert.strictEqual(missing.fixedCount, 0);
+});
+test('sanitizeBackup: 정상적인 budgetHistory는 from 오름차순으로 정렬해 그대로 둔다(setBudgetFrom과 동일한 불변식, 정상 케이스는 회귀 없음)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    budgetHistory: { 식비: [{ from: '2026-03', amount: 100 }, { from: '2026-01', amount: 200 }] },
+  });
+  assert.strictEqual(data.budgetHistory['식비'][0].from, '2026-01');
+  assert.strictEqual(data.budgetHistory['식비'][0].amount, 200);
+  assert.strictEqual(data.budgetHistory['식비'][1].from, '2026-03');
+  assert.strictEqual(data.budgetHistory['식비'][1].amount, 100);
+  assert.strictEqual(fixedCount, 0);
+});
+
+/* ---------- sanitizeBackup: catIcon/catVar(카테고리 아이콘·변동 카테고리 플래그)·deletedType/
+ * deletedBal(삭제된 자산 재연동용 타입·잔액 기억)은 모두 '타입:이름'(또는 자산명) → 값의 평평한
+ * 객체 맵이다 — 배열 등 다른 타입이 들어오면 mergeFlatMap()의 Object.assign이 데이터를 뒤튼다. ---------- */
+test('sanitizeBackup: catIcon/catVar/deletedType/deletedBal이 객체가 아니면(배열 등) 빈 맵으로 되돌리고 fixedCount를 센다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    catIcon: ['oops'], catVar: 'oops', deletedType: 123, deletedBal: null,
+  });
+  assert.strictEqual(Object.keys(data.catIcon).length, 0);
+  assert.strictEqual(Object.keys(data.catVar).length, 0);
+  assert.strictEqual(Object.keys(data.deletedType).length, 0);
+  assert.strictEqual(Object.keys(data.deletedBal).length, 0);
+  assert.strictEqual(fixedCount, 3); // deletedBal:null은 '없음'과 동일하게 취급(fixedCount 제외)
+});
+test('sanitizeBackup: 정상적인 catIcon/catVar/deletedType/deletedBal은 그대로 두고, 없어도 터지지 않는다(정상 케이스는 회귀 없음)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    catIcon: { 'expense:식비': 'food' }, catVar: { 'expense:용돈': true },
+    deletedType: { '옛통장': 'cash' }, deletedBal: { '옛통장': 10000 },
+  });
+  assert.strictEqual(data.catIcon['expense:식비'], 'food');
+  assert.strictEqual(data.catVar['expense:용돈'], true);
+  assert.strictEqual(data.deletedType['옛통장'], 'cash');
+  assert.strictEqual(data.deletedBal['옛통장'], 10000);
+  assert.strictEqual(fixedCount, 0);
+  const missing = sandbox.sanitizeBackup({ txns: [], assets: [] });
+  assert.strictEqual(Object.keys(missing.data.catIcon).length, 0);
+  assert.strictEqual(Object.keys(missing.data.deletedBal).length, 0);
+});
+
 /* ---------- spendByCategory: 지출 분석 카테고리별 합계는 잔액 조정(기본 제외)을 빼야 한다 ---------- */
 test('spendByCategory: 수지에 포함되지 않은 잔액 조정 지출은 카테고리 합계에서 제외된다', () => {
   sandbox.DB = {

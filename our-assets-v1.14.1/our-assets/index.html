@@ -1315,7 +1315,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.50';
+const APP_VERSION='1.47.51';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5579,7 +5579,67 @@ function sanitizeBackup(obj){
   if('newQty' in d){const n=sanitizeAmount(d.newQty,0);if(n!==d.newQty){d.newQty=n;fixedCount++}}
   assetQtyLog.push(d);
  });
- return {data:Object.assign({},obj,{txns,assets,recurrences,goals,inquiries,assetQtyLog}),fixedCount,droppedCount,rangeCount};
+ /* DB.categories/DB.owners(카테고리·귀속 이름 목록)도 txns/assets/recurrences/goals/inquiries/
+  * assetQtyLog와 동일하게 백업 복원·클라우드 풀 경로에서 전혀 검증되지 않고 있었다. 파일 복원
+  * 경로(restoreBackup, 5591줄 부근)는 migrate()를 try/catch로 감싸 실패해도 DB를 되돌리지만,
+  * 클라우드 풀 경로(afterCloudAuth/resolveCloudPullRemote/resolveCloudForcePush)는
+  * DB=sanitizeBackup(remote).data 뒤 migrate()를 보호 없이 그대로 호출한다 — obj.categories.
+  * expense/income/saving나 obj.owners가 배열이 아니면(손상된 클라우드 문서·레거시 포맷 등)
+  * migrate()의 DB.categories.income.push(ADJUST_CAT)이나 DB.owners.forEach(...)에서 바로
+  * TypeError로 터져 로그인/동기화 자체가 복구 없이 멈춘다(app-evolve cycle141 develop). 배열이
+  * 아니면 빈 배열로 되돌리고, 배열 안에서도 문자열이 아니거나 빈 값인 항목은 걸러낸다. */
+ const catTypes=['expense','income','saving'];
+ const srcCatsRaw=obj&&obj.categories;
+ const srcCats=(srcCatsRaw&&typeof srcCatsRaw==='object'&&!Array.isArray(srcCatsRaw))?srcCatsRaw:{};
+ const categories={};
+ catTypes.forEach(k=>{
+  const raw=srcCats[k];
+  const arr=Array.isArray(raw)?raw:[];
+  const cleaned=arr.filter(c=>typeof c==='string'&&c.trim());
+  if(raw!=null&&(!Array.isArray(raw)||cleaned.length!==arr.length))fixedCount++; /* null/undefined 둘 다 migrate()가 ||[default]로 조용히 메우는 '미설정'이라 fixedCount에 넣지 않는다 */
+  categories[k]=cleaned;
+ });
+ const srcOwnersRaw=obj&&obj.owners;
+ const ownersArr=Array.isArray(srcOwnersRaw)?srcOwnersRaw:[];
+ const owners=ownersArr.filter(o=>typeof o==='string'&&o.trim());
+ if(srcOwnersRaw!=null&&(!Array.isArray(srcOwnersRaw)||owners.length!==ownersArr.length))fixedCount++;
+ /* DB.budgetHistory(카테고리→[{from:"YYYY-MM",amount}] 시점별 예산 이력)도 같은 이유로 검증이
+  * 없었다 — from이 "YYYY-MM" 형식이 아니면 budgetForMonth()의 문자열 비교(h[i].from<=key)가
+  * 엉뚱한 항목을 집어내고, amount는 txns.amount와 동일한 크기 필드라 음수·NaN이면
+  * budgetProgress()의 진행률·초과 판정과 totalBudgetSummary()의 합계가 조용히 오염(NaN 전파)된다. */
+ const srcBudgetRaw=obj&&obj.budgetHistory;
+ const srcBudget=(srcBudgetRaw&&typeof srcBudgetRaw==='object'&&!Array.isArray(srcBudgetRaw))?srcBudgetRaw:{};
+ if(srcBudgetRaw!=null&&srcBudget!==srcBudgetRaw)fixedCount++;
+ const budgetHistory={};
+ Object.keys(srcBudget).forEach(cat=>{
+  const rawArr=srcBudget[cat];
+  const arr=Array.isArray(rawArr)?rawArr:[];
+  if(!Array.isArray(rawArr))fixedCount++;
+  const cleaned=[];
+  arr.forEach(e=>{
+   if(!e||typeof e.from!=='string'||!/^\d{4}-(0[1-9]|1[0-2])$/.test(e.from)){fixedCount++;return} /* budgetKey()와 동일한 "YYYY-MM"(01~12월만) 형식 — "2026-13"처럼 모양만 맞는 값은 문자열 비교에서 다음 해보다도 뒤로 밀려 budgetForMonth()를 엉뚱하게 꼬아놓는다 */
+   const amt=sanitizeAmount(e.amount,0);
+   if(amt!==e.amount)fixedCount++;
+   cleaned.push({from:e.from,amount:amt});
+  });
+  cleaned.sort((a,b)=>a.from<b.from?-1:a.from>b.from?1:0);
+  budgetHistory[cat]=cleaned;
+ });
+ /* catIcon/catVar(카테고리 아이콘·변동 카테고리 플래그)·deletedType/deletedBal(삭제된 자산 재연동용
+  * 타입·잔액 기억)은 모두 '타입:이름'(또는 자산명) → 값의 평평한 객체 맵이다 — 배열·문자열 등
+  * 다른 타입이 그대로 들어오면 mergeFlatMap()의 Object.assign이 배열의 숫자 인덱스를 프로퍼티로
+  * 뒤섞어 저장하는 등 데이터를 뒤튼다. 객체가 아니면 빈 맵으로 되돌린다. */
+ const sanitizeFlatMap=v=>{
+  if(v==null)return {}; /* 없음/null은 migrate()의 DB.catIcon=DB.catIcon||{} 등과 동일하게 정상적인 '미설정'이라 fixedCount에 넣지 않는다 */
+  if(typeof v==='object'&&!Array.isArray(v))return v;
+  fixedCount++;
+  return {};
+ };
+ const catIcon=sanitizeFlatMap(obj&&obj.catIcon);
+ const catVar=sanitizeFlatMap(obj&&obj.catVar);
+ const deletedType=sanitizeFlatMap(obj&&obj.deletedType);
+ const deletedBal=sanitizeFlatMap(obj&&obj.deletedBal);
+ return {data:Object.assign({},obj,{txns,assets,recurrences,goals,inquiries,assetQtyLog,categories,owners,budgetHistory,catIcon,catVar,deletedType,deletedBal}),fixedCount,droppedCount,rangeCount};
 }
 /* obj.assets/obj.txns가 배열인지까지 검증한 뒤 DB를 통째로 교체한다. migrate()가 손상된
  * obj 때문에 중간에 throw해도 DB가 절반만 마이그레이션된 채로 남지 않도록, 실패 시 교체 전
