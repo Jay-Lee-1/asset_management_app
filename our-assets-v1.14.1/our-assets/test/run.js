@@ -1963,6 +1963,54 @@ test('nwChartPath: 점이 2개 미만이면 빈 경로를 반환한다', () => {
   assert.strictEqual(r.line, '');
   assert.strictEqual(r.area, '');
 });
+
+/* ---------- assetBalSampleDates/assetBalanceSeries: 개별 자산 잔액 추이 (app-evolve cycle140 critique/advance) ----------
+ * openAssetHistory가 전체내역을 계좌 하나로 필터했을 때 꽂는 미니 차트용 샘플링+재생 순수 함수.
+ * vm 샌드박스가 만든 배열/객체 리터럴은 host realm과 프로토타입이 달라 deepStrictEqual이 값이
+ * 같아도 "same structure but not reference-equal"로 실패하므로(위 recDates 테스트들과 동일한 이유),
+ * JSON.parse(JSON.stringify(...))로 host realm 값으로 정규화해 비교한다(parseCSV 테스트와 동일 패턴). */
+test('assetBalSampleDates: from>to면 빈 배열', () => {
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.assetBalSampleDates('2026-02-01', '2026-01-01', 30))), []);
+});
+test('assetBalSampleDates: 구간이 maxPoints보다 짧으면 다운샘플링 없이 매일 하나씩 반환한다', () => {
+  const out = JSON.parse(JSON.stringify(sandbox.assetBalSampleDates('2026-01-01', '2026-01-05', 30)));
+  assert.deepStrictEqual(out, ['2026-01-01', '2026-01-02', '2026-01-03', '2026-01-04', '2026-01-05']);
+});
+test('assetBalSampleDates: 구간이 maxPoints보다 길면 균등 샘플링하되 첫/끝 날짜는 항상 포함한다', () => {
+  const out = JSON.parse(JSON.stringify(sandbox.assetBalSampleDates('2026-01-01', '2027-01-01', 5)));
+  assert.strictEqual(out[0], '2026-01-01');
+  assert.strictEqual(out[out.length - 1], '2027-01-01');
+  assert.ok(out.length <= 5, `최대 5개를 넘지 않아야 함 (실제 ${out.length})`);
+  for (let i = 1; i < out.length; i++) assert.ok(out[i - 1] < out[i], '날짜가 오름차순이어야 함');
+});
+test('assetBalanceSeries: 기준액만 있고 거래가 없으면 모든 날짜가 기준액 그대로다', () => {
+  const dates = ['2026-01-01', '2026-01-15', '2026-02-01'];
+  const out = JSON.parse(JSON.stringify(sandbox.assetBalanceSeries([], 'a1', 10000, 1, dates)));
+  assert.deepStrictEqual(out, dates.map(d => ({ date: d, bal: 10000 })));
+});
+test('assetBalanceSeries: 날짜 순서와 무관하게 정렬해 날짜별 거래를 누적한다(일반 자산은 입금 +, 출금 -)', () => {
+  const txns = [
+    { date: '2026-01-20', fromAssetId: 'a1', amount: 2000 }, // a1에서 출금
+    { date: '2026-01-10', toAssetId: 'a1', amount: 5000 },   // a1으로 입금
+  ];
+  const dates = ['2026-01-01', '2026-01-15', '2026-02-01'];
+  const out = JSON.parse(JSON.stringify(sandbox.assetBalanceSeries(txns, 'a1', 1000, 1, dates)));
+  assert.deepStrictEqual(out, [
+    { date: '2026-01-01', bal: 1000 },   // 아직 거래 전
+    { date: '2026-01-15', bal: 6000 },   // 1/10 입금만 반영
+    { date: '2026-02-01', bal: 4000 },   // 1/20 출금까지 반영
+  ]);
+});
+test('assetBalanceSeries: sign=-1(부채)이면 입금이 잔액을 줄이고 출금이 늘린다', () => {
+  const txns = [{ date: '2026-01-10', toAssetId: 'd1', amount: 3000 }]; // 부채 상환(입금) → 잔여원금 감소
+  const out = JSON.parse(JSON.stringify(sandbox.assetBalanceSeries(txns, 'd1', 10000, -1, ['2026-01-20'])));
+  assert.deepStrictEqual(out, [{ date: '2026-01-20', bal: 7000 }]);
+});
+test('assetBalanceSeries: 다른 자산의 거래는 무시한다', () => {
+  const txns = [{ date: '2026-01-10', toAssetId: 'other', amount: 5000 }];
+  const out = JSON.parse(JSON.stringify(sandbox.assetBalanceSeries(txns, 'a1', 1000, 1, ['2026-01-20'])));
+  assert.deepStrictEqual(out, [{ date: '2026-01-20', bal: 1000 }]);
+});
 test('nwChartPath: 모든 값이 같으면(span=0) 0으로 나누지 않고 수평선을 그린다', () => {
   const { line } = sandbox.nwChartPath([
     { date: '2026-01-01', nw: 100 }, { date: '2026-01-02', nw: 100 }, { date: '2026-01-03', nw: 100 },

@@ -389,6 +389,45 @@ function whTargetIdx(cur,n,key){
  return cur;
 }
 
+/* ================= ASSET BALANCE HISTORY (개별 자산 잔액 추이, 순수) ================= */
+/* from~to 사이를 최대 maxPoints개의 날짜로 균등 샘플링한다(날짜 간격 기준, nwChartPath류와 동일한
+ * '일수 비례' 원칙). 구간이 maxPoints보다 짧으면 매일 하나씩(다운샘플링 없이) 반환해 짧은 기간에서
+ * 디테일을 잃지 않는다(1개월 보기가 nwHistoryRange처럼 일별이어야 함). from>to면 빈 배열. */
+function assetBalSampleDates(from,to,maxPoints){
+ if(from>to)return [];
+ const totalDays=daysBetween(from,to);
+ if(totalDays<=maxPoints-1){
+  const out=[];for(let i=0;i<=totalDays;i++)out.push(addDays(from,i));return out;
+ }
+ const out=[];let lastDs=null;
+ for(let i=0;i<maxPoints;i++){
+  const d=addDays(from,Math.round(i*totalDays/(maxPoints-1)));
+  if(d!==lastDs){out.push(d);lastDs=d;}
+ }
+ if(out[out.length-1]!==to)out.push(to);
+ return out;
+}
+/* 자산 하나의 잔액 추이 — balancesUpTo()(index.html)와 동일한 재생 규칙(기준액 + 날짜순 이체·지출·
+ * 수입 누적)을 자산 하나에, 미리 뽑은 날짜 배열(dates, 오름차순)에 대해서만 계산한다. txns는 날짜
+ * 정렬 여부 무관(내부에서 정렬), base는 시작 잔액(assetBase(a)), sign은 부채면 -1 그 외 1
+ * (balancesUpTo와 동일 규약 — 호출부가 DB 의존 없이 직접 넘긴다). 날짜마다 거래 전체를 처음부터
+ * 다시 훑는 대신(O(n*m)) 정렬된 한 번의 순회로 모든 포인트를 계산한다(O(n+m)). dates는 오름차순이어야
+ * 포인터 누적이 올바르다(assetBalSampleDates의 출력이 그 조건을 만족). */
+function assetBalanceSeries(txns,assetId,base,sign,dates){
+ const sorted=(txns||[]).filter(t=>t.fromAssetId===assetId||t.toAssetId===assetId)
+   .slice().sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
+ let bal=base,ti=0;
+ return (dates||[]).map(d=>{
+  while(ti<sorted.length&&sorted[ti].date<=d){
+   const t=sorted[ti];
+   if(t.fromAssetId===assetId)bal-=sign*t.amount;
+   if(t.toAssetId===assetId)bal+=sign*t.amount;
+   ti++;
+  }
+  return {date:d,bal};
+ });
+}
+
 /* ================= TAB NAV HISTORY (순수) ================= */
 /* 설치형 PWA(manifest display:standalone)에서 안드로이드 백버튼은 history 스택이 비면 바로 앱을
  * 종료시킨다. _ovHistDepth/ovHistPush()(index.html)는 시트·날짜피커 같은 오버레이를 열 때마다

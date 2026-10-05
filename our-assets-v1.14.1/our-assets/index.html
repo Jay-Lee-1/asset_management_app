@@ -1315,7 +1315,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.49';
+const APP_VERSION='1.47.50';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2326,7 +2326,7 @@ function visibleTx(t){return DB.settings.includeScheduled||!txScheduled(t)}
 let TM=ym(TODAY);TM.d=+TODAY.slice(8,10);
 let ST={tab:'home',ledgerMode:'cal',assetOwner:'all',nwPreset:'m3',ledger:{y:TM.y,m:TM.m,sel:TODAY},home:{y:TM.y,m:TM.m},
  hist:{cat:'전체',q:'',assetId:null,catExact:null,owner:'전체',selMode:false,sel:new Set(),sortAsc:false,
-   range:{from:`${TM.y}-01-01`,to:`${TM.y}-12-31`},preset:'year',page:1,avgMode:false},
+   range:{from:`${TM.y}-01-01`,to:`${TM.y}-12-31`},preset:'year',page:1,avgMode:false,balPreset:'m3'},
  plan:{owner:'전체',assetId:null,y:TM.y,m:TM.m},spendOwner:'전체',editAssets:false,aSel:{mode:false,ids:new Set()},lSel:{mode:false,ids:new Set()}};
 const TABS=[{id:'home',label:'홈',icon:'home'},{id:'assets',label:'자산관리',icon:'wallet'},{id:'ledger',label:'가계부',icon:'ledger'},{id:'plan',label:'한달 플랜',icon:'plan'},{id:'menu',label:'메뉴',icon:'menu'}];
 
@@ -2468,6 +2468,86 @@ function nwChartPeekEnd(){
  _nwPeekIdx=null;
  const line=$('nwhPeekLine');if(line)line.style.display='none';
  const label=$('nwhPeekLabel');if(label)label.classList.remove('on');
+}
+
+/* 전체내역 탭에서 특정 계좌로 필터링했을 때(openAssetHistory) 꽂는 잔액 추이 미니 차트.
+ * cash/savings/realestate/etc/pension/debt(= isMarketValued가 아닌, 잔액식) 자산만 대상이다 —
+ * fx/gold/stock은 openAssetHistory가 openAssetQtyLog로 돌려보내 여기엔 들어오지 않는다.
+ * nwHistoryCard(2399행)와 같은 기간 세그먼트(1개월/3개월/1년/전체)+스크러버 패턴을 그대로 쓰고,
+ * nwChartPath/nwNearestPointIndex도 그대로 재사용한다({date,nw} 모양이라 bal을 nw로 매핑).
+ * 거래가 없거나(또는 샘플 포인트가 1개뿐인 신규 자산) 추이를 그릴 수 없으면 빈 상태 안내로 대체
+ * (app-evolve cycle140 critique/advance — renderAssetSheet/openAssetHistory 둘 다 개별 자산의
+ * 현재 금액만 보여주고 추이가 전혀 없던 공백 해소). */
+function assetBalCard(assetId,preset){
+ preset=preset||'m3';
+ const a=DB.assets.find(x=>x.id===assetId);
+ if(!a||!['cash','savings','realestate','etc','pension','debt'].includes(a.type))return '';
+ const segHTML=`<div class="seg nwh-seg"><div class="seg-blob"></div>${[['m1','1개월'],['m3','3개월'],['y1','1년'],['all','전체']].map(([p,l])=>`<button type="button" class="${preset===p?'on':''}" onclick="assetBalPresetSel('${a.id}','${p}')">${l}</button>`).join('')}</div>`;
+ const to=TODAY;
+ const days={m1:30,m3:90,y1:365}[preset];
+ let from=days?addDays(to,-days):RANGE_FROM;
+ if(from<RANGE_FROM)from=RANGE_FROM;
+ const dates=assetBalSampleDates(from,to,60);
+ const txns=allTxns(RANGE_FROM,to).filter(t=>!isPending(t));
+ const series=assetBalanceSeries(txns,a.id,assetBase(a),a.type==='debt'?-1:1,dates);
+ const pts=series.map(p=>({date:p.date,nw:p.bal}));
+ if(pts.length<2)return `<div class="card nwh-card">
+   <div class="section-title" style="margin-top:0">잔액 추이</div>
+   ${segHTML}
+   <div class="empty" style="padding:18px 0"><div class="es">이 계좌의 추이는 곧 쌓여요</div></div>
+ </div>`;
+ const {line,area}=nwChartPath(pts,300,80);
+ const first=pts[0],last=pts[pts.length-1];
+ const diff=last.nw-first.nw,up=diff>=0;
+ const color=up?'var(--income)':'var(--expense)';
+ _assetBalChartPts=pts;
+ return `<div class="card nwh-card">
+   <div class="section-title" style="margin-top:0">잔액 추이</div>
+   ${segHTML}
+   <div class="nwh-range">${shortDate2(first.date)} ~ ${shortDate2(last.date)} <b class="${up?'':'minus'}">${up?'+':''}${comma(diff)}원</b></div>
+   <div class="nwh-chart" id="assetBalChart" onpointerdown="assetBalPeekStart(event)" onpointermove="assetBalPeekMove(event)" onpointerup="assetBalPeekEnd()" onpointercancel="assetBalPeekEnd()" onpointerleave="assetBalPeekEnd()">
+     <svg viewBox="0 0 300 80" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+       <path d="${area}" fill="${color}" opacity="0.12" stroke="none"/>
+       <path d="${line}" fill="none" stroke="${color}" stroke-width="2.2" vector-effect="non-scaling-stroke"/>
+       <line id="assetBalPeekLine" x1="0" x2="0" y1="0" y2="80" stroke="var(--text-3)" stroke-dasharray="2,2" style="display:none"/>
+     </svg>
+     <div class="nwh-peek-label" id="assetBalPeekLabel" aria-hidden="true"></div>
+   </div>
+ </div>`;
+}
+function assetBalPresetSel(assetId,p){
+ if(ST.hist.balPreset===p)return;
+ ST.hist.balPreset=p;
+ const el=$('assetBalCard');if(!el)return;
+ el.innerHTML=assetBalCard(assetId,p);
+ requestAnimationFrame(()=>{try{moveSegBlobs()}catch(e){}});
+}
+let _assetBalChartPts=null,_assetBalPeekIdx=null;
+/* nwChartPeekStart/Move/End(2448행)와 동일한 원칙 — 좌표 매핑은 nwChartPath가 그릴 때 쓰는 것과
+ * 똑같이 '날짜 간격 비례'라야 손가락 위치와 그려진 점이 실제로 맞아떨어진다. */
+function assetBalPeekStart(e){
+ const el=$('assetBalChart');if(!el||!_assetBalChartPts||_assetBalChartPts.length<2)return;
+ if(el.setPointerCapture&&e.pointerId!=null)try{el.setPointerCapture(e.pointerId)}catch(err){}
+ assetBalPeekMove(e);
+}
+function assetBalPeekMove(e){
+ const el=$('assetBalChart');if(!el||!_assetBalChartPts||_assetBalChartPts.length<2)return;
+ const rect=el.getBoundingClientRect();if(!rect.width)return;
+ const ratio=(e.clientX-rect.left)/rect.width;
+ const idx=nwNearestPointIndex(_assetBalChartPts,ratio);
+ if(idx<0||idx===_assetBalPeekIdx)return;
+ _assetBalPeekIdx=idx;
+ const p=_assetBalChartPts[idx];
+ const totalDays=Math.max(1,daysBetween(_assetBalChartPts[0].date,_assetBalChartPts[_assetBalChartPts.length-1].date));
+ const x=daysBetween(_assetBalChartPts[0].date,p.date)/totalDays*300;
+ const line=$('assetBalPeekLine');if(line){line.setAttribute('x1',x.toFixed(1));line.setAttribute('x2',x.toFixed(1));line.style.display='';}
+ const label=$('assetBalPeekLabel');if(label){label.textContent=`${shortDate2(p.date)} · ${comma(p.nw)}원`;label.style.left=Math.max(4,Math.min(96,x/300*100))+'%';label.classList.add('on');}
+ announceLive(`${shortDate2(p.date)} 잔액 ${comma(p.nw)}원`);
+}
+function assetBalPeekEnd(){
+ _assetBalPeekIdx=null;
+ const line=$('assetBalPeekLine');if(line)line.style.display='none';
+ const label=$('assetBalPeekLabel');if(label)label.classList.remove('on');
 }
 
 /* 자산관리 탭 순자산 추이 카드 아래에 꽂는 자산유형별 비중(allocation) 카드 — expenseBreakdownCard와
@@ -4111,7 +4191,8 @@ function renderHistory(){
  <div class="searchbar" style="flex:1">${svg('search')}<input id="histQ" aria-label="내역 검색" placeholder="메모·카테고리·자산 검색" value="${H.q}" oninput="ST.hist.q=this.value;histInvalidate();updateHist()"></div>
  <button type="button" class="sch-chip" aria-label="내역 선택" onclick="ST.hist.selMode=true;updateHist();updateSelBottom()">${svg('check',14)}</button>
  </div>
- ${H.assetId?`<button type="button" class="sch-chip on" style="margin-bottom:14px" onclick="histClearAssetFilter()" aria-label="${esc((DB.assets.find(a=>a.id===H.assetId)||{}).name||'계좌')} 필터 해제">${esc((DB.assets.find(a=>a.id===H.assetId)||{}).name||'계좌')} ${svg('x',14)}</button>`:''}
+ ${H.assetId?`<button type="button" class="sch-chip on" style="margin-bottom:14px" onclick="histClearAssetFilter()" aria-label="${esc((DB.assets.find(a=>a.id===H.assetId)||{}).name||'계좌')} 필터 해제">${esc((DB.assets.find(a=>a.id===H.assetId)||{}).name||'계좌')} ${svg('x',14)}</button>
+ <div id="assetBalCard">${assetBalCard(H.assetId,H.balPreset)}</div>`:''}
  ${H.catExact?`<button type="button" class="sch-chip on" style="margin-bottom:14px" onclick="histClearCatFilter()" aria-label="${esc(H.catExact)} 필터 해제">${esc(H.catExact)}${H.owner&&H.owner!=='전체'?` · ${esc(H.owner)}`:''} ${svg('x',14)}</button>`:''}
  <div class="rg-pick">
    <button class="rg-date" onclick="histPickDate('from')">${fmtDot(R.from)}</button>
