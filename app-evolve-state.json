@@ -1,15 +1,8 @@
 {
   "cycle": 141,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 136,
-      "phase": "develop",
-      "timestamp": "2026-10-04T00:00:00.000Z",
-      "summary": "general-purpose 서브에이전트 조사로 dpMonthBlock()(index.html:5806-5818, 날짜 선택기의 일자 버튼 생성 함수)이 접근성 정보 없이 맨 숫자(\"15\" 등)만 버튼 텍스트로 내보내고 있었음을 발견·수정. renderDatePicker()가 한 번에 7개월치를 렌더하고(±3개월, 5824행) 스크롤 시 dpExtend()로 계속 이어붙이므로(5854행) 같은 \"15\", \"1\" 같은 버튼이 여러 달치가 동시에 DOM에 존재하는데 접근 가능한 이름이 전혀 구분되지 않아 스크린리더 사용자가 탭/스와이프로 넘길 때 어느 달의 며칠인지 알 수 없었다(만기일·반복 종료일 등을 한 달 밀려서 선택해도 알아챌 방법이 없음). dpMonthBlock()의 각 버튼에 aria-label=\"년 월 일\" 추가, 오늘 날짜 셀에 aria-current=\"date\" 추가, 선택된 셀에 aria-pressed 상태 추가. dpPick()도 셀 선택/해제 시 aria-pressed를 함께 토글하도록 수정(기존 classList.add/remove('sel')과 동일한 지점에 추가). 같은 피커의 보조 UI인 연/월 점프 휠(wh-item, role=\"option\"/aria-selected, 5901/5927행)은 이미 이 패턴을 쓰고 있었는데 메인 일자 그리드만 빠져 있던 것으로, 기존 컨벤션과의 일관성 보완이기도 하다. test/run.js에 dpMonthBlock/dpPick 소스 패턴을 정규식/문자열로 확인하는 회귀 테스트 2개 추가(기존 Enter-to-submit 계열 테스트와 동일한 extractFunction+패턴매칭 방식). node test/run.js 904/904 -> 906/906 통과. APP_VERSION 1.47.40->1.47.41, sw.js CACHE v302->v303.",
-      "commit": null
-    },
     {
       "cycle": 136,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-05T05:30:00.000Z",
       "summary": "critique(cycle140) 계획대로 전체내역 탭에서 계좌 하나로 필터링했을 때(openAssetHistory) 꽂히는 잔액 추이 미니 차트를 추가했다. (1) logic.js에 순수 함수 assetBalSampleDates(from,to,maxPoints) 추가 — 구간이 maxPoints보다 짧으면 매일 하나씩, 길면 날짜 간격 기준으로 균등 샘플링(첫/끝 날짜는 항상 포함). (2) assetBalanceSeries(txns,assetId,base,sign,dates) 추가 — balancesUpTo()(index.html)와 동일한 재생 규칙(기준액 + 날짜순 이체·지출·수입 누적, 부채는 sign=-1)을 자산 하나에, 미리 뽑은 날짜 배열에 대해서만 계산한다. 날짜마다 거래 전체를 처음부터 다시 훑지 않고 정렬된 한 번의 순회(O(n+m))로 모든 포인트를 계산. DB/전역 상태를 전혀 참조하지 않아 호출부(index.html)가 assetBase(a)/sign을 직접 넘긴다. (3) index.html에 assetBalCard(assetId,preset) 추가 — nwHistoryCard(cycle135)와 동일한 기간 세그먼트(1개월/3개월/1년/전체)+nwChartPath(기존 {date,nw} 범용 svg path 계산 재사용, bal을 nw로 매핑)+nwNearestPointIndex 기반 포인터 스크러버(assetBalPeekStart/Move/End, announceLive 공지 포함) 패턴을 그대로 차용. 대상은 cash/savings/realestate/etc/pension/debt로 한정(fx/gold/stock은 openAssetHistory가 openAssetQtyLog로 돌려보내 이 경로에 들어오지 않음). 샘플 포인트가 1개뿐인 신규 계좌는 차트 대신 '추이는 곧 쌓여요' 빈 상태로 대체(기존 nwHistoryCard 빈 상태 문구와 동일 패턴). renderHistory()의 계좌 필터 칩 바로 아래 #assetBalCard 컨테이너에 꽂고, assetBalPresetSel()이 전체 재렌더 없이 그 컨테이너만 갱신(refreshNwHistoryCard와 동일한 moveSegBlobs() 호출 포함). ST.hist.balPreset 상태 필드 추가(기본 'm3'). test/run.js에 assetBalSampleDates 3개(경계/다운샘플링 없음/균등 샘플링)+assetBalanceSeries 4개(거래 없음/날짜순 정렬+누적/부채 sign/다른 자산 무시) 테스트 추가 — vm 샌드박스가 반환하는 배열/객체 리터럴이 host realm과 프로토타입이 달라 deepStrictEqual이 값이 같아도 실패하는 문제(cycle131에서 처음 발견)를 JSON.parse(JSON.stringify(...))로 정규화해 회피(parseCSV 테스트와 동일 패턴). node test/run.js 950/950 -> 956/956 통과. APP_VERSION 1.47.49->1.47.50, sw.js CACHE v311->v312. pending_advance_plan을 null로 비움.",
       "commit": null
+    },
+    {
+      "cycle": 141,
+      "phase": "develop",
+      "timestamp": "2026-10-05T06:30:00.000Z",
+      "summary": "general-purpose 서브에이전트 조사로 sanitizeBackup()(index.html:5465행)이 txns/assets/recurrences/goals/inquiries/assetQtyLog만 검증하고 DB.categories/DB.owners/DB.budgetHistory/DB.catIcon/DB.catVar/DB.deletedType/DB.deletedBal은 전혀 검증하지 않음을 발견·수정 — goals/inquiries/assetQtyLog에서 반복된 '신설 컬렉션 검증 누락' 버그 클래스의 재발. 클라우드 풀 경로(afterCloudAuth 1783행/resolveCloudPullRemote 1816행/resolveCloudForcePush)는 복원 경로(restoreBackup)와 달리 migrate()를 try/catch로 보호하지 않아, DB.categories.income이 배열이 아니면 migrate()의 push(2020행)가, DB.owners가 배열이 아니면 addOwner()의 find/push가 TypeError로 터지는 재현을 직접 확인(DB가 이미 손상된 remote로 교체된 뒤라 복구 불가능하게 로그인/동기화 정지). sanitizeBackup()에 7개 필드 검증 추가: categories/owners는 배열 아니면 빈 배열로, 배열 안 비문자열/빈 문자열 항목 제거; budgetHistory는 from이 YYYY-MM(01~12월) 형식 아니면 drop, amount 음수/NaN이면 0 클램프, from 오름차순 재정렬; catIcon/catVar/deletedType/deletedBal은 평평한 객체 맵 아니면 빈 맵으로. null/undefined는 migrate()가 이미 기본값으로 메워 fixedCount 미포함. test/run.js에 회귀 테스트 14개 추가(수정 전 코드로 되돌리면 11건 실제 FAIL 확인 + 손상 categories/owners를 migrate()/addOwner()에 직접 넘겨 TypeError 재현 2건). node test/run.js 956/956 -> 970/970 통과. APP_VERSION 1.47.50->1.47.51, sw.js CACHE v312->v313. 커밋 831c0e6.",
+      "commit": "831c0e6038a863f11be0659e15c62784e5d27e2b"
     }
   ]
 }
