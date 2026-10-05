@@ -3314,6 +3314,22 @@ test('matchTxnQuery: 메모/카테고리/자산명 어디에도 없으면 매칭
   const t = { memo: '점심', category: '식비', fromAssetId: 'a1', toAssetId: null };
   assert.strictEqual(sandbox.matchTxnQuery(t, 'xyz', assets), false);
 });
+test('matchTxnQuery: 금액으로도 검색할 수 있다(쉼표 없이 입력)', () => {
+  const t = { memo: '', category: '식비', amount: 50000, fromAssetId: null, toAssetId: null };
+  assert.strictEqual(sandbox.matchTxnQuery(t, '50000', []), true);
+});
+test('matchTxnQuery: 검색어에 쉼표가 있어도("50,000") 쉼표 없는 금액과 매칭된다', () => {
+  const t = { memo: '', category: '식비', amount: 50000, fromAssetId: null, toAssetId: null };
+  assert.strictEqual(sandbox.matchTxnQuery(t, '50,000', []), true);
+});
+test('matchTxnQuery: 금액의 일부 숫자만 넣어도 부분일치로 찾을 수 있다(기존 텍스트 검색과 동일한 includes 규칙)', () => {
+  const t = { memo: '', category: '식비', amount: 123456, fromAssetId: null, toAssetId: null };
+  assert.strictEqual(sandbox.matchTxnQuery(t, '2345', []), true);
+});
+test('matchTxnQuery: 금액이 일치하지 않고 메모/카테고리/자산명에도 없으면 매칭되지 않는다', () => {
+  const t = { memo: '점심', category: '식비', amount: 12000, fromAssetId: null, toAssetId: null };
+  assert.strictEqual(sandbox.matchTxnQuery(t, '99999', []), false);
+});
 
 /* ---------- matchesAssetId: 자산 행 '내역' 버튼(openAssetHistory)이 쓰는 계좌 필터 ---------- */
 test('matchesAssetId: assetId가 없으면(전체) 항상 매칭된다', () => {
@@ -9994,7 +10010,7 @@ test('renderHistory: 일치하는 거래가 없으면 예외 없이 실행되고
   assert.doesNotThrow(() => sandbox.renderHistory());
   const html = sandbox.pageHistoryEl.innerHTML;
   assert.ok(html, "$('page-history').innerHTML이 채워져야 함");
-  assert.ok(html.includes('메모·카테고리·자산 검색'), '전체 내역 탭 검색바가 렌더돼야 함');
+  assert.ok(html.includes('메모·카테고리·자산·금액 검색'), '전체 내역 탭 검색바가 렌더돼야 함');
   assert.ok(sandbox.histListEl.innerHTML.includes('이 기간에는 내역이 없어요'), '내역이 없으면 빈 상태 안내가 나와야 함');
 });
 test('renderHistory: 실제 거래가 있으면 메모/금액이 histList에, 건수가 histTotals에 실제로 렌더된다', () => {
@@ -10013,7 +10029,7 @@ test('renderHistory: 멀티셀렉트 모드(ST.hist.selMode)에서는 검색바�
   sandbox.DB.txns = [{ id: 't1', date: '2026-06-10', type: 'expense', category: '식비', memo: '점심 김밥', amount: 8000, fromAssetId: 'a1' }];
   sandbox.ST.hist.selMode = true;
   sandbox.renderHistory();
-  assert.ok(!sandbox.pageHistoryEl.innerHTML.includes('메모·카테고리·자산 검색'), '멀티셀렉트 모드에서는 검색바가 숨겨져야 함');
+  assert.ok(!sandbox.pageHistoryEl.innerHTML.includes('메모·카테고리·자산·금액 검색'), '멀티셀렉트 모드에서는 검색바가 숨겨져야 함');
   const listHtml = sandbox.histListEl.innerHTML;
   assert.ok(listHtml.includes('sel-check'), '멀티셀렉트 모드에서는 선택 체크마크가 렌더돼야 함');
   assert.ok(listHtml.includes("onclick=\"histToggleSel('t1')\""), '내역 행 클릭이 histToggleSel로 연결돼야 함');
