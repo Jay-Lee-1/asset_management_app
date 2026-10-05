@@ -1,15 +1,8 @@
 {
   "cycle": 140,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 135,
-      "phase": "develop",
-      "timestamp": "2026-10-04T05:00:00.000Z",
-      "summary": "general-purpose 서브에이전트 조사로 mergeRemoteDataIntoLocal()(index.html:1444-1470)이 DB.deletedType/DB.deletedBal(삭제한 자산의 재연동용 타입·삭제시점잔액 기억, snapshotAssetName이 3016-3017행에서 기록)을 전혀 병합하지 않고 있었음을 발견·수정. cycle125에서 catIcon/catVar에 동일 버그를 고친 선례, cycle133 critique에서 deletedType이 \"영향 범위가 좁아 develop 스코프\"로 러너업 기각됐던 기록을 근거로 재조사 — relinkDeletedAsset(2941)/deletedAssetHistoryExists(2977)/askRelinkDeleted(2991)가 이 두 맵을 읽는데 pushCloud가 DB 전체를 업로드하면서도 병합 경로(afterCloudAuth localUnsynced 분기 1789행, pushCloud 충돌 재시도 1753행)에선 조용히 로컬 값으로 덮어써, 한 기기가 삭제한 자산의 재연동 기록이 다른 기기로 전달되지 않고 역병합 push 시 영구 소실될 수 있었다. catIcon/catVar와 동일한 mergeFlatMap()을 deletedType/deletedBal에 그대로 적용(두 줄 추가, 1472-1473행). test/run.js에 minimalMergeDB 기반 회귀 테스트 1개 추가(remote-only 키 유입 + 동일 키는 local 우선 확인) — 수정 전 코드로 되돌려 해당 테스트가 실제로 FAIL함을 직접 검증한 뒤 복구. node test/run.js 892/892 -> 893/893 통과. APP_VERSION 1.47.38->1.47.39, sw.js CACHE v300->v301.",
-      "commit": null
-    },
     {
       "cycle": 135,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-05T01:15:00.000Z",
       "summary": "critique(cycle139) 계획대로 openAssetPicker()(index.html:6697)의 자산 0개 빈 상태를 고쳤다. emptyDB() 신규 가입자/게스트가 자산 0개로 시작해 첫 거래 입력에서 이 경로를 실제로 밟는데, 예전엔 `<p>선택할 자산이 없어요</p>` 맨 텍스트만 떨어져 왜 막혔는지 안내가 전혀 없었다. openPlanAsset() 통장선택 빈 상태(4420-4421)·assetBodyHTML() 자산목록 빈 상태(2958)와 동일한 .empty(아이콘 svg(wallet)+제목 \"등록된 자산이 없어요\"+설명+empty-cta 버튼) 패턴으로 교체, CTA는 2958과 동일하게 onclick=\"openAssetSheet()\". openSheet()가 이미 열린 시트(wasOpen=true)에서는 ovHistPush()를 추가로 호출하지 않으므로(5715행) 피커 안에서 CTA로 openAssetSheet()를 열어도 history push/pop이 1:1로 맞아 백버튼 동작이 깨지지 않음을 소스로 확인. 계획이 명시한 대로 저장 후 원래 피커/거래폼으로 자동 복귀하는 로직은 이번 스코프 밖(최소 막다른 길 해소만). pk-group/pk-blob 래퍼(6698행)가 .empty를 감싸도 position:relative 외 제약이 없어 레이아웃 영향 없음을 CSS로 확인. test/run.js에 회귀 테스트 2개 추가 — (1) 그룹/필터 조건 없이도 전체 DB.assets가 비면 .empty+empty-cta+openAssetSheet() 호출부가 있고 옛 문구는 없는지, (2) cashOnly 필터로 결과가 0개가 되는 경우도 동일 패턴을 쓰는지. node test/run.js 945/945 -> 947/947 통과. APP_VERSION 1.47.47->1.47.48, sw.js CACHE v309->v310. pending_advance_plan을 null로 비움.",
       "commit": null
+    },
+    {
+      "cycle": 140,
+      "phase": "develop",
+      "timestamp": "2026-10-05T02:21:40.408Z",
+      "summary": "general-purpose 서브에이전트 조사로 doRenameOwner()(index.html:3383 부근)가 이름 변경 시 ST.assetOwner/ST.plan.owner/ST.spendOwner 세 상태는 새 이름으로 갱신하면서 ST.hist.owner(전체내역 탭의 귀속 필터, spendOwner 드릴다운에서 설정됨)는 빠뜨리고 있었음을 발견·수정. filterTxnsByOwner(logic.js)가 ST.hist.owner와 자산의 .owner를 정확매칭하는데, 자산들의 .owner는 이미 새 이름이지만 ST.hist.owner는 존재하지 않는 옛 이름을 계속 가리켜 전체내역 목록이 조용히 텅 비어버리는(에러 없이, 필터를 직접 해제해야만 복구되는) 버그였다. doRenameOwner()의 기존 세 캐스케이드와 같은 줄에 ST.hist&&ST.hist.owner===old일 때만 갱신하는 가드를 추가(기존 테스트들이 .hist 없는 부분 ST fixture를 쓰는 경우와의 하위호환 유지). test/run.js에 회귀 테스트 2개 추가(옛 이름을 가리키던 경우 새 이름으로 따라감 / 무관한 이름이면 그대로 유지+ .hist 자체가 없어도 안 터짐) — 수정 전 코드로 되돌려 첫 테스트가 실제로 FAIL함을 직접 검증한 뒤 복구. node test/run.js 947/947 -> 949/949 통과. APP_VERSION 1.47.48->1.47.49, sw.js CACHE v310->v311.",
+      "commit": "163888c"
     }
   ]
 }
