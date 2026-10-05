@@ -2919,6 +2919,10 @@ test('relinkDeletedAsset: type이 같을 때만 과거 내역을 새 자산에 �
   assert.strictEqual(sandbox.DB.txns[0].fromAssetId, 'new1', '같은 type이면 거래가 새 자산에 재연결되어야 함');
   assert.strictEqual(sandbox.DB.txns[0].fromAssetName, undefined, '재연결되면 이름 스냅샷은 지워져야 함');
   assert.strictEqual(sandbox.DB.recurrences[0].fromAssetId, 'new1', '같은 type이면 반복거래도 재연결되어야 함');
+  // app-evolve cycle143/144: 재연결로 fromAssetId/fromAssetName이 바뀐 레코드는 touch()되어야
+  // mergeCollection()이 이 재연결을 다른 기기의 미동기화 사본에게 조용히 되돌리지 않는다.
+  assert.strictEqual(sandbox.DB.txns[0].updatedAt, 'test-updatedAt', '재연결된 거래는 touch()로 updatedAt이 갱신되어야 함(mergeCollection 병합 불변식)');
+  assert.strictEqual(sandbox.DB.recurrences[0].updatedAt, 'test-updatedAt', '재연결된 반복거래도 touch()로 updatedAt이 갱신되어야 함');
 });
 test('relinkDeletedAsset: type이 다른 동명 자산으로는 재연결하지 않는다(deletedAssetHistoryExists 가드를 우회한 직접 호출 방어)', () => {
   sandbox.DB = {
@@ -2931,6 +2935,7 @@ test('relinkDeletedAsset: type이 다른 동명 자산으로는 재연결하지 
   sandbox.relinkDeletedAsset(newStock);
   assert.strictEqual(sandbox.DB.txns[0].fromAssetId, 'gone', 'type이 다르면 fromAssetId가 그대로여야 함');
   assert.strictEqual(sandbox.DB.txns[0].fromAssetName, '카카오뱅크', 'type이 다르면 이름 스냅샷도 지워지지 않아야 함');
+  assert.strictEqual(sandbox.DB.txns[0].updatedAt, undefined, '재연결이 아예 일어나지 않았으면 touch()도 호출되면 안 됨');
 });
 test('relinkDeletedAsset: DB.deletedType 기록이 없으면(마이그레이션 이전 데이터) 재연결하지 않는다', () => {
   sandbox.DB = {
@@ -3817,6 +3822,9 @@ test('deleteAssetsUndo: undo 콜백이 snapshotAssetName이 남긴 fromAssetName
   sandbox.deleteAssetsUndo(new Set(['a1']));
   sandbox.lastUndo.undoFn();
   assert.strictEqual(t.fromAssetName, undefined, 'undo 후에는 fromAssetId가 다시 살아있는 자산을 가리키므로 스냅샷 이름이 남아있으면 안 됨');
+  // app-evolve cycle143/144: unsnapshotAssetName이 fromAssetName을 지우면서 touch()도 호출해야
+  // mergeCollection()이 이 되돌림을 다른 기기의 미동기화 사본에게 조용히 되돌리지 않는다.
+  assert.strictEqual(t.updatedAt, 'test-updatedAt', '스냅샷 이름이 지워진 거래는 touch()로 updatedAt이 갱신되어야 함(mergeCollection 병합 불변식)');
   const sameTxnRebuiltFromId = { ...t, fromAssetName: undefined };
   assert.strictEqual(
     sandbox.csvDedupeKey(t), sandbox.csvDedupeKey(sameTxnRebuiltFromId),
@@ -6312,6 +6320,25 @@ test('mergeCollection: (회귀 방지) touch() 없이 되살린 내역처럼 upd
   const remoteDeletedIds = { t1: deleteTs };
   const out = sandbox.mergeCollection([restoredWithoutTouch], [], {}, remoteDeletedIds);
   assert.strictEqual(out.length, 0, 'touch() 없이는 되살린 내역이 tombstone에 져서 사라져야 함(수정 전 버그 재현)');
+});
+test('mergeCollection: (app-evolve cycle144) 자산 삭제로 이름 스냅샷이 찍힌 거래가 touch()로 updatedAt이 더 커지면, 다른 기기의 미동기화(스냅샷 없음) 사본보다 병합에서 이긴다 — snapshotAssetName/unsnapshotAssetName/relinkDeletedAsset touch() 누락 버그의 실제 증상 재현', () => {
+  // 기기A: 자산을 삭제하고 snapshotAssetName()이 fromAssetName을 남긴 뒤 touch()로 updatedAt을 올림
+  const snapshotted = { id: 't1', fromAssetName: '카카오뱅크', amount: 1000, updatedAt: 200 };
+  // 기기B: 아직 동기화 전이라 스냅샷 없는 옛 사본을 그대로 들고 있음(touch() 없이 생성된 원본과 같은 updatedAt)
+  const unsyncedCopy = { id: 't1', amount: 1000, updatedAt: 100 };
+  const out = sandbox.mergeCollection([snapshotted], [unsyncedCopy], {}, {});
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].fromAssetName, '카카오뱅크', '더 최근에 touch()된 스냅샷 있는 사본이 채택되어야 함 — assetNm()이 \'—\'로 떨어지지 않음');
+});
+test('mergeCollection: (회귀 방지) touch() 없이 이름 스냅샷만 찍혔다면(updatedAt이 그대로) 동일 updatedAt인 다른 기기의 미동기화 사본에 동률로 밀려 스냅샷이 사라진다 — 수정 전 버그가 실제로 이 조건에서 발생했음을 보여주는 대조군', () => {
+  const snapshottedWithoutTouch = { id: 't1', fromAssetName: '카카오뱅크', amount: 1000, updatedAt: 100 }; // touch() 누락: updatedAt이 원본과 동일
+  const unsyncedCopy = { id: 't1', amount: 1000, updatedAt: 100 };
+  const out = sandbox.mergeCollection([snapshottedWithoutTouch], [unsyncedCopy], {}, {});
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].fromAssetName, '카카오뱅크', 'updatedAt 동률이면 local(snapshottedWithoutTouch)이 이기므로 이 재현에서는 우연히 스냅샷이 남음 — 아래 반대 순서 재현이 실제 소실 조건');
+  // local/remote를 뒤집으면: 미동기화(스냅샷 없음) 사본이 local이 되어 동률에서 이김 — 이것이 버그의 실제 소실 경로
+  const out2 = sandbox.mergeCollection([unsyncedCopy], [snapshottedWithoutTouch], {}, {});
+  assert.strictEqual(out2[0].fromAssetName, undefined, 'touch() 없이는 동률 시 local(스냅샷 없는 미동기화 사본)이 이겨 이름 스냅샷이 조용히 사라짐(수정 전 버그 재현)');
 });
 
 /* ---------- mergeNameList/mergeBudgetHistory: mergeRemoteDataIntoLocal()이 DB.categories/

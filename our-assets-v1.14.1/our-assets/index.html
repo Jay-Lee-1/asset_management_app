@@ -1316,7 +1316,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.55';
+const APP_VERSION='1.47.56';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3127,12 +3127,12 @@ function relinkDeletedAsset(d){
  const nm=d.name;
  if(!(DB.deletedType&&DB.deletedType[nm]===d.type))return; /* 타입이 다르면(또는 기록이 없으면) 재연결하지 않음 — deletedAssetHistoryExists 가드를 우회한 직접 호출도 방어 */
  (DB.txns||[]).forEach(t=>{
-   if(t.fromAssetName===nm&&!DB.assets.some(a=>a.id===t.fromAssetId)){t.fromAssetId=d.id;delete t.fromAssetName;}
-   if(t.toAssetName===nm&&!DB.assets.some(a=>a.id===t.toAssetId)){t.toAssetId=d.id;delete t.toAssetName;}
+   if(t.fromAssetName===nm&&!DB.assets.some(a=>a.id===t.fromAssetId)){t.fromAssetId=d.id;delete t.fromAssetName;touch(t);}
+   if(t.toAssetName===nm&&!DB.assets.some(a=>a.id===t.toAssetId)){t.toAssetId=d.id;delete t.toAssetName;touch(t);}
  });
  (DB.recurrences||[]).forEach(r=>{
-   if(r.fromAssetName===nm&&!DB.assets.some(a=>a.id===r.fromAssetId)){r.fromAssetId=d.id;delete r.fromAssetName;}
-   if(r.toAssetName===nm&&!DB.assets.some(a=>a.id===r.toAssetId)){r.toAssetId=d.id;delete r.toAssetName;}
+   if(r.fromAssetName===nm&&!DB.assets.some(a=>a.id===r.fromAssetId)){r.fromAssetId=d.id;delete r.fromAssetName;touch(r);}
+   if(r.toAssetName===nm&&!DB.assets.some(a=>a.id===r.toAssetId)){r.toAssetId=d.id;delete r.toAssetName;touch(r);}
  });
 }
 /* 재등록 연동 시 이전 잔액과의 차액을 오늘 날짜 조정 내역으로 기록 (자산에 태그) */
@@ -3203,23 +3203,23 @@ function snapshotAssetName(id){
  DB.deletedBal=DB.deletedBal||{};DB.deletedBal[nm]=balanceAt(id,TODAY); /* 삭제 시점 실제 잔액 기억 */
  DB.deletedType=DB.deletedType||{};DB.deletedType[nm]=a.type; /* 재연동 시 타입 일치 검사용 */
  (DB.txns||[]).forEach(t=>{
-   if(t.fromAssetId===id)t.fromAssetName=nm;
-   if(t.toAssetId===id)t.toAssetName=nm;
+   if(t.fromAssetId===id){t.fromAssetName=nm;touch(t);}
+   if(t.toAssetId===id){t.toAssetName=nm;touch(t);}
  });
  (DB.recurrences||[]).forEach(r=>{
-   if(r.fromAssetId===id)r.fromAssetName=nm;
-   if(r.toAssetId===id)r.toAssetName=nm;
+   if(r.fromAssetId===id){r.fromAssetName=nm;touch(r);}
+   if(r.toAssetId===id){r.toAssetName=nm;touch(r);}
  });
 }
 /* snapshotAssetName의 되돌리기용 짝 — 삭제 취소 시 남은 스냅샷 이름을 지워 id/name 이중상태를 없앤다 */
 function unsnapshotAssetName(id){
  (DB.txns||[]).forEach(t=>{
-   if(t.fromAssetId===id)delete t.fromAssetName;
-   if(t.toAssetId===id)delete t.toAssetName;
+   if(t.fromAssetId===id){delete t.fromAssetName;touch(t);}
+   if(t.toAssetId===id){delete t.toAssetName;touch(t);}
  });
  (DB.recurrences||[]).forEach(r=>{
-   if(r.fromAssetId===id)delete r.fromAssetName;
-   if(r.toAssetId===id)delete r.toAssetName;
+   if(r.fromAssetId===id){delete r.fromAssetName;touch(r);}
+   if(r.toAssetId===id){delete r.toAssetName;touch(r);}
  });
 }
 /* 자산 다중선택 체크박스 토글/전체선택은 선택 상태만 바뀌므로 renderAssets() 전체를 다시 그릴 필요가 없다.
