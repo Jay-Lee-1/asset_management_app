@@ -1,15 +1,12 @@
 {
   "cycle": 144,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "부채(debt) 자산 상세에 '이 속도로 갚으면 언제 다 갚는지' 상환완료 예상일 투사 추가",
+    "why": "logic.js:277-296 goalProgress()는 순자산 목표에 대해 이력 처음·끝 두 점의 일별 증가율로 목표 도달일을 선형 투사하는 패턴을 이미 검증된 형태로 갖고 있다(test/run.js:1225-1270 전용 테스트 포함, index.html:2621/2643에서 호출). 반면 index.html:2501-2537 assetBalCard()는 debt 타입 자산(2504행 ['cash','savings','realestate','etc','pension','debt'].includes(a.type))에도 적용되지만 잔액 추이 스파크라인만 보여주고 끝난다 — '언제 다 갚는지'에 대응하는 대칭 투사가 전혀 없다(grep -n '상환|완납|payoff|interestRate' index.html 결과 전무). 이 앱은 debt를 ASSET_TYPES.debt로 정식 지원하고 시드 데이터에도 '전세자금대출'을 포함시킬 만큼 공들였는데, 빚을 꾸준히 갚아나가는 사용자가 가장 궁금해할 핵심 동기부여 정보(현재 속도로 언제 다 갚는지)가 빠져 있다. 목표(goal) 쪽에는 있는 통찰이 부채 쪽엔 비대칭적으로 없는 상태.",
+    "approach": "1) logic.js에 goalProgress와 동일한 선형투사 철학을 재사용하는 순수 함수 debtPayoffProjection(pts, today) 추가. 입력은 assetBalCard가 이미 계산해두는 pts(날짜순 {date,bal} 배열, assetBalanceSeries 결과)를 그대로 사용 — 새 DB 필드/마이그레이션 불필요. last.bal<=0이면 {achieved:true}; 포인트 2개 미만이거나 처음·끝 구간의 일별 감소율이 0 이하(갚는 속도가 없거나 늘고 있음)면 {projectedDate:null}(goalProgress와 동일하게 '모른다'를 추측 대신 반환); 감소 중이면 rate=(first.bal-last.bal)/days로 projectedDate=addDays(last.date, Math.ceil(last.bal/rate)) 반환. 2) index.html의 assetBalCard()(2501행) 안에서 a.type==='debt'일 때만 이 함수를 pts에 적용해 차트 아래 한 줄 추가: 투사 가능하면 '이 속도로 갚으면 YYYY년 M월경 다 갚을 수 있어요', achieved면 완납 안내, 투사 불가능(정체/증가)이면 중립적으로 '최근엔 줄어들고 있지 않아요'류 안내. goalRowHTML(2620행)의 문구 패턴을 참고해 어조를 맞춘다. 3) test/run.js에 goalProgress 테스트(1225-1270행)와 동일한 4케이스(완납됨/이력부족/감소세 없음/정상 투사)를 debtPayoffProjection용으로 추가. 4) APP_VERSION 및 sw.js CACHE 버전 증가."
+  },
   "history": [
-    {
-      "cycle": 139,
-      "phase": "critique",
-      "timestamp": "2026-10-05T00:31:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(139사이클 동안 다뤄진 항목 전부 제외 지시: Enter-to-submit 시리즈/touchSave 가드/CSV 이체/지출분석 drill-down/문의하기+sanitizeBackup/자산 그룹 내 재배열+경계버그/DB 병합 누락 5건/순자산 추이 기간선택+탭/날짜선택기 접근성/선택모드 일괄 카테고리 변경/Pro 프로모 제거/탭전환 백버튼/assetQtyLog 포함, 기각 이력도 전달). 새로 발견 후 직접 소스 재검증: emptyDB()(index.html:1633-1640)는 assets:[]로 시작하고 튜토리얼(5022-5058)은 twGuard()(5043)가 실제 저장을 막아 끝까지 봐도 자산이 안 생기므로, 신규 가입자/게스트가 첫 거래를 입력하려 들면 openAssetPicker()(6691-6699)가 해당 조건(fromAssetId:firstCash() null 등)에 맞는 자산이 0개일 때 6697행에서 `<p>선택할 자산이 없어요</p>` 맨 텍스트만 보여줌을 확인 — 앱의 다른 빈 상태(openPlanAsset 통장선택 4420-4421: 아이콘+제목+설명, assetBodyHTML 자산목록 2958: 아이콘+제목+설명+empty-cta 버튼까지)와 명백히 다른 비일관적 막다른 길. 핵심 첫 액션(거래 기록)에서 발생해 우선순위 높음. pending_advance_plan에 openAssetPicker()의 if(!html) 분기를 기존 .empty 패턴(아이콘+제목+설명, 가능하면 자산 추가 CTA)으로 교체 + 회귀테스트 저장(복귀 로직까지는 스코프 제외, 상세는 pending_advance_plan 참고). 러너업(기각): saveGoal() targetDate 범위검증 누락(goalProgress가 targetDate를 전혀 안 읽어 실제 영향 없는 순수 표시용 라벨) / PWA 설치 유도(beforeinstallprompt) 부재(storage.persist 경고+7일 백업 리마인더로 이미 데이터손실 리스크 커버돼 실익 낮음) / DB.budgetHistory touch() 누락(오탐 — mergeBudgetHistory가 flat-map 로컬우선 전략이라 touch 불필요) / 앱 자체 PIN/생체 잠금 부재(신규 보안모델 필요해 과대 스코프, 기존 '클라이언트사이드 보안경계' 테마 반복 기각과 일치). 코드 변경 없음(읽기 전용 조사, 서브에이전트와 오케스트레이팅 세션 둘 다 index.html:6691-6699/4420-4421/2958/1633-1640/5022-5058/5043을 직접 Read/Grep으로 재확인).",
-      "commit": null
-    },
     {
       "cycle": 139,
       "phase": "advance",
@@ -140,6 +137,13 @@
       "phase": "review",
       "timestamp": "2026-10-05T20:10:00.000Z",
       "summary": "develop 커밋(40a3682, matchTxnQuery 금액 검색 추가)을 검토해 실제 버그 발견·수정. 적용된 norm=s=>String(s).toLowerCase().replace(/,/g,'')가 비교 양쪽(hay 전체 + q)에서 쉼표를 지우는데, amt(String(number))는 애초에 쉼표가 없으므로 쉼표 제거가 필요한 쪽은 검색어(q)뿐임을 확인. 그런데 hay 쪽까지 쉼표를 지우면 메모/카테고리/자산명에 들어있는 실제 쉼표가 사라지면서 쉼표를 사이에 두고 떨어져 있던 글자들이 이어 붙어, 원래는 안 걸려야 할 검색어가 우연히 매칭되는 오탐이 생김을 직접 재현해 확인 — memo:'우유,계란'에서 검색어 '유계'(쉼표 없음)가 수정 전 코드로는 true(오탐), 커밋이 의도한 동작(쉼표 없는 메모/카테고리/자산명 텍스트 검색은 기존 그대로)과 어긋남. hay는 그대로 두고 q쪽에서만 .replace(/,/g,'') 하도록 축소(hay.toLowerCase().includes(q.toLowerCase().replace(/,/g,''))) — \"50000\"/\"50,000\" 둘 다 금액과 매칭되는 기존 4개 신규 테스트는 그대로 통과(amt 자체엔 쉼표가 없어 q만 정규화해도 충분), 쉼표 포함 메모 오탐 방지 회귀 테스트 1건 추가(수정 전 코드로 되돌려 실제 FAIL함을 직접 검증한 뒤 복구). placeholder 변경/기존 4개 검색 테스트는 영향 없음. node test/run.js 991/991 -> 992/992 통과. APP_VERSION 1.47.57->1.47.58, sw.js CACHE v319->v320.",
+      "commit": null
+    },
+    {
+      "cycle": 144,
+      "phase": "critique",
+      "timestamp": "2026-10-05T21:10:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(144사이클 동안 다뤄진 항목 전부 + 기각 이력 전달). 서브에이전트가 logic.js 전체와 index.html의 자산평가/반복거래 편집범위/CSV import·export/크로스탭 저장동기화/클라우드 병합/시세동기화/로컬알림/저장공간경고/시트 접근성/자산 삭제·재연동/검색필터 캐시를 직접 Read — 144사이클의 방어적 처리로 신규 결함을 찾기 어려웠음. 중간 기각: histQ 검색 디바운스 부재(실사용 규모에서 체감 성능 문제 아님) / spendTrend()의 카테고리별 반복 재계산(실사용 카테고리 수 규모에선 병목 아님) / debt 자산 통화(currency) 필드 부재(영향 작음). 최종 발견(grep -n '상환|완납|payoff|interestRate' index.html 결과 전무로 확인): logic.js:277-296 goalProgress()는 순자산 목표에 대해 이력 처음·끝 두 점의 선형투사로 목표 도달일을 계산하는 검증된 패턴(test/run.js:1225-1270 테스트 포함)을 갖고 있는데, index.html:2501-2537 assetBalCard()는 debt 타입 자산(2504행)에도 적용되면서 잔액 추이 스파크라인만 보여주고 '이 속도로 갚으면 언제 다 갚는지' 투사는 전혀 없음 — goal 쪽에는 있는 통찰이 debt 쪽엔 비대칭적으로 빠져 있음. debt는 ASSET_TYPES.debt로 정식 지원되고 시드 데이터에도 '전세자금대출'이 포함될 만큼 공들여진 타입이라, 빚을 갚아나가는 사용자의 핵심 동기부여 정보가 누락된 상태로 판단. pending_advance_plan에 logic.js에 goalProgress와 동일한 선형투사 철학의 debtPayoffProjection(pts,today) 순수함수 추가(새 DB 필드 불필요, assetBalanceSeries의 pts 재사용) + assetBalCard()에 debt 전용 한 줄 안내 추가 + test/run.js에 4케이스(완납/이력부족/감소세없음/정상투사) 회귀테스트 계획 저장(상세는 pending_advance_plan 참고). 코드 변경 없음(읽기 전용 조사).",
       "commit": null
     }
   ]
