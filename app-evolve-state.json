@@ -1,19 +1,8 @@
 {
-  "cycle": 139,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "거래 입력 시 자산선택 피커(openAssetPicker)가 해당 조건의 자산이 0개면 아이콘/안내/CTA 없는 맨 텍스트 막다른 길이 됨",
-    "why": "emptyDB()(index.html:1633-1640)는 assets:[]로 시작해 신규 가입자/게스트는 자산 0개로 시작한다. 튜토리얼(5022-5058)은 twGuard()(5043)가 실제 저장을 막아 끝까지 봐도 자산이 생기지 않으므로, 첫 거래 입력에서 openAssetPicker()가 열릴 조건(openTxSheet의 firstCash() null 등)이 실제로 발생한다. index.html:6691-6699를 직접 Read로 재확인: 6692줄에서 그룹/조건에 맞는 자산이 하나도 없으면 html이 빈 문자열로 남고, 6697줄 `if(!html)html=<p style=\"padding:16px;color:var(--text-3)\">선택할 자산이 없어요</p>`로만 떨어진다. 앱의 다른 빈 상태는 전부 아이콘+제목+설명(+CTA) 패턴을 쓴다 — openPlanAsset()의 통장 선택 빈 상태(4420-4421, svg('bank')+et+es)와 assetBodyHTML()의 자산목록 빈 상태(2958, svg('wallet')+et+es+empty-cta 버튼까지)를 직접 Read로 확인. 핵심 첫 액션(거래 기록)에서 사용자가 왜 막혔는지 안내가 전혀 없는 비일관적 막다른 길이라 우선순위가 높다.",
-    "approach": "openAssetPicker()(index.html:6691-6699)의 `if(!html)` 분기를 2958/4420-4421과 동일한 markup 패턴(`<div class=\"empty\">...`)으로 교체한다. 아이콘은 o.cashOnly/o.excludeMarketValued 등 컨텍스트에 맞는 걸 쓰거나 범용 svg('wallet'), 제목은 '등록된 자산이 없어요', 설명은 '자산관리에서 통장·자산을 먼저 등록해 주세요'. 가능하면 2958의 empty-cta 버튼처럼 CTA(`<button class=\"empty-cta\" onclick=\"openAssetSheet()\">${svg('plus')} 자산 추가하기</button>`)도 추가하되, saveAsset() 저장 후 원래 피커/거래폼으로 자동 복귀하는 로직까지는 이번 사이클 범위를 넘으므로 욕심내지 않는다(최소 막다른 길 해소가 목표). DB 스키마/병합 로직과 무관하므로 교차배선 불필요. test/run.js에 openAssetPicker를 자산 0개 상태로 호출해 반환 html에 .empty 클래스/안내문이 포함되는지(그리고 '선택할 자산이 없어요' 리터럴 텍스트가 더는 없는지) 확인하는 회귀 테스트 추가."
-  },
+  "cycle": 140,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 134,
-      "phase": "advance",
-      "timestamp": "2026-10-04T03:12:49.749Z",
-      "summary": "critique(cycle134) 계획대로 '사용자 정의순' 자산 정렬에 그룹 내 개별 자산 재배열 UI를 추가했다. (1) movedGroupOrder와 동일한 모양의 순수 함수 movedAssetOrder(ids,id,dir) 추가 — 그룹 내 자산 id 배열에서 인접 교환 후 {id:순번} order 맵 반환(경계에선 null). (2) moveAsset(id,dir): groupItems(a.type)로 현재 표시 순서를 구해 movedAssetOrder 호출 → 맵의 값을 각 자산 order에 대입 → touch(asset) 호출 후 save() — 계획의 touchSave(...) 대신 개별 touch()를 쓴 이유: Object.keys(map).forEach로 수집한 asset들을 touchSave(...touched) 배열로 펼치는 간접 패턴은 test/run.js의 touch-before-save 정적 스캐너(find()로 바인딩한 변수명을 그대로 commit 호출 인자에서 찾는 토큰 매칭)가 추적 못 해 거짓양성을 내므로(cycle132 advance에서 toggleConfirmTransfers가 같은 이유로 직접 touch() 호출로 되돌려진 선례와 동일 사유), 루프 안에서 asset.order 대입 직후 touch(asset)을 바로 호출하는 더 간단하고 스캐너도 올바르게 통과하는 형태를 택함. (3) assetBodyHTML()의 ST.editAssets 분기: 그룹 행(.asset-item)을 display:block으로 바꾸고 내부에 기존 헤더 줄(핸들/아이콘/이름/grp-move/합계)을 감싼 flex 줄 + DB.settings.assetSort==='custom'일 때만 그 뒤에 .asset-sub-list(자산별 .asset-sub-row, 이름 + grp-move-btn과 동일 스타일의 위/아래 버튼, 첫/끝 disabled)를 추가 — 그룹 행의 class/data-type을 그대로 유지해 wireGroupDrag()/movedGroupOrder()의 기존 '.asset-item' 셀렉터 기반 그룹 드래그 로직은 전혀 건드리지 않음(래퍼만 블록화되고 높이가 커짐). CSS에 .asset-sub-list/.asset-sub-row 추가. (4) openSortSheet()의 custom 서브텍스트를 '그룹 내 등록 순서 유지' → '편집 모드에서 그룹 내 순서를 직접 바꿀 수 있어요'로 교정. test/run.js: FUNCTIONS에 movedAssetOrder/moveAsset 등록, movedGroupOrder 테스트와 평행하게 movedAssetOrder 4개 테스트(중간 위/아래 이동, 경계 null, 다른 그룹 영향 없음 — vm 객체는 deepStrictEqual 대신 필드별 strictEqual로 비교, cycle131에서 처음 발견한 realm 경계 문제와 동일) 추가, 기존 renderAssets 편집모드 테스트가 'custom 정렬에선 개별 자산 이름이 전혀 안 보여야 함'을 단언하고 있어 이번 기능과 정면 충돌 → custom/비custom 두 시나리오로 재작성(custom: 이름+버튼+양끝 disabled 확인, amount: 여전히 숨김 확인). node test/run.js 887/887(reset 기준 882) -> 892/892 통과. APP_VERSION 1.47.37->1.47.38, sw.js CACHE v299->v300. pending_advance_plan을 null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 135,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-05T00:31:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(139사이클 동안 다뤄진 항목 전부 제외 지시: Enter-to-submit 시리즈/touchSave 가드/CSV 이체/지출분석 drill-down/문의하기+sanitizeBackup/자산 그룹 내 재배열+경계버그/DB 병합 누락 5건/순자산 추이 기간선택+탭/날짜선택기 접근성/선택모드 일괄 카테고리 변경/Pro 프로모 제거/탭전환 백버튼/assetQtyLog 포함, 기각 이력도 전달). 새로 발견 후 직접 소스 재검증: emptyDB()(index.html:1633-1640)는 assets:[]로 시작하고 튜토리얼(5022-5058)은 twGuard()(5043)가 실제 저장을 막아 끝까지 봐도 자산이 안 생기므로, 신규 가입자/게스트가 첫 거래를 입력하려 들면 openAssetPicker()(6691-6699)가 해당 조건(fromAssetId:firstCash() null 등)에 맞는 자산이 0개일 때 6697행에서 `<p>선택할 자산이 없어요</p>` 맨 텍스트만 보여줌을 확인 — 앱의 다른 빈 상태(openPlanAsset 통장선택 4420-4421: 아이콘+제목+설명, assetBodyHTML 자산목록 2958: 아이콘+제목+설명+empty-cta 버튼까지)와 명백히 다른 비일관적 막다른 길. 핵심 첫 액션(거래 기록)에서 발생해 우선순위 높음. pending_advance_plan에 openAssetPicker()의 if(!html) 분기를 기존 .empty 패턴(아이콘+제목+설명, 가능하면 자산 추가 CTA)으로 교체 + 회귀테스트 저장(복귀 로직까지는 스코프 제외, 상세는 pending_advance_plan 참고). 러너업(기각): saveGoal() targetDate 범위검증 누락(goalProgress가 targetDate를 전혀 안 읽어 실제 영향 없는 순수 표시용 라벨) / PWA 설치 유도(beforeinstallprompt) 부재(storage.persist 경고+7일 백업 리마인더로 이미 데이터손실 리스크 커버돼 실익 낮음) / DB.budgetHistory touch() 누락(오탐 — mergeBudgetHistory가 flat-map 로컬우선 전략이라 touch 불필요) / 앱 자체 PIN/생체 잠금 부재(신규 보안모델 필요해 과대 스코프, 기존 '클라이언트사이드 보안경계' 테마 반복 기각과 일치). 코드 변경 없음(읽기 전용 조사, 서브에이전트와 오케스트레이팅 세션 둘 다 index.html:6691-6699/4420-4421/2958/1633-1640/5022-5058/5043을 직접 Read/Grep으로 재확인).",
+      "commit": null
+    },
+    {
+      "cycle": 139,
+      "phase": "advance",
+      "timestamp": "2026-10-05T01:15:00.000Z",
+      "summary": "critique(cycle139) 계획대로 openAssetPicker()(index.html:6697)의 자산 0개 빈 상태를 고쳤다. emptyDB() 신규 가입자/게스트가 자산 0개로 시작해 첫 거래 입력에서 이 경로를 실제로 밟는데, 예전엔 `<p>선택할 자산이 없어요</p>` 맨 텍스트만 떨어져 왜 막혔는지 안내가 전혀 없었다. openPlanAsset() 통장선택 빈 상태(4420-4421)·assetBodyHTML() 자산목록 빈 상태(2958)와 동일한 .empty(아이콘 svg(wallet)+제목 \"등록된 자산이 없어요\"+설명+empty-cta 버튼) 패턴으로 교체, CTA는 2958과 동일하게 onclick=\"openAssetSheet()\". openSheet()가 이미 열린 시트(wasOpen=true)에서는 ovHistPush()를 추가로 호출하지 않으므로(5715행) 피커 안에서 CTA로 openAssetSheet()를 열어도 history push/pop이 1:1로 맞아 백버튼 동작이 깨지지 않음을 소스로 확인. 계획이 명시한 대로 저장 후 원래 피커/거래폼으로 자동 복귀하는 로직은 이번 스코프 밖(최소 막다른 길 해소만). pk-group/pk-blob 래퍼(6698행)가 .empty를 감싸도 position:relative 외 제약이 없어 레이아웃 영향 없음을 CSS로 확인. test/run.js에 회귀 테스트 2개 추가 — (1) 그룹/필터 조건 없이도 전체 DB.assets가 비면 .empty+empty-cta+openAssetSheet() 호출부가 있고 옛 문구는 없는지, (2) cashOnly 필터로 결과가 0개가 되는 경우도 동일 패턴을 쓰는지. node test/run.js 945/945 -> 947/947 통과. APP_VERSION 1.47.47->1.47.48, sw.js CACHE v309->v310. pending_advance_plan을 null로 비움.",
       "commit": null
     }
   ]

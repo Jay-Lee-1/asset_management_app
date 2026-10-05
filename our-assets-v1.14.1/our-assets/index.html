@@ -1315,7 +1315,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.47';
+const APP_VERSION='1.47.48';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6694,7 +6694,7 @@ function openAssetPicker(o){o=o||{};let html='';
    items.forEach(a=>{const ty=ASSET_TYPES[a.type];const bal=a.type==='debt'?-assetEval(a):assetEval(a);
      html+=`<button class="pk-item hasamt ${a.id===o.current?'on':''}" data-val="${a.id}" onclick="pkPickAsset('${a.id}')"><div class="pav ${ty.cls}">${svg(ty.icon)}</div><div class="pbody"><div class="pn">${esc(a.name)}</div><div class="psub"><span class="chipmini own-${esc(a.owner)}">${esc(a.owner)}</span>${ty.label}</div></div><div class="amt num">${comma(bal)}원</div></button>`;});
  });
- if(!html)html=`<p style="padding:16px;color:var(--text-3)">선택할 자산이 없어요</p>`;
+ if(!html)html=`<div class="empty"><div class="ei">${svg('wallet')}</div><div class="et">등록된 자산이 없어요</div><div class="es">자산관리에서 통장·자산을 먼저 등록해 주세요</div><button class="empty-cta" onclick="openAssetSheet()">${svg('plus')} 자산 추가하기</button></div>`;
  window._pkPick=o.onPick;openPicker(o.title||'통장 선택','<div class="pk-group" id="pkGroup"><div class="pk-blob" id="pkBlob"></div>'+html+'</div>',o.back);
  requestAnimationFrame(()=>requestAnimationFrame(()=>movePkBlob(false)));}
 function movePkBlob(animate){

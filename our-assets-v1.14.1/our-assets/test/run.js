@@ -7388,6 +7388,34 @@ test('openAssetPicker: excludeId(만기이체 picker에서 자기 자신 제외)
   assert.ok(!html.includes('data-val="a_sav"'), 'excludeId로 지정한 자산 본인은 빠져야 함');
 });
 
+/* ---------- openAssetPicker: 조건에 맞는 자산이 0개면(신규 가입자/게스트가 자산 0개로 시작해
+ * 첫 거래 입력에서 이 경로를 그대로 밟는다, emptyDB()) 예전엔 아이콘/안내/CTA 없이
+ * `<p>선택할 자산이 없어요</p>` 맨 텍스트만 보여줘 사용자가 왜 막혔는지 알 방법이 없는 막다른
+ * 길이었다(app-evolve cycle139 advance). openPlanAsset()의 통장 선택 빈 상태·assetBodyHTML()의
+ * 자산목록 빈 상태와 같은 .empty(아이콘+제목+설명+CTA) 패턴으로 교체했다. ---------- */
+test('openAssetPicker: 조건에 맞는 자산이 0개면 맨 텍스트 대신 .empty 패턴(아이콘+제목+설명+자산 추가 CTA)을 보여준다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox.DB = { settings: { groupOrder: ['cash', 'savings', 'fx', 'gold', 'stock'] }, assets: [], txns: [], recurrences: [], rates: {} };
+  sandbox._balCache.clear();
+  sandbox.lastPickerHtml = null;
+  sandbox.openAssetPicker({ onPick: () => {} });
+  const html = sandbox.lastPickerHtml;
+  assert.ok(!html.includes('선택할 자산이 없어요'), '예전의 맨 텍스트 안내문은 더는 없어야 함');
+  assert.ok(html.includes('class="empty"'), '다른 화면과 동일한 .empty 빈 상태 래퍼를 써야 함');
+  assert.ok(html.includes('등록된 자산이 없어요'), '제목이 있어야 함');
+  assert.ok(html.includes('class="empty-cta"') && html.includes("onclick=\"openAssetSheet()\""), '자산 추가 CTA가 있어야 함');
+});
+test('openAssetPicker: cashOnly/excludeMarketValued 필터로 0개가 되는 경우도 동일한 .empty 패턴을 보여준다', () => {
+  setupAssetPickerDB();
+  sandbox.DB.assets = sandbox.DB.assets.filter((a) => a.type === 'fx' || a.type === 'gold' || a.type === 'stock'); // 현금성 자산 없음
+  sandbox.lastPickerHtml = null;
+  sandbox.openAssetPicker({ cashOnly: true, onPick: () => {} });
+  const html = sandbox.lastPickerHtml;
+  assert.ok(!html.includes('선택할 자산이 없어요'));
+  assert.ok(html.includes('class="empty"') && html.includes('class="empty-cta"'));
+});
+
 /* ---------- _applyOpenAsset: 이체/저축 입력 화면(txOpenAsset/recOpenAsset)에서 보내는/받는
  * 자산 picker가 이미 고른 반대쪽 자산을 제외하지 않던 버그(app-evolve cycle122 develop).
  * asOpenMat()이 여는 만기이체 picker는 excludeId로 자기 자신을 걸러내는데(cycle34), 같은
