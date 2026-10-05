@@ -1,7 +1,11 @@
 {
   "cycle": 143,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "snapshotAssetName/unsnapshotAssetName/relinkDeletedAsset touch() 누락 — 자산삭제 이름스냅샷 동기화 유실",
+    "why": "자산 삭제 시 snapshotAssetName()(index.html:3200-3213)이 DB.txns/DB.recurrences에 fromAssetName/toAssetName 스냅샷을 써넣지만 touch()를 호출하지 않아 해당 레코드의 updatedAt이 그대로 유지된다. mergeCollection()(logic.js:107-129, 124행 l&&r 분기)은 양쪽 다 살아있으면 updatedAt이 같거나 큰 쪽을 채택하고 동률이면 local이 이김 — 기기A가 삭제+스냅샷(updatedAt 불변)을 push해도 기기B의 미동기화 로컬 사본이 '동일한' updatedAt을 가지므로 항상 B의 로컬(스냅샷 없음) 사본이 채택된다. 자산 자체는 DB.deletedIds 톰스톤(6857행, Date.now())으로 정상 삭제되지만, 그 자산을 참조했던 과거 거래는 B에서 죽은 assetId만 남고 이름 스냅샷이 없어 assetNm()(index.html:1512, a?a.name:(snap||'—'))이 영구히 '—'를 표시한다. unsnapshotAssetName(삭제취소, 3215-3224)과 relinkDeletedAsset(재연동, 3125-3137)도 동일한 touch() 누락을 공유한다. doRenameOwner/doRenameCat/rollPendingTransfers/recActualAmount에서 반복적으로 고쳐온 'touch() 누락 → mergeCollection이 updatedAt만 보고 병합하다 다른 기기의 미동기화 내역이 조용히 되돌림' 버그 클래스의 재발이며, 지금까지 이 세 함수만 빠져 있었다.",
+    "approach": "snapshotAssetName(index.html:3205-3212), unsnapshotAssetName(3216-3223), relinkDeletedAsset(3129-3136) 세 함수의 forEach 바디에서, 실제로 fromAssetName/toAssetName(또는 fromAssetId/toAssetId)을 바꾸는 if 분기마다 touch(t)/touch(r)를 추가한다(doRenameCat 4954행과 동일 스타일: 필드 대입 직후 touch 호출). from/to 양쪽 다 매칭되는 자기참조 엣지케이스에서 touch()가 같은 레코드에 두 번 불려도 멱등이라 문제 없음. 호출부(deleteAssetsUndo/askRelinkDeleted._amLink, 6852-6860/3171-3186)는 이미 이 함수들 뒤에 save()를 호출하므로 콜사이트 변경은 불필요.\n테스트 계획(test/run.js, 기존 2885-2995·3766-3850 블록 근처): (1) deleteAssetsUndo로 자산 삭제 후 참조 txn의 updatedAt이 증가했는지 확인, (2) undo 경로에서 unsnapshotAssetName 호출 후 updatedAt이 다시 갱신되는지 확인, (3) relinkDeletedAsset 기존 테스트(2910/2923)에 touch() 발생(updatedAt 갱신) 단언 추가, (4) logic.js 레벨 mergeCollection 회귀: 동일 updatedAt을 가진 두 txn 사본(하나는 fromAssetName 있음=수정후 touch됨, 하나는 없음=미동기화 상태)을 만들어 touch 적용 후에는 이름 있는 사본이 채택됨을 확인 — 수정 전 코드로는 이 테스트가 fail함을 직접 검증 후 복구.\n스코프 제외: mergeCollection()의 동률 시 local-wins 정책 자체는 의도된 3-way 병합 규칙이라 건드리지 않음(logic.js:100-106 주석 참고) — 수정은 touch() 호출 지점에서만. 이미 과거 동기화에서 유실된 기존 데이터의 복구는 스코프 밖(앞으로 발생을 막는 것만)."
+  },
   "history": [
     {
       "cycle": 139,
@@ -126,6 +130,13 @@
       "phase": "review",
       "timestamp": "2026-10-05T16:00:00.000Z",
       "summary": "develop 커밋(f71c40b, refreshNwHistoryCard/assetBalPresetSel 세그먼트 버튼 포커스 보존)을 검토. nwHistoryCard()/assetBalCard()가 내부에 세그먼트 컨테이너를 '.seg nwh-seg' 하나만 렌더한다는 전제(각각 index.html:2406/2505)를 grep으로 확인해, el.querySelector('.seg button.on')이 카드마다 유일한 선택된 버튼을 정확히 가리킴을 검증. closeSheet()의 _sheetReturnFocus와 동일한 '재렌더 전에 el.contains(document.activeElement)로만 기억, 포커스가 없었으면 아무 것도 안 함' 패턴이 두 함수에 동일하게 적용돼 캐러셀/점 전환 등 카드 밖에서 트리거되는 기존 호출 경로에는 영향이 없음을 확인. nwHistoryCard가 pts.length<2(owner==='all')일 때 ''를 반환하는 경로, assetBalCard가 자산 미존재/타입 제외 시 ''를 반환하는 경로 모두 el.innerHTML=''이 되어도 querySelector가 null을 반환해 if(on) 가드로 안전함을 확인. node test/run.js 985/985 통과(신규 2건 포함). 코드 변경 없음 — 이상 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 143,
+      "phase": "critique",
+      "timestamp": "2026-10-05T17:14:52Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(143사이클 동안 다뤄진 항목 전부 + 기각 이력 전달). 새로 발견 후 오케스트레이팅 세션이 index.html 3120-3225를 직접 Read, logic.js 100-129(mergeCollection)을 직접 Read해 재검증: snapshotAssetName()/unsnapshotAssetName()/relinkDeletedAsset()(index.html:3125-3224)가 DB.txns/DB.recurrences에 fromAssetName/toAssetName 이름스냅샷을 쓰거나 지우면서 touch()를 전혀 호출하지 않음을 확인. mergeCollection()(logic.js:107-129, 124행)은 양쪽 다 살아있으면 updatedAt 동률 시 local이 이기는데, 이 세 함수가 건드린 레코드는 updatedAt이 그대로라 기기A의 삭제+스냅샷을 기기B가 pull해도 B의 미동기화 로컬(스냅샷 없음) 사본이 항상 채택됨 — 자산 자체는 deletedIds 톰스톤으로 정상 삭제되지만 그 자산을 참조한 과거 거래는 다른 기기에서 영구히 assetNm()의 '—' 폴백으로 떨어지는 조용한 동기화 유실. doRenameOwner/doRenameCat/rollPendingTransfers에서 반복 수정된 'touch() 누락' 버그 클래스의 재발이며 이 세 함수만 빠져 있었음을 grep으로 확인(3120-3225, 6840-6862에 touch( 호출이 자산/반복거래 비활성화/조정내역에만 있고 스냅샷 대입 라인에는 없음). pending_advance_plan에 세 함수 touch() 추가 + mergeCollection 레벨 회귀테스트 계획 저장(상세는 pending_advance_plan 참고). 러너업(기각): nwHistoryCard/assetBalCard의 '추이는 곧 쌓여요' 빈 상태가 .ei 아이콘+CTA 없이 설명문만 있음(코스메틱, 차트 자체는 데이터 쌓이면 정상 표시되는 막다른 길 아님) / 지출분석·저축목표 피기뱅크 빈 상태도 CTA 없음(마땅한 액션이 없어 의도적으로 보임) / addMonths/recDates 월말 롤오버(day 31 반복거래) — addMonths(index.html:4254-4259)·recDates(logic.js:20-60) 둘 다 Math.min(day,lastDay(y,m))으로 이미 정확히 클램프함을 재확인, 가짜 리드였음. 코드 변경 없음(읽기 전용 조사, 서브에이전트와 오케스트레이팅 세션 둘 다 index.html 3120-3225·6840-6862·1512, logic.js 100-129, test/run.js 2885-2995·3766-3850을 직접 Read/grep으로 재확인).",
       "commit": null
     }
   ]
