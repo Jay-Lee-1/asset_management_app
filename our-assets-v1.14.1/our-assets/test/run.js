@@ -2830,6 +2830,27 @@ test('csvRowToImportTxn: 자산명을 못 찾으면 id 없이 이름 스냅샷�
   assert.strictEqual(r.txn.fromAssetName, '없는통장');
   assert.deepStrictEqual(Array.from(r.unmatched), ['없는통장']);
 });
+// addCat/addOwner/saveAsset(동명 자산 가드, line 3358)는 모두 normName()으로 대소문자·연속 공백·
+// 유니코드 정규화(NFC/NFD) 차이를 "같은 이름"으로 본다. CSV findAsset()만 예전엔 String===로
+// 엄격 비교해, 엑셀에서 내보내거나 macOS(파일시스템이 NFD로 정규화)에서 만든 CSV를 다시
+// 가져올 때 같은 자산인데도 표기만 미세하게 다르면 매칭에 실패해 unmatched로 떨어졌다
+// (cycle141에서 "bonus item, out of scope"로 남겨둔 항목 — cycle142에서 수정).
+test('csvRowToImportTxn: 대소문자·공백·유니코드 정규화(NFC/NFD) 차이만 있는 자산명도 normName 기준으로 매칭한다', () => {
+  const assets = [{ id: 'a1', name: '주 계좌' }];
+  const spaced = sandbox.csvRowToImportTxn(['2026-01-01', '지출', '식비', '5000', '주  계좌', '', ''], assets);
+  assert.strictEqual(spaced.ok, true);
+  assert.strictEqual(spaced.txn.fromAssetId, 'a1', '연속 공백 차이는 같은 자산으로 매칭되어야 함');
+  assert.strictEqual(spaced.txn.fromAssetName, undefined);
+  const caseAssets = [{ id: 'a2', name: 'USD Cash' }];
+  const cased = sandbox.csvRowToImportTxn(['2026-01-01', '지출', '식비', '5000', 'usd cash', '', ''], caseAssets);
+  assert.strictEqual(cased.ok, true);
+  assert.strictEqual(cased.txn.fromAssetId, 'a2', '대소문자 차이는 같은 자산으로 매칭되어야 함');
+  // NFD(자모 분리형)로 들어온 이름도 NFC 저장 자산과 매칭되어야 함(macOS CSV 내보내기 등)
+  const nfdAssets = [{ id: 'a3', name: '우리은행'.normalize('NFD') }];
+  const nfc = sandbox.csvRowToImportTxn(['2026-01-01', '지출', '식비', '5000', '우리은행', '', ''], nfdAssets);
+  assert.strictEqual(nfc.ok, true);
+  assert.strictEqual(nfc.txn.fromAssetId, 'a3', 'NFC/NFD 정규화 차이는 같은 자산으로 매칭되어야 함');
+});
 // isMarketValued(fx/gold/stock)는 assetEval()이 원장과 무관하게 qty×시세로 평가하므로,
 // CSV 임포트가 이름만 보고 매칭해버리면 그 거래가 잔액에 반영되지 않아 순자산이 조용히 어긋난다.
 // 수동 입력 폼(txOpenAsset/recOpenAsset)은 이미 excludeMarketValued로 막고 있으니 CSV 경로도 맞춘다.

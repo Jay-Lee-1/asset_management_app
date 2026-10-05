@@ -1315,7 +1315,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.52';
+const APP_VERSION='1.47.53';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5303,7 +5303,10 @@ function csvRowToImportTxn(cells,assets){
  if(type==='expense'&&!fromName)return{ok:false,error:'asset'};
  if(type==='income'&&!toName)return{ok:false,error:'asset'};
  if(type!=='transfer'&&!category)return{ok:false,error:'category'};
- const findAsset=nm=>{if(!nm)return null;const cands=(assets||[]).filter(a=>a.name.trim()===nm&&!isMarketValued(a));return cands.length===1?cands[0]:null};
+ /* addCat/addOwner/saveAsset 중복명 판정과 같은 normName() 근접일치 — 대소문자·연속 공백·
+    유니코드 정규화(NFC/NFD) 차이만 있는 자산명을 서로 다른 자산으로 보고 unmatched 처리하면
+    안 된다(saveAsset의 동명 자산 가드도 같은 type끼리는 애초에 이 차이를 구분 없이 막는다). */
+ const findAsset=nm=>{if(!nm)return null;const cands=(assets||[]).filter(a=>normName(a.name)===normName(nm)&&!isMarketValued(a));return cands.length===1?cands[0]:null};
  const fromAsset=type!=='income'?findAsset(fromName):null;
  const toAsset=type!=='expense'?findAsset(toName):null;
  const unmatched=[];
