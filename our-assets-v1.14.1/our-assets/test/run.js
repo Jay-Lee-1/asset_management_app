@@ -1713,6 +1713,18 @@ test('normName: 앞뒤 공백은 trim되고, 실제로 다른 이름은 다른 �
   assert.strictEqual(sandbox.normName('  식비  '), '식비');
   assert.notStrictEqual(sandbox.normName('식비'), sandbox.normName('교통비'));
 });
+/* 한글 완성형(NFC)과 조합형(NFD, macOS/HFS+ 클립보드나 일부 CSV 내보내기가 생성)은 같은 글자를
+ * 다르게 인코딩한다. normalize('NFC') 없이는 두 폼이 다른 문자열로 비교돼 같은 이름인데도
+ * 근접중복 판정을 피해 조용히 별개 항목이 생길 수 있었다 (app-evolve cycle141 advance). */
+test('normName: 한글 NFC(완성형)와 NFD(조합형)는 같은 정규화 결과를 낸다', () => {
+  const nfc = '식비'.normalize('NFC');
+  const nfd = '식비'.normalize('NFD');
+  assert.notStrictEqual(nfc, nfd, '테스트 전제: 두 문자열은 바이트 수준에서 달라야 한다');
+  assert.strictEqual(sandbox.normName(nfc), sandbox.normName(nfd));
+  const nfcOwner = '공동명의'.normalize('NFC');
+  const nfdOwner = '공동명의'.normalize('NFD');
+  assert.strictEqual(sandbox.normName(nfcOwner), sandbox.normName(nfdOwner));
+});
 
 test('addCat: 대소문자만 다른 이름은 근접 중복으로 막고 기존 이름을 토스트에 보여준다', () => {
   sandbox.DB = { categories: { expense: ['Food'] }, catIcon: {}, catVar: {}, txns: [], recurrences: [] };
@@ -6297,6 +6309,12 @@ test('mergeNameList: remote에만 있는 새 이름은 local 순서를 유지한
 test('mergeNameList: 대소문자·공백만 다른 remote 이름은 중복 추가되지 않는다', () => {
   const out = sandbox.mergeNameList(['Netflix'], [' netflix '], sandbox.normName);
   assert.deepStrictEqual(j(out), ['Netflix']);
+});
+test('mergeNameList: 한글 NFC/NFD만 다른 remote 이름은 중복 추가되지 않는다', () => {
+  const nfc = '식비'.normalize('NFC');
+  const nfd = '식비'.normalize('NFD');
+  const out = sandbox.mergeNameList([nfc], [nfd], sandbox.normName);
+  assert.deepStrictEqual(j(out), [nfc]);
 });
 test('mergeNameList: local/remote가 비어 있거나 undefined여도 터지지 않는다', () => {
   assert.deepStrictEqual(j(sandbox.mergeNameList(undefined, undefined, sandbox.normName)), []);

@@ -200,9 +200,9 @@ function computeRelinkBaseline(remembered,H,entered){
 
 /* ================= DATE/FORMAT/BUDGET (cycle111) ================= */
 function esc(s){const m={'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'};return String(s==null?'':s).replace(/[&<>"']/g,c=>m[c])}
-/* 카테고리/귀속 이름 중복 비교용 정규화 — 대소문자·연속 공백(전각공백 포함)만 다른 이름을 같은 이름으로 취급.
-   저장/표시용 원본 이름은 건드리지 않고 비교할 때만 사용한다. */
-function normName(s){return String(s==null?'':s).trim().replace(/[\s　]+/g,' ').toLowerCase()}
+/* 카테고리/귀속 이름 중복 비교용 정규화 — 대소문자·연속 공백(전각공백 포함)·한글 조합형(NFD)/완성형(NFC) 차이만
+   다른 이름을 같은 이름으로 취급. 저장/표시용 원본 이름은 건드리지 않고 비교할 때만 사용한다. */
+function normName(s){return String(s==null?'':s).normalize('NFC').trim().replace(/[\s　]+/g,' ').toLowerCase()}
 function lastDay(y,m){return new Date(y,m,0).getDate()}
 function monthEndStr(y,m){return `${y}-${String(m).padStart(2,'0')}-${String(lastDay(y,m)).padStart(2,'0')}`}
 function monthStartStr(y,m){return `${y}-${String(m).padStart(2,'0')}-01`}

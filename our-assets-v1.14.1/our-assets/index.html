@@ -1315,7 +1315,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.51';
+const APP_VERSION='1.47.52';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3275,7 +3275,7 @@ function openAssetSheet(id){
  renderAssetSheet(editing);
 }
 function syncAssetInputs(){const d=asDraft;const g=id=>$(id);
- if(g('asName'))d.name=(g('asName').value||'').trim();
+ if(g('asName'))d.name=(g('asName').value||'').trim().normalize('NFC');
  if(g('asAmt'))d._dispAmt=num(g('asAmt'),d.type!=='debt');
  if(g('asMat'))d.maturityDate=g('asMat').value;
  if(g('asFx'))d.fxAmount=Math.max(0,parseFloat((g('asFx').value||'0').replace(/,/g,''))||0);
@@ -3441,7 +3441,7 @@ function openOwnerManage(){
   <div style="height:14px"></div><button class="btn btn-primary" onclick="closeSheet()">완료</button>`);
 }
 function openOwnerSheet(){openOwnerManage()}
-function addOwner(){const v=$('newOwner').value.trim();if(!v)return;const dup=DB.owners.find(o=>normName(o)===normName(v));if(dup){toast(dup===v?'이미 있는 귀속이에요':`비슷한 귀속이 있어요: ${dup}`);return}DB.owners.push(v);save();openOwnerManage();}
+function addOwner(){const v=$('newOwner').value.trim().normalize('NFC');if(!v)return;const dup=DB.owners.find(o=>normName(o)===normName(v));if(dup){toast(dup===v?'이미 있는 귀속이에요':`비슷한 귀속이 있어요: ${dup}`);return}DB.owners.push(v);save();openOwnerManage();}
 function delOwner(i){const o=DB.owners[i];if(DB.owners.length<=1){toast('귀속은 최소 1개가 필요해요');return}
  const used=DB.assets.filter(a=>a.owner===o).length;
  if(used){toast(`'${o}' 귀속을 쓰는 자산 ${used}개가 있어요`);return}
@@ -3454,7 +3454,7 @@ function renameOwnerSheet(i){const cur=DB.owners[i];
   <div class="field"><input id="renameOwner" value="${esc(cur)}" onkeydown="if(event.key==='Enter'&&!event.isComposing)doRenameOwner(${i})"></div>
   <div class="two-btn"><button class="btn btn-soft cancel" onclick="openOwnerManage()">취소</button><button class="btn btn-primary" onclick="doRenameOwner(${i})">저장</button></div>`);
  setTimeout(()=>{const el=$('renameOwner');el&&el.focus()},300)}
-function doRenameOwner(i){const v=$('renameOwner').value.trim();if(!v){toast('이름을 입력해 주세요');return}
+function doRenameOwner(i){const v=$('renameOwner').value.trim().normalize('NFC');if(!v){toast('이름을 입력해 주세요');return}
  const old=DB.owners[i];if(v===old){openOwnerManage();return}
  const dup=DB.owners.find((o,oi)=>oi!==i&&normName(o)===normName(v));
  if(dup){toast(dup===v?'이미 있는 귀속이에요':`비슷한 귀속이 있어요: ${dup}`);return}
@@ -4854,7 +4854,7 @@ function openCatManage(kind,keep){
   <div class="add-inline"><button class="emo-pick ${avCls}" onclick="pickCatAddIcon('${k}')" aria-label="아이콘 선택">${svg(trigIcon,20)}</button><input id="newCat" placeholder="새 ${CAT_LABEL[k]} 카테고리" value="${catAddDraft.name.replace(/"/g,'&quot;')}" oninput="catAddDraft.name=this.value" onkeydown="if(event.key==='Enter'&&!event.isComposing)addCat('${k}')"><button onclick="addCat('${k}')" aria-label="${CAT_LABEL[k]} 카테고리 추가">${svg('plus')}</button></div>
   <div style="height:14px"></div><button class="btn btn-primary" onclick="closeSheet()">완료</button>`);
 }
-function addCat(k){const v=(($('newCat')&&$('newCat').value)||catAddDraft.name||'').trim();if(!v)return;
+function addCat(k){const v=(($('newCat')&&$('newCat').value)||catAddDraft.name||'').trim().normalize('NFC');if(!v)return;
  const dup=DB.categories[k].find(c=>normName(c)===normName(v));
  if(dup){toast(dup===v?'이미 있는 카테고리예요':`비슷한 카테고리가 있어요: ${dup}`);return}
  DB.catIcon=DB.catIcon||{};
@@ -4900,7 +4900,7 @@ function renameCatSheet(k,i,keep){const cur=DB.categories[k][i];
   <div class="cat-edit-row"><button class="emo-pick lg ${avCls}" onclick="pickCatRenameIcon('${k}',${i})" aria-label="아이콘 선택">${svg(catRenameDraft.icon||'tag',24)}</button><input id="renameCat" value="${catRenameDraft.name.replace(/"/g,'&quot;')}" oninput="catRenameDraft.name=this.value" placeholder="카테고리 이름" onkeydown="if(event.key==='Enter'&&!event.isComposing)doRenameCat('${k}',${i})"></div>
   <div class="two-btn"><button class="btn btn-soft cancel" onclick="openCatManage('${k}')">취소</button><button class="btn btn-primary" onclick="doRenameCat('${k}',${i})">저장</button></div>`);
  setTimeout(()=>{const el=$('renameCat');el&&el.focus()},300)}
-function doRenameCat(k,i){const v=((catRenameDraft.name!=null?catRenameDraft.name:($('renameCat')&&$('renameCat').value))||'').trim();if(!v){toast('이름을 입력해 주세요');return}
+function doRenameCat(k,i){const v=((catRenameDraft.name!=null?catRenameDraft.name:($('renameCat')&&$('renameCat').value))||'').trim().normalize('NFC');if(!v){toast('이름을 입력해 주세요');return}
  const old=DB.categories[k][i];
  if(k==='income'&&old===ADJUST_CAT){toast('자동으로 생성되는 카테고리라 이름을 바꿀 수 없어요');return}
  if(v!==old){const dup=DB.categories[k].find(c=>c!==old&&normName(c)===normName(v));if(dup){toast(dup===v?'이미 있는 카테고리예요':`비슷한 카테고리가 있어요: ${dup}`);return}}

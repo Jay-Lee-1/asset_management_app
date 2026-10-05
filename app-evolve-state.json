@@ -1,19 +1,8 @@
 {
-  "cycle": 141,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "normName()에 유니코드 NFC 정규화 추가 — 조합형/분해형 한글을 다른 문자열로 오인하는 근접중복 판정 결함 해소",
-    "why": "normName()(logic.js:205)은 cycle85(대소문자·공백 무시)·cycle95(자산명까지 확장)에 걸쳐 '겉보기엔 같은 이름인데 집계가 사용자도 모르게 두 갈래로 쪼개지는' 문제를 막기 위해 만들어진 공유 체크포인트 함수인데, String.prototype.normalize('NFC')를 전혀 호출하지 않는다. 한글은 완성형(NFC)과 조합형(NFD, macOS/HFS+ 클립보드나 일부 CSV 내보내기가 생성)으로 같은 글자를 다르게 인코딩할 수 있어, 두 폼으로 입력된 '같은' 카테고리/귀속/자산 이름이 normName()에서 다른 문자열로 판정돼 중복 안내 없이 그대로 통과한다. 호출부 9곳(addCat index.html:4858, doRenameCat:4906, addOwner:3444, doRenameOwner:3459, saveAsset 근접중복체크:3358, CSV import canon매칭:5336-5337/5707, mergeNameList logic.js:137-143 — 클라우드 동기화 경로 index.html:1468-1469가 사용)이 전부 이 하나의 함수에 중복판정을 위임하므로, 한 줄 수정으로 전체가 동시에 고쳐지는 이 앱의 '공유 체크포인트에서 고친다' 관례에 정확히 맞는다.",
-    "approach": "1) logic.js:205의 normName()을 trim/공백축약/소문자화보다 먼저 .normalize('NFC')를 적용하도록 수정: `function normName(s){return String(s==null?'':s).normalize('NFC').trim().replace(/[\\s　]+/g,' ').toLowerCase()}`. 이것만으로 normName()을 호출하는 9곳 전부가 혜택을 받는다. 2) 추가로, normName()을 거치지 않는 완전일치(===) 비교들(ownerAssets/ownerDebt의 a.owner===o, filterTxnsByOwner logic.js:95의 o===owner, doRenameOwner index.html:3461의 a.owner===old, doRenameCat index.html:4916의 t.category===old)도 신규/수정 데이터에 한해 안전해지도록, 값을 저장하는 입력 캡처 지점에서 trim() 바로 뒤에 .normalize('NFC')를 체이닝한다: index.html:4857 addCat(), index.html:4903 doRenameCat(), index.html:3444 addOwner(), index.html:3457 doRenameOwner(), index.html:3278 syncAssetInputs()의 d.name 대입. 3) test/run.js에 회귀 테스트 추가 — 기존 normName 테스트 블록(test/run.js:1700-1714)에 NFC/NFD 한글이 같은 정규화 결과를 내는지 검증(예: sandbox.normName('식비')와 sandbox.normName('식비'.normalize('NFD'))가 같아야 함, Node 내장 normalize로 NFD 샘플을 그 자리에서 생성해 하드코딩 이스케이프 불필요). mergeNameList 테스트 블록(test/run.js:6294 부근)에도 NFC/NFD만 다른 이름은 중복으로 합쳐지지 않고 길이 1로 유지되는 케이스를 추가. 4) index.html:1318의 APP_VERSION과 sw.js의 CACHE 버전 문자열을 패치 수준으로 올린다(예: 1.47.51→1.47.52, 캐시 v313→v314 — 정확한 현재 버전은 구현 시점에 직접 확인). 5) 여유가 있으면 보너스로 csvRowToImportTxn()의 findAsset(index.html:5306)이 normName() 대신 완전일치(a.name.trim()===nm)를 써 CSV 가져오기 경로에만 cycle95가 막은 것과 같은 유형의 불일치가 재발해 있는 것도 normName(a.name)===normName(nm)으로 통일 — 단, 이미 '자산 매칭 안 됨' 카운트로 사용자에게 드러나는 문제라 1차 범위는 아니다."
-  },
+  "cycle": 142,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 136,
-      "phase": "advance",
-      "timestamp": "2026-10-04T12:17:13.950Z",
-      "summary": "critique(cycle136) 계획대로 선택 모드(일별거래/전체내역)에 다건 카테고리 일괄 변경을 추가했다. (1) logic.js에 순수 함수 bulkCatTargets(txns,ids) 추가 — ids가 비었거나 실제 거래와 하나도 안 맞으면 reason:'empty', transfer가 하나라도 섞이면 reason:'transfer'(이체는 catListOf에서도 항상 [] — 카테고리 개념이 없음), type(expense/income/saving)이 섞이면 reason:'mixed', 통과하면 {ok:true,kind,items}. (2) activeSel()에 lSel/hist 모드에서만 cat:'ledgerCatSel()'/'histCatSel()' 키 추가(aSel은 자산엔 카테고리 개념이 없어 스코프 제외, 주석으로 이유 명시). (3) updateSelBottom()에 s.cat 있을 때 svg('tag')+'카테고리' 4번째 버튼(.sbb-cat) 추가, #selBarBottom에 has-cat 클래스 토글 — 좁은 화면에서 4버튼이 넘치지 않도록 .selbar-bottom.has-cat .sbb{min-width:0;padding:0 12px;font-size:13px} CSS 추가(클래스 3개 조합이라 명시도가 개별 .sbb-* 규칙보다 항상 높아 소스 순서와 무관하게 적용됨). (4) ledgerCatSel()/histCatSel() 추가(ledgerDelSel/histDelSel 바로 아래) — ledgerDelSel의 snapshot 관례(new Set(ST.lSel.ids)로 복제 후 mode/ids를 지우기 전에 넘김)를 그대로 따름. bulkCatPickFor(ids,afterApply)는 pkPickCat/openCatPicker 블록 바로 아래 배치 — bulkCatTargets로 먼저 검증해 실패 사유별 토스트(선택 없음/이체 포함/종류 혼합)를 보여주거나, 통과 시 openCatPicker({kind,current:null,onPick:c=>{closeSheet();doBulkCat(ids,c);afterApply()}})를 연다. _applyOpenCat()과 달리 되돌아갈 이전 시트가 없는 단독 피커라 onPick에서 직접 closeSheet() 호출이 필요함을 발견(back 파라미터를 안 넘기면 pkPickCat()이 닫지 않고 그대로 열려 있음). doBulkCat(ids,cat)은 deleteTxnsUndo 바로 아래 배치 — doRenameCat()과 동일한 memo-follows-category 관례(메모가 이전 카테고리명과 같았다면 자동 채움으로 보고 메모도 같이 옮김)를 따르고 touchSave(...items)로 touch+save, undoToast로 category/memo를 원복. (5) test/run.js: FUNCTIONS에 doBulkCat/bulkCatPickFor 등록, closeSheet 스텁을 closeSheetCalls 스파이로 교체. bulkCatTargets 5개(empty 2종/transfer/mixed/성공) + doBulkCat 4개(적용+memo-follow/undo/twGuard/bulkCatTargets 실패 시 안전망) + bulkCatPickFor 4개(toast 3종+성공 플로우 전체: 피커 열림→pick→closeSheet→afterApply→undoToast까지) + activeSel 3개(aSel엔 cat 없음/lSel·hist엔 있음) 총 16개 테스트 추가. vm 컨텍스트 객체 리터럴 deepStrictEqual 실패(cycle131에서 처음 발견한 realm 경계 문제)가 bulkCatTargets의 실패 케이스 4개에서도 재발해 필드별 strictEqual로 수정. node test/run.js 906/906 -> 922/922 통과. APP_VERSION 1.47.41->1.47.42, sw.js CACHE v303->v304. pending_advance_plan을 null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 137,
       "phase": "develop",
@@ -144,6 +133,13 @@
       "phase": "critique",
       "timestamp": "2026-10-05T08:12:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(141사이클 동안 다뤄진 항목 전부 제외 지시: Enter-to-submit 시리즈/touchSave 가드/CSV 이체/지출분석 drill-down/문의하기+sanitizeBackup/자산 그룹 내 재배열+경계버그/DB 병합 누락 수정 다수(goals·catIcon·catVar·deletedType·deletedBal·inquiries·assetQtyLog 및 categories·owners·budgetHistory 7필드 sanitizeBackup 검증)/순자산 추이 기간선택+탭/날짜선택기 접근성/선택모드 일괄 카테고리 변경/assetQtyLog/Pro 프로모 제거/탭전환 백버튼/openAssetPicker 빈 상태/ST.hist.owner 동기화/자산상세 잔액추이 미니차트(assetBalCard) 포함, 기각 이력도 전달). 새로 발견: normName()(logic.js:205, cycle85 대소문자·공백 무시 + cycle95 자산명 확장으로 만들어진 근접중복 판정 공유 체크포인트)이 String.normalize('NFC')를 전혀 호출하지 않아, 완성형(NFC)과 조합형(NFD, macOS/HFS+ 클립보드나 일부 CSV 내보내기가 생성)으로 다르게 인코딩된 동일 한글 문자열을 서로 다른 이름으로 오판함을 확인 — addCat(index.html:4858)/doRenameCat(4906)/addOwner(3444)/doRenameOwner(3459)/saveAsset 근접중복체크(3358)/CSV import canon매칭(5336-5337,5707)/mergeNameList(logic.js:137-143, 클라우드 동기화 index.html:1468-1469가 사용) 9곳 전부가 이 함수에 위임하므로 겉보기엔 같은 카테고리/귀속/자산명이 조용히 두 갈래로 쪼개지거나 두 기기가 서로를 중복으로 인식 못 해 리스트가 계속 불어날 수 있음. pending_advance_plan에 normName() NFC 정규화 한 줄 수정 + 입력 캡처 지점 5곳 동반 정규화(완전일치 비교 경로 보호) + 회귀테스트(normName NFC/NFD 동치, mergeNameList 중복판정) 저장(상세는 pending_advance_plan 참고). 러너업(기각): recSaveScopeApply() touch() 누락처럼 보였으나 saveRec()이 분기 전 이미 touch(d) 호출함을 확인해 오탐 / sanitizeBackup()의 nwHistory·settings 미검증은 실재하나 둘 다 기기별 로컬 데이터로 의도적 병합 제외 대상이라 클라우드 동기화 위험 없고 표시 문제 수준 / csvRowToImportTxn() findAsset의 완전일치 매칭(normName 미사용)은 실재하는 비일관성이나 이미 '매칭 안 됨' 카운트로 노출돼 있어 침묵하는 버그가 아니고 normName 본 건보다 영향 좁아 plan의 보너스 항목으로만 남김 / homeAlerts() neg 종류가 OS 알림 대상에서 빠진 것은 코드 주석이 설계 의도로 명시 / wireNwCarousel()의 addEventListener는 컨테이너 자체가 매 렌더 innerHTML로 교체돼 리스너도 같이 GC되는 앱 전역 관례와 동일해 누수 아님. 코드 변경 없음(읽기 전용 조사, 서브에이전트가 logic.js 205·95·137-143, index.html 3270-3461·4645-4920·4034-4176·5280-5359·5465-5682·1445-1483·6598-6677 등을 직접 Read/grep으로 재확인).",
+      "commit": null
+    },
+    {
+      "cycle": 141,
+      "phase": "advance",
+      "timestamp": "2026-10-05T09:08:22Z",
+      "summary": "critique(cycle141) 계획대로 normName()(logic.js:205)에 .normalize('NFC')를 trim 전에 추가해 한글 완성형(NFC)/조합형(NFD)이 다른 문자열로 오인되던 근접중복 판정 결함을 고쳤다. 이 함수를 쓰는 addCat/doRenameCat/addOwner/doRenameOwner/saveAsset 근접중복체크/CSV import canon매칭/mergeNameList 9곳 전부가 한 번에 혜택을 받는다. 추가로 normName()을 거치지 않는 완전일치(===) 비교가 남은 입력 캡처 지점(addCat/doRenameCat/addOwner/doRenameOwner/syncAssetInputs의 asName)에도 trim() 뒤에 .normalize('NFC')를 체이닝해 신규/수정 데이터는 애초에 NFC로 저장되게 했다. test/run.js에 NFC/NFD 비교 회귀 테스트 2개(normName, mergeNameList) 추가, APP_VERSION 1.47.51→1.47.52, sw.js CACHE v313→v314. 972/972 테스트 통과. CSV import의 findAsset() 완전일치 불일치(보너스 항목)는 범위 밖이라 보류.",
       "commit": null
     }
   ]
