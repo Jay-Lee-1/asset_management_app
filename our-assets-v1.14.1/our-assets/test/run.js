@@ -10711,6 +10711,61 @@ if (!stockFns || !ratesFns) {
   });
 }
 
+/* ---------- nwChartKeyStep: 순자산/잔액 추이 차트 스크러버(nwhChart·assetBalChart)의
+ * ArrowLeft/ArrowRight/Home/End 키가 쓰는 인덱스 계산 (app-evolve cycle142 critique/advance,
+ * logic.js). whTargetIdx(위)와 같은 clamp 원칙(wrap 없음)이지만, 시작 전엔 선택된 포인트가 없는
+ * 상태(curIdx가 null/-1)가 있다는 점이 다르다 — 차트가 포인터 전용이라 키보드로 처음 들어왔을 땐
+ * "현재 보고 있던 포인트"가 없기 때문. */
+test('nwChartKeyStep: Home/End는 각각 0과 마지막 인덱스로 이동한다', () => {
+  assert.strictEqual(sandbox.nwChartKeyStep(5, 'Home', 12), 0);
+  assert.strictEqual(sandbox.nwChartKeyStep(5, 'End', 12), 11);
+});
+test('nwChartKeyStep: ArrowLeft/ArrowRight는 한 칸씩 이동한다', () => {
+  assert.strictEqual(sandbox.nwChartKeyStep(5, 'ArrowLeft', 12), 4);
+  assert.strictEqual(sandbox.nwChartKeyStep(5, 'ArrowRight', 12), 6);
+});
+test('nwChartKeyStep: 양끝을 넘어가면 wrap 없이 그 자리에 고정(clamp)된다', () => {
+  assert.strictEqual(sandbox.nwChartKeyStep(0, 'ArrowLeft', 12), 0);
+  assert.strictEqual(sandbox.nwChartKeyStep(11, 'ArrowRight', 12), 11);
+});
+test('nwChartKeyStep: curIdx가 null/-1(아직 아무 포인트도 안 본 상태)이면 마지막(가장 최근) 포인트에서 시작한다', () => {
+  assert.strictEqual(sandbox.nwChartKeyStep(null, 'ArrowLeft', 12), 10);
+  assert.strictEqual(sandbox.nwChartKeyStep(null, 'ArrowRight', 12), 11);
+  assert.strictEqual(sandbox.nwChartKeyStep(-1, 'ArrowLeft', 12), 10);
+});
+test('nwChartKeyStep: Home/End는 curIdx가 null이어도 그대로 0/len-1을 반환한다', () => {
+  assert.strictEqual(sandbox.nwChartKeyStep(null, 'Home', 12), 0);
+  assert.strictEqual(sandbox.nwChartKeyStep(null, 'End', 12), 11);
+});
+test('nwChartKeyStep: len<=0(포인트 없음)이면 항상 -1을 반환한다', () => {
+  assert.strictEqual(sandbox.nwChartKeyStep(3, 'ArrowRight', 0), -1);
+  assert.strictEqual(sandbox.nwChartKeyStep(null, 'Home', 0), -1);
+});
+test('nwChartKeyStep: 모르는 key는 curIdx를 그대로 돌려준다(호출부가 "이동 없음"으로 처리)', () => {
+  assert.strictEqual(sandbox.nwChartKeyStep(5, 'PageUp', 12), 5);
+  assert.strictEqual(sandbox.nwChartKeyStep(null, 'Tab', 12), null);
+});
+
+/* ---------- nwhChart/assetBalChart 마크업: 키보드로 스크러버에 닿을 수 있는지(tabindex+onkeydown)
+ * 확인하는 회귀 테스트. 포인터 핸들러만 있던 것(app-evolve cycle135/140)을 cycle142에서 고쳤다 —
+ * 이 둘이 다시 onpointer*만 남고 키보드 경로가 빠지면 조용히 재발할 수 있어 마크업 자체를 지킨다. */
+test('nwhChart: tabindex와 키보드 핸들러(onkeydown)가 있다', () => {
+  assert.ok(
+    src.includes('id="nwhChart" tabindex="0" role="img"') && src.includes('onkeydown="nwChartPeekKey(event)"'),
+    'nwhChart div에 tabindex/onkeydown이 없음 — 키보드 접근 경로가 빠짐'
+  );
+});
+test('assetBalChart: tabindex와 키보드 핸들러(onkeydown)가 있다', () => {
+  assert.ok(
+    src.includes('id="assetBalChart" tabindex="0" role="img"') && src.includes('onkeydown="assetBalPeekKey(event)"'),
+    'assetBalChart div에 tabindex/onkeydown이 없음 — 키보드 접근 경로가 빠짐'
+  );
+});
+test('nwChartPeekKey/assetBalPeekKey가 nwChartKeyStep을 호출해 다음 인덱스를 고른다', () => {
+  assert.ok(src.includes('nwChartKeyStep(_nwPeekIdx,e.key,_nwChartPts.length)'), 'nwChartPeekKey가 nwChartKeyStep을 호출하지 않음');
+  assert.ok(src.includes('nwChartKeyStep(_assetBalPeekIdx,e.key,_assetBalChartPts.length)'), 'assetBalPeekKey가 nwChartKeyStep을 호출하지 않음');
+});
+
 /* ---------- 실행 ---------- */
 // pbkdf2Hash는 Web Crypto(subtle.deriveBits)를 쓰는 비동기 함수라, 러너도 async test를
 // 지원해야 한다 — sync test는 그냥 await해도 즉시 반환되므로 기존 테스트에는 영향 없다.

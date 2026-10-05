@@ -1,19 +1,8 @@
 {
-  "cycle": 142,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "nwHistoryCard/assetBalCard 미니차트 스크러버가 포인터 전용 — 키보드 접근 경로 전혀 없음",
-    "why": "홈 순자산추이 카드(#nwhChart, index.html:2428, cycle135)와 전체내역 계좌필터 잔액추이 카드(#assetBalChart, index.html:2508, cycle140) 둘 다 onpointerdown/move/up/cancel/leave로만 스크러버가 동작하고 tabindex/role/onkeydown이 전혀 없다. rowKeydown(e,fn)(index.html:1488, Enter/Space 처리)이 앱 전역의 다른 모든 커스텀 인터랙티브 행/칩(2372,2593,2607,2615,3023,3029,3493,3667,3672,4444,4557,4724,6554,6561,6590,6689,6694,6699)과 wheel 날짜/월 피커(whKeydown, 6172, 화살표/Home/End)에 일관되게 적용돼 있는데, 이 두 차트 스크러버만 예외. 키보드/스위치 접근 사용자는 기간 세그먼트 버튼과 첫→끝 요약은 보지만 개별 날짜 값을 드릴다운하는 핵심 인터랙션 자체에 닿을 방법이 없음 — 이미 출시된 두 핵심 분석 기능에 걸친 실사용 차단 수준 접근성 공백. test/run.js에 nwChartPeek/assetBalPeek 매칭 0건으로 회귀 커버리지도 없음.",
-    "approach": "1) logic.js에 순수 함수 nwChartKeyStep(curIdx,key,len) 추가 — ArrowRight/ArrowLeft/Home/End를 0..len-1로 클램프해 다음 인덱스 반환(ArrowRight from null은 len-1에서 시작), nwNearestPointIndex처럼 단위테스트 가능하게 side-effect free로 유지. 2) index.html에서 nwChartPeekMove(~2453-2466)/assetBalPeekMove(~2533-2546)에 중복된 \"피크 UI를 idx로 세팅\"(line x1/x2, 라벨 텍스트/위치/클래스, announceLive) 바디를 공용 setter(예: chartPeekRenderAt(ptsArr,lineElId,labelElId,announcePrefix,idx))로 추출해 포인터 핸들러와 신규 키보드 핸들러 양쪽에서 재사용. 3) #nwhChart(2428)에 tabindex=\"0\" role=\"img\" aria-label=\"순자산 추이 차트, 화살표 키로 날짜별 값 탐색\" onkeydown=\"nwChartPeekKey(event)\" 추가, #assetBalChart(2508)에 동일 패턴으로 assetBalPeekKey 추가. 신규 핸들러는 Arrow/Home/End면 공용 setter+nwChartKeyStep 호출, Escape/blur면 기존 *PeekEnd()로 라인/라벨 숨김(기존 pointerleave와 동일). 4) test/run.js에 nwChartKeyStep 순수 테스트 4-6개(첫/끝 클램프, Home/End, null 시작)+ .promo 제거/go popstate 배선 테스트와 같은 extractFunction 문자열패턴검사로 nwHistoryCard/assetBalCard 마크업에 tabindex=\"0\"·onkeydown이 있고 신규 키핸들러가 존재해 step 함수를 호출하는지 확인. 5) 여유가 있으면 runner-up 1(refreshNwHistoryCard 2923-2927 / assetBalPresetSel 2518-2524가 세그먼트 버튼 클릭 후 innerHTML 재렌더로 포커스를 잃는 문제, index.html:3189 주석의 기존 포커스복원 패턴과 동일하게)도 같이 묶어 고칠 수 있음 — 다만 범위 밖이면 생략 가능. DB/스키마 변경 없음(런타임 UI 상태만). APP_VERSION/sw.js CACHE 버전 올림."
-  },
+  "cycle": 143,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 137,
-      "phase": "advance",
-      "timestamp": "2026-10-04T16:30:00.000Z",
-      "summary": "critique(cycle137) 계획대로 isMarketValued(fx/gold/stock) 자산의 수량 변경 기록 부재를 고쳤다(fallback이 아닌 전체 계획 구현). (1) 신규 최상위 DB.assetQtyLog 배열, 각 항목 {id,assetId,date,prevQty,newQty,field}(field는 'fxAmount'|'goldDon'|'stockQty'). (2) saveAsset() editing 분기에 기존 balType 조정 분기의 형제로 else if(isMarketValued(d)) 추가(3288행 부근) — DB.assets[i]=d로 덮어쓰기 전에 qtyField별 prevQty/newQty를 비교해 다르면 touch()된 로그 항목을 push. (3) openAssetHistory(assetId)(4044행 부근)를 isMarketValued(asset) 분기로 갈라 신규 openAssetQtyLog(assetId) 시트(날짜, 부호 있는 Δ, 자산타입별 단위: fx는 통화코드/gold는 '돈'/stock은 '주')로 라우팅해 영원히 빈 화면이던 '내역 보기' 버튼의 dead end를 해소, delGoal/delInquiry와 동일한 confirmSheet+톰스톤+undoToast 패턴의 delAssetQtyLog(id) 추가. (4) 교차 배선: migrate()에 DB.assetQtyLog=DB.assetQtyLog||[] 백필(2035행), mergeRemoteDataIntoLocal()에 goals/inquiries 옆에 DB.assetQtyLog=mergeCollection(...) 추가(1464행), sanitizeBackup()에 id/assetId 없는 레코드 drop+prevQty/newQty를 sanitizeAmount(v,0)로 클램프하는 검증 블록 추가(5480행 부근, inquiries 블록과 동일 모양) — goals/inquiries/catIcon/catVar/deletedType·deletedBal에서 5번 반복된 '신설 컬렉션 병합 배선 누락' 버그 클래스가 이번엔 신설 시점에 바로 막힘. 자산 삭제 시 qty-log는 cascade 삭제하지 않고 보존(txns의 snapshotAssetName과 동일 철학). (5) test/run.js: FUNCTIONS에 openAssetQtyLog/delAssetQtyLog 등록, minimalMergeDB()에 assetQtyLog:[] 추가, 테스트 12개 추가(계획의 5-8개보다 넓게: 수량 변경시 로그 1건 생성 정확성/무변경시 미생성/balType 자산엔 로그 안 남는 회귀가드/openAssetHistory 라우팅/목록 표시 최신순+부호/삭제 확인시트+톰스톤/undo 왕복/두 기기 독립 생성 항목 무손실 병합(local-only+remote-only+둘다 있을 때 최신 우선, 이 버그 클래스를 재현하지 않음을 증명)/톰스톤된 항목이 되살아나지 않음/sanitizeBackup의 id·assetId 누락 drop+배열 아님 방어/prevQty·newQty 음수·비숫자 클램프/정상 케이스 무회귀). node test/run.js 925/925 -> 937/937 통과. APP_VERSION 1.47.43->1.47.44, sw.js CACHE v305->v306. pending_advance_plan을 null로 비움. (general-purpose 서브에이전트에 구현을 위임하고, 오케스트레이팅 세션이 git diff 전체와 테스트 재실행으로 직접 검증함.)",
-      "commit": null
-    },
     {
       "cycle": 138,
       "phase": "develop",
@@ -144,6 +133,13 @@
       "phase": "critique",
       "timestamp": "2026-10-05T12:15:10.397Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(142사이클 동안 다뤄진 항목 전부 + 기각 이력 전달, normName NFC/CSV findAsset 통일 포함). 새로 발견 후 서브에이전트가 직접 재검증: 홈 순자산추이 카드(#nwhChart, index.html:2428, cycle135)와 전체내역 계좌필터 잔액추이 카드(#assetBalChart, index.html:2508, cycle140)의 스크러버가 onpointerdown/move/up/cancel/leave로만 동작하고 tabindex/role/onkeydown이 전혀 없음을 확인 — rowKeydown()(1488)이 앱 전역 다른 모든 커스텀 인터랙티브 요소와 wheel 피커(whKeydown, 6172)에 일관 적용된 것과 달리 이 두 차트만 예외. 키보드 사용자가 두 핵심 분석 기능의 \"스크럽해서 값 보기\" 인터랙션에 전혀 닿을 수 없는 실사용 차단 접근성 공백. test/run.js에 nwChartPeek/assetBalPeek 매칭 0건으로 회귀 커버리지도 없음. pending_advance_plan에 nwChartKeyStep() 순수함수+공용 피크렌더 setter 추출+두 차트 div에 tabindex/onkeydown 추가+회귀테스트 계획 저장. 러너업(참고용, 이번엔 메인 아님): refreshNwHistoryCard/assetBalPresetSel의 세그먼트버튼 클릭 후 innerHTML 재렌더로 포커스 소실(여유 있으면 같이 묶어 고치되 범위 밖이면 생략 가능) / checkNotifyAlerts()의 showNotification 실패 silent catch(주석상 best-effort로 명시돼 계약 내). 이번 패스에서 재확인했으나 버그 아님: tombstone/merge 배선(goals/inquiries/assetQtyLog)은 DB.deletedIds+gcTombstones로 완전 배선됨, exportData는 풀 DB 덤프라 신규 컬렉션 병합 공백 없음. 코드 변경 없음(읽기 전용 조사, 서브에이전트가 index.html 1488·2372·2428·2448·2453·2467·2508·2518-2546·2593-2699·2923-2927·3023-3029·3189·3493·3667-3672·4444·4557·4724·6172·6554-6699 및 test/run.js grep을 직접 Read/확인).",
+      "commit": null
+    },
+    {
+      "cycle": 142,
+      "phase": "advance",
+      "timestamp": "2026-10-05T13:12:43Z",
+      "summary": "critique(cycle142) 계획대로 nwHistoryCard(#nwhChart, index.html)와 assetBalCard(#assetBalChart) 두 미니차트 스크러버에 키보드 접근 경로를 추가했다. logic.js에 순수 함수 nwChartKeyStep(curIdx,key,len) 추가(whTargetIdx와 같은 clamp 원칙이되, curIdx가 null/-1인 시작 상태에선 가장 최근 포인트(len-1)에서 시작). index.html에서 nwChartPeekMove/assetBalPeekMove에 중복돼 있던 '피크 라인/라벨을 idx로 그리기' 바디를 공용 chartPeekRenderAt(pts,lineElId,labelElId,prefix,idx)로 추출해 포인터 핸들러와 신규 키보드 핸들러(nwChartPeekKey/assetBalPeekKey) 양쪽에서 재사용. 두 차트 div에 tabindex=\"0\" role=\"img\" aria-label 추가, onkeydown으로 ArrowLeft/ArrowRight/Home/End 처리, Escape/blur는 기존 *PeekEnd()로 숨김(pointerleave와 동일 동작). CSS에 .nwh-chart:focus-visible 아웃라인도 asset-item 등 기존 커스텀 인터랙티브 요소와 같은 패턴으로 추가. test/run.js에 nwChartKeyStep 순수 테스트 7개 + 마크업/배선 확인 테스트 3개(총 10개) 추가. critique가 러너업으로 남긴 '세그먼트 버튼 클릭 후 포커스 소실'은 범위 밖으로 보류. APP_VERSION 1.47.53→1.47.54, sw.js CACHE v315→v316. node test/run.js 973/973 -> 983/983 통과 (메인 인라인 script 구문 검사 포함).",
       "commit": null
     }
   ]

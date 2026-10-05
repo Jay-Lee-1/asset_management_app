@@ -389,6 +389,23 @@ function whTargetIdx(cur,n,key){
  return cur;
 }
 
+/* 순자산/잔액 추이 차트 스크러버(nwhChart·assetBalChart)의 ArrowLeft/ArrowRight/Home/End 키가
+ * 다음에 보여줄 포인트 인덱스를 고른다. whTargetIdx(위)와 같은 clamp 원칙(wrap 없음)이지만,
+ * 이 차트는 포인터 전용이라 시작 시점엔 선택된 포인트가 없다(curIdx가 null/음수) — 이때 처음
+ * 방향키를 누르면 가장 최근 포인트(len-1, 차트 맨 오른쪽=오늘)에서 시작해 거기서부터 좌우로
+ * 움직이는 게, 포인터로 차트를 짚었을 때 보통 맨 끝부터 보게 되는 것과 가장 가깝다
+ * (app-evolve cycle142 critique/advance — 두 차트 스크러버가 onpointer*로만 동작해 키보드/
+ * 스위치 접근 사용자는 드릴다운 인터랙션에 전혀 닿을 수 없던 공백 해소). */
+function nwChartKeyStep(curIdx,key,len){
+ if(!(len>0))return -1;
+ if(key==='Home')return 0;
+ if(key==='End')return len-1;
+ if(key!=='ArrowLeft'&&key!=='ArrowRight')return curIdx;
+ const c=(curIdx==null||curIdx<0)?len-1:curIdx;
+ if(key==='ArrowRight')return Math.min(len-1,c+1);
+ return Math.max(0,c-1);
+}
+
 /* ================= ASSET BALANCE HISTORY (개별 자산 잔액 추이, 순수) ================= */
 /* from~to 사이를 최대 maxPoints개의 날짜로 균등 샘플링한다(날짜 간격 기준, nwChartPath류와 동일한
  * '일수 비례' 원칙). 구간이 maxPoints보다 짧으면 매일 하나씩(다운샘플링 없이) 반환해 짧은 기간에서

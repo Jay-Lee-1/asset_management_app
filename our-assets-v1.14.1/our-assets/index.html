@@ -297,6 +297,7 @@ html[data-theme="dark"] .alloc-bar i+i::before{background:var(--bg);opacity:.9}
 .switch{width:46px;height:28px;border-radius:var(--r-pill);background:var(--line-2);position:relative;transition:background .2s;flex-shrink:0;appearance:none;-webkit-appearance:none;border:0;padding:0;cursor:pointer}
 .switch:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
 .asset-item:focus-visible,.swipe-content:focus-visible,.manage-row:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}
+.nwh-chart:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:6px}
 .switch.on{background:var(--brand)}
 .switch i{position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;transition:transform .2s var(--spring);box-shadow:0 1px 3px rgba(0,0,0,.2)}
 .switch.on i{transform:translateX(18px)}
@@ -1315,7 +1316,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.53';
+const APP_VERSION='1.47.54';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2425,7 +2426,7 @@ function nwHistoryCard(owner,preset){
    <div class="section-title" style="margin-top:0">순자산 추이</div>
    ${segHTML}
    <div class="nwh-range">${shortDate2(first.date)} ~ ${shortDate2(last.date)} <b class="${up?'':'minus'}">${up?'+':''}${comma(diff)}원</b></div>
-   <div class="nwh-chart" id="nwhChart" onpointerdown="nwChartPeekStart(event)" onpointermove="nwChartPeekMove(event)" onpointerup="nwChartPeekEnd()" onpointercancel="nwChartPeekEnd()" onpointerleave="nwChartPeekEnd()">
+   <div class="nwh-chart" id="nwhChart" tabindex="0" role="img" aria-label="순자산 추이 차트, 화살표 키로 날짜별 값 탐색" onpointerdown="nwChartPeekStart(event)" onpointermove="nwChartPeekMove(event)" onpointerup="nwChartPeekEnd()" onpointercancel="nwChartPeekEnd()" onpointerleave="nwChartPeekEnd()" onkeydown="nwChartPeekKey(event)" onblur="nwChartPeekEnd()">
      <svg viewBox="0 0 300 80" preserveAspectRatio="none" aria-hidden="true" focusable="false">
        <path d="${area}" fill="${color}" opacity="0.12" stroke="none"/>
        <path d="${line}" fill="none" stroke="${color}" stroke-width="2.2" vector-effect="non-scaling-stroke"/>
@@ -2439,6 +2440,18 @@ function nwPresetSel(p){
  if(ST.nwPreset===p)return;
  ST.nwPreset=p;
  refreshNwHistoryCard();
+}
+/* nwhChart/assetBalChart(두 차트 모두 {date,nw} 모양의 pts 배열을 공유)의 스크러버 라인+라벨을
+ * idx 위치로 그린다 — 포인터로 짚었을 때(nwChartPeekMove/assetBalPeekMove)와 키보드로 이동했을 때
+ * (nwChartPeekKey/assetBalPeekKey) 양쪽에서 똑같이 쓰는 공용 렌더러(app-evolve cycle142
+ * critique/advance, 중복 제거 겸 키보드 접근성 추가). */
+function chartPeekRenderAt(pts,lineElId,labelElId,prefix,idx){
+ const p=pts[idx];
+ const totalDays=Math.max(1,daysBetween(pts[0].date,pts[pts.length-1].date));
+ const x=daysBetween(pts[0].date,p.date)/totalDays*300;
+ const line=$(lineElId);if(line){line.setAttribute('x1',x.toFixed(1));line.setAttribute('x2',x.toFixed(1));line.style.display='';}
+ const label=$(labelElId);if(label){label.textContent=`${shortDate2(p.date)} · ${comma(p.nw)}원`;label.style.left=Math.max(4,Math.min(96,x/300*100))+'%';label.classList.add('on');}
+ announceLive(`${shortDate2(p.date)} ${prefix} ${comma(p.nw)}원`);
 }
 let _nwChartPts=null,_nwPeekIdx=null;
 /* 차트를 누르고 있는 동안 가장 가까운 스냅샷의 날짜·금액을 보여준다(포인터 이동마다, 손 떼면 숨김).
@@ -2457,12 +2470,19 @@ function nwChartPeekMove(e){
  const idx=nwNearestPointIndex(_nwChartPts,ratio);
  if(idx<0||idx===_nwPeekIdx)return;
  _nwPeekIdx=idx;
- const p=_nwChartPts[idx];
- const totalDays=Math.max(1,daysBetween(_nwChartPts[0].date,_nwChartPts[_nwChartPts.length-1].date));
- const x=daysBetween(_nwChartPts[0].date,p.date)/totalDays*300;
- const line=$('nwhPeekLine');if(line){line.setAttribute('x1',x.toFixed(1));line.setAttribute('x2',x.toFixed(1));line.style.display='';}
- const label=$('nwhPeekLabel');if(label){label.textContent=`${shortDate2(p.date)} · ${comma(p.nw)}원`;label.style.left=Math.max(4,Math.min(96,x/300*100))+'%';label.classList.add('on');}
- announceLive(`${shortDate2(p.date)} 순자산 ${comma(p.nw)}원`);
+ chartPeekRenderAt(_nwChartPts,'nwhPeekLine','nwhPeekLabel','순자산',idx);
+}
+/* nwChartPeekMove(포인터)와 짝이 되는 키보드 경로 — ArrowLeft/Right로 이전/다음 스냅샷, Home/End로
+ * 양끝, Escape로 숨김(pointerleave와 동일). nwChartKeyStep(logic.js)이 다음 인덱스를 고른다. */
+function nwChartPeekKey(e){
+ if(!_nwChartPts||_nwChartPts.length<2)return;
+ if(e.key==='Escape'){nwChartPeekEnd();return;}
+ if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;
+ e.preventDefault();
+ const idx=nwChartKeyStep(_nwPeekIdx,e.key,_nwChartPts.length);
+ if(idx<0||idx===_nwPeekIdx)return;
+ _nwPeekIdx=idx;
+ chartPeekRenderAt(_nwChartPts,'nwhPeekLine','nwhPeekLabel','순자산',idx);
 }
 function nwChartPeekEnd(){
  _nwPeekIdx=null;
@@ -2505,7 +2525,7 @@ function assetBalCard(assetId,preset){
    <div class="section-title" style="margin-top:0">잔액 추이</div>
    ${segHTML}
    <div class="nwh-range">${shortDate2(first.date)} ~ ${shortDate2(last.date)} <b class="${up?'':'minus'}">${up?'+':''}${comma(diff)}원</b></div>
-   <div class="nwh-chart" id="assetBalChart" onpointerdown="assetBalPeekStart(event)" onpointermove="assetBalPeekMove(event)" onpointerup="assetBalPeekEnd()" onpointercancel="assetBalPeekEnd()" onpointerleave="assetBalPeekEnd()">
+   <div class="nwh-chart" id="assetBalChart" tabindex="0" role="img" aria-label="잔액 추이 차트, 화살표 키로 날짜별 값 탐색" onpointerdown="assetBalPeekStart(event)" onpointermove="assetBalPeekMove(event)" onpointerup="assetBalPeekEnd()" onpointercancel="assetBalPeekEnd()" onpointerleave="assetBalPeekEnd()" onkeydown="assetBalPeekKey(event)" onblur="assetBalPeekEnd()">
      <svg viewBox="0 0 300 80" preserveAspectRatio="none" aria-hidden="true" focusable="false">
        <path d="${area}" fill="${color}" opacity="0.12" stroke="none"/>
        <path d="${line}" fill="none" stroke="${color}" stroke-width="2.2" vector-effect="non-scaling-stroke"/>
@@ -2537,12 +2557,18 @@ function assetBalPeekMove(e){
  const idx=nwNearestPointIndex(_assetBalChartPts,ratio);
  if(idx<0||idx===_assetBalPeekIdx)return;
  _assetBalPeekIdx=idx;
- const p=_assetBalChartPts[idx];
- const totalDays=Math.max(1,daysBetween(_assetBalChartPts[0].date,_assetBalChartPts[_assetBalChartPts.length-1].date));
- const x=daysBetween(_assetBalChartPts[0].date,p.date)/totalDays*300;
- const line=$('assetBalPeekLine');if(line){line.setAttribute('x1',x.toFixed(1));line.setAttribute('x2',x.toFixed(1));line.style.display='';}
- const label=$('assetBalPeekLabel');if(label){label.textContent=`${shortDate2(p.date)} · ${comma(p.nw)}원`;label.style.left=Math.max(4,Math.min(96,x/300*100))+'%';label.classList.add('on');}
- announceLive(`${shortDate2(p.date)} 잔액 ${comma(p.nw)}원`);
+ chartPeekRenderAt(_assetBalChartPts,'assetBalPeekLine','assetBalPeekLabel','잔액',idx);
+}
+/* assetBalPeekMove(포인터)와 짝이 되는 키보드 경로 — nwChartPeekKey(2448행 부근)와 동일한 패턴. */
+function assetBalPeekKey(e){
+ if(!_assetBalChartPts||_assetBalChartPts.length<2)return;
+ if(e.key==='Escape'){assetBalPeekEnd();return;}
+ if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;
+ e.preventDefault();
+ const idx=nwChartKeyStep(_assetBalPeekIdx,e.key,_assetBalChartPts.length);
+ if(idx<0||idx===_assetBalPeekIdx)return;
+ _assetBalPeekIdx=idx;
+ chartPeekRenderAt(_assetBalChartPts,'assetBalPeekLine','assetBalPeekLabel','잔액',idx);
 }
 function assetBalPeekEnd(){
  _assetBalPeekIdx=null;
