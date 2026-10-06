@@ -784,6 +784,8 @@ input[type=date]{box-sizing:border-box}
 .field .unit{font-size:15px;font-weight:700;color:var(--text-2);flex-shrink:0}
 .with-unit .field-clear{flex:1;min-width:0} /* with-unit은 input을 직접 flex item으로 두는 걸 전제하므로, field-clear를 끼워 넣을 때도 같은 너비 배분이 되게 함 */
 .add-inline .field-clear,.cat-edit-row .field-clear{flex:1;min-width:0} /* add-inline/cat-edit-row도 input을 직접 flex item으로 두는 걸 전제 — 위 with-unit과 동일한 이유 */
+.searchbar .field-clear{flex:1;min-width:0}
+.searchbar .field-clear input{width:100%} /* searchbar도 input을 직접 flex item으로 두는 걸 전제하지만, with-unit/add-inline과 달리 .field 조상이 없어 .field input{width:100%}의 보호를 못 받으므로 여기서 직접 명시 (전체내역 검색창 histQ에 지우기 버튼을 추가하며 확인된 차이 — app-evolve cycle149 develop) */
 .amount-in{font-size:26px!important;font-weight:700;text-align:right;height:60px!important;letter-spacing:-.02em}
 .opt-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
 .opt-grid.c3{grid-template-columns:repeat(3,1fr)}
@@ -1319,7 +1321,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.66';
+const APP_VERSION='1.47.67';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4266,7 +4268,7 @@ function renderHistory(){
  ${pageHead('history')}
  ${H.selMode?'':`
  <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
- <div class="searchbar" style="flex:1">${svg('search')}<input id="histQ" aria-label="내역 검색" placeholder="메모·카테고리·자산·금액 검색" value="${H.q}" oninput="ST.hist.q=this.value;histInvalidate();updateHist()"></div>
+ <div class="searchbar" style="flex:1">${svg('search')}<div class="field-clear"><input id="histQ" aria-label="내역 검색" placeholder="메모·카테고리·자산·금액 검색" value="${H.q}" oninput="ST.hist.q=this.value;histInvalidate();updateHist()"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('histQ')">✕</button></div></div>
  <button type="button" class="sch-chip" aria-label="내역 선택" onclick="ST.hist.selMode=true;updateHist();updateSelBottom()">${svg('check',14)}</button>
  </div>
  ${H.assetId?`<button type="button" class="sch-chip on" style="margin-bottom:14px" onclick="histClearAssetFilter()" aria-label="${esc((DB.assets.find(a=>a.id===H.assetId)||{}).name||'계좌')} 필터 해제">${esc((DB.assets.find(a=>a.id===H.assetId)||{}).name||'계좌')} ${svg('x',14)}</button>
@@ -4280,6 +4282,7 @@ function renderHistory(){
  <div id="histList"></div>
  <div style="height:8px"></div>`;
  updateHist();
+ try{fcWire()}catch(e){} /* histQ의 지우기(×) 버튼 배선 — openSheet()와 달리 전체내역은 시트가 아니라 탭 화면이라 그쪽 자동배선을 못 타므로 여기서 직접 호출 */
  requestAnimationFrame(fitAll);
 }
 function fmtDot(ds){return ds.slice(0,4)+'.'+(+ds.slice(5,7))+'.'+(+ds.slice(8,10))}

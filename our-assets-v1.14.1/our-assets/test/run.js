@@ -10340,6 +10340,22 @@ test('renderHistory: 일치하는 거래가 없으면 예외 없이 실행되고
   assert.ok(html.includes('메모·카테고리·자산·금액 검색'), '전체 내역 탭 검색바가 렌더돼야 함');
   assert.ok(sandbox.histListEl.innerHTML.includes('이 기간에는 내역이 없어요'), '내역이 없으면 빈 상태 안내가 나와야 함');
 });
+/* app-evolve cycle149 develop: histQ(전체내역 검색창)는 txAmt/budgetIn/newOwner 등 다른 텍스트
+ * 입력란과 달리 시트가 아니라 메인 탭 화면에 있어, openSheet()가 매번 호출해주는 fcWire() 자동
+ * 배선(5952행)을 타지 못해 field-clear(×) 버튼 관례에서 혼자 빠져 있었다 — renderHistory()가
+ * 직접 fcWire()를 호출하도록 고치고(아래 두 번째 테스트) histQ를 다른 입력란과 같은
+ * .field-clear+fc-x 구조로 감쌌다(이 테스트). */
+test('renderHistory: histQ(검색창)도 다른 텍스트 입력란과 동일하게 field-clear(×) 버튼이 있다', () => {
+  setupHistoryDB();
+  sandbox.renderHistory();
+  const html = sandbox.pageHistoryEl.innerHTML;
+  assert.ok(html.includes('<div class="field-clear"><input id="histQ"'), 'histQ 입력이 field-clear로 감싸져 있지 않음');
+  assert.ok(html.includes(`<button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('histQ')">`), 'histQ에 fc-x 지우기 버튼의 clrInput 연결이 없음');
+});
+test('renderHistory: 함수 본문이 fcWire()를 호출해 histQ의 지우기 버튼을 실제로 배선한다(시트가 아닌 탭 화면이라 openSheet()의 자동 배선을 못 타므로 직접 호출해야 함)', () => {
+  const body = extractFunction('renderHistory');
+  assert.ok(/fcWire\(\)/.test(body), 'renderHistory()가 fcWire()를 호출하지 않음');
+});
 test('renderHistory: 실제 거래가 있으면 메모/금액이 histList에, 건수가 histTotals에 실제로 렌더된다', () => {
   setupHistoryDB();
   sandbox.DB.assets = [{ id: 'a1', name: '주계좌', owner: '나', type: 'cash', baseAmount: 500000 }];
