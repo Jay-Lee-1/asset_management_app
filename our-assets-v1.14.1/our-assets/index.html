@@ -1321,7 +1321,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.70';
+const APP_VERSION='1.47.71';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6820,7 +6820,9 @@ function toggleOsNotify(){
   DB.settings.osNotify=true;save();renderCurrent();
   toast('OS 알림을 켰어요 · '+notifyReliabilityMsg(notifyReliabilityTier(IS_IOS)));
   checkNotifyAlerts();
- });
+ }).catch(()=>toast('알림 권한 요청에 실패했어요')); /* 권한 정책 차단 등으로 이 Promise가 reject되면(.then만 있던 과거엔
+   unhandled rejection으로 콘솔에만 남고) 토글을 눌러도 화면이 그대로라 사용자는 버튼이 멈췄다고 오인했다 — 실패도
+   명시적으로 알려준다(app-evolve cycle151 develop) */
 }
 function homeAlertCard(al){
  if(al.kind==='cloudConflict')return `<button class="home-alert" onclick="openAccountSheet()">

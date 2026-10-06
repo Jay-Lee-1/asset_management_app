@@ -2149,6 +2149,16 @@ test('toggleOsNotify: 켤 때 토스트가 notifyReliabilityMsg(notifyReliabilit
   assert.ok(extractFunction('toggleOsNotify').includes("toast('OS 알림을 켰어요 · '+notifyReliabilityMsg(notifyReliabilityTier(IS_IOS)))"), 'toggleOsNotify 토스트가 notifyReliabilityMsg를 쓰지 않음');
   assert.ok(!src.includes('앱을 닫아둬도'), '과거의 과잉 약속 문구("앱을 닫아둬도")가 소스에 남아있음');
 });
+// Notification.requestPermission()은 권한 정책 차단 등으로 reject될 수 있는데, .then()만 있고
+// .catch()가 없으면 그 실패가 콘솔의 unhandled rejection으로만 남고 화면엔 아무 반응이 없다 —
+// 토글을 눌렀는데 꺼진 채 그대로라 사용자는 버튼이 멈췄다고 오인한다(app-evolve cycle151 develop).
+// extractFunction으로 몸통만 좁혀 .then(...) 뒤에 에러 토스트를 띄우는 .catch(...)가 실제로
+// 체이닝돼 있는지 검사한다(파일 전체 src.includes()면 다른 함수의 비슷한 catch에도 속아 통과함).
+test('toggleOsNotify: Notification.requestPermission()이 reject돼도 unhandled rejection으로 묻히지 않고 .catch()로 실패 토스트를 띄운다', () => {
+  const body = extractFunction('toggleOsNotify');
+  assert.ok(/\.then\([^]*?\}\)\.catch\(\(\)=>toast\(/.test(body), 'toggleOsNotify의 requestPermission() 체인에 .catch() 실패 처리가 없음');
+  assert.ok(!/\.then\([^]*?\}\);\s*\}$/.test(body), 'toggleOsNotify가 .catch() 없이 .then()만으로 끝남(reject 시 무반응)');
+});
 test('renderMenu: OS 알림이 켜져 있으면 "알림 · 기준" 그룹 아래 실제 능력 고지 캡션이 상시 노출된다', () => {
   const body = extractFunction('renderMenu');
   assert.ok(body.includes("g.cap==='알림 · 기준'&&DB.settings.osNotify"), 'renderMenu가 OS 알림 캡션을 조건부로 렌더하지 않음');
