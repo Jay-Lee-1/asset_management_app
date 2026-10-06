@@ -1,15 +1,12 @@
 {
   "cycle": 145,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "OS 알림 '앱을 닫아둬도 알려드려요' 약속과 실제 best-effort(포그라운드 setInterval, 푸시 서버 없음) 구현 간 불일치 해소",
+    "why": "index.html:6699-6702의 개발자 주석이 스스로 인정하는 한계(백그라운드 탭/PWA가 메모리에 살아있을 때만 동작, 완전 종료 시 보장 없음, 서버 푸시 없음)와 index.html:6723의 사용자 노출 토스트('앱을 닫아둬도 ... 알려드려요')가 정면으로 어긋난다. 이 기능이 지키려는 알림(이체 확인/저축 만기/예산 초과, notifyAlertInfo가 '그날 놓치면 의미 없는' 것만 고른 이유 — index.html:6668-6670)일수록 사용자가 앱을 닫아둔 사이 조용히 유실될 위험이 크고, 설정 화면(index.html:4584 토글 행)에는 이 한계를 알리는 장치가 전혀 없어 사용자가 신뢰했다가 뒤통수를 맞을 수 있다. 단순 문구 수정만으로는 기능의 존재 이유가 사라지므로, 실제 보장 범위를 넓히는 구조적 조치와 함께 가야 한다.",
+    "approach": "1) logic.js에 순수 함수 notifyReliabilityTier(isIOS, periodicSyncSupported) 추가 — 'foreground-tab'|'background-tab'|'periodic-background' 중 하나를 반환하고, 각 tier에 대응하는 한국어 설명 문구를 매핑하는 헬퍼(예: notifyReliabilityMsg(tier))도 순수 함수로 둔다(테스트: iOS/비iOS × periodicSync 지원여부 4가지 조합, 각각 올바른 tier/문구). 2) index.html boot()에서 navigator.serviceWorker.ready 이후 'periodic-background-sync' permission을 feature-detect(navigator.permissions.query, try/catch로 미지원 브라우저 방어)하고 IS_IOS(index.html:5303)와 함께 PERIODIC_SYNC_SUPPORTED 전역에 기록. 3) toggleOsNotify()(index.html:6717-6726)의 성공 토스트(6723행)를 notifyReliabilityMsg(notifyReliabilityTier(IS_IOS,PERIODIC_SYNC_SUPPORTED))로 교체해 '앱을 닫아둬도'라는 과잉 약속을 제거하고, 실제로 periodicsync 등록에 성공했다면(Android/Chrome 등) navigator.serviceWorker.ready.then(reg=>reg.periodicSync.register('check-alerts',{minInterval:60*60*1000})) 호출을 try/catch로 best-effort 등록. 4) 설정 화면 OS 알림 행(index.html:4584 주변) 아래에 상시 노출되는 1줄 캡션을 추가해(토스트는 1회성이라 금방 잊히므로) 토글이 켜져 있는 동안 늘 같은 tier 문구가 보이게 한다. 5) 토글을 켠 직후에만 노출되는 '테스트 알림 보내기' 버튼을 추가(reg.showNotification으로 즉시 더미 알림을 쏴서 권한·실제 동작을 바로 확인시켜줌 — 특히 iOS에서 설정 화면에서 알림을 막아둔 경우를 설치 당시에 바로 알게 함). 6) sw.js에 'periodicsync' 이벤트 리스너를 추가하되, 서비스워커는 localStorage에 접근할 수 없으므로 save()(index.html:2070)가 알림 판정에 필요한 최소 슬라이스만(펜딩 이체 id/날짜, 저축 만기 자산, 이번 달 예산초과 카테고리 — homeAlerts의 confirm/mat/budgetOver 세 종류만) 작은 IndexedDB 스토어(예: 'asset_app_alert_mirror')에 함께 써두고, periodicsync 핸들러가 그 미러만 읽어 showNotification을 호출하게 한다(DB 전체를 옮기는 대규모 IndexedDB 마이그레이션이 아니라 이 한 기능에 필요한 최소 사본만). 7) 테스트: notifyReliabilityTier/notifyReliabilityMsg 순수 함수 테스트(test/run.js에 추가, 기존 varyingRecs/budgetProgress 테스트 옆에 같은 스타일로), 그리고 미러 슬라이스를 만드는 순수 함수(예: buildAlertMirror(db,today) — homeAlerts를 참고해 DB/DOM 의존 없이 세 종류만 추출)에 대한 pending/mat/budgetOver 각 케이스 테스트. 범위가 크면 1) 문구 정직화(1,3,4번)만 이번 사이클에 완결하고 periodicsync/IndexedDB 미러(2,5,6번)는 새 critique 계획으로 분리해도 됨 — 작은 리뷰 가능한 diff 우선."
+  },
   "history": [
-    {
-      "cycle": 140,
-      "phase": "critique",
-      "timestamp": "2026-10-05T04:10:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(140사이클 동안 다뤄진 항목 전부 제외 지시: Enter-to-submit 시리즈/touchSave 가드/CSV 이체/지출분석 drill-down/문의하기+sanitizeBackup/자산 그룹 내 재배열+경계버그/DB 병합 누락 5건/순자산 추이 기간선택+탭/날짜선택기 접근성/선택모드 일괄 카테고리 변경/Pro 프로모 제거/탭전환 백버튼/assetQtyLog/openAssetPicker 빈 상태/ST.hist.owner 동기화 포함, 기각 이력도 전달). 새로 발견 후 서브에이전트가 직접 소스 재검증: renderAssetSheet()(index.html:3214-3260)는 cash/savings/realestate/etc/pension/debt 자산에 \"현재 금액\" 입력 필드와 토글만 보여주고, assetSubline()(2814-2821)도 fx/gold/stock/savings 외 타입은 라벨만 반환해 과거 추이 정보가 전혀 없음을 확인. 홈의 순자산 추이 카드(nwHistoryCard, cycle135에서 기간선택+탭 인터랙션까지 완성됨)는 가구 전체/귀속별 \"합계\" 추이만 보여주고, openAssetHistory()(4056-4061)도 cash류는 거래 리스트만·isMarketValued는 수량 변경 로그만 보여줄 뿐 개별 통장 하나의 잔액이 시간에 따라 어떻게 움직여왔는지는 앱 어디서도 그래프로 볼 수 없음을 재확인 — 가계부 앱의 핵심 효용(이 통장이 늘고 있는지/줄고 있는지 한눈에)이 자산 단위에서 비어 있음. balanceAt/balancesUpTo(2167-2210)가 이미 거래 재생으로 임의 과거 날짜의 자산별 잔액을 순수 계산하고 nwChartPath(2283-2301)가 이미 범용 svg path 순수함수라 저장 스키마 변경 없이 구현 가능함도 확인. pending_advance_plan에 자산 상세(openAssetHistory/renderAssetSheet)에 미니 잔액 추이 차트 추가 계획 저장(상세는 pending_advance_plan 참고, fx/gold/stock은 평가액 성격이 달라 스코프 제외). 러너업(기각): SRI 미작성 TODO(1308-1315) — curl로 cdn.jsdelivr.net/t1.kakaocdn.net이 이 환경 proxy에서 여전히 403(CONNECT tunnel failed)으로 막혀 있음을 재확인, 이전 사이클 블로커 그대로라 해시 계산 불가 / cycle139 review가 지적한 splitIdx 주석 오류(2918-2924 부근, 기능 영향 없는 순수 주석 오탈자) — 우선순위 낮아 보류 / fx/gold/stock 시세 미확인 표시 부재 — rateWasUnknown 즉시 동기화(3320)+rateStatusText(2714-2721)로 공백 작음. 코드 변경 없음(읽기 전용 조사, 서브에이전트가 index.html 2167-2210·2283-2301·2393-2416·2602-2721·2809-2821·2900-2985·3065-3074·3214-3260·3320·3365-3385·4036-4125·4593-4687·5183-5260·1308-1315, sw.js, logic.js 전체를 직접 Read/grep으로 재확인, SRI curl 재검증 포함).",
-      "commit": null
-    },
     {
       "cycle": 140,
       "phase": "advance",
@@ -140,6 +137,13 @@
       "phase": "review",
       "timestamp": "2026-10-06T00:30:00.000Z",
       "summary": "develop 커밋(4bc0028, renderTxSheet rc분기 txAmt에 Enter-제출 추가)을 검토. recSave()(index.html:3985)를 직접 Read해 twGuard() 가드와 amt 비어있을 때 toast 후 안전 반환하는 경로를 확인, Enter로 조기 호출돼도 부작용(중복 저장/예외) 없음을 재확인. 같은 시트의 다른 분기(메인 txAmt)와 rAmt/goalAmt/asCostBasis 등 기존 Enter-제출 컨벤션과 동일한 onkeydown 패턴(if(event.key==='Enter'&&!event.isComposing))이 그대로 적용됨을 diff로 확인. node test/run.js 재실행 997/997 통과(신규 회귀 테스트 1건 포함). 코드 변경 없음 — 이상 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 145,
+      "phase": "critique",
+      "timestamp": "2026-10-06T01:40:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(cycle140-145 히스토리 전부 + 기각 이력 전달). 새로 발견 후 서브에이전트가 index.html 6699-6726·6668-6670·7165·7384·4584·5303, sw.js 전체, netlify.toml, netlify/functions/*.js, manifest.webmanifest를 직접 Read/grep으로 재검증: OS 알림 토글을 켤 때 뜨는 토스트(index.html:6723) 문구가 '앱을 닫아둬도 ... 알려드려요'라고 명시적으로 약속하는데, 실제 구현(checkNotifyAlerts, index.html:6699-6716)은 document.hidden일 때만 동작하는 순수 foreground setInterval(7165행, 5분 주기)이고 Push API/VAPID/periodicSync 등록이 전체 레포에 전혀 없음(grep 0건, sw.js에 push 리스너 없음)을 확인 — 코드 자체의 개발자 주석(6699-6702)도 '완전 종료(특히 iOS Safari PWA)까지는 보장 못함, best-effort'라고 스스로 인정하는 한계가 사용자 노출 문구와 정면으로 어긋남. notifyAlertInfo가 챙기는 알림(이체확인/저축만기/예산초과, 6668-6670 주석: '그날 놓치면 의미 없는' 것만 선정)일수록 앱이 완전 종료된 사이 조용히 유실될 위험이 크고, 설정 화면 토글 행(4584)엔 이 한계를 알리는 장치가 전혀 없음. pending_advance_plan에 (1)notifyReliabilityTier/notifyReliabilityMsg 순수 함수로 토스트·설정화면 캡션 문구를 실제 능력에 맞게 정직화 (2)Android/Chrome 등 periodicSync 지원 시 best-effort로 추가 등록 (3)sw.js periodicsync 리스너 + 알림 판정에 필요한 최소 슬라이스(펜딩이체/저축만기/예산초과)만 담는 IndexedDB 미러 (4)테스트 알림 보내기 버튼 (5)회귀테스트 계획을 저장, 범위가 크면 문구 정직화만 이번 사이클에 완결하고 나머지는 분리해도 된다고 명시(상세는 pending_advance_plan 참고). 러너업(기각): 예산(budgetHistory)이 귀속 무관 전역인 것(spendByCategory/openBudgetPrompt 주석이 설계 의도로 명시) / 단일 7422줄 index.html 모놀리식 구조(이미 logic.js 분리 완화책 있음, 구체적 결함 아님) / sw.js 캐시버전 수동 bump(가정성 리드, staleness 증거 없음) / RANGE_FROM 고정 하한(이미 rangeCount로 고지, 긴급성 낮음) / 자산 재배열 키보드 접근성(moveGroup/moveAsset 버튼으로 이미 완전한 대안 존재, 가짜 리드). 코드 변경 없음(읽기 전용 조사).",
       "commit": null
     }
   ]
