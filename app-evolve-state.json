@@ -1,8 +1,15 @@
 {
   "cycle": 149,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 149,
+      "phase": "review",
+      "timestamp": "2026-10-06T16:05:00.000Z",
+      "summary": "cycle149 develop(1e48085, histQ 전체내역 검색창에 field-clear(×) 버튼 추가)을 검토. CSS 추가(.searchbar .field-clear{flex:1;min-width:0}, .searchbar .field-clear input{width:100%})가 안전한지 grep으로 .searchbar 사용처를 전부 확인 — 실제 input이 있는 곳은 histQ 한 곳뿐이고 나머지(#m-search, 5157행)는 span이라 영향 없음. clrInput()/fcToggle()/fcWire()(index.html:3503-3510) 소스를 직접 Read해 dispatchEvent(new Event('input',{bubbles:true}))가 기존 oninput=\"ST.hist.q=this.value;histInvalidate();updateHist()\"도 그대로 트리거함을 확인, renderHistory() 끝의 try{fcWire()}catch(e){}가 updateHist() 호출 뒤에 위치해 DOM이 이미 그려진 상태에서 배선됨을 확인. 신규 테스트 2건(마크업 구조 확인 + extractFunction 기반 fcWire() 호출 확인)도 실제로 의미 있는 검증임을 재확인. node test/run.js 재실행 1026/1026 통과. 추가로 고칠 버그 없음 — 이상 없음.",
+      "commit": null
+    },
     {
       "cycle": 149,
       "phase": "develop",
@@ -135,13 +142,6 @@
       "timestamp": "2026-10-05T13:12:43Z",
       "summary": "critique(cycle142) 계획대로 nwHistoryCard(#nwhChart, index.html)와 assetBalCard(#assetBalChart) 두 미니차트 스크러버에 키보드 접근 경로를 추가했다. logic.js에 순수 함수 nwChartKeyStep(curIdx,key,len) 추가(whTargetIdx와 같은 clamp 원칙이되, curIdx가 null/-1인 시작 상태에선 가장 최근 포인트(len-1)에서 시작). index.html에서 nwChartPeekMove/assetBalPeekMove에 중복돼 있던 '피크 라인/라벨을 idx로 그리기' 바디를 공용 chartPeekRenderAt(pts,lineElId,labelElId,prefix,idx)로 추출해 포인터 핸들러와 신규 키보드 핸들러(nwChartPeekKey/assetBalPeekKey) 양쪽에서 재사용. 두 차트 div에 tabindex=\"0\" role=\"img\" aria-label 추가, onkeydown으로 ArrowLeft/ArrowRight/Home/End 처리, Escape/blur는 기존 *PeekEnd()로 숨김(pointerleave와 동일 동작). CSS에 .nwh-chart:focus-visible 아웃라인도 asset-item 등 기존 커스텀 인터랙티브 요소와 같은 패턴으로 추가. test/run.js에 nwChartKeyStep 순수 테스트 7개 + 마크업/배선 확인 테스트 3개(총 10개) 추가. critique가 러너업으로 남긴 '세그먼트 버튼 클릭 후 포커스 소실'은 범위 밖으로 보류. APP_VERSION 1.47.53→1.47.54, sw.js CACHE v315→v316. node test/run.js 973/973 -> 983/983 통과 (메인 인라인 script 구문 검사 포함).",
       "commit": null
-    },
-    {
-      "cycle": 143,
-      "phase": "develop",
-      "timestamp": "2026-10-05T14:05:00.000Z",
-      "summary": "general-purpose 서브에이전트로 cycle142 critique가 러너업(이번엔 메인 아님, 여유 있으면 같이 묶어 고치되 범위 밖이면 생략 가능)으로 남겨뒀던 세그먼트 버튼 클릭 후 포커스 소실을 해소. refreshNwHistoryCard()(nwHistoryCard)와 assetBalPresetSel()(assetBalCard) 둘 다 1개월/3개월/1년/전체 기간 세그먼트 버튼을 누르면 컨테이너 전체를 innerHTML로 통째로 교체하는데, 이때 클릭/키보드 포커스를 받고 있던 버튼 DOM 노드 자체가 사라져 브라우저가 포커스를 조용히 <body>로 떨어뜨림을 확인 — cycle139(날짜선택기)·cycle142(차트 스크러버) 접근성이 바로 다음 상호작용에서 끊기는 상황. closeSheet()의 _sheetReturnFocus 복귀(5976행)와 같은 원칙으로 수정: innerHTML 교체 직전 el.contains(document.activeElement)로 포커스가 카드 안에 있었는지만 기억해두고, 재렌더 후 포커스가 있었을 때만 새로 그려진 .on(현재 선택 preset) 버튼으로 focus() 복귀(카드 밖에서 트리거된 호출 경로는 hadFocus=false라 기존 동작과 동일, 회귀 없음). test/run.js에 두 함수 모두 DOM-mutating이라 FUNCTIONS vm 추출 대상이 아니므로 cycle142 키보드 접근 테스트와 동일한 소스 패턴 검사 방식으로 회귀 테스트 2개 추가 — 수정 전 코드로 되돌려 둘 다 실제 FAIL함을 직접 검증한 뒤 복구. node test/run.js 983/983 -> 985/985 통과(메인 인라인 script 구문 검사 포함). APP_VERSION 1.47.54->1.47.55, sw.js CACHE v316->v317.",
-      "commit": "f71c40bafefaa8c15388ac220fcd688882e49a4d"
     }
   ]
 }
