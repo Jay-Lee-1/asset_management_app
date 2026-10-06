@@ -1,12 +1,15 @@
 {
-  "cycle": 149,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "balancesUpTo()/balanceAt() 날짜별 전체 재스캔 O(거래수×조회날짜수) 성능 개선 — 배치 포인터 누적 방식으로 전환",
-    "why": "balancesUpTo(dateStr)(index.html:2233-2253)는 호출마다 allTxns(RANGE_FROM,RANGE_TO) 전체(반복거래 확장 포함)를 처음부터 순회해 그 시점 잔액맵을 만들고 dateStr 단위로만 캐시한다(_balCache). RANGE_TO=addDays(TODAY,760)로 날이 지날수록 스캔 창이 계속 늘어난다. planNegatives()(6371-6389, 홈 탭을 열 때마다·save() 직후마다 전체 Plan 자산×여러 날짜), lowestInMonth()/planRowsHTML()/planTrackHTML()(Plan 탭 렌더당 한 달~3개월치 거래일), findDonors()(현금성 자산마다 1회)가 모두 '같은 렌더 안에서 서로 다른 날짜'로 balanceAt()을 반복 호출해 매번 전체 재스캔이 일어난다. save()가 invalidateBalances()로 캐시를 매번 비우므로 거래가 쌓인 사용자일수록 홈/Plan 탭이 체감 가능하게 느려지는 구조적 문제. 같은 '날짜마다 처음부터 재스캔' 패턴을 이미 assetBalanceSeries()(logic.js:451-469)에서 정렬+포인터 누적(O(n+m))으로 고친 전례가 있어, 같은 기법을 더 자주 호출되는 balancesUpTo 계열에도 적용할 가치가 있다.",
-    "approach": "1) assetBalanceSeries와 동일한 정렬+포인터 누적 패턴으로 '여러 날짜를 한 번에' 계산하는 배치 함수(예: balancesAtDates(dateList) 또는 balancesUpTo를 날짜 배열 입력으로 확장)를 logic.js 또는 index.html에 추가한다. 2) planNegatives(6377-6386), lowestInMonth(4449-4453), planRowsHTML(4514), findDonors(6511-6513) 등 '같은 자산/같은 렌더 내 여러 날짜'를 조회하는 호출부를 배치 API로 교체하되, 다른 단발 조회 호출부(3195, 3219, 4463 등)의 balanceAt(id,dateStr) 시그니처는 그대로 유지한다. 3) 동작/출력은 완전히 동일해야 하므로 test/run.js의 balanceAt/balancesUpTo/planNegatives/lowestInMonth 관련 기존 테스트(약 75건)가 리팩터 후에도 그대로 통과해야 한다(현재 1026/1026). 4) 화면·문구·DB 스키마 변화 없음 — 캐시/루프 구조 교체만. APP_VERSION/sw.js CACHE 버전은 로직 변경이 있으므로 bump한다."
-  },
+  "cycle": 150,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 149,
+      "phase": "advance",
+      "timestamp": "2026-10-06T18:05:00.000Z",
+      "summary": "critique(cycle149) 계획대로 balancesUpTo()/balanceAt() 날짜별 전체 재스캔 성능 문제를 고쳤다. balanceAt()(index.html:2254) 바로 뒤에 balancesAtDates(dateList)를 신규 추가 — assetBalanceSeries()(logic.js:451-469, 자산 하나·여러 날짜)와 같은 '정렬+포인터 누적' 원칙을, balancesUpTo()와 동일한 규칙(기준액+upto 클램프+dateStr>TODAY 기준 proj별 미확인 이체 포함 여부+부채 부호 반전)으로 '모든 자산·여러 날짜'에 한 번에 적용한다. proj(dateStr>TODAY)가 날짜마다 다를 수 있어 allTxns(RANGE_FROM,RANGE_TO)를 한 번만 불러 정렬한 뒤 proj=false/true 두 그룹으로 나눠 각각 독립적으로 포인터를 누적한다. balanceAt()과 동일한 폴백 규칙(맵에 없으면 assetBase(a), 자산 자체가 없으면 0)을 재현하는 balanceAtFromMap(balMap,dateStr,id) 헬퍼도 함께 추가. 계획이 지목한 호출부 중 lowestInMonth(4449-4453)/planRowsHTML(4514)/planNegatives(6377-6389) 세 곳을 날짜별 balanceAt() 반복 호출에서 balancesAtDates() 단일 배치 호출로 교체(planNegatives는 플랜 대상 통장 전체의 날짜를 한 데 모아 단 한 번의 배치로 계산하도록 추가로 묶었다). findDonors(6511-6513, 네 번째 호출부)는 실제로는 호출당 날짜가 하나뿐이고 balancesUpTo()의 기존 단일 키 캐시(_balCache)가 이미 그 한 날짜의 전체 맵을 자산 전체에 걸쳐 캐싱해 두 번째 자산부터는 재스캔이 전혀 없었음을 코드 추적으로 재확인 — 배치로 바꿔도 이득이 없어(오히려 약간의 오버헤드만 추가) 그대로 두고 이유를 주석 대신 커밋 메시지에 남김. planTrackHTML/planBalCard는 별도로 건드리지 않았으나 내부에서 부르는 lowestInMonth가 배치화됐으므로 자동으로 혜택을 받는다. test/run.js FUNCTIONS에 balancesAtDates/balanceAtFromMap 추가, 회귀 테스트 6건 신규(배치 결과가 balanceAt()/balancesUpTo()와 완전히 동일한지, proj=false/true가 같은 배치에 섞여도 각각 올바른 미확인 이체 규칙을 적용하는지, 날짜 수와 무관하게 allTxns() 호출이 1회로 고정되는지, balanceAtFromMap의 폴백 규칙, lowestInMonth/planRowsHTML/planNegatives 세 호출부 모두 allTxns() 호출이 날짜 수와 무관하게 상수로 고정되는지). 첫 구현에서 발견: 새 테스트 2건이 직전 반복거래 _recCache 회귀 테스트(2026-01-01~RANGE_TO 매일 지출 반복거래)가 남긴 (RANGE_FROM,RANGE_TO) 키의 스테일 캐시를 그대로 물려받아 500000 대신 334000이 나오는 실패를 직접 겪음 — _balCache.clear()만으로는 부족하고 _recCache.clear()도 같이 비워야 함을 확인해 해당 테스트들에 추가(값을 서로 비교하는 테스트는 같은 스테일 데이터를 양쪽이 공유해 우연히 통과했었음, 절대값을 확인하는 테스트에서만 드러남). APP_VERSION 1.47.67->1.47.68, sw.js CACHE v329->v330. node test/run.js 1026/1026 -> 1031/1031 통과(메인 인라인 script 구문 검사 포함, 오케스트레이팅 세션이 diff를 직접 Read로 재확인 후 재실행해 커밋).",
+      "commit": null
+    },
     {
       "cycle": 149,
       "phase": "critique",
@@ -138,13 +141,6 @@
       "phase": "review",
       "timestamp": "2026-10-05T11:08:30.456Z",
       "summary": "cycle142 develop(202690d, CSV import findAsset() normName() 통일)을 diff/코드 검토. normName()이 NFC 정규화+trim+공백축약+lowercase를 수행함을 확인, csvRowToImportTxn의 category 매칭(buildImportPreview)이 이미 같은 normName() 패턴을 쓰고 있어 일관성 있는 수정임을 확인. node test/run.js 973/973 통과. 추가로 고칠 버그 없음 — 이상 없음.",
-      "commit": null
-    },
-    {
-      "cycle": 142,
-      "phase": "critique",
-      "timestamp": "2026-10-05T12:15:10.397Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(142사이클 동안 다뤄진 항목 전부 + 기각 이력 전달, normName NFC/CSV findAsset 통일 포함). 새로 발견 후 서브에이전트가 직접 재검증: 홈 순자산추이 카드(#nwhChart, index.html:2428, cycle135)와 전체내역 계좌필터 잔액추이 카드(#assetBalChart, index.html:2508, cycle140)의 스크러버가 onpointerdown/move/up/cancel/leave로만 동작하고 tabindex/role/onkeydown이 전혀 없음을 확인 — rowKeydown()(1488)이 앱 전역 다른 모든 커스텀 인터랙티브 요소와 wheel 피커(whKeydown, 6172)에 일관 적용된 것과 달리 이 두 차트만 예외. 키보드 사용자가 두 핵심 분석 기능의 \"스크럽해서 값 보기\" 인터랙션에 전혀 닿을 수 없는 실사용 차단 접근성 공백. test/run.js에 nwChartPeek/assetBalPeek 매칭 0건으로 회귀 커버리지도 없음. pending_advance_plan에 nwChartKeyStep() 순수함수+공용 피크렌더 setter 추출+두 차트 div에 tabindex/onkeydown 추가+회귀테스트 계획 저장. 러너업(참고용, 이번엔 메인 아님): refreshNwHistoryCard/assetBalPresetSel의 세그먼트버튼 클릭 후 innerHTML 재렌더로 포커스 소실(여유 있으면 같이 묶어 고치되 범위 밖이면 생략 가능) / checkNotifyAlerts()의 showNotification 실패 silent catch(주석상 best-effort로 명시돼 계약 내). 이번 패스에서 재확인했으나 버그 아님: tombstone/merge 배선(goals/inquiries/assetQtyLog)은 DB.deletedIds+gcTombstones로 완전 배선됨, exportData는 풀 DB 덤프라 신규 컬렉션 병합 공백 없음. 코드 변경 없음(읽기 전용 조사, 서브에이전트가 index.html 1488·2372·2428·2448·2453·2467·2508·2518-2546·2593-2699·2923-2927·3023-3029·3189·3493·3667-3672·4444·4557·4724·6172·6554-6699 및 test/run.js grep을 직접 Read/확인).",
       "commit": null
     }
   ]

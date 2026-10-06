@@ -1321,7 +1321,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.67';
+const APP_VERSION='1.47.68';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2255,6 +2255,50 @@ function balanceAt(id,dateStr){ /* 특정 일자 기준 잔액 — 예정·반�
  const a=DB.assets.find(x=>x.id===id);if(!a)return 0;
  const map=balancesUpTo(dateStr);
  return map[id]!=null?map[id]:assetBase(a);
+}
+/* balancesUpTo()/balanceAt()와 동일한 재생 규칙(기준액 + upto 클램프 + proj에 따른 미확인 이체
+   제외 + 부채 부호 반전)을, assetBalanceSeries()(logic.js, 자산 하나·여러 날짜용)와 같은
+   정렬+포인터 누적 원칙으로 '모든 자산·여러 날짜'에 대해 한 번에 계산한다. planNegatives()/
+   lowestInMonth()/planRowsHTML()처럼 같은 렌더 안에서 서로 다른 날짜로 balanceAt()을 거듭 부르는
+   호출부는, balancesUpTo()의 단일 dateStr 캐시(_balCache)가 날짜마다 다른 키라 매번
+   allTxns(RANGE_FROM,RANGE_TO) 전체를 처음부터 재스캔했다 — O(거래수×조회날짜수)를
+   O(거래수+조회날짜수)로 줄인다(app-evolve cycle149 critique/advance). dateStr>TODAY(예정까지
+   반영, proj=true)와 그 외(완료 잔액만, proj=false)는 미확인 이체 포함 여부가 갈리므로 두 그룹으로
+   나눠 각각 독립적으로 한 번씩 재생한다 — 날짜 하나가 어느 그룹에 속하는지는 balancesUpTo()와
+   똑같이 그 날짜 자체(dateStr>TODAY)로만 정해진다. 반환값은 dateStr(호출부가 넘긴 그대로) ->
+   {assetId: balance} Map. */
+function balancesAtDates(dateList){
+ const out=new Map();
+ if(!dateList||!dateList.length)return out;
+ const base={},sign={};
+ DB.assets.forEach(a=>{base[a.id]=assetBase(a);sign[a.id]=(a.type==='debt'?-1:1)});
+ const txns=allTxns(RANGE_FROM,RANGE_TO).slice().sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
+ [false,true].forEach(proj=>{
+  const items=[...new Set(dateList)]
+    .filter(ds=>(ds>TODAY)===proj)
+    .map(ds=>({ds,upto:ds>RANGE_TO?RANGE_TO:ds}))
+    .sort((x,z)=>x.upto<z.upto?-1:x.upto>z.upto?1:0);
+  if(!items.length)return;
+  const map={};Object.keys(base).forEach(id=>map[id]=base[id]);
+  let ti=0;
+  items.forEach(({ds,upto})=>{
+   while(ti<txns.length&&txns[ti].date<=upto){
+    const t=txns[ti];
+    if(proj||!isPending(t)){
+     if(t.fromAssetId!=null&&map[t.fromAssetId]!=null)map[t.fromAssetId]-=sign[t.fromAssetId]*t.amount;
+     if(t.toAssetId!=null&&map[t.toAssetId]!=null)map[t.toAssetId]+=sign[t.toAssetId]*t.amount;
+    }
+    ti++;
+   }
+   out.set(ds,Object.assign({},map));
+  });
+ });
+ return out;
+}
+function balanceAtFromMap(balMap,dateStr,id){ /* balancesAtDates() 결과에서 balanceAt()과 동일한 폴백 규칙으로 하나 꺼낸다 */
+ const m=balMap.get(dateStr);
+ if(m&&m[id]!=null)return m[id];
+ const a=DB.assets.find(x=>x.id===id);return a?assetBase(a):0;
 }
 const isCashLike=a=>a.type==='cash'||a.type==='savings';
 const isMarketValued=a=>a.type==='fx'||a.type==='gold'||a.type==='stock'; /* assetEval()이 원장과 무관하게 qty×시세로 평가 — 거래 입력의 통장으로 쓰면 순자산이 조용히 어긋남 */
@@ -4442,13 +4486,16 @@ function lowestInMonth(assetId,y,m){ /* 그 달 중 잔액이 가장 낮은 날 
   if(t.fromAssetId!==assetId&&t.toAssetId!==assetId)return;
   days.add(t.date);
  });
- /* 날짜별로 balanceAt()을 직접 불러야 balancesUpTo()가 이미 적용 중인 미확인 이체 제외
-    규칙(예정 반영 여부에 따라 dateStr<=TODAY면 제외, 그 이후면 포함)과 부채 부호 반전이
-    그대로 반영된다 — 예전처럼 거래별 증감을 직접 누적하면 이 규칙을 놓치고 미확인 이체가
-    무조건 섞여 실제 잔액과 다른 값이 나왔다. */
+ /* 날짜별로 balanceAt()과 동일한 규칙(balancesAtDates() 참고)을 따라야 미확인 이체 제외 규칙
+    (예정 반영 여부에 따라 dateStr<=TODAY면 제외, 그 이후면 포함)과 부채 부호 반전이 그대로
+    반영된다 — 예전처럼 거래별 증감을 직접 누적하면 이 규칙을 놓치고 미확인 이체가 무조건
+    섞여 실제 잔액과 다른 값이 나왔다. 날짜가 여러 개(한 달치)라 balanceAt()을 날짜마다
+    부르면 매번 전체 재스캔이 일어나던 것을 balancesAtDates()로 한 번에 계산한다. */
+ const sortedDays=Array.from(days).sort();
+ const balMap=balancesAtDates(sortedDays);
  let low=null,lowDate=st;
- Array.from(days).sort().forEach(d=>{
-  const b=balanceAt(assetId,d);
+ sortedDays.forEach(d=>{
+  const b=balanceAtFromMap(balMap,d,assetId);
   if(low===null||b<low){low=b;lowDate=d}
  });
  return {date:lowDate,amount:low};
@@ -4506,12 +4553,15 @@ function planRowsHTML(a,y,m){
  const dates=[...new Set(flows.map(f=>f.t.date))];
  if(y===TM.y&&m===TM.m&&!dates.includes(TODAY))dates.push(TODAY);
  dates.sort();
- /* 표시 잔액은 거래별 증감을 직접 누적하지 않고 날짜별 balanceAt()을 불러 구한다 —
+ /* 표시 잔액은 거래별 증감을 직접 누적하지 않고 날짜별 balanceAt()과 동일한 규칙으로 구한다 —
     lowestInMonth()와 같은 이유(3883줄 주석 참고): 직접 누적하면 balancesUpTo()가 이미 적용
     중인 미확인 이체 제외 규칙(dateStr<=TODAY면 제외, 그 이후는 예정으로 포함)을 놓쳐,
     이체 확인 기능을 켠 상태에서 미확인 이체가 있으면 이 날짜별 잔액이 월말/오늘까지 잔액
-    카드(planBalInner)나 '가장 낮을 때' 카드(lowestInMonth)와 서로 다른 값을 보여줬다. */
- const dayBal=dates.map(d=>balanceAt(a.id,d));
+    카드(planBalInner)나 '가장 낮을 때' 카드(lowestInMonth)와 서로 다른 값을 보여줬다.
+    날짜가 여러 개(한 달치)라 balanceAt()을 날짜마다 부르면 매번 전체 재스캔이 일어나던
+    것을 balancesAtDates()로 한 번에 계산한다(lowestInMonth와 동일한 이유). */
+ const balMap=balancesAtDates(dates);
+ const dayBal=dates.map(d=>balanceAtFromMap(balMap,d,a.id));
  let firstNegIdx=-1; /* 잔액이 처음 마이너스가 되는 날 인덱스 */
  const dayNeg=dayBal.map((b,i)=>{const neg=b<0;if(neg&&firstNegIdx<0)firstNegIdx=i;return neg;}); /* 날짜별 실제 잔액 마이너스 여부 */
  return dates.length?dates.map((d,i)=>{
@@ -6370,16 +6420,27 @@ function monthStep(which,delta){
 }
 function planNegatives(){ /* 통장별 · 예정 끝까지 · '하루 합산(일 마감)' 잔액 기준 */
  const horizon=DISP_TO,out=[];
- /* lowestInMonth()/planRowsHTML()과 동일한 이유로 날짜별 balanceAt()을 직접 불러야 한다 —
-    예전처럼 거래별 증감(byDay)을 직접 누적하면 balancesUpTo()가 적용 중인 미확인 이체
-    제외 규칙(dateStr<=TODAY면 제외)을 놓쳐, 오늘 날짜의 미확인 이체 한 건만 기록해도
-    아직 나가지 않은 돈인데 오늘 잔액이 마이너스로 뜬다는 거짓 경고가 나왔다. */
- DB.assets.filter(isPlanAcct).forEach(a=>{
+ /* lowestInMonth()/planRowsHTML()과 동일한 이유로 날짜별 balanceAt()과 동일한 규칙을 따라야
+    한다 — 예전처럼 거래별 증감(byDay)을 직접 누적하면 balancesUpTo()가 적용 중인 미확인
+    이체 제외 규칙(dateStr<=TODAY면 제외)을 놓쳐, 오늘 날짜의 미확인 이체 한 건만 기록해도
+    아직 나가지 않은 돈인데 오늘 잔액이 마이너스로 뜬다는 거짓 경고가 나왔다. 플랜 대상
+    통장마다, 그리고 통장마다 여러 날짜를 조회하므로(대시보드 전체에 걸친 날짜 수만큼)
+    balanceAt()을 날짜마다 부르면 매번 전체 재스캔이 일어난다 — 모든 통장의 모든 날짜를
+    모아 balancesAtDates() 한 번으로 계산한다(lowestInMonth/planRowsHTML과 동일한 이유). */
+ const plAssets=DB.assets.filter(isPlanAcct);
+ const perAssetDates=new Map(),allDates=new Set();
+ plAssets.forEach(a=>{
    const dates=new Set([TODAY]);
    allTxns(TODAY,horizon).forEach(t=>{if(t.fromAssetId===a.id||t.toAssetId===a.id)dates.add(t.date)});
+   const sorted=Array.from(dates).sort();
+   perAssetDates.set(a.id,sorted);
+   sorted.forEach(d=>allDates.add(d));
+ });
+ const balMap=balancesAtDates(Array.from(allDates));
+ plAssets.forEach(a=>{
    let firstNeg=null,minBal=Infinity;
-   Array.from(dates).sort().forEach(date=>{
-     const b=balanceAt(a.id,date);
+   perAssetDates.get(a.id).forEach(date=>{
+     const b=balanceAtFromMap(balMap,date,a.id);
      if(b<minBal)minBal=b;
      if(b<0&&!firstNeg)firstNeg=date;
    });

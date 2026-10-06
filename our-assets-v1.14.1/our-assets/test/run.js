@@ -161,7 +161,7 @@ const FUNCTIONS = [
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges', 'shouldRetryCloudSync',
   'pullCloud', 'afterCloudAuth', 'resolveCloudPullRemote', 'pushCloud',
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
-  'clampDay', 'saveTx', 'assetBase', 'balancesUpTo', 'balanceAt',
+  'clampDay', 'saveTx', 'assetBase', 'balancesUpTo', 'balanceAt', 'balancesAtDates', 'balanceAtFromMap',
   'addBalanceAdjust', 'updateBalanceAdjust', 'toggleConfirmTransfers', 'rollPendingTransfers',
   'assetEval', 'assetGainLoss', 'assetGainLossBadge', 'costBasisField', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'delOwner', 'doMaturity', 'firstCash',
   'detectStaleMarketValuedTxns', 'delBudget', 'saveBudget', 'openBudgetPrompt', 'openBigMinSheet',
@@ -7363,6 +7363,128 @@ test('balancesUpTo: 서로 다른 두 날짜를 조회해도 반복거래 확장
   } finally {
     delete sandbox.DB.recurrences.forEach;
   }
+});
+
+/* ---------- balancesAtDates: 여러 날짜를 한 번의 정렬+포인터 누적으로 계산하는 배치 API
+ * (app-evolve cycle149 critique/advance) ----------
+ * planNegatives()/lowestInMonth()/planRowsHTML()처럼 같은 렌더 안에서 여러 날짜로 balanceAt()을
+ * 거듭 부르면 balancesUpTo()의 날짜별 캐시(_balCache)가 매번 새 키라 allTxns(RANGE_FROM,RANGE_TO)
+ * 전체를 처음부터 재스캔한다. balancesAtDates()는 assetBalanceSeries(logic.js)와 같은 원칙으로
+ * 모든 자산·여러 날짜를 한 번의 정렬된 순회로 계산한다 — balanceAt()과 완전히 같은 값을 내야
+ * 하고, dateStr>TODAY(proj=true, 미확인 이체 포함)/그 외(proj=false, 제외) 그룹을 올바르게 나눠야
+ * 하며, allTxns() 호출 횟수가 날짜 수와 무관해야 한다. */
+test('balancesAtDates: 여러 날짜를 배치로 계산해도 balanceAt()/balancesUpTo()와 완전히 같은 값을 낸다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox._balCache.clear();
+  sandbox._recCache.clear(); // 바로 앞 테스트가 같은 (RANGE_FROM,RANGE_TO) 키에 daily 반복거래 확장 결과를 캐시해뒀을 수 있어, 이 테스트의 recurrences:[]와 어긋나지 않게 비운다
+  sandbox.DB = {
+    settings: {},
+    assets: [
+      { id: 'a1', type: 'cash', baseAmount: 10000 },
+      { id: 'd1', type: 'debt', baseAmount: 50000 },
+    ],
+    txns: [
+      { date: '2026-06-01', type: 'expense', category: '식비', amount: 1000, fromAssetId: 'a1' },
+      { date: '2026-06-10', type: 'income', category: '용돈', amount: 3000, toAssetId: 'a1' },
+      { date: '2026-06-20', type: 'transfer', amount: 5000, fromAssetId: 'a1', toAssetId: 'd1' },
+    ],
+    recurrences: [],
+  };
+  const dates = ['2026-06-05', '2026-06-15', '2026-06-25'];
+  const balMap = sandbox.balancesAtDates(dates);
+  dates.forEach(d => {
+    sandbox._balCache.clear();
+    assert.strictEqual(sandbox.balanceAtFromMap(balMap, d, 'a1'), sandbox.balanceAt('a1', d), `a1 @ ${d}는 balanceAt()과 같아야 함`);
+    sandbox._balCache.clear();
+    assert.strictEqual(sandbox.balanceAtFromMap(balMap, d, 'd1'), sandbox.balanceAt('d1', d), `d1(부채, 부호 반전) @ ${d}는 balanceAt()과 같아야 함`);
+  });
+});
+test('balancesAtDates: dateStr>TODAY(예정)와 그 이전(완료)이 같은 배치에 섞여도 각각 올바른 미확인 이체 포함 규칙을 적용한다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox._balCache.clear();
+  sandbox._recCache.clear();
+  sandbox.DB = {
+    settings: { confirmTransfers: true },
+    assets: [
+      { id: 'a1', type: 'cash', baseAmount: 500000 },
+      { id: 'a2', type: 'cash', baseAmount: 0 },
+    ],
+    txns: [
+      { id: 't1', date: sandbox.TODAY, type: 'transfer', amount: 600000, fromAssetId: 'a1', toAssetId: 'a2', confirmed: false },
+    ],
+    recurrences: [],
+  };
+  const pastDate = sandbox.TODAY, futureDate = '2026-07-01';
+  const balMap = sandbox.balancesAtDates([pastDate, futureDate]);
+  assert.strictEqual(sandbox.balanceAtFromMap(balMap, pastDate, 'a1'), 500000, '오늘(완료 잔액, proj=false)은 미확인 이체를 제외해야 함');
+  assert.strictEqual(sandbox.balanceAtFromMap(balMap, futureDate, 'a1'), -100000, '미래 날짜(예정 반영, proj=true)는 미확인 이체도 포함해야 함');
+});
+test('balancesAtDates: 날짜 수와 무관하게 allTxns()는 단 한 번만 불린다(날짜마다 전체 재스캔하던 문제 회귀 방지)', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox._balCache.clear();
+  sandbox._recCache.clear();
+  sandbox.DB = {
+    settings: {},
+    assets: [{ id: 'a1', type: 'cash', baseAmount: 0 }],
+    txns: [{ date: '2026-01-10', type: 'expense', category: '식비', amount: 1000, fromAssetId: 'a1' }],
+    recurrences: [],
+  };
+  const origAllTxns = sandbox.allTxns;
+  let calls = 0;
+  sandbox.allTxns = (...args) => { calls++; return origAllTxns(...args); };
+  try {
+    sandbox.balancesAtDates(['2026-06-01', '2026-06-10', '2026-06-20', '2026-06-30']);
+    assert.strictEqual(calls, 1, '날짜가 몇 개든 allTxns()는 한 번만 불려야 함(각 날짜마다 다시 부르면 날짜 수만큼 늘어남)');
+  } finally {
+    sandbox.allTxns = origAllTxns;
+  }
+});
+test('balanceAtFromMap: 맵에 값이 있으면 그대로, 없으면 balanceAt()과 동일하게 assetBase()로 폴백하고 자산이 없으면 0을 반환한다', () => {
+  sandbox.DB = {
+    settings: {},
+    assets: [{ id: 'a1', type: 'cash', baseAmount: 7000 }],
+    txns: [],
+    recurrences: [],
+  };
+  const balMap = new Map([['2026-06-01', { a1: 1234 }]]);
+  assert.strictEqual(sandbox.balanceAtFromMap(balMap, '2026-06-01', 'a1'), 1234, '맵에 있는 값을 그대로 써야 함');
+  assert.strictEqual(sandbox.balanceAtFromMap(balMap, '2026-07-01', 'a1'), 7000, '맵에 그 날짜 자체가 없으면 assetBase()로 폴백해야 함');
+  assert.strictEqual(sandbox.balanceAtFromMap(balMap, '2026-06-01', 'ghost'), 0, '자산이 DB에 없으면(삭제됨 등) 0을 반환해야 함(balanceAt()과 동일)');
+});
+test('lowestInMonth/planRowsHTML/planNegatives: batch 적용 후에도 allTxns()가 조회 날짜 수와 무관하게 상수 번만 불린다(app-evolve cycle149 advance 성능 개선 회귀 방지)', () => {
+  sandbox.TODAY = '2026-06-05';
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox.DISP_TO = sandbox.addDays(sandbox.TODAY, 92);
+  sandbox._balCache.clear();
+  sandbox._recCache.clear();
+  // 한 달 내내(6/1~6/30) 매일 거래가 있어 날짜별 balanceAt()을 날짜마다 부르는 예전 구조였다면
+  // allTxns() 호출 수가 거래 일수에 비례해 늘어난다 — batch 적용 후에는 호출 수가 상수(아래 count
+  // 목록 길이)로 고정되어야 한다.
+  const txns = [];
+  for (let d = 1; d <= 30; d++) txns.push({ id: `t${d}`, date: `2026-06-${String(d).padStart(2, '0')}`, type: 'expense', category: '식비', amount: 100, fromAssetId: 'a1' });
+  sandbox.DB = {
+    settings: {},
+    assets: [{ id: 'a1', name: '통장1', owner: '나', type: 'cash', baseAmount: 100000 }],
+    txns,
+    recurrences: [],
+  };
+  const origAllTxns = sandbox.allTxns;
+  const run = (fn) => {
+    sandbox._balCache.clear();
+    let calls = 0;
+    sandbox.allTxns = (...args) => { calls++; return origAllTxns(...args); };
+    try { fn(); } finally { sandbox.allTxns = origAllTxns; }
+    return calls;
+  };
+  const lowCalls = run(() => sandbox.lowestInMonth('a1', 2026, 6));
+  assert.ok(lowCalls <= 2, `lowestInMonth는 allTxns()를 거의 상수 번만 불러야 함(날짜 수와 무관) — 실제 ${lowCalls}번`);
+  const rowsCalls = run(() => sandbox.planRowsHTML(sandbox.DB.assets[0], 2026, 6));
+  assert.ok(rowsCalls <= 2, `planRowsHTML은 allTxns()를 거의 상수 번만 불러야 함 — 실제 ${rowsCalls}번`);
+  const negCalls = run(() => sandbox.planNegatives());
+  assert.ok(negCalls <= 2, `planNegatives는 allTxns()를 자산 수만큼만 불러야 하고(통장 하나) 조회 날짜 수와는 무관해야 함 — 실제 ${negCalls}번`);
 });
 
 /* ---------- expandRec/_recCache: 반복거래 확장 결과 캐시의 회귀 테스트 (app-evolve cycle26 advance) ----------
