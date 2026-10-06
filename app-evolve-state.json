@@ -1,14 +1,14 @@
 {
   "cycle": 146,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
-      "cycle": 141,
+      "cycle": 146,
       "phase": "develop",
-      "timestamp": "2026-10-05T06:30:00.000Z",
-      "summary": "general-purpose 서브에이전트 조사로 sanitizeBackup()(index.html:5465행)이 txns/assets/recurrences/goals/inquiries/assetQtyLog만 검증하고 DB.categories/DB.owners/DB.budgetHistory/DB.catIcon/DB.catVar/DB.deletedType/DB.deletedBal은 전혀 검증하지 않음을 발견·수정 — goals/inquiries/assetQtyLog에서 반복된 '신설 컬렉션 검증 누락' 버그 클래스의 재발. 클라우드 풀 경로(afterCloudAuth 1783행/resolveCloudPullRemote 1816행/resolveCloudForcePush)는 복원 경로(restoreBackup)와 달리 migrate()를 try/catch로 보호하지 않아, DB.categories.income이 배열이 아니면 migrate()의 push(2020행)가, DB.owners가 배열이 아니면 addOwner()의 find/push가 TypeError로 터지는 재현을 직접 확인(DB가 이미 손상된 remote로 교체된 뒤라 복구 불가능하게 로그인/동기화 정지). sanitizeBackup()에 7개 필드 검증 추가: categories/owners는 배열 아니면 빈 배열로, 배열 안 비문자열/빈 문자열 항목 제거; budgetHistory는 from이 YYYY-MM(01~12월) 형식 아니면 drop, amount 음수/NaN이면 0 클램프, from 오름차순 재정렬; catIcon/catVar/deletedType/deletedBal은 평평한 객체 맵 아니면 빈 맵으로. null/undefined는 migrate()가 이미 기본값으로 메워 fixedCount 미포함. test/run.js에 회귀 테스트 14개 추가(수정 전 코드로 되돌리면 11건 실제 FAIL 확인 + 손상 categories/owners를 migrate()/addOwner()에 직접 넘겨 TypeError 재현 2건). node test/run.js 956/956 -> 970/970 통과. APP_VERSION 1.47.50->1.47.51, sw.js CACHE v312->v313. 커밋 831c0e6.",
-      "commit": "831c0e6038a863f11be0659e15c62784e5d27e2b"
+      "timestamp": "2026-10-06T03:40:00.000Z",
+      "summary": "general-purpose 서브에이전트로 금액 입력란 전반을 grep해 지우기(×) 버튼 관례(.field-clear 래퍼 + fc-x 버튼 + clrInput(), fcWire()가 자동 배선)가 txAmt/rAmt/goalAmt/asAmt/asCostBasis/asName/goalName/txMemo/rMemo에는 적용돼 있는데 budgetIn(openBudgetPrompt, index.html:4799)/qAmt(openQuickAmount, 6434)/bigMinInput(openBigMinSheet, 2883) 세 금액 입력란에만 빠져 있음을 발견·수정. cycle121이 budgetIn을 콤마 포맷/num() 파서로 통일한 것과 같은 결의 '다른 금액칸과 나란히 쓰는데 지우는 방법만 다름(전체선택 후 삭제)' UX 불일치. 세 입력을 .field-clear로 감싸고 동일 패턴의 fc-x 버튼(onclick=\"clrInput('id')\")을 추가(JS 와이어링은 fcWire()가 렌더 후 자동 처리라 추가 배선 불필요). test/run.js FUNCTIONS에 openBudgetPrompt/openBigMinSheet를 새로 추가하고(기존엔 샌드박스에 로드돼 있지 않았음) 회귀 테스트 3건 추가. 수정 전 코드로 되돌려 신규 3건만 정확히 FAIL함을 git stash로 직접 검증한 뒤 복구. node test/run.js 1001/1001 -> 1004/1004 통과(메인 인라인 script 구문 검사 포함). APP_VERSION 1.47.61->1.47.62, sw.js CACHE v323->v324. 오케스트레이팅 세션이 diff를 직접 Read로 재확인 후 테스트 재실행(1004/1004)해 커밋.",
+      "commit": null
     },
     {
       "cycle": 141,

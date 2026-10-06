@@ -126,7 +126,7 @@ const FUNCTIONS = [
   'clampDay', 'saveTx', 'assetBase', 'balancesUpTo', 'balanceAt',
   'addBalanceAdjust', 'updateBalanceAdjust', 'toggleConfirmTransfers', 'rollPendingTransfers',
   'assetEval', 'assetGainLoss', 'assetGainLossBadge', 'costBasisField', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'delOwner', 'doMaturity', 'firstCash',
-  'detectStaleMarketValuedTxns', 'delBudget', 'saveBudget',
+  'detectStaleMarketValuedTxns', 'delBudget', 'saveBudget', 'openBudgetPrompt', 'openBigMinSheet',
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards',
   'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'openCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter',
   'genSalt', 'pbkdf2Hash', 'genRecoveryCode', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer', 'openConfirmTransfer',
@@ -1674,6 +1674,28 @@ test('delBudget: undo는 그 달에 원래 있던 값이 아니라 삭제 직전
   sandbox.lastUndo.undoFn();
   assert.strictEqual(sandbox.DB.budgetHistory.식비.length, 1, '되돌리면 원래 없던 6월 항목이 제거되고 1월 항목만 남아야 함');
   assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 8), 50000, '되돌린 뒤에는 8월도 다시 1월부터 이어지는 5만원이어야 함');
+});
+
+/* ---------- openBudgetPrompt: budgetIn도 다른 금액 입력란과 같은 지우기(×) 버튼 관례를 따라야 함
+ * (app-evolve develop cycle — txAmt/rAmt/goalAmt/asCostBasis/asAmt/qAmt/bigMinInput은 모두
+ * .field-clear로 감싸 입력값이 있을 때 누르면 즉시 비워지는 fc-x 버튼을 제공하는데, budgetIn만
+ * 빠져 있었다. cycle121이 콤마 포맷/num() 파서를 통일한 것과 같은 이유로, 다른 금액 입력란과
+ * 나란히 쓰는 사용자에게 이 칸만 지우는 방법이 다르면(전체 선택 후 삭제) 눈에 띄는 불일치다). */
+test('openBudgetPrompt: budgetIn도 다른 금액 입력란(txAmt/rAmt/goalAmt/asCostBasis/qAmt)과 동일하게 field-clear(×) 버튼이 있다', () => {
+  sandbox.DB = { txns: [], recurrences: [], budgetHistory: { 식비: [{ from: '2026-01', amount: 50000 }] } };
+  sandbox.ST = { ledger: { y: 2026, m: 6 } };
+  sandbox.lastSheetHtml = null;
+  sandbox.openBudgetPrompt(0);
+  assert.ok(sandbox.lastSheetHtml.includes('<div class="field-clear"><input id="budgetIn"'), 'budgetIn 입력이 field-clear로 감싸져 있지 않음');
+  assert.ok(sandbox.lastSheetHtml.includes(`<button type="button" class="fc-x" aria-label="예산 금액 지우기" onclick="clrInput('budgetIn')">`), 'budgetIn에 fc-x 지우기 버튼의 clrInput 연결이 없음');
+});
+/* bigMinInput('큰 지출' 기준 금액, openBigMinSheet)도 budgetIn/qAmt와 같은 누락이 있던 금액 입력란이다. */
+test('openBigMinSheet: bigMinInput도 다른 금액 입력란과 동일하게 field-clear(×) 버튼이 있다', () => {
+  sandbox.DB = { settings: {} };
+  sandbox.lastSheetHtml = null;
+  sandbox.openBigMinSheet();
+  assert.ok(sandbox.lastSheetHtml.includes('<div class="field-clear"><input id="bigMinInput"'), 'bigMinInput 입력이 field-clear로 감싸져 있지 않음');
+  assert.ok(sandbox.lastSheetHtml.includes(`<button type="button" class="fc-x" aria-label="기준 금액 지우기" onclick="clrInput('bigMinInput')">`), 'bigMinInput에 fc-x 지우기 버튼의 clrInput 연결이 없음');
 });
 
 /* ---------- saveBudget: budgetIn 입력란이 다른 금액 입력란(txAmt/rAmt/asAmt 등)처럼 천단위
@@ -4661,6 +4683,14 @@ test('openQuickAmount: qAmt(실제 금액)의 Enter-제출도 다른 금액 입�
     sandbox.lastSheetHtml.includes(`onkeydown="if(event.key==='Enter'&&!event.isComposing)saveQuickAmount('r1','2026-03-05')"`),
     'qAmt의 Enter→saveQuickAmount() 연결에 !event.isComposing 가드가 없음'
   );
+});
+test('openQuickAmount: qAmt도 다른 금액 입력란(txAmt/rAmt/goalAmt/asCostBasis)과 동일하게 field-clear(×) 버튼이 있다', () => {
+  const r = { id: 'r1', type: 'expense', category: '변동비', memo: '변동비', edits: {} };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.lastSheetHtml = null;
+  sandbox.openQuickAmount('r1', '2026-03-05');
+  assert.ok(sandbox.lastSheetHtml.includes('<div class="field-clear"><input id="qAmt"'), 'qAmt 입력이 field-clear로 감싸져 있지 않음');
+  assert.ok(sandbox.lastSheetHtml.includes(`<button type="button" class="fc-x" aria-label="금액 지우기" onclick="clrInput('qAmt')">`), 'qAmt에 fc-x 지우기 버튼의 clrInput 연결이 없음');
 });
 
 /* ---------- storageOutcomeMsg: save()가 저장 성공/실패를 더 이상 숨기지 않는지 ---------- */
