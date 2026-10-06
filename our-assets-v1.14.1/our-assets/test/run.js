@@ -8401,6 +8401,24 @@ test('renderAssetSheet: stock 타입의 asQty(보유 주식 수)도 동일하게
   assert.ok(body.includes('<div class="with-unit"><div class="field-clear"><input id="asQty"'), 'asQty 입력이 with-unit 안에서 field-clear로 감싸져 있지 않음');
   assert.ok(body.includes(`<button type="button" class="fc-x" aria-label="보유 주식 수 지우기" onclick="clrInput('asQty')">`), 'asQty에 fc-x 지우기 버튼의 clrInput 연결이 없음');
 });
+/* openOwnerManage/renameOwnerSheet/renameCatSheet는 FUNCTIONS(실제 실행) 목록 밖이라
+ * renderAssetSheet의 asFx/asGold/asQty 검증과 같은 extractFunction() 소스 패턴 검증을 쓴다
+ * (app-evolve cycle148 develop — newCat은 openCatManage가 FUNCTIONS에 있어 실제 실행으로 검증). */
+test('openOwnerManage: newOwner(귀속 추가 입력)도 다른 이름 입력란과 동일하게 field-clear(×) 버튼이 있다', () => {
+  const body = extractFunction('openOwnerManage');
+  assert.ok(body.includes('<div class="add-inline"><div class="field-clear"><input id="newOwner"'), 'newOwner 입력이 field-clear로 감싸져 있지 않음');
+  assert.ok(body.includes(`<button type="button" class="fc-x" aria-label="귀속 이름 지우기" onclick="clrInput('newOwner')">`), 'newOwner에 fc-x 지우기 버튼의 clrInput 연결이 없음');
+});
+test('renameOwnerSheet: renameOwner(귀속 이름 수정 입력)도 동일하게 field-clear(×) 버튼이 있다', () => {
+  const body = extractFunction('renameOwnerSheet');
+  assert.ok(body.includes('<div class="field"><div class="field-clear"><input id="renameOwner"'), 'renameOwner 입력이 field-clear로 감싸져 있지 않음');
+  assert.ok(body.includes(`<button type="button" class="fc-x" aria-label="이름 지우기" onclick="clrInput('renameOwner')">`), 'renameOwner에 fc-x 지우기 버튼의 clrInput 연결이 없음');
+});
+test('renameCatSheet: renameCat(카테고리 이름 수정 입력)도 동일하게 field-clear(×) 버튼이 있다', () => {
+  const body = extractFunction('renameCatSheet');
+  assert.ok(body.includes('<div class="cat-edit-row">') && body.includes('<div class="field-clear"><input id="renameCat"'), 'renameCat 입력이 field-clear로 감싸져 있지 않음');
+  assert.ok(body.includes(`<button type="button" class="fc-x" aria-label="카테고리 이름 지우기" onclick="clrInput('renameCat')">`), 'renameCat에 fc-x 지우기 버튼의 clrInput 연결이 없음');
+});
 test("costBasisField: fx/gold/stock 공용 매입금액 입력(asCostBasis)에 Enter-제출이 있다(세 타입 모두의 마지막 입력)", () => {
   assert.strictEqual(
     sandbox.costBasisField({ costBasis: 0 }, false),
@@ -9299,6 +9317,16 @@ test('openCatManage: keep=true로 다시 열면 진행 중이던 catAddDraft(이
   sandbox.openCatManage('expense', true);
   assert.strictEqual(sandbox.catAddDraft.name, '새카테', 'keep=true면 입력 중이던 이름이 지워지면 안 됨');
   assert.ok(sandbox.lastSheetHtml.includes('새카테'));
+});
+/* newOwner/renameOwner/newCat/renameCat — asName/goalName/txMemo 등 다른 모든 짧은 텍스트
+ * 입력란은 수 사이클에 걸쳐 field-clear(×) 관례를 갖췄는데, 귀속/카테고리 추가·수정의 이 네
+ * 입력란만 같은 .add-inline/.field/.cat-edit-row 패턴이면서 빠져 있었다(app-evolve cycle148 develop). */
+test('openCatManage: newCat(카테고리 추가 입력)도 다른 이름 입력란과 동일하게 field-clear(×) 버튼이 있다', () => {
+  setupCatManageDB();
+  sandbox.openCatManage('expense');
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('<div class="field-clear"><input id="newCat"'), 'newCat 입력이 field-clear로 감싸져 있지 않음');
+  assert.ok(html.includes(`<button type="button" class="fc-x" aria-label="카테고리 이름 지우기" onclick="clrInput('newCat')">`), 'newCat에 fc-x 지우기 버튼의 clrInput 연결이 없음');
 });
 
 /* ---------- openCatPicker: 카테고리명 onclick 문자열보간 인젝션 봉합 회귀 (app-evolve cycle82 advance) ----------

@@ -1,8 +1,15 @@
 {
-  "cycle": 147,
-  "phase": "develop",
+  "cycle": 148,
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 148,
+      "phase": "develop",
+      "timestamp": "2026-10-06T11:30:00.000Z",
+      "summary": "귀속/카테고리 관리의 이름 입력란 4곳(newOwner/renameOwner/newCat/renameCat)이 asName/goalName/txMemo 등 다른 모든 짧은 텍스트 입력란과 달리 field-clear(×) 지우기 버튼 관례에서 빠져 있던 것을 Explore 서브에이전트로 찾아 수정. 네 곳 모두 .field-clear 래퍼+fc-x 버튼으로 감싸고 clrInput()으로 연결 — fcWire()가 openSheet 렌더 후 자동 배선하므로 별도 JS 로직 변경은 불필요. newCat/renameCat은 catAddDraft.name/catRenameDraft.name을 갱신하는 oninput 핸들러가 이미 있어 clrInput()의 input 이벤트 dispatch로 그대로 동기화됨. .add-inline/.cat-edit-row 안에서도 .with-unit과 동일한 이유로 field-clear 래퍼에 flex:1;min-width:0 CSS를 추가해 기존 폭 배분을 유지. APP_VERSION 1.47.64->1.47.65, sw.js CACHE v326->v327. 회귀 테스트 4건 추가(openCatManage의 newCat은 FUNCTIONS 실행 기반, openOwnerManage/renameOwnerSheet/renameCatSheet는 FUNCTIONS 밖이라 asFx/asGold/asQty와 같은 extractFunction 소스 패턴 검증). node test/run.js 1015/1015 -> 1019/1019 통과.",
+      "commit": null
+    },
     {
       "cycle": 147,
       "phase": "advance",
@@ -134,13 +141,6 @@
       "phase": "develop",
       "timestamp": "2026-10-05T02:00:00.000Z",
       "summary": "전체내역 탭 검색바(matchTxnQuery, logic.js)가 메모·카테고리·자산명만 매칭하고 금액은 검색 못 하는 것을 발견해 수정. haystack에 t.amount(문자열)를 추가하고, 비교 양쪽에서 쉼표를 제거하는 norm() 헬퍼로 통일해 \"50000\"과 \"50,000\" 검색어가 동일하게 매칭되게 함. index.html 검색바 placeholder를 \"메모·카테고리·자산 검색\"→\"메모·카테고리·자산·금액 검색\"으로 동기화. test/run.js에 matchTxnQuery 회귀 4건 추가, placeholder 문자열을 검증하던 기존 테스트 2곳도 새 문구에 맞게 갱신. APP_VERSION 1.47.56→1.47.57, sw.js CACHE v318→v319. 991/991 passed.",
-      "commit": null
-    },
-    {
-      "cycle": 144,
-      "phase": "review",
-      "timestamp": "2026-10-05T20:10:00.000Z",
-      "summary": "develop 커밋(40a3682, matchTxnQuery 금액 검색 추가)을 검토해 실제 버그 발견·수정. 적용된 norm=s=>String(s).toLowerCase().replace(/,/g,'')가 비교 양쪽(hay 전체 + q)에서 쉼표를 지우는데, amt(String(number))는 애초에 쉼표가 없으므로 쉼표 제거가 필요한 쪽은 검색어(q)뿐임을 확인. 그런데 hay 쪽까지 쉼표를 지우면 메모/카테고리/자산명에 들어있는 실제 쉼표가 사라지면서 쉼표를 사이에 두고 떨어져 있던 글자들이 이어 붙어, 원래는 안 걸려야 할 검색어가 우연히 매칭되는 오탐이 생김을 직접 재현해 확인 — memo:'우유,계란'에서 검색어 '유계'(쉼표 없음)가 수정 전 코드로는 true(오탐), 커밋이 의도한 동작(쉼표 없는 메모/카테고리/자산명 텍스트 검색은 기존 그대로)과 어긋남. hay는 그대로 두고 q쪽에서만 .replace(/,/g,'') 하도록 축소(hay.toLowerCase().includes(q.toLowerCase().replace(/,/g,''))) — \"50000\"/\"50,000\" 둘 다 금액과 매칭되는 기존 4개 신규 테스트는 그대로 통과(amt 자체엔 쉼표가 없어 q만 정규화해도 충분), 쉼표 포함 메모 오탐 방지 회귀 테스트 1건 추가(수정 전 코드로 되돌려 실제 FAIL함을 직접 검증한 뒤 복구). placeholder 변경/기존 4개 검색 테스트는 영향 없음. node test/run.js 991/991 -> 992/992 통과. APP_VERSION 1.47.57->1.47.58, sw.js CACHE v319->v320.",
       "commit": null
     }
   ]
