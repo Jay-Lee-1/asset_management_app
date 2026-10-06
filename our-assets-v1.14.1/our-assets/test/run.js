@@ -168,6 +168,7 @@ const FUNCTIONS = [
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards',
   'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'openCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter',
   'genSalt', 'pbkdf2Hash', 'genRecoveryCode', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer', 'openConfirmTransfer',
+  'renderLockView', 'openForgotPinSheet', 'doForgotPin',
   'confirmTransferNow', 'postponeTransfer', 'confirmRecNow',
   'foreignSaveIsNewer', 'applyForeignSave', 'openCopyBackup', 'copyBackup', 'findDonors',
   'recIsVarying', 'varyingRecs', 'fixShortfallDefaultDate', 'openFixShortfall', 'lastActualAmount', 'openQuickAmount',
@@ -201,7 +202,7 @@ const FUNCTIONS = [
 // 판정 상수라 같은 방식(extractConst)으로 끌어온다.
 // _savedDrafts는 saveTx/saveRec의 더블탭 중복 저장 가드(app-evolve cycle79 advance)가 쓰는
 // WeakSet — 저장 완료된 draft 객체를 표시해 같은 draft로 재호출되면 조용히 무시한다.
-const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts'];
+const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY'];
 // _histCache는 filteredHist()가 재대입(={key,list})하는 let 선언이라 CONSTS(extractConst)로는
 // 못 끌어오므로 별도의 LETS 목록으로 extractLet을 통해 가져온다.
 // _copyIsCsv도 같은 이유(openCopyBackup()이 재대입)로 LETS를 통해 가져온다.
@@ -450,6 +451,16 @@ const sandbox = {
   navigator: {},
   toast: (msg) => { sandbox.lastToast = msg; sandbox.toastCalls.push(msg); },
   toastCalls: [],
+  // doForgotPin()(app-evolve cycle151 develop)이 부르는 APPLOCK.disable()/unlockApp() —
+  // 둘 다 화면 전용 부수효과(실제 APPLOCK 객체/화면 전환)라 closeSheet/toast와 같은 이유로
+  // 호출 여부만 기록하는 스파이로 흉내낸다.
+  appLockDisableCalls: 0,
+  APPLOCK: { disable: () => { sandbox.appLockDisableCalls++; } },
+  unlockAppCalls: 0,
+  unlockApp: () => { sandbox.unlockAppCalls++; },
+  // renderLockView()가 잠김(backoff) 상태에서 재시도 타이머를 재설정할 때 부르는
+  // clearTimeout — setTimeout처럼 화면 전용이라 no-op으로 흉내낸다.
+  clearTimeout: () => {},
   save: () => {},
   invalidateBalances: () => {},
   renderCurrent: () => {},
@@ -8744,6 +8755,45 @@ test("APPLOCK: 'applock' 실패 카운터는 AUTH 로그인 실패 카운터와 
   const raw = JSON.parse(ctx.localStorage.getItem('asset_app_login_fails'));
   assert.ok(raw.applock, "실패 카운터가 'asset_app_login_fails'의 'applock' 키에 적립돼야 함(AUTH._recordFail 재사용 증거)");
   assert.strictEqual(raw.applock.count, 1);
+});
+
+/* ---------- PIN을 잊었을 때의 탈출구(app-evolve cycle151 develop) — APPLOCK에는 복구 코드
+ * 개념이 없어서, 이게 없으면 verify() 성공 없이는 영원히 #lockView에 막혀 앱 잠금을 풀기
+ * 위해 사이트 데이터 전체를 지워야 했다(이 기기에만 있는 자산 내역 전체가 함께 사라짐). ---------- */
+test('renderLockView: PIN 잠금 화면에 계정 비밀번호 찾기(auth-forgot)와 같은 스타일의 "PIN을 잊으셨나요?" 링크가 openForgotPinSheet로 연결돼 있다', () => {
+  const $orig = sandbox.$;
+  const authOrig = sandbox.AUTH;
+  const lockViewEl = { _html: '', set innerHTML(v) { this._html = v; }, get innerHTML() { return this._html; } };
+  sandbox.$ = (id) => (id === 'lockView' ? lockViewEl : $orig(id));
+  sandbox.AUTH = { _lockStatus: () => ({ locked: false, waitSec: 0 }) };
+  try {
+    sandbox.renderLockView();
+    assert.ok(
+      lockViewEl.innerHTML.includes('<button type="button" class="auth-forgot" onclick="openForgotPinSheet()">PIN을 잊으셨나요?</button>'),
+      '잠금 화면에 PIN 찾기 링크(auth-forgot 스타일)가 없음'
+    );
+  } finally {
+    sandbox.$ = $orig;
+    sandbox.AUTH = authOrig;
+  }
+});
+test('openForgotPinSheet: 데이터는 그대로 남고 잠금만 꺼진다는 설명과 함께 doForgotPin으로 연결된 확인 시트를 띄운다', () => {
+  sandbox.lastSheetHtml = null;
+  sandbox.openForgotPinSheet();
+  assert.ok(sandbox.lastSheetHtml.includes('저장된 자산 데이터는 그대로 남아요'), '데이터는 안전하다는 안내가 없음');
+  assert.ok(sandbox.lastSheetHtml.includes('onclick="doForgotPin()"'), 'doForgotPin 연결이 없음');
+  assert.ok(sandbox.lastSheetHtml.includes('onclick="closeSheet()"'), '취소 버튼이 없음');
+});
+test('doForgotPin: 틀린/잊은 PIN을 묻지 않고 APPLOCK만 초기화해 잠금을 풀고, 시트를 닫고 토스트로 알린다(자산 데이터 자체는 건드리지 않음)', () => {
+  sandbox.appLockDisableCalls = 0;
+  sandbox.unlockAppCalls = 0;
+  sandbox.closeSheetCalls = 0;
+  sandbox.lastToast = null;
+  sandbox.doForgotPin();
+  assert.strictEqual(sandbox.appLockDisableCalls, 1, 'APPLOCK.disable()이 호출돼야 함');
+  assert.strictEqual(sandbox.unlockAppCalls, 1, 'unlockApp()으로 화면이 풀려야 함');
+  assert.strictEqual(sandbox.closeSheetCalls, 1);
+  assert.ok(/초기화/.test(sandbox.lastToast));
 });
 
 /* ---------- genRecoveryCode: 로컬 계정 비밀번호 복구 코드(가입 시 1회 발급, 해시만 저장) ---------- */

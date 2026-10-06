@@ -1321,7 +1321,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.68';
+const APP_VERSION='1.47.69';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -7307,6 +7307,7 @@ function renderLockView(){
    <div class="auth-field"><label for="lockPinIn">PIN</label><input id="lockPinIn" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="PIN 입력" ${lock.locked?'disabled':''} onkeydown="if(event.key==='Enter')doUnlock()"></div>
    <div id="lockErr" class="auth-err" style="display:${lock.locked?'block':'none'}">${lock.locked?`너무 많이 틀렸어요 · ${lock.waitSec}초 후 다시 시도해 주세요`:''}</div>
    <button class="btn btn-primary auth-submit" id="lockSubmitBtn" ${lock.locked?'disabled':''} onclick="doUnlock()">확인</button>
+   <button type="button" class="auth-forgot" onclick="openForgotPinSheet()">PIN을 잊으셨나요?</button>
  </div>`;
  if(lock.locked){clearTimeout(window._lockRetryT);window._lockRetryT=setTimeout(renderLockView,lock.waitSec*1000+200)}
  else setTimeout(()=>{const e=$('lockPinIn');e&&e.focus()},120);
@@ -7386,6 +7387,19 @@ async function doChangePin(){
  await APPLOCK.setPin(p1);
  if(btn)btn.disabled=false;
  closeSheet();toast('PIN을 변경했어요');
+}
+/* PIN을 잊은 경우의 탈출구 — 복구 코드 개념이 없는 기기-로컬 전용 잠금이라, 이게 없으면
+ * verify() 성공 없이는 영원히 #lockView에 막혀서 앱 잠금을 풀기 위해 사이트 데이터 전체를
+ * 지워야 했다(이 기기에만 있는 자산 내역 전체가 함께 사라짐). PIN은 암호화 키가 아니라 단순
+ * 기기-로컬 화면 잠금이라, 데이터는 건드리지 않고 APPLOCK만 초기화해도 안전하다
+ * (app-evolve cycle151 develop). */
+function openForgotPinSheet(){
+ openSheet(`<h3>PIN을 잊으셨나요?</h3>
+  <div class="desc">PIN은 이 기기에만 저장돼 있어 복구 코드로 찾을 수 없어요. 초기화하면 앱 잠금만 꺼지고, 저장된 자산 데이터는 그대로 남아요. 다시 잠그고 싶으면 메뉴 › 설정에서 새 PIN을 설정해 주세요.</div>
+  <div class="two-btn" style="margin-top:14px"><button class="btn btn-soft cancel" onclick="closeSheet()">취소</button><button class="btn btn-primary" onclick="doForgotPin()">잠금 초기화</button></div>`);
+}
+function doForgotPin(){
+ APPLOCK.disable();closeSheet();unlockApp();toast('앱 잠금을 초기화했어요');
 }
 function toggleAppLock(){
  if(APPLOCK.enabled())openDisableAppLockSheet();

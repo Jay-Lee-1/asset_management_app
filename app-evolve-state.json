@@ -1,8 +1,15 @@
 {
   "cycle": 150,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 150,
+      "phase": "develop",
+      "timestamp": "2026-10-06T19:10:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 탐색해(최근 사이클들이 다룬 field-clear/aria/normName NFC/balancesAtDates/PIN잠금/알림문구정직화 등은 모두 제외 지시) '앱 잠금(PIN)'(cycle148 advance 신규 기능)에 PIN을 잊었을 때의 탈출구가 전혀 없다는 실제 데이터손실 함정을 발견. APPLOCK(index.html:1986-2006)은 PBKDF2 해시만 기기-로컬 localStorage(asset_app_lock)에 저장하고 복구 코드 개념이 없는데, renderLockView()(7301-7313)의 #lockView는 PIN 입력칸+확인 버튼뿐이라 verify() 성공 없이는 영원히 못 빠져나가 — 클라우드 계정(AUTH.resetPasswordLocal, 가입시 발급 복구코드)이나 비밀번호(doForgotPassword)에는 이미 있는 복구 경로가 이 기능에만 없음. GUEST 모드 사용자가 4~6자리 PIN을 잊으면 유일한 탈출구가 '사이트 데이터 전체 지우기'뿐이라 이 기기에만 있던 자산/거래 내역 전체가 함께 영구 삭제됨. PIN은 암호화 키가 아니라 단순 기기-로컬 화면 게이트라는 설계 의도(코드 주석)에 착안해, renderLockView()의 확인 버튼 아래 기존 비밀번호 찾기(doForgotPassword)와 같은 .auth-forgot 스타일로 'PIN을 잊으셨나요?' 링크를 추가 → openForgotPinSheet()(data는 그대로 남고 잠금만 꺼진다는 명시적 안내 + 취소/초기화 두 버튼의 기존 .two-btn 확인시트 패턴) → doForgotPin()이 APPLOCK.disable()+unlockApp()+closeSheet()+toast()만 호출(자산 데이터는 전혀 건지지 않음, PIN 재검증 불필요 — 잊은 상황이므로). doDisableAppLock()(기존 PIN을 아는 정상 해제 경로)은 그대로 유지, 이번 추가는 '모르는' 경우의 별도 탈출구. test/run.js: FUNCTIONS에 renderLockView/openForgotPinSheet/doForgotPin, CONSTS에 APPLOCK_FAIL_KEY 추가, sandbox에 APPLOCK.disable()/unlockApp()/clearTimeout 스파이 스텁 신규. 회귀 테스트 3건(잠금화면에 auth-forgot 링크+openForgotPinSheet 연결 확인은 sandbox.$/sandbox.AUTH를 지역적으로 override-and-restore하는 기존 패턴(line 2569 등) 재사용, 확인시트 문구+버튼 연결 확인, doForgotPin이 APPLOCK.disable/unlockApp/closeSheet를 각 1회씩 부르고 토스트를 띄우는지 확인). APP_VERSION 1.47.68->1.47.69, sw.js CACHE v330->v331. node test/run.js 1031/1031 -> 1034/1034 통과(메인 인라인 script 구문 검사 포함, 오케스트레이팅 세션이 diff를 직접 Read로 재확인 후 재실행해 커밋). 로그인 계정(이메일/카카오) 사용자에게 추가 재인증을 요구하는 더 엄격한 버전은 범위 밖으로 남김(사후 critique가 필요하다고 판단하면 재논의).",
+      "commit": null
+    },
     {
       "cycle": 149,
       "phase": "advance",
@@ -112,7 +119,7 @@
       "cycle": 146,
       "phase": "develop",
       "timestamp": "2026-10-06T03:40:00.000Z",
-      "summary": "general-purpose 서브에이전트로 금액 입력란 전반을 grep해 지우기(×) 버튼 관례(.field-clear 래퍼 + fc-x 버튼 + clrInput(), fcWire()가 자동 배선)가 txAmt/rAmt/goalAmt/asAmt/asCostBasis/asName/goalName/txMemo/rMemo에는 적용돼 있는데 budgetIn(openBudgetPrompt, index.html:4799)/qAmt(openQuickAmount, 6434)/bigMinInput(openBigMinSheet, 2883) 세 금액 입력란에만 빠져 있음을 발견·수정. cycle121이 budgetIn을 콤마 포맷/num() 파서로 통일한 것과 같은 결의 '다른 금액칸과 나란히 쓰는데 지우는 방법만 다름(전체선택 후 삭제)' UX 불일치. 세 입력을 .field-clear로 감싸고 동일 패턴의 fc-x 버튼(onclick=\"clrInput('id')\")을 추가(JS 와이어링은 fcWire()가 렌더 후 자동 처리라 추가 배선 불필요). test/run.js FUNCTIONS에 openBudgetPrompt/openBigMinSheet를 새로 추가하고(기존엔 샌드박스에 로드돼 있지 않았음) 회귀 테스트 3건 추가. 수정 전 코드로 되돌려 신규 3건만 정확히 FAIL함을 git stash로 직접 검증한 뒤 복구. node test/run.js 1001/1001 -> 1004/1004 통과(메인 인라인 script 구문 검사 포함). APP_VERSION 1.47.61->1.47.62, sw.js CACHE v323->v324. 오케스트레이팅 세션이 diff를 직접 Read로 재확인 후 테스트 재실행(1004/1004)해 커밋.",
+      "summary": "general-purpose 서브에이전트로 금액 입력란 전반을 grep해 지우기(×) 버튼 관례(.field-clear 래퍼 + fc-x 버튼 + clrInput(), fcWire()가 자동 배선)가 txAmt/rAmt/goalAmt/asAmt/asCostBasis/asName/goalName/txMemo/rMemo에는 적용돼 있는데 budgetIn(openBudgetPrompt, index.html:4799)/qAmt(openQuickAmount, 6434)/bigMinInput(openBigMinSheet, 2883) 세 금액 입력란에만 빠져 있음을 발견·수정. cycle121이 budgetIn을 콤마 포맷/num() 파서로 통일한 것과 같은 결의 '다른 금액칸과 나란히 쓰는데 지우는 방법만 다름(전체 선택 후 삭제)' UX 불일치. 세 입력을 .field-clear로 감싸고 동일 패턴의 fc-x 버튼(onclick=\"clrInput('id')\")을 추가(JS 와이어링은 fcWire()가 렌더 후 자동 처리라 추가 배선 불필요). test/run.js FUNCTIONS에 openBudgetPrompt/openBigMinSheet를 새로 추가하고(기존엔 샌드박스에 로드돼 있지 않았음) 회귀 테스트 3건 추가. 수정 전 코드로 되돌려 신규 3건만 정확히 FAIL함을 git stash로 직접 검증한 뒤 복구. node test/run.js 1001/1001 -> 1004/1004 통과(메인 인라인 script 구문 검사 포함). APP_VERSION 1.47.61->1.47.62, sw.js CACHE v323->v324. 오케스트레이팅 세션이 diff를 직접 Read로 재확인 후 테스트 재실행(1004/1004)해 커밋.",
       "commit": "fef8240"
     },
     {
@@ -134,13 +141,6 @@
       "phase": "develop",
       "timestamp": "2026-10-05T10:10:00.000Z",
       "summary": "general-purpose 서브에이전트로 cycle141 critique가 '보너스 항목, 범위 밖'으로 남겨뒀던 CSV import의 findAsset() 완전일치 불일치를 해소. csvRowToImportTxn()(index.html:5306 부근)의 findAsset이 a.name.trim()===nm 식 대소문자·유니코드 미정규화 완전일치를 쓰는 반면, saveAsset() 동명 자산 가드(3358)/addOwner·doRenameOwner(3444,3459)/addCat·doRenameCat(4858,4906)/CSV import의 카테고리 매칭(buildImportPreview, 5336, 바로 두 줄 아래)까지 전부 normName()(logic.js:205, cycle141에서 NFC 정규화까지 추가됨) 기준 근접일치를 쓰고 있어, 이 한 곳만 비일관적임을 소스 대조로 재확인. 효과: 이 앱이 내보낸 CSV를 macOS(파일시스템이 NFD로 정규화)에서 다시 가져오거나 대소문자/공백만 다른 자산명이 섞인 CSV를 가져오면 실제로 존재하는 자산인데도 매칭 실패해 이름 스냅샷만 남는 unmatched 거래로 떨어져 해당 자산 잔액이 조용히 갱신되지 않음. findAsset의 비교를 normName(a.name)===normName(nm)으로 변경(isMarketValued 제외, 후보 2개 이상이면 미매칭 유지하는 안전장치는 그대로 보존), 일관성 근거를 설명하는 주석 추가. test/run.js에 회귀 테스트 1개 추가(연속 공백/대소문자/NFD 저장 자산명 세 케이스 모두 normName 기준 매칭 확인). node test/run.js 972/972 -> 973/973 통과(메인 인라인 script 구문 검사 포함, 오케스트레이팅 세션이 직접 재실행해 재확인). APP_VERSION 1.47.52->1.47.53, sw.js CACHE v314->v315.",
-      "commit": null
-    },
-    {
-      "cycle": 142,
-      "phase": "review",
-      "timestamp": "2026-10-05T11:08:30.456Z",
-      "summary": "cycle142 develop(202690d, CSV import findAsset() normName() 통일)을 diff/코드 검토. normName()이 NFC 정규화+trim+공백축약+lowercase를 수행함을 확인, csvRowToImportTxn의 category 매칭(buildImportPreview)이 이미 같은 normName() 패턴을 쓰고 있어 일관성 있는 수정임을 확인. node test/run.js 973/973 통과. 추가로 고칠 버그 없음 — 이상 없음.",
       "commit": null
     }
   ]
