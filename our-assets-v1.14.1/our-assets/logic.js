@@ -469,6 +469,20 @@ function assetBalanceSeries(txns,assetId,base,sign,dates){
  });
 }
 
+/* ================= OS 알림 신뢰도 (순수) ================= */
+/* checkNotifyAlerts()(index.html)는 별도 푸시 서버 없이 로컬 Notification API만 쓰고, 화면이
+ * 백그라운드(document.hidden)인 동안만 동작한다(periodicSync/푸시 등록 없음). 토글을 켤 때 뜨는
+ * 토스트가 과거 '앱을 닫아둬도 알려드려요'라고 실제 능력보다 과장해 말했던 문제(app-evolve cycle145
+ * critique)를 고치기 위해, 실제로 보장되는 범위만 두 등급으로 나눠 문구를 고른다. iOS는 Safari
+ * PWA가 백그라운드 탭조차 금방 정지시켜 다른 플랫폼보다 범위가 더 좁다. */
+function notifyReliabilityTier(isIOS){
+ return isIOS?'foreground-tab':'background-tab';
+}
+function notifyReliabilityMsg(tier){
+ if(tier==='foreground-tab')return '이 기기(iOS)는 앱을 열어둔 동안에만 알림이 와요 · 완전히 종료하면 오지 않아요';
+ return '앱을 최근 사용 앱에 남겨두면 받을 수 있어요 · 완전히 종료하면 알림이 오지 않아요';
+}
+
 /* ================= TAB NAV HISTORY (순수) ================= */
 /* 설치형 PWA(manifest display:standalone)에서 안드로이드 백버튼은 history 스택이 비면 바로 앱을
  * 종료시킨다. _ovHistDepth/ovHistPush()(index.html)는 시트·날짜피커 같은 오버레이를 열 때마다

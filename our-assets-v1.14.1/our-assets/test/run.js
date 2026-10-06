@@ -2051,6 +2051,32 @@ test('assetBalanceSeries: 다른 자산의 거래는 무시한다', () => {
   const out = JSON.parse(JSON.stringify(sandbox.assetBalanceSeries(txns, 'a1', 1000, 1, ['2026-01-20'])));
   assert.deepStrictEqual(out, [{ date: '2026-01-20', bal: 1000 }]);
 });
+
+/* ---------- notifyReliabilityTier/notifyReliabilityMsg: OS 알림 토스트/캡션의 실제 능력 고지
+ * (app-evolve cycle145 critique/advance) ----------
+ * checkNotifyAlerts()는 document.hidden일 때만 동작하는 foreground/background 로컬 알림일 뿐
+ * periodicSync/푸시 서버가 없다 — '앱을 닫아둬도 알려드려요' 같은 과잉 약속 대신 실제 범위만
+ * 말하는 두 등급(foreground-tab=iOS, background-tab=그 외)으로 좁혀 고정한다. */
+test('notifyReliabilityTier: iOS는 foreground-tab, 그 외는 background-tab이다', () => {
+  assert.strictEqual(sandbox.notifyReliabilityTier(true), 'foreground-tab');
+  assert.strictEqual(sandbox.notifyReliabilityTier(false), 'background-tab');
+});
+test('notifyReliabilityMsg: foreground-tab/background-tab 등급마다 다른 문구를 돌려주고, 둘 다 "완전히 종료하면" 한계를 명시한다', () => {
+  const fg = sandbox.notifyReliabilityMsg('foreground-tab');
+  const bg = sandbox.notifyReliabilityMsg('background-tab');
+  assert.notStrictEqual(fg, bg);
+  assert.ok(fg.includes('완전히 종료하면'), 'foreground-tab 문구에 종료 시 한계가 빠짐');
+  assert.ok(bg.includes('완전히 종료하면'), 'background-tab 문구에 종료 시 한계가 빠짐');
+  assert.ok(!fg.includes('앱을 닫아둬도') && !bg.includes('앱을 닫아둬도'), '과거의 과잉 약속 문구("앱을 닫아둬도")가 남아있으면 안 됨');
+});
+test('toggleOsNotify: 켤 때 토스트가 notifyReliabilityMsg(notifyReliabilityTier(IS_IOS))를 쓰고, 과거의 "앱을 닫아둬도" 문구는 완전히 제거됐다', () => {
+  assert.ok(src.includes("toast('OS 알림을 켰어요 · '+notifyReliabilityMsg(notifyReliabilityTier(IS_IOS)))"), 'toggleOsNotify 토스트가 notifyReliabilityMsg를 쓰지 않음');
+  assert.ok(!src.includes('앱을 닫아둬도'), '과거의 과잉 약속 문구("앱을 닫아둬도")가 소스에 남아있음');
+});
+test('renderMenu: OS 알림이 켜져 있으면 "알림 · 기준" 그룹 아래 실제 능력 고지 캡션이 상시 노출된다', () => {
+  assert.ok(src.includes("g.cap==='알림 · 기준'&&DB.settings.osNotify"), 'renderMenu가 OS 알림 캡션을 조건부로 렌더하지 않음');
+  assert.ok(src.includes('notifyReliabilityMsg(notifyReliabilityTier(IS_IOS))'), 'renderMenu의 캡션이 notifyReliabilityMsg를 쓰지 않음');
+});
 test('nwChartPath: 모든 값이 같으면(span=0) 0으로 나누지 않고 수평선을 그린다', () => {
   const { line } = sandbox.nwChartPath([
     { date: '2026-01-01', nw: 100 }, { date: '2026-01-02', nw: 100 }, { date: '2026-01-03', nw: 100 },
