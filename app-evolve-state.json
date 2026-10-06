@@ -1,8 +1,19 @@
 {
   "cycle": 149,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "balancesUpTo()/balanceAt() 날짜별 전체 재스캔 O(거래수×조회날짜수) 성능 개선 — 배치 포인터 누적 방식으로 전환",
+    "why": "balancesUpTo(dateStr)(index.html:2233-2253)는 호출마다 allTxns(RANGE_FROM,RANGE_TO) 전체(반복거래 확장 포함)를 처음부터 순회해 그 시점 잔액맵을 만들고 dateStr 단위로만 캐시한다(_balCache). RANGE_TO=addDays(TODAY,760)로 날이 지날수록 스캔 창이 계속 늘어난다. planNegatives()(6371-6389, 홈 탭을 열 때마다·save() 직후마다 전체 Plan 자산×여러 날짜), lowestInMonth()/planRowsHTML()/planTrackHTML()(Plan 탭 렌더당 한 달~3개월치 거래일), findDonors()(현금성 자산마다 1회)가 모두 '같은 렌더 안에서 서로 다른 날짜'로 balanceAt()을 반복 호출해 매번 전체 재스캔이 일어난다. save()가 invalidateBalances()로 캐시를 매번 비우므로 거래가 쌓인 사용자일수록 홈/Plan 탭이 체감 가능하게 느려지는 구조적 문제. 같은 '날짜마다 처음부터 재스캔' 패턴을 이미 assetBalanceSeries()(logic.js:451-469)에서 정렬+포인터 누적(O(n+m))으로 고친 전례가 있어, 같은 기법을 더 자주 호출되는 balancesUpTo 계열에도 적용할 가치가 있다.",
+    "approach": "1) assetBalanceSeries와 동일한 정렬+포인터 누적 패턴으로 '여러 날짜를 한 번에' 계산하는 배치 함수(예: balancesAtDates(dateList) 또는 balancesUpTo를 날짜 배열 입력으로 확장)를 logic.js 또는 index.html에 추가한다. 2) planNegatives(6377-6386), lowestInMonth(4449-4453), planRowsHTML(4514), findDonors(6511-6513) 등 '같은 자산/같은 렌더 내 여러 날짜'를 조회하는 호출부를 배치 API로 교체하되, 다른 단발 조회 호출부(3195, 3219, 4463 등)의 balanceAt(id,dateStr) 시그니처는 그대로 유지한다. 3) 동작/출력은 완전히 동일해야 하므로 test/run.js의 balanceAt/balancesUpTo/planNegatives/lowestInMonth 관련 기존 테스트(약 75건)가 리팩터 후에도 그대로 통과해야 한다(현재 1026/1026). 4) 화면·문구·DB 스키마 변화 없음 — 캐시/루프 구조 교체만. APP_VERSION/sw.js CACHE 버전은 로직 변경이 있으므로 bump한다."
+  },
   "history": [
+    {
+      "cycle": 149,
+      "phase": "critique",
+      "timestamp": "2026-10-06T17:10:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(141-149사이클 동안 다뤄진 항목 전부 + 기각 이력 전달). 새로 발견: balancesUpTo(dateStr)(index.html:2233-2253)가 호출마다 allTxns(RANGE_FROM,RANGE_TO) 전체를 처음부터 순회해 그 시점 잔액맵을 만들고 dateStr 단위로만 캐시(_balCache) — RANGE_TO=addDays(TODAY,760)로 스캔 창이 날짜가 지날수록 계속 자람. planNegatives()(6371-6389, 홈 탭 열 때마다·save() 직후마다)/lowestInMonth()·planRowsHTML()·planTrackHTML()(Plan 탭 렌더당 한 달~3개월치 거래일)/findDonors()(현금성 자산마다)가 모두 같은 렌더 안에서 서로 다른 날짜로 balanceAt()을 반복 호출해 매번 O(거래수) 전체 재스캔이 일어남을 서브에이전트가 호출부 라인까지 직접 Read로 재확인. save()가 invalidateBalances()로 매번 캐시를 비우므로 거래가 쌓인 사용자일수록 홈/Plan 탭이 느려지는 구조. 같은 '날짜마다 재스캔' 패턴을 assetBalanceSeries()(logic.js:451-469, 정렬+포인터 누적 O(n+m))에서 이미 고친 전례가 있어 같은 기법을 balancesUpTo 계열에 적용하는 계획을 pending_advance_plan에 저장(상세는 pending_advance_plan 참고). 러너업(기각): save()의 전체 JSON.stringify(2104-2126, 91곳 호출)는 input oninput에 직접 걸린 곳이 0건이고 CSV일괄가져오기 등은 touchSave()로 이미 배치돼 있어 체감 영향 작음 / PIN잠금 유예시간·WebAuthn는 여전히 유효한 후속항목이나 이번엔 성능 공백이 더 뚜렷해 보류 / renderHistory 필터는 20건 페이지네이션 있어 구조적 문제 없음 / netlify 함수 소비측 에러처리는 stale표시+failStreak+부분성공 토스트까지 이미 견고. 코드 변경 없음(읽기 전용 조사, 서브에이전트가 index.html 2189·2227-2259·3195·3219·4438-4533·4463·4799·6371-6389·6434·6509-6515·6434, logic.js 451-469, test/run.js 관련 테스트 75건 존재 및 node test/run.js 1026/1026 통과를 직접 Read/grep/실행으로 재확인).",
+      "commit": null
+    },
     {
       "cycle": 149,
       "phase": "review",
@@ -134,13 +145,6 @@
       "phase": "critique",
       "timestamp": "2026-10-05T12:15:10.397Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(142사이클 동안 다뤄진 항목 전부 + 기각 이력 전달, normName NFC/CSV findAsset 통일 포함). 새로 발견 후 서브에이전트가 직접 재검증: 홈 순자산추이 카드(#nwhChart, index.html:2428, cycle135)와 전체내역 계좌필터 잔액추이 카드(#assetBalChart, index.html:2508, cycle140)의 스크러버가 onpointerdown/move/up/cancel/leave로만 동작하고 tabindex/role/onkeydown이 전혀 없음을 확인 — rowKeydown()(1488)이 앱 전역 다른 모든 커스텀 인터랙티브 요소와 wheel 피커(whKeydown, 6172)에 일관 적용된 것과 달리 이 두 차트만 예외. 키보드 사용자가 두 핵심 분석 기능의 \"스크럽해서 값 보기\" 인터랙션에 전혀 닿을 수 없는 실사용 차단 접근성 공백. test/run.js에 nwChartPeek/assetBalPeek 매칭 0건으로 회귀 커버리지도 없음. pending_advance_plan에 nwChartKeyStep() 순수함수+공용 피크렌더 setter 추출+두 차트 div에 tabindex/onkeydown 추가+회귀테스트 계획 저장. 러너업(참고용, 이번엔 메인 아님): refreshNwHistoryCard/assetBalPresetSel의 세그먼트버튼 클릭 후 innerHTML 재렌더로 포커스 소실(여유 있으면 같이 묶어 고치되 범위 밖이면 생략 가능) / checkNotifyAlerts()의 showNotification 실패 silent catch(주석상 best-effort로 명시돼 계약 내). 이번 패스에서 재확인했으나 버그 아님: tombstone/merge 배선(goals/inquiries/assetQtyLog)은 DB.deletedIds+gcTombstones로 완전 배선됨, exportData는 풀 DB 덤프라 신규 컬렉션 병합 공백 없음. 코드 변경 없음(읽기 전용 조사, 서브에이전트가 index.html 1488·2372·2428·2448·2453·2467·2508·2518-2546·2593-2699·2923-2927·3023-3029·3189·3493·3667-3672·4444·4557·4724·6172·6554-6699 및 test/run.js grep을 직접 Read/확인).",
-      "commit": null
-    },
-    {
-      "cycle": 142,
-      "phase": "advance",
-      "timestamp": "2026-10-05T13:12:43Z",
-      "summary": "critique(cycle142) 계획대로 nwHistoryCard(#nwhChart, index.html)와 assetBalCard(#assetBalChart) 두 미니차트 스크러버에 키보드 접근 경로를 추가했다. logic.js에 순수 함수 nwChartKeyStep(curIdx,key,len) 추가(whTargetIdx와 같은 clamp 원칙이되, curIdx가 null/-1인 시작 상태에선 가장 최근 포인트(len-1)에서 시작). index.html에서 nwChartPeekMove/assetBalPeekMove에 중복돼 있던 '피크 라인/라벨을 idx로 그리기' 바디를 공용 chartPeekRenderAt(pts,lineElId,labelElId,prefix,idx)로 추출해 포인터 핸들러와 신규 키보드 핸들러(nwChartPeekKey/assetBalPeekKey) 양쪽에서 재사용. 두 차트 div에 tabindex=\"0\" role=\"img\" aria-label 추가, onkeydown으로 ArrowLeft/ArrowRight/Home/End 처리, Escape/blur는 기존 *PeekEnd()로 숨김(pointerleave와 동일 동작). CSS에 .nwh-chart:focus-visible 아웃라인도 asset-item 등 기존 커스텀 인터랙티브 요소와 같은 패턴으로 추가. test/run.js에 nwChartKeyStep 순수 테스트 7개 + 마크업/배선 확인 테스트 3개(총 10개) 추가. critique가 러너업으로 남긴 '세그먼트 버튼 클릭 후 포커스 소실'은 범위 밖으로 보류. APP_VERSION 1.47.53→1.47.54, sw.js CACHE v315→v316. node test/run.js 973/973 -> 983/983 통과 (메인 인라인 script 구문 검사 포함).",
       "commit": null
     }
   ]
