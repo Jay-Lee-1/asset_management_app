@@ -1,8 +1,15 @@
 {
   "cycle": 150,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 150,
+      "phase": "review",
+      "timestamp": "2026-10-06T20:15:00.000Z",
+      "summary": "직전 develop 커밋(9646cb0, PIN 잠금화면 'PIN을 잊으셨나요?' 복구 경로)을 diff 기준으로 검토. APPLOCK.disable()/verify()/setPin()(index.html:1986-2006), renderLockView/doForgotPin(7301-7403), unlockApp(7295-7300), openSheet/closeSheet와 #sheet(line 1300)가 #app(1287-1298)과 형제 노드라 #app이 display:none이어도 시트가 정상 노출됨을 확인(기존 doForgotPassword와 동일 패턴, line 7425) — 즉 PIN 입력 잠김 화면 위에서도 확인 시트가 가려지지 않음. .auth-forgot 클래스가 이미 존재해(line 1235) 스타일 중복 없이 재사용됨도 확인. 잠김(too-many-fails) 상태에서 renderLockView가 예약한 window._lockRetryT 재시도 타이머를 doForgotPin()이 clearTimeout하지 않는 점을 발견했으나, 타이머가 나중에 발화해도 renderLockView()는 매번 AUTH._lockStatus()로 현재 상태를 다시 읽어 그대로 멱등 렌더만 하고 그 시점 #lockView는 이미 display:none(unlockApp 처리)이라 사용자에게 보이는 영향이 전혀 없음 — 실질 버그 아님으로 판단해 코드 변경 없이 기록만 남김(향후 비슷한 타이머 핸들링 패턴을 건드릴 때 참고). doForgotPin이 자산 데이터(DB)에는 전혀 손대지 않고 APPLOCK 키만 지우는지(index.html:2005) 재확인. test/run.js 신규 3건 포함 node test/run.js 1034/1034 통과 재확인(회귀 없음). 코드 변경 없음 — state.json 갱신만.",
+      "commit": null
+    },
     {
       "cycle": 150,
       "phase": "develop",
@@ -134,13 +141,6 @@
       "phase": "advance",
       "timestamp": "2026-10-05T09:08:22Z",
       "summary": "critique(cycle141) 계획대로 normName()(logic.js:205)에 .normalize('NFC')를 trim 전에 추가해 한글 완성형(NFC)/조합형(NFD)이 다른 문자열로 오인되던 근접중복 판정 결함을 고쳤다. 이 함수를 쓰는 addCat/doRenameCat/addOwner/doRenameOwner/saveAsset 근접중복체크/CSV import canon매칭/mergeNameList 9곳 전부가 한 번에 혜택을 받는다. 추가로 normName()을 거치지 않는 완전일치(===) 비교가 남은 입력 캡처 지점(addCat/doRenameCat/addOwner/doRenameOwner/syncAssetInputs의 asName)에도 trim() 뒤에 .normalize('NFC')를 체이닝해 신규/수정 데이터는 애초에 NFC로 저장되게 했다. test/run.js에 NFC/NFD 비교 회귀 테스트 2개(normName, mergeNameList) 추가, APP_VERSION 1.47.51→1.47.52, sw.js CACHE v313→v314. 972/972 테스트 통과. CSV import의 findAsset() 완전일치 불일치(보너스 항목)는 범위 밖이라 보류.",
-      "commit": null
-    },
-    {
-      "cycle": 142,
-      "phase": "develop",
-      "timestamp": "2026-10-05T10:10:00.000Z",
-      "summary": "general-purpose 서브에이전트로 cycle141 critique가 '보너스 항목, 범위 밖'으로 남겨뒀던 CSV import의 findAsset() 완전일치 불일치를 해소. csvRowToImportTxn()(index.html:5306 부근)의 findAsset이 a.name.trim()===nm 식 대소문자·유니코드 미정규화 완전일치를 쓰는 반면, saveAsset() 동명 자산 가드(3358)/addOwner·doRenameOwner(3444,3459)/addCat·doRenameCat(4858,4906)/CSV import의 카테고리 매칭(buildImportPreview, 5336, 바로 두 줄 아래)까지 전부 normName()(logic.js:205, cycle141에서 NFC 정규화까지 추가됨) 기준 근접일치를 쓰고 있어, 이 한 곳만 비일관적임을 소스 대조로 재확인. 효과: 이 앱이 내보낸 CSV를 macOS(파일시스템이 NFD로 정규화)에서 다시 가져오거나 대소문자/공백만 다른 자산명이 섞인 CSV를 가져오면 실제로 존재하는 자산인데도 매칭 실패해 이름 스냅샷만 남는 unmatched 거래로 떨어져 해당 자산 잔액이 조용히 갱신되지 않음. findAsset의 비교를 normName(a.name)===normName(nm)으로 변경(isMarketValued 제외, 후보 2개 이상이면 미매칭 유지하는 안전장치는 그대로 보존), 일관성 근거를 설명하는 주석 추가. test/run.js에 회귀 테스트 1개 추가(연속 공백/대소문자/NFD 저장 자산명 세 케이스 모두 normName 기준 매칭 확인). node test/run.js 972/972 -> 973/973 통과(메인 인라인 script 구문 검사 포함, 오케스트레이팅 세션이 직접 재실행해 재확인). APP_VERSION 1.47.52->1.47.53, sw.js CACHE v314->v315.",
       "commit": null
     }
   ]
