@@ -11403,6 +11403,29 @@ test('twScreen: 튜토리얼 화면의 달력/목록 세그먼트 버튼에 aria
   );
 });
 
+/* ---------- prefers-reduced-motion이 무한반복 keyframe animation도 멈추는지 ----------
+ * 이 미디어쿼리는 CSS 선언이라 vm에서 실행할 수 없어(함수가 아님) src.includes류 정적
+ * 텍스트 검사로 확인한다 — cycle146 critique가 경계한 "실행 함수인데 문자열 검사만 하는"
+ * 패턴과는 다르다(CSS는 원래 비실행 정적 텍스트). 예전엔 transition-duration만 .01ms로
+ * 깎아 .nav-badge.on(warnPulse)/.tw-dot(twGlow)/.tw-try·.tw-hint(twPulse)/.tw-char(twHop)
+ * 5곳의 무한반복 keyframe animation은 reduce-motion 설정과 무관하게 계속 돌았다
+ * (app-evolve cycle150 critique/advance). */
+test('prefers-reduced-motion(reduce)이 transition뿐 아니라 keyframe animation도 전역으로 멈춘다', () => {
+  const marker = '@media (prefers-reduced-motion:reduce)';
+  const markerStart = src.indexOf(marker);
+  assert.ok(markerStart !== -1, 'prefers-reduced-motion:reduce 미디어쿼리를 찾지 못함');
+  const openBrace = src.indexOf('{', markerStart);
+  let depth = 0, i = openBrace;
+  for (; i < src.length; i++) {
+    if (src[i] === '{') depth++;
+    else if (src[i] === '}') { depth--; if (depth === 0) break; }
+  }
+  const block = src.slice(openBrace, i + 1);
+  assert.ok(block.includes('transition-duration:.01ms!important'), 'transition-duration 규칙이 사라짐(기존 동작 유지 확인)');
+  assert.ok(block.includes('animation-duration:.01ms!important'), 'animation-duration 오버라이드가 없어 무한반복 keyframe animation이 reduce-motion에서도 계속 돎');
+  assert.ok(block.includes('animation-iteration-count:1!important'), 'animation-iteration-count 오버라이드가 없어 infinite animation이 reduce-motion에서도 계속 반복됨');
+});
+
 /* ---------- 실행 ---------- */
 // pbkdf2Hash는 Web Crypto(subtle.deriveBits)를 쓰는 비동기 함수라, 러너도 async test를
 // 지원해야 한다 — sync test는 그냥 await해도 즉시 반환되므로 기존 테스트에는 영향 없다.

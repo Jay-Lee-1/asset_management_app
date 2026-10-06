@@ -1277,7 +1277,7 @@ body.selmode .fab{display:none}
 .spend-amt .a .bgt{font-size:11px;font-weight:600;color:var(--text-3)}
 
 
-@media (prefers-reduced-motion:reduce){*{transition-duration:.01ms!important}}
+@media (prefers-reduced-motion:reduce){*{transition-duration:.01ms!important}*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important}}
 </style>
 </head>
 <body>
@@ -1321,7 +1321,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.69';
+const APP_VERSION='1.47.70';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
