@@ -8,7 +8,7 @@
       "phase": "develop",
       "timestamp": "2026-10-06T03:40:00.000Z",
       "summary": "general-purpose 서브에이전트로 금액 입력란 전반을 grep해 지우기(×) 버튼 관례(.field-clear 래퍼 + fc-x 버튼 + clrInput(), fcWire()가 자동 배선)가 txAmt/rAmt/goalAmt/asAmt/asCostBasis/asName/goalName/txMemo/rMemo에는 적용돼 있는데 budgetIn(openBudgetPrompt, index.html:4799)/qAmt(openQuickAmount, 6434)/bigMinInput(openBigMinSheet, 2883) 세 금액 입력란에만 빠져 있음을 발견·수정. cycle121이 budgetIn을 콤마 포맷/num() 파서로 통일한 것과 같은 결의 '다른 금액칸과 나란히 쓰는데 지우는 방법만 다름(전체선택 후 삭제)' UX 불일치. 세 입력을 .field-clear로 감싸고 동일 패턴의 fc-x 버튼(onclick=\"clrInput('id')\")을 추가(JS 와이어링은 fcWire()가 렌더 후 자동 처리라 추가 배선 불필요). test/run.js FUNCTIONS에 openBudgetPrompt/openBigMinSheet를 새로 추가하고(기존엔 샌드박스에 로드돼 있지 않았음) 회귀 테스트 3건 추가. 수정 전 코드로 되돌려 신규 3건만 정확히 FAIL함을 git stash로 직접 검증한 뒤 복구. node test/run.js 1001/1001 -> 1004/1004 통과(메인 인라인 script 구문 검사 포함). APP_VERSION 1.47.61->1.47.62, sw.js CACHE v323->v324. 오케스트레이팅 세션이 diff를 직접 Read로 재확인 후 테스트 재실행(1004/1004)해 커밋.",
-      "commit": null
+      "commit": "fef8240"
     },
     {
       "cycle": 141,
