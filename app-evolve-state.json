@@ -1,12 +1,15 @@
 {
-  "cycle": 146,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "test/run.js DOM-mutating 함수 검증을 '파일 전체 문자열 존재'에서 '해당 엘리먼트 범위 내 속성 검증'으로 좁히기",
-    "why": "src.includes()는 위치/문맥을 구분하지 못해 거짓 안전감을 준다. 전체 66개 render/open 함수를 한 번에 진짜 DOM 실행으로 바꾸는 건 범위가 너무 크므로(의존성 추가 없이 node만 쓰는 프로젝트 철학상 jsdom 등 설치도 지양), 가장 최근(cycle142/143/145)에 추가된 접근성·포커스 핵심 와이어링 테스트부터 scope를 좁혀 실질적 보호력을 높인다.",
-    "approach": "test/run.js에 extractTag(id) 헬퍼 추가 — index.html에서 `id=\"X\"`를 포함하는 여는 태그(`<div id=\"X\" ...>`)만 안전하게 슬라이싱해 그 태그의 속성 문자열만 반환(extractFunction의 괄호매칭과 동일 원칙, 따옴표 중첩 주의). 10892-10904행의 nwhChart/assetBalChart 키보드 와이어링 테스트, 2095-2100행의 알림 캡션 테스트를 extractTag(id) 결과에 대해 assert하도록 교체(파일 전체가 아니라 그 엘리먼트 안에서만 tabindex/onkeydown/aria-label 확인). 검증 전략: 먼저 해당 속성을 실제 엘리먼트에서 제거하면서 똑같은 문자열을 파일의 다른(관련 없는) 위치에 남겨두는 변형을 만들어 — 기존 src.includes 버전은 여전히 PASS, 새 extractTag 버전은 올바르게 FAIL함을 git stash로 직접 증명한 뒤 커밋. 추가로 nwChartPeekKey/assetBalPeekKey처럼 핵심 상호작용 하나는, 아주 작은 fake div(속성 저장 + onkeydown 문자열을 vm.runInContext로 실행)로 실제 키 이벤트를 흉내 내 `_nwPeekIdx` 등 상태 변화까지 assert하는 파일럿을 만들어 '완전 실행형 테스트'로 가는 길을 보여준다. 나머지 64개 미검증 render/open 함수는 범위 밖(백로그)으로 남긴다."
-  },
+  "cycle": 147,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 146,
+      "phase": "advance",
+      "timestamp": "2026-10-06T06:30:00.000Z",
+      "summary": "critique(cycle146) 계획대로 test/run.js의 DOM-mutating 함수 검증을 '파일 전체 문자열 존재(src.includes)'에서 '해당 엘리먼트/함수 범위 내 검증'으로 좁혔다. extractTag(id) 헬퍼 추가(id=\"X\"가 나오는 지점 기준 가장 가까운 앞쪽 \"<\"부터 그 태그를 닫는 \">\"까지만 슬라이싱) — nwhChart/assetBalChart 마크업 테스트(tabindex/role/onkeydown)를 이걸로 교체. nwChartPeekKey/assetBalPeekKey가 nwChartKeyStep을 호출하는지, toggleOsNotify의 토스트, renderMenu의 알림 캡션 테스트 3건은 애초에 함수 몸통이라 이미 있던 extractFunction으로 교체(새 헬퍼 불필요, renderMenu는 다른 테스트에서 이미 쓰던 패턴 재사용). git으로 nwhChart div에서 실제로 onkeydown 속성을 제거하면서 같은 문자열을 파일 다른 곳(주석)에 남겨두는 변형을 만들어, 기존 src.includes 버전이면 여전히 PASS했을 상황에서 새 extractTag 버전이 올바르게 FAIL함을 직접 재현해 검증(검증 후 원복). 파일럿: nwChartPeekKey+chartPeekRenderAt을 별도 vm 컨텍스트에($/announceLive는 no-op 스텁, daysBetween/shortDate2/comma/nwChartKeyStep은 실제 소스) 올려 ArrowRight/ArrowLeft 키 이벤트 객체를 실제로 호출하고 _nwPeekIdx가 2->1로 바뀌는지, preventDefault가 호출되는지까지 assert하는 완전 실행형 테스트 1건 추가. 나머지 64개 미검증 render/open 함수는 계획대로 범위 밖(백로그)으로 남김. index.html/sw.js 변경 없음(테스트 파일만 수정이라 APP_VERSION/CACHE bump 불필요). node test/run.js 1004/1004 -> 1005/1005 통과(메인 인라인 script 구문 검사 포함).",
+      "commit": null
+    },
     {
       "cycle": 146,
       "phase": "critique",
@@ -138,13 +141,6 @@
       "phase": "review",
       "timestamp": "2026-10-06T00:30:00.000Z",
       "summary": "develop 커밋(4bc0028, renderTxSheet rc분기 txAmt에 Enter-제출 추가)을 검토. recSave()(index.html:3985)를 직접 Read해 twGuard() 가드와 amt 비어있을 때 toast 후 안전 반환하는 경로를 확인, Enter로 조기 호출돼도 부작용(중복 저장/예외) 없음을 재확인. 같은 시트의 다른 분기(메인 txAmt)와 rAmt/goalAmt/asCostBasis 등 기존 Enter-제출 컨벤션과 동일한 onkeydown 패턴(if(event.key==='Enter'&&!event.isComposing))이 그대로 적용됨을 diff로 확인. node test/run.js 재실행 997/997 통과(신규 회귀 테스트 1건 포함). 코드 변경 없음 — 이상 없음.",
-      "commit": null
-    },
-    {
-      "cycle": 145,
-      "phase": "critique",
-      "timestamp": "2026-10-06T01:40:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(cycle140-145 히스토리 전부 + 기각 이력 전달). 새로 발견 후 서브에이전트가 index.html 6699-6726·6668-6670·7165·7384·4584·5303, sw.js 전체, netlify.toml, netlify/functions/*.js, manifest.webmanifest를 직접 Read/grep으로 재검증: OS 알림 토글을 켤 때 뜨는 토스트(index.html:6723) 문구가 '앱을 닫아둬도 ... 알려드려요'라고 명시적으로 약속하는데, 실제 구현(checkNotifyAlerts, index.html:6699-6716)은 document.hidden일 때만 동작하는 순수 foreground setInterval(7165행, 5분 주기)이고 Push API/VAPID/periodicSync 등록이 전체 레포에 전혀 없음(grep 0건, sw.js에 push 리스너 없음)을 확인 — 코드 자체의 개발자 주석(6699-6702)도 '완전 종료(특히 iOS Safari PWA)까지는 보장 못함, best-effort'라고 스스로 인정하는 한계가 사용자 노출 문구와 정면으로 어긋남. notifyAlertInfo가 챙기는 알림(이체확인/저축만기/예산초과, 6668-6670 주석: '그날 놓치면 의미 없는' 것만 선정)일수록 앱이 완전 종료된 사이 조용히 유실될 위험이 크고, 설정 화면 토글 행(4584)엔 이 한계를 알리는 장치가 전혀 없음. pending_advance_plan에 (1)notifyReliabilityTier/notifyReliabilityMsg 순수 함수로 토스트·설정화면 캡션 문구를 실제 능력에 맞게 정직화 (2)Android/Chrome 등 periodicSync 지원 시 best-effort로 추가 등록 (3)sw.js periodicsync 리스너 + 알림 판정에 필요한 최소 슬라이스(펜딩이체/저축만기/예산초과)만 담는 IndexedDB 미러 (4)테스트 알림 보내기 버튼 (5)회귀테스트 계획을 저장, 범위가 크면 문구 정직화만 이번 사이클에 완결하고 나머지는 분리해도 된다고 명시(상세는 pending_advance_plan 참고). 러너업(기각): 예산(budgetHistory)이 귀속 무관 전역인 것(spendByCategory/openBudgetPrompt 주석이 설계 의도로 명시) / 단일 7422줄 index.html 모놀리식 구조(이미 logic.js 분리 완화책 있음, 구체적 결함 아님) / sw.js 캐시버전 수동 bump(가정성 리드, staleness 증거 없음) / RANGE_FROM 고정 하한(이미 rangeCount로 고지, 긴급성 낮음) / 자산 재배열 키보드 접근성(moveGroup/moveAsset 버튼으로 이미 완전한 대안 존재, 가짜 리드). 코드 변경 없음(읽기 전용 조사).",
       "commit": null
     }
   ]

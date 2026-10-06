@@ -87,6 +87,23 @@ function extractLet(name) {
 // 파싱하므로, 그 구문 오류 하나가 앱 전체(모든 탭)를 백지로 만든다. extractMainScript는
 // 그 간극을 메우려고 메인 인라인 <script> 블록 전체를 원본 그대로(추출/가공 없이) 반환해,
 // 아래 스모크 테스트가 실제 브라우저처럼 전체를 한 번에 구문 검사할 수 있게 한다.
+// src.includes('id="X" attr="y"')는 파일 전체에서 그 문자열이 "어딘가에 존재하는지"만 보므로,
+// 속성이 실제로는 그 엘리먼트에서 빠졌는데 같은 문자열이 주석/다른 엘리먼트/문자열 리터럴에 남아있어도
+// 거짓으로 통과한다(app-evolve cycle146 critique가 짚은 거짓 안전감). extractTag(id)는 `id="X"`가
+// 나오는 지점을 기준으로 그 **여는 태그 하나**의 범위(가장 가까운 앞쪽 "<"부터 그 태그를 닫는 ">"까지)만
+// 잘라내 반환해, 이후 assert가 그 엘리먼트의 속성 문자열 안에서만 검사하도록 좁힌다.
+// (이 프로젝트의 태그 속성값엔 ">"가 들어가지 않으므로 가장 단순한 lastIndexOf/indexOf 짝짓기로 충분하다.)
+function extractTag(id) {
+  const marker = `id="${id}"`;
+  const idPos = src.indexOf(marker);
+  if (idPos === -1) throw new Error(`extractTag: id="${id}" 엘리먼트를 index.html에서 찾지 못함`);
+  const tagStart = src.lastIndexOf('<', idPos);
+  if (tagStart === -1) throw new Error(`extractTag: id="${id}" 앞에서 여는 태그("<")를 찾지 못함`);
+  const tagEnd = src.indexOf('>', idPos);
+  if (tagEnd === -1) throw new Error(`extractTag: id="${id}" 뒤에서 태그를 닫는 ">"를 찾지 못함`);
+  return src.slice(tagStart, tagEnd + 1);
+}
+
 function extractMainScript() {
   const afterExternalTags = src.indexOf('<script src="logic.js"></script>');
   if (afterExternalTags === -1) throw new Error('extractMainScript: logic.js 스크립트 태그를 찾지 못함');
@@ -2091,13 +2108,19 @@ test('notifyReliabilityMsg: foreground-tab/background-tab 등급마다 다른 �
   assert.ok(bg.includes('완전히 종료하면'), 'background-tab 문구에 종료 시 한계가 빠짐');
   assert.ok(!fg.includes('앱을 닫아둬도') && !bg.includes('앱을 닫아둬도'), '과거의 과잉 약속 문구("앱을 닫아둬도")가 남아있으면 안 됨');
 });
+// (app-evolve cycle147 review: "toast(...)가 notifyReliabilityMsg를 쓴다"는 toggleOsNotify
+// 함수 하나의 문제인데 src.includes()로 보면 파일 전체 어딘가에 그 문자열만 있어도 통과한다 —
+// 정작 toggleOsNotify가 그 토스트 호출을 잃고 다른 데(예: 주석)에 같은 문자열이 남아도 거짓
+// 안전감을 준다. extractFunction으로 그 함수 몸통만 잘라 검사하도록 좁힌다. "앱을 닫아둬도"
+// 부재 확인은 파일 전체에서 "어디에도 없어야" 하는 전역 네거티브 체크라 src 그대로 쓴다.)
 test('toggleOsNotify: 켤 때 토스트가 notifyReliabilityMsg(notifyReliabilityTier(IS_IOS))를 쓰고, 과거의 "앱을 닫아둬도" 문구는 완전히 제거됐다', () => {
-  assert.ok(src.includes("toast('OS 알림을 켰어요 · '+notifyReliabilityMsg(notifyReliabilityTier(IS_IOS)))"), 'toggleOsNotify 토스트가 notifyReliabilityMsg를 쓰지 않음');
+  assert.ok(extractFunction('toggleOsNotify').includes("toast('OS 알림을 켰어요 · '+notifyReliabilityMsg(notifyReliabilityTier(IS_IOS)))"), 'toggleOsNotify 토스트가 notifyReliabilityMsg를 쓰지 않음');
   assert.ok(!src.includes('앱을 닫아둬도'), '과거의 과잉 약속 문구("앱을 닫아둬도")가 소스에 남아있음');
 });
 test('renderMenu: OS 알림이 켜져 있으면 "알림 · 기준" 그룹 아래 실제 능력 고지 캡션이 상시 노출된다', () => {
-  assert.ok(src.includes("g.cap==='알림 · 기준'&&DB.settings.osNotify"), 'renderMenu가 OS 알림 캡션을 조건부로 렌더하지 않음');
-  assert.ok(src.includes('notifyReliabilityMsg(notifyReliabilityTier(IS_IOS))'), 'renderMenu의 캡션이 notifyReliabilityMsg를 쓰지 않음');
+  const body = extractFunction('renderMenu');
+  assert.ok(body.includes("g.cap==='알림 · 기준'&&DB.settings.osNotify"), 'renderMenu가 OS 알림 캡션을 조건부로 렌더하지 않음');
+  assert.ok(body.includes('notifyReliabilityMsg(notifyReliabilityTier(IS_IOS))'), 'renderMenu의 캡션이 notifyReliabilityMsg를 쓰지 않음');
 });
 test('nwChartPath: 모든 값이 같으면(span=0) 0으로 나누지 않고 수평선을 그린다', () => {
   const { line } = sandbox.nwChartPath([
@@ -10886,22 +10909,53 @@ test('nwChartKeyStep: 모르는 key는 curIdx를 그대로 돌려준다(호출�
 
 /* ---------- nwhChart/assetBalChart 마크업: 키보드로 스크러버에 닿을 수 있는지(tabindex+onkeydown)
  * 확인하는 회귀 테스트. 포인터 핸들러만 있던 것(app-evolve cycle135/140)을 cycle142에서 고쳤다 —
- * 이 둘이 다시 onpointer*만 남고 키보드 경로가 빠지면 조용히 재발할 수 있어 마크업 자체를 지킨다. */
+ * 이 둘이 다시 onpointer*만 남고 키보드 경로가 빠지면 조용히 재발할 수 있어 마크업 자체를 지킨다.
+ * (app-evolve cycle147 review: 예전엔 src.includes()로 파일 전체에서 문자열 존재만 봤는데,
+ * 그 속성이 실제로 이 div에서 빠져도 같은 문자열이 파일 다른 곳(주석 등)에 남아있으면 거짓으로
+ * 통과했다 — extractTag(id)로 이 div의 여는 태그 범위 안에서만 검사하도록 좁혔다.) */
 test('nwhChart: tabindex와 키보드 핸들러(onkeydown)가 있다', () => {
-  assert.ok(
-    src.includes('id="nwhChart" tabindex="0" role="img"') && src.includes('onkeydown="nwChartPeekKey(event)"'),
-    'nwhChart div에 tabindex/onkeydown이 없음 — 키보드 접근 경로가 빠짐'
-  );
+  const tag = extractTag('nwhChart');
+  assert.ok(tag.includes('tabindex="0"'), 'nwhChart div에 tabindex="0"이 없음 — 키보드 접근 경로가 빠짐');
+  assert.ok(tag.includes('role="img"'), 'nwhChart div에 role="img"가 없음');
+  assert.ok(tag.includes('onkeydown="nwChartPeekKey(event)"'), 'nwhChart div에 onkeydown이 없음 — 키보드 접근 경로가 빠짐');
 });
 test('assetBalChart: tabindex와 키보드 핸들러(onkeydown)가 있다', () => {
-  assert.ok(
-    src.includes('id="assetBalChart" tabindex="0" role="img"') && src.includes('onkeydown="assetBalPeekKey(event)"'),
-    'assetBalChart div에 tabindex/onkeydown이 없음 — 키보드 접근 경로가 빠짐'
-  );
+  const tag = extractTag('assetBalChart');
+  assert.ok(tag.includes('tabindex="0"'), 'assetBalChart div에 tabindex="0"이 없음 — 키보드 접근 경로가 빠짐');
+  assert.ok(tag.includes('role="img"'), 'assetBalChart div에 role="img"가 없음');
+  assert.ok(tag.includes('onkeydown="assetBalPeekKey(event)"'), 'assetBalChart div에 onkeydown이 없음 — 키보드 접근 경로가 빠짐');
 });
+/* nwChartPeekKey/assetBalPeekKey는 둘 다 함수라 extractFunction으로 그 몸통만 정확히 잘라
+ * 검사할 수 있다(src.includes처럼 파일 전체를 보지 않음). */
 test('nwChartPeekKey/assetBalPeekKey가 nwChartKeyStep을 호출해 다음 인덱스를 고른다', () => {
-  assert.ok(src.includes('nwChartKeyStep(_nwPeekIdx,e.key,_nwChartPts.length)'), 'nwChartPeekKey가 nwChartKeyStep을 호출하지 않음');
-  assert.ok(src.includes('nwChartKeyStep(_assetBalPeekIdx,e.key,_assetBalChartPts.length)'), 'assetBalPeekKey가 nwChartKeyStep을 호출하지 않음');
+  assert.ok(extractFunction('nwChartPeekKey').includes('nwChartKeyStep(_nwPeekIdx,e.key,_nwChartPts.length)'), 'nwChartPeekKey가 nwChartKeyStep을 호출하지 않음');
+  assert.ok(extractFunction('assetBalPeekKey').includes('nwChartKeyStep(_assetBalPeekIdx,e.key,_assetBalChartPts.length)'), 'assetBalPeekKey가 nwChartKeyStep을 호출하지 않음');
+});
+/* ---------- nwChartPeekKey 완전 실행형 파일럿: 위 테스트들은 소스 텍스트 패턴만 보지만, 여기선
+ * nwChartPeekKey/chartPeekRenderAt을 실제 vm에 태워 ArrowRight 키 이벤트를 흉내 내 호출하고
+ * _nwPeekIdx 상태가 실제로 바뀌는지까지 확인한다(app-evolve cycle146 critique가 제안한
+ * "완전 실행형 테스트로 가는 길" 파일럿 — 나머지 render/open 함수들은 범위 밖으로 남긴다). */
+test('[실행형] nwChartPeekKey(ArrowRight) 키 이벤트는 _nwPeekIdx를 다음 인덱스로 옮긴다', () => {
+  const ctx = {
+    $: () => null, // chartPeekRenderAt이 스크러버 라인/라벨 엘리먼트를 못 찾아도(null) 안전하게 넘어감
+    announceLive: () => {},
+    shortDate2: sandbox.shortDate2,
+    comma: sandbox.comma,
+    daysBetween: sandbox.daysBetween,
+    nwChartKeyStep: sandbox.nwChartKeyStep,
+    _nwChartPts: [
+      { date: '2026-01-01', nw: 100 }, { date: '2026-01-02', nw: 110 }, { date: '2026-01-03', nw: 120 },
+    ],
+    _nwPeekIdx: null,
+  };
+  vm.createContext(ctx);
+  vm.runInContext([extractFunction('chartPeekRenderAt'), extractFunction('nwChartPeekKey')].join('\n'), ctx);
+  let prevented = false;
+  ctx.nwChartPeekKey({ key: 'ArrowRight', preventDefault: () => { prevented = true; } });
+  assert.strictEqual(ctx._nwPeekIdx, 2, 'curIdx가 null인 상태에서 ArrowRight면 마지막 포인트(인덱스 2)로 가야 함');
+  assert.ok(prevented, 'ArrowRight는 e.preventDefault()를 호출해야 함(스크롤 등 기본 동작 방지)');
+  ctx.nwChartPeekKey({ key: 'ArrowLeft', preventDefault: () => {} });
+  assert.strictEqual(ctx._nwPeekIdx, 1, '이어서 ArrowLeft면 한 칸 앞(인덱스 1)으로 이동해야 함');
 });
 
 /* ---------- refreshNwHistoryCard/assetBalPresetSel 포커스 보존: 기간 세그먼트(1개월/3개월/...)
