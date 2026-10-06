@@ -1317,7 +1317,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.63';
+const APP_VERSION='1.47.64';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2404,7 +2404,7 @@ function planGaugeCard(S,y,m){
 function shortDate2(ds){return ds.slice(5,7)+'/'+ds.slice(8,10)}
 function nwPresetSegHTML(preset){
  const presets=[['m1','1개월'],['m3','3개월'],['y1','1년'],['all','전체']];
- return `<div class="seg nwh-seg"><div class="seg-blob"></div>${presets.map(([p,l])=>`<button type="button" class="${preset===p?'on':''}" onclick="nwPresetSel('${p}')">${l}</button>`).join('')}</div>`;
+ return `<div class="seg nwh-seg" role="group" aria-label="기간 선택"><div class="seg-blob"></div>${presets.map(([p,l])=>`<button type="button" class="${preset===p?'on':''}" aria-pressed="${preset===p}" onclick="nwPresetSel('${p}')">${l}</button>`).join('')}</div>`;
 }
 function nwHistoryCard(owner,preset){
  owner=owner||'all';preset=preset||'m3';
@@ -2503,7 +2503,7 @@ function assetBalCard(assetId,preset){
  preset=preset||'m3';
  const a=DB.assets.find(x=>x.id===assetId);
  if(!a||!['cash','savings','realestate','etc','pension','debt'].includes(a.type))return '';
- const segHTML=`<div class="seg nwh-seg"><div class="seg-blob"></div>${[['m1','1개월'],['m3','3개월'],['y1','1년'],['all','전체']].map(([p,l])=>`<button type="button" class="${preset===p?'on':''}" onclick="assetBalPresetSel('${a.id}','${p}')">${l}</button>`).join('')}</div>`;
+ const segHTML=`<div class="seg nwh-seg" role="group" aria-label="기간 선택"><div class="seg-blob"></div>${[['m1','1개월'],['m3','3개월'],['y1','1년'],['all','전체']].map(([p,l])=>`<button type="button" class="${preset===p?'on':''}" aria-pressed="${preset===p}" onclick="assetBalPresetSel('${a.id}','${p}')">${l}</button>`).join('')}</div>`;
  const to=TODAY;
  const days={m1:30,m3:90,y1:365}[preset];
  let from=days?addDays(to,-days):RANGE_FROM;
@@ -2672,7 +2672,7 @@ function goalClearDate(editing){syncGoalInputs();goalDraft.targetDate='';renderG
 function goalOwnerSel(i,editing){syncGoalInputs();const list=['all',...(DB.owners||[])];goalDraft.owner=list[i]||'all';renderGoalForm(editing)} /* 자산 ownerPick과 달리 '전체'(가구 공동 목표) 선택지가 있어 asOpenOwner의 전용 시트 대신 spendOwnerSel과 같은 인라인 seg를 쓴다 */
 function renderGoalForm(editing){
  const d=goalDraft;
- const ownerSeg=`<div class="field"><label>귀속</label><div class="seg"><div class="seg-blob"></div>${['all',...(DB.owners||[])].map((o,oi)=>`<button class="${(d.owner||'all')===o?'on':''}" onclick="goalOwnerSel(${oi},${editing})">${o==='all'?'전체':esc(o)}</button>`).join('')}</div></div>`;
+ const ownerSeg=`<div class="field"><label>귀속</label><div class="seg" role="group" aria-label="귀속 선택"><div class="seg-blob"></div>${['all',...(DB.owners||[])].map((o,oi)=>`<button class="${(d.owner||'all')===o?'on':''}" aria-pressed="${(d.owner||'all')===o}" onclick="goalOwnerSel(${oi},${editing})">${o==='all'?'전체':esc(o)}</button>`).join('')}</div></div>`;
  openSheet(`<h3>${editing?'목표 수정':'목표 추가'}</h3><div class="desc">순자산이 이 금액에 도달하는 걸 목표로 추적해요</div>
   <div class="field"><label for="goalName">목표 이름</label><div class="field-clear"><input id="goalName" value="${esc(d.name||'')}" placeholder="예: 내 집 마련 자금"><button type="button" class="fc-x" aria-label="이름 지우기" onclick="clrInput('goalName')">✕</button></div></div>
   ${ownerSeg}
@@ -3593,7 +3593,7 @@ function calPane(y,m,sel,live,txMap){
 function modeSeg(tab){ /* 달력/목록 컴팩트 세그먼트 (헤더용) */
  const isCal=(tab==='ledger');
  const filtered=(ST.hist.cat!=='전체'||ST.hist.q!==''||!!ST.hist.assetId);
- return `<div class="mseg"><button class="${isCal?'on':''}" onclick="${isCal?'':'toCal()'}">달력</button><button class="${!isCal?'on':''}" onclick="${!isCal?'':'toList()'}">검색${filtered?'<span class="chip-dot"></span>':''}</button></div>`;
+ return `<div class="mseg" role="group" aria-label="보기 방식 선택"><button class="${isCal?'on':''}" aria-pressed="${isCal}" onclick="${isCal?'':'toCal()'}">달력</button><button class="${!isCal?'on':''}" aria-pressed="${!isCal}" onclick="${!isCal?'':'toList()'}">검색${filtered?'<span class="chip-dot"></span>':''}</button></div>`;
 }
 function ledgerRowsHtml(d){
  const selTx=dayTxns(d);
@@ -3795,7 +3795,7 @@ function renderTxSheet(){
  const editing=!!d.id;
  const showRepeat=!editing; /* 간단: 생성 시에만 반복 토글 노출 (기존 반복 편집은 반복 관리에서) */
  const rpt=showRepeat&&d.repeat;
- const typeSeg=[['expense','지출'],['income','수입'],['transfer','이체'],['saving','저축']].map(([v,l])=>`<button class="${d.type===v?'on':''}" onclick="txType('${v}')">${l}</button>`).join('');
+ const typeSeg=[['expense','지출'],['income','수입'],['transfer','이체'],['saving','저축']].map(([v,l])=>`<button class="${d.type===v?'on':''}" aria-pressed="${d.type===v}" onclick="txType('${v}')">${l}</button>`).join('');
  const catField=d.type!=='transfer'?`<div class="field"><label>카테고리</label><button class="pick" onclick="txOpenCat()"><div class="pav ${catAv(d.type)}">${catGlyph(d.type,d.category,null,'tag')}</div><div class="pbody"><div class="pn">${esc(d.category)}</div></div><div class="pc">${svg('chevR')}</div></button></div>`:'';
  let assetFields='';
  if(d.type==='expense')assetFields=`<div class="field"><label>출금 자산</label>${assetPickBtn(d.fromAssetId,"txOpenAsset('from')")}</div>`;
@@ -3816,7 +3816,7 @@ function renderTxSheet(){
  const datePsub=rpt?'':(d.date===TODAY?'오늘':(isFuture(d.date)?'예정':''));
  const memoEnterSubmit=rpt?'':` onkeydown="if(event.key==='Enter'&&!event.isComposing)saveTx()"`; /* 반복 켜짐이면 뒤에 주기/종료조건 필드가 더 있어 제외 */
  openFormSheet(`<div class="tx-head"><h3>${editing?'내역 수정':'내역 입력'}</h3>${repeatChip}</div>
-  <div class="seg"><div class="seg-blob"></div>${typeSeg}</div>
+  <div class="seg" role="group" aria-label="구분 선택"><div class="seg-blob"></div>${typeSeg}</div>
   <div class="field"><label for="txAmt">금액</label><div class="field-clear"><input id="txAmt" class="amount-in num" inputmode="numeric" value="${d.amount?comma(d.amount):''}" placeholder="0" oninput="fmtAmt(this)"><button type="button" class="fc-x" aria-label="금액 지우기" onclick="clrInput('txAmt')">✕</button></div></div>
   <div class="field"><label>${dateLabel}</label><button class="pick" onclick="syncTxInputs();openFieldDatePicker(txDraft.date,ds=>{txDraft.date=ds;recalcEndCond(txDraft,ds);renderTxSheet()})">
     <div class="pav a-etc">${svg('ledger')}</div><div class="pbody"><div class="pn">${fmtDateFull(d.date)}</div><div class="psub">${datePsub}</div></div><div class="pc">${svg('chev')}</div></button>
@@ -4033,7 +4033,7 @@ function recOpenWeekend(){syncRecInputs();const cur=recDraft.weekend||'none';
 function setRecWeekend(v){recDraft.weekend=v;recalcEndCond(recDraft,recDraft.startDate);renderRecSheet(!!recDraft.id)}
 function renderRecSheet(){
  const d=recDraft;const editing=!!d.id;
- const typeSeg=[['expense','지출'],['income','수입'],['transfer','이체'],['saving','저축']].map(([v,l])=>`<button class="${d.type===v?'on':''}" onclick="recType('${v}')">${l}</button>`).join('');
+ const typeSeg=[['expense','지출'],['income','수입'],['transfer','이체'],['saving','저축']].map(([v,l])=>`<button class="${d.type===v?'on':''}" aria-pressed="${d.type===v}" onclick="recType('${v}')">${l}</button>`).join('');
  const catField=d.type!=='transfer'?`<div class="field"><label>카테고리</label><button class="pick" onclick="recOpenCat()"><div class="pav ${catAv(d.type)}">${catGlyph(d.type,d.category,null,'tag')}</div><div class="pbody"><div class="pn">${esc(d.category)}</div></div><div class="pc">${svg('chevR')}</div></button></div>`:'';
  const freqBtns=[['monthly','매월'],['weekly','매주'],['daily','매일'],['yearly','매년']].map(([v,l])=>`<button class="${d.freq===v?'on':''}" onclick="recFreq('${v}')">${l}</button>`).join('');
  let dayField='';
@@ -4043,7 +4043,7 @@ function renderRecSheet(){
  else if(d.type==='income')assetFields=`<div class="field"><label>입금 자산</label>${assetPickBtn(d.toAssetId,"recOpenAsset('to')")}</div>`;
  else assetFields=`<div class="field"><label>보내는 자산</label>${assetPickBtn(d.fromAssetId,"recOpenAsset('from')")}</div><div class="field"><label>받는 자산</label>${assetPickBtn(d.toAssetId,"recOpenAsset('to')")}</div>`;
  openFormSheet(`<h3>${editing?'반복 수정':'반복 설정'}</h3><div class="desc">고정지출·정기수입·이체·저축을 자동 기록해요</div>
-  <div class="seg"><div class="seg-blob"></div>${typeSeg}</div>
+  <div class="seg" role="group" aria-label="구분 선택"><div class="seg-blob"></div>${typeSeg}</div>
   ${catField}
   <div class="field"><label for="rMemo">메모 <span style="color:var(--text-3);font-weight:600">(선택)</span></label><div class="field-clear"><input id="rMemo" value="${(d.memo&&d.memo!==d.category)?d.memo.replace(/"/g,'&quot;'):''}" placeholder="예: 넷플릭스 구독" oninput="recDraft.memo=this.value"><button type="button" class="fc-x" aria-label="메모 지우기" onclick="clrInput('rMemo')">✕</button></div></div>
   <div class="field"><label for="rAmt">금액</label><div class="field-clear"><input id="rAmt" class="num" inputmode="numeric" value="${d.amount?comma(d.amount):''}" placeholder="0" oninput="fmtAmt(this)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveRec()"><button type="button" class="fc-x" aria-label="금액 지우기" onclick="clrInput('rAmt')">✕</button></div></div>
@@ -4774,7 +4774,7 @@ function openSpendAnalysis(){
     <div class="spend-amt"><div class="a num${overCls}">${comma(r.v)}${budget?`<span class="bgt">/${comma(budget)}</span>`:''}원</div><div class="p${overCls}">${pct}%${budget?' 사용':''}</div></div></div>`}).join('')
    :`<div class="empty"><div class="ei">${svg('chart')}</div><div class="et">아직 쓴 게 없어요 👏</div><div class="es">이대로만 가면 완벽해요</div></div>`;
  openSheet(`<h3>${m}월 지출 분석</h3><div class="desc">카테고리를 눌러 예산을 정해보세요 · 예정 포함</div>
-  <div class="seg"><div class="seg-blob"></div>${['전체',...DB.owners].map((o,oi)=>`<button class="${ST.spendOwner===o?'on':''}" onclick="spendOwnerSel(${oi})">${esc(o)}</button>`).join('')}</div>
+  <div class="seg" role="group" aria-label="귀속 선택"><div class="seg-blob"></div>${['전체',...DB.owners].map((o,oi)=>`<button class="${ST.spendOwner===o?'on':''}" aria-pressed="${ST.spendOwner===o}" onclick="spendOwnerSel(${oi})">${esc(o)}</button>`).join('')}</div>
   <div class="card" style="text-align:center;padding:16px;margin-bottom:12px"><div style="font-size:12.5px;color:var(--text-3);font-weight:700">총 지출</div><div class="num" style="font-size:26px;font-weight:700;color:var(--expense);margin-top:2px">${comma(total)}원</div>${totalDeltaPct!==null?`<div style="margin-top:4px">${spendTrendBadge(totalDeltaPct,'최근 3개월 평균 대비 ')}</div>`:''}</div>
   ${tb.budgetedTotal?`<div class="card" style="text-align:center;padding:16px;margin-bottom:12px">
    <div style="font-size:12.5px;color:var(--text-3);font-weight:700">이번 달 예산</div>
@@ -4891,7 +4891,7 @@ function openCatManage(kind,keep){
  const avCls=k==='income'?'a-in':k==='saving'?'a-save':'a-food';
  const trigIcon=catAddDraft.icon||(k==='income'?'arrowUp':k==='saving'?'piggy':'tag');
  openSheet(`<h3>카테고리 관리</h3><div class="desc">${k==='saving'?'아이콘과 이름으로 추가해요.':'‘변동’은 매달 금액이 달라지는 항목이에요.'}</div>
-  <div class="seg"><div class="seg-blob"></div>${['expense','income','saving'].map(x=>`<button class="${k===x?'on':''}" onclick="openCatManage('${x}')">${CAT_LABEL[x]}</button>`).join('')}</div>
+  <div class="seg" role="group" aria-label="구분 선택"><div class="seg-blob"></div>${['expense','income','saving'].map(x=>`<button class="${k===x?'on':''}" aria-pressed="${k===x}" onclick="openCatManage('${x}')">${CAT_LABEL[x]}</button>`).join('')}</div>
   <div>${DB.categories[k].map((c,i)=>{
     const isSysAdjust=k==='income'&&c===ADJUST_CAT; /* 거래에서 자동 생성되는 시스템 카테고리 — 이름변경/삭제 못 하게 액션 대신 안내만 보여준다 */
     const varPill=k==='saving'?'':`<button class="varpill ${isVarCat(k,c)?'on':''}" onclick="toggleCatVarUI('${k}',${i},this)">${isVarCat(k,c)?'변동':'고정'}</button>`;
@@ -5112,7 +5112,7 @@ function twScreen(name){
     <div style="flex:1;min-width:0"><div class="nm"><span class="nmt">${a}</span></div><div class="sub"><span class="chipmini own-${o}">${o}</span><span>현금예금</span></div></div>
     <div class="val"><div class="k num">${v}원</div></div></div>`).join('')}</div>`+twNav('assets');
  if(name==='cal'||name==='list'){
-  const seg=`<div class="mseg tws-live" id="m-seg"><button class="${name==='cal'?'on':''}" onclick="mSeg('cal')">달력</button><button class="${name==='list'?'on':''}" onclick="mSeg('list')">목록</button></div>`;
+  const seg=`<div class="mseg tws-live" id="m-seg" role="group" aria-label="보기 방식 선택"><button class="${name==='cal'?'on':''}" aria-pressed="${name==='cal'}" onclick="mSeg('cal')">달력</button><button class="${name==='list'?'on':''}" aria-pressed="${name==='list'}" onclick="mSeg('list')">목록</button></div>`;
   const suji=`<div class="card ledsum tws-live" id="m-suji" onpointerdown="mSujiDown()" onpointerup="mSujiUp()" onpointercancel="mSujiUp()" onpointerleave="mSujiUp()">${mSujiInner(false)}</div>`;
   if(name==='cal')return twHead('📒 가계부 ✏️',seg)+`<div class="month-nav solo"><div class="mn-lbl">2026년 7월 ${svg('chevD')}</div></div>${suji}
    <div class="cal" id="m-cal"><div class="cal-week"><div class="sun">일</div><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div class="sat">토</div></div>

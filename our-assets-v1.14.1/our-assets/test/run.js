@@ -2245,7 +2245,11 @@ test('nwHistoryCard: 선택한 preset에 맞는 세그먼트 버튼에만 "on" �
   buttons.forEach(([full, p]) => {
     const isOn = full.includes('class="on"');
     assert.strictEqual(isOn, p === 'y1', `preset="y1"일 때는 ${p} 버튼의 on 여부가 (${p === 'y1'})이어야 함`);
+    // on 클래스와 aria-pressed가 항상 같은 값을 가리켜야 함(스크린리더가 선택 상태를 알 수 없던
+    // 공백 — app-evolve cycle147 critique/advance, 세그먼트 컨트롤 9곳에 aria-pressed 추가).
+    assert.ok(full.includes(`aria-pressed="${isOn}"`), `${p} 버튼의 aria-pressed가 on 클래스(${isOn})와 일치하지 않음`);
   });
+  assert.ok(/<div class="seg nwh-seg" role="group" aria-label="[^"]+">/.test(html), '기간 세그먼트 래퍼에 role="group"/aria-label이 없음');
 });
 test('nwHistoryCard: 귀속별 추이가 비어있는 빈 상태 카드에도 기간 세그먼트가 함께 렌더된다', () => {
   sandbox.TODAY = '2026-06-15';
@@ -2503,6 +2507,11 @@ test('renderGoalForm: 귀속 세그먼트가 goalDraft.owner와 일치하는 버
   sandbox.renderGoalForm(true);
   assert.ok(/class="on"[^>]*>배우자/.test(sandbox.lastSheetHtml), '배우자 버튼이 선택 상태여야 함');
   assert.ok(!/class="on"[^>]*>전체/.test(sandbox.lastSheetHtml), '전체 버튼은 선택 상태가 아니어야 함');
+  // on 클래스뿐 아니라 aria-pressed도 선택 상태와 일치해야 함(스크린리더가 선택된 귀속을
+  // 알 수 없던 공백 — app-evolve cycle147 critique/advance).
+  assert.ok(/aria-pressed="true"[^>]*>배우자/.test(sandbox.lastSheetHtml), '배우자 버튼의 aria-pressed가 true가 아님');
+  assert.ok(/aria-pressed="false"[^>]*>전체/.test(sandbox.lastSheetHtml), '전체 버튼의 aria-pressed가 false가 아님');
+  assert.ok(/role="group" aria-label="귀속 선택"/.test(sandbox.lastSheetHtml), '귀속 세그먼트 래퍼에 role="group"/aria-label이 없음');
 });
 test('goalOwnerSel: 귀속 버튼을 고르면 입력값을 먼저 동기화한 뒤 goalDraft.owner를 바꾸고 폼을 다시 연다', () => {
   sandbox.DB = { owners: ['나', '배우자'] };
@@ -8346,6 +8355,16 @@ test('openSpendAnalysis: 지출 분석 카테고리 행(spend-row)에 키보드/
   assert.ok(/class="spend-row"[^>]*role="button"/.test(body), 'spend-row에 role="button"이 없음');
   assert.ok(body.includes('onkeydown="rowKeydown(event,()=>openBudgetPrompt('), 'spend-row에 rowKeydown 연결이 없음');
 });
+/* 지출분석 귀속 필터 세그먼트도 class="on"만으로 선택 상태를 표시해 스크린리더가 어떤 귀속이
+ * 선택돼 있는지 알 수 없던 공백 — app-evolve cycle147 critique/advance. */
+test('openSpendAnalysis: 귀속 필터 세그먼트 버튼에 aria-pressed, 래퍼에 role/aria-label이 있다', () => {
+  const body = extractFunction('openSpendAnalysis');
+  assert.ok(
+    /\['전체',\.\.\.DB\.owners\]\.map\(\(o,oi\)=>`<button class="\$\{ST\.spendOwner===o\?'on':''\}" aria-pressed="\$\{ST\.spendOwner===o\}" onclick="spendOwnerSel/.test(body),
+    '귀속 필터 세그먼트 버튼에 aria-pressed가 없음'
+  );
+  assert.ok(/<div class="seg" role="group" aria-label="귀속 선택">/.test(body), '귀속 필터 세그먼트 래퍼에 role="group"/aria-label이 없음');
+});
 test('monthOutflowCard: 홈 탭 이번 달 나갈 돈 행(of-row)에 키보드/스크린리더 접근 패턴이 있다', () => {
   const body = extractFunction('monthOutflowCard');
   assert.ok(/class="of-row"[^>]*role="button"/.test(body), 'of-row에 role="button"이 없음');
@@ -8409,6 +8428,17 @@ test('renderRecSheet: rAmt(금액)에 Enter-제출이 있다(saveRec()가 요구
     body.includes(`id="rAmt" class="num" inputmode="numeric" value="${'${d.amount?comma(d.amount):\'\'}'}" placeholder="0" oninput="fmtAmt(this)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveRec()"`),
     'rAmt에 Enter→saveRec() 연결이 없음'
   );
+});
+/* renderRecSheet는 renderTxSheet와 달리 vm 실행 스모크 테스트 fixture가 없어(DB.settings 등
+ * 의존이 더 많음) extractFunction 소스 패턴으로 구분 세그먼트의 aria-pressed/role을 확인한다
+ * (app-evolve cycle147 critique/advance, 세그먼트 컨트롤 9곳에 aria-pressed 추가). */
+test('renderRecSheet: 구분 세그먼트 버튼에 aria-pressed, 래퍼에 role/aria-label이 있다', () => {
+  const body = extractFunction('renderRecSheet');
+  assert.ok(
+    /typeSeg=\[.*\]\.map\(\(\[v,l\]\)=>`<button class="\$\{d\.type===v\?'on':''\}" aria-pressed="\$\{d\.type===v\}" onclick="recType/.test(body),
+    'renderRecSheet의 구분 세그먼트 버튼에 aria-pressed가 없음'
+  );
+  assert.ok(/<div class="seg" role="group" aria-label="구분 선택">/.test(body), '구분 세그먼트 래퍼에 role="group"/aria-label이 없음');
 });
 test('renderGoalForm: goalAmt(목표 금액)에 Enter-제출이 있다(saveGoal()의 유일한 필수 수치 입력이고, 목표일은 선택 항목이라 그 뒤에 이어지지 않음)', () => {
   const body = extractFunction('renderGoalForm');
@@ -9239,6 +9269,20 @@ test('openCatManage: saving 탭 — 변동/고정 뱃지(varPill) 없이 그린�
   assert.ok(html.includes('적금'));
   assert.ok(!html.includes('varpill'), 'saving 탭은 변동/고정 뱃지가 없어야 함');
 });
+/* 구분(지출/수입/저축) 세그먼트가 class="on"만으로 선택 상태를 표시해 스크린리더가 어떤 탭이
+ * 선택돼 있는지 알 수 없던 공백 — app-evolve cycle147 critique/advance. */
+test('openCatManage: 구분 세그먼트가 현재 탭(kind)과 일치하는 버튼에만 aria-pressed="true"를 준다', () => {
+  setupCatManageDB();
+  sandbox.openCatManage('income');
+  const html = sandbox.lastSheetHtml;
+  const buttons = [...html.matchAll(/<button class="([^"]*)" aria-pressed="(true|false)" onclick="openCatManage\('(\w+)'\)">/g)];
+  assert.strictEqual(buttons.length, 3, '지출/수입/저축 세 개 구분 버튼이 렌더돼야 함');
+  buttons.forEach(([, cls, pressed, k]) => {
+    assert.strictEqual(cls === 'on', pressed === 'true', `${k} 버튼의 on 클래스(${cls})와 aria-pressed(${pressed})가 일치하지 않음`);
+    assert.strictEqual(pressed === 'true', k === 'income', `kind="income"일 때는 ${k} 버튼의 aria-pressed가 (${k === 'income'})이어야 함`);
+  });
+  assert.ok(/<div class="seg" role="group" aria-label="구분 선택">/.test(html), '구분 세그먼트 래퍼에 role="group"/aria-label이 없음');
+});
 test('openCatManage: income 탭의 ADJUST_CAT(잔액 조정)은 "자동 생성" 표시만 하고 수정/삭제 액션은 숨긴다', () => {
   setupCatManageDB();
   // 다른 income 카테고리(급여 등)의 delCat(/renameCatSheet( 호출과 뒤섞이지 않도록
@@ -9339,6 +9383,22 @@ test('renderTxSheet: type별로 자산 필드가 from/to 중 올바른 조합으
   html = sandbox.lastSheetHtml;
   assert.ok(html.includes('보내는 자산') && html.includes('받는 자산'));
   assert.ok(!html.includes('출금 자산') && !html.includes('입금 자산'), 'transfer는 보내는/받는 자산만 나와야 함');
+});
+/* 구분(지출/수입/이체/저축) 세그먼트가 class="on"만으로 선택 상태를 표시해 스크린리더가 어떤
+ * 구분이 선택돼 있는지 전혀 알 수 없던 공백 — app-evolve cycle147 critique/advance, 세그먼트
+ * 컨트롤 9곳에 aria-pressed 추가. */
+test('renderTxSheet: 구분 세그먼트가 d.type과 일치하는 버튼에만 aria-pressed="true"를 준다', () => {
+  setupTxSheetDB();
+  sandbox.txDraft = { type: 'transfer', category: '이체', date: '2026-01-01', amount: 1000, fromAssetId: 'a1', toAssetId: 'a2', repeat: false };
+  sandbox.renderTxSheet();
+  const html = sandbox.lastSheetHtml;
+  const buttons = [...html.matchAll(/<button class="([^"]*)" aria-pressed="(true|false)" onclick="txType\('(\w+)'\)">/g)];
+  assert.strictEqual(buttons.length, 4, '지출/수입/이체/저축 네 개 구분 버튼이 렌더돼야 함');
+  buttons.forEach(([, cls, pressed, v]) => {
+    assert.strictEqual(cls === 'on', pressed === 'true', `${v} 버튼의 on 클래스(${cls})와 aria-pressed(${pressed})가 일치하지 않음`);
+    assert.strictEqual(pressed === 'true', v === 'transfer', `d.type="transfer"일 때는 ${v} 버튼의 aria-pressed가 (${v === 'transfer'})이어야 함`);
+  });
+  assert.ok(/<div class="seg" role="group" aria-label="구분 선택">/.test(html), '구분 세그먼트 래퍼에 role="group"/aria-label이 없음');
 });
 test('renderTxSheet: 신규 생성(d.id 없음) 시에만 반복 토글이 보이고, 편집 중(d.id 있음)엔 숨긴다', () => {
   setupTxSheetDB();
@@ -9919,6 +9979,19 @@ function setupLedgerDB() {
     recurrences: [],
   };
 }
+/* modeSeg는 달력/검색 전환을 위한 순수 문자열 빌더(.mseg)로, "on" 클래스만 있고 aria-pressed/role이
+ * 없어 스크린리더가 현재 달력/검색 중 뭐가 선택돼 있는지 알 수 없던 공백이었다
+ * (app-evolve cycle147 critique/advance, 세그먼트 컨트롤 9곳에 aria-pressed 추가). */
+test('modeSeg: 탭에 맞는 버튼에만 on 클래스와 aria-pressed="true"가 붙고, 래퍼에 role/aria-label이 있다', () => {
+  sandbox.ST = { hist: { cat: '전체', q: '', assetId: null } };
+  const cal = sandbox.modeSeg('ledger');
+  assert.ok(/class="on" aria-pressed="true"[^>]*>달력/.test(cal), 'ledger 탭이면 달력 버튼이 on+aria-pressed=true여야 함');
+  assert.ok(/class="" aria-pressed="false"[^>]*>검색/.test(cal), 'ledger 탭이면 검색 버튼이 aria-pressed=false여야 함');
+  const list = sandbox.modeSeg('history');
+  assert.ok(/class="" aria-pressed="false"[^>]*>달력/.test(list), 'history 탭이면 달력 버튼이 aria-pressed=false여야 함');
+  assert.ok(/class="on" aria-pressed="true"[^>]*>검색/.test(list), 'history 탭이면 검색 버튼이 on+aria-pressed=true여야 함');
+  assert.ok(cal.includes('role="group" aria-label="보기 방식 선택"'), 'mseg 래퍼에 role="group"/aria-label이 없음');
+});
 test('renderLedger: 선택한 날에 내역이 없으면 예외 없이 실행되고 빈 상태 안내가 렌더된다', () => {
   setupLedgerDB();
   assert.doesNotThrow(() => sandbox.renderLedger());
@@ -10944,6 +11017,15 @@ test('assetBalChart: tabindex와 키보드 핸들러(onkeydown)가 있다', () =
   assert.ok(tag.includes('role="img"'), 'assetBalChart div에 role="img"가 없음');
   assert.ok(tag.includes('onkeydown="assetBalPeekKey(event)"'), 'assetBalChart div에 onkeydown이 없음 — 키보드 접근 경로가 빠짐');
 });
+/* assetBalCard의 기간 세그먼트(1개월/3개월/1년/전체)는 DOM을 직접 만지지 않는 순수 문자열 생성
+ * 함수지만 assetBalSampleDates 등 FUNCTIONS 목록 밖 의존이 많아 vm 실행 대상이 아니다 — extractFunction
+ * 소스 패턴으로 좁혀 aria-pressed/role이 실제로 이 함수가 만드는 segHTML에 있는지 확인한다
+ * (app-evolve cycle147 critique/advance, 세그먼트 컨트롤 9곳에 aria-pressed 추가). */
+test('assetBalCard: 기간 세그먼트 버튼에 aria-pressed, 래퍼에 role/aria-label이 있다', () => {
+  const body = extractFunction('assetBalCard');
+  assert.ok(/segHTML=`<div class="seg nwh-seg" role="group" aria-label="[^"]+">/.test(body), 'assetBalCard의 세그먼트 래퍼에 role="group"/aria-label이 없음');
+  assert.ok(/class="\$\{preset===p\?'on':''\}" aria-pressed="\$\{preset===p\}" onclick="assetBalPresetSel/.test(body), 'assetBalCard의 세그먼트 버튼에 aria-pressed가 없음');
+});
 /* nwChartPeekKey/assetBalPeekKey는 둘 다 함수라 extractFunction으로 그 몸통만 정확히 잘라
  * 검사할 수 있다(src.includes처럼 파일 전체를 보지 않음). */
 test('nwChartPeekKey/assetBalPeekKey가 nwChartKeyStep을 호출해 다음 인덱스를 고른다', () => {
@@ -10992,6 +11074,28 @@ test('assetBalPresetSel: 세그먼트 버튼에 포커스가 있었으면 재렌
   const body = extractFunction('assetBalPresetSel');
   assert.ok(body.includes('el.contains(document.activeElement)'), 'assetBalPresetSel이 재렌더 전 포커스 위치를 기억하지 않음');
   assert.ok(body.includes(`el.querySelector('.seg button.on')`), 'assetBalPresetSel이 재렌더 후 새 .on 버튼을 찾지 않음');
+});
+
+/* ---------- twScreen(튜토리얼 가짜 화면)의 달력/목록 세그먼트(mSeg) ----------
+ * twScreen은 가짜 데이터로 그리는 인터랙티브 튜토리얼 전용 화면이라 실제 DB/렌더 체인과
+ * 무관하지만, 버튼 자체는 실제 DOM에 붙어 스크린리더가 읽는다 — 다른 8곳과 같은 공백
+ * (class="on"만 있고 aria-pressed 없음)이 똑같이 있었다(app-evolve cycle147 critique/advance,
+ * 세그먼트 컨트롤 9곳에 aria-pressed 추가). 의존(TWi/MOWN 등)이 깊어 vm 실행 대신 소스
+ * 패턴으로 확인한다. */
+test('twScreen: 튜토리얼 화면의 달력/목록 세그먼트 버튼에 aria-pressed, 래퍼에 role/aria-label이 있다', () => {
+  const body = extractFunction('twScreen');
+  assert.ok(
+    /const seg=`<div class="mseg tws-live" id="m-seg" role="group" aria-label="[^"]+">/.test(body),
+    'twScreen의 mSeg 래퍼에 role="group"/aria-label이 없음'
+  );
+  assert.ok(
+    /class="\$\{name==='cal'\?'on':''\}" aria-pressed="\$\{name==='cal'\}" onclick="mSeg\('cal'\)"/.test(body),
+    'twScreen의 달력 버튼에 aria-pressed가 없음'
+  );
+  assert.ok(
+    /class="\$\{name==='list'\?'on':''\}" aria-pressed="\$\{name==='list'\}" onclick="mSeg\('list'\)"/.test(body),
+    'twScreen의 목록 버튼에 aria-pressed가 없음'
+  );
 });
 
 /* ---------- 실행 ---------- */

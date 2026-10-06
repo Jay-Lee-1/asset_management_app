@@ -1,12 +1,15 @@
 {
   "cycle": 147,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "세그먼트 컨트롤(.seg/.mseg)에 aria-pressed/role 누락 — 선택 상태가 스크린리더에 전달 안 됨",
-    "why": "앱 전역에 쓰이는 '세그먼트 선택' 위젯(.seg, .mseg)이 최소 9곳에서 선택 상태를 CSS class(\"on\")로만 표시하고 어떤 ARIA 속성도 주지 않는다 — index.html:2407(nwPresetSegHTML, 순자산추이 기간), :2506(assetBalCard 기간), :2675(renderGoalForm ownerSeg, 목표 귀속), :3596(modeSeg, 달력/검색 전환), :3798/:3819(renderTxSheet typeSeg, 거래 구분), :4036/:4046(renderRecSheet typeSeg, 반복 구분), :4777(지출분석 귀속 필터), :4894(openCatManage typeSeg), :5115(mSeg, 체크아웃 흐름 달력/목록). 버튼은 그냥 `<button class=\"${x===cur?'on':''}\">`로만 렌더되고 aria-pressed/aria-selected/role이 전혀 없다. 반면 같은 코드베이스는 토글形 버튼에 aria-pressed를 쓰는 관례가 이미 확립돼 있다(index.html:3070 자산선택, :3540 캘린더 날짜셀, :4877 아이콘피커, :6098 날짜피커 셀, :3647/:3653/:6083/:6085/:6209/:6211에서 셀 전환 시 aria-pressed/aria-selected를 갈아끼움) — 이 관례가 '세그먼트 컨트롤'이라는 가장 널리 쓰이는 선택 패턴 하나에만 적용되지 않았다. 스크린리더 사용자는 탭 이동 시 '1개월, 버튼' '3개월, 버튼' '1년, 버튼'만 듣고 현재 어떤 기간이 선택돼 있는지 전혀 알 수 없다 — 거래/반복거래 입력에서 구분(지출/수입/이체/저축)이 뭘로 선택돼 있는지도 마찬가지. test/run.js에 aria-pressed 검증이 있는 건 날짜피커 셀(:10859-10871)뿐이고 이 9개 세그먼트 생성 함수엔 해당 검증이 전혀 없다(grep으로 확인).",
-    "approach": "index.html의 9개 세그먼트 생성 지점을 모두 수정: 각 `<button class=\"${cond?'on':''}\" onclick=...>`에 `aria-pressed=\"${cond}\"`를 추가하고, 감싸는 `.seg`/`.mseg` 래퍼 div에 `role=\"group\"`과 맥락에 맞는 `aria-label`(예: '기간 선택', '귀속 선택', '구분 선택', '보기 방식')을 추가한다. 대상: nwPresetSegHTML(~2407), assetBalCard의 segHTML(~2506), renderGoalForm의 ownerSeg(~2675), modeSeg(~3596), renderTxSheet의 typeSeg 정의(~3798)와 사용처(~3819), renderRecSheet의 typeSeg 정의(~4036)와 사용처(~4046), 지출분석 귀속 seg(~4777), openCatManage의 typeSeg(~4894), mSeg용 seg 템플릿(~5115). 기존 관례(aria-pressed를 토글 버튼에 쓰는 패턴, 예: index.html:3070/:3540/:4877)와 동일한 방식을 따라 새로운 상호작용 패턴(예: role=tablist의 화살표키 roving tabindex)은 도입하지 않고 어트리뷰트만 추가해 동작은 바꾸지 않는다. logic.js에 순수 헬퍼가 필요하면(예: segButtonsHTML(items,current,onclickFn,ariaLabel) 같은 공용 함수로 9곳을 통합) 테스트하기 쉬워지지만 필수는 아님 — 각 지점을 개별 수정해도 충분히 스코프가 작다. 회귀 테스트: test/run.js에 각 생성 함수(nwPresetSegHTML은 이미 export돼 테스트 가능, 나머지는 extractTag/extractFunction으로 해당 템플릿 리터럴을 뽑아) 결과 HTML에 `aria-pressed=\"true\"`가 현재 선택된 버튼에만, `aria-pressed=\"false\"`가 나머지 버튼에 있는지 확인하는 테스트를 9개 지점 각각(또는 공용 헬퍼로 묶었다면 헬퍼 1개 + 각 호출부가 올바른 aria-label을 넘기는지) 추가한다."
-  },
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 147,
+      "phase": "advance",
+      "timestamp": "2026-10-06T10:14:56.056Z",
+      "summary": "critique(cycle147) 계획대로 앱 전역 세그먼트 컨트롤(.seg/.mseg) 9곳 전부에 aria-pressed를 추가했다: nwPresetSegHTML(순자산추이 기간), assetBalCard의 segHTML(자산 상세 잔액추이 기간), renderGoalForm의 ownerSeg(목표 귀속), modeSeg(달력/검색 전환), renderTxSheet·renderRecSheet의 typeSeg(거래/반복거래 구분), openSpendAnalysis의 귀속 필터, openCatManage의 typeSeg, twScreen의 mSeg(튜토리얼 달력/목록). 각 버튼에 aria-pressed=${cond}를, 감싸는 .seg/.mseg 래퍼에 role=\"group\"과 맥락별 aria-label(기간 선택/귀속 선택/구분 선택/보기 방식 선택)을 추가 — 기존 토글 버튼 관례(index.html:3070/:3540/:4877)를 그대로 따르고 새 상호작용 패턴(roving tabindex 등)은 도입하지 않아 동작은 바꾸지 않았다. 회귀 테스트 8건 추가(assetBalCard/openSpendAnalysis/renderRecSheet/openCatManage/renderTxSheet/modeSeg/twScreen 신규 + nwHistoryCard 기존 preset 테스트와 renderGoalForm 기존 ownerSeg 테스트를 aria-pressed/role 확인으로 확장) — nwPresetSegHTML/modeSeg/renderTxSheet/renderGoalForm/openCatManage는 실제 실행(vm) 기반으로, assetBalCard/renderRecSheet/openSpendAnalysis/twScreen은 FUNCTIONS 목록 밖이라 extractFunction 소스 패턴으로 검증(cycle146/147 review가 정립한 범위를 좁힌 검증 방식 재사용). APP_VERSION 1.47.63->1.47.64, sw.js CACHE v325->v326. node test/run.js 1008/1008 -> 1015/1015 통과(메인 인라인 script 구문 검사 포함).",
+      "commit": null
+    },
     {
       "cycle": 147,
       "phase": "critique",
@@ -138,13 +141,6 @@
       "phase": "review",
       "timestamp": "2026-10-05T20:10:00.000Z",
       "summary": "develop 커밋(40a3682, matchTxnQuery 금액 검색 추가)을 검토해 실제 버그 발견·수정. 적용된 norm=s=>String(s).toLowerCase().replace(/,/g,'')가 비교 양쪽(hay 전체 + q)에서 쉼표를 지우는데, amt(String(number))는 애초에 쉼표가 없으므로 쉼표 제거가 필요한 쪽은 검색어(q)뿐임을 확인. 그런데 hay 쪽까지 쉼표를 지우면 메모/카테고리/자산명에 들어있는 실제 쉼표가 사라지면서 쉼표를 사이에 두고 떨어져 있던 글자들이 이어 붙어, 원래는 안 걸려야 할 검색어가 우연히 매칭되는 오탐이 생김을 직접 재현해 확인 — memo:'우유,계란'에서 검색어 '유계'(쉼표 없음)가 수정 전 코드로는 true(오탐), 커밋이 의도한 동작(쉼표 없는 메모/카테고리/자산명 텍스트 검색은 기존 그대로)과 어긋남. hay는 그대로 두고 q쪽에서만 .replace(/,/g,'') 하도록 축소(hay.toLowerCase().includes(q.toLowerCase().replace(/,/g,''))) — \"50000\"/\"50,000\" 둘 다 금액과 매칭되는 기존 4개 신규 테스트는 그대로 통과(amt 자체엔 쉼표가 없어 q만 정규화해도 충분), 쉼표 포함 메모 오탐 방지 회귀 테스트 1건 추가(수정 전 코드로 되돌려 실제 FAIL함을 직접 검증한 뒤 복구). placeholder 변경/기존 4개 검색 테스트는 영향 없음. node test/run.js 991/991 -> 992/992 통과. APP_VERSION 1.47.57->1.47.58, sw.js CACHE v319->v320.",
-      "commit": null
-    },
-    {
-      "cycle": 144,
-      "phase": "critique",
-      "timestamp": "2026-10-05T21:10:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(144사이클 동안 다뤄진 항목 전부 + 기각 이력 전달). 서브에이전트가 logic.js 전체와 index.html의 자산평가/반복거래 편집범위/CSV import·export/크로스탭 저장동기화/클라우드 병합/시세동기화/로컬알림/저장공간경고/시트 접근성/자산 삭제·재연동/검색필터 캐시를 직접 Read — 144사이클의 방어적 처리로 신규 결함을 찾기 어려웠음. 중간 기각: histQ 검색 디바운스 부재(실사용 규모에서 체감 성능 문제 아님) / spendTrend()의 카테고리별 반복 재계산(실사용 카테고리 수 규모에선 병목 아님) / debt 자산 통화(currency) 필드 부재(영향 작음). 최종 발견(grep -n '상환|완납|payoff|interestRate' index.html 결과 전무로 확인): logic.js:277-296 goalProgress()는 순자산 목표에 대해 이력 처음·끝 두 점의 선형투사로 목표 도달일을 계산하는 검증된 패턴(test/run.js:1225-1270 테스트 포함)을 갖고 있는데, index.html:2501-2537 assetBalCard()는 debt 타입 자산(2504행)에도 적용되면서 잔액 추이 스파크라인만 보여주고 '이 속도로 갚으면 언제 다 갚는지' 투사는 전혀 없음 — goal 쪽에는 있는 통찰이 debt 쪽엔 비대칭적으로 빠져 있음. debt는 ASSET_TYPES.debt로 정식 지원되고 시드 데이터에도 '전세자금대출'이 포함될 만큼 공들여진 타입이라, 빚을 갚아나가는 사용자의 핵심 동기부여 정보가 누락된 상태로 판단. pending_advance_plan에 logic.js에 goalProgress와 동일한 선형투사 철학의 debtPayoffProjection(pts,today) 순수함수 추가(새 DB 필드 불필요, assetBalanceSeries의 pts 재사용) + assetBalCard()에 debt 전용 한 줄 안내 추가 + test/run.js에 4케이스(완납/이력부족/감소세없음/정상투사) 회귀테스트 계획 저장(상세는 pending_advance_plan 참고). 코드 변경 없음(읽기 전용 조사).",
       "commit": null
     }
   ]
