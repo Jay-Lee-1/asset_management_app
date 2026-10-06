@@ -1,8 +1,15 @@
 {
   "cycle": 146,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 146,
+      "phase": "review",
+      "timestamp": "2026-10-06T04:10:00.000Z",
+      "summary": "cycle146 develop(fef8240, budgetIn/qAmt/bigMinInput에 field-clear+fc-x 지우기 버튼 통일)을 검토. 세 곳 모두 div 중첩이 기존 금액 입력란(goalAmt/asAmt 등)과 동일한 구조(.field > .field-clear > input + fc-x button)로 정확히 균형 잡혀 있음을 diff로 직접 확인. clrInput/fcToggle/fcWire(index.html:3469-3475)를 Read해 fcWire()가 openSheet()(5902행) 렌더 직후 requestAnimationFrame 콜백에서 자동 호출됨을 재확인 — 커밋이 주장한 '추가 JS 와이어링 불필요'가 정확함. node test/run.js 재실행 1004/1004 통과. 추가로 고칠 버그 없음 — 이상 없음.",
+      "commit": null
+    },
     {
       "cycle": 146,
       "phase": "develop",
@@ -133,13 +140,6 @@
       "phase": "critique",
       "timestamp": "2026-10-06T01:40:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(cycle140-145 히스토리 전부 + 기각 이력 전달). 새로 발견 후 서브에이전트가 index.html 6699-6726·6668-6670·7165·7384·4584·5303, sw.js 전체, netlify.toml, netlify/functions/*.js, manifest.webmanifest를 직접 Read/grep으로 재검증: OS 알림 토글을 켤 때 뜨는 토스트(index.html:6723) 문구가 '앱을 닫아둬도 ... 알려드려요'라고 명시적으로 약속하는데, 실제 구현(checkNotifyAlerts, index.html:6699-6716)은 document.hidden일 때만 동작하는 순수 foreground setInterval(7165행, 5분 주기)이고 Push API/VAPID/periodicSync 등록이 전체 레포에 전혀 없음(grep 0건, sw.js에 push 리스너 없음)을 확인 — 코드 자체의 개발자 주석(6699-6702)도 '완전 종료(특히 iOS Safari PWA)까지는 보장 못함, best-effort'라고 스스로 인정하는 한계가 사용자 노출 문구와 정면으로 어긋남. notifyAlertInfo가 챙기는 알림(이체확인/저축만기/예산초과, 6668-6670 주석: '그날 놓치면 의미 없는' 것만 선정)일수록 앱이 완전 종료된 사이 조용히 유실될 위험이 크고, 설정 화면 토글 행(4584)엔 이 한계를 알리는 장치가 전혀 없음. pending_advance_plan에 (1)notifyReliabilityTier/notifyReliabilityMsg 순수 함수로 토스트·설정화면 캡션 문구를 실제 능력에 맞게 정직화 (2)Android/Chrome 등 periodicSync 지원 시 best-effort로 추가 등록 (3)sw.js periodicsync 리스너 + 알림 판정에 필요한 최소 슬라이스(펜딩이체/저축만기/예산초과)만 담는 IndexedDB 미러 (4)테스트 알림 보내기 버튼 (5)회귀테스트 계획을 저장, 범위가 크면 문구 정직화만 이번 사이클에 완결하고 나머지는 분리해도 된다고 명시(상세는 pending_advance_plan 참고). 러너업(기각): 예산(budgetHistory)이 귀속 무관 전역인 것(spendByCategory/openBudgetPrompt 주석이 설계 의도로 명시) / 단일 7422줄 index.html 모놀리식 구조(이미 logic.js 분리 완화책 있음, 구체적 결함 아님) / sw.js 캐시버전 수동 bump(가정성 리드, staleness 증거 없음) / RANGE_FROM 고정 하한(이미 rangeCount로 고지, 긴급성 낮음) / 자산 재배열 키보드 접근성(moveGroup/moveAsset 버튼으로 이미 완전한 대안 존재, 가짜 리드). 코드 변경 없음(읽기 전용 조사).",
-      "commit": null
-    },
-    {
-      "cycle": 145,
-      "phase": "advance",
-      "timestamp": "2026-10-06T02:50:00.000Z",
-      "summary": "critique(cycle145) 계획대로, 범위가 크다고 판단해 명시된 분할 지침(\"1) 문구 정직화만 이번 사이클에 완결하고 periodicsync/IndexedDB 미러는 새 critique 계획으로 분리해도 됨\")을 따라 문구 정직화만 완결했다. logic.js에 순수 함수 notifyReliabilityTier(isIOS)/notifyReliabilityMsg(tier) 추가 — 실제 구현(checkNotifyAlerts, document.hidden 기반 foreground/background 로컬 알림, periodicSync·푸시 서버 없음)에 맞춰 'foreground-tab'(iOS)/'background-tab'(그 외) 두 등급만 두고, 각각 '완전히 종료하면 알림이 오지 않아요'라는 정직한 한계를 명시하는 문구를 반환한다(critique 계획의 periodicSyncSupported 매개변수/'periodic-background' 등급은 실제 periodicSync 등록(2,5,6번)을 이번 사이클에 구현하지 않으므로 포함하지 않음 — 구현 안 된 능력을 등급에 넣는 건 지금 고치려는 과잉 약속과 같은 문제라 판단). toggleOsNotify()(index.html:6717-6726)의 성공 토스트를 '앱을 닫아둬도 확정 대기 이체·만기·예산 초과를 알려드려요'에서 notifyReliabilityMsg(notifyReliabilityTier(IS_IOS))로 교체. renderMenu()의 '알림 · 기준' 그룹 카드 아래에 OS 알림이 켜져 있는 동안 상시 노출되는 1줄 캡션 추가(토스트는 1회성이라 금방 잊히므로, critique 4번 요구사항). test/run.js에 notifyReliabilityTier 1개, notifyReliabilityMsg 1개(과거 '앱을 닫아둬도' 문구 잔존 여부 포함), toggleOsNotify 토스트 배선 확인 1개, renderMenu 캡션 배선 확인 1개 — 총 4개 추가. APP_VERSION 1.47.60→1.47.61, sw.js CACHE v322→v323. node test/run.js 997/997 -> 1001/1001 통과(메인 인라인 script 구문 검사 포함). periodicSync 등록/IndexedDB 알림 미러/테스트 알림 보내기 버튼(critique 2,5,6번)은 범위 밖으로 남겨둠 — 다음 critique가 새 계획으로 다룰 수 있음. pending_advance_plan을 null로 비움.",
       "commit": null
     }
   ]
