@@ -1281,6 +1281,7 @@ body.selmode .fab{display:none}
 <body>
 <div class="err-banner" id="errBanner" role="alert"></div>
 <div id="authView" class="auth-view" style="display:none"></div>
+<div id="lockView" class="auth-view" style="display:none"></div>
 <div id="app">
   <div class="viewport">
     <section class="page active" id="page-home"></section>
@@ -1318,7 +1319,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.65';
+const APP_VERSION='1.47.66';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1971,6 +1972,35 @@ const AUTH={
  kakaoUpsert(id,nick){const a=this._accts();if(!a[emailKey(id)])a[emailKey(id)]={email:id,kakao:true,nick:nick||'',created:Date.now()};else if(nick)a[emailKey(id)].nick=nick;this._write(a)},
  rec(email){return this._accts()[emailKey(email)]||null},
  signOut(){SESSION='';localStorage.setItem('asset_app_session','');CLOUD_UID=null;if(SB)try{SB.auth.signOut().catch(()=>{})}catch(e){}},
+};
+/* 기기 단위 앱 잠금(PIN) — AUTH와 별개의 보안 계층이라 계정/클라우드 동기화 대상이 아니다.
+ * 가족 공유 계정이라도 기기마다 PIN이 다를 수 있어야 하므로 DB.settings가 아니라
+ * localStorage에 기기-로컬로만 저장한다(nwHistory/테마 등 기존에도 기기-로컬로 두는 데이터와 같은 원칙).
+ * 해시는 복구 코드와 똑같이 genSalt()/pbkdf2Hash()(PBKDF2-SHA256 120k iter)를 재사용하고,
+ * brute-force 지수 백오프는 AUTH._lockStatus/_recordFail/_clearFails를 'applock'이라는
+ * 별도 키로 그대로 재사용한다(로그인 실패 카운터와 키 네임스페이스가 겹치지 않음). */
+const APPLOCK_KEY='asset_app_lock';
+const APPLOCK_FAIL_KEY='applock';
+const APPLOCK={
+ _read(){try{return JSON.parse(localStorage.getItem(APPLOCK_KEY)||'null')}catch(e){return null}},
+ _write(s){localStorage.setItem(APPLOCK_KEY,JSON.stringify(s))},
+ enabled(){const s=this._read();return !!(s&&s.enabled)},
+ async setPin(pin){
+  const salt=genSalt();
+  this._write({enabled:true,salt,hash:await pbkdf2Hash(pin,salt)});
+  AUTH._clearFails(APPLOCK_FAIL_KEY);
+ },
+ async verify(pin){
+  const lock=AUTH._lockStatus(APPLOCK_FAIL_KEY);
+  if(lock.locked)return{err:`너무 많이 틀렸어요 · ${lock.waitSec}초 후 다시 시도해 주세요`};
+  const s=this._read();
+  if(!s||!s.enabled)return{ok:true};
+  const ok=(await pbkdf2Hash(pin,s.salt))===s.hash;
+  if(!ok){AUTH._recordFail(APPLOCK_FAIL_KEY);return{err:'PIN이 일치하지 않아요'}}
+  AUTH._clearFails(APPLOCK_FAIL_KEY);
+  return{ok:true};
+ },
+ disable(){try{localStorage.removeItem(APPLOCK_KEY)}catch(e){}AUTH._clearFails(APPLOCK_FAIL_KEY)},
 };
 const KAKAO_JS_KEY=''; /* 선택: 여기에 직접 넣어도 되고, 앱 로그인 화면에서 붙여넣어도 됩니다 */
 function getKakaoKey(){try{return (localStorage.getItem('asset_app_kakao_key')||'').trim()||KAKAO_JS_KEY}catch(e){return KAKAO_JS_KEY}}
@@ -4584,6 +4614,8 @@ function renderMenu(){
   {cap:'알림 · 기준',items:[
    {ic:'check',l:'이체 확인',sw:!!DB.settings.confirmTransfers,a:"toggleConfirmTransfers()"},
    {ic:'bell',l:'OS 알림',sw:!!DB.settings.osNotify,a:"toggleOsNotify()"},
+   {ic:'lock',l:'앱 잠금(PIN)',sw:APPLOCK.enabled(),a:"toggleAppLock()"},
+   ...(APPLOCK.enabled()?[{ic:'lock',l:'PIN 변경',a:"openChangePinSheet()"}]:[]),
    {ic:'chart',l:'큰 지출 기준',v:comma(bigMin())+'원',a:"openBigMinSheet()"},
    {ic:'sync',l:'시세 연동',v:rateStatusMenu(),a:"openRateSheet()"},
   ]},
@@ -7180,12 +7212,121 @@ async function boot(){
     if(data&&data.session&&data.session.user)await afterCloudAuth(data.session.user.id);
    }catch(e){}
   }
-  return startApp();
+  startApp();if(APPLOCK.enabled())lockApp();
+  return;
  }
- if(GUEST)return startApp();
+ if(GUEST){startApp();if(APPLOCK.enabled())lockApp();return}
  showAuth();
 }
 function showAuth(){$('app').style.display='none';$('authView').style.display='flex';renderAuth()}
+/* APP_LOCKED는 '지금 PIN 입력을 기다리는 중'을 뜻한다 — 로그인 전(showAuth)과는 다른 화면/다른
+ * 트리거(백그라운드 전환, 콜드부트)에서 쓰이므로 AUTHKEY 같은 기존 플래그와 섞지 않는다. */
+let APP_LOCKED=false;
+function lockApp(){
+ if(APP_LOCKED||!APPLOCK.enabled())return;
+ APP_LOCKED=true;
+ $('app').style.display='none';$('lockView').style.display='flex';
+ renderLockView();
+}
+function unlockApp(){
+ APP_LOCKED=false;
+ $('lockView').style.display='none';$('lockView').innerHTML='';
+ $('app').style.display='';
+ maybeRollDay(); /* 잠겨 있던 동안 넘어간 날짜/동기화를 지금 반영 */
+}
+function renderLockView(){
+ const lock=AUTH._lockStatus(APPLOCK_FAIL_KEY);
+ $('lockView').innerHTML=`<div class="auth-card">
+   <div class="auth-logo">🔒</div>
+   <div class="auth-title">잠겨 있어요</div>
+   <div class="auth-sub">설정한 PIN을 입력해 주세요</div>
+   <div class="auth-field"><label for="lockPinIn">PIN</label><input id="lockPinIn" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="PIN 입력" ${lock.locked?'disabled':''} onkeydown="if(event.key==='Enter')doUnlock()"></div>
+   <div id="lockErr" class="auth-err" style="display:${lock.locked?'block':'none'}">${lock.locked?`너무 많이 틀렸어요 · ${lock.waitSec}초 후 다시 시도해 주세요`:''}</div>
+   <button class="btn btn-primary auth-submit" id="lockSubmitBtn" ${lock.locked?'disabled':''} onclick="doUnlock()">확인</button>
+ </div>`;
+ if(lock.locked){clearTimeout(window._lockRetryT);window._lockRetryT=setTimeout(renderLockView,lock.waitSec*1000+200)}
+ else setTimeout(()=>{const e=$('lockPinIn');e&&e.focus()},120);
+}
+async function doUnlock(){
+ const btn=$('lockSubmitBtn');if(btn&&btn.disabled)return;
+ const pin=($('lockPinIn')&&$('lockPinIn').value)||'';
+ if(btn)btn.disabled=true;
+ const r=await APPLOCK.verify(pin);
+ if(btn)btn.disabled=false;
+ if(r.err){
+  const e=$('lockErr');if(e){e.textContent=r.err;e.style.display='block'}
+  const inp=$('lockPinIn');if(inp){inp.value='';inp.focus()}
+  if(/^너무 많이/.test(r.err))renderLockView(); /* 잠김 상태로 재렌더(입력칸 disable+카운트다운) */
+  return;
+ }
+ unlockApp();
+}
+function openSetPinSheet(){
+ openSheet(`<h3>앱 잠금 PIN 설정</h3>
+  <div class="desc">앱을 열 때마다 입력할 4~6자리 숫자 PIN을 설정해요. 이 PIN은 이 기기에만 저장되고 클라우드로 동기화되지 않아요.</div>
+  <div class="field"><label for="pinNewIn">새 PIN</label><input id="pinNewIn" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="4~6자리 숫자"></div>
+  <div class="field"><label for="pinNewIn2">PIN 확인</label><input id="pinNewIn2" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="다시 입력" onkeydown="if(event.key==='Enter')doSetPin()"></div>
+  <div id="pinSetErr" class="auth-err" style="display:none"></div>
+  <div class="two-btn" style="margin-top:14px"><button class="btn btn-soft cancel" onclick="closeSheet()">취소</button><button class="btn btn-primary" id="pinSetBtn" onclick="doSetPin()">설정</button></div>`);
+ setTimeout(()=>{const el=$('pinNewIn');el&&el.focus()},120);
+}
+async function doSetPin(){
+ const btn=$('pinSetBtn');if(btn&&btn.disabled)return;
+ const p1=($('pinNewIn')&&$('pinNewIn').value)||'',p2=($('pinNewIn2')&&$('pinNewIn2').value)||'';
+ const errEl=$('pinSetErr');if(errEl)errEl.style.display='none';
+ const showErr=m=>{if(errEl){errEl.textContent=m;errEl.style.display='block'}};
+ if(!/^\d{4,6}$/.test(p1))return showErr('4~6자리 숫자로 입력해 주세요');
+ if(p1!==p2)return showErr('PIN이 일치하지 않아요');
+ if(btn)btn.disabled=true;
+ await APPLOCK.setPin(p1);
+ if(btn)btn.disabled=false;
+ closeSheet();renderCurrent();toast('앱 잠금을 설정했어요');
+}
+function openDisableAppLockSheet(){
+ openSheet(`<h3>앱 잠금 끄기</h3>
+  <div class="desc">현재 PIN을 입력하면 앱 잠금이 꺼져요.</div>
+  <div class="field"><label for="pinOffIn">현재 PIN</label><input id="pinOffIn" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="PIN 입력" onkeydown="if(event.key==='Enter')doDisableAppLock()"></div>
+  <div id="pinOffErr" class="auth-err" style="display:none"></div>
+  <div class="two-btn" style="margin-top:14px"><button class="btn btn-soft cancel" onclick="closeSheet()">취소</button><button class="btn btn-primary" id="pinOffBtn" onclick="doDisableAppLock()">끄기</button></div>`);
+ setTimeout(()=>{const el=$('pinOffIn');el&&el.focus()},120);
+}
+async function doDisableAppLock(){
+ const btn=$('pinOffBtn');if(btn&&btn.disabled)return;
+ const pin=($('pinOffIn')&&$('pinOffIn').value)||'';
+ const errEl=$('pinOffErr');if(errEl)errEl.style.display='none';
+ if(btn)btn.disabled=true;
+ const r=await APPLOCK.verify(pin);
+ if(btn)btn.disabled=false;
+ if(r.err){if(errEl){errEl.textContent=r.err;errEl.style.display='block'}return}
+ APPLOCK.disable();closeSheet();renderCurrent();toast('앱 잠금을 껐어요');
+}
+function openChangePinSheet(){
+ openSheet(`<h3>PIN 변경</h3>
+  <div class="field"><label for="pinChgCurIn">현재 PIN</label><input id="pinChgCurIn" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="현재 PIN"></div>
+  <div class="field"><label for="pinChgNewIn">새 PIN</label><input id="pinChgNewIn" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="4~6자리 숫자"></div>
+  <div class="field"><label for="pinChgNewIn2">새 PIN 확인</label><input id="pinChgNewIn2" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="다시 입력" onkeydown="if(event.key==='Enter')doChangePin()"></div>
+  <div id="pinChgErr" class="auth-err" style="display:none"></div>
+  <div class="two-btn" style="margin-top:14px"><button class="btn btn-soft cancel" onclick="closeSheet()">취소</button><button class="btn btn-primary" id="pinChgBtn" onclick="doChangePin()">변경</button></div>`);
+ setTimeout(()=>{const el=$('pinChgCurIn');el&&el.focus()},120);
+}
+async function doChangePin(){
+ const btn=$('pinChgBtn');if(btn&&btn.disabled)return;
+ const cur=($('pinChgCurIn')&&$('pinChgCurIn').value)||'',p1=($('pinChgNewIn')&&$('pinChgNewIn').value)||'',p2=($('pinChgNewIn2')&&$('pinChgNewIn2').value)||'';
+ const errEl=$('pinChgErr');if(errEl)errEl.style.display='none';
+ const showErr=m=>{if(errEl){errEl.textContent=m;errEl.style.display='block'}};
+ if(btn)btn.disabled=true;
+ const r=await APPLOCK.verify(cur);
+ if(r.err){if(btn)btn.disabled=false;return showErr(r.err)}
+ if(!/^\d{4,6}$/.test(p1)){if(btn)btn.disabled=false;return showErr('4~6자리 숫자로 입력해 주세요')}
+ if(p1!==p2){if(btn)btn.disabled=false;return showErr('PIN이 일치하지 않아요')}
+ await APPLOCK.setPin(p1);
+ if(btn)btn.disabled=false;
+ closeSheet();toast('PIN을 변경했어요');
+}
+function toggleAppLock(){
+ if(APPLOCK.enabled())openDisableAppLockSheet();
+ else openSetPinSheet();
+}
 function renderAuth(){
  const login=authMode==='login';
  $('authView').innerHTML=`<div class="auth-card">
@@ -7383,7 +7524,7 @@ function maybeRollDay(){
  if(CLOUD_UID&&CLOUD_SYNC_STATE==='conflict'&&ST.tab==='home')renderCurrent();
  autoSyncRates()
 }
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)maybeRollDay();else{if(CLOUD_UID){clearTimeout(SB_PUSH_T);pushCloud().catch(()=>{})}checkNotifyAlerts()}});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)maybeRollDay();else{if(CLOUD_UID){clearTimeout(SB_PUSH_T);pushCloud().catch(()=>{})}checkNotifyAlerts();if(appIsOpen())lockApp()}});
 window.addEventListener('online',async()=>{
  if(!shouldRetryCloudSync(CLOUD_UID,CLOUD_SYNC_STATE,navigator.onLine))return;
  await pullCloud();await pushCloud();

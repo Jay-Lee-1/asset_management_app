@@ -79,6 +79,27 @@ function extractLet(name) {
   return src.slice(start + 'let '.length, end + 1);
 }
 
+// extractConst는 첫 ";"를 종료 지점으로 보므로, AUTH/APPLOCK처럼 메서드 본문 안에 ";"가
+// 여러 번 나오는 객체 리터럴에는 못 쓴다(첫 메서드 본문에서 끊겨버림). extractFunction과
+// 같은 중괄호 깊이 세기 방식으로 `const NAME={...};` 선언 전체를 끊어낸다(app-evolve
+// cycle148 advance, APPLOCK이 AUTH._lockStatus/_recordFail/_clearFails를 재사용하는지
+// 실제 실행으로 검증하려면 둘 다 끌어와야 함).
+function extractConstBlock(name) {
+  const marker = `const ${name}=`;
+  const start = src.indexOf(marker);
+  if (start === -1) throw new Error(`extractConstBlock: "${name}" 선언을 index.html에서 찾지 못함`);
+  const braceStart = src.indexOf('{', start);
+  let depth = 0, i = braceStart;
+  for (; i < src.length; i++) {
+    const c = src[i];
+    if (c === '{') depth++;
+    else if (c === '}') { depth--; if (depth === 0) { i++; break; } }
+  }
+  if (depth !== 0) throw new Error(`extractConstBlock: "${name}" 중괄호 짝이 맞지 않음(추출 로직 확인 필요)`);
+  if (src[i] === ';') i++;
+  return src.slice(start + 'const '.length, i);
+}
+
 // 위 extractFunction/extractConst/extractLet은 FUNCTIONS/CONSTS/LETS 목록에 이름을 올린
 // 대상만 개별적으로 뽑아 vm에 태운다 — 목록 밖의 코드(이벤트 리스너 등 최상위 문, 또는
 // 아직 FUNCTIONS에 추가되지 않은 새 함수)에 backtick 누락이나 중괄호 짝 안 맞음 같은 구문
@@ -8533,6 +8554,74 @@ test('pbkdf2Hash: 같은 비밀번호라도 salt가 다르면 다른 해시가 �
   const h1 = await sandbox.pbkdf2Hash('same-password', s1);
   const h2 = await sandbox.pbkdf2Hash('same-password', s2);
   assert.notStrictEqual(h1, h2);
+});
+
+/* ---------- APPLOCK(기기 단위 앱 잠금 PIN, app-evolve cycle148 advance): genSalt/pbkdf2Hash로
+ * PIN을 해싱하고 AUTH._lockStatus/_recordFail/_clearFails의 지수 백오프를 그대로 재사용한다.
+ * 위 pbkdf2Hash 테스트들과 달리 setPin()→verify()의 실제 localStorage 읽기/쓰기 왕복과,
+ * 로그인 실패 카운터(AUTH._fails)를 'applock' 키로 공유하면서도 잠그고 풀리는 흐름 자체를
+ * 끝까지 실행해 검증해야 하므로, sandbox.localStorage(단일 _lsRaw 스텁)가 아니라 실제
+ * get/set이 맞물리는 Map 기반 목업을 둔 별도 vm 컨텍스트에 AUTH+APPLOCK+genSalt+pbkdf2Hash를
+ * 함께 태운다(nwChartPeekKey 완전 실행형 파일럿과 같은 패턴). */
+function makeAppLockCtx() {
+  const store = new Map();
+  const ctx = {
+    crypto, TextEncoder,
+    localStorage: {
+      getItem: (k) => (store.has(k) ? store.get(k) : null),
+      setItem: (k, v) => { store.set(k, String(v)); },
+      removeItem: (k) => { store.delete(k); },
+    },
+  };
+  vm.createContext(ctx);
+  vm.runInContext(
+    [extractFunction('genSalt'), extractFunction('pbkdf2Hash'), extractConst('APPLOCK_KEY'), extractConst('APPLOCK_FAIL_KEY'), extractConstBlock('AUTH'), extractConstBlock('APPLOCK')].join('\n'),
+    ctx
+  );
+  return ctx;
+}
+test('APPLOCK: 초기 상태(미설정)에서는 enabled()가 false, verify()는 PIN 없이도 통과한다', async () => {
+  const ctx = makeAppLockCtx();
+  assert.strictEqual(ctx.APPLOCK.enabled(), false);
+  const r = await ctx.APPLOCK.verify('아무거나');
+  assert.strictEqual(r.ok, true, 'PIN이 설정 안 됐으면 잠금 자체가 없으므로 통과해야 함');
+});
+test('APPLOCK: setPin()으로 저장한 PIN은 verify()로 그대로 검증된다(salt가 매번 달라도 왕복 성공)', async () => {
+  const ctx = makeAppLockCtx();
+  await ctx.APPLOCK.setPin('1234');
+  assert.strictEqual(ctx.APPLOCK.enabled(), true);
+  const ok = await ctx.APPLOCK.verify('1234');
+  assert.strictEqual(ok.ok, true);
+  const bad = await ctx.APPLOCK.verify('9999');
+  assert.ok(bad.err, '틀린 PIN은 err를 돌려줘야 함');
+});
+test('APPLOCK: 5회 연속 틀리면 AUTH._lockStatus의 지수 백오프로 잠긴다(재사용 확인)', async () => {
+  const ctx = makeAppLockCtx();
+  await ctx.APPLOCK.setPin('1234');
+  for (let i = 0; i < 5; i++) {
+    const r = await ctx.APPLOCK.verify('0000');
+    assert.ok(r.err, `${i + 1}번째 오답은 잠기기 전이므로 PIN 불일치 에러여야 함`);
+  }
+  const locked = await ctx.APPLOCK.verify('1234'); // 맞는 PIN이라도 잠긴 동안은 막혀야 함
+  assert.ok(locked.err, '5회 실패 후에는 맞는 PIN을 넣어도 잠금 대기가 먼저 막아야 함');
+  assert.match(locked.err, /너무 많이/, '잠금 중엔 AUTH._lockStatus의 대기 안내 문구가 나와야 함');
+});
+test('APPLOCK: disable()은 설정을 지우고 실패 카운터도 함께 초기화한다', async () => {
+  const ctx = makeAppLockCtx();
+  await ctx.APPLOCK.setPin('1234');
+  await ctx.APPLOCK.verify('0000'); // 실패 카운터 1 적립
+  ctx.APPLOCK.disable();
+  assert.strictEqual(ctx.APPLOCK.enabled(), false);
+  const r = await ctx.APPLOCK.verify('1234'); // PIN 자체가 없으니 뭘 넣어도 통과
+  assert.strictEqual(r.ok, true);
+});
+test("APPLOCK: 'applock' 실패 카운터는 AUTH 로그인 실패 카운터와 같은 localStorage 키를 공유하지만 다른 object key로 구분된다", async () => {
+  const ctx = makeAppLockCtx();
+  await ctx.APPLOCK.setPin('1234');
+  await ctx.APPLOCK.verify('0000');
+  const raw = JSON.parse(ctx.localStorage.getItem('asset_app_login_fails'));
+  assert.ok(raw.applock, "실패 카운터가 'asset_app_login_fails'의 'applock' 키에 적립돼야 함(AUTH._recordFail 재사용 증거)");
+  assert.strictEqual(raw.applock.count, 1);
 });
 
 /* ---------- genRecoveryCode: 로컬 계정 비밀번호 복구 코드(가입 시 1회 발급, 해시만 저장) ---------- */

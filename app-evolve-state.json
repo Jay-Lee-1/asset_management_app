@@ -1,12 +1,15 @@
 {
-  "cycle": 148,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "앱 잠금(PIN) 화면 — 기기 로컬 접근 제어 신규 기능",
-    "why": "순자산·계좌별 잔액·전체 거래내역을 다루는 금융 앱인데 기기 단위 접근 제어(PIN/패턴/생체인증)가 전혀 없음을 grep으로 확인(pin/lock/biometric/faceid/touchid/webauthn/credential 전수 검색, 매칭은 전부 무관한 CSS·동기화 스피너·드래그 제스처 주석뿐). 내보내기/클라우드 동기화/undo/다중기기 충돌처리 등 다른 금융앱 기본기는 이미 견고한데 이 카테고리만 비어 있어, 기기를 잠깐 놓아두거나 분실하면 전체 자산 내역이 그대로 노출됨.",
-    "approach": "1) 새 device-local localStorage 키(예: asset_app_lock)에 {enabled,hash,salt,failCount,lockedUntil} 저장 — DB.settings/클라우드 동기화 대상 아님(기기별 PIN이 가족 공유 계정에 동기화되면 안 되고, nwHistory/테마처럼 기존에도 기기-로컬로 두는 데이터와 같은 원칙). 2) genSalt()/pbkdf2Hash(index.html:1843-1858, 이미 PBKDF2-SHA256 120k iter로 복구코드 해싱에 쓰이고 test/run.js vm sandbox에서도 실행 검증됨)로 PIN 해시 생성/검증, AUTH._lockStatus/_recordFail/_clearFails(index.html:1860-1871)의 지수백오프 브루트포스 잠금 로직을 그대로 재사용. 3) #authView(showAuth, index.html:7188)와 같은 display:none/flex 오버레이 패턴으로 #lockView 신규 추가, 숫자 PIN 패드 UI. 4) boot()(index.html:7169-7187)에서 startApp() 호출 전에 게이트, visibilitychange/pageshow 핸들러(index.html:7386-7395, 기존 maybeRollDay 배선과 같은 위치)에서 document.hidden 시 즉시 재잠금. 5) renderMenu()의 '알림 · 기준' 그룹(index.html:4584-4589, confirmTransfers/osNotify와 같은 {ic,l,sw,a} 스위치 템플릿)에 '앱 잠금' 토글 + 'PIN 변경'/'PIN 해제' 행 추가(변경/해제는 기존 PIN 재확인 필요). 6) test/run.js에 해시/검증/백오프 순수 로직 유닛 테스트 추가(pbkdf2Hash 패턴 재사용이라 테스트 가능성 이미 증명됨) — PIN 패드 DOM 자체는 기존 vm 파일럿 테스트 수준이면 충분. 7) index.html에 새 상시 UI/마크업/스크립트가 추가되므로 APP_VERSION(현재 1.47.65, index.html:1321)과 sw.js CACHE(현재 ourassets-v327, sw.js:6)를 관례대로 bump. 범위가 크면 advance 1회로 'PIN 설정+잠금화면+재잠금' 핵심까지만 끝내고, 생체인증(WebAuthn) 연동이나 '잠금까지 유예시간' 같은 확장은 후속 cycle로 미뤄도 됨."
-  },
+  "cycle": 149,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 148,
+      "phase": "advance",
+      "timestamp": "2026-10-06T14:20:00.000Z",
+      "summary": "critique(cycle148) 계획대로 앱 잠금(PIN) 화면을 핵심 범위(PIN 설정+잠금화면+재잠금)까지 구현. AUTH 객체 바로 뒤에 APPLOCK 추가(index.html) — genSalt()/pbkdf2Hash()로 PIN을 PBKDF2-SHA256 해싱해 device-local localStorage 키 asset_app_lock(DB.settings/클라우드 동기화 대상 아님)에 저장, AUTH._lockStatus/_recordFail/_clearFails를 'applock' 키로 재사용해 5회 오답부터 지수 백오프. #authView 바로 아래 같은 .auth-view 클래스로 #lockView 신규 추가(새 CSS 없이 기존 auth-card/auth-field/auth-err 스타일 재사용), renderLockView()/doUnlock()/lockApp()/unlockApp() 구현. boot()에서 startApp() 직후(로그인/게스트 두 경로 모두) APPLOCK.enabled()면 lockApp()으로 게이트 — 로그인 직후 바로 또 PIN을 묻지 않도록 모든 startApp() 호출이 아니라 boot()의 콜드 스타트 경로에만 넣음. visibilitychange의 document.hidden 분기에 lockApp() 호출 추가(appIsOpen() 가드)해 백그라운드 전환 시 즉시 재잠금(앱 전환기 스크린샷에도 잠금화면이 찍히도록). renderMenu()의 '알림 · 기준' 그룹에 '앱 잠금(PIN)' 토글 + enabled일 때만 보이는 'PIN 변경' 행 추가, toggleAppLock()/openSetPinSheet()/openChangePinSheet()/openDisableAppLockSheet()가 각각 PIN 설정/변경/해제 시트를 기존 .field+.auth-err+.two-btn 패턴으로 제공(변경/해제는 현재 PIN 재검증 필요). test/run.js에 extractConstBlock(name) 헬퍼 신규 추가(extractConst는 첫 ';'에서 끊는데 AUTH/APPLOCK처럼 메서드 본문에 ';'가 여러 번 나오는 객체 리터럴엔 못 써서, extractFunction과 같은 중괄호 깊이 세기 방식으로 전체 블록을 추출) + Map 기반 실제 localStorage 목업을 쓰는 별도 vm 컨텍스트(makeAppLockCtx)로 setPin→verify 왕복, 5회 실패 후 잠김, disable 시 실패카운터까지 초기화, 'applock' 키가 AUTH 로그인 실패 카운터와 같은 localStorage 키를 공유하는지까지 실행형 테스트 6건 추가(src.includes 문자열존재검사가 아니라 실제 실행·왕복 검증, cycle146 critique가 지적한 거짓 안전감 패턴을 피함). 오케스트레이팅 세션이 Playwright 헤드리스 크로미움으로 file:// 직접 로드해 게스트 진입→앱잠금 토글→PIN 설정→lockApp()→오답 거부→정답 해제→PIN해제까지 전체 흐름을 실제 브라우저에서 수동 시연해 재확인(에러는 file:// 프로토콜의 CORS뿐, 기능과 무관). APP_VERSION 1.47.65->1.47.66, sw.js CACHE v327->v328. node test/run.js 1019/1019 -> 1024/1024 통과(메인 인라인 script 구문 검사 포함). WebAuthn/생체인증 연동과 '잠금까지 유예시간'은 critique가 명시한 대로 범위 밖으로 후속 cycle에 남김.",
+      "commit": null
+    },
     {
       "cycle": 148,
       "phase": "critique",
@@ -138,13 +141,6 @@
       "phase": "review",
       "timestamp": "2026-10-05T16:00:00.000Z",
       "summary": "develop 커밋(f71c40b, refreshNwHistoryCard/assetBalPresetSel 세그먼트 버튼 포커스 보존)을 검토. nwHistoryCard()/assetBalCard()가 내부에 세그먼트 컨테이너를 '.seg nwh-seg' 하나만 렌더한다는 전제(각각 index.html:2406/2505)를 grep으로 확인해, el.querySelector('.seg button.on')이 카드마다 유일한 선택된 버튼을 정확히 가리킴을 검증. closeSheet()의 _sheetReturnFocus와 동일한 '재렌더 전에 el.contains(document.activeElement)로만 기억, 포커스가 없었으면 아무 것도 안 함' 패턴이 두 함수에 동일하게 적용돼 캐러셀/점 전환 등 카드 밖에서 트리거되는 기존 호출 경로에는 영향이 없음을 확인. nwHistoryCard가 pts.length<2(owner==='all')일 때 ''를 반환하는 경로, assetBalCard가 자산 미존재/타입 제외 시 ''를 반환하는 경로 모두 el.innerHTML=''이 되어도 querySelector가 null을 반환해 if(on) 가드로 안전함을 확인. node test/run.js 985/985 통과(신규 2건 포함). 코드 변경 없음 — 이상 없음.",
-      "commit": null
-    },
-    {
-      "cycle": 143,
-      "phase": "critique",
-      "timestamp": "2026-10-05T17:14:52Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(143사이클 동안 다뤄진 항목 전부 + 기각 이력 전달). 새로 발견 후 오케스트레이팅 세션이 index.html 3120-3225를 직접 Read, logic.js 100-129(mergeCollection)을 직접 Read해 재검증: snapshotAssetName()/unsnapshotAssetName()/relinkDeletedAsset()(index.html:3125-3224)가 DB.txns/DB.recurrences에 fromAssetName/toAssetName 이름스냅샷을 쓰거나 지우면서 touch()를 전혀 호출하지 않음을 확인. mergeCollection()(logic.js:107-129, 124행)은 양쪽 다 살아있으면 updatedAt 동률 시 local이 이기는데, 이 세 함수가 건드린 레코드는 updatedAt이 그대로라 기기A의 삭제+스냅샷을 기기B가 pull해도 B의 미동기화 로컬(스냅샷 없음) 사본이 항상 채택됨 — 자산 자체는 deletedIds 톰스톤으로 정상 삭제되지만 그 자산을 참조한 과거 거래는 다른 기기에서 영구히 assetNm()의 '—' 폴백으로 떨어지는 조용한 동기화 유실. doRenameOwner/doRenameCat/rollPendingTransfers에서 반복 수정된 'touch() 누락' 버그 클래스의 재발이며 이 세 함수만 빠져 있었음을 grep으로 확인(3120-3225, 6840-6862에 touch( 호출이 자산/반복거래 비활성화/조정내역에만 있고 스냅샷 대입 라인에는 없음). pending_advance_plan에 세 함수 touch() 추가 + mergeCollection 레벨 회귀테스트 계획 저장(상세는 pending_advance_plan 참고). 러너업(기각): nwHistoryCard/assetBalCard의 '추이는 곧 쌓여요' 빈 상태가 .ei 아이콘+CTA 없이 설명문만 있음(코스메틱, 차트 자체는 데이터 쌓이면 정상 표시되는 막다른 길 아님) / 지출분석·저축목표 피기뱅크 빈 상태도 CTA 없음(마땅한 액션이 없어 의도적으로 보임) / addMonths/recDates 월말 롤오버(day 31 반복거래) — addMonths(index.html:4254-4259)·recDates(logic.js:20-60) 둘 다 Math.min(day,lastDay(y,m))으로 이미 정확히 클램프함을 재확인, 가짜 리드였음. 코드 변경 없음(읽기 전용 조사, 서브에이전트와 오케스트레이팅 세션 둘 다 index.html 3120-3225·6840-6862·1512, logic.js 100-129, test/run.js 2885-2995·3766-3850을 직접 Read/grep으로 재확인).",
       "commit": null
     }
   ]
