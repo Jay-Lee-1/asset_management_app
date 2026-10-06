@@ -8363,6 +8363,25 @@ test('renderAssetSheet: cash/debt/realestate/etc/pension의 asAmt에 Enter-제�
     'asAmt의 Enter-제출이 savings를 제외하고 나머지 balType에만 적용되지 않음'
   );
 });
+/* ---------- renderAssetSheet: fx/gold/stock의 보유 수량 입력(asFx/asGold/asQty)도 다른 금액/이름
+ * 입력란(asAmt/asCostBasis/asName 등)과 같은 field-clear(×) 버튼 관례를 따라야 한다. 이 세 입력만
+ * .with-unit(단위 표시용 flex 래퍼)으로 감싸져 있어 field-clear가 없었다(app-evolve cycle147 develop
+ * — budgetIn/qAmt/bigMinInput을 통일한 cycle146이 "금액" 입력만 다루고 "수량" 입력은 남겨둔 공백). */
+test('renderAssetSheet: fx 타입의 asFx(보유 수량)도 다른 입력란과 동일하게 field-clear(×) 버튼이 있다', () => {
+  const body = extractFunction('renderAssetSheet');
+  assert.ok(body.includes('<div class="with-unit"><div class="field-clear"><input id="asFx"'), 'asFx 입력이 with-unit 안에서 field-clear로 감싸져 있지 않음');
+  assert.ok(body.includes(`<button type="button" class="fc-x" aria-label="보유 수량 지우기" onclick="clrInput('asFx')">`), 'asFx에 fc-x 지우기 버튼의 clrInput 연결이 없음');
+});
+test('renderAssetSheet: gold 타입의 asGold(보유 수량)도 동일하게 field-clear(×) 버튼이 있다', () => {
+  const body = extractFunction('renderAssetSheet');
+  assert.ok(body.includes('<div class="with-unit"><div class="field-clear"><input id="asGold"'), 'asGold 입력이 with-unit 안에서 field-clear로 감싸져 있지 않음');
+  assert.ok(body.includes(`<button type="button" class="fc-x" aria-label="보유 수량 지우기" onclick="clrInput('asGold')">`), 'asGold에 fc-x 지우기 버튼의 clrInput 연결이 없음');
+});
+test('renderAssetSheet: stock 타입의 asQty(보유 주식 수)도 동일하게 field-clear(×) 버튼이 있다', () => {
+  const body = extractFunction('renderAssetSheet');
+  assert.ok(body.includes('<div class="with-unit"><div class="field-clear"><input id="asQty"'), 'asQty 입력이 with-unit 안에서 field-clear로 감싸져 있지 않음');
+  assert.ok(body.includes(`<button type="button" class="fc-x" aria-label="보유 주식 수 지우기" onclick="clrInput('asQty')">`), 'asQty에 fc-x 지우기 버튼의 clrInput 연결이 없음');
+});
 test("costBasisField: fx/gold/stock 공용 매입금액 입력(asCostBasis)에 Enter-제출이 있다(세 타입 모두의 마지막 입력)", () => {
   assert.strictEqual(
     sandbox.costBasisField({ costBasis: 0 }, false),

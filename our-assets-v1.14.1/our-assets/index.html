@@ -782,6 +782,7 @@ html.no-ad .ad-slot{display:none}
 input[type=date]{box-sizing:border-box}
 .field .with-unit{display:flex;align-items:center;gap:8px}
 .field .unit{font-size:15px;font-weight:700;color:var(--text-2);flex-shrink:0}
+.with-unit .field-clear{flex:1;min-width:0} /* with-unit은 input을 직접 flex item으로 두는 걸 전제하므로, field-clear를 끼워 넣을 때도 같은 너비 배분이 되게 함 */
 .amount-in{font-size:26px!important;font-weight:700;text-align:right;height:60px!important;letter-spacing:-.02em}
 .opt-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
 .opt-grid.c3{grid-template-columns:repeat(3,1fr)}
@@ -1316,7 +1317,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.62';
+const APP_VERSION='1.47.63';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3360,18 +3361,18 @@ function renderAssetSheet(editing){
  }else if(d.type==='fx'){
    const curInfo=CURRENCY_LIST.find(x=>x.code===d.currency)||{code:d.currency,label:d.currency};
    fields=nameField+`<div class="field"><label>통화</label><button class="pick" onclick="asOpenCur()"><div class="pav a-fx">${svg('fx')}</div><div class="pbody"><div class="pn">${esc(curInfo.code)}</div><div class="psub">${esc(curInfo.label)}</div></div><div class="pc">${svg('chevR')}</div></button></div>
-     <div class="field"><label for="asFx">보유 수량</label><div class="with-unit"><input id="asFx" class="num" inputmode="decimal" value="${d.fxAmount||''}" placeholder="0" oninput="fmtQty(this)"><span class="unit">${d.currency}</span></div></div>
+     <div class="field"><label for="asFx">보유 수량</label><div class="with-unit"><div class="field-clear"><input id="asFx" class="num" inputmode="decimal" value="${d.fxAmount||''}" placeholder="0" oninput="fmtQty(this)"><button type="button" class="fc-x" aria-label="보유 수량 지우기" onclick="clrInput('asFx')">✕</button></div><span class="unit">${d.currency}</span></div></div>
      <p style="font-size:12.5px;color:var(--text-2);margin:-4px 0 14px">현재 환율 ${comma(DB.rates.fx[d.currency]||0)}원 기준으로 원화 평가액이 자동 계산돼요.</p>
      ${costBasisField(d,editing)}`;
  }else if(d.type==='gold'){
-   fields=nameField+`<div class="field"><label for="asGold">보유 수량</label><div class="with-unit"><input id="asGold" class="num" inputmode="decimal" value="${d.goldDon||''}" placeholder="0" oninput="fmtQty(this)"><span class="unit">돈</span></div></div>
+   fields=nameField+`<div class="field"><label for="asGold">보유 수량</label><div class="with-unit"><div class="field-clear"><input id="asGold" class="num" inputmode="decimal" value="${d.goldDon||''}" placeholder="0" oninput="fmtQty(this)"><button type="button" class="fc-x" aria-label="보유 수량 지우기" onclick="clrInput('asGold')">✕</button></div><span class="unit">돈</span></div></div>
      <p style="font-size:12.5px;color:var(--text-2);margin:-4px 0 14px">금 시세 ${comma(DB.rates.goldPerG)}원/g × 3.75g 기준으로 자동 계산돼요.</p>
      ${costBasisField(d,editing)}`;
  }else if(d.type==='stock'){
    fields=`<div class="field"><label for="asName">종목명</label><div class="field-clear"><input id="asName" value="${esc(d.name||'')}" placeholder="예: 삼성전자"><button type="button" class="fc-x" aria-label="종목명 지우기" onclick="clrInput('asName')">✕</button></div></div>
      <div class="field"><label for="asCode">종목코드</label><input id="asCode" value="${esc(d.stockCode||'')}" placeholder="국내 005930 · 해외 AAPL" autocapitalize="characters" oninput="this.value=this.value.toUpperCase()">
       <p style="font-size:12px;color:var(--text-3);margin-top:6px">국내는 6자리 숫자, 해외는 티커(AAPL·TSLA·NVDA)를 넣어주세요. 해외는 원화로 환산돼요.</p></div>
-     <div class="field"><label for="asQty">보유 주식 수</label><div class="with-unit"><input id="asQty" class="num" inputmode="decimal" value="${d.stockQty||''}" placeholder="0" oninput="fmtQty(this)"><span class="unit">주</span></div></div>
+     <div class="field"><label for="asQty">보유 주식 수</label><div class="with-unit"><div class="field-clear"><input id="asQty" class="num" inputmode="decimal" value="${d.stockQty||''}" placeholder="0" oninput="fmtQty(this)"><button type="button" class="fc-x" aria-label="보유 주식 수 지우기" onclick="clrInput('asQty')">✕</button></div><span class="unit">주</span></div></div>
      <p style="font-size:12.5px;color:var(--text-2);margin:-4px 0 14px">평가액 = 현재가 × 보유수량 (현재가는 시세 연동 관리에서 입력).</p>
      ${costBasisField(d,editing)}`;
  }

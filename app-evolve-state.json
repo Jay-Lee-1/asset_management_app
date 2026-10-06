@@ -1,8 +1,15 @@
 {
   "cycle": 147,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 147,
+      "phase": "develop",
+      "timestamp": "2026-10-06T07:13:30.163Z",
+      "summary": "fx/gold/stock 자산 편집 시트의 '보유 수량' 입력란(asFx/asGold/asQty)이 field-clear(×) 지우기 버튼 관례에서 빠져 있던 것을 발견해 수정. 이 세 입력은 .with-unit(단위 표시 flex 래퍼)로만 감싸져 있어 cycle146의 budgetIn/qAmt/bigMinInput 통일(금액 입력 전용) 때도 누락됐던 별개의 공백. .with-unit 안에 .field-clear를 중첩하고 .with-unit .field-clear{flex:1;min-width:0} CSS 한 줄을 추가해 기존 폭 배분을 유지(fcWire가 .field-clear input을 자동 배선하므로 JS 변경 불필요). test/run.js에 asFx/asGold/asQty 각각의 field-clear+clrInput 연결 회귀 테스트 3건 추가(수정 전 markup으로 되돌려 FAIL을 직접 재현해 테스트가 실제로 뭔가를 검증함을 확인). APP_VERSION 1.47.62->1.47.63, sw.js CACHE v324->v325. node test/run.js 1005/1005 -> 1008/1008 통과.",
+      "commit": null
+    },
     {
       "cycle": 146,
       "phase": "advance",
@@ -134,13 +141,6 @@
       "phase": "develop",
       "timestamp": "2026-10-05T23:12:51.957Z",
       "summary": "Explore 서브에이전트로 144사이클 동안 다뤄진/기각된 항목 전부를 제외하고 새 develop 대상 조사. renderTxSheet()(index.html:3784-3791)의 rc(반복 개별/범위 수정) 분기에서 유일한 입력인 txAmt(금액)에 onkeydown Enter-제출 핸들러가 빠져 있음을 발견 — 같은 분기의 메인 txAmt(반복 미편집 시, 3819행 근처)와 rAmt(renderRecSheet)/goalAmt/asCostBasis/qAmt/bigMinInput 등 \"마지막/유일 입력이면 Enter로 제출\" 컨벤션(cycle 다수에서 확립)을 따르는 모든 단일금액시트와 달리 이 시트만 예외였음을 grep으로 확인. recSave()는 amt가 비어있으면 toast만 띄우고 안전하게 반환하므로 부작용 없음. onkeydown=\"if(event.key==='Enter'&&!event.isComposing)recSave()\" 추가, APP_VERSION 1.47.59->1.47.60, sw.js CACHE v321->v322, test/run.js에 renderTxSheet rc분기 txAmt Enter-제출 회귀테스트 1건 추가. node test/run.js 996/996 -> 997/997 통과.",
-      "commit": null
-    },
-    {
-      "cycle": 145,
-      "phase": "review",
-      "timestamp": "2026-10-06T00:30:00.000Z",
-      "summary": "develop 커밋(4bc0028, renderTxSheet rc분기 txAmt에 Enter-제출 추가)을 검토. recSave()(index.html:3985)를 직접 Read해 twGuard() 가드와 amt 비어있을 때 toast 후 안전 반환하는 경로를 확인, Enter로 조기 호출돼도 부작용(중복 저장/예외) 없음을 재확인. 같은 시트의 다른 분기(메인 txAmt)와 rAmt/goalAmt/asCostBasis 등 기존 Enter-제출 컨벤션과 동일한 onkeydown 패턴(if(event.key==='Enter'&&!event.isComposing))이 그대로 적용됨을 diff로 확인. node test/run.js 재실행 997/997 통과(신규 회귀 테스트 1건 포함). 코드 변경 없음 — 이상 없음.",
       "commit": null
     }
   ]
