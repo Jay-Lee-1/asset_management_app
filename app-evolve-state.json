@@ -1,8 +1,20 @@
 {
   "cycle": 150,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "prefers-reduced-motion이 CSS transition만 끄고 keyframe animation(특히 무한반복 5곳)은 그대로 둠",
+    "why": "index.html:1280의 reduced-motion 규칙은 `*{transition-duration:.01ms!important}`뿐이라 transition에만 적용되고 animation(keyframes)에는 전혀 영향이 없다. .nav-badge.on{animation:warnPulse 2.4s ... infinite}(1210, Plan탭 경고뱃지 #planBadge — 평상시 UI 요소, 튜토리얼 한정 아님)과 튜토리얼의 .tw-dot/.tw-try/.tw-hint/.tw-char(803/816/860/845, twGlow/twPulse/twHop) 5개가 infinite로 영구 반복돼, OS에서 reduce-motion을 켠 사용자(어지러움·전정기관 민감성 등)에게 앱 안에서 끌 방법이 전혀 없는 지속적 흔들림/펄스를 계속 보여준다. lpPop/selIn/dayFlash/rowFlash/numIn/twIn 같은 one-shot 애니메이션도 영향받지 않지만 피해는 크지 않음(무한반복 5곳이 핵심).",
+    "approach": "index.html:1280의 @media (prefers-reduced-motion:reduce) 블록에 `*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important}` 한 줄을 추가(기존 transition-duration 규칙은 그대로 유지). CSS 전역 선택자(`*`)로 적용해 지금의 12개뿐 아니라 향후 추가되는 animation도 자동 커버. JS/마크업 변경 없음, DB/sanitizeBackup/sync 무관. 적용 후 .nav-badge.on/.tw-dot/.tw-hint/.tw-try/.tw-char가 reduced-motion에서 한 프레임만에 멈추는지, 기존 one-shot(dayFlash 등)의 setTimeout 기반 클래스 제거 타이밍(JS 쪽)과 충돌 없는지 확인. test/run.js는 CSS를 전혀 검사하지 않으므로(vm 실행 기반, CSS 어서션 없음 확인됨) 새 테스트는 index.html 소스에서 reduced-motion 미디어 블록 문자열에 animation-duration/animation-iteration-count가 포함되는지 보는 정적 텍스트 검사로 추가(이 경우는 CSS가 비실행 정적 텍스트라 src.includes류 검사가 적절, cycle146 critique가 경계한 '실행 함수인데 문자열 검사만' 패턴과는 다름).",
+    "watch_out": "(a) animation-iteration-count:1 + .01ms 조합이 마지막 keyframe이 아닌 중간 프레임에 멈출 수 있어 .nav-badge.on(JS가 안 지우는 지속 요소)이 scale(1)/opacity 1 같은 '정상' 최종 상태로 안착하는지 DevTools의 prefers-reduced-motion 토글로 시각 확인할 것. (b) one-shot 플래시류는 JS setTimeout이 독립적으로 클래스를 제거하므로(예: 4537, 659-660) 애니메이션 길이를 줄여도 그 타이밍과는 무관해 깨지지 않음. (c) 5곳만 하드코딩하지 말고 전역 `*` 규칙으로 — 향후 cycle이 추가하는 animation도 자동 보호."
+  },
   "history": [
+    {
+      "cycle": 150,
+      "phase": "critique",
+      "timestamp": "2026-10-06T21:10:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(141-150사이클 동안 다뤄진 항목 전부 + 기각 이력 전달). 새로 발견 후 서브에이전트가 직접 재검증: index.html:1280의 prefers-reduced-motion 미디어쿼리가 transition-duration만 .01ms로 깎고 animation(keyframes)은 전혀 건드리지 않아, Plan탭 경고뱃지(.nav-badge.on, 1210, warnPulse 2.4s infinite — 평상시 UI, 튜토리얼 한정 아님)와 튜토리얼 스팟라이트/힌트/마스코트(.tw-dot/.tw-try/.tw-hint/.tw-char, 803/816/845/860, twGlow/twPulse/twHop 모두 infinite) 5곳이 OS 레벨 reduce-motion 설정과 무관하게 영구 반복됨을 확인. 접근성 사이클들이 다룬 aria-pressed/role(스크린리더용 상태 노출)과는 다른 축(모션 자체)의 공백으로 중복 아님. test/run.js는 vm 실행 기반이라 CSS 어서션이 전혀 없음을 grep으로 재확인(코드 변경 없이는 전통적 회귀테스트 불가 — 계획에 정적 텍스트 검사 방식 명시). pending_advance_plan에 reduced-motion 미디어 블록에 animation-duration/animation-iteration-count 전역(`*`) 오버라이드 한 줄을 추가하는 계획 저장(상세는 pending_advance_plan 참고). 코드 변경 없음(읽기 전용 조사, 서브에이전트가 index.html 803·816·845·860·1210·1280을 직접 Read/grep으로 재확인, test/run.js의 CSS 미검증도 grep으로 확인).",
+      "commit": null
+    },
     {
       "cycle": 150,
       "phase": "review",
