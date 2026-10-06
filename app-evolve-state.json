@@ -1,8 +1,19 @@
 {
   "cycle": 146,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "test/run.js DOM-mutating 함수 검증을 '파일 전체 문자열 존재'에서 '해당 엘리먼트 범위 내 속성 검증'으로 좁히기",
+    "why": "src.includes()는 위치/문맥을 구분하지 못해 거짓 안전감을 준다. 전체 66개 render/open 함수를 한 번에 진짜 DOM 실행으로 바꾸는 건 범위가 너무 크므로(의존성 추가 없이 node만 쓰는 프로젝트 철학상 jsdom 등 설치도 지양), 가장 최근(cycle142/143/145)에 추가된 접근성·포커스 핵심 와이어링 테스트부터 scope를 좁혀 실질적 보호력을 높인다.",
+    "approach": "test/run.js에 extractTag(id) 헬퍼 추가 — index.html에서 `id=\"X\"`를 포함하는 여는 태그(`<div id=\"X\" ...>`)만 안전하게 슬라이싱해 그 태그의 속성 문자열만 반환(extractFunction의 괄호매칭과 동일 원칙, 따옴표 중첩 주의). 10892-10904행의 nwhChart/assetBalChart 키보드 와이어링 테스트, 2095-2100행의 알림 캡션 테스트를 extractTag(id) 결과에 대해 assert하도록 교체(파일 전체가 아니라 그 엘리먼트 안에서만 tabindex/onkeydown/aria-label 확인). 검증 전략: 먼저 해당 속성을 실제 엘리먼트에서 제거하면서 똑같은 문자열을 파일의 다른(관련 없는) 위치에 남겨두는 변형을 만들어 — 기존 src.includes 버전은 여전히 PASS, 새 extractTag 버전은 올바르게 FAIL함을 git stash로 직접 증명한 뒤 커밋. 추가로 nwChartPeekKey/assetBalPeekKey처럼 핵심 상호작용 하나는, 아주 작은 fake div(속성 저장 + onkeydown 문자열을 vm.runInContext로 실행)로 실제 키 이벤트를 흉내 내 `_nwPeekIdx` 등 상태 변화까지 assert하는 파일럿을 만들어 '완전 실행형 테스트'로 가는 길을 보여준다. 나머지 64개 미검증 render/open 함수는 범위 밖(백로그)으로 남긴다."
+  },
   "history": [
+    {
+      "cycle": 146,
+      "phase": "critique",
+      "timestamp": "2026-10-06T05:20:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(cycle141-146 히스토리 전부 + 기각 이력 전달). 새로 발견: test/run.js(10945줄)의 회귀 테스트 중 297건이 grep 기준 src.includes()(파일 전체 문자열 존재 검사)에 의존하고, render*/open*/do* 등 DOM을 조작하는 함수(66개) 다수는 FUNCTIONS(vm 추출 대상)에 전혀 없어 실제로 한 줄도 실행되지 않음을 확인 — 설계 자체가 1-9행 주석에서 'DOM-mutating 함수는 실행 대상 아님'을 인정. 문제: src.includes(s)는 s가 파일 어딘가에만 있으면 통과하므로, 예를 들어 cycle142가 고친 nwhChart/assetBalChart tabindex/onkeydown 키보드 배선을 리팩터링 중 실수로 제거해도 그 문자열 조각이 주석이나 다른 카드의 비슷한 마크업에 남아있으면 테스트는 그대로 통과 보고됨 — 거짓 안전감이 146사이클 동안 누적되어 온 패턴. 직접 사용자 체감 버그는 아니지만 app-evolve 루프 자체가 'node test/run.js 전부 통과'를 안전망으로 의존하므로 다음 사이클들의 신뢰도에 영향. 전체 66개를 한 번에 진짜 DOM 실행으로 바꾸는 건 범위가 너무 크다고 판단해, 가장 최근 추가된 접근성 핵심 배선(nwhChart/assetBalChart 키보드, 알림 캡션) 테스트를 extractTag(id) 기반 엘리먼트 범위 검증으로 좁히고 파일럿으로 vm 실행 기반 완전 실행형 테스트 하나를 시범 구현하는 계획을 pending_advance_plan에 저장. 러너업(기각): CSV 내보내기가 반복거래 자체는 안 다룸(JSON 백업이 전체 덮음, 설계 의도) / assetBalCard가 시세평가 자산(fx/gold/stock) 잔액추이 제외(isMarketValued 포함목록에서 의도적 제외, 버그 아님) / 접근성·undo 패턴·storage quota 경고·인증 에러 메시지 전수 점검했으나 모두 방어적으로 처리됨. 코드 변경 없음(읽기 전용 조사, logic.js 전체, index.html 2040-2270·2501-2560·2696-2710·3491-3500·3944-3946·4809-4830·4917-4935·5025-5075·7187-7360, sw.js 전체, netlify.toml, netlify/functions/*.js, test/run.js 1-155·2095-2100·10550-10904를 직접 Read/grep).",
+      "commit": null
+    },
     {
       "cycle": 146,
       "phase": "review",
@@ -16,12 +27,6 @@
       "timestamp": "2026-10-06T03:40:00.000Z",
       "summary": "general-purpose 서브에이전트로 금액 입력란 전반을 grep해 지우기(×) 버튼 관례(.field-clear 래퍼 + fc-x 버튼 + clrInput(), fcWire()가 자동 배선)가 txAmt/rAmt/goalAmt/asAmt/asCostBasis/asName/goalName/txMemo/rMemo에는 적용돼 있는데 budgetIn(openBudgetPrompt, index.html:4799)/qAmt(openQuickAmount, 6434)/bigMinInput(openBigMinSheet, 2883) 세 금액 입력란에만 빠져 있음을 발견·수정. cycle121이 budgetIn을 콤마 포맷/num() 파서로 통일한 것과 같은 결의 '다른 금액칸과 나란히 쓰는데 지우는 방법만 다름(전체선택 후 삭제)' UX 불일치. 세 입력을 .field-clear로 감싸고 동일 패턴의 fc-x 버튼(onclick=\"clrInput('id')\")을 추가(JS 와이어링은 fcWire()가 렌더 후 자동 처리라 추가 배선 불필요). test/run.js FUNCTIONS에 openBudgetPrompt/openBigMinSheet를 새로 추가하고(기존엔 샌드박스에 로드돼 있지 않았음) 회귀 테스트 3건 추가. 수정 전 코드로 되돌려 신규 3건만 정확히 FAIL함을 git stash로 직접 검증한 뒤 복구. node test/run.js 1001/1001 -> 1004/1004 통과(메인 인라인 script 구문 검사 포함). APP_VERSION 1.47.61->1.47.62, sw.js CACHE v323->v324. 오케스트레이팅 세션이 diff를 직접 Read로 재확인 후 테스트 재실행(1004/1004)해 커밋.",
       "commit": "fef8240"
-    },
-    {
-      "cycle": 141,
-      "phase": "review",
-      "timestamp": "2026-10-05T07:10:36.975Z",
-      "summary": "develop 커밋(831c0e6, sanitizeBackup()에 categories/owners/budgetHistory/catIcon/catVar/deletedType/deletedBal 검증 추가)을 검토. 클라우드 풀 경로 3곳(index.html:1764/1800/1808/1820, afterCloudAuth/resolveCloudPullRemote/resolveCloudForcePush)이 모두 DB=sanitizeBackup(remote).data 뒤 migrate()를 try/catch 없이 바로 호출한다는 전제를 grep으로 재확인(restoreBackup만 5651행에서 try/catch로 보호). migrate() 2019-2020행(DB.categories.income이 truthy+length>0인 비배열, 예: 문자열이면 그대로 유지했다가 .push(ADJUST_CAT)에서 TypeError)과 addOwner() 3444행(DB.owners.find/push가 문자열엔 없어 TypeError)을 직접 Read해 커밋이 지목한 크래시 경로가 정확함을 확인. sanitizeBackup() 추가분을 라인별로 추적: categories/owners는 raw!=null && (비배열 || 필터로 길이가 줄었을 때)만 fixedCount를 세고 null/undefined(미설정)는 제외하는 규칙이 일관되게 적용됨, budgetHistory는 sanitizeAmount(index.html:5455, Number()+Number.isFinite 가드)로 NaN/음수를 0으로 클램프하고 budgetKey()와 동일한 /^\\d{4}-(0[1-9]|1[0-2])$/ 형식 검사로 2026-13 같은 모양만 맞는 값도 걸러낸 뒤 from 오름차순 재정렬함을 확인(setBudgetFrom 불변식과 일치). catIcon/catVar/deletedType/deletedBal의 sanitizeFlatMap()은 배열도 typeof object라 Array.isArray로 따로 걸러냄을 확인(누락 시 배열이 그대로 통과했을 취약점). 신규 테스트 14개를 하나씩 손으로 재계산해 fixedCount 기댓값이 전부 코드 동작과 일치함을 확인(특히 식비,교통 문자열+[급여]+null 혼합 케이스에서 fixedCount=1만 나와야 하는 이유: null/undefined는 미설정으로 간주해 제외). node test/run.js 재실행 970/970 통과(기존 956 + 신규 14 전부 포함). 코드 변경 없음(이상 없음)."
     },
     {
       "cycle": 141,
