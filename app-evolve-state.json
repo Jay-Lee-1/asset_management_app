@@ -1,8 +1,19 @@
 {
   "cycle": 147,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "세그먼트 컨트롤(.seg/.mseg)에 aria-pressed/role 누락 — 선택 상태가 스크린리더에 전달 안 됨",
+    "why": "앱 전역에 쓰이는 '세그먼트 선택' 위젯(.seg, .mseg)이 최소 9곳에서 선택 상태를 CSS class(\"on\")로만 표시하고 어떤 ARIA 속성도 주지 않는다 — index.html:2407(nwPresetSegHTML, 순자산추이 기간), :2506(assetBalCard 기간), :2675(renderGoalForm ownerSeg, 목표 귀속), :3596(modeSeg, 달력/검색 전환), :3798/:3819(renderTxSheet typeSeg, 거래 구분), :4036/:4046(renderRecSheet typeSeg, 반복 구분), :4777(지출분석 귀속 필터), :4894(openCatManage typeSeg), :5115(mSeg, 체크아웃 흐름 달력/목록). 버튼은 그냥 `<button class=\"${x===cur?'on':''}\">`로만 렌더되고 aria-pressed/aria-selected/role이 전혀 없다. 반면 같은 코드베이스는 토글形 버튼에 aria-pressed를 쓰는 관례가 이미 확립돼 있다(index.html:3070 자산선택, :3540 캘린더 날짜셀, :4877 아이콘피커, :6098 날짜피커 셀, :3647/:3653/:6083/:6085/:6209/:6211에서 셀 전환 시 aria-pressed/aria-selected를 갈아끼움) — 이 관례가 '세그먼트 컨트롤'이라는 가장 널리 쓰이는 선택 패턴 하나에만 적용되지 않았다. 스크린리더 사용자는 탭 이동 시 '1개월, 버튼' '3개월, 버튼' '1년, 버튼'만 듣고 현재 어떤 기간이 선택돼 있는지 전혀 알 수 없다 — 거래/반복거래 입력에서 구분(지출/수입/이체/저축)이 뭘로 선택돼 있는지도 마찬가지. test/run.js에 aria-pressed 검증이 있는 건 날짜피커 셀(:10859-10871)뿐이고 이 9개 세그먼트 생성 함수엔 해당 검증이 전혀 없다(grep으로 확인).",
+    "approach": "index.html의 9개 세그먼트 생성 지점을 모두 수정: 각 `<button class=\"${cond?'on':''}\" onclick=...>`에 `aria-pressed=\"${cond}\"`를 추가하고, 감싸는 `.seg`/`.mseg` 래퍼 div에 `role=\"group\"`과 맥락에 맞는 `aria-label`(예: '기간 선택', '귀속 선택', '구분 선택', '보기 방식')을 추가한다. 대상: nwPresetSegHTML(~2407), assetBalCard의 segHTML(~2506), renderGoalForm의 ownerSeg(~2675), modeSeg(~3596), renderTxSheet의 typeSeg 정의(~3798)와 사용처(~3819), renderRecSheet의 typeSeg 정의(~4036)와 사용처(~4046), 지출분석 귀속 seg(~4777), openCatManage의 typeSeg(~4894), mSeg용 seg 템플릿(~5115). 기존 관례(aria-pressed를 토글 버튼에 쓰는 패턴, 예: index.html:3070/:3540/:4877)와 동일한 방식을 따라 새로운 상호작용 패턴(예: role=tablist의 화살표키 roving tabindex)은 도입하지 않고 어트리뷰트만 추가해 동작은 바꾸지 않는다. logic.js에 순수 헬퍼가 필요하면(예: segButtonsHTML(items,current,onclickFn,ariaLabel) 같은 공용 함수로 9곳을 통합) 테스트하기 쉬워지지만 필수는 아님 — 각 지점을 개별 수정해도 충분히 스코프가 작다. 회귀 테스트: test/run.js에 각 생성 함수(nwPresetSegHTML은 이미 export돼 테스트 가능, 나머지는 extractTag/extractFunction으로 해당 템플릿 리터럴을 뽑아) 결과 HTML에 `aria-pressed=\"true\"`가 현재 선택된 버튼에만, `aria-pressed=\"false\"`가 나머지 버튼에 있는지 확인하는 테스트를 9개 지점 각각(또는 공용 헬퍼로 묶었다면 헬퍼 1개 + 각 호출부가 올바른 aria-label을 넘기는지) 추가한다."
+  },
   "history": [
+    {
+      "cycle": 147,
+      "phase": "critique",
+      "timestamp": "2026-10-06T09:00:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(141-147사이클 동안 다뤄진 항목 전부 + 기각 이력 전달). 새로 발견 후 서브에이전트가 직접 재검증: 앱 전역 '세그먼트 선택' 위젯(.seg/.mseg)이 최소 9곳(순자산추이·assetBalCard 기간, 목표 귀속, 달력/검색 전환, 거래/반복거래 구분 ×2, 지출분석 귀속, 카테고리관리 구분, 체크아웃 mSeg)에서 선택 상태를 class=\"on\"으로만 표시하고 aria-pressed/role이 전혀 없음을 확인 — 같은 코드베이스가 토글 버튼(자산선택·캘린더 날짜셀·아이콘피커·날짜피커 셀 등)엔 이미 aria-pressed를 일관되게 쓰는 관례와 대비되는 공백. 스크린리더 사용자는 세그먼트 버튼 순회 시 현재 선택된 기간/구분/귀속을 전혀 알 수 없음. test/run.js에 aria-pressed 검증은 날짜피커 셀뿐이고 이 9곳엔 없음(grep 확인). pending_advance_plan에 9개 지점 전체에 aria-pressed(+래퍼에 role=group/aria-label) 추가 + 회귀테스트 계획 저장(상세는 pending_advance_plan 참고). 러너업(기각): netlify/functions/rates.js·stock.js 에러처리(타임아웃+재시도+멀티소스 폴백+실행시간 예산까지 이미 견고, 새 공백 없음) / 클라우드 동기화 merge 코드(mergeCollection/mergeNameList/mergeFlatMap 등, 10여 차례 하드닝을 거쳐 설계 근거 주석까지 명시된 상태, 새 공백 없음). 코드 변경 없음(읽기 전용 조사, 서브에이전트가 index.html 전체 세그먼트 지점·logic.js 전체·netlify/functions/rates.js·stock.js 전체·test/run.js를 직접 Read/grep으로 재확인, git status clean 확인).",
+      "commit": null
+    },
     {
       "cycle": 147,
       "phase": "review",
@@ -134,13 +145,6 @@
       "phase": "critique",
       "timestamp": "2026-10-05T21:10:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(144사이클 동안 다뤄진 항목 전부 + 기각 이력 전달). 서브에이전트가 logic.js 전체와 index.html의 자산평가/반복거래 편집범위/CSV import·export/크로스탭 저장동기화/클라우드 병합/시세동기화/로컬알림/저장공간경고/시트 접근성/자산 삭제·재연동/검색필터 캐시를 직접 Read — 144사이클의 방어적 처리로 신규 결함을 찾기 어려웠음. 중간 기각: histQ 검색 디바운스 부재(실사용 규모에서 체감 성능 문제 아님) / spendTrend()의 카테고리별 반복 재계산(실사용 카테고리 수 규모에선 병목 아님) / debt 자산 통화(currency) 필드 부재(영향 작음). 최종 발견(grep -n '상환|완납|payoff|interestRate' index.html 결과 전무로 확인): logic.js:277-296 goalProgress()는 순자산 목표에 대해 이력 처음·끝 두 점의 선형투사로 목표 도달일을 계산하는 검증된 패턴(test/run.js:1225-1270 테스트 포함)을 갖고 있는데, index.html:2501-2537 assetBalCard()는 debt 타입 자산(2504행)에도 적용되면서 잔액 추이 스파크라인만 보여주고 '이 속도로 갚으면 언제 다 갚는지' 투사는 전혀 없음 — goal 쪽에는 있는 통찰이 debt 쪽엔 비대칭적으로 빠져 있음. debt는 ASSET_TYPES.debt로 정식 지원되고 시드 데이터에도 '전세자금대출'이 포함될 만큼 공들여진 타입이라, 빚을 갚아나가는 사용자의 핵심 동기부여 정보가 누락된 상태로 판단. pending_advance_plan에 logic.js에 goalProgress와 동일한 선형투사 철학의 debtPayoffProjection(pts,today) 순수함수 추가(새 DB 필드 불필요, assetBalanceSeries의 pts 재사용) + assetBalCard()에 debt 전용 한 줄 안내 추가 + test/run.js에 4케이스(완납/이력부족/감소세없음/정상투사) 회귀테스트 계획 저장(상세는 pending_advance_plan 참고). 코드 변경 없음(읽기 전용 조사).",
-      "commit": null
-    },
-    {
-      "cycle": 144,
-      "phase": "advance",
-      "timestamp": "2026-10-05T22:05:00.000Z",
-      "summary": "critique(cycle144) 계획대로 debt 자산에 '이 속도로 갚으면 언제 다 갚는지' 상환완료 예상일 투사를 추가했다. logic.js에 goalProgress와 동일한 '처음·끝 두 점 선형투사' 철학을 공유하는 순수 함수 debtPayoffProjection(pts,today) 추가 — pts는 assetBalCard가 이미 계산해둔 assetBalanceSeries 결과(sign=-1로 뒤집힌 날짜순 {date,bal}, bal은 양수=남은 빚)를 그대로 받아 새 DB 필드/마이그레이션 없이 재사용. last.bal<=0이면 achieved:true, 포인트 2개 미만이거나 처음·끝 구간 일별 감소율이 0 이하(정체/증가)면 projectedDate:null(추측 대신 '모른다'), 감소 중이면 rate=(first.bal-last.bal)/days로 projectedDate=addDays(last.date,Math.ceil(last.bal/rate)). index.html의 assetBalCard()(2501행)에서 a.type==='debt'일 때만 이 함수를 pts에 적용해 차트 아래 goalRowHTML과 같은 어조의 한 줄(achieved면 '이미 다 갚았어요', 투사 가능하면 'YYYY-MM-DD쯤 다 갚아요', 불가능하면 '최근엔 줄어들고 있지 않아요') 추가. test/run.js에 goalProgress 테스트와 동일한 4케이스(완납/이력부족/증가세/정상투사) 추가. APP_VERSION 1.47.58→1.47.59, sw.js CACHE v320→v321. node test/run.js 992/992 -> 996/996 통과(메인 인라인 script 구문 검사 포함). pending_advance_plan을 null로 비움.",
       "commit": null
     }
   ]
