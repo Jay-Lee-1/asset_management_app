@@ -1321,7 +1321,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.71';
+const APP_VERSION='1.47.72';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1987,9 +1987,12 @@ const APPLOCK={
  _read(){try{return JSON.parse(localStorage.getItem(APPLOCK_KEY)||'null')}catch(e){return null}},
  _write(s){localStorage.setItem(APPLOCK_KEY,JSON.stringify(s))},
  enabled(){const s=this._read();return !!(s&&s.enabled)},
+ getGrace(){const s=this._read();return (s&&typeof s.graceSec==='number')?s.graceSec:0}, /* 재잠금까지의 유예시간(초). 0=백그라운드 전환 즉시 재잠금(기존 기본 동작) */
+ setGrace(sec){const s=this._read();if(!s)return;s.graceSec=sec;this._write(s)},
  async setPin(pin){
   const salt=genSalt();
-  this._write({enabled:true,salt,hash:await pbkdf2Hash(pin,salt)});
+  const prevGrace=this.getGrace(); /* PIN 설정/변경으로 유예시간 설정이 조용히 초기화되지 않게 보존(app-evolve cycle151 advance) */
+  this._write({enabled:true,salt,hash:await pbkdf2Hash(pin,salt),graceSec:prevGrace});
   AUTH._clearFails(APPLOCK_FAIL_KEY);
  },
  async verify(pin){
@@ -4668,7 +4671,7 @@ function renderMenu(){
    {ic:'check',l:'이체 확인',sw:!!DB.settings.confirmTransfers,a:"toggleConfirmTransfers()"},
    {ic:'bell',l:'OS 알림',sw:!!DB.settings.osNotify,a:"toggleOsNotify()"},
    {ic:'lock',l:'앱 잠금(PIN)',sw:APPLOCK.enabled(),a:"toggleAppLock()"},
-   ...(APPLOCK.enabled()?[{ic:'lock',l:'PIN 변경',a:"openChangePinSheet()"}]:[]),
+   ...(APPLOCK.enabled()?[{ic:'lock',l:'PIN 변경',a:"openChangePinSheet()"},{ic:'lock',l:'재잠금 시점',v:graceLabel(),a:"openAppLockGraceSheet()"}]:[]),
    {ic:'chart',l:'큰 지출 기준',v:comma(bigMin())+'원',a:"openBigMinSheet()"},
    {ic:'sync',l:'시세 연동',v:rateStatusMenu(),a:"openRateSheet()"},
   ]},
@@ -7288,6 +7291,7 @@ function showAuth(){$('app').style.display='none';$('authView').style.display='f
 /* APP_LOCKED는 '지금 PIN 입력을 기다리는 중'을 뜻한다 — 로그인 전(showAuth)과는 다른 화면/다른
  * 트리거(백그라운드 전환, 콜드부트)에서 쓰이므로 AUTHKEY 같은 기존 플래그와 섞지 않는다. */
 let APP_LOCKED=false;
+let APP_HIDDEN_AT=0; /* 마지막으로 백그라운드로 전환된 시각(ms). 유예시간 안에 돌아오면 재인증 없이 자동 해제한다 */
 function lockApp(){
  if(APP_LOCKED||!APPLOCK.enabled())return;
  APP_LOCKED=true;
@@ -7390,6 +7394,12 @@ async function doChangePin(){
  if(btn)btn.disabled=false;
  closeSheet();toast('PIN을 변경했어요');
 }
+const APPLOCK_GRACE_OPTS=[[0,'즉시 재잠금','백그라운드로 전환되면 바로 PIN을 요구해요'],[30,'30초 후','30초 안에 돌아오면 PIN 없이 계속 써요'],[60,'1분 후',''],[300,'5분 후','']];
+function graceLabel(){const o=APPLOCK_GRACE_OPTS.find(x=>x[0]===APPLOCK.getGrace());return o?o[1]:'즉시 재잠금'}
+function openAppLockGraceSheet(){
+ openSheet(`<h3>재잠금 시점</h3><div class="opt-list">${APPLOCK_GRACE_OPTS.map(([v,l,s])=>`<button class="${APPLOCK.getGrace()===v?'on':''}" onclick="setAppLockGrace(${v})"><span class="rd"></span><div><div>${l}</div>${s?`<div class="ol-sub">${s}</div>`:''}</div></button>`).join('')}</div>`);
+}
+function setAppLockGrace(sec){APPLOCK.setGrace(sec);closeSheet();renderMenu();toast('재잠금 시점을 바꿨어요')}
 /* PIN을 잊은 경우의 탈출구 — 복구 코드 개념이 없는 기기-로컬 전용 잠금이라, 이게 없으면
  * verify() 성공 없이는 영원히 #lockView에 막혀서 앱 잠금을 풀기 위해 사이트 데이터 전체를
  * 지워야 했다(이 기기에만 있는 자산 내역 전체가 함께 사라짐). PIN은 암호화 키가 아니라 단순
@@ -7604,7 +7614,9 @@ function maybeRollDay(){
  if(CLOUD_UID&&CLOUD_SYNC_STATE==='conflict'&&ST.tab==='home')renderCurrent();
  autoSyncRates()
 }
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)maybeRollDay();else{if(CLOUD_UID){clearTimeout(SB_PUSH_T);pushCloud().catch(()=>{})}checkNotifyAlerts();if(appIsOpen())lockApp()}});
+/* 백그라운드로 전환되면 즉시 화면을 가려(lockApp) OS 앱 전환화면에 데이터가 노출되지 않게 하면서도,
+ * 설정된 유예시간 안에 돌아오면 PIN 재입력 없이 자동으로 다시 연다(app-evolve cycle151 advance) */
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){if(APP_LOCKED&&APPLOCK.enabled()&&APP_HIDDEN_AT&&(Date.now()-APP_HIDDEN_AT)/1000<APPLOCK.getGrace())unlockApp();else maybeRollDay();APP_HIDDEN_AT=0}else{if(CLOUD_UID){clearTimeout(SB_PUSH_T);pushCloud().catch(()=>{})}checkNotifyAlerts();if(appIsOpen()){APP_HIDDEN_AT=Date.now();lockApp()}}});
 window.addEventListener('online',async()=>{
  if(!shouldRetryCloudSync(CLOUD_UID,CLOUD_SYNC_STATE,navigator.onLine))return;
  await pullCloud();await pushCloud();

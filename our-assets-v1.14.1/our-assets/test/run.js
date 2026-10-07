@@ -8767,6 +8767,60 @@ test("APPLOCK: 'applock' 실패 카운터는 AUTH 로그인 실패 카운터와 
   assert.strictEqual(raw.applock.count, 1);
 });
 
+/* ---------- 재잠금 유예시간(graceSec, app-evolve cycle151 advance) — 그레이스는 lockApp()을
+ * 미루는 게 아니라(그러면 백그라운드 전환 중 OS 앱 전환화면에 데이터가 그대로 노출됨), 화면은
+ * 즉시 가리고(lockApp) 유예시간 안에 돌아왔을 때만 PIN 재입력 없이 조용히 풀어주는 쪽으로
+ * 설계했다 — 그 설계를 보장하는 건 visibilitychange 핸들러이므로, 여기 APPLOCK 단위 테스트는
+ * getGrace/setGrace 저장 왕복과 setPin()이 그레이스 값을 보존하는지만 검증한다(핸들러 자체의
+ * '즉시 가리고 유예시간 안엔 자동 해제' 로직은 lockApp/unlockApp/document 의존이라 이 vm
+ * 컨텍스트 밖이라 못 실행형으로 태운다; 아래 index.html 구문 검사는 그 핸들러가 getGrace()를
+ * 쓰는 모양까지 정적으로 확인한다). ---------- */
+test('APPLOCK: getGrace()의 기본값은 0(즉시 재잠금)이다 — PIN 미설정 상태에서도, 설정 직후에도', async () => {
+  const ctx = makeAppLockCtx();
+  assert.strictEqual(ctx.APPLOCK.getGrace(), 0, 'PIN 미설정 상태의 기본값');
+  await ctx.APPLOCK.setPin('1234');
+  assert.strictEqual(ctx.APPLOCK.getGrace(), 0, 'setPin() 직후(첫 설정)에도 기존 기본 동작과 같아야 함');
+});
+test('APPLOCK: setGrace()로 저장한 유예시간은 getGrace()로 그대로 왕복된다', async () => {
+  const ctx = makeAppLockCtx();
+  await ctx.APPLOCK.setPin('1234');
+  ctx.APPLOCK.setGrace(60);
+  assert.strictEqual(ctx.APPLOCK.getGrace(), 60);
+});
+test('APPLOCK: setPin()(PIN 변경 포함)으로 기존에 설정해 둔 유예시간이 조용히 초기화되지 않는다', async () => {
+  const ctx = makeAppLockCtx();
+  await ctx.APPLOCK.setPin('1234');
+  ctx.APPLOCK.setGrace(300);
+  await ctx.APPLOCK.setPin('5678'); // doChangePin()이 부르는 것과 같은 경로
+  assert.strictEqual(ctx.APPLOCK.getGrace(), 300, 'PIN을 바꿔도 유예시간 설정은 그대로 유지돼야 함');
+  const ok = await ctx.APPLOCK.verify('5678');
+  assert.strictEqual(ok.ok, true, '바뀐 PIN으로 정상 검증되는지도 함께 확인');
+});
+test('APPLOCK: disable()은 유예시간 설정도 함께 지운다(재설정 시 기본값 0으로 돌아옴)', async () => {
+  const ctx = makeAppLockCtx();
+  await ctx.APPLOCK.setPin('1234');
+  ctx.APPLOCK.setGrace(60);
+  ctx.APPLOCK.disable();
+  await ctx.APPLOCK.setPin('1234'); // 다시 켬(toggleAppLock() 끈 뒤 다시 켜는 것과 같은 경로)
+  assert.strictEqual(ctx.APPLOCK.getGrace(), 0, '꺼졌다가 다시 켜지면 그레이스는 보안 기본값(즉시)으로 리셋돼야 함');
+});
+test('APPLOCK: setGrace()는 PIN이 설정돼 있지 않으면(저장된 게 없으면) 조용히 무시한다', () => {
+  const ctx = makeAppLockCtx();
+  ctx.APPLOCK.setGrace(60); // PIN 설정 전 — 쓸 저장소가 없음
+  assert.strictEqual(ctx.APPLOCK.enabled(), false, '없는 설정을 만들어 enabled()를 true로 바꿔버리면 안 됨');
+  assert.strictEqual(ctx.APPLOCK.getGrace(), 0);
+});
+test('index.html 소스: visibilitychange 핸들러가 hidden 분기에서 lockApp()을 즉시 부르고, visible 분기에서만 APPLOCK.getGrace()로 유예시간을 비교한다', () => {
+  const full = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const start = full.indexOf("document.addEventListener('visibilitychange'");
+  assert.notStrictEqual(start, -1, 'visibilitychange 리스너를 못 찾음');
+  const end = full.indexOf('});', start) + 3;
+  const handler = full.slice(start, end);
+  assert.match(handler, /if\(appIsOpen\(\)\)\{APP_HIDDEN_AT=Date\.now\(\);lockApp\(\)\}/, 'hidden으로 전환되면 그레이스 판단 없이 즉시 lockApp()을 불러 화면을 가려야 함');
+  assert.match(handler, /APPLOCK\.getGrace\(\)/, '돌아올 때 getGrace()로 유예시간을 비교해야 함');
+  assert.match(handler, /unlockApp\(\)/, '유예시간 안이면 unlockApp()으로 PIN 재입력 없이 풀어야 함');
+});
+
 /* ---------- PIN을 잊었을 때의 탈출구(app-evolve cycle151 develop) — APPLOCK에는 복구 코드
  * 개념이 없어서, 이게 없으면 verify() 성공 없이는 영원히 #lockView에 막혀 앱 잠금을 풀기
  * 위해 사이트 데이터 전체를 지워야 했다(이 기기에만 있는 자산 내역 전체가 함께 사라짐). ---------- */
