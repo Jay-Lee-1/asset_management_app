@@ -1,15 +1,8 @@
 {
   "cycle": 155,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 147,
-      "phase": "advance",
-      "timestamp": "2026-10-06T10:14:56.056Z",
-      "summary": "critique(cycle147) 계획대로 .seg/.mseg 세그먼트 컨트롤 9곳 전부에 aria-pressed+role=group 추가. test/run.js 1008/1008 -> 1015/1015 통과.",
-      "commit": null
-    },
     {
       "cycle": 147,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-07T15:15:15.005Z",
       "summary": "auPw(로그인/가입)·frPwIn(로컬 계정 복구)·newPwIn(비밀번호 변경/재설정) 3개 비밀번호 입력에 표시/숨기기(눈 아이콘) 토글 추가. 특히 doLocalRecover는 복구 코드가 있어야만 쓸 수 있는 한 번뿐인 고위험 플로우라, 타이핑한 새 비밀번호를 확인할 길이 없어 오타로 스스로 잠길 위험이 있었음. togglePwVis(id) 헬퍼 + eye/eyeOff 아이콘 추가, .pw-wrap/.pw-x CSS는 기존 .field-clear/.fc-x 패턴을 그대로 모방(항상 보이게 has-val 게이팅만 뺌). PIN 입력(숫자 코드)은 범위 밖으로 제외. togglePwVis 자체는 실DOM(closest/type) 조작이라 jsdom 없는 스위트에서 실행형 테스트가 불가해 정규식 기반 테스트 4건(togglePwVis 로직 + renderAuth/doForgotPasswordLocal/openChangePasswordSheet 배선)으로 커버. index.html/sw.js 변경이라 APP_VERSION 1.47.75->1.47.76, sw.js CACHE v337->v338 갱신. node test/run.js 1059/1059 -> 1063/1063 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 155,
+      "phase": "review",
+      "timestamp": "2026-10-07T17:30:00.000Z",
+      "summary": "cycle155 develop(auPw/frPwIn/newPwIn 눈 아이콘 토글) 검토 — togglePwVis가 el.type과 아이콘/aria-label을 정확히 뒤집는지, 3곳(renderAuth/doForgotPasswordLocal/openChangePasswordSheet) 모두 .pw-wrap으로 감싸고 togglePwVis(id)에 올바르게 연결됐는지 직접 확인. $(id).value로 값을 읽는 기존 코드(doLogin/doSignup/doLocalRecover/doChangePassword)는 wrapper div 추가와 무관하게 그대로 동작함을 확인했고, CSS .pw-wrap/.pw-x가 기존 .field-clear 패턴과 겹치지 않음도 확인. node test/run.js 1063/1063 통과. 이상 없음.",
       "commit": null
     }
   ]
