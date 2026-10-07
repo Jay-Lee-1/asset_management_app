@@ -1,15 +1,16 @@
 {
   "cycle": 153,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "test/run.js — openSheet류 render/entry-point 함수 실행 기반 테스트 확장 (renderAssetSheet 또는 openTxSheet부터)",
+    "why": "test/run.js:195-199에 이미 '범위가 한 사이클을 넘어서므로 제외'라고 명시된 백로그: openSheet/openTxSheet/openRecSheet/renderMenu/renderAssetSheet 5개는 지금도 vm 실제 실행 검증(FUNCTIONS) 밖에 있고, test/run.js:8549-8622의 현재 테스트는 extractFunction() 소스 문자열에 대한 regex/includes 패턴 매칭뿐이다. 이 방식은 매칭 문자열이 주석이나 죽은 분기에 있어도, 또는 실행 시에만 드러나는 미세 버그(예: 자산타입별로 잘못된 필드가 렌더되거나 onclick= 인자가 틀림)가 있어도 통과한다. cycle146부터 지적된 'src.includes 거짓 안전감'이 이 5개 핵심 진입점 함수에서는 아직도 해소되지 않은 상태이고, 이들은 돈 입력(renderAssetSheet/openTxSheet/openRecSheet)과 설정 화면(renderMenu) 전체를 게이팅하는 파급력 가장 큰 함수들이다.",
+    "approach": "5개를 한 번에 다 하지 않고(이전에 '범위 과대'로 보류된 이유) 가장 얕은 1개부터: renderAssetSheet(index.html 약 3418-3460) 또는 openTxSheet 중 draft 객체 기반 문자열 생성이 가장 단순한 쪽을 우선 선택. test/run.js의 기존 sandbox(약 480-600줄)에 최소 DOM 스텁을 추가 — Map 기반 요소 스텁에 .value/.classList(Set 기반 add/remove/contains)/.dataset/.style/.innerHTML/.querySelector(All)/.focus()/.addEventListener(no-op)만 구현하고, $()를 그 스텁 조회/생성 함수로 연결(새 프레임워크가 아니라 기존 sandbox에 추가하는 것). 선택한 함수를 실제 실행해 draft별로 결과 HTML/상태를 받아, 자산타입별 올바른 필드 존재(costBasis는 fx/gold/stock에만 등), field-clear 버튼 존재, Enter-submit 와이어링 등 구체적 구조를 deepStrictEqual/assert로 검증하는 [실행형] 테스트로 8549-8622 부근의 기존 regex 전용 테스트를 보강(대체 또는 추가). 패턴이 검증되면 나머지(openTxSheet/openRecSheet/renderMenu/openSheet)는 후속 cycle 백로그로 남긴다 — 이번 사이클에 전부 하지 않는다.",
+    "runner_up_rejected": [
+      "localStorage -> IndexedDB 마이그레이션: 5~10MB 쿼터 문제의 근본 해결이지만 이미 쿼터 경고/persistent storage 요청으로 완화되어 있고(index.html:1651-2129), 한 사이클 범위를 넘는 재작성 리스크가 크다.",
+      "stock 자산 단일 costBasis를 lot별 원가/실현손익 추적으로 확장: 정당한 제품 기능 공백이지만 기존 취약점 수정이 아닌 신규 기능이라 테스트 공백보다 긴급도가 낮다."
+    ]
+  },
   "history": [
-    {
-      "cycle": 149,
-      "phase": "review",
-      "timestamp": "2026-10-06T16:05:00.000Z",
-      "summary": "cycle149 develop(histQ field-clear) 검토 — 이상 없음, node test/run.js 1026/1026 통과.",
-      "commit": null
-    },
     {
       "cycle": 149,
       "phase": "develop",
@@ -141,6 +142,13 @@
       "phase": "review",
       "timestamp": "2026-10-07T11:00:00.000Z",
       "summary": "cycle153 develop(addMonthsStr 롤오버 회귀 테스트 3건) 검토 — 테스트 전용 변경, addMonthsStr('2026-01-31',1)='2026-03-03' 등 기대값을 node로 직접 재계산해 실제 동작과 일치함을 확인. index.html/logic.js 코드 변경 없음(테스트만 추가), 혼용 방지 주석도 정확함. node test/run.js 1053/1053 통과. 이상 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 153,
+      "phase": "critique",
+      "timestamp": "2026-10-07T12:00:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 재조망(기존 수정완료 목록 전달 후 겹치지 않는 공백 탐색). 재확인: test/run.js:195-199에 직접 백로그로 명시된 openSheet/openTxSheet/openRecSheet/renderMenu/renderAssetSheet 5개 핵심 진입점 함수가 cycle152 이후에도 여전히 vm 실행 검증(FUNCTIONS) 밖이고, 현재 테스트(test/run.js:8549-8622)는 extractFunction() 소스 문자열에 대한 regex/includes 매칭뿐이라 실행 시에만 드러나는 버그를 못 잡음. CSV/백업/클라우드 병합/반복거래 날짜/차트 접근성 등 다른 영역은 에이전트가 직접 확인한 결과 이미 방어적 수정이 코드에 문서화되어 있어 제외. 가장 얕은 renderAssetSheet 또는 openTxSheet 1개부터 sandbox에 최소 DOM 스텁(classList/dataset/style/innerHTML/querySelector 등)을 추가해 실행 기반 [실행형] 테스트로 전환하는 계획을 pending_advance_plan에 저장(5개 전부가 아니라 1개부터, 패턴 검증 후 나머지는 백로그). 러너업(기각): localStorage->IndexedDB 마이그레이션(이미 쿼터 경고로 완화, 재작성 리스크 큼), stock lot별 원가추적(신규 기능이라 긴급도 낮음). 코드 변경 없음(읽기 전용 조사).",
       "commit": null
     }
   ]
