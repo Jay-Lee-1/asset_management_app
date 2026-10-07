@@ -1328,7 +1328,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.78';
+const APP_VERSION='1.47.79';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6555,6 +6555,16 @@ function varyingRecs(){ /* 변동 카테고리 반복 = 해당일이 되면 실�
  });
  return out;
 }
+function openConfirmTransferList(){ /* 미확인 이체 여러 건을 한 시트에서 — openQuickList()와 동일 패턴 */
+ const list=allTxns(RANGE_FROM,TODAY).filter(t=>isDuePending(t)).sort((a,b)=>a.date<b.date?-1:1);
+ if(!list.length){toast('확인할 이체가 없어요');return}
+ if(list.length===1){const t=list[0];return t.isRec?confirmRecTransfer(t.recId,t.date):openConfirmTransfer(t.id);}
+ openSheet(`<h3>이체 확인</h3><div class="desc">미확인 이체 ${list.length}건이에요. 눌러서 완료를 확인하세요.</div>
+  <div style="display:flex;flex-direction:column;gap:8px">${list.map(t=>`<button class="pick" onclick="${t.isRec?`confirmRecTransfer('${t.recId}','${t.date}')`:`openConfirmTransfer('${t.id}')`}">
+    <div class="pav a-etc">${svg('repeat')}</div>
+    <div class="pbody"><div class="pn">${esc(assetNm(t.fromAssetId,t.fromAssetName))} → ${esc(assetNm(t.toAssetId,t.toAssetName))}</div><div class="psub">${shortDate(t.date)} · ${comma(t.amount)}원</div></div>
+    <div class="pc">${svg('chevR')}</div></button>`).join('')}</div>`);
+}
 function openQuickList(){ /* 변동 실제금액 입력 여러 건을 한 시트에서 */
  const vr=varyingRecs();
  if(!vr.length){toast('입력할 항목이 없어요');return}
@@ -6791,7 +6801,9 @@ function homeAlerts(neg){
  if(backupDue()&&DB.txns.length)arr.push({kind:'backup'});
  if(shouldWarnUnpersisted(STORAGE_PERSISTED,!!CLOUD_UID)&&!DB.settings.persistWarnDismissed)arr.push({kind:'persist'});
  if(shouldWarnStorageSize(DB_JSON_LEN,DB.settings.storageSizeWarnDismissed,STORAGE_SIZE_WARN_LEN,STORAGE_SIZE_CRIT_LEN))arr.push({kind:'storageSize'});
- allTxns(RANGE_FROM,TODAY).filter(t=>isDuePending(t)).sort((a,b)=>a.date<b.date?-1:1).forEach(t=>arr.push({kind:'confirm',id:t.id,recId:t.recId,isRec:!!t.isRec,from:assetNm(t.fromAssetId,t.fromAssetName),to:assetNm(t.toAssetId,t.toAssetName),amount:t.amount,date:t.date}));
+ const _pend=allTxns(RANGE_FROM,TODAY).filter(t=>isDuePending(t)).sort((a,b)=>a.date<b.date?-1:1); /* 미확인 이체: 1건이면 그대로, 여러 건이면 하나로 묶음(quick/quickMulti, budgetOver/budgetOverMulti와 동일 패턴) */
+ if(_pend.length===1){const t=_pend[0];arr.push({kind:'confirm',id:t.id,recId:t.recId,isRec:!!t.isRec,from:assetNm(t.fromAssetId,t.fromAssetName),to:assetNm(t.toAssetId,t.toAssetName),amount:t.amount,date:t.date});}
+ else if(_pend.length>1)arr.push({kind:'confirmMulti',count:_pend.length});
  neg.forEach(n=>arr.push({kind:'neg',assetId:n.assetId,name:n.name,date:n.date,min:n.min}));
  DB.assets.filter(a=>a.type==='savings'&&a.maturityDate&&a.maturityDate<=addDays(TODAY,7))
    .sort((a,b)=>a.maturityDate<b.maturityDate?-1:1)
@@ -6811,6 +6823,7 @@ function homeAlerts(neg){
  * 급하지 않거나 홈 카드로 충분해 대상에서 뺀다. */
 function notifyAlertInfo(al){
  if(al.kind==='confirm')return{key:`confirm:${al.id}:${al.date}`,title:'이체 확인이 필요해요',body:`${al.from} → ${al.to} · ${comma(al.amount)}원 이체하셨나요?`};
+ if(al.kind==='confirmMulti')return{key:`confirmMulti:${TODAY}:${al.count}`,title:'이체 확인이 필요해요',body:`미확인 이체 ${al.count}건이 있어요`};
  if(al.kind==='mat'&&al.date<=addDays(TODAY,1)){ /* date<TODAY(아직 doMaturity()로 처리 안 된 지난 만기)까지 포함되므로 '내일'로 잘못 말하지 않게 분기 */
   const overdue=al.date<TODAY;
   const when=overdue?'만기가 지났어요':(al.date===TODAY?'오늘':'내일');
@@ -6892,6 +6905,11 @@ function homeAlertCard(al){
    <div class="ha-ic">${svg('repeat')}</div>
    <div class="ha-b"><div class="ha-t">이체 확인 · ${comma(al.amount)}원</div>
      <div class="ha-s">${esc(al.from)} → ${esc(al.to)} · 이체하셨는지 확인해 주세요</div></div>
+   <div class="ha-c">${svg('chev')}</div></button>`;
+ if(al.kind==='confirmMulti')return `<button class="home-alert confirm" onclick="openConfirmTransferList()">
+   <div class="ha-ic">${svg('repeat')}</div>
+   <div class="ha-b"><div class="ha-t">이체 확인 ${al.count}건</div>
+     <div class="ha-s">미확인 이체 · 눌러서 한 번에 확인</div></div>
    <div class="ha-c">${svg('chev')}</div></button>`;
  if(al.kind==='mat')return `<button class="home-alert mat" onclick="openMaturity()">
    <div class="ha-ic">${svg('bell')}</div>

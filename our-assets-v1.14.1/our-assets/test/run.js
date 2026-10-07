@@ -169,7 +169,7 @@ const FUNCTIONS = [
   'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'openCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter',
   'genSalt', 'pbkdf2Hash', 'genRecoveryCode', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer', 'openConfirmTransfer',
   'renderLockView', 'openForgotPinSheet', 'doForgotPin', 'tickForgotPinWait',
-  'confirmTransferNow', 'postponeTransfer', 'confirmRecNow',
+  'confirmTransferNow', 'postponeTransfer', 'confirmRecNow', 'openConfirmTransferList',
   'foreignSaveIsNewer', 'applyForeignSave', 'openCopyBackup', 'copyBackup', 'findDonors',
   'recIsVarying', 'varyingRecs', 'fixShortfallDefaultDate', 'openFixShortfall', 'lastActualAmount', 'openQuickAmount',
   'backupDue', 'planNegatives', 'homeAlerts', 'updateAlerts',
@@ -9691,6 +9691,77 @@ test('homeAlerts: 예산 이내(초과 없음)면 budgetOver/budgetOverMulti 둘
   sandbox.DB.txns.push({ id: 't1', date: '2026-06-05', type: 'expense', category: '식비', amount: 90000 });
   const alerts = sandbox.homeAlerts([]);
   assert.ok(!alerts.some((a) => a.kind === 'budgetOver' || a.kind === 'budgetOverMulti'));
+});
+/* 미확인 이체(confirm)도 quick/quickMulti·budgetOver/budgetOverMulti와 동일한 1건/N건 묶음 패턴을 쓴다
+ * (app-evolve cycle156 critique: 반복 이체를 방치하면 홈 알림이 confirm 카드로 도배되던 비대칭을 해소) */
+test('homeAlerts: 미확인 이체(confirm)가 정확히 1건이면 confirm, 2건으로 늘면 confirmMulti로 묶인다(app-evolve cycle156)', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.settings.confirmTransfers = true;
+  sandbox.DB.assets.push({ id: 'a1', name: '통장1', owner: '나', type: 'cash', baseAmount: 1000000 });
+  sandbox.DB.assets.push({ id: 'a2', name: '통장2', owner: '나', type: 'cash', baseAmount: 0 });
+  sandbox.DB.txns.push({ id: 't1', date: '2026-06-10', type: 'transfer', amount: 50000, fromAssetId: 'a1', toAssetId: 'a2', confirmed: false });
+  let alerts = sandbox.homeAlerts([]);
+  let confirm = alerts.filter((a) => a.kind === 'confirm' || a.kind === 'confirmMulti');
+  assert.strictEqual(confirm.length, 1);
+  assert.strictEqual(confirm[0].kind, 'confirm', '정확히 1건이면 confirm이어야 함');
+  assert.strictEqual(confirm[0].id, 't1');
+
+  sandbox.DB.txns.push({ id: 't2', date: '2026-06-11', type: 'transfer', amount: 30000, fromAssetId: 'a1', toAssetId: 'a2', confirmed: false });
+  alerts = sandbox.homeAlerts([]);
+  confirm = alerts.filter((a) => a.kind === 'confirm' || a.kind === 'confirmMulti');
+  assert.strictEqual(confirm.length, 1);
+  assert.strictEqual(confirm[0].kind, 'confirmMulti', '2건이 되면 confirmMulti 하나로 묶여야 함');
+  assert.strictEqual(confirm[0].count, 2);
+});
+test('notifyAlertInfo: confirmMulti도 budgetOverMulti처럼 건수가 바뀌면 다시 알리도록 키에 count가 들어간다(app-evolve cycle156)', () => {
+  sandbox.TODAY = '2026-06-15';
+  const confirmMulti = sandbox.notifyAlertInfo({ kind: 'confirmMulti', count: 2 });
+  assert.ok(confirmMulti && confirmMulti.key === 'confirmMulti:2026-06-15:2', '날짜+건수로 키가 잡혀야 함');
+  assert.ok(confirmMulti.body.includes('2건'));
+  const confirmMulti3 = sandbox.notifyAlertInfo({ kind: 'confirmMulti', count: 3 });
+  assert.notStrictEqual(confirmMulti3.key, confirmMulti.key, '건수가 늘면 키도 바뀌어 다시 알려야 함');
+});
+test('homeAlertCard: confirmMulti는 openConfirmTransferList()로 열리고 건수가 보인다(app-evolve cycle156)', () => {
+  const html = sandbox.homeAlertCard({ kind: 'confirmMulti', count: 3 });
+  assert.ok(html.includes('onclick="openConfirmTransferList()"'), 'confirmMulti 카드가 openConfirmTransferList()를 호출해야 함');
+  assert.ok(html.includes('이체 확인 3건'), '건수가 보여야 함');
+});
+test('openConfirmTransferList: 미확인 이체가 없으면 안내 토스트만 뜨고, 정확히 1건이면 목록 없이 바로 그 건의 개별 확인 시트로 간다(app-evolve cycle156)', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.settings.confirmTransfers = true;
+  sandbox.DB.assets.push({ id: 'a1', name: '통장1', owner: '나', type: 'cash', baseAmount: 1000000 });
+  sandbox.DB.assets.push({ id: 'a2', name: '통장2', owner: '나', type: 'cash', baseAmount: 0 });
+  sandbox.lastToast = null;
+  sandbox.lastSheetHtml = null;
+  sandbox.openConfirmTransferList();
+  assert.ok(sandbox.lastToast, '확인할 이체가 없으면 안내 토스트가 떠야 함');
+  assert.strictEqual(sandbox.lastSheetHtml, null, '항목이 없으면 시트를 열면 안 됨');
+
+  sandbox.DB.txns.push({ id: 't1', date: '2026-06-10', type: 'transfer', amount: 50000, fromAssetId: 'a1', toAssetId: 'a2', confirmed: false });
+  sandbox.lastSheetHtml = null;
+  sandbox.openConfirmTransferList();
+  assert.ok(sandbox.lastSheetHtml, '1건이면 개별 확인 시트가 떠야 함');
+  assert.ok(sandbox.lastSheetHtml.includes(`confirmTransferNow('t1')`), '1건이면 목록이 아니라 openConfirmTransfer의 개별 시트로 바로 가야 함');
+});
+test('openConfirmTransferList: 2건 이상이면 일반 이체와 반복 이체를 한 시트에 한 줄씩 보여주고, 각자 올바른 확인 함수로 연결된다(app-evolve cycle156)', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.settings.confirmTransfers = true;
+  sandbox.DB.assets.push({ id: 'a1', name: '통장1', owner: '나', type: 'cash', baseAmount: 1000000 });
+  sandbox.DB.assets.push({ id: 'a2', name: '통장2', owner: '나', type: 'cash', baseAmount: 0 });
+  sandbox.DB.txns.push({ id: 't1', date: '2026-06-10', type: 'transfer', amount: 50000, fromAssetId: 'a1', toAssetId: 'a2', confirmed: false });
+  sandbox.DB.recurrences.push({
+    id: 'r1', active: true, freq: 'monthly', type: 'transfer', category: '이체',
+    day: 12, startDate: '2026-06-01', endDate: null, count: null, amount: 30000,
+    fromAssetId: 'a1', toAssetId: 'a2', weekend: 'none', skip: [], edits: {},
+    autoConfirm: false, confirmedDates: [],
+  });
+  sandbox.lastSheetHtml = null;
+  sandbox.openConfirmTransferList();
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('미확인 이체 2건'), '건수 안내가 있어야 함');
+  assert.ok(html.includes(`openConfirmTransfer('t1')`), '일반 이체 행은 openConfirmTransfer로 연결돼야 함');
+  assert.ok(html.includes(`confirmRecTransfer('r1','2026-06-12')`), '반복 이체 행은 confirmRecTransfer로 연결돼야 함');
+  assert.ok(html.includes(sandbox.comma(50000)) && html.includes(sandbox.comma(30000)), '각 행에 금액이 표시돼야 함');
 });
 test('homeAlerts: planNegatives 결과(neg)를 그대로 넘겨받아 자산별 neg 알림으로 변환한다(회귀 확인)', () => {
   setupHomeAlertsDB();
