@@ -1,19 +1,8 @@
 {
-  "cycle": 152,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "test/run.js FUNCTIONS 목록에서 완전히 빠진 48개 render*/open*/do* DOM-mutating 함수에 실행 기반 회귀 테스트 추가",
-    "why": "test/run.js는 vm.runInContext로 함수를 실제 실행해 검증하는 FUNCTIONS 배열(291개 항목)을 갖고 있는데, index.html에서 '^function (render|open|do)...'로 정의된 83개 중 48개가 이 배열에 전혀 들어있지 않다(실행 검증 0%, grep으로 직접 확인: comm -23 결과 48개). 그중에는 openSheet(앱 전체 시트를 여는 범용 진입점), openTxSheet(거래 입력/수정 — 앱에서 가장 많이 쓰는 폼), openRecSheet, renderMenu, doLogout, doResetAll, doForgotPassword/doForgotPasswordLocal, openCsvImportPreview, openSetPinSheet/openChangePinSheet(148사이클에서 추가한 PIN 잠금 플로우) 등 버그가 나면 파급력이 가장 큰 핵심 함수들이 포함돼 있다. cycle146 critique가 이미 '파일 전체 src.includes()는 거짓 안전감'이라고 지적해 extractTag() 헬퍼로 일부(nwhChart/assetBalChart 등 2개)를 좁혔지만, 그 수정은 속성 문자열 검사에 쓰던 헬퍼를 날카롭게 만든 것일 뿐 실행 검증 공백 자체는 전혀 줄이지 않았다. 152사이클 동안 develop 단계가 거의 매번 이 함수들(필드 지우기 버튼, aria-pressed, PIN 잠금 등)을 직접 고쳐왔는데, 그 수정들의 회귀를 실제로 실행해서 잡아주는 테스트가 없다는 것은 이 프로젝트의 핵심 안전망에 구조적 구멍이 있다는 뜻이다. 단일 7657줄 HTML 파일 구조상 코드 리뷰만으로 회귀를 잡기 어렵기 때문에, 자동화된 실행 테스트의 커버리지 확대는 다음 수십 사이클의 develop/review 신뢰도를 직접 끌어올리는 레버리지가 큰 작업이다.",
-    "approach": "전체 48개를 한 번에 다 하는 건 재작성에 가까운 과도한 범위이므로, 파급력 순으로 우선순위를 매겨 핵심 8~12개(openSheet, openTxSheet, openRecSheet, renderAssetSheet, renderMenu, doLogout, doResetAll, openSetPinSheet/openChangePinSheet, doForgotPassword/doForgotPasswordLocal)부터 extractFunction()/extractConstBlock()로 끌어와 run.js 상단에 이미 있는 경량 DOM 스텁(sandbox 패턴)을 재사용해 실제 실행 후 '시트가 열렸다/DB가 비워졌다/세션이 지워졌다' 같은 핵심 불변식을 assert한다. 각 함수가 의존하는 하위 함수(예: openTxSheet → syncAssetInputs 등)는 FUNCTIONS에 이미 있는지 확인하고 없으면 같이 끌어온다. 끝나면 주석에 '남은 함수 목록'을 남겨 다음 cycle이 이어갈 수 있게 한다. index.html/logic.js 자체는 건드리지 않고 test/run.js만 확장한다."
-  },
+  "cycle": 153,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 152,
-      "phase": "develop",
-      "timestamp": "2026-10-07T00:00:00.000Z",
-      "summary": "general-purpose 서브에이전트로 탐색. renderAssetSheet()의 stock 타입 폼에서 asName(종목명)/asQty(보유 주식 수)는 cycle147/148에서 field-clear(×) 버튼이 적용됐는데, 그 사이에 끼어 있는 asCode(종목코드) 입력만 빠져 있던 것을 발견(이전 사이클들이 '수량' 입력 통일에 집중하면서 같은 줄의 텍스트 입력은 지나침). index.html:3453 asCode 입력을 .field-clear+fc-x 버튼(aria-label=\"종목코드 지우기\", onclick=clrInput('asCode'))으로 감쌌다 — 기존 autocapitalize=\"characters\"/oninput 대문자 변환 핸들러는 그대로 유지, clrInput()의 input 이벤트 dispatch가 그 핸들러도 함께 트리거함(기존 관례와 동일). openSheet()가 렌더 후 fcWire()를 범용으로 호출하므로 추가 JS 배선 불필요. test/run.js에 extractFunction('renderAssetSheet') 소스 패턴 검증 회귀 테스트 1건 추가(field-clear 래퍼+fc-x 버튼+기존 대문자 변환 oninput 보존 여부 확인). APP_VERSION 1.47.72->1.47.73, sw.js CACHE v334->v335. node test/run.js 1042/1042 -> 1043/1043 통과, 메인 인라인 <script> 구문 검사 포함. 러너업(보류): sbUrlIn/sbKeyIn(Supabase 설정값, 자격증명성이라 지우기 버튼 UX를 별도 논의 필요)과 auEmail/fpEmailIn/frEmailIn(이메일 입력, 호출부 3곳에 걸쳐 있어 한 번의 develop 범위로는 큼) 두 후보는 다음 critique가 참고할 수 있도록 기록만 남김.",
-      "commit": null
-    },
     {
       "cycle": 149,
       "phase": "advance",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-07T02:00:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(141-152사이클 전부 + 기각 이력 전달). 새로 발견: index.html에 정의된 render*/open*/do* 함수 83개 중 48개가 test/run.js의 FUNCTIONS(vm 실제 실행 검증 대상) 배열에 전혀 없음을 comm -23으로 직접 확인 — openSheet/openTxSheet/openRecSheet/renderMenu/doLogout/doResetAll/doForgotPassword/openSetPinSheet/openChangePinSheet 등 파급력이 가장 큰 핵심 함수들이 포함됨. cycle146이 지적한 'src.includes 거짓 안전감'을 extractTag()로 일부 좁혔지만 실행 검증 공백 자체는 줄이지 않았음을 재확인. 48개 전체는 과도한 범위라 파급력 순 핵심 8~12개(openSheet/openTxSheet/openRecSheet/renderAssetSheet/renderMenu/doLogout/doResetAll/openSetPinSheet/openChangePinSheet/doForgotPassword 등)부터 FUNCTIONS에 끌어와 실행 기반 테스트를 추가하는 계획을 pending_advance_plan에 저장. 러너업(기각): WebAuthn/생체인증 연동(UX 결정 비중이 커서 한 사이클 안에 안전하게 끝낼 확신이 낮음), sbUrlIn/sbKeyIn·이메일 입력 field-clear(기계적 작업으로 develop/review 몫에 더 가까움). 코드 변경 없음(읽기 전용 조사).",
+      "commit": null
+    },
+    {
+      "cycle": 152,
+      "phase": "advance",
+      "timestamp": "2026-10-07T03:20:00.000Z",
+      "summary": "critique(cycle152) 계획대로 test/run.js FUNCTIONS 커버리지 공백을 메웠다 — 48개 미검증 render/open/do 함수 중 계정 메뉴(doLogout/doResetAll/doForgotPassword/doForgotPasswordLocal)와 PIN 플로우(openSetPinSheet/openChangePinSheet/openDisableAppLockSheet) 7개를 FUNCTIONS에 끌어와 실행형([실행형]) 테스트 8건을 신규 추가했다(기존 openSheet/confirmSheet 공유 스텁 재사용). doLogout은 확인 시트 콜백 실행 후 AUTH.signOut/GUEST 플래그/showAuth 전환까지, doResetAll은 확인 → DB가 emptyDB()로 교체 → 되돌리기(undoToast)로 원복까지 왕복 검증한다. 그 과정에서 두 가지를 함께 고쳤다: (1) sandbox.AUTH에 signOut 스파이가 필요했는데 기존 'accountName: 카카오 로그인' 테스트가 AUTH를 원본 대신 `{rec:()=>null}`로 하드코딩 리셋해 영구히 지워버리던 버그를 authOrig 저장/복원 패턴(renderLockView 테스트와 동일)으로 수정, (2) vm 샌드박스에서 emptyDB()가 만든 배열은 host Array와 realm이 달라 deepStrictEqual이 값이 같아도 실패하는 기존에 문서화된 함정(recDates 테스트 주석)에 걸려 Array.from으로 정규화했다. 범위가 큰 openSheet 자체/openTxSheet/openRecSheet/renderMenu/renderAssetSheet는 DOM 전역(classList/requestAnimationFrame/attachDetent 등) 의존이 깊어 한 사이클 범위를 넘어선다고 보고 백로그로 남김(FUNCTIONS 주석에 기록). index.html/logic.js는 건드리지 않아 APP_VERSION/sw.js 변경 없음. node test/run.js 1043/1043 -> 1050/1050 통과.",
       "commit": null
     }
   ]

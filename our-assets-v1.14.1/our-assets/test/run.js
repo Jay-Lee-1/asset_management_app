@@ -191,6 +191,16 @@ const FUNCTIONS = [
   'refreshPlanBody', 'planAsset', 'nextGroupOrder', 'movedGroupOrder', 'moveGroup', 'movedAssetOrder', 'moveAsset', 'monthSwipeCommitDir', 'overlayEscapeTarget', 'recFreq',
   'planSplitTransfer', 'planTransfer',
   'sbErrMsg',
+  // 아래 10개는 app-evolve cycle152 advance가 FUNCTIONS 커버리지 공백(critique가 지적한 48개
+  // 미검증 render*/open*/do* 함수)에서 끌어온 것 — openSheet/openTxSheet/openRecSheet/renderMenu/
+  // renderAssetSheet처럼 DOM 전역(classList, requestAnimationFrame 등)에 깊이 엮인 화면 진입점은
+  // 범위가 한 사이클을 넘어서므로 제외했고(여전히 openSheet()은 스텁), 그보다 의존이 적어 기존
+  // 공유 sandbox 스텁(confirmSheet/openSheet/closeSheet 등)만으로 실제 실행 검증이 가능한 함수부터
+  // 가져왔다. 나머지 미검증 함수(openTxSheet/openRecSheet/renderMenu/renderAssetSheet/openSheet 등)는
+  // 다음 cycle이 이어받을 백로그로 남긴다.
+  'sbCfg', 'emptyDB', 'accountKind',
+  'openSetPinSheet', 'openChangePinSheet', 'openDisableAppLockSheet',
+  'doForgotPassword', 'doForgotPasswordLocal', 'doLogout', 'doResetAll',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -202,7 +212,9 @@ const FUNCTIONS = [
 // 판정 상수라 같은 방식(extractConst)으로 끌어온다.
 // _savedDrafts는 saveTx/saveRec의 더블탭 중복 저장 가드(app-evolve cycle79 advance)가 쓰는
 // WeakSet — 저장 완료된 draft 객체를 표시해 같은 draft로 재호출되면 조용히 무시한다.
-const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY'];
+// SUPABASE_URL/SUPABASE_ANON_KEY는 sbCfg()가 localStorage에 저장된 값이 없을 때 돌아가는
+// 기본값이다(app-evolve cycle152 advance, doForgotPassword/doForgotPasswordLocal 분기 테스트용).
+const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY'];
 // _histCache는 filteredHist()가 재대입(={key,list})하는 let 선언이라 CONSTS(extractConst)로는
 // 못 끌어오므로 별도의 LETS 목록으로 extractLet을 통해 가져온다.
 // _copyIsCsv도 같은 이유(openCopyBackup()이 재대입)로 LETS를 통해 가져온다.
@@ -299,7 +311,13 @@ const sandbox = {
   // RANGE_TO/CLOUD_UID와 같은 이유(파생·비순수 상태, localStorage 의존)로 재현하지 않고
   // accountName() 테스트에서 직접 세팅한다.
   SESSION: null,
-  AUTH: { rec: () => null },
+  // doLogout()이 호출하는 AUTH.signOut() — 실제 로그아웃(세션 삭제)은 화면 전용 부수효과라
+  // closeSheet/toast와 같은 이유로 호출 여부만 기록하는 스파이로 흉내낸다(app-evolve cycle152 advance).
+  authSignOutCalls: 0,
+  AUTH: { rec: () => null, signOut: () => { sandbox.authSignOutCalls++; } },
+  // GUEST는 index.html에서 `let GUEST=localStorage.getItem('asset_app_guest')==='1'`로 파생되는
+  // 비순수 상태라(SESSION/CLOUD_UID와 같은 이유) doLogout/doResetAll 테스트에서 직접 세팅한다.
+  GUEST: null,
   catRenameDraft: null,
   catAddDraft: null,
   asDraft: null,
@@ -444,7 +462,7 @@ const sandbox = {
   // asName은 syncAssetInputs()의 이름 trim() 회귀 테스트용(공백만 있는 이름이 그대로 저장되던 버그).
   // asNameValue가 undefined인 기본 상태에서는 null을 반환해, 이 mock 추가 이전처럼 다른 테스트의
   // syncAssetInputs()/saveAsset() 호출에서 asDraft.name이 건드려지지 않도록 한다.
-  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'budgetIn' ? { value: sandbox.budgetInValue } : id === 'goalName' ? (sandbox.goalNameValue === undefined ? null : { value: sandbox.goalNameValue }) : id === 'goalAmt' ? (sandbox.goalAmtValue === undefined ? null : { value: sandbox.goalAmtValue }) : id === 'inqText' ? (sandbox.inqTextValue === undefined ? null : { value: sandbox.inqTextValue }) : id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-plan' ? sandbox.pagePlanEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : id === 'ledgerCard' ? (sandbox.ledgerCardMissing ? null : sandbox.ledgerCardEl) : id === 'assetBody' ? (sandbox.assetBodyMissing ? null : sandbox.assetBodyEl) : id === 'newOwner' ? (sandbox.newOwnerValue === undefined ? null : { value: sandbox.newOwnerValue }) : id === 'renameOwner' ? (sandbox.renameOwnerValue === undefined ? null : { value: sandbox.renameOwnerValue }) : null,
+  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'budgetIn' ? { value: sandbox.budgetInValue } : id === 'goalName' ? (sandbox.goalNameValue === undefined ? null : { value: sandbox.goalNameValue }) : id === 'goalAmt' ? (sandbox.goalAmtValue === undefined ? null : { value: sandbox.goalAmtValue }) : id === 'inqText' ? (sandbox.inqTextValue === undefined ? null : { value: sandbox.inqTextValue }) : id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-plan' ? sandbox.pagePlanEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : id === 'ledgerCard' ? (sandbox.ledgerCardMissing ? null : sandbox.ledgerCardEl) : id === 'assetBody' ? (sandbox.assetBodyMissing ? null : sandbox.assetBodyEl) : id === 'newOwner' ? (sandbox.newOwnerValue === undefined ? null : { value: sandbox.newOwnerValue }) : id === 'renameOwner' ? (sandbox.renameOwnerValue === undefined ? null : { value: sandbox.renameOwnerValue }) : id === 'auEmail' ? (sandbox.auEmailValue === undefined ? null : { value: sandbox.auEmailValue }) : null,
   bkTextEl: { value: 'backup-text', select: () => {}, setSelectionRange: () => {} },
   // copyBackup()의 navigator.clipboard 체크가 ReferenceError 없이 "지원 안 함"으로 지나가게
   // 하는 최소 흉내(document.execCommand는 try/catch로 감싸져 있어 굳이 스텁이 필요 없음).
@@ -499,6 +517,14 @@ const sandbox = {
   // 흉내낸다.
   goCalls: [],
   go: (tab) => { sandbox.goCalls.push(tab); },
+  // doLogout()이 로그아웃 후 부르는 로그인 화면 전환 — closeSheet/go와 같은 이유(화면 전용)로
+  // 호출 여부만 기록하는 스파이로 흉내낸다(app-evolve cycle152 advance).
+  showAuthCalls: 0,
+  showAuth: () => { sandbox.showAuthCalls++; },
+  // doResetAll()이 초기화 직후(비동기 디바운스로) 부르는 클라우드 재푸시 예약 — setTimeout이
+  // 이미 no-op 스텁이라 실제로 실행되지는 않지만, `setTimeout(scheduleCloudPush,6000)`처럼
+  // 식별자로 참조만 해도 선언돼 있어야 ReferenceError가 안 난다(app-evolve cycle152 advance).
+  scheduleCloudPush: () => {},
   renderTxSheet: () => {},
   // asOpenType()의 onPick 콜백이 마지막에 부르는 자산 시트 재렌더 — renderTxSheet와 같은 이유
   // (화면 전용, asOpenType 테스트는 asDraft 변화만 검증)로 no-op으로 흉내낸다.
@@ -9942,10 +9968,17 @@ test('esc(accountName()): 악성 이메일이 SESSION에 남아 있어도 esc()�
 });
 test('accountName: 카카오 로그인이면 닉네임(없으면 기본값)을 반환한다', () => {
   sandbox.SESSION = 'kakao-1';
+  // 복구 전 하드코딩된 `{ rec: () => null }`은 AUTH.signOut 같이 다른 테스트가 기대하는 메서드를
+  // 영구히 지워버렸다(app-evolve cycle152 advance가 doLogout 실행형 테스트 추가 중 발견) — 원본을
+  // 저장해 그대로 복원한다(위 renderLockView 테스트의 authOrig 패턴과 동일).
+  const authOrig = sandbox.AUTH;
   sandbox.AUTH = { rec: () => ({ kakao: true, nick: '<b>닉네임</b>' }) };
-  assert.strictEqual(sandbox.accountName(), '<b>닉네임</b>');
-  assert.ok(sandbox.esc(sandbox.accountName()).includes('&lt;b&gt;'), 'esc()를 거치면 닉네임의 태그도 이스케이프돼야 함');
-  sandbox.AUTH = { rec: () => null };
+  try {
+    assert.strictEqual(sandbox.accountName(), '<b>닉네임</b>');
+    assert.ok(sandbox.esc(sandbox.accountName()).includes('&lt;b&gt;'), 'esc()를 거치면 닉네임의 태그도 이스케이프돼야 함');
+  } finally {
+    sandbox.AUTH = authOrig;
+  }
 });
 
 /* ---------- dbIsEmpty: 로그인 시 게스트 데이터 자동 병합/안내 판단에 쓰이는 순수 함수
@@ -11498,6 +11531,126 @@ test('prefers-reduced-motion(reduce)이 transition뿐 아니라 keyframe animati
   assert.ok(block.includes('transition-duration:.01ms!important'), 'transition-duration 규칙이 사라짐(기존 동작 유지 확인)');
   assert.ok(block.includes('animation-duration:.01ms!important'), 'animation-duration 오버라이드가 없어 무한반복 keyframe animation이 reduce-motion에서도 계속 돎');
   assert.ok(block.includes('animation-iteration-count:1!important'), 'animation-iteration-count 오버라이드가 없어 infinite animation이 reduce-motion에서도 계속 반복됨');
+});
+
+/* ---------- [실행형] FUNCTIONS 커버리지 공백 보강: openSetPinSheet/openChangePinSheet/
+ * openDisableAppLockSheet/doForgotPassword/doForgotPasswordLocal/doLogout/doResetAll ----------
+ * cycle146 critique가 지적한 "src.includes 거짓 안전감"에 이어 cycle152 critique는 index.html의
+ * render, open, do로 시작하는 함수 83개 중 48개가 FUNCTIONS(vm 실제 실행) 밖에 있음을 확인했다.
+ * 그중 파급력이 큰 함수들(계정 메뉴의 로그아웃, 초기화, 비밀번호 찾기, PIN 설정/변경/해제 진입점)
+ * 일부를 여기서 실제로 실행해 검증한다 — openSheet 자체는 기존처럼 lastSheetHtml만 기록하는
+ * 스텁이라, 이 함수들이 그 스텁에 넘기는 html, 인자가 실제로 기대한 모양인지까지 확인할 수 있다.
+ * openTxSheet, openRecSheet, renderMenu, renderAssetSheet, openSheet 자체처럼 DOM 전역(classList,
+ * requestAnimationFrame, attachDetent 등)에 깊이 엮인 화면 진입점은 범위가 한 사이클을 넘어서므로
+ * 다음 cycle의 백로그로 남긴다. */
+test('[실행형] openSetPinSheet: PIN 설정 폼(새 PIN/확인/설정 버튼)을 openSheet에 넘긴다', () => {
+  sandbox.lastSheetHtml = null;
+  sandbox.openSetPinSheet();
+  assert.ok(sandbox.lastSheetHtml.includes('id="pinNewIn"'), '새 PIN 입력칸이 없음');
+  assert.ok(sandbox.lastSheetHtml.includes('id="pinNewIn2"'), 'PIN 확인 입력칸이 없음');
+  assert.ok(sandbox.lastSheetHtml.includes('onclick="doSetPin()"'), '설정 버튼이 doSetPin()에 연결돼 있지 않음');
+});
+test('[실행형] openChangePinSheet: PIN 변경 폼(현재/새 PIN/확인/변경 버튼)을 openSheet에 넘긴다', () => {
+  sandbox.lastSheetHtml = null;
+  sandbox.openChangePinSheet();
+  assert.ok(sandbox.lastSheetHtml.includes('id="pinChgCurIn"'), '현재 PIN 입력칸이 없음');
+  assert.ok(sandbox.lastSheetHtml.includes('id="pinChgNewIn"'), '새 PIN 입력칸이 없음');
+  assert.ok(sandbox.lastSheetHtml.includes('id="pinChgNewIn2"'), 'PIN 확인 입력칸이 없음');
+  assert.ok(sandbox.lastSheetHtml.includes('onclick="doChangePin()"'), '변경 버튼이 doChangePin()에 연결돼 있지 않음');
+});
+test('[실행형] openDisableAppLockSheet: 현재 PIN 입력 후 끄기 버튼을 openSheet에 넘긴다', () => {
+  sandbox.lastSheetHtml = null;
+  sandbox.openDisableAppLockSheet();
+  assert.ok(sandbox.lastSheetHtml.includes('id="pinOffIn"'), '현재 PIN 입력칸이 없음');
+  assert.ok(sandbox.lastSheetHtml.includes('onclick="doDisableAppLock()"'), '끄기 버튼이 doDisableAppLock()에 연결돼 있지 않음');
+});
+test('[실행형] doForgotPassword: Supabase가 설정돼 있지 않으면(sbCfg().url이 빈 값) 로컬 복구(doForgotPasswordLocal) 시트로 바로 넘어간다', () => {
+  const lsRawOrig = sandbox._lsRaw;
+  sandbox._lsRaw = null; // localStorage에 sb url/key 저장값이 없고 SUPABASE_URL 기본값도 ''라 sbCfg().url===''
+  sandbox.lastSheetHtml = null;
+  sandbox.auEmailValue = 'local@example.com';
+  try {
+    sandbox.doForgotPassword();
+    assert.ok(sandbox.lastSheetHtml.includes('id="frEmailIn"'), 'Supabase 미설정이면 doForgotPasswordLocal의 복구 코드 입력 시트로 가야 하는데 못 감');
+    assert.ok(sandbox.lastSheetHtml.includes('value="local@example.com"'), 'auEmail에 입력했던 이메일이 복구 폼에 그대로 넘어가지 않음');
+    assert.ok(sandbox.lastSheetHtml.includes('onclick="doLocalRecover()"'), '복구하기 버튼이 doLocalRecover()에 연결돼 있지 않음');
+  } finally {
+    sandbox._lsRaw = lsRawOrig;
+    sandbox.auEmailValue = undefined;
+  }
+});
+test('[실행형] doForgotPassword: Supabase가 설정돼 있으면(sbCfg().url이 값이 있음) 이메일 재설정 메일 시트를 띄운다', () => {
+  const lsRawOrig = sandbox._lsRaw;
+  sandbox._lsRaw = 'https://example.supabase.co'; // localStorage.getItem('asset_app_sb_url')이 이 값을 돌려줌
+  sandbox.lastSheetHtml = null;
+  sandbox.auEmailValue = 'cloud@example.com';
+  try {
+    sandbox.doForgotPassword();
+    assert.ok(sandbox.lastSheetHtml.includes('id="fpEmailIn"'), 'Supabase 설정 상태면 이메일 재설정 메일 시트로 가야 하는데 못 감');
+    assert.ok(sandbox.lastSheetHtml.includes('value="cloud@example.com"'), 'auEmail에 입력했던 이메일이 재설정 메일 폼에 그대로 넘어가지 않음');
+    assert.ok(sandbox.lastSheetHtml.includes('onclick="doSendResetEmail()"'), '재설정 메일 보내기 버튼이 doSendResetEmail()에 연결돼 있지 않음');
+  } finally {
+    sandbox._lsRaw = lsRawOrig;
+    sandbox.auEmailValue = undefined;
+  }
+});
+test('[실행형] doLogout: 확인 시트에서 로그아웃을 누르면 AUTH.signOut 후 게스트 플래그를 끄고 로그인 화면으로 간다', () => {
+  const sessionOrig = sandbox.SESSION, guestOrig = sandbox.GUEST;
+  sandbox.SESSION = 'test@example.com';
+  sandbox.GUEST = true;
+  sandbox.authSignOutCalls = 0;
+  sandbox.closeSheetCalls = 0;
+  sandbox.showAuthCalls = 0;
+  sandbox.confirmSheetCalls = [];
+  sandbox._lsSetCalls = [];
+  try {
+    sandbox.doLogout();
+    assert.strictEqual(sandbox.confirmSheetCalls.length, 1, '로그아웃 전 확인 시트를 띄우지 않음');
+    assert.strictEqual(sandbox.authSignOutCalls, 0, '확인 전에 벌써 로그아웃돼 버림(확인 없이 바로 실행)');
+    sandbox.confirmSheetCalls[0].cb(); // "로그아웃" 확인 버튼을 누른 상태를 흉내냄
+    assert.strictEqual(sandbox.authSignOutCalls, 1, '확인 후 AUTH.signOut()을 호출하지 않음');
+    assert.strictEqual(sandbox.GUEST, false, '로그아웃 후 GUEST 플래그를 꺼야 함');
+    assert.deepStrictEqual(sandbox._lsSetCalls[sandbox._lsSetCalls.length - 1], ['asset_app_guest', '0'], 'localStorage의 게스트 플래그를 0으로 갱신하지 않음');
+    assert.strictEqual(sandbox.closeSheetCalls, 1, '로그아웃 후 시트를 닫지 않음');
+    assert.strictEqual(sandbox.showAuthCalls, 1, '로그아웃 후 로그인 화면으로 가지 않음');
+  } finally {
+    sandbox.SESSION = sessionOrig;
+    sandbox.GUEST = guestOrig;
+  }
+});
+test('[실행형] doResetAll: 확인 시트에서 초기화를 누르면 DB가 빈 상태로 바뀌고 되돌리기 토스트를 띄운다', () => {
+  const dbOrig = sandbox.DB, stOrig = sandbox.ST;
+  const originalDb = { owners: ['나'], assets: [{ id: 'a1' }], txns: [{ id: 't1' }], categories: { expense: ['식비'], income: [], saving: [] } };
+  sandbox.DB = originalDb;
+  sandbox.ST = { tab: 'ledger' };
+  sandbox.closeSheetCalls = 0;
+  sandbox.goCalls = [];
+  sandbox.confirmSheetCalls = [];
+  sandbox.lastUndo = null;
+  try {
+    sandbox.doResetAll();
+    assert.strictEqual(sandbox.confirmSheetCalls.length, 1, '초기화 전 확인 시트를 띄우지 않음');
+    assert.strictEqual(sandbox.DB, originalDb, '확인 전에 벌써 DB가 바뀌어 버림(확인 없이 바로 실행)');
+    sandbox.confirmSheetCalls[0].cb(); // "초기화" 확인 버튼을 누른 상태를 흉내냄
+    assert.notStrictEqual(sandbox.DB, originalDb, '확인 후 DB가 emptyDB()로 교체되지 않음');
+    // emptyDB()는 vm 샌드박스 안에서 실행돼 그 결과(DB.assets/txns)도 vm realm 배열이다 —
+    // 위 recDates 테스트와 같은 이유(host Array와 realm이 달라 deepStrictEqual이 값이 같아도
+    // 실패)로 Array.from으로 host realm 배열로 정규화한다.
+    assert.deepStrictEqual(Array.from(sandbox.DB.assets), [], '초기화 후 자산이 비어있지 않음');
+    assert.deepStrictEqual(Array.from(sandbox.DB.txns), [], '초기화 후 내역이 비어있지 않음');
+    assert.strictEqual(sandbox.closeSheetCalls, 1, '초기화 후 시트를 닫지 않음');
+    assert.strictEqual(sandbox.ST.tab, 'home', '초기화 후 홈 탭으로 이동하지 않음');
+    assert.ok(sandbox.goCalls.includes('home'), '초기화 후 go("home")으로 탭 전환하지 않음');
+    assert.ok(sandbox.lastUndo && sandbox.lastUndo.msg === '전체 초기화했어요', '되돌리기 토스트를 띄우지 않음');
+    assert.ok(typeof sandbox.lastUndo.undoFn === 'function', '되돌리기 콜백이 없음');
+    const resetDb = sandbox.DB;
+    sandbox.lastUndo.undoFn(); // "되돌리기"를 누른 상태를 흉내냄
+    assert.strictEqual(sandbox.DB, originalDb, '되돌리기를 눌러도 원래 DB로 복원되지 않음');
+    assert.notStrictEqual(sandbox.DB, resetDb);
+  } finally {
+    sandbox.DB = dbOrig;
+    sandbox.ST = stOrig;
+  }
 });
 
 /* ---------- 실행 ---------- */
