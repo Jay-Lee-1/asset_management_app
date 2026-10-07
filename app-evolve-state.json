@@ -1,15 +1,8 @@
 {
   "cycle": 154,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 148,
-      "phase": "advance",
-      "timestamp": "2026-10-06T14:20:00.000Z",
-      "summary": "critique(cycle148) 계획대로 앱 잠금(PIN) 화면을 핵심 범위까지 구현(PBKDF2 해싱, 잠금화면, 재잠금, PIN 변경/해제). WebAuthn/생체인증과 유예시간은 후속 cycle로 남김. test/run.js 1019/1019 -> 1024/1024 통과.",
-      "commit": null
-    },
     {
       "cycle": 148,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-07T11:10:40.619Z",
       "summary": "cycle152/153 critique 러너업으로 기각됐던 sbUrlIn/sbKeyIn·이메일 입력 field-clear(×) 보강을 처리. Supabase 설정(sbUrlIn/sbKeyIn), 카카오 키 재설정(kkeyIn2), 비밀번호 재설정/복구 이메일·복구코드(fpEmailIn/frEmailIn/frCodeIn) 총 7개 입력에 기존 field-clear 패턴을 적용 — 전부 openSheet() 내부라 별도 CSS/배선(fcWire) 추가 없이 자동 적용됨. password 타입 입력은 기존 관례대로 제외. 같은 화면에서도 .auth-field로 구조가 다르고 openSheet 밖(렌더런 직접 호출)인 auth 메인 화면의 auEmail/kkeyIn은 CSS·수동 fcWire 배선이 추가로 필요해 범위를 넘어선다고 보고 백로그로 남김. index.html/sw.js 변경이라 APP_VERSION 1.47.73->1.47.74, sw.js CACHE v335->v336 갱신. node test/run.js 1054/1054 통과(변경 전과 동일 — 렌더링 전용 UI 변경).",
+      "commit": null
+    },
+    {
+      "cycle": 154,
+      "phase": "review",
+      "timestamp": "2026-10-07T14:30:00.000Z",
+      "summary": "cycle154 develop(sbUrlIn/sbKeyIn/kkeyIn2/fpEmailIn/frEmailIn/frCodeIn field-clear 7곳) 검토 — openSheet()가 매 렌더 시 fcWire()를 호출해 .field-clear 안의 input을 자동 와이어링하는 것을 index.html:6008에서 직접 확인했고, diff는 그 전제에 맞게 기존 패턴(div.field-clear + button.fc-x + clrInput(id))을 7곳에 그대로 적용한 것뿐이라 '추가 CSS/배선 불필요'라는 커밋 설명이 정확함을 검증. password 타입은 기존 관례대로 제외됨도 확인. node test/run.js 1054/1054 통과. 이상 없음.",
       "commit": null
     }
   ]
