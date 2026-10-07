@@ -763,6 +763,39 @@ test('fmtDate/shortDate/fmtDateFull: 음수 UTC 오프셋 시간대에서도 날
   });
 });
 
+/* ---------- inQuietWindow: KRX/원화 장 마감(토 06:00~월 08:00)은 KST 기준 고정이어야
+ * 하는데, 예전 구현은 d.getDay()/d.getHours()로 기기(Node 프로세스) 로컬 시간대를
+ * 읽어 판정했다(app-evolve cycle156 develop). 아래 각 instant는 "KST 벽시계 기준"으로
+ * 고른 절대 시각(UTC epoch)이라, 기본 TZ와 America/New_York(UTC-4) 양쪽에서 같은
+ * 결과가 나와야 KST에 고정된 것이 맞다 — 고치기 전 코드로는 두 TZ의 결과가 갈렸다. */
+test('inQuietWindow: 토요일 06:00 KST부터 휴장 시작(그 직전 05:59는 아직 거래시간)', () => {
+  const start = new Date('2026-10-02T21:00:00.000Z'); // = 토 2026-10-03 06:00 KST
+  const before = new Date('2026-10-02T20:59:00.000Z'); // = 토 2026-10-03 05:59 KST
+  assert.strictEqual(sandbox.inQuietWindow(start), true);
+  assert.strictEqual(sandbox.inQuietWindow(before), false);
+  withTZ('America/New_York', () => {
+    assert.strictEqual(sandbox.inQuietWindow(start), true);
+    assert.strictEqual(sandbox.inQuietWindow(before), false);
+  });
+});
+test('inQuietWindow: 일요일은 시간과 무관하게 항상 휴장이다', () => {
+  const sunday = new Date('2026-10-04T06:00:00.000Z'); // = 일 2026-10-04 15:00 KST
+  assert.strictEqual(sandbox.inQuietWindow(sunday), true);
+  withTZ('America/New_York', () => {
+    assert.strictEqual(sandbox.inQuietWindow(sunday), true);
+  });
+});
+test('inQuietWindow: 월요일 08:00 KST에 휴장이 끝난다(그 직전 07:59는 아직 휴장)', () => {
+  const stillQuiet = new Date('2026-10-04T22:59:00.000Z'); // = 월 2026-10-05 07:59 KST
+  const ended = new Date('2026-10-04T23:00:00.000Z'); // = 월 2026-10-05 08:00 KST
+  assert.strictEqual(sandbox.inQuietWindow(stillQuiet), true);
+  assert.strictEqual(sandbox.inQuietWindow(ended), false);
+  withTZ('America/New_York', () => {
+    assert.strictEqual(sandbox.inQuietWindow(stillQuiet), true);
+    assert.strictEqual(sandbox.inQuietWindow(ended), false);
+  });
+});
+
 /* ---------- recDates: 월간 day clamp ---------- */
 test('recDates: 매월 31일 반복은 짧은 달에서 그 달의 마지막 날로 clamp된다', () => {
   const r = { freq: 'monthly', day: 31, startDate: '2026-01-01', endDate: null, weekend: 'none' };
