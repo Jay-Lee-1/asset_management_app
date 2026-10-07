@@ -1,15 +1,8 @@
 {
   "cycle": 154,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 149,
-      "phase": "develop",
-      "timestamp": "2026-10-06T15:25:27.170Z",
-      "summary": "전체내역 검색창(#histQ)에 field-clear(×) 추가. .searchbar가 .field 조상이 없어 input이 좁아지던 버그도 함께 발견해 CSS 수정. test/run.js 1024/1024 -> 1026/1026 통과.",
-      "commit": null
-    },
     {
       "cycle": 148,
       "phase": "advance",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-07T13:30:00.000Z",
       "summary": "critique(cycle153) 계획대로 renderAssetSheet를 test/run.js FUNCTIONS(vm 실제 실행)로 승격했다. 직접 살펴보니 cycle152가 가정했던 'DOM 전역에 깊이 엮여 범위 초과'는 이 함수엔 맞지 않았다 — 본문은 문자열 템플릿 조립뿐이고, 유일한 DOM 접촉(setTimeout 포커스, openSheet)은 이미 sandbox가 no-op/캡처 스텁으로 갖고 있어서 그대로 실행 가능했다. 8590-8656 부근 regex/includes 기반 테스트 5건을 sandbox.renderAssetSheet(editing) 실제 실행 + lastSheetHtml 검증으로 전환하고, costBasis/만기일 필드가 타입별로 올바르게 있고/없는지 확인하는 구조 테스트 2건을 추가했다. 전환 과정에서 두 가지 숨은 문제를 발견해 고쳤다: (1) asOpenCur 테스트가 DB를 직접 세팅하지 않고 이전 테스트가 남긴 leftover DB(rates.fx 없음)에 의존하고 있었는데, renderAssetSheet가 실제로 돌면서 그 틈이 크래시로 드러났다(DB.rates.fx['THB'] 접근) — 테스트가 자기 DB를 세팅하도록 수정. (2) savings 타입 렌더가 호출하는 assetPickBtn(maturityTargetId)이 DB.assets.find를 바로 쓰므로, 테스트 헬퍼가 매번 DB.assets=[]를 보장하도록 함. 남은 openTxSheet/openRecSheet/renderMenu/openSheet(자체)는 여전히 더 깊이 엮여 있어 백로그로 남김(FUNCTIONS 주석에 반영). index.html/logic.js는 건드리지 않아 APP_VERSION/sw.js 변경 없음. node test/run.js 1053/1053 -> 1054/1054 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 154,
+      "phase": "develop",
+      "timestamp": "2026-10-07T11:10:40.619Z",
+      "summary": "cycle152/153 critique 러너업으로 기각됐던 sbUrlIn/sbKeyIn·이메일 입력 field-clear(×) 보강을 처리. Supabase 설정(sbUrlIn/sbKeyIn), 카카오 키 재설정(kkeyIn2), 비밀번호 재설정/복구 이메일·복구코드(fpEmailIn/frEmailIn/frCodeIn) 총 7개 입력에 기존 field-clear 패턴을 적용 — 전부 openSheet() 내부라 별도 CSS/배선(fcWire) 추가 없이 자동 적용됨. password 타입 입력은 기존 관례대로 제외. 같은 화면에서도 .auth-field로 구조가 다르고 openSheet 밖(렌더런 직접 호출)인 auth 메인 화면의 auEmail/kkeyIn은 CSS·수동 fcWire 배선이 추가로 필요해 범위를 넘어선다고 보고 백로그로 남김. index.html/sw.js 변경이라 APP_VERSION 1.47.73->1.47.74, sw.js CACHE v335->v336 갱신. node test/run.js 1054/1054 통과(변경 전과 동일 — 렌더링 전용 UI 변경).",
       "commit": null
     }
   ]

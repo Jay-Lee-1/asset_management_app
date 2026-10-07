@@ -1321,7 +1321,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.73';
+const APP_VERSION='1.47.74';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4729,8 +4729,8 @@ function openHelpCloud(){
  const c=sbCfg();
  openSheet(`<h3>이메일 로그인 · 클라우드 동기화</h3>
   <div class="help-body"><p><b>1) Supabase 프로젝트 준비</b><br>supabase.com 에서 무료 프로젝트를 만들고, <b>Project Settings › API</b>에서 <b>Project URL</b>과 <b>anon public</b> 키를 복사해 아래에 붙여넣으세요.</p></div>
-  <div class="field"><label for="sbUrlIn">Project URL</label><input id="sbUrlIn" placeholder="https://xxxx.supabase.co" value="${(c.url||'').replace(/"/g,'&quot;')}"></div>
-  <div class="field"><label for="sbKeyIn">anon public 키</label><input id="sbKeyIn" placeholder="anon public key" value="${(c.key||'').replace(/"/g,'&quot;')}" onkeydown="if(event.key==='Enter')saveCloudCfg()"></div>
+  <div class="field"><label for="sbUrlIn">Project URL</label><div class="field-clear"><input id="sbUrlIn" placeholder="https://xxxx.supabase.co" value="${(c.url||'').replace(/"/g,'&quot;')}"><button type="button" class="fc-x" aria-label="Project URL 지우기" onclick="clrInput('sbUrlIn')">✕</button></div></div>
+  <div class="field"><label for="sbKeyIn">anon public 키</label><div class="field-clear"><input id="sbKeyIn" placeholder="anon public key" value="${(c.key||'').replace(/"/g,'&quot;')}" onkeydown="if(event.key==='Enter')saveCloudCfg()"><button type="button" class="fc-x" aria-label="anon public 키 지우기" onclick="clrInput('sbKeyIn')">✕</button></div></div>
   <div class="two-btn" style="margin-bottom:16px">${c.url?`<button class="btn btn-soft cancel" onclick="localStorage.removeItem('asset_app_sb_url');localStorage.removeItem('asset_app_sb_key');SB=null;closeSheet();toast('클라우드 설정을 삭제했어요')">설정 삭제</button>`:`<button class="btn btn-soft cancel" onclick="closeSheet()">닫기</button>`}<button class="btn btn-primary" onclick="saveCloudCfg()">저장</button></div>
   <div class="help-body">
    <p><b>2) 테이블 만들기</b><br>Supabase <b>SQL Editor</b>에서 아래 SQL을 한 번 실행하세요.</p>
@@ -4762,7 +4762,7 @@ function openHelpKakao(){
  const cur=(localStorage.getItem('asset_app_kakao_key')||'');
  openSheet(`<h3>카카오 로그인 · 클라우드 설정</h3>
   <div class="help-body"><p><b>1) 카카오 키 입력</b><br>developers.kakao.com에서 앱을 만들고 [앱 키]의 <b>JavaScript 키</b>를 복사해 아래에 붙여넣으세요.</p></div>
-  <div class="field"><input id="kkeyIn2" placeholder="카카오 JavaScript 키" value="${cur.replace(/"/g,'&quot;')}" onkeydown="if(event.key==='Enter')saveKakaoKey2()"></div>
+  <div class="field"><div class="field-clear"><input id="kkeyIn2" placeholder="카카오 JavaScript 키" value="${cur.replace(/"/g,'&quot;')}" onkeydown="if(event.key==='Enter')saveKakaoKey2()"><button type="button" class="fc-x" aria-label="카카오 키 지우기" onclick="clrInput('kkeyIn2')">✕</button></div></div>
   <div class="two-btn" style="margin-bottom:16px">${cur?`<button class="btn btn-soft cancel" onclick="localStorage.removeItem('asset_app_kakao_key');closeSheet();toast('카카오 키를 삭제했어요')">키 삭제</button>`:`<button class="btn btn-soft cancel" onclick="closeSheet()">닫기</button>`}<button class="btn btn-primary" onclick="saveKakaoKey2()">저장</button></div>
   <div class="help-body">
    <p><b>2) 도메인 등록</b><br>카카오 개발자 [플랫폼 › Web]에 이 앱을 올린 <b>도메인</b>을 등록하고, [카카오 로그인]을 활성화 + 동의항목에서 '닉네임'을 허용하세요.</p>
@@ -7505,7 +7505,7 @@ function doForgotPassword(){
  if(!sbCfg().url)return doForgotPasswordLocal(email);
  openSheet(`<h3>비밀번호 재설정</h3>
   <div class="desc">가입하신 이메일로 비밀번호 재설정 링크를 보내드려요.</div>
-  <div class="field"><label for="fpEmailIn">이메일</label><input id="fpEmailIn" type="email" inputmode="email" autocomplete="username" placeholder="you@example.com" value="${esc(email)}" onkeydown="if(event.key==='Enter')doSendResetEmail()"></div>
+  <div class="field"><label for="fpEmailIn">이메일</label><div class="field-clear"><input id="fpEmailIn" type="email" inputmode="email" autocomplete="username" placeholder="you@example.com" value="${esc(email)}" onkeydown="if(event.key==='Enter')doSendResetEmail()"><button type="button" class="fc-x" aria-label="이메일 지우기" onclick="clrInput('fpEmailIn')">✕</button></div></div>
   <div id="fpErr" class="auth-err" style="display:none"></div>
   <div class="two-btn" style="margin-top:14px"><button class="btn btn-soft cancel" onclick="closeSheet()">취소</button><button class="btn btn-primary" id="fpSendBtn" onclick="doSendResetEmail()">재설정 메일 보내기</button></div>`);
 }
@@ -7524,8 +7524,8 @@ async function doSendResetEmail(){
 function doForgotPasswordLocal(email){
  openSheet(`<h3>비밀번호 복구</h3>
   <div class="desc">가입할 때 딱 한 번 보여드린 복구 코드로 새 비밀번호를 설정해요. 복구 코드가 없다면 이 계정은 복구할 수 없어요 — 메뉴 › 데이터 관리에서 CSV로 미리 백업해 두는 걸 추천해요.</div>
-  <div class="field"><label for="frEmailIn">이메일</label><input id="frEmailIn" type="email" inputmode="email" autocomplete="username" placeholder="you@example.com" value="${esc(email)}"></div>
-  <div class="field"><label for="frCodeIn">복구 코드</label><input id="frCodeIn" autocomplete="off" placeholder="XXXX-XXXX-XXXX"></div>
+  <div class="field"><label for="frEmailIn">이메일</label><div class="field-clear"><input id="frEmailIn" type="email" inputmode="email" autocomplete="username" placeholder="you@example.com" value="${esc(email)}"><button type="button" class="fc-x" aria-label="이메일 지우기" onclick="clrInput('frEmailIn')">✕</button></div></div>
+  <div class="field"><label for="frCodeIn">복구 코드</label><div class="field-clear"><input id="frCodeIn" autocomplete="off" placeholder="XXXX-XXXX-XXXX"><button type="button" class="fc-x" aria-label="복구 코드 지우기" onclick="clrInput('frCodeIn')">✕</button></div></div>
   <div class="field"><label for="frPwIn">새 비밀번호</label><input id="frPwIn" type="password" autocomplete="new-password" placeholder="8자 이상" onkeydown="if(event.key==='Enter')doLocalRecover()"></div>
   <div id="frErr" class="auth-err" style="display:none"></div>
   <div class="two-btn" style="margin-top:14px"><button class="btn btn-soft cancel" onclick="closeSheet()">취소</button><button class="btn btn-primary" id="frBtn" onclick="doLocalRecover()">복구하기</button></div>`);
