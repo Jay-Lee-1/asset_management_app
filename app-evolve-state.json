@@ -1,15 +1,7 @@
 {
-  "cycle": 153,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "test/run.js — openSheet류 render/entry-point 함수 실행 기반 테스트 확장 (renderAssetSheet 또는 openTxSheet부터)",
-    "why": "test/run.js:195-199에 이미 '범위가 한 사이클을 넘어서므로 제외'라고 명시된 백로그: openSheet/openTxSheet/openRecSheet/renderMenu/renderAssetSheet 5개는 지금도 vm 실제 실행 검증(FUNCTIONS) 밖에 있고, test/run.js:8549-8622의 현재 테스트는 extractFunction() 소스 문자열에 대한 regex/includes 패턴 매칭뿐이다. 이 방식은 매칭 문자열이 주석이나 죽은 분기에 있어도, 또는 실행 시에만 드러나는 미세 버그(예: 자산타입별로 잘못된 필드가 렌더되거나 onclick= 인자가 틀림)가 있어도 통과한다. cycle146부터 지적된 'src.includes 거짓 안전감'이 이 5개 핵심 진입점 함수에서는 아직도 해소되지 않은 상태이고, 이들은 돈 입력(renderAssetSheet/openTxSheet/openRecSheet)과 설정 화면(renderMenu) 전체를 게이팅하는 파급력 가장 큰 함수들이다.",
-    "approach": "5개를 한 번에 다 하지 않고(이전에 '범위 과대'로 보류된 이유) 가장 얕은 1개부터: renderAssetSheet(index.html 약 3418-3460) 또는 openTxSheet 중 draft 객체 기반 문자열 생성이 가장 단순한 쪽을 우선 선택. test/run.js의 기존 sandbox(약 480-600줄)에 최소 DOM 스텁을 추가 — Map 기반 요소 스텁에 .value/.classList(Set 기반 add/remove/contains)/.dataset/.style/.innerHTML/.querySelector(All)/.focus()/.addEventListener(no-op)만 구현하고, $()를 그 스텁 조회/생성 함수로 연결(새 프레임워크가 아니라 기존 sandbox에 추가하는 것). 선택한 함수를 실제 실행해 draft별로 결과 HTML/상태를 받아, 자산타입별 올바른 필드 존재(costBasis는 fx/gold/stock에만 등), field-clear 버튼 존재, Enter-submit 와이어링 등 구체적 구조를 deepStrictEqual/assert로 검증하는 [실행형] 테스트로 8549-8622 부근의 기존 regex 전용 테스트를 보강(대체 또는 추가). 패턴이 검증되면 나머지(openTxSheet/openRecSheet/renderMenu/openSheet)는 후속 cycle 백로그로 남긴다 — 이번 사이클에 전부 하지 않는다.",
-    "runner_up_rejected": [
-      "localStorage -> IndexedDB 마이그레이션: 5~10MB 쿼터 문제의 근본 해결이지만 이미 쿼터 경고/persistent storage 요청으로 완화되어 있고(index.html:1651-2129), 한 사이클 범위를 넘는 재작성 리스크가 크다.",
-      "stock 자산 단일 costBasis를 lot별 원가/실현손익 추적으로 확장: 정당한 제품 기능 공백이지만 기존 취약점 수정이 아닌 신규 기능이라 테스트 공백보다 긴급도가 낮다."
-    ]
-  },
+  "cycle": 154,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
     {
       "cycle": 149,
@@ -96,13 +88,6 @@
       "commit": null
     },
     {
-      "cycle": 146,
-      "phase": "develop",
-      "timestamp": "2026-10-06T03:40:00.000Z",
-      "summary": "금액 입력란 중 budgetIn/qAmt/bigMinInput 세 곳에 field-clear(×) 추가. test/run.js 1001/1001 -> 1004/1004 통과.",
-      "commit": "fef8240"
-    },
-    {
       "cycle": 150,
       "phase": "advance",
       "timestamp": "2026-10-06T22:10:05.106Z",
@@ -149,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-07T12:00:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 재조망(기존 수정완료 목록 전달 후 겹치지 않는 공백 탐색). 재확인: test/run.js:195-199에 직접 백로그로 명시된 openSheet/openTxSheet/openRecSheet/renderMenu/renderAssetSheet 5개 핵심 진입점 함수가 cycle152 이후에도 여전히 vm 실행 검증(FUNCTIONS) 밖이고, 현재 테스트(test/run.js:8549-8622)는 extractFunction() 소스 문자열에 대한 regex/includes 매칭뿐이라 실행 시에만 드러나는 버그를 못 잡음. CSV/백업/클라우드 병합/반복거래 날짜/차트 접근성 등 다른 영역은 에이전트가 직접 확인한 결과 이미 방어적 수정이 코드에 문서화되어 있어 제외. 가장 얕은 renderAssetSheet 또는 openTxSheet 1개부터 sandbox에 최소 DOM 스텁(classList/dataset/style/innerHTML/querySelector 등)을 추가해 실행 기반 [실행형] 테스트로 전환하는 계획을 pending_advance_plan에 저장(5개 전부가 아니라 1개부터, 패턴 검증 후 나머지는 백로그). 러너업(기각): localStorage->IndexedDB 마이그레이션(이미 쿼터 경고로 완화, 재작성 리스크 큼), stock lot별 원가추적(신규 기능이라 긴급도 낮음). 코드 변경 없음(읽기 전용 조사).",
+      "commit": null
+    },
+    {
+      "cycle": 153,
+      "phase": "advance",
+      "timestamp": "2026-10-07T13:30:00.000Z",
+      "summary": "critique(cycle153) 계획대로 renderAssetSheet를 test/run.js FUNCTIONS(vm 실제 실행)로 승격했다. 직접 살펴보니 cycle152가 가정했던 'DOM 전역에 깊이 엮여 범위 초과'는 이 함수엔 맞지 않았다 — 본문은 문자열 템플릿 조립뿐이고, 유일한 DOM 접촉(setTimeout 포커스, openSheet)은 이미 sandbox가 no-op/캡처 스텁으로 갖고 있어서 그대로 실행 가능했다. 8590-8656 부근 regex/includes 기반 테스트 5건을 sandbox.renderAssetSheet(editing) 실제 실행 + lastSheetHtml 검증으로 전환하고, costBasis/만기일 필드가 타입별로 올바르게 있고/없는지 확인하는 구조 테스트 2건을 추가했다. 전환 과정에서 두 가지 숨은 문제를 발견해 고쳤다: (1) asOpenCur 테스트가 DB를 직접 세팅하지 않고 이전 테스트가 남긴 leftover DB(rates.fx 없음)에 의존하고 있었는데, renderAssetSheet가 실제로 돌면서 그 틈이 크래시로 드러났다(DB.rates.fx['THB'] 접근) — 테스트가 자기 DB를 세팅하도록 수정. (2) savings 타입 렌더가 호출하는 assetPickBtn(maturityTargetId)이 DB.assets.find를 바로 쓰므로, 테스트 헬퍼가 매번 DB.assets=[]를 보장하도록 함. 남은 openTxSheet/openRecSheet/renderMenu/openSheet(자체)는 여전히 더 깊이 엮여 있어 백로그로 남김(FUNCTIONS 주석에 반영). index.html/logic.js는 건드리지 않아 APP_VERSION/sw.js 변경 없음. node test/run.js 1053/1053 -> 1054/1054 통과.",
       "commit": null
     }
   ]

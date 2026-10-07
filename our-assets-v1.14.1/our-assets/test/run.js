@@ -201,6 +201,12 @@ const FUNCTIONS = [
   'sbCfg', 'emptyDB', 'accountKind',
   'openSetPinSheet', 'openChangePinSheet', 'openDisableAppLockSheet',
   'doForgotPassword', 'doForgotPasswordLocal', 'doLogout', 'doResetAll',
+  // renderAssetSheet는 cycle153 advance에서 끌어왔다 — 실제로 살펴보니 setTimeout(포커스)과
+  // openSheet() 호출 외에는 classList/requestAnimationFrame 같은 DOM 전역을 직접 건드리지
+  // 않고(기존 openSheet/setTimeout 스텁만으로 충분), 몸통 전체가 문자열 템플릿 조립이라
+  // "DOM 전역에 깊이 엮여 범위가 크다"던 위 cycle152의 가정이 이 함수엔 맞지 않았다.
+  // openTxSheet/openRecSheet/renderMenu/openSheet 자체는 여전히 더 깊이 엮여 있어 백로그로 남김.
+  'renderAssetSheet',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -526,9 +532,9 @@ const sandbox = {
   // 식별자로 참조만 해도 선언돼 있어야 ReferenceError가 안 난다(app-evolve cycle152 advance).
   scheduleCloudPush: () => {},
   renderTxSheet: () => {},
-  // asOpenType()의 onPick 콜백이 마지막에 부르는 자산 시트 재렌더 — renderTxSheet와 같은 이유
-  // (화면 전용, asOpenType 테스트는 asDraft 변화만 검증)로 no-op으로 흉내낸다.
-  renderAssetSheet: () => {},
+  // renderAssetSheet는 cycle153 advance부터 FUNCTIONS(실제 실행)로 승격돼 위 no-op 스텁을
+  // 더 이상 쓰지 않는다 — vm이 실제 함수로 이 프로퍼티를 덮어쓴다(doLogout/doResetAll 등
+  // cycle152 승격분과 같은 패턴).
   uid: () => 'test-uid',
   // touch()는 Date.now()를 쓰는데, saveTx/saveAsset/saveRec 테스트에서 매번 값이 달라지면
   // 그 필드를 assert하기 번거로우므로(assert하지 않는 테스트도 실행 시각마다 스냅샷이 흔들림)
@@ -6022,6 +6028,10 @@ test('CURRENCY_LIST: 모든 코드가 중복 없는 3자리 대문자 ISO 코드
  * 반영되는지 검증한다(asOpenType과 같은 패턴 — 실제 DOM 렌더는 스텁이 대신하고, 여기선 현재값이
  * 피커에 올바르게 전달되고 onPick 콜백이 asDraft를 갱신하는 순수 로직만 확인). ---------- */
 test('asOpenCur: 현재 통화를 피커에 넘기고, onPick으로 고른 통화가 asDraft.currency에 반영된다', () => {
+  // onPick(asCur)이 asDraft.currency를 바꾼 뒤 renderAssetSheet를 재호출하므로(아래 실행형
+  // renderAssetSheet 테스트부터 FUNCTIONS에 끌어와 실제 실행), DB.rates.fx가 있어야 함 —
+  // 없으면 leftover DB(이전 테스트가 남긴 { rates: { stocks: {} } })로 fx가 없어 크래시한다.
+  sandbox.DB = { rates: { fx: {}, stocks: {} } };
   sandbox.asDraft = { id: 'a1', type: 'fx', owner: '나', currency: 'USD', fxAmount: 100 };
   sandbox.asOpenCur();
   assert.strictEqual(sandbox.lastCurrencyPickerCurrent, 'USD', '피커를 열 때 현재 선택된 통화를 넘겨야 함');
@@ -8582,11 +8592,36 @@ test('homeAlertCard: 백업 알림 행(ha-b)에 키보드/스크린리더 접근
   assert.ok(/class="ha-b"\s+tabindex="0"\s+role="button"[^>]*onclick="exportData\(\)"/.test(body), '백업 ha-b에 role="button"이 없음');
   assert.ok(body.includes('onkeydown="rowKeydown(event,()=>exportData())"'), '백업 ha-b에 rowKeydown 연결이 없음');
 });
+/* ---------- renderAssetSheet: app-evolve cycle146 critique가 짚은 "src.includes 거짓 안전감"을
+ * 메우는 첫 실행형 전환(cycle153 critique 계획) — 바로 아래 5개 테스트는 과거 extractFunction()
+ * 소스 문자열 regex/includes 매칭이었다(실행 시에만 드러나는 버그를 못 잡음). renderAssetSheet를
+ * FUNCTIONS에 끌어와 sandbox.renderAssetSheet(editing)을 실제로 실행하고, 기존처럼 openSheet()
+ * 스텁(sandbox.lastSheetHtml)이 받은 실제 렌더 결과에 대해 같은 assert를 건다 — 검증 내용은
+ * 그대로 유지하되 "그 문자열이 파일 어딘가에 있는가"가 아니라 "이 draft로 실제로 그 HTML이
+ * 나오는가"를 확인한다. openTxSheet/openRecSheet/renderMenu/openSheet 자체는 DOM 전역
+ * (classList/requestAnimationFrame 등)에 더 깊이 엮여 있어 여전히 백로그(아래 8558줄 부근 주석). */
+function renderAsset(draft) {
+  // savings 타입은 "만기 시 이체할 통장" 필드에서 assetPickBtn(maturityTargetId)을 부르는데,
+  // assetPickBtn은 DB.assets.find(...)를 바로 쓰므로 DB.assets가 항상 배열로 있어야 한다
+  // (이전 테스트가 남긴 leftover DB를 그대로 쓰면 .assets가 없어 크래시한다).
+  sandbox.DB = { assets: [], rates: { fx: { USD: 1300 }, stocks: {}, goldPerG: 100000 } };
+  sandbox.asDraft = draft;
+  sandbox.lastSheetHtml = null;
+  sandbox.renderAssetSheet(!!draft.id);
+  return sandbox.lastSheetHtml;
+}
 test('renderAssetSheet: cash/debt/realestate/etc/pension의 asAmt에 Enter-제출이 있고, savings는 제외된다(만기일 입력이 이어지므로)', () => {
-  const body = extractFunction('renderAssetSheet');
+  ['cash', 'debt', 'realestate', 'etc', 'pension'].forEach(ty => {
+    const html = renderAsset({ type: ty, owner: '나', includeInTotal: true, name: '' });
+    assert.ok(
+      html.includes(`onkeydown="if(event.key==='Enter'&&!event.isComposing)saveAsset(false)"`),
+      `${ty} 타입의 asAmt에 Enter-제출이 없음`
+    );
+  });
+  const savingsHtml = renderAsset({ type: 'savings', owner: '나', includeInTotal: true, name: '' });
   assert.ok(
-    /savings'\?'':`\s*onkeydown="if\(event\.key==='Enter'&&!event\.isComposing\)saveAsset\(\$\{editing\}\)"`/.test(body),
-    'asAmt의 Enter-제출이 savings를 제외하고 나머지 balType에만 적용되지 않음'
+    !savingsHtml.includes(`onkeydown="if(event.key==='Enter'&&!event.isComposing)saveAsset(false)"`),
+    'savings는 만기일 입력이 이어지므로 asAmt에 Enter-제출이 없어야 함'
   );
 });
 /* ---------- renderAssetSheet: fx/gold/stock의 보유 수량 입력(asFx/asGold/asQty)도 다른 금액/이름
@@ -8594,29 +8629,38 @@ test('renderAssetSheet: cash/debt/realestate/etc/pension의 asAmt에 Enter-제�
  * .with-unit(단위 표시용 flex 래퍼)으로 감싸져 있어 field-clear가 없었다(app-evolve cycle147 develop
  * — budgetIn/qAmt/bigMinInput을 통일한 cycle146이 "금액" 입력만 다루고 "수량" 입력은 남겨둔 공백). */
 test('renderAssetSheet: fx 타입의 asFx(보유 수량)도 다른 입력란과 동일하게 field-clear(×) 버튼이 있다', () => {
-  const body = extractFunction('renderAssetSheet');
-  assert.ok(body.includes('<div class="with-unit"><div class="field-clear"><input id="asFx"'), 'asFx 입력이 with-unit 안에서 field-clear로 감싸져 있지 않음');
-  assert.ok(body.includes(`<button type="button" class="fc-x" aria-label="보유 수량 지우기" onclick="clrInput('asFx')">`), 'asFx에 fc-x 지우기 버튼의 clrInput 연결이 없음');
+  const html = renderAsset({ type: 'fx', owner: '나', includeInTotal: true, name: '', currency: 'USD', fxAmount: 100 });
+  assert.ok(html.includes('<div class="with-unit"><div class="field-clear"><input id="asFx"'), 'asFx 입력이 with-unit 안에서 field-clear로 감싸져 있지 않음');
+  assert.ok(html.includes(`<button type="button" class="fc-x" aria-label="보유 수량 지우기" onclick="clrInput('asFx')">`), 'asFx에 fc-x 지우기 버튼의 clrInput 연결이 없음');
+  assert.ok(html.includes('id="asCostBasis"'), 'fx 타입에는 매입 원가(costBasisField) 입력이 있어야 함');
 });
 test('renderAssetSheet: gold 타입의 asGold(보유 수량)도 동일하게 field-clear(×) 버튼이 있다', () => {
-  const body = extractFunction('renderAssetSheet');
-  assert.ok(body.includes('<div class="with-unit"><div class="field-clear"><input id="asGold"'), 'asGold 입력이 with-unit 안에서 field-clear로 감싸져 있지 않음');
-  assert.ok(body.includes(`<button type="button" class="fc-x" aria-label="보유 수량 지우기" onclick="clrInput('asGold')">`), 'asGold에 fc-x 지우기 버튼의 clrInput 연결이 없음');
+  const html = renderAsset({ type: 'gold', owner: '나', includeInTotal: true, name: '', goldDon: 5 });
+  assert.ok(html.includes('<div class="with-unit"><div class="field-clear"><input id="asGold"'), 'asGold 입력이 with-unit 안에서 field-clear로 감싸져 있지 않음');
+  assert.ok(html.includes(`<button type="button" class="fc-x" aria-label="보유 수량 지우기" onclick="clrInput('asGold')">`), 'asGold에 fc-x 지우기 버튼의 clrInput 연결이 없음');
 });
 test('renderAssetSheet: stock 타입의 asQty(보유 주식 수)도 동일하게 field-clear(×) 버튼이 있다', () => {
-  const body = extractFunction('renderAssetSheet');
-  assert.ok(body.includes('<div class="with-unit"><div class="field-clear"><input id="asQty"'), 'asQty 입력이 with-unit 안에서 field-clear로 감싸져 있지 않음');
-  assert.ok(body.includes(`<button type="button" class="fc-x" aria-label="보유 주식 수 지우기" onclick="clrInput('asQty')">`), 'asQty에 fc-x 지우기 버튼의 clrInput 연결이 없음');
+  const html = renderAsset({ type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 10 });
+  assert.ok(html.includes('<div class="with-unit"><div class="field-clear"><input id="asQty"'), 'asQty 입력이 with-unit 안에서 field-clear로 감싸져 있지 않음');
+  assert.ok(html.includes(`<button type="button" class="fc-x" aria-label="보유 주식 수 지우기" onclick="clrInput('asQty')">`), 'asQty에 fc-x 지우기 버튼의 clrInput 연결이 없음');
+  assert.ok(!html.includes('id="asAmt"'), 'stock 타입은 cash류의 asAmt 필드를 보여주면 안 됨');
 });
 /* renderAssetSheet: stock 타입의 asCode(종목코드)는 같은 폼의 asName/asQty 사이에 끼어 있으면서도
  * field-clear가 빠져 있었다(app-evolve cycle149 develop — asFx/asGold/asQty를 통일한 cycle147이
  * "수량" 입력만 다루고, 같은 줄에 있는 종목코드 텍스트 입력은 남겨둔 공백). autocapitalize/대문자
  * 변환 oninput은 유지하면서 다른 텍스트 입력과 동일한 .field-clear+fc-x 구조로 감쌌다. */
 test('renderAssetSheet: stock 타입의 asCode(종목코드)도 asName/asQty와 동일하게 field-clear(×) 버튼이 있다', () => {
-  const body = extractFunction('renderAssetSheet');
-  assert.ok(body.includes('<div class="field-clear"><input id="asCode"'), 'asCode 입력이 field-clear로 감싸져 있지 않음');
-  assert.ok(body.includes(`<button type="button" class="fc-x" aria-label="종목코드 지우기" onclick="clrInput('asCode')">`), 'asCode에 fc-x 지우기 버튼의 clrInput 연결이 없음');
-  assert.ok(body.includes(`oninput="this.value=this.value.toUpperCase()"`), 'asCode의 대문자 변환 oninput이 유지되지 않음');
+  const html = renderAsset({ type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 10 });
+  assert.ok(html.includes('<div class="field-clear"><input id="asCode"'), 'asCode 입력이 field-clear로 감싸져 있지 않음');
+  assert.ok(html.includes(`<button type="button" class="fc-x" aria-label="종목코드 지우기" onclick="clrInput('asCode')">`), 'asCode에 fc-x 지우기 버튼의 clrInput 연결이 없음');
+  assert.ok(html.includes(`oninput="this.value=this.value.toUpperCase()"`), 'asCode의 대문자 변환 oninput이 유지되지 않음');
+});
+test('renderAssetSheet: savings 타입은 만기일 필드를 보여주고, cash 타입은 만기일 필드가 없다', () => {
+  const savingsHtml = renderAsset({ type: 'savings', owner: '나', includeInTotal: true, name: '', baseAmount: 0 });
+  assert.ok(savingsHtml.includes('id="asMat"'), 'savings 타입에는 만기일 필드(asMat)가 있어야 함');
+  const cashHtml = renderAsset({ type: 'cash', owner: '나', includeInTotal: true, name: '', baseAmount: 0 });
+  assert.ok(!cashHtml.includes('id="asMat"'), 'cash 타입에는 만기일 필드가 없어야 함');
+  assert.ok(!cashHtml.includes('id="asCostBasis"'), 'cash 타입에는 매입 원가 필드가 없어야 함(fx/gold/stock 전용)');
 });
 /* openOwnerManage/renameOwnerSheet/renameCatSheet는 FUNCTIONS(실제 실행) 목록 밖이라
  * renderAssetSheet의 asFx/asGold/asQty 검증과 같은 extractFunction() 소스 패턴 검증을 쓴다
@@ -11557,9 +11601,10 @@ test('prefers-reduced-motion(reduce)이 transition뿐 아니라 keyframe animati
  * 그중 파급력이 큰 함수들(계정 메뉴의 로그아웃, 초기화, 비밀번호 찾기, PIN 설정/변경/해제 진입점)
  * 일부를 여기서 실제로 실행해 검증한다 — openSheet 자체는 기존처럼 lastSheetHtml만 기록하는
  * 스텁이라, 이 함수들이 그 스텁에 넘기는 html, 인자가 실제로 기대한 모양인지까지 확인할 수 있다.
- * openTxSheet, openRecSheet, renderMenu, renderAssetSheet, openSheet 자체처럼 DOM 전역(classList,
+ * openTxSheet, openRecSheet, renderMenu, openSheet 자체처럼 DOM 전역(classList,
  * requestAnimationFrame, attachDetent 등)에 깊이 엮인 화면 진입점은 범위가 한 사이클을 넘어서므로
- * 다음 cycle의 백로그로 남긴다. */
+ * 다음 cycle의 백로그로 남긴다(renderAssetSheet는 cycle153 advance에서 실제로는 그 정도로
+ * DOM 전역에 엮여 있지 않음이 확인돼 FUNCTIONS로 승격됐다 — 위 8595줄 부근 주석 참고). */
 test('[실행형] openSetPinSheet: PIN 설정 폼(새 PIN/확인/설정 버튼)을 openSheet에 넘긴다', () => {
   sandbox.lastSheetHtml = null;
   sandbox.openSetPinSheet();
