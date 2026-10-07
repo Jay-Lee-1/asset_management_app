@@ -1,8 +1,15 @@
 {
   "cycle": 152,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 152,
+      "phase": "develop",
+      "timestamp": "2026-10-07T00:00:00.000Z",
+      "summary": "general-purpose 서브에이전트로 탐색. renderAssetSheet()의 stock 타입 폼에서 asName(종목명)/asQty(보유 주식 수)는 cycle147/148에서 field-clear(×) 버튼이 적용됐는데, 그 사이에 끼어 있는 asCode(종목코드) 입력만 빠져 있던 것을 발견(이전 사이클들이 '수량' 입력 통일에 집중하면서 같은 줄의 텍스트 입력은 지나침). index.html:3453 asCode 입력을 .field-clear+fc-x 버튼(aria-label=\"종목코드 지우기\", onclick=clrInput('asCode'))으로 감쌌다 — 기존 autocapitalize=\"characters\"/oninput 대문자 변환 핸들러는 그대로 유지, clrInput()의 input 이벤트 dispatch가 그 핸들러도 함께 트리거함(기존 관례와 동일). openSheet()가 렌더 후 fcWire()를 범용으로 호출하므로 추가 JS 배선 불필요. test/run.js에 extractFunction('renderAssetSheet') 소스 패턴 검증 회귀 테스트 1건 추가(field-clear 래퍼+fc-x 버튼+기존 대문자 변환 oninput 보존 여부 확인). APP_VERSION 1.47.72->1.47.73, sw.js CACHE v334->v335. node test/run.js 1042/1042 -> 1043/1043 통과, 메인 인라인 <script> 구문 검사 포함. 러너업(보류): sbUrlIn/sbKeyIn(Supabase 설정값, 자격증명성이라 지우기 버튼 UX를 별도 논의 필요)과 auEmail/fpEmailIn/frEmailIn(이메일 입력, 호출부 3곳에 걸쳐 있어 한 번의 develop 범위로는 큼) 두 후보는 다음 critique가 참고할 수 있도록 기록만 남김.",
+      "commit": null
+    },
     {
       "cycle": 149,
       "phase": "advance",
@@ -114,13 +121,6 @@
       "timestamp": "2026-10-06T03:40:00.000Z",
       "summary": "general-purpose 서브에이전트로 금액 입력란 전반을 grep해 지우기(×) 버튼 관례(.field-clear 래퍼 + fc-x 버튼 + clrInput(), fcWire()가 자동 배선)가 txAmt/rAmt/goalAmt/asAmt/asCostBasis/asName/goalName/txMemo/rMemo에는 적용돼 있는데 budgetIn(openBudgetPrompt, index.html:4799)/qAmt(openQuickAmount, 6434)/bigMinInput(openBigMinSheet, 2883) 세 금액 입력란에만 빠져 있음을 발견·수정. cycle121이 budgetIn을 콤마 포맷/num() 파서로 통일한 것과 같은 결의 '다른 금액칸과 나란히 쓰는데 지우는 방법만 다름(전체 선택 후 삭제)' UX 불일치. 세 입력을 .field-clear로 감싸고 동일 패턴의 fc-x 버튼(onclick=\"clrInput('id')\")을 추가(JS 와이어링은 fcWire()가 렌더 후 자동 처리라 추가 배선 불필요). test/run.js FUNCTIONS에 openBudgetPrompt/openBigMinSheet를 새로 추가하고(기존엔 샌드박스에 로드돼 있지 않았음) 회귀 테스트 3건 추가. 수정 전 코드로 되돌려 신규 3건만 정확히 FAIL함을 git stash로 직접 검증한 뒤 복구. node test/run.js 1001/1001 -> 1004/1004 통과(메인 인라인 script 구문 검사 포함). APP_VERSION 1.47.61->1.47.62, sw.js CACHE v323->v324. 오케스트레이팅 세션이 diff를 직접 Read로 재확인 후 테스트 재실행(1004/1004)해 커밋.",
       "commit": "fef8240"
-    },
-    {
-      "cycle": 141,
-      "phase": "advance",
-      "timestamp": "2026-10-05T09:08:22Z",
-      "summary": "critique(cycle141) 계획대로 normName()(logic.js:205)에 .normalize('NFC')를 trim 전에 추가해 한글 완성형(NFC)/조합형(NFD)이 다른 문자열로 오인되던 근접중복 판정 결함을 고쳤다. 이 함수를 쓰는 addCat/doRenameCat/addOwner/doRenameOwner/saveAsset 근접중복체크/CSV import canon매칭/mergeNameList 9곳 전부가 한 번에 혜택을 받는다. 추가로 normName()을 거치지 않는 완전일치(===) 비교가 남은 입력 캡처 지점(addCat/doRenameCat/addOwner/doRenameOwner/syncAssetInputs의 asName)에도 trim() 뒤에 .normalize('NFC')를 체이닝해 신규/수정 데이터는 애초에 NFC로 저장되게 했다. test/run.js에 NFC/NFD 비교 회귀 테스트 2개(normName, mergeNameList) 추가, APP_VERSION 1.47.51→1.47.52, sw.js CACHE v313→v314. 972/972 테스트 통과. CSV import의 findAsset() 완전일치 불일치(보너스 항목)는 범위 밖이라 보류.",
-      "commit": null
     },
     {
       "cycle": 150,

@@ -8565,6 +8565,16 @@ test('renderAssetSheet: stock 타입의 asQty(보유 주식 수)도 동일하게
   assert.ok(body.includes('<div class="with-unit"><div class="field-clear"><input id="asQty"'), 'asQty 입력이 with-unit 안에서 field-clear로 감싸져 있지 않음');
   assert.ok(body.includes(`<button type="button" class="fc-x" aria-label="보유 주식 수 지우기" onclick="clrInput('asQty')">`), 'asQty에 fc-x 지우기 버튼의 clrInput 연결이 없음');
 });
+/* renderAssetSheet: stock 타입의 asCode(종목코드)는 같은 폼의 asName/asQty 사이에 끼어 있으면서도
+ * field-clear가 빠져 있었다(app-evolve cycle149 develop — asFx/asGold/asQty를 통일한 cycle147이
+ * "수량" 입력만 다루고, 같은 줄에 있는 종목코드 텍스트 입력은 남겨둔 공백). autocapitalize/대문자
+ * 변환 oninput은 유지하면서 다른 텍스트 입력과 동일한 .field-clear+fc-x 구조로 감쌌다. */
+test('renderAssetSheet: stock 타입의 asCode(종목코드)도 asName/asQty와 동일하게 field-clear(×) 버튼이 있다', () => {
+  const body = extractFunction('renderAssetSheet');
+  assert.ok(body.includes('<div class="field-clear"><input id="asCode"'), 'asCode 입력이 field-clear로 감싸져 있지 않음');
+  assert.ok(body.includes(`<button type="button" class="fc-x" aria-label="종목코드 지우기" onclick="clrInput('asCode')">`), 'asCode에 fc-x 지우기 버튼의 clrInput 연결이 없음');
+  assert.ok(body.includes(`oninput="this.value=this.value.toUpperCase()"`), 'asCode의 대문자 변환 oninput이 유지되지 않음');
+});
 /* openOwnerManage/renameOwnerSheet/renameCatSheet는 FUNCTIONS(실제 실행) 목록 밖이라
  * renderAssetSheet의 asFx/asGold/asQty 검증과 같은 extractFunction() 소스 패턴 검증을 쓴다
  * (app-evolve cycle148 develop — newCat은 openCatManage가 FUNCTIONS에 있어 실제 실행으로 검증). */
