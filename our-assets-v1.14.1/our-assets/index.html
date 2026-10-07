@@ -1328,7 +1328,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.79';
+const APP_VERSION='1.47.80';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -7206,12 +7206,12 @@ function go(tab){if(ST.aSel.mode){ST.aSel.mode=false;ST.aSel.ids.clear()}if(ST.l
  if(tab==='ledger')ST.ledgerMode='cal';else if(tab==='history')ST.ledgerMode='list'; /* 마지막 모드 기억 */
  document.body.classList.toggle('show-fab',tab!=='menu');renderers[tab]();updateSelBottom();
  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));$('page-'+tab).classList.add('active');$('page-'+tab).scrollTop=0;
- document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('on',b.dataset.tab===navTabOf(tab)));
+ document.querySelectorAll('.nav-btn').forEach(b=>{const on=b.dataset.tab===navTabOf(tab);b.classList.toggle('on',on);b.setAttribute('aria-current',on?'page':'false')});
  moveBlob(true);if(navigator.vibrate)navigator.vibrate(8);
  wireHdrFade($('page-'+tab));
  $('adSlot').textContent={home:'실시간 시세 · Pro로 광고 없이',assets:'우리집 자산 · 함께 관리하기',ledger:'카카오페이지 · 지금 열기',history:'전체내역 · Pro로 더 편하게',plan:'통장 흐름 · 목표 달성 도우미',menu:'월 900원 · 광고 제거'}[tab];
  updateAlerts();requestAnimationFrame(fitAll);}
-function buildNav(){$('nav').innerHTML=`<div class="nav-blob" id="navBlob"></div>`+TABS.map(t=>`<button class="nav-btn ${t.id==='home'?'on':''}" data-tab="${t.id}" onclick="navGo('${t.id}')">${svg(t.icon)}<span>${t.label}</span>${t.id==='plan'?'<i class="nav-badge" id="planBadge"></i>':''}</button>`).join('');
+function buildNav(){$('nav').innerHTML=`<div class="nav-blob" id="navBlob"></div>`+TABS.map(t=>`<button class="nav-btn ${t.id==='home'?'on':''}" data-tab="${t.id}" aria-current="${t.id==='home'?'page':'false'}" onclick="navGo('${t.id}')">${svg(t.icon)}<span>${t.label}</span>${t.id==='plan'?'<i class="nav-badge" id="planBadge"></i>':''}</button>`).join('');
  requestAnimationFrame(()=>moveBlob(false));
  window.addEventListener('resize',()=>moveBlob(false));
 }

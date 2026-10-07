@@ -11406,6 +11406,21 @@ test('popstate: _ovHistDepth가 0이고 _tabNavPushed면 진짜 백버튼으로 
   assert.ok(src.includes("if(_tabNavPushed){_tabNavPushed=false;go('home');}"), 'popstate 리스너에 _tabNavPushed 소비 후 go(\'home\') 호출이 없음');
 });
 
+/* ---------- 하단 탭바(.nav-btn) aria-current: 지금까지 'on' CSS 클래스만으로 활성 탭을
+ * 표시해서 스크린리더 사용자는 어느 탭이 선택됐는지 알 수 없었다(nw-dots/날짜피커는 이미
+ * aria-current를 쓰고 있었는데 nav-btn만 빠져 있던 불일치). buildNav/go 둘 다 DOM API를
+ * 직접 쓰므로(innerHTML 조립, querySelectorAll) FUNCTIONS vm 실행 대상에 넣지 않고 go
+ * 테스트와 동일하게 소스 패턴으로 확인한다. */
+test('buildNav: 각 탭 버튼에 초기 aria-current를 넣는다(home만 page, 나머지는 false)', () => {
+  const body = extractFunction('buildNav');
+  assert.ok(/aria-current="\$\{t\.id===.home.\?.page.:.false.\}"/.test(body), 'buildNav가 탭 버튼에 aria-current를 배선하지 않음');
+});
+test('go(tab): .nav-btn의 aria-current를 활성 탭에 맞춰 갱신한다', () => {
+  const body = extractFunction('go');
+  assert.ok(/setAttribute\('aria-current',\s*on\?'page':'false'\)/.test(body), "go(tab)이 nav-btn의 aria-current를 갱신하지 않음");
+  assert.ok(/b\.dataset\.tab===navTabOf\(tab\)/.test(body), 'go(tab)의 aria-current 갱신이 활성 탭 판정(navTabOf)과 연결돼 있지 않음');
+});
+
 /* ---------- sbErrMsg: Supabase 에러 메시지 매핑 (app-evolve cycle98 advance: 비밀번호 변경/재설정 추가) ----------
  * changePassword/resetPassword가 추가되면서 signUp/signIn 흐름에는 없던 두 메시지("기존과 같은
  * 비밀번호"·"요청 빈도 제한")가 새로 생겼다. 이 둘은 generic한 /password/i 분기보다 앞에 있어야 하는데,
