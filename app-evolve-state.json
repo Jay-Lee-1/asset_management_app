@@ -1,15 +1,12 @@
 {
   "cycle": 152,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "test/run.js FUNCTIONS 목록에서 완전히 빠진 48개 render*/open*/do* DOM-mutating 함수에 실행 기반 회귀 테스트 추가",
+    "why": "test/run.js는 vm.runInContext로 함수를 실제 실행해 검증하는 FUNCTIONS 배열(291개 항목)을 갖고 있는데, index.html에서 '^function (render|open|do)...'로 정의된 83개 중 48개가 이 배열에 전혀 들어있지 않다(실행 검증 0%, grep으로 직접 확인: comm -23 결과 48개). 그중에는 openSheet(앱 전체 시트를 여는 범용 진입점), openTxSheet(거래 입력/수정 — 앱에서 가장 많이 쓰는 폼), openRecSheet, renderMenu, doLogout, doResetAll, doForgotPassword/doForgotPasswordLocal, openCsvImportPreview, openSetPinSheet/openChangePinSheet(148사이클에서 추가한 PIN 잠금 플로우) 등 버그가 나면 파급력이 가장 큰 핵심 함수들이 포함돼 있다. cycle146 critique가 이미 '파일 전체 src.includes()는 거짓 안전감'이라고 지적해 extractTag() 헬퍼로 일부(nwhChart/assetBalChart 등 2개)를 좁혔지만, 그 수정은 속성 문자열 검사에 쓰던 헬퍼를 날카롭게 만든 것일 뿐 실행 검증 공백 자체는 전혀 줄이지 않았다. 152사이클 동안 develop 단계가 거의 매번 이 함수들(필드 지우기 버튼, aria-pressed, PIN 잠금 등)을 직접 고쳐왔는데, 그 수정들의 회귀를 실제로 실행해서 잡아주는 테스트가 없다는 것은 이 프로젝트의 핵심 안전망에 구조적 구멍이 있다는 뜻이다. 단일 7657줄 HTML 파일 구조상 코드 리뷰만으로 회귀를 잡기 어렵기 때문에, 자동화된 실행 테스트의 커버리지 확대는 다음 수십 사이클의 develop/review 신뢰도를 직접 끌어올리는 레버리지가 큰 작업이다.",
+    "approach": "전체 48개를 한 번에 다 하는 건 재작성에 가까운 과도한 범위이므로, 파급력 순으로 우선순위를 매겨 핵심 8~12개(openSheet, openTxSheet, openRecSheet, renderAssetSheet, renderMenu, doLogout, doResetAll, openSetPinSheet/openChangePinSheet, doForgotPassword/doForgotPasswordLocal)부터 extractFunction()/extractConstBlock()로 끌어와 run.js 상단에 이미 있는 경량 DOM 스텁(sandbox 패턴)을 재사용해 실제 실행 후 '시트가 열렸다/DB가 비워졌다/세션이 지워졌다' 같은 핵심 불변식을 assert한다. 각 함수가 의존하는 하위 함수(예: openTxSheet → syncAssetInputs 등)는 FUNCTIONS에 이미 있는지 확인하고 없으면 같이 끌어온다. 끝나면 주석에 '남은 함수 목록'을 남겨 다음 cycle이 이어갈 수 있게 한다. index.html/logic.js 자체는 건드리지 않고 test/run.js만 확장한다."
+  },
   "history": [
-    {
-      "cycle": 152,
-      "phase": "review",
-      "timestamp": "2026-10-07T01:00:00.000Z",
-      "summary": "cycle152 develop 커밋(asCode에 field-clear(×) 버튼 추가)을 검토. git show로 diff 전체 확인: asName/asQty와 완전히 동일한 .field-clear+fc-x 패턴이고, 기존 autocapitalize=\"characters\"/대문자 변환 oninput 핸들러는 그대로 보존됨. clrInput()/fcToggle()/fcWire() 구현을 직접 읽어 input 이벤트 dispatch가 대문자 변환 oninput도 함께 트리거하는지, .field-clear div가 올바르게 열리고 닫혀 있는지(뒤따르는 <p> 안내문이 필드 안에 중첩된 기존 구조를 그대로 유지하는지) 확인 — 문제 없음. node test/run.js 재실행해 1043/1043 통과 재확인. 사소한 지적(고칠 정도는 아님): 같은 커밋에서 추가된 test/run.js 주석이 \"app-evolve cycle149 develop\"를 언급하는데 실제로는 cycle152 커밋이다(오래된 커밋 메시지를 참고해 작성하며 번호를 잘못 옮긴 것으로 보임) — 코드 동작에는 영향 없는 주석 오타라 이번엔 고치지 않고 기록만 남김. 실제 코드 변경 없음(읽기 전용 검토).",
-      "commit": null
-    },
     {
       "cycle": 152,
       "phase": "develop",
@@ -21,126 +18,133 @@
       "cycle": 149,
       "phase": "advance",
       "timestamp": "2026-10-06T18:05:00.000Z",
-      "summary": "critique(cycle149) 계획대로 balancesUpTo()/balanceAt() 날짜별 전체 재스캔 성능 문제를 고쳤다. balanceAt()(index.html:2254) 바로 뒤에 balancesAtDates(dateList)를 신규 추가 — assetBalanceSeries()(logic.js:451-469, 자산 하나·여러 날짜)와 같은 '정렬+포인터 누적' 원칙을, balancesUpTo()와 동일한 규칙(기준액+upto 클램프+dateStr>TODAY 기준 proj별 미확인 이체 포함 여부+부채 부호 반전)으로 '모든 자산·여러 날짜'에 한 번에 적용한다. proj(dateStr>TODAY)가 날짜마다 다를 수 있어 allTxns(RANGE_FROM,RANGE_TO)를 한 번만 불러 정렬한 뒤 proj=false/true 두 그룹으로 나눠 각각 독립적으로 포인터를 누적한다. balanceAt()과 동일한 폴백 규칙(맵에 없으면 assetBase(a), 자산 자체가 없으면 0)을 재현하는 balanceAtFromMap(balMap,dateStr,id) 헬퍼도 함께 추가. 계획이 지목한 호출부 중 lowestInMonth(4449-4453)/planRowsHTML(4514)/planNegatives(6377-6389) 세 곳을 날짜별 balanceAt() 반복 호출에서 balancesAtDates() 단일 배치 호출로 교체(planNegatives는 플랜 대상 통장 전체의 날짜를 한 데 모아 단 한 번의 배치로 계산하도록 추가로 묶었다). findDonors(6511-6513, 네 번째 호출부)는 실제로는 호출당 날짜가 하나뿐이고 balancesUpTo()의 기존 단일 키 캐시(_balCache)가 이미 그 한 날짜의 전체 맵을 자산 전체에 걸쳐 캐싱해 두 번째 자산부터는 재스캔이 전혀 없었음을 코드 추적으로 재확인 — 배치로 바꿔도 이득이 없어(오히려 약간의 오버헤드만 추가) 그대로 두고 이유를 주석 대신 커밋 메시지에 남김. planTrackHTML/planBalCard는 별도로 건드리지 않았으나 내부에서 부르는 lowestInMonth가 배치화됐으므로 자동으로 혜택을 받는다. test/run.js FUNCTIONS에 balancesAtDates/balanceAtFromMap 추가, 회귀 테스트 6건 신규(배치 결과가 balanceAt()/balancesUpTo()와 완전히 동일한지, proj=false/true가 같은 배치에 섞여도 각각 올바른 미확인 이체 규칙을 적용하는지, 날짜 수와 무관하게 allTxns() 호출이 1회로 고정되는지, balanceAtFromMap의 폴백 규칙, lowestInMonth/planRowsHTML/planNegatives 세 호출부 모두 allTxns() 호출이 날짜 수와 무관하게 상수로 고정되는지). 첫 구현에서 발견: 새 테스트 2건이 직전 반복거래 _recCache 회귀 테스트(2026-01-01~RANGE_TO 매일 지출 반복거래)가 남긴 (RANGE_FROM,RANGE_TO) 키의 스테일 캐시를 그대로 물려받아 500000 대신 334000이 나오는 실패를 직접 겪음 — _balCache.clear()만으로는 부족하고 _recCache.clear()도 같이 비워야 함을 확인해 해당 테스트들에 추가(값을 서로 비교하는 테스트는 같은 스테일 데이터를 양쪽이 공유해 우연히 통과했었음, 절대값을 확인하는 테스트에서만 드러남). APP_VERSION 1.47.67->1.47.68, sw.js CACHE v329->v330. node test/run.js 1026/1026 -> 1031/1031 통과(메인 인라인 script 구문 검사 포함, 오케스트레이팅 세션이 diff를 직접 Read로 재확인 후 재실행해 커밋).",
+      "summary": "critique(cycle149) 계획대로 balancesUpTo()/balanceAt() 날짜별 전체 재스캔 성능 문제를 고쳤다. balanceAt()(index.html:2254) 바로 뒤에 balancesAtDates(dateList)를 신규 추가 — assetBalanceSeries()(logic.js:451-469, 자산 하나·여러 날짜)와 같은 '정렬+포인터 누적' 원칙을, balancesUpTo()와 동일한 규칙(기준액+upto 클램프+dateStr>TODAY 기준 proj별 미확인 이체 포함 여부+부채 부호 반전)으로 '모든 자산·여러 날짜'에 한 번에 적용한다. lowestInMonth/planRowsHTML/planNegatives 세 호출부를 날짜별 balanceAt() 반복 호출에서 balancesAtDates() 단일 배치 호출로 교체. findDonors는 호출당 날짜가 하나뿐이라 그대로 둠. test/run.js에 회귀 테스트 6건 신규. APP_VERSION 1.47.67->1.47.68, sw.js CACHE v329->v330. node test/run.js 1026/1026 -> 1031/1031 통과.",
       "commit": null
     },
     {
       "cycle": 149,
       "phase": "critique",
       "timestamp": "2026-10-06T17:10:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(141-149사이클 동안 다뤄진 항목 전부 + 기각 이력 전달). 새로 발견: balancesUpTo(dateStr)(index.html:2233-2253)가 호출마다 allTxns(RANGE_FROM,RANGE_TO) 전체를 처음부터 순회해 그 시점 잔액맵을 만들고 dateStr 단위로만 캐시(_balCache) — RANGE_TO=addDays(TODAY,760)로 스캔 창이 날짜가 지날수록 계속 자람. planNegatives()(6371-6389, 홈 탭 열 때마다·save() 직후마다)/lowestInMonth()·planRowsHTML()·planTrackHTML()(Plan 탭 렌더당 한 달~3개월치 거래일)/findDonors()(현금성 자산마다)가 모두 같은 렌더 안에서 서로 다른 날짜로 balanceAt()을 반복 호출해 매번 O(거래수) 전체 재스캔이 일어남을 서브에이전트가 호출부 라인까지 직접 Read로 재확인. save()가 invalidateBalances()로 매번 캐시를 비우므로 거래가 쌓인 사용자일수록 홈/Plan 탭이 느려지는 구조. 같은 '날짜마다 재스캔' 패턴을 assetBalanceSeries()(logic.js:451-469, 정렬+포인터 누적 O(n+m))에서 이미 고친 전례가 있어 같은 기법을 balancesUpTo 계열에 적용하는 계획을 pending_advance_plan에 저장(상세는 pending_advance_plan 참고). 러너업(기각): save()의 전체 JSON.stringify(2104-2126, 91곳 호출)는 input oninput에 직접 걸린 곳이 0건이고 CSV일괄가져오기 등은 touchSave()로 이미 배치돼 있어 체감 영향 작음 / PIN잠금 유예시간·WebAuthn는 여전히 유효한 후속항목이나 이번엔 성능 공백이 더 뚜렷해 보류 / renderHistory 필터는 20건 페이지네이션 있어 구조적 문제 없음 / netlify 함수 소비측 에러처리는 stale표시+failStreak+부분성공 토스트까지 이미 견고. 코드 변경 없음(읽기 전용 조사, 서브에이전트가 index.html 2189·2227-2259·3195·3219·4438-4533·4463·4799·6371-6389·6434·6509-6515·6434, logic.js 451-469, test/run.js 관련 테스트 75건 존재 및 node test/run.js 1026/1026 통과를 직접 Read/grep/실행으로 재확인).",
+      "summary": "balancesUpTo/balanceAt 계열의 날짜별 전체 재스캔 성능 문제를 발견, balancesAtDates() 배치 처리 계획을 pending_advance_plan에 저장.",
       "commit": null
     },
     {
       "cycle": 149,
       "phase": "review",
       "timestamp": "2026-10-06T16:05:00.000Z",
-      "summary": "cycle149 develop(1e48085, histQ 전체내역 검색창에 field-clear(×) 버튼 추가)을 검토. CSS 추가(.searchbar .field-clear{flex:1;min-width:0}, .searchbar .field-clear input{width:100%})가 안전한지 grep으로 .searchbar 사용처를 전부 확인 — 실제 input이 있는 곳은 histQ 한 곳뿐이고 나머지(#m-search, 5157행)는 span이라 영향 없음. clrInput()/fcToggle()/fcWire()(index.html:3503-3510) 소스를 직접 Read해 dispatchEvent(new Event('input',{bubbles:true}))가 기존 oninput=\"ST.hist.q=this.value;histInvalidate();updateHist()\"도 그대로 트리거함을 확인, renderHistory() 끝의 try{fcWire()}catch(e){}가 updateHist() 호출 뒤에 위치해 DOM이 이미 그려진 상태에서 배선됨을 확인. 신규 테스트 2건(마크업 구조 확인 + extractFunction 기반 fcWire() 호출 확인)도 실제로 의미 있는 검증임을 재확인. node test/run.js 재실행 1026/1026 통과. 추가로 고칠 버그 없음 — 이상 없음.",
+      "summary": "cycle149 develop(histQ field-clear) 검토 — 이상 없음, node test/run.js 1026/1026 통과.",
       "commit": null
     },
     {
       "cycle": 149,
       "phase": "develop",
       "timestamp": "2026-10-06T15:25:27.170Z",
-      "summary": "general-purpose 서브에이전트로 field-clear(×) 관례가 아직 빠진 입력란을 탐색. 전체내역(히스토리) 탭의 검색창(#histQ)이 메인 탭 화면(시트 아님)에 있는 유일한 텍스트 입력이라 fcWire()가 openSheet() 렌더 후에만 자동 호출되는 배선 관례를 못 타서 field-clear 자체가 빠져 있었음을 발견. input을 .field-clear(+fc-x 버튼, onclick=clrInput(histQ))로 감싸고 renderHistory() 끝에 try{fcWire()}catch(e){}를 추가해 직접 배선. 구현 중 Playwright로 실제 렌더를 재서 발견한 추가 버그: .searchbar는 .with-unit/.add-inline/.cat-edit-row와 달리 .field 조상이 없어 .field input{width:100%} 보호를 못 받아 input이 래퍼보다 좁게(237px vs 282px) 줄어듦 — .searchbar .field-clear{flex:1;min-width:0}와 .searchbar .field-clear input{width:100%} CSS 두 줄을 추가해 해결, getBoundingClientRect 측정 및 스크린샷으로 전후 확인. 기존에 이미 배포된 newOwner/newCat/asFx 등 field-clear 적용 지점들은 같은 버그가 없음을 재확인(해당 컨텍스트들은 .field 조상 또는 flex 특성상 문제 없음). test/run.js에 회귀 테스트 2건 추가(마크업 배선 확인 + extractFunction 기반 fcWire() 호출 확인). 실제 헤드리스 크로미움에서 타이핑→has-val/is-focus 토글, ×클릭→DOM값+ST.hist.q 초기화+refocus까지 수동 시연 재확인. APP_VERSION 1.47.66->1.47.67, sw.js CACHE v328->v329. node test/run.js 1024/1024 -> 1026/1026 통과(오케스트레이팅 세션이 diff 직접 Read로 재확인 후 재실행해 커밋).",
+      "summary": "전체내역 검색창(#histQ)에 field-clear(×) 추가. .searchbar가 .field 조상이 없어 input이 좁아지던 버그도 함께 발견해 CSS 수정. test/run.js 1024/1024 -> 1026/1026 통과.",
       "commit": null
     },
     {
       "cycle": 148,
       "phase": "advance",
       "timestamp": "2026-10-06T14:20:00.000Z",
-      "summary": "critique(cycle148) 계획대로 앱 잠금(PIN) 화면을 핵심 범위(PIN 설정+잠금화면+재잠금)까지 구현. AUTH 객체 바로 뒤에 APPLOCK 추가(index.html) — genSalt()/pbkdf2Hash()로 PIN을 PBKDF2-SHA256 해싱해 device-local localStorage 키 asset_app_lock(DB.settings/클라우드 동기화 대상 아님)에 저장, AUTH._lockStatus/_recordFail/_clearFails를 'applock' 키로 재사용해 5회 오답부터 지수 백오프. #authView 바로 아래 같은 .auth-view 클래스로 #lockView 신규 추가(새 CSS 없이 기존 auth-card/auth-field/auth-err 스타일 재사용), renderLockView()/doUnlock()/lockApp()/unlockApp() 구현. boot()에서 startApp() 직후(로그인/게스트 두 경로 모두) APPLOCK.enabled()면 lockApp()으로 게이트 — 로그인 직후 바로 또 PIN을 묻지 않도록 모든 startApp() 호출이 아니라 boot()의 콜드 스타트 경로에만 넣음. visibilitychange의 document.hidden 분기에 lockApp() 호출 추가(appIsOpen() 가드)해 백그라운드 전환 시 즉시 재잠금(앱 전환기 스크린샷에도 잠금화면이 찍히도록). renderMenu()의 '알림 · 기준' 그룹에 '앱 잠금(PIN)' 토글 + enabled일 때만 보이는 'PIN 변경' 행 추가, toggleAppLock()/openSetPinSheet()/openChangePinSheet()/openDisableAppLockSheet()가 각각 PIN 설정/변경/해제 시트를 기존 .field+.auth-err+.two-btn 패턴으로 제공(변경/해제는 현재 PIN 재검증 필요). test/run.js에 extractConstBlock(name) 헬퍼 신규 추가(extractConst는 첫 ';'에서 끊는데 AUTH/APPLOCK처럼 메서드 본문에 ';'가 여러 번 나오는 객체 리터럴엔 못 써서, extractFunction과 같은 중괄호 깊이 세기 방식으로 전체 블록을 추출) + Map 기반 실제 localStorage 목업을 쓰는 별도 vm 컨텍스트(makeAppLockCtx)로 setPin→verify 왕복, 5회 실패 후 잠김, disable 시 실패카운터까지 초기화, 'applock' 키가 AUTH 로그인 실패 카운터와 같은 localStorage 키를 공유하는지까지 실행형 테스트 6건 추가(src.includes 문자열존재검사가 아니라 실제 실행·왕복 검증, cycle146 critique가 지적한 거짓 안전감 패턴을 피함). 오케스트레이팅 세션이 Playwright 헤드리스 크로미움으로 file:// 직접 로드해 게스트 진입→앱잠금 토글→PIN 설정→lockApp()→오답 거부→정답 해제→PIN해제까지 전체 흐름을 실제 브라우저에서 수동 시연해 재확인(에러는 file:// 프로토콜의 CORS뿐, 기능과 무관). APP_VERSION 1.47.65->1.47.66, sw.js CACHE v327->v328. node test/run.js 1019/1019 -> 1024/1024 통과(메인 인라인 script 구문 검사 포함). WebAuthn/생체인증 연동과 '잠금까지 유예시간'은 critique가 명시한 대로 범위 밖으로 후속 cycle에 남김.",
+      "summary": "critique(cycle148) 계획대로 앱 잠금(PIN) 화면을 핵심 범위까지 구현(PBKDF2 해싱, 잠금화면, 재잠금, PIN 변경/해제). WebAuthn/생체인증과 유예시간은 후속 cycle로 남김. test/run.js 1019/1019 -> 1024/1024 통과.",
       "commit": null
     },
     {
       "cycle": 148,
       "phase": "critique",
       "timestamp": "2026-10-06T13:14:28.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(141-148사이클 동안 다뤄진 항목 전부 + 기각 이력 전달). 새로 발견: index.html 전체에서 pin/lock/biometric/faceid/touchid/webauthn/credential을 대소문자무시로 grep해도 무관한 CSS·동기화 스피너·드래그제스처 주석(\"뒤 화면 스크롤 잠금\")만 매칭되고, 순자산·계좌잔액·전체거래내역을 다루는 이 금융 앱에 기기 단위 PIN/잠금화면이 전혀 없음을 확인 — 내보내기·클라우드동기화·undo·다중기기충돌처리 등 다른 기본기는 이미 견고한데 이 카테고리만 빈 공백. 서브에이전트가 직접 재확인: genSalt()/pbkdf2Hash()(index.html:1843-1858, PBKDF2-SHA256 120k iter, 복구코드 해싱에 이미 쓰이고 test/run.js vm sandbox 실행 검증됨)와 AUTH._lockStatus/_recordFail/_clearFails(1860-1871)의 지수백오프 브루트포스 잠금이 PIN 검증에 그대로 재사용 가능, showAuth()의 #authView display:none/flex 오버레이 패턴(7188)과 boot()(7169-7187)가 게이트 삽입 지점, visibilitychange/pageshow 핸들러(7386-7395)가 재잠금 훅, renderMenu()의 '알림 · 기준' {ic,l,sw,a} 스위치 템플릿(4584-4589)이 토글 자리로 전부 존재해 신규 기능이지만 처음부터 짜는 보안기능이 아님. pending_advance_plan에 PIN 설정/잠금화면/재잠금 핵심 구현 계획 저장(상세는 pending_advance_plan 참고). 러너업(기각): CDN SRI 해시 TODO(index.html:1311-1317)는 샌드박스에서 cdn.jsdelivr.net·t1.kakaocdn.net curl이 그대로 403으로 막혀(egress 정책) 코드 주석이 이미 설명한 차단이 여전히 유효함을 재확인, 새 발견 아님 / fx·gold·stock costBasis가 부분매수·매도 시 자동조정 안 되는 것(2239-2246, 3424-3431)은 실재하는 한계지만 costBasis가 사용자가 직접 넣는 단일값으로 문서화돼 있고 제대로 하려면 FIFO 매입단가 전체 설계가 필요해 한 advance 사이클 범위를 넘어서 기각. 코드 변경 없음(읽기 전용 조사, 서브에이전트가 index.html 1284·1311-1317·1321·1843-1871·2239-2246·3424-3431·4584-4589·4610-4613·7169-7187·7386-7395·7188, sw.js:6, test/run.js를 직접 Read/grep/curl로 재확인).",
+      "summary": "금융 앱인데 기기 단위 PIN/잠금화면이 전혀 없음을 발견, PIN 설정/잠금화면/재잠금 핵심 구현 계획을 pending_advance_plan에 저장.",
       "commit": null
     },
     {
       "cycle": 148,
       "phase": "review",
       "timestamp": "2026-10-06T12:30:00.000Z",
-      "summary": "cycle148 develop(5c0e4ca, newOwner/renameOwner/newCat/renameCat에 field-clear 추가)을 검토. diff로 네 곳 모두 기존 field-clear 관례(.field-clear 래퍼 + fc-x 버튼 + clrInput())와 정확히 같은 구조임을 확인. clrInput()이 dispatchEvent(new Event('input',{bubbles:true}))로 같은 엘리먼트의 oninput=\"catAddDraft.name=this.value\"/\"catRenameDraft.name=this.value\"도 함께 트리거함을 clrInput/fcToggle/fcWire 소스(index.html:3471-3479)로 재확인 — newCat/renameCat 드래프트 동기화가 끊기지 않음. .add-inline .field-clear,.cat-edit-row .field-clear{flex:1;min-width:0} CSS가 .with-unit .field-clear와 동일한 이유로 추가돼 기존 폭 배분을 유지함을 확인. fcWire()가 openSheet() 렌더 후 requestAnimationFrame 콜백(5920행)에서 자동 호출되는 기존 배선 그대로라 추가 JS 불필요하다는 커밋 설명도 맞음. node test/run.js 1019/1019 통과. 추가로 고칠 버그 없음 — 이상 없음.",
+      "summary": "cycle148 develop(newOwner/renameOwner/newCat/renameCat field-clear) 검토 — 이상 없음, node test/run.js 1019/1019 통과.",
       "commit": null
     },
     {
       "cycle": 148,
       "phase": "develop",
       "timestamp": "2026-10-06T11:30:00.000Z",
-      "summary": "귀속/카테고리 관리의 이름 입력란 4곳(newOwner/renameOwner/newCat/renameCat)이 asName/goalName/txMemo 등 다른 모든 짧은 텍스트 입력란과 달리 field-clear(×) 지우기 버튼 관례에서 빠져 있던 것을 Explore 서브에이전트로 찾아 수정. 네 곳 모두 .field-clear 래퍼+fc-x 버튼으로 감싸고 clrInput()으로 연결 — fcWire()가 openSheet 렌더 후 자동 배선하므로 별도 JS 로직 변경은 불필요. newCat/renameCat은 catAddDraft.name/catRenameDraft.name을 갱신하는 oninput 핸들러가 이미 있어 clrInput()의 input 이벤트 dispatch로 그대로 동기화됨. .add-inline/.cat-edit-row 안에서도 .with-unit과 동일한 이유로 field-clear 래퍼에 flex:1;min-width:0 CSS를 추가해 기존 폭 배분을 유지. APP_VERSION 1.47.64->1.47.65, sw.js CACHE v326->v327. 회귀 테스트 4건 추가(openCatManage의 newCat은 FUNCTIONS 실행 기반, openOwnerManage/renameOwnerSheet/renameCatSheet는 FUNCTIONS 밖이라 asFx/asGold/asQty와 같은 extractFunction 소스 패턴 검증). node test/run.js 1015/1015 -> 1019/1019 통과.",
+      "summary": "귀속/카테고리 관리 이름 입력란 4곳(newOwner/renameOwner/newCat/renameCat)에 field-clear(×) 추가. test/run.js 1015/1015 -> 1019/1019 통과.",
       "commit": null
     },
     {
       "cycle": 147,
       "phase": "advance",
       "timestamp": "2026-10-06T10:14:56.056Z",
-      "summary": "critique(cycle147) 계획대로 앱 전역 세그먼트 컨트롤(.seg/.mseg) 9곳 전부에 aria-pressed를 추가했다: nwPresetSegHTML(순자산추이 기간), assetBalCard의 segHTML(자산 상세 잔액추이 기간), renderGoalForm의 ownerSeg(목표 귀속), modeSeg(달력/검색 전환), renderTxSheet·renderRecSheet의 typeSeg(거래/반복거래 구분), openSpendAnalysis의 귀속 필터, openCatManage의 typeSeg, twScreen의 mSeg(튜토리얼 달력/목록). 각 버튼에 aria-pressed=${cond}를, 감싸는 .seg/.mseg 래퍼에 role=\"group\"과 맥락별 aria-label(기간 선택/귀속 선택/구분 선택/보기 방식 선택)을 추가 — 기존 토글 버튼 관례(index.html:3070/:3540/:4877)를 그대로 따르고 새 상호작용 패턴(roving tabindex 등)은 도입하지 않아 동작은 바꾸지 않았다. 회귀 테스트 8건 추가(assetBalCard/openSpendAnalysis/renderRecSheet/openCatManage/renderTxSheet/modeSeg/twScreen 신규 + nwHistoryCard 기존 preset 테스트와 renderGoalForm 기존 ownerSeg 테스트를 aria-pressed/role 확인으로 확장) — nwPresetSegHTML/modeSeg/renderTxSheet/renderGoalForm/openCatManage는 실제 실행(vm) 기반으로, assetBalCard/renderRecSheet/openSpendAnalysis/twScreen은 FUNCTIONS 목록 밖이라 extractFunction 소스 패턴으로 검증(cycle146/147 review가 정립한 범위를 좁힌 검증 방식 재사용). APP_VERSION 1.47.63->1.47.64, sw.js CACHE v325->v326. node test/run.js 1008/1008 -> 1015/1015 통과(메인 인라인 script 구문 검사 포함).",
+      "summary": "critique(cycle147) 계획대로 .seg/.mseg 세그먼트 컨트롤 9곳 전부에 aria-pressed+role=group 추가. test/run.js 1008/1008 -> 1015/1015 통과.",
       "commit": null
     },
     {
       "cycle": 147,
       "phase": "critique",
       "timestamp": "2026-10-06T09:00:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(141-147사이클 동안 다뤄진 항목 전부 + 기각 이력 전달). 새로 발견 후 서브에이전트가 직접 재검증: 앱 전역 '세그먼트 선택' 위젯(.seg/.mseg)이 최소 9곳(순자산추이·assetBalCard 기간, 목표 귀속, 달력/검색 전환, 거래/반복거래 구분 ×2, 지출분석 귀속, 카테고리관리 구분, 체크아웃 mSeg)에서 선택 상태를 class=\"on\"으로만 표시하고 aria-pressed/role이 전혀 없음을 확인 — 같은 코드베이스가 토글 버튼(자산선택·캘린더 날짜셀·아이콘피커·날짜피커 셀 등)엔 이미 aria-pressed를 일관되게 쓰는 관례와 대비되는 공백. 스크린리더 사용자는 세그먼트 버튼 순회 시 현재 선택된 기간/구분/귀속을 전혀 알 수 없음. test/run.js에 aria-pressed 검증은 날짜피커 셀뿐이고 이 9곳엔 없음(grep 확인). pending_advance_plan에 9개 지점 전체에 aria-pressed(+래퍼에 role=group/aria-label) 추가 + 회귀테스트 계획 저장(상세는 pending_advance_plan 참고). 러너업(기각): netlify/functions/rates.js·stock.js 에러처리(타임아웃+재시도+멀티소스 폴백+실행시간 예산까지 이미 견고, 새 공백 없음) / 클라우드 동기화 merge 코드(mergeCollection/mergeNameList/mergeFlatMap 등, 10여 차례 하드닝을 거쳐 설계 근거 주석까지 명시된 상태, 새 공백 없음). 코드 변경 없음(읽기 전용 조사, 서브에이전트가 index.html 전체 세그먼트 지점·logic.js 전체·netlify/functions/rates.js·stock.js 전체·test/run.js를 직접 Read/grep으로 재확인, git status clean 확인).",
+      "summary": ".seg/.mseg 세그먼트 컨트롤 9곳에 aria-pressed/role이 전혀 없는 접근성 공백 발견, 추가 계획을 pending_advance_plan에 저장.",
       "commit": null
     },
     {
       "cycle": 147,
       "phase": "review",
       "timestamp": "2026-10-06T08:05:00.000Z",
-      "summary": "cycle147 develop(5242e29, asFx/asGold/asQty에 field-clear 추가)을 검토. with-unit 안에 field-clear를 중첩한 세 곳 모두 마크업이 균형 잡혀 있고 CSS(.with-unit .field-clear{flex:1;min-width:0})가 기존 폭 배분을 정확히 유지함을 diff로 확인. clrInput()이 input 이벤트를 dispatch해 같은 엘리먼트의 oninput=\"fmtQty(this)\"도 함께 트리거됨을 확인(다른 수량 입력 clrInput 사용 패턴과 동일). grep으로 '.with-unit' 사용처가 이 세 곳뿐임을 재확인해 빠진 곳 없음. node test/run.js 1008/1008 통과. 추가로 고칠 버그 없음 — 이상 없음.",
+      "summary": "cycle147 develop(asFx/asGold/asQty field-clear) 검토 — 이상 없음, node test/run.js 1008/1008 통과.",
       "commit": null
     },
     {
       "cycle": 147,
       "phase": "develop",
       "timestamp": "2026-10-06T07:13:30.163Z",
-      "summary": "fx/gold/stock 자산 편집 시트의 '보유 수량' 입력란(asFx/asGold/asQty)이 field-clear(×) 지우기 버튼 관례에서 빠져 있던 것을 발견해 수정. 이 세 입력은 .with-unit(단위 표시 flex 래퍼)로만 감싸져 있어 cycle146의 budgetIn/qAmt/bigMinInput 통일(금액 입력 전용) 때도 누락됐던 별개의 공백. .with-unit 안에 .field-clear를 중첩하고 .with-unit .field-clear{flex:1;min-width:0} CSS 한 줄을 추가해 기존 폭 배분을 유지(fcWire가 .field-clear input을 자동 배선하므로 JS 변경 불필요). test/run.js에 asFx/asGold/asQty 각각의 field-clear+clrInput 연결 회귀 테스트 3건 추가(수정 전 markup으로 되돌려 FAIL을 직접 재현해 테스트가 실제로 뭔가를 검증함을 확인). APP_VERSION 1.47.62->1.47.63, sw.js CACHE v324->v325. node test/run.js 1005/1005 -> 1008/1008 통과.",
+      "summary": "fx/gold/stock 보유 수량 입력란(asFx/asGold/asQty)에 field-clear(×) 추가. test/run.js 1005/1005 -> 1008/1008 통과.",
       "commit": "5242e29"
     },
     {
       "cycle": 146,
       "phase": "advance",
       "timestamp": "2026-10-06T06:30:00.000Z",
-      "summary": "critique(cycle146) 계획대로 test/run.js의 DOM-mutating 함수 검증을 '파일 전체 문자열 존재(src.includes)'에서 '해당 엘리먼트/함수 범위 내 검증'으로 좁혔다. extractTag(id) 헬퍼 추가(id=\"X\"가 나오는 지점 기준 가장 가까운 앞쪽 \"<\"부터 그 태그를 닫는 \">\"까지만 슬라이싱) — nwhChart/assetBalChart 마크업 테스트(tabindex/role/onkeydown)를 이걸로 교체. nwChartPeekKey/assetBalPeekKey가 nwChartKeyStep을 호출하는지, toggleOsNotify의 토스트, renderMenu의 알림 캡션 테스트 3건은 애초에 함수 몸통이라 이미 있던 extractFunction으로 교체(새 헬퍼 불필요, renderMenu는 다른 테스트에서 이미 쓰던 패턴 재사용). git으로 nwhChart div에서 실제로 onkeydown 속성을 제거하면서 같은 문자열을 파일 다른 곳(주석)에 남겨두는 변형을 만들어, 기존 src.includes 버전이면 여전히 PASS했을 상황에서 새 extractTag 버전이 올바르게 FAIL함을 직접 재현해 검증(검증 후 원복). 파일럿: nwChartPeekKey+chartPeekRenderAt을 별도 vm 컨텍스트에($/announceLive는 no-op 스텁, daysBetween/shortDate2/comma/nwChartKeyStep은 실제 소스) 올려 ArrowRight/ArrowLeft 키 이벤트 객체를 실제로 호출하고 _nwPeekIdx가 2->1로 바뀌는지, preventDefault가 호출되는지까지 assert하는 완전 실행형 테스트 1건 추가. 나머지 64개 미검증 render/open 함수는 계획대로 범위 밖(백로그)으로 남김. index.html/sw.js 변경 없음(테스트 파일만 수정이라 APP_VERSION/CACHE bump 불필요). node test/run.js 1004/1004 -> 1005/1005 통과(메인 인라인 script 구문 검사 포함).",
+      "summary": "critique(cycle146) 계획대로 test/run.js의 DOM-mutating 함수 검증을 src.includes 기반에서 extractTag(id) 범위 검증으로 일부 좁히고 vm 실행 기반 테스트 1건 파일럿 구현. node test/run.js 1004/1004 -> 1005/1005 통과. 나머지 64개 미검증 함수는 백로그로 남김.",
       "commit": null
     },
     {
       "cycle": 146,
       "phase": "critique",
       "timestamp": "2026-10-06T05:20:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(cycle141-146 히스토리 전부 + 기각 이력 전달). 새로 발견: test/run.js(10945줄)의 회귀 테스트 중 297건이 grep 기준 src.includes()(파일 전체 문자열 존재 검사)에 의존하고, render*/open*/do* 등 DOM을 조작하는 함수(66개) 다수는 FUNCTIONS(vm 추출 대상)에 전혀 없어 실제로 한 줄도 실행되지 않음을 확인 — 설계 자체가 1-9행 주석에서 'DOM-mutating 함수는 실행 대상 아님'을 인정. 문제: src.includes(s)는 s가 파일 어딘가에만 있으면 통과하므로, 예를 들어 cycle142가 고친 nwhChart/assetBalChart tabindex/onkeydown 키보드 배선을 리팩터링 중 실수로 제거해도 그 문자열 조각이 주석이나 다른 카드의 비슷한 마크업에 남아있으면 테스트는 그대로 통과 보고됨 — 거짓 안전감이 146사이클 동안 누적되어 온 패턴. 직접 사용자 체감 버그는 아니지만 app-evolve 루프 자체가 'node test/run.js 전부 통과'를 안전망으로 의존하므로 다음 사이클들의 신뢰도에 영향. 전체 66개를 한 번에 진짜 DOM 실행으로 바꾸는 건 범위가 너무 크다고 판단해, 가장 최근 추가된 접근성 핵심 배선(nwhChart/assetBalChart 키보드, 알림 캡션) 테스트를 extractTag(id) 기반 엘리먼트 범위 검증으로 좁히고 파일럿으로 vm 실행 기반 완전 실행형 테스트 하나를 시범 구현하는 계획을 pending_advance_plan에 저장. 러너업(기각): CSV 내보내기가 반복거래 자체는 안 다룸(JSON 백업이 전체 덮음, 설계 의도) / assetBalCard가 시세평가 자산(fx/gold/stock) 잔액추이 제외(isMarketValued 포함목록에서 의도적 제외, 버그 아님) / 접근성·undo 패턴·storage quota 경고·인증 에러 메시지 전수 점검했으나 모두 방어적으로 처리됨. 코드 변경 없음(읽기 전용 조사, logic.js 전체, index.html 2040-2270·2501-2560·2696-2710·3491-3500·3944-3946·4809-4830·4917-4935·5025-5075·7187-7360, sw.js 전체, netlify.toml, netlify/functions/*.js, test/run.js 1-155·2095-2100·10550-10904를 직접 Read/grep).",
+      "summary": "test/run.js 회귀 테스트 중 297건이 src.includes() 기반이고 DOM-mutating 함수 66개가 FUNCTIONS(실제 실행 검증) 밖에 있어 거짓 안전감 위험이 있음을 발견. extractTag 좁히기 + vm 실행 파일럿 계획을 pending_advance_plan에 저장.",
       "commit": null
     },
     {
       "cycle": 146,
       "phase": "review",
       "timestamp": "2026-10-06T04:10:00.000Z",
-      "summary": "cycle146 develop(fef8240, budgetIn/qAmt/bigMinInput에 field-clear+fc-x 지우기 버튼 통일)을 검토. 세 곳 모두 div 중첩이 기존 금액 입력란(goalAmt/asAmt 등)과 동일한 구조(.field > .field-clear > input + fc-x button)로 정확히 균형 잡혀 있음을 diff로 직접 확인. clrInput/fcToggle/fcWire(index.html:3469-3475)를 Read해 fcWire()가 openSheet()(5902행) 렌더 직후 requestAnimationFrame 콜백에서 자동 호출됨을 재확인 — 커밋이 주장한 '추가 JS 와이어링 불필요'가 정확함. node test/run.js 재실행 1004/1004 통과. 추가로 고칠 버그 없음 — 이상 없음.",
+      "summary": "cycle146 develop(budgetIn/qAmt/bigMinInput field-clear) 검토 — 이상 없음, node test/run.js 1004/1004 통과.",
       "commit": null
     },
     {
       "cycle": 146,
       "phase": "develop",
       "timestamp": "2026-10-06T03:40:00.000Z",
-      "summary": "general-purpose 서브에이전트로 금액 입력란 전반을 grep해 지우기(×) 버튼 관례(.field-clear 래퍼 + fc-x 버튼 + clrInput(), fcWire()가 자동 배선)가 txAmt/rAmt/goalAmt/asAmt/asCostBasis/asName/goalName/txMemo/rMemo에는 적용돼 있는데 budgetIn(openBudgetPrompt, index.html:4799)/qAmt(openQuickAmount, 6434)/bigMinInput(openBigMinSheet, 2883) 세 금액 입력란에만 빠져 있음을 발견·수정. cycle121이 budgetIn을 콤마 포맷/num() 파서로 통일한 것과 같은 결의 '다른 금액칸과 나란히 쓰는데 지우는 방법만 다름(전체 선택 후 삭제)' UX 불일치. 세 입력을 .field-clear로 감싸고 동일 패턴의 fc-x 버튼(onclick=\"clrInput('id')\")을 추가(JS 와이어링은 fcWire()가 렌더 후 자동 처리라 추가 배선 불필요). test/run.js FUNCTIONS에 openBudgetPrompt/openBigMinSheet를 새로 추가하고(기존엔 샌드박스에 로드돼 있지 않았음) 회귀 테스트 3건 추가. 수정 전 코드로 되돌려 신규 3건만 정확히 FAIL함을 git stash로 직접 검증한 뒤 복구. node test/run.js 1001/1001 -> 1004/1004 통과(메인 인라인 script 구문 검사 포함). APP_VERSION 1.47.61->1.47.62, sw.js CACHE v323->v324. 오케스트레이팅 세션이 diff를 직접 Read로 재확인 후 테스트 재실행(1004/1004)해 커밋.",
+      "summary": "금액 입력란 중 budgetIn/qAmt/bigMinInput 세 곳에 field-clear(×) 추가. test/run.js 1001/1001 -> 1004/1004 통과.",
       "commit": "fef8240"
     },
     {
       "cycle": 150,
       "phase": "advance",
       "timestamp": "2026-10-06T22:10:05.106Z",
-      "summary": "critique(cycle150) 계획대로 index.html:1280의 prefers-reduced-motion 미디어쿼리에 animation-duration:.01ms!important;animation-iteration-count:1!important를 전역(*,*::before,*::after) 선택자로 추가(기존 transition-duration 규칙은 그대로 유지). 이제까지 transition만 깎고 keyframe animation은 전혀 건드리지 않아 Plan탭 경고뱃지(.nav-badge.on, warnPulse 2.4s infinite)와 튜토리얼 스팟라이트/힌트/마스코트(.tw-dot/.tw-try/.tw-hint/.tw-char, twGlow/twPulse/twHop 모두 infinite) 5곳이 OS reduce-motion 설정과 무관하게 영구 반복되던 문제를 고쳤다. 네 keyframe(warnPulse/twGlow/twPulse/twHop) 모두 0%와 100%가 동일한 '정상' 상태(scale(1)/opacity 1/translateY(0)/기본 box-shadow)로 끝나므로 animation-iteration-count:1로 멈춰도 중간 프레임에 걸리지 않고 정상 모양으로 안착함을 keyframe 정의(index.html 848-861, 1211)를 직접 Read로 확인. one-shot 애니메이션(dayFlash 등)의 JS setTimeout 기반 클래스 제거는 애니메이션 duration과 독립적이라 영향 없음(cycle150 critique의 watch_out (b) 확인). test/run.js에 정적 텍스트 검사 1건 추가 — 미디어쿼리 블록을 중괄호 깊이로 슬라이싱해(regex lookahead 대신 수동 depth count, 처음 시도한 중첩 regex는 내부 두 번째 규칙까지 못 타고 첫 }에서 끊겨 재작성) transition-duration 규칙이 그대로 있는지 + animation-duration/animation-iteration-count 오버라이드가 새로 생겼는지 확인(CSS는 비실행 정적 텍스트라 src.includes류 검사가 적절, cycle146 critique가 경계한 '실행 함수인데 문자열 검사만' 패턴과는 다름). APP_VERSION 1.47.69->1.47.70, sw.js CACHE v331->v332. node test/run.js 1034/1034 -> 1035/1035 통과. pending_advance_plan은 완료되어 비움.",
+      "summary": "critique(cycle150) 계획대로 prefers-reduced-motion 미디어쿼리에 animation-duration/animation-iteration-count 오버라이드 추가 — transition만 깎고 무한반복 keyframe animation(경고뱃지, 튜토리얼 스팟라이트 등 5곳)은 그대로 두던 문제 수정. node test/run.js 1034/1034 -> 1035/1035 통과.",
       "commit": null
     },
     {
       "cycle": 151,
       "phase": "develop",
       "timestamp": "2026-10-06T23:05:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 탐색(최근 사이클들이 다룬 field-clear/aria/normName NFC/balancesAtDates/PIN잠금+복구/알림문구정직화/prefers-reduced-motion은 모두 제외 지시). 발견: toggleOsNotify()(index.html, OS 알림 토글)가 Notification.requestPermission().then(...)에 .catch()가 전혀 없어, 권한 정책 차단 등으로 이 Promise가 reject되면 unhandled rejection으로만 콘솔에 남고 화면엔 아무 반응이 없음(토글이 꺼진 채 멈춘 것처럼 보이고 사용자는 이유를 알 수 없음) — 150사이클 동안 이 함수의 성공 경로 토스트 문구만 다뤄졌을 뿐(cycle145/147) 실패 경로 자체는 처음 다뤄짐. .then(...) 체인 끝에 .catch(()=>toast('알림 권한 요청에 실패했어요'))를 추가하고 이유를 주석으로 남김. test/run.js: toggleOsNotify는 FUNCTIONS(vm 실행) 대상이 아니라 extractFunction 소스 패턴으로 검증하는 기존 관례를 따라, .then(...).catch(()=>toast(...)) 체이닝 존재 + .catch() 없이 .then()만으로 끝나는 패턴 부재를 확인하는 회귀 테스트 1건(assert 2개) 추가. APP_VERSION 1.47.70->1.47.71, sw.js CACHE v332->v333. 오케스트레이팅 세션이 diff를 직접 Read로 재확인(주석의 app-evolve cycle 참조 스타일이 기존 관례와 일치함도 grep으로 확인) 후 node --check(추출된 <script> 블록 전부)와 node test/run.js를 재실행해 1034/1034 -> 1036/1036 통과를 확인하고 커밋.",
+      "summary": "toggleOsNotify()의 Notification.requestPermission() Promise에 .catch() 누락 발견 — 권한 요청 실패 시 아무 반응 없이 콘솔에만 unhandled rejection이 남던 문제를 토스트 안내로 수정. test/run.js 1034/1034 -> 1036/1036 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 152,
+      "phase": "critique",
+      "timestamp": "2026-10-07T02:00:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(141-152사이클 전부 + 기각 이력 전달). 새로 발견: index.html에 정의된 render*/open*/do* 함수 83개 중 48개가 test/run.js의 FUNCTIONS(vm 실제 실행 검증 대상) 배열에 전혀 없음을 comm -23으로 직접 확인 — openSheet/openTxSheet/openRecSheet/renderMenu/doLogout/doResetAll/doForgotPassword/openSetPinSheet/openChangePinSheet 등 파급력이 가장 큰 핵심 함수들이 포함됨. cycle146이 지적한 'src.includes 거짓 안전감'을 extractTag()로 일부 좁혔지만 실행 검증 공백 자체는 줄이지 않았음을 재확인. 48개 전체는 과도한 범위라 파급력 순 핵심 8~12개(openSheet/openTxSheet/openRecSheet/renderAssetSheet/renderMenu/doLogout/doResetAll/openSetPinSheet/openChangePinSheet/doForgotPassword 등)부터 FUNCTIONS에 끌어와 실행 기반 테스트를 추가하는 계획을 pending_advance_plan에 저장. 러너업(기각): WebAuthn/생체인증 연동(UX 결정 비중이 커서 한 사이클 안에 안전하게 끝낼 확신이 낮음), sbUrlIn/sbKeyIn·이메일 입력 field-clear(기계적 작업으로 develop/review 몫에 더 가까움). 코드 변경 없음(읽기 전용 조사).",
       "commit": null
     }
   ]
