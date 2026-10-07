@@ -1328,7 +1328,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.76';
+const APP_VERSION='1.47.77';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -7440,13 +7440,52 @@ function setAppLockGrace(sec){APPLOCK.setGrace(sec);closeSheet();renderMenu();to
  * verify() 성공 없이는 영원히 #lockView에 막혀서 앱 잠금을 풀기 위해 사이트 데이터 전체를
  * 지워야 했다(이 기기에만 있는 자산 내역 전체가 함께 사라짐). PIN은 암호화 키가 아니라 단순
  * 기기-로컬 화면 잠금이라, 데이터는 건드리지 않고 APPLOCK만 초기화해도 안전하다
- * (app-evolve cycle151 develop). */
+ * (app-evolve cycle151 develop).
+ * 다만 질문 없이 확인 버튼 한 번으로 바로 풀리면 App-Lock이 막으려던 것(분실/도난 기기·동거인의
+ * 무단 접근) 자체가 무력화된다. email 계정은 비밀번호가 있으므로 기존 로그인 검증(AUTH.signIn)을
+ * 그대로 재사용해 복구 전에 본인 확인을 요구하고(데이터는 여전히 건드리지 않음 — 위 cycle151 보장
+ * 유지), 비밀번호가 없는 guest/kakao 계정은 검증할 수단이 없어 최소한 즉시·무경고 우회만은
+ * 막는 강제 대기 + 명시 경고로 대체한다(app-evolve cycle155 advance). */
 function openForgotPinSheet(){
+ if(accountKind()==='email'){
+  openSheet(`<h3>PIN을 잊으셨나요?</h3>
+   <div class="desc">PIN은 이 기기에만 저장돼 있어 복구 코드로 찾을 수 없어요. 계정 비밀번호를 확인하면 앱 잠금만 꺼지고, 저장된 자산 데이터는 그대로 남아요. 다시 잠그고 싶으면 메뉴 › 설정에서 새 PIN을 설정해 주세요.</div>
+   <div class="field"><label for="fpinPwIn">계정 비밀번호</label><div class="pw-wrap"><input id="fpinPwIn" type="password" autocomplete="current-password" placeholder="비밀번호" onkeydown="if(event.key==='Enter')doForgotPin()"><button type="button" class="pw-x" aria-label="비밀번호 표시" onclick="togglePwVis('fpinPwIn')">${svg('eye',18)}</button></div></div>
+   <div id="fpinErr" class="auth-err" style="display:none"></div>
+   <div class="two-btn" style="margin-top:14px"><button class="btn btn-soft cancel" onclick="closeSheet()">취소</button><button class="btn btn-primary" id="fpinBtn" onclick="doForgotPin()">잠금 초기화</button></div>`);
+  setTimeout(()=>{const el=$('fpinPwIn');el&&el.focus()},120);
+  return;
+ }
  openSheet(`<h3>PIN을 잊으셨나요?</h3>
-  <div class="desc">PIN은 이 기기에만 저장돼 있어 복구 코드로 찾을 수 없어요. 초기화하면 앱 잠금만 꺼지고, 저장된 자산 데이터는 그대로 남아요. 다시 잠그고 싶으면 메뉴 › 설정에서 새 PIN을 설정해 주세요.</div>
-  <div class="two-btn" style="margin-top:14px"><button class="btn btn-soft cancel" onclick="closeSheet()">취소</button><button class="btn btn-primary" onclick="doForgotPin()">잠금 초기화</button></div>`);
+  <div class="desc">⚠️ 비밀번호가 없는 계정(게스트/카카오)이라 본인 확인을 할 수 없어요. <b>본인 기기일 때만</b> 계속하세요 — 다른 사람의 기기라면 지금 취소해 주세요. 초기화해도 앱 잠금만 꺼지고 저장된 자산 데이터는 그대로 남아요.</div>
+  <div id="fpinWaitMsg" class="auth-err" style="display:block;color:var(--text-2)">${FPIN_WAIT_SEC}초 후 초기화할 수 있어요…</div>
+  <div class="two-btn" style="margin-top:14px"><button class="btn btn-soft cancel" onclick="closeSheet()">취소</button><button class="btn btn-primary" id="fpinBtn" disabled onclick="doForgotPin()">잠금 초기화</button></div>`);
+ tickForgotPinWait(FPIN_WAIT_SEC-1);
 }
-function doForgotPin(){
+const FPIN_WAIT_SEC=5;
+/* 비밀번호 없는 계정용 강제 대기 카운트다운. 매초 재귀 setTimeout으로 틱하며, 시트가 닫히거나
+ * 다른 화면으로 교체돼 두 엘리먼트($('fpinWaitMsg')/$('fpinBtn'))가 더 이상 없으면 조용히
+ * 멈춘다 — renderLockView의 지수 백오프 재시도 타이머와 같은 패턴. */
+function tickForgotPinWait(left){
+ const m=$('fpinWaitMsg'),b=$('fpinBtn');
+ if(!m||!b)return;
+ if(left<=0){m.textContent='이제 초기화할 수 있어요';b.disabled=false;return}
+ m.textContent=`${left}초 후 초기화할 수 있어요…`;
+ setTimeout(()=>tickForgotPinWait(left-1),1000);
+}
+async function doForgotPin(){
+ if(accountKind()==='email'){
+  const btn=$('fpinBtn');if(btn&&btn.disabled)return;
+  const pw=($('fpinPwIn')&&$('fpinPwIn').value)||'';
+  const errEl=$('fpinErr');if(errEl)errEl.style.display='none';
+  if(btn)btn.disabled=true;
+  const r=await AUTH.signIn(SESSION,pw);
+  if(btn)btn.disabled=false;
+  if(!r.ok){
+   if(errEl){errEl.textContent=r.err||'비밀번호가 일치하지 않아요';errEl.style.display='block'}
+   return;
+  }
+ }
  APPLOCK.disable();closeSheet();unlockApp();toast('앱 잠금을 초기화했어요');
 }
 function toggleAppLock(){

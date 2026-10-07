@@ -168,7 +168,7 @@ const FUNCTIONS = [
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards',
   'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'openCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter',
   'genSalt', 'pbkdf2Hash', 'genRecoveryCode', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer', 'openConfirmTransfer',
-  'renderLockView', 'openForgotPinSheet', 'doForgotPin',
+  'renderLockView', 'openForgotPinSheet', 'doForgotPin', 'tickForgotPinWait',
   'confirmTransferNow', 'postponeTransfer', 'confirmRecNow',
   'foreignSaveIsNewer', 'applyForeignSave', 'openCopyBackup', 'copyBackup', 'findDonors',
   'recIsVarying', 'varyingRecs', 'fixShortfallDefaultDate', 'openFixShortfall', 'lastActualAmount', 'openQuickAmount',
@@ -224,7 +224,7 @@ const FUNCTIONS = [
 // WeakSet — 저장 완료된 draft 객체를 표시해 같은 draft로 재호출되면 조용히 무시한다.
 // SUPABASE_URL/SUPABASE_ANON_KEY는 sbCfg()가 localStorage에 저장된 값이 없을 때 돌아가는
 // 기본값이다(app-evolve cycle152 advance, doForgotPassword/doForgotPasswordLocal 분기 테스트용).
-const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY'];
+const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC'];
 // _histCache는 filteredHist()가 재대입(={key,list})하는 let 선언이라 CONSTS(extractConst)로는
 // 못 끌어오므로 별도의 LETS 목록으로 extractLet을 통해 가져온다.
 // _copyIsCsv도 같은 이유(openCopyBackup()이 재대입)로 LETS를 통해 가져온다.
@@ -472,7 +472,14 @@ const sandbox = {
   // asName은 syncAssetInputs()의 이름 trim() 회귀 테스트용(공백만 있는 이름이 그대로 저장되던 버그).
   // asNameValue가 undefined인 기본 상태에서는 null을 반환해, 이 mock 추가 이전처럼 다른 테스트의
   // syncAssetInputs()/saveAsset() 호출에서 asDraft.name이 건드려지지 않도록 한다.
-  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'budgetIn' ? { value: sandbox.budgetInValue } : id === 'goalName' ? (sandbox.goalNameValue === undefined ? null : { value: sandbox.goalNameValue }) : id === 'goalAmt' ? (sandbox.goalAmtValue === undefined ? null : { value: sandbox.goalAmtValue }) : id === 'inqText' ? (sandbox.inqTextValue === undefined ? null : { value: sandbox.inqTextValue }) : id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-plan' ? sandbox.pagePlanEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : id === 'ledgerCard' ? (sandbox.ledgerCardMissing ? null : sandbox.ledgerCardEl) : id === 'assetBody' ? (sandbox.assetBodyMissing ? null : sandbox.assetBodyEl) : id === 'newOwner' ? (sandbox.newOwnerValue === undefined ? null : { value: sandbox.newOwnerValue }) : id === 'renameOwner' ? (sandbox.renameOwnerValue === undefined ? null : { value: sandbox.renameOwnerValue }) : id === 'auEmail' ? (sandbox.auEmailValue === undefined ? null : { value: sandbox.auEmailValue }) : null,
+  // fpinPwIn/fpinErr/fpinBtn/fpinWaitMsg는 doForgotPin()의 email 분기(계정 비밀번호 검증)와
+  // guest/kakao 분기(강제 대기 카운트다운)를 실제 실행으로 검증하기 위한 흉내다(app-evolve
+  // cycle155 advance). fpinErrEl/fpinBtnEl/fpinWaitMsgEl은 함수가 직접 style/textContent/disabled를
+  // 대입하므로 bkTextEl처럼 호출 간에도 값이 남는 공유 객체로 선언한다.
+  fpinErrEl: { style: { display: 'none' }, textContent: '' },
+  fpinBtnEl: { disabled: false },
+  fpinWaitMsgEl: { style: { display: 'none' }, textContent: '' },
+  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'budgetIn' ? { value: sandbox.budgetInValue } : id === 'goalName' ? (sandbox.goalNameValue === undefined ? null : { value: sandbox.goalNameValue }) : id === 'goalAmt' ? (sandbox.goalAmtValue === undefined ? null : { value: sandbox.goalAmtValue }) : id === 'inqText' ? (sandbox.inqTextValue === undefined ? null : { value: sandbox.inqTextValue }) : id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-plan' ? sandbox.pagePlanEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : id === 'ledgerCard' ? (sandbox.ledgerCardMissing ? null : sandbox.ledgerCardEl) : id === 'assetBody' ? (sandbox.assetBodyMissing ? null : sandbox.assetBodyEl) : id === 'newOwner' ? (sandbox.newOwnerValue === undefined ? null : { value: sandbox.newOwnerValue }) : id === 'renameOwner' ? (sandbox.renameOwnerValue === undefined ? null : { value: sandbox.renameOwnerValue }) : id === 'auEmail' ? (sandbox.auEmailValue === undefined ? null : { value: sandbox.auEmailValue }) : id === 'fpinPwIn' ? (sandbox.fpinPwInValue === undefined ? null : { value: sandbox.fpinPwInValue }) : id === 'fpinErr' ? sandbox.fpinErrEl : id === 'fpinBtn' ? sandbox.fpinBtnEl : id === 'fpinWaitMsg' ? sandbox.fpinWaitMsgEl : null,
   bkTextEl: { value: 'backup-text', select: () => {}, setSelectionRange: () => {} },
   // copyBackup()의 navigator.clipboard 체크가 ReferenceError 없이 "지원 안 함"으로 지나가게
   // 하는 최소 흉내(document.execCommand는 try/catch로 감싸져 있어 굳이 스텁이 필요 없음).
@@ -8924,7 +8931,10 @@ test('index.html 소스: visibilitychange 핸들러가 hidden 분기에서 lockA
 
 /* ---------- PIN을 잊었을 때의 탈출구(app-evolve cycle151 develop) — APPLOCK에는 복구 코드
  * 개념이 없어서, 이게 없으면 verify() 성공 없이는 영원히 #lockView에 막혀 앱 잠금을 풀기
- * 위해 사이트 데이터 전체를 지워야 했다(이 기기에만 있는 자산 내역 전체가 함께 사라짐). ---------- */
+ * 위해 사이트 데이터 전체를 지워야 했다(이 기기에만 있는 자산 내역 전체가 함께 사라짐).
+ * cycle155 advance부터는 email 계정은 계정 비밀번호 검증(AUTH.signIn 재사용)을 통과해야만 풀리고,
+ * 비밀번호가 없는 guest/kakao 계정은 짧은 강제 대기 뒤에만 풀린다 — 질문 없이 확인 한 번으로
+ * App-Lock 자체가 무력화되던 문제의 수정. ---------- */
 test('renderLockView: PIN 잠금 화면에 계정 비밀번호 찾기(auth-forgot)와 같은 스타일의 "PIN을 잊으셨나요?" 링크가 openForgotPinSheet로 연결돼 있다', () => {
   const $orig = sandbox.$;
   const authOrig = sandbox.AUTH;
@@ -8942,14 +8952,34 @@ test('renderLockView: PIN 잠금 화면에 계정 비밀번호 찾기(auth-forgo
     sandbox.AUTH = authOrig;
   }
 });
-test('openForgotPinSheet: 데이터는 그대로 남고 잠금만 꺼진다는 설명과 함께 doForgotPin으로 연결된 확인 시트를 띄운다', () => {
+test('openForgotPinSheet: guest/kakao(비밀번호 없는) 계정은 경고 문구와 함께 확인 버튼이 처음엔 비활성이다(강제 대기)', () => {
+  assert.strictEqual(sandbox.SESSION, null, '이 테스트는 기본(guest) 세션 상태를 가정함');
   sandbox.lastSheetHtml = null;
   sandbox.openForgotPinSheet();
+  assert.ok(sandbox.lastSheetHtml.includes('본인 확인을 할 수 없어요'), '비밀번호 없는 계정 경고 문구가 없음');
   assert.ok(sandbox.lastSheetHtml.includes('저장된 자산 데이터는 그대로 남아요'), '데이터는 안전하다는 안내가 없음');
-  assert.ok(sandbox.lastSheetHtml.includes('onclick="doForgotPin()"'), 'doForgotPin 연결이 없음');
+  assert.ok(sandbox.lastSheetHtml.includes('id="fpinBtn" disabled onclick="doForgotPin()"'), '대기 중엔 확인 버튼이 비활성이어야 함');
   assert.ok(sandbox.lastSheetHtml.includes('onclick="closeSheet()"'), '취소 버튼이 없음');
 });
-test('doForgotPin: 틀린/잊은 PIN을 묻지 않고 APPLOCK만 초기화해 잠금을 풀고, 시트를 닫고 토스트로 알린다(자산 데이터 자체는 건드리지 않음)', () => {
+test('openForgotPinSheet: email 계정은 비밀번호 확인이 필요하다는 안내와 함께 비밀번호 입력칸(즉시 활성화된 확인 버튼)을 띄운다', () => {
+  const sessionOrig = sandbox.SESSION, authOrig = sandbox.AUTH;
+  sandbox.SESSION = 'user@example.com';
+  sandbox.AUTH = { rec: () => null };
+  try {
+    sandbox.lastSheetHtml = null;
+    sandbox.openForgotPinSheet();
+    assert.ok(sandbox.lastSheetHtml.includes('id="fpinPwIn"'), '계정 비밀번호 입력칸이 없음');
+    assert.ok(sandbox.lastSheetHtml.includes("togglePwVis('fpinPwIn')"), '비밀번호 표시 토글이 연결돼 있지 않음');
+    assert.ok(sandbox.lastSheetHtml.includes('저장된 자산 데이터는 그대로 남아요'), '데이터는 안전하다는 안내가 없음');
+    assert.ok(sandbox.lastSheetHtml.includes('id="fpinBtn" onclick="doForgotPin()"'), 'email 계정은 대기 없이 바로 확인 버튼이 활성이어야 함(비밀번호 검증이 대신 막음)');
+    assert.ok(sandbox.lastSheetHtml.includes('onclick="closeSheet()"'), '취소 버튼이 없음');
+  } finally {
+    sandbox.SESSION = sessionOrig;
+    sandbox.AUTH = authOrig;
+  }
+});
+test('doForgotPin: guest/kakao(비밀번호 없는) 계정은 PIN을 묻지 않고 APPLOCK만 초기화해 잠금을 풀고, 시트를 닫고 토스트로 알린다(자산 데이터 자체는 건드리지 않음)', () => {
+  assert.strictEqual(sandbox.SESSION, null, '이 테스트는 기본(guest) 세션 상태를 가정함');
   sandbox.appLockDisableCalls = 0;
   sandbox.unlockAppCalls = 0;
   sandbox.closeSheetCalls = 0;
@@ -8959,6 +8989,67 @@ test('doForgotPin: 틀린/잊은 PIN을 묻지 않고 APPLOCK만 초기화해 �
   assert.strictEqual(sandbox.unlockAppCalls, 1, 'unlockApp()으로 화면이 풀려야 함');
   assert.strictEqual(sandbox.closeSheetCalls, 1);
   assert.ok(/초기화/.test(sandbox.lastToast));
+});
+test('doForgotPin: email 계정은 계정 비밀번호(AUTH.signIn)가 맞아야만 APPLOCK을 초기화한다', async () => {
+  const sessionOrig = sandbox.SESSION, authOrig = sandbox.AUTH;
+  sandbox.SESSION = 'user@example.com';
+  let signInArgs = null;
+  sandbox.AUTH = { rec: () => null, signIn: async (email, pw) => { signInArgs = [email, pw]; return { ok: true, email: 'user@example.com' }; } };
+  sandbox.fpinPwInValue = 'correct-pw';
+  sandbox.fpinErrEl.style.display = 'block'; sandbox.fpinErrEl.textContent = 'stale';
+  sandbox.appLockDisableCalls = 0; sandbox.unlockAppCalls = 0; sandbox.closeSheetCalls = 0; sandbox.lastToast = null;
+  try {
+    await sandbox.doForgotPin();
+    assert.deepStrictEqual(signInArgs, ['user@example.com', 'correct-pw'], '현재 세션 이메일과 입력한 비밀번호로 AUTH.signIn을 불러야 함');
+    assert.strictEqual(sandbox.appLockDisableCalls, 1, '비밀번호가 맞으면 APPLOCK.disable()이 호출돼야 함');
+    assert.strictEqual(sandbox.unlockAppCalls, 1);
+    assert.strictEqual(sandbox.closeSheetCalls, 1);
+    assert.ok(/초기화/.test(sandbox.lastToast));
+  } finally {
+    sandbox.SESSION = sessionOrig;
+    sandbox.AUTH = authOrig;
+    sandbox.fpinPwInValue = undefined;
+  }
+});
+test('doForgotPin: email 계정은 비밀번호가 틀리면 AUTH.signIn의 에러 메시지를 보여주고 APPLOCK을 건드리지 않는다', async () => {
+  const sessionOrig = sandbox.SESSION, authOrig = sandbox.AUTH;
+  sandbox.SESSION = 'user@example.com';
+  sandbox.AUTH = { rec: () => null, signIn: async () => ({ err: '비밀번호가 일치하지 않아요' }) };
+  sandbox.fpinPwInValue = 'wrong-pw';
+  sandbox.fpinErrEl.style.display = 'none'; sandbox.fpinErrEl.textContent = '';
+  sandbox.appLockDisableCalls = 0; sandbox.unlockAppCalls = 0; sandbox.closeSheetCalls = 0; sandbox.lastToast = null;
+  try {
+    await sandbox.doForgotPin();
+    assert.strictEqual(sandbox.appLockDisableCalls, 0, '비밀번호가 틀리면 APPLOCK.disable()이 절대 호출되면 안 됨');
+    assert.strictEqual(sandbox.unlockAppCalls, 0, '잠금이 풀리면 안 됨');
+    assert.strictEqual(sandbox.closeSheetCalls, 0, '시트가 닫히면 안 됨');
+    assert.strictEqual(sandbox.lastToast, null);
+    assert.strictEqual(sandbox.fpinErrEl.textContent, '비밀번호가 일치하지 않아요');
+    assert.strictEqual(sandbox.fpinErrEl.style.display, 'block');
+  } finally {
+    sandbox.SESSION = sessionOrig;
+    sandbox.AUTH = authOrig;
+    sandbox.fpinPwInValue = undefined;
+  }
+});
+test('tickForgotPinWait: 대기칸/버튼이 아직 있으면 남은 초를 보여주고 0초가 되면 버튼을 활성화한다', () => {
+  sandbox.fpinWaitMsgEl.style.display = 'block'; sandbox.fpinWaitMsgEl.textContent = '';
+  sandbox.fpinBtnEl.disabled = true;
+  sandbox.tickForgotPinWait(2);
+  assert.strictEqual(sandbox.fpinWaitMsgEl.textContent, '2초 후 초기화할 수 있어요…');
+  assert.strictEqual(sandbox.fpinBtnEl.disabled, true, '대기 중엔 버튼이 계속 비활성이어야 함');
+  sandbox.tickForgotPinWait(0);
+  assert.strictEqual(sandbox.fpinWaitMsgEl.textContent, '이제 초기화할 수 있어요');
+  assert.strictEqual(sandbox.fpinBtnEl.disabled, false, '대기가 끝나면 버튼이 활성화돼야 함');
+});
+test('tickForgotPinWait: 시트가 닫혀 대기칸/버튼이 더 이상 없으면(=null) 조용히 멈춘다(재오픈하지 않음)', () => {
+  const $orig = sandbox.$;
+  sandbox.$ = (id) => (id === 'fpinWaitMsg' || id === 'fpinBtn') ? null : $orig(id);
+  try {
+    assert.doesNotThrow(() => sandbox.tickForgotPinWait(3), '닫힌 시트의 틱이 예외를 던지면 안 됨');
+  } finally {
+    sandbox.$ = $orig;
+  }
 });
 
 /* ---------- genRecoveryCode: 로컬 계정 비밀번호 복구 코드(가입 시 1회 발급, 해시만 저장) ---------- */
