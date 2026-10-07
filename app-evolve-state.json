@@ -1,6 +1,6 @@
 {
   "cycle": 156,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
     {
@@ -134,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-07T19:18:28.000Z",
       "summary": "inQuietWindow()(장 마감 판정, 토 06:00~월 08:00 KRX/KRW 휴장)가 d.getDay()/d.getHours()로 기기 로컬 시간대를 읽어 판정하던 버그를 고쳤다 — 주석은 'KST 기준'을 명시하지만 실제로는 기기가 다른 시간대(해외 로밍, UTC 설정 등)면 휴장 창을 KST와 다른 벽시계로 계산해 autoSyncRates 호출 게이트와 '주말 휴장' 라벨이 실제 KRX 휴장 시각과 수 시간씩 어긋났다(코드베이스 전체에 Asia/Seoul 고정 변환이 이 한 곳 말고는 없었음). d를 UTC로 정규화한 뒤 +9시간을 더해 KST로 변환하고 그 결과로 day/hour를 읽도록 수정(Intl 없이 2줄). test/run.js에 토요일 06:00/일요일/월요일 08:00 경계 3건을 America/New_York(UTC-4) withTZ로도 같은 결과가 나오는지 검증하는 회귀 테스트를 추가 — 수정 전 코드로 되돌려 돌려보면 이 중 2건이 실제로 깨짐을 확인했다. index.html/sw.js 변경이라 APP_VERSION 1.47.77->1.47.78, sw.js CACHE v339->v340 갱신. node test/run.js 1068/1068 -> 1071/1071 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 156,
+      "phase": "review",
+      "timestamp": "2026-10-07T20:05:00.000Z",
+      "summary": "cycle156 develop(inQuietWindow KST 변환) 검토 — 고친 코드가 d.getTimezoneOffset()(기기 TZ)과 로컬 getDay()/getHours()를 그대로 쓰고 있어서, 'KST 기준·기기 시간대 무관'이라는 주석/의도와 실제 구현이 불일치함을 발견했다. node로 직접 산술을 풀어보면 평소엔 기기 offset이 자기 자신과 상쇄돼 우연히 맞아떨어지지만(America/New_York 테스트도 그래서 통과), 기기 시간대에서 DST 전환이 일어나는 순간을 끼고 있는 instant에서는 상쇄가 깨져 off(T_d)!=off(T_k)로 틀어질 수 있음을 실제로 재현해 확인(미국 춘/추계 전환일 offset이 300↔240으로 60분 어긋남). 다만 이 틀어짐이 실제 휴장 경계(토06:00/월08:00 KST) 판정을 바꾸려면 기기 TZ의 DST 전환 시각과 KST 휴장 경계가 같은 날 겹쳐야 해서 실제 영향은 극히 희박하지만, 이 커밋이 고치려던 바로 그 '기기 시간대 의존'을 완전히 제거하지 못한 근본적 불일치라고 판단해 바로 고쳤다 — d.getTimezoneOffset() 항을 빼고 kst.getUTCDay()/getUTCHours()로 바꿔 기기 설정을 전혀 읽지 않는 순수 UTC+9 산술로 교체(더 단순하고 완전히 device-tz-independent). node test/run.js 1071/1071 통과(기존 America/New_York 회귀 테스트 포함 변경 없음).",
       "commit": null
     }
   ]

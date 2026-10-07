@@ -2841,8 +2841,10 @@ function hasRateAssets(){return needFx()||needGold()||needStock()}
 
 function inQuietWindow(d){ /* 토 06:00 ~ 월 08:00 휴장(KST 기준, 기기 시간대 무관) */
  d=d||new Date();
- const kst=new Date(d.getTime()+d.getTimezoneOffset()*60000+9*60*60000);
- const day=kst.getDay(),h=kst.getHours();
+ /* d.getTimezoneOffset()+로컬 getDay/getHours를 쓰면 기기 DST 전환 시각이 끼어들 때
+  * offset이 자기 자신과 어긋나 틀릴 수 있다 — UTC+9 고정 산술과 getUTC*로 기기 설정을 완전히 배제한다. */
+ const kst=new Date(d.getTime()+9*60*60000);
+ const day=kst.getUTCDay(),h=kst.getUTCHours();
  return (day===6&&h>=6)||day===0||(day===1&&h<8);
 }
 
