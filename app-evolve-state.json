@@ -1,15 +1,12 @@
 {
   "cycle": 155,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "'PIN을 잊으셨나요?' 복구 플로우가 인증 없이 App-Lock을 즉시 무력화함",
+    "why": "renderLockView()의 PIN 복구 링크(index.html ~7352) -> openForgotPinSheet()/doForgotPin()(~7444-7451)가 올바른 PIN을 전혀 묻지 않고 확인 버튼 한 번으로 APPLOCK.disable()+unlockApp()을 실행한다. cycle131 전후로 'PIN을 잊으면 로컬 데이터 전체 삭제'라는 데이터 손실 함정을 고치기 위해 의도적으로 넣은 동작이지만(test/run.js ~8928-8960이 이걸 '의도된 동작'으로 단언), 과잉 수정이라 App-Lock이 약속하는 보호(분실/도난/타인 접근 차단)를 완전히 무력화한다 — 잠긴 폰을 주운 사람이나 가족 누구나 버튼 2번으로 들어갈 수 있음. email 계정은 이미 계정 비밀번호가 존재하므로(doLogin/doChangePassword 등에서 검증 로직 재사용 가능) 그 비밀번호 확인을 복구 전에 끼워 넣을 수 있고, guest/kakao 계정은 검증할 비밀번호가 없으니 최소한 즉시-무클릭이 아니게 지연/경고 문구로 정직하게 만들 수 있다.",
+    "approach": "accountKind()(index.html ~2028, 'guest'|'kakao'|'email')로 분기한다. (1) email 계정: openForgotPinSheet()을 계정 비밀번호 입력 필드를 받도록 바꾸고, 기존 로그인/로컬복구 경로가 쓰는 비밀번호 검증을 재사용해 통과했을 때만 doForgotPin()을 호출하게 한다(데이터는 여전히 건드리지 않음 — cycle131 보장 유지). (2) guest/kakao 계정: 비밀번호가 없으므로 renderLockView의 잠금 카운트다운 UI 패턴을 재사용한 짧은 강제 대기 + '본인 기기일 때만 사용하세요' 같은 명시적 경고 문구를 추가해 최소한 즉시·무경고 우회는 막는다. (3) test/run.js ~8928-8960의 '질문 없이 바로 푼다'를 정답으로 단언하는 테스트들을 새 두 분기(이메일 비밀번호 검증 통과/실패, guest/kakao 카운트다운)를 커버하도록 교체한다."
+  },
   "history": [
-    {
-      "cycle": 147,
-      "phase": "critique",
-      "timestamp": "2026-10-06T09:00:00.000Z",
-      "summary": ".seg/.mseg 세그먼트 컨트롤 9곳에 aria-pressed/role이 전혀 없는 접근성 공백 발견, 추가 계획을 pending_advance_plan에 저장.",
-      "commit": null
-    },
     {
       "cycle": 147,
       "phase": "review",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-07T17:30:00.000Z",
       "summary": "cycle155 develop(auPw/frPwIn/newPwIn 눈 아이콘 토글) 검토 — togglePwVis가 el.type과 아이콘/aria-label을 정확히 뒤집는지, 3곳(renderAuth/doForgotPasswordLocal/openChangePasswordSheet) 모두 .pw-wrap으로 감싸고 togglePwVis(id)에 올바르게 연결됐는지 직접 확인. $(id).value로 값을 읽는 기존 코드(doLogin/doSignup/doLocalRecover/doChangePassword)는 wrapper div 추가와 무관하게 그대로 동작함을 확인했고, CSS .pw-wrap/.pw-x가 기존 .field-clear 패턴과 겹치지 않음도 확인. node test/run.js 1063/1063 통과. 이상 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 155,
+      "phase": "critique",
+      "timestamp": "2026-10-07T17:13:31.069Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 재조망. 새로 발견: renderLockView()의 PIN 복구 링크(~7352) -> openForgotPinSheet()/doForgotPin()(~7444-7451)가 올바른 PIN을 전혀 묻지 않고 확인 버튼 한 번으로 APPLOCK.disable()+unlockApp()을 실행 — test/run.js(~8928-8960)가 이걸 의도된 동작으로 단언하고 있음. cycle131 전후로 ‘PIN 분실 시 로컬 데이터 전체 삭제’ 데이터손실 함정을 막으려 넣은 장치지만 과잉수정이라 App-Lock의 보호 목적(분실/도난/타인 접근 차단) 자체를 무력화함 — 잠긴 폰을 주운 사람도 버튼 2번이면 들어감. email 계정은 기존 로그인/로컬복구 비밀번호 검증을 재사용해 복구 전에 비밀번호 확인을 끼워넣고, guest/kakao 계정은 비밀번호가 없으니 잠금 카운트다운 UI 패턴 재사용 + 명시적 경고 문구로 최소한 즉시-무클릭 우회는 막는 계획을 pending_advance_plan에 저장. 러너업(기각): 거래 영수증/사진 첨부(바이너리 저장이 localStorage 한도를 넘어 기존에 거부된 IndexedDB 마이그레이션 리스크와 동일), 3개 CDN 스크립트 SRI 해시(index.html에 이미 TODO(SRI)로 명시, 이 샌드박스가 CDN egress를 막아 실제 해시 계산 불가 — 새 발견 아님). 코드 변경 없음(읽기 전용 조사).",
       "commit": null
     }
   ]
