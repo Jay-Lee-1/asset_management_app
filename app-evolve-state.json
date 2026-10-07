@@ -1,27 +1,8 @@
 {
-  "cycle": 154,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "카카오 로그인 — \"로그인\"인데 기기 간 동기화가 전혀 없다는 사실이 사용자에게 숨겨짐",
-    "why": "kakaoLogin()(index.html 7445-7457)은 AUTH.kakaoUpsert()+AUTH.setSession()만 호출하고 afterCloudAuth()/CLOUD_UID 설정을 거치지 않는다. afterCloudAuth 호출부 4곳(7281/7475/7491/7584)은 전부 이메일(Supabase) 로그인 경로뿐이고, pullCloud/pushCloud/scheduleCloudPush는 !CLOUD_UID면 즉시 return(1708,1722,1737)한다 — 카카오 계정은 100% 기기-로컬 저장이며 다른 기기에서 같은 카카오로 로그인해도 데이터가 안 보인다. 그런데 인증화면에서 '카카오로 시작하기'가 이메일보다 먼저·더 크게 노출되고(7426), 계정 메뉴에서도 '카카오 계정'이 이메일 계정과 동일한 급으로 표시되며(4694-4695,4716-4717) 동기화 상태 안내(cloudSyncLabel류)가 전혀 없다. 유일한 경고 문구(7441)도 Supabase 미설정 상태에서만 뜨고 연결 후에는 카카오 언급이 사라진다. 금융 앱에서 '로그인했으니 다른 기기에도 보이겠지'라는 합리적 기대가 조용히 깨지는 신뢰 문제.",
-    "approach": "(1) 계정 메뉴: accountKind()==='kakao'일 때 cloudSyncLabel() 대신 '이 기기에만 저장돼요 · 다른 기기와 동기화 안 됨' 고정 배지 + '이메일로 전환해 동기화하기' CTA 추가(이메일 계정의 isCloudAcct 분기와 대칭). (2) 인증화면: 카카오 버튼 바로 아래에 Supabase 연결 여부와 무관하게 항상 노출되는 캡션 한 줄로 '기기 간 동기화는 이메일 로그인에서만 지원돼요' 명시(현재처럼 sbCfg().url 조건부로 숨지 않게). (3) accountKind/kakaoSyncLabel류를 순수 함수로 분리해 test/run.js FUNCTIONS에 추가. 실제 OAuth 브릿지(서버사이드 토큰 교환)는 이 컨테이너가 kakaocdn.net/jsdelivr egress를 막아(1314-1317 TODO) 테스트 불가하므로 이번 사이클은 '정직한 UX'로 범위를 좁히고, 실동기화 브릿지는 테스트 가능한 환경 확보 후 별도 사이클로 미룬다.",
-    "runner_up": "openSheet/openTxSheet/openRecSheet/renderMenu vm 실행 테스트 공백(이미 반복 지적된 백로그라 새 발견 아님); 전체내역 검색(histQ) 재필터링 성능(이미 _histCache+점진 렌더링 적용돼 체감 영향 작음)"
-  },
+  "cycle": 155,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 148,
-      "phase": "critique",
-      "timestamp": "2026-10-06T13:14:28.000Z",
-      "summary": "금융 앱인데 기기 단위 PIN/잠금화면이 전혀 없음을 발견, PIN 설정/잠금화면/재잠금 핵심 구현 계획을 pending_advance_plan에 저장.",
-      "commit": null
-    },
-    {
-      "cycle": 148,
-      "phase": "review",
-      "timestamp": "2026-10-06T12:30:00.000Z",
-      "summary": "cycle148 develop(newOwner/renameOwner/newCat/renameCat field-clear) 검토 — 이상 없음, node test/run.js 1019/1019 통과.",
-      "commit": null
-    },
     {
       "cycle": 148,
       "phase": "develop",
@@ -153,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-07T15:30:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 재조망(기존 수정완료 목록 전달 후 겹치지 않는 공백 탐색). 새로 발견: kakaoLogin()(index.html 7445-7457)이 afterCloudAuth()/CLOUD_UID 설정을 전혀 거치지 않아 카카오 로그인 계정은 100% 기기-로컬 저장이고 다른 기기에서 동기화가 안 됨을 pullCloud/pushCloud/scheduleCloudPush의 !CLOUD_UID 즉시-return(1708,1722,1737) 확인으로 검증. 그런데 인증화면·계정메뉴에서 카카오 계정이 이메일 계정과 동일한 급으로 노출되고 동기화 불가 안내가 전혀 없어 '로그인했으니 동기화되겠지'라는 합리적 기대가 깨지는 신뢰 문제. 이 컨테이너가 kakaocdn.net egress를 막아 실제 OAuth 브릿지는 테스트 불가하므로, 이번 advance는 계정메뉴 고정 배지+인증화면 캡션으로 '정직한 UX'부터 구현하는 계획을 pending_advance_plan에 저장. 러너업(기각): openSheet류 vm 실행 테스트 공백(반복 지적된 백로그), histQ 검색 재필터링 성능(이미 캐싱 적용돼 영향 작음). 코드 변경 없음(읽기 전용 조사).",
+      "commit": null
+    },
+    {
+      "cycle": 154,
+      "phase": "advance",
+      "timestamp": "2026-10-07T16:30:00.000Z",
+      "summary": "critique(cycle154) 계획대로 카카오 계정의 '정직한 UX'를 구현했다. cloudSyncLabel()과 대칭으로 kakaoSyncLabel() 순수 함수를 추가해 '카카오 계정 · 이 기기에만 저장돼요 (동기화 안 됨)' 고정 문구를 반환하게 하고, 메뉴 계정 카드(4695)와 계정 시트(4717) 양쪽에서 기존 '카카오 계정' 라벨을 이걸로 교체했다. 계정 시트에는 isCloudAcct의 비밀번호 변경 버튼과 대칭으로 '이메일로 전환해 동기화하기' CTA를 추가했는데, dataKey()가 카카오 id로 완전히 분리된 로컬 DB를 쓰는 걸 직접 확인하고서 바로 로그아웃시키는 대신 openKakaoSwitchSheet()로 먼저 '내보내기 → 이메일 재가입 → 가져오기' 3단계를 안내해, 전환하면 지금 데이터가 사라진 것처럼 보이는 오해를 막았다. 인증화면에는 카카오 버튼 바로 아래 sbCfg().url 조건과 무관하게 항상 보이는 캡션 한 줄('기기 간 동기화는 이메일 로그인에서만 지원돼요')을 추가해, 기존 auth-note가 Supabase 연결 후에는 카카오 언급을 빼먹던 공백을 메웠다. kakaoSyncLabel/openKakaoSwitchSheet는 둘 다 shallow(순수 문자열/openSheet 호출뿐)해 test/run.js FUNCTIONS에 끌어와 실행형 테스트로 추가했고, renderMenu/openAccountSheet/renderAuth 변경은 기존 관례대로 extractFunction 기반 테스트 3건으로 커버했다(5건 신규, 전부 실제 노드 실행/정규식 검증 — 작성만 하고 안 돌려본 테스트 없음). index.html/sw.js 변경이라 APP_VERSION 1.47.74->1.47.75, sw.js CACHE v336->v337 갱신. node test/run.js 1054/1054 -> 1059/1059 통과.",
       "commit": null
     }
   ]

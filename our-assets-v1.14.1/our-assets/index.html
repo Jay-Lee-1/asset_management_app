@@ -1321,7 +1321,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.74';
+const APP_VERSION='1.47.75';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1692,6 +1692,11 @@ function cloudSyncLabel(){
  if(CLOUD_LAST_OK)return '클라우드 동기화됨 · '+fmtSynced(CLOUD_LAST_OK);
  return '클라우드 연결됨';
 }
+/* 카카오 로그인은 kakaoLogin()이 afterCloudAuth()/CLOUD_UID 설정을 거치지 않아 cloudSyncLabel()과
+ * 달리 영영 '연결됨'이 될 수 없다 — 이 기기에만 저장되는 로컬 전용 계정임을 매번 고정 문구로
+ * 알려서, '카카오 계정'이라는 표시만 보고 이메일 계정처럼 기기 간 동기화가 된다고 오해하지
+ * 않게 한다(app-evolve cycle154 advance). */
+function kakaoSyncLabel(){return '카카오 계정 · 이 기기에만 저장돼요 (동기화 안 됨)'}
 /* supabase-js 호출(SB.auth.getSession()/SB.from(...)...)은 fetch와 달리 signal 옵션이 없어
  * fetchWithTimeout의 AbortController 방식을 못 쓴다. 대신 reject-after 타이머를 Promise.race처럼
  * 경합시켜, 원래 프로미스가 캡티브 포털·죽은 와이파이·서버 응답 지연으로 영원히 pending이어도
@@ -4692,7 +4697,7 @@ function renderMenu(){
  ${pageHead('menu')}
  <div class="card acct-card" tabindex="0" role="button" aria-label="${esc(accountName())} 계정" onclick="openAccountSheet()" onkeydown="rowKeydown(event,()=>openAccountSheet())">
    <div class="acct-head"><div class="acct-av">${kind==='kakao'?'💬':kind==='email'?'👤':'🙂'}</div>
-     <div class="acct-i" style="flex:1;min-width:0"><div class="an">${esc(accountName())}</div><div class="ak">${kind==='kakao'?'카카오 계정':kind==='email'?'이메일 계정':'게스트 · 로그인하면 계정별로 보관돼요'}</div></div>
+     <div class="acct-i" style="flex:1;min-width:0"><div class="an">${esc(accountName())}</div><div class="ak">${kind==='kakao'?kakaoSyncLabel():kind==='email'?'이메일 계정':'게스트 · 로그인하면 계정별로 보관돼요'}</div></div>
      <span class="mc">${svg('chev')}</span></div>
  </div>
  ${groups.map(g=>`<div class="menu-group"><div class="menu-cap">${g.cap}</div><div class="card">
@@ -4714,16 +4719,31 @@ function openAccountSheet(){
  const conflict=isCloudAcct&&CLOUD_SYNC_STATE==='conflict';
  openSheet(`<h3>계정</h3>
   <div class="acct-head" style="margin-bottom:14px"><div class="acct-av">${kind==='kakao'?'💬':kind==='email'?'👤':'🙂'}</div>
-    <div class="acct-i" style="flex:1;min-width:0"><div class="an">${esc(accountName())}</div><div class="ak">${kind==='kakao'?'카카오 계정':kind==='email'?(isCloudAcct?cloudSyncLabel():'이메일 계정 (이 기기)'):'게스트 (로그인 전)'}</div></div></div>
+    <div class="acct-i" style="flex:1;min-width:0"><div class="an">${esc(accountName())}</div><div class="ak">${kind==='kakao'?kakaoSyncLabel():kind==='email'?(isCloudAcct?cloudSyncLabel():'이메일 계정 (이 기기)'):'게스트 (로그인 전)'}</div></div></div>
   ${conflict?`<div class="desc" style="color:var(--expense)">다른 기기에서 더 최근에 저장한 데이터가 있어요. 어느 쪽을 쓸지 골라주세요.</div>
    <div class="two-btn" style="margin-bottom:14px"><button class="btn btn-soft cancel" onclick="resolveCloudPullRemote()">최신 데이터 가져오기</button><button class="btn btn-primary" onclick="confirmCloudForcePush()">내 데이터로 덮어쓰기</button></div>`:''}
   <div class="desc">${cloudOn?'이메일로 로그인하면 다른 기기에서도 같은 데이터를 볼 수 있어요. 단, 같은 이메일 계정으로 로그인해야만 같은 데이터가 보여요 — 배우자가 계정을 따로 만들면 서로의 기록이 보이지 않아요.':'데이터는 이 기기에 저장돼요. 여러 기기에서 함께 보려면 클라우드 동기화 설정이 필요합니다.'}</div>
   <div class="opt-list">
     ${kind==='guest'?`<button onclick="closeSheet();showAuth()"><div><div>로그인 / 회원가입</div><div class="ol-sub">카카오 또는 이메일</div></div></button>`:`<button onclick="doLogout()"><div><div>로그아웃</div></div></button>`}
     ${isCloudAcct?`<button onclick="openChangePasswordSheet(false)"><div><div>비밀번호 변경</div></div></button>`:''}
+    ${kind==='kakao'?`<button onclick="openKakaoSwitchSheet()"><div><div>이메일로 전환해 동기화하기</div><div class="ol-sub">카카오 계정은 다른 기기와 동기화되지 않아요</div></div></button>`:''}
     <button onclick="openHelpCloud()"><div><div>이메일 로그인 · 클라우드 동기화 설정</div><div class="ol-sub">${cloudOn?'Supabase 연결됨':'Supabase 연결하면 다른 기기에서도 같은 데이터를 봐요'}</div></div></button>
     <button onclick="openHelpKakao()"><div><div>카카오 로그인 설정 방법</div><div class="ol-sub">JavaScript 키·도메인 등록 안내</div></div></button>
   </div>`);
+}
+/* 카카오 계정은 dataKey()가 kakao id로 분리된 로컬 DB를 쓰므로, 이메일로 로그인한다고 데이터가
+ * 자동으로 옮겨가지 않는다(완전히 별개의 빈 DB로 시작함). CTA를 누르면 바로 로그아웃시키는 대신
+ * 먼저 내보내기부터 안내해, "전환하면 지금 기록이 사라진 것처럼 보인다"는 오해를 막는다
+ * (app-evolve cycle154 advance). */
+function openKakaoSwitchSheet(){
+ openSheet(`<h3>이메일로 전환해 동기화하기</h3>
+  <div class="desc">카카오 계정은 이 기기에만 저장되고 다른 기기와는 동기화되지 않아요. 지금 기록을 다른 기기에서도 보려면:</div>
+  <ol style="margin:10px 2px 14px;padding-left:20px;color:var(--text-2);font-size:14px;line-height:1.8">
+    <li>지금 데이터 내보내기(백업)</li>
+    <li>로그아웃 후 이메일로 새로 가입</li>
+    <li>내보낸 파일을 가져오기로 불러오기</li>
+  </ol>
+  <div class="two-btn"><button class="btn btn-soft cancel" onclick="closeSheet()">나중에</button><button class="btn btn-primary" onclick="exportData()">지금 내보내기</button></div>`);
 }
 function openHelpCloud(){
  const c=sbCfg();
@@ -7424,6 +7444,7 @@ function renderAuth(){
    <div class="auth-title">우리의 자산</div>
    <div class="auth-sub">가볍게 시작하는 우리 가족 자산·가계부</div>
    <button class="kakao-btn" onclick="kakaoLogin()"><span class="kico">${svg('chat')}</span>카카오로 시작하기</button>
+   <div style="font-size:12px;color:var(--text-3);text-align:center;margin:6px 0 2px">기기 간 동기화는 이메일 로그인에서만 지원돼요 · 카카오는 이 기기에만 저장돼요</div>
    ${AUTHKEY?`<div class="kkey">
      <label for="kkeyIn">카카오 JavaScript 키</label>
      <input id="kkeyIn" placeholder="카카오 JavaScript 키 붙여넣기" value="${(localStorage.getItem('asset_app_kakao_key')||'').replace(/"/g,'&quot;')}" onkeydown="if(event.key==='Enter')saveKakaoKey()">

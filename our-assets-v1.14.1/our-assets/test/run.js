@@ -207,6 +207,10 @@ const FUNCTIONS = [
   // "DOM 전역에 깊이 엮여 범위가 크다"던 위 cycle152의 가정이 이 함수엔 맞지 않았다.
   // openTxSheet/openRecSheet/renderMenu/openSheet 자체는 여전히 더 깊이 엮여 있어 백로그로 남김.
   'renderAssetSheet',
+  // kakaoSyncLabel/openKakaoSwitchSheet는 cycle154 critique(카카오 로그인이 기기 간 동기화를
+  // 전혀 지원하지 않는데 UI에 그 사실이 전혀 드러나지 않던 공백)의 advance 구현 — 둘 다 shallow해서
+  // (순수 문자열 반환, openSheet() 호출뿐) 기존 공유 스텁만으로 실행 검증 가능.
+  'kakaoSyncLabel', 'openKakaoSwitchSheet',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -10040,6 +10044,42 @@ test('accountName: 카카오 로그인이면 닉네임(없으면 기본값)을 �
   } finally {
     sandbox.AUTH = authOrig;
   }
+});
+
+/* ---------- kakaoSyncLabel/openKakaoSwitchSheet: 카카오 로그인은 kakaoLogin()이 afterCloudAuth()/
+ * CLOUD_UID 설정을 거치지 않아 100% 기기-로컬 저장인데, 메뉴/계정 화면에 그 사실이 전혀 드러나지
+ * 않아 '로그인했으니 동기화되겠지'라는 합리적 기대가 깨지던 신뢰 문제 (app-evolve cycle154
+ * critique가 발견, 같은 cycle advance가 고정 배지 + 전환 안내 시트로 고침) ---------- */
+test('kakaoSyncLabel: 카카오 계정은 기기 간 동기화가 안 된다는 고정 문구를 반환한다', () => {
+  const label = sandbox.kakaoSyncLabel();
+  assert.ok(label.includes('이 기기'), '"이 기기"에만 저장된다는 문구가 없음');
+  assert.ok(/동기화.*안|안.*동기화/.test(label), '동기화가 안 된다는 문구가 없음');
+});
+test('openKakaoSwitchSheet: 바로 로그아웃시키지 않고 내보내기부터 안내하는 시트를 연다', () => {
+  sandbox.lastSheetHtml = null;
+  sandbox.openKakaoSwitchSheet();
+  assert.ok(sandbox.lastSheetHtml.includes('다른 기기와는 동기화되지 않아요'), '카카오가 동기화되지 않는다는 설명이 없음');
+  assert.ok(sandbox.lastSheetHtml.includes('onclick="exportData()"'), '지금 내보내기 버튼이 exportData()로 연결돼 있지 않음 — 데이터가 사라진 것처럼 보일 위험');
+  assert.ok(sandbox.lastSheetHtml.includes('onclick="closeSheet()"'), '취소(나중에) 버튼이 없음');
+});
+test('renderMenu: 카카오 계정은 계정 카드 부제에 kakaoSyncLabel()을 쓴다(동기화 안내 없이 "카카오 계정"만 보이면 안 됨)', () => {
+  const body = extractFunction('renderMenu');
+  assert.ok(body.includes("kind==='kakao'?kakaoSyncLabel()"), "renderMenu의 계정 카드가 kind==='kakao'일 때 kakaoSyncLabel()을 쓰지 않음");
+});
+test('openAccountSheet: 카카오 계정은 부제에 kakaoSyncLabel(), 이메일 전환 CTA를 보여준다', () => {
+  const body = extractFunction('openAccountSheet');
+  assert.ok(body.includes("kind==='kakao'?kakaoSyncLabel()"), "openAccountSheet의 계정 부제가 kind==='kakao'일 때 kakaoSyncLabel()을 쓰지 않음");
+  assert.ok(body.includes("kind==='kakao'?`<button onclick=\"openKakaoSwitchSheet()\">"), '카카오 계정에 "이메일로 전환해 동기화하기" CTA가 없음');
+});
+test('renderAuth: 카카오 버튼 바로 아래에 Supabase 연결 여부와 무관하게 항상 동기화 미지원 캡션이 보인다', () => {
+  const body = extractFunction('renderAuth');
+  const btnIdx = body.indexOf('카카오로 시작하기');
+  const capIdx = body.indexOf('기기 간 동기화는 이메일 로그인에서만 지원돼요');
+  assert.ok(btnIdx !== -1 && capIdx !== -1 && capIdx > btnIdx, '카카오 버튼 아래에 동기화 미지원 캡션이 없음');
+  // sbCfg().url 조건부(연결 여부에 따라 문구가 사라지던 기존 auth-note)와 달리, 이 캡션은
+  // 그 삼항식 바깥에 독립된 리터럴 div로 있어야 한다 — sbCfg 조건 안에 있으면 다시 숨을 수 있음.
+  const capLine = body.slice(body.lastIndexOf('\n', capIdx), body.indexOf('\n', capIdx) + 1);
+  assert.ok(!capLine.includes('sbCfg()'), '캡션이 sbCfg() 조건부 삼항식 안에 있어 다시 숨겨질 수 있음');
 });
 
 /* ---------- dbIsEmpty: 로그인 시 게스트 데이터 자동 병합/안내 판단에 쓰이는 순수 함수
