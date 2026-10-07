@@ -1,15 +1,8 @@
 {
   "cycle": 153,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 149,
-      "phase": "advance",
-      "timestamp": "2026-10-06T18:05:00.000Z",
-      "summary": "critique(cycle149) 계획대로 balancesUpTo()/balanceAt() 날짜별 전체 재스캔 성능 문제를 고쳤다. balanceAt()(index.html:2254) 바로 뒤에 balancesAtDates(dateList)를 신규 추가 — assetBalanceSeries()(logic.js:451-469, 자산 하나·여러 날짜)와 같은 '정렬+포인터 누적' 원칙을, balancesUpTo()와 동일한 규칙(기준액+upto 클램프+dateStr>TODAY 기준 proj별 미확인 이체 포함 여부+부채 부호 반전)으로 '모든 자산·여러 날짜'에 한 번에 적용한다. lowestInMonth/planRowsHTML/planNegatives 세 호출부를 날짜별 balanceAt() 반복 호출에서 balancesAtDates() 단일 배치 호출로 교체. findDonors는 호출당 날짜가 하나뿐이라 그대로 둠. test/run.js에 회귀 테스트 6건 신규. APP_VERSION 1.47.67->1.47.68, sw.js CACHE v329->v330. node test/run.js 1026/1026 -> 1031/1031 통과.",
-      "commit": null
-    },
     {
       "cycle": 149,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-07T03:20:00.000Z",
       "summary": "critique(cycle152) 계획대로 test/run.js FUNCTIONS 커버리지 공백을 메웠다 — 48개 미검증 render/open/do 함수 중 계정 메뉴(doLogout/doResetAll/doForgotPassword/doForgotPasswordLocal)와 PIN 플로우(openSetPinSheet/openChangePinSheet/openDisableAppLockSheet) 7개를 FUNCTIONS에 끌어와 실행형([실행형]) 테스트 8건을 신규 추가했다(기존 openSheet/confirmSheet 공유 스텁 재사용). doLogout은 확인 시트 콜백 실행 후 AUTH.signOut/GUEST 플래그/showAuth 전환까지, doResetAll은 확인 → DB가 emptyDB()로 교체 → 되돌리기(undoToast)로 원복까지 왕복 검증한다. 그 과정에서 두 가지를 함께 고쳤다: (1) sandbox.AUTH에 signOut 스파이가 필요했는데 기존 'accountName: 카카오 로그인' 테스트가 AUTH를 원본 대신 `{rec:()=>null}`로 하드코딩 리셋해 영구히 지워버리던 버그를 authOrig 저장/복원 패턴(renderLockView 테스트와 동일)으로 수정, (2) vm 샌드박스에서 emptyDB()가 만든 배열은 host Array와 realm이 달라 deepStrictEqual이 값이 같아도 실패하는 기존에 문서화된 함정(recDates 테스트 주석)에 걸려 Array.from으로 정규화했다. 범위가 큰 openSheet 자체/openTxSheet/openRecSheet/renderMenu/renderAssetSheet는 DOM 전역(classList/requestAnimationFrame/attachDetent 등) 의존이 깊어 한 사이클 범위를 넘어선다고 보고 백로그로 남김(FUNCTIONS 주석에 기록). index.html/logic.js는 건드리지 않아 APP_VERSION/sw.js 변경 없음. node test/run.js 1043/1043 -> 1050/1050 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 153,
+      "phase": "develop",
+      "timestamp": "2026-10-07T07:12:30.572Z",
+      "summary": "addMonthsStr(logic.js)이 addMonths(index.html)와 달리 day를 clamp하지 않고 setMonth 롤오버를 그대로 반환함을 발견(예: 1/31+1개월 -> 3/3). recNthDate/recCountUntil이 이 함수로 만드는 to 상한은 롤오버가 항상 뒤로만 밀기 때문에 현재는 버그 아님을 직접 확인했고, 대신 지금까지 day 29/30/31 시작을 다루지 않아 이 경로가 테스트로 한 번도 실행되지 않았던 공백을 메웠다 — test/run.js에 addMonthsStr 직접 테스트 3건(말일 롤오버/연 경계/윤년->평년 롤오버) 추가, addMonths와 혼용하지 않도록 동작 차이를 주석으로 명시. index.html/logic.js는 변경 없어 APP_VERSION/sw.js 변경 없음. node test/run.js 1050/1050 -> 1053/1053 통과.",
       "commit": null
     }
   ]

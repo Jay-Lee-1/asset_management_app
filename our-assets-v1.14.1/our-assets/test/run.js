@@ -697,6 +697,23 @@ test('addMonths: n이 양수면 앞으로 이동한다', () => {
   assert.strictEqual(sandbox.addMonths('2026-01-15', 2), '2026-03-15');
 });
 
+/* ---------- addMonthsStr(logic.js): addMonths와 이름은 비슷하지만 day를 clamp하지 않는 별도 함수 ----------
+ * addMonths()는 day를 그 달의 마지막 날로 clamp하지만, addMonthsStr()은 recNthDate/recCountUntil이
+ * recDates()에 넘길 상한(to)을 구하기 위한 용도라 clamp 없이 new Date().setMonth() 롤오버를 그대로
+ * 반환한다(예: 1/31+1개월 → 2/28이 아니라 3/3). 상한을 계산할 뿐이라 롤오버가 날짜를 앞이 아니라
+ * 항상 뒤로만 미루므로 현재는 버그가 아니지만(app-evolve cycle153 develop 조사), 지금까지 recNthDate/
+ * recCountUntil 테스트는 day 29/30/31 시작을 다루지 않아 이 롤오버 경로가 테스트로 한 번도 실행된
+ * 적이 없었다. addMonths와 섞어 쓰지 않도록 현재 동작을 여기 명시적으로 고정해 둔다. */
+test('addMonthsStr: 짧은 달로 넘어가는 말일 기준 날짜는 clamp 없이 다음 달로 롤오버된다(addMonths와 다름)', () => {
+  assert.strictEqual(sandbox.addMonthsStr('2026-01-31', 1), '2026-03-03');
+});
+test('addMonthsStr: 연 경계를 넘는 이동도 월만 정확히 이동한다', () => {
+  assert.strictEqual(sandbox.addMonthsStr('2026-12-15', 1), '2027-01-15');
+});
+test('addMonthsStr: 윤년 2/29 시작에서 평년으로 넘어가는 이동은 2/29로 clamp되지 않고 3/1로 롤오버된다', () => {
+  assert.strictEqual(sandbox.addMonthsStr('2024-02-29', 12), '2025-03-01');
+});
+
 /* ---------- addDays/wname/fmtDate/shortDate/fmtDateFull: UTC-오프셋 음수 시간대에서 날짜가 하루 밀리던 버그 ----------
  * `new Date('2026-09-13')`처럼 시간 없는 날짜 문자열은 UTC 자정으로 파싱되는데,
  * getFullYear/getMonth/getDate/getDay는 로컬 시간대로 읽으므로 UTC-오프셋이 음수인
