@@ -10082,7 +10082,30 @@ test('renderAuth: 카카오 버튼 바로 아래에 Supabase 연결 여부와 �
   assert.ok(!capLine.includes('sbCfg()'), '캡션이 sbCfg() 조건부 삼항식 안에 있어 다시 숨겨질 수 있음');
 });
 
-/* ---------- dbIsEmpty: 로그인 시 게스트 데이터 자동 병합/안내 판단에 쓰이는 순수 함수
+/* ---------- togglePwVis: 비밀번호 입력칸(auPw/frPwIn/newPwIn)에 표시/숨기기 눈 아이콘 토글을
+ * 추가 (app-evolve cycle155 develop가 발견 — 긴 비밀번호를 칠 때 특히 계정 복구(doLocalRecover)
+ * 같은 한 번뿐인/고위험 플로우에서 타이핑한 내용을 확인할 길이 전혀 없어, 오타가 나면 자신이
+ * 실제로 설정한 비밀번호를 영문 모르고 잠겨버릴 수 있었음). togglePwVis 자체는 closest()/type
+ * 같은 실DOM 조작이라 이 테스트 스위트엔 jsdom이 없어 실행형으로 못 돌리므로(다른 openSheet류
+ * 함수처럼), 소스 문자열 검증(정규식 기반)으로 로직과 각 렌더 함수의 배선을 확인한다. ---------- */
+test('togglePwVis: password<->text를 뒤집고 버튼 아이콘/aria-label을 eye<->eyeOff로 맞춰 바꾼다', () => {
+  const body = extractFunction('togglePwVis');
+  assert.ok(/el\.type\s*=\s*show\s*\?\s*'text'\s*:\s*'password'/.test(body), "togglePwVis가 el.type을 'text'<->'password'로 뒤집지 않음");
+  assert.ok(body.includes("svg(show?'eyeOff':'eye'"), 'togglePwVis가 아이콘을 eye<->eyeOff로 바꾸지 않음');
+  assert.ok(body.includes("btn.setAttribute('aria-label'"), 'togglePwVis가 버튼의 aria-label을 갱신하지 않음 — 스크린리더가 토글 상태를 못 읽음');
+});
+for (const [fn, id] of [['renderAuth', 'auPw'], ['doForgotPasswordLocal', 'frPwIn'], ['openChangePasswordSheet', 'newPwIn']]) {
+  test(`${fn}: ${id} 비밀번호 입력을 .pw-wrap으로 감싸고 눈 토글 버튼을 togglePwVis('${id}')에 연결한다`, () => {
+    const body = extractFunction(fn);
+    assert.ok(body.includes(`id="${id}" type="password"`), `${fn}에 id="${id}" type="password" 입력이 없음`);
+    const wrapIdx = body.indexOf('class="pw-wrap"');
+    const inputIdx = body.indexOf(`id="${id}"`);
+    assert.ok(wrapIdx !== -1 && wrapIdx < inputIdx, `${id} 입력이 .pw-wrap 안에 있지 않음`);
+    assert.ok(body.includes(`togglePwVis('${id}')`), `${fn}에 togglePwVis('${id}')로 연결된 버튼이 없음`);
+  });
+}
+
+/* ---------- dbIsEmpty:로그인 시 게스트 데이터 자동 병합/안내 판단에 쓰이는 순수 함수
  * (app-evolve cycle63 critique/advance — doLogin()이 기존 계정 데이터를 게스트 데이터로
  * 조용히 덮어쓰거나 반대로 게스트 데이터를 안내 없이 버리지 않도록, "이 계정이 비어 있는가"를
  * 판정하는 로직을 emptyDB()와 나란히 두고 테스트한다) ---------- */

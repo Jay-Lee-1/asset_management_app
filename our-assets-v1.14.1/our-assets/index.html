@@ -773,6 +773,13 @@ html.no-ad .ad-slot{display:none}
 .field-clear.has-val.is-focus .fc-x:active{transform:translateY(-50%) scale(.86)}
 /* 큰 금액 입력칸: ✕를 더 크고 또렷하게 */
 .field-clear input.amount-in~.fc-x{width:26px;height:26px;font-size:14px;right:14px}
+/* 비밀번호 입력칸 눈 모양 표시/숨기기 토글 — field-clear와 달리 입력값과 무관하게 항상 보여야 하는 버튼이라 별도 클래스로 둠 */
+.pw-wrap{position:relative}
+.pw-wrap input{padding-right:42px!important}
+.pw-x{position:absolute;top:50%;right:10px;transform:translateY(-50%);width:30px;height:30px;border-radius:50%;
+  background:transparent;border:none;color:var(--text-3);display:inline-flex;align-items:center;justify-content:center;
+  cursor:pointer;padding:0;z-index:2}
+.pw-x:active{color:var(--text-2)}
 .field input,.field select{width:100%;height:52px;border-radius:var(--r-sm);border:1px solid var(--line-2);background:var(--surface-2);padding:0 15px;font-size:16px;color:var(--text);outline:none;transition:border .15s}
 .field textarea{width:100%;min-height:130px;border-radius:var(--r-sm);border:1px solid var(--line-2);background:var(--surface-2);padding:12px 15px;font-size:15px;color:var(--text);outline:none;resize:none;line-height:1.5}
 .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--brand)}
@@ -1321,7 +1328,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.75';
+const APP_VERSION='1.47.76';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1433,6 +1440,8 @@ const I={
  piggy:'<path d="M4 12a6 5 0 0 1 12 0v3a2 2 0 0 1-2 2h-1v2h-2v-2H8v2H6v-2.2A6 5 0 0 1 4 12z"/><circle cx="13" cy="10" r=".7" fill="currentColor"/><path d="M17 11h2M8 8c0-1.5 1.5-2.5 3-2"/>',
  pension:'<path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/><path d="M9 12l2 2 4-4"/>',
  debt:'<circle cx="12" cy="12" r="8"/><path d="M15 9.5c-.5-1-1.7-1.5-3-1.5-1.7 0-3 .8-3 2s1.3 1.8 3 2 3 .8 3 2-1.3 2-3 2c-1.3 0-2.5-.5-3-1.5M12 6v2M12 16v2"/>',
+ eye:'<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>',
+ eyeOff:'<path d="M3.5 3.5l17 17"/><path d="M10 5.2A10.4 10.4 0 0 1 12 5c6 0 10 7 10 7a15 15 0 0 1-3.2 3.8M6.5 6.8C4 8.5 2 12 2 12s4 7 10 7c1.2 0 2.3-.2 3.3-.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
 };
 function svg(n,w){if(n==='fx')return `<span class="cur-sym"${w?` style="font-size:${Math.round(w*0.82)}px"`:''}>₩</span>`;return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"${w?` style="width:${w}px;height:${w}px"`:''}>${I[n]||''}</svg>`}
 
@@ -3553,6 +3562,13 @@ function clampRecurringToMaturity(assetId,maturity,prevMaturity){
  });
 }
 function clrInput(id){const el=$(id);if(!el)return;el.value='';el.dispatchEvent(new Event('input',{bubbles:true}));el.focus();fcToggle(el);}
+function togglePwVis(id){
+ const el=$(id);if(!el)return;
+ const wrap=el.closest('.pw-wrap');const btn=wrap&&wrap.querySelector('.pw-x');
+ const show=el.type==='password';
+ el.type=show?'text':'password';
+ if(btn){btn.innerHTML=svg(show?'eyeOff':'eye',18);btn.setAttribute('aria-label',show?'비밀번호 숨기기':'비밀번호 표시');}
+}
 function fcToggle(el){const w=el.closest('.field-clear');if(w)w.classList.toggle('has-val',!!el.value)}
 function fcWire(){document.querySelectorAll('.field-clear input').forEach(el=>{fcToggle(el);
   if(!el._fcw){el._fcw=1;const w=el.closest('.field-clear');
@@ -7454,7 +7470,7 @@ function renderAuth(){
    <div class="auth-div"><span>또는 이메일로</span></div>
    <div class="auth-seg"><button class="${login?'on':''}" onclick="authSet('login')">로그인</button><button class="${login?'':'on'}" onclick="authSet('signup')">회원가입</button></div>
    <div class="auth-field"><label for="auEmail">이메일</label><input id="auEmail" type="email" inputmode="email" autocomplete="username" placeholder="you@example.com"></div>
-   <div class="auth-field"><label for="auPw">비밀번호</label><input id="auPw" type="password" autocomplete="${login?'current-password':'new-password'}" placeholder="${login?'':'8자 이상'}" onkeydown="if(event.key==='Enter'){${login?'doLogin()':'doSignup()'}}"></div>
+   <div class="auth-field"><label for="auPw">비밀번호</label><div class="pw-wrap"><input id="auPw" type="password" autocomplete="${login?'current-password':'new-password'}" placeholder="${login?'':'8자 이상'}" onkeydown="if(event.key==='Enter'){${login?'doLogin()':'doSignup()'}}"><button type="button" class="pw-x" aria-label="비밀번호 표시" onclick="togglePwVis('auPw')">${svg('eye',18)}</button></div></div>
    ${login?`<button type="button" class="auth-forgot" onclick="doForgotPassword()">비밀번호를 잊으셨나요?</button>`:''}
    <div id="auErr" class="auth-err" style="display:none"></div>
    <button class="btn btn-primary auth-submit" onclick="${login?'doLogin()':'doSignup()'}">${login?'로그인':'가입하고 시작'}</button>
@@ -7547,7 +7563,7 @@ function doForgotPasswordLocal(email){
   <div class="desc">가입할 때 딱 한 번 보여드린 복구 코드로 새 비밀번호를 설정해요. 복구 코드가 없다면 이 계정은 복구할 수 없어요 — 메뉴 › 데이터 관리에서 CSV로 미리 백업해 두는 걸 추천해요.</div>
   <div class="field"><label for="frEmailIn">이메일</label><div class="field-clear"><input id="frEmailIn" type="email" inputmode="email" autocomplete="username" placeholder="you@example.com" value="${esc(email)}"><button type="button" class="fc-x" aria-label="이메일 지우기" onclick="clrInput('frEmailIn')">✕</button></div></div>
   <div class="field"><label for="frCodeIn">복구 코드</label><div class="field-clear"><input id="frCodeIn" autocomplete="off" placeholder="XXXX-XXXX-XXXX"><button type="button" class="fc-x" aria-label="복구 코드 지우기" onclick="clrInput('frCodeIn')">✕</button></div></div>
-  <div class="field"><label for="frPwIn">새 비밀번호</label><input id="frPwIn" type="password" autocomplete="new-password" placeholder="8자 이상" onkeydown="if(event.key==='Enter')doLocalRecover()"></div>
+  <div class="field"><label for="frPwIn">새 비밀번호</label><div class="pw-wrap"><input id="frPwIn" type="password" autocomplete="new-password" placeholder="8자 이상" onkeydown="if(event.key==='Enter')doLocalRecover()"><button type="button" class="pw-x" aria-label="비밀번호 표시" onclick="togglePwVis('frPwIn')">${svg('eye',18)}</button></div></div>
   <div id="frErr" class="auth-err" style="display:none"></div>
   <div class="two-btn" style="margin-top:14px"><button class="btn btn-soft cancel" onclick="closeSheet()">취소</button><button class="btn btn-primary" id="frBtn" onclick="doLocalRecover()">복구하기</button></div>`);
 }
@@ -7580,7 +7596,7 @@ function closeRecoverySheet(){closeSheet();const cb=RECOVERY_ONDONE;RECOVERY_OND
 function openChangePasswordSheet(recovery){
  openSheet(`<h3>${recovery?'새 비밀번호 설정':'비밀번호 변경'}</h3>
   <div class="desc">${recovery?'비밀번호 재설정 메일로 들어오셨어요. 새 비밀번호를 설정해 주세요.':'다른 기기는 조용히 로그아웃될 수 있어요.'}</div>
-  <div class="field"><label for="newPwIn">새 비밀번호</label><input id="newPwIn" type="password" autocomplete="new-password" placeholder="8자 이상" onkeydown="if(event.key==='Enter')doChangePassword(${!!recovery})"></div>
+  <div class="field"><label for="newPwIn">새 비밀번호</label><div class="pw-wrap"><input id="newPwIn" type="password" autocomplete="new-password" placeholder="8자 이상" onkeydown="if(event.key==='Enter')doChangePassword(${!!recovery})"><button type="button" class="pw-x" aria-label="비밀번호 표시" onclick="togglePwVis('newPwIn')">${svg('eye',18)}</button></div></div>
   <div id="newPwErr" class="auth-err" style="display:none"></div>
   <div class="two-btn" style="margin-top:14px"><button class="btn btn-primary" id="pwSaveBtn" onclick="doChangePassword(${!!recovery})" style="width:100%">저장</button></div>`);
 }

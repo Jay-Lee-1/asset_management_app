@@ -1,15 +1,8 @@
 {
   "cycle": 155,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 148,
-      "phase": "develop",
-      "timestamp": "2026-10-06T11:30:00.000Z",
-      "summary": "귀속/카테고리 관리 이름 입력란 4곳(newOwner/renameOwner/newCat/renameCat)에 field-clear(×) 추가. test/run.js 1015/1015 -> 1019/1019 통과.",
-      "commit": null
-    },
     {
       "cycle": 147,
       "phase": "advance",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-07T16:30:00.000Z",
       "summary": "critique(cycle154) 계획대로 카카오 계정의 '정직한 UX'를 구현했다. cloudSyncLabel()과 대칭으로 kakaoSyncLabel() 순수 함수를 추가해 '카카오 계정 · 이 기기에만 저장돼요 (동기화 안 됨)' 고정 문구를 반환하게 하고, 메뉴 계정 카드(4695)와 계정 시트(4717) 양쪽에서 기존 '카카오 계정' 라벨을 이걸로 교체했다. 계정 시트에는 isCloudAcct의 비밀번호 변경 버튼과 대칭으로 '이메일로 전환해 동기화하기' CTA를 추가했는데, dataKey()가 카카오 id로 완전히 분리된 로컬 DB를 쓰는 걸 직접 확인하고서 바로 로그아웃시키는 대신 openKakaoSwitchSheet()로 먼저 '내보내기 → 이메일 재가입 → 가져오기' 3단계를 안내해, 전환하면 지금 데이터가 사라진 것처럼 보이는 오해를 막았다. 인증화면에는 카카오 버튼 바로 아래 sbCfg().url 조건과 무관하게 항상 보이는 캡션 한 줄('기기 간 동기화는 이메일 로그인에서만 지원돼요')을 추가해, 기존 auth-note가 Supabase 연결 후에는 카카오 언급을 빼먹던 공백을 메웠다. kakaoSyncLabel/openKakaoSwitchSheet는 둘 다 shallow(순수 문자열/openSheet 호출뿐)해 test/run.js FUNCTIONS에 끌어와 실행형 테스트로 추가했고, renderMenu/openAccountSheet/renderAuth 변경은 기존 관례대로 extractFunction 기반 테스트 3건으로 커버했다(5건 신규, 전부 실제 노드 실행/정규식 검증 — 작성만 하고 안 돌려본 테스트 없음). index.html/sw.js 변경이라 APP_VERSION 1.47.74->1.47.75, sw.js CACHE v336->v337 갱신. node test/run.js 1054/1054 -> 1059/1059 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 155,
+      "phase": "develop",
+      "timestamp": "2026-10-07T15:15:15.005Z",
+      "summary": "auPw(로그인/가입)·frPwIn(로컬 계정 복구)·newPwIn(비밀번호 변경/재설정) 3개 비밀번호 입력에 표시/숨기기(눈 아이콘) 토글 추가. 특히 doLocalRecover는 복구 코드가 있어야만 쓸 수 있는 한 번뿐인 고위험 플로우라, 타이핑한 새 비밀번호를 확인할 길이 없어 오타로 스스로 잠길 위험이 있었음. togglePwVis(id) 헬퍼 + eye/eyeOff 아이콘 추가, .pw-wrap/.pw-x CSS는 기존 .field-clear/.fc-x 패턴을 그대로 모방(항상 보이게 has-val 게이팅만 뺌). PIN 입력(숫자 코드)은 범위 밖으로 제외. togglePwVis 자체는 실DOM(closest/type) 조작이라 jsdom 없는 스위트에서 실행형 테스트가 불가해 정규식 기반 테스트 4건(togglePwVis 로직 + renderAuth/doForgotPasswordLocal/openChangePasswordSheet 배선)으로 커버. index.html/sw.js 변경이라 APP_VERSION 1.47.75->1.47.76, sw.js CACHE v337->v338 갱신. node test/run.js 1059/1059 -> 1063/1063 통과.",
       "commit": null
     }
   ]
