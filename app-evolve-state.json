@@ -1,8 +1,19 @@
 {
   "cycle": 151,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "앱 잠금(PIN)에 '재잠금까지의 유예시간(grace period)' 추가 — 지금은 백그라운드 전환 즉시 100% 재잠금",
+    "why": "index.html:7607의 document.addEventListener('visibilitychange', ...) 핸들러가 document.hidden이 될 때마다 appIsOpen()이면 무조건 lockApp()을 호출한다(7291-7296, APP_LOCKED=true + lockView 표시). APPLOCK 객체(1984-2006, _read/_write/enabled/setPin/verify/disable)에는 그레이스 관련 필드가 전혀 없고, lockApp() 자체도 '마지막으로 백그라운드로 간 시각'을 기록하거나 비교하는 로직이 없다 — 즉 지문/문자 인증앱으로 OTP를 복사하러 잠깐 전환하거나, 영수증 촬영을 위해 카메라 앱을 열거나, 알림을 한 번 확인하는 것만으로도 매번 처음부터 PIN을 다시 입력해야 한다. 설정 메뉴(4667-4671, '알림 · 기준' 그룹)에도 '앱 잠금(PIN)' on/off 스위치와 'PIN 변경'만 있고 재잠금 시점을 조절하는 항목이 없다. cycle148 critique가 PIN 잠금 기본 구현(설정/잠금화면/재잠금/변경/복구)을 cycle148 advance로 끝내면서 '유예시간'을 명시적으로 범위 밖에 남겼고, 기본 구현이 끝난 지금 적절한 크기라고 판단해 선정. 지문/OTP 2차인증과 결합해 쓰는 금융 앱치고 재잠금이 지나치게 공격적인 건 실제 UX 결함이며, 신규 아키텍처 없이 기존 APPLOCK/localStorage/설정메뉴 패턴만 확장하면 되는 중간 크기 작업이라 다음 advance 한 사이클에 안전하게 들어간다.",
+    "approach": "① APPLOCK 상태 객체(_read/_write가 다루는 asset_app_lock)에 graceSec 필드 추가(기본값 0=즉시 잠금, 선택지 예: 즉시/30초/1분/5분 — 기존 .seg 세그먼트 컨트롤 UI 패턴 재사용). ② visibilitychange의 hidden 분기(7607)에서 lockApp()을 바로 부르는 대신 Date.now()를 APPLOCK_KEY 저장소의 lastHiddenAt(별도 device-local 타임스탬프, DB.settings/클라우드 동기화 대상 아님)에 기록만 해두고, visible로 돌아오는 쪽(maybeRollDay 또는 별도 분기)에서 '숨겨진 시간 >= graceSec'일 때만 실제로 lockApp()을 호출하도록 바꾼다. ③ 설정 메뉴(4667-4671)의 '앱 잠금(PIN)' 행 아래, APPLOCK.enabled()일 때만 보이는 'PIN 변경'과 같은 자리에 '재잠금 시점' 행을 추가해 시트(openXxxSheet 패턴)로 그레이스 옵션을 고르게 한다. ④ 앱 완전 종료 후 재실행(새 boot(), APP_LOCKED가 리셋된 콜드스타트)은 그레이스와 무관하게 항상 즉시 잠그도록 boot()의 lockApp() 호출(7281/7284)은 그대로 둔다 — 그레이스는 '같은 세션 내 짧은 백그라운드 전환'에만 적용되는 것으로 한정해 보안 저하를 최소화한다. ⑤ test/run.js의 기존 APPLOCK vm 테스트 하네스(8702-8764, Map 기반 localStorage 목업)를 확장해 graceSec 저장/읽기, '그레이스 안이면 안 잠김 vs 밖이면 잠김' 판정 로직을 실행형으로 검증하는 테스트를 추가한다."
+  },
   "history": [
+    {
+      "cycle": 151,
+      "phase": "critique",
+      "timestamp": "2026-10-07T01:00:00.000Z",
+      "summary": "general-purpose 에이전트로 앱 전체를 다시 조망(cycle141-151 히스토리 전부 + 기각 이력 전달받음). sw.js(86줄, 캐시 전략/네트워크 우선 네비게이션/알림클릭 핸들러)와 index.html의 서비스워커 업데이트 플로우(1307/1327/4685/4699/7632-7638), 포커스 트랩/오버레이 inert 처리(5909-5996, syncOverlayInert/overlayEscapeTarget), undo 패턴(6931-6941 등 10여 곳의 undoToast+톰스톤), histQ 검색 캐시(4315/4333)까지 폭넓게 Read/grep으로 점검했으나 모두 이미 견고하거나 사소해 새 critique 대상이 아니었다. 대신 cycle148 critique가 'WebAuthn/생체인증·잠금까지의 유예시간'을 범위 밖 후속항목으로 명시해 두었던 점에 집중해 실제 코드를 재확인: APPLOCK 상태 객체(index.html:1984-2006, _read/_write/enabled/setPin/verify/disable)에는 grace 관련 필드가 전혀 없고, lockApp()/unlockApp()(7291-7301)도 마지막 백그라운드 전환 시각을 기록·비교하는 로직이 없으며, document.addEventListener('visibilitychange', ...)(7607)가 document.hidden이 될 때마다 appIsOpen()이면 무조건 lockApp()을 호출함을 직접 확인했다. 설정 메뉴(4667-4671, '알림 · 기준' 그룹)에도 '앱 잠금(PIN)' 스위치+'PIN 변경'만 있고 재잠금 시점을 조절하는 항목이 없다. 즉 OTP 복사, 영수증 카메라 전환, 알림 확인처럼 아주 짧은 백그라운드 전환에도 매번 PIN을 처음부터 다시 입력해야 하는 과도하게 공격적인 재잠금 정책이 실제로 존재함을 확인했다. test/run.js(8702-8764)의 기존 APPLOCK vm 테스트 하네스(Map 기반 localStorage 목업으로 setPin/verify/disable/실패카운터 왕복 검증)를 그대로 재사용·확장해 그레이스 로직을 검증할 수 있어 신규 아키텍처 없이 한 advance 사이클에 안전하게 끝낼 수 있는 크기라고 판단해 이를 pending_advance_plan으로 선정했다. 러너업(기각): histQ 검색 디바운스 부재는 기존 캐시+페이지네이션으로 체감 영향이 작아 보류, WebAuthn/생체인증 연동은 여전히 한 사이클보다 커서 재기각(그레이스 유예시간만 분리해 채택), CSV import 완전일치 불일치는 이전에 이미 '보너스 항목'으로 기각됐고 관련 함수명도 현재 코드에서 재확인되지 않아 보류. 코드 변경 없음(읽기 전용 조사), git status clean 유지 확인.",
+      "commit": null
+    },
     {
       "cycle": 151,
       "phase": "review",
