@@ -1,15 +1,8 @@
 {
   "cycle": 153,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 149,
-      "phase": "critique",
-      "timestamp": "2026-10-06T17:10:00.000Z",
-      "summary": "balancesUpTo/balanceAt 계열의 날짜별 전체 재스캔 성능 문제를 발견, balancesAtDates() 배치 처리 계획을 pending_advance_plan에 저장.",
-      "commit": null
-    },
     {
       "cycle": 149,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-07T07:12:30.572Z",
       "summary": "addMonthsStr(logic.js)이 addMonths(index.html)와 달리 day를 clamp하지 않고 setMonth 롤오버를 그대로 반환함을 발견(예: 1/31+1개월 -> 3/3). recNthDate/recCountUntil이 이 함수로 만드는 to 상한은 롤오버가 항상 뒤로만 밀기 때문에 현재는 버그 아님을 직접 확인했고, 대신 지금까지 day 29/30/31 시작을 다루지 않아 이 경로가 테스트로 한 번도 실행되지 않았던 공백을 메웠다 — test/run.js에 addMonthsStr 직접 테스트 3건(말일 롤오버/연 경계/윤년->평년 롤오버) 추가, addMonths와 혼용하지 않도록 동작 차이를 주석으로 명시. index.html/logic.js는 변경 없어 APP_VERSION/sw.js 변경 없음. node test/run.js 1050/1050 -> 1053/1053 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 153,
+      "phase": "review",
+      "timestamp": "2026-10-07T11:00:00.000Z",
+      "summary": "cycle153 develop(addMonthsStr 롤오버 회귀 테스트 3건) 검토 — 테스트 전용 변경, addMonthsStr('2026-01-31',1)='2026-03-03' 등 기대값을 node로 직접 재계산해 실제 동작과 일치함을 확인. index.html/logic.js 코드 변경 없음(테스트만 추가), 혼용 방지 주석도 정확함. node test/run.js 1053/1053 통과. 이상 없음.",
       "commit": null
     }
   ]
