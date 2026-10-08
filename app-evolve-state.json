@@ -1,15 +1,8 @@
 {
   "cycle": 160,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 155,
-      "phase": "review",
-      "timestamp": "2026-10-07T17:30:00.000Z",
-      "summary": "cycle155 develop(auPw/frPwIn/newPwIn 눈 아이콘 토글) 검토 — togglePwVis가 el.type과 아이콘/aria-label을 정확히 뒤집는지, 3곳(renderAuth/doForgotPasswordLocal/openChangePasswordSheet) 모두 .pw-wrap으로 감싸고 togglePwVis(id)에 올바르게 연결됐는지 직접 확인. $(id).value로 값을 읽는 기존 코드(doLogin/doSignup/doLocalRecover/doChangePassword)는 wrapper div 추가와 무관하게 그대로 동작함을 확인했고, CSS .pw-wrap/.pw-x가 기존 .field-clear 패턴과 겹치지 않음도 확인. node test/run.js 1063/1063 통과. 이상 없음.",
-      "commit": null
-    },
     {
       "cycle": 155,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-08T11:15:23.956Z",
       "summary": "homeAlerts 카드 중 nextOutflowCard()(\"다음에 나갈 큰돈\")만 전체를 <button class=\"next-card\">로 렌더하면서 그 안에 중첩된 .nc-fix(\"해결 방법 보기\")를 onclick div로 넣고 event.stopPropagation()으로 두 클릭을 분리하던 문제를 발견 — 네이티브 button 안에 인터랙티브 요소를 중첩하는 건 무효 HTML이고, 포커스 가능한 요소가 아니라 Tab으로는 절대 닿지 않아 경고 상태에서 가장 중요한 액션(해결 방법 보기)이 키보드/스위치 접근 사용자에게 완전히 막혀 있었음(spend-row/of-row/acct-card/ha-b가 이미 쓰던 role=button+real inner button 패턴을 이 카드만 놓침). 바깥 요소를 role=\"button\" tabindex=\"0\" aria-label + onkeydown=\"rowKeydown(...)\" div로, nc-fix를 실제 <button type=\"button\">으로 교체. .next-card:not(.ok){cursor:pointer} CSS 보강(경고 없는 .ok 변형은 onclick이 없어 제외). button.next-card를 참조하는 다른 코드 없음을 확인. test/run.js에 role/tabindex/onkeydown과 nc-fix가 실제 button 태그인지 검증하는 테스트 1건 추가. index.html/sw.js 변경이라 APP_VERSION 1.47.85->1.47.86, sw.js CACHE v347->v348 갱신. node test/run.js 1103/1103 -> 1104/1104 통과.",
       "commit": "73f7950"
+    },
+    {
+      "cycle": 160,
+      "phase": "review",
+      "timestamp": "2026-10-08T12:11:30.000Z",
+      "summary": "cycle160 develop(nextOutflowCard의 next-card role=button div + nc-fix 실제 button 전환) 검토 — nc-fix가 Tab으로 도달 가능해졌지만 자체 keydown stopPropagation이 없어 Enter/Space로 활성화하면 keydown이 바깥 next-card div로 버블되고, 그 onkeydown=rowKeydown이 e.preventDefault()를 호출해 nc-fix의 네이티브 클릭 활성화(openFixShortfall)를 막아버린 뒤 goPlanTo를 대신 실행하는 버그를 발견 — 키보드 사용자가 \"해결 방법 보기\"를 눌러도 Plan 탭으로 보내져 버리는, develop 커밋이 고치려던 바로 그 접근성 문제를 다른 모양으로 재도입한 것. nc-fix 버튼에 onkeydown=\"event.stopPropagation()\"을 추가해 버블을 끊었다(이 핸들러는 preventDefault를 호출하지 않으므로 네이티브 Enter/Space 클릭 활성화는 그대로 유지됨). 수정 전 코드로 되돌려 새 회귀 테스트를 돌려보면 실제로 깨짐을 확인했다. index.html/sw.js 변경이라 APP_VERSION 1.47.86->1.47.87, sw.js CACHE v348->v349 갱신. node test/run.js 1104/1104 -> 1105/1105 통과.",
+      "commit": null
     }
   ]
 }

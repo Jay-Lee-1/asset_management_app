@@ -8723,6 +8723,17 @@ test('nextOutflowCard: 카드(next-card)와 해결 방법 보기(nc-fix)가 각�
   assert.ok(/<button type="button" class="nc-fix"/.test(body), 'nc-fix가 실제 <button>이 아님(예전 onclick div는 Tab으로 닿을 수 없었음)');
   assert.ok(!/<div class="nc-fix"/.test(body), 'nc-fix가 여전히 onclick div로 남아있음');
 });
+/* ---------- nextOutflowCard: nc-fix에 포커스된 채 Enter/Space를 누르면 keydown이 바깥
+ * role="button" div로 버블돼 rowKeydown이 preventDefault()를 호출, 네이티브 버튼 클릭 활성화
+ * (openFixShortfall)를 막고 goPlanTo가 대신 실행되던 버그 (app-evolve cycle160 review) ----------
+ * cycle160 develop이 nc-fix를 실제 <button>으로 바꿔 Tab 도달은 고쳤지만, 버블링을 막지 않아
+ * 키보드로 활성화하면 엉뚱한 동작(goPlanTo)이 실행되는 새 문제를 만들었다. nc-fix의 keydown에도
+ * stopPropagation을 걸어 버블을 끊었다 — 이 핸들러는 preventDefault를 호출하지 않으므로 네이티브
+ * Enter/Space 클릭 활성화(및 그 onclick의 openFixShortfall)는 그대로 유지된다. */
+test('nextOutflowCard: nc-fix의 keydown이 바깥 next-card로 버블되지 않는다(goPlanTo 오발동 방지)', () => {
+  const body = extractFunction('nextOutflowCard');
+  assert.ok(/<button type="button" class="nc-fix"[^>]*onkeydown="event\.stopPropagation\(\)"/.test(body), 'nc-fix에 onkeydown="event.stopPropagation()"이 없음 — Enter/Space가 바깥 div로 버블돼 goPlanTo가 대신 실행됨');
+});
 test('homeAlertCard: 백업 알림 행(ha-b)에 키보드/스크린리더 접근 패턴이 있다', () => {
   const body = extractFunction('homeAlertCard');
   assert.ok(/class="ha-b"\s+tabindex="0"\s+role="button"[^>]*onclick="exportData\(\)"/.test(body), '백업 ha-b에 role="button"이 없음');
