@@ -1331,7 +1331,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.92';
+const APP_VERSION='1.47.93';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5865,7 +5865,34 @@ function sanitizeBackup(obj){
  const catVar=sanitizeFlatMap(obj&&obj.catVar);
  const deletedType=sanitizeFlatMap(obj&&obj.deletedType);
  const deletedBal=sanitizeFlatMap(obj&&obj.deletedBal);
- return {data:Object.assign({},obj,{txns,assets,recurrences,goals,inquiries,assetQtyLog,categories,owners,budgetHistory,catIcon,catVar,deletedType,deletedBal}),fixedCount,droppedCount,rangeCount};
+ /* DB.nwHistory(순자산 추이 일별 스냅샷 [{date,ta,td,nw,byOwner?}])는 txns/assets/recurrences/goals/
+  * inquiries/assetQtyLog/categories/owners/budgetHistory와 달리 지금까지 여기서 전혀 검증되지 않던
+  * 유일한 배열 컬렉션이었다. mergeRemoteDataIntoLocal()은 "기기별 로컬 스냅샷"이라며 의도적으로
+  * nwHistory를 병합 대상에서 빼지만, afterCloudAuth()의 미동기화 없음 분기(1831줄)와
+  * resolveCloudPullRemote()(1844줄)는 그 병합을 거치지 않고 DB=sanitizeBackup(remote).data로
+  * 통째로 교체한다 — 즉 원격(다른 기기·과거 버전) 문서의 nwHistory가 그대로 이 기기 DB에 들어온다.
+  * 교체 후 그대로 두면 save()가 호출될 때마다(앱의 거의 모든 저장 흐름, ~70곳) updateNwHistory()의
+  * hist.slice()/hist.push()/hist[hist.length-1].date가 배열이 아닌 값에서 그대로 TypeError로 터져
+  * (복원/풀 직후 이어지는 save() 호출엔 try/catch가 없음) 깨진 원격 문서 하나로 앱이 완전히 멈춘다 —
+  * categories/owners/budgetHistory(cycle141)와 동일한 '검증 분기 누락' 버그 클래스. 항목에 날짜가
+  * 없거나 csvDateValid()를 통과하지 못하면(nwChartPath/goalProgress가 날짜 비교·정렬에 그대로 씀)
+  * 통째로 제거하고, ta/td는 amount류와 동일한 크기 필드라 sanitizeAmount(min 0)로 클램프한 뒤
+  * nw는 그 값에서 항상 다시 계산한다(updateNwHistory가 쓰는 것과 동일한 유일한 산식). byOwner는
+  * catIcon류와 동일하게 일반 객체가 아니면 통째로 떨어뜨린다. */
+ const srcNwRaw=obj&&obj.nwHistory;
+ const srcNwHist=Array.isArray(srcNwRaw)?srcNwRaw:[];
+ if(srcNwRaw!=null&&!Array.isArray(srcNwRaw))fixedCount++;
+ const nwHistory=[];
+ srcNwHist.forEach(h=>{
+  if(!h||!csvDateValid(h.date)){droppedCount++;return}
+  const ta=sanitizeAmount(h.ta,0),td=sanitizeAmount(h.td,0),nw=ta-td;
+  if(ta!==h.ta||td!==h.td||nw!==h.nw)fixedCount++;
+  const d={date:h.date,ta,td,nw};
+  if(h.byOwner&&typeof h.byOwner==='object'&&!Array.isArray(h.byOwner))d.byOwner=h.byOwner;
+  else if(h.byOwner!=null)fixedCount++;
+  nwHistory.push(d);
+ });
+ return {data:Object.assign({},obj,{txns,assets,recurrences,goals,inquiries,assetQtyLog,categories,owners,budgetHistory,catIcon,catVar,deletedType,deletedBal,nwHistory}),fixedCount,droppedCount,rangeCount};
 }
 /* obj.assets/obj.txns가 배열인지까지 검증한 뒤 DB를 통째로 교체한다. migrate()가 손상된
  * obj 때문에 중간에 throw해도 DB가 절반만 마이그레이션된 채로 남지 않도록, 실패 시 교체 전

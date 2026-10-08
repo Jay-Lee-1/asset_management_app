@@ -5522,6 +5522,69 @@ test('sanitizeBackup: 정상적인 catIcon/catVar/deletedType/deletedBal은 그�
   assert.strictEqual(Object.keys(missing.data.deletedBal).length, 0);
 });
 
+/* ---------- sanitizeBackup: DB.nwHistory(순자산 추이 일별 스냅샷)도 txns/assets/recurrences/goals/
+ * inquiries/assetQtyLog/categories/owners/budgetHistory와 동일하게 검증돼야 한다 — afterCloudAuth()의
+ * 미동기화 없음 분기/resolveCloudPullRemote()는 mergeRemoteDataIntoLocal()을 거치지 않고
+ * DB=sanitizeBackup(remote).data로 통째로 교체하므로, 원격 문서의 nwHistory가 손상돼 있으면 그대로
+ * 이 기기 DB에 들어온다. 검증 없이 두면 다음 save() 호출에서 updateNwHistory()가 그 값으로
+ * TypeError를 던진다(아래 '버그 재현' 테스트로 확인). ---------- */
+test('sanitizeBackup 없이 손상된 nwHistory를 그대로 updateNwHistory()에 넘기면 TypeError로 터진다(버그 재현 — 클라우드 풀 경로는 mergeRemoteDataIntoLocal을 거치지 않고 DB를 통째로 교체한 뒤 save()를 try/catch 없이 바로 부른다)', () => {
+  assert.throws(() => sandbox.updateNwHistory('손상됨', '2026-06-01', 100, 10));
+  assert.throws(() => sandbox.updateNwHistory({ oops: true }, '2026-06-01', 100, 10));
+});
+test('sanitizeBackup: nwHistory가 배열이 아니면 빈 배열로 되돌리고 fixedCount를 센다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({ txns: [], assets: [], nwHistory: '손상됨' });
+  assert.deepStrictEqual(Array.from(data.nwHistory), []);
+  assert.strictEqual(fixedCount, 1);
+  assert.doesNotThrow(() => sandbox.updateNwHistory(data.nwHistory, '2026-06-01', 100, 10));
+});
+test('sanitizeBackup: nwHistory 항목에 날짜가 없거나 형식/달력상 무효하면 통째로 제거하고 droppedCount로 센다(csvDateValid와 동일 기준)', () => {
+  const { data, droppedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    nwHistory: [
+      { ta: 100, td: 10, nw: 90 },
+      { date: 'not-a-date', ta: 100, td: 10, nw: 90 },
+      { date: '2026-13-01', ta: 100, td: 10, nw: 90 },
+      { date: '2026-06-01', ta: 100, td: 10, nw: 90 },
+    ],
+  });
+  assert.strictEqual(data.nwHistory.length, 1);
+  assert.strictEqual(data.nwHistory[0].date, '2026-06-01');
+  assert.strictEqual(droppedCount, 3);
+});
+test('sanitizeBackup: nwHistory의 ta/td가 NaN/문자열/음수면 0으로 클램프하고, nw는 그 값으로 다시 계산해 fixedCount를 센다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    nwHistory: [{ date: '2026-06-01', ta: 'NaN이상한값', td: -10, nw: 999 }],
+  });
+  assert.strictEqual(data.nwHistory[0].ta, 0);
+  assert.strictEqual(data.nwHistory[0].td, 0);
+  assert.strictEqual(data.nwHistory[0].nw, 0);
+  assert.strictEqual(fixedCount, 1);
+});
+test('sanitizeBackup: nwHistory의 byOwner가 일반 객체가 아니면(배열 등) 그 필드만 떨어뜨리고 fixedCount를 센다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    nwHistory: [{ date: '2026-06-01', ta: 100, td: 10, nw: 90, byOwner: ['oops'] }],
+  });
+  assert.strictEqual(data.nwHistory[0].byOwner, undefined);
+  assert.strictEqual(fixedCount, 1);
+});
+test('sanitizeBackup: 정상적인 nwHistory는 그대로 두고, 없어도 터지지 않는다(정상 케이스는 회귀 없음)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    nwHistory: [{ date: '2026-06-01', ta: 300, td: 20, nw: 280, byOwner: { 나: { ta: 300, td: 20 } } }],
+  });
+  assert.strictEqual(data.nwHistory[0].ta, 300);
+  assert.strictEqual(data.nwHistory[0].td, 20);
+  assert.strictEqual(data.nwHistory[0].nw, 280);
+  assert.deepStrictEqual(data.nwHistory[0].byOwner, { 나: { ta: 300, td: 20 } });
+  assert.strictEqual(fixedCount, 0);
+  const missing = sandbox.sanitizeBackup({ txns: [], assets: [] });
+  assert.deepStrictEqual(Array.from(missing.data.nwHistory), []);
+  assert.strictEqual(missing.fixedCount, 0);
+});
+
 /* ---------- spendByCategory: 지출 분석 카테고리별 합계는 잔액 조정(기본 제외)을 빼야 한다 ---------- */
 test('spendByCategory: 수지에 포함되지 않은 잔액 조정 지출은 카테고리 합계에서 제외된다', () => {
   sandbox.DB = {

@@ -1,15 +1,8 @@
 {
-  "cycle": 162,
-  "phase": "develop",
+  "cycle": 163,
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 158,
-      "phase": "develop",
-      "timestamp": "2026-10-08T03:09:22.546Z",
-      "summary": "renderAuth()의 auEmail(이메일)·kkeyIn(카카오 JavaScript 키) 입력에 다른 텍스트 입력란과 동일한 field-clear(×) 버튼을 추가. cycle154 critique가 범위 밖(별도 CSS/수동 fcWire 배선 필요)으로 백로그에 남겨둔 항목 — 실제로 확인해보니 .auth-field/.kkey 모두 position 지정이 없어 .field-clear의 position:relative+fc-x 절대배치가 그대로 들어맞았고, 새 CSS 추가는 필요 없었다. authView는 openSheet()가 아닌 별도 화면이라 그쪽 자동 fcWire() 배선을 못 타므로, histQ(renderHistory)가 쓰던 것과 동일하게 renderAuth() 끝에 fcWire() 직접 호출을 추가했다. test/run.js에 auEmail/kkeyIn field-clear 구조 2건 + renderAuth가 fcWire()를 호출하는지 1건, 총 3건의 정규식 기반 테스트를 추가(실DOM 조작이 아닌 순수 문자열 템플릿 조립이라 다른 field-clear 테스트들과 동일한 관례). index.html/sw.js 변경이라 APP_VERSION 1.47.81->1.47.82, sw.js CACHE v343->v344 갱신. node test/run.js 1086/1086 -> 1089/1089 통과.",
-      "commit": null
-    },
     {
       "cycle": 158,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-08T22:10:00.000Z",
       "summary": "critique(cycle162) 계획대로 openRateSheet()의 금/외화/주식 시세 직접수정 input 3곳에 newOwner와 동일한 마크업으로 aria-label + .field-clear/fc-x 지우기 버튼을 추가했다. gold는 고정 id(rateGold), fx/stock은 행마다 고유 id(rateFx_${c}, rateStock_${a.stockCode})를 새로 부여해 clrInput()이 각 행을 구분해서 지울 수 있게 했다(기존엔 셀렉터 대상이 될 input 자체에 id가 전혀 없었음). aria-label은 금 '금 시세', fx '${c} 환율', stock '${a.name} 현재가'로 달아 보유 통화·종목이 여러 개여도 스크린리더로 구분 가능하게 했다. openRateSheet()는 openSheet()를 통해 열리므로(renderAuth처럼 별도 화면이 아님) fcWire() 자동 배선을 그대로 타 별도 호출은 불필요했다. .rate-row input의 기존 width:118px(box-sizing:border-box 전역 규칙 덕에 .field-clear input의 padding-right:38px!important가 박스 폭을 넓히지 않음)과 .sheet .rate-row input 글래스 배경 셀렉터(자손 선택자라 중첩 깊이 무관) 둘 다 깨지지 않음을 코드로 확인. openRateSheet는 FUNCTIONS(vm 실행) 목록 밖이라 renderAuth/openOwnerManage와 동일하게 extractFunction 소스 문자열 검사 테스트 3건(gold/fx/stock 각각 id·aria-label·field-clear·fc-x onclick 연결 검증)을 추가했다. index.html/sw.js 변경이라 APP_VERSION 1.47.91->1.47.92, sw.js CACHE v353->v354 갱신. node test/run.js 1117/1117 -> 1120/1120 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 163,
+      "phase": "develop",
+      "timestamp": "2026-10-08T23:30:00.000Z",
+      "summary": "sanitizeBackup()이 txns/assets/recurrences/goals/inquiries/assetQtyLog/categories/owners/budgetHistory/catIcon류는 전부 검증하면서 DB.nwHistory(순자산 추이 일별 스냅샷 배열)만 빠뜨리고 있음을 코드로 확인 — mergeRemoteDataIntoLocal()은 nwHistory를 '기기별 로컬 스냅샷'이라며 의도적으로 병합 대상에서 빼지만, afterCloudAuth()의 미동기화 없음 분기와 resolveCloudPullRemote()는 그 병합을 거치지 않고 DB=sanitizeBackup(remote).data로 DB를 통째로 교체해 원격(다른 기기·과거 버전) 문서의 nwHistory가 그대로 들어온다. 검증 없이 두면 교체 직후 이어지는 save() 호출(try/catch 없음)마다 updateNwHistory()의 hist.slice()/hist.push()가 배열이 아닌 값에서 TypeError로 터져 손상된 원격 문서 하나로 앱이 완전히 멈춘다 — categories/owners/budgetHistory(cycle141)와 같은 '검증 분기 누락' 버그 클래스가 nwHistory에만 재발한 것. sanitizeBackup()에 nwHistory 전용 검증 블록을 추가: 배열이 아니면 빈 배열로, 항목에 csvDateValid를 통과하는 날짜가 없으면 통째로 제거, ta/td는 amount류와 동일하게 sanitizeAmount(min 0)로 클램프하고 nw는 그 값으로 항상 다시 계산(updateNwHistory와 동일한 유일한 산식), byOwner는 일반 객체가 아니면 떨어뜨림. test/run.js에 버그 재현(손상된 값을 updateNwHistory에 바로 넘기면 TypeError) 1건 + 배열 아님/날짜 무효/ta·td 클램프/byOwner 무효/정상 케이스 회귀 없음 총 6건을 추가. index.html/sw.js 변경이라 APP_VERSION 1.47.92->1.47.93, sw.js CACHE v354->v355 갱신. node test/run.js 1120/1120 -> 1126/1126 통과.",
       "commit": null
     }
   ]
