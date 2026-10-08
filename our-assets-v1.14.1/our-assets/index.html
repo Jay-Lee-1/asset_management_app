@@ -298,6 +298,7 @@ html[data-theme="dark"] .alloc-bar i+i::before{background:var(--bg);opacity:.9}
 .switch:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
 .asset-item:focus-visible,.swipe-content:focus-visible,.manage-row:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}
 .nwh-chart:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:6px}
+#ledsumLive:focus-visible,#histTotLive:focus-visible,#histTotals:focus-visible,#planBalLive:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:var(--r-lg)}
 .switch.on{background:var(--brand)}
 .switch i{position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;transition:transform .2s var(--spring);box-shadow:0 1px 3px rgba(0,0,0,.2)}
 .switch.on i{transform:translateX(18px)}
@@ -1329,7 +1330,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.87';
+const APP_VERSION='1.47.88';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3680,12 +3681,26 @@ function ledSumBox(y,m,live){
  const {a,sc}=monthStats2(y,m);
  if(!live)return `<div class="card ledsum" style="pointer-events:none">${ledSumInner(a,sc,false,true)}</div>`;
  /* 라이브 카드: 꾹 누르는 동안 '오늘까지' 금액으로 전환 (릴리즈 시 복귀) */
- return `<div class="card ledsum" id="ledsumLive" data-y="${y}" data-m="${m}" onpointerdown="sujiPeekStart()" onpointermove="sujiPeekMove()" onpointerup="sujiPeekEnd()" onpointercancel="sujiPeekEnd()" onpointerleave="sujiPeekEnd()">${ledSumInner(a,sc,false,true)}</div>`;
+ return `<div class="card ledsum" id="ledsumLive" data-y="${y}" data-m="${m}" tabindex="0" role="button" aria-label="이번 달 수지, 엔터나 스페이스를 누르고 있으면 오늘까지 금액 보기" onpointerdown="sujiPeekStart()" onpointermove="sujiPeekMove()" onpointerup="sujiPeekEnd()" onpointercancel="sujiPeekEnd()" onpointerleave="sujiPeekEnd()" onkeydown="sujiPeekKey(event)" onkeyup="sujiPeekEnd()" onblur="sujiPeekEnd()">${ledSumInner(a,sc,false,true)}</div>`;
 }
 let _sujiTimer=null,_sujiPeeking=false,_sujiPeeked=false;
 function sujiPeekStart(){clearTimeout(_sujiTimer);_sujiPeeked=false;_sujiTimer=setTimeout(()=>{_sujiPeeking=true;_sujiPeeked=true;setSujiMode(true);if(navigator.vibrate)navigator.vibrate(8)},180)}
 function sujiPeekMove(){if(!_sujiPeeking)clearTimeout(_sujiTimer)} /* 스와이프면 피크 취소 */
 function sujiPeekEnd(){clearTimeout(_sujiTimer);if(_sujiPeeking){_sujiPeeking=false;setSujiMode(false)}}
+/* 카드 안의 수입/지출/저축 버튼(ledSumTap)으로 키보드 포커스가 있을 때 Enter/Space를 누르면
+ * 그 keydown이 카드 div까지 버블되는데, e.target!==e.currentTarget으로 걸러 "카드 자체"가 포커스일
+ * 때만 피크를 시작한다 — 안 그러면 preventDefault가 버블 중에도 적용돼 안쪽 버튼의 네이티브
+ * Enter/Space 클릭 활성화까지 막아버린다(nc-fix가 겪은 것과 같은 버블링 함정). Escape는
+ * nwChartPeekKey와 동일하게 즉시 종료, e.repeat는 키를 누르고 있는 동안 반복 발생하는
+ * keydown이라 무시해야 pointerdown 1회와 동등하게 동작한다. */
+function sujiPeekKey(e){
+ if(e.target!==e.currentTarget)return;
+ if(e.key==='Escape'){sujiPeekEnd();return}
+ if(e.key!=='Enter'&&e.key!==' ')return;
+ e.preventDefault();
+ if(e.repeat)return;
+ sujiPeekStart();
+}
 /* 버튼 onclick(ledSumTap)은 롱프레스 릴리즈 시에도 pointerup 뒤 click이 그대로 발생해 호출된다 —
  * _sujiPeeked로 '방금 꾹 눌러 오늘까지 미리보기를 했을 뿐인' 릴리즈 한 번만 삼키고(전체내역 이동
  * 방지), 다음 진짜 탭부터는 sujiPeekStart()가 매 누름 시작마다 다시 false로 되돌려 정상 동작한다. */
@@ -4351,7 +4366,7 @@ function renderHistory(){
    <button class="rg-date" onclick="histPickDate('from')">${fmtDot(R.from)}</button>
    <span class="rg-tilde">~</span>
    <button class="rg-date" onclick="histPickDate('to')">${fmtDot(R.to)}</button></div>
- <div class="card ledsum" id="histTotals" onpointerdown="histTotDown()" onpointerup="histTotUp()" onpointermove="histTotUp()" onpointercancel="histTotUp()" onpointerleave="histTotUp()"></div>`}
+ <div class="card ledsum" id="histTotals" tabindex="0" role="button" aria-label="전체내역 합계, 엔터나 스페이스로 월평균 보기 전환" onpointerdown="histTotDown()" onpointerup="histTotUp()" onpointermove="histTotUp()" onpointercancel="histTotUp()" onpointerleave="histTotUp()" onkeydown="rowKeydown(event,histTotToggle)"></div>`}
  <div id="histList"></div>
  <div style="height:8px"></div>`;
  updateHist();
@@ -4389,12 +4404,21 @@ function histTotBox(tot,suji,sch,ssuji,live){ /* 달력 모드 수지카드와 �
              :{income:0,expense:0,saving:0,transfer:0,suji:0};
  if(!live)return `<div class="card ledsum mc-pane" style="pointer-events:none">${ledSumInner(a,sc,false)}</div>`;
  _histLive={a,sc};
- return `<div class="card ledsum mc-pane" id="histTotLive" onpointerdown="histPeekStart()" onpointermove="histPeekMove()" onpointerup="histPeekEnd()" onpointercancel="histPeekEnd()" onpointerleave="histPeekEnd()">${ledSumInner(a,sc,false)}</div>`;
+ return `<div class="card ledsum mc-pane" id="histTotLive" tabindex="0" role="button" aria-label="전체내역 합계, 엔터나 스페이스를 누르고 있으면 오늘까지 금액 보기" onpointerdown="histPeekStart()" onpointermove="histPeekMove()" onpointerup="histPeekEnd()" onpointercancel="histPeekEnd()" onpointerleave="histPeekEnd()" onkeydown="histPeekKey(event)" onkeyup="histPeekEnd()" onblur="histPeekEnd()">${ledSumInner(a,sc,false)}</div>`;
 }
 let _histTimer=null,_histPeeking=false;
 function histPeekStart(){clearTimeout(_histTimer);_histTimer=setTimeout(()=>{_histPeeking=true;setHistMode(true);if(navigator.vibrate)navigator.vibrate(8)},180)}
 function histPeekMove(){if(!_histPeeking)clearTimeout(_histTimer)}
 function histPeekEnd(){clearTimeout(_histTimer);if(_histPeeking){_histPeeking=false;setHistMode(false)}}
+/* sujiPeekKey(3683행 부근)와 동일한 원칙 — 버블링 방지용 e.target 가드, Escape 즉시 종료, e.repeat 무시. */
+function histPeekKey(e){
+ if(e.target!==e.currentTarget)return;
+ if(e.key==='Escape'){histPeekEnd();return}
+ if(e.key!=='Enter'&&e.key!==' ')return;
+ e.preventDefault();
+ if(e.repeat)return;
+ histPeekStart();
+}
 function setHistMode(today){const c=$('histTotLive');if(!c||!_histLive)return;const L=_histLive;c.innerHTML=ledSumInner(L.a,L.sc,today);c.classList.toggle('peek',today);requestAnimationFrame(fitAll)}
 function histClearFilter(){ST.hist.cat='전체';ST.hist.q='';ST.hist.assetId=null;ST.hist.catExact=null;ST.hist.owner='전체';histInvalidate();renderHistory()}
 function histClearAssetFilter(){ST.hist.assetId=null;histInvalidate();renderHistory()}
@@ -4467,11 +4491,12 @@ function histTotHTML(a,sc,cntA,cntS,list){
    </div>
    <button class="lsr"><span class="k">내부이체</span><span class="lsr-r"><span class="v num fit" data-max="15">${comma(tr)}원</span></span></button>`;
 }
-/* 합계 카드 롱프레스 감지 → 월평균 토글 */
+/* 합계 카드 롱프레스 감지 → 월평균 토글. 키보드는 길게 누르는 대신 Enter/Space 1회로 즉시
+ * 토글한다(histTotals onkeydown="rowKeydown(event,histTotToggle)") — 포인터와 달리 키 입력엔
+ * "꾹 누름"을 구분할 자연스러운 수단이 없어 즉시 토글이 더 자연스럽다. */
 let _htTimer=null;
-function histTotDown(){clearTimeout(_htTimer);_htTimer=setTimeout(()=>{
- ST.hist.avgMode=!ST.hist.avgMode;if(navigator.vibrate)navigator.vibrate(10);updateHist();requestAnimationFrame(fitAll);
-},450)}
+function histTotToggle(){ST.hist.avgMode=!ST.hist.avgMode;if(navigator.vibrate)navigator.vibrate(10);updateHist();requestAnimationFrame(fitAll)}
+function histTotDown(){clearTimeout(_htTimer);_htTimer=setTimeout(histTotToggle,450)}
 function histTotUp(){clearTimeout(_htTimer)}
 function histRow(t){return txRowCore(t,{mode:ST.hist.selMode,has:id=>ST.hist.sel.has(id),onToggle:'histToggleSel'})}
 let _segPrev=null; /* 시트 재렌더 시에도 물방울이 이어서 미끄러지도록 이전 위치 기억 */
@@ -4551,11 +4576,22 @@ function planBalCard(y,m,a,live){
  const bal=balanceAt(a.id,monthEndStr(y,m));
  if(!live)return `<div class="balance-head mc-pane ${bal<0?'neg':''}">${planBalInner(y,m,a,false)}</div>`;
  _planLive={y,m,a};
- return `<div class="balance-head mc-pane ${bal<0?'neg':''}" id="planBalLive" onpointerdown="planPeekStart()" onpointermove="planPeekMove()" onpointerup="planPeekEnd()" onpointercancel="planPeekEnd()" onpointerleave="planPeekEnd()">${planBalInner(y,m,a,false)}</div>`;
+ return `<div class="balance-head mc-pane ${bal<0?'neg':''}" id="planBalLive" tabindex="0" role="button" aria-label="이번 달 말일 잔액, 엔터나 스페이스를 누르고 있으면 오늘까지 잔액 보기" onpointerdown="planPeekStart()" onpointermove="planPeekMove()" onpointerup="planPeekEnd()" onpointercancel="planPeekEnd()" onpointerleave="planPeekEnd()" onkeydown="planPeekKey(event)" onkeyup="planPeekEnd()" onblur="planPeekEnd()">${planBalInner(y,m,a,false)}</div>`;
 }
 function planPeekStart(){clearTimeout(_planT);_planT=setTimeout(()=>{_planPeek=true;setPlanMode(true);if(navigator.vibrate)navigator.vibrate(8)},180)}
 function planPeekMove(){if(!_planPeek)clearTimeout(_planT)}
 function planPeekEnd(){clearTimeout(_planT);if(_planPeek){_planPeek=false;setPlanMode(false)}}
+/* sujiPeekKey(3683행 부근)와 동일한 원칙 — planBalInner 안의 "가장 낮을 때"(.bh-low) 버튼에서
+ * 버블된 keydown은 e.target!==e.currentTarget으로 걸러 preventDefault가 그 버튼의 네이티브
+ * Enter/Space 클릭까지 막지 않게 한다. */
+function planPeekKey(e){
+ if(e.target!==e.currentTarget)return;
+ if(e.key==='Escape'){planPeekEnd();return}
+ if(e.key!=='Enter'&&e.key!==' ')return;
+ e.preventDefault();
+ if(e.repeat)return;
+ planPeekStart();
+}
 function setPlanMode(today){const c=$('planBalLive');if(!c||!_planLive)return;const L=_planLive;
  c.innerHTML=planBalInner(L.y,L.m,L.a,today);c.classList.toggle('peek',today);requestAnimationFrame(fitAll)}
 function scrollToPlanDay(date){

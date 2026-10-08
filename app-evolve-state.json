@@ -1,19 +1,8 @@
 {
-  "cycle": 160,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "\"오늘까지/월평균\" 롱프레스 피크 카드 4곳 키보드 접근성 추가 (nwChart/assetBalChart 패턴과 통일)",
-    "why": "nwhChart(index.html:2525)와 assetBalChart(index.html:2631)는 롱프레스 '다른 값 미리보기' UX에 tabindex=0/role=img/aria-label/onkeydown(nwChartPeekKey·assetBalPeekKey)/onblur로 완전한 키보드 접근성을 갖췄고 test/run.js에도 회귀 테스트가 있다. 그런데 동일 패턴을 쓰는 다른 4곳 — ledSumBox/#ledsumLive(가계부 '이번 달 수지', sujiPeekStart, ~3683/3686), histTotBox/#histTotLive(전체내역 '오늘까지' 라이브 합계, histPeekStart, ~4392/4395), #histTotals(전체내역 고정 합계의 '월평균' 토글, histTotDown, ~4354/4472), planBalCard/#planBalLive(한달 플랜 '말일 잔액' '오늘까지', planPeekStart, ~4554/4556) — 는 onpointerdown/up/move/cancel/leave만 있고 tabindex·role·onkeydown·aria-label이 전혀 없어 키보드/스크린리더 사용자가 포커스조차 줄 수 없다. 튜토리얼(index.html:5291,5293)이 '꾹 누르면 오늘까지 금액이 나와요'를 핵심 UX로 소개하는데도 키보드 전용 사용자는 이 기능에 접근할 길이 없다. grep으로 4곳 모두 tabindex 부재, test/run.js에 관련 키보드 테스트 부재를 확인했고 cycle154-160 이력과 겹치지 않는 새 발견이다.",
-    "approach": "nwChartPeekKey/assetBalPeekKey와 동일한 골격을 재사용한다. 1) ledsumLive/histTotLive/planBalLive/histTotals 4곳에 tabindex=\"0\", role=\"button\", 현재 상태를 설명하는 aria-label을 추가. 2) 누름-유지형 3곳(ledsumLive/histTotLive/planBalLive)은 keydown에서 peekStart() 호출(event.repeat면 무시해 중복 트리거 방지), keyup 또는 onblur에서 peekEnd() 호출로 포인터의 누름→뗌을 keydown→keyup에 매핑. 3) 토글형 histTotals(histTotDown, 월평균)는 Enter/Space 1회에 ST.hist.avgMode=!ST.hist.avgMode;updateHist()를 직접 호출(길게 눌러야 하는 포인터와 달리 키보드는 즉시 토글해도 동일 기능이므로 더 자연스러움); rowKeydown() 공용 헬퍼를 쓸 수 있으면 재사용. 4) test/run.js에 nwhChart/assetBalChart류와 같은 형태로 이 4개 엘리먼트의 tabindex·키보드 핸들러 존재를 검증하는 회귀 테스트를 추가."
-  },
+  "cycle": 161,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 155,
-      "phase": "advance",
-      "timestamp": "2026-10-07T18:16:28.200Z",
-      "summary": "critique(cycle155) 계획대로 PIN 복구 플로우의 인증 없는 App-Lock 우회를 고쳤다. openForgotPinSheet()/doForgotPin()을 accountKind()로 분기 — email 계정은 계정 비밀번호 입력칸(togglePwVis 눈 아이콘 재사용)을 받아 AUTH.signIn(SESSION,pw)을 그대로 재사용해 통과해야만 APPLOCK.disable()을 부르고(검증 중엔 버튼 비활성, 실패하면 fpinErr에 메시지만 띄우고 APPLOCK/closeSheet/unlockApp 중 아무것도 건드리지 않음 — cycle131이 보장한 데이터 비파괴는 그대로 유지), guest/kakao 계정은 비밀번호가 없어 검증할 수단이 없으므로 renderLockView의 재시도 타이머 패턴을 모방한 tickForgotPinWait()로 5초 강제 대기 + \"본인 확인을 할 수 없어요 · 본인 기기일 때만\" 경고 문구를 추가해 최소한 즉시·무경고 우회만은 막았다. tickForgotPinWait는 대기칸/버튼이 사라지면(시트가 닫히는 등) 조용히 멈춰 닫힌 시트를 재오픈하지 않는다. test/run.js의 '질문 없이 바로 푼다'를 정답으로 단언하던 기존 테스트 2건을 guest/email 각 분기(성공/실패/대기)를 실행형으로 검증하는 7건으로 교체했다. index.html/sw.js 변경이라 APP_VERSION 1.47.76->1.47.77, sw.js CACHE v338->v339 갱신. node test/run.js 1063/1063 -> 1068/1068 통과.",
-      "commit": null
-    },
     {
       "cycle": 156,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-08T13:10:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 재조망(154-160사이클 전부 + 기각 이력 전달). 새로 발견: nwhChart/assetBalChart는 '롱프레스로 다른 값 미리보기' UX에 tabindex/role/aria-label/onkeydown(nwChartPeekKey·assetBalPeekKey)/onblur로 완전한 키보드 접근성과 회귀 테스트를 갖췄는데, 동일 패턴을 쓰는 다른 4곳(ledsumLive/sujiPeekStart ~3683, histTotLive/histPeekStart ~4392, histTotals 월평균토글/histTotDown ~4354, planBalLive/planPeekStart ~4554)은 onpointerdown류만 있고 tabindex·role·onkeydown·aria-label이 전혀 없어 키보드/스크린리더 사용자가 접근 불가. 튜토리얼이 이 기능을 핵심으로 소개하는데도 키보드 전용 사용자는 못 씀. nwChartPeekKey류 골격 재사용 + histTotals는 즉시토글 방식으로 처리하는 계획을 pending_advance_plan에 저장. 러너업(기각): saveGoal() 중복 이름 검사 누락(목표명은 참조 키가 아니라 데이터 무결성과 무관한 사소 UX, 저임팩트), 대량 데이터 O(n²) 성능(캐싱이 이미 cycle149 전후로 체계적으로 들어가 있어 추가 발견 없음), 백업/복원 검증 공백(모든 필드가 이미 꼼꼼히 검증되고 있어 추가 공백 없음). 코드 변경 없음(읽기 전용 조사).",
+      "commit": null
+    },
+    {
+      "cycle": 160,
+      "phase": "advance",
+      "timestamp": "2026-10-08T14:20:00.000Z",
+      "summary": "critique(cycle160) 계획대로 ledsumLive(가계부 '이번 달 수지')/histTotLive(전체내역 '오늘까지' 라이브 합계)/planBalLive(한달 플랜 '말일 잔액/오늘까지') 3곳과 histTotals(전체내역 합계 '월평균' 토글) 1곳에 nwChartPeekKey/assetBalPeekKey와 동일한 골격으로 키보드 접근성을 추가했다. 누름-유지형 3곳은 tabindex=\"0\" role=\"button\" aria-label을 달고 onkeydown=\"sujiPeekKey/histPeekKey/planPeekKey(event)\" +onkeyup/onblur=\"...PeekEnd()\"로 포인터의 누름→뗌을 keydown→keyup에 매핑했다. 새 Key 함수들은 Enter/Space에서만 Start()를 부르고 Escape는 즉시 End(), e.repeat(키를 누르고 있는 동안 반복 발생)는 무시한다 — 특히 카드 안에 ledSumTap/bh-low 같은 실제 <button>이 중첩돼 있어(나머지 3곳과 달리 nwhChart/assetBalChart엔 이게 없었음) 그 버튼에서 버블된 keydown까지 처리하면 e.preventDefault()가 버블 중에도 적용돼 그 버튼의 네이티브 Enter/Space 클릭 활성화를 막아버린다는 걸 파악해(cycle160 review가 nc-fix에서 겪은 것과 같은 함정) e.target!==e.currentTarget 가드를 추가했다. 토글형 histTotals는 계획대로 즉시 토글 방식을 택해 histTotDown의 450ms 롱프레스 로직에서 avgMode 토글 부분을 histTotToggle()로 뽑아 onkeydown=\"rowKeydown(event,histTotToggle)\"과 공유시켰다(롱프레스/키보드가 로직을 따로 들고 있다가 한쪽만 고치는 회귀 방지). CSS에 4개 id용 :focus-visible 아웃라인(.nwh-chart와 동일 패턴)도 추가. test/run.js에 4곳의 tabindex/role/키보드 핸들러 마크업 검증 5건, 3개 Key 함수의 e.target/e.repeat/Escape 가드 소스 검증 1건, histTotDown/histTotals가 histTotToggle을 공유하는지 검증 1건, 총 7건(테스트는 6개 test() 블록)을 추가했다. index.html/sw.js 변경이라 APP_VERSION 1.47.87->1.47.88, sw.js CACHE v349->v350 갱신. node test/run.js 1105/1105 -> 1111/1111 통과.",
       "commit": null
     }
   ]

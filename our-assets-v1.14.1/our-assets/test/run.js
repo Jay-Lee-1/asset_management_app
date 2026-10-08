@@ -12018,6 +12018,63 @@ test('assetBalChart: tabindex와 키보드 핸들러(onkeydown)가 있다', () =
   assert.ok(tag.includes('role="img"'), 'assetBalChart div에 role="img"가 없음');
   assert.ok(tag.includes('onkeydown="assetBalPeekKey(event)"'), 'assetBalChart div에 onkeydown이 없음 — 키보드 접근 경로가 빠짐');
 });
+/* ---------- ledsumLive/histTotLive/histTotals/planBalLive 마크업: nwhChart/assetBalChart와
+ * 똑같이 "롱프레스로 다른 값 미리보기" UX를 쓰면서도 onpointer*만 있고 키보드 경로가 전혀 없던
+ * 공백(app-evolve cycle160 critique)을 cycle161에서 메웠다 — tabindex+onkeydown이 다시 빠지면
+ * 조용히 재발할 수 있어 마크업 자체를 지킨다. extractTag(id)로 각 엘리먼트의 여는 태그
+ * 범위 안에서만 검사한다(nwhChart 테스트와 같은 이유). */
+test('ledsumLive: tabindex와 키보드 핸들러(onkeydown/onkeyup/onblur)가 있다', () => {
+  const tag = extractTag('ledsumLive');
+  assert.ok(tag.includes('tabindex="0"'), 'ledsumLive div에 tabindex="0"이 없음 — 키보드 접근 경로가 빠짐');
+  assert.ok(tag.includes('role="button"'), 'ledsumLive div에 role="button"이 없음');
+  assert.ok(tag.includes('onkeydown="sujiPeekKey(event)"'), 'ledsumLive div에 onkeydown이 없음 — 키보드 접근 경로가 빠짐');
+  assert.ok(tag.includes('onkeyup="sujiPeekEnd()"'), 'ledsumLive div에 onkeyup이 없음 — 키를 떼도 피크가 끝나지 않음');
+  assert.ok(tag.includes('onblur="sujiPeekEnd()"'), 'ledsumLive div에 onblur가 없음 — 포커스를 잃어도 피크가 끝나지 않음');
+});
+test('histTotLive: tabindex와 키보드 핸들러(onkeydown/onkeyup/onblur)가 있다', () => {
+  const tag = extractTag('histTotLive');
+  assert.ok(tag.includes('tabindex="0"'), 'histTotLive div에 tabindex="0"이 없음 — 키보드 접근 경로가 빠짐');
+  assert.ok(tag.includes('role="button"'), 'histTotLive div에 role="button"이 없음');
+  assert.ok(tag.includes('onkeydown="histPeekKey(event)"'), 'histTotLive div에 onkeydown이 없음 — 키보드 접근 경로가 빠짐');
+  assert.ok(tag.includes('onkeyup="histPeekEnd()"'), 'histTotLive div에 onkeyup이 없음 — 키를 떼도 피크가 끝나지 않음');
+  assert.ok(tag.includes('onblur="histPeekEnd()"'), 'histTotLive div에 onblur가 없음 — 포커스를 잃어도 피크가 끝나지 않음');
+});
+test('planBalLive: tabindex와 키보드 핸들러(onkeydown/onkeyup/onblur)가 있다', () => {
+  const tag = extractTag('planBalLive');
+  assert.ok(tag.includes('tabindex="0"'), 'planBalLive div에 tabindex="0"이 없음 — 키보드 접근 경로가 빠짐');
+  assert.ok(tag.includes('role="button"'), 'planBalLive div에 role="button"이 없음');
+  assert.ok(tag.includes('onkeydown="planPeekKey(event)"'), 'planBalLive div에 onkeydown이 없음 — 키보드 접근 경로가 빠짐');
+  assert.ok(tag.includes('onkeyup="planPeekEnd()"'), 'planBalLive div에 onkeyup이 없음 — 키를 떼도 피크가 끝나지 않음');
+  assert.ok(tag.includes('onblur="planPeekEnd()"'), 'planBalLive div에 onblur가 없음 — 포커스를 잃어도 피크가 끝나지 않음');
+});
+test('histTotals: tabindex와 키보드 핸들러(onkeydown)가 있다(토글형이라 즉시 토글)', () => {
+  const tag = extractTag('histTotals');
+  assert.ok(tag.includes('tabindex="0"'), 'histTotals div에 tabindex="0"이 없음 — 키보드 접근 경로가 빠짐');
+  assert.ok(tag.includes('role="button"'), 'histTotals div에 role="button"이 없음');
+  assert.ok(tag.includes('onkeydown="rowKeydown(event,histTotToggle)"'), 'histTotals div에 onkeydown이 없음 — 키보드 접근 경로가 빠짐');
+});
+/* sujiPeekKey/histPeekKey/planPeekKey 공통 가드 — extractFunction으로 몸통만 잘라 검사한다.
+ * 1) e.target!==e.currentTarget: 카드 안의 다른 버튼(수입/지출/가장 낮을 때 등)에서 버블된
+ *    keydown까지 처리하면 그 버튼의 네이티브 Enter/Space 클릭 활성화를 preventDefault가
+ *    막아버린다(nc-fix가 겪은 버블링 함정과 동일 원인) — 이걸 보장하는 게 핵심이라 소스에
+ *    그 가드가 남아있는지를 지킨다.
+ * 2) e.repeat 무시: 키를 누르고 있으면 브라우저가 keydown을 반복 발생시키는데, 매번
+ *    Start()를 다시 부르면 안 된다(포인터는 pointerdown이 1회뿐이라 대응 사례가 없음). */
+test('sujiPeekKey/histPeekKey/planPeekKey가 버블링 가드(e.target)와 반복 가드(e.repeat)를 둔다', () => {
+  for (const fn of ['sujiPeekKey', 'histPeekKey', 'planPeekKey']) {
+    const body = extractFunction(fn);
+    assert.ok(body.includes('e.target!==e.currentTarget'), `${fn}에 e.target!==e.currentTarget 버블링 가드가 없음`);
+    assert.ok(body.includes('e.repeat'), `${fn}에 e.repeat 가드가 없음 — 키를 누르고 있으면 Start()가 반복 호출됨`);
+    assert.ok(body.includes(`if(e.key==='Escape'){${fn.replace('Key','End')}()`) || body.includes("e.key==='Escape'"), `${fn}에 Escape 처리가 없음`);
+  }
+});
+/* histTotDown(롱프레스 450ms)과 키보드(Enter/Space 즉시)가 같은 토글 로직(histTotToggle)을
+ * 공유하는지 확인 — 둘이 각자 ST.hist.avgMode를 따로 뒤집으면 한쪽만 고치고 다른 쪽을 잊어버리는
+ * 회귀가 생기기 쉽다. */
+test('histTotDown/histTotals onkeydown이 같은 histTotToggle을 공유한다', () => {
+  assert.ok(extractFunction('histTotDown').includes('histTotToggle'), 'histTotDown이 histTotToggle을 쓰지 않음(롱프레스/키보드가 로직을 공유하지 않음)');
+  assert.ok(extractFunction('histTotToggle').includes('ST.hist.avgMode=!ST.hist.avgMode'), 'histTotToggle이 avgMode를 뒤집지 않음');
+});
 /* assetBalCard의 기간 세그먼트(1개월/3개월/1년/전체)는 DOM을 직접 만지지 않는 순수 문자열 생성
  * 함수지만 assetBalSampleDates 등 FUNCTIONS 목록 밖 의존이 많아 vm 실행 대상이 아니다 — extractFunction
  * 소스 패턴으로 좁혀 aria-pressed/role이 실제로 이 함수가 만드는 segHTML에 있는지 확인한다
