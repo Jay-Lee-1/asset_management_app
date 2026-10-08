@@ -8709,6 +8709,20 @@ test('monthOutflowCard: 홈 탭 이번 달 나갈 돈 행(of-row)에 키보드/�
   assert.ok(/class="of-row"[^>]*role="button"/.test(body), 'of-row에 role="button"이 없음');
   assert.ok(body.includes('onkeydown="rowKeydown(event,()=>goLedgerTo('), 'of-row에 rowKeydown 연결이 없음');
 });
+/* ---------- nextOutflowCard: 카드 전체가 <button>인데 그 안의 "해결 방법 보기"(nc-fix)가 onclick div였던 버그
+ * (app-evolve cycle160 develop) ----------
+ * 잔액부족(short>0)일 때만 나타나는 nc-fix는 마우스로는 stopPropagation()으로 바깥 <button>의 goPlanTo와
+ * 분리돼 동작했지만, 자체 role/tabindex가 없는 div라 Tab으로는 아예 도달할 수 없었다 — 이 카드에서
+ * 가장 중요한 바로가기(해결 방법 보기)가 키보드/스위치 접근 사용자에게만 막혀 있던 셈. 바깥을
+ * spend-row/of-row와 동일한 role="button" div로, nc-fix는 실제 <button>으로 뒤집어 두 액션 모두
+ * 키보드로 닿게 했다. */
+test('nextOutflowCard: 카드(next-card)와 해결 방법 보기(nc-fix)가 각각 키보드로 접근 가능하다', () => {
+  const body = extractFunction('nextOutflowCard');
+  assert.ok(/<div class="next-card \$\{short\?'warn':''\}" role="button" tabindex="0"/.test(body), 'next-card에 role="button"/tabindex가 없음');
+  assert.ok(body.includes('onkeydown="rowKeydown(event,()=>goPlanTo('), 'next-card에 rowKeydown 연결이 없음');
+  assert.ok(/<button type="button" class="nc-fix"/.test(body), 'nc-fix가 실제 <button>이 아님(예전 onclick div는 Tab으로 닿을 수 없었음)');
+  assert.ok(!/<div class="nc-fix"/.test(body), 'nc-fix가 여전히 onclick div로 남아있음');
+});
 test('homeAlertCard: 백업 알림 행(ha-b)에 키보드/스크린리더 접근 패턴이 있다', () => {
   const body = extractFunction('homeAlertCard');
   assert.ok(/class="ha-b"\s+tabindex="0"\s+role="button"[^>]*onclick="exportData\(\)"/.test(body), '백업 ha-b에 role="button"이 없음');

@@ -1104,6 +1104,7 @@ html[data-theme="dark"] .toast.undo .toast-undo{color:var(--brand-ink)}
 .next-card{display:block;width:100%;text-align:left;background:var(--surface);border:1.5px solid var(--brand);
   border-radius:var(--r-lg);padding:20px 22px 18px;margin-bottom:14px;box-shadow:var(--sh-sm);
   transition:transform .3s var(--bounce)}
+.next-card:not(.ok){cursor:pointer} /* .ok(60일간 큰 지출 없음)은 onclick이 없는 안내 카드라 제외 */
 .next-card:active{transform:scale(.985)}
 .next-card.warn{border-color:var(--expense);border-width:1.5px}
 .nc-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
@@ -1328,7 +1329,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.85';
+const APP_VERSION='1.47.86';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6737,7 +6738,12 @@ function nextOutflowCard(){
  const acct=DB.assets.find(a=>a.id===t.fromAssetId);
  const bal=acct?balanceOn(acct.id,t.date):null;
  const short=(bal!==null&&bal<0)?Math.abs(bal):0;
- return `<button class="next-card ${short?'warn':''}" onclick="goPlanTo('${t.fromAssetId||''}','${t.date}')">
+ /* nc-fix(해결 방법 보기)가 카드 전체를 감싼 <button> 안에 onclick div로 들어있어 stopPropagation으로
+    마우스 클릭만 막아 처리했고, 자체 role/tabindex가 없어 키보드·스위치 접근으로는 아예 닿을 수 없었다
+    (잔액부족 상태에서 가장 중요한 바로가기인데도). spend-row/of-row와 동일하게 바깥을 role=button div로,
+    안쪽 액션은 실제 <button>으로 뒤집어 두 액션 모두 키보드로 닿게 한다(app-evolve cycle160). */
+ const cardLabel=`${esc(t.memo||t.category)} ${shortDate(t.date)} ${comma(t.amount)}원`;
+ return `<div class="next-card ${short?'warn':''}" role="button" tabindex="0" aria-label="${cardLabel}" onclick="goPlanTo('${t.fromAssetId||''}','${t.date}')" onkeydown="rowKeydown(event,()=>goPlanTo('${t.fromAssetId||''}','${t.date}'))">
   <div class="nc-top">
     <span class="nc-lb">다음에 나갈 큰돈</span>
     <span class="nc-dd">${d===0?'오늘':d===1?'내일':'D-'+d}</span>
@@ -6749,8 +6755,8 @@ function nextOutflowCard(){
       ? `${shortDate(t.date)} 잔액 <b>${comma(short)}원 부족</b>`
       : `${shortDate(t.date)} 잔액 <b>${comma(bal||0)}원</b> · 여유 있어요`}
   </div>
-  ${short?`<div class="nc-fix" onclick="event.stopPropagation();openFixShortfall('${t.fromAssetId}','${t.date}',${short})">${svg('transfer')} 해결 방법 보기</div>`:''}
-  </button>`;
+  ${short?`<button type="button" class="nc-fix" onclick="event.stopPropagation();openFixShortfall('${t.fromAssetId}','${t.date}',${short})">${svg('transfer')} 해결 방법 보기</button>`:''}
+  </div>`;
 }
 function monthOutflowCard(y,m){
  const {list,total}=monthOutflows(y,m);
