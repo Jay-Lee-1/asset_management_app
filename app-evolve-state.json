@@ -1,15 +1,12 @@
 {
   "cycle": 159,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "App-Lock PIN 입력 7곳(lockPinIn/pinNewIn/pinNewIn2/pinOffIn/pinChgCurIn/pinChgNewIn/pinChgNewIn2)에 눈 아이콘(표시/숨기기) 토글 추가",
+    "why": "cycle155가 auPw/frPwIn/newPwIn/fpinPwIn에 togglePwVis 눈 아이콘을 추가한 이유(마스킹된 고위험/일회성 입력에서 오타를 확인할 길이 없어 스스로 잠길 위험)가 App-Lock PIN 7곳에는 전혀 적용되지 않았다. renderLockView()의 lockPinIn(~7412)은 확인 필드도 없는 단일 입력이라 오타를 치면 AUTH._lockStatus 지수적 백오프 잠금을 거쳐 결국 openForgotPinSheet/doForgotPin(둘 다 cycle155가 캐주얼한 우회를 막으려 일부러 무겁게 만든 플로우: 이메일 계정은 비밀번호 재검증, guest/kakao는 5초 강제 대기+경고)으로 떨어진다. pinOffIn/pinChgCurIn도 동일하게 단일 마스킹 입력.",
+    "approach": "7개 입력 각각을 auPw(~7575)와 동일한 마크업으로 감싼다: <div class=\"pw-wrap\"><input type=\"password\" inputmode=\"numeric\" maxlength=\"6\" ...><button type=\"button\" class=\"pw-x\" aria-label=\"PIN 표시\" onclick=\"togglePwVis('<id>')\">${svg('eye',18)}</button></div>. togglePwVis()(3569)는 이미 범용(el.closest('.pw-wrap')/el.type 기반)이라 JS 로직 변경 없이 템플릿 7곳만 수정하면 된다. inputmode=numeric/maxlength=6/autocomplete=off는 그대로 유지. test/run.js: 기존 line~10475의 테이블 기반 테스트([['renderAuth','auPw'],['doForgotPasswordLocal','frPwIn'],['openChangePasswordSheet','newPwIn']])에 7개 (fn,id) 쌍을 추가해 동일한 단언(.pw-wrap이 input보다 먼저 나오는지, togglePwVis('<id>') 배선 여부)을 재사용한다. openSetPinSheet/openChangePinSheet/openDisableAppLockSheet는 이미 FUNCTIONS에 있고, renderLockView는 아직 없으니(순수 템플릿 함수, $/AUTH._lockStatus는 샌드박스가 이미 스텁) FUNCTIONS에 새로 등록해 실행형 테스트 대상에 포함시킨다. index.html/sw.js 변경이므로 APP_VERSION과 sw.js CACHE 버전을 올린다."
+  },
   "history": [
-    {
-      "cycle": 154,
-      "phase": "critique",
-      "timestamp": "2026-10-07T15:30:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 재조망(기존 수정완료 목록 전달 후 겹치지 않는 공백 탐색). 새로 발견: kakaoLogin()(index.html 7445-7457)이 afterCloudAuth()/CLOUD_UID 설정을 전혀 거치지 않아 카카오 로그인 계정은 100% 기기-로컬 저장이고 다른 기기에서 동기화가 안 됨을 pullCloud/pushCloud/scheduleCloudPush의 !CLOUD_UID 즉시-return(1708,1722,1737) 확인으로 검증. 그런데 인증화면·계정메뉴에서 카카오 계정이 이메일 계정과 동일한 급으로 노출되고 동기화 불가 안내가 전혀 없어 '로그인했으니 동기화되겠지'라는 합리적 기대가 깨지는 신뢰 문제. 이 컨테이너가 kakaocdn.net egress를 막아 실제 OAuth 브릿지는 테스트 불가하므로, 이번 advance는 계정메뉴 고정 배지+인증화면 캡션으로 '정직한 UX'부터 구현하는 계획을 pending_advance_plan에 저장. 러너업(기각): openSheet류 vm 실행 테스트 공백(반복 지적된 백로그), histQ 검색 재필터링 성능(이미 캐싱 적용돼 영향 작음). 코드 변경 없음(읽기 전용 조사).",
-      "commit": null
-    },
     {
       "cycle": 154,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-08T08:00:00.000Z",
       "summary": "cycle159 develop(openGoalsList/openMaturity ISO 날짜 원문 노출 수정) 검토 — fmtDateFull/shortDate 둘 다 g.targetDate?.../sav(a.maturityDate 필터링됨) 쪽에서 null/undefined가 절대 들어오지 않는 위치에서만 호출됨을 코드로 직접 확인(openGoalsList는 g.targetDate? 가드, openMaturity는 DB.assets.filter(a=>...&&a.maturityDate)로 미리 걸러짐). 두 헬퍼 모두 같은 화면의 다른 날짜 필드가 이미 쓰던 것을 그대로 재사용한 것뿐이라 새 로직 없음. node test/run.js 1096/1096 통과. 이상 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 159,
+      "phase": "critique",
+      "timestamp": "2026-10-08T09:12:32.779Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 재조망(141-159사이클 전부 + 기각 이력 전달). 새로 발견: App-Lock PIN 입력 7곳(renderLockView의 lockPinIn ~7412, openSetPinSheet의 pinNewIn/pinNewIn2 ~7437-7438, openDisableAppLockSheet의 pinOffIn ~7458, openChangePinSheet의 pinChgCurIn/pinChgNewIn/pinChgNewIn2 ~7475-7477)가 cycle155가 auPw/frPwIn/newPwIn/fpinPwIn에 적용한 눈 아이콘(togglePwVis) 패턴을 전혀 적용받지 않았음을 grep/코드 확인. 특히 lockPinIn은 확인 입력도 없는 단일 필드라 오타 시 AUTH._lockStatus 지수 백오프 잠금을 거쳐 cycle155가 일부러 무겁게 만든 openForgotPinSheet/doForgotPin(이메일 비밀번호 재검증 또는 guest/kakao 5초 강제대기+경고) 복구 플로우로 떨어지는 과도한 비용. togglePwVis()는 이미 범용(el.closest(.pw-wrap)/el.type)이라 JS 로직 변경 없이 템플릿 7곳에 .pw-wrap+pw-x 마크업만 추가하면 되는 작은 범위의 수정. pending_advance_plan에 저장. 러너업(기각): openStaleMvReview()에 일괄 dismiss 없음(코드 주석이 금액 수정이 아닌 개별 확인이라 의도적임을 명시, 버그 아님), dday()가 T00:00:00 접미사 없이 new Date(dateStr) 사용(inQuietWindow류 타임존 버그로 보였으나 양쪽 피연산자가 동일한 UTC-midnight 파싱을 거쳐 self-consistent함을 확인, 버그 아님). 코드 변경 없음(읽기 전용 조사).",
       "commit": null
     }
   ]
