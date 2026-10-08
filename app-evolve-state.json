@@ -1,15 +1,12 @@
 {
   "cycle": 160,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "\"오늘까지/월평균\" 롱프레스 피크 카드 4곳 키보드 접근성 추가 (nwChart/assetBalChart 패턴과 통일)",
+    "why": "nwhChart(index.html:2525)와 assetBalChart(index.html:2631)는 롱프레스 '다른 값 미리보기' UX에 tabindex=0/role=img/aria-label/onkeydown(nwChartPeekKey·assetBalPeekKey)/onblur로 완전한 키보드 접근성을 갖췄고 test/run.js에도 회귀 테스트가 있다. 그런데 동일 패턴을 쓰는 다른 4곳 — ledSumBox/#ledsumLive(가계부 '이번 달 수지', sujiPeekStart, ~3683/3686), histTotBox/#histTotLive(전체내역 '오늘까지' 라이브 합계, histPeekStart, ~4392/4395), #histTotals(전체내역 고정 합계의 '월평균' 토글, histTotDown, ~4354/4472), planBalCard/#planBalLive(한달 플랜 '말일 잔액' '오늘까지', planPeekStart, ~4554/4556) — 는 onpointerdown/up/move/cancel/leave만 있고 tabindex·role·onkeydown·aria-label이 전혀 없어 키보드/스크린리더 사용자가 포커스조차 줄 수 없다. 튜토리얼(index.html:5291,5293)이 '꾹 누르면 오늘까지 금액이 나와요'를 핵심 UX로 소개하는데도 키보드 전용 사용자는 이 기능에 접근할 길이 없다. grep으로 4곳 모두 tabindex 부재, test/run.js에 관련 키보드 테스트 부재를 확인했고 cycle154-160 이력과 겹치지 않는 새 발견이다.",
+    "approach": "nwChartPeekKey/assetBalPeekKey와 동일한 골격을 재사용한다. 1) ledsumLive/histTotLive/planBalLive/histTotals 4곳에 tabindex=\"0\", role=\"button\", 현재 상태를 설명하는 aria-label을 추가. 2) 누름-유지형 3곳(ledsumLive/histTotLive/planBalLive)은 keydown에서 peekStart() 호출(event.repeat면 무시해 중복 트리거 방지), keyup 또는 onblur에서 peekEnd() 호출로 포인터의 누름→뗌을 keydown→keyup에 매핑. 3) 토글형 histTotals(histTotDown, 월평균)는 Enter/Space 1회에 ST.hist.avgMode=!ST.hist.avgMode;updateHist()를 직접 호출(길게 눌러야 하는 포인터와 달리 키보드는 즉시 토글해도 동일 기능이므로 더 자연스러움); rowKeydown() 공용 헬퍼를 쓸 수 있으면 재사용. 4) test/run.js에 nwhChart/assetBalChart류와 같은 형태로 이 4개 엘리먼트의 tabindex·키보드 핸들러 존재를 검증하는 회귀 테스트를 추가."
+  },
   "history": [
-    {
-      "cycle": 155,
-      "phase": "critique",
-      "timestamp": "2026-10-07T17:13:31.069Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 재조망. 새로 발견: renderLockView()의 PIN 복구 링크(~7352) -> openForgotPinSheet()/doForgotPin()(~7444-7451)가 올바른 PIN을 전혀 묻지 않고 확인 버튼 한 번으로 APPLOCK.disable()+unlockApp()을 실행 — test/run.js(~8928-8960)가 이걸 의도된 동작으로 단언하고 있음. cycle131 전후로 ‘PIN 분실 시 로컬 데이터 전체 삭제’ 데이터손실 함정을 막으려 넣은 장치지만 과잉수정이라 App-Lock의 보호 목적(분실/도난/타인 접근 차단) 자체를 무력화함 — 잠긴 폰을 주운 사람도 버튼 2번이면 들어감. email 계정은 기존 로그인/로컬복구 비밀번호 검증을 재사용해 복구 전에 비밀번호 확인을 끼워넣고, guest/kakao 계정은 비밀번호가 없으니 잠금 카운트다운 UI 패턴 재사용 + 명시적 경고 문구로 최소한 즉시-무클릭 우회는 막는 계획을 pending_advance_plan에 저장. 러너업(기각): 거래 영수증/사진 첨부(바이너리 저장이 localStorage 한도를 넘어 기존에 거부된 IndexedDB 마이그레이션 리스크와 동일), 3개 CDN 스크립트 SRI 해시(index.html에 이미 TODO(SRI)로 명시, 이 샌드박스가 CDN egress를 막아 실제 해시 계산 불가 — 새 발견 아님). 코드 변경 없음(읽기 전용 조사).",
-      "commit": null
-    },
     {
       "cycle": 155,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-08T12:11:30.000Z",
       "summary": "cycle160 develop(nextOutflowCard의 next-card role=button div + nc-fix 실제 button 전환) 검토 — nc-fix가 Tab으로 도달 가능해졌지만 자체 keydown stopPropagation이 없어 Enter/Space로 활성화하면 keydown이 바깥 next-card div로 버블되고, 그 onkeydown=rowKeydown이 e.preventDefault()를 호출해 nc-fix의 네이티브 클릭 활성화(openFixShortfall)를 막아버린 뒤 goPlanTo를 대신 실행하는 버그를 발견 — 키보드 사용자가 \"해결 방법 보기\"를 눌러도 Plan 탭으로 보내져 버리는, develop 커밋이 고치려던 바로 그 접근성 문제를 다른 모양으로 재도입한 것. nc-fix 버튼에 onkeydown=\"event.stopPropagation()\"을 추가해 버블을 끊었다(이 핸들러는 preventDefault를 호출하지 않으므로 네이티브 Enter/Space 클릭 활성화는 그대로 유지됨). 수정 전 코드로 되돌려 새 회귀 테스트를 돌려보면 실제로 깨짐을 확인했다. index.html/sw.js 변경이라 APP_VERSION 1.47.86->1.47.87, sw.js CACHE v348->v349 갱신. node test/run.js 1104/1104 -> 1105/1105 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 160,
+      "phase": "critique",
+      "timestamp": "2026-10-08T13:10:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 재조망(154-160사이클 전부 + 기각 이력 전달). 새로 발견: nwhChart/assetBalChart는 '롱프레스로 다른 값 미리보기' UX에 tabindex/role/aria-label/onkeydown(nwChartPeekKey·assetBalPeekKey)/onblur로 완전한 키보드 접근성과 회귀 테스트를 갖췄는데, 동일 패턴을 쓰는 다른 4곳(ledsumLive/sujiPeekStart ~3683, histTotLive/histPeekStart ~4392, histTotals 월평균토글/histTotDown ~4354, planBalLive/planPeekStart ~4554)은 onpointerdown류만 있고 tabindex·role·onkeydown·aria-label이 전혀 없어 키보드/스크린리더 사용자가 접근 불가. 튜토리얼이 이 기능을 핵심으로 소개하는데도 키보드 전용 사용자는 못 씀. nwChartPeekKey류 골격 재사용 + histTotals는 즉시토글 방식으로 처리하는 계획을 pending_advance_plan에 저장. 러너업(기각): saveGoal() 중복 이름 검사 누락(목표명은 참조 키가 아니라 데이터 무결성과 무관한 사소 UX, 저임팩트), 대량 데이터 O(n²) 성능(캐싱이 이미 cycle149 전후로 체계적으로 들어가 있어 추가 발견 없음), 백업/복원 검증 공백(모든 필드가 이미 꼼꼼히 검증되고 있어 추가 공백 없음). 코드 변경 없음(읽기 전용 조사).",
       "commit": null
     }
   ]
