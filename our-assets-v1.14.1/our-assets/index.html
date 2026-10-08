@@ -1328,7 +1328,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.82';
+const APP_VERSION='1.47.83';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6789,14 +6789,19 @@ function emptyAssets(){ /* 현금예금 제외 · 잔액 0 · 앞으로 쓸 일 
 function tidySnoozed(id){const s=(DB.settings.tidySnooze||{})[id]||0;return Date.now()<s}
 function snoozeTidy(id){(DB.settings.tidySnooze=DB.settings.tidySnooze||{})[id]=Date.now()+14*24*60*60*1000;
  save();renderCurrent();toast('2주 뒤에 다시 알려드릴게요')}
-function emptyAssetCards(){
+function emptyAssetCards(){ /* 1건이면 기존 상세 카드, 여러 건이면 하나로 묶음(confirm/neg/mat/quick/budgetOver와 동일 패턴) */
  const list=emptyAssets().filter(a=>!tidySnoozed(a.id));
  if(!list.length)return '';
- return list.map(a=>`<div class="home-alert tidy">
+ if(list.length===1){const a=list[0];return `<div class="home-alert tidy">
    <div class="ha-ic">${svg('trash')}</div>
    <div class="ha-b" tabindex="0" role="button" aria-label="${esc(a.name)} · 다 썼어요 · 정리할까요?" onclick="openTidyAsset('${a.id}')" onkeydown="rowKeydown(event,()=>openTidyAsset('${a.id}'))"><div class="ha-t">${esc(a.name)} · 다 썼어요</div>
      <div class="ha-s">${ASSET_TYPES[a.type].label} · 0원 · 정리할까요?</div></div>
-   <button class="txt-btn" style="flex-shrink:0;padding:6px 10px" onclick="event.stopPropagation();snoozeTidy('${a.id}')">나중에</button></div>`).join('');
+   <button class="txt-btn" style="flex-shrink:0;padding:6px 10px" onclick="event.stopPropagation();snoozeTidy('${a.id}')">나중에</button></div>`;}
+ return `<button class="home-alert tidy" onclick="openTidyList()">
+   <div class="ha-ic">${svg('trash')}</div>
+   <div class="ha-b"><div class="ha-t">다 쓴 자산 정리 ${list.length}건</div>
+     <div class="ha-s">눌러서 한 번에 확인</div></div>
+   <div class="ha-c">${svg('chev')}</div></button>`;
 }
 function openTidyAsset(id){
  const a=DB.assets.find(x=>x.id===id);if(!a)return;
@@ -6805,6 +6810,17 @@ function openTidyAsset(id){
    <span style="color:var(--text-3);font-size:12.5px">지난 내역은 그대로 남아요. 실수로 지워도 되돌릴 수 있어요.</span>`,
   '정리하기',()=>{deleteAssetsUndo(new Set([id]))});
 }
+function openTidyList(){ /* 다 쓴 자산 여러 건을 한 시트에서 — openStaleMvReview()/dismissStaleMv()와 동일한
+  "행을 처리할 때마다 시트를 다시 그려 유지" 패턴(나중에 눌러도 시트가 안 닫히고 그 행만 빠짐) */
+ const list=emptyAssets().filter(a=>!tidySnoozed(a.id));
+ if(!list.length){closeSheet();return}
+ if(list.length===1){closeSheet();openTidyAsset(list[0].id);return}
+ openSheet(`<h3>다 쓴 자산 정리</h3><div class="desc">잔액이 0원이고 앞으로 쓸 일도 없는 자산 ${list.length}개예요. 정리하거나 나중에 다시 볼 수 있어요.</div>
+  ${list.map(a=>`<div class="manage-row"><div class="ic">${svg('trash')}</div><div style="flex:1;min-width:0"><div class="mn">${esc(a.name)}</div><div class="msub">${ASSET_TYPES[a.type].label} · 0원</div></div>
+   <button class="txt-btn" style="flex-shrink:0" onclick="openTidyAsset('${a.id}')">정리</button>
+   <button class="txt-btn" style="flex-shrink:0" onclick="tidyListSnooze('${a.id}')">나중에</button></div>`).join('')}`);
+}
+function tidyListSnooze(id){snoozeTidy(id);openTidyList();}
 function homeAlerts(neg){
  const arr=[];
  if(CLOUD_UID&&CLOUD_SYNC_STATE==='conflict')arr.push({kind:'cloudConflict'});

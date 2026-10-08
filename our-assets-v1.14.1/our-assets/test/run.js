@@ -165,7 +165,7 @@ const FUNCTIONS = [
   'addBalanceAdjust', 'updateBalanceAdjust', 'toggleConfirmTransfers', 'rollPendingTransfers',
   'assetEval', 'assetGainLoss', 'assetGainLossBadge', 'costBasisField', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'delOwner', 'doMaturity', 'firstCash',
   'detectStaleMarketValuedTxns', 'delBudget', 'saveBudget', 'openBudgetPrompt', 'openBigMinSheet',
-  'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards',
+  'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards', 'openTidyAsset', 'openTidyList', 'tidyListSnooze',
   'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'openCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter',
   'genSalt', 'pbkdf2Hash', 'genRecoveryCode', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer', 'openConfirmTransfer',
   'renderLockView', 'openForgotPinSheet', 'doForgotPin', 'tickForgotPinWait',
@@ -8379,18 +8379,36 @@ test('emptyAssets: 만기가 지났고(또는 없고) 0원에 예정 내역도 �
   const ids = sandbox.emptyAssets().map((a) => a.id).sort();
   assert.deepStrictEqual(ids, ['a_savings0', 'a_stockHasTxn']);
 });
-test('emptyAssetCards: snoozeTidy()로 미룬 자산은 다음 emptyAssetCards() 출력에서 빠진다', () => {
+test('emptyAssetCards: 정리 대상이 1건이면 기존처럼 상세 카드가 나오고, snoozeTidy() 이후엔 빈 문자열이 된다', () => {
   setupEmptyAssetsDB();
+  sandbox.DB.assets = sandbox.DB.assets.filter((a) => a.id !== 'a_stockHasTxn'); // a_savings0 하나만 남김
   const before = sandbox.emptyAssetCards();
-  assert.ok(before.includes('만기지난적금'));
+  assert.ok(before.includes('만기지난적금'), '1건이면 자산 이름이 보이는 상세 카드여야 함');
+  assert.ok(!before.includes('onclick="openTidyList()"'), '1건이면 목록 시트로 보내면 안 됨');
   sandbox.snoozeTidy('a_savings0');
   const after = sandbox.emptyAssetCards();
   assert.ok(!after.includes('만기지난적금'), 'snoozeTidy() 이후에도 카드가 계속 노출됨');
+  assert.strictEqual(after, '', '1건뿐이었으면 미루고 난 뒤엔 빈 문자열이어야 함');
 });
 test('emptyAssetCards: 정리할 자산이 없으면 빈 문자열을 반환한다', () => {
   setupEmptyAssetsDB();
   sandbox.DB.assets = sandbox.DB.assets.filter((a) => a.id === 'a_cash');
   assert.strictEqual(sandbox.emptyAssetCards(), '');
+});
+test('emptyAssetCards: 정리 대상이 2건 이상이면 confirm/neg/mat/quick/budgetOver처럼 요약 카드 1장으로 묶인다(app-evolve cycle158)', () => {
+  setupEmptyAssetsDB(); // a_savings0 + a_stockHasTxn = 2건
+  const html = sandbox.emptyAssetCards();
+  assert.ok(html.includes('다 쓴 자산 정리 2건'), '건수 안내가 있어야 함');
+  assert.ok(html.includes('onclick="openTidyList()"'), '요약 카드는 openTidyList()로 열려야 함');
+  assert.ok(!html.includes('만기지난적금') && !html.includes('예정거래있는주식'), '요약 카드에는 개별 자산 이름이 보이면 안 됨');
+  assert.ok(!html.includes(`onclick="openTidyAsset('a_savings0')"`), '요약 카드에서 바로 개별 정리로 연결되면 안 됨');
+});
+test('emptyAssetCards: snoozeTidy()로 2건 중 1건을 미루면 남은 1건은 다시 상세 카드로 돌아온다', () => {
+  setupEmptyAssetsDB();
+  sandbox.snoozeTidy('a_stockHasTxn');
+  const after = sandbox.emptyAssetCards();
+  assert.ok(after.includes('만기지난적금'), '1건만 남으면 상세 카드로 돌아와야 함');
+  assert.ok(!after.includes('다 쓴 자산 정리'), '1건이면 요약 카드 문구가 남으면 안 됨');
 });
 test('renderHome: 다 쓴 자산 정리 제안(emptyAssetCards)이 실제로 렌더링 템플릿에 포함되어 있다', () => {
   // 예전부터 정의만 돼 있고 어디서도 호출되지 않던 죽은 코드였던 emptyAssetCards()를
@@ -8398,11 +8416,59 @@ test('renderHome: 다 쓴 자산 정리 제안(emptyAssetCards)이 실제로 렌
   const body = extractFunction('renderHome');
   assert.ok(body.includes('emptyAssetCards()'), 'renderHome()이 emptyAssetCards()를 호출하지 않음');
 });
-test('emptyAssetCards: 정리 제안 행(ha-b)에 키보드/스크린리더 접근 패턴이 있다', () => {
+test('emptyAssetCards: 1건일 때의 정리 제안 행(ha-b)에 키보드/스크린리더 접근 패턴이 있다', () => {
   setupEmptyAssetsDB();
+  sandbox.DB.assets = sandbox.DB.assets.filter((a) => a.id !== 'a_stockHasTxn');
   const html = sandbox.emptyAssetCards();
   assert.ok(html.includes('role="button"'), 'ha-b 행에 role="button"이 없음');
   assert.ok(html.includes('onkeydown="rowKeydown('), 'ha-b 행에 rowKeydown 연결이 없음');
+});
+/* openTidyList: emptyAssetCards()가 2건 이상일 때 여는 목록 시트. openStaleMvReview()/dismissStaleMv()와
+ * 동일한 "행을 처리하면 시트를 다시 그려 유지"하는 패턴 — '나중에'를 눌러도 시트가 닫히지 않고
+ * 그 행만 목록에서 빠지며, 1건만 남으면 기존 개별 확인 흐름(openTidyAsset)으로 넘어간다.
+ * (app-evolve cycle158 advance) */
+test('openTidyList: 정리 대상이 없으면 시트를 닫기만 한다', () => {
+  setupEmptyAssetsDB();
+  sandbox.DB.assets = sandbox.DB.assets.filter((a) => a.id === 'a_cash');
+  sandbox.closeSheetCalls = 0;
+  sandbox.lastSheetHtml = null;
+  sandbox.openTidyList();
+  assert.strictEqual(sandbox.closeSheetCalls, 1, '정리할 자산이 없으면 시트를 닫아야 함');
+  assert.strictEqual(sandbox.lastSheetHtml, null, '항목이 없으면 시트를 새로 열면 안 됨');
+});
+test('openTidyList: 정확히 1건이면 목록 없이 바로 openTidyAsset의 개별 확인 시트로 간다', () => {
+  setupEmptyAssetsDB();
+  sandbox.DB.assets = sandbox.DB.assets.filter((a) => a.id !== 'a_stockHasTxn'); // a_savings0 하나만
+  sandbox.closeSheetCalls = 0;
+  sandbox.confirmSheetCalls = [];
+  sandbox.openTidyList();
+  assert.strictEqual(sandbox.closeSheetCalls, 1, '목록 시트로 가기 전에 닫아야 함(openTidyAsset이 자기 확인 시트를 새로 염)');
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 1, '1건이면 openTidyAsset의 개별 확인 시트가 떠야 함');
+  assert.ok(sandbox.confirmSheetCalls[0].msg.includes('만기지난적금'), '그 자산에 대한 확인 시트여야 함');
+});
+test('openTidyList: 2건 이상이면 한 시트에 한 줄씩 보여주고 각 행에 정리/나중에 버튼이 연결된다', () => {
+  setupEmptyAssetsDB(); // a_savings0 + a_stockHasTxn
+  sandbox.lastSheetHtml = null;
+  sandbox.openTidyList();
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html, '2건 이상이면 목록 시트를 열어야 함');
+  assert.ok(html.includes('자산 2개'), '건수 안내가 있어야 함');
+  assert.ok(html.includes('만기지난적금') && html.includes('예정거래있는주식'), '각 자산 이름이 한 줄씩 보여야 함');
+  assert.ok(html.includes(`onclick="openTidyAsset('a_savings0')"`), '정리 버튼은 openTidyAsset으로 연결돼야 함');
+  assert.ok(html.includes(`onclick="tidyListSnooze('a_savings0')"`), '나중에 버튼은 tidyListSnooze로 연결돼야 함');
+});
+test('openTidyList: 2건 중 1건을 나중에로 미루면 시트를 닫지 않고 남은 1건으로 다시 그린다', () => {
+  setupEmptyAssetsDB();
+  sandbox.lastSheetHtml = null;
+  sandbox.closeSheetCalls = 0;
+  sandbox.confirmSheetCalls = [];
+  sandbox.openTidyList();
+  assert.ok(sandbox.lastSheetHtml.includes('만기지난적금') && sandbox.lastSheetHtml.includes('예정거래있는주식'));
+  sandbox.tidyListSnooze('a_stockHasTxn');
+  assert.strictEqual(sandbox.closeSheetCalls, 1, '남은 게 1건이면 openTidyList가 openTidyAsset으로 넘기며 목록 시트를 닫아야 함(닫기 1회)');
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 1, '미룬 자산을 빼고 남은 1건의 개별 확인 시트가 떠야 함');
+  assert.ok(sandbox.confirmSheetCalls[0].msg.includes('만기지난적금'), '남은 자산에 대한 확인 시트여야 함');
+  assert.ok(!sandbox.confirmSheetCalls[0].msg.includes('예정거래있는주식'), '나중에를 누른 자산은 더 이상 보이면 안 됨');
 });
 
 /* ---------- bare onclick 행 키보드/스크린리더 접근성 — flow-item/acct-card/spend-row/of-row/backup ha-b ----------
