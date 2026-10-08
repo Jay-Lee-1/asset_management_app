@@ -1331,7 +1331,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.91';
+const APP_VERSION='1.47.92';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5167,8 +5167,8 @@ function rateAutoLabel(){
 function openRateSheet(){
  const R=DB.rates;
  const fxCur=[...new Set(DB.assets.filter(a=>a.type==='fx').map(a=>a.currency))];
- const stockRows=DB.assets.filter(a=>a.type==='stock').map(a=>`<div class="rate-row"><div style="flex:1"><div class="rn">${esc(a.name)}</div><div class="rsub">${esc(a.stockCode)} 현재가${rateUnknown(a)?' · 미확인':''}</div></div><input class="num" inputmode="numeric" value="${comma(R.stocks[a.stockCode]||0)}" onchange="setRate('stock','${a.stockCode}',this.value)"></div>`).join('');
- const fxRows=fxCur.map(c=>`<div class="rate-row"><div style="flex:1"><div class="rn">${c}</div><div class="rsub">원/${c}${rateUnknown({type:'fx',currency:c})?' · 미확인':''}</div></div><input class="num" inputmode="numeric" value="${comma(R.fx[c]||0)}" onchange="setRate('fx','${c}',this.value)"></div>`).join('');
+ const stockRows=DB.assets.filter(a=>a.type==='stock').map(a=>{const id=`rateStock_${a.stockCode}`;return `<div class="rate-row"><div style="flex:1"><div class="rn">${esc(a.name)}</div><div class="rsub">${esc(a.stockCode)} 현재가${rateUnknown(a)?' · 미확인':''}</div></div><div class="field-clear"><input id="${id}" class="num" inputmode="numeric" value="${comma(R.stocks[a.stockCode]||0)}" aria-label="${esc(a.name)} 현재가" onchange="setRate('stock','${a.stockCode}',this.value)"><button type="button" class="fc-x" aria-label="${esc(a.name)} 현재가 지우기" onclick="clrInput('${id}')">✕</button></div></div>`}).join('');
+ const fxRows=fxCur.map(c=>{const id=`rateFx_${c}`;return `<div class="rate-row"><div style="flex:1"><div class="rn">${c}</div><div class="rsub">원/${c}${rateUnknown({type:'fx',currency:c})?' · 미확인':''}</div></div><div class="field-clear"><input id="${id}" class="num" inputmode="numeric" value="${comma(R.fx[c]||0)}" aria-label="${c} 환율" onchange="setRate('fx','${c}',this.value)"><button type="button" class="fc-x" aria-label="${c} 환율 지우기" onclick="clrInput('${id}')">✕</button></div></div>`}).join('');
  const active=rateAutoLabel();
  const none=active==='해당 없음';
  openSheet(`<h3>시세 연동 관리 (자동)</h3>
@@ -5184,7 +5184,7 @@ function openRateSheet(){
   ${none?'<div class="empty"><div class="ei">'+svg('sync')+'</div><div class="et">연동할 자산이 없어요</div><div class="es">주식·외화·금 자산을 등록하면 자동으로 켜져요</div></div>':`
   <button class="btn btn-primary" onclick="syncRates()">${svg('sync')} 지금 갱신</button>
   <div class="menu-cap" style="margin-top:18px">시세값 (직접 수정 가능)</div>
-  ${needGold()?`<div class="rate-row"><div style="flex:1"><div class="rn">금</div><div class="rsub">원/g</div></div><input class="num" inputmode="numeric" value="${comma(R.goldPerG)}" onchange="setRate('gold','',this.value)"></div>`:''}
+  ${needGold()?`<div class="rate-row"><div style="flex:1"><div class="rn">금</div><div class="rsub">원/g</div></div><div class="field-clear"><input id="rateGold" class="num" inputmode="numeric" value="${comma(R.goldPerG)}" aria-label="금 시세" onchange="setRate('gold','',this.value)"><button type="button" class="fc-x" aria-label="금 시세 지우기" onclick="clrInput('rateGold')">✕</button></div></div>`:''}
   ${fxRows}
   ${stockRows}`}
   <div style="height:16px"></div><button class="btn btn-soft" onclick="closeSheet()">닫기</button>`);

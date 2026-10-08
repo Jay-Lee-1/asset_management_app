@@ -1,19 +1,8 @@
 {
   "cycle": 162,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "시세값 직접 수정 입력 3곳에 접근 가능한 레이블 + field-clear(x) 버튼 추가",
-    "why": "openRateSheet()의 금/외화/주식 시세 수동수정 입력(index.html:5170,5171,5187)이 <label>도 aria-label도 없는 맨 <input class=\"num\">로만 렌더되어, 보유 통화·종목이 여러 개면 스크린리더 사용자가 어느 입력이 어느 자산인지 구분할 방법이 없다. 자산명/귀속/카테고리/인증 등 다른 입력 전부에 이미 적용된 .field-clear+fc-x 지우기 버튼 패턴도 이 세 곳만 빠져 있다(.rate-row 래퍼라 fcWire()의 '.field-clear input' 셀렉터 대상에서 구조적으로 제외됨). 잘못된 행에 값을 입력하면 자산 평가액이 조용히 틀어지는 데이터 위험도 있다.",
-    "approach": "stockRows/fxRows/gold row(index.html openRateSheet, ~5170-5187) 세 input 각각에 aria-label(예: 금 '금 시세', fx '${c} 환율', stock '${a.name} 현재가')을 추가하고, newOwner(3595줄)와 동일한 마크업으로 <div class=\"field-clear\">로 감싸 <button class=\"fc-x\" aria-label=\"...지우기\" onclick=\"clrInput(...)\">✕</button>를 추가한다. clrInput()이 id 기반이므로 각 input에 고유 id(예: rateGold, rateFx_${c}, rateStock_${a.stockCode})를 부여해야 한다. openSheet()가 fcWire()를 자동 호출하므로 별도 배선 호출은 불필요. .rate-row input의 기존 width(118px, CSS ~940줄) 정렬이 깨지지 않는지 .field-clear 래핑 후 확인한다. setRate()의 숫자 파싱 로직은 변경하지 않는다."
-  },
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 157,
-      "phase": "advance",
-      "timestamp": "2026-10-08T02:13:50.382Z",
-      "summary": "critique(cycle157) 계획대로 homeAlerts()의 neg(잔액부족예상)·mat(저축만기임박)을 confirm/quick/budgetOver와 동일한 1건/N건 묶음 패턴으로 바꿨다. neg.length/matList.length로 분기해 1건이면 기존 kind:'neg'/'mat'를 그대로 쓰고 2건 이상이면 kind:'negMulti'/'matMulti'(count)로 묶도록 homeAlerts()를 수정했다. homeAlertCard()에 negMulti/matMulti 분기를 추가했는데, mat은 조사해보니 openMaturity() 시트가 이미 만기 임박 자산 전체를 30일 이내 기준으로 한 시트에 보여주고 있어(계획이 예상한 대로) 새 리스트를 만들지 않고 그대로 재사용했고, neg는 그런 기존 화면이 없어 openConfirmTransferList()/openQuickList()와 동일한 구조의 openNegList()를 새로 추가해 각 통장 행을 누르면 closeSheet() 후 goPlanTo(assetId,date)로 plan 탭 이동시켰다(사이트가 아니라 탭 전환이라 confirm/quick 리스트와 달리 명시적 closeSheet가 필요함을 확인하고 추가). notifyAlertInfo()에는 matMulti 분기만 추가했다(neg/negMulti는 기존처럼 OS 알림 대상 제외 유지) — 기존 단일 mat이 '오늘/내일(1일 이내)'만 알리던 긴급도 규칙을 유지하기 위해 homeAlerts()가 matMulti에 count 외에 dueCount(1일 이내 건수)도 함께 담게 하고, notifyAlertInfo는 dueCount>0일 때만 budgetOverMulti와 동일한 날짜+count 키로 알린다. test/run.js에 homeAlerts neg/mat 1건↔2건 그룹핑, matMulti dueCount 계산, notifyAlertInfo matMulti 게이팅, homeAlertCard negMulti/matMulti 렌더링, openNegList 실행형(0건/1건 위임/2건 이상 리스트) 테스트 총 8건을 추가하고 openNegList/goPlanTo를 FUNCTIONS(vm 실행 검증)에 새로 등록했다. index.html/sw.js 변경이라 APP_VERSION 1.47.80->1.47.81, sw.js CACHE v342->v343 갱신. node test/run.js 1078/1078 -> 1086/1086 통과.",
-      "commit": null
-    },
     {
       "cycle": 158,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-08T21:17:12.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 재조망(141-162사이클 전부 + 기각 이력 전달). 새로 발견: openRateSheet()(index.html~5167-5190)의 금/외화/주식 시세 직접수정 input 3종(5170 stockRows, 5171 fxRows, 5187 gold)이 <label>/aria-label 없는 맨 input이고, newOwner/asFx/asGold/asQty/auEmail 등 다른 모든 입력에 이미 적용된 .field-clear+fc-x 지우기 버튼 패턴도 .rate-row 래퍼 때문에 fcWire()의 '.field-clear input' 셀렉터에서 구조적으로 빠져 있음을 grep/코드 대조로 확인. 보유 외화·주식이 여러 개면 스크린리더로는 어느 입력이 어느 자산인지 구분이 안 되고, 잘못된 행에 입력하면 평가액이 조용히 틀어지는 데이터 위험도 있음. openSheet()가 fcWire()를 자동 호출(6095줄)하므로 .field-clear로 감싸기만 하면 지우기 버튼은 자동 배선됨을 확인. newOwner(3595줄) 마크업을 선례로 pending_advance_plan에 저장. 코드 변경 없음(읽기 전용 조사).",
+      "commit": null
+    },
+    {
+      "cycle": 162,
+      "phase": "advance",
+      "timestamp": "2026-10-08T22:10:00.000Z",
+      "summary": "critique(cycle162) 계획대로 openRateSheet()의 금/외화/주식 시세 직접수정 input 3곳에 newOwner와 동일한 마크업으로 aria-label + .field-clear/fc-x 지우기 버튼을 추가했다. gold는 고정 id(rateGold), fx/stock은 행마다 고유 id(rateFx_${c}, rateStock_${a.stockCode})를 새로 부여해 clrInput()이 각 행을 구분해서 지울 수 있게 했다(기존엔 셀렉터 대상이 될 input 자체에 id가 전혀 없었음). aria-label은 금 '금 시세', fx '${c} 환율', stock '${a.name} 현재가'로 달아 보유 통화·종목이 여러 개여도 스크린리더로 구분 가능하게 했다. openRateSheet()는 openSheet()를 통해 열리므로(renderAuth처럼 별도 화면이 아님) fcWire() 자동 배선을 그대로 타 별도 호출은 불필요했다. .rate-row input의 기존 width:118px(box-sizing:border-box 전역 규칙 덕에 .field-clear input의 padding-right:38px!important가 박스 폭을 넓히지 않음)과 .sheet .rate-row input 글래스 배경 셀렉터(자손 선택자라 중첩 깊이 무관) 둘 다 깨지지 않음을 코드로 확인. openRateSheet는 FUNCTIONS(vm 실행) 목록 밖이라 renderAuth/openOwnerManage와 동일하게 extractFunction 소스 문자열 검사 테스트 3건(gold/fx/stock 각각 id·aria-label·field-clear·fc-x onclick 연결 검증)을 추가했다. index.html/sw.js 변경이라 APP_VERSION 1.47.91->1.47.92, sw.js CACHE v353->v354 갱신. node test/run.js 1117/1117 -> 1120/1120 통과.",
       "commit": null
     }
   ]

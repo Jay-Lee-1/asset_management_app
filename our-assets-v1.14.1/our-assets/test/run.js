@@ -12357,6 +12357,32 @@ test('[실행형] doResetAll: 확인 시트에서 초기화를 누르면 DB가 �
   }
 });
 
+/* ---------- openRateSheet: 금/외화/주식 시세 직접수정 input 3종도 field-clear(×) 관례를 따름
+ * (app-evolve cycle162 advance — 이름/귀속/카테고리/인증 등 다른 입력 전부에 이미 적용된
+ * field-clear(×) 패턴이 .rate-row 래퍼 때문에 fcWire()의 '.field-clear input' 셀렉터 대상에서
+ * 구조적으로 빠져 있었고, <label>/aria-label도 전혀 없어 보유 통화·종목이 여러 개면 스크린리더로
+ * 어느 입력이 어느 자산인지 구분이 안 됐다. openSheet()가 fcWire()를 자동 호출하므로(renderAuth와
+ * 달리 이 함수는 openSheet()를 통해 열리는 시트라 직접 fcWire() 호출은 불필요) field-clear로
+ * 감싸기만 하면 지우기 버튼은 자동 배선된다. openRateSheet는 FUNCTIONS(vm 실행) 목록 밖이라
+ * renderAuth/openOwnerManage와 동일하게 extractFunction 소스 문자열 검사로 검증한다. ---------- */
+test('openRateSheet: 금(gold) 시세 입력에 aria-label과 field-clear(×) 버튼이 있다', () => {
+  const body = extractFunction('openRateSheet');
+  assert.ok(body.includes('<div class="field-clear"><input id="rateGold" class="num" inputmode="numeric" value="${comma(R.goldPerG)}" aria-label="금 시세"'), '금 시세 입력이 aria-label과 함께 field-clear로 감싸져 있지 않음');
+  assert.ok(body.includes(`<button type="button" class="fc-x" aria-label="금 시세 지우기" onclick="clrInput('rateGold')">`), '금 시세 입력에 fc-x 지우기 버튼의 clrInput 연결이 없음');
+});
+test('openRateSheet: 외화(fx) 시세 입력에 통화별 aria-label과 field-clear(×) 버튼이 있다', () => {
+  const body = extractFunction('openRateSheet');
+  assert.ok(/const id=`rateFx_\$\{c\}`/.test(body), 'fx 시세 입력에 통화별 고유 id(rateFx_통화코드)가 없음');
+  assert.ok(body.includes('<div class="field-clear"><input id="${id}" class="num" inputmode="numeric" value="${comma(R.fx[c]||0)}" aria-label="${c} 환율"'), 'fx 시세 입력이 통화별 aria-label과 함께 field-clear로 감싸져 있지 않음');
+  assert.ok(body.includes(`<button type="button" class="fc-x" aria-label="${'$'}{c} 환율 지우기" onclick="clrInput('${'$'}{id}')">`), 'fx 시세 입력에 fc-x 지우기 버튼의 clrInput 연결이 없음');
+});
+test('openRateSheet: 주식(stock) 시세 입력에 종목별 aria-label과 field-clear(×) 버튼이 있다', () => {
+  const body = extractFunction('openRateSheet');
+  assert.ok(/const id=`rateStock_\$\{a\.stockCode\}`/.test(body), 'stock 시세 입력에 종목별 고유 id(rateStock_종목코드)가 없음');
+  assert.ok(body.includes('<div class="field-clear"><input id="${id}" class="num" inputmode="numeric" value="${comma(R.stocks[a.stockCode]||0)}" aria-label="${esc(a.name)} 현재가"'), 'stock 시세 입력이 종목별 aria-label과 함께 field-clear로 감싸져 있지 않음');
+  assert.ok(body.includes(`<button type="button" class="fc-x" aria-label="${'$'}{esc(a.name)} 현재가 지우기" onclick="clrInput('${'$'}{id}')">`), 'stock 시세 입력에 fc-x 지우기 버튼의 clrInput 연결이 없음');
+});
+
 /* ---------- 실행 ---------- */
 // pbkdf2Hash는 Web Crypto(subtle.deriveBits)를 쓰는 비동기 함수라, 러너도 async test를
 // 지원해야 한다 — sync test는 그냥 await해도 즉시 반환되므로 기존 테스트에는 영향 없다.
