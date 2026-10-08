@@ -1,15 +1,8 @@
 {
   "cycle": 158,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 153,
-      "phase": "review",
-      "timestamp": "2026-10-07T11:00:00.000Z",
-      "summary": "cycle153 develop(addMonthsStr 롤오버 회귀 테스트 3건) 검토 — 테스트 전용 변경, addMonthsStr('2026-01-31',1)='2026-03-03' 등 기대값을 node로 직접 재계산해 실제 동작과 일치함을 확인. index.html/logic.js 코드 변경 없음(테스트만 추가), 혼용 방지 주석도 정확함. node test/run.js 1053/1053 통과. 이상 없음.",
-      "commit": null
-    },
     {
       "cycle": 153,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-08T03:09:22.546Z",
       "summary": "renderAuth()의 auEmail(이메일)·kkeyIn(카카오 JavaScript 키) 입력에 다른 텍스트 입력란과 동일한 field-clear(×) 버튼을 추가. cycle154 critique가 범위 밖(별도 CSS/수동 fcWire 배선 필요)으로 백로그에 남겨둔 항목 — 실제로 확인해보니 .auth-field/.kkey 모두 position 지정이 없어 .field-clear의 position:relative+fc-x 절대배치가 그대로 들어맞았고, 새 CSS 추가는 필요 없었다. authView는 openSheet()가 아닌 별도 화면이라 그쪽 자동 fcWire() 배선을 못 타므로, histQ(renderHistory)가 쓰던 것과 동일하게 renderAuth() 끝에 fcWire() 직접 호출을 추가했다. test/run.js에 auEmail/kkeyIn field-clear 구조 2건 + renderAuth가 fcWire()를 호출하는지 1건, 총 3건의 정규식 기반 테스트를 추가(실DOM 조작이 아닌 순수 문자열 템플릿 조립이라 다른 field-clear 테스트들과 동일한 관례). index.html/sw.js 변경이라 APP_VERSION 1.47.81->1.47.82, sw.js CACHE v343->v344 갱신. node test/run.js 1086/1086 -> 1089/1089 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 158,
+      "phase": "review",
+      "timestamp": "2026-10-08T03:30:00.000Z",
+      "summary": "cycle158 develop(auEmail/kkeyIn field-clear(x) 추가) 검토 — fcWire()가 document 전체의 .field-clear input을 el._fcw 플래그로 멱등 배선하는 것을 직접 확인했고, renderAuth()가 openSheet() 밖 별도 화면이라 자동 배선을 못 타 직접 fcWire()를 호출해야 한다는 커밋 설명이 정확함을 검증. CSS 측면도 .auth-field input/.kkey input 모두 width:100%이고 별도 position 지정이 없어 .field-clear(position:relative)+.fc-x(절대배치)가 기존 add-inline/searchbar 사례와 동일하게 충돌 없이 들어맞음을 확인. clrInput('auEmail')/clrInput('kkeyIn')도 $(id)로 그대로 input을 찾아 기존 doLogin/doSignup/saveKakaoKey의 $('auEmail').value/$('kkeyIn').value 읽기와 무관함을 확인. node test/run.js 1089/1089 통과. 이상 없음.",
       "commit": null
     }
   ]
