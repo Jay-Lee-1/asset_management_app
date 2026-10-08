@@ -1,15 +1,12 @@
 {
   "cycle": 157,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "홈 알림의 neg(잔액부족예상)·mat(저축만기임박)이 confirm/quick/budgetOver와 달리 1건/N건 묶음 패턴이 없어 무제한으로 카드/OS알림이 쌓임",
+    "why": "homeAlerts()(index.html:6798-6819)에서 confirm/quick/budgetOver 세 종류는 이미 1건이면 그대로, N건이면 Multi(count)로 묶는 패턴(cycle154/156에서 완성)을 쓰는데, 바로 옆줄의 neg(6807)와 mat(6808-6810)만 여전히 자산/통장 하나당 카드 하나씩 건수 제한 없이 push한다. negMulti/matMulti는 코드 전체에 존재하지 않음(grep으로 확인). mat은 notifyAlertInfo()(6824-6834)에서도 자산마다 독립된 OS 알림 키(mat:assetId:date)를 쓰므로 만기가 몰리면 하루에 여러 건의 개별 푸시가 발송되고, renderHome()(2441-2443)의 alertBanner가 배열 길이 제한 없이 그대로 렌더해 홈 캐러셀도 카드로 도배된다.",
+    "approach": "1) homeAlerts()에서 neg.length/matList.length로 분기 — 1건이면 기존 kind:'neg'/'mat' 유지, 2건 이상이면 kind:'negMulti'/'matMulti'(count)로 묶는다. 2) homeAlertCard()에 negMulti/matMulti 분기를 추가 — 1건이면 기존 개별 동작(goPlanTo/openMaturity)으로 즉시 위임, N건이면 openQuickList/openConfirmTransferList와 같은 구조의 리스트 시트를 연다(기존에 저축 만기 알림 목록 시트가 있는지 먼저 확인해 재사용 가능하면 새로 만들지 않는다). 3) notifyAlertInfo()에 matMulti 분기를 추가해 N건을 하나의 OS 알림으로 합친다(neg는 기존처럼 OS 알림 대상에서 제외 유지 — 6822 주석). 4) test/run.js에 negList/matList 2건 이상 DB로 negMulti/matMulti 그룹핑과 1건일 때 기존 kind 유지를 검증하는 회귀 테스트 추가, 가능하면 homeAlertCard/notifyAlertInfo 신규 분기도 실행형 테스트로 커버."
+  },
   "history": [
-    {
-      "cycle": 152,
-      "phase": "critique",
-      "timestamp": "2026-10-07T02:00:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 다시 조망(141-152사이클 전부 + 기각 이력 전달). 새로 발견: index.html에 정의된 render*/open*/do* 함수 83개 중 48개가 test/run.js의 FUNCTIONS(vm 실제 실행 검증 대상) 배열에 전혀 없음을 comm -23으로 직접 확인 — openSheet/openTxSheet/openRecSheet/renderMenu/doLogout/doResetAll/doForgotPassword/openSetPinSheet/openChangePinSheet 등 파급력이 가장 큰 핵심 함수들이 포함됨. cycle146이 지적한 'src.includes 거짓 안전감'을 extractTag()로 일부 좁혔지만 실행 검증 공백 자체는 줄이지 않았음을 재확인. 48개 전체는 과도한 범위라 파급력 순 핵심 8~12개(openSheet/openTxSheet/openRecSheet/renderAssetSheet/renderMenu/doLogout/doResetAll/openSetPinSheet/openChangePinSheet/doForgotPassword 등)부터 FUNCTIONS에 끌어와 실행 기반 테스트를 추가하는 계획을 pending_advance_plan에 저장. 러너업(기각): WebAuthn/생체인증 연동(UX 결정 비중이 커서 한 사이클 안에 안전하게 끝낼 확신이 낮음), sbUrlIn/sbKeyIn·이메일 입력 field-clear(기계적 작업으로 develop/review 몫에 더 가까움). 코드 변경 없음(읽기 전용 조사).",
-      "commit": null
-    },
     {
       "cycle": 152,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-08T00:00:00.000Z",
       "summary": "cycle157 develop(nav-btn aria-current) 검토 — go(tab)의 forEach가 b.dataset.tab===navTabOf(tab)로 올바르게 활성 탭을 판정해 setAttribute('aria-current', on?'page':'false')로 토글함을 확인했고, buildNav()의 초기 하드코딩('home'만 'page')도 init 시퀀스(index.html:7319 ST.tab='home' 고정 후 buildNav() 호출)와 정확히 일치해 틀어질 여지가 없음을 코드로 직접 확인(기존 'on' 클래스도 동일하게 하드코딩돼 있던 선례와 일관). aria-current='page' 값도 버튼 기반 SPA 네비게이션에 맞는 표준 사용. node test/run.js 1078/1078 통과. 이상 없음, 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 157,
+      "phase": "critique",
+      "timestamp": "2026-10-08T01:00:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 재조망(141-157사이클 전부 + 기각 이력 전달). 새로 발견: homeAlerts()(index.html:6798-6819)에서 confirm/quick/budgetOver 세 종류는 이미 cycle154/156을 거쳐 1건/N건 묶음 패턴(kind+Multi)을 완성했는데, 바로 옆줄의 neg(잔액부족예상, 6807)와 mat(저축만기임박, 6808-6810)만 여전히 그 패턴이 없어 자산/통장 하나당 카드 하나씩 무제한으로 쌓인다(negMulti/matMulti는 코드에 존재하지 않음, grep으로 확인). mat은 notifyAlertInfo()(6824-6834)에서도 자산마다 독립된 OS 알림 키(mat:assetId:date)를 써서 만기가 몰리면 하루에 여러 건의 개별 푸시가 발송되고, renderHome()(2441-2443)의 alertBanner가 배열 길이 제한 없이 그대로 렌더해 홈 캐러셀도 카드로 도배됨을 확인. cycle156이 confirm을 고치면서 바로 옆에 있던 동일 패턴 2건을 놓친 것으로 보여, neg/mat에도 동일한 Multi 분기 + 리스트 시트 + notifyAlertInfo 묶음 알림을 적용하는 계획을 pending_advance_plan에 저장. 러너업(기각): sw.js가 test/run.js에서 전혀 참조되지 않음(변경 빈도 낮아 임팩트 작음), 인증 함수(doLogin 등)가 FUNCTIONS vm 실행 목록에 없음(이미 반복 지적된 카테고리라 중복 제안 제외). 코드 변경 없음(읽기 전용 조사).",
       "commit": null
     }
   ]
