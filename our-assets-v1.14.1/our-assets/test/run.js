@@ -10483,6 +10483,32 @@ for (const [fn, id] of [['renderAuth', 'auPw'], ['doForgotPasswordLocal', 'frPwI
   });
 }
 
+/* ---------- App-Lock PIN 입력 7곳(lockPinIn/pinNewIn/pinNewIn2/pinOffIn/pinChgCurIn/pinChgNewIn/
+ * pinChgNewIn2)에도 togglePwVis 눈 아이콘 토글 추가 (app-evolve cycle159 advance — cycle155가
+ * auPw/frPwIn/newPwIn/fpinPwIn 비밀번호 입력에만 적용하고 App-Lock PIN 입력은 범위 밖으로 뺐던
+ * 공백. 특히 lockPinIn은 확인 입력도 없는 단일 필드라 오타를 쳐도 확인할 길이 없어 AUTH._lockStatus
+ * 지수 백오프 잠금을 거쳐 cycle155가 일부러 무겁게 만든 openForgotPinSheet/doForgotPin 복구
+ * 플로우로 떨어질 위험이 있었음. 각 함수가 PIN 입력을 둘 이상 갖고 있어(renderAuth류와 달리)
+ * body.indexOf 단일 탐색 대신, pw-wrap과 input이 바로 붙어있는지를 각 id별로 직접 확인한다. ---------- */
+for (const [fn, id] of [
+  ['renderLockView', 'lockPinIn'],
+  ['openSetPinSheet', 'pinNewIn'],
+  ['openSetPinSheet', 'pinNewIn2'],
+  ['openDisableAppLockSheet', 'pinOffIn'],
+  ['openChangePinSheet', 'pinChgCurIn'],
+  ['openChangePinSheet', 'pinChgNewIn'],
+  ['openChangePinSheet', 'pinChgNewIn2'],
+]) {
+  test(`${fn}: ${id} PIN 입력을 .pw-wrap으로 감싸고 눈 토글 버튼을 togglePwVis('${id}')에 연결한다`, () => {
+    const body = extractFunction(fn);
+    assert.ok(
+      new RegExp(`class="pw-wrap"><input id="${id}" type="password"`).test(body),
+      `${fn}의 ${id} 입력이 .pw-wrap으로 바로 감싸여 있지 않음`
+    );
+    assert.ok(body.includes(`togglePwVis('${id}')`), `${fn}에 togglePwVis('${id}')로 연결된 버튼이 없음`);
+  });
+}
+
 /* ---------- renderAuth: auEmail/kkeyIn도 field-clear(×) 관례를 따름
  * (app-evolve cycle158 develop — 다른 텍스트 입력란은 전부 field-clear(×) 버튼을 갖췄는데,
  * auth 메인 화면(renderAuth)의 auEmail/kkeyIn만 openSheet()가 아닌 별도 화면이라 cycle154

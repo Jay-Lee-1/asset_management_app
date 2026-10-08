@@ -1328,7 +1328,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.84';
+const APP_VERSION='1.47.85';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -7409,7 +7409,7 @@ function renderLockView(){
    <div class="auth-logo">🔒</div>
    <div class="auth-title">잠겨 있어요</div>
    <div class="auth-sub">설정한 PIN을 입력해 주세요</div>
-   <div class="auth-field"><label for="lockPinIn">PIN</label><input id="lockPinIn" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="PIN 입력" ${lock.locked?'disabled':''} onkeydown="if(event.key==='Enter')doUnlock()"></div>
+   <div class="auth-field"><label for="lockPinIn">PIN</label><div class="pw-wrap"><input id="lockPinIn" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="PIN 입력" ${lock.locked?'disabled':''} onkeydown="if(event.key==='Enter')doUnlock()"><button type="button" class="pw-x" aria-label="PIN 표시" onclick="togglePwVis('lockPinIn')">${svg('eye',18)}</button></div></div>
    <div id="lockErr" class="auth-err" style="display:${lock.locked?'block':'none'}">${lock.locked?`너무 많이 틀렸어요 · ${lock.waitSec}초 후 다시 시도해 주세요`:''}</div>
    <button class="btn btn-primary auth-submit" id="lockSubmitBtn" ${lock.locked?'disabled':''} onclick="doUnlock()">확인</button>
    <button type="button" class="auth-forgot" onclick="openForgotPinSheet()">PIN을 잊으셨나요?</button>
@@ -7434,8 +7434,8 @@ async function doUnlock(){
 function openSetPinSheet(){
  openSheet(`<h3>앱 잠금 PIN 설정</h3>
   <div class="desc">앱을 열 때마다 입력할 4~6자리 숫자 PIN을 설정해요. 이 PIN은 이 기기에만 저장되고 클라우드로 동기화되지 않아요.</div>
-  <div class="field"><label for="pinNewIn">새 PIN</label><input id="pinNewIn" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="4~6자리 숫자"></div>
-  <div class="field"><label for="pinNewIn2">PIN 확인</label><input id="pinNewIn2" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="다시 입력" onkeydown="if(event.key==='Enter')doSetPin()"></div>
+  <div class="field"><label for="pinNewIn">새 PIN</label><div class="pw-wrap"><input id="pinNewIn" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="4~6자리 숫자"><button type="button" class="pw-x" aria-label="PIN 표시" onclick="togglePwVis('pinNewIn')">${svg('eye',18)}</button></div></div>
+  <div class="field"><label for="pinNewIn2">PIN 확인</label><div class="pw-wrap"><input id="pinNewIn2" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="다시 입력" onkeydown="if(event.key==='Enter')doSetPin()"><button type="button" class="pw-x" aria-label="PIN 표시" onclick="togglePwVis('pinNewIn2')">${svg('eye',18)}</button></div></div>
   <div id="pinSetErr" class="auth-err" style="display:none"></div>
   <div class="two-btn" style="margin-top:14px"><button class="btn btn-soft cancel" onclick="closeSheet()">취소</button><button class="btn btn-primary" id="pinSetBtn" onclick="doSetPin()">설정</button></div>`);
  setTimeout(()=>{const el=$('pinNewIn');el&&el.focus()},120);
@@ -7455,7 +7455,7 @@ async function doSetPin(){
 function openDisableAppLockSheet(){
  openSheet(`<h3>앱 잠금 끄기</h3>
   <div class="desc">현재 PIN을 입력하면 앱 잠금이 꺼져요.</div>
-  <div class="field"><label for="pinOffIn">현재 PIN</label><input id="pinOffIn" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="PIN 입력" onkeydown="if(event.key==='Enter')doDisableAppLock()"></div>
+  <div class="field"><label for="pinOffIn">현재 PIN</label><div class="pw-wrap"><input id="pinOffIn" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="PIN 입력" onkeydown="if(event.key==='Enter')doDisableAppLock()"><button type="button" class="pw-x" aria-label="PIN 표시" onclick="togglePwVis('pinOffIn')">${svg('eye',18)}</button></div></div>
   <div id="pinOffErr" class="auth-err" style="display:none"></div>
   <div class="two-btn" style="margin-top:14px"><button class="btn btn-soft cancel" onclick="closeSheet()">취소</button><button class="btn btn-primary" id="pinOffBtn" onclick="doDisableAppLock()">끄기</button></div>`);
  setTimeout(()=>{const el=$('pinOffIn');el&&el.focus()},120);
@@ -7472,9 +7472,9 @@ async function doDisableAppLock(){
 }
 function openChangePinSheet(){
  openSheet(`<h3>PIN 변경</h3>
-  <div class="field"><label for="pinChgCurIn">현재 PIN</label><input id="pinChgCurIn" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="현재 PIN"></div>
-  <div class="field"><label for="pinChgNewIn">새 PIN</label><input id="pinChgNewIn" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="4~6자리 숫자"></div>
-  <div class="field"><label for="pinChgNewIn2">새 PIN 확인</label><input id="pinChgNewIn2" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="다시 입력" onkeydown="if(event.key==='Enter')doChangePin()"></div>
+  <div class="field"><label for="pinChgCurIn">현재 PIN</label><div class="pw-wrap"><input id="pinChgCurIn" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="현재 PIN"><button type="button" class="pw-x" aria-label="PIN 표시" onclick="togglePwVis('pinChgCurIn')">${svg('eye',18)}</button></div></div>
+  <div class="field"><label for="pinChgNewIn">새 PIN</label><div class="pw-wrap"><input id="pinChgNewIn" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="4~6자리 숫자"><button type="button" class="pw-x" aria-label="PIN 표시" onclick="togglePwVis('pinChgNewIn')">${svg('eye',18)}</button></div></div>
+  <div class="field"><label for="pinChgNewIn2">새 PIN 확인</label><div class="pw-wrap"><input id="pinChgNewIn2" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="다시 입력" onkeydown="if(event.key==='Enter')doChangePin()"><button type="button" class="pw-x" aria-label="PIN 표시" onclick="togglePwVis('pinChgNewIn2')">${svg('eye',18)}</button></div></div>
   <div id="pinChgErr" class="auth-err" style="display:none"></div>
   <div class="two-btn" style="margin-top:14px"><button class="btn btn-soft cancel" onclick="closeSheet()">취소</button><button class="btn btn-primary" id="pinChgBtn" onclick="doChangePin()">변경</button></div>`);
  setTimeout(()=>{const el=$('pinChgCurIn');el&&el.focus()},120);
