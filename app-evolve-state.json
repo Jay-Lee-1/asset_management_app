@@ -1,15 +1,8 @@
 {
   "cycle": 160,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 155,
-      "phase": "develop",
-      "timestamp": "2026-10-07T15:15:15.005Z",
-      "summary": "auPw(로그인/가입)·frPwIn(로컬 계정 복구)·newPwIn(비밀번호 변경/재설정) 3개 비밀번호 입력에 표시/숨기기(눈 아이콘) 토글 추가. 특히 doLocalRecover는 복구 코드가 있어야만 쓸 수 있는 한 번뿐인 고위험 플로우라, 타이핑한 새 비밀번호를 확인할 길이 없어 오타로 스스로 잠길 위험이 있었음. togglePwVis(id) 헬퍼 + eye/eyeOff 아이콘 추가, .pw-wrap/.pw-x CSS는 기존 .field-clear/.fc-x 패턴을 그대로 모방(항상 보이게 has-val 게이팅만 뺌). PIN 입력(숫자 코드)은 범위 밖으로 제외. togglePwVis 자체는 실DOM(closest/type) 조작이라 jsdom 없는 스위트에서 실행형 테스트가 불가해 정규식 기반 테스트 4건(togglePwVis 로직 + renderAuth/doForgotPasswordLocal/openChangePasswordSheet 배선)으로 커버. index.html/sw.js 변경이라 APP_VERSION 1.47.75->1.47.76, sw.js CACHE v337->v338 갱신. node test/run.js 1059/1059 -> 1063/1063 통과.",
-      "commit": null
-    },
     {
       "cycle": 155,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-08T10:05:00.000Z",
       "summary": "critique(cycle159) 계획대로 App-Lock PIN 입력 7곳(lockPinIn/pinNewIn/pinNewIn2/pinOffIn/pinChgCurIn/pinChgNewIn/pinChgNewIn2)에 auPw(~7575)와 동일한 togglePwVis 눈 아이콘 토글을 추가했다. 각 입력을 <div class=\"pw-wrap\">로 감싸고 바로 옆에 onclick=\"togglePwVis('<id>')\" 버튼을 붙였을 뿐 togglePwVis() 자체(el.closest('.pw-wrap')/el.type 기반 범용 로직)는 손대지 않았다. 계획이 'renderLockView는 FUNCTIONS에 없다'고 가정했던 부분은 실제로 코드를 열어보니 틀렸음을 확인(이미 line171에 등록돼 실행형 테스트 대상이었음) — openSetPinSheet/openChangePinSheet/openDisableAppLockSheet와 마찬가지로 추가 등록 없이 기존 vm 실행 검증을 그대로 탄다. test/run.js는 cycle155의 (fn,id) 테이블 테스트와 같은 의도지만, 이번엔 한 함수에 PIN 입력이 2~3개씩 있어 body.indexOf 단일 탐색 대신 각 id별로 `class=\"pw-wrap\"><input id=\"<id>\" type=\"password\"`가 바로 붙어 있는지 정규식으로 확인하는 7건을 추가했다(되돌려서 돌려보면 7건 모두 깨짐을 확인). index.html/sw.js 변경이라 APP_VERSION 1.47.84->1.47.85, sw.js CACHE v346->v347 갱신. node test/run.js 1096/1096 -> 1103/1103 통과.",
       "commit": null
+    },
+    {
+      "cycle": 160,
+      "phase": "develop",
+      "timestamp": "2026-10-08T11:15:23.956Z",
+      "summary": "homeAlerts 카드 중 nextOutflowCard()(\"다음에 나갈 큰돈\")만 전체를 <button class=\"next-card\">로 렌더하면서 그 안에 중첩된 .nc-fix(\"해결 방법 보기\")를 onclick div로 넣고 event.stopPropagation()으로 두 클릭을 분리하던 문제를 발견 — 네이티브 button 안에 인터랙티브 요소를 중첩하는 건 무효 HTML이고, 포커스 가능한 요소가 아니라 Tab으로는 절대 닿지 않아 경고 상태에서 가장 중요한 액션(해결 방법 보기)이 키보드/스위치 접근 사용자에게 완전히 막혀 있었음(spend-row/of-row/acct-card/ha-b가 이미 쓰던 role=button+real inner button 패턴을 이 카드만 놓침). 바깥 요소를 role=\"button\" tabindex=\"0\" aria-label + onkeydown=\"rowKeydown(...)\" div로, nc-fix를 실제 <button type=\"button\">으로 교체. .next-card:not(.ok){cursor:pointer} CSS 보강(경고 없는 .ok 변형은 onclick이 없어 제외). button.next-card를 참조하는 다른 코드 없음을 확인. test/run.js에 role/tabindex/onkeydown과 nc-fix가 실제 button 태그인지 검증하는 테스트 1건 추가. index.html/sw.js 변경이라 APP_VERSION 1.47.85->1.47.86, sw.js CACHE v347->v348 갱신. node test/run.js 1103/1103 -> 1104/1104 통과.",
+      "commit": "73f7950"
     }
   ]
 }
