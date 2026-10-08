@@ -1328,7 +1328,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.80';
+const APP_VERSION='1.47.81';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6504,6 +6504,16 @@ function goPlanTo(assetId,date){
  if(a){ST.plan.owner='전체';ST.plan.assetId=assetId;const p=(date||'').split('-');if(p[0]){ST.plan.y=+p[0];ST.plan.m=+p[1]}}
  go('plan');
 }
+function openNegList(){ /* 잔액부족예상 여러 건을 한 시트에서 — openQuickList()/openConfirmTransferList()와 동일 패턴 */
+ const list=planNegatives();
+ if(!list.length){toast('부족 예상 통장이 없어요');return}
+ if(list.length===1){const n=list[0];closeSheet();goPlanTo(n.assetId,n.date);return;}
+ openSheet(`<h3>잔액 부족 예상</h3><div class="desc">잔액이 부족해질 것으로 예상되는 통장 ${list.length}곳이에요. 눌러서 확인하세요.</div>
+  <div style="display:flex;flex-direction:column;gap:8px">${list.map(n=>`<button class="pick" onclick="closeSheet();goPlanTo('${n.assetId}','${n.date}')">
+    <div class="pav a-etc">${svg('bell')}</div>
+    <div class="pbody"><div class="pn">${esc(n.name)}</div><div class="psub">${shortDate(n.date)}부터 · 잔액 ${comma(n.min)}원까지 내려가요</div></div>
+    <div class="pc">${svg('chevR')}</div></button>`).join('')}</div>`);
+}
 function celebrate(msg){ /* 잘 해냈을 때의 작은 보상 */
  if(navigator.vibrate)navigator.vibrate([12,60,12]);
  const el=document.createElement('div');
@@ -6804,10 +6814,14 @@ function homeAlerts(neg){
  const _pend=allTxns(RANGE_FROM,TODAY).filter(t=>isDuePending(t)).sort((a,b)=>a.date<b.date?-1:1); /* 미확인 이체: 1건이면 그대로, 여러 건이면 하나로 묶음(quick/quickMulti, budgetOver/budgetOverMulti와 동일 패턴) */
  if(_pend.length===1){const t=_pend[0];arr.push({kind:'confirm',id:t.id,recId:t.recId,isRec:!!t.isRec,from:assetNm(t.fromAssetId,t.fromAssetName),to:assetNm(t.toAssetId,t.toAssetName),amount:t.amount,date:t.date});}
  else if(_pend.length>1)arr.push({kind:'confirmMulti',count:_pend.length});
- neg.forEach(n=>arr.push({kind:'neg',assetId:n.assetId,name:n.name,date:n.date,min:n.min}));
- DB.assets.filter(a=>a.type==='savings'&&a.maturityDate&&a.maturityDate<=addDays(TODAY,7))
-   .sort((a,b)=>a.maturityDate<b.maturityDate?-1:1)
-   .forEach(a=>arr.push({kind:'mat',assetId:a.id,name:a.name,date:a.maturityDate,amount:assetEval(a)}));
+ /* 잔액부족예상: 1건이면 그대로, 여러 건이면 하나로 묶음(quick/quickMulti와 동일 패턴) */
+ if(neg.length===1){const n=neg[0];arr.push({kind:'neg',assetId:n.assetId,name:n.name,date:n.date,min:n.min});}
+ else if(neg.length>1)arr.push({kind:'negMulti',count:neg.length});
+ /* 저축 만기 임박: 1건이면 그대로, 여러 건이면 하나로 묶음(quick/quickMulti와 동일 패턴) */
+ const _mat=DB.assets.filter(a=>a.type==='savings'&&a.maturityDate&&a.maturityDate<=addDays(TODAY,7))
+   .sort((a,b)=>a.maturityDate<b.maturityDate?-1:1);
+ if(_mat.length===1){const a=_mat[0];arr.push({kind:'mat',assetId:a.id,name:a.name,date:a.maturityDate,amount:assetEval(a)});}
+ else if(_mat.length>1)arr.push({kind:'matMulti',count:_mat.length,dueCount:_mat.filter(a=>a.maturityDate<=addDays(TODAY,1)).length});
  const _vr=varyingRecs(); /* 변동 실제금액 입력: 1건이면 그대로, 여러 건이면 하나로 묶음 */
  if(_vr.length===1){const q=_vr[0];arr.push({kind:'quick',recId:q.rec.id,date:q.date,name:q.rec.memo||q.rec.category,rtype:q.rec.type});}
  else if(_vr.length>1){arr.push({kind:'quickMulti',count:_vr.length});}
@@ -6829,6 +6843,7 @@ function notifyAlertInfo(al){
   const when=overdue?'만기가 지났어요':(al.date===TODAY?'오늘':'내일');
   return{key:`mat:${al.assetId}:${al.date}`,title:overdue?'저축 만기가 지났어요':'저축 만기가 임박했어요',body:overdue?`${al.name} · ${when} · ${comma(al.amount)}원`:`${al.name} · ${when} 만기 · ${comma(al.amount)}원`};
  }
+ if(al.kind==='matMulti'&&al.dueCount>0)return{key:`matMulti:${TODAY}:${al.count}`,title:'저축 만기가 임박했어요',body:`저축 만기 ${al.count}건이 있어요`};
  if(al.kind==='budgetOver')return{key:`budget:${al.cat}:${TODAY.slice(0,7)}`,title:'예산을 초과했어요',body:`${al.cat} · ${comma(al.spent)}원 / ${comma(al.budget)}원`};
  if(al.kind==='budgetOverMulti')return{key:`budgetMulti:${TODAY.slice(0,7)}`,title:'예산을 초과했어요',body:`${al.count}개 카테고리가 이번 달 예산을 넘었어요`};
  return null;
@@ -6916,6 +6931,11 @@ function homeAlertCard(al){
    <div class="ha-b"><div class="ha-t">저축 만기 임박 · ${esc(al.name)}</div>
      <div class="ha-s">${shortDate(al.date)} · ${comma(al.amount)}원 만기예요</div></div>
    <div class="ha-c">${svg('chev')}</div></button>`;
+ if(al.kind==='matMulti')return `<button class="home-alert mat" onclick="openMaturity()">
+   <div class="ha-ic">${svg('bell')}</div>
+   <div class="ha-b"><div class="ha-t">저축 만기 임박 ${al.count}건</div>
+     <div class="ha-s">눌러서 한 번에 확인</div></div>
+   <div class="ha-c">${svg('chev')}</div></button>`;
  if(al.kind==='quick')return `<button class="home-alert quick" onclick="openQuickAmount('${al.recId}','${al.date}')">
    <div class="ha-ic">${svg('edit')}</div>
    <div class="ha-b"><div class="ha-t">${esc(al.name)} 실제 금액을 넣어주세요</div>
@@ -6940,6 +6960,11 @@ function homeAlertCard(al){
    <div class="ha-ic">${svg('alert')}</div>
    <div class="ha-b"><div class="ha-t">예산을 초과한 카테고리 ${al.count}개</div>
      <div class="ha-s">눌러서 확인하세요</div></div>
+   <div class="ha-c">${svg('chev')}</div></button>`;
+ if(al.kind==='negMulti')return `<button class="home-alert" onclick="openNegList()">
+   <div class="ha-ic">${svg('bell')}</div>
+   <div class="ha-b"><div class="ha-t">잔액 부족 예상 ${al.count}건</div>
+     <div class="ha-s">눌러서 한 번에 확인</div></div>
    <div class="ha-c">${svg('chev')}</div></button>`;
  return `<button class="home-alert" onclick="goPlanTo('${al.assetId}','${al.date}')">
    <div class="ha-ic">${svg('bell')}</div>

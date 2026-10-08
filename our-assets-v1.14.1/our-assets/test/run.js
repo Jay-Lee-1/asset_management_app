@@ -172,7 +172,7 @@ const FUNCTIONS = [
   'confirmTransferNow', 'postponeTransfer', 'confirmRecNow', 'openConfirmTransferList',
   'foreignSaveIsNewer', 'applyForeignSave', 'openCopyBackup', 'copyBackup', 'findDonors',
   'recIsVarying', 'varyingRecs', 'fixShortfallDefaultDate', 'openFixShortfall', 'lastActualAmount', 'openQuickAmount',
-  'backupDue', 'planNegatives', 'homeAlerts', 'updateAlerts',
+  'backupDue', 'planNegatives', 'homeAlerts', 'updateAlerts', 'goPlanTo', 'openNegList',
  'notifyAlertInfo', 'pickNotifyAlerts', 'pruneNotifiedIds',
   'catIconOf', 'catGlyph', 'openCatManage', 'openCatPicker',
   'catListOf', 'catAv', 'assetPickBtn', 'endCondFields', 'dayPickerHTML', 'openFormSheet', 'renderTxSheet', '_applyType', '_applyFreq', '_applyDay', '_applyCount', '_applyOpenCat', '_applyOpenAsset', 'txType', 'txToggleRepeat',
@@ -9726,6 +9726,16 @@ test('homeAlertCard: confirmMulti는 openConfirmTransferList()로 열리고 건�
   assert.ok(html.includes('onclick="openConfirmTransferList()"'), 'confirmMulti 카드가 openConfirmTransferList()를 호출해야 함');
   assert.ok(html.includes('이체 확인 3건'), '건수가 보여야 함');
 });
+test('homeAlertCard: negMulti는 openNegList()로 열리고 건수가 보인다(app-evolve cycle157)', () => {
+  const html = sandbox.homeAlertCard({ kind: 'negMulti', count: 2 });
+  assert.ok(html.includes('onclick="openNegList()"'), 'negMulti 카드가 openNegList()를 호출해야 함');
+  assert.ok(html.includes('잔액 부족 예상 2건'), '건수가 보여야 함');
+});
+test('homeAlertCard: matMulti는 openMaturity()로 열리고 건수가 보인다(기존 저축 만기 목록 시트를 재사용, app-evolve cycle157)', () => {
+  const html = sandbox.homeAlertCard({ kind: 'matMulti', count: 3 });
+  assert.ok(html.includes('onclick="openMaturity()"'), 'matMulti 카드가 새 시트를 만들지 않고 기존 openMaturity()를 재사용해야 함');
+  assert.ok(html.includes('저축 만기 임박 3건'), '건수가 보여야 함');
+});
 test('openConfirmTransferList: 미확인 이체가 없으면 안내 토스트만 뜨고, 정확히 1건이면 목록 없이 바로 그 건의 개별 확인 시트로 간다(app-evolve cycle156)', () => {
   setupHomeAlertsDB();
   sandbox.DB.settings.confirmTransfers = true;
@@ -9763,6 +9773,44 @@ test('openConfirmTransferList: 2건 이상이면 일반 이체와 반복 이체�
   assert.ok(html.includes(`confirmRecTransfer('r1','2026-06-12')`), '반복 이체 행은 confirmRecTransfer로 연결돼야 함');
   assert.ok(html.includes(sandbox.comma(50000)) && html.includes(sandbox.comma(30000)), '각 행에 금액이 표시돼야 함');
 });
+/* openNegList: openConfirmTransferList()/openQuickList()와 동일 패턴 — 0건이면 토스트만, 1건이면
+ * 목록 없이 바로 plan 탭으로, 2건 이상이면 한 시트에 한 줄씩 보여주고 눌렀을 때 시트를 닫고
+ * plan 탭으로 이동한다(sheet 위에 plan 탭이 그대로 깔리는 걸 막기 위해 closeSheet 필요,
+ * openConfirmTransferList/openQuickList의 개별 확인 시트와 달리 sheet가 아니라 탭 전환이라서).
+ * (app-evolve cycle157 advance) */
+test('openNegList: 부족 예상 통장이 없으면 안내 토스트만 뜨고, 정확히 1곳이면 목록 없이 바로 plan 탭으로 간다(app-evolve cycle157)', () => {
+  setupHomeAlertsDB();
+  sandbox.ST = { plan: { owner: '전체' } };
+  sandbox.goCalls = [];
+  sandbox.closeSheetCalls = 0;
+  sandbox.lastToast = null;
+  sandbox.lastSheetHtml = null;
+  sandbox.openNegList();
+  assert.ok(sandbox.lastToast, '부족 예상 통장이 없으면 안내 토스트가 떠야 함');
+  assert.strictEqual(sandbox.lastSheetHtml, null, '항목이 없으면 시트를 열면 안 됨');
+  assert.deepStrictEqual(sandbox.goCalls, [], '항목이 없으면 탭 전환도 없어야 함');
+
+  sandbox.DB.assets.push({ id: 'a1', name: '통장1', owner: '나', type: 'cash', baseAmount: -30000 });
+  sandbox.lastSheetHtml = null;
+  sandbox.openNegList();
+  assert.strictEqual(sandbox.lastSheetHtml, null, '1곳이면 목록 시트를 열지 않고 바로 plan 탭으로 가야 함');
+  assert.strictEqual(sandbox.closeSheetCalls, 1, '탭 전환 전에 열려있던 시트를 닫아야 함');
+  assert.deepStrictEqual(sandbox.goCalls, ['plan'], "1곳이면 바로 go('plan')으로 가야 함");
+  assert.strictEqual(sandbox.ST.plan.assetId, 'a1', 'plan 탭이 그 통장을 선택한 상태로 열려야 함');
+});
+test('openNegList: 2곳 이상이면 한 시트에 한 줄씩 보여주고, 누르면 시트를 닫고 그 통장의 plan 탭으로 이동한다(app-evolve cycle157)', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.assets.push({ id: 'a1', name: '통장1', owner: '나', type: 'cash', baseAmount: -30000 });
+  sandbox.DB.assets.push({ id: 'a2', name: '통장2', owner: '나', type: 'cash', baseAmount: 10000 });
+  sandbox.DB.txns.push({ id: 't1', date: '2026-06-20', type: 'expense', category: '식비', amount: 15000, fromAssetId: 'a2' });
+  sandbox.lastSheetHtml = null;
+  sandbox.openNegList();
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html, '2곳 이상이면 목록 시트를 열어야 함');
+  assert.ok(html.includes('통장 2곳'), '건수 안내가 있어야 함');
+  assert.ok(html.includes(`closeSheet();goPlanTo('a1','2026-06-15')`), '이미 마이너스인 통장 행은 오늘 날짜로 closeSheet 후 goPlanTo로 연결돼야 함');
+  assert.ok(html.includes(`closeSheet();goPlanTo('a2','2026-06-20')`), '예정 지출로 마이너스 전환되는 통장 행은 그 날짜로 연결돼야 함');
+});
 test('homeAlerts: planNegatives 결과(neg)를 그대로 넘겨받아 자산별 neg 알림으로 변환한다(회귀 확인)', () => {
   setupHomeAlertsDB();
   const neg = [{ assetId: 'a1', name: '통장1', owner: '나', date: '2026-06-20', min: -5000 }];
@@ -9772,6 +9820,53 @@ test('homeAlerts: planNegatives 결과(neg)를 그대로 넘겨받아 자산별 
   assert.strictEqual(negAlerts[0].assetId, 'a1');
   assert.strictEqual(negAlerts[0].date, '2026-06-20');
   assert.strictEqual(negAlerts[0].min, -5000);
+});
+/* neg(잔액부족예상)도 quick/quickMulti·confirm/confirmMulti와 동일한 1건/N건 묶음 패턴을 쓴다
+ * (app-evolve cycle157 critique: confirm/quick/budgetOver는 이미 묶는데 바로 옆줄의 neg/mat만
+ * 묶지 않아 자산이 여러 개 동시에 부족해지면 홈 알림이 카드로 도배되던 비대칭을 해소) */
+test('homeAlerts: 잔액부족예상(neg)이 정확히 1건이면 neg, 2건으로 늘면 negMulti로 묶인다(app-evolve cycle157)', () => {
+  setupHomeAlertsDB();
+  let alerts = sandbox.homeAlerts([{ assetId: 'a1', name: '통장1', owner: '나', date: '2026-06-20', min: -5000 }]);
+  let neg = alerts.filter((a) => a.kind === 'neg' || a.kind === 'negMulti');
+  assert.strictEqual(neg.length, 1);
+  assert.strictEqual(neg[0].kind, 'neg', '정확히 1건이면 neg여야 함');
+  assert.strictEqual(neg[0].assetId, 'a1');
+
+  alerts = sandbox.homeAlerts([
+    { assetId: 'a1', name: '통장1', owner: '나', date: '2026-06-20', min: -5000 },
+    { assetId: 'a2', name: '통장2', owner: '나', date: '2026-06-22', min: -2000 },
+  ]);
+  neg = alerts.filter((a) => a.kind === 'neg' || a.kind === 'negMulti');
+  assert.strictEqual(neg.length, 1);
+  assert.strictEqual(neg[0].kind, 'negMulti', '2건이 되면 negMulti 하나로 묶여야 함');
+  assert.strictEqual(neg[0].count, 2);
+});
+test('homeAlerts: 저축 만기 임박(mat)이 정확히 1건이면 mat, 2건으로 늘면 matMulti로 묶인다(app-evolve cycle157)', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.assets.push({ id: 's1', name: '적금1', owner: '나', type: 'savings', baseAmount: 1000000, maturityDate: '2026-06-18' });
+  let alerts = sandbox.homeAlerts([]);
+  let mat = alerts.filter((a) => a.kind === 'mat' || a.kind === 'matMulti');
+  assert.strictEqual(mat.length, 1);
+  assert.strictEqual(mat[0].kind, 'mat', '정확히 1건이면 mat여야 함');
+  assert.strictEqual(mat[0].assetId, 's1');
+
+  sandbox.DB.assets.push({ id: 's2', name: '적금2', owner: '나', type: 'savings', baseAmount: 500000, maturityDate: '2026-06-20' });
+  alerts = sandbox.homeAlerts([]);
+  mat = alerts.filter((a) => a.kind === 'mat' || a.kind === 'matMulti');
+  assert.strictEqual(mat.length, 1);
+  assert.strictEqual(mat[0].kind, 'matMulti', '2건이 되면 matMulti 하나로 묶여야 함');
+  assert.strictEqual(mat[0].count, 2);
+  assert.strictEqual(mat[0].dueCount, 0, '둘 다 오늘/내일(1일 이내)이 아니면 dueCount는 0이어야 함');
+});
+test('homeAlerts: matMulti의 dueCount는 1일 이내(오늘·내일·지남)로 만기인 건수만 센다(app-evolve cycle157)', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.assets.push({ id: 's1', name: '적금1', owner: '나', type: 'savings', baseAmount: 1000000, maturityDate: '2026-06-15' }); // 오늘
+  sandbox.DB.assets.push({ id: 's2', name: '적금2', owner: '나', type: 'savings', baseAmount: 500000, maturityDate: '2026-06-20' }); // 5일 뒤(7일 이내지만 1일 이내 아님)
+  const alerts = sandbox.homeAlerts([]);
+  const matMulti = alerts.find((a) => a.kind === 'matMulti');
+  assert.ok(matMulti);
+  assert.strictEqual(matMulti.count, 2);
+  assert.strictEqual(matMulti.dueCount, 1, '오늘 만기 1건만 1일 이내로 카운트돼야 함');
 });
 /* ---------- notifyAlertInfo/pickNotifyAlerts/pruneNotifiedIds: OS 알림 대상 선별/dedupe 회귀 테스트
  * (app-evolve cycle59 advance) — homeAlerts()가 이미 계산해두는 confirm/mat/budgetOver(Multi) 중
@@ -9814,6 +9909,16 @@ test('notifyAlertInfo: 이미 지난 저축 만기(overdue, doMaturity 미처리
   const yesterday = sandbox.notifyAlertInfo({ kind: 'mat', assetId: 's1', name: '적금', date: '2026-06-14', amount: 1000000 });
   assert.ok(yesterday.body.includes('지났'));
   assert.ok(!yesterday.body.includes('내일'));
+});
+test('notifyAlertInfo: matMulti는 묶인 건 중 1일 이내(dueCount)로 임박한 게 있을 때만 알리고, 날짜+건수로 키가 잡힌다(app-evolve cycle157)', () => {
+  sandbox.TODAY = '2026-06-15';
+  const urgent = sandbox.notifyAlertInfo({ kind: 'matMulti', count: 3, dueCount: 1 });
+  assert.ok(urgent && urgent.key === 'matMulti:2026-06-15:3', '날짜+건수로 키가 잡혀야 함');
+  assert.ok(urgent.body.includes('3건'));
+  const notYet = sandbox.notifyAlertInfo({ kind: 'matMulti', count: 2, dueCount: 0 });
+  assert.strictEqual(notYet, null, '전부 1일 이내가 아니면(아직 임박 아님) 알림 대상이 아니어야 함');
+  const urgent4 = sandbox.notifyAlertInfo({ kind: 'matMulti', count: 4, dueCount: 2 });
+  assert.notStrictEqual(urgent4.key, urgent.key, '건수가 늘면 키도 바뀌어 다시 알려야 함');
 });
 test('pickNotifyAlerts: 이미 알림 보낸 key는 다시 보내지 않고(dedupe), 처음 보는 key만 toNotify에 담긴다', () => {
   sandbox.TODAY = '2026-06-15';
