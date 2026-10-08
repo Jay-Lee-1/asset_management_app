@@ -1,7 +1,12 @@
 {
   "cycle": 158,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "홈 화면 '다 쓴 자산 정리' 카드도 confirm/neg/mat/quick/budgetOver처럼 1건/N건 묶음 처리",
+    "why": "emptyAssetCards()(index.html:6792-6800)는 cycle154/156/157을 거쳐 완성된 homeAlerts()의 1건/N건 묶음(kind+'Multi') 패턴에서 유일하게 빠진 카테고리다. emptyAssets()(6780)가 반환하는 잔액 0·예정 내역 없는 자산 전부를 tidySnoozed로만 거른 뒤 개수 제한 없이 .home-alert.tidy 카드를 하나씩 쌓아 렌더한다(6793-6799) — 만기 저축/소액 보유를 여러 개 정리하지 않고 방치하면 홈 캐러셀이 동일 카드로 도배되고 confirm/neg/mat/quick/budgetOver는 이미 다 해결된 문제가 바로 옆 함수에만 남아있는 불일치다. test/run.js:8313-8395가 이미 emptyAssets/emptyAssetCards를 커버하고 있어 확장할 지점도 명확하다.",
+    "approach": "confirm/confirmMulti·neg/negMulti·mat/matMulti와 동일한 패턴을 emptyAssetCards()(index.html~6792)에 적용한다: list.length===1이면 기존 상세 카드를 그대로 쓰고, list.length>1이면 요약 카드 1장('다 쓴 자산 N개 · 정리할까요?')만 렌더해 openTidyList()를 열게 한다. openTidyList()는 openConfirmTransferList/openNegList와 동일한 구조로 새로 추가: 각 자산을 한 줄씩 보여주고 행마다 '정리'(openTidyAsset 위임)/'나중에'(snoozeTidy, 해당 행만 제거하고 시트는 안 닫힘) 버튼을 그대로 재사용한다. test/run.js 8313-8395 부근에 1건→기존 카드/2건 이상→요약+Multi 그룹핑 테스트, openTidyList를 FUNCTIONS(vm 실행 검증)에 추가해 0건/1건 위임/2건 이상 리스트 렌더 및 각 행의 tidy/snooze 와이어링을 실행형으로 검증하는 테스트를 추가한다. index.html을 건드리므로 APP_VERSION/sw.js CACHE 버전도 함께 올린다.",
+    "risk": "low-medium. 리스트 시트 안에서 행별 snoozeTidy 호출이 해당 행만 제거하고 시트 전체를 닫지 않아야 하는데, confirmMulti/negMulti/matMulti가 이미 이 '행 단위 조작 vs 시트 유지' 문제를 풀어놓은 선례가 있어 복붙 드리프트만 조심하면 된다. 네트워크/외부 의존 없음, 기존 openTidyAsset/snoozeTidy 재사용이라 새로운 삭제 로직 없음."
+  },
   "history": [
     {
       "cycle": 153,
@@ -141,6 +146,13 @@
       "phase": "review",
       "timestamp": "2026-10-08T03:30:00.000Z",
       "summary": "cycle158 develop(auEmail/kkeyIn field-clear(x) 추가) 검토 — fcWire()가 document 전체의 .field-clear input을 el._fcw 플래그로 멱등 배선하는 것을 직접 확인했고, renderAuth()가 openSheet() 밖 별도 화면이라 자동 배선을 못 타 직접 fcWire()를 호출해야 한다는 커밋 설명이 정확함을 검증. CSS 측면도 .auth-field input/.kkey input 모두 width:100%이고 별도 position 지정이 없어 .field-clear(position:relative)+.fc-x(절대배치)가 기존 add-inline/searchbar 사례와 동일하게 충돌 없이 들어맞음을 확인. clrInput('auEmail')/clrInput('kkeyIn')도 $(id)로 그대로 input을 찾아 기존 doLogin/doSignup/saveKakaoKey의 $('auEmail').value/$('kkeyIn').value 읽기와 무관함을 확인. node test/run.js 1089/1089 통과. 이상 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 158,
+      "phase": "critique",
+      "timestamp": "2026-10-08T04:30:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 재조망(153-158사이클 전부 + 기각 이력 전달). 새로 발견: emptyAssetCards()(index.html:6792-6800)가 homeAlerts()의 confirm/neg/mat/quick/budgetOver 다섯 카테고리 모두 cycle154/156/157을 거쳐 완성한 1건/N건 묶음(kind+Multi) 패턴에서 유일하게 빠져 있음을 grep으로 확인(emptyAssetCards 자체는 homeAlerts()와 별도 함수로 renderHome()에서 직접 호출되지만 동일한 '다건 시 카드 도배' 결함을 그대로 갖고 있음). emptyAssets()가 반환하는 잔액 0 자산 전부를 tidySnoozed로만 거르고 개수 제한 없이 .home-alert.tidy 카드를 하나씩 쌓아 홈 캐러셀을 도배할 수 있음을 코드로 직접 확인. test/run.js:8313-8395가 이미 이 함수들을 커버해 확장 지점도 명확함. openTidyList() 신규 추가 + Multi 분기 계획을 pending_advance_plan에 저장. 러너업(기각): WebAuthn/생체인증 App-Lock(이 샌드박스가 플랫폼 authenticator를 전혀 실행할 수 없어 새 코드 대부분이 테스트 불가), FUNCTIONS vm 커버리지를 openSheet류 외 나머지 함수로 확대(이미 반복 지적된 백로그 카테고리, 새 발견 아님). 코드 변경 없음(읽기 전용 조사).",
       "commit": null
     }
   ]
