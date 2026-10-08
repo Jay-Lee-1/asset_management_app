@@ -1330,7 +1330,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.89';
+const APP_VERSION='1.47.90';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4731,7 +4731,7 @@ function renderMenu(){
   ]},
   {cap:'알림 · 기준',items:[
    {ic:'check',l:'이체 확인',sw:!!DB.settings.confirmTransfers,a:"toggleConfirmTransfers()"},
-   {ic:'bell',l:'OS 알림',sw:!!DB.settings.osNotify,a:"toggleOsNotify()"},
+   {ic:'bell',l:(typeof Notification!=='undefined'&&Notification.permission==='denied')?'OS 알림 · 차단됨':'OS 알림',sw:!!DB.settings.osNotify,a:"toggleOsNotify()"},
    {ic:'lock',l:'앱 잠금(PIN)',sw:APPLOCK.enabled(),a:"toggleAppLock()"},
    ...(APPLOCK.enabled()?[{ic:'lock',l:'PIN 변경',a:"openChangePinSheet()"},{ic:'lock',l:'재잠금 시점',v:graceLabel(),a:"openAppLockGraceSheet()"}]:[]),
    {ic:'chart',l:'큰 지출 기준',v:comma(bigMin())+'원',a:"openBigMinSheet()"},
@@ -6940,7 +6940,18 @@ function pruneNotifiedIds(notifiedIds,now){
  * 앱을 보고 있는 동안은 이미 같은 정보가 홈 알림 카드로 보이므로 중복 알림하지 않는다.
  * 완전 종료(특히 iOS Safari PWA)까지는 보장하지 못하고, 앱이 백그라운드/최소화된 동안만 동작하는
  * best-effort 범위다(별도 푸시 서버 없이 로컬 Notification API만 사용). */
+/* DB.settings.osNotify가 true로 남아있어도, 사용자가 나중에 OS/브라우저 설정에서 알림 권한을 꺼버리면
+ * (흔한 경로) Notification.permission이 더는 'granted'가 아니게 되는데, checkNotifyAlerts()는 그 경우
+ * 조용히 멈추기만 하고 메뉴의 스위치는 계속 '켜짐'으로 보인다 — 부팅 시/포그라운드 복귀 시/주기 확인
+ * 때마다 실제 권한과 다시 맞춰, 사용자가 꺼진 줄 모르고 계속 알림을 기다리지 않게 한다. */
+function syncNotifyPermission(){
+ if(!(DB&&DB.settings.osNotify))return;
+ if(typeof Notification==='undefined'||Notification.permission==='granted')return;
+ DB.settings.osNotify=false;save();renderCurrent();
+ toast('브라우저 알림 권한이 꺼져서 OS 알림도 꺼졌어요');
+}
 function checkNotifyAlerts(){
+ syncNotifyPermission();
  if(!(DB&&DB.settings.osNotify))return;
  if(typeof document!=='undefined'&&!document.hidden)return;
  if(!(typeof Notification!=='undefined'&&Notification.permission==='granted'))return;
@@ -7406,6 +7417,7 @@ let authMode='login';let AUTHKEY=false;
 function showApp(){$('authView').style.display='none';$('app').style.display=''}
 function startApp(){
  load();
+ syncNotifyPermission();
  try{localStorage.removeItem('ourassets_snapshots')}catch(e){} /* 구 자동백업 저장소 정리 */
  rollPendingTransfers();
  save(); /* save()가 오늘 날짜 nwHistory 스냅샷을 항상 갱신한다 */
@@ -7811,7 +7823,7 @@ function maybeRollDay(){
 }
 /* 백그라운드로 전환되면 즉시 화면을 가려(lockApp) OS 앱 전환화면에 데이터가 노출되지 않게 하면서도,
  * 설정된 유예시간 안에 돌아오면 PIN 재입력 없이 자동으로 다시 연다(app-evolve cycle151 advance) */
-document.addEventListener('visibilitychange',()=>{if(!document.hidden){if(APP_LOCKED&&APPLOCK.enabled()&&APP_HIDDEN_AT&&(Date.now()-APP_HIDDEN_AT)/1000<APPLOCK.getGrace())unlockApp();else maybeRollDay();APP_HIDDEN_AT=0}else{if(CLOUD_UID){clearTimeout(SB_PUSH_T);pushCloud().catch(()=>{})}checkNotifyAlerts();if(appIsOpen()){APP_HIDDEN_AT=Date.now();lockApp()}}});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){syncNotifyPermission();if(APP_LOCKED&&APPLOCK.enabled()&&APP_HIDDEN_AT&&(Date.now()-APP_HIDDEN_AT)/1000<APPLOCK.getGrace())unlockApp();else maybeRollDay();APP_HIDDEN_AT=0}else{if(CLOUD_UID){clearTimeout(SB_PUSH_T);pushCloud().catch(()=>{})}checkNotifyAlerts();if(appIsOpen()){APP_HIDDEN_AT=Date.now();lockApp()}}});
 window.addEventListener('online',async()=>{
  if(!shouldRetryCloudSync(CLOUD_UID,CLOUD_SYNC_STATE,navigator.onLine))return;
  await pullCloud();await pushCloud();

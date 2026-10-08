@@ -173,7 +173,7 @@ const FUNCTIONS = [
   'foreignSaveIsNewer', 'applyForeignSave', 'openCopyBackup', 'copyBackup', 'findDonors',
   'recIsVarying', 'varyingRecs', 'fixShortfallDefaultDate', 'openFixShortfall', 'lastActualAmount', 'openQuickAmount',
   'backupDue', 'planNegatives', 'homeAlerts', 'updateAlerts', 'goPlanTo', 'openNegList',
- 'notifyAlertInfo', 'pickNotifyAlerts', 'pruneNotifiedIds',
+ 'notifyAlertInfo', 'pickNotifyAlerts', 'pruneNotifiedIds', 'syncNotifyPermission',
   'catIconOf', 'catGlyph', 'openCatManage', 'openCatPicker',
   'catListOf', 'catAv', 'assetPickBtn', 'endCondFields', 'dayPickerHTML', 'openFormSheet', 'renderTxSheet', '_applyType', '_applyFreq', '_applyDay', '_applyCount', '_applyOpenCat', '_applyOpenAsset', 'txType', 'txToggleRepeat',
   'accountName', 'dbIsEmpty', 'guestHasData',
@@ -486,6 +486,10 @@ const sandbox = {
   navigator: {},
   toast: (msg) => { sandbox.lastToast = msg; sandbox.toastCalls.push(msg); },
   toastCalls: [],
+  // Notification은 브라우저 전용 전역이라(SESSION/CLOUD_UID와 같은 이유) syncNotifyPermission()/
+  // toggleOsNotify() 테스트에서 {permission:'granted'|'denied'|'default'}로 직접 세팅한다.
+  // undefined로 두면 실제 코드의 typeof Notification==='undefined' 분기(미지원 브라우저)를 재현한다.
+  Notification: undefined,
   // doForgotPin()(app-evolve cycle151 develop)이 부르는 APPLOCK.disable()/unlockApp() —
   // 둘 다 화면 전용 부수효과(실제 APPLOCK 객체/화면 전환)라 closeSheet/toast와 같은 이유로
   // 호출 여부만 기록하는 스파이로 흉내낸다.
@@ -2256,6 +2260,38 @@ test('renderMenu: OS 알림이 켜져 있으면 "알림 · 기준" 그룹 아래
   const body = extractFunction('renderMenu');
   assert.ok(body.includes("g.cap==='알림 · 기준'&&DB.settings.osNotify"), 'renderMenu가 OS 알림 캡션을 조건부로 렌더하지 않음');
   assert.ok(body.includes('notifyReliabilityMsg(notifyReliabilityTier(IS_IOS))'), 'renderMenu의 캡션이 notifyReliabilityMsg를 쓰지 않음');
+});
+// toggleOsNotify()가 켤 때 한 번 Notification.requestPermission()으로 DB.settings.osNotify=true를
+// 세팅한 뒤로는 아무도 실제 권한 상태를 다시 확인하지 않아서, 사용자가 나중에 OS/브라우저 설정에서
+// 알림 권한을 꺼버리면 checkNotifyAlerts()는 조용히 멈추지만 메뉴 스위치는 계속 켜진 것처럼 보이던
+// 버그의 회귀 테스트(app-evolve cycle161 advance, cycle160 critique의 계획).
+test('syncNotifyPermission: OS 알림이 켜진 상태에서 브라우저 알림 권한이 꺼지면(denied) 토글을 자동으로 내리고 안내한다', () => {
+  sandbox.DB = { settings: { osNotify: true } };
+  sandbox.Notification = { permission: 'denied' };
+  sandbox.lastToast = null;
+  sandbox.syncNotifyPermission();
+  assert.strictEqual(sandbox.DB.settings.osNotify, false, '권한이 꺼졌으면 osNotify도 false로 내려가야 함');
+  assert.ok(sandbox.lastToast, '권한이 꺼져서 토글이 내려갔다는 안내 토스트가 떴어야 함');
+});
+test('syncNotifyPermission: 권한이 아직 granted면 아무것도 건드리지 않는다', () => {
+  sandbox.DB = { settings: { osNotify: true } };
+  sandbox.Notification = { permission: 'granted' };
+  sandbox.lastToast = null;
+  sandbox.syncNotifyPermission();
+  assert.strictEqual(sandbox.DB.settings.osNotify, true, 'granted 상태에서는 osNotify를 건드리면 안 됨');
+  assert.strictEqual(sandbox.lastToast, null, 'granted 상태에서는 안내 토스트가 뜨면 안 됨');
+});
+test('syncNotifyPermission: osNotify가 이미 꺼져 있으면 권한 상태와 무관하게 아무 일도 하지 않는다', () => {
+  sandbox.DB = { settings: { osNotify: false } };
+  sandbox.Notification = { permission: 'denied' };
+  sandbox.lastToast = null;
+  sandbox.syncNotifyPermission();
+  assert.strictEqual(sandbox.DB.settings.osNotify, false);
+  assert.strictEqual(sandbox.lastToast, null, 'osNotify가 꺼져 있으면 토스트가 뜨면 안 됨');
+});
+test('renderMenu: 브라우저 알림 권한이 차단(denied)되면 "OS 알림" 메뉴 라벨에 차단됨을 표시한다', () => {
+  const body = extractFunction('renderMenu');
+  assert.ok(body.includes("Notification.permission==='denied')?'OS 알림 · 차단됨':'OS 알림'"), 'renderMenu가 denied 권한을 라벨에 반영하지 않음');
 });
 test('nwChartPath: 모든 값이 같으면(span=0) 0으로 나누지 않고 수평선을 그린다', () => {
   const { line } = sandbox.nwChartPath([

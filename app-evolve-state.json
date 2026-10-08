@@ -1,19 +1,8 @@
 {
-  "cycle": 161,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "OS 알림 토글(DB.settings.osNotify)이 실제 브라우저 Notification.permission과 다시는 동기화되지 않음",
-    "why": "toggleOsNotify()(index.html ~6957)는 Notification.requestPermission()이 'granted'일 때 딱 한 번만 DB.settings.osNotify=true로 설정하고, 그 뒤로는 아무도 실제 권한 상태를 다시 확인하지 않는다. 사용자가 나중에 OS/브라우저 설정에서 알림 권한을 꺼버리면(흔한 경로) checkNotifyAlerts()(~6943)는 Notification.permission!=='granted' 가드에 걸려 조용히 아무것도 안 하고 리턴하지만, Settings 메뉴의 스위치는 DB.settings.osNotify가 true인 그대로 계속 '켜짐'으로 보인다(이 값은 백업/병합을 통해 다른 기기로도 그대로 동기화됨). 결과적으로 사용자는 예산초과/이체/만기 알림이 계속 오는 줄 알지만 실제로는 영원히 멈춰 있고, 토글을 다시 만지기 전까진 알아챌 방법이 없다 — toggleOsNotify() 자신의 catch(cycle151)가 막으려던 바로 그 '조용한 실패' 패턴이 revoke 이후 경로에서는 그대로 재발.",
-    "approach": "1) syncNotifyPermission() 헬퍼를 새로 추가: DB.settings.osNotify가 true인데 Notification.permission!=='granted'이면 DB.settings.osNotify=false로 내리고 save() 후 toast()로 안내('브라우저 알림 권한이 꺼져서 OS 알림이 꺼졌어요' 등, 기존 notifyReliabilityMsg 문구 톤 재사용). 2) 앱 부팅 시(다른 설정 마이그레이션 근처)와 checkNotifyAlerts()/visibilitychange 포그라운드 분기 진입 시 이 헬퍼를 호출해 토글 화면을 열기 전에도 빨리 잡히게 한다. 3) renderMenu()에서 Notification.permission==='denied' 케이스를 'default'와 구분해 스위치/문구로 보여줘, toggleOsNotify()의 범용 토스트에만 의존하지 않게 한다. test/run.js에서 Notification.permission을 mock해 DB.settings.osNotify가 false로 내려가는지 검증. sw.js는 건드리지 않음."
-  },
+  "cycle": 162,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 156,
-      "phase": "advance",
-      "timestamp": "2026-10-07T22:15:00.000Z",
-      "summary": "critique(cycle156) 계획대로 homeAlerts()의 미확인 이체(confirm)를 quick/quickMulti·budgetOver/budgetOverMulti와 동일한 1건/N건 묶음 패턴으로 바꿨다. isDuePending 건수가 1건이면 기존 kind:'confirm'을 그대로 쓰고 2건 이상이면 kind:'confirmMulti'(count)로 묶도록 homeAlerts()를 수정했고, homeAlertCard()에 confirmMulti 분기를 추가해 openQuickList()와 동일한 구조의 openConfirmTransferList()를 열게 했다 — 이 함수는 1건이면 목록 없이 바로 기존 openConfirmTransfer/confirmRecTransfer 개별 시트로 즉시 위임하고(closeSheet() 재호출 충돌 없이 openQuickList→openQuickAmount와 같은 위임 패턴), 2건 이상이면 각 미확인 이체(일반/반복 모두)를 한 줄씩 보여주는 리스트 시트를 열어 탭하면 각자의 기존 개별 확인 시트로 들어간다. 추가로 notifyAlertInfo()에 confirmMulti 분기(budgetOverMulti와 동일하게 날짜+count로 키를 잡아 건수가 바뀌면 재알림)를 넣어, 그룹핑 때문에 OS 알림이 조용히 빠지는 회귀를 막았다. 백엔드·데이터 모델 변경 없이 기존 confirmTransferNow/confirmRecNow/postponeTransfer/postponeRecTransfer/isDuePending을 그대로 재사용했다. test/run.js에 homeAlerts 1건→confirm/2건→confirmMulti 그룹핑, notifyAlertInfo confirmMulti 키, homeAlertCard confirmMulti 렌더링, openConfirmTransferList 실행형(0건/1건 위임/2건 이상 리스트, 일반+반복 혼합) 테스트 총 5건을 추가하고 openConfirmTransferList를 FUNCTIONS(vm 실행 검증)에 등록했다. index.html/sw.js 변경이라 APP_VERSION 1.47.78->1.47.79, sw.js CACHE v340->v341 갱신. node test/run.js 1071/1071 -> 1076/1076 통과.",
-      "commit": null
-    },
     {
       "cycle": 157,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-08T17:12:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 재조망(141-161사이클 전부 + 기각 이력 전달). 새로 발견: toggleOsNotify()(index.html~6957)가 Notification.requestPermission()이 'granted'일 때 딱 한 번만 DB.settings.osNotify=true로 설정한 뒤 그 값을 다시는 실제 Notification.permission과 비교해 재확인하지 않음. 사용자가 나중에 OS/브라우저 설정에서 알림 권한을 꺼버리면 checkNotifyAlerts()(~6943)의 permission==='granted' 가드에 걸려 조용히 리턴하지만 Settings 메뉴 스위치는 (백업/병합으로 다른 기기에도 동기화되는) osNotify=true 그대로 '켜짐'으로 계속 보여, 사용자는 예산초과/이체/만기 알림이 계속 오는 줄 알지만 실제로는 영원히 멈춰 있고 알아챌 방법이 없음 — toggleOsNotify() 자신의 catch(cycle151)가 막으려던 '조용한 실패'가 revoke 경로에서 재발하는 패턴. syncNotifyPermission() 헬퍼(불일치 시 osNotify=false로 내리고 toast 안내) + 부팅/checkNotifyAlerts/visibilitychange 포그라운드 시점 호출 + renderMenu()의 denied/default 구분 표시 계획을 pending_advance_plan에 저장. 러너업(기각): delGoal/delCat/delOwner/delInquiry/delAssetQtyLog/delAdjust/delBudget 전부 이미 confirmSheet→mutate→undoToast 톰스톤 패턴을 일관되게 따름(공백 없음), 자산 그룹/자산 순서 드래그 재정렬에 moveGroup()/moveAsset() 화살표 버튼으로 이미 완전한 키보드 대안이 있음(공백 없음). 코드 변경 없음(읽기 전용 조사).",
+      "commit": null
+    },
+    {
+      "cycle": 161,
+      "phase": "advance",
+      "timestamp": "2026-10-08T18:20:00.000Z",
+      "summary": "critique(cycle161) 계획대로 syncNotifyPermission() 헬퍼를 새로 추가: DB.settings.osNotify가 true인데 Notification.permission이 더 이상 'granted'가 아니면 osNotify를 false로 내리고 save()+renderCurrent() 후 toast로 안내한다. 이 헬퍼를 startApp()(부팅 시), checkNotifyAlerts()(5분 주기 + 백그라운드 전환 시) 맨 앞, visibilitychange의 포그라운드 복귀 분기(!document.hidden) 세 곳에서 호출해 권한이 꺼진 뒤 가능한 한 빨리(다음 포그라운드 전환이나 5분 폴링 이내) 토글이 실제 상태를 따라가게 했다. renderMenu()의 'OS 알림' 메뉴 라벨도 Notification.permission==='denied'일 때 'OS 알림 · 차단됨'으로 바꿔, 권한을 아예 재요청할 수 없는(브라우저가 다시 프롬프트를 안 띄우는) denied 상태를 토글을 눌러보기 전에도 알 수 있게 했다(계획의 'default와 구분' 중 실질적으로 의미 있는 denied 쪽만 구현 — default는 아직 한 번도 묻지 않은 상태라 토글을 누르면 정상적으로 재요청되므로 별도 표시가 필요 없음). test/run.js에 syncNotifyPermission을 FUNCTIONS(vm 실행 검증)에 등록하고 granted/denied/osNotify-off 세 분기 실행형 테스트 3건 + renderMenu denied 라벨 소스 검증 1건, 총 4건을 추가했다. sandbox에 Notification 전역(기본 undefined, 테스트별로 {permission} 세팅)을 새로 추가. index.html/sw.js 변경이라 APP_VERSION 1.47.89->1.47.90, sw.js CACHE v351->v352 갱신. node test/run.js 1112/1112 -> 1116/1116 통과.",
       "commit": null
     }
   ]
