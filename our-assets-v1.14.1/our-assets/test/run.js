@@ -12101,6 +12101,15 @@ test('m-suji(튜토리얼): tabindex와 키보드 핸들러(onkeydown/onkeyup/on
   assert.ok(tag.includes('onkeyup="mSujiUp()"'), 'm-suji div에 onkeyup이 없음 — 키를 떼도 피크가 끝나지 않음');
   assert.ok(tag.includes('onblur="mSujiUp()"'), 'm-suji div에 onblur가 없음 — 포커스를 잃어도 피크가 끝나지 않음');
 });
+/* ---------- m-fab(튜토리얼 가짜 '+' FAB): 실제 .fab 버튼은 네이티브 <button>이라 키보드로
+ * 바로 닿지만, 이를 흉내 낸 튜토리얼 목업(#m-fab)은 bare <div onclick>이라 TW 단계(try:'+ 버튼을
+ * 눌러봐')를 키보드 사용자가 완료할 수 없었다(m-suji와 같은 결함 유형, app-evolve cycle162 develop). */
+test('m-fab(튜토리얼): tabindex와 키보드 핸들러(onkeydown)가 있다', () => {
+  const tag = extractTag('m-fab');
+  assert.ok(tag.includes('tabindex="0"'), 'm-fab div에 tabindex="0"이 없음 — 키보드 접근 경로가 빠짐');
+  assert.ok(tag.includes('role="button"'), 'm-fab div에 role="button"이 없음');
+  assert.ok(tag.includes('onkeydown="rowKeydown(event,mFab)"'), 'm-fab div에 onkeydown이 없음 — 키보드 접근 경로가 빠짐');
+});
 /* sujiPeekKey/histPeekKey/planPeekKey 공통 가드 — extractFunction으로 몸통만 잘라 검사한다.
  * 1) e.target!==e.currentTarget: 카드 안의 다른 버튼(수입/지출/가장 낮을 때 등)에서 버블된
  *    keydown까지 처리하면 그 버튼의 네이티브 Enter/Space 클릭 활성화를 preventDefault가

@@ -299,6 +299,7 @@ html[data-theme="dark"] .alloc-bar i+i::before{background:var(--bg);opacity:.9}
 .asset-item:focus-visible,.swipe-content:focus-visible,.manage-row:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}
 .nwh-chart:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:6px}
 #ledsumLive:focus-visible,#histTotLive:focus-visible,#histTotals:focus-visible,#planBalLive:focus-visible,#m-suji:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:var(--r-lg)}
+#m-fab:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:50%}
 .switch.on{background:var(--brand)}
 .switch i{position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;transition:transform .2s var(--spring);box-shadow:0 1px 3px rgba(0,0,0,.2)}
 .switch.on i{transform:translateX(18px)}
@@ -1330,7 +1331,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.90';
+const APP_VERSION='1.47.91';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5319,7 +5320,7 @@ function twScreen(name){
   <div class="tws-pop" id="m-pop" style="display:none">
    <div class="fp-item"><span class="fp-ic a-food">${svg('plus')}</span><span class="fp-b"><span class="fp-t">내역</span><span class="fp-s">지출 · 수입 · 저축 · 이체</span></span></div>
    <div class="fp-item"><span class="fp-ic a-bank">${svg('wallet')}</span><span class="fp-b"><span class="fp-t">자산</span><span class="fp-s">통장 · 저축 · 부동산</span></span></div></div>
-  <div class="tws-fab tws-live" id="m-fab" onclick="mFab()"></div>`;
+  <div class="tws-fab tws-live" id="m-fab" tabindex="0" role="button" aria-label="추가" onclick="mFab()" onkeydown="rowKeydown(event,mFab)"></div>`;
  return '';
 }
 const TW=[
