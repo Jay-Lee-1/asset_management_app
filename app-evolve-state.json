@@ -1,15 +1,8 @@
 {
   "cycle": 158,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 153,
-      "phase": "develop",
-      "timestamp": "2026-10-07T07:12:30.572Z",
-      "summary": "addMonthsStr(logic.js)이 addMonths(index.html)와 달리 day를 clamp하지 않고 setMonth 롤오버를 그대로 반환함을 발견(예: 1/31+1개월 -> 3/3). recNthDate/recCountUntil이 이 함수로 만드는 to 상한은 롤오버가 항상 뒤로만 밀기 때문에 현재는 버그 아님을 직접 확인했고, 대신 지금까지 day 29/30/31 시작을 다루지 않아 이 경로가 테스트로 한 번도 실행되지 않았던 공백을 메웠다 — test/run.js에 addMonthsStr 직접 테스트 3건(말일 롤오버/연 경계/윤년->평년 롤오버) 추가, addMonths와 혼용하지 않도록 동작 차이를 주석으로 명시. index.html/logic.js는 변경 없어 APP_VERSION/sw.js 변경 없음. node test/run.js 1050/1050 -> 1053/1053 통과.",
-      "commit": null
-    },
     {
       "cycle": 153,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-08T02:13:50.382Z",
       "summary": "critique(cycle157) 계획대로 homeAlerts()의 neg(잔액부족예상)·mat(저축만기임박)을 confirm/quick/budgetOver와 동일한 1건/N건 묶음 패턴으로 바꿨다. neg.length/matList.length로 분기해 1건이면 기존 kind:'neg'/'mat'를 그대로 쓰고 2건 이상이면 kind:'negMulti'/'matMulti'(count)로 묶도록 homeAlerts()를 수정했다. homeAlertCard()에 negMulti/matMulti 분기를 추가했는데, mat은 조사해보니 openMaturity() 시트가 이미 만기 임박 자산 전체를 30일 이내 기준으로 한 시트에 보여주고 있어(계획이 예상한 대로) 새 리스트를 만들지 않고 그대로 재사용했고, neg는 그런 기존 화면이 없어 openConfirmTransferList()/openQuickList()와 동일한 구조의 openNegList()를 새로 추가해 각 통장 행을 누르면 closeSheet() 후 goPlanTo(assetId,date)로 plan 탭 이동시켰다(사이트가 아니라 탭 전환이라 confirm/quick 리스트와 달리 명시적 closeSheet가 필요함을 확인하고 추가). notifyAlertInfo()에는 matMulti 분기만 추가했다(neg/negMulti는 기존처럼 OS 알림 대상 제외 유지) — 기존 단일 mat이 '오늘/내일(1일 이내)'만 알리던 긴급도 규칙을 유지하기 위해 homeAlerts()가 matMulti에 count 외에 dueCount(1일 이내 건수)도 함께 담게 하고, notifyAlertInfo는 dueCount>0일 때만 budgetOverMulti와 동일한 날짜+count 키로 알린다. test/run.js에 homeAlerts neg/mat 1건↔2건 그룹핑, matMulti dueCount 계산, notifyAlertInfo matMulti 게이팅, homeAlertCard negMulti/matMulti 렌더링, openNegList 실행형(0건/1건 위임/2건 이상 리스트) 테스트 총 8건을 추가하고 openNegList/goPlanTo를 FUNCTIONS(vm 실행 검증)에 새로 등록했다. index.html/sw.js 변경이라 APP_VERSION 1.47.80->1.47.81, sw.js CACHE v342->v343 갱신. node test/run.js 1078/1078 -> 1086/1086 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 158,
+      "phase": "develop",
+      "timestamp": "2026-10-08T03:09:22.546Z",
+      "summary": "renderAuth()의 auEmail(이메일)·kkeyIn(카카오 JavaScript 키) 입력에 다른 텍스트 입력란과 동일한 field-clear(×) 버튼을 추가. cycle154 critique가 범위 밖(별도 CSS/수동 fcWire 배선 필요)으로 백로그에 남겨둔 항목 — 실제로 확인해보니 .auth-field/.kkey 모두 position 지정이 없어 .field-clear의 position:relative+fc-x 절대배치가 그대로 들어맞았고, 새 CSS 추가는 필요 없었다. authView는 openSheet()가 아닌 별도 화면이라 그쪽 자동 fcWire() 배선을 못 타므로, histQ(renderHistory)가 쓰던 것과 동일하게 renderAuth() 끝에 fcWire() 직접 호출을 추가했다. test/run.js에 auEmail/kkeyIn field-clear 구조 2건 + renderAuth가 fcWire()를 호출하는지 1건, 총 3건의 정규식 기반 테스트를 추가(실DOM 조작이 아닌 순수 문자열 템플릿 조립이라 다른 field-clear 테스트들과 동일한 관례). index.html/sw.js 변경이라 APP_VERSION 1.47.81->1.47.82, sw.js CACHE v343->v344 갱신. node test/run.js 1086/1086 -> 1089/1089 통과.",
       "commit": null
     }
   ]

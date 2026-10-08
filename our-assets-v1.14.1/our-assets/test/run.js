@@ -10405,6 +10405,27 @@ for (const [fn, id] of [['renderAuth', 'auPw'], ['doForgotPasswordLocal', 'frPwI
   });
 }
 
+/* ---------- renderAuth: auEmail/kkeyIn도 field-clear(×) 관례를 따름
+ * (app-evolve cycle158 develop — 다른 텍스트 입력란은 전부 field-clear(×) 버튼을 갖췄는데,
+ * auth 메인 화면(renderAuth)의 auEmail/kkeyIn만 openSheet()가 아닌 별도 화면이라 cycle154
+ * critique 때 범위 밖(별도 CSS·수동 fcWire 배선 필요)으로 백로그에 남아 있었음. histQ(renderHistory)가
+ * 이미 쓰던 것과 동일한 패턴 — .field-clear+fc-x로 감싸고 renderAuth()가 직접 fcWire()를
+ * 호출 — 을 그대로 적용했다. ---------- */
+test('renderAuth: auEmail도 다른 텍스트 입력란과 동일하게 field-clear(×) 버튼이 있다', () => {
+  const body = extractFunction('renderAuth');
+  assert.ok(body.includes('<div class="field-clear"><input id="auEmail"'), 'auEmail 입력이 field-clear로 감싸져 있지 않음');
+  assert.ok(body.includes(`<button type="button" class="fc-x" aria-label="이메일 지우기" onclick="clrInput('auEmail')">`), 'auEmail에 fc-x 지우기 버튼의 clrInput 연결이 없음');
+});
+test('renderAuth: kkeyIn(카카오 JavaScript 키 입력)도 동일하게 field-clear(×) 버튼이 있다', () => {
+  const body = extractFunction('renderAuth');
+  assert.ok(body.includes('<div class="field-clear"><input id="kkeyIn"'), 'kkeyIn 입력이 field-clear로 감싸져 있지 않음');
+  assert.ok(body.includes(`<button type="button" class="fc-x" aria-label="카카오 JavaScript 키 지우기" onclick="clrInput('kkeyIn')">`), 'kkeyIn에 fc-x 지우기 버튼의 clrInput 연결이 없음');
+});
+test('renderAuth: 함수 본문이 fcWire()를 호출해 auEmail/kkeyIn의 지우기 버튼을 실제로 배선한다(시트가 아닌 별도 화면이라 openSheet()의 자동 배선을 못 타므로 직접 호출해야 함)', () => {
+  const body = extractFunction('renderAuth');
+  assert.ok(/fcWire\(\)/.test(body), 'renderAuth()가 fcWire()를 호출하지 않음');
+});
+
 /* ---------- dbIsEmpty:로그인 시 게스트 데이터 자동 병합/안내 판단에 쓰이는 순수 함수
  * (app-evolve cycle63 critique/advance — doLogin()이 기존 계정 데이터를 게스트 데이터로
  * 조용히 덮어쓰거나 반대로 게스트 데이터를 안내 없이 버리지 않도록, "이 계정이 비어 있는가"를
