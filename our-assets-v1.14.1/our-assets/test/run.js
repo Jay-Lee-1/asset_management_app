@@ -12053,6 +12053,18 @@ test('histTotals: tabindex와 키보드 핸들러(onkeydown)가 있다(토글형
   assert.ok(tag.includes('role="button"'), 'histTotals div에 role="button"이 없음');
   assert.ok(tag.includes('onkeydown="rowKeydown(event,histTotToggle)"'), 'histTotals div에 onkeydown이 없음 — 키보드 접근 경로가 빠짐');
 });
+/* ---------- m-suji(튜토리얼 가짜 '이번 달 수지' 카드): ledsumLive와 동일한 롱프레스 미리보기
+ * UX를 흉내 내는 튜토리얼 전용 목업인데, 실제 ledsumLive가 cycle160에서 받은 키보드 접근성을
+ * 못 받아 TW 단계(#m-suji, try:'꾹 눌러봐')가 키보드 사용자에게는 완료 불가능했다(app-evolve
+ * cycle161 develop). twScreen의 mSeg 세그먼트 테스트와 같은 이유로 vm 실행 대신 마크업만 지킨다. */
+test('m-suji(튜토리얼): tabindex와 키보드 핸들러(onkeydown/onkeyup/onblur)가 있다', () => {
+  const tag = extractTag('m-suji');
+  assert.ok(tag.includes('tabindex="0"'), 'm-suji div에 tabindex="0"이 없음 — 키보드 접근 경로가 빠짐');
+  assert.ok(tag.includes('role="button"'), 'm-suji div에 role="button"이 없음');
+  assert.ok(tag.includes('onkeydown="mSujiPeekKey(event)"'), 'm-suji div에 onkeydown이 없음 — 키보드 접근 경로가 빠짐');
+  assert.ok(tag.includes('onkeyup="mSujiUp()"'), 'm-suji div에 onkeyup이 없음 — 키를 떼도 피크가 끝나지 않음');
+  assert.ok(tag.includes('onblur="mSujiUp()"'), 'm-suji div에 onblur가 없음 — 포커스를 잃어도 피크가 끝나지 않음');
+});
 /* sujiPeekKey/histPeekKey/planPeekKey 공통 가드 — extractFunction으로 몸통만 잘라 검사한다.
  * 1) e.target!==e.currentTarget: 카드 안의 다른 버튼(수입/지출/가장 낮을 때 등)에서 버블된
  *    keydown까지 처리하면 그 버튼의 네이티브 Enter/Space 클릭 활성화를 preventDefault가
@@ -12060,8 +12072,8 @@ test('histTotals: tabindex와 키보드 핸들러(onkeydown)가 있다(토글형
  *    그 가드가 남아있는지를 지킨다.
  * 2) e.repeat 무시: 키를 누르고 있으면 브라우저가 keydown을 반복 발생시키는데, 매번
  *    Start()를 다시 부르면 안 된다(포인터는 pointerdown이 1회뿐이라 대응 사례가 없음). */
-test('sujiPeekKey/histPeekKey/planPeekKey가 버블링 가드(e.target)와 반복 가드(e.repeat)를 둔다', () => {
-  for (const fn of ['sujiPeekKey', 'histPeekKey', 'planPeekKey']) {
+test('sujiPeekKey/histPeekKey/planPeekKey/mSujiPeekKey가 버블링 가드(e.target)와 반복 가드(e.repeat)를 둔다', () => {
+  for (const fn of ['sujiPeekKey', 'histPeekKey', 'planPeekKey', 'mSujiPeekKey']) {
     const body = extractFunction(fn);
     assert.ok(body.includes('e.target!==e.currentTarget'), `${fn}에 e.target!==e.currentTarget 버블링 가드가 없음`);
     assert.ok(body.includes('e.repeat'), `${fn}에 e.repeat 가드가 없음 — 키를 누르고 있으면 Start()가 반복 호출됨`);

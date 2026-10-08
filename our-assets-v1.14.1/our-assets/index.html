@@ -298,7 +298,7 @@ html[data-theme="dark"] .alloc-bar i+i::before{background:var(--bg);opacity:.9}
 .switch:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
 .asset-item:focus-visible,.swipe-content:focus-visible,.manage-row:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}
 .nwh-chart:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:6px}
-#ledsumLive:focus-visible,#histTotLive:focus-visible,#histTotals:focus-visible,#planBalLive:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:var(--r-lg)}
+#ledsumLive:focus-visible,#histTotLive:focus-visible,#histTotals:focus-visible,#planBalLive:focus-visible,#m-suji:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:var(--r-lg)}
 .switch.on{background:var(--brand)}
 .switch i{position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;transition:transform .2s var(--spring);box-shadow:0 1px 3px rgba(0,0,0,.2)}
 .switch.on i{transform:translateX(18px)}
@@ -1330,7 +1330,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.88';
+const APP_VERSION='1.47.89';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5252,6 +5252,15 @@ function mSujiInner(today){
 let _mT=null,_mPeek=false;
 function mSujiDown(){clearTimeout(_mT);_mT=setTimeout(()=>{_mPeek=true;const c=$('m-suji');if(c){c.innerHTML=mSujiInner(true);c.classList.add('peek')}if(navigator.vibrate)navigator.vibrate(8);twDone()},180)}
 function mSujiUp(){clearTimeout(_mT);if(_mPeek){_mPeek=false;const c=$('m-suji');if(c){c.innerHTML=mSujiInner(false);c.classList.remove('peek')}}}
+/* sujiPeekKey(3696행 부근)와 동일한 원칙 — 버블링 방지용 e.target 가드, Escape 즉시 종료, e.repeat 무시. */
+function mSujiPeekKey(e){
+ if(e.target!==e.currentTarget)return;
+ if(e.key==='Escape'){mSujiUp();return}
+ if(e.key!=='Enter'&&e.key!==' ')return;
+ e.preventDefault();
+ if(e.repeat)return;
+ mSujiDown();
+}
 function mSeg(mode){const sg=$('twStage');if(!sg||sg.dataset.scr===mode)return;sg.dataset.scr=mode;sg.innerHTML=twScreen(mode);twDone()}
 function mFab(){const pop=$('m-pop'),f=$('m-fab');if(!pop)return;const on=pop.style.display==='none';
  pop.style.display=on?'':'none';if(f)f.style.transform=on?'rotate(45deg)':'';if(navigator.vibrate)navigator.vibrate(6);twDone();
@@ -5279,7 +5288,7 @@ function twScreen(name){
     <div class="val"><div class="k num">${v}원</div></div></div>`).join('')}</div>`+twNav('assets');
  if(name==='cal'||name==='list'){
   const seg=`<div class="mseg tws-live" id="m-seg" role="group" aria-label="보기 방식 선택"><button class="${name==='cal'?'on':''}" aria-pressed="${name==='cal'}" onclick="mSeg('cal')">달력</button><button class="${name==='list'?'on':''}" aria-pressed="${name==='list'}" onclick="mSeg('list')">목록</button></div>`;
-  const suji=`<div class="card ledsum tws-live" id="m-suji" onpointerdown="mSujiDown()" onpointerup="mSujiUp()" onpointercancel="mSujiUp()" onpointerleave="mSujiUp()">${mSujiInner(false)}</div>`;
+  const suji=`<div class="card ledsum tws-live" id="m-suji" tabindex="0" role="button" aria-label="이번 달 수지, 엔터나 스페이스를 누르고 있으면 오늘까지 금액 보기" onpointerdown="mSujiDown()" onpointerup="mSujiUp()" onpointercancel="mSujiUp()" onpointerleave="mSujiUp()" onkeydown="mSujiPeekKey(event)" onkeyup="mSujiUp()" onblur="mSujiUp()">${mSujiInner(false)}</div>`;
   if(name==='cal')return twHead('📒 가계부 ✏️',seg)+`<div class="month-nav solo"><div class="mn-lbl">2026년 7월 ${svg('chevD')}</div></div>${suji}
    <div class="cal" id="m-cal"><div class="cal-week"><div class="sun">일</div><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div class="sat">토</div></div>
    <div class="cal-grid">${Array.from({length:14},(_,k)=>{const d=k+1;return `<div class="cal-cell${d===8?' sel':''}"><div class="d">${d}</div>${d===5?'<div class="ex num">-52만</div>':''}${d===10?'<div class="in num">+320만</div>':''}${d===15?'<div class="ex num">-18만</div>':''}</div>`}).join('')}</div></div>`+twNav('ledger');

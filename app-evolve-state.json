@@ -1,15 +1,8 @@
 {
   "cycle": 161,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 156,
-      "phase": "develop",
-      "timestamp": "2026-10-07T19:18:28.000Z",
-      "summary": "inQuietWindow()(장 마감 판정, 토 06:00~월 08:00 KRX/KRW 휴장)가 d.getDay()/d.getHours()로 기기 로컬 시간대를 읽어 판정하던 버그를 고쳤다 — 주석은 'KST 기준'을 명시하지만 실제로는 기기가 다른 시간대(해외 로밍, UTC 설정 등)면 휴장 창을 KST와 다른 벽시계로 계산해 autoSyncRates 호출 게이트와 '주말 휴장' 라벨이 실제 KRX 휴장 시각과 수 시간씩 어긋났다(코드베이스 전체에 Asia/Seoul 고정 변환이 이 한 곳 말고는 없었음). d를 UTC로 정규화한 뒤 +9시간을 더해 KST로 변환하고 그 결과로 day/hour를 읽도록 수정(Intl 없이 2줄). test/run.js에 토요일 06:00/일요일/월요일 08:00 경계 3건을 America/New_York(UTC-4) withTZ로도 같은 결과가 나오는지 검증하는 회귀 테스트를 추가 — 수정 전 코드로 되돌려 돌려보면 이 중 2건이 실제로 깨짐을 확인했다. index.html/sw.js 변경이라 APP_VERSION 1.47.77->1.47.78, sw.js CACHE v339->v340 갱신. node test/run.js 1068/1068 -> 1071/1071 통과.",
-      "commit": null
-    },
     {
       "cycle": 156,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-08T14:20:00.000Z",
       "summary": "critique(cycle160) 계획대로 ledsumLive(가계부 '이번 달 수지')/histTotLive(전체내역 '오늘까지' 라이브 합계)/planBalLive(한달 플랜 '말일 잔액/오늘까지') 3곳과 histTotals(전체내역 합계 '월평균' 토글) 1곳에 nwChartPeekKey/assetBalPeekKey와 동일한 골격으로 키보드 접근성을 추가했다. 누름-유지형 3곳은 tabindex=\"0\" role=\"button\" aria-label을 달고 onkeydown=\"sujiPeekKey/histPeekKey/planPeekKey(event)\" +onkeyup/onblur=\"...PeekEnd()\"로 포인터의 누름→뗌을 keydown→keyup에 매핑했다. 새 Key 함수들은 Enter/Space에서만 Start()를 부르고 Escape는 즉시 End(), e.repeat(키를 누르고 있는 동안 반복 발생)는 무시한다 — 특히 카드 안에 ledSumTap/bh-low 같은 실제 <button>이 중첩돼 있어(나머지 3곳과 달리 nwhChart/assetBalChart엔 이게 없었음) 그 버튼에서 버블된 keydown까지 처리하면 e.preventDefault()가 버블 중에도 적용돼 그 버튼의 네이티브 Enter/Space 클릭 활성화를 막아버린다는 걸 파악해(cycle160 review가 nc-fix에서 겪은 것과 같은 함정) e.target!==e.currentTarget 가드를 추가했다. 토글형 histTotals는 계획대로 즉시 토글 방식을 택해 histTotDown의 450ms 롱프레스 로직에서 avgMode 토글 부분을 histTotToggle()로 뽑아 onkeydown=\"rowKeydown(event,histTotToggle)\"과 공유시켰다(롱프레스/키보드가 로직을 따로 들고 있다가 한쪽만 고치는 회귀 방지). CSS에 4개 id용 :focus-visible 아웃라인(.nwh-chart와 동일 패턴)도 추가. test/run.js에 4곳의 tabindex/role/키보드 핸들러 마크업 검증 5건, 3개 Key 함수의 e.target/e.repeat/Escape 가드 소스 검증 1건, histTotDown/histTotals가 histTotToggle을 공유하는지 검증 1건, 총 7건(테스트는 6개 test() 블록)을 추가했다. index.html/sw.js 변경이라 APP_VERSION 1.47.87->1.47.88, sw.js CACHE v349->v350 갱신. node test/run.js 1105/1105 -> 1111/1111 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 161,
+      "phase": "develop",
+      "timestamp": "2026-10-08T15:12:18.441Z",
+      "summary": "튜토리얼(twScreen)의 가짜 \"이번 달 수지\" 카드(m-suji)가 실제 ledsumLive의 롱프레스 미리보기를 흉내 내면서도 cycle160이 ledsumLive/histTotLive/histTotals/planBalLive 4곳에 추가한 키보드 접근성을 못 받았음을 발견 — TW 튜토리얼 단계(#m-suji, try:\"꾹 눌러봐\")가 바로 이 엘리먼트에 롱프레스를 시키는데도 tabindex/role/onkeydown이 전혀 없어 키보드 사용자는 튜토리얼의 이 단계를 아예 완료할 수 없었다(mSujiInner가 twScreen 안에 하드코딩된 목업이라 ledsumLive() 자체를 재사용하지 않아서 cycle160이 놓친 공백). ledsumLive/sujiPeekKey와 동일한 골격으로 m-suji div에 tabindex=\"0\" role=\"button\" aria-label, onkeydown=\"mSujiPeekKey(event)\" onkeyup/onblur=\"mSujiUp()\"을 추가하고, mSujiPeekKey(e)를 sujiPeekKey와 같은 e.target!==e.currentTarget 버블링 가드·e.repeat 가드·Escape 즉시종료로 새로 작성(안쪽 ls1/ls3 버튼엔 onclick이 없어 지금은 버블링 위험이 없지만 sujiPeekKey 선례와 동일하게 가드를 넣어둠). CSS :focus-visible 규칙에도 #m-suji를 추가. test/run.js에 m-suji 마크업 검증 1건, mSujiPeekKey를 기존 sujiPeekKey/histPeekKey/planPeekKey 공통 가드 테스트 루프에 추가 1건, 총 2건을 추가 — 수정 전 마크업으로 되돌려 돌려보면 이 2건이 실제로 깨짐을 확인했다. index.html/sw.js 변경이라 APP_VERSION 1.47.88->1.47.89, sw.js CACHE v350->v351 갱신. node test/run.js 1111/1111 -> 1112/1112 통과.",
       "commit": null
     }
   ]
