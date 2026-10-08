@@ -1,15 +1,12 @@
 {
   "cycle": 162,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "시세값 직접 수정 입력 3곳에 접근 가능한 레이블 + field-clear(x) 버튼 추가",
+    "why": "openRateSheet()의 금/외화/주식 시세 수동수정 입력(index.html:5170,5171,5187)이 <label>도 aria-label도 없는 맨 <input class=\"num\">로만 렌더되어, 보유 통화·종목이 여러 개면 스크린리더 사용자가 어느 입력이 어느 자산인지 구분할 방법이 없다. 자산명/귀속/카테고리/인증 등 다른 입력 전부에 이미 적용된 .field-clear+fc-x 지우기 버튼 패턴도 이 세 곳만 빠져 있다(.rate-row 래퍼라 fcWire()의 '.field-clear input' 셀렉터 대상에서 구조적으로 제외됨). 잘못된 행에 값을 입력하면 자산 평가액이 조용히 틀어지는 데이터 위험도 있다.",
+    "approach": "stockRows/fxRows/gold row(index.html openRateSheet, ~5170-5187) 세 input 각각에 aria-label(예: 금 '금 시세', fx '${c} 환율', stock '${a.name} 현재가')을 추가하고, newOwner(3595줄)와 동일한 마크업으로 <div class=\"field-clear\">로 감싸 <button class=\"fc-x\" aria-label=\"...지우기\" onclick=\"clrInput(...)\">✕</button>를 추가한다. clrInput()이 id 기반이므로 각 input에 고유 id(예: rateGold, rateFx_${c}, rateStock_${a.stockCode})를 부여해야 한다. openSheet()가 fcWire()를 자동 호출하므로 별도 배선 호출은 불필요. .rate-row input의 기존 width(118px, CSS ~940줄) 정렬이 깨지지 않는지 .field-clear 래핑 후 확인한다. setRate()의 숫자 파싱 로직은 변경하지 않는다."
+  },
   "history": [
-    {
-      "cycle": 157,
-      "phase": "critique",
-      "timestamp": "2026-10-08T01:00:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 재조망(141-157사이클 전부 + 기각 이력 전달). 새로 발견: homeAlerts()(index.html:6798-6819)에서 confirm/quick/budgetOver 세 종류는 이미 cycle154/156을 거쳐 1건/N건 묶음 패턴(kind+Multi)을 완성했는데, 바로 옆줄의 neg(잔액부족예상, 6807)와 mat(저축만기임박, 6808-6810)만 여전히 그 패턴이 없어 자산/통장 하나당 카드 하나씩 무제한으로 쌓인다(negMulti/matMulti는 코드에 존재하지 않음, grep으로 확인). mat은 notifyAlertInfo()(6824-6834)에서도 자산마다 독립된 OS 알림 키(mat:assetId:date)를 써서 만기가 몰리면 하루에 여러 건의 개별 푸시가 발송되고, renderHome()(2441-2443)의 alertBanner가 배열 길이 제한 없이 그대로 렌더해 홈 캐러셀도 카드로 도배됨을 확인. cycle156이 confirm을 고치면서 바로 옆에 있던 동일 패턴 2건을 놓친 것으로 보여, neg/mat에도 동일한 Multi 분기 + 리스트 시트 + notifyAlertInfo 묶음 알림을 적용하는 계획을 pending_advance_plan에 저장. 러너업(기각): sw.js가 test/run.js에서 전혀 참조되지 않음(변경 빈도 낮아 임팩트 작음), 인증 함수(doLogin 등)가 FUNCTIONS vm 실행 목록에 없음(이미 반복 지적된 카테고리라 중복 제안 제외). 코드 변경 없음(읽기 전용 조사).",
-      "commit": null
-    },
     {
       "cycle": 157,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-08T20:05:00.000Z",
       "summary": "cycle162 develop(m-fab 튜토리얼 카드 키보드 접근성) 검토 — rowKeydown(event,mFab)이 기존 histTotDown/histTotals가 쓰던 '바운드 인자 없는 콜백을 그대로 넘기는' 선례(rowKeydown(event,histTotToggle))와 동일한 패턴임을 grep으로 대조 확인했고, m-fab div 자체가 자식 엘리먼트 없이 비어 있어(tws-pop#m-pop은 형제 요소) cycle160의 nc-fix/cycle160 advance의 e.target 가드가 필요했던 '중첩된 인터랙티브 자식으로의 keydown 버블링' 위험이 이 카드에는 없음을 확인했다. 실제 .fab 네이티브 버튼(id=fab, line1315)도 aria-expanded 등 추가 상태 속성 없이 onclick+aria-label만 쓰고 있어 m-fab이 그 이상으로 과설계되지 않았음도 확인. node test/run.js 1117/1117 통과. 이상 없음, 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 162,
+      "phase": "critique",
+      "timestamp": "2026-10-08T21:17:12.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 재조망(141-162사이클 전부 + 기각 이력 전달). 새로 발견: openRateSheet()(index.html~5167-5190)의 금/외화/주식 시세 직접수정 input 3종(5170 stockRows, 5171 fxRows, 5187 gold)이 <label>/aria-label 없는 맨 input이고, newOwner/asFx/asGold/asQty/auEmail 등 다른 모든 입력에 이미 적용된 .field-clear+fc-x 지우기 버튼 패턴도 .rate-row 래퍼 때문에 fcWire()의 '.field-clear input' 셀렉터에서 구조적으로 빠져 있음을 grep/코드 대조로 확인. 보유 외화·주식이 여러 개면 스크린리더로는 어느 입력이 어느 자산인지 구분이 안 되고, 잘못된 행에 입력하면 평가액이 조용히 틀어지는 데이터 위험도 있음. openSheet()가 fcWire()를 자동 호출(6095줄)하므로 .field-clear로 감싸기만 하면 지우기 버튼은 자동 배선됨을 확인. newOwner(3595줄) 마크업을 선례로 pending_advance_plan에 저장. 코드 변경 없음(읽기 전용 조사).",
       "commit": null
     }
   ]
