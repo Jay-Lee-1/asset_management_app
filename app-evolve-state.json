@@ -1,15 +1,8 @@
 {
   "cycle": 159,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 154,
-      "phase": "review",
-      "timestamp": "2026-10-07T14:30:00.000Z",
-      "summary": "cycle154 develop(sbUrlIn/sbKeyIn/kkeyIn2/fpEmailIn/frEmailIn/frCodeIn field-clear 7곳) 검토 — openSheet()가 매 렌더 시 fcWire()를 호출해 .field-clear 안의 input을 자동 와이어링하는 것을 index.html:6008에서 직접 확인했고, diff는 그 전제에 맞게 기존 패턴(div.field-clear + button.fc-x + clrInput(id))을 7곳에 그대로 적용한 것뿐이라 '추가 CSS/배선 불필요'라는 커밋 설명이 정확함을 검증. password 타입은 기존 관례대로 제외됨도 확인. node test/run.js 1054/1054 통과. 이상 없음.",
-      "commit": null
-    },
     {
       "cycle": 154,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-08T07:16:54.684Z",
       "summary": "목표관리 목록(openGoalsList)과 저축 만기 알림(openMaturity) 두 화면이 targetDate/maturityDate를 ISO 원문(예: 2026-12-31) 그대로 노출하고 있었음을 발견 — 같은 필드를 쓰는 다른 화면들(목표 수정 폼은 fmtDateFull, homeAlerts의 mat/신규 테스트들은 shortDate)은 전부 사람이 읽는 형식으로 가공하는데 이 두 곳만 누락돼 있던 불일치. 기존 회귀 테스트(test/run.js:2424)가 그 미가공 ISO 문자열 노출을 \"정답\"으로 단언하고 있어 버그가 그대로 잠겨 있었음을 코드로 직접 확인. index.html:2752의 g.targetDate를 fmtDateFull(g.targetDate)로, index.html:4957의 a.maturityDate를 shortDate(a.maturityDate)로 교체(둘 다 같은 화면의 다른 필드가 이미 쓰던 헬퍼를 그대로 재사용, 새 로직 없음). openGoalsList 테스트의 ISO 원문 단언을 fmtDateFull 기반으로 교체하고 원문 미노출 네거티브 단언을 추가했으며, openMaturity는 FUNCTIONS(vm 실행 검증) 목록에 전에 없어 새로 등록하고 shortDate 형식 노출 + ISO 원문 미노출을 검증하는 실행형 테스트 1건을 추가했다. index.html/sw.js 변경이라 APP_VERSION 1.47.83->1.47.84, sw.js CACHE v345->v346 갱신. node test/run.js 1095/1095 -> 1096/1096 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 159,
+      "phase": "review",
+      "timestamp": "2026-10-08T08:00:00.000Z",
+      "summary": "cycle159 develop(openGoalsList/openMaturity ISO 날짜 원문 노출 수정) 검토 — fmtDateFull/shortDate 둘 다 g.targetDate?.../sav(a.maturityDate 필터링됨) 쪽에서 null/undefined가 절대 들어오지 않는 위치에서만 호출됨을 코드로 직접 확인(openGoalsList는 g.targetDate? 가드, openMaturity는 DB.assets.filter(a=>...&&a.maturityDate)로 미리 걸러짐). 두 헬퍼 모두 같은 화면의 다른 날짜 필드가 이미 쓰던 것을 그대로 재사용한 것뿐이라 새 로직 없음. node test/run.js 1096/1096 통과. 이상 없음.",
       "commit": null
     }
   ]
