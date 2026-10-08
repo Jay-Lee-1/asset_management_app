@@ -1,15 +1,12 @@
 {
   "cycle": 161,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "OS 알림 토글(DB.settings.osNotify)이 실제 브라우저 Notification.permission과 다시는 동기화되지 않음",
+    "why": "toggleOsNotify()(index.html ~6957)는 Notification.requestPermission()이 'granted'일 때 딱 한 번만 DB.settings.osNotify=true로 설정하고, 그 뒤로는 아무도 실제 권한 상태를 다시 확인하지 않는다. 사용자가 나중에 OS/브라우저 설정에서 알림 권한을 꺼버리면(흔한 경로) checkNotifyAlerts()(~6943)는 Notification.permission!=='granted' 가드에 걸려 조용히 아무것도 안 하고 리턴하지만, Settings 메뉴의 스위치는 DB.settings.osNotify가 true인 그대로 계속 '켜짐'으로 보인다(이 값은 백업/병합을 통해 다른 기기로도 그대로 동기화됨). 결과적으로 사용자는 예산초과/이체/만기 알림이 계속 오는 줄 알지만 실제로는 영원히 멈춰 있고, 토글을 다시 만지기 전까진 알아챌 방법이 없다 — toggleOsNotify() 자신의 catch(cycle151)가 막으려던 바로 그 '조용한 실패' 패턴이 revoke 이후 경로에서는 그대로 재발.",
+    "approach": "1) syncNotifyPermission() 헬퍼를 새로 추가: DB.settings.osNotify가 true인데 Notification.permission!=='granted'이면 DB.settings.osNotify=false로 내리고 save() 후 toast()로 안내('브라우저 알림 권한이 꺼져서 OS 알림이 꺼졌어요' 등, 기존 notifyReliabilityMsg 문구 톤 재사용). 2) 앱 부팅 시(다른 설정 마이그레이션 근처)와 checkNotifyAlerts()/visibilitychange 포그라운드 분기 진입 시 이 헬퍼를 호출해 토글 화면을 열기 전에도 빨리 잡히게 한다. 3) renderMenu()에서 Notification.permission==='denied' 케이스를 'default'와 구분해 스위치/문구로 보여줘, toggleOsNotify()의 범용 토스트에만 의존하지 않게 한다. test/run.js에서 Notification.permission을 mock해 DB.settings.osNotify가 false로 내려가는지 검증. sw.js는 건드리지 않음."
+  },
   "history": [
-    {
-      "cycle": 156,
-      "phase": "critique",
-      "timestamp": "2026-10-07T21:00:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 재조망(141-156사이클 전부 + 기각 이력 전달). 새로 발견: homeAlerts()(index.html:6788)가 varyingRecs(변동금액 미입력)와 budgetOver(예산초과)에서는 1건/N건을 구분해 quickMulti/budgetOverMulti로 묶어 전용 배치 시트(openQuickList)로 연결하는 패턴을 이미 두 번 구현했으면서도, 더 오래되고 더 흔한 세 번째 사례인 미확인 이체(isDuePending, 6794줄)는 건수 제한 없이 개별 confirm 카드로만 쌓는다. 반복 이체를 며칠~몇 주 방치하면 홈 알림 캐러셀이 동일 카드로 도배되고 한 건씩 시트를 열어야 해서 밀릴수록 처리 부담이 커지는 UX 결함. confirmMulti 분기 + openConfirmTransferList() 배치 시트 추가 계획을 pending_advance_plan에 저장. 러너업(기각): 하단 탭바 .nav-btn에 aria-current/aria-selected 누락(범위가 너무 작아 develop/review 몫에 더 가까움), 부채 자산 이자율 필드 부재로 debtPayoffProjection이 실제 이자 미반영(신규 기능 범주, 저긴급도). 코드 변경 없음(읽기 전용 조사).",
-      "commit": null
-    },
     {
       "cycle": 156,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-08T16:05:00.000Z",
       "summary": "cycle161 develop(m-suji 튜토리얼 카드 키보드 접근성) 검토 — mSujiPeekKey가 sujiPeekKey와 완전히 동일한 가드 골격(e.target!==e.currentTarget, Escape 즉시 mSujiUp(), Enter/Space만 처리 후 e.repeat 무시)을 그대로 따름을 코드로 직접 대조 확인했고, onkeyup/onblur=\"mSujiUp()\"이 무조건 호출되는 것도 sujiPeekEnd()가 같은 방식(내부 _mPeek/_sujiPeeking 플래그로 멱등 가드)으로 호출되는 기존 선례와 일치함을 확인. mSujiInner()의 안쪽 ls1/ls3 버튼에 onclick이 없어 e.target 가드가 당장은 실질적 효과가 없지만, 이는 이 커밋이 손대지 않은 기존 상태(mSujiInner 자체는 diff에 없음)이고 커밋 메시지도 이를 정확히 인지하고 있어 새로운 문제가 아님. node test/run.js 1112/1112 통과. 이상 없음, 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 161,
+      "phase": "critique",
+      "timestamp": "2026-10-08T17:12:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 재조망(141-161사이클 전부 + 기각 이력 전달). 새로 발견: toggleOsNotify()(index.html~6957)가 Notification.requestPermission()이 'granted'일 때 딱 한 번만 DB.settings.osNotify=true로 설정한 뒤 그 값을 다시는 실제 Notification.permission과 비교해 재확인하지 않음. 사용자가 나중에 OS/브라우저 설정에서 알림 권한을 꺼버리면 checkNotifyAlerts()(~6943)의 permission==='granted' 가드에 걸려 조용히 리턴하지만 Settings 메뉴 스위치는 (백업/병합으로 다른 기기에도 동기화되는) osNotify=true 그대로 '켜짐'으로 계속 보여, 사용자는 예산초과/이체/만기 알림이 계속 오는 줄 알지만 실제로는 영원히 멈춰 있고 알아챌 방법이 없음 — toggleOsNotify() 자신의 catch(cycle151)가 막으려던 '조용한 실패'가 revoke 경로에서 재발하는 패턴. syncNotifyPermission() 헬퍼(불일치 시 osNotify=false로 내리고 toast 안내) + 부팅/checkNotifyAlerts/visibilitychange 포그라운드 시점 호출 + renderMenu()의 denied/default 구분 표시 계획을 pending_advance_plan에 저장. 러너업(기각): delGoal/delCat/delOwner/delInquiry/delAssetQtyLog/delAdjust/delBudget 전부 이미 confirmSheet→mutate→undoToast 톰스톤 패턴을 일관되게 따름(공백 없음), 자산 그룹/자산 순서 드래그 재정렬에 moveGroup()/moveAsset() 화살표 버튼으로 이미 완전한 키보드 대안이 있음(공백 없음). 코드 변경 없음(읽기 전용 조사).",
       "commit": null
     }
   ]
