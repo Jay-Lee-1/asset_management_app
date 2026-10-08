@@ -1328,7 +1328,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.83';
+const APP_VERSION='1.47.84';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2749,7 +2749,7 @@ function openGoalsList(){ /* 관리 목록은 캐러셀 귀속과 무관하게 �
     <div class="avatar a-save" style="width:38px;height:38px">${svg('target')}</div>
     <div style="flex:1;min-width:0"><div class="mn">${esc(g.name)} ${p.achieved?'<span class="mini">달성</span>':''}</div>
      <div class="msub">${comma(p.cur)} / ${comma(p.target)}원 · ${p.pct}%${ownerBadge}</div>
-     ${g.targetDate?`<div class="msub2">목표일 ${g.targetDate}</div>`:''}</div>
+     ${g.targetDate?`<div class="msub2">목표일 ${fmtDateFull(g.targetDate)}</div>`:''}</div>
     <div class="mc">${svg('chev')}</div></div>`;
  }).join('')}</div>`:`<div class="empty"><div class="ei">${svg('target')}</div><div class="et">아직 목표가 없어요</div><div class="es">순자산 목표를 세우면 진행 상황을 추적할 수 있어요</div></div>`;
  openSheet(`<h3>목표 관리</h3><div class="desc">탭하면 수정·삭제할 수 있어요</div>${body}
@@ -4954,7 +4954,7 @@ function openMaturity(){
  openSheet(`<h3>저축 만기 알림</h3><div class="desc">만기 30일 이내 저축을 알려드려요</div>
   ${sav.length?sav.map(a=>{const target=DB.assets.find(x=>x.id===a.maturityTargetId);const soon=a.maturityDate<=addDays(TODAY,30);
    const mDate=a.maturityDate<=TODAY?a.maturityDate:TODAY; /* doMaturity()가 실제로 이체할 금액(만기일 기준 실잔액)과 같은 값을 미리보여줌 — assetEval()의 예정 포함 투영과는 다를 수 있음 */
-   return `<div class="manage-row"><div style="flex:1"><div class="mn">${esc(a.name)} ${soon?'<span class="mini sch">임박</span>':''}</div><div class="msub">만기 ${a.maturityDate} · ${comma(balanceAt(a.id,mDate))}원 → ${target?esc(target.name):'미지정'}</div></div>
+   return `<div class="manage-row"><div style="flex:1"><div class="mn">${esc(a.name)} ${soon?'<span class="mini sch">임박</span>':''}</div><div class="msub">만기 ${shortDate(a.maturityDate)} · ${comma(balanceAt(a.id,mDate))}원 → ${target?esc(target.name):'미지정'}</div></div>
     ${soon?`<button class="btn-sm btn btn-primary" style="width:auto;padding:0 14px" onclick="doMaturity('${a.id}')">이체</button>`:''}</div>`}).join('')
    :`<div class="empty"><div class="ei">${svg('piggy')}</div><div class="et">아직 모으는 중인 게 없네요</div><div class="es">작게라도 시작해볼까요?</div></div>`}
   <div style="height:12px"></div><button class="btn btn-soft" onclick="closeSheet()">닫기</button>`);

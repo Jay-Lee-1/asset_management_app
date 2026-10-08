@@ -1,15 +1,8 @@
 {
   "cycle": 159,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 154,
-      "phase": "develop",
-      "timestamp": "2026-10-07T11:10:40.619Z",
-      "summary": "cycle152/153 critique 러너업으로 기각됐던 sbUrlIn/sbKeyIn·이메일 입력 field-clear(×) 보강을 처리. Supabase 설정(sbUrlIn/sbKeyIn), 카카오 키 재설정(kkeyIn2), 비밀번호 재설정/복구 이메일·복구코드(fpEmailIn/frEmailIn/frCodeIn) 총 7개 입력에 기존 field-clear 패턴을 적용 — 전부 openSheet() 내부라 별도 CSS/배선(fcWire) 추가 없이 자동 적용됨. password 타입 입력은 기존 관례대로 제외. 같은 화면에서도 .auth-field로 구조가 다르고 openSheet 밖(렌더런 직접 호출)인 auth 메인 화면의 auEmail/kkeyIn은 CSS·수동 fcWire 배선이 추가로 필요해 범위를 넘어선다고 보고 백로그로 남김. index.html/sw.js 변경이라 APP_VERSION 1.47.73->1.47.74, sw.js CACHE v335->v336 갱신. node test/run.js 1054/1054 통과(변경 전과 동일 — 렌더링 전용 UI 변경).",
-      "commit": null
-    },
     {
       "cycle": 154,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-08T00:00:00.000Z",
       "summary": "critique(cycle158)의 계획대로 emptyAssetCards()를 confirm/neg/mat/quick/budgetOver와 동일한 1건/N건 묶음 패턴으로 바꿨다: 1건이면 기존 상세 카드 그대로, 2건 이상이면 요약 카드 1장(\"다 쓴 자산 정리 N건\")만 떠서 openTidyList()를 연다. openTidyList()는 openStaleMvReview()/dismissStaleMv()와 동일한 \"행을 처리할 때마다 시트를 다시 그려 유지\"하는 패턴으로 새로 추가(각 행에 정리=openTidyAsset/나중에=tidyListSnooze 버튼), 나중에를 눌러도 시트가 안 닫히고 그 행만 빠지며 1건만 남으면 기존 개별 확인 흐름으로 자동 위임한다. test/run.js에 1건/2건 이상/snoozeTidy 상호작용/openTidyList 실행형 테스트 8개를 추가하고 FUNCTIONS에 openTidyAsset/openTidyList/tidyListSnooze를 추가해 vm 실행 검증 대상에 포함시켰다. APP_VERSION 1.47.83, sw.js CACHE v345로 올림. node test/run.js 1095/1095 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 159,
+      "phase": "develop",
+      "timestamp": "2026-10-08T07:16:54.684Z",
+      "summary": "목표관리 목록(openGoalsList)과 저축 만기 알림(openMaturity) 두 화면이 targetDate/maturityDate를 ISO 원문(예: 2026-12-31) 그대로 노출하고 있었음을 발견 — 같은 필드를 쓰는 다른 화면들(목표 수정 폼은 fmtDateFull, homeAlerts의 mat/신규 테스트들은 shortDate)은 전부 사람이 읽는 형식으로 가공하는데 이 두 곳만 누락돼 있던 불일치. 기존 회귀 테스트(test/run.js:2424)가 그 미가공 ISO 문자열 노출을 \"정답\"으로 단언하고 있어 버그가 그대로 잠겨 있었음을 코드로 직접 확인. index.html:2752의 g.targetDate를 fmtDateFull(g.targetDate)로, index.html:4957의 a.maturityDate를 shortDate(a.maturityDate)로 교체(둘 다 같은 화면의 다른 필드가 이미 쓰던 헬퍼를 그대로 재사용, 새 로직 없음). openGoalsList 테스트의 ISO 원문 단언을 fmtDateFull 기반으로 교체하고 원문 미노출 네거티브 단언을 추가했으며, openMaturity는 FUNCTIONS(vm 실행 검증) 목록에 전에 없어 새로 등록하고 shortDate 형식 노출 + ISO 원문 미노출을 검증하는 실행형 테스트 1건을 추가했다. index.html/sw.js 변경이라 APP_VERSION 1.47.83->1.47.84, sw.js CACHE v345->v346 갱신. node test/run.js 1095/1095 -> 1096/1096 통과.",
       "commit": null
     }
   ]

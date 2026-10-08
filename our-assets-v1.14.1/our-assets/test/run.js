@@ -163,7 +163,7 @@ const FUNCTIONS = [
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
   'clampDay', 'saveTx', 'assetBase', 'balancesUpTo', 'balanceAt', 'balancesAtDates', 'balanceAtFromMap',
   'addBalanceAdjust', 'updateBalanceAdjust', 'toggleConfirmTransfers', 'rollPendingTransfers',
-  'assetEval', 'assetGainLoss', 'assetGainLossBadge', 'costBasisField', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'delOwner', 'doMaturity', 'firstCash',
+  'assetEval', 'assetGainLoss', 'assetGainLossBadge', 'costBasisField', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'delOwner', 'doMaturity', 'openMaturity', 'firstCash',
   'detectStaleMarketValuedTxns', 'delBudget', 'saveBudget', 'openBudgetPrompt', 'openBigMinSheet',
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards', 'openTidyAsset', 'openTidyList', 'tidyListSnooze',
   'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'openCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter',
@@ -2421,7 +2421,8 @@ test('openGoalsList: 목표가 있으면 목표별 진행률·목표일을 목�
   sandbox.openGoalsList();
   assert.ok(sandbox.lastSheetHtml.includes('비상금 1000만원'));
   assert.ok(sandbox.lastSheetHtml.includes('20%'));
-  assert.ok(sandbox.lastSheetHtml.includes('2026-12-31'));
+  assert.ok(sandbox.lastSheetHtml.includes(sandbox.fmtDateFull('2026-12-31')), '목표일은 다른 화면들처럼 사람이 읽는 형식으로 보여야 함(app-evolve cycle159 develop)');
+  assert.ok(!sandbox.lastSheetHtml.includes('목표일 2026-12-31<'), '목표일이 가공 없이 ISO 원문 그대로 노출되면 안 됨');
 });
 test('openGoalForm: id 없이 열면 goalDraft가 빈 새 목표로 초기화된다(uid 스텁 경로)', () => {
   sandbox.DB = { goals: [] };
@@ -8236,6 +8237,17 @@ test('doMaturity: 정상 범위 안 만기일은 클램프 없이 그대로 이�
   sandbox.doMaturity('a_sav');
   const t = sandbox.DB.txns[sandbox.DB.txns.length - 1];
   assert.strictEqual(t.date, '2026-06-10');
+});
+/* ---------- openMaturity: 만기일을 ISO 원문('2026-06-10')으로 그대로 노출하던 버그
+ * (app-evolve cycle159 develop) — 같은 필드를 쓰는 다른 화면(homeAlerts의 mat, 목표관리 목표일)은
+ * 전부 shortDate/fmtDateFull로 사람이 읽는 형식을 쓰는데 이 시트만 가공 없이 날짜 문자열을 그대로
+ * 템플릿에 꽂고 있었다. shortDate(a.maturityDate)로 바꿔 통일했다. ---------- */
+test('openMaturity: 만기일을 shortDate 형식으로 보여주고 ISO 원문은 노출하지 않는다', () => {
+  setupMaturityDB();
+  sandbox.lastSheetHtml = null;
+  sandbox.openMaturity();
+  assert.ok(sandbox.lastSheetHtml.includes(sandbox.shortDate('2026-06-10')), '만기일이 shortDate 형식으로 보여야 함');
+  assert.ok(!sandbox.lastSheetHtml.includes('만기 2026-06-10'), '만기일이 가공 없이 ISO 원문 그대로 노출되면 안 됨');
 });
 /* ---------- doMaturity: maturityDate=null로 지우는 자산 자체에는 touch()가 없어, cloud sync
  * 병합 시 다른 기기의 더 오래된 사본이 이겨 만기 처리(이체 생성+플래그 클리어)가 되돌아가면
