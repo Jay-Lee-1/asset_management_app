@@ -1061,6 +1061,18 @@ test('dayPickerHTML: day가 프리셋 밖의 숫자면(직접 입력 상태) 커
   assert.doesNotMatch(html, /class="on"/, '프리셋 버튼 중 어느 것도 22와 일치하지 않으므로 on 클래스가 없어야 함');
 });
 
+/* ---------- endCondFields: 반복 횟수 입력(${pfx}CountBox)에 aria-label 존재 확인
+ * (app-evolve cycle163 advance — placeholder="횟수"만 있고 label/aria-label이 없어 입력 후
+ * 스크린리더로 구분이 안 되던 유일한 입력이었다. tx/rec 두 prefix가 공유하는 함수라 둘 다 확인한다.) */
+test('endCondFields: tx 종료조건의 횟수 입력에 aria-label이 있다', () => {
+  const html = sandbox.endCondFields({ freq: 'monthly', day: 10, startDate: '2026-01-01', weekend: 'none' }, 'tx');
+  assert.match(html, /id="txCountBox"[^>]*aria-label="반복 횟수"/);
+});
+test('endCondFields: rec 종료조건의 횟수 입력에 aria-label이 있다', () => {
+  const html = sandbox.endCondFields({ freq: 'monthly', day: 10, startDate: '2026-01-01', weekend: 'none' }, 'rec');
+  assert.match(html, /id="recCountBox"[^>]*aria-label="반복 횟수"/);
+});
+
 /* ---------- recDates: weekend 조정이 달/연도 경계를 넘어 앞당겨지는 회차 누락 버그 ---------- */
 test('recDates: 매월 1일+earlier 반복에서 다음달 1일이 일요일이면 이번달 말일로 당겨진 회차가 이번달 조회에 나온다', () => {
   // 2026-02-01은 일요일이라 2026-01-30(금)으로 당겨짐 — 이 회차는 1월 조회에서 나와야 함
