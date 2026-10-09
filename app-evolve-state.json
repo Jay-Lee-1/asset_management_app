@@ -1,6 +1,6 @@
 {
   "cycle": 166,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
@@ -141,6 +141,13 @@
       "phase": "advance",
       "timestamp": "2026-10-09T09:10:00.000Z",
       "summary": "critique(cycle165) 계획대로 클라우드 동기화 시계 오차 감지+경고를 구현했다. logic.js에 순수 함수 clockSkewSeverity(driftMs,warnMs,critMs)('ok'|'warn'|'severe', null/NaN은 ok)와 shouldWarnStorageSize와 동일한 정책의 shouldWarnClockSkew(severity,dismissed)('severe'는 dismiss 무시, 'warn'은 dismiss로 가라앉음)를 추가했다. index.html에는 새 모듈 변수 CLOCK_SKEW_MS(기본 null)와 문턱 상수 CLOCK_SKEW_WARN_MS(5분)/CLOCK_SKEW_CRIT_MS(1일), 그리고 measureCloudClockSkew() 함수를 추가해 afterCloudAuth(uid) 맨 앞(CLOUD_UID 설정 직후)에서 fire-and-forget으로 호출한다 — sbReady()&&CLOUD_UID일 때만 fetchWithTimeout(기존 헬퍼 재사용)으로 Supabase REST(`${url}/rest/v1/`)에 GET을 보내 응답의 Date 헤더를 Date.now()와 비교하고, 네트워크 실패나 헤더 없음은 조용히 무시(이전 CLOCK_SKEW_MS를 지우지 않음)하며 성공 시 ST.tab==='home'이면 renderCurrent()로 즉시 반영한다. homeAlerts()에 CLOUD_UID가 있을 때만 clockSkewSeverity/shouldWarnClockSkew로 판정해 {kind:'clockSkew',severity} 알림을 추가했고(로컬/카카오 전용 계정은 같은 기기 시계를 쓰므로 CLOUD_UID 없으면 절대 안 뜸), homeAlertCard에 persist/storageSize와 동일한 '카드+확인 버튼' 패턴으로 렌더를 추가(severity별 문구 분기, 누르면 openAccountSheet()로 동기화 상태 확인, 확인 버튼은 새 dismissClockSkewWarn()으로 DB.settings.clockSkewWarnDismissed를 세팅). DB.settings 기본값에 clockSkewWarnDismissed:false를 추가. test/run.js에 clockSkewSeverity/shouldWarnClockSkew 단위 테스트 8건, homeAlerts/homeAlertCard 통합 테스트 5건, measureCloudClockSkew를 FUNCTIONS(vm 실행)에 등록해 fetch 스텁으로 검증하는 실행형 테스트 4건(CLOUD_UID 없음/정상 측정/홈탭 재렌더/네트워크실패·헤더없음 보존), 총 17건을 추가했다. index.html/sw.js 변경이라 APP_VERSION 1.47.98->1.47.99, sw.js CACHE v360->v361 갱신. node test/run.js 1132/1132 -> 1149/1149 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 166,
+      "phase": "develop",
+      "timestamp": "2026-10-09T10:05:00.000Z",
+      "summary": "Explore 서브에이전트로 160-165사이클(접근성/CSV가드/시계오차 작업)과 겹치지 않는 새 개선점을 탐색 — sanitizeBackup()(index.html~5724)이 txns/assets/recurrences/goals/inquiries/assetQtyLog/categories/owners/budgetHistory/catIcon/catVar/deletedType/deletedBal/nwHistory를 전부 검증하면서 DB.deletedIds({id:삭제시각(ms)} 톰스톤 맵)만 전혀 건드리지 않고(최종 Object.assign 오버라이드 목록에도 없어) 백업 복원·클라우드 풀 양쪽에서 obj.deletedIds가 그대로 통과함을 발견했다. mergeCollection()(logic.js)과 mergeRemoteDataIntoLocal()(1472줄)이 이 맵의 값을 (r.updatedAt||0)>delLocalTs처럼 순수 숫자 비교로만 쓰는데, 값이 숫자가 아니면(예: 손상된 문서나 미래의 실수로 ISO 문자열이 들어간 경우) Number>NaN이 항상 false가 되어 '삭제 뒤 다른 기기에서 수정된 사본을 살리는' 복구 경로가 조용히 막혀 정상 레코드가 영구히 사라진다 — cycle141/163이 nwHistory/categories/budgetHistory에서 고친 것과 같은 '검증 분기 누락' 버그 클래스가 deletedIds에만 남아 있던 것. catIcon/catVar류의 sanitizeFlatMap(객체 형태만 검증)으로는 부족해(값 타입을 안 봄) deletedIds 전용 블록을 새로 추가: 객체가 아니면 통째로 {}로, 값이 유한수가 아닌 항목은(맵 전체가 아니라) 그 id만 제거하고 fixedCount로 센다. 최종 반환 객체에도 deletedIds를 포함시켰다. test/run.js에 버그 재현(비숫자 톰스톤을 mergeCollection에 바로 넘기면 수정된 원격 사본을 못 살림) 1건 + 객체 아님/비숫자 값 제거(+정규화 후 mergeCollection 정상 동작 확인)/정상 케이스 회귀 없음 총 4건을 추가했다. index.html/sw.js 변경이라 APP_VERSION 1.47.99->1.47.100, sw.js CACHE v361->v362 갱신. node test/run.js 1149/1149 -> 1153/1153 통과.",
       "commit": null
     }
   ]

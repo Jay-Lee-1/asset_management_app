@@ -5674,6 +5674,42 @@ test('sanitizeBackup: 정상적인 nwHistory는 그대로 두고, 없어도 터�
   assert.strictEqual(missing.fixedCount, 0);
 });
 
+/* ---------- sanitizeBackup: DB.deletedIds({id:삭제시각(ms)} 톰스톤 맵)도 검증돼야 한다 — catIcon/
+ * catVar/deletedType/deletedBal과 같은 평평한 맵이지만, 그쪽의 sanitizeFlatMap은 객체 형태만
+ * 보고 값 타입은 안 본다. mergeCollection()(logic.js)과 mergeRemoteDataIntoLocal()이 이 값을
+ * (r.updatedAt||0)>delLocalTs처럼 순수 숫자 비교로만 쓰므로, 값이 숫자가 아니면 Number>NaN이
+ * 항상 false가 되어 삭제 뒤 다른 기기에서 수정된 사본을 살리는 복구 경로가 조용히 막힌다. ---------- */
+test('sanitizeBackup 없이 손상된(비숫자) deletedIds 톰스톤을 그대로 mergeCollection()에 넘기면 수정된 원격 사본을 못 살린다(버그 재현)', () => {
+  const remote = [{ id: 't1', updatedAt: 999999 }]; // 삭제 시각보다 훨씬 나중에 수정된 사본
+  const out = sandbox.mergeCollection([], remote, { t1: '2026-01-01T00:00:00Z' }, {});
+  assert.strictEqual(out.length, 0, 'ISO 문자열 톰스톤은 숫자 비교에서 항상 false가 되어 수정된 사본이 영구 소실됨');
+});
+test('sanitizeBackup: deletedIds가 객체가 아니면 빈 맵으로 되돌리고 fixedCount를 센다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({ txns: [], assets: [], deletedIds: '손상됨' });
+  assert.deepStrictEqual(Object.keys(data.deletedIds), []);
+  assert.strictEqual(fixedCount, 1);
+});
+test('sanitizeBackup: deletedIds 값이 숫자가 아니면(ISO 문자열 등) 그 id만 제거하고 fixedCount를 센다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    deletedIds: { t1: '2026-01-01T00:00:00Z', t2: 1700000000000, t3: 'not-a-number' },
+  });
+  assert.deepStrictEqual(Object.keys(data.deletedIds), ['t2']);
+  assert.strictEqual(data.deletedIds.t2, 1700000000000);
+  assert.strictEqual(fixedCount, 2);
+  // 정규화된 뒤에는 mergeCollection이 의도대로 동작한다(비교 가능한 숫자만 남음).
+  const out = sandbox.mergeCollection([], [{ id: 't2', updatedAt: 1800000000000 }], data.deletedIds, {});
+  assert.strictEqual(out.length, 1, '정규화된 숫자 톰스톤은 더 나중에 수정된 원격 사본을 정상적으로 살려야 함');
+});
+test('sanitizeBackup: 정상적인 deletedIds는 그대로 두고, 없어도 터지지 않는다(정상 케이스는 회귀 없음)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({ txns: [], assets: [], deletedIds: { t1: 1700000000000 } });
+  assert.strictEqual(data.deletedIds.t1, 1700000000000);
+  assert.strictEqual(fixedCount, 0);
+  const missing = sandbox.sanitizeBackup({ txns: [], assets: [] });
+  assert.deepStrictEqual(Object.keys(missing.data.deletedIds), []);
+  assert.strictEqual(missing.fixedCount, 0);
+});
+
 /* ---------- spendByCategory: 지출 분석 카테고리별 합계는 잔액 조정(기본 제외)을 빼야 한다 ---------- */
 test('spendByCategory: 수지에 포함되지 않은 잔액 조정 지출은 카테고리 합계에서 제외된다', () => {
   sandbox.DB = {

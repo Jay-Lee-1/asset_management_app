@@ -1331,7 +1331,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.99';
+const APP_VERSION='1.47.100';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5898,6 +5898,25 @@ function sanitizeBackup(obj){
  const catVar=sanitizeFlatMap(obj&&obj.catVar);
  const deletedType=sanitizeFlatMap(obj&&obj.deletedType);
  const deletedBal=sanitizeFlatMap(obj&&obj.deletedBal);
+ /* DB.deletedIds({id:삭제시각(ms)} 톰스톤 맵)는 catIcon/catVar/deletedType/deletedBal과 같은
+  * 평평한 맵이지만, 위 sanitizeFlatMap은 객체 형태만 보고 값 타입은 검증하지 않아 여기선 쓸 수
+  * 없다 — mergeCollection()(logic.js)과 mergeRemoteDataIntoLocal()(1472줄)이 이 맵의 값을
+  * (r.updatedAt||0)>delLocalTs처럼 순수 숫자 비교로만 쓰는데, 값이 ISO 문자열 등 숫자가 아니면
+  * Number>NaN이 항상 false가 되어 "삭제 뒤 다른 기기에서 수정된 사본을 살리는" 복구 경로가
+  * 조용히 막혀 정상 레코드가 영구히 사라진다. 객체가 아니면 통째로 비우고, 유한수가 아닌 값을
+  * 가진 항목은(맵 전체가 아니라) 그 id만 제거한다. */
+ const srcDeletedIdsRaw=obj&&obj.deletedIds;
+ let deletedIds;
+ if(srcDeletedIdsRaw==null)deletedIds={};
+ else if(typeof srcDeletedIdsRaw!=='object'||Array.isArray(srcDeletedIdsRaw)){deletedIds={};fixedCount++}
+ else{
+  deletedIds={};
+  Object.keys(srcDeletedIdsRaw).forEach(id=>{
+   const ts=Number(srcDeletedIdsRaw[id]);
+   if(Number.isFinite(ts))deletedIds[id]=ts;
+   else fixedCount++;
+  });
+ }
  /* DB.nwHistory(순자산 추이 일별 스냅샷 [{date,ta,td,nw,byOwner?}])는 txns/assets/recurrences/goals/
   * inquiries/assetQtyLog/categories/owners/budgetHistory와 달리 지금까지 여기서 전혀 검증되지 않던
   * 유일한 배열 컬렉션이었다. mergeRemoteDataIntoLocal()은 "기기별 로컬 스냅샷"이라며 의도적으로
@@ -5939,7 +5958,7 @@ function sanitizeBackup(obj){
   }else if(h.byOwner!=null)fixedCount++;
   nwHistory.push(d);
  });
- return {data:Object.assign({},obj,{txns,assets,recurrences,goals,inquiries,assetQtyLog,categories,owners,budgetHistory,catIcon,catVar,deletedType,deletedBal,nwHistory}),fixedCount,droppedCount,rangeCount};
+ return {data:Object.assign({},obj,{txns,assets,recurrences,goals,inquiries,assetQtyLog,categories,owners,budgetHistory,catIcon,catVar,deletedType,deletedBal,deletedIds,nwHistory}),fixedCount,droppedCount,rangeCount};
 }
 /* obj.assets/obj.txns가 배열인지까지 검증한 뒤 DB를 통째로 교체한다. migrate()가 손상된
  * obj 때문에 중간에 throw해도 DB가 절반만 마이그레이션된 채로 남지 않도록, 실패 시 교체 전
