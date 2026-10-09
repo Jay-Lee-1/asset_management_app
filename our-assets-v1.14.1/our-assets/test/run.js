@@ -5710,6 +5710,65 @@ test('sanitizeBackup: 정상적인 deletedIds는 그대로 두고, 없어도 터
   assert.strictEqual(missing.fixedCount, 0);
 });
 
+/* ---------- sanitizeBackup: DB.settings도 검증돼야 한다 — categories/owners/budgetHistory/catIcon류/
+ * deletedIds/nwHistory와 달리 지금까지 전혀 검증되지 않던 유일한 컬렉션이었다. dismissedStaleMvIds는
+ * new Set(DB.settings.dismissedStaleMvIds||[])로 직접 소비되는데, truthy한 비배열 값(객체/숫자)이면
+ * new Set()이 "not iterable" TypeError를 던진다(homeAlerts 경로라 바깥 try/catch가 삼켜 조용히 매
+ * 렌더마다 깨짐). ---------- */
+test('sanitizeBackup 없이 손상된(객체) dismissedStaleMvIds를 그대로 new Set()에 넘기면 TypeError가 난다(버그 재현)', () => {
+  assert.throws(() => new Set({ x: 1 }), TypeError);
+});
+test('sanitizeBackup: settings가 객체가 아니면 빈 객체로 되돌리고 fixedCount를 센다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({ txns: [], assets: [], settings: '손상됨' });
+  // vm 샌드박스 안에서 만들어진 {}는 host의 Object와 realm이 달라 deepStrictEqual이 (값은 같아도)
+  // 실패하므로, JSON round-trip으로 host realm 구조로 정규화해 비교한다.
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(data.settings)), {});
+  assert.strictEqual(fixedCount, 1);
+});
+test('sanitizeBackup: settings.dismissedStaleMvIds가 배열이 아니면(객체/숫자) 빈 배열로 정규화해 new Set()이 안전해진다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [], settings: { dismissedStaleMvIds: { x: 1 } },
+  });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(data.settings.dismissedStaleMvIds)), []);
+  assert.strictEqual(fixedCount, 1);
+  assert.doesNotThrow(() => new Set(data.settings.dismissedStaleMvIds));
+});
+test('sanitizeBackup: settings.dismissedStaleMvIds 배열 안에 문자열이 아닌 항목이 섞여 있으면 그 항목만 걸러낸다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [], settings: { dismissedStaleMvIds: ['a:b', 1, null, 'c:d'] },
+  });
+  assert.deepStrictEqual(data.settings.dismissedStaleMvIds, ['a:b', 'c:d']);
+  assert.strictEqual(fixedCount, 1);
+});
+test('sanitizeBackup: settings.groupOrder가 배열이 아니면 기본 그룹 순서로 되돌린다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [], settings: { groupOrder: '손상됨' },
+  });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(data.settings.groupOrder)), [...sandbox.DEFAULT_GROUP_ORDER]);
+  assert.strictEqual(fixedCount, 1);
+});
+test('sanitizeBackup: settings.groupOrder 배열 안에 문자열이 아닌 항목이 섞여 있으면 그 항목만 걸러낸다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [], settings: { groupOrder: ['cash', 5, 'stock'] },
+  });
+  assert.deepStrictEqual(data.settings.groupOrder, ['cash', 'stock']);
+  assert.strictEqual(fixedCount, 1);
+});
+test('sanitizeBackup: 정상적인 settings는 그대로 두고, 없어도 터지지 않는다(정상 케이스는 회귀 없음)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    settings: { themeMode: 'dark', confirmTransfers: false, dismissedStaleMvIds: ['a:b'], groupOrder: ['cash', 'stock'] },
+  });
+  assert.strictEqual(data.settings.themeMode, 'dark');
+  assert.strictEqual(data.settings.confirmTransfers, false);
+  assert.deepStrictEqual(data.settings.dismissedStaleMvIds, ['a:b']);
+  assert.deepStrictEqual(data.settings.groupOrder, ['cash', 'stock']);
+  assert.strictEqual(fixedCount, 0);
+  const missing = sandbox.sanitizeBackup({ txns: [], assets: [] });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(missing.data.settings)), {});
+  assert.strictEqual(missing.fixedCount, 0);
+});
+
 /* ---------- spendByCategory: 지출 분석 카테고리별 합계는 잔액 조정(기본 제외)을 빼야 한다 ---------- */
 test('spendByCategory: 수지에 포함되지 않은 잔액 조정 지출은 카테고리 합계에서 제외된다', () => {
   sandbox.DB = {

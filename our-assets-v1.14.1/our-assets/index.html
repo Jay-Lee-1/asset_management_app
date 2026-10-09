@@ -1331,7 +1331,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.100';
+const APP_VERSION='1.47.101';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5917,6 +5917,42 @@ function sanitizeBackup(obj){
    else fixedCount++;
   });
  }
+ /* DB.settings(환경설정 평평한 객체)는 txns/assets/recurrences/goals/inquiries/assetQtyLog/
+  * categories/owners/budgetHistory/catIcon류/deletedIds/nwHistory와 달리 지금까지 여기서 전혀
+  * 검증되지 않던 유일한 컬렉션이었다 — 마지막 Object.assign(obj,{...}) 오버라이드 목록에도 없어
+  * obj.settings가 그대로 통과됐다. migrate()의 DB.settings=Object.assign({defaults},
+  * DB.settings||{})(2077줄)는 비객체 소스는 안전하게 걸러내지만, dismissedStaleMvIds는
+  * 2377줄에서 new Set(DB.settings.dismissedStaleMvIds||[])로 직접 소비돼 truthy한 비배열
+  * 값(예: {} 객체, 숫자)이면 new Set()이 "object is not iterable" TypeError를 던진다. 이 호출이
+  * homeAlerts()->updateAlerts()->renderCurrent() 경로라 바깥 try/catch가 삼켜 사용자가 알기
+  * 어려운 채로 매 렌더마다 조용히 깨진 상태가 지속된다 — categories/owners/budgetHistory/
+  * catIcon류/deletedIds/nwHistory에서 반복된 '검증 분기 누락' 버그 클래스의 마지막 인스턴스.
+  * groupOrder는 migrate()(2078줄)가 비배열/빈 배열이면 기본값으로 되돌리는 폴백이 있지만,
+  * 소스 단에서도 문자열 배열로 정규화해 방어선을 하나 더 둔다. confirmTransfers/autoRates
+  * 등 나머지 필드는 truthy/falsy로만 쓰여 크래시 위험이 없어 그대로 둔다. */
+ const srcSettingsRaw=obj&&obj.settings;
+ let settings;
+ if(srcSettingsRaw==null)settings={};
+ else if(typeof srcSettingsRaw!=='object'||Array.isArray(srcSettingsRaw)){settings={};fixedCount++}
+ else settings=Object.assign({},srcSettingsRaw);
+ if('dismissedStaleMvIds' in settings){
+  const raw=settings.dismissedStaleMvIds;
+  if(!Array.isArray(raw)){settings.dismissedStaleMvIds=[];fixedCount++}
+  else{
+   const cleaned=raw.filter(k=>typeof k==='string'&&k);
+   if(cleaned.length!==raw.length)fixedCount++;
+   settings.dismissedStaleMvIds=cleaned;
+  }
+ }
+ if('groupOrder' in settings){
+  const raw=settings.groupOrder;
+  if(!Array.isArray(raw)){settings.groupOrder=[...DEFAULT_GROUP_ORDER];fixedCount++}
+  else{
+   const cleaned=raw.filter(t=>typeof t==='string'&&t);
+   if(cleaned.length!==raw.length)fixedCount++;
+   settings.groupOrder=cleaned;
+  }
+ }
  /* DB.nwHistory(순자산 추이 일별 스냅샷 [{date,ta,td,nw,byOwner?}])는 txns/assets/recurrences/goals/
   * inquiries/assetQtyLog/categories/owners/budgetHistory와 달리 지금까지 여기서 전혀 검증되지 않던
   * 유일한 배열 컬렉션이었다. mergeRemoteDataIntoLocal()은 "기기별 로컬 스냅샷"이라며 의도적으로
@@ -5958,7 +5994,7 @@ function sanitizeBackup(obj){
   }else if(h.byOwner!=null)fixedCount++;
   nwHistory.push(d);
  });
- return {data:Object.assign({},obj,{txns,assets,recurrences,goals,inquiries,assetQtyLog,categories,owners,budgetHistory,catIcon,catVar,deletedType,deletedBal,deletedIds,nwHistory}),fixedCount,droppedCount,rangeCount};
+ return {data:Object.assign({},obj,{txns,assets,recurrences,goals,inquiries,assetQtyLog,categories,owners,budgetHistory,catIcon,catVar,deletedType,deletedBal,deletedIds,nwHistory,settings}),fixedCount,droppedCount,rangeCount};
 }
 /* obj.assets/obj.txns가 배열인지까지 검증한 뒤 DB를 통째로 교체한다. migrate()가 손상된
  * obj 때문에 중간에 throw해도 DB가 절반만 마이그레이션된 채로 남지 않도록, 실패 시 교체 전
