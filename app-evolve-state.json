@@ -1,6 +1,6 @@
 {
   "cycle": 167,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
@@ -141,6 +141,13 @@
       "phase": "advance",
       "timestamp": "2026-10-09T14:20:00.000Z",
       "summary": "critique(cycle166) 계획대로 sanitizeBackup()에 DB.settings 전용 검증 블록을 추가했다. obj.settings가 일반 객체가 아니면(문자열/숫자/배열/null) {}로 교체(fixedCount). dismissedStaleMvIds는 배열이 아니면 빈 배열로 되돌리고(new Set()이 더 이상 터지지 않음), 배열이면 문자열이 아니거나 빈 문자열인 항목만 걸러낸다. groupOrder도 migrate()(2078줄)의 '비배열/빈 배열이면 기본값' 폴백이 이미 있지만, 소스 단에서도 배열이 아니면 DEFAULT_GROUP_ORDER로, 배열이면 문자열 아닌 항목만 걸러내 방어선을 하나 더 뒀다. confirmTransfers/autoRates/bigMin 등 나머지 필드는 truthy/falsy나 숫자로만 쓰여 크래시 위험이 없어 계획대로 손대지 않았다. 최종 반환 객체에도 settings를 포함시켰다(이전엔 obj를 Object.assign으로 그대로 흘려보내 obj.settings가 미검증 상태로 통과됐었음). test/run.js에 new Set({}) 버그 재현 1건 + settings 비객체/dismissedStaleMvIds 비배열·비문자열 항목 제거/groupOrder 비배열·비문자열 항목 제거/정상 케이스 회귀 없음 총 6건을 추가했고, 수정을 되돌리면 이 중 settings 관련 4건이 realm 문제 없이(JSON round-trip으로 host realm 정규화) 실제로 깨짐을 확인했다. index.html/sw.js 변경이라 APP_VERSION 1.47.100->1.47.101, sw.js CACHE v362->v363 갱신. node test/run.js 1153/1153 -> 1160/1160 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 167,
+      "phase": "develop",
+      "timestamp": "2026-10-09T15:10:00.000Z",
+      "summary": "Explore 서브에이전트로 index.html 전체 52개 <input> 전부를 label/aria-label/placeholder(브라우저가 접근성 이름으로 대체 사용) 기준으로 재조사 — renameOwnerSheet(i)(3633줄)가 렌더하는 귀속 이름 수정 입력(#renameOwner, 3635줄)이 label도 aria-label도 placeholder도 전혀 없는, 앱 전체에서 유일하게 접근성 이름이 없는 입력이었음을 확인했다(형제 패턴인 newOwner/renameCat은 placeholder가, bigMinInput/goalName/asName류는 <label for>가 있음). 설정→귀속 관리→편집(✏️) 진입 시 스크린리더가 현재 값만 읽고 어떤 필드인지 전혀 안내하지 못하는 결함. input에 aria-label=\"귀속 이름\"을 추가(histQ의 아이콘+aria-label 선례와 동일하게 이 시트엔 별도 라벨 텍스트가 없어 label 대신 aria-label을 선택). test/run.js의 기존 renameOwnerSheet field-clear 테스트 옆에 aria-label 존재를 검증하는 회귀 테스트 1건을 추가 — 수정 전 마크업으로 되돌리면 실제로 깨짐을 확인했다. index.html/sw.js 변경이라 APP_VERSION 1.47.101->1.47.102, sw.js CACHE v363->v364 갱신. node test/run.js 1160/1160 -> 1161/1161 통과.",
       "commit": null
     }
   ]

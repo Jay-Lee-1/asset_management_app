@@ -1331,7 +1331,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.101';
+const APP_VERSION='1.47.102';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3632,7 +3632,7 @@ function delOwner(i){const o=DB.owners[i];if(DB.owners.length<=1){toast('귀속�
  });}
 function renameOwnerSheet(i){const cur=DB.owners[i];
  openSheet(`<h3>귀속 이름 수정</h3><div class="desc">'${esc(cur)}'의 이름을 바꾸면 이 귀속의 자산도 함께 바뀌어요.</div>
-  <div class="field"><div class="field-clear"><input id="renameOwner" value="${esc(cur)}" onkeydown="if(event.key==='Enter'&&!event.isComposing)doRenameOwner(${i})"><button type="button" class="fc-x" aria-label="이름 지우기" onclick="clrInput('renameOwner')">✕</button></div></div>
+  <div class="field"><div class="field-clear"><input id="renameOwner" aria-label="귀속 이름" value="${esc(cur)}" onkeydown="if(event.key==='Enter'&&!event.isComposing)doRenameOwner(${i})"><button type="button" class="fc-x" aria-label="이름 지우기" onclick="clrInput('renameOwner')">✕</button></div></div>
   <div class="two-btn"><button class="btn btn-soft cancel" onclick="openOwnerManage()">취소</button><button class="btn btn-primary" onclick="doRenameOwner(${i})">저장</button></div>`);
  setTimeout(()=>{const el=$('renameOwner');el&&el.focus()},300)}
 function doRenameOwner(i){const v=$('renameOwner').value.trim().normalize('NFC');if(!v){toast('이름을 입력해 주세요');return}

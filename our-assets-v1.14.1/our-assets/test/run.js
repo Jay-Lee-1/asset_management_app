@@ -9105,6 +9105,10 @@ test('renameOwnerSheet: renameOwner(귀속 이름 수정 입력)도 동일하게
   assert.ok(body.includes('<div class="field"><div class="field-clear"><input id="renameOwner"'), 'renameOwner 입력이 field-clear로 감싸져 있지 않음');
   assert.ok(body.includes(`<button type="button" class="fc-x" aria-label="이름 지우기" onclick="clrInput('renameOwner')">`), 'renameOwner에 fc-x 지우기 버튼의 clrInput 연결이 없음');
 });
+test('renameOwnerSheet: renameOwner 입력에 aria-label이 있다(앱 전체에서 유일하게 label도 placeholder도 없던 입력이었음)', () => {
+  const body = extractFunction('renameOwnerSheet');
+  assert.ok(body.includes('<input id="renameOwner" aria-label="귀속 이름"'), 'renameOwner에 aria-label="귀속 이름"이 없음');
+});
 test('renameCatSheet: renameCat(카테고리 이름 수정 입력)도 동일하게 field-clear(×) 버튼이 있다', () => {
   const body = extractFunction('renameCatSheet');
   assert.ok(body.includes('<div class="cat-edit-row">') && body.includes('<div class="field-clear"><input id="renameCat"'), 'renameCat 입력이 field-clear로 감싸져 있지 않음');
