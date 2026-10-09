@@ -274,11 +274,17 @@ function goalPct(cur,target){
  if(!(target>0))return cur>0?100:0;
  return Math.max(0,Math.min(100,Math.round(cur/target*100)));
 }
-/* 순자산 목표 진행률 + 추세 투사. nwHistory(일별 {date,nw} 스냅샷)의 처음·끝 두 점으로 하루 평균
- * 증가량을 구해 남은 금액을 나누는 단순 선형 투사(spendTrend류와 동일하게 복잡한 회귀는 쓰지 않음).
- * 이력이 1개 이하거나 증가세가 0 이하(정체·감소)면 목표 도달 시점을 예측할 수 없으므로 null —
- * '못 간다'를 추측으로 단정하지 않고 모른다고 말하는 쪽을 택함. */
-function goalProgress(goal,nwHistory,today){
+/* 순자산 목표 진행률 + 추세 투사. 추세(rate)는 nwHistory 전체가 아니라 최근 trendWindowDays일
+ * (기본 90일) 구간의 처음·끝 점으로 하루 평균 증가량을 구해 남은 금액을 나누는 단순 선형 투사
+ * (spendTrend류와 동일하게 복잡한 회귀는 쓰지 않음) — debtPayoffProjection(아래)이 호출부에서
+ * 이미 기간 세그먼트(기본 3개월)로 받은 pts만 보는 것과 같은 '최근 추세' 원칙을 공유한다. 전엔
+ * 설치일부터의 전체 이력 처음·끝만 썼어서, 오래전 가입해 저축 패턴이 바뀐 사용자의 예측이 몇 년치
+ * 평균으로 왜곡됐었다(app-evolve cycle168 critique → cycle168 advance). 윈도 안에 2점 미만이면
+ * (신규 사용자 등) 전체 이력으로 폴백해 기존 동작을 그대로 유지한다. cur/pct/achieved는 창과 무관하게
+ * 항상 최신 스냅샷 기준. 이력이 1개 이하거나 증가세가 0 이하(정체·감소)면 목표 도달 시점을 예측할 수
+ * 없으므로 null — '못 간다'를 추측으로 단정하지 않고 모른다고 말하는 쪽을 택함. */
+function goalProgress(goal,nwHistory,today,trendWindowDays){
+ trendWindowDays=trendWindowDays||90;
  const hist=(nwHistory||[]).filter(h=>h.date<=today);
  const cur=hist.length?hist[hist.length-1].nw:0;
  const target=goal&&goal.targetAmount||0;
@@ -287,7 +293,10 @@ function goalProgress(goal,nwHistory,today){
  const achieved=target>0&&cur>=target;
  let projectedDate=null;
  if(!achieved&&remaining>0&&hist.length>=2){
-  const first=hist[0],last=hist[hist.length-1];
+  const last=hist[hist.length-1];
+  const cutoff=addDays(last.date,-trendWindowDays);
+  const windowed=hist.filter(h=>h.date>cutoff);
+  const first=(windowed.length>=2?windowed:hist)[0];
   const days=daysBetween(first.date,last.date);
   const rate=days>0?(last.nw-first.nw)/days:0;
   if(rate>0)projectedDate=addDays(last.date,Math.ceil(remaining/rate));

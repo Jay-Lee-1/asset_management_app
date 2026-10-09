@@ -1441,6 +1441,26 @@ test('goalProgress: today 이후의 미래 스냅샷은 무시하고 그 시점�
   assert.strictEqual(p.pct, 50);
   assert.strictEqual(p.projectedDate, null, '필터 후 이력이 1건뿐이면 추세를 계산할 수 없음');
 });
+test('goalProgress: 오래된 이력 전체는 완만했지만 최근 90일 구간만 급증했으면, 전체 평균이 아니라 최근 구간의 빠른 추세로 투사한다 (app-evolve cycle168 advance)', () => {
+  // 2년(730일)간 10만원만 늘다가(거의 0에 가까운 추세) 최근 90일 동안 90만원이 늘었음(1만원/일).
+  // 전체 평균(730일에 100만원 = ~1370원/일)으로 투사하면 남은 500만원에 수천 일이 걸리지만,
+  // 최근 추세(1만원/일)로는 500일이면 된다 — 창을 안 두면 '거의 영원히 못 간다'로 잘못 보임.
+  const hist = [
+    { date: '2024-01-01', nw: 100000 },
+    { date: '2026-01-03', nw: 200000 }, // 최근 90일 창(cutoff=2026-01-02) 안, 완만한 2년 추세의 끝점
+    { date: '2026-04-02', nw: 1100000 }, // today, 최근 창 구간(89일)에 +900,000 ≈ 10,112/일
+  ];
+  const p = sandbox.goalProgress({ targetAmount: 6000000 }, hist, '2026-04-02');
+  assert.strictEqual(p.cur, 1100000);
+  assert.strictEqual(p.remaining, 4900000);
+  assert.strictEqual(p.projectedDate, '2027-07-31', '전체 2년 평균(2024-01-01부터)이 아니라 최근 90일 창(2026-01-03부터)의 빠른 추세로 투사해야 함');
+});
+test('goalProgress: 최근 90일 구간에 스냅샷이 1개뿐이면(데이터가 희소해도) 전체 이력으로 폴백해 기존 동작을 유지한다', () => {
+  const hist = [{ date: '2026-01-01', nw: 0 }, { date: '2026-04-01', nw: 90000 }]; // 90일간 90,000 = 1,000/일, 두 점 모두 창(90일) 경계 안팎에 걸침
+  const p = sandbox.goalProgress({ targetAmount: 300000 }, hist, '2026-04-01');
+  assert.strictEqual(p.cur, 90000);
+  assert.notStrictEqual(p.projectedDate, null, '창 안에 2점 미만이면 전체 이력으로 폴백해야 함(투사 자체가 사라지면 안 됨)');
+});
 
 /* ---------- debtPayoffProjection: debt 자산 상환완료 예상일 투사 (app-evolve cycle144 advance) ----------
  * goalProgress와 대칭되는 부채 쪽 선형투사. pts는 assetBalanceSeries(sign=-1)가 반환하는 날짜순
