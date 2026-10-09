@@ -1331,7 +1331,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.97';
+const APP_VERSION='1.47.98';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3899,7 +3899,7 @@ function catListOf(type){return type==='income'?DB.categories.income:type==='sav
 function dayPickerHTML(d,pfx){
  const isCustom=d._custom||(typeof d.day==='number'&&![1,5,15,25].includes(d.day));
  const dayBtns=[['1','1일'],['5','5일'],['15','15일'],['25','25일'],['last','말일'],['custom','직접']].map(([v,l])=>v==='custom'&&isCustom
-  ?`<label class="day-cell" style="box-sizing:border-box;display:flex;align-items:center;justify-content:center;gap:2px;height:46px;border-radius:var(--r-sm);background:var(--brand-soft);border:1px solid var(--brand);color:var(--brand-ink);font-size:13px;font-weight:700;overflow:hidden"><input class="day-in num" id="${pfx}DayIn" inputmode="numeric" maxlength="2" value="${d.day}" oninput="${pfx}DayInput(this)" onfocus="daySuf(this,0)" onblur="daySuf(this,1)" style="box-sizing:border-box;display:block;height:44px;min-height:0;width:2.4ch;margin:0;padding:0;line-height:44px;-webkit-appearance:none;appearance:none;border:none;border-radius:0;background:transparent;-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:none;color:var(--brand-ink);text-align:center;font-size:13px;font-weight:700;outline:none"><span class="day-suf" style="font-size:13px;font-weight:700;color:var(--brand-ink);line-height:1">일</span></label>`
+  ?`<label class="day-cell" style="box-sizing:border-box;display:flex;align-items:center;justify-content:center;gap:2px;height:46px;border-radius:var(--r-sm);background:var(--brand-soft);border:1px solid var(--brand);color:var(--brand-ink);font-size:13px;font-weight:700;overflow:hidden"><input class="day-in num" id="${pfx}DayIn" aria-label="반복일 직접 입력 (1~31일)" inputmode="numeric" maxlength="2" value="${d.day}" oninput="${pfx}DayInput(this)" onfocus="daySuf(this,0)" onblur="daySuf(this,1)" style="box-sizing:border-box;display:block;height:44px;min-height:0;width:2.4ch;margin:0;padding:0;line-height:44px;-webkit-appearance:none;appearance:none;border:none;border-radius:0;background:transparent;-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:none;color:var(--brand-ink);text-align:center;font-size:13px;font-weight:700;outline:none"><span class="day-suf" style="font-size:13px;font-weight:700;color:var(--brand-ink);line-height:1">일</span></label>`
   :`<button class="${String(d.day)===v?'on':''}" onclick="${pfx}Day('${v}')">${l}</button>`).join('');
  return `<div class="field"><label>반복일</label><div class="opt-grid c3">${dayBtns}</div><div class="day-warn" id="${pfx}DayWarn" style="display:none"></div></div>`;
 }

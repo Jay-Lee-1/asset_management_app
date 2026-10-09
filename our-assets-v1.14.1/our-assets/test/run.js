@@ -1060,6 +1060,10 @@ test('dayPickerHTML: day가 프리셋 밖의 숫자면(직접 입력 상태) 커
   assert.match(html, /id="txDayIn"[^>]*value="22"/);
   assert.doesNotMatch(html, /class="on"/, '프리셋 버튼 중 어느 것도 22와 일치하지 않으므로 on 클래스가 없어야 함');
 });
+test('dayPickerHTML: 커스텀 입력칸에 aria-label이 있어 스크린리더가 용도를 알 수 있다', () => {
+  const html = sandbox.dayPickerHTML({ day: 22, _custom: false }, 'rec');
+  assert.match(html, /id="recDayIn"[^>]*aria-label="반복일 직접 입력[^"]*"/);
+});
 
 /* ---------- endCondFields: 반복 횟수 입력(${pfx}CountBox)에 aria-label 존재 확인
  * (app-evolve cycle163 advance — placeholder="횟수"만 있고 label/aria-label이 없어 입력 후
