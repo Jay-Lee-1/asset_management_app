@@ -1331,7 +1331,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.102';
+const APP_VERSION='1.47.103';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1770,6 +1770,32 @@ function localHasUnsyncedChanges(savedAt,syncedAt){return !!(savedAt&&(!syncedAt
  * 화면에서 명시적으로 풀어야 하므로(위 confirmCloudForcePush 등) 여기서 자동으로 건드리지 않는다. */
 function shouldRetryCloudSync(cloudUid,syncState,navigatorOnline){return !!(cloudUid&&syncState==='error'&&navigatorOnline)}
 function markCloudSynced(){try{localStorage.setItem(dataKey()+'__syncedAt',String(Date.now()))}catch(e){}}
+/* pullCloudIfStale()이 실제로 네트워크 pull을 할지 판정하는 순수 로직 — 마지막으로 pull/push가
+ * 성공한 시각(markCloudSynced()가 남기는 '__syncedAt')으로부터 thresholdMs 이상 지났을 때만
+ * pull한다. 한 번도 동기화된 적이 없으면(lastSyncedAtMs 없음) 곧장 pull한다. */
+function shouldPullCloud(now,lastSyncedAtMs,thresholdMs){return !lastSyncedAtMs||(now-lastSyncedAtMs)>=thresholdMs}
+const CLOUD_PULL_STALE_MS=3*60*1000;
+/* 앱이 백그라운드/다른 탭에 있는 동안 다른 기기가 올린 변경을 반영하기 위해, 포그라운드로
+ * 돌아올 때마다(visibilitychange-visible/focus/pageshow) 호출한다. 지금까지 pullCloud()/
+ * afterCloudAuth()는 boot()/로그인/online 이벤트에서만 불렸고, 재개 시에는 전혀 pull하지
+ * 않아 가족 공유 계정에서 다른 기기의 수정이 반영되려면 강제종료 후 재실행이 필요했다
+ * (app-evolve cycle167 critique) — pushCloud()의 '쓰기'와 짝을 이루는 '읽기 신선도' 보강.
+ * shouldPullCloud()로 스로틀해 포그라운드 전환마다 매번 네트워크를 타지 않게 하고, 시트가
+ * 열려 있으면(편집 중인 드래프트가 있을 수 있음) 이번엔 건드리지 않고 그냥 건너뛴다 —
+ * handleForeignStorage의 TAB_SYNC_PENDING과 같은 '편집 중엔 덮어쓰지 않는다' 원칙이되,
+ * 여기선 '__syncedAt'를 갱신하지 않은 채 돌아가므로 시트를 닫은 뒤 다음 포그라운드 전환에서
+ * 그냥 다시 시도하면 돼 별도의 pending 큐가 필요 없다. */
+async function pullCloudIfStale(){
+ if(!sbReady()||!CLOUD_UID||!DB)return;
+ if($('sheet')&&$('sheet').classList.contains('show'))return;
+ let syncedAt;try{syncedAt=+localStorage.getItem(dataKey()+'__syncedAt')||null}catch(e){syncedAt=null}
+ if(!shouldPullCloud(Date.now(),syncedAt,CLOUD_PULL_STALE_MS))return;
+ const remote=await pullCloud();
+ if(!remote)return;
+ mergeRemoteDataIntoLocal(sanitizeBackup(remote).data);
+ save();
+ if(appIsOpen())renderCurrent();
+}
 /* scheduleCloudPush()의 1.2초 디바운스 타이머와 visibilitychange 핸들러(탭을 숨길 때 곧장
  * pushCloud()를 부름)가 거의 동시에 겹치면, 이전엔 두 호출이 똑같이 CLOUD_LAST_SYNCED_AT을 보고
  * 동시에 SB.from(...)을 날려 경합할 수 있었다. retried===true(아래 conflict 자동 병합 재시도)는
@@ -7962,15 +7988,15 @@ function maybeRollDay(){
 }
 /* 백그라운드로 전환되면 즉시 화면을 가려(lockApp) OS 앱 전환화면에 데이터가 노출되지 않게 하면서도,
  * 설정된 유예시간 안에 돌아오면 PIN 재입력 없이 자동으로 다시 연다(app-evolve cycle151 advance) */
-document.addEventListener('visibilitychange',()=>{if(!document.hidden){syncNotifyPermission();if(APP_LOCKED&&APPLOCK.enabled()&&APP_HIDDEN_AT&&(Date.now()-APP_HIDDEN_AT)/1000<APPLOCK.getGrace())unlockApp();else maybeRollDay();APP_HIDDEN_AT=0}else{if(CLOUD_UID){clearTimeout(SB_PUSH_T);pushCloud().catch(()=>{})}checkNotifyAlerts();if(appIsOpen()){APP_HIDDEN_AT=Date.now();lockApp()}}});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){syncNotifyPermission();if(APP_LOCKED&&APPLOCK.enabled()&&APP_HIDDEN_AT&&(Date.now()-APP_HIDDEN_AT)/1000<APPLOCK.getGrace())unlockApp();else maybeRollDay();APP_HIDDEN_AT=0;pullCloudIfStale().catch(()=>{})}else{if(CLOUD_UID){clearTimeout(SB_PUSH_T);pushCloud().catch(()=>{})}checkNotifyAlerts();if(appIsOpen()){APP_HIDDEN_AT=Date.now();lockApp()}}});
 window.addEventListener('online',async()=>{
  if(!shouldRetryCloudSync(CLOUD_UID,CLOUD_SYNC_STATE,navigator.onLine))return;
  await pullCloud();await pushCloud();
  if(appIsOpen())renderCurrent();
 });
-window.addEventListener('focus',maybeRollDay);
+window.addEventListener('focus',()=>{maybeRollDay();pullCloudIfStale().catch(()=>{})});
 window.addEventListener('storage',handleForeignStorage); /* 다른 탭이 save()로 덮어쓴 걸 감지 — handleForeignStorage 주석 참고 */
-window.addEventListener('pageshow',maybeRollDay);
+window.addEventListener('pageshow',()=>{maybeRollDay();pullCloudIfStale().catch(()=>{})});
 setInterval(maybeRollDay,60000);
 matchMedia('(prefers-color-scheme:dark)').addEventListener('change',()=>{if(DB.settings.themeMode==='system')renderCurrent()});
 setTimeout(()=>{if(!DB)return;const soon=DB.assets.filter(a=>a.type==='savings'&&a.maturityDate&&a.maturityDate<=addDays(TODAY,7));

@@ -160,6 +160,7 @@ const FUNCTIONS = [
   'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asOpenCur', 'asCur', 'asToggleNeg', 'openAssetSheet', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'mergeRemoteDataIntoLocal', 'fmtAmt', 'fmtQty',
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges', 'shouldRetryCloudSync',
   'pullCloud', 'afterCloudAuth', 'resolveCloudPullRemote', 'pushCloud', 'measureCloudClockSkew',
+  'shouldPullCloud', 'pullCloudIfStale', 'appIsOpen',
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
   'clampDay', 'saveTx', 'assetBase', 'balancesUpTo', 'balanceAt', 'balancesAtDates', 'balanceAtFromMap',
   'addBalanceAdjust', 'updateBalanceAdjust', 'toggleConfirmTransfers', 'rollPendingTransfers',
@@ -322,6 +323,9 @@ const sandbox = {
   CLOCK_SKEW_MS: null,
   CLOCK_SKEW_WARN_MS: 5 * 60 * 1000,
   CLOCK_SKEW_CRIT_MS: 24 * 60 * 60 * 1000,
+  // CLOUD_PULL_STALE_MS는 pullCloudIfStale()이 shouldPullCloud()에 넘기는 문턱 상수(app-evolve
+  // cycle167 advance) — 위 CLOCK_SKEW_WARN_MS/CRIT_MS와 같은 이유로 테스트에서 직접 세팅한다.
+  CLOUD_PULL_STALE_MS: 3 * 60 * 1000,
   // SESSION은 `let SESSION=localStorage.getItem(...)`으로 파생되는 로그인 이메일/카카오 id고,
   // AUTH는 localStorage 기반 계정 저장소 객체라(accountName()이 AUTH.rec(SESSION)을 부름) 둘 다
   // RANGE_TO/CLOUD_UID와 같은 이유(파생·비순수 상태, localStorage 의존)로 재현하지 않고
@@ -7088,6 +7092,77 @@ test('shouldRetryCloudSync: 실패 상태여도 아직 오프라인이면 재시
 });
 test('shouldRetryCloudSync: 충돌 상태는 사용자의 명시적 해결이 필요하므로 자동 재시도하지 않는다', () => {
   assert.strictEqual(sandbox.shouldRetryCloudSync('u1', 'conflict', true), false);
+});
+
+/* ---------- shouldPullCloud/pullCloudIfStale: 포그라운드 복귀 시 클라우드 재-pull 스로틀
+ * (app-evolve cycle167 advance — visibilitychange-visible/focus/pageshow가 maybeRollDay()만
+ * 부르고 네트워크는 전혀 건드리지 않아 다른 기기의 수정이 강제종료 후 재실행 전까지 반영되지
+ * 않던 공백을 메운다) ---------- */
+test('shouldPullCloud: 한 번도 동기화된 적이 없으면(lastSyncedAtMs 없음) 곧장 pull한다', () => {
+  assert.strictEqual(sandbox.shouldPullCloud(100000, null, 180000), true);
+  assert.strictEqual(sandbox.shouldPullCloud(100000, 0, 180000), true);
+});
+test('shouldPullCloud: 마지막 동기화로부터 문턱 시간이 아직 안 지났으면 pull하지 않는다', () => {
+  assert.strictEqual(sandbox.shouldPullCloud(200000, 100000, 180000), false);
+});
+test('shouldPullCloud: 문턱 시간이 지났으면(경계값 포함) pull한다', () => {
+  assert.strictEqual(sandbox.shouldPullCloud(280000, 100000, 180000), true);
+  assert.strictEqual(sandbox.shouldPullCloud(280001, 100000, 180000), true);
+});
+
+test('pullCloudIfStale: 클라우드 계정이 아니면(CLOUD_UID 없음) pull을 시도하지 않는다', async () => {
+  sandbox.CLOUD_UID = null;
+  sandbox.DB = { assets: [], txns: [] };
+  sandbox._sbMaybeSingleResult = { data: { data: { assets: [{ id: 'remote' }], txns: [] }, updated_at: '2026-01-01T00:00:00.000Z' }, error: null };
+  await sandbox.pullCloudIfStale();
+  assert.strictEqual(sandbox.DB.assets.length, 0, '클라우드 계정이 아니므로 로컬 DB가 건드려지면 안 됨');
+});
+test('pullCloudIfStale: DB가 아직 로드되지 않았으면(부팅 전) pull을 시도하지 않는다', async () => {
+  sandbox.CLOUD_UID = 'u1';
+  sandbox.DB = null;
+  sandbox._sbMaybeSingleResult = { data: { data: { assets: [{ id: 'remote' }], txns: [] }, updated_at: '2026-01-01T00:00:00.000Z' }, error: null };
+  await sandbox.pullCloudIfStale();
+  assert.strictEqual(sandbox.DB, null);
+  sandbox.CLOUD_UID = null;
+});
+test('pullCloudIfStale: 시트가 열려 있으면(편집 중일 수 있음) 동기화가 오래됐어도 건드리지 않고 건너뛴다', async () => {
+  sandbox.CLOUD_UID = 'u1';
+  sandbox.DB = { assets: [{ id: 'local-only', type: 'cash', updatedAt: 100 }], txns: [] };
+  sandbox._lsMap = { 'test-key__syncedAt': String(Date.now() - 10 * 60 * 1000) }; // 10분 전 → CLOUD_PULL_STALE_MS(3분) 초과
+  sandbox._sbMaybeSingleResult = { data: { data: { assets: [{ id: 'remote-only', type: 'cash', updatedAt: 100 }], txns: [] }, updated_at: '2026-01-01T00:00:00.000Z' }, error: null };
+  const origDollar = sandbox.$;
+  sandbox.$ = (id) => id === 'sheet' ? { classList: { contains: () => true } } : origDollar(id);
+  await sandbox.pullCloudIfStale();
+  sandbox.$ = origDollar;
+  assert.strictEqual(sandbox.DB.assets.length, 1, '시트가 열려 있는 동안은 원격 데이터가 병합되면 안 됨');
+  sandbox._lsMap = null;
+  sandbox.CLOUD_UID = null;
+});
+test('pullCloudIfStale: 아직 동기화가 오래되지 않았으면(문턱 이내) pull 자체를 하지 않는다', async () => {
+  sandbox.CLOUD_UID = 'u1';
+  sandbox.DB = { assets: [{ id: 'local-only', type: 'cash', updatedAt: 100 }], txns: [] };
+  sandbox._lsMap = { 'test-key__syncedAt': String(Date.now() - 60 * 1000) }; // 1분 전 → 3분 문턱 이내
+  sandbox._sbMaybeSingleResult = { data: { data: { assets: [{ id: 'remote-only', type: 'cash', updatedAt: 100 }], txns: [] }, updated_at: '2026-01-01T00:00:00.000Z' }, error: null };
+  await sandbox.pullCloudIfStale();
+  assert.strictEqual(sandbox.DB.assets.length, 1, '아직 신선한 동기화 상태면 원격 데이터를 가져오면 안 됨');
+  sandbox._lsMap = null;
+  sandbox.CLOUD_UID = null;
+});
+test('pullCloudIfStale: 동기화가 오래됐고 시트도 닫혀 있으면 원격을 로컬에 병합하고 save()를 부른다', async () => {
+  sandbox.CLOUD_UID = 'u1';
+  sandbox.DB = { assets: [{ id: 'local-only', type: 'cash', updatedAt: 100 }], txns: [], recurrences: [], goals: [], inquiries: [], assetQtyLog: [], deletedIds: {} };
+  sandbox._lsMap = { 'test-key__syncedAt': String(Date.now() - 10 * 60 * 1000) }; // 10분 전 → 3분 문턱 초과
+  sandbox._sbMaybeSingleResult = { data: { data: { assets: [{ id: 'remote-only', type: 'cash', updatedAt: 100 }], txns: [], recurrences: [], goals: [], inquiries: [], assetQtyLog: [], deletedIds: {} }, updated_at: '2026-01-01T00:00:00.000Z' }, error: null };
+  let saveCalls = 0;
+  const origSave = sandbox.save;
+  sandbox.save = () => { saveCalls++; };
+  await sandbox.pullCloudIfStale();
+  sandbox.save = origSave;
+  assert.strictEqual(saveCalls, 1, '원격 변경을 받아왔으면 save()로 로컬에 반영해야 함');
+  assert.ok(sandbox.DB.assets.some(a => a.id === 'local-only'), '기존 로컬 레코드가 사라지면 안 됨');
+  assert.ok(sandbox.DB.assets.some(a => a.id === 'remote-only'), '원격에만 있던 레코드가 병합돼야 함');
+  sandbox._lsMap = null;
+  sandbox.CLOUD_UID = null;
 });
 
 /* ---------- pullCloud/afterCloudAuth/resolveCloudPullRemote: markCloudSynced() 호출 시점

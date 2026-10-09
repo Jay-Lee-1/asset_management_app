@@ -1,19 +1,8 @@
 {
-  "cycle": 167,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "클라우드 동기화: 앱이 열려 있는 동안(visibilitychange/focus/pageshow)에는 원격 데이터를 다시 pull하지 않음",
-    "why": "pullCloud()/afterCloudAuth()(index.html:1731,1831)는 boot()/로그인/online 이벤트에서만 호출되고, visibilitychange-visible·focus·pageshow·60초 setInterval(maybeRollDay)(7955-7974줄)은 네트워크를 전혀 건드리지 않는다(같은 visibilitychange 핸들러의 hidden 분기는 pushCloud()로 쓰기는 내보내면서 읽기는 안 들여옴). 이 앱은 가족이 같은 계정을 여러 기기에서 쓰는 걸 전제로 하는데(4855줄 안내), 배우자 A가 폰에서 지출을 추가해도 B의 폰은 PWA가 백그라운드에 떠 있다가 잠금해제/포커스 복귀만으로는 절대 다시 pull하지 않아 잔액·예산 초과 상태·순자산 그래프가 며칠이고 조용히 과거 값으로 남고, 강제종료 후 재실행(=boot())해야만 복구된다. clockSkew/LWW 등 기존 작업은 전부 \"쓰기\"가 맞는지만 다뤘지 재개된 세션의 \"읽기 신선도\"는 아무도 건드리지 않았다.",
-    "approach": "scheduleCloudPush(1764줄) 패턴을 본떠 pullCloudIfStale()을 추가한다 — CLOUD_LAST_SYNCED_AT/markCloudSynced 북키핑을 재사용해 마지막 성공 pull/push로부터 일정 시간(예: 수 분) 이상 지났을 때만 실제로 pull하도록 스로틀한다. visibilitychange의 visible 분기, window focus, pageshow 3곳에서 이 함수를 호출하도록 와이어링한다. 시트가 열려 있는 동안의 편집을 덮어쓰지 않도록 기존 TAB_SYNC_PENDING류 지연 패턴을 그대로 따른다. test/run.js에는 스로틀 판단을 순수 함수로 뽑아(예: shouldPullCloud(now,lastSyncedAt,thresholdMs)) shouldRetryCloudSync와 동일한 스타일의 단위 테스트를 추가한다."
-  },
+  "cycle": 168,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 162,
-      "phase": "advance",
-      "timestamp": "2026-10-08T22:10:00.000Z",
-      "summary": "critique(cycle162) 계획대로 openRateSheet()의 금/외화/주식 시세 직접수정 input 3곳에 newOwner와 동일한 마크업으로 aria-label + .field-clear/fc-x 지우기 버튼을 추가했다. gold는 고정 id(rateGold), fx/stock은 행마다 고유 id(rateFx_${c}, rateStock_${a.stockCode})를 새로 부여해 clrInput()이 각 행을 구분해서 지울 수 있게 했다(기존엔 셀렉터 대상이 될 input 자체에 id가 전혀 없었음). aria-label은 금 '금 시세', fx '${c} 환율', stock '${a.name} 현재가'로 달아 보유 통화·종목이 여러 개여도 스크린리더로 구분 가능하게 했다. openRateSheet()는 openSheet()를 통해 열리므로(renderAuth처럼 별도 화면이 아님) fcWire() 자동 배선을 그대로 타 별도 호출은 불필요했다. .rate-row input의 기존 width:118px(box-sizing:border-box 전역 규칙 덕에 .field-clear input의 padding-right:38px!important가 박스 폭을 넓히지 않음)과 .sheet .rate-row input 글래스 배경 셀렉터(자손 선택자라 중첩 깊이 무관) 둘 다 깨지지 않음을 코드로 확인. openRateSheet는 FUNCTIONS(vm 실행) 목록 밖이라 renderAuth/openOwnerManage와 동일하게 extractFunction 소스 문자열 검사 테스트 3건(gold/fx/stock 각각 id·aria-label·field-clear·fc-x onclick 연결 검증)을 추가했다. index.html/sw.js 변경이라 APP_VERSION 1.47.91->1.47.92, sw.js CACHE v353->v354 갱신. node test/run.js 1117/1117 -> 1120/1120 통과.",
-      "commit": null
-    },
     {
       "cycle": 163,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-09T17:14:13.336Z",
       "summary": "general-purpose 서브에이전트로 141-167사이클 전부(특히 164-167의 sanitizeBackup/a11y/CSV가드/시계오차 미세수정들) + 기각 이력을 전달하고 앱 전체를 더 멀리서(세션 생명주기/네트워크 관점) 재조망. 새로 발견: pullCloud()/afterCloudAuth()(1731/1831줄)는 boot()/로그인/online 이벤트에서만 호출되고, visibilitychange-visible/focus/pageshow/60초 setInterval(maybeRollDay)(7955-7974줄)은 네트워크를 전혀 건드리지 않음을 확인 — 같은 visibilitychange 핸들러의 hidden 분기가 pushCloud()로 쓰기는 내보내는 것과 비대칭. 가족 공유 계정(4855줄)에서 한 기기가 백그라운드에 떠 있는 동안 다른 기기의 수정이 반영되지 않아 잔액/예산/순자산이 조용히 오래된 값으로 남고 강제종료 후 재실행(boot())해야만 복구되는 문제 — 지금까지의 clockSkew/LWW 작업은 전부 \"쓰기\" 정확성만 다뤘지 재개된 세션의 \"읽기 신선도\"는 아무도 건드리지 않았음. scheduleCloudPush(1764줄) 패턴을 본떠 pullCloudIfStale()을 추가해 visibilitychange-visible/focus/pageshow 3곳에 와이어링하는 계획을 pending_advance_plan에 저장. 러너업(기각): txAmt/asCostBasis/budgetIn 등 금액 입력에 상한선 없음(실존하지만 저빈도·한 건 수정으로 복구 가능해 우선순위 낮음), DB.nwHistory 무한 증가는 pruneNwHistory()(2407줄)가 90일 이후 월별로 다운샘플링해 이미 해소됨(실제 이슈 아님으로 확인). 코드 변경 없음(읽기 전용 조사).",
+      "commit": null
+    },
+    {
+      "cycle": 167,
+      "phase": "advance",
+      "timestamp": "2026-10-09T18:05:00.000Z",
+      "summary": "critique(cycle167) 계획대로 pullCloudIfStale()을 추가했다. 순수 함수 shouldPullCloud(now,lastSyncedAtMs,thresholdMs)(마지막 성공 pull/push 이후 thresholdMs 이상 지났는지만 판정, 한 번도 동기화 안 됐으면 곧장 true)와 문턱 상수 CLOUD_PULL_STALE_MS(3분)를 scheduleCloudPush 바로 아래에 추가했다. pullCloudIfStale()은 sbReady()&&CLOUD_UID&&DB가 있고 시트가 열려 있지 않을 때만(TAB_SYNC_PENDING의 '편집 중엔 덮어쓰지 않는다' 원칙을 '__syncedAt'를 안 건드린 채 이번 라운드를 그냥 건너뛰는 방식으로 적용 — 별도 pending 큐 없이 다음 포그라운드 전환에서 자연히 재시도됨) dataKey()+'__syncedAt'로 신선도를 확인하고, 오래됐으면 pullCloud()로 원격을 받아 mergeRemoteDataIntoLocal()로 로컬에 병합 후 save()한다(병합 결과는 save()가 부르는 scheduleCloudPush()로 자동 되밀림, afterCloudAuth 'merged' 분기와 동일 패턴). document.visibilitychange의 visible 분기(unlockApp/maybeRollDay 분기 모두 이어서 호출), window 'focus', window 'pageshow' 3곳에 각각 .catch(()=>{})로 와이어링했다. test/run.js FUNCTIONS에 shouldPullCloud/pullCloudIfStale/appIsOpen(의존 함수, 기존엔 미등록)을 추가하고 CLOUD_PULL_STALE_MS를 CLOCK_SKEW_WARN_MS와 동일한 방식으로 sandbox 리터럴에 넣었다. shouldPullCloud 단위 테스트 3건 + pullCloudIfStale 통합 테스트 5건(CLOUD_UID 없음/DB 없음/시트 열림/아직 신선함/오래돼서 병합+save 호출 각각 스킵·수행 검증) 총 8건을 추가했다. index.html/sw.js 변경이라 APP_VERSION 1.47.102->1.47.103, sw.js CACHE v364->v365 갱신. node test/run.js 1161/1161 -> 1169/1169 통과. pending_advance_plan을 비웠다.",
       "commit": null
     }
   ]
