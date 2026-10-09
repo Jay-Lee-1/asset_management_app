@@ -1,15 +1,12 @@
 {
   "cycle": 163,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "반복거래 종료조건 '횟수' 입력(endCondFields의 ${pfx}CountBox)에 접근 가능한 이름(aria-label) 추가",
+    "why": "endCondFields(d,pfx) (index.html:3975-3987)가 렌더하는 ${pfx}CountBox input(line 3984)은 <label for>도 aria-label도 없이 placeholder=\"횟수\"만 갖고 있다. placeholder는 입력 즉시 접근성 트리에서 사라지는 이름이 아니라 값일 뿐이라(WCAG 1.3.1/4.1.2 위반), 스크린리더/음성제어 사용자가 이 필드에 숫자를 입력한 뒤에는 '편집 텍스트'로만 들리고 옆의 '종료일' 버튼과 구분이 안 된다. 이 함수는 거래 시트(endCondFields(d,'tx'), line 3935)와 반복항목 편집기(endCondFields(d,'rec'), line 4178) 두 실제 화면에서 공유되므로 결함이 두 곳에 동시 존재한다. index.html 전체 52개 input 중 이 필드만 label/aria-label이 전혀 없는 유일한 예외임을 grep으로 확인했다(~160사이클에 걸쳐 쌓인 입력 레이블링 일관성의 유일한 공백).",
+    "approach": "endCondFields(d,pfx) (index.html ~3981-3987)의 ${pfx}CountBox input에 aria-label=\"반복 횟수\"를 추가한다(rate-edit input들이 쓰는 aria-label 패턴과 동일, placeholder=\"횟수\"는 그대로 유지). endCondFields는 FUNCTIONS(vm 실행 검증) 목록에 있으므로 tx/rec 두 prefix로 각각 실행해 렌더된 HTML의 #${pfx}CountBox에 aria-label이 붙어 있는지 검증하는 회귀 테스트를 test/run.js에 추가한다(되돌리면 깨지는지 확인). index.html 변경이므로 APP_VERSION과 sw.js CACHE 버전을 올리고 node test/run.js로 전체 통과를 확인한다."
+  },
   "history": [
-    {
-      "cycle": 158,
-      "phase": "critique",
-      "timestamp": "2026-10-08T04:30:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체를 재조망(153-158사이클 전부 + 기각 이력 전달). 새로 발견: emptyAssetCards()(index.html:6792-6800)가 homeAlerts()의 confirm/neg/mat/quick/budgetOver 다섯 카테고리 모두 cycle154/156/157을 거쳐 완성한 1건/N건 묶음(kind+Multi) 패턴에서 유일하게 빠져 있음을 grep으로 확인(emptyAssetCards 자체는 homeAlerts()와 별도 함수로 renderHome()에서 직접 호출되지만 동일한 '다건 시 카드 도배' 결함을 그대로 갖고 있음). emptyAssets()가 반환하는 잔액 0 자산 전부를 tidySnoozed로만 거르고 개수 제한 없이 .home-alert.tidy 카드를 하나씩 쌓아 홈 캐러셀을 도배할 수 있음을 코드로 직접 확인. test/run.js:8313-8395가 이미 이 함수들을 커버해 확장 지점도 명확함. openTidyList() 신규 추가 + Multi 분기 계획을 pending_advance_plan에 저장. 러너업(기각): WebAuthn/생체인증 App-Lock(이 샌드박스가 플랫폼 authenticator를 전혀 실행할 수 없어 새 코드 대부분이 테스트 불가), FUNCTIONS vm 커버리지를 openSheet류 외 나머지 함수로 확대(이미 반복 지적된 백로그 카테고리, 새 발견 아님). 코드 변경 없음(읽기 전용 조사).",
-      "commit": null
-    },
     {
       "cycle": 158,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-09T00:11:01.492Z",
       "summary": "cycle163 develop(sanitizeBackup에 DB.nwHistory 검증 분기 추가) 검토 — top-level ta/td는 클램프하면서 byOwner[owner].ta/td는 그 안의 객체 형태만 보고 내부 값을 그대로 믹스하던 공백을 발견: nwHistoryForOwner()(logic.js)와 goalProgress()가 둘 다 b.ta-b.td를 그 귀속별 값으로 직접 계산에 쓰는데(nwHistoryCard(owner)/목표 진행률 투사), 손상된 원격 문서의 byOwner 내부 ta/td가 문자열/NaN이면 크래시는 안 나지만(Math.min/max가 NaN을, (NaN-NaN)||1로 span을 1로 되돌리는 등 TypeError 없이 조용히 흡수) 귀속별 순자산 추이 카드와 목표 진행률이 NaN으로 깨진 채 표시된다 — develop 커밋이 막으려던 바로 그 \"검증 분기 누락\" 버그 클래스가 한 레벨 더 안쪽(byOwner 내부)에서 재발한 것. byOwner를 그대로 대입하던 부분을 top-level ta/td와 동일하게 각 귀속의 ta/td를 sanitizeAmount(min 0)로 클램프하고, 귀속 값 자체가 객체가 아니면 그 귀속만 떨어뜨리도록 고쳤다(귀속 전체를 버리지 않음 — 다른 귀속 데이터는 멀쩡할 수 있으므로). test/run.js에 내부 ta/td 클램프 + 비객체 귀속 제거 1건을 추가했는데, vm 샌드박스에서 새로 만들어진 byOwner 객체를 host 리터럴과 deepStrictEqual로 비교하면 realm이 달라 실패하는 기존 패턴(budgetProgress 테스트 주석 참고)을 그대로 밟아, 기존 \"정상적인 nwHistory\" 테스트도 같은 이유로 필드별 비교로 고쳤다. index.html/sw.js 변경이라 APP_VERSION 1.47.93->1.47.94, sw.js CACHE v355->v356 갱신. node test/run.js 1126/1126 -> 1127/1127 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 163,
+      "phase": "critique",
+      "timestamp": "2026-10-09T01:20:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전체를 재조망(158-163사이클 전부 + 기각 이력 전달). 새로 발견: endCondFields(d,pfx) (index.html:3975-3987)가 렌더하는 반복거래 종료조건 '횟수' 입력(${pfx}CountBox, line 3984)이 placeholder=\"횟수\"만 있고 <label>/aria-label이 전혀 없음을 확인 — index.html 전체 52개 input 전부 label 또는 aria-label을 갖는데 이 필드만 유일한 예외. 거래 시트(endCondFields(d,'tx'))와 반복항목 편집기(endCondFields(d,'rec')) 두 실제 화면이 이 함수를 공유해 결함이 양쪽에 동시 존재. aria-label=\"반복 횟수\" 추가 계획을 pending_advance_plan에 저장. 러너업(기각): CDN 스크립트 3개 SRI 해시 미적용(index.html:1324 TODO(SRI) 명시, 이 샌드박스 egress 프록시가 cdn.jsdelivr.net/t1.kakaocdn.net을 차단해 해시 계산 불가 — WebAuthn과 동일 사유로 환경상 불가능), wireLongPress 롱프레스 다중선택(이미 세 화면 모두 키보드 접근 가능한 '선택' 버튼 대안 존재, 공백 아님), 6개 롱프레스-미리보기 카드 키보드 접근성(cycle160/161이 이미 전부 커버, 1127/1127 테스트로 확인), sanitizeBackup() 추가 검증 공백(이미 거의 모든 컬렉션을 꼼꼼히 검증 중, 추가 공백 없음), eb-bar 차트에 role=img 누락(인접 eb-list가 이미 동일 정보를 접근 가능한 텍스트로 제공해 실질적 공백 아님). 코드 변경 없음(읽기 전용 조사).",
       "commit": null
     }
   ]
