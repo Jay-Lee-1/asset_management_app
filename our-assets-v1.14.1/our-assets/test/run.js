@@ -5571,6 +5571,51 @@ test('sanitizeBackup: 정상적인 budgetHistory는 from 오름차순으로 정�
   assert.strictEqual(fixedCount, 0);
 });
 
+/* ---------- sanitizeBackup: DB.budgets(budgetHistory 신설 전 시간축 없는 레거시 flat 맵,
+ * 카테고리→금액)는 migrate()의 1회 변환(DB._budgetHistV1 가드)이 이 값을 그대로
+ * budgetHistory[cat]=[{from:BUDGET_EPOCH,amount}]에 복사해 넣으므로, budgetHistory의 amount와
+ * 동일하게 검증해야 한다. ---------- */
+test('sanitizeBackup: budgets의 NaN/문자열 값을 0으로 보정하고 fixedCount를 센다(migrate()가 그대로 budgetHistory로 복사하는 값이라 budgetHistory.amount와 동일 기준)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    budgets: { 식비: 'abc', 교통: 300000 },
+  });
+  assert.strictEqual(data.budgets['식비'], 0);
+  assert.strictEqual(data.budgets['교통'], 300000);
+  assert.strictEqual(fixedCount, 1);
+});
+test('sanitizeBackup: budgets 값이 음수면 0으로 클램프한다(budgetHistory.amount와 동일 — 크기 필드라 음수 무효)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    budgets: { 식비: -5000 },
+  });
+  assert.strictEqual(data.budgets['식비'], 0);
+  assert.strictEqual(fixedCount, 1);
+});
+test('sanitizeBackup: budgets가 객체가 아니면(배열 등) 빈 맵으로 되돌리고, budgets가 없거나 객체가 아니어도 터지지 않는다', () => {
+  const notObject = sandbox.sanitizeBackup({ txns: [], assets: [], budgets: ['oops'] });
+  assert.strictEqual(Object.keys(notObject.data.budgets).length, 0);
+  assert.strictEqual(notObject.fixedCount, 1);
+  const missing = sandbox.sanitizeBackup({ txns: [], assets: [] });
+  assert.strictEqual(Object.keys(missing.data.budgets).length, 0);
+  assert.strictEqual(missing.fixedCount, 0);
+});
+test('sanitizeBackup: 정상적인 budgets는 그대로 둔다(정상 케이스는 회귀 없음)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    budgets: { 식비: 300000, 교통: 50000 },
+  });
+  assert.strictEqual(data.budgets['식비'], 300000);
+  assert.strictEqual(data.budgets['교통'], 50000);
+  assert.strictEqual(fixedCount, 0);
+});
+test('sanitizeBackup: 손상된 budgets 값을 보정하지 않은 채 두면 migrate()의 1회 변환이 그 값을 그대로 budgetHistory로 복사해 budgetForMonth()가 깨진 값을 돌려준다(버그 재현 — 보정된 data를 쓰면 정상 숫자가 나와야 함)', () => {
+  const { data } = sandbox.sanitizeBackup({ txns: [], assets: [], budgets: { 식비: 'abc' } });
+  sandbox.DB = { budgets: data.budgets, budgetHistory: {} };
+  sandbox.migrate();
+  assert.strictEqual(sandbox.DB.budgetHistory['식비'][0].amount, 0, 'sanitizeBackup이 보정했으므로 migrate() 변환 후에도 숫자 0이어야 함(원래 버그였다면 문자열 "abc"가 그대로 들어갔을 것)');
+});
+
 /* ---------- sanitizeBackup: catIcon/catVar(카테고리 아이콘·변동 카테고리 플래그)·deletedType/
  * deletedBal(삭제된 자산 재연동용 타입·잔액 기억)은 모두 '타입:이름'(또는 자산명) → 값의 평평한
  * 객체 맵이다 — 배열 등 다른 타입이 들어오면 mergeFlatMap()의 Object.assign이 데이터를 뒤튼다. ---------- */

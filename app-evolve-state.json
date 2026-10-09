@@ -1,15 +1,8 @@
 {
   "cycle": 168,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 163,
-      "phase": "develop",
-      "timestamp": "2026-10-08T23:30:00.000Z",
-      "summary": "sanitizeBackup()이 txns/assets/recurrences/goals/inquiries/assetQtyLog/categories/owners/budgetHistory/catIcon류는 전부 검증하면서 DB.nwHistory(순자산 추이 일별 스냅샷 배열)만 빠뜨리고 있음을 코드로 확인 — mergeRemoteDataIntoLocal()은 nwHistory를 '기기별 로컬 스냅샷'이라며 의도적으로 병합 대상에서 빼지만, afterCloudAuth()의 미동기화 없음 분기와 resolveCloudPullRemote()는 그 병합을 거치지 않고 DB=sanitizeBackup(remote).data로 DB를 통째로 교체해 원격(다른 기기·과거 버전) 문서의 nwHistory가 그대로 들어온다. 검증 없이 두면 교체 직후 이어지는 save() 호출(try/catch 없음)마다 updateNwHistory()의 hist.slice()/hist.push()가 배열이 아닌 값에서 TypeError로 터져 손상된 원격 문서 하나로 앱이 완전히 멈춘다 — categories/owners/budgetHistory(cycle141)와 같은 '검증 분기 누락' 버그 클래스가 nwHistory에만 재발한 것. sanitizeBackup()에 nwHistory 전용 검증 블록을 추가: 배열이 아니면 빈 배열로, 항목에 csvDateValid를 통과하는 날짜가 없으면 통째로 제거, ta/td는 amount류와 동일하게 sanitizeAmount(min 0)로 클램프하고 nw는 그 값으로 항상 다시 계산(updateNwHistory와 동일한 유일한 산식), byOwner는 일반 객체가 아니면 떨어뜨림. test/run.js에 버그 재현(손상된 값을 updateNwHistory에 바로 넘기면 TypeError) 1건 + 배열 아님/날짜 무효/ta·td 클램프/byOwner 무효/정상 케이스 회귀 없음 총 6건을 추가. index.html/sw.js 변경이라 APP_VERSION 1.47.92->1.47.93, sw.js CACHE v354->v355 갱신. node test/run.js 1120/1120 -> 1126/1126 통과.",
-      "commit": null
-    },
     {
       "cycle": 163,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-09T18:05:00.000Z",
       "summary": "critique(cycle167) 계획대로 pullCloudIfStale()을 추가했다. 순수 함수 shouldPullCloud(now,lastSyncedAtMs,thresholdMs)(마지막 성공 pull/push 이후 thresholdMs 이상 지났는지만 판정, 한 번도 동기화 안 됐으면 곧장 true)와 문턱 상수 CLOUD_PULL_STALE_MS(3분)를 scheduleCloudPush 바로 아래에 추가했다. pullCloudIfStale()은 sbReady()&&CLOUD_UID&&DB가 있고 시트가 열려 있지 않을 때만(TAB_SYNC_PENDING의 '편집 중엔 덮어쓰지 않는다' 원칙을 '__syncedAt'를 안 건드린 채 이번 라운드를 그냥 건너뛰는 방식으로 적용 — 별도 pending 큐 없이 다음 포그라운드 전환에서 자연히 재시도됨) dataKey()+'__syncedAt'로 신선도를 확인하고, 오래됐으면 pullCloud()로 원격을 받아 mergeRemoteDataIntoLocal()로 로컬에 병합 후 save()한다(병합 결과는 save()가 부르는 scheduleCloudPush()로 자동 되밀림, afterCloudAuth 'merged' 분기와 동일 패턴). document.visibilitychange의 visible 분기(unlockApp/maybeRollDay 분기 모두 이어서 호출), window 'focus', window 'pageshow' 3곳에 각각 .catch(()=>{})로 와이어링했다. test/run.js FUNCTIONS에 shouldPullCloud/pullCloudIfStale/appIsOpen(의존 함수, 기존엔 미등록)을 추가하고 CLOUD_PULL_STALE_MS를 CLOCK_SKEW_WARN_MS와 동일한 방식으로 sandbox 리터럴에 넣었다. shouldPullCloud 단위 테스트 3건 + pullCloudIfStale 통합 테스트 5건(CLOUD_UID 없음/DB 없음/시트 열림/아직 신선함/오래돼서 병합+save 호출 각각 스킵·수행 검증) 총 8건을 추가했다. index.html/sw.js 변경이라 APP_VERSION 1.47.102->1.47.103, sw.js CACHE v364->v365 갱신. node test/run.js 1161/1161 -> 1169/1169 통과. pending_advance_plan을 비웠다.",
+      "commit": null
+    },
+    {
+      "cycle": 168,
+      "phase": "develop",
+      "timestamp": "2026-10-09T19:10:00.000Z",
+      "summary": "general-purpose 서브에이전트로 160-167사이클과 겹치지 않는 새 개선점을 탐색 — sanitizeBackup()(index.html~5891-5912)이 budgetHistory/categories/owners/catIcon류/deletedIds/nwHistory/settings까지 전부 검증하면서, 그 바로 옆에 있는 레거시 DB.budgets(budgetHistory 신설 전 시간축 없는 flat 맵, 카테고리→금액)는 유일하게 검증 분기도 최종 Object.assign 반환 목록도 빠뜨리고 있어 obj.budgets가 그대로 통과함을 발견했다. migrate()의 1회 변환(DB._budgetHistV1 가드, 2110줄)이 Object.keys(DB.budgets).forEach(c=>{if(!DB.budgetHistory[c])DB.budgetHistory[c]=[{from:BUDGET_EPOCH,amount:DB.budgets[c]}]})로 obj.budgets[c]를 검증 없이 그대로 budgetHistory에 복사해 넣는데, 값이 숫자가 아니면(손상되거나 손으로 편집된 레거시 백업/클라우드 문서) budgetForMonth()가 그 값을 그대로 돌려주고 budgetProgress()의 ratio=spent/amount가 NaN으로 전파돼 예산 진행률 바·퍼센트가 크래시 없이 조용히 깨진 채 표시된다 — budgetHistory/categories/owners/catIcon류/deletedIds/nwHistory/settings에서 반복된 '검증 분기 누락' 버그 클래스의 budgets 인스턴스. budgetHistory의 amount와 동일하게 sanitizeAmount(min 0)로 값을 클램프하고, obj.budgets가 일반 객체가 아니면 빈 맵으로 되돌리는 블록을 budgetHistory 블록 바로 뒤에 추가했으며, 최종 Object.assign 반환 목록에도 budgets를 포함시켰다(이전엔 obj를 그대로 흘려보내 obj.budgets가 미검증 상태로 통과됐었음). test/run.js에 budgetHistory sanitizeBackup 테스트 블록 바로 뒤에 NaN/문자열 값 보정·음수 클램프·비객체 budgets 처리·정상 케이스 회귀 없음 4건 + migrate()의 1회 변환까지 이어 붙여 budgetForMonth() 결과가 실제로 정상 숫자가 되는지 확인하는 통합 재현 테스트 1건, 총 5건을 추가했다. 수정을 되돌리면 이 중 4건이 실제로 깨짐을 확인했다(1169/1174 -> 수정 복원 후 1174/1174). index.html/sw.js 변경이라 APP_VERSION 1.47.103->1.47.104, sw.js CACHE v365->v366 갱신. node test/run.js 1169/1169 -> 1174/1174 통과.",
       "commit": null
     }
   ]
