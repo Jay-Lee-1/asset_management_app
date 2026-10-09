@@ -1,15 +1,8 @@
 {
   "cycle": 165,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 160,
-      "phase": "review",
-      "timestamp": "2026-10-08T12:11:30.000Z",
-      "summary": "cycle160 develop(nextOutflowCard의 next-card role=button div + nc-fix 실제 button 전환) 검토 — nc-fix가 Tab으로 도달 가능해졌지만 자체 keydown stopPropagation이 없어 Enter/Space로 활성화하면 keydown이 바깥 next-card div로 버블되고, 그 onkeydown=rowKeydown이 e.preventDefault()를 호출해 nc-fix의 네이티브 클릭 활성화(openFixShortfall)를 막아버린 뒤 goPlanTo를 대신 실행하는 버그를 발견 — 키보드 사용자가 \"해결 방법 보기\"를 눌러도 Plan 탭으로 보내져 버리는, develop 커밋이 고치려던 바로 그 접근성 문제를 다른 모양으로 재도입한 것. nc-fix 버튼에 onkeydown=\"event.stopPropagation()\"을 추가해 버블을 끊었다(이 핸들러는 preventDefault를 호출하지 않으므로 네이티브 Enter/Space 클릭 활성화는 그대로 유지됨). 수정 전 코드로 되돌려 새 회귀 테스트를 돌려보면 실제로 깨짐을 확인했다. index.html/sw.js 변경이라 APP_VERSION 1.47.86->1.47.87, sw.js CACHE v348->v349 갱신. node test/run.js 1104/1104 -> 1105/1105 통과.",
-      "commit": null
-    },
     {
       "cycle": 160,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-09T06:10:00.000Z",
       "summary": "Explore 서브에이전트로 141-164사이클에서 이미 다룬/기각된 항목을 피해 새 개선점을 탐색 — dayPickerHTML(d,pfx)(index.html~3899, tx/rec 공유 반복일 선택 UI)가 렌더하는 '직접' 커스텀 일자 입력(${pfx}DayIn)이 label 텍스트 없이 뒤쪽 '일' 접미사 span만 가진 <label class=\"day-cell\"> 안에 있어, 다른 입력(openRateSheet/endCondFields count 등)과 달리 aria-label이 전혀 없음을 발견. 거래/반복거래 시트에서 '직접'을 선택하면 스크린리더가 이 입력에 어떤 값을 넣어야 하는지 맥락 없이 안내한다. input에 aria-label=\"반복일 직접 입력 (1~31일)\"을 추가. test/run.js에 dayPickerHTML(rec prefix)로 렌더한 HTML의 #recDayIn에 aria-label이 포함되는지 검증하는 회귀 테스트 1건을 추가 — 수정 전 마크업으로 되돌려 돌려보면 실제로 깨짐을 확인했다. index.html/sw.js 변경이라 APP_VERSION 1.47.97->1.47.98, sw.js CACHE v359->v360 갱신. node test/run.js 1131/1131 -> 1132/1132 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 165,
+      "phase": "review",
+      "timestamp": "2026-10-09T07:05:00.000Z",
+      "summary": "cycle165 develop(dayPickerHTML 커스텀 일자 입력에 aria-label 추가) 검토 — 추가된 aria-label=\"반복일 직접 입력 (1~31일)\"의 범위 표기가 실제 검증 로직(dayWarn: n>31/n<1 경고, clampDay: 저장 시 1~31로 보정)과 정확히 일치함을 코드로 대조 확인했고, id/oninput(${pfx}DayInput)/onfocus·onblur(daySuf) 등 기존 속성은 그대로 보존돼 레이아웃·동작에 영향이 없음을 diff로 확인. 유일한 호출부인 tx/rec 두 시트 모두 동일한 이득을 받는다. node test/run.js 1132/1132 통과. 이상 없음, 코드 변경 없음.",
       "commit": null
     }
   ]
