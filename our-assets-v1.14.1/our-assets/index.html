@@ -1331,7 +1331,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.105';
+const APP_VERSION='1.47.106';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5060,6 +5060,7 @@ function doMaturity(id){if(twGuard())return;const a=DB.assets.find(x=>x.id===id)
  const clamped=dateBelowRangeFloor(date);
  if(clamped)date=RANGE_FROM;
  const amt=balanceAt(a.id,date); /* assetEval()의 schHorizon 투영(예정 포함 시 이번 달 말까지)은 만기 이체 시점의 실제 잔액과 다를 수 있어 사용하지 않음 */
+ if(!(amt>0)){toast('만기 이체할 잔액이 없어요. 잔액을 확인해 주세요');return} /* 저축 자산은 overdraft 가드가 없어 잔액이 0 이하로 내려갈 수 있는데, 그 상태로 만기를 맞으면 amount<=0인 transfer가 생겨 amount는 항상 양수(방향은 from/to로만 표현)라는 앱 전체의 불변식을 깬다 */
  DB.txns.push(touch({id:uid(),type:'transfer',date,category:'이체',memo:`${a.name} 만기 이체`,amount:amt,
   fromAssetId:a.id,toAssetId:target.id,
   confirmed:DB.settings.confirmTransfers?false:true})); /* 실제로 옮겼는지 확인받음 */

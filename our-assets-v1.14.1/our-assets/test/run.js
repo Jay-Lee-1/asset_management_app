@@ -8661,6 +8661,29 @@ test('doMaturity: 정상 범위 안 만기일은 클램프 없이 그대로 이�
   const t = sandbox.DB.txns[sandbox.DB.txns.length - 1];
   assert.strictEqual(t.date, '2026-06-10');
 });
+/* ---------- doMaturity: 저축 자산은 overdraft 가드가 없어 잔액이 0 이하로 내려갈 수 있는데,
+ * 그 상태로 만기를 맞으면 amount<=0인 transfer 거래가 생겨 "amount는 항상 양수(방향은 from/to로만
+ * 표현)"라는 앱 전체의 불변식(sanitizeBackup이 백업/클라우드 복원에서만 강제하던 것과 동일한 규칙)을
+ * 깨고, balancesUpTo()의 흐름 방향이 뒤집힌다(app-evolve cycle169 develop). ---------- */
+test('doMaturity: 잔액이 0 이하면 이체 거래를 만들지 않고 안내만 한다', () => {
+  setupMaturityDB();
+  sandbox.DB.assets.find(a => a.id === 'a_sav').maturityTargetId = 'a_cash';
+  sandbox.DB.assets.find(a => a.id === 'a_sav').baseAmount = 0;
+  const before = sandbox.DB.txns.length;
+  sandbox.doMaturity('a_sav');
+  assert.strictEqual(sandbox.DB.txns.length, before, '잔액이 0이면 만기 이체 거래가 생기면 안 됨');
+  assert.strictEqual(sandbox.DB.assets.find(a => a.id === 'a_sav').maturityDate, '2026-06-10', '실행 안 됐으니 만기일도 그대로 남아야 함');
+  assert.ok(sandbox.toastCalls.some(m => m.includes('잔액이 없어요')), '잔액이 없다는 안내가 떠야 함');
+});
+test('doMaturity: 인출로 잔액이 음수가 된 저축 자산도 이체 거래를 만들지 않는다', () => {
+  setupMaturityDB();
+  sandbox.DB.assets.find(a => a.id === 'a_sav').maturityTargetId = 'a_cash';
+  sandbox.DB.txns.push({ id: 't_wd', type: 'expense', date: '2026-06-01', category: '기타', memo: '', amount: 8000, fromAssetId: 'a_sav', toAssetId: null, confirmed: true });
+  const before = sandbox.DB.txns.length;
+  sandbox.doMaturity('a_sav');
+  assert.strictEqual(sandbox.DB.txns.length, before, '잔액이 음수면 만기 이체 거래가 생기면 안 됨');
+  assert.ok(sandbox.toastCalls.some(m => m.includes('잔액이 없어요')), '잔액이 없다는 안내가 떠야 함');
+});
 /* ---------- openMaturity: 만기일을 ISO 원문('2026-06-10')으로 그대로 노출하던 버그
  * (app-evolve cycle159 develop) — 같은 필드를 쓰는 다른 화면(homeAlerts의 mat, 목표관리 목표일)은
  * 전부 shortDate/fmtDateFull로 사람이 읽는 형식을 쓰는데 이 시트만 가공 없이 날짜 문자열을 그대로

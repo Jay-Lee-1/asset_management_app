@@ -1,15 +1,8 @@
 {
   "cycle": 169,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 164,
-      "phase": "develop",
-      "timestamp": "2026-10-09T02:45:00.000Z",
-      "summary": "CSV 가져오기(csvRowToImportTxn())의 자기 자신 이체 방지 가드가 fromName===toName 문자열 완전일치만 검사해, 자산 이름 조회에 쓰이는 normName()(공백 축약/대소문자 무시/NFC·NFD 정규화) 기준으로는 같은 자산인데 셀 문자열만 다른 경우(예: '주  계좌'(공백 2개) vs '주 계좌'(공백 1개), 'USD Cash' vs 'usd cash')에는 가드를 그대로 통과해 fromAssetId===toAssetId인 이체/저축 거래가 그대로 가져와지는 버그를 발견했다 — saveTx/saveRec가 수동 입력에서 엄격히 막는 '보내는 자산과 받는 자산이 같아요' 규칙이 CSV 경로에서만 뚫려 있던 결함. fromAsset/toAsset을 findAsset()으로 resolve한 뒤 두 자산 id가 같으면 transfer/saving 타입에 대해 {ok:false,error:'asset'}로 reject하는 최종 가드를 추가했다(기존 문자열 완전일치 검사는 '둘 다 매칭되는 자산이 없음' 케이스에 여전히 쓰이므로 유지). test/run.js에 공백 차이 케이스와 영문 대소문자 차이 케이스를 transfer/saving 각각에 대해 검증하는 회귀 테스트를 추가했고, 수정을 되돌리면 새 테스트가 실제로 깨지는 것을 확인했다(1129/1130 -> 수정 복원 후 1130/1130). index.html/sw.js 변경이라 APP_VERSION 1.47.95->1.47.96, sw.js CACHE v357->v358 갱신. node test/run.js 1129/1129 -> 1130/1130 통과.",
-      "commit": "40947eb43581bcd6160d3f8ab2b9fa0c0381ec36"
-    },
     {
       "cycle": 164,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-09T16:05:00.000Z",
       "summary": "critique(cycle168) 계획대로 goalProgress()에 최근 추세 창(trendWindowDays, 기본 90일)을 추가했다. 기존엔 nwHistory 전체(설치일부터)의 처음·끝 두 점만으로 일평균 증가율을 선형투사해, 오래전 가입한 사용자가 저축 패턴을 바꾼 뒤에도 몇 년치 평균으로 예상 달성일이 왜곡됐었다. debtPayoffProjection과 같은 '최근 구간만 본다' 원칙을 공유하도록, rate 계산용 first를 last 기준 최근 90일 창 안에서만 고르고(윈도 안에 2점 미만이면 전체 이력으로 폴백해 기존 동작 유지), cur/pct/achieved는 그대로 전체 최신값을 쓴다. index.html 호출부(goalRowHTML, openGoalsList)는 새 trendWindowDays 인자를 기본값(생략)으로 그대로 호출해 자동으로 90일 창을 적용받는다. test/run.js에 '오래된 이력은 완만했지만 최근 90일만 급증'했을 때 전체 평균이 아니라 최근 추세로 투사하는지 검증하는 회귀 테스트와, 창 안에 스냅샷이 1개뿐이면 전체 이력 폴백이 살아있는지 검증하는 테스트를 추가했다 — 수정을 되돌리면(logic.js만 stash) 새 회귀 테스트가 실제로 깨짐을 확인했다(1175/1176 -> 수정 복원 후 1176/1176). index.html/sw.js 변경이라 APP_VERSION 1.47.104->1.47.105, sw.js CACHE v366->v367 갱신. node test/run.js 1176/1176 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 169,
+      "phase": "develop",
+      "timestamp": "2026-10-09T22:30:00.000Z",
+      "summary": "general-purpose 서브에이전트로 160-168사이클과 겹치지 않는 새 개선점을 탐색 — doMaturity()(index.html 5052-5068)가 만기 이체 금액 amt=balanceAt(a.id,date)를 아무 하한 검증 없이 그대로 transfer 거래의 amount로 push함을 발견했다. savings 타입 자산은 앱 전체에 overdraft 가드가 없어(txAmt/saveTx도 '잔액 초과 인출' 검사가 없음) 인출이 누적되면 balanceAt()이 0 이하 값을 그대로 반환할 수 있는데, 그 상태에서 만기일이 되면 amount<=0인 transfer 거래가 조용히 생성된다 — sanitizeBackup()이 백업/클라우드 복원 시점에만 강제하는 'txn amount는 항상 양수(방향은 from/to로 표현)' 불변식을 이 자동 생성 플로우가 깨고, balancesUpTo()의 map[from]-=sign*amount/map[to]+=sign*amount 흐름 방향이 뒤집힌다. target.id===a.id(자기 자신 이체) 가드와 동일한 'early return + toast' 스타일로 if(!(amt>0)){toast('만기 이체할 잔액이 없어요. 잔액을 확인해 주세요');return} 를 amt 계산 바로 다음, txn push 이전에 추가했다 — 자기 자신 가드처럼 maturityDate는 지우지 않아 잔액이 회복될 때까지 '만기 임박' 알림이 유지된다. test/run.js에 기존 setupMaturityDB()/자기 자신 이체 테스트와 동일한 패턴으로 baseAmount=0 케이스와 인출로 잔액이 음수가 된 케이스 2건을 추가했다 — 수정을 되돌리면 두 테스트가 실제로 깨지는 것을 확인했다(1176/1178 -> 수정 복원 후 1178/1178). index.html/sw.js 변경이라 APP_VERSION 1.47.105->1.47.106, sw.js CACHE v367->v368 갱신. node test/run.js 1176/1176 -> 1178/1178 통과.",
       "commit": null
     }
   ]
