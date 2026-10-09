@@ -3355,6 +3355,24 @@ test('csvRowToImportTxn: 이체/저축인데 보내는·받는 자산 이름이 
   assert.strictEqual(sameSaving.ok, false);
   assert.strictEqual(sameSaving.error, 'asset');
 });
+// 위 테스트는 fromName/toName 문자열이 글자 그대로 같은 경우만 다룬다. findAsset()은(line 3130
+// 테스트처럼) 연속 공백·대소문자·NFC/NFD 차이를 normName()으로 같은 자산으로 매칭하므로, 두 셀의
+// 문자열이 "다르지만" 같은 자산 하나를 가리키면 과거엔 이 가드를 통과해 fromAssetId===toAssetId인
+// 자기 자신 이체가 그대로 저장됐다(app-evolve cycle164 develop에서 수정).
+test('csvRowToImportTxn: 이체/저축인데 보내는·받는 자산 이름이 문자열은 달라도 normName 기준으로 같은 자산이면 무효 처리한다', () => {
+  const assets = [{ id: 'a1', name: '주 계좌' }];
+  const spaced = sandbox.csvRowToImportTxn(['2026-01-01', '이체', '이체', '10000', '주  계좌', '주 계좌', ''], assets);
+  assert.strictEqual(spaced.ok, false);
+  assert.strictEqual(spaced.error, 'asset');
+  const spacedSaving = sandbox.csvRowToImportTxn(['2026-01-01', '저축', '저축', '10000', '주  계좌', '주 계좌', ''], assets);
+  assert.strictEqual(spacedSaving.ok, false);
+  assert.strictEqual(spacedSaving.error, 'asset');
+  // 대소문자 차이(한글엔 적용되지 않으므로 영문 자산명으로 별도 확인)
+  const enAssets = [{ id: 'a2', name: 'USD Cash' }];
+  const casedEn = sandbox.csvRowToImportTxn(['2026-01-01', '이체', '이체', '10000', 'USD Cash', 'usd cash', ''], enAssets);
+  assert.strictEqual(casedEn.ok, false);
+  assert.strictEqual(casedEn.error, 'asset');
+});
 test('csvRowToImportTxn: 지출/수입/저축인데 카테고리가 비어 있으면 무효, 이체는 카테고리 없어도 "이체"로 고정된다', () => {
   const assets = [{ id: 'a1', name: 'A' }, { id: 'a2', name: 'B' }];
   const bad = sandbox.csvRowToImportTxn(['2026-01-01', '지출', '', '1000', '', '', ''], []);

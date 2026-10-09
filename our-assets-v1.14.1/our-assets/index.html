@@ -1331,7 +1331,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.95';
+const APP_VERSION='1.47.96';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5532,6 +5532,12 @@ function csvRowToImportTxn(cells,assets){
  const findAsset=nm=>{if(!nm)return null;const cands=(assets||[]).filter(a=>normName(a.name)===normName(nm)&&!isMarketValued(a));return cands.length===1?cands[0]:null};
  const fromAsset=type!=='income'?findAsset(fromName):null;
  const toAsset=type!=='expense'?findAsset(toName):null;
+ /* 위 fromName===toName 가드는 글자 그대로 같을 때만 잡는다 — 연속 공백/대소문자/NFC·NFD
+    차이로 문자열은 다르지만 findAsset()의 normName() 매칭으로 같은 자산을 가리키면(예: "주  계좌"
+    vs "주 계좌") 통과해 fromAssetId===toAssetId인 자기 자신 이체가 그대로 저장된다 — saveTx/saveRec가
+    수동 입력에서 막는 "보내는 자산과 받는 자산이 같아요"(line 4019/4210)와 똑같은 상태인데 CSV
+    가져오기만 못 막던 공백. */
+ if((type==='transfer'||type==='saving')&&fromAsset&&toAsset&&fromAsset.id===toAsset.id)return{ok:false,error:'asset'};
  const unmatched=[];
  const txn={type,date,category:type==='transfer'?'이체':category,amount,memo};
  if(type==='income')txn.fromAssetId=null;
