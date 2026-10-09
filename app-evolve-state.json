@@ -1,15 +1,8 @@
 {
   "cycle": 163,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 158,
-      "phase": "review",
-      "timestamp": "2026-10-08T03:30:00.000Z",
-      "summary": "cycle158 develop(auEmail/kkeyIn field-clear(x) 추가) 검토 — fcWire()가 document 전체의 .field-clear input을 el._fcw 플래그로 멱등 배선하는 것을 직접 확인했고, renderAuth()가 openSheet() 밖 별도 화면이라 자동 배선을 못 타 직접 fcWire()를 호출해야 한다는 커밋 설명이 정확함을 검증. CSS 측면도 .auth-field input/.kkey input 모두 width:100%이고 별도 position 지정이 없어 .field-clear(position:relative)+.fc-x(절대배치)가 기존 add-inline/searchbar 사례와 동일하게 충돌 없이 들어맞음을 확인. clrInput('auEmail')/clrInput('kkeyIn')도 $(id)로 그대로 input을 찾아 기존 doLogin/doSignup/saveKakaoKey의 $('auEmail').value/$('kkeyIn').value 읽기와 무관함을 확인. node test/run.js 1089/1089 통과. 이상 없음.",
-      "commit": null
-    },
     {
       "cycle": 158,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-08T23:30:00.000Z",
       "summary": "sanitizeBackup()이 txns/assets/recurrences/goals/inquiries/assetQtyLog/categories/owners/budgetHistory/catIcon류는 전부 검증하면서 DB.nwHistory(순자산 추이 일별 스냅샷 배열)만 빠뜨리고 있음을 코드로 확인 — mergeRemoteDataIntoLocal()은 nwHistory를 '기기별 로컬 스냅샷'이라며 의도적으로 병합 대상에서 빼지만, afterCloudAuth()의 미동기화 없음 분기와 resolveCloudPullRemote()는 그 병합을 거치지 않고 DB=sanitizeBackup(remote).data로 DB를 통째로 교체해 원격(다른 기기·과거 버전) 문서의 nwHistory가 그대로 들어온다. 검증 없이 두면 교체 직후 이어지는 save() 호출(try/catch 없음)마다 updateNwHistory()의 hist.slice()/hist.push()가 배열이 아닌 값에서 TypeError로 터져 손상된 원격 문서 하나로 앱이 완전히 멈춘다 — categories/owners/budgetHistory(cycle141)와 같은 '검증 분기 누락' 버그 클래스가 nwHistory에만 재발한 것. sanitizeBackup()에 nwHistory 전용 검증 블록을 추가: 배열이 아니면 빈 배열로, 항목에 csvDateValid를 통과하는 날짜가 없으면 통째로 제거, ta/td는 amount류와 동일하게 sanitizeAmount(min 0)로 클램프하고 nw는 그 값으로 항상 다시 계산(updateNwHistory와 동일한 유일한 산식), byOwner는 일반 객체가 아니면 떨어뜨림. test/run.js에 버그 재현(손상된 값을 updateNwHistory에 바로 넘기면 TypeError) 1건 + 배열 아님/날짜 무효/ta·td 클램프/byOwner 무효/정상 케이스 회귀 없음 총 6건을 추가. index.html/sw.js 변경이라 APP_VERSION 1.47.92->1.47.93, sw.js CACHE v354->v355 갱신. node test/run.js 1120/1120 -> 1126/1126 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 163,
+      "phase": "review",
+      "timestamp": "2026-10-09T00:11:01.492Z",
+      "summary": "cycle163 develop(sanitizeBackup에 DB.nwHistory 검증 분기 추가) 검토 — top-level ta/td는 클램프하면서 byOwner[owner].ta/td는 그 안의 객체 형태만 보고 내부 값을 그대로 믹스하던 공백을 발견: nwHistoryForOwner()(logic.js)와 goalProgress()가 둘 다 b.ta-b.td를 그 귀속별 값으로 직접 계산에 쓰는데(nwHistoryCard(owner)/목표 진행률 투사), 손상된 원격 문서의 byOwner 내부 ta/td가 문자열/NaN이면 크래시는 안 나지만(Math.min/max가 NaN을, (NaN-NaN)||1로 span을 1로 되돌리는 등 TypeError 없이 조용히 흡수) 귀속별 순자산 추이 카드와 목표 진행률이 NaN으로 깨진 채 표시된다 — develop 커밋이 막으려던 바로 그 \"검증 분기 누락\" 버그 클래스가 한 레벨 더 안쪽(byOwner 내부)에서 재발한 것. byOwner를 그대로 대입하던 부분을 top-level ta/td와 동일하게 각 귀속의 ta/td를 sanitizeAmount(min 0)로 클램프하고, 귀속 값 자체가 객체가 아니면 그 귀속만 떨어뜨리도록 고쳤다(귀속 전체를 버리지 않음 — 다른 귀속 데이터는 멀쩡할 수 있으므로). test/run.js에 내부 ta/td 클램프 + 비객체 귀속 제거 1건을 추가했는데, vm 샌드박스에서 새로 만들어진 byOwner 객체를 host 리터럴과 deepStrictEqual로 비교하면 realm이 달라 실패하는 기존 패턴(budgetProgress 테스트 주석 참고)을 그대로 밟아, 기존 \"정상적인 nwHistory\" 테스트도 같은 이유로 필드별 비교로 고쳤다. index.html/sw.js 변경이라 APP_VERSION 1.47.93->1.47.94, sw.js CACHE v355->v356 갱신. node test/run.js 1126/1126 -> 1127/1127 통과.",
       "commit": null
     }
   ]

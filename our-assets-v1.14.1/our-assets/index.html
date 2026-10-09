@@ -1331,7 +1331,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.93';
+const APP_VERSION='1.47.94';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5888,8 +5888,22 @@ function sanitizeBackup(obj){
   const ta=sanitizeAmount(h.ta,0),td=sanitizeAmount(h.td,0),nw=ta-td;
   if(ta!==h.ta||td!==h.td||nw!==h.nw)fixedCount++;
   const d={date:h.date,ta,td,nw};
-  if(h.byOwner&&typeof h.byOwner==='object'&&!Array.isArray(h.byOwner))d.byOwner=h.byOwner;
-  else if(h.byOwner!=null)fixedCount++;
+  /* byOwner[owner]={ta,td}도 top-level ta/td와 똑같이 nwHistoryForOwner()(logic.js)와
+   * goalProgress()가 b.ta-b.td를 그대로 계산에 쓴다(위 h.ta/h.td와 완전히 같은 소비 경로) —
+   * 객체 형태만 보고 내부 ta/td를 그대로 믹스하면 손상된 값이 그 계산에 NaN으로 흘러들어
+   * 귀속별 순자산 추이 카드/목표 진행률이 깨진 채 조용히 표시된다(크래시는 안 나지만 위에서
+   * 막은 것과 같은 검증 공백). */
+  if(h.byOwner&&typeof h.byOwner==='object'&&!Array.isArray(h.byOwner)){
+   const byOwner={};
+   Object.keys(h.byOwner).forEach(o=>{
+    const b=h.byOwner[o];
+    if(!b||typeof b!=='object'||Array.isArray(b)){fixedCount++;return}
+    const bta=sanitizeAmount(b.ta,0),btd=sanitizeAmount(b.td,0);
+    if(bta!==b.ta||btd!==b.td)fixedCount++;
+    byOwner[o]={ta:bta,td:btd};
+   });
+   d.byOwner=byOwner;
+  }else if(h.byOwner!=null)fixedCount++;
   nwHistory.push(d);
  });
  return {data:Object.assign({},obj,{txns,assets,recurrences,goals,inquiries,assetQtyLog,categories,owners,budgetHistory,catIcon,catVar,deletedType,deletedBal,nwHistory}),fixedCount,droppedCount,rangeCount};

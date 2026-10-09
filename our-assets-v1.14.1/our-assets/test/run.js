@@ -5570,6 +5570,18 @@ test('sanitizeBackup: nwHistory의 byOwner가 일반 객체가 아니면(배열 
   assert.strictEqual(data.nwHistory[0].byOwner, undefined);
   assert.strictEqual(fixedCount, 1);
 });
+test('sanitizeBackup: nwHistory의 byOwner는 객체라도 내부 귀속별 ta/td가 NaN/문자열이면 top-level ta/td와 동일하게 0으로 클램프하고, 귀속 값 자체가 객체가 아니면 그 귀속만 떨어뜨린다(nwHistoryForOwner/goalProgress가 b.ta-b.td를 그대로 계산에 씀)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    nwHistory: [{ date: '2026-06-01', ta: 100, td: 10, nw: 90, byOwner: { 나: { ta: 'oops', td: -5 }, 배우자: 'not-an-object' } }],
+  });
+  // vm 샌드박스에서 만들어진 객체는 host의 Object와 realm이 달라 deepStrictEqual이
+  // 실패하므로(값은 같아도 프로토타입이 다름), 필드별로 비교한다.
+  assert.deepStrictEqual(Object.keys(data.nwHistory[0].byOwner), ['나']);
+  assert.strictEqual(data.nwHistory[0].byOwner.나.ta, 0);
+  assert.strictEqual(data.nwHistory[0].byOwner.나.td, 0);
+  assert.strictEqual(fixedCount, 2); /* 나.ta/나.td 클램프 1건 + 배우자 통째로 떨어뜨림 1건 */
+});
 test('sanitizeBackup: 정상적인 nwHistory는 그대로 두고, 없어도 터지지 않는다(정상 케이스는 회귀 없음)', () => {
   const { data, fixedCount } = sandbox.sanitizeBackup({
     txns: [], assets: [],
@@ -5578,7 +5590,9 @@ test('sanitizeBackup: 정상적인 nwHistory는 그대로 두고, 없어도 터�
   assert.strictEqual(data.nwHistory[0].ta, 300);
   assert.strictEqual(data.nwHistory[0].td, 20);
   assert.strictEqual(data.nwHistory[0].nw, 280);
-  assert.deepStrictEqual(data.nwHistory[0].byOwner, { 나: { ta: 300, td: 20 } });
+  assert.deepStrictEqual(Object.keys(data.nwHistory[0].byOwner), ['나']);
+  assert.strictEqual(data.nwHistory[0].byOwner.나.ta, 300);
+  assert.strictEqual(data.nwHistory[0].byOwner.나.td, 20);
   assert.strictEqual(fixedCount, 0);
   const missing = sandbox.sanitizeBackup({ txns: [], assets: [] });
   assert.deepStrictEqual(Array.from(missing.data.nwHistory), []);
