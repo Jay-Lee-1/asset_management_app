@@ -496,3 +496,27 @@ function tabNavAction(tab,alreadyPushed){
  if(tab==='home')return alreadyPushed?'pop':'none';
  return alreadyPushed?'none':'push';
 }
+
+/* ================= 클라우드 동기화 시계 오차 (순수) ================= */
+/* mergeCollection()(위 3-way 병합)은 충돌 '존재'는 Supabase 서버 updated_at으로 감지해 시계
+ * 틀어짐에 안전하지만, 일단 충돌이 감지된 뒤 어느 쪽 수정이 이기는지는 두 기기의 로컬 시계
+ * (touch()가 찍는 Date.now())만 비교하는 순수 LWW다. 가족 공유 등 멀티 디바이스 동기화에서
+ * 한 기기 시계가 크게 틀리면(배터리 방전, 리셋된 기기, NTP 미동기화 등) 그 기기 수정이 항상
+ * 지거나 다른 기기의 최신 수정을 경고 없이 조용히 덮어쓸 수 있다 — 병합 알고리즘 자체를
+ * 바꾸는 대신(모든 동기화 레코드 스키마 변경 필요) 감지+경고만 추가한다(app-evolve cycle165
+ * critique/advance). measureCloudClockSkew()(index.html)가 Supabase REST 응답의 Date 헤더로
+ * 얻은 서버 시각과 이 기기 Date.now()의 차이(driftMs, 기기가 빠르면 양수)를 넘겨준다. */
+function clockSkewSeverity(driftMs,warnMs,critMs){
+ if(driftMs==null||isNaN(driftMs))return'ok';
+ const a=Math.abs(driftMs);
+ if(a>=critMs)return'severe';
+ if(a>=warnMs)return'warn';
+ return'ok';
+}
+/* shouldWarnStorageSize와 동일한 정책: 'warn'은 한 번 뜨면 dismiss로 가라앉힐 수 있지만,
+ * 'severe'는 dismiss 여부와 무관하게 항상 뜬다(방치하다 실제 데이터 손실로 이어지는 걸 막음). */
+function shouldWarnClockSkew(severity,dismissed){
+ if(severity==='severe')return true;
+ if(severity==='warn')return!dismissed;
+ return false;
+}

@@ -159,7 +159,7 @@ const FUNCTIONS = [
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'expenseBreakdownCard',
   'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asOpenCur', 'asCur', 'asToggleNeg', 'openAssetSheet', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'mergeRemoteDataIntoLocal', 'fmtAmt', 'fmtQty',
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges', 'shouldRetryCloudSync',
-  'pullCloud', 'afterCloudAuth', 'resolveCloudPullRemote', 'pushCloud',
+  'pullCloud', 'afterCloudAuth', 'resolveCloudPullRemote', 'pushCloud', 'measureCloudClockSkew',
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
   'clampDay', 'saveTx', 'assetBase', 'balancesUpTo', 'balanceAt', 'balancesAtDates', 'balanceAtFromMap',
   'addBalanceAdjust', 'updateBalanceAdjust', 'toggleConfirmTransfers', 'rollPendingTransfers',
@@ -316,6 +316,12 @@ const sandbox = {
   DB_JSON_LEN: 0,
   STORAGE_SIZE_WARN_LEN: 3000000,
   STORAGE_SIZE_CRIT_LEN: 4500000,
+  // CLOCK_SKEW_MS는 measureCloudClockSkew()(index.html)가 Supabase REST 응답의 Date 헤더로 채우는
+  // 파생 상태(기본값 null=측정 전/실패)라 CLOUD_UID/STORAGE_PERSISTED와 같은 이유로 테스트에서
+  // 직접 세팅한다. CLOCK_SKEW_WARN_MS/CRIT_MS는 그 문턱 상수(app-evolve cycle165 advance).
+  CLOCK_SKEW_MS: null,
+  CLOCK_SKEW_WARN_MS: 5 * 60 * 1000,
+  CLOCK_SKEW_CRIT_MS: 24 * 60 * 60 * 1000,
   // SESSION은 `let SESSION=localStorage.getItem(...)`으로 파생되는 로그인 이메일/카카오 id고,
   // AUTH는 localStorage 기반 계정 저장소 객체라(accountName()이 AUTH.rec(SESSION)을 부름) 둘 다
   // RANGE_TO/CLOUD_UID와 같은 이유(파생·비순수 상태, localStorage 의존)로 재현하지 않고
@@ -4978,6 +4984,41 @@ test('shouldWarnStorageSize: dismiss했어도 critLen까지 넘으면 다시 경
 test('shouldWarnStorageSize: 문턱 값 자체(경계)에서는 경고한다', () => {
   assert.strictEqual(sandbox.shouldWarnStorageSize(3000, false, 3000, 4500), true);
   assert.strictEqual(sandbox.shouldWarnStorageSize(4500, true, 3000, 4500), true);
+});
+
+/* ---------- clockSkewSeverity/shouldWarnClockSkew: 클라우드 동기화 시계 오차 경고 판정 (logic.js, app-evolve cycle165 advance) ----------
+ * mergeCollection()의 LWW가 두 기기 로컬 시계만으로 병합 승자를 정해, 한쪽 시계가 크게 틀리면
+ * 수정이 조용히 사라질 수 있다는 critique(cycle165)의 감지+경고 계획을 구현한다. */
+const CSKEW_WARN_MS = 5 * 60 * 1000, CSKEW_CRIT_MS = 24 * 60 * 60 * 1000;
+test('clockSkewSeverity: 아직 측정 전(null)이거나 측정 실패(NaN)면 ok다', () => {
+  assert.strictEqual(sandbox.clockSkewSeverity(null, CSKEW_WARN_MS, CSKEW_CRIT_MS), 'ok');
+  assert.strictEqual(sandbox.clockSkewSeverity(NaN, CSKEW_WARN_MS, CSKEW_CRIT_MS), 'ok');
+});
+test('clockSkewSeverity: warnMs 미만이면 ok다', () => {
+  assert.strictEqual(sandbox.clockSkewSeverity(60 * 1000, CSKEW_WARN_MS, CSKEW_CRIT_MS), 'ok');
+});
+test('clockSkewSeverity: warnMs 이상 critMs 미만이면 warn이고, 기기가 느려도(음수 drift) 절대값으로 판정한다', () => {
+  assert.strictEqual(sandbox.clockSkewSeverity(10 * 60 * 1000, CSKEW_WARN_MS, CSKEW_CRIT_MS), 'warn');
+  assert.strictEqual(sandbox.clockSkewSeverity(-10 * 60 * 1000, CSKEW_WARN_MS, CSKEW_CRIT_MS), 'warn');
+});
+test('clockSkewSeverity: critMs 이상이면 severe다', () => {
+  assert.strictEqual(sandbox.clockSkewSeverity(2 * 24 * 60 * 60 * 1000, CSKEW_WARN_MS, CSKEW_CRIT_MS), 'severe');
+});
+test('clockSkewSeverity: 문턱 값 자체(경계)에서는 그 등급으로 올라간다', () => {
+  assert.strictEqual(sandbox.clockSkewSeverity(CSKEW_WARN_MS, CSKEW_WARN_MS, CSKEW_CRIT_MS), 'warn');
+  assert.strictEqual(sandbox.clockSkewSeverity(CSKEW_CRIT_MS, CSKEW_WARN_MS, CSKEW_CRIT_MS), 'severe');
+});
+test('shouldWarnClockSkew: ok면 dismiss 여부와 무관하게 경고하지 않는다', () => {
+  assert.strictEqual(sandbox.shouldWarnClockSkew('ok', false), false);
+  assert.strictEqual(sandbox.shouldWarnClockSkew('ok', true), false);
+});
+test('shouldWarnClockSkew: warn은 dismiss 전엔 경고하고, dismiss하면 조용하다', () => {
+  assert.strictEqual(sandbox.shouldWarnClockSkew('warn', false), true);
+  assert.strictEqual(sandbox.shouldWarnClockSkew('warn', true), false);
+});
+test('shouldWarnClockSkew: severe는 dismiss했어도 항상 경고한다(방치 방지)', () => {
+  assert.strictEqual(sandbox.shouldWarnClockSkew('severe', true), true);
+  assert.strictEqual(sandbox.shouldWarnClockSkew('severe', false), true);
 });
 
 /* ---------- restoreBackup: JSON 백업 복원의 스키마 검증 + 실패 시 롤백 ---------- */
@@ -9971,6 +10012,59 @@ test('notifyAlertInfo: confirmMulti도 budgetOverMulti처럼 건수가 바뀌면
   const confirmMulti3 = sandbox.notifyAlertInfo({ kind: 'confirmMulti', count: 3 });
   assert.notStrictEqual(confirmMulti3.key, confirmMulti.key, '건수가 늘면 키도 바뀌어 다시 알려야 함');
 });
+/* ---------- homeAlerts/homeAlertCard: clockSkew (app-evolve cycle165 advance) ----------
+ * critique(cycle165)가 발견한 "mergeCollection() LWW가 두 기기 로컬 시계만 본다" 데이터 손실
+ * 위험에 대한 감지+경고. CLOUD_UID가 있어야만(클라우드 동기화 계정) 의미가 있고, 로컬/카카오
+ * 전용 계정은 같은 기기 시계만 쓰므로 CLOUD_UID가 없으면 CLOCK_SKEW_MS가 커도 뜨지 않는다. */
+test('homeAlerts: CLOUD_UID가 없으면(로컬/카카오 전용) CLOCK_SKEW_MS가 커도 clockSkew를 띄우지 않는다', () => {
+  setupHomeAlertsDB();
+  sandbox.CLOUD_UID = null;
+  sandbox.CLOCK_SKEW_MS = 2 * 24 * 60 * 60 * 1000;
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'clockSkew'));
+});
+test('homeAlerts: CLOUD_UID가 있고 drift가 warn 문턱을 넘으면(dismiss 전) clockSkew(warn)를 띄운다', () => {
+  setupHomeAlertsDB();
+  sandbox.CLOUD_UID = 'u1';
+  sandbox.CLOCK_SKEW_MS = 10 * 60 * 1000;
+  sandbox.DB.settings.clockSkewWarnDismissed = false;
+  const alerts = sandbox.homeAlerts([]);
+  const skew = alerts.find((a) => a.kind === 'clockSkew');
+  assert.ok(skew, 'clockSkew 알림이 있어야 함');
+  assert.strictEqual(skew.severity, 'warn');
+});
+test('homeAlerts: warn 등급은 dismiss하면 조용해지지만, severe 등급은 dismiss해도 다시 뜬다', () => {
+  setupHomeAlertsDB();
+  sandbox.CLOUD_UID = 'u1';
+  sandbox.CLOCK_SKEW_MS = 10 * 60 * 1000;
+  sandbox.DB.settings.clockSkewWarnDismissed = true;
+  let alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'clockSkew'), 'warn + dismiss면 조용해야 함');
+
+  sandbox.CLOCK_SKEW_MS = 2 * 24 * 60 * 60 * 1000;
+  alerts = sandbox.homeAlerts([]);
+  const skew = alerts.find((a) => a.kind === 'clockSkew');
+  assert.ok(skew, 'severe는 dismiss했어도 떠야 함(방치 방지)');
+  assert.strictEqual(skew.severity, 'severe');
+});
+test('homeAlerts: drift가 아직 null(측정 전/실패)이면 CLOUD_UID가 있어도 clockSkew를 띄우지 않는다', () => {
+  setupHomeAlertsDB();
+  sandbox.CLOUD_UID = 'u1';
+  sandbox.CLOCK_SKEW_MS = null;
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'clockSkew'));
+});
+test('homeAlertCard: clockSkew는 severity별로 다른 문구를 쓰고, 눌러서 동기화 상태를 보고 확인으로 dismiss할 수 있다', () => {
+  const warnHtml = sandbox.homeAlertCard({ kind: 'clockSkew', severity: 'warn' });
+  assert.ok(warnHtml.includes('기기 시간을 확인해 주세요'), 'warn 문구가 보여야 함');
+  assert.ok(warnHtml.includes('onclick="openAccountSheet()"'), '눌러서 동기화 상태(계정 화면)로 가야 함');
+  assert.ok(warnHtml.includes('onkeydown="rowKeydown(event,openAccountSheet)"'), '키보드 접근 가능해야 함');
+  assert.ok(warnHtml.includes('dismissClockSkewWarn()'), '확인 버튼으로 dismiss할 수 있어야 함');
+
+  const severeHtml = sandbox.homeAlertCard({ kind: 'clockSkew', severity: 'severe' });
+  assert.ok(severeHtml.includes('기기 시간이 많이 틀려요'), 'severe는 더 강한 문구를 써야 함');
+  assert.notStrictEqual(severeHtml, warnHtml, 'severity별로 다른 카드여야 함');
+});
 test('homeAlertCard: confirmMulti는 openConfirmTransferList()로 열리고 건수가 보인다(app-evolve cycle156)', () => {
   const html = sandbox.homeAlertCard({ kind: 'confirmMulti', count: 3 });
   assert.ok(html.includes('onclick="openConfirmTransferList()"'), 'confirmMulti 카드가 openConfirmTransferList()를 호출해야 함');
@@ -11996,6 +12090,89 @@ if (stockFns && ratesFns) {
       await sandbox.fetchWithTimeout('/x');
       assert.ok(capturedOpts.signal);
     } finally { restoreTimers(); }
+  });
+})();
+
+/* ---------- measureCloudClockSkew (app-evolve cycle165 advance) ----------
+ * critique(cycle165)가 발견한 "mergeCollection()의 LWW가 두 기기 로컬 시계만으로 병합 승자를
+ * 정해, 한쪽 시계가 틀리면 수정이 조용히 사라질 수 있다"는 위험의 감지 쪽 구현. afterCloudAuth()가
+ * 이미 하는 클라우드 왕복에 얹어 Supabase REST 응답의 Date 헤더로 서버 시각을 얻고, 이 기기
+ * Date.now()와의 차이를 CLOCK_SKEW_MS에 남긴다(homeAlerts()가 clockSkewSeverity()로 판정).
+ * fetchWithTimeout과 같은 이유로 sandbox.fetch를 이 블록에서만 실제로 바꿔주고 매 테스트 후 원복한다. */
+(() => {
+  const origFetch = sandbox.fetch, origCloudUid = sandbox.CLOUD_UID, origSkew = sandbox.CLOCK_SKEW_MS,
+    origTab = sandbox.ST && sandbox.ST.tab, origRender = sandbox.renderCurrent, origDB = sandbox.DB;
+  function restore() {
+    sandbox.fetch = origFetch; sandbox.CLOUD_UID = origCloudUid; sandbox.CLOCK_SKEW_MS = origSkew;
+    if (sandbox.ST) sandbox.ST.tab = origTab;
+    sandbox.renderCurrent = origRender; sandbox.DB = origDB;
+  }
+
+  test('measureCloudClockSkew: CLOUD_UID가 없으면(로컬/카카오 전용) 네트워크를 전혀 부르지 않고 조용히 리턴한다', async () => {
+    sandbox.CLOUD_UID = null;
+    sandbox.CLOCK_SKEW_MS = null;
+    let fetchCalled = false;
+    sandbox.fetch = async () => { fetchCalled = true; return { headers: { get: () => null } }; };
+    try {
+      await sandbox.measureCloudClockSkew();
+      assert.strictEqual(fetchCalled, false, 'CLOUD_UID가 없으면 fetch를 부르면 안 됨');
+      assert.strictEqual(sandbox.CLOCK_SKEW_MS, null);
+    } finally { restore(); }
+  });
+
+  test('measureCloudClockSkew: 응답의 Date 헤더와 이 기기 시계 차이를 CLOCK_SKEW_MS에 남긴다', async () => {
+    sandbox.CLOUD_UID = 'u1';
+    sandbox.CLOCK_SKEW_MS = null;
+    sandbox.ST = sandbox.ST || {};
+    sandbox.ST.tab = 'ledger'; // 홈 탭이 아니므로 renderCurrent를 부르지 않는 경로도 함께 확인
+    sandbox.DB = { settings: {} };
+    let renderCalls = 0;
+    sandbox.renderCurrent = () => { renderCalls++; };
+    const now = Date.now();
+    const serverMs = now - 10 * 60 * 1000; // 서버가 10분 "과거"로 응답 → 이 기기가 10분 빠름
+    sandbox.fetch = async () => ({ headers: { get: (h) => (h === 'date' ? new Date(serverMs).toUTCString() : null) } });
+    try {
+      await sandbox.measureCloudClockSkew();
+      assert.ok(Math.abs(sandbox.CLOCK_SKEW_MS - 10 * 60 * 1000) < 2000, 'drift가 약 10분으로 계산돼야 함(Date 헤더는 초 단위라 약간의 오차 허용)');
+      assert.strictEqual(renderCalls, 0, '홈 탭이 아니면 renderCurrent를 부르지 않아야 함');
+    } finally { restore(); }
+  });
+
+  test('measureCloudClockSkew: 홈 탭에서 측정에 성공하면 renderCurrent를 불러 새 경고 카드가 바로 보이게 한다', async () => {
+    sandbox.CLOUD_UID = 'u1';
+    sandbox.CLOCK_SKEW_MS = null;
+    sandbox.ST = sandbox.ST || {};
+    sandbox.ST.tab = 'home';
+    sandbox.DB = { settings: {} };
+    let renderCalls = 0;
+    sandbox.renderCurrent = () => { renderCalls++; };
+    sandbox.fetch = async () => ({ headers: { get: (h) => (h === 'date' ? new Date().toUTCString() : null) } });
+    try {
+      await sandbox.measureCloudClockSkew();
+      assert.strictEqual(renderCalls, 1, '홈 탭이면 측정 후 renderCurrent를 한 번 불러야 함');
+      assert.notStrictEqual(sandbox.CLOCK_SKEW_MS, null);
+    } finally { restore(); }
+  });
+
+  test('measureCloudClockSkew: fetch가 실패하거나(네트워크) Date 헤더가 없으면 CLOCK_SKEW_MS를 그대로 두고 renderCurrent도 부르지 않는다', async () => {
+    sandbox.CLOUD_UID = 'u1';
+    sandbox.CLOCK_SKEW_MS = 123; // 이전에 측정된 값이 있다고 가정
+    sandbox.ST = sandbox.ST || {};
+    sandbox.ST.tab = 'home';
+    sandbox.DB = { settings: {} };
+    let renderCalls = 0;
+    sandbox.renderCurrent = () => { renderCalls++; };
+    try {
+      sandbox.fetch = async () => { throw new Error('network down'); };
+      await sandbox.measureCloudClockSkew();
+      assert.strictEqual(sandbox.CLOCK_SKEW_MS, 123, '네트워크 실패를 시계 오차로 오인해 이전 값을 지우면 안 됨');
+      assert.strictEqual(renderCalls, 0);
+
+      sandbox.fetch = async () => ({ headers: { get: () => null } }); // Date 헤더가 없는 응답
+      await sandbox.measureCloudClockSkew();
+      assert.strictEqual(sandbox.CLOCK_SKEW_MS, 123);
+      assert.strictEqual(renderCalls, 0);
+    } finally { restore(); }
   });
 })();
 

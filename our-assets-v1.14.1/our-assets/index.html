@@ -1331,7 +1331,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.98';
+const APP_VERSION='1.47.99';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1667,6 +1667,9 @@ let DB, STORAGE_OK=true, STORAGE_PERSISTED=null, TAB_SAVED_AT=0, TAB_SYNC_PENDIN
  * 그 실패가 나기 "전에" 미리 경고해 사용자가 백업·정리할 시간을 벌어준다 — 문자 길이를 바이트의
  * 대략적 하한 추정치로 쓴다(UTF-16 저장 시 한글은 코드유닛당 2바이트라 실제로는 더 크다).*/
 const STORAGE_SIZE_WARN_LEN=3000000, STORAGE_SIZE_CRIT_LEN=4500000;
+/* clockSkewSeverity(logic.js)의 문턱: 5분 이상은 흔한 시계 오차를 넘어 mergeCollection()의
+ * LWW 승자 판정에 영향을 줄 수 있는 수준으로 보고 'warn', 1일 이상은 명백히 틀린 시계로 'severe'. */
+const CLOCK_SKEW_WARN_MS=5*60*1000, CLOCK_SKEW_CRIT_MS=24*60*60*1000;
 const SKEY='asset_app_db_v3';
 /* ===== 계정 · 세션 (이메일 로그인) =====
    ▸ Supabase가 설정되지 않으면 이 기기(localStorage)에만 저장됩니다(계정별로 분리).
@@ -1675,6 +1678,9 @@ const SKEY='asset_app_db_v3';
 let SESSION=localStorage.getItem('asset_app_session')||'';
 let GUEST=localStorage.getItem('asset_app_guest')==='1';
 let CLOUD_UID=null;
+/* measureCloudClockSkew()가 남기는 이 기기와 Supabase 서버 시각의 차이(ms, 기기가 빠르면 양수) —
+ * 아직 측정 전이거나 측정 실패면 null로 둬 homeAlerts()가 경고를 띄우지 않게 한다. */
+let CLOCK_SKEW_MS=null;
 const emailKey=e=>(e||'').trim().toLowerCase();
 function dataKey(){return SESSION?('asset_app_db_v3__'+emailKey(SESSION)):'asset_app_db_v3__guest'}
 function migrateLegacy(){try{const legacy=localStorage.getItem(SKEY);const guest=localStorage.getItem('asset_app_db_v3__guest');if(legacy&&!guest)localStorage.setItem('asset_app_db_v3__guest',legacy)}catch(e){}}
@@ -1735,6 +1741,24 @@ async function pullCloud(){
   CLOUD_LAST_SYNCED_AT=data.updated_at;cloudSyncOk();
   return data.data||null;
  }catch(e){cloudSyncFailed();return null}
+}
+/* measureCloudClockSkew: afterCloudAuth()가 이미 하는 클라우드 왕복에 얹어, Supabase REST 응답의
+ * Date 헤더로 신뢰할 수 있는 서버 시각을 얻고 이 기기 시계(Date.now())와의 차이를 CLOCK_SKEW_MS에
+ * 남긴다. mergeCollection()의 LWW가 두 기기 로컬 시계만으로 병합 승자를 정하는데, 한쪽 시계가
+ * 크게 틀리면 수정이 조용히 사라질 수 있어(app-evolve cycle165 critique) homeAlerts()가 이 값을
+ * clockSkewSeverity()로 판정해 경고 카드를 띄운다. 측정 자체가 실패(네트워크/CORS)하면
+ * CLOCK_SKEW_MS를 그대로 둔다 — 네트워크 문제를 시계 오차로 오인해 경고를 지우지 않기 위함. */
+async function measureCloudClockSkew(){
+ if(!sbReady()||!CLOUD_UID)return;
+ try{
+  const c=sbCfg();
+  const r=await fetchWithTimeout(c.url+'/rest/v1/',{headers:{apikey:c.key}},5000);
+  const hdr=r.headers.get('date');
+  const serverMs=hdr?Date.parse(hdr):NaN;
+  if(isNaN(serverMs))return;
+  CLOCK_SKEW_MS=Date.now()-serverMs;
+ }catch(e){return}
+ if(DB&&ST.tab==='home')renderCurrent();
 }
 let SB_PUSH_T=null;
 function scheduleCloudPush(){if(!sbReady()||!CLOUD_UID)return;clearTimeout(SB_PUSH_T);SB_PUSH_T=setTimeout(()=>pushCloud().catch(()=>{}),1200)}
@@ -1806,6 +1830,7 @@ async function pushCloud(retried){
 }
 async function afterCloudAuth(uid){
  CLOUD_UID=uid;
+ measureCloudClockSkew(); /* best-effort, 결과는 홈 알림에 반영(await 안 해 로그인/부팅을 늦추지 않음) */
  /* 부팅/로그인마다 자동 실행되는데, 오프라인 편집이 아직 클라우드에 못 올라간 채로
   * 남아있으면 여기서 곧장 DB=remote로 덮어써 그 편집이 영구히 사라질 수 있다.
   * 그래서 remote를 적용하기 전에 이 기기에 미동기화 흔적이 있는지부터 확인한다. */
@@ -2049,7 +2074,7 @@ function load(){
  DB=(SESSION?emptyDB():seed());migrate();save(); /* 게스트 첫 실행=샘플 체험 · 새 계정=빈 상태 */
 }
 function migrate(){
- DB.settings=Object.assign({themeMode:'system',includeScheduled:false,assetSort:'custom',histSortAsc:true,confirmTransfers:true,autoRates:true,bigMin:100000,dismissedStaleMvIds:[],persistWarnDismissed:false,storageSizeWarnDismissed:false},DB.settings||{});
+ DB.settings=Object.assign({themeMode:'system',includeScheduled:false,assetSort:'custom',histSortAsc:true,confirmTransfers:true,autoRates:true,bigMin:100000,dismissedStaleMvIds:[],persistWarnDismissed:false,storageSizeWarnDismissed:false,clockSkewWarnDismissed:false},DB.settings||{});
  if(!Array.isArray(DB.settings.groupOrder)||!DB.settings.groupOrder.length)DB.settings.groupOrder=[...DEFAULT_GROUP_ORDER];
  DEFAULT_GROUP_ORDER.forEach(t=>{if(!DB.settings.groupOrder.includes(t))DB.settings.groupOrder.push(t)});
  delete DB.settings.showScheduled; /* 예정 표시는 홈 '예정 포함'으로 통합 */
@@ -5472,6 +5497,7 @@ function dismissPersistWarn(){DB.settings.persistWarnDismissed=true;save();rende
 /* 문턱을 넘을 때마다 dismiss해도 shouldWarnStorageSize가 critLen에서 다시 띄우므로, 여기서 영구
  * dismiss해도 정말 위험해지면 재경고된다(dismissPersistWarn과 달리 한 번 끄면 영영 안 뜨지 않음). */
 function dismissStorageSizeWarn(){DB.settings.storageSizeWarnDismissed=true;save();renderCurrent();toast('확인했어요 · 오래된 데이터는 백업 후 정리하는 걸 권장해요')}
+function dismissClockSkewWarn(){DB.settings.clockSkewWarnDismissed=true;save();renderCurrent();toast('확인했어요 · 기기 날짜/시간을 맞추면 동기화가 더 안전해져요')}
 function backupDue(){ /* 마지막 파일 내보내기 후 7일 경과 */
  const snooze=DB.settings.backupSnooze||0;
  if(Date.now()<snooze)return false;
@@ -6928,6 +6954,10 @@ function tidyListSnooze(id){snoozeTidy(id);openTidyList();}
 function homeAlerts(neg){
  const arr=[];
  if(CLOUD_UID&&CLOUD_SYNC_STATE==='conflict')arr.push({kind:'cloudConflict'});
+ if(CLOUD_UID){ /* 클라우드 동기화 계정에서만 의미 있음(로컬/카카오 전용은 같은 기기 시계를 쓰므로 영향 없음) */
+  const _skewSev=clockSkewSeverity(CLOCK_SKEW_MS,CLOCK_SKEW_WARN_MS,CLOCK_SKEW_CRIT_MS);
+  if(shouldWarnClockSkew(_skewSev,DB.settings.clockSkewWarnDismissed))arr.push({kind:'clockSkew',severity:_skewSev});
+ }
  if(backupDue()&&DB.txns.length)arr.push({kind:'backup'});
  if(shouldWarnUnpersisted(STORAGE_PERSISTED,!!CLOUD_UID)&&!DB.settings.persistWarnDismissed)arr.push({kind:'persist'});
  if(shouldWarnStorageSize(DB_JSON_LEN,DB.settings.storageSizeWarnDismissed,STORAGE_SIZE_WARN_LEN,STORAGE_SIZE_CRIT_LEN))arr.push({kind:'storageSize'});
@@ -7047,6 +7077,11 @@ function homeAlertCard(al){
    <div class="ha-b" tabindex="0" role="button" aria-label="저장 용량이 많이 찼어요 · 눌러서 백업" onclick="exportData()" onkeydown="rowKeydown(event,()=>exportData())"><div class="ha-t">저장 용량이 많이 찼어요</div>
      <div class="ha-s">이 기기의 저장 공간 한도에 가까워지고 있어요 · 백업해 두면 안전해요</div></div>
    <button class="txt-btn" style="flex-shrink:0;padding:6px 10px" onclick="event.stopPropagation();dismissStorageSizeWarn()">확인</button></div>`;
+ if(al.kind==='clockSkew')return `<div class="home-alert mat">
+   <div class="ha-ic">${svg('alert')}</div>
+   <div class="ha-b" tabindex="0" role="button" aria-label="기기 시간을 확인해 주세요 · 눌러서 동기화 상태 보기" onclick="openAccountSheet()" onkeydown="rowKeydown(event,openAccountSheet)"><div class="ha-t">${al.severity==='severe'?'기기 시간이 많이 틀려요':'기기 시간을 확인해 주세요'}</div>
+     <div class="ha-s">${al.severity==='severe'?'동기화할 때 다른 기기의 최신 수정이 조용히 사라질 수 있어요 · 기기 날짜/시간을 맞춰주세요':'동기화 병합 순서가 바뀔 수 있어요 · 기기 날짜/시간을 맞추는 걸 권장해요'}</div></div>
+   <button class="txt-btn" style="flex-shrink:0;padding:6px 10px" onclick="event.stopPropagation();dismissClockSkewWarn()">확인</button></div>`;
  if(al.kind==='confirm')return `<button class="home-alert confirm" onclick="${al.isRec?`confirmRecTransfer('${al.recId}','${al.date}')`:`openConfirmTransfer('${al.id}')`}">
    <div class="ha-ic">${svg('repeat')}</div>
    <div class="ha-b"><div class="ha-t">이체 확인 · ${comma(al.amount)}원</div>

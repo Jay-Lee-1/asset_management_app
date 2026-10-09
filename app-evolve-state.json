@@ -1,19 +1,8 @@
 {
-  "cycle": 165,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "클라우드 동기화 병합(mergeCollection)이 기기 로컬 시계만으로 last-write-wins을 결정 — 시계 틀어짐 감지/경고 추가",
-    "why": "logic.js의 mergeCollection(localArr,remoteArr,...)은 두 쪽 다 살아있으면 updatedAt(각 기기의 Date.now())이 더 큰 쪽을 채택한다. 충돌 '존재' 자체는 Supabase의 서버 updated_at으로 감지해 시계 틀어짐에 안전하지만, 일단 충돌이 발견된 뒤 어느 거래/자산/목표 수정이 '이기는지'는 순전히 두 기기의 로컬 시계 비교로 결정된다. 이 앱은 가족 공유 계정 등 멀티 디바이스 동기화를 명시적으로 지원하는데(confirmCloudForcePush 안내문 등), 한 기기의 시계가 틀리면(배터리 방전, 리셋된 태블릿, 네트워크 없어 NTP 미동기화 등) 그 기기의 모든 수정이 항상 지거나(시계가 느림) 항상 다른 기기의 더 최신이고 올바른 수정을 경고 없이 조용히 덮어쓴다(시계가 빠름). 가계부 공유 환경에서 금액을 고쳤는데 동기화 후 조용히 틀린 값으로 되돌아가는 식의, 접근성/검증 미세수정보다 훨씬 심각한 조용한 데이터 손실로 이어질 수 있다. cycle123/133/135/138도 병합 대상 컬렉션만 늘렸을 뿐 이 LWW 메커니즘 자체는 한 번도 의심한 적이 없다.",
-    "approach": "병합 알고리즘 자체를 다시 설계하진 않는다(한 사이클엔 위험이 큼). 대신 '감지 + 경고'만 추가한다: (1) pullCloud()/afterCloudAuth()(index.html ~1725/1807)에서 클라우드 왕복이 이미 일어날 때, Supabase REST 엔드포인트에 가벼운 HEAD 요청을 보내 응답의 Date 헤더로 믿을 수 있는 서버 시각을 얻는다. (2) logic.js에 shouldWarnStorageSize류와 같은 스타일로 순수 함수 clockSkewSeverity(driftMs)('ok'|'warn'|'severe', 임계값 예: 5분/1일)를 추가해 test/run.js에서 단위 테스트한다. (3) 계산된 drift를 모듈 변수(클라우드 계정에서만 유효)로 저장하고 homeAlerts()(index.html ~6928)를 통해 sbReady()&&CLOUD_UID인 계정에만 닫을 수 있는 카드로 노출한다(게스트/로컬 전용/같은 브라우저 탭 동기화는 같은 기기 시계를 쓰므로 영향 없음). 메시지는 동기화가 조용히 수정을 잃을 수 있다는 것과 기기 날짜/시간을 맞추라는 안내를 명시적으로 담는다. 이것은 데이터 손실 자체를 고치는 게 아니라 감지+경고이며, 진짜 수정(벡터 클락/서버 할당 논리 시각)은 모든 동기화 레코드의 스키마 변경이 필요해 한 사이클 범위를 벗어난다."
-  },
+  "cycle": 166,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 160,
-      "phase": "advance",
-      "timestamp": "2026-10-08T14:20:00.000Z",
-      "summary": "critique(cycle160) 계획대로 ledsumLive(가계부 '이번 달 수지')/histTotLive(전체내역 '오늘까지' 라이브 합계)/planBalLive(한달 플랜 '말일 잔액/오늘까지') 3곳과 histTotals(전체내역 합계 '월평균' 토글) 1곳에 nwChartPeekKey/assetBalPeekKey와 동일한 골격으로 키보드 접근성을 추가했다. 누름-유지형 3곳은 tabindex=\"0\" role=\"button\" aria-label을 달고 onkeydown=\"sujiPeekKey/histPeekKey/planPeekKey(event)\" +onkeyup/onblur=\"...PeekEnd()\"로 포인터의 누름→뗌을 keydown→keyup에 매핑했다. 새 Key 함수들은 Enter/Space에서만 Start()를 부르고 Escape는 즉시 End(), e.repeat(키를 누르고 있는 동안 반복 발생)는 무시한다 — 특히 카드 안에 ledSumTap/bh-low 같은 실제 <button>이 중첩돼 있어(나머지 3곳과 달리 nwhChart/assetBalChart엔 이게 없었음) 그 버튼에서 버블된 keydown까지 처리하면 e.preventDefault()가 버블 중에도 적용돼 그 버튼의 네이티브 Enter/Space 클릭 활성화를 막아버린다는 걸 파악해(cycle160 review가 nc-fix에서 겪은 것과 같은 함정) e.target!==e.currentTarget 가드를 추가했다. 토글형 histTotals는 계획대로 즉시 토글 방식을 택해 histTotDown의 450ms 롱프레스 로직에서 avgMode 토글 부분을 histTotToggle()로 뽑아 onkeydown=\"rowKeydown(event,histTotToggle)\"과 공유시켰다(롱프레스/키보드가 로직을 따로 들고 있다가 한쪽만 고치는 회귀 방지). CSS에 4개 id용 :focus-visible 아웃라인(.nwh-chart와 동일 패턴)도 추가. test/run.js에 4곳의 tabindex/role/키보드 핸들러 마크업 검증 5건, 3개 Key 함수의 e.target/e.repeat/Escape 가드 소스 검증 1건, histTotDown/histTotals가 histTotToggle을 공유하는지 검증 1건, 총 7건(테스트는 6개 test() 블록)을 추가했다. index.html/sw.js 변경이라 APP_VERSION 1.47.87->1.47.88, sw.js CACHE v349->v350 갱신. node test/run.js 1105/1105 -> 1111/1111 통과.",
-      "commit": null
-    },
     {
       "cycle": 161,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-09T08:00:00.000Z",
       "summary": "general-purpose 서브에이전트로 141-165사이클 이력(특히 160-165의 접근성/검증 미세수정들) 전달 후 앱 전체를 더 멀리서(아키텍처/데이터 무결성 관점) 재조망. 새로 발견: logic.js의 mergeCollection(localArr,remoteArr,...)(3-way 병합, touch()가 찍는 updatedAt=Date.now() 기반)이 충돌 시 '양쪽 다 살아있으면 updatedAt 더 큰 쪽 채택'이라는 순수 LWW(last-write-wins)인데, 충돌 '존재' 감지는 Supabase 서버 updated_at이라 시계 틀어짐에 안전하지만 일단 충돌이 감지된 뒤 어느 거래/자산/목표 수정이 이기는지는 두 기기의 로컬 시계 비교로만 결정됨을 확인. 이 앱이 명시적으로 지원하는 가족 공유/멀티 디바이스 동기화 환경에서 한 기기 시계가 틀리면(배터리 방전, 리셋된 기기, NTP 미동기화 등) 그 기기 수정이 항상 지거나 항상 다른 기기의 최신 수정을 경고 없이 조용히 덮어써, 가계부 금액이 동기화 후 조용히 틀린 값으로 되돌아가는 식의 데이터 손실을 유발할 수 있음 — cycle123/133/135/138도 병합 대상 컬렉션만 늘렸을 뿐 이 LWW 메커니즘 자체는 의심한 적이 없었음. 병합 알고리즘 재설계 대신 '감지+경고'(Supabase REST HEAD 응답 Date 헤더로 서버 시각 확보, logic.js에 순수함수 clockSkewSeverity(driftMs) 추가, sbReady()&&CLOUD_UID 계정에서만 homeAlerts()로 닫을 수 있는 경고 카드 노출)로 범위를 좁힌 계획을 pending_advance_plan에 저장. 러너업(기각): 반복거래 r.skip/r.edits/r.confirmedDates 배열이 오래된 날짜를 영구히 가지(느린 저장공간 누적, 크래시/데이터손실 아님이라 저임팩트), sw.js CACHE 버전 수동 올림 규칙(최근 20개+ 커밋 전부 정확히 지켜짐, 관찰된 버그 아닌 잠재적 공정 위험), localStorage 단일 거대 blob 동기 저장(이미 cycle160에서 '이미 충분히 다룸'으로 기각된 사안 재론, 추가 근거 없음). 코드 변경 없음(읽기 전용 조사).",
+      "commit": null
+    },
+    {
+      "cycle": 165,
+      "phase": "advance",
+      "timestamp": "2026-10-09T09:10:00.000Z",
+      "summary": "critique(cycle165) 계획대로 클라우드 동기화 시계 오차 감지+경고를 구현했다. logic.js에 순수 함수 clockSkewSeverity(driftMs,warnMs,critMs)('ok'|'warn'|'severe', null/NaN은 ok)와 shouldWarnStorageSize와 동일한 정책의 shouldWarnClockSkew(severity,dismissed)('severe'는 dismiss 무시, 'warn'은 dismiss로 가라앉음)를 추가했다. index.html에는 새 모듈 변수 CLOCK_SKEW_MS(기본 null)와 문턱 상수 CLOCK_SKEW_WARN_MS(5분)/CLOCK_SKEW_CRIT_MS(1일), 그리고 measureCloudClockSkew() 함수를 추가해 afterCloudAuth(uid) 맨 앞(CLOUD_UID 설정 직후)에서 fire-and-forget으로 호출한다 — sbReady()&&CLOUD_UID일 때만 fetchWithTimeout(기존 헬퍼 재사용)으로 Supabase REST(`${url}/rest/v1/`)에 GET을 보내 응답의 Date 헤더를 Date.now()와 비교하고, 네트워크 실패나 헤더 없음은 조용히 무시(이전 CLOCK_SKEW_MS를 지우지 않음)하며 성공 시 ST.tab==='home'이면 renderCurrent()로 즉시 반영한다. homeAlerts()에 CLOUD_UID가 있을 때만 clockSkewSeverity/shouldWarnClockSkew로 판정해 {kind:'clockSkew',severity} 알림을 추가했고(로컬/카카오 전용 계정은 같은 기기 시계를 쓰므로 CLOUD_UID 없으면 절대 안 뜸), homeAlertCard에 persist/storageSize와 동일한 '카드+확인 버튼' 패턴으로 렌더를 추가(severity별 문구 분기, 누르면 openAccountSheet()로 동기화 상태 확인, 확인 버튼은 새 dismissClockSkewWarn()으로 DB.settings.clockSkewWarnDismissed를 세팅). DB.settings 기본값에 clockSkewWarnDismissed:false를 추가. test/run.js에 clockSkewSeverity/shouldWarnClockSkew 단위 테스트 8건, homeAlerts/homeAlertCard 통합 테스트 5건, measureCloudClockSkew를 FUNCTIONS(vm 실행)에 등록해 fetch 스텁으로 검증하는 실행형 테스트 4건(CLOUD_UID 없음/정상 측정/홈탭 재렌더/네트워크실패·헤더없음 보존), 총 17건을 추가했다. index.html/sw.js 변경이라 APP_VERSION 1.47.98->1.47.99, sw.js CACHE v360->v361 갱신. node test/run.js 1132/1132 -> 1149/1149 통과.",
       "commit": null
     }
   ]
