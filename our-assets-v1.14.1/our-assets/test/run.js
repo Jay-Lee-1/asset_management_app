@@ -12217,6 +12217,17 @@ test('m-fab(튜토리얼): tabindex와 키보드 핸들러(onkeydown)가 있다'
   assert.ok(tag.includes('role="button"'), 'm-fab div에 role="button"이 없음');
   assert.ok(tag.includes('onkeydown="rowKeydown(event,mFab)"'), 'm-fab div에 onkeydown이 없음 — 키보드 접근 경로가 빠짐');
 });
+/* ---------- swUpdateBar(서비스워커 업데이트 배너): role="button" tabindex="0"을 선언한 이 앱의
+ * 다른 모든 요소(pg-row/manage-row/asset-item/next-card/of-row/ha-b/m-fab/histTotals 등)는
+ * 예외 없이 onkeydown="rowKeydown(event,...)"를 함께 달지만 swUpdateBar만 빠져 있어, 포인터로는
+ * 탭하면 바로 새로고침되는데 키보드로 포커스 후 Enter/Space를 눌러도 아무 일도 일어나지 않았다
+ * (app-evolve cycle164 critique → cycle164 advance). */
+test('swUpdateBar: tabindex와 키보드 핸들러(onkeydown)가 있다', () => {
+  const tag = extractTag('swUpdateBar');
+  assert.ok(tag.includes('tabindex="0"'), 'swUpdateBar div에 tabindex="0"이 없음 — 키보드 접근 경로가 빠짐');
+  assert.ok(tag.includes('role="button"'), 'swUpdateBar div에 role="button"이 없음');
+  assert.ok(tag.includes('onkeydown="rowKeydown(event,reloadForUpdate)"'), 'swUpdateBar div에 onkeydown이 없음 — 키보드 접근 경로가 빠짐');
+});
 /* sujiPeekKey/histPeekKey/planPeekKey 공통 가드 — extractFunction으로 몸통만 잘라 검사한다.
  * 1) e.target!==e.currentTarget: 카드 안의 다른 버튼(수입/지출/가장 낮을 때 등)에서 버블된
  *    keydown까지 처리하면 그 버튼의 네이티브 Enter/Space 클릭 활성화를 preventDefault가

@@ -1,11 +1,7 @@
 {
-  "cycle": 164,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "서비스워커 업데이트 배너(#swUpdateBar)가 role=button인데 유일하게 onkeydown(rowKeydown) 누락 — 키보드 사용자가 새 버전 새로고침을 못 함",
-    "why": "index.html 1317행: `<div class=\"sw-update-bar\" id=\"swUpdateBar\" onclick=\"location.reload()\" role=\"button\" tabindex=\"0\"></div>` — role=\"button\"과 tabindex=\"0\"으로 스크린리더/키보드 사용자에게 '버튼으로 포커스 가능'임을 알리지만 onkeydown 핸들러가 전혀 없다. 1340~1345행 showSwUpdateBar()가 이 요소의 내용을 '새 버전이 있어요 · 탭하여 새로고침'으로 채우고 .show 클래스를 붙여 노출하는데, app-evolve가 매시간 커밋을 밀어 서비스워커가 거의 항상 새 버전을 갖고 있으므로 활성 사용자라면 자주 보게 되는 배너다. 코드베이스 전체를 grep한 결과 role=\"button\" tabindex=\"0\"이 붙은 모든 요소(pg-row, manage-row, asset-item, next-card, of-row, ha-b, m-fab, histTotals, link 스팬 등 20개 이상)가 예외 없이 onkeydown=\"rowKeydown(event,...)\"를 함께 달아 Enter/Space를 클릭과 동등하게 처리하는 것이 이 앱의 확립된 규약인데, #swUpdateBar만 이 규약에서 빠져 있다. 포인터로는 탭하여 새로고침되지만 키보드로 포커스를 옮긴 뒤 Enter/Space를 눌러도 location.reload()가 전혀 호출되지 않아, 버튼이라고 안내받은 조작이 조용히 실패한다.",
-    "approach": "swUpdateBar의 onclick 핸들러를 별도 named 함수(예: function reloadForUpdate(){location.reload()})로 뽑아 onclick=\"reloadForUpdate()\"로 바꾸고, 1317행 div 태그에 onkeydown=\"rowKeydown(event,reloadForUpdate)\"를 추가한다 — m-fab(5323행: onclick=\"mFab()\" onkeydown=\"rowKeydown(event,mFab)\")처럼 인자 없는 콜백을 그대로 넘기는 선례를 따른다. 정적 index.html에 이미 있는 요소이므로 showSwUpdateBar()(1340행)는 innerHTML/classList만 건드리고 태그 속성 자체는 바꾸지 않는다. test/run.js에 m-fab/m-suji 마크업 테스트와 동일한 패턴으로 #swUpdateBar의 onkeydown=rowKeydown(event,reloadForUpdate) 존재를 검증하는 회귀 테스트 1건을 추가한다. index.html/sw.js 수정이므로 APP_VERSION과 sw.js CACHE 버전을 함께 올린다."
-  },
+  "cycle": 165,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
     {
       "cycle": 160,
@@ -131,6 +127,13 @@
       "phase": "critique",
       "timestamp": "2026-10-09T04:30:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전체를 재조망(141-164사이클 전부 + 기각 이력 전달). 새로 발견: index.html 1317행 서비스워커 업데이트 배너 #swUpdateBar가 role=\"button\" tabindex=\"0\"으로 선언돼 있으면서도 이 앱 전체(20개 이상 role=button 요소)가 일관되게 지키는 onkeydown=\"rowKeydown(event,...)\" 규약에서 유일하게 빠져 있음을 grep 전수조사+코드 확인. 포인터로는 탭하면 location.reload()가 바로 실행되지만 키보드로 포커스 후 Enter/Space를 눌러도 아무 일도 일어나지 않아, 버튼으로 안내받은 조작이 조용히 실패. app-evolve가 매시간 새 버전을 배포해 활성 사용자가 자주 마주치는 배너라 영향도가 작지 않음. onclick을 named 함수(reloadForUpdate)로 분리해 onkeydown=\"rowKeydown(event,reloadForUpdate)\"를 추가하는 m-fab(5323행) 선례 그대로의 계획을 pending_advance_plan에 저장. 러너업(기각): svg() 장식 아이콘 전반에 aria-hidden 누락(수백 호출부를 건드려야 해 한 cycle 범위 초과, 대다수 스크린리더가 빈 svg는 어차피 무시), csvRowToImportTxn의 saving 타입 toAsset이 실제 savings 자산인지 미검증(수동 입력도 이런 타입 제약이 없어 비교 기준이 모호, 저빈도), errBanner(role=alert)는 수동 알림이라 rowKeydown 대상 아님(swUpdateBar와 혼동 방지용 기록). 코드 변경 없음(읽기 전용 조사).",
+      "commit": null
+    },
+    {
+      "cycle": 164,
+      "phase": "advance",
+      "timestamp": "2026-10-09T05:20:00.000Z",
+      "summary": "critique(cycle164) 계획대로 #swUpdateBar의 onclick=\"location.reload()\"를 named 함수 reloadForUpdate()(showSwUpdateBar 바로 위에 정의)로 뽑아 onclick=\"reloadForUpdate()\"로 바꾸고, 같은 div 태그에 onkeydown=\"rowKeydown(event,reloadForUpdate)\"를 추가해 m-fab(onclick=\"mFab()\" onkeydown=\"rowKeydown(event,mFab)\") 선례와 동일한 모양으로 만들었다. showSwUpdateBar()는 계획대로 innerHTML/classList만 건드리고 태그 속성은 그대로 둔다. test/run.js에 m-fab/m-suji 마크업 테스트와 동일한 extractTag 패턴으로 #swUpdateBar의 tabindex=\"0\"/role=\"button\"/onkeydown=\"rowKeydown(event,reloadForUpdate)\" 존재를 검증하는 회귀 테스트 1건을 추가 — 수정 전 마크업(onclick만, onkeydown 없음)으로 되돌려 돌려보면 이 테스트가 실제로 깨짐을 확인했다(1130/1131 -> 수정 복원 후 1131/1131). index.html/sw.js 변경이라 APP_VERSION 1.47.96->1.47.97, sw.js CACHE v358->v359 갱신. node test/run.js 1130/1130 -> 1131/1131 통과.",
       "commit": null
     }
   ]

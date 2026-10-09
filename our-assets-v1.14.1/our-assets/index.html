@@ -1314,7 +1314,7 @@ body.selmode .fab{display:none}
 <div class="fab-pop" id="fabPop"></div>
 <button class="fab" id="fab" onclick="fabTap()" aria-label="추가"></button>
 <div class="selbar-bottom" id="selBarBottom"></div>
-<div class="sw-update-bar" id="swUpdateBar" onclick="location.reload()" role="button" tabindex="0"></div>
+<div class="sw-update-bar" id="swUpdateBar" onclick="reloadForUpdate()" role="button" tabindex="0" onkeydown="rowKeydown(event,reloadForUpdate)"></div>
 <div class="toast-wrap" id="toastWrap"></div>
 <div class="sr-only" id="ariaLivePolite" role="status" aria-live="polite" aria-atomic="true"></div>
 <div class="sr-only" id="ariaLiveAssertive" role="alert" aria-live="assertive" aria-atomic="true"></div>
@@ -1331,12 +1331,13 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.96';
+const APP_VERSION='1.47.97';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
  * 하단 배너 노출 + 버전 정보 메뉴 문구 전환에 쓰인다 (index.html 끝부분 SW 등록 스크립트에서 세팅). */
 let SW_UPDATE_AVAILABLE=false;
+function reloadForUpdate(){location.reload()}
 function showSwUpdateBar(){
  const el=$('swUpdateBar');if(!el)return;
  el.innerHTML=svg('refresh',18)+'<span>새 버전이 있어요 · 탭하여 새로고침</span>';
