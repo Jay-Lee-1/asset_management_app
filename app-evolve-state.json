@@ -1,15 +1,8 @@
 {
   "cycle": 170,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 165,
-      "phase": "review",
-      "timestamp": "2026-10-09T07:05:00.000Z",
-      "summary": "cycle165 develop(dayPickerHTML 커스텀 일자 입력에 aria-label 추가) 검토 — 추가된 aria-label=\"반복일 직접 입력 (1~31일)\"의 범위 표기가 실제 검증 로직(dayWarn: n>31/n<1 경고, clampDay: 저장 시 1~31로 보정)과 정확히 일치함을 코드로 대조 확인했고, id/oninput(${pfx}DayInput)/onfocus·onblur(daySuf) 등 기존 속성은 그대로 보존돼 레이아웃·동작에 영향이 없음을 diff로 확인. 유일한 호출부인 tx/rec 두 시트 모두 동일한 이득을 받는다. node test/run.js 1132/1132 통과. 이상 없음, 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 165,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-10T03:20:00.000Z",
       "summary": "general-purpose 서브에이전트로 141-169사이클과 겹치지 않는 새 개선점을 탐색 — sanitizeBackup()(index.html 5751줄)이 반복거래의 amount/endDate/day/edits는 검증하면서도 skip(건너뛴 회차 날짜 목록)과 confirmedDates(이체 완료 처리한 회차 목록) 필드는 전혀 검증하지 않음을 발견. migrate()(2115줄)는 이 필드가 '없을 때만' []로 채우므로 백업/클라우드 데이터에 필드가 존재하되 배열이 아니면(숫자·객체·null) 손상값이 그대로 남고, expandRec()(2238줄)의 (r.skip||[]).includes(d)와 confirmRecNow/postponeRecTransfer/delRec의 r.skip.slice()/push(), (r.confirmedDates||[]).includes(...)가 모두 배열 메서드로 직접 소비해 TypeError를 던진다 — expandRec()은 allTxns()를 거쳐 가계부/캘린더/잔액 등 앱 거의 전체 렌더 경로를 통과하므로 앱이 통째로 멈춘다(vm 샌드박스에서 직접 재현 확인). budgetHistory/nwHistory/settings/deletedIds/budgets에서 반복된 '검증 분기 누락' 버그 클래스의 또 다른 인스턴스. sanitizeBackup()의 반복거래 edits 검증 블록 바로 뒤에 skip/confirmedDates 검증을 추가 — 배열이 아니면 []로 되돌리고(fixedCount++), 배열이면 문자열이 아니거나 빈 문자열인 항목만 걸러낸다. test/run.js에 숫자/객체 보정, 정상 배열 유지, 배열 내 null/숫자/빈문자열 항목만 걸러짐, 필드 없으면 미건드림(fixedCount 0), [실행형] 보정 후 expandRec()이 TypeError 없이 정상 동작 총 5건을 추가했다 — 수정 전 코드로 되돌리면 신규 테스트 3건이 실제로 깨짐을 확인했다(1182/1185 -> 수정 복원 후 1185/1185). index.html/sw.js 변경이라 APP_VERSION 1.47.107->1.47.108, sw.js CACHE v369->v370 갱신. node test/run.js 1181/1181 -> 1185/1185 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 170,
+      "phase": "review",
+      "timestamp": "2026-10-10T03:30:00.000Z",
+      "summary": "cycle170 develop(sanitizeBackup()에 반복거래 skip/confirmedDates 배열 검증 추가) 검토 — 코드로 실제 소비 지점을 대조 확인: migrate()(index.html:2115)의 Object.assign({skip:[],confirmedDates:[],...}, r, {...})는 기본값을 \"없을 때만\" 채우는 구조라 r.skip/r.confirmedDates가 숫자·객체처럼 존재하되 배열이 아니면 그 손상값이 그대로 덮어써 살아남고, 이후 confirmRecNow(1546)·postponeRecTransfer(1552,1555)·delRec(4139,4143-4146,4172-4174)·recSave(4306) 등이 r.skip.slice()/r.skip.push()/splitRecOverrides(r.skip,...)를 가드 없이 직접 호출해 TypeError로 터지는 경로가 실제로 존재함을 확인했다. expandRec(2238)·pendingTransferCount류(1519)처럼 (r.skip||[])/(r.confirmedDates||[]) 가드가 있는 호출부도 있지만 위 가드 없는 직접 호출부들 때문에 여전히 크래시 가능. 추가된 sanitizeBackup 검증(필드 존재+비배열→[]로, 배열이면 문자열 아닌/빈 항목 필터)은 migrate() 이전에 선행 실행되어 이 두 클래스를 모두 막는다. 테스트 4개 추가, node test/run.js 1185/1185 통과. 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
       "commit": null
     }
   ]
