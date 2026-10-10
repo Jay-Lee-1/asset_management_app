@@ -1,15 +1,8 @@
 {
   "cycle": 171,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 166,
-      "phase": "develop",
-      "timestamp": "2026-10-09T10:05:00.000Z",
-      "summary": "Explore 서브에이전트로 160-165사이클(접근성/CSV가드/시계오차 작업)과 겹치지 않는 새 개선점을 탐색 — sanitizeBackup()(index.html~5724)이 txns/assets/recurrences/goals/inquiries/assetQtyLog/categories/owners/budgetHistory/catIcon/catVar/deletedType/deletedBal/nwHistory를 전부 검증하면서 DB.deletedIds({id:삭제시각(ms)} 톰스톤 맵)만 전혀 건드리지 않고(최종 Object.assign 오버라이드 목록에도 없어) 백업 복원·클라우드 풀 양쪽에서 obj.deletedIds가 그대로 통과함을 발견했다. mergeCollection()(logic.js)과 mergeRemoteDataIntoLocal()(1472줄)이 이 맵의 값을 (r.updatedAt||0)>delLocalTs처럼 순수 숫자 비교로만 쓰는데, 값이 숫자가 아니면(예: 손상된 문서나 미래의 실수로 ISO 문자열이 들어간 경우) Number>NaN이 항상 false가 되어 '삭제 뒤 다른 기기에서 수정된 사본을 살리는' 복구 경로가 조용히 막혀 정상 레코드가 영구히 사라진다 — cycle141/163이 nwHistory/categories/budgetHistory에서 고친 것과 같은 '검증 분기 누락' 버그 클래스가 deletedIds에만 남아 있던 것. catIcon/catVar류의 sanitizeFlatMap(객체 형태만 검증)으로는 부족해(값 타입을 안 봄) deletedIds 전용 블록을 새로 추가: 객체가 아니면 통째로 {}로, 값이 유한수가 아닌 항목은(맵 전체가 아니라) 그 id만 제거하고 fixedCount로 센다. 최종 반환 객체에도 deletedIds를 포함시켰다. test/run.js에 버그 재현(비숫자 톰스톤을 mergeCollection에 바로 넘기면 수정된 원격 사본을 못 살림) 1건 + 객체 아님/비숫자 값 제거(+정규화 후 mergeCollection 정상 동작 확인)/정상 케이스 회귀 없음 총 4건을 추가했다. index.html/sw.js 변경이라 APP_VERSION 1.47.99->1.47.100, sw.js CACHE v361->v362 갱신. node test/run.js 1149/1149 -> 1153/1153 통과.",
-      "commit": null
-    },
     {
       "cycle": 166,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-10T07:11:38.145Z",
       "summary": "critique(cycle170) 계획대로 push 실패(CLOUD_SYNC_STATE='error') 자동 재시도 + 지속 경고를 구현했다. 기존 pullCloudIfStale 60초 interval(cycle169) 바로 뒤에 독립된 새 setInterval(()=>{if(!document.hidden&&CLOUD_UID&&DB&&CLOUD_SYNC_STATE==='error')pushCloud().catch(()=>{})},60*1000)을 추가했다 — PUSH_CLOUD_INFLIGHT가 이미 중복 push를 막아주므로 상태만 확인하고 그대로 재시도한다. homeAlerts()의 cloudConflict 라인 바로 뒤에 else if(CLOUD_UID&&CLOUD_SYNC_STATE==='error')arr.push({kind:'cloudSyncError'})를 추가해 conflict/error가 배타적으로 하나만 뜨게 했고(동시에 같은 CLOUD_SYNC_STATE 값이라 원래도 배타적), dismiss 플래그 없이 cloudSyncOk()가 호출되면(재시도 성공) 자연히 사라진다. homeAlertCard()에 cloudConflict와 같은 버튼 스타일로 cloudSyncError 분기('클라우드 동기화에 실패했어요' · '자동으로 다시 시도하고 있어요 · 눌러서 확인' · onclick=openAccountSheet())를 추가했다. test/run.js: 새 setInterval statement 전용으로 sandbox.setInterval 스텁을 _pushRetryIntervalCb/_pushRetryIntervalMs 필드로 바꿔 끼운 뒤 extractStatement()로 실행해 캡처했다(기존 _pullStaleIntervalCb와 섞이지 않게 분리) — 60초 주기 확인 1건 + error 상태에서 포그라운드면 pushCloud() 호출/ok·conflict·syncing·idle이면 스킵/백그라운드(document.hidden)면 스킵/CLOUD_UID·DB 없으면 스킵 총 5건. homeAlerts에 error일 때 뜨고 ok/idle이면 안 뜨고 CLOUD_UID 없으면 안 뜨고 conflict와 배타적임을 확인하는 4건 + homeAlertCard 렌더 1건, 총 10건을 추가했다. index.html/sw.js 변경이라 APP_VERSION 1.47.108->1.47.109, sw.js CACHE v370->v371 갱신. node test/run.js 1185/1185 -> 1195/1195 통과. pending_advance_plan을 비웠다.",
+      "commit": null
+    },
+    {
+      "cycle": 171,
+      "phase": "develop",
+      "timestamp": "2026-10-10T08:30:00.000Z",
+      "summary": "general-purpose 서브에이전트로 141-170사이클과 겹치지 않는 새 개선점을 탐색 — txnsToCSV()의 guard(v)(index.html:5546, 구 regex /^[=+\\-@\\t\\r]/)와 CSV 재가져오기 csvRowToImportTxn()이 쓰는 unguardCsv(v)(5557, 구 regex /^'[=+\\-@\\t\\r]/)의 라운드트립이 비대칭임을 발견했다 — 메모/카테고리/자산명 원문이 이미 '로 시작하고 그 다음이 위험 문자(예: \"'-환불 예정\", \"'=특가\")인 경우, guard()는 \"이미 '로 보호돼 있다\"고 오인해 아무것도 안 붙이는데 unguardCsv()는 \"맨 앞 '+위험문자\" 모양만 보고 무조건 벗겨내 CSV 내보내기→재가져오기(앱 자체의 '이미 있는 내역은 건너뜀' 가져오기 플로우)만으로 원문의 '가 조용히 사라지는 데이터 손상이 발생함을 vm 샌드박스로 재현 확인했다. guard()의 정규식에 '도 트리거 문자로 포함(/^['=+\\-@\\t\\r]/)해 원문이 '로 시작하면 항상 보호용 '를 하나 더 붙이도록 바꾸고, unguardCsv()는 다음 글자를 보지 않고 맨 앞이 '이면 무조건 하나만 벗기도록 단순화해 올바른 역함수 쌍으로 맞췄다. test/run.js에 memo/category/asset명이 모두 '+위험문자로 시작하는 라운드트립 회귀 테스트 1건 추가. index.html/sw.js 변경이라 APP_VERSION 1.47.109->1.47.110, sw.js CACHE v371->v372 갱신. node test/run.js 1195/1195 -> 1196/1196 통과.",
       "commit": null
     }
   ]

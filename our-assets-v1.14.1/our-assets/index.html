@@ -1331,7 +1331,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.109';
+const APP_VERSION='1.47.110';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5542,8 +5542,11 @@ function txnsToCSV(txns,assets){
  const typeLabel={expense:'지출',income:'수입',transfer:'이체',saving:'저축'};
  const nm=(id,snap)=>{const a=(assets||[]).find(x=>x.id===id);return a?a.name:(snap||'')};
  /* 카테고리/자산명/메모는 사용자가 자유롭게 입력하므로 =,+,-,@ 로 시작하면
-    엑셀/스프레드시트가 수식으로 해석할 수 있음(CSV 인젝션) — 앞에 '를 붙여 무력화 */
- const guard=v=>{const s=String(v==null?'':v);return /^[=+\-@\t\r]/.test(s)?"'"+s:s};
+    엑셀/스프레드시트가 수식으로 해석할 수 있음(CSV 인젝션) — 앞에 '를 붙여 무력화.
+    원문이 이미 '로 시작하는 경우도 똑같이 한 번 더 '를 붙여야 한다 — 안 그러면 "'=foo"처럼
+    '뒤에 위험 문자가 바로 오는 원본과, 이 guard가 막 보호한 "'=foo"(원본 "=foo")를 내보낸
+    뒤에는 구분할 수 없어, unguardCsv가 재가져오기 때 원본에 있던 '까지 지워버린다(아래 주석). */
+ const guard=v=>{const s=String(v==null?'':v);return /^['=+\-@\t\r]/.test(s)?"'"+s:s};
  const esc=v=>{const s=String(v==null?'':v);return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s};
  const header=['날짜','구분','카테고리','금액','보내는 자산','받는 자산','메모'].map(esc).join(',');
  const rows=(txns||[]).slice().sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0).map(t=>[
@@ -5553,8 +5556,15 @@ function txnsToCSV(txns,assets){
  return '\ufeff'+[header,...rows].join('\r\n');
 }
 /* ===== 거래 내역 CSV 가져오기 — 순수 함수(DOM/DB 전역 참조 없음) ===== */
-/* txnsToCSV의 guard(v)가 =,+,-,@,\t,\r 로 시작하는 값 앞에 붙인 보호용 '를 되돌린다. */
-function unguardCsv(v){return /^'[=+\-@\t\r]/.test(v)?v.slice(1):v}
+/* txnsToCSV의 guard(v)가 =,+,-,@,\t,\r(또는 원본이 이미 '로 시작하는 경우) 앞에 붙인 보호용 '를
+ * 되돌린다 — guard가 "원본이 '로 시작하면 무조건 보호용 '를 하나 더 붙인다"로 바뀌었으므로
+ * (위 txnsToCSV 주석), 여기서도 "다음 글자가 위험 문자인지"는 더 안 보고 맨 앞이 '면 무조건
+ * 하나만 벗겨내야 guard와 짝이 맞는다. 예전엔 /^'[=+\-@\t\r]/ 로 다음 글자까지 확인했는데,
+ * 메모/카테고리/자산명이 원래 "'=할인"처럼 '로 시작하고 그 다음이 위험 문자였던 경우
+ * guard()가 보호하지 않아(원본에 이미 보호용 '가 붙어있다고 오인하기 쉬움) 내보낸 CSV도
+ * "'=할인" 그대로였고, 재가져오기 때 이 정규식이 맞아 떨어져 원본의 '까지 지워 "=할인"으로
+ * 조용히 바뀌었다(라운드트립 데이터 손상). */
+function unguardCsv(v){return typeof v==='string'&&v[0]==="'"?v.slice(1):v}
 /* CSV 한 행(cells)을 txn 후보로 변환한다. 컬럼 순서는 txnsToCSV의 헤더(날짜,구분,카테고리,금액,
    보내는 자산,받는 자산,메모)와 같다. 자산명은 assets 배열에서 정확히 일치하는 이름을 찾고,
    못 찾으면(오타/삭제됨/다른 앱에서 가져온 이름) id 없이 *AssetName 스냅샷만 남긴다 —

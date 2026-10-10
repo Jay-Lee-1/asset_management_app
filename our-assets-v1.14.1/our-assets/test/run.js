@@ -3180,6 +3180,27 @@ test('unguardCsv: guard()가 =,+,-,@ 앞에 붙인 보호용 \'를 되돌린다'
   assert.strictEqual(sandbox.unguardCsv('평범한 이름'), '평범한 이름');
   assert.strictEqual(sandbox.unguardCsv("어포스트로피'가 중간에"), "어포스트로피'가 중간에");
 });
+/* txnsToCSV의 guard(v)는 예전엔 /^[=+\-@\t\r]/만 보호 대상으로 봐서, 원본 메모/카테고리/자산명이
+ * 이미 '로 시작하고 그 다음이 위험 문자인 경우(예: "'=할인", 사용자가 문자 그대로 입력)는 내보낼 때
+ * 전혀 손대지 않았다 — 그런데 unguardCsv()는 "맨 앞이 '이고 다음이 위험 문자"라는 모양만 보고
+ * 무조건 '를 벗겨내므로, 그 CSV를 재가져오면 guard가 전혀 붙이지 않은 원본의 '까지 지워져
+ * "'=할인"이 "=할인"으로 조용히 바뀌었다(raw round-trip 데이터 손상, app-evolve cycle171 develop).
+ * guard()가 원본이 '로 시작하는 경우도 똑같이 보호(' 하나 더 붙임)하도록 고쳐, 내보내기→가져오기
+ * 전체 경로(txnsToCSV→parseCSV→csvRowToImportTxn, csvRowToImportTxn이 내부에서 unguardCsv를 씀)로
+ * 검증한다. */
+test('txnsToCSV→csvRowToImportTxn round-trip: 메모/카테고리/자산명이 이미 \'로 시작하고 그 다음이 위험 문자(=,+,-,@)여도 재가져오기 때 원본의 \'가 지워지지 않는다', () => {
+  const assets = [{ id: 'a1', name: "'-할인계좌" }];
+  const csv = sandbox.txnsToCSV(
+    [{ date: '2026-01-01', type: 'expense', category: "'=특가", amount: 5000, fromAssetId: 'a1', toAssetId: null, memo: "'-환불 예정" }],
+    assets
+  );
+  const rows = JSON.parse(JSON.stringify(sandbox.parseCSV(csv)));
+  const r = sandbox.csvRowToImportTxn(rows[1], assets);
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.txn.category, "'=특가", '카테고리의 원본 \'가 보존돼야 함');
+  assert.strictEqual(r.txn.memo, "'-환불 예정", '메모의 원본 \'가 보존돼야 함');
+  assert.strictEqual(r.txn.fromAssetId, 'a1', '자산명의 원본 \'가 보존돼 정확히 매칭돼야 함');
+});
 test('csvDateValid: YYYY-MM-DD 형식이 아니거나 실존하지 않는 날짜(예: 2월 30일)는 거부한다', () => {
   assert.strictEqual(sandbox.csvDateValid('2026-01-15'), true);
   assert.strictEqual(sandbox.csvDateValid('2026-1-15'), false);
