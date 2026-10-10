@@ -1,6 +1,6 @@
 {
   "cycle": 173,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
     {
@@ -134,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-10T17:40:00.000Z",
       "summary": "general-purpose 서브에이전트로 141-172사이클과 겹치지 않는 새 개선점을 탐색 — saveRec()에는 두 저장 경로가 있는데, cycle172 advance가 pruneOrphanRecOverrides()를 배선한 것은 과거 회차가 이미 있어 recSaveScopeConfirm() 확인 시트를 거치는 'all' 분기뿐이었고, 과거 회차가 아직 없는 반복(시작일이 미래라 recDates(orig,orig.startDate,addDays(TODAY,-1)).length===0)을 편집할 때는 recHistFieldsChanged(...)&&...length>0 조건의 뒷부분이 거짓이 되어 확인 시트 자체를 거치지 않고 DB.recurrences[i]=d로 곧장 덮어쓰는 두 번째 경로가 그대로 남아 orphan 정리가 전혀 적용되지 않음을 발견했다 — cycle172 critique가 지적한 버그 클래스가 수정이 닿지 않은 다른 코드 경로에 그대로 남아있던 재발. 구체 시나리오: 아직 한 번도 발생하지 않은 미래 반복거래의 특정 회차를 미리 개별 삭제(skip)/수정(edits)해 둔 뒤 day/freq/startDate/weekend를 바꾸면, 확인 시트 없이 즉시 적용되며 옛 스케줄 기준 날짜로 박힌 skip/edits가 새 스케줄과 안 맞는데도 정리되지 않고 영구 저장돼(스케줄이 우연히 되돌아오면 조용히 되살아날 위험) 쌓인다. saveRec()의 wasEditing 분기에서 확인 시트 없이 곧장 덮어쓰는 경로(DB.recurrences[i]=d 직전)에도 pruneOrphanRecOverrides(d)를 추가했다(스케줄 불변·skip/edits 없으면 0 반환해 기존 동작 무영향, 함수 자체 가드 재사용). 정리된 건수가 있으면 'all' 분기와 동일한 토스트 문구('반복을 수정했어요 · 새 일정과 안 맞는 개별 삭제·수정 N건을 정리했어요')를 붙이도록 통일했다. test/run.js에 과거 회차 없는 즉시 적용 경로에서 day 변경 시 고아 skip/edits가 정리되는지(수정 전엔 실패) + 스케줄 미변경(fromAssetId만 변경)이면 기존 skip/edits·토스트가 회귀 없이 그대로인지, 총 2건을 추가했다. index.html만 되돌려 재현한 결과 신규 테스트 1건이 실제로 깨짐을 확인했다(1212/1213 -> 수정 복원 후 1213/1213). index.html/sw.js 변경이라 APP_VERSION 1.47.113->1.47.114, sw.js CACHE v375->v376 갱신. node test/run.js 1211/1211 -> 1213/1213 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 173,
+      "phase": "review",
+      "timestamp": "2026-10-10T18:08:00.318Z",
+      "summary": "cycle173 develop(saveRec()의 확인 시트 없는 즉시적용 분기에도 pruneOrphanRecOverrides 배선)을 검토 — recHistFieldsChanged&&과거회차>0 조건이 거짓이 되어 recSaveScopeConfirm을 거치지 않고 DB.recurrences[i]=d로 직행하는 경로에 cleaned=pruneOrphanRecOverrides(d)를 추가한 것으로, 코드 위치/주석/토스트 문구 모두 cycle172의 all 분기와 패턴이 일치한다. 스케줄 미변경 시(recHistFieldsChanged 거짓이라 이 분기에 온 경우) d의 schedule이 orig와 동일해 recDates() valid set도 기존 skip/edits와 그대로 일치하므로 cleaned=0이 되어 회귀 없음을 확인했고, 실제로 신규 회귀 테스트(fromAssetId만 변경)가 이를 검증한다. index.html의 script 블록 2개 모두 node -e new Function()으로 문법 검증 통과, APP_VERSION(1.47.114)/sw.js CACHE(v376) 버전 쌍이 올바르게 맞물려 있음을 확인. node test/run.js 1213/1213 전부 통과. 코드 변경할 이슈를 찾지 못함 — 이상 없음.",
       "commit": null
     }
   ]
