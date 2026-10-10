@@ -1,7 +1,11 @@
 {
   "cycle": 171,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "서비스워커 업데이트 체크가 '계속 떠 있는 동안'에는 전혀 발동하지 않음 (pullCloudIfStale과 동일한 stay-open 공백)",
+    "why": "index.html의 SW 등록(8073-8091줄)은 controllerchange 이벤트에만 의존하는데, 이는 브라우저가 navigation(새 페이지 로드/새로고침) 시점에만 자체적으로 update 체크를 수행할 때 발동한다. registration.update()를 코드 전체에서 호출하는 곳이 전혀 없음(grep으로 확인). PWA를 홈 화면에 설치해 며칠씩 켜두는 사용자(잠금/해제, 백그라운드/포그라운드 전환 반복 — 이들은 navigation이 아님)는 새 버전이 여러 번 배포돼도 #swUpdateBar 배너를 전혀 못 보고, 강제종료 후 재실행하기 전까지 구버전 코드(이번 사이클들이 고친 sanitizeBackup/클라우드 동기화 수정 포함)를 계속 돌리게 된다. cycle169가 클라우드 pull에 대해 정확히 이 '전환 시에만 발동, 계속 떠 있으면 공백' 문제를 pullCloudIfStale() 60초 interval로 해결한 것과 동일한 버그 클래스의 SW 쪽 나머지 절반.",
+    "approach": "1) navigator.serviceWorker.register('./sw.js') 성공 후 ServiceWorkerRegistration을 모듈 레벨 변수에 보관. 2) autoSyncRates/pullCloudIfStale 패턴(7653/8061줄)과 동일한 모양으로 setInterval(()=>{if(!document.hidden)reg.update().catch(()=>{})}, 30~60분)을 추가. 3) 기존 visibilitychange-visible 핸들러(pullCloudIfStale() 호출 지점, 8046줄 부근)에도 reg.update().catch(()=>{})를 같이 호출해 포그라운드 복귀 시 즉시 체크. 4) 새 UI는 불필요 — update()가 새 워커를 설치하면 기존 showSwUpdateBar()/controllerchange가 그대로 배너를 띄움. 5) 가능하면 shouldPullCloud처럼 테스트 가능한 순수 헬퍼(예: shouldCheckSwUpdate(lastCheckMs, now))를 두어 test/run.js에서 주기를 검증. registration.update()는 실제 네트워크 요청을 하므로 test/run.js에서는 reg 객체를 스텁으로 교체해 호출 여부/주기만 검증(실제 fetch 없이)."
+  },
   "history": [
     {
       "cycle": 166,
@@ -148,6 +152,13 @@
       "phase": "review",
       "timestamp": "2026-10-10T09:07:43.000Z",
       "summary": "cycle171 develop(guard/unguardCsv 라운드트립 비대칭 수정) 검토 — 손으로 네 가지 경로를 재추적: 원문이 위험문자로 시작(\"=foo\")→guard \"'=foo\"→unguard \"=foo\"(복원), 원문이 '+위험문자(\"'=foo\")→guard는 이제 '도 트리거셋에 포함돼 매칭→\"''=foo\"→unguard 한 글자만 벗겨 \"'=foo\"(복원, 수정 전엔 깨졌던 경로), 원문이 '+안전문자(\"'tis\")→guard \"''tis\"→unguard \"'tis\"(복원, 수정 전에도 안전했던 경로가 그대로 유지됨), 안전한 원문(\"hello\")→무변화. 네 경로 모두 올바른 역함수 쌍임을 확인했고, guard/unguardCsv의 유일한 소비처(category/fromName/toName/memo 4곳, 5578-5582줄)도 grep으로 전수 확인해 다른 호출부가 없음을 재확인. node test/run.js 1196/1196 통과. 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
+      "commit": null
+    },
+    {
+      "cycle": 171,
+      "phase": "critique",
+      "timestamp": "2026-10-10T10:15:00.000Z",
+      "summary": "general-purpose 서브에이전트로 141-171사이클 전부(특히 164-171의 sanitizeBackup/a11y/CSV가드/시계오차/stale-pull/goalProgress/doMaturity/cloud push 재시도 미세수정들) + 기각 이력을 전달하고 앱 전체를 재조망. 새로 발견: SW 등록(index.html 8073-8091줄)이 controllerchange 이벤트에만 의존하고 registration.update()를 코드 전체에서 한 번도 호출하지 않음(grep 확인) — 브라우저 자체 업데이트 체크는 navigation(새 페이지 로드) 시점에만 발동하므로, PWA를 홈 화면에 설치해 며칠씩 켜두고 잠금/해제·백그라운드/포그라운드 전환만 반복하는 사용자는 새 버전이 여러 번 배포돼도 #swUpdateBar 배너를 전혀 못 보고 강제종료 후 재실행 전까지 구버전 코드를 계속 돌린다 — cycle169가 클라우드 pull에 대해 정확히 같은 '전환 시에만 발동, stay-open엔 공백' 문제를 pullCloudIfStale() 60초 interval로 고친 것과 동일한 버그 클래스의 SW 쪽 나머지 절반. autoSyncRates/pullCloudIfStale 패턴과 동일한 모양으로 reg.update() 주기 호출(백그라운드 setInterval + visibilitychange-visible 즉시 체크)을 추가하는 계획을 pending_advance_plan에 저장. 러너업(기각): Supabase 클라우드 데이터 평문 저장(키 관리 UX 전면 개편 필요, 서버/RLS 영역이라 범위 초과), 채무 자산 이자 누적/APR 모델링 없음(개방형 제품 설계 질문, 범위 초과), 거래 영수증/사진 첨부 없음(저장 용량·내보내기 포맷·UI 전반에 걸쳐 범위 초과), 주식/FX/금 costBasis가 FIFO 아닌 단일값(이미 기각된 거래분할 항목과 동일한 범위 문제), delOwner가 goals.owner는 가드 안 함(이미 감사 완료된 cascade 항목에 속하고 데이터 손실이 아닌 UI상 미선택 정도의 저가치 증상이라 재제안 보류). 코드 변경 없음(읽기 전용 조사).",
       "commit": null
     }
   ]
