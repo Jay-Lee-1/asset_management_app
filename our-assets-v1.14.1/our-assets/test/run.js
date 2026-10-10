@@ -100,6 +100,23 @@ function extractConstBlock(name) {
   return src.slice(start + 'const '.length, i);
 }
 
+// FUNCTIONS 목록(개별 함수 추출)에 들어가지 않는 최상위 statement — setInterval(cb,ms)/
+// addEventListener(...) 같은 이벤트·타이머 와이어링 한 줄을 실행형으로 검증해야 할 때 쓴다.
+// markerText가 시작하는 지점부터 괄호/중괄호 깊이를 세어, 깊이가 0으로 돌아온 뒤 처음 나오는
+// ";"까지(포함)를 그대로 잘라낸다(extractFunction/extractConstBlock과 같은 깊이 세기 방식).
+function extractStatement(markerText) {
+  const start = src.indexOf(markerText);
+  if (start === -1) throw new Error(`extractStatement: "${markerText}" 문장을 index.html에서 찾지 못함`);
+  let depth = 0, i = start;
+  for (; i < src.length; i++) {
+    const c = src[i];
+    if (c === '(' || c === '{') depth++;
+    else if (c === ')' || c === '}') depth--;
+    else if (c === ';' && depth === 0) { i++; break; }
+  }
+  return src.slice(start, i);
+}
+
 // 위 extractFunction/extractConst/extractLet은 FUNCTIONS/CONSTS/LETS 목록에 이름을 올린
 // 대상만 개별적으로 뽑아 vm에 태운다 — 목록 밖의 코드(이벤트 리스너 등 최상위 문, 또는
 // 아직 FUNCTIONS에 추가되지 않은 새 함수)에 backtick 누락이나 중괄호 짝 안 맞음 같은 구문
@@ -366,8 +383,16 @@ const sandbox = {
   // updateAlerts()가 부르는 최소 DOM 흉내 — nav-btn 순회는 빈 배열로, planBadge는 errBannerEl과
   // 같은 패턴의 classList/textContent 흉내 엘리먼트로, moveBlob은 실제 소스가 아니라(FUNCTIONS에
   // 없음) 호출 여부만 흉내내는 no-op으로 둔다(물방울 이동은 순수 로직 검증 대상이 아님).
-  document: { querySelectorAll: () => [] },
+  // hidden은 포그라운드 유지 중 재-pull interval(app-evolve cycle169 advance)이 읽는
+  // document.hidden — 기본은 포그라운드(false)로 두고, 해당 테스트가 직접 true/false로 바꾼다.
+  document: { querySelectorAll: () => [], hidden: false },
   moveBlob: () => {},
+  // setInterval(cb,ms)는 이 샌드박스가 실제 타이머를 돌리지 않으므로(FUNCTIONS는 개별 함수만
+  // 추출해 실행), 유일하게 vm으로 직접 실행하는 포그라운드 유지 중 재-pull interval 와이어링의
+  // 콜백/주기만 캡처해 테스트가 직접 호출할 수 있게 한다(app-evolve cycle169 advance).
+  _pullStaleIntervalCb: null,
+  _pullStaleIntervalMs: null,
+  setInterval: (fn, ms) => { sandbox._pullStaleIntervalCb = fn; sandbox._pullStaleIntervalMs = ms; return 0; },
   planBadgeEl: {
     _text: '',
     classList: {
@@ -635,6 +660,14 @@ vm.createContext(sandbox);
 // (함수 선언끼리는 순서가 무관하지만, 실제 로드 순서와 맞춰 둔다).
 vm.runInContext(logicSrc, sandbox, { filename: 'logic.js' });
 vm.runInContext(extracted, sandbox, { filename: 'extracted-from-index.html' });
+// FUNCTIONS 목록 밖의 최상위 와이어링 statement 하나 — 포그라운드 유지 중 재-pull interval
+// (app-evolve cycle169 advance)을 실제로 실행해, 위 setInterval 스텁이 그 콜백/주기를 캡처하게
+// 한다(아래 pullCloudIfStale interval 테스트 참고).
+vm.runInContext(
+  extractStatement("setInterval(()=>{if(!document.hidden)pullCloudIfStale()"),
+  sandbox,
+  { filename: 'pull-stale-interval-wiring-from-index.html' }
+);
 
 const tests = [];
 function test(name, fn) { tests.push({ name, fn }); }
@@ -7228,6 +7261,36 @@ test('pullCloudIfStale: 동기화가 오래됐고 시트도 닫혀 있으면 원
   assert.ok(sandbox.DB.assets.some(a => a.id === 'remote-only'), '원격에만 있던 레코드가 병합돼야 함');
   sandbox._lsMap = null;
   sandbox.CLOUD_UID = null;
+});
+
+/* ---------- 포그라운드 유지 중 재-pull interval(app-evolve cycle169 advance) — 위
+ * visibilitychange-visible/focus/pageshow 3곳은 모두 '전환'에서만 pullCloudIfStale()을 부르므로,
+ * 가족 공유 계정에서 두 기기가 나란히 계속 포그라운드에 떠 있으면(둘 다 백그라운드로 안 감) 어느
+ * 쪽도 전환이 안 일어나 서로의 수정이 영원히 반영되지 않았다. autoSyncRates(3분 간격) 선례와 같은
+ * 모양으로 60초마다 틱하되, document.hidden이면(백그라운드/다른 탭) 건드리지 않고, 실제 pull
+ * 빈도는 pullCloudIfStale() 내부의 CLOUD_PULL_STALE_MS(3분) 문턱이 그대로 제한한다. ---------- */
+test('포그라운드 유지 중 재-pull interval: autoSyncRates(3분)와 같은 선례로 60초마다 틱한다', () => {
+  assert.strictEqual(sandbox._pullStaleIntervalMs, 60 * 1000);
+  assert.strictEqual(typeof sandbox._pullStaleIntervalCb, 'function');
+});
+test('포그라운드 유지 중 재-pull interval: document.hidden===false(포그라운드)면 틱마다 pullCloudIfStale()을 부른다', () => {
+  const origFn = sandbox.pullCloudIfStale;
+  let calls = 0;
+  sandbox.pullCloudIfStale = () => { calls++; return Promise.resolve(); };
+  sandbox.document.hidden = false;
+  sandbox._pullStaleIntervalCb();
+  sandbox.pullCloudIfStale = origFn;
+  assert.strictEqual(calls, 1);
+});
+test('포그라운드 유지 중 재-pull interval: document.hidden===true(백그라운드/다른 탭)면 건드리지 않고 건너뛴다', () => {
+  const origFn = sandbox.pullCloudIfStale;
+  let calls = 0;
+  sandbox.pullCloudIfStale = () => { calls++; return Promise.resolve(); };
+  sandbox.document.hidden = true;
+  sandbox._pullStaleIntervalCb();
+  sandbox.pullCloudIfStale = origFn;
+  sandbox.document.hidden = false;
+  assert.strictEqual(calls, 0);
 });
 
 /* ---------- pullCloud/afterCloudAuth/resolveCloudPullRemote: markCloudSynced() 호출 시점

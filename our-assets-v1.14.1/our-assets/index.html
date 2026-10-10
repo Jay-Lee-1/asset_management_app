@@ -1331,7 +1331,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.106';
+const APP_VERSION='1.47.107';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -8017,6 +8017,12 @@ window.addEventListener('focus',()=>{maybeRollDay();pullCloudIfStale().catch(()=
 window.addEventListener('storage',handleForeignStorage); /* 다른 탭이 save()로 덮어쓴 걸 감지 — handleForeignStorage 주석 참고 */
 window.addEventListener('pageshow',()=>{maybeRollDay();pullCloudIfStale().catch(()=>{})});
 setInterval(maybeRollDay,60000);
+/* visibilitychange-visible/focus/pageshow는 '전환'에서만 발동해, 기기가 계속 포그라운드에
+ * 떠 있는 동안(가족 공유 계정에서 두 사람이 나란히 동시에 써서 둘 다 백그라운드로 안 가는 경우)
+ * 다른 기기의 수정을 영원히 못 받는 공백이 있었다(app-evolve cycle169 critique) — autoSyncRates
+ * 3분 간격 선례와 같은 모양으로 60초마다 틱하되, pullCloudIfStale() 내부의 CLOUD_PULL_STALE_MS(3분)
+ * 문턱이 실제 pull 빈도를 그대로 제한한다. */
+setInterval(()=>{if(!document.hidden)pullCloudIfStale().catch(()=>{})},60*1000);
 matchMedia('(prefers-color-scheme:dark)').addEventListener('change',()=>{if(DB.settings.themeMode==='system')renderCurrent()});
 setTimeout(()=>{if(!DB)return;const soon=DB.assets.filter(a=>a.type==='savings'&&a.maturityDate&&a.maturityDate<=addDays(TODAY,7));
  if(soon.length)toast(`저축 만기 ${soon.length}건이 임박했어요`)},1200);
