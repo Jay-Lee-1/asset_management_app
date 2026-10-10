@@ -1,19 +1,8 @@
 {
-  "cycle": 172,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "반복거래 '전체 적용' 스케줄 변경 시 기존 skip/edits가 새 날짜와 안 맞아 조용히 무효화됨",
-    "why": "recSaveScopeApply()의 'all' 분기(index.html ~4320-4330)는 day/freq/startDate가 바뀐 레코드로 DB.recurrences[i]=d 교체만 하고 기존 skip(삭제한 회차)/edits(개별 수정한 회차) 배열은 그대로 들고 간다. 두 필드 모두 '교체 전 스케줄' 기준 절대 날짜 문자열인데, expandRec()(2236-2238)은 '교체 후' recDates()와 매칭하므로 스케줄이 바뀌면 날짜가 전혀 안 맞아 삭제했던 회차가 되살아나고 개별 수정값은 조용히 사라진다. '미래부터' 분기(splitRecurrenceAt/splitRecOverrides)는 이미 구 스케줄을 보존해 이 문제를 피하므로 'all' 분기만 비대칭.",
-    "approach": "recSaveScopeConfirm()(index.html ~4312) 또는 saveRec()에서 scope 확인 시트를 띄우기 전에 orig.skip?.length 또는 Object.keys(orig.edits||{}).length가 0보다 크고 변경 필드에 day/freq/startDate/weekend 같은 스케줄 모양 필드가 포함돼 있으면, 기존 '과거 기록도 함께 바뀌어요' 경고(4316줄 .ol-sub 빨간 글씨)와 같은 패턴으로 '개별 삭제/수정한 회차가 새 일정과 안 맞아 무시돼요' 경고 문구를 추가한다. '전체 적용'이 실제로 선택되면 새 recDates()와 매칭 안 되는 skip/edits 항목을 정리(고아 제거)하고 delCat/deleteTxnsUndo류에서 쓰는 패턴처럼 정리된 개수를 토스트로 안내한다. test/run.js에는 day 변경+기존 skip/edits가 있는 상태에서 'all' 적용 시 고아 항목이 정리되는지와 경고 표시 조건(스케줄 필드 변경 + skip/edits 비어있지 않음) 조합을 회귀 테스트로 추가한다."
-  },
+  "cycle": 173,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 167,
-      "phase": "advance",
-      "timestamp": "2026-10-09T18:05:00.000Z",
-      "summary": "critique(cycle167) 계획대로 pullCloudIfStale()을 추가했다. 순수 함수 shouldPullCloud(now,lastSyncedAtMs,thresholdMs)(마지막 성공 pull/push 이후 thresholdMs 이상 지났는지만 판정, 한 번도 동기화 안 됐으면 곧장 true)와 문턱 상수 CLOUD_PULL_STALE_MS(3분)를 scheduleCloudPush 바로 아래에 추가했다. pullCloudIfStale()은 sbReady()&&CLOUD_UID&&DB가 있고 시트가 열려 있지 않을 때만(TAB_SYNC_PENDING의 '편집 중엔 덮어쓰지 않는다' 원칙을 '__syncedAt'를 안 건드린 채 이번 라운드를 그냥 건너뛰는 방식으로 적용 — 별도 pending 큐 없이 다음 포그라운드 전환에서 자연히 재시도됨) dataKey()+'__syncedAt'로 신선도를 확인하고, 오래됐으면 pullCloud()로 원격을 받아 mergeRemoteDataIntoLocal()로 로컬에 병합 후 save()한다(병합 결과는 save()가 부르는 scheduleCloudPush()로 자동 되밀림, afterCloudAuth 'merged' 분기와 동일 패턴). document.visibilitychange의 visible 분기(unlockApp/maybeRollDay 분기 모두 이어서 호출), window 'focus', window 'pageshow' 3곳에 각각 .catch(()=>{})로 와이어링했다. test/run.js FUNCTIONS에 shouldPullCloud/pullCloudIfStale/appIsOpen(의존 함수, 기존엔 미등록)을 추가하고 CLOUD_PULL_STALE_MS를 CLOCK_SKEW_WARN_MS와 동일한 방식으로 sandbox 리터럴에 넣었다. shouldPullCloud 단위 테스트 3건 + pullCloudIfStale 통합 테스트 5건(CLOUD_UID 없음/DB 없음/시트 열림/아직 신선함/오래돼서 병합+save 호출 각각 스킵·수행 검증) 총 8건을 추가했다. index.html/sw.js 변경이라 APP_VERSION 1.47.102->1.47.103, sw.js CACHE v364->v365 갱신. node test/run.js 1161/1161 -> 1169/1169 통과. pending_advance_plan을 비웠다.",
-      "commit": null
-    },
     {
       "cycle": 168,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-10T15:15:05.2886Z",
       "summary": "general-purpose 서브에이전트로 141-171사이클 전부(기각 이력 포함)를 전달하고 앱 전체를 재조망. 새로 발견: 반복거래 스케줄(day/freq/startDate)을 '전체 적용'으로 바꾸면 recSaveScopeApply()의 'all' 분기(index.html 4320-4330)가 DB.recurrences[i]=d로 레코드를 통째로 교체하면서 기존 skip/edits 배열(과거 스케줄 기준 절대 날짜 문자열)을 그대로 들고 가는데, expandRec()(2236-2238)이 새 day/freq/startDate로 재계산한 recDates()와 그 날짜들을 매칭하므로 날짜가 전혀 안 맞아 삭제(skip)했던 회차가 조용히 되살아나고 개별 수정(edits)했던 회차는 조용히 원래 값으로 되돌아감을 코드로 확인(테스트도 이 조합 미검증). '미래부터' 분기(splitRecurrenceAt/splitRecOverrides)는 이미 구 스케줄을 보존하도록 처리돼 있어 'all' 분기만 비대칭적으로 공백. recSaveScopeConfirm()의 스코프 확인 시트에 orig.skip/edits가 비어있지 않은데 스케줄 모양 필드(day/freq/startDate/weekend)가 바뀌면 기존 '과거 기록도 함께 바뀌어요' 경고(4316줄, .ol-sub 빨간 글씨)와 같은 패턴으로 '개별 삭제/수정한 회차가 새 일정과 안 맞아 무시돼요' 경고를 추가하고, '전체 적용' 실행 시 고아가 된 skip/edits 항목을 정리하며 토스트로 개수를 알리는 계획을 pending_advance_plan에 저장. 러너업(기각): skip/edits/confirmedDates 무한 증가(이미 기각, 이건 증가가 아니라 정확성 문제라 구분), 예산초과 OS알림 dedupe 키가 지출액을 안 담아 월중 재초과 시 재알림 안 됨(저빈도·저심각도), 자산 타입 변경(주식→현금 등) 엣지케이스(assetBase 폴백 확인 결과 이미 정상 처리), PIN 무차별대입 쓰로틀(이미 APPLOCK.verify/AUTH._lockStatus로 구현 완비 확인), CSV 중복감지/검색 범위 UX/SW 캐시 버전 스큐(모두 이미 잘 처리됨 확인), fxAmount/goldDon 소수점 손실 가설(parseFloat 사용, num() 미사용으로 반증). 코드 변경 없음(읽기 전용 조사).",
+      "commit": null
+    },
+    {
+      "cycle": 172,
+      "phase": "advance",
+      "timestamp": "2026-10-10T16:30:00.000Z",
+      "summary": "critique(cycle172)의 계획대로 구현. recSaveScopeApply('all')이 d(editRec()의 JSON 클론이라 orig의 옛 skip/edits를 그대로 들고 있음)를 새 스케줄로 통째로 교체하기 전에 pruneOrphanRecOverrides(d)를 불러, d 자신의(=새) day/freq/startDate/weekend로 recDates()를 다시 돌려 실제로 생성되는 날짜만 skip/edits에 남기고 나머지(고아)는 제거하도록 index.html(4296-4332 부근)에 추가했다. 정리 개수를 반환해 recSaveScopeApply가 토스트에 '새 일정과 안 맞는 개별 삭제·수정 N건을 정리했어요'로 안내한다(정리할 게 없으면 기존 토스트 그대로, 회귀 없음). recHistFieldsChanged의 부분집합인 recScheduleShapeChanged(day/freq/startDate/weekend만)를 추가해, recSaveScopeConfirm()의 확인 시트에서 orig.skip/edits가 비어있지 않고 스케줄 모양이 바뀌는 경우에만 '전체 적용' 옵션의 기존 빨간 경고(ol-sub) 뒤에 '개별로 삭제·수정한 회차는 새 일정과 안 맞으면 정리돼요' 문구를 덧붙였다(fromAssetId/amount/category 등 스케줄 비영향 필드만 바뀐 경우엔 경고 없음). pruneOrphanRecOverrides는 skip/edits가 둘 다 비어있으면 recDates() 호출 자체를 건너뛰어 RANGE_TO가 아직 세팅 안 된 기존 'all' 테스트들에 영향이 없게 했다. test/run.js FUNCTIONS에 recScheduleShapeChanged/pruneOrphanRecOverrides를 추가하고, 단위 테스트(스케줄 필드 판정, 고아 skip/edits 정리, 유효한 날짜는 보존, RANGE_TO 미설정 시 안전)와 saveRec()+recSaveScopeApply('all') 통합 테스트(day 5->10 변경 시 고아 skip 1건+edits 1건이 정리되고 토스트에 '2건'이 뜨는지, 정리할 게 없을 때 토스트 문구가 회귀 없이 그대로인지)를 추가했다. index.html/sw.js 변경이라 APP_VERSION 1.47.112->1.47.113, sw.js CACHE v374->v375 갱신. node test/run.js 1211/1211 통과(신규 8건 포함). pending_advance_plan을 비웠다.",
       "commit": null
     }
   ]

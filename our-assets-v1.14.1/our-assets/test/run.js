@@ -171,7 +171,7 @@ const FUNCTIONS = [
   'deletedAssetHistoryExists', 'relinkDeletedAsset',
   'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'restoreBackup', 'storageOutcomeMsg', 'shouldWarnUnpersisted', 'shouldWarnStorageSize', 'toggleRecActive', 'toggleAdjustSurplus', 'touchSave',
   'sanitizeAmount', 'sanitizeBackup',
-  'saveRec', 'recHistFieldsChanged', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
+  'saveRec', 'recHistFieldsChanged', 'recScheduleShapeChanged', 'pruneOrphanRecOverrides', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
   'expandRec', 'allTxns', 'txnsByDateInRange', 'spendByCategory', 'spendTrend', 'spendTrendBadge', 'histSumTotals',
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'expenseBreakdownCard',
   'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asOpenCur', 'asCur', 'asToggleNeg', 'openAssetSheet', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'mergeRemoteDataIntoLocal', 'fmtAmt', 'fmtQty',
@@ -4844,6 +4844,92 @@ test('saveRec: 이력 비영향 필드(메모 등)만 바뀌면 과거 회차가
   sandbox.saveRec();
   assert.strictEqual(sandbox.lastSheetHtml, null, '이력 비영향 필드만 바뀌면 확인 없이 바로 적용되어야 함');
   assert.strictEqual(sandbox.DB.recurrences[0].memo, '월세');
+});
+/* ---------- recScheduleShapeChanged / pruneOrphanRecOverrides (app-evolve cycle173 advance) ----------
+ * critique(cycle172)가 지적한 결함: recSaveScopeApply('all')의 d는 editRec()의 JSON 클론이라 orig의
+ * skip/edits(옛 스케줄 기준 절대 날짜)를 그대로 들고 있다. day/freq/startDate/weekend가 바뀌면
+ * recDates()가 생성하는 날짜 자체가 바뀌므로, 옛 날짜로 박힌 skip은 더는 아무 날짜와도 안 맞아
+ * "삭제했던 회차가 되살아나고", edits는 "개별 수정값이 조용히 사라진다". */
+test('recScheduleShapeChanged: day/freq/startDate/weekend가 바뀌면 true, 그 외 필드만 바뀌면 false', () => {
+  const orig = { day: 5, freq: 'monthly', startDate: '2026-01-05', weekend: 'none', fromAssetId: 'a1', amount: 1000, category: '관리비', memo: '관리비' };
+  assert.strictEqual(sandbox.recScheduleShapeChanged(orig, { ...orig, day: 10 }), true);
+  assert.strictEqual(sandbox.recScheduleShapeChanged(orig, { ...orig, freq: 'weekly' }), true);
+  assert.strictEqual(sandbox.recScheduleShapeChanged(orig, { ...orig, startDate: '2026-02-05' }), true);
+  assert.strictEqual(sandbox.recScheduleShapeChanged(orig, { ...orig, weekend: 'later' }), true);
+  assert.strictEqual(sandbox.recScheduleShapeChanged(orig, { ...orig, fromAssetId: 'a2', amount: 2000, category: '주거', memo: '월세' }), false);
+});
+test('pruneOrphanRecOverrides: skip/edits가 모두 비어 있으면 recDates() 없이도 0을 반환한다(RANGE_TO가 설정 안 돼 있어도 안전해야 함)', () => {
+  const prevRangeTo = sandbox.RANGE_TO;
+  sandbox.RANGE_TO = null;
+  const d = { freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, weekend: 'none', skip: [], edits: {} };
+  assert.strictEqual(sandbox.pruneOrphanRecOverrides(d), 0);
+  sandbox.RANGE_TO = prevRangeTo;
+});
+test('pruneOrphanRecOverrides: day를 5→10으로 바꾸면 옛 day=5 날짜의 skip/edits는 새 스케줄과 안 맞아 제거된다', () => {
+  sandbox.RANGE_TO = '2026-12-31';
+  const d = {
+    freq: 'monthly', day: 10, startDate: '2026-01-05', endDate: null, weekend: 'none',
+    skip: ['2026-02-05', '2026-03-05'], // 옛(day=5) 스케줄 기준 — 새 스케줄(day=10)에는 존재하지 않는 날짜
+    edits: { '2026-04-05': { amount: 999 } },
+  };
+  const removed = sandbox.pruneOrphanRecOverrides(d);
+  assert.strictEqual(removed, 3, 'skip 2건 + edits 1건 = 고아 3건이 정리되어야 함');
+  assert.strictEqual(d.skip.length, 0);
+  assert.strictEqual(Object.keys(d.edits).length, 0);
+});
+test('pruneOrphanRecOverrides: 새 스케줄에도 여전히 생성되는 날짜의 skip/edits는 그대로 남는다', () => {
+  sandbox.RANGE_TO = '2026-12-31';
+  const d = {
+    freq: 'monthly', day: 10, startDate: '2026-01-05', endDate: null, weekend: 'none',
+    skip: ['2026-02-10', '2026-03-05'], // 2/10은 새 스케줄(day=10)에도 그대로 생성됨, 3/5는 고아
+    edits: { '2026-04-10': { amount: 999 } }, // 4/10도 새 스케줄에 그대로 생성됨
+  };
+  const removed = sandbox.pruneOrphanRecOverrides(d);
+  assert.strictEqual(removed, 1, '3/5 skip만 고아이므로 1건만 정리되어야 함');
+  assert.deepStrictEqual(d.skip, ['2026-02-10']);
+  assert.strictEqual(JSON.stringify(d.edits), JSON.stringify({ '2026-04-10': { amount: 999 } }));
+});
+test("recSaveScopeConfirm: skip/edits가 있는데 스케줄 모양(day/freq/startDate/weekend)이 바뀌면 '전체 적용' 쪽에 정리 경고가 추가된다", () => {
+  const orig = { id: 'r1', memo: '월세', category: '주거', day: 5, freq: 'monthly', startDate: '2026-01-05', weekend: 'none', skip: ['2026-02-05'], edits: {} };
+  const d = { ...orig, day: 10 };
+  sandbox.lastSheetHtml = null;
+  sandbox.recSaveScopeConfirm(orig, d, 0);
+  assert.ok(sandbox.lastSheetHtml.includes('정리돼요'), '스케줄이 바뀌고 skip/edits가 있으면 경고 문구가 보여야 함');
+});
+test("recSaveScopeConfirm: 스케줄이 안 바뀌면(fromAssetId만 변경) skip/edits가 있어도 정리 경고가 없다", () => {
+  const orig = { id: 'r1', memo: '월세', category: '주거', day: 5, freq: 'monthly', startDate: '2026-01-05', weekend: 'none', fromAssetId: 'a1', skip: ['2026-02-05'], edits: {} };
+  const d = { ...orig, fromAssetId: 'a2' };
+  sandbox.lastSheetHtml = null;
+  sandbox.recSaveScopeConfirm(orig, d, 0);
+  assert.ok(!sandbox.lastSheetHtml.includes('정리돼요'), '스케줄이 안 바뀌면 정리 경고가 없어야 함');
+});
+test("saveRec: day를 바꿔 '전체 적용'하면 새 스케줄과 안 맞는 skip/edits가 정리되고 토스트에 정리 건수가 안내된다", () => {
+  sandbox.TWi = -1; sandbox.TODAY = '2026-06-15'; sandbox.RANGE_TO = '2027-06-15';
+  const r = {
+    id: 'r1', type: 'expense', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, count: null,
+    amount: 1000, category: '관리비', memo: '관리비', fromAssetId: 'a1', toAssetId: null, active: true, weekend: 'none',
+    skip: ['2026-02-05'], edits: { '2026-03-05': { amount: 500 } }, // day=5 기준 — day=10으로 바꾸면 둘 다 고아가 됨
+  };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.recDraft = { ...JSON.parse(JSON.stringify(r)), day: 10 };
+  sandbox.lastToast = null;
+  sandbox.saveRec();
+  sandbox.recSaveScopeApply('all');
+  const saved = sandbox.DB.recurrences[0];
+  assert.strictEqual(saved.day, 10);
+  assert.strictEqual(saved.skip.length, 0, '옛 day=5 기준 skip은 새 스케줄과 안 맞아 정리되어야 함');
+  assert.strictEqual(Object.keys(saved.edits).length, 0, '옛 day=5 기준 edits도 정리되어야 함');
+  assert.ok(sandbox.lastToast.includes('2건'), '정리된 건수(skip 1 + edits 1 = 2)가 토스트에 안내되어야 함');
+});
+test("saveRec: '전체 적용'해도 정리할 고아 항목이 없으면 토스트는 기존 문구 그대로다(회귀 방지)", () => {
+  sandbox.TWi = -1; sandbox.TODAY = '2026-06-15'; sandbox.RANGE_TO = '2027-06-15';
+  const r = { id: 'r1', type: 'expense', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, count: null, amount: 1000, category: '관리비', memo: '관리비', fromAssetId: 'a1', toAssetId: null, active: true, weekend: 'none', skip: [], edits: {} };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.recDraft = { ...JSON.parse(JSON.stringify(r)), fromAssetId: 'a2' };
+  sandbox.lastToast = null;
+  sandbox.saveRec();
+  sandbox.recSaveScopeApply('all');
+  assert.strictEqual(sandbox.lastToast, '반복을 수정했어요');
 });
 test('saveRec: 신규 반복 등록(id 없음)은 기존처럼 회귀 없이 바로 추가된다', () => {
   sandbox.TWi = -1; sandbox.TODAY = '2026-06-15';

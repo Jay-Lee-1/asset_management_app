@@ -1331,7 +1331,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.112';
+const APP_VERSION='1.47.113';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4290,6 +4290,24 @@ function saveRec(){
 /* 반복 이력(과거 회차)에 영향을 주는 필드만 비교: 메모는 소급 적용돼도 무해하지만,
    weekend는 recDates()의 shiftWeekend()가 과거 회차의 날짜도 그대로 재계산해 바꾸므로 포함해야 한다 */
 function recHistFieldsChanged(orig,d){return ['fromAssetId','toAssetId','amount','category','day','freq','startDate','weekend'].some(k=>orig[k]!==d[k])}
+/* recHistFieldsChanged의 부분집합: day/freq/startDate/weekend만 — 이 넷은 recDates()가 생성하는
+   날짜 자체를 바꾸므로, orig.skip/edits(옛 스케줄 기준 절대 날짜)가 새 스케줄과 안 맞게 될 수 있다.
+   fromAssetId/amount/category 등은 날짜 생성에 영향 없어 skip/edits와 무관하다(app-evolve cycle173). */
+function recScheduleShapeChanged(orig,d){return ['day','freq','startDate','weekend'].some(k=>orig[k]!==d[k])}
+/* recSaveScopeApply('all')이 d(옛 skip/edits를 그대로 들고 있는 draft)를 새 스케줄로 그대로 교체하기
+   전에 호출한다 — 안 그러면 옛 스케줄 기준 날짜로 박힌 skip/edits가 새 recDates()와 매칭 안 돼
+   삭제했던 회차가 조용히 되살아나거나(skip 무효화) 개별 수정값이 조용히 사라진다(edits 무효화).
+   d 자신의(=새) day/freq/startDate/weekend로 recDates()를 다시 돌려 실제로 생성되는 날짜만 남기고,
+   정리한 개수를 반환해 호출부가 사용자에게 알릴 수 있게 한다. */
+function pruneOrphanRecOverrides(d){
+ const hasSkip=d.skip&&d.skip.length,hasEdits=d.edits&&Object.keys(d.edits).length;
+ if(!hasSkip&&!hasEdits)return 0; /* 지울 게 없으면 recDates() 호출 자체를 건너뜀(불필요한 재계산 방지) */
+ const valid=new Set(recDates(d,RANGE_FROM,RANGE_TO));
+ let removed=0;
+ if(hasSkip){const kept=d.skip.filter(dt=>valid.has(dt));removed+=d.skip.length-kept.length;d.skip=kept;}
+ if(hasEdits){const kept={};Object.entries(d.edits).forEach(([dt,v])=>{if(valid.has(dt))kept[dt]=v;else removed++});d.edits=kept;}
+ return removed;
+}
 /* future 분기(recSave/splitRecurrenceAt)에서 반복을 둘로 쪼갤 때, 개별 회차의 skip(이 날만 삭제)·
    edits(이 날만 수정)를 effectiveDate 기준으로 나눠준다 — 안 나누고 새 반복에 그냥 []/{}를 주면
    effectiveDate 이후로 남아있던 삭제·수정 이력이 split 순간 조용히 사라진다(되살아나거나 원상복구됨) */
@@ -4312,22 +4330,27 @@ function splitRecurrenceAt(original,draft,effectiveDate){
 }
 function recSaveScopeConfirm(orig,d,i){
  window._recSaveScope={orig,d,i};
+ const hasOverrides=(orig.skip&&orig.skip.length>0)||(orig.edits&&Object.keys(orig.edits).length>0);
+ const overrideWarn=hasOverrides&&recScheduleShapeChanged(orig,d)?' · 개별로 삭제·수정한 회차는 새 일정과 안 맞으면 정리돼요':'';
  openSheet(`<h3>반복 내역 수정 범위</h3><div class="desc">'${esc(orig.memo||orig.category)}'은 이미 지난 회차가 있어요. 어디까지 적용할까요?</div>
   <div class="opt-list">
    <button onclick="recSaveScopeApply('future')"><span class="rd"></span><div><div>오늘부터 이후 모두</div><div class="ol-sub">지난 기록은 그대로 두고, 오늘부터 새 내용을 적용해요</div></div></button>
-   <button onclick="recSaveScopeApply('all')"><span class="rd"></span><div><div>전체 적용</div><div class="ol-sub" style="color:var(--expense)">과거 기록도 함께 바뀌어요 · 잔액 이력이 달라질 수 있어요</div></div></button>
+   <button onclick="recSaveScopeApply('all')"><span class="rd"></span><div><div>전체 적용</div><div class="ol-sub" style="color:var(--expense)">과거 기록도 함께 바뀌어요 · 잔액 이력이 달라질 수 있어요${overrideWarn}</div></div></button>
   </div>`);
 }
 function recSaveScopeApply(scope){
  const ctx=window._recSaveScope;if(!ctx)return;window._recSaveScope=null;
  const {orig,d,i}=ctx;
+ let cleaned=0;
  if(scope==='future'){
   const {updatedOriginal,newRec}=splitRecurrenceAt(orig,d,TODAY);
   DB.recurrences[i]=updatedOriginal;DB.recurrences.push(newRec);
  }else{
+  cleaned=pruneOrphanRecOverrides(d);
   DB.recurrences[i]=d;
  }
- save();closeSheet();renderCurrent();toast('반복을 수정했어요');
+ save();closeSheet();renderCurrent();
+ toast(cleaned>0?`반복을 수정했어요 · 새 일정과 안 맞는 개별 삭제·수정 ${cleaned}건을 정리했어요`:'반복을 수정했어요');
 }
 function delRecConfirm(id){confirmSheet('반복 삭제','이 반복 내역을 삭제할까요? 앞으로 자동 기록이 중단돼요.','삭제',()=>{deleteRecsUndo(new Set([id]))})}
 
