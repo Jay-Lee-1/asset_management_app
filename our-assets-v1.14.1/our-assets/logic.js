@@ -276,8 +276,9 @@ function goalPct(cur,target){
 }
 /* 순자산 목표 진행률 + 추세 투사. 추세(rate)는 nwHistory 전체가 아니라 최근 trendWindowDays일
  * (기본 90일) 구간의 처음·끝 점으로 하루 평균 증가량을 구해 남은 금액을 나누는 단순 선형 투사
- * (spendTrend류와 동일하게 복잡한 회귀는 쓰지 않음) — debtPayoffProjection(아래)이 호출부에서
- * 이미 기간 세그먼트(기본 3개월)로 받은 pts만 보는 것과 같은 '최근 추세' 원칙을 공유한다. 전엔
+ * (spendTrend류와 동일하게 복잡한 회귀는 쓰지 않음) — debtPayoffProjection(아래)도 동일한 '최근
+ * trendWindowDays일' 원칙을 자체 내부 윈도로 공유한다(둘 다 호출부가 넘긴 pts의 기간과 무관하게
+ * 투사 기준을 고정). 전엔
  * 설치일부터의 전체 이력 처음·끝만 썼어서, 오래전 가입해 저축 패턴이 바뀐 사용자의 예측이 몇 년치
  * 평균으로 왜곡됐었다(app-evolve cycle168 critique → cycle168 advance). 윈도 안에 2점 미만이면
  * (신규 사용자 등) 전체 이력으로 폴백해 기존 동작을 그대로 유지한다. cur/pct/achieved는 창과 무관하게
@@ -304,19 +305,27 @@ function goalProgress(goal,nwHistory,today,trendWindowDays){
  return {cur,target,pct,remaining,achieved,projectedDate};
 }
 
-/* debt 자산의 상환완료 예상일 투사 — goalProgress와 동일한 '처음·끝 두 점 선형투사' 철학을 공유한다.
- * pts는 assetBalanceSeries(assetId,...,sign=-1)가 반환하는 날짜순 {date,bal} 배열을 그대로 받는다
- * (부채 잔액은 양수로 표현되고 갚을수록 줄어듦). 잔액이 이미 0 이하면 완납. 포인트가 2개 미만이거나
+/* debt 자산의 상환완료 예상일 투사 — goalProgress와 동일한 '최근 trendWindowDays일(기본 90일) 구간의
+ * 처음·끝 두 점 선형투사' 철학을 공유한다. pts는 assetBalanceSeries(assetId,...,sign=-1)가 반환하는
+ * 날짜순 {date,bal} 배열을 그대로 받는다(부채 잔액은 양수로 표현되고 갚을수록 줄어듦). 잔액이 이미
+ * 0 이하면 완납. 전엔 호출부(assetBalCard)가 넘긴 pts 전체의 처음·끝만 썼는데, pts는 사용자가 차트
+ * 기간 세그먼트(1개월/3개월/1년/전체)를 바꿀 때마다 그대로 바뀌므로 '전체'를 고르면 초기 급증분까지
+ * 섞여 최근엔 꾸준히 갚고 있어도 왜곡된 투사가 나왔다(app-evolve cycle172 develop). goalProgress와
+ * 똑같이 내부에서 자체 윈도를 적용해 호출부가 어떤 기간을 보여주고 있든 투사 기준은 고정한다. 윈도
+ * 안에 2점 미만이면(신규 사용자 등) 전체 이력으로 폴백해 기존 동작을 유지한다. 포인트가 2개 미만이거나
  * 처음·끝 구간의 일별 감소율이 0 이하(안 갚고 있거나 오히려 늘고 있음)면 projectedDate:null —
  * goalProgress와 마찬가지로 '못 갚는다'를 추측으로 단정하지 않고 모른다고 말하는 쪽을 택한다. */
-function debtPayoffProjection(pts,today){
+function debtPayoffProjection(pts,today,trendWindowDays){
+ trendWindowDays=trendWindowDays||90;
  const hist=(pts||[]).filter(p=>p.date<=today);
  if(!hist.length)return {achieved:false,projectedDate:null};
  const last=hist[hist.length-1];
  if(last.bal<=0)return {achieved:true,projectedDate:null};
  let projectedDate=null;
  if(hist.length>=2){
-  const first=hist[0];
+  const cutoff=addDays(last.date,-trendWindowDays);
+  const windowed=hist.filter(h=>h.date>cutoff);
+  const first=(windowed.length>=2?windowed:hist)[0];
   const days=daysBetween(first.date,last.date);
   const rate=days>0?(first.bal-last.bal)/days:0;
   if(rate>0)projectedDate=addDays(last.date,Math.ceil(last.bal/rate));

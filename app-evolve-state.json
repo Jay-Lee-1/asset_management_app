@@ -1,15 +1,8 @@
 {
   "cycle": 172,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 167,
-      "phase": "develop",
-      "timestamp": "2026-10-09T15:10:00.000Z",
-      "summary": "Explore 서브에이전트로 index.html 전체 52개 <input> 전부를 label/aria-label/placeholder(브라우저가 접근성 이름으로 대체 사용) 기준으로 재조사 — renameOwnerSheet(i)(3633줄)가 렌더하는 귀속 이름 수정 입력(#renameOwner, 3635줄)이 label도 aria-label도 placeholder도 전혀 없는, 앱 전체에서 유일하게 접근성 이름이 없는 입력이었음을 확인했다(형제 패턴인 newOwner/renameCat은 placeholder가, bigMinInput/goalName/asName류는 <label for>가 있음). 설정→귀속 관리→편집(✏️) 진입 시 스크린리더가 현재 값만 읽고 어떤 필드인지 전혀 안내하지 못하는 결함. input에 aria-label=\"귀속 이름\"을 추가(histQ의 아이콘+aria-label 선례와 동일하게 이 시트엔 별도 라벨 텍스트가 없어 label 대신 aria-label을 선택). test/run.js의 기존 renameOwnerSheet field-clear 테스트 옆에 aria-label 존재를 검증하는 회귀 테스트 1건을 추가 — 수정 전 마크업으로 되돌리면 실제로 깨짐을 확인했다. index.html/sw.js 변경이라 APP_VERSION 1.47.101->1.47.102, sw.js CACHE v363->v364 갱신. node test/run.js 1160/1160 -> 1161/1161 통과.",
-      "commit": null
-    },
     {
       "cycle": 167,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-10T11:20:00.000Z",
       "summary": "critique(cycle171) 계획대로 SW 업데이트 체크에 '포그라운드 유지' 경로를 추가했다. SW 등록 성공 시(register().then) ServiceWorkerRegistration을 이 스크립트 블록 안의 모듈 변수 SW_REG에 보관하고, 같은 블록 안에 독립된 document.addEventListener('visibilitychange', ...)(포그라운드 복귀 즉시 reg.update())와 setInterval(..., 30분)(포그라운드 유지 중 주기 체크)을 추가했다 — 둘 다 !document.hidden&&SW_REG일 때만 SW_REG.update().catch(()=>{})를 부른다. 메인 스크립트(visibilitychange-visible/focus/pageshow)를 건드리지 않고 SW 등록 블록 하나에만 격리시켰다 — 어차피 이 블록은 window 'load' 이후에만 register가 끝나 SW_REG가 채워지므로 메인 스크립트와의 실행 순서 의존이 생기지 않는다. 새 UI는 추가하지 않았다 — update()가 새 워커를 찾아 설치하면 기존 controllerchange/showSwUpdateBar()가 그대로 배너를 띄운다. test/run.js: FUNCTIONS가 아닌 두 최상위 statement를 extractStatement()로 각각 추출해 실행했고(document.addEventListener 쪽은 sandbox.document.addEventListener 스텁이, setInterval 쪽은 setInterval 스텁 재할당이 콜백을 캡처), SW_REG를 CLOUD_UID와 같은 패턴으로 sandbox 상태에 추가했다. 포그라운드+SW_REG 있음→두 핸들러 모두 update() 호출/SW_REG===null→아무 일 안 함/document.hidden===true→건너뜀 + interval 주기(30분) 확인, 총 5건을 추가했다 — index.html의 두 statement를 되돌리면 vm 셋업 자체가 extractStatement 에러로 죽는 것으로 의존성을 확인했다(1196/1196 -> 수정 복원 후 1201/1201). index.html/sw.js 변경이라 APP_VERSION 1.47.110->1.47.111, sw.js CACHE v372->v373 갱신. node test/run.js 1196/1196 -> 1201/1201 통과. pending_advance_plan을 비웠다.",
+      "commit": null
+    },
+    {
+      "cycle": 172,
+      "phase": "develop",
+      "timestamp": "2026-10-10T12:17:28.088Z",
+      "summary": "Explore 서브에이전트로 141-171사이클과 겹치지 않는 새 개선점을 탐색 — debtPayoffProjection()(logic.js:307-325)이 goalProgress와 달리 자체 90일 추세 윈도를 전혀 두지 않고, 호출부(assetBalCard, index.html:2678)가 사용자의 차트 기간 세그먼트(1개월/3개월/1년/전체) 선택에 따라 넘기는 pts 전체의 처음·끝 두 점만으로 완납 투사율을 계산함을 발견. nwHistoryCard류 세그먼트 버튼은 어디서나 \"보기 전용\"이어야 하는데, 이 카드에서는 세그먼트를 \"전체\"로 바꾸는 순간 오래된 구간(예: 초기 대출 급증분)까지 섞여 \"이 속도로 갚으면...\" 투사가 왜곡되거나 \"최근엔 줄어들고 있지 않아요\"로 잘못 뜰 수 있음. goalProgress(cycle168 advance에서 이미 같은 문제를 90일 내부 윈도+폴백으로 고친 전례)와 완전히 동일한 패턴으로 debtPayoffProjection에 trendWindowDays(기본 90) 파라미터와 내부 윈도잉+폴백(윈도 안에 2점 미만이면 전체 이력 사용)을 추가. doc 주석(goalProgress 쪽의 과거 가정 문구 포함)을 갱신하고, cycle168 goalProgress 테스트와 대칭되는 회귀 테스트 2건(오래된 완만한 구간+최근 급격한 구간이 섞였을 때 최근 추세로 투사하는지, 윈도 안에 1점뿐일 때 전체 이력으로 폴백하는지)을 test/run.js에 추가. index.html/sw.js는 직접 로직을 건드리지 않았지만 logic.js가 바뀌어 캐시 갱신이 필요하므로 APP_VERSION 1.47.111->1.47.112, sw.js CACHE v373->v374 갱신. node test/run.js 1201/1201 -> 1203/1203 통과.",
       "commit": null
     }
   ]

@@ -1555,6 +1555,26 @@ test('debtPayoffProjection: 꾸준히 갚고 있으면 일평균 감소량으로
   assert.strictEqual(p.achieved, false);
   assert.strictEqual(p.projectedDate, '2026-01-31', '남은 20만원 ÷ 1만원/일 = 20일 뒤');
 });
+test('debtPayoffProjection: 오래전엔 거의 안 갚다가 최근 90일 구간만 빠르게 갚고 있으면, 전체 평균이 아니라 최근 구간의 빠른 추세로 투사한다 (app-evolve cycle172 develop) — assetBalCard가 "전체" 기간 세그먼트의 pts를 그대로 넘겨도 투사가 왜곡되지 않아야 함', () => {
+  // 2년(730일)간 10만원만 줄다가(거의 0에 가까운 추세) 최근 90일 동안 90만원이 줄었음(1만원/일).
+  // 전체 평균(730일에 100만원 = ~1370원/일)으로 투사하면 남은 돈을 갚는 데 수천 일이 걸리지만,
+  // 최근 추세(1만원/일)로는 그보다 훨씬 빨리 끝난다 — 창을 안 두면 차트에서 '전체'를 고르는 순간
+  // (display-only여야 할 선택이) 투사를 거의 영원히 못 갚는 것처럼 왜곡해 보여준다.
+  const pts = [
+    { date: '2024-01-01', bal: 1100000 },
+    { date: '2026-01-03', bal: 1000000 }, // 최근 90일 창(cutoff=2026-01-02) 안, 완만한 2년 추세의 끝점
+    { date: '2026-04-02', bal: 100000 }, // today, 최근 창 구간(89일)에 -900,000 ≈ 10,112/일
+  ];
+  const p = sandbox.debtPayoffProjection(pts, '2026-04-02');
+  assert.strictEqual(p.achieved, false);
+  assert.strictEqual(p.projectedDate, '2026-04-12', '전체 2년 평균(2024-01-01부터)이 아니라 최근 90일 창(2026-01-03부터)의 빠른 추세로 투사해야 함');
+});
+test('debtPayoffProjection: 최근 90일 창 안에 포인트가 1개뿐이면(데이터가 희소해도) 전체 이력으로 폴백해 기존 동작을 유지한다', () => {
+  const pts = [{ date: '2026-01-01', bal: 190000 }, { date: '2026-04-01', bal: 100000 }]; // 90일간 90,000 감소 = 1,000/일, 두 점 모두 창(90일) 경계 안팎에 걸침
+  const p = sandbox.debtPayoffProjection(pts, '2026-04-01');
+  assert.strictEqual(p.achieved, false);
+  assert.strictEqual(p.projectedDate, '2026-07-10', '창 안에 2점 미만이면 전체 이력(두 점)으로 폴백해 투사 자체가 사라지면 안 됨');
+});
 
 /* ---------- budgetForMonth/setBudgetFrom: 예산은 시점별 이력이라 과거/미래 조회에 서로 다른 값을 돌려줘야 한다 ---------- */
 test('budgetForMonth: 이력이 없는 카테고리는 0(미설정)을 반환한다', () => {
