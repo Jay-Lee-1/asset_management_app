@@ -5306,6 +5306,53 @@ test('sanitizeBackup: 반복거래 회차별 수정(edits[date].amount)이 음�
   assert.strictEqual(data.recurrences[0].edits['2026-02-01'].amount, 0);
   assert.strictEqual(fixedCount, 1);
 });
+test('sanitizeBackup: 반복거래의 skip/confirmedDates가 배열이 아니면(숫자/객체 등) 빈 배열로 되돌린다(expandRec의 (r.skip||[]).includes가 배열 아닌 값에서 TypeError로 터지는 것을 방지)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    recurrences: [
+      { id: 'r1', startDate: '2026-01-01', amount: 1000, skip: 5, confirmedDates: { a: 1 } },
+      { id: 'r2', startDate: '2026-01-01', amount: 1000, skip: ['2026-02-01'], confirmedDates: ['2026-02-01'] },
+    ],
+  });
+  // sanitizeBackup이 새로 만든 []는 vm 샌드박스 realm의 배열이라 host 리터럴([])과
+  // deepStrictEqual이 realm 불일치로 실패한다(위 recApply 테스트와 같은 이유) — JSON.stringify로 정규화해 비교한다.
+  assert.strictEqual(JSON.stringify(data.recurrences[0].skip), '[]');
+  assert.strictEqual(JSON.stringify(data.recurrences[0].confirmedDates), '[]');
+  assert.deepStrictEqual(data.recurrences[1].skip, ['2026-02-01'], '정상 배열은 그대로 유지되어야 함');
+  assert.deepStrictEqual(data.recurrences[1].confirmedDates, ['2026-02-01']);
+  assert.strictEqual(fixedCount, 2);
+});
+test('sanitizeBackup: 반복거래의 skip/confirmedDates 배열 안에 문자열이 아닌/빈 항목이 섞여 있으면 걸러낸다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    recurrences: [
+      { id: 'r1', startDate: '2026-01-01', amount: 1000, skip: ['2026-02-01', null, 7, ''], confirmedDates: ['2026-03-01', 123] },
+    ],
+  });
+  assert.deepStrictEqual(data.recurrences[0].skip, ['2026-02-01']);
+  assert.deepStrictEqual(data.recurrences[0].confirmedDates, ['2026-03-01']);
+  assert.strictEqual(fixedCount, 2);
+});
+test('sanitizeBackup: 반복거래에 skip/confirmedDates 필드가 아예 없으면 건드리지 않는다(migrate()가 []로 채우는 정상 "미설정" 상태)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    recurrences: [{ id: 'r1', startDate: '2026-01-01', amount: 1000 }],
+  });
+  assert.strictEqual('skip' in data.recurrences[0], false);
+  assert.strictEqual('confirmedDates' in data.recurrences[0], false);
+  assert.strictEqual(fixedCount, 0);
+});
+test('[실행형] sanitizeBackup으로 보정한 뒤에는 expandRec()이 손상된 skip(숫자)으로 더 이상 TypeError로 터지지 않는다(이전엔 (r.skip||[]).includes가 숫자에서 크래시)', () => {
+  const { data } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    recurrences: [{ id: 'r1', active: true, startDate: '2026-01-01', freq: 'monthly', day: 1, amount: 1000, type: 'expense', category: 'x', skip: 5 }],
+  });
+  sandbox._recCache.clear();
+  sandbox.DB = { recurrences: data.recurrences };
+  let out;
+  assert.doesNotThrow(() => { out = sandbox.expandRec('2026-01-01', '2026-03-01') });
+  assert.ok(out.length >= 2, '보정 후에는 정상적으로 회차가 생성되어야 함');
+});
 test('sanitizeBackup: id 없는 반복거래는 제거하고, recurrences가 없거나 배열이 아니어도 터지지 않는다', () => {
   const dropped = sandbox.sanitizeBackup({ txns: [], assets: [], recurrences: [{ startDate: '2026-01-01', amount: 1000 }] });
   assert.strictEqual(dropped.data.recurrences.length, 0);

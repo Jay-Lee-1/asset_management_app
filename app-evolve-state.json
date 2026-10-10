@@ -1,15 +1,8 @@
 {
   "cycle": 170,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 165,
-      "phase": "develop",
-      "timestamp": "2026-10-09T06:10:00.000Z",
-      "summary": "Explore 서브에이전트로 141-164사이클에서 이미 다룬/기각된 항목을 피해 새 개선점을 탐색 — dayPickerHTML(d,pfx)(index.html~3899, tx/rec 공유 반복일 선택 UI)가 렌더하는 '직접' 커스텀 일자 입력(${pfx}DayIn)이 label 텍스트 없이 뒤쪽 '일' 접미사 span만 가진 <label class=\"day-cell\"> 안에 있어, 다른 입력(openRateSheet/endCondFields count 등)과 달리 aria-label이 전혀 없음을 발견. 거래/반복거래 시트에서 '직접'을 선택하면 스크린리더가 이 입력에 어떤 값을 넣어야 하는지 맥락 없이 안내한다. input에 aria-label=\"반복일 직접 입력 (1~31일)\"을 추가. test/run.js에 dayPickerHTML(rec prefix)로 렌더한 HTML의 #recDayIn에 aria-label이 포함되는지 검증하는 회귀 테스트 1건을 추가 — 수정 전 마크업으로 되돌려 돌려보면 실제로 깨짐을 확인했다. index.html/sw.js 변경이라 APP_VERSION 1.47.97->1.47.98, sw.js CACHE v359->v360 갱신. node test/run.js 1131/1131 -> 1132/1132 통과.",
-      "commit": null
-    },
     {
       "cycle": 165,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-10T02:15:00.000Z",
       "summary": "critique(cycle169) 계획대로 포그라운드 유지 중 재-pull interval을 추가했다. 기존 visibilitychange-visible/focus/pageshow 와이어링(8010-8018줄) 바로 뒤, setInterval(maybeRollDay,60000) 다음 줄에 autoSyncRates(3분 간격) 선례와 동일한 모양으로 setInterval(()=>{if(!document.hidden)pullCloudIfStale().catch(()=>{})},60*1000)을 추가했다 — 새 상수 없이 기존 shouldPullCloud()/pullCloudIfStale()의 CLOUD_PULL_STALE_MS(3분) 문턱이 실제 pull 빈도를 그대로 제한하므로, 60초마다 틱해도 네트워크는 3분에 한 번만 나간다. document.hidden일 때(백그라운드/다른 탭) 건드리지 않는 것도 기존 visibilitychange 핸들러의 hidden 분기(push만 하고 pull은 안 함)와 대칭을 이룬다. test/run.js에는 FUNCTIONS 추출 대상이 아닌 이 최상위 setInterval 호출 statement 자체를 실행형으로 검증하기 위해 범용 extractStatement(markerText)(extractFunction/extractConstBlock과 같은 괄호 깊이 세기 방식, 깊이 0에서 처음 만나는 ';'까지 자름) 헬퍼와, 그 콜백/주기만 캡처하는 setInterval 스텁(sandbox._pullStaleIntervalCb/_pullStaleIntervalMs)을 추가해 vm 셋업 시 한 번 실행시켰다. document.hidden===false면 틱마다 pullCloudIfStale()을 부르고 true면 건너뛰는지 검증하는 테스트 2건 + 틱 주기(60초)를 확인하는 테스트 1건, 총 3건을 추가했다 — index.html의 새 setInterval 줄을 되돌리면(test/run.js는 그대로 둔 채) extractStatement()가 찾지 못해 vm 셋업 자체가 에러로 죽는 것으로 의존성을 확인했다(1178/1178 -> 수정 복원 후 1181/1181). index.html/sw.js 변경이라 APP_VERSION 1.47.106->1.47.107, sw.js CACHE v368->v369 갱신. node test/run.js 1178/1178 -> 1181/1181 통과. pending_advance_plan을 비웠다.",
+      "commit": null
+    },
+    {
+      "cycle": 170,
+      "phase": "develop",
+      "timestamp": "2026-10-10T03:20:00.000Z",
+      "summary": "general-purpose 서브에이전트로 141-169사이클과 겹치지 않는 새 개선점을 탐색 — sanitizeBackup()(index.html 5751줄)이 반복거래의 amount/endDate/day/edits는 검증하면서도 skip(건너뛴 회차 날짜 목록)과 confirmedDates(이체 완료 처리한 회차 목록) 필드는 전혀 검증하지 않음을 발견. migrate()(2115줄)는 이 필드가 '없을 때만' []로 채우므로 백업/클라우드 데이터에 필드가 존재하되 배열이 아니면(숫자·객체·null) 손상값이 그대로 남고, expandRec()(2238줄)의 (r.skip||[]).includes(d)와 confirmRecNow/postponeRecTransfer/delRec의 r.skip.slice()/push(), (r.confirmedDates||[]).includes(...)가 모두 배열 메서드로 직접 소비해 TypeError를 던진다 — expandRec()은 allTxns()를 거쳐 가계부/캘린더/잔액 등 앱 거의 전체 렌더 경로를 통과하므로 앱이 통째로 멈춘다(vm 샌드박스에서 직접 재현 확인). budgetHistory/nwHistory/settings/deletedIds/budgets에서 반복된 '검증 분기 누락' 버그 클래스의 또 다른 인스턴스. sanitizeBackup()의 반복거래 edits 검증 블록 바로 뒤에 skip/confirmedDates 검증을 추가 — 배열이 아니면 []로 되돌리고(fixedCount++), 배열이면 문자열이 아니거나 빈 문자열인 항목만 걸러낸다. test/run.js에 숫자/객체 보정, 정상 배열 유지, 배열 내 null/숫자/빈문자열 항목만 걸러짐, 필드 없으면 미건드림(fixedCount 0), [실행형] 보정 후 expandRec()이 TypeError 없이 정상 동작 총 5건을 추가했다 — 수정 전 코드로 되돌리면 신규 테스트 3건이 실제로 깨짐을 확인했다(1182/1185 -> 수정 복원 후 1185/1185). index.html/sw.js 변경이라 APP_VERSION 1.47.107->1.47.108, sw.js CACHE v369->v370 갱신. node test/run.js 1181/1181 -> 1185/1185 통과.",
       "commit": null
     }
   ]

@@ -1331,7 +1331,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.107';
+const APP_VERSION='1.47.108';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5814,6 +5814,24 @@ function sanitizeBackup(obj){
    });
    d.edits=edits;
   }
+  /* skip(건너뛴/삭제된 회차 날짜 목록)·confirmedDates(이체 완료 처리한 회차 날짜 목록)는
+   * migrate()(2115줄)가 "없을 때만" []로 채우는 기본값이라, 백업/원격 데이터에 이 필드가
+   * 존재하되 배열이 아니면(예: 숫자·객체·null) 그 손상값이 그대로 남는다. expandRec()(2238줄)의
+   * (r.skip||[]).includes(d), confirmRecNow/postponeRecTransfer/delRec 등의 r.skip.slice()·
+   * r.skip.push()·(r.confirmedDates||[]).includes(...)가 모두 이 필드를 배열 메서드로 직접
+   * 소비하는데, 숫자/객체처럼 그 메서드가 없는 값이면 expandRec()은 allTxns()를 거치는 거의
+   * 모든 화면(가계부/캘린더/잔액)에서, 나머지는 이체 확인·반복 수정/삭제 액션에서 바로
+   * TypeError로 터진다 — amount/day/edits와 같은 '검증 분기 누락' 버그 클래스의 또 다른 인스턴스.
+   * 날짜 자체의 유효성은(정상 작동에 영향 없음, 비교만 하므로) 따지지 않고 배열 모양만 보정한다. */
+  ['skip','confirmedDates'].forEach(f=>{
+   if(f in d){
+    if(!Array.isArray(d[f])){d[f]=[];fixedCount++}
+    else{
+     const cleaned=d[f].filter(x=>typeof x==='string'&&x);
+     if(cleaned.length!==d[f].length){d[f]=cleaned;fixedCount++}
+    }
+   }
+  });
   recurrences.push(d);
  });
  /* DB.goals(순자산 목표, app-evolve cycle122)도 신설 당시 여기 검증 분기가 없었다 — targetAmount가
