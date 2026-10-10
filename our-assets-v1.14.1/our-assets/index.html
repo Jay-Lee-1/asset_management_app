@@ -1331,7 +1331,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.113';
+const APP_VERSION='1.47.114';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4276,16 +4276,26 @@ function saveRec(){
  d.varying=isVarCat(d.type,d.category); /* 변동 여부는 카테고리에서 파생 */
  const wasEditing=!!d.id;
  _savedDrafts.add(d);touch(d);
+ let cleaned=0;
  if(wasEditing){
   const i=DB.recurrences.findIndex(x=>x.id===d.id);
   if(i>=0){
    const orig=DB.recurrences[i];
    if(recHistFieldsChanged(orig,d)&&recDates(orig,orig.startDate,addDays(TODAY,-1)).length>0){recSaveScopeConfirm(orig,d,i);return}
+   /* 과거 회차가 아직 없어(시작일이 미래 등) 위 분기가 확인 시트 없이 곧장 여기로 오는 경우에도,
+      스케줄(day/freq/startDate/weekend)이 바뀌었다면 recSaveScopeApply('all')과 똑같이 옛 skip/edits가
+      새 스케줄과 안 맞을 수 있다 — 여긴 확인 시트 자체가 없어 pruneOrphanRecOverrides가 지금까지
+      전혀 불리지 않았고(app-evolve cycle172critique가 지적한 'all' 분기만 고쳐졌었음), 이미 지난 적
+      없는 미래 반복을 미리 개별 삭제/수정해 둔 뒤 스케줄을 바꾸면 그 고아 항목이 정리되지 않고 영구히
+      남아 있었다(스케줄이 우연히 되돌아오면 조용히 되살아날 수도 있음). skip/edits가 없거나 스케줄이
+      그대로면 pruneOrphanRecOverrides가 0을 반환해 평소 동작에는 영향이 없다(app-evolve cycle173 develop). */
+   cleaned=pruneOrphanRecOverrides(d);
    DB.recurrences[i]=d;
   }
  }
  else{DB.recurrences.push(Object.assign({},d,{id:uid(),active:d.active!==false,skip:[],edits:{},autoConfirm:d.autoConfirm!==false,confirmedDates:[],varying:!!d.varying}))}
- save();closeSheet();renderCurrent();toast(wasEditing?'반복을 수정했어요':'반복 설정을 저장했어요');
+ save();closeSheet();renderCurrent();
+ toast(wasEditing?(cleaned>0?`반복을 수정했어요 · 새 일정과 안 맞는 개별 삭제·수정 ${cleaned}건을 정리했어요`:'반복을 수정했어요'):'반복 설정을 저장했어요');
 }
 /* 반복 이력(과거 회차)에 영향을 주는 필드만 비교: 메모는 소급 적용돼도 무해하지만,
    weekend는 recDates()의 shiftWeekend()가 과거 회차의 날짜도 그대로 재계산해 바꾸므로 포함해야 한다 */

@@ -4931,6 +4931,52 @@ test("saveRec: '전체 적용'해도 정리할 고아 항목이 없으면 토스
   sandbox.recSaveScopeApply('all');
   assert.strictEqual(sandbox.lastToast, '반복을 수정했어요');
 });
+/* app-evolve cycle173 advance(바로 위)는 recSaveScopeApply('all') 분기에만 pruneOrphanRecOverrides를
+ * 배선했는데, saveRec()에는 확인 시트 자체가 아예 뜨지 않고 곧장 덮어쓰는 분기가 하나 더 있다 —
+ * 과거 회차가 아직 없는 반복(시작일이 아직 안 왔거나 당일인 경우, recDates(orig,orig.startDate,
+ * addDays(TODAY,-1)).length===0)을 편집할 때다(saveRec의 if(recHistFieldsChanged(...)&&...length>0)
+ * 조건에서 길이 조건이 거짓이 되어 recSaveScopeConfirm을 아예 안 거치고 DB.recurrences[i]=d로 직행).
+ * 이 반복이 아직 한 번도 발생 전이라도 사용자가 특정 회차를 미리 개별 삭제(skip)·수정(edits)해 둔
+ * 뒤 day/freq/startDate/weekend 중 하나를 바꾸면, 옛 스케줄 기준 날짜로 박힌 그 skip/edits가 새
+ * 스케줄과 전혀 안 맞게 되는데도 이 분기는 정리하지 않고 그대로 영구 저장했다(app-evolve cycle174
+ * develop) — 스케줄이 나중에 우연히 되돌아오면 조용히 되살아날 수도 있는 고아 항목이 생김. */
+test("saveRec: 과거 회차가 없어 확인 시트 없이 바로 적용되는 경로에서도 day를 바꾸면 새 일정과 안 맞는 skip/edits가 정리된다(cycle173이 'all' 분기만 고치고 놓친 경로)", () => {
+  sandbox.TWi = -1; sandbox.TODAY = '2026-06-15'; sandbox.RANGE_TO = '2027-06-15';
+  const r = {
+    id: 'r1', type: 'expense', freq: 'monthly', day: 5, startDate: '2026-07-05', endDate: null, count: null,
+    amount: 1000, category: '관리비', memo: '관리비', fromAssetId: 'a1', toAssetId: null, active: true, weekend: 'none',
+    skip: ['2026-08-05'], edits: { '2026-09-05': { amount: 500 } }, // day=5 기준 — day=10으로 바꾸면 둘 다 고아가 됨
+  };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.recDraft = { ...JSON.parse(JSON.stringify(r)), day: 10 };
+  sandbox.lastSheetHtml = null;
+  sandbox.lastToast = null;
+  sandbox.saveRec();
+  assert.strictEqual(sandbox.lastSheetHtml, null, '아직 지난 회차가 없으므로 확인 시트가 뜨면 안 됨(즉시 적용 경로)');
+  assert.strictEqual(sandbox.DB.recurrences.length, 1);
+  const saved = sandbox.DB.recurrences[0];
+  assert.strictEqual(saved.day, 10);
+  assert.strictEqual(saved.skip.length, 0, '옛 day=5 기준 skip은 새 스케줄과 안 맞아 정리되어야 함');
+  assert.strictEqual(Object.keys(saved.edits).length, 0, '옛 day=5 기준 edits도 정리되어야 함');
+  assert.ok(sandbox.lastToast.includes('2건'), '정리된 건수(skip 1 + edits 1 = 2)가 토스트에 안내되어야 함');
+});
+test('saveRec: 같은(확인 시트 없는) 즉시 적용 경로라도 스케줄이 안 바뀌면(fromAssetId만 변경) 기존 skip/edits는 그대로 남고 토스트도 기존 문구다(회귀 방지)', () => {
+  sandbox.TWi = -1; sandbox.TODAY = '2026-06-15'; sandbox.RANGE_TO = '2027-06-15';
+  const r = {
+    id: 'r1', type: 'expense', freq: 'monthly', day: 5, startDate: '2026-07-05', endDate: null, count: null,
+    amount: 1000, category: '관리비', memo: '관리비', fromAssetId: 'a1', toAssetId: null, active: true, weekend: 'none',
+    skip: ['2026-08-05'], edits: { '2026-09-05': { amount: 500 } },
+  };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.recDraft = { ...JSON.parse(JSON.stringify(r)), fromAssetId: 'a2' };
+  sandbox.lastToast = null;
+  sandbox.saveRec();
+  const saved = sandbox.DB.recurrences[0];
+  assert.strictEqual(saved.fromAssetId, 'a2', '즉시 적용되어야 함');
+  assert.deepStrictEqual(saved.skip, ['2026-08-05'], '스케줄이 안 바뀌었으면 기존 skip이 그대로 남아야 함');
+  assert.strictEqual(JSON.stringify(saved.edits), JSON.stringify({ '2026-09-05': { amount: 500 } }), '스케줄이 안 바뀌었으면 기존 edits도 그대로 남아야 함');
+  assert.strictEqual(sandbox.lastToast, '반복을 수정했어요', '정리할 게 없으면 토스트 문구는 기존 그대로여야 함');
+});
 test('saveRec: 신규 반복 등록(id 없음)은 기존처럼 회귀 없이 바로 추가된다', () => {
   sandbox.TWi = -1; sandbox.TODAY = '2026-06-15';
   sandbox.DB = { recurrences: [] };
