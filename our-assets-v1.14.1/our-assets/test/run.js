@@ -4707,6 +4707,37 @@ test('splitRecurrenceAt: effectiveDate 이후(포함)의 skip/edits는 새 레�
   assert.deepStrictEqual(newRec.skip, ['2026-06-05', '2026-09-05'], 'effectiveDate 이후(포함) skip은 새 레코드로 옮겨져야 함(전에는 조용히 사라지는 버그가 있었음)');
   assert.strictEqual(JSON.stringify(newRec.edits), JSON.stringify({ '2026-08-05': { amount: 2 } }), 'effectiveDate 이후(포함) edits는 새 레코드로 옮겨져야 함(전에는 조용히 사라지는 버그가 있었음)');
 });
+/* recSaveScopeApply('all')(app-evolve cycle172/173)은 d(draft)에 pruneOrphanRecOverrides를 불러
+ * 새 스케줄과 안 맞는 skip/edits를 정리하지만, splitRecurrenceAt이 만드는 newRec('future' 분기)은
+ * original의 skipFuture/editsFuture(옛 스케줄 기준 절대 날짜)를 그대로 물려받고도 지금까지 한 번도
+ * 정리되지 않았다 — day/freq/startDate/weekend가 바뀌면 newRec은 draft의 새 스케줄로 recDates()를
+ * 돌리므로, 그 옛 날짜들이 더는 생성되지 않을 수 있는데도 그대로 영구 저장됐다(app-evolve cycle174
+ * develop, 'all' 분기만 고쳐졌던 cycle172/173의 누락분). */
+test("splitRecurrenceAt: 스케줄 모양(day)이 바뀌면 newRec이 물려받는 옛 스케줄 기준 skip/edits가 새 스케줄에 안 맞아 정리되고, cleaned로 건수가 반환된다", () => {
+  sandbox.RANGE_TO = '2026-12-31';
+  const orig = {
+    id: 'r1', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: '2026-12-05', count: 12, amount: 1000, fromAssetId: 'a1', weekend: 'none',
+    skip: ['2026-06-05'], // effectiveDate 이후(future)로 넘어갈 옛(day=5) 스케줄 기준 skip
+    edits: { '2026-08-05': { amount: 2 } }, // 역시 future로 넘어갈 옛(day=5) 기준 edits
+  };
+  const draft = { ...orig, day: 10 }; // day만 5→10으로 바뀜(스케줄 모양 변경)
+  const { newRec, cleaned } = sandbox.splitRecurrenceAt(orig, draft, '2026-06-05');
+  assert.strictEqual(cleaned, 2, 'skip 1건 + edits 1건 = 고아 2건이 정리되어야 함');
+  assert.strictEqual(newRec.skip.length, 0, '옛 day=5 기준 skip은 새 day=10 스케줄과 안 맞아 제거되어야 함');
+  assert.strictEqual(Object.keys(newRec.edits).length, 0, '옛 day=5 기준 edits도 새 스케줄과 안 맞아 제거되어야 함');
+});
+test("splitRecurrenceAt: 스케줄 모양이 안 바뀌면(fromAssetId만 변경) newRec의 skip/edits가 그대로 남고 cleaned는 0이다(회귀 방지)", () => {
+  sandbox.RANGE_TO = '2026-12-31';
+  const orig = {
+    id: 'r1', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: '2026-12-05', count: 12, amount: 1000, fromAssetId: 'a1', weekend: 'none',
+    skip: ['2026-06-05'], edits: { '2026-08-05': { amount: 2 } },
+  };
+  const draft = { ...orig, fromAssetId: 'a9' }; // 스케줄 비영향 필드만 변경
+  const { newRec, cleaned } = sandbox.splitRecurrenceAt(orig, draft, '2026-06-05');
+  assert.strictEqual(cleaned, 0, '스케줄이 그대로면 정리할 고아 항목이 없어야 함');
+  assert.deepStrictEqual(newRec.skip, ['2026-06-05']);
+  assert.strictEqual(JSON.stringify(newRec.edits), JSON.stringify({ '2026-08-05': { amount: 2 } }));
+});
 
 /* splitRecOverrides 자체는 위 splitRecurrenceAt 테스트들이 간접적으로 통과시키지만(app-evolve
  * cycle80 critique가 지적한 "직접 assertion 0건"), 여기서는 splitRecurrenceAt의 날짜 재계산·
@@ -4959,6 +4990,50 @@ test("saveRec: 과거 회차가 없어 확인 시트 없이 바로 적용되는 
   assert.strictEqual(saved.skip.length, 0, '옛 day=5 기준 skip은 새 스케줄과 안 맞아 정리되어야 함');
   assert.strictEqual(Object.keys(saved.edits).length, 0, '옛 day=5 기준 edits도 정리되어야 함');
   assert.ok(sandbox.lastToast.includes('2건'), '정리된 건수(skip 1 + edits 1 = 2)가 토스트에 안내되어야 함');
+});
+/* cycle172/173은 recSaveScopeApply('all') 분기와 확인 시트 없는 즉시 적용 분기만 고쳤고, 'future'
+ * (오늘부터 이후 모두) 분기는 splitRecurrenceAt이 만드는 newRec에 pruneOrphanRecOverrides가 전혀
+ * 연결돼 있지 않아 옛 스케줄 기준 skip/edits가 정리되지 않고 그대로 영구 저장됐다(app-evolve
+ * cycle174 develop). */
+test("saveRec: day를 바꿔 '오늘부터 이후 모두'를 고르면 새로 분리되는 구간에서도 새 스케줄과 안 맞는 skip/edits가 정리되고 토스트에 정리 건수가 안내된다", () => {
+  sandbox.TWi = -1; sandbox.TODAY = '2026-06-15'; sandbox.RANGE_TO = '2027-06-15';
+  const r = {
+    id: 'r1', type: 'expense', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, count: null,
+    amount: 1000, category: '관리비', memo: '관리비', fromAssetId: 'a1', toAssetId: null, active: true, weekend: 'none',
+    skip: ['2026-02-05', '2026-08-05'], // 2/5는 과거(원본에 남음), 8/5는 미래(day=5 기준 — newRec으로 넘어가 day=10과 안 맞아 고아가 됨)
+    edits: { '2026-09-05': { amount: 500 } }, // 9/5도 미래(day=5 기준) — newRec으로 넘어가 고아가 됨
+  };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.recDraft = { ...JSON.parse(JSON.stringify(r)), day: 10 };
+  sandbox.lastToast = null;
+  sandbox.saveRec();
+  sandbox.recSaveScopeApply('future');
+  assert.strictEqual(sandbox.DB.recurrences.length, 2);
+  const pastRec = sandbox.DB.recurrences.find(x => x.id === 'r1');
+  assert.deepStrictEqual(pastRec.skip, ['2026-02-05'], '과거 구간(원본)의 skip은 그대로 유지되어야 함');
+  const newRec = sandbox.DB.recurrences.find(x => x.id !== 'r1');
+  assert.strictEqual(newRec.day, 10);
+  assert.strictEqual(newRec.skip.length, 0, '새 구간으로 넘어간 옛 day=5 기준 skip은 새 day=10 스케줄과 안 맞아 정리되어야 함');
+  assert.strictEqual(Object.keys(newRec.edits).length, 0, '새 구간으로 넘어간 옛 day=5 기준 edits도 정리되어야 함');
+  assert.ok(sandbox.lastToast.includes('2건'), '정리된 건수(skip 1 + edits 1 = 2)가 토스트에 안내되어야 함');
+});
+test("saveRec: '오늘부터 이후 모두'를 골라도 스케줄이 안 바뀌면(fromAssetId만 변경) 새 구간의 skip/edits가 그대로 남고 토스트도 기존 문구다(회귀 방지)", () => {
+  sandbox.TWi = -1; sandbox.TODAY = '2026-06-15'; sandbox.RANGE_TO = '2027-06-15';
+  const r = {
+    id: 'r1', type: 'expense', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, count: null,
+    amount: 1000, category: '관리비', memo: '관리비', fromAssetId: 'a1', toAssetId: null, active: true, weekend: 'none',
+    skip: ['2026-08-05'], edits: { '2026-09-05': { amount: 500 } },
+  };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.recDraft = { ...JSON.parse(JSON.stringify(r)), fromAssetId: 'a2' };
+  sandbox.lastToast = null;
+  sandbox.saveRec();
+  sandbox.recSaveScopeApply('future');
+  const newRec = sandbox.DB.recurrences.find(x => x.id !== 'r1');
+  assert.strictEqual(newRec.fromAssetId, 'a2');
+  assert.deepStrictEqual(newRec.skip, ['2026-08-05'], '스케줄이 안 바뀌었으면 새 구간의 skip도 그대로 남아야 함');
+  assert.strictEqual(JSON.stringify(newRec.edits), JSON.stringify({ '2026-09-05': { amount: 500 } }), '스케줄이 안 바뀌었으면 새 구간의 edits도 그대로 남아야 함');
+  assert.strictEqual(sandbox.lastToast, '반복을 수정했어요', '정리할 게 없으면 토스트 문구는 기존 그대로여야 함');
 });
 test('saveRec: 같은(확인 시트 없는) 즉시 적용 경로라도 스케줄이 안 바뀌면(fromAssetId만 변경) 기존 skip/edits는 그대로 남고 토스트도 기존 문구다(회귀 방지)', () => {
   sandbox.TWi = -1; sandbox.TODAY = '2026-06-15'; sandbox.RANGE_TO = '2027-06-15';

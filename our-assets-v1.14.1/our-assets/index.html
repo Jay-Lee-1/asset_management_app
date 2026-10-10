@@ -1331,7 +1331,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.115';
+const APP_VERSION='1.47.116';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4329,14 +4329,21 @@ function splitRecOverrides(skip,edits,effectiveDate){
 }
 /* recSave()의 future 분기(3105-3112)와 동일한 규칙: 원본을 effectiveDate 직전까지로 자르고,
    그 이후는 draft의 새 필드값으로 별도 반복을 분리 생성한다 */
+/* newRec이 물려받는 skipFuture/editsFuture는 original(옛 day/freq/startDate/weekend) 기준 절대
+ * 날짜다 — recScheduleShapeChanged(orig,d)가 true인 경우(day/freq/startDate/weekend 중 하나라도
+ * 바뀜) newRec은 draft의 새 스케줄로 recDates()를 돌리므로, 그 옛 날짜들은 새 스케줄에서 더는
+ * 생성되지 않을 수 있다 — recSaveScopeApply('all')이 d에 대해 쓰는 pruneOrphanRecOverrides와 완전히
+ * 같은 버그 클래스인데, 'future' 분기(이 함수)만 지금까지 정리하지 않고 있었다(스케줄이 안 바뀌면
+ * pruneOrphanRecOverrides가 0을 반환해 평소 동작엔 영향 없음, app-evolve cycle174 develop). */
 function splitRecurrenceAt(original,draft,effectiveDate){
  const prevEnd=original.endDate;
  const {skipPast,skipFuture,editsPast,editsFuture}=splitRecOverrides(original.skip,original.edits,effectiveDate);
  const updatedOriginal=Object.assign({},original,{skip:skipPast,edits:editsPast},truncateRecEnd({freq:original.freq,day:original.day,startDate:original.startDate,weekend:original.weekend},addDays(effectiveDate,-1)));
  const newBase={freq:draft.freq,day:draft.day,startDate:effectiveDate,weekend:draft.weekend};
  const newRec=Object.assign({},JSON.parse(JSON.stringify(draft)),{id:uid(),startDate:effectiveDate,endDate:prevEnd,count:prevEnd?recCountUntil(newBase,prevEnd):null,skip:skipFuture,edits:editsFuture});
+ const cleaned=pruneOrphanRecOverrides(newRec);
  touch(updatedOriginal);touch(newRec);
- return {updatedOriginal,newRec};
+ return {updatedOriginal,newRec,cleaned};
 }
 function recSaveScopeConfirm(orig,d,i){
  window._recSaveScope={orig,d,i};
@@ -4353,7 +4360,8 @@ function recSaveScopeApply(scope){
  const {orig,d,i}=ctx;
  let cleaned=0;
  if(scope==='future'){
-  const {updatedOriginal,newRec}=splitRecurrenceAt(orig,d,TODAY);
+  const {updatedOriginal,newRec,cleaned:c}=splitRecurrenceAt(orig,d,TODAY);
+  cleaned=c;
   DB.recurrences[i]=updatedOriginal;DB.recurrences.push(newRec);
  }else{
   cleaned=pruneOrphanRecOverrides(d);
