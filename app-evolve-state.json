@@ -1,15 +1,8 @@
 {
   "cycle": 174,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 169,
-      "phase": "review",
-      "timestamp": "2026-10-10T00:05:00.000Z",
-      "summary": "cycle169 develop(doMaturity()에 만기 이체 잔액 하한 amt>0 가드 추가) 검토 — maturityDate는 코드 전체에서 type==='savings' 자산에만 설정됨을 grep으로 확인해 가드 대상이 정확함을 확인했고, balanceAt()은 항상 숫자를 반환하므로(맵에 없으면 assetBase(a) 폴백) amt가 undefined/NaN이 되는 경로가 없어 !(amt>0) 조건이 0/음수/NaN을 모두 안전하게 걸러냄을 코드로 확인했다. 가드가 amt 계산 '뒤', txn push '전'에 위치해 clamped 날짜 보정 로직과도 순서 충돌이 없고, 자기 자신 이체 가드와 동일하게 maturityDate를 지우지 않아 사용자가 수동으로 만기일을 지울 때까지(asset 편집 시트의 '만기일 지우기' 버튼) 알림이 유지되는 것도 의도된 동작임을 확인. 새 회귀 테스트 2건(baseAmount=0, 인출로 음수화) 모두 수정을 되돌리면 실제로 깨짐을 재확인했다. node test/run.js 1178/1178 통과. 이상 없음, 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 169,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-10T00:00:00.000Z",
       "summary": "general-purpose 서브에이전트로 141-173사이클과 겹치지 않는 새 개선점을 탐색 — splitRecurrenceAt()(index.html ~4338)이 recSaveScopeApply('future')(오늘부터 이후 모두) 경로에서 newRec에 original의 옛 skip/edits(skipFuture/editsFuture)를 그대로 물려주면서도, cycle172/173이 'all' 분기와 saveRec() 즉시적용 분기에 배선한 pruneOrphanRecOverrides() 호출이 이 'future' 분기에만 빠져 있던 것을 발견했다 — day/freq/startDate/weekend가 바뀌면 새로 분리되는 구간의 skip/edits가 새 스케줄의 recDates()와 안 맞아 조용히 고아가 되는, 이미 고친 것과 같은 버그 클래스. splitRecurrenceAt()이 newRec을 만든 뒤 pruneOrphanRecOverrides(newRec)을 호출해 정리 건수를 cleaned로 반환하게 하고, recSaveScopeApply()의 'future' 분기가 그 cleaned를 받아 'all' 분기와 동일한 토스트 문구('새 일정과 안 맞는 개별 삭제·수정 N건을 정리했어요')를 띄우도록 연결했다. test/run.js에 splitRecurrenceAt 단위테스트 2건(스케줄 변경 시 정리/스케줄 불변 시 회귀 방지)과 saveRec()+recSaveScopeApply('future') 통합테스트 2건을 cycle172/173 'all' 분기 테스트와 동일한 패턴으로 추가했다 — fix를 되돌리면 정리 동작을 검증하는 2건이 실제로 깨짐을 확인했다(1221/1223 -> 복원 후 1223/1223). index.html/sw.js 변경이라 APP_VERSION 1.47.115->1.47.116, sw.js CACHE v377->v378 갱신. node test/run.js 1219/1219 -> 1223/1223 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 174,
+      "phase": "review",
+      "timestamp": "2026-10-10T21:30:00.000Z",
+      "summary": "cycle174 develop(splitRecurrenceAt()의 'future' 분기에도 pruneOrphanRecOverrides 배선) 검토 — splitRecurrenceAt이 newRec의 day/freq/startDate/weekend를 draft에서 그대로 물려받음을 코드로 확인했고(Object.assign의 override 목록에 day/freq/weekend가 없어 draft 값 유지), newBase(recCountUntil용)와 pruneOrphanRecOverrides가 보는 newRec.day/freq/startDate/weekend가 동일한 값임을 대조 확인했다. recSaveScopeApply('future')의 let cleaned=0 초기화 후 분기별 재할당(구조분해 {cleaned:c}로 'all'의 cleaned 변수명과 충돌 없이 분리)도 토스트 로직과 올바르게 맞물림을 확인. 새 회귀 테스트 4건(splitRecurrenceAt 단위 2건 + saveRec/recSaveScopeApply('future') 통합 2건) 모두 수정을 되돌리면 실제로 깨짐이 이미 develop 단계에서 확인됐고, node test/run.js 1223/1223 통과를 재확인했다. 이상 없음, 코드 변경 없음.",
       "commit": null
     }
   ]
