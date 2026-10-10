@@ -1331,7 +1331,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.108';
+const APP_VERSION='1.47.109';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -7072,6 +7072,9 @@ function tidyListSnooze(id){snoozeTidy(id);openTidyList();}
 function homeAlerts(neg){
  const arr=[];
  if(CLOUD_UID&&CLOUD_SYNC_STATE==='conflict')arr.push({kind:'cloudConflict'});
+ /* push 실패(error)는 토스트가 1회만 뜨고 사라지므로, conflict처럼 카드로 지속 경고한다 — cloudSyncOk()가
+  * 호출되면(재시도 성공) 자연히 사라진다(app-evolve cycle170 advance) */
+ else if(CLOUD_UID&&CLOUD_SYNC_STATE==='error')arr.push({kind:'cloudSyncError'});
  if(CLOUD_UID){ /* 클라우드 동기화 계정에서만 의미 있음(로컬/카카오 전용은 같은 기기 시계를 쓰므로 영향 없음) */
   const _skewSev=clockSkewSeverity(CLOCK_SKEW_MS,CLOCK_SKEW_WARN_MS,CLOCK_SKEW_CRIT_MS);
   if(shouldWarnClockSkew(_skewSev,DB.settings.clockSkewWarnDismissed))arr.push({kind:'clockSkew',severity:_skewSev});
@@ -7179,6 +7182,11 @@ function homeAlertCard(al){
    <div class="ha-ic">${svg('alert')}</div>
    <div class="ha-b"><div class="ha-t">클라우드 동기화가 멈췄어요</div>
      <div class="ha-s">다른 기기에 최신 데이터가 있어요 · 눌러서 확인하세요</div></div>
+   <div class="ha-c">${svg('chev')}</div></button>`;
+ if(al.kind==='cloudSyncError')return `<button class="home-alert" onclick="openAccountSheet()">
+   <div class="ha-ic">${svg('alert')}</div>
+   <div class="ha-b"><div class="ha-t">클라우드 동기화에 실패했어요</div>
+     <div class="ha-s">자동으로 다시 시도하고 있어요 · 눌러서 확인하세요</div></div>
    <div class="ha-c">${svg('chev')}</div></button>`;
  if(al.kind==='backup')return `<div class="home-alert mat">
    <div class="ha-ic">${svg('download')}</div>
@@ -8041,6 +8049,11 @@ setInterval(maybeRollDay,60000);
  * 3분 간격 선례와 같은 모양으로 60초마다 틱하되, pullCloudIfStale() 내부의 CLOUD_PULL_STALE_MS(3분)
  * 문턱이 실제 pull 빈도를 그대로 제한한다. */
 setInterval(()=>{if(!document.hidden)pullCloudIfStale().catch(()=>{})},60*1000);
+/* push 실패(CLOUD_SYNC_STATE==='error')는 navigator.onLine이 바뀌는 'online' 이벤트나 다음 로컬 편집에만
+ * 재시도가 걸려 있어서, 흔한 일시적 실패(Supabase 5xx·타임아웃처럼 onLine은 안 바뀌는 경우)에서 사용자가
+ * 그날 더 편집을 안 하면 영원히 멈췄다(app-evolve cycle170 critique) — PUSH_CLOUD_INFLIGHT가 이미 중복
+ * push를 막아주므로 위의 pull interval과 독립적으로 60초마다 재시도만 추가한다. */
+setInterval(()=>{if(!document.hidden&&CLOUD_UID&&DB&&CLOUD_SYNC_STATE==='error')pushCloud().catch(()=>{})},60*1000);
 matchMedia('(prefers-color-scheme:dark)').addEventListener('change',()=>{if(DB.settings.themeMode==='system')renderCurrent()});
 setTimeout(()=>{if(!DB)return;const soon=DB.assets.filter(a=>a.type==='savings'&&a.maturityDate&&a.maturityDate<=addDays(TODAY,7));
  if(soon.length)toast(`저축 만기 ${soon.length}건이 임박했어요`)},1200);

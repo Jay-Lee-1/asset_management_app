@@ -1,19 +1,8 @@
 {
-  "cycle": 170,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "클라우드 동기화 'error' 상태는 지속 경고도 자동 재시도도 없음 (conflict/stale-pull과 비대칭)",
-    "why": "index.html의 pushCloud()(~1804-1852)는 실패 시 cloudSyncFailed()로 CLOUD_SYNC_STATE='error'를 세팅하고 토스트를 단 한 번만 띄운다(CLOUD_ERR_TOASTED). 이후 복구는 (a)다음 로컬 편집->save()->scheduleCloudPush(), (b)navigator.onLine이 실제로 false->true로 바뀌는 online 이벤트(shouldRetryCloudSync, 1771), (c)pullCloudIfStale() 성공 후 save() 부작용에만 의존하는데, (c)는 pull도 같은 이유로 실패하면 remote가 없어 save()에 도달하지 못해 push를 구제할 수 없다. navigator.onLine이 안 바뀌는 흔한 일시적 실패(Supabase 5xx, 느린 네트워크, withTimeout 만료)에서 사용자가 그날 더 이상 편집을 안 하면 영원히 멈춘다. homeAlerts()(7072-7101)는 cloudConflict/clockSkew/backup/persist/storageSize 카드는 있지만 CLOUD_SYNC_STATE==='error'에 대한 분기가 전혀 없고, maybeRollDay()(8013-8019)도 conflict 카드는 재렌더로 유지시키면서 error는 방치한다. 가족 공유 계정에서 기기 A가 불안정한 네트워크 상태로 지출을 기록->push 1회 실패->토스트 사라짐->그날 더 편집 안 함 시나리오면 기기 B는 그 거래를 영원히 못 보고, 기기 A가 분실/초기화/사이트데이터삭제되면 그 거래는 조용히 사라진다.",
-    "approach": "1) index.html의 기존 pullCloudIfStale 60초 interval(8043줄, cycle169 advance에서 추가) 바로 다음 줄에 독립된 새 setInterval statement 추가: setInterval(()=>{if(!document.hidden&&CLOUD_UID&&DB&&CLOUD_SYNC_STATE==='error')pushCloud().catch(()=>{})},60*1000); — 기존 extractStatement() 마커 기반 테스트 인프라를 건드리지 않도록 별도 줄로 분리. PUSH_CLOUD_INFLIGHT가 이미 중복 push를 막아줌. 2) homeAlerts()(~7074)에 cloudConflict 라인 근처에 if(CLOUD_UID&&CLOUD_SYNC_STATE==='error')arr.push({kind:'cloudSyncError'}) 추가 — dismiss 플래그 없이 cloudSyncOk() 실행 시 자동으로 사라짐. 3) homeAlertCard()(~7177)에 cloudConflict 버튼과 같은 스타일(dismiss 가능한 mat 카드 아님)로 cloudSyncError 분기 추가: 제목 '클라우드 동기화에 실패했어요', 부제 '자동으로 다시 시도하고 있어요 · 눌러서 확인', onclick=openAccountSheet(). 4) test/run.js: 기존 interval 추출 테스트 블록을 확장해 새 statement의 콜백/60초 주기를 캡처해 hidden=false&&CLOUD_UID&&DB&&state==='error'일 때만 pushCloud 호출(ok/conflict/syncing은 스킵)하는지 검증 + homeAlerts() 'error'->cloudSyncError 포함/'ok'->미포함 단위 테스트 + homeAlertCard() 새 분기 렌더 및 onclick이 openAccountSheet를 호출하는지 테스트. 5) APP_VERSION과 sw.js CACHE 버전을 관례대로 올리고 node our-assets-v1.14.1/our-assets/test/run.js로 1185/1185 + 신규 테스트 전부 통과 확인."
-  },
+  "cycle": 171,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 165,
-      "phase": "advance",
-      "timestamp": "2026-10-09T09:10:00.000Z",
-      "summary": "critique(cycle165) 계획대로 클라우드 동기화 시계 오차 감지+경고를 구현했다. logic.js에 순수 함수 clockSkewSeverity(driftMs,warnMs,critMs)('ok'|'warn'|'severe', null/NaN은 ok)와 shouldWarnStorageSize와 동일한 정책의 shouldWarnClockSkew(severity,dismissed)('severe'는 dismiss 무시, 'warn'은 dismiss로 가라앉음)를 추가했다. index.html에는 새 모듈 변수 CLOCK_SKEW_MS(기본 null)와 문턱 상수 CLOCK_SKEW_WARN_MS(5분)/CLOCK_SKEW_CRIT_MS(1일), 그리고 measureCloudClockSkew() 함수를 추가해 afterCloudAuth(uid) 맨 앞(CLOUD_UID 설정 직후)에서 fire-and-forget으로 호출한다 — sbReady()&&CLOUD_UID일 때만 fetchWithTimeout(기존 헬퍼 재사용)으로 Supabase REST(`${url}/rest/v1/`)에 GET을 보내 응답의 Date 헤더를 Date.now()와 비교하고, 네트워크 실패나 헤더 없음은 조용히 무시(이전 CLOCK_SKEW_MS를 지우지 않음)하며 성공 시 ST.tab==='home'이면 renderCurrent()로 즉시 반영한다. homeAlerts()에 CLOUD_UID가 있을 때만 clockSkewSeverity/shouldWarnClockSkew로 판정해 {kind:'clockSkew',severity} 알림을 추가했고(로컬/카카오 전용 계정은 같은 기기 시계를 쓰므로 CLOUD_UID 없으면 절대 안 뜸), homeAlertCard에 persist/storageSize와 동일한 '카드+확인 버튼' 패턴으로 렌더를 추가(severity별 문구 분기, 누르면 openAccountSheet()로 동기화 상태 확인, 확인 버튼은 새 dismissClockSkewWarn()으로 DB.settings.clockSkewWarnDismissed를 세팅). DB.settings 기본값에 clockSkewWarnDismissed:false를 추가. test/run.js에 clockSkewSeverity/shouldWarnClockSkew 단위 테스트 8건, homeAlerts/homeAlertCard 통합 테스트 5건, measureCloudClockSkew를 FUNCTIONS(vm 실행)에 등록해 fetch 스텁으로 검증하는 실행형 테스트 4건(CLOUD_UID 없음/정상 측정/홈탭 재렌더/네트워크실패·헤더없음 보존), 총 17건을 추가했다. index.html/sw.js 변경이라 APP_VERSION 1.47.98->1.47.99, sw.js CACHE v360->v361 갱신. node test/run.js 1132/1132 -> 1149/1149 통과.",
-      "commit": null
-    },
     {
       "cycle": 166,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-10T04:40:00.000Z",
       "summary": "general-purpose 서브에이전트로 141-170사이클 전부(특히 164-170의 sanitizeBackup/a11y/CSV가드/시계오차/stale-pull/goalProgress/doMaturity 미세수정들) + 기각 이력을 전달하고 앱 전체를 더 멀리서(세션 생명주기/네트워크 관점) 재조망. 새로 발견: pushCloud()(1804-1852)가 실패하면 CLOUD_SYNC_STATE='error'로 두고 토스트 1회만 띄우는데, 이후 복구 경로(로컬 편집->save(), navigator.onLine false->true 플립, pullCloudIfStale() 성공 부작용)가 전부 navigator.onLine이 안 바뀌는 흔한 일시적 실패(5xx/타임아웃)에는 작동하지 않고, pullCloudIfStale()도 같은 이유로 pull이 실패하면 save()에 도달 못 해 push를 구제 못함. homeAlerts()(7072-7101)는 cloudConflict/clockSkew 등 카드가 있지만 CLOUD_SYNC_STATE==='error'엔 분기가 전혀 없어 토스트가 사라진 뒤로는 사용자가 알 길이 없고, 그날 더 편집을 안 하면 영원히 멈춤 — cycle167/169가 고친 '재개/stay-open 중 재-pull' 공백과 대칭을 이루는, 'push 실패 후 자동 재시도+지속 경고'가 없는 마지막 공백. 가족 공유 계정에서 기기 A가 불안정한 네트워크로 지출 기록->push 실패->그대로 방치되면 기기 B는 그 거래를 영원히 못 보고 기기 A가 분실/초기화되면 조용히 데이터가 사라질 수 있음. 기존 pullCloudIfStale 60초 interval(cycle169) 옆에 독립된 새 setInterval로 CLOUD_SYNC_STATE==='error'일 때만 pushCloud() 재시도 + homeAlerts()/homeAlertCard()에 cloudConflict와 같은 스타일의 cloudSyncError 카드(openAccountSheet로 안내) 추가하는 계획을 pending_advance_plan에 저장. 러너업(기각): 반복거래 skip/edits/confirmedDates 배열 무제한 증가(cycle165에서 이미 기각된 사안 재확인, 권위 있는 이력 데이터라 함부로 prune하면 위험해 저가치), mergeCollection()의 레코드 전체 단위 LWW가 두 기기가 같은 레코드의 '다른 필드'를 동시에 편집하면 한쪽을 조용히 덮어쓰는 문제(실재하지만 전체 컬렉션에 걸친 필드 단위 3-way 병합 재설계가 필요해 한 cycle 범위 초과, 이미 배포된 clockSkew 경고는 이 문제의 절반만 다룸), 카테고리/귀속/자산 삭제·이름변경 cascade 재감사(doDeleteCat/doRenameCat/delOwner 등 전수 확인 결과 참조 정합성 가드 이미 충분, 버그 없음). 코드 변경 없음(읽기 전용 조사).",
+      "commit": null
+    },
+    {
+      "cycle": 170,
+      "phase": "advance",
+      "timestamp": "2026-10-10T07:11:38.145Z",
+      "summary": "critique(cycle170) 계획대로 push 실패(CLOUD_SYNC_STATE='error') 자동 재시도 + 지속 경고를 구현했다. 기존 pullCloudIfStale 60초 interval(cycle169) 바로 뒤에 독립된 새 setInterval(()=>{if(!document.hidden&&CLOUD_UID&&DB&&CLOUD_SYNC_STATE==='error')pushCloud().catch(()=>{})},60*1000)을 추가했다 — PUSH_CLOUD_INFLIGHT가 이미 중복 push를 막아주므로 상태만 확인하고 그대로 재시도한다. homeAlerts()의 cloudConflict 라인 바로 뒤에 else if(CLOUD_UID&&CLOUD_SYNC_STATE==='error')arr.push({kind:'cloudSyncError'})를 추가해 conflict/error가 배타적으로 하나만 뜨게 했고(동시에 같은 CLOUD_SYNC_STATE 값이라 원래도 배타적), dismiss 플래그 없이 cloudSyncOk()가 호출되면(재시도 성공) 자연히 사라진다. homeAlertCard()에 cloudConflict와 같은 버튼 스타일로 cloudSyncError 분기('클라우드 동기화에 실패했어요' · '자동으로 다시 시도하고 있어요 · 눌러서 확인' · onclick=openAccountSheet())를 추가했다. test/run.js: 새 setInterval statement 전용으로 sandbox.setInterval 스텁을 _pushRetryIntervalCb/_pushRetryIntervalMs 필드로 바꿔 끼운 뒤 extractStatement()로 실행해 캡처했다(기존 _pullStaleIntervalCb와 섞이지 않게 분리) — 60초 주기 확인 1건 + error 상태에서 포그라운드면 pushCloud() 호출/ok·conflict·syncing·idle이면 스킵/백그라운드(document.hidden)면 스킵/CLOUD_UID·DB 없으면 스킵 총 5건. homeAlerts에 error일 때 뜨고 ok/idle이면 안 뜨고 CLOUD_UID 없으면 안 뜨고 conflict와 배타적임을 확인하는 4건 + homeAlertCard 렌더 1건, 총 10건을 추가했다. index.html/sw.js 변경이라 APP_VERSION 1.47.108->1.47.109, sw.js CACHE v370->v371 갱신. node test/run.js 1185/1185 -> 1195/1195 통과. pending_advance_plan을 비웠다.",
       "commit": null
     }
   ]

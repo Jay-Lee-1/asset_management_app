@@ -388,10 +388,14 @@ const sandbox = {
   document: { querySelectorAll: () => [], hidden: false },
   moveBlob: () => {},
   // setInterval(cb,ms)는 이 샌드박스가 실제 타이머를 돌리지 않으므로(FUNCTIONS는 개별 함수만
-  // 추출해 실행), 유일하게 vm으로 직접 실행하는 포그라운드 유지 중 재-pull interval 와이어링의
-  // 콜백/주기만 캡처해 테스트가 직접 호출할 수 있게 한다(app-evolve cycle169 advance).
+  // 추출해 실행), vm으로 직접 실행하는 포그라운드 유지 중 재-pull/재-push interval 와이어링의
+  // 콜백/주기만 캡처해 테스트가 직접 호출할 수 있게 한다(app-evolve cycle169/170 advance).
+  // 두 statement를 순서대로 추출·실행하므로, 각각 실행되는 시점에 가리키는 필드가 다른 스텁으로
+  // 바꿔 끼워 서로 덮어쓰지 않게 한다(아래 push-retry-interval 실행 직전에 재할당).
   _pullStaleIntervalCb: null,
   _pullStaleIntervalMs: null,
+  _pushRetryIntervalCb: null,
+  _pushRetryIntervalMs: null,
   setInterval: (fn, ms) => { sandbox._pullStaleIntervalCb = fn; sandbox._pullStaleIntervalMs = ms; return 0; },
   planBadgeEl: {
     _text: '',
@@ -667,6 +671,15 @@ vm.runInContext(
   extractStatement("setInterval(()=>{if(!document.hidden)pullCloudIfStale()"),
   sandbox,
   { filename: 'pull-stale-interval-wiring-from-index.html' }
+);
+// push 실패(CLOUD_SYNC_STATE==='error') 재시도 interval(app-evolve cycle170 advance) — 위
+// pull-stale interval과 별도의 최상위 setInterval statement라, 캡처 필드가 섞이지 않도록
+// setInterval 스텁을 이 statement 전용 필드로 바꿔 끼운 뒤 실행한다.
+sandbox.setInterval = (fn, ms) => { sandbox._pushRetryIntervalCb = fn; sandbox._pushRetryIntervalMs = ms; return 0; };
+vm.runInContext(
+  extractStatement("setInterval(()=>{if(!document.hidden&&CLOUD_UID&&DB&&CLOUD_SYNC_STATE==='error')pushCloud()"),
+  sandbox,
+  { filename: 'push-retry-interval-wiring-from-index.html' }
 );
 
 const tests = [];
@@ -7340,6 +7353,82 @@ test('포그라운드 유지 중 재-pull interval: document.hidden===true(백�
   assert.strictEqual(calls, 0);
 });
 
+/* ---------- push 실패(CLOUD_SYNC_STATE==='error') 재시도 interval(app-evolve cycle170 advance) —
+ * pushCloud()가 실패하면 CLOUD_SYNC_STATE='error'로 두고 토스트를 1회만 띄우는데, 이후 복구는
+ * navigator.onLine이 false->true로 실제로 바뀌는 'online' 이벤트나 다음 로컬 편집(save())에만
+ * 걸려 있어서, onLine은 안 바뀌는 흔한 일시적 실패(5xx/타임아웃)에서 사용자가 그날 더 편집을
+ * 안 하면 영원히 멈췄다. 위 pull-stale interval과 같은 60초 틱 모양으로 CLOUD_SYNC_STATE==='error'
+ * 일 때만 pushCloud()를 재시도한다(PUSH_CLOUD_INFLIGHT가 중복 push는 이미 막아줌). ---------- */
+test('push 실패 재시도 interval: 60초마다 틱한다', () => {
+  assert.strictEqual(sandbox._pushRetryIntervalMs, 60 * 1000);
+  assert.strictEqual(typeof sandbox._pushRetryIntervalCb, 'function');
+});
+test('push 실패 재시도 interval: CLOUD_SYNC_STATE==="error"이고 포그라운드면 pushCloud()를 다시 부른다', () => {
+  const origFn = sandbox.pushCloud;
+  let calls = 0;
+  sandbox.pushCloud = () => { calls++; return Promise.resolve(); };
+  sandbox.document.hidden = false;
+  sandbox.CLOUD_UID = 'u1';
+  sandbox.DB = { assets: [] };
+  sandbox.CLOUD_SYNC_STATE = 'error';
+  sandbox._pushRetryIntervalCb();
+  sandbox.pushCloud = origFn;
+  sandbox.CLOUD_UID = null;
+  sandbox.DB = null;
+  sandbox.CLOUD_SYNC_STATE = 'idle';
+  assert.strictEqual(calls, 1);
+});
+test('push 실패 재시도 interval: CLOUD_SYNC_STATE가 "ok"/"conflict"/"syncing"이면 건드리지 않는다', () => {
+  const origFn = sandbox.pushCloud;
+  let calls = 0;
+  sandbox.pushCloud = () => { calls++; return Promise.resolve(); };
+  sandbox.document.hidden = false;
+  sandbox.CLOUD_UID = 'u1';
+  sandbox.DB = { assets: [] };
+  ['ok', 'conflict', 'syncing', 'idle'].forEach(state => {
+    sandbox.CLOUD_SYNC_STATE = state;
+    sandbox._pushRetryIntervalCb();
+  });
+  sandbox.pushCloud = origFn;
+  sandbox.CLOUD_UID = null;
+  sandbox.DB = null;
+  sandbox.CLOUD_SYNC_STATE = 'idle';
+  assert.strictEqual(calls, 0);
+});
+test('push 실패 재시도 interval: document.hidden===true(백그라운드)면 건드리지 않고 건너뛴다', () => {
+  const origFn = sandbox.pushCloud;
+  let calls = 0;
+  sandbox.pushCloud = () => { calls++; return Promise.resolve(); };
+  sandbox.document.hidden = true;
+  sandbox.CLOUD_UID = 'u1';
+  sandbox.DB = { assets: [] };
+  sandbox.CLOUD_SYNC_STATE = 'error';
+  sandbox._pushRetryIntervalCb();
+  sandbox.pushCloud = origFn;
+  sandbox.document.hidden = false;
+  sandbox.CLOUD_UID = null;
+  sandbox.DB = null;
+  sandbox.CLOUD_SYNC_STATE = 'idle';
+  assert.strictEqual(calls, 0);
+});
+test('push 실패 재시도 interval: CLOUD_UID나 DB가 없으면(로그아웃/부팅 전) 건드리지 않는다', () => {
+  const origFn = sandbox.pushCloud;
+  let calls = 0;
+  sandbox.pushCloud = () => { calls++; return Promise.resolve(); };
+  sandbox.document.hidden = false;
+  sandbox.CLOUD_SYNC_STATE = 'error';
+  sandbox.CLOUD_UID = null;
+  sandbox.DB = { assets: [] };
+  sandbox._pushRetryIntervalCb();
+  sandbox.CLOUD_UID = 'u1';
+  sandbox.DB = null;
+  sandbox._pushRetryIntervalCb();
+  sandbox.pushCloud = origFn;
+  sandbox.CLOUD_UID = null;
+  sandbox.CLOUD_SYNC_STATE = 'idle';
+  assert.strictEqual(calls, 0);
+});
+
 /* ---------- pullCloud/afterCloudAuth/resolveCloudPullRemote: markCloudSynced() 호출 시점
  * (app-evolve cycle77 develop 회귀 테스트). pullCloud()는 원래 원격 fetch에 성공하기만 하면
  * markCloudSynced()(dataKey()+'__syncedAt'을 지금 시각으로 찍음)를 곧장 불렀다. 그런데
@@ -10436,6 +10525,48 @@ test('homeAlertCard: clockSkew는 severity별로 다른 문구를 쓰고, 눌러
   const severeHtml = sandbox.homeAlertCard({ kind: 'clockSkew', severity: 'severe' });
   assert.ok(severeHtml.includes('기기 시간이 많이 틀려요'), 'severe는 더 강한 문구를 써야 함');
   assert.notStrictEqual(severeHtml, warnHtml, 'severity별로 다른 카드여야 함');
+});
+/* ---------- homeAlerts/homeAlertCard: cloudSyncError (app-evolve cycle170 advance) ----------
+ * pushCloud() 실패(CLOUD_SYNC_STATE='error')는 토스트가 1회만 뜨고 사라져, 그 뒤로는 사용자가
+ * 동기화가 멈춘 걸 알 길이 없었다(critique cycle170) — cloudConflict와 같은 '지속 카드' 패턴으로
+ * cloudSyncOk()가 호출될 때까지(재시도 성공) 계속 보이게 한다. */
+test('homeAlerts: CLOUD_UID가 있고 CLOUD_SYNC_STATE==="error"면 cloudSyncError를 띄운다', () => {
+  setupHomeAlertsDB();
+  sandbox.CLOUD_UID = 'u1';
+  sandbox.CLOUD_SYNC_STATE = 'error';
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(alerts.some((a) => a.kind === 'cloudSyncError'), 'cloudSyncError 알림이 있어야 함');
+});
+test('homeAlerts: CLOUD_SYNC_STATE==="ok"/"idle"이면 cloudSyncError를 띄우지 않는다', () => {
+  setupHomeAlertsDB();
+  sandbox.CLOUD_UID = 'u1';
+  sandbox.CLOUD_SYNC_STATE = 'ok';
+  let alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'cloudSyncError'));
+  sandbox.CLOUD_SYNC_STATE = 'idle';
+  alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'cloudSyncError'));
+});
+test('homeAlerts: CLOUD_UID가 없으면(로컬/카카오 전용) CLOUD_SYNC_STATE가 "error"여도 cloudSyncError를 띄우지 않는다', () => {
+  setupHomeAlertsDB();
+  sandbox.CLOUD_UID = null;
+  sandbox.CLOUD_SYNC_STATE = 'error';
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'cloudSyncError'));
+});
+test('homeAlerts: conflict와 error는 같은 CLOUD_SYNC_STATE 값을 두고 배타적이라 동시에 뜨지 않는다', () => {
+  setupHomeAlertsDB();
+  sandbox.CLOUD_UID = 'u1';
+  sandbox.CLOUD_SYNC_STATE = 'conflict';
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(alerts.some((a) => a.kind === 'cloudConflict'));
+  assert.ok(!alerts.some((a) => a.kind === 'cloudSyncError'));
+});
+test('homeAlertCard: cloudSyncError는 openAccountSheet()로 열리고 재시도 중임을 알린다', () => {
+  const html = sandbox.homeAlertCard({ kind: 'cloudSyncError' });
+  assert.ok(html.includes('클라우드 동기화에 실패했어요'), '실패 문구가 보여야 함');
+  assert.ok(html.includes('onclick="openAccountSheet()"'), '눌러서 동기화 상태(계정 화면)로 가야 함');
+  assert.ok(html.includes('자동으로 다시 시도'), '자동 재시도 중임을 안내해야 함');
 });
 test('homeAlertCard: confirmMulti는 openConfirmTransferList()로 열리고 건수가 보인다(app-evolve cycle156)', () => {
   const html = sandbox.homeAlertCard({ kind: 'confirmMulti', count: 3 });
