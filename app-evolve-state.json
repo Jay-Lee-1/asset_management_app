@@ -1,33 +1,8 @@
 {
-  "cycle": 171,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "서비스워커 업데이트 체크가 '계속 떠 있는 동안'에는 전혀 발동하지 않음 (pullCloudIfStale과 동일한 stay-open 공백)",
-    "why": "index.html의 SW 등록(8073-8091줄)은 controllerchange 이벤트에만 의존하는데, 이는 브라우저가 navigation(새 페이지 로드/새로고침) 시점에만 자체적으로 update 체크를 수행할 때 발동한다. registration.update()를 코드 전체에서 호출하는 곳이 전혀 없음(grep으로 확인). PWA를 홈 화면에 설치해 며칠씩 켜두는 사용자(잠금/해제, 백그라운드/포그라운드 전환 반복 — 이들은 navigation이 아님)는 새 버전이 여러 번 배포돼도 #swUpdateBar 배너를 전혀 못 보고, 강제종료 후 재실행하기 전까지 구버전 코드(이번 사이클들이 고친 sanitizeBackup/클라우드 동기화 수정 포함)를 계속 돌리게 된다. cycle169가 클라우드 pull에 대해 정확히 이 '전환 시에만 발동, 계속 떠 있으면 공백' 문제를 pullCloudIfStale() 60초 interval로 해결한 것과 동일한 버그 클래스의 SW 쪽 나머지 절반.",
-    "approach": "1) navigator.serviceWorker.register('./sw.js') 성공 후 ServiceWorkerRegistration을 모듈 레벨 변수에 보관. 2) autoSyncRates/pullCloudIfStale 패턴(7653/8061줄)과 동일한 모양으로 setInterval(()=>{if(!document.hidden)reg.update().catch(()=>{})}, 30~60분)을 추가. 3) 기존 visibilitychange-visible 핸들러(pullCloudIfStale() 호출 지점, 8046줄 부근)에도 reg.update().catch(()=>{})를 같이 호출해 포그라운드 복귀 시 즉시 체크. 4) 새 UI는 불필요 — update()가 새 워커를 설치하면 기존 showSwUpdateBar()/controllerchange가 그대로 배너를 띄움. 5) 가능하면 shouldPullCloud처럼 테스트 가능한 순수 헬퍼(예: shouldCheckSwUpdate(lastCheckMs, now))를 두어 test/run.js에서 주기를 검증. registration.update()는 실제 네트워크 요청을 하므로 test/run.js에서는 reg 객체를 스텁으로 교체해 호출 여부/주기만 검증(실제 fetch 없이)."
-  },
+  "cycle": 172,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 166,
-      "phase": "review",
-      "timestamp": "2026-10-09T11:40:00.000Z",
-      "summary": "cycle166 develop(sanitizeBackup에 DB.deletedIds 검증 블록 추가) 검토 — mergeRemoteDataIntoLocal()의 실제 비교식(index.html:1472 remoteData.deletedIds[id]>DB.deletedIds[id])과 mergeCollection()/gcTombstones()(logic.js)이 모두 순수 숫자 비교·연산(now-deletedIds[id]<=maxAgeMs)만 쓴다는 커밋의 근거를 grep으로 직접 대조 확인했고, 정규화 후 Number.isFinite만 통과하면 되므로 음수/소수 등 비현실적이지만 무해한 값은 그대로 허용되는 설계도 catIcon 등 기존 sanitizeFlatMap류와 일관됨을 확인. 객체 전체가 아니라 비정상 id 단위로만 제거해 손상되지 않은 다른 톰스톤은 보존하는 점도 cycle163(nwHistory byOwner)이 세운 선례와 일치. node test/run.js 1153/1153 통과. 이상 없음, 코드 변경 없음.",
-      "commit": null
-    },
-    {
-      "cycle": 166,
-      "phase": "critique",
-      "timestamp": "2026-10-09T13:15:00.000Z",
-      "summary": "general-purpose 서브에이전트로 141-166사이클 전부(특히 cycle166 develop이 막 고친 deletedIds 검증 공백) + 기각 이력을 전달하고 앱 전체를 재조망. 새로 발견: sanitizeBackup()이 이제 txns/assets/recurrences/goals/inquiries/assetQtyLog/categories/owners/budgetHistory/catIcon류/deletedIds/nwHistory까지 전부 검증하면서 유일하게 DB.settings만 Object.assign({},obj,{...})(5961줄)로 아무 검증 없이 통과시킴을 확인. migrate()의 DB.settings=Object.assign({defaults},DB.settings||{})(2077줄)는 비객체 소스는 안전히 버리지만, DB.settings.dismissedStaleMvIds가 2377줄에서 new Set(DB.settings.dismissedStaleMvIds||[])로 직접 소비돼 truthy한 비배열 값이면 TypeError가 나고, 이 호출이 homeAlerts()->updateAlerts()->renderCurrent() 경로라 바깥 try/catch가 삼켜 사용자가 알기 어려운 채로 매 렌더마다 조용히 깨진 상태가 지속됨 — categories/owners/budgetHistory/catIcon류/deletedIds/nwHistory에서 반복된 '검증 분기 누락' 버그 클래스의 마지막 남은 인스턴스. settings 전용 검증 블록(dismissedStaleMvIds/groupOrder 정규화) 계획을 pending_advance_plan에 저장. 러너업(기각): 반복거래 편집 입력 memo의 value=\"...\" 어트리뷰트 이스케이프는 이미 \"만 수동 치환돼 실제 인젝션 경로 아님(esc()와 스타일만 다름, 저가치); 시트/모달 포커스트랩·inert 처리는 이미 충분(6138-6168줄 확인, 공백 없음); test/run.js가 render 함수는 안 덮고 logic.js 순수함수 위주인 것은 실제 기술부채지만 한 cycle 범위를 넘고 실제 버그 근거 없음. 코드 변경 없음(읽기 전용 조사).",
-      "commit": null
-    },
-    {
-      "cycle": 166,
-      "phase": "advance",
-      "timestamp": "2026-10-09T14:20:00.000Z",
-      "summary": "critique(cycle166) 계획대로 sanitizeBackup()에 DB.settings 전용 검증 블록을 추가했다. obj.settings가 일반 객체가 아니면(문자열/숫자/배열/null) {}로 교체(fixedCount). dismissedStaleMvIds는 배열이 아니면 빈 배열로 되돌리고(new Set()이 더 이상 터지지 않음), 배열이면 문자열이 아니거나 빈 문자열인 항목만 걸러낸다. groupOrder도 migrate()(2078줄)의 '비배열/빈 배열이면 기본값' 폴백이 이미 있지만, 소스 단에서도 배열이 아니면 DEFAULT_GROUP_ORDER로, 배열이면 문자열 아닌 항목만 걸러내 방어선을 하나 더 뒀다. confirmTransfers/autoRates/bigMin 등 나머지 필드는 truthy/falsy나 숫자로만 쓰여 크래시 위험이 없어 계획대로 손대지 않았다. 최종 반환 객체에도 settings를 포함시켰다(이전엔 obj를 Object.assign으로 그대로 흘려보내 obj.settings가 미검증 상태로 통과됐었음). test/run.js에 new Set({}) 버그 재현 1건 + settings 비객체/dismissedStaleMvIds 비배열·비문자열 항목 제거/groupOrder 비배열·비문자열 항목 제거/정상 케이스 회귀 없음 총 6건을 추가했고, 수정을 되돌리면 이 중 settings 관련 4건이 realm 문제 없이(JSON round-trip으로 host realm 정규화) 실제로 깨짐을 확인했다. index.html/sw.js 변경이라 APP_VERSION 1.47.100->1.47.101, sw.js CACHE v362->v363 갱신. node test/run.js 1153/1153 -> 1160/1160 통과.",
-      "commit": null
-    },
     {
       "cycle": 167,
       "phase": "develop",
@@ -137,7 +112,7 @@
       "cycle": 170,
       "phase": "advance",
       "timestamp": "2026-10-10T07:11:38.145Z",
-      "summary": "critique(cycle170) 계획대로 push 실패(CLOUD_SYNC_STATE='error') 자동 재시도 + 지속 경고를 구현했다. 기존 pullCloudIfStale 60초 interval(cycle169) 바로 뒤에 독립된 새 setInterval(()=>{if(!document.hidden&&CLOUD_UID&&DB&&CLOUD_SYNC_STATE==='error')pushCloud().catch(()=>{})},60*1000)을 추가했다 — PUSH_CLOUD_INFLIGHT가 이미 중복 push를 막아주므로 상태만 확인하고 그대로 재시도한다. homeAlerts()의 cloudConflict 라인 바로 뒤에 else if(CLOUD_UID&&CLOUD_SYNC_STATE==='error')arr.push({kind:'cloudSyncError'})를 추가해 conflict/error가 배타적으로 하나만 뜨게 했고(동시에 같은 CLOUD_SYNC_STATE 값이라 원래도 배타적), dismiss 플래그 없이 cloudSyncOk()가 호출되면(재시도 성공) 자연히 사라진다. homeAlertCard()에 cloudConflict와 같은 버튼 스타일로 cloudSyncError 분기('클라우드 동기화에 실패했어요' · '자동으로 다시 시도하고 있어요 · 눌러서 확인' · onclick=openAccountSheet())를 추가했다. test/run.js: 새 setInterval statement 전용으로 sandbox.setInterval 스텁을 _pushRetryIntervalCb/_pushRetryIntervalMs 필드로 바꿔 끼운 뒤 extractStatement()로 실행해 캡처했다(기존 _pullStaleIntervalCb와 섞이지 않게 분리) — 60초 주기 확인 1건 + error 상태에서 포그라운드면 pushCloud() 호출/ok·conflict·syncing·idle이면 스킵/백그라운드(document.hidden)면 스킵/CLOUD_UID·DB 없으면 스킵 총 5건. homeAlerts에 error일 때 뜨고 ok/idle이면 안 뜨고 CLOUD_UID 없으면 안 뜨고 conflict와 배타적임을 확인하는 4건 + homeAlertCard 렌더 1건, 총 10건을 추가했다. index.html/sw.js 변경이라 APP_VERSION 1.47.108->1.47.109, sw.js CACHE v370->v371 갱신. node test/run.js 1185/1185 -> 1195/1195 통과. pending_advance_plan을 비웠다.",
+      "summary": "critique(cycle170) 계획대로 push 실패(CLOUD_SYNC_STATE='error') 자동 재시도 + 지속 경고를 구현했다. 기존 pullCloudIfStale 60초 interval(cycle169) 바로 뒤에 독립된 새 setInterval(()=>{if(!document.hidden&&CLOUD_UID&&DB&&CLOUD_SYNC_STATE==='error')pushCloud().catch(()=>{})})를 추가했다 — PUSH_CLOUD_INFLIGHT가 이미 중복 push를 막아주므로 상태만 확인하고 그대로 재시도한다. homeAlerts()의 cloudConflict 라인 바로 뒤에 else if(CLOUD_UID&&CLOUD_SYNC_STATE==='error')arr.push({kind:'cloudSyncError'})를 추가해 conflict/error가 배타적으로 하나만 뜨게 했고(동시에 같은 CLOUD_SYNC_STATE 값이라 원래도 배타적), dismiss 플래그 없이 cloudSyncOk()가 호출되면(재시도 성공) 자연히 사라진다. homeAlertCard()에 cloudConflict와 같은 버튼 스타일로 cloudSyncError 분기('클라우드 동기화에 실패했어요' · '자동으로 다시 시도하고 있어요 · 눌러서 확인' · onclick=openAccountSheet())를 추가했다. test/run.js: 새 setInterval statement 전용으로 sandbox.setInterval 스텁을 _pushRetryIntervalCb/_pushRetryIntervalMs 필드로 바꿔 끼운 뒤 extractStatement()로 실행해 캡처했다(기존 _pullStaleIntervalCb와 섞이지 않게 분리) — 60초 주기 확인 1건 + error 상태에서 포그라운드면 pushCloud() 호출/ok·conflict·syncing·idle이면 스킵/백그라운드(document.hidden)면 스킵/CLOUD_UID·DB 없으면 스킵 총 5건. homeAlerts에 error일 때 뜨고 ok/idle이면 안 뜨고 CLOUD_UID 없으면 안 뜨고 conflict와 배타적임을 확인하는 4건 + homeAlertCard 렌더 1건, 총 10건을 추가했다. index.html/sw.js 변경이라 APP_VERSION 1.47.108->1.47.109, sw.js CACHE v370->v371 갱신. node test/run.js 1185/1185 -> 1195/1195 통과. pending_advance_plan을 비웠다.",
       "commit": null
     },
     {
@@ -159,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-10T10:15:00.000Z",
       "summary": "general-purpose 서브에이전트로 141-171사이클 전부(특히 164-171의 sanitizeBackup/a11y/CSV가드/시계오차/stale-pull/goalProgress/doMaturity/cloud push 재시도 미세수정들) + 기각 이력을 전달하고 앱 전체를 재조망. 새로 발견: SW 등록(index.html 8073-8091줄)이 controllerchange 이벤트에만 의존하고 registration.update()를 코드 전체에서 한 번도 호출하지 않음(grep 확인) — 브라우저 자체 업데이트 체크는 navigation(새 페이지 로드) 시점에만 발동하므로, PWA를 홈 화면에 설치해 며칠씩 켜두고 잠금/해제·백그라운드/포그라운드 전환만 반복하는 사용자는 새 버전이 여러 번 배포돼도 #swUpdateBar 배너를 전혀 못 보고 강제종료 후 재실행 전까지 구버전 코드를 계속 돌린다 — cycle169가 클라우드 pull에 대해 정확히 같은 '전환 시에만 발동, stay-open엔 공백' 문제를 pullCloudIfStale() 60초 interval로 고친 것과 동일한 버그 클래스의 SW 쪽 나머지 절반. autoSyncRates/pullCloudIfStale 패턴과 동일한 모양으로 reg.update() 주기 호출(백그라운드 setInterval + visibilitychange-visible 즉시 체크)을 추가하는 계획을 pending_advance_plan에 저장. 러너업(기각): Supabase 클라우드 데이터 평문 저장(키 관리 UX 전면 개편 필요, 서버/RLS 영역이라 범위 초과), 채무 자산 이자 누적/APR 모델링 없음(개방형 제품 설계 질문, 범위 초과), 거래 영수증/사진 첨부 없음(저장 용량·내보내기 포맷·UI 전반에 걸쳐 범위 초과), 주식/FX/금 costBasis가 FIFO 아닌 단일값(이미 기각된 거래분할 항목과 동일한 범위 문제), delOwner가 goals.owner는 가드 안 함(이미 감사 완료된 cascade 항목에 속하고 데이터 손실이 아닌 UI상 미선택 정도의 저가치 증상이라 재제안 보류). 코드 변경 없음(읽기 전용 조사).",
+      "commit": null
+    },
+    {
+      "cycle": 171,
+      "phase": "advance",
+      "timestamp": "2026-10-10T11:20:00.000Z",
+      "summary": "critique(cycle171) 계획대로 SW 업데이트 체크에 '포그라운드 유지' 경로를 추가했다. SW 등록 성공 시(register().then) ServiceWorkerRegistration을 이 스크립트 블록 안의 모듈 변수 SW_REG에 보관하고, 같은 블록 안에 독립된 document.addEventListener('visibilitychange', ...)(포그라운드 복귀 즉시 reg.update())와 setInterval(..., 30분)(포그라운드 유지 중 주기 체크)을 추가했다 — 둘 다 !document.hidden&&SW_REG일 때만 SW_REG.update().catch(()=>{})를 부른다. 메인 스크립트(visibilitychange-visible/focus/pageshow)를 건드리지 않고 SW 등록 블록 하나에만 격리시켰다 — 어차피 이 블록은 window 'load' 이후에만 register가 끝나 SW_REG가 채워지므로 메인 스크립트와의 실행 순서 의존이 생기지 않는다. 새 UI는 추가하지 않았다 — update()가 새 워커를 찾아 설치하면 기존 controllerchange/showSwUpdateBar()가 그대로 배너를 띄운다. test/run.js: FUNCTIONS가 아닌 두 최상위 statement를 extractStatement()로 각각 추출해 실행했고(document.addEventListener 쪽은 sandbox.document.addEventListener 스텁이, setInterval 쪽은 setInterval 스텁 재할당이 콜백을 캡처), SW_REG를 CLOUD_UID와 같은 패턴으로 sandbox 상태에 추가했다. 포그라운드+SW_REG 있음→두 핸들러 모두 update() 호출/SW_REG===null→아무 일 안 함/document.hidden===true→건너뜀 + interval 주기(30분) 확인, 총 5건을 추가했다 — index.html의 두 statement를 되돌리면 vm 셋업 자체가 extractStatement 에러로 죽는 것으로 의존성을 확인했다(1196/1196 -> 수정 복원 후 1201/1201). index.html/sw.js 변경이라 APP_VERSION 1.47.110->1.47.111, sw.js CACHE v372->v373 갱신. node test/run.js 1196/1196 -> 1201/1201 통과. pending_advance_plan을 비웠다.",
       "commit": null
     }
   ]

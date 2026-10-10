@@ -290,6 +290,10 @@ const sandbox = {
   CLOUD_UID: null,
   CLOUD_SYNC_STATE: 'idle',
   CLOUD_LAST_SYNCED_AT: null,
+  // SW_REG는 SW 등록 성공 시 register().then()이 채우는 ServiceWorkerRegistration(app-evolve
+  // cycle171 advance) — 등록 전/실패 시 null인 비순수 상태라 CLOUD_UID와 같은 이유로 테스트에서
+  // 직접 세팅한다(포그라운드 유지 중 업데이트 체크 interval 테스트 참고).
+  SW_REG: null,
   // PUSH_CLOUD_INFLIGHT(app-evolve cycle116)도 같은 이유로 pushCloud() 테스트에서 직접 세팅한다
   // (scheduleCloudPush()의 디바운스와 visibilitychange 핸들러가 겹쳐도 SB.from()을 중복 호출하지
   // 않도록 막는 가드 플래그).
@@ -385,7 +389,9 @@ const sandbox = {
   // 없음) 호출 여부만 흉내내는 no-op으로 둔다(물방울 이동은 순수 로직 검증 대상이 아님).
   // hidden은 포그라운드 유지 중 재-pull interval(app-evolve cycle169 advance)이 읽는
   // document.hidden — 기본은 포그라운드(false)로 두고, 해당 테스트가 직접 true/false로 바꾼다.
-  document: { querySelectorAll: () => [], hidden: false },
+  // addEventListener는 SW 업데이트 체크의 visibilitychange 즉시 체크(app-evolve cycle171
+  // advance) 와이어링을 실행할 때 그 콜백만 캡처한다(실제 이벤트 디스패치는 하지 않음).
+  document: { querySelectorAll: () => [], hidden: false, _swVisibilityCb: null, addEventListener: (ev, fn) => { if (ev === 'visibilitychange') sandbox.document._swVisibilityCb = fn; } },
   moveBlob: () => {},
   // setInterval(cb,ms)는 이 샌드박스가 실제 타이머를 돌리지 않으므로(FUNCTIONS는 개별 함수만
   // 추출해 실행), vm으로 직접 실행하는 포그라운드 유지 중 재-pull/재-push interval 와이어링의
@@ -680,6 +686,20 @@ vm.runInContext(
   extractStatement("setInterval(()=>{if(!document.hidden&&CLOUD_UID&&DB&&CLOUD_SYNC_STATE==='error')pushCloud()"),
   sandbox,
   { filename: 'push-retry-interval-wiring-from-index.html' }
+);
+// SW 업데이트 체크(app-evolve cycle171 advance) — 포그라운드 복귀 즉시 체크(visibilitychange)와
+// 포그라운드 유지 중 주기 체크(setInterval) 두 statement를 각각 캡처한다. 전자는 위
+// document.addEventListener 스텁이, 후자는 setInterval 스텁을 다시 바꿔 끼워 캡처한다.
+vm.runInContext(
+  extractStatement("document.addEventListener('visibilitychange',function(){if(!document.hidden&&SW_REG)"),
+  sandbox,
+  { filename: 'sw-update-visibility-wiring-from-index.html' }
+);
+sandbox.setInterval = (fn, ms) => { sandbox._swUpdateIntervalCb = fn; sandbox._swUpdateIntervalMs = ms; return 0; };
+vm.runInContext(
+  extractStatement("setInterval(function(){if(!document.hidden&&SW_REG)SW_REG.update()"),
+  sandbox,
+  { filename: 'sw-update-interval-wiring-from-index.html' }
 );
 
 const tests = [];
@@ -7448,6 +7468,44 @@ test('push 실패 재시도 interval: CLOUD_UID나 DB가 없으면(로그아웃/
   sandbox.CLOUD_UID = null;
   sandbox.CLOUD_SYNC_STATE = 'idle';
   assert.strictEqual(calls, 0);
+});
+
+/* ---------- SW 업데이트 체크 — controllerchange만으로는 브라우저가 navigation 시점에만
+ * 자체 업데이트 체크를 하므로, PWA를 홈 화면에 설치해 며칠씩 켜두고 잠금/해제·백그라운드/
+ * 포그라운드 전환만 반복하는 사용자는 registration.update()를 아무도 안 불러 새 배포를 영원히
+ * 못 본다(app-evolve cycle171 critique) — pullCloudIfStale/push 재시도 interval과 같은
+ * '전환 시에만 발동, stay-open은 공백' 버그 클래스의 SW 쪽 나머지 절반. ---------- */
+test('SW 업데이트 체크: 포그라운드 복귀(visibilitychange) 즉시 체크 핸들러가 등록돼 있다', () => {
+  assert.strictEqual(typeof sandbox.document._swVisibilityCb, 'function');
+});
+test('SW 업데이트 체크: 포그라운드 유지 중 interval은 30분마다 틱한다', () => {
+  assert.strictEqual(sandbox._swUpdateIntervalMs, 30 * 60 * 1000);
+  assert.strictEqual(typeof sandbox._swUpdateIntervalCb, 'function');
+});
+test('SW 업데이트 체크: 등록 완료(SW_REG 있음) + 포그라운드면 두 핸들러 모두 registration.update()를 부른다', () => {
+  let updateCalls = 0;
+  sandbox.SW_REG = { update: () => { updateCalls++; return Promise.resolve(); } };
+  sandbox.document.hidden = false;
+  sandbox.document._swVisibilityCb();
+  sandbox._swUpdateIntervalCb();
+  sandbox.SW_REG = null;
+  assert.strictEqual(updateCalls, 2, 'visibilitychange 즉시 체크와 interval 틱 모두 update()를 불러야 함');
+});
+test('SW 업데이트 체크: 아직 등록이 안 끝났으면(SW_REG===null) 두 핸들러 모두 아무 일도 하지 않는다', () => {
+  sandbox.SW_REG = null;
+  sandbox.document.hidden = false;
+  assert.doesNotThrow(() => sandbox.document._swVisibilityCb());
+  assert.doesNotThrow(() => sandbox._swUpdateIntervalCb());
+});
+test('SW 업데이트 체크: document.hidden===true(백그라운드)면 두 핸들러 모두 update()를 건너뛴다', () => {
+  let updateCalls = 0;
+  sandbox.SW_REG = { update: () => { updateCalls++; return Promise.resolve(); } };
+  sandbox.document.hidden = true;
+  sandbox.document._swVisibilityCb();
+  sandbox._swUpdateIntervalCb();
+  sandbox.SW_REG = null;
+  sandbox.document.hidden = false;
+  assert.strictEqual(updateCalls, 0);
 });
 
 /* ---------- pullCloud/afterCloudAuth/resolveCloudPullRemote: markCloudSynced() 호출 시점

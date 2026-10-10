@@ -1331,7 +1331,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.110';
+const APP_VERSION='1.47.111';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -8079,16 +8079,27 @@ if('serviceWorker' in navigator){
    * 서비스워커가 이 페이지를 제어 중이던 경우(hadController=true)에만 이후 controllerchange를
    * 진짜 새 배포로 취급한다. */
   var hadController=!!navigator.serviceWorker.controller;
+  var SW_REG=null;
   navigator.serviceWorker.addEventListener('controllerchange',function(){
     if(!hadController){hadController=true;return}
     SW_UPDATE_AVAILABLE=true;
     showSwUpdateBar();
   });
   window.addEventListener('load',function(){
-    navigator.serviceWorker.register('./sw.js').catch(function(e){
+    navigator.serviceWorker.register('./sw.js').then(function(reg){SW_REG=reg}).catch(function(e){
       console.warn('SW registration failed:', e);
     });
   });
+  /* controllerchange만으로는 브라우저가 자체적으로 새 버전을 체크하는 navigation(새 페이지
+   * 로드/새로고침) 시점에만 업데이트가 발견된다. PWA를 홈 화면에 설치해 며칠씩 켜두고
+   * 잠금/해제·백그라운드/포그라운드 전환만 반복하는 사용자는 navigation이 전혀 없어, 새 버전이
+   * 여러 번 배포돼도 #swUpdateBar 배너를 전혀 못 보고 강제종료 후 재실행 전까지 구버전을 계속
+   * 돈다(app-evolve cycle171 critique) — pullCloudIfStale()의 포그라운드 유지 중 재-pull
+   * interval(cycle169)/재-push interval(cycle170)과 같은 '전환 시에만 발동, stay-open은
+   * 공백' 버그 클래스의 SW 쪽 나머지 절반. registration.update()가 새 워커를 찾아 설치하면
+   * 기존 controllerchange/showSwUpdateBar()가 그대로 배너를 띄우므로 새 UI는 필요 없다. */
+  document.addEventListener('visibilitychange',function(){if(!document.hidden&&SW_REG)SW_REG.update().catch(function(){})});
+  setInterval(function(){if(!document.hidden&&SW_REG)SW_REG.update().catch(function(){})},30*60*1000);
 }
 </script>
 </body>
