@@ -1331,7 +1331,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.114';
+const APP_VERSION='1.47.115';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -7144,6 +7144,14 @@ function homeAlerts(neg){
  const _bo=spendByCategory(TM.y,TM.m).filter(r=>{const b=budgetForMonth(r.c,TM.y,TM.m);return b>0&&r.v>b}); /* 예산 초과 카테고리: 1건이면 그대로, 여러 건이면 하나로 묶음(quick/quickMulti와 동일 패턴) */
  if(_bo.length===1){const r=_bo[0],b=budgetForMonth(r.c,TM.y,TM.m);arr.push({kind:'budgetOver',cat:r.c,spent:r.v,budget:b});}
  else if(_bo.length>1)arr.push({kind:'budgetOverMulti',count:_bo.length});
+ /* 목표일보다 늦어지는 목표: 목표일이 있고 아직 안 달성한 목표 중, goalProgress()의 추세 투사가 목표일을
+  * 못 맞추거나(projectedDate>targetDate) 추세가 0/음수라 투사 자체가 안 나오면(projectedDate:null) 포함한다.
+  * budgetOver/budgetOverMulti와 동일한 단일/복수 collapsing 패턴(app-evolve cycle173 advance) */
+ const _gb=(DB.goals||[]).filter(g=>g.targetDate).map(g=>({g,p:goalProgress(g,nwHistoryForOwner(DB.nwHistory,goalOwnerEff(g)),TODAY)}))
+   .filter(({g,p})=>!p.achieved&&(!p.projectedDate||p.projectedDate>g.targetDate))
+   .sort((a,b)=>a.g.targetDate<b.g.targetDate?-1:1);
+ if(_gb.length===1){const{g,p}=_gb[0];arr.push({kind:'goalBehind',goalId:g.id,name:g.name,targetDate:g.targetDate,projectedDate:p.projectedDate});}
+ else if(_gb.length>1)arr.push({kind:'goalBehindMulti',count:_gb.length});
  return arr;
 }
 /* homeAlerts()가 계산한 알림 중 "오늘 확정 대기 이체 / 임박한 저축 만기(1~2일 이내) / 예산 초과"처럼
@@ -7160,6 +7168,8 @@ function notifyAlertInfo(al){
  if(al.kind==='matMulti'&&al.dueCount>0)return{key:`matMulti:${TODAY}:${al.count}`,title:'저축 만기가 임박했어요',body:`저축 만기 ${al.count}건이 있어요`};
  if(al.kind==='budgetOver')return{key:`budget:${al.cat}:${TODAY.slice(0,7)}`,title:'예산을 초과했어요',body:`${al.cat} · ${comma(al.spent)}원 / ${comma(al.budget)}원`};
  if(al.kind==='budgetOverMulti')return{key:`budgetMulti:${TODAY.slice(0,7)}`,title:'예산을 초과했어요',body:`${al.count}개 카테고리가 이번 달 예산을 넘었어요`};
+ if(al.kind==='goalBehind')return{key:`goalBehind:${al.goalId}:${TODAY.slice(0,7)}`,title:'목표가 늦어지고 있어요',body:`${al.name} · 목표일 ${fmtDateFull(al.targetDate)}까지 어려울 것 같아요`};
+ if(al.kind==='goalBehindMulti')return{key:`goalBehindMulti:${TODAY.slice(0,7)}`,title:'목표가 늦어지고 있어요',body:`목표 ${al.count}건이 목표일보다 늦어지고 있어요`};
  return null;
 }
 /* 같은 항목(key)은 상태가 유지되는 한 다시 알리지 않는다 — checkNotifyAlerts가 동기화 주기(수 분)마다
@@ -7295,6 +7305,16 @@ function homeAlertCard(al){
    <div class="ha-ic">${svg('alert')}</div>
    <div class="ha-b"><div class="ha-t">예산을 초과한 카테고리 ${al.count}개</div>
      <div class="ha-s">눌러서 확인하세요</div></div>
+   <div class="ha-c">${svg('chev')}</div></button>`;
+ if(al.kind==='goalBehind')return `<button class="home-alert mat" onclick="openGoalForm('${al.goalId}')">
+   <div class="ha-ic">${svg('target')}</div>
+   <div class="ha-b"><div class="ha-t">목표가 늦어지고 있어요 · ${esc(al.name)}</div>
+     <div class="ha-s">목표일 ${shortDate(al.targetDate)}${al.projectedDate?` · 이대로면 ${shortDate(al.projectedDate)}쯤 달성 예상`:' · 최근 추세로는 달성이 어려워요'}</div></div>
+   <div class="ha-c">${svg('chev')}</div></button>`;
+ if(al.kind==='goalBehindMulti')return `<button class="home-alert mat" onclick="openGoalsList()">
+   <div class="ha-ic">${svg('target')}</div>
+   <div class="ha-b"><div class="ha-t">목표가 늦어지고 있어요 ${al.count}건</div>
+     <div class="ha-s">눌러서 한 번에 확인</div></div>
    <div class="ha-c">${svg('chev')}</div></button>`;
  if(al.kind==='negMulti')return `<button class="home-alert" onclick="openNegList()">
    <div class="ha-ic">${svg('bell')}</div>

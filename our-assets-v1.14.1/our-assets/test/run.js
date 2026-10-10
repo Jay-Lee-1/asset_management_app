@@ -10675,6 +10675,89 @@ test('homeAlerts: 예산 이내(초과 없음)면 budgetOver/budgetOverMulti 둘
   const alerts = sandbox.homeAlerts([]);
   assert.ok(!alerts.some((a) => a.kind === 'budgetOver' || a.kind === 'budgetOverMulti'));
 });
+/* 목표일보다 늦어지는 목표(goalBehind/goalBehindMulti) — budgetOver/budgetOverMulti와 동일한 1건/N건
+ * 묶음 패턴을 goals에도 적용. goalProgress()의 추세 투사(목표일을 못 맞추거나 추세가 0/음수라
+ * projectedDate가 안 나옴)를 그대로 재사용하므로, homeAlerts 쪽은 묶음 분기만 검증한다(app-evolve cycle173 advance) */
+test('homeAlerts: 목표일보다 늦어지는(추세가 0/음수라 투사 자체가 안 나오는) 목표가 정확히 1개면 goalBehind, 2개로 늘면 goalBehindMulti로 묶인다', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.nwHistory = [
+    { date: '2026-05-01', nw: 1000000 },
+    { date: '2026-06-15', nw: 1000000 }, // 추세 0 → rate<=0 → projectedDate:null
+  ];
+  sandbox.DB.goals = [
+    { id: 'g1', name: '내 집 마련', type: 'networth', targetAmount: 2000000, targetDate: '2026-07-01', owner: 'all' },
+  ];
+  let alerts = sandbox.homeAlerts([]);
+  let gb = alerts.filter((a) => a.kind === 'goalBehind' || a.kind === 'goalBehindMulti');
+  assert.strictEqual(gb.length, 1);
+  assert.strictEqual(gb[0].kind, 'goalBehind', '정확히 1개면 goalBehind여야 함');
+  assert.strictEqual(gb[0].goalId, 'g1');
+  assert.strictEqual(gb[0].name, '내 집 마련');
+  assert.strictEqual(gb[0].targetDate, '2026-07-01');
+  assert.strictEqual(gb[0].projectedDate, null);
+
+  sandbox.DB.goals.push({ id: 'g2', name: '비상금', type: 'networth', targetAmount: 3000000, targetDate: '2026-08-01', owner: 'all' });
+  alerts = sandbox.homeAlerts([]);
+  gb = alerts.filter((a) => a.kind === 'goalBehind' || a.kind === 'goalBehindMulti');
+  assert.strictEqual(gb.length, 1);
+  assert.strictEqual(gb[0].kind, 'goalBehindMulti', '2개로 늘면 goalBehindMulti 하나로 묶여야 함');
+  assert.strictEqual(gb[0].count, 2);
+});
+test('homeAlerts: 추세대로면 목표일 전에 달성 예상인 목표는 goalBehind에 포함되지 않는다(회귀 확인)', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.nwHistory = [
+    { date: '2026-05-01', nw: 1000000 },
+    { date: '2026-06-15', nw: 1900000 }, // 하루 20000원씩 증가 → 5000000 남은 금액을 250일 안에 투사
+  ];
+  sandbox.DB.goals = [
+    { id: 'g1', name: '순조로운 목표', type: 'networth', targetAmount: 6900000, targetDate: '2028-01-01', owner: 'all' },
+  ];
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'goalBehind' || a.kind === 'goalBehindMulti'), '목표일보다 투사가 빠르면 behind로 뜨면 안 됨');
+});
+test('homeAlerts: 이미 달성한 목표(achieved)는 추세가 0이어도 goalBehind에 포함되지 않는다(회귀 확인)', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.nwHistory = [
+    { date: '2026-05-01', nw: 2000000 },
+    { date: '2026-06-15', nw: 2000000 },
+  ];
+  sandbox.DB.goals = [
+    { id: 'g1', name: '달성한 목표', type: 'networth', targetAmount: 1000000, targetDate: '2026-07-01', owner: 'all' },
+  ];
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'goalBehind' || a.kind === 'goalBehindMulti'), '이미 달성한 목표는 behind로 뜨면 안 됨');
+});
+test('homeAlerts: 목표일이 없는 목표는 추세가 0/음수여도 goalBehind에 포함되지 않는다(회귀 확인)', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.nwHistory = [
+    { date: '2026-05-01', nw: 1000000 },
+    { date: '2026-06-15', nw: 1000000 },
+  ];
+  sandbox.DB.goals = [
+    { id: 'g1', name: '목표일 없는 목표', type: 'networth', targetAmount: 2000000, targetDate: null, owner: 'all' },
+  ];
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'goalBehind' || a.kind === 'goalBehindMulti'), '목표일이 없으면 늦어진다는 판단 자체를 할 수 없어야 함');
+});
+test('notifyAlertInfo: goalBehind/goalBehindMulti는 budgetOver처럼 월 단위 dedupe 키를 쓴다', () => {
+  sandbox.TODAY = '2026-06-15';
+  const info1 = sandbox.notifyAlertInfo({ kind: 'goalBehind', goalId: 'g1', name: '내 집 마련', targetDate: '2026-07-01', projectedDate: null });
+  assert.strictEqual(info1.key, 'goalBehind:g1:2026-06');
+  assert.ok(info1.title && info1.body, 'OS 알림 제목/본문이 있어야 함');
+
+  const info2 = sandbox.notifyAlertInfo({ kind: 'goalBehindMulti', count: 2 });
+  assert.strictEqual(info2.key, 'goalBehindMulti:2026-06');
+  assert.ok(info2.title && info2.body, 'OS 알림 제목/본문이 있어야 함');
+});
+test('homeAlertCard: goalBehind/goalBehindMulti가 각각 openGoalForm/openGoalsList로 연결된다', () => {
+  const html1 = sandbox.homeAlertCard({ kind: 'goalBehind', goalId: 'g1', name: '내 집 마련', targetDate: '2026-07-01', projectedDate: null });
+  assert.ok(html1.includes("openGoalForm('g1')"));
+  assert.ok(html1.includes('내 집 마련'));
+
+  const html2 = sandbox.homeAlertCard({ kind: 'goalBehindMulti', count: 2 });
+  assert.ok(html2.includes('openGoalsList()'));
+  assert.ok(html2.includes('2건'));
+});
 /* 미확인 이체(confirm)도 quick/quickMulti·budgetOver/budgetOverMulti와 동일한 1건/N건 묶음 패턴을 쓴다
  * (app-evolve cycle156 critique: 반복 이체를 방치하면 홈 알림이 confirm 카드로 도배되던 비대칭을 해소) */
 test('homeAlerts: 미확인 이체(confirm)가 정확히 1건이면 confirm, 2건으로 늘면 confirmMulti로 묶인다(app-evolve cycle156)', () => {
