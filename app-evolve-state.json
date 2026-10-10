@@ -1,6 +1,6 @@
 {
   "cycle": 171,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
     {
@@ -141,6 +141,13 @@
       "phase": "develop",
       "timestamp": "2026-10-10T08:30:00.000Z",
       "summary": "general-purpose 서브에이전트로 141-170사이클과 겹치지 않는 새 개선점을 탐색 — txnsToCSV()의 guard(v)(index.html:5546, 구 regex /^[=+\\-@\\t\\r]/)와 CSV 재가져오기 csvRowToImportTxn()이 쓰는 unguardCsv(v)(5557, 구 regex /^'[=+\\-@\\t\\r]/)의 라운드트립이 비대칭임을 발견했다 — 메모/카테고리/자산명 원문이 이미 '로 시작하고 그 다음이 위험 문자(예: \"'-환불 예정\", \"'=특가\")인 경우, guard()는 \"이미 '로 보호돼 있다\"고 오인해 아무것도 안 붙이는데 unguardCsv()는 \"맨 앞 '+위험문자\" 모양만 보고 무조건 벗겨내 CSV 내보내기→재가져오기(앱 자체의 '이미 있는 내역은 건너뜀' 가져오기 플로우)만으로 원문의 '가 조용히 사라지는 데이터 손상이 발생함을 vm 샌드박스로 재현 확인했다. guard()의 정규식에 '도 트리거 문자로 포함(/^['=+\\-@\\t\\r]/)해 원문이 '로 시작하면 항상 보호용 '를 하나 더 붙이도록 바꾸고, unguardCsv()는 다음 글자를 보지 않고 맨 앞이 '이면 무조건 하나만 벗기도록 단순화해 올바른 역함수 쌍으로 맞췄다. test/run.js에 memo/category/asset명이 모두 '+위험문자로 시작하는 라운드트립 회귀 테스트 1건 추가. index.html/sw.js 변경이라 APP_VERSION 1.47.109->1.47.110, sw.js CACHE v371->v372 갱신. node test/run.js 1195/1195 -> 1196/1196 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 171,
+      "phase": "review",
+      "timestamp": "2026-10-10T09:07:43.000Z",
+      "summary": "cycle171 develop(guard/unguardCsv 라운드트립 비대칭 수정) 검토 — 손으로 네 가지 경로를 재추적: 원문이 위험문자로 시작(\"=foo\")→guard \"'=foo\"→unguard \"=foo\"(복원), 원문이 '+위험문자(\"'=foo\")→guard는 이제 '도 트리거셋에 포함돼 매칭→\"''=foo\"→unguard 한 글자만 벗겨 \"'=foo\"(복원, 수정 전엔 깨졌던 경로), 원문이 '+안전문자(\"'tis\")→guard \"''tis\"→unguard \"'tis\"(복원, 수정 전에도 안전했던 경로가 그대로 유지됨), 안전한 원문(\"hello\")→무변화. 네 경로 모두 올바른 역함수 쌍임을 확인했고, guard/unguardCsv의 유일한 소비처(category/fromName/toName/memo 4곳, 5578-5582줄)도 grep으로 전수 확인해 다른 호출부가 없음을 재확인. node test/run.js 1196/1196 통과. 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
       "commit": null
     }
   ]
