@@ -1356,7 +1356,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.124';
+const APP_VERSION='1.47.125';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1525,6 +1525,14 @@ function mergeRemoteDataIntoLocal(remoteData){
  DB.deletedBal=mergeFlatMap(DB.deletedBal,remoteData.deletedBal);
  migrate();invalidateBalances();
 }
+/* afterCloudAuth()의 무충돌 전량교체 분기와 resolveCloudPullRemote()는 mergeRemoteDataIntoLocal()을
+ * 거치지 않고 DB=sanitizeBackup(remote).data로 통째로 교체한다(app-evolve cycle178 critique) —
+ * 그 교체 직전에 불러 DB.settings/DB.nwHistory를 스냅샷해두고(기기-로컬 전용, mergeRemoteDataIntoLocal이
+ * 이미 선언한 것과 같은 원칙), 교체 직후 restoreLocalDeviceFields로 그대로 되돌려 원격 값이 이기지
+ * 않게 한다. 로컬 DB가 비어 있으면(최초 로그인 등 지킬 로컬 값이 없는 신규 기기) null을 돌려줘 그대로
+ * 원격 값을 받는다. */
+function snapshotLocalDeviceFields(){return dbIsEmpty(DB)?null:{settings:DB.settings,nwHistory:DB.nwHistory}}
+function restoreLocalDeviceFields(snap){if(!snap)return;if(snap.settings)DB.settings=snap.settings;if(snap.nwHistory)DB.nwHistory=snap.nwHistory}
 const comma=n=>Math.round(n||0).toLocaleString('ko-KR');
 const commaQty=n=>Number.isInteger(n)?comma(n):(n||0).toLocaleString('ko-KR',{maximumFractionDigits:4}); /* 소수 보유수량(주식/외화)은 반올림하지 않고 그대로 표시 */
 const won=n=>(n<0?'-':'')+comma(Math.abs(n))+'원';
@@ -1906,7 +1914,8 @@ async function afterCloudAuth(uid){
     * scheduleCloudPush()를 호출하므로 병합 결과는 1.2초 안에 자동으로 클라우드에 되밀린다. */
    return{status:'merged'};
   }
-  DB=sanitizeBackup(remote).data;migrate();invalidateBalances();try{localStorage.setItem(dataKey(),JSON.stringify(DB))}catch(e){}markCloudSynced();return{status:'remote'};
+  const _devSnap=snapshotLocalDeviceFields();
+  DB=sanitizeBackup(remote).data;restoreLocalDeviceFields(_devSnap);migrate();invalidateBalances();try{localStorage.setItem(dataKey(),JSON.stringify(DB))}catch(e){}markCloudSynced();return{status:'remote'};
  }
  let status='empty';
  if(guestHasData()){try{DB=JSON.parse(localStorage.getItem('asset_app_db_v3__guest'));migrate();status='guestMerged'}catch(e){if(!DB||!Array.isArray(DB.assets)){DB=emptyDB();migrate()}}}
@@ -1918,8 +1927,9 @@ async function resolveCloudPullRemote(){
  closeSheet();toast('불러오는 중…');
  const remote=await pullCloud();
  if(remote){
+  const _devSnap=snapshotLocalDeviceFields();
   const{data,fixedCount,droppedCount,rangeCount}=sanitizeBackup(remote);
-  DB=data;migrate();invalidateBalances();try{localStorage.setItem(dataKey(),JSON.stringify(DB))}catch(e){}markCloudSynced();renderCurrent();
+  DB=data;restoreLocalDeviceFields(_devSnap);migrate();invalidateBalances();try{localStorage.setItem(dataKey(),JSON.stringify(DB))}catch(e){}markCloudSynced();renderCurrent();
   toast((fixedCount||droppedCount)?'최신 클라우드 데이터를 가져왔어요 · 값을 보정했어요':rangeCount?`최신 클라우드 데이터를 가져왔어요 · 날짜 범위를 벗어난 ${rangeCount}건은 잔액에 반영 안 돼요`:'최신 클라우드 데이터를 가져왔어요');
  }else toast('가져오기에 실패했어요');
 }
@@ -6112,10 +6122,12 @@ function sanitizeBackup(obj){
  /* DB.nwHistory(순자산 추이 일별 스냅샷 [{date,ta,td,nw,byOwner?}])는 txns/assets/recurrences/goals/
   * inquiries/assetQtyLog/categories/owners/budgetHistory와 달리 지금까지 여기서 전혀 검증되지 않던
   * 유일한 배열 컬렉션이었다. mergeRemoteDataIntoLocal()은 "기기별 로컬 스냅샷"이라며 의도적으로
-  * nwHistory를 병합 대상에서 빼지만, afterCloudAuth()의 미동기화 없음 분기(1831줄)와
-  * resolveCloudPullRemote()(1844줄)는 그 병합을 거치지 않고 DB=sanitizeBackup(remote).data로
-  * 통째로 교체한다 — 즉 원격(다른 기기·과거 버전) 문서의 nwHistory가 그대로 이 기기 DB에 들어온다.
-  * 교체 후 그대로 두면 save()가 호출될 때마다(앱의 거의 모든 저장 흐름, ~70곳) updateNwHistory()의
+  * nwHistory를 병합 대상에서 빼고, afterCloudAuth()의 미동기화 없음 분기와 resolveCloudPullRemote()는
+  * 그 병합을 거치지 않고 DB=sanitizeBackup(remote).data로 통째로 교체한 뒤 snapshotLocalDeviceFields/
+  * restoreLocalDeviceFields(app-evolve cycle178)로 로컬 settings/nwHistory를 복원해 원격 값에 덮이지
+  * 않게 막지만, 그 복원도 최초 로그인처럼 지킬 로컬 값이 없을 때는 건너뛰어 원격 nwHistory가 그대로
+  * 들어온다 — 이 검증은 그 경로를 포함해 원격 문서가 애초에 깨진 값을 들고 있는 경우를 막는다. 교체
+  * 후 그대로 두면 save()가 호출될 때마다(앱의 거의 모든 저장 흐름, ~70곳) updateNwHistory()의
   * hist.slice()/hist.push()/hist[hist.length-1].date가 배열이 아닌 값에서 그대로 TypeError로 터져
   * (복원/풀 직후 이어지는 save() 호출엔 try/catch가 없음) 깨진 원격 문서 하나로 앱이 완전히 멈춘다 —
   * categories/owners/budgetHistory(cycle141)와 동일한 '검증 분기 누락' 버그 클래스. 항목에 날짜가

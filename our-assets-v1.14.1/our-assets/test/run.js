@@ -174,7 +174,7 @@ const FUNCTIONS = [
   'saveRec', 'recHistFieldsChanged', 'recScheduleShapeChanged', 'pruneOrphanRecOverrides', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
   'expandRec', 'allTxns', 'txnsByDateInRange', 'spendByCategory', 'spendTrend', 'spendTrendBadge', 'histSumTotals',
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'expenseBreakdownCard',
-  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asOpenCur', 'asCur', 'asToggleNeg', 'openAssetSheet', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'mergeRemoteDataIntoLocal', 'fmtAmt', 'fmtQty',
+  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asOpenCur', 'asCur', 'asToggleNeg', 'openAssetSheet', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'mergeRemoteDataIntoLocal', 'snapshotLocalDeviceFields', 'restoreLocalDeviceFields', 'fmtAmt', 'fmtQty',
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges', 'shouldRetryCloudSync',
   'pullCloud', 'afterCloudAuth', 'resolveCloudPullRemote', 'pushCloud', 'measureCloudClockSkew',
   'shouldPullCloud', 'pullCloudIfStale', 'appIsOpen',
@@ -8180,6 +8180,118 @@ test('resolveCloudPullRemote(사용자가 명시적으로 누르는 "가져오�
   }
   assert.ok(sandbox.DB.assets.some(a => a.id === 'remote2'));
   assert.strictEqual(sandbox.markCloudSyncedCalls, 1);
+});
+/* ---------- snapshotLocalDeviceFields/restoreLocalDeviceFields: afterCloudAuth()의 무충돌
+ * 전량교체 분기와 resolveCloudPullRemote()가 DB=sanitizeBackup(remote).data로 통째로 교체하기
+ * 전후에 불러 DB.settings/DB.nwHistory(기기-로컬 전용, mergeRemoteDataIntoLocal이 병합 대상에서
+ * 제외하는 것과 동일한 두 필드)가 원격 값에 덮이지 않게 지키는 헬퍼(app-evolve cycle178 advance —
+ * 이 보호가 없던 예전엔 가족 공유 로그인에서 기기마다 동기화할 때마다 테마/경고숨김/osNotify가
+ * 뒤집히고 로컬 전용 nwHistory 일자가 사라질 수 있었다). ---------- */
+test('snapshotLocalDeviceFields: 로컬 DB가 비어있지 않으면 settings/nwHistory를 그대로 돌려준다', () => {
+  // snapshotLocalDeviceFields()가 돌려주는 바깥 {settings,nwHistory} 객체는 vm 샌드박스 안에서
+  // 만들어져 호스트 리터럴과 구조는 같아도 "same structure but not reference-equal"로 실패하므로
+  // (다른 vm 경계 테스트들과 동일한 이유), 안쪽 값(설정 객체/배열 그 자체)의 참조 동일성만 확인한다 —
+  // snapshotLocalDeviceFields는 DB.settings/DB.nwHistory를 그대로 담아 돌려줄 뿐 복사하지 않는다.
+  const localSettings = { themeMode: 'dark' };
+  const localNwHistory = [{ date: '2026-01-01', ta: 100, td: 0, nw: 100 }];
+  sandbox.DB = { assets: [{ id: 'a1' }], txns: [], settings: localSettings, nwHistory: localNwHistory };
+  const snap = sandbox.snapshotLocalDeviceFields();
+  assert.strictEqual(snap.settings, localSettings);
+  assert.strictEqual(snap.nwHistory, localNwHistory);
+});
+test('snapshotLocalDeviceFields: 로컬 DB가 비어있으면(최초 로그인 등 지킬 값이 없음) null을 돌려준다', () => {
+  sandbox.DB = { assets: [], txns: [], settings: { themeMode: 'dark' }, nwHistory: [{ date: '2026-01-01', ta: 100, td: 0, nw: 100 }] };
+  assert.strictEqual(sandbox.snapshotLocalDeviceFields(), null);
+});
+test('restoreLocalDeviceFields: 스냅샷이 null이면 DB를 건드리지 않는다(최초 로그인 — 원격 settings/nwHistory를 그대로 받아야 함)', () => {
+  sandbox.DB = { settings: { themeMode: 'light' }, nwHistory: [] };
+  sandbox.restoreLocalDeviceFields(null);
+  assert.deepStrictEqual(sandbox.DB.settings, { themeMode: 'light' });
+  assert.deepStrictEqual(sandbox.DB.nwHistory, []);
+});
+test('restoreLocalDeviceFields: 스냅샷이 있으면 교체된 DB의 settings/nwHistory를 스냅샷 값으로 되돌린다', () => {
+  sandbox.DB = { settings: { themeMode: 'light' }, nwHistory: [{ date: '2026-02-01', ta: 50, td: 0, nw: 50 }] };
+  sandbox.restoreLocalDeviceFields({ settings: { themeMode: 'dark' }, nwHistory: [{ date: '2026-01-01', ta: 100, td: 0, nw: 100 }] });
+  assert.deepStrictEqual(sandbox.DB.settings, { themeMode: 'dark' });
+  assert.deepStrictEqual(sandbox.DB.nwHistory, [{ date: '2026-01-01', ta: 100, td: 0, nw: 100 }]);
+});
+test('afterCloudAuth: 미동기화 편집 없이 remote를 그대로 채택할 때도 기기-로컬 settings/nwHistory는 원격 값에 덮이지 않고 보존된다(가족 공유 로그인에서 테마/nwHistory가 기기 동기화마다 뒤집히던 버그)', async () => {
+  sandbox.DB = {
+    assets: [{ id: 'local-old' }], txns: [],
+    settings: { themeMode: 'dark', dismissedStaleMvIds: ['x1'] },
+    nwHistory: [{ date: '2026-01-01', ta: 500, td: 0, nw: 500 }],
+  };
+  sandbox.CLOUD_UID = 'u1';
+  sandbox._lsMap = { 'test-key__savedAt': '1000', 'test-key__syncedAt': '2000' }; // savedAt<=syncedAt → 동기화됨(무충돌 분기)
+  sandbox._sbMaybeSingleResult = {
+    data: {
+      data: {
+        assets: [{ id: 'remote', type: 'cash' }], txns: [],
+        settings: { themeMode: 'light', dismissedStaleMvIds: [] },
+        nwHistory: [{ date: '2026-02-01', ta: 999, td: 0, nw: 999 }],
+      },
+      updated_at: '2026-01-02T00:00:00.000Z',
+    },
+    error: null,
+  };
+  const result = await sandbox.afterCloudAuth('u1');
+  assert.strictEqual(result.status, 'remote');
+  assert.ok(sandbox.DB.assets.some(a => a.id === 'remote'), 'assets/txns 등은 remote를 그대로 채택해야 함');
+  // migrate()가 settings에 다른 기본값들을 Object.assign으로 채워 넣으므로(themeMode 등과 무관),
+  // 전체를 deepStrictEqual로 비교하지 않고 보존 대상 필드만 확인한다.
+  assert.strictEqual(sandbox.DB.settings.themeMode, 'dark', '기기-로컬 설정은 remote에 덮이면 안 됨');
+  assert.deepStrictEqual(sandbox.DB.settings.dismissedStaleMvIds, ['x1'], '기기-로컬 설정은 remote에 덮이면 안 됨');
+  assert.deepStrictEqual(sandbox.DB.nwHistory, [{ date: '2026-01-01', ta: 500, td: 0, nw: 500 }], '기기-로컬 nwHistory는 remote에 덮이면 안 됨');
+  sandbox._lsMap = null;
+});
+test('afterCloudAuth: 로컬 DB가 비어있는 최초 로그인(신규 기기)에서는 remote의 settings/nwHistory를 그대로 받는다(지킬 로컬 값이 없음)', async () => {
+  sandbox.DB = { assets: [], txns: [], settings: { themeMode: 'dark' }, nwHistory: [{ date: '2026-01-01', ta: 500, td: 0, nw: 500 }] };
+  sandbox.CLOUD_UID = 'u1';
+  sandbox._lsMap = { 'test-key__savedAt': '1000', 'test-key__syncedAt': '2000' };
+  sandbox._sbMaybeSingleResult = {
+    data: {
+      data: { assets: [{ id: 'remote', type: 'cash' }], txns: [], settings: { themeMode: 'light' }, nwHistory: [{ date: '2026-02-01', ta: 999, td: 0, nw: 999 }] },
+      updated_at: '2026-01-02T00:00:00.000Z',
+    },
+    error: null,
+  };
+  await sandbox.afterCloudAuth('u1');
+  assert.strictEqual(sandbox.DB.settings.themeMode, 'light', '지킬 로컬 값이 없으므로 remote 설정을 그대로 받아야 함');
+  // sanitizeBackup()이 vm 샌드박스 안에서 nwHistory 항목 객체를 새로 만들어 돌려주므로(d={date,ta,td,nw}),
+  // 구조가 같아도 "same structure but not reference-equal"로 실패한다(위 snapshotLocalDeviceFields
+  // 테스트와 동일한 realm 경계 이유) — 필드별로 비교한다.
+  assert.strictEqual(sandbox.DB.nwHistory.length, 1);
+  assert.strictEqual(sandbox.DB.nwHistory[0].date, '2026-02-01');
+  assert.strictEqual(sandbox.DB.nwHistory[0].ta, 999);
+  assert.strictEqual(sandbox.DB.nwHistory[0].nw, 999);
+  sandbox._lsMap = null;
+});
+test('resolveCloudPullRemote: "최신 데이터 가져오기"로 remote를 채택할 때도 기기-로컬 settings/nwHistory는 보존된다', async () => {
+  sandbox.DB = {
+    assets: [{ id: 'local-old' }], txns: [],
+    settings: { themeMode: 'dark' },
+    nwHistory: [{ date: '2026-01-01', ta: 500, td: 0, nw: 500 }],
+  };
+  sandbox.CLOUD_UID = 'u1';
+  sandbox._sbMaybeSingleResult = {
+    data: {
+      data: { assets: [{ id: 'remote2', type: 'cash' }], txns: [], settings: { themeMode: 'light' }, nwHistory: [{ date: '2026-02-01', ta: 999, td: 0, nw: 999 }] },
+      updated_at: '2026-01-03T00:00:00.000Z',
+    },
+    error: null,
+  };
+  const origRenderCurrent = sandbox.renderCurrent;
+  sandbox.renderCurrent = () => {};
+  try {
+    await sandbox.resolveCloudPullRemote();
+  } finally {
+    sandbox.renderCurrent = origRenderCurrent;
+  }
+  assert.ok(sandbox.DB.assets.some(a => a.id === 'remote2'));
+  // migrate()가 settings를 {defaults,...DB.settings} 새 객체로 다시 만들어 넣으므로(themeMode 등과
+  // 무관), 전체를 deepStrictEqual로 비교하지 않고 보존 대상 필드만 확인한다.
+  assert.strictEqual(sandbox.DB.settings.themeMode, 'dark', '기기-로컬 설정은 remote에 덮이면 안 됨');
+  assert.deepStrictEqual(sandbox.DB.nwHistory, [{ date: '2026-01-01', ta: 500, td: 0, nw: 500 }], '기기-로컬 nwHistory는 remote에 덮이면 안 됨');
 });
 
 /* ---------- pushCloud: 조건부 UPDATE 충돌 시 수동 양자택일로 곧장 멈추는 대신 mergeCollection()으로
