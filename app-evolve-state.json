@@ -1,19 +1,8 @@
 {
-  "cycle": 175,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "복원(restoreBackup)의 6초 되돌리기 창에도 전체초기화(doResetAll)와 동일하게 클라우드 push 지연 적용",
-    "why": "importFile change 핸들러(index.html ~6136-6147)는 DB 전체교체 후 plain save()를 호출해 1.2초 디바운스로 즉시 클라우드에 push되는데, 같은 화면이 보여주는 undoToast 되돌리기 창은 6초다. 똑같은 '전체교체+타임드 undo' 패턴인 doResetAll()(8139-8142)은 이미 save({deferCloudPush:true})+setTimeout(scheduleCloudPush,6000)+되돌리기 시 clearTimeout으로 6초를 지켜주므로, restoreBackup 경로만 비대칭적으로 비는 상태 — 가족 공유 계정에서 사용자가 잘못된 백업을 복원했다가 3~4초 내 되돌려도, 이미 push된 틀린 데이터가 다른 기기에 pull되어 merge될 수 있다.",
-    "approach": "index.html의 importFile 'change' 핸들러(confirmSheet 콜백 내부, 현재 save();invalidateBalances();renderCurrent(); 줄)를 doResetAll과 동일한 패턴으로 수정: save() 대신 save({deferCloudPush:true}) 호출, 바로 뒤에 const restorePushT=setTimeout(scheduleCloudPush,6000) 추가, undoToast 콜백(DB=prev;save();invalidateBalances();renderCurrent();toast('되돌렸어요')) 맨 앞에 clearTimeout(restorePushT) 삽입(되돌린 뒤의 save()는 opts 없이 그대로 두면 자신의 정상 push를 예약하므로 손대지 않음). doResetAll 쪽 주석과 교차 참조하는 짧은 주석 추가. test/run.js에 FUNCTIONS로 추출 가능한 순수 로직이 아니라 top-level statement라, 기존 cycle170/171 setInterval/addEventListener 캡처 패턴처럼 confirmSheet/save/setTimeout/undoToast를 스텁으로 캡처해 (a) 복원 직후 save가 deferCloudPush:true로 호출되는지 (b) 6초 후 scheduleCloudPush가 호출되는지 (c) 되돌리기를 누르면 clearTimeout이 restorePushT로 호출되고 이후 scheduleCloudPush가 호출되지 않는지 (d) 되돌리기 후 save()는 opts 없이 호출되는지, 총 4건 내외 추가. index.html/sw.js 변경이라 APP_VERSION/sw.js CACHE 버전 갱신 필요. node test/run.js로 베이스라인(1235/1235) 대비 통과 확인."
-  },
+  "cycle": 176,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 170,
-      "phase": "advance",
-      "timestamp": "2026-10-10T07:11:38.145Z",
-      "summary": "critique(cycle170) 계획대로 push 실패(CLOUD_SYNC_STATE='error') 자동 재시도 + 지속 경고를 구현했다. 기존 pullCloudIfStale 60초 interval(cycle169) 바로 뒤에 독립된 새 setInterval(()=>{if(!document.hidden&&CLOUD_UID&&DB&&CLOUD_SYNC_STATE==='error')pushCloud().catch(()=>{})})를 추가했다 — PUSH_CLOUD_INFLIGHT가 이미 중복 push를 막아주므로 상태만 확인하고 그대로 재시도한다. homeAlerts()의 cloudConflict 라인 바로 뒤에 else if(CLOUD_UID&&CLOUD_SYNC_STATE==='error')arr.push({kind:'cloudSyncError'})를 추가해 conflict/error가 배타적으로 하나만 뜨게 했고(동시에 같은 CLOUD_SYNC_STATE 값이라 원래도 배타적), dismiss 플래그 없이 cloudSyncOk()가 호출되면(재시도 성공) 자연히 사라진다. homeAlertCard()에 cloudConflict와 같은 버튼 스타일로 cloudSyncError 분기('클라우드 동기화에 실패했어요' · '자동으로 다시 시도하고 있어요 · 눌러서 확인' · onclick=openAccountSheet())를 추가했다. test/run.js: 새 setInterval statement 전용으로 sandbox.setInterval 스텁을 _pushRetryIntervalCb/_pushRetryIntervalMs 필드로 바꿔 끼운 뒤 extractStatement()로 실행해 캡처했다(기존 _pullStaleIntervalCb와 섞이지 않게 분리) — 60초 주기 확인 1건 + error 상태에서 포그라운드면 pushCloud() 호출/ok·conflict·syncing·idle이면 스킵/백그라운드(document.hidden)면 스킵/CLOUD_UID·DB 없으면 스킵 총 5건. homeAlerts에 error일 때 뜨고 ok/idle이면 안 뜨고 CLOUD_UID 없으면 안 뜨고 conflict와 배타적임을 확인하는 4건 + homeAlertCard 렌더 1건, 총 10건을 추가했다. index.html/sw.js 변경이라 APP_VERSION 1.47.108->1.47.109, sw.js CACHE v370->v371 갱신. node test/run.js 1185/1185 -> 1195/1195 통과. pending_advance_plan을 비웠다.",
-      "commit": null
-    },
     {
       "cycle": 171,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-11T03:10:00.000Z",
       "summary": "general-purpose 서브에이전트로 141-175사이클 전부(기각 이력 포함)를 전달하고 앱 전체를 재조망. 새로 발견: importFile 'change' 핸들러(index.html ~6136-6147)가 restoreBackup()으로 DB를 통째로 교체한 뒤 plain save()를 호출해 1.2초 디바운스로 거의 즉시 클라우드에 push되는데, 같은 화면의 undoToast 되돌리기 창은 6초라고 안내함(confirmSheet 문구 '복원 후 6초 안에는 되돌릴 수 있어요'). 동일하게 'DB 전체교체+타임드 undo' 패턴인 doResetAll()(8139-8142)은 이미 save({deferCloudPush:true})+setTimeout(scheduleCloudPush,6000)+되돌리기 시 clearTimeout으로 자신의 6초 창을 정확히 지키도록 처리돼 있어, restoreBackup 경로만 비대칭적으로 비어 있음을 두 함수의 실제 코드를 대조해 확인. 가족 공유 계정에서 사용자가 틀린 백업을 복원했다가 3~4초 내 되돌려도, 이미 push된 틀린 데이터가 다른 기기의 pullCloudIfStale/online 핸들러에 의해 merge될 수 있고 최악의 경우 되돌림 직후의 재push와 다른 기기의 merge-후-push가 경합해 사용자가 이미 스스로 취소한 일로 cloud-conflict 수동 해결 화면까지 갈 수 있음을 확인. doResetAll과 완전히 동일한 패턴(save({deferCloudPush:true}) + setTimeout(scheduleCloudPush,6000) + undo 콜백에서 clearTimeout)을 restoreBackup 커밋 콜백에 적용하는 계획을 pending_advance_plan에 저장. 러너업(기각): CSV 가져오기 되돌리기(doCsvImport, 6206줄)가 DB.deletedIds 툼스톤 없이 추가 전용이라 push 모델상 자가치유되어 심각도 낮음, varyingRecs()/pendingTransferCount()가 매 호출마다 RANGE_FROM(2023-01-01)~TODAY 전체를 스캔하는 성능 비용(상관관계 있는 정확성 버그 없이 순수 추측, 느린 경로 재현 못함), CSV 가져오기 매칭/클라우드 merge/자산삭제-relink/카테고리 rename cascade/접근성/netlify fallback/goal·debt 홈알림 전수 재확인 결과 모두 이미 충분히 견고함 확인. 코드 변경 없음(읽기 전용 조사).",
+      "commit": null
+    },
+    {
+      "cycle": 175,
+      "phase": "advance",
+      "timestamp": "2026-10-11T04:05:00.000Z",
+      "summary": "critique(cycle175) 계획대로 importFile 'change' 핸들러(restoreBackup 커밋 콜백)에 doResetAll과 동일한 6초 지연 push를 적용했다. save() 대신 save({deferCloudPush:true})를 호출하고 바로 뒤에 const restorePushT=setTimeout(scheduleCloudPush,6000)을 추가했으며, undoToast 콜백 맨 앞에 clearTimeout(restorePushT)를 삽입해 되돌리면 push 타이머가 취소되게 했다(되돌린 뒤의 save()는 opts 없이 그대로 둬 자신의 정상 push를 예약). 이 콜백은 FUNCTIONS로 추출 가능한 선언형 함수가 아니라 $('importFile').addEventListener('change',e=>{...}) 최상위 statement 안에 있어, cycle170/171/174의 setInterval/addEventListener 캡처 패턴을 그대로 재사용했다 — sandbox에 importFileEl(addEventListener가 콜백을 _importFileChangeCb에 캡처)과 FileReader 스텁(readAsText가 onload를 즉시 호출, file.__text를 result로 돌림)을 추가하고, 전역 wiring 섹션에서 extractStatement로 이 statement를 실행해 vm의 $('importFile')이 실제로 그 콜백을 캡처하게 했다. test/run.js에 가짜 change 이벤트(target.files[0]={__text:JSON배백업문자열})로 전체 흐름(파일 읽기→sanitizeBackup→confirmSheet)을 재현하는 테스트 2건을 추가: (1) 복원 확인 후 save가 {deferCloudPush:true}로 호출되고 6초 전엔 scheduleCloudPush가 안 불리다가 타이머 콜백을 직접 불러보면 호출되는지, (2) 되돌리기를 누르면 clearTimeout이 setTimeout이 돌려준 것과 같은 id로 호출되고 scheduleCloudPush가 전혀 불리지 않으며 DB가 복원되고 두 번째 save()는 opts 없이 호출되는지. 두 테스트 모두 수정 전 커밋(HEAD의 index.html)으로 되돌려 재현한 결과 실제로 깨짐을 확인했다(1235/1237 -> 수정 복원 후 1237/1237). index.html/sw.js 변경이라 APP_VERSION 1.47.118->1.47.119, sw.js CACHE v380->v381 갱신. node test/run.js 1235/1235 -> 1237/1237 통과. pending_advance_plan을 비웠다.",
       "commit": null
     }
   ]

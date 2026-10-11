@@ -1331,7 +1331,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.118';
+const APP_VERSION='1.47.119';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6139,11 +6139,13 @@ $('importFile').addEventListener('change',e=>{
   const{data:obj,fixedCount,droppedCount,rangeCount}=sanitizeBackup(raw);
   confirmSheet('데이터 복원','현재 데이터를 백업 파일로 교체할까요?<br><span style="color:var(--text-2);font-size:13px">복원 후 6초 안에는 되돌릴 수 있어요.</span>','복원',()=>{
    let prev;try{prev=restoreBackup(obj)}catch(err){toast('손상된 백업 파일이라 복원할 수 없어요');return}
-   save();invalidateBalances();renderCurrent();
+   /* doResetAll과 동일: 안내한 6초 되돌리기 창이 끝나기 전엔 클라우드에 push하지 않는다 */
+   save({deferCloudPush:true});invalidateBalances();renderCurrent();
+   const restorePushT=setTimeout(scheduleCloudPush,6000);
    const notes=[];if(fixedCount)notes.push(`값 ${fixedCount}건 보정`);if(droppedCount)notes.push(`${droppedCount}건 제외`);
    if(rangeCount)notes.push(`날짜 범위를 벗어난 ${rangeCount}건은 내역엔 남지만 잔액엔 반영 안 돼요`);
    const msg=notes.length?`데이터를 복원했어요 · ${notes.join(', ')}`:'데이터를 복원했어요';
-   undoToast(msg,()=>{DB=prev;save();invalidateBalances();renderCurrent();toast('되돌렸어요')});
+   undoToast(msg,()=>{clearTimeout(restorePushT);DB=prev;save();invalidateBalances();renderCurrent();toast('되돌렸어요')});
   });
  }catch(_){toast('올바른 백업 파일이 아니에요')}finally{e.target.value=''}};
  r.readAsText(f);

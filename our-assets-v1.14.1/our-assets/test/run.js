@@ -443,6 +443,19 @@ const sandbox = {
     set innerHTML(v) { this._html = v; },
     get innerHTML() { return this._html; },
   },
+  // importFile <input type=file>의 최소 DOM 흉내 — 실제 코드가 쓰는 건 change 리스너
+  // 등록(addEventListener)뿐이라, 콜백을 모듈 스코프 _importFileChangeCb에 캡처해 두면 테스트가
+  // 가짜 change 이벤트로 직접 호출할 수 있다(app-evolve cycle175 advance, 아래
+  // import-file-change-wiring-from-index.html 실행 참고).
+  _importFileChangeCb: null,
+  importFileEl: {
+    addEventListener: (ev, fn) => { if (ev === 'change') sandbox._importFileChangeCb = fn; },
+  },
+  // 실제 FileReader는 비동기(onload가 다음 틱에 불림)지만, 이 vm 샌드박스는 브라우저의 진짜
+  // 비동기 파일 읽기를 재현할 필요가 없다 — onload/onerror를 할당한 "다음" 줄인 readAsText()
+  // 호출 시점엔 이미 둘 다 세팅돼 있으므로, 같은 틱에 즉시 불러도 실제 코드의 관찰 가능한 동작과
+  // 같다(confirmSheet가 cb를 캡처해 두고 테스트가 나중에 직접 부르는 것과 같은 패턴).
+  FileReader: function FileReader() { this.onload = null; this.onerror = null; this.result = undefined; },
   // page-home의 최소 DOM 흉내 — renderHome()이 $('page-home').innerHTML=... 으로 직접 꽂는
   // 결과 문자열만 확인하면 되므로 errBannerEl과 같은 getter/setter 패턴을 재사용한다.
   pageHomeEl: {
@@ -525,7 +538,7 @@ const sandbox = {
   fpinErrEl: { style: { display: 'none' }, textContent: '' },
   fpinBtnEl: { disabled: false },
   fpinWaitMsgEl: { style: { display: 'none' }, textContent: '' },
-  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'budgetIn' ? { value: sandbox.budgetInValue } : id === 'goalName' ? (sandbox.goalNameValue === undefined ? null : { value: sandbox.goalNameValue }) : id === 'goalAmt' ? (sandbox.goalAmtValue === undefined ? null : { value: sandbox.goalAmtValue }) : id === 'inqText' ? (sandbox.inqTextValue === undefined ? null : { value: sandbox.inqTextValue }) : id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-plan' ? sandbox.pagePlanEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : id === 'ledgerCard' ? (sandbox.ledgerCardMissing ? null : sandbox.ledgerCardEl) : id === 'assetBody' ? (sandbox.assetBodyMissing ? null : sandbox.assetBodyEl) : id === 'newOwner' ? (sandbox.newOwnerValue === undefined ? null : { value: sandbox.newOwnerValue }) : id === 'renameOwner' ? (sandbox.renameOwnerValue === undefined ? null : { value: sandbox.renameOwnerValue }) : id === 'auEmail' ? (sandbox.auEmailValue === undefined ? null : { value: sandbox.auEmailValue }) : id === 'fpinPwIn' ? (sandbox.fpinPwInValue === undefined ? null : { value: sandbox.fpinPwInValue }) : id === 'fpinErr' ? sandbox.fpinErrEl : id === 'fpinBtn' ? sandbox.fpinBtnEl : id === 'fpinWaitMsg' ? sandbox.fpinWaitMsgEl : null,
+  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'budgetIn' ? { value: sandbox.budgetInValue } : id === 'goalName' ? (sandbox.goalNameValue === undefined ? null : { value: sandbox.goalNameValue }) : id === 'goalAmt' ? (sandbox.goalAmtValue === undefined ? null : { value: sandbox.goalAmtValue }) : id === 'inqText' ? (sandbox.inqTextValue === undefined ? null : { value: sandbox.inqTextValue }) : id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-plan' ? sandbox.pagePlanEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : id === 'ledgerCard' ? (sandbox.ledgerCardMissing ? null : sandbox.ledgerCardEl) : id === 'assetBody' ? (sandbox.assetBodyMissing ? null : sandbox.assetBodyEl) : id === 'newOwner' ? (sandbox.newOwnerValue === undefined ? null : { value: sandbox.newOwnerValue }) : id === 'renameOwner' ? (sandbox.renameOwnerValue === undefined ? null : { value: sandbox.renameOwnerValue }) : id === 'auEmail' ? (sandbox.auEmailValue === undefined ? null : { value: sandbox.auEmailValue }) : id === 'fpinPwIn' ? (sandbox.fpinPwInValue === undefined ? null : { value: sandbox.fpinPwInValue }) : id === 'fpinErr' ? sandbox.fpinErrEl : id === 'fpinBtn' ? sandbox.fpinBtnEl : id === 'fpinWaitMsg' ? sandbox.fpinWaitMsgEl : id === 'importFile' ? sandbox.importFileEl : null,
   bkTextEl: { value: 'backup-text', select: () => {}, setSelectionRange: () => {} },
   // copyBackup()의 navigator.clipboard 체크가 ReferenceError 없이 "지원 안 함"으로 지나가게
   // 하는 최소 흉내(document.execCommand는 try/catch로 감싸져 있어 굳이 스텁이 필요 없음).
@@ -667,6 +680,15 @@ const sandbox = {
   clearTimeout: () => {},
 };
 vm.createContext(sandbox);
+// 위 FileReader 스텁의 readAsText — 클래스 본문이 아니라 생성자+프로토타입 메서드로 나눠 둔
+// 이유는 object literal 안에서 바로 메서드를 붙이면 vm 샌드박스 바깥(host realm)의 Function이라
+// sandbox 쪽 코드가 instanceof로 비교할 일은 없지만, 다른 생성자 스텁들(Error 등)과 같은 모양을
+// 맞추기 위함이다. file.__text가 없으면(손상 시나리오를 흉내낼 때) onerror를 부른다.
+sandbox.FileReader.prototype.readAsText = function readAsText(file) {
+  if (!file || typeof file.__text !== 'string') { if (typeof this.onerror === 'function') this.onerror(); return; }
+  this.result = file.__text;
+  if (typeof this.onload === 'function') this.onload();
+};
 // index.html이 <script src="logic.js">로 로드하는 순서를 그대로 따라 logic.js를 먼저 실행한다
 // (함수 선언끼리는 순서가 무관하지만, 실제 로드 순서와 맞춰 둔다).
 vm.runInContext(logicSrc, sandbox, { filename: 'logic.js' });
@@ -701,6 +723,16 @@ vm.runInContext(
   extractStatement("setInterval(function(){if(!document.hidden&&SW_REG)SW_REG.update()"),
   sandbox,
   { filename: 'sw-update-interval-wiring-from-index.html' }
+);
+// 백업 복원(importFile 'change') — doResetAll과 동일한 6초 지연 push를 적용한 app-evolve
+// cycle175 advance 변경이 실제로 그 핸들러 안에 있는지 실행형으로 검증하려면, FUNCTIONS로
+// 추출 가능한 선언형 함수가 아닌 이 최상위 addEventListener statement 자체를 실행해 콜백을
+// 캡처해야 한다(위 SW 업데이트 wiring과 같은 이유) — 캡처는 위 importFileEl.addEventListener
+// 스텁이 맡는다.
+vm.runInContext(
+  extractStatement("$('importFile').addEventListener('change',e=>{"),
+  sandbox,
+  { filename: 'import-file-change-wiring-from-index.html' }
 );
 
 const tests = [];
@@ -13702,6 +13734,82 @@ test('[실행형] doResetAll: 확인 시트에서 초기화를 누르면 DB가 �
   } finally {
     sandbox.DB = dbOrig;
     sandbox.ST = stOrig;
+  }
+});
+
+/* ---------- importFile 'change'(백업 복원): doResetAll과 동일한 6초 지연 push (app-evolve
+ * cycle175 advance) ----------
+ * confirmSheet('데이터 복원',...)의 콜백은 FUNCTIONS로 추출 가능한 선언형 함수 안이 아니라
+ * $('importFile').addEventListener('change',e=>{...}) 최상위 statement 안에 있어, 위
+ * doResetAll처럼 sandbox.doResetAll()을 직접 부를 수 없다 — 위 import-file-change-wiring이
+ * 그 statement를 실행해 캡처해 둔 sandbox._importFileChangeCb(e)를 가짜 change 이벤트로 불러야
+ * 한다. FileReader 스텁(readAsText가 onload를 즉시 호출)이 r.result에 백업 JSON 텍스트를
+ * 넣어주므로, 실제 파일 선택→읽기→확인 시트까지 한 번에 재현된다. */
+test('[실행형] importFile change: "복원" 확인 후 save({deferCloudPush:true})로 저장하고, 6초 뒤에야 scheduleCloudPush가 호출된다(되돌리기 전에는 push하지 않음)', () => {
+  const dbOrig = sandbox.DB;
+  const setTimeoutOrig = sandbox.setTimeout, saveOrig = sandbox.save, scheduleCloudPushOrig = sandbox.scheduleCloudPush;
+  sandbox.DB = { owners: ['나'], assets: [{ id: 'a1' }], txns: [{ id: 't1' }], categories: { expense: [], income: [], saving: [] } };
+  const saveCalls = [];
+  sandbox.save = (opts) => { saveCalls.push(opts); };
+  let capturedTimeoutFn = null, capturedTimeoutMs = null;
+  sandbox.setTimeout = (fn, ms) => { capturedTimeoutFn = fn; capturedTimeoutMs = ms; return 'restore-push-timer'; };
+  let scheduleCloudPushCalls = 0;
+  sandbox.scheduleCloudPush = () => { scheduleCloudPushCalls++; };
+  sandbox.confirmSheetCalls = [];
+  sandbox.lastUndo = null;
+  try {
+    sandbox._importFileChangeCb({ target: { files: [{ __text: JSON.stringify({ assets: [], txns: [] }) }], value: '' } });
+    assert.strictEqual(sandbox.confirmSheetCalls.length, 1, '복원 전 확인 시트를 띄우지 않음');
+    sandbox.confirmSheetCalls[0].cb(); // "복원" 확인 버튼을 누른 상태를 흉내냄
+    assert.strictEqual(saveCalls.length, 1, '복원 직후 save()를 호출하지 않음');
+    // saveCalls[0]은 vm realm 객체라(위 emptyDB() 주석과 같은 이유) host 객체 리터럴과
+    // assert.deepStrictEqual로 비교하면 프로토타입 realm이 달라 내용이 같아도 실패한다 —
+    // 필드만 직접 비교한다.
+    assert.strictEqual(saveCalls[0] && saveCalls[0].deferCloudPush, true, 'doResetAll과 달리 save()를 즉시 push되게(opts 없이) 호출함 — 안내한 6초 창 안에 틀린 데이터가 다른 기기로 push될 수 있음');
+    assert.strictEqual(capturedTimeoutMs, 6000, '복원 안내 문구("6초 안에는 되돌릴 수 있어요")와 다르게 push 지연 시간이 6000ms가 아님');
+    assert.strictEqual(scheduleCloudPushCalls, 0, '6초가 지나기 전인데 벌써 scheduleCloudPush가 호출됨');
+    capturedTimeoutFn(); // 되돌리지 않은 채 6초가 지난 상황을 흉내냄
+    assert.strictEqual(scheduleCloudPushCalls, 1, '6초 뒤 scheduleCloudPush로 클라우드에 push를 예약하지 않음');
+  } finally {
+    sandbox.DB = dbOrig;
+    sandbox.setTimeout = setTimeoutOrig;
+    sandbox.save = saveOrig;
+    sandbox.scheduleCloudPush = scheduleCloudPushOrig;
+  }
+});
+test('[실행형] importFile change: 되돌리기를 누르면 예약된 push 타이머를 clearTimeout으로 취소하고 DB를 복원한 뒤 opts 없는 save()로 즉시 되돌린 데이터를 push한다', () => {
+  const dbOrig = sandbox.DB;
+  const setTimeoutOrig = sandbox.setTimeout, clearTimeoutOrig = sandbox.clearTimeout, saveOrig = sandbox.save, scheduleCloudPushOrig = sandbox.scheduleCloudPush;
+  const originalDb = { owners: ['나'], assets: [{ id: 'a1' }], txns: [{ id: 't1' }], categories: { expense: [], income: [], saving: [] } };
+  sandbox.DB = originalDb;
+  const saveCalls = [];
+  sandbox.save = (opts) => { saveCalls.push(opts); };
+  let timerId = 0;
+  sandbox.setTimeout = () => { timerId += 1; return timerId; };
+  const clearTimeoutCalls = [];
+  sandbox.clearTimeout = (id) => { clearTimeoutCalls.push(id); };
+  let scheduleCloudPushCalls = 0;
+  sandbox.scheduleCloudPush = () => { scheduleCloudPushCalls++; };
+  sandbox.confirmSheetCalls = [];
+  sandbox.lastUndo = null;
+  try {
+    sandbox._importFileChangeCb({ target: { files: [{ __text: JSON.stringify({ assets: [], txns: [] }) }], value: '' } });
+    sandbox.confirmSheetCalls[0].cb(); // "복원" 확인 버튼을 누른 상태를 흉내냄
+    assert.strictEqual(saveCalls.length, 1, '복원 직후 save()가 호출되지 않음');
+    assert.ok(sandbox.lastUndo && typeof sandbox.lastUndo.undoFn === 'function', '되돌리기 토스트(undoToast)를 띄우지 않음');
+    sandbox.lastUndo.undoFn(); // "되돌리기"를 누른 상태를 흉내냄
+    assert.deepStrictEqual(clearTimeoutCalls, [1], 'doResetAll과 달리 되돌리기를 눌러도 예약된 push 타이머(restorePushT)를 취소하지 않음 — 되돌린 직후에도 틀린 데이터가 push될 수 있음');
+    assert.strictEqual(scheduleCloudPushCalls, 0, '취소됐어야 할 push 타이머의 scheduleCloudPush가 호출됨');
+    assert.strictEqual(sandbox.DB.assets[0].id, 'a1', '되돌리기를 눌러도 복원 전 원래 DB로 돌아가지 않음');
+    assert.strictEqual(sandbox.DB.txns[0].id, 't1', '되돌리기를 눌러도 복원 전 원래 DB로 돌아가지 않음');
+    assert.strictEqual(saveCalls.length, 2, '되돌리기 후 save()를 다시 호출하지 않음');
+    assert.strictEqual(saveCalls[1], undefined, '되돌리기 후 save()는 opts 없이(즉시 push) 호출돼야 하는데 opts가 그대로 남아있음');
+  } finally {
+    sandbox.DB = dbOrig;
+    sandbox.setTimeout = setTimeoutOrig;
+    sandbox.clearTimeout = clearTimeoutOrig;
+    sandbox.save = saveOrig;
+    sandbox.scheduleCloudPush = scheduleCloudPushOrig;
   }
 });
 
