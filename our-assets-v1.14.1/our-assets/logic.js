@@ -170,19 +170,41 @@ function mergeRecurrences(localArr,remoteArr,localDeletedIds,remoteDeletedIds){
  });
  return out;
 }
-/* 이름 목록(카테고리/귀속) 병합 — id가 없는 순수 문자열 배열이라 mergeCollection의 tombstone
- * 방식은 쓸 수 없다. local 순서를 그대로 유지하고, remote에만 있는 이름 중 normalize(정규화)
- * 기준으로 local에 이미 없는 것만 뒤에 덧붙인다(addCat/addOwner가 normName()으로 중복을
- * 막는 것과 동일한 기준). 삭제는 병합 대상이 아니다 — 카테고리/귀속 삭제는 사용 중이면 막히므로
- * (doDeleteCat/delOwner) 상대 기기의 '아직 지우지 않은' 상태를 지우는 쪽으로 병합하면 그 기기가
- * 쓰고 있던 값이 사라질 수 있어, 이름이 사라지는 방향은 항상 로컬에서 명시적으로 지운 뒤 다음
- * push로만 반영되게 둔다. */
+/* 이름 목록(카테고리/귀속) 병합의 바탕 — id가 없는 순수 문자열 배열이라 mergeCollection의
+ * id/updatedAt 톰스톤 방식을 그대로 쓸 수 없다. local 순서를 그대로 유지하고, remote에만
+ * 있는 이름 중 normalize(정규화) 기준으로 local에 이미 없는 것만 뒤에 덧붙인다(addCat/addOwner가
+ * normName()으로 중복을 막는 것과 동일한 기준). 삭제는 다루지 않는 순수 union이라, 이 함수
+ * 자체만 쓰면 한쪽 기기에서 지운 이름이 아직 지우지 않은 다른 기기와 동기화되는 순간 되살아난다
+ * (app-evolve cycle179 critique) — mergeRemoteDataIntoLocal은 이제 아래 mergeNameListWithTombstones를
+ * 쓰고, 이 함수는 그 안전장치(툼스톤 적용 결과가 비면 폴백)로만 남는다. */
 function mergeNameList(localArr,remoteArr,normalize){
  localArr=localArr||[];remoteArr=remoteArr||[];
  const seen=new Set(localArr.map(normalize));
  const out=localArr.slice();
  remoteArr.forEach(name=>{const key=normalize(name);if(!seen.has(key)){seen.add(key);out.push(name)}});
  return out;
+}
+/* 이름 목록(카테고리/귀속) 병합 — DB.deletedIds에 남긴 합성 키(owner:<normName>, cat:<type>:<normName>,
+ * mergeRemoteDataIntoLocal 호출부 참고)로 '삭제된 이름'을 판정해 mergeNameList의 순수 union에서
+ * 제외한다. deletedIds는 호출 시점에 이미 local/remote 양쪽 톰스톤이 max-timestamp로 합쳐진 뒤이므로
+ * (mergeRemoteDataIntoLocal이 DB.txns 등을 병합하기 전에 먼저 합치는 것과 동일한 전제) 여기선 그냥
+ * 존재 여부만 본다 — 레코드 id 톰스톤처럼 "그 이후 수정했으면 삭제를 이긴다"는 되살림 규칙은 두지
+ * 않는다(이름에는 updatedAt이 없어 "그 이후"를 판정할 기준 자체가 없고, 카테고리/귀속이 삭제돼도
+ * 그 이름을 참조하던 기존 내역·자산은 그대로 남는 걸 doDeleteCat/goalOwnerEff/ST.assetOwner 등이
+ * 이미 지원하므로 — 최악의 경우도 "그 이름으로 더는 못 고름"이지 데이터 손상이 아니다). 재추가하면
+ * addOwner/addCat이 해당 키의 톰스톤을 지워 다음 병합부터 다시 살아나게 한다. 툼스톤을 전부 적용한
+ * 결과가 비면(카테고리/귀속이 0개가 되는 불변식 위반) mergeNameList의 순수 union으로 폴백한다. */
+function mergeNameListWithTombstones(localArr,remoteArr,deletedIds,tombstoneKeyFn,normalize){
+ localArr=localArr||[];remoteArr=remoteArr||[];deletedIds=deletedIds||{};
+ const isTombstoned=name=>tombstoneKeyFn(name) in deletedIds;
+ const out=localArr.filter(name=>!isTombstoned(name));
+ const seen=new Set(out.map(normalize));
+ remoteArr.forEach(name=>{
+  const key=normalize(name);
+  if(seen.has(key)||isTombstoned(name))return;
+  seen.add(key);out.push(name);
+ });
+ return out.length?out:mergeNameList(localArr,remoteArr,normalize);
 }
 /* 예산 이력(카테고리→[{from,amount}]) 병합 — 각 카테고리별로 local/remote 항목을 from(월) 키로
  * 유니온한다. 같은 (카테고리,from)이 양쪽에 다른 금액으로 있으면(동시에 같은 달 예산을 고쳤을 때)

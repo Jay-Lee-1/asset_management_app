@@ -1356,7 +1356,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.126';
+const APP_VERSION='1.47.127';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1507,11 +1507,16 @@ function mergeRemoteDataIntoLocal(remoteData){
   * 함수로 병합한다 — 이전엔 여기서 전혀 병합되지 않아, 두 기기가 오프라인 상태에서 각자
   * 카테고리/귀속/예산을 고치면 로컬 값이 조용히 이기고 이어지는 push가 상대 기기의 편집을
   * 영구히 덮어썼다(settings/nwHistory는 각각 기기별 로컬 선호·자동 생성 스냅샷이라 이번 병합
-  * 대상에서 의도적으로 제외 — app-evolve cycle102). */
+  * 대상에서 의도적으로 제외 — app-evolve cycle102). categories/owners는 mergeNameListWithTombstones로
+  * 병합한다 — 이름엔 updatedAt이 없어 mergeNameList 혼자서는 삭제를 전혀 몰라, 한쪽 기기에서 지운
+  * 카테고리/귀속이 아직 지우지 않은 다른 기기와 동기화되는 순간 조용히 되살아났다(app-evolve
+  * cycle179 critique/advance). 바로 위에서 DB.deletedIds를 이미 local/remote 톰스톤의 max-timestamp로
+  * 합쳐뒀으므로(1495-1498줄) 그 결과를 그대로 넘긴다 — delOwner/doDeleteCat이 삭제 시 합성 키
+  * (owner:<normName>, cat:<type>:<normName>)를 거기에 남긴다. */
  DB.categories=DB.categories||{expense:[],income:[],saving:[]};
  const remoteCats=remoteData.categories||{};
- ['expense','income','saving'].forEach(k=>{DB.categories[k]=mergeNameList(DB.categories[k]||[],remoteCats[k]||[],normName)});
- DB.owners=mergeNameList(DB.owners||[],remoteData.owners||[],normName);
+ ['expense','income','saving'].forEach(k=>{DB.categories[k]=mergeNameListWithTombstones(DB.categories[k]||[],remoteCats[k]||[],DB.deletedIds,n=>catTombKey(k,n),normName)});
+ DB.owners=mergeNameListWithTombstones(DB.owners||[],remoteData.owners||[],DB.deletedIds,ownerTombKey,normName);
  DB.budgetHistory=mergeBudgetHistory(DB.budgetHistory||{},remoteData.budgetHistory||{});
  /* catIcon/catVar(카테고리 아이콘·변동 카테고리 플래그)도 budgetHistory와 같은 '카테고리 커스터마이징'
   * 데이터인데 cycle122 goals 신설 이전부터 여기서 전혀 병합되지 않고 있었다(app-evolve cycle125) —
@@ -3688,13 +3693,18 @@ function openOwnerManage(){
   <div style="height:14px"></div><button class="btn btn-primary" onclick="closeSheet()">완료</button>`);
 }
 function openOwnerSheet(){openOwnerManage()}
-function addOwner(){const v=$('newOwner').value.trim().normalize('NFC');if(!v)return;const dup=DB.owners.find(o=>normName(o)===normName(v));if(dup){toast(dup===v?'이미 있는 귀속이에요':`비슷한 귀속이 있어요: ${dup}`);return}DB.owners.push(v);save();openOwnerManage();}
+/* 귀속 삭제 톰스톤 키(mergeNameListWithTombstones가 DB.deletedIds에서 찾는 합성 키, app-evolve
+ * cycle179) — 레코드 id 톰스톤과 네임스페이스가 겹치지 않도록 'owner:' 접두사를 둔다. */
+const ownerTombKey=name=>'owner:'+normName(name);
+function addOwner(){const v=$('newOwner').value.trim().normalize('NFC');if(!v)return;const dup=DB.owners.find(o=>normName(o)===normName(v));if(dup){toast(dup===v?'이미 있는 귀속이에요':`비슷한 귀속이 있어요: ${dup}`);return}DB.owners.push(v);DB.deletedIds=DB.deletedIds||{};delete DB.deletedIds[ownerTombKey(v)];save();openOwnerManage();}
 function delOwner(i){const o=DB.owners[i];if(DB.owners.length<=1){toast('귀속은 최소 1개가 필요해요');return}
  const used=DB.assets.filter(a=>a.owner===o).length;
  if(used){toast(`'${o}' 귀속을 쓰는 자산 ${used}개가 있어요`);return}
  confirmSheet('귀속 삭제',`'${esc(o)}' 귀속을 삭제할까요?`,'삭제',()=>{
-  DB.owners=DB.owners.filter(x=>x!==o);save();openOwnerManage();
-  undoToast(`'${o}' 귀속을 삭제했어요`,()=>{DB.owners.splice(i,0,o);save();openOwnerManage();toast('되돌렸어요')});
+  DB.owners=DB.owners.filter(x=>x!==o);
+  DB.deletedIds=DB.deletedIds||{};DB.deletedIds[ownerTombKey(o)]=Date.now(); /* delGoal 등과 동일한 톰스톤 — 없으면 mergeRemoteDataIntoLocal이 이 삭제를 모르고 아직 안 지운 기기의 사본을 되살림(app-evolve cycle179) */
+  save();openOwnerManage();
+  undoToast(`'${o}' 귀속을 삭제했어요`,()=>{DB.owners.splice(i,0,o);delete DB.deletedIds[ownerTombKey(o)];save();openOwnerManage();toast('되돌렸어요')});
  });}
 function renameOwnerSheet(i){const cur=DB.owners[i];
  openSheet(`<h3>귀속 이름 수정</h3><div class="desc">'${esc(cur)}'의 이름을 바꾸면 이 귀속의 자산도 함께 바뀌어요.</div>
@@ -5155,6 +5165,10 @@ const CAT_LABEL={expense:'지출',income:'수입',saving:'저축'};
    카테고리는 문자열 이름으로 저장하고, 선택한 아이콘 키는 '타입:이름' 병렬 맵에 둔다.
    지정이 없으면 기존 기본 아이콘(CATICON) → fallback 순으로 렌더. (데이터 비파괴) */
 const catKey=(type,name)=>type+':'+name;
+/* 카테고리 삭제 톰스톤 키(mergeNameListWithTombstones가 DB.deletedIds에서 찾는 합성 키, app-evolve
+ * cycle179) — catKey와 달리 normName()으로 정규화해, 대소문자·공백만 다른 재추가도 같은 키로
+ * 잡아낸다(레코드 id 톰스톤과 네임스페이스가 겹치지 않도록 'cat:' 접두사). */
+const catTombKey=(type,name)=>'cat:'+type+':'+normName(name);
 function catIconOf(type,name){return (DB.catIcon&&DB.catIcon[catKey(type,name)])||''}
 function isVarCat(type,name){return !!(DB.catVar&&DB.catVar[catKey(type,name)])} /* 변동 카테고리 여부 */
 function setCatVar(type,name,on){DB.catVar=DB.catVar||{};if(on)DB.catVar[catKey(type,name)]=true;else delete DB.catVar[catKey(type,name)]}
@@ -5209,6 +5223,7 @@ function addCat(k){const v=(($('newCat')&&$('newCat').value)||catAddDraft.name||
  DB.categories[k].push(v);
  if(catAddDraft.icon)DB.catIcon[catKey(k,v)]=catAddDraft.icon;
  catAddDraft={name:'',icon:''};
+ DB.deletedIds=DB.deletedIds||{};delete DB.deletedIds[catTombKey(k,v)];
  save();openCatManage(k)}
 /* 삭제될 카테고리를 참조하는 '활성' 반복거래를 찾는다 — activeRecsForAssets(2334)와 같은 이유:
    반복거래는 과거 기록이 아니라 계속 새 항목을 만들어내는 생성기라, 카테고리 삭제 후에도
@@ -5233,6 +5248,7 @@ function doDeleteCat(k,i){const c=DB.categories[k][i];
  delete DB.catIcon[catKey(k,c)];              /* 삭제 시 아이콘/변동/예산도 함께 정리 (동명 카테고리 재생성 시 이전 설정이 남지 않도록) */
  delete DB.catVar[catKey(k,c)];
  if(hadBudget)delete DB.budgetHistory[c];
+ DB.deletedIds=DB.deletedIds||{};DB.deletedIds[catTombKey(k,c)]=Date.now(); /* delOwner와 동일한 톰스톤 — 없으면 mergeRemoteDataIntoLocal이 이 삭제를 모르고 아직 안 지운 기기의 사본을 되살림(app-evolve cycle179) */
  touchSave(...recs);renderCurrent();openCatManage(k);
  undoToast(`'${c}' 카테고리를 삭제했어요`+(recs.length?` · 반복거래 ${recs.length}개 비활성화`:''),()=>{
   DB.categories[k].splice(i,0,c);
@@ -5240,6 +5256,7 @@ function doDeleteCat(k,i){const c=DB.categories[k][i];
   if(wasVar)DB.catVar[catKey(k,c)]=true;
   if(hadBudget){DB.budgetHistory=DB.budgetHistory||{};DB.budgetHistory[c]=budgetVal}
   recs.forEach(r=>{r.active=true});
+  delete DB.deletedIds[catTombKey(k,c)];
   touchSave(...recs);renderCurrent();openCatManage(k);toast('되돌렸어요')})}
 function renameCatSheet(k,i,keep){const cur=DB.categories[k][i];
  if(!keep)catRenameDraft={name:cur,icon:catIconOf(k,cur)||CATICON[cur]||'tag'};

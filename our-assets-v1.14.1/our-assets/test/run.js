@@ -248,7 +248,7 @@ const FUNCTIONS = [
 // WeakSet — 저장 완료된 draft 객체를 표시해 같은 draft로 재호출되면 조용히 무시한다.
 // SUPABASE_URL/SUPABASE_ANON_KEY는 sbCfg()가 localStorage에 저장된 값이 없을 때 돌아가는
 // 기본값이다(app-evolve cycle152 advance, doForgotPassword/doForgotPasswordLocal 분기 테스트용).
-const CONSTS = ['catKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC'];
+const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC'];
 // _histCache는 filteredHist()가 재대입(={key,list})하는 let 선언이라 CONSTS(extractConst)로는
 // 못 끌어오므로 별도의 LETS 목록으로 extractLet을 통해 가져온다.
 // _copyIsCsv도 같은 이유(openCopyBackup()이 재대입)로 LETS를 통해 가져온다.
@@ -1941,6 +1941,32 @@ test('doDeleteCat: 마지막 남은 저축 카테고리 하나는 삭제할 수 
   assert.ok(sandbox.lastToast, '안내 토스트가 떴어야 함');
 });
 
+/* ---------- doDeleteCat/addCat: 삭제 시 mergeNameListWithTombstones용 톰스톤을 남기고, undo나
+ * 재추가 시 지운다(app-evolve cycle179) — 없으면 mergeRemoteDataIntoLocal이 이 삭제를 모르고
+ * 아직 안 지운 기기의 사본을 되살린다. ---------- */
+test('doDeleteCat: 삭제하면 DB.deletedIds에 catTombKey가 남고, undo하면 지워진다', () => {
+  sandbox.DB = {
+    categories: { expense: ['커피', '식비'] },
+    catIcon: {}, catVar: {}, budgetHistory: {}, txns: [], recurrences: [],
+  };
+  sandbox.lastUndo = null;
+  sandbox.doDeleteCat('expense', 0);
+  assert.strictEqual(sandbox.DB.deletedIds[sandbox.catTombKey('expense', '커피')] > 0, true, '삭제 시 톰스톤이 남아야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.catTombKey('expense', '커피') in sandbox.DB.deletedIds, false, '되돌리면 톰스톤도 지워져야 함');
+});
+test('addCat: 이미 톰스톤된(지워진) 이름을 다시 추가하면 톰스톤이 지워진다', () => {
+  sandbox.DB = {
+    categories: { expense: ['식비'] },
+    catIcon: {}, catVar: {}, txns: [], recurrences: [],
+    deletedIds: { [sandbox.catTombKey('expense', '커피')]: 1000 },
+  };
+  sandbox.catAddDraft = { name: '커피', icon: '' };
+  sandbox.addCat('expense');
+  assert.deepStrictEqual(sandbox.DB.categories.expense, ['식비', '커피']);
+  assert.strictEqual(sandbox.catTombKey('expense', '커피') in sandbox.DB.deletedIds, false, '재추가한 이름의 톰스톤은 지워져야 다음 병합에서 되살아남');
+});
+
 /* ---------- delOwner: 귀속 삭제도 delCat/delTx처럼 undo 가능해야 한다 (cycle28) ---------- */
 test('delOwner: 사용 중인 자산이 없으면 확인 시트 후 삭제하고 undoToast로 되돌릴 수 있다', () => {
   sandbox.DB = { owners: ['나', '아내', '아이'], assets: [] };
@@ -1971,6 +1997,27 @@ test('delOwner: 마지막 남은 귀속 하나는 삭제할 수 없다', () => {
   sandbox.delOwner(0);
   assert.strictEqual(sandbox.confirmSheetCalls.length, 0);
   assert.deepStrictEqual(sandbox.DB.owners, ['나']);
+});
+
+/* ---------- delOwner/addOwner: 삭제 시 mergeNameListWithTombstones용 톰스톤을 남기고, undo나
+ * 재추가 시 지운다(app-evolve cycle179) — 없으면 mergeRemoteDataIntoLocal이 이 삭제를 모르고
+ * 아직 안 지운 기기의 사본을 되살린다. ---------- */
+test('delOwner: 삭제하면 DB.deletedIds에 ownerTombKey가 남고, undo하면 지워진다', () => {
+  sandbox.DB = { owners: ['나', '아내'], assets: [] };
+  sandbox.confirmSheetCalls = [];
+  sandbox.lastUndo = null;
+  sandbox.delOwner(1);
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.deletedIds[sandbox.ownerTombKey('아내')] > 0, true, '삭제 시 톰스톤이 남아야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.ownerTombKey('아내') in sandbox.DB.deletedIds, false, '되돌리면 톰스톤도 지워져야 함');
+});
+test('addOwner: 이미 톰스톤된(지워진) 이름을 다시 추가하면 톰스톤이 지워진다', () => {
+  sandbox.DB = { owners: ['나'], deletedIds: { [sandbox.ownerTombKey('아내')]: 1000 } };
+  sandbox.newOwnerValue = '아내';
+  sandbox.addOwner();
+  assert.deepStrictEqual(sandbox.DB.owners, ['나', '아내']);
+  assert.strictEqual(sandbox.ownerTombKey('아내') in sandbox.DB.deletedIds, false, '재추가한 이름의 톰스톤은 지워져야 다음 병합에서 되살아남');
 });
 
 /* ---------- delBudget: 예산 삭제도 delCat/delOwner처럼 undo 가능해야 한다 (cycle29), 이제는 과거 이력을 보존한다 (cycle32) ---------- */
@@ -7671,6 +7718,50 @@ test('mergeNameList: local/remote가 비어 있거나 undefined여도 터지지 
   assert.deepStrictEqual(j(sandbox.mergeNameList(['A'], undefined, sandbox.normName)), ['A']);
   assert.deepStrictEqual(j(sandbox.mergeNameList(undefined, ['B'], sandbox.normName)), ['B']);
 });
+
+/* ---------- mergeNameListWithTombstones: mergeNameList의 순수 union에 DB.deletedIds 기반
+ * 삭제 전파를 더한다(app-evolve cycle179 critique/advance) — mergeNameList 혼자서는 삭제를
+ * 전혀 몰라, 한 기기가 지운 카테고리/귀속이 아직 지우지 않은 다른 기기와 동기화되는 순간
+ * 조용히 되살아났다. ---------- */
+test('mergeNameListWithTombstones: 로컬이 지운 뒤에도 remote가 아직 들고 있는 이름은 되살아나지 않는다', () => {
+  const tk = (n) => 'k:' + n;
+  const out = sandbox.mergeNameListWithTombstones(['나'], ['나', '친구'], { 'k:친구': 1000 }, tk, sandbox.normName);
+  assert.deepStrictEqual(j(out), ['나'], 'remote에만 남은 이름이라도 톰스톤이 있으면 합쳐지면 안 됨');
+});
+test('mergeNameListWithTombstones: (되돌린 재현) 원격이 지운 뒤 아직 안 지운 로컬에 병합하면, 로컬 자신의 사본도 함께 제거된다', () => {
+  // delOwner/doDeleteCat는 로컬 배열에서 즉시 지우지만, 아직 동기화 못 받은 "다른" 기기 입장에서는
+  // 자기 localArr에 그 이름이 여전히 남아있는 채로 상대 기기의 톰스톤만 먼저 받는 상황을 재현한다.
+  const tk = (n) => 'k:' + n;
+  const out = sandbox.mergeNameListWithTombstones(['나', '친구'], ['나'], { 'k:친구': 1000 }, tk, sandbox.normName);
+  assert.deepStrictEqual(j(out), ['나'], '아직 지우지 않은 쪽의 로컬 사본도 상대의 톰스톤을 따라 제거돼야 함');
+});
+test('mergeNameListWithTombstones: 톰스톤이 없는 이름은 평소 union과 동일하게 동작한다', () => {
+  const tk = (n) => 'k:' + n;
+  const out = sandbox.mergeNameListWithTombstones(['식비', '교통'], ['식비', '문화'], {}, tk, sandbox.normName);
+  assert.deepStrictEqual(j(out), ['식비', '교통', '문화']);
+});
+test('mergeNameListWithTombstones: 재추가된 이름(톰스톤 키가 지워짐)은 다시 union에 포함된다', () => {
+  const tk = (n) => 'k:' + n;
+  // addOwner/addCat이 재추가 시 톰스톤을 지우는 것과 동일한 상태(deletedIds에 키가 없음)를 가정
+  const out = sandbox.mergeNameListWithTombstones(['나', '친구'], ['나'], {}, tk, sandbox.normName);
+  assert.deepStrictEqual(j(out), ['나', '친구']);
+});
+test('mergeNameListWithTombstones: 대소문자·공백만 다른 이름도 normalize 기준으로 톰스톤이 적용된다', () => {
+  const tk = (n) => 'k:' + sandbox.normName(n);
+  const out = sandbox.mergeNameListWithTombstones(['Netflix', 'Hulu'], [' netflix ', 'Disney'], { 'k:netflix': 1 }, tk, sandbox.normName);
+  assert.deepStrictEqual(j(out), ['Hulu', 'Disney'], '로컬 사본도 정규화된 톰스톤 키로 제거되고, 톰스톤 없는 이름들은 평소처럼 union돼야 함');
+});
+test('mergeNameListWithTombstones: 톰스톤을 전부 적용한 결과가 비면(카테고리/귀속 0개 불변식 위반) 안전하게 순수 union으로 폴백한다', () => {
+  const tk = (n) => 'k:' + n;
+  const out = sandbox.mergeNameListWithTombstones(['마지막'], ['마지막'], { 'k:마지막': 1 }, tk, sandbox.normName);
+  assert.deepStrictEqual(j(out), ['마지막'], '둘 다 같은 마지막 이름을 지운 극단적 동시삭제여도 목록이 완전히 비면 안 됨');
+});
+test('mergeNameListWithTombstones: localArr/remoteArr/deletedIds가 없어도(undefined) 터지지 않는다', () => {
+  const tk = (n) => 'k:' + n;
+  assert.deepStrictEqual(j(sandbox.mergeNameListWithTombstones(undefined, undefined, undefined, tk, sandbox.normName)), []);
+  assert.deepStrictEqual(j(sandbox.mergeNameListWithTombstones(['A'], undefined, undefined, tk, sandbox.normName)), ['A']);
+});
+
 test('mergeBudgetHistory: remote에만 있는 카테고리는 그대로 포함된다', () => {
   const out = sandbox.mergeBudgetHistory({}, { 문화: [{ from: '2026-01', amount: 50000 }] });
   assert.deepStrictEqual(j(out), { 문화: [{ from: '2026-01', amount: 50000 }] });
@@ -7740,6 +7831,20 @@ test('mergeRemoteDataIntoLocal: DB.deletedType/DB.deletedBal도 mergeFlatMap으�
   assert.strictEqual(sandbox.DB.deletedType['증권계좌'], 'stock', 'remote에만 있던 기록도 들어와야 함');
   assert.strictEqual(sandbox.DB.deletedType['카카오뱅크'], 'cash', '같은 키는 local 값이 이겨야 함');
   assert.strictEqual(sandbox.DB.deletedBal['증권계좌'], 5000, 'remote에만 있던 잔액 기록도 들어와야 함');
+});
+test('mergeRemoteDataIntoLocal: DB.owners/DB.categories는 mergeNameListWithTombstones로 병합돼, 한 기기가 지운 귀속/카테고리가 아직 지우지 않은 기기와 동기화돼도 되살아나지 않는다(app-evolve cycle179)', () => {
+  sandbox.DB = minimalMergeDB({
+    catsV2: true, // migrate()의 1회성 지출 카테고리 교체 가드 — 없으면 병합 결과와 무관하게 EXP_CATS_DEFAULT로 되돌아감(이 테스트와는 무관한 기존 동작)
+    owners: ['나', '친구'],
+    categories: { expense: ['식비', '커피'], income: [], saving: [] },
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    owners: ['나'],
+    categories: { expense: ['식비'], income: [], saving: [] },
+    deletedIds: { [sandbox.ownerTombKey('친구')]: 2000, [sandbox.catTombKey('expense', '커피')]: 2000 },
+  });
+  assert.deepStrictEqual(j(sandbox.DB.owners), ['나'], '원격이 먼저 지운 귀속이 로컬에서 되살아나면 안 됨');
+  assert.deepStrictEqual(j(sandbox.DB.categories.expense), ['식비'], '원격이 먼저 지운 카테고리가 로컬에서 되살아나면 안 됨');
 });
 
 /* ---------- gcTombstones: migrate()가 부팅마다 DB.deletedIds에서 오래된(maxAgeMs 이전) tombstone을
