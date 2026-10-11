@@ -3456,6 +3456,61 @@ test('relinkDeletedAsset: DB.deletedType 기록이 없으면(마이그레이션 
   sandbox.relinkDeletedAsset(newCash);
   assert.strictEqual(sandbox.DB.txns[0].fromAssetId, 'gone');
 });
+// app-evolve cycle178: deleteAssetsUndo가 자산 삭제로 비활성화한 반복거래(_autoDeactivatedByAssetDelete)는,
+// undo 없이 동명·동종 자산을 재등록해 relinkDeletedAsset으로 연동하는 순간 자동으로 다시 켜져야 한다 —
+// 그러지 않으면 '연동했어요' 토스트를 보고도 반복거래는 계속 멈춘 채 expandRec()에서 영원히 제외된다.
+test('relinkDeletedAsset: 자산 삭제로 자동 비활성화됐던 반복거래는 재연동되면 자동으로 다시 활성화된다', () => {
+  sandbox.DB = {
+    deletedType: { '카카오뱅크': 'cash' },
+    txns: [],
+    recurrences: [{ id: 'r1', fromAssetId: 'gone', fromAssetName: '카카오뱅크', toAssetId: null,
+      active: false, _autoDeactivatedByAssetDelete: true }],
+    assets: [],
+  };
+  const newCash = { id: 'new1', name: '카카오뱅크', type: 'cash' };
+  sandbox.relinkDeletedAsset(newCash);
+  const r = sandbox.DB.recurrences[0];
+  assert.strictEqual(r.fromAssetId, 'new1', '먼저 재연결은 평소처럼 일어나야 함');
+  assert.strictEqual(r.active, true, '재연동이 끝났으니 자동으로 다시 활성화되어야 함');
+  assert.strictEqual(r._autoDeactivatedByAssetDelete, undefined, '복원 후에는 원인 플래그를 지워야 수동 중지와 다시 구분됨');
+  assert.strictEqual(r.updatedAt, 'test-updatedAt', '활성화 복원도 touch()되어야 클라우드 동기화에서 되돌아가지 않음');
+});
+test('relinkDeletedAsset: 양쪽 다 삭제된 이체는 한쪽만 재연결됐을 땐 아직 활성화하지 않는다', () => {
+  sandbox.DB = {
+    deletedType: { '카카오뱅크': 'cash', '저축은행': 'cash' },
+    txns: [],
+    recurrences: [{ id: 'r1', fromAssetId: 'gone1', fromAssetName: '카카오뱅크', toAssetId: 'gone2', toAssetName: '저축은행',
+      active: false, _autoDeactivatedByAssetDelete: true }],
+    assets: [],
+  };
+  const newCash = { id: 'new1', name: '카카오뱅크', type: 'cash' };
+  sandbox.relinkDeletedAsset(newCash); // '저축은행' 쪽은 아직 재등록 전 — toAssetName이 남아있어야 함
+  const r = sandbox.DB.recurrences[0];
+  assert.strictEqual(r.fromAssetId, 'new1', '카카오뱅크 쪽은 재연결되어야 함');
+  assert.strictEqual(r.toAssetName, '저축은행', '저축은행 쪽은 아직 재연결 전이라 스냅샷 이름이 남아있어야 함');
+  assert.strictEqual(r.active, false, '한쪽만 재연결됐을 땐 아직 활성화하면 안 됨(저축은행 쪽은 여전히 존재하지 않는 자산을 가리킴)');
+  assert.strictEqual(r._autoDeactivatedByAssetDelete, true, '아직 복원 조건을 못 채웠으니 원인 플래그도 남아있어야 함');
+  // 이어서 '저축은행'도 재등록해 연동하면 그제서야 활성화되어야 함
+  sandbox.DB.assets.push(newCash);
+  const newSavings = { id: 'new2', name: '저축은행', type: 'cash' };
+  sandbox.relinkDeletedAsset(newSavings);
+  assert.strictEqual(r.toAssetId, 'new2', '저축은행 쪽도 재연결되어야 함');
+  assert.strictEqual(r.active, true, '양쪽 다 재연결이 끝났으니 이제 활성화되어야 함');
+  assert.strictEqual(r._autoDeactivatedByAssetDelete, undefined, '복원 후에는 원인 플래그를 지워야 함');
+});
+test('relinkDeletedAsset: _autoDeactivatedByAssetDelete가 없는(사용자가 직접 멈춘) 반복거래는 재연동돼도 active를 바꾸지 않는다', () => {
+  sandbox.DB = {
+    deletedType: { '카카오뱅크': 'cash' },
+    txns: [],
+    recurrences: [{ id: 'r1', fromAssetId: 'gone', fromAssetName: '카카오뱅크', toAssetId: null, active: false }],
+    assets: [],
+  };
+  const newCash = { id: 'new1', name: '카카오뱅크', type: 'cash' };
+  sandbox.relinkDeletedAsset(newCash);
+  const r = sandbox.DB.recurrences[0];
+  assert.strictEqual(r.fromAssetId, 'new1', '재연결 자체는 평소처럼 일어나야 함');
+  assert.strictEqual(r.active, false, '자산 삭제가 원인이 아니었다면(플래그 없음) 재연동돼도 active를 되돌리면 안 됨');
+});
 // askRelinkDeleted 자체는 saveAsset()의 재연동 분기 테스트(아래)가 스파이 스텁(sandbox.askRelinkDeleted)에
 // 의존하고 있어(FUNCTIONS로 실제 구현을 끌어오면 그 스텁을 덮어써 해당 테스트가 깨짐) 여기선 단위 테스트를
 // 추가하지 않는다 — index.html의 _amLink/_amFresh 내부 DB.assets.push(d) 두 곳에 touch(d)를 적용한 것은
@@ -4345,6 +4400,22 @@ test('deleteAssetsUndo: 연결된 활성 반복거래를 비활성화하고, und
   sandbox.lastUndo.undoFn();
   assert.strictEqual(rec.active, true, '되돌리면 반복거래도 다시 활성화되어야 함');
   assert.strictEqual(rec.updatedAt, 'test-updatedAt', '되돌릴 때도 touch()되어야 함');
+});
+// app-evolve cycle178: undo를 누르지 않고 넘어간 뒤 나중에 동명·동종 자산을 재등록해 relinkDeletedAsset으로
+// 연동하면, 위 테스트의 undo 경로를 타지 않으므로 r.active가 영원히 false로 남아 expandRec()이 이 반복거래를
+// 영구히 건너뛴다. deleteAssetsUndo가 비활성화 "원인"을 _autoDeactivatedByAssetDelete로 남겨, relinkDeletedAsset이
+// 재연동 완료 시점에 이를 보고 자동으로 되살릴 수 있게 한다(아래 relinkDeletedAsset 테스트가 그 복원을 검증).
+test('deleteAssetsUndo: 비활성화 원인을 _autoDeactivatedByAssetDelete로 남기고, undo하면 그 플래그도 지운다', () => {
+  sandbox.TWi = -1;
+  const a1 = { id: 'a1', name: '통장1' };
+  const rec = { id: 'r1', active: true, fromAssetId: 'a1', toAssetId: null, updatedAt: 1 };
+  sandbox.DB = { assets: [a1], recurrences: [rec] };
+  sandbox.lastUndo = null;
+  sandbox.snapshotCalls = [];
+  sandbox.deleteAssetsUndo(new Set(['a1']));
+  assert.strictEqual(rec._autoDeactivatedByAssetDelete, true, '자산 삭제로 비활성화됐음을 표시해야 relinkDeletedAsset이 나중에 자동 복원할 수 있음');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(rec._autoDeactivatedByAssetDelete, undefined, '되돌리면(=삭제가 취소됐으니) 플래그도 함께 지워져야 함');
 });
 test('deleteAssetsUndo: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 삭제되지 않는다', () => {
   sandbox.TWi = 0;
