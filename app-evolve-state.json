@@ -1,15 +1,8 @@
 {
   "cycle": 177,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 172,
-      "phase": "review",
-      "timestamp": "2026-10-10T13:08:14.164Z",
-      "summary": "cycle172 develop(debtPayoffProjection에 goalProgress와 동일한 trendWindowDays 90일 내부 윈도+폴백 추가) 검토 — 변경이 goalProgress(cycle168)의 기존에 검증된 패턴을 정확히 그대로 따르는지 diff로 대조(cutoff=addDays(last.date,-trendWindowDays), windowed.length>=2 폴백 조건, filter 부등호 방향까지 동일). 유일한 호출부(index.html:2678 assetBalCard)가 trendWindowDays를 넘기지 않아 기본값 90이 적용됨을 확인 — 호출부 수정 불필요. rate<=0이면 기존처럼 반환값(achieved:false, projectedDate:null)이 그대로 유지됨도 확인. node --check logic.js 통과, node test/run.js 1203/1203(신규 2건 포함) 통과. 이상 없음, 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 172,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-11T10:30:00.000Z",
       "summary": "general-purpose 서브에이전트로 141-176사이클과 겹치지 않는 새 개선점을 탐색 — cycle176 advance가 Kakao/Supabase CDN 스크립트를 동적 로더(loadScriptWithTimeout, index.html:1336-1346)로 바꾸면서 추가한 el.crossOrigin='anonymous'가 그 자체로 새 버그였음을 발견. ① t1.kakaocdn.net이 CORS 헤더(Access-Control-Allow-Origin)를 내려주지 않으면 crossorigin='anonymous'는 CORS 모드 요청을 네트워크 오류로 실패시켜(일반 <script src>라면 성공했을 로드가 막힘) Kakao 로그인이 상시 깨지는데, onerror도 조용히 finish()만 호출해 timeout과 구분이 안 돼 '인터넷 연결을 확인해 주세요'라는 오탐 메시지로 사용자를 오도한다. ② 전역 에러 바운더리 recordError()(1369-1382)의 주석이 명시하는 'crossorigin 없는 서드파티 스크립트에서 오는 정보 없는 Script error.는 조용히 무시한다' 필터는 정확히 crossOrigin이 없을 때만 동작하는데, 이 두 스크립트에 crossOrigin을 달아버려 Kakao/Supabase SDK 내부의 처리되지 않은 런타임 예외가 이제 err instanceof Error를 만족해 third-party SDK 소음까지 사용자 에러 배너로 노출된다. loadScriptWithTimeout에서 el.crossOrigin='anonymous' 한 줄을 제거하고 그 이유를 설명하는 주석을 추가했다(onload/onerror는 둘 다 finish()만 부르므로 CORS 세부정보를 쓰는 코드가 전혀 없어 crossOrigin이 득 없이 리스크만 더함). test/run.js의 'CDN 리소스' 정적 검사 테스트를 crossOrigin이 설정되지 '않음'을 확인하도록 반전시키고(el\\\\.crossOrigin\\\\s*=\\\\s* 정규식 — 설명 주석 안의 'crossOrigin' 문자열과 혼동되지 않게 실제 할당 패턴만 매칭), [실행형] loadScriptWithTimeout 테스트의 appended[0].crossOrigin 기대값을 'anonymous'에서 undefined로 바꿨다 — index.html만 HEAD(cycle176 advance 커밋)로 되돌려 재현한 결과 두 테스트 모두 실제로 깨짐을 확인했다(1243/1245 -> 복원 후 1245/1245). index.html/sw.js 변경이라 APP_VERSION 1.47.121->1.47.122, sw.js CACHE v383->v384 갱신. node test/run.js 1245/1245 -> 1245/1245 통과(신규 추가 없이 기존 2건을 반전 수정).",
+      "commit": "8014445"
+    },
+    {
+      "cycle": 177,
+      "phase": "review",
+      "timestamp": "2026-10-11T11:40:00.000Z",
+      "summary": "cycle177 develop(동적 로더의 crossOrigin='anonymous' 제거) 검토 — recordError()(index.html:1382-1386)를 직접 읽어 'kind===renderCurrent이거나 err instanceof Error일 때만 showErrBanner()' 조건이 develop 커밋의 서술과 정확히 일치함을 확인했고, crossOrigin이 없으면 third-party onerror/onload의 Script error.가 Error 인스턴스가 아니라는 필터링 전제도 코드로 검증했다. loadScriptWithTimeout 본문이 onload/onerror 모두 finish()만 호출해(resolve 값·CORS 세부정보 전혀 안 씀) crossOrigin 제거로 잃는 기능이 없음도 확인. 반전된 두 테스트(정적 CDN 검사의 '!el.crossOrigin=' 매칭, [실행형] appended[0].crossOrigin===undefined)가 실제로 새 동작을 검증하는지 대조. node test/run.js 1245/1245 전부 통과(독립 재실행), APP_VERSION(1.47.122)/sw.js CACHE(v384) 버전 쌍 일치 확인. 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
       "commit": null
     }
   ]
