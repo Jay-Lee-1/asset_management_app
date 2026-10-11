@@ -1331,7 +1331,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.117';
+const APP_VERSION='1.47.118';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5856,6 +5856,18 @@ function sanitizeBackup(obj){
    * 같은 깨진 날짜 문자열을 매달 계속 만들어내 가계부/캘린더를 조용히 오염시키고(크래시는 안 남),
    * recFreqLabel()도 "매월 NaN일"처럼 그대로 보여준다 — amount와 같은 이유로 여기서도 정규화한다. */
   if(d.freq==='monthly'&&d.day!=='last'){const before=d.day;clampDay(d);if(d.day!==before)fixedCount++}
+  /* weekend(주말 조정)는 recOpenWeekend가 'none'|'earlier'|'later' 중 하나로만 쓰고, recFreq()가
+   * freq를 monthly 아닌 값으로 바꿀 때마다 weekend도 함께 'none'으로 되돌려(4240줄) "daily/weekly/
+   * yearly엔 weekend!=='none'이 절대 안 남는다"는 불변식을 UI가 지켜준다. 백업/원격 데이터는 이
+   * UI 경로를 거치지 않으므로 이 불변식이 깨진 채 들어올 수 있다 — 영향은 두 갈래: ① 'none'/
+   * 'earlier'/'later'가 아닌 값이 남으면 반복 수정 시트가 WK[d.weekend][0]을 그리다 undefined[0]
+   * TypeError로 크래시(amount/day/skip과 동일한 '검증 분기 누락' 버그 클래스). ② freq가 monthly가
+   * 아닌데 weekend가 'earlier'/'later'로 남으면, 금/토/일처럼 며칠 간격인 daily/weekly 회차가
+   * shiftWeekend()로 같은 날짜에 겹쳐 recDates()의 인접 중복 제거(push())가 그중 일부를 조용히
+   * 삼켜버린다(크래시는 없지만 회차가 소리 없이 줄어드는 데이터 손실). 둘 다 day/amount와 동일하게
+   * 'none'으로 정규화한다. */
+  if(d.weekend&&!['none','earlier','later'].includes(d.weekend)){d.weekend='none';fixedCount++}
+  else if(d.freq!=='monthly'&&d.weekend&&d.weekend!=='none'){d.weekend='none';fixedCount++}
   if(d.edits&&typeof d.edits==='object'){
    const edits={};
    Object.keys(d.edits).forEach(date=>{

@@ -5709,6 +5709,67 @@ test("sanitizeBackup: 매월 반복의 day가 'last'(말일)면 그대로 두고
   assert.strictEqual(data.recurrences[1].day, 'garbage');
   assert.strictEqual(fixedCount, 0);
 });
+/* weekend(주말 조정)는 recOpenWeekend가 'none'|'earlier'|'later'로만 쓰고, recFreq()가 freq를
+ * monthly 아닌 값으로 바꿀 때마다 weekend도 'none'으로 함께 되돌려(index.html recFreq) "daily/
+ * weekly/yearly엔 weekend!=='none'이 절대 안 남는다"는 불변식을 UI가 지켜준다. 백업/원격 데이터는
+ * 이 경로를 거치지 않아 불변식이 깨진 채 들어올 수 있었다 — sanitizeBackup이 지금까지 이 필드를
+ * 전혀 검증하지 않아, 알 수 없는 값이 남으면 반복 수정 시트의 WK[d.weekend][0]이 undefined[0]
+ * TypeError로 크래시하고, freq가 monthly 아닌데 weekend가 'earlier'/'later'로 남으면 금/토/일처럼
+ * 며칠 간격인 daily/weekly 회차가 shiftWeekend()로 같은 날짜에 겹쳐 recDates()의 인접 중복
+ * 제거(push())가 그중 일부를 조용히 삼켜버린다(회차가 소리 없이 줄어드는 데이터 손실). */
+test("sanitizeBackup: 알 수 없는 weekend 값('none'/'earlier'/'later'가 아님)은 'none'으로 정규화한다(반복 수정 시트의 WK[d.weekend][0] TypeError 크래시 방지)", () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    recurrences: [
+      { id: 'r1', freq: 'monthly', day: 15, startDate: '2026-01-01', amount: 1000, weekend: 'garbage' },
+      { id: 'r2', freq: 'monthly', day: 15, startDate: '2026-01-01', amount: 1000, weekend: 'earlier' },
+    ],
+  });
+  assert.strictEqual(data.recurrences[0].weekend, 'none');
+  assert.strictEqual(data.recurrences[1].weekend, 'earlier', '정상 값은 그대로 유지되어야 함');
+  assert.strictEqual(fixedCount, 1);
+});
+test("sanitizeBackup: freq가 monthly가 아닌데 weekend가 'none'이 아니면 'none'으로 되돌린다(recFreq()가 보장하는 불변식을 백업 복원 경로에서도 지킴 — recDates()의 daily/weekly 인접 중복 제거가 회차를 조용히 삼키는 것을 방지)", () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    recurrences: [
+      { id: 'r1', freq: 'daily', startDate: '2026-01-01', amount: 1000, weekend: 'earlier' },
+      { id: 'r2', freq: 'weekly', startDate: '2026-01-01', amount: 1000, weekend: 'later' },
+      { id: 'r3', freq: 'yearly', startDate: '2026-01-01', amount: 1000, weekend: 'earlier' },
+      { id: 'r4', freq: 'daily', startDate: '2026-01-01', amount: 1000, weekend: 'none' },
+    ],
+  });
+  assert.strictEqual(data.recurrences[0].weekend, 'none');
+  assert.strictEqual(data.recurrences[1].weekend, 'none');
+  assert.strictEqual(data.recurrences[2].weekend, 'none');
+  assert.strictEqual(data.recurrences[3].weekend, 'none', '이미 none이면 그대로(회귀 방지)');
+  assert.strictEqual(fixedCount, 3);
+});
+test("sanitizeBackup: weekend 필드가 없거나(falsy) monthly+유효값이면 건드리지 않는다(정상 케이스는 회귀 없음)", () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    recurrences: [
+      { id: 'r1', freq: 'monthly', day: 15, startDate: '2026-01-01', amount: 1000, weekend: 'later' },
+      { id: 'r2', freq: 'weekly', startDate: '2026-01-01', amount: 1000 }, // weekend 필드 자체가 없음(구버전 데이터)
+    ],
+  });
+  assert.strictEqual(data.recurrences[0].weekend, 'later');
+  assert.strictEqual(data.recurrences[1].weekend, undefined);
+  assert.strictEqual(fixedCount, 0);
+});
+test("[실행형] sanitizeBackup으로 정규화하지 않으면 freq가 monthly가 아닌데 weekend가 'earlier'로 남아, 금/토/일 daily 회차가 같은 날짜로 겹쳐 recDates()가 회차를 조용히 삼킨다(정규화 후에는 매일 생성됨)", () => {
+  // 2026-01-01은 목요일 — 1/2(금) 정상, 1/3(토)는 'earlier'로 1/2로 당겨져 1/2과 겹치고, 1/4(일)도
+  // 'earlier'로 이틀 당겨져 역시 1/2과 겹친다 — push()의 인접 중복 제거가 1/3·1/4 회차를 삼켜버림.
+  const corrupted = { freq: 'daily', startDate: '2026-01-01', endDate: null, weekend: 'earlier' };
+  const collapsed = sandbox.recDates(corrupted, '2026-01-01', '2026-01-04');
+  assert.strictEqual(collapsed.length, 2, '정규화 없이는 1/3·1/4 회차가 1/2에 겹쳐 사라짐(버그 상태 재현)');
+  const { data } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    recurrences: [{ id: 'r1', ...corrupted, amount: 1000 }],
+  });
+  const fixed = sandbox.recDates(data.recurrences[0], '2026-01-01', '2026-01-04');
+  assert.strictEqual(fixed.length, 4, 'sanitizeBackup이 weekend를 none으로 되돌린 뒤에는 1/1~1/4 매일 정상 생성되어야 함');
+});
 /* DB.goals(app-evolve cycle122 신설)는 sanitizeBackup에 검증 분기가 전혀 없어 손상된 백업/원격
  * payload의 targetAmount/targetDate가 그대로 통과했었다(critique cycle123이 발견). */
 test('sanitizeBackup: 목표의 NaN/문자열 목표금액을 보정하고 fixedCount를 센다', () => {
