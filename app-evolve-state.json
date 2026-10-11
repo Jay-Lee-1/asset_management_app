@@ -1,15 +1,8 @@
 {
   "cycle": 178,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 173,
-      "phase": "review",
-      "timestamp": "2026-10-10T18:08:00.318Z",
-      "summary": "cycle173 develop(saveRec()의 확인 시트 없는 즉시적용 분기에도 pruneOrphanRecOverrides 배선)을 검토 — recHistFieldsChanged&&과거회차>0 조건이 거짓이 되어 recSaveScopeConfirm을 거치지 않고 DB.recurrences[i]=d로 직행하는 경로에 cleaned=pruneOrphanRecOverrides(d)를 추가한 것으로, 코드 위치/주석/토스트 문구 모두 cycle172의 all 분기와 패턴이 일치한다. 스케줄 미변경 시(recHistFieldsChanged 거짓이라 이 분기에 온 경우) d의 schedule이 orig와 동일해 recDates() valid set도 기존 skip/edits와 그대로 일치하므로 cleaned=0이 되어 회귀 없음을 확인했고, 실제로 신규 회귀 테스트(fromAssetId만 변경)가 이를 검증한다. index.html의 script 블록 2개 모두 node -e new Function()으로 문법 검증 통과, APP_VERSION(1.47.114)/sw.js CACHE(v376) 버전 쌍이 올바르게 맞물려 있음을 확인. node test/run.js 1213/1213 전부 통과. 코드 변경할 이슈를 찾지 못함 — 이상 없음.",
-      "commit": null
-    },
     {
       "cycle": 173,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-11T14:16:48.211Z",
       "summary": "general-purpose 서브에이전트로 172-177사이클과 겹치지 않는 새 개선점을 탐색 — deleteAssetsUndo()(index.html)가 자산 삭제 시 연결된 활성 반복거래를 r.active=false로 끄는데, undo를 누르지 않고 넘어간 뒤 나중에 동일 이름·동일 타입 자산을 재등록해 relinkDeletedAsset()으로 연동하면 active가 영원히 false로 남아 expandRec()이 영구히 건너뛰는 버그를 발견(cycle176 critique가 실존 확인했으나 보류했던 백로그 항목). deleteAssetsUndo가 비활성화할 때 r._autoDeactivatedByAssetDelete=true를 함께 남기고(undo 시 active=true 복원과 함께 플래그도 삭제), relinkDeletedAsset()은 fromAssetId/toAssetId 재연결 후 그 플래그가 있고 fromAssetName/toAssetName이 둘 다 더 이상 남아있지 않으면(이체처럼 양쪽 다 삭제된 경우 양쪽 재연결이 끝나야 함) active=true로 복원하고 플래그를 지우고 touch(r)한다. 사용자가 직접 멈춘(플래그 없는) 반복거래는 그대로 둔다. test/run.js에 deleteAssetsUndo가 플래그를 남기고 undo 시 지우는지, relinkDeletedAsset이 플래그 있는 반복거래만 재활성화하는지, 양쪽 다 삭제된 이체는 한쪽만 relink됐을 땐 아직 활성화 안 하는지, 플래그 없는(수동 비활성) 반복거래는 재연동돼도 active를 바꾸지 않는지 4개 테스트를 추가. index.html/sw.js 변경이라 APP_VERSION 1.47.123->1.47.124, sw.js CACHE v385->v386 갱신. node test/run.js 1260/1260 통과(신규 4건 포함).",
+      "commit": "f21b819"
+    },
+    {
+      "cycle": 178,
+      "phase": "review",
+      "timestamp": "2026-10-11T15:05:00.000Z",
+      "summary": "cycle178 develop(_autoDeactivatedByAssetDelete 플래그로 재연동 시 반복거래 자동 복원) 검토 — relinkDeletedAsset()(index.html:3321-3328)을 직접 읽어 fromAssetName/toAssetName 관련 두 if문이 먼저 실행된 뒤에 플래그 체크가 오는 순서를 확인했고, snapshotAssetName()이 fromAssetId/toAssetId가 실제로 일치하는 쪽에만 이름을 심는다는 점(3393-3404)을 대조해 비거래측(toAssetId=null인 일반 수입/지출 반복거래)은 toAssetName이 처음부터 undefined로 남아 `!r.fromAssetName&&!r.toAssetName` 조건이 한쪽만 재연결돼도 자연히 통과함을 확인했다 — 양쪽이 모두 삭제된 이체(fromAssetId/toAssetId 둘 다 다른 삭제자산을 가리킴)에서는 한쪽만 재등록됐을 때 남은 toAssetName이 조건을 막아 아직 활성화되지 않음을 테스트와 코드 양쪽에서 재확인했다. deleteAssetsUndo()의 undo 콜백이 r.active=true 복원과 함께 플래그도 삭제해 '사용자가 직접 멈춤'과 재구분됨을 확인. 신규 회귀 테스트 4건(단일측 자동복원, 양쪽삭제 이체의 부분재연결 시 보류, 플래그 없는 수동비활성 비변경, undo 시 플래그 제거)이 실제로 기존 동작과 의미있게 다른 것을 검증하는지 로직을 대조했고, node test/run.js 1260/1260 전부 통과(독립 재실행으로 재확인)했다. 3개 inline <script> 블록 모두 node -e new Function()으로 문법 검증 통과, APP_VERSION(1.47.124)/sw.js CACHE(v386) 버전 쌍 일치 확인. 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
       "commit": null
     }
   ]
