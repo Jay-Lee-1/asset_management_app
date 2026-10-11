@@ -1331,7 +1331,7 @@ body.selmode .fab{display:none}
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.116';
+const APP_VERSION='1.47.117';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -7120,6 +7120,35 @@ function openTidyList(){ /* 다 쓴 자산 여러 건을 한 시트에서 — op
    <button class="txt-btn" style="flex-shrink:0" onclick="tidyListSnooze('${a.id}')">나중에</button></div>`).join('')}`);
 }
 function tidyListSnooze(id){snoozeTidy(id);openTidyList();}
+/* 상환 추세가 정체/악화된 부채 목록 — assetBalCard()(2676행 부근)가 부채 자산 상세를 열어야만
+ * 보여주던 debtPayoffProjection() 투사를 homeAlerts()/openDebtBehindList()가 같이 쓰도록 분리.
+ * assetBalCard와 동일한 방식(RANGE_FROM~TODAY 실제 잔액 추이, sign=-1)으로 pts를 만들어 achieved
+ * (완납)나 projectedDate(추세대로 완납 예상)가 나오면 제외한다.
+ * RANGE_FROM이 고정된 먼 과거 날짜라 assetBalSampleDates가 뽑는 샘플 포인트 수는 거의 항상
+ * 충분해서(pts.length는 거의 늘 2 이상) 그것만으론 "이력이 아직 없는 신규 부채"를 걸러내지 못한다
+ * (baseAmount만 있고 거래가 하나도 없으면 전 구간이 평평한 한 값으로 채워져 rate=0 → 오탐으로
+ * behind가 돼버림). 그래서 실제 가드는 "이 자산을 참조하는 거래가 최소 1건이라도 있는가"다 —
+ * 등록만 해두고 아직 아무 활동도 없는 부채는 추세를 판단할 근거가 없으므로 제외한다. */
+function debtsBehind(){
+ const txns=allTxns(RANGE_FROM,TODAY).filter(t=>!isPending(t));
+ const dates=assetBalSampleDates(RANGE_FROM,TODAY,60);
+ return DB.assets.filter(a=>a.includeInTotal&&a.type==='debt'&&txns.some(t=>t.fromAssetId===a.id||t.toAssetId===a.id)).map(a=>{
+   const pts=assetBalanceSeries(txns,a.id,assetBase(a),-1,dates);
+   return{a,p:debtPayoffProjection(pts,TODAY)};
+  }).filter(({p})=>!p.achieved&&!p.projectedDate)
+  .map(({a})=>a)
+  .sort((x,y)=>x.name<y.name?-1:1);
+}
+function openDebtBehindList(){ /* openNegList()와 동일 패턴 — 1건이면 바로 그 자산으로, 여러 건이면 시트에서 고른다 */
+ const list=debtsBehind();
+ if(!list.length){closeSheet();return}
+ if(list.length===1){closeSheet();openAssetHistory(list[0].id);return}
+ openSheet(`<h3>부채 상환 정체</h3><div class="desc">최근 줄어들고 있지 않은 부채 ${list.length}건이에요. 눌러서 확인하세요.</div>
+  <div style="display:flex;flex-direction:column;gap:8px">${list.map(a=>`<button class="pick" onclick="closeSheet();openAssetHistory('${a.id}')">
+    <div class="pav a-debt">${svg('debt')}</div>
+    <div class="pbody"><div class="pn">${esc(a.name)}</div><div class="psub">${comma(assetEval(a))}원 · 최근엔 줄어들고 있지 않아요</div></div>
+    <div class="pc">${svg('chevR')}</div></button>`).join('')}</div>`);
+}
 function homeAlerts(neg){
  const arr=[];
  if(CLOUD_UID&&CLOUD_SYNC_STATE==='conflict')arr.push({kind:'cloudConflict'});
@@ -7160,6 +7189,11 @@ function homeAlerts(neg){
    .sort((a,b)=>a.g.targetDate<b.g.targetDate?-1:1);
  if(_gb.length===1){const{g,p}=_gb[0];arr.push({kind:'goalBehind',goalId:g.id,name:g.name,targetDate:g.targetDate,projectedDate:p.projectedDate});}
  else if(_gb.length>1)arr.push({kind:'goalBehindMulti',count:_gb.length});
+ /* 상환 추세가 정체/악화된 부채: debtsBehind()(homeAlerts 바로 앞) 참고. goalBehind와 동일한
+  * 단일/복수 collapsing 패턴(app-evolve cycle174 advance) */
+ const _db=debtsBehind();
+ if(_db.length===1){const a=_db[0];arr.push({kind:'debtBehind',assetId:a.id,name:a.name,amount:assetEval(a)});}
+ else if(_db.length>1)arr.push({kind:'debtBehindMulti',count:_db.length});
  return arr;
 }
 /* homeAlerts()가 계산한 알림 중 "오늘 확정 대기 이체 / 임박한 저축 만기(1~2일 이내) / 예산 초과"처럼
@@ -7178,6 +7212,8 @@ function notifyAlertInfo(al){
  if(al.kind==='budgetOverMulti')return{key:`budgetMulti:${TODAY.slice(0,7)}`,title:'예산을 초과했어요',body:`${al.count}개 카테고리가 이번 달 예산을 넘었어요`};
  if(al.kind==='goalBehind')return{key:`goalBehind:${al.goalId}:${TODAY.slice(0,7)}`,title:'목표가 늦어지고 있어요',body:`${al.name} · 목표일 ${fmtDateFull(al.targetDate)}까지 어려울 것 같아요`};
  if(al.kind==='goalBehindMulti')return{key:`goalBehindMulti:${TODAY.slice(0,7)}`,title:'목표가 늦어지고 있어요',body:`목표 ${al.count}건이 목표일보다 늦어지고 있어요`};
+ if(al.kind==='debtBehind')return{key:`debtBehind:${al.assetId}:${TODAY.slice(0,7)}`,title:'부채가 줄지 않고 있어요',body:`${al.name} · 최근엔 ${comma(al.amount)}원에서 줄어들고 있지 않아요`};
+ if(al.kind==='debtBehindMulti')return{key:`debtBehindMulti:${TODAY.slice(0,7)}`,title:'부채가 줄지 않고 있어요',body:`부채 ${al.count}건이 최근 줄어들고 있지 않아요`};
  return null;
 }
 /* 같은 항목(key)은 상태가 유지되는 한 다시 알리지 않는다 — checkNotifyAlerts가 동기화 주기(수 분)마다
@@ -7322,6 +7358,16 @@ function homeAlertCard(al){
  if(al.kind==='goalBehindMulti')return `<button class="home-alert mat" onclick="openGoalsList()">
    <div class="ha-ic">${svg('target')}</div>
    <div class="ha-b"><div class="ha-t">목표가 늦어지고 있어요 ${al.count}건</div>
+     <div class="ha-s">눌러서 한 번에 확인</div></div>
+   <div class="ha-c">${svg('chev')}</div></button>`;
+ if(al.kind==='debtBehind')return `<button class="home-alert mat" onclick="openAssetHistory('${al.assetId}')">
+   <div class="ha-ic">${svg('debt')}</div>
+   <div class="ha-b"><div class="ha-t">부채가 줄지 않고 있어요 · ${esc(al.name)}</div>
+     <div class="ha-s">최근엔 ${comma(al.amount)}원에서 줄어들고 있지 않아요</div></div>
+   <div class="ha-c">${svg('chev')}</div></button>`;
+ if(al.kind==='debtBehindMulti')return `<button class="home-alert mat" onclick="openDebtBehindList()">
+   <div class="ha-ic">${svg('debt')}</div>
+   <div class="ha-b"><div class="ha-t">부채가 줄지 않고 있어요 ${al.count}건</div>
      <div class="ha-s">눌러서 한 번에 확인</div></div>
    <div class="ha-c">${svg('chev')}</div></button>`;
  if(al.kind==='negMulti')return `<button class="home-alert" onclick="openNegList()">

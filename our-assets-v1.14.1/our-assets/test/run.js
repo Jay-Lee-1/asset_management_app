@@ -184,6 +184,7 @@ const FUNCTIONS = [
   'assetEval', 'assetGainLoss', 'assetGainLossBadge', 'costBasisField', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'delOwner', 'doMaturity', 'openMaturity', 'firstCash',
   'detectStaleMarketValuedTxns', 'delBudget', 'saveBudget', 'openBudgetPrompt', 'openBigMinSheet',
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards', 'openTidyAsset', 'openTidyList', 'tidyListSnooze',
+  'debtsBehind', 'openDebtBehindList',
   'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'openCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter',
   'genSalt', 'pbkdf2Hash', 'genRecoveryCode', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer', 'openConfirmTransfer',
   'renderLockView', 'openForgotPinSheet', 'doForgotPin', 'tickForgotPinWait',
@@ -10832,6 +10833,101 @@ test('homeAlertCard: goalBehind/goalBehindMulti가 각각 openGoalForm/openGoals
   const html2 = sandbox.homeAlertCard({ kind: 'goalBehindMulti', count: 2 });
   assert.ok(html2.includes('openGoalsList()'));
   assert.ok(html2.includes('2건'));
+});
+/* 상환 추세가 정체/악화된 부채(debtBehind/debtBehindMulti) — goalBehind/goalBehindMulti와 동일한 1건/N건
+ * 묶음 패턴을 부채에도 적용. debtPayoffProjection()의 추세 투사(완납했거나, 추세대로면 완납 예상일이
+ * 나오면 제외)를 그대로 재사용하므로, homeAlerts 쪽은 묶음 분기와 "거래 이력이 없는 신규 부채는
+ * 제외"라는 가드만 검증한다(app-evolve cycle174 advance) */
+test('homeAlerts: 최근 상환 활동이 없어 정체된 부채가 정확히 1개면 debtBehind, 2개로 늘면 debtBehindMulti로 묶인다', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.assets.push({ id: 'd1', name: '마이너스통장', owner: '나', type: 'debt', baseAmount: 600000, includeInTotal: true });
+  // 2024년 초에 한 번 갚은 뒤로 최근까지 아무 활동이 없음 → 최근 추세는 0(정체)
+  sandbox.DB.txns.push({ date: '2024-01-10', type: 'income', toAssetId: 'd1', amount: 50000 });
+  let alerts = sandbox.homeAlerts([]);
+  let db = alerts.filter((a) => a.kind === 'debtBehind' || a.kind === 'debtBehindMulti');
+  assert.strictEqual(db.length, 1);
+  assert.strictEqual(db[0].kind, 'debtBehind', '정확히 1개면 debtBehind여야 함');
+  assert.strictEqual(db[0].assetId, 'd1');
+  assert.strictEqual(db[0].name, '마이너스통장');
+  assert.strictEqual(db[0].amount, 550000);
+
+  sandbox.DB.assets.push({ id: 'd2', name: '신용대출', owner: '나', type: 'debt', baseAmount: 300000, includeInTotal: true });
+  sandbox.DB.txns.push({ date: '2024-02-10', type: 'income', toAssetId: 'd2', amount: 10000 });
+  alerts = sandbox.homeAlerts([]);
+  db = alerts.filter((a) => a.kind === 'debtBehind' || a.kind === 'debtBehindMulti');
+  assert.strictEqual(db.length, 1);
+  assert.strictEqual(db[0].kind, 'debtBehindMulti', '2개로 늘면 debtBehindMulti 하나로 묶여야 함');
+  assert.strictEqual(db[0].count, 2);
+});
+test('homeAlerts: 최근까지 꾸준히 갚아 완납 예상일이 나오는 부채는 debtBehind에 포함되지 않는다(회귀 확인)', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.assets.push({ id: 'd1', name: '꾸준히 갚는 빚', owner: '나', type: 'debt', baseAmount: 1200000, includeInTotal: true });
+  let d = '2023-02-01';
+  const payTxns = [];
+  for (let i = 0; i < 40; i++) {
+    payTxns.push({ date: d, type: 'income', toAssetId: 'd1', amount: 20000 });
+    d = sandbox.addMonths(d, 1);
+  }
+  sandbox.DB.txns.push(...payTxns);
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'debtBehind' || a.kind === 'debtBehindMulti'), '최근 추세로 완납이 투사되면 behind로 뜨면 안 됨');
+});
+test('homeAlerts: 이미 다 갚은(완납) 부채는 추세와 무관하게 debtBehind에 포함되지 않는다(회귀 확인)', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.assets.push({ id: 'd1', name: '다 갚은 빚', owner: '나', type: 'debt', baseAmount: 100000, includeInTotal: true });
+  sandbox.DB.txns.push({ date: '2024-01-10', type: 'income', toAssetId: 'd1', amount: 100000 }); // 완납
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'debtBehind' || a.kind === 'debtBehindMulti'), '완납한 부채는 behind로 뜨면 안 됨');
+});
+test('homeAlerts: 거래 이력이 전혀 없는 신규 부채는 추세를 판단할 근거가 없어 debtBehind에 포함되지 않는다(회귀 확인)', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.assets.push({ id: 'd1', name: '방금 등록한 빚', owner: '나', type: 'debt', baseAmount: 500000, includeInTotal: true });
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'debtBehind' || a.kind === 'debtBehindMulti'), '거래 이력이 없으면 신규/짧은 이력으로 보고 behind 판단 자체를 하면 안 됨');
+});
+test('homeAlerts: includeInTotal=false인 부채는 추세가 정체여도 debtBehind에 포함되지 않는다(회귀 확인)', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.assets.push({ id: 'd1', name: '총계 제외 빚', owner: '나', type: 'debt', baseAmount: 600000, includeInTotal: false });
+  sandbox.DB.txns.push({ date: '2024-01-10', type: 'income', toAssetId: 'd1', amount: 50000 });
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'debtBehind' || a.kind === 'debtBehindMulti'), 'includeInTotal=false면 다른 총계 집계처럼 behind 판단에서도 빠져야 함');
+});
+test('notifyAlertInfo: debtBehind/debtBehindMulti는 goalBehind처럼 월 단위 dedupe 키를 쓴다', () => {
+  sandbox.TODAY = '2026-06-15';
+  const info1 = sandbox.notifyAlertInfo({ kind: 'debtBehind', assetId: 'd1', name: '마이너스통장', amount: 550000 });
+  assert.strictEqual(info1.key, 'debtBehind:d1:2026-06');
+  assert.ok(info1.title && info1.body, 'OS 알림 제목/본문이 있어야 함');
+
+  const info2 = sandbox.notifyAlertInfo({ kind: 'debtBehindMulti', count: 2 });
+  assert.strictEqual(info2.key, 'debtBehindMulti:2026-06');
+  assert.ok(info2.title && info2.body, 'OS 알림 제목/본문이 있어야 함');
+});
+test('homeAlertCard: debtBehind/debtBehindMulti가 각각 openAssetHistory/openDebtBehindList로 연결된다', () => {
+  const html1 = sandbox.homeAlertCard({ kind: 'debtBehind', assetId: 'd1', name: '마이너스통장', amount: 550000 });
+  assert.ok(html1.includes("openAssetHistory('d1')"));
+  assert.ok(html1.includes('마이너스통장'));
+
+  const html2 = sandbox.homeAlertCard({ kind: 'debtBehindMulti', count: 2 });
+  assert.ok(html2.includes('openDebtBehindList()'));
+  assert.ok(html2.includes('2건'));
+});
+test('openDebtBehindList: 정체된 부채가 1건이면 바로 그 자산 내역으로, 여러 건이면 시트에서 고르게 한다', () => {
+  setupHistoryDB();
+  sandbox.DB.assets.push({ id: 'd1', name: '마이너스통장', owner: '나', type: 'debt', baseAmount: 600000, includeInTotal: true });
+  sandbox.DB.txns.push({ date: '2024-01-10', type: 'income', toAssetId: 'd1', amount: 50000 });
+  sandbox.goCalls = [];
+  sandbox.closeSheetCalls = 0;
+  sandbox.lastSheetHtml = null;
+  sandbox.openDebtBehindList();
+  assert.deepStrictEqual(sandbox.goCalls, ['history'], '1건이면 바로 openAssetHistory로 그 자산 내역을 열어야 함');
+  assert.strictEqual(sandbox.ST.hist.assetId, 'd1');
+  assert.strictEqual(sandbox.closeSheetCalls, 1, '시트 위에 history 탭이 깔리지 않도록 먼저 닫아야 함');
+
+  sandbox.DB.assets.push({ id: 'd2', name: '신용대출', owner: '나', type: 'debt', baseAmount: 300000, includeInTotal: true });
+  sandbox.DB.txns.push({ date: '2024-02-10', type: 'income', toAssetId: 'd2', amount: 10000 });
+  sandbox.lastSheetHtml = null;
+  sandbox.openDebtBehindList();
+  assert.ok(sandbox.lastSheetHtml && sandbox.lastSheetHtml.includes('마이너스통장') && sandbox.lastSheetHtml.includes('신용대출'), '2건이면 시트에서 둘 다 고를 수 있어야 함');
 });
 /* 미확인 이체(confirm)도 quick/quickMulti·budgetOver/budgetOverMulti와 동일한 1건/N건 묶음 패턴을 쓴다
  * (app-evolve cycle156 critique: 반복 이체를 방치하면 홈 알림이 confirm 카드로 도배되던 비대칭을 해소) */
