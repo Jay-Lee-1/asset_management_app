@@ -1967,6 +1967,36 @@ test('addCat: 이미 톰스톤된(지워진) 이름을 다시 추가하면 톰�
   assert.strictEqual(sandbox.catTombKey('expense', '커피') in sandbox.DB.deletedIds, false, '재추가한 이름의 톰스톤은 지워져야 다음 병합에서 되살아남');
 });
 
+/* ---------- doRenameCat: 이름변경도 doDeleteCat과 동일하게 옛 이름을 톰스톤해야 한다(app-evolve cycle180) ----------
+ * doRenameCat은 txns/recurrences/budgetHistory의 old를 v로 옮기지만 DB.categories에서 old 자체를
+ * 지우는 것과 동치인데도, doDeleteCat과 달리 old에 대한 catTombKey 톰스톤을 남기지 않았다. 그 결과
+ * mergeNameListWithTombstones가 old를 "아직 살아있다"고 보고, 이 이름변경을 모르는 다른 기기가 old를
+ * 그대로 들고 동기화하면 old가 좀비 카테고리로 되살아난다(실 거래는 전부 새 이름을 가리키므로 쓸 수도
+ * 지울 수도 없는 유령 항목). ---------- */
+test('doRenameCat: 이름변경 시 옛 이름에 catTombKey 톰스톤이 남는다', () => {
+  sandbox.DB = { categories: { expense: ['식비'] }, catIcon: {}, catVar: {}, txns: [], recurrences: [] };
+  sandbox.catRenameDraft = { name: '외식비', icon: '' };
+  sandbox.doRenameCat('expense', 0);
+  assert.strictEqual(sandbox.DB.deletedIds[sandbox.catTombKey('expense', '식비')] > 0, true, '이름변경으로 사라진 옛 이름도 톰스톤이 남아야 함');
+});
+test('doRenameCat: 과거에 지워졌던(톰스톤된) 이름으로 되돌아가면 그 톰스톤은 지워진다', () => {
+  sandbox.DB = {
+    categories: { expense: ['식비'] }, catIcon: {}, catVar: {}, txns: [], recurrences: [],
+    deletedIds: { [sandbox.catTombKey('expense', '외식비')]: 1000 },
+  };
+  sandbox.catRenameDraft = { name: '외식비', icon: '' };
+  sandbox.doRenameCat('expense', 0);
+  assert.strictEqual(sandbox.catTombKey('expense', '외식비') in sandbox.DB.deletedIds, false, '되돌아온 이름의 톰스톤은 지워져야 다음 병합에서 되살아남');
+});
+test('doRenameCat → mergeNameListWithTombstones: 이름변경 전으로 동기화가 안 된 다른 기기의 사본이 옛 이름을 되살리지 못한다', () => {
+  sandbox.DB = { categories: { expense: ['식비'] }, catIcon: {}, catVar: {}, txns: [], recurrences: [] };
+  sandbox.catRenameDraft = { name: '외식비', icon: '' };
+  sandbox.doRenameCat('expense', 0); // 기기A: 식비 -> 외식비로 이름변경, 식비를 톰스톤
+  const remoteB = ['식비']; // 기기B: 아직 이름변경 전
+  const merged = sandbox.mergeNameListWithTombstones(sandbox.DB.categories.expense, remoteB, sandbox.DB.deletedIds, n => sandbox.catTombKey('expense', n), sandbox.normName);
+  assert.deepStrictEqual(merged, ['외식비'], '톰스톤된 옛 이름(식비)이 좀비로 되살아나면 안 됨');
+});
+
 /* ---------- delOwner: 귀속 삭제도 delCat/delTx처럼 undo 가능해야 한다 (cycle28) ---------- */
 test('delOwner: 사용 중인 자산이 없으면 확인 시트 후 삭제하고 undoToast로 되돌릴 수 있다', () => {
   sandbox.DB = { owners: ['나', '아내', '아이'], assets: [] };
@@ -2018,6 +2048,49 @@ test('addOwner: 이미 톰스톤된(지워진) 이름을 다시 추가하면 톰
   sandbox.addOwner();
   assert.deepStrictEqual(sandbox.DB.owners, ['나', '아내']);
   assert.strictEqual(sandbox.ownerTombKey('아내') in sandbox.DB.deletedIds, false, '재추가한 이름의 톰스톤은 지워져야 다음 병합에서 되살아남');
+});
+
+/* ---------- doRenameOwner: 이름변경도 delOwner과 동일하게 옛 이름을 톰스톤해야 한다(app-evolve cycle180) ----------
+ * doRenameCat과 완전히 동일한 사연 — doRenameOwner는 assets/goals의 owner를 old에서 v로 옮기지만
+ * DB.owners에서 old 자체를 지우는 것과 동치인데도 ownerTombKey 톰스톤을 남기지 않아,
+ * mergeNameListWithTombstones가 old를 되살릴 수 있었다. ---------- */
+test('doRenameOwner: 이름변경 시 옛 이름에 ownerTombKey 톰스톤이 남는다', () => {
+  sandbox.DB = { owners: ['나', '아빠'], assets: [] };
+  sandbox.ST = { plan: {} };
+  const $orig = sandbox.$;
+  sandbox.$ = (id) => (id === 'renameOwner' ? { value: '아버지' } : $orig(id));
+  try {
+    sandbox.doRenameOwner(1);
+  } finally {
+    sandbox.$ = $orig;
+  }
+  assert.strictEqual(sandbox.DB.deletedIds[sandbox.ownerTombKey('아빠')] > 0, true, '이름변경으로 사라진 옛 이름도 톰스톤이 남아야 함');
+});
+test('doRenameOwner: 과거에 지워졌던(톰스톤된) 이름으로 되돌아가면 그 톰스톤은 지워진다', () => {
+  sandbox.DB = { owners: ['나', '아빠'], assets: [], deletedIds: { [sandbox.ownerTombKey('아버지')]: 1000 } };
+  sandbox.ST = { plan: {} };
+  const $orig = sandbox.$;
+  sandbox.$ = (id) => (id === 'renameOwner' ? { value: '아버지' } : $orig(id));
+  try {
+    sandbox.doRenameOwner(1);
+  } finally {
+    sandbox.$ = $orig;
+  }
+  assert.strictEqual(sandbox.ownerTombKey('아버지') in sandbox.DB.deletedIds, false, '되돌아온 이름의 톰스톤은 지워져야 다음 병합에서 되살아남');
+});
+test('doRenameOwner → mergeNameListWithTombstones: 이름변경 전으로 동기화가 안 된 다른 기기의 사본이 옛 이름을 되살리지 못한다', () => {
+  sandbox.DB = { owners: ['나', '아빠'], assets: [] };
+  sandbox.ST = { plan: {} };
+  const $orig = sandbox.$;
+  sandbox.$ = (id) => (id === 'renameOwner' ? { value: '아버지' } : $orig(id));
+  try {
+    sandbox.doRenameOwner(1); // 기기A: 아빠 -> 아버지로 이름변경, 아빠를 톰스톤
+  } finally {
+    sandbox.$ = $orig;
+  }
+  const remoteB = ['나', '아빠']; // 기기B: 아직 이름변경 전
+  const merged = sandbox.mergeNameListWithTombstones(sandbox.DB.owners, remoteB, sandbox.DB.deletedIds, sandbox.ownerTombKey, sandbox.normName);
+  assert.deepStrictEqual(merged, ['나', '아버지'], '톰스톤된 옛 이름(아빠)이 좀비로 되살아나면 안 됨');
 });
 
 /* ---------- delBudget: 예산 삭제도 delCat/delOwner처럼 undo 가능해야 한다 (cycle29), 이제는 과거 이력을 보존한다 (cycle32) ---------- */
