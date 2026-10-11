@@ -1,15 +1,12 @@
 {
   "cycle": 175,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "복원(restoreBackup)의 6초 되돌리기 창에도 전체초기화(doResetAll)와 동일하게 클라우드 push 지연 적용",
+    "why": "importFile change 핸들러(index.html ~6136-6147)는 DB 전체교체 후 plain save()를 호출해 1.2초 디바운스로 즉시 클라우드에 push되는데, 같은 화면이 보여주는 undoToast 되돌리기 창은 6초다. 똑같은 '전체교체+타임드 undo' 패턴인 doResetAll()(8139-8142)은 이미 save({deferCloudPush:true})+setTimeout(scheduleCloudPush,6000)+되돌리기 시 clearTimeout으로 6초를 지켜주므로, restoreBackup 경로만 비대칭적으로 비는 상태 — 가족 공유 계정에서 사용자가 잘못된 백업을 복원했다가 3~4초 내 되돌려도, 이미 push된 틀린 데이터가 다른 기기에 pull되어 merge될 수 있다.",
+    "approach": "index.html의 importFile 'change' 핸들러(confirmSheet 콜백 내부, 현재 save();invalidateBalances();renderCurrent(); 줄)를 doResetAll과 동일한 패턴으로 수정: save() 대신 save({deferCloudPush:true}) 호출, 바로 뒤에 const restorePushT=setTimeout(scheduleCloudPush,6000) 추가, undoToast 콜백(DB=prev;save();invalidateBalances();renderCurrent();toast('되돌렸어요')) 맨 앞에 clearTimeout(restorePushT) 삽입(되돌린 뒤의 save()는 opts 없이 그대로 두면 자신의 정상 push를 예약하므로 손대지 않음). doResetAll 쪽 주석과 교차 참조하는 짧은 주석 추가. test/run.js에 FUNCTIONS로 추출 가능한 순수 로직이 아니라 top-level statement라, 기존 cycle170/171 setInterval/addEventListener 캡처 패턴처럼 confirmSheet/save/setTimeout/undoToast를 스텁으로 캡처해 (a) 복원 직후 save가 deferCloudPush:true로 호출되는지 (b) 6초 후 scheduleCloudPush가 호출되는지 (c) 되돌리기를 누르면 clearTimeout이 restorePushT로 호출되고 이후 scheduleCloudPush가 호출되지 않는지 (d) 되돌리기 후 save()는 opts 없이 호출되는지, 총 4건 내외 추가. index.html/sw.js 변경이라 APP_VERSION/sw.js CACHE 버전 갱신 필요. node test/run.js로 베이스라인(1235/1235) 대비 통과 확인."
+  },
   "history": [
-    {
-      "cycle": 170,
-      "phase": "critique",
-      "timestamp": "2026-10-10T04:40:00.000Z",
-      "summary": "general-purpose 서브에이전트로 141-170사이클 전부(특히 164-170의 sanitizeBackup/a11y/CSV가드/시계오차/stale-pull/goalProgress/doMaturity 미세수정들) + 기각 이력을 전달하고 앱 전체를 더 멀리서(세션 생명주기/네트워크 관점) 재조망. 새로 발견: pushCloud()(1804-1852)가 실패하면 CLOUD_SYNC_STATE='error'로 두고 토스트 1회만 띄우는데, 이후 복구 경로(로컬 편집->save(), navigator.onLine false->true 플립, pullCloudIfStale() 성공 부작용)가 전부 navigator.onLine이 안 바뀌는 흔한 일시적 실패(5xx/타임아웃)에는 작동하지 않고, pullCloudIfStale()도 같은 이유로 pull이 실패하면 save()에 도달 못 해 push를 구제 못함. homeAlerts()(7072-7101)는 cloudConflict/clockSkew 등 카드가 있지만 CLOUD_SYNC_STATE==='error'엔 분기가 전혀 없어 토스트가 사라진 뒤로는 사용자가 알 길이 없고, 그날 더 편집을 안 하면 영원히 멈춤 — cycle167/169가 고친 '재개/stay-open 중 재-pull' 공백과 대칭을 이루는, 'push 실패 후 자동 재시도+지속 경고'가 없는 마지막 공백. 가족 공유 계정에서 기기 A가 불안정한 네트워크로 지출 기록->push 실패->그대로 방치되면 기기 B는 그 거래를 영원히 못 보고 기기 A가 분실/초기화되면 조용히 데이터가 사라질 수 있음. 기존 pullCloudIfStale 60초 interval(cycle169) 옆에 독립된 새 setInterval로 CLOUD_SYNC_STATE==='error'일 때만 pushCloud() 재시도 + homeAlerts()/homeAlertCard()에 cloudConflict와 같은 스타일의 cloudSyncError 카드(openAccountSheet로 안내) 추가하는 계획을 pending_advance_plan에 저장. 러너업(기각): 반복거래 skip/edits/confirmedDates 배열 무제한 증가(cycle165에서 이미 기각된 사안 재확인, 권위 있는 이력 데이터라 함부로 prune하면 위험해 저가치), mergeCollection()의 레코드 전체 단위 LWW가 두 기기가 같은 레코드의 '다른 필드'를 동시에 편집하면 한쪽을 조용히 덮어쓰는 문제(실재하지만 전체 컬렉션에 걸친 필드 단위 3-way 병합 재설계가 필요해 한 cycle 범위 초과, 이미 배포된 clockSkew 경고는 이 문제의 절반만 다룸), 카테고리/귀속/자산 삭제·이름변경 cascade 재감사(doDeleteCat/doRenameCat/delOwner 등 전수 확인 결과 참조 정합성 가드 이미 충분, 버그 없음). 코드 변경 없음(읽기 전용 조사).",
-      "commit": null
-    },
     {
       "cycle": 170,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-11T02:30:00.000Z",
       "summary": "cycle175 develop(sanitizeBackup()에 반복거래 weekend 필드 검증 추가) 검토 — grep으로 WK 객체(index.html:4198-4202)가 'none'/'earlier'/'later' 키만 가짐을 확인해 ①(미지값→WK[d.weekend][0] undefined[0] TypeError)이 실제로 재현 가능함을 검증했고, recFreq()(4240줄, if(v!=='monthly')recDraft.weekend='none')가 주장된 불변식('daily/weekly/yearly엔 weekend!=='none'이 안 남는다')을 정확히 그 코드로 지켜줌을 확인해 ②(스케줄 비monthly인데 weekend가 'earlier'/'later'로 남아 recDates()가 회차를 삼키는 데이터 손실)의 전제도 사실임을 확인했다. 정규화 조건문(if 불명값→none, else if freq!=='monthly'&&truthy&&!='none'→none)의 분기가 상호 배타적이고 falsy/빈문자열/필드없음 케이스는 그대로 둬 기존 동작과 호환됨을 코드로 대조. node test/run.js 1235/1235 전부 통과(독립 재실행으로 재확인). 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
+      "commit": null
+    },
+    {
+      "cycle": 175,
+      "phase": "critique",
+      "timestamp": "2026-10-11T03:10:00.000Z",
+      "summary": "general-purpose 서브에이전트로 141-175사이클 전부(기각 이력 포함)를 전달하고 앱 전체를 재조망. 새로 발견: importFile 'change' 핸들러(index.html ~6136-6147)가 restoreBackup()으로 DB를 통째로 교체한 뒤 plain save()를 호출해 1.2초 디바운스로 거의 즉시 클라우드에 push되는데, 같은 화면의 undoToast 되돌리기 창은 6초라고 안내함(confirmSheet 문구 '복원 후 6초 안에는 되돌릴 수 있어요'). 동일하게 'DB 전체교체+타임드 undo' 패턴인 doResetAll()(8139-8142)은 이미 save({deferCloudPush:true})+setTimeout(scheduleCloudPush,6000)+되돌리기 시 clearTimeout으로 자신의 6초 창을 정확히 지키도록 처리돼 있어, restoreBackup 경로만 비대칭적으로 비어 있음을 두 함수의 실제 코드를 대조해 확인. 가족 공유 계정에서 사용자가 틀린 백업을 복원했다가 3~4초 내 되돌려도, 이미 push된 틀린 데이터가 다른 기기의 pullCloudIfStale/online 핸들러에 의해 merge될 수 있고 최악의 경우 되돌림 직후의 재push와 다른 기기의 merge-후-push가 경합해 사용자가 이미 스스로 취소한 일로 cloud-conflict 수동 해결 화면까지 갈 수 있음을 확인. doResetAll과 완전히 동일한 패턴(save({deferCloudPush:true}) + setTimeout(scheduleCloudPush,6000) + undo 콜백에서 clearTimeout)을 restoreBackup 커밋 콜백에 적용하는 계획을 pending_advance_plan에 저장. 러너업(기각): CSV 가져오기 되돌리기(doCsvImport, 6206줄)가 DB.deletedIds 툼스톤 없이 추가 전용이라 push 모델상 자가치유되어 심각도 낮음, varyingRecs()/pendingTransferCount()가 매 호출마다 RANGE_FROM(2023-01-01)~TODAY 전체를 스캔하는 성능 비용(상관관계 있는 정확성 버그 없이 순수 추측, 느린 경로 재현 못함), CSV 가져오기 매칭/클라우드 merge/자산삭제-relink/카테고리 rename cascade/접근성/netlify fallback/goal·debt 홈알림 전수 재확인 결과 모두 이미 충분히 견고함 확인. 코드 변경 없음(읽기 전용 조사).",
       "commit": null
     }
   ]
