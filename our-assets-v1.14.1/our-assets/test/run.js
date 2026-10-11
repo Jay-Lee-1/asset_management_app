@@ -7467,6 +7467,111 @@ test('mergeCollection: (회귀 방지) touch() 없이 이름 스냅샷만 찍혔
   assert.strictEqual(out2[0].fromAssetName, undefined, 'touch() 없이는 동률 시 local(스냅샷 없는 미동기화 사본)이 이겨 이름 스냅샷이 조용히 사라짐(수정 전 버그 재현)');
 });
 
+/* ---------- mergeRecurrences: mergeCollection과 달리 DB.recurrences만을 위한 전용 병합(app-evolve
+ * cycle177 critique/advance) — 같은 id가 양쪽에 다 살아있으면 레코드 전체를 통째로 승자/패자로
+ * 가르는 대신 skip[]/edits{}는 합쳐서 보존한다. 스칼라 필드(day/freq 등)와 id/tombstone 판정은
+ * mergeCollection과 동일해야 하므로, 그 부분은 기존 mergeCollection 테스트 입력을 그대로 재사용해
+ * 회귀가 없는지 함께 확인한다. ---------- */
+test('mergeRecurrences: 같은 id를 로컬/원격이 각자 다른 회차를 skip했으면(원격이 더 최근 updatedAt), 두 skip 모두 합쳐서 보존된다', () => {
+  const local = { id: 'r1', day: 5, freq: 'monthly', startDate: '2026-01-01', weekend: 'none', skip: ['2026-02-05'], edits: {}, updatedAt: 100 };
+  const remote = { id: 'r1', day: 5, freq: 'monthly', startDate: '2026-01-01', weekend: 'none', skip: ['2026-03-05'], edits: {}, updatedAt: 200 };
+  const out = sandbox.mergeRecurrences([local], [remote], {}, {});
+  assert.strictEqual(out.length, 1);
+  assert.deepStrictEqual(j(out[0].skip.slice().sort()), ['2026-02-05', '2026-03-05'], 'mergeCollection처럼 더 최근(remote) 쪽 skip만 남으면 로컬이 지운 2월 회차가 되살아남 — 반드시 둘 다 있어야 함');
+});
+test('mergeRecurrences: 같은 id를 로컬/원격이 서로 다른 날짜 키를 edits했으면 둘 다 합쳐서 보존된다', () => {
+  const local = { id: 'r1', day: 5, freq: 'monthly', startDate: '2026-01-01', weekend: 'none', skip: [], edits: { '2026-02-05': { amount: 1000 } }, updatedAt: 100 };
+  const remote = { id: 'r1', day: 5, freq: 'monthly', startDate: '2026-01-01', weekend: 'none', skip: [], edits: { '2026-03-05': { amount: 2000 } }, updatedAt: 200 };
+  const out = sandbox.mergeRecurrences([local], [remote], {}, {});
+  assert.strictEqual(Object.keys(out[0].edits).length, 2);
+  assert.strictEqual(out[0].edits['2026-02-05'].amount, 1000);
+  assert.strictEqual(out[0].edits['2026-03-05'].amount, 2000);
+});
+test('mergeRecurrences: 같은 날짜 키를 양쪽이 서로 다르게 edits했으면(충돌) local이 이긴다 — mergeBudgetHistory와 동일한 관례, updatedAt 비교와 무관', () => {
+  const local = { id: 'r1', day: 5, freq: 'monthly', startDate: '2026-01-01', weekend: 'none', skip: [], edits: { '2026-02-05': { amount: 1000 } }, updatedAt: 100 };
+  const remote = { id: 'r1', day: 5, freq: 'monthly', startDate: '2026-01-01', weekend: 'none', skip: [], edits: { '2026-02-05': { amount: 9999 } }, updatedAt: 200 };
+  const out = sandbox.mergeRecurrences([local], [remote], {}, {});
+  assert.strictEqual(Object.keys(out[0].edits).length, 1);
+  assert.strictEqual(out[0].edits['2026-02-05'].amount, 1000, 'updatedAt이 더 큰 쪽(remote)이 레코드 전체의 승자라도, 같은 날짜 키 충돌에서는 local이 이겨야 함');
+});
+test('mergeRecurrences: skip에 같은 날짜가 양쪽에 중복으로 있어도 결과엔 한 번만 남는다(Set 합집합)', () => {
+  const local = { id: 'r1', day: 5, freq: 'monthly', startDate: '2026-01-01', weekend: 'none', skip: ['2026-02-05', '2026-03-05'], edits: {}, updatedAt: 100 };
+  const remote = { id: 'r1', day: 5, freq: 'monthly', startDate: '2026-01-01', weekend: 'none', skip: ['2026-03-05'], edits: {}, updatedAt: 200 };
+  const out = sandbox.mergeRecurrences([local], [remote], {}, {});
+  assert.deepStrictEqual(j(out[0].skip.slice().sort()), ['2026-02-05', '2026-03-05']);
+});
+test('mergeRecurrences: 스칼라 필드(day 등)는 mergeCollection과 동일하게 updatedAt이 더 큰 쪽을 그대로 쓴다', () => {
+  const local = { id: 'r1', day: 5, memo: 'stale-local', freq: 'monthly', startDate: '2026-01-01', weekend: 'none', skip: [], edits: {}, updatedAt: 100 };
+  const remote = { id: 'r1', day: 10, memo: 'newer-remote', freq: 'monthly', startDate: '2026-01-01', weekend: 'none', skip: [], edits: {}, updatedAt: 200 };
+  const out = sandbox.mergeRecurrences([local], [remote], {}, {});
+  assert.strictEqual(out[0].day, 10);
+  assert.strictEqual(out[0].memo, 'newer-remote');
+});
+// 아래 4건은 mergeCollection의 id/tombstone 판정 테스트(위)와 완전히 같은 입력을 mergeRecurrences에
+// 통과시켜, skip/edits 합집합 병합을 추가하면서도 id/tombstone 판정 자체는 그대로인지 확인한다.
+test('mergeRecurrences: (회귀) id가 한쪽에만 있고 tombstone도 없으면 그대로 채택한다', () => {
+  const local = [{ id: 'r1', memo: 'only-local', updatedAt: 10 }];
+  const remote = [{ id: 'r2', memo: 'only-remote', updatedAt: 10 }];
+  const out = sandbox.mergeRecurrences(local, remote, {}, {});
+  assert.strictEqual(out.length, 2);
+  assert.strictEqual(out.find((r) => r.id === 'r1').memo, 'only-local');
+  assert.strictEqual(out.find((r) => r.id === 'r2').memo, 'only-remote');
+});
+test('mergeRecurrences: (회귀) 한쪽에서 삭제(tombstone)했고 다른 쪽은 그 이후 손대지 않았으면 삭제가 이긴다', () => {
+  const local = [];
+  const remote = [{ id: 'r1', memo: 'stale-remote', updatedAt: 50 }];
+  const out = sandbox.mergeRecurrences(local, remote, { r1: 100 }, {});
+  assert.strictEqual(out.length, 0);
+});
+test('mergeRecurrences: (회귀) 한쪽에서 삭제(tombstone)했지만 다른 쪽이 그 삭제 이후에 수정했으면 수정이 삭제를 이긴다', () => {
+  const local = [];
+  const remote = [{ id: 'r1', memo: 'revived', updatedAt: 150 }];
+  const out = sandbox.mergeRecurrences(local, remote, { r1: 100 }, {});
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].memo, 'revived');
+});
+test('mergeRecurrences: (회귀) localArr/remoteArr/deletedIds가 없어도(undefined) 터지지 않는다', () => {
+  const out = sandbox.mergeRecurrences(undefined, undefined, undefined, undefined);
+  assert.strictEqual(out.length, 0);
+});
+test("mergeRemoteDataIntoLocal: DB.recurrences는 mergeRecurrences로 병합되고, base로 고른 쪽의 스케줄이 다르면 병합 직후 pruneOrphanRecOverrides로 고아가 된 skip/edits가 정리된다(app-evolve cycle177 advance)", () => {
+  sandbox.RANGE_TO = '2026-12-31';
+  sandbox.DB = {
+    recurrences: [
+      // 로컬: day=5 기준 2월 회차를 skip(새 day=10 스케줄에선 고아가 됨), 3월 10일도 skip(우연히 새
+      // 스케줄에서도 그대로 생성되는 날짜라 합집합 병합이 실제로 일어났을 때만 살아남음).
+      { id: 'r1', day: 5, freq: 'monthly', startDate: '2026-01-05', endDate: null, weekend: 'none', skip: ['2026-02-05', '2026-03-10'], edits: {}, updatedAt: 100 },
+    ],
+    deletedIds: {},
+  };
+  sandbox.mergeRemoteDataIntoLocal({
+    // 원격: day=10으로 스케줄을 바꿔 먼저 저장(updatedAt이 더 커서 base로 선택됨). 원격 자신의
+    // skip은 비어 있으므로, 결과에 남는 skip은 전부 로컬에서 합쳐진 것이어야 한다.
+    recurrences: [{ id: 'r1', day: 10, freq: 'monthly', startDate: '2026-01-05', endDate: null, weekend: 'none', skip: [], edits: { '2026-04-10': { amount: 999 } }, updatedAt: 200 }],
+    deletedIds: {},
+  });
+  const r = sandbox.DB.recurrences.find((x) => x.id === 'r1');
+  assert.strictEqual(r.day, 10, 'updatedAt이 더 큰 원격의 새 스케줄이 base로 채택되어야 함');
+  assert.deepStrictEqual(j(r.skip), ['2026-03-10'], '로컬의 2026-02-05(day=5 기준)는 새 스케줄(day=10)과 안 맞아 정리되고, 2026-03-10은 새 스케줄에도 그대로 생성되므로 합쳐진 채 남아야 함 — mergeCollection처럼 로컬 skip을 통째로 버리면 이 자리가 빈 배열([])이 됨');
+  assert.strictEqual(Object.keys(r.edits).length, 1, '새 스케줄(day=10)에도 그대로 생성되는 2026-04-10 edits는 남아야 함');
+  assert.ok(r.edits['2026-04-10'], '고아가 아닌 edits는 정리 대상이 아님');
+});
+test("mergeRemoteDataIntoLocal: DB.recurrences 병합 후 스케줄이 그대로면(base와 패자가 같은 day/freq/startDate/weekend) pruneOrphanRecOverrides가 합쳐진 skip/edits를 건드리지 않는다(회귀 방지)", () => {
+  sandbox.RANGE_TO = '2026-12-31';
+  sandbox.DB = {
+    recurrences: [
+      { id: 'r1', day: 5, freq: 'monthly', startDate: '2026-01-05', endDate: null, weekend: 'none', skip: ['2026-02-05'], edits: {}, updatedAt: 100 },
+    ],
+    deletedIds: {},
+  };
+  sandbox.mergeRemoteDataIntoLocal({
+    recurrences: [{ id: 'r1', day: 5, freq: 'monthly', startDate: '2026-01-05', endDate: null, weekend: 'none', skip: ['2026-03-05'], edits: {}, updatedAt: 200 }],
+    deletedIds: {},
+  });
+  const r = sandbox.DB.recurrences.find((x) => x.id === 'r1');
+  assert.deepStrictEqual(j(r.skip.slice().sort()), ['2026-02-05', '2026-03-05'], '스케줄이 안 바뀌었으니 합쳐진 두 skip 모두 그대로 남아야 함');
+});
+
 /* ---------- mergeNameList/mergeBudgetHistory: mergeRemoteDataIntoLocal()이 DB.categories/
  * DB.owners/DB.budgetHistory를 병합하는 데 쓰는 순수 함수(app-evolve cycle102 critique/advance).
  * 이전엔 이 셋이 전혀 병합되지 않아, 두 기기가 오프라인 상태에서 각자 카테고리/귀속/예산을

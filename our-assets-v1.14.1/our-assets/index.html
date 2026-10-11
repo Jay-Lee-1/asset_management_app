@@ -1356,7 +1356,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.122';
+const APP_VERSION='1.47.123';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1497,7 +1497,8 @@ function mergeRemoteDataIntoLocal(remoteData){
   if(!(id in DB.deletedIds)||remoteData.deletedIds[id]>DB.deletedIds[id])DB.deletedIds[id]=remoteData.deletedIds[id];
  });
  DB.txns=mergeCollection(DB.txns,remoteData.txns,DB.deletedIds,remoteData.deletedIds);
- DB.recurrences=mergeCollection(DB.recurrences,remoteData.recurrences,DB.deletedIds,remoteData.deletedIds);
+ DB.recurrences=mergeRecurrences(DB.recurrences,remoteData.recurrences,DB.deletedIds,remoteData.deletedIds); /* mergeCollection과 달리 skip/edits는 합집합으로 보존(logic.js mergeRecurrences 주석 참고) */
+ DB.recurrences.forEach(pruneOrphanRecOverrides); /* 병합이 다른 스케줄을 가진 쪽을 base로 고르면 합쳐진 skip/edits 중 일부가 그 새 스케줄과 안 맞을 수 있어, saveRec 계열과 동일하게 병합 직후에도 정리한다(스케줄·skip/edits가 그대로면 0건 정리) */
  DB.assets=mergeCollection(DB.assets,remoteData.assets,DB.deletedIds,remoteData.deletedIds);
  DB.goals=mergeCollection(DB.goals,remoteData.goals,DB.deletedIds,remoteData.deletedIds); /* app-evolve cycle123: 신설(cycle122) 당시 여기 누락돼 두 기기가 오프라인에서 각자 목표를 고치면 한쪽이 조용히 소실/복원되던 버그 */
  DB.inquiries=mergeCollection(DB.inquiries,remoteData.inquiries,DB.deletedIds,remoteData.deletedIds); /* app-evolve cycle133: goals와 동일한 누락 — 문의 메모에 id/updatedAt이 없을 때부터 여기서 전혀 병합되지 않고 있었음 */
