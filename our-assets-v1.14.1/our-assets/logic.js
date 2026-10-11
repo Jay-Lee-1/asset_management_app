@@ -451,9 +451,17 @@ function nwChartKeyStep(curIdx,key,len){
 /* ================= ASSET BALANCE HISTORY (개별 자산 잔액 추이, 순수) ================= */
 /* from~to 사이를 최대 maxPoints개의 날짜로 균등 샘플링한다(날짜 간격 기준, nwChartPath류와 동일한
  * '일수 비례' 원칙). 구간이 maxPoints보다 짧으면 매일 하나씩(다운샘플링 없이) 반환해 짧은 기간에서
- * 디테일을 잃지 않는다(1개월 보기가 nwHistoryRange처럼 일별이어야 함). from>to면 빈 배열. */
+ * 디테일을 잃지 않는다(1개월 보기가 nwHistoryRange처럼 일별이어야 함). from>to면 빈 배열.
+ * maxPoints<=1은 호출부(assetBalCard/debtsBehind, 둘 다 항상 60 리터럴)가 실제로 넘기지는
+ * 않지만, 이 함수는 로직 전용 파일에 모아둔 재사용 가능한 순수 함수라 평소처럼 입력 자체의
+ * 정의역을 가드한다 — maxPoints===1이면 아래 균등분배 분기의 분모(maxPoints-1)가 0이 되어
+ * Math.round(0/0)이 NaN이 되고 첫 샘플이 "NaN-NaN-NaN"이라는 깨진 날짜 문자열로 나간다
+ * (maxPoints<=0은 루프가 0번 돌아 우연히 안전했던 것과 달리, 정확히 1일 때만 터지는 숨은
+ * 0-나누기였다). 1개만 요청하면 구간을 대표하는 to 하나만 돌려준다(maxPoints<=0일 때의 기존
+ * 동작과 동일 — 그쪽은 가드가 없어도 안전했지만 모양을 그대로 유지). */
 function assetBalSampleDates(from,to,maxPoints){
  if(from>to)return [];
+ if(maxPoints<=1)return [to];
  const totalDays=daysBetween(from,to);
  if(totalDays<=maxPoints-1){
   const out=[];for(let i=0;i<=totalDays;i++)out.push(addDays(from,i));return out;

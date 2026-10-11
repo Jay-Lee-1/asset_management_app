@@ -2356,6 +2356,26 @@ test('assetBalSampleDates: 구간이 maxPoints보다 길면 균등 샘플링하�
   assert.ok(out.length <= 5, `최대 5개를 넘지 않아야 함 (실제 ${out.length})`);
   for (let i = 1; i < out.length; i++) assert.ok(out[i - 1] < out[i], '날짜가 오름차순이어야 함');
 });
+/* maxPoints===1 숨은 0-나누기 버그 (app-evolve cycle176 develop): 균등분배 분기의 분모가
+ * maxPoints-1이라, 정확히 1을 요청하면 분모가 0이 되어 Math.round(0/0)=NaN이 첫 샘플의 날짜
+ * 연산에 그대로 흘러들어가 "NaN-NaN-NaN"이라는 깨진 날짜 문자열을 반환했다(수정 전 재현:
+ * assetBalSampleDates('2026-01-01','2026-01-10',1) === ['NaN-NaN-NaN','2026-01-10']).
+ * maxPoints<=0은 루프가 0번 돌아 이 나누기 자체를 타지 않아 우연히 깨지지 않았다 — 현재 두
+ * 호출부(assetBalCard/debtsBehind)는 항상 리터럴 60을 넘겨 오늘은 닿지 않지만, 이 함수는
+ * logic.js에 모인 재사용 가능한 순수 함수라 입력 정의역 자체를 가드해야 한다. */
+test('assetBalSampleDates: maxPoints===1이면 분모 0-나누기로 NaN 날짜가 섞이지 않고 to 하나만 반환한다', () => {
+  const out = JSON.parse(JSON.stringify(sandbox.assetBalSampleDates('2026-01-01', '2026-01-10', 1)));
+  assert.deepStrictEqual(out, ['2026-01-10']);
+  assert.ok(!out.some((d) => typeof d !== 'string' || d.includes('NaN')), 'NaN이 섞인 깨진 날짜 문자열이 없어야 함');
+});
+test('assetBalSampleDates: maxPoints===1이고 from===to면 그 날짜 하나를 그대로 반환한다(회귀 확인)', () => {
+  const out = JSON.parse(JSON.stringify(sandbox.assetBalSampleDates('2026-01-01', '2026-01-01', 1)));
+  assert.deepStrictEqual(out, ['2026-01-01']);
+});
+test('assetBalSampleDates: maxPoints<=0(0 또는 음수)은 기존처럼 to 하나만 반환한다(회귀 확인)', () => {
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.assetBalSampleDates('2026-01-01', '2026-01-10', 0))), ['2026-01-10']);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.assetBalSampleDates('2026-01-01', '2026-01-10', -3))), ['2026-01-10']);
+});
 test('assetBalanceSeries: 기준액만 있고 거래가 없으면 모든 날짜가 기준액 그대로다', () => {
   const dates = ['2026-01-01', '2026-01-15', '2026-02-01'];
   const out = JSON.parse(JSON.stringify(sandbox.assetBalanceSeries([], 'a1', 10000, 1, dates)));
