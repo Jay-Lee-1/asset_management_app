@@ -1326,12 +1326,33 @@ body.selmode .fab{display:none}
      해시를 계산할 수 없었다 — 틀린 해시를 넣으면 브라우저가 무결성 불일치로 스크립트 실행을 막아
      Kakao 로그인/Supabase 동기화가 전면 중단되므로(하지 않느니만 못함), 억지로 채우지 않았다.
      CDN 접근이 가능한 환경에서 각 URL의 실제 응답을 내려받아 sha384 해시를 계산해 채울 것. -->
-<script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.4/kakao.min.js" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" crossorigin="anonymous"></script>
+<script>
+/* Kakao SDK/Supabase JS를 정적 <script src>(파서 블로킹) 대신 동적 로더로 올린다. sw.js는 타 origin
+ * 요청을 캐싱하지 않으므로(오프라인 캐시 대상 밖) 이 두 스크립트는 PWA 오프라인 설계의 유일한 예외였다 —
+ * 캡티브 포털/불안정 네트워크에서 TCP 연결이 수초~수십초 행(hang)하면 boot()도, window.onerror도,
+ * 게스트 전용 로컬 기능조차 전혀 못 뜨고 화면이 완전히 빈 채로 멈췄다. loadScriptWithTimeout은
+ * 성공/실패/타임아웃을 구분하지 않고 항상 resolve하는 Promise를 돌려줘(withTimeout/fetchWithTimeout과
+ * 같은 타임아웃 관례), boot()이 SDK_READY를 기다리더라도 최악의 경우에도 6초 뒤엔 반드시 풀려난다. */
+function loadScriptWithTimeout(src,ms){
+ return new Promise(resolve=>{
+  let done=false;
+  const finish=()=>{if(done)return;done=true;clearTimeout(timer);resolve()};
+  const timer=setTimeout(finish,ms||6000);
+  const el=document.createElement('script');
+  el.src=src;el.crossOrigin='anonymous';
+  el.onload=finish;el.onerror=finish;
+  document.head.appendChild(el);
+ });
+}
+const SDK_READY=Promise.all([
+ loadScriptWithTimeout('https://t1.kakaocdn.net/kakao_js_sdk/2.7.4/kakao.min.js'),
+ loadScriptWithTimeout('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js')
+]);
+</script>
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.120';
+const APP_VERSION='1.47.121';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -7775,6 +7796,9 @@ function startApp(){
  setInterval(checkNotifyAlerts,5*60*1000); /* 5분마다 확인 → 백그라운드일 때만 OS 알림 발송 */
 }
 async function boot(){
+ await SDK_READY; /* 최악의 경우에도 6초 내에 풀려남(위 loadScriptWithTimeout) — 그 뒤부터는 로그인/게스트
+  * 진입 흐름이 평소와 동일하게 진행된다(sbReady/kakaoReady가 window.supabase/window.Kakao 존재를
+  * 방어적으로 체크하므로, SDK 로딩이 실패/타임아웃됐어도 여기 아래 로직은 그대로 안전하다). */
  migrateLegacy();
  /* 로그인 전에도 PASSWORD_RECOVERY 리스너를 미리 바인딩해둬야, 다른 기기에서 재설정 메일 링크를
   * 열었을 때(이 기기엔 로컬 세션이 없을 수 있음) 새 비밀번호 설정 시트가 뜬다 */

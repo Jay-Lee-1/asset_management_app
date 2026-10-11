@@ -230,6 +230,11 @@ const FUNCTIONS = [
   // 전혀 지원하지 않는데 UI에 그 사실이 전혀 드러나지 않던 공백)의 advance 구현 — 둘 다 shallow해서
   // (순수 문자열 반환, openSheet() 호출뿐) 기존 공유 스텁만으로 실행 검증 가능.
   'kakaoSyncLabel', 'openKakaoSwitchSheet',
+  // loadScriptWithTimeout/boot는 app-evolve cycle176 advance(Kakao/Supabase CDN 정적 <script>
+  // 태그를 파서 블로킹에서 벗어난 동적 로더+타임아웃으로 교체) 구현 검증용. boot()은 document/
+  // AUTH/APPLOCK/startApp/showAuth 등 비순수 전역에 엮여 있어 SDK_READY 테스트 블록에서 그때그때
+  // 필요한 스텁을 임시로 바꿔 끼운다(doLogout/doResetAll 등 기존 [실행형] 테스트와 같은 패턴).
+  'loadScriptWithTimeout', 'boot',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -356,10 +361,26 @@ const sandbox = {
   // doLogout()이 호출하는 AUTH.signOut() — 실제 로그아웃(세션 삭제)은 화면 전용 부수효과라
   // closeSheet/toast와 같은 이유로 호출 여부만 기록하는 스파이로 흉내낸다(app-evolve cycle152 advance).
   authSignOutCalls: 0,
-  AUTH: { rec: () => null, signOut: () => { sandbox.authSignOutCalls++; } },
+  // exists()/current()는 boot()가 직접 참조한다(AUTH.exists(SESSION)로 지역 계정 존재 확인,
+  // AUTH.current()로 "로그인된 사용자가 있는가" 분기) — 기본값은 SESSION/AUTH.current를 직접
+  // 세팅하는 boot() 테스트들이 로그인 전 상태(둘 다 falsy)를 가정하므로 true/null로 둔다.
+  AUTH: { rec: () => null, signOut: () => { sandbox.authSignOutCalls++; }, exists: () => true, current: () => null },
   // GUEST는 index.html에서 `let GUEST=localStorage.getItem('asset_app_guest')==='1'`로 파생되는
   // 비순수 상태라(SESSION/CLOUD_UID와 같은 이유) doLogout/doResetAll 테스트에서 직접 세팅한다.
   GUEST: null,
+  // migrateLegacy()/startApp()/lockApp()은 boot()가 호출하는 화면 전용 부수효과(각각 레거시
+  // localStorage 키 이전, 앱 화면 전환, PIN 잠금화면 전환)라 showAuth/scheduleCloudPush와 같은
+  // 이유로 호출 여부만 기록하는 스파이로 흉내낸다(app-evolve cycle176 advance, SDK_READY 테스트).
+  migrateLegacyCalls: 0,
+  migrateLegacy: () => { sandbox.migrateLegacyCalls++; },
+  startAppCalls: 0,
+  startApp: () => { sandbox.startAppCalls++; },
+  lockAppCalls: 0,
+  lockApp: () => { sandbox.lockAppCalls++; },
+  // SDK_READY는 index.html에서 Kakao/Supabase 동적 로더(loadScriptWithTimeout) 두 개를 Promise.all로
+  // 묶은 모듈 스코프 상수(app-evolve cycle176 advance) — document.createElement 등 실제 DOM 로딩을
+  // 재현하지 않고(SW_REG/CLOUD_UID와 같은 이유) boot() 테스트에서 제어 가능한 Promise를 직접 세팅한다.
+  SDK_READY: null,
   catRenameDraft: null,
   catAddDraft: null,
   asDraft: null,
@@ -553,7 +574,9 @@ const sandbox = {
   // 둘 다 화면 전용 부수효과(실제 APPLOCK 객체/화면 전환)라 closeSheet/toast와 같은 이유로
   // 호출 여부만 기록하는 스파이로 흉내낸다.
   appLockDisableCalls: 0,
-  APPLOCK: { disable: () => { sandbox.appLockDisableCalls++; } },
+  // enabled()는 boot()가 로그인/게스트 진입 직후 PIN 잠금화면으로 보낼지 묻는다(app-evolve
+  // cycle176 advance SDK_READY 테스트) — 기본값은 PIN 미설정(false)으로 둔다.
+  APPLOCK: { disable: () => { sandbox.appLockDisableCalls++; }, enabled: () => false },
   unlockAppCalls: 0,
   unlockApp: () => { sandbox.unlockAppCalls++; },
   // renderLockView()가 잠김(backoff) 상태에서 재시도 타이머를 재설정할 때 부르는
@@ -13329,20 +13352,125 @@ if (stockFns && ratesFns) {
   });
 })();
 
-test('CDN 리소스: pretendard/kakao/supabase 태그가 pinned 버전과 crossorigin을 유지한다(SRI 준비 회귀 방지)', () => {
+test('CDN 리소스: pretendard 태그/kakao·supabase 동적 로더가 pinned 버전과 crossorigin을 유지한다(SRI 준비 회귀 방지)', () => {
   assert.ok(
     src.includes('crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css"'),
     'pretendard link 태그의 pinned 버전(v1.3.9) 또는 crossorigin이 누락되었습니다'
   );
+  // kakao.min.js/supabase.js는 app-evolve cycle176 advance부터 파서 블로킹 정적 <script src> 태그가
+  // 아니라 loadScriptWithTimeout() 동적 로더로 올라간다(아래 SDK_READY 테스트 참고) — pinned 버전
+  // 문자열 자체는 그 호출 인자로 그대로 남아있어야 한다. crossOrigin 설정은 두 호출이 공유하는
+  // loadScriptWithTimeout 함수 본문 안에 있어 URL별로 반복되지 않는다.
+  const loaderBody = extractFunction('loadScriptWithTimeout');
+  assert.ok(loaderBody.includes("el.crossOrigin='anonymous'"), 'loadScriptWithTimeout이 crossOrigin을 anonymous로 설정하지 않음');
   assert.ok(
-    src.includes('src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.4/kakao.min.js" crossorigin="anonymous"'),
-    'kakao.min.js 태그의 pinned 버전(2.7.4) 또는 crossorigin이 누락되었습니다'
+    src.includes("loadScriptWithTimeout('https://t1.kakaocdn.net/kakao_js_sdk/2.7.4/kakao.min.js')"),
+    'kakao.min.js 로더 호출의 pinned 버전(2.7.4)이 누락되었습니다'
   );
   assert.ok(
-    src.includes('src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" crossorigin="anonymous"'),
-    'supabase.js 태그의 pinned 버전(2.45.4) 또는 crossorigin이 누락되었습니다'
+    src.includes("loadScriptWithTimeout('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js')"),
+    'supabase.js 로더 호출의 pinned 버전(2.45.4)이 누락되었습니다'
   );
 });
+
+/* ---------- [실행형] loadScriptWithTimeout/SDK_READY/boot (app-evolve cycle176 advance) ----------
+ * cycle176 critique가 지적한 공백: Kakao/Supabase CDN 스크립트가 defer/async 없는 파서 블로킹 태그여서
+ * 오프라인/캡티브 포털에서 TCP 연결이 행(hang)하면 boot()도 전혀 못 뜨고 화면이 완전히 빈 채로 멈췄다.
+ * 아래 두 그룹으로 검증한다: (1) loadScriptWithTimeout 자체가 성공/실패/타임아웃을 구분하지 않고
+ * 항상 resolve하는지(withTimeout 테스트 블록과 같은 이유로 이 블록에서만 실제 Node 타이머로 바꿔준다),
+ * (2) boot()이 실제로 SDK_READY를 기다린 "뒤에" 로그인/게스트 분기로 진행하는지(대기 중엔 절대
+ * startApp()/showAuth()를 부르지 않음) — 그리고 SDK_READY가 즉시 풀리면 클라우드 세션 복원
+ * (afterCloudAuth) 경로가 기존과 동일하게 동작하는지. */
+(() => {
+  const origSetTimeout = sandbox.setTimeout, origClearTimeout = sandbox.clearTimeout,
+    origDocument = sandbox.document;
+  function restoreTimers() { sandbox.setTimeout = origSetTimeout; sandbox.clearTimeout = origClearTimeout; sandbox.document = origDocument; }
+
+  test('loadScriptWithTimeout: onload도 onerror도 영원히 안 오면(캡티브 포털 등) 그래도 타임아웃 후 resolve한다(reject하지 않음)', async () => {
+    sandbox.setTimeout = setTimeout; sandbox.clearTimeout = clearTimeout;
+    const appended = [];
+    sandbox.document = { createElement: () => ({}), head: { appendChild: (el) => appended.push(el) } };
+    try {
+      await sandbox.loadScriptWithTimeout('https://example.com/never.js', 10); // reject였다면 여기서 바로 throw
+      assert.strictEqual(appended.length, 1, 'script 엘리먼트를 document.head에 추가하지 않음');
+      assert.strictEqual(appended[0].src, 'https://example.com/never.js');
+      assert.strictEqual(appended[0].crossOrigin, 'anonymous');
+    } finally { restoreTimers(); }
+  });
+
+  test('loadScriptWithTimeout: onload가 바로 오면 즉시 resolve하고 타임아웃 타이머를 정리한다', async () => {
+    let clearCalls = 0;
+    sandbox.setTimeout = setTimeout;
+    sandbox.clearTimeout = (t) => { clearCalls++; clearTimeout(t); };
+    let el;
+    sandbox.document = { createElement: () => (el = {}), head: { appendChild: () => {} } };
+    try {
+      const p = sandbox.loadScriptWithTimeout('https://example.com/ok.js', 5000);
+      el.onload();
+      await p;
+      assert.strictEqual(clearCalls, 1, '성공 경로에서도 타임아웃 타이머를 정리해야 함');
+    } finally { restoreTimers(); }
+  });
+
+  test('loadScriptWithTimeout: onerror가 와도(네트워크 오류) reject하지 않고 resolve한다', async () => {
+    sandbox.setTimeout = setTimeout; sandbox.clearTimeout = clearTimeout;
+    let el;
+    sandbox.document = { createElement: () => (el = {}), head: { appendChild: () => {} } };
+    try {
+      const p = sandbox.loadScriptWithTimeout('https://example.com/404.js', 5000);
+      el.onerror();
+      await p; // reject였다면 여기서 바로 throw
+    } finally { restoreTimers(); }
+  });
+
+  test('[실행형] boot(): SDK_READY가 아직 안 풀렸으면 startApp()/showAuth() 중 어느 쪽도 부르지 않고, 풀리면 그제서야 진행한다', async () => {
+    const sessionOrig = sandbox.SESSION, guestOrig = sandbox.GUEST, authOrig = sandbox.AUTH;
+    sandbox.SESSION = null; sandbox.GUEST = false;
+    sandbox.AUTH = { exists: () => true, current: () => null, rec: () => null, signOut: () => {} };
+    sandbox.migrateLegacyCalls = 0; sandbox.startAppCalls = 0; sandbox.showAuthCalls = 0;
+    let resolveSdk;
+    sandbox.SDK_READY = new Promise((res) => { resolveSdk = res; });
+    try {
+      const bootP = sandbox.boot();
+      // boot()은 await SDK_READY에서 곧바로 멈춰야 한다 — 동기 실행 구간이라 마이크로태스크를
+      // 기다릴 필요 없이 이 지점에서 바로 확인할 수 있다.
+      assert.strictEqual(sandbox.migrateLegacyCalls, 0, 'SDK_READY를 기다리지 않고 migrateLegacy()가 먼저 불림');
+      assert.strictEqual(sandbox.startAppCalls, 0, 'SDK_READY를 기다리지 않고 startApp()이 불림');
+      assert.strictEqual(sandbox.showAuthCalls, 0, 'SDK_READY를 기다리지 않고 showAuth()가 불림');
+      resolveSdk();
+      await bootP;
+      assert.strictEqual(sandbox.migrateLegacyCalls, 1, 'SDK_READY가 풀린 뒤 migrateLegacy()가 불려야 함');
+      assert.strictEqual(sandbox.showAuthCalls, 1, '로그인/게스트 모두 아니면 showAuth()로 가야 함(기존 동작 회귀 없음)');
+      assert.strictEqual(sandbox.startAppCalls, 0, '로그인/게스트가 아닌데 startApp()이 불리면 안 됨');
+    } finally {
+      sandbox.SESSION = sessionOrig; sandbox.GUEST = guestOrig; sandbox.AUTH = authOrig;
+    }
+  });
+
+  test('[실행형] boot(): SDK_READY가 즉시 풀리면 클라우드 세션 복원(afterCloudAuth) 경로가 기존과 동일하게 동작한다', async () => {
+    const sessionOrig = sandbox.SESSION, authOrig = sandbox.AUTH, sbOrig = sandbox.SB, applockOrig = sandbox.APPLOCK,
+      afterCloudAuthOrig = sandbox.afterCloudAuth;
+    sandbox.SESSION = 'cloud@example.com';
+    sandbox.AUTH = { exists: () => true, current: () => 'cloud@example.com', rec: () => ({ cloud: true }), signOut: () => {} };
+    sandbox.sbReady = () => true;
+    sandbox.SB = { auth: { getSession: async () => ({ data: { session: { user: { id: 'u1' } } } }) } };
+    sandbox.APPLOCK = { enabled: () => false };
+    const afterCloudAuthCalls = [];
+    sandbox.afterCloudAuth = async (uid) => { afterCloudAuthCalls.push(uid); };
+    sandbox.migrateLegacyCalls = 0; sandbox.startAppCalls = 0; sandbox.showAuthCalls = 0; sandbox.lockAppCalls = 0;
+    sandbox.SDK_READY = Promise.resolve(); // 네트워크 성공이든 타임아웃이든, 로더는 이미 이 모양으로 풀려있음
+    try {
+      await sandbox.boot();
+      assert.deepStrictEqual(afterCloudAuthCalls, ['u1'], 'boot()이 복원된 세션의 user.id로 afterCloudAuth를 부르지 않음');
+      assert.strictEqual(sandbox.startAppCalls, 1, '클라우드 세션 복원 후 startApp()으로 가야 함');
+      assert.strictEqual(sandbox.showAuthCalls, 0, '로그인된 사용자가 있는데 showAuth()로 가면 안 됨');
+      assert.strictEqual(sandbox.lockAppCalls, 0, 'APPLOCK 비활성 상태면 lockApp()을 부르면 안 됨');
+    } finally {
+      sandbox.SESSION = sessionOrig; sandbox.AUTH = authOrig; sandbox.SB = sbOrig; sandbox.APPLOCK = applockOrig;
+      sandbox.afterCloudAuth = afterCloudAuthOrig; sandbox.sbReady = () => true;
+    }
+  });
+})();
 
 test('dpMonthBlock: 날짜 선택기의 일(day) 버튼에 연·월이 포함된 aria-label이 있다(여러 달이 동시에 DOM에 붙어 "15" 같은 숫자만으로는 스크린리더가 어느 달의 15일인지 구분 못 함)', () => {
   const body = extractFunction('dpMonthBlock');
