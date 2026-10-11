@@ -1356,7 +1356,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.125';
+const APP_VERSION='1.47.126';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -7239,9 +7239,13 @@ function homeAlerts(neg){
  else if(_bo.length>1)arr.push({kind:'budgetOverMulti',count:_bo.length});
  /* 목표일보다 늦어지는 목표: 목표일이 있고 아직 안 달성한 목표 중, goalProgress()의 추세 투사가 목표일을
   * 못 맞추거나(projectedDate>targetDate) 추세가 0/음수라 투사 자체가 안 나오면(projectedDate:null) 포함한다.
-  * budgetOver/budgetOverMulti와 동일한 단일/복수 collapsing 패턴(app-evolve cycle173 advance) */
- const _gb=(DB.goals||[]).filter(g=>g.targetDate).map(g=>({g,p:goalProgress(g,nwHistoryForOwner(DB.nwHistory,goalOwnerEff(g)),TODAY)}))
-   .filter(({g,p})=>!p.achieved&&(!p.projectedDate||p.projectedDate>g.targetDate))
+  * budgetOver/budgetOverMulti와 동일한 단일/복수 collapsing 패턴(app-evolve cycle173 advance). goalProgress는
+  * hist.length<2면 추세를 낼 근거가 없어 projectedDate를 null로 돌려주는데(logic.js), 이는 "정체"와
+  * "아직 이력이 쌓이지 않음"을 구분하지 못한다 — debtsBehind()가 거래 이력 없는 신규 부채를 거르는 것과
+  * 같은 이유로, 오늘 막 만든 목표나 오늘 막 추가한 귀속(nwHistoryForOwner가 과거 스냅샷엔 없는 owner라
+  * 1건만 남김)이 등록 당일부터 "늦어지고 있어요"로 오탐되는 걸 막는다(app-evolve cycle179 develop) */
+ const _gb=(DB.goals||[]).filter(g=>g.targetDate).map(g=>{const hist=nwHistoryForOwner(DB.nwHistory,goalOwnerEff(g)).filter(h=>h.date<=TODAY);return {g,p:goalProgress(g,hist,TODAY),hist};})
+   .filter(({g,p,hist})=>hist.length>=2&&!p.achieved&&(!p.projectedDate||p.projectedDate>g.targetDate))
    .sort((a,b)=>a.g.targetDate<b.g.targetDate?-1:1);
  if(_gb.length===1){const{g,p}=_gb[0];arr.push({kind:'goalBehind',goalId:g.id,name:g.name,targetDate:g.targetDate,projectedDate:p.projectedDate});}
  else if(_gb.length>1)arr.push({kind:'goalBehindMulti',count:_gb.length});

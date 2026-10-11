@@ -1,6 +1,6 @@
 {
   "cycle": 179,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
@@ -120,6 +120,13 @@
       "phase": "advance",
       "timestamp": "2026-10-11T17:30:00.000Z",
       "summary": "critique(cycle178) 계획대로 afterCloudAuth()의 무충돌 전량교체 분기와 resolveCloudPullRemote() 둘 다에 기기-로컬 settings/nwHistory 보존을 적용했다. mergeRemoteDataIntoLocal() 바로 뒤에 snapshotLocalDeviceFields()/restoreLocalDeviceFields(snap) 헬퍼 쌍을 신설: snapshotLocalDeviceFields()는 dbIsEmpty(DB)(기존에 로그인 시 게스트데이터 병합 판단에 쓰던 순수 함수를 재사용)가 true면(최초 로그인 등 지킬 로컬 값이 없는 신규 기기) null을, 아니면 {settings:DB.settings,nwHistory:DB.nwHistory}를 그대로(복사 없이) 돌려준다. 두 호출부 모두 DB=sanitizeBackup(remote).data로 교체하기 직전에 스냅샷을 뜨고, 교체 직후 migrate() 전에 restoreLocalDeviceFields(snap)으로 되돌린다(snap이 null이면 아무것도 안 바꿔 remote 값을 그대로 받음). mergeRemoteDataIntoLocal이 이미 선언한 'settings/nwHistory는 기기-로컬이라 원격이 이기면 안 된다' 원칙을 재사용했을 뿐 새 병합 프리미티브는 만들지 않았다. sanitizeBackup()의 nwHistory 검증 주석(옛 줄번호 1831/1844 참조가 이미 실제 줄번호 1909/1922와 어긋나 있던 것도 함께 정리)도 이번 보호가 적용되는 범위(최초 로그인 제외)를 반영해 갱신했다. test/run.js에 FUNCTIONS 목록에 snapshotLocalDeviceFields/restoreLocalDeviceFields를 추가하고 총 7개 테스트 신설: 순수 함수 단위 테스트 4건(비어있지 않으면 참조 그대로 반환/비어있으면 null/null 스냅샷은 DB를 안 건드림/스냅샷 있으면 복원), afterCloudAuth 통합 테스트 2건(무충돌 전량교체에서도 로컬 themeMode·dismissedStaleMvIds·nwHistory가 보존됨 / 로컬 DB가 비어있는 최초 로그인에서는 remote 값을 그대로 받음), resolveCloudPullRemote 통합 테스트 1건(마찬가지로 로컬 settings.themeMode·nwHistory 보존). vm 샌드박스 realm 경계 때문에(이 코드베이스에 반복되는 패턴) snapshotLocalDeviceFields가 돌려주는 바깥 래퍼 객체나 sanitizeBackup이 새로 만드는 nwHistory 항목 객체를 통짜로 deepStrictEqual하면 구조는 같아도 'not reference-equal'로 실패해, 참조 비교나 필드별 비교로 다시 작성했다. index.html의 두 호출부(restoreLocalDeviceFields 호출)만 되돌려 재현한 결과 신규 통합 테스트 2건(afterCloudAuth 무충돌 보존, resolveCloudPullRemote 보존)이 실제로 깨짐을 확인했다(1265/1267 -> 복원 후 1267/1267) — 최초 로그인 테스트는 dbIsEmpty 분기라 애초에 영향받지 않아 예상대로 통과 유지. index.html/sw.js 변경이라 APP_VERSION 1.47.124->1.47.125, sw.js CACHE v386->v387 갱신. node test/run.js 1260/1260 -> 1267/1267 통과. pending_advance_plan을 비웠다.",
+      "commit": null
+    },
+    {
+      "cycle": 179,
+      "phase": "develop",
+      "timestamp": "2026-10-11T18:30:00.000Z",
+      "summary": "general-purpose 서브에이전트로 141-178사이클과 겹치지 않는 새 개선점을 탐색 — homeAlerts()의 goalBehind 필터(index.html _gb)가 cycle174 debtsBehind와 동일한 오탐 버그 클래스를 갖고 있었음을 발견. goalProgress(logic.js)는 hist.length<2면(추세를 낼 근거 자체가 없으면) projectedDate를 null로 돌리는데, _gb 필터는 '정체(추세 0/음수)'와 '아직 이력이 없음'을 구분하지 않고 둘 다 behind로 묶었다. 실패 시나리오 둘: ① 오늘 막 가입해 목표를 등록하면 nwHistory가 1건뿐이라 당일부터 '목표가 늦어지고 있어요'로 오탐. ② 기존 사용자가 오늘 새 귀속(owner)을 추가해 그 귀속 목표를 만들면, nwHistoryForOwner가 과거 스냅샷엔 없던 owner라 오늘자 1건만 남겨 똑같이 오탐(실사용에서 더 흔한 트리거). _gb의 map에서 owner별로 필터링한 hist를 같이 들고 다니다가 filter에서 hist.length>=2 가드를 추가(debtsBehind가 '거래 이력 있는가'로 가드한 것과 동일 원칙, hist는 goalProgress 내부와 동일하게 h.date<=TODAY로 필터링해 기준을 맞춤). test/run.js에 신규 목표(이력 1건) 제외/신규 귀속(owner별 이력 1건) 제외 2개 테스트 추가 — 기존 4개 goalBehind 테스트(단일/복수 collapsing, 추세양호 제외, achieved 제외, 목표일없음 제외)는 모두 hist 2건 이상을 쓰고 있어 그대로 통과. index.html 변경이라 APP_VERSION 1.47.125->1.47.126, sw.js CACHE v387->v388 갱신. node test/run.js 1267/1267 -> 1269/1269 통과.",
       "commit": null
     }
   ]

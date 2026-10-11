@@ -11239,6 +11239,28 @@ test('homeAlerts: 목표일이 없는 목표는 추세가 0/음수여도 goalBeh
   const alerts = sandbox.homeAlerts([]);
   assert.ok(!alerts.some((a) => a.kind === 'goalBehind' || a.kind === 'goalBehindMulti'), '목표일이 없으면 늦어진다는 판단 자체를 할 수 없어야 함');
 });
+test('homeAlerts: nwHistory가 1건뿐인(이력이 막 쌓이기 시작한) 신규 목표는 projectedDate:null이어도 goalBehind에 포함되지 않는다(app-evolve cycle179 develop)', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.nwHistory = [{ date: '2026-06-15', nw: 1000000 }]; // 오늘 막 기록된 1건뿐 → goalProgress가 추세를 낼 근거 자체가 없음(hist.length<2)
+  sandbox.DB.goals = [
+    { id: 'g1', name: '막 만든 목표', type: 'networth', targetAmount: 2000000, targetDate: '2026-07-01', owner: 'all' },
+  ];
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'goalBehind' || a.kind === 'goalBehindMulti'), '이력이 1건뿐이면 "정체"와 "이력 없음"을 구분 못 하므로 behind로 뜨면 안 됨');
+});
+test('homeAlerts: 과거 스냅샷엔 없던 귀속(오늘 막 추가된 owner)으로 좁힌 목표도 nwHistoryForOwner가 1건만 남겨 goalBehind에 포함되지 않는다(app-evolve cycle179 develop)', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.owners = ['나', '배우자'];
+  sandbox.DB.nwHistory = [
+    { date: '2026-05-01', nw: 1000000, byOwner: { 나: { ta: 1000000, td: 0 } } }, // '배우자'는 아직 없던 시절의 스냅샷
+    { date: '2026-06-15', nw: 1500000, byOwner: { 나: { ta: 1200000, td: 0 }, 배우자: { ta: 300000, td: 0 } } }, // '배우자'는 오늘 처음 등장
+  ];
+  sandbox.DB.goals = [
+    { id: 'g1', name: '배우자 목표', type: 'networth', targetAmount: 2000000, targetDate: '2026-07-01', owner: '배우자' },
+  ];
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'goalBehind' || a.kind === 'goalBehindMulti'), 'nwHistoryForOwner가 해당 귀속으로 1건만 남기면 추세를 낼 근거가 없으므로 behind로 뜨면 안 됨');
+});
 test('notifyAlertInfo: goalBehind/goalBehindMulti는 budgetOver처럼 월 단위 dedupe 키를 쓴다', () => {
   sandbox.TODAY = '2026-06-15';
   const info1 = sandbox.notifyAlertInfo({ kind: 'goalBehind', goalId: 'g1', name: '내 집 마련', targetDate: '2026-07-01', projectedDate: null });
