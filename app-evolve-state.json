@@ -1,15 +1,8 @@
 {
   "cycle": 180,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 175,
-      "phase": "review",
-      "timestamp": "2026-10-11T02:30:00.000Z",
-      "summary": "cycle175 develop(sanitizeBackup()에 반복거래 weekend 필드 검증 추가) 검토 — grep으로 WK 객체(index.html:4198-4202)가 'none'/'earlier'/'later' 키만 가짐을 확인해 ①(미지값→WK[d.weekend][0] undefined[0] TypeError)이 실제로 재현 가능함을 검증했고, recFreq()(4240줄, if(v!=='monthly')recDraft.weekend='none')가 주장된 불변식('daily/weekly/yearly엔 weekend!=='none'이 안 남는다')을 정확히 그 코드로 지켜줌을 확인해 ②(스케줄 비monthly인데 weekend가 'earlier'/'later'로 남아 recDates()가 회차를 삼키는 데이터 손실)의 전제도 사실임을 확인했다. 정규화 조건문(if 불명값→none, else if freq!=='monthly'&&truthy&&!='none'→none)의 분기가 상호 배타적이고 falsy/빈문자열/필드없음 케이스는 그대로 둬 기존 동작과 호환됨을 코드로 대조. node test/run.js 1235/1235 전부 통과(독립 재실행으로 재확인). 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
-      "commit": null
-    },
     {
       "cycle": 175,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-11T00:00:00.000Z",
       "summary": "general-purpose 서브에이전트로 141-179사이클과 겹치지 않는 새 개선점을 탐색 — doRenameCat()(index.html doRenameCat)/doRenameOwner()가 카테고리/귀속 이름변경 시 cycle179에서 delete 경로에만 추가한 catTombKey/ownerTombKey 톰스톤을 old(옛) 이름에는 남기지 않음을 발견. doRenameCat/doRenameOwner는 txns/recurrences/budgetHistory(또는 assets/goals/nwHistory/ST필터)의 old를 v로 옮기지만 DB.categories[k]/DB.owners에서 old 자체가 사라지는 건 doDeleteCat/delOwner와 동치인데, 이름변경 경로만 톰스톤을 안 남겨 mergeNameListWithTombstones(cycle179)가 old를 '아직 살아있다'고 보고 아직 이 이름변경을 모르는 다른 기기의 사본이 old를 좀비(실거래 없는 유령 카테고리/귀속)로 되살림을 node vm으로 재현 확인(localA=['음식',...] vs remoteB=['식비',...] → 톰스톤 없이 병합하면 '식비'가 되살아남, catTombKey 톰스톤 추가 후엔 사라짐). doRenameCat/doRenameOwner의 if(v!==old){...} 블록 끝에 addCat/addOwner와 동일한 톰스톤 지우기/추가 대칭 패턴으로 DB.deletedIds[catTombKey(k,old)]=Date.now()(또는 ownerTombKey(old)) 추가, v가 과거에 지워졌던 이름이면 그 톰스톤은 delete로 지워 되살림을 허용. test/run.js에 카테고리/귀속 각각 3건(이름변경 시 옛 이름 톰스톤 생성, 과거 톰스톤된 이름으로 복귀 시 톰스톤 제거, mergeNameListWithTombstones 연동으로 미동기화 기기의 사본이 좀비 되살리지 못함 확인) 총 6건 추가. index.html/sw.js 변경이라 APP_VERSION 1.47.127->1.47.128, sw.js CACHE v389->v390 갱신. node test/run.js 1281/1281 -> 1287/1287 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 180,
+      "phase": "review",
+      "timestamp": "2026-10-11T23:08:50.295Z",
+      "summary": "cycle180 develop(doRenameCat/doRenameOwner에 이름변경 톰스톤 추가) 검토 — git show로 diff 전체를 대조: ownerTombKey/catTombKey 톰스톤 추가/삭제가 addOwner/addCat·delOwner/doDeleteCat과 동일한 대칭 패턴을 정확히 따름을 확인. doRenameOwner/doRenameCat 둘 다 v===old면 아무 것도 하지 않고 조기 return하므로 무변경 호출에서 자기 자신을 톰스톤하는 사고는 없음. normName 기준으로만 다른 case/공백 변경(v!==old but normName(v)===normName(old))의 경우 old/v의 ownerTombKey가 같은 키라 set 후 즉시 delete돼 순허무 상태가 되지만, 이 경우 mergeNameListWithTombstones의 seen set(normalize 기준)이 애초에 중복을 걸러내므로 톰스톤 부재가 안전함을 로직으로 확인. node test/run.js 1287/1287 전부 통과(신규 6건 포함, 독립 재실행으로 재확인). sw.js CACHE(v389→v390)/APP_VERSION(1.47.127→1.47.128) 동시 갱신도 확인. 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
       "commit": null
     }
   ]
