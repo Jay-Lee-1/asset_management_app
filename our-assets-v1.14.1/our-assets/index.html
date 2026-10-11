@@ -1339,7 +1339,11 @@ function loadScriptWithTimeout(src,ms){
   const finish=()=>{if(done)return;done=true;clearTimeout(timer);resolve()};
   const timer=setTimeout(finish,ms||6000);
   const el=document.createElement('script');
-  el.src=src;el.crossOrigin='anonymous';
+  /* crossOrigin을 일부러 설정하지 않는다 — Kakao SDK 호스트(t1.kakaocdn.net)가 CORS 헤더를
+   * 내려주지 않으면 'anonymous'는 로드 자체를 막아버리고(일반 <script src>면 성공할 요청이
+   * 실패로 바뀜), recordError()(아래 전역 에러 바운더리)의 'crossorigin 없는 서드파티 스크립트의
+   * Script error.는 조용히 무시한다' 필터도 crossOrigin이 있으면 무력화된다. */
+  el.src=src;
   el.onload=finish;el.onerror=finish;
   document.head.appendChild(el);
  });
@@ -1352,7 +1356,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.121';
+const APP_VERSION='1.47.122';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.

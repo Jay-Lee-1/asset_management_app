@@ -1,15 +1,8 @@
 {
   "cycle": 177,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 172,
-      "phase": "develop",
-      "timestamp": "2026-10-10T12:17:28.088Z",
-      "summary": "Explore 서브에이전트로 141-171사이클과 겹치지 않는 새 개선점을 탐색 — debtPayoffProjection()(logic.js:307-325)이 goalProgress와 달리 자체 90일 추세 윈도를 전혀 두지 않고, 호출부(assetBalCard, index.html:2678)가 사용자의 차트 기간 세그먼트(1개월/3개월/1년/전체) 선택에 따라 넘기는 pts 전체의 처음·끝 두 점만으로 완납 투사율을 계산함을 발견. nwHistoryCard류 세그먼트 버튼은 어디서나 \"보기 전용\"이어야 하는데, 이 카드에서는 세그먼트를 \"전체\"로 바꾸는 순간 오래된 구간(예: 초기 대출 급증분)까지 섞여 \"이 속도로 갚으면...\" 투사가 왜곡되거나 \"최근엔 줄어들고 있지 않아요\"로 잘못 뜰 수 있음. goalProgress(cycle168 advance에서 이미 같은 문제를 90일 내부 윈도+폴백으로 고친 전례)와 완전히 동일한 패턴으로 debtPayoffProjection에 trendWindowDays(기본 90) 파라미터와 내부 윈도잉+폴백(윈도 안에 2점 미만이면 전체 이력 사용)을 추가. doc 주석(goalProgress 쪽의 과거 가정 문구 포함)을 갱신하고, cycle168 goalProgress 테스트와 대칭되는 회귀 테스트 2건(오래된 완만한 구간+최근 급격한 구간이 섞였을 때 최근 추세로 투사하는지, 윈도 안에 1점뿐일 때 전체 이력으로 폴백하는지)을 test/run.js에 추가. index.html/sw.js는 직접 로직을 건드리지 않았지만 logic.js가 바뀌어 캐시 갱신이 필요하므로 APP_VERSION 1.47.111->1.47.112, sw.js CACHE v373->v374 갱신. node test/run.js 1201/1201 -> 1203/1203 통과.",
-      "commit": null
-    },
     {
       "cycle": 172,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-11T09:20:00.000Z",
       "summary": "critique(cycle176) 계획대로 Kakao/Supabase CDN <script> 태그를 동적 로더로 교체했다. index.html의 두 정적 <script src> 태그를 지우고, loadScriptWithTimeout(src,ms)(document.createElement('script')로 생성 + load/error 이벤트 + setTimeout(6초) 중 먼저 오는 쪽에서 항상 resolve, reject 없음)를 추가해 SDK_READY=Promise.all([kakao,supabase 로더]) 모듈 스코프 상수로 저장했다. boot()(7777줄) 맨 앞에 await SDK_READY를 추가 — sbReady/kakaoReady가 이미 window.supabase/window.Kakao 존재를 방어적으로 체크하므로 그 아래 로직은 그대로 안전함을 확인. logic.js/메인 인라인 스크립트는 건드리지 않음. test/run.js: FUNCTIONS에 loadScriptWithTimeout/boot를 추가하고, sandbox에 migrateLegacy/startApp/lockApp 스파이·AUTH.exists/current·APPLOCK.enabled·SDK_READY 슬롯을 신설. 기존 'CDN 리소스' 정적 태그 검사 테스트를 동적 로더 호출 패턴 검사로 갱신하고, loadScriptWithTimeout 단위 테스트 3건(onload/onerror 모두 안 와도 타임아웃 후 resolve·onload 즉시 오면 clearTimeout까지·onerror도 reject 아닌 resolve) + boot() 통합 테스트 2건(SDK_READY 대기 중엔 migrateLegacy/startApp/showAuth 중 아무것도 안 불리고 풀리면 그제서야 showAuth로 진행 / SDK_READY가 즉시 풀리면 클라우드 세션 복원 경로가 afterCloudAuth(uid)→startApp까지 기존과 동일하게 동작)를 추가했다. boot()에서 await SDK_READY 한 줄만 되돌려 재현한 결과 신규 gating 테스트가 실제로 깨짐을 확인했다(1244/1245 -> 복원 후 1245/1245). index.html/sw.js 변경이라 APP_VERSION 1.47.120->1.47.121, sw.js CACHE v382->v383 갱신. node test/run.js 1240/1240 -> 1245/1245 통과. pending_advance_plan을 비웠다.",
+      "commit": null
+    },
+    {
+      "cycle": 177,
+      "phase": "develop",
+      "timestamp": "2026-10-11T10:30:00.000Z",
+      "summary": "general-purpose 서브에이전트로 141-176사이클과 겹치지 않는 새 개선점을 탐색 — cycle176 advance가 Kakao/Supabase CDN 스크립트를 동적 로더(loadScriptWithTimeout, index.html:1336-1346)로 바꾸면서 추가한 el.crossOrigin='anonymous'가 그 자체로 새 버그였음을 발견. ① t1.kakaocdn.net이 CORS 헤더(Access-Control-Allow-Origin)를 내려주지 않으면 crossorigin='anonymous'는 CORS 모드 요청을 네트워크 오류로 실패시켜(일반 <script src>라면 성공했을 로드가 막힘) Kakao 로그인이 상시 깨지는데, onerror도 조용히 finish()만 호출해 timeout과 구분이 안 돼 '인터넷 연결을 확인해 주세요'라는 오탐 메시지로 사용자를 오도한다. ② 전역 에러 바운더리 recordError()(1369-1382)의 주석이 명시하는 'crossorigin 없는 서드파티 스크립트에서 오는 정보 없는 Script error.는 조용히 무시한다' 필터는 정확히 crossOrigin이 없을 때만 동작하는데, 이 두 스크립트에 crossOrigin을 달아버려 Kakao/Supabase SDK 내부의 처리되지 않은 런타임 예외가 이제 err instanceof Error를 만족해 third-party SDK 소음까지 사용자 에러 배너로 노출된다. loadScriptWithTimeout에서 el.crossOrigin='anonymous' 한 줄을 제거하고 그 이유를 설명하는 주석을 추가했다(onload/onerror는 둘 다 finish()만 부르므로 CORS 세부정보를 쓰는 코드가 전혀 없어 crossOrigin이 득 없이 리스크만 더함). test/run.js의 'CDN 리소스' 정적 검사 테스트를 crossOrigin이 설정되지 '않음'을 확인하도록 반전시키고(el\\\\.crossOrigin\\\\s*=\\\\s* 정규식 — 설명 주석 안의 'crossOrigin' 문자열과 혼동되지 않게 실제 할당 패턴만 매칭), [실행형] loadScriptWithTimeout 테스트의 appended[0].crossOrigin 기대값을 'anonymous'에서 undefined로 바꿨다 — index.html만 HEAD(cycle176 advance 커밋)로 되돌려 재현한 결과 두 테스트 모두 실제로 깨짐을 확인했다(1243/1245 -> 복원 후 1245/1245). index.html/sw.js 변경이라 APP_VERSION 1.47.121->1.47.122, sw.js CACHE v383->v384 갱신. node test/run.js 1245/1245 -> 1245/1245 통과(신규 추가 없이 기존 2건을 반전 수정).",
       "commit": null
     }
   ]

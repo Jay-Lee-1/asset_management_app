@@ -13352,17 +13352,21 @@ if (stockFns && ratesFns) {
   });
 })();
 
-test('CDN 리소스: pretendard 태그/kakao·supabase 동적 로더가 pinned 버전과 crossorigin을 유지한다(SRI 준비 회귀 방지)', () => {
+test('CDN 리소스: pretendard 태그는 crossorigin을 유지하고, kakao·supabase 동적 로더는 pinned 버전을 유지하되 crossOrigin을 설정하지 않는다(app-evolve cycle177 develop 회귀 방지)', () => {
   assert.ok(
     src.includes('crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css"'),
     'pretendard link 태그의 pinned 버전(v1.3.9) 또는 crossorigin이 누락되었습니다'
   );
   // kakao.min.js/supabase.js는 app-evolve cycle176 advance부터 파서 블로킹 정적 <script src> 태그가
   // 아니라 loadScriptWithTimeout() 동적 로더로 올라간다(아래 SDK_READY 테스트 참고) — pinned 버전
-  // 문자열 자체는 그 호출 인자로 그대로 남아있어야 한다. crossOrigin 설정은 두 호출이 공유하는
-  // loadScriptWithTimeout 함수 본문 안에 있어 URL별로 반복되지 않는다.
+  // 문자열 자체는 그 호출 인자로 그대로 남아있어야 한다. cycle176이 함께 추가했던
+  // el.crossOrigin='anonymous'는 cycle177 develop에서 되돌렸다: t1.kakaocdn.net이 CORS 헤더를
+  // 안 내려주면 CORS 모드 요청은 그냥 실패해(일반 <script src>라면 성공했을 로드가 막힘) Kakao
+  // 로그인이 전면 중단되고, recordError()의 'crossorigin 없는 서드파티 스크립트의 Script error.는
+  // 조용히 무시한다' 필터도 crossOrigin이 있으면 무력화돼 third-party SDK 소음까지 에러 배너로
+  // 노출된다. 둘 다 이 함수 본문 안의 단일 지점이라 URL별로 반복되지 않는다.
   const loaderBody = extractFunction('loadScriptWithTimeout');
-  assert.ok(loaderBody.includes("el.crossOrigin='anonymous'"), 'loadScriptWithTimeout이 crossOrigin을 anonymous로 설정하지 않음');
+  assert.ok(!/el\.crossOrigin\s*=/.test(loaderBody), 'loadScriptWithTimeout이 다시 el.crossOrigin을 설정함(CORS 실패/에러 소음 필터 무력화 회귀)');
   assert.ok(
     src.includes("loadScriptWithTimeout('https://t1.kakaocdn.net/kakao_js_sdk/2.7.4/kakao.min.js')"),
     'kakao.min.js 로더 호출의 pinned 버전(2.7.4)이 누락되었습니다'
@@ -13394,7 +13398,9 @@ test('CDN 리소스: pretendard 태그/kakao·supabase 동적 로더가 pinned �
       await sandbox.loadScriptWithTimeout('https://example.com/never.js', 10); // reject였다면 여기서 바로 throw
       assert.strictEqual(appended.length, 1, 'script 엘리먼트를 document.head에 추가하지 않음');
       assert.strictEqual(appended[0].src, 'https://example.com/never.js');
-      assert.strictEqual(appended[0].crossOrigin, 'anonymous');
+      // cycle177 develop: crossOrigin='anonymous'를 설정하면 CORS 헤더 없는 호스트(t1.kakaocdn.net)에서
+      // 로드 자체가 실패하고 recordError()의 third-party Script error. 필터도 무력화되므로 설정하지 않는다.
+      assert.strictEqual(appended[0].crossOrigin, undefined, 'loadScriptWithTimeout이 crossOrigin을 설정함(CORS 실패/에러 소음 필터 무력화 회귀)');
     } finally { restoreTimers(); }
   });
 
