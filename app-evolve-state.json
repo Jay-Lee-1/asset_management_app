@@ -1,15 +1,12 @@
 {
   "cycle": 177,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "Union-merge recurrence skip/edits instead of whole-record LWW",
+    "why": "mergeCollection() (logic.js:107-129) resolves a local/remote recurrence conflict by keeping the single record with the larger updatedAt, discarding the other side entirely. Because skip[] and edits{} are accumulated independently across many separate user actions (index.html:4164, 6955, 1577-1580), two devices that each skip/edit a different occurrence of the SAME recurring record while offline will silently lose one side's change on next sync, with no warning and no cloud-conflict screen.",
+    "approach": "Add a new pure function in logic.js, e.g. mergeRecurrences(localArr, remoteArr, localDeletedIds, remoteDeletedIds), that reuses mergeCollection's existing id/tombstone resolution (same deletion-wins-unless-revived-by-later-edit logic) but, for the case where both a local and remote copy of the same id are alive, does NOT return one side wholesale. Instead: (1) pick the 'base' record the same way as today (larger updatedAt, local wins ties) for all scalar fields (day/freq/startDate/weekend/amount/category/memo/fromAssetId/toAssetId/active/endDate/count); (2) set the merged record's skip to the array union of local.skip and remote.skip (Set union, same convention as mergeNameList's dedupe-by-value approach); (3) set edits to a key-wise merge of local.edits and remote.edits using the same convention as mergeBudgetHistory (logic.js:149-158): union of keys, and when the SAME date key differs between local and remote, local wins (document this as a stated limitation exactly like mergeBudgetHistory's own comment does, since there's no per-entry updatedAt to arbitrate a true conflict). After building the merged skip/edits, if the winning base's day/freq/startDate/weekend differ from the losing side's (i.e. the schedule shape changed on whichever side didn't win the scalar-field pick), call the existing pruneOrphanRecOverrides(merged) (index.html:4337) to drop any now-invalid dates, preserving the cycle172-174 invariant. Wire this in by replacing the DB.recurrences line in mergeRemoteDataIntoLocal() (index.html:1500) to call mergeRecurrences(...) instead of the generic mergeCollection(...); leave mergeCollection and all its other call sites (txns/assets/goals/inquiries/assetQtyLog) untouched since this risk is concentrated in recurrences' skip/edits shape. Add unit tests in test/run.js mirroring the existing mergeCollection/mergeBudgetHistory test style: (a) same-id recurrence, local adds a skip date, remote (newer updatedAt) adds a different skip date -> merged result contains BOTH dates, not just the winning side's; (b) same pattern for edits on different date keys -> both retained; (c) both sides edit the SAME date key differently -> local wins per the stated convention; (d) a case where the winning side also changed day/freq -> pruneOrphanRecOverrides is applied post-merge and stale dates are dropped; (e) a regression test reusing the existing mergeCollection deletion/tombstone-revival test inputs through mergeRecurrences to confirm no behavior change there. Bump APP_VERSION and sw.js CACHE as usual since index.html changes."
+  },
   "history": [
-    {
-      "cycle": 172,
-      "phase": "critique",
-      "timestamp": "2026-10-10T15:15:05.2886Z",
-      "summary": "general-purpose 서브에이전트로 141-171사이클 전부(기각 이력 포함)를 전달하고 앱 전체를 재조망. 새로 발견: 반복거래 스케줄(day/freq/startDate)을 '전체 적용'으로 바꾸면 recSaveScopeApply()의 'all' 분기(index.html 4320-4330)가 DB.recurrences[i]=d로 레코드를 통째로 교체하면서 기존 skip/edits 배열(과거 스케줄 기준 절대 날짜 문자열)을 그대로 들고 가는데, expandRec()(2236-2238)이 새 day/freq/startDate로 재계산한 recDates()와 그 날짜들을 매칭하므로 날짜가 전혀 안 맞아 삭제(skip)했던 회차가 조용히 되살아나고 개별 수정(edits)했던 회차는 조용히 원래 값으로 되돌아감을 코드로 확인(테스트도 이 조합 미검증). '미래부터' 분기(splitRecurrenceAt/splitRecOverrides)는 이미 구 스케줄을 보존하도록 처리돼 있어 'all' 분기만 비대칭적으로 공백. recSaveScopeConfirm()의 스코프 확인 시트에 orig.skip/edits가 비어있지 않은데 스케줄 모양 필드(day/freq/startDate/weekend)가 바뀌면 기존 '과거 기록도 함께 바뀌어요' 경고(4316줄, .ol-sub 빨간 글씨)와 같은 패턴으로 '개별 삭제/수정한 회차가 새 일정과 안 맞아 무시돼요' 경고를 추가하고, '전체 적용' 실행 시 고아가 된 skip/edits 항목을 정리하며 토스트로 개수를 알리는 계획을 pending_advance_plan에 저장. 러너업(기각): skip/edits/confirmedDates 무한 증가(이미 기각, 이건 증가가 아니라 정확성 문제라 구분), 예산초과 OS알림 dedupe 키가 지출액을 안 담아 월중 재초과 시 재알림 안 됨(저빈도·저심각도), 자산 타입 변경(주식→현금 등) 엣지케이스(assetBase 폴백 확인 결과 이미 정상 처리), PIN 무차별대입 쓰로틀(이미 APPLOCK.verify/AUTH._lockStatus로 구현 완비 확인), CSV 중복감지/검색 범위 UX/SW 캐시 버전 스큐(모두 이미 잘 처리됨 확인), fxAmount/goldDon 소수점 손실 가설(parseFloat 사용, num() 미사용으로 반증). 코드 변경 없음(읽기 전용 조사).",
-      "commit": null
-    },
     {
       "cycle": 172,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-11T11:40:00.000Z",
       "summary": "cycle177 develop(동적 로더의 crossOrigin='anonymous' 제거) 검토 — recordError()(index.html:1382-1386)를 직접 읽어 'kind===renderCurrent이거나 err instanceof Error일 때만 showErrBanner()' 조건이 develop 커밋의 서술과 정확히 일치함을 확인했고, crossOrigin이 없으면 third-party onerror/onload의 Script error.가 Error 인스턴스가 아니라는 필터링 전제도 코드로 검증했다. loadScriptWithTimeout 본문이 onload/onerror 모두 finish()만 호출해(resolve 값·CORS 세부정보 전혀 안 씀) crossOrigin 제거로 잃는 기능이 없음도 확인. 반전된 두 테스트(정적 CDN 검사의 '!el.crossOrigin=' 매칭, [실행형] appended[0].crossOrigin===undefined)가 실제로 새 동작을 검증하는지 대조. node test/run.js 1245/1245 전부 통과(독립 재실행), APP_VERSION(1.47.122)/sw.js CACHE(v384) 버전 쌍 일치 확인. 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
+      "commit": null
+    },
+    {
+      "cycle": 177,
+      "phase": "critique",
+      "timestamp": "2026-10-11T12:30:00.000Z",
+      "summary": "general-purpose 서브에이전트로 141-176사이클 전부(기각 이력 포함)를 전달하고 앱 전체를 재조망. 새로 발견: mergeCollection()(logic.js:107-129)이 같은 id의 local/remote recurrence 레코드를 updatedAt 큰 쪽 통째로 승자로 고르는 whole-record LWW인데, 그 레코드의 skip[]/edits{}는 touchSave()로 여러 독립적인 사용자 행동(4164, 6955, 1577-1580)에 걸쳐 누적되는 필드라, 같은 반복거래를 두 기기(가족 공유 계정, Kakao 로그인+Supabase 동기화)가 오프라인 상태에서 서로 다른 회차를 각자 skip/edit한 뒤 동기화하면 진 쪽의 변경이 경고 없이 통째로 사라짐을 코드로 확인. mergeBudgetHistory/mergeFlatMap(logic.js:149-171)이 이미 같은 유형의 문제를 union-merge로 해결한 전례가 있는데 recurrences의 skip/edits만 비대칭적으로 비보호 상태. cycle173 critique가 레코드 단위 머지까지만 확인하고 레코드 내부 하위필드 독립 변경 레이어는 미검토했던 지점. 러너업(기각): OS 알림이 탭 종료 후 미동작(이미 cycle145에서 의도적 아키텍처 결정으로 처리 완료, serverless 설계상 재논의 불필요), 8255줄 단일파일+onclick 문자열 바인딩 기술부채(test/run.js가 텍스트 추출 방식이라 모듈화하면 테스트 하네스 자체를 재구축해야 하는 고위험 작업, 당장 연결된 구체 버그 없음). pending_advance_plan에 mergeRecurrences() 신설 계획(스칼라 필드는 기존 LWW, skip은 합집합, edits는 키별 병합(동일 키 충돌시 local 우선, mergeBudgetHistory 관례 따름), 스케줄 모양 변경시 pruneOrphanRecOverrides 재적용) 저장. 코드 변경 없음(읽기 전용 조사).",
       "commit": null
     }
   ]
