@@ -1,15 +1,8 @@
 {
   "cycle": 175,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 170,
-      "phase": "review",
-      "timestamp": "2026-10-10T03:30:00.000Z",
-      "summary": "cycle170 develop(sanitizeBackup()에 반복거래 skip/confirmedDates 배열 검증 추가) 검토 — 코드로 실제 소비 지점을 대조 확인: migrate()(index.html:2115)의 Object.assign({skip:[],confirmedDates:[],...}, r, {...})는 기본값을 \"없을 때만\" 채우는 구조라 r.skip/r.confirmedDates가 숫자·객체처럼 존재하되 배열이 아니면 그 손상값이 그대로 덮어써 살아남고, 이후 confirmRecNow(1546)·postponeRecTransfer(1552,1555)·delRec(4139,4143-4146,4172-4174)·recSave(4306) 등이 r.skip.slice()/r.skip.push()/splitRecOverrides(r.skip,...)를 가드 없이 직접 호출해 TypeError로 터지는 경로가 실제로 존재함을 확인했다. expandRec(2238)·pendingTransferCount류(1519)처럼 (r.skip||[])/(r.confirmedDates||[]) 가드가 있는 호출부도 있지만 위 가드 없는 직접 호출부들 때문에 여전히 크래시 가능. 추가된 sanitizeBackup 검증(필드 존재+비배열→[]로, 배열이면 문자열 아닌/빈 항목 필터)은 migrate() 이전에 선행 실행되어 이 두 클래스를 모두 막는다. 테스트 4개 추가, node test/run.js 1185/1185 통과. 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
-      "commit": null
-    },
     {
       "cycle": 170,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-11T02:20:07.256Z",
       "summary": "general-purpose 서브에이전트로 141-174사이클과 겹치지 않는 새 개선점을 탐색 — sanitizeBackup()(index.html, day 클램프 바로 뒤)이 반복거래의 weekend(주말 조정) 필드를 전혀 검증하지 않음을 발견. recOpenWeekend()는 'none'/'earlier'/'later'만 쓰고 recFreq()가 freq를 monthly 아닌 값으로 바꿀 때마다 weekend도 'none'으로 함께 되돌려(4240줄) 'daily/weekly/yearly엔 weekend!=='none'이 절대 안 남는다'는 불변식을 UI가 지켜주지만, 백업/클라우드 데이터는 이 경로를 거치지 않아 불변식이 깨진 채 들어올 수 있다. 영향 두 가지를 코드/vm으로 확인: ① 알 수 없는 weekend 값이 남으면 반복 수정 시트의 WK[d.weekend][0]이 undefined[0] TypeError로 크래시. ② freq가 monthly가 아닌데 weekend가 'earlier'/'later'로 남으면 daily/weekly 회차가 shiftWeekend()로 같은 날짜에 겹쳐 recDates()의 인접 중복 제거가 일부 회차를 조용히 삼킨다(2026-01-01~04 daily 재현: 정규화 없이는 4일이 2건으로 축소). sanitizeBackup()에 day 클램프 뒤 두 검증(미지값→'none', freq!=='monthly'인데 weekend!=='none'→'none')을 추가했다. test/run.js에 알 수 없는 값 정규화/유효값 보존 1건, freq!=='monthly' 4종 조합 정규화+이미 none인 경우 회귀 없음 1건, 필드 없음/monthly+유효값 회귀 없음 1건, [실행형] recDates()로 버그 재현 후 정규화 후 정상 생성 확인 1건, 총 4건 추가 — 수정 제거 시 신규 테스트 3건이 실제로 깨짐을 확인했다(1232/1235 -> 복원 후 1235/1235). index.html/sw.js 변경이라 APP_VERSION 1.47.117->1.47.118, sw.js CACHE v379->v380 갱신. node test/run.js 1231/1231 -> 1235/1235 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 175,
+      "phase": "review",
+      "timestamp": "2026-10-11T02:30:00.000Z",
+      "summary": "cycle175 develop(sanitizeBackup()에 반복거래 weekend 필드 검증 추가) 검토 — grep으로 WK 객체(index.html:4198-4202)가 'none'/'earlier'/'later' 키만 가짐을 확인해 ①(미지값→WK[d.weekend][0] undefined[0] TypeError)이 실제로 재현 가능함을 검증했고, recFreq()(4240줄, if(v!=='monthly')recDraft.weekend='none')가 주장된 불변식('daily/weekly/yearly엔 weekend!=='none'이 안 남는다')을 정확히 그 코드로 지켜줌을 확인해 ②(스케줄 비monthly인데 weekend가 'earlier'/'later'로 남아 recDates()가 회차를 삼키는 데이터 손실)의 전제도 사실임을 확인했다. 정규화 조건문(if 불명값→none, else if freq!=='monthly'&&truthy&&!='none'→none)의 분기가 상호 배타적이고 falsy/빈문자열/필드없음 케이스는 그대로 둬 기존 동작과 호환됨을 코드로 대조. node test/run.js 1235/1235 전부 통과(독립 재실행으로 재확인). 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
       "commit": null
     }
   ]
