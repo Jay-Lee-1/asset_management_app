@@ -1,7 +1,11 @@
 {
   "cycle": 179,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "카테고리/귀속자 이름 삭제가 클라우드 동기화로 조용히 되살아남 (mergeNameList에 tombstone 없음)",
+    "why": "mergeRemoteDataIntoLocal()(index.html:1511-1514)은 DB.categories.{expense,income,saving}와 DB.owners를 mergeNameList(local, remote, normName)으로 병합하는데, 이는 logic.js:180-186에서 순수 집합 합집합(union)일 뿐 tombstone이 전혀 없다. 반면 txns/recurrences/assets/goals/inquiries/assetQtyLog는 모두 DB.deletedIds(레코드 id 기준 tombstone, updatedAt 비교)를 쓰는 mergeCollection/mergeRecurrences를 거쳐 한쪽 기기의 삭제가 동기화 후에도 유지된다. delOwner()(index.html:3692-3698)와 doDeleteCat()(index.html:5224-5238)은 둘 다 확인 다이얼로그+undo 토스트를 가진 '영구 삭제(취소 가능)' UX이지만 실제로는 그 이름에 대한 삭제 기록이 어디에도 남지 않는다. logic.js를 node vm으로 직접 실행해 재현: mergeNameList(['나','친구'],['나'],normName) -> ['나','친구'] (A에서 지운 걸 B가 되살림), mergeNameList(['나'],['나','친구'],normName) -> ['나','친구'] (반대 방향도 동일) — 즉 두 기기가 가족 공유 Kakao+Supabase 로그인으로 비동기 상태에서 한쪽이 카테고리/귀속자를 지우면, 아직 그 삭제를 반영 못 한 다른 기기가 동기화하는 순간 이름이 조용히 되살아난다. 에러나 크래시 없이 설정이 틀어지는, 더 위험한 silent data drift. cycle122/123(goals)·cycle133(inquiries)·cycle138(assetQtyLog)·cycle177(recurrences skip/edits)에서 반복 수정한 '동기화로 레코드가 사라졌다 되살아난다' 버그 클래스와 동일한데 name-list 두 컬렉션(categories/owners)에는 아직 포팅되지 않았고, 이제까지의 critique 보류/기각 목록(부채 이자, FIFO, OS 알림 백그라운드 제한, 단일파일 모듈화)에도 없는 새 항목이다.",
+    "approach": "logic.js에 mergeNameListWithTombstones(localArr, remoteArr, deletedIds, tombstoneKeyFn, normalize) 신설: 기존 union과 동일하지만 tombstoneKeyFn(name)이 (이미 병합된) deletedIds에 키로 존재하면 그 이름은 결과에서 제외한다 (mergeCollection과 같은 'tombstone이 단순 존재보다 우선' 원칙). DB.deletedIds는 index.html:1495-1498에서 이미 local/remote를 max-timestamp로 합친 뒤이므로 그 결과를 그대로 넘긴다. tombstone 키는 owner:<normName(name)>, cat:<type>:<normName(name)> 형태의 합성 키로 만든다(기존 레코드-id tombstone과 네임스페이스 충돌 없음). delOwner()/doDeleteCat()(및 각각의 undo 콜백, index.html:3692-3698 / 5219-5238)에서 삭제 시 DB.deletedIds[tombstoneKey]=Date.now()를 남기고, undo 시 그 키를 다시 지운다(복구가 오래된 remote tombstone을 이기도록). addOwner()(3691)와 카테고리 추가 핸들러(~5209)도 사용자가 같은 이름을 다시 추가하면 해당 tombstone 키를 지운다. mergeRemoteDataIntoLocal()의 두 호출부(1513, 1514)를 mergeNameList 대신 새 함수로 바꾸고 categories는 expense/income/saving 세 타입 각각에 'cat:<type>:' prefix, owners는 'owner:' prefix로 호출한다. 회귀 테스트는 test/run.js에 (1) 새 병합 함수 단위 테스트(tombstone된 이름은 union에서 빠짐, tombstone 없는 이름은 평소처럼 union, 재추가 시 tombstone이 지워지고 다음 병합에서 살아남음), (2) mergeRemoteDataIntoLocal 통합 테스트로 owners 와 categories 세 타입 전부에 대해 위 두 기기 시나리오를 재현해 삭제가 동기화 후에도 유지되는지 확인, (3) undo 토스트 복구 경로가 tombstone을 지워 같은 기기에서의 '되돌리기'가 여전히 동작하는지 확인하는 회귀 테스트, 총 8~10건 정도. 예상 diff 크기: logic.js에 순수 함수 1개(~15-20줄) + delOwner/doDeleteCat/addOwner/카테고리추가 호출부 변경 (~10-15줄) + mergeRemoteDataIntoLocal 호출부 2곳 교체 + 테스트 8-10건. DB.owners/DB.categories 스키마(단순 문자열 배열)는 그대로 유지하고 mergeCollection 등 다른 컬렉션은 건드리지 않는다. 시작 지점: index.html:1506-1514 (mergeRemoteDataIntoLocal), index.html:3691-3698 (addOwner/delOwner), index.html:5204-5238 (add/doDeleteCat), logic.js:180-186 (mergeNameList)."
+  },
   "history": [
     {
       "cycle": 174,
@@ -134,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-11T19:07:58.000Z",
       "summary": "cycle179 develop(goalBehind 홈알림이 nwHistory 1건뿐인 신규 목표/신규 귀속을 \"늦어짐\"으로 오탐하던 버그 수정) 검토 — commit 0139e15의 diff를 확인. hist를 nwHistoryForOwner(...).filter(date<=TODAY)로 미리 구해 hist.length>=2 가드를 _gb 필터에 추가한 방식은 goalProgress() 내부 필터링과 정확히 같은 기준(hist.length<2면 projectedDate:null)을 바깥에서 선제 적용한 것이라 이중 필터링이지만 결과가 일치하고 중복 계산 비용도 무시할 만큼 작다. 정체(hist.length>=2, rate<=0 → projectedDate:null)는 여전히 behind로 잡히는지, debtsBehind(cycle174)와 동일 원칙을 owner별 nwHistoryForOwner에도 올바르게 적용했는지 확인함. 회귀 테스트 2개(신규 목표/신규 귀속) 추가분 포함 1269/1269 전부 통과. 코드 변경 없음 — 이상 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 179,
+      "phase": "critique",
+      "timestamp": "2026-10-11T20:16:32.000Z",
+      "summary": "general-purpose 서브에이전트로 141-179사이클(기각/보류 이력 포함)을 전달하고 앱 전체를 재조망. 새로 발견: mergeRemoteDataIntoLocal()이 DB.categories.*/DB.owners를 mergeNameList()(logic.js:180-186, 순수 집합 union)로 병합하는데, 다른 모든 컬렉션(txns/recurrences/assets/goals/inquiries/assetQtyLog)과 달리 DB.deletedIds tombstone을 전혀 안 쓴다. node vm으로 logic.js의 mergeNameList를 직접 실행해 재현: 한 기기에서 지운 귀속자/카테고리 이름이, 아직 그 삭제를 반영 못 한 다른 기기와 동기화하는 순간 조용히 되살아남(양방향 모두 재현). delOwner()/doDeleteCat()은 확인+undo 토스트까지 갖춘 '영구 삭제' UX인데 실제 tombstone이 없어 생기는 문제로, cycle122/123/133/138/177에서 반복 고친 것과 동일한 버그 클래스가 name-list 두 컬렉션에만 아직 포팅 안 된 것. 다음 advance 계획으로 mergeNameListWithTombstones()(logic.js) 신설 + DB.deletedIds에 합성 키 (owner:<name>, cat:<type>:<name>) 추가 + delOwner/doDeleteCat/addOwner/카테고리추가 호출부 반영을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계 규칙), state.json만 갱신.",
       "commit": null
     }
   ]
