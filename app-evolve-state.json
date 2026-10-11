@@ -1,6 +1,6 @@
 {
   "cycle": 179,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
     {
@@ -127,6 +127,13 @@
       "phase": "develop",
       "timestamp": "2026-10-11T18:30:00.000Z",
       "summary": "general-purpose 서브에이전트로 141-178사이클과 겹치지 않는 새 개선점을 탐색 — homeAlerts()의 goalBehind 필터(index.html _gb)가 cycle174 debtsBehind와 동일한 오탐 버그 클래스를 갖고 있었음을 발견. goalProgress(logic.js)는 hist.length<2면(추세를 낼 근거 자체가 없으면) projectedDate를 null로 돌리는데, _gb 필터는 '정체(추세 0/음수)'와 '아직 이력이 없음'을 구분하지 않고 둘 다 behind로 묶었다. 실패 시나리오 둘: ① 오늘 막 가입해 목표를 등록하면 nwHistory가 1건뿐이라 당일부터 '목표가 늦어지고 있어요'로 오탐. ② 기존 사용자가 오늘 새 귀속(owner)을 추가해 그 귀속 목표를 만들면, nwHistoryForOwner가 과거 스냅샷엔 없던 owner라 오늘자 1건만 남겨 똑같이 오탐(실사용에서 더 흔한 트리거). _gb의 map에서 owner별로 필터링한 hist를 같이 들고 다니다가 filter에서 hist.length>=2 가드를 추가(debtsBehind가 '거래 이력 있는가'로 가드한 것과 동일 원칙, hist는 goalProgress 내부와 동일하게 h.date<=TODAY로 필터링해 기준을 맞춤). test/run.js에 신규 목표(이력 1건) 제외/신규 귀속(owner별 이력 1건) 제외 2개 테스트 추가 — 기존 4개 goalBehind 테스트(단일/복수 collapsing, 추세양호 제외, achieved 제외, 목표일없음 제외)는 모두 hist 2건 이상을 쓰고 있어 그대로 통과. index.html 변경이라 APP_VERSION 1.47.125->1.47.126, sw.js CACHE v387->v388 갱신. node test/run.js 1267/1267 -> 1269/1269 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 179,
+      "phase": "review",
+      "timestamp": "2026-10-11T19:07:58.000Z",
+      "summary": "cycle179 develop(goalBehind 홈알림이 nwHistory 1건뿐인 신규 목표/신규 귀속을 \"늦어짐\"으로 오탐하던 버그 수정) 검토 — commit 0139e15의 diff를 확인. hist를 nwHistoryForOwner(...).filter(date<=TODAY)로 미리 구해 hist.length>=2 가드를 _gb 필터에 추가한 방식은 goalProgress() 내부 필터링과 정확히 같은 기준(hist.length<2면 projectedDate:null)을 바깥에서 선제 적용한 것이라 이중 필터링이지만 결과가 일치하고 중복 계산 비용도 무시할 만큼 작다. 정체(hist.length>=2, rate<=0 → projectedDate:null)는 여전히 behind로 잡히는지, debtsBehind(cycle174)와 동일 원칙을 owner별 nwHistoryForOwner에도 올바르게 적용했는지 확인함. 회귀 테스트 2개(신규 목표/신규 귀속) 추가분 포함 1269/1269 전부 통과. 코드 변경 없음 — 이상 없음.",
       "commit": null
     }
   ]
