@@ -1,15 +1,8 @@
 {
   "cycle": 182,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 177,
-      "phase": "review",
-      "timestamp": "2026-10-11T11:40:00.000Z",
-      "summary": "cycle177 develop(동적 로더의 crossOrigin='anonymous' 제거) 검토 — recordError()(index.html:1382-1386)를 직접 읽어 'kind===renderCurrent이거나 err instanceof Error일 때만 showErrBanner()' 조건이 develop 커밋의 서술과 정확히 일치함을 확인했고, crossOrigin이 없으면 third-party onerror/onload의 Script error.가 Error 인스턴스가 아니라는 필터링 전제도 코드로 검증했다. loadScriptWithTimeout 본문이 onload/onerror 모두 finish()만 호출해(resolve 값·CORS 세부정보 전혀 안 씀) crossOrigin 제거로 잃는 기능이 없음도 확인. 반전된 두 테스트(정적 CDN 검사의 '!el.crossOrigin=' 매칭, [실행형] appended[0].crossOrigin===undefined)가 실제로 새 동작을 검증하는지 대조. node test/run.js 1245/1245 전부 통과(독립 재실행), APP_VERSION(1.47.122)/sw.js CACHE(v384) 버전 쌍 일치 확인. 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
-      "commit": null
-    },
     {
       "cycle": 177,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-12T06:10:00.000Z",
       "summary": "general-purpose 서브에이전트로 141-181사이클과 겹치지 않는 새 개선점을 탐색 — doRenameOwner()는 이름변경 시 ST.hist.owner를 새 이름으로 옮겨주는데(cycle140), doRenameCat()에는 전체내역 탭의 지출분석 카테고리 드릴다운 필터인 ST.hist.catExact(openCatHistory가 세팅, 4475행 필터는 늘 expense 전용)에 대한 동일한 동기화가 빠져 있었음을 발견. 재현 경로: 지출분석에서 카테고리(예: '식비')로 드릴다운 → ST.hist.catExact='식비' → 카테고리 관리에서 '식비'를 '외식비'로 이름변경 → DB.txns/recurrences/budgetHistory는 이미 새 이름으로 옮겨졌지만 ST.hist.catExact만 옛 이름에 남아, 전체내역 탭으로 돌아가면 칩은 그대로 보이면서 필터(t.category===H.catExact)는 어떤 거래와도 안 맞아 목록이 영원히 빈 화면으로 보이는 조용한 버그(cycle181의 ST.hist.owner 삭제 버그와 같은 클래스지만 이름변경+카테고리 경로). doRenameCat()의 old->v 마이그레이션 블록 끝에 if(k==='expense'&&ST.hist&&ST.hist.catExact===old)ST.hist.catExact=v; 한 줄 추가(catExact는 expense 전용이라 k==='expense'로 범위 한정, ST.hist 부재 시 no-op). test/run.js에 3개 테스트 추가: catExact가 옛 이름을 가리키면 새 이름으로 이동 / 무관한 카테고리를 보고 있거나 ST.hist 자체가 없으면 안 건드리고 에러도 안 냄 / catExact는 expense 전용이라 수입 카테고리 이름변경과는 무관함. index.html만 수정 전으로 되돌려(git stash) 첫 번째 테스트가 실제로 깨지는 것을 확인(1307/1308)한 뒤 복구(1308/1308). index.html/sw.js 변경이라 APP_VERSION 1.47.131->1.47.132, sw.js CACHE v393->v394 갱신. node test/run.js 1305/1305 -> 1308/1308 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 182,
+      "phase": "review",
+      "timestamp": "2026-10-12T07:00:00.000Z",
+      "summary": "cycle182 develop(doRenameCat에 ST.hist.catExact 이름변경 동기화 추가) 검토 — commit 2944a41의 diff를 doRenameOwner의 기존 ST.hist.owner 동기화 패턴(index.html:3756)과 직접 대조해 if(k==='expense'&&ST.hist&&ST.hist.catExact===old)ST.hist.catExact=v;가 동일한 가드 스타일임을 확인했다. grep으로 ST.hist.catExact의 전체 쓰기/읽기 지점(2556 초기값, 3962/4488 탭 전환 시 null 리셋, 4468 캐시 키, 4475 필터, 4521 openCatHistory가 세팅, 4546 칩 렌더, 4605/4607 필터 해제)을 모두 훑어 4475행 필터가 항상 t.type==='expense'만 보는 것과 수정의 k==='expense' 범위 한정이 정확히 일치함을 확인했고, 4468행 캐시 키가 H.catExact 현재값을 그대로 문자열에 넣으므로 이름변경 직후 값이 이미 바뀐 상태로 재계산되어 별도 histInvalidate() 호출이 불필요함도 코드로 확인했다. 신규 테스트 3건(이름 이동/무관한 카테고리 또는 ST.hist 부재 시 무변경/수입 카테고리는 영향 없음)이 실제로 의미 있는 차이를 검증하는지 로직 대조. node test/run.js 1308/1308 전부 통과(독립 재실행으로 재확인), APP_VERSION(1.47.132)/sw.js CACHE(v394) 버전 쌍 일치 확인. 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
       "commit": null
     }
   ]
