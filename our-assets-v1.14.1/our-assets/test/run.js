@@ -4095,6 +4095,36 @@ test('filteredHist: owner는 filterTxnsByOwner()와 동일 규칙으로 걸러�
   assert.deepStrictEqual(sandbox.filteredHist().map((t) => t.id), ['t1', 't2'], "owner가 '전체'면 귀속 필터가 없어야 함");
 });
 
+/* ---------- renderHistory: ST.hist.owner(openCatHistory가 세팅)가 그 뒤 delOwner로 완전히 삭제된
+ * 귀속을 계속 가리키면, ST.assetOwner/ST.plan.owner/ST.spendOwner(renderAssets/renderPlan/
+ * renderSpendAnalysis)와 달리 전체내역만 '귀속 사라지면 전체로' 가드가 없어 filterTxnsByOwner가
+ * 그 이름을 가진 자산을 하나도 못 찾아 카테고리 칩은 그대로 보이면서 목록은 영원히 빈 화면이 됐다
+ * (doRenameOwner는 이름변경은 따라가게 해주지만 삭제는 애초에 따라갈 이름이 없음, app-evolve
+ * cycle181 develop) ---------- */
+test('renderHistory: ST.hist.owner가 가리키던 귀속이 삭제돼 DB.owners에 없으면 전체로 되돌리고, 그 귀속이 없어도 매칭됐을 내역을 보여준다', () => {
+  setupHistoryDB();
+  sandbox.DB.owners = ['나']; // '배우자'는 그 사이 delOwner로 삭제됨
+  sandbox.DB.assets = [{ id: 'a1', name: '내 카드', owner: '나' }];
+  sandbox.DB.txns = [{ id: 't1', date: '2026-06-01', type: 'expense', category: '식비', amount: 1000, fromAssetId: 'a1' }];
+  sandbox.ST.hist.catExact = '식비';
+  sandbox.ST.hist.owner = '배우자'; // 삭제된 귀속이 남아있는 상태
+  sandbox.renderHistory();
+  assert.strictEqual(sandbox.ST.hist.owner, '전체', '삭제된 귀속을 계속 가리키면 전체로 되돌려야 함');
+  const chipHtml = sandbox.pageHistoryEl.innerHTML;
+  assert.ok(!chipHtml.includes('배우자'), '칩에 이미 삭제된 귀속 이름이 남아있으면 안 됨');
+  assert.ok(sandbox.histListEl.innerHTML.includes('1,000원'), '전체로 되돌린 뒤에는 해당 카테고리 내역이 보여야 함');
+});
+test("renderHistory: ST.hist.owner가 '전체'거나 아직 살아있는 귀속이면 그대로 둔다", () => {
+  setupHistoryDB();
+  sandbox.DB.owners = ['나'];
+  sandbox.ST.hist.owner = '나';
+  sandbox.renderHistory();
+  assert.strictEqual(sandbox.ST.hist.owner, '나', '살아있는 귀속은 그대로 유지돼야 함');
+  sandbox.ST.hist.owner = '전체';
+  sandbox.renderHistory();
+  assert.strictEqual(sandbox.ST.hist.owner, '전체');
+});
+
 /* ---------- openCatHistory/openAssetHistory: 지출 분석/자산 행의 '내역' 버튼이 ST.hist(+ST.ledger
  * 기준 범위)를 올바르게 세팅하고 화면만 전환하는지(go 호출) 검증 (app-evolve cycle131 advance) ---------- */
 test('openCatHistory: ST.ledger 월 기준 범위로 좁히고 ST.spendOwner를 귀속 필터로 반영하며, 다른 필터는 리셋한다', () => {

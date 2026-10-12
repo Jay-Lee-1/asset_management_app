@@ -1356,7 +1356,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.129';
+const APP_VERSION='1.47.130';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4506,6 +4506,7 @@ function splitHist(list){
 function renderHistory(){
  _histCache.key=null; /* 전체 재렌더 때마다 새로 계산 — 다른 화면(내역 수정/삭제 등)에서 필터를 안 건드리고 renderCurrent()만 불러도 캐시가 아닌 최신 목록을 보여준다 (page는 그대로 유지) */
  const H=ST.hist,R=H.range;
+ if(H.owner&&H.owner!=='전체'&&!(DB.owners||[]).includes(H.owner))H.owner='전체'; /* 귀속 사라지면 전체로 — ST.assetOwner/ST.plan.owner/ST.spendOwner(renderAssets/renderPlan/renderSpendAnalysis)와 동일한 가드. doRenameOwner는 이름변경을 따라가게 해주지만(3729행), delOwner로 완전히 삭제된 뒤에도 openCatHistory가 세팅한 ST.hist.owner가 그 옛 이름에 그대로 남아있으면 filterTxnsByOwner가 어떤 자산도 못 찾아 전체내역이 그 카테고리 칩은 보여주면서 내역은 영원히 빈 화면으로 보인다(app-evolve cycle181) */
  $('page-history').innerHTML=`
  ${pageHead('history')}
  ${H.selMode?'':`
