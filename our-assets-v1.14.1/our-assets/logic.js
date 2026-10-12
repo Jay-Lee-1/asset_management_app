@@ -624,3 +624,12 @@ function shouldWarnClockSkew(severity,dismissed){
  if(severity==='warn')return!dismissed;
  return false;
 }
+/* ================= 테마/강조색 첫 페인트 캐시 (순수) ================= */
+/* head 최상단 동기 인라인 스크립트(index.html)가 localStorage의 'asset_app_theme_cache' 키를
+ * 읽어 JS 실행 전에도 <html data-theme>/data-accent를 맞춰 그리는데, 쓰는 쪽(migrate/setTheme/
+ * applyAccent)마다 같은 payload 모양을 직접 조립하면 한쪽이 키 이름을 잘못 적거나 기본값을 빼먹어도
+ * 발견하기 어렵다. themeCachePayload()로 "DB.settings → 캐시에 쓸 값" 변환만 떼어 테스트한다
+ * (app-evolve cycle181 advance). */
+function themeCachePayload(settings){
+ return{themeMode:(settings&&settings.themeMode)||'system',accent:(settings&&settings.accent)||'teal'};
+}

@@ -169,7 +169,7 @@ const FUNCTIONS = [
   'unguardCsv', 'csvRowToImportTxn', 'buildImportPreview', 'doCsvImport',
   'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo', 'unsnapshotAssetName', 'doBulkCat', 'bulkCatPickFor',
   'deletedAssetHistoryExists', 'relinkDeletedAsset',
-  'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'restoreBackup', 'storageOutcomeMsg', 'shouldWarnUnpersisted', 'shouldWarnStorageSize', 'toggleRecActive', 'toggleAdjustSurplus', 'touchSave',
+  'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'writeThemeCache', 'restoreBackup', 'storageOutcomeMsg', 'shouldWarnUnpersisted', 'shouldWarnStorageSize', 'toggleRecActive', 'toggleAdjustSurplus', 'touchSave',
   'sanitizeAmount', 'sanitizeBackup',
   'saveRec', 'recHistFieldsChanged', 'recScheduleShapeChanged', 'pruneOrphanRecOverrides', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
   'expandRec', 'allTxns', 'txnsByDateInRange', 'spendByCategory', 'spendTrend', 'spendTrendBadge', 'histSumTotals',
@@ -8097,6 +8097,79 @@ test('migrate: DB.deletedIds가 아예 없어도(migrate 이전 상태) 예외 �
   };
   assert.doesNotThrow(() => sandbox.migrate());
   assert.strictEqual(Object.keys(sandbox.DB.deletedIds).length, 0);
+});
+
+/* ---------- themeCachePayload/writeThemeCache: 첫 페인트 FOUC 방지 캐시(app-evolve cycle181 advance) ----------
+ * head 최상단 동기 인라인 스크립트(아래 별도 정적 테스트)가 읽는 'asset_app_theme_cache' localStorage 값을
+ * 쓰는 쪽. themeCachePayload(logic.js, 순수)는 DB.settings → 캐시 payload 변환만, writeThemeCache(index.html)는
+ * 그 payload를 실제로 localStorage에 쓰는 I/O만 맡는다. */
+// vm 샌드박스가 만든 객체 리터럴은 메인 realm의 {}와 "같은 구조지만 참조가 다름"으로
+// deepStrictEqual이 실패한다(cycle131에서 처음 발견한 realm 경계 문제와 동일, 위 migrate 테스트들
+// 참고) — JSON round-trip으로 host realm 값으로 정규화해 비교한다.
+const normTc = (v) => JSON.parse(JSON.stringify(v));
+test('themeCachePayload: themeMode/accent가 둘 다 있으면 그대로 payload를 만든다', () => {
+  assert.deepStrictEqual(normTc(sandbox.themeCachePayload({ themeMode: 'dark', accent: 'plum' })), { themeMode: 'dark', accent: 'plum' });
+});
+test('themeCachePayload: themeMode/accent가 없으면(falsy) migrate()의 기본값과 같은 system/teal로 채운다', () => {
+  assert.deepStrictEqual(normTc(sandbox.themeCachePayload({})), { themeMode: 'system', accent: 'teal' });
+  assert.deepStrictEqual(normTc(sandbox.themeCachePayload({ themeMode: '', accent: '' })), { themeMode: 'system', accent: 'teal' });
+});
+test('themeCachePayload: settings 자체가 없어도(undefined/null) 예외 없이 기본값을 돌려준다', () => {
+  assert.deepStrictEqual(normTc(sandbox.themeCachePayload(undefined)), { themeMode: 'system', accent: 'teal' });
+  assert.deepStrictEqual(normTc(sandbox.themeCachePayload(null)), { themeMode: 'system', accent: 'teal' });
+});
+test('writeThemeCache: DB.settings를 themeCachePayload로 변환해 고정 키로 localStorage에 쓴다', () => {
+  sandbox.DB = { settings: { themeMode: 'dark', accent: 'plum' } };
+  sandbox._lsSetCalls = [];
+  sandbox.writeThemeCache();
+  assert.strictEqual(sandbox._lsSetCalls.length, 1);
+  assert.deepStrictEqual(sandbox._lsSetCalls[0], ['asset_app_theme_cache', JSON.stringify({ themeMode: 'dark', accent: 'plum' })]);
+});
+test('writeThemeCache: localStorage.setItem이 던져도(private mode/스토리지 차단) load()의 raw 접근(2136행)과 같은 이유로 조용히 무시한다', () => {
+  sandbox.DB = { settings: { themeMode: 'light', accent: 'rose' } };
+  const origSetItem = sandbox.localStorage.setItem;
+  sandbox.localStorage.setItem = () => { throw new Error('quota exceeded'); };
+  try {
+    assert.doesNotThrow(() => sandbox.writeThemeCache());
+  } finally {
+    sandbox.localStorage.setItem = origSetItem;
+  }
+});
+test('migrate: themeMode/accent 기본값이 확정된 뒤 writeThemeCache()를 호출해 캐시를 최신 상태로 갱신한다', () => {
+  sandbox.DB = {
+    version: 5, catsV2: true,
+    settings: { themeMode: 'dark', includeScheduled: false, assetSort: 'custom', groupOrder: [...sandbox.DEFAULT_GROUP_ORDER] },
+    owners: ['나', '배우자', '공용'],
+    assets: [], txns: [], recurrences: [], inquiries: [],
+    categories: { expense: [...sandbox.EXP_CATS_DEFAULT], income: [...sandbox.INC_CATS_DEFAULT], saving: [...sandbox.SAV_CATS_DEFAULT] },
+  };
+  sandbox._lsSetCalls = [];
+  sandbox.migrate();
+  const call = sandbox._lsSetCalls.find(([k]) => k === 'asset_app_theme_cache');
+  assert.ok(call, 'migrate()가 writeThemeCache()를 호출하지 않음');
+  assert.deepStrictEqual(JSON.parse(call[1]), { themeMode: 'dark', accent: 'teal' }, 'migrate()가 막 확정한 accent 기본값("teal")이 캐시에 반영돼야 함');
+});
+test('setTheme/applyAccent: 테마·강조색을 바꿀 때마다 writeThemeCache()를 호출해 다음 boot의 캐시를 갱신한다(정적 검사)', () => {
+  const setThemeBody = extractFunction('setTheme');
+  assert.ok(/writeThemeCache\(\)/.test(setThemeBody), 'setTheme()이 writeThemeCache()를 호출하지 않음 — 테마를 바꿔도 다음 첫 페인트는 옛 값으로 그려짐');
+  const applyAccentBody = extractFunction('applyAccent');
+  assert.ok(/writeThemeCache\(\)/.test(applyAccentBody), 'applyAccent()가 writeThemeCache()를 호출하지 않음 — setAccent()가 이걸 거치므로 강조색을 바꿔도 캐시가 안 갱신됨');
+});
+/* head 최상단 동기 인라인 스크립트 자체는 cycle177의 SDK 로더 테스트 선례(정적 패턴 검사)와 동일한
+ * 방식으로 확인한다 — DOM이 없는 vm 샌드박스에서 "첫 페인트 전에 실행돼야 한다"는 속성 자체를
+ * 실행으로 검증할 수 없으므로, 원본 텍스트에서의 등장 순서로 그 불변식을 대신 확인한다. */
+test('테마/강조색 FOUC 방지 캐시 스크립트: <style> 블록과 SDK 동적 로더보다 먼저, async/defer 없이 동기로 실행된다', () => {
+  const cacheScriptPos = src.indexOf("localStorage.getItem('asset_app_theme_cache')");
+  assert.ok(cacheScriptPos !== -1, "'asset_app_theme_cache' 캐시를 읽는 head 인라인 스크립트를 찾지 못함");
+  const stylePos = src.indexOf('<style>');
+  const loaderPos = src.indexOf('function loadScriptWithTimeout');
+  assert.ok(cacheScriptPos < stylePos, '캐시 읽기가 <style> 블록보다 먼저 실행돼야 첫 페인트 전에 테마가 반영됨');
+  assert.ok(cacheScriptPos < loaderPos, '캐시 읽기가 SDK 동적 로더(최대 6초 대기)보다 먼저 실행돼야 FOUC를 막는 의미가 있음');
+  // 캐시 읽기 스크립트 자체의 <script> 태그가 async/defer 없이 블로킹(동기)으로 선언됐는지 확인 —
+  // 그 태그 범위만 좁혀서 검사해야 뒤에 나오는 다른(async/defer 쓰는) <script> 태그와 혼동되지 않는다.
+  const scriptTagStart = src.lastIndexOf('<script>try{', cacheScriptPos);
+  assert.ok(scriptTagStart !== -1 && scriptTagStart < cacheScriptPos, '캐시 읽기 스크립트의 여는 태그를 찾지 못함');
+  assert.ok(!/async|defer/.test(src.slice(scriptTagStart, cacheScriptPos)), '캐시 읽기 스크립트에 async/defer가 있으면 첫 페인트 전에 실행되지 않을 수 있음');
 });
 
 /* ---------- localHasUnsyncedChanges: afterCloudAuth()가 부팅 시 로컬을 조용히 덮어쓸지 판단하는 순수 로직 ---------- */

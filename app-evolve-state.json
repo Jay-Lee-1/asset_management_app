@@ -1,23 +1,8 @@
 {
-  "cycle": 181,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "cycle176의 SDK_READY 비동기 로더 도입으로 새로 생긴 테마/강조색 FOUC(첫 페인트가 하드코딩된 system/teal로 그려진 뒤 수초 후 실제 저장값으로 전환)",
-    "why": "index.html:2의 <html data-theme=\"system\" data-accent=\"teal\">은 하드코딩이고, 이를 사용자의 실제 DB.settings.themeMode/accent로 고쳐주는 유일한 지점은 startApp()(7842-7843행)인데 startApp은 boot()에서만 호출되며 boot()의 첫 줄이 cycle176에서 추가한 await SDK_READY(7854행, 최대 6초)다. 그 사이 body(1293행)~첫 script(1329행) 구간의 DOM/CSS는 JS 없이도 완전히 paint 가능해, light/dark를 OS와 다르게 고정했거나 teal이 아닌 강조색을 쓰는 사용자는 실제로 '틀린 테마가 먼저 그려진 뒤 전환되는' 것을 보게 된다. cycle176 이전에는 같은 자리의 정적 CDN <script> 태그가 파서를 블로킹해 아무것도 안 그려졌으므로(그래서 cycle176 critique가 이 FOUC 항목을 '역설적으로 관측 안 됨'으로 보류) 이번 로더 교체가 '빈 화면'을 '틀린 테마의 빠른 페인트 후 전환'으로 바꾼 셈이라, cycle176이 해결한 오프라인 체감속도 이득의 눈에 보이는 대가로 새로 생긴 리그레션성 버그다.",
-    "approach": "1) <head> 최상단(meta charset 바로 뒤, 29행 <style> 블록보다 먼저, 1329행 SDK 로더보다 먼저)에 동기 인라인 <script>를 추가해 localStorage의 고정 키 'asset_app_theme_cache'(JSON {themeMode,accent})를 읽어 있으면 즉시 document.documentElement의 data-theme/data-accent와 meta[name=theme-color]를 덮어쓴다. try/catch로 감싸 private mode/스토리지 차단 시 조용히 무시(기존 load() 2136-2137행과 동일 패턴). 캐시가 없으면(최초 실행) 지금과 동일하게 동작 — 회귀 없음. 2) 이 키는 dataKey()/SESSION 등 계정별 분기를 쓰지 않는 세션독립 고정 키로 둔다(이 시점엔 아직 그런 헬퍼를 쓸 수 없고, 계정 전환 시 한 프레임만 이전 계정 테마가 보이는 것은 cycle178의 settings 기기로컬 취급 전례와 일치하는 수용 가능한 트레이드오프). 3) migrate()(2174행, accent 기본값 확정 직후)와 setTheme()(6291행)/applyAccent() 또는 setAccent()(6306/6312행) 양쪽에서 이 캐시를 매번 다시 쓴다(공용 writeThemeCache() 헬퍼로 추출 권장) — 재실행마다 최신값 유지. 4) test/run.js: themeCachePayload(settings) 같은 순수 헬퍼로 분리해 vm 샌드박스에서 유닛테스트하고, migrate/setTheme/applyAccent가 그 write 경로를 호출하는지 검증. head 최상단 인라인 스크립트 자체는 cycle177의 SDK 로더 테스트 선례처럼 원본 텍스트에 대한 정적 패턴 검사(캐시 키 등장 위치가 <style> 및 SDK 로더보다 앞인지)로 확인한다. 5) index.html/sw.js 변경이므로 APP_VERSION과 sw.js CACHE를 함께 올린다.",
-    "runner_ups_rejected": [
-      "Pretendard 웹폰트 CDN 스타일시트(28행, crossorigin 있음, font-display 전략 없음)가 렌더 블로킹 — 실재하는 FOIT/FOUT 위험이지만 서드파티 @font-face 규칙을 못 바꾸고 이미 코드 내 TODO(1324-1327행)로 SDK 2종과 함께 보류된 네트워크 항목이라 새 발견 아님",
-      "ariaLivePolite/ariaLiveAssertive가 죽은 a11y 스캐폴딩이라는 의심 — announceLive()(7506행)가 실제로 둘 다 사용 중임을 코드로 확인해 기각"
-    ]
-  },
+  "cycle": 182,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 176,
-      "phase": "advance",
-      "timestamp": "2026-10-11T09:20:00.000Z",
-      "summary": "critique(cycle176) 계획대로 Kakao/Supabase CDN <script> 태그를 동적 로더로 교체했다. index.html의 두 정적 <script src> 태그를 지우고, loadScriptWithTimeout(src,ms)(document.createElement('script')로 생성 + load/error 이벤트 + setTimeout(6초) 중 먼저 오는 쪽에서 항상 resolve, reject 없음)를 추가해 SDK_READY=Promise.all([kakao,supabase 로더]) 모듈 스코프 상수로 저장했다. boot()(7777줄) 맨 앞에 await SDK_READY를 추가 — sbReady/kakaoReady가 이미 window.supabase/window.Kakao 존재를 방어적으로 체크하므로 그 아래 로직은 그대로 안전함을 확인. logic.js/메인 인라인 스크립트는 건드리지 않음. test/run.js: FUNCTIONS에 loadScriptWithTimeout/boot를 추가하고, sandbox에 migrateLegacy/startApp/lockApp 스파이·AUTH.exists/current·APPLOCK.enabled·SDK_READY 슬롯을 신설. 기존 'CDN 리소스' 정적 태그 검사 테스트를 동적 로더 호출 패턴 검사로 갱신하고, loadScriptWithTimeout 단위 테스트 3건(onload/onerror 모두 안 와도 타임아웃 후 resolve·onload 즉시 오면 clearTimeout까지·onerror도 reject 아닌 resolve) + boot() 통합 테스트 2건(SDK_READY 대기 중엔 migrateLegacy/startApp/showAuth 중 아무것도 안 불리고 풀리면 그제서야 showAuth로 진행 / SDK_READY가 즉시 풀리면 클라우드 세션 복원 경로가 afterCloudAuth(uid)→startApp까지 기존과 동일하게 동작)를 추가했다. boot()에서 await SDK_READY 한 줄만 되돌려 재현한 결과 신규 gating 테스트가 실제로 깨짐을 확인했다(1244/1245 -> 복원 후 1245/1245). index.html/sw.js 변경이라 APP_VERSION 1.47.120->1.47.121, sw.js CACHE v382->v383 갱신. node test/run.js 1240/1240 -> 1245/1245 통과. pending_advance_plan을 비웠다.",
-      "commit": null
-    },
     {
       "cycle": 177,
       "phase": "develop",
@@ -149,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-12T04:15:00.000Z",
       "summary": "general-purpose 서브에이전트로 141-181사이클(기각 이력 포함)을 전달하고 앱 전체를 재조망. 먼저 cycle177(mergeCollection의 recurrence skip/edits 통째 LWW)·cycle178(afterCloudAuth/resolveCloudPullRemote 무충돌 전량교체가 settings/nwHistory 기기로컬 보호를 건너뜀) 두 critique의 계획이 각각 cycle177/178 advance에서 실제로 구현됐음을 git log와 mergeRecurrences/snapshotLocalDeviceFields 코드로 재확인(둘 다 완료, 재제기 불필요). 새로 발견: cycle176 advance가 추가한 await SDK_READY(boot() 최상단, 최대 6초 타임아웃)로 인해, index.html:2의 하드코딩된 data-theme=\"system\"/data-accent=\"teal\"이 startApp()(7842-7843행, boot 내부에서만 호출되고 SDK_READY 이후에만 도달)이 실제 DB.settings 값으로 고쳐주기 전까지 그대로 paint됨을 코드 추적으로 확인. body~첫 script 구간의 DOM/CSS가 JS 없이도 완전히 그려질 수 있어, light/dark를 OS와 다르게 고정했거나 teal이 아닌 강조색을 쓰는 사용자는 '틀린 테마가 먼저 보이고 수초 후 전환'되는 새 FOUC를 겪는다 — cycle176 이전엔 같은 자리의 정적 CDN 스크립트가 파서를 블로킹해 아무것도 안 그려졌으므로 역설적으로 관측 안 됐던(cycle176 critique가 명시적으로 보류해둔) 항목이 이번 네트워크 성능 개선의 가시적 대가로 실제 리그레션이 됐다. 첫 paint 전에 실행되는 head 최상단 동기 인라인 스크립트로 localStorage의 고정 캐시 키(세션/계정 분기 없음, migrate()/setTheme()/applyAccent()에서 매번 갱신)를 읽어 data-theme/data-accent/meta[theme-color]를 즉시 적용하는 방식을 pending_advance_plan에 저장. 러너업(기각): Pretendard 웹폰트 CDN 스타일시트의 렌더 블로킹(이미 코드 내 TODO로 SDK 2종과 함께 보류된 네트워크 항목, 새 발견 아님), ariaLivePolite/ariaLiveAssertive 죽은 스캐폴딩 의심(announceLive()가 실제로 사용 중임을 확인해 기각). 코드 변경 없음(읽기 전용 조사).",
+      "commit": null
+    },
+    {
+      "cycle": 181,
+      "phase": "advance",
+      "timestamp": "2026-10-12T05:10:00.000Z",
+      "summary": "critique(cycle181) 계획대로 head 최상단에 동기 인라인 <script>를 추가해 localStorage의 고정 키 'asset_app_theme_cache'(JSON {themeMode,accent})를 읽어 있으면 즉시 document.documentElement의 data-theme/data-accent와 meta[name=theme-color]를 덮어쓰도록 했다(<style> 블록·SDK 동적 로더보다 먼저, try/catch로 private mode/스토리지 차단 시 조용히 무시, 캐시 없으면 기존과 동일). logic.js에 순수 함수 themeCachePayload(settings)(DB.settings→{themeMode,accent} 변환, 둘 다 기본값 system/teal)를 추가하고, index.html에 writeThemeCache()(themeCachePayload 결과를 JSON.stringify해 localStorage.setItem, try/catch로 조용히 무시) 헬퍼를 신설해 migrate()(accent 기본값 확정 직후)·setTheme()·applyAccent()(setAccent()가 거침) 세 곳 모두에서 매번 다시 쓰게 했다. 계정/세션과 무관한 고정 키라 계정 전환 시 한 프레임만 이전 계정 테마가 보일 수 있지만 cycle178의 settings 기기로컬 트레이드오프와 동일하게 수용. test/run.js: FUNCTIONS에 migrate가 이미 호출하는 writeThemeCache를 추가하고, themeCachePayload 단위 테스트 3건(정상값 그대로/빈 값은 기본값/undefined·null settings도 기본값), writeThemeCache 통합 테스트 2건(DB.settings를 고정 키로 저장/localStorage.setItem이 던져도 조용히 무시), migrate가 캐시를 갱신하는지 통합 테스트 1건, setTheme/applyAccent가 writeThemeCache()를 호출하는지 정적 패턴 테스트 1건, head 인라인 스크립트가 <style> 블록·SDK 로더보다 먼저 오고 async/defer가 없는지 원본 텍스트 순서로 확인하는 정적 테스트 1건, 총 8건을 추가했다. vm 샌드박스 realm 경계 문제(themeCachePayload가 돌려주는 객체 리터럴이 host realm과 프로토타입이 달라 deepStrictEqual이 'not reference-equal'로 실패)를 JSON round-trip 정규화로 해결했고, 정적 순서 테스트도 처음엔 직접 추가한 주석 안의 '<style>' 문자열을 실제 태그로 오인해 거짓 통과하는 걸 발견해 주석 문구를 바꿔 고쳤다. index.html만 HEAD(cycle181 critique 커밋)로 되돌려 재현한 결과 test/run.js 자체가 writeThemeCache를 extractFunction하지 못해 하네스가 즉시 에러로 멈추는 것으로, 수정 전 상태엔 이 기능이 아예 없었음을 재확인했다(복원 후 1305/1305). index.html/logic.js/sw.js 변경이라 APP_VERSION 1.47.130->1.47.131, sw.js CACHE v392->v393 갱신. node test/run.js 1297/1297 -> 1305/1305 통과. pending_advance_plan을 비웠다.",
       "commit": null
     }
   ]
