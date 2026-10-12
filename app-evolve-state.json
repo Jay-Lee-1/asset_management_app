@@ -1,15 +1,8 @@
 {
   "cycle": 181,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 176,
-      "phase": "develop",
-      "timestamp": "2026-10-11T06:26:49.000Z",
-      "summary": "general-purpose 서브에이전트로 141-175사이클과 겹치지 않는 새 개선점을 탐색 — logic.js의 assetBalSampleDates(from,to,maxPoints)(개별 자산 잔액 추이 샘플링, cycle140 신설)의 균등분배 분기가 분모로 (maxPoints-1)을 그대로 쓰는데 maxPoints===1을 넘기면 분모가 0이 되어 Math.round(0*totalDays/0)이 NaN이 되고, addDays()에 그대로 흘러들어가 첫 샘플이 \"NaN-NaN-NaN\"이라는 깨진 날짜 문자열로 반환됨을 vm으로 재현 확인(assetBalSampleDates('2026-01-01','2026-01-10',1) 호출). maxPoints<=0은 루프가 0번 돌아 우연히 안전했던 것과 달리 정확히 1일 때만 터지는 숨은 결함. 현재 호출부(assetBalCard/debtsBehind)는 모두 리터럴 60을 넘겨 오늘 당장 닿지는 않지만 logic.js는 호출부 사용 패턴과 무관하게 입력 정의역을 가드하는 기존 관례(sanitizeBackup 등)를 따라 from>to 가드 바로 뒤에 if(maxPoints<=1)return [to]; 가드를 추가(maxPoints<=0의 기존 동작과 결과 동일, 회귀 없음). test/run.js에 maxPoints===1 NaN-free 단일 반환/from===to 경계/maxPoints<=0 회귀 확인, 총 3건 추가 — logic.js만 되돌려 재현한 결과 신규 테스트 1건이 실제로 깨짐을 확인했다(1239/1240 -> 복원 후 1240/1240). logic.js 변경이라 APP_VERSION 1.47.119->1.47.120, sw.js CACHE v381->v382 갱신. node test/run.js 1237/1237 -> 1240/1240 통과.",
-      "commit": "c827f5b"
-    },
     {
       "cycle": 176,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-12T01:20:00.000Z",
       "summary": "critique(cycle180) 계획대로 logic.js의 mergeBudgetHistory/mergeFlatMap에 선택적 deletedIds+tombKeyFn 인자를 추가했다. mergeBudgetHistory는 union 직전에 isTombstoned(cat)으로 걸러 local 자신의 사본까지 포함해 제외(mergeNameListWithTombstones와 동일한 '존재 자체가 우선' 원칙), mergeFlatMap은 Object.assign 결과에서 tombKeyFn(key)가 deletedIds에 있는 키를 delete. 둘 다 tombKeyFn을 안 넘기면(과거 호출 호환) 톰스톤 판정을 완전히 건너뛰어 이전과 동일하게 동작하므로 기존 시그니처로 부르던 코드는 안 건드려도 됨. index.html의 mergeRemoteDataIntoLocal 3개 호출부를 갱신: DB.budgetHistory는 budgetHistory가 expense 전용이라 tombKeyFn=c=>catTombKey('expense',c), DB.catIcon/DB.catVar는 flat key가 catKey(type,name)='타입:이름' 형태라 catFlatTombKey(key)(':' 기준으로 잘라 catTombKey(type,name) 재구성)를 공유해서 쓴다. addCat()에는 플랜대로 방어적 정리를 추가 — dup 체크를 통과해 새 이름을 push하기 직전에 DB.catIcon[catKey(k,v)]/DB.catVar[catKey(k,v)]/(k==='expense'면)DB.budgetHistory[v]를 delete해, 병합 경로를 거치지 않는 restoreBackup/guest 데이터 가져오기 등으로 들어온 유령도 재사용 시점에 정리되게 했다(존재하지 않으면 no-op이라 회귀 없음). test/run.js에 mergeBudgetHistory/mergeFlatMap 단위 테스트 5건(톰스톤된 키는 양쪽에 있어도 제외 2건, local 전용 사본도 제거 1건, tombKeyFn 생략 시 과거 호환 2건), mergeRemoteDataIntoLocal 통합 테스트 2건(critique가 재현한 삭제-후-병합/이름변경-후-병합 시나리오 그대로), addCat 재사용 테스트 1건(병합 경로 밖에서 들어온 유령도 재추가 시 정리됨) 총 8건을 추가했다. logic.js/index.html만 HEAD(cycle180 critique 커밋)로 되돌려 재현한 결과, tombKeyFn을 안 넘기는 과거 호환 테스트 2건은 그대로 통과했지만 나머지 6건(톰스톤 적용 4건 + 통합 2건, addCat 테스트는 catKey/catTombKey 자체는 이미 있어 재현에선 통과하지 않고 실제로 깨짐)이 실제로 깨짐을 확인했다(1289/1295 -> 복원 후 1295/1295). index.html/logic.js/sw.js 변경이라 APP_VERSION 1.47.128->1.47.129, sw.js CACHE v390->v391 갱신. node test/run.js 1287/1287 -> 1295/1295 통과. pending_advance_plan을 비웠다.",
       "commit": null
+    },
+    {
+      "cycle": 181,
+      "phase": "develop",
+      "timestamp": "2026-10-12T02:15:08.000Z",
+      "summary": "general-purpose 서브에이전트로 141-180사이클과 겹치지 않는 새 개선점을 탐색 — ST.assetOwner/ST.plan.owner/ST.spendOwner(renderAssets/renderPlan/renderSpendAnalysis)에는 '귀속이 삭제되면 전체로 되돌리는' 가드가 있지만, 전체내역 탭의 ST.hist.owner(openCatHistory()가 지출분석 카테고리 드릴다운 시 세팅)에는 동일 가드가 빠져 있음을 발견. 재현 경로: 지출분석에서 특정 귀속으로 카테고리 드릴다운 → ST.hist.owner에 그 귀속명 저장 → 나중에 delOwner()로 해당 귀속을 완전 삭제(그 시점에 그 귀속을 쓰는 자산이 0개라 삭제 가능) → 바텀 네비로 전체내역 탭을 다시 열면 filteredHist()가 filterTxnsByOwner(list, DB.assets, H.owner)를 삭제된 옛 이름으로 호출해 매칭되는 자산이 하나도 없어, 카테고리 칩은 그대로 보이면서 목록은 영원히 빈 화면으로 보이는 조용한 버그. renderHistory() 맨 앞에 if(H.owner&&H.owner!=='전체'&&!(DB.owners||[]).includes(H.owner))H.owner='전체'; 가드를 추가(다른 3곳과 동일 패턴, 칩 HTML도 가드 이후 생성되어 삭제된 이름이 칩에도 안 남음). test/run.js에 회귀 테스트 2건(귀속 삭제 시 전체로 되돌림 / 전체이거나 살아있는 귀속이면 그대로 둠) 추가 — 수정 전 코드로 되돌려 첫 번째 테스트가 실제로 깨지는 것을 확인 후 복구. index.html 변경이라 APP_VERSION 1.47.129->1.47.130, sw.js CACHE v391->v392 갱신. node test/run.js 1295/1295 -> 1297/1297 통과.",
+      "commit": "a0e44de"
     }
   ]
 }
