@@ -1,15 +1,8 @@
 {
   "cycle": 182,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 177,
-      "phase": "develop",
-      "timestamp": "2026-10-11T10:30:00.000Z",
-      "summary": "general-purpose 서브에이전트로 141-176사이클과 겹치지 않는 새 개선점을 탐색 — cycle176 advance가 Kakao/Supabase CDN 스크립트를 동적 로더(loadScriptWithTimeout, index.html:1336-1346)로 바꾸면서 추가한 el.crossOrigin='anonymous'가 그 자체로 새 버그였음을 발견. ① t1.kakaocdn.net이 CORS 헤더(Access-Control-Allow-Origin)를 내려주지 않으면 crossorigin='anonymous'는 CORS 모드 요청을 네트워크 오류로 실패시켜(일반 <script src>라면 성공했을 로드가 막힘) Kakao 로그인이 상시 깨지는데, onerror도 조용히 finish()만 호출해 timeout과 구분이 안 돼 '인터넷 연결을 확인해 주세요'라는 오탐 메시지로 사용자를 오도한다. ② 전역 에러 바운더리 recordError()(1369-1382)의 주석이 명시하는 'crossorigin 없는 서드파티 스크립트에서 오는 정보 없는 Script error.는 조용히 무시한다' 필터는 정확히 crossOrigin이 없을 때만 동작하는데, 이 두 스크립트에 crossOrigin을 달아버려 Kakao/Supabase SDK 내부의 처리되지 않은 런타임 예외가 이제 err instanceof Error를 만족해 third-party SDK 소음까지 사용자 에러 배너로 노출된다. loadScriptWithTimeout에서 el.crossOrigin='anonymous' 한 줄을 제거하고 그 이유를 설명하는 주석을 추가했다(onload/onerror는 둘 다 finish()만 부르므로 CORS 세부정보를 쓰는 코드가 전혀 없어 crossOrigin이 득 없이 리스크만 더함). test/run.js의 'CDN 리소스' 정적 검사 테스트를 crossOrigin이 설정되지 '않음'을 확인하도록 반전시키고(el\\\\.crossOrigin\\\\s*=\\\\s* 정규식 — 설명 주석 안의 'crossOrigin' 문자열과 혼동되지 않게 실제 할당 패턴만 매칭), [실행형] loadScriptWithTimeout 테스트의 appended[0].crossOrigin 기대값을 'anonymous'에서 undefined로 바꿨다 — index.html만 HEAD(cycle176 advance 커밋)로 되돌려 재현한 결과 두 테스트 모두 실제로 깨짐을 확인했다(1243/1245 -> 복원 후 1245/1245). index.html/sw.js 변경이라 APP_VERSION 1.47.121->1.47.122, sw.js CACHE v383->v384 갱신. node test/run.js 1245/1245 -> 1245/1245 통과(신규 추가 없이 기존 2건을 반전 수정).",
-      "commit": "8014445"
-    },
     {
       "cycle": 177,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-12T05:10:00.000Z",
       "summary": "critique(cycle181) 계획대로 head 최상단에 동기 인라인 <script>를 추가해 localStorage의 고정 키 'asset_app_theme_cache'(JSON {themeMode,accent})를 읽어 있으면 즉시 document.documentElement의 data-theme/data-accent와 meta[name=theme-color]를 덮어쓰도록 했다(<style> 블록·SDK 동적 로더보다 먼저, try/catch로 private mode/스토리지 차단 시 조용히 무시, 캐시 없으면 기존과 동일). logic.js에 순수 함수 themeCachePayload(settings)(DB.settings→{themeMode,accent} 변환, 둘 다 기본값 system/teal)를 추가하고, index.html에 writeThemeCache()(themeCachePayload 결과를 JSON.stringify해 localStorage.setItem, try/catch로 조용히 무시) 헬퍼를 신설해 migrate()(accent 기본값 확정 직후)·setTheme()·applyAccent()(setAccent()가 거침) 세 곳 모두에서 매번 다시 쓰게 했다. 계정/세션과 무관한 고정 키라 계정 전환 시 한 프레임만 이전 계정 테마가 보일 수 있지만 cycle178의 settings 기기로컬 트레이드오프와 동일하게 수용. test/run.js: FUNCTIONS에 migrate가 이미 호출하는 writeThemeCache를 추가하고, themeCachePayload 단위 테스트 3건(정상값 그대로/빈 값은 기본값/undefined·null settings도 기본값), writeThemeCache 통합 테스트 2건(DB.settings를 고정 키로 저장/localStorage.setItem이 던져도 조용히 무시), migrate가 캐시를 갱신하는지 통합 테스트 1건, setTheme/applyAccent가 writeThemeCache()를 호출하는지 정적 패턴 테스트 1건, head 인라인 스크립트가 <style> 블록·SDK 로더보다 먼저 오고 async/defer가 없는지 원본 텍스트 순서로 확인하는 정적 테스트 1건, 총 8건을 추가했다. vm 샌드박스 realm 경계 문제(themeCachePayload가 돌려주는 객체 리터럴이 host realm과 프로토타입이 달라 deepStrictEqual이 'not reference-equal'로 실패)를 JSON round-trip 정규화로 해결했고, 정적 순서 테스트도 처음엔 직접 추가한 주석 안의 '<style>' 문자열을 실제 태그로 오인해 거짓 통과하는 걸 발견해 주석 문구를 바꿔 고쳤다. index.html만 HEAD(cycle181 critique 커밋)로 되돌려 재현한 결과 test/run.js 자체가 writeThemeCache를 extractFunction하지 못해 하네스가 즉시 에러로 멈추는 것으로, 수정 전 상태엔 이 기능이 아예 없었음을 재확인했다(복원 후 1305/1305). index.html/logic.js/sw.js 변경이라 APP_VERSION 1.47.130->1.47.131, sw.js CACHE v392->v393 갱신. node test/run.js 1297/1297 -> 1305/1305 통과. pending_advance_plan을 비웠다.",
+      "commit": null
+    },
+    {
+      "cycle": 182,
+      "phase": "develop",
+      "timestamp": "2026-10-12T06:10:00.000Z",
+      "summary": "general-purpose 서브에이전트로 141-181사이클과 겹치지 않는 새 개선점을 탐색 — doRenameOwner()는 이름변경 시 ST.hist.owner를 새 이름으로 옮겨주는데(cycle140), doRenameCat()에는 전체내역 탭의 지출분석 카테고리 드릴다운 필터인 ST.hist.catExact(openCatHistory가 세팅, 4475행 필터는 늘 expense 전용)에 대한 동일한 동기화가 빠져 있었음을 발견. 재현 경로: 지출분석에서 카테고리(예: '식비')로 드릴다운 → ST.hist.catExact='식비' → 카테고리 관리에서 '식비'를 '외식비'로 이름변경 → DB.txns/recurrences/budgetHistory는 이미 새 이름으로 옮겨졌지만 ST.hist.catExact만 옛 이름에 남아, 전체내역 탭으로 돌아가면 칩은 그대로 보이면서 필터(t.category===H.catExact)는 어떤 거래와도 안 맞아 목록이 영원히 빈 화면으로 보이는 조용한 버그(cycle181의 ST.hist.owner 삭제 버그와 같은 클래스지만 이름변경+카테고리 경로). doRenameCat()의 old->v 마이그레이션 블록 끝에 if(k==='expense'&&ST.hist&&ST.hist.catExact===old)ST.hist.catExact=v; 한 줄 추가(catExact는 expense 전용이라 k==='expense'로 범위 한정, ST.hist 부재 시 no-op). test/run.js에 3개 테스트 추가: catExact가 옛 이름을 가리키면 새 이름으로 이동 / 무관한 카테고리를 보고 있거나 ST.hist 자체가 없으면 안 건드리고 에러도 안 냄 / catExact는 expense 전용이라 수입 카테고리 이름변경과는 무관함. index.html만 수정 전으로 되돌려(git stash) 첫 번째 테스트가 실제로 깨지는 것을 확인(1307/1308)한 뒤 복구(1308/1308). index.html/sw.js 변경이라 APP_VERSION 1.47.131->1.47.132, sw.js CACHE v393->v394 갱신. node test/run.js 1305/1305 -> 1308/1308 통과.",
       "commit": null
     }
   ]

@@ -1997,6 +1997,45 @@ test('doRenameCat → mergeNameListWithTombstones: 이름변경 전으로 동기
   assert.deepStrictEqual(merged, ['외식비'], '톰스톤된 옛 이름(식비)이 좀비로 되살아나면 안 됨');
 });
 
+/* ---------- doRenameCat: ST.hist.catExact(전체내역 탭의 지출분석 카테고리 드릴다운 필터)가 옛 이름을
+ * 가리키고 있었다면 새 이름으로 함께 옮겨간다 (app-evolve cycle182 develop) ----------
+ * doRenameOwner는 ST.hist.owner를 이름변경과 함께 옮기지만(app-evolve cycle140), doRenameCat에는
+ * 똑같은 사연의 ST.hist.catExact 동기화가 빠져 있었다. openCatHistory가 지출분석 카테고리 행의
+ * '내역' 버튼에서 ST.hist.catExact를 세팅해 전체내역 탭에 그 카테고리 칩을 띄우는데, 그 상태로
+ * 카테고리 이름을 바꾸면 DB.txns/DB.recurrences의 category는 이미 새 이름으로 옮겨갔지만(5320행)
+ * ST.hist.catExact만 옛 이름에 그대로 남는다. 4475행의 필터(t.category===H.catExact)는 그 옛 이름과
+ * 더는 어떤 거래와도 안 맞으므로, 전체내역 탭으로 돌아가면 활성 칩은 보여주면서(렌더는 H.catExact
+ * 문자열 자체를 그대로 표시) 목록은 영원히 빈 화면으로 보인다. */
+test('doRenameCat: ST.hist.catExact가 옛 카테고리명을 가리키고 있었다면 새 이름으로 함께 옮겨간다', () => {
+  sandbox.DB = {
+    categories: { expense: ['식비'] }, catIcon: {}, catVar: {},
+    txns: [{ id: 't1', type: 'expense', category: '식비', memo: '식비' }], recurrences: [],
+  };
+  sandbox.ST = { hist: { catExact: '식비', owner: '전체' } };
+  sandbox.catRenameDraft = { name: '외식비', icon: '' };
+  sandbox.doRenameCat('expense', 0);
+  assert.strictEqual(sandbox.ST.hist.catExact, '외식비', '전체내역 탭의 카테고리 필터가 새 이름을 따라가지 않음');
+});
+test('doRenameCat: ST.hist.catExact가 다른 카테고리를 보고 있었다면(또는 ST.hist 자체가 없어도) 건드리지 않고 에러도 내지 않는다', () => {
+  sandbox.DB = { categories: { expense: ['식비', '교통비'] }, catIcon: {}, catVar: {}, txns: [], recurrences: [] };
+  sandbox.ST = { hist: { catExact: '교통비', owner: '전체' } };
+  sandbox.catRenameDraft = { name: '외식비', icon: '' };
+  sandbox.doRenameCat('expense', 0);
+  assert.strictEqual(sandbox.ST.hist.catExact, '교통비', '무관한 카테고리 필터는 그대로 유지돼야 함');
+  // ST.hist 자체가 없는 호출부(이 파일의 다른 doRenameCat 테스트들)에서도 TypeError 없이 끝나야 함
+  sandbox.ST = { tab: 'home' };
+  sandbox.DB = { categories: { expense: ['식비'] }, catIcon: {}, catVar: {}, txns: [], recurrences: [] };
+  sandbox.catRenameDraft = { name: '외식비2', icon: '' };
+  assert.doesNotThrow(() => sandbox.doRenameCat('expense', 0));
+});
+test('doRenameCat: catExact는 지출(expense) 전용 필터이므로 수입/저축 카테고리 이름변경은 건드리지 않는다', () => {
+  sandbox.DB = { categories: { income: ['식비'] }, catIcon: {}, catVar: {}, txns: [], recurrences: [] };
+  sandbox.ST = { hist: { catExact: '식비', owner: '전체' } }; // 지출 카테고리 '식비'를 보고 있던 상태(이름만 우연히 같은 수입 카테고리)
+  sandbox.catRenameDraft = { name: '용돈', icon: '' };
+  sandbox.doRenameCat('income', 0);
+  assert.strictEqual(sandbox.ST.hist.catExact, '식비', '수입 카테고리 이름변경은 지출 전용 catExact 필터와 무관해야 함');
+});
+
 /* ---------- delOwner: 귀속 삭제도 delCat/delTx처럼 undo 가능해야 한다 (cycle28) ---------- */
 test('delOwner: 사용 중인 자산이 없으면 확인 시트 후 삭제하고 undoToast로 되돌릴 수 있다', () => {
   sandbox.DB = { owners: ['나', '아내', '아이'], assets: [] };

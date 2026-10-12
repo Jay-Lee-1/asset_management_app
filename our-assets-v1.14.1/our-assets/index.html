@@ -1376,7 +1376,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.131';
+const APP_VERSION='1.47.132';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5321,6 +5321,7 @@ function doRenameCat(k,i){const v=((catRenameDraft.name!=null?catRenameDraft.nam
   DB.recurrences.forEach(r=>{if(r.type===k&&r.category===old){r.category=v;if(r.memo===old)r.memo=v;touch(r)}});
   if(k==='expense'&&DB.budgetHistory&&old in DB.budgetHistory){DB.budgetHistory[v]=DB.budgetHistory[old];delete DB.budgetHistory[old]} /* 이름 변경 시 예산 이력도 함께 이동 */
   DB.deletedIds=DB.deletedIds||{};DB.deletedIds[catTombKey(k,old)]=Date.now();delete DB.deletedIds[catTombKey(k,v)]; /* old 이름도 doDeleteCat처럼 톰스톤해야 함 — 안 그러면 mergeNameListWithTombstones가 old를 '살아있다'고 보고 아직 이 이름변경을 모르는 다른 기기의 사본이 old를 되살림(app-evolve cycle180). v가 과거에 삭제됐던 이름이면 그 톰스톤은 지워 되살림을 허용 */
+  if(k==='expense'&&ST.hist&&ST.hist.catExact===old)ST.hist.catExact=v; /* 전체내역 탭의 지출분석 카테고리 드릴다운 필터(ST.hist.catExact, openCatHistory가 세팅·4475행 필터는 늘 expense만 대상)가 doRenameOwner의 ST.hist.owner와 똑같은 사연으로 낡은 이름에 남아있었다 — DB.txns는 위에서 이미 새 이름으로 옮겼으므로, 그 상태로 전체내역 탭에 돌아가면 칩은 새 이름이 아니라 옛 이름을 보여주면서 필터(t.category===old 그대로)는 어떤 거래와도 안 맞아 내역이 영원히 빈 화면으로 보인다(app-evolve cycle182) */
  }
  save();renderCurrent();openCatManage(k);toast('카테고리를 수정했어요')}
 
