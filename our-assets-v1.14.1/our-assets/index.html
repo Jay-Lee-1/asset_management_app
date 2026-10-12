@@ -1376,7 +1376,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.132';
+const APP_VERSION='1.47.133';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2250,7 +2250,24 @@ async function requestPersistentStorage(){
  }catch(e){STORAGE_PERSISTED=null}
  if(DB&&ST.tab==='home')renderCurrent();
 }
-function save(opts){invalidateBalances();
+/* save(): foreignSaveIsNewer()로 다른 탭의 __savedAt을 확인하는 것과 실제 localStorage.setItem
+ * 사이가 원자적이지 않아, 같은 계정을 멀티탭(설치된 PWA+남겨둔 브라우저 탭 등)으로 열어두면 OS
+ * 앱전환/슬립-리줌 시 모든 탭이 거의 동시에 save()를 불러 서로의 아직 반영 안 된 __savedAt을
+ * "병합 불필요"로 잘못 판단해 나중에 쓰는 탭이 앞 탭의 변경을 조용히 덮어쓰는 check-then-act
+ * 레이스가 있었다(scheduleCloudPush/pushCloud가 이미 updated_at 조건부 UPDATE로 원자화한 것과
+ * 같은 버그 클래스가 로컬 저장 경로에만 없었음). navigator.locks(Web Locks API)로 'aa_save_'+dataKey()
+ * 이름의 락을 걸어 실제 저장 로직(_saveCore)을 동일 오리진 탭 간 상호배제시킨다 — dataKey()가
+ * 계정/게스트별로 다른 키를 돌려주므로 다른 계정끼리는 서로 경합하지 않는다. 미지원 브라우저(구형
+ * Safari 등)는 지금까지처럼 _saveCore를 바로 호출한다. 반환값을 동기적으로 소비하는 호출부는
+ * 없다(touchSave()가 그대로 전달만 할 뿐이라 락 분기의 fire-and-forget true가 안전하다). */
+function save(opts){
+ if(typeof navigator!=='undefined'&&navigator.locks&&navigator.locks.request){
+  navigator.locks.request('aa_save_'+dataKey(),()=>_saveCore(opts));
+  return true;
+ }
+ return _saveCore(opts);
+}
+function _saveCore(opts){invalidateBalances();
  /* 시트가 열려 있으면 handleForeignStorage가 다른 탭의 저장을 TAB_SYNC_PENDING으로만 쌓아두고
   * 반영을 closeSheet()로 미루는데, saveTx/saveAsset/saveRec 등 모든 저장 흐름은 closeSheet()보다
   * save()를 먼저 부르므로 그 사이 이 탭이 save()를 호출하면 병합 없이 자신의(다른 탭 변경을 모르는)

@@ -8816,6 +8816,121 @@ test('applyForeignSave: localStorage에 저장된 값이 없으면 DB를 건드�
   assert.strictEqual(sandbox.DB, before, 'localStorage가 비어있으면 조용히 아무 것도 하지 않아야 함');
 });
 
+/* ---------- save()/_saveCore: navigator.locks로 동일 계정 멀티탭 저장을 직렬화하는지 검증
+ * (app-evolve cycle182 advance) ---------- */
+// sandbox.save/sandbox.invalidateBalances 등은 전역 FUNCTIONS 목록에 올리지 않고(다른 93곳의
+// save() 호출부가 전부 전역 no-op 스텁에 기대고 있어, save()를 실제 로직으로 승격하면 그 호출부들이
+// DB/owners 등 이 테스트와 무관한 전역 상태를 요구하게 돼 무관한 테스트가 대거 깨진다) save/_saveCore/
+// foreignSaveIsNewer만 끌어온 별도 vm 컨텍스트에 태운다(APPLOCK 테스트의 makeAppLockCtx와 같은 패턴).
+// 테스트마다 필요한 의존(DB/invalidateBalances/mergeRemoteDataIntoLocal 등)은 그 컨텍스트에서
+// 최소한의 스텁으로 직접 채운다.
+function makeSaveCtx(opts) {
+  const ctx = Object.assign({
+    invalidateBalances: () => {},
+    scheduleCloudPush: () => {},
+    toast: () => {},
+    toastFail: () => {},
+    storageOutcomeMsg: () => null,
+    mergeRemoteDataIntoLocal: () => {},
+    updateNwHistory: (h) => h,
+    totalAssets: () => 0,
+    totalDebt: () => 0,
+    ownerAssets: () => 0,
+    ownerDebt: () => 0,
+    TODAY: '2026-01-01',
+    STORAGE_OK: true,
+    TAB_SAVED_AT: 0,
+    TAB_SYNC_PENDING: null,
+    DB: { owners: [], nwHistory: [], txns: [] },
+  }, opts);
+  vm.createContext(ctx);
+  vm.runInContext([extractFunction('save'), extractFunction('_saveCore'), extractFunction('foreignSaveIsNewer')].join('\n'), ctx);
+  return ctx;
+}
+// Web Locks API(navigator.locks.request)를 최소한으로 흉내내는 가짜 락 매니저 — 이름 하나당
+// 콜백을 큐에 쌓아 앞선 콜백이 완전히 settle된 뒤에야 다음 콜백을 꺼내 실행한다(실제 Web Lock이
+// 동일 오리진 탭 간에 보장하는 상호배제와 같은 모양). 두 번째 '탭'의 _saveCore가 첫 번째 탭의
+// 쓰기를 반드시 관측하는지(3c 레이스 해소 검증)와, 락이 실제로 쓰이는지(이름 일치) 둘 다 이걸로 검증한다.
+function makeFakeLockManager() {
+  let busy = false;
+  const queue = [];
+  function runNext() {
+    if (busy || !queue.length) return;
+    busy = true;
+    const { cb, resolve, reject } = queue.shift();
+    Promise.resolve().then(cb).then(
+      (v) => { busy = false; resolve(v); runNext(); },
+      (e) => { busy = false; reject(e); runNext(); }
+    );
+  }
+  const calls = [];
+  return {
+    calls,
+    request(name, cb) {
+      calls.push(name);
+      return new Promise((resolve, reject) => { queue.push({ cb, resolve, reject }); runNext(); });
+    },
+  };
+}
+test('save(): navigator.locks 미지원(구형 Safari 등)이면 _saveCore를 바로(동기) 호출해 기존과 동일하게 동작한다', () => {
+  const setCalls = [];
+  const ctx = makeSaveCtx({
+    navigator: {},
+    dataKey: () => 'k',
+    localStorage: { getItem: () => null, setItem: (k, v) => setCalls.push([k, v]) },
+  });
+  const ok = ctx.save();
+  assert.strictEqual(ok, true, '락 미지원 분기는 _saveCore의 반환값(ok)을 그대로 동기 반환해야 함');
+  assert.strictEqual(setCalls.length, 2, 'DB와 __savedAt 두 키가 호출 즉시(동기) 저장돼야 함 — 비동기로 지연되면 기존 호출부(touchSave 등)의 "저장 후 즉시 렌더" 흐름이 깨짐');
+});
+test('save(): navigator.locks 지원 시 "aa_save_"+dataKey() 이름으로 락을 요청하고, 그 안에서 기존과 동일하게 저장한다', async () => {
+  const setCalls = [];
+  const lockManager = makeFakeLockManager();
+  const ctx = makeSaveCtx({
+    navigator: { locks: lockManager },
+    dataKey: () => 'acct-k',
+    localStorage: { getItem: () => null, setItem: (k, v) => setCalls.push([k, v]) },
+  });
+  ctx.save();
+  await Promise.resolve(); await Promise.resolve();
+  assert.deepStrictEqual(lockManager.calls, ['aa_save_acct-k'], 'dataKey()로 계정별 락 이름을 만들어야 함 — 고정 이름이면 다른 계정끼리도 서로 불필요하게 경합한다');
+  assert.strictEqual(setCalls.length, 2, '락이 풀린 뒤 _saveCore가 실제로 실행되어 DB/__savedAt이 저장돼야 함');
+});
+test('[실행형] save(): 동일 계정 멀티탭에서 거의 동시에 save()를 불러도 락이 직렬화해 먼저 탭의 변경을 잃지 않는다(cycle182 critique가 재현한 check-then-act 레이스)', async () => {
+  const store = new Map();
+  const sharedLocalStorage = {
+    getItem: (k) => store.has(k) ? store.get(k) : null,
+    setItem: (k, v) => { store.set(k, v); },
+  };
+  const lockManager = makeFakeLockManager();
+  // 두 '탭'을 완전히 분리된 vm 컨텍스트(각자 독립된 메모리 DB)로 만들되, 실제 멀티탭처럼
+  // localStorage와 Web Lock은 같은 것을 공유시킨다. mergeRemoteDataIntoLocal은 실제 병합 함수
+  // 대신(그 로직 자체는 mergeCollection 테스트들이 이미 검증) "상대 탭 txns를 id 기준으로 합친다"는
+  // 핵심만 재현하는 스텁으로 둔다 — 이 테스트가 보려는 건 병합 로직이 아니라 "병합이 호출될 기회를
+  // 락이 보장하는가"다.
+  function makeTab(txnId) {
+    const ctx = makeSaveCtx({
+      navigator: { locks: lockManager },
+      dataKey: () => 'shared-k',
+      localStorage: sharedLocalStorage,
+      DB: { owners: [], nwHistory: [], txns: [{ id: txnId }] },
+      mergeRemoteDataIntoLocal: (foreign) => {
+        const seen = new Set(ctx.DB.txns.map(t => t.id));
+        (foreign.txns || []).forEach(t => { if (!seen.has(t.id)) ctx.DB.txns.push(t); });
+      },
+    });
+    return ctx;
+  }
+  const tabA = makeTab('txA');
+  const tabB = makeTab('txB');
+  tabA.save();
+  tabB.save();
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  const finalDB = JSON.parse(store.get('shared-k'));
+  assert.ok(finalDB.txns.some(t => t.id === 'txA') && finalDB.txns.some(t => t.id === 'txB'),
+    '락이 없으면 두 탭이 서로의 아직 반영 안 된 __savedAt을 보고 "병합 불필요"로 판단해 나중에 쓰는 탭이 먼저 탭의 거래를 영구히 덮어쓴다 — 직렬화되면 두 거래가 모두 남아야 함');
+});
+
 /* ---------- renderCurrent: 전역 에러 바운더리 ---------- */
 function resetErrBanner() {
   sandbox.errBannerEl._html = '';
