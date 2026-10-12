@@ -1356,7 +1356,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.128';
+const APP_VERSION='1.47.129';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1517,12 +1517,21 @@ function mergeRemoteDataIntoLocal(remoteData){
  const remoteCats=remoteData.categories||{};
  ['expense','income','saving'].forEach(k=>{DB.categories[k]=mergeNameListWithTombstones(DB.categories[k]||[],remoteCats[k]||[],DB.deletedIds,n=>catTombKey(k,n),normName)});
  DB.owners=mergeNameListWithTombstones(DB.owners||[],remoteData.owners||[],DB.deletedIds,ownerTombKey,normName);
- DB.budgetHistory=mergeBudgetHistory(DB.budgetHistory||{},remoteData.budgetHistory||{});
+ /* budgetHistory(월별 예산 한도)는 카테고리명으로 키잉되는 보조 맵이라, categories 자체의
+  * catTombKey 톰스톤(바로 위)과 같은 삭제를 알아야 한다 — 안 그러면 doDeleteCat이 지운 예산
+  * 한도가 아직 그 삭제를 모르는 다른 기기와 병합하는 순간 되살아난다(app-evolve cycle180
+  * critique/cycle181 advance). budgetHistory는 지출(expense) 카테고리 전용이라 catTombKey의
+  * type을 'expense'로 고정한 tombKeyFn을 넘긴다. */
+ DB.budgetHistory=mergeBudgetHistory(DB.budgetHistory||{},remoteData.budgetHistory||{},DB.deletedIds,c=>catTombKey('expense',c));
  /* catIcon/catVar(카테고리 아이콘·변동 카테고리 플래그)도 budgetHistory와 같은 '카테고리 커스터마이징'
   * 데이터인데 cycle122 goals 신설 이전부터 여기서 전혀 병합되지 않고 있었다(app-evolve cycle125) —
-  * mergeFlatMap()으로 budgetHistory와 동일한 병합 관례를 적용한다. */
- DB.catIcon=mergeFlatMap(DB.catIcon,remoteData.catIcon);
- DB.catVar=mergeFlatMap(DB.catVar,remoteData.catVar);
+  * mergeFlatMap()으로 budgetHistory와 동일한 병합 관례를 적용한다. 이 둘의 키는 catKey(type,name)
+  * 형태('타입:이름')라 budgetHistory처럼 카테고리명 하나로 바로 톰스톤 조회를 할 수 없어, 키를
+  * ':' 기준으로 잘라 type/name을 복원한 뒤 catTombKey(type,name)을 조회하는 전용 tombKeyFn을
+  * 쓴다(budgetHistory와 동일한 cycle180 critique/cycle181 advance 버그 클래스). */
+ const catFlatTombKey=key=>{const i=key.indexOf(':');return i===-1?null:catTombKey(key.slice(0,i),key.slice(i+1))};
+ DB.catIcon=mergeFlatMap(DB.catIcon,remoteData.catIcon,DB.deletedIds,catFlatTombKey);
+ DB.catVar=mergeFlatMap(DB.catVar,remoteData.catVar,DB.deletedIds,catFlatTombKey);
  /* deletedType/deletedBal(삭제한 자산의 재연동용 타입·잔액 기억, snapshotAssetName)도 catIcon/catVar와
   * 같은 flat map인데 여기서 전혀 병합되지 않고 있었다(app-evolve cycle135) — 한쪽 기기가 삭제한 자산의
   * 기록이 병합 후에도 반영되지 않아 재연동 안내가 뜨지 않고, 그대로 push하면 상대 기기 기록을 덮어썼다. */
@@ -5220,7 +5229,8 @@ function openCatManage(kind,keep){
 function addCat(k){const v=(($('newCat')&&$('newCat').value)||catAddDraft.name||'').trim().normalize('NFC');if(!v)return;
  const dup=DB.categories[k].find(c=>normName(c)===normName(v));
  if(dup){toast(dup===v?'이미 있는 카테고리예요':`비슷한 카테고리가 있어요: ${dup}`);return}
- DB.catIcon=DB.catIcon||{};
+ DB.catIcon=DB.catIcon||{};DB.catVar=DB.catVar||{};DB.budgetHistory=DB.budgetHistory||{};
+ delete DB.catIcon[catKey(k,v)];delete DB.catVar[catKey(k,v)];if(k==='expense')delete DB.budgetHistory[v]; /* mergeBudgetHistory/mergeFlatMap은 병합 경로에서만 톰스톤을 보므로, restoreBackup/guest 데이터 가져오기 등 병합을 거치지 않는 경로로 이 이름의 아이콘/변동플래그/예산한도 유령이 들어와 있었다면 재사용 시점에 방어적으로 지운다(app-evolve cycle181) */
  DB.categories[k].push(v);
  if(catAddDraft.icon)DB.catIcon[catKey(k,v)]=catAddDraft.icon;
  catAddDraft={name:'',icon:''};

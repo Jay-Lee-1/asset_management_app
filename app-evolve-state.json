@@ -1,19 +1,8 @@
 {
-  "cycle": 180,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "budgetHistory/catIcon/catVar 유령 복원 방지용 톰스톤 인지 병합",
-    "why": "cycle179/180이 DB.categories/DB.owners '이름 목록'에만 catTombKey/ownerTombKey 톰스톤을 적용했는데, 같은 이름으로 키잉되는 보조 flat-map인 DB.budgetHistory(월별 예산 한도)/DB.catIcon/DB.catVar는 mergeBudgetHistory/mergeFlatMap(logic.js:214-236, mergeRemoteDataIntoLocal 호출부 index.html~1518-1525)이 순수 key-union이라 톰스톤을 전혀 안 본다. doDeleteCat()이 로컬에서 budgetHistory[c]/catIcon/catVar 키를 지우고 카테고리명만 톰스톤해도, 아직 동기화 못 한 다른 기기와 머지하는 순간 지워진 예산 한도가 그대로 되살아나고, 사용자가 같은 이름으로 카테고리를 재생성하면 addCat()이 이 flat-map들을 전혀 안 지워 과거(삭제 전) 예산 한도가 아무 사용자 행동 없이 즉시 재적용돼 '초과' 경고/퍼센트가 틀리게 뜬다. node vm으로 mergeBudgetHistory({}, {coffee:[{from:'2026-08',amount:90000}]}) 호출 시 결과에 coffee가 그대로 살아남음을 직접 재현 확인했고, rename 시나리오(A가 커피→카페로 바꾸고 B는 아직 구이름 보유)에서도 머지 후 cafe/coffee 둘 다 남는 고아 발생을 재현했다.",
-    "approach": "(1) logic.js의 mergeBudgetHistory/mergeFlatMap에 deletedIds+tombKeyFn 인자를 추가해 mergeNameListWithTombstones와 동일한 방식으로 tombKeyFn(key)가 deletedIds에 있으면 결과에서 제외(budgetHistory는 expense 전용이라 tombKeyFn=c=>catTombKey('expense',c); catIcon/catVar는 flat key가 catKey(type,name) 형태라 ':' 기준으로 분리해 catTombKey(type,name) 재구성). (2) mergeRemoteDataIntoLocal(index.html ~1518-1525)의 3개 호출부에 DB.deletedIds와 해당 tombKeyFn을 넘긴다(categories/owners에 이미 쓰는 패턴 재사용). (3) 방어적으로 addCat()에서 톰스톤된 이름을 재사용할 때 새 카테고리 생성 전에 DB.budgetHistory[v]/DB.catIcon[catKey(k,v)]/DB.catVar[catKey(k,v)]를 delete해, 병합 경로 외(restoreBackup/guest 데이터 가져오기 등)로 들어온 유령도 같이 정리한다. (4) test/run.js에 mergeBudgetHistory/mergeFlatMap 단위 테스트(톰스톤된 키는 local/remote 양쪽에 있어도 제외), mergeRemoteDataIntoLocal 통합 테스트(삭제-후-병합/이름변경-후-병합 재현), doDeleteCat→addCat 재사용 테스트(과거 예산 한도가 살아남지 않음) 추가. 예상 diff는 과거 advance 규모와 비슷한 150~250줄."
-  },
+  "cycle": 181,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 175,
-      "phase": "advance",
-      "timestamp": "2026-10-11T04:05:00.000Z",
-      "summary": "critique(cycle175) 계획대로 importFile 'change' 핸들러(restoreBackup 커밋 콜백)에 doResetAll과 동일한 6초 지연 push를 적용했다. save() 대신 save({deferCloudPush:true})를 호출하고 바로 뒤에 const restorePushT=setTimeout(scheduleCloudPush,6000)을 추가했으며, undoToast 콜백 맨 앞에 clearTimeout(restorePushT)를 삽입해 되돌리면 push 타이머가 취소되게 했다(되돌린 뒤의 save()는 opts 없이 그대로 둬 자신의 정상 push를 예약). 이 콜백은 FUNCTIONS로 추출 가능한 선언형 함수가 아니라 $('importFile').addEventListener('change',e=>{...}) 최상위 statement 안에 있어, cycle170/171/174의 setInterval/addEventListener 캡처 패턴을 그대로 재사용했다 — sandbox에 importFileEl(addEventListener가 콜백을 _importFileChangeCb에 캡처)과 FileReader 스텁(readAsText가 onload를 즉시 호출, file.__text를 result로 돌림)을 추가하고, 전역 wiring 섹션에서 extractStatement로 이 statement를 실행해 vm의 $('importFile')이 실제로 그 콜백을 캡처하게 했다. test/run.js에 가짜 change 이벤트(target.files[0]={__text:JSON배백업문자열})로 전체 흐름(파일 읽기→sanitizeBackup→confirmSheet)을 재현하는 테스트 2건을 추가: (1) 복원 확인 후 save가 {deferCloudPush:true}로 호출되고 6초 전엔 scheduleCloudPush가 안 불리다가 타이머 콜백을 직접 불러보면 호출되는지, (2) 되돌리기를 누르면 clearTimeout이 setTimeout이 돌려준 것과 같은 id로 호출되고 scheduleCloudPush가 전혀 불리지 않으며 DB가 복원되고 두 번째 save()는 opts 없이 호출되는지. 두 테스트 모두 수정 전 커밋(HEAD의 index.html)으로 되돌려 재현한 결과 실제로 깨짐을 확인했다(1235/1237 -> 수정 복원 후 1237/1237). index.html/sw.js 변경이라 APP_VERSION 1.47.118->1.47.119, sw.js CACHE v380->v381 갱신. node test/run.js 1235/1235 -> 1237/1237 통과. pending_advance_plan을 비웠다.",
-      "commit": null
-    },
     {
       "cycle": 176,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-12T00:13:26.452Z",
       "summary": "general-purpose 서브에이전트로 120-180사이클(기각 이력 포함)을 전달하고 앱 전체를 재조망. 새로 발견: cycle179/180이 DB.categories/DB.owners 이름 목록에만 catTombKey/ownerTombKey 톰스톤을 추가했는데, 같은 이름으로 키잉되는 보조 flat-map인 DB.budgetHistory(월별 예산 한도)/DB.catIcon/DB.catVar는 mergeBudgetHistory/mergeFlatMap(logic.js:214-236, 호출부 index.html~1518-1525)이 순수 key-union이라 톰스톤을 전혀 안 본다. node vm으로 mergeBudgetHistory({}, {coffee:[{from:\"2026-08\",amount:90000}]}) 호출 시 coffee가 그대로 살아남음을 직접 재현했고, rename 시나리오(A가 커피->카페로 바꾸고 B는 미동기화 구이름 보유)에서도 머지 후 cafe/coffee 둘 다 남는 고아를 재현했다. doDeleteCat()이 로컬에서 해당 flat-map 키를 지우고 카테고리명만 톰스톤해도 미동기화 기기와 병합하면 지워진 예산 한도가 되살아나고, addCat()은 톰스톤된 이름 재사용 시 이 flat-map들을 전혀 안 지워 과거 예산 한도가 사용자 행동 없이 즉시 재적용돼 잘못된 \"초과\" 경고/퍼센트가 뜸을 확인. mergeBudgetHistory/mergeFlatMap에 mergeNameListWithTombstones와 동일한 방식으로 deletedIds+tombKeyFn을 추가하고(budgetHistory는 catTombKey(expense,c), catIcon/catVar는 catKey 형태를 분리해 catTombKey(type,name) 재구성), mergeRemoteDataIntoLocal의 3개 호출부에 반영 + addCat()에서 톰스톤 재사용 시 방어적으로 flat-map 키를 지우는 계획을 pending_advance_plan에 저장. 러너업(기각): DB.rates(시세 캐시)는 비권위적 외부 데이터로 syncRates/RATE_TTL이 자가치유하므로 저순위, costBasis 스칼라가 assetQtyLog 수량변경에 안 맞는 문제는 기존에 보류된 FIFO 로트 추적 항목과 동일 근본원인이라 새 발견 아님, Kakao 동기화 안내 메시지(kakaoSyncLabel)는 cycle154에서 이미 충분히 처리됨 재확인. 코드 변경 없음(읽기 전용 조사).",
+      "commit": null
+    },
+    {
+      "cycle": 180,
+      "phase": "advance",
+      "timestamp": "2026-10-12T01:20:00.000Z",
+      "summary": "critique(cycle180) 계획대로 logic.js의 mergeBudgetHistory/mergeFlatMap에 선택적 deletedIds+tombKeyFn 인자를 추가했다. mergeBudgetHistory는 union 직전에 isTombstoned(cat)으로 걸러 local 자신의 사본까지 포함해 제외(mergeNameListWithTombstones와 동일한 '존재 자체가 우선' 원칙), mergeFlatMap은 Object.assign 결과에서 tombKeyFn(key)가 deletedIds에 있는 키를 delete. 둘 다 tombKeyFn을 안 넘기면(과거 호출 호환) 톰스톤 판정을 완전히 건너뛰어 이전과 동일하게 동작하므로 기존 시그니처로 부르던 코드는 안 건드려도 됨. index.html의 mergeRemoteDataIntoLocal 3개 호출부를 갱신: DB.budgetHistory는 budgetHistory가 expense 전용이라 tombKeyFn=c=>catTombKey('expense',c), DB.catIcon/DB.catVar는 flat key가 catKey(type,name)='타입:이름' 형태라 catFlatTombKey(key)(':' 기준으로 잘라 catTombKey(type,name) 재구성)를 공유해서 쓴다. addCat()에는 플랜대로 방어적 정리를 추가 — dup 체크를 통과해 새 이름을 push하기 직전에 DB.catIcon[catKey(k,v)]/DB.catVar[catKey(k,v)]/(k==='expense'면)DB.budgetHistory[v]를 delete해, 병합 경로를 거치지 않는 restoreBackup/guest 데이터 가져오기 등으로 들어온 유령도 재사용 시점에 정리되게 했다(존재하지 않으면 no-op이라 회귀 없음). test/run.js에 mergeBudgetHistory/mergeFlatMap 단위 테스트 5건(톰스톤된 키는 양쪽에 있어도 제외 2건, local 전용 사본도 제거 1건, tombKeyFn 생략 시 과거 호환 2건), mergeRemoteDataIntoLocal 통합 테스트 2건(critique가 재현한 삭제-후-병합/이름변경-후-병합 시나리오 그대로), addCat 재사용 테스트 1건(병합 경로 밖에서 들어온 유령도 재추가 시 정리됨) 총 8건을 추가했다. logic.js/index.html만 HEAD(cycle180 critique 커밋)로 되돌려 재현한 결과, tombKeyFn을 안 넘기는 과거 호환 테스트 2건은 그대로 통과했지만 나머지 6건(톰스톤 적용 4건 + 통합 2건, addCat 테스트는 catKey/catTombKey 자체는 이미 있어 재현에선 통과하지 않고 실제로 깨짐)이 실제로 깨짐을 확인했다(1289/1295 -> 복원 후 1295/1295). index.html/logic.js/sw.js 변경이라 APP_VERSION 1.47.128->1.47.129, sw.js CACHE v390->v391 갱신. node test/run.js 1287/1287 -> 1295/1295 통과. pending_advance_plan을 비웠다.",
       "commit": null
     }
   ]

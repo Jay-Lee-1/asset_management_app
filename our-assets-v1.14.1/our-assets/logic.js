@@ -210,11 +210,20 @@ function mergeNameListWithTombstones(localArr,remoteArr,deletedIds,tombstoneKeyF
  * 유니온한다. 같은 (카테고리,from)이 양쪽에 다른 금액으로 있으면(동시에 같은 달 예산을 고쳤을 때)
  * 이 값 자체엔 mergeCollection처럼 항목별 updatedAt이 없어 승패를 가릴 다른 기준이 없으므로,
  * mergeCollection의 "updatedAt 동률이면 local이 이긴다" 관례를 그대로 따라 local을 우선한다.
- * setBudgetFrom()과 동일하게 from 오름차순으로 재정렬해 반환한다. */
-function mergeBudgetHistory(localMap,remoteMap){
- localMap=localMap||{};remoteMap=remoteMap||{};
+ * setBudgetFrom()과 동일하게 from 오름차순으로 재정렬해 반환한다.
+ * deletedIds/tombKeyFn(둘 다 선택)은 mergeNameListWithTombstones와 동일한 합성 키 방식으로
+ * '삭제된 카테고리'를 판정해 그 카테고리의 예산 한도 전체(local 자신의 사본 포함)를 결과에서
+ * 제외한다(app-evolve cycle180 critique/cycle181 advance) — 이전엔 카테고리 이름 자체는
+ * mergeNameListWithTombstones로 톰스톤되는데, 같은 이름으로 키잉되는 이 보조 맵은 순수
+ * key-union이라 톰스톤을 전혀 몰라, doDeleteCat이 지운 예산 한도가 아직 그 삭제를 모르는
+ * 다른 기기와 병합하는 순간 되살아났다. tombKeyFn을 안 넘기면(과거 호출 호환) 톰스톤 판정을
+ * 건너뛰고 이전과 동일하게 동작한다. */
+function mergeBudgetHistory(localMap,remoteMap,deletedIds,tombKeyFn){
+ localMap=localMap||{};remoteMap=remoteMap||{};deletedIds=deletedIds||{};
+ const isTombstoned=tombKeyFn?(cat=>tombKeyFn(cat) in deletedIds):(()=>false);
  const out={};
  new Set([...Object.keys(localMap),...Object.keys(remoteMap)]).forEach(cat=>{
+  if(isTombstoned(cat))return;
   const merged=new Map((remoteMap[cat]||[]).map(e=>[e.from,e.amount]));
   (localMap[cat]||[]).forEach(e=>merged.set(e.from,e.amount));
   out[cat]=[...merged.entries()].map(([from,amount])=>({from,amount})).sort((a,b)=>a.from<b.from?-1:a.from>b.from?1:0);
@@ -227,12 +236,16 @@ function mergeBudgetHistory(localMap,remoteMap){
  * 고르거나 변동 카테고리로 지정한 뒤 다른 기기가 나중에 병합 경로로 동기화하면 그 변경이 조용히
  * 사라지고(로컬 맵에 없는 키는 버려짐) 뒤이은 push가 사라진 상태를 클라우드에 영구히 되밀었다.
  * mergeBudgetHistory와 동일한 관례(같은 키가 양쪽에 다른 값이면 local이 이김, 한쪽에만 있는 키는
- * 그대로 포함)를 쓰되 항목이 배열이 아니라 단일 값이라 더 단순하다. 삭제는 대상이 아니다 —
- * mergeNameList와 동일한 이유로(doDeleteCat/doRenameCat이 지운 키를 상대 기기의 '아직 안 지운'
- * 값으로 되살리면 그 기기가 쓰던 값이 사라질 수 있음) 키가 사라지는 방향은 로컬에서 명시적으로
- * 지운 뒤 다음 push로만 반영되게 둔다. */
-function mergeFlatMap(localMap,remoteMap){
- return Object.assign({},remoteMap||{},localMap||{});
+ * 그대로 포함)를 쓰되 항목이 배열이 아니라 단일 값이라 더 단순하다.
+ * deletedIds/tombKeyFn(둘 다 선택)은 mergeBudgetHistory와 동일한 이유(app-evolve cycle180
+ * critique/cycle181 advance)로 추가됐다 — 삭제된 카테고리의 아이콘/변동 플래그가 톰스톤 없이는
+ * 되살아나던 걸 막는다. 안 넘기면(DB.deletedType/DB.deletedBal처럼 톰스톤 개념이 없는 다른 flat
+ * map 호출부) 이전과 동일하게 순수 key-union으로 동작한다. */
+function mergeFlatMap(localMap,remoteMap,deletedIds,tombKeyFn){
+ localMap=localMap||{};remoteMap=remoteMap||{};deletedIds=deletedIds||{};
+ const out=Object.assign({},remoteMap,localMap);
+ if(tombKeyFn)Object.keys(out).forEach(key=>{if(tombKeyFn(key) in deletedIds)delete out[key]});
+ return out;
 }
 /* deletedIds는 삭제할 때마다(deleteTxnsUndo 등) 영구히 쌓이기만 하고 지금까지 지우는 경로가
  * 없어 수년 사용하면 무한히 커지고, 매 pushCloud/pullCloud마다 전체가 그대로 오간다. 순수 함수로

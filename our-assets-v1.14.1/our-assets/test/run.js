@@ -7920,6 +7920,97 @@ test('mergeRemoteDataIntoLocal: DB.owners/DB.categories는 mergeNameListWithTomb
   assert.deepStrictEqual(j(sandbox.DB.categories.expense), ['식비'], '원격이 먼저 지운 카테고리가 로컬에서 되살아나면 안 됨');
 });
 
+/* ---------- mergeBudgetHistory/mergeFlatMap 톰스톤 인지: categories/owners 이름 목록은
+ * mergeNameListWithTombstones(cycle179)로 톰스톤되는데, 같은 이름으로 키잉되는 보조 flat-map인
+ * budgetHistory(예산 한도)/catIcon/catVar는 여태 순수 key-union이라 톰스톤을 전혀 몰라, doDeleteCat이
+ * 지운 값이 아직 그 삭제를 모르는 다른 기기와 병합하는 순간 되살아났다(app-evolve cycle180
+ * critique/cycle181 advance). ---------- */
+test('mergeBudgetHistory: tombKeyFn으로 톰스톤된 카테고리는 local/remote 양쪽에 있어도 결과에서 제외된다', () => {
+  const tk = (c) => 'cat:expense:' + c;
+  const local = { 식비: [{ from: '2026-01', amount: 100000 }] };
+  const remote = { 식비: [{ from: '2026-01', amount: 100000 }], coffee: [{ from: '2026-08', amount: 90000 }] };
+  const out = sandbox.mergeBudgetHistory(local, remote, { 'cat:expense:coffee': 1000 }, tk);
+  assert.deepStrictEqual(j(out), { 식비: [{ from: '2026-01', amount: 100000 }] }, '톰스톤된 coffee는 remote에만 있어도 되살아나면 안 됨');
+});
+test('mergeBudgetHistory: local 자신의 사본도 톰스톤되면 함께 제거된다(doDeleteCat 직후 미동기화 기기가 상대의 톰스톤을 받는 상황)', () => {
+  const tk = (c) => 'cat:expense:' + c;
+  const local = { coffee: [{ from: '2026-08', amount: 90000 }] };
+  const out = sandbox.mergeBudgetHistory(local, {}, { 'cat:expense:coffee': 1000 }, tk);
+  assert.deepStrictEqual(j(out), {}, 'local만 들고 있어도 톰스톤이 있으면 제외돼야 함');
+});
+test('mergeBudgetHistory: tombKeyFn을 안 넘기면(과거 호출 호환) 톰스톤 판정 없이 이전과 동일하게 동작한다', () => {
+  const out = sandbox.mergeBudgetHistory({}, { coffee: [{ from: '2026-08', amount: 90000 }] });
+  assert.deepStrictEqual(j(out), { coffee: [{ from: '2026-08', amount: 90000 }] });
+});
+test('mergeFlatMap: tombKeyFn으로 톰스톤된 키는 local/remote 양쪽에 있어도 결과에서 제외된다', () => {
+  const tk = (key) => { const i = key.indexOf(':'); return 'cat:' + key.slice(0, i) + ':' + key.slice(i + 1) };
+  const local = { 'expense:식비': 'food', 'expense:coffee': 'coffee-icon' };
+  const remote = { 'expense:coffee': 'coffee-icon' };
+  const out = sandbox.mergeFlatMap(local, remote, { 'cat:expense:coffee': 1000 }, tk);
+  assert.deepStrictEqual(j(out), { 'expense:식비': 'food' }, '톰스톤된 expense:coffee는 local에도 있었지만 제외돼야 함');
+});
+test('mergeFlatMap: tombKeyFn을 안 넘기면(DB.deletedType/DB.deletedBal 호출부처럼) 톰스톤 판정 없이 이전과 동일하게 동작한다', () => {
+  const out = sandbox.mergeFlatMap({ a: 1 }, { b: 2 });
+  assert.deepStrictEqual(j(out), { a: 1, b: 2 });
+});
+test('mergeRemoteDataIntoLocal: 한 기기가 지운 카테고리의 budgetHistory/catIcon/catVar가 아직 지우지 않은 다른 기기와 병합해도 되살아나지 않는다(app-evolve cycle180 critique가 재현한 유령 복원)', () => {
+  sandbox.DB = minimalMergeDB({
+    catsV2: true,
+    categories: { expense: ['식비'], income: [], saving: [] }, // 기기A: coffee를 이미 삭제함
+    budgetHistory: {},
+    catIcon: {},
+    catVar: {},
+    deletedIds: { [sandbox.catTombKey('expense', 'coffee')]: 2000 },
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    categories: { expense: ['식비', 'coffee'], income: [], saving: [] }, // 기기B: 아직 coffee를 안 지움
+    budgetHistory: { coffee: [{ from: '2026-08', amount: 90000 }] },
+    catIcon: { 'expense:coffee': 'coffee' },
+    catVar: { 'expense:coffee': true },
+    deletedIds: {},
+  });
+  assert.deepStrictEqual(j(sandbox.DB.categories.expense), ['식비'], '카테고리 이름은 cycle179부터 이미 톰스톤돼 되살아나지 않음');
+  assert.strictEqual('coffee' in sandbox.DB.budgetHistory, false, '지워진 카테고리의 예산 한도가 되살아나면 안 됨');
+  assert.strictEqual('expense:coffee' in sandbox.DB.catIcon, false, '지워진 카테고리의 아이콘이 되살아나면 안 됨');
+  assert.strictEqual('expense:coffee' in sandbox.DB.catVar, false, '지워진 카테고리의 변동 플래그가 되살아나면 안 됨');
+});
+test('mergeRemoteDataIntoLocal: 이름변경(커피→카페) 후 미동기화 기기와 병합해도 옛 이름의 budgetHistory가 고아로 남지 않는다', () => {
+  sandbox.DB = minimalMergeDB({
+    catsV2: true,
+    categories: { expense: ['카페'], income: [], saving: [] }, // 기기A: 커피 -> 카페로 이름변경, budgetHistory도 함께 이동
+    budgetHistory: { 카페: [{ from: '2026-08', amount: 90000 }] },
+    deletedIds: { [sandbox.catTombKey('expense', '커피')]: 2000 },
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    categories: { expense: ['커피'], income: [], saving: [] }, // 기기B: 아직 이름변경 전, 옛 이름으로 예산을 고침
+    budgetHistory: { 커피: [{ from: '2026-09', amount: 80000 }] },
+    deletedIds: {},
+  });
+  assert.deepStrictEqual(j(sandbox.DB.categories.expense), ['카페']);
+  assert.strictEqual('커피' in sandbox.DB.budgetHistory, false, '톰스톤된 옛 이름(커피)의 예산 한도가 고아로 남으면 안 됨');
+  assert.deepStrictEqual(j(sandbox.DB.budgetHistory['카페']), [{ from: '2026-08', amount: 90000 }], '새 이름(카페)의 예산 한도는 그대로 유지돼야 함');
+});
+
+/* ---------- addCat: 톰스톤된(과거 삭제된) 이름을 재사용할 때 budgetHistory/catIcon/catVar 유령을
+ * 정리한다(app-evolve cycle181 advance) — mergeBudgetHistory/mergeFlatMap의 톰스톤 인지는 병합
+ * 경로에서만 적용되므로, restoreBackup/guest 데이터 가져오기 등 병합을 거치지 않는 경로로 들어온
+ * 유령은 addCat 시점에 방어적으로 한 번 더 정리해야 한다. ---------- */
+test('addCat: 톰스톤 병합 경로 바깥에서 들어온 budgetHistory/catIcon/catVar 유령이 있어도 재추가 시 깨끗이 지워진다', () => {
+  sandbox.DB = {
+    categories: { expense: ['식비'] },
+    catIcon: { 'expense:coffee': 'old-icon' },
+    catVar: { 'expense:coffee': true },
+    budgetHistory: { coffee: [{ from: '2026-08', amount: 90000 }] }, // 병합 경로를 거치지 않고 들어온 유령(예: restoreBackup)
+    txns: [], recurrences: [],
+  };
+  sandbox.catAddDraft = { name: 'coffee', icon: '' };
+  sandbox.addCat('expense');
+  assert.deepStrictEqual(sandbox.DB.categories.expense, ['식비', 'coffee']);
+  assert.strictEqual('expense:coffee' in sandbox.DB.catIcon, false, '재추가 시 유령 아이콘이 지워져야 함');
+  assert.strictEqual('expense:coffee' in sandbox.DB.catVar, false, '재추가 시 유령 변동플래그가 지워져야 함');
+  assert.strictEqual('coffee' in sandbox.DB.budgetHistory, false, '재추가 시 유령 예산 한도가 지워져야 함(과거 예산이 사용자 행동 없이 즉시 재적용되면 안 됨)');
+});
+
 /* ---------- gcTombstones: migrate()가 부팅마다 DB.deletedIds에서 오래된(maxAgeMs 이전) tombstone을
  * 걸러내는 순수 함수(app-evolve cycle95 advance) — GC 없이는 삭제할 때마다 쌓이기만 해 수년 사용 시
  * 무한히 커지고, 매 pushCloud/pullCloud마다 전체가 그대로 오간다. ---------- */
