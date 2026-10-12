@@ -1,15 +1,8 @@
 {
   "cycle": 181,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 176,
-      "phase": "review",
-      "timestamp": "2026-10-11T07:15:00.000Z",
-      "summary": "cycle176 develop(assetBalSampleDates의 maxPoints===1 0-나누기 NaN 날짜 버그 수정) 검토 — 수정된 함수를 읽고 maxPoints<=1 가드가 균등분배 분기(분모 maxPoints-1) 진입 전에 조기 반환됨을 확인했고, maxPoints<=0일 때의 기존 동작([to] 하나만 반환)과 결과가 동일함을 코드로 대조해 회귀가 없음을 검증했다. 현재 두 호출부(assetBalCard/debtsBehind)가 항상 리터럴 60을 넘겨 오늘 당장 이 경로에 닿지 않는다는 서술도 grep으로 재확인(다른 호출부 없음). node test/run.js 1240/1240 전부 통과(독립 재실행으로 재확인). 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
-      "commit": null
-    },
     {
       "cycle": 176,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-12T02:15:08.000Z",
       "summary": "general-purpose 서브에이전트로 141-180사이클과 겹치지 않는 새 개선점을 탐색 — ST.assetOwner/ST.plan.owner/ST.spendOwner(renderAssets/renderPlan/renderSpendAnalysis)에는 '귀속이 삭제되면 전체로 되돌리는' 가드가 있지만, 전체내역 탭의 ST.hist.owner(openCatHistory()가 지출분석 카테고리 드릴다운 시 세팅)에는 동일 가드가 빠져 있음을 발견. 재현 경로: 지출분석에서 특정 귀속으로 카테고리 드릴다운 → ST.hist.owner에 그 귀속명 저장 → 나중에 delOwner()로 해당 귀속을 완전 삭제(그 시점에 그 귀속을 쓰는 자산이 0개라 삭제 가능) → 바텀 네비로 전체내역 탭을 다시 열면 filteredHist()가 filterTxnsByOwner(list, DB.assets, H.owner)를 삭제된 옛 이름으로 호출해 매칭되는 자산이 하나도 없어, 카테고리 칩은 그대로 보이면서 목록은 영원히 빈 화면으로 보이는 조용한 버그. renderHistory() 맨 앞에 if(H.owner&&H.owner!=='전체'&&!(DB.owners||[]).includes(H.owner))H.owner='전체'; 가드를 추가(다른 3곳과 동일 패턴, 칩 HTML도 가드 이후 생성되어 삭제된 이름이 칩에도 안 남음). test/run.js에 회귀 테스트 2건(귀속 삭제 시 전체로 되돌림 / 전체이거나 살아있는 귀속이면 그대로 둠) 추가 — 수정 전 코드로 되돌려 첫 번째 테스트가 실제로 깨지는 것을 확인 후 복구. index.html 변경이라 APP_VERSION 1.47.129->1.47.130, sw.js CACHE v391->v392 갱신. node test/run.js 1295/1295 -> 1297/1297 통과.",
       "commit": "a0e44de"
+    },
+    {
+      "cycle": 181,
+      "phase": "review",
+      "timestamp": "2026-10-12T03:05:00.000Z",
+      "summary": "cycle181 develop(renderHistory에 ST.hist.owner 귀속 삭제 가드 추가) 검토 — commit a0e44de의 diff를 ST.assetOwner/ST.plan.owner/ST.spendOwner의 기존 3곳 가드(3293/4806/5078행)와 직접 대조해 조건식(H.owner&&H.owner!=='전체'&&!(DB.owners||[]).includes(H.owner))이 동일 패턴임을 확인했다. 가드가 _histCache.key=null 다음, HTML 템플릿(칩 렌더링 포함) 이전에 위치해 삭제된 귀속 이름이 칩에도 안 남는다는 서술이 코드 순서와 일치함을 확인. doRenameOwner(3729행)가 이름변경 시 ST.hist.owner를 함께 옮겨주는 것과 이번 가드(완전삭제 대응)가 서로 겹치지 않고 상호보완적임을 확인. 신규 회귀 테스트 2건이 실제로 의미 있는 차이(삭제된 귀속→전체로 복귀 후 매칭 내역 노출 / 살아있는 귀속·전체는 불변)를 검증하는지 로직 대조. node test/run.js 1297/1297 전부 통과(독립 재실행으로 재확인), APP_VERSION(1.47.130)/sw.js CACHE(v392) 버전 쌍 일치 확인. 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
+      "commit": null
     }
   ]
 }
