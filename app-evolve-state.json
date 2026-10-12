@@ -1,15 +1,16 @@
 {
   "cycle": 181,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "cycle176의 SDK_READY 비동기 로더 도입으로 새로 생긴 테마/강조색 FOUC(첫 페인트가 하드코딩된 system/teal로 그려진 뒤 수초 후 실제 저장값으로 전환)",
+    "why": "index.html:2의 <html data-theme=\"system\" data-accent=\"teal\">은 하드코딩이고, 이를 사용자의 실제 DB.settings.themeMode/accent로 고쳐주는 유일한 지점은 startApp()(7842-7843행)인데 startApp은 boot()에서만 호출되며 boot()의 첫 줄이 cycle176에서 추가한 await SDK_READY(7854행, 최대 6초)다. 그 사이 body(1293행)~첫 script(1329행) 구간의 DOM/CSS는 JS 없이도 완전히 paint 가능해, light/dark를 OS와 다르게 고정했거나 teal이 아닌 강조색을 쓰는 사용자는 실제로 '틀린 테마가 먼저 그려진 뒤 전환되는' 것을 보게 된다. cycle176 이전에는 같은 자리의 정적 CDN <script> 태그가 파서를 블로킹해 아무것도 안 그려졌으므로(그래서 cycle176 critique가 이 FOUC 항목을 '역설적으로 관측 안 됨'으로 보류) 이번 로더 교체가 '빈 화면'을 '틀린 테마의 빠른 페인트 후 전환'으로 바꾼 셈이라, cycle176이 해결한 오프라인 체감속도 이득의 눈에 보이는 대가로 새로 생긴 리그레션성 버그다.",
+    "approach": "1) <head> 최상단(meta charset 바로 뒤, 29행 <style> 블록보다 먼저, 1329행 SDK 로더보다 먼저)에 동기 인라인 <script>를 추가해 localStorage의 고정 키 'asset_app_theme_cache'(JSON {themeMode,accent})를 읽어 있으면 즉시 document.documentElement의 data-theme/data-accent와 meta[name=theme-color]를 덮어쓴다. try/catch로 감싸 private mode/스토리지 차단 시 조용히 무시(기존 load() 2136-2137행과 동일 패턴). 캐시가 없으면(최초 실행) 지금과 동일하게 동작 — 회귀 없음. 2) 이 키는 dataKey()/SESSION 등 계정별 분기를 쓰지 않는 세션독립 고정 키로 둔다(이 시점엔 아직 그런 헬퍼를 쓸 수 없고, 계정 전환 시 한 프레임만 이전 계정 테마가 보이는 것은 cycle178의 settings 기기로컬 취급 전례와 일치하는 수용 가능한 트레이드오프). 3) migrate()(2174행, accent 기본값 확정 직후)와 setTheme()(6291행)/applyAccent() 또는 setAccent()(6306/6312행) 양쪽에서 이 캐시를 매번 다시 쓴다(공용 writeThemeCache() 헬퍼로 추출 권장) — 재실행마다 최신값 유지. 4) test/run.js: themeCachePayload(settings) 같은 순수 헬퍼로 분리해 vm 샌드박스에서 유닛테스트하고, migrate/setTheme/applyAccent가 그 write 경로를 호출하는지 검증. head 최상단 인라인 스크립트 자체는 cycle177의 SDK 로더 테스트 선례처럼 원본 텍스트에 대한 정적 패턴 검사(캐시 키 등장 위치가 <style> 및 SDK 로더보다 앞인지)로 확인한다. 5) index.html/sw.js 변경이므로 APP_VERSION과 sw.js CACHE를 함께 올린다.",
+    "runner_ups_rejected": [
+      "Pretendard 웹폰트 CDN 스타일시트(28행, crossorigin 있음, font-display 전략 없음)가 렌더 블로킹 — 실재하는 FOIT/FOUT 위험이지만 서드파티 @font-face 규칙을 못 바꾸고 이미 코드 내 TODO(1324-1327행)로 SDK 2종과 함께 보류된 네트워크 항목이라 새 발견 아님",
+      "ariaLivePolite/ariaLiveAssertive가 죽은 a11y 스캐폴딩이라는 의심 — announceLive()(7506행)가 실제로 둘 다 사용 중임을 코드로 확인해 기각"
+    ]
+  },
   "history": [
-    {
-      "cycle": 176,
-      "phase": "critique",
-      "timestamp": "2026-10-11T08:16:38.968Z",
-      "summary": "general-purpose 서브에이전트로 141-176사이클 전부(기각 이력 포함)를 전달하고 앱 전체를 재조망. 새로 발견: index.html 1329-1331의 Kakao/Supabase CDN <script> 태그가 defer/async 없는 파서 블로킹 태그로, logic.js·메인 인라인 스크립트(boot() 포함)보다 먼저 위치해 있고 sw.js:43이 타 origin이라 오프라인 캐시 대상에서도 제외됨을 코드로 확인. PWA를 오프라인/불안정 네트워크(캡티브 포털 등)에서 열면 TCP 연결 행 동안 화면이 완전히 빈 채로 멈추고 게스트 전용 로컬 기능조차 전혀 못 뜨는 실제 오프라인 설계 공백 — 이미 존재하는 fetchWithTimeout/withTimeout 타임아웃 관례의 사각지대. 단순 defer 추가는 boot()의 동기적 sbReady() 세션복원 호출 순서를 깨뜨려 더 나쁜 회귀를 만들 것이므로 기각하고, 동적 script 로더+6초 타임아웃 Promise(SDK_READY)를 boot() 최상단에서 await하는 방식을 pending_advance_plan에 저장. 러너업(기각): 삭제된 자산 relink 시 반복거래 active=false가 복원 안 됨(실존하지만 UX 마찰 수준이고 수동 토글로 해결 가능해 저순위), mergeBudgetHistory/mergeFlatMap/gcTombstones/decidePushOutcome 재검토(이미 올바르게 처리됨 확인), 테마 FOUC(현재의 파서블로킹 구조 때문에 역설적으로 관측 안 됨, 이번 수정이 완료되면 재검토 가치 생길 수 있음). 코드 변경 없음(읽기 전용 조사, 서브에이전트 보고 직접 코드 대조로 검증 완료).",
-      "commit": null
-    },
     {
       "cycle": 176,
       "phase": "advance",
@@ -141,6 +142,13 @@
       "phase": "review",
       "timestamp": "2026-10-12T03:05:00.000Z",
       "summary": "cycle181 develop(renderHistory에 ST.hist.owner 귀속 삭제 가드 추가) 검토 — commit a0e44de의 diff를 ST.assetOwner/ST.plan.owner/ST.spendOwner의 기존 3곳 가드(3293/4806/5078행)와 직접 대조해 조건식(H.owner&&H.owner!=='전체'&&!(DB.owners||[]).includes(H.owner))이 동일 패턴임을 확인했다. 가드가 _histCache.key=null 다음, HTML 템플릿(칩 렌더링 포함) 이전에 위치해 삭제된 귀속 이름이 칩에도 안 남는다는 서술이 코드 순서와 일치함을 확인. doRenameOwner(3729행)가 이름변경 시 ST.hist.owner를 함께 옮겨주는 것과 이번 가드(완전삭제 대응)가 서로 겹치지 않고 상호보완적임을 확인. 신규 회귀 테스트 2건이 실제로 의미 있는 차이(삭제된 귀속→전체로 복귀 후 매칭 내역 노출 / 살아있는 귀속·전체는 불변)를 검증하는지 로직 대조. node test/run.js 1297/1297 전부 통과(독립 재실행으로 재확인), APP_VERSION(1.47.130)/sw.js CACHE(v392) 버전 쌍 일치 확인. 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
+      "commit": null
+    },
+    {
+      "cycle": 181,
+      "phase": "critique",
+      "timestamp": "2026-10-12T04:15:00.000Z",
+      "summary": "general-purpose 서브에이전트로 141-181사이클(기각 이력 포함)을 전달하고 앱 전체를 재조망. 먼저 cycle177(mergeCollection의 recurrence skip/edits 통째 LWW)·cycle178(afterCloudAuth/resolveCloudPullRemote 무충돌 전량교체가 settings/nwHistory 기기로컬 보호를 건너뜀) 두 critique의 계획이 각각 cycle177/178 advance에서 실제로 구현됐음을 git log와 mergeRecurrences/snapshotLocalDeviceFields 코드로 재확인(둘 다 완료, 재제기 불필요). 새로 발견: cycle176 advance가 추가한 await SDK_READY(boot() 최상단, 최대 6초 타임아웃)로 인해, index.html:2의 하드코딩된 data-theme=\"system\"/data-accent=\"teal\"이 startApp()(7842-7843행, boot 내부에서만 호출되고 SDK_READY 이후에만 도달)이 실제 DB.settings 값으로 고쳐주기 전까지 그대로 paint됨을 코드 추적으로 확인. body~첫 script 구간의 DOM/CSS가 JS 없이도 완전히 그려질 수 있어, light/dark를 OS와 다르게 고정했거나 teal이 아닌 강조색을 쓰는 사용자는 '틀린 테마가 먼저 보이고 수초 후 전환'되는 새 FOUC를 겪는다 — cycle176 이전엔 같은 자리의 정적 CDN 스크립트가 파서를 블로킹해 아무것도 안 그려졌으므로 역설적으로 관측 안 됐던(cycle176 critique가 명시적으로 보류해둔) 항목이 이번 네트워크 성능 개선의 가시적 대가로 실제 리그레션이 됐다. 첫 paint 전에 실행되는 head 최상단 동기 인라인 스크립트로 localStorage의 고정 캐시 키(세션/계정 분기 없음, migrate()/setTheme()/applyAccent()에서 매번 갱신)를 읽어 data-theme/data-accent/meta[theme-color]를 즉시 적용하는 방식을 pending_advance_plan에 저장. 러너업(기각): Pretendard 웹폰트 CDN 스타일시트의 렌더 블로킹(이미 코드 내 TODO로 SDK 2종과 함께 보류된 네트워크 항목, 새 발견 아님), ariaLivePolite/ariaLiveAssertive 죽은 스캐폴딩 의심(announceLive()가 실제로 사용 중임을 확인해 기각). 코드 변경 없음(읽기 전용 조사).",
       "commit": null
     }
   ]
