@@ -1376,7 +1376,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.135';
+const APP_VERSION='1.47.136';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2858,7 +2858,15 @@ function allocationCard(owner){
  const rows=alloc.map((x,i)=>
    `<div class="eb-row"><span class="eb-dot" style="background:${TYPE_COLOR[x.type]}"></span>
      <span class="eb-cat">${esc(ASSET_TYPES[x.type].label)}</span><span class="eb-pc num">${floor[i]}%</span><span class="eb-v num">${comma(Math.round(x.amount))}원</span></div>`).join('');
- return `<div class="section-title">자산 비중</div>
+ /* assetAllocation()은 rateUnknown(시세 미확인) 자산을 amount=0으로 받아 분모(total)에는 포함하되
+  * 집계 맵에서는 빼버린다(logic.js 주석) — 그 결과 이 함수의 퍼센트 잔여 보정(바로 위 floor 로직)이
+  * "보이는 유형들"의 퍼센트 합을 억지로 100%까지 끌어올려, 시세를 아직 못 받아온 자산의 몫이 다른
+  * 유형들에게 조용히 흡수돼 보인다(예: 현금 90만 + 시세미확인 주식 100만이면 전체는 190만인데 이
+  * 카드는 "현금 100%"만 보여줘 주식이 존재 자체를 모르게 됨). nwPane()/assetBodyHTML() 그룹소계가
+  * 이미 쓰는 "산술은 그대로 두고 캡션만 붙인다" 원칙(app-evolve cycle183 advance)을 이 카드에도
+  * 그대로 적용한다 — cycle183은 히어로/그룹소계/행 배지까지만 다루고 이 비중 카드는 비워뒀었다. */
+ const hasUnknown=items.some(rateUnknown);
+ return `<div class="section-title">자산 비중${hasUnknown?' <span class="mini warn">일부 미확인</span>':''}</div>
    <div class="card eb-card"><div class="eb-bar">${seg}</div><div class="eb-list">${rows}</div></div>`;
 }
 

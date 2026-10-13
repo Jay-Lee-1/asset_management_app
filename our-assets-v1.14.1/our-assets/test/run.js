@@ -9938,6 +9938,32 @@ test('allocationCard: 집계 대상 자산이 전혀 없으면(모두 부채거�
   assert.strictEqual(sandbox.allocationCard(), '', '부채만 있으면 비중 카드는 숨겨야 함(nwHistoryCard/goalsSummaryCard와 동일한 빈 상태 원칙)');
   assert.strictEqual(sandbox.allocationCard('없는귀속'), '', '아무도 소유하지 않은 귀속이면 빈 문자열');
 });
+/* allocationCard는 assetAllocation()이 rateUnknown 자산을 amount=0으로(분모엔 포함, 집계 맵에서는 제외)
+ * 넘겨받는데, 바로 뒤의 퍼센트 잔여 보정이 "보이는 유형들"만으로 100%를 채워버려 시세 미확인 자산의
+ * 존재 자체가 화면에서 사라진다 — nwPane()/assetBodyHTML() 그룹소계의 "일부 미확인" 캡션(app-evolve
+ * cycle183 advance)이 이 카드에는 없었다(app-evolve cycle184 develop) */
+test('allocationCard: 시세 미확인(rateUnknown) 자산이 섞여 있으면 "일부 미확인" 캡션이 붙고, 시세가 확인되면 사라진다', () => {
+  setupNetWorthDB();
+  delete sandbox.DB.rates.fx.USD; // 달러(a_usd) 시세 미확인 → assetEval 0원 처리
+  sandbox._balCache.clear();
+  let html = sandbox.allocationCard();
+  assert.ok(html.includes('일부 미확인'), '시세 미확인 자산이 섞여 있으면 캡션이 보여야 함');
+  assert.ok(!html.includes('외화'), '달러(fx)가 0원 취급되면 목록에서 아예 사라짐 — 캡션 없이는 사용자가 이 자산의 존재조차 알 수 없었던 공백');
+
+  sandbox.DB.rates.fx.USD = 1300;
+  sandbox._balCache.clear();
+  html = sandbox.allocationCard();
+  assert.ok(!html.includes('일부 미확인'), '시세가 확인되면 캡션이 사라져야 함');
+});
+test('allocationCard: owner 스코프 밖의 시세 미확인 자산은 캡션에 영향을 주지 않는다(귀속별 스코프 확인)', () => {
+  setupNetWorthDB();
+  delete sandbox.DB.rates.fx.USD; // 달러(a_usd, "나" 소유)만 시세 미확인
+  sandbox._balCache.clear();
+  const spouseHtml = sandbox.allocationCard('배우자'); // 적금+금만 보유, 둘 다 시세 확인됨
+  assert.ok(!spouseHtml.includes('일부 미확인'), '"배우자" 귀속엔 시세 미확인 자산이 없으므로 캡션이 없어야 함');
+  const meHtml = sandbox.allocationCard('나'); // 현금+달러 보유
+  assert.ok(meHtml.includes('일부 미확인'), '"나" 귀속은 시세 미확인 달러를 보유하므로 캡션이 보여야 함');
+});
 test('openAssetPicker: excludeId(만기이체 picker에서 자기 자신 제외)를 넘기면 그 자산은 목록에서 빠지고 나머지는 그대로 남는다', () => {
   setupAssetPickerDB();
   sandbox.lastPickerHtml = null;
