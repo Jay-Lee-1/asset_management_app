@@ -1,15 +1,8 @@
 {
   "cycle": 184,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 179,
-      "phase": "develop",
-      "timestamp": "2026-10-11T18:30:00.000Z",
-      "summary": "general-purpose 서브에이전트로 141-178사이클과 겹치지 않는 새 개선점을 탐색 — homeAlerts()의 goalBehind 필터(index.html _gb)가 cycle174 debtsBehind와 동일한 오탐 버그 클래스를 갖고 있었음을 발견. goalProgress(logic.js)는 hist.length<2면(추세를 낼 근거 자체가 없으면) projectedDate를 null로 돌리는데, _gb 필터는 '정체(추세 0/음수)'와 '아직 이력이 없음'을 구분하지 않고 둘 다 behind로 묶었다. 실패 시나리오 둘: ① 오늘 막 가입해 목표를 등록하면 nwHistory가 1건뿐이라 당일부터 '목표가 늦어지고 있어요'로 오탐. ② 기존 사용자가 오늘 새 귀속(owner)을 추가해 그 귀속 목표를 만들면, nwHistoryForOwner가 과거 스냅샷엔 없던 owner라 오늘자 1건만 남겨 똑같이 오탐(실사용에서 더 흔한 트리거). _gb의 map에서 owner별로 필터링한 hist를 같이 들고 다니다가 filter에서 hist.length>=2 가드를 추가(debtsBehind가 '거래 이력 있는가'로 가드한 것과 동일 원칙, hist는 goalProgress 내부와 동일하게 h.date<=TODAY로 필터링해 기준을 맞춤). test/run.js에 신규 목표(이력 1건) 제외/신규 귀속(owner별 이력 1건) 제외 2개 테스트 추가 — 기존 4개 goalBehind 테스트(단일/복수 collapsing, 추세양호 제외, achieved 제외, 목표일없음 제외)는 모두 hist 2건 이상을 쓰고 있어 그대로 통과. index.html 변경이라 APP_VERSION 1.47.125->1.47.126, sw.js CACHE v387->v388 갱신. node test/run.js 1267/1267 -> 1269/1269 통과.",
-      "commit": null
-    },
     {
       "cycle": 179,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-13T08:13:19.000Z",
       "summary": "critique(cycle183) 계획의 (1)(2)를 구현했다. homeAlerts()(staleMv 바로 다음)에 새 kind 'rateUnknownTotal' 추가: DB.assets.filter(a=>a.includeInTotal&&rateUnknown(a)).length로 건수를 구해(rateUnknown 자체가 isMarketValued 아닌 타입은 이미 false를 돌려주므로 별도 타입 가드 불필요) 1건 이상이면 push, homeAlertCard에 staleMv와 동일한 스타일로 openRateSheet() 연결 카드를 추가했다(OS 알림 notifyAlertInfo에는 staleMv처럼 추가하지 않음 — 급한 알림이 아니라 홈 카드로 충분하다는 기존 분류를 그대로 따름). nwPane(o,TA,TD)에는 DB.assets.some(a=>a.includeInTotal&&(isAll||a.owner===o)&&rateUnknown(a))로 그 스코프(전체 또는 해당 귀속)에 미확인 자산이 있는지 보고, 있으면 히어로 label 옆에 기존 '<span class=\"mini\">...</span>' 인라인 배지 패턴(2906/4852/5200/5361행과 동일)으로 '일부 미확인' 캡션을 붙였다. assetBodyHTML()의 편집모드 블록(그룹별 sum 계산 직전)과 일반모드 블록(동일) 둘 다에서 sum을 구하던 items.filter(a=>a.includeInTotal)를 'incl' 변수로 뽑아 재사용하고 incl.some(rateUnknown)으로 같은 캡션을 그룹 타이틀 옆(편집모드는 ty.label 옆, 일반모드는 .grp-title .g span 옆)에 추가했다 — 산술(sum 계산 자체, totalAssets/ownerAssets 등)은 전혀 건드리지 않아 9864-9884 기존 테스트 그대로 통과. 스트레치((3) nwHistory에 hasUnknownRate 플래그 기록)는 플랜이 이미 '사후 복원 불가라 스코프 제한'으로 명시한 선택 항목이라 이번 사이클 범위에서는 보류하고 다음 critique가 필요하면 재검토하도록 남겨뒀다. test/run.js에 7개 테스트 추가: homeAlerts 3건(시세 미확인 자산 있으면 alert 뜨고 시세 확인되면 사라짐, includeInTotal=false면 집계 안 됨, 여러 건이면 count 합산), homeAlertCard 1건(openRateSheet 연결), renderAssets(nwPane+assetBodyHTML 통합 경로) 3건(캡션 노출/소멸, 다른 귀속 소유 자산은 내 귀속 히어로에 캡션 안 붙음, 편집모드에서도 그룹 타이틀에 캡션). index.html/sw.js만 critique 커밋(1ede5d9)으로 되돌려 재현한 결과, index.html 의존 6개 테스트가 실제로 깨짐을 확인했다(1315/1321 -> 복원 후 1321/1321; openRateSheet 연결 카드 테스트 1건은 index.html 변경과 무관해 되돌려도 그대로 통과). index.html/sw.js 변경이라 APP_VERSION 1.47.134->1.47.135, sw.js CACHE v396->v397 갱신. node test/run.js 1314/1314 -> 1321/1321 통과. pending_advance_plan을 비웠다.",
       "commit": null
+    },
+    {
+      "cycle": 184,
+      "phase": "develop",
+      "timestamp": "2026-10-13T09:13:10.000Z",
+      "summary": "general-purpose 서브에이전트로 141-183사이클과 겹치지 않는 새 개선점을 탐색 — allocationCard()(자산관리 탭 \"자산 비중\" 파이/퍼센트 분해 카드)가 cycle183이 nwPane 히어로/그룹소계에 붙인 rateUnknown 캡션과 달리 여전히 시세 미확인 자산을 캡션 없이 조용히 사라지게 함을 발견. assetAllocation()(logic.js)은 rateUnknown인 항목을 0원으로 집계맵에서 제외하는 것 자체는 의도된 동작(0% 행 난립 방지, 기존 테스트로 보증됨)이지만, allocationCard()의 퍼센트 반올림 보정(2852-2856행)이 보이는 타입들의 퍼센트를 100%로 강제 정규화해 예: 현금 90만원 + 시세 미확인 주식 100만원(실제로는 더 큼)인데도 \"현금 100%\"로 표시되고 거의 절반에 달하는 미확인 자산이 0% 슬라이버로조차 안 보이는 모순이 cycle183 이후에도 이 카드 하나만 남아있었음. allocationCard()에 items.some(rateUnknown) 체크를 추가해 참이면 기존 '.mini.warn' 캡션('일부 미확인')을 카드에 덧붙였다 — 산술(assetAllocation 자체, 퍼센트 정규화)은 전혀 안 바꾸고 캡션만 추가해 cycle183과 동일한 '산술은 그대로, 숨기지만 않기' 원칙을 따름. test/run.js에 2개 테스트 추가(캡션 노출/소멸이 시세 확인 여부에 따라 토글, 다른 귀속 소유의 rateUnknown 자산은 내 귀속 카드에 캡션을 안 붙임 — owner 스코프 격리). 수정만 되돌려 재실행해 신규 2개 테스트가 정확히 실패하는 것을 확인한 후 재적용(1321/1323 -> 복원 후 1323/1323). index.html/sw.js 변경이라 APP_VERSION 1.47.135->1.47.136, sw.js CACHE v397->v398 갱신. node test/run.js 1321/1321 -> 1323/1323 통과.",
+      "commit": "8de33b0"
     }
   ]
 }
