@@ -1,15 +1,8 @@
 {
   "cycle": 187,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 182,
-      "phase": "develop",
-      "timestamp": "2026-10-12T06:10:00.000Z",
-      "summary": "general-purpose 서브에이전트로 141-181사이클과 겹치지 않는 새 개선점을 탐색 — doRenameOwner()는 이름변경 시 ST.hist.owner를 새 이름으로 옮겨주는데(cycle140), doRenameCat()에는 전체내역 탭의 지출분석 카테고리 드릴다운 필터인 ST.hist.catExact(openCatHistory가 세팅, 4475행 필터는 늘 expense 전용)에 대한 동일한 동기화가 빠져 있었음을 발견. 재현 경로: 지출분석에서 카테고리(예: '식비')로 드릴다운 → ST.hist.catExact='식비' → 카테고리 관리에서 '식비'를 '외식비'로 이름변경 → DB.txns/recurrences/budgetHistory는 이미 새 이름으로 옮겨졌지만 ST.hist.catExact만 옛 이름에 남아, 전체내역 탭으로 돌아가면 칩은 그대로 보이면서 필터(t.category===H.catExact)는 어떤 거래와도 안 맞아 목록이 영원히 빈 화면으로 보이는 조용한 버그(cycle181의 ST.hist.owner 삭제 버그와 같은 클래스지만 이름변경+카테고리 경로). doRenameCat()의 old->v 마이그레이션 블록 끝에 if(k==='expense'&&ST.hist&&ST.hist.catExact===old)ST.hist.catExact=v; 한 줄 추가(catExact는 expense 전용이라 k==='expense'로 범위 한정, ST.hist 부재 시 no-op). test/run.js에 3개 테스트 추가: catExact가 옛 이름을 가리키면 새 이름으로 이동 / 무관한 카테고리를 보고 있거나 ST.hist 자체가 없으면 안 건드리고 에러도 안 냄 / catExact는 expense 전용이라 수입 카테고리 이름변경과는 무관함. index.html만 수정 전으로 되돌려(git stash) 첫 번째 테스트가 실제로 깨지는 것을 확인(1307/1308)한 뒤 복구(1308/1308). index.html/sw.js 변경이라 APP_VERSION 1.47.131->1.47.132, sw.js CACHE v393->v394 갱신. node test/run.js 1305/1305 -> 1308/1308 통과.",
-      "commit": null
-    },
     {
       "cycle": 182,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-13T20:05:00.000Z",
       "summary": "critique(cycle186) 계획대로 goalHasUnknown(g) 헬퍼를 추가했다(nwPane의 hasUnknown 판정과 동일: (DB.assets||[]).some(a=>a.includeInTotal&&(o==='all'||a.owner===o)&&rateUnknown(a)), o는 goalOwnerEff(g)). goalRowHTML()의 .pg-k 이름 옆(달성 배지보다 앞)과 openGoalsList()의 각 행 .msub 바로 다음에 기존 '.mini.warn' 캡션('일부 미확인')을 조건부로 추가했다 — goalProgress/nwHistoryForOwner 등 산술 함수는 전혀 건드리지 않고 렌더링에만 캡션을 붙이는 cycle183/184 원칙을 그대로 따름. homeAlerts()의 goalBehind 판정(filter 체인)에 &&!goalHasUnknown(g) 가드를 추가해, 목표 귀속에 시세 미확인 자산이 있으면 cur가 과소평가된 상태일 수 있으므로 '늦어지고 있어요' 오탐을 억제했다(cycle179의 '이력 부족' 오탐 억제와 같은 원칙, 원인은 캡션으로 이미 안내하므로 중복 경보가 아님). test/run.js: FUNCTIONS 목록에 goalHasUnknown 추가(최초 실행 시 extractFunction 에러로 발견), goalRowHTML 2건(캡션 토글, owner 스코프 밖 자산은 무영향) + openGoalsList 1건(여러 목표 중 해당 귀속 행에만 캡션) + homeAlerts goalBehind 억제/해제 2건(시세 미확인 시 억제, 시세 확인 후 재개) 총 5건 추가. index.html만 critique 커밋(0552071)으로 되돌려 재현한 결과 goalHasUnknown이 아예 없어 extractFunction 자체가 즉시 에러로 멈춤을 확인했다(수정 전 상태엔 이 기능이 아예 없었음을 재확인) — 복원 후 1344/1344. index.html/sw.js 변경이라 APP_VERSION 1.47.140->1.47.141, sw.js CACHE v402->v403 갱신. node test/run.js 1339/1339 -> 1344/1344 통과. pending_advance_plan을 비웠다.",
       "commit": null
+    },
+    {
+      "cycle": 187,
+      "phase": "develop",
+      "timestamp": "2026-10-13T21:18:41.000Z",
+      "summary": "cycle187 develop: recSaveScopeConfirm()의 hasOverrides가 orig.skip/orig.edits 길이만 보고 orig.confirmedDates는 전혀 보지 않던 공백을 발견. pruneOrphanRecOverrides(cycle184/185)는 스케줄 모양(day/freq/startDate/weekend) 변경 시 skip/edits뿐 아니라 confirmedDates도 새 스케줄에 안 맞으면 함께 정리하는데, 그 사실을 사용자에게 경고하는 \"개별로 삭제·수정한 회차는 새 일정과 안 맞으면 정리돼요\" 문구는 skip/edits만 있을 때만 떴다. 재현: autoConfirm=false 반복거래를 매번 이체 확인만 하고(confirmedDates 누적) 개별 삭제·수정은 한 번도 안 한 상태(skip=[], edits={})에서 day/freq/startDate/weekend를 바꿔 '전체 적용'을 고르면, 경고 없이 recSaveScopeApply('all')→pruneOrphanRecOverrides가 고아가 된 confirmedDates를 조용히 지워 이미 확인한 이체가 다시 '미확인'으로 돌아간다. recSaveScopeConfirm()의 hasOverrides에 orig.confirmedDates 길이 체크를 추가(index.html ~4497행)해 pruneOrphanRecOverrides/splitRecOverrides와 조건을 일치시켰다. test/run.js에 confirmedDates만 있고 스케줄이 바뀌는/안 바뀌는 2케이스 회귀 테스트 추가, 수정 전으로 되돌려 신규 테스트 1건이 정확히 실패함(1345/1346)을 확인 후 복구. 인라인 스크립트 4개 전부 문법 검증 통과. APP_VERSION 1.47.141→1.47.142, sw.js CACHE v403→v404. node test/run.js 1344/1344 → 1346/1346 통과. 커밋 59ff2c7.",
+      "commit": "59ff2c7"
     }
   ]
 }
