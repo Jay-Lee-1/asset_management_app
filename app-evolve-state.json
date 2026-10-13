@@ -1,15 +1,8 @@
 {
   "cycle": 184,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 179,
-      "phase": "review",
-      "timestamp": "2026-10-11T19:07:58.000Z",
-      "summary": "cycle179 develop(goalBehind 홈알림이 nwHistory 1건뿐인 신규 목표/신규 귀속을 \"늦어짐\"으로 오탐하던 버그 수정) 검토 — commit 0139e15의 diff를 확인. hist를 nwHistoryForOwner(...).filter(date<=TODAY)로 미리 구해 hist.length>=2 가드를 _gb 필터에 추가한 방식은 goalProgress() 내부 필터링과 정확히 같은 기준(hist.length<2면 projectedDate:null)을 바깥에서 선제 적용한 것이라 이중 필터링이지만 결과가 일치하고 중복 계산 비용도 무시할 만큼 작다. 정체(hist.length>=2, rate<=0 → projectedDate:null)는 여전히 behind로 잡히는지, debtsBehind(cycle174)와 동일 원칙을 owner별 nwHistoryForOwner에도 올바르게 적용했는지 확인함. 회귀 테스트 2개(신규 목표/신규 귀속) 추가분 포함 1269/1269 전부 통과. 코드 변경 없음 — 이상 없음.",
-      "commit": null
-    },
     {
       "cycle": 179,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-13T09:13:10.000Z",
       "summary": "general-purpose 서브에이전트로 141-183사이클과 겹치지 않는 새 개선점을 탐색 — allocationCard()(자산관리 탭 \"자산 비중\" 파이/퍼센트 분해 카드)가 cycle183이 nwPane 히어로/그룹소계에 붙인 rateUnknown 캡션과 달리 여전히 시세 미확인 자산을 캡션 없이 조용히 사라지게 함을 발견. assetAllocation()(logic.js)은 rateUnknown인 항목을 0원으로 집계맵에서 제외하는 것 자체는 의도된 동작(0% 행 난립 방지, 기존 테스트로 보증됨)이지만, allocationCard()의 퍼센트 반올림 보정(2852-2856행)이 보이는 타입들의 퍼센트를 100%로 강제 정규화해 예: 현금 90만원 + 시세 미확인 주식 100만원(실제로는 더 큼)인데도 \"현금 100%\"로 표시되고 거의 절반에 달하는 미확인 자산이 0% 슬라이버로조차 안 보이는 모순이 cycle183 이후에도 이 카드 하나만 남아있었음. allocationCard()에 items.some(rateUnknown) 체크를 추가해 참이면 기존 '.mini.warn' 캡션('일부 미확인')을 카드에 덧붙였다 — 산술(assetAllocation 자체, 퍼센트 정규화)은 전혀 안 바꾸고 캡션만 추가해 cycle183과 동일한 '산술은 그대로, 숨기지만 않기' 원칙을 따름. test/run.js에 2개 테스트 추가(캡션 노출/소멸이 시세 확인 여부에 따라 토글, 다른 귀속 소유의 rateUnknown 자산은 내 귀속 카드에 캡션을 안 붙임 — owner 스코프 격리). 수정만 되돌려 재실행해 신규 2개 테스트가 정확히 실패하는 것을 확인한 후 재적용(1321/1323 -> 복원 후 1323/1323). index.html/sw.js 변경이라 APP_VERSION 1.47.135->1.47.136, sw.js CACHE v397->v398 갱신. node test/run.js 1321/1321 -> 1323/1323 통과.",
       "commit": "8de33b0"
+    },
+    {
+      "cycle": 184,
+      "phase": "review",
+      "timestamp": "2026-10-13T10:08:15.569Z",
+      "summary": "cycle184 develop(allocationCard에 rateUnknown 캡션 추가, 자산 비중 카드가 시세 미확인 자산을 조용히 사라지게 하던 문제) 검토 — commit 8de33b0의 diff를 확인. allocationCard() 내 items(owner 스코프 + includeInTotal&&type!==debt로 이미 필터된 변수)에 items.some(rateUnknown)을 적용한 것이 cycle183이 nwPane/assetBodyHTML에 붙인 동일 패턴(.mini.warn, 산술은 그대로 두고 캡션만 추가)과 정확히 일치함을 확인했다. rateUnknown()은 market-valued가 아닌 타입(현금 등)엔 이미 false를 반환하므로 별도 타입 가드가 불필요하다는 설명도 index.html:2474-2480 정의와 대조해 맞음을 확인. .mini.warn CSS 클래스(index.html:511)가 이미 4곳(홈 시세카드, nwPane 히어로, assetBodyHTML 그룹타이틀 x2)에서 쓰이던 기존 클래스라 신규 스타일 추가 없이 일관됨. 신규 테스트 2건(캡션 토글이 시세 확인 여부에 따름, owner 스코프 밖 rateUnknown 자산은 캡션에 영향 없음)이 실제로 의미 있는 차이를 검증하는지 로직 대조. node test/run.js 1323/1323 전부 통과(독립 재실행으로 재확인). APP_VERSION(1.47.136)/sw.js CACHE(v398) 버전 쌍 일치 확인. 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
+      "commit": null
     }
   ]
 }
