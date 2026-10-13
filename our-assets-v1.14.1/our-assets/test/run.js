@@ -5256,6 +5256,27 @@ test('pruneOrphanRecOverrides: 새 스케줄에도 여전히 생성되는 날짜
   assert.deepStrictEqual(d.skip, ['2026-02-10']);
   assert.strictEqual(JSON.stringify(d.edits), JSON.stringify({ '2026-04-10': { amount: 999 } }));
 });
+test('pruneOrphanRecOverrides: confirmedDates도 skip/edits와 동일한 규칙으로 정리된다(app-evolve cycle184 advance)', () => {
+  sandbox.RANGE_TO = '2026-12-31';
+  const d = {
+    freq: 'monthly', day: 10, startDate: '2026-01-05', endDate: null, weekend: 'none',
+    skip: [], edits: {},
+    confirmedDates: ['2026-02-05', '2026-03-10'], // 2/5는 옛(day=5) 날짜라 고아, 3/10은 새 스케줄(day=10)에도 그대로 생성됨
+  };
+  const removed = sandbox.pruneOrphanRecOverrides(d);
+  assert.strictEqual(removed, 1, 'confirmedDates 중 고아 1건만 정리되어야 함');
+  assert.deepStrictEqual(d.confirmedDates, ['2026-03-10']);
+});
+test('pruneOrphanRecOverrides: confirmedDates만 있고 skip/edits는 비어 있어도 정리를 건너뛰지 않는다', () => {
+  sandbox.RANGE_TO = '2026-12-31';
+  const d = {
+    freq: 'monthly', day: 10, startDate: '2026-01-05', endDate: null, weekend: 'none',
+    skip: [], edits: {}, confirmedDates: ['2026-02-05'],
+  };
+  const removed = sandbox.pruneOrphanRecOverrides(d);
+  assert.strictEqual(removed, 1);
+  assert.deepStrictEqual(d.confirmedDates, []);
+});
 test("recSaveScopeConfirm: skip/edits가 있는데 스케줄 모양(day/freq/startDate/weekend)이 바뀌면 '전체 적용' 쪽에 정리 경고가 추가된다", () => {
   const orig = { id: 'r1', memo: '월세', category: '주거', day: 5, freq: 'monthly', startDate: '2026-01-05', weekend: 'none', skip: ['2026-02-05'], edits: {} };
   const d = { ...orig, day: 10 };
@@ -7790,6 +7811,19 @@ test('mergeRecurrences: 스칼라 필드(day 등)는 mergeCollection과 동일�
   assert.strictEqual(out[0].day, 10);
   assert.strictEqual(out[0].memo, 'newer-remote');
 });
+test('mergeRecurrences: 같은 id를 로컬/원격이 각자 다른 회차를 confirm했으면(로컬이 더 최근 updatedAt), 두 confirmedDates 모두 합쳐서 보존된다(app-evolve cycle184 advance)', () => {
+  const local = { id: 'r1', day: 5, freq: 'monthly', startDate: '2026-01-01', weekend: 'none', skip: [], edits: {}, confirmedDates: ['2026-02-05'], updatedAt: 200 };
+  const remote = { id: 'r1', day: 5, freq: 'monthly', startDate: '2026-01-01', weekend: 'none', skip: [], edits: {}, confirmedDates: ['2026-03-05'], updatedAt: 100 };
+  const out = sandbox.mergeRecurrences([local], [remote], {}, {});
+  assert.strictEqual(out.length, 1);
+  assert.deepStrictEqual(j(out[0].confirmedDates.slice().sort()), ['2026-02-05', '2026-03-05'], 'mergeCollection처럼 더 최근(local) 쪽 confirmedDates만 남으면 원격이 확인한 3월 회차의 확인 내역이 사라져 다시 미확인으로 보임 — 반드시 둘 다 있어야 함');
+});
+test('mergeRecurrences: confirmedDates에 같은 날짜가 양쪽에 중복으로 있어도 결과엔 한 번만 남는다(Set 합집합)', () => {
+  const local = { id: 'r1', day: 5, freq: 'monthly', startDate: '2026-01-01', weekend: 'none', skip: [], edits: {}, confirmedDates: ['2026-02-05', '2026-03-05'], updatedAt: 100 };
+  const remote = { id: 'r1', day: 5, freq: 'monthly', startDate: '2026-01-01', weekend: 'none', skip: [], edits: {}, confirmedDates: ['2026-03-05'], updatedAt: 200 };
+  const out = sandbox.mergeRecurrences([local], [remote], {}, {});
+  assert.deepStrictEqual(j(out[0].confirmedDates.slice().sort()), ['2026-02-05', '2026-03-05']);
+});
 // 아래 4건은 mergeCollection의 id/tombstone 판정 테스트(위)와 완전히 같은 입력을 mergeRecurrences에
 // 통과시켜, skip/edits 합집합 병합을 추가하면서도 id/tombstone 판정 자체는 그대로인지 확인한다.
 test('mergeRecurrences: (회귀) id가 한쪽에만 있고 tombstone도 없으면 그대로 채택한다', () => {
@@ -7853,6 +7887,26 @@ test("mergeRemoteDataIntoLocal: DB.recurrences 병합 후 스케줄이 그대로
   });
   const r = sandbox.DB.recurrences.find((x) => x.id === 'r1');
   assert.deepStrictEqual(j(r.skip.slice().sort()), ['2026-02-05', '2026-03-05'], '스케줄이 안 바뀌었으니 합쳐진 두 skip 모두 그대로 남아야 함');
+});
+test("mergeRemoteDataIntoLocal: DB.recurrences 병합 후 base로 고른 쪽의 스케줄이 다르면 합쳐진 confirmedDates 중 고아가 된 날짜도 pruneOrphanRecOverrides가 정리한다(app-evolve cycle184 advance)", () => {
+  sandbox.RANGE_TO = '2026-12-31';
+  sandbox.DB = {
+    recurrences: [
+      // 로컬: day=5 기준 2월 회차를 confirm(새 day=10 스케줄에선 고아가 됨), 3월 10일도 confirm(우연히
+      // 새 스케줄에서도 그대로 생성되는 날짜라 합집합 병합이 실제로 일어났을 때만 살아남음).
+      { id: 'r1', day: 5, freq: 'monthly', startDate: '2026-01-05', endDate: null, weekend: 'none', skip: [], edits: {}, confirmedDates: ['2026-02-05', '2026-03-10'], updatedAt: 100 },
+    ],
+    deletedIds: {},
+  };
+  sandbox.mergeRemoteDataIntoLocal({
+    // 원격: day=10으로 스케줄을 바꿔 먼저 저장(updatedAt이 더 커서 base로 선택됨). 원격 자신의
+    // confirmedDates는 비어 있으므로, 결과에 남는 confirmedDates는 전부 로컬에서 합쳐진 것이어야 한다.
+    recurrences: [{ id: 'r1', day: 10, freq: 'monthly', startDate: '2026-01-05', endDate: null, weekend: 'none', skip: [], edits: {}, confirmedDates: [], updatedAt: 200 }],
+    deletedIds: {},
+  });
+  const r = sandbox.DB.recurrences.find((x) => x.id === 'r1');
+  assert.strictEqual(r.day, 10, 'updatedAt이 더 큰 원격의 새 스케줄이 base로 채택되어야 함');
+  assert.deepStrictEqual(j(r.confirmedDates), ['2026-03-10'], '로컬의 2026-02-05(day=5 기준)는 새 스케줄(day=10)과 안 맞아 정리되고, 2026-03-10은 새 스케줄에도 그대로 생성되므로 합쳐진 채 남아야 함 — mergeCollection처럼 로컬 confirmedDates를 통째로 버리면 이 자리가 빈 배열([])이 됨');
 });
 
 /* ---------- mergeNameList/mergeBudgetHistory: mergeRemoteDataIntoLocal()이 DB.categories/

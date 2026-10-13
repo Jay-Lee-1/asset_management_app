@@ -129,18 +129,19 @@ function mergeCollection(localArr,remoteArr,localDeletedIds,remoteDeletedIds){
 }
 /* 반복거래(recurrences) 전용 3-way 병합 — id/tombstone 판정(동시 삭제·복원)은 mergeCollection과
  * 완전히 동일하지만, 양쪽 다 살아있는 같은 id 레코드를 통째로 승자/패자로 가르는 mergeCollection과
- * 달리 skip[]/edits{}만은 합쳐서 보존한다. skip/edits는 레코드 저장 한 번이 아니라 여러 독립된
- * 사용자 행동(개별 회차 삭제/수정)으로 누적되는 하위 필드라, updatedAt 하나로 레코드 전체의
- * 승/패를 가르면 진 쪽이 그동안 쌓아온 개별 삭제·수정이 경고 없이 통째로 사라진다(app-evolve
- * cycle177 critique — 가족 공유/다기기 동기화에서 두 기기가 오프라인 중 같은 반복거래의 서로 다른
- * 회차를 각자 skip/edit한 뒤 동기화하면 재현). day/freq/startDate/weekend/amount 등 나머지 스칼라
- * 필드는 mergeCollection과 동일하게 updatedAt이 더 큰 쪽(동률이면 local)을 그대로 쓴다. skip은
- * Set 합집합(mergeNameList와 동일한 '값 기준 중복 제거'), edits는 날짜 키 유니온에 같은 키가
- * 양쪽에서 다르게 수정됐으면 local이 이기는 mergeBudgetHistory와 동일한 관례를 따른다(항목별
- * updatedAt이 없어 다른 기준으로 승패를 가를 수 없음). base로 고른 쪽의 day/freq/startDate/weekend가
- * 진 쪽과 다르면 합쳐진 skip/edits 중 일부가 그 새 스케줄에서 더는 생성되지 않는 날짜일 수 있는데,
- * 그 정리는 recDates()에 RANGE_FROM/RANGE_TO가 필요해 이 순수 함수 밖(index.html의
- * mergeRemoteDataIntoLocal, pruneOrphanRecOverrides 호출부)에서 병합 직후 맡는다. */
+ * 달리 skip[]/edits{}/confirmedDates[]만은 합쳐서 보존한다. 이 세 필드는 레코드 저장 한 번이 아니라
+ * 여러 독립된 사용자 행동(개별 회차 삭제/수정/확인)으로 누적되는 하위 필드라, updatedAt 하나로
+ * 레코드 전체의 승/패를 가르면 진 쪽이 그동안 쌓아온 개별 삭제·수정·확인이 경고 없이 통째로
+ * 사라진다(app-evolve cycle177 critique — 가족 공유/다기기 동기화에서 두 기기가 오프라인 중 같은
+ * 반복거래의 서로 다른 회차를 각자 skip/edit/confirm한 뒤 동기화하면 재현). day/freq/startDate/
+ * weekend/amount 등 나머지 스칼라 필드는 mergeCollection과 동일하게 updatedAt이 더 큰 쪽(동률이면
+ * local)을 그대로 쓴다. skip/confirmedDates는 Set 합집합(mergeNameList와 동일한 '값 기준 중복
+ * 제거'), edits는 날짜 키 유니온에 같은 키가 양쪽에서 다르게 수정됐으면 local이 이기는
+ * mergeBudgetHistory와 동일한 관례를 따른다(항목별 updatedAt이 없어 다른 기준으로 승패를 가를 수
+ * 없음). base로 고른 쪽의 day/freq/startDate/weekend가 진 쪽과 다르면 합쳐진 skip/edits/
+ * confirmedDates 중 일부가 그 새 스케줄에서 더는 생성되지 않는 날짜일 수 있는데, 그 정리는
+ * recDates()에 RANGE_FROM/RANGE_TO가 필요해 이 순수 함수 밖(index.html의 mergeRemoteDataIntoLocal,
+ * pruneOrphanRecOverrides 호출부)에서 병합 직후 맡는다. */
 function mergeRecurrences(localArr,remoteArr,localDeletedIds,remoteDeletedIds){
  localDeletedIds=localDeletedIds||{};remoteDeletedIds=remoteDeletedIds||{};
  const lMap=new Map((localArr||[]).map(r=>[r.id,r]));
@@ -162,7 +163,8 @@ function mergeRecurrences(localArr,remoteArr,localDeletedIds,remoteDeletedIds){
    const base=(l.updatedAt||0)>=(r.updatedAt||0)?l:r;
    const skip=[...new Set([...(l.skip||[]),...(r.skip||[])])];
    const edits=Object.assign({},r.edits||{},l.edits||{}); // 동일 키 충돌 시 local 우선(mergeBudgetHistory와 동일 관례)
-   out.push(Object.assign({},base,{skip,edits}));
+   const confirmedDates=[...new Set([...(l.confirmedDates||[]),...(r.confirmedDates||[])])];
+   out.push(Object.assign({},base,{skip,edits,confirmedDates}));
    return;
   }
   if(l){out.push(l);return}
