@@ -1,15 +1,12 @@
 {
   "cycle": 187,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "assetAllocation()이 마이너스 잔액(마이너스통장 등) 보유 시 100% 넘는 비중(%)을 만들고 그 자산유형을 조용히 누락시키는 버그 수정",
+    "why": "logic.js:437의 total=items.reduce((s,it)=>s+(it.amount||0),0)은 음수 amount까지 그대로 순합산하지만, 바로 아래 440행의 집계 map은 it.amount>0인 항목만 모은다. amount<=0 제외는 원래 rateUnknown(시세 미확인, 정확히 0원)인 fx/gold/stock용으로 의도된 것(432-434행 주석)인데, 같은 조건이 정말로 음수인 현금/저축/부동산/연금(canNeg=d.type!=='debt', index.html:3636) 보유 시에도 똑같이 적용돼 total이 표시되는 항목들의 합보다 작아진다. 재현: assetAllocation([{type:'cash',amount:-500000},{type:'savings',amount:3000000}]) => savings 1건만 pct:120(120%)로 나오고 cash(마이너스통장)는 집계에서 완전히 사라짐. allocationCard()(index.html:2846-2870)가 이 값을 그대로 퍼센트 바 width(%)와 반올림 보정(2853-2856, rem=100-125처럼 음수가 되면 보정이 그냥 무시됨)에 써서, 오버드래프트 계좌가 있는 사용자는 자산 비중 카드에서 '125%' 같은 불가능한 숫자와 트랙보다 넓은 막대를 보게 되고 해당 자산유형 자체가 목록에서 빠진다. cycle183/184의 rateUnknown류(시세 미확인) 버그와는 다른 트리거(실제 음수 잔액)이고 지금까지 다룬 적 없는 새 버그 클래스다.",
+    "approach": "1) logic.js:437을 total=items.reduce((s,it)=>s+(it.amount>0?it.amount:0),0)으로 바꿔 분모를 map과 동일한 '양수만' 규칙으로 통일한다 — rateUnknown(amount===0) 케이스는 기존과 동일하게 기여 0이라 동작 변화 없음, 진짜 음수(오버드래프트)가 있을 때만 분모가 줄어들어 남은 항목들의 pct 합이 정확히 100%가 되고 100% 초과가 사라진다. 2) (선택, 같은 사이클에서 여유 있으면) allocationCard()에 2868-2869의 기존 '.mini.warn'(일부 미확인) 캡션과 같은 자리에, items.some(it=>it.amount<0) 조건으로 '마이너스 잔액 자산 제외' 같은 캡션을 추가해 그 자산유형이 왜 비중 카드에 안 보이는지 설명한다(렌더링만 추가, assetAllocation 자체 산술 외에는 손대지 않음). 3) test/run.js의 assetAllocation 스위트(약 10069-10101행 근처) 옆에 추가: (a) 서로 다른 타입에 음수 1건+양수 1건을 섞었을 때 pct 합이 100이고 어떤 entry도 100을 넘지 않는지, (b) 같은 타입 내에서 양수+음수(합산 전 순음수 아닌 경우)가 있을 때도 pct가 100을 넘지 않는지, (c) rateUnknown류(amount===0)만 있던 기존 동작은 그대로 회귀 없는지. (선택 캡션 구현 시) allocationCard() 레벨 테스트로 마이너스 잔액 자산이 있을 때만 캡션이 뜨는지 1건 추가."
+  },
   "history": [
-    {
-      "cycle": 182,
-      "phase": "critique",
-      "timestamp": "2026-10-12T08:20:00.000Z",
-      "summary": "general-purpose 서브에이전트로 177-182사이클(기각 이력 포함)을 전달하고 앱 전체를 재조망. 새로 발견: save()(index.html:2253-2275)가 foreignSaveIsNewer()로 다른 탭의 __savedAt을 먼저 확인한 뒤 병합 여부를 정하는데, 그 '확인'과 실제 localStorage.setItem 사이가 원자적이지 않은 전형적 check-then-act 레이스임을 확인했다. 코드 주석(2254-2259)이 이미 직접 언급하는 구성(설치된 PWA+남겨둔 브라우저 탭, 같은 계정 멀티탭)에서 OS 앱전환/슬립-리줌 시 모든 탭이 거의 동시에 visibilitychange/focus/pageshow(8274/8280/8282)를 받아 각자 save()를 호출하면, 두 탭 다 상대의 아직 반영 안 된 __savedAt을 보고 '병합 불필요'로 판단해 각자 메모리 DB로 그대로 덮어쓰고 나중에 쓰는 쪽이 이겨 먼저 탭의 거래가 토스트/경고 없이 영구 소실됨을 코드로 재구성해 확인했다(이후 scheduleCloudPush로 Supabase에도 전파). 팀이 동일 버그 클래스를 Supabase 푸시 경로(scheduleCloudPush/pushCloud, 1832/1877-1905)에서는 updated_at 조건부 UPDATE로 이미 원자화했는데, 로컬 멀티탭 저장 경로(save() 자체)에는 동등한 장치가 없음을 대조 확인 — cycle177-182는 전부 mergeRemoteDataIntoLocal()의 컬렉션 단위 병합 로직만 다뤘지 save()의 쓰기 경로 자체는 아무도 건드리지 않았던 지점. navigator.locks(Web Locks API)로 'aa_save_'+dataKey() 이름의 락을 걸어 _saveCore(opts)(현재 save() 본문을 그대로 이름만 바꾼 것)를 감싸고, 미지원 브라우저는 기존처럼 폴백하는 계획을 pending_advance_plan에 저장. 러너업(기각): DB.rates(시세캐시)는 비권위적 외부데이터라 전량교체/미병합이 무해하고 autoSyncRates 10분 TTL로 자가치유(cycle180 critique가 이미 같은 이유로 기각한 항목과 동일), ST.hist.assetId는 참조 삭제 가드가 없지만 자산삭제가 연관 거래 자체를 안 지워 목록이 영구히 비는 것과 다른(칩 라벨만 '계좌'로 폴백되는) cosmetic 이슈라 ST.hist.owner/catExact류와 동일 심각도가 아님. 코드 변경 없음(읽기 전용 조사).",
-      "commit": null
-    },
     {
       "cycle": 182,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-13T22:05:00.000Z",
       "summary": "cycle187 develop(recSaveScopeConfirm의 hasOverrides에 confirmedDates 체크 추가) 검토 — commit 59ff2c7의 diff를 pruneOrphanRecOverrides(index.html:4453-4466)와 직접 대조해, 그 함수가 이미 hasConfirmed=d.confirmedDates&&d.confirmedDates.length를 skip/edits와 동일하게 정리 대상으로 삼고(4454/4464행) recSaveScopeApply('all') 분기(4522행)가 pruneOrphanRecOverrides(d)를 실제로 호출함을 코드로 확인했다 — 즉 confirmedDates가 정리 대상이면서 경고 문구만 못 보던 것이 실제 공백이었음을 재검증. 새 hasOverrides 조건(orig.confirmedDates&&orig.confirmedDates.length>0 추가)이 recScheduleShapeChanged(day/freq/startDate/weekend 변경 감지)와 AND로 묶여 스케줄이 안 바뀌면 여전히 경고가 안 뜨는 것도 확인(회귀 테스트로 보증됨). 신규 테스트 2건(confirmedDates만 있고 스케줄 변경 시 경고 뜸 / 스케줄 불변(fromAssetId만 변경) 시 경고 없음)이 실제로 의미 있는 차이를 검증하는지 로직 대조. node test/run.js 1346/1346 독립 재실행으로 재확인. node --check로 logic.js/sw.js/test/run.js 문법 검증, APP_VERSION(1.47.142)/sw.js CACHE(v404) 버전 쌍 일치 확인. 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
+      "commit": null
+    },
+    {
+      "cycle": 187,
+      "phase": "critique",
+      "timestamp": "2026-10-13T23:05:00.000Z",
+      "summary": "general-purpose 서브에이전트로 141-187사이클(기각 이력 포함)을 전달하고 앱 전체를 재조망 — rateUnknown 클래스가 아닌 새 버그 발견: assetAllocation(items)(logic.js:435-442)가 total(분모, 437행)은 items.amount를 음수까지 그대로 순합산하지만, 바로 아래 440행의 type별 집계 map은 it.amount>0인 항목만 모은다. amount<=0 제외는 432-434행 주석상 rateUnknown(시세 미확인, 정확히 0원) fx/gold/stock용 설계인데, 똑같은 조건이 정말로 음수인 현금/저축/부동산/연금(canNeg=d.type!=='debt', index.html:3636-3640의 '마이너스 잔액' 토글로 명시적으로 지원되는 기능, 예: 마이너스통장)에도 적용돼 total이 표시 항목 합보다 작아짐을 코드로 재현 확인(node vm 직접 호출: assetAllocation([{type:'cash',amount:-500000},{type:'savings',amount:3000000}]) => savings만 pct:120으로 나오고 cash는 집계에서 사라짐). allocationCard()(index.html:2846-2870)의 퍼센트 반올림 보정(2853-2856, rem=100-125처럼 음수면 보정이 무시됨)과 막대 width(%) 렌더링까지 이어져 오버드래프트 계좌가 있는 사용자는 '125%' 같은 불가능한 비중과 트랙보다 넓은 막대를 보고, 해당 자산유형은 목록에서 완전히 빠짐. logic.js:437을 amount>0만 합산하도록 바꿔(amount===0 rateUnknown 케이스는 기여 0으로 동일, 음수일 때만 분모가 정확해짐) total/map의 포함 규칙을 통일하는 수정과 allocationCard에 '마이너스 잔액 자산 제외' 캡션(기존 .mini.warn 패턴) 추가, test/run.js에 음수+양수 혼합/동일타입 내 상쇄 pct 합 100 검증 테스트를 추가하는 계획을 pending_advance_plan에 저장. 러너업(기각): Kakao/Supabase CDN 스크립트에 SRI 해시 없음(진짜 공급망 취약점이지만 이 샌드박스 egress 프록시가 해당 CDN을 막아 실제 해시를 계산할 수 없어 이 환경에서 당장 실행 불가능 — 보류), .swipe-actions/.swipe.open CSS가 대응하는 HTML 없이 남은 죽은 스타일(키보드 접근 가능한 대체 UI가 이미 있어 기능 버그 아닌 cosmetic dead code), CSV 재가져오기 날짜 엄격 파싱(실패시 조용히 깨지지 않고 가져오기 미리보기에 '유효하지 않음' 건수로 안전하게 표시돼 우선순위 낮음), pushCloud/pullCloud/mergeRemoteDataIntoLocal 동시성 제어 전체 재검토(낙관적 동시성·시계 오차 감지·레코드 단위 3-way 병합·툼스톤 GC 모두 확인, 새 결함 없음). 코드 변경 없음(읽기 전용 조사).",
       "commit": null
     }
   ]
