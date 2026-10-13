@@ -1,15 +1,12 @@
 {
   "cycle": 185,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "splitRecOverrides/splitRecurrenceAt/recApply의 '미래 분할' 경로가 confirmedDates를 안 쪼개 이체 확인 유령 복원",
+    "why": "반복거래를 \"이 날부터 이후 모두\" 범위로 삭제(recApply mode='delete' scope='future', index.html:4272-4278)하거나 분할수정(recSave ctx.scope==='future', 4301-4312 / splitRecurrenceAt, 4473-4481)할 때, skip/edits는 splitRecOverrides(4459-4464)가 effectiveDate 기준으로 과거/미래로 정확히 갈라 보존하지만(cycle121에서 고쳐짐) confirmedDates(이체 완료 확인 표시, isPending()이 읽음)는 세 곳 모두에서 전혀 쪼개지지 않고 원본 배열 전체가 그대로 남거나 상속된다. 재현: ①반복 이체의 미래 회차를 미리 확인해 r.confirmedDates=['2026-05-05'] ②'이 날부터 이후 모두 삭제'(2026-03-01 기준)로 r.endDate='2026-02-28'로 끊어도 confirmedDates는 그대로 남음(당장은 5/5가 생성 안 되는 날짜라 무해) ③나중에 종료일을 다시 늘리거나 무기한으로 되돌리면 recSaveScopeApply('all')의 pruneOrphanRecOverrides(d)가 valid.has('2026-05-05')===true로 보고 정리하지 않아 그대로 살아남음 ④결과: 한 번도 확인한 적 없는 2026-05-05 회차가 isPending()에서 '확인됨'으로 취급돼 홈 '이체 확인 필요' 알림에 안 뜨고 완료 잔액 계산에 조용히 포함됨 — cycle183 rateUnknown류와 같은 등급의 조용한 숫자 오류. test/run.js의 recApply future-delete(4706-4736)/recSave future 분할(4793-4844)/splitRecOverrides(5081-5094) 테스트 모두 skip/edits만 검증하고 confirmedDates는 지금까지 한 번도 테스트된 적 없는 공백.",
+    "approach": "1) index.html:4459 splitRecOverrides(skip,edits,effectiveDate)를 splitRecOverrides(skip,edits,confirmedDates,effectiveDate)로 확장해 skip과 동일한 경계 규칙(effectiveDate 당일 포함 이후=future)으로 confirmedPast/confirmedFuture를 추가 반환. 2) recApply(4272-4278): splitRecOverrides(r.skip,r.edits,r.confirmedDates,date) 호출로 바꾸고 r.confirmedDates=confirmedPast로 교체(미래분은 skipFuture처럼 버림), undo 클로저에 prevConfirmed 캡처. 3) recSave scope='future'(4301-4312): 동일하게 받아 r.confirmedDates=confirmedPast, newRec에 confirmedDates:confirmedFuture를 Object.assign에 추가(현재 JSON clone이 과거분까지 중복 상속하므로 반드시 교체), undo 클로저에 prevConfirmed 추가. 4) splitRecurrenceAt(4473-4481): splitRecOverrides(original.skip,original.edits,original.confirmedDates,effectiveDate)로 호출해 updatedOriginal에 confirmedDates:confirmedPast를 명시 추가하고 newRec에도 confirmedDates:confirmedFuture로 교체(현재 JSON clone 상속값을 덮어씀), pruneOrphanRecOverrides(newRec)는 추가 안전망으로 유지. 5) test/run.js에 추가(기존 4706/4722/4793/5031 패턴 그대로): splitRecOverrides confirmedPast/confirmedFuture 경계 검증 1건, recApply future-delete가 cutoff 이후 confirmedDates도 버리고 undo시 원복 1건, endDate를 다시 늘려도 유령 복원 안 되는 회귀 1건(4722 skip 회귀와 동일 구조), recSave future 분할이 confirmedDates를 올바르게 나누는지 1건, splitRecurrenceAt 양쪽(updatedOriginal/newRec) 검증 1건. 구현 전 각 테스트를 수정 전 코드로 먼저 실패시켜 재현을 확인한 뒤 수정 적용."
+  },
   "history": [
-    {
-      "cycle": 180,
-      "phase": "critique",
-      "timestamp": "2026-10-12T00:13:26.452Z",
-      "summary": "general-purpose 서브에이전트로 120-180사이클(기각 이력 포함)을 전달하고 앱 전체를 재조망. 새로 발견: cycle179/180이 DB.categories/DB.owners 이름 목록에만 catTombKey/ownerTombKey 톰스톤을 추가했는데, 같은 이름으로 키잉되는 보조 flat-map인 DB.budgetHistory(월별 예산 한도)/DB.catIcon/DB.catVar는 mergeBudgetHistory/mergeFlatMap(logic.js:214-236, 호출부 index.html~1518-1525)이 순수 key-union이라 톰스톤을 전혀 안 본다. node vm으로 mergeBudgetHistory({}, {coffee:[{from:\"2026-08\",amount:90000}]}) 호출 시 coffee가 그대로 살아남음을 직접 재현했고, rename 시나리오(A가 커피->카페로 바꾸고 B는 미동기화 구이름 보유)에서도 머지 후 cafe/coffee 둘 다 남는 고아를 재현했다. doDeleteCat()이 로컬에서 해당 flat-map 키를 지우고 카테고리명만 톰스톤해도 미동기화 기기와 병합하면 지워진 예산 한도가 되살아나고, addCat()은 톰스톤된 이름 재사용 시 이 flat-map들을 전혀 안 지워 과거 예산 한도가 사용자 행동 없이 즉시 재적용돼 잘못된 \"초과\" 경고/퍼센트가 뜸을 확인. mergeBudgetHistory/mergeFlatMap에 mergeNameListWithTombstones와 동일한 방식으로 deletedIds+tombKeyFn을 추가하고(budgetHistory는 catTombKey(expense,c), catIcon/catVar는 catKey 형태를 분리해 catTombKey(type,name) 재구성), mergeRemoteDataIntoLocal의 3개 호출부에 반영 + addCat()에서 톰스톤 재사용 시 방어적으로 flat-map 키를 지우는 계획을 pending_advance_plan에 저장. 러너업(기각): DB.rates(시세 캐시)는 비권위적 외부 데이터로 syncRates/RATE_TTL이 자가치유하므로 저순위, costBasis 스칼라가 assetQtyLog 수량변경에 안 맞는 문제는 기존에 보류된 FIFO 로트 추적 항목과 동일 근본원인이라 새 발견 아님, Kakao 동기화 안내 메시지(kakaoSyncLabel)는 cycle154에서 이미 충분히 처리됨 재확인. 코드 변경 없음(읽기 전용 조사).",
-      "commit": null
-    },
     {
       "cycle": 180,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-13T14:08:53.782Z",
       "summary": "cycle185 develop(addOwner/doRenameOwner에 isReservedOwnerName('전체'/'all') 가드 추가) 검토 — git show로 전체 diff 대조. isReservedOwnerName은 normName()으로 비교해 '전체'/'ALL'/공백 변형을 모두 잡음. addOwner는 가드를 dup 체크보다 먼저 실행해 예약어가 유사 중복 메시지로 새나가지 않게 함. doRenameOwner는 v===old 조기 return 다음에 가드를 둬서 무변경 호출이나 '전체'에서 다른 이름으로의 변경(가드는 새 값 v만 검사)은 막지 않음 — 올바른 방향. 기존 ADJUST_CAT 카테고리 예약어 가드(index.html doDeleteCat/doRenameCat의 k==='income'&&c===ADJUST_CAT)와 동일한 '예약어 보호' 원칙이라 컨벤션에 부합. 테스트 헬퍼(newOwnerValue/renameOwnerValue/lastToast)도 test/run.js의 기존 sandbox.$ 목 패턴과 정확히 일치. node test/run.js 1332/1332 전부 통과(독립 재실행으로 재확인). sw.js CACHE(v399→v400)/APP_VERSION(1.47.137→1.47.138) 동시 갱신도 확인. 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
+      "commit": null
+    },
+    {
+      "cycle": 185,
+      "phase": "critique",
+      "timestamp": "2026-10-13T15:10:00.000Z",
+      "summary": "general-purpose 서브에이전트로 141-185사이클(기각 이력 포함)을 전달하고 앱 전체를 재조망. 새로 발견: 반복거래를 \"이 날부터 이후 모두\" 범위로 삭제(recApply mode='delete' scope='future', index.html:4272-4278)하거나 분할수정(recSave ctx.scope==='future', 4301-4312 / splitRecurrenceAt, 4473-4481)할 때, skip/edits는 splitRecOverrides(4459-4464)가 effectiveDate 기준으로 과거/미래로 정확히 갈라 보존하지만(cycle121에서 고쳐짐) confirmedDates(이체 완료 확인 표시, isPending()이 읽음, cycle184가 동기화 merge 경로에서 보호를 추가한 바로 그 필드)는 세 곳 모두에서 전혀 쪼개지지 않고 원본 전체가 그대로 남거나 상속됨을 확인. 재현(코드 추적): ①미래 회차를 미리 확인해 r.confirmedDates=['2026-05-05'] ②'이후 모두 삭제'로 r.endDate='2026-02-28'로 끊어도 confirmedDates는 그대로 남음(당장은 무해) ③나중에 종료일을 다시 늘리거나 무기한으로 되돌리면 pruneOrphanRecOverrides(d)가 valid.has('2026-05-05')===true로 보고 정리 안 해 그대로 살아남음 ④한 번도 확인한 적 없는 회차가 isPending()에서 '확인됨'으로 취급돼 홈 알림에 안 뜨고 완료 잔액 계산에 조용히 포함됨 — cycle183 rateUnknown류와 같은 등급의 조용한 숫자 오류. test/run.js의 recApply future-delete(4706-4736)/recSave future 분할(4793-4844)/splitRecOverrides(5081-5094) 테스트 모두 skip/edits만 다루고 confirmedDates는 한 번도 테스트된 적 없는 공백임을 확인. splitRecOverrides를 confirmedDates 인자까지 받아 confirmedPast/confirmedFuture를 추가 반환하도록 확장하고 recApply/recSave/splitRecurrenceAt 세 호출부 모두 반영 + 회귀 테스트 5건 추가하는 계획을 pending_advance_plan에 저장. 러너업(기각): ST.hist.catExact가 카테고리 완전삭제(doDeleteCat) 시 갱신 안 되는 점은 삭제 후에도 과거 내역의 category 문자열이 그대로 남아 filteredHist 매칭이 안 깨지므로 리네임 버그와 달리 블랭크 화면이 안 생겨 기각, sw.js 캐시 우선 전략에서 CACHE 버전을 안 올리면 갱신 안 되는 점은 이미 알려진 수동 릴리즈 리스크일 뿐 코드 버그가 아니라 기각, APPLOCK._fails가 localStorage 기반이라 사이트 데이터 삭제로 백오프를 우회할 수 있는 점은 기기-로컬 PIN 위협모델상 이미 수용된 한계(cycle151/155 설계 문서화)라 기각. 코드 변경 없음(읽기 전용 조사).",
       "commit": null
     }
   ]
