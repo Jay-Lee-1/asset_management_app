@@ -1,15 +1,8 @@
 {
   "cycle": 186,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 181,
-      "phase": "review",
-      "timestamp": "2026-10-12T03:05:00.000Z",
-      "summary": "cycle181 develop(renderHistory에 ST.hist.owner 귀속 삭제 가드 추가) 검토 — commit a0e44de의 diff를 ST.assetOwner/ST.plan.owner/ST.spendOwner의 기존 3곳 가드(3293/4806/5078행)와 직접 대조해 조건식(H.owner&&H.owner!=='전체'&&!(DB.owners||[]).includes(H.owner))이 동일 패턴임을 확인했다. 가드가 _histCache.key=null 다음, HTML 템플릿(칩 렌더링 포함) 이전에 위치해 삭제된 귀속 이름이 칩에도 안 남는다는 서술이 코드 순서와 일치함을 확인. doRenameOwner(3729행)가 이름변경 시 ST.hist.owner를 함께 옮겨주는 것과 이번 가드(완전삭제 대응)가 서로 겹치지 않고 상호보완적임을 확인. 신규 회귀 테스트 2건이 실제로 의미 있는 차이(삭제된 귀속→전체로 복귀 후 매칭 내역 노출 / 살아있는 귀속·전체는 불변)를 검증하는지 로직 대조. node test/run.js 1297/1297 전부 통과(독립 재실행으로 재확인), APP_VERSION(1.47.130)/sw.js CACHE(v392) 버전 쌍 일치 확인. 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
-      "commit": null
-    },
     {
       "cycle": 181,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-13T17:17:39.402Z",
       "summary": "general-purpose 서브에이전트로 141-185사이클과 겹치지 않는 새 개선점을 탐색 — emptyAssets()(홈의 \"다 쓴 자산 정리\" 제안)가 Math.abs(assetEval(a))>0만으로 \"잔액 남음\"을 판정해, 시세 미확인(rateUnknown) 상태인 fx/gold/stock 보유 자산(assetEval()의 ||0 폴백으로 0원 평가됨)을 \"다 썼어요, 정리할까요?\"에 잘못 올려 사용자가 확인을 누르면 실제 삭제(되돌리기 토스트 지나면 영구 소실)로 이어질 수 있던 버그 발견 — cycle183(assetGainLoss)/cycle184(allocationCard)와 같은 rateUnknown \"모름 vs 0원\" 구분 가드가 emptyAssets()에만 빠져 있던 사각지대. emptyAssets()에 rateUnknown(a) 가드를 추가해 시세 미확인 자산을 조용히 제외시킴. test/run.js에 2건 추가(시세 미확인+수량 있음은 제외 / 시세 확인 후에도 수량 있으면 제외, 수량 0이면 비로소 포함). index.html만 되돌려 재현한 결과 신규 테스트가 실패하고 공유 fixture 변경으로 기존 emptyAssets/emptyAssetCards/openTidyList 관련 테스트도 함께 깨짐을 확인 후 복구. index.html/sw.js 변경이라 APP_VERSION 1.47.139->1.47.140, sw.js CACHE v401->v402 갱신. node test/run.js 1337/1337 -> 1339/1339 통과.",
       "commit": "3f8f7bc"
+    },
+    {
+      "cycle": 186,
+      "phase": "review",
+      "timestamp": "2026-10-13T18:08:47.167Z",
+      "summary": "cycle186 develop(emptyAssets()에 rateUnknown 가드 추가, commit 3f8f7bc) 검토 — assetEval()이 R.fx/R.goldPerG/R.stocks 미설정 시 ||0 폴백으로 0원을 반환하는 코드(2371-2373행)를 직접 확인하고, rateUnknown()(2474-2480행)이 isMarketValued(a)로 cash/savings/부동산/부채/연금 등 비시세자산엔 항상 false를 돌려줘 가드가 그 자산들에 전혀 영향을 주지 않음을 코드로 확인. assetGainLoss/allocationCard(cycle183/184)가 이미 쓰는 것과 동일한 패턴으로, emptyAssets()의 필터 체인에서 cash 제외 다음·assetEval 체크 앞이라는 배치도 적절함을 확인. 신규 회귀 테스트 2건(시세 미확인시 수량 있어도 제외 / 시세 확인 후 수량 0일때만 포함)이 실제로 의미있는 차이를 검증하는지 로직 대조. node test/run.js 1339/1339 독립 재실행으로 재확인. APP_VERSION(1.47.140)/sw.js CACHE(v402) 버전 쌍 일치 확인. 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
+      "commit": null
     }
   ]
 }
