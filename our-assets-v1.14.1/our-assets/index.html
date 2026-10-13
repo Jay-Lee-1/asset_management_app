@@ -1376,7 +1376,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.133';
+const APP_VERSION='1.47.134';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2480,9 +2480,16 @@ function rateUnknown(a){
 }
 /* fx/gold/stock 전용 선택 입력 costBasis(매입 원가, 원)가 있을 때만 손익을 계산한다.
    0으로 기본값을 두면 "매입가 모름"과 "무료로 취득"을 구분할 수 없어 rateUnknown()과
-   같은 이유로 costBasis>0일 때만 값을 인정한다(미설정 시 null). */
+   같은 이유로 costBasis>0일 때만 값을 인정한다(미설정 시 null).
+   rateUnknown(a)일 때도 null을 반환해야 한다 — 시세를 아직 못 받아온 상태에서는
+   assetEval()이 R.fx[cur]/R.goldPerG/R.stocks[code]를 ||0으로 0 취급하므로, costBasis가
+   설정돼 있으면 amount=0-costBasis, pct=-100%가 그대로 계산돼 "매입가 전액을 손실했다"는
+   거짓 배지가 뜬다. 시세가 아직 안 와서 모르는 것과 실제로 전부 잃은 것은 전혀 다른
+   상태인데, 새로 등록한 fx/gold/stock 자산이 시세 동기화 전 잠깐이라도 이 화면을 보면
+   바로 이 오표시가 뜬다(rateUnknown 자체가 바로 이 '모름 vs 0원' 구분을 위해 만들어진
+   함수인데도 assetGainLoss만 빠져 있었다). */
 function assetGainLoss(a){
- if(!isMarketValued(a)||!(a.costBasis>0))return null;
+ if(!isMarketValued(a)||!(a.costBasis>0)||rateUnknown(a))return null;
  const amount=assetEval(a)-a.costBasis;
  return {amount,pct:amount/a.costBasis*100};
 }

@@ -7473,6 +7473,29 @@ test('assetGainLoss: 평가액이 매입가보다 낮으면 손실(음수 금액
   assert.strictEqual(gl.amount, -20000);
   assert.strictEqual(gl.pct, -20);
 });
+/* ---------- assetGainLoss: rateUnknown(시세 미동기화)이면 costBasis가 있어도 null이어야 한다
+ * (app-evolve cycle183 develop) — assetEval()은 R.fx[cur]/R.goldPerG/R.stocks[code]가 없으면
+ * ||0으로 평가하므로, 이 가드가 없으면 시세를 아직 못 받아온 새 자산이 amount=0-costBasis,
+ * pct=-100%로 "매입가 전액 손실"이라는 거짓 배지를 보여준다. ---------- */
+test('assetGainLoss: 시세를 아직 못 받아왔으면(rateUnknown) costBasis가 있어도 null (거짓 -100% 손실 방지)', () => {
+  sandbox.DB = { rates: { fx: {}, stocks: {}, goldPerG: 0 } };
+  assert.strictEqual(sandbox.assetGainLoss({ type: 'fx', currency: 'USD', fxAmount: 100, costBasis: 100000 }), null);
+  assert.strictEqual(sandbox.assetGainLoss({ type: 'gold', goldDon: 1, costBasis: 100000 }), null);
+  assert.strictEqual(sandbox.assetGainLoss({ type: 'stock', stockCode: '005930', stockQty: 10, costBasis: 100000 }), null);
+});
+test('assetGainLoss: 시세가 들어온 뒤에는 그 자산만 정상적으로 손익을 계산한다', () => {
+  sandbox.DB = { rates: { fx: { USD: 1350 }, stocks: { '005930': 12000 }, goldPerG: 0 } };
+  assert.notStrictEqual(sandbox.assetGainLoss({ type: 'fx', currency: 'USD', fxAmount: 100, costBasis: 100000 }), null);
+  assert.notStrictEqual(sandbox.assetGainLoss({ type: 'stock', stockCode: '005930', stockQty: 10, costBasis: 100000 }), null);
+  assert.strictEqual(sandbox.assetGainLoss({ type: 'gold', goldDon: 1, costBasis: 100000 }), null, '금은 이 DB에서 goldPerG가 여전히 0(미확인)이라 null 유지');
+});
+test('assetGainLossBadge/assetSubline: rateUnknown이면 손익 배지를 아예 안 보여준다(costBasis가 있어도)', () => {
+  sandbox.DB = { rates: { fx: {}, stocks: {}, goldPerG: 0 } };
+  const a = { type: 'stock', stockCode: '005930', stockQty: 10, costBasis: 100000 };
+  assert.strictEqual(sandbox.assetGainLossBadge(a), '');
+  const sub = sandbox.assetSubline(a);
+  assert.ok(!sub.includes('%'), sub);
+});
 test('assetGainLossBadge: 이익이면 income 색상 배지를, 손실이면 expense 색상 배지를 반환한다', () => {
   sandbox.DB = { rates: { fx: {}, stocks: { '005930': 12000 }, goldPerG: 0 } };
   const upBadge = sandbox.assetGainLossBadge({ type: 'stock', stockCode: '005930', stockQty: 10, costBasis: 100000 });
