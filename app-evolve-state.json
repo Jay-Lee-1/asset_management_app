@@ -1,7 +1,11 @@
 {
   "cycle": 184,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "mergeRecurrences에 confirmedDates 합집합 보존 추가",
+    "why": "두 기기가 오프라인 중 같은 반복 이체의 서로 다른 회차를 확인하면, 동기화 후 updatedAt이 낮은 쪽의 확인 내역이 통째로 사라져 이미 완료 처리된 이체가 다시 미확인으로 보이고 완료 잔액(balancesUpTo/isPending)이 조용히 바뀐다 — cycle177이 skip/edits에 적용한 '독립 누적 필드는 통째 LWW 대신 합집합' 원칙이 confirmedDates에는 빠져 있다.",
+    "approach": "logic.js의 mergeRecurrences()에서 skip과 동일한 방식(Set 합집합)으로 confirmedDates도 합친다: const confirmedDates=[...new Set([...(l.confirmedDates||[]),...(r.confirmedDates||[])])]; out.push(Object.assign({},base,{skip,edits,confirmedDates})). index.html의 mergeRemoteDataIntoLocal 호출부 주석 보강(skip/edits와 동일 보호를 받는다는 점 명시). pruneOrphanRecOverrides()도 skip과 같은 방식으로 confirmedDates 중 현재 스케줄에서 더는 생성되지 않는 날짜를 정리하도록 확장(스케줄 변경 없으면 영향 없음, 기존 cycle173/174 관례와 동일). test/run.js에 mergeRecurrences 회귀 테스트 추가: (1) 양쪽이 다른 날짜를 confirm했으면 합쳐짐, (2) 중복 날짜는 한 번만, (3) pruneOrphanRecOverrides가 스케줄 변경 시 유효하지 않은 confirmedDates 날짜도 정리."
+  },
   "history": [
     {
       "cycle": 179,
@@ -141,6 +145,13 @@
       "phase": "review",
       "timestamp": "2026-10-13T10:08:15.569Z",
       "summary": "cycle184 develop(allocationCard에 rateUnknown 캡션 추가, 자산 비중 카드가 시세 미확인 자산을 조용히 사라지게 하던 문제) 검토 — commit 8de33b0의 diff를 확인. allocationCard() 내 items(owner 스코프 + includeInTotal&&type!==debt로 이미 필터된 변수)에 items.some(rateUnknown)을 적용한 것이 cycle183이 nwPane/assetBodyHTML에 붙인 동일 패턴(.mini.warn, 산술은 그대로 두고 캡션만 추가)과 정확히 일치함을 확인했다. rateUnknown()은 market-valued가 아닌 타입(현금 등)엔 이미 false를 반환하므로 별도 타입 가드가 불필요하다는 설명도 index.html:2474-2480 정의와 대조해 맞음을 확인. .mini.warn CSS 클래스(index.html:511)가 이미 4곳(홈 시세카드, nwPane 히어로, assetBodyHTML 그룹타이틀 x2)에서 쓰이던 기존 클래스라 신규 스타일 추가 없이 일관됨. 신규 테스트 2건(캡션 토글이 시세 확인 여부에 따름, owner 스코프 밖 rateUnknown 자산은 캡션에 영향 없음)이 실제로 의미 있는 차이를 검증하는지 로직 대조. node test/run.js 1323/1323 전부 통과(독립 재실행으로 재확인). APP_VERSION(1.47.136)/sw.js CACHE(v398) 버전 쌍 일치 확인. 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
+      "commit": null
+    },
+    {
+      "cycle": 184,
+      "phase": "critique",
+      "timestamp": "2026-10-13T11:05:00.000Z",
+      "summary": "cycle184 critique: general-purpose 서브에이전트로 141-184사이클과 겹치지 않는 영역(동기화/병합, 반복거래 날짜 엔진, ST 참조 무결성, 클라우드 push/pull, 서비스워커 캐시 버전)을 재조망. mergeCollection/mergeRecurrences/mergeNameListWithTombstones/mergeBudgetHistory/mergeFlatMap 전부와 mergeRemoteDataIntoLocal의 모든 DB 컬렉션 배선(txns/recurrences/assets/goals/inquiries/assetQtyLog/categories/owners/budgetHistory/catIcon/catVar/deletedType/deletedBal)을 DB 스키마(emptyDB)와 실제 참조 전체와 대조해 빠짐이 없음을 확인했고, sw.js의 CACHE 버전(v398)도 매 사이클 정확히 증가해왔음을 git log로 확인했다. 새로 발견한 버그: mergeRecurrences()(logic.js:144-172)가 skip[]/edits{}는 cycle177부터 Set 합집합/키 유니온으로 특별 보존하지만, 같은 성격(사용자의 독립적 누적 행동)의 confirmedDates[](이체 자동확인 OFF 기능이 쓰는 '회차별 완료 확인' 목록, index.html:1614/3171이 push+touch)는 그 보호를 못 받고 스칼라 필드처럼 base(둘 중 updatedAt이 큰 쪽) 전체를 그대로 쓴다는 것을 발견. node vm으로 mergeRecurrences([A],[B],{},{})를 직접 실행해(A.confirmedDates=['2026-10-01'],updatedAt=1000 / B.confirmedDates=['2026-11-01'],updatedAt=2000) 결과에 A의 확인 날짜가 완전히 사라짐을 재현 확인했다. 두 기기가 오프라인 중 같은 반복 이체의 서로 다른 회차를 \"이체 확인\"하면, 동기화 후 패배한 쪽의 확인 내역이 통째로 소실돼 isPending(t)이 그 회차를 다시 true로 평가하고 balancesUpTo()가 완료 잔액에서 그 회차를 다시 빼버려 계좌 잔액이 조용히 바뀐다(이미 확인·반영됐던 이체가 사용자가 모르는 사이 \"미확인\"으로 되돌아감). pruneOrphanRecOverrides()(index.html:4439)도 skip/edits만 정리하고 confirmedDates는 손대지 않는 동일 사각지대. test/run.js에 mergeRecurrences의 skip/edits 유니온 테스트(7758~7792행)는 있지만 confirmedDates 관련 유니온 테스트는 전혀 없어(sanitizeBackup의 배열 모양 검증 테스트만 존재) 이 경로가 처음부터 테스트되지 않았음을 확인했다. 다음 advance는 logic.js의 mergeRecurrences에 confirmedDates를 skip과 동일한 Set 합집합으로 추가하고, pruneOrphanRecOverrides도 confirmedDates 중 스케줄 변경으로 더는 유효하지 않은 날짜를 함께 정리하도록 확장하며, 회귀 테스트 2~3건을 추가할 계획이다. 러너업으로 goalProgress/목표 카드의 rateUnknown 캡션 누락(cycle183/184와 동일 클래스, 중복으로 기각)과 pushCloud()의 conflict 자동 병합 재시도 경로(코드 추적 결과 정상 동작 확인, 기각)를 검토했다. node test/run.js 1323/1323 통과 상태를 그대로 확인(읽기 전용 조사라 코드 변경 없음).",
       "commit": null
     }
   ]
