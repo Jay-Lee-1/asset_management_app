@@ -1,15 +1,8 @@
 {
   "cycle": 185,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 180,
-      "phase": "develop",
-      "timestamp": "2026-10-11T00:00:00.000Z",
-      "summary": "general-purpose 서브에이전트로 141-179사이클과 겹치지 않는 새 개선점을 탐색 — doRenameCat()(index.html doRenameCat)/doRenameOwner()가 카테고리/귀속 이름변경 시 cycle179에서 delete 경로에만 추가한 catTombKey/ownerTombKey 톰스톤을 old(옛) 이름에는 남기지 않음을 발견. doRenameCat/doRenameOwner는 txns/recurrences/budgetHistory(또는 assets/goals/nwHistory/ST필터)의 old를 v로 옮기지만 DB.categories[k]/DB.owners에서 old 자체가 사라지는 건 doDeleteCat/delOwner와 동치인데, 이름변경 경로만 톰스톤을 안 남겨 mergeNameListWithTombstones(cycle179)가 old를 '아직 살아있다'고 보고 아직 이 이름변경을 모르는 다른 기기의 사본이 old를 좀비(실거래 없는 유령 카테고리/귀속)로 되살림을 node vm으로 재현 확인(localA=['음식',...] vs remoteB=['식비',...] → 톰스톤 없이 병합하면 '식비'가 되살아남, catTombKey 톰스톤 추가 후엔 사라짐). doRenameCat/doRenameOwner의 if(v!==old){...} 블록 끝에 addCat/addOwner와 동일한 톰스톤 지우기/추가 대칭 패턴으로 DB.deletedIds[catTombKey(k,old)]=Date.now()(또는 ownerTombKey(old)) 추가, v가 과거에 지워졌던 이름이면 그 톰스톤은 delete로 지워 되살림을 허용. test/run.js에 카테고리/귀속 각각 3건(이름변경 시 옛 이름 톰스톤 생성, 과거 톰스톤된 이름으로 복귀 시 톰스톤 제거, mergeNameListWithTombstones 연동으로 미동기화 기기의 사본이 좀비 되살리지 못함 확인) 총 6건 추가. index.html/sw.js 변경이라 APP_VERSION 1.47.127->1.47.128, sw.js CACHE v389->v390 갱신. node test/run.js 1281/1281 -> 1287/1287 통과.",
-      "commit": null
-    },
     {
       "cycle": 180,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-13T12:10:45.143Z",
       "summary": "critique(cycle184) 계획대로 logic.js의 mergeRecurrences()에 confirmedDates Set 합집합 병합을 추가했다(skip과 동일한 패턴: const confirmedDates=[...new Set([...(l.confirmedDates||[]),...(r.confirmedDates||[])])]; out.push(Object.assign({},base,{skip,edits,confirmedDates}))). index.html의 pruneOrphanRecOverrides()도 skip/edits와 동일한 방식으로 확장해 confirmedDates 중 현재 스케줄(day/freq/startDate/weekend)에서 더는 생성되지 않는 날짜를 정리하도록 했다(hasConfirmed 가드 추가, valid 날짜 집합 재사용). mergeRemoteDataIntoLocal 호출부(index.html 1520-1521)와 mergeRecurrences 상단 주석을 confirmedDates도 skip/edits와 동일한 보호를 받는다는 점을 명시하도록 보강했다. test/run.js에 총 5건 추가: mergeRecurrences 단위 테스트 2건(양쪽이 다른 날짜를 confirm하면 합쳐짐 · 중복 날짜는 한 번만), pruneOrphanRecOverrides 단위 테스트 2건(confirmedDates도 정리됨 · confirmedDates만 있어도 스킵 가드를 안 탐), mergeRemoteDataIntoLocal 통합 테스트 1건(base로 선택된 쪽의 스케줄이 바뀌면 합쳐진 confirmedDates 중 고아만 정리되고 유효한 날짜는 남음). index.html/sw.js 변경이라 APP_VERSION 1.47.136->1.47.137, sw.js CACHE v398->v399 갱신. node test/run.js 1323/1323 -> 1328/1328 통과. pending_advance_plan을 비웠다.",
+      "commit": null
+    },
+    {
+      "cycle": 185,
+      "phase": "develop",
+      "timestamp": "2026-10-13T12:50:00.000Z",
+      "summary": "general-purpose 서브에이전트로 141-184사이클과 겹치지 않는 새 개선점을 탐색 — addOwner()/doRenameOwner()가 '전체'/'all' 예약어 가드 없이 중복명만 normName()으로 막고 있었음을 발견. '전체'/'all'은 ST.assetOwner·goalOwnerSel('all')/ST.plan.owner·ST.spendOwner·ST.hist.owner('전체')가 '모든 귀속 보기' 센티넬로 쓰는 문자열인데, 사용자가 실제로 귀속을 '전체'라는 이름으로 만들면(한국어로 충분히 시도할 법함) 그 귀속 전용 필터들이 전부 '전체 보기'로 오인돼 해당 귀속만 따로 보는 화면에 영구히 진입할 수 없게 됨 — 카테고리의 ADJUST_CAT 예약어 가드(doRenameCat/doDeleteCat)와 동일한 클래스의 누락이 귀속에는 있었음. logic.js에 isReservedOwnerName(v)(normName 비교로 '전체'/'all' 대소문자·공백·NFC 차이까지 포괄) 추가, index.html의 addOwner()/doRenameOwner()에 중복명 체크보다 먼저 이 가드를 배선해 토스트로 막음. test/run.js에 4건 추가(isReservedOwnerName 변형 3종, addOwner/doRenameOwner가 '전체'/'All'을 막는지 각 1건). index.html만 되돌려 재현한 결과 신규 4건이 정확히 깨지는 것을 확인 후 복구. index.html/logic.js/sw.js 변경이라 APP_VERSION 1.47.137->1.47.138, sw.js CACHE v399->v400 갱신. node test/run.js 1328/1328 -> 1332/1332 통과.",
       "commit": null
     }
   ]

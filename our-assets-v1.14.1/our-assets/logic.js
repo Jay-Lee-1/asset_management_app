@@ -283,6 +283,18 @@ function esc(s){const m={'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#3
 /* 카테고리/귀속 이름 중복 비교용 정규화 — 대소문자·연속 공백(전각공백 포함)·한글 조합형(NFD)/완성형(NFC) 차이만
    다른 이름을 같은 이름으로 취급. 저장/표시용 원본 이름은 건드리지 않고 비교할 때만 사용한다. */
 function normName(s){return String(s==null?'':s).normalize('NFC').trim().replace(/[\s　]+/g,' ').toLowerCase()}
+/* 귀속(owner) 이름으로 쓸 수 없는 예약어 — '전체'/'all'은 "모든 귀속" 센티넬로 여러 화면이
+ * 나눠서 쓴다: ST.assetOwner/goalOwnerSel(목표 폼)은 'all', ST.plan.owner/ST.spendOwner/
+ * ST.hist.owner(가계부 플랜·지출분석·전체내역)는 '전체'. addOwner()/doRenameOwner()가 중복명만
+ * normName()으로 막고 이 두 센티넬 문자열 자체는 막지 않고 있었다 — 사용자가 실제로 "전체"라는
+ * 이름으로 귀속을 만들면(한국어 UI에서 충분히 시도할 법한 이름), 그 귀속만 따로 보려는 모든
+ * 필터가 '전체 보기'로 오인되어 해당 귀속 전용 화면으로 들어갈 방법이 영구히 사라진다(addCat의
+ * ADJUST_CAT 예약어 가드, k==='income'&&old===ADJUST_CAT와 동일한 '예약어 보호' 원칙을 귀속에도
+ * 적용). normName()으로 비교해 대소문자/공백/정규화 차이(ALL, 전체 , 전체 등)도 함께 막는다. */
+function isReservedOwnerName(v){
+ const n=normName(v);
+ return n==='전체'||n==='all';
+}
 function lastDay(y,m){return new Date(y,m,0).getDate()}
 function monthEndStr(y,m){return `${y}-${String(m).padStart(2,'0')}-${String(lastDay(y,m)).padStart(2,'0')}`}
 function monthStartStr(y,m){return `${y}-${String(m).padStart(2,'0')}-01`}

@@ -10683,6 +10683,45 @@ test('doRenameOwner: 귀속 이름이 바뀐 자산에는 touch()가 호출돼 u
   assert.strictEqual(sandbox.DB.assets[1].updatedAt, 222, '무관한 자산의 updatedAt은 그대로여야 함');
 });
 
+/* ---------- isReservedOwnerName/addOwner/doRenameOwner: '전체'/'all' 예약어 보호 (app-evolve cycle185 develop) ----------
+ * ST.assetOwner/goalOwnerSel은 'all'을, ST.plan.owner/ST.spendOwner/ST.hist.owner는 '전체'를 "모든 귀속"
+ * 센티넬로 쓴다 — 사용자가 실제 귀속 이름을 그대로 '전체'(또는 'all')로 지으면 그 귀속만 따로 보려는
+ * 모든 필터가 영구히 '전체 보기'로 오인된다. addOwner/doRenameOwner는 그 이름을 거부해야 한다. */
+test('isReservedOwnerName: 전체/all은 대소문자·공백·정규화 차이와 무관하게 예약어로 판정된다', () => {
+  assert.strictEqual(sandbox.isReservedOwnerName('전체'), true);
+  assert.strictEqual(sandbox.isReservedOwnerName(' 전체 '), true);
+  assert.strictEqual(sandbox.isReservedOwnerName('all'), true);
+  assert.strictEqual(sandbox.isReservedOwnerName('All'), true);
+  assert.strictEqual(sandbox.isReservedOwnerName('  ALL  '), true);
+  assert.strictEqual(sandbox.isReservedOwnerName('나'), false);
+  assert.strictEqual(sandbox.isReservedOwnerName('아빠'), false);
+});
+test('addOwner: "전체"라는 이름은 추가를 막는다(모든 귀속 필터와 이름이 겹쳐 해당 귀속만 볼 방법이 사라짐)', () => {
+  sandbox.DB = { owners: ['나'] };
+  sandbox.newOwnerValue = '전체';
+  sandbox.lastToast = null;
+  sandbox.addOwner();
+  assert.deepStrictEqual(sandbox.DB.owners, ['나'], '예약어는 추가되면 안 됨');
+  assert.ok(sandbox.lastToast, '안내 토스트가 떴어야 함');
+});
+test('addOwner: "all"(대소문자 무관)도 예약어라 추가를 막는다', () => {
+  sandbox.DB = { owners: ['나'] };
+  sandbox.newOwnerValue = 'All';
+  sandbox.lastToast = null;
+  sandbox.addOwner();
+  assert.deepStrictEqual(sandbox.DB.owners, ['나'], '예약어는 추가되면 안 됨');
+  assert.ok(sandbox.lastToast, '안내 토스트가 떴어야 함');
+});
+test('doRenameOwner: "전체"로 이름을 바꾸는 시도는 막는다', () => {
+  sandbox.DB = { owners: ['나', '아빠'], assets: [] };
+  sandbox.ST = { assetOwner: '전체', plan: { owner: '전체' } };
+  sandbox.renameOwnerValue = '전체';
+  sandbox.lastToast = null;
+  sandbox.doRenameOwner(1);
+  assert.strictEqual(sandbox.DB.owners[1], '아빠', '예약어로는 이름이 바뀌면 안 됨');
+  assert.ok(sandbox.lastToast, '안내 토스트가 떴어야 함');
+});
+
 test('renderMenu: 메뉴 탭 계정 진입점(acct-card)에 키보드/스크린리더 접근 패턴이 있다', () => {
   const body = extractFunction('renderMenu');
   assert.ok(/class="card acct-card"[^>]*role="button"/.test(body), 'acct-card에 role="button"이 없음');

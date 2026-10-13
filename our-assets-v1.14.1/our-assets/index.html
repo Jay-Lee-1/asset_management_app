@@ -1376,7 +1376,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.137';
+const APP_VERSION='1.47.138';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3772,7 +3772,9 @@ function openOwnerSheet(){openOwnerManage()}
 /* 귀속 삭제 톰스톤 키(mergeNameListWithTombstones가 DB.deletedIds에서 찾는 합성 키, app-evolve
  * cycle179) — 레코드 id 톰스톤과 네임스페이스가 겹치지 않도록 'owner:' 접두사를 둔다. */
 const ownerTombKey=name=>'owner:'+normName(name);
-function addOwner(){const v=$('newOwner').value.trim().normalize('NFC');if(!v)return;const dup=DB.owners.find(o=>normName(o)===normName(v));if(dup){toast(dup===v?'이미 있는 귀속이에요':`비슷한 귀속이 있어요: ${dup}`);return}DB.owners.push(v);DB.deletedIds=DB.deletedIds||{};delete DB.deletedIds[ownerTombKey(v)];save();openOwnerManage();}
+function addOwner(){const v=$('newOwner').value.trim().normalize('NFC');if(!v)return;
+ if(isReservedOwnerName(v)){toast("'전체'는 모든 귀속을 보는 이름이라 귀속 이름으로 쓸 수 없어요");return} /* '전체'/'all' 센티넬 보호(logic.js isReservedOwnerName 주석 참고) */
+ const dup=DB.owners.find(o=>normName(o)===normName(v));if(dup){toast(dup===v?'이미 있는 귀속이에요':`비슷한 귀속이 있어요: ${dup}`);return}DB.owners.push(v);DB.deletedIds=DB.deletedIds||{};delete DB.deletedIds[ownerTombKey(v)];save();openOwnerManage();}
 function delOwner(i){const o=DB.owners[i];if(DB.owners.length<=1){toast('귀속은 최소 1개가 필요해요');return}
  const used=DB.assets.filter(a=>a.owner===o).length;
  if(used){toast(`'${o}' 귀속을 쓰는 자산 ${used}개가 있어요`);return}
@@ -3789,6 +3791,7 @@ function renameOwnerSheet(i){const cur=DB.owners[i];
  setTimeout(()=>{const el=$('renameOwner');el&&el.focus()},300)}
 function doRenameOwner(i){const v=$('renameOwner').value.trim().normalize('NFC');if(!v){toast('이름을 입력해 주세요');return}
  const old=DB.owners[i];if(v===old){openOwnerManage();return}
+ if(isReservedOwnerName(v)){toast("'전체'는 모든 귀속을 보는 이름이라 귀속 이름으로 쓸 수 없어요");return} /* addOwner와 동일한 '전체'/'all' 센티넬 보호 */
  const dup=DB.owners.find((o,oi)=>oi!==i&&normName(o)===normName(v));
  if(dup){toast(dup===v?'이미 있는 귀속이에요':`비슷한 귀속이 있어요: ${dup}`);return}
  DB.owners[i]=v;DB.assets.forEach(a=>{if(a.owner===old){a.owner=v;touch(a)}}); /* touch() 누락 시 mergeCollection()이 updatedAt만 보고 병합하다 다른 기기의 동기화 안 된 자산이 이 이름변경을 조용히 되돌릴 수 있음(saveAsset/askRelinkDeleted와 동일한 불변식) */
