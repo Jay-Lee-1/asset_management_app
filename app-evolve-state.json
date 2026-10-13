@@ -1,15 +1,8 @@
 {
   "cycle": 186,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 181,
-      "phase": "develop",
-      "timestamp": "2026-10-12T02:15:08.000Z",
-      "summary": "general-purpose 서브에이전트로 141-180사이클과 겹치지 않는 새 개선점을 탐색 — ST.assetOwner/ST.plan.owner/ST.spendOwner(renderAssets/renderPlan/renderSpendAnalysis)에는 '귀속이 삭제되면 전체로 되돌리는' 가드가 있지만, 전체내역 탭의 ST.hist.owner(openCatHistory()가 지출분석 카테고리 드릴다운 시 세팅)에는 동일 가드가 빠져 있음을 발견. 재현 경로: 지출분석에서 특정 귀속으로 카테고리 드릴다운 → ST.hist.owner에 그 귀속명 저장 → 나중에 delOwner()로 해당 귀속을 완전 삭제(그 시점에 그 귀속을 쓰는 자산이 0개라 삭제 가능) → 바텀 네비로 전체내역 탭을 다시 열면 filteredHist()가 filterTxnsByOwner(list, DB.assets, H.owner)를 삭제된 옛 이름으로 호출해 매칭되는 자산이 하나도 없어, 카테고리 칩은 그대로 보이면서 목록은 영원히 빈 화면으로 보이는 조용한 버그. renderHistory() 맨 앞에 if(H.owner&&H.owner!=='전체'&&!(DB.owners||[]).includes(H.owner))H.owner='전체'; 가드를 추가(다른 3곳과 동일 패턴, 칩 HTML도 가드 이후 생성되어 삭제된 이름이 칩에도 안 남음). test/run.js에 회귀 테스트 2건(귀속 삭제 시 전체로 되돌림 / 전체이거나 살아있는 귀속이면 그대로 둠) 추가 — 수정 전 코드로 되돌려 첫 번째 테스트가 실제로 깨지는 것을 확인 후 복구. index.html 변경이라 APP_VERSION 1.47.129->1.47.130, sw.js CACHE v391->v392 갱신. node test/run.js 1295/1295 -> 1297/1297 통과.",
-      "commit": "a0e44de"
-    },
     {
       "cycle": 181,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-13T16:10:00.000Z",
       "summary": "critique(cycle185) 계획대로 splitRecOverrides(skip,edits,effectiveDate)를 splitRecOverrides(skip,edits,confirmedDates,effectiveDate)로 확장해 confirmedPast/confirmedFuture를 skip과 동일한 경계 규칙(effectiveDate 당일 포함 이후=future)으로 추가 반환하게 했다. 세 호출부 모두 갱신: recApply scope='future' 삭제(4272-4279)는 r.confirmedDates를 confirmedPast로 교체하고 undo 클로저에 prevConfirmed를 캡처(미래분은 skipFuture처럼 끊어낸 구간 자체이므로 버림, cycle121의 skip과 동일 처리); recSave ctx.scope==='future'(4301-4313)는 r.confirmedDates=confirmedPast로 교체하고 newRec Object.assign에 confirmedDates:confirmedFuture를 추가(기존엔 JSON clone이 과거분까지 중복 상속하던 것을 교체); splitRecurrenceAt(4473-4482)은 updatedOriginal에 confirmedDates:confirmedPast를 명시 추가하고 newRec에도 confirmedDates:confirmedFuture로 교체(JSON clone 상속값을 덮어씀), pruneOrphanRecOverrides(newRec)는 스케줄 변경 시 추가 안전망으로 그대로 유지. test/run.js: 기존 splitRecOverrides 3건 테스트를 새 4-arg 시그니처로 갱신하고 confirmedDates 경계 검증 2건(분기/null-undefined) 추가, recApply future-delete에 confirmedDates도 함께 버려지고 undo 복원되는지 1건 + endDate를 다시 늘려도 유령 복원 안 되는 회귀 1건(cycle121 skip 회귀와 동일 구조), recSave future 분할이 confirmedDates를 올바르게 나누는지 1건, splitRecurrenceAt 양쪽(updatedOriginal/newRec) confirmedDates 분할 검증 1건 — 총 7건 추가(기존 3건 갱신 포함 순증 7건). index.html만 critique 커밋(4013baf)으로 되돌려 재현한 결과 신규/갱신 테스트들이 구 시그니처 불일치 및 confirmedDates 미분할로 실제 깨짐을 확인(1332/1337 -> 복원 후 1337/1337). index.html/sw.js 변경이라 APP_VERSION 1.47.138->1.47.139, sw.js CACHE v400->v401 갱신. node test/run.js 1332/1332 -> 1337/1337 통과. pending_advance_plan을 비웠다.",
       "commit": null
+    },
+    {
+      "cycle": 186,
+      "phase": "develop",
+      "timestamp": "2026-10-13T17:17:39.402Z",
+      "summary": "general-purpose 서브에이전트로 141-185사이클과 겹치지 않는 새 개선점을 탐색 — emptyAssets()(홈의 \"다 쓴 자산 정리\" 제안)가 Math.abs(assetEval(a))>0만으로 \"잔액 남음\"을 판정해, 시세 미확인(rateUnknown) 상태인 fx/gold/stock 보유 자산(assetEval()의 ||0 폴백으로 0원 평가됨)을 \"다 썼어요, 정리할까요?\"에 잘못 올려 사용자가 확인을 누르면 실제 삭제(되돌리기 토스트 지나면 영구 소실)로 이어질 수 있던 버그 발견 — cycle183(assetGainLoss)/cycle184(allocationCard)와 같은 rateUnknown \"모름 vs 0원\" 구분 가드가 emptyAssets()에만 빠져 있던 사각지대. emptyAssets()에 rateUnknown(a) 가드를 추가해 시세 미확인 자산을 조용히 제외시킴. test/run.js에 2건 추가(시세 미확인+수량 있음은 제외 / 시세 확인 후에도 수량 있으면 제외, 수량 0이면 비로소 포함). index.html만 되돌려 재현한 결과 신규 테스트가 실패하고 공유 fixture 변경으로 기존 emptyAssets/emptyAssetCards/openTidyList 관련 테스트도 함께 깨짐을 확인 후 복구. index.html/sw.js 변경이라 APP_VERSION 1.47.139->1.47.140, sw.js CACHE v401->v402 갱신. node test/run.js 1337/1337 -> 1339/1339 통과.",
+      "commit": "3f8f7bc"
     }
   ]
 }
