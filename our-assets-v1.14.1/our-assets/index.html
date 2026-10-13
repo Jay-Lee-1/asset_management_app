@@ -1376,7 +1376,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.140';
+const APP_VERSION='1.47.141';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2884,11 +2884,20 @@ function nearestGoal(owner){ /* owner(기본 'all')가 추적하는 목표 중 �
  const withDate=gs.filter(g=>g.targetDate).sort((a,b)=>a.targetDate<b.targetDate?-1:1);
  return withDate[0]||gs[0];
 }
+/* 순자산 목표의 cur/pct는 goalProgress()가 nwHistoryForOwner(byOwner 스냅샷)를 그대로 쓰는데,
+ * 그 스냅샷은 totalAssets/ownerAssets와 같은 assetEval() 합산이라 시세 미확인(rateUnknown) 자산이
+ * 경고 없이 ₩0으로 섞여 들어간다 — nwPane()이 이미 쓰는 "산술은 그대로 두고 캡션만 붙인다" 원칙
+ * (app-evolve cycle183 advance)을 목표 화면에도 적용하기 위한 판정(app-evolve cycle186 advance). */
+function goalHasUnknown(g){
+ const o=goalOwnerEff(g);
+ return (DB.assets||[]).some(a=>a.includeInTotal&&(o==='all'||a.owner===o)&&rateUnknown(a));
+}
 function goalRowHTML(g){
  const p=goalProgress(g,nwHistoryForOwner(DB.nwHistory,goalOwnerEff(g)),TODAY); /* 목표가 귀속별(owner)이면 그 귀속만의 순자산 추이로 진행률·투사를 계산 — nwHistoryCard(owner)와 동일한 nwHistoryForOwner를 공유 */
  const color=p.achieved?'var(--income)':'var(--brand)';
+ const hasUnknown=goalHasUnknown(g);
  return `<div class="pg-row" tabindex="0" role="button" aria-label="${esc(g.name)} 목표 진행률 ${p.pct}%" onclick="openGoalForm('${g.id}')" onkeydown="rowKeydown(event,()=>openGoalForm('${g.id}'))">
-   <div class="pg-head"><span class="pg-k">${esc(g.name)}${p.achieved?`<span class="pg-done" style="color:${color};background:color-mix(in srgb,${color} 15%,transparent)">달성</span>`:''}</span>
+   <div class="pg-head"><span class="pg-k">${esc(g.name)}${hasUnknown?' <span class="mini warn">일부 미확인</span>':''}${p.achieved?`<span class="pg-done" style="color:${color};background:color-mix(in srgb,${color} 15%,transparent)">달성</span>`:''}</span>
      <span class="pg-nums"><b class="num">${comma(p.cur)}</b><span class="pg-of num"> / ${comma(p.target)}원</span></span></div>
    <div class="pg-bar"><i style="width:${p.pct}%;background:${color}"></i></div>
    ${!p.achieved&&p.projectedDate?`<div class="msub2" style="margin-top:4px">이대로면 ${shortDate2(p.projectedDate)}쯤 달성 예상</div>`:''}
@@ -2909,10 +2918,12 @@ function openGoalsList(){ /* 관리 목록은 캐러셀 귀속과 무관하게 �
  const body=gs.length?`<div class="card" style="margin-bottom:6px">${gs.map(g=>{
    const p=goalProgress(g,nwHistoryForOwner(DB.nwHistory,goalOwnerEff(g)),TODAY);
    const ownerBadge=goalOwnerEff(g)!=='all'?` · ${esc(g.owner)}`:'';
+   const hasUnknown=goalHasUnknown(g); /* goalRowHTML()과 동일 캡션(app-evolve cycle186 advance) */
    return `<div class="manage-row" tabindex="0" role="button" aria-label="${esc(g.name)} 목표 진행률 ${p.pct}%" onclick="openGoalForm('${g.id}')" onkeydown="rowKeydown(event,()=>openGoalForm('${g.id}'))">
     <div class="avatar a-save" style="width:38px;height:38px">${svg('target')}</div>
     <div style="flex:1;min-width:0"><div class="mn">${esc(g.name)} ${p.achieved?'<span class="mini">달성</span>':''}</div>
      <div class="msub">${comma(p.cur)} / ${comma(p.target)}원 · ${p.pct}%${ownerBadge}</div>
+     ${hasUnknown?'<div class="mini warn" style="margin-top:2px">일부 미확인</div>':''}
      ${g.targetDate?`<div class="msub2">목표일 ${fmtDateFull(g.targetDate)}</div>`:''}</div>
     <div class="mc">${svg('chev')}</div></div>`;
  }).join('')}</div>`:`<div class="empty"><div class="ei">${svg('target')}</div><div class="et">아직 목표가 없어요</div><div class="es">순자산 목표를 세우면 진행 상황을 추적할 수 있어요</div></div>`;
@@ -7362,9 +7373,13 @@ function homeAlerts(neg){
   * hist.length<2면 추세를 낼 근거가 없어 projectedDate를 null로 돌려주는데(logic.js), 이는 "정체"와
   * "아직 이력이 쌓이지 않음"을 구분하지 못한다 — debtsBehind()가 거래 이력 없는 신규 부채를 거르는 것과
   * 같은 이유로, 오늘 막 만든 목표나 오늘 막 추가한 귀속(nwHistoryForOwner가 과거 스냅샷엔 없는 owner라
-  * 1건만 남김)이 등록 당일부터 "늦어지고 있어요"로 오탐되는 걸 막는다(app-evolve cycle179 develop) */
+  * 1건만 남김)이 등록 당일부터 "늦어지고 있어요"로 오탐되는 걸 막는다(app-evolve cycle179 develop).
+  * goalHasUnknown(g)인 목표는 cur 자체가 시세 미확인 자산을 ₩0으로 과소평가한 상태라 추세/투사가
+  * 실제보다 나쁘게 나올 수 있으므로, 그 귀속의 시세가 다 확인될 때까지는 behind 알림을 억제한다
+  * (goalRowHTML/openGoalsList의 "일부 미확인" 캡션으로 이미 원인을 안내하므로 중복 경보가 아님,
+  * app-evolve cycle186 advance) */
  const _gb=(DB.goals||[]).filter(g=>g.targetDate).map(g=>{const hist=nwHistoryForOwner(DB.nwHistory,goalOwnerEff(g)).filter(h=>h.date<=TODAY);return {g,p:goalProgress(g,hist,TODAY),hist};})
-   .filter(({g,p,hist})=>hist.length>=2&&!p.achieved&&(!p.projectedDate||p.projectedDate>g.targetDate))
+   .filter(({g,p,hist})=>hist.length>=2&&!p.achieved&&(!p.projectedDate||p.projectedDate>g.targetDate)&&!goalHasUnknown(g))
    .sort((a,b)=>a.g.targetDate<b.g.targetDate?-1:1);
  if(_gb.length===1){const{g,p}=_gb[0];arr.push({kind:'goalBehind',goalId:g.id,name:g.name,targetDate:g.targetDate,projectedDate:p.projectedDate});}
  else if(_gb.length>1)arr.push({kind:'goalBehindMulti',count:_gb.length});

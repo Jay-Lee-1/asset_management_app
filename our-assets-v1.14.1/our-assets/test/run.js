@@ -199,7 +199,7 @@ const FUNCTIONS = [
   'txScheduled', 'monthStats', 'monthStats2', 'expenseByCat', 'needGold', 'inQuietWindow', 'fmtSynced', 'rateStatusText',
   'nextBigOutflow', 'dday', 'balanceOn', 'nextOutflowCard', 'monthOutflowCard', 'planGaugeCard', 'homeAlertCard', 'renderHome',
   'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwPresetSegHTML', 'nwHistoryCard', 'allocationCard', 'doRenameOwner', 'addOwner',
-  'goalOwnerEff', 'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'syncGoalInputs', 'goalClearDate', 'goalOwnerSel', 'renderGoalForm', 'openGoalForm', 'saveGoal', 'delGoal',
+  'goalOwnerEff', 'goalHasUnknown', 'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'syncGoalInputs', 'goalClearDate', 'goalOwnerSel', 'renderGoalForm', 'openGoalForm', 'saveGoal', 'delGoal',
   'openInquiry', 'sendInquiry', 'openInquiryList', 'delInquiry',
   'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetToggleSel', 'visibleAssetsForSel', 'assetSelAll', 'activeSel',
   'modeSeg', 'monthNav', 'abbr', 'calCellsFor', 'ledSumInner', 'ledSumBox', 'ledSumTap', 'calPane', 'txRowCore', 'txRow', 'dayTxns',
@@ -3003,6 +3003,58 @@ test('openGoalsList: owner가 지정된 목표는 전체 순자산이 아니라 
   // 나의 byOwner.ta=100100 → 목표 200000 대비 50%. 전체 합계(ta-td=280)로 계산했다면 0%가 나왔을 것.
   assert.ok(sandbox.lastSheetHtml.includes('50%'), '귀속별 byOwner 추이로 진행률이 계산돼야 함');
   assert.ok(sandbox.lastSheetHtml.includes(' · 나'), '목표가 특정 귀속에 속해 있으면 그 귀속명을 함께 보여줘야 함');
+});
+/* goalRowHTML/openGoalsList는 goalProgress()가 nwHistoryForOwner(byOwner 스냅샷)의 cur를 그대로 쓰는데,
+ * 그 스냅샷은 totalAssets/ownerAssets와 같은 assetEval() 합산이라 시세 미확인(rateUnknown) 자산이
+ * 경고 없이 ₩0으로 섞여 들어간다 — nwPane()/allocationCard()가 이미 쓰는 "일부 미확인" 캡션(app-evolve
+ * cycle183/184 advance)이 목표 화면 두 곳에는 없었다(app-evolve cycle186 critique/advance) */
+test('goalRowHTML: 목표 귀속에 시세 미확인(rateUnknown) 자산이 있으면 "일부 미확인" 캡션이 붙고, 시세가 확인되면 사라진다', () => {
+  sandbox.DB = {
+    assets: [{ id: 'a_usd', name: '달러', type: 'fx', owner: '나', currency: 'USD', fxAmount: 100, includeInTotal: true }],
+    rates: { fx: {}, goldPerG: 0, stocks: {} }, // USD 시세 미확인
+    goals: [{ id: 'g1', name: '내 집 마련', targetAmount: 1000000, targetDate: null, owner: 'all' }],
+    nwHistory: [{ date: '2026-01-01', nw: 500000 }],
+  };
+  sandbox.TODAY = '2026-01-01';
+  let html = sandbox.goalRowHTML(sandbox.DB.goals[0]);
+  assert.ok(html.includes('일부 미확인'), '시세 미확인 자산이 섞여 있으면 캡션이 보여야 함');
+
+  sandbox.DB.rates.fx.USD = 1300;
+  html = sandbox.goalRowHTML(sandbox.DB.goals[0]);
+  assert.ok(!html.includes('일부 미확인'), '시세가 확인되면 캡션이 사라져야 함');
+});
+test('goalRowHTML: 목표 귀속 밖의 시세 미확인 자산은 캡션에 영향을 주지 않는다(귀속별 스코프 확인)', () => {
+  sandbox.DB = {
+    owners: ['나', '배우자'],
+    assets: [{ id: 'a_usd', name: '달러', type: 'fx', owner: '나', currency: 'USD', fxAmount: 100, includeInTotal: true }], // "나" 소유만 시세 미확인
+    rates: { fx: {}, goldPerG: 0, stocks: {} },
+    goals: [{ id: 'g1', name: '배우자 목표', targetAmount: 1000, targetDate: null, owner: '배우자' }],
+    nwHistory: [{ date: '2026-01-01', ta: 100, td: 0, nw: 100, byOwner: { 나: { ta: 0, td: 0 }, 배우자: { ta: 100, td: 0 } } }],
+  };
+  sandbox.TODAY = '2026-01-01';
+  const html = sandbox.goalRowHTML(sandbox.DB.goals[0]);
+  assert.ok(!html.includes('일부 미확인'), '"배우자" 귀속엔 시세 미확인 자산이 없으므로 캡션이 없어야 함');
+});
+test('openGoalsList: 목표 귀속에 시세 미확인(rateUnknown) 자산이 있으면 그 목표 행에만 "일부 미확인" 캡션이 붙는다(다른 귀속 목표엔 안 붙음)', () => {
+  sandbox.DB = {
+    owners: ['나', '배우자'],
+    assets: [{ id: 'a_usd', name: '달러', type: 'fx', owner: '나', currency: 'USD', fxAmount: 100, includeInTotal: true }],
+    rates: { fx: {}, goldPerG: 0, stocks: {} },
+    goals: [
+      { id: 'g1', name: '내 목표', targetAmount: 1000, targetDate: null, owner: '나' },
+      { id: 'g2', name: '배우자 목표', targetAmount: 1000, targetDate: null, owner: '배우자' },
+    ],
+    nwHistory: [{ date: '2026-01-01', ta: 100, td: 0, nw: 100, byOwner: { 나: { ta: 0, td: 0 }, 배우자: { ta: 100, td: 0 } } }],
+  };
+  sandbox.TODAY = '2026-01-01';
+  sandbox.lastSheetHtml = null;
+  sandbox.openGoalsList();
+  const html = sandbox.lastSheetHtml;
+  const myIdx = html.indexOf('내 목표');
+  const spouseIdx = html.indexOf('배우자 목표');
+  const warnIdx = html.indexOf('일부 미확인');
+  assert.ok(myIdx > -1 && spouseIdx > -1, '두 목표 행이 모두 렌더링돼야 함');
+  assert.ok(warnIdx > myIdx && warnIdx < spouseIdx, '캡션은 "내 목표" 행에만 붙어야 함(배우자 목표 행보다 앞)');
 });
 test('goalsSummaryCard: owner를 넘기면 그 귀속이 소유한 목표만 보여주고, 다른 귀속의 목표는 보이지 않는다', () => {
   sandbox.DB = {
@@ -12006,6 +12058,38 @@ test('homeAlerts: 과거 스냅샷엔 없던 귀속(오늘 막 추가된 owner)�
   ];
   const alerts = sandbox.homeAlerts([]);
   assert.ok(!alerts.some((a) => a.kind === 'goalBehind' || a.kind === 'goalBehindMulti'), 'nwHistoryForOwner가 해당 귀속으로 1건만 남기면 추세를 낼 근거가 없으므로 behind로 뜨면 안 됨');
+});
+/* 목표의 cur는 nwHistoryForOwner(byOwner 스냅샷)를 그대로 쓰는데, 그 스냅샷은 totalAssets/ownerAssets와
+ * 같은 assetEval() 합산이라 시세 미확인(rateUnknown) 자산을 ₩0으로 과소평가한다 — 그 상태에서 추세가
+ * 나쁘게 나와도 실제론 시세만 안 들어온 것뿐일 수 있으므로, goalHasUnknown(g)인 목표는 behind 판정에서
+ * 제외한다(goalRowHTML/openGoalsList의 "일부 미확인" 캡션으로 원인은 이미 안내함, app-evolve cycle186 advance) */
+test('homeAlerts: 목표 귀속에 시세 미확인(rateUnknown) 자산이 있으면 goalBehind가 억제된다(cur 과소평가로 인한 오탐 방지)', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.rates = { fx: {}, goldPerG: 0, stocks: {} }; // USD 시세 미확인
+  sandbox.DB.assets = [{ id: 'a_usd', name: '달러', type: 'fx', owner: '나', currency: 'USD', fxAmount: 100, includeInTotal: true }];
+  sandbox.DB.nwHistory = [
+    { date: '2026-05-01', nw: 1000000 },
+    { date: '2026-06-15', nw: 1000000 }, // 추세 0 → rate<=0 → projectedDate:null (억제 없으면 goalBehind가 떴을 조건)
+  ];
+  sandbox.DB.goals = [
+    { id: 'g1', name: '내 집 마련', type: 'networth', targetAmount: 2000000, targetDate: '2026-07-01', owner: 'all' },
+  ];
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'goalBehind' || a.kind === 'goalBehindMulti'), '시세 미확인 자산이 있으면 cur가 과소평가될 수 있으므로 behind 알림이 억제돼야 함');
+});
+test('homeAlerts: 시세가 모두 확인되면 goalBehind 억제가 풀려 다시 뜬다(회귀 확인)', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.rates = { fx: { USD: 1300 }, goldPerG: 90000, stocks: {} }; // 시세 전부 확인됨
+  sandbox.DB.assets = [{ id: 'a_usd', name: '달러', type: 'fx', owner: '나', currency: 'USD', fxAmount: 100, includeInTotal: true }];
+  sandbox.DB.nwHistory = [
+    { date: '2026-05-01', nw: 1000000 },
+    { date: '2026-06-15', nw: 1000000 },
+  ];
+  sandbox.DB.goals = [
+    { id: 'g1', name: '내 집 마련', type: 'networth', targetAmount: 2000000, targetDate: '2026-07-01', owner: 'all' },
+  ];
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(alerts.some((a) => a.kind === 'goalBehind' || a.kind === 'goalBehindMulti'), '시세가 다 확인되면 억제가 풀려 다시 behind 알림이 떠야 함');
 });
 test('notifyAlertInfo: goalBehind/goalBehindMulti는 budgetOver처럼 월 단위 dedupe 키를 쓴다', () => {
   sandbox.TODAY = '2026-06-15';
