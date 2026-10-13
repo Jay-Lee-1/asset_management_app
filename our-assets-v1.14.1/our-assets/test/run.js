@@ -4719,6 +4719,25 @@ test("recApply: scope='future' 삭제는 cutoff 이후의 skip/edits도 함께 �
   assert.deepStrictEqual(r.skip, ['2026-01-05', '2026-03-05'], '되돌리면 skip이 원래 배열로 복원되어야 함');
   assert.strictEqual(JSON.stringify(r.edits), JSON.stringify({ '2026-01-10': { amount: 1 }, '2026-03-10': { amount: 2 } }), '되돌리면 edits도 원래 객체로 복원되어야 함');
 });
+test("recApply: scope='future' 삭제는 cutoff 이후의 confirmedDates(이체 완료 확인)도 함께 버리고, undo하면 복원된다 — 안 그러면 끊어낸 미래 회차가 '확인됨'으로 유령처럼 남는다(app-evolve cycle185)", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', skip: [], edits: {}, confirmedDates: ['2026-01-05', '2026-03-05'], endDate: null };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.lastUndo = null;
+  sandbox.recApply('r1', '2026-02-05', 'delete', 'future');
+  assert.deepStrictEqual(r.confirmedDates, ['2026-01-05'], 'cutoff(2/5) 이후 confirmedDates(3/5)는 끊어낸 구간이므로 함께 버려지고, 이전 것(1/5)만 남아야 함');
+  sandbox.lastUndo.undoFn();
+  assert.deepStrictEqual(r.confirmedDates, ['2026-01-05', '2026-03-05'], '되돌리면 confirmedDates가 원래 배열로 복원되어야 함');
+});
+test("recApply: scope='future' 삭제로 끊어낸 구간의 confirmedDates가 가지치기되어 있어, 나중에 endDate를 다시 늘려도 끊어냈던 회차가 '확인됨'으로 되살아나지 않는다(app-evolve cycle185, cycle121의 skip 회귀와 같은 구조)", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', active: true, freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, count: null, weekend: 'none', type: 'expense', category: '식비', memo: '', amount: 1000, skip: [], edits: {}, confirmedDates: ['2026-05-05'] };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.recApply('r1', '2026-03-01', 'delete', 'future');
+  assert.deepStrictEqual(r.confirmedDates, [], '3/1부터 끊었으므로 그 이후 날짜였던 5/5 confirmedDates는 더 이상 의미가 없어 함께 제거되어야 함');
+  r.endDate = null; r.count = null; // 사용자가 나중에 다시 무기한으로 늘렸다고 가정
+  assert.deepStrictEqual(r.confirmedDates, [], '끊어낸 뒤 버려졌어야 할 confirmedDates가 남아있었다면, 한 번도 확인한 적 없는 5/5 회차가 되살아나 영원히 확인된 것으로 취급됐을 것(회귀 확인)');
+});
 test("recApply: scope='future' 삭제로 끊어낸 구간의 skip이 가지치기되어 있어, 나중에 endDate를 다시 늘려도(DB.recurrences[i]=d 직접 치환과 동일한 상태) 삭제됐던 회차가 skip으로 되살아나 거래가 사라지지 않는다(app-evolve cycle121 회귀)", () => {
   sandbox.TWi = -1;
   sandbox._recCache.clear();
@@ -4811,6 +4830,23 @@ test("recSave: scope='future' 분할은 effectiveDate 이후의 skip/edits를 �
   sandbox.lastUndo.undoFn();
   assert.deepStrictEqual(r.skip, ['2026-01-01', '2026-04-01', '2026-05-01'], '되돌리면 원본의 skip이 분할 이전 상태로 복원되어야 함');
   assert.strictEqual(JSON.stringify(r.edits), JSON.stringify({ '2026-02-01': { amount: 11 }, '2026-06-01': { amount: 22 } }), '되돌리면 원본의 edits가 분할 이전 상태로 복원되어야 함');
+});
+test("recSave: scope='future' 분할은 effectiveDate 이후의 confirmedDates(이체 완료 확인)도 새 레코드로 옮기고, 이전 것은 원본에 남긴다 — 안 옮기면 새 레코드가 한 번도 확인 안 된 회차를 '확인됨'으로 물려받는다(app-evolve cycle185)", () => {
+  sandbox.TWi = -1;
+  const r = {
+    id: 'r1', amount: 1000, endDate: null,
+    skip: [], edits: {},
+    confirmedDates: ['2026-01-01', '2026-04-01', '2026-05-01'],
+  };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.window._recCtx = { recId: 'r1', date: '2026-03-01', scope: 'future' };
+  sandbox.txDraft = { amount: 7000 };
+  sandbox.recSave();
+  const newRec = sandbox.DB.recurrences.find(x => x.id !== 'r1');
+  assert.deepStrictEqual(r.confirmedDates, ['2026-01-01'], 'effectiveDate 이전의 confirmedDates는 원본에 남아야 함');
+  assert.deepStrictEqual(newRec.confirmedDates, ['2026-04-01', '2026-05-01'], 'effectiveDate 이후(포함)의 confirmedDates는 새 레코드로 옮겨져야 함');
+  sandbox.lastUndo.undoFn();
+  assert.deepStrictEqual(r.confirmedDates, ['2026-01-01', '2026-04-01', '2026-05-01'], '되돌리면 원본의 confirmedDates가 분할 이전 상태로 복원되어야 함');
 });
 test("recSave: scope='future' 분할 시 원래 반복에 종료일이 있었다면 새 레코드도 그 종료일을 물려받아야 한다(무한 반복으로 바뀌면 안 됨)", () => {
   sandbox.TWi = -1;
@@ -5043,6 +5079,17 @@ test('splitRecurrenceAt: effectiveDate 이후(포함)의 skip/edits는 새 레�
   assert.deepStrictEqual(newRec.skip, ['2026-06-05', '2026-09-05'], 'effectiveDate 이후(포함) skip은 새 레코드로 옮겨져야 함(전에는 조용히 사라지는 버그가 있었음)');
   assert.strictEqual(JSON.stringify(newRec.edits), JSON.stringify({ '2026-08-05': { amount: 2 } }), 'effectiveDate 이후(포함) edits는 새 레코드로 옮겨져야 함(전에는 조용히 사라지는 버그가 있었음)');
 });
+test("splitRecurrenceAt: effectiveDate 이후(포함)의 confirmedDates(이체 완료 확인)는 새 레코드로, 이전 것은 원본에 남는다 — 안 나누면 updatedOriginal이 끊어낸 미래 회차를 '확인됨'으로 유령처럼 계속 들고 있는다(app-evolve cycle185)", () => {
+  const orig = {
+    id: 'r1', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: '2026-12-05', count: 12, amount: 1000, fromAssetId: 'a1',
+    skip: [], edits: {},
+    confirmedDates: ['2026-02-05', '2026-06-05', '2026-09-05'],
+  };
+  const draft = { ...orig, amount: 2000, fromAssetId: 'a9' };
+  const { updatedOriginal, newRec } = sandbox.splitRecurrenceAt(orig, draft, '2026-06-05');
+  assert.deepStrictEqual(updatedOriginal.confirmedDates, ['2026-02-05'], 'effectiveDate 이전 confirmedDates는 원본에 남아야 함');
+  assert.deepStrictEqual(newRec.confirmedDates, ['2026-06-05', '2026-09-05'], 'effectiveDate 이후(포함) confirmedDates는 새 레코드로 옮겨져야 함');
+});
 /* recSaveScopeApply('all')(app-evolve cycle172/173)은 d(draft)에 pruneOrphanRecOverrides를 불러
  * 새 스케줄과 안 맞는 skip/edits를 정리하지만, splitRecurrenceAt이 만드는 newRec('future' 분기)은
  * original의 skipFuture/editsFuture(옛 스케줄 기준 절대 날짜)를 그대로 물려받고도 지금까지 한 번도
@@ -5079,23 +5126,34 @@ test("splitRecurrenceAt: 스케줄 모양이 안 바뀌면(fromAssetId만 변경
  * cycle80 critique가 지적한 "직접 assertion 0건"), 여기서는 splitRecurrenceAt의 날짜 재계산·
  * 필드 병합 로직 없이 skip/edits 분기 규칙 자체만 떼어 직접 검증한다. */
 test('splitRecOverrides: skip은 effectiveDate 미만/이상으로 갈라지고, effectiveDate 당일은 future 쪽으로 간다(경계 포함)', () => {
-  const { skipPast, skipFuture } = sandbox.splitRecOverrides(['2026-06-01', '2026-06-05', '2026-06-10'], {}, '2026-06-05');
+  const { skipPast, skipFuture } = sandbox.splitRecOverrides(['2026-06-01', '2026-06-05', '2026-06-10'], {}, [], '2026-06-05');
   assert.deepStrictEqual(skipPast, ['2026-06-01']);
   assert.deepStrictEqual(skipFuture, ['2026-06-05', '2026-06-10']);
 });
 test('splitRecOverrides: edits도 같은 경계 규칙(effectiveDate 당일 포함 이후는 future)으로 갈라진다', () => {
-  const { editsPast, editsFuture } = sandbox.splitRecOverrides([], { '2026-06-01': { amount: 1 }, '2026-06-05': { amount: 2 } }, '2026-06-05');
+  const { editsPast, editsFuture } = sandbox.splitRecOverrides([], { '2026-06-01': { amount: 1 }, '2026-06-05': { amount: 2 } }, [], '2026-06-05');
   assert.strictEqual(JSON.stringify(editsPast), JSON.stringify({ '2026-06-01': { amount: 1 } }));
   assert.strictEqual(JSON.stringify(editsFuture), JSON.stringify({ '2026-06-05': { amount: 2 } }));
 });
-test('splitRecOverrides: skip/edits가 없으면(null/undefined) 예외 없이 양쪽 다 빈 값을 반환한다', () => {
-  const { skipPast, skipFuture, editsPast, editsFuture } = sandbox.splitRecOverrides(null, undefined, '2026-06-05');
+/* confirmedDates(이체 완료 확인 표시)는 skip/edits와 똑같이 effectiveDate 기준으로 나뉘어야 한다 —
+ * 지금까지는 세 호출부(recApply future-delete/recSave future/splitRecurrenceAt) 모두 confirmedDates를
+ * 전혀 나누지 않고 통째로 남기거나 물려줘서, 끊어낸 미래 회차를 한 번도 확인한 적 없어도 '확인됨'으로
+ * 남아있다가 나중에 종료일을 늘리면 유령으로 되살아났다(app-evolve cycle185). */
+test('splitRecOverrides: confirmedDates도 skip과 같은 경계 규칙으로 갈라진다', () => {
+  const { confirmedPast, confirmedFuture } = sandbox.splitRecOverrides([], {}, ['2026-06-01', '2026-06-05', '2026-06-10'], '2026-06-05');
+  assert.deepStrictEqual(confirmedPast, ['2026-06-01']);
+  assert.deepStrictEqual(confirmedFuture, ['2026-06-05', '2026-06-10']);
+});
+test('splitRecOverrides: skip/edits/confirmedDates가 없으면(null/undefined) 예외 없이 모두 빈 값을 반환한다', () => {
+  const { skipPast, skipFuture, editsPast, editsFuture, confirmedPast, confirmedFuture } = sandbox.splitRecOverrides(null, undefined, null, '2026-06-05');
   // vm 샌드박스 안에서 새로 만들어진 배열/객체는 host realm과 프로토타입이 달라 deepStrictEqual이
   // 값이 같아도 실패한다(위 splitRecurrenceAt 테스트와 같은 이유) — 길이/JSON으로 비교한다.
   assert.strictEqual(skipPast.length, 0);
   assert.strictEqual(skipFuture.length, 0);
   assert.strictEqual(JSON.stringify(editsPast), '{}');
   assert.strictEqual(JSON.stringify(editsFuture), '{}');
+  assert.strictEqual(confirmedPast.length, 0);
+  assert.strictEqual(confirmedFuture.length, 0);
 });
 
 /* recSaveScopeConfirm 자체도 지금까지 saveRec()을 거쳐서만 실행됐다(app-evolve cycle80 critique) —
