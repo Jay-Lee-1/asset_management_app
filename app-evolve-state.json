@@ -1,19 +1,8 @@
 {
-  "cycle": 183,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "rateUnknown 자산이 총자산/순자산/그룹소계/nwHistory에서 조용히 ₩0으로 집계됨 (개별 행 배지와 모순, nwHistory에 비가역 박제)",
-    "why": "assetEval()이 시세 미확인(rateUnknown)을 실제 0원과 구분 못해 totalAssets/totalDebt/ownerAssets/ownerDebt/nwPane 히어로 숫자/그룹소계가 모두 rateUnknown 자산을 0원으로 그대로 합산한다. 같은 화면에서 해당 자산 행에는 \"가격 미확인\" 배지가 뜨는데 상단 순자산 숫자는 경고 없이 그 값을 포함해 모순된다. 게다가 save()가 매번 totalAssets()/totalDebt()로 nwHistory 스냅샷을 갱신하고 90일 뒤 비가역 압축하므로, 이 왜곡이 순자산 추세 차트에 영구히 박제되고 goalProgress/debtsBehind 홈알림 오탐으로도 이어질 수 있다. (index.html: assetEval 2368-2376, rateUnknown 2474-2480, totalAssets/totalDebt 2522-2523, ownerAssets/ownerDebt/nwPane 3196-3206, 그룹소계 3286/3319-3321/3335, updateNwHistory 호출 2287, pruneNwHistory 2534-2541)",
-    "approach": "(1) homeAlerts()(7290-7339)에 기존 단일 alert-kind push 패턴으로 새 kind \"rateUnknownTotal\" 추가: includeInTotal 시장가 자산 중 rateUnknown(a)가 1건 이상이면 안내 카드 → openRateSheet() 연결. 기존 rateUnknown 판정(2609/5386-5387)을 그대로 재사용, 새 병합 프리미티브 불필요. (2) nwPane() 히어로 숫자와 assetBodyHTML() 그룹/귀속 소계(3286, 3319-3320) 옆에 기존 .mini.warn 배지 클래스(3335와 동일)로 조건부 \"일부 자산 미확인\" 캡션 추가 — 산술(테스트 9864-9884가 의존)은 건드리지 않음. (3) 스트레치: updateNwHistory 스냅샷에 하루 단위 hasUnknownRate 플래그만 추가 기록(산술 불변, 투명성 확보 목적, 사후 복원 불가라 스코프 제한). test/run.js는 9845 setupNetWorthDB() 패턴을 확장해 rates에 특정 코드가 없는(undefined) 자산으로 (a)신규 alert 노출 (b)includeInTotal=false면 미노출 (c)시세 전부 확인되면 미노출 (d)nwPane/그룹소계 캐비어트 부착을 검증."
-  },
+  "cycle": 184,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 178,
-      "phase": "advance",
-      "timestamp": "2026-10-11T17:30:00.000Z",
-      "summary": "critique(cycle178) 계획대로 afterCloudAuth()의 무충돌 전량교체 분기와 resolveCloudPullRemote() 둘 다에 기기-로컬 settings/nwHistory 보존을 적용했다. mergeRemoteDataIntoLocal() 바로 뒤에 snapshotLocalDeviceFields()/restoreLocalDeviceFields(snap) 헬퍼 쌍을 신설: snapshotLocalDeviceFields()는 dbIsEmpty(DB)(기존에 로그인 시 게스트데이터 병합 판단에 쓰던 순수 함수를 재사용)가 true면(최초 로그인 등 지킬 로컬 값이 없는 신규 기기) null을, 아니면 {settings:DB.settings,nwHistory:DB.nwHistory}를 그대로(복사 없이) 돌려준다. 두 호출부 모두 DB=sanitizeBackup(remote).data로 교체하기 직전에 스냅샷을 뜨고, 교체 직후 migrate() 전에 restoreLocalDeviceFields(snap)으로 되돌린다(snap이 null이면 아무것도 안 바꿔 remote 값을 그대로 받음). mergeRemoteDataIntoLocal이 이미 선언한 'settings/nwHistory는 기기-로컬이라 원격이 이기면 안 된다' 원칙을 재사용했을 뿐 새 병합 프리미티브는 만들지 않았다. sanitizeBackup()의 nwHistory 검증 주석(옛 줄번호 1831/1844 참조가 이미 실제 줄번호 1909/1922와 어긋나 있던 것도 함께 정리)도 이번 보호가 적용되는 범위(최초 로그인 제외)를 반영해 갱신했다. test/run.js에 FUNCTIONS 목록에 snapshotLocalDeviceFields/restoreLocalDeviceFields를 추가하고 총 7개 테스트 신설: 순수 함수 단위 테스트 4건(비어있지 않으면 참조 그대로 반환/비어있으면 null/null 스냅샷은 DB를 안 건드림/스냅샷 있으면 복원), afterCloudAuth 통합 테스트 2건(무충돌 전량교체에서도 로컬 themeMode·dismissedStaleMvIds·nwHistory가 보존됨 / 로컬 DB가 비어있는 최초 로그인에서는 remote 값을 그대로 받음), resolveCloudPullRemote 통합 테스트 1건(마찬가지로 로컬 settings.themeMode·nwHistory 보존). vm 샌드박스 realm 경계 때문에(이 코드베이스에 반복되는 패턴) snapshotLocalDeviceFields가 돌려주는 바깥 래퍼 객체나 sanitizeBackup이 새로 만드는 nwHistory 항목 객체를 통짜로 deepStrictEqual하면 구조는 같아도 'not reference-equal'로 실패해, 참조 비교나 필드별 비교로 다시 작성했다. index.html의 두 호출부(restoreLocalDeviceFields 호출)만 되돌려 재현한 결과 신규 통합 테스트 2건(afterCloudAuth 무충돌 보존, resolveCloudPullRemote 보존)이 실제로 깨짐을 확인했다(1265/1267 -> 복원 후 1267/1267) — 최초 로그인 테스트는 dbIsEmpty 분기라 애초에 영향받지 않아 예상대로 통과 유지. index.html/sw.js 변경이라 APP_VERSION 1.47.124->1.47.125, sw.js CACHE v386->v387 갱신. node test/run.js 1260/1260 -> 1267/1267 통과. pending_advance_plan을 비웠다.",
-      "commit": null
-    },
     {
       "cycle": 179,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-13T07:17:19.000Z",
       "summary": "general-purpose 서브에이전트로 176-183사이클(기각/완료 이력 포함)을 전달하고 앱 전체를 재조망. 새로 발견: rateUnknown(a)(index.html:2474-2480)이 개별 행/카드 배지(자산 상세행 3335, 홈 시세카드 2608-2609, 시세설정시트 5386-5387, cycle183이 고친 assetGainLoss 2491-2495)에는 배선돼 있지만, 앱 전체 \"순자산\"의 유일한 산술 근원인 totalAssets()/totalDebt()(2522-2523), ownerAssets()/ownerDebt()(3196-3197), 자산관리 탭 그룹별 소계(3286, 3319-3320), 그리고 nwPane()의 순자산/총자산/부채 히어로 숫자(3199-3206)는 모두 assetEval(a)(2368-2376, 시세 미확인을 ||0으로 실제 0원과 구분 못함을 2471-2473 주석이 이미 지적)를 직접 합산할 뿐 rateUnknown()을 전혀 안 봐서, 같은 화면에서 \"가격 미확인\" 배지가 붙은 행(val=₩0)과 그 자산이 포함된 그룹소계/상단 순자산 숫자가 경고 없이 그 ₩0을 그대로 더한 값을 보여줘 모순됨을 확인. 더 심각한 건 save()/_saveCore가 매번 DB.nwHistory=updateNwHistory(...,totalAssets(),totalDebt(),...)(2287)로 그날 스냅샷을 통째 갱신하고 pruneNwHistory()(2534-2541)가 90일 지나면 월별 1건으로 비가역 압축해(test/run.js:9841-9844가 이미 \"화면이 아니라 과거 차트에 영구히 박제\"라고 경고), 자산 추가 직후 시세 fetch 완료 전이나 README가 스스로 경고하는 배포 실수(Netlify 함수 없이 올려 주식시세가 영구히 안 갱신)로 rateUnknown이 계속되는 사용자는 순자산 추세가 영구히 낮게 기록되고, 이것이 cycle174/179가 고친 debtsBehind/goalBehind 홈알림에 2차 오탐까지 유발할 수 있음을 코드로 재구성해 확인. 다음 advance 계획: (1) homeAlerts()(7290-7339)에 기존 단일 alert-kind push 패턴과 동일하게 새 kind(rateUnknownTotal)를 추가 — includeInTotal 시장가 자산 중 rateUnknown(a)가 1건 이상이면 \"시세 미확인 자산이 있어 총자산에 반영 안 됐어요\" 카드를 openRateSheet()로 연결(2609/5386-5387의 기존 판정 재사용, 새 병합 프리미티브 불필요). (2) nwPane() 히어로 숫자와 assetBodyHTML() 그룹/귀속 소계(3286, 3319-3320) 옆에 기존 .mini.warn 배지 클래스(3335와 동일)로 조건부 \"일부 자산 미확인\" 캡션만 추가(산술 자체는 안 바꿔 기존 9864-9884 테스트 안전). (3) 스트레치: updateNwHistory 스냅샷에 산술은 안 바꾸고 hasUnknownRate 플래그만 같이 기록해 투명성 확보(사후 복원은 불가하므로 스코프 제한). test/run.js는 9845 setupNetWorthDB() 패턴을 확장해 코드가 rates에 없는(0이 아니라 undefined) 자산으로 (a)신규 alert 뜸 (b)includeInTotal=false면 안 뜸 (c)시세 전부 확인되면 안 뜸 (d)nwPane/그룹소계 캐비어트 부착을 검증. 러너업(기각): histQ 검색 매 keystroke 전체재계산 성능(체감 랙 미재현, 우선순위 낮음), netlify/functions의 테스트 커버리지 부재(서버리스라 vm 하네스 대상 아니고 이미 방어적으로 작성돼 신규 버그 없음). 코드 변경 없음(읽기 전용 조사).",
+      "commit": null
+    },
+    {
+      "cycle": 183,
+      "phase": "advance",
+      "timestamp": "2026-10-13T08:13:19.000Z",
+      "summary": "critique(cycle183) 계획의 (1)(2)를 구현했다. homeAlerts()(staleMv 바로 다음)에 새 kind 'rateUnknownTotal' 추가: DB.assets.filter(a=>a.includeInTotal&&rateUnknown(a)).length로 건수를 구해(rateUnknown 자체가 isMarketValued 아닌 타입은 이미 false를 돌려주므로 별도 타입 가드 불필요) 1건 이상이면 push, homeAlertCard에 staleMv와 동일한 스타일로 openRateSheet() 연결 카드를 추가했다(OS 알림 notifyAlertInfo에는 staleMv처럼 추가하지 않음 — 급한 알림이 아니라 홈 카드로 충분하다는 기존 분류를 그대로 따름). nwPane(o,TA,TD)에는 DB.assets.some(a=>a.includeInTotal&&(isAll||a.owner===o)&&rateUnknown(a))로 그 스코프(전체 또는 해당 귀속)에 미확인 자산이 있는지 보고, 있으면 히어로 label 옆에 기존 '<span class=\"mini\">...</span>' 인라인 배지 패턴(2906/4852/5200/5361행과 동일)으로 '일부 미확인' 캡션을 붙였다. assetBodyHTML()의 편집모드 블록(그룹별 sum 계산 직전)과 일반모드 블록(동일) 둘 다에서 sum을 구하던 items.filter(a=>a.includeInTotal)를 'incl' 변수로 뽑아 재사용하고 incl.some(rateUnknown)으로 같은 캡션을 그룹 타이틀 옆(편집모드는 ty.label 옆, 일반모드는 .grp-title .g span 옆)에 추가했다 — 산술(sum 계산 자체, totalAssets/ownerAssets 등)은 전혀 건드리지 않아 9864-9884 기존 테스트 그대로 통과. 스트레치((3) nwHistory에 hasUnknownRate 플래그 기록)는 플랜이 이미 '사후 복원 불가라 스코프 제한'으로 명시한 선택 항목이라 이번 사이클 범위에서는 보류하고 다음 critique가 필요하면 재검토하도록 남겨뒀다. test/run.js에 7개 테스트 추가: homeAlerts 3건(시세 미확인 자산 있으면 alert 뜨고 시세 확인되면 사라짐, includeInTotal=false면 집계 안 됨, 여러 건이면 count 합산), homeAlertCard 1건(openRateSheet 연결), renderAssets(nwPane+assetBodyHTML 통합 경로) 3건(캡션 노출/소멸, 다른 귀속 소유 자산은 내 귀속 히어로에 캡션 안 붙음, 편집모드에서도 그룹 타이틀에 캡션). index.html/sw.js만 critique 커밋(1ede5d9)으로 되돌려 재현한 결과, index.html 의존 6개 테스트가 실제로 깨짐을 확인했다(1315/1321 -> 복원 후 1321/1321; openRateSheet 연결 카드 테스트 1건은 index.html 변경과 무관해 되돌려도 그대로 통과). index.html/sw.js 변경이라 APP_VERSION 1.47.134->1.47.135, sw.js CACHE v396->v397 갱신. node test/run.js 1314/1314 -> 1321/1321 통과. pending_advance_plan을 비웠다.",
       "commit": null
     }
   ]

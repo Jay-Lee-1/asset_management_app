@@ -1376,7 +1376,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.134';
+const APP_VERSION='1.47.135';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3199,7 +3199,11 @@ function ownerListArr(){return ['all',...DB.owners]}
 function nwPane(o,TA,TD){ /* 순자산 카드 한 장 (전체 또는 귀속별) */
  const isAll=(o==='all');
  const ta=isAll?TA:ownerAssets(o), td=isAll?TD:ownerDebt(o);
- return `<div class="hero"><div class="label">${isAll?'순자산':esc(o)+' 순자산'}</div>
+ /* rateUnknown(a)는 개별 행 배지(3335행)에만 배선돼 있어, assetEval()의 시세미확인→₩0 폴백이
+    이 히어로 숫자/그룹소계에 경고 없이 그대로 섞여 들어간다 — 산술은 그대로 두고 캡션만 붙인다
+    (app-evolve cycle183 critique/advance) */
+ const hasUnknown=DB.assets.some(a=>a.includeInTotal&&(isAll||a.owner===o)&&rateUnknown(a));
+ return `<div class="hero"><div class="label">${isAll?'순자산':esc(o)+' 순자산'}${hasUnknown?' <span class="mini warn">일부 미확인</span>':''}</div>
    <div class="total num fit" data-max="34">${comma(ta-td)}<small>원</small></div>
    <div class="hero-split"><div><div class="k">총자산</div><div class="v num fit" data-max="14">${comma(ta)}원</div></div>
      <div><div class="k">부채</div><div class="v num fit minus" data-max="14">${comma(td)}원</div></div></div></div>`;
@@ -3283,14 +3287,16 @@ function assetBodyHTML(){
    const customSort=DB.settings.assetSort==='custom'; /* amount/name/owner 정렬일 땐 a.order가 화면에 반영 안 돼 버튼이 무의미함 */
    body=`<div class="card" id="dragList">`+DB.settings.groupOrder.filter(t=>DB.assets.some(a=>a.type===t)).map((t,i,arr)=>{
      const items=DB.assets.filter(a=>a.type===t);
-     const sum=items.filter(a=>a.includeInTotal).reduce((s,a)=>s+(a.type==='debt'?-assetEval(a):assetEval(a)),0);
+     const incl=items.filter(a=>a.includeInTotal);
+     const sum=incl.reduce((s,a)=>s+(a.type==='debt'?-assetEval(a):assetEval(a)),0);
+     const hasUnknown=incl.some(rateUnknown); /* nwPane()과 동일한 캡션(app-evolve cycle183 advance) */
      const ty=ASSET_TYPES[t];
      const assetRows=customSort?groupItems(t):[];
      return `<div class="asset-item" data-type="${t}" style="display:block;padding:0">
        <div style="display:flex;align-items:center;gap:13px;padding:14px 16px">
        <div class="drag-handle" data-drag="${t}">${svg('grip')}</div>
        <div class="avatar ${ty.cls}" style="width:40px;height:40px">${svg(ty.icon)}</div>
-       <div style="flex:1"><div class="nm">${ty.label}</div><div class="sub">${items.length}개 자산</div></div>
+       <div style="flex:1"><div class="nm">${ty.label}${hasUnknown?' <span class="mini warn">일부 미확인</span>':''}</div><div class="sub">${items.length}개 자산</div></div>
        <div class="grp-move">
          <button type="button" class="grp-move-btn" aria-label="${esc(ty.label)} 위로 이동" onclick="moveGroup('${t}',-1)"${i===0?' disabled':''}>${svg('arrowUp')}</button>
          <button type="button" class="grp-move-btn" aria-label="${esc(ty.label)} 아래로 이동" onclick="moveGroup('${t}',1)"${i===arr.length-1?' disabled':''}>${svg('arrowDn')}</button>
@@ -3316,8 +3322,10 @@ function assetBodyHTML(){
      let items=groupItems(t);
      if(ST.assetOwner!=='all')items=items.filter(a=>a.owner===ST.assetOwner); /* 귀속 필터 */
      if(!items.length)return;
-     const sum=items.filter(a=>a.includeInTotal).reduce((s,a)=>s+(a.type==='debt'?-assetEval(a):assetEval(a)),0);
-     body+=`<div class="grp-title"><span class="g">${ASSET_TYPES[t].label}</span><span class="gt num ${t==='debt'?'minus':''}">${won(sum)}</span></div><div class="card">`;
+     const incl=items.filter(a=>a.includeInTotal);
+     const sum=incl.reduce((s,a)=>s+(a.type==='debt'?-assetEval(a):assetEval(a)),0);
+     const hasUnknown=incl.some(rateUnknown); /* nwPane()과 동일한 캡션(app-evolve cycle183 advance) */
+     body+=`<div class="grp-title"><span class="g">${ASSET_TYPES[t].label}${hasUnknown?' <span class="mini warn">일부 미확인</span>':''}</span><span class="gt num ${t==='debt'?'minus':''}">${won(sum)}</span></div><div class="card">`;
      body+=items.map(a=>{const ty=ASSET_TYPES[a.type];const val=a.type==='debt'?-assetEval(a):assetEval(a);
        const showEval=['fx','gold','stock'].includes(a.type);
        if(ST.aSel.mode){const on=ST.aSel.ids.has(a.id);
@@ -7316,6 +7324,12 @@ function homeAlerts(neg){
  else if(_vr.length>1){arr.push({kind:'quickMulti',count:_vr.length});}
  const staleMv=detectStaleMarketValuedTxns(DB);
  if(staleMv.length)arr.push({kind:'staleMv',count:staleMv.length});
+ /* 시세 미확인(rateUnknown) 시장가 자산은 assetEval()이 ||0으로 평가해 총자산/귀속소계/
+  * nwPane 히어로 숫자에 경고 없이 ₩0으로 섞여 들어간다(개별 행 배지만으론 상단 숫자가
+  * 틀렸다는 걸 알 수 없다) — openRateSheet()로 바로 연결해 시세를 받아오게 안내한다
+  * (app-evolve cycle183 critique/advance) */
+ const _ruCount=DB.assets.filter(a=>a.includeInTotal&&rateUnknown(a)).length;
+ if(_ruCount)arr.push({kind:'rateUnknownTotal',count:_ruCount});
  const _bo=spendByCategory(TM.y,TM.m).filter(r=>{const b=budgetForMonth(r.c,TM.y,TM.m);return b>0&&r.v>b}); /* 예산 초과 카테고리: 1건이면 그대로, 여러 건이면 하나로 묶음(quick/quickMulti와 동일 패턴) */
  if(_bo.length===1){const r=_bo[0],b=budgetForMonth(r.c,TM.y,TM.m);arr.push({kind:'budgetOver',cat:r.c,spent:r.v,budget:b});}
  else if(_bo.length>1)arr.push({kind:'budgetOverMulti',count:_bo.length});
@@ -7481,6 +7495,11 @@ function homeAlertCard(al){
    <div class="ha-ic">${svg('alert')}</div>
    <div class="ha-b"><div class="ha-t">순자산 계산에서 빠졌을 수 있는 기록 ${al.count}건</div>
      <div class="ha-s">외화·금·주식 통장을 이체·지출·수입 대상으로 쓴 과거 기록이에요 · 눌러서 확인하세요</div></div>
+   <div class="ha-c">${svg('chev')}</div></button>`;
+ if(al.kind==='rateUnknownTotal')return `<button class="home-alert" onclick="openRateSheet()">
+   <div class="ha-ic">${svg('alert')}</div>
+   <div class="ha-b"><div class="ha-t">시세 미확인 자산 ${al.count}건이 총자산에서 빠졌어요</div>
+     <div class="ha-s">가격을 받아오기 전까지 ₩0으로 계산돼요 · 눌러서 시세 연동을 확인하세요</div></div>
    <div class="ha-c">${svg('chev')}</div></button>`;
  if(al.kind==='budgetOver')return `<button class="home-alert" onclick="openSpendAnalysisThisMonth()">
    <div class="ha-ic">${svg('alert')}</div>

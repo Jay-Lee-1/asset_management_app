@@ -11906,6 +11906,85 @@ test('homeAlertCard: debtBehind/debtBehindMulti가 각각 openAssetHistory/openD
   assert.ok(html2.includes('openDebtBehindList()'));
   assert.ok(html2.includes('2건'));
 });
+/* ---------- rateUnknownTotal: 시세 미확인(rateUnknown) 시장가 자산은 assetEval()이 ||0으로
+ * 평가해 totalAssets/nwPane 히어로/그룹소계에 경고 없이 ₩0으로 섞여 들어간다 — 개별 행 배지만으론
+ * 상단 숫자가 틀렸다는 걸 알 수 없어, staleMv와 동일한 단일 alert-kind push 패턴으로 추가한
+ * 홈 알림(app-evolve cycle183 critique/advance) ---------- */
+test('homeAlerts: 시세 미확인(rateUnknown) 시장가 자산이 있으면 rateUnknownTotal 알림이 뜨고, 시세가 확인되면 사라진다', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.rates = { fx: {}, goldPerG: 90000, stocks: {} }; // USD 시세만 아직 안 들어온 상태
+  sandbox.DB.assets.push({ id: 'a_usd', name: '달러', owner: '나', type: 'fx', currency: 'USD', fxAmount: 100, includeInTotal: true });
+  let alerts = sandbox.homeAlerts([]);
+  let ru = alerts.filter((a) => a.kind === 'rateUnknownTotal');
+  assert.strictEqual(ru.length, 1, '시세 미확인 자산이 있으면 알림이 떠야 함');
+  assert.strictEqual(ru[0].count, 1);
+
+  sandbox.DB.rates.fx.USD = 1300; // 시세가 들어오면
+  alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'rateUnknownTotal'), '시세가 확인되면 알림이 사라져야 함');
+});
+test('homeAlerts: includeInTotal=false인 자산은 시세 미확인이어도 rateUnknownTotal에 집계되지 않는다(회귀 확인)', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.rates = { fx: {}, goldPerG: 90000, stocks: {} };
+  sandbox.DB.assets.push({ id: 'a_usd', name: '숨긴 달러', owner: '나', type: 'fx', currency: 'USD', fxAmount: 100, includeInTotal: false });
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'rateUnknownTotal'), 'includeInTotal=false면 다른 총계 집계처럼 이 알림에서도 빠져야 함');
+});
+test('homeAlerts: 시세 미확인 자산이 여러 건이면 rateUnknownTotal의 count에 모두 합산된다', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.rates = { fx: {}, goldPerG: 0, stocks: {} };
+  sandbox.DB.assets.push(
+    { id: 'a_usd', name: '달러', owner: '나', type: 'fx', currency: 'USD', fxAmount: 100, includeInTotal: true },
+    { id: 'a_gold', name: '금', owner: '나', type: 'gold', goldDon: 1, includeInTotal: true },
+  );
+  const alerts = sandbox.homeAlerts([]);
+  const ru = alerts.filter((a) => a.kind === 'rateUnknownTotal');
+  assert.strictEqual(ru.length, 1);
+  assert.strictEqual(ru[0].count, 2, '달러·금 둘 다 시세 미확인이면 2건으로 집계돼야 함');
+});
+test('homeAlertCard: rateUnknownTotal은 openRateSheet()로 연결되고 건수를 보여준다', () => {
+  const html = sandbox.homeAlertCard({ kind: 'rateUnknownTotal', count: 2 });
+  assert.ok(html.includes('openRateSheet()'));
+  assert.ok(html.includes('2건'));
+});
+/* ---------- nwPane()/assetBodyHTML(): 홈 알림 카드와 별개로, 순자산 히어로 숫자와 자산관리
+ * 그룹소계 자체에도 "일부 미확인" 캡션을 붙인다(산술은 그대로, 캡션만 추가) ---------- */
+test('renderAssets: 시세 미확인 시장가 자산이 있으면 순자산 히어로/그룹소계에 "일부 미확인" 캡션이 붙고, 시세가 확인되면 사라진다', () => {
+  setupAssetsDB();
+  sandbox.DB.assets = [{ id: 'a_usd', name: '달러', owner: '나', type: 'fx', currency: 'USD', fxAmount: 100, includeInTotal: true, order: 0 }];
+  sandbox.DB.rates = { fx: {}, stocks: {}, goldPerG: 0, syncedAt: 0 }; // USD 시세 미확인
+  sandbox.renderAssets();
+  let html = sandbox.pageAssetsEl.innerHTML;
+  assert.ok(html.includes('일부 미확인'), '시세 미확인 자산이 있으면 캡션이 보여야 함');
+
+  sandbox.DB.rates.fx.USD = 1300;
+  sandbox._balCache.clear();
+  sandbox.renderAssets();
+  html = sandbox.pageAssetsEl.innerHTML;
+  assert.ok(!html.includes('일부 미확인'), '시세가 확인되면 캡션이 사라져야 함');
+});
+test('renderAssets: 다른 귀속 소유의 시세 미확인 자산은 내 귀속 히어로에 캡션을 붙이지 않는다(귀속별 스코프 확인)', () => {
+  setupAssetsDB();
+  sandbox.DB.owners = ['나', '배우자'];
+  sandbox.DB.assets = [
+    { id: 'a_cash', name: '내지갑', owner: '나', type: 'cash', includeInTotal: true, baseAmount: 10000, order: 0 },
+    { id: 'a_usd', name: '배우자 달러', owner: '배우자', type: 'fx', currency: 'USD', fxAmount: 100, includeInTotal: true, order: 0 },
+  ];
+  sandbox.DB.rates = { fx: {}, stocks: {}, goldPerG: 0, syncedAt: 0 }; // USD 시세 미확인
+  sandbox.ST.assetOwner = '나';
+  sandbox.renderAssets();
+  const naHero = sandbox.pageAssetsEl.innerHTML.split('배우자 순자산')[0];
+  assert.ok(!naHero.includes('일부 미확인'), '"나" 귀속에는 시세 미확인 자산이 없으므로 캡션이 없어야 함');
+  assert.ok(sandbox.pageAssetsEl.innerHTML.includes('일부 미확인'), '전체(all)·배우자 귀속엔 여전히 캡션이 있어야 함');
+});
+test('renderAssets: 편집 모드(ST.editAssets)에서도 그룹 타이틀 옆에 "일부 미확인" 캡션이 붙는다', () => {
+  setupAssetsDB();
+  sandbox.DB.assets = [{ id: 'a_usd', name: '달러', owner: '나', type: 'fx', currency: 'USD', fxAmount: 100, includeInTotal: true, order: 0 }];
+  sandbox.DB.rates = { fx: {}, stocks: {}, goldPerG: 0, syncedAt: 0 };
+  sandbox.ST.editAssets = true;
+  sandbox.renderAssets();
+  assert.ok(sandbox.pageAssetsEl.innerHTML.includes('일부 미확인'), '편집 모드 그룹 타이틀에도 캡션이 보여야 함');
+});
 test('openDebtBehindList: 정체된 부채가 1건이면 바로 그 자산 내역으로, 여러 건이면 시트에서 고르게 한다', () => {
   setupHistoryDB();
   sandbox.DB.assets.push({ id: 'd1', name: '마이너스통장', owner: '나', type: 'debt', baseAmount: 600000, includeInTotal: true });
