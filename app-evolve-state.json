@@ -1,15 +1,8 @@
 {
   "cycle": 183,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 178,
-      "phase": "review",
-      "timestamp": "2026-10-11T15:05:00.000Z",
-      "summary": "cycle178 develop(_autoDeactivatedByAssetDelete 플래그로 재연동 시 반복거래 자동 복원) 검토 — relinkDeletedAsset()(index.html:3321-3328)을 직접 읽어 fromAssetName/toAssetName 관련 두 if문이 먼저 실행된 뒤에 플래그 체크가 오는 순서를 확인했고, snapshotAssetName()이 fromAssetId/toAssetId가 실제로 일치하는 쪽에만 이름을 심는다는 점(3393-3404)을 대조해 비거래측(toAssetId=null인 일반 수입/지출 반복거래)은 toAssetName이 처음부터 undefined로 남아 `!r.fromAssetName&&!r.toAssetName` 조건이 한쪽만 재연결돼도 자연히 통과함을 확인했다 — 양쪽이 모두 삭제된 이체(fromAssetId/toAssetId 둘 다 다른 삭제자산을 가리킴)에서는 한쪽만 재등록됐을 때 남은 toAssetName이 조건을 막아 아직 활성화되지 않음을 테스트와 코드 양쪽에서 재확인했다. deleteAssetsUndo()의 undo 콜백이 r.active=true 복원과 함께 플래그도 삭제해 '사용자가 직접 멈춤'과 재구분됨을 확인. 신규 회귀 테스트 4건(단일측 자동복원, 양쪽삭제 이체의 부분재연결 시 보류, 플래그 없는 수동비활성 비변경, undo 시 플래그 제거)이 실제로 기존 동작과 의미있게 다른 것을 검증하는지 로직을 대조했고, node test/run.js 1260/1260 전부 통과(독립 재실행으로 재확인)했다. 3개 inline <script> 블록 모두 node -e new Function()으로 문법 검증 통과, APP_VERSION(1.47.124)/sw.js CACHE(v386) 버전 쌍 일치 확인. 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
-      "commit": null
-    },
     {
       "cycle": 178,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-13T05:15:08.526Z",
       "summary": "general-purpose 서브에이전트로 141-182사이클과 겹치지 않는 새 개선점을 탐색 — assetGainLoss(a)(index.html)가 costBasis>0 가드만 두고 rateUnknown(a)(시세를 아직 못 받아왔거나 API 실패로 모르는 상태) 가드는 빠져 있었음을 발견. assetEval(a)는 R.fx[cur]/R.goldPerG/R.stocks[code]가 없으면 ||0으로 평가해 0을 반환하는데, 그 상태에서 costBasis가 입력돼 있으면 assetGainLoss가 amount=0-costBasis, pct=-100%를 그대로 계산해 자산 목록/상세(assetSubline→assetGainLossBadge)에 시세 동기화 전(또는 API 실패 지속 시) \"매입가 전액 손실(-100%)\" 거짓 배지가 뜨는 버그. rateUnknown() 자체가 cycle64 등에서 \"시세 모름 vs 실제 0원\"을 구분하려고 만든 함수인데 assetGainLoss만 이 패턴을 안 쓰고 있었음. assetGainLoss(a)의 가드 조건에 ||rateUnknown(a)를 추가해 시세 미확인이면 null 반환하도록 수정(assetGainLossBadge/assetSubline은 이미 null을 빈 문자열로 처리하므로 거짓 배지가 자동 해소). test/run.js에 3개 테스트 추가: rateUnknown 상태의 fx/gold/stock 각각 costBasis가 있어도 null 반환 / 시세가 들어온 자산은 정상 계산(회귀 방지) / assetGainLossBadge·assetSubline이 rateUnknown 시 배지를 안 보여줌. 코드 수정만 되돌리고 재실행해 신규 3개 테스트가 정확히 실패하는 것을 확인 후 재적용. index.html/sw.js 변경이라 APP_VERSION 1.47.133->1.47.134, sw.js CACHE v395->v396 갱신. node test/run.js 1311/1311 -> 1314/1314 통과.",
       "commit": "c3811a9"
+    },
+    {
+      "cycle": 183,
+      "phase": "review",
+      "timestamp": "2026-10-13T06:08:36.167Z",
+      "summary": "cycle183 develop(assetGainLoss에 rateUnknown 가드 추가, 시세 미동기화 자산의 거짓 -100% 손실 배지 방지) 검토 — commit c3811a9의 diff를 rateUnknown()(index.html:2474-2480) 정의와 직접 대조해 fx/gold/stock 세 타입의 미확인 조건(R.fx[cur]==null / !R.goldPerG / R.stocks[code]==null)과 assetEval()의 ||0 폴백이 실제로 costBasis>0인 상태에서 amount=0-costBasis, pct=-100%를 만들어낼 수 있음을 코드로 재확인했다. 가드 추가 위치(costBasis>0 체크 바로 다음)가 cycle64의 costBasis=0 가드와 동일한 null-반환 패턴임을 확인했고, assetGainLossBadge/assetSubline이 null을 빈 문자열로 처리하는 기존 로직(grep으로 호출부 확인)과 맞물려 배지가 자동으로 사라지는 경로도 추적했다. 신규 테스트 3건(fx/gold/stock 각각 rateUnknown 시 null, 시세 확인된 자산은 정상 계산되는 회귀, 배지/서브라인이 안 뜨는지)이 실제로 의미 있는 차이를 검증하는지 로직 대조. node test/run.js 1314/1314 전부 통과(독립 재실행으로 재확인). 주석을 제거한 뒤 node -e new Function()으로 4개 inline <script> 블록 전부 문법 검증 통과, APP_VERSION(1.47.134)/sw.js CACHE(v396) 버전 쌍 일치 확인. 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
+      "commit": null
     }
   ]
 }
