@@ -1,15 +1,8 @@
 {
   "cycle": 183,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 178,
-      "phase": "develop",
-      "timestamp": "2026-10-11T14:16:48.211Z",
-      "summary": "general-purpose 서브에이전트로 172-177사이클과 겹치지 않는 새 개선점을 탐색 — deleteAssetsUndo()(index.html)가 자산 삭제 시 연결된 활성 반복거래를 r.active=false로 끄는데, undo를 누르지 않고 넘어간 뒤 나중에 동일 이름·동일 타입 자산을 재등록해 relinkDeletedAsset()으로 연동하면 active가 영원히 false로 남아 expandRec()이 영구히 건너뛰는 버그를 발견(cycle176 critique가 실존 확인했으나 보류했던 백로그 항목). deleteAssetsUndo가 비활성화할 때 r._autoDeactivatedByAssetDelete=true를 함께 남기고(undo 시 active=true 복원과 함께 플래그도 삭제), relinkDeletedAsset()은 fromAssetId/toAssetId 재연결 후 그 플래그가 있고 fromAssetName/toAssetName이 둘 다 더 이상 남아있지 않으면(이체처럼 양쪽 다 삭제된 경우 양쪽 재연결이 끝나야 함) active=true로 복원하고 플래그를 지우고 touch(r)한다. 사용자가 직접 멈춘(플래그 없는) 반복거래는 그대로 둔다. test/run.js에 deleteAssetsUndo가 플래그를 남기고 undo 시 지우는지, relinkDeletedAsset이 플래그 있는 반복거래만 재활성화하는지, 양쪽 다 삭제된 이체는 한쪽만 relink됐을 땐 아직 활성화 안 하는지, 플래그 없는(수동 비활성) 반복거래는 재연동돼도 active를 바꾸지 않는지 4개 테스트를 추가. index.html/sw.js 변경이라 APP_VERSION 1.47.123->1.47.124, sw.js CACHE v385->v386 갱신. node test/run.js 1260/1260 통과(신규 4건 포함).",
-      "commit": "f21b819"
-    },
     {
       "cycle": 178,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-12T09:10:00.000Z",
       "summary": "critique(cycle182) 계획대로 index.html의 현재 save(opts) 본문을 그대로 _saveCore(opts)로 이름만 바꾸고, save(opts)를 얇은 래퍼로 교체했다: navigator.locks.request가 있으면 'aa_save_'+dataKey() 이름의 Web Lock으로 _saveCore(opts)를 감싸 동일 오리진 탭 간 상호배제를 보장하고(dataKey()가 계정/게스트별로 다른 키를 돌려줘 다른 계정끼리는 경합하지 않음), 없으면(구형 Safari 등) 기존처럼 _saveCore(opts)를 바로 호출하는 폴백을 유지한다. 플랜대로 save()의 리턴값을 실제로 소비하는 호출부가 있는지 먼저 grep으로 확인했는데, touchSave()가 'return save()'로 그대로 전달하는 것 외에는 93곳 호출부 전부가 반환값을 버리는 fire-and-forget 호출이었고(touchSave의 반환값을 쓰는 곳도 없음) — 플랜이 예상한 '소비하는 곳이 없으면 단순 wrapper로 충분' 분기에 해당해 락 분기에서 결과를 기다리지 않고 바로 true를 반환하는 가장 단순한 형태로 구현했다. test/run.js: save는 93곳 호출부가 전역 no-op 스텁(sandbox.save=()=>{})에 의존하고 있어 전역 FUNCTIONS 목록에 올리지 않고(올리면 무관한 테스트들이 DB.owners 등 전역 상태를 요구하게 돼 대거 깨짐), APPLOCK 테스트의 makeAppLockCtx와 같은 패턴으로 save/_saveCore/foreignSaveIsNewer만 끌어온 별도 vm 컨텍스트를 쓰는 makeSaveCtx() 헬퍼를 신설했다. 3개 테스트 추가: (a) navigator.locks 미지원 시 _saveCore를 동기 호출해 호출 즉시 DB/__savedAt 두 키가 저장되고 반환값도 그대로 전달되는지, (b) navigator.locks 지원 시 요청하는 락 이름이 정확히 'aa_save_'+dataKey()인지(계정별 락 분리 확인) 및 락 콜백 안에서 실제 저장이 일어나는지, (c) [실행형] 플랜의 3c 그대로 — 콜백을 큐에 쌓아 앞선 콜백이 완전히 settle돼야 다음을 실행하는 가짜 Web Lock 매니저로 같은 localStorage를 공유하는 두 '탭'(완전히 분리된 vm 컨텍스트, 각자 다른 신규 거래)을 만들어 거의 동시에 save()를 부른 뒤, 두 탭의 거래가 모두 최종 localStorage에 남는지(레이스가 실제로 해소됐는지) 검증. index.html만 critique 커밋(483ba16)으로 되돌려 재현한 결과 3개 테스트 모두 실제로 깨짐을 확인했다(1308/1311 -> 복원 후 1311/1311, (c)는 락 없이 두 번째 탭이 첫 탭의 __savedAt을 못 보고 그대로 덮어써 거래 하나가 사라지는 것으로 실패). index.html/sw.js 변경이라 APP_VERSION 1.47.132->1.47.133, sw.js CACHE v394->v395 갱신. node test/run.js 1308/1308 -> 1311/1311 통과. pending_advance_plan을 비웠다.",
       "commit": null
+    },
+    {
+      "cycle": 183,
+      "phase": "develop",
+      "timestamp": "2026-10-13T05:15:08.526Z",
+      "summary": "general-purpose 서브에이전트로 141-182사이클과 겹치지 않는 새 개선점을 탐색 — assetGainLoss(a)(index.html)가 costBasis>0 가드만 두고 rateUnknown(a)(시세를 아직 못 받아왔거나 API 실패로 모르는 상태) 가드는 빠져 있었음을 발견. assetEval(a)는 R.fx[cur]/R.goldPerG/R.stocks[code]가 없으면 ||0으로 평가해 0을 반환하는데, 그 상태에서 costBasis가 입력돼 있으면 assetGainLoss가 amount=0-costBasis, pct=-100%를 그대로 계산해 자산 목록/상세(assetSubline→assetGainLossBadge)에 시세 동기화 전(또는 API 실패 지속 시) \"매입가 전액 손실(-100%)\" 거짓 배지가 뜨는 버그. rateUnknown() 자체가 cycle64 등에서 \"시세 모름 vs 실제 0원\"을 구분하려고 만든 함수인데 assetGainLoss만 이 패턴을 안 쓰고 있었음. assetGainLoss(a)의 가드 조건에 ||rateUnknown(a)를 추가해 시세 미확인이면 null 반환하도록 수정(assetGainLossBadge/assetSubline은 이미 null을 빈 문자열로 처리하므로 거짓 배지가 자동 해소). test/run.js에 3개 테스트 추가: rateUnknown 상태의 fx/gold/stock 각각 costBasis가 있어도 null 반환 / 시세가 들어온 자산은 정상 계산(회귀 방지) / assetGainLossBadge·assetSubline이 rateUnknown 시 배지를 안 보여줌. 코드 수정만 되돌리고 재실행해 신규 3개 테스트가 정확히 실패하는 것을 확인 후 재적용. index.html/sw.js 변경이라 APP_VERSION 1.47.133->1.47.134, sw.js CACHE v395->v396 갱신. node test/run.js 1311/1311 -> 1314/1314 통과.",
+      "commit": "c3811a9"
     }
   ]
 }
