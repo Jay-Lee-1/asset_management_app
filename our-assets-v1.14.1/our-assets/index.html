@@ -1376,7 +1376,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.139';
+const APP_VERSION='1.47.140';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -7244,6 +7244,10 @@ function hasFutureTxns(assetId){ /* 앞으로 예정된 내역(반복 포함)이
 function emptyAssets(){ /* 현금예금 제외 · 잔액 0 · 앞으로 쓸 일 없음 */
  return DB.assets.filter(a=>{
   if(a.type==='cash')return false;              /* 통장은 0원이어도 유지 */
+  if(rateUnknown(a))return false;               /* 시세 미확인 fx/gold/stock: assetEval()의 ||0 폴백을
+   "다 썼다"로 오인하면 안 됨 — 시세 동기화 전(또는 실패 지속) 보유 중인 자산이 0원으로
+   잘못 평가돼 "정리할까요?" 제안(실제 삭제로 이어짐)에 잘못 올라가는 것을 막는다. assetGainLoss()/
+   allocationCard()와 동일한 '모름 vs 0원' 구분(app-evolve cycle183/184) */
   if(Math.abs(assetEval(a))>0)return false;     /* 아직 값이 남아 있음 */
   if(a.type==='savings'&&a.maturityDate&&a.maturityDate>TODAY)return false; /* 만기 전 저축 */
   if(hasFutureTxns(a.id))return false;          /* 예정 내역이 남아 있음 */

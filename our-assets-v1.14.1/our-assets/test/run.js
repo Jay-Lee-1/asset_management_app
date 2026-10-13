@@ -10398,6 +10398,7 @@ function setupEmptyAssetsDB() {
       { id: 'a_savingsFuture', name: '진행중적금', type: 'savings', owner: '나', maturityDate: '2099-01-01' },
       { id: 'a_stockHasTxn', name: '예정거래있는주식', type: 'stock', owner: '나', stockQty: 0, stockCode: 'S1' },
       { id: 'a_stockNonZero', name: '보유중인주식', type: 'stock', owner: '나', stockQty: 5, stockCode: 'S1' },
+      { id: 'a_stockRateUnknown', name: '시세미확인주식', type: 'stock', owner: '나', stockQty: 3, stockCode: 'S2' },
     ],
     rates: { fx: {}, stocks: { S1: 70000 } },
     txns: [],
@@ -10417,6 +10418,25 @@ test('emptyAssets: 잔액이 남아있는 자산은 제외된다', () => {
   setupEmptyAssetsDB();
   const ids = sandbox.emptyAssets().map((a) => a.id);
   assert.ok(!ids.includes('a_stockNonZero'));
+});
+test('emptyAssets: 시세 미확인(rateUnknown) fx/gold/stock은 보유 수량이 있어도 "다 썼다"로 오인해 정리 대상에 올리지 않는다', () => {
+  // 회귀: assetEval()은 아직 시세를 못 받아온 종목을 (R.stocks[code]||0)으로 0원 취급한다.
+  // emptyAssets()가 이 ₩0을 그대로 "잔액 없음"으로 읽으면, stockQty=3(실제 보유 중)인데도
+  // 시세 동기화 전이라는 이유만으로 "다 썼어요, 정리할까요?" 제안(실수 승인 시 실제 삭제)에
+  // 잘못 올라간다 — assetGainLoss/allocationCard와 동일한 '모름 vs 0원' 구분이 빠진 사각지대.
+  setupEmptyAssetsDB();
+  assert.ok(sandbox.rateUnknown(sandbox.DB.assets.find((a) => a.id === 'a_stockRateUnknown')), 'S2는 rates.stocks에 없어 시세 미확인이어야 함');
+  const ids = sandbox.emptyAssets().map((a) => a.id);
+  assert.ok(!ids.includes('a_stockRateUnknown'), '시세 미확인 보유 종목이 정리 대상으로 잘못 분류됨');
+});
+test('emptyAssets: 시세가 들어오면(rateUnknown 해소) 실제로 수량이 0일 때만 정리 대상이 된다(회귀 방지)', () => {
+  setupEmptyAssetsDB();
+  sandbox.DB.rates.stocks.S2 = 50000; // 시세 확인됨
+  let ids = sandbox.emptyAssets().map((a) => a.id);
+  assert.ok(!ids.includes('a_stockRateUnknown'), '시세가 확인됐고 수량이 남아있으면 여전히 제외돼야 함');
+  sandbox.DB.assets.find((a) => a.id === 'a_stockRateUnknown').stockQty = 0;
+  ids = sandbox.emptyAssets().map((a) => a.id);
+  assert.ok(ids.includes('a_stockRateUnknown'), '시세가 확인됐고 수량도 0이면 정리 대상이어야 함');
 });
 test('emptyAssets: 만기 전 저축은 0원이어도 제외된다', () => {
   setupEmptyAssetsDB();
