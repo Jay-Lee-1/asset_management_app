@@ -1376,7 +1376,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.141';
+const APP_VERSION='1.47.142';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4496,7 +4496,13 @@ function splitRecurrenceAt(original,draft,effectiveDate){
 }
 function recSaveScopeConfirm(orig,d,i){
  window._recSaveScope={orig,d,i};
- const hasOverrides=(orig.skip&&orig.skip.length>0)||(orig.edits&&Object.keys(orig.edits).length>0);
+ /* confirmedDates(이체 완료 확인한 회차)도 pruneOrphanRecOverrides가 skip/edits와 똑같이 정리
+  * 대상으로 삼는다(cycle184/185에서 배선) — 그런데 이 경고 문구를 만드는 hasOverrides는 그 뒤로도
+  * skip/edits만 보고 있었다. skip·edits는 비어 있고 confirmedDates만 있는(한 번도 개별 삭제·수정 없이
+  * 매번 이체 확인만 해온) 반복에서 스케줄 모양을 바꾸면, '전체 적용'이 그 확인 기록을 조용히
+  * 지우는데도(마지막 recSaveScopeApply 참고) 이 경고가 전혀 뜨지 않아 사용자가 모르고 확인 이력을
+  * 잃을 수 있었다. pruneOrphanRecOverrides/splitRecOverrides와 동일하게 confirmedDates도 넣는다. */
+ const hasOverrides=(orig.skip&&orig.skip.length>0)||(orig.edits&&Object.keys(orig.edits).length>0)||(orig.confirmedDates&&orig.confirmedDates.length>0);
  const overrideWarn=hasOverrides&&recScheduleShapeChanged(orig,d)?' · 개별로 삭제·수정한 회차는 새 일정과 안 맞으면 정리돼요':'';
  openSheet(`<h3>반복 내역 수정 범위</h3><div class="desc">'${esc(orig.memo||orig.category)}'은 이미 지난 회차가 있어요. 어디까지 적용할까요?</div>
   <div class="opt-list">

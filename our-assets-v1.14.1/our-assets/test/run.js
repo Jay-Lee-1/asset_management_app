@@ -5401,6 +5401,25 @@ test("recSaveScopeConfirm: 스케줄이 안 바뀌면(fromAssetId만 변경) ski
   sandbox.recSaveScopeConfirm(orig, d, 0);
   assert.ok(!sandbox.lastSheetHtml.includes('정리돼요'), '스케줄이 안 바뀌면 정리 경고가 없어야 함');
 });
+/* pruneOrphanRecOverrides는 skip/edits가 비어 있어도 confirmedDates만으로 정리를 건너뛰지 않는다
+ * (위 "confirmedDates만 있고 skip/edits는 비어 있어도" 테스트, cycle184/185 advance) — 그런데 이
+ * 경고를 띄울지 정하는 hasOverrides는 그 뒤로도 skip/edits만 보고 있었다. 한 번도 개별 삭제·수정
+ * 없이 이체 확인만 해온 반복(skip/edits는 빈 채 confirmedDates만 있음)의 스케줄 모양을 바꾸면,
+ * '전체 적용'이 그 확인 기록을 조용히 지우는데도 경고가 안 뜨는 공백이었다(app-evolve cycle187 develop). */
+test("recSaveScopeConfirm: skip/edits는 비어 있고 confirmedDates만 있어도, 스케줄 모양이 바뀌면 정리 경고가 추가된다", () => {
+  const orig = { id: 'r1', memo: '월세', category: '주거', day: 5, freq: 'monthly', startDate: '2026-01-05', weekend: 'none', skip: [], edits: {}, confirmedDates: ['2026-02-05'] };
+  const d = { ...orig, day: 10 };
+  sandbox.lastSheetHtml = null;
+  sandbox.recSaveScopeConfirm(orig, d, 0);
+  assert.ok(sandbox.lastSheetHtml.includes('정리돼요'), 'confirmedDates만 있어도 스케줄이 바뀌면 경고 문구가 보여야 함');
+});
+test("recSaveScopeConfirm: confirmedDates가 있어도 스케줄이 안 바뀌면(fromAssetId만 변경) 정리 경고가 없다(회귀 방지)", () => {
+  const orig = { id: 'r1', memo: '월세', category: '주거', day: 5, freq: 'monthly', startDate: '2026-01-05', weekend: 'none', fromAssetId: 'a1', skip: [], edits: {}, confirmedDates: ['2026-02-05'] };
+  const d = { ...orig, fromAssetId: 'a2' };
+  sandbox.lastSheetHtml = null;
+  sandbox.recSaveScopeConfirm(orig, d, 0);
+  assert.ok(!sandbox.lastSheetHtml.includes('정리돼요'), '스케줄이 안 바뀌면 confirmedDates가 있어도 정리 경고가 없어야 함');
+});
 test("saveRec: day를 바꿔 '전체 적용'하면 새 스케줄과 안 맞는 skip/edits가 정리되고 토스트에 정리 건수가 안내된다", () => {
   sandbox.TWi = -1; sandbox.TODAY = '2026-06-15'; sandbox.RANGE_TO = '2027-06-15';
   const r = {
