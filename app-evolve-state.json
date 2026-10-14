@@ -1,15 +1,12 @@
 {
   "cycle": 188,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "CSV 가져오기 되돌리기(undoToast)가 DB.deletedIds 톰스톤을 안 남겨 동기화 시 되살아날 수 있음",
+    "why": "index.html doCsvImport()(약 6356-6387행)의 undoToast 콜백(6382-6386행)이 DB.txns.filter로 방금 가져온 거래를 제거하고 addedCats도 되돌리지만, DB.deletedIds[id]=Date.now() 톰스톤을 전혀 남기지 않는다. deleteTxnsUndo/deleteRecsUndo/deleteAssetsUndo/delGoal/delOwner/doDeleteCat/delInquiry/delAssetQtyLog, 그리고 cycle188에서 고친 updateBalanceAdjust gap===0 경로까지 이 코드베이스의 다른 모든 삭제/되돌리기 경로는 전부 톰스톤을 남기는데 이 경로만 빠져 있다. save()는 1200ms debounce 후 scheduleCloudPush()를 호출하고 undoToast 버튼은 6000ms 동안 떠 있으므로(7640행 부근), '가져오기 → 자동 클라우드 푸시 → 다른 기기가 pull → 사용자가 되돌리기 클릭(톰스톤 없이 로컬 삭제) → 다음 pull에서 mergeCollection()이 공백을 삭제가 아니라 빠진 데이터로 보고 되돌린 거래를 조용히 되살림' 이라는 실제 경쟁 윈도우가 있다.",
+    "approach": "doCsvImport()의 undoToast 콜백에서 DB.txns 필터링 직후 addedIds.forEach(id=>{DB.deletedIds=DB.deletedIds||{};DB.deletedIds[id]=Date.now();})를 추가해 deleteTxnsUndo와 동일한 패턴으로 맞춘다. addedCats로 새로 생성된 카테고리를 되돌리는 부분도 다른 기기가 이미 그 카테고리명을 채택했을 가능성을 고려해 카테고리 톰스톤(catTombKey 등 기존 카테고리 삭제 경로가 쓰는 키)이 필요한지 함께 확인하고, 필요하면 같은 방식으로 추가한다. test/run.js에 회귀 테스트 추가: (1) CSV 가져오기 후 되돌리면 added 모든 거래 id가 DB.deletedIds에 남는지, (2) 되돌린 뒤 그 중 하나를 포함한 원격 사본으로 mergeCollection을 돌렸을 때 되살아나지 않는지. index.html/sw.js를 건드리므로 APP_VERSION과 sw.js CACHE 버전을 올리고, node our-assets-v1.14.1/our-assets/test/run.js를 커밋 전에 통과시킨다."
+  },
   "history": [
-    {
-      "cycle": 183,
-      "phase": "critique",
-      "timestamp": "2026-10-13T07:17:19.000Z",
-      "summary": "general-purpose 서브에이전트로 176-183사이클(기각/완료 이력 포함)을 전달하고 앱 전체를 재조망. rateUnknown(a)이 개별 행/카드 배지에는 배선돼 있지만 totalAssets()/ownerAssets()/그룹별 소계/nwPane() 히어로 숫자는 모두 assetEval(a)를 직접 합산할 뿐 rateUnknown()을 전혀 안 봐서 모순 발생함을 확인. 다음 advance 계획: homeAlerts()에 rateUnknownTotal kind 추가, nwPane/assetBodyHTML에 '일부 자산 미확인' 캡션 추가. 코드 변경 없음(읽기 전용 조사).",
-      "commit": null
-    },
     {
       "cycle": 183,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-14T01:40:00.000Z",
       "summary": "cycle188 develop(updateBalanceAdjust gap===0 제거 경로에 DB.deletedIds 톰스톤 추가, commit 7ccfd04) 검토 — delGoal/delOwner/delAssetQtyLog 등 기존 삭제 경로의 DB.deletedIds[id]=Date.now() 패턴과 diff를 직접 대조해 동일 컨벤션임을 확인했고, updateBalanceAdjust() 전체 로직(adj를 먼저 filter로 제외 후 gap!==0이면 갱신·재추가, gap===0이면 톰스톤만 남김)도 재검증했다. node test/run.js 1352/1352 전부 통과(독립 재실행으로 재확인). 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
+      "commit": null
+    },
+    {
+      "cycle": 188,
+      "phase": "critique",
+      "timestamp": "2026-10-14T02:20:00.000Z",
+      "summary": "general-purpose 서브에이전트로 141-188사이클(기각/완료 이력 포함)을 전달하고 앱 전체를 재조망 — doCsvImport()(index.html 6356-6387행)의 undoToast 되돌리기 콜백(6382-6386행)이 DB.txns에서 가져온 거래를 제거하고 addedCats도 되돌리지만, 이 코드베이스의 다른 모든 삭제/되돌리기 경로(deleteTxnsUndo/deleteRecsUndo/deleteAssetsUndo/delGoal/delOwner/doDeleteCat/delInquiry/delAssetQtyLog, cycle188 develop의 updateBalanceAdjust 포함)와 달리 DB.deletedIds 톰스톤을 전혀 남기지 않음을 발견. save()의 1200ms 푸시 debounce와 undoToast의 6000ms 노출 시간 사이에 '가져오기→클라우드 푸시→다른 기기 pull→되돌리기(톰스톤 없음)→다음 pull에서 mergeCollection이 삭제를 공백으로 오인해 되살림' 경쟁 윈도우가 실재함을 추적 확인. 다음 advance 계획: undoToast 콜백에 addedIds.forEach(id=>DB.deletedIds[id]=Date.now()) 추가, addedCats 카테고리 톰스톤 필요 여부 검토, test/run.js에 톰스톤 생성 + mergeCollection 비-되살림 회귀 테스트 추가. 코드 변경 없음(읽기 전용 조사).",
       "commit": null
     }
   ]
