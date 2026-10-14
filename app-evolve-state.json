@@ -1,15 +1,8 @@
 {
   "cycle": 191,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 186,
-      "phase": "review",
-      "timestamp": "2026-10-13T18:08:47.167Z",
-      "summary": "cycle186 develop(emptyAssets에 rateUnknown 가드 추가, commit 3f8f7bc) 검토 — 기존 패턴과 일치 확인. node test/run.js 1339/1339 전부 통과. 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
-      "commit": null
-    },
     {
       "cycle": 186,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-14T13:05:00.000Z",
       "summary": "general-purpose 서브에이전트로 141-190사이클과 겹치지 않는 새 개선점을 탐색 — 전체내역(History) 탭에서 ST.hist.cat(유형 필터: 지출/수입/저축/이체)이 assetId/catExact와 달리 해제 가능한 칩이 전혀 없던 버그 발견. 가계부 요약 카드에서 sumTap('지출') 등으로 유형 필터가 걸린 채 전체내역으로 넘어오면, 합계 카드(histTotHTML)의 수입/저축/내부이체가 전부 0으로 보여도 '필터링됨'인지 '실제로 없음'인지 구분할 길이 없고, go(tab)이 ST.hist.cat을 리셋하지 않아 다른 탭에 갔다가 하단 네비로 돌아와도 필터가 조용히 남는다. renderHistory()에 assetId/catExact와 동일한 패턴의 해제 칩 추가, histClearTypeFilter() 신설(다른 필터 상태는 보존). test/run.js에 4건 추가(칩 렌더/비렌더/해제 함수/modeSeg 칩-dot 회귀). index.html/sw.js 변경이라 APP_VERSION 1.47.149->1.47.150, sw.js CACHE v411->v412 갱신. node test/run.js 1381/1381 -> 1385/1385 통과. 커밋 35b286a.",
       "commit": "35b286a"
+    },
+    {
+      "cycle": 191,
+      "phase": "review",
+      "timestamp": "2026-10-14T14:05:00.000Z",
+      "summary": "cycle191 develop(histClearTypeFilter() 추가, ST.hist.cat 유형 필터 해제 칩 신설, commit 35b286a) 검토 — sumTap()/openAssetHistory()/openCatHistory() 세 곳 모두 ST.hist.cat/assetId/catExact를 서로 배타적으로 '전체'/null 리셋함을 grep으로 재확인해 세 칩이 동시에 뜨지 않는다는 커밋 주장이 맞음을 검증했고, histClearTypeFilter()가 q/assetId/catExact/owner 등 다른 필터 상태를 건드리지 않음을 코드로 재확인했다. node test/run.js 1385/1385 전부 통과(독립 재실행으로 재확인). 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
+      "commit": null
     }
   ]
 }
