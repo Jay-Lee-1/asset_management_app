@@ -265,6 +265,22 @@ function mergeFlatMap(localMap,remoteMap,deletedIds,tombKeyFn){
  if(tombKeyFn)Object.keys(out).forEach(key=>{if(tombKeyFn(key) in deletedIds)delete out[key]});
  return out;
 }
+/* DB.rates(fx/stocks/goldPerG 현재 시세)는 txns/assets 같은 id 기반 레코드 모음이 아니라
+ * '한 기기가 아는 가장 최신 시세 스냅샷' 통째 하나이므로, mergeCollection류의 레코드별 병합이
+ * 아니라 최신 수정 시각(last-write-wins) 하나로 전체를 교체한다 — fx['USD']만 따로 합치면
+ * 한쪽 기기의 절반만 최신인 짬뽕 스냅샷이 나와 더 혼란스럽다. mergeRemoteDataIntoLocal()이
+ * 지금까지 DB.rates를 전혀 병합하지 않아(app-evolve cycle192 critique), 기기A가 setRate()로
+ * 수동 입력한 시세를 push한 뒤 오프라인이던 기기B가 복귀해 병합하면 B의 구닥다리 rates가 그대로
+ * 남아 뒤이은 push가 A의 입력을 조용히 덮어썼다. ratesUpdatedAt(수동 입력 포함 모든 변경에서
+ * 찍힘)이 없으면 syncRates()가 늘 찍어온 syncedAt으로 대신 비교한다(과거에 저장된 rates가
+ * ratesUpdatedAt 없이도 동작하도록). 둘 다 없으면(최초 상태) local을 유지한다. */
+function mergeRates(local,remote){
+ local=local||{};
+ if(!remote)return local;
+ const localTs=local.ratesUpdatedAt||local.syncedAt||0;
+ const remoteTs=remote.ratesUpdatedAt||remote.syncedAt||0;
+ return remoteTs>localTs?remote:local;
+}
 /* deletedIds는 삭제할 때마다(deleteTxnsUndo 등) 영구히 쌓이기만 하고 지금까지 지우는 경로가
  * 없어 수년 사용하면 무한히 커지고, 매 pushCloud/pullCloud마다 전체가 그대로 오간다. 순수 함수로
  * maxAgeMs(기본 400일)보다 오래된 tombstone만 걸러낸 새 객체를 반환한다(원본 불변). 이 기간이면

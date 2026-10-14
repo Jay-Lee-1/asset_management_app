@@ -1,11 +1,7 @@
 {
-  "cycle": 192,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "mergeRemoteDataIntoLocal()이 DB.rates(시세)를 병합 대상에서 빠뜨려 동기화 중 최신 시세·수동 입력 시세가 조용히 사라짐",
-    "why": "index.html 1523~1570줄 mergeRemoteDataIntoLocal()은 DB.txns/recurrences/assets/goals/inquiries/assetQtyLog/categories/owners/budgetHistory/catIcon/catVar/deletedType/deletedBal을 모두 병합하지만, DB.rates({fx,stocks,goldPerG,syncedAt,failStreak,fxFail,stockFail})는 함수 전체에서 단 한 번도 참조되지 않는다(1523~1570줄 범위에 'DB.rates' 문자열이 전혀 없음, 2378줄부터만 등장, grep으로 재확인). settings/nwHistory는 1535~1538줄 주석에서 '기기-로컬 전용이라 의도적으로 병합 제외'라고 명시돼 있지만 rates는 그런 의도 표시가 전혀 없다 — 가격은 기기별 선호가 아니라 공유 데이터인데도 병합 배선이 빠진, goals(cycle123)/inquiries(cycle133)/assetQtyLog(cycle138)와 동일한 '신설/누락 컬렉션 병합 배선 누락' 버그 클래스의 아직 안 고쳐진 인스턴스다. 재현: 기기 A가 openRateSheet()→setRateVal()(5545~5546줄, 어떤 타임스탬프도 찍지 않음)으로 특정 종목 시세를 수동 입력 후 push. 그 사이 오프라인이던 기기 B가 다른 거래를 추가해두고 온라인 복귀하면 afterCloudAuth()의 localUnsynced 분기(1940~1949줄)가 mergeRemoteDataIntoLocal(remoteData)을 호출하는데 DB.rates는 B의 예전 값 그대로 남고, 뒤이은 save()가 scheduleCloudPush()를 걸어 B의 구닥다리 rates 전체를 그대로 업로드해 A가 입력한 시세를 덮어쓴다 — 에러나 토스트 없이 조용히 사라진다. test/run.js에는 mergeRemoteDataIntoLocal에 대해 goals/inquiries/assetQtyLog 각각의 '병합된다' 테스트는 있지만 DB.rates에 대해서는 단 하나도 없다(grep 결과 rates 관련 테스트는 전부 무관한 'USD 시세 미확인' 픽스처뿐).",
-    "approach": "1) logic.js에 순수 함수 mergeRates(local, remote) 추가 — DB.rates는 레코드 단위가 아니라 한 번에 통째로 갱신되는 블롭이므로 mergeCollection 대신 단일 타임스탬프 기준 LWW(last-write-wins)로 병합한다. 그러려면 먼저 rates 변경 지점 전체에 타임스탬프를 일관되게 찍어야 한다: syncRates()(3093~3119줄, 이미 R.syncedAt=Date.now() 찍음 — 이걸 재사용하거나 별도 ratesUpdatedAt 추가)와 setRateVal()(5540~5546줄, 현재 아무 타임스탬프도 안 찍음 — 여기에 R.ratesUpdatedAt=Date.now() 추가가 핵심, 수동 입력이 LWW에서 안 보이면 그대로 되돌려지는 문제가 재발). mergeRates는 (remote && (remote.ratesUpdatedAt||remote.syncedAt||0) > (local.ratesUpdatedAt||local.syncedAt||0)) ? remote : local 형태로 구현. 2) index.html의 mergeRemoteDataIntoLocal()(1523~1570줄)에 DB.rates=mergeRates(DB.rates||{}, remoteData.rates); 한 줄을 다른 컬렉션들과 같은 자리에 추가하고, goals/inquiries 때처럼 '왜 지금까지 빠졌는지' 주석을 남긴다. 3) sanitizeBackup()(6054줄~)에도 DB.rates 검증 분기를 추가한다(fx/stocks가 객체가 아니면 빈 맵으로, goldPerG/syncedAt/ratesUpdatedAt이 유한수가 아니면 0/undefined로 클램프). 4) test/run.js에 cycle123/133/138 패턴을 따라 최소 2개 테스트 추가: (a) local과 remote의 DB.rates가 다른 ratesUpdatedAt/syncedAt을 가질 때 더 최신 쪽이 통째로 이기는지(mergeRemoteDataIntoLocal 호출 후 DB.rates 확인), (b) setRateVal 호출이 ratesUpdatedAt을 찍어 그 수동 입력이 이후 병합에서 보호되는지. 5) index.html의 APP_VERSION과 sw.js의 CACHE를 관례대로 다음 번호로 올린다."
-  },
+  "cycle": 193,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
     {
       "cycle": 187,
@@ -145,6 +141,13 @@
       "phase": "critique",
       "timestamp": "2026-10-14T19:12:48.000Z",
       "summary": "general-purpose 서브에이전트로 141-191사이클(기각/완료 이력 포함)을 전달하고 앱 전체를 재조망 — mergeRemoteDataIntoLocal()(index.html:1523-1570)이 txns/recurrences/assets/goals/inquiries/assetQtyLog/categories/owners/budgetHistory/catIcon/catVar/deletedType/deletedBal은 모두 병합하면서 DB.rates(시세: fx/stocks/goldPerG/syncedAt)는 단 한 번도 참조하지 않음을 발견(grep으로 1523-1570줄 범위에 'DB.rates' 無 확인). settings/nwHistory처럼 '기기-로컬 전용이라 의도적 제외'라는 주석도 없어, goals(cycle123)/inquiries(cycle133)/assetQtyLog(cycle138)와 동일한 '신설 컬렉션 병합 배선 누락' 버그 클래스의 미수정 인스턴스. 재현: 기기A가 setRateVal()(5545-5546줄, 타임스탬프 없음)로 수동 시세 입력 후 push, 오프라인이던 기기B가 복귀해 mergeRemoteDataIntoLocal 거치면 DB.rates는 B의 구닥다리 값 그대로 남아 뒤이은 push가 A의 입력을 조용히 덮어씀. test/run.js에 DB.rates 병합 테스트가 전혀 없음을 grep으로 확인. logic.js에 mergeRates(LWW) 추가 + setRateVal에 ratesUpdatedAt 타임스탬프 기록 + mergeRemoteDataIntoLocal에 한 줄 배선 + sanitizeBackup 검증 분기 + 테스트 2건 추가 계획을 pending_advance_plan에 저장. 코드 변경 없음(읽기 전용 조사), node test/run.js 1395/1395 베이스라인 통과 확인.",
+      "commit": null
+    },
+    {
+      "cycle": 192,
+      "phase": "advance",
+      "timestamp": "2026-10-14T20:14:00.000Z",
+      "summary": "critique(cycle192) 계획대로 DB.rates(시세 스냅샷) 병합 배선을 추가. logic.js에 순수 함수 mergeRates(local,remote) 신설 — 레코드 모음이 아니라 통째 스냅샷이라 mergeCollection 대신 (remote.ratesUpdatedAt||remote.syncedAt||0)>(local.ratesUpdatedAt||local.syncedAt||0) 기준 last-write-wins으로 전체를 교체. setRate()(index.html, 실제 함수명은 setRateVal이 아니라 setRate)에 DB.rates.ratesUpdatedAt=Date.now()를 호출 맨 앞에서 항상 찍도록 추가(값을 지우는 0-이하 입력에도 동일 적용 — 수동 입력이 LWW에서 보호되려면 입력을 지우는 것도 '의도된 변경'으로 봐야 함), syncRates()의 성공 분기(ok)에도 R.ratesUpdatedAt=R.syncedAt 추가. mergeRemoteDataIntoLocal()에 DB.rates=mergeRates(DB.rates,remoteData.rates); 한 줄을 다른 컬렉션들과 같은 자리에 배선. sanitizeBackup()에 DB.rates 검증 분기 추가(fx/stocks가 객체 아니면 빈 맵, goldPerG/syncedAt/ratesUpdatedAt/failStreak는 sanitizeAmount(v,0)로 클램프, fxFail/stockFail은 boolean 캐스팅) 및 반환 객체에 rates 포함. test/run.js에 11건 추가: mergeRates 단위 5건(remote가 더 최신/local이 더 최신/syncedAt 폴백/타임스탬프 둘 다 없으면 local 유지/local이 null이어도 안전), mergeRemoteDataIntoLocal 통합 2건(remote가 더 최신이면 이김 / local이 더 최신이면 되돌아가지 않음 — 버그 재현 방지), setRate ratesUpdatedAt 1건, sanitizeBackup rates 검증 2건(손상값 보정/정상값·누락값 안전 처리). index.html/logic.js/sw.js 변경이라 APP_VERSION 1.47.152->1.47.153, sw.js CACHE v414->v415 갱신. node test/run.js 1395/1395 -> 1405/1405 통과. pending_advance_plan을 비웠다.",
       "commit": null
     }
   ]

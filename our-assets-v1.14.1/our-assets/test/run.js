@@ -6694,6 +6694,36 @@ test('sanitizeBackup: 정상적인 catIcon/catVar/deletedType/deletedBal은 그�
   assert.strictEqual(Object.keys(missing.data.deletedBal).length, 0);
 });
 
+/* ---------- sanitizeBackup: DB.rates(시세 스냅샷)도 mergeRemoteDataIntoLocal에 병합 배선이 추가되며
+ * (app-evolve cycle192 advance) 복원/클라우드 풀 경로로 통째로 들어올 수 있게 됐다 — fx/stocks가
+ * 객체가 아니면 assetEval()/rateUnknown()의 괄호 접근이 깨지고, goldPerG/syncedAt/ratesUpdatedAt이
+ * 숫자가 아니면 mergeRates()의 >비교가 NaN으로 샌다. ---------- */
+test('sanitizeBackup: rates.fx/rates.stocks가 객체가 아니면(배열 등) 빈 맵으로 되돌리고 fixedCount를 센다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    rates: { fx: ['oops'], stocks: 'oops', goldPerG: 'abc', syncedAt: 'abc' },
+  });
+  assert.strictEqual(Object.keys(data.rates.fx).length, 0);
+  assert.strictEqual(Object.keys(data.rates.stocks).length, 0);
+  assert.strictEqual(data.rates.goldPerG, 0);
+  assert.strictEqual(data.rates.syncedAt, 0);
+  assert.ok(fixedCount >= 4);
+});
+test('sanitizeBackup: 정상적인 rates는 그대로 두고, 없어도 빈 맵으로 안전하게 채워져 터지지 않는다(정상 케이스는 회귀 없음)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    rates: { fx: { USD: 1384.5 }, stocks: { '005930': 79800 }, goldPerG: 152000, ratesUpdatedAt: 123, fxFail: false },
+  });
+  assert.strictEqual(data.rates.fx.USD, 1384.5);
+  assert.strictEqual(data.rates.stocks['005930'], 79800);
+  assert.strictEqual(data.rates.goldPerG, 152000);
+  assert.strictEqual(data.rates.ratesUpdatedAt, 123);
+  assert.strictEqual(data.rates.fxFail, false);
+  assert.strictEqual(fixedCount, 0);
+  const missing = sandbox.sanitizeBackup({ txns: [], assets: [] });
+  assert.deepStrictEqual(j(missing.data.rates), { fx: {}, stocks: {} });
+});
+
 /* ---------- sanitizeBackup: DB.nwHistory(순자산 추이 일별 스냅샷)도 txns/assets/recurrences/goals/
  * inquiries/assetQtyLog/categories/owners/budgetHistory와 동일하게 검증돼야 한다 — afterCloudAuth()의
  * 미동기화 없음 분기/resolveCloudPullRemote()는 mergeRemoteDataIntoLocal()을 거치지 않고
@@ -7546,6 +7576,19 @@ test('setRate: gold 입력을 지우면 0으로 저장되지만 rateUnknown은 �
   assert.strictEqual(sandbox.DB.rates.goldPerG, 0);
   assert.strictEqual(sandbox.rateUnknown({ type: 'gold' }), true);
 });
+/* setRate가 ratesUpdatedAt을 찍지 않으면 mergeRates(logic.js, app-evolve cycle192)가 이 수동
+ * 입력을 syncRates()의 syncedAt보다 "더 오래된" 것으로 보고, 다음 동기화에서 다른 기기의 구닥다리
+ * rates로 그대로 덮어쓴다 — 값 저장뿐 아니라 이 타임스탬프 자체가 병합의 유일한 근거라 반드시
+ * 찍혀야 한다(입력을 지우는 경로도 "의도된 변경"이므로 동일하게 찍는다). */
+test('setRate: 호출하면 값과 무관하게 항상 DB.rates.ratesUpdatedAt을 현재 시각으로 찍는다(mergeRates가 이 값으로 최신 입력인지 판단함)', () => {
+  sandbox.DB = { rates: { fx: {}, stocks: {}, goldPerG: 0 } };
+  const before = Date.now();
+  sandbox.setRate('fx', 'USD', '1384.5');
+  assert.ok(sandbox.DB.rates.ratesUpdatedAt >= before, '숫자 입력 시에도 타임스탬프가 찍혀야 함');
+  sandbox.DB.rates.ratesUpdatedAt = 0;
+  sandbox.setRate('fx', 'USD', '');
+  assert.ok(sandbox.DB.rates.ratesUpdatedAt >= before, '값을 지우는 입력(0 이하)에도 타임스탬프가 찍혀야 함');
+});
 test('saveAsset: 새 종목코드를 등록해도 더 이상 DB.rates.stocks를 0으로 미리 채우지 않고, 미확인 상태라 즉시 시세 동기화를 부른다', () => {
   sandbox.DB = { assets: [], rates: { fx: {}, stocks: {}, goldPerG: 0 } };
   sandbox.asDraft = { type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 10 };
@@ -8396,6 +8439,63 @@ test('mergeRemoteDataIntoLocal: DB.deletedType/DB.deletedBal도 mergeFlatMap으�
   assert.strictEqual(sandbox.DB.deletedType['카카오뱅크'], 'cash', '같은 키는 local 값이 이겨야 함');
   assert.strictEqual(sandbox.DB.deletedBal['증권계좌'], 5000, 'remote에만 있던 잔액 기록도 들어와야 함');
 });
+
+/* ---------- mergeRates: DB.rates(fx/stocks/goldPerG 현재 시세 스냅샷)는 mergeCollection/
+ * mergeFlatMap과 달리 레코드·키 단위가 아니라 통째로 한 기기가 더 최신인지(ratesUpdatedAt 또는
+ * syncedAt)만 보고 전체를 교체하는 last-write-wins다 — mergeRemoteDataIntoLocal이 지금까지 DB.rates를
+ * 전혀 병합하지 않아, 기기A가 setRate()로 수동 입력한 시세를 push한 뒤 오프라인이던 기기B가 복귀해
+ * 병합하면 B의 구닥다리 rates가 그대로 남아 뒤이은 push가 A의 입력을 조용히 덮어썼다(app-evolve
+ * cycle192 critique/advance). ---------- */
+test('mergeRates: remote가 local보다 더 최신(ratesUpdatedAt이 더 큼)이면 remote 전체가 이긴다', () => {
+  const local = { fx: { USD: 1300 }, stocks: {}, goldPerG: 100000, ratesUpdatedAt: 100 };
+  const remote = { fx: { USD: 1400 }, stocks: { '005930': 80000 }, goldPerG: 150000, ratesUpdatedAt: 200 };
+  const out = sandbox.mergeRates(local, remote);
+  assert.deepStrictEqual(j(out), j(remote), '더 최신인 remote 스냅샷으로 통째 교체돼야 함');
+});
+test('mergeRates: local이 remote보다 더 최신이면 local이 그대로 유지된다', () => {
+  const local = { fx: { USD: 1400 }, stocks: {}, goldPerG: 150000, ratesUpdatedAt: 200 };
+  const remote = { fx: { USD: 1300 }, stocks: {}, goldPerG: 100000, ratesUpdatedAt: 100 };
+  const out = sandbox.mergeRates(local, remote);
+  assert.deepStrictEqual(j(out), j(local), '더 오래된 remote가 더 최신인 local을 덮어쓰면 안 됨');
+});
+test('mergeRates: ratesUpdatedAt이 없으면 syncedAt으로 대신 비교한다(과거에 저장된 rates와의 호환)', () => {
+  const local = { fx: { USD: 1300 }, stocks: {}, goldPerG: 100000, syncedAt: 100 };
+  const remote = { fx: { USD: 1400 }, stocks: {}, goldPerG: 150000, syncedAt: 200 };
+  const out = sandbox.mergeRates(local, remote);
+  assert.deepStrictEqual(j(out), j(remote));
+});
+test('mergeRates: remote가 없거나(undefined) local/remote 둘 다 타임스탬프가 없으면 local을 그대로 유지한다', () => {
+  const local = { fx: { USD: 1300 }, stocks: {}, goldPerG: 100000 };
+  assert.deepStrictEqual(j(sandbox.mergeRates(local, undefined)), j(local));
+  assert.deepStrictEqual(j(sandbox.mergeRates(local, { fx: { USD: 9999 }, stocks: {}, goldPerG: 1 })), j(local));
+});
+test('mergeRates: local이 undefined/null이어도 터지지 않고 remote(있으면) 또는 빈 객체를 돌려준다', () => {
+  assert.deepStrictEqual(j(sandbox.mergeRates(undefined, undefined)), {});
+  const remote = { fx: {}, stocks: {}, goldPerG: 0, ratesUpdatedAt: 100 };
+  assert.deepStrictEqual(j(sandbox.mergeRates(null, remote)), j(remote));
+});
+test('mergeRemoteDataIntoLocal: DB.rates도 mergeRates로 병합된다(이전엔 전혀 병합 안 돼 수동 입력한 시세가 병합 후 조용히 원격의 구닥다리 값으로 되돌아감)', () => {
+  sandbox.DB = minimalMergeDB({
+    rates: { fx: { USD: 1300 }, stocks: {}, goldPerG: 100000, ratesUpdatedAt: 100 },
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    rates: { fx: { USD: 1400 }, stocks: { '005930': 80000 }, goldPerG: 150000, ratesUpdatedAt: 200 },
+    deletedIds: {},
+  });
+  assert.strictEqual(sandbox.DB.rates.fx.USD, 1400, '더 최신인 remote rates가 이겨야 함');
+  assert.strictEqual(sandbox.DB.rates.stocks['005930'], 80000);
+});
+test('mergeRemoteDataIntoLocal: 로컬이 더 최신 시세(ratesUpdatedAt이 더 큼)를 갖고 있으면 원격의 구닥다리 rates로 되돌아가지 않는다(버그 재현 방지)', () => {
+  sandbox.DB = minimalMergeDB({
+    rates: { fx: { USD: 1400 }, stocks: {}, goldPerG: 150000, ratesUpdatedAt: 200 },
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    rates: { fx: { USD: 1300 }, stocks: {}, goldPerG: 100000, ratesUpdatedAt: 100 },
+    deletedIds: {},
+  });
+  assert.strictEqual(sandbox.DB.rates.fx.USD, 1400, '로컬이 더 최신이면 원격의 오래된 시세가 되돌리면 안 됨');
+});
+
 test('mergeRemoteDataIntoLocal: DB.owners/DB.categories는 mergeNameListWithTombstones로 병합돼, 한 기기가 지운 귀속/카테고리가 아직 지우지 않은 기기와 동기화돼도 되살아나지 않는다(app-evolve cycle179)', () => {
   sandbox.DB = minimalMergeDB({
     catsV2: true, // migrate()의 1회성 지출 카테고리 교체 가드 — 없으면 병합 결과와 무관하게 EXP_CATS_DEFAULT로 되돌아감(이 테스트와는 무관한 기존 동작)

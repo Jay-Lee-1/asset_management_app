@@ -1385,7 +1385,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.152';
+const APP_VERSION='1.47.153';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1566,6 +1566,11 @@ function mergeRemoteDataIntoLocal(remoteData){
   * 기록이 병합 후에도 반영되지 않아 재연동 안내가 뜨지 않고, 그대로 push하면 상대 기기 기록을 덮어썼다. */
  DB.deletedType=mergeFlatMap(DB.deletedType,remoteData.deletedType);
  DB.deletedBal=mergeFlatMap(DB.deletedBal,remoteData.deletedBal);
+ /* DB.rates(시세: fx/stocks/goldPerG)도 지금까지 여기서 전혀 병합되지 않고 있었다(app-evolve
+  * cycle192 critique) — goals/inquiries/assetQtyLog와 같은 '신설 컬렉션 병합 배선 누락' 버그
+  * 클래스지만, rates는 레코드 모음이 아니라 통째 스냅샷이라 mergeCollection 대신 logic.js의
+  * mergeRates(LWW, ratesUpdatedAt/syncedAt 기준)를 쓴다. */
+ DB.rates=mergeRates(DB.rates,remoteData.rates);
  migrate();invalidateBalances();
 }
 /* afterCloudAuth()의 무충돌 전량교체 분기와 resolveCloudPullRemote()는 mergeRemoteDataIntoLocal()을
@@ -3113,7 +3118,7 @@ async function syncRates(silent){
    R.stockFail=false;
   }else{R.stockFail=true;fail++}
 
-  if(ok){R.syncedAt=Date.now();R.failStreak=0}else R.failStreak=(R.failStreak||0)+1;
+  if(ok){R.syncedAt=Date.now();R.ratesUpdatedAt=R.syncedAt;R.failStreak=0}else R.failStreak=(R.failStreak||0)+1;
   save();renderCurrent();
   if(!silent)toast(ok?(fail?'일부 시세만 반영했어요':'시세를 반영했어요'):'시세를 가져오지 못했어요');
  }finally{
@@ -5542,6 +5547,11 @@ function setRate(kind,key,val){const n=Number(String(val).replace(/[^0-9.]/g,'')
     평가액이 조용히 0원이 된다(index.html:2125-2134 주석 참고). fx/stock은 키 자체를
     지워 다른 시세 미수신 상태와 동일하게 만들고, gold는 원래도 !goldPerG로 0을
     미확인 취급하므로 0을 그대로 둬도 안전하다. */
+ /* ratesUpdatedAt은 mergeRates()(logic.js, app-evolve cycle192)가 DB.rates 전체를 last-write-wins로
+  * 병합할 때 쓰는 유일한 기준이다 — 여기서 안 찍으면 수동 입력한 시세가 syncRates()의 syncedAt보다
+  * 항상 "더 오래된" 취급을 받아, 다음 자동/수동 동기화가 다른 기기의 rates로 병합될 때마다
+  * 이 수동 입력이 조용히 되돌려진다. */
+ DB.rates.ratesUpdatedAt=Date.now();
  if(n<=0){if(kind==='gold')DB.rates.goldPerG=0;else if(kind==='fx'||kind==='fx100')delete DB.rates.fx[key];else if(kind==='stock')delete DB.rates.stocks[key];save();return}
  if(kind==='gold')DB.rates.goldPerG=n;else if(kind==='fx')DB.rates.fx[key]=n;else if(kind==='fx100')DB.rates.fx[key]=n/100;else if(kind==='stock')DB.rates.stocks[key]=n;save()}
 /* 문의하기 — 셀프호스트 구조상 받는 쪽이 없는 '접수' 채널이 아니라, 이 기기(계정)에 저장되고
@@ -6276,6 +6286,27 @@ function sanitizeBackup(obj){
  const catVar=sanitizeFlatMap(obj&&obj.catVar);
  const deletedType=sanitizeFlatMap(obj&&obj.deletedType);
  const deletedBal=sanitizeFlatMap(obj&&obj.deletedBal);
+ /* DB.rates(시세 스냅샷)도 mergeRemoteDataIntoLocal()에 병합 배선이 추가되면서(app-evolve
+  * cycle192 advance) 복원/클라우드 풀 경로로 통째로 들어올 수 있게 됐는데, 그 소스는 fx/stocks가
+  * 반드시 객체라는 보장이 없다 — assetEval()의 R.fx[cur]/R.stocks[code] 조회, rateUnknown()의
+  * !R.fx[...] 판정 모두 그 값이 객체임을 가정하고 바로 속성 접근한다(배열·문자열이 들어오면
+  * TypeError는 안 나도 괄호 접근이 undefined만 돌려주거나, 숫자/null이면 R.fx[cur] 접근 자체가
+  * 터진다). goldPerG/syncedAt/ratesUpdatedAt/failStreak는 숫자여야 fmtSynced()의 Date.now()-ts,
+  * mergeRates()의 >비교가 NaN으로 새지 않는다. */
+ const srcRatesRaw=obj&&obj.rates;
+ const srcRates=(srcRatesRaw&&typeof srcRatesRaw==='object'&&!Array.isArray(srcRatesRaw))?srcRatesRaw:{};
+ if(srcRatesRaw!=null&&srcRates!==srcRatesRaw)fixedCount++;
+ const sanitizeRateMap=v=>{
+  if(v==null)return {};
+  if(typeof v==='object'&&!Array.isArray(v))return v;
+  fixedCount++;
+  return {};
+ };
+ const rates={fx:sanitizeRateMap(srcRates.fx),stocks:sanitizeRateMap(srcRates.stocks)};
+ ['goldPerG','syncedAt','ratesUpdatedAt','failStreak'].forEach(f=>{
+  if(f in srcRates){const n=sanitizeAmount(srcRates[f],0);if(n!==srcRates[f])fixedCount++;rates[f]=n}
+ });
+ ['fxFail','stockFail'].forEach(f=>{if(f in srcRates)rates[f]=!!srcRates[f]});
  /* DB.deletedIds({id:삭제시각(ms)} 톰스톤 맵)는 catIcon/catVar/deletedType/deletedBal과 같은
   * 평평한 맵이지만, 위 sanitizeFlatMap은 객체 형태만 보고 값 타입은 검증하지 않아 여기선 쓸 수
   * 없다 — mergeCollection()(logic.js)과 mergeRemoteDataIntoLocal()(1472줄)이 이 맵의 값을
@@ -6374,7 +6405,7 @@ function sanitizeBackup(obj){
   }else if(h.byOwner!=null)fixedCount++;
   nwHistory.push(d);
  });
- return {data:Object.assign({},obj,{txns,assets,recurrences,goals,inquiries,assetQtyLog,categories,owners,budgetHistory,budgets,catIcon,catVar,deletedType,deletedBal,deletedIds,nwHistory,settings}),fixedCount,droppedCount,rangeCount};
+ return {data:Object.assign({},obj,{txns,assets,recurrences,goals,inquiries,assetQtyLog,categories,owners,budgetHistory,budgets,catIcon,catVar,deletedType,deletedBal,deletedIds,nwHistory,settings,rates}),fixedCount,droppedCount,rangeCount};
 }
 /* obj.assets/obj.txns가 배열인지까지 검증한 뒤 DB를 통째로 교체한다. migrate()가 손상된
  * obj 때문에 중간에 throw해도 DB가 절반만 마이그레이션된 채로 남지 않도록, 실패 시 교체 전
