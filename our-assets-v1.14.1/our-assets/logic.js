@@ -430,11 +430,13 @@ function debtPayoffProjection(pts,today,trendWindowDays){
  * assetEval(DB.rates에 의존하는 index.html 쪽 함수) 평가를 이미 끝낸 뒤 넘긴다(여기선 DB를 몰라야
  * 하므로 assetEval을 직접 부르지 않는다 — nwHistoryForOwner가 DOM/전역 없이 데이터만 받는 것과
  * 동일한 분리). type별로 합산해 amount 내림차순 pct(%)를 매긴다. amount<=0인 항목(가격 미확인
- * fx/gold/stock 등)은 분모(total)에는 포함하되 집계 맵에서는 제외해 0% 세그먼트로 목록이 지저분해지지
- * 않게 한다. total<=0(자산 없음/전부 0)이면 비중이 무의미하므로 빈 배열(호출부가 카드 자체를 숨김). */
+ * fx/gold/stock 등, 또는 마이너스통장처럼 실제 음수인 현금/저축/부동산/연금)은 분모(total)와 집계 맵
+ * 둘 다에서 제외한다 — 분모에 음수를 그대로 섞으면(마이너스 잔액이 있을 때) total이 "보이는" 항목들의
+ * 합보다 작아져 pct 합이 100%를 넘는 버그가 난다(app-evolve cycle187 critique/advance). total<=0
+ * (자산 없음/전부 0 또는 음수가 양수를 상회)이면 비중이 무의미하므로 빈 배열(호출부가 카드 자체를 숨김). */
 function assetAllocation(items){
  items=items||[];
- const total=items.reduce((s,it)=>s+(it.amount||0),0);
+ const total=items.reduce((s,it)=>s+(it.amount>0?it.amount:0),0);
  if(!(total>0))return [];
  const map=new Map();
  items.forEach(it=>{if(!(it.amount>0))return;map.set(it.type,(map.get(it.type)||0)+it.amount)});

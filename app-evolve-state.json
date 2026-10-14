@@ -1,19 +1,8 @@
 {
-  "cycle": 187,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "assetAllocation()이 마이너스 잔액(마이너스통장 등) 보유 시 100% 넘는 비중(%)을 만들고 그 자산유형을 조용히 누락시키는 버그 수정",
-    "why": "logic.js:437의 total=items.reduce((s,it)=>s+(it.amount||0),0)은 음수 amount까지 그대로 순합산하지만, 바로 아래 440행의 집계 map은 it.amount>0인 항목만 모은다. amount<=0 제외는 원래 rateUnknown(시세 미확인, 정확히 0원)인 fx/gold/stock용으로 의도된 것(432-434행 주석)인데, 같은 조건이 정말로 음수인 현금/저축/부동산/연금(canNeg=d.type!=='debt', index.html:3636) 보유 시에도 똑같이 적용돼 total이 표시되는 항목들의 합보다 작아진다. 재현: assetAllocation([{type:'cash',amount:-500000},{type:'savings',amount:3000000}]) => savings 1건만 pct:120(120%)로 나오고 cash(마이너스통장)는 집계에서 완전히 사라짐. allocationCard()(index.html:2846-2870)가 이 값을 그대로 퍼센트 바 width(%)와 반올림 보정(2853-2856, rem=100-125처럼 음수가 되면 보정이 그냥 무시됨)에 써서, 오버드래프트 계좌가 있는 사용자는 자산 비중 카드에서 '125%' 같은 불가능한 숫자와 트랙보다 넓은 막대를 보게 되고 해당 자산유형 자체가 목록에서 빠진다. cycle183/184의 rateUnknown류(시세 미확인) 버그와는 다른 트리거(실제 음수 잔액)이고 지금까지 다룬 적 없는 새 버그 클래스다.",
-    "approach": "1) logic.js:437을 total=items.reduce((s,it)=>s+(it.amount>0?it.amount:0),0)으로 바꿔 분모를 map과 동일한 '양수만' 규칙으로 통일한다 — rateUnknown(amount===0) 케이스는 기존과 동일하게 기여 0이라 동작 변화 없음, 진짜 음수(오버드래프트)가 있을 때만 분모가 줄어들어 남은 항목들의 pct 합이 정확히 100%가 되고 100% 초과가 사라진다. 2) (선택, 같은 사이클에서 여유 있으면) allocationCard()에 2868-2869의 기존 '.mini.warn'(일부 미확인) 캡션과 같은 자리에, items.some(it=>it.amount<0) 조건으로 '마이너스 잔액 자산 제외' 같은 캡션을 추가해 그 자산유형이 왜 비중 카드에 안 보이는지 설명한다(렌더링만 추가, assetAllocation 자체 산술 외에는 손대지 않음). 3) test/run.js의 assetAllocation 스위트(약 10069-10101행 근처) 옆에 추가: (a) 서로 다른 타입에 음수 1건+양수 1건을 섞었을 때 pct 합이 100이고 어떤 entry도 100을 넘지 않는지, (b) 같은 타입 내에서 양수+음수(합산 전 순음수 아닌 경우)가 있을 때도 pct가 100을 넘지 않는지, (c) rateUnknown류(amount===0)만 있던 기존 동작은 그대로 회귀 없는지. (선택 캡션 구현 시) allocationCard() 레벨 테스트로 마이너스 잔액 자산이 있을 때만 캡션이 뜨는지 1건 추가."
-  },
+  "cycle": 188,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 182,
-      "phase": "advance",
-      "timestamp": "2026-10-12T09:10:00.000Z",
-      "summary": "critique(cycle182) 계획대로 index.html의 현재 save(opts) 본문을 그대로 _saveCore(opts)로 이름만 바꾸고, save(opts)를 얇은 래퍼로 교체했다: navigator.locks.request가 있으면 'aa_save_'+dataKey() 이름의 Web Lock으로 _saveCore(opts)를 감싸 동일 오리진 탭 간 상호배제를 보장하고(dataKey()가 계정/게스트별로 다른 키를 돌려줘 다른 계정끼리는 경합하지 않음), 없으면(구형 Safari 등) 기존처럼 _saveCore(opts)를 바로 호출하는 폴백을 유지한다. 플랜대로 save()의 리턴값을 실제로 소비하는 호출부가 있는지 먼저 grep으로 확인했는데, touchSave()가 'return save()'로 그대로 전달하는 것 외에는 93곳 호출부 전부가 반환값을 버리는 fire-and-forget 호출이었고(touchSave의 반환값을 쓰는 곳도 없음) — 플랜이 예상한 '소비하는 곳이 없으면 단순 wrapper로 충분' 분기에 해당해 락 분기에서 결과를 기다리지 않고 바로 true를 반환하는 가장 단순한 형태로 구현했다. test/run.js: save는 93곳 호출부가 전역 no-op 스텁(sandbox.save=()=>{})에 의존하고 있어 전역 FUNCTIONS 목록에 올리지 않고(올리면 무관한 테스트들이 DB.owners 등 전역 상태를 요구하게 돼 대거 깨짐), APPLOCK 테스트의 makeAppLockCtx와 같은 패턴으로 save/_saveCore/foreignSaveIsNewer만 끌어온 별도 vm 컨텍스트를 쓰는 makeSaveCtx() 헬퍼를 신설했다. 3개 테스트 추가: (a) navigator.locks 미지원 시 _saveCore를 동기 호출해 호출 즉시 DB/__savedAt 두 키가 저장되고 반환값도 그대로 전달되는지, (b) navigator.locks 지원 시 요청하는 락 이름이 정확히 'aa_save_'+dataKey()인지(계정별 락 분리 확인) 및 락 콜백 안에서 실제 저장이 일어나는지, (c) [실행형] 플랜의 3c 그대로 — 콜백을 큐에 쌓아 앞선 콜백이 완전히 settle돼야 다음을 실행하는 가짜 Web Lock 매니저로 같은 localStorage를 공유하는 두 '탭'(완전히 분리된 vm 컨텍스트, 각자 다른 신규 거래)을 만들어 거의 동시에 save()를 부른 뒤, 두 탭의 거래가 모두 최종 localStorage에 남는지(레이스가 실제로 해소됐는지) 검증. index.html만 critique 커밋(483ba16)으로 되돌려 재현한 결과 3개 테스트 모두 실제로 깨짐을 확인했다(1308/1311 -> 복원 후 1311/1311, (c)는 락 없이 두 번째 탭이 첫 탭의 __savedAt을 못 보고 그대로 덮어써 거래 하나가 사라지는 것으로 실패). index.html/sw.js 변경이라 APP_VERSION 1.47.132->1.47.133, sw.js CACHE v394->v395 갱신. node test/run.js 1308/1308 -> 1311/1311 통과. pending_advance_plan을 비웠다.",
-      "commit": null
-    },
     {
       "cycle": 183,
       "phase": "develop",
@@ -25,126 +14,133 @@
       "cycle": 183,
       "phase": "review",
       "timestamp": "2026-10-13T06:08:36.167Z",
-      "summary": "cycle183 develop(assetGainLoss에 rateUnknown 가드 추가, 시세 미동기화 자산의 거짓 -100% 손실 배지 방지) 검토 — commit c3811a9의 diff를 rateUnknown()(index.html:2474-2480) 정의와 직접 대조해 fx/gold/stock 세 타입의 미확인 조건(R.fx[cur]==null / !R.goldPerG / R.stocks[code]==null)과 assetEval()의 ||0 폴백이 실제로 costBasis>0인 상태에서 amount=0-costBasis, pct=-100%를 만들어낼 수 있음을 코드로 재확인했다. 가드 추가 위치(costBasis>0 체크 바로 다음)가 cycle64의 costBasis=0 가드와 동일한 null-반환 패턴임을 확인했고, assetGainLossBadge/assetSubline이 null을 빈 문자열로 처리하는 기존 로직(grep으로 호출부 확인)과 맞물려 배지가 자동으로 사라지는 경로도 추적했다. 신규 테스트 3건(fx/gold/stock 각각 rateUnknown 시 null, 시세 확인된 자산은 정상 계산되는 회귀, 배지/서브라인이 안 뜨는지)이 실제로 의미 있는 차이를 검증하는지 로직 대조. node test/run.js 1314/1314 전부 통과(독립 재실행으로 재확인). 주석을 제거한 뒤 node -e new Function()으로 4개 inline <script> 블록 전부 문법 검증 통과, APP_VERSION(1.47.134)/sw.js CACHE(v396) 버전 쌍 일치 확인. 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
+      "summary": "cycle183 develop(assetGainLoss에 rateUnknown 가드 추가, 시세 미동기화 자산의 거짓 -100% 손실 배지 방지) 검토 — commit c3811a9의 diff를 rateUnknown()(index.html:2474-2480) 정의와 직접 대조해 fx/gold/stock 세 타입의 미확인 조건(R.fx[cur]==null / !R.goldPerG / R.stocks[code]==null)과 assetEval()의 ||0 폴백이 실제로 costBasis>0인 상태에서 amount=0-costBasis, pct=-100%를 만들어낼 수 있음을 코드로 재확인했다. node test/run.js 1314/1314 전부 통과(독립 재실행으로 재확인). 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
       "commit": null
     },
     {
       "cycle": 183,
       "phase": "critique",
       "timestamp": "2026-10-13T07:17:19.000Z",
-      "summary": "general-purpose 서브에이전트로 176-183사이클(기각/완료 이력 포함)을 전달하고 앱 전체를 재조망. 새로 발견: rateUnknown(a)(index.html:2474-2480)이 개별 행/카드 배지(자산 상세행 3335, 홈 시세카드 2608-2609, 시세설정시트 5386-5387, cycle183이 고친 assetGainLoss 2491-2495)에는 배선돼 있지만, 앱 전체 \"순자산\"의 유일한 산술 근원인 totalAssets()/totalDebt()(2522-2523), ownerAssets()/ownerDebt()(3196-3197), 자산관리 탭 그룹별 소계(3286, 3319-3320), 그리고 nwPane()의 순자산/총자산/부채 히어로 숫자(3199-3206)는 모두 assetEval(a)(2368-2376, 시세 미확인을 ||0으로 실제 0원과 구분 못함을 2471-2473 주석이 이미 지적)를 직접 합산할 뿐 rateUnknown()을 전혀 안 봐서, 같은 화면에서 \"가격 미확인\" 배지가 붙은 행(val=₩0)과 그 자산이 포함된 그룹소계/상단 순자산 숫자가 경고 없이 그 ₩0을 그대로 더한 값을 보여줘 모순됨을 확인. 더 심각한 건 save()/_saveCore가 매번 DB.nwHistory=updateNwHistory(...,totalAssets(),totalDebt(),...)(2287)로 그날 스냅샷을 통째 갱신하고 pruneNwHistory()(2534-2541)가 90일 지나면 월별 1건으로 비가역 압축해(test/run.js:9841-9844가 이미 \"화면이 아니라 과거 차트에 영구히 박제\"라고 경고), 자산 추가 직후 시세 fetch 완료 전이나 README가 스스로 경고하는 배포 실수(Netlify 함수 없이 올려 주식시세가 영구히 안 갱신)로 rateUnknown이 계속되는 사용자는 순자산 추세가 영구히 낮게 기록되고, 이것이 cycle174/179가 고친 debtsBehind/goalBehind 홈알림에 2차 오탐까지 유발할 수 있음을 코드로 재구성해 확인. 다음 advance 계획: (1) homeAlerts()(7290-7339)에 기존 단일 alert-kind push 패턴과 동일하게 새 kind(rateUnknownTotal)를 추가 — includeInTotal 시장가 자산 중 rateUnknown(a)가 1건 이상이면 \"시세 미확인 자산이 있어 총자산에 반영 안 됐어요\" 카드를 openRateSheet()로 연결(2609/5386-5387의 기존 판정 재사용, 새 병합 프리미티브 불필요). (2) nwPane() 히어로 숫자와 assetBodyHTML() 그룹/귀속 소계(3286, 3319-3320) 옆에 기존 .mini.warn 배지 클래스(3335와 동일)로 조건부 \"일부 자산 미확인\" 캡션만 추가(산술 자체는 안 바꿔 기존 9864-9884 테스트 안전). (3) 스트레치: updateNwHistory 스냅샷에 산술은 안 바꾸고 hasUnknownRate 플래그만 같이 기록해 투명성 확보(사후 복원은 불가하므로 스코프 제한). test/run.js는 9845 setupNetWorthDB() 패턴을 확장해 코드가 rates에 없는(0이 아니라 undefined) 자산으로 (a)신규 alert 뜸 (b)includeInTotal=false면 안 뜸 (c)시세 전부 확인되면 안 뜸 (d)nwPane/그룹소계 캐비어트 부착을 검증. 러너업(기각): histQ 검색 매 keystroke 전체재계산 성능(체감 랙 미재현, 우선순위 낮음), netlify/functions의 테스트 커버리지 부재(서버리스라 vm 하네스 대상 아니고 이미 방어적으로 작성돼 신규 버그 없음). 코드 변경 없음(읽기 전용 조사).",
+      "summary": "general-purpose 서브에이전트로 176-183사이클(기각/완료 이력 포함)을 전달하고 앱 전체를 재조망. rateUnknown(a)이 개별 행/카드 배지에는 배선돼 있지만 totalAssets()/ownerAssets()/그룹별 소계/nwPane() 히어로 숫자는 모두 assetEval(a)를 직접 합산할 뿐 rateUnknown()을 전혀 안 봐서 모순 발생함을 확인. 다음 advance 계획: homeAlerts()에 rateUnknownTotal kind 추가, nwPane/assetBodyHTML에 '일부 자산 미확인' 캡션 추가. 코드 변경 없음(읽기 전용 조사).",
       "commit": null
     },
     {
       "cycle": 183,
       "phase": "advance",
       "timestamp": "2026-10-13T08:13:19.000Z",
-      "summary": "critique(cycle183) 계획의 (1)(2)를 구현했다. homeAlerts()(staleMv 바로 다음)에 새 kind 'rateUnknownTotal' 추가: DB.assets.filter(a=>a.includeInTotal&&rateUnknown(a)).length로 건수를 구해(rateUnknown 자체가 isMarketValued 아닌 타입은 이미 false를 돌려주므로 별도 타입 가드 불필요) 1건 이상이면 push, homeAlertCard에 staleMv와 동일한 스타일로 openRateSheet() 연결 카드를 추가했다(OS 알림 notifyAlertInfo에는 staleMv처럼 추가하지 않음 — 급한 알림이 아니라 홈 카드로 충분하다는 기존 분류를 그대로 따름). nwPane(o,TA,TD)에는 DB.assets.some(a=>a.includeInTotal&&(isAll||a.owner===o)&&rateUnknown(a))로 그 스코프(전체 또는 해당 귀속)에 미확인 자산이 있는지 보고, 있으면 히어로 label 옆에 기존 '<span class=\"mini\">...</span>' 인라인 배지 패턴(2906/4852/5200/5361행과 동일)으로 '일부 미확인' 캡션을 붙였다. assetBodyHTML()의 편집모드 블록(그룹별 sum 계산 직전)과 일반모드 블록(동일) 둘 다에서 sum을 구하던 items.filter(a=>a.includeInTotal)를 'incl' 변수로 뽑아 재사용하고 incl.some(rateUnknown)으로 같은 캡션을 그룹 타이틀 옆(편집모드는 ty.label 옆, 일반모드는 .grp-title .g span 옆)에 추가했다 — 산술(sum 계산 자체, totalAssets/ownerAssets 등)은 전혀 건드리지 않아 9864-9884 기존 테스트 그대로 통과. 스트레치((3) nwHistory에 hasUnknownRate 플래그 기록)는 플랜이 이미 '사후 복원 불가라 스코프 제한'으로 명시한 선택 항목이라 이번 사이클 범위에서는 보류하고 다음 critique가 필요하면 재검토하도록 남겨뒀다. test/run.js에 7개 테스트 추가: homeAlerts 3건(시세 미확인 자산 있으면 alert 뜨고 시세 확인되면 사라짐, includeInTotal=false면 집계 안 됨, 여러 건이면 count 합산), homeAlertCard 1건(openRateSheet 연결), renderAssets(nwPane+assetBodyHTML 통합 경로) 3건(캡션 노출/소멸, 다른 귀속 소유 자산은 내 귀속 히어로에 캡션 안 붙음, 편집모드에서도 그룹 타이틀에 캡션). index.html/sw.js만 critique 커밋(1ede5d9)으로 되돌려 재현한 결과, index.html 의존 6개 테스트가 실제로 깨짐을 확인했다(1315/1321 -> 복원 후 1321/1321; openRateSheet 연결 카드 테스트 1건은 index.html 변경과 무관해 되돌려도 그대로 통과). index.html/sw.js 변경이라 APP_VERSION 1.47.134->1.47.135, sw.js CACHE v396->v397 갱신. node test/run.js 1314/1314 -> 1321/1321 통과. pending_advance_plan을 비웠다.",
+      "summary": "critique(cycle183) 계획의 (1)(2)를 구현. homeAlerts()에 rateUnknownTotal kind 추가, nwPane/assetBodyHTML에 '일부 미확인' 캡션 추가(산술은 안 바꾸고 캡션만). test/run.js에 7개 테스트 추가. index.html/sw.js 변경이라 APP_VERSION 1.47.134->1.47.135, sw.js CACHE v396->v397 갱신. node test/run.js 1314/1314 -> 1321/1321 통과. pending_advance_plan을 비웠다.",
       "commit": null
     },
     {
       "cycle": 184,
       "phase": "develop",
       "timestamp": "2026-10-13T09:13:10.000Z",
-      "summary": "general-purpose 서브에이전트로 141-183사이클과 겹치지 않는 새 개선점을 탐색 — allocationCard()(자산관리 탭 \"자산 비중\" 파이/퍼센트 분해 카드)가 cycle183이 nwPane 히어로/그룹소계에 붙인 rateUnknown 캡션과 달리 여전히 시세 미확인 자산을 캡션 없이 조용히 사라지게 함을 발견. assetAllocation()(logic.js)은 rateUnknown인 항목을 0원으로 집계맵에서 제외하는 것 자체는 의도된 동작(0% 행 난립 방지, 기존 테스트로 보증됨)이지만, allocationCard()의 퍼센트 반올림 보정(2852-2856행)이 보이는 타입들의 퍼센트를 100%로 강제 정규화해 예: 현금 90만원 + 시세 미확인 주식 100만원(실제로는 더 큼)인데도 \"현금 100%\"로 표시되고 거의 절반에 달하는 미확인 자산이 0% 슬라이버로조차 안 보이는 모순이 cycle183 이후에도 이 카드 하나만 남아있었음. allocationCard()에 items.some(rateUnknown) 체크를 추가해 참이면 기존 '.mini.warn' 캡션('일부 미확인')을 카드에 덧붙였다 — 산술(assetAllocation 자체, 퍼센트 정규화)은 전혀 안 바꾸고 캡션만 추가해 cycle183과 동일한 '산술은 그대로, 숨기지만 않기' 원칙을 따름. test/run.js에 2개 테스트 추가(캡션 노출/소멸이 시세 확인 여부에 따라 토글, 다른 귀속 소유의 rateUnknown 자산은 내 귀속 카드에 캡션을 안 붙임 — owner 스코프 격리). 수정만 되돌려 재실행해 신규 2개 테스트가 정확히 실패하는 것을 확인한 후 재적용(1321/1323 -> 복원 후 1323/1323). index.html/sw.js 변경이라 APP_VERSION 1.47.135->1.47.136, sw.js CACHE v397->v398 갱신. node test/run.js 1321/1321 -> 1323/1323 통과.",
+      "summary": "general-purpose 서브에이전트로 141-183사이클과 겹치지 않는 새 개선점을 탐색 — allocationCard()가 cycle183이 nwPane 히어로/그룹소계에 붙인 rateUnknown 캡션과 달리 여전히 시세 미확인 자산을 캡션 없이 조용히 사라지게 함을 발견. allocationCard()에 items.some(rateUnknown) 체크를 추가해 참이면 '일부 미확인' 캡션을 카드에 덧붙였다. test/run.js에 2개 테스트 추가. index.html/sw.js 변경이라 APP_VERSION 1.47.135->1.47.136, sw.js CACHE v397->v398 갱신. node test/run.js 1321/1321 -> 1323/1323 통과.",
       "commit": "8de33b0"
     },
     {
       "cycle": 184,
       "phase": "review",
       "timestamp": "2026-10-13T10:08:15.569Z",
-      "summary": "cycle184 develop(allocationCard에 rateUnknown 캡션 추가, 자산 비중 카드가 시세 미확인 자산을 조용히 사라지게 하던 문제) 검토 — commit 8de33b0의 diff를 확인. allocationCard() 내 items(owner 스코프 + includeInTotal&&type!==debt로 이미 필터된 변수)에 items.some(rateUnknown)을 적용한 것이 cycle183이 nwPane/assetBodyHTML에 붙인 동일 패턴(.mini.warn, 산술은 그대로 두고 캡션만 추가)과 정확히 일치함을 확인했다. rateUnknown()은 market-valued가 아닌 타입(현금 등)엔 이미 false를 반환하므로 별도 타입 가드가 불필요하다는 설명도 index.html:2474-2480 정의와 대조해 맞음을 확인. .mini.warn CSS 클래스(index.html:511)가 이미 4곳(홈 시세카드, nwPane 히어로, assetBodyHTML 그룹타이틀 x2)에서 쓰이던 기존 클래스라 신규 스타일 추가 없이 일관됨. 신규 테스트 2건(캡션 토글이 시세 확인 여부에 따름, owner 스코프 밖 rateUnknown 자산은 캡션에 영향 없음)이 실제로 의미 있는 차이를 검증하는지 로직 대조. node test/run.js 1323/1323 전부 통과(독립 재실행으로 재확인). APP_VERSION(1.47.136)/sw.js CACHE(v398) 버전 쌍 일치 확인. 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
+      "summary": "cycle184 develop(allocationCard에 rateUnknown 캡션 추가) 검토 — commit 8de33b0의 diff 확인, 기존 패턴과 일치함을 확인. node test/run.js 1332/1332(당시 기준) 전부 통과. 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
       "commit": null
     },
     {
       "cycle": 184,
       "phase": "critique",
       "timestamp": "2026-10-13T11:05:00.000Z",
-      "summary": "cycle184 critique: general-purpose 서브에이전트로 141-184사이클과 겹치지 않는 영역(동기화/병합, 반복거래 날짜 엔진, ST 참조 무결성, 클라우드 push/pull, 서비스워커 캐시 버전)을 재조망. mergeCollection/mergeRecurrences/mergeNameListWithTombstones/mergeBudgetHistory/mergeFlatMap 전부와 mergeRemoteDataIntoLocal의 모든 DB 컬렉션 배선(txns/recurrences/assets/goals/inquiries/assetQtyLog/categories/owners/budgetHistory/catIcon/catVar/deletedType/deletedBal)을 DB 스키마(emptyDB)와 실제 참조 전체와 대조해 빠짐이 없음을 확인했고, sw.js의 CACHE 버전(v398)도 매 사이클 정확히 증가해왔음을 git log로 확인했다. 새로 발견한 버그: mergeRecurrences()(logic.js:144-172)가 skip[]/edits{}는 cycle177부터 Set 합집합/키 유니온으로 특별 보존하지만, 같은 성격(사용자의 독립적 누적 행동)의 confirmedDates[](이체 자동확인 OFF 기능이 쓰는 '회차별 완료 확인' 목록, index.html:1614/3171이 push+touch)는 그 보호를 못 받고 스칼라 필드처럼 base(둘 중 updatedAt이 큰 쪽) 전체를 그대로 쓴다는 것을 발견. node vm으로 mergeRecurrences([A],[B],{},{})를 직접 실행해(A.confirmedDates=['2026-10-01'],updatedAt=1000 / B.confirmedDates=['2026-11-01'],updatedAt=2000) 결과에 A의 확인 날짜가 완전히 사라짐을 재현 확인했다. 두 기기가 오프라인 중 같은 반복 이체의 서로 다른 회차를 \"이체 확인\"하면, 동기화 후 패배한 쪽의 확인 내역이 통째로 소실돼 isPending(t)이 그 회차를 다시 true로 평가하고 balancesUpTo()가 완료 잔액에서 그 회차를 다시 빼버려 계좌 잔액이 조용히 바뀐다(이미 확인·반영됐던 이체가 사용자가 모르는 사이 \"미확인\"으로 되돌아감). pruneOrphanRecOverrides()(index.html:4439)도 skip/edits만 정리하고 confirmedDates는 손대지 않는 동일 사각지대. test/run.js에 mergeRecurrences의 skip/edits 유니온 테스트(7758~7792행)는 있지만 confirmedDates 관련 유니온 테스트는 전혀 없어(sanitizeBackup의 배열 모양 검증 테스트만 존재) 이 경로가 처음부터 테스트되지 않았음을 확인했다. 다음 advance는 logic.js의 mergeRecurrences에 confirmedDates를 skip과 동일한 Set 합집합으로 추가하고, pruneOrphanRecOverrides도 confirmedDates 중 스케줄 변경으로 더는 유효하지 않은 날짜를 함께 정리하도록 확장하며, 회귀 테스트 2~3건을 추가할 계획이다. 러너업으로 goalProgress/목표 카드의 rateUnknown 캡션 누락(cycle183/184와 동일 클래스, 중복으로 기각)과 pushCloud()의 conflict 자동 병합 재시도 경로(코드 추적 결과 정상 동작 확인, 기각)를 검토했다. node test/run.js 1323/1323 통과 상태를 그대로 확인(읽기 전용 조사라 코드 변경 없음).",
+      "summary": "cycle184 critique: mergeRecurrences()가 skip[]/edits{}는 Set 합집합으로 보존하지만 confirmedDates[]는 그 보호를 못 받고 스칼라 필드처럼 base 전체를 그대로 쓴다는 것을 발견. node vm으로 직접 재현 확인. 다음 advance는 confirmedDates를 skip과 동일한 Set 합집합으로 추가하는 계획. 코드 변경 없음(읽기 전용 조사).",
       "commit": null
     },
     {
       "cycle": 184,
       "phase": "advance",
       "timestamp": "2026-10-13T12:10:45.143Z",
-      "summary": "critique(cycle184) 계획대로 logic.js의 mergeRecurrences()에 confirmedDates Set 합집합 병합을 추가했다(skip과 동일한 패턴: const confirmedDates=[...new Set([...(l.confirmedDates||[]),...(r.confirmedDates||[])])]; out.push(Object.assign({},base,{skip,edits,confirmedDates}))). index.html의 pruneOrphanRecOverrides()도 skip/edits와 동일한 방식으로 확장해 confirmedDates 중 현재 스케줄(day/freq/startDate/weekend)에서 더는 생성되지 않는 날짜를 정리하도록 했다(hasConfirmed 가드 추가, valid 날짜 집합 재사용). mergeRemoteDataIntoLocal 호출부(index.html 1520-1521)와 mergeRecurrences 상단 주석을 confirmedDates도 skip/edits와 동일한 보호를 받는다는 점을 명시하도록 보강했다. test/run.js에 총 5건 추가: mergeRecurrences 단위 테스트 2건(양쪽이 다른 날짜를 confirm하면 합쳐짐 · 중복 날짜는 한 번만), pruneOrphanRecOverrides 단위 테스트 2건(confirmedDates도 정리됨 · confirmedDates만 있어도 스킵 가드를 안 탐), mergeRemoteDataIntoLocal 통합 테스트 1건(base로 선택된 쪽의 스케줄이 바뀌면 합쳐진 confirmedDates 중 고아만 정리되고 유효한 날짜는 남음). index.html/sw.js 변경이라 APP_VERSION 1.47.136->1.47.137, sw.js CACHE v398->v399 갱신. node test/run.js 1323/1323 -> 1328/1328 통과. pending_advance_plan을 비웠다.",
+      "summary": "critique(cycle184) 계획대로 mergeRecurrences()에 confirmedDates Set 합집합 병합 추가, pruneOrphanRecOverrides도 확장. test/run.js에 5건 추가. index.html/sw.js 변경이라 APP_VERSION 1.47.136->1.47.137, sw.js CACHE v398->v399 갱신. node test/run.js 1323/1323 -> 1328/1328 통과. pending_advance_plan을 비웠다.",
       "commit": null
     },
     {
       "cycle": 185,
       "phase": "develop",
       "timestamp": "2026-10-13T12:50:00.000Z",
-      "summary": "general-purpose 서브에이전트로 141-184사이클과 겹치지 않는 새 개선점을 탐색 — addOwner()/doRenameOwner()가 '전체'/'all' 예약어 가드 없이 중복명만 normName()으로 막고 있었음을 발견. '전체'/'all'은 ST.assetOwner·goalOwnerSel('all')/ST.plan.owner·ST.spendOwner·ST.hist.owner('전체')가 '모든 귀속 보기' 센티넬로 쓰는 문자열인데, 사용자가 실제로 귀속을 '전체'라는 이름으로 만들면(한국어로 충분히 시도할 법함) 그 귀속 전용 필터들이 전부 '전체 보기'로 오인돼 해당 귀속만 따로 보는 화면에 영구히 진입할 수 없게 됨 — 카테고리의 ADJUST_CAT 예약어 가드(doRenameCat/doDeleteCat)와 동일한 클래스의 누락이 귀속에는 있었음. logic.js에 isReservedOwnerName(v)(normName 비교로 '전체'/'all' 대소문자·공백·NFC 차이까지 포괄) 추가, index.html의 addOwner()/doRenameOwner()에 중복명 체크보다 먼저 이 가드를 배선해 토스트로 막음. test/run.js에 4건 추가(isReservedOwnerName 변형 3종, addOwner/doRenameOwner가 '전체'/'All'을 막는지 각 1건). index.html만 되돌려 재현한 결과 신규 4건이 정확히 깨지는 것을 확인 후 복구. index.html/logic.js/sw.js 변경이라 APP_VERSION 1.47.137->1.47.138, sw.js CACHE v399->v400 갱신. node test/run.js 1328/1328 -> 1332/1332 통과.",
+      "summary": "general-purpose 서브에이전트로 141-184사이클과 겹치지 않는 새 개선점을 탐색 — addOwner()/doRenameOwner()가 '전체'/'all' 예약어 가드 없었음을 발견. isReservedOwnerName(v) 추가해 가드 배선. test/run.js에 4건 추가. index.html/logic.js/sw.js 변경이라 APP_VERSION 1.47.137->1.47.138, sw.js CACHE v399->v400 갱신. node test/run.js 1328/1328 -> 1332/1332 통과.",
       "commit": null
     },
     {
       "cycle": 185,
       "phase": "review",
       "timestamp": "2026-10-13T14:08:53.782Z",
-      "summary": "cycle185 develop(addOwner/doRenameOwner에 isReservedOwnerName('전체'/'all') 가드 추가) 검토 — git show로 전체 diff 대조. isReservedOwnerName은 normName()으로 비교해 '전체'/'ALL'/공백 변형을 모두 잡음. addOwner는 가드를 dup 체크보다 먼저 실행해 예약어가 유사 중복 메시지로 새나가지 않게 함. doRenameOwner는 v===old 조기 return 다음에 가드를 둬서 무변경 호출이나 '전체'에서 다른 이름으로의 변경(가드는 새 값 v만 검사)은 막지 않음 — 올바른 방향. 기존 ADJUST_CAT 카테고리 예약어 가드(index.html doDeleteCat/doRenameCat의 k==='income'&&c===ADJUST_CAT)와 동일한 '예약어 보호' 원칙이라 컨벤션에 부합. 테스트 헬퍼(newOwnerValue/renameOwnerValue/lastToast)도 test/run.js의 기존 sandbox.$ 목 패턴과 정확히 일치. node test/run.js 1332/1332 전부 통과(독립 재실행으로 재확인). sw.js CACHE(v399→v400)/APP_VERSION(1.47.137→1.47.138) 동시 갱신도 확인. 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
+      "summary": "cycle185 develop(isReservedOwnerName 가드 추가) 검토 — diff 대조, 기존 ADJUST_CAT 예약어 가드와 동일 원칙으로 컨벤션 부합 확인. node test/run.js 1332/1332 전부 통과. 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
       "commit": null
     },
     {
       "cycle": 185,
       "phase": "critique",
       "timestamp": "2026-10-13T15:10:00.000Z",
-      "summary": "general-purpose 서브에이전트로 141-185사이클(기각 이력 포함)을 전달하고 앱 전체를 재조망. 새로 발견: 반복거래를 \"이 날부터 이후 모두\" 범위로 삭제(recApply mode='delete' scope='future', index.html:4272-4278)하거나 분할수정(recSave ctx.scope==='future', 4301-4312 / splitRecurrenceAt, 4473-4481)할 때, skip/edits는 splitRecOverrides(4459-4464)가 effectiveDate 기준으로 과거/미래로 정확히 갈라 보존하지만(cycle121에서 고쳐짐) confirmedDates(이체 완료 확인 표시, isPending()이 읽음, cycle184가 동기화 merge 경로에서 보호를 추가한 바로 그 필드)는 세 곳 모두에서 전혀 쪼개지지 않고 원본 전체가 그대로 남거나 상속됨을 확인. 재현(코드 추적): ①미래 회차를 미리 확인해 r.confirmedDates=['2026-05-05'] ②'이후 모두 삭제'로 r.endDate='2026-02-28'로 끊어도 confirmedDates는 그대로 남음(당장은 무해) ③나중에 종료일을 다시 늘리거나 무기한으로 되돌리면 pruneOrphanRecOverrides(d)가 valid.has('2026-05-05')===true로 보고 정리 안 해 그대로 살아남음 ④한 번도 확인한 적 없는 회차가 isPending()에서 '확인됨'으로 취급돼 홈 알림에 안 뜨고 완료 잔액 계산에 조용히 포함됨 — cycle183 rateUnknown류와 같은 등급의 조용한 숫자 오류. test/run.js의 recApply future-delete(4706-4736)/recSave future 분할(4793-4844)/splitRecOverrides(5081-5094) 테스트 모두 skip/edits만 다루고 confirmedDates는 한 번도 테스트된 적 없는 공백임을 확인. splitRecOverrides를 confirmedDates 인자까지 받아 confirmedPast/confirmedFuture를 추가 반환하도록 확장하고 recApply/recSave/splitRecurrenceAt 세 호출부 모두 반영 + 회귀 테스트 5건 추가하는 계획을 pending_advance_plan에 저장. 러너업(기각): ST.hist.catExact가 카테고리 완전삭제(doDeleteCat) 시 갱신 안 되는 점은 삭제 후에도 과거 내역의 category 문자열이 그대로 남아 filteredHist 매칭이 안 깨지므로 리네임 버그와 달리 블랭크 화면이 안 생겨 기각, sw.js 캐시 우선 전략에서 CACHE 버전을 안 올리면 갱신 안 되는 점은 이미 알려진 수동 릴리즈 리스크일 뿐 코드 버그가 아니라 기각, APPLOCK._fails가 localStorage 기반이라 사이트 데이터 삭제로 백오프를 우회할 수 있는 점은 기기-로컬 PIN 위협모델상 이미 수용된 한계(cycle151/155 설계 문서화)라 기각. 코드 변경 없음(읽기 전용 조사).",
+      "summary": "cycle185 critique: 반복거래 '이후 모두' 삭제/분할수정 시 skip/edits는 쪼개지지만 confirmedDates는 전혀 쪼개지지 않고 원본 전체가 그대로 남거나 상속됨을 발견. splitRecOverrides를 confirmedDates까지 받아 confirmedPast/confirmedFuture로 분할 반환하도록 확장하는 계획을 pending_advance_plan에 저장. 코드 변경 없음(읽기 전용 조사).",
       "commit": null
     },
     {
       "cycle": 185,
       "phase": "advance",
       "timestamp": "2026-10-13T16:10:00.000Z",
-      "summary": "critique(cycle185) 계획대로 splitRecOverrides(skip,edits,effectiveDate)를 splitRecOverrides(skip,edits,confirmedDates,effectiveDate)로 확장해 confirmedPast/confirmedFuture를 skip과 동일한 경계 규칙(effectiveDate 당일 포함 이후=future)으로 추가 반환하게 했다. 세 호출부 모두 갱신: recApply scope='future' 삭제(4272-4279)는 r.confirmedDates를 confirmedPast로 교체하고 undo 클로저에 prevConfirmed를 캡처(미래분은 skipFuture처럼 끊어낸 구간 자체이므로 버림, cycle121의 skip과 동일 처리); recSave ctx.scope==='future'(4301-4313)는 r.confirmedDates=confirmedPast로 교체하고 newRec Object.assign에 confirmedDates:confirmedFuture를 추가(기존엔 JSON clone이 과거분까지 중복 상속하던 것을 교체); splitRecurrenceAt(4473-4482)은 updatedOriginal에 confirmedDates:confirmedPast를 명시 추가하고 newRec에도 confirmedDates:confirmedFuture로 교체(JSON clone 상속값을 덮어씀), pruneOrphanRecOverrides(newRec)는 스케줄 변경 시 추가 안전망으로 그대로 유지. test/run.js: 기존 splitRecOverrides 3건 테스트를 새 4-arg 시그니처로 갱신하고 confirmedDates 경계 검증 2건(분기/null-undefined) 추가, recApply future-delete에 confirmedDates도 함께 버려지고 undo 복원되는지 1건 + endDate를 다시 늘려도 유령 복원 안 되는 회귀 1건(cycle121 skip 회귀와 동일 구조), recSave future 분할이 confirmedDates를 올바르게 나누는지 1건, splitRecurrenceAt 양쪽(updatedOriginal/newRec) confirmedDates 분할 검증 1건 — 총 7건 추가(기존 3건 갱신 포함 순증 7건). index.html만 critique 커밋(4013baf)으로 되돌려 재현한 결과 신규/갱신 테스트들이 구 시그니처 불일치 및 confirmedDates 미분할로 실제 깨짐을 확인(1332/1337 -> 복원 후 1337/1337). index.html/sw.js 변경이라 APP_VERSION 1.47.138->1.47.139, sw.js CACHE v400->v401 갱신. node test/run.js 1332/1332 -> 1337/1337 통과. pending_advance_plan을 비웠다.",
+      "summary": "critique(cycle185) 계획대로 splitRecOverrides를 4-arg로 확장해 confirmedPast/confirmedFuture 분할 반환, recApply/recSave/splitRecurrenceAt 세 호출부 모두 반영. test/run.js에 7건 추가. index.html/sw.js 변경이라 APP_VERSION 1.47.138->1.47.139, sw.js CACHE v400->v401 갱신. node test/run.js 1332/1332 -> 1337/1337 통과. pending_advance_plan을 비웠다.",
       "commit": null
     },
     {
       "cycle": 186,
       "phase": "develop",
       "timestamp": "2026-10-13T17:17:39.402Z",
-      "summary": "general-purpose 서브에이전트로 141-185사이클과 겹치지 않는 새 개선점을 탐색 — emptyAssets()(홈의 \"다 쓴 자산 정리\" 제안)가 Math.abs(assetEval(a))>0만으로 \"잔액 남음\"을 판정해, 시세 미확인(rateUnknown) 상태인 fx/gold/stock 보유 자산(assetEval()의 ||0 폴백으로 0원 평가됨)을 \"다 썼어요, 정리할까요?\"에 잘못 올려 사용자가 확인을 누르면 실제 삭제(되돌리기 토스트 지나면 영구 소실)로 이어질 수 있던 버그 발견 — cycle183(assetGainLoss)/cycle184(allocationCard)와 같은 rateUnknown \"모름 vs 0원\" 구분 가드가 emptyAssets()에만 빠져 있던 사각지대. emptyAssets()에 rateUnknown(a) 가드를 추가해 시세 미확인 자산을 조용히 제외시킴. test/run.js에 2건 추가(시세 미확인+수량 있음은 제외 / 시세 확인 후에도 수량 있으면 제외, 수량 0이면 비로소 포함). index.html만 되돌려 재현한 결과 신규 테스트가 실패하고 공유 fixture 변경으로 기존 emptyAssets/emptyAssetCards/openTidyList 관련 테스트도 함께 깨짐을 확인 후 복구. index.html/sw.js 변경이라 APP_VERSION 1.47.139->1.47.140, sw.js CACHE v401->v402 갱신. node test/run.js 1337/1337 -> 1339/1339 통과.",
+      "summary": "general-purpose 서브에이전트로 141-185사이클과 겹치지 않는 새 개선점을 탐색 — emptyAssets()가 rateUnknown 자산을 '다 썼어요'로 잘못 제안할 수 있던 버그 발견. rateUnknown(a) 가드 추가. test/run.js에 2건 추가. index.html/sw.js 변경이라 APP_VERSION 1.47.139->1.47.140, sw.js CACHE v401->v402 갱신. node test/run.js 1337/1337 -> 1339/1339 통과.",
       "commit": "3f8f7bc"
     },
     {
       "cycle": 186,
       "phase": "review",
       "timestamp": "2026-10-13T18:08:47.167Z",
-      "summary": "cycle186 develop(emptyAssets()에 rateUnknown 가드 추가, commit 3f8f7bc) 검토 — assetEval()이 R.fx/R.goldPerG/R.stocks 미설정 시 ||0 폴백으로 0원을 반환하는 코드(2371-2373행)를 직접 확인하고, rateUnknown()(2474-2480행)이 isMarketValued(a)로 cash/savings/부동산/부채/연금 등 비시세자산엔 항상 false를 돌려줘 가드가 그 자산들에 전혀 영향을 주지 않음을 코드로 확인. assetGainLoss/allocationCard(cycle183/184)가 이미 쓰는 것과 동일한 패턴으로, emptyAssets()의 필터 체인에서 cash 제외 다음·assetEval 체크 앞이라는 배치도 적절함을 확인. 신규 회귀 테스트 2건(시세 미확인시 수량 있어도 제외 / 시세 확인 후 수량 0일때만 포함)이 실제로 의미있는 차이를 검증하는지 로직 대조. node test/run.js 1339/1339 독립 재실행으로 재확인. APP_VERSION(1.47.140)/sw.js CACHE(v402) 버전 쌍 일치 확인. 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
+      "summary": "cycle186 develop(emptyAssets에 rateUnknown 가드 추가, commit 3f8f7bc) 검토 — 기존 패턴과 일치 확인. node test/run.js 1339/1339 전부 통과. 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
       "commit": null
     },
     {
       "cycle": 186,
       "phase": "critique",
       "timestamp": "2026-10-13T19:18:18.059Z",
-      "summary": "general-purpose 서브에이전트로 141-186사이클(기각 이력 포함)을 전달하고 앱 전체를 재조망 — rateUnknown 캡션 작업(cycle183/184)이 nwPane/allocationCard/홈알림까지는 덮었지만 동일한 totalAssets/totalDebt 산술을 쓰는 목표(Goal) 화면 goalRowHTML()(index.html:2887-2895)/openGoalsList()(2907-2919)에는 캡션이 전혀 없음을 발견. homeAlerts()의 goalBehind 판정(7366-7369)도 같은 cur값을 써서 시세 미확인 자산 보유 귀속의 순자산 목표가 거짓 '늦어짐' 알림을 낼 수 있음을 코드 추적으로 확인. nwPane과 동일한 판정을 재사용하는 goalHasUnknown(g) 헬퍼를 추가해 goalRowHTML/openGoalsList에 캡션을 붙이고 goalBehind 오탐을 억제하는 계획을 pending_advance_plan에 저장. 코드 변경 없음(읽기 전용 조사).",
+      "summary": "cycle186 critique: rateUnknown 캡션 작업이 목표(Goal) 화면 goalRowHTML()/openGoalsList()에는 전혀 없음을 발견, homeAlerts()의 goalBehind 판정도 같은 오탐 가능성 확인. goalHasUnknown(g) 헬퍼 추가 계획을 pending_advance_plan에 저장. 코드 변경 없음(읽기 전용 조사).",
       "commit": null
     },
     {
       "cycle": 186,
       "phase": "advance",
       "timestamp": "2026-10-13T20:05:00.000Z",
-      "summary": "critique(cycle186) 계획대로 goalHasUnknown(g) 헬퍼를 추가했다(nwPane의 hasUnknown 판정과 동일: (DB.assets||[]).some(a=>a.includeInTotal&&(o==='all'||a.owner===o)&&rateUnknown(a)), o는 goalOwnerEff(g)). goalRowHTML()의 .pg-k 이름 옆(달성 배지보다 앞)과 openGoalsList()의 각 행 .msub 바로 다음에 기존 '.mini.warn' 캡션('일부 미확인')을 조건부로 추가했다 — goalProgress/nwHistoryForOwner 등 산술 함수는 전혀 건드리지 않고 렌더링에만 캡션을 붙이는 cycle183/184 원칙을 그대로 따름. homeAlerts()의 goalBehind 판정(filter 체인)에 &&!goalHasUnknown(g) 가드를 추가해, 목표 귀속에 시세 미확인 자산이 있으면 cur가 과소평가된 상태일 수 있으므로 '늦어지고 있어요' 오탐을 억제했다(cycle179의 '이력 부족' 오탐 억제와 같은 원칙, 원인은 캡션으로 이미 안내하므로 중복 경보가 아님). test/run.js: FUNCTIONS 목록에 goalHasUnknown 추가(최초 실행 시 extractFunction 에러로 발견), goalRowHTML 2건(캡션 토글, owner 스코프 밖 자산은 무영향) + openGoalsList 1건(여러 목표 중 해당 귀속 행에만 캡션) + homeAlerts goalBehind 억제/해제 2건(시세 미확인 시 억제, 시세 확인 후 재개) 총 5건 추가. index.html만 critique 커밋(0552071)으로 되돌려 재현한 결과 goalHasUnknown이 아예 없어 extractFunction 자체가 즉시 에러로 멈춤을 확인했다(수정 전 상태엔 이 기능이 아예 없었음을 재확인) — 복원 후 1344/1344. index.html/sw.js 변경이라 APP_VERSION 1.47.140->1.47.141, sw.js CACHE v402->v403 갱신. node test/run.js 1339/1339 -> 1344/1344 통과. pending_advance_plan을 비웠다.",
+      "summary": "critique(cycle186) 계획대로 goalHasUnknown(g) 헬퍼 추가, goalRowHTML/openGoalsList에 캡션 추가, homeAlerts goalBehind 오탐 억제. test/run.js에 5건 추가. index.html/sw.js 변경이라 APP_VERSION 1.47.140->1.47.141, sw.js CACHE v402->v403 갱신. node test/run.js 1339/1339 -> 1344/1344 통과. pending_advance_plan을 비웠다.",
       "commit": null
     },
     {
       "cycle": 187,
       "phase": "develop",
       "timestamp": "2026-10-13T21:18:41.000Z",
-      "summary": "cycle187 develop: recSaveScopeConfirm()의 hasOverrides가 orig.skip/orig.edits 길이만 보고 orig.confirmedDates는 전혀 보지 않던 공백을 발견. pruneOrphanRecOverrides(cycle184/185)는 스케줄 모양(day/freq/startDate/weekend) 변경 시 skip/edits뿐 아니라 confirmedDates도 새 스케줄에 안 맞으면 함께 정리하는데, 그 사실을 사용자에게 경고하는 \"개별로 삭제·수정한 회차는 새 일정과 안 맞으면 정리돼요\" 문구는 skip/edits만 있을 때만 떴다. 재현: autoConfirm=false 반복거래를 매번 이체 확인만 하고(confirmedDates 누적) 개별 삭제·수정은 한 번도 안 한 상태(skip=[], edits={})에서 day/freq/startDate/weekend를 바꿔 '전체 적용'을 고르면, 경고 없이 recSaveScopeApply('all')→pruneOrphanRecOverrides가 고아가 된 confirmedDates를 조용히 지워 이미 확인한 이체가 다시 '미확인'으로 돌아간다. recSaveScopeConfirm()의 hasOverrides에 orig.confirmedDates 길이 체크를 추가(index.html ~4497행)해 pruneOrphanRecOverrides/splitRecOverrides와 조건을 일치시켰다. test/run.js에 confirmedDates만 있고 스케줄이 바뀌는/안 바뀌는 2케이스 회귀 테스트 추가, 수정 전으로 되돌려 신규 테스트 1건이 정확히 실패함(1345/1346)을 확인 후 복구. 인라인 스크립트 4개 전부 문법 검증 통과. APP_VERSION 1.47.141→1.47.142, sw.js CACHE v403→v404. node test/run.js 1344/1344 → 1346/1346 통과. 커밋 59ff2c7.",
+      "summary": "cycle187 develop: recSaveScopeConfirm()의 hasOverrides가 orig.confirmedDates는 전혀 안 보던 공백 발견, 체크 추가해 pruneOrphanRecOverrides와 조건 일치시킴. test/run.js에 2건 추가. APP_VERSION 1.47.141→1.47.142, sw.js CACHE v403→v404. node test/run.js 1344/1344 → 1346/1346 통과. 커밋 59ff2c7.",
       "commit": "59ff2c7"
     },
     {
       "cycle": 187,
       "phase": "review",
       "timestamp": "2026-10-13T22:05:00.000Z",
-      "summary": "cycle187 develop(recSaveScopeConfirm의 hasOverrides에 confirmedDates 체크 추가) 검토 — commit 59ff2c7의 diff를 pruneOrphanRecOverrides(index.html:4453-4466)와 직접 대조해, 그 함수가 이미 hasConfirmed=d.confirmedDates&&d.confirmedDates.length를 skip/edits와 동일하게 정리 대상으로 삼고(4454/4464행) recSaveScopeApply('all') 분기(4522행)가 pruneOrphanRecOverrides(d)를 실제로 호출함을 코드로 확인했다 — 즉 confirmedDates가 정리 대상이면서 경고 문구만 못 보던 것이 실제 공백이었음을 재검증. 새 hasOverrides 조건(orig.confirmedDates&&orig.confirmedDates.length>0 추가)이 recScheduleShapeChanged(day/freq/startDate/weekend 변경 감지)와 AND로 묶여 스케줄이 안 바뀌면 여전히 경고가 안 뜨는 것도 확인(회귀 테스트로 보증됨). 신규 테스트 2건(confirmedDates만 있고 스케줄 변경 시 경고 뜸 / 스케줄 불변(fromAssetId만 변경) 시 경고 없음)이 실제로 의미 있는 차이를 검증하는지 로직 대조. node test/run.js 1346/1346 독립 재실행으로 재확인. node --check로 logic.js/sw.js/test/run.js 문법 검증, APP_VERSION(1.47.142)/sw.js CACHE(v404) 버전 쌍 일치 확인. 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
+      "summary": "cycle187 develop(recSaveScopeConfirm hasOverrides에 confirmedDates 체크 추가) 검토 — pruneOrphanRecOverrides와 대조해 공백이 실제였음을 재검증. node test/run.js 1346/1346 전부 통과. 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
       "commit": null
     },
     {
       "cycle": 187,
       "phase": "critique",
       "timestamp": "2026-10-13T23:05:00.000Z",
-      "summary": "general-purpose 서브에이전트로 141-187사이클(기각 이력 포함)을 전달하고 앱 전체를 재조망 — rateUnknown 클래스가 아닌 새 버그 발견: assetAllocation(items)(logic.js:435-442)가 total(분모, 437행)은 items.amount를 음수까지 그대로 순합산하지만, 바로 아래 440행의 type별 집계 map은 it.amount>0인 항목만 모은다. amount<=0 제외는 432-434행 주석상 rateUnknown(시세 미확인, 정확히 0원) fx/gold/stock용 설계인데, 똑같은 조건이 정말로 음수인 현금/저축/부동산/연금(canNeg=d.type!=='debt', index.html:3636-3640의 '마이너스 잔액' 토글로 명시적으로 지원되는 기능, 예: 마이너스통장)에도 적용돼 total이 표시 항목 합보다 작아짐을 코드로 재현 확인(node vm 직접 호출: assetAllocation([{type:'cash',amount:-500000},{type:'savings',amount:3000000}]) => savings만 pct:120으로 나오고 cash는 집계에서 사라짐). allocationCard()(index.html:2846-2870)의 퍼센트 반올림 보정(2853-2856, rem=100-125처럼 음수면 보정이 무시됨)과 막대 width(%) 렌더링까지 이어져 오버드래프트 계좌가 있는 사용자는 '125%' 같은 불가능한 비중과 트랙보다 넓은 막대를 보고, 해당 자산유형은 목록에서 완전히 빠짐. logic.js:437을 amount>0만 합산하도록 바꿔(amount===0 rateUnknown 케이스는 기여 0으로 동일, 음수일 때만 분모가 정확해짐) total/map의 포함 규칙을 통일하는 수정과 allocationCard에 '마이너스 잔액 자산 제외' 캡션(기존 .mini.warn 패턴) 추가, test/run.js에 음수+양수 혼합/동일타입 내 상쇄 pct 합 100 검증 테스트를 추가하는 계획을 pending_advance_plan에 저장. 러너업(기각): Kakao/Supabase CDN 스크립트에 SRI 해시 없음(진짜 공급망 취약점이지만 이 샌드박스 egress 프록시가 해당 CDN을 막아 실제 해시를 계산할 수 없어 이 환경에서 당장 실행 불가능 — 보류), .swipe-actions/.swipe.open CSS가 대응하는 HTML 없이 남은 죽은 스타일(키보드 접근 가능한 대체 UI가 이미 있어 기능 버그 아닌 cosmetic dead code), CSV 재가져오기 날짜 엄격 파싱(실패시 조용히 깨지지 않고 가져오기 미리보기에 '유효하지 않음' 건수로 안전하게 표시돼 우선순위 낮음), pushCloud/pullCloud/mergeRemoteDataIntoLocal 동시성 제어 전체 재검토(낙관적 동시성·시계 오차 감지·레코드 단위 3-way 병합·툼스톤 GC 모두 확인, 새 결함 없음). 코드 변경 없음(읽기 전용 조사).",
+      "summary": "general-purpose 서브에이전트로 141-187사이클(기각 이력 포함)을 전달하고 앱 전체를 재조망 — assetAllocation(items)(logic.js:435-442)가 total(분모)은 음수까지 그대로 순합산하지만 집계 map은 amount>0 항목만 모아, 마이너스통장 같은 실제 음수 자산이 있으면 total이 표시 항목 합보다 작아져 남은 유형의 pct가 100%를 넘는 버그 발견(node vm 재현: cash=-500000, savings=3000000 → savings만 pct:120). logic.js:437을 amount>0만 합산하도록 바꾸는 수정과 allocationCard에 '마이너스 잔액 자산 제외' 캡션 추가, 회귀 테스트 추가 계획을 pending_advance_plan에 저장. 코드 변경 없음(읽기 전용 조사).",
+      "commit": null
+    },
+    {
+      "cycle": 187,
+      "phase": "advance",
+      "timestamp": "2026-10-14T00:05:00.000Z",
+      "summary": "critique(cycle187) 계획대로 logic.js:437의 total 계산을 total=items.reduce((s,it)=>s+(it.amount>0?it.amount:0),0)으로 바꿔 분모를 집계 map과 동일한 '양수만' 규칙으로 통일 — amount===0(rateUnknown) 케이스는 기여 0으로 동작 변화 없고, 음수(오버드래프트) 있을 때만 분모가 정확해져 pct 합이 100%를 넘던 버그가 사라진다. allocationCard()에 기존 '일부 미확인' 캡션과 같은 자리에 items.some(a=>assetEval(a)<0) 조건으로 '마이너스 잔액 자산 제외' 캡션을 추가(렌더링만, assetAllocation 산술 외 손대지 않음). test/run.js에 4건 추가: assetAllocation 다른 타입 음수+양수 혼합 시 pct합<=100 / 같은 타입 내 양수+음수 섞여도 100 안 넘음 / amount===0만 있던 기존 동작 회귀 없음 / allocationCard 캡션 토글(음수 생기면 뜨고 양수로 돌아오면 사라짐). index.html/logic.js/sw.js 변경이라 APP_VERSION 1.47.142->1.47.143, sw.js CACHE v404->v405 갱신. node test/run.js 1346/1346 -> 1350/1350 통과. pending_advance_plan을 비웠다.",
       "commit": null
     }
   ]

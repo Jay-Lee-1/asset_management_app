@@ -10099,6 +10099,31 @@ test('assetAllocation: amount가 0 이하인 항목(가격 미확인 등)은 분
   assert.strictEqual(r[0].type, 'cash');
   assert.strictEqual(r[0].pct, 100, 'amount=0인 항목은 분모(total)에도 안 잡혀야 cash가 100%가 됨');
 });
+/* 마이너스통장처럼 실제로 amount<0인 자산이 있으면(canNeg=d.type!=='debt', index.html:3636)
+ * 옛 total=items.reduce((s,it)=>s+(it.amount||0),0)이 음수를 그대로 순합산해 total이 "보이는"
+ * 유형들의 합보다 작아지고, 그 결과 남은 유형의 pct가 100%를 넘어버렸다(app-evolve cycle187
+ * critique/advance) */
+test('assetAllocation: 다른 타입에 음수 자산(마이너스통장)이 섞여 있어도 pct 합은 100을 넘지 않는다', () => {
+  const r = sandbox.assetAllocation([{ type: 'cash', amount: -500000 }, { type: 'savings', amount: 3000000 }]);
+  assert.strictEqual(r.length, 1, '음수 자산(cash)은 집계 목록에서 제외되어야 함');
+  assert.strictEqual(r[0].type, 'savings');
+  assert.strictEqual(r[0].pct, 100, '수정 전엔 total이 음수까지 순합산돼 120%가 나왔음');
+});
+test('assetAllocation: 같은 타입 내에서 양수+음수 항목이 섞여도(순합산이 양수라도) 다른 타입의 pct가 100을 넘지 않는다', () => {
+  const r = sandbox.assetAllocation([
+    { type: 'cash', amount: 1000000 }, { type: 'cash', amount: -400000 },
+    { type: 'savings', amount: 600000 },
+  ]);
+  const pctSum = r.reduce((s, x) => s + x.pct, 0);
+  assert.ok(pctSum <= 100 + 1e-9, `pct 합이 100을 넘으면 안 됨(실제 ${pctSum})`);
+  assert.ok(r.every(x => x.pct <= 100 + 1e-9), '어떤 entry도 100%를 넘으면 안 됨');
+});
+test('assetAllocation: amount===0(시세 미확인)만 있던 기존 동작은 음수 처리 수정 후에도 동일하다', () => {
+  const r = sandbox.assetAllocation([{ type: 'cash', amount: 10000 }, { type: 'stock', amount: 0 }, { type: 'gold', amount: 0 }]);
+  assert.strictEqual(r.length, 1);
+  assert.strictEqual(r[0].type, 'cash');
+  assert.strictEqual(r[0].pct, 100, 'amount=0 항목들은 여전히 분모에 기여하지 않아야 함(회귀 없음)');
+});
 test('allocationCard: owner="all"(기본)이면 includeInTotal 자산 중 부채를 뺀 나머지를 유형별로 보여준다(배우자 포함 가구 전체)', () => {
   setupNetWorthDB();
   const html = sandbox.allocationCard();
@@ -10146,6 +10171,22 @@ test('allocationCard: owner 스코프 밖의 시세 미확인 자산은 캡션�
   assert.ok(!spouseHtml.includes('일부 미확인'), '"배우자" 귀속엔 시세 미확인 자산이 없으므로 캡션이 없어야 함');
   const meHtml = sandbox.allocationCard('나'); // 현금+달러 보유
   assert.ok(meHtml.includes('일부 미확인'), '"나" 귀속은 시세 미확인 달러를 보유하므로 캡션이 보여야 함');
+});
+/* assetAllocation()이 음수 평가액(마이너스통장)을 분모·집계에서 제외하도록 고친 뒤(logic.js,
+ * app-evolve cycle187 advance), allocationCard()에도 "일부 미확인"과 같은 자리에 왜 그 자산유형이
+ * 카드에서 빠졌는지 설명하는 캡션을 붙였다. */
+test('allocationCard: 음수 평가액(마이너스통장) 자산이 있으면 "마이너스 잔액 자산 제외" 캡션이 붙고, 양수로 돌아오면 사라진다', () => {
+  setupNetWorthDB();
+  sandbox.DB.assets.find(a => a.id === 'a_cash').baseAmount = -5000; // 내지갑을 마이너스통장으로
+  sandbox._balCache.clear();
+  let html = sandbox.allocationCard();
+  assert.ok(html.includes('마이너스 잔액 자산 제외'), '음수 자산이 섞여 있으면 캡션이 보여야 함');
+  assert.ok(!html.includes('현금예금'), '음수 평가액인 현금예금은 집계 목록에서 빠짐 — 캡션 없이는 사용자가 존재조차 모름');
+
+  sandbox.DB.assets.find(a => a.id === 'a_cash').baseAmount = 10000;
+  sandbox._balCache.clear();
+  html = sandbox.allocationCard();
+  assert.ok(!html.includes('마이너스 잔액 자산 제외'), '양수로 돌아오면 캡션이 사라져야 함');
 });
 test('openAssetPicker: excludeId(만기이체 picker에서 자기 자신 제외)를 넘기면 그 자산은 목록에서 빠지고 나머지는 그대로 남는다', () => {
   setupAssetPickerDB();

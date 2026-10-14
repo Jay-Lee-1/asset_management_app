@@ -1376,7 +1376,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.142';
+const APP_VERSION='1.47.143';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2866,7 +2866,13 @@ function allocationCard(owner){
   * 이미 쓰는 "산술은 그대로 두고 캡션만 붙인다" 원칙(app-evolve cycle183 advance)을 이 카드에도
   * 그대로 적용한다 — cycle183은 히어로/그룹소계/행 배지까지만 다루고 이 비중 카드는 비워뒀었다. */
  const hasUnknown=items.some(rateUnknown);
- return `<div class="section-title">자산 비중${hasUnknown?' <span class="mini warn">일부 미확인</span>':''}</div>
+ /* assetAllocation()이 이제 음수 평가액(마이너스통장 등)을 분모·집계 둘 다에서 제외한다(logic.js,
+  * app-evolve cycle187 advance) — 위 "일부 미확인" 캡션과 같은 이유로, 그 자산유형 자체가 왜 이
+  * 카드에 안 보이는지 설명 없이는 사용자가 알 길이 없다. */
+ const hasNeg=items.some(a=>assetEval(a)<0);
+ const captions=[hasUnknown?'일부 미확인':null,hasNeg?'마이너스 잔액 자산 제외':null].filter(Boolean)
+   .map(c=>` <span class="mini warn">${c}</span>`).join('');
+ return `<div class="section-title">자산 비중${captions}</div>
    <div class="card eb-card"><div class="eb-bar">${seg}</div><div class="eb-list">${rows}</div></div>`;
 }
 
