@@ -1376,7 +1376,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.145';
+const APP_VERSION='1.47.146';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2773,10 +2773,24 @@ function assetBalCard(assetId,preset){
  const color=up?'var(--income)':'var(--expense)';
  _assetBalChartPts=pts;
  /* debt 전용 상환완료 예상일 투사 — goalRowHTML의 '이대로면 YYYY쯤 달성 예상' 문구 패턴과 어조를 맞춘다.
-    assetBalanceSeries가 debt면 sign=-1로 이미 뒤집어둔 pts(bal, 양수=남은 빚)를 그대로 재사용. */
+    debtPayoffProjection은 내부적으로 최근 90일 추세만 본다는 계약이 있는데(trendWindowDays
+    기본값), 차트의 '1개월' 프리셋처럼 pts 자체가 90일보다 짧으면 그 cutoff 필터가 무력화되어
+    훨씬 짧은 구간의 추세로 투사일이 왜곡된다(app-evolve cycle189 develop). 그래서 화면에 그리는
+    pts(preset에 따라 짧을 수 있음)와는 별도로, 투사 전용 pfPts를 항상 최근 90일(또는 RANGE_FROM
+    까지) 고정 구간으로 다시 샘플링해 선택된 기간 탭과 무관하게 같은 투사일이 나오게 한다. */
  let payoffHTML='';
  if(a.type==='debt'){
-  const pf=debtPayoffProjection(pts.map(p=>({date:p.date,bal:p.nw})),TODAY);
+  let pfFrom=addDays(to,-90);
+  if(pfFrom<RANGE_FROM)pfFrom=RANGE_FROM;
+  let pfPts;
+  if(pfFrom===from){
+   pfPts=pts.map(p=>({date:p.date,bal:p.nw}));
+  }else{
+   const pfDates=assetBalSampleDates(pfFrom,to,60);
+   const pfSeries=assetBalanceSeries(txns,a.id,assetBase(a),-1,pfDates);
+   pfPts=pfSeries.map(p=>({date:p.date,bal:p.bal}));
+  }
+  const pf=debtPayoffProjection(pfPts,TODAY);
   payoffHTML=`<div class="msub2" style="margin-top:4px">${pf.achieved?'이미 다 갚았어요':pf.projectedDate?`이 속도로 갚으면 ${shortDate2(pf.projectedDate)}쯤 다 갚아요`:'최근엔 줄어들고 있지 않아요'}</div>`;
  }
  return `<div class="card nwh-card">

@@ -1,15 +1,8 @@
 {
   "cycle": 189,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 184,
-      "phase": "develop",
-      "timestamp": "2026-10-13T09:13:10.000Z",
-      "summary": "general-purpose 서브에이전트로 141-183사이클과 겹치지 않는 새 개선점을 탐색 — allocationCard()가 cycle183이 nwPane 히어로/그룹소계에 붙인 rateUnknown 캡션과 달리 여전히 시세 미확인 자산을 캡션 없이 조용히 사라지게 함을 발견. allocationCard()에 items.some(rateUnknown) 체크를 추가해 참이면 '일부 미확인' 캡션을 카드에 덧붙였다. test/run.js에 2개 테스트 추가. index.html/sw.js 변경이라 APP_VERSION 1.47.135->1.47.136, sw.js CACHE v397->v398 갱신. node test/run.js 1321/1321 -> 1323/1323 통과.",
-      "commit": "8de33b0"
-    },
     {
       "cycle": 184,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-14T03:05:00.000Z",
       "summary": "critique(cycle188) 계획대로 doCsvImport()의 undoToast 되돌리기 콜백에 톰스톤을 추가. addedIds.forEach(id=>DB.deletedIds[id]=Date.now())로 가져온 거래 전체를 deleteTxnsUndo와 동일하게 톰스톤하고, addedCats로 되돌려 제거되는 카테고리도 doDeleteCat과 동일하게 DB.deletedIds[catTombKey(type,name)]=Date.now()를 남기도록 확장. mergeCollection 자체 테스트까지는 과하다고 판단해(이미 기존 톰스톤 패턴의 mergeCollection 소비 쪽은 다른 사이클에서 충분히 검증됨) 생성 쪽 회귀만 2건 추가: 되돌리면 가져온 거래 id가 톰스톤되는지 / 되돌리면 새로 만든 카테고리도 catTombKey 톰스톤이 남는지. index.html/sw.js 변경이라 APP_VERSION 1.47.144->1.47.145, sw.js CACHE v406->v407 갱신. node test/run.js 1352/1352 -> 1354/1354 통과. pending_advance_plan을 비웠다.",
+      "commit": null
+    },
+    {
+      "cycle": 189,
+      "phase": "develop",
+      "timestamp": "2026-10-14T04:30:00.000Z",
+      "summary": "general-purpose 서브에이전트로 141-188사이클과 겹치지 않는 새 개선점을 탐색 — assetBalCard(assetId,preset)(index.html)의 debt 완납 투사가 화면에 그리는 preset 클립 pts를 그대로 debtPayoffProjection에 넘겨, 선택한 기간 세그먼트에 따라 같은 데이터인데도 다른 '다 갚는 날' 투사가 나오던 버그를 발견. debtPayoffProjection은 내부적으로 최근 90일 추세만 본다는 계약이 있지만(cutoff=addDays(last.date,-trendWindowDays)), '1개월' 프리셋은 pts 자체가 30일뿐이라 그 cutoff 필터가 무력화되어 31~90일 전 상환 활동이 안 보여 '정체'로 오판한다(node vm 재현: 120일 합성 이력에서 전체/30일-슬라이스로 판이하게 다른 projectedDate 확인). assetBalCard에 preset과 무관한 고정 90일 pfFrom(RANGE_FROM 클램프)을 계산해, pfFrom이 현재 preset의 from과 같으면(m3) pts를 재사용하고 다르면(m1/y1/all) assetBalSampleDates/assetBalanceSeries로 별도 재샘플링한 pfPts를 debtPayoffProjection에 넘기도록 고쳤다 — 화면에 그리는 차트(pts)는 그대로 preset을 따른다. assetBalCard는 FUNCTIONS 목록 밖 의존이 많아 vm 실행 대상이 아니라서(기존 세그먼트 테스트 주석 참고), test/run.js에 (1) extractFunction 소스 패턴 검증 1건, (2) assetBalCard가 호출하는 실제 logic.js 함수(assetBalSampleDates/assetBalanceSeries/debtPayoffProjection)로 버그/수정을 재현하는 실행형 테스트 1건, 총 2건 추가. index.html/sw.js 변경이라 APP_VERSION 1.47.145->1.47.146, sw.js CACHE v407->v408 갱신. node test/run.js 1354/1354 -> 1356/1356 통과.",
       "commit": null
     }
   ]

@@ -15030,6 +15030,55 @@ test('assetBalCard: 기간 세그먼트 버튼에 aria-pressed, 래퍼에 role/a
   assert.ok(/segHTML=`<div class="seg nwh-seg" role="group" aria-label="[^"]+">/.test(body), 'assetBalCard의 세그먼트 래퍼에 role="group"/aria-label이 없음');
   assert.ok(/class="\$\{preset===p\?'on':''\}" aria-pressed="\$\{preset===p\}" onclick="assetBalPresetSel/.test(body), 'assetBalCard의 세그먼트 버튼에 aria-pressed가 없음');
 });
+/* assetBalCard의 debt 완납 투사가 화면에 그리는 preset 클립 pts를 그대로 debtPayoffProjection에
+ * 넘기던 버그 수정 확인(app-evolve cycle189 develop) — '1개월' 프리셋은 pts 자체가 30일뿐이라
+ * debtPayoffProjection 내부의 90일 cutoff 필터가 무력화돼(모든 점이 cutoff보다 최신이라 걸러낼 게
+ * 없음) 실제 상환 활동이 31~90일 전에 있었어도 안 보여 "정체"로 오판한다. 고정 90일 pfFrom으로
+ * 별도 재샘플링한 pfPts를 넘기게 고친 뒤에는 어떤 세그먼트를 보고 있든 같은 투사가 나와야 한다.
+ * assetBalCard 자체는 FUNCTIONS 목록 밖 의존(assetBalSampleDates 등 DOM 아닌 순수 함수는 포함되나
+ * segHTML/TODAY 등 추가 전역이 더 필요)이 많아 vm 실행 대상이 아니므로(위 테스트 주석 참고), 아래
+ * 두 테스트로 나눠 검증한다: (1) 소스가 실제로 pfFrom/pfPts 패턴을 쓰는지 extractFunction으로 확인,
+ * (2) 그 패턴이 의도한 로직(preset별 clipped pts 직접 투사 vs 고정 90일 재샘플링)대로 동작하는지
+ * assetBalCard가 호출하는 실제 logic.js 함수(assetBalSampleDates/assetBalanceSeries/
+ * debtPayoffProjection)로 재현한다. */
+test('assetBalCard: debt 완납 투사는 preset 클립 pts가 아니라 고정 90일 pfPts를 debtPayoffProjection에 넘긴다(소스 패턴)', () => {
+  const body = extractFunction('assetBalCard');
+  assert.ok(/let pfFrom=addDays\(to,-90\);/.test(body), 'assetBalCard가 preset과 무관한 고정 90일 pfFrom을 계산하지 않음');
+  assert.ok(/if\(pfFrom<RANGE_FROM\)pfFrom=RANGE_FROM;/.test(body), 'pfFrom이 RANGE_FROM 아래로 못 내려가게 클램프하지 않음');
+  assert.ok(/if\(pfFrom===from\)\{/.test(body), 'pfFrom이 현재 preset의 from과 같을 때(m3) pts를 재사용하는 분기가 없음');
+  assert.ok(/debtPayoffProjection\(pfPts,TODAY\)/.test(body), 'debtPayoffProjection이 preset 클립 pts가 아니라 pfPts를 받지 않음');
+});
+test('assetBalCard 완납 투사 로직: "1개월" preset처럼 pts 자체가 90일보다 짧으면 31~90일 전 상환 활동이 안 보여 정체로 오판하지만, 고정 90일 pfPts로 재샘플링하면 드러난다', () => {
+  const to = '2026-06-15';
+  const RANGE_FROM = '2023-01-01';
+  const base = 900000;
+  // 31~90일 전(최근 30일은 아님) 사이에 70,000원씩 6번 상환 = 420,000원 감소. 최근 30일은 활동 없음.
+  const txns = [-85, -75, -65, -55, -45, -35].map((n) => ({
+    date: sandbox.addDays(to, n), type: 'income', toAssetId: 'd1', amount: 70000,
+  }));
+
+  // 버그가 있던 "1개월" preset: from=to-30일 — 그 구간만 샘플링해 바로 넘기면 상환 활동이 전혀
+  // 안 보여 debtPayoffProjection의 90일 cutoff도 무력화된다(모든 점이 cutoff보다 최신이라 전체를
+  // 그대로 씀 = 이미 짧은 구간 자체).
+  const clippedDates = sandbox.assetBalSampleDates(sandbox.addDays(to, -30), to, 60);
+  const clippedSeries = sandbox.assetBalanceSeries(txns, 'd1', base, -1, clippedDates);
+  const buggyPf = sandbox.debtPayoffProjection(clippedSeries.map((p) => ({ date: p.date, bal: p.bal })), to);
+  assert.strictEqual(buggyPf.projectedDate, null, '30일 구간만 보면 상환 활동이 전혀 안 보여 정체로 오판해야 함(수정 전 재현)');
+
+  // 수정 후 assetBalCard가 쓰는 고정 90일 pfFrom으로 재샘플링하면 실제 상환 추세가 드러난다.
+  let pfFrom = sandbox.addDays(to, -90);
+  if (pfFrom < RANGE_FROM) pfFrom = RANGE_FROM;
+  const pfDates = sandbox.assetBalSampleDates(pfFrom, to, 60);
+  const pfSeries = sandbox.assetBalanceSeries(txns, 'd1', base, -1, pfDates);
+  const fixedPf = sandbox.debtPayoffProjection(pfSeries.map((p) => ({ date: p.date, bal: p.bal })), to);
+  assert.notStrictEqual(fixedPf.projectedDate, null, '고정 90일 창으로 보면 31~90일 전 상환 추세가 드러나 투사일이 나와야 함');
+
+  // "3개월" preset(from=to-90일)은 pfFrom과 정확히 같은 구간이라, assetBalCard가 재사용하는
+  // pts와 pfPts가 날짜 샘플 단위로 완전히 같아야 한다(= "1개월"에서만 벌어지던 왜곡이 "3개월" 이상
+  // 에서는 재샘플링 없이도 이미 없었다는 뜻).
+  const m3Dates = sandbox.assetBalSampleDates(sandbox.addDays(to, -90), to, 60);
+  assert.deepStrictEqual(m3Dates, pfDates, 'm3(from=to-90)와 pfFrom(to-90)은 같은 날짜 샘플을 만들어야 함');
+});
 /* nwChartPeekKey/assetBalPeekKey는 둘 다 함수라 extractFunction으로 그 몸통만 정확히 잘라
  * 검사할 수 있다(src.includes처럼 파일 전체를 보지 않음). */
 test('nwChartPeekKey/assetBalPeekKey가 nwChartKeyStep을 호출해 다음 인덱스를 고른다', () => {
