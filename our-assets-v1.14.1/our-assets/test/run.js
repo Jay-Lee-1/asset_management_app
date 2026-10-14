@@ -205,7 +205,7 @@ const FUNCTIONS = [
   'modeSeg', 'monthNav', 'abbr', 'calCellsFor', 'ledSumInner', 'ledSumBox', 'ledSumTap', 'calPane', 'txRowCore', 'txRow', 'dayTxns',
   'ledgerRowsHtml', 'ledgerDayHeadHtml', 'renderLedger', 'selDayPartial',
   'ledgerSelPartial', 'ledgerToggleSel', 'ledgerSelAll', 'visibleTx',
-  'fmtDot', 'splitHist', 'histRow', 'histTotHTML', 'updateHist', 'renderHistory',
+  'fmtDot', 'splitHist', 'histRow', 'histTotHTML', 'updateHist', 'renderHistory', 'histPreset',
   'lowestInMonth', 'planBalInner', 'planBalCard', 'planTrackHTML', 'planRowsHTML', 'renderPlan',
   'refreshPlanBody', 'planAsset', 'nextGroupOrder', 'movedGroupOrder', 'moveGroup', 'movedAssetOrder', 'moveAsset', 'monthSwipeCommitDir', 'overlayEscapeTarget', 'recFreq', 'recFreqLabel',
   'planSplitTransfer', 'planTransfer',
@@ -14378,6 +14378,63 @@ test('modeSeg: ST.hist.cat이 좁혀져 있으면(필터 남은 상태) 가계�
   sandbox.ST.hist.cat = '지출';
   const html = sandbox.modeSeg('ledger');
   assert.ok(html.includes('chip-dot'), 'ST.hist.cat이 전체가 아니면 modeSeg()가 chip-dot을 표시해야 함');
+});
+
+/* ---------- renderHistory/histPreset: 전체내역 기간 빠른 선택 칩 (app-evolve cycle193 develop) ----------
+ * ST.hist.preset 필드와 histPreset('month'/'q3') 분기는 이미 있었지만 이를 실제로 호출하는 UI가
+ * 전혀 없어(rg-pick 날짜 버튼은 histPickDate만 호출) 두 분기가 달성 불가능한 죽은 코드였다.
+ * renderHistory()에 다른 .seg 세그먼트(assetBalPresetSel 등)와 동일한 패턴의 칩을 추가해 이 함수를
+ * 실제로 연결했다. ---------- */
+test('renderHistory: 전체내역 화면에 기간 빠른 선택 칩(올해/이번 달/최근 3개월)이 렌더되고, 현재 ST.hist.preset과 일치하는 칩에만 on이 붙는다', () => {
+  setupHistoryDB();
+  sandbox.renderHistory();
+  const html = sandbox.pageHistoryEl.innerHTML;
+  assert.ok(html.includes('onclick="histPreset(\'year\')"'), '올해 칩이 렌더돼야 함');
+  assert.ok(html.includes('onclick="histPreset(\'month\')"'), '이번 달 칩이 렌더돼야 함');
+  assert.ok(html.includes('onclick="histPreset(\'q3\')"'), '최근 3개월 칩이 렌더돼야 함');
+  assert.ok(/class="on" aria-pressed="true" onclick="histPreset\('year'\)"/.test(html), "기본 preset('year')인 올해 칩만 on이어야 함");
+  assert.ok(!/class="on"[^>]*histPreset\('month'\)/.test(html), "preset이 'year'면 이번 달 칩은 on이 아니어야 함");
+});
+test('renderHistory: 선택(selMode) 중에는 기간 빠른 선택 칩도 다른 검색 UI와 함께 숨겨진다', () => {
+  setupHistoryDB();
+  sandbox.ST.hist.selMode = true;
+  sandbox.renderHistory();
+  assert.ok(!sandbox.pageHistoryEl.innerHTML.includes('histPreset'), '선택 모드에서는 기간 빠른 선택 칩이 렌더되지 않아야 함');
+});
+test("histPreset('month'): ST.hist.range를 이번 달 1일~말일로, preset을 'month'로 바꾼다(TM 기준)", () => {
+  setupHistoryDB();
+  sandbox.histPreset('month');
+  assert.strictEqual(sandbox.ST.hist.preset, 'month');
+  // vm 샌드박스 객체는 host와 realm이 달라 deepStrictEqual이 (값은 같아도) reference-equal
+  // 비교에서 실패한다(위 recDates 테스트의 Array.from과 동일한 이유) — 필드별로 비교한다.
+  assert.strictEqual(sandbox.ST.hist.range.from, '2026-06-01');
+  assert.strictEqual(sandbox.ST.hist.range.to, '2026-06-30');
+  assert.ok(/class="on" aria-pressed="true" onclick="histPreset\('month'\)"/.test(sandbox.pageHistoryEl.innerHTML), "다시 렌더된 화면에서 이번 달 칩이 on이어야 함");
+});
+test("histPreset('q3'): ST.hist.range를 TODAY 기준 최근 3개월(addMonths(-3)~오늘)로, preset을 'q3'로 바꾼다", () => {
+  setupHistoryDB();
+  sandbox.histPreset('q3');
+  assert.strictEqual(sandbox.ST.hist.preset, 'q3');
+  assert.strictEqual(sandbox.ST.hist.range.from, sandbox.addMonths('2026-06-15', -3));
+  assert.strictEqual(sandbox.ST.hist.range.from, '2026-03-15', 'addMonths가 롤오버 없이 3개월 전 같은 날짜를 내야 함');
+  assert.strictEqual(sandbox.ST.hist.range.to, '2026-06-15');
+});
+test("histPreset: 범위/preset만 바꾸고 q(검색어)·catExact 같은 다른 필터 상태는 건드리지 않는다", () => {
+  setupHistoryDB();
+  sandbox.ST.hist.q = '검색어유지';
+  sandbox.ST.hist.catExact = '식비';
+  sandbox.histPreset('month');
+  assert.strictEqual(sandbox.ST.hist.q, '검색어유지');
+  assert.strictEqual(sandbox.ST.hist.catExact, '식비');
+});
+test("histPreset('year'): 커스텀 범위로 좁혀둔 뒤에도 다시 '올해' 전체 범위로 되돌릴 수 있다", () => {
+  setupHistoryDB();
+  sandbox.ST.hist.range = { from: '2026-03-15', to: '2026-06-15' };
+  sandbox.ST.hist.preset = 'q3';
+  sandbox.histPreset('year');
+  assert.strictEqual(sandbox.ST.hist.preset, 'year');
+  assert.strictEqual(sandbox.ST.hist.range.from, '2026-01-01');
+  assert.strictEqual(sandbox.ST.hist.range.to, '2026-12-31');
 });
 
 /* ---------- txRow/histRow: 공용 txRowCore 동기화 회귀 (app-evolve cycle126 advance) ----------

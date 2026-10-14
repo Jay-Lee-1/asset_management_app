@@ -1385,7 +1385,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.153';
+const APP_VERSION='1.47.154';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4694,6 +4694,7 @@ function renderHistory(){
  <div id="assetBalCard">${assetBalCard(H.assetId,H.balPreset)}</div>`:''}
  ${H.catExact?`<button type="button" class="sch-chip on" style="margin-bottom:14px" onclick="histClearCatFilter()" aria-label="${esc(H.catExact)} 필터 해제">${esc(H.catExact)}${H.owner&&H.owner!=='전체'?` · ${esc(H.owner)}`:''} ${svg('x',14)}</button>`:''}
  ${(H.cat&&H.cat!=='전체')?`<button type="button" class="sch-chip on" style="margin-bottom:14px" onclick="histClearTypeFilter()" aria-label="${esc(H.cat)} 유형 필터 해제">${esc(H.cat)}만 보는 중 ${svg('x',14)}</button>`:''}
+ <div class="seg" role="group" aria-label="기간 빠른 선택"><div class="seg-blob"></div>${[['year','올해'],['month','이번 달'],['q3','최근 3개월']].map(([p,l])=>`<button type="button" class="${H.preset===p?'on':''}" aria-pressed="${H.preset===p}" onclick="histPreset('${p}')">${l}</button>`).join('')}</div>
  <div class="rg-pick">
    <button class="rg-date" onclick="histPickDate('from')">${fmtDot(R.from)}</button>
    <span class="rg-tilde">~</span>
@@ -4704,9 +4705,16 @@ function renderHistory(){
  updateHist();
  try{fcWire()}catch(e){} /* histQ의 지우기(×) 버튼 배선 — openSheet()와 달리 전체내역은 시트가 아니라 탭 화면이라 그쪽 자동배선을 못 타므로 여기서 직접 호출 */
  requestAnimationFrame(fitAll);
+ requestAnimationFrame(()=>{try{moveSegBlobs()}catch(e){}}); /* 기간 빠른 선택 세그먼트의 물방울 하이라이트를 다른 seg 호출부(assetBalPresetSel 등)와 동일하게 배선 */
 }
 function fmtDot(ds){return ds.slice(0,4)+'.'+(+ds.slice(5,7))+'.'+(+ds.slice(8,10))}
 function histInvalidate(){_histCache.key=null;ST.hist.page=1}
+/* 전체내역 기간 빠른 선택('올해'/'이번 달'/'최근 3개월'). ST.hist.preset 필드와 이 함수 자체는
+ * 이미 있었지만(histPickDate가 날짜를 직접 고르면 preset을 'custom'으로만 돌려놓음) 'month'/'q3'
+ * 분기를 실제로 호출하는 UI가 전혀 없어 달성 불가능한 죽은 코드였다 — renderHistory()의 범위
+ * 선택(rg-pick)은 두 번의 날짜 피커 탭을 거쳐야만 "이번 달"/"최근 3개월" 같은 흔한 범위로 좁힐 수
+ * 있었다(app-evolve cycle193 develop). renderHistory()에 다른 세그먼트(assetBalPresetSel 등)와
+ * 동일한 .seg 칩 UI를 추가해 이 함수를 실제로 연결하고, H.preset과 일치하는 칩에 on을 표시한다. */
 function histPreset(p){const H=ST.hist;H.preset=p;
  if(p==='year'){H.range={from:`${TM.y}-01-01`,to:`${TM.y}-12-31`};}
  else if(p==='month'){H.range={from:monthStartStr(TM.y,TM.m),to:monthEndStr(TM.y,TM.m)};}
