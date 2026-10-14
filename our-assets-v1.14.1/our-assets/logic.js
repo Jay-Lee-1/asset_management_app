@@ -434,6 +434,22 @@ function debtPayoffProjection(pts,today,trendWindowDays){
  return {achieved:false,projectedDate};
 }
 
+/* ================= 매입원가(costBasis) 수량변경 보정 (순수) ================= */
+/* fx/gold/stock(isMarketValued)은 가중평균 없이 사용자가 한 번 입력한 총 매입금액 단일값을
+ * costBasis로 쓴다(assetGainLoss). saveAsset()이 수량만 바꿔 덮어쓰면 costBasis는 그대로 남아
+ * 손익(P/L)이 왜곡된다(app-evolve cycle190 critique) — 수량이 줄어드는 경우(일부 매도/정정)는
+ * 평단을 유지한 채 남은 지분만큼 비례 축소하면 사용자 추가 입력 없이도 수학적으로 안전하게
+ * 교정할 수 있다. 반대로 수량이 늘어나는 경우(추가매수)는 이번에 얼마를 더 투입했는지 추측할
+ * 수 없으므로(goalProgress/debtPayoffProjection과 같은 "모르면 추측하지 않는다" 원칙) 여기서
+ * 계산하지 않고 costBasisNeedsUpdate()로 경고만 띄운다. */
+function scaleCostBasisForSale(origQty,newQty,costBasis){
+ if(!(origQty>0)||!(newQty>0)||!(costBasis>0)||newQty>=origQty)return costBasis;
+ return Math.round(costBasis*newQty/origQty);
+}
+function costBasisNeedsUpdate(origQty,newQty,costBasis){
+ return costBasis>0&&newQty>origQty;
+}
+
 /* ================= ASSET ALLOCATION (자산유형별 비중, 순수) ================= */
 /* items: [{type,amount}] — 호출부(allocationCard)가 owner/includeInTotal/부채 제외 필터링과
  * assetEval(DB.rates에 의존하는 index.html 쪽 함수) 평가를 이미 끝낸 뒤 넘긴다(여기선 DB를 몰라야

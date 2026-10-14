@@ -1385,7 +1385,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.148';
+const APP_VERSION='1.47.149';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3642,6 +3642,7 @@ function openAssetSheet(id){
  asDraft=editing?JSON.parse(JSON.stringify(DB.assets.find(a=>a.id===id))):{type:'cash',owner:DB.owners[0],includeInTotal:true,currency:'USD'};
  if(editing&&asDraft.type==='pension')asDraft._pensionAutoExcl=true; /* _pensionAutoExcl은 저장 시 지워지므로, 기존 연금 자산을 열 때마다 "연금은 자동 제외"로 다시 간주해야 전환 시 복원 로직(asOpenType)이 동작함 */
  if(editing&&['cash','savings','realestate','etc','pension','debt'].includes(asDraft.type))asDraft._dispAmt=balanceAt(asDraft.id,TODAY);
+ if(editing&&isMarketValued(asDraft))asDraft._origQty=asDraft.type==='fx'?(asDraft.fxAmount||0):asDraft.type==='gold'?(asDraft.goldDon||0):(asDraft.stockQty||0); /* qtyBasisWarn/costBasisField가 수량 증가(추가매수) 경고를 판단할 기준값 — saveAsset()은 이걸 쓰지 않고 DB.assets[i]의 실제 원본값을 다시 읽는다 */
  renderAssetSheet(editing);
 }
 function syncAssetInputs(){const d=asDraft;const g=id=>$(id);
@@ -3658,8 +3659,13 @@ function asOpenOwner(){syncAssetInputs();openOwnerPicker({current:asDraft.owner,
 function asOpenCur(){syncAssetInputs();openCurrencyPicker({current:asDraft.currency,back:()=>renderAssetSheet(!!asDraft.id),onPick:c=>asCur(c)})}
 function asOpenMat(){syncAssetInputs();openAssetPicker({current:asDraft.maturityTargetId,title:'만기 시 이체할 통장',cashOnly:true,excludeId:asDraft.id,back:()=>renderAssetSheet(!!asDraft.id),onPick:id=>{asDraft.maturityTargetId=id;renderAssetSheet(!!asDraft.id)}})}
 function asToggleNeg(editing){syncAssetInputs();asDraft._dispAmt=-(asDraft._dispAmt||0);renderAssetSheet(editing)}
-function costBasisField(d,editing){ /* fx/gold/stock 공통 — 매입 원가는 선택 입력이라 비워두면 손익을 표시하지 않는다(assetGainLoss). fx/gold/stock 폼의 마지막 입력이라 Enter로 제출 */
- return `<div class="field"><label for="asCostBasis">매입 금액 (원, 선택)</label><div class="field-clear"><input id="asCostBasis" class="num" inputmode="numeric" value="${d.costBasis?comma(d.costBasis):''}" placeholder="입력 시 손익을 계산해요" oninput="fmtAmt(this,false)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveAsset(${editing})"><button type="button" class="fc-x" aria-label="매입 금액 지우기" onclick="clrInput('asCostBasis')">✕</button></div></div>`;
+function costBasisField(d,editing){ /* fx/gold/stock 공통 — 매입 원가는 선택 입력이라 비워두면 손익을 표시하지 않는다(assetGainLoss). fx/gold/stock 폼의 마지막 입력이라 Enter로 제출
+   d._origQty(편집 시 openAssetSheet가 스냅샷)보다 보유 수량이 늘면(추가매수) 기존 매입금액이 그대로
+   남아 손익이 과대 표시되므로 경고만 띄운다 — 줄어드는 경우(일부 매도)는 saveAsset()이
+   scaleCostBasisForSale로 자동 비례 축소하므로 경고가 필요 없다(app-evolve cycle190 advance) */
+ const qtyField=d.type==='fx'?'fxAmount':d.type==='gold'?'goldDon':'stockQty';
+ const warnMsg=(editing&&d._origQty!=null&&costBasisNeedsUpdate(d._origQty,d[qtyField]||0,d.costBasis))?'보유 수량이 늘었어요 · 매입 금액도 함께 늘려주세요 (손익 계산 정확도를 위해)':'';
+ return `<div class="field"><label for="asCostBasis">매입 금액 (원, 선택)</label><div class="field-clear"><input id="asCostBasis" class="num" inputmode="numeric" value="${d.costBasis?comma(d.costBasis):''}" placeholder="입력 시 손익을 계산해요" oninput="fmtAmt(this,false)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveAsset(${editing})"><button type="button" class="fc-x" aria-label="매입 금액 지우기" onclick="clrInput('asCostBasis')">✕</button></div><div class="day-warn" id="asQtyBasisWarn" style="display:${warnMsg?'block':'none'}">${esc(warnMsg)}</div></div>`;
 }
 function renderAssetSheet(editing){
  const d=asDraft;const ty=ASSET_TYPES[d.type];
@@ -3684,18 +3690,18 @@ function renderAssetSheet(editing){
  }else if(d.type==='fx'){
    const curInfo=CURRENCY_LIST.find(x=>x.code===d.currency)||{code:d.currency,label:d.currency};
    fields=nameField+`<div class="field"><label>통화</label><button class="pick" onclick="asOpenCur()"><div class="pav a-fx">${svg('fx')}</div><div class="pbody"><div class="pn">${esc(curInfo.code)}</div><div class="psub">${esc(curInfo.label)}</div></div><div class="pc">${svg('chevR')}</div></button></div>
-     <div class="field"><label for="asFx">보유 수량</label><div class="with-unit"><div class="field-clear"><input id="asFx" class="num" inputmode="decimal" value="${d.fxAmount||''}" placeholder="0" oninput="fmtQty(this)"><button type="button" class="fc-x" aria-label="보유 수량 지우기" onclick="clrInput('asFx')">✕</button></div><span class="unit">${d.currency}</span></div></div>
+     <div class="field"><label for="asFx">보유 수량</label><div class="with-unit"><div class="field-clear"><input id="asFx" class="num" inputmode="decimal" value="${d.fxAmount||''}" placeholder="0" oninput="fmtQty(this);qtyBasisWarn(this)"><button type="button" class="fc-x" aria-label="보유 수량 지우기" onclick="clrInput('asFx')">✕</button></div><span class="unit">${d.currency}</span></div></div>
      <p style="font-size:12.5px;color:var(--text-2);margin:-4px 0 14px">현재 환율 ${comma(DB.rates.fx[d.currency]||0)}원 기준으로 원화 평가액이 자동 계산돼요.</p>
      ${costBasisField(d,editing)}`;
  }else if(d.type==='gold'){
-   fields=nameField+`<div class="field"><label for="asGold">보유 수량</label><div class="with-unit"><div class="field-clear"><input id="asGold" class="num" inputmode="decimal" value="${d.goldDon||''}" placeholder="0" oninput="fmtQty(this)"><button type="button" class="fc-x" aria-label="보유 수량 지우기" onclick="clrInput('asGold')">✕</button></div><span class="unit">돈</span></div></div>
+   fields=nameField+`<div class="field"><label for="asGold">보유 수량</label><div class="with-unit"><div class="field-clear"><input id="asGold" class="num" inputmode="decimal" value="${d.goldDon||''}" placeholder="0" oninput="fmtQty(this);qtyBasisWarn(this)"><button type="button" class="fc-x" aria-label="보유 수량 지우기" onclick="clrInput('asGold')">✕</button></div><span class="unit">돈</span></div></div>
      <p style="font-size:12.5px;color:var(--text-2);margin:-4px 0 14px">금 시세 ${comma(DB.rates.goldPerG)}원/g × 3.75g 기준으로 자동 계산돼요.</p>
      ${costBasisField(d,editing)}`;
  }else if(d.type==='stock'){
    fields=`<div class="field"><label for="asName">종목명</label><div class="field-clear"><input id="asName" value="${esc(d.name||'')}" placeholder="예: 삼성전자"><button type="button" class="fc-x" aria-label="종목명 지우기" onclick="clrInput('asName')">✕</button></div></div>
      <div class="field"><label for="asCode">종목코드</label><div class="field-clear"><input id="asCode" value="${esc(d.stockCode||'')}" placeholder="국내 005930 · 해외 AAPL" autocapitalize="characters" oninput="this.value=this.value.toUpperCase()"><button type="button" class="fc-x" aria-label="종목코드 지우기" onclick="clrInput('asCode')">✕</button></div>
       <p style="font-size:12px;color:var(--text-3);margin-top:6px">국내는 6자리 숫자, 해외는 티커(AAPL·TSLA·NVDA)를 넣어주세요. 해외는 원화로 환산돼요.</p></div>
-     <div class="field"><label for="asQty">보유 주식 수</label><div class="with-unit"><div class="field-clear"><input id="asQty" class="num" inputmode="decimal" value="${d.stockQty||''}" placeholder="0" oninput="fmtQty(this)"><button type="button" class="fc-x" aria-label="보유 주식 수 지우기" onclick="clrInput('asQty')">✕</button></div><span class="unit">주</span></div></div>
+     <div class="field"><label for="asQty">보유 주식 수</label><div class="with-unit"><div class="field-clear"><input id="asQty" class="num" inputmode="decimal" value="${d.stockQty||''}" placeholder="0" oninput="fmtQty(this);qtyBasisWarn(this)"><button type="button" class="fc-x" aria-label="보유 주식 수 지우기" onclick="clrInput('asQty')">✕</button></div><span class="unit">주</span></div></div>
      <p style="font-size:12.5px;color:var(--text-2);margin:-4px 0 14px">평가액 = 현재가 × 보유수량 (현재가는 시세 연동 관리에서 입력).</p>
      ${costBasisField(d,editing)}`;
  }
@@ -3724,7 +3730,7 @@ function saveAsset(editing){
  const balType=balTypes.includes(d.type);
  const balKey=(d.type==='cash'||d.type==='savings')?'baseAmount':'amountKRW';
  const entered=balType?(d._dispAmt!=null?d._dispAmt:(d[balKey]||0)):0; /* 사용자가 입력한 '현재 금액' */
- delete d._dispAmt;delete d._pensionAutoExcl;
+ delete d._dispAmt;delete d._pensionAutoExcl;delete d._origQty;
  const dup=DB.assets.find(a=>a.id!==d.id&&normName(a.name)===normName(d.name)&&a.type===d.type); /* 살아있는 동명(대소문자·연속 공백 개수 무시)·동종 (신규/수정 공통) */
  if(dup){toast(dup.name===d.name?'같은 이름·종류의 자산이 이미 있어요':`비슷한 이름의 자산이 있어요: ${dup.name}`);return;} /* 중복 차단 */
  /* 표시 잔액이 입력값과 같도록 기준값 역산 (오늘까지의 순입출금 기여분 제외) */
@@ -3747,6 +3753,7 @@ function saveAsset(editing){
        수량이 언제·얼마나 바뀌었는지 아무 기록도 남지 않았다(app-evolve cycle138 advance) */
      const qtyField=d.type==='fx'?'fxAmount':d.type==='gold'?'goldDon':'stockQty';
      const prevQty=DB.assets[i][qtyField]||0,newQty=d[qtyField]||0;
+     if(newQty<prevQty)d.costBasis=scaleCostBasisForSale(prevQty,newQty,d.costBasis); /* 일부 매도/정정: 평단 유지한 채 비례 축소 — 늘어나는 경우(추가매수)는 추가 투입금액을 추측할 수 없어 그대로 둔다(qtyBasisWarn이 안내) */
      DB.assets[i]=d;
      if(prevQty!==newQty){
        DB.assetQtyLog=DB.assetQtyLog||[];
@@ -4434,6 +4441,13 @@ function dayWarn(pfx,v){const w=$(pfx+'DayWarn');if(!w)return;
  const n=Number(v);let msg='';
  if(v!==''&&n>31)msg='한 달은 최대 31일이에요 · 저장하면 31일로 맞춰져요';
  else if(v!==''&&n<1)msg='1일부터 넣을 수 있어요 · 저장하면 1일로 맞춰져요';
+ w.textContent=msg;w.style.display=msg?'block':'none';}
+/* asFx/asGold/asQty 입력 시 즉시 costBasisField 아래 경고 캡션을 토글(전체 리렌더 없이) —
+ * dayWarn과 동일한 패턴. asDraft._origQty가 없으면(신규 등록) 비교 기준이 없으므로 항상 숨긴다 */
+function qtyBasisWarn(inp){const w=$('asQtyBasisWarn');if(!w)return;
+ if(asDraft._origQty==null){w.style.display='none';return}
+ const v=parseFloat((inp.value||'0').replace(/,/g,''))||0;
+ const msg=costBasisNeedsUpdate(asDraft._origQty,v,asDraft.costBasis)?'보유 수량이 늘었어요 · 매입 금액도 함께 늘려주세요 (손익 계산 정확도를 위해)':'';
  w.textContent=msg;w.style.display=msg?'block':'none';}
 function clampDay(d){ /* 저장 시 보정 */
  if(typeof d.day!=='number'||isNaN(d.day)){d.day=1;return '1일로 맞췄어요'}

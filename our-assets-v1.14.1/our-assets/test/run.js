@@ -7575,6 +7575,66 @@ test('saveAsset: cash 등 balType 자산을 수정해도 DB.assetQtyLog는 건�
   sandbox.saveAsset(true);
   assert.strictEqual(sandbox.DB.assetQtyLog.length, 0, 'balType 자산은 isMarketValued가 아니므로 이 분기를 타면 안 됨');
 });
+/* ---------- scaleCostBasisForSale/costBasisNeedsUpdate(logic.js, 순수): 투자자산(fx/gold/stock)
+ * 수량 변경 시 매입원가(costBasis) 보정 (app-evolve cycle190 critique/advance). costBasis는
+ * 가중평균 없이 사용자가 한 번 입력한 총 매입금액 단일값이라, saveAsset()이 수량만 바꿔 덮어쓰면
+ * assetGainLoss()의 손익(P/L)이 왜곡된다. 수량이 줄 때(일부 매도)는 평단을 유지한 채 비례 축소하면
+ * 추측 없이 안전하게 교정 가능하지만, 늘 때(추가매수)는 이번에 얼마를 더 투입했는지 알 수 없어
+ * 경고만 띄운다(goalProgress/debtPayoffProjection과 같은 "모르면 추측하지 않는다" 원칙). ---------- */
+test('scaleCostBasisForSale: 수량이 줄면 평단을 유지한 채 매입원가를 비례 축소한다', () => {
+  assert.strictEqual(sandbox.scaleCostBasisForSale(20, 10, 300000), 150000, '20주→10주(절반 매도)면 매입원가도 절반');
+  assert.strictEqual(sandbox.scaleCostBasisForSale(3, 1, 100000), 33333, 'Math.round로 반올림');
+});
+test('scaleCostBasisForSale: 전량 매도(newQty=0)는 가드에 걸려 costBasis를 그대로 반환한다(delAsset 등 별도 경로가 처리할 몫)', () => {
+  assert.strictEqual(sandbox.scaleCostBasisForSale(10, 0, 100000), 100000);
+});
+test('scaleCostBasisForSale: 수량이 늘거나 그대로면(추가매수/무변경) costBasis를 건드리지 않는다', () => {
+  assert.strictEqual(sandbox.scaleCostBasisForSale(10, 20, 100000), 100000, '늘어난 경우는 추측하지 않고 그대로 둠');
+  assert.strictEqual(sandbox.scaleCostBasisForSale(10, 10, 100000), 100000, '수량 불변');
+});
+test('scaleCostBasisForSale: origQty/costBasis가 0 이하거나 없으면 가드에 걸려 costBasis를 그대로 반환한다', () => {
+  assert.strictEqual(sandbox.scaleCostBasisForSale(0, 0, 100000), 100000);
+  assert.strictEqual(sandbox.scaleCostBasisForSale(10, 5, 0), 0);
+  assert.strictEqual(sandbox.scaleCostBasisForSale(10, 5, undefined), undefined);
+});
+test('costBasisNeedsUpdate: costBasis가 있고 수량이 늘었을 때만(추가매수) true', () => {
+  assert.strictEqual(sandbox.costBasisNeedsUpdate(10, 20, 100000), true);
+  assert.strictEqual(sandbox.costBasisNeedsUpdate(10, 5, 100000), false, '수량이 줄면(자동 보정 대상) 경고 불필요');
+  assert.strictEqual(sandbox.costBasisNeedsUpdate(10, 10, 100000), false, '수량 불변');
+  assert.strictEqual(sandbox.costBasisNeedsUpdate(10, 20, 0), false, 'costBasis 미설정이면 애초에 손익을 안 보여주므로 경고 불필요');
+});
+test('saveAsset: 투자자산 수량이 줄면(일부 매도) costBasis가 scaleCostBasisForSale과 동일하게 비례 축소되고 assetQtyLog 기록도 그대로 남는다', () => {
+  const asset = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 20, costBasis: 300000 };
+  sandbox.DB = { assets: [asset], assetQtyLog: [], rates: { fx: {}, stocks: { '005930': 20000 }, goldPerG: 0 } };
+  sandbox.asDraft = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 10, costBasis: 300000 };
+  sandbox.saveAsset(true);
+  assert.strictEqual(sandbox.DB.assets[0].stockQty, 10);
+  assert.strictEqual(sandbox.DB.assets[0].costBasis, 150000, '20주→10주 매도면 매입원가도 절반으로 자동 보정돼야 함');
+  assert.strictEqual(sandbox.DB.assetQtyLog.length, 1, '수량 변경 기록은 costBasis 보정과 무관하게 그대로 남아야 함');
+  assert.strictEqual(sandbox.DB.assetQtyLog[0].prevQty, 20);
+  assert.strictEqual(sandbox.DB.assetQtyLog[0].newQty, 10);
+});
+test('saveAsset: 투자자산 수량이 늘면(추가매수) costBasis를 추측해 바꾸지 않고 사용자가 입력한 값을 그대로 둔다', () => {
+  const asset = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 10, costBasis: 100000 };
+  sandbox.DB = { assets: [asset], assetQtyLog: [], rates: { fx: {}, stocks: { '005930': 15000 }, goldPerG: 0 } };
+  sandbox.asDraft = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 20, costBasis: 100000 };
+  sandbox.saveAsset(true);
+  assert.strictEqual(sandbox.DB.assets[0].stockQty, 20);
+  assert.strictEqual(sandbox.DB.assets[0].costBasis, 100000, '추가매수는 추가 투입금액을 알 수 없으므로 자동 계산하지 않음(qtyBasisWarn이 안내)');
+});
+/* ---------- costBasisField: 편집 중 보유 수량이 _origQty(openAssetSheet 스냅샷)보다 늘면
+ * (추가매수) costBasisNeedsUpdate 경고 캡션을 즉시 렌더한다. 줄어드는 경우는 saveAsset()이
+ * 자동 보정하므로 캡션이 뜨면 안 된다. ---------- */
+test('costBasisField: 수량이 _origQty보다 늘면 경고 캡션이 뜨고, 줄거나 그대로면 숨겨진다', () => {
+  const grown = sandbox.costBasisField({ type: 'stock', stockQty: 20, costBasis: 100000, _origQty: 10 }, true);
+  assert.ok(grown.includes('id="asQtyBasisWarn"'));
+  assert.ok(!grown.includes('display:none"'), '늘었으면 보여야 함');
+  assert.ok(grown.includes('매입 금액도 함께'));
+  const shrunk = sandbox.costBasisField({ type: 'stock', stockQty: 5, costBasis: 100000, _origQty: 10 }, true);
+  assert.ok(shrunk.includes('display:none"'), '줄었으면 자동 보정 대상이라 경고가 필요 없음');
+  const fresh = sandbox.costBasisField({ type: 'stock', stockQty: 20, costBasis: 100000 }, false);
+  assert.ok(fresh.includes('display:none"'), '신규 등록(_origQty 없음)은 비교 기준이 없으므로 항상 숨김');
+});
 /* ---------- saveAsset: 주식 자산의 종목코드가 비어 있으면 저장을 막는다 (cycle58 develop).
  * syncAssetInputs()는 종목코드를 trim/uppercase만 할 뿐 필수 여부를 검사하지 않고, saveAsset()도
  * transfer의 from/to 자산처럼 다른 필수 조합은 저장 전에 막으면서 stockCode는 검사하지 않아
@@ -11191,7 +11251,7 @@ test('renameCatSheet: renameCat(카테고리 이름 수정 입력)도 동일하�
 test("costBasisField: fx/gold/stock 공용 매입금액 입력(asCostBasis)에 Enter-제출이 있다(세 타입 모두의 마지막 입력)", () => {
   assert.strictEqual(
     sandbox.costBasisField({ costBasis: 0 }, false),
-    '<div class="field"><label for="asCostBasis">매입 금액 (원, 선택)</label><div class="field-clear"><input id="asCostBasis" class="num" inputmode="numeric" value="" placeholder="입력 시 손익을 계산해요" oninput="fmtAmt(this,false)" onkeydown="if(event.key===\'Enter\'&&!event.isComposing)saveAsset(false)"><button type="button" class="fc-x" aria-label="매입 금액 지우기" onclick="clrInput(\'asCostBasis\')">✕</button></div></div>'
+    '<div class="field"><label for="asCostBasis">매입 금액 (원, 선택)</label><div class="field-clear"><input id="asCostBasis" class="num" inputmode="numeric" value="" placeholder="입력 시 손익을 계산해요" oninput="fmtAmt(this,false)" onkeydown="if(event.key===\'Enter\'&&!event.isComposing)saveAsset(false)"><button type="button" class="fc-x" aria-label="매입 금액 지우기" onclick="clrInput(\'asCostBasis\')">✕</button></div><div class="day-warn" id="asQtyBasisWarn" style="display:none"></div></div>'
   );
   assert.ok(sandbox.costBasisField({ costBasis: 0 }, true).includes('saveAsset(true)'), 'editing=true(수정 모드)일 때 saveAsset 호출에 전달되지 않음');
 });
