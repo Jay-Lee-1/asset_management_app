@@ -1,15 +1,12 @@
 {
   "cycle": 189,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "자산(Assets) 탭에 검색창 추가 — 내역(History) 탭과의 기능 불일치 해소",
+    "why": "renderHistory()(index.html ~4621-4645)는 histQ 검색창+matchTxnQuery()로 메모/카테고리/자산명/금액을 검색할 수 있지만, renderAssets()/assetBodyHTML()(index.html ~3323-3423)에는 owner 필터 캐러셀과 정렬만 있고 검색이 전혀 없다. 주식 종목마다 별도 자산 행이 생기고 다주택/다통화/다인(owner) 구성이 흔한 앱 특성상 자산이 20~40개 이상으로 늘어나기 쉬운데, 특정 자산(예: 특정 종목, 배우자의 세 번째 적금)을 찾는 유일한 방법이 스크롤+육안 탐색뿐이다. 앱 전역에서 검색 가능한 리스트는 histQ 하나뿐임을 grep으로 확인했고, 다른 후보(CSV 라운드트립, 클라우드 머지, 반복거래, PIN 복구, 차트 접근성, 상환 투사 윈도우, 자산 재연결, RANGE_FROM/TO 경계)는 이미 과거 사이클에서 충분히 다뤄져 있어 이것이 가장 우선순위가 높은 남은 완성도 격차.",
+    "approach": "1) ST 객체에 assetQ:'' 상태 추가(index.html ST.assetOwner 근처). 2) logic.js에 matchTxnQuery(logic.js:305)와 동일한 패턴으로 순수 함수 matchAssetQuery(asset,q) 추가 — asset.name 및 존재하는 경우 종목/통화 필드까지 대소문자 무시·trim 비교. 3) renderAssets()(index.html ~3388)에 histQ와 동일한 마크업/클리어 버튼 패턴의 .searchbar input을 assetBody 위에 삽입, oninput으로 ST.assetQ 갱신 후 #assetBody만 innerHTML 재렌더(refreshPlanBody() 같은 부분 재렌더 패턴 재사용, 캐러셀/차트는 건드리지 않음). 4) assetBodyHTML()의 비-편집/비-선택 모드 분기(index.html ~3360-3384)에서 ST.assetQ가 비어있지 않으면 매 타입 그룹의 items를 matchAssetQuery로 필터링하고, 그룹이 비면 기존처럼 그룹 자체를 숨김. ST.editAssets(드래그 재정렬)와 ST.aSel(일괄 선택) 모드는 이번 범위 밖(별도 설계 필요). 5) 전체 그룹이 매칭 결과 없을 때 기존 '검색 결과 없음' 스타일의 .empty 상태 표시. 6) test/run.js에 matchAssetQuery 단위 테스트(이름 매칭/대소문자 무시/빈 쿼리 통과) + renderAssets()에 검색 input이 존재하는지, ST.assetQ 설정 시 assetBodyHTML()이 비매칭 자산을 숨기는지 확인하는 DOM/실행형 테스트 추가. index.html/logic.js/sw.js 변경이므로 APP_VERSION과 sw.js CACHE 버전도 올릴 것."
+  },
   "history": [
-    {
-      "cycle": 184,
-      "phase": "critique",
-      "timestamp": "2026-10-13T11:05:00.000Z",
-      "summary": "cycle184 critique: mergeRecurrences()가 skip[]/edits{}는 Set 합집합으로 보존하지만 confirmedDates[]는 그 보호를 못 받고 스칼라 필드처럼 base 전체를 그대로 쓴다는 것을 발견. node vm으로 직접 재현 확인. 다음 advance는 confirmedDates를 skip과 동일한 Set 합집합으로 추가하는 계획. 코드 변경 없음(읽기 전용 조사).",
-      "commit": null
-    },
     {
       "cycle": 184,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-14T05:40:00.000Z",
       "summary": "cycle189 develop(assetBalCard debt 완납 투사를 고정 90일 pfPts로 분리, commit 3b6ae5a) 검토 — debtPayoffProjection(logic.js:410-411)의 trendWindowDays 기본값이 실제로 90임을 재확인했고, pfFrom/from 날짜 문자열 비교가 addDays/RANGE_FROM의 동일한 YYYY-MM-DD zero-padded 포맷을 쓰므로 안전함을 확인. m1/m3/y1/all 네 preset 전부와 RANGE_FROM이 90일보다 가까운 짧은 히스토리 케이스까지 수동으로 날짜 산술을 추적해 pfFrom===from 재사용/재샘플링 분기가 모든 경우에 일관된 투사를 만든다는 것을 검증했다. node test/run.js 1356/1356 전부 통과(독립 재실행으로 재확인). 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
+      "commit": null
+    },
+    {
+      "cycle": 189,
+      "phase": "critique",
+      "timestamp": "2026-10-14T07:14:11.928Z",
+      "summary": "general-purpose 서브에이전트로 141-189사이클 기각/완료 이력을 전달하고 앱 전체를 재조망 — 내역(History) 탭의 renderHistory()/matchTxnQuery()(histQ 검색창, index.html~4621-4645, logic.js:305)와 달리 자산(Assets) 탭 renderAssets()/assetBodyHTML()(index.html~3323-3423)에는 owner 필터와 정렬만 있고 검색창이 전혀 없음을 발견. 주식 종목별 개별 자산 행 + 다인(owner)/다통화 구성 특성상 자산이 20~40개 이상으로 늘기 쉬워 특정 자산을 찾는 유일한 방법이 스크롤뿐임을 grep(전역에서 유일한 .searchbar/실동작 검색창은 histQ뿐)으로 확인. CSV 라운드트립/클라우드 머지/반복거래/PIN 복구/차트 접근성/상환 투사/자산 재연결/RANGE 경계 등 다른 후보는 과거 사이클에서 이미 충분히 다뤄짐을 재확인 후 기각. 다음 advance 계획: matchAssetQuery(asset,q) 순수 함수 추가 + ST.assetQ 상태 + renderAssets()에 histQ와 동일 패턴의 검색창 삽입 + assetBodyHTML() 필터링 + 관련 테스트. 코드 변경 없음(읽기 전용 조사).",
       "commit": null
     }
   ]
