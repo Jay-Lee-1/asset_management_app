@@ -4166,6 +4166,23 @@ test('matchTxnQuery: 메모에 실제 쉼표가 들어있어도 쉼표를 사이
   assert.strictEqual(sandbox.matchTxnQuery(t, '유계', []), false);
 });
 
+/* ---------- matchAssetQuery: 자산 검색도 matchTxnQuery와 동일한 대소문자 무시 includes 규칙 ---------- */
+test('matchAssetQuery: 빈 검색어는 항상 매칭된다', () => {
+  assert.strictEqual(sandbox.matchAssetQuery({ name: '카카오뱅크' }, ''), true);
+});
+test('matchAssetQuery: 자산명이 대문자로 저장돼 있어도 소문자 검색어로 찾을 수 있다', () => {
+  assert.strictEqual(sandbox.matchAssetQuery({ name: 'KakaoBank' }, 'kakao'), true);
+});
+test('matchAssetQuery: 이름 일부만 입력해도 부분일치로 찾을 수 있다', () => {
+  assert.strictEqual(sandbox.matchAssetQuery({ name: '삼성전자' }, '삼성'), true);
+});
+test('matchAssetQuery: fx 자산은 이름뿐 아니라 보유 통화(currency)로도 찾을 수 있다', () => {
+  assert.strictEqual(sandbox.matchAssetQuery({ name: '달러', currency: 'USD' }, 'usd'), true);
+});
+test('matchAssetQuery: 이름/통화 어디에도 없으면 매칭되지 않는다', () => {
+  assert.strictEqual(sandbox.matchAssetQuery({ name: '우리은행', currency: 'KRW' }, 'xyz'), false);
+});
+
 /* ---------- matchesAssetId: 자산 행 '내역' 버튼(openAssetHistory)이 쓰는 계좌 필터 ---------- */
 test('matchesAssetId: assetId가 없으면(전체) 항상 매칭된다', () => {
   const t = { fromAssetId: 'a1', toAssetId: null };
@@ -13386,7 +13403,7 @@ function setupAssetsDB() {
   sandbox._recCache.clear();
   sandbox._lastNwOwner = null;
   sandbox.pageAssetsEl._html = '';
-  sandbox.ST = { editAssets: false, aSel: { mode: false, ids: new Set() }, assetOwner: 'all' };
+  sandbox.ST = { editAssets: false, aSel: { mode: false, ids: new Set() }, assetOwner: 'all', assetQ: '' };
   sandbox.DB = {
     settings: { includeScheduled: true, groupOrder: sandbox.DEFAULT_GROUP_ORDER, assetSort: 'custom' },
     assets: [],
@@ -13413,6 +13430,71 @@ test('renderAssets: 자산이 있으면 그룹 타이틀과 자산 카드가 실
   assert.ok(html.includes('현금예금'), '자산 종류 그룹 타이틀이 렌더돼야 함');
   assert.ok(html.includes('주계좌'), '자산 이름이 렌더돼야 함');
   assert.ok(!html.includes('아직 등록한 자산이 없어요'));
+});
+/* ---------- renderAssets 검색창(assetQ): 내역(History) 탭 histQ와 같은 '.searchbar' 패턴을 자산 탭에도 추가
+ * (app-evolve cycle189 critique가 지적한 기능 불일치 해소) ---------- */
+test('renderAssets: 자산 탭에도 histQ와 동일한 패턴의 검색창(assetQ)이 fc-x 지우기 버튼과 함께 렌더된다', () => {
+  setupAssetsDB();
+  sandbox.DB.assets = [{ id: 'a1', name: '주계좌', owner: '나', type: 'cash', order: 0, includeInTotal: true, baseAmount: 500000 }];
+  sandbox.renderAssets();
+  const html = sandbox.pageAssetsEl.innerHTML;
+  assert.ok(html.includes('<input id="assetQ"'), '검색 입력란(assetQ)이 렌더돼야 함');
+  assert.ok(html.includes(`<button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('assetQ')">`), 'assetQ에 fc-x 지우기 버튼의 clrInput 연결이 없음');
+});
+test('renderAssets: 함수 본문이 fcWire()를 호출해 assetQ의 지우기 버튼을 실제로 배선한다(시트가 아닌 탭 화면이라 openSheet()의 자동 배선을 못 타므로 직접 호출해야 함)', () => {
+  const body = sandbox.renderAssets.toString();
+  assert.ok(/fcWire\(\)/.test(body), 'renderAssets()가 fcWire()를 호출하지 않음');
+});
+test('renderAssets: 편집 모드·일괄선택 모드에서는 검색창이 아예 렌더되지 않는다(이번 범위 밖)', () => {
+  setupAssetsDB();
+  sandbox.DB.assets = [{ id: 'a1', name: '주계좌', owner: '나', type: 'cash', order: 0, includeInTotal: true, baseAmount: 500000 }];
+  sandbox.ST.editAssets = true;
+  sandbox.renderAssets();
+  assert.ok(!sandbox.pageAssetsEl.innerHTML.includes('id="assetQ"'), '편집 모드에서는 검색창이 없어야 함');
+
+  sandbox.ST.editAssets = false;
+  sandbox.ST.aSel.mode = true;
+  sandbox.renderAssets();
+  assert.ok(!sandbox.pageAssetsEl.innerHTML.includes('id="assetQ"'), '일괄선택 모드에서는 검색창이 없어야 함');
+});
+test('assetBodyHTML: ST.assetQ로 자산 이름을 검색하면 일치하는 자산만 남고, 매칭된 자산이 없는 그룹은 통째로 숨는다', () => {
+  setupAssetsDB();
+  sandbox.DB.assets = [
+    { id: 'a1', name: '카카오뱅크', owner: '나', type: 'cash', order: 0, includeInTotal: true, baseAmount: 500000 },
+    { id: 'a2', name: '우리은행', owner: '나', type: 'cash', order: 1, includeInTotal: true, baseAmount: 100000 },
+    { id: 'a3', name: '삼성전자', owner: '나', type: 'stock', stockQty: 10, order: 0, includeInTotal: true },
+  ];
+  sandbox.ST.assetQ = '카카오';
+  const html = sandbox.assetBodyHTML();
+  assert.ok(html.includes('카카오뱅크'), '검색어와 일치하는 자산은 남아야 함');
+  assert.ok(!html.includes('우리은행'), '검색어와 일치하지 않는 같은 그룹 자산은 숨어야 함');
+  assert.ok(!html.includes('삼성전자'), '매칭된 자산이 하나도 없는 그룹(주식)은 통째로 숨어야 함');
+});
+test('assetBodyHTML: 검색어와 일치하는 자산이 하나도 없으면 "아직 등록한 자산이 없어요"가 아니라 검색 결과 없음 안내가 뜬다', () => {
+  setupAssetsDB();
+  sandbox.DB.assets = [{ id: 'a1', name: '주계좌', owner: '나', type: 'cash', order: 0, includeInTotal: true, baseAmount: 500000 }];
+  sandbox.ST.assetQ = '존재하지않는검색어';
+  const html = sandbox.assetBodyHTML();
+  assert.ok(!html.includes('아직 등록한 자산이 없어요'), '자산 자체는 있으므로 이 문구는 오해를 줌');
+  assert.ok(html.includes('일치하는 자산이 없어요'), '검색 결과 없음 안내가 나와야 함');
+});
+test('assetBodyHTML: 일괄선택 모드(ST.aSel.mode)에서는 검색어 필터를 적용하지 않는다(visibleAssetsForSel의 "전체 선택" 범위와 화면 표시가 어긋나면 안 됨)', () => {
+  setupAssetsDB();
+  sandbox.DB.assets = [
+    { id: 'a1', name: '카카오뱅크', owner: '나', type: 'cash', order: 0, includeInTotal: true, baseAmount: 500000 },
+    { id: 'a2', name: '우리은행', owner: '나', type: 'cash', order: 1, includeInTotal: true, baseAmount: 100000 },
+  ];
+  sandbox.ST.assetQ = '카카오';
+  sandbox.ST.aSel.mode = true;
+  const html = sandbox.assetBodyHTML();
+  assert.ok(html.includes('카카오뱅크') && html.includes('우리은행'), '일괄선택 모드에서는 검색어와 무관하게 귀속 필터 결과 전체가 보여야 함(visibleAssetsForSel과 일치)');
+});
+test('matchAssetQuery: fx 자산은 이름 외에 보유 통화로도 검색되므로, assetBodyHTML 검색에서도 통화명으로 fx 자산을 찾을 수 있다', () => {
+  setupAssetsDB();
+  sandbox.DB.assets = [{ id: 'a1', name: '여행자금', owner: '나', type: 'fx', currency: 'JPY', fxAmount: 50000, order: 0, includeInTotal: true }];
+  sandbox.ST.assetQ = 'jpy';
+  const html = sandbox.assetBodyHTML();
+  assert.ok(html.includes('여행자금'), '이름에 없어도 보유 통화(JPY)로 매칭되어야 함');
 });
 test('renderAssets: 편집 모드(ST.editAssets)에서는 드래그용 그룹 목록이 렌더되고, assetSort가 custom이면 그룹 헤더 아래 개별 자산 위/아래 버튼도 함께 렌더된다(app-evolve cycle134 advance 전에는 그룹만 나왔음)', () => {
   setupAssetsDB(); // setupAssetsDB()는 assetSort:'custom'

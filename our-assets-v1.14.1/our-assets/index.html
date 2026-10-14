@@ -1376,7 +1376,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.146';
+const APP_VERSION='1.47.147';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2576,7 +2576,7 @@ function visibleTx(t){return DB.settings.includeScheduled||!txScheduled(t)}
 
 /* ================= STATE ================= */
 let TM=ym(TODAY);TM.d=+TODAY.slice(8,10);
-let ST={tab:'home',ledgerMode:'cal',assetOwner:'all',nwPreset:'m3',ledger:{y:TM.y,m:TM.m,sel:TODAY},home:{y:TM.y,m:TM.m},
+let ST={tab:'home',ledgerMode:'cal',assetOwner:'all',assetQ:'',nwPreset:'m3',ledger:{y:TM.y,m:TM.m,sel:TODAY},home:{y:TM.y,m:TM.m},
  hist:{cat:'전체',q:'',assetId:null,catExact:null,owner:'전체',selMode:false,sel:new Set(),sortAsc:false,
    range:{from:`${TM.y}-01-01`,to:`${TM.y}-12-31`},preset:'year',page:1,avgMode:false,balPreset:'m3'},
  plan:{owner:'전체',assetId:null,y:TM.y,m:TM.m},spendOwner:'전체',editAssets:false,aSel:{mode:false,ids:new Set()},lSel:{mode:false,ids:new Set()}};
@@ -3360,6 +3360,11 @@ function assetBodyHTML(){
    DB.settings.groupOrder.forEach(t=>{
      let items=groupItems(t);
      if(ST.assetOwner!=='all')items=items.filter(a=>a.owner===ST.assetOwner); /* 귀속 필터 */
+     /* 검색어 필터 — 일괄선택(ST.aSel) 모드는 범위 밖: visibleAssetsForSel()(전체선택 대상)이
+      * 귀속 필터만 보고 검색어는 모르므로, 여기서까지 걸러버리면 화면엔 안 보이는 자산이
+      * "전체 선택"에는 들어가는 불일치가 생긴다(과거 귀속 필터에서 이미 겪은 것과 같은 종류의
+      * 버그이므로 재현하지 않는다, app-evolve cycle189 advance) */
+     if(ST.assetQ&&!ST.aSel.mode)items=items.filter(a=>matchAssetQuery(a,ST.assetQ));
      if(!items.length)return;
      const incl=items.filter(a=>a.includeInTotal);
      const sum=incl.reduce((s,a)=>s+(a.type==='debt'?-assetEval(a):assetEval(a)),0);
@@ -3383,6 +3388,8 @@ function assetBodyHTML(){
      }).join('')+`</div>`;
    });
  }
+ if(!body&&ST.assetQ&&!ST.editAssets&&!ST.aSel.mode&&DB.assets.length) /* 자산은 있지만 검색어에 아무 것도 안 걸릴 때 — "아직 등록한 자산이 없어요"는 오해를 준다 */
+   return `<div class="empty"><div class="ei">${svg('search')}</div><div class="et">'${esc(ST.assetQ)}'와 일치하는 자산이 없어요</div><div class="es">다른 이름으로 검색해 보세요</div></div>`;
  return body||`<div class="empty"><div class="ei">${svg('wallet')}</div><div class="et">${ST.assetOwner==='all'?'아직 등록한 자산이 없어요':ST.assetOwner+' 앞으로 된 자산이 없어요'}</div><div class="es">통장·적금·투자를 등록하면 한눈에 볼 수 있어요</div><button class="empty-cta" onclick="openAssetSheet()">${svg('plus')} 자산 추가하기</button></div>`;
 }
 function renderAssets(){
@@ -3398,6 +3405,7 @@ function renderAssets(){
  <div id="nwHistBody">${nwHistoryCard(ST.assetOwner,ST.nwPreset)}</div>
  <div id="allocBody">${allocationCard(ST.assetOwner)}</div>
  <div id="goalsSummaryBody">${goalsSummaryCard(ST.assetOwner)}</div>
+ ${(!ST.editAssets&&!ST.aSel.mode)?`<div class="searchbar" style="margin-bottom:14px">${svg('search')}<div class="field-clear"><input id="assetQ" aria-label="자산 검색" placeholder="자산 이름 검색" value="${esc(ST.assetQ)}" oninput="ST.assetQ=this.value;assetSelPartial()"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('assetQ')">✕</button></div></div>`:''}
  <div class="as-tools${ST.aSel.mode?' hidden':''}">
    <div class="as-actions">${ST.editAssets?`<button class="as-tbtn primary" onclick="ST.editAssets=false;save();renderAssets()">${svg('check')} 완료</button>`:
     `<button class="as-tbtn" onclick="openSortSheet()">${svg('sort')} 정렬</button>
@@ -3411,6 +3419,7 @@ function renderAssets(){
  <div style="height:8px"></div>`;
  if(ST.editAssets)wireGroupDrag();
  if(!ST.editAssets&&!ST.aSel.mode)wireLongPress($('page-assets'),id=>{ST.aSel.mode=true;ST.aSel.ids.add(id);renderAssets()});
+ try{fcWire()}catch(e){} /* assetQ의 지우기(×) 버튼 배선 — openSheet()와 달리 자산관리는 시트가 아니라 탭 화면이라 그쪽 자동배선을 못 타므로 histQ(renderHistory)와 동일하게 여기서 직접 호출 */
  wireNwCarousel();restoreNwScroll(actIdx);
  if(_lastNwOwner!==ST.assetOwner){_lastNwOwner=ST.assetOwner;animNums('page-assets','.hero .total,.hero .hero-split .v')}
  updateSelBottom();

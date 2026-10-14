@@ -309,6 +309,15 @@ function matchTxnQuery(t,q,assets){
  const hay=(t.memo||'')+' '+t.category+' '+(fa?fa.name:(t.fromAssetName||'—'))+' '+(ta?ta.name:(t.toAssetName||'—'))+' '+amt;
  return hay.toLowerCase().includes(q.toLowerCase().replace(/,/g,''));
 }
+/* 자산명(+fx 보유통화) 검색 — matchTxnQuery와 동일하게 대소문자 구분 없이 includes로 매칭한다.
+ * 자산은 종목코드 같은 별도 필드가 없어 이름이 유일한 식별자이지만(stock은 보유 종목명을
+ * name에 직접 쓴다), fx는 화면에 '달러'처럼 이름을 붙여도 실제로 찾는 건 보유 통화(USD 등)인
+ * 경우가 많아 currency도 함께 haystack에 넣는다. */
+function matchAssetQuery(a,q){
+ if(!q)return true;
+ const hay=(a.name||'')+' '+(a.currency||'');
+ return hay.toLowerCase().includes(q.toLowerCase());
+}
 /* 계좌(자산) 단위 거래내역 필터 — assetId가 없으면(전체) 항상 통과, 있으면 보내거나 받은 쪽 중 하나라도 일치해야 함 */
 function matchesAssetId(t,assetId){
  if(!assetId)return true;
