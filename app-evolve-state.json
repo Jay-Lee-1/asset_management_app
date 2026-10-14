@@ -1,15 +1,8 @@
 {
   "cycle": 188,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 183,
-      "phase": "develop",
-      "timestamp": "2026-10-13T05:15:08.526Z",
-      "summary": "general-purpose 서브에이전트로 141-182사이클과 겹치지 않는 새 개선점을 탐색 — assetGainLoss(a)(index.html)가 costBasis>0 가드만 두고 rateUnknown(a)(시세를 아직 못 받아왔거나 API 실패로 모르는 상태) 가드는 빠져 있었음을 발견. assetEval(a)는 R.fx[cur]/R.goldPerG/R.stocks[code]가 없으면 ||0으로 평가해 0을 반환하는데, 그 상태에서 costBasis가 입력돼 있으면 assetGainLoss가 amount=0-costBasis, pct=-100%를 그대로 계산해 자산 목록/상세(assetSubline→assetGainLossBadge)에 시세 동기화 전(또는 API 실패 지속 시) \"매입가 전액 손실(-100%)\" 거짓 배지가 뜨는 버그. rateUnknown() 자체가 cycle64 등에서 \"시세 모름 vs 실제 0원\"을 구분하려고 만든 함수인데 assetGainLoss만 이 패턴을 안 쓰고 있었음. assetGainLoss(a)의 가드 조건에 ||rateUnknown(a)를 추가해 시세 미확인이면 null 반환하도록 수정(assetGainLossBadge/assetSubline은 이미 null을 빈 문자열로 처리하므로 거짓 배지가 자동 해소). test/run.js에 3개 테스트 추가: rateUnknown 상태의 fx/gold/stock 각각 costBasis가 있어도 null 반환 / 시세가 들어온 자산은 정상 계산(회귀 방지) / assetGainLossBadge·assetSubline이 rateUnknown 시 배지를 안 보여줌. 코드 수정만 되돌리고 재실행해 신규 3개 테스트가 정확히 실패하는 것을 확인 후 재적용. index.html/sw.js 변경이라 APP_VERSION 1.47.133->1.47.134, sw.js CACHE v395->v396 갱신. node test/run.js 1311/1311 -> 1314/1314 통과.",
-      "commit": "c3811a9"
-    },
     {
       "cycle": 183,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-14T00:05:00.000Z",
       "summary": "critique(cycle187) 계획대로 logic.js:437의 total 계산을 total=items.reduce((s,it)=>s+(it.amount>0?it.amount:0),0)으로 바꿔 분모를 집계 map과 동일한 '양수만' 규칙으로 통일 — amount===0(rateUnknown) 케이스는 기여 0으로 동작 변화 없고, 음수(오버드래프트) 있을 때만 분모가 정확해져 pct 합이 100%를 넘던 버그가 사라진다. allocationCard()에 기존 '일부 미확인' 캡션과 같은 자리에 items.some(a=>assetEval(a)<0) 조건으로 '마이너스 잔액 자산 제외' 캡션을 추가(렌더링만, assetAllocation 산술 외 손대지 않음). test/run.js에 4건 추가: assetAllocation 다른 타입 음수+양수 혼합 시 pct합<=100 / 같은 타입 내 양수+음수 섞여도 100 안 넘음 / amount===0만 있던 기존 동작 회귀 없음 / allocationCard 캡션 토글(음수 생기면 뜨고 양수로 돌아오면 사라짐). index.html/logic.js/sw.js 변경이라 APP_VERSION 1.47.142->1.47.143, sw.js CACHE v404->v405 갱신. node test/run.js 1346/1346 -> 1350/1350 통과. pending_advance_plan을 비웠다.",
       "commit": null
+    },
+    {
+      "cycle": 188,
+      "phase": "develop",
+      "timestamp": "2026-10-14T00:30:00.000Z",
+      "summary": "cycle188 develop: general-purpose 서브에이전트로 141-187사이클과 겹치지 않는 영역(반복거래/확정일자/rateUnknown/배분 패턴 외)에서 새 개선점을 탐색 — updateBalanceAdjust(asset,entered)(index.html)가 사용자가 입력한 잔액이 조정 전 기준 잔액과 정확히 같아(gap===0) 기존 '재등록 잔액 조정' 거래를 DB.txns에서 제거하는 경로에서 DB.deletedIds 톰스톤을 전혀 남기지 않던 버그를 발견. doDeleteCat/delGoal/delAssetQtyLog 등 이 코드베이스의 모든 다른 삭제 경로는 DB.deletedIds[id]=Date.now()로 톰스톤하는데, 이 경로만 빠져 있어 mergeCollection()이 '로컬엔 없고 원격엔 있음'을 삭제가 아니라 공백으로 보고 다음 클라우드 동기화(다른 기기 또는 지난 사본)에서 이미 지운 조정 거래를 조용히 되살릴 수 있었다. gap===0 분기에 DB.deletedIds[adj.id]=Date.now() 톰스톤 추가. test/run.js에 2개 테스트 추가: gap===0으로 제거될 때 톰스톤이 남는지 / gap!==0인 정상 갱신 경로에서는 톰스톤을 남기지 않는지(회귀 방지). 수정 전 코드로 되돌려 재실행해 신규 테스트가 정확히 실패하는 것을 확인 후 재적용. index.html/sw.js 변경이라 APP_VERSION 1.47.143->1.47.144, sw.js CACHE v405->v406 갱신. node test/run.js 1350/1350 -> 1352/1352 통과. 커밋 7ccfd04.",
+      "commit": "7ccfd04"
     }
   ]
 }
