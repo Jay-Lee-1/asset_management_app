@@ -1,15 +1,12 @@
 {
   "cycle": 190,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "투자자산(fx/gold/stock) 수량 변경 시 매입원가(costBasis) 미갱신으로 손익(P/L) 표시가 체계적으로 왜곡됨",
+    "why": "assetGainLoss(a)(index.html:2500-2503)는 amount=assetEval(a)-a.costBasis로 손익을 계산하는데, costBasis는 가중평균 없이 사용자가 한 번 입력한 총 매입금액 단일값이다. saveAsset()의 isMarketValued 분기(index.html:3744-3754)는 보유수량(fxAmount/goldDon/stockQty)이 바뀌면 DB.assetQtyLog에 변경 이력만 남길 뿐 costBasis는 그대로 둔다. costBasisField(index.html:3661-3663)도 수정 시 기존 costBasis를 그대로 prefill해 사용자가 수량만 바꾸고 저장하면 그 값이 고스란히 남는다. 예: 삼성전자 10주·매입원가 100,000원 상태에서 10주를 15,000원에 추가매수해 20주로 늘리면(실투자 250,000원), 현재가 15,000원 기준 실제 수익률은 +20%인데 화면엔 (300,000-100,000)/100,000=+200%로 10배 과대 표시된다. 반대로 일부 매도해 수량이 줄 때도 costBasis가 그대로라 남은 지분 손익률이 왜곡된다. 이는 정기적으로 분할매수하는(DCA) 실제 사용자에게 핵심 기능(자산 성과 확인)이 조용히 거짓 수치를 보여주는 문제이며, 141~190 사이클의 어떤 기각/완료 주제(반복거래 분할, rateUnknown, 배분 퍼센트, 톰스톤, 부채투사 윈도우, 자산검색, 귀속칩)와도 겹치지 않는 새로운 근본 원인이다.",
+    "approach": "logic.js에 순수 함수 두 개 추가: scaleCostBasisForSale(origQty,newQty,costBasis) — 수량이 줄어들 때(일부 매도/정정) Math.round(costBasis*newQty/origQty)로 평단을 유지한 채 남은 지분의 매입원가를 비례 축소(사용자 입력 없이 수학적으로 안전하게 자동 교정), origQty<=0/newQty<=0/newQty>=origQty 가드 포함. costBasisNeedsUpdate(origQty,newQty,costBasis) — 수량이 늘었고(추가매수) costBasis>0이면 true를 반환해 '매입원가 갱신 필요' 경고 트리거로 사용(늘어난 경우는 추가 투입금액을 추측할 수 없으므로 자동 계산하지 않고 사용자에게 안내만 한다). index.html: openAssetSheet(id)에서 editing 시 asDraft._origQty에 원래 수량을 스냅샷 저장. asFx/asGold/asQty의 oninput(fmtQty 호출부)에 dayWarn(index.html:4433)과 동일한 패턴의 qtyBasisWarn(inp) 훅을 추가해 costBasisField 아래 경고 캡션(id=asQtyBasisWarn)을 전체 리렌더 없이 즉시 토글. costBasisField(d,editing)에 그 캡션용 빈 엘리먼트 마크업 추가. saveAsset()의 isMarketValued(d) 분기(prevQty/newQty 비교 지점, DB.assets[i]=d 대입 전)에서 newQty<prevQty면 d.costBasis=scaleCostBasisForSale(prevQty,newQty,d.costBasis)로 자동 보정, newQty>prevQty는 기존처럼 그대로 둔다(추측 금지 원칙 유지, 대신 위 경고로 안내됨). test/run.js에 scaleCostBasisForSale 단위테스트(정상 축소/가드/전량매도/수량증가 시 무변경), costBasisNeedsUpdate 단위테스트(경고 조건 3가지), saveAsset 통합테스트(수량 감소 시 costBasis 비례축소 반영 + assetQtyLog 기록 유지 회귀, 수량 증가 시 costBasis 불변 회귀), renderAssetSheet/costBasisField HTML에 경고 캡션 엘리먼트 존재 검증을 추가한다. index.html/logic.js/sw.js 변경이므로 APP_VERSION과 sw.js CACHE 버전을 관례대로 올린다."
+  },
   "history": [
-    {
-      "cycle": 185,
-      "phase": "critique",
-      "timestamp": "2026-10-13T15:10:00.000Z",
-      "summary": "cycle185 critique: 반복거래 '이후 모두' 삭제/분할수정 시 skip/edits는 쪼개지지만 confirmedDates는 전혀 쪼개지지 않고 원본 전체가 그대로 남거나 상속됨을 발견. splitRecOverrides를 confirmedDates까지 받아 confirmedPast/confirmedFuture로 분할 반환하도록 확장하는 계획을 pending_advance_plan에 저장. 코드 변경 없음(읽기 전용 조사).",
-      "commit": null
-    },
     {
       "cycle": 185,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-14T10:08:10.000Z",
       "summary": "cycle190 develop(ownerChipClass 추가, 귀속 칩 색상을 이름이 아닌 DB.owners 내 위치 기반으로 변경, commit fc87bd6) 검토 — 실제 귀속 칩 호출부(renderAssets×2/openPlanAsset/openAssetPicker) 4곳 모두 ownerChipClass로 전환됐는지 grep으로 재확인, 남아있는 own-${o}/own-나 2곳(온보딩 튜토리얼 정적 목업, 시세 연동 관리 시트의 무관한 상태 칩)이 커밋 설명대로 실제 귀속 데이터와 무관함을 직접 코드로 검증. own-0~4 CSS 변수(--gold/--gold-soft/--save/--save-soft 등)도 라이트/다크 테마 모두 정의돼 있음을 확인. node test/run.js 1373/1373 전부 통과(독립 재실행으로 재확인). 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
+      "commit": null
+    },
+    {
+      "cycle": 190,
+      "phase": "critique",
+      "timestamp": "2026-10-14T11:13:40.000Z",
+      "summary": "general-purpose 서브에이전트로 141-190사이클(기각/완료 이력 포함)을 전달하고 앱 전체를 재조망 — 투자자산(fx/gold/stock) 수량 변경 시 costBasis(매입원가)가 전혀 갱신되지 않아 손익(P/L) 배지가 체계적으로 왜곡됨을 발견. assetGainLoss(a)(index.html:2500-2503)는 amount=assetEval(a)-a.costBasis로 계산하는데, costBasis는 가중평균 없이 사용자가 한 번 입력한 총 매입금액 단일값이고, saveAsset()의 isMarketValued 분기(index.html:3744-3754)는 수량이 바뀌면 DB.assetQtyLog에만 기록하고 costBasis는 그대로 둔다. costBasisField(index.html:3661-3663)도 수정 시 기존 costBasis를 그대로 prefill. 재현: 삼성전자 10주·매입원가 100,000원에서 10주를 15,000원에 추가매수해 20주로 늘리면(실투자 250,000원) 현재가 15,000원 기준 실제 수익률은 +20%인데 화면엔 (300,000-100,000)/100,000=+200%로 10배 과대 표시됨. 일부 매도로 수량이 줄 때도 costBasis가 그대로라 남은 지분 손익률이 왜곡됨. 클라우드 동기화/병합 로직은 재조사했으나 이미 충분히 다듬어져 새 결함 없음, 온보딩 튜토리얼 범위 누락은 의도된 설계로 보여 기각. 다음 advance 계획: logic.js에 scaleCostBasisForSale(origQty,newQty,costBasis)로 수량 감소 시 costBasis 비례 축소 자동 교정, costBasisNeedsUpdate(origQty,newQty,costBasis)로 수량 증가(추가매수) 시 경고 트리거 판정 — 늘어난 경우는 추측하지 않고 안내만. index.html에 qtyBasisWarn 캡션 UI(dayWarn과 동일 패턴) + saveAsset()의 isMarketValued 분기에서 수량 감소 시 자동 보정 적용. pending_advance_plan에 저장. 코드 변경 없음(읽기 전용 조사).",
       "commit": null
     }
   ]
