@@ -1385,7 +1385,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.151';
+const APP_VERSION='1.47.152';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5479,7 +5479,7 @@ function doRenameCat(k,i){const v=((catRenameDraft.name!=null?catRenameDraft.nam
  }
  save();renderCurrent();openCatManage(k);toast('카테고리를 수정했어요')}
 
-function recFreqLabel(r){return r.freq==='monthly'?`매월 ${r.day==='last'?'말일':r.day+'일'}`:r.freq==='weekly'?'매주':r.freq==='daily'?'매일':'매년'}
+function recFreqLabel(r){return recFreqLabelStr(r.freq,r.day,r.startDate)}
 function openRecManage(){
  const groups=[['expense','지출','a-food'],['income','수입','a-in'],['saving','저축','a-save'],['transfer','내부이체','a-etc']];
  let body='';

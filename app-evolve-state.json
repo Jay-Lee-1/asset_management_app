@@ -1,15 +1,8 @@
 {
   "cycle": 192,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 187,
-      "phase": "develop",
-      "timestamp": "2026-10-13T21:18:41.000Z",
-      "summary": "cycle187 develop: recSaveScopeConfirm()의 hasOverrides가 orig.confirmedDates는 전혀 안 보던 공백 발견, 체크 추가해 pruneOrphanRecOverrides와 조건 일치시킴. test/run.js에 2건 추가. APP_VERSION 1.47.141→1.47.142, sw.js CACHE v403→v404. node test/run.js 1344/1344 → 1346/1346 통과. 커밋 59ff2c7.",
-      "commit": "59ff2c7"
-    },
     {
       "cycle": 187,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-14T16:13:04.106Z",
       "summary": "critique(cycle191) 계획대로 투자자산(fx/gold/stock) 추가매수 시 \"이번에 추가로 투입한 금액\"을 따로 입력받는 asAddedCost 입력창(asAddedCostField)을 costBasisField에 추가했다(기존 누적 총액 입력창 asCostBasis는 직접 덮어쓰고 싶은 사용자를 위해 그대로 둠). logic.js에 addCostBasisForBuy(origCostBasis,addedAmount) 순수 함수 추가(addedAmount<=0/undefined면 원본 그대로, scaleCostBasisForSale의 반대 짝). syncAssetInputs가 asAddedCost를 asDraft._addedCost로 읽고, saveAsset()의 isMarketValued 분기에서 수량 증가(추가매수) + _addedCost>0일 때만 addCostBasisForBuy로 d.costBasis를 갱신(매도 쪽 scaleCostBasisForSale 분기와 상호 배타적), 저장 전 _addedCost는 삭제. DB.assetQtyLog 엔트리에도 addedAmount를 남겨 openAssetQtyLog 이력 행에 \"· 투입 N원\"으로 표시되게 했다(과거엔 prevQty/newQty만 있어 투입액 이력을 재구성할 수 없었음). qtyBasisWarn()이 asQtyBasisWarn 경고 캡션과 asAddedCostField 표시를 함께 토글하도록 확장. test/run.js에 9건 추가/수정: addCostBasisForBuy 단위 2건, saveAsset 통합 3건(입력 없으면 불변+addedAmount 미기록 / 입력하면 가산+assetQtyLog에 addedAmount 기록+_addedCost 잔존 금지 / 매도 중엔 _addedCost 무시), costBasisField 캡션+입력창 토글 1건(재작성), 기존 costBasisField 정확매치 Enter-제출 테스트 1건과 추가매수 플레이스홀더 테스트 1건을 새 마크업에 맞게 갱신. index.html/logic.js/sw.js 변경이라 APP_VERSION 1.47.150->1.47.151, sw.js CACHE v412->v413 갱신. node test/run.js 1385/1385 -> 1389/1389 통과. pending_advance_plan을 비웠다.",
       "commit": null
+    },
+    {
+      "cycle": 192,
+      "phase": "develop",
+      "timestamp": "2026-10-14T17:14:29.000Z",
+      "summary": "general-purpose 서브에이전트로 141-191사이클과 겹치지 않는 새 개선점을 탐색 — 반복 내역 관리(openRecManage)의 recFreqLabel(r)이 monthly는 r.day로 '매월 15일'/'매월 말일'까지 보여주는데 weekly/yearly는 그냥 '매주'/'매년'만 반환해 디테일 수준이 어긋나 있음을 발견. weekly의 요일·yearly의 월/일은 recDates()가 r.startDate에서 그대로 파생시키는 정보라 레이블에도 똑같이 보여줄 수 있는데 빠져 있었음(같은 유형 안에 요일이 다른 매주 반복이 여러 개면 목록만 보고는 구분 불가). test/run.js에 전혀 등장하지 않는 함수들을 추려보다 테스트 커버리지 공백에서 발견. logic.js에 순수 함수 recFreqLabelStr(freq,day,startDate) 신설(monthly는 기존 그대로, weekly는 '매주 ○요일', yearly는 '매년 N월 M일', startDate 없거나 파싱 실패 시 방어적으로 기존 동작 폴백), index.html의 recFreqLabel(r)은 이 함수로 위임하도록 교체(호출부/서식 변경 없음). test/run.js에 recFreqLabelStr 단위 테스트 6건 + recFreqLabel 실행형 위임 검증 1건, 총 7건 추가. index.html/logic.js/sw.js 변경이라 APP_VERSION 1.47.151->1.47.152, sw.js CACHE v413->v414 갱신. node test/run.js 1389/1389 -> 1395/1395 통과.",
+      "commit": "ccc689b"
     }
   ]
 }

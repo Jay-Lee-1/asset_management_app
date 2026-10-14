@@ -207,7 +207,7 @@ const FUNCTIONS = [
   'ledgerSelPartial', 'ledgerToggleSel', 'ledgerSelAll', 'visibleTx',
   'fmtDot', 'splitHist', 'histRow', 'histTotHTML', 'updateHist', 'renderHistory',
   'lowestInMonth', 'planBalInner', 'planBalCard', 'planTrackHTML', 'planRowsHTML', 'renderPlan',
-  'refreshPlanBody', 'planAsset', 'nextGroupOrder', 'movedGroupOrder', 'moveGroup', 'movedAssetOrder', 'moveAsset', 'monthSwipeCommitDir', 'overlayEscapeTarget', 'recFreq',
+  'refreshPlanBody', 'planAsset', 'nextGroupOrder', 'movedGroupOrder', 'moveGroup', 'movedAssetOrder', 'moveAsset', 'monthSwipeCommitDir', 'overlayEscapeTarget', 'recFreq', 'recFreqLabel',
   'planSplitTransfer', 'planTransfer',
   'sbErrMsg',
   // 아래 10개는 app-evolve cycle152 advance가 FUNCTIONS 커버리지 공백(critique가 지적한 48개
@@ -1003,6 +1003,41 @@ test('truncateRecEnd: 주말 조정(later)이 있는 주간 반복도 실제 생
   const { endDate, count } = sandbox.truncateRecEnd(base, cutoff);
   assert.strictEqual(endDate, cutoff);
   assert.strictEqual(count, 4, 'recNthDate(base,4)를 cutoff로 넘기면 count는 4여야 함');
+});
+
+/* ---------- recFreqLabelStr/recFreqLabel: 반복 주기 요약 레이블이 monthly와 동일한 구체성으로
+   weekly(요일)/yearly(월일)까지 보여준다 (app-evolve cycle192 develop) ---------- */
+test('recFreqLabelStr: monthly는 기존처럼 일자(또는 말일)를 보여준다', () => {
+  assert.strictEqual(sandbox.recFreqLabelStr('monthly', 15, '2026-01-15'), '매월 15일');
+  assert.strictEqual(sandbox.recFreqLabelStr('monthly', 'last', '2026-01-31'), '매월 말일');
+});
+test('recFreqLabelStr: daily는 그대로 "매일"', () => {
+  assert.strictEqual(sandbox.recFreqLabelStr('daily', null, '2026-01-01'), '매일');
+});
+test('recFreqLabelStr: weekly는 startDate의 요일을 덧붙인다(매주 같은 요일에만 생성되므로 요일이 곧 전체 스케줄)', () => {
+  assert.strictEqual(sandbox.recFreqLabelStr('weekly', null, '2026-03-02'), '매주 월요일'); // 2026-03-02는 월요일
+  assert.strictEqual(sandbox.recFreqLabelStr('weekly', null, '2026-03-06'), '매주 금요일'); // 2026-03-06은 금요일
+});
+test('recFreqLabelStr: yearly는 startDate의 월/일을 덧붙인다', () => {
+  assert.strictEqual(sandbox.recFreqLabelStr('yearly', null, '2026-05-05'), '매년 5월 5일');
+});
+test('recFreqLabelStr: startDate가 없으면(방어적 처리) weekly/yearly도 예전처럼 "매주"/"매년"만 반환한다', () => {
+  assert.strictEqual(sandbox.recFreqLabelStr('weekly', null, null), '매주');
+  assert.strictEqual(sandbox.recFreqLabelStr('yearly', null, undefined), '매년');
+});
+test('[실행형] recFreqLabel: openRecManage 목록이 쓰는 실제 함수가 recFreqLabelStr(r.freq,r.day,r.startDate)에 그대로 위임한다', () => {
+  assert.strictEqual(
+    sandbox.recFreqLabel({ freq: 'weekly', day: null, startDate: '2026-03-06' }),
+    '매주 금요일'
+  );
+  assert.strictEqual(
+    sandbox.recFreqLabel({ freq: 'yearly', day: null, startDate: '2026-05-05' }),
+    '매년 5월 5일'
+  );
+  assert.strictEqual(
+    sandbox.recFreqLabel({ freq: 'monthly', day: 'last', startDate: '2026-01-31' }),
+    '매월 말일'
+  );
 });
 
 /* ---------- recalcEndCond: 주기/반복일/주말규칙/시작일 변경 시 count↔endDate 쌍이 새 기준으로 재계산돼야 함 (cycle53) ---------- */

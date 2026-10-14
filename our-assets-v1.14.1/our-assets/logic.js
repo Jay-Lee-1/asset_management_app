@@ -58,6 +58,22 @@ function recDates(r,from,to){
  }
  return out.sort();
 }
+/* 반복 내역 관리 화면(openRecManage/index.html)의 반복 주기 요약 레이블 — monthly는 r.day
+ * 필드로 '매월 15일'/'매월 말일'까지 구체적으로 보여주는데, weekly/yearly는 각각 요일/월일이
+ * recDates()에서 r.startDate로부터 그대로 파생되는데도(위 recDates의 yearly mo/day, weekly의
+ * step=7 기준) 레이블은 그냥 '매주'/'매년'으로만 떠서 monthly와 구체성이 어긋나 있었다 — 특히
+ * 같은 유형(지출/수입 등) 안에 요일이 다른 매주 반복이 여러 개면(예: 매주 월요일 용돈 vs 매주
+ * 금요일 장보기) 목록만 보고는 서로 구분할 수 없었다(app-evolve cycle192 develop). startDate가
+ * 있으면(정상 데이터는 항상 있음, 방어적으로만 없을 때 폴백) 요일/월일을 덧붙인다. */
+function recFreqLabelStr(freq,day,startDate){
+ if(freq==='monthly')return `매월 ${day==='last'?'말일':day+'일'}`;
+ if(freq==='daily')return '매일';
+ if(!startDate)return freq==='weekly'?'매주':'매년';
+ const d=new Date(startDate+'T00:00:00');
+ if(isNaN(d))return freq==='weekly'?'매주':'매년';
+ if(freq==='weekly')return `매주 ${['일','월','화','수','목','금','토'][d.getDay()]}요일`;
+ return `매년 ${d.getMonth()+1}월 ${d.getDate()}일`;
+}
 /* 반복 종료 조건: 횟수 ↔ 종료일 (엔진 recDates 재사용 → 규칙 100% 일치) */
 function addMonthsStr(ds,m){const d=new Date(ds+'T00:00:00');d.setMonth(d.getMonth()+m);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
 function recNthDate(base,n){ /* n번째 반복 날짜 */
