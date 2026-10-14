@@ -449,6 +449,13 @@ function scaleCostBasisForSale(origQty,newQty,costBasis){
 function costBasisNeedsUpdate(origQty,newQty,costBasis){
  return costBasis>0&&newQty>origQty;
 }
+/* 추가매수(수량 증가) 시 "이번에 추가로 투입한 금액"만 입력받아 원래 매입원가에 더한다 —
+ * scaleCostBasisForSale과 반대 방향의 짝. addedAmount<=0/undefined면 추측할 게 없으므로
+ * origCostBasis를 그대로 반환(기존 "그대로 두고 경고만" 동작과 호환, app-evolve cycle191 advance) */
+function addCostBasisForBuy(origCostBasis,addedAmount){
+ if(!(addedAmount>0))return origCostBasis;
+ return Math.round((origCostBasis||0)+addedAmount);
+}
 
 /* ================= ASSET ALLOCATION (자산유형별 비중, 순수) ================= */
 /* items: [{type,amount}] — 호출부(allocationCard)가 owner/includeInTotal/부채 제외 필터링과

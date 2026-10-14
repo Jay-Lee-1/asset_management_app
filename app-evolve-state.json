@@ -1,19 +1,8 @@
 {
-  "cycle": 191,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "추가매수(수량 증가) 시 costBasis를 사용자가 직접 손계산해 전체 금액을 덮어써야 함 — 매도 쪽만 자동 보정됨",
-    "why": "costBasisNeedsUpdate()(logic.js:449-451)는 수량 증가(추가매수) 시 경고 캡션만 띄우고(index.html:3667, 4450), saveAsset()(index.html:3756)은 d.costBasis를 그대로 둔다 — 코드 주석도 '추가 투입금액을 추측할 수 없어 그대로 둔다'고 명시. 유일한 입력창(costBasisField, index.html:3662-3668)은 '누적 총 매입금액'이라 사용자가 기존값+신규투입액을 머릿속으로 계산해 전체를 다시 입력해야 하고, 더하는 걸 잊거나 신규투입액만 입력하면 P/L% 표시가 조용히 틀어진다. cycle190이 매도(수량 감소) 쪽은 scaleCostBasisForSale로 자동 보정했는데 매수 쪽만 반쪽으로 남아있는 동일 계열 버그. DB.assetQtyLog(index.html:3759-3760)도 prevQty/newQty만 기록해 투입액 이력을 재구성할 방법이 없다.",
-    "approach": "costBasisNeedsUpdate가 true일 때만 보이는 '이번에 추가로 투입한 금액' 입력창을 추가(기존 누적 총액 입력창은 직접 덮어쓰고 싶은 사용자를 위해 그대로 둠). logic.js에 addCostBasisForBuy(origCostBasis, addedAmount) 순수 함수 추가(addedAmount<=0이면 costBasis 불변 가드), saveAsset()의 scaleCostBasisForSale 호출 지점(index.html:3756)과 같은 자리에서 수량 증가 시 이 함수로 d.costBasis를 갱신. DB.assetQtyLog 엔트리(index.html:3759-3760)에 addedAmount 필드를 추가해 openAssetQtyLog 이력에 투입액이 남도록 함. test/run.js의 scaleCostBasisForSale/costBasisNeedsUpdate 테스트(~7584-7604)와 같은 패턴으로 addCostBasisForBuy 단위 테스트(덧셈/0·undefined 가드) + saveAsset 통합 테스트(수량 증가 시 costBasis=원본+투입액, qtyLog에 투입액 기록) 추가."
-  },
+  "cycle": 192,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 186,
-      "phase": "advance",
-      "timestamp": "2026-10-13T20:05:00.000Z",
-      "summary": "critique(cycle186) 계획대로 goalHasUnknown(g) 헬퍼 추가, goalRowHTML/openGoalsList에 캡션 추가, homeAlerts goalBehind 오탐 억제. test/run.js에 5건 추가. index.html/sw.js 변경이라 APP_VERSION 1.47.140->1.47.141, sw.js CACHE v402->v403 갱신. node test/run.js 1339/1339 -> 1344/1344 통과. pending_advance_plan을 비웠다.",
-      "commit": null
-    },
     {
       "cycle": 187,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-14T15:10:00.000Z",
       "summary": "general-purpose 서브에이전트로 141-191사이클(기각/완료 이력 포함)을 전달하고 앱 전체를 재조망 — cycle190이 투자자산 매도(수량 감소) 시에는 scaleCostBasisForSale로 costBasis를 자동 비례 보정했는데, 추가매수(수량 증가) 시에는 costBasisNeedsUpdate 경고 캡션만 띄우고 saveAsset()(index.html:3756)이 d.costBasis를 그대로 둬 사용자가 '기존 누적 총액+신규 투입액'을 직접 계산해 같은 입력창에 덮어써야 하는 반쪽짜리 수정임을 발견. 더하는 걸 잊거나 신규 투입액만 입력하면 P/L% 표시가 조용히 틀어지고, DB.assetQtyLog도 prevQty/newQty만 기록해 투입액 이력을 재구성할 수 없음을 코드로 확인. 다음 advance 계획: '이번에 추가로 투입한 금액' 별도 입력창 추가(기존 누적 총액 입력창은 유지), logic.js에 addCostBasisForBuy(origCostBasis,addedAmount) 순수 함수 추가 후 saveAsset()에서 수량 증가 시 적용, DB.assetQtyLog에 addedAmount 기록, 관련 단위/통합 테스트 추가. SRI 해시 TODO(샌드박스에서 CDN 접근 불가로 기각), 반복거래 관리 화면 검색/일괄삭제 부재(낮은 우선순위로 기각), 환율 부분 실패 처리/멀티탭 동기화/알림 시스템(이미 충분히 다듬어짐 확인 후 기각)은 pending_advance_plan에서 제외. 코드 변경 없음(읽기 전용 조사).",
+      "commit": null
+    },
+    {
+      "cycle": 191,
+      "phase": "advance",
+      "timestamp": "2026-10-14T16:13:04.106Z",
+      "summary": "critique(cycle191) 계획대로 투자자산(fx/gold/stock) 추가매수 시 \"이번에 추가로 투입한 금액\"을 따로 입력받는 asAddedCost 입력창(asAddedCostField)을 costBasisField에 추가했다(기존 누적 총액 입력창 asCostBasis는 직접 덮어쓰고 싶은 사용자를 위해 그대로 둠). logic.js에 addCostBasisForBuy(origCostBasis,addedAmount) 순수 함수 추가(addedAmount<=0/undefined면 원본 그대로, scaleCostBasisForSale의 반대 짝). syncAssetInputs가 asAddedCost를 asDraft._addedCost로 읽고, saveAsset()의 isMarketValued 분기에서 수량 증가(추가매수) + _addedCost>0일 때만 addCostBasisForBuy로 d.costBasis를 갱신(매도 쪽 scaleCostBasisForSale 분기와 상호 배타적), 저장 전 _addedCost는 삭제. DB.assetQtyLog 엔트리에도 addedAmount를 남겨 openAssetQtyLog 이력 행에 \"· 투입 N원\"으로 표시되게 했다(과거엔 prevQty/newQty만 있어 투입액 이력을 재구성할 수 없었음). qtyBasisWarn()이 asQtyBasisWarn 경고 캡션과 asAddedCostField 표시를 함께 토글하도록 확장. test/run.js에 9건 추가/수정: addCostBasisForBuy 단위 2건, saveAsset 통합 3건(입력 없으면 불변+addedAmount 미기록 / 입력하면 가산+assetQtyLog에 addedAmount 기록+_addedCost 잔존 금지 / 매도 중엔 _addedCost 무시), costBasisField 캡션+입력창 토글 1건(재작성), 기존 costBasisField 정확매치 Enter-제출 테스트 1건과 추가매수 플레이스홀더 테스트 1건을 새 마크업에 맞게 갱신. index.html/logic.js/sw.js 변경이라 APP_VERSION 1.47.150->1.47.151, sw.js CACHE v412->v413 갱신. node test/run.js 1385/1385 -> 1389/1389 통과. pending_advance_plan을 비웠다.",
       "commit": null
     }
   ]

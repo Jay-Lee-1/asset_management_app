@@ -7614,26 +7614,62 @@ test('saveAsset: 투자자산 수량이 줄면(일부 매도) costBasis가 scale
   assert.strictEqual(sandbox.DB.assetQtyLog[0].prevQty, 20);
   assert.strictEqual(sandbox.DB.assetQtyLog[0].newQty, 10);
 });
-test('saveAsset: 투자자산 수량이 늘면(추가매수) costBasis를 추측해 바꾸지 않고 사용자가 입력한 값을 그대로 둔다', () => {
+test('saveAsset: 투자자산 수량이 늘어도(추가매수) "추가로 투입한 금액"을 입력하지 않으면 costBasis를 추측해 바꾸지 않고 그대로 둔다', () => {
   const asset = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 10, costBasis: 100000 };
   sandbox.DB = { assets: [asset], assetQtyLog: [], rates: { fx: {}, stocks: { '005930': 15000 }, goldPerG: 0 } };
   sandbox.asDraft = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 20, costBasis: 100000 };
   sandbox.saveAsset(true);
   assert.strictEqual(sandbox.DB.assets[0].stockQty, 20);
-  assert.strictEqual(sandbox.DB.assets[0].costBasis, 100000, '추가매수는 추가 투입금액을 알 수 없으므로 자동 계산하지 않음(qtyBasisWarn이 안내)');
+  assert.strictEqual(sandbox.DB.assets[0].costBasis, 100000, '추가 투입 금액 입력이 없으면 자동 계산하지 않음(qtyBasisWarn이 안내)');
+  assert.ok(!('addedAmount' in sandbox.DB.assetQtyLog[0]), '투입액 입력이 없으면 assetQtyLog에도 addedAmount를 남기지 않음');
+});
+test('saveAsset: 추가매수 시 "이번에 추가로 투입한 금액"(_addedCost)을 입력하면 addCostBasisForBuy로 기존 costBasis에 더해지고 assetQtyLog에도 addedAmount로 남는다', () => {
+  const asset = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 10, costBasis: 100000 };
+  sandbox.DB = { assets: [asset], assetQtyLog: [], rates: { fx: {}, stocks: { '005930': 15000 }, goldPerG: 0 } };
+  sandbox.asDraft = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 20, costBasis: 100000, _addedCost: 150000 };
+  sandbox.saveAsset(true);
+  assert.strictEqual(sandbox.DB.assets[0].stockQty, 20);
+  assert.strictEqual(sandbox.DB.assets[0].costBasis, 250000, '기존 100,000원 + 추가 투입 150,000원 = 250,000원');
+  assert.strictEqual(sandbox.DB.assetQtyLog.length, 1);
+  assert.strictEqual(sandbox.DB.assetQtyLog[0].addedAmount, 150000, '투입액 이력을 재구성할 수 있도록 assetQtyLog에 남아야 함');
+  assert.ok(!('_addedCost' in sandbox.DB.assets[0]), '_addedCost는 임시 입력값이라 저장된 자산에 남으면 안 됨');
+});
+test('saveAsset: 수량이 줄 때(매도)는 _addedCost가 있어도 무시되고 scaleCostBasisForSale 비례 축소가 적용된다', () => {
+  const asset = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 20, costBasis: 300000 };
+  sandbox.DB = { assets: [asset], assetQtyLog: [], rates: { fx: {}, stocks: { '005930': 20000 }, goldPerG: 0 } };
+  sandbox.asDraft = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 10, costBasis: 300000, _addedCost: 999999 };
+  sandbox.saveAsset(true);
+  assert.strictEqual(sandbox.DB.assets[0].costBasis, 150000, '매도 중에는 추가매수용 _addedCost를 쓰지 않음');
+  assert.ok(!('addedAmount' in sandbox.DB.assetQtyLog[0]));
+});
+/* ---------- addCostBasisForBuy(logic.js, 순수): 추가매수 시 "이번에 추가로 투입한 금액"만 기존
+ * costBasis에 더한다 — scaleCostBasisForSale의 반대 방향 짝(app-evolve cycle191 advance) ---------- */
+test('addCostBasisForBuy: addedAmount를 기존 costBasis에 더한다', () => {
+  assert.strictEqual(sandbox.addCostBasisForBuy(100000, 150000), 250000);
+  assert.strictEqual(sandbox.addCostBasisForBuy(0, 150000), 150000, 'costBasis가 0/미설정이던 자산도 투입액만으로 시작 가능');
+  assert.strictEqual(sandbox.addCostBasisForBuy(undefined, 150000), 150000);
+});
+test('addCostBasisForBuy: addedAmount가 0 이하/미입력이면 origCostBasis를 그대로 반환한다(추측하지 않음)', () => {
+  assert.strictEqual(sandbox.addCostBasisForBuy(100000, 0), 100000);
+  assert.strictEqual(sandbox.addCostBasisForBuy(100000, -5000), 100000);
+  assert.strictEqual(sandbox.addCostBasisForBuy(100000, undefined), 100000);
 });
 /* ---------- costBasisField: 편집 중 보유 수량이 _origQty(openAssetSheet 스냅샷)보다 늘면
- * (추가매수) costBasisNeedsUpdate 경고 캡션을 즉시 렌더한다. 줄어드는 경우는 saveAsset()이
- * 자동 보정하므로 캡션이 뜨면 안 된다. ---------- */
-test('costBasisField: 수량이 _origQty보다 늘면 경고 캡션이 뜨고, 줄거나 그대로면 숨겨진다', () => {
+ * (추가매수) costBasisNeedsUpdate 경고 캡션과 "이번에 추가로 투입한 금액" 입력창(asAddedCostField)을
+ * 함께 즉시 렌더한다. 줄어드는 경우는 saveAsset()이 자동 보정하므로 둘 다 뜨면 안 된다. ---------- */
+test('costBasisField: 수량이 _origQty보다 늘면 경고 캡션+추가 투입 금액 입력창이 뜨고, 줄거나 그대로면 둘 다 숨겨진다', () => {
   const grown = sandbox.costBasisField({ type: 'stock', stockQty: 20, costBasis: 100000, _origQty: 10 }, true);
   assert.ok(grown.includes('id="asQtyBasisWarn"'));
-  assert.ok(!grown.includes('display:none"'), '늘었으면 보여야 함');
-  assert.ok(grown.includes('매입 금액도 함께'));
+  assert.ok(grown.includes('id="asAddedCostField" style="display:block"'), '늘었으면 추가 투입 금액 입력창도 보여야 함');
+  assert.ok(grown.includes('id="asQtyBasisWarn" style="display:block"'), '늘었으면 경고 캡션도 보여야 함');
+  assert.ok(grown.includes('아래에 이번에 추가로 투입한 금액만 입력하면'));
+  assert.ok(grown.includes('id="asAddedCost"'), '추가 투입 금액 입력 필드(asAddedCost)가 있어야 함');
   const shrunk = sandbox.costBasisField({ type: 'stock', stockQty: 5, costBasis: 100000, _origQty: 10 }, true);
-  assert.ok(shrunk.includes('display:none"'), '줄었으면 자동 보정 대상이라 경고가 필요 없음');
+  assert.ok(shrunk.includes('id="asQtyBasisWarn" style="display:none"'), '줄었으면 경고가 필요 없음');
+  assert.ok(shrunk.includes('id="asAddedCostField" style="display:none"'), '줄었으면 추가 투입 금액 입력창도 숨겨야 함');
   const fresh = sandbox.costBasisField({ type: 'stock', stockQty: 20, costBasis: 100000 }, false);
-  assert.ok(fresh.includes('display:none"'), '신규 등록(_origQty 없음)은 비교 기준이 없으므로 항상 숨김');
+  assert.ok(fresh.includes('id="asQtyBasisWarn" style="display:none"'), '신규 등록(_origQty 없음)은 비교 기준이 없으므로 항상 숨김');
+  assert.ok(fresh.includes('id="asAddedCostField" style="display:none"'));
 });
 /* ---------- saveAsset: 주식 자산의 종목코드가 비어 있으면 저장을 막는다 (cycle58 develop).
  * syncAssetInputs()는 종목코드를 trim/uppercase만 할 뿐 필수 여부를 검사하지 않고, saveAsset()도
@@ -11251,7 +11287,8 @@ test('renameCatSheet: renameCat(카테고리 이름 수정 입력)도 동일하�
 test("costBasisField: fx/gold/stock 공용 매입금액 입력(asCostBasis)에 Enter-제출이 있다(세 타입 모두의 마지막 입력)", () => {
   assert.strictEqual(
     sandbox.costBasisField({ costBasis: 0 }, false),
-    '<div class="field"><label for="asCostBasis">매입 금액 (원, 선택)</label><div class="field-clear"><input id="asCostBasis" class="num" inputmode="numeric" value="" placeholder="입력 시 손익을 계산해요" oninput="fmtAmt(this,false)" onkeydown="if(event.key===\'Enter\'&&!event.isComposing)saveAsset(false)"><button type="button" class="fc-x" aria-label="매입 금액 지우기" onclick="clrInput(\'asCostBasis\')">✕</button></div><div class="day-warn" id="asQtyBasisWarn" style="display:none"></div></div>'
+    '<div class="field"><label for="asCostBasis">매입 금액 (원, 선택)</label><div class="field-clear"><input id="asCostBasis" class="num" inputmode="numeric" value="" placeholder="입력 시 손익을 계산해요" oninput="fmtAmt(this,false)" onkeydown="if(event.key===\'Enter\'&&!event.isComposing)saveAsset(false)"><button type="button" class="fc-x" aria-label="매입 금액 지우기" onclick="clrInput(\'asCostBasis\')">✕</button></div><div class="day-warn" id="asQtyBasisWarn" style="display:none"></div></div>\n' +
+    ' <div class="field" id="asAddedCostField" style="display:none"><label for="asAddedCost">이번에 추가로 투입한 금액 (원, 선택)</label><div class="field-clear"><input id="asAddedCost" class="num" inputmode="numeric" value="" placeholder="신규 매수에 쓴 금액만 입력하면 자동으로 더해드려요" oninput="fmtAmt(this,false)" onkeydown="if(event.key===\'Enter\'&&!event.isComposing)saveAsset(false)"><button type="button" class="fc-x" aria-label="추가 투입 금액 지우기" onclick="clrInput(\'asAddedCost\')">✕</button></div></div>'
   );
   assert.ok(sandbox.costBasisField({ costBasis: 0 }, true).includes('saveAsset(true)'), 'editing=true(수정 모드)일 때 saveAsset 호출에 전달되지 않음');
 });
