@@ -1,15 +1,8 @@
 {
   "cycle": 189,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 184,
-      "phase": "review",
-      "timestamp": "2026-10-13T10:08:15.569Z",
-      "summary": "cycle184 develop(allocationCard에 rateUnknown 캡션 추가) 검토 — commit 8de33b0의 diff 확인, 기존 패턴과 일치함을 확인. node test/run.js 1332/1332(당시 기준) 전부 통과. 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
-      "commit": null
-    },
     {
       "cycle": 184,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-14T04:30:00.000Z",
       "summary": "general-purpose 서브에이전트로 141-188사이클과 겹치지 않는 새 개선점을 탐색 — assetBalCard(assetId,preset)(index.html)의 debt 완납 투사가 화면에 그리는 preset 클립 pts를 그대로 debtPayoffProjection에 넘겨, 선택한 기간 세그먼트에 따라 같은 데이터인데도 다른 '다 갚는 날' 투사가 나오던 버그를 발견. debtPayoffProjection은 내부적으로 최근 90일 추세만 본다는 계약이 있지만(cutoff=addDays(last.date,-trendWindowDays)), '1개월' 프리셋은 pts 자체가 30일뿐이라 그 cutoff 필터가 무력화되어 31~90일 전 상환 활동이 안 보여 '정체'로 오판한다(node vm 재현: 120일 합성 이력에서 전체/30일-슬라이스로 판이하게 다른 projectedDate 확인). assetBalCard에 preset과 무관한 고정 90일 pfFrom(RANGE_FROM 클램프)을 계산해, pfFrom이 현재 preset의 from과 같으면(m3) pts를 재사용하고 다르면(m1/y1/all) assetBalSampleDates/assetBalanceSeries로 별도 재샘플링한 pfPts를 debtPayoffProjection에 넘기도록 고쳤다 — 화면에 그리는 차트(pts)는 그대로 preset을 따른다. assetBalCard는 FUNCTIONS 목록 밖 의존이 많아 vm 실행 대상이 아니라서(기존 세그먼트 테스트 주석 참고), test/run.js에 (1) extractFunction 소스 패턴 검증 1건, (2) assetBalCard가 호출하는 실제 logic.js 함수(assetBalSampleDates/assetBalanceSeries/debtPayoffProjection)로 버그/수정을 재현하는 실행형 테스트 1건, 총 2건 추가. index.html/sw.js 변경이라 APP_VERSION 1.47.145->1.47.146, sw.js CACHE v407->v408 갱신. node test/run.js 1354/1354 -> 1356/1356 통과.",
+      "commit": "3b6ae5a"
+    },
+    {
+      "cycle": 189,
+      "phase": "review",
+      "timestamp": "2026-10-14T05:40:00.000Z",
+      "summary": "cycle189 develop(assetBalCard debt 완납 투사를 고정 90일 pfPts로 분리, commit 3b6ae5a) 검토 — debtPayoffProjection(logic.js:410-411)의 trendWindowDays 기본값이 실제로 90임을 재확인했고, pfFrom/from 날짜 문자열 비교가 addDays/RANGE_FROM의 동일한 YYYY-MM-DD zero-padded 포맷을 쓰므로 안전함을 확인. m1/m3/y1/all 네 preset 전부와 RANGE_FROM이 90일보다 가까운 짧은 히스토리 케이스까지 수동으로 날짜 산술을 추적해 pfFrom===from 재사용/재샘플링 분기가 모든 경우에 일관된 투사를 만든다는 것을 검증했다. node test/run.js 1356/1356 전부 통과(독립 재실행으로 재확인). 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
       "commit": null
     }
   ]
