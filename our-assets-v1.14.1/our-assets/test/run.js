@@ -4084,6 +4084,44 @@ test('doCsvImport: newCats에 기존 카테고리의 공백/대소문자 변형�
   assert.deepStrictEqual(sandbox.DB.categories.expense, ['Rent'], '기존 카테고리와 근접중복이면 DB.categories에 추가되면 안 됨');
 });
 
+/* ---------- doCsvImport: undoToast의 되돌리기가 DB.deletedIds 톰스톤을 전혀 남기지 않던 버그의
+ * 회귀 테스트(app-evolve cycle188 critique/advance). deleteTxnsUndo/updateBalanceAdjust 등 이
+ * 코드베이스의 다른 모든 삭제/되돌리기 경로는 톰스톤을 남기는데 이 경로만 빠져 있어, save()의
+ * 클라우드 푸시 debounce와 undoToast 노출 시간 사이의 경쟁 윈도우에서 다른 기기가 되돌린 거래를
+ * 조용히 되살릴 수 있었다. ---------- */
+test('doCsvImport: 되돌리기(undoToast)를 누르면 가져온 거래 id가 DB.deletedIds에 톰스톤으로 남는다', () => {
+  sandbox.DB = { categories: { expense: [], income: [], saving: [] }, txns: [] };
+  sandbox.lastUndo = null;
+  sandbox.window._csvImport = {
+    items: [
+      { dup: false, txn: { type: 'expense', category: '식비', memo: '점심', amount: 5000, date: '2026-01-01', fromAssetId: null, toAssetId: null } },
+    ],
+    newCats: { expense: [], income: [], saving: [] },
+  };
+  sandbox.doCsvImport();
+  const addedId = sandbox.DB.txns[0].id;
+  assert.ok(addedId, '가져온 거래에 id가 있어야 함');
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.txns.length, 0, '되돌리면 가져온 거래가 제거되어야 함');
+  assert.ok(sandbox.DB.deletedIds && sandbox.DB.deletedIds[addedId] > 0, '되돌린 거래 id가 톰스톤돼야 함(없으면 동기화 시 다른 기기가 되살림)');
+});
+test('doCsvImport: 되돌리기를 누르면 이 가져오기가 새로 만든 카테고리도 doDeleteCat과 동일하게 catTombKey 톰스톤이 남는다', () => {
+  sandbox.DB = { categories: { expense: ['식비'], income: [], saving: [] }, txns: [] };
+  sandbox.lastUndo = null;
+  sandbox.window._csvImport = {
+    items: [
+      { dup: false, txn: { type: 'expense', category: '새카테고리', memo: '', amount: 1000, date: '2026-01-01', fromAssetId: null, toAssetId: null } },
+    ],
+    newCats: { expense: ['새카테고리'], income: [], saving: [] },
+  };
+  sandbox.doCsvImport();
+  assert.deepStrictEqual(sandbox.DB.categories.expense, ['식비', '새카테고리']);
+  sandbox.lastUndo.undoFn();
+  assert.deepStrictEqual(sandbox.DB.categories.expense, ['식비'], '되돌리면 새로 생긴 카테고리도 제거되어야 함');
+  assert.strictEqual(sandbox.DB.deletedIds[sandbox.catTombKey('expense', '새카테고리')] > 0, true, '되돌리면 새로 생긴 카테고리도 doDeleteCat과 동일하게 톰스톤돼야 함');
+});
+
 /* ---------- matchTxnQuery: 거래 검색은 대소문자를 구분하지 않는다 ---------- */
 test('matchTxnQuery: 빈 검색어는 항상 매칭된다', () => {
   const t = { memo: '', category: '식비', fromAssetId: null, toAssetId: null };

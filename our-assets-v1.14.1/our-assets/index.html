@@ -1376,7 +1376,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.144';
+const APP_VERSION='1.47.145';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6381,7 +6381,9 @@ function doCsvImport(){
  window._csvImport=null;
  undoToast(`${added.length}건을 가져왔어요`,()=>{
   DB.txns=DB.txns.filter(t=>!addedIds.has(t.id));
-  addedCats.forEach(({type,name})=>{const i=DB.categories[type].indexOf(name);if(i>=0)DB.categories[type].splice(i,1)});
+  DB.deletedIds=DB.deletedIds||{};
+  addedIds.forEach(id=>{DB.deletedIds[id]=Date.now();}); /* deleteTxnsUndo/updateBalanceAdjust 등과 동일한 톰스톤 — 없으면 mergeRemoteDataIntoLocal이 이 되돌리기를 모르고 다른 기기의 사본(이미 클라우드에 푸시된 가져온 거래)을 되살림(app-evolve cycle188 critique) */
+  addedCats.forEach(({type,name})=>{const i=DB.categories[type].indexOf(name);if(i>=0){DB.categories[type].splice(i,1);DB.deletedIds[catTombKey(type,name)]=Date.now();}}); /* doDeleteCat과 동일한 톰스톤 — 이 가져오기가 만든 새 카테고리라 되돌리면 doDeleteCat처럼 사라져야 함 */
   save();renderCurrent();toast('되돌렸어요');
  });
 }
