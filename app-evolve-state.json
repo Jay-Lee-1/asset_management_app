@@ -1,15 +1,8 @@
 {
   "cycle": 188,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 183,
-      "phase": "review",
-      "timestamp": "2026-10-13T06:08:36.167Z",
-      "summary": "cycle183 develop(assetGainLoss에 rateUnknown 가드 추가, 시세 미동기화 자산의 거짓 -100% 손실 배지 방지) 검토 — commit c3811a9의 diff를 rateUnknown()(index.html:2474-2480) 정의와 직접 대조해 fx/gold/stock 세 타입의 미확인 조건(R.fx[cur]==null / !R.goldPerG / R.stocks[code]==null)과 assetEval()의 ||0 폴백이 실제로 costBasis>0인 상태에서 amount=0-costBasis, pct=-100%를 만들어낼 수 있음을 코드로 재확인했다. node test/run.js 1314/1314 전부 통과(독립 재실행으로 재확인). 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
-      "commit": null
-    },
     {
       "cycle": 183,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-14T00:30:00.000Z",
       "summary": "cycle188 develop: general-purpose 서브에이전트로 141-187사이클과 겹치지 않는 영역(반복거래/확정일자/rateUnknown/배분 패턴 외)에서 새 개선점을 탐색 — updateBalanceAdjust(asset,entered)(index.html)가 사용자가 입력한 잔액이 조정 전 기준 잔액과 정확히 같아(gap===0) 기존 '재등록 잔액 조정' 거래를 DB.txns에서 제거하는 경로에서 DB.deletedIds 톰스톤을 전혀 남기지 않던 버그를 발견. doDeleteCat/delGoal/delAssetQtyLog 등 이 코드베이스의 모든 다른 삭제 경로는 DB.deletedIds[id]=Date.now()로 톰스톤하는데, 이 경로만 빠져 있어 mergeCollection()이 '로컬엔 없고 원격엔 있음'을 삭제가 아니라 공백으로 보고 다음 클라우드 동기화(다른 기기 또는 지난 사본)에서 이미 지운 조정 거래를 조용히 되살릴 수 있었다. gap===0 분기에 DB.deletedIds[adj.id]=Date.now() 톰스톤 추가. test/run.js에 2개 테스트 추가: gap===0으로 제거될 때 톰스톤이 남는지 / gap!==0인 정상 갱신 경로에서는 톰스톤을 남기지 않는지(회귀 방지). 수정 전 코드로 되돌려 재실행해 신규 테스트가 정확히 실패하는 것을 확인 후 재적용. index.html/sw.js 변경이라 APP_VERSION 1.47.143->1.47.144, sw.js CACHE v405->v406 갱신. node test/run.js 1350/1350 -> 1352/1352 통과. 커밋 7ccfd04.",
       "commit": "7ccfd04"
+    },
+    {
+      "cycle": 188,
+      "phase": "review",
+      "timestamp": "2026-10-14T01:40:00.000Z",
+      "summary": "cycle188 develop(updateBalanceAdjust gap===0 제거 경로에 DB.deletedIds 톰스톤 추가, commit 7ccfd04) 검토 — delGoal/delOwner/delAssetQtyLog 등 기존 삭제 경로의 DB.deletedIds[id]=Date.now() 패턴과 diff를 직접 대조해 동일 컨벤션임을 확인했고, updateBalanceAdjust() 전체 로직(adj를 먼저 filter로 제외 후 gap!==0이면 갱신·재추가, gap===0이면 톰스톤만 남김)도 재검증했다. node test/run.js 1352/1352 전부 통과(독립 재실행으로 재확인). 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
+      "commit": null
     }
   ]
 }
