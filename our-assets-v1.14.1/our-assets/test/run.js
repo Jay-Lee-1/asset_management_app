@@ -9781,6 +9781,44 @@ test('updateBalanceAdjust: 기존 조정 내역을 재계산해 갱신할 때도
   assert.strictEqual(adj.updatedAt, 'test-updatedAt', '재계산으로 갱신된 기존 조정 내역에도 touch()가 호출되어야 함');
 });
 
+/* ---------- updateBalanceAdjust: 입력값이 조정 없는 기준 잔액과 정확히 같아(gap===0) 기존 조정
+ * 내역을 DB.txns에서 빼는 경로에 톰스톤(DB.deletedIds)이 없던 버그의 회귀 테스트(app-evolve cycle188).
+ * doDeleteCat/delGoal 등과 달리 이 경로만 DB.deletedIds를 안 남겨, 클라우드 동기화 시
+ * mergeCollection()이 '로컬에 없고 원격엔 있음'을 삭제가 아니라 공백으로 보고 다른 기기(또는 지난
+ * 클라우드 사본)의 조정 내역을 되살렸다. ---------- */
+test('updateBalanceAdjust: gap===0으로 기존 조정 내역이 제거될 때 DB.deletedIds에 톰스톤을 남긴다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  const asset = { id: 'a1', type: 'cash', baseAmount: 4000 };
+  sandbox.DB = {
+    settings: {},
+    assets: [asset],
+    txns: [{ id: 'adj1', date: '2026-06-01', type: 'income', category: sandbox.ADJUST_CAT, memo: '재등록 잔액 조정', amount: 1000, fromAssetId: null, toAssetId: 'a1', adjust: true, adjustAsset: 'a1' }],
+    recurrences: [],
+  };
+  sandbox._balCache.clear();
+  sandbox.updateBalanceAdjust(asset, 4000); // 조정 없는 기준 잔액(baseAmount 4000)과 똑같이 입력 → gap=0
+  const adj = sandbox.DB.txns.find((t) => t.adjust && t.adjustAsset === 'a1');
+  assert.strictEqual(adj, undefined, '조정 내역은 DB.txns에서 제거되어야 함');
+  assert.ok(sandbox.DB.deletedIds && sandbox.DB.deletedIds.adj1, '제거된 조정 내역의 id가 DB.deletedIds에 톰스톤돼야 함(없으면 동기화 시 되살아남)');
+});
+test('updateBalanceAdjust: gap이 0이 아니면(조정 내역 갱신) DB.deletedIds에 톰스톤을 남기지 않는다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  const asset = { id: 'a1', type: 'cash', baseAmount: 4000 };
+  sandbox.DB = {
+    settings: {},
+    assets: [asset],
+    txns: [{ id: 'adj1', date: '2026-06-01', type: 'income', category: sandbox.ADJUST_CAT, memo: '재등록 잔액 조정', amount: 1000, fromAssetId: null, toAssetId: 'a1', adjust: true, adjustAsset: 'a1' }],
+    recurrences: [],
+  };
+  sandbox._balCache.clear();
+  sandbox.updateBalanceAdjust(asset, 6000);
+  const adj = sandbox.DB.txns.find((t) => t.adjust && t.adjustAsset === 'a1');
+  assert.ok(adj, '조정 내역은 갱신되어 그대로 남아있어야 함');
+  assert.ok(!(sandbox.DB.deletedIds && sandbox.DB.deletedIds.adj1), '갱신 경로에서는 같은 id를 톰스톤하면 안 됨');
+});
+
 /* ---------- toggleRecActive/toggleAdjustSurplus: 반복거래 일시중지·재시작 토글과 조정 내역의
  * "수지에 포함" 토글이 각각 r.active/t.inSurplus만 바꾸고 touch()를 안 불러, mergeCollection()이
  * updatedAt만 보고 승자를 고르는 cloud sync에서 다른 기기의 더 오래된 사본이 이겨 이 토글이

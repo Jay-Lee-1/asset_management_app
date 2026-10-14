@@ -1376,7 +1376,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.143';
+const APP_VERSION='1.47.144';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3457,7 +3457,7 @@ function updateBalanceAdjust(asset,entered){
    if(adj){adj.amount=Math.abs(gap);adj.type=inc?'income':'expense';
      adj.fromAssetId=inc?null:asset.id;adj.toAssetId=inc?asset.id:null;adj.date=adj.date||TODAY;DB.txns.push(touch(adj));}
    else addBalanceAdjust(asset,gap);
- } /* gap==0이면 조정 내역 제거된 상태로 둠 */
+ }else if(adj){DB.deletedIds=DB.deletedIds||{};DB.deletedIds[adj.id]=Date.now();} /* gap==0이면 조정 내역 제거 — doDeleteCat 등과 동일한 톰스톤 필요, 없으면 mergeRemoteDataIntoLocal이 다른 기기의 사본을 되살림(app-evolve cycle188) */
 }
 /* 삭제된 동명·동종 자산의 내역(스냅샷 이름)이 남아있는지 — type도 같아야 매칭(다른 종류의 동명 자산에 조용히 재연결되는 걸 방지) */
 function deletedAssetHistoryExists(nm,type){
