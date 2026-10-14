@@ -198,7 +198,7 @@ const FUNCTIONS = [
   'accountName', 'dbIsEmpty', 'guestHasData',
   'txScheduled', 'monthStats', 'monthStats2', 'expenseByCat', 'needGold', 'inQuietWindow', 'fmtSynced', 'rateStatusText',
   'nextBigOutflow', 'dday', 'balanceOn', 'nextOutflowCard', 'monthOutflowCard', 'planGaugeCard', 'homeAlertCard', 'renderHome',
-  'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwPresetSegHTML', 'nwHistoryCard', 'allocationCard', 'doRenameOwner', 'addOwner',
+  'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwPresetSegHTML', 'nwHistoryCard', 'allocationCard', 'doRenameOwner', 'addOwner', 'ownerChipClass',
   'goalOwnerEff', 'goalHasUnknown', 'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'syncGoalInputs', 'goalClearDate', 'goalOwnerSel', 'renderGoalForm', 'openGoalForm', 'saveGoal', 'delGoal',
   'openInquiry', 'sendInquiry', 'openInquiryList', 'delInquiry',
   'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetToggleSel', 'visibleAssetsForSel', 'assetSelAll', 'activeSel',
@@ -2087,6 +2087,36 @@ test('addOwner: 이미 톰스톤된(지워진) 이름을 다시 추가하면 톰
   sandbox.addOwner();
   assert.deepStrictEqual(sandbox.DB.owners, ['나', '아내']);
   assert.strictEqual(sandbox.ownerTombKey('아내') in sandbox.DB.deletedIds, false, '재추가한 이름의 톰스톤은 지워져야 다음 병합에서 되살아남');
+});
+
+/* ---------- ownerChipClass: 귀속 칩(chipmini) 색 클래스는 이름이 아니라 DB.owners 안 위치로 정해진다
+ * (app-evolve cycle190 develop) — 예전엔 CSS가 .own-나/.own-배우자/.own-공용처럼 기본 3귀속
+ * 이름만 직접 키잉해 색을 입혔는데, addOwner()로 새 귀속을 추가하거나 doRenameOwner()로 기본
+ * 이름을 바꾸면(가족 공유 앱에서 흔한 사용) 그 귀속의 칩은 어떤 CSS 규칙과도 안 맞아 배경/글자색
+ * 없이 카드에 묻혀 보이지 않았다. ---------- */
+test('ownerChipClass: 기본 3귀속(나/배우자/공용)은 기존 own-나/own-배우자/own-공용과 같은 순서(0/1/2)로 매핑된다', () => {
+  sandbox.DB = { owners: ['나', '배우자', '공용'] };
+  assert.strictEqual(sandbox.ownerChipClass('나'), 'own-0');
+  assert.strictEqual(sandbox.ownerChipClass('배우자'), 'own-1');
+  assert.strictEqual(sandbox.ownerChipClass('공용'), 'own-2');
+});
+test('ownerChipClass: 기본 3개를 벗어난 이름(addOwner로 추가한 귀속)도 own-0~4 중 하나로 배정돼 더는 무색이 아니다', () => {
+  sandbox.DB = { owners: ['나', '배우자', '공용', '아이', '엄마'] };
+  assert.strictEqual(sandbox.ownerChipClass('아이'), 'own-3');
+  assert.strictEqual(sandbox.ownerChipClass('엄마'), 'own-4');
+});
+test('ownerChipClass: 귀속이 6개 이상이면 own-0~4를 순환(mod 5)해 재사용한다', () => {
+  sandbox.DB = { owners: ['a', 'b', 'c', 'd', 'e', 'f', 'g'] };
+  assert.strictEqual(sandbox.ownerChipClass('f'), 'own-0');
+  assert.strictEqual(sandbox.ownerChipClass('g'), 'own-1');
+});
+test('ownerChipClass: doRenameOwner로 기본 이름을 완전히 다른 이름으로 바꿔도(배우자\u2192아내) 같은 위치면 같은 색을 유지한다', () => {
+  sandbox.DB = { owners: ['나', '아내', '공용'] };
+  assert.strictEqual(sandbox.ownerChipClass('아내'), 'own-1', '배우자였던 자리(index 1)이므로 own-1(기존 own-배우자와 동일 색)을 유지해야 함');
+});
+test('ownerChipClass: DB.owners에 없는(삭제된) 귀속 이름은 own-0으로 안전하게 폴백한다', () => {
+  sandbox.DB = { owners: ['나', '배우자'] };
+  assert.strictEqual(sandbox.ownerChipClass('이미삭제된귀속'), 'own-0');
 });
 
 /* ---------- doRenameOwner: 이름변경도 delOwner과 동일하게 옛 이름을 톰스톤해야 한다(app-evolve cycle180) ----------

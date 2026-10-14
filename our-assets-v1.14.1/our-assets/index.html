@@ -256,6 +256,15 @@ html[data-theme="dark"] .card{box-shadow:var(--sh-md),0 1px 0 rgba(255,255,255,.
   white-space:nowrap;flex-shrink:0}
 .own-나{background:var(--brand-soft);color:var(--brand-ink)}.own-배우자{background:var(--stock-soft);color:var(--stock)}
 .own-공용{background:var(--income-soft);color:var(--income)}.own-x{background:var(--sunken);color:var(--text-2)}
+/* 귀속 칩 색상 — 기본 3귀속(나/배우자/공용)만 이름으로 직접 키잉되고, 그 외 이름은 어디에도
+   안 걸려 배경/글자색 없이(투명) 렌더돼 카드에 묻혀 안 보였다(사용자가 addOwner()로 새 귀속을
+   추가하거나 기본 이름을 다른 이름으로 바꾸기만 해도 재현 — 가족 공유 앱에서 흔한 사용 패턴).
+   ownerChipClass()(아래 JS)가 DB.owners 안 위치(index)로 own-0~4를 순환 배정해, 이름이 무엇이든
+   항상 색이 입혀지게 한다. 0~2번은 기존 나/배우자/공용 기본 배치와 같은 brand→stock→income
+   순서로 맞춰 기본 3귀속 사용자는 보던 색 그대로 유지된다(app-evolve cycle190 develop). */
+.own-0{background:var(--brand-soft);color:var(--brand-ink)}.own-1{background:var(--stock-soft);color:var(--stock)}
+.own-2{background:var(--income-soft);color:var(--income)}.own-3{background:var(--gold-soft);color:var(--gold)}
+.own-4{background:var(--save-soft);color:var(--save)}
 .avatar{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;flex-shrink:0}
 .avatar svg{width:22px;height:22px}
 .cur-sym{font-size:15px;font-weight:700;letter-spacing:-1.5px;line-height:1;display:inline-flex}
@@ -1376,7 +1385,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.147';
+const APP_VERSION='1.47.148';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3377,12 +3386,12 @@ function assetBodyHTML(){
            <div class="sel-check ${on?'on':''}">${svg('check')}</div>
            <div class="avatar ${ty.cls}">${svg(ty.icon)}</div>
            <div style="flex:1;min-width:0"><div class="nm"><span class="nmt">${esc(a.name)}</span>${a.includeInTotal?'':'<span class="chipmini own-x">미포함</span>'}</div>
-             <div class="sub"><span class="chipmini own-${esc(a.owner)}">${esc(a.owner)}</span><span>${assetSubline(a)}</span></div></div>
+             <div class="sub"><span class="chipmini ${ownerChipClass(a.owner)}">${esc(a.owner)}</span><span>${assetSubline(a)}</span></div></div>
            <div class="val"><div class="k num ${a.type==='debt'?'minus':''}">${won(val)}</div></div></div>`;}
        return `<div class="asset-item ${a.includeInTotal?'':'excl'}" data-id="${a.id}" data-lp="1" tabindex="0" role="button" aria-label="${esc(a.name)} ${won(val)}" onclick="openAssetSheet('${a.id}')" onkeydown="rowKeydown(event,()=>openAssetSheet('${a.id}'))">
          <div class="avatar ${ty.cls}">${svg(ty.icon)}</div>
          <div style="flex:1;min-width:0"><div class="nm"><span class="nmt">${esc(a.name)}</span>${a.includeInTotal?'':'<span class="chipmini own-x">미포함</span>'}</div>
-           <div class="sub"><span class="chipmini own-${esc(a.owner)}">${esc(a.owner)}</span><span>${assetSubline(a)}</span></div></div>
+           <div class="sub"><span class="chipmini ${ownerChipClass(a.owner)}">${esc(a.owner)}</span><span>${assetSubline(a)}</span></div></div>
          <div class="row-acts"><button type="button" class="act-btn" aria-label="${esc(a.name)} 내역 보기" onclick="event.stopPropagation();openAssetHistory('${a.id}')">${svg('receipt')}</button></div>
          <div class="val"><div class="k num ${a.type==='debt'?'minus':''}">${won(val)}</div>${showEval?(rateUnknown(a)?'<div class="mini warn">가격 미확인</div>':'<div class="s">평가액</div>'):''}</div></div>`;
      }).join('')+`</div>`;
@@ -3812,6 +3821,18 @@ function openOwnerSheet(){openOwnerManage()}
 /* 귀속 삭제 톰스톤 키(mergeNameListWithTombstones가 DB.deletedIds에서 찾는 합성 키, app-evolve
  * cycle179) — 레코드 id 톰스톤과 네임스페이스가 겹치지 않도록 'owner:' 접두사를 둔다. */
 const ownerTombKey=name=>'owner:'+normName(name);
+/* 자산 목록/자산 선택 시트 등에서 쓰는 귀속 칩(chipmini)의 색 클래스 — CSS가 own-0~own-4 5색을
+ * 돌려가며 정의해두므로(257행 부근), DB.owners 안에서의 위치(index)를 5로 나눈 나머지로 고른다.
+ * own-나/own-배우자/own-공용처럼 이름 자체로 색을 키잉하면 사용자가 addOwner()로 귀속을 추가하거나
+ * doRenameOwner()로 기본 이름을 바꾸는 순간(가족 공유 앱에서 흔한 사용) 그 귀속의 칩은 어떤
+ * CSS 규칙과도 안 맞아 배경/글자색 없이 카드에 묻혀버린다 — 이름이 아니라 위치 기반이면 이름이
+ * 무엇이든 항상 색이 입혀진다. 기본 3귀속(나/배우자/공용)은 index 0/1/2가 기존 own-나/own-배우자/
+ * own-공용과 같은 brand/stock/income 순서라 보던 색 그대로 유지된다(app-evolve cycle190 develop).
+ * owner가 DB.owners에 없으면(삭제된 귀속 등 방어적 처리) index 0으로 폴백. */
+function ownerChipClass(owner){
+ const idx=(DB.owners||[]).indexOf(owner);
+ return 'own-'+(idx>=0?idx%5:0);
+}
 function addOwner(){const v=$('newOwner').value.trim().normalize('NFC');if(!v)return;
  if(isReservedOwnerName(v)){toast("'전체'는 모든 귀속을 보는 이름이라 귀속 이름으로 쓸 수 없어요");return} /* '전체'/'all' 센티넬 보호(logic.js isReservedOwnerName 주석 참고) */
  const dup=DB.owners.find(o=>normName(o)===normName(v));if(dup){toast(dup===v?'이미 있는 귀속이에요':`비슷한 귀속이 있어요: ${dup}`);return}DB.owners.push(v);DB.deletedIds=DB.deletedIds||{};delete DB.deletedIds[ownerTombKey(v)];save();openOwnerManage();}
@@ -4978,7 +4999,7 @@ function openPlanAsset(){
  DB.owners.forEach(ow=>{
   const list=cash.filter(a=>a.owner===ow);
   if(!list.length)return;
-  html+=`<div class="pa-cap"><span class="chipmini own-${esc(ow)}">${esc(ow)}</span></div><div class="opt-list">`;
+  html+=`<div class="pa-cap"><span class="chipmini ${ownerChipClass(ow)}">${esc(ow)}</span></div><div class="opt-list">`;
   html+=list.map(a=>{const s=acctSafety(a.id);
    return `<button class="${ST.plan.assetId===a.id?'on':''}" onclick="planAsset('${a.id}')">
     <span class="rd"></span>
@@ -7713,7 +7734,7 @@ function openAssetPicker(o){o=o||{};let html='';
  DB.settings.groupOrder.forEach(t=>{let items=DB.assets.filter(a=>a.type===t);if(o.cashOnly)items=items.filter(isCashLike);if(o.excludeMarketValued)items=items.filter(a=>!isMarketValued(a));if(o.excludeId)items=items.filter(a=>a.id!==o.excludeId);if(!items.length)return;
    html+=`<div class="pk-cap">${ASSET_TYPES[t].label}</div>`;
    items.forEach(a=>{const ty=ASSET_TYPES[a.type];const bal=a.type==='debt'?-assetEval(a):assetEval(a);
-     html+=`<button class="pk-item hasamt ${a.id===o.current?'on':''}" data-val="${a.id}" onclick="pkPickAsset('${a.id}')"><div class="pav ${ty.cls}">${svg(ty.icon)}</div><div class="pbody"><div class="pn">${esc(a.name)}</div><div class="psub"><span class="chipmini own-${esc(a.owner)}">${esc(a.owner)}</span>${ty.label}</div></div><div class="amt num">${comma(bal)}원</div></button>`;});
+     html+=`<button class="pk-item hasamt ${a.id===o.current?'on':''}" data-val="${a.id}" onclick="pkPickAsset('${a.id}')"><div class="pav ${ty.cls}">${svg(ty.icon)}</div><div class="pbody"><div class="pn">${esc(a.name)}</div><div class="psub"><span class="chipmini ${ownerChipClass(a.owner)}">${esc(a.owner)}</span>${ty.label}</div></div><div class="amt num">${comma(bal)}원</div></button>`;});
  });
  if(!html)html=`<div class="empty"><div class="ei">${svg('wallet')}</div><div class="et">등록된 자산이 없어요</div><div class="es">자산관리에서 통장·자산을 먼저 등록해 주세요</div><button class="empty-cta" onclick="openAssetSheet()">${svg('plus')} 자산 추가하기</button></div>`;
  window._pkPick=o.onPick;openPicker(o.title||'통장 선택','<div class="pk-group" id="pkGroup"><div class="pk-blob" id="pkBlob"></div>'+html+'</div>',o.back);
