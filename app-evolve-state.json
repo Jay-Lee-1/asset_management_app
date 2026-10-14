@@ -1,15 +1,8 @@
 {
   "cycle": 193,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 188,
-      "phase": "review",
-      "timestamp": "2026-10-14T01:40:00.000Z",
-      "summary": "cycle188 develop(updateBalanceAdjust gap===0 제거 경로에 DB.deletedIds 톰스톤 추가, commit 7ccfd04) 검토 — delGoal/delOwner/delAssetQtyLog 등 기존 삭제 경로의 DB.deletedIds[id]=Date.now() 패턴과 diff를 직접 대조해 동일 컨벤션임을 확인했고, updateBalanceAdjust() 전체 로직(adj를 먼저 filter로 제외 후 gap!==0이면 갱신·재추가, gap===0이면 톰스톤만 남김)도 재검증했다. node test/run.js 1352/1352 전부 통과(독립 재실행으로 재확인). 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
-      "commit": null
-    },
     {
       "cycle": 188,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-14T21:15:32.000Z",
       "summary": "general-purpose 서브에이전트로 renderHistory()/histPreset() 조사 — ST.hist.preset 필드와 histPreset('month'/'q3') 분기는 이미 구현돼 있었지만, 이를 호출하는 UI가 전혀 없어 두 분기가 달성 불가능한 죽은 코드였음을 발견(rg-pick의 두 날짜 피커 버튼은 histPickDate만 호출, 'year'만 '오늘로' 롱프레스 숏컷으로 간접 도달 가능했음). renderHistory()에 다른 .seg 세그먼트(assetBalPresetSel 등)와 동일한 패턴의 기간 빠른 선택 칩(올해/이번 달/최근 3개월)을 추가해 histPreset()을 실제로 연결하고, moveSegBlobs()로 물방울 하이라이트를 배선, H.preset과 일치하는 칩에 on 표시. selMode 중엔 다른 검색 UI와 함께 칩도 숨겨짐을 확인. test/run.js에 6건 추가(칩 렌더/on 상태/selMode 숨김/month·q3·year range 산출/다른 필터 필드 불변 회귀). index.html/sw.js 변경이라 APP_VERSION 1.47.153->1.47.154, sw.js CACHE v415->v416 갱신. node test/run.js 1405/1405 -> 1411/1411 통과.",
+      "commit": "0b6b193"
+    },
+    {
+      "cycle": 193,
+      "phase": "review",
+      "timestamp": "2026-10-14T22:15:00.000Z",
+      "summary": "cycle193 develop(전체내역 기간 빠른 선택 칩 추가, histPreset 연결, commit 0b6b193) 검토 — 칩 UI가 H.selMode?'':`...` 블록 안에 있어 선택 모드에서 검색창/선택 버튼과 함께 숨겨짐을 코드로 확인했고, ST.hist 기본값(range가 올해 1/1~12/31, preset:'year')과 칩의 기본 on 상태가 일치함을 확인. histPreset()의 year/month/q3 분기가 monthStartStr/monthEndStr/addMonths를 기존 호출 패턴과 동일하게 사용하며, histPickDate로 직접 날짜를 고르면 preset이 'custom'으로 돌아가 칩이 전부 꺼지는 것도 의도된 동작임을 확인. moveSegBlobs()가 document.querySelectorAll('.seg')로 페이지 내 모든 세그먼트를 순회하므로 새 칩 세그먼트도 다른 .seg(assetBalPresetSel 등)와 함께 안전하게 처리됨을 확인. node test/run.js 1411/1411 전부 통과(독립 재실행으로 재확인). 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
       "commit": null
     }
   ]
