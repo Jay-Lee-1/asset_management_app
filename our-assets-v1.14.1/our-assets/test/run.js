@@ -185,7 +185,7 @@ const FUNCTIONS = [
   'detectStaleMarketValuedTxns', 'delBudget', 'saveBudget', 'openBudgetPrompt', 'openBigMinSheet',
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards', 'openTidyAsset', 'openTidyList', 'tidyListSnooze',
   'debtsBehind', 'openDebtBehindList',
-  'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'openCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter',
+  'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'openCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter', 'histClearTypeFilter',
   'genSalt', 'pbkdf2Hash', 'genRecoveryCode', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer', 'openConfirmTransfer',
   'renderLockView', 'openForgotPinSheet', 'doForgotPin', 'tickForgotPinWait',
   'confirmTransferNow', 'postponeTransfer', 'confirmRecNow', 'openConfirmTransferList',
@@ -14160,6 +14160,52 @@ test('updateHist: sortAsc:false(기본값)에서는 기존처럼 최신 20건이
   const listHtml = sandbox.histListEl.innerHTML;
   assert.ok(listHtml.includes('d25'), '첫 페이지에 가장 최근 내역이 보여야 함');
   assert.ok(!listHtml.includes('d05'), '가장 오래된 5건은 아직 안 보여야 함');
+});
+
+/* ---------- renderHistory/histClearTypeFilter: ST.hist.cat(유형 필터) 공백 (app-evolve cycle191
+ * develop) ----------
+ * sumTap()/ledSumTap()이 가계부 수지 카드의 '지출/수입/저축/이체' 버튼에서 전체내역으로 넘어올 때
+ * 세팅하는 ST.hist.cat은 ST.hist.assetId/ST.hist.catExact와 달리 전체내역 화면에 칩이 전혀 없었다.
+ * 그 결과 (1) 필터된 채 다른 탭에 나갔다가 하단 네비 '전체내역'으로 직접 돌아와도 유형 필터가
+ * 조용히 남아있다는 걸 알 길이 없고, (2) 합계 카드(histTotHTML)가 이미 유형으로 걸러진 list만 보고
+ * 집계하므로 "지출"만 필터된 상태에서는 수입/저축/내부이체가 전부 0으로 보여 그 달에 정말 수입이
+ * 없었다는 것처럼 오인하게 만든다. assetId/catExact와 동일한 칩+해제 버튼을 추가했다. ---------- */
+test('renderHistory: ST.hist.cat이 지출 등으로 좁혀져 있으면 칩이 뜨고, 합계 카드는 그 유형만 반영한다(수입 0원이 "필터링됨"이 아니라 "실제로 없었음"처럼 보이던 공백)', () => {
+  setupHistoryDB();
+  sandbox.DB.assets = [{ id: 'a1', name: '주계좌', owner: '나', type: 'cash', baseAmount: 1000000 }];
+  sandbox.DB.txns = [
+    { id: 't1', date: '2026-06-10', type: 'expense', category: '식비', amount: 8000, fromAssetId: 'a1' },
+    { id: 't2', date: '2026-06-11', type: 'income', category: '급여', amount: 3000000, toAssetId: 'a1' },
+  ];
+  sandbox.ST.hist.cat = '지출';
+  sandbox.renderHistory();
+  const pageHtml = sandbox.pageHistoryEl.innerHTML;
+  assert.ok(pageHtml.includes("onclick=\"histClearTypeFilter()\""), "유형 필터 칩에 histClearTypeFilter() 해제 버튼이 있어야 함");
+  assert.ok(pageHtml.includes('지출만 보는 중'), '칩에 현재 적용된 유형(지출)이 표시돼야 함');
+  const listHtml = sandbox.histListEl.innerHTML;
+  assert.ok(listHtml.includes('8,000원') && !listHtml.includes('3,000,000'), '목록은 지출만 보여야 함(필터 적용 자체는 정상 동작)');
+});
+test('renderHistory: ST.hist.cat이 전체면 유형 필터 칩이 렌더되지 않는다', () => {
+  setupHistoryDB();
+  sandbox.ST.hist.cat = '전체';
+  sandbox.renderHistory();
+  assert.ok(!sandbox.pageHistoryEl.innerHTML.includes('histClearTypeFilter'), "cat이 '전체'면 유형 필터 칩이 없어야 함");
+});
+test("histClearTypeFilter: ST.hist.cat을 '전체'로 되돌리고 다시 렌더하면 칩이 사라지며, assetId/catExact 등 다른 필터는 건드리지 않는다", () => {
+  setupHistoryDB();
+  sandbox.DB.txns = [{ id: 't1', date: '2026-06-10', type: 'expense', category: '식비', amount: 8000, fromAssetId: 'a1' }];
+  sandbox.ST.hist.cat = '지출';
+  sandbox.ST.hist.q = '검색어유지';
+  sandbox.histClearTypeFilter();
+  assert.strictEqual(sandbox.ST.hist.cat, '전체', "histClearTypeFilter() 후 cat은 '전체'여야 함");
+  assert.strictEqual(sandbox.ST.hist.q, '검색어유지', '다른 필터(검색어 등)는 그대로 유지돼야 함');
+  assert.ok(!sandbox.pageHistoryEl.innerHTML.includes('histClearTypeFilter'), '칩이 더 이상 렌더되지 않아야 함');
+});
+test('modeSeg: ST.hist.cat이 좁혀져 있으면(필터 남은 상태) 가계부↔전체내역 세그먼트의 "검색" 버튼에 필터 표시 점(chip-dot)이 뜬다', () => {
+  setupHistoryDB();
+  sandbox.ST.hist.cat = '지출';
+  const html = sandbox.modeSeg('ledger');
+  assert.ok(html.includes('chip-dot'), 'ST.hist.cat이 전체가 아니면 modeSeg()가 chip-dot을 표시해야 함');
 });
 
 /* ---------- txRow/histRow: 공용 txRowCore 동기화 회귀 (app-evolve cycle126 advance) ----------

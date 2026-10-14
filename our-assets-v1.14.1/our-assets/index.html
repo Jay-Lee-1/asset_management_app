@@ -1385,7 +1385,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.149';
+const APP_VERSION='1.47.150';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4676,6 +4676,7 @@ function renderHistory(){
  ${H.assetId?`<button type="button" class="sch-chip on" style="margin-bottom:14px" onclick="histClearAssetFilter()" aria-label="${esc((DB.assets.find(a=>a.id===H.assetId)||{}).name||'계좌')} 필터 해제">${esc((DB.assets.find(a=>a.id===H.assetId)||{}).name||'계좌')} ${svg('x',14)}</button>
  <div id="assetBalCard">${assetBalCard(H.assetId,H.balPreset)}</div>`:''}
  ${H.catExact?`<button type="button" class="sch-chip on" style="margin-bottom:14px" onclick="histClearCatFilter()" aria-label="${esc(H.catExact)} 필터 해제">${esc(H.catExact)}${H.owner&&H.owner!=='전체'?` · ${esc(H.owner)}`:''} ${svg('x',14)}</button>`:''}
+ ${(H.cat&&H.cat!=='전체')?`<button type="button" class="sch-chip on" style="margin-bottom:14px" onclick="histClearTypeFilter()" aria-label="${esc(H.cat)} 유형 필터 해제">${esc(H.cat)}만 보는 중 ${svg('x',14)}</button>`:''}
  <div class="rg-pick">
    <button class="rg-date" onclick="histPickDate('from')">${fmtDot(R.from)}</button>
    <span class="rg-tilde">~</span>
@@ -4737,6 +4738,15 @@ function setHistMode(today){const c=$('histTotLive');if(!c||!_histLive)return;co
 function histClearFilter(){ST.hist.cat='전체';ST.hist.q='';ST.hist.assetId=null;ST.hist.catExact=null;ST.hist.owner='전체';histInvalidate();renderHistory()}
 function histClearAssetFilter(){ST.hist.assetId=null;histInvalidate();renderHistory()}
 function histClearCatFilter(){ST.hist.catExact=null;ST.hist.owner='전체';histInvalidate();renderHistory()}
+/* sumTap()/ledSumTap()이 가계부·요약 카드의 '지출/수입/저축/이체' 버튼에서 전체내역으로 넘어올 때
+ * 세팅하는 ST.hist.cat(유형 필터)은 assetId/catExact와 달리 지금까지 전체내역 화면에 칩이 전혀
+ * 없었다 — 필터링된 채 다른 탭(홈 등)으로 나갔다가 하단 네비 '전체내역'을 눌러 돌아와도 그 유형
+ * 필터가 조용히 남아 있어, 합계 카드(histTotHTML)의 수입/저축/내부이체가 전부 0으로 보여도
+ * 사용자는 그게 '이번 달 실제로 없었다'는 건지 '지출만 걸러 보고 있다'는 건지 구분할 길이 없었다
+ * (ST.hist.owner 삭제 가드 공백·cycle181/182와 같은 '필터 흔적 공백' 버그 클래스). assetId/catExact
+ * 칩과 동일한 패턴으로 칩+해제 버튼을 추가한다 — 이 셋은 sumTap()/openAssetHistory()/openCatHistory()가
+ * 서로 다른 둘을 항상 '전체'/null로 같이 리셋하므로(상호 배타) 동시에 두 개 이상 뜨지 않는다. */
+function histClearTypeFilter(){ST.hist.cat='전체';histInvalidate();renderHistory()}
 /* 히스토리 합계: 잔액 조정은 수지 포함 설정(기본 제외) 전까지 집계에서 뺀다 —
    monthStats2()와 동일 규칙이어야 홈/가계부와 전체내역 탭의 합계가 일치한다 */
 function histSumTotals(actual,sched){
