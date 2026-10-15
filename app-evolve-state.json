@@ -1,6 +1,6 @@
 {
   "cycle": 195,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
     {
@@ -99,6 +99,13 @@
       "phase": "develop",
       "timestamp": "2026-10-15T05:30:00.000Z",
       "summary": "목표 화면(goalRowHTML/openGoalsList)에 '목표일이 지났는데 아직 달성 못함'을 보여줄 표시가 전혀 없던 공백 발견 — homeAlerts()의 goalBehind 알림은 hist.length>=2 && !goalHasUnknown을 요구해 신규 목표·미확인 자산 섞인 목표에는 안 뜨는데, 목표 화면 자체엔 그 전제와 무관하게 '지났다'는 가장 단순한 사실조차 없었음. logic.js에 goalIsOverdue(targetDate,achieved,today) 순수함수 신설(targetDate<today && !achieved만 봄, ===today는 아직 안 지남). index.html의 goalRowHTML()에 '목표일 지남' mini warn 배지(일부 미확인 배지와 같은 자리) + aria-label 보강, openGoalsList() 행의 목표일 캡션 옆에 '지남' 배지 추가. test/run.js에 goalIsOverdue 경계 테스트 5건 추가(미설정/달성함/오늘/과거/미래). index.html/logic.js/sw.js 변경이라 APP_VERSION 1.47.157->1.47.158, sw.js CACHE v419->v420 갱신. node test/run.js 1446/1446 -> 1451/1451 통과.",
+      "commit": "02ffe5a"
+    },
+    {
+      "cycle": 195,
+      "phase": "review",
+      "timestamp": "2026-10-15T06:30:00.000Z",
+      "summary": "cycle195 develop(goalIsOverdue, commit 02ffe5a) 검토 — homeAlerts()의 goalBehind 전제(hist.length>=2 && !goalHasUnknown)와 의도적으로 분리된 판정임을 확인(목표 화면 자체의 '지남' 표시는 그 전제가 필요 없음, 커밋 메시지에도 명시됨). targetDate/TODAY 모두 YYYY-MM-DD 문자열이라 기존 코드(goalProgress의 h.date<=today 등)와 동일한 문자열 비교 관례를 따름. 'mini warn' 배지 클래스도 hasUnknown과 동일하게 재사용. node test/run.js 1451/1451 통과. 이상 없음, 코드 변경 없음.",
       "commit": null
     }
   ]
