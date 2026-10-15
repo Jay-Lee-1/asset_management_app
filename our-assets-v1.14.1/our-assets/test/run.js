@@ -3293,6 +3293,57 @@ test('openGoalsList: 목표 귀속에 시세 미확인(rateUnknown) 자산이 �
   assert.ok(myIdx > -1 && spouseIdx > -1, '두 목표 행이 모두 렌더링돼야 함');
   assert.ok(warnIdx > myIdx && warnIdx < spouseIdx, '캡션은 "내 목표" 행에만 붙어야 함(배우자 목표 행보다 앞)');
 });
+/* goalRowHTML/openGoalsList의 "목표일 지남" 배지(app-evolve cycle195 develop, goalIsOverdue)는 그동안
+ * goalIsOverdue() 순수함수 자체의 경계 테스트(위 1623줄 부근)만 있었고, 바로 위 "일부 미확인" 테스트들처럼
+ * 실제 렌더 함수가 그 판정을 배지·aria-label에 제대로 배선했는지 실행형으로 확인하는 테스트가 없었다 —
+ * 소스-매칭이 아니라 goalRowHTML/openGoalsList를 실제로 호출해 결과 HTML을 검사한다(app-evolve cycle195
+ * critique/advance). */
+test('goalRowHTML: 목표일이 지났고 아직 달성 못했으면 "목표일 지남" 배지와 aria-label이 실제로 붙는다', () => {
+  sandbox.DB = {
+    goals: [{ id: 'g1', name: '내 집 마련', targetAmount: 1000000, targetDate: '2026-01-01', owner: 'all' }],
+    nwHistory: [{ date: '2026-01-01', nw: 100000 }], // cur=100000 < target=1000000 → 미달성
+  };
+  sandbox.TODAY = '2026-06-01'; // targetDate(2026-01-01)가 지남
+  const html = sandbox.goalRowHTML(sandbox.DB.goals[0]);
+  assert.ok(html.includes('<span class="mini warn">목표일 지남</span>'), '목표일 지남 배지가 없음');
+  assert.ok(/aria-label="[^"]*목표일 지남"/.test(html), 'aria-label에 "목표일 지남"이 보강되지 않음');
+});
+test('goalRowHTML: 목표일이 지났어도 이미 달성(achieved)했으면 "목표일 지남" 배지가 안 붙는다', () => {
+  sandbox.DB = {
+    goals: [{ id: 'g1', name: '내 집 마련', targetAmount: 1000000, targetDate: '2026-01-01', owner: 'all' }],
+    nwHistory: [{ date: '2026-01-01', nw: 1000000 }], // cur===target → 달성
+  };
+  sandbox.TODAY = '2026-06-01';
+  const html = sandbox.goalRowHTML(sandbox.DB.goals[0]);
+  assert.ok(!html.includes('목표일 지남'), '달성한 목표는 목표일이 지났어도 배지가 없어야 함');
+});
+test('goalRowHTML: 목표일이 오늘이거나 미래면(아직 안 지남) 미달성이어도 배지가 안 붙는다', () => {
+  sandbox.DB = {
+    goals: [{ id: 'g1', name: '내 집 마련', targetAmount: 1000000, targetDate: '2026-06-01', owner: 'all' }],
+    nwHistory: [{ date: '2026-01-01', nw: 0 }],
+  };
+  sandbox.TODAY = '2026-06-01'; // targetDate===today → 아직 지나지 않음
+  const html = sandbox.goalRowHTML(sandbox.DB.goals[0]);
+  assert.ok(!html.includes('목표일 지남'), '목표일이 오늘이면 아직 지나지 않았으므로 배지가 없어야 함');
+});
+test('openGoalsList: 목표일이 지난 목표의 행에만 "지남" 배지가 붙는다(다른 목표엔 안 붙음)', () => {
+  sandbox.DB = {
+    goals: [
+      { id: 'g1', name: '지난 목표', targetAmount: 1000000, targetDate: '2026-01-01', owner: 'all' },
+      { id: 'g2', name: '미래 목표', targetAmount: 1000000, targetDate: '2026-12-31', owner: 'all' },
+    ],
+    nwHistory: [{ date: '2026-01-01', nw: 100000 }], // 두 목표 모두 미달성(cur=100000 < target)
+  };
+  sandbox.TODAY = '2026-06-01';
+  sandbox.lastSheetHtml = null;
+  sandbox.openGoalsList();
+  const html = sandbox.lastSheetHtml;
+  const pastIdx = html.indexOf('지난 목표');
+  const futureIdx = html.indexOf('미래 목표');
+  const overdueIdx = html.indexOf('<span class="mini warn">지남</span>');
+  assert.ok(pastIdx > -1 && futureIdx > -1, '두 목표 행이 모두 렌더링돼야 함');
+  assert.ok(overdueIdx > pastIdx && overdueIdx < futureIdx, '"지남" 배지는 "지난 목표" 행에만 붙어야 함(미래 목표 행보다 앞)');
+});
 test('goalsSummaryCard: owner를 넘기면 그 귀속이 소유한 목표만 보여주고, 다른 귀속의 목표는 보이지 않는다', () => {
   sandbox.DB = {
     owners: ['나', '배우자'],
@@ -11547,39 +11598,110 @@ test('openSpendAnalysis: 귀속 필터 세그먼트 버튼에 aria-pressed, 래�
   );
   assert.ok(/<div class="seg" role="group" aria-label="귀속 선택">/.test(body), '귀속 필터 세그먼트 래퍼에 role="group"/aria-label이 없음');
 });
+/* 메인 sandbox에서 openSpendAnalysis는 화면 전용 부수효과(saveBudget/delBudget이 저장·삭제
+ * 끝에 재렌더용으로 부름)라 계속 no-op 스텁(위쪽 공유 stub 객체)으로 둬야 한다 — 그 두 함수의
+ * 기존 테스트들은 DB.owners/ST.spendOwner를 안 채운 최소 fixture라, openSpendAnalysis를 그
+ * 자리에서 실제로 돌리면 DB.owners.includes(...)에서 깨진다. 하지만 openSpendAnalysis 자신의
+ * 렌더 결과(overCount/carryTotal 캡션, 행별 한도)는 실행형으로 검증할 가치가 있으므로,
+ * makeAppLockCtx/makeSpendAnalysisCtx처럼 메인 sandbox와 무관한 별도 vm 컨텍스트에 openSpendAnalysis와
+ * 그 의존 함수 전체(logic.js + FUNCTIONS/CONSTS/LETS)를 독립적으로 올려 격리한다. 복사된 함수
+ * 참조를 다른 컨텍스트에 얹는 방식(Object.assign)은 자유 변수(DB/ST 등)가 "정의된" 컨텍스트를
+ * 계속 참조해 격리가 깨지므로 쓰지 않는다 — 전체를 이 컨텍스트 안에서 새로 컴파일해야 DB/ST가
+ * 이 컨텍스트 자신의 것으로 일관되게 해석된다(app-evolve cycle195 critique/advance, 소스-매칭 →
+ * 실행형 전환). */
+let _spendAnalysisCtx = null;
+function spendAnalysisCtx() {
+  if (_spendAnalysisCtx) return _spendAnalysisCtx;
+  const ctx = {
+    lastSheetHtml: null,
+    openSheet: (html) => { ctx.lastSheetHtml = html; },
+    svg: () => '',
+  };
+  vm.createContext(ctx);
+  vm.runInContext(logicSrc, ctx, { filename: 'logic.js' });
+  vm.runInContext(extracted, ctx, { filename: 'extracted-from-index.html' });
+  vm.runInContext(extractFunction('openSpendAnalysis'), ctx, { filename: 'openSpendAnalysis-real' });
+  _spendAnalysisCtx = ctx;
+  return ctx;
+}
 /* 예산 요약 카드가 totalBudgetSummary()의 overCount(개별 카테고리별 예산 초과 수)를 전혀
  * 보여주지 않고 있었다 — tbp.over는 카테고리 전체 합계 기준이라, 한 카테고리가 크게 초과해도
  * 다른 카테고리가 그만큼 덜 써서 합계가 예산 이내면 전체 바는 초과 아님(브랜드색)으로만 보이고,
  * 어떤 카테고리가 초과했는지는 아래 카테고리별 행을 하나하나 훑어 빨간 표시를 찾아야만 알 수
  * 있었다. 짝인 unsetCount(예산 미설정 카테고리 수)는 이미 같은 자리에 캡션으로 노출되는데
  * overCount만 빠져 있던 비대칭을 해소한다(app-evolve cycle194 develop). */
-test('openSpendAnalysis: 예산 요약 카드에 개별 카테고리 예산 초과 수(overCount)를 캡션으로 보여준다', () => {
-  const body = extractFunction('openSpendAnalysis');
-  assert.ok(
-    body.includes('tb.overCount?`<div style="font-size:11.5px;color:var(--expense);margin-top:6px;font-weight:600">예산을 초과한 카테고리 ${tb.overCount}개</div>`'),
-    '요약 카드에 overCount 캡션이 없음'
-  );
-  // unsetCount 캡션과 같은 카드 안에, overCount 캡션보다 뒤에 와야 한다(경고가 더 급한 정보이므로 먼저 노출)
-  const overIdx = body.indexOf('tb.overCount?');
-  const unsetIdx = body.indexOf('tb.unsetCount?');
-  assert.ok(overIdx !== -1 && unsetIdx !== -1 && overIdx < unsetIdx, 'overCount 캡션이 unsetCount 캡션보다 먼저 와야 함');
+test('openSpendAnalysis: 예산 요약 카드에 개별 카테고리 예산 초과 수(overCount)를 캡션으로 보여주고, unsetCount 캡션보다 먼저 온다', () => {
+  const ctx = spendAnalysisCtx();
+  ctx.DB = {
+    owners: [],
+    assets: [],
+    recurrences: [],
+    budgetHistory: { 식비: [{ from: '2026-01', amount: 40000 }] }, // 교통은 예산 자체가 없음(unsetCount)
+    catBudgetRollover: {},
+    txns: [
+      { id: '1', type: 'expense', category: '식비', amount: 50000, date: '2026-06-10', confirmed: true }, // 40000 한도 초과
+      { id: '2', type: 'expense', category: '교통', amount: 10000, date: '2026-06-11', confirmed: true },
+    ],
+  };
+  ctx.ST = { ledger: { y: 2026, m: 6 }, spendOwner: '전체' };
+  ctx.lastSheetHtml = null;
+  ctx.openSpendAnalysis();
+  const html = ctx.lastSheetHtml;
+  assert.ok(html.includes('예산을 초과한 카테고리 1개'), '요약 카드에 실제 overCount(1) 캡션이 없음');
+  assert.ok(html.includes('예산 미설정 카테고리 1개'), '요약 카드에 실제 unsetCount(1) 캡션이 없음');
+  const overIdx = html.indexOf('예산을 초과한 카테고리');
+  const unsetIdx = html.indexOf('예산 미설정 카테고리');
+  assert.ok(overIdx !== -1 && unsetIdx !== -1 && overIdx < unsetIdx, 'overCount 캡션이 unsetCount 캡션보다 먼저 와야 함(경고가 더 급한 정보)');
 });
 /* 예산 이월(catBudgetRollover) 토글이 켜진 카테고리의 여윳돈이 이번 달 한도에 조용히 더해지기만
  * 하면, 사용자는 왜 한도가 평소보다 커졌는지 알 길이 없다 — overCount/unsetCount와 같은 자리에
  * '전달 이월 N원 포함' 캡션을 추가한다(app-evolve cycle194 advance). */
-test('openSpendAnalysis: 예산 요약 카드에 이월(rollover)로 더해진 금액을 캡션으로 보여준다', () => {
-  const body = extractFunction('openSpendAnalysis');
-  assert.ok(
-    body.includes('tb.carryTotal?`<div style="font-size:11.5px;color:var(--text-3);margin-top:6px">전달 이월 ${comma(tb.carryTotal)}원 포함</div>`'),
-    '요약 카드에 전달 이월 캡션이 없음'
-  );
-  const unsetIdx = body.indexOf('tb.unsetCount?');
-  const carryIdx = body.indexOf('tb.carryTotal?');
+test('openSpendAnalysis: 예산 요약 카드에 이월(rollover)로 더해진 금액을 실제 금액으로 캡션에 보여주고, unsetCount 캡션보다 뒤에 온다', () => {
+  const ctx = spendAnalysisCtx();
+  ctx.DB = {
+    owners: [],
+    assets: [],
+    recurrences: [],
+    catBudgetRollover: { 'expense:식비': true },
+    budgetHistory: { 식비: [{ from: '2026-01', amount: 300000 }] }, // 교통은 예산 없음(unsetCount)
+    txns: [
+      { id: '1', type: 'expense', category: '식비', amount: 200000, date: '2026-05-10', confirmed: true }, // 전달 300000 중 200000만 써서 100000 이월
+      { id: '2', type: 'expense', category: '식비', amount: 150000, date: '2026-06-10', confirmed: true }, // 이번 달은 이월 포함 400000 이내
+      { id: '3', type: 'expense', category: '교통', amount: 5000, date: '2026-06-11', confirmed: true },
+    ],
+  };
+  ctx.ST = { ledger: { y: 2026, m: 6 }, spendOwner: '전체' };
+  ctx.lastSheetHtml = null;
+  ctx.openSpendAnalysis();
+  const html = ctx.lastSheetHtml;
+  assert.ok(html.includes(`전달 이월 ${ctx.comma(100000)}원 포함`), '요약 카드에 실제 이월 금액(100,000원) 캡션이 없음');
+  assert.ok(!html.includes('예산을 초과한 카테고리'), '이월 반영 후 400000 한도 이내라 overCount 캡션은 없어야 함');
+  const unsetIdx = html.indexOf('예산 미설정 카테고리');
+  const carryIdx = html.indexOf('전달 이월');
   assert.ok(unsetIdx !== -1 && carryIdx !== -1 && unsetIdx < carryIdx, '이월 캡션은 unsetCount 캡션보다 뒤에 와야 함');
 });
-test('openSpendAnalysis: 카테고리별 행의 한도 표시도 이월이 더해진 budgetForMonthWithCarry 기준이다', () => {
-  const body = extractFunction('openSpendAnalysis');
-  assert.ok(body.includes('const budget=budgetForMonthWithCarry(r.c,y,m);'), '행 한도 계산이 이월을 반영하는 budgetForMonthWithCarry가 아님');
+test('openSpendAnalysis: 카테고리별 행의 한도 표시는 이월(catBudgetRollover) opt-in 여부에 따라 카테고리마다 다른 실제 숫자를 보여준다', () => {
+  const ctx = spendAnalysisCtx();
+  ctx.DB = {
+    owners: [],
+    assets: [],
+    recurrences: [],
+    catBudgetRollover: { 'expense:식비': true }, // 식비만 이월 opt-in, 교통은 꺼짐
+    budgetHistory: { 식비: [{ from: '2026-01', amount: 300000 }], 교통: [{ from: '2026-01', amount: 100000 }] },
+    txns: [
+      { id: '1', type: 'expense', category: '식비', amount: 200000, date: '2026-05-10', confirmed: true }, // 전달 여윳돈 100000
+      { id: '2', type: 'expense', category: '교통', amount: 20000, date: '2026-05-11', confirmed: true }, // 전달 여윳돈 80000(이월 꺼져 있어 무시돼야 함)
+      { id: '3', type: 'expense', category: '식비', amount: 150000, date: '2026-06-10', confirmed: true },
+      { id: '4', type: 'expense', category: '교통', amount: 30000, date: '2026-06-11', confirmed: true },
+    ],
+  };
+  ctx.ST = { ledger: { y: 2026, m: 6 }, spendOwner: '전체' };
+  ctx.lastSheetHtml = null;
+  ctx.openSpendAnalysis();
+  const html = ctx.lastSheetHtml;
+  assert.ok(html.includes(`/${ctx.comma(400000)}`), '이월 opt-in한 식비 행은 300000+100000=400000 한도로 표시돼야 함');
+  assert.ok(html.includes(`/${ctx.comma(100000)}`), '이월 opt-out한 교통 행은 전달 여윳돈(80000)과 무관하게 flat 100000 한도여야 함');
+  assert.ok(!html.includes(`/${ctx.comma(180000)}`), '교통은 이월이 꺼져 있으므로 80000이 더해진 180000 한도가 나오면 안 됨');
 });
 test('totalBudgetSummary: catBudgetRollover 토글이 켜진 카테고리는 이월분이 budgetedTotal/overCount에 반영되고 carryTotal로 노출된다', () => {
   sandbox.DB = {
