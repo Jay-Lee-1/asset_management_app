@@ -489,6 +489,24 @@ function addCostBasisForBuy(origCostBasis,addedAmount){
  return Math.round((origCostBasis||0)+addedAmount);
 }
 
+/* ================= 예산 이월(rollover, 순수) ================= */
+/* budgetForMonth(index.html)는 '카테고리→[{from,amount}]' effective-dated flat 값을 그대로 쓰는
+ * 월별 고정 한도라, 전달에 못 쓰고 남은 돈이나 초과한 돈이 다음 달 한도에 전혀 반영되지 않는다
+ * (app-evolve cycle194 critique) — 흔한 봉투식(envelope) 예산처럼 opt-in 토글이 켜진 카테고리만
+ * "전달에 아낀 만큼 이번 달에 더 쓸 수 있다"를 지원한다. 초과분은 0으로 clamp해(이미 초과한 걸
+ * 또 다음 달에서 깎으면 두 달 다 압박만 커져 실사용에 안 맞음) 여윳돈만 이월한다. */
+function budgetCarry(prevBudget,prevSpent){
+ if(!(prevBudget>0))return 0;
+ return Math.max(0,prevBudget-(prevSpent||0));
+}
+/* baseBudget(이번 달 flat 한도)이 0/미설정이면 이월을 더해도 '이번 달에 예산이 생긴 것'처럼
+ * 보여선 안 되므로(scaleCostBasisForSale과 같은 "확실한 쪽만 계산" 원칙) 그대로 0을 반환해
+ * budgetForMonth()의 기존 "falsy=미설정" 호출부 관례를 깨지 않는다. */
+function budgetForMonthEffective(baseBudget,carry){
+ if(!(baseBudget>0))return baseBudget;
+ return baseBudget+(carry||0);
+}
+
 /* ================= ASSET ALLOCATION (자산유형별 비중, 순수) ================= */
 /* items: [{type,amount}] — 호출부(allocationCard)가 owner/includeInTotal/부채 제외 필터링과
  * assetEval(DB.rates에 의존하는 index.html 쪽 함수) 평가를 이미 끝낸 뒤 넘긴다(여기선 DB를 몰라야

@@ -1387,7 +1387,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.156';
+const APP_VERSION='1.47.157';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1564,6 +1564,11 @@ function mergeRemoteDataIntoLocal(remoteData){
  const catFlatTombKey=key=>{const i=key.indexOf(':');return i===-1?null:catTombKey(key.slice(0,i),key.slice(i+1))};
  DB.catIcon=mergeFlatMap(DB.catIcon,remoteData.catIcon,DB.deletedIds,catFlatTombKey);
  DB.catVar=mergeFlatMap(DB.catVar,remoteData.catVar,DB.deletedIds,catFlatTombKey);
+ /* catBudgetRollover(카테고리별 예산 이월 opt-in 토글, app-evolve cycle194 advance)도 catIcon/catVar와
+  * 똑같은 '타입:이름'→true flat map이라 신설 시점부터 바로 같은 자리에 배선한다 — DB.rates처럼
+  * 신설 컬렉션 병합 배선을 깜빡했다가 나중에야 발견되는 버그 클래스(cycle122/133/138/192)를
+  * 처음부터 피한다. */
+ DB.catBudgetRollover=mergeFlatMap(DB.catBudgetRollover,remoteData.catBudgetRollover,DB.deletedIds,catFlatTombKey);
  /* deletedType/deletedBal(삭제한 자산의 재연동용 타입·잔액 기억, snapshotAssetName)도 catIcon/catVar와
   * 같은 flat map인데 여기서 전혀 병합되지 않고 있었다(app-evolve cycle135) — 한쪽 기기가 삭제한 자산의
   * 기록이 병합 후에도 반영되지 않아 재연동 안내가 뜨지 않고, 그대로 push하면 상대 기기 기록을 덮어썼다. */
@@ -2209,6 +2214,7 @@ function migrate(){
  DB.categories=DB.categories||{};
  DB.catIcon=DB.catIcon||{}; /* '타입:이름' → 아이콘 키 (선택). 없으면 기본 아이콘 */
  DB.catVar=DB.catVar||{};   /* '타입:이름' → true (변동 카테고리: 매달 실제 금액 입력) */
+ DB.catBudgetRollover=DB.catBudgetRollover||{}; /* 'expense:이름' → true (예산 이월 opt-in, 기본 false=하위호환) — budgetForMonthWithCarry()가 조회 */
  if(!DB._varMigrated){ /* 기존 varying 반복이 있으면 그 카테고리를 변동으로 승격 */
   (DB.recurrences||[]).forEach(r=>{if(r.varying&&(r.type==='expense'||r.type==='income'))DB.catVar[r.type+':'+r.category]=true});
   DB._varMigrated=true;
@@ -5265,15 +5271,37 @@ function setBudgetFrom(c,y,m,amount){
  if(idx>=0)h[idx].amount=amount;
  else{h.push({from:key,amount});h.sort((a,b)=>a.from<b.from?-1:a.from>b.from?1:0)}
 }
-/* 예산이 설정된 카테고리만 골라 해당 달(y,m) 기준 전체 예산 대비 지출을 집계 — 예산이 하나도 없으면 budgetedTotal=0으로 '집계할 게 없음'을 나타낸다 */
+/* 카테고리별 예산 이월(catBudgetRollover) 토글이 켜져 있으면 전달에 budgetForMonth가 가리키던
+ * 한도 중 안 쓰고 남은 만큼(logic.js budgetCarry, 초과분은 0으로 clamp)을 이번 달에 얹는다
+ * (app-evolve cycle194 critique/advance). 예산은 귀속과 무관하게 전역이므로(budgetForMonth와
+ * 동일한 관례) spendByCategory도 항상 '전체' 기준으로 조회 — 현재 보고 있는 ST.spendOwner 필터와
+ * 무관하게 전달 지출 전체를 봐야 이월 계산이 맞다. */
+function budgetCarryFor(c,y,m){
+ if(!isBudgetRolloverCat(c))return 0;
+ let py=y,pm=m-1;if(pm<1){pm=12;py--}
+ const prevBudget=budgetForMonth(c,py,pm);
+ if(!prevBudget)return 0;
+ const prevSpent=spendByCategory(py,pm,'전체').find(x=>x.c===c);
+ return budgetCarry(prevBudget,prevSpent?prevSpent.v:0);
+}
+/* budgetForMonth()에 이월분을 더한 "이번 달에 실제로 쓸 수 있는 한도" — budgetForMonthEffective가
+ * 이번 달 자체에 flat 예산이 없으면(0/미설정) 이월이 있어도 0을 그대로 돌려주므로(logic.js 주석
+ * 참고), 기존 budgetForMonth()의 "falsy=미설정" 호출부 관례를 그대로 유지한다. */
+function budgetForMonthWithCarry(c,y,m){
+ return budgetForMonthEffective(budgetForMonth(c,y,m),budgetCarryFor(c,y,m));
+}
+/* 예산이 설정된 카테고리만 골라 해당 달(y,m) 기준 전체 예산 대비 지출을 집계 — 예산이 하나도 없으면 budgetedTotal=0으로 '집계할 게 없음'을 나타낸다.
+ * budgetedTotal/overCount는 이월이 적용된 실질 한도(budgetForMonthWithCarry) 기준이고, carryTotal은
+ * 그중 이월로 얹힌 금액만 따로 합산해 openSpendAnalysis()의 '전달 이월 N원 포함' 캡션에 쓴다. */
 function totalBudgetSummary(rows,y,m){
- let budgetedTotal=0,spentOnBudgeted=0,overCount=0,unsetCount=0;
+ let budgetedTotal=0,spentOnBudgeted=0,overCount=0,unsetCount=0,carryTotal=0;
  rows.forEach(r=>{
-  const b=budgetForMonth(r.c,y,m);
-  if(b){budgetedTotal+=b;spentOnBudgeted+=r.v;if(r.v>b)overCount++}
+  const carry=budgetCarryFor(r.c,y,m);
+  const b=budgetForMonthEffective(budgetForMonth(r.c,y,m),carry);
+  if(b){budgetedTotal+=b;spentOnBudgeted+=r.v;if(r.v>b)overCount++;carryTotal+=carry}
   else unsetCount++;
  });
- return{budgetedTotal,spentOnBudgeted,overCount,unsetCount};
+ return{budgetedTotal,spentOnBudgeted,overCount,unsetCount,carryTotal};
 }
 /* deltaPct(null=비교 기준 없음)를 화살표+퍼센트 배지로 렌더 — 지출이 늘면(양수) expense색, 줄면(음수) income색(가계부의 기존 관례, assetGainLossBadge와 동일) */
 function spendTrendBadge(deltaPct,label){
@@ -5290,8 +5318,17 @@ function openSpendAnalysis(){
  let py=y,pm=m,totalAvg=0;for(let i=0;i<3;i++){pm--;if(pm<1){pm=12;py--}totalAvg+=spendByCategory(py,pm,ST.spendOwner).reduce((s,r)=>s+r.v,0)}
  totalAvg=Math.round(totalAvg/3);
  const totalDeltaPct=totalAvg?Math.round((total-totalAvg)/totalAvg*100):null;
+ /* totalBudgetSummary()가 집계하는 overCount(개별 카테고리별 예산 초과 수)를 이 요약 카드가
+  * 지금까지 전혀 보여주지 않고 있었다(app-evolve cycle194 develop) — tbp.over는 전체 합계
+  * 기준이라, 한 카테고리가 크게 초과해도 다른 카테고리가 그만큼 덜 써서 합계가 예산 이내면
+  * 전체 바는 초록(미초과)으로만 보이고, 어떤 카테고리가 초과했는지는 아래 카테고리별 행을
+  * 하나하나 스크롤해 빨간 표시(overCls)를 찾아야만 알 수 있었다. unsetCount(예산 미설정
+  * 카테고리 수)는 이미 같은 자리에 캡션으로 노출하면서 짝이 되는 overCount만 빠져 있던
+  * 비대칭을 해소한다. carryTotal(이월로 얹힌 금액 합)은 cycle194 advance가 추가한 예산
+  * 이월 캡션에 쓴다 — 이 캡션이 원래 이 자리의 HTML 주석이었다(DOM에 그대로 렌더되던 바이트를
+  * 평범한 JS 주석으로 옮겨 정리, cycle194 review 지적). */
  const body=rows.length?rows.map((r,idx)=>{
-   const budget=budgetForMonth(r.c,y,m);
+   const budget=budgetForMonthWithCarry(r.c,y,m); /* 카테고리별 이월(catBudgetRollover)이 켜져 있으면 전달 여윳돈이 더해진 실질 한도를 보여준다(app-evolve cycle194 advance) */
    const bp=budgetProgress(r.v,budget);
    const pct=budget?bp.pct:(total?Math.round(r.v/total*100):0);
    const barPct=budget?bp.barPct:(total?r.v/total*100:0);
@@ -5310,15 +5347,9 @@ function openSpendAnalysis(){
    <div style="font-size:12.5px;color:var(--text-3);font-weight:700">이번 달 예산</div>
    <div class="num" style="font-size:16px;font-weight:700;margin-top:4px;color:${tbp.over?'var(--expense)':'var(--text)'}">${comma(tb.budgetedTotal)}원 중 ${comma(tb.spentOnBudgeted)}원 사용 · ${tbp.pct}%</div>
    <div class="spend-track" style="margin-top:8px"><i class="${tbp.over?'over':'budgeted'}" style="width:${tbp.barPct}%"></i></div>
-   <!-- totalBudgetSummary()가 집계하는 overCount(개별 카테고리별 예산 초과 수)를 이 요약 카드가
-        지금까지 전혀 보여주지 않고 있었다(app-evolve cycle194 develop) — tbp.over는 전체 합계
-        기준이라, 한 카테고리가 크게 초과해도 다른 카테고리가 그만큼 덜 써서 합계가 예산 이내면
-        전체 바는 초록(미초과)으로만 보이고, 어떤 카테고리가 초과했는지는 아래 카테고리별 행을
-        하나하나 스크롤해 빨간 표시(overCls)를 찾아야만 알 수 있었다. unsetCount(예산 미설정
-        카테고리 수)는 이미 같은 자리에 캡션으로 노출하면서 짝이 되는 overCount만 빠져 있던
-        비대칭을 해소한다. */
    ${tb.overCount?`<div style="font-size:11.5px;color:var(--expense);margin-top:6px;font-weight:600">예산을 초과한 카테고리 ${tb.overCount}개</div>`:''}
    ${tb.unsetCount?`<div style="font-size:11.5px;color:var(--text-3);margin-top:6px">예산 미설정 카테고리 ${tb.unsetCount}개</div>`:''}
+   ${tb.carryTotal?`<div style="font-size:11.5px;color:var(--text-3);margin-top:6px">전달 이월 ${comma(tb.carryTotal)}원 포함</div>`:''}
   </div>`:''}
   <div class="card" style="padding:2px 14px">${body}</div>
   <div style="height:12px"></div><button class="btn btn-soft" onclick="closeSheet()">닫기</button>`);
@@ -5334,8 +5365,10 @@ function spendOwnerSel(i){const list=['전체',...DB.owners];ST.spendOwner=list[
 function openBudgetPrompt(idx){
  const y=ST.ledger.y,m=ST.ledger.m;const rows=spendByCategory(y,m,ST.spendOwner);const r=rows[idx];if(!r)return;
  const cur=budgetForMonth(r.c,y,m)||'';
+ const carry=cur?budgetCarryFor(r.c,y,m):0; /* 이번 달 자체에 설정한 한도가 없으면(cur falsy) 이월해도 budgetForMonthEffective가 0으로 무시하므로 캡션도 보여주지 않는다 */
  openSheet(`<h3>${esc(r.c)} 예산 설정</h3><div class="desc">${m}월부터 ${esc(r.c)}에 쓸 수 있는 한도예요 · 바꾸기 전까지 이후 달에도 계속 적용돼요</div>
   <div class="field"><div class="field-clear"><input id="budgetIn" class="num" inputmode="numeric" placeholder="예산 금액(원)" value="${cur?comma(cur):''}" oninput="fmtAmt(this)" onkeydown="if(event.key==='Enter')saveBudget(${idx})"><button type="button" class="fc-x" aria-label="예산 금액 지우기" onclick="clrInput('budgetIn')">✕</button></div></div>
+  ${carry?`<div class="desc" style="margin-top:-6px">전달 이월 ${comma(carry)}원이 더해져 이번 달 총 ${comma(cur+carry)}원까지 쓸 수 있어요</div>`:''}
   <div class="two-btn" style="margin-bottom:16px">${cur?`<button class="btn btn-soft cancel" onclick="delBudget(${idx})">예산 삭제</button>`:`<button class="btn btn-soft cancel" onclick="openSpendAnalysis()">취소</button>`}<button class="btn btn-primary" onclick="saveBudget(${idx})">저장</button></div>`);
  setTimeout(()=>{const el=$('budgetIn');el&&el.focus()},300);
 }
@@ -5403,6 +5436,12 @@ function setCatVar(type,name,on){DB.catVar=DB.catVar||{};if(on)DB.catVar[catKey(
 function recIsVarying(r){return (r.type==='expense'||r.type==='income')&&isVarCat(r.type,r.category)}
 function toggleCatVarUI(k,i,btn){const c=DB.categories[k][i];const on=!isVarCat(k,c);setCatVar(k,c,on);save();
  if(btn){btn.classList.toggle('on',on);btn.textContent=on?'변동':'고정'}else openCatManage(k)}
+/* 예산 이월(catBudgetRollover) opt-in 토글 — isVarCat/setCatVar와 동일한 flat map 패턴이지만
+ * budgetHistory처럼 지출(expense) 카테고리 전용이라 type을 받지 않고 'expense'로 고정한다. */
+function isBudgetRolloverCat(name){return !!(DB.catBudgetRollover&&DB.catBudgetRollover[catKey('expense',name)])}
+function setBudgetRolloverCat(name,on){DB.catBudgetRollover=DB.catBudgetRollover||{};if(on)DB.catBudgetRollover[catKey('expense',name)]=true;else delete DB.catBudgetRollover[catKey('expense',name)]}
+function toggleBudgetRolloverUI(i,btn){const c=DB.categories.expense[i];const on=!isBudgetRolloverCat(c);setBudgetRolloverCat(c,on);save();
+ if(btn){btn.classList.toggle('on',on);btn.textContent=on?'이월':'이월 안함'}else openCatManage('expense')}
 function catGlyph(type,name,size,fallbackIcon){
  const key=catIconOf(type,name)||CATICON[name]||fallbackIcon||'tag';
  return svg(key,size);
@@ -5438,8 +5477,9 @@ function openCatManage(kind,keep){
   <div>${DB.categories[k].map((c,i)=>{
     const isSysAdjust=k==='income'&&c===ADJUST_CAT; /* 거래에서 자동 생성되는 시스템 카테고리 — 이름변경/삭제 못 하게 액션 대신 안내만 보여준다 */
     const varPill=k==='saving'?'':`<button class="varpill ${isVarCat(k,c)?'on':''}" onclick="toggleCatVarUI('${k}',${i},this)">${isVarCat(k,c)?'변동':'고정'}</button>`;
+    const rollPill=k==='expense'?`<button class="varpill ${isBudgetRolloverCat(c)?'on':''}" onclick="toggleBudgetRolloverUI(${i},this)">${isBudgetRolloverCat(c)?'이월':'이월 안함'}</button>`:''; /* 예산 이월은 지출 카테고리에만 있는 설정(saving/income 대상 아님) — budgetHistory와 동일한 범위 */
     const acts=isSysAdjust?`<span class="mini">자동 생성</span>`:`<div class="row-acts"><button class="act-btn" aria-label="${esc(c)} 수정" onclick="renameCatSheet('${k}',${i})">${svg('edit')}</button><button class="act-btn danger" aria-label="${esc(c)} 삭제" onclick="delCat('${k}',${i})">${svg('trash')}</button></div>`;
-    return `<div class="manage-row"><div class="avatar ${avCls}" style="width:36px;height:36px;border-radius:11px">${catGlyph(k,c,18,'tag')}</div><div class="mn">${esc(c)}</div>${isSysAdjust?'':varPill}${acts}</div>`;
+    return `<div class="manage-row"><div class="avatar ${avCls}" style="width:36px;height:36px;border-radius:11px">${catGlyph(k,c,18,'tag')}</div><div class="mn">${esc(c)}</div>${isSysAdjust?'':varPill}${rollPill}${acts}</div>`;
    }).join('')}</div>
   <div class="add-inline"><button class="emo-pick ${avCls}" onclick="pickCatAddIcon('${k}')" aria-label="아이콘 선택">${svg(trigIcon,20)}</button><div class="field-clear"><input id="newCat" placeholder="새 ${CAT_LABEL[k]} 카테고리" value="${catAddDraft.name.replace(/"/g,'&quot;')}" oninput="catAddDraft.name=this.value" onkeydown="if(event.key==='Enter'&&!event.isComposing)addCat('${k}')"><button type="button" class="fc-x" aria-label="카테고리 이름 지우기" onclick="clrInput('newCat')">✕</button></div><button onclick="addCat('${k}')" aria-label="${CAT_LABEL[k]} 카테고리 추가">${svg('plus')}</button></div>
   <div style="height:14px"></div><button class="btn btn-primary" onclick="closeSheet()">완료</button>`);
@@ -5447,8 +5487,8 @@ function openCatManage(kind,keep){
 function addCat(k){const v=(($('newCat')&&$('newCat').value)||catAddDraft.name||'').trim().normalize('NFC');if(!v)return;
  const dup=DB.categories[k].find(c=>normName(c)===normName(v));
  if(dup){toast(dup===v?'이미 있는 카테고리예요':`비슷한 카테고리가 있어요: ${dup}`);return}
- DB.catIcon=DB.catIcon||{};DB.catVar=DB.catVar||{};DB.budgetHistory=DB.budgetHistory||{};
- delete DB.catIcon[catKey(k,v)];delete DB.catVar[catKey(k,v)];if(k==='expense')delete DB.budgetHistory[v]; /* mergeBudgetHistory/mergeFlatMap은 병합 경로에서만 톰스톤을 보므로, restoreBackup/guest 데이터 가져오기 등 병합을 거치지 않는 경로로 이 이름의 아이콘/변동플래그/예산한도 유령이 들어와 있었다면 재사용 시점에 방어적으로 지운다(app-evolve cycle181) */
+ DB.catIcon=DB.catIcon||{};DB.catVar=DB.catVar||{};DB.budgetHistory=DB.budgetHistory||{};DB.catBudgetRollover=DB.catBudgetRollover||{};
+ delete DB.catIcon[catKey(k,v)];delete DB.catVar[catKey(k,v)];if(k==='expense'){delete DB.budgetHistory[v];delete DB.catBudgetRollover[catKey('expense',v)]} /* mergeBudgetHistory/mergeFlatMap은 병합 경로에서만 톰스톤을 보므로, restoreBackup/guest 데이터 가져오기 등 병합을 거치지 않는 경로로 이 이름의 아이콘/변동플래그/예산한도/이월설정 유령이 들어와 있었다면 재사용 시점에 방어적으로 지운다(app-evolve cycle181/194) */
  DB.categories[k].push(v);
  if(catAddDraft.icon)DB.catIcon[catKey(k,v)]=catAddDraft.icon;
  catAddDraft={name:'',icon:''};
@@ -5468,15 +5508,17 @@ function delCat(k,i){const c=DB.categories[k][i];
 function doDeleteCat(k,i){const c=DB.categories[k][i];
  if(k==='income'&&c===ADJUST_CAT){toast('자동으로 생성되는 카테고리라 삭제할 수 없어요');return}
  if(DB.categories[k].length<=1){toast('카테고리는 최소 1개가 필요해요');return} /* 마지막 카테고리 삭제 방지 (delOwner와 동일 패턴): 비면 openTxSheet/saveTx가 undefined 카테고리로 거래를 만들 수 있음 */
- DB.catIcon=DB.catIcon||{};DB.catVar=DB.catVar||{};DB.budgetHistory=DB.budgetHistory||{};
+ DB.catIcon=DB.catIcon||{};DB.catVar=DB.catVar||{};DB.budgetHistory=DB.budgetHistory||{};DB.catBudgetRollover=DB.catBudgetRollover||{};
  const recs=activeRecsForCat(k,c);
  const icon=DB.catIcon[catKey(k,c)];const wasVar=isVarCat(k,c);
  const hadBudget=k==='expense'&&DB.budgetHistory&&c in DB.budgetHistory;const budgetVal=hadBudget?DB.budgetHistory[c]:undefined;
+ const wasRollover=k==='expense'&&isBudgetRolloverCat(c); /* catVar와 동일하게 삭제·되돌리기에서 함께 이동시켜야 유령으로 남거나 끊기지 않음(app-evolve cycle194 advance) */
  recs.forEach(r=>{r.active=false});
  DB.categories[k].splice(i,1);
- delete DB.catIcon[catKey(k,c)];              /* 삭제 시 아이콘/변동/예산도 함께 정리 (동명 카테고리 재생성 시 이전 설정이 남지 않도록) */
+ delete DB.catIcon[catKey(k,c)];              /* 삭제 시 아이콘/변동/예산/이월설정도 함께 정리 (동명 카테고리 재생성 시 이전 설정이 남지 않도록) */
  delete DB.catVar[catKey(k,c)];
  if(hadBudget)delete DB.budgetHistory[c];
+ if(k==='expense')delete DB.catBudgetRollover[catKey('expense',c)];
  DB.deletedIds=DB.deletedIds||{};DB.deletedIds[catTombKey(k,c)]=Date.now(); /* delOwner와 동일한 톰스톤 — 없으면 mergeRemoteDataIntoLocal이 이 삭제를 모르고 아직 안 지운 기기의 사본을 되살림(app-evolve cycle179) */
  touchSave(...recs);renderCurrent();openCatManage(k);
  undoToast(`'${c}' 카테고리를 삭제했어요`+(recs.length?` · 반복거래 ${recs.length}개 비활성화`:''),()=>{
@@ -5484,6 +5526,7 @@ function doDeleteCat(k,i){const c=DB.categories[k][i];
   if(icon)DB.catIcon[catKey(k,c)]=icon;
   if(wasVar)DB.catVar[catKey(k,c)]=true;
   if(hadBudget){DB.budgetHistory=DB.budgetHistory||{};DB.budgetHistory[c]=budgetVal}
+  if(wasRollover)DB.catBudgetRollover[catKey('expense',c)]=true;
   recs.forEach(r=>{r.active=true});
   delete DB.deletedIds[catTombKey(k,c)];
   touchSave(...recs);renderCurrent();openCatManage(k);toast('되돌렸어요')})}
@@ -5498,13 +5541,15 @@ function doRenameCat(k,i){const v=((catRenameDraft.name!=null?catRenameDraft.nam
  const old=DB.categories[k][i];
  if(k==='income'&&old===ADJUST_CAT){toast('자동으로 생성되는 카테고리라 이름을 바꿀 수 없어요');return}
  if(v!==old){const dup=DB.categories[k].find(c=>c!==old&&normName(c)===normName(v));if(dup){toast(dup===v?'이미 있는 카테고리예요':`비슷한 카테고리가 있어요: ${dup}`);return}}
- DB.catIcon=DB.catIcon||{};DB.catVar=DB.catVar||{};DB.budgetHistory=DB.budgetHistory||{};
+ DB.catIcon=DB.catIcon||{};DB.catVar=DB.catVar||{};DB.budgetHistory=DB.budgetHistory||{};DB.catBudgetRollover=DB.catBudgetRollover||{};
  const ic=catRenameDraft.icon||'';
  const wasVar=isVarCat(k,old);
+ const wasRollover=k==='expense'&&isBudgetRolloverCat(old); /* 이름 변경 시 예산 이월 설정도 catVar와 동일하게 이동(app-evolve cycle194 advance) */
  delete DB.catIcon[catKey(k,old)];            /* 이름 변경 시 아이콘 키도 이동 */
  if(ic)DB.catIcon[catKey(k,v)]=ic;
  delete DB.catVar[catKey(k,old)];             /* 이름 변경 시 '변동' 카테고리 플래그도 이동 */
  if(wasVar)DB.catVar[catKey(k,v)]=true;
+ if(k==='expense'){delete DB.catBudgetRollover[catKey('expense',old)];if(wasRollover)DB.catBudgetRollover[catKey('expense',v)]=true}
  if(v!==old){
   DB.categories[k][i]=v;
   DB.txns.forEach(t=>{if(t.type===k&&t.category===old){t.category=v;if(t.memo===old)t.memo=v;touch(t)}}); /* 메모가 카테고리명과 같았던(=자동 채움) 내역도 recurrences와 동일하게 이동. touch() 누락 시 mergeCollection()이 updatedAt만 보고 병합하다 다른 기기의 동기화 안 된 내역이 이 이름변경을 조용히 되돌릴 수 있음(doRenameOwner와 동일한 불변식) */
@@ -6315,6 +6360,7 @@ function sanitizeBackup(obj){
  };
  const catIcon=sanitizeFlatMap(obj&&obj.catIcon);
  const catVar=sanitizeFlatMap(obj&&obj.catVar);
+ const catBudgetRollover=sanitizeFlatMap(obj&&obj.catBudgetRollover);
  const deletedType=sanitizeFlatMap(obj&&obj.deletedType);
  const deletedBal=sanitizeFlatMap(obj&&obj.deletedBal);
  /* DB.rates(시세 스냅샷)도 mergeRemoteDataIntoLocal()에 병합 배선이 추가되면서(app-evolve
@@ -6436,7 +6482,7 @@ function sanitizeBackup(obj){
   }else if(h.byOwner!=null)fixedCount++;
   nwHistory.push(d);
  });
- return {data:Object.assign({},obj,{txns,assets,recurrences,goals,inquiries,assetQtyLog,categories,owners,budgetHistory,budgets,catIcon,catVar,deletedType,deletedBal,deletedIds,nwHistory,settings,rates}),fixedCount,droppedCount,rangeCount};
+ return {data:Object.assign({},obj,{txns,assets,recurrences,goals,inquiries,assetQtyLog,categories,owners,budgetHistory,budgets,catIcon,catVar,catBudgetRollover,deletedType,deletedBal,deletedIds,nwHistory,settings,rates}),fixedCount,droppedCount,rangeCount};
 }
 /* obj.assets/obj.txns가 배열인지까지 검증한 뒤 DB를 통째로 교체한다. migrate()가 손상된
  * obj 때문에 중간에 throw해도 DB가 절반만 마이그레이션된 채로 남지 않도록, 실패 시 교체 전

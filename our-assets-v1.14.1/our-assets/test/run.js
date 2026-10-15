@@ -165,6 +165,7 @@ const FUNCTIONS = [
   'addMonths', 'fetchWithTimeout', 'withTimeout',
   'dateBelowRangeFloor', 'dateAboveRangeCeil', 'recalcEndCond', 'isVarCat', 'setCatVar', 'activeRecsForAssets', 'activeRecsForCat',
   'num', 'doRenameCat', 'doDeleteCat', 'totalBudgetSummary', 'budgetForMonth', 'setBudgetFrom', 'addCat',
+  'isBudgetRolloverCat', 'setBudgetRolloverCat', 'toggleBudgetRolloverUI', 'budgetCarryFor', 'budgetForMonthWithCarry',
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV',
   'unguardCsv', 'csvRowToImportTxn', 'buildImportPreview', 'doCsvImport',
   'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo', 'unsnapshotAssetName', 'doBulkCat', 'bulkCatPickFor',
@@ -1708,6 +1709,99 @@ test('setBudgetFrom: 과거 달을 보면서 저장해도(예: 6월을 보다가
   assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 6), 300000, '이후 달 값은 영향받지 않아야 함');
 });
 
+/* ---------- budgetCarry/budgetForMonthEffective(logic.js): 예산 이월(rollover, 순수) ---------- */
+test('budgetCarry: 전달 예산을 다 못 쓰고 남았으면 그 여윳돈을 그대로 돌려준다', () => {
+  assert.strictEqual(sandbox.budgetCarry(300000, 200000), 100000);
+});
+test('budgetCarry: 전달 예산을 초과했으면 0으로 clamp한다(초과분은 다음 달로 넘기지 않음)', () => {
+  assert.strictEqual(sandbox.budgetCarry(300000, 350000), 0);
+});
+test('budgetCarry: 딱 맞춰 다 썼으면 0을 돌려준다', () => {
+  assert.strictEqual(sandbox.budgetCarry(300000, 300000), 0);
+});
+test('budgetCarry: 전달에 예산 자체가 없었으면(0/미설정) 이월할 게 없으므로 0을 돌려준다', () => {
+  assert.strictEqual(sandbox.budgetCarry(0, 0), 0);
+  assert.strictEqual(sandbox.budgetCarry(undefined, 0), 0);
+});
+test('budgetForMonthEffective: 이번 달 한도에 이월분을 더한다', () => {
+  assert.strictEqual(sandbox.budgetForMonthEffective(300000, 100000), 400000);
+});
+test('budgetForMonthEffective: 이월분이 0이면 이번 달 한도 그대로다', () => {
+  assert.strictEqual(sandbox.budgetForMonthEffective(300000, 0), 300000);
+});
+test('budgetForMonthEffective: 이번 달 자체에 한도가 없으면(0/미설정) 이월분이 있어도 0을 그대로 돌려준다(없던 예산이 생겨 보이면 안 됨)', () => {
+  assert.strictEqual(sandbox.budgetForMonthEffective(0, 100000), 0);
+});
+
+/* ---------- catBudgetRollover 토글 + budgetCarryFor/budgetForMonthWithCarry(index.html): 토글 opt-in 이월 ---------- */
+test('isBudgetRolloverCat/setBudgetRolloverCat: 기본은 꺼짐(false)이고 켜고 끌 수 있다', () => {
+  sandbox.DB = { catBudgetRollover: {} };
+  assert.strictEqual(sandbox.isBudgetRolloverCat('식비'), false);
+  sandbox.setBudgetRolloverCat('식비', true);
+  assert.strictEqual(sandbox.isBudgetRolloverCat('식비'), true);
+  sandbox.setBudgetRolloverCat('식비', false);
+  assert.strictEqual(sandbox.isBudgetRolloverCat('식비'), false);
+});
+test('budgetCarryFor: 토글이 꺼져 있으면 전달 실적과 무관하게 항상 0이다', () => {
+  sandbox.DB = {
+    catBudgetRollover: {},
+    budgetHistory: { 식비: [{ from: '2026-01', amount: 300000 }] },
+    txns: [{ id: '1', type: 'expense', category: '식비', amount: 200000, date: '2026-05-10', confirmed: true }],
+    recurrences: [],
+  };
+  assert.strictEqual(sandbox.budgetCarryFor('식비', 2026, 6), 0);
+});
+test('budgetCarryFor: 토글이 켜져 있으면 전달 예산-지출의 여윳돈을 이월한다', () => {
+  sandbox.DB = {
+    catBudgetRollover: { 'expense:식비': true },
+    budgetHistory: { 식비: [{ from: '2026-01', amount: 300000 }] },
+    txns: [{ id: '1', type: 'expense', category: '식비', amount: 200000, date: '2026-05-10', confirmed: true }],
+    recurrences: [],
+  };
+  assert.strictEqual(sandbox.budgetCarryFor('식비', 2026, 6), 100000, '전달(5월) 300000 예산 중 200000만 써서 100000이 남아야 함');
+});
+test('budgetCarryFor: 토글이 켜져 있어도 전달 예산을 초과했으면 이월분은 0이다', () => {
+  sandbox.DB = {
+    catBudgetRollover: { 'expense:식비': true },
+    budgetHistory: { 식비: [{ from: '2026-01', amount: 300000 }] },
+    txns: [{ id: '1', type: 'expense', category: '식비', amount: 350000, date: '2026-05-10', confirmed: true }],
+    recurrences: [],
+  };
+  assert.strictEqual(sandbox.budgetCarryFor('식비', 2026, 6), 0);
+});
+test('budgetCarryFor: 전달에 예산 자체가 없었으면(0/미설정) 이월할 게 없다', () => {
+  sandbox.DB = { catBudgetRollover: { 'expense:식비': true }, budgetHistory: {}, txns: [], recurrences: [] };
+  assert.strictEqual(sandbox.budgetCarryFor('식비', 2026, 6), 0);
+});
+test('budgetCarryFor: 1월(전달이 전년 12월)로 넘어가도(연도 경계) 올바르게 조회한다', () => {
+  sandbox.DB = {
+    catBudgetRollover: { 'expense:식비': true },
+    budgetHistory: { 식비: [{ from: '2025-01', amount: 300000 }] },
+    txns: [{ id: '1', type: 'expense', category: '식비', amount: 100000, date: '2025-12-20', confirmed: true }],
+    recurrences: [],
+  };
+  assert.strictEqual(sandbox.budgetCarryFor('식비', 2026, 1), 200000);
+});
+test('budgetForMonthWithCarry: 토글이 꺼져 있으면 기존 budgetForMonth()와 완전히 동일하다(하위호환)', () => {
+  sandbox.DB = {
+    catBudgetRollover: {},
+    budgetHistory: { 식비: [{ from: '2026-01', amount: 300000 }] },
+    txns: [{ id: '1', type: 'expense', category: '식비', amount: 100000, date: '2026-05-10', confirmed: true }],
+    recurrences: [],
+  };
+  assert.strictEqual(sandbox.budgetForMonthWithCarry('식비', 2026, 6), sandbox.budgetForMonth('식비', 2026, 6));
+  assert.strictEqual(sandbox.budgetForMonthWithCarry('식비', 2026, 6), 300000);
+});
+test('budgetForMonthWithCarry: 토글이 켜져 있으면 이월분이 더해진 실질 한도를 돌려준다', () => {
+  sandbox.DB = {
+    catBudgetRollover: { 'expense:식비': true },
+    budgetHistory: { 식비: [{ from: '2026-01', amount: 300000 }] },
+    txns: [{ id: '1', type: 'expense', category: '식비', amount: 200000, date: '2026-05-10', confirmed: true }],
+    recurrences: [],
+  };
+  assert.strictEqual(sandbox.budgetForMonthWithCarry('식비', 2026, 6), 400000, '300000 + 전달 여윳돈 100000');
+});
+
 /* ---------- totalBudgetSummary: 지출 분석의 해당 달 '예산' 요약 카드 집계 ---------- */
 test('totalBudgetSummary: 예산을 하나도 설정하지 않았으면 budgetedTotal=0(집계할 게 없음)', () => {
   sandbox.DB = { budgetHistory: {} };
@@ -1768,6 +1862,22 @@ test('doRenameCat: 예산이 설정되지 않은 카테고리를 이름변경해
   sandbox.doRenameCat('expense', 0);
   assert.strictEqual(Object.keys(sandbox.DB.budgetHistory).length, 0);
 });
+/* catVar/budgetHistory와 동일하게 예산 이월(catBudgetRollover) 토글도 이름변경을 따라 이동해야
+ * 한다 — 안 하면 이름을 바꾸자마자 토글이 유령으로 끊기거나 새 이름에 옛 설정이 남는다
+ * (app-evolve cycle194 advance). */
+test('doRenameCat: 이월(rollover) 토글이 켜진 카테고리의 이름을 바꾸면 토글도 새 이름으로 이동한다', () => {
+  sandbox.DB = { categories: { expense: ['식비'] }, catIcon: {}, catVar: {}, catBudgetRollover: { 'expense:식비': true }, budgetHistory: {}, txns: [], recurrences: [] };
+  sandbox.catRenameDraft = { name: '외식비', icon: '' };
+  sandbox.doRenameCat('expense', 0);
+  assert.strictEqual(sandbox.isBudgetRolloverCat('외식비'), true, '새 이름에 이월 토글이 켜져 있어야 함');
+  assert.strictEqual('expense:식비' in sandbox.DB.catBudgetRollover, false, '옛 이름의 이월 토글은 제거돼야 함');
+});
+test('doRenameCat: 이월 토글이 꺼진 카테고리의 이름을 바꿔도 새 이름에 토글이 켜지지 않는다', () => {
+  sandbox.DB = { categories: { expense: ['식비'] }, catIcon: {}, catVar: {}, catBudgetRollover: {}, budgetHistory: {}, txns: [], recurrences: [] };
+  sandbox.catRenameDraft = { name: '외식비', icon: '' };
+  sandbox.doRenameCat('expense', 0);
+  assert.strictEqual(sandbox.isBudgetRolloverCat('외식비'), false);
+});
 
 /* ---------- doDeleteCat: 카테고리 삭제 시 아이콘/변동/예산 정리 (동명 재생성 시 이전 설정이 남지 않도록) ---------- */
 test('doDeleteCat: 삭제 시 catIcon/catVar/budgetHistory 항목이 함께 제거된다', () => {
@@ -1783,6 +1893,19 @@ test('doDeleteCat: 삭제 시 catIcon/catVar/budgetHistory 항목이 함께 제�
   assert.strictEqual('expense:커피' in sandbox.DB.catIcon, false);
   assert.strictEqual('expense:커피' in sandbox.DB.catVar, false);
   assert.strictEqual('커피' in sandbox.DB.budgetHistory, false);
+});
+test('doDeleteCat: 이월(rollover) 토글이 켜진 카테고리를 삭제하면 토글도 함께 제거되고, 되돌리면 토글도 함께 복원된다', () => {
+  sandbox.DB = {
+    categories: { expense: ['커피', '식비'] },
+    catIcon: {}, catVar: {},
+    catBudgetRollover: { 'expense:커피': true },
+    budgetHistory: {},
+    txns: [], recurrences: [],
+  };
+  sandbox.doDeleteCat('expense', 0);
+  assert.strictEqual('expense:커피' in sandbox.DB.catBudgetRollover, false, '삭제 시 이월 토글도 제거돼야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.isBudgetRolloverCat('커피'), true, '되돌리면 이월 토글도 복원돼야 함');
 });
 test('doDeleteCat: 같은 이름으로 다시 추가해도 지워진 카테고리의 이전 아이콘/변동/예산을 물려받지 않는다', () => {
   sandbox.DB = {
@@ -2246,6 +2369,35 @@ test('openBudgetPrompt: budgetIn도 다른 금액 입력란(txAmt/rAmt/goalAmt/a
   sandbox.openBudgetPrompt(0);
   assert.ok(sandbox.lastSheetHtml.includes('<div class="field-clear"><input id="budgetIn"'), 'budgetIn 입력이 field-clear로 감싸져 있지 않음');
   assert.ok(sandbox.lastSheetHtml.includes(`<button type="button" class="fc-x" aria-label="예산 금액 지우기" onclick="clrInput('budgetIn')">`), 'budgetIn에 fc-x 지우기 버튼의 clrInput 연결이 없음');
+});
+/* 이월(catBudgetRollover) 토글이 켜진 카테고리를 편집할 때, 입력란(budgetIn)의 값은 여전히 이번 달에
+ * 직접 설정한 flat 한도 그대로 두되(이월분까지 끼워 저장하면 다음 번 조회 때 또 더해져 눈덩이처럼
+ * 불어남) 바로 아래에 "전달 이월 N원이 더해져 총 M원까지" 캡션만 추가해 사용자가 왜 실제 한도가
+ * 다른지 알 수 있게 한다(app-evolve cycle194 advance). */
+test('openBudgetPrompt: 이월(rollover) 토글이 켜져 있고 전달 여윳돈이 있으면 안내 캡션을 보여준다', () => {
+  sandbox.DB = {
+    txns: [{ id: '1', type: 'expense', category: '식비', amount: 200000, date: '2026-05-10', confirmed: true }],
+    recurrences: [],
+    budgetHistory: { 식비: [{ from: '2026-01', amount: 300000 }] },
+    catBudgetRollover: { 'expense:식비': true },
+  };
+  sandbox.ST = { ledger: { y: 2026, m: 6 } };
+  sandbox.lastSheetHtml = null;
+  sandbox.openBudgetPrompt(0);
+  assert.ok(sandbox.lastSheetHtml.includes('전달 이월 100,000원이 더해져 이번 달 총 400,000원까지 쓸 수 있어요'), '이월 안내 캡션이 없음');
+  assert.ok(sandbox.lastSheetHtml.includes('value="300,000"'), '입력란 자체는 이월이 더해지지 않은 flat 한도를 그대로 보여줘야 함');
+});
+test('openBudgetPrompt: 이월 토글이 꺼져 있으면 캡션이 뜨지 않는다', () => {
+  sandbox.DB = {
+    txns: [{ id: '1', type: 'expense', category: '식비', amount: 200000, date: '2026-05-10', confirmed: true }],
+    recurrences: [],
+    budgetHistory: { 식비: [{ from: '2026-01', amount: 300000 }] },
+    catBudgetRollover: {},
+  };
+  sandbox.ST = { ledger: { y: 2026, m: 6 } };
+  sandbox.lastSheetHtml = null;
+  sandbox.openBudgetPrompt(0);
+  assert.ok(!sandbox.lastSheetHtml.includes('전달 이월'), '토글이 꺼져 있는데도 이월 캡션이 떴음');
 });
 /* bigMinInput('큰 지출' 기준 금액, openBigMinSheet)도 budgetIn/qAmt와 같은 누락이 있던 금액 입력란이다. */
 test('openBigMinSheet: bigMinInput도 다른 금액 입력란과 동일하게 field-clear(×) 버튼이 있다', () => {
@@ -6664,28 +6816,31 @@ test('sanitizeBackup: 손상된 budgets 값을 보정하지 않은 채 두면 mi
   assert.strictEqual(sandbox.DB.budgetHistory['식비'][0].amount, 0, 'sanitizeBackup이 보정했으므로 migrate() 변환 후에도 숫자 0이어야 함(원래 버그였다면 문자열 "abc"가 그대로 들어갔을 것)');
 });
 
-/* ---------- sanitizeBackup: catIcon/catVar(카테고리 아이콘·변동 카테고리 플래그)·deletedType/
- * deletedBal(삭제된 자산 재연동용 타입·잔액 기억)은 모두 '타입:이름'(또는 자산명) → 값의 평평한
- * 객체 맵이다 — 배열 등 다른 타입이 들어오면 mergeFlatMap()의 Object.assign이 데이터를 뒤튼다. ---------- */
-test('sanitizeBackup: catIcon/catVar/deletedType/deletedBal이 객체가 아니면(배열 등) 빈 맵으로 되돌리고 fixedCount를 센다', () => {
+/* ---------- sanitizeBackup: catIcon/catVar(카테고리 아이콘·변동 카테고리 플래그)·catBudgetRollover
+ * (예산 이월 토글, app-evolve cycle194 advance)·deletedType/deletedBal(삭제된 자산 재연동용 타입·잔액
+ * 기억)은 모두 '타입:이름'(또는 자산명) → 값의 평평한 객체 맵이다 — 배열 등 다른 타입이 들어오면
+ * mergeFlatMap()의 Object.assign이 데이터를 뒤튼다. ---------- */
+test('sanitizeBackup: catIcon/catVar/catBudgetRollover/deletedType/deletedBal이 객체가 아니면(배열 등) 빈 맵으로 되돌리고 fixedCount를 센다', () => {
   const { data, fixedCount } = sandbox.sanitizeBackup({
     txns: [], assets: [],
-    catIcon: ['oops'], catVar: 'oops', deletedType: 123, deletedBal: null,
+    catIcon: ['oops'], catVar: 'oops', catBudgetRollover: ['oops'], deletedType: 123, deletedBal: null,
   });
   assert.strictEqual(Object.keys(data.catIcon).length, 0);
   assert.strictEqual(Object.keys(data.catVar).length, 0);
+  assert.strictEqual(Object.keys(data.catBudgetRollover).length, 0);
   assert.strictEqual(Object.keys(data.deletedType).length, 0);
   assert.strictEqual(Object.keys(data.deletedBal).length, 0);
-  assert.strictEqual(fixedCount, 3); // deletedBal:null은 '없음'과 동일하게 취급(fixedCount 제외)
+  assert.strictEqual(fixedCount, 4); // deletedBal:null은 '없음'과 동일하게 취급(fixedCount 제외)
 });
-test('sanitizeBackup: 정상적인 catIcon/catVar/deletedType/deletedBal은 그대로 두고, 없어도 터지지 않는다(정상 케이스는 회귀 없음)', () => {
+test('sanitizeBackup: 정상적인 catIcon/catVar/catBudgetRollover/deletedType/deletedBal은 그대로 두고, 없어도 터지지 않는다(정상 케이스는 회귀 없음)', () => {
   const { data, fixedCount } = sandbox.sanitizeBackup({
     txns: [], assets: [],
-    catIcon: { 'expense:식비': 'food' }, catVar: { 'expense:용돈': true },
+    catIcon: { 'expense:식비': 'food' }, catVar: { 'expense:용돈': true }, catBudgetRollover: { 'expense:식비': true },
     deletedType: { '옛통장': 'cash' }, deletedBal: { '옛통장': 10000 },
   });
   assert.strictEqual(data.catIcon['expense:식비'], 'food');
   assert.strictEqual(data.catVar['expense:용돈'], true);
+  assert.strictEqual(data.catBudgetRollover['expense:식비'], true);
   assert.strictEqual(data.deletedType['옛통장'], 'cash');
   assert.strictEqual(data.deletedBal['옛통장'], 10000);
   assert.strictEqual(fixedCount, 0);
@@ -8425,6 +8580,31 @@ test('mergeRemoteDataIntoLocal: DB.catIcon/DB.catVar도 mergeFlatMap으로 병�
   assert.strictEqual(sandbox.DB.catIcon['expense:식비'], 'food', '같은 키는 local 값이 이겨야 함');
   assert.strictEqual(sandbox.DB.catVar['expense:교통'], true, 'remote에만 있던 변동 플래그도 들어와야 함');
 });
+test('mergeRemoteDataIntoLocal: DB.catBudgetRollover(예산 이월 토글)도 catIcon/catVar와 동일하게 mergeFlatMap으로 병합된다(신설 시점부터 배선, app-evolve cycle194 advance)', () => {
+  sandbox.DB = minimalMergeDB({
+    catBudgetRollover: { 'expense:식비': true },
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    catBudgetRollover: { 'expense:교통': true, 'expense:식비': false },
+    deletedIds: {},
+  });
+  assert.strictEqual(sandbox.DB.catBudgetRollover['expense:교통'], true, 'remote에만 있던 이월 토글도 들어와야 함');
+  assert.strictEqual(sandbox.DB.catBudgetRollover['expense:식비'], true, '같은 키는 local 값이 이겨야 함(local이 false를 저장하진 않지만 Object.assign 순서 회귀 확인)');
+});
+test('mergeRemoteDataIntoLocal: 한 기기가 지운 카테고리의 catBudgetRollover가 아직 지우지 않은 다른 기기와 병합해도 되살아나지 않는다(catIcon/catVar와 동일한 톰스톤 인지)', () => {
+  sandbox.DB = minimalMergeDB({
+    catsV2: true,
+    categories: { expense: ['식비'], income: [], saving: [] }, // 기기A: coffee를 이미 삭제함
+    catBudgetRollover: {},
+    deletedIds: { [sandbox.catTombKey('expense', 'coffee')]: 2000 },
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    categories: { expense: ['식비', 'coffee'], income: [], saving: [] }, // 기기B: 아직 coffee를 안 지움
+    catBudgetRollover: { 'expense:coffee': true },
+    deletedIds: {},
+  });
+  assert.strictEqual('expense:coffee' in sandbox.DB.catBudgetRollover, false, '지워진 카테고리의 이월 토글이 되살아나면 안 됨');
+});
 test('mergeRemoteDataIntoLocal: DB.deletedType/DB.deletedBal도 mergeFlatMap으로 병합된다(이전엔 전혀 병합 안 돼 재연동 기록이 기기 간에 사라짐)', () => {
   sandbox.DB = minimalMergeDB({
     deletedType: { '카카오뱅크': 'cash' },
@@ -8586,11 +8766,12 @@ test('mergeRemoteDataIntoLocal: 이름변경(커피→카페) 후 미동기화 �
  * 정리한다(app-evolve cycle181 advance) — mergeBudgetHistory/mergeFlatMap의 톰스톤 인지는 병합
  * 경로에서만 적용되므로, restoreBackup/guest 데이터 가져오기 등 병합을 거치지 않는 경로로 들어온
  * 유령은 addCat 시점에 방어적으로 한 번 더 정리해야 한다. ---------- */
-test('addCat: 톰스톤 병합 경로 바깥에서 들어온 budgetHistory/catIcon/catVar 유령이 있어도 재추가 시 깨끗이 지워진다', () => {
+test('addCat: 톰스톤 병합 경로 바깥에서 들어온 budgetHistory/catIcon/catVar/catBudgetRollover 유령이 있어도 재추가 시 깨끗이 지워진다', () => {
   sandbox.DB = {
     categories: { expense: ['식비'] },
     catIcon: { 'expense:coffee': 'old-icon' },
     catVar: { 'expense:coffee': true },
+    catBudgetRollover: { 'expense:coffee': true },
     budgetHistory: { coffee: [{ from: '2026-08', amount: 90000 }] }, // 병합 경로를 거치지 않고 들어온 유령(예: restoreBackup)
     txns: [], recurrences: [],
   };
@@ -8600,6 +8781,7 @@ test('addCat: 톰스톤 병합 경로 바깥에서 들어온 budgetHistory/catIc
   assert.strictEqual('expense:coffee' in sandbox.DB.catIcon, false, '재추가 시 유령 아이콘이 지워져야 함');
   assert.strictEqual('expense:coffee' in sandbox.DB.catVar, false, '재추가 시 유령 변동플래그가 지워져야 함');
   assert.strictEqual('coffee' in sandbox.DB.budgetHistory, false, '재추가 시 유령 예산 한도가 지워져야 함(과거 예산이 사용자 행동 없이 즉시 재적용되면 안 됨)');
+  assert.strictEqual('expense:coffee' in sandbox.DB.catBudgetRollover, false, '재추가 시 유령 이월 토글이 지워져야 함');
 });
 
 /* ---------- gcTombstones: migrate()가 부팅마다 DB.deletedIds에서 오래된(maxAgeMs 이전) tombstone을
@@ -11362,6 +11544,36 @@ test('openSpendAnalysis: 예산 요약 카드에 개별 카테고리 예산 초�
   const unsetIdx = body.indexOf('tb.unsetCount?');
   assert.ok(overIdx !== -1 && unsetIdx !== -1 && overIdx < unsetIdx, 'overCount 캡션이 unsetCount 캡션보다 먼저 와야 함');
 });
+/* 예산 이월(catBudgetRollover) 토글이 켜진 카테고리의 여윳돈이 이번 달 한도에 조용히 더해지기만
+ * 하면, 사용자는 왜 한도가 평소보다 커졌는지 알 길이 없다 — overCount/unsetCount와 같은 자리에
+ * '전달 이월 N원 포함' 캡션을 추가한다(app-evolve cycle194 advance). */
+test('openSpendAnalysis: 예산 요약 카드에 이월(rollover)로 더해진 금액을 캡션으로 보여준다', () => {
+  const body = extractFunction('openSpendAnalysis');
+  assert.ok(
+    body.includes('tb.carryTotal?`<div style="font-size:11.5px;color:var(--text-3);margin-top:6px">전달 이월 ${comma(tb.carryTotal)}원 포함</div>`'),
+    '요약 카드에 전달 이월 캡션이 없음'
+  );
+  const unsetIdx = body.indexOf('tb.unsetCount?');
+  const carryIdx = body.indexOf('tb.carryTotal?');
+  assert.ok(unsetIdx !== -1 && carryIdx !== -1 && unsetIdx < carryIdx, '이월 캡션은 unsetCount 캡션보다 뒤에 와야 함');
+});
+test('openSpendAnalysis: 카테고리별 행의 한도 표시도 이월이 더해진 budgetForMonthWithCarry 기준이다', () => {
+  const body = extractFunction('openSpendAnalysis');
+  assert.ok(body.includes('const budget=budgetForMonthWithCarry(r.c,y,m);'), '행 한도 계산이 이월을 반영하는 budgetForMonthWithCarry가 아님');
+});
+test('totalBudgetSummary: catBudgetRollover 토글이 켜진 카테고리는 이월분이 budgetedTotal/overCount에 반영되고 carryTotal로 노출된다', () => {
+  sandbox.DB = {
+    catBudgetRollover: { 'expense:식비': true },
+    budgetHistory: { 식비: [{ from: '2026-01', amount: 300000 }] },
+    txns: [{ id: '1', type: 'expense', category: '식비', amount: 200000, date: '2026-05-10', confirmed: true }],
+    recurrences: [],
+  };
+  const rows = [{ c: '식비', v: 350000 }]; // 이번 달 식비 350000 지출
+  const r = sandbox.totalBudgetSummary(rows, 2026, 6);
+  assert.strictEqual(r.carryTotal, 100000, '전달 300000 예산 중 200000만 써서 100000이 이월돼야 함');
+  assert.strictEqual(r.budgetedTotal, 400000, '이번 달 한도 300000 + 이월 100000');
+  assert.strictEqual(r.overCount, 0, '350000 지출은 이월 포함 400000 한도 이내라 초과가 아니어야 함(이월 없었다면 300000 한도로 초과였을 상황)');
+});
 test('totalBudgetSummary → openSpendAnalysis: overCount>0이어도 합계가 예산 이내(tbp.over=false)면 전체 바는 초과색이 아니지만 overCount 캡션은 떠야 한다', () => {
   // 식비는 50000/40000(초과), 교통은 10000/60000(여유) → 합계 60000/100000은 이내지만 식비 하나는 초과
   const rows = [{ c: '식비', v: 50000 }, { c: '교통', v: 10000 }];
@@ -13173,6 +13385,7 @@ function setupCatManageDB() {
     categories: { expense: ['식비', '교통'], income: ['급여', sandbox.ADJUST_CAT], saving: ['적금'] },
     catIcon: {},
     catVar: {},
+    catBudgetRollover: {},
   };
   sandbox.catAddDraft = null;
   sandbox.lastSheetHtml = null;
@@ -13194,6 +13407,36 @@ test('openCatManage: saving 탭 — 변동/고정 뱃지(varPill) 없이 그린�
   const html = sandbox.lastSheetHtml;
   assert.ok(html.includes('적금'));
   assert.ok(!html.includes('varpill'), 'saving 탭은 변동/고정 뱃지가 없어야 함');
+});
+/* 예산 이월(catBudgetRollover) 토글 pill — budgetHistory와 동일하게 지출(expense) 카테고리에만
+ * 있는 설정이라 saving/income 탭에는 없어야 한다(app-evolve cycle194 advance). */
+test('openCatManage: expense 탭 — 이월(rollover) 토글 pill을 변동/고정 뱃지 옆에 그린다', () => {
+  setupCatManageDB();
+  sandbox.DB.catBudgetRollover[sandbox.catKey('expense', '식비')] = true;
+  sandbox.openCatManage('expense');
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('이월'), '이월 토글이 켜진 카테고리는 "이월" 뱃지를 보여줘야 함');
+  assert.ok(html.includes('이월 안함'), '이월 토글이 꺼진 카테고리는 "이월 안함" 뱃지를 보여줘야 함');
+  assert.ok(html.includes("onclick=\"toggleBudgetRolloverUI(0,this)\""), '식비(인덱스 0) 행에 toggleBudgetRolloverUI 연결이 없음');
+});
+test('openCatManage: saving/income 탭에는 이월 토글 pill이 없다', () => {
+  setupCatManageDB();
+  sandbox.openCatManage('saving');
+  assert.ok(!sandbox.lastSheetHtml.includes('toggleBudgetRolloverUI'), 'saving 탭에 이월 토글이 그려짐');
+  sandbox.openCatManage('income');
+  assert.ok(!sandbox.lastSheetHtml.includes('toggleBudgetRolloverUI'), 'income 탭에 이월 토글이 그려짐');
+});
+test('toggleBudgetRolloverUI: 버튼 클릭 시 상태를 토글하고 DOM(classList/textContent)을 즉시 갱신한다', () => {
+  setupCatManageDB();
+  const btn = { classList: { toggle(cls, on) { this.on = !!on; }, on: false }, textContent: '이월 안함' };
+  sandbox.toggleBudgetRolloverUI(0, btn);
+  assert.strictEqual(sandbox.isBudgetRolloverCat('식비'), true);
+  assert.strictEqual(btn.classList.on, true);
+  assert.strictEqual(btn.textContent, '이월');
+  sandbox.toggleBudgetRolloverUI(0, btn);
+  assert.strictEqual(sandbox.isBudgetRolloverCat('식비'), false);
+  assert.strictEqual(btn.classList.on, false);
+  assert.strictEqual(btn.textContent, '이월 안함');
 });
 /* 구분(지출/수입/저축) 세그먼트가 class="on"만으로 선택 상태를 표시해 스크린리더가 어떤 탭이
  * 선택돼 있는지 알 수 없던 공백 — app-evolve cycle147 critique/advance. */

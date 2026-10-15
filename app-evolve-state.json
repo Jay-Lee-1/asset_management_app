@@ -1,157 +1,97 @@
 {
   "cycle": 194,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "예산 이월(rollover) 기능 부재 — 카테고리 예산이 매달 고정값 반복일 뿐, 남은/초과분이 다음 달로 전혀 넘어가지 않음",
-    "why": "index.html의 예산 모델(budgetForMonth/setBudgetFrom/budgetKey ~5251-5262, totalBudgetSummary ~5269-5285, openBudgetPrompt/saveBudget ~5334-5346)은 '카테고리→[{from,amount}]' 이력에서 대상 달 이전 가장 최근 값을 그대로 쓰는 effective-dated flat 값이라, 한 달 예산을 다 못 썼든(여윳돈) 초과했든 다음 달 budgetForMonth(c,y,m+1) 계산에 전혀 반영되지 않는다. 예: 식비 예산 300,000원 중 1월에 200,000원만 썼어도 2월엔 그대로 300,000원 한도만 뜨고, '1월에 아낀 10만원까지 2월엔 40만원 쓸 수 있다'는 흔한 봉투식(envelope) 예산 기능이 없다. 194사이클의 예산 관련 작업(overCount 캡션, 카테고리 삭제/이름변경 시 budgetHistory 이관, CSV undo 등)은 전부 기존 flat 모델의 정확성·동기화 문제만 다뤘을 뿐 모델 자체의 기능적 공백(이월 유무)은 건드린 적이 없어 미답 영역이다.",
-    "approach": "1) logic.js에 순수 함수 budgetCarry(prevBudget,prevSpent)=Math.max(0,prevBudget-prevSpent)(초과분은 0으로 clamp, 여윳돈만 이월) + budgetForMonthEffective(baseBudget,carry)=baseBudget+carry 추가, totalBudgetSummary/openBudgetPrompt가 공유. 2) index.html에 DB.catVar와 동일 패턴으로 DB.catBudgetRollover 맵 추가(opt-in, 카테고리별 on/off, 기본 false=기존 동작 그대로 하위호환), catKey(k,c) 재사용. openCatManage()의 expense 카테고리 행에 isVarCat() varpill 옆에 '이월' 토글 pill 추가(toggleCatBudgetRolloverUI, toggleCatVarUI와 동일 구조) — saving/income은 대상 아님. 3) 사용자에게 '이번 달 한도'를 보여주는 지점(openBudgetPrompt, totalBudgetSummary 내부 budgetForMonth(r.c,y,m) 호출부 ~5271)에서 DB.catBudgetRollover[catKey('expense',c)]true면 전달 budgetForMonth(c,y,m-1)+전달 spendByCategory(y,m-1,'전체')로 budgetCarry() 계산 후 budgetForMonthEffective로 합산해 '예산'으로 사용. doRenameCat/doDeleteCat(~5461-5509)에 DB.catVar 이관/삭제와 동일하게 DB.catBudgetRollover 키도 함께 이동/삭제(안 하면 이름변경·삭제 시 토글 상태가 유령으로 남거나 끊김). 4) openSpendAnalysis()/openBudgetPrompt()에 '전달 이월 N원 포함' 1줄 캡션 추가(기존 '일부 미확인' 캡션과 동일한 짧은 스타일). 이 작업이 어차피 openSpendAnalysis()의 totalBudgetSummary 카드 템플릿 리터럴(index.html ~5286-5319, 바로 cycle194 review가 지적한 7줄 <!-- --> HTML 주석이 박혀있는 블록)을 건드리므로, 같은 자리에서 그 주석을 평범한 // JS 주석으로 바깥에 옮기는 정리도 함께 처리(추가 diff 비용 거의 0). 5) test/run.js에 budgetCarry 단위 테스트(0 clamp/초과분 미이월/여윳돈 이월) + budgetForMonthEffective 합산 테스트 + catBudgetRollover 토글 꺼진 카테고리는 기존 budgetForMonth() 값과 동일(하위호환) 회귀 테스트 + doRenameCat/doDeleteCat의 catBudgetRollover 키 이관/삭제 테스트 추가."
-  },
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 189,
-      "phase": "critique",
-      "timestamp": "2026-10-14T07:14:11.928Z",
-      "summary": "general-purpose 서브에이전트로 141-189사이클 기각/완료 이력을 전달하고 앱 전체를 재조망 — 내역(History) 탭의 renderHistory()/matchTxnQuery()(histQ 검색창, index.html~4621-4645, logic.js:305)와 달리 자산(Assets) 탭 renderAssets()/assetBodyHTML()(index.html~3323-3423)에는 owner 필터와 정렬만 있고 검색창이 전혀 없음을 발견. 주식 종목별 개별 자산 행 + 다인(owner)/다통화 구성 특성상 자산이 20~40개 이상으로 늘기 쉬워 특정 자산을 찾는 유일한 방법이 스크롤뿐임을 grep(전역에서 유일한 .searchbar/실동작 검색창은 histQ뿐)으로 확인. CSV 라운드트립/클라우드 머지/반복거래/PIN 복구/차트 접근성/상환 투사/자산 재연결/RANGE 경계 등 다른 후보는 과거 사이클에서 이미 충분히 다뤄짐을 재확인 후 기각. 다음 advance 계획: matchAssetQuery(asset,q) 순수 함수 추가 + ST.assetQ 상태 + renderAssets()에 histQ와 동일 패턴의 검색창 삽입 + assetBodyHTML() 필터링 + 관련 테스트. 코드 변경 없음(읽기 전용 조사).",
-      "commit": null
-    },
-    {
-      "cycle": 189,
-      "phase": "advance",
-      "timestamp": "2026-10-14T08:11:15.248Z",
-      "summary": "critique(cycle189) 계획대로 자산(Assets) 탭에 검색창을 추가해 내역(History) 탭 histQ와의 기능 불일치를 해소. logic.js에 matchAssetQuery(a,q) 순수 함수 추가(matchTxnQuery와 동일한 대소문자 무시 includes 규칙, fx는 이름+보유통화(currency)까지 매칭). ST.assetQ 상태 추가. renderAssets()에 histQ와 동일한 .searchbar/.field-clear/fc-x 패턴의 검색창(id=assetQ)을 편집/일괄선택 모드가 아닐 때만 렌더하고, 입력 시 assetSelPartial()을 재사용해 #assetBody만 부분 재렌더(전체 재렌더로 포커스가 빠지는 문제 방지). 시트가 아닌 탭 화면이라 histQ/renderHistory와 동일하게 renderAssets() 본문에서 직접 fcWire()를 호출해 지우기(×) 버튼을 배선. assetBodyHTML()의 비편집/비선택 분기에서 ST.assetQ가 있으면 matchAssetQuery로 그룹별 items를 필터링하고(매칭 0건이면 그룹 자체를 숨김), ST.aSel.mode(일괄선택)에서는 검색 필터를 적용하지 않음(visibleAssetsForSel()이 귀속 필터만 보고 검색어는 모르므로, 여기까지 걸러버리면 화면엔 안 보이는 자산이 전체선택엔 들어가는 불일치가 재현됨 — 과거 귀속 필터 버그와 같은 종류라 의도적으로 범위를 좁힘). 자산은 있지만 검색 결과가 0건일 때는 기존 \"아직 등록한 자산이 없어요\" 대신 검색 결과 없음 전용 안내를 보여주도록 분기 추가. test/run.js에 matchAssetQuery 단위 테스트 5건 + renderAssets/assetBodyHTML 실행형 테스트 7건, 총 12건 추가(검색창 렌더/fc-x 배선/fcWire 호출/편집·선택 모드에서 검색창 숨김/검색 필터링·그룹 숨김/검색 결과 없음 안내/일괄선택 모드에서 필터 미적용/fx 통화 검색). index.html/logic.js/sw.js 변경이라 APP_VERSION 1.47.146->1.47.147, sw.js CACHE v408->v409 갱신. node test/run.js 1356/1356 -> 1368/1368 통과. pending_advance_plan을 비웠다.",
-      "commit": null
-    },
-    {
-      "cycle": 190,
-      "phase": "develop",
-      "timestamp": "2026-10-14T09:13:41.000Z",
-      "summary": "general-purpose 서브에이전트로 141-189사이클과 겹치지 않는 새 개선점을 탐색 — 귀속(owner) 칩 배지 CSS(.own-나/.own-배우자/.own-공용)가 기본 3귀속 이름에만 키잉되어 있어, addOwner()로 새 귀속을 추가하거나 doRenameOwner()로 이름을 바꾸면(예: 배우자→아내) 어떤 CSS 규칙과도 안 맞아 배지가 무색/무배경으로 렌더되던 버그 발견. DB.owners 내 index%5로 own-0~4를 고르는 ownerChipClass(owner) 추가, 기본 3귀속은 기존 색(brand/stock/income)을 그대로 유지하도록 own-0~4 CSS 순서 맞춤. renderAssets×2/openAssetPicker/pkPickAsset 등 실제 귀속 칩 4곳을 own-${esc(owner)} 대신 ownerChipClass()로 교체. test/run.js에 5건 추가(기본 3귀속 색 유지/4·5번째 귀속 배정/6명 이상 시 mod-5 순환/이름 변경에도 위치 기반이라 색 유지/DB.owners에 없는 이름 폴백). index.html/sw.js 변경이라 APP_VERSION 1.47.147->1.47.148, sw.js CACHE v409->v410 갱신. node test/run.js 1368/1368 -> 1373/1373 통과. 커밋 fc87bd6.",
-      "commit": "fc87bd6"
-    },
-    {
-      "cycle": 190,
-      "phase": "review",
-      "timestamp": "2026-10-14T10:08:10.000Z",
-      "summary": "cycle190 develop(ownerChipClass 추가, 귀속 칩 색상을 이름이 아닌 DB.owners 내 위치 기반으로 변경, commit fc87bd6) 검토 — 실제 귀속 칩 호출부(renderAssets×2/openPlanAsset/openAssetPicker) 4곳 모두 ownerChipClass로 전환됐는지 grep으로 재확인, 남아있는 own-${o}/own-나 2곳(온보딩 튜토리얼 정적 목업, 시세 연동 관리 시트의 무관한 상태 칩)이 커밋 설명대로 실제 귀속 데이터와 무관함을 직접 코드로 검증. own-0~4 CSS 변수(--gold/--gold-soft/--save/--save-soft 등)도 라이트/다크 테마 모두 정의돼 있음을 확인. node test/run.js 1373/1373 전부 통과(독립 재실행으로 재확인). 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
-      "commit": null
-    },
-    {
-      "cycle": 190,
-      "phase": "critique",
-      "timestamp": "2026-10-14T11:13:40.000Z",
-      "summary": "general-purpose 서브에이전트로 141-190사이클(기각/완료 이력 포함)을 전달하고 앱 전체를 재조망 — 투자자산(fx/gold/stock) 수량 변경 시 costBasis(매입원가)가 전혀 갱신되지 않아 손익(P/L) 배지가 체계적으로 왜곡됨을 발견. assetGainLoss(a)(index.html:2500-2503)는 amount=assetEval(a)-a.costBasis로 계산하는데, costBasis는 가중평균 없이 사용자가 한 번 입력한 총 매입금액 단일값이고, saveAsset()의 isMarketValued 분기(index.html:3744-3754)는 수량이 바뀌면 DB.assetQtyLog에만 기록하고 costBasis는 그대로 둔다. costBasisField(index.html:3661-3663)도 수정 시 기존 costBasis를 그대로 prefill. 재현: 삼성전자 10주·매입원가 100,000원에서 10주를 15,000원에 추가매수해 20주로 늘리면(실투자 250,000원) 현재가 15,000원 기준 실제 수익률은 +20%인데 화면엔 (300,000-100,000)/100,000=+200%로 10배 과대 표시됨. 일부 매도로 수량이 줄 때도 costBasis가 그대로라 남은 지분 손익률이 왜곡됨. 클라우드 동기화/병합 로직은 재조사했으나 이미 충분히 다듬어져 새 결함 없음, 온보딩 튜토리얼 범위 누락은 의도된 설계로 보여 기각. 다음 advance 계획: logic.js에 scaleCostBasisForSale(origQty,newQty,costBasis)로 수량 감소 시 costBasis 비례 축소 자동 교정, costBasisNeedsUpdate(origQty,newQty,costBasis)로 수량 증가(추가매수) 시 경고 트리거 판정 — 늘어난 경우는 추측하지 않고 안내만. index.html에 qtyBasisWarn 캡션 UI(dayWarn과 동일 패턴) + saveAsset()의 isMarketValued 분기에서 수량 감소 시 자동 보정 적용. pending_advance_plan에 저장. 코드 변경 없음(읽기 전용 조사).",
-      "commit": null
-    },
-    {
-      "cycle": 190,
-      "phase": "advance",
-      "timestamp": "2026-10-14T12:13:40.095Z",
-      "summary": "critique(cycle190) 계획대로 logic.js에 scaleCostBasisForSale(origQty,newQty,costBasis)/costBasisNeedsUpdate(origQty,newQty,costBasis) 순수 함수 추가. saveAsset()의 isMarketValued(d) 분기에서 수량이 줄면(일부 매도) costBasis를 scaleCostBasisForSale로 비례 축소 자동 보정하고, 늘면(추가매수) 추가 투입금액을 추측하지 않고 그대로 둔다. openAssetSheet(id)에서 editing&&isMarketValued일 때 asDraft._origQty에 원래 수량을 스냅샷하고, saveAsset()에서 delete. costBasisField(d,editing)에 qtyBasisWarn 경고 캡션(id=asQtyBasisWarn, dayWarn과 동일한 .day-warn 패턴, 수량이 _origQty보다 늘었을 때만 표시)을 추가하고, asFx/asGold/asQty의 oninput(fmtQty 호출부)에 qtyBasisWarn(this)를 배선해 전체 리렌더 없이 즉시 토글되게 했다. test/run.js에 8건 추가: scaleCostBasisForSale 4건(정상 축소/전량매도 가드/수량증가·불변 시 무변경/origQty·costBasis 가드), costBasisNeedsUpdate 1건(경고 조건), saveAsset 통합 2건(수량 감소 시 costBasis 비례축소+assetQtyLog 기록 유지 회귀, 수량 증가 시 costBasis 불변 회귀), costBasisField 캡션 1건(증가/감소/신규등록 3가지 표시 분기). 기존 costBasisField Enter-제출 테스트(line ~11251)도 새로 추가된 asQtyBasisWarn 마크업에 맞게 기대값을 갱신했다. index.html/logic.js/sw.js 변경이라 APP_VERSION 1.47.148->1.47.149, sw.js CACHE v410->v411 갱신. node test/run.js 1373/1373 -> 1381/1381 통과. pending_advance_plan을 비웠다.",
-      "commit": null
-    },
-    {
-      "cycle": 191,
-      "phase": "develop",
-      "timestamp": "2026-10-14T13:05:00.000Z",
-      "summary": "general-purpose 서브에이전트로 141-190사이클과 겹치지 않는 새 개선점을 탐색 — 전체내역(History) 탭에서 ST.hist.cat(유형 필터: 지출/수입/저축/이체)이 assetId/catExact와 달리 해제 가능한 칩이 전혀 없던 버그 발견. 가계부 요약 카드에서 sumTap('지출') 등으로 유형 필터가 걸린 채 전체내역으로 넘어오면, 합계 카드(histTotHTML)의 수입/저축/내부이체가 전부 0으로 보여도 '필터링됨'인지 '실제로 없음'인지 구분할 길이 없고, go(tab)이 ST.hist.cat을 리셋하지 않아 다른 탭에 갔다가 하단 네비로 돌아와도 필터가 조용히 남는다. renderHistory()에 assetId/catExact와 동일한 패턴의 해제 칩 추가, histClearTypeFilter() 신설(다른 필터 상태는 보존). test/run.js에 4건 추가(칩 렌더/비렌더/해제 함수/modeSeg 칩-dot 회귀). index.html/sw.js 변경이라 APP_VERSION 1.47.149->1.47.150, sw.js CACHE v411->v412 갱신. node test/run.js 1381/1381 -> 1385/1385 통과. 커밋 35b286a.",
-      "commit": "35b286a"
-    },
-    {
-      "cycle": 191,
-      "phase": "review",
-      "timestamp": "2026-10-14T14:05:00.000Z",
-      "summary": "cycle191 develop(histClearTypeFilter() 추가, ST.hist.cat 유형 필터 해제 칩 신설, commit 35b286a) 검토 — sumTap()/openAssetHistory()/openCatHistory() 세 곳 모두 ST.hist.cat/assetId/catExact를 서로 배타적으로 '전체'/null 리셋함을 grep으로 재확인해 세 칩이 동시에 뜨지 않는다는 커밋 주장이 맞음을 검증했고, histClearTypeFilter()가 q/assetId/catExact/owner 등 다른 필터 상태를 건드리지 않음을 코드로 재확인했다. node test/run.js 1385/1385 전부 통과(독립 재실행으로 재확인). 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
-      "commit": null
-    },
-    {
-      "cycle": 191,
-      "phase": "critique",
-      "timestamp": "2026-10-14T15:10:00.000Z",
-      "summary": "general-purpose 서브에이전트로 141-191사이클(기각/완료 이력 포함)을 전달하고 앱 전체를 재조망 — cycle190이 투자자산 매도(수량 감소) 시에는 scaleCostBasisForSale로 costBasis를 자동 비례 보정했는데, 추가매수(수량 증가) 시에는 costBasisNeedsUpdate 경고 캡션만 띄우고 saveAsset()(index.html:3756)이 d.costBasis를 그대로 둬 사용자가 '기존 누적 총액+신규 투입액'을 직접 계산해 같은 입력창에 덮어써야 하는 반쪽짜리 수정임을 발견. 더하는 걸 잊거나 신규 투입액만 입력하면 P/L% 표시가 조용히 틀어지고, DB.assetQtyLog도 prevQty/newQty만 기록해 투입액 이력을 재구성할 수 없음을 코드로 확인. 다음 advance 계획: '이번에 추가로 투입한 금액' 별도 입력창 추가(기존 누적 총액 입력창은 유지), logic.js에 addCostBasisForBuy(origCostBasis,addedAmount) 순수 함수 추가 후 saveAsset()에서 수량 증가 시 적용, DB.assetQtyLog에 addedAmount 기록, 관련 단위/통합 테스트 추가. SRI 해시 TODO(샌드박스에서 CDN 접근 불가로 기각), 반복거래 관리 화면 검색/일괄삭제 부재(낮은 우선순위로 기각), 환율 부분 실패 처리/멀티탭 동기화/알림 시스템(이미 충분히 다듬어짐 확인 후 기각)은 pending_advance_plan에서 제외. 코드 변경 없음(읽기 전용 조사).",
-      "commit": null
-    },
     {
       "cycle": 191,
       "phase": "advance",
       "timestamp": "2026-10-14T16:13:04.106Z",
-      "summary": "critique(cycle191) 계획대로 투자자산(fx/gold/stock) 추가매수 시 \"이번에 추가로 투입한 금액\"을 따로 입력받는 asAddedCost 입력창(asAddedCostField)을 costBasisField에 추가했다(기존 누적 총액 입력창 asCostBasis는 직접 덮어쓰고 싶은 사용자를 위해 그대로 둠). logic.js에 addCostBasisForBuy(origCostBasis,addedAmount) 순수 함수 추가(addedAmount<=0/undefined면 원본 그대로, scaleCostBasisForSale의 반대 짝). syncAssetInputs가 asAddedCost를 asDraft._addedCost로 읽고, saveAsset()의 isMarketValued 분기에서 수량 증가(추가매수) + _addedCost>0일 때만 addCostBasisForBuy로 d.costBasis를 갱신(매도 쪽 scaleCostBasisForSale 분기와 상호 배타적), 저장 전 _addedCost는 삭제. DB.assetQtyLog 엔트리에도 addedAmount를 남겨 openAssetQtyLog 이력 행에 \"· 투입 N원\"으로 표시되게 했다(과거엔 prevQty/newQty만 있어 투입액 이력을 재구성할 수 없었음). qtyBasisWarn()이 asQtyBasisWarn 경고 캡션과 asAddedCostField 표시를 함께 토글하도록 확장. test/run.js에 9건 추가/수정: addCostBasisForBuy 단위 2건, saveAsset 통합 3건(입력 없으면 불변+addedAmount 미기록 / 입력하면 가산+assetQtyLog에 addedAmount 기록+_addedCost 잔존 금지 / 매도 중엔 _addedCost 무시), costBasisField 캡션+입력창 토글 1건(재작성), 기존 costBasisField 정확매치 Enter-제출 테스트 1건과 추가매수 플레이스홀더 테스트 1건을 새 마크업에 맞게 갱신. index.html/logic.js/sw.js 변경이라 APP_VERSION 1.47.150->1.47.151, sw.js CACHE v412->v413 갱신. node test/run.js 1385/1385 -> 1389/1389 통과. pending_advance_plan을 비웠다.",
+      "summary": "critique(cycle191) 계획대로 투자자산(fx/gold/stock) 추가매수 시 \"이번에 추가로 투입한 금액\"을 따로 입력받는 asAddedCost 입력창(asAddedCostField)을 costBasisField에 추가했다(기존 누적 총액 입력창 asCostBasis는 직접 덮어쓰고 싶은 사용자를 위해 그대로 둠). logic.js에 addCostBasisForBuy(origCostBasis,addedAmount) 순수 함수 추가(addedAmount<=0/undefined면 원본 그대로, scaleCostBasisForSale의 반대 짝). syncAssetInputs가 asAddedCost를 asDraft._addedCost로 읽고, saveAsset()의 isMarketValued 분기에서 수량 증가(추가매수) + _addedCost>0일 때만 addCostBasisForBuy로 d.costBasis를 갱신(매도 쪽 scaleCostBasisForSale 분기와 상호 배타적), 저장 전 _addedCost는 삭제. DB.assetQtyLog 엔트리에도 addedAmount를 남겨 openAssetQtyLog 이력 행에 \"· 투입 N원\"으로 표시되게 했다. test/run.js에 9건 추가/수정. index.html/logic.js/sw.js 변경이라 APP_VERSION 1.47.150->1.47.151, sw.js CACHE v412->v413 갱신. node test/run.js 1385/1385 -> 1389/1389 통과. pending_advance_plan을 비웠다.",
       "commit": null
     },
     {
       "cycle": 192,
       "phase": "develop",
       "timestamp": "2026-10-14T17:14:29.000Z",
-      "summary": "general-purpose 서브에이전트로 141-191사이클과 겹치지 않는 새 개선점을 탐색 — 반복 내역 관리(openRecManage)의 recFreqLabel(r)이 monthly는 r.day로 '매월 15일'/'매월 말일'까지 보여주는데 weekly/yearly는 그냥 '매주'/'매년'만 반환해 디테일 수준이 어긋나 있음을 발견. weekly의 요일·yearly의 월/일은 recDates()가 r.startDate에서 그대로 파생시키는 정보라 레이블에도 똑같이 보여줄 수 있는데 빠져 있었음(같은 유형 안에 요일이 다른 매주 반복이 여러 개면 목록만 보고는 구분 불가). test/run.js에 전혀 등장하지 않는 함수들을 추려보다 테스트 커버리지 공백에서 발견. logic.js에 순수 함수 recFreqLabelStr(freq,day,startDate) 신설(monthly는 기존 그대로, weekly는 '매주 ○요일', yearly는 '매년 N월 M일', startDate 없거나 파싱 실패 시 방어적으로 기존 동작 폴백), index.html의 recFreqLabel(r)은 이 함수로 위임하도록 교체(호출부/서식 변경 없음). test/run.js에 recFreqLabelStr 단위 테스트 6건 + recFreqLabel 실행형 위임 검증 1건, 총 7건 추가. index.html/logic.js/sw.js 변경이라 APP_VERSION 1.47.151->1.47.152, sw.js CACHE v413->v414 갱신. node test/run.js 1389/1389 -> 1395/1395 통과.",
+      "summary": "반복 내역 관리(openRecManage)의 recFreqLabel(r)이 monthly는 r.day로 상세를 보여주는데 weekly/yearly는 '매주'/'매년'만 반환하던 비대칭 발견. logic.js에 recFreqLabelStr(freq,day,startDate) 신설, recFreqLabel(r)은 위임. test 7건 추가. APP_VERSION 1.47.151->1.47.152, CACHE v413->v414. node test/run.js 1389/1389 -> 1395/1395 통과.",
       "commit": "aff2c2a"
     },
     {
       "cycle": 192,
       "phase": "review",
       "timestamp": "2026-10-14T18:10:00.000Z",
-      "summary": "cycle192 develop(recFreqLabelStr 신설, weekly/yearly 요약 레이블에 요일/월일 추가, commit aff2c2a) 검토 — recDates()의 실제 파생 규칙과 직접 대조: yearly는 rs.getMonth()+1/rs.getDate()로 월/일을 고정하고 weekly는 step=7로 요일이 항상 startDate 요일에 고정되므로, recFreqLabelStr의 d.getMonth()+1/d.getDate()/d.getDay() 파생이 recDates의 실제 스케줄과 100% 일치함을 확인. 테스트 픽스처 날짜(2026-03-02=월요일, 2026-03-06=금요일, 2026-01-31=토요일)를 독립적으로 재계산해 검증했고, recFreqLabel 호출부가 index.html 전역에 1곳(openRecManage 목록)뿐이며 모두 교체됐음을 grep으로 재확인. node test/run.js 1395/1395 전부 통과(독립 재실행으로 재확인). 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
+      "summary": "cycle192 develop(recFreqLabelStr, commit aff2c2a) 검토 — recDates()의 실제 파생 규칙과 100% 일치함을 확인. node test/run.js 1395/1395 통과. 이상 없음, 코드 변경 없음.",
       "commit": null
     },
     {
       "cycle": 192,
       "phase": "critique",
       "timestamp": "2026-10-14T19:12:48.000Z",
-      "summary": "general-purpose 서브에이전트로 141-191사이클(기각/완료 이력 포함)을 전달하고 앱 전체를 재조망 — mergeRemoteDataIntoLocal()(index.html:1523-1570)이 txns/recurrences/assets/goals/inquiries/assetQtyLog/categories/owners/budgetHistory/catIcon/catVar/deletedType/deletedBal은 모두 병합하면서 DB.rates(시세: fx/stocks/goldPerG/syncedAt)는 단 한 번도 참조하지 않음을 발견(grep으로 1523-1570줄 범위에 'DB.rates' 無 확인). settings/nwHistory처럼 '기기-로컬 전용이라 의도적 제외'라는 주석도 없어, goals(cycle123)/inquiries(cycle133)/assetQtyLog(cycle138)와 동일한 '신설 컬렉션 병합 배선 누락' 버그 클래스의 미수정 인스턴스. 재현: 기기A가 setRateVal()(5545-5546줄, 타임스탬프 없음)로 수동 시세 입력 후 push, 오프라인이던 기기B가 복귀해 mergeRemoteDataIntoLocal 거치면 DB.rates는 B의 구닥다리 값 그대로 남아 뒤이은 push가 A의 입력을 조용히 덮어씀. test/run.js에 DB.rates 병합 테스트가 전혀 없음을 grep으로 확인. logic.js에 mergeRates(LWW) 추가 + setRateVal에 ratesUpdatedAt 타임스탬프 기록 + mergeRemoteDataIntoLocal에 한 줄 배선 + sanitizeBackup 검증 분기 + 테스트 2건 추가 계획을 pending_advance_plan에 저장. 코드 변경 없음(읽기 전용 조사), node test/run.js 1395/1395 베이스라인 통과 확인.",
+      "summary": "mergeRemoteDataIntoLocal()이 DB.rates(시세: fx/stocks/goldPerG/syncedAt)는 단 한 번도 참조하지 않음을 발견 — 신설 컬렉션 병합 배선 누락 버그 클래스의 미수정 인스턴스. mergeRates(LWW) 추가 + setRateVal에 ratesUpdatedAt 타임스탬프 기록 + mergeRemoteDataIntoLocal 배선 + sanitizeBackup 검증 분기 + 테스트 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     },
     {
       "cycle": 192,
       "phase": "advance",
       "timestamp": "2026-10-14T20:14:00.000Z",
-      "summary": "critique(cycle192) 계획대로 DB.rates(시세 스냅샷) 병합 배선을 추가. logic.js에 순수 함수 mergeRates(local,remote) 신설 — 레코드 모음이 아니라 통째 스냅샷이라 mergeCollection 대신 (remote.ratesUpdatedAt||remote.syncedAt||0)>(local.ratesUpdatedAt||local.syncedAt||0) 기준 last-write-wins으로 전체를 교체. setRate()(index.html, 실제 함수명은 setRateVal이 아니라 setRate)에 DB.rates.ratesUpdatedAt=Date.now()를 호출 맨 앞에서 항상 찍도록 추가(값을 지우는 0-이하 입력에도 동일 적용 — 수동 입력이 LWW에서 보호되려면 입력을 지우는 것도 '의도된 변경'으로 봐야 함), syncRates()의 성공 분기(ok)에도 R.ratesUpdatedAt=R.syncedAt 추가. mergeRemoteDataIntoLocal()에 DB.rates=mergeRates(DB.rates,remoteData.rates); 한 줄을 다른 컬렉션들과 같은 자리에 배선. sanitizeBackup()에 DB.rates 검증 분기 추가(fx/stocks가 객체 아니면 빈 맵, goldPerG/syncedAt/ratesUpdatedAt/failStreak는 sanitizeAmount(v,0)로 클램프, fxFail/stockFail은 boolean 캐스팅) 및 반환 객체에 rates 포함. test/run.js에 11건 추가: mergeRates 단위 5건(remote가 더 최신/local이 더 최신/syncedAt 폴백/타임스탬프 둘 다 없으면 local 유지/local이 null이어도 안전), mergeRemoteDataIntoLocal 통합 2건(remote가 더 최신이면 이김 / local이 더 최신이면 되돌아가지 않음 — 버그 재현 방지), setRate ratesUpdatedAt 1건, sanitizeBackup rates 검증 2건(손상값 보정/정상값·누락값 안전 처리). index.html/logic.js/sw.js 변경이라 APP_VERSION 1.47.152->1.47.153, sw.js CACHE v414->v415 갱신. node test/run.js 1395/1395 -> 1405/1405 통과. pending_advance_plan을 비웠다.",
+      "summary": "critique(cycle192) 계획대로 DB.rates(시세 스냅샷) 병합 배선 추가. logic.js에 mergeRates(local,remote) 신설(LWW), setRate에 ratesUpdatedAt 기록, mergeRemoteDataIntoLocal 배선, sanitizeBackup 검증 분기. test 11건 추가. APP_VERSION 1.47.152->1.47.153, CACHE v414->v415. node test/run.js 1395/1395 -> 1405/1405 통과. pending_advance_plan을 비웠다.",
       "commit": null
     },
     {
       "cycle": 193,
       "phase": "develop",
       "timestamp": "2026-10-14T21:15:32.000Z",
-      "summary": "general-purpose 서브에이전트로 renderHistory()/histPreset() 조사 — ST.hist.preset 필드와 histPreset('month'/'q3') 분기는 이미 구현돼 있었지만, 이를 호출하는 UI가 전혀 없어 두 분기가 달성 불가능한 죽은 코드였음을 발견(rg-pick의 두 날짜 피커 버튼은 histPickDate만 호출, 'year'만 '오늘로' 롱프레스 숏컷으로 간접 도달 가능했음). renderHistory()에 다른 .seg 세그먼트(assetBalPresetSel 등)와 동일한 패턴의 기간 빠른 선택 칩(올해/이번 달/최근 3개월)을 추가해 histPreset()을 실제로 연결하고, moveSegBlobs()로 물방울 하이라이트를 배선, H.preset과 일치하는 칩에 on 표시. selMode 중엔 다른 검색 UI와 함께 칩도 숨겨짐을 확인. test/run.js에 6건 추가(칩 렌더/on 상태/selMode 숨김/month·q3·year range 산출/다른 필터 필드 불변 회귀). index.html/sw.js 변경이라 APP_VERSION 1.47.153->1.47.154, sw.js CACHE v415->v416 갱신. node test/run.js 1405/1405 -> 1411/1411 통과.",
+      "summary": "renderHistory()/histPreset()의 ST.hist.preset 분기가 구현돼 있었지만 호출 UI가 전혀 없어 죽은 코드였음을 발견. 기간 빠른 선택 칩(올해/이번 달/최근 3개월) 추가해 연결. test 6건 추가. APP_VERSION 1.47.153->1.47.154, CACHE v415->v416. node test/run.js 1405/1405 -> 1411/1411 통과.",
       "commit": "0b6b193"
     },
     {
       "cycle": 193,
       "phase": "review",
       "timestamp": "2026-10-14T22:15:00.000Z",
-      "summary": "cycle193 develop(전체내역 기간 빠른 선택 칩 추가, histPreset 연결, commit 0b6b193) 검토 — 칩 UI가 H.selMode?'':`...` 블록 안에 있어 선택 모드에서 검색창/선택 버튼과 함께 숨겨짐을 코드로 확인했고, ST.hist 기본값(range가 올해 1/1~12/31, preset:'year')과 칩의 기본 on 상태가 일치함을 확인. histPreset()의 year/month/q3 분기가 monthStartStr/monthEndStr/addMonths를 기존 호출 패턴과 동일하게 사용하며, histPickDate로 직접 날짜를 고르면 preset이 'custom'으로 돌아가 칩이 전부 꺼지는 것도 의도된 동작임을 확인. moveSegBlobs()가 document.querySelectorAll('.seg')로 페이지 내 모든 세그먼트를 순회하므로 새 칩 세그먼트도 다른 .seg(assetBalPresetSel 등)와 함께 안전하게 처리됨을 확인. node test/run.js 1411/1411 전부 통과(독립 재실행으로 재확인). 이상 없음, 코드 변경 없음(상태 파일만 갱신).",
+      "summary": "cycle193 develop(기간 빠른 선택 칩, commit 0b6b193) 검토 — histPreset() 분기와 moveSegBlobs() 동작 재확인. node test/run.js 1411/1411 통과. 이상 없음, 코드 변경 없음.",
       "commit": null
     },
     {
       "cycle": 193,
       "phase": "critique",
       "timestamp": "2026-10-14T23:12:56.222Z",
-      "summary": "general-purpose 서브에이전트로 141-193사이클 기각/완료 이력을 전달하고 앱 전체를 재조망 — 거래 입력 플로우에 '복제(빠른 재입력)' 기능이 전혀 없음을 발견. openTxSheet()(index.html:4158)는 항상 빈 draft로 시작하고, editTx(id)(4312-4317)는 같은 id를 수정하는 용도로만 쓰이며, 메모 입력(txMemo, 4211)엔 datalist/자동완성도 없음. grep으로 '복제|duplicate|copyTx|cloneTx' 전역 매치 0건 확인. 매일 반복되는 소액 비정형 지출(커피/점심/교통) 입력이 매번 유형→카테고리→메모→자산을 처음부터 다시 고르게 만들어 핵심 사용성(일일 기록 리텐션)을 해침 — DB.recurrences는 금액이 고정이 아니므로 대안이 안 됨. 다음 advance 계획: duplicateTx(id) 신설(기존 레코드를 딥클론해 id=null, date=TODAY, confirmed 해제, isRec/adjust 레코드는 제외), txRowCore()에 '복제' 버튼 추가(복제 아이콘 svg 신규, sel.mode/isRec/대기중 이체 행에서는 숨김), renderTxSheet()이 id=null인 draft를 신규 저장으로 처리하도록 확인, DB 스키마 변경 없어 merge/sync 배선 불필요. test/run.js에 duplicateTx 단위(필드 복사+id/date 리셋, isRec/adjust 제외) + 저장 시 원본 불변 통합 테스트 추가 예정. pending_advance_plan에 저장. 코드 변경 없음(읽기 전용 조사).",
+      "summary": "거래 입력 플로우에 '복제(빠른 재입력)' 기능이 전혀 없음을 발견. duplicateTx(id) 신설 계획 + txRowCore() 복제 버튼 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     },
     {
       "cycle": 193,
       "phase": "advance",
       "timestamp": "2026-10-15T00:13:51.745Z",
-      "summary": "critique(cycle193) 계획대로 거래 입력에 복제(빠른 재입력) 기능을 구현. I 아이콘 맵에 copy svg 추가, txRowCore()(index.html:4091-4109)의 각 내역 행에 복제 버튼을 추가해 isRec(반복 가상 행)/adjust(잔액조정)/isDuePending(대기중 이체 확인 버튼이 이미 있는 행)에서는 숨기도록 가드. duplicateTx(id)를 editTx 바로 아래에 신설 — DB.txns에서 레코드를 딥클론해 id=null, date=TODAY로 리셋하고 confirmed/updatedAt 필드는 지워 saveTx()가 새 날짜 기준으로 신규 저장(d.id=uid();DB.txns.push(d)) 경로를 타게 한다. adjust 레코드는 가드로 제외, isRec 가상 행은 id가 rec_... 형태라 DB.txns.find가 애초에 실패해 자연히 제외됨. FUNCTIONS 목록에 duplicateTx 추가, test/run.js에 5건 추가(필드 복사+id/date 리셋, confirmed 제거, adjust 가드, isRec 가드, duplicateTx→saveTx 통합: 원본 불변+새 독립 레코드 생성). index.html/sw.js 변경이라 APP_VERSION 1.47.154->1.47.155, sw.js CACHE v416->v417 갱신. node test/run.js 1411/1411 -> 1416/1416 통과. pending_advance_plan을 비웠다.",
+      "summary": "critique(cycle193) 계획대로 거래 입력에 복제(빠른 재입력) 기능 구현. duplicateTx(id) 신설, txRowCore()에 복제 버튼(isRec/adjust/isDuePending 가드). test 5건 추가. APP_VERSION 1.47.154->1.47.155, CACHE v416->v417. node test/run.js 1411/1411 -> 1416/1416 통과. pending_advance_plan을 비웠다.",
       "commit": null
     },
     {
       "cycle": 194,
       "phase": "develop",
       "timestamp": "2026-10-15T01:14:00.000Z",
-      "summary": "general-purpose 서브에이전트로 141-193사이클과 겹치지 않는 새 개선점을 탐색 — openSpendAnalysis()(index.html~5286)의 '이번 달 예산' 요약 카드가 totalBudgetSummary(rows,y,m)이 이미 계산해 반환하는 overCount(개별 카테고리별 예산 초과 수)를 전혀 보여주지 않고 있었음을 발견. 짝인 unsetCount(예산 미설정 카테고리 수)는 같은 카드에 캡션으로 노출되는데 overCount만 빠진 비대칭. tbp.over는 전체 합계 기준이라 한 카테고리가 크게 초과해도 다른 카테고리가 덜 써서 합계가 예산 이내면 전체 바가 초과 아님으로만 보이고, 어떤 카테고리가 초과했는지는 아래 카테고리별 행을 하나하나 스크롤해 빨간 표시를 찾아야만 알 수 있었음. tb.overCount>0일 때만 뜨는 '예산을 초과한 카테고리 N개' 캡션(var(--expense) 색, unsetCount 캡션보다 먼저)을 추가. test/run.js에 2건 추가(캡션 마크업+순서 검증, totalBudgetSummary/budgetProgress로 overCount>0이면서 tbp.over=false인 시나리오 재현). index.html/sw.js 변경이라 APP_VERSION 1.47.155->1.47.156, sw.js CACHE v417->v418 갱신. node test/run.js 1416/1416 -> 1418/1418 통과.",
+      "summary": "openSpendAnalysis()의 '이번 달 예산' 요약 카드가 totalBudgetSummary()의 overCount를 전혀 보여주지 않던 비대칭 발견. overCount>0일 때만 뜨는 캡션 추가. test 2건 추가. APP_VERSION 1.47.155->1.47.156, CACHE v417->v418. node test/run.js 1416/1416 -> 1418/1418 통과.",
       "commit": null
     },
     {
       "cycle": 194,
       "phase": "review",
       "timestamp": "2026-10-15T02:16:00.000Z",
-      "summary": "cycle194 develop(예산 요약 카드에 overCount 캡션 추가, commit 1656e48) 검토 — totalBudgetSummary()의 overCount 집계(index.html:5270-5276, if(b){...if(r.v>b)overCount++})가 budgetedTotal>0인 카테고리에서만 증가하므로 tb.budgetedTotal이 0일 때(카드 자체가 안 뜨는 조건)는 overCount도 항상 0임을 코드로 재확인해 캡션이 불필요하게 뜰 수 없음을 검증. tbp.over(전체 합계 기준)와 overCount(개별 카테고리 기준)가 독립적인 수치라는 커밋 설명대로, 식비 50000/40000(초과)+교통 10000/60000(여유) 합계 60000/100000(이내) 픽스처를 직접 재계산해 overCount=1이면서 tbp.over=false가 되는 것을 확인(신규 테스트와 동일 결과). overCount 캡션이 unsetCount보다 먼저 오는 순서도 템플릿 리터럴에서 직접 재확인. 다만 index.html 5313-5319줄에 7줄짜리 HTML 주석(<!-- ... -->)이 템플릿 리터럴 안에 작성돼 있어 openSpendAnalysis가 호출될 때마다 이 주석 텍스트가 그대로 렌더링된 DOM(시트 HTML)에 포함됨을 확인 — 화면에 보이진 않지만 매번 불필요한 바이트가 DOM에 섞여 들어가는 점, 그리고 코드 설명이 이렇게 긴 인라인 주석으로 들어간 것 자체가 프로젝트의 다른 JS 로직 주석(한 줄 또는 두 줄 수준)과 결이 다른 점은 급한 버그는 아니라 이번엔 고치지 않고 critique가 참고하도록 남겨둔다. node test/run.js 1418/1418 전부 통과(독립 재실행으로 재확인). 치명적 문제 없음, 코드 변경 없음(상태 파일만 갱신).",
+      "summary": "cycle194 develop(overCount 캡션, commit 1656e48) 검토 — overCount/tbp.over 독립성, 캡션 순서 확인. index.html 5313-5319줄에 7줄 HTML 주석이 템플릿 리터럴 안에 박혀 렌더된 DOM에 그대로 포함되는 점을 발견했으나 급하지 않아 critique가 참고하도록 남김. node test/run.js 1418/1418 통과. 치명적 문제 없음, 코드 변경 없음.",
       "commit": null
     },
     {
       "cycle": 194,
       "phase": "critique",
       "timestamp": "2026-10-15T03:36:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전체(Home/History/Assets/Budget/Goals/Recurring/CSV/Sync/PIN)와 전체 git log('app-evolve' grep)를 재조망 — 예산 모델이 'budgetForMonth가 effective-dated flat 값을 그대로 쓰는 월별 고정 한도'일 뿐, 전달 예산 남은 돈/초과분이 다음 달 한도에 전혀 반영되지 않는 봉투식(envelope) 이월 기능 부재를 발견(budgetForMonth/setBudgetFrom/budgetKey index.html~5251-5262, totalBudgetSummary~5269-5285, openBudgetPrompt/saveBudget~5334-5346). 194사이클의 예산 관련 작업은 전부 이 flat 모델의 정확성/동기화 문제(overCount 캡션, catVar/budgetHistory 이관, CSV undo)만 다뤘을 뿐 모델 자체의 기능적 공백은 다룬 적 없음. 기각한 후보: Goal 모델의 '순자산 1종 MVP' 범위 확장(코드 주석에 의도된 축소 범위로 명시돼 있어 설계 변경 폭이 큼), 단일 파일 아키텍처/테스트 전략(test/run.js 자체가 빌드 없는 회귀방지용으로 설계 의도가 명확해 흔드는 건 사이클 규모 초과), SRI 해시 TODO(샌드박스 CDN 차단으로 이미 전 사이클에 실행 불가 판정), PIN/저장소 quota/멀티탭 race/알림 재동기화(코드로 재확인 결과 이미 꼼꼼히 처리됨). 다음 advance 계획: logic.js에 budgetCarry(prevBudget,prevSpent)(초과분 0 clamp, 여윳돈만 이월)+budgetForMonthEffective(baseBudget,carry) 순수함수 추가, DB.catBudgetRollover 맵(DB.catVar와 동일 패턴, opt-in·기본 false 하위호환) 신설 및 openCatManage() expense 행에 토글 pill 추가, budgetForMonth 호출부(openBudgetPrompt/totalBudgetSummary)에서 토글 on인 카테고리만 전달 실적으로 이월 계산해 합산, doRenameCat/doDeleteCat에 catVar와 동일하게 catBudgetRollover 키 이관/삭제 배선, openSpendAnalysis/openBudgetPrompt에 '전달 이월 N원 포함' 캡션 추가. 같은 블록을 건드리는 김에 cycle194 review가 지적한 openSpendAnalysis() 템플릿 리터럴 내 7줄 HTML 주석도 평범한 // 주석으로 꺼내 정리(fold-in, 추가 비용 거의 0). test/run.js에 budgetCarry/budgetForMonthEffective 단위 테스트 + 토글 꺼진 카테고리 하위호환 회귀 + 카테고리 이름변경/삭제 시 catBudgetRollover 이관/삭제 테스트 추가 예정. pending_advance_plan에 저장. 코드 변경 없음(읽기 전용 조사), node test/run.js 1418/1418 베이스라인 통과 확인.",
+      "summary": "예산 모델이 월별 flat 한도일 뿐, 전달 남은/초과 예산이 다음 달에 전혀 반영되지 않는 봉투식(envelope) 이월 기능 부재를 발견. budgetCarry/budgetForMonthEffective 순수함수 + DB.catBudgetRollover opt-in 토글 + 호출부 배선 + doRenameCat/doDeleteCat 이관 + 테스트 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 194,
+      "phase": "advance",
+      "timestamp": "2026-10-15T04:40:00.000Z",
+      "summary": "critique(cycle194) 계획대로 예산 이월(rollover) 기능 구현. logic.js에 budgetCarry(prevBudget,prevSpent)(초과분 0 clamp)+budgetForMonthEffective(baseBudget,carry)(baseBudget<=0이면 그대로 0, 이번 달에 없던 예산이 생겨 보이는 것 방지) 순수함수 추가. index.html에 DB.catBudgetRollover('expense:이름'→true, opt-in, 기본 false 하위호환) 신설 — migrate()에서 초기화, mergeRemoteDataIntoLocal()에 catIcon/catVar와 동일한 mergeFlatMap+catFlatTombKey로 배선(DB.rates처럼 신설 컬렉션 배선 누락 버그 클래스를 처음부터 피함), sanitizeBackup()에 sanitizeFlatMap 검증 분기 추가. isBudgetRolloverCat/setBudgetRolloverCat/toggleBudgetRolloverUI 접근자 추가, openCatManage()의 expense 카테고리 행에 varpill과 같은 클래스의 '이월'/'이월 안함' 토글 pill 추가(saving/income 제외). budgetCarryFor(c,y,m)(토글 꺼짐/전달 예산 없음이면 0, 귀속 무관하게 '전체' 기준 spendByCategory로 전달 실적 조회)와 budgetForMonthWithCarry(c,y,m) 헬퍼 추가. totalBudgetSummary()가 budgetForMonthEffective 기준으로 budgetedTotal/overCount를 계산하고 이월분만 따로 carryTotal로 반환하도록 확장(토글 꺼진 카테고리는 carry=0이라 기존 결과와 완전히 동일 — 하위호환). openSpendAnalysis()의 카테고리별 행 한도 표시를 budgetForMonthWithCarry로 교체, 요약 카드에 '전달 이월 N원 포함' 캡션 추가(overCount/unsetCount와 같은 자리, review가 지적한 7줄 HTML 주석은 템플릿 리터럴 밖 JS 주석으로 이동). openBudgetPrompt()의 입력값(budgetIn)은 flat 한도 그대로 유지하고(이월분까지 끼워 저장하면 다음 조회 때 또 더해져 눈덩이처럼 불어남) 바로 아래에 이월 안내 캡션만 추가. addCat/doDeleteCat/doRenameCat에 catVar와 동일하게 catBudgetRollover 키 정리/이관/복원 배선. test/run.js에 28건 추가(budgetCarry 4, budgetForMonthEffective 3, isBudgetRolloverCat/setBudgetRolloverCat 1, budgetCarryFor 5, budgetForMonthWithCarry 2, totalBudgetSummary carryTotal 1, openSpendAnalysis 캡션/한도 2, openBudgetPrompt 캡션 2, openCatManage rollPill 2+toggleBudgetRolloverUI 1, doRenameCat 이관 2, doDeleteCat 이관 1, mergeRemoteDataIntoLocal 배선 2) + sanitizeBackup/addCat 기존 테스트 3건을 catBudgetRollover 포함하도록 확장. index.html/logic.js/sw.js 변경이라 APP_VERSION 1.47.156->1.47.157, sw.js CACHE v418->v419 갱신. node test/run.js 1418/1418 -> 1446/1446 통과. pending_advance_plan을 비웠다.",
       "commit": null
     }
   ]
