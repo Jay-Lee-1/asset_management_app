@@ -1,7 +1,11 @@
 {
   "cycle": 196,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "budgetCarryFor()가 전월 \"flat\" 예산만 보고 이월을 계산해 2개월 이상 연속 이월 시 누적이 끊기는 버그 수정",
+    "why": "index.html:5281-5288 budgetCarryFor(c,y,m)가 전월 한도를 budgetForMonth(flat, 이월 미반영)로 구해서 budgetCarry(prevBudget,prevSpent)를 계산한다. 하지만 사용자에게 실제로 보여주고 '그 안에서 썼다'고 믿게 만드는 한도는 budgetForMonthWithCarry(flat+이월)다. 예: 1개월차 30만원 한도에서 20만원 지출→2개월차 이월 10만원(실질 한도 40만원). 2개월차에 35만원을 썼다면 사용자 입장에선 실질 한도(40만원) 이내라 괜찮지만, budgetCarryFor는 flat(30만원) 기준으로 max(0,30-35)=0을 반환해 3개월차 이월이 0으로 리셋된다 — envelope(봉투식) 이월이라는 기능의 핵심 약속(안 쓴 돈은 누적된다)이 깨지고, 사용자가 손해를 본다. test/run.js에 2개월 연속 체이닝 테스트가 없어 지금까지 못 잡힌 회귀 사각지대다.",
+    "approach": "1) index.html의 budgetCarryFor(c,y,m) 중 'const prevBudget=budgetForMonth(c,py,pm)'을 'const prevBudget=budgetForMonthWithCarry(c,py,pm)'로 교체 — budgetForMonthWithCarry가 내부에서 자기 자신(budgetCarryFor)을 한 달 전 기준으로 재귀 호출하므로 자연스럽게 연속 이월 체인이 된다. 2) 무한/과도 재귀 방지: 카테고리가 생성된 이래 계속 이월 토글이 켜져 있으면 매달 조회마다 재귀 깊이가 늘어날 수 있으므로, depth 파라미터(기본값 예: 24개월 cap)를 추가하거나 동일 (c,y,m) 호출을 같은 렌더 패스 내에서 memoize한다 — 어느 쪽이든 코드 읽어보고 기존 스타일과 맞는 가벼운 방법 선택. 3) test/run.js의 budgetCarryFor/budgetForMonthWithCarry 테스트(약 1733-1822줄 근방) 옆에 3개월 연속 체인 테스트 추가: 1개월차 저지출(이월 생김)→2개월차 flat과 effective 사이 지출(이 버그 전이면 이월이 0으로 끊김)→3개월차 이월이 실제 누적분을 반영하는지 확인. depth cap/성능에 대한 간단한 sanity 테스트도 추가. 4) DB 스키마/마이그레이션 변경 없음 — 순수 로직 수정+ 테스트 추가만. index.html 변경이므로 APP_VERSION/sw.js CACHE 버전도 올릴 것."
+  },
   "history": [
     {
       "cycle": 191,
@@ -134,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-15T10:20:00.000Z",
       "summary": "cycle196 develop(varPill/rollPill aria-label/aria-pressed, commit 2682e8b) 검토 — isVarCat/isBudgetRolloverCat 모두 !! 로 boolean을 강제해 aria-pressed에 undefined가 새지 않음을 확인, toggleCatVarUI/toggleBudgetRolloverUI의 setAttribute('aria-pressed',on)도 동일하게 boolean on을 받음. esc(c) 사용도 같은 화면의 다른 action 버튼 aria-label과 일관됨. node our-assets-v1.14.1/our-assets/test/run.js 1457/1457 통과. 이상 없음, 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 196,
+      "phase": "critique",
+      "timestamp": "2026-10-15T11:25:00.000Z",
+      "summary": "Explore 서브에이전트로 앱 전반을 훑어 budgetCarryFor(c,y,m)(index.html:5281-5288)이 전월 한도를 budgetForMonth(flat, 이월 미반영)로 구해 budgetCarry를 계산하는 버그 발견 — budgetForMonthWithCarry(flat+이월, 사용자가 실제로 보고 따르는 실질 한도)를 써야 하는데 flat만 봐서, 2개월 이상 연속 이월 시 'flat~effective 사이'로 지출한 달 바로 다음 달에 이월이 0으로 리셋됨(예: 1개월차 이월 10만원 생성 → 2개월차 실질한도 40만원 안에서 35만원 지출했는데도 flat 30만원 기준으로 max(0,30-35)=0 반환). 봉투식(envelope) 이월의 핵심 약속(안 쓴 돈 누적)이 깨지는 제품 로직 버그. test/run.js에 2개월 연속 체이닝 테스트가 없어 지금까지 미발견. budgetForMonth(c,py,pm)->budgetForMonthWithCarry(c,py,pm) 교체(재귀적으로 체인됨) + 재귀 깊이 cap/memoize + 3개월 연속 체인 테스트 추가 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     }
   ]
