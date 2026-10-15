@@ -1,15 +1,8 @@
 {
   "cycle": 197,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 192,
-      "phase": "review",
-      "timestamp": "2026-10-14T18:10:00.000Z",
-      "summary": "cycle192 develop(recFreqLabelStr, commit aff2c2a) 검토 — recDates()의 실제 파생 규칙과 100% 일치함을 확인. node test/run.js 1395/1395 통과. 이상 없음, 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 192,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-15T14:20:00.000Z",
       "summary": "Explore 서브에이전트로 develop 후보를 탐색해, logic.js의 isCloudConflict(curUpdatedAt,lastSyncedAt)가 index.html에서 단 한 번도 호출되지 않는 죽은 함수임을 발견 — pushCloud()의 실제 충돌 판정은 조건부 UPDATE 매치 결과를 보는 decidePushOutcome(matchedRowCount,rowExistedBefore)로 완전히 대체돼 있었는데, maybeRollDay()의 주석(기존 8560줄)은 여전히 '1566 부근 isCloudConflict 참고'라며 없는 근거를 가리키고 있었음. logic.js에서 isCloudConflict 함수+주석 삭제, maybeRollDay() 주석을 'decidePushOutcome(1917 부근)' 참고로 정정, test/run.js의 isCloudConflict 테스트 5건과 FUNCTIONS 주석 목록의 언급도 함께 제거(decidePushOutcome 테스트는 그대로 유지). 동작 변경은 없음(애초에 호출되지 않던 코드라 순수 정리). index.html/logic.js 변경이라 APP_VERSION 1.47.160->1.47.161, sw.js CACHE v422->v423 갱신. node test/run.js 1459/1459 -> 1454/1454(5건 삭제 반영) 통과.",
+      "commit": "d3bd42b"
+    },
+    {
+      "cycle": 197,
+      "phase": "review",
+      "timestamp": "2026-10-15T15:07:53.000Z",
+      "summary": "cycle197 develop(isCloudConflict 죽은 함수 삭제, commit d3bd42b) 검토 — grep으로 isCloudConflict가 index.html/logic.js/test 어디에도 더 이상 남아있지 않음을 재확인. maybeRollDay() 주석이 가리키는 'decidePushOutcome(1917 부근)'이 실제로 index.html:1917(pushCloud 내부 호출부)과 정확히 일치함을 확인. node test/run.js 1454/1454 통과. 이상 없음, 코드 변경 없음.",
       "commit": null
     }
   ]
