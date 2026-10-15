@@ -1,26 +1,8 @@
 {
-  "cycle": 197,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "openRecManage()에 실행형(sandbox-rendered) 테스트 커버리지 추가 — 현재 자체 출력 검증이 전혀 없음",
-    "why": "test/run.js에서 openRecManage는 무조건 no-op 스텁(591줄 openRecManage: () => {})으로만 쓰이고, recFreqLabel 위임을 보는 간접 테스트(1029줄 근처) 하나가 있을 뿐 openRecManage 자체를 실행해 결과를 검사하는 테스트가 없다. 실제 함수(index.html:5574-5592)는 DB.recurrences를 type(지출/수입/저축/내부이체)별로 그룹핑하고 빈 그룹은 건너뛰며, 기간 라벨(startDate~endDate를 YYYY.MM 형식으로), active/paused 상태에 따른 opacity·'중지' 배지·pause/play 아이콘+aria-label, 그리고 빈 상태('반복되는 게 아직 없어요') 분기까지 제법 복잡한 렌더 로직을 갖고 있다. 반복거래는 월세·구독 등 핵심 기능이고 recFreqLabelStr(주/월/년 라벨)이나 endCond/truncation 쪽에서 실제 버그가 과거 사이클에 여러 번 발견된 영역인데, 그 목록을 보여주는 유일한 관리 화면이 그룹핑/기간 문자열/active-paused 렌더링 중 하나가 깨져도 테스트로는 전혀 잡히지 않는다. openSpendAnalysis/goalRowHTML이 이미 겪은 '소스-매칭 혹은 無테스트' 공백과 같은 버그 클래스의 다음 인스턴스.",
-    "approach": "spendAnalysisCtx()에서 확립된 격리-vm-컨텍스트 패턴(logic.js + FUNCTIONS/CONSTS/LETS 전체 + extractFunction('openRecManage')를 별도 vm 컨텍스트에서 컴파일, openSheet를 lastSheetHtml 캡처용 스텁으로 교체)을 따라 recManageCtx() 헬퍼를 test/run.js에 신설한다(toggleRecActive 관련 기존 테스트 근처, ~10453줄). DB.recurrences 픽스처를 active/paused 혼합, 여러 type(expense/income/saving/transfer), endDate 있음/없음으로 구성해 ctx.openRecManage() 실행 후 lastSheetHtml을 검사: (1) 데이터 없는 type의 그룹 헤더/카운트는 안 뜨는지, (2) 비어있지 않은 type만 '라벨 · N개' 헤더로 뜨는지, (3) paused 항목에 '중지' 배지 + opacity:.4 + play 아이콘 + 적절한 aria-label이 붙는지(active 항목엔 안 붙는지), (4) 기간 라벨이 startDate~endDate를 'YYYY.MM ~ YYYY.MM' 또는 endDate 없으면 'YYYY.MM ~'로 포맷하는지, (5) DB.recurrences가 비어있을 때 empty 상태 문구가 뜨는지. index.html은 건드리지 않되, 테스트를 실제로 작성하다 그룹핑/배지/기간 포맷 중 실제 버그가 드러나면 그 자리에서 최소 범위로 고친다(이 경우에만 APP_VERSION/CACHE 갱신)."
-  },
+  "cycle": 198,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 192,
-      "phase": "critique",
-      "timestamp": "2026-10-14T19:12:48.000Z",
-      "summary": "mergeRemoteDataIntoLocal()이 DB.rates(시세: fx/stocks/goldPerG/syncedAt)는 단 한 번도 참조하지 않음을 발견 — 신설 컬렉션 병합 배선 누락 버그 클래스의 미수정 인스턴스. mergeRates(LWW) 추가 + setRateVal에 ratesUpdatedAt 타임스탬프 기록 + mergeRemoteDataIntoLocal 배선 + sanitizeBackup 검증 분기 + 테스트 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
-      "commit": null
-    },
-    {
-      "cycle": 192,
-      "phase": "advance",
-      "timestamp": "2026-10-14T20:14:00.000Z",
-      "summary": "critique(cycle192) 계획대로 DB.rates(시세 스냅샷) 병합 배선 추가. logic.js에 mergeRates(local,remote) 신설(LWW), setRate에 ratesUpdatedAt 기록, mergeRemoteDataIntoLocal 배선, sanitizeBackup 검증 분기. test 11건 추가. APP_VERSION 1.47.152->1.47.153, CACHE v414->v415. node test/run.js 1395/1395 -> 1405/1405 통과. pending_advance_plan을 비웠다.",
-      "commit": null
-    },
     {
       "cycle": 193,
       "phase": "develop",
@@ -152,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-15T16:10:00.000Z",
       "summary": "Explore 서브에이전트로 앱 전반(아키텍처/UX/접근성/데이터 안전성/성능/테스트 커버리지)을 훑었다. openRecManage()(index.html:5574-5592, 반복거래 관리 화면 — type별 그룹핑, 기간 라벨, active/paused 배지·아이콘·aria-label, 빈 상태)가 test/run.js에서 무조건 no-op 스텁으로만 쓰이고 자체 실행형 테스트가 전혀 없음을 발견(recFreqLabel 위임을 보는 간접 테스트 1건만 존재) — openSpendAnalysis/goalRowHTML이 이미 겪었던 '소스-매칭 또는 無테스트' 버그 클래스의 다음 인스턴스. spendAnalysisCtx() 패턴을 재사용하는 recManageCtx() 신설 계획을 pending_advance_plan에 저장. 러너업: openQuickList(7256 부근)·openStaleMvReview(7798 부근)도 직접 테스트 無(다음 critique 후보로 보류). 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 197,
+      "phase": "advance",
+      "timestamp": "2026-10-15T17:09:57.823Z",
+      "summary": "critique(cycle197) 계획대로 openRecManage()에 실행형(sandbox-rendered) 테스트 커버리지를 추가했다. spendAnalysisCtx()와 같은 격리-vm-컨텍스트 패턴으로 recManageCtx() 헬퍼를 test/run.js에 신설(logic.js + recFreqLabel/ADJUST_CAT/CATICON/catKey/catIconOf/catGlyph/comma/openRecManage만 별도 컨텍스트에서 컴파일, openSheet는 lastSheetHtml 캡처 스텁). 5건 추가: (1) 데이터 없는 type은 그룹 헤더가 안 뜸, (2) 여러 type이 각각 \"라벨 · N개\"로 집계됨, (3) paused 항목만 \"중지\" 배지+opacity:.4+play 아이콘이 붙고 active 항목엔 안 붙음, (4) 기간 라벨이 endDate 유무에 따라 \"YYYY.MM ~ YYYY.MM\"/\"YYYY.MM ~\"로 포맷됨, (5) DB.recurrences가 비어있으면 빈 상태 문구가 뜸. 테스트를 작성하며 실제 렌더 로직에서 버그는 발견되지 않아 index.html/logic.js/sw.js는 건드리지 않았다(APP_VERSION/CACHE 변경 없음). node our-assets-v1.14.1/our-assets/test/run.js 1454/1454 -> 1459/1459 통과. pending_advance_plan을 비웠다.",
       "commit": null
     }
   ]

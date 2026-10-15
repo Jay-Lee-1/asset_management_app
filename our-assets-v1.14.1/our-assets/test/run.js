@@ -10473,6 +10473,103 @@ test('toggleAdjustSurplus: 조정 내역의 "수지에 포함" 토글에도 touc
   assert.strictEqual(t.updatedAt, 'test-updatedAt', '"수지에 포함" 토글에도 touch()가 호출되어야 함');
 });
 
+/* ---------- openRecManage: 메인 sandbox에서는 editRec/openRecSheet 등 다른 화면 진입점을
+ * 참조하는 onclick 문자열을 그대로 실행하지 않아도 되도록 무조건 no-op 스텁(591줄)으로 남겨두는데,
+ * 그 탓에 실제 openRecManage() 몸통(type별 그룹핑, 빈 그룹 스킵, 기간 라벨, active/paused
+ * 배지·opacity·아이콘·aria-label, 빈 상태 문구)은 recFreqLabel 위임을 보는 간접 테스트
+ * 하나(1029줄)를 빼면 전혀 실행 검증이 없었다 — openSpendAnalysis/goalRowHTML이 이미 겪었던
+ * '소스-매칭 또는 無테스트' 버그 클래스의 다음 인스턴스(app-evolve cycle197 critique).
+ * spendAnalysisCtx()와 같은 패턴으로, 이 함수가 실제로 참조하는 소스만 모아 별도 vm
+ * 컨텍스트에서 새로 컴파일해 DB/openSheet를 격리한다. ---------- */
+let _recManageCtx = null;
+function recManageCtx() {
+  if (_recManageCtx) return _recManageCtx;
+  const ctx = {
+    lastSheetHtml: null,
+    openSheet: (html) => { ctx.lastSheetHtml = html; },
+    svg: (key) => key,
+  };
+  vm.createContext(ctx);
+  vm.runInContext(logicSrc, ctx, { filename: 'logic.js' });
+  vm.runInContext(extractFunction('recFreqLabel'), ctx, { filename: 'recFreqLabel-real' });
+  vm.runInContext(extractConst('ADJUST_CAT'), ctx, { filename: 'ADJUST_CAT-real' });
+  vm.runInContext(extractConst('CATICON'), ctx, { filename: 'CATICON-real' });
+  vm.runInContext(extractConst('catKey'), ctx, { filename: 'catKey-real' });
+  vm.runInContext(extractFunction('catIconOf'), ctx, { filename: 'catIconOf-real' });
+  vm.runInContext(extractFunction('catGlyph'), ctx, { filename: 'catGlyph-real' });
+  vm.runInContext(extractConst('comma'), ctx, { filename: 'comma-real' });
+  vm.runInContext(extractFunction('openRecManage'), ctx, { filename: 'openRecManage-real' });
+  _recManageCtx = ctx;
+  return ctx;
+}
+test('[실행형] openRecManage: 데이터가 없는 type은 그룹 헤더/카운트가 아예 뜨지 않는다', () => {
+  const ctx = recManageCtx();
+  ctx.DB = {
+    recurrences: [
+      { id: 'r1', type: 'expense', category: '월세', amount: 500000, freq: 'monthly', day: 1, startDate: '2026-01-01', active: true },
+    ],
+  };
+  ctx.openRecManage();
+  const html = ctx.lastSheetHtml;
+  assert.ok(html.includes('지출 · 1개'), '지출 그룹 헤더(데이터 있음)가 떠야 함');
+  assert.ok(!html.includes('수입 ·'), '데이터 없는 수입 그룹 헤더는 뜨면 안 됨');
+  assert.ok(!html.includes('저축 ·'), '데이터 없는 저축 그룹 헤더는 뜨면 안 됨');
+  assert.ok(!html.includes('내부이체 ·'), '데이터 없는 내부이체 그룹 헤더는 뜨면 안 됨');
+});
+test('[실행형] openRecManage: 여러 type에 데이터가 있으면 각각 "라벨 · N개" 헤더로 뜬다', () => {
+  const ctx = recManageCtx();
+  ctx.DB = {
+    recurrences: [
+      { id: 'r1', type: 'expense', category: '월세', amount: 500000, freq: 'monthly', day: 1, startDate: '2026-01-01', active: true },
+      { id: 'r2', type: 'expense', category: '구독', amount: 10000, freq: 'monthly', day: 5, startDate: '2026-01-05', active: true },
+      { id: 'r3', type: 'income', category: '급여', amount: 3000000, freq: 'monthly', day: 25, startDate: '2026-01-25', active: true },
+    ],
+  };
+  ctx.openRecManage();
+  const html = ctx.lastSheetHtml;
+  assert.ok(html.includes('지출 · 2개'), '지출 그룹은 2건으로 집계되어야 함');
+  assert.ok(html.includes('수입 · 1개'), '수입 그룹은 1건으로 집계되어야 함');
+});
+test('[실행형] openRecManage: paused 항목은 "중지" 배지 + opacity:.4 + play 아이콘이 붙고, active 항목엔 안 붙는다', () => {
+  const ctx = recManageCtx();
+  ctx.DB = {
+    recurrences: [
+      { id: 'r1', type: 'expense', category: '월세', amount: 500000, freq: 'monthly', day: 1, startDate: '2026-01-01', active: true },
+      { id: 'r2', type: 'expense', category: '구독', amount: 10000, freq: 'monthly', day: 5, startDate: '2026-01-05', active: false },
+    ],
+  };
+  ctx.openRecManage();
+  const html = ctx.lastSheetHtml;
+  assert.ok(html.includes('<span class="mini">중지</span>'), 'paused 항목엔 "중지" 배지가 붙어야 함');
+  assert.ok(html.includes('opacity:.4'), 'paused 항목의 avatar는 opacity:.4로 흐려져야 함');
+  assert.ok(html.includes('다시 시작'), 'paused 항목의 토글 버튼은 "다시 시작"(play) 상태여야 함');
+  assert.ok(html.includes('일시중지'), 'active 항목의 토글 버튼은 "일시중지"(pause) 상태여야 함');
+  // active 항목(월세)의 행에는 "중지" 배지가 없어야 하므로, 배지 등장 횟수가 paused 건수(1)와 같아야 함
+  const badgeCount = (html.match(/<span class="mini">중지<\/span>/g) || []).length;
+  assert.strictEqual(badgeCount, 1, '"중지" 배지는 paused 항목 수만큼만 떠야 함(active 항목엔 안 붙음)');
+});
+test('[실행형] openRecManage: 기간 라벨은 startDate~endDate를 "YYYY.MM ~ YYYY.MM"으로, endDate가 없으면 "YYYY.MM ~"로 표시한다', () => {
+  const ctx = recManageCtx();
+  ctx.DB = {
+    recurrences: [
+      { id: 'r1', type: 'expense', category: '월세', amount: 500000, freq: 'monthly', day: 1, startDate: '2026-01-01', endDate: '2026-12-31', active: true },
+      { id: 'r2', type: 'expense', category: '구독', amount: 10000, freq: 'monthly', day: 5, startDate: '2026-03-05', active: true },
+    ],
+  };
+  ctx.openRecManage();
+  const html = ctx.lastSheetHtml;
+  assert.ok(html.includes('2026.01 ~ 2026.12'), 'endDate가 있으면 "YYYY.MM ~ YYYY.MM" 형식이어야 함');
+  assert.ok(html.includes('2026.03 ~<'), 'endDate가 없으면 "YYYY.MM ~"로 끝나야 함(뒤에 다른 날짜가 더 붙으면 안 됨)');
+});
+test('[실행형] openRecManage: DB.recurrences가 비어있으면 빈 상태 문구가 뜬다', () => {
+  const ctx = recManageCtx();
+  ctx.DB = { recurrences: [] };
+  ctx.openRecManage();
+  const html = ctx.lastSheetHtml;
+  assert.ok(html.includes('반복되는 게 아직 없어요'), '반복거래가 하나도 없으면 빈 상태 문구가 떠야 함');
+  assert.ok(!html.includes('menu-cap'), '빈 상태에서는 그룹 헤더가 전혀 뜨면 안 됨');
+});
+
 /* ---------- addBalanceAdjust/updateBalanceAdjust: 부채(debt) 자산에 잔액 조정 내역을
  * 만들 때 방향이 반대로 기록되던 버그의 회귀 테스트.
  * balancesUpTo()(2070줄)는 부채 자산에 sign=-1을 매겨, toAssetId로 들어오는 금액은 잔액을
