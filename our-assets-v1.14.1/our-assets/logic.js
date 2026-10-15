@@ -293,8 +293,6 @@ function gcTombstones(deletedIds,now,maxAgeMs){
  Object.keys(deletedIds||{}).forEach(id=>{if(now-deletedIds[id]<=maxAgeMs)out[id]=deletedIds[id]});
  return out;
 }
-/* push 직전 순수 충돌 판정 — 원격이 우리가 마지막으로 안전하게 동기화한 시점보다 최신이면 충돌 */
-function isCloudConflict(curUpdatedAt,lastSyncedAt){return !!(curUpdatedAt&&lastSyncedAt&&curUpdatedAt>lastSyncedAt)}
 /* pushCloud()의 조건부 UPDATE(.eq('updated_at',CLOUD_LAST_SYNCED_AT)) 결과를 어떻게 처리할지 판정하는 순수 로직.
  * matchedRowCount>0: 우리가 마지막으로 본 updated_at 그대로였다는 뜻이므로 그대로 진행(proceed).
  * matchedRowCount===0인데 행 자체가 아직 없으면(첫 push 등) upsert로 폴백(fallback).

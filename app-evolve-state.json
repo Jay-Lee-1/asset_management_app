@@ -1,15 +1,8 @@
 {
   "cycle": 197,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 192,
-      "phase": "develop",
-      "timestamp": "2026-10-14T17:14:29.000Z",
-      "summary": "반복 내역 관리(openRecManage)의 recFreqLabel(r)이 monthly는 r.day로 상세를 보여주는데 weekly/yearly는 '매주'/'매년'만 반환하던 비대칭 발견. logic.js에 recFreqLabelStr(freq,day,startDate) 신설, recFreqLabel(r)은 위임. test 7건 추가. APP_VERSION 1.47.151->1.47.152, CACHE v413->v414. node test/run.js 1389/1389 -> 1395/1395 통과.",
-      "commit": "aff2c2a"
-    },
     {
       "cycle": 192,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-15T13:13:02.850Z",
       "summary": "critique(cycle196) 계획대로 budgetCarryFor(c,y,m)의 전달 한도 조회를 budgetForMonth(flat)에서 budgetForMonthWithCarry(flat+이월, 재귀)로 교체 — 연속 이월 체인이 2개월째에 flat~실질 한도 사이로 지출하면 0으로 끊기던 버그를 고쳤다. 무한/과도 재귀 방지를 위해 depth 파라미터(기본 0, 24개월 cap)를 budgetCarryFor/budgetForMonthWithCarry 양쪽에 추가(바깥 호출부는 그대로 depth 생략). test/run.js에 3단계 체인 회귀 테스트 1건(수정 전이면 0이 되던 지점이 50000으로 나오는지 확인) + depth cap sanity 테스트 1건 신규 추가, 또한 기존 budgetCarryFor/budgetForMonthWithCarry/openBudgetPrompt/openSpendAnalysis/totalBudgetSummary 테스트들이 budgetHistory를 2026-01부터로 둬 재귀 수정 후 의도치 않게 다다음 달까지 체인이 뻗어 기존 기대값이 깨지던 것을 발견 — 각 테스트의 budgetHistory 시작월을 '전달' 바로 전으로 좁혀 원래 의도(단일 스텝 이월)를 그대로 검증하도록 고쳤다(년도 경계 테스트는 2025-01->2025-12). index.html 변경이라 APP_VERSION 1.47.159->1.47.160, sw.js CACHE v421->v422. node test/run.js 1457/1457 -> 1459/1459 통과. pending_advance_plan을 비웠다.",
+      "commit": null
+    },
+    {
+      "cycle": 197,
+      "phase": "develop",
+      "timestamp": "2026-10-15T14:20:00.000Z",
+      "summary": "Explore 서브에이전트로 develop 후보를 탐색해, logic.js의 isCloudConflict(curUpdatedAt,lastSyncedAt)가 index.html에서 단 한 번도 호출되지 않는 죽은 함수임을 발견 — pushCloud()의 실제 충돌 판정은 조건부 UPDATE 매치 결과를 보는 decidePushOutcome(matchedRowCount,rowExistedBefore)로 완전히 대체돼 있었는데, maybeRollDay()의 주석(기존 8560줄)은 여전히 '1566 부근 isCloudConflict 참고'라며 없는 근거를 가리키고 있었음. logic.js에서 isCloudConflict 함수+주석 삭제, maybeRollDay() 주석을 'decidePushOutcome(1917 부근)' 참고로 정정, test/run.js의 isCloudConflict 테스트 5건과 FUNCTIONS 주석 목록의 언급도 함께 제거(decidePushOutcome 테스트는 그대로 유지). 동작 변경은 없음(애초에 호출되지 않던 코드라 순수 정리). index.html/logic.js 변경이라 APP_VERSION 1.47.160->1.47.161, sw.js CACHE v422->v423 갱신. node test/run.js 1459/1459 -> 1454/1454(5건 삭제 반영) 통과.",
       "commit": null
     }
   ]

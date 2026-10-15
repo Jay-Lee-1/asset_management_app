@@ -156,7 +156,7 @@ function extractMainScript() {
 
 // 테스트 대상 + 그 대상이 내부에서 호출하는 순수 함수들.
 // addDays/daysBetween/shiftWeekend/recDates/addMonthsStr/recNthDate/recCountUntil/truncateRecEnd,
-// mergeCollection/gcTombstones/isCloudConflict/decidePushOutcome/computeRelinkBaseline,
+// mergeCollection/gcTombstones/decidePushOutcome/computeRelinkBaseline,
 // parseCSV/csvDateValid/csvDedupeKey,
 // esc/normName/lastDay/monthEndStr/monthStartStr/matchTxnQuery/budgetKey/budgetProgress는
 // index.html이 아니라 logic.js에 있다 — 위 logicSrc로 직접 로드하므로 이 목록에는 없다
@@ -8246,23 +8246,6 @@ test('clampRecurringToMaturity: 만기를 더 당기면(단축) count 유무와 
   sandbox.DB = { recurrences: [rec] };
   sandbox.clampRecurringToMaturity('a2', '2026-03-01', '2026-09-01');
   assert.strictEqual(rec.endDate, '2026-02-15', '만기가 당겨지면 만기 이후 이체를 막기 위해 항상 재계산돼야 함');
-});
-
-/* ---------- isCloudConflict: pushCloud()가 충돌로 빠지는 조건의 순수 판정 로직 ---------- */
-test('isCloudConflict: 원격 updated_at이 마지막 동기화 시점보다 최신이면 충돌이다', () => {
-  assert.strictEqual(sandbox.isCloudConflict('2026-06-15T10:00:00.000Z', '2026-06-15T09:00:00.000Z'), true);
-});
-test('isCloudConflict: 원격 updated_at이 마지막 동기화 시점과 같으면 충돌이 아니다', () => {
-  assert.strictEqual(sandbox.isCloudConflict('2026-06-15T09:00:00.000Z', '2026-06-15T09:00:00.000Z'), false);
-});
-test('isCloudConflict: 원격 updated_at이 더 오래됐으면 충돌이 아니다', () => {
-  assert.strictEqual(sandbox.isCloudConflict('2026-06-15T08:00:00.000Z', '2026-06-15T09:00:00.000Z'), false);
-});
-test('isCloudConflict: 마지막 동기화 기록이 없으면(첫 push) 충돌로 보지 않는다', () => {
-  assert.strictEqual(sandbox.isCloudConflict('2026-06-15T09:00:00.000Z', null), false);
-});
-test('isCloudConflict: 원격에 데이터가 아직 없으면(updated_at 없음) 충돌이 아니다', () => {
-  assert.strictEqual(sandbox.isCloudConflict(null, '2026-06-15T09:00:00.000Z'), false);
 });
 
 /* ---------- decidePushOutcome: pushCloud()의 조건부 UPDATE 결과 판정(동시 기기 푸시 race condition 방지) ---------- */
