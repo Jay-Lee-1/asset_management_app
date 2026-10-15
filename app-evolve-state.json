@@ -1,15 +1,8 @@
 {
   "cycle": 199,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 194,
-      "phase": "review",
-      "timestamp": "2026-10-15T02:16:00.000Z",
-      "summary": "cycle194 develop(overCount 캡션, commit 1656e48) 검토 — overCount/tbp.over 독립성, 캡션 순서 확인. index.html 5313-5319줄에 7줄 HTML 주석이 템플릿 리터럴 안에 박혀 렌더된 DOM에 그대로 포함되는 점을 발견했으나 급하지 않아 critique가 참고하도록 남김. node test/run.js 1418/1418 통과. 치명적 문제 없음, 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 194,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-15T22:10:04.662Z",
       "summary": "Explore 서브에이전트로 develop 후보를 탐색 — openQuickList()(index.html:7329-7338, 변동 실제금액 입력 여러 건을 한 시트에서 보여주는 함수)가 형제 함수인 openConfirmTransferList()/openNegList()와 똑같은 0건/1건/N건 분기 구조를 공유하는데도, 그 둘은 cycle156/157에서 이미 직접 실행형 테스트를 받았고 openQuickList만 critique 이력에 이름이 남은 채 테스트가 전혀 없었음(코드 자체에 버그는 없음, 순수 테스트 커버리지 공백). FUNCTIONS 목록에 openQuickList 추가 + test/run.js에 2건 추가: (1) 입력할 변동 항목이 없으면 토스트만 뜨고 시트 안 열림, 정확히 1건이면 목록 없이 바로 그 건의 saveQuickAmount 개별 시트로 가고 목록 제목(\"실제 금액 입력\")은 안 보임 — setupHomeAlertsDB + setCatVar로 변동 카테고리 1건 구성, (2) 2건 이상(지출+수입 섞어서)이면 \"변동 항목 2건\" 안내와 함께 각 행이 자신의 openQuickAmount(recId,date)로 연결되고 카테고리/메모가 보임. 프로덕션 코드 변경 없음(테스트 전용이라 APP_VERSION/CACHE 변경 없음). node our-assets-v1.14.1/our-assets/test/run.js 1489/1489 -> 1491/1491 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 199,
+      "phase": "review",
+      "timestamp": "2026-10-15T23:05:00.000Z",
+      "summary": "cycle199 develop(openQuickList 실행형 테스트 2건, commit 0013a2e) 검토 — openQuickList() 소스(index.html:7329-7338)를 직접 대조해 0건(토스트만, 시트 안 염)/1건(목록 없이 바로 openQuickAmount)/N건(각 행이 자신의 recId/date로 openQuickAmount 연결, 건수·카테고리·메모 표시) 분기와 테스트 기대값이 정확히 일치함을 확인. 형제 함수 openConfirmTransferList/openNegList의 기존 실행형 패턴과 구조가 같음. node our-assets-v1.14.1/our-assets/test/run.js 1491/1491 통과. 이상 없음, 코드 변경 없음.",
       "commit": null
     }
   ]
