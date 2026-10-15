@@ -1387,7 +1387,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.159';
+const APP_VERSION='1.47.160';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5273,24 +5273,32 @@ function setBudgetFrom(c,y,m,amount){
  if(idx>=0)h[idx].amount=amount;
  else{h.push({from:key,amount});h.sort((a,b)=>a.from<b.from?-1:a.from>b.from?1:0)}
 }
-/* 카테고리별 예산 이월(catBudgetRollover) 토글이 켜져 있으면 전달에 budgetForMonth가 가리키던
- * 한도 중 안 쓰고 남은 만큼(logic.js budgetCarry, 초과분은 0으로 clamp)을 이번 달에 얹는다
- * (app-evolve cycle194 critique/advance). 예산은 귀속과 무관하게 전역이므로(budgetForMonth와
+/* 카테고리별 예산 이월(catBudgetRollover) 토글이 켜져 있으면 전달의 "실질" 한도(flat+그 전달의
+ * 이월, budgetForMonthWithCarry) 중 안 쓰고 남은 만큼(logic.js budgetCarry, 초과분은 0으로 clamp)을
+ * 이번 달에 얹는다(app-evolve cycle194 critique/advance, cycle196 critique/advance 버그 수정) —
+ * 전달 한도를 flat(budgetForMonth)으로만 보면 "1개월차에 이월이 생겼는데 2개월차에 flat~실질 한도
+ * 사이로 썼을 때" 이월이 0으로 끊기는 버그가 있었다(실질 한도 안에서 썼으니 사용자 입장엔 '아낀
+ * 돈'인데 flat 기준으로는 '초과'로 보여 다음 이월이 사라짐). 전달 실질 한도를 다시 구하려면 그
+ * 전달 이월(budgetCarryFor 재귀 호출)이 필요해 자연스럽게 연속 이월 체인이 된다 — depth로 재귀
+ * 깊이를 24개월로 cap해(토글을 몇 년씩 켜둔 카테고리에서 매 조회마다 재귀가 무한정 깊어지는 것을
+ * 방지) 그 이상 과거는 이월 없음(0)으로 본다. 예산은 귀속과 무관하게 전역이므로(budgetForMonth와
  * 동일한 관례) spendByCategory도 항상 '전체' 기준으로 조회 — 현재 보고 있는 ST.spendOwner 필터와
  * 무관하게 전달 지출 전체를 봐야 이월 계산이 맞다. */
-function budgetCarryFor(c,y,m){
+function budgetCarryFor(c,y,m,depth=0){
  if(!isBudgetRolloverCat(c))return 0;
+ if(depth>=24)return 0;
  let py=y,pm=m-1;if(pm<1){pm=12;py--}
- const prevBudget=budgetForMonth(c,py,pm);
+ const prevBudget=budgetForMonthWithCarry(c,py,pm,depth+1);
  if(!prevBudget)return 0;
  const prevSpent=spendByCategory(py,pm,'전체').find(x=>x.c===c);
  return budgetCarry(prevBudget,prevSpent?prevSpent.v:0);
 }
 /* budgetForMonth()에 이월분을 더한 "이번 달에 실제로 쓸 수 있는 한도" — budgetForMonthEffective가
  * 이번 달 자체에 flat 예산이 없으면(0/미설정) 이월이 있어도 0을 그대로 돌려주므로(logic.js 주석
- * 참고), 기존 budgetForMonth()의 "falsy=미설정" 호출부 관례를 그대로 유지한다. */
-function budgetForMonthWithCarry(c,y,m){
- return budgetForMonthEffective(budgetForMonth(c,y,m),budgetCarryFor(c,y,m));
+ * 참고), 기존 budgetForMonth()의 "falsy=미설정" 호출부 관례를 그대로 유지한다. depth는
+ * budgetCarryFor의 재귀 체인을 위한 내부용 인자로, 바깥 호출부는 그냥 생략하면 된다. */
+function budgetForMonthWithCarry(c,y,m,depth=0){
+ return budgetForMonthEffective(budgetForMonth(c,y,m),budgetCarryFor(c,y,m,depth));
 }
 /* 예산이 설정된 카테고리만 골라 해당 달(y,m) 기준 전체 예산 대비 지출을 집계 — 예산이 하나도 없으면 budgetedTotal=0으로 '집계할 게 없음'을 나타낸다.
  * budgetedTotal/overCount는 이월이 적용된 실질 한도(budgetForMonthWithCarry) 기준이고, carryTotal은

@@ -1774,7 +1774,7 @@ test('budgetCarryFor: 토글이 꺼져 있으면 전달 실적과 무관하게 �
 test('budgetCarryFor: 토글이 켜져 있으면 전달 예산-지출의 여윳돈을 이월한다', () => {
   sandbox.DB = {
     catBudgetRollover: { 'expense:식비': true },
-    budgetHistory: { 식비: [{ from: '2026-01', amount: 300000 }] },
+    budgetHistory: { 식비: [{ from: '2026-05', amount: 300000 }] },
     txns: [{ id: '1', type: 'expense', category: '식비', amount: 200000, date: '2026-05-10', confirmed: true }],
     recurrences: [],
   };
@@ -1783,7 +1783,7 @@ test('budgetCarryFor: 토글이 켜져 있으면 전달 예산-지출의 여윳�
 test('budgetCarryFor: 토글이 켜져 있어도 전달 예산을 초과했으면 이월분은 0이다', () => {
   sandbox.DB = {
     catBudgetRollover: { 'expense:식비': true },
-    budgetHistory: { 식비: [{ from: '2026-01', amount: 300000 }] },
+    budgetHistory: { 식비: [{ from: '2026-05', amount: 300000 }] },
     txns: [{ id: '1', type: 'expense', category: '식비', amount: 350000, date: '2026-05-10', confirmed: true }],
     recurrences: [],
   };
@@ -1796,16 +1796,42 @@ test('budgetCarryFor: 전달에 예산 자체가 없었으면(0/미설정) 이�
 test('budgetCarryFor: 1월(전달이 전년 12월)로 넘어가도(연도 경계) 올바르게 조회한다', () => {
   sandbox.DB = {
     catBudgetRollover: { 'expense:식비': true },
-    budgetHistory: { 식비: [{ from: '2025-01', amount: 300000 }] },
+    budgetHistory: { 식비: [{ from: '2025-12', amount: 300000 }] },
     txns: [{ id: '1', type: 'expense', category: '식비', amount: 100000, date: '2025-12-20', confirmed: true }],
     recurrences: [],
   };
   assert.strictEqual(sandbox.budgetCarryFor('식비', 2026, 1), 200000);
 });
+/* cycle196 critique가 발견한 버그: budgetCarryFor가 전달 한도를 flat(budgetForMonth)으로만 보면
+ * "1개월차에 이월이 생겼는데 2개월차에 flat~실질 한도 사이로 썼을 때" 이월이 0으로 끊긴다 —
+ * 실질 한도(budgetForMonthWithCarry) 기준으로 봐야 envelope의 "안 쓴 돈은 누적된다"는 약속이
+ * 깨지지 않는다. 3개월을 체인으로 이어 수정 전/후 차이가 드러나는 지점을 검증한다. */
+test('budgetCarryFor: 전달의 이월까지 반영된 실질 한도를 기준으로 다다음 달까지 체인이 끊기지 않는다(cycle196 critique 버그 수정)', () => {
+  sandbox.DB = {
+    catBudgetRollover: { 'expense:식비': true },
+    budgetHistory: { 식비: [{ from: '2026-04', amount: 300000 }] },
+    txns: [
+      { id: '1', type: 'expense', category: '식비', amount: 200000, date: '2026-04-10', confirmed: true }, // 4월: 300000 중 200000 사용, 이월 100000
+      { id: '2', type: 'expense', category: '식비', amount: 350000, date: '2026-05-10', confirmed: true }, // 5월: flat 300000은 초과했지만 실질 한도(400000) 이내
+    ],
+    recurrences: [],
+  };
+  assert.strictEqual(sandbox.budgetForMonthWithCarry('식비', 2026, 5), 400000, '5월 실질 한도는 4월 이월 100000이 더해진 400000');
+  assert.strictEqual(
+    sandbox.budgetCarryFor('식비', 2026, 6),
+    50000,
+    '5월은 실질 한도(400000) 중 350000만 써서 50000이 남아야 함 — flat(300000) 기준이면 초과로 보여 0이 되는 버그였음',
+  );
+});
+test('budgetCarryFor: depth cap(24개월)을 넘는 과거까지 재귀하지 않고 끝난다(토글을 몇 년째 켜둔 카테고리의 안전장치)', () => {
+  const history = [{ from: '2020-01', amount: 100000 }];
+  sandbox.DB = { catBudgetRollover: { 'expense:식비': true }, budgetHistory: { 식비: history }, txns: [], recurrences: [] };
+  assert.doesNotThrow(() => sandbox.budgetCarryFor('식비', 2026, 6), 'RangeError(스택 초과) 없이 끝나야 함');
+});
 test('budgetForMonthWithCarry: 토글이 꺼져 있으면 기존 budgetForMonth()와 완전히 동일하다(하위호환)', () => {
   sandbox.DB = {
     catBudgetRollover: {},
-    budgetHistory: { 식비: [{ from: '2026-01', amount: 300000 }] },
+    budgetHistory: { 식비: [{ from: '2026-05', amount: 300000 }] },
     txns: [{ id: '1', type: 'expense', category: '식비', amount: 100000, date: '2026-05-10', confirmed: true }],
     recurrences: [],
   };
@@ -1815,7 +1841,7 @@ test('budgetForMonthWithCarry: 토글이 꺼져 있으면 기존 budgetForMonth(
 test('budgetForMonthWithCarry: 토글이 켜져 있으면 이월분이 더해진 실질 한도를 돌려준다', () => {
   sandbox.DB = {
     catBudgetRollover: { 'expense:식비': true },
-    budgetHistory: { 식비: [{ from: '2026-01', amount: 300000 }] },
+    budgetHistory: { 식비: [{ from: '2026-05', amount: 300000 }] },
     txns: [{ id: '1', type: 'expense', category: '식비', amount: 200000, date: '2026-05-10', confirmed: true }],
     recurrences: [],
   };
@@ -2398,7 +2424,7 @@ test('openBudgetPrompt: 이월(rollover) 토글이 켜져 있고 전달 여윳�
   sandbox.DB = {
     txns: [{ id: '1', type: 'expense', category: '식비', amount: 200000, date: '2026-05-10', confirmed: true }],
     recurrences: [],
-    budgetHistory: { 식비: [{ from: '2026-01', amount: 300000 }] },
+    budgetHistory: { 식비: [{ from: '2026-05', amount: 300000 }] },
     catBudgetRollover: { 'expense:식비': true },
   };
   sandbox.ST = { ledger: { y: 2026, m: 6 } };
@@ -11663,7 +11689,7 @@ test('openSpendAnalysis: 예산 요약 카드에 이월(rollover)로 더해진 �
     assets: [],
     recurrences: [],
     catBudgetRollover: { 'expense:식비': true },
-    budgetHistory: { 식비: [{ from: '2026-01', amount: 300000 }] }, // 교통은 예산 없음(unsetCount)
+    budgetHistory: { 식비: [{ from: '2026-05', amount: 300000 }] }, // 교통은 예산 없음(unsetCount)
     txns: [
       { id: '1', type: 'expense', category: '식비', amount: 200000, date: '2026-05-10', confirmed: true }, // 전달 300000 중 200000만 써서 100000 이월
       { id: '2', type: 'expense', category: '식비', amount: 150000, date: '2026-06-10', confirmed: true }, // 이번 달은 이월 포함 400000 이내
@@ -11687,7 +11713,7 @@ test('openSpendAnalysis: 카테고리별 행의 한도 표시는 이월(catBudge
     assets: [],
     recurrences: [],
     catBudgetRollover: { 'expense:식비': true }, // 식비만 이월 opt-in, 교통은 꺼짐
-    budgetHistory: { 식비: [{ from: '2026-01', amount: 300000 }], 교통: [{ from: '2026-01', amount: 100000 }] },
+    budgetHistory: { 식비: [{ from: '2026-05', amount: 300000 }], 교통: [{ from: '2026-01', amount: 100000 }] },
     txns: [
       { id: '1', type: 'expense', category: '식비', amount: 200000, date: '2026-05-10', confirmed: true }, // 전달 여윳돈 100000
       { id: '2', type: 'expense', category: '교통', amount: 20000, date: '2026-05-11', confirmed: true }, // 전달 여윳돈 80000(이월 꺼져 있어 무시돼야 함)
@@ -11706,7 +11732,7 @@ test('openSpendAnalysis: 카테고리별 행의 한도 표시는 이월(catBudge
 test('totalBudgetSummary: catBudgetRollover 토글이 켜진 카테고리는 이월분이 budgetedTotal/overCount에 반영되고 carryTotal로 노출된다', () => {
   sandbox.DB = {
     catBudgetRollover: { 'expense:식비': true },
-    budgetHistory: { 식비: [{ from: '2026-01', amount: 300000 }] },
+    budgetHistory: { 식비: [{ from: '2026-05', amount: 300000 }] },
     txns: [{ id: '1', type: 'expense', category: '식비', amount: 200000, date: '2026-05-10', confirmed: true }],
     recurrences: [],
   };

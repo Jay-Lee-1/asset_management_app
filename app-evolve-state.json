@@ -1,19 +1,8 @@
 {
-  "cycle": 196,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "budgetCarryFor()가 전월 \"flat\" 예산만 보고 이월을 계산해 2개월 이상 연속 이월 시 누적이 끊기는 버그 수정",
-    "why": "index.html:5281-5288 budgetCarryFor(c,y,m)가 전월 한도를 budgetForMonth(flat, 이월 미반영)로 구해서 budgetCarry(prevBudget,prevSpent)를 계산한다. 하지만 사용자에게 실제로 보여주고 '그 안에서 썼다'고 믿게 만드는 한도는 budgetForMonthWithCarry(flat+이월)다. 예: 1개월차 30만원 한도에서 20만원 지출→2개월차 이월 10만원(실질 한도 40만원). 2개월차에 35만원을 썼다면 사용자 입장에선 실질 한도(40만원) 이내라 괜찮지만, budgetCarryFor는 flat(30만원) 기준으로 max(0,30-35)=0을 반환해 3개월차 이월이 0으로 리셋된다 — envelope(봉투식) 이월이라는 기능의 핵심 약속(안 쓴 돈은 누적된다)이 깨지고, 사용자가 손해를 본다. test/run.js에 2개월 연속 체이닝 테스트가 없어 지금까지 못 잡힌 회귀 사각지대다.",
-    "approach": "1) index.html의 budgetCarryFor(c,y,m) 중 'const prevBudget=budgetForMonth(c,py,pm)'을 'const prevBudget=budgetForMonthWithCarry(c,py,pm)'로 교체 — budgetForMonthWithCarry가 내부에서 자기 자신(budgetCarryFor)을 한 달 전 기준으로 재귀 호출하므로 자연스럽게 연속 이월 체인이 된다. 2) 무한/과도 재귀 방지: 카테고리가 생성된 이래 계속 이월 토글이 켜져 있으면 매달 조회마다 재귀 깊이가 늘어날 수 있으므로, depth 파라미터(기본값 예: 24개월 cap)를 추가하거나 동일 (c,y,m) 호출을 같은 렌더 패스 내에서 memoize한다 — 어느 쪽이든 코드 읽어보고 기존 스타일과 맞는 가벼운 방법 선택. 3) test/run.js의 budgetCarryFor/budgetForMonthWithCarry 테스트(약 1733-1822줄 근방) 옆에 3개월 연속 체인 테스트 추가: 1개월차 저지출(이월 생김)→2개월차 flat과 effective 사이 지출(이 버그 전이면 이월이 0으로 끊김)→3개월차 이월이 실제 누적분을 반영하는지 확인. depth cap/성능에 대한 간단한 sanity 테스트도 추가. 4) DB 스키마/마이그레이션 변경 없음 — 순수 로직 수정+ 테스트 추가만. index.html 변경이므로 APP_VERSION/sw.js CACHE 버전도 올릴 것."
-  },
+  "cycle": 197,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 191,
-      "phase": "advance",
-      "timestamp": "2026-10-14T16:13:04.106Z",
-      "summary": "critique(cycle191) 계획대로 투자자산(fx/gold/stock) 추가매수 시 \"이번에 추가로 투입한 금액\"을 따로 입력받는 asAddedCost 입력창(asAddedCostField)을 costBasisField에 추가했다(기존 누적 총액 입력창 asCostBasis는 직접 덮어쓰고 싶은 사용자를 위해 그대로 둠). logic.js에 addCostBasisForBuy(origCostBasis,addedAmount) 순수 함수 추가(addedAmount<=0/undefined면 원본 그대로, scaleCostBasisForSale의 반대 짝). syncAssetInputs가 asAddedCost를 asDraft._addedCost로 읽고, saveAsset()의 isMarketValued 분기에서 수량 증가(추가매수) + _addedCost>0일 때만 addCostBasisForBuy로 d.costBasis를 갱신(매도 쪽 scaleCostBasisForSale 분기와 상호 배타적), 저장 전 _addedCost는 삭제. DB.assetQtyLog 엔트리에도 addedAmount를 남겨 openAssetQtyLog 이력 행에 \"· 투입 N원\"으로 표시되게 했다. test/run.js에 9건 추가/수정. index.html/logic.js/sw.js 변경이라 APP_VERSION 1.47.150->1.47.151, sw.js CACHE v412->v413 갱신. node test/run.js 1385/1385 -> 1389/1389 통과. pending_advance_plan을 비웠다.",
-      "commit": null
-    },
     {
       "cycle": 192,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-15T11:25:00.000Z",
       "summary": "Explore 서브에이전트로 앱 전반을 훑어 budgetCarryFor(c,y,m)(index.html:5281-5288)이 전월 한도를 budgetForMonth(flat, 이월 미반영)로 구해 budgetCarry를 계산하는 버그 발견 — budgetForMonthWithCarry(flat+이월, 사용자가 실제로 보고 따르는 실질 한도)를 써야 하는데 flat만 봐서, 2개월 이상 연속 이월 시 'flat~effective 사이'로 지출한 달 바로 다음 달에 이월이 0으로 리셋됨(예: 1개월차 이월 10만원 생성 → 2개월차 실질한도 40만원 안에서 35만원 지출했는데도 flat 30만원 기준으로 max(0,30-35)=0 반환). 봉투식(envelope) 이월의 핵심 약속(안 쓴 돈 누적)이 깨지는 제품 로직 버그. test/run.js에 2개월 연속 체이닝 테스트가 없어 지금까지 미발견. budgetForMonth(c,py,pm)->budgetForMonthWithCarry(c,py,pm) 교체(재귀적으로 체인됨) + 재귀 깊이 cap/memoize + 3개월 연속 체인 테스트 추가 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 196,
+      "phase": "advance",
+      "timestamp": "2026-10-15T13:13:02.850Z",
+      "summary": "critique(cycle196) 계획대로 budgetCarryFor(c,y,m)의 전달 한도 조회를 budgetForMonth(flat)에서 budgetForMonthWithCarry(flat+이월, 재귀)로 교체 — 연속 이월 체인이 2개월째에 flat~실질 한도 사이로 지출하면 0으로 끊기던 버그를 고쳤다. 무한/과도 재귀 방지를 위해 depth 파라미터(기본 0, 24개월 cap)를 budgetCarryFor/budgetForMonthWithCarry 양쪽에 추가(바깥 호출부는 그대로 depth 생략). test/run.js에 3단계 체인 회귀 테스트 1건(수정 전이면 0이 되던 지점이 50000으로 나오는지 확인) + depth cap sanity 테스트 1건 신규 추가, 또한 기존 budgetCarryFor/budgetForMonthWithCarry/openBudgetPrompt/openSpendAnalysis/totalBudgetSummary 테스트들이 budgetHistory를 2026-01부터로 둬 재귀 수정 후 의도치 않게 다다음 달까지 체인이 뻗어 기존 기대값이 깨지던 것을 발견 — 각 테스트의 budgetHistory 시작월을 '전달' 바로 전으로 좁혀 원래 의도(단일 스텝 이월)를 그대로 검증하도록 고쳤다(년도 경계 테스트는 2025-01->2025-12). index.html 변경이라 APP_VERSION 1.47.159->1.47.160, sw.js CACHE v421->v422. node test/run.js 1457/1457 -> 1459/1459 통과. pending_advance_plan을 비웠다.",
       "commit": null
     }
   ]
