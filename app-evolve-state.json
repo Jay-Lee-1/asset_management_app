@@ -1,19 +1,8 @@
 {
-  "cycle": 193,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "거래 입력에 '복제(빠른 재입력)' 기능 추가",
-    "why": "매일 반복되는 소액 비정형 지출(커피/점심/교통 등)을 매번 유형→카테고리→메모→자산을 처음부터 다시 골라 입력해야 함. DB.recurrences는 금액이 고정이 아니라 대안이 안 됨. openTxSheet()(index.html:4158)는 항상 빈 draft로 시작하고, editTx(id)(4312-4317)는 같은 id 수정 전용이며, txMemo(4211)엔 자동완성도 없음. grep '복제|duplicate|copyTx|cloneTx' 전역 0건으로 복제 기능이 전혀 없음을 확인. 핵심 사용성(일일 기록 리텐션)을 해치는 누락.",
-    "approach": "logic.js 또는 index.html에 duplicateTx(id) 신설: DB.txns에서 해당 레코드를 딥클론해 id=null, date=TODAY, confirmed 해제한 draft를 반환(isRec/adjust 레코드는 제외해 null 반환 또는 가드). txRowCore()(~4090-4109)에 '복제' 액션 버튼 추가(새 copy SVG 아이콘, sel.mode 중이거나 isRec/대기중 이체 행에서는 숨김) → 탭 시 txDraft=duplicateTx(id) 결과로 세팅하고 renderTxSheet() 호출. renderTxSheet()이 id가 null인 draft를 신규 저장(삭제 버튼 없이 '저장하기'로 새 레코드 생성)으로 처리하는지 확인/보강. DB 스키마 변경이 없으므로 mergeRemoteDataIntoLocal 등 동기화 배선은 불필요. test/run.js에 추가할 테스트: (1) duplicateTx가 category/memo/amount/asset 필드는 복사하되 id=null, date=TODAY로 리셋하는지 단위 테스트, (2) isRec/adjust 레코드에는 적용되지 않는지(가드) 테스트, (3) 복제된 draft를 저장하면 원본 DB.txns 레코드는 그대로 두고 새 독립 레코드가 추가되는 통합 테스트."
-  },
+  "cycle": 194,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 188,
-      "phase": "advance",
-      "timestamp": "2026-10-14T03:05:00.000Z",
-      "summary": "critique(cycle188) 계획대로 doCsvImport()의 undoToast 되돌리기 콜백에 톰스톤을 추가. addedIds.forEach(id=>DB.deletedIds[id]=Date.now())로 가져온 거래 전체를 deleteTxnsUndo와 동일하게 톰스톤하고, addedCats로 되돌려 제거되는 카테고리도 doDeleteCat과 동일하게 DB.deletedIds[catTombKey(type,name)]=Date.now()를 남기도록 확장. mergeCollection 자체 테스트까지는 과하다고 판단해(이미 기존 톰스톤 패턴의 mergeCollection 소비 쪽은 다른 사이클에서 충분히 검증됨) 생성 쪽 회귀만 2건 추가: 되돌리면 가져온 거래 id가 톰스톤되는지 / 되돌리면 새로 만든 카테고리도 catTombKey 톰스톤이 남는지. index.html/sw.js 변경이라 APP_VERSION 1.47.144->1.47.145, sw.js CACHE v406->v407 갱신. node test/run.js 1352/1352 -> 1354/1354 통과. pending_advance_plan을 비웠다.",
-      "commit": null
-    },
     {
       "cycle": 189,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-14T23:12:56.222Z",
       "summary": "general-purpose 서브에이전트로 141-193사이클 기각/완료 이력을 전달하고 앱 전체를 재조망 — 거래 입력 플로우에 '복제(빠른 재입력)' 기능이 전혀 없음을 발견. openTxSheet()(index.html:4158)는 항상 빈 draft로 시작하고, editTx(id)(4312-4317)는 같은 id를 수정하는 용도로만 쓰이며, 메모 입력(txMemo, 4211)엔 datalist/자동완성도 없음. grep으로 '복제|duplicate|copyTx|cloneTx' 전역 매치 0건 확인. 매일 반복되는 소액 비정형 지출(커피/점심/교통) 입력이 매번 유형→카테고리→메모→자산을 처음부터 다시 고르게 만들어 핵심 사용성(일일 기록 리텐션)을 해침 — DB.recurrences는 금액이 고정이 아니므로 대안이 안 됨. 다음 advance 계획: duplicateTx(id) 신설(기존 레코드를 딥클론해 id=null, date=TODAY, confirmed 해제, isRec/adjust 레코드는 제외), txRowCore()에 '복제' 버튼 추가(복제 아이콘 svg 신규, sel.mode/isRec/대기중 이체 행에서는 숨김), renderTxSheet()이 id=null인 draft를 신규 저장으로 처리하도록 확인, DB 스키마 변경 없어 merge/sync 배선 불필요. test/run.js에 duplicateTx 단위(필드 복사+id/date 리셋, isRec/adjust 제외) + 저장 시 원본 불변 통합 테스트 추가 예정. pending_advance_plan에 저장. 코드 변경 없음(읽기 전용 조사).",
+      "commit": null
+    },
+    {
+      "cycle": 193,
+      "phase": "advance",
+      "timestamp": "2026-10-15T00:13:51.745Z",
+      "summary": "critique(cycle193) 계획대로 거래 입력에 복제(빠른 재입력) 기능을 구현. I 아이콘 맵에 copy svg 추가, txRowCore()(index.html:4091-4109)의 각 내역 행에 복제 버튼을 추가해 isRec(반복 가상 행)/adjust(잔액조정)/isDuePending(대기중 이체 확인 버튼이 이미 있는 행)에서는 숨기도록 가드. duplicateTx(id)를 editTx 바로 아래에 신설 — DB.txns에서 레코드를 딥클론해 id=null, date=TODAY로 리셋하고 confirmed/updatedAt 필드는 지워 saveTx()가 새 날짜 기준으로 신규 저장(d.id=uid();DB.txns.push(d)) 경로를 타게 한다. adjust 레코드는 가드로 제외, isRec 가상 행은 id가 rec_... 형태라 DB.txns.find가 애초에 실패해 자연히 제외됨. FUNCTIONS 목록에 duplicateTx 추가, test/run.js에 5건 추가(필드 복사+id/date 리셋, confirmed 제거, adjust 가드, isRec 가드, duplicateTx→saveTx 통합: 원본 불변+새 독립 레코드 생성). index.html/sw.js 변경이라 APP_VERSION 1.47.154->1.47.155, sw.js CACHE v416->v417 갱신. node test/run.js 1411/1411 -> 1416/1416 통과. pending_advance_plan을 비웠다.",
       "commit": null
     }
   ]

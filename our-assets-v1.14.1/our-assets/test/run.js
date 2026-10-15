@@ -179,7 +179,7 @@ const FUNCTIONS = [
   'pullCloud', 'afterCloudAuth', 'resolveCloudPullRemote', 'pushCloud', 'measureCloudClockSkew',
   'shouldPullCloud', 'pullCloudIfStale', 'appIsOpen',
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
-  'clampDay', 'saveTx', 'assetBase', 'balancesUpTo', 'balanceAt', 'balancesAtDates', 'balanceAtFromMap',
+  'clampDay', 'saveTx', 'duplicateTx', 'assetBase', 'balancesUpTo', 'balanceAt', 'balancesAtDates', 'balanceAtFromMap',
   'addBalanceAdjust', 'updateBalanceAdjust', 'toggleConfirmTransfers', 'rollPendingTransfers',
   'assetEval', 'assetGainLoss', 'assetGainLossBadge', 'costBasisField', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'delOwner', 'doMaturity', 'openMaturity', 'firstCash',
   'detectStaleMarketValuedTxns', 'delBudget', 'saveBudget', 'openBudgetPrompt', 'openBigMinSheet',
@@ -9576,6 +9576,59 @@ test('saveTx: 실제 메모 내용은 앞뒤 공백만 trim되고 그대로 유�
   };
   sandbox.saveTx();
   assert.strictEqual(sandbox.DB.txns[0].memo, '점심 김밥', '앞뒤 공백은 제거되고 내용은 그대로 유지되어야 함');
+});
+
+/* ---------- duplicateTx: 복제(빠른 재입력) (app-evolve cycle193 advance) ----------
+ * 매일 반복되는 소액 비정형 지출(커피/점심/교통 등)을 유형→카테고리→메모→자산을 매번
+ * 처음부터 다시 고르지 않고, 기존 내역을 복사해 날짜만 오늘로 바꿔 새 내역으로 저장할 수
+ * 있게 한다. 원본 레코드는 건드리지 않고(딥클론), id는 null로 비워 saveTx()가 신규 저장
+ * 경로(d.id=uid();DB.txns.push(d))를 타게 한다. */
+test('duplicateTx: category/memo/amount/asset 등 필드는 복사하되 id는 null, date는 TODAY로 리셋한다', () => {
+  sandbox.TODAY = '2026-03-10';
+  sandbox.DB = { assets: [], txns: [{ id: 't1', type: 'expense', date: '2026-01-05', category: '카페', memo: '아이스 아메리카노', amount: 4500, fromAssetId: 'a1', toAssetId: null, updatedAt: 111 }] };
+  sandbox.duplicateTx('t1');
+  assert.strictEqual(sandbox.txDraft.id, null, '복제 draft의 id는 null이어야 새 레코드로 저장됨');
+  assert.strictEqual(sandbox.txDraft.date, '2026-03-10', '복제 draft의 날짜는 원본 날짜가 아니라 오늘로 리셋되어야 함');
+  assert.strictEqual(sandbox.txDraft.category, '카페');
+  assert.strictEqual(sandbox.txDraft.memo, '아이스 아메리카노');
+  assert.strictEqual(sandbox.txDraft.amount, 4500);
+  assert.strictEqual(sandbox.txDraft.fromAssetId, 'a1');
+  assert.strictEqual(sandbox.DB.txns[0].date, '2026-01-05', '원본 레코드는 건드리지 않아야 함(딥클론)');
+});
+test('duplicateTx: confirmed 필드를 지워 saveTx()가 새 날짜 기준으로 다시 판단하게 한다', () => {
+  sandbox.TODAY = '2026-03-10';
+  sandbox.DB = { assets: [], txns: [{ id: 't2', type: 'transfer', date: '2026-01-05', category: '이체', memo: '이체', amount: 10000, fromAssetId: 'a1', toAssetId: 'a2', confirmed: false }] };
+  sandbox.duplicateTx('t2');
+  assert.strictEqual('confirmed' in sandbox.txDraft, false, '복제 draft엔 원본의 confirmed가 남아있지 않아야 함');
+});
+test('duplicateTx: 잔액조정(adjust) 레코드는 복제 대상에서 제외된다', () => {
+  sandbox.TODAY = '2026-03-10';
+  sandbox.DB = { txns: [{ id: 't3', type: 'expense', date: '2026-01-05', category: '잔액조정', memo: '', amount: 1000, adjust: true, adjustAsset: 'a1' }] };
+  sandbox.txDraft = null;
+  sandbox.duplicateTx('t3');
+  assert.strictEqual(sandbox.txDraft, null, 'adjust 레코드는 draft를 세팅하지 않고 그대로 return해야 함');
+});
+test('duplicateTx: isRec 가상 행의 id("rec_...")는 DB.txns에 없어 find가 실패하므로 아무 일도 하지 않는다', () => {
+  sandbox.TODAY = '2026-03-10';
+  sandbox.DB = { txns: [] };
+  sandbox.txDraft = null;
+  sandbox.duplicateTx('rec_r1_2026-01-05');
+  assert.strictEqual(sandbox.txDraft, null, '존재하지 않는 id는 draft를 세팅하지 않아야 함');
+});
+test('duplicateTx → saveTx: 복제본을 저장하면 원본은 그대로 남고 독립된 새 레코드가 추가된다', () => {
+  sandbox.TWi = -1;
+  sandbox.TODAY = '2026-03-10';
+  sandbox.DB = { assets: [], txns: [{ id: 't4', type: 'expense', date: '2026-01-05', category: '교통', memo: '버스', amount: 1500, fromAssetId: 'a1', toAssetId: null, updatedAt: 999 }], settings: {} };
+  sandbox.duplicateTx('t4');
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.DB.txns.length, 2, '원본 1건 + 복제 신규 저장 1건으로 총 2건이어야 함');
+  assert.strictEqual(sandbox.DB.txns[0].id, 't4', '원본 레코드는 그대로 남아야 함');
+  assert.strictEqual(sandbox.DB.txns[0].date, '2026-01-05', '원본 날짜는 바뀌지 않아야 함');
+  const dup = sandbox.DB.txns[1];
+  assert.notStrictEqual(dup.id, 't4', '복제본은 원본과 다른 새 id를 받아야 함');
+  assert.strictEqual(dup.date, '2026-03-10', '복제본의 날짜는 오늘이어야 함');
+  assert.strictEqual(dup.category, '교통');
+  assert.strictEqual(dup.amount, 1500);
 });
 
 /* ---------- saveTx: touch()로 updatedAt 스탬프 (app-evolve cycle86 advance, saveRec/saveAsset와 동일 목적) ---------- */

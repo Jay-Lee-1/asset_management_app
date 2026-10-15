@@ -1230,6 +1230,8 @@ body.selmode .fab{display:none}
 .celebrate.show .cel-card{transform:scale(1)}
 .confirm-btn{flex-shrink:0;margin-left:8px;background:var(--brand);color:#fff;font-size:12.5px;font-weight:700;border-radius:999px;padding:6px 13px;box-shadow:var(--sh-sm)}
 .confirm-btn:active{transform:scale(.93)}
+.dup-btn{flex-shrink:0;margin-left:8px;width:30px;height:30px;border-radius:999px;display:grid;place-items:center;color:var(--text-3);background:var(--surface-2)}
+.dup-btn:active{transform:scale(.88);color:var(--text)}
 .ha-ic{width:38px;height:38px;border-radius:11px;background:var(--expense);color:#fff;display:grid;place-items:center;flex-shrink:0}
 .ha-ic svg{width:19px;height:19px}
 .ha-b{flex:1;min-width:0}
@@ -1385,7 +1387,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.154';
+const APP_VERSION='1.47.155';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1500,6 +1502,7 @@ const I={
  debt:'<circle cx="12" cy="12" r="8"/><path d="M15 9.5c-.5-1-1.7-1.5-3-1.5-1.7 0-3 .8-3 2s1.3 1.8 3 2 3 .8 3 2-1.3 2-3 2c-1.3 0-2.5-.5-3-1.5M12 6v2M12 16v2"/>',
  eye:'<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>',
  eyeOff:'<path d="M3.5 3.5l17 17"/><path d="M10 5.2A10.4 10.4 0 0 1 12 5c6 0 10 7 10 7a15 15 0 0 1-3.2 3.8M6.5 6.8C4 8.5 2 12 2 12s4 7 10 7c1.2 0 2.3-.2 3.3-.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
+ copy:'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>',
 };
 function svg(n,w){if(n==='fx')return `<span class="cur-sym"${w?` style="font-size:${Math.round(w*0.82)}px"`:''}>₩</span>`;return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"${w?` style="width:${w}px;height:${w}px"`:''}>${I[n]||''}</svg>`}
 
@@ -4105,7 +4108,7 @@ function txRowCore(t,sel){
  return `<div class="swipe" data-id="${t.id}" data-rec="${t.isRec?t.recId:''}" data-date="${t.date}" ${t.isRec?'':'data-lp="1"'}>  <div class="swipe-content" tabindex="0" role="button" aria-label="${esc(t.memo||t.category)} ${sign}${comma(t.amount)}원" onclick="rowTap(this)" onkeydown="rowKeydown(event,()=>rowTap(this))"><div class="avatar ${av}" style="width:40px;height:40px">${glyph}</div>
    <div style="flex:1;min-width:0"><div class="nm-row"><span class="nm">${esc(t.memo||t.category)}</span>${t.isRec?`<span class="rec-ic" title="반복">${svg('repeat')}</span>`:''}</div>
     ${asset?`<div class="flow-sub"><span class="fl">${esc(asset)}</span>${txScheduled(t)?'<span class="sch-dot"></span>':''}</div>`:(txScheduled(t)?`<div class="flow-sub"><span class="sch-dot"></span><span class="fl">예정</span></div>`:'')}</div>
-   <div class="amt num ${cls}">${sign}${comma(t.amount)}원</div>${isDuePending(t)?`<button class="confirm-btn" onclick="event.stopPropagation();${t.isRec?`confirmRecTransfer('${t.recId}','${t.date}')`:`openConfirmTransfer('${t.id}')`}">확인</button>`:''}</div></div>`;
+   <div class="amt num ${cls}">${sign}${comma(t.amount)}원</div>${(!t.isRec&&!t.adjust&&!isDuePending(t))?`<button class="dup-btn" onclick="event.stopPropagation();duplicateTx('${t.id}')" aria-label="복제">${svg('copy',16)}</button>`:''}${isDuePending(t)?`<button class="confirm-btn" onclick="event.stopPropagation();${t.isRec?`confirmRecTransfer('${t.recId}','${t.date}')`:`openConfirmTransfer('${t.id}')`}">확인</button>`:''}</div></div>`;
 }
 function txRow(t){return txRowCore(t,{mode:ST.lSel.mode,has:id=>ST.lSel.ids.has(id),onToggle:'ledgerToggleSel'})}
 function rowTap(el){ /* 내역 탭 → 수정 (길게 누르면 다중 선택·삭제) */
@@ -4314,6 +4317,18 @@ function editTx(id,recId,date){
  const t=DB.txns.find(x=>x.id===id);if(!t)return;
  if(t.adjust){openAdjustEdit(t);return} /* 잔액 조정: 전용 편집 */
  window._recCtx=null;_formScroll=0;txDraft=JSON.parse(JSON.stringify(t));renderTxSheet();
+}
+/* 복제(빠른 재입력): 매일 반복되는 소액 비정형 지출(커피/점심/교통 등)을 유형→카테고리→
+ * 메모→자산을 처음부터 다시 고르지 않고 기존 내역을 복사해 날짜만 오늘로 바꿔 새로 저장할
+ * 수 있게 한다. DB.recurrences(금액 고정)로는 대체가 안 되는 용도라 별도 함수로 둔다.
+ * isRec(반복에서 파생된 가상 행, DB.txns에 없어 find가 애초에 실패함)와 잔액조정(adjust,
+ * 전용 편집만 지원)은 복제 대상에서 제외한다. */
+function duplicateTx(id){
+ const t=DB.txns.find(x=>x.id===id);if(!t||t.adjust)return;
+ window._recCtx=null;_formScroll=0;_txFocusAmt=true;
+ const d=JSON.parse(JSON.stringify(t));
+ d.id=null;d.date=TODAY;delete d.confirmed;delete d.updatedAt;
+ txDraft=d;renderTxSheet();
 }
 /* 잔액 조정 내역 전용 편집: 수지 포함 토글 (기본 제외) */
 function openAdjustEdit(t){
