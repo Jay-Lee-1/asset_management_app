@@ -191,7 +191,7 @@ const FUNCTIONS = [
   'renderLockView', 'openForgotPinSheet', 'doForgotPin', 'tickForgotPinWait',
   'confirmTransferNow', 'postponeTransfer', 'confirmRecNow', 'openConfirmTransferList',
   'foreignSaveIsNewer', 'applyForeignSave', 'openCopyBackup', 'copyBackup', 'findDonors',
-  'recIsVarying', 'varyingRecs', 'fixShortfallDefaultDate', 'openFixShortfall', 'lastActualAmount', 'openQuickAmount',
+  'recIsVarying', 'varyingRecs', 'fixShortfallDefaultDate', 'openFixShortfall', 'lastActualAmount', 'openQuickAmount', 'openQuickList',
   'backupDue', 'planNegatives', 'homeAlerts', 'updateAlerts', 'goPlanTo', 'openNegList',
  'notifyAlertInfo', 'pickNotifyAlerts', 'pruneNotifiedIds', 'syncNotifyPermission',
   'catIconOf', 'catGlyph', 'openCatManage', 'openCatPicker',
@@ -13696,6 +13696,53 @@ test('openNegList: 2곳 이상이면 한 시트에 한 줄씩 보여주고, 누�
   assert.ok(html.includes('통장 2곳'), '건수 안내가 있어야 함');
   assert.ok(html.includes(`closeSheet();goPlanTo('a1','2026-06-15')`), '이미 마이너스인 통장 행은 오늘 날짜로 closeSheet 후 goPlanTo로 연결돼야 함');
   assert.ok(html.includes(`closeSheet();goPlanTo('a2','2026-06-20')`), '예정 지출로 마이너스 전환되는 통장 행은 그 날짜로 연결돼야 함');
+});
+/* openQuickList: openConfirmTransferList()/openNegList()와 동일 0건/1건/N건 패턴 — 변동 금액
+ * 입력이 필요한 회차가 없으면 토스트만, 정확히 1건이면 목록 없이 바로 그 건의 openQuickAmount
+ * 시트로, 2건 이상이면 한 시트에 한 줄씩 보여주고 각자 올바른 openQuickAmount로 연결된다.
+ * 그동안 이 함수만 직접 실행형 테스트가 없었다(app-evolve cycle199 develop) */
+test('openQuickList: 입력할 변동 항목이 없으면 안내 토스트만 뜨고, 정확히 1건이면 목록 없이 바로 그 건의 openQuickAmount 시트로 간다(app-evolve cycle199)', () => {
+  setupHomeAlertsDB();
+  sandbox.lastToast = null;
+  sandbox.lastSheetHtml = null;
+  sandbox.openQuickList();
+  assert.ok(sandbox.lastToast, '입력할 항목이 없으면 안내 토스트가 떠야 함');
+  assert.strictEqual(sandbox.lastSheetHtml, null, '항목이 없으면 시트를 열면 안 됨');
+
+  sandbox.setCatVar('expense', '전기요금', true);
+  sandbox.DB.recurrences.push({
+    id: 'r1', active: true, freq: 'monthly', type: 'expense', category: '전기요금',
+    day: 10, startDate: '2026-06-01', endDate: null, count: null, amount: 50000,
+    weekend: 'none', skip: [], edits: {},
+  });
+  sandbox.lastSheetHtml = null;
+  sandbox.openQuickList();
+  assert.ok(sandbox.lastSheetHtml, '1건이면 개별 입력 시트가 떠야 함');
+  assert.ok(sandbox.lastSheetHtml.includes(`saveQuickAmount('r1','2026-06-10')`), '1건이면 목록이 아니라 openQuickAmount의 개별 시트로 바로 가야 함');
+  assert.ok(!sandbox.lastSheetHtml.includes('실제 금액 입력'), '1건이면 목록 시트의 제목이 뜨면 안 됨');
+});
+test('openQuickList: 2건 이상이면 한 시트에 한 줄씩 보여주고, 각자 올바른 openQuickAmount로 연결된다(app-evolve cycle199)', () => {
+  setupHomeAlertsDB();
+  sandbox.setCatVar('expense', '전기요금', true);
+  sandbox.DB.recurrences.push({
+    id: 'r1', active: true, freq: 'monthly', type: 'expense', category: '전기요금',
+    day: 10, startDate: '2026-06-01', endDate: null, count: null, amount: 50000,
+    weekend: 'none', skip: [], edits: {},
+  });
+  sandbox.setCatVar('income', '용돈', true);
+  sandbox.DB.recurrences.push({
+    id: 'r2', active: true, freq: 'monthly', type: 'income', category: '용돈',
+    day: 12, startDate: '2026-06-01', endDate: null, count: null, amount: 30000,
+    weekend: 'none', skip: [], edits: {},
+  });
+  sandbox.lastSheetHtml = null;
+  sandbox.openQuickList();
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html, '2건 이상이면 목록 시트를 열어야 함');
+  assert.ok(html.includes('변동 항목 2건'), '건수 안내가 있어야 함');
+  assert.ok(html.includes(`onclick="openQuickAmount('r1','2026-06-10')"`), '지출 변동 항목 행은 자신의 openQuickAmount로 연결돼야 함');
+  assert.ok(html.includes(`onclick="openQuickAmount('r2','2026-06-12')"`), '수입 변동 항목 행도 자신의 openQuickAmount로 연결돼야 함');
+  assert.ok(html.includes('전기요금') && html.includes('용돈'), '각 행에 카테고리/메모가 보여야 함');
 });
 test('homeAlerts: planNegatives 결과(neg)를 그대로 넘겨받아 자산별 neg 알림으로 변환한다(회귀 확인)', () => {
   setupHomeAlertsDB();
