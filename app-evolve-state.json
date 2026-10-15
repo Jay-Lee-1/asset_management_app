@@ -1,6 +1,6 @@
 {
   "cycle": 196,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
     {
@@ -127,6 +127,13 @@
       "phase": "develop",
       "timestamp": "2026-10-15T09:19:00.000Z",
       "summary": "카테고리 관리(openCatManage)의 varPill('변동'/'고정')·rollPill('이월'/'이월 안함') 토글 버튼에 aria-label/aria-pressed가 전혀 없던 공백 발견 — 같은 화면의 구분 세그먼트·아이콘 선택·수정/삭제 버튼은 모두 aria-label/aria-pressed가 있는데 이 둘만 스크린리더로는 어느 카테고리의 토글인지, 켜짐/꺼짐 상태인지 알 수 없었음. 버튼 템플릿에 카테고리명 포함 aria-label과 현재 상태의 aria-pressed 추가, toggleCatVarUI/toggleBudgetRolloverUI가 classList/textContent와 함께 btn.setAttribute('aria-pressed',on)도 갱신하도록 수정. test/run.js에 varPill/rollPill aria 렌더 테스트 1건 + toggleCatVarUI/toggleBudgetRolloverUI DOM 갱신 테스트 2건(기존 1건 확장+1건 신규) 추가, FUNCTIONS 목록에 누락돼 있던 toggleCatVarUI도 추가. index.html 변경이라 APP_VERSION 1.47.158->1.47.159, sw.js CACHE v420->v421 갱신. node test/run.js 1455/1455 -> 1457/1457 통과.",
+      "commit": "2682e8b"
+    },
+    {
+      "cycle": 196,
+      "phase": "review",
+      "timestamp": "2026-10-15T10:20:00.000Z",
+      "summary": "cycle196 develop(varPill/rollPill aria-label/aria-pressed, commit 2682e8b) 검토 — isVarCat/isBudgetRolloverCat 모두 !! 로 boolean을 강제해 aria-pressed에 undefined가 새지 않음을 확인, toggleCatVarUI/toggleBudgetRolloverUI의 setAttribute('aria-pressed',on)도 동일하게 boolean on을 받음. esc(c) 사용도 같은 화면의 다른 action 버튼 aria-label과 일관됨. node our-assets-v1.14.1/our-assets/test/run.js 1457/1457 통과. 이상 없음, 코드 변경 없음.",
       "commit": null
     }
   ]
