@@ -1387,7 +1387,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.155';
+const APP_VERSION='1.47.156';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5310,6 +5310,14 @@ function openSpendAnalysis(){
    <div style="font-size:12.5px;color:var(--text-3);font-weight:700">이번 달 예산</div>
    <div class="num" style="font-size:16px;font-weight:700;margin-top:4px;color:${tbp.over?'var(--expense)':'var(--text)'}">${comma(tb.budgetedTotal)}원 중 ${comma(tb.spentOnBudgeted)}원 사용 · ${tbp.pct}%</div>
    <div class="spend-track" style="margin-top:8px"><i class="${tbp.over?'over':'budgeted'}" style="width:${tbp.barPct}%"></i></div>
+   <!-- totalBudgetSummary()가 집계하는 overCount(개별 카테고리별 예산 초과 수)를 이 요약 카드가
+        지금까지 전혀 보여주지 않고 있었다(app-evolve cycle194 develop) — tbp.over는 전체 합계
+        기준이라, 한 카테고리가 크게 초과해도 다른 카테고리가 그만큼 덜 써서 합계가 예산 이내면
+        전체 바는 초록(미초과)으로만 보이고, 어떤 카테고리가 초과했는지는 아래 카테고리별 행을
+        하나하나 스크롤해 빨간 표시(overCls)를 찾아야만 알 수 있었다. unsetCount(예산 미설정
+        카테고리 수)는 이미 같은 자리에 캡션으로 노출하면서 짝이 되는 overCount만 빠져 있던
+        비대칭을 해소한다. */
+   ${tb.overCount?`<div style="font-size:11.5px;color:var(--expense);margin-top:6px;font-weight:600">예산을 초과한 카테고리 ${tb.overCount}개</div>`:''}
    ${tb.unsetCount?`<div style="font-size:11.5px;color:var(--text-3);margin-top:6px">예산 미설정 카테고리 ${tb.unsetCount}개</div>`:''}
   </div>`:''}
   <div class="card" style="padding:2px 14px">${body}</div>

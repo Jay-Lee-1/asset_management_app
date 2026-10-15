@@ -11345,6 +11345,33 @@ test('openSpendAnalysis: 귀속 필터 세그먼트 버튼에 aria-pressed, 래�
   );
   assert.ok(/<div class="seg" role="group" aria-label="귀속 선택">/.test(body), '귀속 필터 세그먼트 래퍼에 role="group"/aria-label이 없음');
 });
+/* 예산 요약 카드가 totalBudgetSummary()의 overCount(개별 카테고리별 예산 초과 수)를 전혀
+ * 보여주지 않고 있었다 — tbp.over는 카테고리 전체 합계 기준이라, 한 카테고리가 크게 초과해도
+ * 다른 카테고리가 그만큼 덜 써서 합계가 예산 이내면 전체 바는 초과 아님(브랜드색)으로만 보이고,
+ * 어떤 카테고리가 초과했는지는 아래 카테고리별 행을 하나하나 훑어 빨간 표시를 찾아야만 알 수
+ * 있었다. 짝인 unsetCount(예산 미설정 카테고리 수)는 이미 같은 자리에 캡션으로 노출되는데
+ * overCount만 빠져 있던 비대칭을 해소한다(app-evolve cycle194 develop). */
+test('openSpendAnalysis: 예산 요약 카드에 개별 카테고리 예산 초과 수(overCount)를 캡션으로 보여준다', () => {
+  const body = extractFunction('openSpendAnalysis');
+  assert.ok(
+    body.includes('tb.overCount?`<div style="font-size:11.5px;color:var(--expense);margin-top:6px;font-weight:600">예산을 초과한 카테고리 ${tb.overCount}개</div>`'),
+    '요약 카드에 overCount 캡션이 없음'
+  );
+  // unsetCount 캡션과 같은 카드 안에, overCount 캡션보다 뒤에 와야 한다(경고가 더 급한 정보이므로 먼저 노출)
+  const overIdx = body.indexOf('tb.overCount?');
+  const unsetIdx = body.indexOf('tb.unsetCount?');
+  assert.ok(overIdx !== -1 && unsetIdx !== -1 && overIdx < unsetIdx, 'overCount 캡션이 unsetCount 캡션보다 먼저 와야 함');
+});
+test('totalBudgetSummary → openSpendAnalysis: overCount>0이어도 합계가 예산 이내(tbp.over=false)면 전체 바는 초과색이 아니지만 overCount 캡션은 떠야 한다', () => {
+  // 식비는 50000/40000(초과), 교통은 10000/60000(여유) → 합계 60000/100000은 이내지만 식비 하나는 초과
+  const rows = [{ c: '식비', v: 50000 }, { c: '교통', v: 10000 }];
+  const budgetHistory = { 식비: [{ from: '2000-01', amount: 40000 }], 교통: [{ from: '2000-01', amount: 60000 }] };
+  sandbox.DB = { budgetHistory };
+  const tb = sandbox.totalBudgetSummary(rows, 2026, 6);
+  assert.strictEqual(tb.overCount, 1, '식비 하나만 예산을 초과함');
+  const tbp = sandbox.budgetProgress(tb.spentOnBudgeted, tb.budgetedTotal);
+  assert.strictEqual(tbp.over, false, '합계(60000/100000)는 예산 이내라 전체 초과는 아님');
+});
 test('monthOutflowCard: 홈 탭 이번 달 나갈 돈 행(of-row)에 키보드/스크린리더 접근 패턴이 있다', () => {
   const body = extractFunction('monthOutflowCard');
   assert.ok(/class="of-row"[^>]*role="button"/.test(body), 'of-row에 role="button"이 없음');
