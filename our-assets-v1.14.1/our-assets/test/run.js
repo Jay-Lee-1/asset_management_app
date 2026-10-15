@@ -1446,6 +1446,31 @@ test('doRenameCat: 사용자가 직접 입력한(카테고리명과 다른) 거�
   assert.strictEqual(sandbox.DB.txns[0].category, '외식비');
   assert.strictEqual(sandbox.DB.txns[0].memo, '점심 김밥', '사용자가 직접 쓴 메모는 카테고리 이름변경과 무관하게 보존돼야 함');
 });
+/* 분할 거래(t.splits)는 old 카테고리로 된 항목만 각각 옮기고(다른 항목은 그대로), 최상위 category
+ * (하위호환 fallback=splits[0].category)도 같이 맞춘다 — 둘 다 안 맞으면 CATICON 조회 등 분할을
+ * 모르는 기존 코드가 여전히 옛 이름을 보게 된다(app-evolve cycle198 advance). */
+test('doRenameCat: 분할 거래는 old 카테고리로 된 항목만 각각 새 이름으로 옮기고, 다른 항목은 그대로 둔다', () => {
+  sandbox.DB = {
+    categories: { expense: ['식비'] }, catIcon: {}, catVar: {}, recurrences: [],
+    txns: [{ id: 't1', type: 'expense', category: '식비', memo: '마트', splits: [{ category: '식비', amount: 7000 }, { category: '생활용품', amount: 3000 }] }],
+  };
+  sandbox.catRenameDraft = { name: '외식비', icon: '' };
+  sandbox.doRenameCat('expense', 0);
+  assert.deepStrictEqual(sandbox.DB.txns[0].splits, [{ category: '외식비', amount: 7000 }, { category: '생활용품', amount: 3000 }]);
+  assert.strictEqual(sandbox.DB.txns[0].category, '외식비', '최상위 category(fallback)도 splits[0]과 같이 옮겨야 함');
+  assert.strictEqual(sandbox.DB.txns[0].memo, '마트', '직접 입력한 메모는 그대로 유지돼야 함');
+});
+test('doRenameCat: 분할 거래의 어느 항목에도 old 카테고리가 없으면 손대지 않는다(touch도 안 됨)', () => {
+  sandbox.DB = {
+    categories: { expense: ['여행'] }, catIcon: {}, catVar: {}, recurrences: [],
+    txns: [{ id: 't1', type: 'expense', category: '식비', memo: '마트', updatedAt: 1, splits: [{ category: '식비', amount: 7000 }, { category: '생활용품', amount: 3000 }] }],
+  };
+  sandbox.catRenameDraft = { name: '휴가', icon: '' };
+  sandbox.doRenameCat('expense', 0);
+  assert.deepStrictEqual(sandbox.DB.txns[0].splits, [{ category: '식비', amount: 7000 }, { category: '생활용품', amount: 3000 }], '여행(old)은 이 거래의 어느 항목에도 없으니 그대로 유지');
+  assert.strictEqual(sandbox.DB.txns[0].category, '식비', '최상위 category도 그대로 유지');
+  assert.strictEqual(sandbox.DB.txns[0].updatedAt, 1, '바뀐 게 없으면 touch()도 호출되면 안 됨');
+});
 
 /* ---------- doRenameCat: 카테고리 이름이 바뀐 txns/recurrences에도 touch()로 updatedAt이 갱신돼야 함 (app-evolve cycle92 advance) ----------
  * doRenameOwner()와 완전히 같은 이유로(위 doRenameOwner touch() 테스트 참고), mergeCollection()의
@@ -3701,6 +3726,17 @@ test('txnsToCSV: 날짜 오름차순으로 정렬한다', () => {
   assert.ok(lines[1].startsWith('2026-01-01'));
   assert.ok(lines[2].startsWith('2026-02-01'));
 });
+test('txnsToCSV: 분할 거래(t.splits)는 항목별로 한 행씩 내보낸다(날짜/구분/자산은 그대로 반복)', () => {
+  const assets = [{ id: 'a1', name: '우리은행' }];
+  const csv = sandbox.txnsToCSV(
+    [{ date: '2026-03-01', type: 'expense', amount: 10000, fromAssetId: 'a1', toAssetId: null, memo: '마트', splits: [{ category: '식비', amount: 7000 }, { category: '생활용품', amount: 3000, memo: '휴지' }] }],
+    assets
+  );
+  const lines = csv.slice(1).split('\r\n');
+  assert.strictEqual(lines.length, 3, '헤더 1줄 + 분할 항목 2줄');
+  assert.strictEqual(lines[1], '2026-03-01,지출,식비,7000,우리은행,,마트', '항목별 메모가 없으면 거래 전체 메모(t.memo)로 대체');
+  assert.strictEqual(lines[2], '2026-03-01,지출,생활용품,3000,우리은행,,휴지', '항목별 메모(splits[].memo)가 있으면 그걸 우선');
+});
 test('txnsToCSV: 메모가 =,+,-,@ 로 시작하면 앞에 \'를 붙여 수식 인젝션을 막는다', () => {
   const csv = sandbox.txnsToCSV(
     [
@@ -4479,6 +4515,14 @@ test('matchTxnQuery: 메모에 실제 쉼표가 들어있어도 쉼표를 사이
   const t = { memo: '우유,계란', category: '식비', amount: 3000, fromAssetId: null, toAssetId: null };
   assert.strictEqual(sandbox.matchTxnQuery(t, '유계', []), false);
 });
+test('matchTxnQuery: 분할 거래(t.splits)는 두 번째 이후 항목의 카테고리로도 찾을 수 있다', () => {
+  const t = { memo: '마트', amount: 10000, fromAssetId: null, toAssetId: null, splits: [{ category: '식비', amount: 7000 }, { category: '생활용품', amount: 3000 }] };
+  assert.strictEqual(sandbox.matchTxnQuery(t, '생활용품', []), true, '최상위 category가 아니라 splits[1].category로도 찾아야 함');
+});
+test('matchTxnQuery: 분할 거래의 항목별 메모(splits[].memo)로도 찾을 수 있다', () => {
+  const t = { memo: '마트', amount: 10000, fromAssetId: null, toAssetId: null, splits: [{ category: '식비', amount: 7000, memo: '우유' }, { category: '생활용품', amount: 3000, memo: '휴지' }] };
+  assert.strictEqual(sandbox.matchTxnQuery(t, '휴지', []), true);
+});
 
 /* ---------- matchAssetQuery: 자산 검색도 matchTxnQuery와 동일한 대소문자 무시 includes 규칙 ---------- */
 test('matchAssetQuery: 빈 검색어는 항상 매칭된다', () => {
@@ -4536,6 +4580,16 @@ test('filteredHist: catExact가 비어있으면(null) 평소처럼 걸러지지 
   setupHistoryDB();
   sandbox.DB.txns = [{ id: 't1', date: '2026-06-01', type: 'expense', category: '식비', amount: 1000 }];
   assert.strictEqual(sandbox.filteredHist().length, 1);
+});
+test('filteredHist: catExact는 분할 거래(t.splits)도 그 항목 중 하나라도 일치하면 매칭한다(spendByCategory의 집계 기준과 동일)', () => {
+  setupHistoryDB();
+  sandbox.DB.txns = [
+    { id: 't1', date: '2026-06-01', type: 'expense', category: '식비', amount: 10000, splits: [{ category: '식비', amount: 7000 }, { category: '생활용품', amount: 3000 }] },
+    { id: 't2', date: '2026-06-02', type: 'expense', category: '교통', amount: 2000 },
+  ];
+  sandbox.ST.hist.catExact = '생활용품';
+  const list = sandbox.filteredHist();
+  assert.deepStrictEqual(list.map((t) => t.id), ['t1'], '분할 항목 중 생활용품이 있는 t1만 매칭돼야 함(최상위 category는 식비인데도)');
 });
 test('filteredHist: owner는 filterTxnsByOwner()와 동일 규칙으로 걸러진다(catExact와 조합)', () => {
   setupHistoryDB();
@@ -4851,6 +4905,20 @@ test('bulkCatTargets: 같은 종류끼리만 선택하면 ok:true로 해당 거�
   assert.strictEqual(r.kind, 'expense');
   assert.deepStrictEqual(r.items, [a, b], '선택되지 않은 거래는 포함되지 않아야 함');
 });
+test('bulkCatTargets: 선택에 분할 거래(t.splits)가 하나라도 섞이면 reason:split(카테고리가 여러 개라 하나의 피커로 일괄 변경할 수 없음)', () => {
+  const txns = [
+    { id: 'a', type: 'expense', category: '식비' },
+    { id: 'b', type: 'expense', category: '식비', splits: [{ category: '식비', amount: 7000 }, { category: '생활용품', amount: 3000 }] },
+  ];
+  const r = sandbox.bulkCatTargets(txns, new Set(['a', 'b']));
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.reason, 'split');
+});
+test('bulkCatTargets: splits가 1개짜리 배열이면(분할이 아님) 평소처럼 통과한다', () => {
+  const a = { id: 'a', type: 'expense', category: '식비', splits: [{ category: '식비', amount: 1000 }] };
+  const r = sandbox.bulkCatTargets([a], new Set(['a']));
+  assert.strictEqual(r.ok, true);
+});
 
 test('doBulkCat: 선택한 거래들의 카테고리를 바꾸고, 메모가 이전 카테고리명과 같았다면(자동 채움) 메모도 함께 옮긴다', () => {
   sandbox.TWi = -1;
@@ -4914,6 +4982,13 @@ test('bulkCatPickFor: 선택한 거래들의 종류가 섞여 있으면 안내�
   sandbox.lastPickerHtml = null;
   sandbox.bulkCatPickFor(new Set(['a', 'b']), () => {});
   assert.strictEqual(sandbox.lastToast, '같은 종류의 내역만 한번에 바꿀 수 있어요');
+  assert.strictEqual(sandbox.lastPickerHtml, null);
+});
+test('bulkCatPickFor: 선택에 분할 거래가 섞여 있으면 분할 전용 안내를 띄우고 피커를 열지 않는다', () => {
+  sandbox.DB = { txns: [{ id: 'a', type: 'expense', category: '식비', splits: [{ category: '식비', amount: 7000 }, { category: '생활용품', amount: 3000 }] }] };
+  sandbox.lastPickerHtml = null;
+  sandbox.bulkCatPickFor(new Set(['a']), () => {});
+  assert.strictEqual(sandbox.lastToast, '분할된 내역은 일괄로 카테고리를 바꿀 수 없어요');
   assert.strictEqual(sandbox.lastPickerHtml, null);
 });
 test('bulkCatPickFor: 유효한 선택이면 해당 종류의 카테고리 피커를 열고, 고르면 적용→시트 닫기→afterApply까지 이어진다', () => {
@@ -7248,6 +7323,72 @@ test('spendByCategory: DB.budgetHistory가 없어도(undefined) 터지지 않는
     recurrences: [],
   };
   assert.doesNotThrow(() => sandbox.spendByCategory(2026, 6));
+});
+/* ---------- splitLines/txCatLabel: 거래 1건=1카테고리 고정을 깨는 선택적 분할(t.splits) ----------
+ * 마트 한 건에 식비+생활용품이 섞이는 상황에서 "제일 비슷한 카테고리 하나"를 억지로 고르게 하던
+ * 공백을 없애려고 t.splits:[{category,amount,memo?}]를 추가했다(app-evolve cycle198 critique/advance).
+ * t.splits가 없으면 기존과 완전히 같은 [{category:t.category,amount:t.amount}] 하나짜리 배열을
+ * 돌려줘야 하위호환이 깨지지 않는다. */
+test('splitLines: t.splits가 없으면 t.category/t.amount 단일 쌍을 그대로 돌려준다(하위호환)', () => {
+  const t = { category: '식비', amount: 10000, memo: '점심' };
+  const r = sandbox.splitLines(t);
+  assert.strictEqual(r.length, 1);
+  assert.strictEqual(r[0].category, '식비');
+  assert.strictEqual(r[0].amount, 10000);
+  assert.strictEqual(r[0].memo, '점심');
+});
+test('splitLines: t.splits가 빈 배열이어도 fallback으로 돌아간다(마이그레이션 중간 상태 등)', () => {
+  const t = { category: '식비', amount: 10000, splits: [] };
+  const r = sandbox.splitLines(t);
+  assert.strictEqual(r.length, 1);
+  assert.strictEqual(r[0].category, '식비');
+  assert.strictEqual(r[0].amount, 10000);
+});
+test('splitLines: t.splits가 있으면 그 배열을 그대로 돌려준다(최상위 category/amount는 무시)', () => {
+  const t = { category: '식비', amount: 10000, splits: [{ category: '식비', amount: 7000 }, { category: '생활용품', amount: 3000 }] };
+  assert.deepStrictEqual(sandbox.splitLines(t), [{ category: '식비', amount: 7000 }, { category: '생활용품', amount: 3000 }]);
+});
+test('txCatLabel: 분할이 아니면 카테고리명을 그대로 돌려준다', () => {
+  assert.strictEqual(sandbox.txCatLabel({ category: '식비', amount: 10000 }), '식비');
+});
+test('txCatLabel: 분할 항목이 2개 이상이면 "카테고리 N개"로 뭉뚱그린다', () => {
+  const t = { category: '식비', amount: 10000, splits: [{ category: '식비', amount: 7000 }, { category: '생활용품', amount: 3000 }] };
+  assert.strictEqual(sandbox.txCatLabel(t), '카테고리 2개');
+});
+test('spendByCategory: 분할 거래(t.splits)는 각 항목을 자기 카테고리로 따로 집계한다', () => {
+  sandbox.DB = {
+    txns: [
+      { date: '2026-06-05', type: 'expense', category: '식비', amount: 10000, splits: [{ category: '식비', amount: 7000 }, { category: '생활용품', amount: 3000 }] },
+      { date: '2026-06-06', type: 'expense', category: '식비', amount: 2000 },
+    ],
+    recurrences: [],
+  };
+  const byCat = Object.fromEntries(Array.from(sandbox.spendByCategory(2026, 6)).map(r => [r.c, r.v]));
+  assert.strictEqual(byCat['식비'], 9000, '분할의 식비 7000 + 일반 거래의 식비 2000');
+  assert.strictEqual(byCat['생활용품'], 3000);
+});
+/* expenseByCat은 홈 탭 요약 카드(cats=expenseByCat(y,m), index.html:2613 부근)가 쓰는
+ * spendByCategory의 근접 중복 집계 함수인데 지금까지 직접 테스트가 하나도 없었다 — 같은 분할
+ * 집계 수정을 적용하면서 기본 동작과 함께 처음으로 실행형 커버리지를 추가한다. */
+test('expenseByCat: 지출만 카테고리별로 큰 순서로 집계한다(기본 동작)', () => {
+  sandbox.DB = {
+    txns: [
+      { date: '2026-06-05', type: 'expense', category: '식비', amount: 10000 },
+      { date: '2026-06-06', type: 'expense', category: '교통', amount: 30000 },
+      { date: '2026-06-07', type: 'income', category: '급여', amount: 3000000 },
+    ],
+    recurrences: [],
+  };
+  assert.deepStrictEqual(Array.from(sandbox.expenseByCat(2026, 6)).map(r => ({ cat: r.cat, v: r.v })), [{ cat: '교통', v: 30000 }, { cat: '식비', v: 10000 }]);
+});
+test('expenseByCat: 분할 거래는 spendByCategory와 동일하게 각 항목을 자기 카테고리로 따로 집계한다', () => {
+  sandbox.DB = {
+    txns: [{ date: '2026-06-05', type: 'expense', category: '식비', amount: 10000, splits: [{ category: '식비', amount: 7000 }, { category: '생활용품', amount: 3000 }] }],
+    recurrences: [],
+  };
+  const byCat = Object.fromEntries(Array.from(sandbox.expenseByCat(2026, 6)).map(r => [r.cat, r.v]));
+  assert.strictEqual(byCat['식비'], 7000);
+  assert.strictEqual(byCat['생활용품'], 3000);
 });
 
 /* ---------- spendTrend/spendTrendBadge: 지출 분석의 최근 3개월 평균/지난달 대비 증감 배지 ---------- */
@@ -10060,6 +10201,75 @@ test('saveTx: transfer는 category가 없어도(고정 카테고리 없음) 저�
   };
   sandbox.saveTx();
   assert.strictEqual(sandbox.DB.txns.length, 1, 'transfer는 category 가드의 영향을 받지 않아야 함');
+});
+/* ---------- saveTx: 분할 입력(여러 카테고리로 나누기) 검증 (app-evolve cycle198 critique/advance) ----------
+ * t.amount는 분할 여부와 무관하게 늘 전체 합계여야 balancesUpTo 등 잔액 계산이 어긋나지 않으므로,
+ * 저장 시점에 합계를 검증해야 한다. 최상위 category는 분할을 모르는 기존 코드를 위한 하위호환
+ * fallback으로 첫 항목을 그대로 쓴다. */
+test('saveTx: 분할 항목의 금액 합이 전체 금액과 다르면 토스트만 뜨고 저장되지 않는다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { txns: [], settings: {} };
+  sandbox.txDraft = {
+    id: null, type: 'expense', date: '2026-01-15', category: '식비', memo: '마트',
+    amount: 10000, fromAssetId: 'a1', toAssetId: null, repeat: false,
+    splits: [{ category: '식비', amount: 7000 }, { category: '생활용품', amount: 2000 }], // 합계 9000 ≠ 10000
+  };
+  sandbox.toastCalls = [];
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.DB.txns.length, 0, '합계가 다르면 저장되면 안 됨(잔액 계산이 어긋남)');
+  assert.ok(sandbox.toastCalls.includes('분할 금액의 합이 전체 금액과 달라요'));
+});
+test('saveTx: 분할 항목에 카테고리가 비어있으면 토스트만 뜨고 저장되지 않는다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { txns: [], settings: {} };
+  sandbox.txDraft = {
+    id: null, type: 'expense', date: '2026-01-15', category: '식비', memo: '마트',
+    amount: 10000, fromAssetId: 'a1', toAssetId: null, repeat: false,
+    splits: [{ category: '식비', amount: 7000 }, { category: '', amount: 3000 }],
+  };
+  sandbox.toastCalls = [];
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.DB.txns.length, 0);
+  assert.ok(sandbox.toastCalls.includes('분할 항목의 카테고리를 선택해 주세요'));
+});
+test('saveTx: 분할 항목에 금액이 비어있으면(0) 토스트만 뜨고 저장되지 않는다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { txns: [], settings: {} };
+  sandbox.txDraft = {
+    id: null, type: 'expense', date: '2026-01-15', category: '식비', memo: '마트',
+    amount: 10000, fromAssetId: 'a1', toAssetId: null, repeat: false,
+    splits: [{ category: '식비', amount: 10000 }, { category: '생활용품', amount: 0 }],
+  };
+  sandbox.toastCalls = [];
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.DB.txns.length, 0);
+  assert.ok(sandbox.toastCalls.includes('분할 항목의 금액을 입력해 주세요'));
+});
+test('saveTx: 분할 항목의 합이 전체 금액과 같으면 정상 저장되고, 최상위 category는 첫 항목으로 설정된다(하위호환 fallback)', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { txns: [], settings: {} };
+  sandbox.txDraft = {
+    id: null, type: 'expense', date: '2026-01-15', category: '식비', memo: '마트',
+    amount: 10000, fromAssetId: 'a1', toAssetId: null, repeat: false,
+    splits: [{ category: '식비', amount: 7000 }, { category: '생활용품', amount: 3000 }],
+  };
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.DB.txns.length, 1);
+  const t = sandbox.DB.txns[0];
+  assert.strictEqual(t.amount, 10000, '최상위 amount는 분할 여부와 무관하게 전체 합계로 유지되어야 함(잔액 계산용)');
+  assert.strictEqual(t.category, '식비', '최상위 category는 첫 항목으로 설정되어야 함');
+  assert.deepStrictEqual(t.splits, [{ category: '식비', amount: 7000 }, { category: '생활용품', amount: 3000 }]);
+});
+test('saveTx: 메모를 비워두면 분할이어도 첫 항목의 카테고리로 채워진다(일반 거래와 동일한 자동채움 규칙)', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { txns: [], settings: {} };
+  sandbox.txDraft = {
+    id: null, type: 'expense', date: '2026-01-15', category: '식비', memo: '',
+    amount: 10000, fromAssetId: 'a1', toAssetId: null, repeat: false,
+    splits: [{ category: '식비', amount: 7000 }, { category: '생활용품', amount: 3000 }],
+  };
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.DB.txns[0].memo, '식비');
 });
 /* ---------- saveTx/saveRec: expense/income에 자산 선택 없이 저장되던 버그 (app-evolve cycle81 develop) ----------
  * transfer/saving은 fromAssetId/toAssetId가 없으면 '보내는·받는 자산을 선택해 주세요' 토스트로
@@ -15124,6 +15334,35 @@ test('txRow/histRow: 선택 모드에서 선택된 상태(on)도 두 함수가 �
     histHtml.split('histToggleSel').join('TOGGLE'),
     '선택된 상태(on)에서도 토글 핸들러 이름만 바꿔치면 나머지 마크업은 완전히 같아야 함'
   );
+});
+/* ---------- txRowCore: 분할 거래(t.splits)는 "카테고리 N개"로 표시 (app-evolve cycle198 advance) ----------
+ * 거래가 여러 카테고리로 나뉘면 단일 카테고리 아이콘/이름 하나로는 거짓 요약이 되므로, 일반(비선택)
+ * 모드엔 mini 배지로 "카테고리 N개"를 덧붙이고, 메모가 없을 때의 제목(nm) 기본값도 첫 카테고리가
+ * 아니라 이 라벨로 보여준다. */
+test('txRowCore: 분할 거래는 일반 모드에서 "카테고리 N개" mini 배지가 붙는다', () => {
+  const t = { id: 't1', date: '2026-06-10', type: 'expense', category: '식비', memo: '마트', amount: 10000, fromAssetId: 'a1', splits: [{ category: '식비', amount: 7000 }, { category: '생활용품', amount: 3000 }] };
+  sandbox.ST = { lSel: { mode: false, ids: new Set() } };
+  const html = sandbox.txRow(t);
+  assert.ok(html.includes('카테고리 2개'), '분할 항목 수를 보여줘야 함');
+  assert.ok(html.includes('마트'), '사용자가 입력한 메모는 제목으로 그대로 보여야 함');
+});
+test('txRowCore: 분할이 아닌 일반 거래는 mini 배지가 붙지 않는다(회귀 없음)', () => {
+  const t = makeTxRowFixture();
+  sandbox.ST = { lSel: { mode: false, ids: new Set() } };
+  const html = sandbox.txRow(t);
+  assert.ok(!html.includes('class="mini"'), '분할이 아니면 mini 배지가 없어야 함');
+});
+test('txRowCore: 분할 거래는 메모가 없으면 제목도 "카테고리 N개"로 대체된다', () => {
+  const t = { id: 't1', date: '2026-06-10', type: 'expense', category: '식비', memo: '', amount: 10000, fromAssetId: 'a1', splits: [{ category: '식비', amount: 7000 }, { category: '생활용품', amount: 3000 }] };
+  sandbox.ST = { lSel: { mode: false, ids: new Set() } };
+  const html = sandbox.txRow(t);
+  assert.ok(html.includes('<span class="nm">카테고리 2개</span>'), '메모가 없으면 첫 카테고리(식비)가 아니라 분할 라벨이 제목이 돼야 함');
+});
+test('txRowCore: 선택 모드에서도 분할 거래는 "카테고리 N개"를 보조 라벨로 보여준다', () => {
+  const t = { id: 't1', date: '2026-06-10', type: 'expense', category: '식비', memo: '마트', amount: 10000, fromAssetId: 'a1', splits: [{ category: '식비', amount: 7000 }, { category: '생활용품', amount: 3000 }] };
+  sandbox.ST = { lSel: { mode: true, ids: new Set() } };
+  const html = sandbox.txRow(t);
+  assert.ok(html.includes('카테고리 2개'));
 });
 
 /* ---------- renderPlan: 렌더 함수 스모크 테스트 (app-evolve cycle57 critique/advance) ----------

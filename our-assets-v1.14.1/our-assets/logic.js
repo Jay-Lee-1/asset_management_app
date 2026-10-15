@@ -328,15 +328,39 @@ function isReservedOwnerName(v){
 function lastDay(y,m){return new Date(y,m,0).getDate()}
 function monthEndStr(y,m){return `${y}-${String(m).padStart(2,'0')}-${String(lastDay(y,m)).padStart(2,'0')}`}
 function monthStartStr(y,m){return `${y}-${String(m).padStart(2,'0')}-01`}
+/* 거래 1건이 카테고리 하나에 묶이지 않고 여러 카테고리로 나뉠 수 있게 하는 선택적 필드
+ * t.splits:[{category,amount,memo?}] 를 읽는 공용 헬퍼(app-evolve cycle198 critique/advance) —
+ * 마트 한 건에 식비+생활용품이 섞이는 실제 상황에서 "제일 비슷한 카테고리 하나"를 억지로
+ * 고르게 하던 데이터 모델 공백을 없앤다. t.splits가 없거나 비었으면 기존과 똑같이
+ * t.category/t.amount 단일 쌍을 그대로 반환해(하위호환), spendByCategory 등 집계 함수와
+ * matchTxnQuery 같은 검색 함수가 분할 여부와 무관하게 이 헬퍼 하나만 거치면 된다. 최상위
+ * t.amount는 분할 여부와 무관하게 늘 전체 합계로 유지해야 한다(assetBalanceSeries 등 잔액
+ * 계산은 카테고리와 무관하게 거래 전체 금액만 보므로, 분할 합계가 t.amount와 어긋나면
+ * 잔액이 조용히 틀어진다 — saveTx()가 저장 시점에 이 불변식을 검증한다). */
+function splitLines(t){
+ return (Array.isArray(t.splits)&&t.splits.length)?t.splits:[{category:t.category,amount:t.amount,memo:t.memo}];
+}
+/* 거래 목록 등에서 카테고리를 한 단어로 보여줄 때 쓰는 라벨 — 분할 거래면 "카테고리 N개"로
+ * 뭉뚱그리고(어느 한 카테고리만 대표로 보여주면 나머지가 안 보여 오해를 살 수 있음), 아니면
+ * 기존처럼 t.category 그대로. */
+function txCatLabel(t){
+ const n=splitLines(t).length;
+ return n>1?`카테고리 ${n}개`:t.category;
+}
 /* 메모·카테고리·자산명·금액 검색을 대소문자 구분 없이 매칭(영문 메모/자산명 대비).
  * 금액은 쉼표 없는 숫자 그대로 들어있으므로, 검색어 쪽 쉼표만 지워 "50000"이든 "50,000"이든
  * 똑같이 찾을 수 있게 한다(haystack 쪽까지 쉼표를 지우면 메모/자산명에 들어있는 실제 쉼표가
- * 사라지면서 원래라면 안 걸릴 단어가 우연히 이어 붙어 매칭되는 오탐이 생길 수 있어 제외). */
+ * 사라지면서 원래라면 안 걸릴 단어가 우연히 이어 붙어 매칭되는 오탐이 생길 수 있어 제외).
+ * 분할 거래(t.splits)는 카테고리/메모가 여러 개로 나뉘므로 splitLines()로 모두 모아
+ * haystack에 합친다 — 안 그러면 분할된 두 번째 이후 카테고리/메모로는 검색해도 못 찾는다. */
 function matchTxnQuery(t,q,assets){
  if(!q)return true;
  const fa=(assets||[]).find(a=>a.id===t.fromAssetId),ta=(assets||[]).find(a=>a.id===t.toAssetId);
  const amt=t.amount!=null?String(t.amount):'';
- const hay=(t.memo||'')+' '+t.category+' '+(fa?fa.name:(t.fromAssetName||'—'))+' '+(ta?ta.name:(t.toAssetName||'—'))+' '+amt;
+ const lines=splitLines(t);
+ const cats=lines.map(s=>s.category||'').join(' ');
+ const lineMemos=lines.map(s=>s.memo||'').join(' ');
+ const hay=(t.memo||'')+' '+cats+' '+lineMemos+' '+(fa?fa.name:(t.fromAssetName||'—'))+' '+(ta?ta.name:(t.toAssetName||'—'))+' '+amt;
  return hay.toLowerCase().includes(q.toLowerCase().replace(/,/g,''));
 }
 /* 자산명(+fx 보유통화) 검색 — matchTxnQuery와 동일하게 대소문자 구분 없이 includes로 매칭한다.
@@ -583,6 +607,7 @@ function bulkCatTargets(txns,ids){
  const items=(txns||[]).filter(t=>idSet.has(t.id));
  if(!items.length)return{ok:false,reason:'empty'};
  if(items.some(t=>t.type==='transfer'))return{ok:false,reason:'transfer'};
+ if(items.some(t=>Array.isArray(t.splits)&&t.splits.length>1))return{ok:false,reason:'split'}; /* 분할 거래는 카테고리가 여러 개라 하나의 피커로 일괄 변경할 수 없음(app-evolve cycle198 advance) */
  const kind=items[0].type;
  if(items.some(t=>t.type!==kind))return{ok:false,reason:'mixed'};
  return{ok:true,kind,items};
