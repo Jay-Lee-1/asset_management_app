@@ -1,15 +1,8 @@
 {
   "cycle": 198,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 193,
-      "phase": "develop",
-      "timestamp": "2026-10-14T21:15:32.000Z",
-      "summary": "renderHistory()/histPreset()의 ST.hist.preset 분기가 구현돼 있었지만 호출 UI가 전혀 없어 죽은 코드였음을 발견. 기간 빠른 선택 칩(올해/이번 달/최근 3개월) 추가해 연결. test 6건 추가. APP_VERSION 1.47.153->1.47.154, CACHE v415->v416. node test/run.js 1405/1405 -> 1411/1411 통과.",
-      "commit": "0b6b193"
-    },
     {
       "cycle": 193,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-15T17:09:57.823Z",
       "summary": "critique(cycle197) 계획대로 openRecManage()에 실행형(sandbox-rendered) 테스트 커버리지를 추가했다. spendAnalysisCtx()와 같은 격리-vm-컨텍스트 패턴으로 recManageCtx() 헬퍼를 test/run.js에 신설(logic.js + recFreqLabel/ADJUST_CAT/CATICON/catKey/catIconOf/catGlyph/comma/openRecManage만 별도 컨텍스트에서 컴파일, openSheet는 lastSheetHtml 캡처 스텁). 5건 추가: (1) 데이터 없는 type은 그룹 헤더가 안 뜸, (2) 여러 type이 각각 \"라벨 · N개\"로 집계됨, (3) paused 항목만 \"중지\" 배지+opacity:.4+play 아이콘이 붙고 active 항목엔 안 붙음, (4) 기간 라벨이 endDate 유무에 따라 \"YYYY.MM ~ YYYY.MM\"/\"YYYY.MM ~\"로 포맷됨, (5) DB.recurrences가 비어있으면 빈 상태 문구가 뜸. 테스트를 작성하며 실제 렌더 로직에서 버그는 발견되지 않아 index.html/logic.js/sw.js는 건드리지 않았다(APP_VERSION/CACHE 변경 없음). node our-assets-v1.14.1/our-assets/test/run.js 1454/1454 -> 1459/1459 통과. pending_advance_plan을 비웠다.",
+      "commit": null
+    },
+    {
+      "cycle": 198,
+      "phase": "develop",
+      "timestamp": "2026-10-15T18:10:00.000Z",
+      "summary": "Explore 서브에이전트로 develop 후보를 탐색 — openQuickList/openStaleMvReview(테스트 커버리지 후보)는 실제 버그가 없는 반면, openQuickAmount(index.html:7266-7276)의 '지난번'/'지난달' 힌트 문구가 r.freq를 전혀 보지 않고 inc(수입 여부)만으로 결정돼, daily/weekly/yearly 변동 지출에도 무조건 '지난달은 ~원이었어요'라고 잘못 표시되는 실제 버그(varyingRecs가 daily/weekly 변동 지출을 명시적으로 지원하는데도)를 발견. lastLabel=(!inc&&(r.freq==='monthly'||!r.freq))?'지난달':'지난번'로 수정(freq 없는 기존 데이터는 index.html:4243과 동일하게 monthly로 간주해 기존 동작 보존, 수입은 freq 무관하게 항상 '지난번' 유지). test/run.js에 weekly/daily/monthly/수입-weekly 4건 추가. index.html 변경이라 APP_VERSION 1.47.161->1.47.162, sw.js CACHE v423->v424 갱신. node test/run.js 1459/1459 -> 1463/1463 통과.",
       "commit": null
     }
   ]

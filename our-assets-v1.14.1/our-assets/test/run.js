@@ -6129,6 +6129,40 @@ test('openQuickAmount: qAmt도 다른 금액 입력란(txAmt/rAmt/goalAmt/asCost
   assert.ok(sandbox.lastSheetHtml.includes('<div class="field-clear"><input id="qAmt"'), 'qAmt 입력이 field-clear로 감싸져 있지 않음');
   assert.ok(sandbox.lastSheetHtml.includes(`<button type="button" class="fc-x" aria-label="금액 지우기" onclick="clrInput('qAmt')">`), 'qAmt에 fc-x 지우기 버튼의 clrInput 연결이 없음');
 });
+/* ---------- openQuickAmount: "지난달"/"지난번" 힌트 문구가 freq를 반영해야 한다
+   (app-evolve cycle198 develop) — 전엔 inc(수입 여부)만 보고 지출이면 무조건 "지난달"이라 했는데,
+   daily/weekly/yearly 변동 지출도 전부 "지난달은 ~원이었어요"로 잘못 표시됐다(실제로는 어제/지난주).
+   freq가 없는 기존 데이터는 monthly로 간주하는 다른 코드(index.html:4243)와 동일하게 처리한다. */
+test('openQuickAmount: freq가 weekly인 변동 지출은 "지난달"이 아니라 "지난번"으로 표시한다', () => {
+  const r = { id: 'r1', type: 'expense', freq: 'weekly', category: '변동비', memo: '변동비', edits: { '2026-02-26': { amount: 1000 } } };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.lastSheetHtml = null;
+  sandbox.openQuickAmount('r1', '2026-03-05');
+  assert.ok(sandbox.lastSheetHtml.includes('지난번은 1,000원이었어요'), 'weekly는 "지난주"가 아니라도 최소한 틀린 "지난달"은 아니어야 함');
+  assert.ok(!sandbox.lastSheetHtml.includes('지난달'), 'weekly 변동 지출에 "지난달" 문구가 남아있으면 안 됨');
+});
+test('openQuickAmount: freq가 daily인 변동 지출도 "지난번"으로 표시한다', () => {
+  const r = { id: 'r1', type: 'expense', freq: 'daily', category: '변동비', memo: '변동비', edits: { '2026-03-04': { amount: 2000 } } };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.lastSheetHtml = null;
+  sandbox.openQuickAmount('r1', '2026-03-05');
+  assert.ok(sandbox.lastSheetHtml.includes('지난번은 2,000원이었어요'));
+  assert.ok(!sandbox.lastSheetHtml.includes('지난달'));
+});
+test('openQuickAmount: freq가 monthly인 변동 지출은 그대로 "지난달"로 표시한다(기존 동작 유지)', () => {
+  const r = { id: 'r1', type: 'expense', freq: 'monthly', category: '변동비', memo: '변동비', edits: { '2026-02-05': { amount: 3000 } } };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.lastSheetHtml = null;
+  sandbox.openQuickAmount('r1', '2026-03-05');
+  assert.ok(sandbox.lastSheetHtml.includes('지난달은 3,000원이었어요'));
+});
+test('openQuickAmount: freq가 weekly인 변동 수입은 (원래도) "지난번"으로 표시한다(inc는 freq와 무관)', () => {
+  const r = { id: 'r1', type: 'income', freq: 'weekly', category: '변동수입', memo: '변동수입', edits: { '2026-02-26': { amount: 4000 } } };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.lastSheetHtml = null;
+  sandbox.openQuickAmount('r1', '2026-03-05');
+  assert.ok(sandbox.lastSheetHtml.includes('지난번은 4,000원이었어요'));
+});
 
 /* ---------- storageOutcomeMsg: save()가 저장 성공/실패를 더 이상 숨기지 않는지 ---------- */
 test('storageOutcomeMsg: 계속 정상 저장 중이면 토스트를 띄우지 않는다(매 save() 호출마다 스팸 방지)', () => {
