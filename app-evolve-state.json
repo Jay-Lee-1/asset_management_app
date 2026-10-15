@@ -1,15 +1,8 @@
 {
   "cycle": 198,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 193,
-      "phase": "review",
-      "timestamp": "2026-10-14T22:15:00.000Z",
-      "summary": "cycle193 develop(기간 빠른 선택 칩, commit 0b6b193) 검토 — histPreset() 분기와 moveSegBlobs() 동작 재확인. node test/run.js 1411/1411 통과. 이상 없음, 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 193,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-15T18:10:00.000Z",
       "summary": "Explore 서브에이전트로 develop 후보를 탐색 — openQuickList/openStaleMvReview(테스트 커버리지 후보)는 실제 버그가 없는 반면, openQuickAmount(index.html:7266-7276)의 '지난번'/'지난달' 힌트 문구가 r.freq를 전혀 보지 않고 inc(수입 여부)만으로 결정돼, daily/weekly/yearly 변동 지출에도 무조건 '지난달은 ~원이었어요'라고 잘못 표시되는 실제 버그(varyingRecs가 daily/weekly 변동 지출을 명시적으로 지원하는데도)를 발견. lastLabel=(!inc&&(r.freq==='monthly'||!r.freq))?'지난달':'지난번'로 수정(freq 없는 기존 데이터는 index.html:4243과 동일하게 monthly로 간주해 기존 동작 보존, 수입은 freq 무관하게 항상 '지난번' 유지). test/run.js에 weekly/daily/monthly/수입-weekly 4건 추가. index.html 변경이라 APP_VERSION 1.47.161->1.47.162, sw.js CACHE v423->v424 갱신. node test/run.js 1459/1459 -> 1463/1463 통과.",
+      "commit": "14c9849"
+    },
+    {
+      "cycle": 198,
+      "phase": "review",
+      "timestamp": "2026-10-15T19:05:00.000Z",
+      "summary": "cycle198 develop(openQuickAmount lastLabel freq 분기, commit 14c9849) 검토 — index.html:4243(txToggleRepeat의 freq==='monthly'||!freq 관례)과 동일한 기존 규약을 그대로 재사용했음을 재확인. lastActualAmount() 자체는 freq와 무관하게 '직전 edits 값'만 보므로 lastLabel 문구만 바뀌고 실제 금액 조회 로직은 안 건드렸음을 확인. 수입은 freq 무관하게 항상 '지난번' 유지하는 분기도 기존 동작과 일치. node test/run.js 1463/1463 통과. 이상 없음, 코드 변경 없음.",
       "commit": null
     }
   ]
