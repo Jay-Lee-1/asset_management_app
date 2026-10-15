@@ -1,7 +1,12 @@
 {
   "cycle": 195,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "openSpendAnalysis 회귀 테스트 5건을 소스 텍스트 정규식 대신 이미 있는 lastSheetHtml 실행 패턴으로 교체 + goalRowHTML/openGoalsList의 '목표일 지남' 배지 실행 테스트 추가",
+    "why": "test/run.js는 extractFunction()으로 함수 소스를 텍스트로 뽑아 body.includes(...)/정규식으로 검사하는 '소스 매칭' 방식과, sandbox에서 함수를 직접 실행해 결과(sandbox.lastSheetHtml 등)를 검사하는 '실행형' 방식을 섞어 쓴다. 두 방식 다 쓰고 있지만 어느 쪽을 쓸지는 함수의 특성이 아니라 그때그때 작성자 선택에 좌우돼 왔다 — 가까운 예로 openBudgetPrompt()의 이월 캡션 테스트(test/run.js:2404-2408)는 sandbox.openBudgetPrompt()를 실제로 호출해 sandbox.lastSheetHtml을 검사하는 실행형인데, 바로 옆 형제 함수인 openSpendAnalysis()의 overCount/carryTotal 캡션 테스트(test/run.js:11556-11569)와 budgetForMonthWithCarry 배선 테스트(11571-11575)는 extractFunction('openSpendAnalysis')로 뽑은 소스 문자열에 리터럴이 '존재하는지'만 본다. goalRowHTML도 마찬가지로 '일부 미확인' 캡션은 실행형(test/run.js:3248-3263, sandbox.goalRowHTML(g) 직접 호출)으로 이미 잘 되어 있는데, cycle195 develop에서 추가한 '목표일 지남' 배지는 goalIsOverdue 순수함수 자체의 경계 테스트(test/run.js:1623-1640)만 있고 goalRowHTML/openGoalsList가 그 결과를 실제로 배지·aria-label에 배선했는지 확인하는 실행형 테스트가 아예 없다. 소스-매칭 테스트는 리터럴 문자열이 함수 안 어딘가에 '존재'하기만 하면 통과하므로, 조건문이 뒤바뀌거나(예: overdue?'...':'' 가 실수로 반전) 호출부가 다른 변수를 참조하는 실제 버그가 생겨도 못 잡는다 — 실제 동작은 검증하지 않고 리팩터링 안전망 역할만 흉내 내는 셈이다. 이미 같은 파일 안에 실행형 패턴(sandbox.lastSheetHtml 캡처, 직접 함수 호출)이 확립돼 있으므로 새 인프라(jsdom 등 신규 의존성) 없이 바로 적용 가능한, 범위가 분명한 개선이다.",
+    "approach": "1) test/run.js의 openSpendAnalysis 관련 extractFunction 기반 테스트 5개 중 다음 3개를 sandbox.openSpendAnalysis() 실제 호출 + sandbox.lastSheetHtml 검사로 교체한다(role/aria-pressed 두 접근성 테스트는 '특정 DOM 속성이 마크업에 있는지'만 보면 충분해 소스 매칭이 적합하므로 그대로 둔다): (a) 11556-11569의 overCount/carryTotal 캡션 테스트 — DB.budgetHistory/txns를 구성해 카테고리 일부를 초과시키고 lastSheetHtml에 실제 개수/금액이 올바르게 박히는지, unsetCount/overCount/carryTotal 캡션의 실제 등장 순서까지 확인. (b) 11571-11575의 '카테고리별 행 한도가 budgetForMonthWithCarry 기준' 테스트 — catBudgetRollover를 켠/끈 카테고리를 각각 구성해 lastSheetHtml에 찍히는 실제 한도 숫자가 이월 포함/미포함으로 달라지는지 확인. 기존 소스-매칭 테스트는 삭제(중복 유지 말 것). 2) goalRowHTML/openGoalsList에 '목표일 지남' 배지 실행형 테스트 2~3건 신규 추가: targetDate가 TODAY보다 과거이고 achieved=false인 목표로 sandbox.goalRowHTML(g)을 직접 호출해 '목표일 지남' 배지와 aria-label이 실제로 포함되는지, achieved=true나 targetDate가 미래/오늘인 목표는 배지가 없는지, 그리고 openGoalsList()로 여러 목표를 함께 렌더링했을 때 배지가 해당 목표 행에만 붙는지(이미 있는 '일부 미확인' 스코프 테스트 3290-3300과 같은 패턴)까지 커버한다. 3) 변경은 test/run.js 안에서만 끝나며 index.html/logic.js/sw.js를 건드리지 않으므로 APP_VERSION/CACHE 버전은 올리지 않는다. 4) node test/run.js로 전체 통과 확인 후 커밋.",
+    "scope_note": "순수 테스트 품질 개선이며 프로덕션 코드(index.html/logic.js) 변경은 없음 — advance 단계치고 작은 diff일 수 있으나, 다음 cycle부터는 이 패턴이 relevant한 모든 신규 render 테스트의 기본값이 되도록 하는 선례를 남기는 게 목적."
+  },
   "history": [
     {
       "cycle": 191,
@@ -106,6 +111,13 @@
       "phase": "review",
       "timestamp": "2026-10-15T06:30:00.000Z",
       "summary": "cycle195 develop(goalIsOverdue, commit 02ffe5a) 검토 — homeAlerts()의 goalBehind 전제(hist.length>=2 && !goalHasUnknown)와 의도적으로 분리된 판정임을 확인(목표 화면 자체의 '지남' 표시는 그 전제가 필요 없음, 커밋 메시지에도 명시됨). targetDate/TODAY 모두 YYYY-MM-DD 문자열이라 기존 코드(goalProgress의 h.date<=today 등)와 동일한 문자열 비교 관례를 따름. 'mini warn' 배지 클래스도 hasUnknown과 동일하게 재사용. node test/run.js 1451/1451 통과. 이상 없음, 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 195,
+      "phase": "critique",
+      "timestamp": "2026-10-15T07:40:00.000Z",
+      "summary": "Explore 서브에이전트로 앱 전반(아키텍처/접근성/데이터 안전성/성능/누락 기능/TODO)을 훑었다 — 전역 에러 바운더리, 포커스 트랩, aria-live, 검색, 페이지네이션, Web Locks 멀티탭 저장, mergeRemoteDataIntoLocal의 전 컬렉션 배선 등 이미 성숙한 부분이 많았고 새 TODO/죽은 코드는 없었음. 남은 후보 중 CDN 3개(pretendard/kakao/supabase) SRI 해시 미설정은 이 샌드박스의 egress 차단(curl로 재확인, 403)으로 지금도 못 고치는 환경 제약이라 보류. 대신 test/run.js가 extractFunction()+정규식으로 '소스에 리터럴이 존재하는지'만 보는 테스트와 sandbox에서 실제로 함수를 호출해 lastSheetHtml 등 결과를 검사하는 '실행형' 테스트를 섞어 쓰는데, 같은 파일 안에 이미 실행형 패턴(openBudgetPrompt 이월 캡션 테스트 2404-2408, goalRowHTML '일부 미확인' 테스트 3248-3263)이 확립돼 있음에도 바로 옆 형제 함수인 openSpendAnalysis의 overCount/carryTotal 캡션 테스트(11556-11575)와 cycle195 develop이 추가한 goalRowHTML '목표일 지남' 배지는 소스-매칭뿐이거나(전자) 배지 실행 테스트가 아예 없음(후자)을 발견 — 소스-매칭은 조건문이 뒤바뀌는 실제 버그를 못 잡는 구멍. 새 의존성(jsdom 등) 없이 기존 lastSheetHtml 패턴으로 교체/추가하는 구체적 계획을 pending_advance_plan에 저장. 코드 변경 없음(테스트 전용 계획이라 다음 advance도 index.html/logic.js/sw.js는 건드리지 않을 예정).",
       "commit": null
     }
   ]
