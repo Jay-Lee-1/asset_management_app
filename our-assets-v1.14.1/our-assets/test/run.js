@@ -1620,6 +1620,26 @@ test('goalProgress: 최근 90일 구간에 스냅샷이 1개뿐이면(데이터�
   assert.notStrictEqual(p.projectedDate, null, '창 안에 2점 미만이면 전체 이력으로 폴백해야 함(투사 자체가 사라지면 안 됨)');
 });
 
+/* ---------- goalIsOverdue: 목표일이 지났는데 아직 달성 못한 목표 판정 (app-evolve cycle195 develop) ----------
+ * homeAlerts()의 goalBehind 알림(hist.length>=2 && !goalHasUnknown 요구)과 달리, 목표 화면 자체의
+ * "지남" 표시는 그 전제 없이 targetDate<today && !achieved만 본다. */
+test('goalIsOverdue: 목표일이 없으면(targetDate 미설정) false', () => {
+  assert.strictEqual(sandbox.goalIsOverdue('', false, '2026-06-01'), false);
+  assert.strictEqual(sandbox.goalIsOverdue(null, false, '2026-06-01'), false);
+});
+test('goalIsOverdue: 이미 달성했으면(achieved=true) 목표일이 지났어도 false', () => {
+  assert.strictEqual(sandbox.goalIsOverdue('2026-01-01', true, '2026-06-01'), false);
+});
+test('goalIsOverdue: 목표일이 오늘이면(targetDate===today) 아직 지나지 않았으므로 false', () => {
+  assert.strictEqual(sandbox.goalIsOverdue('2026-06-01', false, '2026-06-01'), false);
+});
+test('goalIsOverdue: 목표일이 과거이고 아직 미달성이면 true', () => {
+  assert.strictEqual(sandbox.goalIsOverdue('2026-05-31', false, '2026-06-01'), true);
+});
+test('goalIsOverdue: 목표일이 미래면(아직 안 지남) false', () => {
+  assert.strictEqual(sandbox.goalIsOverdue('2026-12-01', false, '2026-06-01'), false);
+});
+
 /* ---------- debtPayoffProjection: debt 자산 상환완료 예상일 투사 (app-evolve cycle144 advance) ----------
  * goalProgress와 대칭되는 부채 쪽 선형투사. pts는 assetBalanceSeries(sign=-1)가 반환하는 날짜순
  * {date,bal} 배열(bal은 양수=남은 빚)을 그대로 받는다고 가정해 네 경계를 검증한다. */

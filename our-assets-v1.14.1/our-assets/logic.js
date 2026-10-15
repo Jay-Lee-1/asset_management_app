@@ -438,6 +438,15 @@ function goalProgress(goal,nwHistory,today,trendWindowDays){
  return {cur,target,pct,remaining,achieved,projectedDate};
 }
 
+/* 목표일이 지났는데도 아직 달성하지 못한 목표인지 — homeAlerts()의 goalBehind 알림은 hist.length>=2(이력
+ * 2건 이상)와 !goalHasUnknown(미확인 자산 없음)을 요구해 신규 목표나 미확인 자산이 섞인 목표에는 뜨지 않는데,
+ * 목표 화면(goalRowHTML/openGoalsList) 자체에는 그 알림과 무관하게 "목표일이 지났다"는 가장 단순한 사실조차
+ * 보여줄 데가 없었다(app-evolve cycle195 develop). 그래서 이 판정은 알림의 그 두 전제를 전혀 요구하지 않고
+ * targetDate<today && !achieved만 본다 — targetDate===today(오늘이 목표일)는 아직 지나지 않았으므로 false. */
+function goalIsOverdue(targetDate,achieved,today){
+ return !!(targetDate&&!achieved&&targetDate<today);
+}
+
 /* debt 자산의 상환완료 예상일 투사 — goalProgress와 동일한 '최근 trendWindowDays일(기본 90일) 구간의
  * 처음·끝 두 점 선형투사' 철학을 공유한다. pts는 assetBalanceSeries(assetId,...,sign=-1)가 반환하는
  * 날짜순 {date,bal} 배열을 그대로 받는다(부채 잔액은 양수로 표현되고 갚을수록 줄어듦). 잔액이 이미

@@ -1,6 +1,6 @@
 {
-  "cycle": 194,
-  "phase": "develop",
+  "cycle": 195,
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
@@ -92,6 +92,13 @@
       "phase": "advance",
       "timestamp": "2026-10-15T04:40:00.000Z",
       "summary": "critique(cycle194) 계획대로 예산 이월(rollover) 기능 구현. logic.js에 budgetCarry(prevBudget,prevSpent)(초과분 0 clamp)+budgetForMonthEffective(baseBudget,carry)(baseBudget<=0이면 그대로 0, 이번 달에 없던 예산이 생겨 보이는 것 방지) 순수함수 추가. index.html에 DB.catBudgetRollover('expense:이름'→true, opt-in, 기본 false 하위호환) 신설 — migrate()에서 초기화, mergeRemoteDataIntoLocal()에 catIcon/catVar와 동일한 mergeFlatMap+catFlatTombKey로 배선(DB.rates처럼 신설 컬렉션 배선 누락 버그 클래스를 처음부터 피함), sanitizeBackup()에 sanitizeFlatMap 검증 분기 추가. isBudgetRolloverCat/setBudgetRolloverCat/toggleBudgetRolloverUI 접근자 추가, openCatManage()의 expense 카테고리 행에 varpill과 같은 클래스의 '이월'/'이월 안함' 토글 pill 추가(saving/income 제외). budgetCarryFor(c,y,m)(토글 꺼짐/전달 예산 없음이면 0, 귀속 무관하게 '전체' 기준 spendByCategory로 전달 실적 조회)와 budgetForMonthWithCarry(c,y,m) 헬퍼 추가. totalBudgetSummary()가 budgetForMonthEffective 기준으로 budgetedTotal/overCount를 계산하고 이월분만 따로 carryTotal로 반환하도록 확장(토글 꺼진 카테고리는 carry=0이라 기존 결과와 완전히 동일 — 하위호환). openSpendAnalysis()의 카테고리별 행 한도 표시를 budgetForMonthWithCarry로 교체, 요약 카드에 '전달 이월 N원 포함' 캡션 추가(overCount/unsetCount와 같은 자리, review가 지적한 7줄 HTML 주석은 템플릿 리터럴 밖 JS 주석으로 이동). openBudgetPrompt()의 입력값(budgetIn)은 flat 한도 그대로 유지하고(이월분까지 끼워 저장하면 다음 조회 때 또 더해져 눈덩이처럼 불어남) 바로 아래에 이월 안내 캡션만 추가. addCat/doDeleteCat/doRenameCat에 catVar와 동일하게 catBudgetRollover 키 정리/이관/복원 배선. test/run.js에 28건 추가(budgetCarry 4, budgetForMonthEffective 3, isBudgetRolloverCat/setBudgetRolloverCat 1, budgetCarryFor 5, budgetForMonthWithCarry 2, totalBudgetSummary carryTotal 1, openSpendAnalysis 캡션/한도 2, openBudgetPrompt 캡션 2, openCatManage rollPill 2+toggleBudgetRolloverUI 1, doRenameCat 이관 2, doDeleteCat 이관 1, mergeRemoteDataIntoLocal 배선 2) + sanitizeBackup/addCat 기존 테스트 3건을 catBudgetRollover 포함하도록 확장. index.html/logic.js/sw.js 변경이라 APP_VERSION 1.47.156->1.47.157, sw.js CACHE v418->v419 갱신. node test/run.js 1418/1418 -> 1446/1446 통과. pending_advance_plan을 비웠다.",
+      "commit": null
+    },
+    {
+      "cycle": 195,
+      "phase": "develop",
+      "timestamp": "2026-10-15T05:30:00.000Z",
+      "summary": "목표 화면(goalRowHTML/openGoalsList)에 '목표일이 지났는데 아직 달성 못함'을 보여줄 표시가 전혀 없던 공백 발견 — homeAlerts()의 goalBehind 알림은 hist.length>=2 && !goalHasUnknown을 요구해 신규 목표·미확인 자산 섞인 목표에는 안 뜨는데, 목표 화면 자체엔 그 전제와 무관하게 '지났다'는 가장 단순한 사실조차 없었음. logic.js에 goalIsOverdue(targetDate,achieved,today) 순수함수 신설(targetDate<today && !achieved만 봄, ===today는 아직 안 지남). index.html의 goalRowHTML()에 '목표일 지남' mini warn 배지(일부 미확인 배지와 같은 자리) + aria-label 보강, openGoalsList() 행의 목표일 캡션 옆에 '지남' 배지 추가. test/run.js에 goalIsOverdue 경계 테스트 5건 추가(미설정/달성함/오늘/과거/미래). index.html/logic.js/sw.js 변경이라 APP_VERSION 1.47.157->1.47.158, sw.js CACHE v419->v420 갱신. node test/run.js 1446/1446 -> 1451/1451 통과.",
       "commit": null
     }
   ]

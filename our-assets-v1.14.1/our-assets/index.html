@@ -1387,7 +1387,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.157';
+const APP_VERSION='1.47.158';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2939,8 +2939,9 @@ function goalRowHTML(g){
  const p=goalProgress(g,nwHistoryForOwner(DB.nwHistory,goalOwnerEff(g)),TODAY); /* 목표가 귀속별(owner)이면 그 귀속만의 순자산 추이로 진행률·투사를 계산 — nwHistoryCard(owner)와 동일한 nwHistoryForOwner를 공유 */
  const color=p.achieved?'var(--income)':'var(--brand)';
  const hasUnknown=goalHasUnknown(g);
- return `<div class="pg-row" tabindex="0" role="button" aria-label="${esc(g.name)} 목표 진행률 ${p.pct}%" onclick="openGoalForm('${g.id}')" onkeydown="rowKeydown(event,()=>openGoalForm('${g.id}'))">
-   <div class="pg-head"><span class="pg-k">${esc(g.name)}${hasUnknown?' <span class="mini warn">일부 미확인</span>':''}${p.achieved?`<span class="pg-done" style="color:${color};background:color-mix(in srgb,${color} 15%,transparent)">달성</span>`:''}</span>
+ const overdue=goalIsOverdue(g.targetDate,p.achieved,TODAY); /* homeAlerts()의 goalBehind 알림은 hist.length>=2·!hasUnknown을 요구해 안 뜰 때가 있어도, 목표 화면 자체엔 지남 표시가 있어야 함(app-evolve cycle195 develop) */
+ return `<div class="pg-row" tabindex="0" role="button" aria-label="${esc(g.name)} 목표 진행률 ${p.pct}%${overdue?' 목표일 지남':''}" onclick="openGoalForm('${g.id}')" onkeydown="rowKeydown(event,()=>openGoalForm('${g.id}'))">
+   <div class="pg-head"><span class="pg-k">${esc(g.name)}${hasUnknown?' <span class="mini warn">일부 미확인</span>':''}${overdue?' <span class="mini warn">목표일 지남</span>':''}${p.achieved?`<span class="pg-done" style="color:${color};background:color-mix(in srgb,${color} 15%,transparent)">달성</span>`:''}</span>
      <span class="pg-nums"><b class="num">${comma(p.cur)}</b><span class="pg-of num"> / ${comma(p.target)}원</span></span></div>
    <div class="pg-bar"><i style="width:${p.pct}%;background:${color}"></i></div>
    ${!p.achieved&&p.projectedDate?`<div class="msub2" style="margin-top:4px">이대로면 ${shortDate2(p.projectedDate)}쯤 달성 예상</div>`:''}
@@ -2962,12 +2963,13 @@ function openGoalsList(){ /* 관리 목록은 캐러셀 귀속과 무관하게 �
    const p=goalProgress(g,nwHistoryForOwner(DB.nwHistory,goalOwnerEff(g)),TODAY);
    const ownerBadge=goalOwnerEff(g)!=='all'?` · ${esc(g.owner)}`:'';
    const hasUnknown=goalHasUnknown(g); /* goalRowHTML()과 동일 캡션(app-evolve cycle186 advance) */
-   return `<div class="manage-row" tabindex="0" role="button" aria-label="${esc(g.name)} 목표 진행률 ${p.pct}%" onclick="openGoalForm('${g.id}')" onkeydown="rowKeydown(event,()=>openGoalForm('${g.id}'))">
+   const overdue=goalIsOverdue(g.targetDate,p.achieved,TODAY); /* goalRowHTML()과 동일 판정(app-evolve cycle195 develop) */
+   return `<div class="manage-row" tabindex="0" role="button" aria-label="${esc(g.name)} 목표 진행률 ${p.pct}%${overdue?' 목표일 지남':''}" onclick="openGoalForm('${g.id}')" onkeydown="rowKeydown(event,()=>openGoalForm('${g.id}'))">
     <div class="avatar a-save" style="width:38px;height:38px">${svg('target')}</div>
     <div style="flex:1;min-width:0"><div class="mn">${esc(g.name)} ${p.achieved?'<span class="mini">달성</span>':''}</div>
      <div class="msub">${comma(p.cur)} / ${comma(p.target)}원 · ${p.pct}%${ownerBadge}</div>
      ${hasUnknown?'<div class="mini warn" style="margin-top:2px">일부 미확인</div>':''}
-     ${g.targetDate?`<div class="msub2">목표일 ${fmtDateFull(g.targetDate)}</div>`:''}</div>
+     ${g.targetDate?`<div class="msub2">목표일 ${fmtDateFull(g.targetDate)}${overdue?' <span class="mini warn">지남</span>':''}</div>`:''}</div>
     <div class="mc">${svg('chev')}</div></div>`;
  }).join('')}</div>`:`<div class="empty"><div class="ei">${svg('target')}</div><div class="et">아직 목표가 없어요</div><div class="es">순자산 목표를 세우면 진행 상황을 추적할 수 있어요</div></div>`;
  openSheet(`<h3>목표 관리</h3><div class="desc">탭하면 수정·삭제할 수 있어요</div>${body}
