@@ -1,6 +1,6 @@
 {
   "cycle": 196,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
@@ -120,6 +120,13 @@
       "phase": "advance",
       "timestamp": "2026-10-15T08:40:00.000Z",
       "summary": "critique(cycle195) 계획대로 test/run.js의 openSpendAnalysis 소스-매칭 테스트 3건을 실행형으로 교체 + goalRowHTML/openGoalsList '목표일 지남' 배지 실행형 테스트 4건 신규 추가. openSpendAnalysis는 saveBudget/delBudget이 부수효과로 호출하는 화면 전용 진입점이라 메인 sandbox에선 계속 no-op 스텁(614줄)이어야 하는데(실제로 켰더니 그 두 함수의 기존 최소 fixture 테스트가 DB.owners 누락으로 깨짐을 확인하고 되돌림), makeAppLockCtx와 같은 '별도 vm 컨텍스트에 필요한 소스만 통째로 새로 컴파일' 패턴을 적용해 spendAnalysisCtx() 헬퍼를 신설 — logic.js+FUNCTIONS/CONSTS/LETS 전체와 extractFunction('openSpendAnalysis')를 이 컨텍스트 안에서만 로드해 DB/ST 격리를 유지한다(함수 참조만 복사하면 자유변수가 정의된 컨텍스트를 계속 참조해 격리가 깨짐을 확인). overCount/unsetCount/carryTotal 캡션 테스트와 행별 한도(budgetForMonthWithCarry) 테스트를 실제 DB.txns/budgetHistory/catBudgetRollover를 구성해 ctx.openSpendAnalysis() 실행 후 lastSheetHtml의 실제 숫자·순서를 검사하도록 교체(이월 opt-in/opt-out 카테고리를 함께 둬서 카테고리별로 다른 숫자가 나오는지까지 확인). goalRowHTML/openGoalsList 테스트는 기존 '일부 미확인' 실행형 패턴과 동일하게 sandbox.goalRowHTML(g)/sandbox.openGoalsList() 직접 호출 — 과거+미달성(배지 있음)/과거+달성(배지 없음)/오늘·미래(배지 없음)/openGoalsList 스코프(지난 목표 행에만 붙음) 4건. index.html/logic.js/sw.js는 건드리지 않아 APP_VERSION/CACHE 변경 없음. node test/run.js 1451/1451 -> 1455/1455 통과. pending_advance_plan을 비웠다.",
+      "commit": null
+    },
+    {
+      "cycle": 196,
+      "phase": "develop",
+      "timestamp": "2026-10-15T09:19:00.000Z",
+      "summary": "카테고리 관리(openCatManage)의 varPill('변동'/'고정')·rollPill('이월'/'이월 안함') 토글 버튼에 aria-label/aria-pressed가 전혀 없던 공백 발견 — 같은 화면의 구분 세그먼트·아이콘 선택·수정/삭제 버튼은 모두 aria-label/aria-pressed가 있는데 이 둘만 스크린리더로는 어느 카테고리의 토글인지, 켜짐/꺼짐 상태인지 알 수 없었음. 버튼 템플릿에 카테고리명 포함 aria-label과 현재 상태의 aria-pressed 추가, toggleCatVarUI/toggleBudgetRolloverUI가 classList/textContent와 함께 btn.setAttribute('aria-pressed',on)도 갱신하도록 수정. test/run.js에 varPill/rollPill aria 렌더 테스트 1건 + toggleCatVarUI/toggleBudgetRolloverUI DOM 갱신 테스트 2건(기존 1건 확장+1건 신규) 추가, FUNCTIONS 목록에 누락돼 있던 toggleCatVarUI도 추가. index.html 변경이라 APP_VERSION 1.47.158->1.47.159, sw.js CACHE v420->v421 갱신. node test/run.js 1455/1455 -> 1457/1457 통과.",
       "commit": null
     }
   ]

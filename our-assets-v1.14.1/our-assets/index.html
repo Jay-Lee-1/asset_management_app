@@ -1387,7 +1387,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.158';
+const APP_VERSION='1.47.159';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5437,13 +5437,13 @@ function isVarCat(type,name){return !!(DB.catVar&&DB.catVar[catKey(type,name)])}
 function setCatVar(type,name,on){DB.catVar=DB.catVar||{};if(on)DB.catVar[catKey(type,name)]=true;else delete DB.catVar[catKey(type,name)]}
 function recIsVarying(r){return (r.type==='expense'||r.type==='income')&&isVarCat(r.type,r.category)}
 function toggleCatVarUI(k,i,btn){const c=DB.categories[k][i];const on=!isVarCat(k,c);setCatVar(k,c,on);save();
- if(btn){btn.classList.toggle('on',on);btn.textContent=on?'변동':'고정'}else openCatManage(k)}
+ if(btn){btn.classList.toggle('on',on);btn.textContent=on?'변동':'고정';btn.setAttribute('aria-pressed',on)}else openCatManage(k)}
 /* 예산 이월(catBudgetRollover) opt-in 토글 — isVarCat/setCatVar와 동일한 flat map 패턴이지만
  * budgetHistory처럼 지출(expense) 카테고리 전용이라 type을 받지 않고 'expense'로 고정한다. */
 function isBudgetRolloverCat(name){return !!(DB.catBudgetRollover&&DB.catBudgetRollover[catKey('expense',name)])}
 function setBudgetRolloverCat(name,on){DB.catBudgetRollover=DB.catBudgetRollover||{};if(on)DB.catBudgetRollover[catKey('expense',name)]=true;else delete DB.catBudgetRollover[catKey('expense',name)]}
 function toggleBudgetRolloverUI(i,btn){const c=DB.categories.expense[i];const on=!isBudgetRolloverCat(c);setBudgetRolloverCat(c,on);save();
- if(btn){btn.classList.toggle('on',on);btn.textContent=on?'이월':'이월 안함'}else openCatManage('expense')}
+ if(btn){btn.classList.toggle('on',on);btn.textContent=on?'이월':'이월 안함';btn.setAttribute('aria-pressed',on)}else openCatManage('expense')}
 function catGlyph(type,name,size,fallbackIcon){
  const key=catIconOf(type,name)||CATICON[name]||fallbackIcon||'tag';
  return svg(key,size);
@@ -5478,8 +5478,8 @@ function openCatManage(kind,keep){
   <div class="seg" role="group" aria-label="구분 선택"><div class="seg-blob"></div>${['expense','income','saving'].map(x=>`<button class="${k===x?'on':''}" aria-pressed="${k===x}" onclick="openCatManage('${x}')">${CAT_LABEL[x]}</button>`).join('')}</div>
   <div>${DB.categories[k].map((c,i)=>{
     const isSysAdjust=k==='income'&&c===ADJUST_CAT; /* 거래에서 자동 생성되는 시스템 카테고리 — 이름변경/삭제 못 하게 액션 대신 안내만 보여준다 */
-    const varPill=k==='saving'?'':`<button class="varpill ${isVarCat(k,c)?'on':''}" onclick="toggleCatVarUI('${k}',${i},this)">${isVarCat(k,c)?'변동':'고정'}</button>`;
-    const rollPill=k==='expense'?`<button class="varpill ${isBudgetRolloverCat(c)?'on':''}" onclick="toggleBudgetRolloverUI(${i},this)">${isBudgetRolloverCat(c)?'이월':'이월 안함'}</button>`:''; /* 예산 이월은 지출 카테고리에만 있는 설정(saving/income 대상 아님) — budgetHistory와 동일한 범위 */
+    const varPill=k==='saving'?'':`<button class="varpill ${isVarCat(k,c)?'on':''}" aria-label="${esc(c)} 변동 카테고리 설정" aria-pressed="${isVarCat(k,c)}" onclick="toggleCatVarUI('${k}',${i},this)">${isVarCat(k,c)?'변동':'고정'}</button>`;
+    const rollPill=k==='expense'?`<button class="varpill ${isBudgetRolloverCat(c)?'on':''}" aria-label="${esc(c)} 예산 이월 설정" aria-pressed="${isBudgetRolloverCat(c)}" onclick="toggleBudgetRolloverUI(${i},this)">${isBudgetRolloverCat(c)?'이월':'이월 안함'}</button>`:''; /* 예산 이월은 지출 카테고리에만 있는 설정(saving/income 대상 아님) — budgetHistory와 동일한 범위 */
     const acts=isSysAdjust?`<span class="mini">자동 생성</span>`:`<div class="row-acts"><button class="act-btn" aria-label="${esc(c)} 수정" onclick="renameCatSheet('${k}',${i})">${svg('edit')}</button><button class="act-btn danger" aria-label="${esc(c)} 삭제" onclick="delCat('${k}',${i})">${svg('trash')}</button></div>`;
     return `<div class="manage-row"><div class="avatar ${avCls}" style="width:36px;height:36px;border-radius:11px">${catGlyph(k,c,18,'tag')}</div><div class="mn">${esc(c)}</div>${isSysAdjust?'':varPill}${rollPill}${acts}</div>`;
    }).join('')}</div>

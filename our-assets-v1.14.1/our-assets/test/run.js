@@ -163,7 +163,7 @@ function extractMainScript() {
 // (app-evolve cycle97 advance, cycle111 advance).
 const FUNCTIONS = [
   'addMonths', 'fetchWithTimeout', 'withTimeout',
-  'dateBelowRangeFloor', 'dateAboveRangeCeil', 'recalcEndCond', 'isVarCat', 'setCatVar', 'activeRecsForAssets', 'activeRecsForCat',
+  'dateBelowRangeFloor', 'dateAboveRangeCeil', 'recalcEndCond', 'isVarCat', 'setCatVar', 'toggleCatVarUI', 'activeRecsForAssets', 'activeRecsForCat',
   'num', 'doRenameCat', 'doDeleteCat', 'totalBudgetSummary', 'budgetForMonth', 'setBudgetFrom', 'addCat',
   'isBudgetRolloverCat', 'setBudgetRolloverCat', 'toggleBudgetRolloverUI', 'budgetCarryFor', 'budgetForMonthWithCarry',
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV',
@@ -13543,6 +13543,20 @@ test('openCatManage: expense 탭 — throw 없이 카테고리 행과 변동/고
   assert.ok(html.includes('변동'), '변동 카테고리는 "변동" 뱃지를 보여줘야 함');
   assert.ok(html.includes('고정'), '변동 아닌 카테고리는 "고정" 뱃지를 보여줘야 함');
 });
+/* varPill/rollPill은 "변동"/"고정"·"이월"/"이월 안함"만 보여줘서, 스크린리더로는 어떤 카테고리의
+ * 토글인지, 켜짐/꺼짐 상태인지 알 수 없던 공백(구분 세그먼트·아이콘 선택 등 다른 토글들은 이미
+ * aria-label/aria-pressed가 있었음) — app-evolve cycle196 develop. */
+test('openCatManage: varPill/rollPill에 카테고리별 aria-label과 상태에 맞는 aria-pressed가 있다', () => {
+  setupCatManageDB();
+  sandbox.DB.catVar[sandbox.catKey('expense', '식비')] = true;
+  sandbox.DB.catBudgetRollover[sandbox.catKey('expense', '교통')] = true;
+  sandbox.openCatManage('expense');
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('aria-label="식비 변동 카테고리 설정" aria-pressed="true"'), '변동 켜진 카테고리의 varPill aria 상태가 틀림');
+  assert.ok(html.includes('aria-label="교통 변동 카테고리 설정" aria-pressed="false"'), '변동 꺼진 카테고리의 varPill aria 상태가 틀림');
+  assert.ok(html.includes('aria-label="식비 예산 이월 설정" aria-pressed="false"'), '이월 꺼진 카테고리의 rollPill aria 상태가 틀림');
+  assert.ok(html.includes('aria-label="교통 예산 이월 설정" aria-pressed="true"'), '이월 켜진 카테고리의 rollPill aria 상태가 틀림');
+});
 test('openCatManage: saving 탭 — 변동/고정 뱃지(varPill) 없이 그린다(회귀 확인)', () => {
   setupCatManageDB();
   sandbox.openCatManage('saving');
@@ -13568,17 +13582,33 @@ test('openCatManage: saving/income 탭에는 이월 토글 pill이 없다', () =
   sandbox.openCatManage('income');
   assert.ok(!sandbox.lastSheetHtml.includes('toggleBudgetRolloverUI'), 'income 탭에 이월 토글이 그려짐');
 });
-test('toggleBudgetRolloverUI: 버튼 클릭 시 상태를 토글하고 DOM(classList/textContent)을 즉시 갱신한다', () => {
+test('toggleBudgetRolloverUI: 버튼 클릭 시 상태를 토글하고 DOM(classList/textContent/aria-pressed)을 즉시 갱신한다', () => {
   setupCatManageDB();
-  const btn = { classList: { toggle(cls, on) { this.on = !!on; }, on: false }, textContent: '이월 안함' };
+  const btn = { classList: { toggle(cls, on) { this.on = !!on; }, on: false }, textContent: '이월 안함', ariaPressed: null, setAttribute(name, v) { if (name === 'aria-pressed') this.ariaPressed = v; } };
   sandbox.toggleBudgetRolloverUI(0, btn);
   assert.strictEqual(sandbox.isBudgetRolloverCat('식비'), true);
   assert.strictEqual(btn.classList.on, true);
   assert.strictEqual(btn.textContent, '이월');
+  assert.strictEqual(btn.ariaPressed, true, '토글 켤 때 aria-pressed가 갱신돼야 함');
   sandbox.toggleBudgetRolloverUI(0, btn);
   assert.strictEqual(sandbox.isBudgetRolloverCat('식비'), false);
   assert.strictEqual(btn.classList.on, false);
   assert.strictEqual(btn.textContent, '이월 안함');
+  assert.strictEqual(btn.ariaPressed, false, '토글 끌 때 aria-pressed가 갱신돼야 함');
+});
+test('toggleCatVarUI: 버튼 클릭 시 상태를 토글하고 DOM(classList/textContent/aria-pressed)을 즉시 갱신한다', () => {
+  setupCatManageDB();
+  const btn = { classList: { toggle(cls, on) { this.on = !!on; }, on: false }, textContent: '고정', ariaPressed: null, setAttribute(name, v) { if (name === 'aria-pressed') this.ariaPressed = v; } };
+  sandbox.toggleCatVarUI('expense', 0, btn);
+  assert.strictEqual(sandbox.isVarCat('expense', '식비'), true);
+  assert.strictEqual(btn.classList.on, true);
+  assert.strictEqual(btn.textContent, '변동');
+  assert.strictEqual(btn.ariaPressed, true, '토글 켤 때 aria-pressed가 갱신돼야 함');
+  sandbox.toggleCatVarUI('expense', 0, btn);
+  assert.strictEqual(sandbox.isVarCat('expense', '식비'), false);
+  assert.strictEqual(btn.classList.on, false);
+  assert.strictEqual(btn.textContent, '고정');
+  assert.strictEqual(btn.ariaPressed, false, '토글 끌 때 aria-pressed가 갱신돼야 함');
 });
 /* 구분(지출/수입/저축) 세그먼트가 class="on"만으로 선택 상태를 표시해 스크린리더가 어떤 탭이
  * 선택돼 있는지 알 수 없던 공백 — app-evolve cycle147 critique/advance. */
