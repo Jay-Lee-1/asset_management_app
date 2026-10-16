@@ -1387,7 +1387,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.163';
+const APP_VERSION='1.47.164';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -7650,8 +7650,11 @@ function homeAlerts(neg){
   * (app-evolve cycle183 critique/advance) */
  const _ruCount=DB.assets.filter(a=>a.includeInTotal&&rateUnknown(a)).length;
  if(_ruCount)arr.push({kind:'rateUnknownTotal',count:_ruCount});
- const _bo=spendByCategory(TM.y,TM.m).filter(r=>{const b=budgetForMonth(r.c,TM.y,TM.m);return b>0&&r.v>b}); /* 예산 초과 카테고리: 1건이면 그대로, 여러 건이면 하나로 묶음(quick/quickMulti와 동일 패턴) */
- if(_bo.length===1){const r=_bo[0],b=budgetForMonth(r.c,TM.y,TM.m);arr.push({kind:'budgetOver',cat:r.c,spent:r.v,budget:b});}
+ const _bo=spendByCategory(TM.y,TM.m).filter(r=>{const b=budgetForMonthWithCarry(r.c,TM.y,TM.m);return b>0&&r.v>b}); /* 예산 초과 카테고리: 1건이면 그대로, 여러 건이면 하나로 묶음(quick/quickMulti와 동일 패턴).
+  * budgetForMonth(flat)이 아니라 budgetForMonthWithCarry(실질 한도, flat+이월)를 봐야 openSpendAnalysis/totalBudgetSummary와 판정이 일치한다 — 이월을 켠
+  * 카테고리에서 지난달 아낀 돈이 이번 달 실질 한도를 늘려줬는데도 flat 기준으로는 "초과"로 잘못 떠 홈 카드/OS 푸시가 지출분석 화면과 다른 말을 하던
+  * 버그를 고친다(이월 꺼진 카테고리는 budgetCarryFor가 0을 반환해 기존과 동일, app-evolve cycle199 critique/advance) */
+ if(_bo.length===1){const r=_bo[0],b=budgetForMonthWithCarry(r.c,TM.y,TM.m);arr.push({kind:'budgetOver',cat:r.c,spent:r.v,budget:b});}
  else if(_bo.length>1)arr.push({kind:'budgetOverMulti',count:_bo.length});
  /* 목표일보다 늦어지는 목표: 목표일이 있고 아직 안 달성한 목표 중, goalProgress()의 추세 투사가 목표일을
   * 못 맞추거나(projectedDate>targetDate) 추세가 0/음수라 투사 자체가 안 나오면(projectedDate:null) 포함한다.

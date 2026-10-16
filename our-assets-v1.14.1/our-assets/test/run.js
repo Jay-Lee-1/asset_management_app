@@ -13172,6 +13172,30 @@ test('homeAlerts: 예산 이내(초과 없음)면 budgetOver/budgetOverMulti 둘
   const alerts = sandbox.homeAlerts([]);
   assert.ok(!alerts.some((a) => a.kind === 'budgetOver' || a.kind === 'budgetOverMulti'));
 });
+/* homeAlerts()의 budgetOver 판정이 flat budgetForMonth()만 보면, 예산 이월(catBudgetRollover)을 켠
+ * 카테고리에서 지난달 아낀 돈으로 늘어난 실질 한도(budgetForMonthWithCarry) 안에서 썼는데도 홈 카드/OS
+ * 푸시엔 "예산 초과"가 뜨고 openSpendAnalysis 화면엔 "초과 아님"이 뜨는 화면 간 불일치가 생겼다
+ * (app-evolve cycle199 critique/advance) */
+test('homeAlerts: 예산 이월(catBudgetRollover) 카테고리는 flat이 아니라 실질 한도(budgetForMonthWithCarry) 기준으로 초과를 판정한다(회귀 확인)', () => {
+  setupHomeAlertsDB();
+  sandbox.setBudgetRolloverCat('식비', true);
+  sandbox.setBudgetFrom('식비', 2026, 5, 100000);
+  sandbox.DB.txns.push({ id: 't0', date: '2026-05-05', type: 'expense', category: '식비', amount: 70000 }); // 전달: flat 10만원 중 7만원만 써서 이월 3만원 발생
+  sandbox.setBudgetFrom('식비', 2026, 6, 100000);
+  sandbox.DB.txns.push({ id: 't1', date: '2026-06-05', type: 'expense', category: '식비', amount: 120000 }); // 이번 달: flat 10만원은 넘지만 실질 한도(13만원)는 안 넘음
+  assert.strictEqual(sandbox.budgetForMonthWithCarry('식비', 2026, 6), 130000, '실질 한도가 13만원이어야 함(테스트 전제 확인)');
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(
+    !alerts.some((a) => a.kind === 'budgetOver' || a.kind === 'budgetOverMulti'),
+    'flat 10만원만 보면 거짓으로 예산 초과가 떴을 지점 — 실질 한도 13만원 안이므로 뜨면 안 됨',
+  );
+
+  sandbox.DB.txns.push({ id: 't2', date: '2026-06-06', type: 'expense', category: '식비', amount: 20000 }); // 실질 한도(13만원)까지 넘기면 그때는 진짜 초과
+  const bo = sandbox.homeAlerts([]).filter((a) => a.kind === 'budgetOver' || a.kind === 'budgetOverMulti');
+  assert.strictEqual(bo.length, 1);
+  assert.strictEqual(bo[0].kind, 'budgetOver');
+  assert.strictEqual(bo[0].budget, 130000, '알림에 실린 budget도 flat이 아니라 실질 한도여야 함');
+});
 /* 목표일보다 늦어지는 목표(goalBehind/goalBehindMulti) — budgetOver/budgetOverMulti와 동일한 1건/N건
  * 묶음 패턴을 goals에도 적용. goalProgress()의 추세 투사(목표일을 못 맞추거나 추세가 0/음수라
  * projectedDate가 안 나옴)를 그대로 재사용하므로, homeAlerts 쪽은 묶음 분기만 검증한다(app-evolve cycle173 advance) */
