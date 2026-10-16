@@ -1387,7 +1387,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.165';
+const APP_VERSION='1.47.166';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6232,6 +6232,24 @@ function sanitizeBackup(obj){
    * 않으면 손상된 백업/원격 데이터의 음수 amount가 balancesUpTo()의 -sign*t.amount 계산에서
    * 부호가 뒤집혀 반대 방향 입출금으로 조용히 오염된다. */
   if('amount' in d){const n=sanitizeAmount(d.amount,0);if(n!==d.amount){d.amount=n;fixedCount++}}
+  /* t.splits(분할 거래, app-evolve cycle198)는 saveTx()가 저장 시점에만 category/amount 전부 입력·
+   * 합계 일치를 강제하고, 백업 복원/클라우드 머지가 공유하는 이 유일한 검증 체크포인트에서는
+   * 전혀 재검증되지 않았다 — 손상된 백업이나 다른 기기에서 동기화된 데이터에 category 없는
+   * split, amount가 NaN/음수/문자열인 split, 합계가 d.amount와 안 맞는 split이 들어오면
+   * splitLines()가 그대로 소비해 spendByCategory/budgetForMonthWithCarry/homeAlerts의 예산
+   * 집계에 NaN이 조용히 전파된다(원장/잔액 화면은 d.amount를 직접 써서 정상으로 보여 화면 간
+   * 수치 drift가 생김). 손상된 항목을 걸러낸 뒤 유효 항목이 2개 미만이거나(txSplitRemove가
+   * 2개 밑으로는 못 내려가게 하는 UI 불변식과 동일) 합계가 d.amount와 다르면 splits 전체를
+   * 지워 top-level category/amount로 fallback시킨다(saveTx와 동일한 "분할 아님" 처리). */
+  if('splits' in d){
+   if(!Array.isArray(d.splits)){delete d.splits;fixedCount++}
+   else{
+    const cleaned=d.splits.filter(s=>s&&typeof s.category==='string'&&s.category).map(s=>Object.assign({},s,{amount:sanitizeAmount(s.amount,0)})).filter(s=>s.amount>0);
+    const sum=cleaned.reduce((s,x)=>s+x.amount,0);
+    if(cleaned.length<2||sum!==d.amount){delete d.splits;fixedCount++}
+    else if(cleaned.length!==d.splits.length||cleaned.some((s,i)=>s.amount!==d.splits[i].amount)){d.splits=cleaned;fixedCount++}
+   }
+  }
   /* CSV 가져오기(buildImportPreview)는 RANGE_FROM~RANGE_TO 밖 행을 rangeCount로 세어 사용자에게
    * 보여주는데, 백업/클라우드 복원 경로만 이 카운트가 없었다 — 복원된 txn은 DB엔 그대로
    * 남지만 범위 밖 날짜라 allTxns(RANGE_FROM,RANGE_TO) 기반 잔액·집계에서는

@@ -1,12 +1,15 @@
 {
-  "cycle": 200,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "sanitizeBackup()이 t.splits(분할 거래)를 전혀 검증하지 않는 공백 - 백업 복원/클라우드 머지 경로로 손상된 split이 들어오면 NaN이 지출분석/예산 집계로 조용히 전파",
-    "why": "sanitizeBackup()(index.html:6223-6400+)은 restoreBackup과 모든 클라우드 머지(mergeRemoteDataIntoLocal) 경로가 공유하는 유일한 데이터 검증 체크포인트로, amount/assets/recurrences/goals/inquiries/assetQtyLog/categories/owners/budgetHistory/budgets/catIcon/rates/nwHistory/deletedIds/settings 전부에 대해 76개 테스트로 뒷받침된 검증 분기를 갖고 있다. 그런데 cycle198에서 추가된 t.splits 필드는 saveTx()(4343-4348)가 저장 시점에만 '카테고리/금액 모두 입력, 합계=t.amount'를 강제하고, 복원/동기화 경로에서는 전혀 재검증되지 않는다. 손상되거나 손으로 편집된 백업 JSON, 또는 다른 기기에서 동기화된 상한 payload에 category:null/빈 문자열 split이나 amount가 NaN/음수/문자열인 split, 혹은 합계가 t.amount와 안 맞는 split이 들어오면 splitLines()(logic.js:340-341)가 그대로 소비해 spendByCategory/budgetForMonthWithCarry/homeAlerts의 예산 초과 판정에 NaN이 전파되는데, 원장/잔액 화면은 t.amount를 직접 써서 정상으로 보여 두 화면 간 조용하고 영구적인 수치 drift가 생긴다. 이 함수의 기존 커밋 이력 자체가 '새 필드가 생길 때마다 검증 분기를 반응적으로 추가해온' 패턴이고(goals/inquiries/assetQtyLog 사례), splits는 아직 추가되지 않은 가장 최근 사례다. CSV split export 제한(cycle198에서 의도적으로 문서화된 제한)이나 delAsset/delCat/delOwner cascade(이미 cycle179/180/194/197에서 충분히 강화됨) 같은 후보보다 이쪽이 실제 silent-corruption 경로가 있는 진짜 공백이라 우선한다.",
-    "approach": "index.html의 sanitizeBackup() 중 txns 루프(6227-6241 근방, d.amount 검증 직후)에 d.splits 검증을 추가한다: Array.isArray(d.splits)이면 category가 비어있거나 문자열이 아닌 항목, amount가 sanitizeAmount(x.amount,0) 결과 0 이하이거나 유한하지 않은 항목을 제거한 뒤 남은 항목들의 합을 재계산한다. 유효 항목이 2개 미만이거나 합계가 (이미 정제된) d.amount와 다르면 d.splits 전체를 delete해 splitLines()가 top-level category/amount로 fallback하게 한다(saveTx가 '2개 미만이면 분할 아님'으로 취급하는 것과 동일한 관례). 변경/제거가 있으면 기존 fixedCount/droppedCount 카운터를 증가시켜 복원 요약 토스트에 자동으로 반영되게 한다(새 UI 불필요). index.html 변경이므로 APP_VERSION(1390 근방)과 sw.js CACHE를 함께 올린다. test/run.js의 다른 txn sanitizeBackup 테스트들(6385-6412 근방) 옆에 5건 추가: (1) splits가 배열이 아니면 조용히 제거되고 크래시 없음, (2) category가 null/빈 문자열인 split 항목 제거 후 남은 게 2개 미만이면 splits 전체 삭제돼 top-level로 fallback, (3) amount가 NaN/음수/문자열인 split 항목도 동일하게 제거/삭제, (4) 정제 후 합계가 d.amount와 안 맞으면 splits 전체 삭제돼 fallback(핵심 NaN/drift 방지 케이스), (5) 정상 split(2개 이상, 합계 일치)은 그대로 보존되는 회귀 테스트. 커밋 전 node our-assets-v1.14.1/our-assets/test/run.js 통과 확인 필수."
-  },
+  "cycle": 201,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 200,
+      "phase": "advance",
+      "timestamp": "2026-10-16T05:10:39.454Z",
+      "summary": "critique(cycle200) 계획대로 sanitizeBackup()의 txns 루프(d.amount 검증 직후)에 d.splits 검증을 추가했다 — category가 없거나 문자열이 아닌 split 항목, amount가 sanitizeAmount(x.amount,0) 후 0 이하(NaN/음수/문자열 포함)인 항목을 제거한 뒤 합계를 재계산하고, 유효 항목이 2개 미만이거나 합계가 d.amount와 다르면 d.splits 전체를 delete해 splitLines()가 top-level category/amount로 fallback하게 했다(saveTx가 쓰는 \"2개 미만이면 분할 아님\" 관례, txSplitRemove가 2개 밑으로 못 내려가게 하는 UI 불변식과 동일). 손상/제거가 있으면 기존 fixedCount 카운터만 증가시켜 새 UI 없이 복원 요약 토스트에 자동 반영되게 했다. test/run.js의 다른 txn sanitizeBackup 테스트들 옆에 5건 추가: (1) splits가 배열이 아니면 조용히 제거(크래시 없음), (2) category 없는 split 제거 후 2개 미만이면 전체 삭제 후 top-level fallback, (3) amount가 NaN/음수/문자열인 항목도 동일 처리, (4) 정제 후 합계 불일치 시 전체 삭제(핵심 NaN/drift 방지 케이스), (5) 정상 split(2개 이상, 합계 일치)은 그대로 보존(회귀 가드). index.html/sw.js 변경이라 APP_VERSION 1.47.165->1.47.166, sw.js CACHE v427->v428 갱신. node our-assets-v1.14.1/our-assets/test/run.js 1495/1495 -> 1500/1500 통과. pending_advance_plan을 비웠다.",
+      "commit": null
+    },
     {
       "cycle": 200,
       "phase": "critique",
@@ -138,13 +141,6 @@
       "phase": "develop",
       "timestamp": "2026-10-15T22:10:04.662Z",
       "summary": "Explore 서브에이전트로 develop 후보를 탐색 — openQuickList()(index.html:7329-7338, 변동 실제금액 입력 여러 건을 한 시트에서 보여주는 함수)가 형제 함수인 openConfirmTransferList()/openNegList()와 똑같은 0건/1건/N건 분기 구조를 공유하는데도, 그 둘은 cycle156/157에서 이미 직접 실행형 테스트를 받았고 openQuickList만 critique 이력에 이름이 남은 채 테스트가 전혀 없었음(코드 자체에 버그는 없음, 순수 테스트 커버리지 공백). FUNCTIONS 목록에 openQuickList 추가 + test/run.js에 2건 추가: (1) 입력할 변동 항목이 없으면 토스트만 뜨고 시트 안 열림, 정확히 1건이면 목록 없이 바로 그 건의 saveQuickAmount 개별 시트로 가고 목록 제목(\"실제 금액 입력\")은 안 보임 — setupHomeAlertsDB + setCatVar로 변동 카테고리 1건 구성, (2) 2건 이상(지출+수입 섞어서)이면 \"변동 항목 2건\" 안내와 함께 각 행이 자신의 openQuickAmount(recId,date)로 연결되고 카테고리/메모가 보임. 프로덕션 코드 변경 없음(테스트 전용이라 APP_VERSION/CACHE 변경 없음). node our-assets-v1.14.1/our-assets/test/run.js 1489/1489 -> 1491/1491 통과.",
-      "commit": null
-    },
-    {
-      "cycle": 199,
-      "phase": "review",
-      "timestamp": "2026-10-15T23:05:00.000Z",
-      "summary": "cycle199 develop(openQuickList 실행형 테스트 2건, commit 0013a2e) 검토 — openQuickList() 소스(index.html:7329-7338)를 직접 대조해 0건(토스트만, 시트 안 염)/1건(목록 없이 바로 openQuickAmount)/N건(각 행이 자신의 recId/date로 openQuickAmount 연결, 건수·카테고리·메모 표시) 분기와 테스트 기대값이 정확히 일치함을 확인. 형제 함수 openConfirmTransferList/openNegList의 기존 실행형 패턴과 구조가 같음. node our-assets-v1.14.1/our-assets/test/run.js 1491/1491 통과. 이상 없음, 코드 변경 없음.",
       "commit": null
     }
   ]

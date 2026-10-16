@@ -6409,6 +6409,70 @@ test('sanitizeBackup: 거래 금액이 음수면 0으로 클램프한다(방향�
   assert.strictEqual(data.txns[0].amount, 0);
   assert.strictEqual(fixedCount, 1);
 });
+/* ---------- sanitizeBackup: t.splits(분할 거래, app-evolve cycle198)는 saveTx()가 저장 시점에만
+ * 검증하고 백업 복원·클라우드 머지가 공유하는 이 체크포인트에서는 재검증이 없었다(app-evolve
+ * cycle200 critique/advance). 손상된 split이 들어오면 splitLines()가 그대로 소비해 예산 집계에
+ * NaN이 전파되므로, 손상된 항목을 걸러낸 뒤 유효 항목이 2개 미만이거나 합계가 안 맞으면 splits
+ * 전체를 지워 top-level category/amount로 fallback시킨다. ---------- */
+test('sanitizeBackup: splits가 배열이 아니면 조용히 제거하고 fixedCount를 센다(크래시 없음)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    assets: [],
+    txns: [{ id: 't1', date: '2026-01-01', amount: 10000, category: '식비', splits: 'oops' }],
+  });
+  assert.strictEqual('splits' in data.txns[0], false);
+  assert.strictEqual(data.txns[0].category, '식비');
+  assert.strictEqual(fixedCount, 1);
+});
+test('sanitizeBackup: category가 없는 split 항목을 제거한 뒤 유효 항목이 2개 미만이면 splits 전체를 지워 top-level로 fallback한다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    assets: [],
+    txns: [{ id: 't1', date: '2026-01-01', amount: 10000, category: '식비', splits: [
+      { category: '식비', amount: 10000 },
+      { category: '', amount: 0 },
+    ] }],
+  });
+  assert.strictEqual('splits' in data.txns[0], false);
+  assert.strictEqual(data.txns[0].amount, 10000);
+  assert.strictEqual(fixedCount, 1);
+});
+test('sanitizeBackup: amount가 NaN/음수/문자열인 split 항목도 걸러내고, 남은 게 2개 미만이면 splits를 지운다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    assets: [],
+    txns: [{ id: 't1', date: '2026-01-01', amount: 10000, category: '식비', splits: [
+      { category: '식비', amount: 10000 },
+      { category: '생활용품', amount: 'oops' },
+      { category: '교통', amount: -500 },
+    ] }],
+  });
+  assert.strictEqual('splits' in data.txns[0], false);
+  assert.strictEqual(fixedCount, 1);
+});
+test('sanitizeBackup: 정제 후 합계가 d.amount와 다르면 splits 전체를 지워 NaN/drift 전파를 막는다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    assets: [],
+    txns: [{ id: 't1', date: '2026-01-01', amount: 10000, category: '식비', splits: [
+      { category: '식비', amount: 6000 },
+      { category: '생활용품', amount: 3000 },
+    ] }],
+  });
+  assert.strictEqual('splits' in data.txns[0], false);
+  assert.strictEqual(data.txns[0].amount, 10000);
+  assert.strictEqual(fixedCount, 1);
+});
+test('sanitizeBackup: 유효한 split(2개 이상, 합계 일치)은 그대로 보존한다(정상 케이스는 회귀 없음)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    assets: [],
+    txns: [{ id: 't1', date: '2026-01-01', amount: 10000, category: '식비', splits: [
+      { category: '식비', amount: 6000 },
+      { category: '생활용품', amount: 4000 },
+    ] }],
+  });
+  assert.strictEqual(Array.isArray(data.txns[0].splits), true);
+  assert.strictEqual(data.txns[0].splits.length, 2);
+  assert.strictEqual(data.txns[0].splits[0].amount, 6000);
+  assert.strictEqual(data.txns[0].splits[1].amount, 4000);
+  assert.strictEqual(fixedCount, 0);
+});
 test('sanitizeBackup: 자산의 보유수량 필드(fxAmount/goldDon/stockQty)는 음수면 0으로 클램프한다', () => {
   const { data, fixedCount } = sandbox.sanitizeBackup({
     txns: [],
