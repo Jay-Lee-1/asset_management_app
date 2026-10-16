@@ -1,14 +1,14 @@
 {
   "cycle": 200,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
-      "cycle": 195,
+      "cycle": 200,
       "phase": "develop",
-      "timestamp": "2026-10-15T05:30:00.000Z",
-      "summary": "목표 화면(goalRowHTML/openGoalsList)에 '목표일이 지났는데 아직 달성 못함'을 보여줄 표시가 전혀 없던 공백 발견 — homeAlerts()의 goalBehind 알림은 hist.length>=2 && !goalHasUnknown을 요구해 신규 목표·미확인 자산 섞인 목표에는 안 뜨는데, 목표 화면 자체엔 그 전제와 무관하게 '지났다'는 가장 단순한 사실조차 없었음. logic.js에 goalIsOverdue(targetDate,achieved,today) 순수함수 신설(targetDate<today && !achieved만 봄, ===today는 아직 안 지남). index.html의 goalRowHTML()에 '목표일 지남' mini warn 배지(일부 미확인 배지와 같은 자리) + aria-label 보강, openGoalsList() 행의 목표일 캡션 옆에 '지남' 배지 추가. test/run.js에 goalIsOverdue 경계 테스트 5건 추가(미설정/달성함/오늘/과거/미래). index.html/logic.js/sw.js 변경이라 APP_VERSION 1.47.157->1.47.158, sw.js CACHE v419->v420 갱신. node test/run.js 1446/1446 -> 1451/1451 통과.",
-      "commit": "02ffe5a"
+      "timestamp": "2026-10-16T00:00:00.000Z",
+      "summary": "Explore 서브에이전트로 develop 후보를 탐색 — modeSeg(tab)(index.html:3990-3994, 가계부/전체내역 헤더의 달력↔검색 세그먼트)의 filtered 플래그가 ST.hist.cat/q/assetId 세 개만 보고 ST.hist.catExact(지출분석 화면의 '내역' 버튼이 세팅하는 카테고리 드릴다운 필터)와 ST.hist.owner(귀속 필터, catExact와 항상 함께 세팅/해제됨)를 빼놓던 버그 발견 — 지출분석에서 '식비' 내역을 보고 달력 탭으로 넘어가면(toCal()/toList()는 ST.hist를 안 지움, 필터가 탭 전환 중에도 유지되는 건 의도된 동작) catExact='식비' 필터가 여전히 걸려 있는데도 chip-dot이 사라져, '검색으로 돌아가면 식비만 보인다'는 유일한 시각적 흔적이 끊김. ST.hist.owner가 사라진 귀속 이름을 들고 있으면 내역이 조용히 전부 사라지는 cycle181/182 버그, catExact 칩이 옛 이름에 남는 cycle182 버그와 같은 '필터 흔적 공백' 버그 클래스의 재발. filtered 식에 ||!!ST.hist.catExact||(ST.hist.owner&&ST.hist.owner!=='전체') 추가(기존 cat/q/assetId 체크는 그대로, filteredHist() 등 실제 필터링 로직은 안 건드린 순수 UI 인디케이터 수정). test/run.js에 기존 chip-dot 테스트(15292행 근방) 바로 옆에 3건 추가: catExact만 있을 때, owner만 '전체'가 아닐 때, 둘 다 기본값일 때(dot 없음, 회귀 가드). index.html/sw.js 변경이라 APP_VERSION 1.47.164->1.47.165, sw.js CACHE v426->v427 갱신. node test/run.js 1492/1492 -> 1495/1495 통과.",
+      "commit": null
     },
     {
       "cycle": 195,

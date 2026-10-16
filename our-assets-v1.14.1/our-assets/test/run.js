@@ -15295,6 +15295,27 @@ test('modeSeg: ST.hist.cat이 좁혀져 있으면(필터 남은 상태) 가계�
   const html = sandbox.modeSeg('ledger');
   assert.ok(html.includes('chip-dot'), 'ST.hist.cat이 전체가 아니면 modeSeg()가 chip-dot을 표시해야 함');
 });
+/* openCatHistory()(지출분석 화면의 "내역" 버튼)가 세팅하는 ST.hist.catExact/owner는 cat/q/assetId와
+ * 똑같이 전체내역 탭을 실제로 좁히는 필터인데, modeSeg()의 filtered 체크가 cat/q/assetId 세 개만 보고
+ * 이 둘을 빼놓아서 지출분석→내역→달력으로 돌아가면 필터가 여전히 걸려 있는데도 chip-dot이 사라져
+ * '검색으로 돌아가면 뭐가 보일지' 흔적이 끊기는 공백이었다 (app-evolve cycle200 develop). */
+test('modeSeg: ST.hist.catExact(지출분석 카테고리 드릴다운)가 걸려 있으면 가계부↔전체내역 세그먼트에 chip-dot이 뜬다', () => {
+  setupHistoryDB();
+  sandbox.ST.hist.catExact = '식비';
+  const html = sandbox.modeSeg('ledger');
+  assert.ok(html.includes('chip-dot'), 'ST.hist.catExact가 있으면 modeSeg()가 chip-dot을 표시해야 함');
+});
+test('modeSeg: ST.hist.owner가 "전체"가 아니면(귀속 필터) 가계부↔전체내역 세그먼트에 chip-dot이 뜬다', () => {
+  setupHistoryDB();
+  sandbox.ST.hist.owner = '나';
+  const html = sandbox.modeSeg('ledger');
+  assert.ok(html.includes('chip-dot'), 'ST.hist.owner가 전체가 아니면 modeSeg()가 chip-dot을 표시해야 함');
+});
+test('modeSeg: catExact/owner가 모두 기본값이면(cat/q/assetId도 기본값) chip-dot이 안 뜬다', () => {
+  setupHistoryDB();
+  const html = sandbox.modeSeg('ledger');
+  assert.ok(!html.includes('chip-dot'), '모든 필터가 기본값이면 chip-dot이 뜨면 안 됨');
+});
 
 /* ---------- renderHistory/histPreset: 전체내역 기간 빠른 선택 칩 (app-evolve cycle193 develop) ----------
  * ST.hist.preset 필드와 histPreset('month'/'q3') 분기는 이미 있었지만 이를 실제로 호출하는 UI가

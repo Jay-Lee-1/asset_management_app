@@ -1387,7 +1387,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.164';
+const APP_VERSION='1.47.165';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3989,7 +3989,7 @@ function calPane(y,m,sel,live,txMap){
 }
 function modeSeg(tab){ /* 달력/목록 컴팩트 세그먼트 (헤더용) */
  const isCal=(tab==='ledger');
- const filtered=(ST.hist.cat!=='전체'||ST.hist.q!==''||!!ST.hist.assetId);
+ const filtered=(ST.hist.cat!=='전체'||ST.hist.q!==''||!!ST.hist.assetId||!!ST.hist.catExact||(ST.hist.owner&&ST.hist.owner!=='전체')); /* catExact/owner(지출분석 카테고리 드릴다운이 세팅)도 봐야 함 — 안 그러면 달력↔전체내역 토글 중 필터가 안 보이는 흔적 공백(cat/q/assetId만 보던 원래 체크의 누락) */
  return `<div class="mseg" role="group" aria-label="보기 방식 선택"><button class="${isCal?'on':''}" aria-pressed="${isCal}" onclick="${isCal?'':'toCal()'}">달력</button><button class="${!isCal?'on':''}" aria-pressed="${!isCal}" onclick="${!isCal?'':'toList()'}">검색${filtered?'<span class="chip-dot"></span>':''}</button></div>`;
 }
 function ledgerRowsHtml(d){
