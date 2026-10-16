@@ -1,7 +1,11 @@
 {
   "cycle": 199,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "homeAlerts()의 예산 초과 판정이 예산 이월(rollover)을 무시해 거짓 \"예산 초과\" 알림/푸시를 보냄",
+    "why": "cycle194가 예산 이월(catBudgetRollover) 기능을 추가하면서 openSpendAnalysis()(index.html:5402)와 totalBudgetSummary()(5371)는 이월이 반영된 실질 한도 budgetForMonthWithCarry()로 갈아탔지만, 홈 화면 알림·카드·OS 푸시 알림을 만드는 homeAlerts()의 예산 초과 집계(index.html:7653-7654, `_bo=spendByCategory(...).filter(r=>{const b=budgetForMonth(r.c,TM.y,TM.m);return b>0&&r.v>b})`)는 여전히 flat budgetForMonth()만 본다. 이월을 켠 카테고리에서 지난달 아낀 돈이 이번 달 실질 한도를 늘려줬는데도, 홈 카드엔 \"예산을 초과했어요\"가 뜨고 OS 알림(osNotify 켜져 있으면 notifyAlertInfo의 budgetOver, 7691행)까지 발송된다 — 바로 다음에 사용자가 지출분석 화면을 열면 \"초과 아님\"이라고 나와 두 화면이 서로 다른 말을 하는 눈에 보이는 버그이자, 막 투자한 이월 기능의 신뢰를 깎는 지점이다. cycle196이 budgetCarryFor 자체의 재귀 체이닝 버그는 고쳤지만 이 호출부는 건드리지 않아 지금까지 남아있다.",
+    "approach": "index.html의 homeAlerts()에서 7653행 `const b=budgetForMonth(r.c,TM.y,TM.m)`와 7654행의 동일 표현을 `budgetForMonthWithCarry(r.c,TM.y,TM.m)`로 교체한다(둘 다 같은 달 기준이라 단순 치환, 시그니처도 동일). 이월이 꺼진 카테고리는 budgetCarryFor가 0을 반환해 budgetForMonthWithCarry===budgetForMonth와 동일하므로 하위호환. test/run.js의 homeAlerts 블록(13148행 근방, setupHomeAlertsDB 패턴)에 신규 테스트 추가: (1) 전달에 이월 카테고리로 설정 후 예산보다 적게 써서(예: flat 100000에 70000 지출) 이번 달 carry=30000이 생기도록 budgetHistory/txns를 구성하고, 이번 달 지출을 flat~실질 한도 사이(예: 120000, flat 100000보다 많지만 실질 130000보다 적게)로 넣었을 때 수정 전엔 budgetOver가 뜨고 수정 후엔 안 뜨는 것을 확인(버그 재현 테스트이므로 선 실패 확인 후 수정 적용), (2) 기존 '예산 초과'/'예산 이내' 테스트(13148/13168)가 이월 없는 카테고리 기준이라 그대로 통과하는지 재확인. notifyAlertInfo의 budgetOver 문구(al.budget)도 이제 실질 한도를 보여주게 되므로, 관련 알림 카드 렌더(7828행 부근)에 실질 한도 숫자가 노출되는 곳이 있으면 문구가 어색하지 않은지 같이 확인한다. index.html 변경이므로 APP_VERSION/sw.js CACHE 버전을 올린다."
+  },
   "history": [
     {
       "cycle": 194,
@@ -141,6 +145,13 @@
       "phase": "review",
       "timestamp": "2026-10-15T23:05:00.000Z",
       "summary": "cycle199 develop(openQuickList 실행형 테스트 2건, commit 0013a2e) 검토 — openQuickList() 소스(index.html:7329-7338)를 직접 대조해 0건(토스트만, 시트 안 염)/1건(목록 없이 바로 openQuickAmount)/N건(각 행이 자신의 recId/date로 openQuickAmount 연결, 건수·카테고리·메모 표시) 분기와 테스트 기대값이 정확히 일치함을 확인. 형제 함수 openConfirmTransferList/openNegList의 기존 실행형 패턴과 구조가 같음. node our-assets-v1.14.1/our-assets/test/run.js 1491/1491 통과. 이상 없음, 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 199,
+      "phase": "critique",
+      "timestamp": "2026-10-16T00:00:00.000Z",
+      "summary": "Explore 서브에이전트로 앱 전반을 훑어, homeAlerts()의 예산 초과 집계(index.html:7653-7654)가 여전히 flat budgetForMonth()만 보고 cycle194가 추가한 예산 이월(catBudgetRollover)을 무시하는 버그를 발견 — openSpendAnalysis/totalBudgetSummary는 이미 budgetForMonthWithCarry로 갈아탔는데 홈 알림/카드/OS 푸시(notifyAlertInfo budgetOver)만 안 갈아타서, 이월로 실질 한도가 늘어난 카테고리에서 홈엔 '예산 초과'가 뜨고 지출분석 화면엔 '초과 아님'이 뜨는 화면 간 불일치가 생김. budgetForMonth(r.c,TM.y,TM.m)->budgetForMonthWithCarry(r.c,TM.y,TM.m) 단순 치환(이월 꺼진 카테고리는 결과 동일, 하위호환) + homeAlerts 테스트 블록(13148행 근방)에 버그 재현 테스트(수정 전 실패 확인 후 적용) 추가 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     }
   ]
