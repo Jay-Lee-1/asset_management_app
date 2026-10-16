@@ -1,8 +1,15 @@
 {
   "cycle": 202,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 202,
+      "phase": "develop",
+      "timestamp": "2026-10-16T10:13:28.323Z",
+      "summary": "Explore 서브에이전트로 develop 후보를 탐색 — openOwnerManage()(index.html:3843)가 openCatManage/openRecManage/assetBalCard가 이미 거친 \"소스-매칭 또는 無테스트\" 공백의 다음 인스턴스임을 발견(test/run.js의 유일한 기존 테스트가 extractFunction() 소스 문자열만 검사, 실제 실행/렌더 검증 없음). openRecManage/assetBalCard와 같은 격리 vm 컨텍스트 패턴으로 ownerManageCtx() 헬퍼를 test/run.js에 신설(logic.js + extractFunction(\"openOwnerManage\")만 로드, openSheet/svg 최소 스텁). 공유 sandbox의 FUNCTIONS 목록에 직접 추가하는 방식도 시도했으나, addOwner/delOwner/doRenameOwner의 기존 테스트들이 DB.assets 없이 DB를 구성해둔 경우가 많아(이들 함수가 성공 시 호출하는 openOwnerManage() 기존 no-op 스텁을 실제 함수로 바꾸면 DB.assets.filter에서 throw) 되돌리고 격리 컨텍스트로 전환 — 공유 sandbox의 openOwnerManage 스텁은 그대로 유지. 실행형 테스트 3건 추가: (1) 귀속별 자산 개수(DB.assets.filter)가 \"N개 자산\"으로 정확히 집계되고 수정/삭제 버튼의 aria-label·onclick 인덱스가 귀속별로 맞는지, (2) 자산이 0개인 귀속도 죽지 않고 \"0개 자산\"으로 뜨는지(회귀 가드), (3) newOwner 입력의 field-clear(×) 버튼(기존 소스-매칭 테스트를 실행형으로 승격). 테스트를 작성하며 실제 렌더 로직에서 버그는 발견되지 않아 index.html/logic.js/sw.js는 건드리지 않았다(APP_VERSION/CACHE 변경 없음, 순수 테스트 커버리지 추가). node our-assets-v1.14.1/our-assets/test/run.js 1508/1508 -> 1510/1510 통과.",
+      "commit": null
+    },
     {
       "cycle": 201,
       "phase": "advance",
@@ -135,13 +142,6 @@
       "timestamp": "2026-10-15T17:09:57.823Z",
       "summary": "critique(cycle197) 계획대로 openRecManage()에 실행형(sandbox-rendered) 테스트 커버리지를 추가했다. spendAnalysisCtx()와 같은 격리-vm-컨텍스트 패턴으로 recManageCtx() 헬퍼를 test/run.js에 신설(logic.js + recFreqLabel/ADJUST_CAT/CATICON/catKey/catIconOf/catGlyph/comma/openRecManage만 별도 컨텍스트에서 컴파일, openSheet는 lastSheetHtml 캡처 스텁). 5건 추가: (1) 데이터 없는 type은 그룹 헤더가 안 뜸, (2) 여러 type이 각각 \"라벨 · N개\"로 집계됨, (3) paused 항목만 \"중지\" 배지+opacity:.4+play 아이콘이 붙고 active 항목엔 안 붙음, (4) 기간 라벨이 endDate 유무에 따라 \"YYYY.MM ~ YYYY.MM\"/\"YYYY.MM ~\"로 포맷됨, (5) DB.recurrences가 비어있으면 빈 상태 문구가 뜸. 테스트를 작성하며 실제 렌더 로직에서 버그는 발견되지 않아 index.html/logic.js/sw.js는 건드리지 않았다(APP_VERSION/CACHE 변경 없음). node our-assets-v1.14.1/our-assets/test/run.js 1454/1454 -> 1459/1459 통과. pending_advance_plan을 비웠다.",
       "commit": null
-    },
-    {
-      "cycle": 198,
-      "phase": "develop",
-      "timestamp": "2026-10-15T18:10:00.000Z",
-      "summary": "Explore 서브에이전트로 develop 후보를 탐색 — openQuickList/openStaleMvReview(테스트 커버리지 후보)는 실제 버그가 없는 반면, openQuickAmount(index.html:7266-7276)의 '지난번'/'지난달' 힌트 문구가 r.freq를 전혀 보지 않고 inc(수입 여부)만으로 결정돼, daily/weekly/yearly 변동 지출에도 무조건 '지난달은 ~원이었어요'라고 잘못 표시되는 실제 버그(varyingRecs가 daily/weekly 변동 지출을 명시적으로 지원하는데도)를 발견. lastLabel=(!inc&&(r.freq==='monthly'||!r.freq))?'지난달':'지난번'로 수정(freq 없는 기존 데이터는 index.html:4243과 동일하게 monthly로 간주해 기존 동작 보존, 수입은 freq 무관하게 항상 '지난번' 유지). test/run.js에 weekly/daily/monthly/수입-weekly 4건 추가. index.html 변경이라 APP_VERSION 1.47.161->1.47.162, sw.js CACHE v423->v424 갱신. node test/run.js 1459/1459 -> 1463/1463 통과.",
-      "commit": "14c9849"
     }
   ]
 }

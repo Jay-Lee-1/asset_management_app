@@ -12258,13 +12258,59 @@ test('renderAssetSheet: savings 타입은 만기일 필드를 보여주고, cash
   assert.ok(!cashHtml.includes('id="asMat"'), 'cash 타입에는 만기일 필드가 없어야 함');
   assert.ok(!cashHtml.includes('id="asCostBasis"'), 'cash 타입에는 매입 원가 필드가 없어야 함(fx/gold/stock 전용)');
 });
-/* openOwnerManage/renameOwnerSheet/renameCatSheet는 FUNCTIONS(실제 실행) 목록 밖이라
- * renderAssetSheet의 asFx/asGold/asQty 검증과 같은 extractFunction() 소스 패턴 검증을 쓴다
- * (app-evolve cycle148 develop — newCat은 openCatManage가 FUNCTIONS에 있어 실제 실행으로 검증). */
-test('openOwnerManage: newOwner(귀속 추가 입력)도 다른 이름 입력란과 동일하게 field-clear(×) 버튼이 있다', () => {
-  const body = extractFunction('openOwnerManage');
-  assert.ok(body.includes('<div class="add-inline"><div class="field-clear"><input id="newOwner"'), 'newOwner 입력이 field-clear로 감싸져 있지 않음');
-  assert.ok(body.includes(`<button type="button" class="fc-x" aria-label="귀속 이름 지우기" onclick="clrInput('newOwner')">`), 'newOwner에 fc-x 지우기 버튼의 clrInput 연결이 없음');
+/* renameOwnerSheet/renameCatSheet는 FUNCTIONS(실제 실행) 목록 밖이라 renderAssetSheet의
+ * asFx/asGold/asQty 검증과 같은 extractFunction() 소스 패턴 검증을 쓴다(app-evolve cycle148
+ * develop — newCat은 openCatManage가 FUNCTIONS에 있어 실제 실행으로 검증). openOwnerManage는
+ * 바로 아래 ownerManageCtx()로 격리 실행 검증으로 승격했다(app-evolve cycle202 develop —
+ * openCatManage/openRecManage/assetBalCard가 이미 거친 "소스-매칭 또는 無테스트" 공백의 다음
+ * 인스턴스. addOwner/delOwner/doRenameOwner가 이미 공유 sandbox의 FUNCTIONS 목록에 있어 그
+ * sandbox의 openOwnerManage는 여전히 no-op 스텁으로 둬야 한다 — 실제로 교체해보니 DB.assets를
+ * 세팅하지 않은 addOwner/delOwner 테스트들이 깨짐. openRecManage/assetBalCard와 동일하게
+ * 별도 vm 컨텍스트를 신설한 이유). */
+let _ownerManageCtx = null;
+function ownerManageCtx() {
+  if (_ownerManageCtx) return _ownerManageCtx;
+  const ctx = {
+    lastSheetHtml: null,
+    openSheet: (html) => { ctx.lastSheetHtml = html; },
+    svg: (key) => key,
+  };
+  vm.createContext(ctx);
+  vm.runInContext(logicSrc, ctx, { filename: 'logic.js' });
+  vm.runInContext(extractFunction('openOwnerManage'), ctx, { filename: 'openOwnerManage-real' });
+  _ownerManageCtx = ctx;
+  return ctx;
+}
+test('[실행형] openOwnerManage: 귀속별 자산 개수를 "N개 자산"으로 집계해 보여주고, 수정/삭제 버튼에 귀속 이름이 담긴 aria-label과 올바른 인덱스가 연결된다', () => {
+  const ctx = ownerManageCtx();
+  ctx.DB = {
+    owners: ['나', '배우자'],
+    assets: [
+      { id: 'a1', owner: '나' },
+      { id: 'a2', owner: '나' },
+      { id: 'a3', owner: '배우자' },
+    ],
+  };
+  ctx.openOwnerManage();
+  const html = ctx.lastSheetHtml;
+  assert.ok(html.includes('<div class="mn">나</div><div class="msub">2개 자산</div>'), '나 귀속은 자산 2개로 집계되어야 함');
+  assert.ok(html.includes('<div class="mn">배우자</div><div class="msub">1개 자산</div>'), '배우자 귀속은 자산 1개로 집계되어야 함');
+  assert.ok(html.includes('aria-label="나 수정" onclick="renameOwnerSheet(0)"'), '나(인덱스 0) 수정 버튼의 aria-label/onclick 연결이 틀림');
+  assert.ok(html.includes('aria-label="배우자 삭제" onclick="delOwner(1)"'), '배우자(인덱스 1) 삭제 버튼의 aria-label/onclick 연결이 틀림');
+});
+test('[실행형] openOwnerManage: 자산이 하나도 없는 귀속은 "0개 자산"으로 뜬다(회귀 가드 — used 계산이 비어도 죽지 않아야 함)', () => {
+  const ctx = ownerManageCtx();
+  ctx.DB = { owners: ['나'], assets: [] };
+  ctx.openOwnerManage();
+  assert.ok(ctx.lastSheetHtml.includes('<div class="msub">0개 자산</div>'), '자산 없는 귀속은 0개 자산으로 떠야 함');
+});
+test('[실행형] openOwnerManage: newOwner(귀속 추가 입력)도 다른 이름 입력란과 동일하게 field-clear(×) 버튼이 있다', () => {
+  const ctx = ownerManageCtx();
+  ctx.DB = { owners: ['나'], assets: [] };
+  ctx.openOwnerManage();
+  const html = ctx.lastSheetHtml;
+  assert.ok(html.includes('<div class="add-inline"><div class="field-clear"><input id="newOwner"'), 'newOwner 입력이 field-clear로 감싸져 있지 않음');
+  assert.ok(html.includes(`<button type="button" class="fc-x" aria-label="귀속 이름 지우기" onclick="clrInput('newOwner')">`), 'newOwner에 fc-x 지우기 버튼의 clrInput 연결이 없음');
 });
 test('renameOwnerSheet: renameOwner(귀속 이름 수정 입력)도 동일하게 field-clear(×) 버튼이 있다', () => {
   const body = extractFunction('renameOwnerSheet');
