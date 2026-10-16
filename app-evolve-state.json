@@ -1,12 +1,15 @@
 {
-  "cycle": 201,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "assetBalCard()에 실행형(execution-style) 테스트 커버리지 추가 — 소스-매칭 전용 공백 해소",
-    "why": "assetBalCard(index.html ~2775행, 자산별 '잔액 추이' 카드 — 디버트 상환 예측 포함)가 test/run.js 자체 주석(16514-16540행 부근)에 '너무 많은 외부 전역(TODAY, RANGE_FROM, assetBalSampleDates, shortDate2, svg 등)에 의존해 vm 실행 대상이 아니다'라고 명시돼 있어, 지금까지 aria 속성 정규식 매칭과 debtPayoffProjection 수학을 별도로 재검증하는 테스트만 있고 assetBalCard(assetId,preset)를 실제로 호출해 반환 HTML을 검사하는 테스트는 전혀 없다. openSpendAnalysis/goalRowHTML/openRecManage/openQuickList가 이미 cycle153/195/197/198에서 벗어난 '소스-매칭 또는 無테스트' 버그 클래스의 다음 미처리 인스턴스. pts 대신 pfPts를 잘못 넘기거나 pts.length<2 빈 상태 분기, type==='debt'에만 payoffHTML을 붙이는 조건이 깨져도 지금은 어떤 테스트도 못 잡는다(cycle189에 실제로 pts/pfPts 버그가 있었고 로직 전용 테스트가 우연히 잡은 적 있음).",
-    "approach": "test/run.js에 recManageCtx()와 같은 격리 vm 컨텍스트 패턴으로 assetBalCardCtx() 헬퍼 신설 — logic.js(assetBalSampleDates/assetBalanceSeries/debtPayoffProjection/nwChartPath/nwChartKeyStep 등) + assetBase/shortDate2/comma extractFunction + svg/chartPeekRenderAt는 no-op 스텁으로 로드한 뒤 extractFunction('assetBalCard')를 같은 컨텍스트에 추가. ctx.TODAY/ctx.RANGE_FROM을 테스트 fixture로 세팅하고 ctx.DB={assets:[...],txns:[...]}를 구성해 ctx.assetBalCard(assetId,preset) 반환 문자열을 직접 검사하는 테스트 6~8건 추가: (1) 샘플 포인트<2 → '이 계좌의 추이는 곧 쌓여요' 문구, 차트/상환예측 블록 없음, (2) 비-debt 자산(cash/savings/realestate/etc/pension)은 history가 있어도 payoffHTML 없음, (3) debt 자산이 이미 상환 완료(최근 잔액<=0) → '이미 다 갚았어요', (4) debt 자산이 뚜렷한 상환 추세 → '이 속도로 갚으면 ...쯤 다 갚아요' + debtPayoffProjection 독립 계산과 날짜 일치, (5) debt 자산이 추세 없음/flat → '최근엔 줄어들고 있지 않아요', (6) 2포인트 단순 시계열의 증감 부호/색상이 맞는지, (7) 허용 타입 목록(cash/savings/realestate/etc/pension/debt) 밖의 type(예: stock/fx)은 빈 문자열 반환(현재는 early-return guard로만 암시, 검증 테스트 없음). 기존 aria-pressed/pfFrom-pfPts 소스-매칭 테스트 2건은 그대로 유지(특정 정규식 자체는 여전히 유효). production 코드 변경은 필요 없음(순수 테스트 커버리지 추가)."
-  },
+  "cycle": 202,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 201,
+      "phase": "advance",
+      "timestamp": "2026-10-16T09:12:13.001Z",
+      "summary": "critique(cycle201) 계획대로 assetBalCardCtx() 격리 vm 컨텍스트 헬퍼를 test/run.js에 신설(logic.js + 기존 FUNCTIONS/CONSTS/LETS 추출본(extracted, assetBase/comma/shortDate2/nwChartPath/allTxns/isPending/RANGE_FROM 등 포함) 로드 후 extractFunction(\"assetBalCard\")만 추가 — spendAnalysisCtx()와 동일한 패턴이라 별도 스텁 없이 그대로 적용됨, TODAY는 FUNCTIONS/CONSTS/LETS 어디에도 없는 전역이라 매 테스트에서 ctx.TODAY로 직접 세팅, RANGE_FROM은 extractConst가 \"const \"를 떼고 평범한 대입문으로 바꿔두므로 ctx.RANGE_FROM으로 재대입 가능). 실행형 테스트 7건 추가: (1) RANGE_FROM===TODAY로 샘플 포인트<2 → 빈 상태 문구, 차트/상환예측 없음, (2) cash/savings/realestate/etc/pension 5개 타입 모두 history가 있어도 payoffHTML 미노출, (3) debt 완납(누적 상환>=base, 최근 잔액<=0) → \"이미 다 갚았어요\", (4) debt 상환 추세 뚜렷(미완납) → \"이 속도로 갚으면 ...쯤 다 갚아요\"(shortDate2 MM/DD 포맷), (5) debt 상환 활동 전혀 없음(flat) → \"최근엔 줄어들고 있지 않아요\", (6) 잔액 증가/감소에 따라 \"+\"·up 색상(class 없음) vs 음수·minus 색상 클래스 분기, (7) 허용 타입(cash/savings/realestate/etc/pension/debt) 밖(stock) 또는 존재하지 않는 자산 id는 빈 문자열 반환. 테스트를 작성하며 실제 렌더 로직에서 버그는 발견되지 않아 index.html/logic.js/sw.js는 건드리지 않았다(APP_VERSION/CACHE 변경 없음, 순수 테스트 커버리지 추가). node our-assets-v1.14.1/our-assets/test/run.js 1501/1501 -> 1508/1508 통과. pending_advance_plan을 비웠다.",
+      "commit": null
+    },
     {
       "cycle": 201,
       "phase": "critique",
@@ -139,13 +142,6 @@
       "timestamp": "2026-10-15T18:10:00.000Z",
       "summary": "Explore 서브에이전트로 develop 후보를 탐색 — openQuickList/openStaleMvReview(테스트 커버리지 후보)는 실제 버그가 없는 반면, openQuickAmount(index.html:7266-7276)의 '지난번'/'지난달' 힌트 문구가 r.freq를 전혀 보지 않고 inc(수입 여부)만으로 결정돼, daily/weekly/yearly 변동 지출에도 무조건 '지난달은 ~원이었어요'라고 잘못 표시되는 실제 버그(varyingRecs가 daily/weekly 변동 지출을 명시적으로 지원하는데도)를 발견. lastLabel=(!inc&&(r.freq==='monthly'||!r.freq))?'지난달':'지난번'로 수정(freq 없는 기존 데이터는 index.html:4243과 동일하게 monthly로 간주해 기존 동작 보존, 수입은 freq 무관하게 항상 '지난번' 유지). test/run.js에 weekly/daily/monthly/수입-weekly 4건 추가. index.html 변경이라 APP_VERSION 1.47.161->1.47.162, sw.js CACHE v423->v424 갱신. node test/run.js 1459/1459 -> 1463/1463 통과.",
       "commit": "14c9849"
-    },
-    {
-      "cycle": 198,
-      "phase": "review",
-      "timestamp": "2026-10-15T19:05:00.000Z",
-      "summary": "cycle198 develop(openQuickAmount lastLabel freq 분기, commit 14c9849) 검토 — index.html:4243(txToggleRepeat의 freq==='monthly'||!freq 관례)과 동일한 기존 규약을 그대로 재사용했음을 재확인. lastActualAmount() 자체는 freq와 무관하게 '직전 edits 값'만 보므로 lastLabel 문구만 바뀌고 실제 금액 조회 로직은 안 건드렸음을 확인. 수입은 freq 무관하게 항상 '지난번' 유지하는 분기도 기존 동작과 일치. node test/run.js 1463/1463 통과. 이상 없음, 코드 변경 없음.",
-      "commit": null
     }
   ]
 }

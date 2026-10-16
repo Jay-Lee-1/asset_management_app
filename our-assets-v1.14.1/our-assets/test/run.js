@@ -16569,6 +16569,115 @@ test('assetBalCard 완납 투사 로직: "1개월" preset처럼 pts 자체가 90
   const m3Dates = sandbox.assetBalSampleDates(sandbox.addDays(to, -90), to, 60);
   assert.deepStrictEqual(m3Dates, pfDates, 'm3(from=to-90)와 pfFrom(to-90)은 같은 날짜 샘플을 만들어야 함');
 });
+/* assetBalCard 자체는 TODAY/RANGE_FROM/segHTML 등 FUNCTIONS 목록 밖 전역에 의존해 메인 sandbox
+ * 실행 대상이 아니다(위 "기간 세그먼트" 테스트 주석 참고) — 그래서 지금까지 aria 속성/pfFrom-pfPts
+ * 소스-매칭 테스트만 있고, assetBalCard(assetId,preset)를 실제로 호출해 반환 HTML을 검사하는
+ * 실행형 테스트가 전혀 없었다(openSpendAnalysis/goalRowHTML/openRecManage/openQuickList가 이미
+ * 벗어난 '소스-매칭 또는 無테스트' 버그 클래스의 다음 인스턴스, app-evolve cycle201 critique/advance).
+ * spendAnalysisCtx()와 같은 격리 vm 컨텍스트 패턴을 재사용 — logic.js + 기존 FUNCTIONS/CONSTS/LETS
+ * 추출본(extracted, assetBase/comma/shortDate2/nwChartPath/allTxns/isPending/RANGE_FROM 등을
+ * 이미 포함)을 그대로 로드한 뒤 extractFunction('assetBalCard')만 추가하면 된다. TODAY는 어느
+ * FUNCTIONS/CONSTS/LETS에도 없는 전역이라 매 테스트에서 ctx.TODAY로 직접 세팅한다(RANGE_FROM은
+ * extractConst가 "const "를 떼고 평범한 대입문으로 바꾸므로 ctx.DB처럼 재대입 가능). */
+let _assetBalCardCtx = null;
+function assetBalCardCtx() {
+  if (_assetBalCardCtx) return _assetBalCardCtx;
+  const ctx = {};
+  vm.createContext(ctx);
+  vm.runInContext(logicSrc, ctx, { filename: 'logic.js' });
+  vm.runInContext(extracted, ctx, { filename: 'extracted-from-index.html' });
+  vm.runInContext(extractFunction('assetBalCard'), ctx, { filename: 'assetBalCard-real' });
+  _assetBalCardCtx = ctx;
+  return ctx;
+}
+function assetBalCardFixtureDB(assets, txns) {
+  return { assets, txns: txns || [], recurrences: [], settings: { confirmTransfers: false } };
+}
+test('[실행형] assetBalCard: 샘플링 가능한 날짜가 하루뿐이면(RANGE_FROM===TODAY, pts<2) 차트/상환예측 없이 빈 상태 문구만 뜬다', () => {
+  const ctx = assetBalCardCtx();
+  ctx.TODAY = '2026-06-15';
+  ctx.RANGE_FROM = '2026-06-15';
+  ctx.DB = assetBalCardFixtureDB([{ id: 'a1', type: 'cash', baseAmount: 100000 }]);
+  const html = ctx.assetBalCard('a1', 'm3');
+  assert.ok(html.includes('이 계좌의 추이는 곧 쌓여요'), '포인트가 1개뿐이면 빈 상태 문구가 떠야 함');
+  assert.ok(!html.includes('nwh-chart'), '빈 상태에서는 차트가 뜨면 안 됨');
+  assert.ok(!html.includes('다 갚'), '빈 상태에서는 상환예측 문구가 뜨면 안 됨');
+});
+test('[실행형] assetBalCard: debt가 아닌 자산 타입(cash/savings/realestate/etc/pension)은 이력이 있어도 상환예측(payoffHTML)이 붙지 않는다', () => {
+  const ctx = assetBalCardCtx();
+  ctx.TODAY = '2026-06-15';
+  ctx.RANGE_FROM = '2023-01-01';
+  for (const type of ['cash', 'savings', 'realestate', 'etc', 'pension']) {
+    ctx.DB = assetBalCardFixtureDB(
+      [{ id: 'a1', type, baseAmount: 1000000 }],
+      [{ id: 't1', date: '2026-04-01', type: 'income', toAssetId: 'a1', amount: 50000 }]
+    );
+    const html = ctx.assetBalCard('a1', 'm3');
+    assert.ok(!html.includes('다 갚'), `${type} 자산엔 상환예측 문구가 붙으면 안 됨`);
+    assert.ok(!html.includes('msub2'), `${type} 자산엔 payoffHTML 블록(msub2) 자체가 없어야 함`);
+  }
+});
+test('[실행형] assetBalCard: debt 자산이 이미 다 갚았으면(최근 잔액<=0) "이미 다 갚았어요"가 뜬다', () => {
+  const ctx = assetBalCardCtx();
+  const to = '2026-06-15';
+  ctx.TODAY = to;
+  ctx.RANGE_FROM = '2023-01-01';
+  const txns = [-85, -75, -65, -55, -45, -35, -25, -15, -5].map((n, i) => ({
+    id: 'p' + i, date: ctx.addDays(to, n), type: 'income', toAssetId: 'd1', amount: 70000,
+  }));
+  ctx.DB = assetBalCardFixtureDB([{ id: 'd1', type: 'debt', baseAmount: 500000 }], txns);
+  const html = ctx.assetBalCard('d1', 'm3');
+  assert.ok(html.includes('이미 다 갚았어요'), '9번의 70,000원 상환(총 630,000)이 base 500,000을 넘으면 완납 문구가 떠야 함');
+  assert.ok(!html.includes('이 속도로 갚으면'), '완납 상태에서는 투사 문구가 섞이면 안 됨');
+});
+test('[실행형] assetBalCard: debt 자산이 꾸준히 갚히는 추세면 "이 속도로 갚으면 ...쯤 다 갚아요" 투사 문구가 뜬다', () => {
+  const ctx = assetBalCardCtx();
+  const to = '2026-06-15';
+  ctx.TODAY = to;
+  ctx.RANGE_FROM = '2023-01-01';
+  const txns = [-85, -75, -65, -55, -45, -35, -25, -15, -5].map((n, i) => ({
+    id: 'p' + i, date: ctx.addDays(to, n), type: 'income', toAssetId: 'd1', amount: 30000,
+  }));
+  ctx.DB = assetBalCardFixtureDB([{ id: 'd1', type: 'debt', baseAmount: 900000 }], txns);
+  const html = ctx.assetBalCard('d1', 'm3');
+  assert.ok(/이 속도로 갚으면 \d{2}\/\d{2}쯤 다 갚아요/.test(html), '270,000원을 갚고도 아직 630,000원이 남았으면(미완납) shortDate2 포맷의 투사일 문구가 떠야 함');
+});
+test('[실행형] assetBalCard: debt 자산에 상환 활동이 전혀 없으면(추세 없음) "최근엔 줄어들고 있지 않아요"가 뜬다', () => {
+  const ctx = assetBalCardCtx();
+  ctx.TODAY = '2026-06-15';
+  ctx.RANGE_FROM = '2023-01-01';
+  ctx.DB = assetBalCardFixtureDB([{ id: 'd1', type: 'debt', baseAmount: 500000 }], []);
+  const html = ctx.assetBalCard('d1', 'm3');
+  assert.ok(html.includes('최근엔 줄어들고 있지 않아요'), '상환 활동이 전혀 없어 잔액이 그대로면 추세 없음 문구가 떠야 함');
+});
+test('[실행형] assetBalCard: 잔액이 늘면 "+"기호에 up 색상(class 없음), 줄면 음수 기호에 "minus" 색상 클래스가 붙는다', () => {
+  const ctx = assetBalCardCtx();
+  const to = '2026-06-15';
+  ctx.TODAY = to;
+  ctx.RANGE_FROM = '2023-01-01';
+
+  ctx.DB = assetBalCardFixtureDB(
+    [{ id: 'a1', type: 'cash', baseAmount: 100000 }],
+    [{ id: 't1', date: ctx.addDays(to, -10), type: 'income', toAssetId: 'a1', amount: 30000 }]
+  );
+  let html = ctx.assetBalCard('a1', 'm1');
+  assert.ok(html.includes('<b class="">+30,000원</b>'), '증가 시 "+" 기호와 up 색상(class 없음)이 붙어야 함');
+
+  ctx.DB = assetBalCardFixtureDB(
+    [{ id: 'a1', type: 'cash', baseAmount: 100000 }],
+    [{ id: 't1', date: ctx.addDays(to, -10), type: 'expense', fromAssetId: 'a1', amount: 30000 }]
+  );
+  html = ctx.assetBalCard('a1', 'm1');
+  assert.ok(html.includes('<b class="minus">-30,000원</b>'), '감소 시 음수 기호와 minus 색상 클래스가 붙어야 함');
+});
+test('[실행형] assetBalCard: 허용된 타입(cash/savings/realestate/etc/pension/debt) 밖의 자산이거나 존재하지 않는 자산 id면 빈 문자열을 반환한다', () => {
+  const ctx = assetBalCardCtx();
+  ctx.TODAY = '2026-06-15';
+  ctx.RANGE_FROM = '2023-01-01';
+  ctx.DB = assetBalCardFixtureDB([{ id: 's1', type: 'stock', baseAmount: 100000 }]);
+  assert.strictEqual(ctx.assetBalCard('s1', 'm3'), '', 'stock처럼 허용 목록 밖의 타입은 빈 문자열을 반환해야 함');
+  assert.strictEqual(ctx.assetBalCard('nonexistent', 'm3'), '', '존재하지 않는 자산 id도 빈 문자열을 반환해야 함');
+});
 /* nwChartPeekKey/assetBalPeekKey는 둘 다 함수라 extractFunction으로 그 몸통만 정확히 잘라
  * 검사할 수 있다(src.includes처럼 파일 전체를 보지 않음). */
 test('nwChartPeekKey/assetBalPeekKey가 nwChartKeyStep을 호출해 다음 인덱스를 고른다', () => {
