@@ -1,8 +1,19 @@
 {
   "cycle": 204,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "invalidateBalances()가 _saveCore() ~70여 호출부마다 _balCache/_recCache/_lastEditCache 전체를 매번 비워, 캐시가 편집 사이에는 전혀 적중하지 않고 RANGE_FROM(2023-01-01) 고정 시작점 때문에 재스캔 비용이 연 단위로 계속 커지는 문제",
+    "why": "balancesUpTo()(index.html:2423-2443)와 expandRec()(index.html:2350-2366)은 RANGE_FROM='2023-01-01'~RANGE_TO 고정폭 전체 거래/반복거래를 매번 순회해 날짜별 잔액 맵을 만든다. _balCache/_recCache는 한 번의 렌더 안에서 여러 날짜를 조회할 때만 도움이 되는데, invalidateBalances()(index.html:2422)가 _saveCore()(index.html:2294)의 맨 앞에서 무조건 호출돼 거래 추가/수정/확인/스누즈 등 거의 모든 저장 동작마다 캐시를 통째로 비운다 — 즉 캐시가 '다음 렌더 전까지'만 살아있어 편집 사이에는 적중률이 0이다. 지금(2026년, ~3년치 데이터)은 체감상 괜찮아도, 이 앱의 전제(순자산 추이·목표·반복거래를 몇 년씩 쌓아가며 쓰는 가계부)대로 사용자가 늘어날수록 매 토글/확인/수정 한 번마다 전체 거래+반복거래 재확장 비용이 영구히 커진다 — notifiedAlertIds/dismissedStaleMvIds처럼 이미 GC를 추가한 다른 무한 누적 클래스와 같은 성격의, 아직 손대지 않은 성능 쪽 공백.",
+    "approach": "invalidateBalances()에 선택적 fromDate 인자를 추가해, 지정되면 _balCache/_lastEditCache에서 키의 upto(캐시 키 포맷 'upto|dateStr', index.html:2426)가 fromDate 이후인 항목만 제거하고 그보다 이전 날짜까지만 반영한 캐시 항목은 그대로 둔다(그 날짜 이전 잔액은 이번 변경으로 바뀔 수 없으므로 안전). _recCache는 [from,to] 폭 캐시라 반복거래 전개 자체는 그대로 재사용 가능한 경우가 많으므로 1차로는 그대로 두거나 추후 범위 비교로 확장. fromDate를 모르거나 생략하면 기존처럼 전체 clear(현재 동작과 100% 동일, 안전한 기본값) — 즉 하위호환을 유지한 채 추가적인 개선만 노리는 구조. 70여 호출부를 전부 고치는 대신, 거래 저장/수정처럼 영향받는 날짜를 이미 알고 있는 핵심 경로(saveTx/editTx 등 거래 객체의 .date를 바로 쓸 수 있는 지점) 먼저 fromDate를 넘기도록 바꾸고, 날짜를 특정하기 애매한 나머지 호출부는 그대로 인자 없이 호출해 기존 전체-clear 동작을 유지한다(부분 적용이라도 정확성 저하 없이 가장 빈번한 경로의 캐시 적중률만 끌어올리는 안전한 접근). test/run.js에 (1) fromDate 이전 날짜 키는 보존되고 그 이후 키만 제거되는지, (2) fromDate 생략 시 기존처럼 전체 clear되는지(회귀 가드), (3) 부분 clear 후에도 balancesUpTo()가 정확한 값을 재계산하는지(스테일 캐시 없음) 검증하는 실행형 테스트를 추가한다."
+  },
   "history": [
+    {
+      "cycle": 204,
+      "phase": "critique",
+      "timestamp": "2026-10-16T21:05:00.000Z",
+      "summary": "Explore 서브에이전트로 앱 전반을 아키텍처/성능 관점에서 훑었다(0건 토스트 안내 누락 버그 클래스, assetBalCard/openOwnerManage 등 실행형 테스트 커버리지 공백, budgetCarryFor 체이닝, modeSeg chip-dot, sanitizeBackup/buildImportPreview splits 검증, dismissedStaleMvIds 가지치기, split 거래, isCloudConflict 등 cycle189-204에서 이미 다룬 항목은 명시적으로 제외). invalidateBalances()(index.html:2422)가 _saveCore()(index.html:2294, ~70여 호출부)의 맨 앞에서 무조건 _balCache/_recCache/_lastEditCache 전체를 비워, 저장 동작 사이에는 캐시 적중률이 0이고 RANGE_FROM='2023-01-01'(index.html:2379) 고정 시작점 때문에 재스캔 비용이 해가 지날수록 계속 커지는 문제를 발견 — cycle149에 balancesAtDates/txnsByDateInRange를 캐싱으로 강화했지만 '편집 사이 캐시가 전혀 안 살아있다'는 이 문제는 아직 손대지 않았음. 러너업으로 (1) renderCurrent()가 거의 모든 변경 후 전체 재렌더되는 패턴(이미 scroll/focus 보존 등 완화 장치가 있고 부분 렌더로 가려면 재작성에 가까워 기각), (2) r.skip/r.edits/r.confirmedDates가 장기 반복거래에서 가지치기 없이 쌓이는 문제(실사용 영향이 작아 기각)를 검토했으나 둘 다 이번 계획에서 제외. invalidateBalances()에 선택적 fromDate 인자를 추가해 fromDate 이후 캐시 키만 부분 제거하고(인자 생략 시 기존 전체 clear로 하위호환), 날짜를 아는 핵심 저장 경로부터 우선 적용하는 계획을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "commit": null
+    },
     {
       "cycle": 202,
       "phase": "advance",
