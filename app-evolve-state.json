@@ -1,8 +1,15 @@
 {
   "cycle": 201,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 201,
+      "phase": "review",
+      "timestamp": "2026-10-16T07:05:00.000Z",
+      "summary": "cycle201 develop(buildImportPreview 분할 거래 재가져오기 중복판정 수정, commit fa1869a) 검토 — logic.js의 csvDedupeKey(587-595행)가 date/type/amount/category/fromAssetName-or-Id/toAssetName-or-Id/memo로 키를 만듦을 재확인하고, existingCounts 생성부가 Object.assign({},t,{category:s.category,amount:s.amount,memo:s.memo||t.memo})로 t의 나머지 필드(date/type/fromAssetId/toAssetId 등)는 그대로 둔 채 분할 항목 값만 덮어써 r.txn(csvRowToImportTxn이 만드는 신규 파싱 행)과 정확히 같은 필드 집합으로 키가 만들어짐을 확인. s.memo||t.memo 폴백이 txnsToCSV의 내보내기 식(guard(s.memo||t.memo||''))과 동일해 왕복 일치. 비분할 거래는 splitLines가 [{category:t.category,amount:t.amount,memo:t.memo}] 폴백을 주므로 Object.assign 결과가 t 원본과 동일해 기존 동작 불변. node our-assets-v1.14.1/our-assets/test/run.js 1501/1501 통과. 이상 없음, 코드 변경 없음.",
+      "commit": null
+    },
     {
       "cycle": 201,
       "phase": "develop",
@@ -134,13 +141,6 @@
       "phase": "critique",
       "timestamp": "2026-10-15T20:10:00.000Z",
       "summary": "Explore 서브에이전트로 앱 전반을 훑어, 모든 거래가 t.category/t.amount 단일 쌍으로 고정돼 1거래=1카테고리를 강제하는 핵심 데이터 모델 공백을 발견 — 마트 한 건에 식비+생활용품이 섞이는 실제 상황에서 사용자는 '제일 비슷한 카테고리 하나'를 억지로 골라야 하고, 이는 cycle194-196에서 투자한 예산/이월 기능(spendByCategory/budgetForMonth)의 정확성을 조용히 갉아먹는다. t.splits:[{category,amount,memo}] 선택적 필드(최상위 category/amount는 하위호환 fallback) + logic.js의 splitLines(t) 순수함수 + 집계 함수들을 splitLines 순회로 교체 + 거래 입력 시트의 '분할' 토글 + CSV export/import 범위 제한을 담은 구체적 계획을 pending_advance_plan에 저장. 러너업: 범용 은행 CSV import 지원, openQuickList/openStaleMvReview 테스트 커버리지 부재. 코드 변경 없음.",
-      "commit": null
-    },
-    {
-      "cycle": 198,
-      "phase": "advance",
-      "timestamp": "2026-10-15T21:20:00.000Z",
-      "summary": "critique(cycle198) 계획대로 거래를 여러 카테고리로 분할(split) 입력하는 기능을 구현했다. logic.js에 순수함수 splitLines(t)(t.splits가 있으면 그 배열을, 없으면 [{category:t.category,amount:t.amount,memo:t.memo}] 하나짜리 fallback을 반환) + txCatLabel(t)(분할이면 \"카테고리 N개\") 신설. matchTxnQuery를 splitLines 기반으로 바꿔 분할 항목의 카테고리/메모로도 검색되게 하고, bulkCatTargets에 reason:'split'(분할 거래는 카테고리가 여러 개라 일괄 변경 불가) 추가. index.html의 spendByCategory/expenseByCat을 splitLines 순회로 교체해 분할 항목을 각자 카테고리로 집계하고, filteredHist의 catExact 필터와 doRenameCat의 txns 이름변경 스윕도 분할 항목까지 보도록 확장(최상위 category=fallback도 함께 맞춤). txRowCore에 분할 거래용 \"카테고리 N개\" mini 배지/라벨 추가, nextOutflowCard/monthOutflowCard/planRowsHTML 등 t.memo||t.category로 라벨을 보여주던 자리들도 txCatLabel(t)로 교체. renderTxSheet에 '여러 카테고리로 나누기' 토글(txToggleSplit) + splitFieldHTML(기존 .field/.pick/.field-clear/.txt-btn 컴포넌트만 재사용, 새 CSS 없음) + txSplitAdd/txSplitRemove(최소 2개)/txSplitOpenCat/txSplitAmt 추가, saveTx에 분할 검증(카테고리 전부 선택·금액 전부 입력·합계가 전체 금액과 일치해야 저장, 최상위 category는 하위호환 fallback으로 splits[0]을 씀) 추가. 반복(txToggleRepeat)을 켜면 분할을 되돌리도록 가드(DB.recurrences는 분할을 담을 스키마가 없음), _applyType도 유형 전환 시 분할을 지움. txnsToCSV는 분할 거래를 항목별 여러 행으로 내보내고, CSV 가져오기(v1)는 분할을 지원하지 않는 걸 알려진 제한으로 문서화(계획에 명시된 스코프 제한). test/run.js에 26건 추가 (splitLines 3, txCatLabel 2, spendByCategory 분할 1, expenseByCat 기본+분할 2, matchTxnQuery 분할 2, filteredHist catExact 분할 1, bulkCatTargets/bulkCatPickFor 분할 3, doRenameCat 분할 2, txnsToCSV 분할 1, txRowCore 분할 배지 4, saveTx 분할 검증 5)— 벡엔드/vm 크로스-realm 때문에 deepStrictEqual이 거짓 실패하던 3건(splitLines 2, expenseByCat 1)은 Array.from(...).map(...)으로 Node realm에 재구성하거나 필드별 strictEqual로 바꿔 고쳤다. index.html/logic.js/sw.js 변경이라 APP_VERSION 1.47.162->1.47.163, sw.js CACHE v424->v425 갱신. node test/run.js 1463/1463 -> 1489/1489 통과. pending_advance_plan을 비웠다.",
       "commit": null
     }
   ]
