@@ -4283,6 +4283,19 @@ test('buildImportPreview: doExport가 내보낸 CSV를 그대로 다시 가져�
   assert.strictEqual(preview.newCount, 0);
   assert.strictEqual(preview.dupCount, 1);
 });
+test('buildImportPreview: 분할 거래(t.splits)를 내보낸 CSV를 그대로 다시 가져오려 하면 분할 항목별 행이 각각 중복으로 건너뛴다(app-evolve cycle201)', () => {
+  const assets = [{ id: 'a1', name: '주계좌' }];
+  const txns = [{
+    id: 't1', date: '2026-01-01', type: 'expense', category: '식비', amount: 5000,
+    fromAssetId: 'a1', toAssetId: null, memo: '장보기',
+    splits: [{ category: '식비', amount: 3000, memo: '' }, { category: '생활용품', amount: 2000, memo: '' }],
+  }];
+  const csv = sandbox.txnsToCSV(txns, assets);
+  const preview = sandbox.buildImportPreview(csv, assets, { expense: ['식비', '생활용품'], income: [], saving: [] }, txns);
+  assert.strictEqual(preview.totalRows, 2);
+  assert.strictEqual(preview.newCount, 0);
+  assert.strictEqual(preview.dupCount, 2);
+});
 test('buildImportPreview: 음수 금액 행은 형식 오류와 같은 invalidCount로 잡히고 새 항목으로 세지 않는다', () => {
   const csv = '날짜,구분,카테고리,금액,보내는 자산,받는 자산,메모\r\n' +
     '2026-01-01,지출,식비,-5000,,,점심\r\n';

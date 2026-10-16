@@ -1,8 +1,15 @@
 {
   "cycle": 201,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 201,
+      "phase": "develop",
+      "timestamp": "2026-10-16T06:05:00.000Z",
+      "summary": "Explore 서브에이전트로 develop 후보를 탐색 — CSV 가져오기 미리보기(buildImportPreview, index.html:6078)가 기존 거래의 중복 판정 키를 top-level t.category/t.amount로만 만들어, 분할 거래(t.splits, cycle198에서 추가)를 다시 가져오면 매칭이 전부 실패하는 버그 발견. txnsToCSV(index.html:6014)는 이미 cycle198부터 분할 거래를 항목별로 한 행씩(각 행이 split의 category/amount) 내보내는데, buildImportPreview의 existingCounts는 분할 전 top-level 값(합계/대표 카테고리) 하나로만 키를 만들어 실제로 내보낸 어떤 행과도 안 맞음 — 내 백업 CSV를 그대로 재가져오면 분할 거래의 모든 행이 dup:false로 잘못 표시돼 분할 거래가 일반 거래 여러 건으로 쪼개져 중복 생성된다(cycle200의 sanitizeBackup 분할 미검증 공백과 같은 버그 클래스, 반대 방향: 그때는 복원 시 검증 누락, 이번엔 재가져오기 시 중복판정 누락). buildImportPreview의 existingCounts 생성부를 splitLines(t)로 순회해 각 분할 항목의 category/amount/memo(없으면 t.memo로 fallback, txnsToCSV의 s.memo||t.memo와 동일)로 키를 만들도록 수정(csvDedupeKey 자체는 그대로, 호출부에서 분할 항목마다 한 번씩 호출). 비분할 거래는 splitLines가 [{category:t.category,amount:t.amount,memo:t.memo}] 하나짜리 fallback을 주므로 기존 동작과 동일. test/run.js에 기존 'doExport 왕복→전부 중복' 테스트 바로 옆에 분할 거래 버전 1건 추가(3000/2000으로 분할된 5000원 거래를 내보내고 재가져오기 하면 2행 모두 dupCount로 잡히는지 확인). index.html/sw.js 변경이라 APP_VERSION 1.47.166->1.47.167, sw.js CACHE v428->v429 갱신. node our-assets-v1.14.1/our-assets/test/run.js 1500/1500 -> 1501/1501 통과.",
+      "commit": null
+    },
     {
       "cycle": 200,
       "phase": "advance",
@@ -134,13 +141,6 @@
       "phase": "advance",
       "timestamp": "2026-10-15T21:20:00.000Z",
       "summary": "critique(cycle198) 계획대로 거래를 여러 카테고리로 분할(split) 입력하는 기능을 구현했다. logic.js에 순수함수 splitLines(t)(t.splits가 있으면 그 배열을, 없으면 [{category:t.category,amount:t.amount,memo:t.memo}] 하나짜리 fallback을 반환) + txCatLabel(t)(분할이면 \"카테고리 N개\") 신설. matchTxnQuery를 splitLines 기반으로 바꿔 분할 항목의 카테고리/메모로도 검색되게 하고, bulkCatTargets에 reason:'split'(분할 거래는 카테고리가 여러 개라 일괄 변경 불가) 추가. index.html의 spendByCategory/expenseByCat을 splitLines 순회로 교체해 분할 항목을 각자 카테고리로 집계하고, filteredHist의 catExact 필터와 doRenameCat의 txns 이름변경 스윕도 분할 항목까지 보도록 확장(최상위 category=fallback도 함께 맞춤). txRowCore에 분할 거래용 \"카테고리 N개\" mini 배지/라벨 추가, nextOutflowCard/monthOutflowCard/planRowsHTML 등 t.memo||t.category로 라벨을 보여주던 자리들도 txCatLabel(t)로 교체. renderTxSheet에 '여러 카테고리로 나누기' 토글(txToggleSplit) + splitFieldHTML(기존 .field/.pick/.field-clear/.txt-btn 컴포넌트만 재사용, 새 CSS 없음) + txSplitAdd/txSplitRemove(최소 2개)/txSplitOpenCat/txSplitAmt 추가, saveTx에 분할 검증(카테고리 전부 선택·금액 전부 입력·합계가 전체 금액과 일치해야 저장, 최상위 category는 하위호환 fallback으로 splits[0]을 씀) 추가. 반복(txToggleRepeat)을 켜면 분할을 되돌리도록 가드(DB.recurrences는 분할을 담을 스키마가 없음), _applyType도 유형 전환 시 분할을 지움. txnsToCSV는 분할 거래를 항목별 여러 행으로 내보내고, CSV 가져오기(v1)는 분할을 지원하지 않는 걸 알려진 제한으로 문서화(계획에 명시된 스코프 제한). test/run.js에 26건 추가 (splitLines 3, txCatLabel 2, spendByCategory 분할 1, expenseByCat 기본+분할 2, matchTxnQuery 분할 2, filteredHist catExact 분할 1, bulkCatTargets/bulkCatPickFor 분할 3, doRenameCat 분할 2, txnsToCSV 분할 1, txRowCore 분할 배지 4, saveTx 분할 검증 5)— 벡엔드/vm 크로스-realm 때문에 deepStrictEqual이 거짓 실패하던 3건(splitLines 2, expenseByCat 1)은 Array.from(...).map(...)으로 Node realm에 재구성하거나 필드별 strictEqual로 바꿔 고쳤다. index.html/logic.js/sw.js 변경이라 APP_VERSION 1.47.162->1.47.163, sw.js CACHE v424->v425 갱신. node test/run.js 1463/1463 -> 1489/1489 통과. pending_advance_plan을 비웠다.",
-      "commit": null
-    },
-    {
-      "cycle": 199,
-      "phase": "develop",
-      "timestamp": "2026-10-15T22:10:04.662Z",
-      "summary": "Explore 서브에이전트로 develop 후보를 탐색 — openQuickList()(index.html:7329-7338, 변동 실제금액 입력 여러 건을 한 시트에서 보여주는 함수)가 형제 함수인 openConfirmTransferList()/openNegList()와 똑같은 0건/1건/N건 분기 구조를 공유하는데도, 그 둘은 cycle156/157에서 이미 직접 실행형 테스트를 받았고 openQuickList만 critique 이력에 이름이 남은 채 테스트가 전혀 없었음(코드 자체에 버그는 없음, 순수 테스트 커버리지 공백). FUNCTIONS 목록에 openQuickList 추가 + test/run.js에 2건 추가: (1) 입력할 변동 항목이 없으면 토스트만 뜨고 시트 안 열림, 정확히 1건이면 목록 없이 바로 그 건의 saveQuickAmount 개별 시트로 가고 목록 제목(\"실제 금액 입력\")은 안 보임 — setupHomeAlertsDB + setCatVar로 변동 카테고리 1건 구성, (2) 2건 이상(지출+수입 섞어서)이면 \"변동 항목 2건\" 안내와 함께 각 행이 자신의 openQuickAmount(recId,date)로 연결되고 카테고리/메모가 보임. 프로덕션 코드 변경 없음(테스트 전용이라 APP_VERSION/CACHE 변경 없음). node our-assets-v1.14.1/our-assets/test/run.js 1489/1489 -> 1491/1491 통과.",
       "commit": null
     }
   ]

@@ -1387,7 +1387,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.166';
+const APP_VERSION='1.47.167';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6078,7 +6078,16 @@ function csvRowToImportTxn(cells,assets){
 function buildImportPreview(text,assets,categories,existingTxns){
  const dataRows=parseCSV(text).slice(1);
  const existingCounts=new Map();
- (existingTxns||[]).forEach(t=>{const k=csvDedupeKey(t);existingCounts.set(k,(existingCounts.get(k)||0)+1)});
+ /* txnsToCSV는 분할 거래(t.splits)를 항목별로 한 행씩 내보내므로(위 txnsToCSV 주석), 재가져올
+    때도 각 분할 항목이 그 항목의 category/amount로 된 독립된 행과 매칭돼야 한다. 기존 거래를
+    top-level t.category/t.amount 하나로만 키를 만들면(분할이면 fallback 합계/대표 카테고리라
+    실제로 내보낸 어떤 행과도 안 맞음) 재가져오기 때 분할 거래의 모든 행이 dup:false로 잘못
+    표시돼 내 백업 CSV를 다시 불러오면 분할 거래가 일반 거래로 쪼개져 중복 생성된다
+    (app-evolve cycle200의 sanitizeBackup 분할 미검증 공백과 같은 버그 클래스, 반대 방향). */
+ (existingTxns||[]).forEach(t=>{splitLines(t).forEach(s=>{
+  const k=csvDedupeKey(Object.assign({},t,{category:s.category,amount:s.amount,memo:s.memo||t.memo}));
+  existingCounts.set(k,(existingCounts.get(k)||0)+1);
+ })});
  const usedCounts=new Map();
  const items=[];
  let invalidCount=0,rangeCount=0;
