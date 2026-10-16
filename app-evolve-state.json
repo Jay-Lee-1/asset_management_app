@@ -1,8 +1,19 @@
 {
   "cycle": 201,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "assetBalCard()에 실행형(execution-style) 테스트 커버리지 추가 — 소스-매칭 전용 공백 해소",
+    "why": "assetBalCard(index.html ~2775행, 자산별 '잔액 추이' 카드 — 디버트 상환 예측 포함)가 test/run.js 자체 주석(16514-16540행 부근)에 '너무 많은 외부 전역(TODAY, RANGE_FROM, assetBalSampleDates, shortDate2, svg 등)에 의존해 vm 실행 대상이 아니다'라고 명시돼 있어, 지금까지 aria 속성 정규식 매칭과 debtPayoffProjection 수학을 별도로 재검증하는 테스트만 있고 assetBalCard(assetId,preset)를 실제로 호출해 반환 HTML을 검사하는 테스트는 전혀 없다. openSpendAnalysis/goalRowHTML/openRecManage/openQuickList가 이미 cycle153/195/197/198에서 벗어난 '소스-매칭 또는 無테스트' 버그 클래스의 다음 미처리 인스턴스. pts 대신 pfPts를 잘못 넘기거나 pts.length<2 빈 상태 분기, type==='debt'에만 payoffHTML을 붙이는 조건이 깨져도 지금은 어떤 테스트도 못 잡는다(cycle189에 실제로 pts/pfPts 버그가 있었고 로직 전용 테스트가 우연히 잡은 적 있음).",
+    "approach": "test/run.js에 recManageCtx()와 같은 격리 vm 컨텍스트 패턴으로 assetBalCardCtx() 헬퍼 신설 — logic.js(assetBalSampleDates/assetBalanceSeries/debtPayoffProjection/nwChartPath/nwChartKeyStep 등) + assetBase/shortDate2/comma extractFunction + svg/chartPeekRenderAt는 no-op 스텁으로 로드한 뒤 extractFunction('assetBalCard')를 같은 컨텍스트에 추가. ctx.TODAY/ctx.RANGE_FROM을 테스트 fixture로 세팅하고 ctx.DB={assets:[...],txns:[...]}를 구성해 ctx.assetBalCard(assetId,preset) 반환 문자열을 직접 검사하는 테스트 6~8건 추가: (1) 샘플 포인트<2 → '이 계좌의 추이는 곧 쌓여요' 문구, 차트/상환예측 블록 없음, (2) 비-debt 자산(cash/savings/realestate/etc/pension)은 history가 있어도 payoffHTML 없음, (3) debt 자산이 이미 상환 완료(최근 잔액<=0) → '이미 다 갚았어요', (4) debt 자산이 뚜렷한 상환 추세 → '이 속도로 갚으면 ...쯤 다 갚아요' + debtPayoffProjection 독립 계산과 날짜 일치, (5) debt 자산이 추세 없음/flat → '최근엔 줄어들고 있지 않아요', (6) 2포인트 단순 시계열의 증감 부호/색상이 맞는지, (7) 허용 타입 목록(cash/savings/realestate/etc/pension/debt) 밖의 type(예: stock/fx)은 빈 문자열 반환(현재는 early-return guard로만 암시, 검증 테스트 없음). 기존 aria-pressed/pfFrom-pfPts 소스-매칭 테스트 2건은 그대로 유지(특정 정규식 자체는 여전히 유효). production 코드 변경은 필요 없음(순수 테스트 커버리지 추가)."
+  },
   "history": [
+    {
+      "cycle": 201,
+      "phase": "critique",
+      "timestamp": "2026-10-16T08:05:00.000Z",
+      "summary": "Explore 서브에이전트로 앱 전반을 훑었다. cycle194-201에서 이미 다룬 split거래/예산이월/homeAlerts/modeSeg/isCloudConflict/각종 execution-style 테스트 추가(openSpendAnalysis·goalRowHTML·openRecManage·openQuickList) 목록을 명시적으로 제외하고 탐색한 결과, assetBalCard()(자산별 잔액 추이 카드, 디버트 상환예측 포함)가 test/run.js 자신의 주석에 '너무 많은 외부 전역 의존으로 vm 실행 대상이 아니다'라고 명시된 채 지금까지 aria 정규식 매칭 + debtPayoffProjection 수학 재검증 테스트만 있고 assetBalCard() 자체를 실제로 호출해 반환 HTML을 검사하는 테스트가 전혀 없음을 발견 — openSpendAnalysis/goalRowHTML/openRecManage/openQuickList가 이미 벗어난 '소스-매칭 또는 無테스트' 버그 클래스의 다음 미처리 인스턴스(cycle189에 pts/pfPts 전달 버그가 실제로 있었던 로직 밀도 높은 화면). assetBalCardCtx() 격리 vm 헬퍼 신설 + 7건의 실행형 테스트(빈 상태/비-debt/상환완료/상환추세/추세없음/증감부호/허용타입 밖 early-return) 추가 계획을 pending_advance_plan에 저장. production 코드 변경은 불필요(순수 테스트 커버리지 공백). 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "commit": null
+    },
     {
       "cycle": 201,
       "phase": "review",
@@ -134,13 +145,6 @@
       "phase": "review",
       "timestamp": "2026-10-15T19:05:00.000Z",
       "summary": "cycle198 develop(openQuickAmount lastLabel freq 분기, commit 14c9849) 검토 — index.html:4243(txToggleRepeat의 freq==='monthly'||!freq 관례)과 동일한 기존 규약을 그대로 재사용했음을 재확인. lastActualAmount() 자체는 freq와 무관하게 '직전 edits 값'만 보므로 lastLabel 문구만 바뀌고 실제 금액 조회 로직은 안 건드렸음을 확인. 수입은 freq 무관하게 항상 '지난번' 유지하는 분기도 기존 동작과 일치. node test/run.js 1463/1463 통과. 이상 없음, 코드 변경 없음.",
-      "commit": null
-    },
-    {
-      "cycle": 198,
-      "phase": "critique",
-      "timestamp": "2026-10-15T20:10:00.000Z",
-      "summary": "Explore 서브에이전트로 앱 전반을 훑어, 모든 거래가 t.category/t.amount 단일 쌍으로 고정돼 1거래=1카테고리를 강제하는 핵심 데이터 모델 공백을 발견 — 마트 한 건에 식비+생활용품이 섞이는 실제 상황에서 사용자는 '제일 비슷한 카테고리 하나'를 억지로 골라야 하고, 이는 cycle194-196에서 투자한 예산/이월 기능(spendByCategory/budgetForMonth)의 정확성을 조용히 갉아먹는다. t.splits:[{category,amount,memo}] 선택적 필드(최상위 category/amount는 하위호환 fallback) + logic.js의 splitLines(t) 순수함수 + 집계 함수들을 splitLines 순회로 교체 + 거래 입력 시트의 '분할' 토글 + CSV export/import 범위 제한을 담은 구체적 계획을 pending_advance_plan에 저장. 러너업: 범용 은행 CSV import 지원, openQuickList/openStaleMvReview 테스트 커버리지 부재. 코드 변경 없음.",
       "commit": null
     }
   ]
