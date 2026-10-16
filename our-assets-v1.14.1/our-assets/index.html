@@ -1387,7 +1387,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.169';
+const APP_VERSION='1.47.170';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -7605,7 +7605,7 @@ function openTidyAsset(id){
 function openTidyList(){ /* 다 쓴 자산 여러 건을 한 시트에서 — openStaleMvReview()/dismissStaleMv()와 동일한
   "행을 처리할 때마다 시트를 다시 그려 유지" 패턴(나중에 눌러도 시트가 안 닫히고 그 행만 빠짐) */
  const list=emptyAssets().filter(a=>!tidySnoozed(a.id));
- if(!list.length){closeSheet();return}
+ if(!list.length){toast('정리할 자산이 없어요');closeSheet();return}
  if(list.length===1){closeSheet();openTidyAsset(list[0].id);return}
  openSheet(`<h3>다 쓴 자산 정리</h3><div class="desc">잔액이 0원이고 앞으로 쓸 일도 없는 자산 ${list.length}개예요. 정리하거나 나중에 다시 볼 수 있어요.</div>
   ${list.map(a=>`<div class="manage-row"><div class="ic">${svg('trash')}</div><div style="flex:1;min-width:0"><div class="mn">${esc(a.name)}</div><div class="msub">${ASSET_TYPES[a.type].label} · 0원</div></div>

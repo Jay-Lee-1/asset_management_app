@@ -11788,13 +11788,15 @@ test('emptyAssetCards: 1건일 때의 정리 제안 행(ha-b)에 키보드/스�
  * 동일한 "행을 처리하면 시트를 다시 그려 유지"하는 패턴 — '나중에'를 눌러도 시트가 닫히지 않고
  * 그 행만 목록에서 빠지며, 1건만 남으면 기존 개별 확인 흐름(openTidyAsset)으로 넘어간다.
  * (app-evolve cycle158 advance) */
-test('openTidyList: 정리 대상이 없으면 시트를 닫기만 한다', () => {
+test('openTidyList: 정리 대상이 없으면 시트를 닫고 안내 토스트를 띄운다(app-evolve cycle203 회귀 가드)', () => {
   setupEmptyAssetsDB();
   sandbox.DB.assets = sandbox.DB.assets.filter((a) => a.id === 'a_cash');
   sandbox.closeSheetCalls = 0;
+  sandbox.lastToast = null;
   sandbox.lastSheetHtml = null;
   sandbox.openTidyList();
   assert.strictEqual(sandbox.closeSheetCalls, 1, '정리할 자산이 없으면 시트를 닫아야 함');
+  assert.strictEqual(sandbox.lastToast, '정리할 자산이 없어요', '항목이 없으면 안내 토스트가 떠야 함(이전엔 조용히 닫히기만 했음, openStaleMvReview/openDebtBehindList와 동일 패턴)');
   assert.strictEqual(sandbox.lastSheetHtml, null, '항목이 없으면 시트를 새로 열면 안 됨');
 });
 test('openTidyList: 정확히 1건이면 목록 없이 바로 openTidyAsset의 개별 확인 시트로 간다', () => {
