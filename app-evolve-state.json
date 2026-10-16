@@ -1,8 +1,19 @@
 {
   "cycle": 200,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "sanitizeBackup()이 t.splits(분할 거래)를 전혀 검증하지 않는 공백 - 백업 복원/클라우드 머지 경로로 손상된 split이 들어오면 NaN이 지출분석/예산 집계로 조용히 전파",
+    "why": "sanitizeBackup()(index.html:6223-6400+)은 restoreBackup과 모든 클라우드 머지(mergeRemoteDataIntoLocal) 경로가 공유하는 유일한 데이터 검증 체크포인트로, amount/assets/recurrences/goals/inquiries/assetQtyLog/categories/owners/budgetHistory/budgets/catIcon/rates/nwHistory/deletedIds/settings 전부에 대해 76개 테스트로 뒷받침된 검증 분기를 갖고 있다. 그런데 cycle198에서 추가된 t.splits 필드는 saveTx()(4343-4348)가 저장 시점에만 '카테고리/금액 모두 입력, 합계=t.amount'를 강제하고, 복원/동기화 경로에서는 전혀 재검증되지 않는다. 손상되거나 손으로 편집된 백업 JSON, 또는 다른 기기에서 동기화된 상한 payload에 category:null/빈 문자열 split이나 amount가 NaN/음수/문자열인 split, 혹은 합계가 t.amount와 안 맞는 split이 들어오면 splitLines()(logic.js:340-341)가 그대로 소비해 spendByCategory/budgetForMonthWithCarry/homeAlerts의 예산 초과 판정에 NaN이 전파되는데, 원장/잔액 화면은 t.amount를 직접 써서 정상으로 보여 두 화면 간 조용하고 영구적인 수치 drift가 생긴다. 이 함수의 기존 커밋 이력 자체가 '새 필드가 생길 때마다 검증 분기를 반응적으로 추가해온' 패턴이고(goals/inquiries/assetQtyLog 사례), splits는 아직 추가되지 않은 가장 최근 사례다. CSV split export 제한(cycle198에서 의도적으로 문서화된 제한)이나 delAsset/delCat/delOwner cascade(이미 cycle179/180/194/197에서 충분히 강화됨) 같은 후보보다 이쪽이 실제 silent-corruption 경로가 있는 진짜 공백이라 우선한다.",
+    "approach": "index.html의 sanitizeBackup() 중 txns 루프(6227-6241 근방, d.amount 검증 직후)에 d.splits 검증을 추가한다: Array.isArray(d.splits)이면 category가 비어있거나 문자열이 아닌 항목, amount가 sanitizeAmount(x.amount,0) 결과 0 이하이거나 유한하지 않은 항목을 제거한 뒤 남은 항목들의 합을 재계산한다. 유효 항목이 2개 미만이거나 합계가 (이미 정제된) d.amount와 다르면 d.splits 전체를 delete해 splitLines()가 top-level category/amount로 fallback하게 한다(saveTx가 '2개 미만이면 분할 아님'으로 취급하는 것과 동일한 관례). 변경/제거가 있으면 기존 fixedCount/droppedCount 카운터를 증가시켜 복원 요약 토스트에 자동으로 반영되게 한다(새 UI 불필요). index.html 변경이므로 APP_VERSION(1390 근방)과 sw.js CACHE를 함께 올린다. test/run.js의 다른 txn sanitizeBackup 테스트들(6385-6412 근방) 옆에 5건 추가: (1) splits가 배열이 아니면 조용히 제거되고 크래시 없음, (2) category가 null/빈 문자열인 split 항목 제거 후 남은 게 2개 미만이면 splits 전체 삭제돼 top-level로 fallback, (3) amount가 NaN/음수/문자열인 split 항목도 동일하게 제거/삭제, (4) 정제 후 합계가 d.amount와 안 맞으면 splits 전체 삭제돼 fallback(핵심 NaN/drift 방지 케이스), (5) 정상 split(2개 이상, 합계 일치)은 그대로 보존되는 회귀 테스트. 커밋 전 node our-assets-v1.14.1/our-assets/test/run.js 통과 확인 필수."
+  },
   "history": [
+    {
+      "cycle": 200,
+      "phase": "critique",
+      "timestamp": "2026-10-16T04:11:37.405Z",
+      "summary": "Explore 서브에이전트로 앱 전반을 훑어, sanitizeBackup()(index.html:6223-6400+)이 로컬 백업 복원/클라우드 머지가 공유하는 유일한 데이터 검증 체크포인트인데도 cycle198에 추가된 t.splits(분할 거래) 필드를 전혀 검증하지 않는 공백을 발견 — saveTx()는 저장 시점에만 분할 합계/카테고리를 강제하고, 복원/동기화 경로(mergeRemoteDataIntoLocal이 호출하는 sanitizeBackup)는 재검증이 없어 손상된 split(카테고리 null, amount NaN/음수, 합계 불일치)이 들어오면 splitLines() 소비 시 spendByCategory/budgetForMonthWithCarry/homeAlerts 예산초과 판정에 NaN이 조용히 전파되고, 원장/잔액 화면은 t.amount를 직접 써서 정상으로 보여 화면 간 수치 drift가 생김. CSV split export 제한(cycle198 의도적 문서화)과 delAsset/delCat/delOwner cascade(이미 cycle179/180/194/197에서 충분히 강화)는 후보로 검토했으나 기각. sanitizeBackup txns 루프에 splits 검증(유효 항목<2 또는 합계 불일치 시 splits 전체 삭제, top-level category/amount로 fallback) 추가 + test/run.js에 5건(비배열/null카테고리/NaN금액/합계불일치/정상케이스) 추가하는 계획을 pending_advance_plan에 저장. index.html 변경 예정이라 다음 advance에서 APP_VERSION/sw.js CACHE 갱신 필요. 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "commit": null
+    },
     {
       "cycle": 200,
       "phase": "review",
@@ -134,13 +145,6 @@
       "phase": "review",
       "timestamp": "2026-10-15T23:05:00.000Z",
       "summary": "cycle199 develop(openQuickList 실행형 테스트 2건, commit 0013a2e) 검토 — openQuickList() 소스(index.html:7329-7338)를 직접 대조해 0건(토스트만, 시트 안 염)/1건(목록 없이 바로 openQuickAmount)/N건(각 행이 자신의 recId/date로 openQuickAmount 연결, 건수·카테고리·메모 표시) 분기와 테스트 기대값이 정확히 일치함을 확인. 형제 함수 openConfirmTransferList/openNegList의 기존 실행형 패턴과 구조가 같음. node our-assets-v1.14.1/our-assets/test/run.js 1491/1491 통과. 이상 없음, 코드 변경 없음.",
-      "commit": null
-    },
-    {
-      "cycle": 199,
-      "phase": "critique",
-      "timestamp": "2026-10-16T00:00:00.000Z",
-      "summary": "Explore 서브에이전트로 앱 전반을 훑어, homeAlerts()의 예산 초과 집계(index.html:7653-7654)가 여전히 flat budgetForMonth()만 보고 cycle194가 추가한 예산 이월(catBudgetRollover)을 무시하는 버그를 발견 — openSpendAnalysis/totalBudgetSummary는 이미 budgetForMonthWithCarry로 갈아탔는데 홈 알림/카드/OS 푸시(notifyAlertInfo budgetOver)만 안 갈아타서, 이월로 실질 한도가 늘어난 카테고리에서 홈엔 '예산 초과'가 뜨고 지출분석 화면엔 '초과 아님'이 뜨는 화면 간 불일치가 생김. budgetForMonth(r.c,TM.y,TM.m)->budgetForMonthWithCarry(r.c,TM.y,TM.m) 단순 치환(이월 꺼진 카테고리는 결과 동일, 하위호환) + homeAlerts 테스트 블록(13148행 근방)에 버그 재현 테스트(수정 전 실패 확인 후 적용) 추가 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     }
   ]
