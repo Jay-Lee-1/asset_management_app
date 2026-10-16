@@ -9971,6 +9971,80 @@ test('[실행형] save(): 동일 계정 멀티탭에서 거의 동시에 save()�
     '락이 없으면 두 탭이 서로의 아직 반영 안 된 __savedAt을 보고 "병합 불필요"로 판단해 나중에 쓰는 탭이 먼저 탭의 거래를 영구히 덮어쓴다 — 직렬화되면 두 거래가 모두 남아야 함');
 });
 
+/* ---------- _saveCore: opts.fromDate를 invalidateBalances에 그대로 전달한다 (app-evolve cycle204
+ * advance) ----------
+ * saveTx() 등 fromDate를 아는 호출부가 save({fromDate})로 넘기면, _saveCore가 그 값을 그대로
+ * invalidateBalances(fromDate)로 전달해야 부분 무효화 경로(_balCache에서 fromDate 이전 upto만
+ * 보존)가 실제로 동작한다. fromDate가 없는 기존 호출부들은 여전히 인자 없이(전체 clear) 불러야
+ * 한다(회귀 가드). */
+test('save()/_saveCore: opts.fromDate가 있으면 그 값 그대로 invalidateBalances에 넘긴다', () => {
+  const calls = [];
+  const ctx = makeSaveCtx({
+    invalidateBalances: (fromDate) => calls.push(fromDate),
+    navigator: {},
+    dataKey: () => 'k',
+    localStorage: { getItem: () => null, setItem: () => {} },
+  });
+  ctx.save({ fromDate: '2026-06-10' });
+  assert.deepStrictEqual(calls, ['2026-06-10']);
+});
+test('save()/_saveCore: opts가 없거나 fromDate가 없으면 기존처럼 invalidateBalances를 인자 없이(전체 clear) 호출한다(회귀 가드)', () => {
+  const calls = [];
+  const ctx = makeSaveCtx({
+    invalidateBalances: (fromDate) => calls.push(fromDate),
+    navigator: {},
+    dataKey: () => 'k',
+    localStorage: { getItem: () => null, setItem: () => {} },
+  });
+  ctx.save();
+  ctx.save({ deferCloudPush: true });
+  assert.deepStrictEqual(calls, [undefined, undefined], 'fromDate가 없는 기존 호출부 70여 곳은 여전히 전체 clear 경로를 타야 함');
+});
+
+/* ---------- invalidateBalances: fromDate 부분 무효화 (app-evolve cycle204 critique/advance) ----------
+ * invalidateBalances()가 _saveCore() ~70여 호출부마다 무조건 _balCache/_recCache/_lastEditCache
+ * 전체를 비워, 저장 동작 사이에는 캐시 적중률이 0%였던 문제를 1차로 완화한다. fromDate를 넘기면
+ * _balCache에서 키(upto+'|'+dateStr, 2427행 balancesUpTo 참고)의 upto가 fromDate 이전인 항목만
+ * 보존한다 — 그 항목은 allTxns(RANGE_FROM,upto)가 fromDate 이전 거래까지만 재생한 결과라 이번
+ * 변경으로 절대 바뀔 수 없다. _recCache/_lastEditCache는 fromDate와 비교할 날짜 키가 없어
+ * ([from,to] 반복거래 전개 폭, recurrence 객체 참조) 안전하게 부분 제거할 근거가 없으므로 지금은
+ * fromDate 유무와 무관하게 항상 전체 clear한다. 실제 모듈 상태(_balCache/_recCache/_lastEditCache)를
+ * 그대로 끌어와 독립 vm 컨텍스트에서 검증한다(makeSaveCtx와 같은 패턴). */
+function makeInvalidateBalancesCtx() {
+  const ctx = {};
+  vm.createContext(ctx);
+  vm.runInContext(
+    [extractConst('_balCache'), extractConst('_recCache'), extractConst('_lastEditCache'), extractFunction('invalidateBalances')].join('\n'),
+    ctx, { filename: 'invalidateBalances-real' }
+  );
+  return ctx;
+}
+test('invalidateBalances(fromDate): fromDate 이전 upto의 _balCache 항목은 보존하고, 그 이후는 제거한다', () => {
+  const ctx = makeInvalidateBalancesCtx();
+  ctx._balCache.set('2026-05-31|2026-05-31', { a1: 100 });
+  ctx._balCache.set('2026-06-10|2026-06-10', { a1: 200 });
+  ctx._balCache.set('2026-06-15|2026-07-01', { a1: 300 });
+  ctx._recCache.set('2023-01-01|2027-01-01', [{ id: 'rec_x_2026-06-01' }]);
+  ctx._lastEditCache.set({ id: 'r1' }, { date: '2026-05-01' });
+  ctx.invalidateBalances('2026-06-10');
+  assert.ok(ctx._balCache.has('2026-05-31|2026-05-31'), 'fromDate 이전 upto는 이번 변경으로 바뀔 수 없으니 그대로 남아있어야 함');
+  assert.ok(!ctx._balCache.has('2026-06-10|2026-06-10'), 'upto===fromDate는 fromDate 이후 거래가 영향을 줄 수 있어 제거되어야 함');
+  assert.ok(!ctx._balCache.has('2026-06-15|2026-07-01'), 'upto>fromDate도 제거되어야 함');
+  assert.strictEqual(ctx._balCache.size, 1, 'fromDate 이전 upto 1건만 남아야 함');
+  assert.strictEqual(ctx._recCache.size, 0, '_recCache는 fromDate 유무와 무관하게 항상 전체 clear되어야 함');
+  assert.strictEqual(ctx._lastEditCache.size, 0, '_lastEditCache도 항상 전체 clear되어야 함');
+});
+test('invalidateBalances(): fromDate를 생략하면 기존처럼 세 캐시를 전부 비운다(회귀 가드)', () => {
+  const ctx = makeInvalidateBalancesCtx();
+  ctx._balCache.set('2026-05-31|2026-05-31', { a1: 100 });
+  ctx._recCache.set('2023-01-01|2027-01-01', []);
+  ctx._lastEditCache.set({ id: 'r1' }, { date: '2026-05-01' });
+  ctx.invalidateBalances();
+  assert.strictEqual(ctx._balCache.size, 0, 'fromDate 없이 부르는 기존 70여 호출부는 _balCache도 전체 clear되어야 함(기존 동작과 100% 동일)');
+  assert.strictEqual(ctx._recCache.size, 0);
+  assert.strictEqual(ctx._lastEditCache.size, 0);
+});
+
 /* ---------- renderCurrent: 전역 에러 바운더리 ---------- */
 function resetErrBanner() {
   sandbox.errBannerEl._html = '';
@@ -10163,6 +10237,86 @@ test('saveTx: 신규 저장·기존 수정 모두 touch()로 updatedAt이 채워
   sandbox.txDraft = Object.assign({}, sandbox.DB.txns[0], { amount: 10000 });
   sandbox.saveTx();
   assert.strictEqual(sandbox.DB.txns[0].updatedAt, 'test-updatedAt', '수정 시에도 updatedAt이 갱신되어야 함');
+});
+
+/* ---------- saveTx: save({fromDate})로 invalidateBalances의 부분 무효화 경로에 날짜를 넘긴다
+ * (app-evolve cycle204 advance) ----------
+ * 기존엔 save()를 인자 없이 불러 _saveCore->invalidateBalances()가 매번 _balCache를 통째로 비웠다.
+ * saveTx()는 저장하는 거래의 .date를 이미 알고 있으므로(핵심 저장 경로), 그 날짜(수정으로 날짜가
+ * 바뀐 경우 원래 날짜와 새 날짜 중 더 이른 쪽)를 save({fromDate})로 넘겨 invalidateBalances가
+ * 그 이전 날짜까지의 _balCache 항목은 보존할 수 있게 한다(70여 호출부를 전부 고치는 대신 이
+ * 핵심 경로만 우선 적용). */
+test('saveTx: 신규 일회성 내역을 저장하면 save()에 그 거래의 date를 fromDate로 넘긴다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { txns: [], settings: {} };
+  sandbox.txDraft = {
+    id: null, type: 'expense', date: '2026-03-10', category: '식비', memo: '점심',
+    amount: 9000, fromAssetId: 'a1', toAssetId: null, repeat: false,
+  };
+  const saveCalls = [];
+  const saveOrig = sandbox.save;
+  sandbox.save = (opts) => { saveCalls.push(opts); };
+  try {
+    sandbox.saveTx();
+  } finally { sandbox.save = saveOrig; }
+  assert.strictEqual(saveCalls.length, 1);
+  assert.strictEqual(saveCalls[0] && saveCalls[0].fromDate, '2026-03-10', '신규 저장은 그 거래 자신의 date를 fromDate로 넘겨야 함');
+});
+test('saveTx: 날짜를 바꾸지 않고 기존 거래를 수정하면 그대로 그 날짜를 fromDate로 넘긴다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { txns: [{ id: 't1', type: 'expense', date: '2026-03-10', category: '식비', memo: '점심', amount: 9000, fromAssetId: 'a1', toAssetId: null }], settings: {} };
+  sandbox.txDraft = Object.assign({}, sandbox.DB.txns[0], { amount: 10000 });
+  const saveCalls = [];
+  const saveOrig = sandbox.save;
+  sandbox.save = (opts) => { saveCalls.push(opts); };
+  try {
+    sandbox.saveTx();
+  } finally { sandbox.save = saveOrig; }
+  assert.strictEqual(saveCalls.length, 1);
+  assert.strictEqual(saveCalls[0] && saveCalls[0].fromDate, '2026-03-10', '날짜가 안 바뀐 수정은 그 날짜 그대로 fromDate여야 함');
+});
+test('saveTx: 기존 거래의 날짜를 더 이른 날짜로 바꾸면 원래 날짜(더 이른 쪽)를 fromDate로 넘긴다(그 사이 잔액도 바뀔 수 있으므로)', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { txns: [{ id: 't1', type: 'expense', date: '2026-03-10', category: '식비', memo: '점심', amount: 9000, fromAssetId: 'a1', toAssetId: null }], settings: {} };
+  sandbox.txDraft = Object.assign({}, sandbox.DB.txns[0], { date: '2026-02-01' });
+  const saveCalls = [];
+  const saveOrig = sandbox.save;
+  sandbox.save = (opts) => { saveCalls.push(opts); };
+  try {
+    sandbox.saveTx();
+  } finally { sandbox.save = saveOrig; }
+  assert.strictEqual(saveCalls.length, 1);
+  assert.strictEqual(saveCalls[0] && saveCalls[0].fromDate, '2026-02-01', '새 날짜가 더 이르면 새 날짜부터 무효화해야 함');
+});
+test('saveTx: 기존 거래의 날짜를 더 늦은 날짜로 바꾸면 원래(더 이른) 날짜를 fromDate로 넘긴다(원래 날짜 이후 잔액도 바뀌므로)', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { txns: [{ id: 't1', type: 'expense', date: '2026-03-10', category: '식비', memo: '점심', amount: 9000, fromAssetId: 'a1', toAssetId: null }], settings: {} };
+  sandbox.txDraft = Object.assign({}, sandbox.DB.txns[0], { date: '2026-05-01' });
+  const saveCalls = [];
+  const saveOrig = sandbox.save;
+  sandbox.save = (opts) => { saveCalls.push(opts); };
+  try {
+    sandbox.saveTx();
+  } finally { sandbox.save = saveOrig; }
+  assert.strictEqual(saveCalls.length, 1);
+  assert.strictEqual(saveCalls[0] && saveCalls[0].fromDate, '2026-03-10', '새 날짜가 더 늦으면 원래(더 이른) 날짜부터 무효화해야 함 — 원래 날짜 이후의 잔액이 이번 수정으로 바뀔 수 있음');
+});
+test('saveTx: 반복 켜고 저장(신규 반복 등록)도 그 시작일을 fromDate로 넘긴다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { recurrences: [], settings: {} };
+  sandbox.txDraft = {
+    id: null, type: 'expense', date: '2026-03-10', category: '월세', memo: '',
+    amount: 500000, fromAssetId: 'a1', toAssetId: null,
+    repeat: true, freq: 'monthly', day: 10, endDate: null, count: null,
+  };
+  const saveCalls = [];
+  const saveOrig = sandbox.save;
+  sandbox.save = (opts) => { saveCalls.push(opts); };
+  try {
+    sandbox.saveTx();
+  } finally { sandbox.save = saveOrig; }
+  assert.strictEqual(saveCalls.length, 1);
+  assert.strictEqual(saveCalls[0] && saveCalls[0].fromDate, '2026-03-10', '신규 반복 등록도 시작일을 fromDate로 넘겨야 함');
 });
 
 /* ---------- saveTx: 더블탭 중복 저장 가드 (app-evolve cycle79 critique/advance) ----------

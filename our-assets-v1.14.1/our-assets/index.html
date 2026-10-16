@@ -1387,7 +1387,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.171';
+const APP_VERSION='1.47.172';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2291,7 +2291,7 @@ function save(opts){
  }
  return _saveCore(opts);
 }
-function _saveCore(opts){invalidateBalances();
+function _saveCore(opts){invalidateBalances(opts&&opts.fromDate);
  /* 시트가 열려 있으면 handleForeignStorage가 다른 탭의 저장을 TAB_SYNC_PENDING으로만 쌓아두고
   * 반영을 closeSheet()로 미루는데, saveTx/saveAsset/saveRec 등 모든 저장 흐름은 closeSheet()보다
   * save()를 먼저 부르므로 그 사이 이 탭이 save()를 호출하면 병합 없이 자신의(다른 탭 변경을 모르는)
@@ -2419,7 +2419,21 @@ const _balCache=new Map();
    기억해 두는 캐시(값은 객체 참조로 키를 잡아 recurrence별로 독립적). _balCache/_recCache와
    같은 규칙으로 invalidateBalances()에서 함께 비운다. */
 const _lastEditCache=new Map();
-function invalidateBalances(){_balCache.clear();_recCache.clear();_lastEditCache.clear()}
+/* fromDate를 생략하면(대부분의 ~70여 호출부) 기존처럼 세 캐시를 전부 비운다(100% 하위호환,
+ * 안전한 기본값). fromDate를 아는 호출부(saveTx 등 거래 .date를 바로 쓸 수 있는 지점)는
+ * _balCache만 부분적으로 비운다 — 키가 upto+'|'+dateStr(2427행)이라 upto<fromDate인 항목은
+ * allTxns(RANGE_FROM,upto)가 fromDate 이전 거래만 재생한 결과라 이번 변경으로 절대 바뀔 수
+ * 없음이 보장되므로 그대로 재사용해도 안전하다(그 밖엔 전부 제거). _recCache/_lastEditCache는
+ * fromDate와 비교할 날짜 키가 없어(각각 [from,to] 반복거래 전개 폭, recurrence 객체 참조) 안전하게
+ * 부분 제거할 근거가 없으므로 지금은 그대로 항상 전체 clear한다(app-evolve cycle204 advance,
+ * 저장 사이 캐시 적중률이 0%였던 문제의 1차 완화 — 가장 비싼 부분인 allTxns 전체 재생만 우선 손봄).
+ * 다른 모든 호출부(afterCloudAuth/applyForeignSave/openAssetSheet 등)는 여전히 인자 없이 불러
+ * 기존 전체-clear 동작 그대로 유지한다. */
+function invalidateBalances(fromDate){
+ if(fromDate){for(const key of _balCache.keys()){if(key.slice(0,key.indexOf('|'))>=fromDate)_balCache.delete(key)}}
+ else{_balCache.clear()}
+ _recCache.clear();_lastEditCache.clear();
+}
 function balancesUpTo(dateStr){
  const upto=dateStr>RANGE_TO?RANGE_TO:dateStr;
  const proj=dateStr>TODAY;
@@ -4392,14 +4406,18 @@ function saveTx(){
   DB.recurrences.push(touch({id:uid(),active:true,type:d.type,category:cat,memo:d.memo,amount:d.amount,
    fromAssetId:d.fromAssetId,toAssetId:d.toAssetId,freq,day,startDate:d.date,endDate,count,
    skip:[],edits:{},autoConfirm:true,confirmedDates:[],varying:isVarCat(d.type,cat)}));
-  save();closeSheet();renderCurrent();toast('반복 내역으로 저장했어요');return;
+  save({fromDate:d.date});closeSheet();renderCurrent();toast('반복 내역으로 저장했어요');return;
  }
  ['repeat','freq','day','endDate','endMode','count'].forEach(k=>delete d[k]); /* 일회성 내역엔 반복 필드 제거 */
  d.memo=(d.memo||'').trim()||d.category; /* 메모 없으면 카테고리로 (saveRec과 동일) */
  if(d.type==='transfer'&&d.confirmed===undefined)d.confirmed=!(DB.settings.confirmTransfers&&isFuture(d.date));
  _savedDrafts.add(d);touch(d);
- if(d.id){const i=DB.txns.findIndex(x=>x.id===d.id);DB.txns[i]=d}else{d.id=uid();DB.txns.push(d)}
- save();closeSheet();renderCurrent();toast(isFuture(d.date)?'예정 내역으로 저장했어요':'내역을 저장했어요');
+ /* invalidateBalances(fromDate)는 fromDate 이전까지만 반영된 _balCache 항목을 그대로 재사용한다
+  * (2427행) — 날짜를 바꿔 수정한 경우 원래 날짜와 새 날짜 중 더 이른 쪽부터 잔액이 달라질 수 있으므로
+  * min(oldDate,d.date)를 넘겨야 한다(app-evolve cycle204 advance). */
+ let fromDate=d.date;
+ if(d.id){const i=DB.txns.findIndex(x=>x.id===d.id);if(i>=0&&DB.txns[i].date<fromDate)fromDate=DB.txns[i].date;DB.txns[i]=d}else{d.id=uid();DB.txns.push(d)}
+ save({fromDate});closeSheet();renderCurrent();toast(isFuture(d.date)?'예정 내역으로 저장했어요':'내역을 저장했어요');
 }
 function editTx(id,recId,date){
  if(recId){recEditScope(recId,date,'edit');return}
