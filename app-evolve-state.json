@@ -1,8 +1,15 @@
 {
   "cycle": 200,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 200,
+      "phase": "review",
+      "timestamp": "2026-10-16T03:07:14.993Z",
+      "summary": "cycle200 develop(modeSeg() chip-dot이 catExact/owner 필터를 못 보던 공백 수정, commit e1e0718) 검토 — ST.hist 기본값(index.html:2603)이 catExact:null, owner:'전체'임을 재확인해 기존 필터 없음 상태에서 filtered가 거짓으로 유지됨을 검증. catExact/owner를 세팅하는 모든 지점(openCatHistory:4754, histClearFilter/histClearCatFilter:4847/4849, toHist류 진입점들)이 서로 짝지어 세팅/해제되는 기존 관례와 일치. filteredHist() 등 실제 필터링 로직은 이번 수정이 건드리지 않았음을 diff로 재확인(순수 UI 인디케이터 변경). node test/run.js 1495/1495 통과. 이상 없음, 코드 변경 없음.",
+      "commit": null
+    },
     {
       "cycle": 200,
       "phase": "develop",
@@ -134,13 +141,6 @@
       "phase": "critique",
       "timestamp": "2026-10-16T00:00:00.000Z",
       "summary": "Explore 서브에이전트로 앱 전반을 훑어, homeAlerts()의 예산 초과 집계(index.html:7653-7654)가 여전히 flat budgetForMonth()만 보고 cycle194가 추가한 예산 이월(catBudgetRollover)을 무시하는 버그를 발견 — openSpendAnalysis/totalBudgetSummary는 이미 budgetForMonthWithCarry로 갈아탔는데 홈 알림/카드/OS 푸시(notifyAlertInfo budgetOver)만 안 갈아타서, 이월로 실질 한도가 늘어난 카테고리에서 홈엔 '예산 초과'가 뜨고 지출분석 화면엔 '초과 아님'이 뜨는 화면 간 불일치가 생김. budgetForMonth(r.c,TM.y,TM.m)->budgetForMonthWithCarry(r.c,TM.y,TM.m) 단순 치환(이월 꺼진 카테고리는 결과 동일, 하위호환) + homeAlerts 테스트 블록(13148행 근방)에 버그 재현 테스트(수정 전 실패 확인 후 적용) 추가 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
-      "commit": null
-    },
-    {
-      "cycle": 199,
-      "phase": "advance",
-      "timestamp": "2026-10-16T01:07:59.572Z",
-      "summary": "critique(cycle199) 계획대로 homeAlerts()의 예산 초과 집계(index.html:7653-7654)를 budgetForMonth(flat)에서 budgetForMonthWithCarry(실질 한도, flat+이월)로 교체 — 예산 이월을 켠 카테고리에서 지난달 아낀 돈으로 늘어난 실질 한도 안에서 썼는데도 홈 카드/OS 푸시(notifyAlertInfo budgetOver)만 flat 기준으로 거짓 \"예산 초과\"를 띄우던 버그를 고쳤다(openSpendAnalysis/totalBudgetSummary는 이미 budgetForMonthWithCarry였음, 이월 꺼진 카테고리는 결과 동일해 하위호환). test/run.js의 homeAlerts budgetOver 블록(13168행 근방)에 회귀 테스트 1건 추가: 전달에 이월 카테고리로 flat 10만원 중 7만원만 써서 이번 달 실질 한도 13만원을 만들고, 이번 달 12만원 지출(flat은 넘지만 실질 한도는 안 넘음)에서 budgetOver가 안 뜨는지, 13만원 초과부터 budgetOver가 뜨고 budget 필드도 실질 한도(13만원)인지 확인. index.html/sw.js 변경이라 APP_VERSION 1.47.163->1.47.164, sw.js CACHE v425->v426 갱신. node test/run.js 1491/1491 -> 1492/1492 통과. pending_advance_plan을 비웠다.",
       "commit": null
     }
   ]
