@@ -1,8 +1,15 @@
 {
   "cycle": 203,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 203,
+      "phase": "review",
+      "timestamp": "2026-10-16T15:09:53.865Z",
+      "summary": "cycle203 develop(openDebtBehindList() 0건 토스트 누락 수정, commit 461192a) 검토 — index.html:7634-7638의 실제 소스를 대조해 debtsBehind()가 0건일 때 toast('상환이 정체된 부채가 없어요')를 closeSheet() 앞에 추가한 것이 형제 함수 openNegList()(toast+return 패턴)와 정확히 일치함을 확인. debtsBehind()/openAssetHistory 등 필터링·네비게이션 로직은 건드리지 않은 순수 안내 토스트 추가임을 diff로 재확인. 새 회귀 테스트(setupHistoryDB()로 DB.assets=[] 상태에서 lastToast/closeSheetCalls 검증)도 cycle202 openStaleMvReview 0건 테스트와 동일한 패턴. node our-assets-v1.14.1/our-assets/test/run.js 1515/1515 통과. 이상 없음, 코드 변경 없음.",
+      "commit": null
+    },
     {
       "cycle": 203,
       "phase": "develop",
@@ -134,13 +141,6 @@
       "phase": "critique",
       "timestamp": "2026-10-15T11:25:00.000Z",
       "summary": "Explore 서브에이전트로 앱 전반을 훑어 budgetCarryFor(c,y,m)(index.html:5281-5288)이 전월 한도를 budgetForMonth(flat, 이월 미반영)로 구해 budgetCarry를 계산하는 버그 발견 — budgetForMonthWithCarry(flat+이월, 사용자가 실제로 보고 따르는 실질 한도)를 써야 하는데 flat만 봐서, 2개월 이상 연속 이월 시 'flat~effective 사이'로 지출한 달 바로 다음 달에 이월이 0으로 리셋됨(예: 1개월차 이월 10만원 생성 → 2개월차 실질한도 40만원 안에서 35만원 지출했는데도 flat 30만원 기준으로 max(0,30-35)=0 반환). 봉투식(envelope) 이월의 핵심 약속(안 쓴 돈 누적)이 깨지는 제품 로직 버그. test/run.js에 2개월 연속 체이닝 테스트가 없어 지금까지 미발견. budgetForMonth(c,py,pm)->budgetForMonthWithCarry(c,py,pm) 교체(재귀적으로 체인됨) + 재귀 깊이 cap/memoize + 3개월 연속 체인 테스트 추가 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
-      "commit": null
-    },
-    {
-      "cycle": 196,
-      "phase": "advance",
-      "timestamp": "2026-10-15T13:13:02.850Z",
-      "summary": "critique(cycle196) 계획대로 budgetCarryFor(c,y,m)의 전달 한도 조회를 budgetForMonth(flat)에서 budgetForMonthWithCarry(flat+이월, 재귀)로 교체 — 연속 이월 체인이 2개월째에 flat~실질 한도 사이로 지출하면 0으로 끊기던 버그를 고쳤다. 무한/과도 재귀 방지를 위해 depth 파라미터(기본 0, 24개월 cap)를 budgetCarryFor/budgetForMonthWithCarry 양쪽에 추가(바깥 호출부는 그대로 depth 생략). test/run.js에 3단계 체인 회귀 테스트 1건(수정 전이면 0이 되던 지점이 50000으로 나오는지 확인) + depth cap sanity 테스트 1건 신규 추가, 또한 기존 budgetCarryFor/budgetForMonthWithCarry/openBudgetPrompt/openSpendAnalysis/totalBudgetSummary 테스트들이 budgetHistory를 2026-01부터로 둬 재귀 수정 후 의도치 않게 다다음 달까지 체인이 뻗어 기존 기대값이 깨지던 것을 발견 — 각 테스트의 budgetHistory 시작월을 '전달' 바로 전으로 좁혀 원래 의도(단일 스텝 이월)를 그대로 검증하도록 고쳤다(년도 경계 테스트는 2025-01->2025-12). index.html 변경이라 APP_VERSION 1.47.159->1.47.160, sw.js CACHE v421->v422. node test/run.js 1457/1457 -> 1459/1459 통과. pending_advance_plan을 비웠다.",
       "commit": null
     }
   ]
