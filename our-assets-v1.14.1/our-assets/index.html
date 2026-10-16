@@ -1387,7 +1387,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.167';
+const APP_VERSION='1.47.168';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -7901,7 +7901,7 @@ function homeAlertCard(al){
    해당 자산의 보유 수량을 맞추도록 안내만 한다. */
 function openStaleMvReview(){
  const items=detectStaleMarketValuedTxns(DB);
- if(!items.length){closeSheet();return}
+ if(!items.length){closeSheet();toast('확인할 항목이 없어요');return}
  openSheet(`<h3>순자산 계산에서 빠졌을 수 있는 기록</h3>
   <div class="desc">외화·금·주식 통장은 보유 수량×시세로 평가돼서, 이 통장들을 이체·지출·수입 대상으로 쓴 기록은 금액이 순자산에 반영되지 않았을 수 있어요.<br>
    <span style="color:var(--text-3);font-size:12.5px">금액은 여기서 고치지 않아요 · 확인 후 필요하면 자산 관리에서 보유 수량을 직접 맞춰주세요.</span></div>

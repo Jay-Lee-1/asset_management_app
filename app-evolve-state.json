@@ -1,13 +1,15 @@
 {
-  "cycle": 202,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "openStaleMvReview()가 0건일 때 토스트 없이 조용히 닫히는 버그 수정 + 실행형 테스트 커버리지 추가",
-    "why": "순자산 계산에서 빠졌을 수 있는 기록 검토 시트(index.html:7902-7910 openStaleMvReview, 7912-7915 dismissStaleMv)는 형제 목록 시트들(openNegList:7287, openQuickList:7358, openConfirmTransferList — 모두 0건이면 toast()로 피드백)과 달리 items.length===0이면 closeSheet()만 호출하고 아무 안내도 없음. 다른 기기에서 이미 확인했거나 해당 거래가 삭제된 뒤 홈 알림을 눌렀을 때 사용자 입장에서는 버튼이 반응 없는 것처럼 보임. 추가로 openStaleMvReview/dismissStaleMv는 FUNCTIONS 추출 목록(test/run.js:164-230)에 없고 grep 결과 실제 실행 테스트가 전혀 없음(언급은 전부 다른 함수 테스트의 비교 주석뿐) — openSpendAnalysis/goalRowHTML/openRecManage/assetBalCard/openOwnerManage가 이미 벗어난 '소스-매칭 또는 無테스트' 버그 클래스의 다음 인스턴스.",
-    "approach": "1) index.html:7904의 `if(!items.length){closeSheet();return}`에 형제 함수들과 동일한 패턴으로 toast('확인할 항목이 없어요') 추가. 2) test/run.js에 openStaleMvReview를 FUNCTIONS에 추가하고(또는 기존 recManageCtx/spendAnalysisCtx와 같은 격리 vm 컨텍스트 패턴 재사용 — detectStaleMarketValuedTxns 등 의존이 많으면 공유 sandbox에 직접 넣기 전에 addOwner류에서 겪었던 깨짐 여부 먼저 확인), 0건(토스트만)/1건 이상(항목별 '확인함' 버튼, aria 텍스트, dismissStaleMv('${it.key}') onclick)/dismissStaleMv 호출 시 DB.settings.dismissedStaleMvIds에 key가 append되고 save()/renderCurrent() 후 openStaleMvReview()가 재호출돼 남은 항목으로 다시 그려지는지를 실행형으로 검증하는 테스트 추가. index.html을 건드리므로 APP_VERSION/sw.js CACHE 버전 갱신 필요.",
-    "deferred_note": "dismissedStaleMvIds가 notifiedAlertIds의 pruneNotifiedIds(index.html:7741/7769)와 달리 가지치기가 없어 무한히 쌓이는 문제(index.html:7913)는 이번 계획에서 제외 — 다음 critique 사이클의 별도 후보로 남겨둔다."
-  },
+  "cycle": 203,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 202,
+      "phase": "advance",
+      "timestamp": "2026-10-16T13:10:00.000Z",
+      "summary": "critique(cycle202) 계획대로 openStaleMvReview()의 0건 분기(index.html:7904)에 형제 함수들(openNegList/openQuickList/openConfirmTransferList)과 동일하게 toast('확인할 항목이 없어요') 추가 — 이전엔 closeSheet()만 호출해 다른 기기에서 이미 확인했거나 해당 거래가 삭제된 뒤 홈 알림을 눌렀을 때 버튼이 반응 없는 것처럼 보였음. openStaleMvReview/dismissStaleMv를 test/run.js의 FUNCTIONS 목록에 추가(detectStaleMarketValuedTxns 등 의존 함수가 이미 공유 sandbox에 있어 openNegList/openQuickList와 같은 패턴으로 바로 적용됨, 별도 격리 컨텍스트 불필요), TYPE_LABEL을 CONSTS에 추가(기존 소스가 참조하는데 누락돼 있었음). 실행형 테스트 4건 추가: (1) 0건이면 closeSheet+toast(회귀 가드), (2) 항목 있으면 확인함 버튼의 dismissStaleMv(key) 연결, (3) dismissStaleMv가 key를 dismissedStaleMvIds에 append하고 save()/renderCurrent() 후 남은 항목으로 시트를 다시 그림, (4) 마지막 항목 확인 시(재귀 호출에서 0건) closeSheet+toast. index.html 변경이라 APP_VERSION 1.47.167->1.47.168, sw.js CACHE v429->v430 갱신. node our-assets-v1.14.1/our-assets/test/run.js 1510/1510 -> 1514/1514 통과. pending_advance_plan을 비웠다.",
+      "commit": null
+    },
     {
       "cycle": 202,
       "phase": "critique",
@@ -140,13 +142,6 @@
       "timestamp": "2026-10-15T14:20:00.000Z",
       "summary": "Explore 서브에이전트로 develop 후보를 탐색해, logic.js의 isCloudConflict(curUpdatedAt,lastSyncedAt)가 index.html에서 단 한 번도 호출되지 않는 죽은 함수임을 발견 — pushCloud()의 실제 충돌 판정은 조건부 UPDATE 매치 결과를 보는 decidePushOutcome(matchedRowCount,rowExistedBefore)로 완전히 대체돼 있었는데, maybeRollDay()의 주석(기존 8560줄)은 여전히 '1566 부근 isCloudConflict 참고'라며 없는 근거를 가리키고 있었음. logic.js에서 isCloudConflict 함수+주석 삭제, maybeRollDay() 주석을 'decidePushOutcome(1917 부근)' 참고로 정정, test/run.js의 isCloudConflict 테스트 5건과 FUNCTIONS 주석 목록의 언급도 함께 제거(decidePushOutcome 테스트는 그대로 유지). 동작 변경은 없음(애초에 호출되지 않던 코드라 순수 정리). index.html/logic.js 변경이라 APP_VERSION 1.47.160->1.47.161, sw.js CACHE v422->v423 갱신. node test/run.js 1459/1459 -> 1454/1454(5건 삭제 반영) 통과.",
       "commit": "d3bd42b"
-    },
-    {
-      "cycle": 197,
-      "phase": "review",
-      "timestamp": "2026-10-15T15:07:53.000Z",
-      "summary": "cycle197 develop(isCloudConflict 죽은 함수 삭제, commit d3bd42b) 검토 — grep으로 isCloudConflict가 index.html/logic.js/test 어디에도 더 이상 남아있지 않음을 재확인. maybeRollDay() 주석이 가리키는 'decidePushOutcome(1917 부근)'이 실제로 index.html:1917(pushCloud 내부 호출부)과 정확히 일치함을 확인. node test/run.js 1454/1454 통과. 이상 없음, 코드 변경 없음.",
-      "commit": null
     }
   ]
 }

@@ -193,6 +193,7 @@ const FUNCTIONS = [
   'foreignSaveIsNewer', 'applyForeignSave', 'openCopyBackup', 'copyBackup', 'findDonors',
   'recIsVarying', 'varyingRecs', 'fixShortfallDefaultDate', 'openFixShortfall', 'lastActualAmount', 'openQuickAmount', 'openQuickList',
   'backupDue', 'planNegatives', 'homeAlerts', 'updateAlerts', 'goPlanTo', 'openNegList',
+  'openStaleMvReview', 'dismissStaleMv',
  'notifyAlertInfo', 'pickNotifyAlerts', 'pruneNotifiedIds', 'syncNotifyPermission',
   'catIconOf', 'catGlyph', 'openCatManage', 'openCatPicker',
   'catListOf', 'catAv', 'assetPickBtn', 'endCondFields', 'dayPickerHTML', 'openFormSheet', 'renderTxSheet', '_applyType', '_applyFreq', '_applyDay', '_applyCount', '_applyOpenCat', '_applyOpenAsset', 'txType', 'txToggleRepeat',
@@ -249,7 +250,7 @@ const FUNCTIONS = [
 // WeakSet — 저장 완료된 draft 객체를 표시해 같은 draft로 재호출되면 조용히 무시한다.
 // SUPABASE_URL/SUPABASE_ANON_KEY는 sbCfg()가 localStorage에 저장된 값이 없을 때 돌아가는
 // 기본값이다(app-evolve cycle152 advance, doForgotPassword/doForgotPasswordLocal 분기 테스트용).
-const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC'];
+const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC'];
 // _histCache는 filteredHist()가 재대입(={key,list})하는 let 선언이라 CONSTS(extractConst)로는
 // 못 끌어오므로 별도의 LETS 목록으로 extractLet을 통해 가져온다.
 // _copyIsCsv도 같은 이유(openCopyBackup()이 재대입)로 LETS를 통해 가져온다.
@@ -11573,6 +11574,72 @@ test('detectStaleMarketValuedTxns: 삭제되어 존재하지 않는 assetId를 �
   sandbox.DB.txns.push({ id: 't1', type: 'transfer', date: '2026-01-05', amount: 1000, fromAssetId: 'a_cash', toAssetId: 'a_deleted' });
   const out = Array.from(sandbox.detectStaleMarketValuedTxns(sandbox.DB));
   assert.deepStrictEqual(out, []);
+});
+
+/* openStaleMvReview/dismissStaleMv: 형제 목록 시트들(openNegList/openQuickList/
+ * openConfirmTransferList)과 달리 0건일 때 안내 토스트가 없던 버그를 고쳤다(app-evolve
+ * cycle202 advance) — 지금까지 실행형 테스트가 전혀 없던 공백이라 이번에 함께 추가한다. */
+test('openStaleMvReview: 검토할 항목이 없으면 시트를 닫고 안내 토스트를 띄운다(app-evolve cycle202 회귀 가드)', () => {
+  setupStaleMvDB();
+  sandbox.closeSheetCalls = 0;
+  sandbox.lastToast = null;
+  sandbox.lastSheetHtml = null;
+  sandbox.openStaleMvReview();
+  assert.strictEqual(sandbox.closeSheetCalls, 1, '항목이 없으면 시트를 닫아야 함');
+  assert.ok(sandbox.lastToast, '항목이 없으면 안내 토스트가 떠야 함(이전엔 조용히 닫히기만 했음)');
+  assert.strictEqual(sandbox.lastSheetHtml, null, '항목이 없으면 목록 시트를 열면 안 됨');
+});
+test('openStaleMvReview: 항목이 있으면 각 행에 확인함 버튼과 dismissStaleMv 연결이 있다', () => {
+  setupStaleMvDB();
+  sandbox.DB.txns.push({ id: 't1', type: 'transfer', date: '2026-01-05', amount: 1000, fromAssetId: 'a_cash', toAssetId: 'a_usd' });
+  sandbox.lastSheetHtml = null;
+  sandbox.openStaleMvReview();
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html, '항목이 있으면 목록 시트를 열어야 함');
+  assert.ok(html.includes('달러'), '대상 자산 이름이 보여야 함');
+  assert.ok(html.includes(sandbox.comma(1000)), '금액이 보여야 함');
+  assert.ok(html.includes(`onclick="dismissStaleMv('tx:t1:to')"`), '확인함 버튼이 해당 항목의 key로 dismissStaleMv를 불러야 함');
+});
+test('dismissStaleMv: key를 dismissedStaleMvIds에 추가해 저장하고, 남은 항목으로 시트를 다시 그린다', () => {
+  setupStaleMvDB();
+  sandbox.DB.txns.push(
+    { id: 't1', type: 'transfer', date: '2026-01-05', amount: 1000, fromAssetId: 'a_cash', toAssetId: 'a_usd' },
+    { id: 't2', type: 'expense', date: '2026-01-06', amount: 2000, fromAssetId: 'a_gold', toAssetId: null },
+  );
+  let saveCalls = 0, renderCalls = 0;
+  const origSave = sandbox.save, origRender = sandbox.renderCurrent;
+  sandbox.save = () => { saveCalls++; };
+  sandbox.renderCurrent = () => { renderCalls++; };
+  try {
+    sandbox.lastSheetHtml = null;
+    sandbox.dismissStaleMv('tx:t1:to');
+    assert.deepStrictEqual(sandbox.DB.settings.dismissedStaleMvIds, ['tx:t1:to'], '확인한 key가 dismissedStaleMvIds에 쌓여야 함');
+    assert.strictEqual(saveCalls, 1, 'save()를 호출해야 함');
+    assert.strictEqual(renderCalls, 1, 'renderCurrent()를 호출해야 함');
+    const html = sandbox.lastSheetHtml;
+    assert.ok(html, '남은 항목(t2)이 있으면 시트를 다시 그려야 함');
+    assert.ok(!html.includes(`dismissStaleMv('tx:t1:to')`), '확인한 항목은 다시 그린 시트에서 빠져야 함');
+    assert.ok(html.includes(`dismissStaleMv('tx:t2:from')`), '남은 항목은 그대로 보여야 함');
+  } finally {
+    sandbox.save = origSave; sandbox.renderCurrent = origRender;
+  }
+});
+test('dismissStaleMv: 마지막 항목을 확인하면(남은 항목 0건) 시트를 닫고 안내 토스트를 띄운다(app-evolve cycle202 회귀 가드)', () => {
+  setupStaleMvDB();
+  sandbox.DB.txns.push({ id: 't1', type: 'transfer', date: '2026-01-05', amount: 1000, fromAssetId: 'a_cash', toAssetId: 'a_usd' });
+  const origSave = sandbox.save, origRender = sandbox.renderCurrent;
+  sandbox.save = () => {}; sandbox.renderCurrent = () => {};
+  try {
+    sandbox.closeSheetCalls = 0;
+    sandbox.lastToast = null;
+    sandbox.lastSheetHtml = null;
+    sandbox.dismissStaleMv('tx:t1:to');
+    assert.strictEqual(sandbox.closeSheetCalls, 1, '마지막 항목까지 확인했으면 시트를 닫아야 함');
+    assert.ok(sandbox.lastToast, '마지막 항목까지 확인했으면 안내 토스트가 떠야 함');
+    assert.strictEqual(sandbox.lastSheetHtml, null, '남은 항목이 없으면 목록 시트를 다시 열면 안 됨');
+  } finally {
+    sandbox.save = origSave; sandbox.renderCurrent = origRender;
+  }
 });
 
 test('renderHome: 예산(지출 분석) 진입점인 nextOutflowCard/monthOutflowCard가 실제로 렌더링 템플릿에 포함되어 있다', () => {
