@@ -1,6 +1,6 @@
 {
   "cycle": 204,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
@@ -106,6 +106,13 @@
       "phase": "advance",
       "timestamp": "2026-10-16T17:09:40.479Z",
       "summary": "critique(cycle203) 계획대로 openTidyList()의 0건 분기(index.html:7608)에 형제 함수들(openStaleMvReview/openDebtBehindList/openNegList/openQuickList/openConfirmTransferList)과 동일하게 toast('정리할 자산이 없어요') 추가 — 이전엔 closeSheet()만 호출해 홈 알림 카드('다 쓴 자산 정리')를 눌렀을 때, 렌더와 탭 사이 간격 중 다른 경로로 이미 정리/스누즈했거나 동기화로 emptyAssets() 결과가 바뀐 경우 버튼이 무반응처럼 보였음. test/run.js의 기존 'openTidyList: 정리 대상이 없으면 시트를 닫기만 한다' 테스트를 토스트 검증까지 포함하도록 갱신(lastToast==='정리할 자산이 없어요' assertion 추가, openStaleMvReview/openDebtBehindList 0건 테스트와 동일 패턴). index.html 변경이라 APP_VERSION 1.47.169->1.47.170, sw.js CACHE v431->v432 갱신. node our-assets-v1.14.1/our-assets/test/run.js 1515/1515 통과(기존 테스트 갱신이라 총 건수 불변). pending_advance_plan을 비웠다.",
+      "commit": null
+    },
+    {
+      "cycle": 204,
+      "phase": "develop",
+      "timestamp": "2026-10-16T19:20:12.000Z",
+      "summary": "Explore 서브에이전트로 develop 후보를 탐색 — dismissedStaleMvIds(DB.settings, index.html:2201/7913)가 '확인함'(dismissStaleMv)을 누를 때마다 쌓이기만 하고, notifiedAlertIds가 이미 받은 pruneNotifiedIds(7741) 같은 가지치기가 없는 버그 발견(두 cycle(202/203) critique에서 러너업으로 거론됐지만 범위가 작다고 두 번 보류된 항목). 참조하던 거래/반복거래가 나중에 삭제돼도 tx:<id>:dir/rec:<id>:dir 키가 영구히 남아 DB.settings에 쌓이고 백업·클라우드 동기화 페이로드에도 그대로 포함돼 장기 사용자일수록 저장공간/동기화 용량에 조용히 누적되는 slow leak(다른 모든 tombstone/dismiss 목록엔 대응하는 정리 함수가 있는데 이것만 없었음). pruneDismissedStaleMvIds(dismissedStaleMvIds,txns,recurrences) 순수 함수를 detectStaleMarketValuedTxns 바로 뒤에 신설(존재하지 않는 tx/rec id를 가리키는 key, 형식이 깨진 key(구분자 수 != 3), 문자열이 아닌 값, 비배열 입력을 모두 걸러내 sanitizeBackup과 동일하게 빈 배열로 취급) — gcTombstones(2241행)와 같은 자리에서 migrate() 호출 시마다 실행되게 연결해 부팅·복원·클라우드 병합 때마다 자동 정리된다. test/run.js에 실행형 테스트 4건 추가(삭제된 참조 제거, 깨진 형식 제거, 비배열 입력 방어, 살아있는 key 보존 회귀 가드) + pruneDismissedStaleMvIds를 FUNCTIONS 목록에 추가. 기존 afterCloudAuth 테스트 하나가 깨졌는데(합성 placeholder 'x1' 키를 쓴 fixture가 실제 거래를 가리키지 않아 새 가지치기 로직에 의해 정상적으로 제거됨) — fixture를 remote.txns에 실제로 존재하는 t1을 가리키는 'tx:t1:from'으로 바꿔 '기기-로컬 설정이 remote에 덮이지 않는다'는 원래 검증 의도를 그대로 유지하면서 테스트를 갱신했다. index.html/sw.js 변경이라 APP_VERSION 1.47.170->1.47.171, sw.js CACHE v432->v433 갱신. node our-assets-v1.14.1/our-assets/test/run.js 1515/1515 -> 1519/1519 통과.",
       "commit": null
     }
   ]

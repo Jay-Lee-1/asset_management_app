@@ -1387,7 +1387,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.170';
+const APP_VERSION='1.47.171';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2239,6 +2239,7 @@ function migrate(){
  DB.goals.forEach(g=>{if(!g.owner)g.owner='all'}); /* owner는 cycle124에 추가된 필드라 그 전에 생긴 목표엔 없음 — 'all'(전체)로 채워야 goalOwnerEff/nwHistoryForOwner가 가구 전체 추이로 올바르게 처리함 */
  DB.assetQtyLog=DB.assetQtyLog||[]; /* fx/gold/stock 보유수량 변경 기록: [{id,assetId,date,prevQty,newQty,field}] — field는 'fxAmount'|'goldDon'|'stockQty' (app-evolve cycle138) */
  DB.deletedIds=gcTombstones(DB.deletedIds||{},Date.now()); /* 부팅 때마다 오래된 tombstone 정리(GC) */
+ DB.settings.dismissedStaleMvIds=pruneDismissedStaleMvIds(DB.settings.dismissedStaleMvIds,DB.txns,DB.recurrences); /* 부팅 때마다 삭제된 거래/반복거래를 가리키는 키 정리(GC) */
 }
 /* storageOutcomeMsg: localStorage 쓰기 시도 결과(ok)와 직전 상태(wasOk)를 놓고 어떤 토스트를
  * 띄울지 결정하는 순수 함수. save()가 앱 곳곳(~70곳)에서 호출될 때마다 매번 토스트를 띄우면
@@ -2541,6 +2542,25 @@ function detectStaleMarketValuedTxns(DB){
  (DB.txns||[]).forEach(t=>check('tx',t.id,t.date,t.type,t.amount,t.fromAssetId,t.toAssetId));
  (DB.recurrences||[]).forEach(r=>check('rec',r.id,r.startDate,r.type,r.amount,r.fromAssetId,r.toAssetId));
  return out.sort((a,b)=>a.date<b.date?-1:1);
+}
+/* dismissedStaleMvIds는 '확인함'(dismissStaleMv)을 누를 때마다 쌓이기만 하고, notifiedAlertIds의
+   pruneNotifiedIds(아래)처럼 가지치기가 없었다 — 참조하던 거래/반복거래가 나중에 삭제돼도
+   키(tx:<id>:dir / rec:<id>:dir)가 영구히 남아 DB.settings에 쌓이고 백업·클라우드 동기화
+   페이로드에도 그대로 포함된다. 더는 존재하지 않는 거래/반복거래를 가리키는 키, 그리고
+   형식이 깨진 값을 버린다(비배열 입력은 sanitizeBackup과 동일하게 빈 배열로 취급). */
+function pruneDismissedStaleMvIds(dismissedStaleMvIds,txns,recurrences){
+ if(!Array.isArray(dismissedStaleMvIds))return[];
+ const txIds=new Set((txns||[]).map(t=>t.id));
+ const recIds=new Set((recurrences||[]).map(r=>r.id));
+ return dismissedStaleMvIds.filter(key=>{
+  if(typeof key!=='string')return false;
+  const parts=key.split(':');
+  if(parts.length!==3)return false;
+  const[kind,refId]=parts;
+  if(kind==='tx')return txIds.has(refId);
+  if(kind==='rec')return recIds.has(refId);
+  return false;
+ });
 }
 function totalAssets(){return DB.assets.filter(a=>a.includeInTotal&&a.type!=='debt').reduce((s,a)=>s+assetEval(a),0)}
 function totalDebt(){return DB.assets.filter(a=>a.includeInTotal&&a.type==='debt').reduce((s,a)=>s+assetEval(a),0)}

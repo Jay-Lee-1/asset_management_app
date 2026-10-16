@@ -193,7 +193,7 @@ const FUNCTIONS = [
   'foreignSaveIsNewer', 'applyForeignSave', 'openCopyBackup', 'copyBackup', 'findDonors',
   'recIsVarying', 'varyingRecs', 'fixShortfallDefaultDate', 'openFixShortfall', 'lastActualAmount', 'openQuickAmount', 'openQuickList',
   'backupDue', 'planNegatives', 'homeAlerts', 'updateAlerts', 'goPlanTo', 'openNegList',
-  'openStaleMvReview', 'dismissStaleMv',
+  'openStaleMvReview', 'dismissStaleMv', 'pruneDismissedStaleMvIds',
  'notifyAlertInfo', 'pickNotifyAlerts', 'pruneNotifiedIds', 'syncNotifyPermission',
   'catIconOf', 'catGlyph', 'openCatManage', 'openCatPicker',
   'catListOf', 'catAv', 'assetPickBtn', 'endCondFields', 'dayPickerHTML', 'openFormSheet', 'renderTxSheet', '_applyType', '_applyFreq', '_applyDay', '_applyCount', '_applyOpenCat', '_applyOpenAsset', 'txType', 'txToggleRepeat',
@@ -9666,7 +9666,7 @@ test('restoreLocalDeviceFields: 스냅샷이 있으면 교체된 DB의 settings/
 test('afterCloudAuth: 미동기화 편집 없이 remote를 그대로 채택할 때도 기기-로컬 settings/nwHistory는 원격 값에 덮이지 않고 보존된다(가족 공유 로그인에서 테마/nwHistory가 기기 동기화마다 뒤집히던 버그)', async () => {
   sandbox.DB = {
     assets: [{ id: 'local-old' }], txns: [],
-    settings: { themeMode: 'dark', dismissedStaleMvIds: ['x1'] },
+    settings: { themeMode: 'dark', dismissedStaleMvIds: ['tx:t1:from'] },
     nwHistory: [{ date: '2026-01-01', ta: 500, td: 0, nw: 500 }],
   };
   sandbox.CLOUD_UID = 'u1';
@@ -9674,7 +9674,10 @@ test('afterCloudAuth: 미동기화 편집 없이 remote를 그대로 채택할 �
   sandbox._sbMaybeSingleResult = {
     data: {
       data: {
-        assets: [{ id: 'remote', type: 'cash' }], txns: [],
+        // txns에 t1을 포함해야 한다 — migrate()의 pruneDismissedStaleMvIds(app-evolve cycle204)가
+        // DB.txns(여기선 remote가 채택됨)에 없는 key를 걸러내므로, 'x1' 같은 존재하지 않는 참조를 쓰면
+        // 이 테스트가 검증하려는 '기기-로컬 settings 보존'과 무관하게 정상적으로 가지치기당해 버린다.
+        assets: [{ id: 'remote', type: 'cash' }], txns: [{ id: 't1', type: 'transfer', date: '2026-01-01', amount: 100, fromAssetId: 'remote', toAssetId: null }],
         settings: { themeMode: 'light', dismissedStaleMvIds: [] },
         nwHistory: [{ date: '2026-02-01', ta: 999, td: 0, nw: 999 }],
       },
@@ -9688,7 +9691,7 @@ test('afterCloudAuth: 미동기화 편집 없이 remote를 그대로 채택할 �
   // migrate()가 settings에 다른 기본값들을 Object.assign으로 채워 넣으므로(themeMode 등과 무관),
   // 전체를 deepStrictEqual로 비교하지 않고 보존 대상 필드만 확인한다.
   assert.strictEqual(sandbox.DB.settings.themeMode, 'dark', '기기-로컬 설정은 remote에 덮이면 안 됨');
-  assert.deepStrictEqual(sandbox.DB.settings.dismissedStaleMvIds, ['x1'], '기기-로컬 설정은 remote에 덮이면 안 됨');
+  assert.deepStrictEqual(Array.from(sandbox.DB.settings.dismissedStaleMvIds), ['tx:t1:from'], '기기-로컬 설정은 remote에 덮이면 안 됨(가지치기로도 지워지면 안 됨 — t1이 remote txns에 살아있음)');
   assert.deepStrictEqual(sandbox.DB.nwHistory, [{ date: '2026-01-01', ta: 500, td: 0, nw: 500 }], '기기-로컬 nwHistory는 remote에 덮이면 안 됨');
   sandbox._lsMap = null;
 });
@@ -11574,6 +11577,32 @@ test('detectStaleMarketValuedTxns: 삭제되어 존재하지 않는 assetId를 �
   sandbox.DB.txns.push({ id: 't1', type: 'transfer', date: '2026-01-05', amount: 1000, fromAssetId: 'a_cash', toAssetId: 'a_deleted' });
   const out = Array.from(sandbox.detectStaleMarketValuedTxns(sandbox.DB));
   assert.deepStrictEqual(out, []);
+});
+
+/* ---------- pruneDismissedStaleMvIds: dismissedStaleMvIds가 notifiedAlertIds(pruneNotifiedIds)와
+   달리 가지치기 없이 쌓이기만 하던 공백을 고쳤다(app-evolve cycle204 develop) ---------- */
+test('pruneDismissedStaleMvIds: 참조하는 거래/반복거래가 삭제되면 그 key를 버린다', () => {
+  const txns = [{ id: 't_live' }];
+  const recurrences = [{ id: 'r_live' }];
+  const out = sandbox.pruneDismissedStaleMvIds(
+    ['tx:t_live:to', 'tx:t_deleted:from', 'rec:r_live:from', 'rec:r_deleted:to'],
+    txns,
+    recurrences,
+  );
+  assert.deepStrictEqual(out, ['tx:t_live:to', 'rec:r_live:from']);
+});
+test('pruneDismissedStaleMvIds: 형식이 깨진 key(구분자 부족·숫자·알 수 없는 kind·구분자 과다)도 조용히 버린다', () => {
+  const out = Array.from(sandbox.pruneDismissedStaleMvIds(['no-colon', 42, 'weird:t1:to', 'tx:t1', 'tx:t1:to:extra'], [{ id: 't1' }], []));
+  assert.deepStrictEqual(out, []);
+});
+test('pruneDismissedStaleMvIds: 비배열 입력은 sanitizeBackup과 동일하게 빈 배열로 취급해 크래시 없이 []를 반환한다', () => {
+  assert.deepStrictEqual(Array.from(sandbox.pruneDismissedStaleMvIds(null, [], [])), []);
+  assert.deepStrictEqual(Array.from(sandbox.pruneDismissedStaleMvIds(undefined, [], [])), []);
+  assert.deepStrictEqual(Array.from(sandbox.pruneDismissedStaleMvIds('oops', [], [])), []);
+});
+test('pruneDismissedStaleMvIds: 모두 살아있는 key는 그대로 보존한다(회귀 가드)', () => {
+  const out = Array.from(sandbox.pruneDismissedStaleMvIds(['tx:t1:to', 'rec:r1:from'], [{ id: 't1' }], [{ id: 'r1' }]));
+  assert.deepStrictEqual(out, ['tx:t1:to', 'rec:r1:from']);
 });
 
 /* openStaleMvReview/dismissStaleMv: 형제 목록 시트들(openNegList/openQuickList/
