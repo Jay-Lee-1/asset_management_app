@@ -1,22 +1,13 @@
 {
   "cycle": 203,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "openTidyList() 0건일 때 토스트 안내 누락 수정 + 실행형 테스트 추가",
+    "why": "index.html:7605-7609 openTidyList()는 형제 함수들(openStaleMvReview/openDebtBehindList/openNegList/openQuickList/openConfirmTransferList)이 이미 고친 '0건일 때 toast 없이 closeSheet()만 호출' 버그의 마지막 남은 인스턴스. 자기 주석에도 'openStaleMvReview()/dismissStaleMv()와 동일한 패턴'이라 적어놓고도 토스트만 빠졌다. 홈 알림 카드(index.html:7592, '다 쓴 자산 정리')는 렌더 시점과 탭 시점 사이에 간격이 있어, 그 사이 사용자가 이미 다른 경로로 자산을 정리/스누즈했거나 클라우드 동기화로 emptyAssets() 결과가 바뀌면 list.length===0이 되어 탭이 아무 반응 없는 것처럼 보인다.",
+    "approach": "1) index.html:7608을 `if(!list.length){toast('정리할 자산이 없어요');closeSheet();return}`로 수정(형제 토스트 문구 관례 '~이 없어요' 따름). 2) index.html/sw.js APP_VERSION/CACHE 버전 올림. 3) test/run.js에 기존 openDebtBehindList/openStaleMvReview 0건 테스트와 동일 패턴으로 openTidyList 0건 케이스 추가(emptyAssets()가 빈 배열이 되도록 DB 구성, lastToast/closeSheetCalls 검증). 4) node our-assets-v1.14.1/our-assets/test/run.js 통과 확인 후 커밋.",
+    "runner_up": "dismissedStaleMvIds(index.html:7913)가 notifiedAlertIds의 pruneNotifiedIds 같은 가지치기 없이 무한히 쌓이는 문제 — 이번엔 범위가 더 작아 보류, 다음 critique 후보."
+  },
   "history": [
-    {
-      "cycle": 203,
-      "phase": "review",
-      "timestamp": "2026-10-16T15:09:53.865Z",
-      "summary": "cycle203 develop(openDebtBehindList() 0건 토스트 누락 수정, commit 461192a) 검토 — index.html:7634-7638의 실제 소스를 대조해 debtsBehind()가 0건일 때 toast('상환이 정체된 부채가 없어요')를 closeSheet() 앞에 추가한 것이 형제 함수 openNegList()(toast+return 패턴)와 정확히 일치함을 확인. debtsBehind()/openAssetHistory 등 필터링·네비게이션 로직은 건드리지 않은 순수 안내 토스트 추가임을 diff로 재확인. 새 회귀 테스트(setupHistoryDB()로 DB.assets=[] 상태에서 lastToast/closeSheetCalls 검증)도 cycle202 openStaleMvReview 0건 테스트와 동일한 패턴. node our-assets-v1.14.1/our-assets/test/run.js 1515/1515 통과. 이상 없음, 코드 변경 없음.",
-      "commit": null
-    },
-    {
-      "cycle": 203,
-      "phase": "develop",
-      "timestamp": "2026-10-16T14:10:00.000Z",
-      "summary": "Explore 서브에이전트로 develop 후보를 탐색 — openDebtBehindList()(index.html:7635-7638)가 자기 주석에 'openNegList()와 동일 패턴'이라 적어두고도 정체된 부채 0건일 때 openNegList(toast('부족 예상 통장이 없어요')+return)와 달리 안내 토스트 없이 closeSheet()만 호출하던 버그 발견 — cycle202에서 고친 openStaleMvReview() 0건 토스트 누락과 같은 버그 클래스의 다음 인스턴스. openDebtBehindList는 홈 알림 카드(kind:'debtBehindMulti')의 onclick으로 시트 바깥(어떤 화면이든)에서 호출될 수 있어, 데이터가 바뀌어 알림 렌더 시점과 탭 시점 사이에 0건이 되면 closeSheet()가 no-op이라 탭이 아무 반응 없는 것처럼 보임. toast('상환이 정체된 부채가 없어요')를 closeSheet() 앞에 추가(openNegList와 동일 메시지 패턴). test/run.js의 기존 openDebtBehindList 1건/N건 테스트 바로 위에 0건 케이스 1건 추가(setupHistoryDB()가 DB.assets=[]로 초기화하므로 debtsBehind()가 자연히 빈 배열, lastToast/closeSheetCalls 검증). index.html 변경이라 APP_VERSION 1.47.168->1.47.169, sw.js CACHE v430->v431 갱신. node our-assets-v1.14.1/our-assets/test/run.js 1514/1514 -> 1515/1515 통과.",
-      "commit": null
-    },
     {
       "cycle": 202,
       "phase": "advance",
@@ -109,38 +100,10 @@
       "commit": null
     },
     {
-      "cycle": 195,
+      "cycle": 203,
       "phase": "critique",
-      "timestamp": "2026-10-15T07:40:00.000Z",
-      "summary": "Explore 서브에이전트로 앱 전반(아키텍처/접근성/데이터 안전성/성능/누락 기능/TODO)을 훑었다 — 전역 에러 바운더리, 포커스 트랩, aria-live, 검색, 페이지네이션, Web Locks 멀티탭 저장, mergeRemoteDataIntoLocal의 전 컬렉션 배선 등 이미 성숙한 부분이 많았고 새 TODO/죽은 코드는 없었음. 남은 후보 중 CDN 3개(pretendard/kakao/supabase) SRI 해시 미설정은 이 샌드박스의 egress 차단(curl로 재확인, 403)으로 지금도 못 고치는 환경 제약이라 보류. 대신 test/run.js가 extractFunction()+정규식으로 '소스에 리터럴이 존재하는지'만 보는 테스트와 sandbox에서 실제로 함수를 호출해 lastSheetHtml 등 결과를 검사하는 '실행형' 테스트를 섞어 쓰는데, 같은 파일 안에 이미 실행형 패턴(openBudgetPrompt 이월 캡션 테스트 2404-2408, goalRowHTML '일부 미확인' 테스트 3248-3263)이 확립돼 있음에도 바로 옆 형제 함수인 openSpendAnalysis의 overCount/carryTotal 캡션 테스트(11556-11575)와 cycle195 develop이 추가한 goalRowHTML '목표일 지남' 배지는 소스-매칭뿐이거나(전자) 배지 실행 테스트가 아예 없음(후자)을 발견 — 소스-매칭은 조건문이 뒤바뀌는 실제 버그를 못 잡는 구멍. 새 의존성(jsdom 등) 없이 기존 lastSheetHtml 패턴으로 교체/추가하는 구체적 계획을 pending_advance_plan에 저장. 코드 변경 없음(테스트 전용 계획이라 다음 advance도 index.html/logic.js/sw.js는 건드리지 않을 예정).",
-      "commit": null
-    },
-    {
-      "cycle": 195,
-      "phase": "advance",
-      "timestamp": "2026-10-15T08:40:00.000Z",
-      "summary": "critique(cycle195) 계획대로 test/run.js의 openSpendAnalysis 소스-매칭 테스트 3건을 실행형으로 교체 + goalRowHTML/openGoalsList '목표일 지남' 배지 실행형 테스트 4건 신규 추가. openSpendAnalysis는 saveBudget/delBudget이 부수효과로 호출하는 화면 전용 진입점이라 메인 sandbox에선 계속 no-op 스텁(614줄)이어야 하는데(실제로 켰더니 그 두 함수의 기존 최소 fixture 테스트가 DB.owners 누락으로 깨짐을 확인하고 되돌림), makeAppLockCtx와 같은 '별도 vm 컨텍스트에 필요한 소스만 통째로 새로 컴파일' 패턴을 적용해 spendAnalysisCtx() 헬퍼를 신설 — logic.js+FUNCTIONS/CONSTS/LETS 전체와 extractFunction('openSpendAnalysis')를 이 컨텍스트 안에서만 로드해 DB/ST 격리를 유지한다(함수 참조만 복사하면 자유변수가 정의된 컨텍스트를 계속 참조해 격리가 깨짐을 확인). overCount/unsetCount/carryTotal 캡션 테스트와 행별 한도(budgetForMonthWithCarry) 테스트를 실제 DB.txns/budgetHistory/catBudgetRollover를 구성해 ctx.openSpendAnalysis() 실행 후 lastSheetHtml의 실제 숫자·순서를 검사하도록 교체(이월 opt-in/opt-out 카테고리를 함께 둬서 카테고리별로 다른 숫자가 나오는지까지 확인). goalRowHTML/openGoalsList 테스트는 기존 '일부 미확인' 실행형 패턴과 동일하게 sandbox.goalRowHTML(g)/sandbox.openGoalsList() 직접 호출 — 과거+미달성(배지 있음)/과거+달성(배지 없음)/오늘·미래(배지 없음)/openGoalsList 스코프(지난 목표 행에만 붙음) 4건. index.html/logic.js/sw.js는 건드리지 않아 APP_VERSION/CACHE 변경 없음. node test/run.js 1451/1451 -> 1455/1455 통과. pending_advance_plan을 비웠다.",
-      "commit": null
-    },
-    {
-      "cycle": 196,
-      "phase": "develop",
-      "timestamp": "2026-10-15T09:19:00.000Z",
-      "summary": "카테고리 관리(openCatManage)의 varPill('변동'/'고정')·rollPill('이월'/'이월 안함') 토글 버튼에 aria-label/aria-pressed가 전혀 없던 공백 발견 — 같은 화면의 구분 세그먼트·아이콘 선택·수정/삭제 버튼은 모두 aria-label/aria-pressed가 있는데 이 둘만 스크린리더로는 어느 카테고리의 토글인지, 켜짐/꺼짐 상태인지 알 수 없었음. 버튼 템플릿에 카테고리명 포함 aria-label과 현재 상태의 aria-pressed 추가, toggleCatVarUI/toggleBudgetRolloverUI가 classList/textContent와 함께 btn.setAttribute('aria-pressed',on)도 갱신하도록 수정. test/run.js에 varPill/rollPill aria 렌더 테스트 1건 + toggleCatVarUI/toggleBudgetRolloverUI DOM 갱신 테스트 2건(기존 1건 확장+1건 신규) 추가, FUNCTIONS 목록에 누락돼 있던 toggleCatVarUI도 추가. index.html 변경이라 APP_VERSION 1.47.158->1.47.159, sw.js CACHE v420->v421 갱신. node test/run.js 1455/1455 -> 1457/1457 통과.",
-      "commit": "2682e8b"
-    },
-    {
-      "cycle": 196,
-      "phase": "review",
-      "timestamp": "2026-10-15T10:20:00.000Z",
-      "summary": "cycle196 develop(varPill/rollPill aria-label/aria-pressed, commit 2682e8b) 검토 — isVarCat/isBudgetRolloverCat 모두 !! 로 boolean을 강제해 aria-pressed에 undefined가 새지 않음을 확인, toggleCatVarUI/toggleBudgetRolloverUI의 setAttribute('aria-pressed',on)도 동일하게 boolean on을 받음. esc(c) 사용도 같은 화면의 다른 action 버튼 aria-label과 일관됨. node our-assets-v1.14.1/our-assets/test/run.js 1457/1457 통과. 이상 없음, 코드 변경 없음.",
-      "commit": null
-    },
-    {
-      "cycle": 196,
-      "phase": "critique",
-      "timestamp": "2026-10-15T11:25:00.000Z",
-      "summary": "Explore 서브에이전트로 앱 전반을 훑어 budgetCarryFor(c,y,m)(index.html:5281-5288)이 전월 한도를 budgetForMonth(flat, 이월 미반영)로 구해 budgetCarry를 계산하는 버그 발견 — budgetForMonthWithCarry(flat+이월, 사용자가 실제로 보고 따르는 실질 한도)를 써야 하는데 flat만 봐서, 2개월 이상 연속 이월 시 'flat~effective 사이'로 지출한 달 바로 다음 달에 이월이 0으로 리셋됨(예: 1개월차 이월 10만원 생성 → 2개월차 실질한도 40만원 안에서 35만원 지출했는데도 flat 30만원 기준으로 max(0,30-35)=0 반환). 봉투식(envelope) 이월의 핵심 약속(안 쓴 돈 누적)이 깨지는 제품 로직 버그. test/run.js에 2개월 연속 체이닝 테스트가 없어 지금까지 미발견. budgetForMonth(c,py,pm)->budgetForMonthWithCarry(c,py,pm) 교체(재귀적으로 체인됨) + 재귀 깊이 cap/memoize + 3개월 연속 체인 테스트 추가 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
+      "timestamp": "2026-10-16T16:05:00.000Z",
+      "summary": "Explore 서브에이전트로 앱 전반을 훑었다(0건 토스트 안내 누락 버그 클래스 — openStaleMvReview/openDebtBehindList/openNegList/openQuickList/openConfirmTransferList — 와 실행형 테스트 공백 — assetBalCard/openOwnerManage/openSpendAnalysis/goalRowHTML/openRecManage/openQuickList/openCatManage — budgetCarryFor 체이닝, modeSeg chip-dot, sanitizeBackup/buildImportPreview splits 검증 등 이미 다룬 항목을 명시적으로 제외). openTidyList()(index.html:7605-7609)가 바로 그 '0건 토스트 안내 누락' 버그 클래스의 마지막 남은 인스턴스임을 발견 — 자기 주석에 'openStaleMvReview()/dismissStaleMv()와 동일한 패턴'이라 적어두고도 list.length===0일 때 toast 없이 closeSheet()만 호출. 홈 알림 카드('다 쓴 자산 정리', 7592)는 렌더와 탭 사이 간격이 있어 그 사이 사용자가 이미 정리/스누즈했거나 동기화로 emptyAssets() 결과가 바뀌면 탭이 무반응처럼 보인다. 토스트('정리할 자산이 없어요') 추가 + 실행형 0건 테스트 추가 계획을 pending_advance_plan에 저장. 러너업: dismissedStaleMvIds(7913)가 notifiedAlertIds의 pruneNotifiedIds 같은 가지치기 없이 무한히 쌓이는 문제(이미 cycle202에도 러너업으로 보류됨, 범위가 작아 이번에도 보류). 코드 변경 없음(critique 단계라 state.json만 갱신).",
       "commit": null
     }
   ]
