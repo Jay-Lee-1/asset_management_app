@@ -1,6 +1,6 @@
 {
   "cycle": 204,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
@@ -106,6 +106,13 @@
       "phase": "advance",
       "timestamp": "2026-10-16T17:09:40.479Z",
       "summary": "critique(cycle203) 계획대로 openTidyList()의 0건 분기(index.html:7608)에 형제 함수들(openStaleMvReview/openDebtBehindList/openNegList/openQuickList/openConfirmTransferList)과 동일하게 toast('정리할 자산이 없어요') 추가 — 이전엔 closeSheet()만 호출해 홈 알림 카드('다 쓴 자산 정리')를 눌렀을 때, 렌더와 탭 사이 간격 중 다른 경로로 이미 정리/스누즈했거나 동기화로 emptyAssets() 결과가 바뀐 경우 버튼이 무반응처럼 보였음. test/run.js의 기존 'openTidyList: 정리 대상이 없으면 시트를 닫기만 한다' 테스트를 토스트 검증까지 포함하도록 갱신(lastToast==='정리할 자산이 없어요' assertion 추가, openStaleMvReview/openDebtBehindList 0건 테스트와 동일 패턴). index.html 변경이라 APP_VERSION 1.47.169->1.47.170, sw.js CACHE v431->v432 갱신. node our-assets-v1.14.1/our-assets/test/run.js 1515/1515 통과(기존 테스트 갱신이라 총 건수 불변). pending_advance_plan을 비웠다.",
+      "commit": null
+    },
+    {
+      "cycle": 204,
+      "phase": "develop",
+      "timestamp": "2026-10-16T18:20:00.000Z",
+      "summary": "Explore 서브에이전트로 develop 후보를 탐색 — renderRecSheet()(index.html:4504, 반복 설정/수정 폼)가 renderTxSheet(cycle43/cycle147에 vm 실행 스모크 테스트가 생김)와 거의 동일한 얕은 의존(recDraft 전역 상태 + catAv/catGlyph/assetPickBtn/endCondFields/dayPickerHTML/openFormSheet, 전부 공유 sandbox에 이미 있음)을 쓰면서도 지금까지 extractFunction 소스 패턴 매칭(aria-pressed 1건, rAmt Enter-제출 1건)만 받고 실제 실행 검증이 전혀 없던 공백임을 발견(cycle147 critique/advance 당시 주석에 'DB.settings 등 의존이 더 많아 vm 실행 fixture가 없다'고 적혀 있었으나 실제로는 WK(주말 조정 어휘) 상수 하나만 CONSTS에 빠져 있던 것). WK를 CONSTS에, renderRecSheet를 FUNCTIONS에 추가해 실제로 vm에서 실행되게 하고, renderTxSheet 실행형 테스트와 같은 패턴으로 7건 추가/전환: (1) 구분 세그먼트 aria-pressed(기존 소스-패턴 테스트를 실행형으로 승격), (2) 이체만 카테고리 필드 숨김, (3) type별 자산 필드 조합(저축도 이체처럼 보내는/받는 자산 둘 다), (4) 주말 조정 필드가 매월일 때만 + WK 라벨 반영, (5) 이체 자동 확인 토글이 type=transfer && DB.settings.confirmTransfers일 때만 + on/off 상태 반영, (6) 편집 중엔 id로 delRecConfirm 삭제 버튼/신규 생성엔 취소 버튼, (7) 변동 카테고리(DB.catVar) 안내 카드가 지출/수입에만 뜨고 저축/이체는 안 뜸. renderRecSheet가 공유 sandbox의 no-op 스텁에서 실제 함수로 바뀌면서, DB/recDraft 없이 freq/weekend만 세팅하던 기존 recFreq 테스트 4건이 renderRecSheet 호출 시 DB.assets 등 미설정으로 깨짐 — setupRecSheetDB() 헬퍼를 신설하고 네 테스트에 DB 세팅 + recDraft에 type/category/fromAssetId를 보강해 함께 고쳤다(기존 테스트가 검증하던 freq/weekend/day assertion은 그대로 유지, 부작용 없음). 테스트 전용 변경이라 index.html/sw.js는 건드리지 않음(APP_VERSION/CACHE 변경 없음). node our-assets-v1.14.1/our-assets/test/run.js 1515/1515 -> 1521/1521 통과.",
       "commit": null
     }
   ]

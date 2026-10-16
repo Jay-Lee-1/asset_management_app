@@ -196,7 +196,7 @@ const FUNCTIONS = [
   'openStaleMvReview', 'dismissStaleMv',
  'notifyAlertInfo', 'pickNotifyAlerts', 'pruneNotifiedIds', 'syncNotifyPermission',
   'catIconOf', 'catGlyph', 'openCatManage', 'openCatPicker',
-  'catListOf', 'catAv', 'assetPickBtn', 'endCondFields', 'dayPickerHTML', 'openFormSheet', 'renderTxSheet', '_applyType', '_applyFreq', '_applyDay', '_applyCount', '_applyOpenCat', '_applyOpenAsset', 'txType', 'txToggleRepeat',
+  'catListOf', 'catAv', 'assetPickBtn', 'endCondFields', 'dayPickerHTML', 'openFormSheet', 'renderTxSheet', 'renderRecSheet', '_applyType', '_applyFreq', '_applyDay', '_applyCount', '_applyOpenCat', '_applyOpenAsset', 'txType', 'txToggleRepeat',
   'accountName', 'dbIsEmpty', 'guestHasData',
   'txScheduled', 'monthStats', 'monthStats2', 'expenseByCat', 'needGold', 'inQuietWindow', 'fmtSynced', 'rateStatusText',
   'nextBigOutflow', 'dday', 'balanceOn', 'nextOutflowCard', 'monthOutflowCard', 'planGaugeCard', 'homeAlertCard', 'renderHome',
@@ -250,7 +250,10 @@ const FUNCTIONS = [
 // WeakSet — 저장 완료된 draft 객체를 표시해 같은 draft로 재호출되면 조용히 무시한다.
 // SUPABASE_URL/SUPABASE_ANON_KEY는 sbCfg()가 localStorage에 저장된 값이 없을 때 돌아가는
 // 기본값이다(app-evolve cycle152 advance, doForgotPassword/doForgotPasswordLocal 분기 테스트용).
-const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC'];
+// WK는 renderRecSheet()/recOpenWeekend()가 참조하는 주말 조정 어휘(none/earlier/later) 상수라
+// 같은 방식(extractConst)으로 끌어온다 — renderRecSheet를 FUNCTIONS에 추가하며 함께 필요해짐
+// (app-evolve cycle204 develop, renderTxSheet처럼 실행형 테스트가 없던 공백).
+const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'WK'];
 // _histCache는 filteredHist()가 재대입(={key,list})하는 let 선언이라 CONSTS(extractConst)로는
 // 못 끌어오므로 별도의 LETS 목록으로 extractLet을 통해 가져온다.
 // _copyIsCsv도 같은 이유(openCopyBackup()이 재대입)로 LETS를 통해 가져온다.
@@ -1082,26 +1085,30 @@ test('recalcEndCond: count/endDate가 둘 다 없으면 아무것도 하지 않�
  * 계속 날짜를 조정해버린다(화면엔 원인이 전혀 안 보임) — recFreq()가 monthly를 벗어날 때
  * weekend를 'none'으로 리셋해 이 불일치를 막는다. */
 test('recFreq: 매월에서 매주로 바꾸면 recDraft.weekend가 none으로 리셋된다', () => {
-  sandbox.recDraft = { freq: 'monthly', weekend: 'later', startDate: '2026-01-10', day: 10 };
+  setupRecSheetDB();
+  sandbox.recDraft = { type: 'expense', category: '월세', fromAssetId: 'a1', toAssetId: null, freq: 'monthly', weekend: 'later', startDate: '2026-01-10', day: 10 };
   sandbox.recFreq('weekly');
   assert.strictEqual(sandbox.recDraft.freq, 'weekly');
   assert.strictEqual(sandbox.recDraft.weekend, 'none');
 });
 test('recFreq: 매월에서 매일/매년으로 바꿔도 weekend가 none으로 리셋된다', () => {
-  sandbox.recDraft = { freq: 'monthly', weekend: 'earlier', startDate: '2026-01-10', day: 10 };
+  setupRecSheetDB();
+  sandbox.recDraft = { type: 'expense', category: '월세', fromAssetId: 'a1', toAssetId: null, freq: 'monthly', weekend: 'earlier', startDate: '2026-01-10', day: 10 };
   sandbox.recFreq('daily');
   assert.strictEqual(sandbox.recDraft.weekend, 'none');
-  sandbox.recDraft = { freq: 'monthly', weekend: 'earlier', startDate: '2026-01-10', day: 10 };
+  sandbox.recDraft = { type: 'expense', category: '월세', fromAssetId: 'a1', toAssetId: null, freq: 'monthly', weekend: 'earlier', startDate: '2026-01-10', day: 10 };
   sandbox.recFreq('yearly');
   assert.strictEqual(sandbox.recDraft.weekend, 'none');
 });
 test('recFreq: 매월에서 매월로(변화 없음) 유지되면 기존 weekend 값을 건드리지 않는다', () => {
-  sandbox.recDraft = { freq: 'monthly', weekend: 'later', startDate: '2026-01-10', day: 10 };
+  setupRecSheetDB();
+  sandbox.recDraft = { type: 'expense', category: '월세', fromAssetId: 'a1', toAssetId: null, freq: 'monthly', weekend: 'later', startDate: '2026-01-10', day: 10 };
   sandbox.recFreq('monthly');
   assert.strictEqual(sandbox.recDraft.weekend, 'later', 'monthly로 유지되는 한 weekend는 사용자가 고른 값 그대로여야 함');
 });
 test('recFreq: 매주에서 매월로 바꾸면 weekend는 건드리지 않는다(그대로면 사용자가 다시 선택 가능)', () => {
-  sandbox.recDraft = { freq: 'weekly', weekend: 'none', startDate: '2026-01-10', day: null };
+  setupRecSheetDB();
+  sandbox.recDraft = { type: 'expense', category: '월세', fromAssetId: 'a1', toAssetId: null, freq: 'weekly', weekend: 'none', startDate: '2026-01-10', day: null };
   sandbox.recFreq('monthly');
   assert.strictEqual(sandbox.recDraft.weekend, 'none');
   assert.strictEqual(sandbox.recDraft.day, 10, '매월로 바뀌면서 day가 비어있었으므로 시작일 기준으로 채워져야 함');
@@ -12424,16 +12431,124 @@ test('renderRecSheet: rAmt(금액)에 Enter-제출이 있다(saveRec()가 요구
     'rAmt에 Enter→saveRec() 연결이 없음'
   );
 });
-/* renderRecSheet는 renderTxSheet와 달리 vm 실행 스모크 테스트 fixture가 없어(DB.settings 등
- * 의존이 더 많음) extractFunction 소스 패턴으로 구분 세그먼트의 aria-pressed/role을 확인한다
- * (app-evolve cycle147 critique/advance, 세그먼트 컨트롤 9곳에 aria-pressed 추가). */
-test('renderRecSheet: 구분 세그먼트 버튼에 aria-pressed, 래퍼에 role/aria-label이 있다', () => {
-  const body = extractFunction('renderRecSheet');
-  assert.ok(
-    /typeSeg=\[.*\]\.map\(\(\[v,l\]\)=>`<button class="\$\{d\.type===v\?'on':''\}" aria-pressed="\$\{d\.type===v\}" onclick="recType/.test(body),
-    'renderRecSheet의 구분 세그먼트 버튼에 aria-pressed가 없음'
-  );
-  assert.ok(/<div class="seg" role="group" aria-label="구분 선택">/.test(body), '구분 세그먼트 래퍼에 role="group"/aria-label이 없음');
+/* renderRecSheet는 renderTxSheet(cycle43/cycle147)와 거의 같은 얕은 의존(recDraft 전역 상태 +
+ * catAv/catGlyph/assetPickBtn/endCondFields/dayPickerHTML/openFormSheet, 전부 공유 sandbox에
+ * 이미 있음)만으로 실제로 실행 가능한데도, renderTxSheet가 vm 실행 스모크 테스트를 받은 cycle43
+ * 이후 지금까지 extractFunction 소스 패턴 매칭만 받고 있던 공백이었다(app-evolve cycle204
+ * develop) — WK(주말 조정 어휘)만 CONSTS에 없어서 못 끌어왔을 뿐, 추가하자 바로 실행됐다.
+ * 아래부터는 실제 sandbox.renderRecSheet() 호출 + 렌더된 HTML 검사로 바꾼다. */
+function setupRecSheetDB() {
+  sandbox.DB = {
+    categories: { expense: ['월세'], income: ['급여'], saving: ['적금'] },
+    catIcon: {}, catVar: {},
+    assets: [
+      { id: 'a1', name: '주계좌', type: 'cash', owner: '나' },
+      { id: 'a2', name: '적금통장', type: 'savings', owner: '나' },
+    ],
+    settings: { confirmTransfers: false },
+  };
+  sandbox.lastSheetHtml = null;
+}
+test('renderRecSheet: 구분 세그먼트 버튼에 d.type과 일치하는 aria-pressed="true", 래퍼에 role/aria-label이 있다', () => {
+  setupRecSheetDB();
+  sandbox.recDraft = { type: 'transfer', category: '이체', amount: 100000, fromAssetId: 'a1', toAssetId: 'a2', freq: 'monthly', day: 10, startDate: '2026-01-01', endDate: null, count: null };
+  sandbox.renderRecSheet();
+  const html = sandbox.lastSheetHtml;
+  const buttons = [...html.matchAll(/<button class="([^"]*)" aria-pressed="(true|false)" onclick="recType\('(\w+)'\)">/g)];
+  assert.strictEqual(buttons.length, 4, '지출/수입/이체/저축 네 개 구분 버튼이 렌더돼야 함');
+  buttons.forEach(([, cls, pressed, v]) => {
+    assert.strictEqual(cls === 'on', pressed === 'true', `${v} 버튼의 on 클래스(${cls})와 aria-pressed(${pressed})가 일치하지 않음`);
+    assert.strictEqual(pressed === 'true', v === 'transfer', `d.type="transfer"일 때는 ${v} 버튼의 aria-pressed가 (${v === 'transfer'})이어야 함`);
+  });
+  assert.ok(html.includes('<div class="seg" role="group" aria-label="구분 선택">'), '구분 세그먼트 래퍼에 role="group"/aria-label이 없음');
+});
+test('renderRecSheet: 이체(transfer)만 카테고리 필드가 숨겨지고, 나머지 타입(지출/수입/저축)은 보인다', () => {
+  setupRecSheetDB();
+  sandbox.recDraft = { type: 'transfer', category: '이체', amount: 100000, fromAssetId: 'a1', toAssetId: 'a2', freq: 'monthly', day: 10, startDate: '2026-01-01', endDate: null, count: null };
+  sandbox.renderRecSheet();
+  assert.ok(!sandbox.lastSheetHtml.includes('<label>카테고리</label>'), '이체는 카테고리 필드가 없어야 함');
+
+  sandbox.recDraft = { type: 'saving', category: '적금', amount: 100000, fromAssetId: 'a1', toAssetId: 'a2', freq: 'monthly', day: 5, startDate: '2026-01-01', endDate: null, count: null };
+  sandbox.renderRecSheet();
+  assert.ok(sandbox.lastSheetHtml.includes('<label>카테고리</label>'), '저축은 카테고리 필드가 있어야 함(이체와만 다름)');
+});
+test('renderRecSheet: type별로 자산 필드가 올바른 조합으로 나온다(저축도 이체처럼 보내는/받는 자산 둘 다)', () => {
+  setupRecSheetDB();
+  sandbox.recDraft = { type: 'expense', category: '월세', amount: 500000, fromAssetId: 'a1', toAssetId: null, freq: 'monthly', day: 1, startDate: '2026-01-01', endDate: null, count: null };
+  sandbox.renderRecSheet();
+  let html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('출금 자산'));
+  assert.ok(!html.includes('입금 자산') && !html.includes('보내는 자산'), '지출은 출금 자산만 나와야 함');
+
+  sandbox.recDraft = { type: 'income', category: '급여', amount: 3000000, fromAssetId: null, toAssetId: 'a1', freq: 'monthly', day: 25, startDate: '2026-01-01', endDate: null, count: null };
+  sandbox.renderRecSheet();
+  html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('입금 자산'));
+  assert.ok(!html.includes('출금 자산') && !html.includes('보내는 자산'), '수입은 입금 자산만 나와야 함');
+
+  sandbox.recDraft = { type: 'saving', category: '적금', amount: 100000, fromAssetId: 'a1', toAssetId: 'a2', freq: 'monthly', day: 5, startDate: '2026-01-01', endDate: null, count: null };
+  sandbox.renderRecSheet();
+  html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('보내는 자산') && html.includes('받는 자산'));
+  assert.ok(!html.includes('출금 자산') && !html.includes('입금 자산'), '저축은 보내는/받는 자산만 나와야 함');
+});
+test('renderRecSheet: 주말 조정 필드는 매월(freq=monthly)일 때만 나오고, 선택된 WK 라벨을 보여준다', () => {
+  setupRecSheetDB();
+  sandbox.recDraft = { type: 'expense', category: '월세', amount: 500000, fromAssetId: 'a1', toAssetId: null, freq: 'monthly', day: 25, startDate: '2026-01-25', endDate: null, count: null, weekend: 'earlier' };
+  sandbox.renderRecSheet();
+  assert.ok(sandbox.lastSheetHtml.includes('recOpenWeekend()') && sandbox.lastSheetHtml.includes('앞당겨 금요일'), '매월일 때 주말 조정 필드가 선택값 라벨과 함께 나와야 함');
+
+  sandbox.recDraft = { type: 'expense', category: '월세', amount: 500000, fromAssetId: 'a1', toAssetId: null, freq: 'weekly', day: null, startDate: '2026-01-25', endDate: null, count: null, weekend: 'earlier' };
+  sandbox.renderRecSheet();
+  assert.ok(!sandbox.lastSheetHtml.includes('recOpenWeekend()'), '매주 등 매월이 아니면 주말 조정 필드가 없어야 함(weekend 값이 남아있어도)');
+});
+test('renderRecSheet: 이체 자동 확인 토글은 type=transfer && DB.settings.confirmTransfers일 때만 나오고 on/off 상태를 반영한다', () => {
+  setupRecSheetDB();
+  sandbox.DB.settings.confirmTransfers = true;
+  sandbox.recDraft = { type: 'transfer', category: '이체', amount: 100000, fromAssetId: 'a1', toAssetId: 'a2', freq: 'monthly', day: 10, startDate: '2026-01-01', endDate: null, count: null, autoConfirm: false };
+  sandbox.renderRecSheet();
+  let html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('이체 자동 확인'), 'confirmTransfers가 켜져 있으면 토글이 나와야 함');
+  assert.ok(html.includes('class="switch " role="switch" aria-checked="false"'), 'autoConfirm=false면 꺼진 상태로 나와야 함');
+
+  sandbox.recDraft.autoConfirm = true;
+  sandbox.renderRecSheet();
+  assert.ok(sandbox.lastSheetHtml.includes('class="switch on" role="switch" aria-checked="true"'), 'autoConfirm이 false가 아니면 켜진 상태로 나와야 함');
+
+  sandbox.DB.settings.confirmTransfers = false;
+  sandbox.renderRecSheet();
+  assert.ok(!sandbox.lastSheetHtml.includes('이체 자동 확인'), 'confirmTransfers가 꺼져 있으면 토글이 없어야 함');
+
+  sandbox.DB.settings.confirmTransfers = true;
+  sandbox.recDraft = { type: 'expense', category: '월세', amount: 500000, fromAssetId: 'a1', toAssetId: null, freq: 'monthly', day: 1, startDate: '2026-01-01', endDate: null, count: null };
+  sandbox.renderRecSheet();
+  assert.ok(!sandbox.lastSheetHtml.includes('이체 자동 확인'), 'type이 transfer가 아니면 confirmTransfers가 켜져 있어도 토글이 없어야 함');
+});
+test('renderRecSheet: 편집 중(d.id 있음)엔 해당 id로 delRecConfirm을 호출하는 삭제 버튼, 신규 생성 시엔 취소 버튼이 나온다', () => {
+  setupRecSheetDB();
+  sandbox.recDraft = { type: 'expense', category: '월세', amount: 500000, fromAssetId: 'a1', toAssetId: null, freq: 'monthly', day: 1, startDate: '2026-01-01', endDate: null, count: null };
+  sandbox.renderRecSheet();
+  assert.ok(sandbox.lastSheetHtml.includes('onclick="closeSheet()"') && !sandbox.lastSheetHtml.includes('delRecConfirm'), '신규 생성 시엔 취소 버튼만 있어야 함');
+
+  sandbox.recDraft = { id: 'r1', type: 'expense', category: '월세', amount: 500000, fromAssetId: 'a1', toAssetId: null, freq: 'monthly', day: 1, startDate: '2026-01-01', endDate: null, count: null };
+  sandbox.renderRecSheet();
+  assert.ok(sandbox.lastSheetHtml.includes(`delRecConfirm('r1')`), '편집 중엔 해당 id로 delRecConfirm을 호출하는 삭제 버튼이 나와야 함');
+});
+test('renderRecSheet: 변동 카테고리(DB.catVar)면 안내 카드가 뜨고, 저축/이체는 변동 여부와 무관하게 안 뜬다', () => {
+  setupRecSheetDB();
+  sandbox.DB.catVar = { [sandbox.catKey('expense', '월세')]: true };
+  sandbox.recDraft = { type: 'expense', category: '월세', amount: 500000, fromAssetId: 'a1', toAssetId: null, freq: 'monthly', day: 1, startDate: '2026-01-01', endDate: null, count: null };
+  sandbox.renderRecSheet();
+  assert.ok(sandbox.lastSheetHtml.includes('변동 카테고리예요'), '변동 카테고리로 지정돼 있으면 안내 카드가 나와야 함');
+
+  sandbox.recDraft = { type: 'income', category: '급여', amount: 3000000, fromAssetId: null, toAssetId: 'a1', freq: 'monthly', day: 25, startDate: '2026-01-01', endDate: null, count: null };
+  sandbox.renderRecSheet();
+  assert.ok(!sandbox.lastSheetHtml.includes('변동 카테고리예요'), '변동으로 지정 안 된 카테고리면 안내 카드가 없어야 함');
+
+  sandbox.DB.catVar = { [sandbox.catKey('saving', '적금')]: true };
+  sandbox.recDraft = { type: 'saving', category: '적금', amount: 100000, fromAssetId: 'a1', toAssetId: 'a2', freq: 'monthly', day: 5, startDate: '2026-01-01', endDate: null, count: null };
+  sandbox.renderRecSheet();
+  assert.ok(!sandbox.lastSheetHtml.includes('변동 카테고리예요'), '저축/이체는 isVarCat이 true여도 안내 카드 대상이 아님(지출/수입 전용)');
 });
 test('renderGoalForm: goalAmt(목표 금액)에 Enter-제출이 있다(saveGoal()의 유일한 필수 수치 입력이고, 목표일은 선택 항목이라 그 뒤에 이어지지 않음)', () => {
   const body = extractFunction('renderGoalForm');
