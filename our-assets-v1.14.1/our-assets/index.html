@@ -1387,7 +1387,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.172';
+const APP_VERSION='1.47.173';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -7985,7 +7985,7 @@ function undoToast(msg,undoFn){const t=document.createElement('div');t.className
 function deleteTxnsUndo(ids){if(twGuard())return;const removed=DB.txns.filter(t=>ids.has(t.id));
  DB.txns=DB.txns.filter(t=>!ids.has(t.id));
  DB.deletedIds=DB.deletedIds||{};const now=Date.now();ids.forEach(id=>DB.deletedIds[id]=now);
- save();renderCurrent();
+ save(removed.length?{fromDate:removed.reduce((m,t)=>t.date<m?t.date:m,removed[0].date)}:undefined);renderCurrent();
  undoToast(`${removed.length}개 내역을 삭제했어요`,()=>{DB.txns.push(...removed);ids.forEach(id=>delete DB.deletedIds[id]);touchSave(...removed);renderCurrent();toast('되돌렸어요')})}
 /* 선택 모드(일별거래/전체내역)의 '카테고리' 버튼이 피커에서 고른 카테고리를 실제로 적용하는
  * 지점(app-evolve cycle136 advance). bulkCatPickFor()가 이미 bulkCatTargets()로 검증해 넘긴

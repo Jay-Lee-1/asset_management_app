@@ -4873,6 +4873,50 @@ test('deleteTxnsUndo: 튜토리얼 모드에서 막히면 deletedIds도 전혀 �
   assert.strictEqual(sandbox.DB.deletedIds, undefined, '삭제가 막히면 deletedIds가 아예 생기지 않아야 함');
   sandbox.TWi = -1;
 });
+/* deleteTxnsUndo: save({fromDate})로 invalidateBalances의 부분 무효화 경로에 날짜를 넘긴다
+ * (app-evolve cycle205 develop) — saveTx()에 이어 삭제 경로도 삭제된 거래들 중 가장 이른 날짜를
+ * fromDate로 넘겨, 그 이전까지의 _balCache 항목은 삭제로 인해 바뀔 수 없으므로 보존한다. */
+test('deleteTxnsUndo: 단일 삭제는 그 거래의 date를 fromDate로 넘긴다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { txns: [{ id: 'x1', date: '2026-03-10', amount: 1000 }] };
+  const saveCalls = [];
+  const saveOrig = sandbox.save;
+  sandbox.save = (opts) => { saveCalls.push(opts); };
+  try {
+    sandbox.deleteTxnsUndo(new Set(['x1']));
+  } finally { sandbox.save = saveOrig; }
+  assert.strictEqual(saveCalls.length, 1);
+  assert.strictEqual(saveCalls[0] && saveCalls[0].fromDate, '2026-03-10', '삭제한 거래 자신의 date를 fromDate로 넘겨야 함');
+});
+test('deleteTxnsUndo: 날짜가 다른 여러 건을 삭제하면 그중 가장 이른 날짜를 fromDate로 넘긴다(순서와 무관하게)', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { txns: [
+    { id: 'x1', date: '2026-03-10', amount: 1000 },
+    { id: 'x2', date: '2026-01-05', amount: 500 },
+    { id: 'x3', date: '2026-05-20', amount: 700 },
+  ] };
+  const saveCalls = [];
+  const saveOrig = sandbox.save;
+  sandbox.save = (opts) => { saveCalls.push(opts); };
+  try {
+    sandbox.deleteTxnsUndo(new Set(['x1', 'x2', 'x3']));
+  } finally { sandbox.save = saveOrig; }
+  assert.strictEqual(saveCalls.length, 1);
+  assert.strictEqual(saveCalls[0] && saveCalls[0].fromDate, '2026-01-05', 'Set에 가장 먼저 들어있지 않아도 가장 이른 날짜를 찾아 fromDate로 넘겨야 함');
+});
+test('deleteTxnsUndo: 지정한 id가 하나도 안 걸려 삭제된 게 없으면 opts 없이 save()를 호출한다(회귀 가드)', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { txns: [{ id: 'x1', date: '2026-03-10', amount: 1000 }] };
+  const saveCalls = [];
+  const saveOrig = sandbox.save;
+  sandbox.save = (opts) => { saveCalls.push(opts); };
+  try {
+    sandbox.deleteTxnsUndo(new Set(['없는id']));
+  } finally { sandbox.save = saveOrig; }
+  assert.strictEqual(saveCalls.length, 1);
+  assert.strictEqual(saveCalls[0], undefined, '삭제된 게 없으면 fromDate 없이(기존과 동일하게 전체 clear) save()를 호출해야 함');
+  assert.strictEqual(sandbox.DB.txns.length, 1, '매칭되는 id가 없으면 아무것도 삭제되지 않아야 함');
+});
 
 /* ---------- bulkCatTargets(logic.js)/doBulkCat/bulkCatPickFor: 선택 모드(일별거래/전체내역)
    일괄 카테고리 변경 (app-evolve cycle136 advance — activeSel()/updateSelBottom()이 전체선택/닫기/

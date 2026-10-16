@@ -1,8 +1,15 @@
 {
   "cycle": 205,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 205,
+      "phase": "develop",
+      "timestamp": "2026-10-16T23:05:00.000Z",
+      "summary": "Explore 서브에이전트로 develop 후보를 탐색 — cycle204가 saveTx()/_saveCore()의 핵심 저장 경로에만 적용했던 invalidateBalances(fromDate) 부분 무효화를 삭제 경로(deleteTxnsUndo, index.html:7985)에도 확장할 여지를 발견. deleteTxnsUndo()가 save()를 인자 없이 호출해 거래를 지울 때마다 _balCache를 통째로 비우고 있었는데, 지워지는 거래들의 날짜 중 가장 이른 날짜 이전까지는 이번 삭제로 바뀔 수 없으므로 fromDate로 넘겨도 안전함(cycle204에서 이미 검증된 invalidateBalances의 fromDate 계약을 한 호출부 더 넓히는 것). save(removed.length?{fromDate:removed.reduce((m,t)=>t.date<m?t.date:m,removed[0].date)}:undefined)로 수정 — removed가 비면(매칭되는 id가 하나도 없으면) 기존처럼 opts 없는 save()를 그대로 호출해 100% 하위호환. undo 복원 분기(touchSave)는 opts 매개변수가 없어 건드리지 않음(범위 밖). test/run.js의 기존 deleteTxnsUndo 테스트 블록 바로 뒤에 3건 추가: (1) 단일 삭제가 그 거래의 date를 fromDate로 넘기는지, (2) 날짜가 다른 여러 건을 삭제하면 Set 순서와 무관하게 가장 이른 날짜를 fromDate로 넘기는지, (3) 매칭되는 id가 하나도 없으면 opts 없이 save()를 호출하는지(회귀 가드). index.html/sw.js 변경이라 APP_VERSION 1.47.172->1.47.173, sw.js CACHE v434->v435 갱신. node our-assets-v1.14.1/our-assets/test/run.js 1528/1528 -> 1531/1531 통과.",
+      "commit": null
+    },
     {
       "cycle": 204,
       "phase": "advance",
