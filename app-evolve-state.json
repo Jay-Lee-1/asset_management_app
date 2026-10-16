@@ -1,8 +1,20 @@
 {
   "cycle": 202,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "openStaleMvReview()가 0건일 때 토스트 없이 조용히 닫히는 버그 수정 + 실행형 테스트 커버리지 추가",
+    "why": "순자산 계산에서 빠졌을 수 있는 기록 검토 시트(index.html:7902-7910 openStaleMvReview, 7912-7915 dismissStaleMv)는 형제 목록 시트들(openNegList:7287, openQuickList:7358, openConfirmTransferList — 모두 0건이면 toast()로 피드백)과 달리 items.length===0이면 closeSheet()만 호출하고 아무 안내도 없음. 다른 기기에서 이미 확인했거나 해당 거래가 삭제된 뒤 홈 알림을 눌렀을 때 사용자 입장에서는 버튼이 반응 없는 것처럼 보임. 추가로 openStaleMvReview/dismissStaleMv는 FUNCTIONS 추출 목록(test/run.js:164-230)에 없고 grep 결과 실제 실행 테스트가 전혀 없음(언급은 전부 다른 함수 테스트의 비교 주석뿐) — openSpendAnalysis/goalRowHTML/openRecManage/assetBalCard/openOwnerManage가 이미 벗어난 '소스-매칭 또는 無테스트' 버그 클래스의 다음 인스턴스.",
+    "approach": "1) index.html:7904의 `if(!items.length){closeSheet();return}`에 형제 함수들과 동일한 패턴으로 toast('확인할 항목이 없어요') 추가. 2) test/run.js에 openStaleMvReview를 FUNCTIONS에 추가하고(또는 기존 recManageCtx/spendAnalysisCtx와 같은 격리 vm 컨텍스트 패턴 재사용 — detectStaleMarketValuedTxns 등 의존이 많으면 공유 sandbox에 직접 넣기 전에 addOwner류에서 겪었던 깨짐 여부 먼저 확인), 0건(토스트만)/1건 이상(항목별 '확인함' 버튼, aria 텍스트, dismissStaleMv('${it.key}') onclick)/dismissStaleMv 호출 시 DB.settings.dismissedStaleMvIds에 key가 append되고 save()/renderCurrent() 후 openStaleMvReview()가 재호출돼 남은 항목으로 다시 그려지는지를 실행형으로 검증하는 테스트 추가. index.html을 건드리므로 APP_VERSION/sw.js CACHE 버전 갱신 필요.",
+    "deferred_note": "dismissedStaleMvIds가 notifiedAlertIds의 pruneNotifiedIds(index.html:7741/7769)와 달리 가지치기가 없어 무한히 쌓이는 문제(index.html:7913)는 이번 계획에서 제외 — 다음 critique 사이클의 별도 후보로 남겨둔다."
+  },
   "history": [
+    {
+      "cycle": 202,
+      "phase": "critique",
+      "timestamp": "2026-10-16T12:30:00.000Z",
+      "summary": "Explore 서브에이전트로 앱 전반을 훑었다(split/예산이월/homeAlerts/modeSeg/isCloudConflict/assetBalCard·openOwnerManage 실행형 테스트 등 cycle189-202에서 이미 다룬 항목 제외). cycle197 critique의 러너업이던 openQuickList는 cycle199에 이미 실행형 테스트가 추가돼 제외하고, 나머지 러너업 openStaleMvReview()(index.html:7902-7915)를 재확인 — (1) items.length===0일 때 형제 목록 시트들(openNegList/openQuickList/openConfirmTransferList)과 달리 toast() 안내 없이 closeSheet()만 호출하는 버그, (2) openStaleMvReview/dismissStaleMv가 FUNCTIONS 목록에도 없고 실행형 테스트가 전혀 없는 공백(같은 버그 클래스의 다음 인스턴스)을 함께 발견. 러너업으로 dismissedStaleMvIds가 notifiedAlertIds와 달리 pruneNotifiedIds 상당의 가지치기가 없어 무한히 쌓이는 문제(7913)도 발견했으나 이번 계획에서는 제외하고 다음 critique 후보로 보류. 토스트 버그 수정 + 실행형 테스트 추가를 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "commit": null
+    },
     {
       "cycle": 202,
       "phase": "review",
@@ -134,13 +146,6 @@
       "phase": "review",
       "timestamp": "2026-10-15T15:07:53.000Z",
       "summary": "cycle197 develop(isCloudConflict 죽은 함수 삭제, commit d3bd42b) 검토 — grep으로 isCloudConflict가 index.html/logic.js/test 어디에도 더 이상 남아있지 않음을 재확인. maybeRollDay() 주석이 가리키는 'decidePushOutcome(1917 부근)'이 실제로 index.html:1917(pushCloud 내부 호출부)과 정확히 일치함을 확인. node test/run.js 1454/1454 통과. 이상 없음, 코드 변경 없음.",
-      "commit": null
-    },
-    {
-      "cycle": 197,
-      "phase": "critique",
-      "timestamp": "2026-10-15T16:10:00.000Z",
-      "summary": "Explore 서브에이전트로 앱 전반(아키텍처/UX/접근성/데이터 안전성/성능/테스트 커버리지)을 훑었다. openRecManage()(index.html:5574-5592, 반복거래 관리 화면 — type별 그룹핑, 기간 라벨, active/paused 배지·아이콘·aria-label, 빈 상태)가 test/run.js에서 무조건 no-op 스텁으로만 쓰이고 자체 실행형 테스트가 전혀 없음을 발견(recFreqLabel 위임을 보는 간접 테스트 1건만 존재) — openSpendAnalysis/goalRowHTML이 이미 겪었던 '소스-매칭 또는 無테스트' 버그 클래스의 다음 인스턴스. spendAnalysisCtx() 패턴을 재사용하는 recManageCtx() 신설 계획을 pending_advance_plan에 저장. 러너업: openQuickList(7256 부근)·openStaleMvReview(7798 부근)도 직접 테스트 無(다음 critique 후보로 보류). 코드 변경 없음.",
       "commit": null
     }
   ]
