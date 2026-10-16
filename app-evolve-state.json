@@ -1,8 +1,15 @@
 {
   "cycle": 203,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 203,
+      "phase": "develop",
+      "timestamp": "2026-10-16T14:10:00.000Z",
+      "summary": "Explore 서브에이전트로 develop 후보를 탐색 — openDebtBehindList()(index.html:7635-7638)가 자기 주석에 'openNegList()와 동일 패턴'이라 적어두고도 정체된 부채 0건일 때 openNegList(toast('부족 예상 통장이 없어요')+return)와 달리 안내 토스트 없이 closeSheet()만 호출하던 버그 발견 — cycle202에서 고친 openStaleMvReview() 0건 토스트 누락과 같은 버그 클래스의 다음 인스턴스. openDebtBehindList는 홈 알림 카드(kind:'debtBehindMulti')의 onclick으로 시트 바깥(어떤 화면이든)에서 호출될 수 있어, 데이터가 바뀌어 알림 렌더 시점과 탭 시점 사이에 0건이 되면 closeSheet()가 no-op이라 탭이 아무 반응 없는 것처럼 보임. toast('상환이 정체된 부채가 없어요')를 closeSheet() 앞에 추가(openNegList와 동일 메시지 패턴). test/run.js의 기존 openDebtBehindList 1건/N건 테스트 바로 위에 0건 케이스 1건 추가(setupHistoryDB()가 DB.assets=[]로 초기화하므로 debtsBehind()가 자연히 빈 배열, lastToast/closeSheetCalls 검증). index.html 변경이라 APP_VERSION 1.47.168->1.47.169, sw.js CACHE v430->v431 갱신. node our-assets-v1.14.1/our-assets/test/run.js 1514/1514 -> 1515/1515 통과.",
+      "commit": null
+    },
     {
       "cycle": 202,
       "phase": "advance",
@@ -135,13 +142,6 @@
       "timestamp": "2026-10-15T13:13:02.850Z",
       "summary": "critique(cycle196) 계획대로 budgetCarryFor(c,y,m)의 전달 한도 조회를 budgetForMonth(flat)에서 budgetForMonthWithCarry(flat+이월, 재귀)로 교체 — 연속 이월 체인이 2개월째에 flat~실질 한도 사이로 지출하면 0으로 끊기던 버그를 고쳤다. 무한/과도 재귀 방지를 위해 depth 파라미터(기본 0, 24개월 cap)를 budgetCarryFor/budgetForMonthWithCarry 양쪽에 추가(바깥 호출부는 그대로 depth 생략). test/run.js에 3단계 체인 회귀 테스트 1건(수정 전이면 0이 되던 지점이 50000으로 나오는지 확인) + depth cap sanity 테스트 1건 신규 추가, 또한 기존 budgetCarryFor/budgetForMonthWithCarry/openBudgetPrompt/openSpendAnalysis/totalBudgetSummary 테스트들이 budgetHistory를 2026-01부터로 둬 재귀 수정 후 의도치 않게 다다음 달까지 체인이 뻗어 기존 기대값이 깨지던 것을 발견 — 각 테스트의 budgetHistory 시작월을 '전달' 바로 전으로 좁혀 원래 의도(단일 스텝 이월)를 그대로 검증하도록 고쳤다(년도 경계 테스트는 2025-01->2025-12). index.html 변경이라 APP_VERSION 1.47.159->1.47.160, sw.js CACHE v421->v422. node test/run.js 1457/1457 -> 1459/1459 통과. pending_advance_plan을 비웠다.",
       "commit": null
-    },
-    {
-      "cycle": 197,
-      "phase": "develop",
-      "timestamp": "2026-10-15T14:20:00.000Z",
-      "summary": "Explore 서브에이전트로 develop 후보를 탐색해, logic.js의 isCloudConflict(curUpdatedAt,lastSyncedAt)가 index.html에서 단 한 번도 호출되지 않는 죽은 함수임을 발견 — pushCloud()의 실제 충돌 판정은 조건부 UPDATE 매치 결과를 보는 decidePushOutcome(matchedRowCount,rowExistedBefore)로 완전히 대체돼 있었는데, maybeRollDay()의 주석(기존 8560줄)은 여전히 '1566 부근 isCloudConflict 참고'라며 없는 근거를 가리키고 있었음. logic.js에서 isCloudConflict 함수+주석 삭제, maybeRollDay() 주석을 'decidePushOutcome(1917 부근)' 참고로 정정, test/run.js의 isCloudConflict 테스트 5건과 FUNCTIONS 주석 목록의 언급도 함께 제거(decidePushOutcome 테스트는 그대로 유지). 동작 변경은 없음(애초에 호출되지 않던 코드라 순수 정리). index.html/logic.js 변경이라 APP_VERSION 1.47.160->1.47.161, sw.js CACHE v422->v423 갱신. node test/run.js 1459/1459 -> 1454/1454(5건 삭제 반영) 통과.",
-      "commit": "d3bd42b"
     }
   ]
 }

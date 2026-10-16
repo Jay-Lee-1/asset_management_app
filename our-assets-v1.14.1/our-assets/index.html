@@ -1387,7 +1387,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.168';
+const APP_VERSION='1.47.169';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -7634,7 +7634,7 @@ function debtsBehind(){
 }
 function openDebtBehindList(){ /* openNegList()와 동일 패턴 — 1건이면 바로 그 자산으로, 여러 건이면 시트에서 고른다 */
  const list=debtsBehind();
- if(!list.length){closeSheet();return}
+ if(!list.length){toast('상환이 정체된 부채가 없어요');closeSheet();return}
  if(list.length===1){closeSheet();openAssetHistory(list[0].id);return}
  openSheet(`<h3>부채 상환 정체</h3><div class="desc">최근 줄어들고 있지 않은 부채 ${list.length}건이에요. 눌러서 확인하세요.</div>
   <div style="display:flex;flex-direction:column;gap:8px">${list.map(a=>`<button class="pick" onclick="closeSheet();openAssetHistory('${a.id}')">

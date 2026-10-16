@@ -13679,6 +13679,14 @@ test('renderAssets: 편집 모드(ST.editAssets)에서도 그룹 타이틀 옆�
   sandbox.renderAssets();
   assert.ok(sandbox.pageAssetsEl.innerHTML.includes('일부 미확인'), '편집 모드 그룹 타이틀에도 캡션이 보여야 함');
 });
+test('openDebtBehindList: 정체된 부채가 0건이면 안내 토스트를 띄우고 시트를 닫는다', () => {
+  setupHistoryDB();
+  sandbox.closeSheetCalls = 0;
+  sandbox.lastToast = null;
+  sandbox.openDebtBehindList();
+  assert.strictEqual(sandbox.lastToast, '상환이 정체된 부채가 없어요', '0건일 때 openNegList와 동일하게 안내 토스트가 떠야 함');
+  assert.strictEqual(sandbox.closeSheetCalls, 1);
+});
 test('openDebtBehindList: 정체된 부채가 1건이면 바로 그 자산 내역으로, 여러 건이면 시트에서 고르게 한다', () => {
   setupHistoryDB();
   sandbox.DB.assets.push({ id: 'd1', name: '마이너스통장', owner: '나', type: 'debt', baseAmount: 600000, includeInTotal: true });
