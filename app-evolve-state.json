@@ -1,7 +1,11 @@
 {
   "cycle": 209,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "test/run.js에 의존성 없는 DOM shim(test/domstub.js) 도입 — jsdom 부재로 정규식 소스-매칭에 머물러 있는 실행형 테스트로 전환",
+    "why": "test/run.js(약 17800줄)의 공유 sandbox는 매 cycle마다 그 cycle이 필요로 하는 최소 fake document/메서드만 손으로 덧붙여온 임시 스텁 객체(약 380-430행)이고, jsdom 등 실제 DOM 구현은 전혀 없다(our-assets-v1.14.1/our-assets/에 package.json/node_modules 자체가 없음). 그 결과 togglePwVis(test/run.js:15046 근처)와 openSheet()의 aria-labelledby 와이어링/twScreen/fcWire(test/run.js:17607-17609 근처) 등 여러 테스트가 '이 테스트 스위트엔 jsdom이 없어 실행형으로 못 돌리므로 소스 문자열 정규식 검증으로 대신한다'는 주석을 달고 실제 실행 대신 소스 문자열 부분일치만 검사한다. index.html에는 openSheet(6869), ensureEdgeGesture(6909, 63줄), wireMonthCarousel(8274, 59줄), twScreen(5838, 71줄), homeAlertCard(7884, 115줄) 등 앱의 실제 렌더링/상호작용 계층인 DOM 와이어링 함수가 수십 개 있는데, 이들의 DOM 변경 동작에 대한 유일한 안전망이 `body.includes(\"sh.querySelector('h3,.pk-h')\")` 같은 정규식/부분문자열 매칭이다. 이런 테스트는 동작이 그대로인 안전한 리팩터링(포맷 변경, 로컬 변수 이름 변경, if/else 재구성)에도 거짓으로 실패하고, 매칭된 부분 문자열만 우연히 보존하는 실제 버그에는 거짓으로 통과한다 — 프레임워크 없는 vanilla DOM 와이어링 계층, 즉 가장 안전망이 필요한 부분의 안전한 리팩터링을 오히려 가로막는다. 또한 매 cycle이 DOM을 다루는 새 기능을 추가할 때마다 ad hoc 스텁 객체가 계속 불어나거나 '실행 못 해서 정규식으로 대신한다'는 테스트가 하나씩 더 쌓이는 구조적으로 누적되는 문제다.",
+    "approach": "npm install 없이 의존성 없는 제로-빌드 철학을 유지한 채, test/domstub.js에 최소 DOM shim을 신설한다: Element(태그/속성/classList add·remove·contains·toggle, setAttribute/getAttribute/removeAttribute, id, children, appendChild/removeChild, textContent/innerHTML get/set, 간단한 querySelector/querySelectorAll — 태그/class/id 선택자만 지원)와 document(createElement, getElementById, querySelector/querySelectorAll, 최소 addEventListener). 이 shim을 test/run.js에 require해 현재 '이 테스트 스위트엔 jsdom이 없어...정규식으로 대신한다' 주석이 달린 약 10~15건의 테스트(togglePwVis, openSheet aria-labelledby, #dpModal/#dpWheel 라벨링, twScreen, fcWire 등)를 실제 DOM 상태를 생성·검사하는 실행형 테스트로 전환한다. 공유 sandbox의 손으로 작성된 ad hoc `sandbox.document={...}` 스텁들도 가능한 범위에서 이 공용 shim으로 교체해, 앞으로 cycle마다 스텁을 개별적으로 불리는 대신 하나의 재사용 가능한 fake로 합친다. 기존에 정규식으로 이미 통과하던 테스트들의 assertion을 실제 DOM 검사로 1:1 치환하되 검증 내용(어떤 속성/클래스가 어떻게 바뀌는지)은 그대로 유지해 회귀 의미를 보존한다. node our-assets-v1.14.1/our-assets/test/run.js로 전체 통과를 확인한다."
+  },
   "history": [
     {
       "cycle": 204,
@@ -134,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-17T16:05:00.000Z",
       "summary": "cycle209 develop 커밋(b4a4b1b, saveRec()에 save({fromDate}) 부분 캐시 무효화 적용)을 검토. invalidateBalances(fromDate)의 계약(key.slice(0,idx)>=fromDate인 _balCache 항목만 제거, upto<fromDate인 캐시는 보존)을 다시 확인하고, fromDate=min(orig.startDate,d.startDate)가 안전한 하한인 이유(expandRec()이 생성하는 모든 회차 날짜는 항상 그 반복의 startDate 이상이므로, 스케줄/금액/계정 등 어떤 필드가 바뀌어도 영향받는 가장 이른 날짜는 결코 min(orig.startDate,new.startDate)보다 앞설 수 없음)를 saveRec()/recDates()/expandRec() 소스로 직접 검증. wasEditing&&i<0인 기이한 경로(레코드가 이미 사라진 경우)는 orig가 없어 fromDate가 d.startDate로만 남는데, 그 경로 자체가 기존에도 비정상 상태라 범위 밖으로 둔 선택도 적절. recSaveScopeConfirm으로 return하는 분기(과거 회차 있어 범위 확인 시트를 거치는 경우)와 신규 반복 분기의 else 브랜치는 이번 범위에서 의도적으로 제외됐다고 커밋 메시지에 명시돼 있고 실제로 그 두 경로는 안 건드렸음을 재확인. 새 테스트 3건(신규 반복 fromDate=startDate, 시작일 불변 수정 fromDate=그 시작일, 시작일을 늦춰도 즉시 적용 경로에서 원래(이른) 시작일을 fromDate로)도 로직과 정확히 일치. node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1560/1560 통과. APP_VERSION 1.47.181/sw.js CACHE v443 갱신도 일관됨. 실제 버그 발견 없음 — 코드 변경 없이 state.json만 갱신.",
+      "commit": null
+    },
+    {
+      "cycle": 209,
+      "phase": "critique",
+      "timestamp": "2026-10-17T17:11:57.000Z",
+      "summary": "Explore 서브에이전트로 앱 전반을 아키텍처 관점에서 훑었다(cycle149-208에서 이미 다룬 invalidateBalances fromDate/closeSheetGuarded/aria-label류/0건 토스트/각종 실행형 테스트 커버리지 추가/budgetCarryFor/modeSeg/sanitizeBackup/dismissedStaleMvIds/split거래/isCloudConflict/r.skip 누적/renderCurrent 전체 재렌더 등은 명시적으로 제외). test/run.js(약 17800줄)의 공유 sandbox가 매 cycle 필요한 최소 fake document 스텁만 덧붙여온 ad hoc 객체이고 jsdom 등 실제 DOM 구현이 전혀 없어(package.json/node_modules 자체가 없음), togglePwVis·openSheet aria-labelledby 와이어링·twScreen·fcWire 등 여러 테스트가 \"jsdom이 없어 실행형으로 못 돌리므로 소스 문자열 정규식 검증으로 대신한다\"는 주석을 단 채 실제 실행 대신 부분 문자열 매칭만 하고 있음을 발견 — openSheet(6869)/ensureEdgeGesture(6909)/wireMonthCarousel(8274)/twScreen(5838)/homeAlertCard(7884) 등 앱의 실제 DOM 와이어링 계층이 가장 안전망이 부족한 상태로 남아 리팩터링 안전성을 해치는 구조적 문제. 러너업으로 (1) txDayInput/txDay/txCount/recDayInput 등 index.html:4341-4606의 미사용 함수 10개(기계적 삭제라 \"substantial\" 기준엔 못 미쳐 기각), (2) index.html:1355의 CDN 스크립트 SRI 해시 누락(이미 이번 로테이션에서 조사됐고 컨테이너 네트워크 egress 차단으로 해시 계산 불가라는 이유가 문서화돼 있어 기각)을 검토했으나 둘 다 이번 계획에서 제외. npm install 없이 의존성 없는 제로-빌드 철학을 유지한 test/domstub.js 최소 DOM shim(Element/classList/querySelector 등) 신설 계획을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
       "commit": null
     }
   ]
