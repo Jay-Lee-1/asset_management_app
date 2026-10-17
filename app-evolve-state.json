@@ -1,15 +1,8 @@
 {
   "cycle": 209,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 205,
-      "phase": "critique",
-      "timestamp": "2026-10-17T01:05:00.000Z",
-      "summary": "Explore 서브에이전트로 앱 전반을 훑었다(0건 토스트 안내 누락 버그 클래스, 실행형 테스트 공백, budgetCarryFor/modeSeg/sanitizeBackup splits/dismissedStaleMvIds 가지치기/invalidateBalances(fromDate) 등 cycle200-205에서 이미 다룬 항목 제외). assetDelSel()(index.html:3621, 자산관리 길게눌러 다중선택 삭제)이 delAsset()(index.html:3499, 단일 자산 삭제)과 달리 연결된 반복거래 비활성화 경고를 confirmSheet에 보여주지 않는 공백을 발견 — 두 경로 모두 deleteAssetsUndo()로 수렴해 삭제되는 자산에 연결된 모든 active 반복거래를 조건 없이 비활성화하는데, delAsset은 activeRecsForAssets(id)를 미리 계산해 '연결된 반복거래 N개도 함께 비활성화돼요'를 메시지에 포함시키지만 assetDelSel은 '{count}개 자산을 삭제할까요?'만 보여주고 activeRecsForAssets를 전혀 호출하지 않음(단일-경로엔 가드, 다중선택-경로엔 없는 이 앱의 반복 버그 클래스의 새 인스턴스). assetDelSel은 test/run.js에 테스트가 전혀 없음. 러너업으로 (1) twGuard()가 튜토리얼 오버레이에서 실제로 도달 불가능한 방어임을 CSS(.tws *{pointer-events:none}) 추적으로 확인해 기각, (2) mergeCollection/mergeRecurrences의 클라이언트-로컬 시계 기반 last-write-wins 병합(클락스큐 위험)은 이미 measureCloudClockSkew 완화가 있고 올바른 해법은 범위 밖 재설계라 기각(cycle204/205의 유사 판단과 일관). assetDelSel에 activeRecsForAssets(ids) 계산 + delAsset과 동일한 경고 절 추가 + 테스트 2건(절 포함/미포함) 계획을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
-      "commit": null
-    },
     {
       "cycle": 205,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-17T14:09:41.871Z",
       "summary": "critique(cycle208) 계획대로 renderHistory()의 #histQ 검색창 value 속성(index.html:4820)을 value=\"${esc(H.q)}\"로 수정 — 바로 아래 자산 검색창(3471행, value=\"${esc(ST.assetQ)}\")과 같은 패턴으로 통일. 이전엔 value=\"${H.q}\"로 ST.hist.q를 esc() 없이 그대로 삽입해, q에 \"가 포함되면(클립보드 하이재킹 self-XSS 등) value 속성이 중간에 끝나고 onmouseover= 같은 임의 속성이 주입되는 속성-이탈 XSS였다. test/run.js의 기존 renderHistory 실행형 테스트 블록에 1건 추가: ST.hist.q = '\" onmouseover=\"x'로 renderHistory() 호출 후 결과 innerHTML에 onmouseover=\"x\" 주입이 없고 value=\"&quot; onmouseover=&quot;x\" 로 정상 escape됐는지 확인. 다른 .replace(/\"/g,'&quot;') 수동 치환 지점들은 이미 안전해 손대지 않음(critique 계획대로 범위 밖). index.html/sw.js 변경이라 APP_VERSION 1.47.179->1.47.180, sw.js CACHE v441->v442 갱신. node our-assets-v1.14.1/our-assets/test/run.js 1556/1556 -> 1557/1557 통과. pending_advance_plan을 비웠다.",
+      "commit": null
+    },
+    {
+      "cycle": 209,
+      "phase": "develop",
+      "timestamp": "2026-10-17T15:12:27.157Z",
+      "summary": "Explore 서브에이전트로 develop 후보를 탐색 — saveTx()/deleteTxnsUndo()가 cycle204/209에서 받은 save({fromDate}) 부분 캐시 무효화를 saveRec()만 아직 받지 못한 공백을 발견(saveRec은 기존처럼 인자 없는 save()를 호출해 반복 저장/수정마다 _balCache를 통째로 비움). invalidateBalances(fromDate,opts) 계약을 재확인하고 saveTx의 \"수정 전 날짜와 새 날짜 중 이른 쪽\" 패턴을 saveRec에 그대로 적용 — wasEditing && 매칭되는 i>=0인 경우 orig를 덮어쓰기 전에 fromDate=min(orig.startDate,d.startDate)로 계산(index.html saveRec() 4632-4652행), 신규 반복 등록은 d.startDate 그대로 사용. recSaveScopeConfirm()/recSaveScopeApply(scope) 경로(과거 회차가 있어 범위 확인 시트를 거치는 분기)는 이번 범위에서 제외(Explore가 recSaveScopeApply/deleteRecsUndo도 같은 공백이 있다고 지적했으나, 가장 많이 거치는 saveRec() 직접 경로 하나만 좁게 고쳐 diff를 작게 유지, 나머지 둘은 다음 cycle 후보로 남김). recsChanged는 기본값(클리어)으로 둠 — DB.recurrences 자체가 바뀌므로 saveTx의 recsChanged:false와 달리 _recCache/_lastEditCache도 반드시 다시 전개돼야 함. test/run.js에 saveTx의 save({fromDate}) 테스트와 동일한 패턴으로 3건 추가: (1) 신규 반복 저장이 그 startDate를 fromDate로 넘기는지, (2) 시작일 안 바뀐 수정은 그대로 그 시작일을 넘기는지, (3) 과거 회차 없어 즉시 적용되는 경로에서 시작일을 더 늦게 바꾸면 원래(더 이른) 시작일을 fromDate로 넘기는지(min 로직 검증). index.html/sw.js 변경이라 APP_VERSION 1.47.180->1.47.181, sw.js CACHE v442->v443 갱신. HTML 주석을 제거한 뒤 <script> 블록을 node --check로 문법 검증. node our-assets-v1.14.1/our-assets/test/run.js 1557/1557 -> 1560/1560 통과.",
       "commit": null
     }
   ]

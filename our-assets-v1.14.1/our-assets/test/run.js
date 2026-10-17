@@ -5886,6 +5886,53 @@ test('saveRec: 이력 비영향 필드(메모 등)만 바뀌면 과거 회차가
   assert.strictEqual(sandbox.lastSheetHtml, null, '이력 비영향 필드만 바뀌면 확인 없이 바로 적용되어야 함');
   assert.strictEqual(sandbox.DB.recurrences[0].memo, '월세');
 });
+/* ---------- saveRec: save({fromDate})로 invalidateBalances의 부분 무효화 경로에 날짜를 넘긴다
+ * (app-evolve cycle209 develop) ----------
+ * saveTx()/deleteTxnsUndo()는 이미 cycle204/cycle209에서 save({fromDate})로 넘겨 invalidateBalances가
+ * 그 이전 날짜까지의 _balCache 항목을 보존하게 됐는데, saveRec()만 인자 없는 save()를 그대로 호출해
+ * 반복 저장/수정마다 _balCache를 통째로 비우고 있었다. DB.recurrences 자체가 바뀌므로 recsChanged는
+ * 기본값(클리어)으로 둔 채 fromDate만 넘긴다. */
+test('saveRec: 신규 반복을 저장하면 save()에 그 반복의 startDate를 fromDate로 넘긴다', () => {
+  sandbox.TWi = -1; sandbox.TODAY = '2026-06-15';
+  sandbox.DB = { recurrences: [] };
+  sandbox.recDraft = { id: null, type: 'expense', freq: 'monthly', day: 5, startDate: '2026-07-05', endDate: null, count: null, amount: 1000, category: '관리비', memo: '관리비', fromAssetId: 'a1', toAssetId: null };
+  const saveCalls = [];
+  const saveOrig = sandbox.save;
+  sandbox.save = (opts) => { saveCalls.push(opts); };
+  try {
+    sandbox.saveRec();
+  } finally { sandbox.save = saveOrig; }
+  assert.strictEqual(saveCalls.length, 1);
+  assert.strictEqual(saveCalls[0] && saveCalls[0].fromDate, '2026-07-05', '신규 반복 저장은 그 시작일을 fromDate로 넘겨야 함');
+});
+test('saveRec: 시작일을 바꾸지 않고 기존 반복을 수정하면 그대로 그 시작일을 fromDate로 넘긴다', () => {
+  sandbox.TWi = -1; sandbox.TODAY = '2026-06-15';
+  const r = { id: 'r1', type: 'expense', freq: 'monthly', day: 5, startDate: '2026-07-05', endDate: null, count: null, amount: 1000, category: '관리비', memo: '관리비', fromAssetId: 'a1', toAssetId: null, skip: [], edits: {}, active: true };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.recDraft = { ...JSON.parse(JSON.stringify(r)), fromAssetId: 'a2' };
+  const saveCalls = [];
+  const saveOrig = sandbox.save;
+  sandbox.save = (opts) => { saveCalls.push(opts); };
+  try {
+    sandbox.saveRec();
+  } finally { sandbox.save = saveOrig; }
+  assert.strictEqual(saveCalls.length, 1);
+  assert.strictEqual(saveCalls[0] && saveCalls[0].fromDate, '2026-07-05', '시작일이 안 바뀐 수정은 그 시작일 그대로 fromDate여야 함');
+});
+test('saveRec: 시작일을 더 늦은 날짜로 바꿔 즉시 적용되는 경로(과거 회차 없음)에서는 원래(더 이른) 시작일을 fromDate로 넘긴다', () => {
+  sandbox.TWi = -1; sandbox.TODAY = '2026-06-15';
+  const r = { id: 'r1', type: 'expense', freq: 'monthly', day: 5, startDate: '2026-07-05', endDate: null, count: null, amount: 1000, category: '관리비', memo: '관리비', fromAssetId: 'a1', toAssetId: null, skip: [], edits: {}, active: true };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.recDraft = { ...JSON.parse(JSON.stringify(r)), startDate: '2026-08-05' };
+  const saveCalls = [];
+  const saveOrig = sandbox.save;
+  sandbox.save = (opts) => { saveCalls.push(opts); };
+  try {
+    sandbox.saveRec();
+  } finally { sandbox.save = saveOrig; }
+  assert.strictEqual(saveCalls.length, 1, '과거 회차가 없으므로 확인 시트 없이 즉시 save()까지 가야 함');
+  assert.strictEqual(saveCalls[0] && saveCalls[0].fromDate, '2026-07-05', '원래 시작일이 더 이르므로 그 시작일부터 무효화해야 함 — 원래 시작일 이후 잔액도 이번 수정으로 바뀔 수 있음');
+});
 /* ---------- recScheduleShapeChanged / pruneOrphanRecOverrides (app-evolve cycle173 advance) ----------
  * critique(cycle172)가 지적한 결함: recSaveScopeApply('all')의 d는 editRec()의 JSON 클론이라 orig의
  * skip/edits(옛 스케줄 기준 절대 날짜)를 그대로 들고 있다. day/freq/startDate/weekend가 바뀌면
