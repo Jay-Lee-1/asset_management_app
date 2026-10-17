@@ -1,8 +1,15 @@
 {
   "cycle": 205,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 205,
+      "phase": "review",
+      "timestamp": "2026-10-17T00:05:00.000Z",
+      "summary": "cycle205 develop 커밋(b266cfa, deleteTxnsUndo()가 save({fromDate})로 삭제 날짜를 넘기도록 수정)을 검토. invalidateBalances(fromDate)의 계약(key.slice(0,idx)>=fromDate인 _balCache 항목만 제거, 즉 upto<fromDate인 캐시는 보존)을 재확인했고, fromDate=removed 중 최솟값 date로 넘기는 게 맞는 이유(그 이전 upto로 계산된 잔액은 이번 삭제로 바뀔 수 없음)를 save()/_saveCore()/invalidateBalances() 정의를 직접 읽어 검증. 추가된 테스트 3건(단일 삭제/여러 날짜 중 최솟값/매칭 없음 회귀 가드)도 로직과 일치. node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1531/1531 통과. undo 복원 분기(touchSave)가 여전히 opts 없는 save()로 전체 clear하는 점은 버그가 아니라 보수적으로 안전한 선택이라 그대로 둠. 실제 버그 발견 없음 — 코드 변경 없이 state.json만 갱신.",
+      "commit": null
+    },
     {
       "cycle": 205,
       "phase": "develop",
@@ -134,13 +141,6 @@
       "phase": "develop",
       "timestamp": "2026-10-16T19:20:12.000Z",
       "summary": "Explore 서브에이전트로 develop 후보를 탐색 — dismissedStaleMvIds(DB.settings, index.html:2201/7913)가 '확인함'(dismissStaleMv)을 누를 때마다 쌓이기만 하고, notifiedAlertIds가 이미 받은 pruneNotifiedIds(7741) 같은 가지치기가 없는 버그 발견(두 cycle(202/203) critique에서 러너업으로 거론됐지만 범위가 작다고 두 번 보류된 항목). 참조하던 거래/반복거래가 나중에 삭제돼도 tx:<id>:dir/rec:<id>:dir 키가 영구히 남아 DB.settings에 쌓이고 백업·클라우드 동기화 페이로드에도 그대로 포함돼 장기 사용자일수록 저장공간/동기화 용량에 조용히 누적되는 slow leak(다른 모든 tombstone/dismiss 목록엔 대응하는 정리 함수가 있는데 이것만 없었음). pruneDismissedStaleMvIds(dismissedStaleMvIds,txns,recurrences) 순수 함수를 detectStaleMarketValuedTxns 바로 뒤에 신설(존재하지 않는 tx/rec id를 가리키는 key, 형식이 깨진 key(구분자 수 != 3), 문자열이 아닌 값, 비배열 입력을 모두 걸러내 sanitizeBackup과 동일하게 빈 배열로 취급) — gcTombstones(2241행)와 같은 자리에서 migrate() 호출 시마다 실행되게 연결해 부팅·복원·클라우드 병합 때마다 자동 정리된다. test/run.js에 실행형 테스트 4건 추가(삭제된 참조 제거, 깨진 형식 제거, 비배열 입력 방어, 살아있는 key 보존 회귀 가드) + pruneDismissedStaleMvIds를 FUNCTIONS 목록에 추가. 기존 afterCloudAuth 테스트 하나가 깨졌는데(합성 placeholder 'x1' 키를 쓴 fixture가 실제 거래를 가리키지 않아 새 가지치기 로직에 의해 정상적으로 제거됨) — fixture를 remote.txns에 실제로 존재하는 t1을 가리키는 'tx:t1:from'으로 바꿔 '기기-로컬 설정이 remote에 덮이지 않는다'는 원래 검증 의도를 그대로 유지하면서 테스트를 갱신했다. index.html/sw.js 변경이라 APP_VERSION 1.47.170->1.47.171, sw.js CACHE v432->v433 갱신. node our-assets-v1.14.1/our-assets/test/run.js 1515/1515 -> 1519/1519 통과.",
-      "commit": null
-    },
-    {
-      "cycle": 204,
-      "phase": "review",
-      "timestamp": "2026-10-16T20:08:18.275Z",
-      "summary": "cycle204 develop(pruneDismissedStaleMvIds 가지치기 함수 추가, commit 7968992) 검토 — dismissStaleMv()가 쓰는 key 포맷(`${kind}:${refId}:${dir}`, index.html:2537)과 pruneDismissedStaleMvIds의 3-split 파싱이 정확히 일치함을 확인. uid()(1511행, Date.now().toString(36)+random)는 콜론을 생성하지 않으므로 실제 tx/rec id가 3-split 가정을 깨뜨릴 수 없음을 확인. migrate() 내 호출 순서(2242행)가 DB.recurrences 정규화(2213행) 이후라 신규 rec id가 비어있을 때도 안전하고, DB.txns는 load() 단계에서 이미 배열로 들어와 있어 문제없음. sanitizeBackup의 기존 dismissedStaleMvIds 비배열/빈문자열 가드(6554행)와 역할이 중복되지 않고 상호 보완적임(하나는 타입 안전, 하나는 참조 GC). afterCloudAuth 테스트 fixture를 실제 존재하는 t1 참조로 바꾼 것도 타당 — 가지치기 로직이 추가된 이후 가짜 참조(x1)를 쓰면 검증 의도와 무관하게 사라지므로 올바른 수정. node our-assets-v1.14.1/our-assets/test/run.js 1519/1519 통과. 이상 없음, 코드 변경 없음.",
       "commit": null
     }
   ]
