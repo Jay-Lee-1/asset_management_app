@@ -17532,6 +17532,29 @@ test('openRateSheet: 주식(stock) 시세 입력에 종목별 aria-label과 fiel
   assert.ok(body.includes(`<button type="button" class="fc-x" aria-label="${'$'}{esc(a.name)} 현재가 지우기" onclick="clrInput('${'$'}{id}')">`), 'stock 시세 입력에 fc-x 지우기 버튼의 clrInput 연결이 없음');
 });
 
+/* ---------- openSheet()의 #sheet 다이얼로그에 aria-labelledby가 없던 공백 ----------
+ * #sheet/#dpModal/#dpWheel 세 다이얼로그 모두 role="dialog" aria-modal="true"만 있고
+ * aria-labelledby가 전혀 없어(파일 전체에 aria-labelledby가 한 번도 안 쓰임), 스크린리더가
+ * 다이얼로그가 열렸다는 것만 알리고 "어떤" 시트인지는 알리지 못했다 — openSheet() 66개
+ * 호출부 중 65곳이 매번 <h3>...</h3>(또는 openPicker가 감싸는 <div class="pk-h">...</div>)로
+ * 제목을 넣는데도 그 제목을 다이얼로그 자체에 연결하는 코드가 없었다(app-evolve cycle207
+ * critique 후보, cycle206 critique가 "깊은 조사 없이는 공백인지 확신 어려워" 보류했던 걸
+ * 재확인해 실제 공백으로 확정). openSheet()는 $/classList/requestAnimationFrame/attachDetent/
+ * fcWire 등 DOM 전역에 깊이 엮여 있어(위 17319-17322 주석 참고) 이 스위트엔 jsdom이 없어
+ * 함수 전체를 실행형으로 못 돌리므로, 다른 DOM-깊은 함수들(twScreen 등)과 같은 소스 패턴
+ * 검사로 확인한다. */
+test('openSheet: 시트 콘텐츠의 첫 h3/.pk-h 제목으로 #sheet에 aria-labelledby를 설정한다(없으면 지운다)', () => {
+  const body = extractFunction('openSheet');
+  assert.ok(body.includes(`sh.innerHTML=`), 'openSheet 추출 범위가 예상과 다름(innerHTML 대입을 못 찾음)');
+  const innerHtmlIdx = body.indexOf('sh.innerHTML=');
+  const labelIdx = body.indexOf(`sh.querySelector('h3,.pk-h')`);
+  assert.ok(labelIdx > innerHtmlIdx, 'openSheet가 sh.innerHTML을 채우기 전에 제목을 찾고 있음(아직 옛 콘텐츠일 수 있음)');
+  assert.ok(
+    body.includes(`if(headEl){if(!headEl.id)headEl.id='sheetTitle';sh.setAttribute('aria-labelledby',headEl.id);}else sh.removeAttribute('aria-labelledby');`),
+    'openSheet가 제목 요소의 id로 aria-labelledby를 설정하거나(제목 없으면 제거하거나) 하지 않음'
+  );
+});
+
 /* ---------- 실행 ---------- */
 // pbkdf2Hash는 Web Crypto(subtle.deriveBits)를 쓰는 비동기 함수라, 러너도 async test를
 // 지원해야 한다 — sync test는 그냥 await해도 즉시 반환되므로 기존 테스트에는 영향 없다.

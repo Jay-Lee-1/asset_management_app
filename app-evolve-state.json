@@ -1,8 +1,15 @@
 {
   "cycle": 207,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 207,
+      "phase": "develop",
+      "timestamp": "2026-10-17T07:05:00.000Z",
+      "summary": "Explore 서브에이전트로 develop 후보를 탐색(0건 토스트 안내 누락/assetDelSel/invalidateBalances/budgetCarryFor/modeSeg/sanitizeBackup splits/buildImportPreview 분할 dedupe/dismissedStaleMvIds/openSpendAnalysis·goalRowHTML·openRecManage·openQuickList·openOwnerManage·assetBalCard 실행형 테스트/mergeCollection 클락스큐/twGuard/deleteTxnsUndo fromDate/celebrate 호출부 등 cycle149-206에서 이미 다룬 항목 전부 제외) — #sheet/#dpModal/#dpWheel 세 다이얼로그가 모두 role=\"dialog\" aria-modal=\"true\"만 있고 aria-labelledby가 파일 전체에 단 한 번도 쓰이지 않는 공백을 발견(cycle206 critique가 \"openSheet/closeSheet 쪽 깊은 조사 없이는 실제 공백인지 확신 어려워\" 보류했던 후보를 재조사해 확정). openSheet() 66개 호출부 중 65곳이 매번 시트 콘텐츠 맨 앞에 <h3>...</h3>(나머지 1곳은 openPicker가 감싸는 <div class=\"pk-h\">...</div>)로 제목을 넣는데도, #sheet 다이얼로그 자체엔 그 제목을 연결하는 코드가 없어 스크린리더가 다이얼로그가 열렸다는 것만 알리고 어떤 시트인지는 전혀 알리지 못했다. openSheet()(index.html:6853)에서 sh.innerHTML을 채운 직후 sh.querySelector('h3,.pk-h')로 첫 제목 요소를 찾아, 있으면(id 없으면 'sheetTitle'로 채운 뒤) sh.setAttribute('aria-labelledby',headEl.id), 없으면 sh.removeAttribute('aria-labelledby')로 지우는 두 줄을 추가 — 기존 66개 호출부 전부가 이미 h3/pk-h를 포함하므로 실질적으로 항상 채워지고, 제목이 없는 가상의 호출에도 안전한 폴백이 있음. openSheet()는 $/classList/requestAnimationFrame/attachDetent/wireSheetGestures/fcWire 등 DOM 전역에 깊이 엮여 있어 이 스위트엔 jsdom이 없어 전체를 실행형으로 못 돌리므로(기존 주석이 이미 백로그로 명시), twScreen과 같은 소스 텍스트 패턴 검사 테스트 1건을 추가(innerHTML 대입 이후에 제목을 찾는지 순서까지 확인 + 추가한 두 줄의 정확한 코드를 그대로 매칭). index.html/sw.js 변경이라 APP_VERSION 1.47.176->1.47.177, sw.js CACHE v438->v439 갱신. node our-assets-v1.14.1/our-assets/test/run.js 1544/1544 -> 1545/1545 통과.",
+      "commit": null
+    },
     {
       "cycle": 206,
       "phase": "advance",

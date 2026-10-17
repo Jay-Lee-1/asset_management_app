@@ -1387,7 +1387,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.176';
+const APP_VERSION='1.47.177';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6856,6 +6856,8 @@ function openSheet(html,topBtn){
  if(!wasOpen){_segPrev=null;sh.classList.remove('expanded');sh._expanded=false;sh._lockH=0;_sheetReturnFocus=document.activeElement;ovHistPush();}
  const btn=topBtn||`<button class="sheet-x" onclick="closeSheet()" aria-label="닫기">${svg('x')}</button>`;
  sh.innerHTML=`<div class="sheet-scroll" id="sheetScroll"><div class="grip"></div>${btn}${html}</div>`;
+ const headEl=sh.querySelector('h3,.pk-h');
+ if(headEl){if(!headEl.id)headEl.id='sheetTitle';sh.setAttribute('aria-labelledby',headEl.id);}else sh.removeAttribute('aria-labelledby');
  sh.classList.add('show');$('scrim').classList.add('show');
  syncOverlayInert();
  const sc=$('sheetScroll');
