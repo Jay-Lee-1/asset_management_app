@@ -6167,6 +6167,87 @@ test('saveRec: 신규 반복 등록(id 없음)은 기존처럼 회귀 없이 바
   assert.strictEqual(sandbox.DB.recurrences.length, 1);
   assert.strictEqual(sandbox.DB.recurrences[0].id, 'test-uid');
 });
+/* ---------- recSaveScopeApply: save({fromDate})로 invalidateBalances의 부분 무효화 경로에 날짜를
+ * 넘긴다 (app-evolve cycle210 develop) ----------
+ * saveRec()의 확인 시트 없는 즉시 적용 경로는 cycle209에서 이미 save({fromDate})로 넘기게 됐는데,
+ * 과거 회차가 있어 recSaveScopeConfirm()을 거치는 경로(recSaveScopeApply)만 그대로 인자 없는
+ * save()를 호출해 'all'/'future' 둘 다 매번 _balCache를 통째로 비우고 있었다. */
+test("recSaveScopeApply('all'): 시작일을 바꾸지 않은 수정은 그 시작일을 fromDate로 넘긴다", () => {
+  sandbox.TWi = -1; sandbox.TODAY = '2026-06-15'; sandbox.RANGE_TO = '2027-06-15';
+  const r = { id: 'r1', type: 'expense', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, count: null, amount: 1000, category: '관리비', memo: '관리비', fromAssetId: 'a1', toAssetId: null, skip: [], edits: {}, active: true, weekend: 'none' };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.recDraft = { ...JSON.parse(JSON.stringify(r)), amount: 2000 };
+  sandbox.saveRec(); // 과거 회차가 있어 확인 시트로 넘어감(즉시 save() 안 됨)
+  const saveCalls = [];
+  const saveOrig = sandbox.save;
+  sandbox.save = (opts) => { saveCalls.push(opts); };
+  try {
+    sandbox.recSaveScopeApply('all');
+  } finally { sandbox.save = saveOrig; }
+  assert.strictEqual(saveCalls.length, 1);
+  assert.strictEqual(saveCalls[0] && saveCalls[0].fromDate, '2026-01-05', "'전체 적용'도 그 시작일을 fromDate로 넘겨야 함");
+});
+test("recSaveScopeApply('all'): 시작일을 더 이른 날짜로 당기면 더 이른(원래보다 앞선) 시작일을 fromDate로 넘긴다", () => {
+  sandbox.TWi = -1; sandbox.TODAY = '2026-06-15'; sandbox.RANGE_TO = '2027-06-15';
+  const r = { id: 'r1', type: 'expense', freq: 'monthly', day: 5, startDate: '2026-03-05', endDate: null, count: null, amount: 1000, category: '관리비', memo: '관리비', fromAssetId: 'a1', toAssetId: null, skip: [], edits: {}, active: true, weekend: 'none' };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.recDraft = { ...JSON.parse(JSON.stringify(r)), startDate: '2026-01-05' };
+  sandbox.saveRec();
+  const saveCalls = [];
+  const saveOrig = sandbox.save;
+  sandbox.save = (opts) => { saveCalls.push(opts); };
+  try {
+    sandbox.recSaveScopeApply('all');
+  } finally { sandbox.save = saveOrig; }
+  assert.strictEqual(saveCalls.length, 1);
+  assert.strictEqual(saveCalls[0] && saveCalls[0].fromDate, '2026-01-05', '새 시작일이 더 이르므로 그 시작일부터 무효화해야 함');
+});
+test("recSaveScopeApply('future'): 'future' 분기도 min(orig.startDate,d.startDate)를 fromDate로 넘긴다", () => {
+  sandbox.TWi = -1; sandbox.TODAY = '2026-06-15'; sandbox.RANGE_TO = '2027-06-15';
+  const r = { id: 'r1', type: 'expense', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, count: null, amount: 1000, category: '관리비', memo: '관리비', fromAssetId: 'a1', toAssetId: null, skip: [], edits: {}, active: true, weekend: 'none' };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.recDraft = { ...JSON.parse(JSON.stringify(r)), amount: 2000 };
+  sandbox.saveRec();
+  const saveCalls = [];
+  const saveOrig = sandbox.save;
+  sandbox.save = (opts) => { saveCalls.push(opts); };
+  try {
+    sandbox.recSaveScopeApply('future');
+  } finally { sandbox.save = saveOrig; }
+  assert.strictEqual(saveCalls.length, 1);
+  assert.strictEqual(saveCalls[0] && saveCalls[0].fromDate, '2026-01-05', "'future' 분기도 원본 시작일을 fromDate로 넘겨야 함(과거 구간은 안 바뀌어도, 더 이른 날짜까지만 캐시를 보존하는 안전한 하한)");
+});
+/* ---------- deleteRecsUndo: save({fromDate})로 invalidateBalances의 부분 무효화 경로에 날짜를
+ * 넘긴다 (app-evolve cycle210 develop) ----------
+ * deleteTxnsUndo()는 cycle207에서 이미 save({fromDate})로 넘기게 됐는데, 반복 삭제(deleteRecsUndo)는
+ * 그대로 인자 없는 save()를 호출해 매번 _balCache를 통째로 비우고 있었다. */
+test('deleteRecsUndo: 지워진 반복들의 startDate 중 가장 이른 날짜를 fromDate로 넘긴다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { recurrences: [
+    { id: 'r1', startDate: '2026-03-05', skip: [], edits: {} },
+    { id: 'r2', startDate: '2026-01-10', skip: [], edits: {} },
+  ] };
+  const saveCalls = [];
+  const saveOrig = sandbox.save;
+  sandbox.save = (opts) => { saveCalls.push(opts); };
+  try {
+    sandbox.deleteRecsUndo(new Set(['r1', 'r2']));
+  } finally { sandbox.save = saveOrig; }
+  assert.strictEqual(saveCalls.length, 1);
+  assert.strictEqual(saveCalls[0] && saveCalls[0].fromDate, '2026-01-10', '지워진 반복 중 더 이른 시작일부터 무효화해야 함');
+});
+test('deleteRecsUndo: 삭제된 게 없으면(ids 불일치) 기존 회귀 가드처럼 opts 없이 save()를 호출한다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { recurrences: [{ id: 'r1', startDate: '2026-03-05', skip: [], edits: {} }] };
+  const saveCalls = [];
+  const saveOrig = sandbox.save;
+  sandbox.save = (opts) => { saveCalls.push(opts); };
+  try {
+    sandbox.deleteRecsUndo(new Set(['no-such-id']));
+  } finally { sandbox.save = saveOrig; }
+  assert.strictEqual(saveCalls.length, 1);
+  assert.strictEqual(saveCalls[0], undefined, '아무것도 안 지워졌으면 opts 모양을 바꾸지 않아야 함');
+});
 /* ---------- saveTx/saveAsset/saveRec: touch()로 updatedAt 스탬프 (app-evolve cycle86 advance) ----------
  * 클라우드 동기화가 문서 전체를 한 덩어리로 취급해 서로 무관한 레코드를 고친 두 기기도 충돌로
  * 처리되는 문제(cycle85/86 critique)를 풀려면 향후 레코드 단위 병합이 필요하고, 그 전제로 생성·
