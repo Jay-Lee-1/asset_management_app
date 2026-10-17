@@ -1,8 +1,19 @@
 {
   "cycle": 205,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "assetDelSel()(index.html:3621) 다중선택 자산 삭제가 delAsset()(index.html:3499)과 달리 연결된 반복거래 비활성화 경고를 안 보여줌",
+    "why": "delAsset()(단일 자산 삭제)는 confirmSheet 띄우기 전에 activeRecsForAssets(id)를 계산해 '연결된 반복거래 N개도 함께 비활성화돼요'를 확인 메시지에 포함하는데, assetDelSel()(자산관리 길게눌러 다중선택 삭제)은 '{count}개 자산을 삭제할까요?'만 보여주고 activeRecsForAssets를 전혀 호출하지 않음. 두 경로 모두 deleteAssetsUndo(ids)로 수렴하고 deleteAssetsUndo는 삭제되는 자산에 연결된 모든 active 반복거래(이전/이체/수입/지출)를 조건 없이 비활성화함. 사용자가 여러 개 계좌를 한꺼번에 정리하면서 자산 개수만 보고 확인하면, 그중 하나에 연결된 월간 반복이체가 조용히 꺼지고 6초짜리 undoToast를 놓치면 다음 달에야 반복거래가 안 도는 걸로 발견하게 됨. 단일-경로엔 가드가 있고 다중선택-경로엔 없는, 이 앱에 반복되는 버그 클래스(0건 토스트 안내 누락과 같은 패턴)의 새 인스턴스. assetDelSel은 test/run.js에 테스트가 전혀 없음.",
+    "approach": "assetDelSel()에서 confirmSheet 호출 전에 const recs=activeRecsForAssets(ids)(ids는 이미 Set이라 activeRecsForAssets의 ids.has 분기가 그대로 동작)를 계산하고, delAsset()과 똑같은 절(recs.length?` 연결된 반복거래 ${recs.length}개도 함께 비활성화돼요.`:'')를 메시지에 append. 새 헬퍼 불필요, 최소 diff. test/run.js에 테스트 추가: (1) activeRecsForAssets가 비어있지 않을 때 assetDelSel의 confirmSheet 메시지에 반복거래 개수 절이 포함되는지, (2) 비어있으면 절이 없는지(delAsset 메시지-내용 테스트와 동일 패턴으로 회귀 가드)."
+  },
   "history": [
+    {
+      "cycle": 205,
+      "phase": "critique",
+      "timestamp": "2026-10-17T01:05:00.000Z",
+      "summary": "Explore 서브에이전트로 앱 전반을 훑었다(0건 토스트 안내 누락 버그 클래스, 실행형 테스트 공백, budgetCarryFor/modeSeg/sanitizeBackup splits/dismissedStaleMvIds 가지치기/invalidateBalances(fromDate) 등 cycle200-205에서 이미 다룬 항목 제외). assetDelSel()(index.html:3621, 자산관리 길게눌러 다중선택 삭제)이 delAsset()(index.html:3499, 단일 자산 삭제)과 달리 연결된 반복거래 비활성화 경고를 confirmSheet에 보여주지 않는 공백을 발견 — 두 경로 모두 deleteAssetsUndo()로 수렴해 삭제되는 자산에 연결된 모든 active 반복거래를 조건 없이 비활성화하는데, delAsset은 activeRecsForAssets(id)를 미리 계산해 '연결된 반복거래 N개도 함께 비활성화돼요'를 메시지에 포함시키지만 assetDelSel은 '{count}개 자산을 삭제할까요?'만 보여주고 activeRecsForAssets를 전혀 호출하지 않음(단일-경로엔 가드, 다중선택-경로엔 없는 이 앱의 반복 버그 클래스의 새 인스턴스). assetDelSel은 test/run.js에 테스트가 전혀 없음. 러너업으로 (1) twGuard()가 튜토리얼 오버레이에서 실제로 도달 불가능한 방어임을 CSS(.tws *{pointer-events:none}) 추적으로 확인해 기각, (2) mergeCollection/mergeRecurrences의 클라이언트-로컬 시계 기반 last-write-wins 병합(클락스큐 위험)은 이미 measureCloudClockSkew 완화가 있고 올바른 해법은 범위 밖 재설계라 기각(cycle204/205의 유사 판단과 일관). assetDelSel에 activeRecsForAssets(ids) 계산 + delAsset과 동일한 경고 절 추가 + 테스트 2건(절 포함/미포함) 계획을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "commit": null
+    },
     {
       "cycle": 205,
       "phase": "review",
@@ -113,13 +124,6 @@
       "phase": "develop",
       "timestamp": "2026-10-16T00:00:00.000Z",
       "summary": "Explore 서브에이전트로 develop 후보를 탐색 — modeSeg(tab)(index.html:3990-3994, 가계부/전체내역 헤더의 달력↔검색 세그먼트)의 filtered 플래그가 ST.hist.cat/q/assetId 세 개만 보고 ST.hist.catExact(지출분석 화면의 '내역' 버튼이 세팅하는 카테고리 드릴다운 필터)와 ST.hist.owner(귀속 필터, catExact와 항상 함께 세팅/해제됨)를 빼놓던 버그 발견 — 지출분석에서 '식비' 내역을 보고 달력 탭으로 넘어가면(toCal()/toList()는 ST.hist를 안 지움, 필터가 탭 전환 중에도 유지되는 건 의도된 동작) catExact='식비' 필터가 여전히 걸려 있는데도 chip-dot이 사라져, '검색으로 돌아가면 식비만 보인다'는 유일한 시각적 흔적이 끊김. ST.hist.owner가 사라진 귀속 이름을 들고 있으면 내역이 조용히 전부 사라지는 cycle181/182 버그, catExact 칩이 옛 이름에 남는 cycle182 버그와 같은 '필터 흔적 공백' 버그 클래스의 재발. filtered 식에 ||!!ST.hist.catExact||(ST.hist.owner&&ST.hist.owner!=='전체') 추가(기존 cat/q/assetId 체크는 그대로, filteredHist() 등 실제 필터링 로직은 안 건드린 순수 UI 인디케이터 수정). test/run.js에 기존 chip-dot 테스트(15292행 근방) 바로 옆에 3건 추가: catExact만 있을 때, owner만 '전체'가 아닐 때, 둘 다 기본값일 때(dot 없음, 회귀 가드). index.html/sw.js 변경이라 APP_VERSION 1.47.164->1.47.165, sw.js CACHE v426->v427 갱신. node test/run.js 1492/1492 -> 1495/1495 통과.",
-      "commit": null
-    },
-    {
-      "cycle": 195,
-      "phase": "review",
-      "timestamp": "2026-10-15T06:30:00.000Z",
-      "summary": "cycle195 develop(goalIsOverdue, commit 02ffe5a) 검토 — homeAlerts()의 goalBehind 전제(hist.length>=2 && !goalHasUnknown)와 의도적으로 분리된 판정임을 확인(목표 화면 자체의 '지남' 표시는 그 전제가 필요 없음, 커밋 메시지에도 명시됨). targetDate/TODAY 모두 YYYY-MM-DD 문자열이라 기존 코드(goalProgress의 h.date<=today 등)와 동일한 문자열 비교 관례를 따름. 'mini warn' 배지 클래스도 hasUnknown과 동일하게 재사용. node test/run.js 1451/1451 통과. 이상 없음, 코드 변경 없음.",
       "commit": null
     },
     {
