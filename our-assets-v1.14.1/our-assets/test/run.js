@@ -17960,6 +17960,118 @@ test('closeSheetGuarded 와이어링: 스크림탭/스와이프다운 닫기/뒤
   );
 });
 
+/* ---------- wireSheetGestures/ensureEdgeGesture: 시트 제스처 엔진 실행형 테스트 ----------
+ * 모든 화면 진입/뒤로가기가 통과하는 openSheet()는 매번 wireSheetGestures()(스와이프다운 닫기)와
+ * ensureEdgeGesture()(좌측 엣지 스와이프 뒤로가기/닫기)를 거치는데, 이 스위트는 지금까지 openSheet를
+ * 항상 트리비얼 스텁으로 교체해(624/701/11315/12643/12874행) 둘 다 실행된 적이 전혀 없었다
+ * (app-evolve cycle209 critique가 처음 지적, cycle210 critique가 범위를 좁혀 재확정). 모든 스와이프
+ * 닫기/뒤로가기가 draft-dirty-guard(cycle207, closeSheetGuarded)에 의존하므로 회귀 발생 시 가장
+ * 조용히 깨질 위험이 큰 지점이다. closeSheetGuarded 테스트(위)와 같은 ad hoc vm 컨텍스트 패턴으로
+ * 세 동작만 좁게 검증한다: (1) 스와이프다운 커밋/취소, (2) 엣지 엘리먼트 싱글톤 생성,
+ * (3) 엣지 스와이프 뒤로가기가 한 드래그당 정확히 한 번만 호출되는지. wireMonthCarousel은
+ * 범위 밖(다음 cycle 후보)으로 남긴다. */
+function sheetGestureCtx() {
+  const dom = domstub.createDocument();
+  const ctx = {
+    closeSheetGuardedCalls: 0, closeSheetGuarded: () => { ctx.closeSheetGuardedCalls++; },
+    closeSheetCalls: 0, closeSheet: () => { ctx.closeSheetCalls++; },
+    applyHeight: () => {}, attachDetent: () => {},
+    requestAnimationFrame: () => {}, setTimeout: (fn) => fn(), moveSegBlobs: () => {},
+    window: {},
+    document: dom,
+    $: (id) => dom.getElementById(id),
+  };
+  vm.createContext(ctx);
+  vm.runInContext(
+    [extractFunction('wireSheetGestures'), extractFunction('ensureEdgeGesture')].join('\n'),
+    ctx, { filename: 'sheet-gesture-real' }
+  );
+  return ctx;
+}
+test('[실행형] wireSheetGestures: 스와이프다운이 120px를 넘으면 closeSheetGuarded()를 부르고, 안 넘으면 원위치로 되돌린다', () => {
+  const ctx = sheetGestureCtx();
+  const sh = { style: {} };
+  const sc = ctx.document.createElement('div');
+  sc.scrollTop = 0;
+  ctx.wireSheetGestures(sh, sc);
+
+  sc.dispatchEvent({ type: 'touchstart', touches: [{ clientX: 0, clientY: 0 }] });
+  sc.dispatchEvent({ type: 'touchmove', touches: [{ clientX: 0, clientY: 150 }] });
+  sc.dispatchEvent({ type: 'touchend' });
+  assert.strictEqual(ctx.closeSheetGuardedCalls, 1, 'dy>120이면 closeSheetGuarded()를 정확히 한 번 불러야 함');
+
+  sh.style.transform = 'translateY(80px)';
+  sc.dispatchEvent({ type: 'touchstart', touches: [{ clientX: 0, clientY: 0 }] });
+  sc.dispatchEvent({ type: 'touchmove', touches: [{ clientX: 0, clientY: 80 }] });
+  sc.dispatchEvent({ type: 'touchend' });
+  assert.strictEqual(ctx.closeSheetGuardedCalls, 1, 'dy<=120이면 closeSheetGuarded()를 추가로 부르면 안 됨(그대로 1)');
+  assert.strictEqual(sh.style.transform, '', 'dy<=120이면 원위치로(transform 제거) 되돌려야 함');
+});
+test('[실행형] ensureEdgeGesture: openSheet()가 매번 다시 불려도(ensureEdgeGesture 재호출) 엣지 엘리먼트를 정확히 한 번만 만든다', () => {
+  const ctx = sheetGestureCtx();
+  assert.strictEqual(ctx.$('sheetEdgeGlobal'), null, '호출 전에는 엣지 엘리먼트가 없어야 함');
+  ctx.ensureEdgeGesture();
+  const edge1 = ctx.$('sheetEdgeGlobal');
+  assert.ok(edge1, '엣지 엘리먼트가 생성돼야 함');
+  assert.strictEqual(ctx.document.body.children.length, 1, '엣지 엘리먼트가 정확히 하나 생성돼야 함');
+
+  ctx.ensureEdgeGesture();
+  ctx.ensureEdgeGesture();
+  assert.strictEqual(ctx.document.body.children.length, 1, '여러 번 재호출돼도(시트 재오픈) 엣지 엘리먼트가 중복 생성되면 안 됨');
+  assert.strictEqual(ctx.$('sheetEdgeGlobal'), edge1, '기존 엣지 엘리먼트를 재사용해야 함(새로 만들면 이전 터치 리스너가 끊김)');
+});
+test('[실행형] ensureEdgeGesture: window._pkBack이 설정된 상태로 엣지를 드래그하면 뒤로가기(b)를 한 드래그당 정확히 한 번만 부른다', () => {
+  const ctx = sheetGestureCtx();
+  const sh = ctx.document.createElement('div');
+  sh.id = 'sheet';
+  sh.classList.add('show');
+  sh.clientWidth = 300;
+  sh.getBoundingClientRect = () => ({ height: 600 });
+  ctx.document.body.appendChild(sh);
+  const sheetScroll = ctx.document.createElement('div');
+  sheetScroll.id = 'sheetScroll';
+  ctx.document.body.appendChild(sheetScroll);
+
+  let backCalls = 0;
+  ctx.window._pkBack = () => { backCalls++; sheetScroll.innerHTML = '이전 화면'; };
+
+  ctx.ensureEdgeGesture();
+  const edge = ctx.$('sheetEdgeGlobal');
+
+  edge.dispatchEvent({ type: 'touchstart', touches: [{ clientX: 0, clientY: 0 }] });
+  edge.dispatchEvent({ type: 'touchmove', touches: [{ clientX: 40, clientY: 0 }] }); // dx=40>6 → 드래그 시작, 뒤로가기 1회 호출
+  assert.strictEqual(backCalls, 1, '드래그가 임계값(6px)을 넘는 순간 뒤로가기 핸들러가 정확히 한 번 불려야 함');
+
+  edge.dispatchEvent({ type: 'touchmove', touches: [{ clientX: 60, clientY: 0 }] });
+  edge.dispatchEvent({ type: 'touchmove', touches: [{ clientX: 90, clientY: 0 }] }); // 같은 드래그 안에서 더 끌어도 재호출되면 안 됨
+  assert.strictEqual(backCalls, 1, '같은 드래그 안에서 touchmove가 더 와도 뒤로가기가 다시 불리면 안 됨');
+
+  edge.dispatchEvent({ type: 'touchend' }); // dx=90<110, 커밋 안 함(취소) — 그래도 추가 호출 없어야 함
+  assert.strictEqual(backCalls, 1, '커밋하지 않고 손을 떼도(취소) 뒤로가기가 추가로 불리면 안 됨');
+  assert.strictEqual(ctx.closeSheetCalls, 0, '커밋하지 않았으면 closeSheet()를 부르면 안 됨');
+
+  edge.dispatchEvent({ type: 'touchstart', touches: [{ clientX: 0, clientY: 0 }] });
+  edge.dispatchEvent({ type: 'touchmove', touches: [{ clientX: 40, clientY: 0 }] }); // 새 드래그(커밋 안 함, dx<110) → 뒤로가기 다시 1회
+  edge.dispatchEvent({ type: 'touchend' });
+  assert.strictEqual(backCalls, 2, '손을 뗀 뒤 새로 시작한 드래그는 뒤로가기를 다시(이번 드래그에서 정확히 한 번) 불러야 함');
+});
+test('[실행형] ensureEdgeGesture: 뒤로갈 화면이 없을 때(window._pkBack 미설정) 엣지 스와이프를 커밋하면 closeSheet()를 부른다', () => {
+  const ctx = sheetGestureCtx();
+  const sh = ctx.document.createElement('div');
+  sh.id = 'sheet';
+  sh.classList.add('show');
+  sh.clientWidth = 300;
+  ctx.document.body.appendChild(sh);
+  ctx.window._pkBack = null;
+
+  ctx.ensureEdgeGesture();
+  const edge = ctx.$('sheetEdgeGlobal');
+  edge.dispatchEvent({ type: 'touchstart', touches: [{ clientX: 0, clientY: 0 }] });
+  edge.dispatchEvent({ type: 'touchmove', touches: [{ clientX: 150, clientY: 0 }] }); // dx=150>110 커밋
+  edge.dispatchEvent({ type: 'touchend' });
+  assert.strictEqual(ctx.closeSheetCalls, 1, '되돌아갈 화면이 없는 상태로 엣지 스와이프를 커밋하면(dx>110) closeSheet()가 불려야 함');
+});
+
 /* ---------- 실행 ---------- */
 // pbkdf2Hash는 Web Crypto(subtle.deriveBits)를 쓰는 비동기 함수라, 러너도 async test를
 // 지원해야 한다 — sync test는 그냥 await해도 즉시 반환되므로 기존 테스트에는 영향 없다.

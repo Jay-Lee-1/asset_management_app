@@ -1,19 +1,8 @@
 {
-  "cycle": 210,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "test/domstub.js 기반 isolated vm context로 openSheet/wireSheetGestures/ensureEdgeGesture 실행형 테스트 추가",
-    "why": "모든 시트 열기/스와이프다운 닫기/엣지 스와이프 뒤로가기가 통과하는 가장 상태적인(클로저 많은) 코드(index.html:6876-6916+)가 test/run.js에서 항상 트리비얼 스텁(701/11315/12643/12874행, 624행 wireMonthCarousel no-op)으로 교체돼 실행된 적이 없다. cycle207의 draft-dirty-guard 등 최근 수정들이 전부 이 경로(closeSheetGuarded 호출)에 의존하므로 향후 리팩터링에서 가장 조용히 깨질 위험이 큰 지점이다.",
-    "approach": "test/domstub.js에 최소 fake touch dispatch 헬퍼(터치 포인트만 가진 {touches:[{clientX,clientY}]} 객체를 만들어 핸들러에 직접 넘기는 수준, 실제 TouchEvent/Touch API 불필요)를 추가하고, assetBalCardCtx와 같은 패턴으로 실제 #sheet/#scrim DOM을 domstub으로 구성한 isolated vm context를 만들어 실제 openSheet/wireSheetGestures/ensureEdgeGesture 소스를 로드한다. 범위는 3가지로 한정: (1) 스와이프다운 dy>120 → closeSheetGuarded 호출, dy<=120 → 원위치 복귀, (2) ensureEdgeGesture가 여러 번 openSheet가 호출돼도 엣지 엘리먼트를 정확히 한 번만 생성(싱글톤 가드), (3) 엣지 스와이프 커밋(dx>110, window._pkBack 설정 상태)이 뒤로가기를 정확히 한 번 호출. wireMonthCarousel은 범위를 좁히기 위해 후속 cycle로 미룬다."
-  },
+  "cycle": 211,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 202,
-      "phase": "advance",
-      "timestamp": "2026-10-16T13:10:00.000Z",
-      "summary": "critique(cycle202) 계획대로 openStaleMvReview()의 0건 분기(index.html:7904)에 형제 함수들(openNegList/openQuickList/openConfirmTransferList)과 동일하게 toast('확인할 항목이 없어요') 추가 — 이전엔 closeSheet()만 호출해 다른 기기에서 이미 확인했거나 해당 거래가 삭제된 뒤 홈 알림을 눌렀을 때 버튼이 반응 없는 것처럼 보였음. openStaleMvReview/dismissStaleMv를 test/run.js의 FUNCTIONS 목록에 추가(detectStaleMarketValuedTxns 등 의존 함수가 이미 공유 sandbox에 있어 openNegList/openQuickList와 같은 패턴으로 바로 적용됨, 별도 격리 컨텍스트 불필요), TYPE_LABEL을 CONSTS에 추가(기존 소스가 참조하는데 누락돼 있었음). 실행형 테스트 4건 추가: (1) 0건이면 closeSheet+toast(회귀 가드), (2) 항목 있으면 확인함 버튼의 dismissStaleMv(key) 연결, (3) dismissStaleMv가 key를 dismissedStaleMvIds에 append하고 save()/renderCurrent() 후 남은 항목으로 시트를 다시 그림, (4) 마지막 항목 확인 시(재귀 호출에서 0건) closeSheet+toast. index.html 변경이라 APP_VERSION 1.47.167->1.47.168, sw.js CACHE v429->v430 갱신. node our-assets-v1.14.1/our-assets/test/run.js 1510/1510 -> 1514/1514 통과. pending_advance_plan을 비웠다.",
-      "commit": null
-    },
     {
       "cycle": 202,
       "phase": "critique",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-17T22:10:47.092Z",
       "summary": "Explore 서브에이전트로 앱 전반을 아키텍처 관점에서 훑었다(cycle190-210에서 이미 다룬 invalidateBalances fromDate/closeSheetGuarded/aria-label류/0건 토스트/각종 실행형 테스트 추가(openOwnerManage·assetBalCard·openSpendAnalysis·goalRowHTML·openRecManage·openQuickList·togglePwVis·wireWhHead)/buildImportPreview dedupe/renderHistory histQ XSS/domstub.js 신설 제외). 시트/제스처 엔진(openSheet index.html:6876, wireSheetGestures:6895, ensureEdgeGesture:6916, wireMonthCarousel:8286)이 모든 화면 진입/뒤로가기가 통과하는 가장 상태적이고 클로저가 깊은 코드인데도, test/run.js가 openSheet를 항상 트리비얼 스텁으로 교체하고(701/11315/12643/12874행) wireMonthCarousel도 no-op 스텁(624행)이라 wireSheetGestures/ensureEdgeGesture가 실행된 적이 전혀 없음을 발견. cycle152~153 주석에 이미 백로그로 명시돼 있었고 cycle209 domstub.js 신설 때도 다시 미뤄졌음(togglePwVis/wireWhHead만 전환). draft-dirty-guard(cycle207)를 포함해 모든 스와이프 닫기/뒤로가기가 이 경로에 의존하므로 회귀 발생 시 가장 조용히 깨질 위험이 큼. advance 범위를 wireSheetGestures 스와이프다운(dy>120 → closeSheetGuarded, dy<=120 → 복귀)과 ensureEdgeGesture 싱글톤 생성/스와이프백 커밋(dx>110) 2~3개 동작으로 좁히고, wireMonthCarousel은 후속 cycle로 미룬다. domstub.js에 최소 fake touch dispatch 헬퍼만 추가해 assetBalCardCtx 패턴처럼 isolated vm context로 실제 openSheet/wireSheetGestures/ensureEdgeGesture를 로드해 테스트.",
+      "commit": null
+    },
+    {
+      "cycle": 210,
+      "phase": "advance",
+      "timestamp": "2026-10-17T23:15:15.024Z",
+      "summary": "critique(cycle210) 계획대로 test/domstub.js 기반 ad hoc vm 컨텍스트로 openSheet()가 매번 거치는 wireSheetGestures/ensureEdgeGesture(index.html:6899-6971, 스와이프다운 닫기 + 좌측 엣지 뒤로가기/닫기)를 실행형으로 전환 — 지금까지 test/run.js가 openSheet를 항상 트리비얼 스텁(624/701/11315/12643/12874행)으로 교체해 둘 다 실행된 적이 없었음. 범위를 3가지로 좁혔다(계획의 wireMonthCarousel 제외는 유지): (1) wireSheetGestures 스와이프다운 — dy>120이면 closeSheetGuarded() 호출, dy<=120이면 style.transform을 원위치로 복귀, (2) ensureEdgeGesture 싱글톤 — 여러 번 재호출(시트 재오픈)돼도 #sheetEdgeGlobal을 정확히 한 번만 생성하고 기존 엘리먼트를 재사용, (3) 엣지 스와이프 뒤로가기 — window._pkBack이 설정된 상태로 드래그 임계값(dx>6)을 넘으면 makePrev()를 통해 뒤로가기 핸들러(b)가 한 드래그당 정확히 한 번만 불리고(같은 드래그 안의 추가 touchmove나 커밋하지 않은 해제에는 재호출 안 됨, 손을 뗀 뒤 새 드래그는 다시 1회), _pkBack이 없을 때(되돌아갈 화면 없음) 커밋(dx>110)하면 closeSheet()가 호출됨. (3)의 makePrev()가 document.createElement로 만든 요소에 .style/.dataset을 직접 대입하고 sh.parentNode.insertBefore로 끼워넣는 패턴을 써서, domstub.js의 DomNode에 style/dataset 기본 필드와 insertBefore() 메서드를 추가(\"실제 파싱이 필요한 함수가 생기면 그때 확장한다\"던 문서화된 확장 지점). 커밋된 드래그에서 promote-into-sh 분기(sh.contains/document.activeElement/sheetFocusables 등 포커스 복원까지 필요)는 스코프 밖으로 남겨 두 번째 드래그도 비-커밋(dx<110)으로 좁혔다(그 분기는 다음 cycle 후보). index.html/sw.js는 건드리지 않았다(순수 테스트 커버리지 추가, APP_VERSION/CACHE 변경 없음). node our-assets-v1.14.1/our-assets/test/run.js 1562/1562 -> 1571/1571 통과. pending_advance_plan을 비웠다.",
       "commit": null
     }
   ]
