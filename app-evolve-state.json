@@ -1,19 +1,8 @@
 {
-  "cycle": 209,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "test/run.js에 의존성 없는 DOM shim(test/domstub.js) 도입 — jsdom 부재로 정규식 소스-매칭에 머물러 있는 실행형 테스트로 전환",
-    "why": "test/run.js(약 17800줄)의 공유 sandbox는 매 cycle마다 그 cycle이 필요로 하는 최소 fake document/메서드만 손으로 덧붙여온 임시 스텁 객체(약 380-430행)이고, jsdom 등 실제 DOM 구현은 전혀 없다(our-assets-v1.14.1/our-assets/에 package.json/node_modules 자체가 없음). 그 결과 togglePwVis(test/run.js:15046 근처)와 openSheet()의 aria-labelledby 와이어링/twScreen/fcWire(test/run.js:17607-17609 근처) 등 여러 테스트가 '이 테스트 스위트엔 jsdom이 없어 실행형으로 못 돌리므로 소스 문자열 정규식 검증으로 대신한다'는 주석을 달고 실제 실행 대신 소스 문자열 부분일치만 검사한다. index.html에는 openSheet(6869), ensureEdgeGesture(6909, 63줄), wireMonthCarousel(8274, 59줄), twScreen(5838, 71줄), homeAlertCard(7884, 115줄) 등 앱의 실제 렌더링/상호작용 계층인 DOM 와이어링 함수가 수십 개 있는데, 이들의 DOM 변경 동작에 대한 유일한 안전망이 `body.includes(\"sh.querySelector('h3,.pk-h')\")` 같은 정규식/부분문자열 매칭이다. 이런 테스트는 동작이 그대로인 안전한 리팩터링(포맷 변경, 로컬 변수 이름 변경, if/else 재구성)에도 거짓으로 실패하고, 매칭된 부분 문자열만 우연히 보존하는 실제 버그에는 거짓으로 통과한다 — 프레임워크 없는 vanilla DOM 와이어링 계층, 즉 가장 안전망이 필요한 부분의 안전한 리팩터링을 오히려 가로막는다. 또한 매 cycle이 DOM을 다루는 새 기능을 추가할 때마다 ad hoc 스텁 객체가 계속 불어나거나 '실행 못 해서 정규식으로 대신한다'는 테스트가 하나씩 더 쌓이는 구조적으로 누적되는 문제다.",
-    "approach": "npm install 없이 의존성 없는 제로-빌드 철학을 유지한 채, test/domstub.js에 최소 DOM shim을 신설한다: Element(태그/속성/classList add·remove·contains·toggle, setAttribute/getAttribute/removeAttribute, id, children, appendChild/removeChild, textContent/innerHTML get/set, 간단한 querySelector/querySelectorAll — 태그/class/id 선택자만 지원)와 document(createElement, getElementById, querySelector/querySelectorAll, 최소 addEventListener). 이 shim을 test/run.js에 require해 현재 '이 테스트 스위트엔 jsdom이 없어...정규식으로 대신한다' 주석이 달린 약 10~15건의 테스트(togglePwVis, openSheet aria-labelledby, #dpModal/#dpWheel 라벨링, twScreen, fcWire 등)를 실제 DOM 상태를 생성·검사하는 실행형 테스트로 전환한다. 공유 sandbox의 손으로 작성된 ad hoc `sandbox.document={...}` 스텁들도 가능한 범위에서 이 공용 shim으로 교체해, 앞으로 cycle마다 스텁을 개별적으로 불리는 대신 하나의 재사용 가능한 fake로 합친다. 기존에 정규식으로 이미 통과하던 테스트들의 assertion을 실제 DOM 검사로 1:1 치환하되 검증 내용(어떤 속성/클래스가 어떻게 바뀌는지)은 그대로 유지해 회귀 의미를 보존한다. node our-assets-v1.14.1/our-assets/test/run.js로 전체 통과를 확인한다."
-  },
+  "cycle": 210,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 204,
-      "phase": "advance",
-      "timestamp": "2026-10-16T22:05:00.000Z",
-      "summary": "critique(cycle204) 계획대로 invalidateBalances()에 선택적 fromDate 인자를 추가(index.html:2422) — fromDate가 있으면 _balCache에서 키(upto+'|'+dateStr)의 upto가 fromDate 이전인 항목만 보존하고(그 전 잔액은 이번 변경으로 바뀔 수 없어 안전), 그 밖은 제거한다. fromDate를 생략하면(기존 ~70여 호출부 전부) 100% 기존과 동일하게 세 캐시를 전부 clear한다. _recCache/_lastEditCache는 fromDate와 비교할 날짜 키가 없어(각각 [from,to] 반복거래 전개 폭, recurrence 객체 참조) 안전한 부분-제거 근거가 없으므로 이번엔 손대지 않고 항상 전체 clear로 남겨둠(가장 비싼 부분인 _balCache의 allTxns 전체 재생만 우선 완화) — critique 계획 중 1차 범위로 명시했던 부분. _saveCore()가 opts.fromDate를 그대로 invalidateBalances에 전달하도록 변경(index.html:2294). 핵심 저장 경로인 saveTx()에 적용: 신규 저장은 d.date를, 기존 수정은 DB.txns 교체 직전에 원래 날짜를 캡처해 min(oldDate,d.date)를 fromDate로 넘긴다(날짜를 당기거나 미루거나 어느 쪽이든 두 날짜 중 이른 쪽부터 잔액이 바뀔 수 있으므로) — 반복 등록 분기도 시작일을 fromDate로 넘김. editTx() 자체는 saveTx()로 커밋되므로 별도 변경 불필요. test/run.js에 9건 추가: (1)(2) invalidateBalances(fromDate) 자체를 실제 모듈 상태(_balCache/_recCache/_lastEditCache)로 독립 vm 컨텍스트에서 검증(부분 보존/전체 clear 회귀 가드), (3)(4) makeSaveCtx로 _saveCore가 opts.fromDate를 그대로 전달하는지/없으면 undefined로 넘기는지, (5)~(9) saveTx()가 신규/날짜불변 수정/날짜 당김/날짜 미룸/신규 반복 등록 각각에 올바른 fromDate를 save()에 넘기는지. index.html/sw.js 변경이라 APP_VERSION 1.47.171->1.47.172, sw.js CACHE v433->v434 갱신. node our-assets-v1.14.1/our-assets/test/run.js 1519/1519 -> 1528/1528 통과. pending_advance_plan을 비웠다.",
-      "commit": null
-    },
     {
       "cycle": 204,
       "phase": "critique",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-17T17:11:57.000Z",
       "summary": "Explore 서브에이전트로 앱 전반을 아키텍처 관점에서 훑었다(cycle149-208에서 이미 다룬 invalidateBalances fromDate/closeSheetGuarded/aria-label류/0건 토스트/각종 실행형 테스트 커버리지 추가/budgetCarryFor/modeSeg/sanitizeBackup/dismissedStaleMvIds/split거래/isCloudConflict/r.skip 누적/renderCurrent 전체 재렌더 등은 명시적으로 제외). test/run.js(약 17800줄)의 공유 sandbox가 매 cycle 필요한 최소 fake document 스텁만 덧붙여온 ad hoc 객체이고 jsdom 등 실제 DOM 구현이 전혀 없어(package.json/node_modules 자체가 없음), togglePwVis·openSheet aria-labelledby 와이어링·twScreen·fcWire 등 여러 테스트가 \"jsdom이 없어 실행형으로 못 돌리므로 소스 문자열 정규식 검증으로 대신한다\"는 주석을 단 채 실제 실행 대신 부분 문자열 매칭만 하고 있음을 발견 — openSheet(6869)/ensureEdgeGesture(6909)/wireMonthCarousel(8274)/twScreen(5838)/homeAlertCard(7884) 등 앱의 실제 DOM 와이어링 계층이 가장 안전망이 부족한 상태로 남아 리팩터링 안전성을 해치는 구조적 문제. 러너업으로 (1) txDayInput/txDay/txCount/recDayInput 등 index.html:4341-4606의 미사용 함수 10개(기계적 삭제라 \"substantial\" 기준엔 못 미쳐 기각), (2) index.html:1355의 CDN 스크립트 SRI 해시 누락(이미 이번 로테이션에서 조사됐고 컨테이너 네트워크 egress 차단으로 해시 계산 불가라는 이유가 문서화돼 있어 기각)을 검토했으나 둘 다 이번 계획에서 제외. npm install 없이 의존성 없는 제로-빌드 철학을 유지한 test/domstub.js 최소 DOM shim(Element/classList/querySelector 등) 신설 계획을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "commit": null
+    },
+    {
+      "cycle": 209,
+      "phase": "advance",
+      "timestamp": "2026-10-17T18:15:00.000Z",
+      "summary": "critique(cycle209) 계획대로 test/domstub.js에 의존성 없는 최소 DOM shim을 신설(Element: tagName/classList add·remove·toggle·contains/setAttribute·getAttribute·removeAttribute/hasAttribute/id/type/value/children/appendChild·removeChild/closest/querySelector·querySelectorAll(#id·.class·tag 단일 토큰만 지원)/addEventListener·removeEventListener·dispatchEvent, document: createElement/body/getElementById/querySelector/querySelectorAll). 계획이 들었던 '10~15건 전부'가 아니라 범위를 좁혀 togglePwVis와 wireWhHead 두 함수만 이번 cycle에서 실행형으로 전환(diff를 작게 유지하려는 선택 — openSheet/twScreen/fcWire처럼 DOM 전역에 더 깊이 엮인 나머지는 다음 cycle 백로그로 남김). FUNCTIONS에 'togglePwVis'/'svg'/'wireWhHead', CONSTS에 'I'(svg가 참조하는 아이콘 테이블)를 추가해 실제 소스를 vm에 끌어왔다. togglePwVis 테스트는 domstub으로 .pw-wrap>input+button.pw-x 트리를 구성해 sandbox.$를 그 트리의 getElementById로 바꿔치기한 뒤 두 번 호출해 type이 password<->text로 뒤집히고 버튼 innerHTML이 실제 sandbox.I.eye/eyeOff 아이콘 문자열을 포함하는지, aria-label이 '비밀번호 표시'<->'비밀번호 숨기기'로 바뀌는지 실제로 검증(기존 정규식 검사보다 엄격 — eye<->eyeOff가 뒤바뀌거나 aria-label 문구가 틀려도 이제 실패함) + el이 없을 때 조용히 return하는 경계 케이스 1건 추가. wireWhHead 테스트는 #dpWheel>.wh-head 트리로 (1) id 없는 .wh-head에 whHeadTitle을 부여하고 aria-labelledby를 그 id로 설정하는지, (2) 이미 id가 있으면 덮어쓰지 않고 그 id를 그대로 쓰는지(기존 소스-매칭 테스트엔 없던 분기, 이번에 새로 커버) 검증. 두 함수 모두 index.html을 전혀 수정하지 않았다(순수 테스트 커버리지 전환, 실제 버그는 못 찾음 — APP_VERSION/sw.js CACHE 변경 없음). node our-assets-v1.14.1/our-assets/test/run.js 1560/1560 -> 1562/1562 통과(기존 togglePwVis 1건을 실행형 2건으로, 기존 wireWhHead 1건을 실행형 2건으로 대체해 순증 +2). pending_advance_plan을 비웠다.",
       "commit": null
     }
   ]

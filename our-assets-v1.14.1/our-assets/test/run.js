@@ -14,6 +14,10 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 const assert = require('assert');
+// domstub.js — jsdom 없이 이 스위트 전용으로 만든 최소 DOM shim(app-evolve cycle210 advance).
+// closest()/querySelector() 등 실DOM 조작이 섞여 "jsdom이 없어 실행형으로 못 돌린다"고 적어온
+// 함수들을 이 shim으로 실제 트리를 구성해 실행형으로 돌리는 테스트에서 쓴다.
+const domstub = require('./domstub.js');
 
 // netlify/functions/{stock,rates}.js는 브라우저가 아니라 Node(Netlify Functions)에서 도는
 // 평범한 CommonJS 모듈이라, index.html처럼 정규식 슬라이싱을 할 필요 없이 그냥 require한다
@@ -237,6 +241,10 @@ const FUNCTIONS = [
   // AUTH/APPLOCK/startApp/showAuth 등 비순수 전역에 엮여 있어 SDK_READY 테스트 블록에서 그때그때
   // 필요한 스텁을 임시로 바꿔 끼운다(doLogout/doResetAll 등 기존 [실행형] 테스트와 같은 패턴).
   'loadScriptWithTimeout', 'boot',
+  // togglePwVis/wireWhHead는 cycle209 critique → cycle210 advance가 domstub.js(최소 DOM shim)로
+  // 실행형 전환한 첫 두 함수 — svg()는 togglePwVis가 아이콘을 그릴 때 부른다(실제 I 아이콘
+  // 테이블과 비교하려면 같이 끌어와야 함). 아래 togglePwVis/wireWhHead 테스트 참고.
+  'togglePwVis', 'svg', 'wireWhHead',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -250,7 +258,9 @@ const FUNCTIONS = [
 // WeakSet — 저장 완료된 draft 객체를 표시해 같은 draft로 재호출되면 조용히 무시한다.
 // SUPABASE_URL/SUPABASE_ANON_KEY는 sbCfg()가 localStorage에 저장된 값이 없을 때 돌아가는
 // 기본값이다(app-evolve cycle152 advance, doForgotPassword/doForgotPasswordLocal 분기 테스트용).
-const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC'];
+// I는 svg()가 참조하는 아이콘 path 테이블(app-evolve cycle210 advance) — togglePwVis 실행형
+// 테스트가 eye<->eyeOff 전환을 실제 아이콘 문자열(sandbox.I.eye/eyeOff)과 비교해 검증한다.
+const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I'];
 // _histCache는 filteredHist()가 재대입(={key,list})하는 let 선언이라 CONSTS(extractConst)로는
 // 못 끌어오므로 별도의 LETS 목록으로 extractLet을 통해 가져온다.
 // _copyIsCsv도 같은 이유(openCopyBackup()이 재대입)로 LETS를 통해 가져온다.
@@ -15043,13 +15053,48 @@ test('renderAuth: 카카오 버튼 바로 아래에 Supabase 연결 여부와 �
  * 추가 (app-evolve cycle155 develop가 발견 — 긴 비밀번호를 칠 때 특히 계정 복구(doLocalRecover)
  * 같은 한 번뿐인/고위험 플로우에서 타이핑한 내용을 확인할 길이 전혀 없어, 오타가 나면 자신이
  * 실제로 설정한 비밀번호를 영문 모르고 잠겨버릴 수 있었음). togglePwVis 자체는 closest()/type
- * 같은 실DOM 조작이라 이 테스트 스위트엔 jsdom이 없어 실행형으로 못 돌리므로(다른 openSheet류
- * 함수처럼), 소스 문자열 검증(정규식 기반)으로 로직과 각 렌더 함수의 배선을 확인한다. ---------- */
-test('togglePwVis: password<->text를 뒤집고 버튼 아이콘/aria-label을 eye<->eyeOff로 맞춰 바꾼다', () => {
-  const body = extractFunction('togglePwVis');
-  assert.ok(/el\.type\s*=\s*show\s*\?\s*'text'\s*:\s*'password'/.test(body), "togglePwVis가 el.type을 'text'<->'password'로 뒤집지 않음");
-  assert.ok(body.includes("svg(show?'eyeOff':'eye'"), 'togglePwVis가 아이콘을 eye<->eyeOff로 바꾸지 않음');
-  assert.ok(body.includes("btn.setAttribute('aria-label'"), 'togglePwVis가 버튼의 aria-label을 갱신하지 않음 — 스크린리더가 토글 상태를 못 읽음');
+ * 같은 실DOM 조작이지만, 이제 domstub.js(jsdom 없이 이 스위트 전용으로 만든 최소 DOM shim)로
+ * 실제 .pw-wrap/.pw-x 트리를 구성해 실행형으로 돌린다(app-evolve cycle210 advance —
+ * cycle209 critique가 지적한, "jsdom이 없다"는 이유로 정규식 소스-매칭에 머물던 DOM 와이어링
+ * 테스트를 실제 실행 검증으로 전환하는 첫 사례). 소스 문자열 검증에서는 안전한 리팩터링(변수명
+ * 변경 등)에도 거짓 실패하고, 부분 문자열만 우연히 보존하는 실제 버그엔 거짓 통과했었다. ---------- */
+test('togglePwVis: password<->text를 뒤집고 버튼 아이콘/aria-label을 eye<->eyeOff로 실제 DOM에서 맞춰 바꾼다', () => {
+  const dom = domstub.createDocument();
+  const wrap = dom.createElement('div');
+  wrap.classList.add('pw-wrap');
+  const input = dom.createElement('input');
+  input.id = 'pwTestInput';
+  input.type = 'password';
+  const btn = dom.createElement('button');
+  btn.classList.add('pw-x');
+  wrap.appendChild(input);
+  wrap.appendChild(btn);
+  dom.body.appendChild(wrap);
+
+  const $orig = sandbox.$;
+  sandbox.$ = (id) => dom.getElementById(id);
+  try {
+    sandbox.togglePwVis('pwTestInput');
+    assert.strictEqual(input.type, 'text', "togglePwVis 첫 호출이 el.type을 'text'로 바꾸지 않음");
+    assert.ok(btn.innerHTML.includes(sandbox.I.eyeOff), 'togglePwVis가 숨기기 상태에서 eyeOff 아이콘을 그리지 않음');
+    assert.strictEqual(btn.getAttribute('aria-label'), '비밀번호 숨기기', 'togglePwVis가 버튼 aria-label을 "비밀번호 숨기기"로 갱신하지 않음');
+
+    sandbox.togglePwVis('pwTestInput');
+    assert.strictEqual(input.type, 'password', "togglePwVis 두 번째 호출이 el.type을 다시 'password'로 되돌리지 않음");
+    assert.ok(btn.innerHTML.includes(sandbox.I.eye), 'togglePwVis가 표시 상태에서 eye 아이콘으로 되돌리지 않음');
+    assert.strictEqual(btn.getAttribute('aria-label'), '비밀번호 표시', 'togglePwVis가 버튼 aria-label을 "비밀번호 표시"로 되돌리지 않음');
+  } finally {
+    sandbox.$ = $orig;
+  }
+});
+test('togglePwVis: 존재하지 않는 id를 넘기면 조용히 아무 일도 하지 않는다', () => {
+  const $orig = sandbox.$;
+  sandbox.$ = () => null;
+  try {
+    assert.doesNotThrow(() => sandbox.togglePwVis('no-such-id'), 'togglePwVis가 el이 없을 때 던지면 안 됨');
+  } finally {
+    sandbox.$ = $orig;
+  }
 });
 for (const [fn, id] of [['renderAuth', 'auPw'], ['doForgotPasswordLocal', 'frPwIn'], ['openChangePasswordSheet', 'newPwIn']]) {
   test(`${fn}: ${id} 비밀번호 입력을 .pw-wrap으로 감싸고 눈 토글 버튼을 togglePwVis('${id}')에 연결한다`, () => {
@@ -17633,12 +17678,47 @@ test('#dpModal에 정적 aria-label="날짜 선택"이 있다', () => {
     '#dpModal에 aria-label이 없어 스크린리더가 다이얼로그 용도를 알리지 못함'
   );
 });
-test('wireWhHead: #dpWheel에 그려진 .wh-head 제목으로 aria-labelledby를 설정한다', () => {
-  const body = extractFunction('wireWhHead');
-  assert.ok(
-    body.includes(`const el=$('dpWheel').querySelector('.wh-head');if(el){if(!el.id)el.id='whHeadTitle';$('dpWheel').setAttribute('aria-labelledby',el.id);}`),
-    'wireWhHead가 .wh-head 요소의 id로 #dpWheel에 aria-labelledby를 설정하지 않음'
-  );
+/* wireWhHead는 $()/querySelector()/setAttribute() 같은 실DOM 조작이지만, domstub.js(jsdom 없이
+ * 이 스위트 전용으로 만든 최소 DOM shim)로 #dpWheel>.wh-head 트리를 실제로 구성해 실행형으로
+ * 돌린다(app-evolve cycle210 advance — togglePwVis와 같은 전환, cycle209 critique 참고). */
+test('wireWhHead: #dpWheel에 그려진 .wh-head 제목으로 aria-labelledby를 실제로 설정한다', () => {
+  const dom = domstub.createDocument();
+  const dpWheel = dom.createElement('div');
+  dpWheel.id = 'dpWheel';
+  const head = dom.createElement('div');
+  head.classList.add('wh-head');
+  dpWheel.appendChild(head);
+  dom.body.appendChild(dpWheel);
+
+  const $orig = sandbox.$;
+  sandbox.$ = (id) => dom.getElementById(id);
+  try {
+    sandbox.wireWhHead();
+    assert.strictEqual(head.id, 'whHeadTitle', 'wireWhHead가 id 없는 .wh-head에 whHeadTitle id를 부여하지 않음');
+    assert.strictEqual(dpWheel.getAttribute('aria-labelledby'), 'whHeadTitle', 'wireWhHead가 #dpWheel에 aria-labelledby를 설정하지 않음');
+  } finally {
+    sandbox.$ = $orig;
+  }
+});
+test('wireWhHead: .wh-head에 이미 id가 있으면 덮어쓰지 않고 그 id를 그대로 aria-labelledby에 쓴다', () => {
+  const dom = domstub.createDocument();
+  const dpWheel = dom.createElement('div');
+  dpWheel.id = 'dpWheel';
+  const head = dom.createElement('div');
+  head.classList.add('wh-head');
+  head.id = 'existingId';
+  dpWheel.appendChild(head);
+  dom.body.appendChild(dpWheel);
+
+  const $orig = sandbox.$;
+  sandbox.$ = (id) => dom.getElementById(id);
+  try {
+    sandbox.wireWhHead();
+    assert.strictEqual(head.id, 'existingId', 'wireWhHead가 이미 있는 .wh-head id를 덮어씀');
+    assert.strictEqual(dpWheel.getAttribute('aria-labelledby'), 'existingId', 'wireWhHead가 기존 id를 aria-labelledby에 쓰지 않음');
+  } finally {
+    sandbox.$ = $orig;
+  }
 });
 for (const fn of ['openMonthSheet', 'dpToggleJump', 'openYMSheet']) {
   test(`${fn}: .wh-head를 그린 뒤 wireWhHead()를 호출해 #dpWheel의 aria-labelledby를 갱신한다`, () => {
