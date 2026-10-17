@@ -1,15 +1,8 @@
 {
   "cycle": 207,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 207,
-      "phase": "develop",
-      "timestamp": "2026-10-17T07:05:00.000Z",
-      "summary": "Explore 서브에이전트로 develop 후보를 탐색(0건 토스트 안내 누락/assetDelSel/invalidateBalances/budgetCarryFor/modeSeg/sanitizeBackup splits/buildImportPreview 분할 dedupe/dismissedStaleMvIds/openSpendAnalysis·goalRowHTML·openRecManage·openQuickList·openOwnerManage·assetBalCard 실행형 테스트/mergeCollection 클락스큐/twGuard/deleteTxnsUndo fromDate/celebrate 호출부 등 cycle149-206에서 이미 다룬 항목 전부 제외) — #sheet/#dpModal/#dpWheel 세 다이얼로그가 모두 role=\"dialog\" aria-modal=\"true\"만 있고 aria-labelledby가 파일 전체에 단 한 번도 쓰이지 않는 공백을 발견(cycle206 critique가 \"openSheet/closeSheet 쪽 깊은 조사 없이는 실제 공백인지 확신 어려워\" 보류했던 후보를 재조사해 확정). openSheet() 66개 호출부 중 65곳이 매번 시트 콘텐츠 맨 앞에 <h3>...</h3>(나머지 1곳은 openPicker가 감싸는 <div class=\"pk-h\">...</div>)로 제목을 넣는데도, #sheet 다이얼로그 자체엔 그 제목을 연결하는 코드가 없어 스크린리더가 다이얼로그가 열렸다는 것만 알리고 어떤 시트인지는 전혀 알리지 못했다. openSheet()(index.html:6853)에서 sh.innerHTML을 채운 직후 sh.querySelector('h3,.pk-h')로 첫 제목 요소를 찾아, 있으면(id 없으면 'sheetTitle'로 채운 뒤) sh.setAttribute('aria-labelledby',headEl.id), 없으면 sh.removeAttribute('aria-labelledby')로 지우는 두 줄을 추가 — 기존 66개 호출부 전부가 이미 h3/pk-h를 포함하므로 실질적으로 항상 채워지고, 제목이 없는 가상의 호출에도 안전한 폴백이 있음. openSheet()는 $/classList/requestAnimationFrame/attachDetent/wireSheetGestures/fcWire 등 DOM 전역에 깊이 엮여 있어 이 스위트엔 jsdom이 없어 전체를 실행형으로 못 돌리므로(기존 주석이 이미 백로그로 명시), twScreen과 같은 소스 텍스트 패턴 검사 테스트 1건을 추가(innerHTML 대입 이후에 제목을 찾는지 순서까지 확인 + 추가한 두 줄의 정확한 코드를 그대로 매칭). index.html/sw.js 변경이라 APP_VERSION 1.47.176->1.47.177, sw.js CACHE v438->v439 갱신. node our-assets-v1.14.1/our-assets/test/run.js 1544/1544 -> 1545/1545 통과.",
-      "commit": null
-    },
     {
       "cycle": 206,
       "phase": "advance",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-16T05:10:39.454Z",
       "summary": "critique(cycle200) 계획대로 sanitizeBackup()의 txns 루프(d.amount 검증 직후)에 d.splits 검증을 추가했다 — category가 없거나 문자열이 아닌 split 항목, amount가 sanitizeAmount(x.amount,0) 후 0 이하(NaN/음수/문자열 포함)인 항목을 제거한 뒤 합계를 재계산하고, 유효 항목이 2개 미만이거나 합계가 d.amount와 다르면 d.splits 전체를 delete해 splitLines()가 top-level category/amount로 fallback하게 했다(saveTx가 쓰는 \"2개 미만이면 분할 아님\" 관례, txSplitRemove가 2개 밑으로 못 내려가게 하는 UI 불변식과 동일). 손상/제거가 있으면 기존 fixedCount 카운터만 증가시켜 새 UI 없이 복원 요약 토스트에 자동 반영되게 했다. test/run.js의 다른 txn sanitizeBackup 테스트들 옆에 5건 추가: (1) splits가 배열이 아니면 조용히 제거(크래시 없음), (2) category 없는 split 제거 후 2개 미만이면 전체 삭제 후 top-level fallback, (3) amount가 NaN/음수/문자열인 항목도 동일 처리, (4) 정제 후 합계 불일치 시 전체 삭제(핵심 NaN/drift 방지 케이스), (5) 정상 split(2개 이상, 합계 일치)은 그대로 보존(회귀 가드). index.html/sw.js 변경이라 APP_VERSION 1.47.165->1.47.166, sw.js CACHE v427->v428 갱신. node our-assets-v1.14.1/our-assets/test/run.js 1495/1495 -> 1500/1500 통과. pending_advance_plan을 비웠다."
+    },
+    {
+      "cycle": 207,
+      "phase": "review",
+      "timestamp": "2026-10-17T08:05:00.000Z",
+      "summary": "cycle207 develop 커밋(a179b78, openSheet aria-labelledby 추가)을 검토: innerHTML 대입 후에 제목을 찾는지 테스트로 이미 확인됨. topBtn(pk-back 등 3곳: 정렬기준/귀속관리/화면테마/재잠금시점 직접 h3 포함 호출 + openPicker의 pk-back 버튼)이 h3/.pk-h를 포함하는 경우가 없어 querySelector('h3,.pk-h')가 항상 콘텐츠 쪽 실제 제목을 집는 것을 66개 호출부 전수 재확인. sheetSlideBack/pkBack은 renderPrev()로 openSheet를 다시 호출하므로 sheetTitle id가 이전 콘텐츠에 묶여 stale해질 경로 없음. closeSheet()가 aria-labelledby/id를 안 지워도 다음 openSheet가 innerHTML을 통째로 교체하며 재설정하므로 문제 없음. node test/run.js 1545/1545 통과. 실제 버그 없음 — 이상 없음.",
+      "commit": null
     }
   ]
 }
