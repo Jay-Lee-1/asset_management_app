@@ -617,6 +617,11 @@ const sandbox = {
   // 같은 이유(화면 전용)로 호출 여부만 기록하는 스파이로 흉내낸다.
   closeSheetCalls: 0,
   closeSheet: () => { sandbox.closeSheetCalls++; },
+  // openGoalForm/openAssetSheet/duplicateTx 등 시트를 여는 함수가 끝에 부르는 초안 스냅샷 찍기
+  // (closeSheetGuarded가 "변경됐는지" 비교할 기준점, app-evolve cycle207 advance) — closeSheet와
+  // 같은 이유(화면/닫기 흐름 전용, 이 함수들의 테스트 대상은 draft 필드 초기화뿐)로 no-op 스텁을 쓴다.
+  // isDraftDirty/closeSheetGuarded 자체는 실제 소스로 격리 실행 검증한다(아래 테스트 참고).
+  snapDraft: () => {},
   // openAssetHistory/openCatHistory가 필터 세팅 후 부르는 탭 전환 — closeSheet와 같은 이유(화면
   // 전용, 이 함수들의 테스트 대상은 ST.hist/ST.ledger 필터 세팅뿐)로 호출 여부만 기록하는 스파이로
   // 흉내낸다.
@@ -17552,6 +17557,154 @@ test('openSheet: 시트 콘텐츠의 첫 h3/.pk-h 제목으로 #sheet에 aria-la
   assert.ok(
     body.includes(`if(headEl){if(!headEl.id)headEl.id='sheetTitle';sh.setAttribute('aria-labelledby',headEl.id);}else sh.removeAttribute('aria-labelledby');`),
     'openSheet가 제목 요소의 id로 aria-labelledby를 설정하거나(제목 없으면 제거하거나) 하지 않음'
+  );
+});
+
+/* ---------- closeSheetGuarded/isDraftDirty: 스크림탭/스와이프다운 닫기/뒤로가기(popstate)가
+ * 입력 중인 초안(txDraft/asDraft/goalDraft/recDraft)을 경고 없이 버리던 문제(app-evolve cycle207
+ * advance) — snapDraft(kind)가 시트를 열 때 찍어둔 스냅샷과 현재 초안을 비교해 다르면
+ * closeSheet() 대신 확인 시트를 띄운다. 금액/메모 등 입력칸은 syncTxInputs류가 호출돼야만
+ * txDraft에 반영되므로(오타 없이 "입력 중"에도 감지해야 하는 게 핵심), isDraftDirty()는 비교
+ * 전에 반드시 해당 종류의 sync 함수를 먼저 불러야 한다 — 그 순서가 빠지면 "방금 타이핑했지만
+ * 아직 sync되지 않은 값"이 dirty로 안 잡혀 버그가 재발한다. */
+test('[실행형] isDraftDirty: snapDraft 직후엔 clean, DOM 입력칸에 아직 반영 전인 값이 있어도 sync 후 dirty로 감지한다(tx)', () => {
+  const ctx = {
+    $: (id) => ctx._els[id] || null,
+    _els: {},
+    _formScroll: 0,
+    txDraft: { id: null, type: 'expense', date: '2026-01-01', category: '식비', memo: '', amount: 0 },
+    asDraft: null, goalDraft: null, recDraft: null,
+  };
+  vm.createContext(ctx);
+  vm.runInContext(
+    [extractFunction('num'), extractFunction('syncTxInputs'), extractFunction('syncAssetInputs'),
+     extractFunction('syncGoalInputs'), extractFunction('syncRecInputs'),
+     extractFunction('snapDraft'), extractFunction('isDraftDirty')].join('\n'),
+    ctx, { filename: 'isDraftDirty-real(tx)' }
+  );
+  ctx.snapDraft('tx');
+  assert.strictEqual(ctx.isDraftDirty(), false, '열자마자는(아무 입력 전) dirty가 아니어야 함');
+  // 사용자가 금액칸에 막 타이핑한 상태 — fmtAmt()는 표시만 바꾸고 txDraft.amount는 아직 그대로다
+  // (syncTxInputs가 불려야만 반영됨). isDraftDirty가 비교 전에 syncTxInputs를 직접 불러야 잡힌다.
+  ctx._els.txAmt = { value: '5,000' };
+  assert.strictEqual(ctx.isDraftDirty(), true, '아직 syncTxInputs가 안 불린 DOM 입력값도 isDraftDirty가 직접 sync해서 감지해야 함');
+  assert.strictEqual(ctx.txDraft.amount, 5000, 'isDraftDirty가 내부적으로 syncTxInputs를 불러 txDraft.amount에 반영했어야 함');
+});
+test('[실행형] isDraftDirty: as/goal/rec 세 종류 모두 snapDraft 직후 clean, 필드 변경 후(sync 포함) dirty로 감지한다', () => {
+  const ctx = {
+    $: (id) => ctx._els[id] || null,
+    _els: {},
+    _formScroll: 0,
+    txDraft: null,
+    asDraft: { id: 'a1', type: 'cash', owner: '나', name: '주거래통장' },
+    goalDraft: { id: 'g1', name: '여행자금', targetAmount: 1000000 },
+    recDraft: { id: null, amount: 0, memo: '' },
+  };
+  vm.createContext(ctx);
+  vm.runInContext(
+    [extractFunction('num'), extractFunction('syncTxInputs'), extractFunction('syncAssetInputs'),
+     extractFunction('syncGoalInputs'), extractFunction('syncRecInputs'),
+     extractFunction('snapDraft'), extractFunction('isDraftDirty')].join('\n'),
+    ctx, { filename: 'isDraftDirty-real(as/goal/rec)' }
+  );
+  ctx.snapDraft('as');
+  assert.strictEqual(ctx.isDraftDirty(), false, 'as: 열자마자는 dirty가 아니어야 함');
+  ctx._els.asName = { value: '비상금통장' };
+  assert.strictEqual(ctx.isDraftDirty(), true, 'as: 이름칸을 고쳐 적으면 sync 후 dirty로 잡혀야 함');
+
+  ctx.snapDraft('goal');
+  assert.strictEqual(ctx.isDraftDirty(), false, 'goal: 열자마자는 dirty가 아니어야 함');
+  ctx._els.goalAmt = { value: '2,000,000' };
+  assert.strictEqual(ctx.isDraftDirty(), true, 'goal: 목표 금액을 고치면 sync 후 dirty로 잡혀야 함');
+
+  ctx.snapDraft('rec');
+  assert.strictEqual(ctx.isDraftDirty(), false, 'rec: 열자마자는 dirty가 아니어야 함');
+  ctx._els.rMemo = { value: '월세' };
+  assert.strictEqual(ctx.isDraftDirty(), true, 'rec: 메모를 적으면 sync 후 dirty로 잡혀야 함');
+});
+test('[실행형] isDraftDirty: 스냅샷이 없거나(열린 적 없음) 해당 draft가 비어 있으면 항상 clean이다', () => {
+  const ctx = {
+    $: () => null,
+    txDraft: null, asDraft: null, goalDraft: null, recDraft: null,
+    _draftSnap: null,
+  };
+  vm.createContext(ctx);
+  vm.runInContext(
+    [extractFunction('num'), extractFunction('syncTxInputs'), extractFunction('syncAssetInputs'),
+     extractFunction('syncGoalInputs'), extractFunction('syncRecInputs'),
+     extractFunction('snapDraft'), extractFunction('isDraftDirty')].join('\n'),
+    ctx, { filename: 'isDraftDirty-real(empty)' }
+  );
+  assert.strictEqual(ctx.isDraftDirty(), false, '스냅샷을 찍은 적이 없으면 false여야 함(열려있던 시트가 애초에 없었음)');
+  ctx.snapDraft('tx'); // txDraft가 null이라 _draftSnap도 null로 남아야 함
+  assert.strictEqual(ctx.isDraftDirty(), false, 'txDraft가 null이면 snapDraft가 스냅샷을 찍지 않고(null), isDraftDirty도 false여야 함');
+});
+test('[실행형] closeSheetGuarded: 초안이 clean이면 바로 닫고, dirty면 확인 시트를 띄우며 closeSheet()를 미룬다', () => {
+  const ctx = {
+    $: () => ({ innerHTML: '원래 폼' }),
+    closeSheetCalls: 0, closeSheet: () => { ctx.closeSheetCalls++; },
+    openSheetCalls: [], openSheet: (html) => { ctx.openSheetCalls.push(html); },
+    ovHistPushCalls: 0, ovHistPush: () => { ctx.ovHistPushCalls++; },
+    syncTxInputs: () => {}, syncAssetInputs: () => {}, syncGoalInputs: () => {}, syncRecInputs: () => {},
+    txDraft: { amount: 0 }, asDraft: null, goalDraft: null, recDraft: null,
+  };
+  vm.createContext(ctx);
+  vm.runInContext(
+    [extractFunction('snapDraft'), extractFunction('isDraftDirty'), extractFunction('closeSheetGuarded')].join('\n'),
+    ctx, { filename: 'closeSheetGuarded-real' }
+  );
+  ctx.snapDraft('tx');
+  ctx.closeSheetGuarded();
+  assert.strictEqual(ctx.closeSheetCalls, 1, '초안이 안 바뀌었으면 closeSheet()를 바로 불러야 함');
+  assert.strictEqual(ctx.openSheetCalls.length, 0, '초안이 안 바뀌었으면 확인 시트를 띄우면 안 됨');
+
+  ctx.snapDraft('tx');
+  ctx.txDraft.amount = 5000;
+  ctx.closeSheetGuarded();
+  assert.strictEqual(ctx.closeSheetCalls, 1, '초안이 바뀌었으면 확인 전까지 closeSheet()를 부르면 안 됨(여전히 1)');
+  assert.strictEqual(ctx.openSheetCalls.length, 1, '초안이 바뀌었으면 확인 시트를 띄워야 함');
+  assert.ok(ctx.openSheetCalls[0].includes('계속 편집') && ctx.openSheetCalls[0].includes('버리기'), '확인 시트에 "계속 편집"/"버리기" 버튼이 있어야 함');
+  assert.strictEqual(ctx.ovHistPushCalls, 0, 'popstate 경로가 아니면(스크림/스와이프) history를 되돌리면 안 됨');
+
+  ctx.snapDraft('tx');
+  ctx.txDraft.amount = 9000;
+  ctx.closeSheetGuarded(true);
+  assert.strictEqual(ctx.ovHistPushCalls, 1, 'viaPopstate=true면(뒤로가기) 이미 소비된 history entry를 ovHistPush()로 복구해야 함');
+});
+test('[실행형] _sheetGuardCancel: "계속 편집"을 누르면 확인 시트 전의 폼 내용을 그대로 복원하고 closeSheet()는 부르지 않는다', () => {
+  let sheetHTML = null;
+  const ctx = {
+    $: (id) => id === 'sheet' ? { set innerHTML(v) { sheetHTML = v; }, get innerHTML() { return sheetHTML; } }
+      : id === 'sheetScroll' ? { innerHTML: sheetHTML } : null,
+    closeSheetCalls: 0, closeSheet: () => { ctx.closeSheetCalls++; },
+    applyHeight: () => {}, attachDetent: () => {}, wireSheetGestures: () => {},
+    requestAnimationFrame: (fn) => fn(),
+    moveSegBlobs: () => {}, fcWire: () => {},
+    _sheetGuardSnapshot: '원래 폼 내용',
+  };
+  vm.createContext(ctx);
+  vm.runInContext(extractFunction('_sheetGuardCancel'), ctx, { filename: '_sheetGuardCancel-real' });
+  ctx._sheetGuardCancel();
+  assert.strictEqual(sheetHTML, '<div class="sheet-scroll" id="sheetScroll">원래 폼 내용</div>', '_sheetGuardCancel이 스냅샷해둔 폼 내용을 그대로 복원해야 함');
+  assert.strictEqual(ctx._sheetGuardSnapshot, null, '복원 후엔 스냅샷을 비워야 함(다음 open에 재사용되면 안 됨)');
+  assert.strictEqual(ctx.closeSheetCalls, 0, '"계속 편집"이면 closeSheet()를 부르면 안 됨');
+});
+test('closeSheetGuarded 와이어링: 스크림탭/스와이프다운 닫기/뒤로가기(popstate)가 모두 closeSheet() 대신 closeSheetGuarded()를 거친다', () => {
+  assert.ok(
+    extractFunction('wireSheetGestures').includes('if(dy>120)closeSheetGuarded();'),
+    '스와이프다운 닫기 완료 지점이 closeSheetGuarded()를 거치지 않음'
+  );
+  assert.ok(
+    extractFunction('closeTopOverlayLevel').includes(`else if(target==='sheet')closeSheetGuarded(true);`),
+    '뒤로가기(popstate)의 시트 닫기가 closeSheetGuarded(true)를 거치지 않음(history 복구 플래그 누락)'
+  );
+  assert.ok(
+    src.includes(`$('scrim').addEventListener('click',()=>closeSheetGuarded());`),
+    '스크림 탭이 closeSheetGuarded()를 거치지 않음'
+  );
+  assert.ok(
+    extractFunction('closeSheet').includes('_draftSnap=null'),
+    'closeSheet()가 실제로 닫힐 때 _draftSnap을 비우지 않음(다음 시트에 이전 스냅샷이 새어나갈 수 있음)'
   );
 });
 

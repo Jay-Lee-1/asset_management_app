@@ -1387,7 +1387,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.177';
+const APP_VERSION='1.47.178';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3016,6 +3016,7 @@ let goalDraft=null;
 function openGoalForm(id){
  const g=id?(DB.goals||[]).find(x=>x.id===id):null;
  goalDraft=g?{...g,owner:goalOwnerEff(g)}:{id:uid(),name:'',type:'networth',targetAmount:0,targetDate:'',owner:'all',createdAt:Date.now()};
+ snapDraft('goal');
  renderGoalForm(!!g);
 }
 function syncGoalInputs(){const d=goalDraft;if(!d)return;if($('goalName'))d.name=$('goalName').value||'';if($('goalAmt'))d.targetAmount=num($('goalAmt'))}
@@ -3698,6 +3699,7 @@ function openAssetSheet(id){
  if(editing&&asDraft.type==='pension')asDraft._pensionAutoExcl=true; /* _pensionAutoExcl은 저장 시 지워지므로, 기존 연금 자산을 열 때마다 "연금은 자동 제외"로 다시 간주해야 전환 시 복원 로직(asOpenType)이 동작함 */
  if(editing&&['cash','savings','realestate','etc','pension','debt'].includes(asDraft.type))asDraft._dispAmt=balanceAt(asDraft.id,TODAY);
  if(editing&&isMarketValued(asDraft))asDraft._origQty=asDraft.type==='fx'?(asDraft.fxAmount||0):asDraft.type==='gold'?(asDraft.goldDon||0):(asDraft.stockQty||0); /* qtyBasisWarn/costBasisField가 수량 증가(추가매수) 경고를 판단할 기준값 — saveAsset()은 이걸 쓰지 않고 DB.assets[i]의 실제 원본값을 다시 읽는다 */
+ snapDraft('as');
  renderAssetSheet(editing);
 }
 function syncAssetInputs(){const d=asDraft;const g=id=>$(id);
@@ -4206,7 +4208,7 @@ document.addEventListener('click',e=>{
  e.preventDefault();e.stopPropagation(); /* 외부 클릭은 '취소'만 — 하부 요소 선택 방지 */
  closeFabPop();
 },true);
-function openTxSheet(){window._recCtx=null;_formScroll=0;_txFocusAmt=true;txDraft={id:null,type:'expense',date:ST.ledger.sel,category:DB.categories.expense[0],memo:'',amount:0,fromAssetId:firstCash(),toAssetId:null,repeat:false,freq:'monthly',day:null,endDate:null,count:null};renderTxSheet()}
+function openTxSheet(){window._recCtx=null;_formScroll=0;_txFocusAmt=true;txDraft={id:null,type:'expense',date:ST.ledger.sel,category:DB.categories.expense[0],memo:'',amount:0,fromAssetId:firstCash(),toAssetId:null,repeat:false,freq:'monthly',day:null,endDate:null,count:null};snapDraft('tx');renderTxSheet()}
 function firstCash(excludeId){const a=DB.assets.find(x=>isCashLike(x)&&x.id!==excludeId);return a?a.id:null}
 function catListOf(type){return type==='income'?DB.categories.income:type==='saving'?DB.categories.saving:type==='expense'?DB.categories.expense:[]}
 /* tx(내역 입력)/rec(반복 설정) 폼이 공유하는 '반복일' 선택 UI. pfx='tx' 또는 'rec' */
@@ -4428,7 +4430,7 @@ function editTx(id,recId,date){
  if(recId){recEditScope(recId,date,'edit');return}
  const t=DB.txns.find(x=>x.id===id);if(!t)return;
  if(t.adjust){openAdjustEdit(t);return} /* 잔액 조정: 전용 편집 */
- window._recCtx=null;_formScroll=0;txDraft=JSON.parse(JSON.stringify(t));renderTxSheet();
+ window._recCtx=null;_formScroll=0;txDraft=JSON.parse(JSON.stringify(t));snapDraft('tx');renderTxSheet();
 }
 /* 복제(빠른 재입력): 매일 반복되는 소액 비정형 지출(커피/점심/교통 등)을 유형→카테고리→
  * 메모→자산을 처음부터 다시 고르지 않고 기존 내역을 복사해 날짜만 오늘로 바꿔 새로 저장할
@@ -4440,7 +4442,7 @@ function duplicateTx(id){
  window._recCtx=null;_formScroll=0;_txFocusAmt=true;
  const d=JSON.parse(JSON.stringify(t));
  d.id=null;d.date=TODAY;delete d.confirmed;delete d.updatedAt;
- txDraft=d;renderTxSheet();
+ txDraft=d;snapDraft('tx');renderTxSheet();
 }
 /* 잔액 조정 내역 전용 편집: 수지 포함 토글 (기본 제외) */
 function openAdjustEdit(t){
@@ -4491,6 +4493,7 @@ function recApply(recId,date,mode,scope){
  const ed=(r.edits||{})[date]||{};
  _formScroll=0;
  txDraft={id:null,type:r.type,date,category:r.category,memo:ed.memo!=null?ed.memo:r.memo,amount:ed.amount!=null?ed.amount:r.amount,fromAssetId:r.fromAssetId,toAssetId:r.toAssetId};
+ snapDraft('tx');
  window._recCtx={recId,date,scope};
  renderTxSheet();
 }
@@ -4529,8 +4532,8 @@ function recSave(){
 
 /* 반복 설정 — 지출/수입/이체/저축, 카테고리 선택 방식 */
 let recDraft=null;
-function openRecSheet(){_formScroll=0;recDraft={id:null,active:true,type:'expense',category:DB.categories.expense[0],amount:0,fromAssetId:firstCash(),toAssetId:null,freq:'monthly',day:1,startDate:ST.ledger.sel,endDate:null,count:null,skip:[],edits:{}};renderRecSheet()}
-function editRec(id){const r=DB.recurrences.find(x=>x.id===id);if(!r)return;_formScroll=0;recDraft=JSON.parse(JSON.stringify(r));renderRecSheet()}
+function openRecSheet(){_formScroll=0;recDraft={id:null,active:true,type:'expense',category:DB.categories.expense[0],amount:0,fromAssetId:firstCash(),toAssetId:null,freq:'monthly',day:1,startDate:ST.ledger.sel,endDate:null,count:null,skip:[],edits:{}};snapDraft('rec');renderRecSheet()}
+function editRec(id){const r=DB.recurrences.find(x=>x.id===id);if(!r)return;_formScroll=0;recDraft=JSON.parse(JSON.stringify(r));snapDraft('rec');renderRecSheet()}
 function syncRecInputs(){const _mm=$('rMemo');if(_mm)recDraft.memo=_mm.value;const sh=$('sheetScroll');if(sh)_formScroll=sh.scrollTop;const a=$('rAmt'),s=$('rStart');if(a)recDraft.amount=num(a);if(s&&s.value)recDraft.startDate=s.value}
 function recOpenCat(){_applyOpenCat(recDraft,syncRecInputs,renderRecSheet)}
 function recOpenAsset(which){_applyOpenAsset(recDraft,which,syncRecInputs,renderRecSheet)}
@@ -6800,7 +6803,7 @@ function closeTopOverlayLevel(){
  const target=overlayEscapeTarget($('dpWheel').classList.contains('show'),$('dpModal').classList.contains('show'),!!(sh&&sh.classList.contains('show')));
  if(target==='wheel')closeDpWheelLayer();
  else if(target==='modal')closeDatePicker();
- else if(target==='sheet')closeSheet();
+ else if(target==='sheet')closeSheetGuarded(true);
 }
 window.addEventListener('popstate',()=>{
  if(_ovHistSuppress){_ovHistSuppress=false;return}
@@ -6883,7 +6886,7 @@ function wireSheetGestures(sh,sc){
      else if(Math.abs(dy)>6){mode='scroll'}
    }
    if(mode==='close'){sh.style.transform=`translateY(${Math.max(0,dy)}px)`;if(e.cancelable)e.preventDefault()}};
- const endClose=()=>{if(mode==='close'){sh.style.transition='';sh._drag=false;if(dy>120)closeSheet();else sh.style.transform=''}mode=null;dx=dy=0};
+ const endClose=()=>{if(mode==='close'){sh.style.transition='';sh._drag=false;if(dy>120)closeSheetGuarded();else sh.style.transform=''}mode=null;dx=dy=0};
  sc.addEventListener('touchstart',startClose,{passive:true});
  sc.addEventListener('touchmove',moveClose,{passive:false});
  sc.addEventListener('touchend',endClose);sc.addEventListener('touchcancel',endClose);
@@ -6946,8 +6949,40 @@ function ensureEdgeGesture(){
    }
  }x0=null;dx=dy=0;};
  edge.addEventListener('touchend',up);edge.addEventListener('touchcancel',up);
-}function closeSheet(){ovHistPop();const sh=$('sheet');sh.style.transition='';sh.style.transform='';sh.style.height='';sh.style.maxHeight='';sh.style.overflow='';sh.classList.remove('expanded','show');$('scrim').classList.remove('show');const eg=$('sheetEdgeGlobal');if(eg)eg.remove();syncOverlayInert();const rf=_sheetReturnFocus;_sheetReturnFocus=null;if(rf&&document.contains(rf))rf.focus();if(TAB_SYNC_PENDING!=null){const at=TAB_SYNC_PENDING;TAB_SYNC_PENDING=null;applyForeignSave(at)}}
-$('scrim').addEventListener('click',closeSheet);
+}function closeSheet(){_draftSnap=null;ovHistPop();const sh=$('sheet');sh.style.transition='';sh.style.transform='';sh.style.height='';sh.style.maxHeight='';sh.style.overflow='';sh.classList.remove('expanded','show');$('scrim').classList.remove('show');const eg=$('sheetEdgeGlobal');if(eg)eg.remove();syncOverlayInert();const rf=_sheetReturnFocus;_sheetReturnFocus=null;if(rf&&document.contains(rf))rf.focus();if(TAB_SYNC_PENDING!=null){const at=TAB_SYNC_PENDING;TAB_SYNC_PENDING=null;applyForeignSave(at)}}
+/* 시트를 열 때(openTxSheet/editTx/duplicateTx/recApply, openAssetSheet, openGoalForm,
+ * openRecSheet/editRec) snapDraft(kind)로 초안 스냅샷을 찍어두고, 암묵적 닫기 경로
+ * (스크림탭/스와이프다운 닫기/뒤로가기)가 그 스냅샷과 달라진 초안을 경고 없이 버리지
+ * 않게 한다(app-evolve cycle207 advance) — 명시적 저장/취소 버튼은 이미 초안을 정리하고
+ * closeSheet()를 직접 부르므로 건드리지 않는다. */
+let _draftSnap=null;
+function snapDraft(kind){const d=kind==='tx'?txDraft:kind==='as'?asDraft:kind==='goal'?goalDraft:kind==='rec'?recDraft:null;_draftSnap=d?{kind,json:JSON.stringify(d)}:null}
+function isDraftDirty(){
+ if(!_draftSnap)return false;
+ const k=_draftSnap.kind;
+ if(k==='tx'){if(!txDraft)return false;syncTxInputs();return JSON.stringify(txDraft)!==_draftSnap.json}
+ if(k==='as'){if(!asDraft)return false;syncAssetInputs();return JSON.stringify(asDraft)!==_draftSnap.json}
+ if(k==='goal'){if(!goalDraft)return false;syncGoalInputs();return JSON.stringify(goalDraft)!==_draftSnap.json}
+ if(k==='rec'){if(!recDraft)return false;syncRecInputs();return JSON.stringify(recDraft)!==_draftSnap.json}
+ return false;
+}
+let _sheetGuardSnapshot=null;
+function closeSheetGuarded(viaPopstate){
+ if(!isDraftDirty()){closeSheet();return}
+ if(viaPopstate)ovHistPush(); /* 뒤로가기가 이미 소비한 history entry를 복구 — 확인 전까지는 오버레이가 열려 있어야 다음 뒤로가기도 정상 동작함('버리기'를 고르면 closeSheet()가 다시 소비한다) */
+ const sc=$('sheetScroll');_sheetGuardSnapshot=sc?sc.innerHTML:'';
+ openSheet(`<h3>변경사항을 버릴까요?</h3><div class="desc" style="margin-bottom:22px">입력하던 내용이 저장되지 않아요.</div>
+  <div class="two-btn"><button class="btn btn-soft cancel" onclick="_sheetGuardCancel()">계속 편집</button>
+   <button class="btn btn-danger" onclick="closeSheet()">버리기</button></div>`);
+}
+function _sheetGuardCancel(){
+ const html=_sheetGuardSnapshot;_sheetGuardSnapshot=null;
+ const sh=$('sheet');if(!sh||html==null){closeSheet();return}
+ sh.innerHTML=`<div class="sheet-scroll" id="sheetScroll">${html}</div>`;
+ const sc=$('sheetScroll');applyHeight(sh,sc);attachDetent(sh,sc);wireSheetGestures(sh,sc);
+ requestAnimationFrame(()=>requestAnimationFrame(()=>{moveSegBlobs();try{fcWire()}catch(e){}}));
+}
+$('scrim').addEventListener('click',()=>closeSheetGuarded());
 $('dpScrim').addEventListener('click',()=>{
  if($('dpWheel').classList.contains('show')){closeDpWheelLayer();return}
  closeDatePicker();

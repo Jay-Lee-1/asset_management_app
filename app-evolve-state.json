@@ -1,19 +1,8 @@
 {
-  "cycle": 207,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "closeSheet()의 암묵적 닫기 경로(스크림탭/스와이프다운/뒤로가기)가 입력 중인 초안을 경고 없이 버림 — closeSheetGuarded() 추가",
-    "why": "closeSheet()(index.html:6949)는 101곳에서 호출되는 단일 함수인데, 명시적 저장/취소 버튼 외에도 scrim 탭 리스너(6950)·스와이프다운 닫기 제스처(~6919-6949)·오버레이 히스토리 popstate 핸들러 ovHistPop()(6794-6805)이 전부 같은 closeSheet()를 그대로 호출해 시트 DOM만 지운다. 거래 입력 중인 txDraft(4169, syncTxInputs 4276)·자산 편집 asDraft(3695-3697)·목표 goalDraft(3015-3046)·반복거래 recDraft(4531) 네 초안 객체는 열려있는 동안 키 입력마다 갱신되지만 어느 닫기 경로도 dirty 여부를 확인하지 않아, 스크림을 잘못 눌렀거나 스와이프를 과하게 하거나 OS 뒤로가기 제스처를 쓰면 입력 내용이 복구 불가능하게 전부 사라진다. 삭제류 전부에 undoToast가 있고 복원 시 sanitizeBackup으로 데이터를 지키는 이 앱의 '조용히 사용자 데이터를 잃지 않는다'는 일관된 원칙과 어긋나는 공백이며, 매일 실사용에서 부딪힐 수 있는 데이터 손실 UX 버그다.",
-    "approach": "isDraftDirty() 헬퍼를 추가해 tx/as/goal/rec 네 초안 각각을 시트 오픈 시점에 캡처한 스냅샷(_sheetOpenSnapshot 등)과 비교. closeSheetGuarded()를 신설해 dirty면 confirmSheet('변경사항을 버릴까요?', '계속 편집'/'버리기' 등)로 확인받고 '버리기'를 눌러야 실제 closeSheet()를 호출하게 한다. 암묵적 닫기 경로(scrim click 리스너, 스와이프다운 닫기 완료 지점, ovHistPop/popstate 뒤로가기 핸들러)만 closeSheetGuarded()로 바꿔 범위를 좁게 유지하고, 명시적 저장/취소 버튼(이미 초안을 정리하고 닫음)과 확인 시트/피커/설정 토글 등 초안이 없는 나머지 ~97곳의 closeSheet() 호출부는 이번 사이클에서 건드리지 않는다(취소 버튼까지 가드하는 건 후속 사이클 과제로 남김). test/run.js에 isDraftDirty 단위 테스트와, 각 드래프트 타입별로 dirty일 때 confirmSheet가 뜨고 clean일 때는 바로 닫히는지 확인하는 실행형 테스트를 추가한다. index.html/sw.js를 건드리므로 APP_VERSION과 sw.js CACHE 버전을 올리고, node our-assets-v1.14.1/our-assets/test/run.js로 전체 회귀를 통과시킨다."
-  },
+  "cycle": 208,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 206,
-      "phase": "advance",
-      "timestamp": "2026-10-17T06:05:00.000Z",
-      "summary": "critique(cycle206) 계획대로 invalidateBalances(fromDate,opts)에 opts.recsChanged 플래그를 추가(index.html:2432) — opts를 생략하거나 recsChanged를 안 적으면(또는 true) 기존처럼 _recCache/_lastEditCache를 항상 전체 clear하는 안전한 기본값을 유지하고, opts.recsChanged===false를 명시한 호출부만 두 캐시를 보존한다. _saveCore(opts)가 opts 전체를 invalidateBalances에 그대로 전달하도록 수정(index.html:2294)해 save({...,recsChanged:false})로 플래그가 흐르게 했다. 15개 호출부를 하나씩 실제 DB 변경 내용과 대조해 분류: DB.recurrences를 전혀 건드리지 않는 saveTx()의 일회성 거래 저장(index.html:4422, 반복 등록 분기(4411행)는 DB.recurrences.push가 있어 제외하고 그대로 둠), deleteTxnsUndo()(7991, 매칭되는 id가 없어 아무것도 안 지워진 경우는 기존 회귀 가드(opts 없이 save())를 깨지 않도록 그대로 둠), updateBalanceAdjust()(3532)·saveAsset() 내부 setBase()(3795, 둘 다 뒤이어 balanceAt()을 불러 recCache를 바로 재사용하므로 실질적 이득이 있음), planSplitTransfer()/planTransfer()(7537/7548, transfer 거래만 추가)에 recsChanged:false를 적용. 반대로 mergeRemoteDataIntoLocal/afterCloudAuth/resolveCloudPullRemote/applyForeignSave/백업 복원(1582/1974/1988/2329/6655/6660, DB 전체 교체라 recurrences도 바뀔 수 있음)과 saveQuickAmount의 r.edits 갱신(7447/7450, recurrence 객체 자체를 수정)은 안전하게 기존 전체-clear 기본값 그대로 두었고, doMaturity()(5530)·refreshToday()(8697)는 바로 앞뒤로 이미 전체-clear하는 touchSave()/save()가 있어 변경해도 실질적 이득이 없다고 판단해 손대지 않았다. test/run.js에 8건 추가: invalidateBalances 자체가 recsChanged:false/true/opts 없음 세 경우를 각각 올바르게 처리하는지(makeInvalidateBalancesCtx로 3건), _saveCore가 opts.recsChanged를 그대로 전달하는지(makeSaveCtx로 1건), saveTx 일회성 저장은 recsChanged:false를 넘기고 신규 반복 등록은 넘기지 않는지(2건), deleteTxnsUndo가 실제 삭제가 있을 때만 recsChanged:false를 넘기고 매칭 없는 기존 회귀 가드는 그대로인지(1건+기존 가드 재확인). index.html/sw.js 변경이라 APP_VERSION 1.47.175->1.47.176, sw.js CACHE v437->v438 갱신. node our-assets-v1.14.1/our-assets/test/run.js 1544/1544 통과(신규 8건 포함, 기존 1536건 전부 그대로 통과 — 특히 cycle205의 'deleteTxnsUndo: 매칭 없으면 opts 없이 save()' 회귀 가드가 내 첫 구현에서 한 번 깨졌다가 deleteTxnsUndo의 '삭제 없음' 분기를 원래대로 되돌려 다시 통과시킴). pending_advance_plan을 비웠다.",
-      "commit": null
-    },
     {
       "cycle": 206,
       "phase": "critique",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-17T09:05:00.000Z",
       "summary": "Explore 서브에이전트로 앱 전반을 아키텍처/UX/데이터손실 관점에서 훑었다(토스트/announceLive 공백류, assetDelSel 경고, invalidateBalances 캐시 부분무효화, deleteTxnsUndo fromDate, sanitizeBackup splits 검증, buildImportPreview 분할거래 dedupe, openSpendAnalysis/goalRowHTML/openRecManage/openQuickList/assetBalCard/openOwnerManage/openStaleMvReview/openCatManage 실행형 테스트, openSheet aria-labelledby, mergeCollection/mergeRecurrences 클락스큐, twGuard 등 cycle189-207에서 이미 다룬 항목 전부 제외). closeSheet()(index.html:6949, 101개 호출부를 가진 단일 닫기 함수)의 암묵적 닫기 경로 — scrim 탭 리스너(6950)·스와이프다운 닫기 제스처(~6919-6949)·오버레이 히스토리 popstate 핸들러 ovHistPop()(6794-6805) — 전부 입력 중인 초안(txDraft 4169/syncTxInputs 4276, asDraft 3695-3697, goalDraft 3015-3046, recDraft 4531)의 dirty 여부를 확인하지 않고 바로 시트를 닫아 입력 내용을 경고 없이 영구히 날려버리는 공백을 발견 — 삭제류 전부에 undoToast, 복원 시 sanitizeBackup 검증이 있는 이 앱의 '조용히 사용자 데이터를 잃지 않는다' 원칙과 어긋나는 일상적 데이터손실 버그. 러너업 (1) dismissedStaleMvIds 가지치기 없음(cycle202에 이미 식별·보류된 낮은 우선순위 백로그라 재선정하지 않음), (2) index.html:1355-1359의 CDN 스크립트 SRI integrity 해시 누락(cdn.jsdelivr.net/t1.kakaocdn.net이 현재 샌드박스 egress 프록시에서 connect_rejected로 막혀 실제 해시를 계산할 수 없어 이 환경에서는 진행 불가능)은 둘 다 기각. isDraftDirty() 헬퍼 + closeSheetGuarded()를 신설해 암묵적 닫기 경로 3곳만 교체하고(명시적 저장/취소 버튼과 초안 없는 나머지 ~97개 closeSheet() 호출부는 범위 밖으로 유지) confirmSheet로 '변경사항을 버릴까요?' 확인을 받는 계획을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "commit": null
+    },
+    {
+      "cycle": 207,
+      "phase": "advance",
+      "timestamp": "2026-10-17T10:17:44.824Z",
+      "summary": "critique(cycle207) 계획대로 closeSheet()의 암묵적 닫기 경로(scrim click 리스너 6950행, 스와이프다운 닫기 완료 지점 wireSheetGestures의 endClose 6889행, ovHistPop/popstate 뒤로가기 핸들러 closeTopOverlayLevel 6806행)만 closeSheetGuarded()로 바꿔 범위를 좁게 유지했다(명시적 저장/취소 버튼과 confirmSheet/피커 등 초안 없는 나머지 호출부는 그대로 closeSheet() 사용). snapDraft(kind)를 txDraft/asDraft/goalDraft/recDraft 8개 생성 지점(openTxSheet/editTx/duplicateTx/recApply, openAssetSheet, openGoalForm, openRecSheet/editRec) 바로 뒤에 추가해 시트 오픈 시점 스냅샷(_draftSnap={kind,json})을 찍고, isDraftDirty()가 해당 종류의 sync 함수(syncTxInputs/syncAssetInputs/syncGoalInputs/syncRecInputs)를 먼저 호출해 아직 반영 전인 DOM 입력값까지 flush한 뒤 스냅샷과 비교한다(이 순서가 핵심 — 안 그러면 막 타이핑한 값이 dirty로 안 잡힘). closeSheetGuarded(viaPopstate)는 clean이면 바로 closeSheet(), dirty면 \"변경사항을 버릴까요? 계속 편집/버리기\" 확인 시트를 띄우고(_sheetGuardSnapshot에 현재 폼 HTML 보관) \"계속 편집\"은 _sheetGuardCancel()으로 그 HTML을 그대로 복원, \"버리기\"는 closeSheet()를 호출한다. viaPopstate===true(실제 뒤로가기/popstate가 이미 history.back()으로 entry 하나를 소비한 뒤 호출된 경우)면 ovHistPush()로 그 entry를 먼저 복구해두고, \"버리기\"를 누르면 closeSheet() 내부의 ovHistPop()이 복구된 entry를 다시 소비해 최종적으로 정확히 한 번만 뒤로가기가 일어나게 한다(\"계속 편집\"이면 복구된 상태 그대로 유지). closeSheet() 자신도 _draftSnap=null로 비워 다음 시트에 이전 스냅샷이 새어나가지 않게 했다. test/run.js에 7건 추가: isDraftDirty가 tx/as/goal/rec 각각 snapDraft 직후 clean이고 DOM 입력(아직 sync 전)도 sync를 거쳐 dirty로 잡히는지(3건, 그중 하나는 스냅샷 없음/draft 없음일 때 항상 false인 경계 케이스), closeSheetGuarded가 clean/dirty/viaPopstate 분기를 올바로 타는지(1건), _sheetGuardCancel이 폼을 그대로 복원하고 closeSheet를 안 부르는지(1건), 세 암묵적 닫기 경로와 closeSheet()의 _draftSnap 클리어가 실제로 와이어링돼 있는지 소스 패턴으로(1건). 기존 openGoalForm/openAssetSheet/duplicateTx 공유 sandbox 테스트가 새 snapDraft 호출로 ReferenceError가 나길래 closeSheet/syncTxInputs와 같은 이유로 no-op 스텁(snapDraft)을 하나 추가해 고쳤다. index.html/sw.js 변경이라 APP_VERSION 1.47.177->1.47.178, sw.js CACHE v439->v440 갱신. node our-assets-v1.14.1/our-assets/test/run.js 1545/1545 -> 1551/1551 통과(새 7건 포함, 기존 1538건 전부 그대로).",
       "commit": null
     }
   ]
