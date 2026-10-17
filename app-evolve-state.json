@@ -1,22 +1,8 @@
 {
   "cycle": 209,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 205,
-      "phase": "review",
-      "timestamp": "2026-10-17T00:05:00.000Z",
-      "summary": "cycle205 develop 커밋(b266cfa, deleteTxnsUndo()가 save({fromDate})로 삭제 날짜를 넘기도록 수정)을 검토. invalidateBalances(fromDate)의 계약(key.slice(0,idx)>=fromDate인 _balCache 항목만 제거, 즉 upto<fromDate인 캐시는 보존)을 재확인했고, fromDate=removed 중 최솟값 date로 넘기는 게 맞는 이유(그 이전 upto로 계산된 잔액은 이번 삭제로 바뀔 수 없음)를 save()/_saveCore()/invalidateBalances() 정의를 직접 읽어 검증. 추가된 테스트 3건(단일 삭제/여러 날짜 중 최솟값/매칭 없음 회귀 가드)도 로직과 일치. node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1531/1531 통과. undo 복원 분기(touchSave)가 여전히 opts 없는 save()로 전체 clear하는 점은 버그가 아니라 보수적으로 안전한 선택이라 그대로 둠. 실제 버그 발견 없음 — 코드 변경 없이 state.json만 갱신.",
-      "commit": null
-    },
-    {
-      "cycle": 205,
-      "phase": "develop",
-      "timestamp": "2026-10-16T23:05:00.000Z",
-      "summary": "Explore 서브에이전트로 develop 후보를 탐색 — cycle204가 saveTx()/_saveCore()의 핵심 저장 경로에만 적용했던 invalidateBalances(fromDate) 부분 무효화를 삭제 경로(deleteTxnsUndo, index.html:7985)에도 확장할 여지를 발견. deleteTxnsUndo()가 save()를 인자 없이 호출해 거래를 지울 때마다 _balCache를 통째로 비우고 있었는데, 지워지는 거래들의 날짜 중 가장 이른 날짜 이전까지는 이번 삭제로 바뀔 수 없으므로 fromDate로 넘겨도 안전함(cycle204에서 이미 검증된 invalidateBalances의 fromDate 계약을 한 호출부 더 넓히는 것). save(removed.length?{fromDate:removed.reduce((m,t)=>t.date<m?t.date:m,removed[0].date)}:undefined)로 수정 — removed가 비면(매칭되는 id가 하나도 없으면) 기존처럼 opts 없는 save()를 그대로 호출해 100% 하위호환. undo 복원 분기(touchSave)는 opts 매개변수가 없어 건드리지 않음(범위 밖). test/run.js의 기존 deleteTxnsUndo 테스트 블록 바로 뒤에 3건 추가: (1) 단일 삭제가 그 거래의 date를 fromDate로 넘기는지, (2) 날짜가 다른 여러 건을 삭제하면 Set 순서와 무관하게 가장 이른 날짜를 fromDate로 넘기는지, (3) 매칭되는 id가 하나도 없으면 opts 없이 save()를 호출하는지(회귀 가드). index.html/sw.js 변경이라 APP_VERSION 1.47.172->1.47.173, sw.js CACHE v434->v435 갱신. node our-assets-v1.14.1/our-assets/test/run.js 1528/1528 -> 1531/1531 통과.",
-      "commit": null
-    },
     {
       "cycle": 204,
       "phase": "advance",
@@ -141,6 +127,13 @@
       "phase": "develop",
       "timestamp": "2026-10-17T15:12:27.157Z",
       "summary": "Explore 서브에이전트로 develop 후보를 탐색 — saveTx()/deleteTxnsUndo()가 cycle204/209에서 받은 save({fromDate}) 부분 캐시 무효화를 saveRec()만 아직 받지 못한 공백을 발견(saveRec은 기존처럼 인자 없는 save()를 호출해 반복 저장/수정마다 _balCache를 통째로 비움). invalidateBalances(fromDate,opts) 계약을 재확인하고 saveTx의 \"수정 전 날짜와 새 날짜 중 이른 쪽\" 패턴을 saveRec에 그대로 적용 — wasEditing && 매칭되는 i>=0인 경우 orig를 덮어쓰기 전에 fromDate=min(orig.startDate,d.startDate)로 계산(index.html saveRec() 4632-4652행), 신규 반복 등록은 d.startDate 그대로 사용. recSaveScopeConfirm()/recSaveScopeApply(scope) 경로(과거 회차가 있어 범위 확인 시트를 거치는 분기)는 이번 범위에서 제외(Explore가 recSaveScopeApply/deleteRecsUndo도 같은 공백이 있다고 지적했으나, 가장 많이 거치는 saveRec() 직접 경로 하나만 좁게 고쳐 diff를 작게 유지, 나머지 둘은 다음 cycle 후보로 남김). recsChanged는 기본값(클리어)으로 둠 — DB.recurrences 자체가 바뀌므로 saveTx의 recsChanged:false와 달리 _recCache/_lastEditCache도 반드시 다시 전개돼야 함. test/run.js에 saveTx의 save({fromDate}) 테스트와 동일한 패턴으로 3건 추가: (1) 신규 반복 저장이 그 startDate를 fromDate로 넘기는지, (2) 시작일 안 바뀐 수정은 그대로 그 시작일을 넘기는지, (3) 과거 회차 없어 즉시 적용되는 경로에서 시작일을 더 늦게 바꾸면 원래(더 이른) 시작일을 fromDate로 넘기는지(min 로직 검증). index.html/sw.js 변경이라 APP_VERSION 1.47.180->1.47.181, sw.js CACHE v442->v443 갱신. HTML 주석을 제거한 뒤 <script> 블록을 node --check로 문법 검증. node our-assets-v1.14.1/our-assets/test/run.js 1557/1557 -> 1560/1560 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 209,
+      "phase": "review",
+      "timestamp": "2026-10-17T16:05:00.000Z",
+      "summary": "cycle209 develop 커밋(b4a4b1b, saveRec()에 save({fromDate}) 부분 캐시 무효화 적용)을 검토. invalidateBalances(fromDate)의 계약(key.slice(0,idx)>=fromDate인 _balCache 항목만 제거, upto<fromDate인 캐시는 보존)을 다시 확인하고, fromDate=min(orig.startDate,d.startDate)가 안전한 하한인 이유(expandRec()이 생성하는 모든 회차 날짜는 항상 그 반복의 startDate 이상이므로, 스케줄/금액/계정 등 어떤 필드가 바뀌어도 영향받는 가장 이른 날짜는 결코 min(orig.startDate,new.startDate)보다 앞설 수 없음)를 saveRec()/recDates()/expandRec() 소스로 직접 검증. wasEditing&&i<0인 기이한 경로(레코드가 이미 사라진 경우)는 orig가 없어 fromDate가 d.startDate로만 남는데, 그 경로 자체가 기존에도 비정상 상태라 범위 밖으로 둔 선택도 적절. recSaveScopeConfirm으로 return하는 분기(과거 회차 있어 범위 확인 시트를 거치는 경우)와 신규 반복 분기의 else 브랜치는 이번 범위에서 의도적으로 제외됐다고 커밋 메시지에 명시돼 있고 실제로 그 두 경로는 안 건드렸음을 재확인. 새 테스트 3건(신규 반복 fromDate=startDate, 시작일 불변 수정 fromDate=그 시작일, 시작일을 늦춰도 즉시 적용 경로에서 원래(이른) 시작일을 fromDate로)도 로직과 정확히 일치. node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1560/1560 통과. APP_VERSION 1.47.181/sw.js CACHE v443 갱신도 일관됨. 실제 버그 발견 없음 — 코드 변경 없이 state.json만 갱신.",
       "commit": null
     }
   ]
