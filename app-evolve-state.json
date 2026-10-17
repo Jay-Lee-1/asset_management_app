@@ -1,19 +1,8 @@
 {
-  "cycle": 208,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "renderHistory() 검색창(#histQ)의 value 속성이 ST.hist.q(H.q)를 esc() 없이 그대로 삽입 — 속성 이탈 XSS",
-    "why": "index.html:4820의 `value=\"${H.q}\"`가 esc()나 수동 \" 치환 없이 H.q(=ST.hist.q, 전체내역 검색창 live 값)를 value 속성에 바로 삽입한다. 바로 아래 자산 검색창(index.html:3471)은 같은 패턴을 `value=\"${esc(ST.assetQ)}\"`로 올바르게 처리하는데 histQ만 빠져 있다. H.q에 \"가 포함되면(예: 클립보드 하이재킹 self-XSS로 `x\" onmouseover=\"...`가 붙여넣기되는 경우) value 속성이 중간에 끝나고 새 속성(onmouseover 등)이 주입돼, CSP가 없는 이 앱에서 DB/localStorage(자산 잔액, 부채, 클라우드 동기화 키 등)를 읽어 유출하는 임의 JS 실행이 가능하다. renderHistory()는 ST.tab==='history'일 때 renderCurrent()가 거의 모든 상태변경(이체확정/목표저장/클라우드 pull/설정변경 등) 뒤에 호출해 #page-history를 통째로 재생성하므로 노출 빈도도 높다. \"가 없는 입력에서는 아무 문제 없이 동작해 지금까지 드러나지 않은 전형적인 속성-이탈 버그.",
-    "approach": "1) index.html:4820 `value=\"${H.q}\"` → `value=\"${esc(H.q)}\"`로 1글자 수정(3471행 assetQ와 동일 패턴, esc()는 logic.js:312 기존 헬퍼 재사용, 새 함수 불필요). 2) renderHistory는 이미 test/run.js 공유 sandbox FUNCTIONS에 있고 sandbox.ST.hist.* 세팅 후 $('page-history').innerHTML을 검사하는 기존 실행형 테스트 패턴이 있음(test/run.js 4637행대) — 그 패턴 그대로 1건 추가: sandbox.ST.hist.q = '\" onmouseover=\"x' 같은 payload로 renderHistory() 호출 후 결과 innerHTML에 #histQ 태그의 value 속성이 &quot;로 escape돼 있고 onmouseover= 같은 주입 속성이 생기지 않는지(oninput=\"ST.hist.q=...\" 속성이 정확히 하나만 있는지) 확인. 3) 다른 .replace(/\"/g,'&quot;') 수동 치환 지점들(4564/5288-5289/5321/5601/5654/8575)은 이미 안전하므로 손대지 않음(범위 밖). 4) index.html/sw.js 변경이므로 APP_VERSION과 sw.js CACHE 버전 갱신, 회귀 테스트 전체 통과 확인."
-  },
+  "cycle": 209,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 205,
-      "phase": "advance",
-      "timestamp": "2026-10-17T02:09:42.418Z",
-      "summary": "critique(cycle205) 계획대로 assetDelSel()(index.html:3621)에서 confirmSheet 호출 전에 activeRecsForAssets(ST.aSel.ids)를 계산해, delAsset()과 동일한 절(연결된 반복거래 N개도 함께 비활성화돼요)을 다중선택 삭제 확인 메시지에도 추가 — 두 경로 모두 deleteAssetsUndo(ids)로 수렴해 조건 없이 연결된 반복거래를 비활성화하는데, 이전엔 단일 삭제(delAsset)에만 경고가 있고 자산관리 길게눌러 다중선택 삭제(assetDelSel)에는 없었다. delAsset/assetDelSel을 test/run.js의 FUNCTIONS 목록에 추가(기존 confirmSheet/toast/ST.aSel 공유 sandbox 스텁만으로 바로 적용됨, 별도 격리 컨텍스트 불필요) + 실행형 테스트 6건: delAsset 경고 포함/미포함 2건, assetDelSel 경고 포함(선택된 여러 자산에 걸친 반복거래 개수 합산)/미포함 2건, assetDelSel 확인 콜백이 선택 모드를 끄고 선택된 자산 전체를 삭제하는 기존 동작 회귀 가드 1건. index.html/sw.js 변경이라 APP_VERSION 1.47.173->1.47.174, sw.js CACHE v435->v436 갱신. node our-assets-v1.14.1/our-assets/test/run.js 1530/1530 -> 1536/1536 통과. pending_advance_plan을 비웠다.",
-      "commit": null
-    },
     {
       "cycle": 205,
       "phase": "critique",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-17T13:12:09.783Z",
       "summary": "Explore 서브에이전트로 앱 전반을 보안/아키텍처 관점에서 훑었다(toast/announceLive 공백류, assetDelSel 경고, invalidateBalances fromDate, sanitizeBackup/buildImportPreview splits, 각종 실행형 테스트 추가(openSpendAnalysis·goalRowHTML·openRecManage·openQuickList·assetBalCard·openOwnerManage·openStaleMvReview·openCatManage·delAsset/assetDelSel·deleteTxnsUndo·invalidateBalances(fromDate)·announceLive/celebrate·isDraftDirty/closeSheetGuarded), openSheet/#dpModal/#dpWheel aria-labelledby, closeSheetGuarded 암묵적 닫기 dirty-draft 가드, dismissedStaleMvIds 가지치기(보류 유지), mergeCollection/mergeRecurrences 클락스큐(기각 유지), twGuard(기각 유지), CDN SRI(이 샌드박스 egress에서 불가), budgetCarryFor/modeSeg/r.skip·r.edits·r.confirmedDates 무제한증가/renderCurrent 전체재렌더(기각 유지) 등 cycle149-208에서 이미 다룬 항목 전부 제외). renderHistory()(index.html:4820)의 전체내역 검색창 #histQ가 `value=\"${H.q}\"`로 ST.hist.q를 esc() 없이(수동 \" 치환도 없이) 그대로 value 속성에 삽입하는 속성-이탈 XSS를 발견 — 바로 아래 자산 검색창(index.html:3471, value=\"${esc(ST.assetQ)}\")이 쓰는 정확한 패턴이 histQ에만 빠져 있다. H.q에 \"가 포함되면(클립보드 하이재킹 self-XSS 등) value 속성이 중간에 끝나고 onmouseover= 같은 새 속성이 주입돼 CSP 없는 이 앱에서 DB/localStorage(자산 잔액, 부채, 클라우드 키)를 유출하는 임의 JS 실행이 가능 — renderCurrent()가 거의 모든 상태변경 뒤 renderHistory()를 호출해 노출 빈도도 높다. 러너업: (1) d.memo 등 다른 지점들의 수동 `.replace(/\"/g,'&quot;')` 치환(4564/5288-5289/5321/5601/5654/8575)은 esc()와 스타일만 다를 뿐 이탈 불가능해 안전 — 이번 계획에서 제외, (2) RANGE_FROM='2023-01-01' 고정 플로어로 인한 재스캔 비용 증가는 cycle204 critique에서 이미 다뤄 재선정하지 않음. index.html:4820을 value=\"${esc(H.q)}\"로 수정(1글자) + test/run.js 기존 renderHistory 실행형 테스트 패턴에 escape 검증 1건 추가하는 계획을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "commit": null
+    },
+    {
+      "cycle": 208,
+      "phase": "advance",
+      "timestamp": "2026-10-17T14:09:41.871Z",
+      "summary": "critique(cycle208) 계획대로 renderHistory()의 #histQ 검색창 value 속성(index.html:4820)을 value=\"${esc(H.q)}\"로 수정 — 바로 아래 자산 검색창(3471행, value=\"${esc(ST.assetQ)}\")과 같은 패턴으로 통일. 이전엔 value=\"${H.q}\"로 ST.hist.q를 esc() 없이 그대로 삽입해, q에 \"가 포함되면(클립보드 하이재킹 self-XSS 등) value 속성이 중간에 끝나고 onmouseover= 같은 임의 속성이 주입되는 속성-이탈 XSS였다. test/run.js의 기존 renderHistory 실행형 테스트 블록에 1건 추가: ST.hist.q = '\" onmouseover=\"x'로 renderHistory() 호출 후 결과 innerHTML에 onmouseover=\"x\" 주입이 없고 value=\"&quot; onmouseover=&quot;x\" 로 정상 escape됐는지 확인. 다른 .replace(/\"/g,'&quot;') 수동 치환 지점들은 이미 안전해 손대지 않음(critique 계획대로 범위 밖). index.html/sw.js 변경이라 APP_VERSION 1.47.179->1.47.180, sw.js CACHE v441->v442 갱신. node our-assets-v1.14.1/our-assets/test/run.js 1556/1556 -> 1557/1557 통과. pending_advance_plan을 비웠다.",
       "commit": null
     }
   ]

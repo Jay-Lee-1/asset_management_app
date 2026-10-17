@@ -15781,6 +15781,18 @@ test('renderHistory: 함수 본문이 fcWire()를 호출해 histQ의 지우기 �
   const body = extractFunction('renderHistory');
   assert.ok(/fcWire\(\)/.test(body), 'renderHistory()가 fcWire()를 호출하지 않음');
 });
+/* app-evolve cycle208 critique/advance: histQ는 바로 아래 자산 검색창(assetQ, value="${esc(ST.assetQ)}")과
+ * 달리 value="${H.q}"로 ST.hist.q를 esc() 없이 그대로 value 속성에 삽입하고 있었다 — q에 "가 포함되면
+ * (클립보드 하이재킹 self-XSS 등) value 속성이 중간에 끝나고 onmouseover= 같은 새 속성이 주입되는
+ * 속성-이탈 XSS. esc(H.q)로 고쳤다(이 테스트가 실제 payload로 재현을 막는지 확인). */
+test('renderHistory: histQ의 value 속성은 ST.hist.q를 esc()로 이스케이프해 속성-이탈 XSS를 막는다(app-evolve cycle208)', () => {
+  setupHistoryDB();
+  sandbox.ST.hist.q = '" onmouseover="x';
+  assert.doesNotThrow(() => sandbox.renderHistory());
+  const html = sandbox.pageHistoryEl.innerHTML;
+  assert.ok(!html.includes('onmouseover="x"'), 'escape가 안 되면 onmouseover 속성이 주입돼야 하는데, 그런 주입이 실제로 없어야 함');
+  assert.ok(html.includes('value="&quot; onmouseover=&quot;x"'), 'histQ value 속성 안의 "가 &quot;로 escape돼야 함');
+});
 test('renderHistory: 실제 거래가 있으면 메모/금액이 histList에, 건수가 histTotals에 실제로 렌더된다', () => {
   setupHistoryDB();
   sandbox.DB.assets = [{ id: 'a1', name: '주계좌', owner: '나', type: 'cash', baseAmount: 500000 }];
