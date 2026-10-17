@@ -17118,6 +17118,32 @@ test('[실행형] nwChartPeekKey(ArrowRight) 키 이벤트는 _nwPeekIdx를 다�
   assert.strictEqual(ctx._nwPeekIdx, 1, '이어서 ArrowLeft면 한 칸 앞(인덱스 1)으로 이동해야 함');
 });
 
+/* ---------- celebrate(): toast()/toastFail()/undoToast()는 모두 pointer-events:none인 시각
+ * 요소라 스크린리더가 못 보는 문제를 announceLive()로 보완하는데(7968행 주석), celebrate()는
+ * 그 보완이 빠져 있었다(app-evolve cycle206 develop) — 이체 전부 완료/이체 제안 수락처럼
+ * celebrate()가 유일한 성공 신호인 화면에서 스크린리더 사용자가 결과를 알 길이 없었다.
+ * 공유 sandbox는 celebrate를 레코더로 완전히 대체해두므로(650행), 실제 celebrate+announceLive
+ * 쌍을 함께 vm에 태우는 격리 컨텍스트로 검증한다. */
+test('[실행형] celebrate()는 toast()처럼 announceLive로 스크린리더용 aria-live 공지를 한다', () => {
+  const ariaEl = { textContent: 'stale' };
+  const ctx = {
+    navigator: { vibrate: () => {} },
+    document: {
+      createElement: () => ({ classList: { add: () => {}, remove: () => {} } }),
+      body: { appendChild: () => {} },
+    },
+    requestAnimationFrame: () => {},
+    // announceLive의 30ms 지연만 즉시 실행하고, celebrate 자신의 1900ms 숨김 타이머는
+    // 이 테스트와 무관하므로 실행하지 않아(실제 Node 타이머를 남기지 않음) 결정적으로 끝난다.
+    setTimeout: (fn, ms) => { if (ms <= 30) fn(); },
+    $: (id) => (id === 'ariaLivePolite' ? ariaEl : null),
+  };
+  vm.createContext(ctx);
+  vm.runInContext([extractFunction('announceLive'), extractFunction('celebrate')].join('\n'), ctx);
+  ctx.celebrate('이체 전부 완료! 🎉');
+  assert.strictEqual(ariaEl.textContent, '이체 전부 완료! 🎉', 'celebrate()가 announceLive를 호출해 aria-live 리전에 같은 문구를 채워야 함');
+});
+
 /* ---------- refreshNwHistoryCard/assetBalPresetSel 포커스 보존: 기간 세그먼트(1개월/3개월/...)
  * 버튼을 눌렀을 때 innerHTML 재렌더로 그 버튼 자체가 사라지며 포커스가 <body>로 떨어지던 문제
  * (app-evolve cycle142 critique가 러너업으로 남기고 cycle143에서 고침). 두 함수 모두 DOM 전역을

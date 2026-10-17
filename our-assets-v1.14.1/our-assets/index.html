@@ -1387,7 +1387,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.174';
+const APP_VERSION='1.47.175';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -7339,6 +7339,7 @@ function celebrate(msg){ /* 잘 해냈을 때의 작은 보상 */
  el.innerHTML=`<div class="cel-card">${msg}</div>`;
  document.body.appendChild(el);
  requestAnimationFrame(()=>el.classList.add('show'));
+ announceLive(msg); /* pointer-events:none 시각 요소라 toast()처럼 스크린리더용 aria-live 공지 필요 */
  setTimeout(()=>{el.classList.remove('show');setTimeout(()=>el.remove(),400)},1900);
 }
 function pendingTransferCount(){return allTxns(RANGE_FROM,TODAY).filter(t=>isDuePending(t)).length}
