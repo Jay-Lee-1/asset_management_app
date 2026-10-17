@@ -17560,6 +17560,38 @@ test('openSheet: 시트 콘텐츠의 첫 h3/.pk-h 제목으로 #sheet에 aria-la
   );
 });
 
+/* ---------- #dpModal/#dpWheel도 #sheet와 같은 공백이 있었다 — app-evolve cycle207 develop은
+ * #sheet만 고쳤고 위 주석(17540-17550)도 #dpModal/#dpWheel을 명시적으로 남겨둔 공백으로 적었다.
+ * #dpModal은 renderDatePicker() 호출부가 항상 날짜 그리드 하나뿐이라(dpModal.innerHTML을 쓰는
+ * 곳이 파일 전체에 renderDatePicker 하나뿐) 동적 제목을 찾을 필요 없이 정적 aria-label로 충분하다.
+ * #dpWheel은 openMonthSheet/dpToggleJump/openYMSheet 세 호출부가 매번 다른 .wh-head 제목으로
+ * innerHTML을 새로 그리므로, openSheet()의 h3→aria-labelledby 패턴을 그대로 따르는 공유 헬퍼
+ * wireWhHead()를 두어 세 호출부 모두 innerHTML 대입 직후 호출하게 한다(app-evolve cycle208
+ * develop). ---------- */
+test('#dpModal에 정적 aria-label="날짜 선택"이 있다', () => {
+  assert.ok(
+    src.includes('<div class="dp-modal" id="dpModal" role="dialog" aria-modal="true" aria-label="날짜 선택"></div>'),
+    '#dpModal에 aria-label이 없어 스크린리더가 다이얼로그 용도를 알리지 못함'
+  );
+});
+test('wireWhHead: #dpWheel에 그려진 .wh-head 제목으로 aria-labelledby를 설정한다', () => {
+  const body = extractFunction('wireWhHead');
+  assert.ok(
+    body.includes(`const el=$('dpWheel').querySelector('.wh-head');if(el){if(!el.id)el.id='whHeadTitle';$('dpWheel').setAttribute('aria-labelledby',el.id);}`),
+    'wireWhHead가 .wh-head 요소의 id로 #dpWheel에 aria-labelledby를 설정하지 않음'
+  );
+});
+for (const fn of ['openMonthSheet', 'dpToggleJump', 'openYMSheet']) {
+  test(`${fn}: .wh-head를 그린 뒤 wireWhHead()를 호출해 #dpWheel의 aria-labelledby를 갱신한다`, () => {
+    const body = extractFunction(fn);
+    const innerHtmlIdx = body.indexOf(`$('dpWheel').innerHTML=`);
+    const wireIdx = body.indexOf('wireWhHead();');
+    assert.ok(innerHtmlIdx !== -1, `${fn} 추출 범위가 예상과 다름(dpWheel.innerHTML 대입을 못 찾음)`);
+    assert.ok(wireIdx !== -1, `${fn}이 wireWhHead()를 호출하지 않음`);
+    assert.ok(wireIdx > innerHtmlIdx, `${fn}이 #dpWheel.innerHTML을 채우기 전에 wireWhHead()를 불러 아직 옛 .wh-head를 참조할 수 있음`);
+  });
+}
+
 /* ---------- closeSheetGuarded/isDraftDirty: 스크림탭/스와이프다운 닫기/뒤로가기(popstate)가
  * 입력 중인 초안(txDraft/asDraft/goalDraft/recDraft)을 경고 없이 버리던 문제(app-evolve cycle207
  * advance) — snapDraft(kind)가 시트를 열 때 찍어둔 스냅샷과 현재 초안을 비교해 다르면

@@ -1340,7 +1340,7 @@ body.selmode .fab{display:none}
 <div class="scrim" id="scrim"></div>
 <div class="sheet" id="sheet" role="dialog" aria-modal="true" tabindex="-1"></div>
 <div class="dp-scrim" id="dpScrim"></div>
-<div class="dp-modal" id="dpModal" role="dialog" aria-modal="true"></div>
+<div class="dp-modal" id="dpModal" role="dialog" aria-modal="true" aria-label="날짜 선택"></div>
 <div class="dp-wheel" id="dpWheel" role="dialog" aria-modal="true"></div>
 <div class="fab-pop" id="fabPop"></div>
 <button class="fab" id="fab" onclick="fabTap()" aria-label="추가"></button>
@@ -1387,7 +1387,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.178';
+const APP_VERSION='1.47.179';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6826,6 +6826,13 @@ function syncOverlayInert(){ /* dpModal/dpWheel가 떠 있는 동안 그 아래(
 let _ovFocusStack=[];
 function ovPushFocus(){_ovFocusStack.push(document.activeElement)}
 function ovPopFocus(){const el=_ovFocusStack.pop();if(el&&document.contains(el))el.focus()}
+/* #dpWheel(월 선택/연월 선택 휠)은 #dpModal(aria-label 고정, 날짜 그리드 하나뿐)과 달리 세 호출부
+ * (openMonthSheet/dpToggleJump/openYMSheet)가 매번 다른 .wh-head 제목("월 선택"/"연도 · 월 선택")으로
+ * innerHTML을 통째로 새로 그려서 고정 aria-label 하나로 커버할 수 없다 — openSheet()의 h3→
+ * aria-labelledby 패턴(index.html 6862행 근처)과 동일한 방식을 휠에도 적용해, 매번 그려진
+ * .wh-head를 그 순간의 다이얼로그 제목으로 연결한다(app-evolve cycle208 develop: #sheet만 고쳤던
+ * cycle207 develop이 남긴 #dpModal/#dpWheel 공백 해소). */
+function wireWhHead(){const el=$('dpWheel').querySelector('.wh-head');if(el){if(!el.id)el.id='whHeadTitle';$('dpWheel').setAttribute('aria-labelledby',el.id);}}
 function closeDpWheelLayer(){ /* dpWheel 닫기 — 단독 사용(월/연월 휠)이든 dpModal 위 점프 휠이든 공통 */
  ovHistPop();
  $('dpWheel').classList.remove('show');
@@ -7039,6 +7046,7 @@ function openMonthSheet(which){ /* 전체내역·플랜: 월 단위 휠 (내역 
      <button class="btn btn-soft cancel" onclick="ymCloseWheel()">취소</button>
      <button class="btn btn-primary" onclick="monthWheelApply('${which}')">이동</button>
    </div>`;
+ wireWhHead();
  $('dpWheel').classList.add('show');$('dpScrim').classList.add('show');
  syncOverlayInert();
  const want=`${cur.y}-${cur.m}`;
@@ -7182,6 +7190,7 @@ function dpToggleJump(){
      <button class="btn btn-soft cancel" onclick="dpCloseJump()">취소</button>
      <button class="btn btn-primary" onclick="dpJumpApply()">이동</button>
    </div>`;
+ wireWhHead();
  $('dpWheel').classList.add('show');
  syncOverlayInert();
  requestAnimationFrame(()=>{whScrollTo($('whY'),_dpYM.y);whScrollTo($('whM'),_dpYM.m);const f=sheetFocusables($('dpWheel'))[0];if(f)f.focus()});
@@ -7296,6 +7305,7 @@ function openYMSheet(which){ /* 홈·가계부: 아이폰 시계식 휠로 연�
      <button class="btn btn-soft cancel" onclick="ymCloseWheel()">취소</button>
      <button class="btn btn-primary" onclick="ymApplyWheel()">이동</button>
    </div>`;
+ wireWhHead();
  $('dpWheel').classList.add('show');$('dpScrim').classList.add('show');
  syncOverlayInert();
  requestAnimationFrame(()=>{whScrollTo($('whY'),cur.y);whScrollTo($('whM'),cur.m);const f=sheetFocusables($('dpWheel'))[0];if(f)f.focus()});
