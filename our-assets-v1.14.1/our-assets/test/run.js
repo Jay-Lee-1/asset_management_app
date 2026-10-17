@@ -168,7 +168,7 @@ const FUNCTIONS = [
   'isBudgetRolloverCat', 'setBudgetRolloverCat', 'toggleBudgetRolloverUI', 'budgetCarryFor', 'budgetForMonthWithCarry',
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV',
   'unguardCsv', 'csvRowToImportTxn', 'buildImportPreview', 'doCsvImport',
-  'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo', 'unsnapshotAssetName', 'doBulkCat', 'bulkCatPickFor',
+  'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo', 'delAsset', 'assetDelSel', 'unsnapshotAssetName', 'doBulkCat', 'bulkCatPickFor',
   'deletedAssetHistoryExists', 'relinkDeletedAsset',
   'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'writeThemeCache', 'restoreBackup', 'storageOutcomeMsg', 'shouldWarnUnpersisted', 'shouldWarnStorageSize', 'toggleRecActive', 'toggleAdjustSurplus', 'touchSave',
   'sanitizeAmount', 'sanitizeBackup',
@@ -5219,6 +5219,63 @@ test('deleteAssetsUndo: undo로 되살린 자산에는 touch()가 호출되어 u
   const restored = sandbox.DB.assets.find(a => a.id === 'a1');
   assert.strictEqual(restored.updatedAt, 'test-updatedAt', '되살린 자산에는 touch()가 호출되어야 함');
   sandbox.TWi = -1;
+});
+
+/* ---------- delAsset/assetDelSel: 단일/다중선택 삭제 모두 연결된 반복거래 비활성화 경고를
+ * confirmSheet 메시지에 보여줘야 한다(app-evolve cycle205) — assetDelSel()이 delAsset()과
+ * 달리 activeRecsForAssets()를 호출하지 않아, 자산관리에서 여러 계좌를 한꺼번에 길게눌러
+ * 선택 삭제할 때 그중 하나에 연결된 반복거래가 조용히 꺼져도 사용자가 삭제 개수만 보고
+ * 확인해버릴 수 있었다. */
+test('delAsset: 연결된 활성 반복거래가 있으면 confirmSheet 메시지에 비활성화 경고가 포함된다', () => {
+  const a1 = { id: 'a1', name: '통장1' };
+  const rec = { id: 'r1', active: true, fromAssetId: 'a1', toAssetId: null };
+  sandbox.DB = { assets: [a1], recurrences: [rec] };
+  sandbox.confirmSheetCalls = [];
+  sandbox.delAsset('a1');
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 1);
+  assert.ok(sandbox.confirmSheetCalls[0].msg.includes('연결된 반복거래 1개도 함께 비활성화돼요'), '연결된 반복거래 경고가 메시지에 포함되어야 함');
+});
+test('delAsset: 연결된 활성 반복거래가 없으면 비활성화 경고 절이 메시지에 붙지 않는다(회귀 가드)', () => {
+  const a1 = { id: 'a1', name: '통장1' };
+  sandbox.DB = { assets: [a1], recurrences: [] };
+  sandbox.confirmSheetCalls = [];
+  sandbox.delAsset('a1');
+  assert.ok(!sandbox.confirmSheetCalls[0].msg.includes('비활성화돼요'), '연결된 반복거래가 없으면 경고 절이 없어야 함');
+});
+test('assetDelSel: 선택한 자산 중 하나라도 연결된 활성 반복거래가 있으면 confirmSheet 메시지에 비활성화 경고가 포함된다(delAsset과 동일한 가드가 다중선택 경로에도 있어야 함)', () => {
+  const a1 = { id: 'a1', name: '통장1' };
+  const a2 = { id: 'a2', name: '통장2' };
+  const rec1 = { id: 'r1', active: true, fromAssetId: 'a1', toAssetId: null };
+  const rec2 = { id: 'r2', active: true, fromAssetId: null, toAssetId: 'a2' };
+  sandbox.DB = { assets: [a1, a2], recurrences: [rec1, rec2] };
+  sandbox.ST = { aSel: { mode: true, ids: new Set(['a1', 'a2']) } };
+  sandbox.confirmSheetCalls = [];
+  sandbox.assetDelSel();
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 1);
+  assert.ok(sandbox.confirmSheetCalls[0].msg.includes('연결된 반복거래 2개도 함께 비활성화돼요'), '선택된 자산 전부에 걸친 연결 반복거래 개수가 메시지에 포함되어야 함');
+});
+test('assetDelSel: 연결된 활성 반복거래가 없으면 비활성화 경고 절이 메시지에 붙지 않는다(회귀 가드)', () => {
+  const a1 = { id: 'a1', name: '통장1' };
+  const a2 = { id: 'a2', name: '통장2' };
+  sandbox.DB = { assets: [a1, a2], recurrences: [] };
+  sandbox.ST = { aSel: { mode: true, ids: new Set(['a1', 'a2']) } };
+  sandbox.confirmSheetCalls = [];
+  sandbox.assetDelSel();
+  assert.ok(!sandbox.confirmSheetCalls[0].msg.includes('비활성화돼요'), '연결된 반복거래가 없으면 경고 절이 없어야 함');
+});
+test('assetDelSel: 확인을 누르면 선택 모드가 꺼지고 선택된 id 전체가 deleteAssetsUndo로 넘어간다(기존 동작 회귀 가드)', () => {
+  const a1 = { id: 'a1', name: '통장1' };
+  const a2 = { id: 'a2', name: '통장2' };
+  sandbox.DB = { assets: [a1, a2], recurrences: [] };
+  sandbox.ST = { aSel: { mode: true, ids: new Set(['a1', 'a2']) } };
+  sandbox.confirmSheetCalls = [];
+  sandbox.lastUndo = null;
+  sandbox.assetDelSel();
+  assert.strictEqual(sandbox.ST.aSel.ids.size, 2, 'confirmSheet 콜백을 부르기 전에는 선택이 아직 유지되어야 함');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.ST.aSel.mode, false, '삭제를 확정하면 선택 모드가 꺼져야 함');
+  assert.strictEqual(sandbox.ST.aSel.ids.size, 0, '삭제를 확정하면 선택 목록이 비워져야 함');
+  assert.deepStrictEqual(sandbox.DB.assets, [], '선택된 자산 둘 다 삭제되어야 함');
 });
 
 /* ---------- recApply(mode='delete'): 부분 삭제(scope='one'/'future')도 twGuard+undo를 쓴다 ---------- */

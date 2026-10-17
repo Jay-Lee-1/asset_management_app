@@ -1387,7 +1387,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.173';
+const APP_VERSION='1.47.174';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3619,7 +3619,9 @@ function assetToggleSel(id){if(window._lpJustFired){window._lpJustFired=false;re
 function visibleAssetsForSel(){return ST.assetOwner==='all'?DB.assets:DB.assets.filter(a=>a.owner===ST.assetOwner)} /* 귀속 필터가 켜져 있으면 화면에 보이는 자산만 전체선택/삭제 대상으로 삼는다 */
 function assetSelAll(){const items=visibleAssetsForSel();if(items.length&&ST.aSel.ids.size>=items.length)ST.aSel.ids.clear();else items.forEach(a=>ST.aSel.ids.add(a.id));if(!assetSelPartial())renderAssets()}
 function assetDelSel(){if(!ST.aSel.ids.size){toast('선택된 자산이 없어요');return}
- confirmSheet('선택 삭제',`<b style="color:var(--expense);font-size:16px">${ST.aSel.ids.size}개</b> 자산을 삭제할까요?`,'삭제',()=>{
+ const recs=activeRecsForAssets(ST.aSel.ids);
+ const msg=`<b style="color:var(--expense);font-size:16px">${ST.aSel.ids.size}개</b> 자산을 삭제할까요?`+(recs.length?` 연결된 반복거래 ${recs.length}개도 함께 비활성화돼요.`:'');
+ confirmSheet('선택 삭제',msg,'삭제',()=>{
   const ids=new Set(ST.aSel.ids);ST.aSel.mode=false;ST.aSel.ids.clear();deleteAssetsUndo(ids)});}
 
 function nextGroupOrder(existingOrder,visibleTypes){return visibleTypes.concat(existingOrder.filter(t=>!visibleTypes.includes(t)))}
