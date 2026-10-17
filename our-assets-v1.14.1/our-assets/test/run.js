@@ -10420,6 +10420,109 @@ test('saveTx: 반복 켜고 저장(신규 반복 등록)도 그 시작일을 fro
   assert.strictEqual(saveCalls[0] && saveCalls[0].fromDate, '2026-03-10', '신규 반복 등록도 시작일을 fromDate로 넘겨야 함');
 });
 
+/* ---------- invalidateBalances/opts.recsChanged: DB.recurrences와 무관한 저장은 _recCache/
+ * _lastEditCache를 보존한다 (app-evolve cycle207 advance) ----------
+ * cycle204가 _balCache에만 fromDate 기반 부분 무효화를 추가했지만, 그 자리의 주석이 스스로
+ * "_recCache/_lastEditCache는 지금은 그대로 항상 전체 clear한다"는 1차 완화임을 명시하고 있었다.
+ * _recCache(expandRec의 [from,to] 전개 결과 캐시)는 DB.recurrences가 바뀌지 않는 한 유효한데,
+ * saveTx의 비반복 거래 저장/deleteTxnsUndo/잔액조정·만기이체 보조 함수처럼 DB.recurrences를
+ * 전혀 건드리지 않는 호출부도 invalidateBalances()를 거치며 매번 전체를 비웠다. opts.recsChanged를
+ * false로 명시한 호출부만 두 캐시를 보존하고, 생략하거나 true인 나머지는 여전히 전체 clear해야 한다. */
+test('invalidateBalances(fromDate,{recsChanged:false}): _balCache는 기존 fromDate 규칙대로 부분 제거되지만 _recCache/_lastEditCache는 보존된다', () => {
+  const ctx = makeInvalidateBalancesCtx();
+  ctx._balCache.set('2026-05-31|2026-05-31', { a1: 100 });
+  ctx._balCache.set('2026-06-15|2026-07-01', { a1: 300 });
+  ctx._recCache.set('2023-01-01|2027-01-01', [{ id: 'rec_x_2026-06-01' }]);
+  ctx._lastEditCache.set({ id: 'r1' }, { date: '2026-05-01' });
+  ctx.invalidateBalances('2026-06-10', { recsChanged: false });
+  assert.ok(ctx._balCache.has('2026-05-31|2026-05-31'), 'fromDate 이전 upto는 recsChanged와 무관하게 그대로 남아있어야 함');
+  assert.ok(!ctx._balCache.has('2026-06-15|2026-07-01'), 'fromDate 이후 upto는 recsChanged와 무관하게 제거되어야 함');
+  assert.strictEqual(ctx._recCache.size, 1, 'recsChanged:false면 DB.recurrences가 안 바뀌었으니 _recCache를 비우면 안 됨');
+  assert.strictEqual(ctx._lastEditCache.size, 1, 'recsChanged:false면 _lastEditCache도 보존되어야 함');
+});
+test('invalidateBalances(null,{recsChanged:false}): fromDate가 없어도 _balCache는 기존처럼 전체 clear되고 _recCache/_lastEditCache만 보존된다', () => {
+  const ctx = makeInvalidateBalancesCtx();
+  ctx._balCache.set('2026-05-31|2026-05-31', { a1: 100 });
+  ctx._recCache.set('2023-01-01|2027-01-01', []);
+  ctx._lastEditCache.set({ id: 'r1' }, { date: '2026-05-01' });
+  ctx.invalidateBalances(null, { recsChanged: false });
+  assert.strictEqual(ctx._balCache.size, 0, '_balCache는 recsChanged와 무관하게 fromDate 유무 규칙만 따른다');
+  assert.strictEqual(ctx._recCache.size, 1);
+  assert.strictEqual(ctx._lastEditCache.size, 1);
+});
+test('invalidateBalances(fromDate,{recsChanged:true})/옵션에 recsChanged를 안 적은 경우: 기존처럼 _recCache/_lastEditCache를 전체 clear한다(회귀 가드)', () => {
+  const ctx = makeInvalidateBalancesCtx();
+  ctx._recCache.set('2023-01-01|2027-01-01', []);
+  ctx._lastEditCache.set({ id: 'r1' }, { date: '2026-05-01' });
+  ctx.invalidateBalances('2026-06-10', { recsChanged: true });
+  assert.strictEqual(ctx._recCache.size, 0, 'recsChanged:true를 명시해도 전체 clear되어야 함');
+  assert.strictEqual(ctx._lastEditCache.size, 0);
+  ctx._recCache.set('2023-01-01|2027-01-01', []);
+  ctx._lastEditCache.set({ id: 'r1' }, { date: '2026-05-01' });
+  ctx.invalidateBalances('2026-06-10', { deferCloudPush: true });
+  assert.strictEqual(ctx._recCache.size, 0, 'opts는 있지만 recsChanged가 없으면(다른 목적의 opts) 안전한 기본값(전체 clear)이어야 함');
+  assert.strictEqual(ctx._lastEditCache.size, 0);
+});
+test('save()/_saveCore: opts.recsChanged를 그대로 invalidateBalances에 전달한다', () => {
+  const calls = [];
+  const ctx = makeSaveCtx({
+    invalidateBalances: (fromDate, opts) => calls.push([fromDate, opts && opts.recsChanged]),
+    navigator: {},
+    dataKey: () => 'k',
+    localStorage: { getItem: () => null, setItem: () => {} },
+  });
+  ctx.save({ fromDate: '2026-06-10', recsChanged: false });
+  ctx.save({ fromDate: '2026-06-11' });
+  assert.deepStrictEqual(calls, [['2026-06-10', false], ['2026-06-11', undefined]],
+    'recsChanged:false를 명시한 호출만 그대로 전달되고, 생략한 호출은 undefined(=전체 clear 기본값)여야 함');
+});
+test('saveTx: 일회성 거래 저장(신규/수정)은 save()에 recsChanged:false를 넘긴다(DB.recurrences를 건드리지 않으므로)', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { txns: [], settings: {} };
+  sandbox.txDraft = {
+    id: null, type: 'expense', date: '2026-03-10', category: '식비', memo: '점심',
+    amount: 9000, fromAssetId: 'a1', toAssetId: null, repeat: false,
+  };
+  const saveCalls = [];
+  const saveOrig = sandbox.save;
+  sandbox.save = (opts) => { saveCalls.push(opts); };
+  try {
+    sandbox.saveTx();
+  } finally { sandbox.save = saveOrig; }
+  assert.strictEqual(saveCalls.length, 1);
+  assert.strictEqual(saveCalls[0] && saveCalls[0].recsChanged, false);
+});
+test('saveTx: 반복 켜고 저장(신규 반복 등록)은 DB.recurrences.push가 있으므로 save()에 recsChanged:false를 넘기지 않는다(안전한 기본값=전체 clear 유지)', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { recurrences: [], settings: {} };
+  sandbox.txDraft = {
+    id: null, type: 'expense', date: '2026-03-10', category: '월세', memo: '',
+    amount: 500000, fromAssetId: 'a1', toAssetId: null,
+    repeat: true, freq: 'monthly', day: 10, endDate: null, count: null,
+  };
+  const saveCalls = [];
+  const saveOrig = sandbox.save;
+  sandbox.save = (opts) => { saveCalls.push(opts); };
+  try {
+    sandbox.saveTx();
+  } finally { sandbox.save = saveOrig; }
+  assert.strictEqual(saveCalls.length, 1);
+  assert.strictEqual(saveCalls[0] && saveCalls[0].recsChanged, undefined, '신규 반복 등록은 _recCache도 반드시 비워야 하므로 recsChanged:false를 넘기면 안 됨');
+});
+test('deleteTxnsUndo: 실제로 삭제된 건이 있으면 save()에 recsChanged:false를 넘긴다(DB.recurrences는 안 건드리므로)', () => {
+  sandbox.DB = { txns: [{ id: 't1', date: '2026-04-01', amount: 100 }], deletedIds: {} };
+  const saveCalls = [];
+  const saveOrig = sandbox.save;
+  sandbox.save = (opts) => { saveCalls.push(opts); };
+  const undoToastOrig = sandbox.undoToast;
+  sandbox.undoToast = () => {};
+  try {
+    sandbox.deleteTxnsUndo(new Set(['t1']));
+  } finally { sandbox.save = saveOrig; sandbox.undoToast = undoToastOrig; }
+  assert.strictEqual(saveCalls.length, 1);
+  assert.strictEqual(saveCalls[0] && saveCalls[0].recsChanged, false);
+});
+
 /* ---------- saveTx: 더블탭 중복 저장 가드 (app-evolve cycle79 critique/advance) ----------
  * saveRec()과 같은 이유(closeSheet()가 innerHTML을 지우지 않아 저장 버튼이 트랜지션 동안
  * DOM에 남아있음)로, saveTx()도 반복 등록 분기(DB.recurrences.push)와 일회성 내역 분기

@@ -1,12 +1,15 @@
 {
-  "cycle": 206,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "invalidateBalances()가 DB.recurrences와 무관한 저장(일반 거래 저장/삭제, 잔액조정)에도 _recCache/_lastEditCache를 매번 전체로 비우는 문제 완화",
-    "why": "cycle204가 _balCache에만 fromDate 기반 부분 무효화를 추가했고, 그 자리의 주석(index.html:2426-2429)이 스스로 '_recCache/_lastEditCache는 지금은 그대로 항상 전체 clear한다'는 1차 완화임을 명시하고 있다. 그런데 _recCache(index.html:2349, expandRec의 [from,to] 전개 결과 캐시)는 애초에 DB.recurrences가 바뀌지 않는 한 유효하다고 주석(2344-2347)에 적혀 있을 만큼 트리거가 '거래 날짜'가 아니라 'DB.recurrences 변경 여부'다. 그런데 실제로는 DB.recurrences를 전혀 건드리지 않는 saveTx()의 일반(비반복) 거래 저장, deleteTxnsUndo(), addBalanceAdjust/updateBalanceAdjust(index.html:3521-3532) 등도 invalidateBalances()를 거치면서 매번 _recCache 전체(최대 40개 [from,to] 전개 결과)와 _lastEditCache를 무조건 비운다. 반복거래가 많은 사용자는 평범한 거래 하나를 저장할 때마다 달력 3개월 패널·지출분석·플랜 화면이 쓰는 recDates() 전개를 처음부터 다시 돌리게 되어, cycle204가 해결하려던 '저장 사이 캐시 적중률 0%' 문제가 recCache 쪽에는 그대로 남아 있다.",
-    "approach": "invalidateBalances(fromDate, opts)에 opts.recsChanged 같은 플래그를 추가(기본값은 안전하게 true, 즉 명시하지 않으면 기존처럼 recCache/lastEditCache까지 전부 비움)하고, DB.recurrences를 실제로 추가/수정/삭제/toggle하는 호출부(saveRec류, recApply, confirmRecTransfer/postponeRecTransfer, saveTx의 반복 등록 분기 등 전체 호출부 중 recurrences를 건드리는 것만)는 {recsChanged:true}를 명시, 반대로 일반 거래만 저장/삭제하거나 잔액조정만 바꾸는 호출부(saveTx의 비반복 경로, deleteTxnsUndo, addBalanceAdjust/updateBalanceAdjust 등)는 {recsChanged:false}를 넘겨 _recCache/_lastEditCache를 건드리지 않게 한다. invalidateBalances() 전체 15개 호출부(index.html 1582/1974/1988/2294/2329/3532/3795/4417근방/5530/6655/6660/7447/7450/7537/7548/8697)를 하나씩 분류해야 하므로 한 사이클 분량의 작업이다. test/run.js에 _recCache가 saveTx 일반 거래 경로에서는 보존되고 반복거래 관련 경로(예: saveRec)에서는 비워지는 걸 검증하는 회귀 테스트를 추가한다."
-  },
+  "cycle": 207,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 206,
+      "phase": "advance",
+      "timestamp": "2026-10-17T06:05:00.000Z",
+      "summary": "critique(cycle206) 계획대로 invalidateBalances(fromDate,opts)에 opts.recsChanged 플래그를 추가(index.html:2432) — opts를 생략하거나 recsChanged를 안 적으면(또는 true) 기존처럼 _recCache/_lastEditCache를 항상 전체 clear하는 안전한 기본값을 유지하고, opts.recsChanged===false를 명시한 호출부만 두 캐시를 보존한다. _saveCore(opts)가 opts 전체를 invalidateBalances에 그대로 전달하도록 수정(index.html:2294)해 save({...,recsChanged:false})로 플래그가 흐르게 했다. 15개 호출부를 하나씩 실제 DB 변경 내용과 대조해 분류: DB.recurrences를 전혀 건드리지 않는 saveTx()의 일회성 거래 저장(index.html:4422, 반복 등록 분기(4411행)는 DB.recurrences.push가 있어 제외하고 그대로 둠), deleteTxnsUndo()(7991, 매칭되는 id가 없어 아무것도 안 지워진 경우는 기존 회귀 가드(opts 없이 save())를 깨지 않도록 그대로 둠), updateBalanceAdjust()(3532)·saveAsset() 내부 setBase()(3795, 둘 다 뒤이어 balanceAt()을 불러 recCache를 바로 재사용하므로 실질적 이득이 있음), planSplitTransfer()/planTransfer()(7537/7548, transfer 거래만 추가)에 recsChanged:false를 적용. 반대로 mergeRemoteDataIntoLocal/afterCloudAuth/resolveCloudPullRemote/applyForeignSave/백업 복원(1582/1974/1988/2329/6655/6660, DB 전체 교체라 recurrences도 바뀔 수 있음)과 saveQuickAmount의 r.edits 갱신(7447/7450, recurrence 객체 자체를 수정)은 안전하게 기존 전체-clear 기본값 그대로 두었고, doMaturity()(5530)·refreshToday()(8697)는 바로 앞뒤로 이미 전체-clear하는 touchSave()/save()가 있어 변경해도 실질적 이득이 없다고 판단해 손대지 않았다. test/run.js에 8건 추가: invalidateBalances 자체가 recsChanged:false/true/opts 없음 세 경우를 각각 올바르게 처리하는지(makeInvalidateBalancesCtx로 3건), _saveCore가 opts.recsChanged를 그대로 전달하는지(makeSaveCtx로 1건), saveTx 일회성 저장은 recsChanged:false를 넘기고 신규 반복 등록은 넘기지 않는지(2건), deleteTxnsUndo가 실제 삭제가 있을 때만 recsChanged:false를 넘기고 매칭 없는 기존 회귀 가드는 그대로인지(1건+기존 가드 재확인). index.html/sw.js 변경이라 APP_VERSION 1.47.175->1.47.176, sw.js CACHE v437->v438 갱신. node our-assets-v1.14.1/our-assets/test/run.js 1544/1544 통과(신규 8건 포함, 기존 1536건 전부 그대로 통과 — 특히 cycle205의 'deleteTxnsUndo: 매칭 없으면 opts 없이 save()' 회귀 가드가 내 첫 구현에서 한 번 깨졌다가 deleteTxnsUndo의 '삭제 없음' 분기를 원래대로 되돌려 다시 통과시킴). pending_advance_plan을 비웠다.",
+      "commit": null
+    },
     {
       "cycle": 206,
       "phase": "critique",
@@ -130,22 +133,7 @@
       "cycle": 200,
       "phase": "advance",
       "timestamp": "2026-10-16T05:10:39.454Z",
-      "summary": "critique(cycle200) 계획대로 sanitizeBackup()의 txns 루프(d.amount 검증 직후)에 d.splits 검증을 추가했다 — category가 없거나 문자열이 아닌 split 항목, amount가 sanitizeAmount(x.amount,0) 후 0 이하(NaN/음수/문자열 포함)인 항목을 제거한 뒤 합계를 재계산하고, 유효 항목이 2개 미만이거나 합계가 d.amount와 다르면 d.splits 전체를 delete해 splitLines()가 top-level category/amount로 fallback하게 했다(saveTx가 쓰는 \"2개 미만이면 분할 아님\" 관례, txSplitRemove가 2개 밑으로 못 내려가게 하는 UI 불변식과 동일). 손상/제거가 있으면 기존 fixedCount 카운터만 증가시켜 새 UI 없이 복원 요약 토스트에 자동 반영되게 했다. test/run.js의 다른 txn sanitizeBackup 테스트들 옆에 5건 추가: (1) splits가 배열이 아니면 조용히 제거(크래시 없음), (2) category 없는 split 제거 후 2개 미만이면 전체 삭제 후 top-level fallback, (3) amount가 NaN/음수/문자열인 항목도 동일 처리, (4) 정제 후 합계 불일치 시 전체 삭제(핵심 NaN/drift 방지 케이스), (5) 정상 split(2개 이상, 합계 일치)은 그대로 보존(회귀 가드). index.html/sw.js 변경이라 APP_VERSION 1.47.165->1.47.166, sw.js CACHE v427->v428 갱신. node our-assets-v1.14.1/our-assets/test/run.js 1495/1495 -> 1500/1500 통과. pending_advance_plan을 비웠다.",
-      "commit": null
-    },
-    {
-      "cycle": 200,
-      "phase": "critique",
-      "timestamp": "2026-10-16T04:11:37.405Z",
-      "summary": "Explore 서브에이전트로 앱 전반을 훑어, sanitizeBackup()(index.html:6223-6400+)이 로컬 백업 복원/클라우드 머지가 공유하는 유일한 데이터 검증 체크포인트인데도 cycle198에 추가된 t.splits(분할 거래) 필드를 전혀 검증하지 않는 공백을 발견 — saveTx()는 저장 시점에만 분할 합계/카테고리를 강제하고, 복원/동기화 경로(mergeRemoteDataIntoLocal이 호출하는 sanitizeBackup)는 재검증이 없어 손상된 split(카테고리 null, amount NaN/음수, 합계 불일치)이 들어오면 splitLines() 소비 시 spendByCategory/budgetForMonthWithCarry/homeAlerts 예산초과 판정에 NaN이 조용히 전파되고, 원장/잔액 화면은 t.amount를 직접 써서 정상으로 보여 화면 간 수치 drift가 생김. CSV split export 제한(cycle198 의도적 문서화)과 delAsset/delCat/delOwner cascade(이미 cycle179/180/194/197에서 충분히 강화)는 후보로 검토했으나 기각. sanitizeBackup txns 루프에 splits 검증(유효 항목<2 또는 합계 불일치 시 splits 전체 삭제, top-level category/amount로 fallback) 추가 + test/run.js에 5건(비배열/null카테고리/NaN금액/합계불일치/정상케이스) 추가하는 계획을 pending_advance_plan에 저장. index.html 변경 예정이라 다음 advance에서 APP_VERSION/sw.js CACHE 갱신 필요. 코드 변경 없음(critique 단계라 state.json만 갱신).",
-      "commit": null
-    },
-    {
-      "cycle": 200,
-      "phase": "review",
-      "timestamp": "2026-10-16T03:07:14.993Z",
-      "summary": "cycle200 develop(modeSeg() chip-dot이 catExact/owner 필터를 못 보던 공백 수정, commit e1e0718) 검토 — ST.hist 기본값(index.html:2603)이 catExact:null, owner:'전체'임을 재확인해 기존 필터 없음 상태에서 filtered가 거짓으로 유지됨을 검증. catExact/owner를 세팅하는 모든 지점(openCatHistory:4754, histClearFilter/histClearCatFilter:4847/4849, toHist류 진입점들)이 서로 짝지어 세팅/해제되는 기존 관례와 일치. filteredHist() 등 실제 필터링 로직은 이번 수정이 건드리지 않았음을 diff로 재확인(순수 UI 인디케이터 변경). node test/run.js 1495/1495 통과. 이상 없음, 코드 변경 없음.",
-      "commit": null
+      "summary": "critique(cycle200) 계획대로 sanitizeBackup()의 txns 루프(d.amount 검증 직후)에 d.splits 검증을 추가했다 — category가 없거나 문자열이 아닌 split 항목, amount가 sanitizeAmount(x.amount,0) 후 0 이하(NaN/음수/문자열 포함)인 항목을 제거한 뒤 합계를 재계산하고, 유효 항목이 2개 미만이거나 합계가 d.amount와 다르면 d.splits 전체를 delete해 splitLines()가 top-level category/amount로 fallback하게 했다(saveTx가 쓰는 \"2개 미만이면 분할 아님\" 관례, txSplitRemove가 2개 밑으로 못 내려가게 하는 UI 불변식과 동일). 손상/제거가 있으면 기존 fixedCount 카운터만 증가시켜 새 UI 없이 복원 요약 토스트에 자동 반영되게 했다. test/run.js의 다른 txn sanitizeBackup 테스트들 옆에 5건 추가: (1) splits가 배열이 아니면 조용히 제거(크래시 없음), (2) category 없는 split 제거 후 2개 미만이면 전체 삭제 후 top-level fallback, (3) amount가 NaN/음수/문자열인 항목도 동일 처리, (4) 정제 후 합계 불일치 시 전체 삭제(핵심 NaN/drift 방지 케이스), (5) 정상 split(2개 이상, 합계 일치)은 그대로 보존(회귀 가드). index.html/sw.js 변경이라 APP_VERSION 1.47.165->1.47.166, sw.js CACHE v427->v428 갱신. node our-assets-v1.14.1/our-assets/test/run.js 1495/1495 -> 1500/1500 통과. pending_advance_plan을 비웠다."
     }
   ]
 }
