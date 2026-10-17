@@ -1,8 +1,15 @@
 {
   "cycle": 210,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 210,
+      "phase": "review",
+      "timestamp": "2026-10-17T20:20:00.000Z",
+      "summary": "cycle210 develop 커밋(659a67e, recSaveScopeApply/deleteRecsUndo에 save({fromDate}) 적용)을 검토. invalidateBalances(fromDate) 계약(key.slice(0,idx)>=fromDate인 _balCache 항목만 제거, upto<fromDate 캐시는 보존)을 재확인하고 두 수정을 각각 대조: recSaveScopeApply의 'all' 분기는 DB.recurrences[i]=d로 과거 회차까지 통째로 교체하므로 fromDate=min(orig.startDate,d.startDate)가 정확히 필요한 하한이고, 'future' 분기(splitRecurrenceAt)는 updatedOriginal이 원본 freq/day/startDate/weekend를 그대로 두고 endDate만 effectiveDate-1로 자르므로(skip/edits도 splitRecOverrides가 날짜 기준으로만 과거분을 그대로 보존) TODAY 이전 잔액은 실제로 전혀 안 바뀜 — 그런데도 min(orig.startDate,d.startDate)(보통 TODAY보다 이름)를 그대로 써서 필요 이상으로 과거까지 무효화하지만, 더 이르게 잡는 건 항상 안전한 하한이라 정확성 문제는 아님(커밋 주석에 이 트레이드오프가 이미 명시돼 있고 saveRec과 일관된 단일 공식을 쓰려는 의도적 선택). deleteRecsUndo는 removed가 비어있으면(ids 불일치) opts 없이 호출해 기존 회귀 가드를 그대로 보존하고, 있으면 reduce로 가장 이른 startDate를 정확히 구함. 새 테스트 5건 모두 소스와 정확히 일치. sw.js CACHE v444/APP_VERSION 1.47.182 갱신도 일관됨. node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1567/1567 통과. 실제 버그 없음 — 코드 변경 없이 state.json만 갱신.",
+      "commit": null
+    },
     {
       "cycle": 210,
       "phase": "develop",
