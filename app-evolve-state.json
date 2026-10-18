@@ -1,19 +1,8 @@
 {
-  "cycle": 214,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "pushCloud()/pullCloud()가 DB 전체 JSON을 압축 없이 매번 통째로 전송 — gzip+base64로 페이로드 축소",
-    "why": "pushCloud(index.html:1905-1957)/pullCloud(1832-1888)는 매 저장마다(scheduleCloudPush가 1.2s 디바운스 후 무조건 호출, 1865) DB 전체를 SB.from('user_data').update/upsert({data:DB,...})로 통째로 올리고, pullCloud/afterCloudAuth/pushCloud 충돌-재시도 경로(await pushCloud(true))도 동일하게 전체를 받아온다. 앱 스스로 STORAGE_SIZE_WARN_LEN=3,000,000 / STORAGE_SIZE_CRIT_LEN=4,500,000 바이트(1770) 임계값으로 localStorage 용량을 경고할 만큼 수 MB대 DB를 전제하는데, 거래/반복/자산수량로그 히스토리가 쌓일수록 '거래 1건 수정'이라는 로컬 변경 1건의 동기화 비용(지연·모바일 데이터)이 계정 나이에 비례해 무한히 커진다 — 가장 자주 도는 저장 경로이자 모바일 셀룰러 환경을 타깃으로 하는 PWA라 체감이 크다. cycle211/212의 mergeDataLoss 경고나 로컬 _balCache/_recCache fromDate 무효화는 계산량만 줄였을 뿐 네트워크 바이트는 전혀 줄이지 않아 겹치지 않는 별개 문제.",
-    "approach": "Supabase 테이블/컬럼 스키마는 그대로 두고(data jsonb 컬럼 유지) 클라이언트 측에서만 처리: push 시 JSON.stringify(DB)를 CompressionStream('gzip')(기능 감지)로 압축 후 base64 인코딩해 {data:{_gz:'<base64>'}, updated_at} 형태로 upsert/update. pullCloud, pushCloud의 충돌-병합 분기(curRow.data), afterCloudAuth 등 data를 읽는 모든 지점에 _gz 키를 감지해 DecompressionStream('gzip')로 풀고, 없으면(구버전 로우/CompressionStream 미지원 브라우저) 기존처럼 raw 객체로 취급하는 작은 디코드 shim을 하나 추가해 sanitizeBackup() 앞에 통과시킨다. CompressionStream 미지원 환경에서는 압축 없이 기존 방식으로 자동 폴백. 스키마 마이그레이션 없이 페이로드 70~90% 축소를 기대."
-  },
+  "cycle": 215,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 209,
-      "phase": "review",
-      "timestamp": "2026-10-17T16:05:00.000Z",
-      "summary": "cycle209 develop 커밋(b4a4b1b, saveRec()에 save({fromDate}) 부분 캐시 무효화 적용)을 검토. invalidateBalances(fromDate)의 계약(key.slice(0,idx)>=fromDate인 _balCache 항목만 제거, upto<fromDate인 캐시는 보존)을 다시 확인하고, fromDate=min(orig.startDate,d.startDate)가 안전한 하한인 이유(expandRec()이 생성하는 모든 회차 날짜는 항상 그 반복의 startDate 이상이므로, 스케줄/금액/계정 등 어떤 필드가 바뀌어도 영향받는 가장 이른 날짜는 결코 min(orig.startDate,new.startDate)보다 앞설 수 없음)를 saveRec()/recDates()/expandRec() 소스로 직접 검증. wasEditing&&i<0인 기이한 경로(레코드가 이미 사라진 경우)는 orig가 없어 fromDate가 d.startDate로만 남는데, 그 경로 자체가 기존에도 비정상 상태라 범위 밖으로 둔 선택도 적절. recSaveScopeConfirm으로 return하는 분기(과거 회차 있어 범위 확인 시트를 거치는 경우)와 신규 반복 분기의 else 브랜치는 이번 범위에서 의도적으로 제외됐다고 커밋 메시지에 명시돼 있고 실제로 그 두 경로는 안 건드렸음을 재확인. 새 테스트 3건(신규 반복 fromDate=startDate, 시작일 불변 수정 fromDate=그 시작일, 시작일을 늦춰도 즉시 적용 경로에서 원래(이른) 시작일을 fromDate로)도 로직과 정확히 일치. node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1560/1560 통과. APP_VERSION 1.47.181/sw.js CACHE v443 갱신도 일관됨. 실제 버그 발견 없음 — 코드 변경 없이 state.json만 갱신.",
-      "commit": null
-    },
     {
       "cycle": 209,
       "phase": "critique",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-18T14:13:32.243Z",
       "summary": "Explore 서브에이전트로 앱 전반을 아키텍처 관점에서 훑었다(cycle149-213에서 다룬 invalidateBalances fromDate/closeSheetGuarded/aria-label/XSS/실행형 테스트 전환류/split거래/pushCloud await 순서/mergeDataLoss 경고/kakaoLogin 게스트 병합/nextOutflowCard 스냅샷/#histQ 디바운스(보류)/recSaveScopeConfirm(보류)/DB.goals type:'networth'|'asset' 신설(cycle213)/goalHistoryFor asset타입변경 버그(cycle214 develop)/CDN SRI(네트워크 egress 차단으로 불가, 문서화됨)/txDayInput 등 미사용 함수 10개(기각)/cycle210 critique에서 보류된 wireSheetGestures·ensureEdgeGesture 제스처 엔진 실행형 테스트 전환(아직 advance 안 됨, 중복 제안 방지 위해 재확인만 하고 이번엔 제외) 전부 제외하고 진행). pushCloud()/pullCloud()(index.html:1832-1957)가 매 저장마다(scheduleCloudPush 1.2s 디바운스, 1865) DB 전체 JSON을 압축 없이 통째로 올리고 받는 구조적 문제를 새로 발견 — STORAGE_SIZE_WARN_LEN/CRIT_LEN(1770) 임계값이 시사하는 수 MB대 DB를 전제로 하면서도 네트워크 페이로드를 줄이는 장치가 전혀 없어, 계정이 오래될수록 거래 1건 수정의 동기화 비용이 무한히 커지는 구조. 로컬 캐시 무효화(_balCache/_recCache)는 계산량만 줄였을 뿐 바이트는 전혀 줄이지 않아 겹치지 않음. CompressionStream/DecompressionStream('gzip') 기반 base64 압축(Supabase 스키마 변경 없이 data jsonb 컬럼 안에서 {_gz:'...'} 래퍼로 처리, 미지원 브라우저는 기존 raw 객체로 자동 폴백)을 advance 계획으로 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "commit": null
+    },
+    {
+      "cycle": 214,
+      "phase": "advance",
+      "timestamp": "2026-10-18T15:20:00.000Z",
+      "summary": "critique(cycle214) 계획대로 pushCloud()/pullCloud()가 scheduleCloudPush()의 1.2초 디바운스마다 DB 전체 JSON을 압축 없이 통째로 올리고 받던 구조에 클라이언트 전용 gzip+base64 압축 레이어를 추가했다. Supabase의 data jsonb 컬럼 스키마는 그대로 두고(마이그레이션 없음), 새 encodeCloudPayload(db)/decodeCloudPayload(raw)(index.html, pullCloud 바로 위)가 CompressionStream/DecompressionStream('gzip')을 feature-detect해 지원 환경에서는 JSON.stringify(DB)를 압축한 뒤 bytesToBase64(0x8000 청크로 나눠 String.fromCharCode.apply — 수 MB 배열에서 apply 인자 개수 한도에 걸리는 RangeError 방지)로 인코딩해 {_gz:'<base64>'}로 래핑하고, 미지원이면(Safari<16.4 등) 압축 없이 DB를 그대로 반환해 기존 동작과 100% 같다. pushCloud()는 조건부 UPDATE/충돌-재시도/fallback UPSERT 세 전송 지점 모두 DB 대신 한 번 계산한 payload를 보내고, pullCloud()의 select 응답과 pushCloud() 충돌-재시도 분기의 curRow.data를 모두 decodeCloudPayload에 통과시켜(_gz 키가 없으면 그대로 패스스루) sanitizeBackup() 등 하위 호출부는 전혀 수정하지 않았다 — afterCloudAuth/resolveCloudPullRemote/ pullCloudIfStale은 모두 pullCloud()의 반환값만 쓰므로 변경 없이 투명하게 혜택을 받는다. test/run.js에 6건 추가: bytesToBase64/base64ToBytes 청크 경계 왕복, encodeCloudPayload/decodeCloudPayload 실제 압축 왕복(원본과 deepStrictEqual), _gz 없는 raw 통과, CompressionStream 미지원 폴백, pullCloud가 {_gz:...} 원격 데이터를 투명하게 풀어주는 통합 테스트, pushCloud가 실제로 전송하는 data가 DB 원본이 아니라 압축된 {_gz:...}인지 확인하는 실행형 테스트. 기존 pushCloud 충돌-재시도 실행형 테스트 1건은 CompressionStream의 실제 압축이 순수 마이크로태스크가 아니라 zlib 콜백을 거쳐 이벤트 루프를 몇 틱 도는 것을 발견해(await Promise.resolve() 20회로는 끝나지 않음) setImmediate 기반 폴링(40틱)으로 바꿔 통과시켰다 (동작 자체는 그대로, 압축이 비동기 I/O를 거친다는 사실을 테스트가 못 따라가던 것만 수정). APP_VERSION 1.47.189->1.47.190, sw.js CACHE v451->v452. HTML 주석 제거 후 <script> 블록 4개 + logic.js 모두 node --check 통과. node our-assets-v1.14.1/our-assets/test/run.js 1601/1601 -> 1607/1607 통과. pending_advance_plan을 비웠다.",
       "commit": null
     }
   ]

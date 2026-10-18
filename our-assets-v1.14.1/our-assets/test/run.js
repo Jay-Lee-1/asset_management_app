@@ -183,6 +183,7 @@ const FUNCTIONS = [
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges', 'shouldRetryCloudSync',
   'pullCloud', 'afterCloudAuth', 'resolveCloudPullRemote', 'pushCloud', 'measureCloudClockSkew',
   'shouldPullCloud', 'pullCloudIfStale', 'appIsOpen',
+  'bytesToBase64', 'base64ToBytes', 'encodeCloudPayload', 'decodeCloudPayload',
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
   'clampDay', 'saveTx', 'duplicateTx', 'assetBase', 'balancesUpTo', 'balanceAt', 'balancesAtDates', 'balanceAtFromMap',
   'addBalanceAdjust', 'updateBalanceAdjust', 'toggleConfirmTransfers', 'rollPendingTransfers',
@@ -713,6 +714,14 @@ const sandbox = {
   // Node 19+의 전역 webcrypto를 그대로 넘기면 index.html과 같은 소스가 그대로 돌아간다.
   crypto,
   TextEncoder,
+  // encodeCloudPayload/decodeCloudPayload(app-evolve cycle214 advance)의 gzip+base64 압축이 쓰는
+  // Web 표준 전역들 — Node 18+가 TextEncoder와 동일하게 전역으로 제공하므로 그대로 넘긴다.
+  TextDecoder,
+  CompressionStream,
+  DecompressionStream,
+  Response,
+  btoa,
+  atob,
   // fetchWithTimeout(app-evolve cycle115)이 쓰는 AbortController는 Node 전역 구현 그대로 넘긴다
   // (브라우저와 동일한 모양). fetch는 기본값을 두지 않고(호출되면 바로 ReferenceError 대신
   // "sandbox.fetch is not a function" 형태로 실패하게) 각 테스트가 필요한 모양으로 직접 채운다.
@@ -10000,6 +10009,77 @@ test('SW 업데이트 체크: document.hidden===true(백그라운드)면 두 핸
   assert.strictEqual(updateCalls, 0);
 });
 
+/* ---------- bytesToBase64/base64ToBytes/encodeCloudPayload/decodeCloudPayload: pushCloud()/
+ * pullCloud()가 매번 DB 전체를 압축 없이 그대로 주고받던 구조를 gzip+base64로 줄이는 클라이언트
+ * 전용 압축 레이어(app-evolve cycle214 advance). Supabase의 data jsonb 컬럼 스키마는 그대로 두고
+ * {_gz:'<base64>'} 래퍼로만 감싸므로, _gz 키가 없는 값(구버전 로우/압축 미지원 환경에서 쓴 로우)은
+ * decodeCloudPayload가 그대로 통과시켜 별도 마이그레이션 없이 공존한다. ---------- */
+test('bytesToBase64/base64ToBytes: 0x8000 청크 경계를 넘는 큰 바이트 배열도 정확히 왕복한다', () => {
+  const bytes = new Uint8Array(0x8000 * 2 + 37);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = i % 256;
+  const b64 = sandbox.bytesToBase64(bytes);
+  assert.strictEqual(typeof b64, 'string');
+  const back = sandbox.base64ToBytes(b64);
+  assert.deepStrictEqual(Array.from(back), Array.from(bytes));
+});
+test('[실행형] encodeCloudPayload/decodeCloudPayload: CompressionStream 지원 환경에서는 {_gz:<base64>}로 압축하고, 풀면 원본 DB와 정확히 같다', async () => {
+  const db = { assets: [{ id: 'a1', type: 'cash' }], txns: [{ id: 't1', date: '2026-01-01', amount: 1000 }], recurrences: [] };
+  const encoded = await sandbox.encodeCloudPayload(db);
+  assert.strictEqual(typeof encoded._gz, 'string', 'CompressionStream이 있으면 {_gz:<base64>}로 래핑해야 함');
+  assert.ok(encoded._gz.length > 0);
+  const decoded = await sandbox.decodeCloudPayload(encoded);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(decoded)), db, '압축을 풀면 원본 DB와 정확히 같아야 함');
+});
+test('decodeCloudPayload: _gz 키가 없는 값(구버전 로우/압축 미지원 환경에서 쓴 로우)은 변형 없이 그대로 통과시킨다', async () => {
+  const raw = { assets: [], txns: [{ id: 't1' }] };
+  assert.strictEqual(await sandbox.decodeCloudPayload(raw), raw);
+  assert.strictEqual(await sandbox.decodeCloudPayload(null), null);
+  assert.strictEqual(await sandbox.decodeCloudPayload(undefined), undefined);
+});
+test('encodeCloudPayload: CompressionStream을 지원하지 않는 환경(예: Safari 16.4 미만)에서는 압축 없이 DB를 그대로 돌려준다', async () => {
+  const origCS = sandbox.CompressionStream;
+  sandbox.CompressionStream = undefined;
+  try {
+    const db = { assets: [{ id: 'a1' }], txns: [] };
+    assert.strictEqual(await sandbox.encodeCloudPayload(db), db, 'feature-detect로 압축을 건너뛰고 원본 DB를 그대로 반환해야 함');
+  } finally {
+    sandbox.CompressionStream = origCS;
+  }
+});
+test('pullCloud: 원격 data가 {_gz:...}로 압축돼 있어도 투명하게 압축을 풀어 원래 DB 모양을 돌려준다', async () => {
+  sandbox.CLOUD_UID = 'u1';
+  const remoteDb = { assets: [{ id: 'remote1', type: 'cash' }], txns: [] };
+  const gz = await sandbox.encodeCloudPayload(remoteDb);
+  sandbox._sbMaybeSingleResult = { data: { data: gz, updated_at: '2026-01-01T00:00:00.000Z' }, error: null };
+  const remote = await sandbox.pullCloud();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(remote)), remoteDb, '압축된 원격 데이터를 pullCloud()가 그대로 풀어서 돌려줘야 함');
+});
+test('[실행형] pushCloud: 실제로 전송하는 data 필드는 DB 원본이 아니라 gzip+base64로 압축한 {_gz:...} 래퍼다', async () => {
+  const origSB = sandbox.SB;
+  sandbox.DB = { txns: [{ id: 't1', date: '2026-01-01', updatedAt: 100 }], recurrences: [], assets: [], deletedIds: {} };
+  sandbox.CLOUD_UID = 'u1';
+  sandbox.CLOUD_SYNC_STATE = 'idle';
+  sandbox.CLOUD_LAST_SYNCED_AT = null; // 첫 push(기준 없음) → 조건부 UPDATE 없이 곧장 upsert 경로
+  sandbox.markCloudSyncedCalls = 0;
+  let upsertArg = null;
+  sandbox.SB = {
+    from: () => ({
+      select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
+      update: () => ({ eq: () => ({ eq: () => ({ select: async () => ({ data: [], error: null }) }) }) }),
+      upsert: async (arg) => { upsertArg = arg; return { error: null }; },
+    }),
+  };
+  try {
+    await sandbox.pushCloud();
+  } finally {
+    sandbox.SB = origSB;
+  }
+  assert.ok(upsertArg, 'upsert가 호출돼야 함');
+  assert.strictEqual(typeof upsertArg.data._gz, 'string', 'upsert에 넘기는 data는 DB 원본이 아니라 압축된 {_gz:...}여야 함');
+  const roundTrip = await sandbox.decodeCloudPayload(upsertArg.data);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(roundTrip)), sandbox.DB, '압축을 풀면 방금 push한 원본 DB와 같아야 함');
+});
+
 /* ---------- pullCloud/afterCloudAuth/resolveCloudPullRemote: markCloudSynced() 호출 시점
  * (app-evolve cycle77 develop 회귀 테스트). pullCloud()는 원래 원격 fetch에 성공하기만 하면
  * markCloudSynced()(dataKey()+'__syncedAt'을 지금 시각으로 찍음)를 곧장 불렀다. 그런데
@@ -10347,7 +10427,12 @@ test('[실행형] pushCloud: 충돌 자동 재시도 중에는 재시도 호출�
   };
   try {
     const p = sandbox.pushCloud();
-    for (let i = 0; i < 20 && updateCallCount < 2; i++) await Promise.resolve();
+    // encodeCloudPayload()(app-evolve cycle214 advance)의 실제 CompressionStream 압축은 순수
+    // 마이크로태스크가 아니라 zlib 네이티브 콜백을 거쳐 이벤트 루프를 몇 틱 돈 뒤에야 끝나서(실측
+    // 결과 setImmediate 1~2틱), await Promise.resolve()만 반복하는 마이크로태스크 전용 루프로는
+    // 영원히 안 끝난다 — setImmediate로 매크로태스크 틱을 실제로 돌려야 한다. push가 1차 실패 후
+    // 재시도까지 두 번 압축해야 하므로(최초 push + 병합 뒤 재시도) 여유 있게 40틱까지 돈다.
+    for (let i = 0; i < 40 && updateCallCount < 2; i++) await new Promise((r) => setImmediate(r));
     assert.strictEqual(updateCallCount, 2, '재시도(2번째) 조건부 UPDATE 호출까지 도달해 있어야 함');
     assert.strictEqual(sandbox.PUSH_CLOUD_INFLIGHT, true, '재시도 네트워크 왕복이 아직 끝나지 않았으면 PUSH_CLOUD_INFLIGHT가 계속 true로 남아, 그 사이 끼어드는 다른 트리거(60초 재시도 interval·디바운스 타이머·online 이벤트)의 중복 push를 막아야 함');
     resolveRetry();

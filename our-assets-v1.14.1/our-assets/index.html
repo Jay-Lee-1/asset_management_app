@@ -1387,7 +1387,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.189';
+const APP_VERSION='1.47.190';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1829,6 +1829,50 @@ function withTimeout(promise,ms){
   promise.then(v=>{clearTimeout(timer);resolve(v)},e=>{clearTimeout(timer);reject(e)});
  });
 }
+/* pushCloud()/pullCloud()는 scheduleCloudPush()의 1.2초 디바운스 뒤 매번 DB 전체 JSON을 압축 없이
+ * 그대로 올리고 받는다 — STORAGE_SIZE_WARN_LEN/CRIT_LEN(위)이 시사하는 수 MB대 DB를 전제하면서도
+ * 네트워크 페이로드를 줄이는 장치가 전혀 없어, 거래/반복거래/자산수량로그가 쌓일수록 '거래 1건
+ * 수정'이라는 로컬 변경 1건의 동기화 비용(지연·모바일 데이터)이 계정 나이에 비례해 무한히 커진다
+ * (app-evolve cycle214 critique). Supabase의 data jsonb 컬럼 스키마는 그대로 두고, 클라이언트에서만
+ * CompressionStream('gzip')으로 압축 + base64 인코딩해 {_gz:'<base64>'}로 래핑한다 — 미지원 브라우저
+ * (예: Safari 16.4 미만)는 feature-detect로 압축 없이 기존처럼 raw 객체를 그대로 보낸다.
+ * encodeCloudPayload가 압축하지 않은 구버전 로우나 미지원 환경에서 온 값은 _gz 키가 없으므로
+ * decodeCloudPayload가 그대로 통과시켜(기존 스키마와 100% 호환) 별도 마이그레이션이 필요 없다. */
+function bytesToBase64(bytes){
+ /* btoa(String.fromCharCode(...bytes))는 배열이 커지면(수 MB) 스프레드/apply 인자 개수 한도에
+  * 걸려 RangeError가 날 수 있어, chunk 단위로 나눠 문자열에 이어 붙인다. */
+ let binary='';const chunk=0x8000;
+ for(let i=0;i<bytes.length;i+=chunk)binary+=String.fromCharCode.apply(null,bytes.subarray(i,i+chunk));
+ return btoa(binary);
+}
+function base64ToBytes(b64){
+ const binary=atob(b64);
+ const bytes=new Uint8Array(binary.length);
+ for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
+ return bytes;
+}
+async function encodeCloudPayload(db){
+ if(typeof CompressionStream!=='function')return db;
+ try{
+  const bytes=new TextEncoder().encode(JSON.stringify(db));
+  const cs=new CompressionStream('gzip');
+  const writer=cs.writable.getWriter();
+  writer.write(bytes);writer.close();
+  const buf=await new Response(cs.readable).arrayBuffer();
+  return{_gz:bytesToBase64(new Uint8Array(buf))};
+ }catch(e){return db}
+}
+async function decodeCloudPayload(raw){
+ if(!raw||typeof raw!=='object'||typeof raw._gz!=='string')return raw;
+ if(typeof DecompressionStream!=='function')return raw;
+ try{
+  const ds=new DecompressionStream('gzip');
+  const writer=ds.writable.getWriter();
+  writer.write(base64ToBytes(raw._gz));writer.close();
+  const buf=await new Response(ds.readable).arrayBuffer();
+  return JSON.parse(new TextDecoder().decode(buf));
+ }catch(e){return raw}
+}
 async function pullCloud(){
  if(!sbReady()||!CLOUD_UID)return null;
  try{
@@ -1840,7 +1884,7 @@ async function pullCloud(){
    * 안 그러면 conflict로 되돌아간 다음에도 '__syncedAt'가 갱신돼, 이후 재부팅 시
    * localHasUnsyncedChanges()가 미동기화 편집을 놓치고 remote로 조용히 덮어쓸 수 있다. */
   CLOUD_LAST_SYNCED_AT=data.updated_at;cloudSyncOk();
-  return data.data||null;
+  return data.data?await decodeCloudPayload(data.data):null;
  }catch(e){cloudSyncFailed();return null}
 }
 /* measureCloudClockSkew: afterCloudAuth()가 이미 하는 클라우드 왕복에 얹어, Supabase REST 응답의
@@ -1911,13 +1955,14 @@ async function pushCloud(retried){
  CLOUD_SYNC_STATE='syncing';
  try{
   const nowIso=new Date().toISOString();
+  const payload=await encodeCloudPayload(DB);
   /* SELECT로 충돌을 먼저 확인하고 나서 별도 UPSERT로 쓰던 예전 방식은 check-then-act라, 두 기기가
    * scheduleCloudPush의 디바운스 창 안에 거의 동시에 푸시하면 둘 다 같은 cur.updated_at을 보고 통과해
    * 나중 쓰기가 먼저 쓴 쪽을 조용히 덮어쓸 수 있었다. 조건부 UPDATE(.eq('updated_at',...))로 바꿔
    * DB가 원자적으로 매치 여부를 판정하게 한다. CLOUD_LAST_SYNCED_AT이 없으면(첫 push, 또는
    * resolveCloudForcePush가 의도적으로 비운 강제 덮어쓰기) 보호할 기준이 없으니 곧장 upsert한다. */
   if(CLOUD_LAST_SYNCED_AT){
-   const{data:updated,error:updErr}=await withTimeout(SB.from('user_data').update({data:DB,updated_at:nowIso}).eq('user_id',CLOUD_UID).eq('updated_at',CLOUD_LAST_SYNCED_AT).select('updated_at'));
+   const{data:updated,error:updErr}=await withTimeout(SB.from('user_data').update({data:payload,updated_at:nowIso}).eq('user_id',CLOUD_UID).eq('updated_at',CLOUD_LAST_SYNCED_AT).select('updated_at'));
    if(updErr){cloudSyncFailed();return}
    const matchedRowCount=(updated||[]).length;
    let rowExistedBefore=true,curRow=null;
@@ -1936,7 +1981,7 @@ async function pushCloud(retried){
      * 수동 폴백으로 떨어진다. */
     if(!retried&&curRow){
      try{
-      const remoteData=sanitizeBackup(curRow.data).data;
+      const remoteData=sanitizeBackup(await decodeCloudPayload(curRow.data)).data;
       mergeRemoteDataIntoLocal(remoteData);
       save({deferCloudPush:true});
       CLOUD_LAST_SYNCED_AT=curRow.updated_at;
@@ -1949,7 +1994,7 @@ async function pushCloud(retried){
    }
    /* outcome==='fallback' → 아래 upsert로 진행 */
   }
-  const{error}=await withTimeout(SB.from('user_data').upsert({user_id:CLOUD_UID,data:DB,updated_at:nowIso}));
+  const{error}=await withTimeout(SB.from('user_data').upsert({user_id:CLOUD_UID,data:payload,updated_at:nowIso}));
   if(error){cloudSyncFailed();return}
   CLOUD_LAST_SYNCED_AT=nowIso;cloudSyncOk();markCloudSynced();
  }catch(e){cloudSyncFailed()}
