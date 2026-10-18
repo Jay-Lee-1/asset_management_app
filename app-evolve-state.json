@@ -1,19 +1,8 @@
 {
-  "cycle": 211,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "mergeCollection()의 레코드 단위 whole-record LWW 병합이 DB.assets/DB.goals에서 조용히 상대 기기의 수정을 날려도 아무 신호가 없음",
-    "why": "logic.js:123-145 mergeCollection()은 같은 id가 local/remote 양쪽에 다 있으면 updatedAt이 더 큰 쪽을 '통째로' 채택하고 진 쪽은 완전히 버린다(의도된 설계, logic.js:116-122 주석에 명시). 이 앱은 '부부 공유 계정'을 전제하므로, 두 사람이 오프라인에서 같은 공유 자산(예: 같은 통장 잔액 메모)이나 같은 목표(goal)의 목표액을 서로 다르게 고친 뒤 재연결하면 mergeRemoteDataIntoLocal()(index.html:1526-1537)이 DB.assets/DB.goals에 대해 이 mergeCollection()을 그대로 호출해, 나중 타임스탬프가 아닌 쪽의 편집을 경고 없이 완전히 버린다. 문서 단위 push-time conflict(CLOUD_SYNC_STATE='conflict')는 homeAlerts의 cloudConflict 카드로 지속 경고되지만, 이 레코드 단위 손실은 merge가 '성공'한 뒤 벌어져 CLOUD_SYNC_STATE는 그대로 'ok'로 남고 사용자는 변경이 사라졌다는 사실을 전혀 알 수 없다 — toast/로그 전부 없음. mergeRecurrences는 skip/edits/confirmedDates를 합집합으로 보존해 이 클래스의 손실을 이미 피해가지만 assets/goals는 아직 whole-record 승자독식이다.",
-    "approach": "1) logic.js에 순수 헬퍼 mergeCollectionConflicts(localArr,remoteArr)를 추가 — localArr/remoteArr 양쪽에 같은 id가 있고 updatedAt이 다르며(id/updatedAt을 제외한 나머지 필드가 실제로 다른) 레코드들만 걸러 {id, discardedSide} 배열로 반환(순수 함수, mergeCollection과 같은 파일에 나란히 둬 바로 단위 테스트 가능). 2) mergeRemoteDataIntoLocal()(index.html:1526-1537)에서 DB.assets/DB.goals를 mergeCollection으로 병합하기 '전에'(local/remote 원본이 아직 살아있을 때) 이 헬퍼를 호출해 충돌 건수를 센다. 3) 센 건수가 1건 이상이면 homeAlerts()의 cloudConflict 카드(index.html:7884 근처 homeAlertCard 패턴)와 같은 지속형 카드를 하나 추가(예: kind:'mergeDataLoss', count)해 '다른 기기와 동시에 수정한 N건은 최신 쪽만 반영됐어요' 식으로 토스트 대신 집에 남는 카드로 보여준다(토스트는 한 번만 뜨고 사라져 이미 cycle170에서 cloudSyncError에 카드로 전환한 전례와 동일 패턴) — 사용자가 확인/닫으면 사라지는 단순 dismiss로 충분, 필드별 병합까지는 범위 밖. 4) test/run.js에 mergeCollectionConflicts 순수 함수 단위 테스트 추가(기존 mergeCollection/mergeRecurrences 테스트 바로 옆) + mergeRemoteDataIntoLocal이 충돌 발견 시 새 카드 kind를 세팅하는지 실행형 테스트 1~2건 추가. index.html/sw.js를 건드리므로 APP_VERSION/CACHE 버전 갱신 필요."
-  },
+  "cycle": 212,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 201,
-      "phase": "advance",
-      "timestamp": "2026-10-16T09:12:13.001Z",
-      "summary": "critique(cycle201) 계획대로 assetBalCardCtx() 격리 vm 컨텍스트 헬퍼를 test/run.js에 신설(logic.js + 기존 FUNCTIONS/CONSTS/LETS 추출본(extracted, assetBase/comma/shortDate2/nwChartPath/allTxns/isPending/RANGE_FROM 등 포함) 로드 후 extractFunction(\"assetBalCard\")만 추가 — spendAnalysisCtx()와 동일한 패턴이라 별도 스텁 없이 그대로 적용됨, TODAY는 FUNCTIONS/CONSTS/LETS 어디에도 없는 전역이라 매 테스트에서 ctx.TODAY로 직접 세팅, RANGE_FROM은 extractConst가 \"const \"를 떼고 평범한 대입문으로 바꿔두므로 ctx.RANGE_FROM으로 재대입 가능). 실행형 테스트 7건 추가: (1) RANGE_FROM===TODAY로 샘플 포인트<2 → 빈 상태 문구, 차트/상환예측 없음, (2) cash/savings/realestate/etc/pension 5개 타입 모두 history가 있어도 payoffHTML 미노출, (3) debt 완납(누적 상환>=base, 최근 잔액<=0) → \"이미 다 갚았어요\", (4) debt 상환 추세 뚜렷(미완납) → \"이 속도로 갚으면 ...쯤 다 갚아요\"(shortDate2 MM/DD 포맷), (5) debt 상환 활동 전혀 없음(flat) → \"최근엔 줄어들고 있지 않아요\", (6) 잔액 증가/감소에 따라 \"+\"·up 색상(class 없음) vs 음수·minus 색상 클래스 분기, (7) 허용 타입(cash/savings/realestate/etc/pension/debt) 밖(stock) 또는 존재하지 않는 자산 id는 빈 문자열 반환. 테스트를 작성하며 실제 렌더 로직에서 버그는 발견되지 않아 index.html/logic.js/sw.js는 건드리지 않았다(APP_VERSION/CACHE 변경 없음, 순수 테스트 커버리지 추가). node our-assets-v1.14.1/our-assets/test/run.js 1501/1501 -> 1508/1508 통과. pending_advance_plan을 비웠다.",
-      "commit": null
-    },
     {
       "cycle": 201,
       "phase": "critique",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-18T02:11:50.579Z",
       "summary": "Explore 서브에이전트로 앱 전반을 아키텍처/데이터손실 관점에서 훑었다(cycle149-211에서 다룬 toast/invalidateBalances fromDate/closeSheetGuarded/aria-label/XSS/실행형 테스트 전환류(openSheet·wireSheetGestures·ensureEdgeGesture·togglePwVis·wireWhHead 등)/split거래/budgetCarry/pushCloud await 버그 전부 제외). mergeCollection()(logic.js:123-145)이 local/remote 양쪽에 같은 id가 있으면 updatedAt 큰 쪽을 통째로 채택하고 진 쪽은 완전히 버리는 whole-record LWW임을 재확인 — mergeRemoteDataIntoLocal()(index.html:1526-1537)이 DB.assets/DB.goals에 그대로 적용하므로, 부부 공유 계정에서 두 기기가 오프라인에 같은 자산/목표를 다르게 고치면 나중 타임스탬프가 아닌 쪽 편집이 경고 없이 소실. 문서 단위 push conflict는 homeAlerts의 cloudConflict 카드로 지속 경고되지만 이 레코드 단위 손실은 merge 성공 후 벌어져 CLOUD_SYNC_STATE는 ok로 남고 사용자가 전혀 알 수 없음(mergeRecurrences는 skip/edits/confirmedDates 합집합 보존으로 이미 이 클래스를 피해가지만 assets/goals는 아니었음). mergeCollectionConflicts() 순수 헬퍼(logic.js) + mergeRemoteDataIntoLocal에서 assets/goals 병합 전 충돌 건수 집계 + homeAlerts에 지속형 mergeDataLoss 카드 추가 계획을 pending_advance_plan에 저장. 러너업: (1) 반복거래 DST/월말/윤년 날짜수학은 이미 수차례 테스트로 강화됨(재선정 안 함), (2) 차트 a11y/localStorage quota 경고는 이미 구현 완료(announceLive+키보드 peek, storageOutcomeMsg/requestPersistentStorage) — 재선정 안 함. 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "commit": null
+    },
+    {
+      "cycle": 211,
+      "phase": "advance",
+      "timestamp": "2026-10-18T02:50:00.000Z",
+      "summary": "critique(cycle211) 계획대로 logic.js에 순수 헬퍼 mergeCollectionConflicts(localArr,remoteArr)를 추가 — local/remote 양쪽에 같은 id가 있고 updatedAt이 다르며(동률이면 mergeCollection이 그냥 local을 쓸 뿐 실제 충돌이 아니라 제외) id/updatedAt을 제외한 나머지 필드 중 하나라도 실제로 다른(완전히 같은 내용을 다시 저장한 경우는 손실이 아니므로 제외) 레코드만 걸러 {id,discardedSide} 배열로 반환. mergeRemoteDataIntoLocal()(index.html:1526-1537)에서 DB.assets/DB.goals를 mergeCollection으로 병합하기 '전'(local/remote 원본이 아직 살아있을 때)에 이 헬퍼로 충돌 건수를 세어 DB.settings.mergeDataLossCount에 누적(여러 번의 병합에 걸쳐 쌓임). homeAlerts()의 CLOUD_UID 블록에 mergeDataLossCount>0이면 {kind:'mergeDataLoss',count} 알림을 추가하고, homeAlertCard에 cloudConflict/clockSkew와 같은 지속형 카드(storageSizeWarnDismissed와 동일한 '문턱을 넘을 때마다 재경고' 관례)를 추가해 \"다른 기기와 동시에 고친 N건은 최신 쪽만 반영됐어요\"를 보여주고, 확인 버튼은 dismissMergeDataLossWarn()으로 mergeDataLossCount를 0으로 리셋한다. DB.settings 기본값에 mergeDataLossCount:0 추가(migrate()). test/run.js에 11건 추가: mergeCollectionConflicts 순수 함수 단위 테스트 6건(충돌 1건 감지/mergeCollection과 일치/동률 제외/동일내용 제외/한쪽에만 있으면 제외/undefined 안전), mergeRemoteDataIntoLocal이 assets·goals 충돌을 mergeDataLossCount에 누적(기존값에 더해짐, 두 컬렉션 합산)하고 실제 손실 없으면 늘지 않는지 3건, homeAlerts/homeAlertCard mergeDataLoss 알림(CLOUD_UID 게이트/count 포함/카드 문구+dismiss 연결) 4건 — vm 크로스-realm 이슈로 mergeCollectionConflicts 반환 객체는 deepStrictEqual 전에 기존 mergeRecurrences 테스트와 동일한 j() JSON 왕복 정규화가 필요함을 재발견해 적용. dismissMergeDataLossWarn 자체는 다른 dismiss* 형제 함수들과 동일하게 FUNCTIONS 추출 목록에 없어 직접 호출 테스트는 만들지 않고 homeAlertCard HTML 문자열 검증으로만 커버(기존 관례 유지). index.html/sw.js 변경이라 APP_VERSION 1.47.183->1.47.184, sw.js CACHE v445->v446 갱신. HTML 주석 제거 후 <script> 블록 4개 + logic.js 모두 node --check 통과. node our-assets-v1.14.1/our-assets/test/run.js 1572/1572 -> 1585/1585 통과. pending_advance_plan을 비웠다.",
       "commit": null
     }
   ]

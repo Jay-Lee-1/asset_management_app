@@ -143,6 +143,32 @@ function mergeCollection(localArr,remoteArr,localDeletedIds,remoteDeletedIds){
  });
  return out;
 }
+/* mergeCollection()이 그대로 병합을 수행해버리기 전에, 그 병합이 어느 레코드를 조용히 버릴지
+ * 미리 알아내는 순수 헬퍼(app-evolve cycle211 critique) — local/remote 양쪽에 같은 id가 있고
+ * updatedAt이 서로 다르며(동률이면 mergeCollection은 그냥 local을 쓸 뿐 실제 충돌이 아님) id/updatedAt을
+ * 제외한 나머지 필드 중 하나라도 실제로 달라야만(단순히 두 기기가 같은 내용을 다른 시각에 저장한
+ * 경우는 손실이 아니므로 제외) "진 쪽의 수정이 버려진다"로 보고 {id,discardedSide}를 반환한다.
+ * mergeCollection과 완전히 같은 입력으로 호출하면 그 호출이 실제로 몇 건을 소실시킬지 미리 센 뒤
+ * 사용자에게 알릴 수 있다(문서 단위 push-time conflict와 달리 레코드 단위 merge-time 손실은 지금까지
+ * CLOUD_SYNC_STATE가 'ok'로 남아 아무 신호가 없었음). */
+function mergeCollectionConflicts(localArr,remoteArr){
+ const lMap=new Map((localArr||[]).map(r=>[r.id,r]));
+ const rMap=new Map((remoteArr||[]).map(r=>[r.id,r]));
+ const out=[];
+ lMap.forEach((l,id)=>{
+  const r=rMap.get(id);
+  if(!r)return;
+  const lu=l.updatedAt||0,ru=r.updatedAt||0;
+  if(lu===ru)return;
+  const keys=new Set([...Object.keys(l),...Object.keys(r)]);
+  keys.delete('id');keys.delete('updatedAt');
+  let differs=false;
+  for(const k of keys){if(JSON.stringify(l[k])!==JSON.stringify(r[k])){differs=true;break}}
+  if(!differs)return;
+  out.push({id,discardedSide:lu>=ru?'remote':'local'});
+ });
+ return out;
+}
 /* 반복거래(recurrences) 전용 3-way 병합 — id/tombstone 판정(동시 삭제·복원)은 mergeCollection과
  * 완전히 동일하지만, 양쪽 다 살아있는 같은 id 레코드를 통째로 승자/패자로 가르는 mergeCollection과
  * 달리 skip[]/edits{}/confirmedDates[]만은 합쳐서 보존한다. 이 세 필드는 레코드 저장 한 번이 아니라

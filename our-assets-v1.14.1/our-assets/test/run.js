@@ -3574,6 +3574,46 @@ test('mergeRemoteDataIntoLocal: 로컬에서 삭제한(톰스톤) 목표는 원�
   assert.strictEqual(sandbox.DB.goals.find(g => g.id === 'g1'), undefined, '삭제 이후 원격이 손대지 않은 사본은 되살리면 안 됨');
 });
 
+/* mergeRemoteDataIntoLocal이 assets/goals를 mergeCollection으로 병합'하기 전에' mergeCollectionConflicts로
+ * 몇 건이 버려질지 세어 DB.settings.mergeDataLossCount에 누적하는지 확인 — 전엔 레코드 단위 손실이
+ * 발생해도 CLOUD_SYNC_STATE가 'ok'로 남아 사용자에게 전혀 신호가 없었다(app-evolve cycle211 advance) */
+test('mergeRemoteDataIntoLocal: assets에서 양쪽이 같은 id를 실제로 다르게 수정했으면 DB.settings.mergeDataLossCount가 충돌 건수만큼 늘어난다', () => {
+  sandbox.DB = minimalMergeDB({
+    settings: { mergeDataLossCount: 0 },
+    assets: [{ id: 'a1', name: 'local-name', type: 'cash', updatedAt: 200 }],
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    assets: [{ id: 'a1', name: 'remote-name', type: 'cash', updatedAt: 100 }],
+    deletedIds: {},
+  });
+  assert.strictEqual(sandbox.DB.settings.mergeDataLossCount, 1);
+  assert.strictEqual(sandbox.DB.assets.find(a => a.id === 'a1').name, 'local-name', 'local이 실제로 이겨야(더 큰 updatedAt) 이 충돌이 현실적임');
+});
+test('mergeRemoteDataIntoLocal: goals 충돌도 assets와 동일하게 mergeDataLossCount에 누적되고(기존 값에 더해짐), 두 컬렉션에서 동시에 발생하면 합산된다', () => {
+  sandbox.DB = minimalMergeDB({
+    settings: { mergeDataLossCount: 3 },
+    assets: [{ id: 'a1', name: 'local-asset', updatedAt: 200 }],
+    goals: [{ id: 'g1', name: 'local-goal', targetAmount: 1000, updatedAt: 200 }],
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    assets: [{ id: 'a1', name: 'remote-asset', updatedAt: 100 }],
+    goals: [{ id: 'g1', name: 'remote-goal', targetAmount: 2000, updatedAt: 100 }],
+    deletedIds: {},
+  });
+  assert.strictEqual(sandbox.DB.settings.mergeDataLossCount, 3 + 2, '기존 누적값(3)에 이번 병합의 충돌 2건(asset 1 + goal 1)이 더해져야 함');
+});
+test('mergeRemoteDataIntoLocal: 실제로 버려지는 내용이 없으면(같은 내용 재저장, 또는 한쪽에만 있는 레코드) mergeDataLossCount가 늘지 않는다', () => {
+  sandbox.DB = minimalMergeDB({
+    settings: { mergeDataLossCount: 0 },
+    assets: [{ id: 'a1', name: 'same', updatedAt: 100 }, { id: 'local-only', name: 'x', updatedAt: 100 }],
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    assets: [{ id: 'a1', name: 'same', updatedAt: 200 }, { id: 'remote-only', name: 'y', updatedAt: 100 }],
+    deletedIds: {},
+  });
+  assert.strictEqual(sandbox.DB.settings.mergeDataLossCount, 0);
+});
+
 /* ---------- 문의하기(개인 메모): openInquiry/sendInquiry/openInquiryList/delInquiry (app-evolve cycle133 advance)
  * '문의 접수' write-only dead end를 '이 기기에 저장되는 메모'로 재정의하면서 id/touch()/mergeCollection
  * 등록/목록·삭제 화면을 추가했다 — delGoal과 동일한 확인 시트+undoToast+톰스톤 패턴. ---------- */
@@ -8889,6 +8929,43 @@ test('mergeCollection: (회귀 방지) touch() 없이 이름 스냅샷만 찍혔
   // local/remote를 뒤집으면: 미동기화(스냅샷 없음) 사본이 local이 되어 동률에서 이김 — 이것이 버그의 실제 소실 경로
   const out2 = sandbox.mergeCollection([unsyncedCopy], [snapshottedWithoutTouch], {}, {});
   assert.strictEqual(out2[0].fromAssetName, undefined, 'touch() 없이는 동률 시 local(스냅샷 없는 미동기화 사본)이 이겨 이름 스냅샷이 조용히 사라짐(수정 전 버그 재현)');
+});
+
+/* ---------- mergeCollectionConflicts: mergeCollection()이 실제로 병합을 수행하기 전에, 그 병합이
+ * 몇 건의 레코드를 조용히 버릴지 미리 세는 순수 헬퍼(app-evolve cycle211 critique/advance) ---------- */
+test('mergeCollectionConflicts: id가 양쪽에 있고 updatedAt이 다르며 나머지 필드도 실제로 다르면 진 쪽을 1건 충돌로 센다', () => {
+  const local = [{ id: 'a1', name: 'local-name', amount: 1000, updatedAt: 200 }];
+  const remote = [{ id: 'a1', name: 'remote-name', amount: 2000, updatedAt: 100 }];
+  const out = sandbox.mergeCollectionConflicts(local, remote);
+  assert.strictEqual(out.length, 1);
+  assert.deepStrictEqual(j(out[0]), { id: 'a1', discardedSide: 'remote' }, 'updatedAt이 더 작은 remote 쪽이 mergeCollection에서 버려지므로 discardedSide는 remote');
+});
+test('mergeCollectionConflicts: mergeCollection과 동일한 입력으로 호출하면 그 호출이 실제로 버릴 레코드 수와 일치한다', () => {
+  const local = [{ id: 'a1', name: 'local-name', updatedAt: 100 }];
+  const remote = [{ id: 'a1', name: 'remote-name', updatedAt: 200 }];
+  const conflicts = sandbox.mergeCollectionConflicts(local, remote);
+  const merged = sandbox.mergeCollection(local, remote, {}, {});
+  assert.strictEqual(conflicts.length, 1);
+  assert.strictEqual(conflicts[0].discardedSide, 'local');
+  assert.strictEqual(merged[0].name, 'remote-name', 'mergeCollection도 같은 레코드에서 실제로 local을 버려야 함');
+});
+test('mergeCollectionConflicts: updatedAt이 완전히 같으면(mergeCollection이 그냥 local을 쓰는 경우) 충돌로 치지 않는다', () => {
+  const local = [{ id: 'a1', name: 'same-ts-local', updatedAt: 100 }];
+  const remote = [{ id: 'a1', name: 'same-ts-remote', updatedAt: 100 }];
+  assert.strictEqual(sandbox.mergeCollectionConflicts(local, remote).length, 0);
+});
+test('mergeCollectionConflicts: updatedAt이 다르더라도 id/updatedAt 제외 나머지 필드가 전부 같으면(같은 내용을 다시 저장한 경우) 충돌로 치지 않는다', () => {
+  const local = [{ id: 'a1', name: 'same-content', amount: 500, updatedAt: 100 }];
+  const remote = [{ id: 'a1', name: 'same-content', amount: 500, updatedAt: 200 }];
+  assert.strictEqual(sandbox.mergeCollectionConflicts(local, remote).length, 0, '실제로 손실되는 내용이 없으므로 사용자에게 알릴 필요가 없음');
+});
+test('mergeCollectionConflicts: id가 한쪽에만 있으면(신규/톰스톤) 충돌이 아니다', () => {
+  const local = [{ id: 'a1', name: 'local-only', updatedAt: 100 }];
+  const remote = [{ id: 'a2', name: 'remote-only', updatedAt: 100 }];
+  assert.strictEqual(sandbox.mergeCollectionConflicts(local, remote).length, 0);
+});
+test('mergeCollectionConflicts: localArr/remoteArr가 없어도(undefined) 터지지 않는다', () => {
+  assert.strictEqual(sandbox.mergeCollectionConflicts(undefined, undefined).length, 0);
 });
 
 /* ---------- mergeRecurrences: mergeCollection과 달리 DB.recurrences만을 위한 전용 병합(app-evolve
@@ -14365,6 +14442,40 @@ test('homeAlertCard: clockSkew는 severity별로 다른 문구를 쓰고, 눌러
   const severeHtml = sandbox.homeAlertCard({ kind: 'clockSkew', severity: 'severe' });
   assert.ok(severeHtml.includes('기기 시간이 많이 틀려요'), 'severe는 더 강한 문구를 써야 함');
   assert.notStrictEqual(severeHtml, warnHtml, 'severity별로 다른 카드여야 함');
+});
+/* ---------- homeAlerts/homeAlertCard: mergeDataLoss (app-evolve cycle211 advance) ----------
+ * mergeRemoteDataIntoLocal이 DB.settings.mergeDataLossCount에 쌓아둔 레코드 단위 merge-time 손실
+ * 건수를 cloudConflict/clockSkew와 같은 CLOUD_UID 전용 지속형 카드로 보여준다. */
+test('homeAlerts: CLOUD_UID가 있고 mergeDataLossCount>0이면 mergeDataLoss 알림을 count와 함께 띄운다', () => {
+  setupHomeAlertsDB();
+  sandbox.CLOUD_UID = 'u1';
+  sandbox.DB.settings.mergeDataLossCount = 2;
+  const alerts = sandbox.homeAlerts([]);
+  const al = alerts.find((a) => a.kind === 'mergeDataLoss');
+  assert.ok(al, 'mergeDataLoss 알림이 있어야 함');
+  assert.strictEqual(al.count, 2);
+});
+test('homeAlerts: CLOUD_UID가 없으면(로컬/카카오 전용) mergeDataLossCount가 있어도 mergeDataLoss를 띄우지 않는다', () => {
+  setupHomeAlertsDB();
+  sandbox.CLOUD_UID = null;
+  sandbox.DB.settings.mergeDataLossCount = 5;
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'mergeDataLoss'));
+});
+test('homeAlerts: mergeDataLossCount가 0이면(또는 없으면) mergeDataLoss를 띄우지 않는다', () => {
+  setupHomeAlertsDB();
+  sandbox.CLOUD_UID = 'u1';
+  sandbox.DB.settings.mergeDataLossCount = 0;
+  let alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'mergeDataLoss'));
+  delete sandbox.DB.settings.mergeDataLossCount;
+  alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'mergeDataLoss'));
+});
+test('homeAlertCard: mergeDataLoss는 건수를 보여주고, 확인을 누르면 dismissMergeDataLossWarn()으로 연결된다', () => {
+  const html = sandbox.homeAlertCard({ kind: 'mergeDataLoss', count: 3 });
+  assert.ok(html.includes('3건'), '건수가 문구에 보여야 함');
+  assert.ok(html.includes('dismissMergeDataLossWarn()'), '확인 버튼으로 dismiss할 수 있어야 함');
 });
 /* ---------- homeAlerts/homeAlertCard: cloudSyncError (app-evolve cycle170 advance) ----------
  * pushCloud() 실패(CLOUD_SYNC_STATE='error')는 토스트가 1회만 뜨고 사라져, 그 뒤로는 사용자가
