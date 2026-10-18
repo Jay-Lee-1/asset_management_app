@@ -13297,6 +13297,18 @@ test('renderAssetSheet: stock 타입의 asQty(보유 주식 수)도 동일하게
   assert.ok(html.includes(`<button type="button" class="fc-x" aria-label="보유 주식 수 지우기" onclick="clrInput('asQty')">`), 'asQty에 fc-x 지우기 버튼의 clrInput 연결이 없음');
   assert.ok(!html.includes('id="asAmt"'), 'stock 타입은 cash류의 asAmt 필드를 보여주면 안 됨');
 });
+/* renderAssetSheet: fx/gold/stock의 asFx/asGold/asQty(보유 수량)는 cash류의 asAmt(amtEnterSubmit)·
+ * goalAmt·rAmt 등 이 앱 거의 모든 금액/수량 입력란이 지키는 'Enter로 저장' 관례가 빠져 있었다 — 그
+ * 뒤에 이어지는 costBasisField(매입 금액)는 선택 입력이라 비워두는 사용자가 많은데, 그 경우 수량만
+ * 입력하고 Enter를 눌러도 반응이 없어 반드시 저장 버튼을 눌러야 했다(app-evolve cycle216 develop). */
+test('renderAssetSheet: fx/gold/stock의 보유 수량 입력(asFx/asGold/asQty)에도 Enter-제출이 있다', () => {
+  const fxHtml = renderAsset({ type: 'fx', owner: '나', includeInTotal: true, name: '', currency: 'USD', fxAmount: 100 });
+  assert.ok(fxHtml.includes('id="asFx" class="num" inputmode="decimal" value="100" placeholder="0" oninput="fmtQty(this);qtyBasisWarn(this)" onkeydown="if(event.key===\'Enter\'&&!event.isComposing)saveAsset(false)"'), 'asFx에 Enter-제출이 없음');
+  const goldHtml = renderAsset({ type: 'gold', owner: '나', includeInTotal: true, name: '', goldDon: 5 });
+  assert.ok(goldHtml.includes('id="asGold" class="num" inputmode="decimal" value="5" placeholder="0" oninput="fmtQty(this);qtyBasisWarn(this)" onkeydown="if(event.key===\'Enter\'&&!event.isComposing)saveAsset(false)"'), 'asGold에 Enter-제출이 없음');
+  const stockHtml = renderAsset({ type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 10 });
+  assert.ok(stockHtml.includes('id="asQty" class="num" inputmode="decimal" value="10" placeholder="0" oninput="fmtQty(this);qtyBasisWarn(this)" onkeydown="if(event.key===\'Enter\'&&!event.isComposing)saveAsset(false)"'), 'asQty에 Enter-제출이 없음');
+});
 /* renderAssetSheet: stock 타입의 asCode(종목코드)는 같은 폼의 asName/asQty 사이에 끼어 있으면서도
  * field-clear가 빠져 있었다(app-evolve cycle149 develop — asFx/asGold/asQty를 통일한 cycle147이
  * "수량" 입력만 다루고, 같은 줄에 있는 종목코드 텍스트 입력은 남겨둔 공백). autocapitalize/대문자
