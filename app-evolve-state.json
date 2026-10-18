@@ -1,19 +1,8 @@
 {
-  "cycle": 215,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "부팅 중(SDK 로딩·클라우드 세션 복원) 빈 화면 — 로딩 스플래시 부재",
-    "why": "#app는 기본값부터 display:none이 아니라 바로 보이는 flex 컨테이너다(index.html:130 #app{position:fixed;inset:0;display:flex;...}, 1328행 <div id=\"app\">). authView/lockView는 style=\"display:none\"으로 시작(1326-1327행)하는 것과 대조적. #app 안의 .page들과 #nav는 buildNav()/renderHome()이 불리기 전까지 비어 있다. boot()(8540-8562행)는 이 렌더가 시작되기 전에 SDK_READY(기본 타임아웃 6000ms, 1371/1382-1385행) → 로그인 세션이 있으면 SB.auth.getSession()을 withTimeout() 기본 8000ms(1825-1831행)로 대기 → afterCloudAuth(uid)(2003행) 내부 pullCloud()(1876행)도 withTimeout() 기본 8000ms 대기, 이 셋을 startApp()/showAuth() 호출 전에 순차로 기다린다. 느린 네트워크·캡티브 포털에서는 최대 약 22초 동안 #app이 빈 화면(텍스트/스피너 없음)으로 멈출 수 있다. 1360-1366행 주석이 이 문제를 이미 인지했지만 '무한 hang 방지'만 고쳤고 '대기 중 피드백 없음'은 남겨뒀다. index.html 전체에 spinner/skeleton/splash 키워드가 전혀 없음. cycle149-215 히스토리 전체에 부팅 로딩 상태를 다룬 cycle은 없음.",
-    "approach": "1) <body> 여는 태그 다음(#errBanner 앞, 1324-1325행 부근)에 <div id=\"bootSplash\">를 추가 — 기존 .auth-logo 패턴(1259행) 재사용해 로고 이모지+'우리의 자산' 텍스트+순수 CSS 스피너(새 @keyframes bootSpin 1개, 기존 prefers-reduced-motion 전역 규칙이 자동 처리). position:fixed;inset:0, #scrim/#sheet보다 높은 z-index. JS 없이 첫 페인트부터 바로 보이게 한다.\n2) hideBootSplash(){const el=$('bootSplash');if(el)el.remove()} 추가, showApp()(8521행)과 showAuth()(8563행) 맨 앞에서 호출 — startApp()이 showApp()을 호출하므로(8533행) 로그인/게스트 경로 자동 커버, showAuth()가 비로그인 경로 커버. lockApp()은 startApp() 이후에만 호출되므로 별도 처리 불필요.\n3) 스코프는 '로딩 중임을 보여준다'로 한정 — boot()의 순차 대기 구조 재설계는 후속 과제로 남긴다.\n4) 테스트: test/run.js가 이미 boot/loadScriptWithTimeout을 FUNCTIONS 추출 대상에 넣고(244행) SDK_READY를 제어 가능한 Promise로 교체해 startAppCalls/showAuthCalls 카운터로 검증하는 테스트 블록(17439-17522행 부근, 특히 17483행)이 있음. 이 패턴을 확장: sandbox.hideBootSplashCalls=0; sandbox.hideBootSplash=()=>{sandbox.hideBootSplashCalls++} 스텁 추가, SDK_READY pending 중 hideBootSplashCalls===0, resolve 후 showAuth()/startApp() 각 분기에서 hideBootSplashCalls===1 검증하는 테스트 2건 추가. 정적 검증 1건: index.html 원문에서 /id=\"bootSplash\"/가 <body> 태그와 #errBanner 사이(즉 #app보다 먼저)에 있는지 정규식으로 확인."
-  },
+  "cycle": 216,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 210,
-      "phase": "advance",
-      "timestamp": "2026-10-17T23:15:15.024Z",
-      "summary": "critique(cycle210) 계획대로 test/domstub.js 기반 ad hoc vm 컨텍스트로 openSheet()가 매번 거치는 wireSheetGestures/ensureEdgeGesture(index.html:6899-6971, 스와이프다운 닫기 + 좌측 엣지 뒤로가기/닫기)를 실행형으로 전환 — 지금까지 test/run.js가 openSheet를 항상 트리비얼 스텁(624/701/11315/12643/12874행)으로 교체해 둘 다 실행된 적이 없었음. 범위를 3가지로 좁혔다(계획의 wireMonthCarousel 제외는 유지): (1) wireSheetGestures 스와이프다운 — dy>120이면 closeSheetGuarded() 호출, dy<=120이면 style.transform을 원위치로 복귀, (2) ensureEdgeGesture 싱글톤 — 여러 번 재호출(시트 재오픈)돼도 #sheetEdgeGlobal을 정확히 한 번만 생성하고 기존 엘리먼트를 재사용, (3) 엣지 스와이프 뒤로가기 — window._pkBack이 설정된 상태로 드래그 임계값(dx>6)을 넘으면 makePrev()를 통해 뒤로가기 핸들러(b)가 한 드래그당 정확히 한 번만 불리고(같은 드래그 안의 추가 touchmove나 커밋하지 않은 해제에는 재호출 안 됨, 손을 뗀 뒤 새 드래그는 다시 1회), _pkBack이 없을 때(되돌아갈 화면 없음) 커밋(dx>110)하면 closeSheet()가 호출됨. (3)의 makePrev()가 document.createElement로 만든 요소에 .style/.dataset을 직접 대입하고 sh.parentNode.insertBefore로 끼워넣는 패턴을 써서, domstub.js의 DomNode에 style/dataset 기본 필드와 insertBefore() 메서드를 추가(\"실제 파싱이 필요한 함수가 생기면 그때 확장한다\"던 문서화된 확장 지점). 커밋된 드래그에서 promote-into-sh 분기(sh.contains/document.activeElement/sheetFocusables 등 포커스 복원까지 필요)는 스코프 밖으로 남겨 두 번째 드래그도 비-커밋(dx<110)으로 좁혔다(그 분기는 다음 cycle 후보). index.html/sw.js는 건드리지 않았다(순수 테스트 커버리지 추가, APP_VERSION/CACHE 변경 없음). node our-assets-v1.14.1/our-assets/test/run.js 1562/1562 -> 1571/1571 통과. pending_advance_plan을 비웠다.",
-      "commit": null
-    },
     {
       "cycle": 211,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-18T19:17:03.653Z",
       "summary": "Explore 서브에이전트로 앱 전반을 훑어 부팅(SDK_READY/getSession/pullCloud 순차 대기, 최대 약 22초) 중 #app이 빈 화면으로 보이는 문제를 발견 — 로딩 스플래시가 전혀 없음(spinner/skeleton/splash 키워드 0건). cycle149-215에서 다룬 적 없는 새 영역. advance 범위를 #bootSplash 마크업 추가 + showApp()/showAuth() 진입 시 hideBootSplash() 호출로 좁히고, boot()의 순차 대기 구조 재설계 자체는 후속 과제로 미룬다.",
+      "commit": null
+    },
+    {
+      "cycle": 215,
+      "phase": "advance",
+      "timestamp": "2026-10-18T20:30:00.000Z",
+      "summary": "critique(cycle215) 계획대로 부팅 중(SDK_READY→getSession→pullCloud 순차 대기, 최대 약 22초) #app이 아무 피드백 없는 빈 화면으로 보이던 공백에 로딩 스플래시를 추가. <body> 바로 다음(#errBanner 앞, 즉 #app보다 먼저)에 JS 없이 바로 보이는 #bootSplash 정적 마크업(기존 .auth-logo 패턴 재사용 + 순수 CSS 스피너 @keyframes bootSpin, 기존 prefers-reduced-motion 전역 규칙이 자동 적용됨)을 추가했다. hideBootSplash(){const el=$('bootSplash');if(el)el.remove()}를 추가하고 showApp()/showAuth() 맨 앞에서 호출 — startApp()이 showApp()을 호출하므로 로그인/게스트 경로를 자동으로 덮고, showAuth()가 비로그인 경로를 덮는다(lockApp()은 startApp() 이후에만 호출되므로 별도 처리 불필요). boot()의 순차 대기 구조 자체는 계획대로 범위 밖으로 남겼다. test/run.js에 hideBootSplash를 FUNCTIONS 추출 목록에 추가하고(기존 $ 스텁에 bootSplashEl/bootSplashMissing 분기만 추가, 새 DOM shim 불필요) 4건 추가: hideBootSplash 실행형 2건(엘리먼트 있으면 remove() 호출/이미 없으면 조용히 통과), showApp·showAuth가 hideBootSplash()를 부르는지 extractFunction 기반 소스 검증 2건(기존 togglePwVis 와이어링 테스트와 동일한 패턴 — boot() 테스트의 showAuth/startApp 스파이는 그대로 둬서 기존 1609건에 영향 없음), index.html 정적 마크업이 <body>와 #errBanner 사이(#app보다 먼저)에 있는지 정규식 검증 1건. index.html/sw.js 변경이라 APP_VERSION 1.47.191->1.47.192, sw.js CACHE v453->v454. HTML 주석 제거 후 <script> 블록 4개(실제 코드 블록, 29행의 '<script>'를 언급하는 주석은 정규식 오탐이라 제외) 모두 node --check 통과. node our-assets-v1.14.1/our-assets/test/run.js 1609/1609 -> 1614/1614 통과(3회 재실행 모두 안정적으로 통과). pending_advance_plan을 비웠다.",
       "commit": null
     }
   ]

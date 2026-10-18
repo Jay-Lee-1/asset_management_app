@@ -1257,6 +1257,10 @@ body.selmode .fab{display:none}
 .auth-view{position:fixed;inset:0;z-index:1000;background:var(--bg);display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:0 22px;padding-top:max(48px,calc(env(safe-area-inset-top) + 40px));padding-bottom:40px}
 .auth-card{width:100%;max-width:400px;margin:auto 0}
 .auth-logo{width:66px;height:66px;border-radius:20px;background:var(--brand-tint);display:grid;place-items:center;font-size:34px;margin:0 auto 14px}
+.boot-splash{position:fixed;inset:0;z-index:1001;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px}
+.boot-splash .auth-logo{margin:0}
+.boot-spin{width:26px;height:26px;border-radius:50%;border:3px solid var(--line-2);border-top-color:var(--brand);animation:bootSpin .8s linear infinite}
+@keyframes bootSpin{to{transform:rotate(360deg)}}
 .auth-title{text-align:center;font-size:24px;font-weight:700;letter-spacing:-.03em}
 .auth-sub{text-align:center;color:var(--text-2);font-size:13.5px;font-weight:500;margin:6px 0 22px}
 .kakao-btn{width:100%;height:52px;border-radius:14px;background:#FEE500;color:#191600;font-size:15.5px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;transition:transform .15s var(--spring)}
@@ -1322,6 +1326,7 @@ body.selmode .fab{display:none}
 </style>
 </head>
 <body>
+<div id="bootSplash" class="boot-splash"><div class="auth-logo">💰</div><div class="boot-spin"></div></div>
 <div class="err-banner" id="errBanner" role="alert"></div>
 <div id="authView" class="auth-view" style="display:none"></div>
 <div id="lockView" class="auth-view" style="display:none"></div>
@@ -1387,7 +1392,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.191';
+const APP_VERSION='1.47.192';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -8518,7 +8523,8 @@ function moveBlob(animate){const blob=$('navBlob');if(!blob)return;
 
 /* init */
 let authMode='login';let AUTHKEY=false;
-function showApp(){$('authView').style.display='none';$('app').style.display=''}
+function hideBootSplash(){const el=$('bootSplash');if(el)el.remove()}
+function showApp(){hideBootSplash();$('authView').style.display='none';$('app').style.display=''}
 function startApp(){
  load();
  syncNotifyPermission();
@@ -8560,7 +8566,7 @@ async function boot(){
  if(GUEST){startApp();if(APPLOCK.enabled())lockApp();return}
  showAuth();
 }
-function showAuth(){$('app').style.display='none';$('authView').style.display='flex';renderAuth()}
+function showAuth(){hideBootSplash();$('app').style.display='none';$('authView').style.display='flex';renderAuth()}
 /* APP_LOCKED는 '지금 PIN 입력을 기다리는 중'을 뜻한다 — 로그인 전(showAuth)과는 다른 화면/다른
  * 트리거(백그라운드 전환, 콜드부트)에서 쓰이므로 AUTHKEY 같은 기존 플래그와 섞지 않는다. */
 let APP_LOCKED=false;

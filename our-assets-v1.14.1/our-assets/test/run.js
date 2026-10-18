@@ -246,6 +246,10 @@ const FUNCTIONS = [
   // 실행형 전환한 첫 두 함수 — svg()는 togglePwVis가 아이콘을 그릴 때 부른다(실제 I 아이콘
   // 테이블과 비교하려면 같이 끌어와야 함). 아래 togglePwVis/wireWhHead 테스트 참고.
   'togglePwVis', 'svg', 'wireWhHead',
+  // hideBootSplash는 app-evolve cycle216 advance(#bootSplash 부팅 로딩 화면) 구현 검증용 —
+  // $('bootSplash')/.remove() 두 줄뿐인 순수 유틸이라 기존 $ 스텁(bootSplashEl)만으로 실행형
+  // 검증이 가능하다.
+  'hideBootSplash',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -572,7 +576,13 @@ const sandbox = {
   fpinErrEl: { style: { display: 'none' }, textContent: '' },
   fpinBtnEl: { disabled: false },
   fpinWaitMsgEl: { style: { display: 'none' }, textContent: '' },
-  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'budgetIn' ? { value: sandbox.budgetInValue } : id === 'goalName' ? (sandbox.goalNameValue === undefined ? null : { value: sandbox.goalNameValue }) : id === 'goalAmt' ? (sandbox.goalAmtValue === undefined ? null : { value: sandbox.goalAmtValue }) : id === 'inqText' ? (sandbox.inqTextValue === undefined ? null : { value: sandbox.inqTextValue }) : id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-plan' ? sandbox.pagePlanEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : id === 'ledgerCard' ? (sandbox.ledgerCardMissing ? null : sandbox.ledgerCardEl) : id === 'assetBody' ? (sandbox.assetBodyMissing ? null : sandbox.assetBodyEl) : id === 'newOwner' ? (sandbox.newOwnerValue === undefined ? null : { value: sandbox.newOwnerValue }) : id === 'renameOwner' ? (sandbox.renameOwnerValue === undefined ? null : { value: sandbox.renameOwnerValue }) : id === 'auEmail' ? (sandbox.auEmailValue === undefined ? null : { value: sandbox.auEmailValue }) : id === 'fpinPwIn' ? (sandbox.fpinPwInValue === undefined ? null : { value: sandbox.fpinPwInValue }) : id === 'fpinErr' ? sandbox.fpinErrEl : id === 'fpinBtn' ? sandbox.fpinBtnEl : id === 'fpinWaitMsg' ? sandbox.fpinWaitMsgEl : id === 'importFile' ? sandbox.importFileEl : null,
+  // bootSplashEl/bootSplashRemoveCalls는 hideBootSplash() 실행형 테스트용(app-evolve cycle216
+  // advance, #bootSplash 부팅 로딩 화면 추가). bootSplashMissing=true면 $('bootSplash')가 null을
+  // 돌려줘, 이미 지워진 뒤 두 번째로 불려도(showApp()이 startApp() 경로와 겹쳐 중복 호출될 수
+  // 있음) 안전하게 넘어가는 분기를 검증한다.
+  bootSplashEl: { remove: () => { sandbox.bootSplashRemoveCalls++; } },
+  bootSplashRemoveCalls: 0,
+  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'budgetIn' ? { value: sandbox.budgetInValue } : id === 'goalName' ? (sandbox.goalNameValue === undefined ? null : { value: sandbox.goalNameValue }) : id === 'goalAmt' ? (sandbox.goalAmtValue === undefined ? null : { value: sandbox.goalAmtValue }) : id === 'inqText' ? (sandbox.inqTextValue === undefined ? null : { value: sandbox.inqTextValue }) : id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-plan' ? sandbox.pagePlanEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : id === 'ledgerCard' ? (sandbox.ledgerCardMissing ? null : sandbox.ledgerCardEl) : id === 'assetBody' ? (sandbox.assetBodyMissing ? null : sandbox.assetBodyEl) : id === 'newOwner' ? (sandbox.newOwnerValue === undefined ? null : { value: sandbox.newOwnerValue }) : id === 'renameOwner' ? (sandbox.renameOwnerValue === undefined ? null : { value: sandbox.renameOwnerValue }) : id === 'auEmail' ? (sandbox.auEmailValue === undefined ? null : { value: sandbox.auEmailValue }) : id === 'fpinPwIn' ? (sandbox.fpinPwInValue === undefined ? null : { value: sandbox.fpinPwInValue }) : id === 'fpinErr' ? sandbox.fpinErrEl : id === 'fpinBtn' ? sandbox.fpinBtnEl : id === 'fpinWaitMsg' ? sandbox.fpinWaitMsgEl : id === 'importFile' ? sandbox.importFileEl : id === 'bootSplash' ? (sandbox.bootSplashMissing ? null : sandbox.bootSplashEl) : null,
   bkTextEl: { value: 'backup-text', select: () => {}, setSelectionRange: () => {} },
   // copyBackup()의 navigator.clipboard 체크가 ReferenceError 없이 "지원 안 함"으로 지나가게
   // 하는 최소 흉내(document.execCommand는 try/catch로 감싸져 있어 굳이 스텁이 필요 없음).
@@ -18576,6 +18586,39 @@ test('[실행형] ensureEdgeGesture: 뒤로갈 화면이 없을 때(window._pkBa
   edge.dispatchEvent({ type: 'touchmove', touches: [{ clientX: 150, clientY: 0 }] }); // dx=150>110 커밋
   edge.dispatchEvent({ type: 'touchend' });
   assert.strictEqual(ctx.closeSheetCalls, 1, '되돌아갈 화면이 없는 상태로 엣지 스와이프를 커밋하면(dx>110) closeSheet()가 불려야 함');
+});
+
+/* ---------- hideBootSplash/#bootSplash: 부팅 중(SDK 로딩·클라우드 세션 복원 순차 대기, 최대
+ * 약 22초) #app이 아무 피드백 없는 빈 화면으로 보이던 공백에 로딩 스플래시를 추가
+ * (app-evolve cycle215 critique → cycle216 advance). #bootSplash는 <body> 바로 다음, #app보다
+ * 먼저 정적 마크업으로 떠서 JS 실행 전 첫 페인트부터 보이고, showApp()/showAuth() 진입 시
+ * hideBootSplash()로 치운다. ---------- */
+test('hideBootSplash: #bootSplash 엘리먼트가 있으면 .remove()를 호출해 지운다', () => {
+  sandbox.bootSplashMissing = false;
+  sandbox.bootSplashRemoveCalls = 0;
+  sandbox.hideBootSplash();
+  assert.strictEqual(sandbox.bootSplashRemoveCalls, 1, 'hideBootSplash가 #bootSplash.remove()를 부르지 않음');
+});
+test('hideBootSplash: #bootSplash가 이미 없으면(null) 조용히 아무 일도 하지 않는다', () => {
+  sandbox.bootSplashMissing = true;
+  sandbox.bootSplashRemoveCalls = 0;
+  assert.doesNotThrow(() => sandbox.hideBootSplash(), 'hideBootSplash가 el이 없을 때 던지면 안 됨');
+  assert.strictEqual(sandbox.bootSplashRemoveCalls, 0, 'el이 없는데 remove()가 불리면 안 됨(호출 대상이 없음)');
+});
+for (const fn of ['showApp', 'showAuth']) {
+  test(`${fn}: 진입하자마자 hideBootSplash()를 불러 부팅 스플래시를 치운다`, () => {
+    const body = extractFunction(fn);
+    assert.ok(body.includes('hideBootSplash()'), `${fn}이 hideBootSplash()를 부르지 않음 — 부팅 스플래시가 안 지워짐`);
+    // startApp()은 showApp()을 거쳐 로그인/게스트 분기 모두를 자동으로 덮는다(boot() 참고) —
+    // 여기선 showApp/showAuth 각 진입점 자체가 1순위로 치우는지만 확인한다.
+  });
+}
+test('index.html: #bootSplash가 <body> 열림 태그와 #errBanner 사이(즉 #app보다 먼저) 정적 마크업으로 있다', () => {
+  const bodyIdx = src.indexOf('<body>');
+  const splashIdx = src.indexOf('id="bootSplash"');
+  const errBannerIdx = src.indexOf('id="errBanner"');
+  assert.ok(bodyIdx !== -1 && splashIdx !== -1 && errBannerIdx !== -1, '<body>/#bootSplash/#errBanner 중 하나를 못 찾음');
+  assert.ok(bodyIdx < splashIdx && splashIdx < errBannerIdx, '#bootSplash가 <body>와 #errBanner 사이(즉 #app보다 먼저)에 있지 않음 — JS 실행 전 첫 페인트부터 보이지 않을 수 있음');
 });
 
 /* ---------- 실행 ---------- */
