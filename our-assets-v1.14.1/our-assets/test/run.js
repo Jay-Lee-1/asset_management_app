@@ -2313,6 +2313,26 @@ test('delOwner: 사용 중인 자산이 있으면 삭제하지 않고 안내 토
   assert.deepStrictEqual(sandbox.DB.owners, ['나', '아내']);
   assert.ok(sandbox.lastToast.includes('아내'));
 });
+/* ---------- delOwner: 자산이 0개라도 goal.owner가 이 귀속을 가리키면 삭제를 막아야 한다 —
+ * 안 그러면 goalOwnerEff()가 사라진 owner를 'all'로 조용히 대체해, 가족 중 한 명을 위한
+ * 목표가 아무 확인 없이 전체 목표로 바뀌어 버린다(app-evolve cycle215, index.html:3011 참고) ---------- */
+test('delOwner: 사용 중인 자산이 없어도 이 귀속을 가리키는 목표가 있으면 삭제하지 않고 안내 토스트만 띄운다', () => {
+  sandbox.DB = { owners: ['나', '아내'], assets: [], goals: [{ owner: '아내' }] };
+  sandbox.lastUndo = null;
+  sandbox.confirmSheetCalls = [];
+  sandbox.delOwner(1);
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0, '확인 시트를 띄우면 안 됨');
+  assert.deepStrictEqual(sandbox.DB.owners, ['나', '아내']);
+  assert.ok(sandbox.lastToast.includes('아내') && sandbox.lastToast.includes('목표 1개'), `목표가 있다는 안내가 떠야 함 (got: ${sandbox.lastToast})`);
+});
+test('delOwner: 자산과 목표가 모두 이 귀속을 가리키면 둘 다 안내 토스트에 포함한다', () => {
+  sandbox.DB = { owners: ['나', '아내'], assets: [{ owner: '아내' }], goals: [{ owner: '아내' }] };
+  sandbox.lastUndo = null;
+  sandbox.confirmSheetCalls = [];
+  sandbox.delOwner(1);
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0);
+  assert.ok(sandbox.lastToast.includes('자산 1개') && sandbox.lastToast.includes('목표 1개'), `자산/목표 둘 다 안내돼야 함 (got: ${sandbox.lastToast})`);
+});
 test('delOwner: 마지막 남은 귀속 하나는 삭제할 수 없다', () => {
   sandbox.DB = { owners: ['나'], assets: [] };
   sandbox.lastUndo = null;

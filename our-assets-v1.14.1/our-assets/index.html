@@ -1387,7 +1387,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.190';
+const APP_VERSION='1.47.191';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4035,7 +4035,8 @@ function addOwner(){const v=$('newOwner').value.trim().normalize('NFC');if(!v)re
  const dup=DB.owners.find(o=>normName(o)===normName(v));if(dup){toast(dup===v?'이미 있는 귀속이에요':`비슷한 귀속이 있어요: ${dup}`);return}DB.owners.push(v);DB.deletedIds=DB.deletedIds||{};delete DB.deletedIds[ownerTombKey(v)];save();openOwnerManage();}
 function delOwner(i){const o=DB.owners[i];if(DB.owners.length<=1){toast('귀속은 최소 1개가 필요해요');return}
  const used=DB.assets.filter(a=>a.owner===o).length;
- if(used){toast(`'${o}' 귀속을 쓰는 자산 ${used}개가 있어요`);return}
+ const usedGoals=(DB.goals||[]).filter(g=>g.owner===o).length; /* goalOwnerEff()는 사라진 owner를 'all'로 조용히 대체해 크래시는 막지만, 자산이 0개라 used=0인 채로 goal.owner만 남아있는 귀속은 그대로 삭제가 돼 목표가 말없이 전체 목표로 바뀌던 문제(index.html:3011 주석 참고) — doRenameOwner가 goal.owner를 따라가며 보존하는 것과 달리 delOwner엔 이 가드가 없었음 */
+ if(used||usedGoals){const parts=[];if(used)parts.push(`자산 ${used}개`);if(usedGoals)parts.push(`목표 ${usedGoals}개`);toast(`'${o}' 귀속을 쓰는 ${parts.join(', ')}가 있어요`);return}
  confirmSheet('귀속 삭제',`'${esc(o)}' 귀속을 삭제할까요?`,'삭제',()=>{
   DB.owners=DB.owners.filter(x=>x!==o);
   DB.deletedIds=DB.deletedIds||{};DB.deletedIds[ownerTombKey(o)]=Date.now(); /* delGoal 등과 동일한 톰스톤 — 없으면 mergeRemoteDataIntoLocal이 이 삭제를 모르고 아직 안 지운 기기의 사본을 되살림(app-evolve cycle179) */
