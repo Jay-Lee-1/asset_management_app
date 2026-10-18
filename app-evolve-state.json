@@ -1,7 +1,11 @@
 {
   "cycle": 213,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "목표(goal)가 '순자산 전체' 1종만 추적 — 특정 자산(저축 계좌 등)에 모은 돈은 부채 변동에 가려짐",
+    "why": "index.html:2964 주석이 명시하듯 지금 DB.goals는 \"MVP: 순자산 1종\"이고, openGoalForm(2929)의 goalDraft와 saveGoal(3050,3055)이 모든 목표를 무조건 type:'networth'로 강제한다. goalProgress(logic.js:468)의 cur는 nwHistoryForOwner가 만든 net worth(=totalAssets-totalDebt) 스냅샷에서만 온다. 그런데 앱은 debt형 자산(신용카드/대출 등)을 1급으로 지원한다 — 사용자가 '결혼 자금 5000만원' 목표를 세우고 전용 저축 계좌에 실제로 5000만원을 다 모아도, 그 사이 카드값이 오르거나 소액 대출을 받거나 주식 평가금액이 떨어지면 cur(순자산)가 그대로거나 줄어 '목표를 이미 달성했는데 진행률 카드/투사(이대로면 ~쯤 달성 예상, logic.js:477-484)가 못 미쳤다거나 뒤로 간다'고 보여준다. 디버깅 없이는 사용자가 왜 그런지 알 길이 없는 신뢰 붕괴형 버그고, 이 앱의 핵심 기능(목표 추적) 자체가 설계상 전제를 잘못 잡고 있어 develop/review 수준의 작은 패치로는 못 고친다.",
+    "approach": "1) DB.goals 레코드에 type:'networth'|'asset' 필드 추가(기존 레코드는 migrate()에서 type 없으면 'networth'로 기본값 채워 하위호환 유지), 'asset' 타입은 linkedAssetId를 추가로 가짐. 2) openGoalForm/renderGoalForm에 목표 유형 선택(순자산 전체 vs 특정 자산)과, 'asset' 선택 시 자산 피커(기존 ownerPick류 패턴 재사용) 추가, saveGoal이 type에 따라 다른 필드를 저장하도록 수정(force-write type:'networth' 제거). 3) logic.js에 goalProgress와 병렬인 순수 함수(예: goalProgressForAsset(goal, asset) — asset.balance/평가액 기준으로 cur 계산, assetEval() 재사용)를 추가하고 goalProgress 자체는 'networth' 타입 전용으로 그대로 둔다(기존 테스트/동작 보존). 4) goalRowHTML/openGoalsList/goalsSummaryCard가 g.type에 따라 goalProgress 또는 goalProgressForAsset을 호출하도록 분기. 5) 연결된 자산이 삭제되면(nextOutflowCard의 assetNm 스냅샷 패턴처럼) 목표 카드에 '연결된 자산이 삭제됐어요' 같은 중립 안내를 보여주고 단정하지 않는다. 6) DB.goals는 이미 mergeDataLossCount 경고 대상이라 그 메커니즘은 손댈 필요 없음(필드 추가만이라 호환). 범위를 좁게: 이번 advance는 'asset' 타입 신설 + 폼/진행률 분기까지만 하고, '카테고리별 저축 목표' 같은 3번째 타입은 다루지 않는다."
+  },
   "history": [
     {
       "cycle": 208,
@@ -141,6 +145,13 @@
       "phase": "review",
       "timestamp": "2026-10-18T09:05:00.000Z",
       "summary": "cycle213 develop 커밋(fe8ed22, nextOutflowCard()가 삭제된 자산을 assetNm() 스냅샷으로 표시하고 잔액을 단정하지 않게 수정)을 검토. assetNm(id,snap)(index.html:1631)의 계약(a=DB.assets.find(x=>x.id===id); a?a.name:(snap||'—'))을 재확인하고, acctNm=assetNm(t.fromAssetId,t.fromAssetName)/acctGone=!acct&&acctNm!=='—' 조합이 세 경우를 정확히 분기함을 직접 추적 — (1) 자산이 살아있으면 acct truthy라 acctGone=false, 기존처럼 실제 잔액/good 표시(변경 없음, 회귀 테스트로 확인됨), (2) 자산이 삭제됐고 snapshotAssetName()(3603행, delAsset/assetDelSel 경로가 항상 호출)이 fromAssetName을 남겼으면 acctGone=true로 중립 '연결된 통장이 삭제됐어요' 표시, (3) fromAssetId가 애초에 비정상 상태(자산도 없고 스냅샷도 없음, 정상 delAsset 경로로는 도달 불가)면 acctNm==='—'라 acctGone=false로 떨어져 기존처럼 '여유 있어요·0원'을 보여주는데, 이는 이미 다른 모든 assetNm() 호출부(4160/5141/7472행 등)가 공유하는 동일한 fallback 한계이지 이번 변경이 새로 만든 구멍이 아님을 확인(재선정 안 함). short가 0인 채로 acctGone이면 nc-fix 버튼도 그대로 숨겨짐(잔액을 모르니 openFixShortfall을 띄울 근거가 없음) — 의도된 동작. 새 테스트 2건(삭제됨→스냅샷 이름+단정 안 함, 생존→기존 동작 유지)이 로직과 정확히 일치. node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1592/1592 통과. APP_VERSION 1.47.187/sw.js CACHE v449 갱신도 일관됨. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 213,
+      "phase": "critique",
+      "timestamp": "2026-10-18T10:05:00.000Z",
+      "summary": "Explore 서브에이전트로 앱 전반을 아키텍처/제품 관점에서 훑었다(cycle149-213에서 다룬 toast/invalidateBalances fromDate/closeSheetGuarded/aria-label/XSS/실행형 테스트 전환류(openSheet·wireSheetGestures·ensureEdgeGesture·togglePwVis·wireWhHead·wireMonthCarousel은 의도적 보류)/split거래/pushCloud await/mergeCollection 기반 mergeDataLoss 경고(assets/goals/txns/inquiries/assetQtyLog)/kakaoLogin 게스트 병합 안내/nextOutflowCard 스냅샷/dismissedStaleMvIds·budgetCarryFor 무제한증가·CDN SRI(보류·기각 유지)/#histQ 디바운스(러너업으로 남겨둠) 전부 제외하고 recSaveScopeConfirm/recSaveScopeApply/deleteRecsUndo(cycle209가 명시적으로 범위 밖으로 미뤄둔 후보)도 검토했으나, 그보다 더 근본적인 제품 설계 결함으로 수렴). index.html:2964 주석이 명시하는 대로 DB.goals는 \"MVP: 순자산 1종\"이라 openGoalForm(2929)/saveGoal(3050,3055)이 모든 목표를 무조건 type:'networth'로 강제하고, goalProgress(logic.js:468)의 cur는 nwHistoryForOwner가 만든 net worth(=totalAssets-totalDebt) 스냅샷에서만 온다. 앱이 debt형 자산(신용카드/대출)을 1급으로 지원하는데도, 사용자가 특정 저축 계좌에 목표 금액을 전부 모아도 그 사이 카드값이 오르거나 소액 대출을 받으면 cur(순자산 전체)가 그대로거나 줄어 진행률 카드와 투사(logic.js:477-484, 이대로면 ~쯤 달성 예상)가 이미 달성한 목표를 '못 미쳤다/뒤로 간다'고 보여주는 신뢰 붕괴형 버그를 발견 — 목표 추적이라는 핵심 기능 자체의 설계 전제 문제라 develop/review 수준 패치로는 못 고친다. DB.goals에 type:'networth'|'asset'(+linkedAssetId) 필드를 추가(기존 레코드는 migrate()에서 기본값 'networth')하고, 목표 폼에 유형/자산 선택 UI를, logic.js에 goalProgress와 병렬인 자산-기준 진행률 순수 함수를, goalRowHTML 등에 type별 분기를 추가하는 계획(연결 자산 삭제 시 nextOutflowCard와 동일한 중립 안내, '카테고리별 저축' 등 3번째 타입은 이번 범위 밖)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
       "commit": null
     }
   ]
