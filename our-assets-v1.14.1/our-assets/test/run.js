@@ -10051,6 +10051,53 @@ test('pushCloud: 재시도까지 두 번 다 충돌이면(극단적 3중 경합)
   assert.ok(sandbox.DB.txns.some(t => t.id === 'remote-only'), '최종 push는 실패했어도 재시도 과정의 병합 자체는 로컬 DB에 남아 데이터 손실이 없어야 함');
   assert.strictEqual(sandbox.markCloudSyncedCalls, 0, '끝내 성공하지 못했으니 markCloudSynced는 불리면 안 됨');
 });
+test('[실행형] pushCloud: 충돌 자동 재시도 중에는 재시도 호출의 네트워크가 끝날 때까지 PUSH_CLOUD_INFLIGHT가 true로 유지된다(app-evolve cycle211 develop — return pushCloud(true)에 await가 빠져 finally가 재시도 완료 전에 먼저 돌며 가드가 풀리던 회귀 방지)', async () => {
+  const origSB = sandbox.SB;
+  sandbox.DB = {
+    txns: [{ id: 'local-only', date: '2026-01-01', updatedAt: 100 }],
+    recurrences: [], assets: [], deletedIds: {},
+  };
+  sandbox.CLOUD_UID = 'u1';
+  sandbox.CLOUD_SYNC_STATE = 'idle';
+  sandbox.CLOUD_LAST_SYNCED_AT = '2026-01-01T00:00:00.000Z';
+  sandbox.CLOUD_CONFLICT_TOASTED = false;
+  sandbox.PUSH_CLOUD_INFLIGHT = false;
+  sandbox.markCloudSyncedCalls = 0;
+  sandbox.lastToast = null; sandbox.toastCalls = [];
+  sandbox._sbMaybeSingleResult = {
+    data: { data: { txns: [{ id: 'remote-only', date: '2026-01-02', updatedAt: 100 }], recurrences: [], assets: [], deletedIds: {} }, updated_at: '2026-02-01T00:00:00.000Z' },
+    error: null,
+  };
+  let updateCallCount = 0;
+  let resolveRetry;
+  // 1번째 조건부 UPDATE(충돌)는 바로 응답하지만, 재시도(2번째) 호출은 resolveRetry()를 부를 때까지
+  // 멈춰 있게 해 "재시도 네트워크 왕복이 아직 안 끝난 시점"을 실제로 관찰할 수 있게 한다.
+  const retryGate = new Promise((res) => { resolveRetry = res; });
+  sandbox.SB = {
+    from: () => ({
+      select: () => ({ eq: () => ({ maybeSingle: async () => sandbox._sbMaybeSingleResult }) }),
+      update: () => ({ eq: () => ({ eq: () => ({ select: async () => {
+        updateCallCount++;
+        if (updateCallCount === 1) return { data: [], error: null };
+        await retryGate;
+        return { data: [{ updated_at: 'retry-ok' }], error: null };
+      } }) }) }),
+      upsert: async () => ({ error: null }),
+    }),
+  };
+  try {
+    const p = sandbox.pushCloud();
+    for (let i = 0; i < 20 && updateCallCount < 2; i++) await Promise.resolve();
+    assert.strictEqual(updateCallCount, 2, '재시도(2번째) 조건부 UPDATE 호출까지 도달해 있어야 함');
+    assert.strictEqual(sandbox.PUSH_CLOUD_INFLIGHT, true, '재시도 네트워크 왕복이 아직 끝나지 않았으면 PUSH_CLOUD_INFLIGHT가 계속 true로 남아, 그 사이 끼어드는 다른 트리거(60초 재시도 interval·디바운스 타이머·online 이벤트)의 중복 push를 막아야 함');
+    resolveRetry();
+    await p;
+    assert.strictEqual(sandbox.PUSH_CLOUD_INFLIGHT, false, '재시도가 완전히 끝난 뒤에는 PUSH_CLOUD_INFLIGHT가 풀려야 함');
+    assert.strictEqual(sandbox.markCloudSyncedCalls, 1, '재시도가 최종 성공했으니 markCloudSynced가 불려야 함');
+  } finally {
+    sandbox.SB = origSB;
+  }
+});
 
 /* ---------- foreignSaveIsNewer: handleForeignStorage()가 다른 탭의 save()를 반영할지 판단하는 순수 로직
  * (탭 간 localStorage 미동기화로 조용히 데이터가 사라지던 버그의 감지 조건) ---------- */
