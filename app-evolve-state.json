@@ -1,15 +1,12 @@
 {
   "cycle": 211,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "mergeCollection()의 레코드 단위 whole-record LWW 병합이 DB.assets/DB.goals에서 조용히 상대 기기의 수정을 날려도 아무 신호가 없음",
+    "why": "logic.js:123-145 mergeCollection()은 같은 id가 local/remote 양쪽에 다 있으면 updatedAt이 더 큰 쪽을 '통째로' 채택하고 진 쪽은 완전히 버린다(의도된 설계, logic.js:116-122 주석에 명시). 이 앱은 '부부 공유 계정'을 전제하므로, 두 사람이 오프라인에서 같은 공유 자산(예: 같은 통장 잔액 메모)이나 같은 목표(goal)의 목표액을 서로 다르게 고친 뒤 재연결하면 mergeRemoteDataIntoLocal()(index.html:1526-1537)이 DB.assets/DB.goals에 대해 이 mergeCollection()을 그대로 호출해, 나중 타임스탬프가 아닌 쪽의 편집을 경고 없이 완전히 버린다. 문서 단위 push-time conflict(CLOUD_SYNC_STATE='conflict')는 homeAlerts의 cloudConflict 카드로 지속 경고되지만, 이 레코드 단위 손실은 merge가 '성공'한 뒤 벌어져 CLOUD_SYNC_STATE는 그대로 'ok'로 남고 사용자는 변경이 사라졌다는 사실을 전혀 알 수 없다 — toast/로그 전부 없음. mergeRecurrences는 skip/edits/confirmedDates를 합집합으로 보존해 이 클래스의 손실을 이미 피해가지만 assets/goals는 아직 whole-record 승자독식이다.",
+    "approach": "1) logic.js에 순수 헬퍼 mergeCollectionConflicts(localArr,remoteArr)를 추가 — localArr/remoteArr 양쪽에 같은 id가 있고 updatedAt이 다르며(id/updatedAt을 제외한 나머지 필드가 실제로 다른) 레코드들만 걸러 {id, discardedSide} 배열로 반환(순수 함수, mergeCollection과 같은 파일에 나란히 둬 바로 단위 테스트 가능). 2) mergeRemoteDataIntoLocal()(index.html:1526-1537)에서 DB.assets/DB.goals를 mergeCollection으로 병합하기 '전에'(local/remote 원본이 아직 살아있을 때) 이 헬퍼를 호출해 충돌 건수를 센다. 3) 센 건수가 1건 이상이면 homeAlerts()의 cloudConflict 카드(index.html:7884 근처 homeAlertCard 패턴)와 같은 지속형 카드를 하나 추가(예: kind:'mergeDataLoss', count)해 '다른 기기와 동시에 수정한 N건은 최신 쪽만 반영됐어요' 식으로 토스트 대신 집에 남는 카드로 보여준다(토스트는 한 번만 뜨고 사라져 이미 cycle170에서 cloudSyncError에 카드로 전환한 전례와 동일 패턴) — 사용자가 확인/닫으면 사라지는 단순 dismiss로 충분, 필드별 병합까지는 범위 밖. 4) test/run.js에 mergeCollectionConflicts 순수 함수 단위 테스트 추가(기존 mergeCollection/mergeRecurrences 테스트 바로 옆) + mergeRemoteDataIntoLocal이 충돌 발견 시 새 카드 kind를 세팅하는지 실행형 테스트 1~2건 추가. index.html/sw.js를 건드리므로 APP_VERSION/CACHE 버전 갱신 필요."
+  },
   "history": [
-    {
-      "cycle": 202,
-      "phase": "develop",
-      "timestamp": "2026-10-16T10:13:28.323Z",
-      "summary": "Explore 서브에이전트로 develop 후보를 탐색 — openOwnerManage()(index.html:3843)가 openCatManage/openRecManage/assetBalCard가 이미 거친 \"소스-매칭 또는 無테스트\" 공백의 다음 인스턴스임을 발견(test/run.js의 유일한 기존 테스트가 extractFunction() 소스 문자열만 검사, 실제 실행/렌더 검증 없음). openRecManage/assetBalCard와 같은 격리 vm 컨텍스트 패턴으로 ownerManageCtx() 헬퍼를 test/run.js에 신설(logic.js + extractFunction(\"openOwnerManage\")만 로드, openSheet/svg 최소 스텁). 공유 sandbox의 FUNCTIONS 목록에 직접 추가하는 방식도 시도했으나, addOwner/delOwner/doRenameOwner의 기존 테스트들이 DB.assets 없이 DB를 구성해둔 경우가 많아(이들 함수가 성공 시 호출하는 openOwnerManage() 기존 no-op 스텁을 실제 함수로 바꾸면 DB.assets.filter에서 throw) 되돌리고 격리 컨텍스트로 전환 — 공유 sandbox의 openOwnerManage 스텁은 그대로 유지. 실행형 테스트 3건 추가: (1) 귀속별 자산 개수(DB.assets.filter)가 \"N개 자산\"으로 정확히 집계되고 수정/삭제 버튼의 aria-label·onclick 인덱스가 귀속별로 맞는지, (2) 자산이 0개인 귀속도 죽지 않고 \"0개 자산\"으로 뜨는지(회귀 가드), (3) newOwner 입력의 field-clear(×) 버튼(기존 소스-매칭 테스트를 실행형으로 승격). 테스트를 작성하며 실제 렌더 로직에서 버그는 발견되지 않아 index.html/logic.js/sw.js는 건드리지 않았다(APP_VERSION/CACHE 변경 없음, 순수 테스트 커버리지 추가). node our-assets-v1.14.1/our-assets/test/run.js 1508/1508 -> 1510/1510 통과.",
-      "commit": null
-    },
     {
       "cycle": 201,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-18T01:10:00.000Z",
       "summary": "cycle211 develop 커밋(3aa4fd7, pushCloud() 충돌 재시도에 await 추가)을 검토. index.html:1920-1940의 conflict 자동 병합 재시도 분기를 직접 확인 — try/finally 안에서 return pushCloud(true)를 평가하면 그 반환 표현식이 Promise로 settle되기 전에 자바스크립트가 즉시 finally를 실행하므로, finally의 if(!retried)PUSH_CLOUD_INFLIGHT=false가 outer 호출(retried=false)에서 재시도 네트워크 왕복이 끝나기도 전에 가드를 풀어버리는 것이 실제 버그였음을 재확인. return await pushCloud(true)로 바꾸면 await가 그 지점에서 함수를 일시정지시켜 inner 호출이 완전히 settle된 뒤에야 바깥 finally가 돌기 때문에 올바르게 고쳐짐. inner pushCloud(true) 자신은 내부 try/catch(cloudSyncFailed)로 모든 에러를 흡수해 절대 throw하지 않으므로, await 추가가 바깥 catch로 새로운 예외 전파 경로를 열지도 않음을 확인. 새 테스트(수동 gate로 재시도 UPDATE를 멈춰두고 그 사이 PUSH_CLOUD_INFLIGHT===true 유지를 검증)가 fix를 되돌리면 실제로 실패함을 직접 재현. APP_VERSION 1.47.183/sw.js CACHE v445 갱신도 일관됨. node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1572/1572 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 211,
+      "phase": "critique",
+      "timestamp": "2026-10-18T02:11:50.579Z",
+      "summary": "Explore 서브에이전트로 앱 전반을 아키텍처/데이터손실 관점에서 훑었다(cycle149-211에서 다룬 toast/invalidateBalances fromDate/closeSheetGuarded/aria-label/XSS/실행형 테스트 전환류(openSheet·wireSheetGestures·ensureEdgeGesture·togglePwVis·wireWhHead 등)/split거래/budgetCarry/pushCloud await 버그 전부 제외). mergeCollection()(logic.js:123-145)이 local/remote 양쪽에 같은 id가 있으면 updatedAt 큰 쪽을 통째로 채택하고 진 쪽은 완전히 버리는 whole-record LWW임을 재확인 — mergeRemoteDataIntoLocal()(index.html:1526-1537)이 DB.assets/DB.goals에 그대로 적용하므로, 부부 공유 계정에서 두 기기가 오프라인에 같은 자산/목표를 다르게 고치면 나중 타임스탬프가 아닌 쪽 편집이 경고 없이 소실. 문서 단위 push conflict는 homeAlerts의 cloudConflict 카드로 지속 경고되지만 이 레코드 단위 손실은 merge 성공 후 벌어져 CLOUD_SYNC_STATE는 ok로 남고 사용자가 전혀 알 수 없음(mergeRecurrences는 skip/edits/confirmedDates 합집합 보존으로 이미 이 클래스를 피해가지만 assets/goals는 아니었음). mergeCollectionConflicts() 순수 헬퍼(logic.js) + mergeRemoteDataIntoLocal에서 assets/goals 병합 전 충돌 건수 집계 + homeAlerts에 지속형 mergeDataLoss 카드 추가 계획을 pending_advance_plan에 저장. 러너업: (1) 반복거래 DST/월말/윤년 날짜수학은 이미 수차례 테스트로 강화됨(재선정 안 함), (2) 차트 a11y/localStorage quota 경고는 이미 구현 완료(announceLive+키보드 peek, storageOutcomeMsg/requestPersistentStorage) — 재선정 안 함. 코드 변경 없음(critique 단계라 state.json만 갱신).",
       "commit": null
     }
   ]
