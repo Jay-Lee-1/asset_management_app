@@ -1,19 +1,8 @@
 {
-  "cycle": 212,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "kakaoLogin() 성공 콜백에 게스트 데이터 병합 안내 추가",
-    "why": "doLogin()(index.html:8654-8669)과 doSignup()(8670-8690)은 로그인/가입 직후 dbIsEmpty(DB)&&guestHasData()면 confirmSheet('데이터 가져오기',...)로 게스트 데이터 가져오기를 제안하고, 그마저 아니면 최소한 '게스트로 입력한 데이터는 이 계정에 합쳐지지 않았어요' 토스트로 명시적으로 알린다. 반면 kakaoLogin()(8633-8645)의 success 콜백은 AUTH.kakaoUpsert→AUTH.setSession(id)→startApp()→성공 토스트만 띄우고 끝난다. dataKey()(1786행)는 SESSION(여기선 'kakao:'+res.id) 기준으로 완전히 새 로컬 키('asset_app_db_v3__kakao:...')를 쓰고 카카오 로그인은 afterCloudAuth()(Supabase 클라우드 머지)를 전혀 거치지 않으므로, 게스트로 실제 자산/거래를 입력해 쓰던 사용자가 카카오로 로그인하면 화면이 빈 데이터로 바뀌는데도 아무 설명이 없다 — 데이터는 localStorage의 'asset_app_db_v3__guest' 키에 그대로 남아 복구 가능하지만 사용자는 그 사실을 알 길이 없어 '내 데이터가 사라졌다'로 인지하는 신뢰 붕괴형 버그다. 이 앱 역사상 반복된 '한쪽 로그인/가입 경로에만 있던 안전장치가 다른 경로엔 빠짐' 버그 클래스(mergeDataLoss 경고가 txns/goals에만 있다가 inquiries/assetQtyLog까지 확장된 cycle212와 같은 유형)와 본질적으로 같다.",
-    "approach": "kakaoLogin()의 success 콜백(8641행)에서 AUTH.kakaoUpsert(id,nick);GUEST=false;localStorage.setItem('asset_app_guest','0');AUTH.setSession(id);startApp(); 다음에, doLogin()이 쓰는 것과 동일한 패턴을 그대로 적용한다: const guestRaw=localStorage.getItem('asset_app_db_v3__guest'); if(dbIsEmpty(DB)&&guestHasData()) confirmSheet('데이터 가져오기','방금까지 게스트로 입력한 자산·내역이 있어요. 이 계정으로 가져올까요?','가져오기',()=>{...DB=JSON.parse(guestRaw);migrate();save();renderCurrent();toast('데이터를 가져왔어요')...}); else if(!dbIsEmpty(DB)&&guestHasData()) toast('카카오 로그인 완료 · '+nick+' · 게스트로 입력한 데이터는 이 계정에 합쳐지지 않았어요'); else toast('카카오 로그인 완료 · '+nick) — 기존 '카카오 로그인 완료 · '+nick 토스트는 else 분기로 흡수. 카카오 경로는 afterCloudAuth()/cloudAuthResult.status==='guestMerged' 분기가 없으므로 doLogin()의 그 부분만 제외하고 나머지는 동일 패턴. test/run.js에는 kakaoLogin success 콜백을 직접 실행하긴 어려우므로(window.Kakao 모킹 필요), 소스 패턴 검증(guestHasData/dbIsEmpty/confirmSheet 호출이 kakaoLogin 블록 안에 존재하는지, doLogin과 동일한 안내 토스트 문구를 쓰는지)으로 커버하거나, 가능하면 Kakao.Auth.login/Kakao.API.request를 스텁해 success 콜백 로직만 분리 실행하는 작은 헬퍼 테스트를 추가한다. index.html/sw.js 변경이라 APP_VERSION/CACHE 버전 갱신 필요."
-  },
+  "cycle": 213,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 207,
-      "phase": "review",
-      "timestamp": "2026-10-17T08:05:00.000Z",
-      "summary": "cycle207 develop 커밋(a179b78, openSheet aria-labelledby 추가)을 검토: innerHTML 대입 후에 제목을 찾는지 테스트로 이미 확인됨. topBtn(pk-back 등 3곳: 정렬기준/귀속관리/화면테마/재잠금시점 직접 h3 포함 호출 + openPicker의 pk-back 버튼)이 h3/.pk-h를 포함하는 경우가 없어 querySelector('h3,.pk-h')가 항상 콘텐츠 쪽 실제 제목을 집는 것을 66개 호출부 전수 재확인. sheetSlideBack/pkBack은 renderPrev()로 openSheet를 다시 호출하므로 sheetTitle id가 이전 콘텐츠에 묶여 stale해질 경로 없음. closeSheet()가 aria-labelledby/id를 안 지워도 다음 openSheet가 innerHTML을 통째로 교체하며 재설정하므로 문제 없음. node test/run.js 1545/1545 통과. 실제 버그 없음 — 이상 없음.",
-      "commit": null
-    },
     {
       "cycle": 207,
       "phase": "critique",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-18T06:15:08.322Z",
       "summary": "Explore 서브에이전트로 앱 전반을 아키텍처/UX/데이터손실/보안 관점에서 훑었다(cycle149-212에서 다룬 toast/invalidateBalances fromDate/closeSheetGuarded/aria-label/XSS/실행형 테스트 전환류(openSheet·wireSheetGestures·ensureEdgeGesture·togglePwVis·wireWhHead)/split거래 dedupe/pushCloud await 버그/mergeCollection 기반 mergeDataLoss 경고(assets·goals·txns·inquiries·assetQtyLog 다섯 컬렉션 완료, mergeRecurrences는 범주 밖)/dismissedStaleMvIds 가지치기(보류 유지)/CDN SRI(환경 제약으로 기각 유지)/budgetCarryFor 등 무제한증가류(보류 유지) 전부 제외). AUTH/APPLOCK(PBKDF2+salt+지수백오프), save()의 Web Locks 기반 멀티탭 머지, CSV formula-injection 가드 등은 이미 견고해 재선정 대상이 거의 없었음을 확인한 뒤 두 후보로 수렴: (1) kakaoLogin()(index.html:8633-8645) 성공 콜백이 doLogin()/doSignup()(8654-8690)과 달리 dbIsEmpty(DB)&&guestHasData() 체크나 \"게스트 데이터는 합쳐지지 않았어요\" 안내가 전혀 없어, 게스트로 실제 데이터를 쓰던 사용자가 카카오 로그인을 누르면 설명 없이 빈 화면으로 바뀌는 데이터손실형 신뢰 붕괴 버그(데이터 자체는 asset_app_db_v3__guest 키에 살아있어 복구 가능하지만 사용자는 알 수 없음), (2) #histQ(index.html:4844) 전체내역 검색 입력에 디바운스가 없어 DB.txns가 커지면 키 입력마다 allTxns+matchTxnQuery+renderHistory 전체 재계산/재렌더가 걸리는 성능 문제(wireNwCarousel의 clearTimeout/setTimeout 디바운스 관례가 검색엔 빠진 비일관성). (1)을 최종 추천: 범주가 \"복구 가능한 손실\"과 \"사용자가 인지하는 손실\"의 간극이 가장 큰 신뢰 붕괴형 버그이고, doLogin()에 이미 있는 패턴을 그대로 옮기면 되는 좁고 명확한 수정 범위이며, 이 앱이 반복적으로 발견·수정해온 \"한쪽 로그인 경로에만 있던 안전장치가 다른 경로엔 빠짐\" 버그 클래스와 같아 발견 신뢰도가 높다. (2)는 다음 cycle 이후 후보로 보류. kakaoLogin() success 콜백에 doLogin() 패턴(confirmSheet 가져오기 제안 + 미병합 안내 토스트)을 적용하는 계획을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "commit": null
+    },
+    {
+      "cycle": 212,
+      "phase": "advance",
+      "timestamp": "2026-10-18T07:05:00.000Z",
+      "summary": "critique(cycle212) 계획대로 kakaoLogin()의 success 콜백(index.html:8641)에 doLogin()/doSignup()과 동일한 게스트 데이터 병합 안내를 추가했다. AUTH.kakaoUpsert/GUEST=false/AUTH.setSession/startApp() 다음에, const guestRaw=localStorage.getItem('asset_app_db_v3__guest')로 받아 (1) dbIsEmpty(DB)&&guestHasData()면 doLogin()과 동일한 confirmSheet('데이터 가져오기',...)로 가져오기를 제안(수락 시 DB=JSON.parse(guestRaw);migrate();save();renderCurrent();toast('데이터를 가져왔어요')), (2) 이 계정이 비어있지 않은데 게스트 데이터가 있으면 '카카오 로그인 완료 · '+nick+' · 게스트로 입력한 데이터는 이 계정에 합쳐지지 않았어요' 안내 토스트, (3) 게스트 데이터가 없으면 기존 '카카오 로그인 완료 · '+nick 토스트(else 분기로 이동)만 — 세 분기로 나눴다. kakaoLogin()은 afterCloudAuth()/Supabase 클라우드 머지를 거치지 않으므로 doLogin()의 cloudAuthResult.status==='guestMerged' 분기는 그대로 제외(계획대로). kakaoLogin()은 window.Kakao.Auth.login/API.request 콜백 중첩이라 실행형 테스트 비용이 커, 계획대로 소스 패턴 검증 3건을 test/run.js에 추가(confirmSheet 가져오기 제안이 doLogin과 동일한 패턴인지, 미병합 안내 토스트 문구가 doLogin과 동일한지, else 분기에 기존 토스트가 남아있는지). index.html/sw.js 변경이라 APP_VERSION 1.47.185->1.47.186, sw.js CACHE v447->v448 갱신. HTML 주석 제거 후 <script> 블록 4개 + logic.js 모두 node --check 통과. node our-assets-v1.14.1/our-assets/test/run.js 1587/1587 -> 1590/1590 통과. pending_advance_plan을 비웠다.",
       "commit": null
     }
   ]

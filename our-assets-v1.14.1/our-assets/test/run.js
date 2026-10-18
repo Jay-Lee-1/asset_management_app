@@ -15316,6 +15316,31 @@ test('renderAuth: 카카오 버튼 바로 아래에 Supabase 연결 여부와 �
   assert.ok(!capLine.includes('sbCfg()'), '캡션이 sbCfg() 조건부 삼항식 안에 있어 다시 숨겨질 수 있음');
 });
 
+/* ---------- kakaoLogin: 게스트 데이터 병합 안내 (app-evolve cycle212 critique/advance) ----------
+ * doLogin()/doSignup()은 로그인·가입 직후 dbIsEmpty(DB)&&guestHasData()면 confirmSheet로
+ * 게스트 데이터 가져오기를 제안하고, 그마저 아니면 최소한 "게스트로 입력한 데이터는 이 계정에
+ * 합쳐지지 않았어요" 토스트로 명시 안내한다. kakaoLogin()의 success 콜백만 이 안내가 전혀 없어
+ * 게스트로 실제 자산·거래를 입력해 쓰던 사용자가 카카오 로그인을 누르면 화면이 빈 데이터로
+ * 바뀌는데도 아무 설명이 없었다(데이터는 'asset_app_db_v3__guest' 키에 그대로 남아 복구
+ * 가능하지만 사용자는 알 길이 없어 "내 데이터가 사라졌다"로 인지하는 신뢰 붕괴형 버그).
+ * kakaoLogin()은 window.Kakao.Auth.login/API.request 콜백 중첩 때문에(window.Kakao 모킹이
+ * 필요) 실행형 테스트로 돌리기엔 비용이 커, doLogin()의 guestHasData 테스트들과 마찬가지로
+ * 소스 패턴 검증으로 안내 로직이 실제로 와이어링돼 있는지 확인한다. ---------- */
+test('kakaoLogin: 성공 콜백이 doLogin()과 같은 패턴으로 dbIsEmpty(DB)&&guestHasData()일 때 confirmSheet로 "데이터 가져오기"를 제안한다', () => {
+  const body = extractFunction('kakaoLogin');
+  assert.ok(/dbIsEmpty\(DB\)&&guestHasData\(\)/.test(body), 'kakaoLogin 성공 콜백에 dbIsEmpty(DB)&&guestHasData() 체크가 없음');
+  assert.ok(body.includes("confirmSheet('데이터 가져오기'"), 'kakaoLogin 성공 콜백에 게스트 데이터 가져오기 제안 confirmSheet가 없음');
+  assert.ok(/DB=JSON\.parse\(guestRaw\);migrate\(\);save\(\);renderCurrent\(\);toast\('데이터를 가져왔어요'\)/.test(body), 'confirmSheet 콜백이 doLogin()과 같은 방식으로 게스트 DB를 가져오지 않음');
+});
+test('kakaoLogin: 게스트 데이터가 있지만 이 계정이 비어있지 않으면 doLogin()과 같은 "합쳐지지 않았어요" 안내 토스트를 띄운다', () => {
+  const body = extractFunction('kakaoLogin');
+  assert.ok(body.includes("else if(!dbIsEmpty(DB)&&guestHasData())toast('카카오 로그인 완료 · '+nick+' · 게스트로 입력한 데이터는 이 계정에 합쳐지지 않았어요')"), 'kakaoLogin에 게스트 데이터 미병합 안내 토스트가 없음(doLogin과 동일한 문구여야 함)');
+});
+test('kakaoLogin: 게스트 데이터가 없으면 기존처럼 평범한 로그인 완료 토스트만 띄운다(else 분기)', () => {
+  const body = extractFunction('kakaoLogin');
+  assert.ok(body.includes("else toast('카카오 로그인 완료 · '+nick)"), 'kakaoLogin의 else 분기에 기존 로그인 완료 토스트가 없음(guestHasData가 false일 때의 기본 동작)');
+});
+
 /* ---------- togglePwVis: 비밀번호 입력칸(auPw/frPwIn/newPwIn)에 표시/숨기기 눈 아이콘 토글을
  * 추가 (app-evolve cycle155 develop가 발견 — 긴 비밀번호를 칠 때 특히 계정 복구(doLocalRecover)
  * 같은 한 번뿐인/고위험 플로우에서 타이핑한 내용을 확인할 길이 전혀 없어, 오타가 나면 자신이

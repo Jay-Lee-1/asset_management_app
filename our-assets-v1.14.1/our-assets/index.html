@@ -1387,7 +1387,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.185';
+const APP_VERSION='1.47.186';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -8638,7 +8638,11 @@ function kakaoLogin(){
   window.Kakao.Auth.login({scope:'profile_nickname',
    success(){window.Kakao.API.request({url:'/v2/user/me',success(res){
      const id='kakao:'+res.id;const nick=(res.kakao_account&&res.kakao_account.profile&&res.kakao_account.profile.nickname)||'카카오 사용자';
-     AUTH.kakaoUpsert(id,nick);GUEST=false;localStorage.setItem('asset_app_guest','0');AUTH.setSession(id);startApp();toast('카카오 로그인 완료 · '+nick);
+     AUTH.kakaoUpsert(id,nick);GUEST=false;localStorage.setItem('asset_app_guest','0');AUTH.setSession(id);startApp();
+     const guestRaw=localStorage.getItem('asset_app_db_v3__guest');
+     if(dbIsEmpty(DB)&&guestHasData())confirmSheet('데이터 가져오기','방금까지 게스트로 입력한 자산·내역이 있어요. 이 계정으로 가져올까요?','가져오기',()=>{try{DB=JSON.parse(guestRaw);migrate();save();renderCurrent();toast('데이터를 가져왔어요')}catch(e){toast('가져오기에 실패했어요')}});
+     else if(!dbIsEmpty(DB)&&guestHasData())toast('카카오 로그인 완료 · '+nick+' · 게스트로 입력한 데이터는 이 계정에 합쳐지지 않았어요');
+     else toast('카카오 로그인 완료 · '+nick);
    },fail(){authErr('카카오 사용자 정보를 가져오지 못했어요.')}})},
    fail(err){const msg=(err&&(err.error_description||err.error))||'';authErr('카카오 로그인 실패'+(msg?(' · '+msg):' · 취소되었거나 도메인이 등록되지 않았어요'));}});
  }catch(e){authErr('카카오 로그인 중 오류가 발생했어요.')}
