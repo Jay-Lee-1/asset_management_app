@@ -1,15 +1,8 @@
 {
   "cycle": 212,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 201,
-      "phase": "critique",
-      "timestamp": "2026-10-16T08:05:00.000Z",
-      "summary": "Explore 서브에이전트로 앱 전반을 훑었다. cycle194-201에서 이미 다룬 split거래/예산이월/homeAlerts/modeSeg/isCloudConflict/각종 execution-style 테스트 추가(openSpendAnalysis·goalRowHTML·openRecManage·openQuickList) 목록을 명시적으로 제외하고 탐색한 결과, assetBalCard()(자산별 잔액 추이 카드, 디버트 상환예측 포함)가 test/run.js 자신의 주석에 '너무 많은 외부 전역 의존으로 vm 실행 대상이 아니다'라고 명시된 채 지금까지 aria 정규식 매칭 + debtPayoffProjection 수학 재검증 테스트만 있고 assetBalCard() 자체를 실제로 호출해 반환 HTML을 검사하는 테스트가 전혀 없음을 발견 — openSpendAnalysis/goalRowHTML/openRecManage/openQuickList가 이미 벗어난 '소스-매칭 또는 無테스트' 버그 클래스의 다음 미처리 인스턴스(cycle189에 pts/pfPts 전달 버그가 실제로 있었던 로직 밀도 높은 화면). assetBalCardCtx() 격리 vm 헬퍼 신설 + 7건의 실행형 테스트(빈 상태/비-debt/상환완료/상환추세/추세없음/증감부호/허용타입 밖 early-return) 추가 계획을 pending_advance_plan에 저장. production 코드 변경은 불필요(순수 테스트 커버리지 공백). 코드 변경 없음(critique 단계라 state.json만 갱신).",
-      "commit": null
-    },
     {
       "cycle": 201,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-18T02:50:00.000Z",
       "summary": "critique(cycle211) 계획대로 logic.js에 순수 헬퍼 mergeCollectionConflicts(localArr,remoteArr)를 추가 — local/remote 양쪽에 같은 id가 있고 updatedAt이 다르며(동률이면 mergeCollection이 그냥 local을 쓸 뿐 실제 충돌이 아니라 제외) id/updatedAt을 제외한 나머지 필드 중 하나라도 실제로 다른(완전히 같은 내용을 다시 저장한 경우는 손실이 아니므로 제외) 레코드만 걸러 {id,discardedSide} 배열로 반환. mergeRemoteDataIntoLocal()(index.html:1526-1537)에서 DB.assets/DB.goals를 mergeCollection으로 병합하기 '전'(local/remote 원본이 아직 살아있을 때)에 이 헬퍼로 충돌 건수를 세어 DB.settings.mergeDataLossCount에 누적(여러 번의 병합에 걸쳐 쌓임). homeAlerts()의 CLOUD_UID 블록에 mergeDataLossCount>0이면 {kind:'mergeDataLoss',count} 알림을 추가하고, homeAlertCard에 cloudConflict/clockSkew와 같은 지속형 카드(storageSizeWarnDismissed와 동일한 '문턱을 넘을 때마다 재경고' 관례)를 추가해 \"다른 기기와 동시에 고친 N건은 최신 쪽만 반영됐어요\"를 보여주고, 확인 버튼은 dismissMergeDataLossWarn()으로 mergeDataLossCount를 0으로 리셋한다. DB.settings 기본값에 mergeDataLossCount:0 추가(migrate()). test/run.js에 11건 추가: mergeCollectionConflicts 순수 함수 단위 테스트 6건(충돌 1건 감지/mergeCollection과 일치/동률 제외/동일내용 제외/한쪽에만 있으면 제외/undefined 안전), mergeRemoteDataIntoLocal이 assets·goals 충돌을 mergeDataLossCount에 누적(기존값에 더해짐, 두 컬렉션 합산)하고 실제 손실 없으면 늘지 않는지 3건, homeAlerts/homeAlertCard mergeDataLoss 알림(CLOUD_UID 게이트/count 포함/카드 문구+dismiss 연결) 4건 — vm 크로스-realm 이슈로 mergeCollectionConflicts 반환 객체는 deepStrictEqual 전에 기존 mergeRecurrences 테스트와 동일한 j() JSON 왕복 정규화가 필요함을 재발견해 적용. dismissMergeDataLossWarn 자체는 다른 dismiss* 형제 함수들과 동일하게 FUNCTIONS 추출 목록에 없어 직접 호출 테스트는 만들지 않고 homeAlertCard HTML 문자열 검증으로만 커버(기존 관례 유지). index.html/sw.js 변경이라 APP_VERSION 1.47.183->1.47.184, sw.js CACHE v445->v446 갱신. HTML 주석 제거 후 <script> 블록 4개 + logic.js 모두 node --check 통과. node our-assets-v1.14.1/our-assets/test/run.js 1572/1572 -> 1585/1585 통과. pending_advance_plan을 비웠다.",
+      "commit": null
+    },
+    {
+      "cycle": 212,
+      "phase": "develop",
+      "timestamp": "2026-10-18T04:12:14.574387Z",
+      "summary": "Explore 서브에이전트로 develop 후보를 탐색(cycle149-211에서 다룬 toast/invalidateBalances fromDate/closeSheetGuarded/aria-label/XSS/실행형 테스트 전환류/split거래/budgetCarry/pushCloud await/mergeCollection assets·goals mergeDataLoss 경고(cycle211) 등 전부 제외) — mergeRemoteDataIntoLocal()(index.html:1526-1548)이 cycle211에서 DB.assets/DB.goals에만 붙인 mergeCollectionConflicts() 기반 mergeDataLossCount 경고가 DB.txns/DB.inquiries/DB.assetQtyLog에는 빠져 있음을 발견 — 이 셋도 mergeCollection() whole-record LWW로 병합되는 동일 버그 클래스이고, 특히 txns는 변경 빈도가 가장 높은 컬렉션이라 이 손실이 가장 자주 발생할 후보인데 지금까지 아무 경고가 없었다. index.html:1531-1548을 리팩터링해 mergeDataLossN 계산 블록을 DB.txns 병합(옛 1531행) '앞'으로 끌어올리고 mergeCollectionConflicts 호출 대상에 DB.txns/DB.inquiries/DB.assetQtyLog를 추가(assets/goals는 그대로 유지, 집계 후 merge 순서는 변경 없음). test/run.js에 txns 단독 충돌 테스트 1건 + inquiries/assetQtyLog 합산 테스트 1건 추가(assets 전용 테스트와 동일한 패턴). APP_VERSION 1.47.184->1.47.185, sw.js CACHE v446->v447 갱신. HTML 주석 제거 후 <script> 블록 5개 + logic.js 모두 node --check 통과. node our-assets-v1.14.1/our-assets/test/run.js 1585/1585 -> 1587/1587 통과.",
       "commit": null
     }
   ]

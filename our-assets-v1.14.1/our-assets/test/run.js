@@ -3613,6 +3613,34 @@ test('mergeRemoteDataIntoLocal: 실제로 버려지는 내용이 없으면(같�
   });
   assert.strictEqual(sandbox.DB.settings.mergeDataLossCount, 0);
 });
+/* cycle211 advance는 assets/goals만 mergeDataLossCount 대상으로 다뤘으나, txns/inquiries/assetQtyLog도
+ * 똑같이 mergeCollection whole-record LWW이라 같은 손실 클래스를 겪는다 — 특히 txns는 가장 변경
+ * 빈도가 높은 컬렉션이라 실제로는 이 경고가 가장 자주 울려야 하는 쪽이다(app-evolve cycle212 develop). */
+test('mergeRemoteDataIntoLocal: txns에서 양쪽이 같은 id를 실제로 다르게 수정했으면 mergeDataLossCount가 늘어난다(assets/goals와 동일한 취급)', () => {
+  sandbox.DB = minimalMergeDB({
+    settings: { mergeDataLossCount: 0 },
+    txns: [{ id: 't1', amount: 5000, category: '식비', updatedAt: 200 }],
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    txns: [{ id: 't1', amount: 5000, category: '카페', updatedAt: 100 }],
+    deletedIds: {},
+  });
+  assert.strictEqual(sandbox.DB.settings.mergeDataLossCount, 1);
+  assert.strictEqual(sandbox.DB.txns.find(t => t.id === 't1').category, '식비', 'local이 실제로 이겨야(더 큰 updatedAt) 이 충돌이 현실적임');
+});
+test('mergeRemoteDataIntoLocal: inquiries/assetQtyLog 충돌도 txns/assets/goals와 동일하게 mergeDataLossCount에 합산된다', () => {
+  sandbox.DB = minimalMergeDB({
+    settings: { mergeDataLossCount: 0 },
+    inquiries: [{ id: 'i1', text: 'local-memo', updatedAt: 200 }],
+    assetQtyLog: [{ id: 'q1', qty: 10, updatedAt: 200 }],
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    inquiries: [{ id: 'i1', text: 'remote-memo', updatedAt: 100 }],
+    assetQtyLog: [{ id: 'q1', qty: 20, updatedAt: 100 }],
+    deletedIds: {},
+  });
+  assert.strictEqual(sandbox.DB.settings.mergeDataLossCount, 2, 'inquiries 1건 + assetQtyLog 1건이 합산돼야 함');
+});
 
 /* ---------- 문의하기(개인 메모): openInquiry/sendInquiry/openInquiryList/delInquiry (app-evolve cycle133 advance)
  * '문의 접수' write-only dead end를 '이 기기에 저장되는 메모'로 재정의하면서 id/touch()/mergeCollection

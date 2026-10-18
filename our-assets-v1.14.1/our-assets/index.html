@@ -1387,7 +1387,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.184';
+const APP_VERSION='1.47.185';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1528,18 +1528,20 @@ function mergeRemoteDataIntoLocal(remoteData){
  Object.keys(remoteData.deletedIds||{}).forEach(id=>{
   if(!(id in DB.deletedIds)||remoteData.deletedIds[id]>DB.deletedIds[id])DB.deletedIds[id]=remoteData.deletedIds[id];
  });
+ /* mergeCollection()이 바로 아래서 DB.txns/DB.assets/DB.goals/DB.inquiries/DB.assetQtyLog를 병합해버리면
+  * 어느 쪽이 버려졌는지 더는 알 수 없으므로, 병합 '전'(local/remote 원본이 아직 살아있을 때)
+  * mergeCollectionConflicts()로 몇 건이 소실될지 먼저 세어 DB.settings.mergeDataLossCount에 누적한다 —
+  * 문서 단위 push-time conflict는 CLOUD_SYNC_STATE='conflict'로 지속 경고되지만, 이 레코드 단위
+  * merge-time 손실은 병합이 "성공"한 뒤 벌어져 지금까지 CLOUD_SYNC_STATE가 그대로 'ok'로 남아 아무
+  * 신호가 없었다(app-evolve cycle211 critique는 assets/goals만 다뤘으나, txns/inquiries/assetQtyLog도
+  * 똑같이 whole-record 승자독식이라 cycle212에서 범위를 넓힌다 — txns는 가장 변경 빈도가 높은
+  * 컬렉션이라 오히려 이 손실 클래스가 가장 자주 발생할 후보다). mergeRecurrences는
+  * skip/edits/confirmedDates를 합집합으로 보존해 이 클래스를 이미 피해가므로 대상에서 제외. */
+ const _mergeDataLossN=mergeCollectionConflicts(DB.txns,remoteData.txns).length+mergeCollectionConflicts(DB.assets,remoteData.assets).length+mergeCollectionConflicts(DB.goals,remoteData.goals).length+mergeCollectionConflicts(DB.inquiries,remoteData.inquiries).length+mergeCollectionConflicts(DB.assetQtyLog,remoteData.assetQtyLog).length;
+ if(_mergeDataLossN>0){DB.settings=DB.settings||{};DB.settings.mergeDataLossCount=(DB.settings.mergeDataLossCount||0)+_mergeDataLossN;}
  DB.txns=mergeCollection(DB.txns,remoteData.txns,DB.deletedIds,remoteData.deletedIds);
  DB.recurrences=mergeRecurrences(DB.recurrences,remoteData.recurrences,DB.deletedIds,remoteData.deletedIds); /* mergeCollection과 달리 skip/edits/confirmedDates는 합집합으로 보존(logic.js mergeRecurrences 주석 참고) */
  DB.recurrences.forEach(pruneOrphanRecOverrides); /* 병합이 다른 스케줄을 가진 쪽을 base로 고르면 합쳐진 skip/edits/confirmedDates 중 일부가 그 새 스케줄과 안 맞을 수 있어, saveRec 계열과 동일하게 병합 직후에도 정리한다(스케줄·skip/edits/confirmedDates가 그대로면 0건 정리) */
- /* mergeCollection()이 바로 아래서 DB.assets/DB.goals를 병합해버리면 어느 쪽이 버려졌는지 더는 알 수
-  * 없으므로, 병합 '전'(local/remote 원본이 아직 살아있을 때) mergeCollectionConflicts()로 몇 건이
-  * 소실될지 먼저 세어 DB.settings.mergeDataLossCount에 누적한다 — 문서 단위 push-time conflict는
-  * CLOUD_SYNC_STATE='conflict'로 지속 경고되지만, 이 레코드 단위 merge-time 손실은 병합이 "성공"한
-  * 뒤 벌어져 지금까지 CLOUD_SYNC_STATE가 그대로 'ok'로 남아 아무 신호가 없었다(app-evolve cycle211
-  * critique). mergeRecurrences는 skip/edits/confirmedDates를 합집합으로 보존해 이 클래스를 이미
-  * 피해가므로 대상에서 제외 — assets/goals만 whole-record 승자독식이라 대상이 된다. */
- const _mergeDataLossN=mergeCollectionConflicts(DB.assets,remoteData.assets).length+mergeCollectionConflicts(DB.goals,remoteData.goals).length;
- if(_mergeDataLossN>0){DB.settings=DB.settings||{};DB.settings.mergeDataLossCount=(DB.settings.mergeDataLossCount||0)+_mergeDataLossN;}
  DB.assets=mergeCollection(DB.assets,remoteData.assets,DB.deletedIds,remoteData.deletedIds);
  DB.goals=mergeCollection(DB.goals,remoteData.goals,DB.deletedIds,remoteData.deletedIds); /* app-evolve cycle123: 신설(cycle122) 당시 여기 누락돼 두 기기가 오프라인에서 각자 목표를 고치면 한쪽이 조용히 소실/복원되던 버그 */
  DB.inquiries=mergeCollection(DB.inquiries,remoteData.inquiries,DB.deletedIds,remoteData.deletedIds); /* app-evolve cycle133: goals와 동일한 누락 — 문의 메모에 id/updatedAt이 없을 때부터 여기서 전혀 병합되지 않고 있었음 */
