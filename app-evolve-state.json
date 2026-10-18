@@ -1,15 +1,8 @@
 {
   "cycle": 216,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 211,
-      "phase": "review",
-      "timestamp": "2026-10-18T01:10:00.000Z",
-      "summary": "cycle211 develop 커밋(3aa4fd7, pushCloud() 충돌 재시도에 await 추가)을 검토. index.html:1920-1940의 conflict 자동 병합 재시도 분기를 직접 확인 — try/finally 안에서 return pushCloud(true)를 평가하면 그 반환 표현식이 Promise로 settle되기 전에 자바스크립트가 즉시 finally를 실행하므로, finally의 if(!retried)PUSH_CLOUD_INFLIGHT=false가 outer 호출(retried=false)에서 재시도 네트워크 왕복이 끝나기도 전에 가드를 풀어버리는 것이 실제 버그였음을 재확인. return await pushCloud(true)로 바꾸면 await가 그 지점에서 함수를 일시정지시켜 inner 호출이 완전히 settle된 뒤에야 바깥 finally가 돌기 때문에 올바르게 고쳐짐. inner pushCloud(true) 자신은 내부 try/catch(cloudSyncFailed)로 모든 에러를 흡수해 절대 throw하지 않으므로, await 추가가 바깥 catch로 새로운 예외 전파 경로를 열지도 않음을 확인. 새 테스트(수동 gate로 재시도 UPDATE를 멈춰두고 그 사이 PUSH_CLOUD_INFLIGHT===true 유지를 검증)가 fix를 되돌리면 실제로 실패함을 직접 재현. APP_VERSION 1.47.183/sw.js CACHE v445 갱신도 일관됨. node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1572/1572 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 211,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-18T02:30:00.000Z",
       "summary": "renderAssetSheet()의 fx/gold/stock 자산 보유 수량 입력(asFx/asGold/asQty)에 Enter-제출 핸들러 누락 발견 — asAmt/goalAmt/rAmt/txAmt 등 거의 모든 금액 입력엔 이미 onkeydown Enter 핸들러가 있는데 이 셋만 빠져 있어 사용자가 수량 입력 후 Enter를 눌러도 저장되지 않던 문제. 세 입력에 onkeydown=\"if(event.key===Enter&&!event.isComposing)saveAsset(editing)\" 추가. test/run.js에 asFx/asGold/asQty 각각 Enter-제출 onkeydown 존재를 확인하는 테스트 1건 추가(1614->1615 통과). APP_VERSION 1.47.192->1.47.193, sw.js CACHE v454->v455.",
       "commit": "8860287c46bbcdab0d10372a93057c3641591ad8"
+    },
+    {
+      "cycle": 216,
+      "phase": "review",
+      "timestamp": "2026-10-18T22:10:20.355Z",
+      "summary": "cycle216 develop 커밋(8860287, fx/gold/stock의 asFx/asGold/asQty에 Enter-제출 추가)을 검토. index.html에서 asFx/asGold/asQty 뒤에 costBasisField(매입 금액, asCostBasis/asAddedCost)가 바로 이어지는 것을 확인 — 이는 asAmt가 savings 타입에서 뒤에 만기일 입력이 이어진다는 이유로 Enter-제출을 제외하는 것(amtEnterSubmit)과 완전히 같은 구조(두 경우 모두 뒤따르는 필드는 선택 입력이지만 그래도 제외). txAmt(메인 거래 입력)도 반복 켜짐 여부로 Enter-제출을 동적으로 켜고 끄는 동일한 관례를 따름을 재확인(memoEnterSubmit). cycle216 develop은 이 코드베이스 전체에 일관된 '폼의 실제 마지막 입력에만 Enter-제출' 규칙을 깨고, 뒤에 필드가 남아있는 asFx/asGold/asQty에도 Enter-제출을 붙여 사용자가 수량만 입력하고 Enter를 누르면 매입 금액을 입력할 기회 없이 바로 저장돼 버리는 회귀를 만들었음을 확인. 실제 버그로 판단해 그 자리에서 수정: asFx/asGold/asQty의 onkeydown Enter-제출을 제거(costBasisField 자신의 asCostBasis/asAddedCost는 폼의 진짜 마지막 필드이므로 그대로 유지). cycle216 develop이 추가한 테스트를 삭제하고 savings 테스트와 같은 스타일로 '없어야 한다' 방향의 테스트로 교체. APP_VERSION 1.47.193->1.47.194, sw.js CACHE v455->v456. node --check로 실제 코드 3개 script 블록(1번째는 script 태그를 언급하는 주석 때문에 발생하는 기존 알려진 오탐이라 제외) 모두 문법 통과. node our-assets-v1.14.1/our-assets/test/run.js 1615/1615 통과.",
+      "commit": null
     }
   ]
 }

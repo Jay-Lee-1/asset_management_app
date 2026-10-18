@@ -1392,7 +1392,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.193';
+const APP_VERSION='1.47.194';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3878,27 +3878,21 @@ function renderAssetSheet(editing){
      <div class="pav a-save">${svg('piggy')}</div><div class="pbody"><div class="pn">${d.maturityDate?fmtDateFull(d.maturityDate):'만기일 선택'}</div></div><div class="pc">${d.maturityDate?`<button type="button" class="fc-x" style="display:inline-flex;position:static;transform:none" aria-label="만기일 지우기" onclick="event.stopPropagation();asDraft.maturityDate='';renderAssetSheet(${editing})" onkeydown="event.stopPropagation()">✕</button>`:svg('chev')}</div></div>
      <input id="asMat" type="hidden" value="${d.maturityDate||''}"></div>
      <div class="field"><label>만기 시 이체할 통장</label>${assetPickBtn(d.maturityTargetId,'asOpenMat()')}</div>`;
- /* fx/gold/stock의 asFx/asGold/asQty(보유 수량)는 cash/savings/etc의 asAmt(amtEnterSubmit)·goalAmt·rAmt 등
-  * 이 앱 거의 모든 금액/수량 입력 필드가 지키는 'Enter로 저장' 관례가 빠져 있었다 — 그 뒤에 이어지는
-  * costBasisField(매입 금액)는 선택 입력이라 비워두는 사용자가 많은데, 그 경우 수량만 입력하고 Enter를
-  * 눌러도 아무 반응이 없어 반드시 저장 버튼을 눌러야 했다(app-evolve cycle216 develop). 세 필드 모두
-  * saveAsset()을 바로 호출해도 안전 — saveAsset이 라인 3912~3915에서 자체적으로 빈 값/0 입력을
-  * 막고 토스트로 안내한다. */
  }else if(d.type==='fx'){
    const curInfo=CURRENCY_LIST.find(x=>x.code===d.currency)||{code:d.currency,label:d.currency};
    fields=nameField+`<div class="field"><label>통화</label><button class="pick" onclick="asOpenCur()"><div class="pav a-fx">${svg('fx')}</div><div class="pbody"><div class="pn">${esc(curInfo.code)}</div><div class="psub">${esc(curInfo.label)}</div></div><div class="pc">${svg('chevR')}</div></button></div>
-     <div class="field"><label for="asFx">보유 수량</label><div class="with-unit"><div class="field-clear"><input id="asFx" class="num" inputmode="decimal" value="${d.fxAmount||''}" placeholder="0" oninput="fmtQty(this);qtyBasisWarn(this)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveAsset(${editing})"><button type="button" class="fc-x" aria-label="보유 수량 지우기" onclick="clrInput('asFx')">✕</button></div><span class="unit">${d.currency}</span></div></div>
+     <div class="field"><label for="asFx">보유 수량</label><div class="with-unit"><div class="field-clear"><input id="asFx" class="num" inputmode="decimal" value="${d.fxAmount||''}" placeholder="0" oninput="fmtQty(this);qtyBasisWarn(this)"><button type="button" class="fc-x" aria-label="보유 수량 지우기" onclick="clrInput('asFx')">✕</button></div><span class="unit">${d.currency}</span></div></div>
      <p style="font-size:12.5px;color:var(--text-2);margin:-4px 0 14px">현재 환율 ${comma(DB.rates.fx[d.currency]||0)}원 기준으로 원화 평가액이 자동 계산돼요.</p>
      ${costBasisField(d,editing)}`;
  }else if(d.type==='gold'){
-   fields=nameField+`<div class="field"><label for="asGold">보유 수량</label><div class="with-unit"><div class="field-clear"><input id="asGold" class="num" inputmode="decimal" value="${d.goldDon||''}" placeholder="0" oninput="fmtQty(this);qtyBasisWarn(this)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveAsset(${editing})"><button type="button" class="fc-x" aria-label="보유 수량 지우기" onclick="clrInput('asGold')">✕</button></div><span class="unit">돈</span></div></div>
+   fields=nameField+`<div class="field"><label for="asGold">보유 수량</label><div class="with-unit"><div class="field-clear"><input id="asGold" class="num" inputmode="decimal" value="${d.goldDon||''}" placeholder="0" oninput="fmtQty(this);qtyBasisWarn(this)"><button type="button" class="fc-x" aria-label="보유 수량 지우기" onclick="clrInput('asGold')">✕</button></div><span class="unit">돈</span></div></div>
      <p style="font-size:12.5px;color:var(--text-2);margin:-4px 0 14px">금 시세 ${comma(DB.rates.goldPerG)}원/g × 3.75g 기준으로 자동 계산돼요.</p>
      ${costBasisField(d,editing)}`;
  }else if(d.type==='stock'){
    fields=`<div class="field"><label for="asName">종목명</label><div class="field-clear"><input id="asName" value="${esc(d.name||'')}" placeholder="예: 삼성전자"><button type="button" class="fc-x" aria-label="종목명 지우기" onclick="clrInput('asName')">✕</button></div></div>
      <div class="field"><label for="asCode">종목코드</label><div class="field-clear"><input id="asCode" value="${esc(d.stockCode||'')}" placeholder="국내 005930 · 해외 AAPL" autocapitalize="characters" oninput="this.value=this.value.toUpperCase()"><button type="button" class="fc-x" aria-label="종목코드 지우기" onclick="clrInput('asCode')">✕</button></div>
       <p style="font-size:12px;color:var(--text-3);margin-top:6px">국내는 6자리 숫자, 해외는 티커(AAPL·TSLA·NVDA)를 넣어주세요. 해외는 원화로 환산돼요.</p></div>
-     <div class="field"><label for="asQty">보유 주식 수</label><div class="with-unit"><div class="field-clear"><input id="asQty" class="num" inputmode="decimal" value="${d.stockQty||''}" placeholder="0" oninput="fmtQty(this);qtyBasisWarn(this)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveAsset(${editing})"><button type="button" class="fc-x" aria-label="보유 주식 수 지우기" onclick="clrInput('asQty')">✕</button></div><span class="unit">주</span></div></div>
+     <div class="field"><label for="asQty">보유 주식 수</label><div class="with-unit"><div class="field-clear"><input id="asQty" class="num" inputmode="decimal" value="${d.stockQty||''}" placeholder="0" oninput="fmtQty(this);qtyBasisWarn(this)"><button type="button" class="fc-x" aria-label="보유 주식 수 지우기" onclick="clrInput('asQty')">✕</button></div><span class="unit">주</span></div></div>
      <p style="font-size:12.5px;color:var(--text-2);margin:-4px 0 14px">평가액 = 현재가 × 보유수량 (현재가는 시세 연동 관리에서 입력).</p>
      ${costBasisField(d,editing)}`;
  }
