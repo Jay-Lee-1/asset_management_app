@@ -1,15 +1,8 @@
 {
   "cycle": 213,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 207,
-      "phase": "advance",
-      "timestamp": "2026-10-17T10:17:44.824Z",
-      "summary": "critique(cycle207) 계획대로 closeSheet()의 암묵적 닫기 경로(scrim click 리스너 6950행, 스와이프다운 닫기 완료 지점 wireSheetGestures의 endClose 6889행, ovHistPop/popstate 뒤로가기 핸들러 closeTopOverlayLevel 6806행)만 closeSheetGuarded()로 바꿔 범위를 좁게 유지했다(명시적 저장/취소 버튼과 confirmSheet/피커 등 초안 없는 나머지 호출부는 그대로 closeSheet() 사용). snapDraft(kind)를 txDraft/asDraft/goalDraft/recDraft 8개 생성 지점(openTxSheet/editTx/duplicateTx/recApply, openAssetSheet, openGoalForm, openRecSheet/editRec) 바로 뒤에 추가해 시트 오픈 시점 스냅샷(_draftSnap={kind,json})을 찍고, isDraftDirty()가 해당 종류의 sync 함수(syncTxInputs/syncAssetInputs/syncGoalInputs/syncRecInputs)를 먼저 호출해 아직 반영 전인 DOM 입력값까지 flush한 뒤 스냅샷과 비교한다(이 순서가 핵심 — 안 그러면 막 타이핑한 값이 dirty로 안 잡힘). closeSheetGuarded(viaPopstate)는 clean이면 바로 closeSheet(), dirty면 \"변경사항을 버릴까요? 계속 편집/버리기\" 확인 시트를 띄우고(_sheetGuardSnapshot에 현재 폼 HTML 보관) \"계속 편집\"은 _sheetGuardCancel()으로 그 HTML을 그대로 복원, \"버리기\"는 closeSheet()를 호출한다. viaPopstate===true(실제 뒤로가기/popstate가 이미 history.back()으로 entry 하나를 소비한 뒤 호출된 경우)면 ovHistPush()로 그 entry를 먼저 복구해두고, \"버리기\"를 누르면 closeSheet() 내부의 ovHistPop()이 복구된 entry를 다시 소비해 최종적으로 정확히 한 번만 뒤로가기가 일어나게 한다(\"계속 편집\"이면 복구된 상태 그대로 유지). closeSheet() 자신도 _draftSnap=null로 비워 다음 시트에 이전 스냅샷이 새어나가지 않게 했다. test/run.js에 7건 추가: isDraftDirty가 tx/as/goal/rec 각각 snapDraft 직후 clean이고 DOM 입력(아직 sync 전)도 sync를 거쳐 dirty로 잡히는지(3건, 그중 하나는 스냅샷 없음/draft 없음일 때 항상 false인 경계 케이스), closeSheetGuarded가 clean/dirty/viaPopstate 분기를 올바로 타는지(1건), _sheetGuardCancel이 폼을 그대로 복원하고 closeSheet를 안 부르는지(1건), 세 암묵적 닫기 경로와 closeSheet()의 _draftSnap 클리어가 실제로 와이어링돼 있는지 소스 패턴으로(1건). 기존 openGoalForm/openAssetSheet/duplicateTx 공유 sandbox 테스트가 새 snapDraft 호출로 ReferenceError가 나길래 closeSheet/syncTxInputs와 같은 이유로 no-op 스텁(snapDraft)을 하나 추가해 고쳤다. index.html/sw.js 변경이라 APP_VERSION 1.47.177->1.47.178, sw.js CACHE v439->v440 갱신. node our-assets-v1.14.1/our-assets/test/run.js 1545/1545 -> 1551/1551 통과(새 7건 포함, 기존 1538건 전부 그대로).",
-      "commit": null
-    },
     {
       "cycle": 208,
       "phase": "develop",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-18T08:10:00.000Z",
       "summary": "Explore 서브에이전트로 develop 후보를 탐색(cycle149-212에서 다룬 toast/invalidateBalances fromDate/closeSheetGuarded/aria-label/XSS/실행형 테스트 전환류/split거래/pushCloud await/mergeCollection 기반 mergeDataLoss 경고(assets/goals/txns/inquiries/assetQtyLog)/dismissedStaleMvIds 가지치기(보류)/CDN SRI(기각)/budgetCarryFor 무제한증가(보류)/kakaoLogin 게스트 병합 안내 전부 제외). nextOutflowCard()(index.html:7629-7660, 홈 \"다음에 나갈 큰돈\" 카드)가 앱의 다른 모든 거래 표시 경로(openConfirmTransfer/txRowCore/planRowsHTML 등)와 달리 assetNm(id,snap) fallback 없이 DB.assets.find로 직접 자산을 찾아, 연결된 자산이 삭제되면 (1) 계좌명이 조용히 사라지고 (2) bal===null이라 short가 항상 0이 돼 잔액을 알 수 없는데도 \"여유 있어요\"라고 단정해버리는 버그를 발견 — 미래 지출 거래가 있는 자산을 삭제하면(delAsset/deleteAssetsUndo는 미래 거래를 지우지 않고 snapshotAssetName()으로 이름만 남김) 바로 재현됨. acctNm=assetNm(t.fromAssetId,t.fromAssetName)로 이름 표시를 바꾸고, acctGone=!acct&&acctNm!==\"—\"일 때 footer가 \"여유 있어요\" 대신 \"연결된 통장이 삭제됐어요\"를 보여주도록 수정. test/run.js에 실행형 회귀 테스트 2건 추가(자산 삭제 시 스냅샷 이름 표시+단정 금지 확인, 자산이 살아있을 때 기존 동작 유지 확인) — fix 되돌리면 전자가 실패함을 git stash로 별도 확인. node --check(메인 스크립트 블록)와 전체 회귀 테스트(1592/1592) 통과 후 APP_VERSION 1.47.186->1.47.187, sw.js CACHE v448->v449.",
+      "commit": null
+    },
+    {
+      "cycle": 213,
+      "phase": "review",
+      "timestamp": "2026-10-18T09:05:00.000Z",
+      "summary": "cycle213 develop 커밋(fe8ed22, nextOutflowCard()가 삭제된 자산을 assetNm() 스냅샷으로 표시하고 잔액을 단정하지 않게 수정)을 검토. assetNm(id,snap)(index.html:1631)의 계약(a=DB.assets.find(x=>x.id===id); a?a.name:(snap||'—'))을 재확인하고, acctNm=assetNm(t.fromAssetId,t.fromAssetName)/acctGone=!acct&&acctNm!=='—' 조합이 세 경우를 정확히 분기함을 직접 추적 — (1) 자산이 살아있으면 acct truthy라 acctGone=false, 기존처럼 실제 잔액/good 표시(변경 없음, 회귀 테스트로 확인됨), (2) 자산이 삭제됐고 snapshotAssetName()(3603행, delAsset/assetDelSel 경로가 항상 호출)이 fromAssetName을 남겼으면 acctGone=true로 중립 '연결된 통장이 삭제됐어요' 표시, (3) fromAssetId가 애초에 비정상 상태(자산도 없고 스냅샷도 없음, 정상 delAsset 경로로는 도달 불가)면 acctNm==='—'라 acctGone=false로 떨어져 기존처럼 '여유 있어요·0원'을 보여주는데, 이는 이미 다른 모든 assetNm() 호출부(4160/5141/7472행 등)가 공유하는 동일한 fallback 한계이지 이번 변경이 새로 만든 구멍이 아님을 확인(재선정 안 함). short가 0인 채로 acctGone이면 nc-fix 버튼도 그대로 숨겨짐(잔액을 모르니 openFixShortfall을 띄울 근거가 없음) — 의도된 동작. 새 테스트 2건(삭제됨→스냅샷 이름+단정 안 함, 생존→기존 동작 유지)이 로직과 정확히 일치. node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1592/1592 통과. APP_VERSION 1.47.187/sw.js CACHE v449 갱신도 일관됨. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
       "commit": null
     }
   ]
