@@ -1,15 +1,12 @@
 {
   "cycle": 212,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "kakaoLogin() 성공 콜백에 게스트 데이터 병합 안내 추가",
+    "why": "doLogin()(index.html:8654-8669)과 doSignup()(8670-8690)은 로그인/가입 직후 dbIsEmpty(DB)&&guestHasData()면 confirmSheet('데이터 가져오기',...)로 게스트 데이터 가져오기를 제안하고, 그마저 아니면 최소한 '게스트로 입력한 데이터는 이 계정에 합쳐지지 않았어요' 토스트로 명시적으로 알린다. 반면 kakaoLogin()(8633-8645)의 success 콜백은 AUTH.kakaoUpsert→AUTH.setSession(id)→startApp()→성공 토스트만 띄우고 끝난다. dataKey()(1786행)는 SESSION(여기선 'kakao:'+res.id) 기준으로 완전히 새 로컬 키('asset_app_db_v3__kakao:...')를 쓰고 카카오 로그인은 afterCloudAuth()(Supabase 클라우드 머지)를 전혀 거치지 않으므로, 게스트로 실제 자산/거래를 입력해 쓰던 사용자가 카카오로 로그인하면 화면이 빈 데이터로 바뀌는데도 아무 설명이 없다 — 데이터는 localStorage의 'asset_app_db_v3__guest' 키에 그대로 남아 복구 가능하지만 사용자는 그 사실을 알 길이 없어 '내 데이터가 사라졌다'로 인지하는 신뢰 붕괴형 버그다. 이 앱 역사상 반복된 '한쪽 로그인/가입 경로에만 있던 안전장치가 다른 경로엔 빠짐' 버그 클래스(mergeDataLoss 경고가 txns/goals에만 있다가 inquiries/assetQtyLog까지 확장된 cycle212와 같은 유형)와 본질적으로 같다.",
+    "approach": "kakaoLogin()의 success 콜백(8641행)에서 AUTH.kakaoUpsert(id,nick);GUEST=false;localStorage.setItem('asset_app_guest','0');AUTH.setSession(id);startApp(); 다음에, doLogin()이 쓰는 것과 동일한 패턴을 그대로 적용한다: const guestRaw=localStorage.getItem('asset_app_db_v3__guest'); if(dbIsEmpty(DB)&&guestHasData()) confirmSheet('데이터 가져오기','방금까지 게스트로 입력한 자산·내역이 있어요. 이 계정으로 가져올까요?','가져오기',()=>{...DB=JSON.parse(guestRaw);migrate();save();renderCurrent();toast('데이터를 가져왔어요')...}); else if(!dbIsEmpty(DB)&&guestHasData()) toast('카카오 로그인 완료 · '+nick+' · 게스트로 입력한 데이터는 이 계정에 합쳐지지 않았어요'); else toast('카카오 로그인 완료 · '+nick) — 기존 '카카오 로그인 완료 · '+nick 토스트는 else 분기로 흡수. 카카오 경로는 afterCloudAuth()/cloudAuthResult.status==='guestMerged' 분기가 없으므로 doLogin()의 그 부분만 제외하고 나머지는 동일 패턴. test/run.js에는 kakaoLogin success 콜백을 직접 실행하긴 어려우므로(window.Kakao 모킹 필요), 소스 패턴 검증(guestHasData/dbIsEmpty/confirmSheet 호출이 kakaoLogin 블록 안에 존재하는지, doLogin과 동일한 안내 토스트 문구를 쓰는지)으로 커버하거나, 가능하면 Kakao.Auth.login/Kakao.API.request를 스텁해 success 콜백 로직만 분리 실행하는 작은 헬퍼 테스트를 추가한다. index.html/sw.js 변경이라 APP_VERSION/CACHE 버전 갱신 필요."
+  },
   "history": [
-    {
-      "cycle": 201,
-      "phase": "develop",
-      "timestamp": "2026-10-16T06:05:00.000Z",
-      "summary": "Explore 서브에이전트로 develop 후보를 탐색 — CSV 가져오기 미리보기(buildImportPreview, index.html:6078)가 기존 거래의 중복 판정 키를 top-level t.category/t.amount로만 만들어, 분할 거래(t.splits, cycle198에서 추가)를 다시 가져오면 매칭이 전부 실패하는 버그 발견. txnsToCSV(index.html:6014)는 이미 cycle198부터 분할 거래를 항목별로 한 행씩(각 행이 split의 category/amount) 내보내는데, buildImportPreview의 existingCounts는 분할 전 top-level 값(합계/대표 카테고리) 하나로만 키를 만들어 실제로 내보낸 어떤 행과도 안 맞음 — 내 백업 CSV를 그대로 재가져오면 분할 거래의 모든 행이 dup:false로 잘못 표시돼 분할 거래가 일반 거래 여러 건으로 쪼개져 중복 생성된다(cycle200의 sanitizeBackup 분할 미검증 공백과 같은 버그 클래스, 반대 방향: 그때는 복원 시 검증 누락, 이번엔 재가져오기 시 중복판정 누락). buildImportPreview의 existingCounts 생성부를 splitLines(t)로 순회해 각 분할 항목의 category/amount/memo(없으면 t.memo로 fallback, txnsToCSV의 s.memo||t.memo와 동일)로 키를 만들도록 수정(csvDedupeKey 자체는 그대로, 호출부에서 분할 항목마다 한 번씩 호출). 비분할 거래는 splitLines가 [{category:t.category,amount:t.amount,memo:t.memo}] 하나짜리 fallback을 주므로 기존 동작과 동일. test/run.js에 기존 'doExport 왕복→전부 중복' 테스트 바로 옆에 분할 거래 버전 1건 추가(3000/2000으로 분할된 5000원 거래를 내보내고 재가져오기 하면 2행 모두 dupCount로 잡히는지 확인). index.html/sw.js 변경이라 APP_VERSION 1.47.166->1.47.167, sw.js CACHE v428->v429 갱신. node our-assets-v1.14.1/our-assets/test/run.js 1500/1500 -> 1501/1501 통과.",
-      "commit": null
-    },
     {
       "cycle": 207,
       "phase": "review",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-18T05:05:00.000Z",
       "summary": "cycle212 develop 커밋(7c117eb, mergeDataLoss 경고를 txns/inquiries/assetQtyLog까지 확장)을 검토. mergeRemoteDataIntoLocal()(index.html:1526-1548) 전문을 다시 읽어 whole-record LWW인 mergeCollection()으로 병합되는 다섯 컬렉션(txns/assets/goals/inquiries/assetQtyLog)이 전부 mergeCollectionConflicts 집계 대상에 포함됐고, skip/edits/confirmedDates를 합집합으로 보존해 이 손실 클래스를 이미 피해가는 mergeRecurrences는 여전히 제외돼 있음을 확인. mergeDataLossN 집계 블록이 다섯 mergeCollection() 호출 '모두'보다 앞에 위치해 local/remote 원본이 비교 시점에 아직 변형되지 않았음을 재확인(순서 변경이 집계 대상 확장과 함께 일어났지만 병합 자체의 실행 순서는 바뀌지 않음). 새 테스트 2건(txns 단독 충돌, inquiries+assetQtyLog 합산)도 로직과 정확히 일치하고 fix 되돌리면 실패함을 별도로 확인하지 않았으나 패턴이 cycle211의 검증된 assets/goals 테스트와 동일. HTML 주석 제거 후 <script> 블록 4개(실측, 커밋 메시지의 '5개'는 오기로 보임 — 중요하지 않은 기록상 차이) + logic.js 모두 node --check 통과. node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1587/1587 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 212,
+      "phase": "critique",
+      "timestamp": "2026-10-18T06:15:08.322Z",
+      "summary": "Explore 서브에이전트로 앱 전반을 아키텍처/UX/데이터손실/보안 관점에서 훑었다(cycle149-212에서 다룬 toast/invalidateBalances fromDate/closeSheetGuarded/aria-label/XSS/실행형 테스트 전환류(openSheet·wireSheetGestures·ensureEdgeGesture·togglePwVis·wireWhHead)/split거래 dedupe/pushCloud await 버그/mergeCollection 기반 mergeDataLoss 경고(assets·goals·txns·inquiries·assetQtyLog 다섯 컬렉션 완료, mergeRecurrences는 범주 밖)/dismissedStaleMvIds 가지치기(보류 유지)/CDN SRI(환경 제약으로 기각 유지)/budgetCarryFor 등 무제한증가류(보류 유지) 전부 제외). AUTH/APPLOCK(PBKDF2+salt+지수백오프), save()의 Web Locks 기반 멀티탭 머지, CSV formula-injection 가드 등은 이미 견고해 재선정 대상이 거의 없었음을 확인한 뒤 두 후보로 수렴: (1) kakaoLogin()(index.html:8633-8645) 성공 콜백이 doLogin()/doSignup()(8654-8690)과 달리 dbIsEmpty(DB)&&guestHasData() 체크나 \"게스트 데이터는 합쳐지지 않았어요\" 안내가 전혀 없어, 게스트로 실제 데이터를 쓰던 사용자가 카카오 로그인을 누르면 설명 없이 빈 화면으로 바뀌는 데이터손실형 신뢰 붕괴 버그(데이터 자체는 asset_app_db_v3__guest 키에 살아있어 복구 가능하지만 사용자는 알 수 없음), (2) #histQ(index.html:4844) 전체내역 검색 입력에 디바운스가 없어 DB.txns가 커지면 키 입력마다 allTxns+matchTxnQuery+renderHistory 전체 재계산/재렌더가 걸리는 성능 문제(wireNwCarousel의 clearTimeout/setTimeout 디바운스 관례가 검색엔 빠진 비일관성). (1)을 최종 추천: 범주가 \"복구 가능한 손실\"과 \"사용자가 인지하는 손실\"의 간극이 가장 큰 신뢰 붕괴형 버그이고, doLogin()에 이미 있는 패턴을 그대로 옮기면 되는 좁고 명확한 수정 범위이며, 이 앱이 반복적으로 발견·수정해온 \"한쪽 로그인 경로에만 있던 안전장치가 다른 경로엔 빠짐\" 버그 클래스와 같아 발견 신뢰도가 높다. (2)는 다음 cycle 이후 후보로 보류. kakaoLogin() success 콜백에 doLogin() 패턴(confirmSheet 가져오기 제안 + 미병합 안내 토스트)을 적용하는 계획을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
       "commit": null
     }
   ]
