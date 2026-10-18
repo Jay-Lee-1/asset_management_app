@@ -205,7 +205,7 @@ const FUNCTIONS = [
   'txScheduled', 'monthStats', 'monthStats2', 'expenseByCat', 'needGold', 'inQuietWindow', 'fmtSynced', 'rateStatusText',
   'nextBigOutflow', 'dday', 'balanceOn', 'nextOutflowCard', 'monthOutflowCard', 'planGaugeCard', 'homeAlertCard', 'renderHome',
   'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwPresetSegHTML', 'nwHistoryCard', 'allocationCard', 'doRenameOwner', 'addOwner', 'ownerChipClass',
-  'goalOwnerEff', 'goalHasUnknown', 'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'syncGoalInputs', 'goalClearDate', 'goalOwnerSel', 'renderGoalForm', 'openGoalForm', 'saveGoal', 'delGoal',
+  'goalOwnerEff', 'goalHasUnknown', 'goalLinkedAssetGone', 'goalHistoryFor', 'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'syncGoalInputs', 'goalClearDate', 'goalOwnerSel', 'goalTypeSel', 'goalOpenAsset', 'renderGoalForm', 'openGoalForm', 'saveGoal', 'delGoal',
   'openInquiry', 'sendInquiry', 'openInquiryList', 'delInquiry',
   'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetToggleSel', 'visibleAssetsForSel', 'assetSelAll', 'activeSel',
   'modeSeg', 'monthNav', 'abbr', 'calCellsFor', 'ledSumInner', 'ledSumBox', 'ledSumTap', 'calPane', 'txRowCore', 'txRow', 'dayTxns',
@@ -3485,6 +3485,96 @@ test('saveGoal: 저장 시 goalDraft.owner를 그대로 담고, 지정하지 않
   sandbox.saveGoal(false);
   assert.strictEqual(sandbox.DB.goals[0].owner, 'all', 'owner를 지정하지 않으면 전체(가구 공동)로 저장돼야 함');
 });
+
+/* ---------- 목표(Goals)에 'asset' 유형 추가 — 순자산 전체가 아니라 특정 자산 하나의 잔액을 목표로 추적
+ * (app-evolve cycle213 critique가 지적한 문제: 특정 저축 계좌에 목표 금액을 다 모아도 다른 부채/자산이
+ * 움직이면 순자산 기준 goalProgress가 '이미 달성'을 못 알아보던 설계적 공백 — cycle214 advance) ---------- */
+test('saveGoal: type:"asset"인데 linkedAssetId가 없으면 저장하지 않고 안내 토스트만 띄운다', () => {
+  sandbox.DB = { assets: [], goals: [] };
+  sandbox.goalDraft = { id: 'test-uid', name: '', type: 'asset', linkedAssetId: null, targetAmount: 0, targetDate: null };
+  sandbox.goalNameValue = '비상금';
+  sandbox.goalAmtValue = '1,000,000';
+  sandbox.lastToast = null;
+  sandbox.saveGoal(false);
+  assert.strictEqual(sandbox.DB.goals.length, 0);
+  assert.ok(sandbox.lastToast && sandbox.lastToast.includes('연결할 자산'), '연결할 자산을 선택해 달라는 안내가 떠야 함');
+});
+test('saveGoal: type:"asset"으로 저장하면 linkedAssetId를 그대로 담고, owner는 사용자가 고른 값과 무관하게 연결 자산의 owner로 맞춘다', () => {
+  sandbox.DB = { owners: ['나', '배우자'], assets: [{ id: 'a1', type: 'savings', owner: '배우자' }], goals: [] };
+  sandbox.goalDraft = { id: 'test-uid', name: '', type: 'asset', linkedAssetId: 'a1', owner: '나', targetAmount: 0, targetDate: null };
+  sandbox.goalNameValue = '비상금';
+  sandbox.goalAmtValue = '1,000,000';
+  sandbox.saveGoal(false);
+  assert.strictEqual(sandbox.DB.goals[0].type, 'asset');
+  assert.strictEqual(sandbox.DB.goals[0].linkedAssetId, 'a1');
+  assert.strictEqual(sandbox.DB.goals[0].owner, '배우자', '목표의 귀속은 연결 자산의 귀속을 따라야 goalOwnerEff/캐러셀 필터가 일관됨');
+});
+test('saveGoal: type:"networth"로 저장하면 linkedAssetId는 항상 null로 떨어진다(이전에 asset형으로 고른 값이 남아있어도)', () => {
+  sandbox.DB = { owners: ['나'], assets: [{ id: 'a1', type: 'savings', owner: '나' }], goals: [] };
+  sandbox.goalDraft = { id: 'test-uid', name: '', type: 'networth', linkedAssetId: 'a1', owner: '나', targetAmount: 0, targetDate: null };
+  sandbox.goalNameValue = '순자산 목표';
+  sandbox.goalAmtValue = '1,000,000';
+  sandbox.saveGoal(false);
+  assert.strictEqual(sandbox.DB.goals[0].type, 'networth');
+  assert.strictEqual(sandbox.DB.goals[0].linkedAssetId, null);
+});
+test('goalHistoryFor/goalLinkedAssetGone: asset형 목표는 연결된 자산 하나의 잔액 추이(assetBalanceSeries)를 쓰고, networth형은 그대로 nwHistoryForOwner를 쓴다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.DB = {
+    owners: ['나'],
+    assets: [{ id: 'a1', type: 'cash', owner: '나', baseAmount: 100000 }],
+    txns: [{ id: 't1', date: sandbox.addDays('2026-06-15', -10), type: 'income', toAssetId: 'a1', amount: 50000 }],
+    recurrences: [],
+    settings: { confirmTransfers: false },
+    nwHistory: [{ date: '2026-06-15', nw: 999999999 }], // networth형이 안 쓰는지 구분하려고 일부러 다른 값
+    goals: [],
+  };
+  const assetGoal = { id: 'g1', type: 'asset', linkedAssetId: 'a1', targetAmount: 200000 };
+  const hist = sandbox.goalHistoryFor(assetGoal);
+  assert.strictEqual(hist[hist.length - 1].nw, 150000, '연결 자산의 baseAmount(100000)+입금(50000)=150000이어야 하고, nwHistory 값과 달라야 함');
+  assert.strictEqual(sandbox.goalLinkedAssetGone(assetGoal), false);
+
+  const goneGoal = { id: 'g2', type: 'asset', linkedAssetId: 'no-such-asset', targetAmount: 200000 };
+  assert.strictEqual(sandbox.goalHistoryFor(goneGoal).length, 0, '연결 자산이 사라졌으면 추측하지 않고 빈 이력을 돌려줘야 함');
+  assert.strictEqual(sandbox.goalLinkedAssetGone(goneGoal), true);
+
+  const nwGoal = { id: 'g3', type: 'networth', owner: 'all' };
+  assert.deepStrictEqual(sandbox.goalHistoryFor(nwGoal), sandbox.DB.nwHistory, 'networth형은 변함없이 nwHistoryForOwner(owner=all) 결과여야 함');
+});
+test('goalRowHTML/openGoalsList: asset형 목표는 연결 자산의 잔액을 기준으로 진행률을 계산하고, 연결 자산이 삭제되면 "연결된 자산이 삭제됐어요" 캡션이 붙으며 cur를 추측하지 않고 0으로 중립 처리한다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.DB = {
+    owners: ['나'],
+    assets: [{ id: 'a1', type: 'savings', owner: '나', baseAmount: 100000, includeInTotal: true }],
+    txns: [],
+    recurrences: [],
+    settings: { confirmTransfers: false },
+    nwHistory: [],
+    goals: [],
+  };
+  const g = { id: 'g1', name: '비상금', type: 'asset', linkedAssetId: 'a1', targetAmount: 200000, owner: '나' };
+  sandbox.DB.goals.push(g);
+  let html = sandbox.goalRowHTML(g);
+  assert.ok(html.includes('목표 진행률 50%'), 'baseAmount 100000/target 200000 = 50%여야 함');
+  assert.ok(!html.includes('연결된 자산이 삭제됐어요'));
+
+  sandbox.DB.assets = []; // 자산이 삭제됨
+  html = sandbox.goalRowHTML(g);
+  assert.ok(html.includes('연결된 자산이 삭제됐어요'), '자산이 사라지면 중립 안내 캡션이 붙어야 함');
+  assert.ok(html.includes('목표 진행률 0%'), '자산이 사라지면 cur를 추측하지 않고 0%로 중립 처리해야 함');
+
+  sandbox.lastSheetHtml = null;
+  sandbox.openGoalsList();
+  assert.ok(sandbox.lastSheetHtml.includes('연결된 자산이 삭제됐어요'), 'openGoalsList도 같은 캡션을 보여줘야 함');
+});
+test('homeAlerts: 연결 자산이 삭제된 asset형 목표는 goalBehind 알림에서 제외된다(cur 0 오탐 방지)', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.owners = ['나'];
+  sandbox.DB.goals = [{ id: 'g1', name: '사라진 자산 목표', type: 'asset', linkedAssetId: 'no-such-asset', targetAmount: 200000, targetDate: '2020-01-01', owner: '나' }];
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'goalBehind' || a.kind === 'goalBehindMulti'), '연결 자산이 사라진 목표는 늦어짐 오탐으로 뜨면 안 됨');
+});
+
 test('doRenameOwner: 이름변경 시 DB.goals의 owner도 함께 옮기고 touch()로 updatedAt을 다시 찍는다(mergeCollection 병합 불변식)', () => {
   sandbox.DB = {
     owners: ['나', '아빠'], assets: [],

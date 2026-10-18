@@ -1,26 +1,8 @@
 {
-  "cycle": 213,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "목표(goal)가 '순자산 전체' 1종만 추적 — 특정 자산(저축 계좌 등)에 모은 돈은 부채 변동에 가려짐",
-    "why": "index.html:2964 주석이 명시하듯 지금 DB.goals는 \"MVP: 순자산 1종\"이고, openGoalForm(2929)의 goalDraft와 saveGoal(3050,3055)이 모든 목표를 무조건 type:'networth'로 강제한다. goalProgress(logic.js:468)의 cur는 nwHistoryForOwner가 만든 net worth(=totalAssets-totalDebt) 스냅샷에서만 온다. 그런데 앱은 debt형 자산(신용카드/대출 등)을 1급으로 지원한다 — 사용자가 '결혼 자금 5000만원' 목표를 세우고 전용 저축 계좌에 실제로 5000만원을 다 모아도, 그 사이 카드값이 오르거나 소액 대출을 받거나 주식 평가금액이 떨어지면 cur(순자산)가 그대로거나 줄어 '목표를 이미 달성했는데 진행률 카드/투사(이대로면 ~쯤 달성 예상, logic.js:477-484)가 못 미쳤다거나 뒤로 간다'고 보여준다. 디버깅 없이는 사용자가 왜 그런지 알 길이 없는 신뢰 붕괴형 버그고, 이 앱의 핵심 기능(목표 추적) 자체가 설계상 전제를 잘못 잡고 있어 develop/review 수준의 작은 패치로는 못 고친다.",
-    "approach": "1) DB.goals 레코드에 type:'networth'|'asset' 필드 추가(기존 레코드는 migrate()에서 type 없으면 'networth'로 기본값 채워 하위호환 유지), 'asset' 타입은 linkedAssetId를 추가로 가짐. 2) openGoalForm/renderGoalForm에 목표 유형 선택(순자산 전체 vs 특정 자산)과, 'asset' 선택 시 자산 피커(기존 ownerPick류 패턴 재사용) 추가, saveGoal이 type에 따라 다른 필드를 저장하도록 수정(force-write type:'networth' 제거). 3) logic.js에 goalProgress와 병렬인 순수 함수(예: goalProgressForAsset(goal, asset) — asset.balance/평가액 기준으로 cur 계산, assetEval() 재사용)를 추가하고 goalProgress 자체는 'networth' 타입 전용으로 그대로 둔다(기존 테스트/동작 보존). 4) goalRowHTML/openGoalsList/goalsSummaryCard가 g.type에 따라 goalProgress 또는 goalProgressForAsset을 호출하도록 분기. 5) 연결된 자산이 삭제되면(nextOutflowCard의 assetNm 스냅샷 패턴처럼) 목표 카드에 '연결된 자산이 삭제됐어요' 같은 중립 안내를 보여주고 단정하지 않는다. 6) DB.goals는 이미 mergeDataLossCount 경고 대상이라 그 메커니즘은 손댈 필요 없음(필드 추가만이라 호환). 범위를 좁게: 이번 advance는 'asset' 타입 신설 + 폼/진행률 분기까지만 하고, '카테고리별 저축 목표' 같은 3번째 타입은 다루지 않는다."
-  },
+  "cycle": 214,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 208,
-      "phase": "develop",
-      "timestamp": "2026-10-17T11:30:00.000Z",
-      "summary": "Explore 없이 직접 탐색 — cycle207 critique/develop이 openSheet()에만 적용했던 aria-labelledby 패턴(index.html 6862행 근처)이 같은 주석이 명시한 #dpModal/#dpWheel에는 여전히 빠져 있음을 확인(0건 토스트류/invalidateBalances/assetDelSel/sanitizeBackup 등 cycle149-207에서 다룬 항목은 전부 제외하고 PIN/비밀번호 폼, addCat/doRenameCat 예약어 보호, cost-basis/budgetCarry/assetAllocation 순수 함수, sumTap의 ST.hist.cat 필터 등을 추가로 살펴봤으나 모두 이미 방어돼 있거나 버그가 아님을 확인한 뒤 이 공백으로 수렴). #dpModal은 renderDatePicker() 호출부 하나뿐이라 정적 aria-label=\"날짜 선택\"을 추가했고, #dpWheel은 openMonthSheet/dpToggleJump/openYMSheet 세 호출부가 매번 다른 .wh-head 제목으로 innerHTML을 새로 그리므로 openSheet()와 같은 방식의 공유 헬퍼 wireWhHead()를 신설해 세 호출부 모두 innerHTML 대입 직후 호출하게 했다. test/run.js에 소스 패턴 검증 5건 추가(#dpModal aria-label, wireWhHead 본문, 세 호출부의 호출 순서). APP_VERSION 1.47.178->1.47.179, sw.js CACHE v440->v441. node our-assets-v1.14.1/our-assets/test/run.js 1551/1551 -> 1556/1556 통과.",
-      "commit": null
-    },
-    {
-      "cycle": 208,
-      "phase": "review",
-      "timestamp": "2026-10-17T12:10:00.000Z",
-      "summary": "cycle208 develop 커밋(b325cff, #dpModal/#dpWheel aria-label/aria-labelledby 추가)을 검토. wireWhHead()(index.html 6833행)의 구현을 openMonthSheet/dpToggleJump/openYMSheet 세 호출부 소스와 직접 대조 — 세 곳 모두 `.wh-head` div가 innerHTML에 포함되고, wireWhHead() 호출이 그 innerHTML 대입 바로 다음 줄에 와서 항상 새로 그려진 제목을 집는 순서임을 확인. 매 호출마다 이전 .wh-head가 innerHTML 교체로 통째로 사라지므로 id='whHeadTitle' 재사용에 따른 중복 id 충돌 경로도 없음(옛 엘리먼트가 DOM에서 사라진 뒤 새 엘리먼트에 같은 id를 다는 것). closeDpWheelLayer()가 aria-labelledby를 안 지우는 것도 closeSheet()가 #sheet의 aria-labelledby를 안 지우는 기존 패턴과 동일(다음 open이 innerHTML을 통째로 교체하며 재설정하므로 문제 없음). #dpModal은 renderDatePicker() 호출부가 유일해 정적 aria-label로 충분함도 grep으로 재확인. node our-assets-v1.14.1/our-assets/test/run.js 1556/1556 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 208,
       "phase": "critique",
@@ -152,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-18T10:05:00.000Z",
       "summary": "Explore 서브에이전트로 앱 전반을 아키텍처/제품 관점에서 훑었다(cycle149-213에서 다룬 toast/invalidateBalances fromDate/closeSheetGuarded/aria-label/XSS/실행형 테스트 전환류(openSheet·wireSheetGestures·ensureEdgeGesture·togglePwVis·wireWhHead·wireMonthCarousel은 의도적 보류)/split거래/pushCloud await/mergeCollection 기반 mergeDataLoss 경고(assets/goals/txns/inquiries/assetQtyLog)/kakaoLogin 게스트 병합 안내/nextOutflowCard 스냅샷/dismissedStaleMvIds·budgetCarryFor 무제한증가·CDN SRI(보류·기각 유지)/#histQ 디바운스(러너업으로 남겨둠) 전부 제외하고 recSaveScopeConfirm/recSaveScopeApply/deleteRecsUndo(cycle209가 명시적으로 범위 밖으로 미뤄둔 후보)도 검토했으나, 그보다 더 근본적인 제품 설계 결함으로 수렴). index.html:2964 주석이 명시하는 대로 DB.goals는 \"MVP: 순자산 1종\"이라 openGoalForm(2929)/saveGoal(3050,3055)이 모든 목표를 무조건 type:'networth'로 강제하고, goalProgress(logic.js:468)의 cur는 nwHistoryForOwner가 만든 net worth(=totalAssets-totalDebt) 스냅샷에서만 온다. 앱이 debt형 자산(신용카드/대출)을 1급으로 지원하는데도, 사용자가 특정 저축 계좌에 목표 금액을 전부 모아도 그 사이 카드값이 오르거나 소액 대출을 받으면 cur(순자산 전체)가 그대로거나 줄어 진행률 카드와 투사(logic.js:477-484, 이대로면 ~쯤 달성 예상)가 이미 달성한 목표를 '못 미쳤다/뒤로 간다'고 보여주는 신뢰 붕괴형 버그를 발견 — 목표 추적이라는 핵심 기능 자체의 설계 전제 문제라 develop/review 수준 패치로는 못 고친다. DB.goals에 type:'networth'|'asset'(+linkedAssetId) 필드를 추가(기존 레코드는 migrate()에서 기본값 'networth')하고, 목표 폼에 유형/자산 선택 UI를, logic.js에 goalProgress와 병렬인 자산-기준 진행률 순수 함수를, goalRowHTML 등에 type별 분기를 추가하는 계획(연결 자산 삭제 시 nextOutflowCard와 동일한 중립 안내, '카테고리별 저축' 등 3번째 타입은 이번 범위 밖)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "commit": null
+    },
+    {
+      "cycle": 213,
+      "phase": "advance",
+      "timestamp": "2026-10-18T11:19:27.081Z",
+      "summary": "critique(cycle213) 계획대로 DB.goals에 type:'networth'|'asset' 구분을 신설 — 특정 자산(저축 계좌 등) 하나의 잔액을 목표로 추적할 수 있게 했다. renderGoalForm에 목표 유형 세그먼트(순자산 전체/특정 자산)와 자산 피커(openAssetPicker에 excludeDebt 옵션 추가, excludeMarketValued와 함께 fx/gold/stock/debt 제외)를 추가했고, saveGoal은 asset형이면 linkedAssetId를 필수로 받고 owner를 연결 자산의 owner로 맞춘다. logic.js는 건드리지 않음 — goalProgress(g,hist,today)가 {date,nw} 모양만 보므로, 새 goalHistoryFor(g) 헬퍼(index.html)가 asset형일 때 assetBalanceSeries(assetBalCard/debtPayoffProjection과 동일 패턴)로 만든 잔액 추이를 {date,nw}로 매핑해 그대로 넘기는 식으로 재사용했다. goalRowHTML/openGoalsList/homeAlerts의 goalBehind 계산을 모두 goalHistoryFor로 통일했고, goalHasUnknown도 asset형이면 연결 자산 하나의 rateUnknown만 본다. 연결 자산이 삭제되면(goalLinkedAssetGone) cur/추세를 추측하지 않고 \"연결된 자산이 삭제됐어요\" 중립 캡션 + 0%로 처리하며 goalBehind 오탐도 억제한다. sanitizeBackup도 type 필드를 owner와 동일한 패턴(없으면 기본값만, 손상된 값만 fixedCount)으로 정규화. test/run.js FUNCTIONS에 goalHistoryFor/goalLinkedAssetGone/goalTypeSel/goalOpenAsset 추가하고 saveGoal/goalHistoryFor/goalRowHTML·openGoalsList/homeAlerts 회귀 테스트 7건 신설. APP_VERSION 1.47.187->1.47.188, sw.js CACHE v449->v450. node our-assets-v1.14.1/our-assets/test/run.js 1592/1592 -> 1598/1598 통과. pending_advance_plan을 비웠다.",
       "commit": null
     }
   ]

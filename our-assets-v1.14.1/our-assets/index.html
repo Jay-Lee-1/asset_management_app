@@ -1387,7 +1387,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.187';
+const APP_VERSION='1.47.188';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2246,7 +2246,7 @@ function migrate(){
  if(!DB.categories.expense||!DB.categories.expense.length)DB.categories.expense=[...EXP_CATS_DEFAULT];
  DB.inquiries=DB.inquiries||[];
  DB.inquiries.forEach(q=>{if(!q.id)q.id=uid();if(!q.updatedAt)q.updatedAt=Date.now()}); /* id/updatedAt은 cycle133에 추가된 필드라 그 전에 저장된 메모엔 없음 — 없으면 mergeCollection()이 모든 레코드를 같은 undefined id로 취급해 하나로 뭉개버림 */
- DB.goals=DB.goals||[]; /* 순자산 목표: [{id,name,type:'networth',targetAmount,targetDate,owner,createdAt}] */
+ DB.goals=DB.goals||[]; /* 목표: [{id,name,type:'networth'|'asset',linkedAssetId,targetAmount,targetDate,owner,createdAt}] — linkedAssetId는 type:'asset'일 때만 쓰며(cycle214), 'networth'는 항상 null/없음 */
  DB.goals.forEach(g=>{if(!g.owner)g.owner='all'}); /* owner는 cycle124에 추가된 필드라 그 전에 생긴 목표엔 없음 — 'all'(전체)로 채워야 goalOwnerEff/nwHistoryForOwner가 가구 전체 추이로 올바르게 처리함 */
  DB.assetQtyLog=DB.assetQtyLog||[]; /* fx/gold/stock 보유수량 변경 기록: [{id,assetId,date,prevQty,newQty,field}] — field는 'fxAmount'|'goldDon'|'stockQty' (app-evolve cycle138) */
  DB.deletedIds=gcTombstones(DB.deletedIds||{},Date.now()); /* 부팅 때마다 오래된 tombstone 정리(GC) */
@@ -2980,16 +2980,36 @@ function nearestGoal(owner){ /* owner(기본 'all')가 추적하는 목표 중 �
  * 경고 없이 ₩0으로 섞여 들어간다 — nwPane()이 이미 쓰는 "산술은 그대로 두고 캡션만 붙인다" 원칙
  * (app-evolve cycle183 advance)을 목표 화면에도 적용하기 위한 판정(app-evolve cycle186 advance). */
 function goalHasUnknown(g){
+ if(g.type==='asset'){const a=(DB.assets||[]).find(x=>x.id===g.linkedAssetId);return !!a&&rateUnknown(a)}
  const o=goalOwnerEff(g);
  return (DB.assets||[]).some(a=>a.includeInTotal&&(o==='all'||a.owner===o)&&rateUnknown(a));
 }
+/* 연결된 자산이 삭제된 asset형 목표 — 자산 1급 전제가 깨진 상태라 cur/추세를 추측하지 않고 중립 안내로 대체한다
+ * (nextOutflowCard의 assetNm 스냅샷 폴백과 동일한 "단정하지 않는다" 원칙, app-evolve cycle214 advance) */
+function goalLinkedAssetGone(g){return g.type==='asset'&&!(DB.assets||[]).some(a=>a.id===g.linkedAssetId)}
+/* g.type에 따라 goalProgress에 넘길 이력을 고른다 — 'networth'는 기존처럼 귀속별 순자산 추이(nwHistoryForOwner),
+ * 'asset'은 연결된 자산 하나의 잔액 추이를 assetBalCard/debtPayoffProjection과 동일한 방식(assetBalanceSeries)으로
+ * 구해 goalProgress가 받는 {date,nw} 모양으로 매핑한다 — goalProgress(logic.js)는 필드 이름만 보고 '순자산'인지
+ * '자산 하나의 잔액'인지는 가리지 않으므로 그대로 재사용할 수 있다(새 순수 함수를 만들 필요가 없음).
+ * 연결 자산이 삭제됐으면 빈 배열 — goalProgress(hist.length 0)가 cur:0·achieved:false로 중립 처리한다. */
+function goalHistoryFor(g){
+ if(g.type==='asset'){
+  const a=(DB.assets||[]).find(x=>x.id===g.linkedAssetId);
+  if(!a)return [];
+  const dates=assetBalSampleDates(RANGE_FROM,TODAY,60);
+  const txns=allTxns(RANGE_FROM,TODAY).filter(t=>!isPending(t));
+  return assetBalanceSeries(txns,a.id,assetBase(a),1,dates).map(p=>({date:p.date,nw:p.bal}));
+ }
+ return nwHistoryForOwner(DB.nwHistory,goalOwnerEff(g));
+}
 function goalRowHTML(g){
- const p=goalProgress(g,nwHistoryForOwner(DB.nwHistory,goalOwnerEff(g)),TODAY); /* 목표가 귀속별(owner)이면 그 귀속만의 순자산 추이로 진행률·투사를 계산 — nwHistoryCard(owner)와 동일한 nwHistoryForOwner를 공유 */
+ const p=goalProgress(g,goalHistoryFor(g),TODAY); /* 목표가 귀속별(owner)이면 그 귀속만의 순자산 추이로, 자산 연결 목표면 그 자산 하나의 잔액 추이로 진행률·투사를 계산(goalHistoryFor) */
  const color=p.achieved?'var(--income)':'var(--brand)';
+ const assetGone=goalLinkedAssetGone(g);
  const hasUnknown=goalHasUnknown(g);
  const overdue=goalIsOverdue(g.targetDate,p.achieved,TODAY); /* homeAlerts()의 goalBehind 알림은 hist.length>=2·!hasUnknown을 요구해 안 뜰 때가 있어도, 목표 화면 자체엔 지남 표시가 있어야 함(app-evolve cycle195 develop) */
  return `<div class="pg-row" tabindex="0" role="button" aria-label="${esc(g.name)} 목표 진행률 ${p.pct}%${overdue?' 목표일 지남':''}" onclick="openGoalForm('${g.id}')" onkeydown="rowKeydown(event,()=>openGoalForm('${g.id}'))">
-   <div class="pg-head"><span class="pg-k">${esc(g.name)}${hasUnknown?' <span class="mini warn">일부 미확인</span>':''}${overdue?' <span class="mini warn">목표일 지남</span>':''}${p.achieved?`<span class="pg-done" style="color:${color};background:color-mix(in srgb,${color} 15%,transparent)">달성</span>`:''}</span>
+   <div class="pg-head"><span class="pg-k">${esc(g.name)}${assetGone?' <span class="mini warn">연결된 자산이 삭제됐어요</span>':hasUnknown?' <span class="mini warn">일부 미확인</span>':''}${overdue?' <span class="mini warn">목표일 지남</span>':''}${p.achieved?`<span class="pg-done" style="color:${color};background:color-mix(in srgb,${color} 15%,transparent)">달성</span>`:''}</span>
      <span class="pg-nums"><b class="num">${comma(p.cur)}</b><span class="pg-of num"> / ${comma(p.target)}원</span></span></div>
    <div class="pg-bar"><i style="width:${p.pct}%;background:${color}"></i></div>
    ${!p.achieved&&p.projectedDate?`<div class="msub2" style="margin-top:4px">이대로면 ${shortDate2(p.projectedDate)}쯤 달성 예상</div>`:''}
@@ -3008,15 +3028,16 @@ function goalsSummaryCard(owner){
 function openGoalsList(){ /* 관리 목록은 캐러셀 귀속과 무관하게 전체 목표를 보여준다 — 각 줄의 진행률만 그 목표 자신의 귀속(goalOwnerEff)을 쓴다 */
  const gs=DB.goals||[];
  const body=gs.length?`<div class="card" style="margin-bottom:6px">${gs.map(g=>{
-   const p=goalProgress(g,nwHistoryForOwner(DB.nwHistory,goalOwnerEff(g)),TODAY);
+   const p=goalProgress(g,goalHistoryFor(g),TODAY);
    const ownerBadge=goalOwnerEff(g)!=='all'?` · ${esc(g.owner)}`:'';
+   const assetGone=goalLinkedAssetGone(g); /* goalRowHTML()과 동일 캡션(app-evolve cycle214 advance) */
    const hasUnknown=goalHasUnknown(g); /* goalRowHTML()과 동일 캡션(app-evolve cycle186 advance) */
    const overdue=goalIsOverdue(g.targetDate,p.achieved,TODAY); /* goalRowHTML()과 동일 판정(app-evolve cycle195 develop) */
    return `<div class="manage-row" tabindex="0" role="button" aria-label="${esc(g.name)} 목표 진행률 ${p.pct}%${overdue?' 목표일 지남':''}" onclick="openGoalForm('${g.id}')" onkeydown="rowKeydown(event,()=>openGoalForm('${g.id}'))">
     <div class="avatar a-save" style="width:38px;height:38px">${svg('target')}</div>
     <div style="flex:1;min-width:0"><div class="mn">${esc(g.name)} ${p.achieved?'<span class="mini">달성</span>':''}</div>
      <div class="msub">${comma(p.cur)} / ${comma(p.target)}원 · ${p.pct}%${ownerBadge}</div>
-     ${hasUnknown?'<div class="mini warn" style="margin-top:2px">일부 미확인</div>':''}
+     ${assetGone?'<div class="mini warn" style="margin-top:2px">연결된 자산이 삭제됐어요</div>':hasUnknown?'<div class="mini warn" style="margin-top:2px">일부 미확인</div>':''}
      ${g.targetDate?`<div class="msub2">목표일 ${fmtDateFull(g.targetDate)}${overdue?' <span class="mini warn">지남</span>':''}</div>`:''}</div>
     <div class="mc">${svg('chev')}</div></div>`;
  }).join('')}</div>`:`<div class="empty"><div class="ei">${svg('target')}</div><div class="et">아직 목표가 없어요</div><div class="es">순자산 목표를 세우면 진행 상황을 추적할 수 있어요</div></div>`;
@@ -3026,20 +3047,48 @@ function openGoalsList(){ /* 관리 목록은 캐러셀 귀속과 무관하게 �
 let goalDraft=null;
 function openGoalForm(id){
  const g=id?(DB.goals||[]).find(x=>x.id===id):null;
- goalDraft=g?{...g,owner:goalOwnerEff(g)}:{id:uid(),name:'',type:'networth',targetAmount:0,targetDate:'',owner:'all',createdAt:Date.now()};
+ goalDraft=g?{...g,owner:goalOwnerEff(g)}:{id:uid(),name:'',type:'networth',linkedAssetId:null,targetAmount:0,targetDate:'',owner:'all',createdAt:Date.now()};
  snapDraft('goal');
  renderGoalForm(!!g);
+}
+/* 목표 유형 전환(순자산 전체 ↔ 특정 자산) — 자산 전환 시 연결 자산은 그대로 두고(재선택 유도), 순자산으로
+ * 되돌리면 linkedAssetId를 지워 saveGoal이 혼란 없이 type:'networth' 레코드를 저장하게 한다. */
+function goalTypeSel(type,editing){
+ syncGoalInputs();
+ goalDraft.type=type;
+ if(type==='networth')goalDraft.linkedAssetId=null;
+ renderGoalForm(editing);
+}
+/* 목표에 연결할 자산 선택 — _applyOpenAsset(거래의 자산 선택)과 같은 openAssetPicker를 쓰되, 목표는
+ * fx/gold/stock(시세 변동으로 일별 추이를 알 수 없음)과 debt(목표는 "모은다"는 의미라 "갚는다"인 부채와는
+ * 어울리지 않고, 부채 전용 투사는 이미 assetBalCard의 debtPayoffProjection이 맡고 있음)를 제외한다. */
+function goalOpenAsset(editing){
+ syncGoalInputs();
+ openAssetPicker({current:goalDraft.linkedAssetId,title:'연결할 자산',excludeMarketValued:true,excludeDebt:true,back:()=>renderGoalForm(editing),onPick:id=>{
+  goalDraft.linkedAssetId=id;
+  const a=(DB.assets||[]).find(x=>x.id===id);if(a)goalDraft.owner=a.owner; /* 목표의 귀속을 연결 자산의 귀속과 맞춰 캐러셀 필터(goalOwnerEff)가 일관되게 동작하게 함 */
+  renderGoalForm(editing);
+ }});
 }
 function syncGoalInputs(){const d=goalDraft;if(!d)return;if($('goalName'))d.name=$('goalName').value||'';if($('goalAmt'))d.targetAmount=num($('goalAmt'))}
 function goalClearDate(editing){syncGoalInputs();goalDraft.targetDate='';renderGoalForm(editing)}
 function goalOwnerSel(i,editing){syncGoalInputs();const list=['all',...(DB.owners||[])];goalDraft.owner=list[i]||'all';renderGoalForm(editing)} /* 자산 ownerPick과 달리 '전체'(가구 공동 목표) 선택지가 있어 asOpenOwner의 전용 시트 대신 spendOwnerSel과 같은 인라인 seg를 쓴다 */
 function renderGoalForm(editing){
  const d=goalDraft;
- const ownerSeg=`<div class="field"><label>귀속</label><div class="seg" role="group" aria-label="귀속 선택"><div class="seg-blob"></div>${['all',...(DB.owners||[])].map((o,oi)=>`<button class="${(d.owner||'all')===o?'on':''}" aria-pressed="${(d.owner||'all')===o}" onclick="goalOwnerSel(${oi},${editing})">${o==='all'?'전체':esc(o)}</button>`).join('')}</div></div>`;
- openSheet(`<h3>${editing?'목표 수정':'목표 추가'}</h3><div class="desc">순자산이 이 금액에 도달하는 걸 목표로 추적해요</div>
+ const isAsset=d.type==='asset';
+ const typeSeg=`<div class="field"><label>목표 유형</label><div class="seg" role="group" aria-label="목표 유형 선택"><div class="seg-blob"></div>
+   <button class="${isAsset?'':'on'}" aria-pressed="${!isAsset}" onclick="goalTypeSel('networth',${editing})">순자산 전체</button>
+   <button class="${isAsset?'on':''}" aria-pressed="${isAsset}" onclick="goalTypeSel('asset',${editing})">특정 자산</button>
+  </div></div>`;
+ /* isAsset이 아닐 때는 assetPickBtn(DB.assets.find 의존)을 평가하지 않아야 해서(goalsSummaryCard 등
+  * 테스트의 최소 DB={goals,nwHistory}처럼 DB.assets가 없을 수 있음) 삼항 분기 안에서만 조건부로 만든다 */
+ const ownerOrAssetField=isAsset?`<div class="field"><label>연결할 자산</label>${assetPickBtn(d.linkedAssetId,`goalOpenAsset(${editing})`)}</div>`
+  :`<div class="field"><label>귀속</label><div class="seg" role="group" aria-label="귀속 선택"><div class="seg-blob"></div>${['all',...(DB.owners||[])].map((o,oi)=>`<button class="${(d.owner||'all')===o?'on':''}" aria-pressed="${(d.owner||'all')===o}" onclick="goalOwnerSel(${oi},${editing})">${o==='all'?'전체':esc(o)}</button>`).join('')}</div></div>`;
+ openSheet(`<h3>${editing?'목표 수정':'목표 추가'}</h3><div class="desc">${isAsset?'연결한 자산의 잔액이 이 금액에 도달하는 걸 목표로 추적해요':'순자산이 이 금액에 도달하는 걸 목표로 추적해요'}</div>
   <div class="field"><label for="goalName">목표 이름</label><div class="field-clear"><input id="goalName" value="${esc(d.name||'')}" placeholder="예: 내 집 마련 자금"><button type="button" class="fc-x" aria-label="이름 지우기" onclick="clrInput('goalName')">✕</button></div></div>
-  ${ownerSeg}
-  <div class="field"><label for="goalAmt">목표 순자산 (원)</label><div class="field-clear"><input id="goalAmt" class="num" inputmode="numeric" value="${d.targetAmount?comma(d.targetAmount):''}" placeholder="0" oninput="fmtAmt(this)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveGoal(${editing})"><button type="button" class="fc-x" aria-label="목표 금액 지우기" onclick="clrInput('goalAmt')">✕</button></div></div>
+  ${typeSeg}
+  ${ownerOrAssetField}
+  <div class="field"><label for="goalAmt">${isAsset?'목표 금액 (원)':'목표 순자산 (원)'}</label><div class="field-clear"><input id="goalAmt" class="num" inputmode="numeric" value="${d.targetAmount?comma(d.targetAmount):''}" placeholder="0" oninput="fmtAmt(this)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveGoal(${editing})"><button type="button" class="fc-x" aria-label="목표 금액 지우기" onclick="clrInput('goalAmt')">✕</button></div></div>
   <div class="field"><label>목표일 (선택)</label><div class="pick ${d.targetDate?'':'placeholder'}" style="cursor:pointer" tabindex="0" role="button" aria-label="목표일 ${d.targetDate?fmtDateFull(d.targetDate):'선택'}" onclick="syncGoalInputs();openFieldDatePicker(goalDraft.targetDate||TODAY,ds=>{goalDraft.targetDate=ds;renderGoalForm(${editing})})" onkeydown="rowKeydown(event,()=>{syncGoalInputs();openFieldDatePicker(goalDraft.targetDate||TODAY,ds=>{goalDraft.targetDate=ds;renderGoalForm(${editing})})})">
     <div class="pav a-save">${svg('calendar')}</div><div class="pbody"><div class="pn">${d.targetDate?fmtDateFull(d.targetDate):'목표일 선택'}</div></div><div class="pc">${d.targetDate?`<button type="button" class="fc-x" style="display:inline-flex;position:static;transform:none" aria-label="목표일 지우기" onclick="event.stopPropagation();goalClearDate(${editing})" onkeydown="event.stopPropagation()">✕</button>`:svg('chev')}</div></div></div>
   <div class="two-btn"><button class="btn btn-soft cancel" onclick="closeSheet()">취소</button>
@@ -3052,7 +3101,10 @@ function saveGoal(editing){
  d.name=(d.name||'').trim();
  if(!d.name){toast('목표 이름을 입력해 주세요');return}
  if(!(d.targetAmount>0)){toast('목표 금액을 입력해 주세요');return}
- const rec=touch({id:d.id,name:d.name,type:'networth',targetAmount:Math.round(d.targetAmount),targetDate:d.targetDate||null,owner:d.owner||'all',createdAt:d.createdAt||Date.now()}); /* touch() 누락 시 mergeRemoteDataIntoLocal의 mergeCollection()이 updatedAt만 보고 병합하다 다른 기기의 동기화 안 된 목표를 이 저장이 조용히 되돌릴 수 있음(saveAsset 등과 동일한 불변식) */
+ const isAsset=d.type==='asset';
+ if(isAsset&&!d.linkedAssetId){toast('연결할 자산을 선택해 주세요');return}
+ const linkedAsset=isAsset?(DB.assets||[]).find(x=>x.id===d.linkedAssetId):null;
+ const rec=touch({id:d.id,name:d.name,type:isAsset?'asset':'networth',linkedAssetId:isAsset?d.linkedAssetId:null,targetAmount:Math.round(d.targetAmount),targetDate:d.targetDate||null,owner:isAsset?(linkedAsset?linkedAsset.owner:(d.owner||'all')):(d.owner||'all'),createdAt:d.createdAt||Date.now()}); /* touch() 누락 시 mergeRemoteDataIntoLocal의 mergeCollection()이 updatedAt만 보고 병합하다 다른 기기의 동기화 안 된 목표를 이 저장이 조용히 되돌릴 수 있음(saveAsset 등과 동일한 불변식). asset형은 owner를 연결 자산의 귀속으로 맞춰 goalOwnerEff/캐러셀 필터가 일관되게 동작하게 함 */
  const i=(DB.goals||[]).findIndex(x=>x.id===d.id);
  if(i>=0)DB.goals[i]=rec;else DB.goals.push(rec);
  save();goalDraft=null;closeSheet();renderCurrent();toast(editing?'목표를 수정했어요':'목표를 추가했어요');
@@ -6435,6 +6487,14 @@ function sanitizeBackup(obj){
   if(d.targetDate&&!csvDateValid(d.targetDate)){d.targetDate=null;fixedCount++} /* 형식만 보던 정규식은 "2026-13-45"처럼 모양은 맞지만 달력상 존재하지 않는 날짜를 그대로 통과시켜 fmtDateFull()이 자바스크립트의 월/일 롤오버 때문에 전혀 엉뚱한 날짜(예: 2027년 2월 14일)를 보여줬다 — startDate/endDate/maturityDate와 동일하게 csvDateValid()로 달력 유효성까지 검증 */
   if(!d.owner){d.owner='all'}
   else if(d.owner!=='all'&&!validOwners.includes(d.owner)){d.owner='all';fixedCount++}
+  /* type(cycle214 신설)도 같은 이유로 여기서 정규화한다 — 'asset'이 아닌 모든 값(누락·손상 포함)은
+   * 'networth'로 떨어뜨리고, 그 경우 linkedAssetId는 지운다(goalHistoryFor/saveGoal 둘 다 type이
+   * 'asset'일 때만 이 필드를 읽으므로 안 지워도 동작엔 영향 없지만, 더 이상 의미 없는 필드를 레코드에
+   * 남겨두지 않는다). linkedAssetId가 가리키는 자산이 실제로 없는 경우는 여기서 걸러내지 않는다 —
+   * 백업은 assets와 goals를 통째로 같이 복원하므로 이 시점엔 아직 assets 쪽 검증이 끝나지 않았고,
+   * goalHistoryFor/goalLinkedAssetGone이 이미 "자산이 사라졌으면 추측하지 않고 중립 안내"로 안전하게
+   * 처리한다(goalRowHTML 참고) — targetDate/owner와 달리 크래시나 데이터 오염 위험이 없다. */
+  if(d.type!=='asset'){if(d.type&&d.type!=='networth')fixedCount++;d.type='networth';d.linkedAssetId=null} /* owner 필드와 동일하게, 그냥 없는 경우(구버전 백업)는 기본값만 채우고 fixedCount를 안 늘린다 — 실제로 손상된(비어있지 않은데 'asset'도 'networth'도 아닌) 값만 "고친 것"으로 센다 */
   goals.push(d);
  });
  /* DB.inquiries(문의하기 메모, cycle133)도 txns/assets/recurrences/goals와 같은 검증 분기가
@@ -7820,8 +7880,8 @@ function homeAlerts(neg){
   * 실제보다 나쁘게 나올 수 있으므로, 그 귀속의 시세가 다 확인될 때까지는 behind 알림을 억제한다
   * (goalRowHTML/openGoalsList의 "일부 미확인" 캡션으로 이미 원인을 안내하므로 중복 경보가 아님,
   * app-evolve cycle186 advance) */
- const _gb=(DB.goals||[]).filter(g=>g.targetDate).map(g=>{const hist=nwHistoryForOwner(DB.nwHistory,goalOwnerEff(g)).filter(h=>h.date<=TODAY);return {g,p:goalProgress(g,hist,TODAY),hist};})
-   .filter(({g,p,hist})=>hist.length>=2&&!p.achieved&&(!p.projectedDate||p.projectedDate>g.targetDate)&&!goalHasUnknown(g))
+ const _gb=(DB.goals||[]).filter(g=>g.targetDate).map(g=>{const hist=goalHistoryFor(g).filter(h=>h.date<=TODAY);return {g,p:goalProgress(g,hist,TODAY),hist};})
+   .filter(({g,p,hist})=>hist.length>=2&&!p.achieved&&(!p.projectedDate||p.projectedDate>g.targetDate)&&!goalHasUnknown(g)&&!goalLinkedAssetGone(g))
    .sort((a,b)=>a.g.targetDate<b.g.targetDate?-1:1);
  if(_gb.length===1){const{g,p}=_gb[0];arr.push({kind:'goalBehind',goalId:g.id,name:g.name,targetDate:g.targetDate,projectedDate:p.projectedDate});}
  else if(_gb.length>1)arr.push({kind:'goalBehindMulti',count:_gb.length});
@@ -8129,7 +8189,7 @@ function openPicker(title,bodyHtml,back){window._pkBack=back||null;
  openSheet(`<div class="pk-h">${title}</div>`+bodyHtml, back?topBtn:undefined);}
 function pkBack(){const b=window._pkBack;window._pkBack=null;if(b)sheetSlideBack(b);else closeSheet()}
 function openAssetPicker(o){o=o||{};let html='';
- DB.settings.groupOrder.forEach(t=>{let items=DB.assets.filter(a=>a.type===t);if(o.cashOnly)items=items.filter(isCashLike);if(o.excludeMarketValued)items=items.filter(a=>!isMarketValued(a));if(o.excludeId)items=items.filter(a=>a.id!==o.excludeId);if(!items.length)return;
+ DB.settings.groupOrder.forEach(t=>{let items=DB.assets.filter(a=>a.type===t);if(o.cashOnly)items=items.filter(isCashLike);if(o.excludeMarketValued)items=items.filter(a=>!isMarketValued(a));if(o.excludeDebt)items=items.filter(a=>a.type!=='debt');if(o.excludeId)items=items.filter(a=>a.id!==o.excludeId);if(!items.length)return;
    html+=`<div class="pk-cap">${ASSET_TYPES[t].label}</div>`;
    items.forEach(a=>{const ty=ASSET_TYPES[a.type];const bal=a.type==='debt'?-assetEval(a):assetEval(a);
      html+=`<button class="pk-item hasamt ${a.id===o.current?'on':''}" data-val="${a.id}" onclick="pkPickAsset('${a.id}')"><div class="pav ${ty.cls}">${svg(ty.icon)}</div><div class="pbody"><div class="pn">${esc(a.name)}</div><div class="psub"><span class="chipmini ${ownerChipClass(a.owner)}">${esc(a.owner)}</span>${ty.label}</div></div><div class="amt num">${comma(bal)}원</div></button>`;});
