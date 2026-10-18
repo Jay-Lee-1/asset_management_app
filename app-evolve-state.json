@@ -141,7 +141,7 @@
       "phase": "advance",
       "timestamp": "2026-10-18T11:19:27.081Z",
       "summary": "critique(cycle213) 계획대로 DB.goals에 type:'networth'|'asset' 구분을 신설 — 특정 자산(저축 계좌 등) 하나의 잔액을 목표로 추적할 수 있게 했다. renderGoalForm에 목표 유형 세그먼트(순자산 전체/특정 자산)와 자산 피커(openAssetPicker에 excludeDebt 옵션 추가, excludeMarketValued와 함께 fx/gold/stock/debt 제외)를 추가했고, saveGoal은 asset형이면 linkedAssetId를 필수로 받고 owner를 연결 자산의 owner로 맞춘다. logic.js는 건드리지 않음 — goalProgress(g,hist,today)가 {date,nw} 모양만 보므로, 새 goalHistoryFor(g) 헬퍼(index.html)가 asset형일 때 assetBalanceSeries(assetBalCard/debtPayoffProjection과 동일 패턴)로 만든 잔액 추이를 {date,nw}로 매핑해 그대로 넘기는 식으로 재사용했다. goalRowHTML/openGoalsList/homeAlerts의 goalBehind 계산을 모두 goalHistoryFor로 통일했고, goalHasUnknown도 asset형이면 연결 자산 하나의 rateUnknown만 본다. 연결 자산이 삭제되면(goalLinkedAssetGone) cur/추세를 추측하지 않고 \"연결된 자산이 삭제됐어요\" 중립 캡션 + 0%로 처리하며 goalBehind 오탐도 억제한다. sanitizeBackup도 type 필드를 owner와 동일한 패턴(없으면 기본값만, 손상된 값만 fixedCount)으로 정규화. test/run.js FUNCTIONS에 goalHistoryFor/goalLinkedAssetGone/goalTypeSel/goalOpenAsset 추가하고 saveGoal/goalHistoryFor/goalRowHTML·openGoalsList/homeAlerts 회귀 테스트 7건 신설. APP_VERSION 1.47.187->1.47.188, sw.js CACHE v449->v450. node our-assets-v1.14.1/our-assets/test/run.js 1592/1592 -> 1598/1598 통과. pending_advance_plan을 비웠다.",
-      "commit": null
+      "commit": "5ad61cd"
     }
   ]
 }
