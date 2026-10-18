@@ -12934,6 +12934,41 @@ test('nextOutflowCard: nc-fix의 keydown이 바깥 next-card로 버블되지 않
   const body = extractFunction('nextOutflowCard');
   assert.ok(/<button type="button" class="nc-fix"[^>]*onkeydown="event\.stopPropagation\(\)"/.test(body), 'nc-fix에 onkeydown="event.stopPropagation()"이 없음 — Enter/Space가 바깥 div로 버블돼 goPlanTo가 대신 실행됨');
 });
+/* ---------- nextOutflowCard: 다음 큰돈 카드가 가리키는 자산이 삭제되면 acct=DB.assets.find(...)가
+ * undefined가 돼, (1) 계좌명이 조용히 사라지고 (2) bal===null이라 short가 항상 0이 돼 실제로는
+ * 잔액을 알 수 없는데도 "여유 있어요"라고 단정하던 버그 (app-evolve cycle213 develop) ----------
+ * 앱의 다른 모든 거래 표시 경로(openConfirmTransfer/txRowCore/planRowsHTML 등)는 acct를 직접 찾는
+ * 대신 assetNm(id,snap)으로 snapshotAssetName()이 심어둔 fromAssetName 스냅샷에 fallback한다 —
+ * nextOutflowCard만 예외였다. */
+test('nextOutflowCard: 연결된 자산이 삭제돼도 fromAssetName 스냅샷으로 계좌명을 보여주고, 잔액을 안다고 단정하지 않는다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.DB = {
+    settings: {},
+    assets: [], // 자산이 삭제됨 — DB.assets.find(a=>a.id===t.fromAssetId)는 항상 undefined
+    txns: [
+      { id: 't1', type: 'expense', date: '2026-06-20', amount: 500000, memo: '월세', fromAssetId: 'deleted1', fromAssetName: '네이버페이통장' },
+    ],
+    recurrences: [],
+  };
+  const html = sandbox.nextOutflowCard();
+  assert.ok(html.includes('네이버페이통장'), '삭제된 자산의 스냅샷 이름(fromAssetName)이 카드에 보이지 않음');
+  assert.ok(!html.includes('여유 있어요'), '자산이 삭제돼 잔액을 알 수 없는데도 "여유 있어요"라고 단정함');
+  assert.ok(!/class="nc-foot bad"/.test(html), '잔액 부족이 아닌데도 bad(부족) 상태로 표시됨');
+});
+test('nextOutflowCard: 연결된 자산이 살아있으면 평소처럼 실제 잔액과 계좌명을 그대로 보여준다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.DB = {
+    settings: {},
+    assets: [{ id: 'a1', name: '네이버페이통장', type: 'cash', baseAmount: 1000000 }],
+    txns: [
+      { id: 't1', type: 'expense', date: '2026-06-20', amount: 500000, memo: '월세', fromAssetId: 'a1' },
+    ],
+    recurrences: [],
+  };
+  const html = sandbox.nextOutflowCard();
+  assert.ok(html.includes('네이버페이통장'), '살아있는 자산의 이름이 카드에 보이지 않음');
+  assert.ok(html.includes('여유 있어요'), '잔액이 충분한데도 여유 있음이 표시되지 않음(회귀 방지)');
+});
 test('homeAlertCard: 백업 알림 행(ha-b)에 키보드/스크린리더 접근 패턴이 있다', () => {
   const body = extractFunction('homeAlertCard');
   assert.ok(/class="ha-b"\s+tabindex="0"\s+role="button"[^>]*onclick="exportData\(\)"/.test(body), '백업 ha-b에 role="button"이 없음');

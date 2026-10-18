@@ -1387,7 +1387,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.186';
+const APP_VERSION='1.47.187';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -7635,6 +7635,8 @@ function nextOutflowCard(){
  const acct=DB.assets.find(a=>a.id===t.fromAssetId);
  const bal=acct?balanceOn(acct.id,t.date):null;
  const short=(bal!==null&&bal<0)?Math.abs(bal):0;
+ const acctNm=assetNm(t.fromAssetId,t.fromAssetName); /* acct가 없어도(연결된 자산 삭제됨) fromAssetName 스냅샷으로 이름을 보여준다 — assetNm()은 index.html의 모든 다른 거래 표시 경로(openConfirmTransfer/txn rows/openDueTransferSheet 등)가 쓰는 동일한 헬퍼(app-evolve cycle213 develop) */
+ const acctGone=!acct&&acctNm!=='—'; /* fromAssetId는 있었지만 그 자산이 삭제됨 — bal을 모르니 '여유 있어요'라고 단정하면 안 됨 */
  /* nc-fix(해결 방법 보기)가 카드 전체를 감싼 <button> 안에 onclick div로 들어있어 stopPropagation으로
     마우스 클릭만 막아 처리했고, 자체 role/tabindex가 없어 키보드·스위치 접근으로는 아예 닿을 수 없었다
     (잔액부족 상태에서 가장 중요한 바로가기인데도). spend-row/of-row와 동일하게 바깥을 role=button div로,
@@ -7650,11 +7652,13 @@ function nextOutflowCard(){
     <span class="nc-dd">${d===0?'오늘':d===1?'내일':'D-'+d}</span>
   </div>
   <div class="nc-amt num fit" data-max="34">${comma(t.amount)}<small>원</small></div>
-  <div class="nc-nm">${esc(t.memo||txCatLabel(t))}${acct?` · ${esc(acct.name)}`:''}</div>
-  <div class="nc-foot ${short?'bad':'good'}">
+  <div class="nc-nm">${esc(t.memo||txCatLabel(t))}${acctNm!=='—'?` · ${esc(acctNm)}`:''}</div>
+  <div class="nc-foot ${short?'bad':acctGone?'':'good'}">
     ${short
       ? `${shortDate(t.date)} 잔액 <b>${comma(short)}원 부족</b>`
-      : `${shortDate(t.date)} 잔액 <b>${comma(bal||0)}원</b> · 여유 있어요`}
+      : acctGone
+        ? `${shortDate(t.date)} 연결된 통장이 삭제됐어요`
+        : `${shortDate(t.date)} 잔액 <b>${comma(bal||0)}원</b> · 여유 있어요`}
   </div>
   ${short?`<button type="button" class="nc-fix" onclick="event.stopPropagation();openFixShortfall('${t.fromAssetId}','${t.date}',${short})" onkeydown="event.stopPropagation()">${svg('transfer')} 해결 방법 보기</button>`:''}
   </div>`;
