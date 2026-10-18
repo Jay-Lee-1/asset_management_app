@@ -1,15 +1,8 @@
 {
   "cycle": 212,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 201,
-      "phase": "review",
-      "timestamp": "2026-10-16T07:05:00.000Z",
-      "summary": "cycle201 develop(buildImportPreview 분할 거래 재가져오기 중복판정 수정, commit fa1869a) 검토 — logic.js의 csvDedupeKey(587-595행)가 date/type/amount/category/fromAssetName-or-Id/toAssetName-or-Id/memo로 키를 만듦을 재확인하고, existingCounts 생성부가 Object.assign({},t,{category:s.category,amount:s.amount,memo:s.memo||t.memo})로 t의 나머지 필드(date/type/fromAssetId/toAssetId 등)는 그대로 둔 채 분할 항목 값만 덮어써 r.txn(csvRowToImportTxn이 만드는 신규 파싱 행)과 정확히 같은 필드 집합으로 키가 만들어짐을 확인. s.memo||t.memo 폴백이 txnsToCSV의 내보내기 식(guard(s.memo||t.memo||''))과 동일해 왕복 일치. 비분할 거래는 splitLines가 [{category:t.category,amount:t.amount,memo:t.memo}] 폴백을 주므로 Object.assign 결과가 t 원본과 동일해 기존 동작 불변. node our-assets-v1.14.1/our-assets/test/run.js 1501/1501 통과. 이상 없음, 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 201,
       "phase": "develop",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-18T04:12:14.574387Z",
       "summary": "Explore 서브에이전트로 develop 후보를 탐색(cycle149-211에서 다룬 toast/invalidateBalances fromDate/closeSheetGuarded/aria-label/XSS/실행형 테스트 전환류/split거래/budgetCarry/pushCloud await/mergeCollection assets·goals mergeDataLoss 경고(cycle211) 등 전부 제외) — mergeRemoteDataIntoLocal()(index.html:1526-1548)이 cycle211에서 DB.assets/DB.goals에만 붙인 mergeCollectionConflicts() 기반 mergeDataLossCount 경고가 DB.txns/DB.inquiries/DB.assetQtyLog에는 빠져 있음을 발견 — 이 셋도 mergeCollection() whole-record LWW로 병합되는 동일 버그 클래스이고, 특히 txns는 변경 빈도가 가장 높은 컬렉션이라 이 손실이 가장 자주 발생할 후보인데 지금까지 아무 경고가 없었다. index.html:1531-1548을 리팩터링해 mergeDataLossN 계산 블록을 DB.txns 병합(옛 1531행) '앞'으로 끌어올리고 mergeCollectionConflicts 호출 대상에 DB.txns/DB.inquiries/DB.assetQtyLog를 추가(assets/goals는 그대로 유지, 집계 후 merge 순서는 변경 없음). test/run.js에 txns 단독 충돌 테스트 1건 + inquiries/assetQtyLog 합산 테스트 1건 추가(assets 전용 테스트와 동일한 패턴). APP_VERSION 1.47.184->1.47.185, sw.js CACHE v446->v447 갱신. HTML 주석 제거 후 <script> 블록 5개 + logic.js 모두 node --check 통과. node our-assets-v1.14.1/our-assets/test/run.js 1585/1585 -> 1587/1587 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 212,
+      "phase": "review",
+      "timestamp": "2026-10-18T05:05:00.000Z",
+      "summary": "cycle212 develop 커밋(7c117eb, mergeDataLoss 경고를 txns/inquiries/assetQtyLog까지 확장)을 검토. mergeRemoteDataIntoLocal()(index.html:1526-1548) 전문을 다시 읽어 whole-record LWW인 mergeCollection()으로 병합되는 다섯 컬렉션(txns/assets/goals/inquiries/assetQtyLog)이 전부 mergeCollectionConflicts 집계 대상에 포함됐고, skip/edits/confirmedDates를 합집합으로 보존해 이 손실 클래스를 이미 피해가는 mergeRecurrences는 여전히 제외돼 있음을 확인. mergeDataLossN 집계 블록이 다섯 mergeCollection() 호출 '모두'보다 앞에 위치해 local/remote 원본이 비교 시점에 아직 변형되지 않았음을 재확인(순서 변경이 집계 대상 확장과 함께 일어났지만 병합 자체의 실행 순서는 바뀌지 않음). 새 테스트 2건(txns 단독 충돌, inquiries+assetQtyLog 합산)도 로직과 정확히 일치하고 fix 되돌리면 실패함을 별도로 확인하지 않았으나 패턴이 cycle211의 검증된 assets/goals 테스트와 동일. HTML 주석 제거 후 <script> 블록 4개(실측, 커밋 메시지의 '5개'는 오기로 보임 — 중요하지 않은 기록상 차이) + logic.js 모두 node --check 통과. node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1587/1587 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
       "commit": null
     }
   ]
