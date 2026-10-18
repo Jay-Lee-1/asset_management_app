@@ -1,13 +1,13 @@
 {
   "cycle": 214,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
-      "cycle": 208,
-      "phase": "critique",
-      "timestamp": "2026-10-17T13:12:09.783Z",
-      "summary": "Explore 서브에이전트로 앱 전반을 보안/아키텍처 관점에서 훑었다(toast/announceLive 공백류, assetDelSel 경고, invalidateBalances fromDate, sanitizeBackup/buildImportPreview splits, 각종 실행형 테스트 추가(openSpendAnalysis·goalRowHTML·openRecManage·openQuickList·assetBalCard·openOwnerManage·openStaleMvReview·openCatManage·delAsset/assetDelSel·deleteTxnsUndo·invalidateBalances(fromDate)·announceLive/celebrate·isDraftDirty/closeSheetGuarded), openSheet/#dpModal/#dpWheel aria-labelledby, closeSheetGuarded 암묵적 닫기 dirty-draft 가드, dismissedStaleMvIds 가지치기(보류 유지), mergeCollection/mergeRecurrences 클락스큐(기각 유지), twGuard(기각 유지), CDN SRI(이 샌드박스 egress에서 불가), budgetCarryFor/modeSeg/r.skip·r.edits·r.confirmedDates 무제한증가/renderCurrent 전체재렌더(기각 유지) 등 cycle149-208에서 이미 다룬 항목 전부 제외). renderHistory()(index.html:4820)의 전체내역 검색창 #histQ가 `value=\"${H.q}\"`로 ST.hist.q를 esc() 없이(수동 \" 치환도 없이) 그대로 value 속성에 삽입하는 속성-이탈 XSS를 발견 — 바로 아래 자산 검색창(index.html:3471, value=\"${esc(ST.assetQ)}\")이 쓰는 정확한 패턴이 histQ에만 빠져 있다. H.q에 \"가 포함되면(클립보드 하이재킹 self-XSS 등) value 속성이 중간에 끝나고 onmouseover= 같은 새 속성이 주입돼 CSP 없는 이 앱에서 DB/localStorage(자산 잔액, 부채, 클라우드 키)를 유출하는 임의 JS 실행이 가능 — renderCurrent()가 거의 모든 상태변경 뒤 renderHistory()를 호출해 노출 빈도도 높다. 러너업: (1) d.memo 등 다른 지점들의 수동 `.replace(/\"/g,'&quot;')` 치환(4564/5288-5289/5321/5601/5654/8575)은 esc()와 스타일만 다를 뿐 이탈 불가능해 안전 — 이번 계획에서 제외, (2) RANGE_FROM='2023-01-01' 고정 플로어로 인한 재스캔 비용 증가는 cycle204 critique에서 이미 다뤄 재선정하지 않음. index.html:4820을 value=\"${esc(H.q)}\"로 수정(1글자) + test/run.js 기존 renderHistory 실행형 테스트 패턴에 escape 검증 1건 추가하는 계획을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "cycle": 214,
+      "phase": "develop",
+      "timestamp": "2026-10-18T12:00:00.000Z",
+      "summary": "Explore 서브에이전트로 develop 후보를 탐색(cycle149-213에서 다룬 toast/invalidateBalances fromDate/closeSheetGuarded/aria-label/XSS/실행형 테스트 전환류/split거래/pushCloud await/mergeDataLoss 경고(5개 컬렉션)/kakaoLogin 게스트 병합 안내/nextOutflowCard 스냅샷/#histQ 디바운스(보류 유지)/recSaveScopeConfirm 등(보류 유지)/DB.goals type:'networth'|'asset' 신설(cycle213 advance) 전부 제외). cycle213 advance가 막 추가한 asset형 목표 추적 기능 자체에서 새 버그 발견: goalHistoryFor(g)(index.html:2995)가 연결 자산(g.linkedAssetId)의 '현재' type을 전혀 확인하지 않고 항상 sign=1 원장-잔액 재생(assetBalanceSeries)으로 처리함 — 그런데 asOpenType()은 이미 연결해둔 자산의 종류를 fx/gold/stock(시세평가, 거래가 쌓이는 원장이 아님)이나 debt(sign=-1이어야 함, assetBalCard/debtPayoffProjection과 동일 규약)로 바꾸는 것을 전혀 막지 않는다. goalOpenAsset이 자산을 '고를 때'만 excludeMarketValued/excludeDebt로 막아줄 뿐이라 연결 '후'에 종류를 바꾸면: (1) fx/gold/stock으로 바뀌면 베이스가 거의 0이라 진행률이 영원히 0%에 멈춰버리고(실제 가치는 qty×시세인데 반영 안 됨), (2) debt로 바뀌면 부호가 반대라 빚을 갚을수록(잔액이 음수 쪽으로 줄어듦) 목표에서 멀어지는 것처럼 보인다 — 둘 다 goalLinkedAssetGone(자산이 존재하므로 false)과 goalHasUnknown 어느 쪽도 못 잡아 경고 없이 조용히 틀린 값을 보여줌. goalHistoryFor에 isMarketValued(a)||a.type==='debt' 가드를 추가해 자산 삭제와 동일하게 빈 이력([])을 돌려주게 하고(goalProgress가 cur:0·achieved:false로 중립 처리, homeAlerts의 goalBehind도 hist.length>=2 요건에 걸려 같이 억제됨 — 코드 추가 없이 자동으로 해결), 새 goalLinkedAssetBroken(g) 판정 함수를 추가해 goalRowHTML/openGoalsList에 '연결된 자산을 추적할 수 없어요' 중립 캡션(assetGone의 '삭제됐어요'와는 구분되는 문구 — 실제로 삭제된 게 아니므로)을 띄우게 했다. test/run.js에 7건 추가: goalLinkedAssetBroken/goalHistoryFor 단위 테스트(fx/gold/stock/debt 4종 전부 + networth형은 항상 false, savings는 여전히 추적 가능), goalRowHTML/openGoalsList 캡션 전환(실행형, stock으로 바꾸면 '추적할 수 없어요' 캡션+0%로 바뀌고 '삭제됐어요'는 안 뜸), homeAlerts goalBehind 오탐 억제(debt로 바뀐 연결 자산). index.html/sw.js 변경이라 APP_VERSION 1.47.188->1.47.189, sw.js CACHE v450->v451. HTML 주석 제거 후 <script> 블록 4개 + logic.js 모두 node --check 통과. node our-assets-v1.14.1/our-assets/test/run.js 1594/1594 -> 1601/1601 통과.",
       "commit": null
     },
     {

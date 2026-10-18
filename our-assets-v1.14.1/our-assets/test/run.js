@@ -205,7 +205,7 @@ const FUNCTIONS = [
   'txScheduled', 'monthStats', 'monthStats2', 'expenseByCat', 'needGold', 'inQuietWindow', 'fmtSynced', 'rateStatusText',
   'nextBigOutflow', 'dday', 'balanceOn', 'nextOutflowCard', 'monthOutflowCard', 'planGaugeCard', 'homeAlertCard', 'renderHome',
   'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwPresetSegHTML', 'nwHistoryCard', 'allocationCard', 'doRenameOwner', 'addOwner', 'ownerChipClass',
-  'goalOwnerEff', 'goalHasUnknown', 'goalLinkedAssetGone', 'goalHistoryFor', 'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'syncGoalInputs', 'goalClearDate', 'goalOwnerSel', 'goalTypeSel', 'goalOpenAsset', 'renderGoalForm', 'openGoalForm', 'saveGoal', 'delGoal',
+  'goalOwnerEff', 'goalHasUnknown', 'goalLinkedAssetGone', 'goalLinkedAssetBroken', 'goalHistoryFor', 'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'syncGoalInputs', 'goalClearDate', 'goalOwnerSel', 'goalTypeSel', 'goalOpenAsset', 'renderGoalForm', 'openGoalForm', 'saveGoal', 'delGoal',
   'openInquiry', 'sendInquiry', 'openInquiryList', 'delInquiry',
   'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetToggleSel', 'visibleAssetsForSel', 'assetSelAll', 'activeSel',
   'modeSeg', 'monthNav', 'abbr', 'calCellsFor', 'ledSumInner', 'ledSumBox', 'ledSumTap', 'calPane', 'txRowCore', 'txRow', 'dayTxns',
@@ -3541,6 +3541,35 @@ test('goalHistoryFor/goalLinkedAssetGone: asset형 목표는 연결된 자산 �
   const nwGoal = { id: 'g3', type: 'networth', owner: 'all' };
   assert.deepStrictEqual(sandbox.goalHistoryFor(nwGoal), sandbox.DB.nwHistory, 'networth형은 변함없이 nwHistoryForOwner(owner=all) 결과여야 함');
 });
+test('goalHistoryFor/goalLinkedAssetBroken: 연결 후 자산 종류가 fx/gold/stock(시세평가)나 debt(부호 반대)로 바뀌면 추측하지 않고 빈 이력을 돌려준다(app-evolve cycle214 develop)', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.DB = {
+    owners: ['나'],
+    assets: [
+      { id: 'a1', type: 'savings', owner: '나', baseAmount: 100000 },
+      { id: 'a2', type: 'stock', owner: '나', baseAmount: 0, stockQty: 1000, stockPrice: 70000 }, // 1000주*70000원=7천만원짜리 자산
+      { id: 'a3', type: 'debt', owner: '나', baseAmount: -500000 },
+      { id: 'a4', type: 'fx', owner: '나', baseAmount: 0, fxAmount: 1000, currency: 'USD' },
+      { id: 'a5', type: 'gold', owner: '나', baseAmount: 0, goldDon: 10 },
+    ],
+    txns: [],
+    recurrences: [],
+    settings: { confirmTransfers: false },
+    nwHistory: [],
+    goals: [],
+  };
+  const liveGoal = { id: 'g1', type: 'asset', linkedAssetId: 'a1', targetAmount: 200000 };
+  assert.strictEqual(sandbox.goalLinkedAssetBroken(liveGoal), false, '여전히 savings면 추적 가능해야 함');
+
+  ['a2', 'a3', 'a4', 'a5'].forEach((assetId) => {
+    const g = { id: `g-${assetId}`, type: 'asset', linkedAssetId: assetId, targetAmount: 200000 };
+    assert.strictEqual(sandbox.goalLinkedAssetBroken(g), true, `${assetId}로 연결되면 추적 불가 판정이어야 함`);
+    assert.strictEqual(sandbox.goalHistoryFor(g).length, 0, `${assetId}로 연결되면 goalHistoryFor가 sign/시세평가를 추측하지 않고 빈 이력을 돌려줘야 함`);
+  });
+
+  const networthGoal = { id: 'g6', type: 'networth', owner: 'all' };
+  assert.strictEqual(sandbox.goalLinkedAssetBroken(networthGoal), false, 'networth형 목표는 항상 false여야 함');
+});
 test('goalRowHTML/openGoalsList: asset형 목표는 연결 자산의 잔액을 기준으로 진행률을 계산하고, 연결 자산이 삭제되면 "연결된 자산이 삭제됐어요" 캡션이 붙으며 cur를 추측하지 않고 0으로 중립 처리한다', () => {
   sandbox.TODAY = '2026-06-15';
   sandbox.DB = {
@@ -3567,12 +3596,48 @@ test('goalRowHTML/openGoalsList: asset형 목표는 연결 자산의 잔액을 �
   sandbox.openGoalsList();
   assert.ok(sandbox.lastSheetHtml.includes('연결된 자산이 삭제됐어요'), 'openGoalsList도 같은 캡션을 보여줘야 함');
 });
+test('goalRowHTML/openGoalsList: 연결 자산이 삭제되진 않았지만 종류가 바뀌어 더 이상 추적 불가능하면 "연결된 자산을 추적할 수 없어요" 캡션이 붙고 cur를 0으로 중립 처리한다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.DB = {
+    owners: ['나'],
+    assets: [{ id: 'a1', type: 'savings', owner: '나', baseAmount: 100000, includeInTotal: true }],
+    txns: [],
+    recurrences: [],
+    settings: { confirmTransfers: false },
+    nwHistory: [],
+    goals: [],
+    rates: { fx: {}, goldPerG: 1, stocks: {} },
+  };
+  const g = { id: 'g1', name: '비상금', type: 'asset', linkedAssetId: 'a1', targetAmount: 200000, owner: '나' };
+  sandbox.DB.goals.push(g);
+  let html = sandbox.goalRowHTML(g);
+  assert.ok(html.includes('목표 진행률 50%'));
+  assert.ok(!html.includes('연결된 자산을 추적할 수 없어요'));
+
+  sandbox.DB.assets[0].type = 'stock'; sandbox.DB.assets[0].stockCode = '005930'; // 자산은 안 지워졌지만 종류가 바뀌어 더 이상 원장 잔액으로 추적 불가
+  html = sandbox.goalRowHTML(g);
+  assert.ok(html.includes('연결된 자산을 추적할 수 없어요'), '삭제되지 않았으므로 "삭제됐어요"가 아니라 별도 캡션이 붙어야 함');
+  assert.ok(!html.includes('연결된 자산이 삭제됐어요'));
+  assert.ok(html.includes('목표 진행률 0%'), 'cur를 추측하지 않고 0%로 중립 처리해야 함');
+
+  sandbox.lastSheetHtml = null;
+  sandbox.openGoalsList();
+  assert.ok(sandbox.lastSheetHtml.includes('연결된 자산을 추적할 수 없어요'), 'openGoalsList도 같은 캡션을 보여줘야 함');
+});
 test('homeAlerts: 연결 자산이 삭제된 asset형 목표는 goalBehind 알림에서 제외된다(cur 0 오탐 방지)', () => {
   setupHomeAlertsDB();
   sandbox.DB.owners = ['나'];
   sandbox.DB.goals = [{ id: 'g1', name: '사라진 자산 목표', type: 'asset', linkedAssetId: 'no-such-asset', targetAmount: 200000, targetDate: '2020-01-01', owner: '나' }];
   const alerts = sandbox.homeAlerts([]);
   assert.ok(!alerts.some((a) => a.kind === 'goalBehind' || a.kind === 'goalBehindMulti'), '연결 자산이 사라진 목표는 늦어짐 오탐으로 뜨면 안 됨');
+});
+test('homeAlerts: 연결 자산 종류가 바뀌어 추적 불가능해진 asset형 목표도 goalBehind 알림에서 제외된다(app-evolve cycle214 develop)', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.owners = ['나'];
+  sandbox.DB.assets.push({ id: 'brokenAsset', type: 'debt', owner: '나', baseAmount: -500000, includeInTotal: true });
+  sandbox.DB.goals = [{ id: 'g1', name: '종류 바뀐 목표', type: 'asset', linkedAssetId: 'brokenAsset', targetAmount: 200000, targetDate: '2020-01-01', owner: '나' }];
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'goalBehind' || a.kind === 'goalBehindMulti'), 'debt로 바뀐 연결 자산 때문에 sign이 반대로 계산되는 오탐이 뜨면 안 됨');
 });
 
 test('doRenameOwner: 이름변경 시 DB.goals의 owner도 함께 옮기고 touch()로 updatedAt을 다시 찍는다(mergeCollection 병합 불변식)', () => {

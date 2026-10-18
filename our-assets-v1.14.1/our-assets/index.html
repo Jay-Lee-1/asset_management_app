@@ -1387,7 +1387,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.188';
+const APP_VERSION='1.47.189';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2987,15 +2987,29 @@ function goalHasUnknown(g){
 /* 연결된 자산이 삭제된 asset형 목표 — 자산 1급 전제가 깨진 상태라 cur/추세를 추측하지 않고 중립 안내로 대체한다
  * (nextOutflowCard의 assetNm 스냅샷 폴백과 동일한 "단정하지 않는다" 원칙, app-evolve cycle214 advance) */
 function goalLinkedAssetGone(g){return g.type==='asset'&&!(DB.assets||[]).some(a=>a.id===g.linkedAssetId)}
+/* 연결된 자산이 살아있지만 더 이상 목표 추적 대상이 아닌 asset형 목표 — openAssetPicker(excludeMarketValued,
+ * excludeDebt)가 goalOpenAsset()에서 자산을 "고를 때"만 fx/gold/stock/debt를 막을 뿐, 이미 연결해둔 뒤에
+ * asOpenType()으로 그 자산의 종류를 바꾸는 건 아무 제약이 없다. isMarketValued(fx/gold/stock)는 거래가
+ * 쌓이는 원장이 아니라 qty×시세로 평가되고, debt는 assetBalanceSeries의 sign 규약이 반대라(자산 +1 ·
+ * 부채 -1, assetBalCard/debtPayoffProjection과 동일) goalHistoryFor가 이 자산들에 그대로 sign=1을 쓰면
+ * 진행률이 조용히 0%에 멈추거나(시세평가) 상환할수록 목표에서 멀어지는 것처럼(부호 반전) 보인다
+ * (app-evolve cycle214 develop). */
+function goalLinkedAssetBroken(g){
+ if(g.type!=='asset')return false;
+ const a=(DB.assets||[]).find(x=>x.id===g.linkedAssetId);
+ return !!a&&(isMarketValued(a)||a.type==='debt');
+}
 /* g.type에 따라 goalProgress에 넘길 이력을 고른다 — 'networth'는 기존처럼 귀속별 순자산 추이(nwHistoryForOwner),
  * 'asset'은 연결된 자산 하나의 잔액 추이를 assetBalCard/debtPayoffProjection과 동일한 방식(assetBalanceSeries)으로
  * 구해 goalProgress가 받는 {date,nw} 모양으로 매핑한다 — goalProgress(logic.js)는 필드 이름만 보고 '순자산'인지
  * '자산 하나의 잔액'인지는 가리지 않으므로 그대로 재사용할 수 있다(새 순수 함수를 만들 필요가 없음).
- * 연결 자산이 삭제됐으면 빈 배열 — goalProgress(hist.length 0)가 cur:0·achieved:false로 중립 처리한다. */
+ * 연결 자산이 삭제됐거나(goalLinkedAssetGone) 더 이상 추적 대상이 아니면(goalLinkedAssetBroken) 빈 배열 —
+ * goalProgress(hist.length 0)가 cur:0·achieved:false로 중립 처리하고, homeAlerts의 goalBehind도 hist.length>=2
+ * 요건에 걸려 같이 억제된다. */
 function goalHistoryFor(g){
  if(g.type==='asset'){
   const a=(DB.assets||[]).find(x=>x.id===g.linkedAssetId);
-  if(!a)return [];
+  if(!a||isMarketValued(a)||a.type==='debt')return [];
   const dates=assetBalSampleDates(RANGE_FROM,TODAY,60);
   const txns=allTxns(RANGE_FROM,TODAY).filter(t=>!isPending(t));
   return assetBalanceSeries(txns,a.id,assetBase(a),1,dates).map(p=>({date:p.date,nw:p.bal}));
@@ -3006,10 +3020,11 @@ function goalRowHTML(g){
  const p=goalProgress(g,goalHistoryFor(g),TODAY); /* 목표가 귀속별(owner)이면 그 귀속만의 순자산 추이로, 자산 연결 목표면 그 자산 하나의 잔액 추이로 진행률·투사를 계산(goalHistoryFor) */
  const color=p.achieved?'var(--income)':'var(--brand)';
  const assetGone=goalLinkedAssetGone(g);
+ const assetBroken=goalLinkedAssetBroken(g);
  const hasUnknown=goalHasUnknown(g);
  const overdue=goalIsOverdue(g.targetDate,p.achieved,TODAY); /* homeAlerts()의 goalBehind 알림은 hist.length>=2·!hasUnknown을 요구해 안 뜰 때가 있어도, 목표 화면 자체엔 지남 표시가 있어야 함(app-evolve cycle195 develop) */
  return `<div class="pg-row" tabindex="0" role="button" aria-label="${esc(g.name)} 목표 진행률 ${p.pct}%${overdue?' 목표일 지남':''}" onclick="openGoalForm('${g.id}')" onkeydown="rowKeydown(event,()=>openGoalForm('${g.id}'))">
-   <div class="pg-head"><span class="pg-k">${esc(g.name)}${assetGone?' <span class="mini warn">연결된 자산이 삭제됐어요</span>':hasUnknown?' <span class="mini warn">일부 미확인</span>':''}${overdue?' <span class="mini warn">목표일 지남</span>':''}${p.achieved?`<span class="pg-done" style="color:${color};background:color-mix(in srgb,${color} 15%,transparent)">달성</span>`:''}</span>
+   <div class="pg-head"><span class="pg-k">${esc(g.name)}${assetGone?' <span class="mini warn">연결된 자산이 삭제됐어요</span>':assetBroken?' <span class="mini warn">연결된 자산을 추적할 수 없어요</span>':hasUnknown?' <span class="mini warn">일부 미확인</span>':''}${overdue?' <span class="mini warn">목표일 지남</span>':''}${p.achieved?`<span class="pg-done" style="color:${color};background:color-mix(in srgb,${color} 15%,transparent)">달성</span>`:''}</span>
      <span class="pg-nums"><b class="num">${comma(p.cur)}</b><span class="pg-of num"> / ${comma(p.target)}원</span></span></div>
    <div class="pg-bar"><i style="width:${p.pct}%;background:${color}"></i></div>
    ${!p.achieved&&p.projectedDate?`<div class="msub2" style="margin-top:4px">이대로면 ${shortDate2(p.projectedDate)}쯤 달성 예상</div>`:''}
@@ -3031,13 +3046,14 @@ function openGoalsList(){ /* 관리 목록은 캐러셀 귀속과 무관하게 �
    const p=goalProgress(g,goalHistoryFor(g),TODAY);
    const ownerBadge=goalOwnerEff(g)!=='all'?` · ${esc(g.owner)}`:'';
    const assetGone=goalLinkedAssetGone(g); /* goalRowHTML()과 동일 캡션(app-evolve cycle214 advance) */
+   const assetBroken=goalLinkedAssetBroken(g); /* goalRowHTML()과 동일 캡션(app-evolve cycle214 develop) */
    const hasUnknown=goalHasUnknown(g); /* goalRowHTML()과 동일 캡션(app-evolve cycle186 advance) */
    const overdue=goalIsOverdue(g.targetDate,p.achieved,TODAY); /* goalRowHTML()과 동일 판정(app-evolve cycle195 develop) */
    return `<div class="manage-row" tabindex="0" role="button" aria-label="${esc(g.name)} 목표 진행률 ${p.pct}%${overdue?' 목표일 지남':''}" onclick="openGoalForm('${g.id}')" onkeydown="rowKeydown(event,()=>openGoalForm('${g.id}'))">
     <div class="avatar a-save" style="width:38px;height:38px">${svg('target')}</div>
     <div style="flex:1;min-width:0"><div class="mn">${esc(g.name)} ${p.achieved?'<span class="mini">달성</span>':''}</div>
      <div class="msub">${comma(p.cur)} / ${comma(p.target)}원 · ${p.pct}%${ownerBadge}</div>
-     ${assetGone?'<div class="mini warn" style="margin-top:2px">연결된 자산이 삭제됐어요</div>':hasUnknown?'<div class="mini warn" style="margin-top:2px">일부 미확인</div>':''}
+     ${assetGone?'<div class="mini warn" style="margin-top:2px">연결된 자산이 삭제됐어요</div>':assetBroken?'<div class="mini warn" style="margin-top:2px">연결된 자산을 추적할 수 없어요</div>':hasUnknown?'<div class="mini warn" style="margin-top:2px">일부 미확인</div>':''}
      ${g.targetDate?`<div class="msub2">목표일 ${fmtDateFull(g.targetDate)}${overdue?' <span class="mini warn">지남</span>':''}</div>`:''}</div>
     <div class="mc">${svg('chev')}</div></div>`;
  }).join('')}</div>`:`<div class="empty"><div class="ei">${svg('target')}</div><div class="et">아직 목표가 없어요</div><div class="es">순자산 목표를 세우면 진행 상황을 추적할 수 있어요</div></div>`;
