@@ -1,15 +1,8 @@
 {
   "cycle": 216,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 211,
-      "phase": "develop",
-      "timestamp": "2026-10-18T00:17:48.784Z",
-      "summary": "Explore 서브에이전트로 develop 후보를 탐색(cycle149-210에서 다룬 toast/invalidateBalances fromDate/closeSheetGuarded/aria-label/XSS/실행형 테스트 전환류/split거래/budgetCarry 등 전부 제외) — pushCloud()(index.html:1932)의 충돌 자동 병합 재시도 경로가 return pushCloud(true)로 await 없이 재귀호출만 해, 감싸는 try의 finally(if(!retried)PUSH_CLOUD_INFLIGHT=false)가 재시도의 네트워크 왕복이 끝나기 전에 즉시 실행돼 PUSH_CLOUD_INFLIGHT 중복-push 가드가 재시도 중에도 풀려버리는 버그 발견(PUSH_CLOUD_INFLIGHT/cycle93 조건부 UPDATE 경합방지 인프라가 지키려던 바로 그 문제 재발). return pushCloud(true) -> return await pushCloud(true)로 1줄 수정. test/run.js의 기존 pushCloud conflict/retry 테스트 블록에 1건 추가: SB.from(...).update().eq().eq().select() 재시도(2번째) 호출만 수동 gate로 멈춰두고, 그 동안 PUSH_CLOUD_INFLIGHT가 true로 유지되는지(fix 전엔 false로 풀려 실패, fix 후엔 true로 유지) 직접 검증 — 수정 되돌려서 테스트가 실제로 실패하는 것까지 확인. index.html/sw.js 변경이라 APP_VERSION 1.47.182->1.47.183, sw.js CACHE v444->v445 갱신. HTML 주석 제거 후 <script> 블록 4개 모두 node --check 통과. node our-assets-v1.14.1/our-assets/test/run.js 1571/1571 -> 1572/1572 통과.",
-      "commit": null
-    },
     {
       "cycle": 211,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-18T20:30:00.000Z",
       "summary": "critique(cycle215) 계획대로 부팅 중(SDK_READY→getSession→pullCloud 순차 대기, 최대 약 22초) #app이 아무 피드백 없는 빈 화면으로 보이던 공백에 로딩 스플래시를 추가. <body> 바로 다음(#errBanner 앞, 즉 #app보다 먼저)에 JS 없이 바로 보이는 #bootSplash 정적 마크업(기존 .auth-logo 패턴 재사용 + 순수 CSS 스피너 @keyframes bootSpin, 기존 prefers-reduced-motion 전역 규칙이 자동 적용됨)을 추가했다. hideBootSplash(){const el=$('bootSplash');if(el)el.remove()}를 추가하고 showApp()/showAuth() 맨 앞에서 호출 — startApp()이 showApp()을 호출하므로 로그인/게스트 경로를 자동으로 덮고, showAuth()가 비로그인 경로를 덮는다(lockApp()은 startApp() 이후에만 호출되므로 별도 처리 불필요). boot()의 순차 대기 구조 자체는 계획대로 범위 밖으로 남겼다. test/run.js에 hideBootSplash를 FUNCTIONS 추출 목록에 추가하고(기존 $ 스텁에 bootSplashEl/bootSplashMissing 분기만 추가, 새 DOM shim 불필요) 4건 추가: hideBootSplash 실행형 2건(엘리먼트 있으면 remove() 호출/이미 없으면 조용히 통과), showApp·showAuth가 hideBootSplash()를 부르는지 extractFunction 기반 소스 검증 2건(기존 togglePwVis 와이어링 테스트와 동일한 패턴 — boot() 테스트의 showAuth/startApp 스파이는 그대로 둬서 기존 1609건에 영향 없음), index.html 정적 마크업이 <body>와 #errBanner 사이(#app보다 먼저)에 있는지 정규식 검증 1건. index.html/sw.js 변경이라 APP_VERSION 1.47.191->1.47.192, sw.js CACHE v453->v454. HTML 주석 제거 후 <script> 블록 4개(실제 코드 블록, 29행의 '<script>'를 언급하는 주석은 정규식 오탐이라 제외) 모두 node --check 통과. node our-assets-v1.14.1/our-assets/test/run.js 1609/1609 -> 1614/1614 통과(3회 재실행 모두 안정적으로 통과). pending_advance_plan을 비웠다.",
       "commit": null
+    },
+    {
+      "cycle": 216,
+      "phase": "develop",
+      "timestamp": "2026-10-18T02:30:00.000Z",
+      "summary": "renderAssetSheet()의 fx/gold/stock 자산 보유 수량 입력(asFx/asGold/asQty)에 Enter-제출 핸들러 누락 발견 — asAmt/goalAmt/rAmt/txAmt 등 거의 모든 금액 입력엔 이미 onkeydown Enter 핸들러가 있는데 이 셋만 빠져 있어 사용자가 수량 입력 후 Enter를 눌러도 저장되지 않던 문제. 세 입력에 onkeydown=\"if(event.key===Enter&&!event.isComposing)saveAsset(editing)\" 추가. test/run.js에 asFx/asGold/asQty 각각 Enter-제출 onkeydown 존재를 확인하는 테스트 1건 추가(1614->1615 통과). APP_VERSION 1.47.192->1.47.193, sw.js CACHE v454->v455.",
+      "commit": "8860287c46bbcdab0d10372a93057c3641591ad8"
     }
   ]
 }
