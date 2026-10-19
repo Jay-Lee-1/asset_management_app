@@ -1,15 +1,8 @@
 {
   "cycle": 217,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 212,
-      "phase": "develop",
-      "timestamp": "2026-10-18T04:12:14.574387Z",
-      "summary": "Explore 서브에이전트로 develop 후보를 탐색(cycle149-211에서 다룬 toast/invalidateBalances fromDate/closeSheetGuarded/aria-label/XSS/실행형 테스트 전환류/split거래/budgetCarry/pushCloud await/mergeCollection assets·goals mergeDataLoss 경고(cycle211) 등 전부 제외) — mergeRemoteDataIntoLocal()(index.html:1526-1548)이 cycle211에서 DB.assets/DB.goals에만 붙인 mergeCollectionConflicts() 기반 mergeDataLossCount 경고가 DB.txns/DB.inquiries/DB.assetQtyLog에는 빠져 있음을 발견 — 이 셋도 mergeCollection() whole-record LWW로 병합되는 동일 버그 클래스이고, 특히 txns는 변경 빈도가 가장 높은 컬렉션이라 이 손실이 가장 자주 발생할 후보인데 지금까지 아무 경고가 없었다. index.html:1531-1548을 리팩터링해 mergeDataLossN 계산 블록을 DB.txns 병합(옛 1531행) '앞'으로 끌어올리고 mergeCollectionConflicts 호출 대상에 DB.txns/DB.inquiries/DB.assetQtyLog를 추가(assets/goals는 그대로 유지, 집계 후 merge 순서는 변경 없음). test/run.js에 txns 단독 충돌 테스트 1건 + inquiries/assetQtyLog 합산 테스트 1건 추가(assets 전용 테스트와 동일한 패턴). APP_VERSION 1.47.184->1.47.185, sw.js CACHE v446->v447 갱신. HTML 주석 제거 후 <script> 블록 5개 + logic.js 모두 node --check 통과. node our-assets-v1.14.1/our-assets/test/run.js 1585/1585 -> 1587/1587 통과.",
-      "commit": null
-    },
     {
       "cycle": 212,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-19T00:10:00.000Z",
       "summary": "critique(cycle216) 계획대로 doExport('csv')가 미래 예정 반복거래/미래 날짜 거래를 '거래 내역' CSV에 영구 혼입시키던 문제를 수정했다. (1) doExport(index.html:6346)의 CSV 분기에서 DB.txns.concat(expandRec(RANGE_FROM,RANGE_TO))를 txnsToCSV에 넘기기 전 filter에 `&&t.date<=TODAY`를 추가해, 반복거래의 가상 '예정' 회차와 아직 안 지난 수동 미래 거래 둘 다 CSV에서 제외했다(TODAY 당일까지는 포함, 즉 이미 일어난 일만). (2) csvRowToImportTxn(6230행대)에 range 체크 다음으로 `if(date>TODAY)return{ok:false,error:'future'}`를 추가 — doExport의 새 필터로 걸러지지 않은(이 필터가 없던 구버전이 만든 CSV 등) 미래 날짜 행도 재가져오기 시 고정 1회성 실거래로 박히지 않게 range와 구분된 사유로 거부한다. buildImportPreview에 futureCount 카운터를 추가(invalidCount/rangeCount와 나란히)하고, openCsvImportPreview의 stats 목록에 \"아직 지나지 않은 날짜(예정) N행은 제외\" 안내를 추가했다. (3) AUTH.resetPasswordLocal(2184행)과 doForgotPasswordLocal(8850행)의 복구코드 없음 안내 문구를 'CSV로 미리 백업'에서 '백업 파일로 미리 백업'으로 바꿔, 반복거래/카테고리/예산/목표/자산 메타데이터까지 보존하는 진짜 무손실 경로(JSON 백업 내보내기)를 권하도록 고쳤다. test/run.js에 3건 추가: txnsToCSV+doExport 필터 조합이 TODAY 이후 반복거래 예정 회차를 실제로 제외하는지(실행형, 월세 반복 중 2026-01-01 1건만 남고 이후 수십 달치는 빠짐), csvRowToImportTxn이 RANGE_TO 안이어도 TODAY 이후 날짜는 error:'future'로 거부하고(RANGE_TO 경계 테스트는 TODAY도 같이 끌어올려 분리) TODAY 당일/이전은 통과시키는지, buildImportPreview가 futureCount를 rangeCount/invalidCount와 분리해서 세는지. 기존 RANGE_TO 경계 테스트(csvRowToImportTxn: RANGE_TO 이후 날짜는...)가 TODAY를 건드리지 않아 새 future 체크에 걸려 깨지는 걸 발견해 그 테스트 안에서 sandbox.TODAY도 RANGE_TO와 같이 끌어올리도록 수정(검증 대상인 RANGE_TO 경계 자체는 그대로 유지, 끝에 TODAY 원복). index.html/sw.js 변경이라 APP_VERSION 1.47.194->1.47.195, sw.js CACHE v456->v457. HTML 주석 제거 후 <script> 블록 4개(1번째 블록은 '동적 로더' 주석이 '<script>' 문자열을 포함해 발생하는 기존 알려진 정규식 오탐이라 HTML 주석 제거 후 재확인 필요 — 제거 후엔 정상 4블록) + logic.js 모두 node --check 통과. node our-assets-v1.14.1/our-assets/test/run.js 1615/1615 -> 1618/1618 통과. pending_advance_plan을 비웠다.",
+      "commit": null
+    },
+    {
+      "cycle": 217,
+      "phase": "review",
+      "timestamp": "2026-10-19T02:08:06.588Z",
+      "summary": "cycle217 develop 커밋(e3ccd40, bulkCatTargets()에 adjust 체크 추가)을 검토. ADJUST_CAT('잔액 조정')을 보호하는 기존 세 경로(openAdjustEdit 전용 편집, doRenameCat/doDeleteCat의 k==='income'&&c===ADJUST_CAT 가드)를 index.html에서 직접 확인했고, histRow가 txRowCore(mode:selMode)로 adjust 거래에도 선택 체크박스를 그대로 렌더함(어떤 경로도 adjust 행을 선택 모드에서 제외하지 않음)을 확인해 이 버그가 실제로 UI에서 도달 가능했음을 재검증. logic.js의 items.some(t=>t.adjust) 체크가 transfer 체크 다음·split/mixed 체크 이전에 들어가 기존 순서를 깨지 않고, bulkCatPickFor의 토스트 분기와 doBulkCat의 safety net까지 일관되게 adjust를 처리함을 추적. 새 테스트 4건(bulkCatTargets 2건: 혼합 선택과 단독 선택 모두 reason:'adjust', doBulkCat safety net 1건, bulkCatPickFor 토스트 1건)이 실제 로직과 정확히 일치. node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1622/1622 통과. logic.js node --check 통과(index.html의 <script> 블록 정규식 추출은 '동적 로더' 주석의 '<script>' 문자열로 인한 기존 알려진 오탐이 재현됐을 뿐 — HTML 주석 제거 후엔 정상임이 cycle216에서 이미 확인된 패턴). APP_VERSION/sw.js CACHE 변경 없음(review 단계, 코드 변경 없음). 실제 버그 없음 — 이상 없음.",
       "commit": null
     }
   ]
