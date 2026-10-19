@@ -1,15 +1,12 @@
 {
   "cycle": 218,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "boot() 순차 클라우드 대기를 로컬-먼저-렌더+백그라운드 병합으로 재구성",
+    "why": "boot()(index.html:8576-8598)이 await SDK_READY(최악 6초)->await withTimeout(SB.auth.getSession())->await afterCloudAuth(uid)(내부 await pullCloud(), 2008/2017행)를 전부 직렬로 끝내야 startApp()(8558, load()+renderHome()으로 실제 화면을 그리는 함수)을 부른다. 로컬 세션/게스트는 이미 완비된 localStorage DB를 갖고 있는데도, 느린 네트워크·콜드 서버리스 함수에서 최악 약 22초간 #bootSplash 스피너만 보이는 빈 화면을 겪는다. cycle215 critique가 이 구조 자체는 후속 과제로 명시적으로 미뤄뒀고(그 사이클은 스피너 UI만 추가), 멀티탭 동기화 경로(applyForeignSave, 2385행)가 이미 '로컬을 먼저 그리고 원격 변경을 비파괴적으로 나중에 합류'하는 패턴을 증명하므로 boot()도 같은 패턴을 쓰지 않을 이유가 없다.",
+    "approach": "- boot()(8576-8598)을 재구성: 로컬 세션(AUTH.current())이나 GUEST가 있으면 SDK_READY/getSession/afterCloudAuth를 기다리지 않고 먼저 startApp()(8558, load()로 즉시 렌더)+lockApp() 분기를 실행한다.\n- 클라우드 체인(SDK_READY->sbReady()->getSession->afterCloudAuth/pullCloud)은 startApp() 이후 백그라운드 Promise로 분리 실행하고, 완료되면 afterCloudAuth 내부의 무충돌 전량교체 분기(index.html 2026-2045 근방) 대신 resolveCloudPullRemote/applyForeignSave가 쓰는 mergeRemoteDataIntoLocal() 기반 비파괴 병합 후 renderCurrent() 류로 화면을 다시 그리게 한다(이미 화면이 떠 있는 상태에서 DB를 통째로 덮어쓰지 않도록).\n- #bootSplash(hideBootSplash)는 로컬 load() 완료 시점에 곧바로 사라지게 하고(수초~22초가 아니라 수십ms), 클라우드 병합은 화면 뒤에서 조용히 끝나거나 충돌/배너 UI로 알린다.\n- APPLOCK.enabled()->lockApp() 호출 시점, localHasUnsyncedChanges/충돌 처리, GUEST 분기, 비로그인(showAuth()) 분기는 기존과 동일한 최종 상태로 귀결되는지 각각 트레이스해서 보존한다.\n- test/run.js에 boot() 관련 실행형 테스트 추가: startApp()/render가 cloud Promise들이 settle되기 전에 먼저 호출되는지, 느리거나 실패하는 pullCloud에도 최종적으로 올바르게 병합된 상태로 끝나는지."
+  },
   "history": [
-    {
-      "cycle": 213,
-      "phase": "develop",
-      "timestamp": "2026-10-18T08:10:00.000Z",
-      "summary": "Explore 서브에이전트로 develop 후보를 탐색(cycle149-212에서 다룬 toast/invalidateBalances fromDate/closeSheetGuarded/aria-label/XSS/실행형 테스트 전환류/split거래/pushCloud await/mergeCollection 기반 mergeDataLoss 경고(assets/goals/txns/inquiries/assetQtyLog)/dismissedStaleMvIds 가지치기(보류)/CDN SRI(기각)/budgetCarryFor 무제한증가(보류)/kakaoLogin 게스트 병합 안내 전부 제외). nextOutflowCard()(index.html:7629-7660, 홈 \"다음에 나갈 큰돈\" 카드)가 앱의 다른 모든 거래 표시 경로(openConfirmTransfer/txRowCore/planRowsHTML 등)와 달리 assetNm(id,snap) fallback 없이 DB.assets.find로 직접 자산을 찾아, 연결된 자산이 삭제되면 (1) 계좌명이 조용히 사라지고 (2) bal===null이라 short가 항상 0이 돼 잔액을 알 수 없는데도 \"여유 있어요\"라고 단정해버리는 버그를 발견 — 미래 지출 거래가 있는 자산을 삭제하면(delAsset/deleteAssetsUndo는 미래 거래를 지우지 않고 snapshotAssetName()으로 이름만 남김) 바로 재현됨. acctNm=assetNm(t.fromAssetId,t.fromAssetName)로 이름 표시를 바꾸고, acctGone=!acct&&acctNm!==\"—\"일 때 footer가 \"여유 있어요\" 대신 \"연결된 통장이 삭제됐어요\"를 보여주도록 수정. test/run.js에 실행형 회귀 테스트 2건 추가(자산 삭제 시 스냅샷 이름 표시+단정 금지 확인, 자산이 살아있을 때 기존 동작 유지 확인) — fix 되돌리면 전자가 실패함을 git stash로 별도 확인. node --check(메인 스크립트 블록)와 전체 회귀 테스트(1592/1592) 통과 후 APP_VERSION 1.47.186->1.47.187, sw.js CACHE v448->v449.",
-      "commit": null
-    },
     {
       "cycle": 213,
       "phase": "review",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-19T06:16:14.000Z",
       "summary": "cycle218 develop 커밋(3bb5123, asOpenType()의 연금 전환/복귀 시 수동 includeInTotal 복원 버그 수정)을 검토. onPick 로직을 직접 트레이스: (1) cash(includeInTotal:false)->pension->cash 왕복 시 _pensionPrevIncl에 false가 저장되고 복귀 시 그대로 복원됨(수정 전엔 무조건 true로 덮였을 상황), (2) pension을 재선택해도(pkChoose가 현재 값이어도 항상 onPick을 호출함을 pkChoose(8310행)에서 확인) _pensionAutoExcl이 이미 true라 _pensionPrevIncl을 덮어쓰지 않아 기억값이 보존됨, (3) 기존에 저장된 연금 자산을 openAssetSheet로 열 때(3828행, _pensionPrevIncl은 세팅 안 함)는 그대로 true로 복원되는 기존 동작을 유지함, (4) saveAsset의 delete 목록에 _pensionPrevIncl이 추가돼 DB.assets에 임시 필드가 새지 않음. pension<->non-pension<->pension<->non-pension 다중 왕복 경로까지 추적해도 매번 올바르게 복원됨을 확인. 새 테스트 3건(복원/no-op 보존/saveAsset delete)이 로직과 정확히 일치. node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1629/1629 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 218,
+      "phase": "critique",
+      "timestamp": "2026-10-19T08:30:00.000Z",
+      "summary": "Explore(general-purpose) 서브에이전트로 앱 전반을 아키텍처 관점에서 훑었다(cycle149-218에서 다룬 toast/invalidateBalances fromDate/closeSheetGuarded/aria-label/XSS/실행형 테스트 전환류(wireSheetGestures·ensureEdgeGesture 등)/split거래 dedupe/pushCloud await/mergeDataLoss 경고(5개 컬렉션)/kakaoLogin 게스트 병합/nextOutflowCard 스냅샷/DB.goals type:'networth'|'asset' 및 goalHistoryFor 자산종류변경 버그/delOwner 목표 체크/pushCloud·pullCloud gzip 압축/#bootSplash/asFx·asGold·asQty Enter-제출(되돌림)/doExport csv 미래거래 혼입/bulkCatTargets adjust 가드/dismissedStaleMvIds·budgetCarryFor·recSaveScopeConfirm(이미 해결 확인)/#histQ 디바운스/CDN SRI(기각)/asOpenType pension 복귀 버그 전부 제외). cycle215 critique가 '후속 과제로 미룬다'며 범위 밖으로 남겨둔 boot() 자체의 순차 대기 구조를 재조사 — boot()(index.html:8576-8598)가 await SDK_READY(최악 6초, 1387)->await withTimeout(SB.auth.getSession())->await afterCloudAuth(uid)(내부에서 await pullCloud(), 2008/2017행)를 전부 직렬로 기다린 뒤에야 startApp()(8558, 실제로 load()+renderHome()으로 화면을 그리는 함수)을 호출함을 index.html에서 직접 확인(cycle215 advance가 추가한 #bootSplash는 이 대기 구간을 스피너로 가려줄 뿐 구조 자체는 그대로임도 확인). 로컬 localStorage DB는 SDK/네트워크와 무관하게 이미 완비돼 있고, 멀티탭 동기화 경로(applyForeignSave, 2385행)가 이미 '로컬을 먼저 그리고 원격 변경을 나중에 비파괴적으로 병합'하는 패턴을 증명하는데도 boot()만 이 패턴을 안 쓴다 — 느린/불안정한 네트워크나 콜드 서버리스 함수에서 최악 약 22초간 빈 화면(스피너만)을 보여주는 구조적 결함. startApp()/load()를 먼저 실행해 로컬 데이터로 즉시 렌더하고, SDK_READY->getSession->afterCloudAuth/pullCloud 체인은 백그라운드로 돌려 resolveCloudPullRemote류가 이미 쓰는 mergeRemoteDataIntoLocal 기반 비파괴 병합+재렌더로 합류시키는 계획(APPLOCK/게스트 분기, localHasUnsyncedChanges 등 기존 보장 유지, boot 관련 실행형 테스트 추가 포함)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
       "commit": null
     }
   ]
