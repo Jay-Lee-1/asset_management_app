@@ -241,7 +241,10 @@ const FUNCTIONS = [
   // 태그를 파서 블로킹에서 벗어난 동적 로더+타임아웃으로 교체) 구현 검증용. boot()은 document/
   // AUTH/APPLOCK/startApp/showAuth 등 비순수 전역에 엮여 있어 SDK_READY 테스트 블록에서 그때그때
   // 필요한 스텁을 임시로 바꿔 끼운다(doLogout/doResetAll 등 기존 [실행형] 테스트와 같은 패턴).
-  'loadScriptWithTimeout', 'boot',
+  // bootCloudBg는 cycle218 advance(boot()이 로컬 세션/게스트에 한해 SDK_READY/클라우드 체인을
+  // 기다리지 않고 곧장 startApp()부터 부르도록 재구성하면서, 그 클라우드 체인만 분리해낸 함수) 검증용 —
+  // 같은 SDK_READY 테스트 블록에서 boot()과 나란히 다룬다.
+  'loadScriptWithTimeout', 'boot', 'bootCloudBg',
   // togglePwVis/wireWhHead는 cycle209 critique → cycle210 advance가 domstub.js(최소 DOM shim)로
   // 실행형 전환한 첫 두 함수 — svg()는 togglePwVis가 아이콘을 그릴 때 부른다(실제 I 아이콘
   // 테이블과 비교하려면 같이 끌어와야 함). 아래 togglePwVis/wireWhHead 테스트 참고.
@@ -17666,14 +17669,20 @@ test('CDN 리소스: pretendard 태그는 crossorigin을 유지하고, kakao·su
   );
 });
 
-/* ---------- [실행형] loadScriptWithTimeout/SDK_READY/boot (app-evolve cycle176 advance) ----------
+/* ---------- [실행형] loadScriptWithTimeout/SDK_READY/boot/bootCloudBg
+ * (app-evolve cycle176 advance, cycle218 advance가 boot() 재구성으로 갱신) ----------
  * cycle176 critique가 지적한 공백: Kakao/Supabase CDN 스크립트가 defer/async 없는 파서 블로킹 태그여서
  * 오프라인/캡티브 포털에서 TCP 연결이 행(hang)하면 boot()도 전혀 못 뜨고 화면이 완전히 빈 채로 멈췄다.
- * 아래 두 그룹으로 검증한다: (1) loadScriptWithTimeout 자체가 성공/실패/타임아웃을 구분하지 않고
- * 항상 resolve하는지(withTimeout 테스트 블록과 같은 이유로 이 블록에서만 실제 Node 타이머로 바꿔준다),
- * (2) boot()이 실제로 SDK_READY를 기다린 "뒤에" 로그인/게스트 분기로 진행하는지(대기 중엔 절대
- * startApp()/showAuth()를 부르지 않음) — 그리고 SDK_READY가 즉시 풀리면 클라우드 세션 복원
- * (afterCloudAuth) 경로가 기존과 동일하게 동작하는지. */
+ * (1) loadScriptWithTimeout 자체가 성공/실패/타임아웃을 구분하지 않고 항상 resolve하는지(withTimeout
+ * 테스트 블록과 같은 이유로 이 블록에서만 실제 Node 타이머로 바꿔준다)는 cycle176 그대로 검증한다.
+ * (2)/(3)은 cycle218 critique(boot()이 로컬 세션/게스트에도 SDK_READY→getSession→pullCloud를 전부
+ * 직렬로 기다려 최악 약 22초간 빈 화면을 보여주던 구조적 결함)의 advance 구현 검증으로 교체됐다 —
+ * 로컬 세션/게스트는 SDK_READY를 기다리지 않고 startApp()부터 곧장 부르는지(showAuth() 경로는
+ * 기존처럼 SDK_READY를 기다리는지 회귀 없음도 같이 확인), 클라우드 체인은 bootCloudBg()로 분리돼
+ * startApp() 이후 화면을 막지 않고 백그라운드로 도는지, 그리고 bootCloudBg() 자신이 remote가 없을 때
+ * (네트워크 실패 포함) afterCloudAuth()의 guestHasData()/emptyDB() 폴백을 타지 않고 이미 로드된 로컬
+ * DB를 절대 건드리지 않는지, remote가 있을 때만 mergeRemoteDataIntoLocal()로 비파괴 병합하는지를
+ * pullCloudIfStale() 테스트와 같은 패턴으로 검증한다. */
 (() => {
   const origSetTimeout = sandbox.setTimeout, origClearTimeout = sandbox.clearTimeout,
     origDocument = sandbox.document;
@@ -17718,7 +17727,7 @@ test('CDN 리소스: pretendard 태그는 crossorigin을 유지하고, kakao·su
     } finally { restoreTimers(); }
   });
 
-  test('[실행형] boot(): SDK_READY가 아직 안 풀렸으면 startApp()/showAuth() 중 어느 쪽도 부르지 않고, 풀리면 그제서야 진행한다', async () => {
+  test('[실행형] boot(): 로그인/게스트 모두 아니면(showAuth 경로) SDK_READY가 풀릴 때까지 기다렸다가 진행한다(기존 동작 회귀 없음)', async () => {
     const sessionOrig = sandbox.SESSION, guestOrig = sandbox.GUEST, authOrig = sandbox.AUTH;
     sandbox.SESSION = null; sandbox.GUEST = false;
     sandbox.AUTH = { exists: () => true, current: () => null, rec: () => null, signOut: () => {} };
@@ -17727,14 +17736,15 @@ test('CDN 리소스: pretendard 태그는 crossorigin을 유지하고, kakao·su
     sandbox.SDK_READY = new Promise((res) => { resolveSdk = res; });
     try {
       const bootP = sandbox.boot();
-      // boot()은 await SDK_READY에서 곧바로 멈춰야 한다 — 동기 실행 구간이라 마이크로태스크를
-      // 기다릴 필요 없이 이 지점에서 바로 확인할 수 있다.
-      assert.strictEqual(sandbox.migrateLegacyCalls, 0, 'SDK_READY를 기다리지 않고 migrateLegacy()가 먼저 불림');
+      // migrateLegacy()는 동기 구간이라 SDK_READY와 무관하게 이미 불려 있어야 하지만(cycle218
+      // advance — 로컬/게스트 분기와 공유하는 선두 공통 로직), showAuth()는 await SDK_READY
+      // 뒤에서만 불려야 한다 — 동기 실행 구간이라 마이크로태스크를 기다릴 필요 없이 이 지점에서
+      // 바로 확인할 수 있다.
+      assert.strictEqual(sandbox.migrateLegacyCalls, 1, 'migrateLegacy()가 동기 구간에서 불리지 않음');
       assert.strictEqual(sandbox.startAppCalls, 0, 'SDK_READY를 기다리지 않고 startApp()이 불림');
       assert.strictEqual(sandbox.showAuthCalls, 0, 'SDK_READY를 기다리지 않고 showAuth()가 불림');
       resolveSdk();
       await bootP;
-      assert.strictEqual(sandbox.migrateLegacyCalls, 1, 'SDK_READY가 풀린 뒤 migrateLegacy()가 불려야 함');
       assert.strictEqual(sandbox.showAuthCalls, 1, '로그인/게스트 모두 아니면 showAuth()로 가야 함(기존 동작 회귀 없음)');
       assert.strictEqual(sandbox.startAppCalls, 0, '로그인/게스트가 아닌데 startApp()이 불리면 안 됨');
     } finally {
@@ -17742,27 +17752,139 @@ test('CDN 리소스: pretendard 태그는 crossorigin을 유지하고, kakao·su
     }
   });
 
-  test('[실행형] boot(): SDK_READY가 즉시 풀리면 클라우드 세션 복원(afterCloudAuth) 경로가 기존과 동일하게 동작한다', async () => {
-    const sessionOrig = sandbox.SESSION, authOrig = sandbox.AUTH, sbOrig = sandbox.SB, applockOrig = sandbox.APPLOCK,
-      afterCloudAuthOrig = sandbox.afterCloudAuth;
+  test('[실행형] boot(): 로컬 세션이 있으면 SDK_READY가 전혀 안 풀려도(최악 6초) 곧장 startApp()을 부르고 반환한다(app-evolve cycle218 advance — 로컬-먼저 렌더)', async () => {
+    const sessionOrig = sandbox.SESSION, authOrig = sandbox.AUTH, applockOrig = sandbox.APPLOCK;
     sandbox.SESSION = 'cloud@example.com';
     sandbox.AUTH = { exists: () => true, current: () => 'cloud@example.com', rec: () => ({ cloud: true }), signOut: () => {} };
-    sandbox.sbReady = () => true;
-    sandbox.SB = { auth: { getSession: async () => ({ data: { session: { user: { id: 'u1' } } } }) } };
     sandbox.APPLOCK = { enabled: () => false };
-    const afterCloudAuthCalls = [];
-    sandbox.afterCloudAuth = async (uid) => { afterCloudAuthCalls.push(uid); };
     sandbox.migrateLegacyCalls = 0; sandbox.startAppCalls = 0; sandbox.showAuthCalls = 0; sandbox.lockAppCalls = 0;
-    sandbox.SDK_READY = Promise.resolve(); // 네트워크 성공이든 타임아웃이든, 로더는 이미 이 모양으로 풀려있음
+    sandbox.SDK_READY = new Promise(() => {}); // 영원히 안 풀림 — 그래도 로컬 세션은 기다리면 안 됨
     try {
-      await sandbox.boot();
-      assert.deepStrictEqual(afterCloudAuthCalls, ['u1'], 'boot()이 복원된 세션의 user.id로 afterCloudAuth를 부르지 않음');
-      assert.strictEqual(sandbox.startAppCalls, 1, '클라우드 세션 복원 후 startApp()으로 가야 함');
+      await sandbox.boot(); // 영원히 안 풀리는 SDK_READY를 boot() 자신이 기다린다면 이 await가 멈춰버림
+      assert.strictEqual(sandbox.startAppCalls, 1, '로컬 세션이면 SDK_READY를 기다리지 않고 startApp()을 불러야 함');
       assert.strictEqual(sandbox.showAuthCalls, 0, '로그인된 사용자가 있는데 showAuth()로 가면 안 됨');
       assert.strictEqual(sandbox.lockAppCalls, 0, 'APPLOCK 비활성 상태면 lockApp()을 부르면 안 됨');
     } finally {
-      sandbox.SESSION = sessionOrig; sandbox.AUTH = authOrig; sandbox.SB = sbOrig; sandbox.APPLOCK = applockOrig;
-      sandbox.afterCloudAuth = afterCloudAuthOrig; sandbox.sbReady = () => true;
+      sandbox.SESSION = sessionOrig; sandbox.AUTH = authOrig; sandbox.APPLOCK = applockOrig;
+    }
+  });
+
+  test('[실행형] boot(): 게스트도 SDK_READY가 전혀 안 풀려도 곧장 startApp()을 부르고 반환한다', async () => {
+    const guestOrig = sandbox.GUEST, sessionOrig = sandbox.SESSION, applockOrig = sandbox.APPLOCK;
+    sandbox.GUEST = true; sandbox.SESSION = null;
+    sandbox.APPLOCK = { enabled: () => false };
+    sandbox.startAppCalls = 0; sandbox.showAuthCalls = 0;
+    sandbox.SDK_READY = new Promise(() => {});
+    try {
+      await sandbox.boot();
+      assert.strictEqual(sandbox.startAppCalls, 1, '게스트면 SDK_READY를 기다리지 않고 startApp()을 불러야 함');
+      assert.strictEqual(sandbox.showAuthCalls, 0, '게스트인데 showAuth()로 가면 안 됨');
+    } finally {
+      sandbox.GUEST = guestOrig; sandbox.SESSION = sessionOrig; sandbox.APPLOCK = applockOrig;
+    }
+  });
+
+  test('[실행형] bootCloudBg(): 게스트(세션 없음)면 클라우드를 전혀 건드리지 않는다', async () => {
+    const sessionOrig = sandbox.SESSION, cloudUidOrig = sandbox.CLOUD_UID;
+    sandbox.SESSION = null; sandbox.CLOUD_UID = null;
+    sandbox.SDK_READY = Promise.resolve();
+    let getSessionCalls = 0;
+    const sbOrig = sandbox.SB;
+    sandbox.SB = { auth: { getSession: async () => { getSessionCalls++; return { data: null }; } } };
+    try {
+      await sandbox.bootCloudBg();
+      assert.strictEqual(getSessionCalls, 0, '게스트인데 getSession()을 호출함');
+      assert.strictEqual(sandbox.CLOUD_UID, null, '게스트인데 CLOUD_UID가 세팅됨');
+    } finally {
+      sandbox.SESSION = sessionOrig; sandbox.CLOUD_UID = cloudUidOrig; sandbox.SB = sbOrig;
+    }
+  });
+
+  test('[실행형] bootCloudBg(): 로컬 전용 계정(rec.cloud 없음)이면 클라우드를 전혀 건드리지 않는다', async () => {
+    const sessionOrig = sandbox.SESSION, authOrig = sandbox.AUTH, cloudUidOrig = sandbox.CLOUD_UID;
+    sandbox.SESSION = 'local@example.com';
+    sandbox.AUTH = { current: () => 'local@example.com', rec: () => ({ cloud: false }) };
+    sandbox.CLOUD_UID = null;
+    sandbox.SDK_READY = Promise.resolve();
+    let getSessionCalls = 0;
+    const sbOrig = sandbox.SB;
+    sandbox.SB = { auth: { getSession: async () => { getSessionCalls++; return { data: null }; } } };
+    try {
+      await sandbox.bootCloudBg();
+      assert.strictEqual(getSessionCalls, 0, '로컬 전용 계정인데 getSession()을 호출함');
+      assert.strictEqual(sandbox.CLOUD_UID, null, '로컬 전용 계정인데 CLOUD_UID가 세팅됨');
+    } finally {
+      sandbox.SESSION = sessionOrig; sandbox.AUTH = authOrig; sandbox.CLOUD_UID = cloudUidOrig; sandbox.SB = sbOrig;
+    }
+  });
+
+  test('[실행형] bootCloudBg(): remote가 없으면(네트워크 실패 포함) 게스트 데이터가 있어도 afterCloudAuth()와 달리 로컬 DB를 절대 건드리지 않는다(app-evolve cycle218 advance — 이미 화면에 떠 있는 실계정 DB가 네트워크 한 번 끊겼다고 게스트 데이터로 바뀌는 데이터 손실 방지)', async () => {
+    const sessionOrig = sandbox.SESSION, authOrig = sandbox.AUTH, cloudUidOrig = sandbox.CLOUD_UID,
+      dbOrig = sandbox.DB, lsMapOrig = sandbox._lsMap, sbOrig = sandbox.SB;
+    sandbox.SESSION = 'cloud@example.com';
+    sandbox.AUTH = { current: () => 'cloud@example.com', rec: () => ({ cloud: true }) };
+    sandbox.CLOUD_UID = null;
+    sandbox.DB = { assets: [{ id: 'real-local' }], txns: [] };
+    sandbox._lsMap = { 'asset_app_db_v3__guest': JSON.stringify({ assets: [{ id: 'stale-guest' }], txns: [] }) };
+    sandbox.SB = { ...sbOrig, auth: { getSession: async () => ({ data: { session: { user: { id: 'u1' } } } }) } }; // pullCloud()가 쓰는 .from()은 기본 스텁을 그대로 보존해야 함
+    sandbox._sbMaybeSingleResult = { data: null, error: null }; // pullCloud()가 remote 없음으로 돌려줌
+    sandbox.SDK_READY = Promise.resolve();
+    try {
+      await sandbox.bootCloudBg();
+      assert.strictEqual(sandbox.CLOUD_UID, 'u1', 'getSession이 성공했으면 CLOUD_UID는 세팅돼야 함(이후 push가 동작하려면 필요)');
+      assert.deepStrictEqual(sandbox.DB.assets, [{ id: 'real-local' }], 'remote가 없다고 로컬 DB가 게스트 데이터 등으로 바뀌면 안 됨');
+    } finally {
+      sandbox.SESSION = sessionOrig; sandbox.AUTH = authOrig; sandbox.CLOUD_UID = cloudUidOrig;
+      sandbox.DB = dbOrig; sandbox._lsMap = lsMapOrig; sandbox.SB = sbOrig;
+    }
+  });
+
+  test('[실행형] bootCloudBg(): 시트가 열려 있으면(편집 중일 수 있음) remote가 있어도 건드리지 않고 건너뛴다(pullCloudIfStale과 동일 원칙)', async () => {
+    const sessionOrig = sandbox.SESSION, authOrig = sandbox.AUTH, cloudUidOrig = sandbox.CLOUD_UID,
+      dbOrig = sandbox.DB, sbOrig = sandbox.SB, dollarOrig = sandbox.$;
+    sandbox.SESSION = 'cloud@example.com';
+    sandbox.AUTH = { current: () => 'cloud@example.com', rec: () => ({ cloud: true }) };
+    sandbox.CLOUD_UID = null;
+    sandbox.DB = { assets: [{ id: 'local-only', type: 'cash', updatedAt: 100 }], txns: [] };
+    sandbox.SB = { ...sbOrig, auth: { getSession: async () => ({ data: { session: { user: { id: 'u1' } } } }) } }; // pullCloud()가 쓰는 .from()은 기본 스텁을 그대로 보존해야 함(시트 가드에 걸려 실제론 안 불리지만 일관성 유지)
+    sandbox._sbMaybeSingleResult = { data: { data: { assets: [{ id: 'remote-only', type: 'cash', updatedAt: 100 }], txns: [] }, updated_at: '2026-01-01T00:00:00.000Z' }, error: null };
+    sandbox.$ = (id) => id === 'sheet' ? { classList: { contains: () => true } } : dollarOrig(id);
+    sandbox.SDK_READY = Promise.resolve();
+    try {
+      await sandbox.bootCloudBg();
+      assert.strictEqual(sandbox.DB.assets.length, 1, '시트가 열려 있는 동안은 원격 데이터가 병합되면 안 됨');
+    } finally {
+      sandbox.SESSION = sessionOrig; sandbox.AUTH = authOrig; sandbox.CLOUD_UID = cloudUidOrig;
+      sandbox.DB = dbOrig; sandbox.SB = sbOrig; sandbox.$ = dollarOrig;
+    }
+  });
+
+  test('[실행형] bootCloudBg(): remote가 있고 시트도 닫혀 있으면 이미 그려진 로컬 DB를 통째로 덮어쓰지 않고 비파괴 병합한 뒤 저장·재렌더한다', async () => {
+    const sessionOrig = sandbox.SESSION, authOrig = sandbox.AUTH, cloudUidOrig = sandbox.CLOUD_UID,
+      dbOrig = sandbox.DB, sbOrig = sandbox.SB, saveOrig = sandbox.save, renderCurrentOrig = sandbox.renderCurrent,
+      appEl = { style: { display: '' } }, dollarOrig = sandbox.$;
+    sandbox.SESSION = 'cloud@example.com';
+    sandbox.AUTH = { current: () => 'cloud@example.com', rec: () => ({ cloud: true }) };
+    sandbox.CLOUD_UID = null;
+    sandbox.DB = { assets: [{ id: 'local-only', type: 'cash', updatedAt: 100 }], txns: [], recurrences: [], goals: [], inquiries: [], assetQtyLog: [], deletedIds: {} };
+    sandbox.SB = { ...sbOrig, auth: { getSession: async () => ({ data: { session: { user: { id: 'u1' } } } }) } }; // pullCloud()가 쓰는 .from()은 기본 스텁을 그대로 보존해야 함
+    sandbox._sbMaybeSingleResult = { data: { data: { assets: [{ id: 'remote-only', type: 'cash', updatedAt: 100 }], txns: [], recurrences: [], goals: [], inquiries: [], assetQtyLog: [], deletedIds: {} }, updated_at: '2026-01-01T00:00:00.000Z' }, error: null };
+    sandbox.$ = (id) => id === 'sheet' ? null : id === 'app' ? appEl : dollarOrig(id);
+    let saveCalls = 0, renderCalls = 0;
+    sandbox.save = () => { saveCalls++; };
+    sandbox.renderCurrent = () => { renderCalls++; };
+    sandbox.SDK_READY = Promise.resolve();
+    try {
+      await sandbox.bootCloudBg();
+      assert.strictEqual(sandbox.CLOUD_UID, 'u1');
+      assert.strictEqual(saveCalls, 1, '병합 후 save()를 불러야 함');
+      assert.strictEqual(renderCalls, 1, '화면이 떠 있으면(appIsOpen) renderCurrent()로 다시 그려야 함');
+      assert.ok(sandbox.DB.assets.some(a => a.id === 'local-only'), '기존 로컬 레코드가 사라지면 안 됨(통째로 덮어쓰지 않음)');
+      assert.ok(sandbox.DB.assets.some(a => a.id === 'remote-only'), '원격에만 있던 레코드가 병합돼야 함');
+    } finally {
+      sandbox.SESSION = sessionOrig; sandbox.AUTH = authOrig; sandbox.CLOUD_UID = cloudUidOrig;
+      sandbox.DB = dbOrig; sandbox.SB = sbOrig; sandbox.save = saveOrig; sandbox.renderCurrent = renderCurrentOrig;
+      sandbox.$ = dollarOrig;
     }
   });
 })();

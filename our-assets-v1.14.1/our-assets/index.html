@@ -29,7 +29,9 @@
 <!-- cycle176 advance가 Kakao/Supabase CDN <script>를 동적 로더(아래 1300번대, boot()이 await SDK_READY로
      기다림)로 바꾸면서, <html data-theme="system" data-accent="teal">(2행 하드코딩)을 사용자의 실제
      DB.settings 값으로 고쳐주는 startApp()(boot() 내부)이 SDK_READY가 풀릴 때까지(최악 6초) 전혀
-     못 돌게 됐다. 그 사이에도 이 지점까지의 <meta>/<link>만으로 브라우저가 첫 페인트를 할 수 있어,
+     못 돌게 됐다(cycle218 advance가 로컬 세션/게스트는 SDK_READY를 기다리지 않고 곧장 startApp()을
+     부르도록 바꿨지만, 로그인 화면(showAuth())으로 가는 경우는 여전히 기다린다 — 이 캐시는 두 경우
+     모두에 안전하게 적용된다). 그 사이에도 이 지점까지의 <meta>/<link>만으로 브라우저가 첫 페인트를 할 수 있어,
      라이트/다크를 OS와 다르게 고정했거나 teal이 아닌 강조색을 쓰는 사용자는 '틀린 테마가 먼저 보이고
      수초 후 전환'되는 FOUC를 겪는다(cycle176 이전엔 같은 자리의 정적 CDN 스크립트가 파서를 블로킹해
      아무것도 안 그려졌으므로 역설적으로 관측되지 않았던 문제 — cycle181 critique). 바로 아래 전역
@@ -1392,7 +1394,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.198';
+const APP_VERSION='1.47.199';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -8574,27 +8576,56 @@ function startApp(){
  setInterval(checkNotifyAlerts,5*60*1000); /* 5분마다 확인 → 백그라운드일 때만 OS 알림 발송 */
 }
 async function boot(){
- await SDK_READY; /* 최악의 경우에도 6초 내에 풀려남(위 loadScriptWithTimeout) — 그 뒤부터는 로그인/게스트
-  * 진입 흐름이 평소와 동일하게 진행된다(sbReady/kakaoReady가 window.supabase/window.Kakao 존재를
-  * 방어적으로 체크하므로, SDK 로딩이 실패/타임아웃됐어도 여기 아래 로직은 그대로 안전하다). */
  migrateLegacy();
+ if(SESSION&&!AUTH.exists(SESSION))AUTH.signOut();
+ if(AUTH.current()||GUEST){
+  /* 로컬 세션/게스트는 localStorage에 이미 완비된 DB가 있으므로 SDK_READY/getSession/pullCloud를
+   * 전혀 기다리지 않고 곧장 그린다 — 느린 네트워크·콜드 서버리스 함수에서 최악 약 22초간
+   * #bootSplash 스피너만 보이던 빈 화면을 없앤다(app-evolve cycle218 critique). 클라우드 체인은
+   * bootCloudBg()로 분리해 화면 뒤 백그라운드에서 돌리고, pullCloudIfStale()과 동일한 비파괴
+   * mergeRemoteDataIntoLocal() 병합으로 나중에 합류시킨다(이미 떠 있는 화면을 통째로 덮어쓰지
+   * 않도록 — afterCloudAuth()의 무충돌 전량교체 분기는 로그인 '직후'(DB가 아직 없을 때) 전용이라
+   * 여기선 쓰지 않는다). */
+  startApp();if(APPLOCK.enabled())lockApp();
+  bootCloudBg().catch(()=>{});
+  return;
+ }
+ await SDK_READY; /* 최악의 경우에도 6초 내에 풀려남(위 loadScriptWithTimeout) — 로그인 화면은 보여줄
+  * 로컬 데이터가 없어 기다려도 체감 지연이 없고, 카카오 로그인 버튼/비밀번호 재설정 리스너가 SDK
+  * 로딩을 전제하므로 그대로 기다린다(sbReady/kakaoReady가 window.supabase/window.Kakao 존재를
+  * 방어적으로 체크하므로, SDK 로딩이 실패/타임아웃됐어도 여기 아래 로직은 그대로 안전하다). */
  /* 로그인 전에도 PASSWORD_RECOVERY 리스너를 미리 바인딩해둬야, 다른 기기에서 재설정 메일 링크를
   * 열었을 때(이 기기엔 로컬 세션이 없을 수 있음) 새 비밀번호 설정 시트가 뜬다 */
  if(sbCfg().url)sbReady();
- if(SESSION&&!AUTH.exists(SESSION))AUTH.signOut();
- if(AUTH.current()){
-  const rec=AUTH.rec(AUTH.current());
-  if(rec&&rec.cloud&&sbReady()){
-   try{
-    const{data}=await withTimeout(SB.auth.getSession());
-    if(data&&data.session&&data.session.user)await afterCloudAuth(data.session.user.id);
-   }catch(e){}
-  }
-  startApp();if(APPLOCK.enabled())lockApp();
-  return;
- }
- if(GUEST){startApp();if(APPLOCK.enabled())lockApp();return}
  showAuth();
+}
+/* boot()이 startApp()으로 로컬 데이터를 먼저 그린 뒤 호출하는 백그라운드 클라우드 동기화.
+ * afterCloudAuth()와 달리 이 시점엔 DB가 이미 실제 로컬 데이터를 담고 있으므로, remote가 없거나
+ * (네트워크 실패 포함) 가져오기 자체가 실패해도 afterCloudAuth()의 guestHasData()/emptyDB() 폴백처럼
+ * DB를 건드리지 않는다 — 그 폴백은 로그인 '직후' DB가 아직 없는 경우만을 위한 것이라, 여기서 그대로
+ * 타면 네트워크가 잠깐 끊겼을 뿐인데 게스트로 체험해본 적 있는 계정의 화면이 조용히 게스트 데이터로
+ * 바뀌는 데이터 손실을 일으킨다. remote를 실제로 받았을 때만 pullCloudIfStale()과 똑같이
+ * mergeRemoteDataIntoLocal()로 비파괴 병합하고, 시트가 열려 있으면(편집 중인 드래프트가 있을 수
+ * 있음) pullCloudIfStale()과 동일한 원칙으로 이번엔 건드리지 않는다 — 다음 포그라운드 전환에서
+ * pullCloudIfStale()이 그냥 다시 시도한다. */
+async function bootCloudBg(){
+ await SDK_READY;
+ if(sbCfg().url)sbReady();
+ if(!AUTH.current())return; /* GUEST는 클라우드가 없음 */
+ const rec=AUTH.rec(AUTH.current());
+ if(!(rec&&rec.cloud&&sbReady()))return;
+ try{
+  const{data}=await withTimeout(SB.auth.getSession());
+  if(!(data&&data.session&&data.session.user))return;
+  CLOUD_UID=data.session.user.id;
+  measureCloudClockSkew(); /* best-effort, 결과는 홈 알림에 반영(await 안 함) */
+  if($('sheet')&&$('sheet').classList.contains('show'))return;
+  const remote=await pullCloud();
+  if(!remote)return;
+  mergeRemoteDataIntoLocal(sanitizeBackup(remote).data);
+  save();
+  if(appIsOpen())renderCurrent();
+ }catch(e){}
 }
 function showAuth(){hideBootSplash();$('app').style.display='none';$('authView').style.display='flex';renderAuth()}
 /* APP_LOCKED는 '지금 PIN 입력을 기다리는 중'을 뜻한다 — 로그인 전(showAuth)과는 다른 화면/다른
