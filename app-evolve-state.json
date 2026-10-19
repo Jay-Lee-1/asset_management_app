@@ -1,15 +1,8 @@
 {
   "cycle": 218,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 218,
-      "phase": "develop",
-      "timestamp": "2026-10-19T00:00:00.000Z",
-      "summary": "general-purpose 서브에이전트로 develop 후보를 탐색(cycle149-217에서 다룬 전부 제외, 아직 안 본 영역 위주로 탐색)해 asOpenType()(index.html:3844)의 연금(pension) 자동제외 복원 로직 버그를 발견 — 기존 로직(app-evolve cycle52)은 연금에서 벗어날 때 _pensionAutoExcl 플래그만 보고 includeInTotal을 무조건 true로 되돌리는데, 사용자가 수동으로 총자산 제외(includeInTotal:false)를 켜둔 자산을 같은 편집 세션 안에서 '연금을 거쳐서' 다른 종류로 되돌리면(예: cash(false)->pension->cash) 수동 설정이 조용히 true로 뒤바뀌는 데이터 손실이 있었다. 기존 테스트(8559행)는 연금을 거치지 않는 직행 전환만 다뤄 이 왕복 경로는 비어 있었음. 연금에 처음 들어갈 때만(이미 연금이 아니었을 때만, pension->pension 재선택으로 덮어쓰지 않도록) 원래 includeInTotal을 _pensionPrevIncl에 기억해두고, 벗어날 때 그 값(없으면 기존처럼 true)으로 복원하도록 asOpenType의 onPick을 수정. saveAsset()의 기존 _pensionAutoExcl delete 옆에 _pensionPrevIncl도 delete 추가해 임시 필드가 DB.assets에 새지 않게 함(기존 DB에 저장된 연금 자산을 바로 여는 openAssetSheet 흐름은 _pensionPrevIncl을 세팅하지 않아 기존 '기본 true 복원' 동작 그대로 유지됨). test/run.js에 테스트 3건 추가(수동 제외 자산이 연금을 거쳐 복귀 시 원래 값 복원, 연금에 두 번 머물러도(no-op) 기억값이 안 덮어씌워짐, saveAsset이 _pensionPrevIncl도 지움) + 기존 saveAsset 테스트에 _pensionPrevIncl 케이스 포함. 수정 전 index.html로 git stash 되돌려 새 테스트 1건이 실제로 실패함을 직접 확인(1626/1629). index.html/sw.js 변경이라 APP_VERSION 1.47.197->1.47.198, sw.js CACHE v459->v460. HTML 주석 제거 후 <script> 블록 4개 + logic.js 모두 node --check 통과. node our-assets-v1.14.1/our-assets/test/run.js 1627/1627 -> 1629/1629 통과(pushCloud 압축-재시도 실행형 테스트 1건이 zlib 콜백 타이밍으로 가끔(약 1/4) flaky하게 실패하는 건 수정 전 베이스에서도 동일하게 재현됨을 8회 반복 실행으로 확인한 기존 알려진 flake — 이번 변경과 무관).",
-      "commit": null
-    },
     {
       "cycle": 213,
       "phase": "develop",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-19T04:20:00.000Z",
       "summary": "critique(cycle217) 계획대로 #histQ(전체내역 검색) 입력에 220ms 디바운스를 추가했다. 기존 `let _histTimer=null,_histPeeking=false;`(histPeekStart 등이 쓰는 모듈 상태) 줄에 `_histQT=null`을 더하고, 새 histQInput(v) 함수가 ST.hist.q=v를 입력 즉시 반영한 뒤 clearTimeout(_histQT)로 이전 타이머를 지우고 — v.trim()===''(clrInput의 지우기(×) 버튼 경로 포함)이면 histInvalidate()+updateHist()를 바로 실행해 지웠을 때 체감 지연이 없게 하고, 아니면 _histQT=setTimeout(()=>{histInvalidate();updateHist()},220)으로 디바운스한다. #histQ의 oninput을 `histQInput(this.value)`로 교체. go(tab)에도 `if(ST.tab==='history'&&tab!=='history')clearTimeout(_histQT)`를 추가해, 전체내역을 벗어난 뒤 디바운스 타이머가 뒤늦게 터져 언마운트된 화면을 updateHist()로 다시 그리는 걸 막았다. test/run.js: FUNCTIONS에 histQInput 추가, LETS에 _histTimer를 추가해 같은 줄의 _histQT를 함께 끌어오게 했다(기존 _sujiTimer와 동일한 패턴). fetchWithTimeout/withTimeout과 같은 setTimeout/clearTimeout 스파이 IIFE 패턴으로 4건 추가(디바운스 220ms 확인, 연속 입력 시 매번 clearTimeout 후 새 타이머 하나만 거는지, 빈 문자열은 즉시 실행, 공백뿐인 입력도 trim 판정으로 즉시 실행하되 ST.hist.q에는 원본을 그대로 저장) + go(tab)이 _histQT를 clearTimeout하는지 확인하는 소스 패턴 테스트 1건(go는 DOM API를 직접 쓰므로 기존 관례대로 vm 실행 대상이 아니라 extractFunction 텍스트 검증). APP_VERSION 1.47.196->1.47.197, sw.js CACHE v458->v459. 메인 <script> 블록 node --check 통과. node our-assets-v1.14.1/our-assets/test/run.js 1622/1622 -> 1627/1627 통과. pending_advance_plan을 비웠다.",
+      "commit": null
+    },
+    {
+      "cycle": 218,
+      "phase": "review",
+      "timestamp": "2026-10-19T06:16:14.000Z",
+      "summary": "cycle218 develop 커밋(3bb5123, asOpenType()의 연금 전환/복귀 시 수동 includeInTotal 복원 버그 수정)을 검토. onPick 로직을 직접 트레이스: (1) cash(includeInTotal:false)->pension->cash 왕복 시 _pensionPrevIncl에 false가 저장되고 복귀 시 그대로 복원됨(수정 전엔 무조건 true로 덮였을 상황), (2) pension을 재선택해도(pkChoose가 현재 값이어도 항상 onPick을 호출함을 pkChoose(8310행)에서 확인) _pensionAutoExcl이 이미 true라 _pensionPrevIncl을 덮어쓰지 않아 기억값이 보존됨, (3) 기존에 저장된 연금 자산을 openAssetSheet로 열 때(3828행, _pensionPrevIncl은 세팅 안 함)는 그대로 true로 복원되는 기존 동작을 유지함, (4) saveAsset의 delete 목록에 _pensionPrevIncl이 추가돼 DB.assets에 임시 필드가 새지 않음. pension<->non-pension<->pension<->non-pension 다중 왕복 경로까지 추적해도 매번 올바르게 복원됨을 확인. 새 테스트 3건(복원/no-op 보존/saveAsset delete)이 로직과 정확히 일치. node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1629/1629 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
       "commit": null
     }
   ]
