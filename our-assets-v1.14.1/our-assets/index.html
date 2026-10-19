@@ -1392,7 +1392,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.197';
+const APP_VERSION='1.47.198';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3841,7 +3841,9 @@ function syncAssetInputs(){const d=asDraft;const g=id=>$(id);
  if(g('asQty'))d.stockQty=Math.max(0,parseFloat((g('asQty').value||'0').replace(/,/g,''))||0);
  if(g('asCostBasis')){const n=num(g('asCostBasis'),false);if(n>0)d.costBasis=n;else delete d.costBasis;}
  if(g('asAddedCost'))d._addedCost=num(g('asAddedCost'),false);}
-function asOpenType(){syncAssetInputs();openTypePicker({current:asDraft.type,back:()=>renderAssetSheet(!!asDraft.id),onPick:k=>{if(k==='pension'){asDraft.includeInTotal=false;asDraft._pensionAutoExcl=true}else if(asDraft._pensionAutoExcl){asDraft.includeInTotal=true;asDraft._pensionAutoExcl=false}asDraft.type=k;if(k==='savings'&&!asDraft.maturityTargetId)asDraft.maturityTargetId=firstCash(asDraft.id);renderAssetSheet(!!asDraft.id)}})}
+function asOpenType(){syncAssetInputs();openTypePicker({current:asDraft.type,back:()=>renderAssetSheet(!!asDraft.id),onPick:k=>{if(k==='pension'){if(!asDraft._pensionAutoExcl)asDraft._pensionPrevIncl=asDraft.includeInTotal; /* 이미 연금 상태(재선택)면 덮어쓰지 않음 — 그 전에 기억해둔 원래 값을 지켜야 함 */
+ asDraft.includeInTotal=false;asDraft._pensionAutoExcl=true}else if(asDraft._pensionAutoExcl){asDraft.includeInTotal=asDraft._pensionPrevIncl!==undefined?asDraft._pensionPrevIncl:true; /* 연금으로 들어오기 전 값(수동으로 순자산 제외했던 자산 포함)을 복원 — 기존 연금 자산을 열 때(openAssetSheet)처럼 _pensionPrevIncl이 없으면 기존처럼 true로 복원 */
+ delete asDraft._pensionPrevIncl;asDraft._pensionAutoExcl=false}asDraft.type=k;if(k==='savings'&&!asDraft.maturityTargetId)asDraft.maturityTargetId=firstCash(asDraft.id);renderAssetSheet(!!asDraft.id)}})}
 function asOpenOwner(){syncAssetInputs();openOwnerPicker({current:asDraft.owner,back:()=>renderAssetSheet(!!asDraft.id),onPick:o=>{asDraft.owner=o;renderAssetSheet(!!asDraft.id)}})}
 function asOpenCur(){syncAssetInputs();openCurrencyPicker({current:asDraft.currency,back:()=>renderAssetSheet(!!asDraft.id),onPick:c=>asCur(c)})}
 function asOpenMat(){syncAssetInputs();openAssetPicker({current:asDraft.maturityTargetId,title:'만기 시 이체할 통장',cashOnly:true,excludeId:asDraft.id,back:()=>renderAssetSheet(!!asDraft.id),onPick:id=>{asDraft.maturityTargetId=id;renderAssetSheet(!!asDraft.id)}})}
@@ -3922,7 +3924,7 @@ function saveAsset(editing){
  const balKey=(d.type==='cash'||d.type==='savings')?'baseAmount':'amountKRW';
  const entered=balType?(d._dispAmt!=null?d._dispAmt:(d[balKey]||0)):0; /* 사용자가 입력한 '현재 금액' */
  const addedCost=d._addedCost>0?d._addedCost:0; /* costBasisField의 "이번에 추가로 투입한 금액" — 추가매수(수량 증가) 시 addCostBasisForBuy로 더해줄 몫 */
- delete d._dispAmt;delete d._pensionAutoExcl;delete d._origQty;delete d._addedCost;
+ delete d._dispAmt;delete d._pensionAutoExcl;delete d._pensionPrevIncl;delete d._origQty;delete d._addedCost;
  const dup=DB.assets.find(a=>a.id!==d.id&&normName(a.name)===normName(d.name)&&a.type===d.type); /* 살아있는 동명(대소문자·연속 공백 개수 무시)·동종 (신규/수정 공통) */
  if(dup){toast(dup.name===d.name?'같은 이름·종류의 자산이 이미 있어요':`비슷한 이름의 자산이 있어요: ${dup.name}`);return;} /* 중복 차단 */
  /* 표시 잔액이 입력값과 같도록 기준값 역산 (오늘까지의 순입출금 기여분 제외) */

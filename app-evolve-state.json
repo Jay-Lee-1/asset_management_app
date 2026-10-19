@@ -1,13 +1,13 @@
 {
   "cycle": 218,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
-      "cycle": 212,
-      "phase": "advance",
-      "timestamp": "2026-10-18T07:05:00.000Z",
-      "summary": "critique(cycle212) 계획대로 kakaoLogin()의 success 콜백(index.html:8641)에 doLogin()/doSignup()과 동일한 게스트 데이터 병합 안내를 추가했다. AUTH.kakaoUpsert/GUEST=false/AUTH.setSession/startApp() 다음에, const guestRaw=localStorage.getItem('asset_app_db_v3__guest')로 받아 (1) dbIsEmpty(DB)&&guestHasData()면 doLogin()과 동일한 confirmSheet('데이터 가져오기',...)로 가져오기를 제안(수락 시 DB=JSON.parse(guestRaw);migrate();save();renderCurrent();toast('데이터를 가져왔어요')), (2) 이 계정이 비어있지 않은데 게스트 데이터가 있으면 '카카오 로그인 완료 · '+nick+' · 게스트로 입력한 데이터는 이 계정에 합쳐지지 않았어요' 안내 토스트, (3) 게스트 데이터가 없으면 기존 '카카오 로그인 완료 · '+nick 토스트(else 분기로 이동)만 — 세 분기로 나눴다. kakaoLogin()은 afterCloudAuth()/Supabase 클라우드 머지를 거치지 않으므로 doLogin()의 cloudAuthResult.status==='guestMerged' 분기는 그대로 제외(계획대로). kakaoLogin()은 window.Kakao.Auth.login/API.request 콜백 중첩이라 실행형 테스트 비용이 커, 계획대로 소스 패턴 검증 3건을 test/run.js에 추가(confirmSheet 가져오기 제안이 doLogin과 동일한 패턴인지, 미병합 안내 토스트 문구가 doLogin과 동일한지, else 분기에 기존 토스트가 남아있는지). index.html/sw.js 변경이라 APP_VERSION 1.47.185->1.47.186, sw.js CACHE v447->v448 갱신. HTML 주석 제거 후 <script> 블록 4개 + logic.js 모두 node --check 통과. node our-assets-v1.14.1/our-assets/test/run.js 1587/1587 -> 1590/1590 통과. pending_advance_plan을 비웠다.",
+      "cycle": 218,
+      "phase": "develop",
+      "timestamp": "2026-10-19T00:00:00.000Z",
+      "summary": "general-purpose 서브에이전트로 develop 후보를 탐색(cycle149-217에서 다룬 전부 제외, 아직 안 본 영역 위주로 탐색)해 asOpenType()(index.html:3844)의 연금(pension) 자동제외 복원 로직 버그를 발견 — 기존 로직(app-evolve cycle52)은 연금에서 벗어날 때 _pensionAutoExcl 플래그만 보고 includeInTotal을 무조건 true로 되돌리는데, 사용자가 수동으로 총자산 제외(includeInTotal:false)를 켜둔 자산을 같은 편집 세션 안에서 '연금을 거쳐서' 다른 종류로 되돌리면(예: cash(false)->pension->cash) 수동 설정이 조용히 true로 뒤바뀌는 데이터 손실이 있었다. 기존 테스트(8559행)는 연금을 거치지 않는 직행 전환만 다뤄 이 왕복 경로는 비어 있었음. 연금에 처음 들어갈 때만(이미 연금이 아니었을 때만, pension->pension 재선택으로 덮어쓰지 않도록) 원래 includeInTotal을 _pensionPrevIncl에 기억해두고, 벗어날 때 그 값(없으면 기존처럼 true)으로 복원하도록 asOpenType의 onPick을 수정. saveAsset()의 기존 _pensionAutoExcl delete 옆에 _pensionPrevIncl도 delete 추가해 임시 필드가 DB.assets에 새지 않게 함(기존 DB에 저장된 연금 자산을 바로 여는 openAssetSheet 흐름은 _pensionPrevIncl을 세팅하지 않아 기존 '기본 true 복원' 동작 그대로 유지됨). test/run.js에 테스트 3건 추가(수동 제외 자산이 연금을 거쳐 복귀 시 원래 값 복원, 연금에 두 번 머물러도(no-op) 기억값이 안 덮어씌워짐, saveAsset이 _pensionPrevIncl도 지움) + 기존 saveAsset 테스트에 _pensionPrevIncl 케이스 포함. 수정 전 index.html로 git stash 되돌려 새 테스트 1건이 실제로 실패함을 직접 확인(1626/1629). index.html/sw.js 변경이라 APP_VERSION 1.47.197->1.47.198, sw.js CACHE v459->v460. HTML 주석 제거 후 <script> 블록 4개 + logic.js 모두 node --check 통과. node our-assets-v1.14.1/our-assets/test/run.js 1627/1627 -> 1629/1629 통과(pushCloud 압축-재시도 실행형 테스트 1건이 zlib 콜백 타이밍으로 가끔(약 1/4) flaky하게 실패하는 건 수정 전 베이스에서도 동일하게 재현됨을 8회 반복 실행으로 확인한 기존 알려진 flake — 이번 변경과 무관).",
       "commit": null
     },
     {

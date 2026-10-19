@@ -8561,12 +8561,42 @@ test('asOpenType: 사용자가 직접 총자산 제외를 켜둔 자산은 연�
   sandbox.lastTypePickerOnPick('savings');
   assert.strictEqual(sandbox.asDraft.includeInTotal, false, '연금 자동 로직과 무관하게 사용자가 직접 꺼둔 값은 종류 변경만으로 켜지면 안 됨');
 });
-test('saveAsset: 연금 전환 시 임시로 남긴 _pensionAutoExcl 플래그가 저장된 자산 객체에 새지 않는다', () => {
+/* ---------- asOpenType: 위 두 테스트가 각각 "연금 왕복(기존 true→pension→복귀)"과 "연금을
+ * 거치지 않는 수동 제외"만 다뤘는데, 그 둘이 겹치는 "수동으로 총자산 제외를 켜둔(includeInTotal:
+ * false) 자산이 같은 편집 세션 안에서 연금을 '거쳐서' 다른 종류로 돌아오는" 경로는 비어 있었다
+ * (app-evolve cycle218 develop, Explore 서브에이전트로 발견). 기존 onPick은 연금에서 벗어날 때
+ * _pensionAutoExcl 플래그만 보고 무조건 includeInTotal=true로 되돌려, 사용자가 원래 수동으로
+ * 숨겨뒀던 자산이 "연금"을 거쳐 갔다는 이유만으로 저장 시 조용히 총자산에 다시 포함돼 버리는
+ * 데이터 손실이 발생했다. 연금에 들어갈 때(이미 연금이 아니었을 때만, 연금→연금 재선택으로
+ * 덮어쓰지 않도록) 원래 값을 _pensionPrevIncl에 기억해두고, 벗어날 때 그 값으로 복원하도록
+ * 수정 — 기존 DB에 저장된 연금 자산을 바로 여는 흐름(openAssetSheet)은 _pensionPrevIncl을
+ * 세팅하지 않으므로 여전히 true로 복원되는 기존 동작을 그대로 유지한다. ---------- */
+test('asOpenType: 수동으로 총자산 제외를 켜둔 자산이 연금을 거쳐 다른 종류로 돌아오면, 연금 자동 제외가 아니라 원래 수동 설정이 복원된다', () => {
+  sandbox.asDraft = { id: 'a3', type: 'cash', owner: '나', includeInTotal: false, name: '숨긴 통장2' };
+  sandbox.asOpenType();
+  sandbox.lastTypePickerOnPick('pension');
+  assert.strictEqual(sandbox.asDraft.includeInTotal, false, '연금으로 들어갈 때는 기존처럼 제외 상태(이미 false였지만 변하지 않음)');
+  sandbox.lastTypePickerOnPick('cash');
+  assert.strictEqual(sandbox.asDraft.type, 'cash');
+  assert.strictEqual(sandbox.asDraft.includeInTotal, false, '연금을 거쳤다고 해서 사용자가 수동으로 꺼둔 값이 true로 뒤바뀌면 안 됨');
+  assert.strictEqual(sandbox.asDraft._pensionAutoExcl, false);
+  assert.ok(!('_pensionPrevIncl' in sandbox.asDraft), '복원 후엔 임시 기억값도 지워져야 다음 왕복에 영향을 안 줌');
+});
+test('asOpenType: 연금에 머문 채로 연금을 다시 선택해도(no-op) 맨 처음 기억해둔 원래 값이 덮어씌워지지 않는다', () => {
+  sandbox.asDraft = { id: 'a4', type: 'cash', owner: '나', includeInTotal: false, name: '숨긴 통장3' };
+  sandbox.asOpenType();
+  sandbox.lastTypePickerOnPick('pension');
+  sandbox.lastTypePickerOnPick('pension');
+  sandbox.lastTypePickerOnPick('cash');
+  assert.strictEqual(sandbox.asDraft.includeInTotal, false, '연금을 두 번 거쳐도 원래 수동 제외값이 그대로 복원돼야 함');
+});
+test('saveAsset: 연금 전환 시 임시로 남긴 _pensionAutoExcl/_pensionPrevIncl 플래그가 저장된 자산 객체에 새지 않는다', () => {
   sandbox.DB = { assets: [], rates: { stocks: {} }, settings: {}, owners: ['나'] };
-  sandbox.asDraft = { type: 'pension', owner: '나', includeInTotal: false, _pensionAutoExcl: true, name: '연금' };
+  sandbox.asDraft = { type: 'pension', owner: '나', includeInTotal: false, _pensionAutoExcl: true, _pensionPrevIncl: true, name: '연금' };
   sandbox.saveAsset(false);
   const saved = sandbox.DB.assets.find(a => a.name === '연금');
   assert.ok(!('_pensionAutoExcl' in saved), '임시 플래그가 저장 시 DB.assets에 그대로 남으면 안 됨');
+  assert.ok(!('_pensionPrevIncl' in saved), '연금 진입 전 기억값도 저장 시 DB.assets에 그대로 남으면 안 됨');
 });
 
 /* ---------- CURRENCY_LIST: FX 자산 등록 시트가 하드코딩 3종(USD/JPY/EUR) 버튼 대신 피커
