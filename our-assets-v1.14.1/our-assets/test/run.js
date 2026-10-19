@@ -4103,6 +4103,30 @@ test('txnsToCSV+doExport 필터: inSurplus를 켠 잔액 조정 항목은 다른
   assert.ok(csv.includes('잔액 조정'), 'inSurplus를 켠 잔액 조정 항목은 monthStats 등과 동일하게 포함돼야 함');
 });
 
+/* ---------- doExport(csv) 회귀: 반복거래는 확인 전까지 DB.txns에 실제로 기록되지 않고
+ * expandRec()이 매번 즉석 생성하는 가상 '예정' 행이다(위 두 테스트 참고) — 그런데 이 가상
+ * 행까지 그대로 '거래 내역' CSV에 섞어 내보내면, 재가져오기 때 csvRowToImportTxn이 스케줄과
+ * 아무 연결 없는 고정된 1회성 실거래로 영구히 박아버리고, 같은 반복거래가 나중에 실제로
+ * 일어나면 중복집계까지 된다(app-evolve cycle216 critique). doExport()는 이제
+ * DB.txns.concat(expandRec(...))를 txnsToCSV에 넘기기 전에 date<=TODAY로도 걸러내므로
+ * 그 조합을 그대로 재현해 검증한다. */
+test('txnsToCSV+doExport 필터: doExport와 같이 date<=TODAY로도 걸러내면 아직 안 지난(TODAY 이후) 반복거래 예정 회차는 CSV에서 빠진다', () => {
+  sandbox._recCache.clear();
+  sandbox.TODAY = '2026-01-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  const DB = {
+    txns: [{ id: 't1', date: '2026-01-01', type: 'expense', category: '식비', amount: -5000, fromAssetId: 'a1', memo: '점심' }],
+    recurrences: [{ id: 'r1', active: true, freq: 'monthly', day: 1, startDate: '2026-01-01', endDate: null, weekend: 'none', type: 'expense', category: '월세', memo: '월세', amount: -500000, fromAssetId: 'a1', skip: [], edits: {} }],
+    assets: [{ id: 'a1', name: '주계좌' }],
+  };
+  const merged = DB.txns.concat(sandbox.expandRec(sandbox.RANGE_FROM, sandbox.RANGE_TO)).filter(t => !(t.adjust && !t.inSurplus) && t.date <= sandbox.TODAY);
+  const csv = sandbox.txnsToCSV(merged, DB.assets);
+  const rentRows = csv.split('\r\n').filter(l => l.includes('월세'));
+  assert.strictEqual(rentRows.length, 1, '2026-01-01 회차 하나만 TODAY(2026-01-15) 이전이므로 그 1건만 남아야 함(이후 수십 달치 예정 회차는 전부 제외)');
+  assert.ok(csv.includes('점심'), 'TODAY 이전의 실제 거래는 그대로 포함돼야 함');
+  sandbox.TODAY = '2026-06-15';
+});
+
 /* ---------- 거래 내역 CSV 가져오기 (app-evolve cycle54 advance) ---------- */
 test('parseCSV: 따옴표로 감싼 필드 안의 콤마/줄바꿈/이스케이프된 큰따옴표를 올바르게 되돌린다', () => {
   // vm 샌드박스 안에서 만들어진 배열은 host의 Array와 realm이 달라 deepStrictEqual이
@@ -4533,11 +4557,30 @@ test("csvRowToImportTxn: RANGE_FROM 이전 날짜는 형식은 유효해도 erro
 // 경계버그 — dateAboveRangeCeil() 신설 후 csvRowToImportTxn에도 동일하게 적용했는지 확인한다.
 test("csvRowToImportTxn: RANGE_TO 이후 날짜는 형식은 유효해도 error:'range'로 걸러진다", () => {
   sandbox.RANGE_TO = '2028-06-15';
+  // date>TODAY인 미래 날짜는 별도의 error:'future'로 걸러지므로(아래 테스트), 이 테스트가
+  // 보려는 RANGE_TO 경계만 분리해서 보려면 TODAY도 같이 끌어올려 둬야 한다.
+  sandbox.TODAY = '2028-06-15';
   const r = sandbox.csvRowToImportTxn(['2028-06-16', '지출', '식비', '1000', '', '', ''], []);
   assert.strictEqual(r.ok, false);
   assert.strictEqual(r.error, 'range');
   const ok = sandbox.csvRowToImportTxn(['2028-06-15', '지출', '식비', '1000', '주계좌', '', ''], []);
   assert.strictEqual(ok.ok, true, 'RANGE_TO 당일은 상한선에 포함되어야 함');
+  sandbox.TODAY = '2026-06-15';
+});
+/* doExport가 이제 CSV를 date<=TODAY로 미리 걸러내지만(위 txnsToCSV+doExport 필터 테스트),
+ * 이 필터가 없던 버전이 만든 과거 CSV나 다른 경로로 만든 CSV에는 여전히 '예정' 날짜 행이
+ * 섞여 있을 수 있다 — RANGE_TO 안이라도 아직 지나지 않은 날짜는 range와 구분되는
+ * error:'future'로 걸러야 한다(app-evolve cycle216 critique → advance). */
+test("csvRowToImportTxn: RANGE_TO 안이어도 TODAY 이후(아직 안 지난) 날짜는 range와 구분된 error:'future'로 걸러진다", () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2028-06-15';
+  const r = sandbox.csvRowToImportTxn(['2026-06-16', '지출', '식비', '1000', '', '', ''], []);
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.error, 'future');
+  const today = sandbox.csvRowToImportTxn(['2026-06-15', '지출', '식비', '1000', '주계좌', '', ''], []);
+  assert.strictEqual(today.ok, true, 'TODAY 당일은 아직 미래가 아니므로 포함되어야 함');
+  const past = sandbox.csvRowToImportTxn(['2026-06-14', '지출', '식비', '1000', '주계좌', '', ''], []);
+  assert.strictEqual(past.ok, true, 'TODAY 이전 날짜는 당연히 포함되어야 함');
 });
 test('csvRowToImportTxn: 지출은 fromAssetId만, 수입은 toAssetId만 채우고 반대쪽은 항상 null', () => {
   const assets = [{ id: 'a1', name: 'A' }];
@@ -4689,6 +4732,21 @@ test("buildImportPreview: RANGE_TO 이후 날짜 행도 형식 오류(invalidCou
   assert.strictEqual(preview.totalRows, 3);
   assert.strictEqual(preview.rangeCount, 1);
   assert.strictEqual(preview.invalidCount, 1, '형식 오류 카운트는 range 행을 포함하지 않아야 함');
+  assert.strictEqual(preview.newCount, 1);
+});
+/* app-evolve cycle216 critique → advance: RANGE_TO 안이라도 아직 지나지 않은(TODAY 이후) 날짜
+ * 행은 range/invalid와 구분된 futureCount로 세어, 가져오기 미리보기에서 따로 안내한다. */
+test("buildImportPreview: TODAY 이후(아직 안 지난) 날짜 행은 rangeCount·invalidCount와 구분된 futureCount로 센다", () => {
+  sandbox.TODAY = '2026-06-15';
+  const csv = '날짜,구분,카테고리,금액,보내는 자산,받는 자산,메모\r\n' +
+    '2026-06-16,지출,식비,5000,,,아직 안 지난 예정\r\n' +
+    'bad-row,지출,식비,abc,,,\r\n' +
+    '2026-01-01,지출,식비,5000,주계좌,,정상 내역\r\n';
+  const preview = sandbox.buildImportPreview(csv, [], { expense: ['식비'], income: [], saving: [] }, []);
+  assert.strictEqual(preview.totalRows, 3);
+  assert.strictEqual(preview.futureCount, 1);
+  assert.strictEqual(preview.rangeCount, 0, 'future 행은 rangeCount에 섞이면 안 됨');
+  assert.strictEqual(preview.invalidCount, 1, '형식 오류 카운트는 future 행을 포함하지 않아야 함');
   assert.strictEqual(preview.newCount, 1);
 });
 /* ---------- buildImportPreview/doCsvImport: CSV 카테고리도 addCat/renameCatSheet와 같은

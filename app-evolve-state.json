@@ -1,19 +1,8 @@
 {
-  "cycle": 216,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "CSV 거래 내역 내보내기가 미래 예정 항목을 영구 거래로 혼입시키는 문제 수정",
-    "why": "반복거래는 DB.txns에 실제로 기록되지 않고 allTxns()/maybeRollDay()가 expandRec()로 매번 템플릿에서 즉석 계산하는 가상 행인데, doExport('csv')(index.html:6336-6346, RANGE_TO=TODAY+760일은 2440행)가 이 가상 미래 행을 DB.txns와 합쳐 '거래 내역' CSV에 그대로 포함시킨다. 이 CSV를 다시 import하면(csvRowToImportTxn/buildImportPreview, 6230-6300·6831행) 미래 날짜 행이 스케줄과 아무 연결 없는 고정된 1회성 실거래로 영구히 박히고, 같은 반복거래를 나중에 다시 만들면 중복집계까지 된다. 더 심각한 건 복구코드 없는 로컬 계정의 비밀번호 분실 안내 문구(2184·8850행 '이 계정은 복구할 수 없어요 · CSV로 미리 백업해 두세요')가 진짜 무손실 복원 경로인 JSON '백업 파일' 내보내기 대신 이 손실 있는 CSV를 권장하고 있어, 안내를 그대로 따른 사용자가 CSV로 복원하면 반복거래 템플릿/카테고리/예산/목표/자산 메타데이터를 전부 잃는다.",
-    "approach": "(1) doExport의 csv 분기에서 DB.txns.concat(expandRec(...)) 결과를 txnsToCSV에 넘기기 전에 date<=TODAY로 필터링해 '거래 내역' CSV에는 실제로 일어난 거래만 담는다. (2) csvRowToImportTxn에 date>TODAY인 경우 기존 범위 체크와 구분되는 명시적 error:'future' 케이스를 추가하고 buildImportPreview/import UI에 해당 건수·안내를 노출한다. (3) 2184·8850행의 복구 안내 문구를 CSV 대신 JSON '백업 파일' 내보내기를 권장하도록 수정한다. (4) txnsToCSV/csvRowToImportTxn의 미래 날짜 케이스에 대한 테스트를 test/run.js에 추가한다."
-  },
+  "cycle": 217,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 211,
-      "phase": "advance",
-      "timestamp": "2026-10-18T02:50:00.000Z",
-      "summary": "critique(cycle211) 계획대로 logic.js에 순수 헬퍼 mergeCollectionConflicts(localArr,remoteArr)를 추가 — local/remote 양쪽에 같은 id가 있고 updatedAt이 다르며(동률이면 mergeCollection이 그냥 local을 쓸 뿐 실제 충돌이 아니라 제외) id/updatedAt을 제외한 나머지 필드 중 하나라도 실제로 다른(완전히 같은 내용을 다시 저장한 경우는 손실이 아니므로 제외) 레코드만 걸러 {id,discardedSide} 배열로 반환. mergeRemoteDataIntoLocal()(index.html:1526-1537)에서 DB.assets/DB.goals를 mergeCollection으로 병합하기 '전'(local/remote 원본이 아직 살아있을 때)에 이 헬퍼로 충돌 건수를 세어 DB.settings.mergeDataLossCount에 누적(여러 번의 병합에 걸쳐 쌓임). homeAlerts()의 CLOUD_UID 블록에 mergeDataLossCount>0이면 {kind:'mergeDataLoss',count} 알림을 추가하고, homeAlertCard에 cloudConflict/clockSkew와 같은 지속형 카드(storageSizeWarnDismissed와 동일한 '문턱을 넘을 때마다 재경고' 관례)를 추가해 \"다른 기기와 동시에 고친 N건은 최신 쪽만 반영됐어요\"를 보여주고, 확인 버튼은 dismissMergeDataLossWarn()으로 mergeDataLossCount를 0으로 리셋한다. DB.settings 기본값에 mergeDataLossCount:0 추가(migrate()). test/run.js에 11건 추가: mergeCollectionConflicts 순수 함수 단위 테스트 6건(충돌 1건 감지/mergeCollection과 일치/동률 제외/동일내용 제외/한쪽에만 있으면 제외/undefined 안전), mergeRemoteDataIntoLocal이 assets·goals 충돌을 mergeDataLossCount에 누적(기존값에 더해짐, 두 컬렉션 합산)하고 실제 손실 없으면 늘지 않는지 3건, homeAlerts/homeAlertCard mergeDataLoss 알림(CLOUD_UID 게이트/count 포함/카드 문구+dismiss 연결) 4건 — vm 크로스-realm 이슈로 mergeCollectionConflicts 반환 객체는 deepStrictEqual 전에 기존 mergeRecurrences 테스트와 동일한 j() JSON 왕복 정규화가 필요함을 재발견해 적용. dismissMergeDataLossWarn 자체는 다른 dismiss* 형제 함수들과 동일하게 FUNCTIONS 추출 목록에 없어 직접 호출 테스트는 만들지 않고 homeAlertCard HTML 문자열 검증으로만 커버(기존 관례 유지). index.html/sw.js 변경이라 APP_VERSION 1.47.183->1.47.184, sw.js CACHE v445->v446 갱신. HTML 주석 제거 후 <script> 블록 4개 + logic.js 모두 node --check 통과. node our-assets-v1.14.1/our-assets/test/run.js 1572/1572 -> 1585/1585 통과. pending_advance_plan을 비웠다.",
-      "commit": null
-    },
     {
       "cycle": 212,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-18T23:05:00.000Z",
       "summary": "Explore 서브에이전트로 앱 전반을 아키텍처/데이터정합성 관점에서 훑었다(cycle149-216에서 다룬 toast/invalidateBalances fromDate/closeSheetGuarded/aria-label/XSS/실행형 테스트 전환류/split거래 dedupe/pushCloud await/mergeDataLoss 경고(5개 컬렉션)/kakaoLogin 게스트 병합/nextOutflowCard 스냅샷/DB.goals type:'networth'|'asset' 및 goalHistoryFor 자산종류변경 버그/delOwner 목표 체크/pushCloud·pullCloud gzip 압축/#bootSplash/asFx·asGold·asQty Enter-제출(되돌림) 전부 제외, #histQ 디바운스·recSaveScopeConfirm 등·dismissedStaleMvIds·budgetCarryFor·CDN SRI·txDayInput도 보류/기각 유지로 재선정 안 함). doExport('csv')(index.html:6336-6346)가 RANGE_TO=TODAY+760일(2440행)까지 expandRec()로 만든 가상 미래 예정 거래를 DB.txns와 합쳐 '거래 내역' CSV에 그대로 포함시키는 것을 발견 — 반복거래는 실제로 DB.txns에 기록되는 게 아니라 allTxns()/maybeRollDay()가 매번 템플릿에서 즉석 계산해 보여주는 가상 행이라, 이 CSV를 다시 import하면(csvRowToImportTxn/buildImportPreview, 6230-6300·6831행) 미래 날짜 행들이 스케줄과 아무 연결 없는 고정된 1회성 실거래로 영구히 박혀버리고, 이후 같은 반복거래를 다시 만들면 중복집계까지 된다. 더 심각한 건 복구코드 없는 로컬 계정의 비밀번호 분실 안내 문구(2184·8850행 '이 계정은 복구할 수 없어요 · CSV로 미리 백업해 두세요')가 진짜 무손실 복원 경로인 JSON '백업 파일' 내보내기 대신 이 손실 있는 CSV를 권장하고 있어, 안내를 그대로 따른 사용자가 CSV로 복원하면 반복거래 템플릿/카테고리/예산/목표/자산 메타데이터를 전부 잃는다. 러너업으로 #histQ 디바운스를 재확인했으나 우선순위가 낮아 재선정 안 함. doExport csv 분기를 date<=TODAY로 필터링하고, csvRowToImportTxn에 future 날짜 케이스 명시적 처리/안내 추가, 복구 안내 문구(2184·8850)를 JSON 백업 쪽으로 수정, txnsToCSV/csvRowToImportTxn 미래날짜 테스트 추가 계획을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "commit": null
+    },
+    {
+      "cycle": 216,
+      "phase": "advance",
+      "timestamp": "2026-10-19T00:10:00.000Z",
+      "summary": "critique(cycle216) 계획대로 doExport('csv')가 미래 예정 반복거래/미래 날짜 거래를 '거래 내역' CSV에 영구 혼입시키던 문제를 수정했다. (1) doExport(index.html:6346)의 CSV 분기에서 DB.txns.concat(expandRec(RANGE_FROM,RANGE_TO))를 txnsToCSV에 넘기기 전 filter에 `&&t.date<=TODAY`를 추가해, 반복거래의 가상 '예정' 회차와 아직 안 지난 수동 미래 거래 둘 다 CSV에서 제외했다(TODAY 당일까지는 포함, 즉 이미 일어난 일만). (2) csvRowToImportTxn(6230행대)에 range 체크 다음으로 `if(date>TODAY)return{ok:false,error:'future'}`를 추가 — doExport의 새 필터로 걸러지지 않은(이 필터가 없던 구버전이 만든 CSV 등) 미래 날짜 행도 재가져오기 시 고정 1회성 실거래로 박히지 않게 range와 구분된 사유로 거부한다. buildImportPreview에 futureCount 카운터를 추가(invalidCount/rangeCount와 나란히)하고, openCsvImportPreview의 stats 목록에 \"아직 지나지 않은 날짜(예정) N행은 제외\" 안내를 추가했다. (3) AUTH.resetPasswordLocal(2184행)과 doForgotPasswordLocal(8850행)의 복구코드 없음 안내 문구를 'CSV로 미리 백업'에서 '백업 파일로 미리 백업'으로 바꿔, 반복거래/카테고리/예산/목표/자산 메타데이터까지 보존하는 진짜 무손실 경로(JSON 백업 내보내기)를 권하도록 고쳤다. test/run.js에 3건 추가: txnsToCSV+doExport 필터 조합이 TODAY 이후 반복거래 예정 회차를 실제로 제외하는지(실행형, 월세 반복 중 2026-01-01 1건만 남고 이후 수십 달치는 빠짐), csvRowToImportTxn이 RANGE_TO 안이어도 TODAY 이후 날짜는 error:'future'로 거부하고(RANGE_TO 경계 테스트는 TODAY도 같이 끌어올려 분리) TODAY 당일/이전은 통과시키는지, buildImportPreview가 futureCount를 rangeCount/invalidCount와 분리해서 세는지. 기존 RANGE_TO 경계 테스트(csvRowToImportTxn: RANGE_TO 이후 날짜는...)가 TODAY를 건드리지 않아 새 future 체크에 걸려 깨지는 걸 발견해 그 테스트 안에서 sandbox.TODAY도 RANGE_TO와 같이 끌어올리도록 수정(검증 대상인 RANGE_TO 경계 자체는 그대로 유지, 끝에 TODAY 원복). index.html/sw.js 변경이라 APP_VERSION 1.47.194->1.47.195, sw.js CACHE v456->v457. HTML 주석 제거 후 <script> 블록 4개(1번째 블록은 '동적 로더' 주석이 '<script>' 문자열을 포함해 발생하는 기존 알려진 정규식 오탐이라 HTML 주석 제거 후 재확인 필요 — 제거 후엔 정상 4블록) + logic.js 모두 node --check 통과. node our-assets-v1.14.1/our-assets/test/run.js 1615/1615 -> 1618/1618 통과. pending_advance_plan을 비웠다.",
       "commit": null
     }
   ]
