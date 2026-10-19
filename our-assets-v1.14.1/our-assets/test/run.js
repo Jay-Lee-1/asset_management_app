@@ -191,7 +191,7 @@ const FUNCTIONS = [
   'detectStaleMarketValuedTxns', 'delBudget', 'saveBudget', 'openBudgetPrompt', 'openBigMinSheet',
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards', 'openTidyAsset', 'openTidyList', 'tidyListSnooze',
   'debtsBehind', 'openDebtBehindList',
-  'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'openCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter', 'histClearTypeFilter',
+  'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate', 'histQInput', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'openCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter', 'histClearTypeFilter',
   'genSalt', 'pbkdf2Hash', 'genRecoveryCode', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer', 'openConfirmTransfer',
   'renderLockView', 'openForgotPinSheet', 'doForgotPin', 'tickForgotPinWait',
   'confirmTransferNow', 'postponeTransfer', 'confirmRecNow', 'openConfirmTransferList',
@@ -284,7 +284,10 @@ const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'AS
 // (_sujiPeeked)를 함께 끌어오기 위한 것 — 소스에서 `let _sujiTimer=null,_sujiPeeking=false,
 // _sujiPeeked=false;` 한 줄로 선언돼 있어 "_sujiTimer"만 추출해도 셋 다 딸려온다
 // (_fixWhen/_fixCtx와 같은 패턴, app-evolve cycle116 develop).
-const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer'];
+// _histTimer는 histQInput()이 참조하는 #histQ 검색 디바운스 타이머 _histQT를 함께 끌어오기
+// 위한 것 — 소스에서 `let _histTimer=null,_histPeeking=false,_histQT=null;` 한 줄로 선언돼
+// 있어 "_histTimer"만 추출해도 셋 다 딸려온다(_sujiTimer와 같은 패턴, app-evolve cycle217 advance).
+const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer', '_histTimer'];
 
 const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(extractConst).join('\n') + '\n' + LETS.map(extractLet).join('\n');
 
@@ -17205,6 +17208,17 @@ test('go(tab): .nav-btn의 aria-current를 활성 탭에 맞춰 갱신한다', (
   assert.ok(/setAttribute\('aria-current',\s*on\?'page':'false'\)/.test(body), "go(tab)이 nav-btn의 aria-current를 갱신하지 않음");
   assert.ok(/b\.dataset\.tab===navTabOf\(tab\)/.test(body), 'go(tab)의 aria-current 갱신이 활성 탭 판정(navTabOf)과 연결돼 있지 않음');
 });
+/* go()도 DOM 전역(history.pushState 등)을 직접 쓰므로 위 두 테스트와 같은 이유로 vm 실행
+ * 대상에 넣지 않고 소스 패턴으로만 확인한다 — 전체내역을 벗어날 때 histQ 디바운스 타이머
+ * (_histQT)가 남아있으면 언마운트된 화면을 뒤늦게 updateHist()로 다시 그려버리는 걸 막는다
+ * (app-evolve cycle217 advance, histQInput 디바운스 추가와 함께 배선). */
+test('go(tab): 전체내역(history) 탭을 벗어나면 histQ 디바운스 타이머(_histQT)를 지운다', () => {
+  const body = extractFunction('go');
+  assert.ok(
+    /ST\.tab===.history.\s*&&\s*tab!==.history.\s*\)\s*clearTimeout\(_histQT\)/.test(body),
+    "go(tab)이 history 탭을 벗어날 때 clearTimeout(_histQT)를 호출하지 않음"
+  );
+});
 
 /* ---------- sbErrMsg: Supabase 에러 메시지 매핑 (app-evolve cycle98 advance: 비밀번호 변경/재설정 추가) ----------
  * changePassword/resetPassword가 추가되면서 signUp/signIn 흐름에는 없던 두 메시지("기존과 같은
@@ -17514,6 +17528,86 @@ if (stockFns && ratesFns) {
       await sandbox.withTimeout(Promise.resolve(1));
       assert.strictEqual(capturedMs, 8000);
     } finally { restoreTimers(); }
+  });
+})();
+
+/* ---------- histQInput (app-evolve cycle217 advance) ----------
+ * #histQ(전체내역 검색) oninput이 예전엔 매 키 입력마다 동기로 histInvalidate()+updateHist()를
+ * 불러 filteredHist()의 전체 재계산·재렌더를 그대로 치렀다(cycle212~216 critique가 반복 지목한
+ * 비일관성 — wireNwCarousel은 이미 clearTimeout/setTimeout 디바운스를 쓰는데 검색엔 없었음).
+ * fetchWithTimeout/withTimeout과 같은 이유로 sandbox.setTimeout/clearTimeout이 기본 no-op이라,
+ * 이 블록에서만 스파이로 바꿔주고 매 테스트 후 원복한다. */
+(() => {
+  const origSetTimeout = sandbox.setTimeout, origClearTimeout = sandbox.clearTimeout,
+    origHistInvalidate = sandbox.histInvalidate, origUpdateHist = sandbox.updateHist;
+  function restore() {
+    sandbox.setTimeout = origSetTimeout; sandbox.clearTimeout = origClearTimeout;
+    sandbox.histInvalidate = origHistInvalidate; sandbox.updateHist = origUpdateHist;
+  }
+
+  test('histQInput: 입력값은 ST.hist.q에 즉시 반영되지만, histInvalidate/updateHist는 220ms 디바운스 후에야 불린다', () => {
+    sandbox.ST = { hist: { q: '' } };
+    let invalidateCalls = 0, updateCalls = 0, capturedMs = null;
+    sandbox.setTimeout = (fn, ms) => { capturedMs = ms; return 'timer'; };
+    sandbox.clearTimeout = () => {};
+    sandbox.histInvalidate = () => { invalidateCalls++; };
+    sandbox.updateHist = () => { updateCalls++; };
+    try {
+      sandbox.histQInput('식비');
+      assert.strictEqual(sandbox.ST.hist.q, '식비', '입력값은 디바운스와 무관하게 즉시 반영돼야 함');
+      assert.strictEqual(invalidateCalls, 0, '타이머가 실제로 실행되기 전에는 histInvalidate가 불리면 안 됨');
+      assert.strictEqual(updateCalls, 0, '타이머가 실제로 실행되기 전에는 updateHist가 불리면 안 됨');
+      assert.strictEqual(capturedMs, 220, '디바운스 지연은 220ms여야 함');
+    } finally { restore(); }
+  });
+
+  test('histQInput: 연속 입력마다 이전 디바운스 타이머를 지우고 새로 하나만 건다(마지막 키 입력 220ms 후 한 번만 재계산)', () => {
+    sandbox.ST = { hist: { q: '' } };
+    let setCalls = 0, clearCalls = 0;
+    sandbox.setTimeout = () => { setCalls++; return 'timer' + setCalls; };
+    sandbox.clearTimeout = () => { clearCalls++; };
+    sandbox.histInvalidate = () => {};
+    sandbox.updateHist = () => {};
+    try {
+      sandbox.histQInput('식');
+      sandbox.histQInput('식비');
+      sandbox.histQInput('식비카');
+      assert.strictEqual(setCalls, 3, '매 입력마다 새 타이머를 예약해야 함');
+      assert.strictEqual(clearCalls, 3, '매 입력이 이전 타이머를 지워야 함(쌓여서 여러 번 재계산되는 걸 방지)');
+    } finally { restore(); }
+  });
+
+  test('histQInput: 검색어를 지우면(clrInput → 빈 문자열) 디바운스 없이 즉시 histInvalidate+updateHist를 부른다', () => {
+    sandbox.ST = { hist: { q: '아무거나' } };
+    let invalidateCalls = 0, updateCalls = 0, setCalls = 0, clearCalls = 0;
+    sandbox.setTimeout = () => { setCalls++; return 'timer'; };
+    sandbox.clearTimeout = () => { clearCalls++; };
+    sandbox.histInvalidate = () => { invalidateCalls++; };
+    sandbox.updateHist = () => { updateCalls++; };
+    try {
+      sandbox.histQInput('');
+      assert.strictEqual(setCalls, 0, '빈 문자열이면 디바운스 타이머를 걸지 않고 즉시 실행해야 함(지우기 버튼 지연 체감 방지)');
+      assert.strictEqual(clearCalls, 1, '혹시 남아있던 이전 타이머는 지워야 함');
+      assert.strictEqual(invalidateCalls, 1);
+      assert.strictEqual(updateCalls, 1);
+      assert.strictEqual(sandbox.ST.hist.q, '');
+    } finally { restore(); }
+  });
+
+  test('histQInput: 공백만 입력해도(trim 결과 빈 문자열) 지우기와 동일하게 즉시 실행된다', () => {
+    sandbox.ST = { hist: { q: '' } };
+    let invalidateCalls = 0, updateCalls = 0, setCalls = 0;
+    sandbox.setTimeout = () => { setCalls++; return 'timer'; };
+    sandbox.clearTimeout = () => {};
+    sandbox.histInvalidate = () => { invalidateCalls++; };
+    sandbox.updateHist = () => { updateCalls++; };
+    try {
+      sandbox.histQInput('   ');
+      assert.strictEqual(setCalls, 0, '공백뿐인 입력도 디바운스 없이 즉시 실행해야 함');
+      assert.strictEqual(invalidateCalls, 1);
+      assert.strictEqual(updateCalls, 1);
+      assert.strictEqual(sandbox.ST.hist.q, '   ', 'trim은 즉시실행 판단에만 쓰고, 실제 ST.hist.q에는 원본 입력을 그대로 저장해야 함');
+    } finally { restore(); }
   });
 })();
 

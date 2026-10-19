@@ -1392,7 +1392,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.196';
+const APP_VERSION='1.47.197';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4960,7 +4960,7 @@ function renderHistory(){
  ${pageHead('history')}
  ${H.selMode?'':`
  <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
- <div class="searchbar" style="flex:1">${svg('search')}<div class="field-clear"><input id="histQ" aria-label="내역 검색" placeholder="메모·카테고리·자산·금액 검색" value="${esc(H.q)}" oninput="ST.hist.q=this.value;histInvalidate();updateHist()"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('histQ')">✕</button></div></div>
+ <div class="searchbar" style="flex:1">${svg('search')}<div class="field-clear"><input id="histQ" aria-label="내역 검색" placeholder="메모·카테고리·자산·금액 검색" value="${esc(H.q)}" oninput="histQInput(this.value)"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('histQ')">✕</button></div></div>
  <button type="button" class="sch-chip" aria-label="내역 선택" onclick="ST.hist.selMode=true;updateHist();updateSelBottom()">${svg('check',14)}</button>
  </div>
  ${H.assetId?`<button type="button" class="sch-chip on" style="margin-bottom:14px" onclick="histClearAssetFilter()" aria-label="${esc((DB.assets.find(a=>a.id===H.assetId)||{}).name||'계좌')} 필터 해제">${esc((DB.assets.find(a=>a.id===H.assetId)||{}).name||'계좌')} ${svg('x',14)}</button>
@@ -5019,7 +5019,19 @@ function histTotBox(tot,suji,sch,ssuji,live){ /* 달력 모드 수지카드와 �
  _histLive={a,sc};
  return `<div class="card ledsum mc-pane" id="histTotLive" tabindex="0" role="button" aria-label="전체내역 합계, 엔터나 스페이스를 누르고 있으면 오늘까지 금액 보기" onpointerdown="histPeekStart()" onpointermove="histPeekMove()" onpointerup="histPeekEnd()" onpointercancel="histPeekEnd()" onpointerleave="histPeekEnd()" onkeydown="histPeekKey(event)" onkeyup="histPeekEnd()" onblur="histPeekEnd()">${ledSumInner(a,sc,false)}</div>`;
 }
-let _histTimer=null,_histPeeking=false;
+let _histTimer=null,_histPeeking=false,_histQT=null;
+/* #histQ(전체내역 검색) 입력 디바운스 — filteredHist()가 allTxns(반복거래 전개 포함)부터
+ * 정렬·그룹까지 전체를 매번 재계산하는데, 예전엔 oninput마다 동기로 histInvalidate()+updateHist()를
+ * 불러 글자 하나 칠 때마다 그 비용을 그대로 치렀다(wireNwCarousel의 clearTimeout/setTimeout
+ * 디바운스 관례가 검색엔 빠진 비일관성, app-evolve cycle212~216 critique가 반복 지목).
+ * 지우기(×) 버튼(clrInput)이 만드는 빈 문자열 입력은 디바운스 없이 즉시 반영해 "지웠는데도
+ * 잠깐 이전 목록이 남아있는" 체감 지연이 없게 한다. */
+function histQInput(v){
+ ST.hist.q=v;
+ clearTimeout(_histQT);
+ if(v.trim()===''){histInvalidate();updateHist();return}
+ _histQT=setTimeout(()=>{histInvalidate();updateHist()},220);
+}
 function histPeekStart(){clearTimeout(_histTimer);_histTimer=setTimeout(()=>{_histPeeking=true;setHistMode(true);if(navigator.vibrate)navigator.vibrate(8)},180)}
 function histPeekMove(){if(!_histPeeking)clearTimeout(_histTimer)}
 function histPeekEnd(){clearTimeout(_histTimer);if(_histPeeking){_histPeeking=false;setHistMode(false)}}
@@ -8430,6 +8442,7 @@ function navGo(t){ /* 가계부 탭 누르면 마지막 보던 모드(달력/목
 function toList(){histInvalidate();go('history')} /* 달력→전체 */
 function toCal(){go('ledger')} /* 전체→달력 */
 function go(tab){if(ST.aSel.mode){ST.aSel.mode=false;ST.aSel.ids.clear()}if(ST.lSel.mode){ST.lSel.mode=false;ST.lSel.ids.clear()}if(ST.hist.selMode){ST.hist.selMode=false;ST.hist.sel.clear()}
+ if(ST.tab==='history'&&tab!=='history')clearTimeout(_histQT); /* 전체내역을 벗어나며 histQ 디바운스 타이머가 남아있으면, 언마운트된 화면을 뒤늦게 updateHist()로 다시 그리지 않도록 정리 */
  const _tnAction=tabNavAction(tab,_tabNavPushed); /* 탭 레벨 백버튼 history entry 판정(logic.js) */
  if(_tnAction==='push'){_tabNavPushed=true;try{history.pushState({tabNav:true},'')}catch(e){}}
  else if(_tnAction==='pop'){_tabNavPushed=false;if(!_ovHistSuppress){_ovHistSuppress=true;history.back();}}
