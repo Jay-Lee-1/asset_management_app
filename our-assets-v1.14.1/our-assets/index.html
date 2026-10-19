@@ -1392,7 +1392,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.195';
+const APP_VERSION='1.47.196';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -8357,7 +8357,7 @@ function pkPickCat(c){
  * 없는 단독 호출이라 onPick에서 직접 closeSheet()로 닫아야 한다. */
 function bulkCatPickFor(ids,afterApply){
  const r=bulkCatTargets(DB.txns,ids);
- if(!r.ok){toast(r.reason==='transfer'?'이체 내역은 카테고리를 바꿀 수 없어요':r.reason==='mixed'?'같은 종류의 내역만 한번에 바꿀 수 있어요':r.reason==='split'?'분할된 내역은 일괄로 카테고리를 바꿀 수 없어요':'선택된 내역이 없어요');return}
+ if(!r.ok){toast(r.reason==='transfer'?'이체 내역은 카테고리를 바꿀 수 없어요':r.reason==='mixed'?'같은 종류의 내역만 한번에 바꿀 수 있어요':r.reason==='split'?'분할된 내역은 일괄로 카테고리를 바꿀 수 없어요':r.reason==='adjust'?'잔액 조정 내역은 카테고리를 바꿀 수 없어요':'선택된 내역이 없어요');return}
  openCatPicker({kind:r.kind,current:null,onPick:c=>{closeSheet();doBulkCat(ids,c);if(afterApply)afterApply()}});
 }
 

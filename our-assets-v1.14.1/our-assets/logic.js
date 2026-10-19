@@ -625,7 +625,10 @@ function csvDedupeKey(t){
  * 3개뿐이라 일괄 카테고리 변경 경로가 없던 공백 해소). 선택이 비었거나 ids가 실제 거래와 하나도
  * 안 맞으면 reason:'empty', transfer가 하나라도 섞이면 reason:'transfer'(이체는 category가 없는
  * 종류라 카테고리 피커 대상이 아님 — catListOf('transfer')도 항상 []), type(expense/income/saving)이
- * 섞여 있으면 reason:'mixed'(카테고리 집합이 종류별로 달라 하나의 피커로 고를 수 없음). 통과하면
+ * 섞여 있으면 reason:'mixed'(카테고리 집합이 종류별로 달라 하나의 피커로 고를 수 없음). adjust(잔액
+ * 조정 자동 생성 거래)가 하나라도 섞이면 reason:'adjust' — editTx()의 openAdjustEdit()과
+ * doRenameCat/doDeleteCat 모두 ADJUST_CAT을 사용자가 바꿀 수 없게 막는데, 일괄 변경만 이 가드가
+ * 없어 선택 모드로 우회할 수 있던 구멍을 막는다(app-evolve cycle217 develop). 통과하면
  * {ok:true,kind,items}로 피커에 넘길 종류와 실제 적용 대상 거래 배열을 돌려준다. */
 function bulkCatTargets(txns,ids){
  const idSet=ids instanceof Set?ids:new Set(ids||[]);
@@ -633,6 +636,7 @@ function bulkCatTargets(txns,ids){
  const items=(txns||[]).filter(t=>idSet.has(t.id));
  if(!items.length)return{ok:false,reason:'empty'};
  if(items.some(t=>t.type==='transfer'))return{ok:false,reason:'transfer'};
+ if(items.some(t=>t.adjust))return{ok:false,reason:'adjust'};
  if(items.some(t=>Array.isArray(t.splits)&&t.splits.length>1))return{ok:false,reason:'split'}; /* 분할 거래는 카테고리가 여러 개라 하나의 피커로 일괄 변경할 수 없음(app-evolve cycle198 advance) */
  const kind=items[0].type;
  if(items.some(t=>t.type!==kind))return{ok:false,reason:'mixed'};

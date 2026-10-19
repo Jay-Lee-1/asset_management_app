@@ -5280,6 +5280,21 @@ test('bulkCatTargets: 선택에 이체가 하나라도 섞이면 reason:transfer
   assert.strictEqual(r.ok, false);
   assert.strictEqual(r.reason, 'transfer');
 });
+test('bulkCatTargets: 선택에 잔액 조정(t.adjust) 내역이 하나라도 섞이면 reason:adjust(editTx/doRenameCat/doDeleteCat 모두 막는 ADJUST_CAT을 선택 모드로 우회하지 못하게)', () => {
+  const txns = [
+    { id: 'a', type: 'income', category: '식비' },
+    { id: 'b', type: 'income', category: '잔액 조정', adjust: true },
+  ];
+  const r = sandbox.bulkCatTargets(txns, new Set(['a', 'b']));
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.reason, 'adjust');
+});
+test('bulkCatTargets: 잔액 조정 내역만 선택해도(type은 같아도) reason:adjust', () => {
+  const txns = [{ id: 'a', type: 'expense', category: '잔액 조정', adjust: true }];
+  const r = sandbox.bulkCatTargets(txns, new Set(['a']));
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.reason, 'adjust');
+});
 test('bulkCatTargets: 선택한 거래들의 종류(expense/income/saving)가 섞이면 reason:mixed', () => {
   const txns = [
     { id: 'a', type: 'expense', category: '식비' },
@@ -5354,6 +5369,15 @@ test('doBulkCat: bulkCatTargets이 실패(이체 포함/혼합/빈 선택)로 �
   assert.strictEqual(t1.category, undefined, '이체는 category 자체가 없으니 손대면 안 됨');
   assert.strictEqual(sandbox.lastUndo, null, 'undoToast도 호출되지 않아야 함');
 });
+test('doBulkCat: 선택에 잔액 조정 내역이 섞여 있으면 bulkCatTargets이 reason:adjust로 막아 아무 것도 바꾸지 않는다(safety net)', () => {
+  sandbox.TWi = -1;
+  const t1 = { id: 'x1', type: 'income', category: '잔액 조정', adjust: true };
+  sandbox.DB = { txns: [t1] };
+  sandbox.lastUndo = null;
+  sandbox.doBulkCat(new Set(['x1']), '외식');
+  assert.strictEqual(t1.category, '잔액 조정', 'ADJUST_CAT은 사용자가 바꿀 수 없어야 함');
+  assert.strictEqual(sandbox.lastUndo, null, 'undoToast도 호출되지 않아야 함');
+});
 
 test('bulkCatPickFor: 선택이 비어 있으면 안내 토스트만 띄우고 카테고리 피커를 열지 않는다', () => {
   sandbox.DB = { txns: [] };
@@ -5368,6 +5392,13 @@ test('bulkCatPickFor: 선택에 이체가 섞여 있으면 이체 전용 안내�
   sandbox.lastPickerHtml = null;
   sandbox.bulkCatPickFor(new Set(['a']), () => {});
   assert.strictEqual(sandbox.lastToast, '이체 내역은 카테고리를 바꿀 수 없어요');
+  assert.strictEqual(sandbox.lastPickerHtml, null);
+});
+test('bulkCatPickFor: 선택에 잔액 조정 내역이 섞여 있으면 조정 전용 안내를 띄우고 피커를 열지 않는다', () => {
+  sandbox.DB = { txns: [{ id: 'a', type: 'income', category: '잔액 조정', adjust: true }] };
+  sandbox.lastPickerHtml = null;
+  sandbox.bulkCatPickFor(new Set(['a']), () => {});
+  assert.strictEqual(sandbox.lastToast, '잔액 조정 내역은 카테고리를 바꿀 수 없어요');
   assert.strictEqual(sandbox.lastPickerHtml, null);
 });
 test('bulkCatPickFor: 선택한 거래들의 종류가 섞여 있으면 안내를 띄우고 피커를 열지 않는다', () => {
