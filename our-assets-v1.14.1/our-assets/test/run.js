@@ -3076,6 +3076,71 @@ test('assetBalanceSeries: 다른 자산의 거래는 무시한다', () => {
   assert.deepStrictEqual(out, [{ date: '2026-01-20', bal: 1000 }]);
 });
 
+/* ---------- archiveBaselines: 오래된 거래 아카이브용 cutoffDate 시점 잔액 계산 (순수)
+ * (app-evolve cycle221 critique/advance) ----------
+ * dismissStorageSizeWarn()가 권하는 '오래된 데이터 정리'의 유일한 실제 경로(전체내역 일괄삭제)는
+ * 잔액 보정이 전혀 없어, cutoffDate 이전 거래를 지우면 balancesUpTo()(index.html, baseAmount
+ * 고정 앵커 + RANGE_FROM부터의 모든 거래 합)가 그 거래들이 쌓아온 금액을 되살릴 길이 없어진다.
+ * archiveBaselines()는 balancesUpTo()와 완전히 같은 base+sign 누적 규칙으로 cutoffDate 시점
+ * 잔액을 계산해, 그 값을 새 baseAmount로 앉히면 cutoffDate 이전 거래를 지워도 잔액이 그대로
+ * 보존됨을 보장한다. */
+test('archiveBaselines: critique가 직접 재현한 시나리오 — cutoffDate 이전 거래만 흡수해 베이스라인을 만들고, 이후 거래는 그대로 남아 중복 계산되지 않는다', () => {
+  const assets = [{ id: 'a1', type: 'cash', baseAmount: 0 }];
+  const txns = [
+    { date: '2023-03-01', toAssetId: 'a1', amount: 500000 },
+    { date: '2023-06-01', toAssetId: 'a1', amount: 300000 },
+    { date: '2026-01-10', toAssetId: 'a1', amount: 50000 }, // cutoff 이후 — 베이스라인에 포함되면 안 됨
+  ];
+  const out = JSON.parse(JSON.stringify(sandbox.archiveBaselines(assets, txns, '2025-12-31')));
+  assert.deepStrictEqual(out, { a1: 800000 });
+  // 이 베이스라인을 새 baseAmount로 쓰고 cutoff 이전 거래를 지운 뒤, cutoff 이후 거래만 다시
+  // 재생해도(balancesUpTo와 동일한 재생 규칙) 전체 히스토리로 계산한 최종 잔액과 같아야 한다.
+  const afterArchive = sandbox.assetBalanceSeries([txns[2]], 'a1', out.a1, 1, ['2026-01-20']);
+  const fullHistory = sandbox.assetBalanceSeries(txns, 'a1', 0, 1, ['2026-01-20']);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(afterArchive)), JSON.parse(JSON.stringify(fullHistory)));
+});
+test('archiveBaselines: 거래가 없으면 각 자산의 기존 baseAmount(없으면 amountKRW)를 그대로 돌려준다', () => {
+  const assets = [{ id: 'a1', type: 'cash', baseAmount: 12345 }, { id: 'a2', type: 'cash', amountKRW: 777 }];
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.archiveBaselines(assets, [], '2025-01-01'))), { a1: 12345, a2: 777 });
+});
+test('archiveBaselines: type==="debt"면 balancesUpTo와 동일하게 부호가 반전된다(입금이 잔여원금을 줄임)', () => {
+  const assets = [{ id: 'd1', type: 'debt', baseAmount: 10000 }];
+  const txns = [{ date: '2023-01-10', toAssetId: 'd1', amount: 3000 }]; // 상환
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.archiveBaselines(assets, txns, '2025-01-01'))), { d1: 7000 });
+});
+test('archiveBaselines: 여러 자산을 독립적으로 집계하고(다른 자산 거래는 무시), fromAssetId/toAssetId 양쪽을 모두 반영한다', () => {
+  const assets = [{ id: 'a1', type: 'cash', baseAmount: 1000 }, { id: 'a2', type: 'cash', baseAmount: 5000 }];
+  const txns = [
+    { date: '2023-02-01', fromAssetId: 'a2', toAssetId: 'a1', amount: 2000 }, // a2 -> a1 이체
+    { date: '2023-03-01', fromAssetId: 'a1', amount: 100 }, // a1에서 지출
+  ];
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.archiveBaselines(assets, txns, '2025-01-01'))), { a1: 2900, a2: 3000 });
+});
+test('archiveBaselines: cutoffDate 이후 날짜의 거래는 베이스라인에 전혀 반영하지 않는다', () => {
+  const assets = [{ id: 'a1', type: 'cash', baseAmount: 0 }];
+  const txns = [{ date: '2025-01-02', toAssetId: 'a1', amount: 999 }]; // cutoff 바로 다음날
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.archiveBaselines(assets, txns, '2025-01-01'))), { a1: 0 });
+});
+test('archiveBaselines: cutoffDate 당일 거래는 경계 포함으로 베이스라인에 반영한다(balancesUpTo의 "<=upto"와 동일)', () => {
+  const assets = [{ id: 'a1', type: 'cash', baseAmount: 0 }];
+  const txns = [{ date: '2025-01-01', toAssetId: 'a1', amount: 999 }];
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.archiveBaselines(assets, txns, '2025-01-01'))), { a1: 999 });
+});
+test('archiveBaselines: isPendingFn이 true를 돌려주는 거래는 balancesUpTo의 미확인 이체 제외 규칙과 동일하게 건너뛴다', () => {
+  const assets = [{ id: 'a1', type: 'cash', baseAmount: 0 }];
+  const txns = [
+    { date: '2023-01-01', toAssetId: 'a1', amount: 500, confirmed: false },
+    { date: '2023-01-02', toAssetId: 'a1', amount: 200, confirmed: true },
+  ];
+  const out = JSON.parse(JSON.stringify(sandbox.archiveBaselines(assets, txns, '2025-01-01', (t) => t.confirmed === false)));
+  assert.deepStrictEqual(out, { a1: 200 });
+});
+test('archiveBaselines: isPendingFn을 생략하면 모든 거래를 확정된 것으로 보고 전부 반영한다(기본값 회귀 확인)', () => {
+  const assets = [{ id: 'a1', type: 'cash', baseAmount: 0 }];
+  const txns = [{ date: '2023-01-01', toAssetId: 'a1', amount: 500, confirmed: false }];
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.archiveBaselines(assets, txns, '2025-01-01'))), { a1: 500 });
+});
+
 /* ---------- notifyReliabilityTier/notifyReliabilityMsg: OS 알림 토스트/캡션의 실제 능력 고지
  * (app-evolve cycle145 critique/advance) ----------
  * checkNotifyAlerts()는 document.hidden일 때만 동작하는 foreground/background 로컬 알림일 뿐

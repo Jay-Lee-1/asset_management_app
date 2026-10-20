@@ -798,3 +798,32 @@ function shouldWarnClockSkew(severity,dismissed){
 function themeCachePayload(settings){
  return{themeMode:(settings&&settings.themeMode)||'system',accent:(settings&&settings.accent)||'teal'};
 }
+
+/* ================= 오래된 거래 아카이브 (순수) ================= */
+/* index.html의 dismissStorageSizeWarn()는 저장공간 경고 시 '오래된 데이터는 백업 후 정리하는
+ * 걸 권장해요'라고 안내하지만, 실제로 오래된 거래를 지울 수 있는 유일한 경로(전체내역
+ * 일괄삭제, deleteTxnsUndo)는 잔액 보정이 전혀 없다. balancesUpTo()/assetBase()(index.html)는
+ * 자산 잔액을 'baseAmount 고정 앵커 + RANGE_FROM부터의 모든 거래 합'으로 계산하므로, cutoffDate
+ * 이전 거래를 보정 없이 지우면 그 거래들이 쌓아온 금액이 통째로 사라져 순자산이 조용히
+ * 틀려진다(app-evolve cycle221 critique). archiveBaselines()는 각 자산의 cutoffDate 시점
+ * 잔액을 balancesUpTo()와 완전히 같은 재생 규칙(기준액 + sign 부호 누적, 부채는 -1)으로
+ * 계산해 돌려준다 — 호출부(다음 사이클의 archiveTxnsBefore() 등)가 이 값을 새 baseAmount로
+ * 앉히면, cutoffDate 이전 거래를 지워도 잔액이 그대로 보존된다.
+ * assets는 {id,type,baseAmount?,amountKRW?} 배열(DB.assets 그대로 넘기면 됨). expandedTxns는
+ * 반복거래의 cutoffDate 이전 가상 발생분까지 포함해야 한다(반복거래는 DB.txns에 실제로 기록되지
+ * 않고 매번 즉석 전개되므로, 호출부가 DB.txns.concat(expandRec(RANGE_FROM,cutoffDate))처럼
+ * 넘겨야 함 — 이 함수는 받은 배열을 그대로 재생할 뿐 반복거래를 스스로 전개하지 않는다).
+ * isPendingFn(t)은 balancesUpTo()의 '미확인 이체는 완료 잔액에서 제외' 규칙과 맞추기 위한
+ * 선택적 콜백(DB.settings/DB.recurrences를 읽는 index.html의 isPending()은 이 모듈이 직접
+ * 참조할 수 없으므로 호출부가 넘겨준다) — 생략하면 모든 거래를 확정된 것으로 본다. */
+function archiveBaselines(assets,expandedTxns,cutoffDate,isPendingFn){
+ const map={},sign={};
+ (assets||[]).forEach(a=>{map[a.id]=a.baseAmount!=null?a.baseAmount:(a.amountKRW||0);sign[a.id]=(a.type==='debt'?-1:1)});
+ (expandedTxns||[]).forEach(t=>{
+  if(t.date>cutoffDate)return;
+  if(isPendingFn&&isPendingFn(t))return;
+  if(t.fromAssetId!=null&&map[t.fromAssetId]!=null)map[t.fromAssetId]-=sign[t.fromAssetId]*t.amount;
+  if(t.toAssetId!=null&&map[t.toAssetId]!=null)map[t.toAssetId]+=sign[t.toAssetId]*t.amount;
+ });
+ return map;
+}
