@@ -1,15 +1,12 @@
 {
   "cycle": 219,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "암호화폐(crypto) 자산 종류 신설 — 시세 자동 조회 포함",
+    "why": "ASSET_TYPES(index.html:1671-1683)에 cash/savings/stock/realestate/debt/pension/fx/gold 등은 있지만 crypto가 없다. 한국 사용자 상당수가 업비트/빗썸 등에 BTC/ETH를 보유하는데 이 앱은 그걸 표현할 방법이 etc/cash 타입에 숫자를 수동 입력하는 것뿐이라, (1) syncRates()/fetchStocks()의 자동 시세 갱신에 전혀 참여하지 못해 금액이 영구히 stale해지고, (2) rateUnknown()/hasRateAssets()의 '가격 미확인' 경고망에도 안 걸려 조용히 틀린 순자산이 표시된다. stock/fx/gold가 이미 쓰는 시세중계(netlify/functions/stock.js)·R.stocks 캐시·assetEval() switch·staleness 경고·백업 sanitize 패턴을 그대로 재사용하면 한 cycle 안에서 안전하게 추가할 수 있다.",
+    "approach": "1) ASSET_TYPES에 crypto:{label:'코인',icon:'coins',cls:'a-crypto'} 추가(기존 TYPE_COLOR도 매칭 추가). 2) 자산 draft에 cryptoCode/cryptoQty 필드를 stockCode/stockQty와 동일한 UI·검증 패턴(asCode 입력, ~3924 검증)으로 추가. 3) DB.rates에 R.crypto={} 버킷 신설, assetEval()에 case 'crypto': (a.cryptoQty||0)*(R.crypto[a.cryptoCode]||0) 추가, rateUnknown()/hasRateAssets()에 crypto 분기 추가(stock과 동일 3줄 패턴). 4) netlify/functions/stock.js의 getJSON/retry/timeout 헬퍼를 재사용해 업비트 공개 티커(GET https://api.upbit.com/v1/ticker?markets=KRW-{CODE}, 키 불필요, KRW 가격 그대로)를 호출하는 자매 함수(crypto.js 또는 기존 함수 확장) 추가. 5) syncRates()/fetchStocks() 흐름에 fetchCrypto() 동등물을 끼워 ok/fail 카운트·R.failStreak·수동 오버라이드 레이트 에디터 UI(~5889 stockRows)의 cryptoRows 대응을 공유. 6) sanitizeBackup()/migrate 쪽에 stocks:{} 디폴트와 동일하게 crypto:{} 디폴트를 추가해 구버전 JSON 백업 복원과의 하위호환을 보장. 기존 자산 종류 동작은 전혀 바꾸지 않는 추가(additive)형 변경이며, 네트워크 egress가 막힌 현재 클라우드 샌드박스에서 실제 업비트 호출을 테스트할 수는 없으므로 fetchCrypto()의 네트워크 왕복 자체는 기존 stock relay 테스트와 같은 방식(fetch를 모킹한 실행형 테스트)으로 커버하고, 실물 API 응답 포맷은 공개 문서 기준으로 구현한 뒤 주석 없이 그대로 둔다."
+  },
   "history": [
-    {
-      "cycle": 214,
-      "phase": "develop",
-      "timestamp": "2026-10-18T12:00:00.000Z",
-      "summary": "Explore 서브에이전트로 develop 후보를 탐색(cycle149-213에서 다룬 toast/invalidateBalances fromDate/closeSheetGuarded/aria-label/XSS/실행형 테스트 전환류/split거래/pushCloud await/mergeDataLoss 경고(5개 컬렉션)/kakaoLogin 게스트 병합 안내/nextOutflowCard 스냅샷/#histQ 디바운스(보류 유지)/recSaveScopeConfirm 등(보류 유지)/DB.goals type:'networth'|'asset' 신설(cycle213 advance) 전부 제외). cycle213 advance가 막 추가한 asset형 목표 추적 기능 자체에서 새 버그 발견: goalHistoryFor(g)(index.html:2995)가 연결 자산(g.linkedAssetId)의 '현재' type을 전혀 확인하지 않고 항상 sign=1 원장-잔액 재생(assetBalanceSeries)으로 처리함 — 그런데 asOpenType()은 이미 연결해둔 자산의 종류를 fx/gold/stock(시세평가, 거래가 쌓이는 원장이 아님)이나 debt(sign=-1이어야 함, assetBalCard/debtPayoffProjection과 동일 규약)로 바꾸는 것을 전혀 막지 않는다. goalOpenAsset이 자산을 '고를 때'만 excludeMarketValued/excludeDebt로 막아줄 뿐이라 연결 '후'에 종류를 바꾸면: (1) fx/gold/stock으로 바뀌면 베이스가 거의 0이라 진행률이 영원히 0%에 멈춰버리고(실제 가치는 qty×시세인데 반영 안 됨), (2) debt로 바뀌면 부호가 반대라 빚을 갚을수록(잔액이 음수 쪽으로 줄어듦) 목표에서 멀어지는 것처럼 보인다 — 둘 다 goalLinkedAssetGone(자산이 존재하므로 false)과 goalHasUnknown 어느 쪽도 못 잡아 경고 없이 조용히 틀린 값을 보여줌. goalHistoryFor에 isMarketValued(a)||a.type==='debt' 가드를 추가해 자산 삭제와 동일하게 빈 이력([])을 돌려주게 하고(goalProgress가 cur:0·achieved:false로 중립 처리, homeAlerts의 goalBehind도 hist.length>=2 요건에 걸려 같이 억제됨 — 코드 추가 없이 자동으로 해결), 새 goalLinkedAssetBroken(g) 판정 함수를 추가해 goalRowHTML/openGoalsList에 '연결된 자산을 추적할 수 없어요' 중립 캡션(assetGone의 '삭제됐어요'와는 구분되는 문구 — 실제로 삭제된 게 아니므로)을 띄우게 했다. test/run.js에 7건 추가: goalLinkedAssetBroken/goalHistoryFor 단위 테스트(fx/gold/stock/debt 4종 전부 + networth형은 항상 false, savings는 여전히 추적 가능), goalRowHTML/openGoalsList 캡션 전환(실행형, stock으로 바꾸면 '추적할 수 없어요' 캡션+0%로 바뀌고 '삭제됐어요'는 안 뜸), homeAlerts goalBehind 오탐 억제(debt로 바뀐 연결 자산). index.html/sw.js 변경이라 APP_VERSION 1.47.188->1.47.189, sw.js CACHE v450->v451. HTML 주석 제거 후 <script> 블록 4개 + logic.js 모두 node --check 통과. node our-assets-v1.14.1/our-assets/test/run.js 1594/1594 -> 1601/1601 통과.",
-      "commit": null
-    },
     {
       "cycle": 214,
       "phase": "review",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-20T06:00:00.000Z",
       "summary": "cycle219 develop 커밋(58ab13c, selectNwOwner()가 자산 일괄선택 모드 중 귀속 캐러셀 전환 시 화면에 안 보이는 선택 id를 남기던 버그 수정)을 검토. visibleAssetsForSel()(index.html:3762, ST.assetOwner==='all'이면 DB.assets 전체, 아니면 owner로 필터)과 ST.aSel 초기값(2705행, {mode:false,ids:new Set()})을 직접 추적 — 가드가 `if(ST.aSel.mode&&ST.aSel.ids.size){...}`로 선택모드가 아니거나 선택된 게 없으면 건드리지 않고, 실제로 owner!==ST.assetOwner일 때만(기존 조건문 안) 실행되므로 캐러셀이 같은 귀속에 머무는 스크롤 정착 이벤트들을 불필요하게 건드리지 않음을 확인. 비파괴적으로 보일 수 있는 대안(바뀐 귀속에서도 여전히 보이는 id만 남기는 부분 정리)보다 전체 비우기가 이 앱의 기존 관례(필터가 바뀌면 선택을 통째로 초기화)와 일치하고 코드도 더 단순해 과잉수정이 아니라고 판단. updateSelBottom()이 selMode 전체에서 쓰는 공용 하단 바 갱신 함수(8409행)와 동일 패턴으로 재사용됐음도 확인. 새 테스트 3건(모드 중 전환 시 비움+갱신, 동일 귀속 재선택 시 무변화, 비선택모드 회귀 가드)이 실제 로직과 정확히 일치하고, test/run.js FUNCTIONS에 추가된 네 함수(selectNwOwner/refreshAssetBody/refreshNwHistoryCard/refreshGoalsSummary/refreshAllocationCard) 모두 기존 공유 $ 스텁만으로 실행형 검증이 가능함을 재확인. APP_VERSION 1.47.200/sw.js CACHE v462 갱신도 일관됨(develop에서 이미 올렸고 review는 코드 변경 없음). node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1638/1638 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 219,
+      "phase": "critique",
+      "timestamp": "2026-10-20T07:15:00.000Z",
+      "summary": "Explore 서브에이전트로 앱 전반을 훑어(cycle149-219에서 다룬 toast/invalidateBalances/split거래/pushCloud await·gzip 압축/mergeDataLoss 경고/kakaoLogin 게스트 병합/nextOutflowCard/#histQ 디바운스/recSaveScopeConfirm 등(보류)/DB.goals type 구분/delOwner 목표 체크/#bootSplash/boot() 로컬-먼저-렌더/asFx·asGold·asQty Enter-제출(되돌림)/doExport csv 미래거래/bulkCatTargets adjust 가드/연금 전환 복원/selectNwOwner 선택id 정리 전부 제외) ASSET_TYPES(index.html:1671-1683)에 cash/savings/stock/realestate/debt/pension/fx/gold는 있지만 암호화폐(crypto) 자산 종류가 전혀 없음을 발견 — stock/fx/gold가 이미 쓰는 시세중계(netlify/functions/stock.js)·R.stocks 캐시·assetEval() switch·rateUnknown()/hasRateAssets() staleness 경고·백업 sanitize 패턴이 완비돼 있는데도 crypto만 비어 있어, 암호화폐를 보유한 사용자는 etc/cash에 숫자를 수동 입력할 수밖에 없고 그 값은 자동 시세 갱신·가격 미확인 경고 어디에도 걸리지 않아 순자산이 조용히 틀려진다. ASSET_TYPES/TYPE_COLOR에 crypto 추가, draft에 cryptoCode/cryptoQty(stockCode/stockQty와 동일 패턴), DB.rates.crypto 버킷 신설, assetEval()/rateUnknown()/hasRateAssets()에 crypto 분기 추가, netlify/functions의 stock relay 패턴을 재사용해 업비트 공개 티커 호출 함수 추가, syncRates()/fetchStocks() 흐름과 수동 레이트 에디터 UI에 통합, sanitizeBackup()/migrate에 crypto:{} 디폴트 추가하는 계획을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
       "commit": null
     }
   ]
