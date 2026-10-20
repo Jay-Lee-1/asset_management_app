@@ -1398,7 +1398,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.202';
+const APP_VERSION='1.47.203';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -8735,8 +8735,8 @@ async function doSetPin(){
  const p1=($('pinNewIn')&&$('pinNewIn').value)||'',p2=($('pinNewIn2')&&$('pinNewIn2').value)||'';
  const errEl=$('pinSetErr');if(errEl)errEl.style.display='none';
  const showErr=m=>{if(errEl){errEl.textContent=m;errEl.style.display='block'}};
- if(!/^\d{4,6}$/.test(p1))return showErr('4~6자리 숫자로 입력해 주세요');
- if(p1!==p2)return showErr('PIN이 일치하지 않아요');
+ if(!/^\d{4,6}$/.test(p1)){showErr('4~6자리 숫자로 입력해 주세요');const el=$('pinNewIn');if(el)el.focus();return}
+ if(p1!==p2){showErr('PIN이 일치하지 않아요');const el=$('pinNewIn2');if(el){el.value='';el.focus()}return}
  if(btn)btn.disabled=true;
  await APPLOCK.setPin(p1);
  if(btn)btn.disabled=false;
@@ -8757,7 +8757,7 @@ async function doDisableAppLock(){
  if(btn)btn.disabled=true;
  const r=await APPLOCK.verify(pin);
  if(btn)btn.disabled=false;
- if(r.err){if(errEl){errEl.textContent=r.err;errEl.style.display='block'}return}
+ if(r.err){if(errEl){errEl.textContent=r.err;errEl.style.display='block'}const inp=$('pinOffIn');if(inp){inp.value='';inp.focus()}return}
  APPLOCK.disable();closeSheet();renderCurrent();toast('앱 잠금을 껐어요');
 }
 function openChangePinSheet(){
@@ -8776,9 +8776,9 @@ async function doChangePin(){
  const showErr=m=>{if(errEl){errEl.textContent=m;errEl.style.display='block'}};
  if(btn)btn.disabled=true;
  const r=await APPLOCK.verify(cur);
- if(r.err){if(btn)btn.disabled=false;return showErr(r.err)}
- if(!/^\d{4,6}$/.test(p1)){if(btn)btn.disabled=false;return showErr('4~6자리 숫자로 입력해 주세요')}
- if(p1!==p2){if(btn)btn.disabled=false;return showErr('PIN이 일치하지 않아요')}
+ if(r.err){if(btn)btn.disabled=false;showErr(r.err);const el=$('pinChgCurIn');if(el){el.value='';el.focus()}return}
+ if(!/^\d{4,6}$/.test(p1)){if(btn)btn.disabled=false;showErr('4~6자리 숫자로 입력해 주세요');const el=$('pinChgNewIn');if(el)el.focus();return}
+ if(p1!==p2){if(btn)btn.disabled=false;showErr('PIN이 일치하지 않아요');const el=$('pinChgNewIn2');if(el){el.value='';el.focus()}return}
  await APPLOCK.setPin(p1);
  if(btn)btn.disabled=false;
  closeSheet();toast('PIN을 변경했어요');

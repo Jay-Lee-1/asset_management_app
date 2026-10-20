@@ -18707,6 +18707,29 @@ test('[실행형] openDisableAppLockSheet: 현재 PIN 입력 후 끄기 버튼�
   assert.ok(sandbox.lastSheetHtml.includes('id="pinOffIn"'), '현재 PIN 입력칸이 없음');
   assert.ok(sandbox.lastSheetHtml.includes('onclick="doDisableAppLock()"'), '끄기 버튼이 doDisableAppLock()에 연결돼 있지 않음');
 });
+
+/* ---------- [소스 검증] doSetPin/doChangePin/doDisableAppLock 에러 경로 재포커스(app-evolve
+ * cycle221 develop) — doUnlock()(8710행 부근)은 PIN이 틀리면 입력칸을 비우고 focus()까지
+ * 해주는데, 이 세 자매 함수는 전부 showErr/에러표시만 하고 포커스를 안 돌려줘 모바일에서
+ * 틀린 PIN/형식/확인불일치를 고치려면 사용자가 손으로 입력칸을 다시 탭해야 했다. 이 함수들은
+ * APPLOCK.verify()/setPin() 실제 해시 연산에 엮여 FUNCTIONS(vm 실행형) 밖에 있으므로(위
+ * cycle152 critique 주석 참고), 다른 데서처럼 extractFunction 소스를 정규식으로 검증한다. */
+test('doSetPin 소스: 형식 오류 시 pinNewIn에, 확인 불일치 시 pinNewIn2를 비우고 focus()한다', () => {
+  const fnSrc = extractFunction('doSetPin');
+  assert.match(fnSrc, /test\(p1\)\)\{showErr\('4~6자리 숫자로 입력해 주세요'\);const el=\$\('pinNewIn'\);if\(el\)el\.focus\(\);return\}/, '형식 오류 분기가 pinNewIn에 focus()하지 않음');
+  assert.match(fnSrc, /if\(p1!==p2\)\{showErr\('PIN이 일치하지 않아요'\);const el=\$\('pinNewIn2'\);if\(el\)\{el\.value='';el\.focus\(\)\}return\}/, '확인 불일치 분기가 pinNewIn2를 비우고 focus()하지 않음');
+});
+test('doDisableAppLock 소스: PIN이 틀리면 doUnlock()과 같은 패턴으로 pinOffIn을 비우고 focus()한다', () => {
+  const fnSrc = extractFunction('doDisableAppLock');
+  assert.match(fnSrc, /if\(r\.err\)\{if\(errEl\)\{errEl\.textContent=r\.err;errEl\.style\.display='block'\}const inp=\$\('pinOffIn'\);if\(inp\)\{inp\.value='';inp\.focus\(\)\}return\}/, 'PIN 오류 분기가 pinOffIn을 비우고 focus()하지 않음');
+});
+test('doChangePin 소스: 현재 PIN 오류/새 PIN 형식 오류/확인 불일치 세 분기가 각각 해당 입력칸에 focus()한다', () => {
+  const fnSrc = extractFunction('doChangePin');
+  assert.match(fnSrc, /if\(r\.err\)\{if\(btn\)btn\.disabled=false;showErr\(r\.err\);const el=\$\('pinChgCurIn'\);if\(el\)\{el\.value='';el\.focus\(\)\}return\}/, '현재 PIN 오류 분기가 pinChgCurIn을 비우고 focus()하지 않음');
+  assert.match(fnSrc, /showErr\('4~6자리 숫자로 입력해 주세요'\);const el=\$\('pinChgNewIn'\);if\(el\)el\.focus\(\);return\}/, '새 PIN 형식 오류 분기가 pinChgNewIn에 focus()하지 않음');
+  assert.match(fnSrc, /if\(p1!==p2\)\{if\(btn\)btn\.disabled=false;showErr\('PIN이 일치하지 않아요'\);const el=\$\('pinChgNewIn2'\);if\(el\)\{el\.value='';el\.focus\(\)\}return\}/, '확인 불일치 분기가 pinChgNewIn2를 비우고 focus()하지 않음');
+});
+
 test('[실행형] doForgotPassword: Supabase가 설정돼 있지 않으면(sbCfg().url이 빈 값) 로컬 복구(doForgotPasswordLocal) 시트로 바로 넘어간다', () => {
   const lsRawOrig = sandbox._lsRaw;
   sandbox._lsRaw = null; // localStorage에 sb url/key 저장값이 없고 SUPABASE_URL 기본값도 ''라 sbCfg().url===''
