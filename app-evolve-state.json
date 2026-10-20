@@ -1,15 +1,8 @@
 {
   "cycle": 222,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 216,
-      "phase": "advance",
-      "timestamp": "2026-10-19T00:10:00.000Z",
-      "summary": "critique(cycle216) 계획대로 doExport('csv')가 미래 예정 반복거래/미래 날짜 거래를 '거래 내역' CSV에 영구 혼입시키던 문제를 수정했다. (1) doExport(index.html:6346)의 CSV 분기에서 DB.txns.concat(expandRec(RANGE_FROM,RANGE_TO))를 txnsToCSV에 넘기기 전 filter에 `&&t.date<=TODAY`를 추가해, 반복거래의 가상 '예정' 회차와 아직 안 지난 수동 미래 거래 둘 다 CSV에서 제외했다(TODAY 당일까지는 포함, 즉 이미 일어난 일만). (2) csvRowToImportTxn(6230행대)에 range 체크 다음으로 `if(date>TODAY)return{ok:false,error:'future'}`를 추가 — doExport의 새 필터로 걸러지지 않은(이 필터가 없던 구버전이 만든 CSV 등) 미래 날짜 행도 재가져오기 시 고정 1회성 실거래로 박히지 않게 range와 구분된 사유로 거부한다. buildImportPreview에 futureCount 카운터를 추가(invalidCount/rangeCount와 나란히)하고, openCsvImportPreview의 stats 목록에 \"아직 지나지 않은 날짜(예정) N행은 제외\" 안내를 추가했다. (3) AUTH.resetPasswordLocal(2184행)과 doForgotPasswordLocal(8850행)의 복구코드 없음 안내 문구를 'CSV로 미리 백업'에서 '백업 파일로 미리 백업'으로 바꿔, 반복거래/카테고리/예산/목표/자산 메타데이터까지 보존하는 진짜 무손실 경로(JSON 백업 내보내기)를 권하도록 고쳤다. test/run.js에 3건 추가: txnsToCSV+doExport 필터 조합이 TODAY 이후 반복거래 예정 회차를 실제로 제외하는지(실행형, 월세 반복 중 2026-01-01 1건만 남고 이후 수십 달치는 빠짐), csvRowToImportTxn이 RANGE_TO 안이어도 TODAY 이후 날짜는 error:'future'로 거부하고(RANGE_TO 경계 테스트는 TODAY도 같이 끌어올려 분리) TODAY 당일/이전은 통과시키는지, buildImportPreview가 futureCount를 rangeCount/invalidCount와 분리해서 세는지. 기존 RANGE_TO 경계 테스트(csvRowToImportTxn: RANGE_TO 이후 날짜는...)가 TODAY를 건드리지 않아 새 future 체크에 걸려 깨지는 걸 발견해 그 테스트 안에서 sandbox.TODAY도 RANGE_TO와 같이 끌어올리도록 수정(검증 대상인 RANGE_TO 경계 자체는 그대로 유지, 끝에 TODAY 원복). index.html/sw.js 변경이라 APP_VERSION 1.47.194->1.47.195, sw.js CACHE v456->v457. HTML 주석 제거 후 <script> 블록 4개(1번째 블록은 '동적 로더' 주석이 '<script>' 문자열을 포함해 발생하는 기존 알려진 정규식 오탐이라 HTML 주석 제거 후 재확인 필요 — 제거 후엔 정상 4블록) + logic.js 모두 node --check 통과. node our-assets-v1.14.1/our-assets/test/run.js 1615/1615 -> 1618/1618 통과. pending_advance_plan을 비웠다.",
-      "commit": null
-    },
     {
       "cycle": 217,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-20T17:07:00.000Z",
       "summary": "general-purpose 서브에이전트로 develop 후보를 탐색(cycle149-221에서 다룬 toast/invalidateBalances/split거래/pushCloud gzip/mergeDataLoss/kakaoLogin 병합/nextOutflowCard/#histQ 디바운스/recSaveScopeConfirm 보류/DB.goals·delOwner/#bootSplash/boot() 로컬우선/doExport CSV/bulkCatTargets adjust/crypto 자산종류+주말휴장 회귀/recDates push() 주말이동/asOpenType pension 복원/selectNwOwner 선택id/PIN focus 복원/archiveBaselines 전부 제외, 단 archiveBaselines의 UI 연결·반복거래 cutoff 분리는 다음 사이클 재후보로 명시). commaQty(n)(index.html, 소수 보유수량 표시 포맷터)가 maximumFractionDigits:4를 써, cycle219-220에서 신설된 crypto 자산의 cryptoQty(사토시 단위 소수 8자리까지 입력 가능)가 0.00005개 미만이면 toLocaleString이 반올림해 자산 목록(assetSubline, 3454행)과 수량변경 로그 모달(4973-4974행)에 '0개'로 표시되는 버그를 발견 — assetEval()은 원본 cryptoQty를 그대로 곱해 순자산/평가액 자체는 틀리지 않지만, 화면 표시만 사라져 사용자가 '코인이 없어졌다'고 오해할 수 있는 순수 표시 버그. maximumFractionDigits를 4->8로 늘려 수정(fx/stock은 보통 더 적은 소수자릿수만 쓰므로 toLocaleString이 불필요한 trailing zero를 붙이지 않아 기존 동작과 호환, 8자리 초과 시엔 정상적으로 반올림되어 무한정 길어지지 않음을 테스트로 확인). test/run.js 기존 commaQty 테스트 뒤에 3건 추가: 사토시 단위 극소수량이 '0'으로 뭉개지지 않는지, 8자리 초과 소수는 8번째 자리에서 반올림하는지, 기존 fx/stock 스타일 저정밀 값엔 불필요한 0이 붙지 않는지(회귀 가드). APP_VERSION 1.47.203->1.47.204, sw.js CACHE v467->v468. node --check(sw.js, logic.js) 통과, HTML 주석 제거 후 commaQty를 포함하는 실제 코드 script 블록 node --check 통과(다른 블록 1개는 추출 정규식이 HTML 주석 영역을 잘못 집은 기존 알려진 오탐). node our-assets-v1.14.1/our-assets/test/run.js 1676/1676 -> 1679/1679 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 222,
+      "phase": "review",
+      "timestamp": "2026-10-20T17:45:00.000Z",
+      "summary": "cycle222 develop 커밋(91b0422, commaQty() maximumFractionDigits 4->8로 암호화폐 소량 보유수량 \"0\" 표시 버그 수정)을 검토. commaQty의 유일한 네 호출부(index.html: assetSubline의 fx/stock/crypto 분기, 수량변경 로그 모달의 delta/prevQty/newQty)를 모두 확인 — 전부 화면 표시 전용이고 assetEval/순자산 계산 경로는 원본 cryptoQty를 그대로 쓰므로 maximumFractionDigits 변경이 평가액 로직에 영향을 주지 않음을 재확인. node -e로 toLocaleString(maximumFractionDigits:8) 동작을 독립적으로 재검증(사토시 단위 0.00001234가 그대로 보존, 음수도 부호 유지, 8자리 초과는 반올림, 1.5/0 등 기존 저정밀 값에 trailing zero 안 붙음) — 새 테스트 3건의 주장과 일치. node our-assets-v1.14.1/our-assets/test/run.js 재실행해 1679/1679 통과 확인. 버그 없음.",
       "commit": null
     }
   ]
