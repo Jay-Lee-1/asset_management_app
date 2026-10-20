@@ -1398,7 +1398,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.201';
+const APP_VERSION='1.47.202';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3330,7 +3330,11 @@ async function syncRates(silent){
  }
 }
 function autoSyncRates(){
- if(!DB.settings.autoRates||!hasRateAssets()||inQuietWindow())return;
+ /* inQuietWindow()는 KRX/원화 환전·금 시세가 쉬는 토 06시~월 08시(KST)를 뜻하는데, 업비트
+  * 암호화폐 시세는 휴일 없이 24시간 거래된다 — crypto를 보유 중이면 이 창 안에서도
+  * 자동 갱신을 건너뛰지 않는다(app-evolve cycle220 develop, crypto 자산 종류 신설 직후
+  * hasRateAssets()/heldCryptoCodes()만 추가되고 이 가드는 그대로 남아 생긴 회귀). */
+ if(!DB.settings.autoRates||!hasRateAssets()||(inQuietWindow()&&!needCrypto()))return;
  if(Date.now()-(DB.rates.syncedAt||0)<RATE_TTL)return;
  syncRates(true);
 }
@@ -3347,7 +3351,8 @@ function rateStatusText(){
  const base=fmtSynced(R.syncedAt);
  const stale=R.fxFail||R.stockFail||R.cryptoFail||(R.failStreak||0)>0;
  if(stale)return base+' · <span style="color:var(--text-2)">최신 아님</span>'; /* 마지막 성공값 유지 + 차분한 안내 */
- return base+(inQuietWindow()?' · 주말 휴장':' · 10분마다 자동');
+ /* autoSyncRates()와 같은 이유로 crypto 보유 중엔 '주말 휴장' 대신 평소 문구를 보여준다. */
+ return base+((inQuietWindow()&&!needCrypto())?' · 주말 휴장':' · 10분마다 자동');
 }
 function scrollToAnchor(pageId,sel,delay){
  setTimeout(()=>{const p=$(pageId);if(!p)return;const el=p.querySelector(sel);

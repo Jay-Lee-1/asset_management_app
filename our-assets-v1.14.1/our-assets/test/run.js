@@ -205,6 +205,11 @@ const FUNCTIONS = [
   'catListOf', 'catAv', 'assetPickBtn', 'endCondFields', 'dayPickerHTML', 'openFormSheet', 'renderTxSheet', '_applyType', '_applyFreq', '_applyDay', '_applyCount', '_applyOpenCat', '_applyOpenAsset', 'txType', 'txToggleRepeat',
   'accountName', 'dbIsEmpty', 'guestHasData',
   'txScheduled', 'monthStats', 'monthStats2', 'expenseByCat', 'needGold', 'inQuietWindow', 'fmtSynced', 'rateStatusText',
+  // heldCurrencies/heldStockCodes/heldCryptoCodes/needFx/needStock/needCrypto/hasRateAssets/autoSyncRates는
+  // app-evolve cycle220 develop(crypto만 보유해도 주말 휴장 시간대에 자동 갱신·"주말 휴장" 표시가
+  // 계속되던 회귀 수정) 검증용 — syncRates는 네트워크 호출을 포함하므로 아래 sandbox.syncRates
+  // 스파이로 대체한다(migrateLegacy/startApp 등과 같은 패턴).
+  'heldCurrencies', 'heldStockCodes', 'heldCryptoCodes', 'needFx', 'needStock', 'needCrypto', 'hasRateAssets', 'autoSyncRates',
   'nextBigOutflow', 'dday', 'balanceOn', 'nextOutflowCard', 'monthOutflowCard', 'planGaugeCard', 'homeAlertCard', 'renderHome',
   'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwPresetSegHTML', 'nwHistoryCard', 'allocationCard', 'doRenameOwner', 'addOwner', 'ownerChipClass',
   // selectNwOwner/refreshAssetBody/refreshNwHistoryCard/refreshGoalsSummary/refreshAllocationCard는
@@ -275,7 +280,9 @@ const FUNCTIONS = [
 // 기본값이다(app-evolve cycle152 advance, doForgotPassword/doForgotPasswordLocal 분기 테스트용).
 // I는 svg()가 참조하는 아이콘 path 테이블(app-evolve cycle210 advance) — togglePwVis 실행형
 // 테스트가 eye<->eyeOff 전환을 실제 아이콘 문자열(sandbox.I.eye/eyeOff)과 비교해 검증한다.
-const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I'];
+// RATE_TTL은 autoSyncRates()가 참조하는 10분 쿨다운 상수(app-evolve cycle220 develop,
+// crypto 전용 보유자 주말 휴장 자동갱신 회귀 수정 검증용).
+const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL'];
 // _histCache는 filteredHist()가 재대입(={key,list})하는 let 선언이라 CONSTS(extractConst)로는
 // 못 끌어오므로 별도의 LETS 목록으로 extractLet을 통해 가져온다.
 // _copyIsCsv도 같은 이유(openCopyBackup()이 재대입)로 LETS를 통해 가져온다.
@@ -407,6 +414,11 @@ const sandbox = {
   startApp: () => { sandbox.startAppCalls++; },
   lockAppCalls: 0,
   lockApp: () => { sandbox.lockAppCalls++; },
+  // syncRates()는 fetchFxGold/fetchStocks/fetchCrypto로 실제 네트워크를 타므로(이 테스트의
+  // 대상이 아님), autoSyncRates()의 가드 로직만 검증하는 테스트에서는 호출 여부/인자만
+  // 기록하는 스파이로 대체한다(migrateLegacy/startApp과 같은 패턴, app-evolve cycle220 develop).
+  syncRatesCalls: [],
+  syncRates: (silent) => { sandbox.syncRatesCalls.push(silent); },
   // SDK_READY는 index.html에서 Kakao/Supabase 동적 로더(loadScriptWithTimeout) 두 개를 Promise.all로
   // 묶은 모듈 스코프 상수(app-evolve cycle176 advance) — document.createElement 등 실제 DOM 로딩을
   // 재현하지 않고(SW_REG/CLOUD_UID와 같은 이유) boot() 테스트에서 제어 가능한 Promise를 직접 세팅한다.
@@ -978,6 +990,70 @@ test('inQuietWindow: 월요일 08:00 KST에 휴장이 끝난다(그 직전 07:59
   withTZ('America/New_York', () => {
     assert.strictEqual(sandbox.inQuietWindow(stillQuiet), true);
     assert.strictEqual(sandbox.inQuietWindow(ended), false);
+  });
+});
+
+// autoSyncRates()/rateStatusText()는 inQuietWindow()를 인자 없이 불러 "지금"(new Date())을
+// 기준으로 판정한다 — 결정적으로 테스트하려면 vm 컨텍스트의 전역 Date 자체를 고정 시각으로
+// 바꿔치기해야 한다. sandbox.Date를 지우면(delete) 컨텍스트 고유 내장 Date로 되돌아간다
+// (vm.createContext가 준 기본 Date는 host에서 sandbox.Date로 보이지 않지만, 한 번 이렇게
+// 덮어쓴 뒤 delete하면 원래 내장 Date로 복원됨을 별도로 확인했다 — app-evolve cycle220 develop).
+function withFakeNow(ms, fn) {
+  class FakeDate extends Date {
+    constructor(...args) { if (args.length) super(...args); else super(ms); }
+    static now() { return ms; }
+  }
+  sandbox.Date = FakeDate;
+  try { return fn(); } finally { delete sandbox.Date; }
+}
+
+/* ---------- autoSyncRates/rateStatusText: crypto 전용 보유자는 KRX 주말 휴장 창에서도
+ * 자동 갱신이 멈추지 않아야 한다(app-evolve cycle220 develop) — hasRateAssets()/
+ * heldCryptoCodes()가 cycle219에서 crypto를 포함하도록 늘었는데, 정작 inQuietWindow() 가드는
+ * "토 06시~월 08시엔 국내 장이 쉰다"는 가정 그대로 남아 있어 업비트처럼 24시간 거래되는
+ * 암호화폐까지 함께 멈춰 있었다(라벨도 '주말 휴장'으로 오표시). */
+test('autoSyncRates: 암호화폐만 보유하면 주말 휴장 시간대에도 자동 갱신을 건너뛰지 않는다', () => {
+  const saturdayNoonKST = Date.parse('2026-10-03T01:00:00.000Z'); // = 토 2026-10-03 10:00 KST(휴장 중)
+  withFakeNow(saturdayNoonKST, () => {
+    sandbox.DB = { settings: { autoRates: true }, assets: [{ id: 'c1', type: 'crypto', cryptoCode: 'BTC' }], rates: { syncedAt: 0 } };
+    sandbox.syncRatesCalls = [];
+    sandbox.autoSyncRates();
+    assert.deepStrictEqual(sandbox.syncRatesCalls, [true]);
+  });
+});
+test('autoSyncRates: 주식만 보유하면(암호화폐 없음) 주말 휴장 시간대엔 기존처럼 자동 갱신을 건너뛴다(회귀 방지)', () => {
+  const saturdayNoonKST = Date.parse('2026-10-03T01:00:00.000Z');
+  withFakeNow(saturdayNoonKST, () => {
+    sandbox.DB = { settings: { autoRates: true }, assets: [{ id: 's1', type: 'stock', stockCode: '005930' }], rates: { syncedAt: 0 } };
+    sandbox.syncRatesCalls = [];
+    sandbox.autoSyncRates();
+    assert.deepStrictEqual(sandbox.syncRatesCalls, []);
+  });
+});
+test('autoSyncRates: 주식+암호화폐를 함께 보유하면 주말에도 자동 갱신한다(crypto가 섞여 있으면 멈추지 않음)', () => {
+  const saturdayNoonKST = Date.parse('2026-10-03T01:00:00.000Z');
+  withFakeNow(saturdayNoonKST, () => {
+    sandbox.DB = { settings: { autoRates: true }, assets: [{ id: 's1', type: 'stock', stockCode: '005930' }, { id: 'c1', type: 'crypto', cryptoCode: 'BTC' }], rates: { syncedAt: 0 } };
+    sandbox.syncRatesCalls = [];
+    sandbox.autoSyncRates();
+    assert.deepStrictEqual(sandbox.syncRatesCalls, [true]);
+  });
+});
+test('rateStatusText: 암호화폐만 보유하면 주말 휴장 시간대에도 "주말 휴장" 대신 평소 문구를 보여준다', () => {
+  const saturdayNoonKST = Date.parse('2026-10-03T01:00:00.000Z');
+  withFakeNow(saturdayNoonKST, () => {
+    sandbox.DB = { assets: [{ id: 'c1', type: 'crypto', cryptoCode: 'BTC' }], rates: { syncedAt: saturdayNoonKST - 5 * 60000, fxFail: false, stockFail: false, cryptoFail: false, failStreak: 0 } };
+    const text = sandbox.rateStatusText();
+    assert.ok(text.includes('10분마다 자동'), `실제: ${text}`);
+    assert.ok(!text.includes('주말 휴장'), `실제: ${text}`);
+  });
+});
+test('rateStatusText: 주식만 보유하면(암호화폐 없음) 주말 휴장 시간대엔 기존처럼 "주말 휴장"을 보여준다(회귀 방지)', () => {
+  const saturdayNoonKST = Date.parse('2026-10-03T01:00:00.000Z');
+  withFakeNow(saturdayNoonKST, () => {
+    sandbox.DB = { assets: [{ id: 's1', type: 'stock', stockCode: '005930' }], rates: { syncedAt: saturdayNoonKST - 5 * 60000, fxFail: false, stockFail: false, cryptoFail: false, failStreak: 0 } };
+    const text = sandbox.rateStatusText();
+    assert.ok(text.includes('주말 휴장'), `실제: ${text}`);
   });
 });
 

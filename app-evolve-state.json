@@ -1,15 +1,8 @@
 {
   "cycle": 220,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 214,
-      "phase": "critique",
-      "timestamp": "2026-10-18T14:13:32.243Z",
-      "summary": "Explore 서브에이전트로 앱 전반을 아키텍처 관점에서 훑었다(cycle149-213에서 다룬 invalidateBalances fromDate/closeSheetGuarded/aria-label/XSS/실행형 테스트 전환류/split거래/pushCloud await 순서/mergeDataLoss 경고/kakaoLogin 게스트 병합/nextOutflowCard 스냅샷/#histQ 디바운스(보류)/recSaveScopeConfirm(보류)/DB.goals type:'networth'|'asset' 신설(cycle213)/goalHistoryFor asset타입변경 버그(cycle214 develop)/CDN SRI(네트워크 egress 차단으로 불가, 문서화됨)/txDayInput 등 미사용 함수 10개(기각)/cycle210 critique에서 보류된 wireSheetGestures·ensureEdgeGesture 제스처 엔진 실행형 테스트 전환(아직 advance 안 됨, 중복 제안 방지 위해 재확인만 하고 이번엔 제외) 전부 제외하고 진행). pushCloud()/pullCloud()(index.html:1832-1957)가 매 저장마다(scheduleCloudPush 1.2s 디바운스, 1865) DB 전체 JSON을 압축 없이 통째로 올리고 받는 구조적 문제를 새로 발견 — STORAGE_SIZE_WARN_LEN/CRIT_LEN(1770) 임계값이 시사하는 수 MB대 DB를 전제로 하면서도 네트워크 페이로드를 줄이는 장치가 전혀 없어, 계정이 오래될수록 거래 1건 수정의 동기화 비용이 무한히 커지는 구조. 로컬 캐시 무효화(_balCache/_recCache)는 계산량만 줄였을 뿐 바이트는 전혀 줄이지 않아 겹치지 않음. CompressionStream/DecompressionStream('gzip') 기반 base64 압축(Supabase 스키마 변경 없이 data jsonb 컬럼 안에서 {_gz:'...'} 래퍼로 처리, 미지원 브라우저는 기존 raw 객체로 자동 폴백)을 advance 계획으로 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
-      "commit": null
-    },
     {
       "cycle": 214,
       "phase": "advance",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-20T08:20:57.000Z",
       "summary": "critique(cycle219) 계획대로 암호화폐(crypto) 자산 종류를 신설했다. ASSET_TYPES/TYPE_COLOR에 crypto(코인, coins 아이콘, a-crypto 색상 — light/dark 테마 모두에 --crypto/--crypto-soft CSS 변수 신설) 추가. draft 필드는 stockCode/stockQty와 완전히 동일한 패턴으로 cryptoCode/cryptoQty를 신설해 isMarketValued/assetEval/rateUnknown switch에 crypto 케이스를 추가(R.crypto[a.cryptoCode]||0 평가, 시세 미확인 구분 포함) — assetGainLoss/assetGainLossBadge/assetSubline/costBasisField/qtyBasisWarn/saveAsset의 qtyLog 기록까지 isMarketValued 기반 로직은 전부 자동으로 crypto를 함께 처리하고, qtyField 매핑(3곳)과 syncAssetInputs의 asCode/asQty 타입분기(stock과 id를 공유하므로 d.type으로 cryptoCode/cryptoQty vs stockCode/stockQty를 가름)만 명시적으로 추가했다. 서버 중계는 netlify/functions/stock.js와 동일한 getJSON(재시도+타임아웃) 패턴으로 crypto.js를 신설해 업비트 공개 티커(GET https://api.upbit.com/v1/ticker?markets=KRW-{CODE}, 키 불필요)를 호출하고 KRW 가격을 그대로 반환(해외주식과 달리 환율 환산 불필요) — 클라이언트 fetchCrypto()/heldCryptoCodes()/needCrypto()를 신설해 syncRates()의 Promise.allSettled에 세 번째 다리로 끼워넣고(R.cryptoFail 추가, rateStatusText의 stale 판정에도 포함) 홈 화면 시세 위젯·시세 연동 관리 시트(openRateSheet의 cryptoRows, setRate crypto 분기)·자산 등록 폼(renderAssetSheet crypto 분기, saveAsset 검증)에 전부 배선했다. 하위호환: emptyDB()/demoDB()의 rates 리터럴에 crypto:{} 추가, migrate()에 DB.rates=DB.rates||{} 전체와 fx/stocks/crypto 각각의 수비적 백필을 추가해(기존 계정은 rates.crypto 버킷이 없어 R.crypto[code] 접근이 바로 TypeError로 터지는 상태였음) 로컬스토리지에서 그대로 불러오는 기존 사용자도 즉시 안전해지고, sanitizeBackup()의 rates 재구성에 crypto 버킷과 cryptoFail 플래그를 추가하고 SANITIZE_QTY_FIELDS에 cryptoQty를 추가해 클라우드 풀/백업 복원 경로도 동일하게 보호된다(mergeRates는 DB.rates 전체를 last-write-wins로 교체하는 기존 구조라 별도 수정 불필요). 네트워크 egress가 막힌 이 클라우드 샌드박스에서 실제 업비트 호출은 테스트할 수 없으므로(fetchStocks/syncRates도 기존에 동일한 이유로 FUNCTIONS(vm 실행) 목록 밖), crypto.js는 stock.js와 동일한 방식대로 테스트 대상에서 fetch 자체를 분리한 순수 함수(parseCodes/marketsParam/pricesFromTickers/toNum/errText)만 require해 검증했다. test/run.js에 17건 추가: netlify/functions/crypto.js require 테스트 6건, rateUnknown/assetEval/isMarketValued crypto 통합검증 1건, setRate crypto 2건, saveAsset crypto 등록/가드 2건, migrate() rates.crypto 백필 2건(기존 rates 있음/DB.rates 자체가 없음), openRateSheet crypto 소스검증 1건, renderAssetSheet crypto UI 3건, syncAssetInputs 타입분기 실행형 2건. 기존 sanitizeBackup 테스트 1건(빈 rates 기본값 기대값)을 새 crypto:{} 포함 형태로 갱신. APP_VERSION 1.47.200->1.47.201, sw.js CACHE v462->v463. HTML 주석 제거 후 실제 코드 script 블록 3개 모두 node Function 생성자로 문법 통과(1번 블록은 기존 알려진 정규식 오탐). node our-assets-v1.14.1/our-assets/test/run.js 1638/1638 -> 1657/1657 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 220,
+      "phase": "develop",
+      "timestamp": "2026-10-20T09:30:00.000Z",
+      "summary": "autoSyncRates()/rateStatusText()가 참조하는 inQuietWindow()는 '토 06시~월 08시(KST)엔 국내 장(KRX/환율/금)이 쉰다'는 가정인데, cycle219 advance가 crypto를 hasRateAssets()/heldCryptoCodes()에 추가하면서 이 창 안에서의 자동갱신 가드(index.html 3337행)와 상태 라벨(3355행, '주말 휴장')은 그대로 남아 있어, 업비트처럼 24시간 거래되는 암호화폐만 보유한 사용자도 주말마다(토 06시~월 08시, 주 ~50시간) 자동 시세 갱신이 멈추고 화면엔 '주말 휴장'이라고 잘못 표시되는 회귀를 Explore 서브에이전트가 발견. 수동 새로고침 버튼(syncRates())은 이 가드를 안 타므로 영향이 없었지만, 10분마다 자동 갱신되는 체감이 crypto 전용 사용자에게만 주말 내내 깨짐. autoSyncRates()의 조건을 (inQuietWindow()&&!needCrypto())로, rateStatusText()의 라벨 분기도 동일 조건으로 고쳐 crypto를 하나라도 보유하면(단독이든 주식/환율/금과 혼합이든) 주말에도 평소처럼 자동 갱신·라벨이 유지되게 했다(기존 crypto 미보유자의 주말 휴장 동작은 그대로 보존). test/run.js: FUNCTIONS에 heldCurrencies/heldStockCodes/heldCryptoCodes/needFx/needStock/needCrypto/hasRateAssets/autoSyncRates를, CONSTS에 RATE_TTL을 추가하고, syncRates는 네트워크 호출을 포함하므로(migrateLegacy/startApp과 같은 패턴) 호출 여부/인자만 기록하는 sandbox.syncRates 스파이로 대체했다. inQuietWindow()가 인자 없이 new Date()로 '지금'을 읽으므로, vm 컨텍스트의 전역 Date를 고정 시각으로 바꿔치기하는 withFakeNow() 헬퍼를 신설(sandbox.Date에 고정 시각을 반환하는 서브클래스를 대입했다가 끝나면 delete로 원래 내장 Date로 복원 — 사전에 별도 node 스크립트로 delete 복원이 실제로 동작함을 확인). 새 테스트 5건: crypto만 보유 시 주말에도 autoSyncRates가 syncRates(true)를 부름/주식만 보유 시 기존처럼 건너뜀(회귀 방지)/주식+crypto 혼합 시에도 부름, rateStatusText가 crypto만 보유 시 '10분마다 자동'을 보여줌/주식만 보유 시 기존처럼 '주말 휴장'을 보여줌(회귀 방지). 수정 전 코드로 되돌려 5건 중 3건이 실제로 FAIL함을 확인해 테스트가 회귀를 잡아내는지 검증한 뒤 수정을 복원했다. APP_VERSION 1.47.201->1.47.202, sw.js CACHE v463->v464. HTML 주석 제거 후 실제 코드 script 블록(2,4,5번) 모두 node Function 생성자로 문법 통과(1번은 기존 알려진 정규식 오탐). node our-assets-v1.14.1/our-assets/test/run.js 1657/1657 -> 1662/1662 통과.",
       "commit": null
     }
   ]
