@@ -1398,7 +1398,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.204';
+const APP_VERSION='1.47.205';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5433,6 +5433,7 @@ function renderMenu(){
    {ic:'download',l:'데이터 내보내기',v:'iCloud·파일',a:"exportData()"},
    {ic:'restore',l:'데이터 복원',a:"importData()"},
    {ic:'bell',l:'저축 만기 알림',v:maturitySoon()+'건',a:"openMaturity()"},
+   {ic:'trash',l:'오래된 데이터 정리',a:"openArchiveOld()"},
   ]},
   {cap:'화면 · 지원',items:[
    {ic:'moon',l:'다크모드',v:modeLabel,a:"openThemeSheet()"},
@@ -7307,6 +7308,19 @@ function monthWheelApply(which){
  const v=it.dataset.v;
  const [y,m]=v.split('-').map(Number);
  if(which==='plan'){ST.plan.y=y;ST.plan.m=m;renderPlan()}
+ else if(which==='archive'){archiveMonthPicked(y,m)}
+}
+/* 메뉴 › '오래된 데이터 정리' 진입점 — 기존 월 선택 휠(openMonthSheet)을 cutoff 달 고르는 용도로
+ * 그대로 재사용한다(app-evolve cycle222 advance, cycle221 critique/advance가 준비해 둔
+ * archiveBaselines()를 실제로 호출하는 지점). */
+function openArchiveOld(){openMonthSheet('archive')}
+function archiveMonthPicked(y,m){
+ const cutoffDate=monthEndStr(y,m);
+ const n=DB.txns.filter(t=>t.date<=cutoffDate).length;
+ if(!n){toast('정리할 내역이 없어요');return}
+ confirmSheet('오래된 데이터 정리',
+  `${y}년 ${m}월 이전 내역 <b>${n}건</b>을 지워요. 이후 조회·통계에서 사라지지만, 자산 잔액은 그대로 보존돼요.<br><span style="color:var(--text-3);font-size:12.5px">정리 전에 먼저 백업해 두는 걸 권장해요(메뉴 › 데이터 내보내기).</span>`,
+  '정리',()=>archiveTxnsBefore(cutoffDate));
 }
 /* 가계부 날짜 선택기 — 연/월 이동 + 일 선택 */
 let _dpYM=null;
@@ -8298,6 +8312,34 @@ function deleteTxnsUndo(ids){if(twGuard())return;const removed=DB.txns.filter(t=
   * 그대로 유지한다 — 아무것도 안 바뀌었으니 opts 모양을 바꿀 이유가 없다. */
  save(removed.length?{fromDate:removed.reduce((m,t)=>t.date<m?t.date:m,removed[0].date),recsChanged:false}:undefined);renderCurrent();
  undoToast(`${removed.length}개 내역을 삭제했어요`,()=>{DB.txns.push(...removed);ids.forEach(id=>delete DB.deletedIds[id]);touchSave(...removed);renderCurrent();toast('되돌렸어요')})}
+/* 오래된 데이터 정리(archiveMonthPicked) 실행부. deleteTxnsUndo()와 달리 cutoffDate 이전 거래를
+ * 지우기 전에 archiveBaselines()(logic.js, cycle221 critique/advance)로 cutoffDate 시점 잔액을
+ * 계산해 각 자산의 새 baseAmount/amountKRW로 앉힌다 — balancesUpTo()/assetBase()가 '기준값 +
+ * RANGE_FROM부터의 전체 합'으로 잔액을 재생하는 구조라, 보정 없이 그냥 지우면 지운 거래들이
+ * 쌓아온 금액이 통째로 사라진다(cycle221 critique가 발견한 함정). 반복거래는 DB.recurrences
+ * 자체를 안 건드려 cutoff 이후 발생은 그대로 생성되고, cutoff 이전 가상 발생분은 expandRec()
+ * concat으로 baseline 계산에만 반영된다(화면에 보일 실제 행은 원래도 없었으므로 유실이 아님).
+ * baselines[a.id]가 현재 assetBase(a)와 같은(=실제로 안 바뀌는) 자산은 건드리지 않는다 — 특히
+ * fx/stock/gold/crypto처럼 baseAmount/amountKRW를 안 쓰는 시세평가 자산에 쓸모없는 0 필드가
+ * 새로 생기는 걸 막는다. */
+function archiveTxnsBefore(cutoffDate){
+ if(twGuard())return;
+ const expanded=DB.txns.concat(expandRec(RANGE_FROM,cutoffDate));
+ const baselines=archiveBaselines(DB.assets,expanded,cutoffDate,isPending);
+ const removed=DB.txns.filter(t=>t.date<=cutoffDate);
+ const prevBase={};
+ DB.assets.forEach(a=>{if(baselines[a.id]==null||baselines[a.id]===assetBase(a))return;
+  prevBase[a.id]={baseAmount:a.baseAmount,amountKRW:a.amountKRW};
+  if(a.baseAmount!=null)a.baseAmount=baselines[a.id];else a.amountKRW=baselines[a.id];
+  touch(a);});
+ DB.txns=DB.txns.filter(t=>t.date>cutoffDate);
+ DB.deletedIds=DB.deletedIds||{};const now=Date.now();removed.forEach(t=>DB.deletedIds[t.id]=now);
+ save();renderCurrent();
+ undoToast(`${removed.length}개의 오래된 내역을 정리했어요`,()=>{
+  DB.assets.forEach(a=>{const p=prevBase[a.id];if(!p)return;a.baseAmount=p.baseAmount;a.amountKRW=p.amountKRW;touch(a)});
+  DB.txns.push(...removed);removed.forEach(t=>delete DB.deletedIds[t.id]);
+  save();renderCurrent();toast('되돌렸어요')});
+}
 /* 선택 모드(일별거래/전체내역)의 '카테고리' 버튼이 피커에서 고른 카테고리를 실제로 적용하는
  * 지점(app-evolve cycle136 advance). bulkCatPickFor()가 이미 bulkCatTargets()로 검증해 넘긴
  * ids/cat만 다루므로 여기선 재검증 없이 바로 적용. doRenameCat()과 동일한 memo-follows-category

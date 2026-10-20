@@ -1,19 +1,8 @@
 {
-  "cycle": 222,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "저장공간 경고가 권하는 '오래된 데이터 정리' 실제 구현 — archiveBaselines() UI 연결",
-    "why": "홈 화면 storageSize 경고(index.html:8148, dismissStorageSizeWarn 토스트)가 '오래된 데이터는 백업 후 정리하는 걸 권장해요'라고 안내하지만, 실제로 거래를 지울 수 있는 유일한 경로인 deleteTxnsUndo(index.html:8292)는 잔액 보정이 전혀 없어 오래된 거래를 지우면 모든 자산 잔액이 조용히 틀어진다(balancesUpTo/assetBase가 baseAmount+RANGE_FROM부터의 전체 합으로 재생하기 때문, cycle221 critique에서 최초 발견). 이를 올바르게 계산하는 순수 함수 archiveBaselines()는 cycle221 advance에서 이미 구현·테스트까지 끝났지만(logic.js:819, test/run.js:3093-3155) index.html에서 호출하는 곳이 전혀 없어 — UI 경고가 가리키는 기능이 실제로는 존재하지 않는, 사용자를 함정에 빠뜨리는 상태로 두 사이클째 방치되어 있다. 이번에 마무리하면 데이터 정합성 신뢰 문제를 닫을 수 있다.",
-    "approach": "1) 메뉴 진입점: renderMenu()의 '백업 · 데이터' 그룹(index.html:5432-5436)에 데이터 내보내기/복원과 같은 패턴으로 {ic:\"trash\",l:\"오래된 데이터 정리\",a:\"openArchiveOld()\"} 추가.\n2) 기준월 선택: 새 날짜 위젯을 만들지 말고 기존 openMonthSheet()(index.html:7274, 가계부/전체내역/한달플랜 공통 월 선택 시트)를 재사용하거나 얇은 래퍼로 호출해 선택된 달의 말일을 cutoffDate로 사용.\n3) 확인 시트: confirmSheet(title,msg,ok,cb) 관례(index.html:7239-7242, doResetAll()의 위험 액션 사용 패턴과 동일)를 따른다. 메시지에 (a) cutoff 이전 삭제될 거래 건수, (b) 자산 잔액은 새 baseAmount로 보존된다는 설명, (c) exportData() 바로가기 버튼으로 '내보내기로 먼저 백업하는 걸 권장해요' 넛지(기존 storageSize 경고 문구와 언어 일관성 유지)를 담는다.\n4) 실행 함수 archiveTxnsBefore(cutoffDate) (deleteTxnsUndo 근처에 신설): expandedTxns = DB.txns.concat(expandRec(RANGE_FROM, cutoffDate)) (allTxns()의 실거래+가상반복거래 합산 관례, index.html:2443과 동일 패턴) 구성 -> archiveBaselines(DB.assets, expandedTxns, cutoffDate, isPending)(isPending: index.html:1636) 호출해 새 baseAmount 계산 -> DB.assets[i].baseAmount에 반영, date<=cutoffDate인 DB.txns 항목 삭제(deleteTxnsUndo의 ids/DB.deletedIds 기록 방식 그대로, index.html:8292-8294) -> undoToast()(index.html:8286)로 기존 일괄삭제처럼 되돌리기 가능하게(삭제된 거래 + 이전 baseAmount를 클로저에 보관) -> save()/renderCurrent().\n5) 반복거래: DB.recurrences 자체는 건드리지 않아 cutoff 이후 발생은 그대로 생성됨. cutoff 이전 가상 발생분은 4)의 expandRec concat을 통해 baseline 계산에만 반영되고 화면에 보일 실제 행은 원래도 없었으므로(반복거래는 즉석 전개) 데이터 유실이 아니다.\n6) build/test: node --check (<script> 블록 추출), node our-assets-v1.14.1/our-assets/test/run.js 전체 통과 확인 — archiveBaselines 호출 경로에 대한 통합 테스트(archiveTxnsBefore 호출 후 잔액이 cutoff 이전과 동일한지) 케이스 추가. APP_VERSION/sw.js CACHE 버전 올리기."
-  },
+  "cycle": 223,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 217,
-      "phase": "critique",
-      "timestamp": "2026-10-19T03:11:33.000Z",
-      "summary": "Explore 서브에이전트로 앱 전반을 아키텍처/성능/제품 관점에서 훑었다(cycle149-217에서 다룬 toast/invalidateBalances fromDate/closeSheetGuarded/aria-label/XSS/실행형 테스트 전환류(wireSheetGestures·ensureEdgeGesture 등, 여전히 미전환)/split거래 dedupe/pushCloud await/mergeDataLoss 경고(5개 컬렉션)/kakaoLogin 게스트 병합 안내/nextOutflowCard 스냅샷/DB.goals type:'networth'|'asset' 및 goalHistoryFor 자산종류변경 버그/delOwner 목표 체크/pushCloud·pullCloud gzip 압축(cycle214 critique, cycle215에 의해 보류 상태로 밀려남)/#bootSplash/asFx·asGold·asQty Enter-제출/doExport csv 미래거래 혼입/bulkCatTargets adjust 가드 전부 제외). 재조사 결과 dismissedStaleMvIds 가지치기는 이미 구현되어 있음(index.html:2303/2629에서 boot 시 실행 확인)과 budgetCarryFor 재귀 깊이도 이미 24로 캡돼 있음(index.html:5539)을 확인해 두 항목 모두 후보에서 제외. recSaveScopeConfirm/recSaveScopeApply(4844-4881)는 과거 지목된 fromDate 캐시 무효화 버그가 이미 수정돼 있고(4870, save({fromDate})) 남은 건 실행형 테스트 전환뿐이라 제외 목록과 동일 범주로 배제. CDN SRI는 환경 제약으로 기각 유지. 새로운 아키텍처 결함은 발견되지 않음(AUTH/APPLOCK, Web Locks 멀티탭 머지, sw.js controllerchange 업데이트 흐름(8985-9005), nwHistory ~120개 가지치기(2655) 모두 견고). 그 결과 cycle212/213/214/216에서 반복적으로 runner-up으로 지목됐으나 끝내 승격되지 않았던 #histQ(index.html:4963) 전체내역 검색 입력의 디바운스 부재를 최종 승격 — oninput이 histInvalidate()+updateHist()(filteredHist()의 allTxns 전개+정렬+재렌더 전체)를 매 키 입력마다 동기 실행해, wireNwCarousel(3498-3506)의 clearTimeout/setTimeout 디바운스 관례와 비일관적이고 거래가 많은 계정/구형 기기에서 체감 가능한 성능 문제. _histQT 타이머+histQInput() 함수 신설(빈 값/클리어 경로는 즉시 실행 유지)로 220ms 디바운스를 추가하고 test/run.js에 캡처 기반 테스트 3건을 추가하는 계획을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
-      "commit": null
-    },
     {
       "cycle": 217,
       "phase": "advance",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-20T00:00:00.000Z",
       "summary": "Explore 서브에이전트로 앱 전반을 재탐색(cycle149-222에서 다룬 영역은 전부 제외하도록 명시)했으나 더 시급한 새 약점은 발견되지 않았고, cycle221 critique에서 발견·advance에서 순수함수까지만 구현해둔 '오래된 데이터 정리' 기능(storageSize 경고가 약속하지만 실제로 존재하지 않는 기능, archiveBaselines()가 logic.js:819에 구현·테스트까지 완료됐지만 index.html 호출부가 전무)이 여전히 최우선 과제임을 재확인했다. deleteTxnsUndo(index.html:8292)로 오래된 거래를 지우면 balancesUpTo/assetBase의 baseAmount+전체합 재생 방식 때문에 모든 자산 잔액이 조용히 틀어지는 함정이 두 사이클째 방치된 상태. 기존 관례(renderMenu 백업·데이터 그룹, openMonthSheet 월선택시트, confirmSheet, undoToast, deleteTxnsUndo의 ids/DB.deletedIds 북키핑)에 맞춘 구체적 1사이클 분량 구현 계획(메뉴 진입점 -> 월 선택 -> 확인시트(백업 넛지 포함) -> archiveTxnsBefore() 실행(archiveBaselines 호출, 거래 삭제, undoToast) -> 반복거래는 expandRec concat으로만 영향)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계, state.json 갱신만).",
+      "commit": null
+    },
+    {
+      "cycle": 222,
+      "phase": "advance",
+      "timestamp": "2026-10-20T20:15:58.317Z",
+      "summary": "critique(cycle222) 계획대로 archiveBaselines() UI 연결을 끝까지 구현했다. 메뉴 ‹백업 · 데이터› 그룹에 {ic:\"trash\",l:\"오래된 데이터 정리\",a:\"openArchiveOld()\"} 추가. openArchiveOld()는 새 날짜 위젯을 만들지 않고 기존 openMonthSheet(\"archive\")를 그대로 재사용하고(가계부/전체내역/한달플랜과 같은 월 선택 휠), monthWheelApply()에 which===\"archive\" 분기를 추가해 고른 연/월을 archiveMonthPicked(y,m)으로 넘긴다. archiveMonthPicked()는 monthEndStr(y,m)을 cutoffDate로 잡고 DB.txns 중 지워질 건수를 세어(0건이면 confirmSheet 없이 안내 토스트만) confirmSheet(doResetAll()과 같은 위험 액션 패턴)로 건수 안내 + 백업 권장 문구(텍스트 넛지 — exportData() 바로가기 버튼은 confirmSheet 내부에 중첩 시트를 여는 구조가 돼 복잡도가 커 범위를 좁힘)를 띄우고, 확인을 누르면 archiveTxnsBefore(cutoffDate)를 실행한다. archiveTxnsBefore()는 cycle221 advance가 만들어 둔 archiveBaselines(DB.assets, DB.txns.concat(expandRec(RANGE_FROM,cutoffDate)), cutoffDate, isPending)을 처음 실제로 호출해 cutoff 시점 잔액을 계산하고, baselines[a.id]가 현재 assetBase(a)와 실제로 다른 자산에만 baseAmount/amountKRW를 새 값으로 앉히고 touch()한다(fx/stock/gold/crypto처럼 baseAmount/amountKRW를 안 쓰는 시세평가 자산에 쓸모없는 0 필드가 새로 생기는 걸 막음) — 그 다음 deleteTxnsUndo()와 동일한 방식(DB.deletedIds 톰스톤, undoToast)으로 cutoff 이전 DB.txns만 지운다(반복거래는 DB.recurrences를 안 건드려 cutoff 이후 발생은 그대로 생성되고, cutoff 이전 가상 발생분은 baseline 계산에만 반영돼 유실이 아님). undo 콜백은 영향받은 자산만 id로 매칭해 baseAmount/amountKRW를 정확히 복원한다. test/run.js: FUNCTIONS에 archiveTxnsBefore/archiveMonthPicked/openArchiveOld 추가(openMonthSheet는 DOM에 깊이 엮여 FUNCTIONS 밖이라 호출된 which만 기록하는 스파이로 흉내냄), 테스트 10건 신설 — cutoff 이전 두 입금을 흡수해 baseAmount가 정확히 보존되는지, undo로 baseAmount/거래/톰스톤이 정확히 복원되는지, 미확인(pending) 이체가 balancesUpTo와 동일하게 baseline 계산에서 제외되면서도 거래 자체는 그대로 지워지는지, 실제로 안 바뀌는 자산(fx/stock류)은 건드리지 않는지(touch 안 됨, 필드 안 생김), 튜토리얼 중엔 twGuard가 막는지, archiveMonthPicked의 confirmSheet 안내/0건 분기, openArchiveOld가 openMonthSheet(\"archive\")를 부르는지, monthWheelApply의 archive 분기(소스 패턴, DOM 엮여 실행형 밖)와 renderMenu 메뉴 항목(소스 패턴) 배선. APP_VERSION 1.47.204->1.47.205, sw.js CACHE v468->v469. HTML 주석 제거 후 실제 코드 script 블록(2,4,5번) 모두 new Function으로 문법 통과(1번은 기존 알려진 정규식 오탐). node our-assets-v1.14.1/our-assets/test/run.js 1679/1679 -> 1689/1689 통과.",
       "commit": null
     }
   ]

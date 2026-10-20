@@ -174,6 +174,11 @@ const FUNCTIONS = [
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV',
   'unguardCsv', 'csvRowToImportTxn', 'buildImportPreview', 'doCsvImport',
   'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo', 'delAsset', 'assetDelSel', 'unsnapshotAssetName', 'doBulkCat', 'bulkCatPickFor',
+  // archiveTxnsBefore/archiveMonthPicked/openArchiveOld는 app-evolve cycle222 advance('오래된
+  // 데이터 정리' 메뉴 — cycle221 critique/advance가 준비해 둔 archiveBaselines()를 처음 실제로
+  // 호출) 검증용. archiveBaselines 자체는 logic.js 전용 섹션에서 이미 검증됐으므로 여기선
+  // 호출 배선(cutoffDate 전달, baseAmount/amountKRW 반영, 삭제·되돌리기)만 다룬다.
+  'archiveTxnsBefore', 'archiveMonthPicked', 'openArchiveOld',
   'deletedAssetHistoryExists', 'relinkDeletedAsset',
   'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'writeThemeCache', 'restoreBackup', 'storageOutcomeMsg', 'shouldWarnUnpersisted', 'shouldWarnStorageSize', 'toggleRecActive', 'toggleAdjustSurplus', 'touchSave',
   'sanitizeAmount', 'sanitizeBackup',
@@ -636,6 +641,11 @@ const sandbox = {
   openCatManage: () => {},
   openOwnerManage: () => {},
   openRecManage: () => {},
+  // openArchiveOld()(app-evolve cycle222 advance, '오래된 데이터 정리' 메뉴 진입점)가 cutoff
+  // 달을 고르려고 부르는 월 선택 휠 — $('dpWheel') 등 DOM 전역에 깊이 엮여 FUNCTIONS 밖에 있으므로
+  // openCatManage 등과 같은 이유로 넘겨받은 which만 기록하는 스파이로 흉내낸다.
+  lastMonthSheetWhich: null,
+  openMonthSheet: (which) => { sandbox.lastMonthSheetWhich = which; },
   // asOpenType()이 여는 자산 종류 피커 — 실제 DOM/블롭 렌더는 화면 전용이라 openPicker처럼
   // no-op으로 흉내내고, onPick 콜백만 캡처해 테스트가 직접 호출할 수 있게 한다.
   lastTypePickerOnPick: null,
@@ -5476,6 +5486,107 @@ test('deleteTxnsUndo: 지정한 id가 하나도 안 걸려 삭제된 게 없으�
   assert.strictEqual(saveCalls.length, 1);
   assert.strictEqual(saveCalls[0], undefined, '삭제된 게 없으면 fromDate 없이(기존과 동일하게 전체 clear) save()를 호출해야 함');
   assert.strictEqual(sandbox.DB.txns.length, 1, '매칭되는 id가 없으면 아무것도 삭제되지 않아야 함');
+});
+
+/* ---------- archiveTxnsBefore/archiveMonthPicked/openArchiveOld: '오래된 데이터 정리'
+ * (메뉴 › 백업 · 데이터, app-evolve cycle222 advance) — deleteTxnsUndo와 달리 cutoffDate 이전
+ * 거래를 지우기 전에 archiveBaselines()(logic.js)로 cutoffDate 시점 잔액을 계산해 각 자산의
+ * 새 baseAmount/amountKRW로 앉혀, 지운 거래들이 쌓아온 금액이 사라지지 않게 한다
+ * (cycle221 critique가 발견한 '정리하면 잔액이 조용히 틀어지는' 함정의 실제 해소). ---------- */
+test('archiveTxnsBefore: cutoffDate 이전 거래만 자산 baseAmount에 흡수하고, 그 거래들은 지우되 이후 거래는 그대로 남긴다', () => {
+  sandbox.TWi = -1;
+  const a1 = { id: 'a1', type: 'cash', baseAmount: 0 };
+  const t1 = { id: 't1', date: '2023-02-01', type: 'income', toAssetId: 'a1', amount: 500000 };
+  const t2 = { id: 't2', date: '2023-06-01', type: 'income', toAssetId: 'a1', amount: 300000 };
+  const t3 = { id: 't3', date: '2025-01-01', type: 'expense', fromAssetId: 'a1', amount: 100000 };
+  sandbox.DB = { assets: [a1], txns: [t1, t2, t3], recurrences: [], settings: {}, deletedIds: {} };
+  sandbox.lastUndo = null;
+  sandbox.archiveTxnsBefore('2024-12-31');
+  assert.strictEqual(a1.baseAmount, 800000, 'cutoff 이전 두 입금(500000+300000)을 흡수한 값이 새 baseAmount가 되어야 함');
+  assert.deepStrictEqual(sandbox.DB.txns.map(t => t.id), ['t3'], 'cutoff 이전 거래만 지워지고 이후 거래는 남아야 함');
+  assert.ok(typeof sandbox.DB.deletedIds.t1 === 'number' && typeof sandbox.DB.deletedIds.t2 === 'number', '지워진 거래엔 톰스톤이 남아야 함');
+  assert.strictEqual(sandbox.DB.deletedIds.t3, undefined, '남은 거래는 톰스톤이 없어야 함');
+  assert.strictEqual(a1.updatedAt, 'test-updatedAt', '잔액이 바뀐 자산은 touch()되어야 함');
+});
+test('archiveTxnsBefore: undo하면 baseAmount와 지워진 거래가 정확히 원래대로 돌아온다', () => {
+  sandbox.TWi = -1;
+  const a1 = { id: 'a1', type: 'cash', baseAmount: 0 };
+  const t1 = { id: 't1', date: '2023-02-01', type: 'income', toAssetId: 'a1', amount: 500000 };
+  sandbox.DB = { assets: [a1], txns: [t1], recurrences: [], settings: {}, deletedIds: {} };
+  sandbox.lastUndo = null;
+  sandbox.archiveTxnsBefore('2024-12-31');
+  assert.strictEqual(a1.baseAmount, 500000);
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(a1.baseAmount, 0, 'undo하면 baseAmount가 원래 값으로 복원되어야 함');
+  assert.ok(sandbox.DB.txns.some(t => t.id === 't1'), 'undo하면 지웠던 거래가 되살아나야 함');
+  assert.strictEqual(sandbox.DB.deletedIds.t1, undefined, 'undo하면 톰스톤도 지워져야 함');
+});
+test('archiveTxnsBefore: 미확인(pending) 이체는 balancesUpTo와 동일하게 baseAmount 계산에서 제외된다(완료 잔액 기준)', () => {
+  sandbox.TWi = -1;
+  const a1 = { id: 'a1', type: 'cash', baseAmount: 1000 };
+  const confirmed = { id: 't1', date: '2023-02-01', type: 'income', toAssetId: 'a1', amount: 500000 };
+  const pending = { id: 't2', date: '2023-03-01', type: 'transfer', toAssetId: 'a1', amount: 300000, confirmed: false };
+  sandbox.DB = { assets: [a1], txns: [confirmed, pending], recurrences: [], settings: { confirmTransfers: true }, deletedIds: {} };
+  sandbox.lastUndo = null;
+  sandbox.archiveTxnsBefore('2024-12-31');
+  assert.strictEqual(a1.baseAmount, 501000, '미확인 이체 금액(300000)은 흡수되지 않고 확인된 입금만 반영되어야 함');
+  assert.deepStrictEqual(sandbox.DB.txns, [], '미확인 이체 거래 자체는 다른 cutoff 이전 거래처럼 그대로 지워져야 함');
+});
+test('archiveTxnsBefore: 계산된 baseline이 기존 값과 같은(실제로 안 바뀌는) 자산은 건드리지 않는다(fx/stock처럼 baseAmount/amountKRW가 없는 시세평가 자산에 쓸모없는 0 필드가 생기는 걸 막음)', () => {
+  sandbox.TWi = -1;
+  const s1 = { id: 's1', type: 'stock', stockCode: 'X', stockQty: 5 };
+  sandbox.DB = { assets: [s1], txns: [], recurrences: [], settings: {}, deletedIds: {} };
+  sandbox.lastUndo = null;
+  sandbox.archiveTxnsBefore('2024-12-31');
+  assert.strictEqual(s1.baseAmount, undefined, 'baseAmount 필드가 새로 생기면 안 됨');
+  assert.strictEqual(s1.amountKRW, undefined, 'amountKRW 필드도 새로 생기면 안 됨');
+  assert.strictEqual(s1.updatedAt, undefined, '실제로 안 바뀐 자산은 touch()되면 안 됨');
+});
+test('archiveTxnsBefore: 튜토리얼 중에는 twGuard가 막아 아무것도 바뀌지 않는다', () => {
+  sandbox.TWi = 0;
+  const a1 = { id: 'a1', type: 'cash', baseAmount: 0 };
+  const t1 = { id: 't1', date: '2023-02-01', type: 'income', toAssetId: 'a1', amount: 500000 };
+  sandbox.DB = { assets: [a1], txns: [t1], recurrences: [], settings: {}, deletedIds: {} };
+  sandbox.lastUndo = null;
+  sandbox.archiveTxnsBefore('2024-12-31');
+  assert.strictEqual(a1.baseAmount, 0, '튜토리얼 중에는 baseAmount가 바뀌면 안 됨');
+  assert.strictEqual(sandbox.DB.txns.length, 1, '튜토리얼 중에는 거래가 지워지면 안 됨');
+  assert.strictEqual(sandbox.lastUndo, null, 'undoToast도 호출되면 안 됨');
+  sandbox.TWi = -1;
+});
+test('archiveMonthPicked: 지워질 거래가 있으면 월말을 cutoffDate로 confirmSheet를 띄우고, 확인을 누르면 archiveTxnsBefore가 그 cutoffDate로 실행된다', () => {
+  const a1 = { id: 'a1', type: 'cash', baseAmount: 0 };
+  const t1 = { id: 't1', date: '2024-05-10', type: 'income', toAssetId: 'a1', amount: 1000 };
+  sandbox.DB = { assets: [a1], txns: [t1], recurrences: [], settings: {}, deletedIds: {} };
+  sandbox.confirmSheetCalls = [];
+  sandbox.lastUndo = null;
+  sandbox.archiveMonthPicked(2024, 5);
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 1, 'confirmSheet가 한 번 떠야 함');
+  assert.ok(sandbox.confirmSheetCalls[0].msg.includes('1건'), '지워질 건수가 안내 문구에 들어가야 함');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.txns.length, 0, 'confirmSheet의 확인 콜백이 archiveTxnsBefore(cutoffDate)를 실행해야 함');
+  assert.strictEqual(a1.baseAmount, 1000);
+});
+test('archiveMonthPicked: 그 달 이전에 지울 거래가 하나도 없으면 confirmSheet 없이 안내 토스트만 띄운다', () => {
+  sandbox.DB = { assets: [], txns: [{ id: 't1', date: '2024-07-01' }], recurrences: [], settings: {}, deletedIds: {} };
+  sandbox.confirmSheetCalls = [];
+  sandbox.lastToast = null;
+  sandbox.archiveMonthPicked(2024, 5); // t1은 2024-05월말보다 뒤 날짜라 걸리지 않음
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0, '지울 게 없으면 confirmSheet를 띄우면 안 됨');
+  assert.ok(sandbox.lastToast, '대신 안내 토스트를 띄워야 함');
+});
+test('openArchiveOld: 메뉴 진입점이 cutoff 달을 고르는 월 선택 휠을 "archive" 용도로 연다', () => {
+  sandbox.lastMonthSheetWhich = null;
+  sandbox.openArchiveOld();
+  assert.strictEqual(sandbox.lastMonthSheetWhich, 'archive', 'openMonthSheet를 "archive"로 호출해야 함');
+});
+test('monthWheelApply: which==="archive"면 고른 연/월로 archiveMonthPicked를 호출한다(소스 패턴 검증 — col.querySelector 등 DOM에 엮여 실행형 대상 밖)', () => {
+  const body = extractFunction('monthWheelApply');
+  assert.ok(/which===['"]archive['"]\)\{archiveMonthPicked\(y,m\)\}/.test(body), 'archive 분기가 archiveMonthPicked(y,m)을 호출해야 함');
+});
+test("renderMenu: '백업 · 데이터' 그룹에 '오래된 데이터 정리' 항목이 openArchiveOld()를 가리킨다(소스 패턴 검증)", () => {
+  const body = extractFunction('renderMenu');
+  assert.ok(/\{ic:'trash',l:'오래된 데이터 정리',a:"openArchiveOld\(\)"\}/.test(body), "메뉴 항목이 openArchiveOld()를 가리켜야 함");
 });
 
 /* ---------- bulkCatTargets(logic.js)/doBulkCat/bulkCatPickFor: 선택 모드(일별거래/전체내역)
