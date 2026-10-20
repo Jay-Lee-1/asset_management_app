@@ -1,15 +1,8 @@
 {
   "cycle": 221,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 215,
-      "phase": "advance",
-      "timestamp": "2026-10-18T20:30:00.000Z",
-      "summary": "critique(cycle215) 계획대로 부팅 중(SDK_READY→getSession→pullCloud 순차 대기, 최대 약 22초) #app이 아무 피드백 없는 빈 화면으로 보이던 공백에 로딩 스플래시를 추가. <body> 바로 다음(#errBanner 앞, 즉 #app보다 먼저)에 JS 없이 바로 보이는 #bootSplash 정적 마크업(기존 .auth-logo 패턴 재사용 + 순수 CSS 스피너 @keyframes bootSpin, 기존 prefers-reduced-motion 전역 규칙이 자동 적용됨)을 추가했다. hideBootSplash(){const el=$('bootSplash');if(el)el.remove()}를 추가하고 showApp()/showAuth() 맨 앞에서 호출 — startApp()이 showApp()을 호출하므로 로그인/게스트 경로를 자동으로 덮고, showAuth()가 비로그인 경로를 덮는다(lockApp()은 startApp() 이후에만 호출되므로 별도 처리 불필요). boot()의 순차 대기 구조 자체는 계획대로 범위 밖으로 남겼다. test/run.js에 hideBootSplash를 FUNCTIONS 추출 목록에 추가하고(기존 $ 스텁에 bootSplashEl/bootSplashMissing 분기만 추가, 새 DOM shim 불필요) 4건 추가: hideBootSplash 실행형 2건(엘리먼트 있으면 remove() 호출/이미 없으면 조용히 통과), showApp·showAuth가 hideBootSplash()를 부르는지 extractFunction 기반 소스 검증 2건(기존 togglePwVis 와이어링 테스트와 동일한 패턴 — boot() 테스트의 showAuth/startApp 스파이는 그대로 둬서 기존 1609건에 영향 없음), index.html 정적 마크업이 <body>와 #errBanner 사이(#app보다 먼저)에 있는지 정규식 검증 1건. index.html/sw.js 변경이라 APP_VERSION 1.47.191->1.47.192, sw.js CACHE v453->v454. HTML 주석 제거 후 <script> 블록 4개(실제 코드 블록, 29행의 '<script>'를 언급하는 주석은 정규식 오탐이라 제외) 모두 node --check 통과. node our-assets-v1.14.1/our-assets/test/run.js 1609/1609 -> 1614/1614 통과(3회 재실행 모두 안정적으로 통과). pending_advance_plan을 비웠다.",
-      "commit": null
-    },
     {
       "cycle": 216,
       "phase": "develop",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-20T13:05:00.000Z",
       "summary": "Explore 서브에이전트로 PIN 관련 함수 전반을 훑어, doUnlock()(index.html 8710행)만 실패 시 입력칸을 비우고 focus()해 재시도를 쉽게 해주는 반면 자매 함수 doSetPin()/doChangePin()/doDisableAppLock()은 showErr만 하고 포커스를 안 돌려줘, PIN 설정/변경/해제 중 형식 오류나 확인 불일치·오류가 나면(특히 모바일에서 키보드가 닫힌 뒤) 사용자가 손으로 입력칸을 다시 탭해야 하는 불일치를 발견. 세 함수 모두 각 에러 분기 끝에 해당 입력칸(doSetPin: 형식오류->pinNewIn, 확인불일치->pinNewIn2 비우고; doDisableAppLock: 오류->pinOffIn 비우고; doChangePin: 현재PIN오류->pinChgCurIn 비우고, 형식오류->pinChgNewIn, 확인불일치->pinChgNewIn2 비우고)에 doUnlock()과 같은 패턴으로 .focus() 추가(현재 입력이 맞는 값이 아닌 분기는 value도 비움, 형식 오류만 난 분기는 값을 유지해 고쳐 쓰기 쉽게 함). 세 함수 모두 APPLOCK.verify()/setPin() 실제 해시 연산에 엮여 FUNCTIONS(vm 실행형) 밖에 있어(cycle152 critique 주석 참고) test/run.js에 extractFunction 기반 소스 정규식 검증 3건 추가(각 분기의 정확한 focus/value 처리를 문자 그대로 매칭). <script> 블록 4개 모두 node --check 통과. node our-assets-v1.14.1/our-assets/test/run.js 1665->1668 통과. APP_VERSION 1.47.202->1.47.203, sw.js CACHE v465->v466.",
+      "commit": "ff43fb7"
+    },
+    {
+      "cycle": 221,
+      "phase": "review",
+      "timestamp": "2026-10-20T13:30:00.000Z",
+      "summary": "cycle221 develop 커밋(ff43fb7, doSetPin/doChangePin/doDisableAppLock 에러 분기에 doUnlock()과 같은 focus() 복원 추가)을 검토. doUnlock()(index.html:8710)의 기존 패턴(틀린 PIN은 비우고 focus, lockErr에 '너무 많이' 패턴이면 renderLockView())과 세 함수의 새 분기를 직접 비교 — doSetPin의 형식 오류 분기는 가치 있는 입력(자리수만 틀린 PIN)을 지우지 않고 focus만 해 고쳐 쓰기 쉽게 하고, 확인 불일치/현재 PIN 오류/PIN 오류 분기는 틀린 값을 비우고 focus하는 것이 doUnlock과 정확히 같은 구분(형식 오류는 유지, 틀린 값은 비움)임을 확인. doChangePin의 세 분기 모두 btn.disabled=false를 먼저 복원한 뒤 showErr+focus 순서로 기존 얼리리턴 구조를 그대로 유지하며 가로채지 않음을 확인. 새 테스트 3건(extractFunction 기반 소스 정규식)이 diff의 실제 코드와 글자 단위로 정확히 일치. node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1668/1668 통과. APP_VERSION 1.47.203/sw.js CACHE v466 갱신도 develop에서 이미 반영됐고 review는 코드 변경 없음. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
       "commit": null
     }
   ]
