@@ -1388,6 +1388,32 @@ test('recDates: 매년 1/1+earlier 반복에서 1/1이 일요일이면 전년도
   assert.ok(!y2023.includes('2022-12-30'), '당겨진 회차가 원래 해 조회에 중복으로 나오면 안 됨');
 });
 
+/* ---------- recDates: 반복거래 시작일 자체가 주말+earlier(당겨서)면 첫 회차가 통째로 유실되는 버그
+ * (app-evolve cycle220 critique/advance) push()(logic.js)가 '이동된' 날짜 d에 대해 d>=r.startDate를
+ * 재검사했는데, 모든 호출부는 이미 '원본' 후보 ds가 ds>=r.startDate일 때만 push(ds)를 부른다.
+ * 반복거래의 첫 회차는 보통 ds===r.startDate라서, 그 날이 토/일이고 weekend='earlier'면 shiftWeekend가
+ * d를 startDate보다 앞으로 옮겨 d>=r.startDate에서 걸러져 첫 회차가 사라졌다(월세처럼 매월 반복되는
+ * 거래의 첫 달이 경고 없이 빠지는 데이터 정합성 버그). push() 안의 재검사를 제거해 end 경계 처리와
+ * 대칭을 맞췄다. */
+test('recDates: monthly+earlier에서 시작일(토요일) 자체가 전달 말일로 당겨지면 그 회차가 빠지지 않는다', () => {
+  // 2024-06-01은 토요일 -> earlier 조정으로 2024-05-31(금)로 당겨짐. 이게 반복거래의 "첫 회차".
+  const r = { freq: 'monthly', day: 1, startDate: '2024-06-01', endDate: null, weekend: 'earlier' };
+  const dates = Array.from(sandbox.recDates(r, '2024-05-01', '2024-06-30'));
+  assert.deepStrictEqual(dates, ['2024-05-31'], '시작일이 주말이라 당겨진 첫 회차가 통째로 사라지면 안 됨');
+});
+test('recDates: yearly+earlier에서 시작일(토요일) 자체가 전년도 말일로 당겨지면 그 회차가 빠지지 않는다', () => {
+  // 2022-01-01은 토요일 -> earlier 조정으로 2021-12-31(금)로 당겨짐.
+  const r = { freq: 'yearly', startDate: '2022-01-01', endDate: null, weekend: 'earlier' };
+  const dates = Array.from(sandbox.recDates(r, '2021-12-01', '2022-01-31'));
+  assert.deepStrictEqual(dates, ['2021-12-31'], '시작일이 주말이라 당겨진 첫 회차가 통째로 사라지면 안 됨');
+});
+test('recDates: daily+earlier에서 시작일(토요일) 자체가 당겨지면 그 회차가 빠지지 않는다', () => {
+  // 2024-06-01(토)->2024-05-31(금)으로, 2024-06-02(일)도 같은 금요일로 조정돼 dedupe로 한 번만 남음.
+  const r = { freq: 'daily', startDate: '2024-06-01', endDate: null, weekend: 'earlier' };
+  const dates = Array.from(sandbox.recDates(r, '2024-05-01', '2024-06-03'));
+  assert.deepStrictEqual(dates, ['2024-05-31', '2024-06-03'], '시작일이 주말이라 당겨진 첫 회차가 통째로 사라지면 안 됨');
+});
+
 /* ---------- recDates: daily/weekly 스캔 시작점을 from 근처로 당기는 최적화의 회귀 테스트 ----------
  * (app-evolve cycle26 advance) recDates()의 daily/weekly 분기는 예전엔 항상 r.startDate부터
  * 하루/일주일씩 순회해 to까지 진행했다 — 오래전 시작된 반복거래일수록 매 호출 비용이 컸다.

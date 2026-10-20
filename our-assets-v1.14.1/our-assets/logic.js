@@ -20,7 +20,12 @@ function shiftWeekend(ds,mode){ /* 주말 조정: earlier=금요일로 당김, l
 function recDates(r,from,to){
  const out=[];const end=new Date(((r.endDate&&r.endDate<to)?r.endDate:to)+'T00:00:00');
  const rs=new Date(r.startDate+'T00:00:00');
- const push=ds=>{const d=shiftWeekend(ds,r.weekend);if(d>=from&&d<=to&&d>=r.startDate&&(!r.endDate||d<=r.endDate)&&out[out.length-1]!==d)out.push(d);};
+ /* d>=r.startDate를 여기서 재검사하지 않는다: 모든 호출부가 이미 원본(미조정) 후보 ds가
+    ds>=r.startDate일 때만 push(ds)를 부른다. 재검사하면 '이동된' d가 기준이 되어, 시작일이
+    주말+weekend='earlier'(당겨서)인 반복거래의 첫 회차가 d<r.startDate로 걸러져 통째로
+    유실된다(예: monthly startDate=2024-06-01(토) → shiftWeekend가 2024-05-31로 당기면서
+    6월 전체 누락). end 경계(위 주석 참고)와 대칭을 맞춘다. */
+ const push=ds=>{const d=shiftWeekend(ds,r.weekend);if(d>=from&&d<=to&&(!r.endDate||d<=r.endDate)&&out[out.length-1]!==d)out.push(d);};
  if(r.freq==='monthly'){
    /* endd 이후 한 달을 더 생성한다: weekend 조정이 달을 넘겨 앞당겨지면(예: 매월 1일+earlier가 전달 말일로 이동) 그 달의 후보를 만들어야만 push()가 올바른 달로 걸러낼 수 있다 */
    let cur=new Date(rs.getFullYear(),rs.getMonth(),1);const endd=new Date(end.getFullYear(),end.getMonth(),1);

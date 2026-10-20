@@ -1,19 +1,8 @@
 {
-  "cycle": 220,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "recDates() push() 내 중복 r.startDate 재검사 제거 — 월초/연초 반복거래가 주말+'당겨서(earlier)' 조합일 때 첫 회차가 통째로 유실되는 버그",
-    "why": "logic.js recDates()(20-32행)의 공용 push() 헬퍼(23행)가 `d>=r.startDate`를 재검사한다. 모든 호출부(월간 30행/연간 39행/일·주간 55행)는 이미 원본 후보 ds가 `ds>=r.startDate`일 때만 push(ds)를 호출하므로, push 안의 재검사는 '이동된(shifted) 날짜' d에 대한 것이라 원본 ds와 다른 기준이 된다. 반복거래의 첫 회차는 보통 ds===r.startDate인데, 이 날짜가 토/일이고 weekend='earlier'(당겨서)이면 shiftWeekend가 d를 startDate보다 1~2일 앞으로 옮겨 `d>=r.startDate`에서 걸러져 해당 회차가 통째로 사라진다(예: monthly, startDate=2024-06-01(토), weekend='earlier' → 6월 전체가 누락, node -e로 직접 재현 확인; yearly/daily도 동일 구조로 재현되나 UI는 monthly에서만 weekend 피커를 노출함: index.html 6589-6590 sanitizeBackup이 non-monthly weekend를 방어적으로 지움). 월세/구독료처럼 매월 반복되는 핵심 거래의 첫 달이 경고 없이 조용히 사라지는 데이터 정합성 버그이며, 홈 '다음 지출' 카드/예산 합계/CSV export/목표·순자산 투사 등 recDates에 의존하는 모든 화면에 영향. 이미 같은 함수의 end 경계(25행 주석)는 유실 방지 처리가 돼 있는데 start 경계만 비대칭적으로 미처리.",
-    "approach": "logic.js push()(23행)에서 `d>=r.startDate` 조건을 제거한다(다른 조건 d>=from, d<=to, (!r.endDate||d<=r.endDate), 중복제거는 유지) — 모든 호출부가 이미 원본 ds를 r.startDate로 가드하므로 안전하고 d를 못 보낼 경우만 줄이지 새 유실 가능성은 만들지 않는다. test/run.js의 기존 주말-경계 테스트 근처(1372-1389행대)에 회귀 케이스 2-4건 추가: monthly+earlier+토요일 시작(6월 첫 회차가 결과에 포함되는지), yearly+daily도 동일 패턴 1건씩. index.html 변경 없음(logic.js는 index.html보다 먼저 로드되는 별도 순수 함수 모듈). 예상 diff 크기: logic.js 1줄 변경 + 테스트 2-4건 추가로 작고 리스크 낮음. test/run.js 통과 확인 후 APP_VERSION/sw.js CACHE 버전 올림."
-  },
+  "cycle": 221,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 215,
-      "phase": "review",
-      "timestamp": "2026-10-18T17:05:00.000Z",
-      "summary": "cycle215 develop 커밋(79f84fc, delOwner()가 자산 0개인 귀속에 걸린 목표를 확인하지 않던 버그 수정)을 검토. goalOwnerEff(g)(index.html:3011)의 계약(o&&o!=='all'&&(DB.owners||[]).includes(o))?o:'all')과 그 주석이 명시하는 바로 그 케이스(delOwner가 goal.owner만 낡은 이름으로 남길 수 있다는 것)를 재확인 — usedGoals=(DB.goals||[]).filter(g=>g.owner===o).length 추가와 if(used||usedGoals) 분기가 정확히 이 구멍을 막음을 직접 추적. doRenameOwner()가 이미 goal.owner를 따라가며 보존하는 것과의 비일관성 해소라는 설명도 실제 doRenameOwner 코드와 일치. 토스트 문구 조합(parts.join(', '))도 자산만/목표만/둘다 세 경우 모두 자연스러운 한국어로 렌더됨을 확인(둘 다 있으면 '자산 N개, 목표 M개가 있어요'). 새 테스트 2건(자산 0개+목표 1개 시 차단, 둘 다 있을 때 둘 다 안내)이 로직과 정확히 일치하고 confirmSheetCalls.length===0으로 confirm 시트가 뜨지 않음까지 검증. node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1609/1609 통과. APP_VERSION 1.47.191/sw.js CACHE v453 갱신도 일관됨. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 215,
       "phase": "critique",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-20T11:00:00.000Z",
       "summary": "Explore(general-purpose) 서브에이전트로 앱 전반(아키텍처/데이터정합성/성능/UX)을 훑되 cycle149-220에서 이미 다룬 영역(toast/invalidateBalances/XSS/실행형테스트전환 보류/split거래/pushCloud gzip/mergeDataLoss/kakaoLogin 병합/nextOutflowCard/#histQ 디바운스/recSaveScopeConfirm 보류/DB.goals·delOwner/#bootSplash/boot() 로컬우선/doExport CSV/crypto 자산종류+주말휴장 회귀수정/selectNwOwner 귀속전환 버그)는 제외하고 새 영역을 찾도록 지시. logic.js recDates()의 공용 push() 헬퍼(23행)가 호출부에서 이미 원본 날짜로 검증한 r.startDate 조건을 '주말 이동 후' 날짜 d에 대해 재검사하는 비대칭 버그를 발견 — monthly/yearly/daily 모두에서 반복거래 시작일이 주말이고 weekend='earlier'(당겨서)이면 shiftWeekend가 d를 startDate 이전으로 밀어 첫 회차가 통째로 유실됨(node -e로 2024-06-01(토) monthly 사례 직접 재현: 6월 누락 확인). UI는 monthly에서만 weekend 피커를 노출하므로 실사용 트리거는 월세/구독 등 매월 반복 지출의 시작일이 주말+당겨서 조합인 경우. end 경계는 이미 25행 주석처럼 유실 방지 처리가 돼 있어 start 경계만 비대칭적으로 미처리된 상태. advance 계획은 pending_advance_plan에 저장: push()의 중복 `d>=r.startDate` 검사 제거(호출부가 이미 가드하므로 안전) + test/run.js 회귀 테스트 추가.",
+      "commit": null
+    },
+    {
+      "cycle": 220,
+      "phase": "advance",
+      "timestamp": "2026-10-20T12:12:18.320Z",
+      "summary": "critique(cycle220) 계획대로 logic.js recDates()의 push() 헬퍼(23행)가 '이동된(shifted)' 날짜 d에 대해 d>=r.startDate를 재검사하던 비대칭 버그를 고쳤다. 모든 호출부(monthly 30행/yearly 39행/daily·weekly 55행)가 이미 원본 후보 ds에 대해 ds>=r.startDate를 확인한 뒤에만 push(ds)를 부르므로, push 안의 d>=r.startDate 재검사는 중복이자 더 엄격한 기준이었다 — 반복거래 시작일이 토/일이고 weekend='earlier'(당겨서)이면 shiftWeekend가 d를 startDate보다 1~2일 앞으로 옮겨 이 재검사에서 걸러져 월세/구독료 등 매월 반복 거래의 첫 회차가 경고 없이 통째로 사라졌다(예: monthly startDate=2024-06-01(토) → 6월 전체 누락, node로 직접 재현). push()에서 d>=r.startDate 조건만 제거(d>=from/d<=to/endDate/dedupe는 그대로 유지)해 end 경계(25행 주석)와 대칭을 맞췄다. test/run.js 기존 주말-경계 테스트(1372-1389행) 바로 뒤에 monthly/yearly/daily 각 1건씩 회귀 테스트 3건을 추가(모두 시작일이 토요일+earlier인 케이스로, 수정 전 코드로 되돌리면 정확히 이 3건만 FAIL함을 직접 확인). logic.js는 index.html보다 먼저 로드되는 별도 순수 함수 모듈이라 index.html/APP_VERSION 변경은 없었지만, sw.js의 SHELL 캐시 목록에 logic.js가 포함돼 있어 CACHE 버전만 v464->v465로 올렸다. node --check(logic.js)와 HTML 주석 제거 후 <script> 블록 4개(New Function 생성자) 모두 문법 통과. node our-assets-v1.14.1/our-assets/test/run.js 1662/1662 -> 1665/1665 통과.",
       "commit": null
     }
   ]
