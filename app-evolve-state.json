@@ -1,15 +1,8 @@
 {
   "cycle": 223,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 217,
-      "phase": "advance",
-      "timestamp": "2026-10-19T04:20:00.000Z",
-      "summary": "critique(cycle217) 계획대로 #histQ(전체내역 검색) 입력에 220ms 디바운스를 추가했다. 기존 `let _histTimer=null,_histPeeking=false;`(histPeekStart 등이 쓰는 모듈 상태) 줄에 `_histQT=null`을 더하고, 새 histQInput(v) 함수가 ST.hist.q=v를 입력 즉시 반영한 뒤 clearTimeout(_histQT)로 이전 타이머를 지우고 — v.trim()===''(clrInput의 지우기(×) 버튼 경로 포함)이면 histInvalidate()+updateHist()를 바로 실행해 지웠을 때 체감 지연이 없게 하고, 아니면 _histQT=setTimeout(()=>{histInvalidate();updateHist()},220)으로 디바운스한다. #histQ의 oninput을 `histQInput(this.value)`로 교체. go(tab)에도 `if(ST.tab==='history'&&tab!=='history')clearTimeout(_histQT)`를 추가해, 전체내역을 벗어난 뒤 디바운스 타이머가 뒤늦게 터져 언마운트된 화면을 updateHist()로 다시 그리는 걸 막았다. test/run.js: FUNCTIONS에 histQInput 추가, LETS에 _histTimer를 추가해 같은 줄의 _histQT를 함께 끌어오게 했다(기존 _sujiTimer와 동일한 패턴). fetchWithTimeout/withTimeout과 같은 setTimeout/clearTimeout 스파이 IIFE 패턴으로 4건 추가(디바운스 220ms 확인, 연속 입력 시 매번 clearTimeout 후 새 타이머 하나만 거는지, 빈 문자열은 즉시 실행, 공백뿐인 입력도 trim 판정으로 즉시 실행하되 ST.hist.q에는 원본을 그대로 저장) + go(tab)이 _histQT를 clearTimeout하는지 확인하는 소스 패턴 테스트 1건(go는 DOM API를 직접 쓰므로 기존 관례대로 vm 실행 대상이 아니라 extractFunction 텍스트 검증). APP_VERSION 1.47.196->1.47.197, sw.js CACHE v458->v459. 메인 <script> 블록 node --check 통과. node our-assets-v1.14.1/our-assets/test/run.js 1622/1622 -> 1627/1627 통과. pending_advance_plan을 비웠다.",
-      "commit": null
-    },
     {
       "cycle": 218,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-20T20:15:58.317Z",
       "summary": "critique(cycle222) 계획대로 archiveBaselines() UI 연결을 끝까지 구현했다. 메뉴 ‹백업 · 데이터› 그룹에 {ic:\"trash\",l:\"오래된 데이터 정리\",a:\"openArchiveOld()\"} 추가. openArchiveOld()는 새 날짜 위젯을 만들지 않고 기존 openMonthSheet(\"archive\")를 그대로 재사용하고(가계부/전체내역/한달플랜과 같은 월 선택 휠), monthWheelApply()에 which===\"archive\" 분기를 추가해 고른 연/월을 archiveMonthPicked(y,m)으로 넘긴다. archiveMonthPicked()는 monthEndStr(y,m)을 cutoffDate로 잡고 DB.txns 중 지워질 건수를 세어(0건이면 confirmSheet 없이 안내 토스트만) confirmSheet(doResetAll()과 같은 위험 액션 패턴)로 건수 안내 + 백업 권장 문구(텍스트 넛지 — exportData() 바로가기 버튼은 confirmSheet 내부에 중첩 시트를 여는 구조가 돼 복잡도가 커 범위를 좁힘)를 띄우고, 확인을 누르면 archiveTxnsBefore(cutoffDate)를 실행한다. archiveTxnsBefore()는 cycle221 advance가 만들어 둔 archiveBaselines(DB.assets, DB.txns.concat(expandRec(RANGE_FROM,cutoffDate)), cutoffDate, isPending)을 처음 실제로 호출해 cutoff 시점 잔액을 계산하고, baselines[a.id]가 현재 assetBase(a)와 실제로 다른 자산에만 baseAmount/amountKRW를 새 값으로 앉히고 touch()한다(fx/stock/gold/crypto처럼 baseAmount/amountKRW를 안 쓰는 시세평가 자산에 쓸모없는 0 필드가 새로 생기는 걸 막음) — 그 다음 deleteTxnsUndo()와 동일한 방식(DB.deletedIds 톰스톤, undoToast)으로 cutoff 이전 DB.txns만 지운다(반복거래는 DB.recurrences를 안 건드려 cutoff 이후 발생은 그대로 생성되고, cutoff 이전 가상 발생분은 baseline 계산에만 반영돼 유실이 아님). undo 콜백은 영향받은 자산만 id로 매칭해 baseAmount/amountKRW를 정확히 복원한다. test/run.js: FUNCTIONS에 archiveTxnsBefore/archiveMonthPicked/openArchiveOld 추가(openMonthSheet는 DOM에 깊이 엮여 FUNCTIONS 밖이라 호출된 which만 기록하는 스파이로 흉내냄), 테스트 10건 신설 — cutoff 이전 두 입금을 흡수해 baseAmount가 정확히 보존되는지, undo로 baseAmount/거래/톰스톤이 정확히 복원되는지, 미확인(pending) 이체가 balancesUpTo와 동일하게 baseline 계산에서 제외되면서도 거래 자체는 그대로 지워지는지, 실제로 안 바뀌는 자산(fx/stock류)은 건드리지 않는지(touch 안 됨, 필드 안 생김), 튜토리얼 중엔 twGuard가 막는지, archiveMonthPicked의 confirmSheet 안내/0건 분기, openArchiveOld가 openMonthSheet(\"archive\")를 부르는지, monthWheelApply의 archive 분기(소스 패턴, DOM 엮여 실행형 밖)와 renderMenu 메뉴 항목(소스 패턴) 배선. APP_VERSION 1.47.204->1.47.205, sw.js CACHE v468->v469. HTML 주석 제거 후 실제 코드 script 블록(2,4,5번) 모두 new Function으로 문법 통과(1번은 기존 알려진 정규식 오탐). node our-assets-v1.14.1/our-assets/test/run.js 1679/1679 -> 1689/1689 통과.",
       "commit": null
+    },
+    {
+      "cycle": 223,
+      "phase": "develop",
+      "timestamp": "2026-10-20T21:21:29.796Z",
+      "summary": "general-purpose 서브에이전트로 develop 후보를 탐색(cycle149-222에서 다룬 모든 영역 전부 제외하도록 명시: toast/invalidateBalances/split거래/pushCloud gzip/mergeDataLoss/kakaoLogin 병합/nextOutflowCard/#histQ 디바운스/recSaveScopeConfirm 보류/DB.goals·delOwner/#bootSplash/boot() 로컬우선/doExport CSV/bulkCatTargets adjust/crypto 자산종류+주말휴장 회귀/recDates push() 주말이동/asOpenType pension 복원/selectNwOwner 선택id/PIN focus 복원/archiveBaselines+UI 연결/commaQty maximumFractionDigits). logic.js recNthDate(base,n)이 \"반복 횟수 N회\" 종료조건을 endDate로 변환할 때 recDates()를 재사용해 \"엔진과 100% 일치\"를 보장한다고 문서화돼 있는데, 내부에서 쓰는 날짜 범위 버퍼(daily는 n+2일)가 \"후보 개수=결과 개수\"라고 가정한 값이었음을 발견. weekend=\"earlier\"|\"later\"는 토/일 후보를 평일로 당기거나 미루면서 그 평일에 이미 push()된 날짜와 겹쳐 recDates()의 인접 중복 제거로 사라지므로, freq=daily에서는 주 7일 중 사실상 5일치만 결과로 남아 n이 일정 크기를 넘으면(2024-01-01 시작+earlier에서 n=11부터 재현) ds[n-1]이 undefined가 되어 recNthDate가 null을 반환 — saveTx/saveRec/_applyCount/recalcEndCond 경로에서 \"반복 횟수\" 종료조건이 조용히 무한 반복(endDate 미설정)으로 저장될 수 있는 잠재적 데이터 정합성 버그였다. 현재 UI는 weekend를 freq===monthly일 때만 노출하고 recFreq()/sanitizeBackup()이 다른 주기에서는 weekend를 none으로 강제해 지금은 freq=daily+weekend!==none 조합이 실제로 저장되지는 않지만, recNthDate 자신은 그 전제에 기대지 않는 순수 엔진 함수여야 한다는 이 프로젝트의 기존 선례(recDates push() 경계 버그, sanitizeBackup weekend 정규화)를 따라 방어적으로 고쳤다. 수정: 결과가 n개에 못 미치면 날짜 범위를 2배씩 늘려 재생성(평일은 매주 최소 5일 나오므로 항상 수렴, 최대 64배는 방어적 상한). monthly/yearly/weekly(유일하게 UI로 weekend 조정과 함께 쓰이는 monthly 포함)는 n=1..999 전 구간 fuzz 테스트로 회귀 없음 확인. test/run.js에 daily+earlier(n=11/20/31)·daily+later(n=25)가 recDates 결과와 정확히 일치하는지, recCountUntil 역변환 일치, 작은 n/weekend=none 회귀 가드까지 테스트 4건 추가. logic.js만 바꿔 APP_VERSION은 그대로 두고 sw.js CACHE만 v469->v470으로 올렸다(logic.js가 SHELL 캐시 대상). node --check(logic.js, sw.js) 통과. node our-assets-v1.14.1/our-assets/test/run.js 1689/1689 -> 1692/1692 통과.",
+      "commit": "753937d"
     }
   ]
 }
