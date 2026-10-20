@@ -1,15 +1,12 @@
 {
   "cycle": 223,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "mergeCollection()의 whole-record last-write-wins을 필드 단위 병합(mergeRecordFields)으로 교체 — mergeRecurrences 패턴을 txns/assets/goals/inquiries/assetQtyLog로 확장",
+    "why": "logic.js:145-167 mergeCollection()이 updatedAt이 더 늦은 레코드를 통째로 채택해, 공유 계정을 쓰는 두 기기가 오프라인 중 같은 레코드의 다른 필드를 각각 수정하면 진 쪽의 수정이 필드 단위로 합쳐지지 않고 전부 버려진다. touch()(index.html:1522-1527) 주석이 이를 '향후 과제'로 명시해뒀고, mergeCollectionConflicts()는 손실을 mergeDataLossCount로 사후 경고만 할 뿐 막지 못한다. mergeRecurrences()(logic.js:194-230+)가 같은 문제를 skip/edits/confirmedDates 합집합 병합으로 이미 해결한 선례가 있는데, 나머지 다섯 컬렉션에는 적용되지 않았다.",
+    "approach": "mergeRecurrences 패턴을 일반화한 순수함수 mergeRecordFields(winner, loser)를 logic.js의 mergeCollection() 근처에 신설한다. 두 레코드가 같은 id로 양쪽에 존재하고 updatedAt이 다르면, 더 늦은 쪽(winner)을 기준 레코드로 삼되, winner가 손대지 않은 필드에서 loser만 값이 다르면 그 필드만 loser 값으로 채워 넣는다(승자가 실제로 바꾼 필드만 승자 값을 유지). mergeCollection()의 'out.push(l...: r)' 식 레코드 전체 채택 분기를 이 함수 호출로 교체한다. test/run.js(기존 순수함수 테스트 관례)에 서로 다른 필드 수정 시 양쪽 다 반영/같은 필드 충돌 시 승자 값 유지/기존 recurrences 테스트 무회귀 케이스를 추가한다. 우선 DB.assets·DB.txns(필드 수가 많고 수정 빈도가 가장 높은 두 컬렉션)에 적용해 범위를 좁히고, 검증되면 이후 사이클에서 goals/inquiries/assetQtyLog로 확장한다. APP_VERSION/sw.js CACHE는 기존 릴리스 관례대로 올린다."
+  },
   "history": [
-    {
-      "cycle": 218,
-      "phase": "critique",
-      "timestamp": "2026-10-19T08:30:00.000Z",
-      "summary": "Explore(general-purpose) 서브에이전트로 앱 전반을 아키텍처 관점에서 훑었다(cycle149-218에서 다룬 toast/invalidateBalances fromDate/closeSheetGuarded/aria-label/XSS/실행형 테스트 전환류(wireSheetGestures·ensureEdgeGesture 등)/split거래 dedupe/pushCloud await/mergeDataLoss 경고(5개 컬렉션)/kakaoLogin 게스트 병합/nextOutflowCard 스냅샷/DB.goals type:'networth'|'asset' 및 goalHistoryFor 자산종류변경 버그/delOwner 목표 체크/pushCloud·pullCloud gzip 압축/#bootSplash/asFx·asGold·asQty Enter-제출(되돌림)/doExport csv 미래거래 혼입/bulkCatTargets adjust 가드/dismissedStaleMvIds·budgetCarryFor·recSaveScopeConfirm(이미 해결 확인)/#histQ 디바운스/CDN SRI(기각)/asOpenType pension 복귀 버그 전부 제외). cycle215 critique가 '후속 과제로 미룬다'며 범위 밖으로 남겨둔 boot() 자체의 순차 대기 구조를 재조사 — boot()(index.html:8576-8598)가 await SDK_READY(최악 6초, 1387)->await withTimeout(SB.auth.getSession())->await afterCloudAuth(uid)(내부에서 await pullCloud(), 2008/2017행)를 전부 직렬로 기다린 뒤에야 startApp()(8558, 실제로 load()+renderHome()으로 화면을 그리는 함수)을 호출함을 index.html에서 직접 확인(cycle215 advance가 추가한 #bootSplash는 이 대기 구간을 스피너로 가려줄 뿐 구조 자체는 그대로임도 확인). 로컬 localStorage DB는 SDK/네트워크와 무관하게 이미 완비돼 있고, 멀티탭 동기화 경로(applyForeignSave, 2385행)가 이미 '로컬을 먼저 그리고 원격 변경을 나중에 비파괴적으로 병합'하는 패턴을 증명하는데도 boot()만 이 패턴을 안 쓴다 — 느린/불안정한 네트워크나 콜드 서버리스 함수에서 최악 약 22초간 빈 화면(스피너만)을 보여주는 구조적 결함. startApp()/load()를 먼저 실행해 로컬 데이터로 즉시 렌더하고, SDK_READY->getSession->afterCloudAuth/pullCloud 체인은 백그라운드로 돌려 resolveCloudPullRemote류가 이미 쓰는 mergeRemoteDataIntoLocal 기반 비파괴 병합+재렌더로 합류시키는 계획(APPLOCK/게스트 분기, localHasUnsyncedChanges 등 기존 보장 유지, boot 관련 실행형 테스트 추가 포함)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
-      "commit": null
-    },
     {
       "cycle": 218,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-20T21:48:00.000Z",
       "summary": "cycle223 develop 커밋(753937d, recNthDate()가 freq=daily+weekend 조정에서 버퍼 부족으로 큰 n에 null을 반환하던 버그 수정)을 검토. 수정 로직(span을 1부터 시작해 ds.length<n이면 2배씩 늘려 재시도, span<=64 상한)을 직접 추적 — 반복마다 이전 span을 써서 ds를 생성한 뒤 span을 두 배로 올리므로 실제 사용되는 최대 span은 64이고 999개 상한(n은 앞서 Math.min(999,...)로 클램프됨)에도 충분한 여유(평일 비율 7:5 ≈ 1.4배만 필요)가 있어 수렴을 보장함을 확인. 독립적으로 n=1..999 전 구간 × weekend(earlier/later) × 4개 시작일(토/일 포함)로 recNthDate→recDates 생성개수·마지막값 일치, recCountUntil 역변환 일치를 직접 fuzz 검증(0 실패) — 커밋이 주장한 범위보다 넓게 재현해도 문제 없음. monthly/yearly/weekly(day=15, weekend 포함)도 n=1,50,500,999에서 전부 null 없이 성공해 회귀 없음을 재확인. 성능도 최악 케이스(daily+earlier, n=999) 50회 반복에 253ms로 체감 지연 없는 수준. sw.js CACHE v470/APP_VERSION 미변경(logic.js만 변경)도 일관됨. node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1692/1692 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 223,
+      "phase": "critique",
+      "timestamp": "2026-10-20T23:15:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-223에서 다룬 모든 영역 전부 제외하도록 명시: toast/invalidateBalances/split거래/pushCloud gzip/mergeDataLoss 경고/kakaoLogin 병합/nextOutflowCard/#histQ 디바운스/recSaveScopeConfirm 보류/DB.goals·delOwner/#bootSplash/boot() 로컬우선/doExport CSV/bulkCatTargets adjust/crypto 자산종류+주말휴장 회귀/recDates push() 주말이동/asOpenType pension 복원/selectNwOwner 선택id/PIN focus 복원/archiveBaselines+UI 연결/commaQty maximumFractionDigits/recNthDate 버퍼 버그 전부 제외). mergeCollection()(logic.js:145-167)이 DB.txns/assets/goals/inquiries/assetQtyLog 다섯 컬렉션 전부에 대해 updatedAt이 더 늦은 쪽의 레코드를 통째로 채택하는 whole-record last-write-wins 방식임을 재확인 — 두 기기(부부/가족 공유 계정, 이 앱의 핵심 사용 시나리오)가 오프라인 중 같은 레코드의 다른 필드를 각각 수정하면 (예: 한쪽이 자산 이름/아이콘을 바꾸고 비슷한 시점에 다른 쪽이 그 자산의 잔액/레이트를 수정) 진 쪽의 수정이 필드 단위로 합쳐지지 않고 레코드 전체가 버려진다. touch()(index.html:1522-1527)의 주석이 updatedAt을 '향후 레코드 단위 병합을 위한 토대'라고 명시하고, mergeCollectionConflicts()(logic.js:168-193)는 이 손실을 DB.settings.mergeDataLossCount로 사후에 세어 경고만 할 뿐 막지는 못함을 확인. 반면 mergeRecurrences()(logic.js:194-230+)는 이미 같은 문제를 skip/edits/confirmedDates를 합집합으로 병합하는 방식으로 recurrences 컬렉션 하나에 대해서만 해결해뒀는데, 이 패턴이 나머지 다섯 컬렉션으로 확장된 적이 없다는 게 남은 공백임을 포착. mergeRecurrences 패턴을 일반화한 mergeRecordFields(winner,loser) 순수함수를 logic.js에 신설해 mergeCollection()의 레코드 전체 채택 분기를 대체하고 (승자 레코드를 기준으로 하되, 승자가 바꾸지 않은 필드에서 패자만 값이 다르면 패자 값을 채워넣는 필드 단위 병합), disjoint-field 병합/same-field 충돌 시 승자 우선/기존 recurrences 테스트 무회귀를 test/run.js에 추가하는 계획을, DB.assets/DB.txns부터 우선 적용하고 goals/inquiries/assetQtyLog로 확장하는 순서로 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
       "commit": null
     }
   ]
