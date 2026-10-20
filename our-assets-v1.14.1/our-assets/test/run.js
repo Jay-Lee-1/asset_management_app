@@ -1122,6 +1122,48 @@ test('recNthDate/recCountUntil: 주말 조정이 없는 경우는 영향받지 �
   assert.strictEqual(sandbox.recCountUntil(base, sixth), 6);
 });
 
+/* ---------- recNthDate: freq='daily'+weekend='earlier'|'later'일 때 버퍼 부족으로 큰 n에서
+ * null을 반환하던 버그 (app-evolve cycle223 develop) ----------
+ * 'earlier'/'later'는 토/일 후보를 평일로 당기거나 미루면서 그 평일에 이미 push된 날짜와 겹쳐
+ * recDates()의 인접 중복 제거로 사라진다 — 주 7일 중 2일이 다른 날과 겹쳐 사실상 5일치만 남으므로,
+ * 옛 코드의 "n+2일 버퍼"로는 큰 n에서 결과가 n개에 못 미쳐 ds[n-1]이 undefined(null)가 됐다.
+ * UI는 weekend를 freq==='monthly'일 때만 노출하고 sanitizeBackup도 같은 불변식을 강제해 지금은
+ * 이 조합이 실제로 저장되지 않지만, recNthDate 자신은 "엔진 recDates 재사용 → 규칙 100% 일치"를
+ * 약속하는 순수 함수이므로 그 전제에 기대지 않고 정확해야 한다. */
+test('recNthDate: freq=daily+weekend=earlier에서 버퍼(n+2일)를 넘는 n도 recDates 결과와 정확히 일치한다', () => {
+  const base = { freq: 'daily', startDate: '2026-01-01', weekend: 'earlier' };
+  for (const n of [11, 20, 31]) { // 옛 버퍼(n+2일)로는 모두 null을 반환하던 n들
+    const got = sandbox.recNthDate(base, n);
+    assert.ok(got, `n=${n}에서 null을 반환함(버퍼 부족 회귀)`);
+    const generated = sandbox.recDates(
+      { freq: 'daily', startDate: base.startDate, endDate: null, weekend: 'earlier' },
+      base.startDate, got
+    );
+    assert.strictEqual(generated.length, n, `n=${n}: recDates가 실제로 만드는 개수와 일치해야 함`);
+    assert.strictEqual(generated[generated.length - 1], got, `n=${n}: recNthDate 결과가 recDates의 n번째 날짜여야 함`);
+  }
+});
+test('recNthDate: freq=daily+weekend=later도 동일하게 큰 n에서 null을 반환하지 않는다', () => {
+  const base = { freq: 'daily', startDate: '2026-01-01', weekend: 'later' };
+  const n = 25;
+  const got = sandbox.recNthDate(base, n);
+  assert.ok(got, 'null을 반환함(버퍼 부족 회귀)');
+  const generated = sandbox.recDates(
+    { freq: 'daily', startDate: base.startDate, endDate: null, weekend: 'later' },
+    base.startDate, got
+  );
+  assert.strictEqual(generated.length, n);
+  assert.strictEqual(sandbox.recCountUntil(base, got), n, 'recCountUntil 역변환도 n과 일치해야 함');
+});
+test('recNthDate: 옛 버퍼로도 이미 맞던 작은 n(회귀 가드)과 weekend=none(영향 없음)은 그대로 정확하다', () => {
+  const small = sandbox.recNthDate({ freq: 'daily', startDate: '2026-01-01', weekend: 'earlier' }, 3);
+  assert.strictEqual(small, sandbox.recDates(
+    { freq: 'daily', startDate: '2026-01-01', endDate: null, weekend: 'earlier' }, '2026-01-01', '2026-01-10'
+  )[2]);
+  const none = sandbox.recNthDate({ freq: 'daily', startDate: '2026-01-01', weekend: 'none' }, 20);
+  assert.strictEqual(none, '2026-01-20', 'weekend=none이면 n번째는 그냥 startDate+19일');
+});
+
 /* ---------- truncateRecEnd: endDate·count를 항상 함께 맞추는 헬퍼 (cycle56, recApply/recSave/splitRecurrenceAt이 공유) ---------- */
 test('truncateRecEnd: 월간 반복을 cutoff 날짜로 자르면 endDate=cutoff, count는 그 시점까지의 실제 발생 횟수와 일치한다', () => {
   const base = { freq: 'monthly', day: 1, startDate: '2026-01-10', weekend: 'none' };

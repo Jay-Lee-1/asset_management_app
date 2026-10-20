@@ -83,12 +83,29 @@ function recFreqLabelStr(freq,day,startDate){
 function addMonthsStr(ds,m){const d=new Date(ds+'T00:00:00');d.setMonth(d.getMonth()+m);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
 function recNthDate(base,n){ /* n번째 반복 날짜 */
  n=Math.min(999,Math.max(0,Number(n)||0));if(n<1||!base.startDate)return null;
- const f=base.freq||'monthly';let to;
- if(f==='monthly')to=addMonthsStr(base.startDate,n+2);
- else if(f==='yearly')to=addMonthsStr(base.startDate,(n+2)*12);
- else if(f==='weekly')to=addDays(base.startDate,(n+2)*7);
- else to=addDays(base.startDate,n+2);
- const ds=recDates({freq:f,day:base.day,startDate:base.startDate,endDate:null,weekend:base.weekend},base.startDate,to);
+ const f=base.freq||'monthly';
+ const rbase={freq:f,day:base.day,startDate:base.startDate,endDate:null,weekend:base.weekend};
+ /* 아래 버퍼(+2단위)는 "후보 n+2개를 만들면 결과도 n+2개 안팎"이라는 가정인데, freq='daily'+
+    weekend='earlier'|'later'에서는 토/일 후보가 평일로 당겨지거나 미뤄지면서 그 평일에 이미 push된
+    날짜와 같아져 recDates()의 인접 중복 제거(push())로 사라진다 — 주 7일 중 2일이 매번 다른 날과
+    겹쳐 사실상 5일치만 남으므로, 후보 개수와 결과 개수가 7:5 비율로 어긋난다. UI는 weekend를
+    freq==='monthly'일 때만 노출하고(recFreq가 그 외 주기로 바꿀 때마다 'none'으로 되돌림) 백업/원격
+    데이터도 sanitizeBackup이 같은 불변식을 강제해 지금은 freq='daily'+weekend!=='none'이 실제로
+    저장되지 않지만, recNthDate는 그 전제에 기대지 않고 받은 그대로 정확히 동작해야 하는 순수
+    엔진 함수다(주석의 "100% 일치" 약속) — 버퍼가 부족하면 결과가 n개에 못 미쳐 ds[n-1]이
+    undefined(null)가 되고, "반복 횟수" 종료조건이 조용히 끝없이 반복(endDate 미설정)으로
+    새 버려진다. 결과가 n개에 못 미치면 버퍼를 두 배씩 늘려 다시 생성한다(평일은 매주 최소 5일
+    나오므로 항상 수렴, span 상한은 방어적 안전장치일 뿐 정상 입력에서는 첫 시도에 바로 끝난다). */
+ let span=1,ds=[];
+ do{
+  let to;
+  if(f==='monthly')to=addMonthsStr(base.startDate,(n+2)*span);
+  else if(f==='yearly')to=addMonthsStr(base.startDate,(n+2)*12*span);
+  else if(f==='weekly')to=addDays(base.startDate,(n+2)*7*span);
+  else to=addDays(base.startDate,(n+2)*span);
+  ds=recDates(rbase,base.startDate,to);
+  span*=2;
+ }while(ds.length<n&&span<=64);
  return ds[n-1]||null;
 }
 function recCountUntil(base,endDate){ /* 시작일~종료일 사이 반복 횟수 */
