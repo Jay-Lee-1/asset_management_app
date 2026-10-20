@@ -1394,7 +1394,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.199';
+const APP_VERSION='1.47.200';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3475,6 +3475,14 @@ function selectNwOwner(r){ /* 캐러셀 스크롤 정착/점 클릭/키보드 �
  const owner=ownerListArr()[r]||'all';
  if(owner!==ST.assetOwner){
    ST.assetOwner=owner;_lastNwOwner=owner;
+   /* 일괄선택 모드(ST.aSel) 중에도 캐러셀이 계속 스와이프/점클릭/키보드로 동작해 귀속을
+      바꿀 수 있는데, 전환 전 선택해둔 id는 새 귀속에서 화면에 보이지 않는 채로
+      ST.aSel.ids에 그대로 남아 있었다 — "전체선택"이 보이지 않는 그 id를 건드리지 않고
+      그 위에 새 귀속 id만 더해 total 계산이 꼬이고, "선택 삭제"를 누르면 화면에 없는
+      이전 귀속 자산까지 조용히 함께 지워졌다(app-evolve cycle219 develop). historySelAll/
+      ledgerSelAll은 필터 UI 자체가 selMode 중엔 숨어 이 문제가 없는데, 자산 탭만 귀속
+      캐러셀이 선택모드에서도 계속 열려 있어 유일하게 해당. */
+   if(ST.aSel.mode&&ST.aSel.ids.size){ST.aSel.ids.clear();updateSelBottom();}
    if(navigator.vibrate)navigator.vibrate(6);
    refreshAssetBody(); /* 전체 재렌더 X → 카드가 튀지 않음 */
    refreshNwHistoryCard();

@@ -206,6 +206,12 @@ const FUNCTIONS = [
   'txScheduled', 'monthStats', 'monthStats2', 'expenseByCat', 'needGold', 'inQuietWindow', 'fmtSynced', 'rateStatusText',
   'nextBigOutflow', 'dday', 'balanceOn', 'nextOutflowCard', 'monthOutflowCard', 'planGaugeCard', 'homeAlertCard', 'renderHome',
   'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwPresetSegHTML', 'nwHistoryCard', 'allocationCard', 'doRenameOwner', 'addOwner', 'ownerChipClass',
+  // selectNwOwner/refreshAssetBody/refreshNwHistoryCard/refreshGoalsSummary/refreshAllocationCard는
+  // app-evolve cycle219 develop(귀속 캐러셀이 자산 일괄선택 모드 중에도 계속 동작해, 전환 전
+  // 선택해둔 id가 새 귀속에서 안 보이는 채로 ST.aSel.ids에 남는 버그) 검증용 — 넷 다
+  // $(...)가 없으면 바로 return하는 얕은 래퍼라(기본 $ 스텁은 'assetBody' 등을 세팅하지 않는 한
+  // null을 돌려줌) 기존 공유 스텁만으로 selectNwOwner를 실행형으로 검증할 수 있다.
+  'selectNwOwner', 'refreshAssetBody', 'refreshNwHistoryCard', 'refreshGoalsSummary', 'refreshAllocationCard',
   'goalOwnerEff', 'goalHasUnknown', 'goalLinkedAssetGone', 'goalLinkedAssetBroken', 'goalHistoryFor', 'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'syncGoalInputs', 'goalClearDate', 'goalOwnerSel', 'goalTypeSel', 'goalOpenAsset', 'renderGoalForm', 'openGoalForm', 'saveGoal', 'delGoal',
   'openInquiry', 'sendInquiry', 'openInquiryList', 'delInquiry',
   'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetToggleSel', 'visibleAssetsForSel', 'assetSelAll', 'activeSel',
@@ -16287,6 +16293,47 @@ test('assetSelAll: 필터된 귀속이 이미 전체선택된 상태에서 다�
   sandbox.ST.aSel = { mode: true, ids: new Set(['a1']) };
   sandbox.assetSelAll();
   assert.strictEqual(sandbox.ST.aSel.ids.size, 0, '필터된 귀속이 이미 전체선택 상태면 전체 해제돼야 함');
+});
+/* ---------- selectNwOwner: 일괄선택 모드 중 귀속 캐러셀로 귀속을 바꾸면 이전 귀속에서
+ * 선택해둔 id를 비워야 함(app-evolve cycle219 develop) ----------
+ * 순자산 캐러셀(#nwCarousel)은 스와이프/점 클릭/화살표 키 세 경로 모두 selectNwOwner()를
+ * 공유하는데, 이 캐러셀은 자산 탭이 일괄선택 모드(ST.aSel.mode)에 들어가도 비활성화되지
+ * 않는다(.selmode CSS는 FAB만 숨김). 그래서 "나" 귀속에서 자산을 선택해둔 채로 캐러셀을
+ * 넘겨 "배우자" 귀속으로 전환하면, 화면(visibleAssetsForSel())엔 더 이상 보이지 않는 그
+ * id가 ST.aSel.ids에 계속 남아 "전체선택"의 total 계산을 꼬이게 하고 "선택 삭제"를 누르면
+ * 화면에 없는 이전 귀속 자산까지 조용히 함께 지워졌다. historySelAll/ledgerSelAll은 선택
+ * 모드 중엔 필터 UI 자체가 숨어 이 문제가 없는데, 자산 탭만 귀속 캐러셀이 선택모드에서도
+ * 계속 열려 있어 유일하게 해당 — selectNwOwner가 귀속이 실제로 바뀔 때 ST.aSel.ids를
+ * 비우고 updateSelBottom()으로 하단 바도 함께 갱신하는지 확인한다. */
+test('selectNwOwner: 일괄선택 모드 중 귀속을 바꾸면 이전 귀속에서 선택해둔 id가 비워진다', () => {
+  setupAssetsDB();
+  sandbox.DB.owners = ['나', '배우자'];
+  sandbox.ST.assetOwner = '나';
+  sandbox.ST.aSel = { mode: true, ids: new Set(['a1']) };
+  sandbox.updateSelBottomCalls = 0;
+  sandbox.selectNwOwner(sandbox.ownerListArr().indexOf('배우자'));
+  assert.strictEqual(sandbox.ST.assetOwner, '배우자', '귀속 캐러셀 전환은 그대로 동작해야 함');
+  assert.strictEqual(sandbox.ST.aSel.ids.size, 0, '귀속이 바뀌면 화면에서 사라진 이전 선택이 비워져야 함(전체선택/선택삭제가 안 보이는 자산을 건드리지 않도록)');
+  assert.strictEqual(sandbox.updateSelBottomCalls, 1, '선택 id를 비웠으면 하단 선택 바도 함께 갱신돼야 함');
+});
+test('selectNwOwner: 같은 귀속을 다시 선택하면(실제로 안 바뀌면) 선택 id를 건드리지 않는다(회귀 가드)', () => {
+  setupAssetsDB();
+  sandbox.DB.owners = ['나', '배우자'];
+  sandbox.ST.assetOwner = '나';
+  sandbox.ST.aSel = { mode: true, ids: new Set(['a1']) };
+  sandbox.updateSelBottomCalls = 0;
+  sandbox.selectNwOwner(sandbox.ownerListArr().indexOf('나'));
+  assert.strictEqual(sandbox.ST.aSel.ids.size, 1, '귀속이 실제로 안 바뀌면 선택을 비울 이유가 없음');
+  assert.strictEqual(sandbox.updateSelBottomCalls, 0, '귀속이 안 바뀌면 아무 갱신도 일어나지 않아야 함');
+});
+test('selectNwOwner: 일괄선택 모드가 아니면 귀속 전환이 선택 id에 영향을 주지 않는다(평소 동작 회귀 가드)', () => {
+  setupAssetsDB();
+  sandbox.DB.owners = ['나', '배우자'];
+  sandbox.ST.assetOwner = '나';
+  sandbox.ST.aSel = { mode: false, ids: new Set() };
+  assert.doesNotThrow(() => sandbox.selectNwOwner(sandbox.ownerListArr().indexOf('배우자')));
+  assert.strictEqual(sandbox.ST.assetOwner, '배우자', '선택모드가 아니어도 귀속 전환 자체는 그대로 동작해야 함');
+  assert.strictEqual(sandbox.ST.aSel.ids.size, 0, '선택된 게 없었으면 그대로 비어 있어야 함');
 });
 test('activeSel: 귀속 필터가 켜져 있으면 자산 선택 total도 필터된 개수를 반영한다', () => {
   setupAssetsDB();

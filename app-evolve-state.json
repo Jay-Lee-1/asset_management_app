@@ -1,15 +1,8 @@
 {
   "cycle": 219,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 213,
-      "phase": "critique",
-      "timestamp": "2026-10-18T10:05:00.000Z",
-      "summary": "Explore 서브에이전트로 앱 전반을 아키텍처/제품 관점에서 훑었다(cycle149-213에서 다룬 toast/invalidateBalances fromDate/closeSheetGuarded/aria-label/XSS/실행형 테스트 전환류(openSheet·wireSheetGestures·ensureEdgeGesture·togglePwVis·wireWhHead·wireMonthCarousel은 의도적 보류)/split거래/pushCloud await/mergeCollection 기반 mergeDataLoss 경고(assets/goals/txns/inquiries/assetQtyLog)/kakaoLogin 게스트 병합 안내/nextOutflowCard 스냅샷/dismissedStaleMvIds·budgetCarryFor 무제한증가·CDN SRI(보류·기각 유지)/#histQ 디바운스(러너업으로 남겨둠) 전부 제외하고 recSaveScopeConfirm/recSaveScopeApply/deleteRecsUndo(cycle209가 명시적으로 범위 밖으로 미뤄둔 후보)도 검토했으나, 그보다 더 근본적인 제품 설계 결함으로 수렴). index.html:2964 주석이 명시하는 대로 DB.goals는 \"MVP: 순자산 1종\"이라 openGoalForm(2929)/saveGoal(3050,3055)이 모든 목표를 무조건 type:'networth'로 강제하고, goalProgress(logic.js:468)의 cur는 nwHistoryForOwner가 만든 net worth(=totalAssets-totalDebt) 스냅샷에서만 온다. 앱이 debt형 자산(신용카드/대출)을 1급으로 지원하는데도, 사용자가 특정 저축 계좌에 목표 금액을 전부 모아도 그 사이 카드값이 오르거나 소액 대출을 받으면 cur(순자산 전체)가 그대로거나 줄어 진행률 카드와 투사(logic.js:477-484, 이대로면 ~쯤 달성 예상)가 이미 달성한 목표를 '못 미쳤다/뒤로 간다'고 보여주는 신뢰 붕괴형 버그를 발견 — 목표 추적이라는 핵심 기능 자체의 설계 전제 문제라 develop/review 수준 패치로는 못 고친다. DB.goals에 type:'networth'|'asset'(+linkedAssetId) 필드를 추가(기존 레코드는 migrate()에서 기본값 'networth')하고, 목표 폼에 유형/자산 선택 UI를, logic.js에 goalProgress와 병렬인 자산-기준 진행률 순수 함수를, goalRowHTML 등에 type별 분기를 추가하는 계획(연결 자산 삭제 시 nextOutflowCard와 동일한 중립 안내, '카테고리별 저축' 등 3번째 타입은 이번 범위 밖)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
-      "commit": null
-    },
     {
       "cycle": 213,
       "phase": "advance",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-19T08:18:48.743Z",
       "summary": "critique(cycle218) 계획대로 boot()의 순차 클라우드 대기(SDK_READY->getSession->afterCloudAuth/pullCloud, 최악 약 22초)를 로컬-먼저-렌더+백그라운드 병합으로 재구성했다. boot()은 이제 migrateLegacy()+AUTH.signOut() 가드 직후, 로컬 세션(AUTH.current())이나 GUEST가 있으면 SDK_READY를 전혀 기다리지 않고 곧장 startApp()(load()로 즉시 렌더)+lockApp() 분기를 실행하고 bootCloudBg()를 fire-and-forget으로 띄운 뒤 반환한다 — showAuth() 경로(로그인 전)만 기존처럼 SDK_READY를 기다린다(렌더할 로컬 데이터가 없어 체감 지연이 없고, 카카오 버튼/비밀번호 재설정 리스너가 SDK 로딩을 전제하므로). 새 bootCloudBg()는 SDK_READY->sbReady()->getSession()까지는 afterCloudAuth()와 같은 순서를 밟지만, 그 다음부터는 afterCloudAuth()를 재사용하지 않고 전용 로직을 쓴다 — afterCloudAuth()는 로그인 '직후'(DB가 아직 없는 호출 3곳: doLogin/doSignup/PASSWORD_RECOVERY 리스너)만을 위한 guestHasData()/emptyDB() 폴백과 무충돌 전량교체(DB=remote) 분기를 갖는데, 이제 boot()이 그 함수를 호출하는 시점엔 DB가 이미 로컬 데이터로 로드되어 화면에 떠 있으므로 그 두 분기를 그대로 쓰면 (1) 네트워크가 잠깐 끊겨 pullCloud()가 null을 돌려줄 때마다 guestHasData()가 true면 실계정 DB가 조용히 게스트 데이터로 바뀌고 (2) remote가 있을 때도 화면에 이미 떠 있는 DB를 통째로 덮어써 그 사이 사용자가 한 입력이 사라지는 두 가지 새로운 데이터손실 버그가 생긴다. bootCloudBg()는 그 대신 pullCloudIfStale()과 완전히 같은 원칙(remote가 없으면 DB를 전혀 건드리지 않고 그냥 반환, 시트가 열려 있으면 건드리지 않고 건너뜀, remote가 있을 때만 mergeRemoteDataIntoLocal()로 비파괴 병합 후 save()+appIsOpen()이면 renderCurrent())을 쓴다. afterCloudAuth()/doLogin/doSignup/PASSWORD_RECOVERY 세 기존 호출부는 전혀 건드리지 않아 로그인/가입 흐름은 회귀 없음. 부수적으로, boot() 재구조화 과정에서 기존 afterCloudAuth()의 localUnsynced=false 분기(무충돌 전량교체)가 boot() 안에서 호출될 때 DB가 아직 load()되기 전(undefined)이라 mergeRemoteDataIntoLocal(DB.deletedIds=...)이 TypeError로 조용히 캐치되어 리모트 병합이 통째로 무효화되는 기존 잠재 버그(미동기화 로컬 편집이 있는 채로 종료 후 재부팅하는 흔한 시나리오에서 발생)도 이번 재구성으로 함께 해소됨을 확인(이제 bootCloudBg가 호출될 때는 항상 DB가 이미 로드돼 있음). test/run.js: FUNCTIONS에 bootCloudBg 추가. 기존 boot() SDK_READY 실행형 테스트 2건을 새 동작에 맞게 재작성(showAuth 경로만 SDK_READY를 기다리는지, migrateLegacy는 동기 구간에서 이미 불렸는지)하고, 로컬 세션/게스트가 SDK_READY 없이도 즉시 startApp()을 부르는 실행형 테스트 2건과 bootCloudBg() 전용 테스트 5건(게스트/로컬전용계정 스킵, remote 없을 때 게스트데이터로 안 바뀜, 시트 열려있으면 스킵, remote 있고 시트 닫혀있으면 비파괴 병합+save+재렌더)을 신설. index.html/sw.js 변경이라 APP_VERSION 1.47.198->1.47.199, sw.js CACHE v460->v461. HTML 주석 제거 후 <script> 블록 4개 모두 node --check 통과. node our-assets-v1.14.1/our-assets/test/run.js 1627/1627 -> 1635/1635 통과. pending_advance_plan을 비웠다.",
       "commit": "9962ee6"
+    },
+    {
+      "cycle": 219,
+      "phase": "develop",
+      "timestamp": "2026-10-20T00:00:00.000Z",
+      "summary": "Explore 서브에이전트로 develop 후보를 탐색(cycle149-218에서 다룬 toast/invalidateBalances fromDate/closeSheetGuarded/aria-label/XSS/실행형 테스트 전환류(wireSheetGestures 등, 여전히 미전환)/split거래/pushCloud await/gzip 압축/mergeDataLoss 경고/kakaoLogin 게스트 병합/nextOutflowCard 스냅샷/#histQ 디바운스/recSaveScopeConfirm 등(보류 유지)/DB.goals type 구분 및 관련 버그들/delOwner 목표 체크/#bootSplash/asFx·asGold·asQty Enter-제출(되돌림)/doExport csv 미래거래 혼입/bulkCatTargets adjust 가드/연금 전환 includeInTotal 복원/boot() 로컬-먼저-렌더 재구성 전부 제외). 순자산 캐러셀(#nwCarousel)이 자산 일괄선택 모드(ST.aSel.mode) 중에도 비활성화되지 않고 계속 스와이프/점클릭/화살표 키로 동작하는 것을 발견 — selectNwOwner()(index.html:3474)가 귀속을 바꿀 때 ST.aSel.ids를 전혀 건드리지 않아, \"나\" 귀속에서 자산을 선택해둔 채로 캐러셀을 넘겨 \"배우자\" 귀속으로 바뀌면 화면엔 더 이상 보이지 않는 그 id가 계속 선택된 채로 남는다. historySelAll/ledgerSelAll은 선택모드 중 필터 UI 자체가 숨어 이 문제가 없는데(H.selMode가 전체 필터 블록을 감싸서 숨김), 자산 탭만 귀속 캐러셀이 선택모드에서도 계속 열려 있어 유일하게 해당. \"전체선택\"(assetSelAll)이 화면에 없는 그 id 위에 새 귀속 id를 더해 total/전체해제 판정이 꼬이고, \"선택 삭제\"(assetDelSel)를 누르면 화면에 없는 이전 귀속 자산까지 사용자가 다시 확인할 기회 없이 함께 지워지는 실제 데이터 손실 버그. selectNwOwner()에 if(ST.aSel.mode&&ST.aSel.ids.size){ST.aSel.ids.clear();updateSelBottom();} 가드를 추가해 귀속이 실제로 바뀔 때(스크롤 정착/점클릭/키보드 세 경로 모두 selectNwOwner를 공유하므로 한 곳 수정으로 전부 해결) 이전 선택을 비우고 하단 선택 바도 함께 갱신하게 했다. test/run.js FUNCTIONS에 selectNwOwner/refreshAssetBody/refreshNwHistoryCard/refreshGoalsSummary/refreshAllocationCard를 추가(넷 다 $(...)가 없으면 즉시 return하는 얕은 래퍼라 기존 공유 $ 스텁만으로 실행형 검증 가능)하고 테스트 3건 신설: 선택모드 중 귀속 전환 시 ids 비워짐+updateSelBottom 호출 확인, 같은 귀속 재선택(실제 변경 없음) 시 ids/updateSelBottom 모두 안 건드림(회귀 가드), 비선택모드에서는 귀속 전환이 ids에 영향 없음(회귀 가드). APP_VERSION 1.47.199->1.47.200, sw.js CACHE v461->v462. HTML 주석 제거 후 실제 코드 script 블록(2번, 516488자) node Function 생성자로 문법 통과. node our-assets-v1.14.1/our-assets/test/run.js 1635/1635 -> 1638/1638 통과.",
+      "commit": null
     }
   ]
 }
