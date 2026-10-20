@@ -1,19 +1,8 @@
 {
-  "cycle": 219,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "암호화폐(crypto) 자산 종류 신설 — 시세 자동 조회 포함",
-    "why": "ASSET_TYPES(index.html:1671-1683)에 cash/savings/stock/realestate/debt/pension/fx/gold 등은 있지만 crypto가 없다. 한국 사용자 상당수가 업비트/빗썸 등에 BTC/ETH를 보유하는데 이 앱은 그걸 표현할 방법이 etc/cash 타입에 숫자를 수동 입력하는 것뿐이라, (1) syncRates()/fetchStocks()의 자동 시세 갱신에 전혀 참여하지 못해 금액이 영구히 stale해지고, (2) rateUnknown()/hasRateAssets()의 '가격 미확인' 경고망에도 안 걸려 조용히 틀린 순자산이 표시된다. stock/fx/gold가 이미 쓰는 시세중계(netlify/functions/stock.js)·R.stocks 캐시·assetEval() switch·staleness 경고·백업 sanitize 패턴을 그대로 재사용하면 한 cycle 안에서 안전하게 추가할 수 있다.",
-    "approach": "1) ASSET_TYPES에 crypto:{label:'코인',icon:'coins',cls:'a-crypto'} 추가(기존 TYPE_COLOR도 매칭 추가). 2) 자산 draft에 cryptoCode/cryptoQty 필드를 stockCode/stockQty와 동일한 UI·검증 패턴(asCode 입력, ~3924 검증)으로 추가. 3) DB.rates에 R.crypto={} 버킷 신설, assetEval()에 case 'crypto': (a.cryptoQty||0)*(R.crypto[a.cryptoCode]||0) 추가, rateUnknown()/hasRateAssets()에 crypto 분기 추가(stock과 동일 3줄 패턴). 4) netlify/functions/stock.js의 getJSON/retry/timeout 헬퍼를 재사용해 업비트 공개 티커(GET https://api.upbit.com/v1/ticker?markets=KRW-{CODE}, 키 불필요, KRW 가격 그대로)를 호출하는 자매 함수(crypto.js 또는 기존 함수 확장) 추가. 5) syncRates()/fetchStocks() 흐름에 fetchCrypto() 동등물을 끼워 ok/fail 카운트·R.failStreak·수동 오버라이드 레이트 에디터 UI(~5889 stockRows)의 cryptoRows 대응을 공유. 6) sanitizeBackup()/migrate 쪽에 stocks:{} 디폴트와 동일하게 crypto:{} 디폴트를 추가해 구버전 JSON 백업 복원과의 하위호환을 보장. 기존 자산 종류 동작은 전혀 바꾸지 않는 추가(additive)형 변경이며, 네트워크 egress가 막힌 현재 클라우드 샌드박스에서 실제 업비트 호출을 테스트할 수는 없으므로 fetchCrypto()의 네트워크 왕복 자체는 기존 stock relay 테스트와 같은 방식(fetch를 모킹한 실행형 테스트)으로 커버하고, 실물 API 응답 포맷은 공개 문서 기준으로 구현한 뒤 주석 없이 그대로 둔다."
-  },
+  "cycle": 220,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 214,
-      "phase": "review",
-      "timestamp": "2026-10-18T13:10:47.053Z",
-      "summary": "cycle214 develop 커밋(79e883f, goalHistoryFor()가 asset형 목표 연결 자산의 종류 변경(fx/gold/stock/debt)을 추적 못 하던 버그 수정)을 검토. goalLinkedAssetBroken(g)의 판정(g.type==='asset'이고 연결 자산이 존재하면서 isMarketValued(a)이거나 a.type==='debt')과 goalHistoryFor()가 이 경우 []를 돌려주는 경로를 직접 추적 — goalProgress(hist.length 0)가 cur:0/achieved:false로 중립 처리되고, homeAlerts의 _gb 필터(hist.length>=2 요건, index.html:7900)에도 자동으로 걸려 goalBehind 오탐이 추가 코드 없이 같이 억제됨을 확인. goalLinkedAssetGone(이미 존재)과 goalLinkedAssetBroken은 상호 배타적(전자는 자산이 없는 경우, 후자는 존재하지만 종류가 바뀐 경우)이라 goalRowHTML/openGoalsList의 캡션 분기(assetGone?'삭제됐어요':assetBroken?'추적할 수 없어요':...) 순서도 올바름. 새 테스트 5건(순수함수 4종 asset 종류별 true/false, goalRowHTML/openGoalsList 캡션 전환 실행형, homeAlerts goalBehind 억제)이 실제 로직과 정확히 일치. APP_VERSION 1.47.189/sw.js CACHE v451 갱신도 일관됨. node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1601/1601 통과. 실제 버그 없음 — 이상 없음.",
-      "commit": null
-    },
     {
       "cycle": 214,
       "phase": "critique",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-20T07:15:00.000Z",
       "summary": "Explore 서브에이전트로 앱 전반을 훑어(cycle149-219에서 다룬 toast/invalidateBalances/split거래/pushCloud await·gzip 압축/mergeDataLoss 경고/kakaoLogin 게스트 병합/nextOutflowCard/#histQ 디바운스/recSaveScopeConfirm 등(보류)/DB.goals type 구분/delOwner 목표 체크/#bootSplash/boot() 로컬-먼저-렌더/asFx·asGold·asQty Enter-제출(되돌림)/doExport csv 미래거래/bulkCatTargets adjust 가드/연금 전환 복원/selectNwOwner 선택id 정리 전부 제외) ASSET_TYPES(index.html:1671-1683)에 cash/savings/stock/realestate/debt/pension/fx/gold는 있지만 암호화폐(crypto) 자산 종류가 전혀 없음을 발견 — stock/fx/gold가 이미 쓰는 시세중계(netlify/functions/stock.js)·R.stocks 캐시·assetEval() switch·rateUnknown()/hasRateAssets() staleness 경고·백업 sanitize 패턴이 완비돼 있는데도 crypto만 비어 있어, 암호화폐를 보유한 사용자는 etc/cash에 숫자를 수동 입력할 수밖에 없고 그 값은 자동 시세 갱신·가격 미확인 경고 어디에도 걸리지 않아 순자산이 조용히 틀려진다. ASSET_TYPES/TYPE_COLOR에 crypto 추가, draft에 cryptoCode/cryptoQty(stockCode/stockQty와 동일 패턴), DB.rates.crypto 버킷 신설, assetEval()/rateUnknown()/hasRateAssets()에 crypto 분기 추가, netlify/functions의 stock relay 패턴을 재사용해 업비트 공개 티커 호출 함수 추가, syncRates()/fetchStocks() 흐름과 수동 레이트 에디터 UI에 통합, sanitizeBackup()/migrate에 crypto:{} 디폴트 추가하는 계획을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "commit": null
+    },
+    {
+      "cycle": 219,
+      "phase": "advance",
+      "timestamp": "2026-10-20T08:20:57.000Z",
+      "summary": "critique(cycle219) 계획대로 암호화폐(crypto) 자산 종류를 신설했다. ASSET_TYPES/TYPE_COLOR에 crypto(코인, coins 아이콘, a-crypto 색상 — light/dark 테마 모두에 --crypto/--crypto-soft CSS 변수 신설) 추가. draft 필드는 stockCode/stockQty와 완전히 동일한 패턴으로 cryptoCode/cryptoQty를 신설해 isMarketValued/assetEval/rateUnknown switch에 crypto 케이스를 추가(R.crypto[a.cryptoCode]||0 평가, 시세 미확인 구분 포함) — assetGainLoss/assetGainLossBadge/assetSubline/costBasisField/qtyBasisWarn/saveAsset의 qtyLog 기록까지 isMarketValued 기반 로직은 전부 자동으로 crypto를 함께 처리하고, qtyField 매핑(3곳)과 syncAssetInputs의 asCode/asQty 타입분기(stock과 id를 공유하므로 d.type으로 cryptoCode/cryptoQty vs stockCode/stockQty를 가름)만 명시적으로 추가했다. 서버 중계는 netlify/functions/stock.js와 동일한 getJSON(재시도+타임아웃) 패턴으로 crypto.js를 신설해 업비트 공개 티커(GET https://api.upbit.com/v1/ticker?markets=KRW-{CODE}, 키 불필요)를 호출하고 KRW 가격을 그대로 반환(해외주식과 달리 환율 환산 불필요) — 클라이언트 fetchCrypto()/heldCryptoCodes()/needCrypto()를 신설해 syncRates()의 Promise.allSettled에 세 번째 다리로 끼워넣고(R.cryptoFail 추가, rateStatusText의 stale 판정에도 포함) 홈 화면 시세 위젯·시세 연동 관리 시트(openRateSheet의 cryptoRows, setRate crypto 분기)·자산 등록 폼(renderAssetSheet crypto 분기, saveAsset 검증)에 전부 배선했다. 하위호환: emptyDB()/demoDB()의 rates 리터럴에 crypto:{} 추가, migrate()에 DB.rates=DB.rates||{} 전체와 fx/stocks/crypto 각각의 수비적 백필을 추가해(기존 계정은 rates.crypto 버킷이 없어 R.crypto[code] 접근이 바로 TypeError로 터지는 상태였음) 로컬스토리지에서 그대로 불러오는 기존 사용자도 즉시 안전해지고, sanitizeBackup()의 rates 재구성에 crypto 버킷과 cryptoFail 플래그를 추가하고 SANITIZE_QTY_FIELDS에 cryptoQty를 추가해 클라우드 풀/백업 복원 경로도 동일하게 보호된다(mergeRates는 DB.rates 전체를 last-write-wins로 교체하는 기존 구조라 별도 수정 불필요). 네트워크 egress가 막힌 이 클라우드 샌드박스에서 실제 업비트 호출은 테스트할 수 없으므로(fetchStocks/syncRates도 기존에 동일한 이유로 FUNCTIONS(vm 실행) 목록 밖), crypto.js는 stock.js와 동일한 방식대로 테스트 대상에서 fetch 자체를 분리한 순수 함수(parseCodes/marketsParam/pricesFromTickers/toNum/errText)만 require해 검증했다. test/run.js에 17건 추가: netlify/functions/crypto.js require 테스트 6건, rateUnknown/assetEval/isMarketValued crypto 통합검증 1건, setRate crypto 2건, saveAsset crypto 등록/가드 2건, migrate() rates.crypto 백필 2건(기존 rates 있음/DB.rates 자체가 없음), openRateSheet crypto 소스검증 1건, renderAssetSheet crypto UI 3건, syncAssetInputs 타입분기 실행형 2건. 기존 sanitizeBackup 테스트 1건(빈 rates 기본값 기대값)을 새 crypto:{} 포함 형태로 갱신. APP_VERSION 1.47.200->1.47.201, sw.js CACHE v462->v463. HTML 주석 제거 후 실제 코드 script 블록 3개 모두 node Function 생성자로 문법 통과(1번 블록은 기존 알려진 정규식 오탐). node our-assets-v1.14.1/our-assets/test/run.js 1638/1638 -> 1657/1657 통과.",
       "commit": null
     }
   ]

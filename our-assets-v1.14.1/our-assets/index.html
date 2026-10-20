@@ -56,6 +56,7 @@
   --brand:#227E72;--brand-ink:#1C6A60;--brand-soft:#E4F0EC;--brand-tint:#F1F8F5;
   --income:#2E7BC4;--income-soft:#E8F1FB;--expense:#E06457;--expense-soft:#FBE9E6;
   --gold:#BE8E2C;--gold-soft:#F5ECD5;--stock:#7C5CC4;--stock-soft:#EEE9FA;--save:#2FA36B;--save-soft:#E5F3EC;
+  --crypto:#CB7B2C;--crypto-soft:#F7E8D5;
   --sh-sm:0 1px 2px rgba(20,30,25,.05),0 1px 3px rgba(20,30,25,.04);
   --sh-md:0 1px 3px rgba(20,30,25,.04),0 6px 20px rgba(20,30,25,.055);
   --sh-lg:0 10px 44px rgba(18,26,22,.16);--sh-nav:0 -1px 0 var(--line),0 -6px 22px rgba(20,30,25,.04);
@@ -75,6 +76,7 @@ html[data-theme="dark"]{
   --brand:#4FB8A8;--brand-ink:#74CFBF;--brand-soft:#1A3F3A;--brand-tint:#183833;
   --income:#5FA3E3;--income-soft:#182A3B;--expense:#F1897C;--expense-soft:#3A2623;
   --gold:#DDB55C;--gold-soft:#332B18;--stock:#A78BE6;--stock-soft:#25203A;--save:#5CC48D;--save-soft:#163023;
+  --crypto:#E0A565;--crypto-soft:#3A2C18;
   --sh-sm:0 1px 2px rgba(0,0,0,.4);--sh-md:0 2px 10px rgba(0,0,0,.4);--sh-lg:0 14px 46px rgba(0,0,0,.6);
   --sh-nav:0 -1px 0 var(--line),0 -8px 26px rgba(0,0,0,.4);
   --glass:rgba(24,28,32,.74);--glass-2:rgba(32,37,42,.66);--glass-line:rgba(255,255,255,.16);
@@ -89,6 +91,7 @@ html[data-theme="dark"]{
   --brand:#4FB8A8;--brand-ink:#74CFBF;--brand-soft:#1A3F3A;--brand-tint:#183833;
   --income:#5FA3E3;--income-soft:#182A3B;--expense:#F1897C;--expense-soft:#3A2623;
   --gold:#DDB55C;--gold-soft:#332B18;--stock:#A78BE6;--stock-soft:#25203A;--save:#5CC48D;--save-soft:#163023;
+  --crypto:#E0A565;--crypto-soft:#3A2C18;
   --sh-sm:0 1px 2px rgba(0,0,0,.4);--sh-md:0 2px 10px rgba(0,0,0,.4);--sh-lg:0 14px 46px rgba(0,0,0,.6);
   --sh-nav:0 -1px 0 var(--line),0 -8px 26px rgba(0,0,0,.4);
   --glass:rgba(24,28,32,.74);--glass-2:rgba(32,37,42,.66);--glass-line:rgba(255,255,255,.16);
@@ -273,6 +276,7 @@ html[data-theme="dark"] .card{box-shadow:var(--sh-md),0 1px 0 rgba(255,255,255,.
 .a-cash{background:var(--brand-soft);color:var(--brand-ink)}.a-bank{background:var(--brand-soft);color:var(--brand-ink)}
 .a-fx{background:var(--brand-soft);color:#5FBFAE}.a-gold{background:var(--gold-soft);color:#C9A227}
 .a-stock{background:var(--stock-soft);color:var(--stock)}.a-house{background:var(--gold-soft);color:var(--gold)}
+.a-crypto{background:var(--crypto-soft);color:var(--crypto)}
 .a-food{background:var(--expense-soft);color:var(--expense)}.a-etc{background:var(--sunken);color:var(--text-3)}
 .a-save{background:var(--save-soft);color:var(--save)}.a-debt{background:var(--expense-soft);color:var(--expense)}
 .a-pension{background:var(--income-soft);color:var(--income)}.a-in{background:var(--income-soft);color:var(--income)}
@@ -1394,7 +1398,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.200';
+const APP_VERSION='1.47.201';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1677,10 +1681,11 @@ const ASSET_TYPES={
  pension:{label:'연금 미래자산',icon:'pension',cls:'a-pension'},
  fx:{label:'외화',icon:'fx',cls:'a-fx'},
  gold:{label:'금',icon:'gold',cls:'a-gold'},
+ crypto:{label:'코인',icon:'coins',cls:'a-crypto'},
  etc:{label:'기타',icon:'wallet',cls:'a-etc'},
 };
 const DEFAULT_GROUP_ORDER=Object.keys(ASSET_TYPES);
-const TYPE_COLOR={cash:'var(--brand)',savings:'var(--save)',stock:'var(--stock)',realestate:'var(--gold)',debt:'var(--expense)',pension:'var(--income)',fx:'#7CC7B8',gold:'#C9A227',etc:'var(--text-3)'};
+const TYPE_COLOR={cash:'var(--brand)',savings:'var(--save)',stock:'var(--stock)',realestate:'var(--gold)',debt:'var(--expense)',pension:'var(--income)',fx:'#7CC7B8',gold:'#C9A227',crypto:'var(--crypto)',etc:'var(--text-3)'};
 /* netlify/functions/rates.js는 임의의 ISO 3자리 통화코드를 폴백 체인으로 처리할 수 있지만,
    자산 등록 시트에서 고를 수 있는 통화는 이 큐레이션 목록으로 제한한다(무제한 자유입력은
    오타·미지원 통화로 이어지기 쉬움). 새 통화가 필요하면 이 배열에 코드/라벨만 추가하면 된다 —
@@ -1751,7 +1756,7 @@ function seed(){
   version:5, catsV2:true,
   settings:{themeMode:'system',includeScheduled:false,assetSort:'custom',groupOrder:[...DEFAULT_GROUP_ORDER]},
   owners:['나','배우자','공용'],
-  rates:{goldPerG:152000,fx:{USD:1384.5,JPY:8.94,EUR:1498.2},stocks:{'005930':79800}},
+  rates:{goldPerG:152000,fx:{USD:1384.5,JPY:8.94,EUR:1498.2},stocks:{'005930':79800},crypto:{}},
   assets, txns, recurrences:rec, inquiries:[],
   categories:{expense:[...EXP_CATS_DEFAULT],income:[...INC_CATS_DEFAULT],saving:[...SAV_CATS_DEFAULT]},
  };
@@ -1761,7 +1766,7 @@ function emptyDB(){return {
   version:5,catsV2:true,
   settings:{themeMode:(typeof DB!=='undefined'&&DB&&DB.settings&&DB.settings.themeMode)||'system',includeScheduled:false,assetSort:'custom',groupOrder:[...DEFAULT_GROUP_ORDER]},
   owners:['나','배우자','공용'],
-  rates:{goldPerG:0,fx:{USD:0,JPY:0,EUR:0},stocks:{}},
+  rates:{goldPerG:0,fx:{USD:0,JPY:0,EUR:0},stocks:{},crypto:{}},
   assets:[],txns:[],recurrences:[],inquiries:[],goals:[],
   categories:{expense:[...EXP_CATS_DEFAULT],income:[...INC_CATS_DEFAULT],saving:[...SAV_CATS_DEFAULT]},
  };}
@@ -2261,6 +2266,7 @@ function load(){
  * 같은 이유로 private mode/스토리지 차단 시 조용히 무시한다. */
 function writeThemeCache(){try{localStorage.setItem('asset_app_theme_cache',JSON.stringify(themeCachePayload(DB.settings)))}catch(e){}}
 function migrate(){
+ DB.rates=DB.rates||{};DB.rates.fx=DB.rates.fx||{};DB.rates.stocks=DB.rates.stocks||{};DB.rates.crypto=DB.rates.crypto||{}; /* crypto 자산 종류 신설(app-evolve cycle219) — 기존 계정엔 rates.crypto 버킷이 없어 assetEval()/rateUnknown()의 R.crypto[code] 접근이 터짐 */
  DB.settings=Object.assign({themeMode:'system',includeScheduled:false,assetSort:'custom',histSortAsc:true,confirmTransfers:true,autoRates:true,bigMin:100000,dismissedStaleMvIds:[],persistWarnDismissed:false,storageSizeWarnDismissed:false,clockSkewWarnDismissed:false,mergeDataLossCount:0},DB.settings||{});
  if(!Array.isArray(DB.settings.groupOrder)||!DB.settings.groupOrder.length)DB.settings.groupOrder=[...DEFAULT_GROUP_ORDER];
  DEFAULT_GROUP_ORDER.forEach(t=>{if(!DB.settings.groupOrder.includes(t))DB.settings.groupOrder.push(t)});
@@ -2300,7 +2306,7 @@ function migrate(){
  DB.inquiries.forEach(q=>{if(!q.id)q.id=uid();if(!q.updatedAt)q.updatedAt=Date.now()}); /* id/updatedAt은 cycle133에 추가된 필드라 그 전에 저장된 메모엔 없음 — 없으면 mergeCollection()이 모든 레코드를 같은 undefined id로 취급해 하나로 뭉개버림 */
  DB.goals=DB.goals||[]; /* 목표: [{id,name,type:'networth'|'asset',linkedAssetId,targetAmount,targetDate,owner,createdAt}] — linkedAssetId는 type:'asset'일 때만 쓰며(cycle214), 'networth'는 항상 null/없음 */
  DB.goals.forEach(g=>{if(!g.owner)g.owner='all'}); /* owner는 cycle124에 추가된 필드라 그 전에 생긴 목표엔 없음 — 'all'(전체)로 채워야 goalOwnerEff/nwHistoryForOwner가 가구 전체 추이로 올바르게 처리함 */
- DB.assetQtyLog=DB.assetQtyLog||[]; /* fx/gold/stock 보유수량 변경 기록: [{id,assetId,date,prevQty,newQty,field}] — field는 'fxAmount'|'goldDon'|'stockQty' (app-evolve cycle138) */
+ DB.assetQtyLog=DB.assetQtyLog||[]; /* fx/gold/stock/crypto 보유수량 변경 기록: [{id,assetId,date,prevQty,newQty,field}] — field는 'fxAmount'|'goldDon'|'stockQty'|'cryptoQty' (app-evolve cycle138) */
  DB.deletedIds=gcTombstones(DB.deletedIds||{},Date.now()); /* 부팅 때마다 오래된 tombstone 정리(GC) */
  DB.settings.dismissedStaleMvIds=pruneDismissedStaleMvIds(DB.settings.dismissedStaleMvIds,DB.txns,DB.recurrences); /* 부팅 때마다 삭제된 거래/반복거래를 가리키는 키 정리(GC) */
 }
@@ -2458,6 +2464,7 @@ function assetEval(a){
   case 'fx': return (a.fxAmount||0)*(R.fx[a.currency]||0);
   case 'gold': return (a.goldDon||0)*GOLD_G_PER_DON*(R.goldPerG||0);
   case 'stock': return (a.stockQty||0)*(R.stocks[a.stockCode]||0);
+  case 'crypto': return (a.cryptoQty||0)*(R.crypto[a.cryptoCode]||0);
   default: return assetBalance(a.id); /* 현금·저축·부동산·부채·연금 등: 기준액 + 모든 입출금(잔액식) */
  }
 }
@@ -2571,7 +2578,7 @@ function balanceAtFromMap(balMap,dateStr,id){ /* balancesAtDates() 결과에서 
  const a=DB.assets.find(x=>x.id===id);return a?assetBase(a):0;
 }
 const isCashLike=a=>a.type==='cash'||a.type==='savings';
-const isMarketValued=a=>a.type==='fx'||a.type==='gold'||a.type==='stock'; /* assetEval()이 원장과 무관하게 qty×시세로 평가 — 거래 입력의 통장으로 쓰면 순자산이 조용히 어긋남 */
+const isMarketValued=a=>a.type==='fx'||a.type==='gold'||a.type==='stock'||a.type==='crypto'; /* assetEval()이 원장과 무관하게 qty×시세로 평가 — 거래 입력의 통장으로 쓰면 순자산이 조용히 어긋남 */
 /* assetEval()의 (R.fx[c]||0) 같은 폴백은 '아직 한 번도 시세를 못 받아온 상태'와
    '실제 시세가 0원'을 구분하지 못해, 새로 등록한 fx/gold/stock 자산이 조용히 ₩0으로 평가돼도
    어디에도 표시되지 않는다 — 그 미확인 상태만 따로 판정해 카드에 배지로 보여주기 위한 함수. */
@@ -2580,6 +2587,7 @@ function rateUnknown(a){
  const R=DB.rates;
  if(a.type==='fx')return R.fx[a.currency]==null;
  if(a.type==='gold')return !R.goldPerG;
+ if(a.type==='crypto')return R.crypto[a.cryptoCode]==null;
  return R.stocks[a.stockCode]==null;
 }
 /* fx/gold/stock 전용 선택 입력 costBasis(매입 원가, 원)가 있을 때만 손익을 계산한다.
@@ -2730,6 +2738,7 @@ function renderHome(){
  if(needGold())mkt.push({ic:'gold',cls:'a-gold',nm:'금 (순금 1g)',sub:'자동 연동',price:R.goldPerG,unknown:rateUnknown({type:'gold'})});
  [...new Set(DB.assets.filter(a=>a.type==='fx').map(a=>a.currency))].forEach(c=>{mkt.push({ic:'fx',cls:'a-fx',nm:c,sub:'매매기준율',price:R.fx[c]||0,unknown:rateUnknown({type:'fx',currency:c})});});
  DB.assets.filter(a=>a.type==='stock').forEach(a=>mkt.push({ic:'stock',cls:'a-stock',nm:a.name,sub:a.stockCode,price:R.stocks[a.stockCode]||0,unknown:rateUnknown({type:'stock',stockCode:a.stockCode})}));
+ DB.assets.filter(a=>a.type==='crypto').forEach(a=>mkt.push({ic:'coins',cls:'a-crypto',nm:a.name,sub:a.cryptoCode,price:R.crypto[a.cryptoCode]||0,unknown:rateUnknown({type:'crypto',cryptoCode:a.cryptoCode})}));
  const mktRows=mkt.map(x=>`<div class="mkt-item"><div class="avatar ${x.cls}">${svg(x.ic)}</div><div><div class="nm">${esc(x.nm)}</div><div class="sub">${esc(x.sub)}</div></div><div class="val">${x.unknown?'<div class="mini warn">미확인</div>':`<div class="price num">${comma(x.price)}원</div>`}</div></div>`).join('');
 
  $('page-home').innerHTML=`
@@ -3223,10 +3232,12 @@ const RATE_TTL=10*60*1000;
 
 function heldCurrencies(){return [...new Set(DB.assets.filter(a=>a.type==='fx'&&a.currency).map(a=>a.currency))]}
 function heldStockCodes(){return [...new Set(DB.assets.filter(a=>a.type==='stock'&&a.stockCode).map(a=>a.stockCode))]}
+function heldCryptoCodes(){return [...new Set(DB.assets.filter(a=>a.type==='crypto'&&a.cryptoCode).map(a=>a.cryptoCode))]}
 function needFx(){return heldCurrencies().length>0}
 function needGold(){return DB.assets.some(a=>a.type==='gold')}
 function needStock(){return heldStockCodes().length>0}
-function hasRateAssets(){return needFx()||needGold()||needStock()}
+function needCrypto(){return heldCryptoCodes().length>0}
+function hasRateAssets(){return needFx()||needGold()||needStock()||needCrypto()}
 
 function inQuietWindow(d){ /* 토 06:00 ~ 월 08:00 휴장(KST 기준, 기기 시간대 무관) */
  d=d||new Date();
@@ -3273,6 +3284,14 @@ async function fetchStocks(){
  if(!r.ok)throw new Error('stock');
  return await r.json();
 }
+/* 암호화폐 (업비트 KRW 마켓 현재가를 서버 경유로 그대로 반환 — stock과 동일한 중계 패턴) */
+async function fetchCrypto(){
+ const codes=heldCryptoCodes();
+ if(!codes.length)return null;
+ const r=await fetchWithTimeout(`/.netlify/functions/crypto?codes=${codes.join(',')}`);
+ if(!r.ok)throw new Error('crypto');
+ return await r.json();
+}
 
 let syncing=false;
 async function syncRates(silent){
@@ -3280,7 +3299,7 @@ async function syncRates(silent){
  syncing=true;
  const btn=$('syncBtn');btn&&btn.classList.add('spin');
  try{
-  const [fg,st]=await Promise.allSettled([fetchFxGold(),fetchStocks()]);
+  const [fg,st,ct]=await Promise.allSettled([fetchFxGold(),fetchStocks(),fetchCrypto()]);
   const R=DB.rates;
   let ok=0,fail=0;
 
@@ -3297,6 +3316,11 @@ async function syncRates(silent){
    if(st.value){Object.entries(st.value).forEach(([code,p])=>{if(code!=='_debug'&&p>0)R.stocks[code]=p});ok++}
    R.stockFail=false;
   }else{R.stockFail=true;fail++}
+
+  if(ct.status==='fulfilled'){
+   if(ct.value){Object.entries(ct.value).forEach(([code,p])=>{if(code!=='_debug'&&p>0)R.crypto[code]=p});ok++}
+   R.cryptoFail=false;
+  }else{R.cryptoFail=true;fail++}
 
   if(ok){R.syncedAt=Date.now();R.ratesUpdatedAt=R.syncedAt;R.failStreak=0}else R.failStreak=(R.failStreak||0)+1;
   save();renderCurrent();
@@ -3321,7 +3345,7 @@ function rateStatusText(){
  const R=DB.rates;
  if(!R.syncedAt)return '시세 연동을 눌러 최신 시세를 받아오세요';
  const base=fmtSynced(R.syncedAt);
- const stale=R.fxFail||R.stockFail||(R.failStreak||0)>0;
+ const stale=R.fxFail||R.stockFail||R.cryptoFail||(R.failStreak||0)>0;
  if(stale)return base+' · <span style="color:var(--text-2)">최신 아님</span>'; /* 마지막 성공값 유지 + 차분한 안내 */
  return base+(inQuietWindow()?' · 주말 휴장':' · 10분마다 자동');
 }
@@ -3422,6 +3446,7 @@ function assetSubline(a){
  if(a.type==='fx')return `${a.currency} ${commaQty(a.fxAmount)}${assetGainLossBadge(a)}`;
  if(a.type==='gold')return `${a.goldDon}돈 · ${comma(R.goldPerG||0)}원/g${assetGainLossBadge(a)}`;
  if(a.type==='stock')return `${commaQty(a.stockQty)}주${assetGainLossBadge(a)}`;
+ if(a.type==='crypto')return `${commaQty(a.cryptoQty)}개${assetGainLossBadge(a)}`;
  if(a.type==='savings')return `만기 ${a.maturityDate||'-'}`;
  return ASSET_TYPES[a.type].label;
 }
@@ -3573,7 +3598,7 @@ function assetBodyHTML(){
      const hasUnknown=incl.some(rateUnknown); /* nwPane()과 동일한 캡션(app-evolve cycle183 advance) */
      body+=`<div class="grp-title"><span class="g">${ASSET_TYPES[t].label}${hasUnknown?' <span class="mini warn">일부 미확인</span>':''}</span><span class="gt num ${t==='debt'?'minus':''}">${won(sum)}</span></div><div class="card">`;
      body+=items.map(a=>{const ty=ASSET_TYPES[a.type];const val=a.type==='debt'?-assetEval(a):assetEval(a);
-       const showEval=['fx','gold','stock'].includes(a.type);
+       const showEval=isMarketValued(a);
        if(ST.aSel.mode){const on=ST.aSel.ids.has(a.id);
          return `<div class="asset-item${on?' sel-on':''}" tabindex="0" role="button" aria-pressed="${on}" aria-label="${esc(a.name)} ${won(val)}" onclick="assetToggleSel('${a.id}')" onkeydown="rowKeydown(event,()=>assetToggleSel('${a.id}'))">
            <div class="sel-check ${on?'on':''}">${svg('check')}</div>
@@ -3837,7 +3862,7 @@ function openAssetSheet(id){
  asDraft=editing?JSON.parse(JSON.stringify(DB.assets.find(a=>a.id===id))):{type:'cash',owner:DB.owners[0],includeInTotal:true,currency:'USD'};
  if(editing&&asDraft.type==='pension')asDraft._pensionAutoExcl=true; /* _pensionAutoExcl은 저장 시 지워지므로, 기존 연금 자산을 열 때마다 "연금은 자동 제외"로 다시 간주해야 전환 시 복원 로직(asOpenType)이 동작함 */
  if(editing&&['cash','savings','realestate','etc','pension','debt'].includes(asDraft.type))asDraft._dispAmt=balanceAt(asDraft.id,TODAY);
- if(editing&&isMarketValued(asDraft))asDraft._origQty=asDraft.type==='fx'?(asDraft.fxAmount||0):asDraft.type==='gold'?(asDraft.goldDon||0):(asDraft.stockQty||0); /* qtyBasisWarn/costBasisField가 수량 증가(추가매수) 경고를 판단할 기준값 — saveAsset()은 이걸 쓰지 않고 DB.assets[i]의 실제 원본값을 다시 읽는다 */
+ if(editing&&isMarketValued(asDraft))asDraft._origQty=asDraft.type==='fx'?(asDraft.fxAmount||0):asDraft.type==='gold'?(asDraft.goldDon||0):asDraft.type==='crypto'?(asDraft.cryptoQty||0):(asDraft.stockQty||0); /* qtyBasisWarn/costBasisField가 수량 증가(추가매수) 경고를 판단할 기준값 — saveAsset()은 이걸 쓰지 않고 DB.assets[i]의 실제 원본값을 다시 읽는다 */
  snapDraft('as');
  renderAssetSheet(editing);
 }
@@ -3847,8 +3872,8 @@ function syncAssetInputs(){const d=asDraft;const g=id=>$(id);
  if(g('asMat'))d.maturityDate=g('asMat').value;
  if(g('asFx'))d.fxAmount=Math.max(0,parseFloat((g('asFx').value||'0').replace(/,/g,''))||0);
  if(g('asGold'))d.goldDon=Math.max(0,parseFloat((g('asGold').value||'0').replace(/,/g,''))||0);
- if(g('asCode'))d.stockCode=g('asCode').value.trim().toUpperCase();
- if(g('asQty'))d.stockQty=Math.max(0,parseFloat((g('asQty').value||'0').replace(/,/g,''))||0);
+ if(g('asCode')){const v=g('asCode').value.trim().toUpperCase();if(d.type==='crypto')d.cryptoCode=v;else d.stockCode=v;}
+ if(g('asQty')){const v=Math.max(0,parseFloat((g('asQty').value||'0').replace(/,/g,''))||0);if(d.type==='crypto')d.cryptoQty=v;else d.stockQty=v;}
  if(g('asCostBasis')){const n=num(g('asCostBasis'),false);if(n>0)d.costBasis=n;else delete d.costBasis;}
  if(g('asAddedCost'))d._addedCost=num(g('asAddedCost'),false);}
 function asOpenType(){syncAssetInputs();openTypePicker({current:asDraft.type,back:()=>renderAssetSheet(!!asDraft.id),onPick:k=>{if(k==='pension'){if(!asDraft._pensionAutoExcl)asDraft._pensionPrevIncl=asDraft.includeInTotal; /* 이미 연금 상태(재선택)면 덮어쓰지 않음 — 그 전에 기억해둔 원래 값을 지켜야 함 */
@@ -3864,7 +3889,7 @@ function costBasisField(d,editing){ /* fx/gold/stock 공통 — 매입 원가는
    addCostBasisForBuy로 자동으로 더해준다(기존 asCostBasis 입력창은 누적 총액을 직접 덮어쓰고
    싶은 사용자를 위해 그대로 둠) — 줄어드는 경우(일부 매도)는 scaleCostBasisForSale로 자동 비례
    축소하므로 별도 입력이 필요 없다(app-evolve cycle190/191 advance) */
- const qtyField=d.type==='fx'?'fxAmount':d.type==='gold'?'goldDon':'stockQty';
+ const qtyField=d.type==='fx'?'fxAmount':d.type==='gold'?'goldDon':d.type==='crypto'?'cryptoQty':'stockQty';
  const needsUpdate=editing&&d._origQty!=null&&costBasisNeedsUpdate(d._origQty,d[qtyField]||0,d.costBasis);
  const warnMsg=needsUpdate?'보유 수량이 늘었어요 · 아래에 이번에 추가로 투입한 금액만 입력하면 자동으로 더해드려요':'';
  return `<div class="field"><label for="asCostBasis">매입 금액 (원, 선택)</label><div class="field-clear"><input id="asCostBasis" class="num" inputmode="numeric" value="${d.costBasis?comma(d.costBasis):''}" placeholder="입력 시 손익을 계산해요" oninput="fmtAmt(this,false)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveAsset(${editing})"><button type="button" class="fc-x" aria-label="매입 금액 지우기" onclick="clrInput('asCostBasis')">✕</button></div><div class="day-warn" id="asQtyBasisWarn" style="display:${warnMsg?'block':'none'}">${esc(warnMsg)}</div></div>
@@ -3907,6 +3932,13 @@ function renderAssetSheet(editing){
      <div class="field"><label for="asQty">보유 주식 수</label><div class="with-unit"><div class="field-clear"><input id="asQty" class="num" inputmode="decimal" value="${d.stockQty||''}" placeholder="0" oninput="fmtQty(this);qtyBasisWarn(this)"><button type="button" class="fc-x" aria-label="보유 주식 수 지우기" onclick="clrInput('asQty')">✕</button></div><span class="unit">주</span></div></div>
      <p style="font-size:12.5px;color:var(--text-2);margin:-4px 0 14px">평가액 = 현재가 × 보유수량 (현재가는 시세 연동 관리에서 입력).</p>
      ${costBasisField(d,editing)}`;
+ }else if(d.type==='crypto'){
+   fields=`<div class="field"><label for="asName">코인명</label><div class="field-clear"><input id="asName" value="${esc(d.name||'')}" placeholder="예: 비트코인"><button type="button" class="fc-x" aria-label="코인명 지우기" onclick="clrInput('asName')">✕</button></div></div>
+     <div class="field"><label for="asCode">심볼</label><div class="field-clear"><input id="asCode" value="${esc(d.cryptoCode||'')}" placeholder="예: BTC, ETH" autocapitalize="characters" oninput="this.value=this.value.toUpperCase()"><button type="button" class="fc-x" aria-label="심볼 지우기" onclick="clrInput('asCode')">✕</button></div>
+      <p style="font-size:12px;color:var(--text-3);margin-top:6px">업비트 KRW 마켓에 있는 심볼을 넣어주세요(BTC·ETH·XRP 등).</p></div>
+     <div class="field"><label for="asQty">보유 수량</label><div class="with-unit"><div class="field-clear"><input id="asQty" class="num" inputmode="decimal" value="${d.cryptoQty||''}" placeholder="0" oninput="fmtQty(this);qtyBasisWarn(this)"><button type="button" class="fc-x" aria-label="보유 수량 지우기" onclick="clrInput('asQty')">✕</button></div><span class="unit">개</span></div></div>
+     <p style="font-size:12.5px;color:var(--text-2);margin:-4px 0 14px">평가액 = 현재가 × 보유수량 (현재가는 시세 연동 관리에서 입력).</p>
+     ${costBasisField(d,editing)}`;
  }
  openSheet(`<h3>${editing?'자산 수정':'자산 등록'}</h3>
   ${typePick}${ownerPick}${fields}
@@ -3922,9 +3954,11 @@ function saveAsset(editing){
  if(twGuard())return;
  syncAssetInputs();const d=asDraft;
  if(d.type==='stock'&&!(d.stockCode||'').trim()){toast('종목코드를 입력해 주세요');return}
+ if(d.type==='crypto'&&!(d.cryptoCode||'').trim()){toast('심볼을 입력해 주세요');return}
  if(d.type==='fx'&&!(d.fxAmount>0)){toast('보유 수량을 입력해 주세요');return}
  if(d.type==='gold'&&!(d.goldDon>0)){toast('보유 수량을 입력해 주세요');return}
  if(d.type==='stock'&&!(d.stockQty>0)){toast('보유 수량을 입력해 주세요');return}
+ if(d.type==='crypto'&&!(d.cryptoQty>0)){toast('보유 수량을 입력해 주세요');return}
  if(d.maturityDate&&dateBelowRangeFloor(d.maturityDate)){toast(`${RANGE_FROM} 이전 날짜는 저장할 수 없어요`);return}
  if(d.maturityDate&&dateAboveRangeCeil(d.maturityDate)){toast(`${RANGE_TO} 이후 날짜는 저장할 수 없어요`);return}
  d.name=d.name||ASSET_TYPES[d.type].label;
@@ -3955,7 +3989,7 @@ function saveAsset(editing){
    }else if(isMarketValued(d)){ /* fx/gold/stock: balType처럼 거래로 남는 조정 내역이 없어, 수량을
        덮어쓰기 전에 변경폭을 DB.assetQtyLog에 기록해둔다 — 이전엔 saveAsset()이 그냥 덮어써서
        수량이 언제·얼마나 바뀌었는지 아무 기록도 남지 않았다(app-evolve cycle138 advance) */
-     const qtyField=d.type==='fx'?'fxAmount':d.type==='gold'?'goldDon':'stockQty';
+     const qtyField=d.type==='fx'?'fxAmount':d.type==='gold'?'goldDon':d.type==='crypto'?'cryptoQty':'stockQty';
      const prevQty=DB.assets[i][qtyField]||0,newQty=d[qtyField]||0;
      if(newQty<prevQty)d.costBasis=scaleCostBasisForSale(prevQty,newQty,d.costBasis); /* 일부 매도/정정: 평단 유지한 채 비례 축소 */
      else if(newQty>prevQty&&addedCost>0)d.costBasis=addCostBasisForBuy(d.costBasis,addedCost); /* 추가매수: costBasisField의 "추가로 투입한 금액" 입력이 있으면 자동으로 더해줌(없으면 그대로 두고 qtyBasisWarn이 안내, app-evolve cycle191 advance) */
@@ -4927,7 +4961,7 @@ function openAssetHistory(assetId){
  * delGoal/delInquiry와 동일한 확인 시트+undoToast+톰스톤 패턴으로 개별 기록을 지울 수 있게 한다. */
 function openAssetQtyLog(assetId){
  const a=DB.assets.find(x=>x.id===assetId);if(!a)return;
- const unit=a.type==='fx'?a.currency:(a.type==='gold'?'돈':'주');
+ const unit=a.type==='fx'?a.currency:(a.type==='gold'?'돈':(a.type==='crypto'?'개':'주'));
  const items=(DB.assetQtyLog||[]).filter(q=>q.assetId===assetId).sort((x,y)=>(y.updatedAt||0)-(x.updatedAt||0));
  const row=q=>{const delta=q.newQty-q.prevQty;const sign=delta>0?'+':'';
   return `<div class="manage-row" style="align-items:flex-start"><div style="flex:1;min-width:0">
@@ -5880,13 +5914,14 @@ function rateStatusMenu(){
  return DB.settings.autoRates?l:'꺼짐';
 }
 function rateAutoLabel(){
- const on=[];if(needFx())on.push('외화');if(needGold())on.push('금');if(needStock())on.push('주식');
+ const on=[];if(needFx())on.push('외화');if(needGold())on.push('금');if(needStock())on.push('주식');if(needCrypto())on.push('코인');
  return on.length?on.join('·'):'해당 없음';
 }
 function openRateSheet(){
  const R=DB.rates;
  const fxCur=[...new Set(DB.assets.filter(a=>a.type==='fx').map(a=>a.currency))];
  const stockRows=DB.assets.filter(a=>a.type==='stock').map(a=>{const id=`rateStock_${a.stockCode}`;return `<div class="rate-row"><div style="flex:1"><div class="rn">${esc(a.name)}</div><div class="rsub">${esc(a.stockCode)} 현재가${rateUnknown(a)?' · 미확인':''}</div></div><div class="field-clear"><input id="${id}" class="num" inputmode="numeric" value="${comma(R.stocks[a.stockCode]||0)}" aria-label="${esc(a.name)} 현재가" onchange="setRate('stock','${a.stockCode}',this.value)"><button type="button" class="fc-x" aria-label="${esc(a.name)} 현재가 지우기" onclick="clrInput('${id}')">✕</button></div></div>`}).join('');
+ const cryptoRows=DB.assets.filter(a=>a.type==='crypto').map(a=>{const id=`rateCrypto_${a.cryptoCode}`;return `<div class="rate-row"><div style="flex:1"><div class="rn">${esc(a.name)}</div><div class="rsub">${esc(a.cryptoCode)} 현재가${rateUnknown(a)?' · 미확인':''}</div></div><div class="field-clear"><input id="${id}" class="num" inputmode="numeric" value="${comma(R.crypto[a.cryptoCode]||0)}" aria-label="${esc(a.name)} 현재가" onchange="setRate('crypto','${a.cryptoCode}',this.value)"><button type="button" class="fc-x" aria-label="${esc(a.name)} 현재가 지우기" onclick="clrInput('${id}')">✕</button></div></div>`}).join('');
  const fxRows=fxCur.map(c=>{const id=`rateFx_${c}`;return `<div class="rate-row"><div style="flex:1"><div class="rn">${c}</div><div class="rsub">원/${c}${rateUnknown({type:'fx',currency:c})?' · 미확인':''}</div></div><div class="field-clear"><input id="${id}" class="num" inputmode="numeric" value="${comma(R.fx[c]||0)}" aria-label="${c} 환율" onchange="setRate('fx','${c}',this.value)"><button type="button" class="fc-x" aria-label="${c} 환율 지우기" onclick="clrInput('${id}')">✕</button></div></div>`}).join('');
  const active=rateAutoLabel();
  const none=active==='해당 없음';
@@ -5900,19 +5935,20 @@ function openRateSheet(){
    <div class="toggle-row" style="border-top:1px solid var(--line)"><div class="tl">연동 중인 자산</div>
     <span class="chipmini ${none?'own-x':'own-나'}" style="font-size:12px;height:24px;padding:0 11px">${active}</span></div>
   </div>
-  ${none?'<div class="empty"><div class="ei">'+svg('sync')+'</div><div class="et">연동할 자산이 없어요</div><div class="es">주식·외화·금 자산을 등록하면 자동으로 켜져요</div></div>':`
+  ${none?'<div class="empty"><div class="ei">'+svg('sync')+'</div><div class="et">연동할 자산이 없어요</div><div class="es">주식·외화·금·코인 자산을 등록하면 자동으로 켜져요</div></div>':`
   <button class="btn btn-primary" onclick="syncRates()">${svg('sync')} 지금 갱신</button>
   <div class="menu-cap" style="margin-top:18px">시세값 (직접 수정 가능)</div>
   ${needGold()?`<div class="rate-row"><div style="flex:1"><div class="rn">금</div><div class="rsub">원/g</div></div><div class="field-clear"><input id="rateGold" class="num" inputmode="numeric" value="${comma(R.goldPerG)}" aria-label="금 시세" onchange="setRate('gold','',this.value)"><button type="button" class="fc-x" aria-label="금 시세 지우기" onclick="clrInput('rateGold')">✕</button></div></div>`:''}
   ${fxRows}
-  ${stockRows}`}
+  ${stockRows}
+  ${cryptoRows}`}
   <div style="height:16px"></div><button class="btn btn-soft" onclick="closeSheet()">닫기</button>`);
 }
 
 function setRate(kind,key,val){const n=Number(String(val).replace(/[^0-9.]/g,''))||0;
  /* 입력을 지우거나 숫자가 아닌 값을 넣으면 n이 0으로 떨어지는데, 이걸 그대로 저장하면
     rateUnknown()이 '아직 못 받아온 상태'와 '실제 0원'을 구분 못 해 미확인 배지 없이
-    평가액이 조용히 0원이 된다(index.html:2125-2134 주석 참고). fx/stock은 키 자체를
+    평가액이 조용히 0원이 된다(index.html:2125-2134 주석 참고). fx/stock/crypto는 키 자체를
     지워 다른 시세 미수신 상태와 동일하게 만들고, gold는 원래도 !goldPerG로 0을
     미확인 취급하므로 0을 그대로 둬도 안전하다. */
  /* ratesUpdatedAt은 mergeRates()(logic.js, app-evolve cycle192)가 DB.rates 전체를 last-write-wins로
@@ -5920,8 +5956,8 @@ function setRate(kind,key,val){const n=Number(String(val).replace(/[^0-9.]/g,'')
   * 항상 "더 오래된" 취급을 받아, 다음 자동/수동 동기화가 다른 기기의 rates로 병합될 때마다
   * 이 수동 입력이 조용히 되돌려진다. */
  DB.rates.ratesUpdatedAt=Date.now();
- if(n<=0){if(kind==='gold')DB.rates.goldPerG=0;else if(kind==='fx'||kind==='fx100')delete DB.rates.fx[key];else if(kind==='stock')delete DB.rates.stocks[key];save();return}
- if(kind==='gold')DB.rates.goldPerG=n;else if(kind==='fx')DB.rates.fx[key]=n;else if(kind==='fx100')DB.rates.fx[key]=n/100;else if(kind==='stock')DB.rates.stocks[key]=n;save()}
+ if(n<=0){if(kind==='gold')DB.rates.goldPerG=0;else if(kind==='fx'||kind==='fx100')delete DB.rates.fx[key];else if(kind==='stock')delete DB.rates.stocks[key];else if(kind==='crypto')delete DB.rates.crypto[key];save();return}
+ if(kind==='gold')DB.rates.goldPerG=n;else if(kind==='fx')DB.rates.fx[key]=n;else if(kind==='fx100')DB.rates.fx[key]=n/100;else if(kind==='stock')DB.rates.stocks[key]=n;else if(kind==='crypto')DB.rates.crypto[key]=n;save()}
 /* 문의하기 — 셀프호스트 구조상 받는 쪽이 없는 '접수' 채널이 아니라, 이 기기(계정)에 저장되고
  * 백업/동기화에 포함되는 개인 메모임을 문구로 명확히 한다(app-evolve cycle133). */
 function openInquiry(){
@@ -6455,7 +6491,7 @@ function sanitizeAmount(v,min){
  if(!Number.isFinite(n))return 0;
  return (min!=null&&n<min)?min:n;
 }
-const SANITIZE_QTY_FIELDS=['fxAmount','goldDon','stockQty','costBasis']; /* 보유수량 — 음수 불가 */
+const SANITIZE_QTY_FIELDS=['fxAmount','goldDon','stockQty','cryptoQty','costBasis']; /* 보유수량 — 음수 불가 */
 const SANITIZE_FREE_FIELDS=['baseAmount','amountKRW']; /* 자산 잔액 — 마이너스도 유효(마이너스통장 등) */
 /* obj를 변형하지 않고 새 객체를 반환한다(restoreBackup의 실패 시 되돌리기 로직과 독립적으로
  * 쓸 수 있게). id(txns는 date도) 없는 레코드는 나머지 로직이 전제하는 최소 형태를 못 갖춘
@@ -6728,11 +6764,11 @@ function sanitizeBackup(obj){
   fixedCount++;
   return {};
  };
- const rates={fx:sanitizeRateMap(srcRates.fx),stocks:sanitizeRateMap(srcRates.stocks)};
+ const rates={fx:sanitizeRateMap(srcRates.fx),stocks:sanitizeRateMap(srcRates.stocks),crypto:sanitizeRateMap(srcRates.crypto)};
  ['goldPerG','syncedAt','ratesUpdatedAt','failStreak'].forEach(f=>{
   if(f in srcRates){const n=sanitizeAmount(srcRates[f],0);if(n!==srcRates[f])fixedCount++;rates[f]=n}
  });
- ['fxFail','stockFail'].forEach(f=>{if(f in srcRates)rates[f]=!!srcRates[f]});
+ ['fxFail','stockFail','cryptoFail'].forEach(f=>{if(f in srcRates)rates[f]=!!srcRates[f]});
  /* DB.deletedIds({id:삭제시각(ms)} 톰스톤 맵)는 catIcon/catVar/deletedType/deletedBal과 같은
   * 평평한 맵이지만, 위 sanitizeFlatMap은 객체 형태만 보고 값 타입은 검증하지 않아 여기선 쓸 수
   * 없다 — mergeCollection()(logic.js)과 mergeRemoteDataIntoLocal()(1472줄)이 이 맵의 값을
