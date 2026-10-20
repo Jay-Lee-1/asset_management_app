@@ -1,15 +1,12 @@
 {
   "cycle": 220,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "recDates() push() 내 중복 r.startDate 재검사 제거 — 월초/연초 반복거래가 주말+'당겨서(earlier)' 조합일 때 첫 회차가 통째로 유실되는 버그",
+    "why": "logic.js recDates()(20-32행)의 공용 push() 헬퍼(23행)가 `d>=r.startDate`를 재검사한다. 모든 호출부(월간 30행/연간 39행/일·주간 55행)는 이미 원본 후보 ds가 `ds>=r.startDate`일 때만 push(ds)를 호출하므로, push 안의 재검사는 '이동된(shifted) 날짜' d에 대한 것이라 원본 ds와 다른 기준이 된다. 반복거래의 첫 회차는 보통 ds===r.startDate인데, 이 날짜가 토/일이고 weekend='earlier'(당겨서)이면 shiftWeekend가 d를 startDate보다 1~2일 앞으로 옮겨 `d>=r.startDate`에서 걸러져 해당 회차가 통째로 사라진다(예: monthly, startDate=2024-06-01(토), weekend='earlier' → 6월 전체가 누락, node -e로 직접 재현 확인; yearly/daily도 동일 구조로 재현되나 UI는 monthly에서만 weekend 피커를 노출함: index.html 6589-6590 sanitizeBackup이 non-monthly weekend를 방어적으로 지움). 월세/구독료처럼 매월 반복되는 핵심 거래의 첫 달이 경고 없이 조용히 사라지는 데이터 정합성 버그이며, 홈 '다음 지출' 카드/예산 합계/CSV export/목표·순자산 투사 등 recDates에 의존하는 모든 화면에 영향. 이미 같은 함수의 end 경계(25행 주석)는 유실 방지 처리가 돼 있는데 start 경계만 비대칭적으로 미처리.",
+    "approach": "logic.js push()(23행)에서 `d>=r.startDate` 조건을 제거한다(다른 조건 d>=from, d<=to, (!r.endDate||d<=r.endDate), 중복제거는 유지) — 모든 호출부가 이미 원본 ds를 r.startDate로 가드하므로 안전하고 d를 못 보낼 경우만 줄이지 새 유실 가능성은 만들지 않는다. test/run.js의 기존 주말-경계 테스트 근처(1372-1389행대)에 회귀 케이스 2-4건 추가: monthly+earlier+토요일 시작(6월 첫 회차가 결과에 포함되는지), yearly+daily도 동일 패턴 1건씩. index.html 변경 없음(logic.js는 index.html보다 먼저 로드되는 별도 순수 함수 모듈). 예상 diff 크기: logic.js 1줄 변경 + 테스트 2-4건 추가로 작고 리스크 낮음. test/run.js 통과 확인 후 APP_VERSION/sw.js CACHE 버전 올림."
+  },
   "history": [
-    {
-      "cycle": 215,
-      "phase": "develop",
-      "timestamp": "2026-10-18T16:10:00.000Z",
-      "summary": "delOwner()가 자산 사용 개수(DB.assets)만 확인하고 DB.goals를 전혀 확인하지 않던 버그 수정. 목표는 goalOwnerSel()로 독립적인 owner 필드를 갖는데(renderGoalForm), 해당 귀속에 자산이 0개면서 목표만 걸려 있는 경우(가족 구성원용 순자산 목표를 자산 등록 전에 만들었거나, 나중에 자산을 다 옮긴 경우) delOwner가 그대로 귀속을 지워버렸다. 그러면 goalOwnerEff()(index.html:3011, 자신의 주석에서 이미 이 케이스를 명시)가 사라진 owner를 'all'로 조용히 대체해 크래시는 안 나지만 가족 한 명 전용 목표가 아무 확인 없이 전체 목표로 바뀌는 데이터 손실이 발생. doRenameOwner()는 이미 '(DB.goals||[]).forEach(g=>{if(g.owner===old)...})'로 이름변경 시 goal.owner를 따라가게 하는데 delOwner엔 동일한 가드가 누락돼 있던 비일관성 — Explore 서브에이전트가 index.html 전체를 탐색해 발견. 자산 개수 체크 바로 옆에 usedGoals 체크를 추가해 자산/목표 중 하나라도 걸려 있으면 삭제를 막고 '자산 N개, 목표 M개가 있어요' 형태로 안내하도록 수정(둘 다 없으면 기존처럼 삭제 진행). test/run.js에 테스트 2건 추가(자산 0개+목표 1개인 경우 삭제 차단 및 안내 문구 확인, 자산+목표 둘 다 있는 경우 둘 다 안내에 포함되는지 확인). APP_VERSION 1.47.190->1.47.191, sw.js CACHE v452->v453. HTML 주석 제거 후 <script> 블록 4개 node --check 통과. node our-assets-v1.14.1/our-assets/test/run.js 1607/1607 -> 1609/1609 통과.",
-      "commit": null
-    },
     {
       "cycle": 215,
       "phase": "review",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-20T10:08:43.000Z",
       "summary": "cycle220 develop 커밋(642b684, autoSyncRates()/rateStatusText()가 crypto 전용 보유자에게도 주말 휴장 창에서 자동 갱신을 멈추던 회귀 수정)을 검토. inQuietWindow()(index.html:3242, '토 06:00~월 08:00 KST 휴장' 주석 확인)와 needCrypto()/heldCryptoCodes()(3235·3239행, type==='crypto'&&cryptoCode 보유 여부)를 직접 추적해 `inQuietWindow()&&!needCrypto()`가 두 함수 모두에서 기존 `needFx()`/`needStock()` 가드와 동일한 스타일로 일관되게 적용됐음을 확인. autoSyncRates()의 다른 가드(DB.settings.autoRates, hasRateAssets(), RATE_TTL 쿨다운)는 전혀 건드리지 않았고, rateStatusText()의 stale 분기(fxFail/stockFail/cryptoFail/failStreak)보다 먼저 평가되는 순서도 그대로 유지돼 기존 동작과 충돌 없음을 확인. 새 테스트 5건(crypto만/주식만(회귀 가드)/혼합 보유 시 autoSyncRates 동작, crypto만/주식만(회귀 가드) 보유 시 rateStatusText 라벨)이 withFakeNow() 헬퍼로 실제 토요일 KST 정오를 고정해 검증하는 방식이 견고하고, 커밋 메시지가 주장한 대로 수정 전 코드로 되돌리면 3건이 FAIL함을 테스트 설계상 재확인. node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1662/1662 통과. APP_VERSION 1.47.202/sw.js CACHE v464 갱신도 develop에서 이미 반영됐고 review는 코드 변경 없음. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 220,
+      "phase": "critique",
+      "timestamp": "2026-10-20T11:00:00.000Z",
+      "summary": "Explore(general-purpose) 서브에이전트로 앱 전반(아키텍처/데이터정합성/성능/UX)을 훑되 cycle149-220에서 이미 다룬 영역(toast/invalidateBalances/XSS/실행형테스트전환 보류/split거래/pushCloud gzip/mergeDataLoss/kakaoLogin 병합/nextOutflowCard/#histQ 디바운스/recSaveScopeConfirm 보류/DB.goals·delOwner/#bootSplash/boot() 로컬우선/doExport CSV/crypto 자산종류+주말휴장 회귀수정/selectNwOwner 귀속전환 버그)는 제외하고 새 영역을 찾도록 지시. logic.js recDates()의 공용 push() 헬퍼(23행)가 호출부에서 이미 원본 날짜로 검증한 r.startDate 조건을 '주말 이동 후' 날짜 d에 대해 재검사하는 비대칭 버그를 발견 — monthly/yearly/daily 모두에서 반복거래 시작일이 주말이고 weekend='earlier'(당겨서)이면 shiftWeekend가 d를 startDate 이전으로 밀어 첫 회차가 통째로 유실됨(node -e로 2024-06-01(토) monthly 사례 직접 재현: 6월 누락 확인). UI는 monthly에서만 weekend 피커를 노출하므로 실사용 트리거는 월세/구독 등 매월 반복 지출의 시작일이 주말+당겨서 조합인 경우. end 경계는 이미 25행 주석처럼 유실 방지 처리가 돼 있어 start 경계만 비대칭적으로 미처리된 상태. advance 계획은 pending_advance_plan에 저장: push()의 중복 `d>=r.startDate` 검사 제거(호출부가 이미 가드하므로 안전) + test/run.js 회귀 테스트 추가.",
       "commit": null
     }
   ]
