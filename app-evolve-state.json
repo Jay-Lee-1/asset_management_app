@@ -1,15 +1,8 @@
 {
   "cycle": 220,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 214,
-      "phase": "advance",
-      "timestamp": "2026-10-18T15:20:00.000Z",
-      "summary": "critique(cycle214) 계획대로 pushCloud()/pullCloud()가 scheduleCloudPush()의 1.2초 디바운스마다 DB 전체 JSON을 압축 없이 통째로 올리고 받던 구조에 클라이언트 전용 gzip+base64 압축 레이어를 추가했다. Supabase의 data jsonb 컬럼 스키마는 그대로 두고(마이그레이션 없음), 새 encodeCloudPayload(db)/decodeCloudPayload(raw)(index.html, pullCloud 바로 위)가 CompressionStream/DecompressionStream('gzip')을 feature-detect해 지원 환경에서는 JSON.stringify(DB)를 압축한 뒤 bytesToBase64(0x8000 청크로 나눠 String.fromCharCode.apply — 수 MB 배열에서 apply 인자 개수 한도에 걸리는 RangeError 방지)로 인코딩해 {_gz:'<base64>'}로 래핑하고, 미지원이면(Safari<16.4 등) 압축 없이 DB를 그대로 반환해 기존 동작과 100% 같다. pushCloud()는 조건부 UPDATE/충돌-재시도/fallback UPSERT 세 전송 지점 모두 DB 대신 한 번 계산한 payload를 보내고, pullCloud()의 select 응답과 pushCloud() 충돌-재시도 분기의 curRow.data를 모두 decodeCloudPayload에 통과시켜(_gz 키가 없으면 그대로 패스스루) sanitizeBackup() 등 하위 호출부는 전혀 수정하지 않았다 — afterCloudAuth/resolveCloudPullRemote/ pullCloudIfStale은 모두 pullCloud()의 반환값만 쓰므로 변경 없이 투명하게 혜택을 받는다. test/run.js에 6건 추가: bytesToBase64/base64ToBytes 청크 경계 왕복, encodeCloudPayload/decodeCloudPayload 실제 압축 왕복(원본과 deepStrictEqual), _gz 없는 raw 통과, CompressionStream 미지원 폴백, pullCloud가 {_gz:...} 원격 데이터를 투명하게 풀어주는 통합 테스트, pushCloud가 실제로 전송하는 data가 DB 원본이 아니라 압축된 {_gz:...}인지 확인하는 실행형 테스트. 기존 pushCloud 충돌-재시도 실행형 테스트 1건은 CompressionStream의 실제 압축이 순수 마이크로태스크가 아니라 zlib 콜백을 거쳐 이벤트 루프를 몇 틱 도는 것을 발견해(await Promise.resolve() 20회로는 끝나지 않음) setImmediate 기반 폴링(40틱)으로 바꿔 통과시켰다 (동작 자체는 그대로, 압축이 비동기 I/O를 거친다는 사실을 테스트가 못 따라가던 것만 수정). APP_VERSION 1.47.189->1.47.190, sw.js CACHE v451->v452. HTML 주석 제거 후 <script> 블록 4개 + logic.js 모두 node --check 통과. node our-assets-v1.14.1/our-assets/test/run.js 1601/1601 -> 1607/1607 통과. pending_advance_plan을 비웠다.",
-      "commit": null
-    },
     {
       "cycle": 215,
       "phase": "develop",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-20T09:30:00.000Z",
       "summary": "autoSyncRates()/rateStatusText()가 참조하는 inQuietWindow()는 '토 06시~월 08시(KST)엔 국내 장(KRX/환율/금)이 쉰다'는 가정인데, cycle219 advance가 crypto를 hasRateAssets()/heldCryptoCodes()에 추가하면서 이 창 안에서의 자동갱신 가드(index.html 3337행)와 상태 라벨(3355행, '주말 휴장')은 그대로 남아 있어, 업비트처럼 24시간 거래되는 암호화폐만 보유한 사용자도 주말마다(토 06시~월 08시, 주 ~50시간) 자동 시세 갱신이 멈추고 화면엔 '주말 휴장'이라고 잘못 표시되는 회귀를 Explore 서브에이전트가 발견. 수동 새로고침 버튼(syncRates())은 이 가드를 안 타므로 영향이 없었지만, 10분마다 자동 갱신되는 체감이 crypto 전용 사용자에게만 주말 내내 깨짐. autoSyncRates()의 조건을 (inQuietWindow()&&!needCrypto())로, rateStatusText()의 라벨 분기도 동일 조건으로 고쳐 crypto를 하나라도 보유하면(단독이든 주식/환율/금과 혼합이든) 주말에도 평소처럼 자동 갱신·라벨이 유지되게 했다(기존 crypto 미보유자의 주말 휴장 동작은 그대로 보존). test/run.js: FUNCTIONS에 heldCurrencies/heldStockCodes/heldCryptoCodes/needFx/needStock/needCrypto/hasRateAssets/autoSyncRates를, CONSTS에 RATE_TTL을 추가하고, syncRates는 네트워크 호출을 포함하므로(migrateLegacy/startApp과 같은 패턴) 호출 여부/인자만 기록하는 sandbox.syncRates 스파이로 대체했다. inQuietWindow()가 인자 없이 new Date()로 '지금'을 읽으므로, vm 컨텍스트의 전역 Date를 고정 시각으로 바꿔치기하는 withFakeNow() 헬퍼를 신설(sandbox.Date에 고정 시각을 반환하는 서브클래스를 대입했다가 끝나면 delete로 원래 내장 Date로 복원 — 사전에 별도 node 스크립트로 delete 복원이 실제로 동작함을 확인). 새 테스트 5건: crypto만 보유 시 주말에도 autoSyncRates가 syncRates(true)를 부름/주식만 보유 시 기존처럼 건너뜀(회귀 방지)/주식+crypto 혼합 시에도 부름, rateStatusText가 crypto만 보유 시 '10분마다 자동'을 보여줌/주식만 보유 시 기존처럼 '주말 휴장'을 보여줌(회귀 방지). 수정 전 코드로 되돌려 5건 중 3건이 실제로 FAIL함을 확인해 테스트가 회귀를 잡아내는지 검증한 뒤 수정을 복원했다. APP_VERSION 1.47.201->1.47.202, sw.js CACHE v463->v464. HTML 주석 제거 후 실제 코드 script 블록(2,4,5번) 모두 node Function 생성자로 문법 통과(1번은 기존 알려진 정규식 오탐). node our-assets-v1.14.1/our-assets/test/run.js 1657/1657 -> 1662/1662 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 220,
+      "phase": "review",
+      "timestamp": "2026-10-20T10:08:43.000Z",
+      "summary": "cycle220 develop 커밋(642b684, autoSyncRates()/rateStatusText()가 crypto 전용 보유자에게도 주말 휴장 창에서 자동 갱신을 멈추던 회귀 수정)을 검토. inQuietWindow()(index.html:3242, '토 06:00~월 08:00 KST 휴장' 주석 확인)와 needCrypto()/heldCryptoCodes()(3235·3239행, type==='crypto'&&cryptoCode 보유 여부)를 직접 추적해 `inQuietWindow()&&!needCrypto()`가 두 함수 모두에서 기존 `needFx()`/`needStock()` 가드와 동일한 스타일로 일관되게 적용됐음을 확인. autoSyncRates()의 다른 가드(DB.settings.autoRates, hasRateAssets(), RATE_TTL 쿨다운)는 전혀 건드리지 않았고, rateStatusText()의 stale 분기(fxFail/stockFail/cryptoFail/failStreak)보다 먼저 평가되는 순서도 그대로 유지돼 기존 동작과 충돌 없음을 확인. 새 테스트 5건(crypto만/주식만(회귀 가드)/혼합 보유 시 autoSyncRates 동작, crypto만/주식만(회귀 가드) 보유 시 rateStatusText 라벨)이 withFakeNow() 헬퍼로 실제 토요일 KST 정오를 고정해 검증하는 방식이 견고하고, 커밋 메시지가 주장한 대로 수정 전 코드로 되돌리면 3건이 FAIL함을 테스트 설계상 재확인. node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1662/1662 통과. APP_VERSION 1.47.202/sw.js CACHE v464 갱신도 develop에서 이미 반영됐고 review는 코드 변경 없음. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
       "commit": null
     }
   ]
