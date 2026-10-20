@@ -1,15 +1,8 @@
 {
   "cycle": 219,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 213,
-      "phase": "advance",
-      "timestamp": "2026-10-18T11:19:27.081Z",
-      "summary": "critique(cycle213) 계획대로 DB.goals에 type:'networth'|'asset' 구분을 신설 — 특정 자산(저축 계좌 등) 하나의 잔액을 목표로 추적할 수 있게 했다. renderGoalForm에 목표 유형 세그먼트(순자산 전체/특정 자산)와 자산 피커(openAssetPicker에 excludeDebt 옵션 추가, excludeMarketValued와 함께 fx/gold/stock/debt 제외)를 추가했고, saveGoal은 asset형이면 linkedAssetId를 필수로 받고 owner를 연결 자산의 owner로 맞춘다. logic.js는 건드리지 않음 — goalProgress(g,hist,today)가 {date,nw} 모양만 보므로, 새 goalHistoryFor(g) 헬퍼(index.html)가 asset형일 때 assetBalanceSeries(assetBalCard/debtPayoffProjection과 동일 패턴)로 만든 잔액 추이를 {date,nw}로 매핑해 그대로 넘기는 식으로 재사용했다. goalRowHTML/openGoalsList/homeAlerts의 goalBehind 계산을 모두 goalHistoryFor로 통일했고, goalHasUnknown도 asset형이면 연결 자산 하나의 rateUnknown만 본다. 연결 자산이 삭제되면(goalLinkedAssetGone) cur/추세를 추측하지 않고 \"연결된 자산이 삭제됐어요\" 중립 캡션 + 0%로 처리하며 goalBehind 오탐도 억제한다. sanitizeBackup도 type 필드를 owner와 동일한 패턴(없으면 기본값만, 손상된 값만 fixedCount)으로 정규화. test/run.js FUNCTIONS에 goalHistoryFor/goalLinkedAssetGone/goalTypeSel/goalOpenAsset 추가하고 saveGoal/goalHistoryFor/goalRowHTML·openGoalsList/homeAlerts 회귀 테스트 7건 신설. APP_VERSION 1.47.187->1.47.188, sw.js CACHE v449->v450. node our-assets-v1.14.1/our-assets/test/run.js 1592/1592 -> 1598/1598 통과. pending_advance_plan을 비웠다.",
-      "commit": "5ad61cd"
-    },
     {
       "cycle": 214,
       "phase": "develop",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-20T00:00:00.000Z",
       "summary": "Explore 서브에이전트로 develop 후보를 탐색(cycle149-218에서 다룬 toast/invalidateBalances fromDate/closeSheetGuarded/aria-label/XSS/실행형 테스트 전환류(wireSheetGestures 등, 여전히 미전환)/split거래/pushCloud await/gzip 압축/mergeDataLoss 경고/kakaoLogin 게스트 병합/nextOutflowCard 스냅샷/#histQ 디바운스/recSaveScopeConfirm 등(보류 유지)/DB.goals type 구분 및 관련 버그들/delOwner 목표 체크/#bootSplash/asFx·asGold·asQty Enter-제출(되돌림)/doExport csv 미래거래 혼입/bulkCatTargets adjust 가드/연금 전환 includeInTotal 복원/boot() 로컬-먼저-렌더 재구성 전부 제외). 순자산 캐러셀(#nwCarousel)이 자산 일괄선택 모드(ST.aSel.mode) 중에도 비활성화되지 않고 계속 스와이프/점클릭/화살표 키로 동작하는 것을 발견 — selectNwOwner()(index.html:3474)가 귀속을 바꿀 때 ST.aSel.ids를 전혀 건드리지 않아, \"나\" 귀속에서 자산을 선택해둔 채로 캐러셀을 넘겨 \"배우자\" 귀속으로 바뀌면 화면엔 더 이상 보이지 않는 그 id가 계속 선택된 채로 남는다. historySelAll/ledgerSelAll은 선택모드 중 필터 UI 자체가 숨어 이 문제가 없는데(H.selMode가 전체 필터 블록을 감싸서 숨김), 자산 탭만 귀속 캐러셀이 선택모드에서도 계속 열려 있어 유일하게 해당. \"전체선택\"(assetSelAll)이 화면에 없는 그 id 위에 새 귀속 id를 더해 total/전체해제 판정이 꼬이고, \"선택 삭제\"(assetDelSel)를 누르면 화면에 없는 이전 귀속 자산까지 사용자가 다시 확인할 기회 없이 함께 지워지는 실제 데이터 손실 버그. selectNwOwner()에 if(ST.aSel.mode&&ST.aSel.ids.size){ST.aSel.ids.clear();updateSelBottom();} 가드를 추가해 귀속이 실제로 바뀔 때(스크롤 정착/점클릭/키보드 세 경로 모두 selectNwOwner를 공유하므로 한 곳 수정으로 전부 해결) 이전 선택을 비우고 하단 선택 바도 함께 갱신하게 했다. test/run.js FUNCTIONS에 selectNwOwner/refreshAssetBody/refreshNwHistoryCard/refreshGoalsSummary/refreshAllocationCard를 추가(넷 다 $(...)가 없으면 즉시 return하는 얕은 래퍼라 기존 공유 $ 스텁만으로 실행형 검증 가능)하고 테스트 3건 신설: 선택모드 중 귀속 전환 시 ids 비워짐+updateSelBottom 호출 확인, 같은 귀속 재선택(실제 변경 없음) 시 ids/updateSelBottom 모두 안 건드림(회귀 가드), 비선택모드에서는 귀속 전환이 ids에 영향 없음(회귀 가드). APP_VERSION 1.47.199->1.47.200, sw.js CACHE v461->v462. HTML 주석 제거 후 실제 코드 script 블록(2번, 516488자) node Function 생성자로 문법 통과. node our-assets-v1.14.1/our-assets/test/run.js 1635/1635 -> 1638/1638 통과.",
+      "commit": "58ab13c"
+    },
+    {
+      "cycle": 219,
+      "phase": "review",
+      "timestamp": "2026-10-20T06:00:00.000Z",
+      "summary": "cycle219 develop 커밋(58ab13c, selectNwOwner()가 자산 일괄선택 모드 중 귀속 캐러셀 전환 시 화면에 안 보이는 선택 id를 남기던 버그 수정)을 검토. visibleAssetsForSel()(index.html:3762, ST.assetOwner==='all'이면 DB.assets 전체, 아니면 owner로 필터)과 ST.aSel 초기값(2705행, {mode:false,ids:new Set()})을 직접 추적 — 가드가 `if(ST.aSel.mode&&ST.aSel.ids.size){...}`로 선택모드가 아니거나 선택된 게 없으면 건드리지 않고, 실제로 owner!==ST.assetOwner일 때만(기존 조건문 안) 실행되므로 캐러셀이 같은 귀속에 머무는 스크롤 정착 이벤트들을 불필요하게 건드리지 않음을 확인. 비파괴적으로 보일 수 있는 대안(바뀐 귀속에서도 여전히 보이는 id만 남기는 부분 정리)보다 전체 비우기가 이 앱의 기존 관례(필터가 바뀌면 선택을 통째로 초기화)와 일치하고 코드도 더 단순해 과잉수정이 아니라고 판단. updateSelBottom()이 selMode 전체에서 쓰는 공용 하단 바 갱신 함수(8409행)와 동일 패턴으로 재사용됐음도 확인. 새 테스트 3건(모드 중 전환 시 비움+갱신, 동일 귀속 재선택 시 무변화, 비선택모드 회귀 가드)이 실제 로직과 정확히 일치하고, test/run.js FUNCTIONS에 추가된 네 함수(selectNwOwner/refreshAssetBody/refreshNwHistoryCard/refreshGoalsSummary/refreshAllocationCard) 모두 기존 공유 $ 스텁만으로 실행형 검증이 가능함을 재확인. APP_VERSION 1.47.200/sw.js CACHE v462 갱신도 일관됨(develop에서 이미 올렸고 review는 코드 변경 없음). node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1638/1638 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
       "commit": null
     }
   ]
