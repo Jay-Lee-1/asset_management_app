@@ -1398,7 +1398,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.203';
+const APP_VERSION='1.47.204';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1612,7 +1612,14 @@ function mergeRemoteDataIntoLocal(remoteData){
 function snapshotLocalDeviceFields(){return dbIsEmpty(DB)?null:{settings:DB.settings,nwHistory:DB.nwHistory}}
 function restoreLocalDeviceFields(snap){if(!snap)return;if(snap.settings)DB.settings=snap.settings;if(snap.nwHistory)DB.nwHistory=snap.nwHistory}
 const comma=n=>Math.round(n||0).toLocaleString('ko-KR');
-const commaQty=n=>Number.isInteger(n)?comma(n):(n||0).toLocaleString('ko-KR',{maximumFractionDigits:4}); /* 소수 보유수량(주식/외화)은 반올림하지 않고 그대로 표시 */
+/* maximumFractionDigits가 4였을 때는 암호화폐(crypto, app-evolve cycle219 신설)처럼 소수점 8자리
+ * (사토시 단위)까지 정밀하게 입력하는 보유수량에서, 0.00005개 미만이면 toLocaleString이 5번째
+ * 자리에서 반올림해 "0"으로 표시했다 — assetSubline/assetEval은 원본 cryptoQty를 그대로 쓰므로
+ * 자산 평가액(총자산)은 틀리지 않지만, 화면엔 보유수량이 사라진 것처럼 보여 사용자가 "코인이
+ * 없어졌다"고 오해할 수 있었다. fx/stock은 보통 이보다 더 적은 소수 자릿수만 쓰므로(예: 0.1주,
+ * 123.45달러) 8자리로 늘려도 trailing zero가 늘어나진 않는다(toLocaleString은 불필요한 끝자리
+ * 0은 어차피 붙이지 않음) — 기존 동작과 호환되면서 crypto만 실제로 이득을 본다. */
+const commaQty=n=>Number.isInteger(n)?comma(n):(n||0).toLocaleString('ko-KR',{maximumFractionDigits:8}); /* 소수 보유수량(주식/외화/코인)은 반올림하지 않고 그대로 표시 */
 const won=n=>(n<0?'-':'')+comma(Math.abs(n))+'원';
 const wonS=n=>(n>0?'+':n<0?'-':'')+comma(Math.abs(n))+'원';
 /* onclick만 있던 div 기반 행(자산/내역/반복거래 목록)에 키보드 접근성을 붙이는 공용 핸들러 — Enter/Space를 클릭과 동일하게 처리 */

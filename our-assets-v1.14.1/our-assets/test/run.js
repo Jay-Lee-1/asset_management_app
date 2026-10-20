@@ -1688,6 +1688,20 @@ test('commaQty: 값이 없으면 0으로 취급한다', () => {
   assert.strictEqual(sandbox.commaQty(0), '0');
   assert.strictEqual(sandbox.commaQty(null), '0');
 });
+test('commaQty: 소수점 8자리(사토시 단위)까지 정밀한 암호화폐 보유수량은 "0"으로 뭉개지지 않는다(app-evolve cycle222)', () => {
+  // maximumFractionDigits가 4였을 때는 0.00001234처럼 5번째 자리 미만인 수량이 toLocaleString에서
+  // "0"으로 반올림돼, 자산 목록에 보유수량이 사라진 것처럼 보였다(평가액 자체는 원본 cryptoQty를
+  // 그대로 곱하는 assetEval이라 틀리지 않았지만 화면 표시만 오해를 줬다).
+  assert.strictEqual(sandbox.commaQty(0.00001234), '0.00001234');
+  assert.strictEqual(sandbox.commaQty(0.00031545), '0.00031545');
+});
+test('commaQty: 8자리보다 더 긴 소수는 8번째 자리에서 반올림한다(무한정 길어지지 않음)', () => {
+  assert.strictEqual(sandbox.commaQty(0.123456789), '0.12345679');
+});
+test('commaQty: fx/stock처럼 소수 자릿수가 적은 값은 늘어난 정밀도에도 불필요한 0이 붙지 않는다(회귀 방지)', () => {
+  assert.strictEqual(sandbox.commaQty(1.5), '1.5');
+  assert.strictEqual(sandbox.commaQty(6.8), '6.8');
+});
 
 /* ---------- budgetProgress: 카테고리별 예산 대비 지출 진행률 계산 ---------- */
 test('budgetProgress: 예산 미설정(0)이면 진행률은 항상 0이고 초과가 아니다', () => {

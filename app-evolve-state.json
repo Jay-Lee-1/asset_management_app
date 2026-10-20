@@ -1,15 +1,8 @@
 {
   "cycle": 222,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 216,
-      "phase": "critique",
-      "timestamp": "2026-10-18T23:05:00.000Z",
-      "summary": "Explore 서브에이전트로 앱 전반을 아키텍처/데이터정합성 관점에서 훑었다(cycle149-216에서 다룬 toast/invalidateBalances fromDate/closeSheetGuarded/aria-label/XSS/실행형 테스트 전환류/split거래 dedupe/pushCloud await/mergeDataLoss 경고(5개 컬렉션)/kakaoLogin 게스트 병합/nextOutflowCard 스냅샷/DB.goals type:'networth'|'asset' 및 goalHistoryFor 자산종류변경 버그/delOwner 목표 체크/pushCloud·pullCloud gzip 압축/#bootSplash/asFx·asGold·asQty Enter-제출(되돌림) 전부 제외, #histQ 디바운스·recSaveScopeConfirm 등·dismissedStaleMvIds·budgetCarryFor·CDN SRI·txDayInput도 보류/기각 유지로 재선정 안 함). doExport('csv')(index.html:6336-6346)가 RANGE_TO=TODAY+760일(2440행)까지 expandRec()로 만든 가상 미래 예정 거래를 DB.txns와 합쳐 '거래 내역' CSV에 그대로 포함시키는 것을 발견 — 반복거래는 실제로 DB.txns에 기록되는 게 아니라 allTxns()/maybeRollDay()가 매번 템플릿에서 즉석 계산해 보여주는 가상 행이라, 이 CSV를 다시 import하면(csvRowToImportTxn/buildImportPreview, 6230-6300·6831행) 미래 날짜 행들이 스케줄과 아무 연결 없는 고정된 1회성 실거래로 영구히 박혀버리고, 이후 같은 반복거래를 다시 만들면 중복집계까지 된다. 더 심각한 건 복구코드 없는 로컬 계정의 비밀번호 분실 안내 문구(2184·8850행 '이 계정은 복구할 수 없어요 · CSV로 미리 백업해 두세요')가 진짜 무손실 복원 경로인 JSON '백업 파일' 내보내기 대신 이 손실 있는 CSV를 권장하고 있어, 안내를 그대로 따른 사용자가 CSV로 복원하면 반복거래 템플릿/카테고리/예산/목표/자산 메타데이터를 전부 잃는다. 러너업으로 #histQ 디바운스를 재확인했으나 우선순위가 낮아 재선정 안 함. doExport csv 분기를 date<=TODAY로 필터링하고, csvRowToImportTxn에 future 날짜 케이스 명시적 처리/안내 추가, 복구 안내 문구(2184·8850)를 JSON 백업 쪽으로 수정, txnsToCSV/csvRowToImportTxn 미래날짜 테스트 추가 계획을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
-      "commit": null
-    },
     {
       "cycle": 216,
       "phase": "advance",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-20T16:14:06.000Z",
       "summary": "critique(cycle221) 계획대로 전체를 끝까지 구현하기엔 범위가 커(archiveTxnsBefore UI 연결, 반복거래 cutoff 분리, confirm/백업 유도 시트까지 한 사이클에 안전하게 담기 어려움), 계획 자체가 명시한 완화 경로대로 범위를 좁혀 순수 함수 archiveBaselines(assets, expandedTxns, cutoffDate, isPendingFn) + 회귀 테스트만 먼저 완료했다. logic.js에 신설 — balancesUpTo()(index.html:2510)와 완전히 같은 base+sign 누적 규칙(자산별 baseAmount/amountKRW를 시작값으로, debt는 sign=-1, fromAssetId는 차감·toAssetId는 가산, t.date<=cutoffDate인 거래만 반영)으로 cutoffDate 시점 각 자산의 잔액을 {assetId:balance}로 돌려준다. isPending()(index.html, DB.settings/DB.recurrences를 읽어 순수 모듈이 직접 참조 불가)이 쓰는 '미확인 이체는 완료 잔액 제외' 규칙과 맞추기 위해, mergeFlatMap의 tombKeyFn(logic.js:293)과 같은 선택적 콜백 패턴으로 isPendingFn을 4번째 인자로 받되 생략하면 전부 확정으로 간주(하위호환). test/run.js에 8건 추가(critique가 직접 재현한 시나리오 그대로 — cutoff 이전 2건 합계 800,000을 흡수한 baseline + cutoff 이후 거래만 재생해도 전체 히스토리 재생과 같은 결과인지, 거래 없을 때 기존 baseAmount/amountKRW 보존, debt 부호반전, 여러 자산 독립 집계(from/to 양쪽), cutoff 경계(당일 포함·다음날 제외), isPendingFn 적용/생략 각 1건). vm 샌드박스 realm이 만든 반환 객체가 host Object와 프로토타입이 달라 deepStrictEqual이 'same structure but not reference-equal'로 실패하는 것을 처음 발견해(assetBalanceSeries 테스트들과 동일한 기존 패턴인데 이번에 처음 누락) JSON.parse(JSON.stringify(...))로 정규화하도록 전부 수정. index.html은 전혀 건드리지 않아(다음 사이클 이후로 미룬 archiveTxnsBefore/UI 연결/반복거래 분리가 그 쪽 몫) APP_VERSION 변경 없음, logic.js만 바뀌었고 sw.js SHELL 캐시 목록에 포함돼 있어 CACHE 버전만 v466->v467로 올렸다(cycle220 advance와 동일 패턴). pending_advance_plan은 계획이 허용한 완화 경로를 따라 비웠다 — 남은 UI 연결/반복거래 cutoff 분리는 critique의 통상적인 재탐색으로 넘긴다. node --check(logic.js, sw.js) 통과. node our-assets-v1.14.1/our-assets/test/run.js 1668/1668 -> 1676/1676 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 222,
+      "phase": "develop",
+      "timestamp": "2026-10-20T17:07:00.000Z",
+      "summary": "general-purpose 서브에이전트로 develop 후보를 탐색(cycle149-221에서 다룬 toast/invalidateBalances/split거래/pushCloud gzip/mergeDataLoss/kakaoLogin 병합/nextOutflowCard/#histQ 디바운스/recSaveScopeConfirm 보류/DB.goals·delOwner/#bootSplash/boot() 로컬우선/doExport CSV/bulkCatTargets adjust/crypto 자산종류+주말휴장 회귀/recDates push() 주말이동/asOpenType pension 복원/selectNwOwner 선택id/PIN focus 복원/archiveBaselines 전부 제외, 단 archiveBaselines의 UI 연결·반복거래 cutoff 분리는 다음 사이클 재후보로 명시). commaQty(n)(index.html, 소수 보유수량 표시 포맷터)가 maximumFractionDigits:4를 써, cycle219-220에서 신설된 crypto 자산의 cryptoQty(사토시 단위 소수 8자리까지 입력 가능)가 0.00005개 미만이면 toLocaleString이 반올림해 자산 목록(assetSubline, 3454행)과 수량변경 로그 모달(4973-4974행)에 '0개'로 표시되는 버그를 발견 — assetEval()은 원본 cryptoQty를 그대로 곱해 순자산/평가액 자체는 틀리지 않지만, 화면 표시만 사라져 사용자가 '코인이 없어졌다'고 오해할 수 있는 순수 표시 버그. maximumFractionDigits를 4->8로 늘려 수정(fx/stock은 보통 더 적은 소수자릿수만 쓰므로 toLocaleString이 불필요한 trailing zero를 붙이지 않아 기존 동작과 호환, 8자리 초과 시엔 정상적으로 반올림되어 무한정 길어지지 않음을 테스트로 확인). test/run.js 기존 commaQty 테스트 뒤에 3건 추가: 사토시 단위 극소수량이 '0'으로 뭉개지지 않는지, 8자리 초과 소수는 8번째 자리에서 반올림하는지, 기존 fx/stock 스타일 저정밀 값엔 불필요한 0이 붙지 않는지(회귀 가드). APP_VERSION 1.47.203->1.47.204, sw.js CACHE v467->v468. node --check(sw.js, logic.js) 통과, HTML 주석 제거 후 commaQty를 포함하는 실제 코드 script 블록 node --check 통과(다른 블록 1개는 추출 정규식이 HTML 주석 영역을 잘못 집은 기존 알려진 오탐). node our-assets-v1.14.1/our-assets/test/run.js 1676/1676 -> 1679/1679 통과.",
       "commit": null
     }
   ]
