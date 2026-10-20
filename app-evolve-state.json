@@ -1,15 +1,12 @@
 {
   "cycle": 222,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "저장공간 경고가 권하는 '오래된 데이터 정리' 실제 구현 — archiveBaselines() UI 연결",
+    "why": "홈 화면 storageSize 경고(index.html:8148, dismissStorageSizeWarn 토스트)가 '오래된 데이터는 백업 후 정리하는 걸 권장해요'라고 안내하지만, 실제로 거래를 지울 수 있는 유일한 경로인 deleteTxnsUndo(index.html:8292)는 잔액 보정이 전혀 없어 오래된 거래를 지우면 모든 자산 잔액이 조용히 틀어진다(balancesUpTo/assetBase가 baseAmount+RANGE_FROM부터의 전체 합으로 재생하기 때문, cycle221 critique에서 최초 발견). 이를 올바르게 계산하는 순수 함수 archiveBaselines()는 cycle221 advance에서 이미 구현·테스트까지 끝났지만(logic.js:819, test/run.js:3093-3155) index.html에서 호출하는 곳이 전혀 없어 — UI 경고가 가리키는 기능이 실제로는 존재하지 않는, 사용자를 함정에 빠뜨리는 상태로 두 사이클째 방치되어 있다. 이번에 마무리하면 데이터 정합성 신뢰 문제를 닫을 수 있다.",
+    "approach": "1) 메뉴 진입점: renderMenu()의 '백업 · 데이터' 그룹(index.html:5432-5436)에 데이터 내보내기/복원과 같은 패턴으로 {ic:\"trash\",l:\"오래된 데이터 정리\",a:\"openArchiveOld()\"} 추가.\n2) 기준월 선택: 새 날짜 위젯을 만들지 말고 기존 openMonthSheet()(index.html:7274, 가계부/전체내역/한달플랜 공통 월 선택 시트)를 재사용하거나 얇은 래퍼로 호출해 선택된 달의 말일을 cutoffDate로 사용.\n3) 확인 시트: confirmSheet(title,msg,ok,cb) 관례(index.html:7239-7242, doResetAll()의 위험 액션 사용 패턴과 동일)를 따른다. 메시지에 (a) cutoff 이전 삭제될 거래 건수, (b) 자산 잔액은 새 baseAmount로 보존된다는 설명, (c) exportData() 바로가기 버튼으로 '내보내기로 먼저 백업하는 걸 권장해요' 넛지(기존 storageSize 경고 문구와 언어 일관성 유지)를 담는다.\n4) 실행 함수 archiveTxnsBefore(cutoffDate) (deleteTxnsUndo 근처에 신설): expandedTxns = DB.txns.concat(expandRec(RANGE_FROM, cutoffDate)) (allTxns()의 실거래+가상반복거래 합산 관례, index.html:2443과 동일 패턴) 구성 -> archiveBaselines(DB.assets, expandedTxns, cutoffDate, isPending)(isPending: index.html:1636) 호출해 새 baseAmount 계산 -> DB.assets[i].baseAmount에 반영, date<=cutoffDate인 DB.txns 항목 삭제(deleteTxnsUndo의 ids/DB.deletedIds 기록 방식 그대로, index.html:8292-8294) -> undoToast()(index.html:8286)로 기존 일괄삭제처럼 되돌리기 가능하게(삭제된 거래 + 이전 baseAmount를 클로저에 보관) -> save()/renderCurrent().\n5) 반복거래: DB.recurrences 자체는 건드리지 않아 cutoff 이후 발생은 그대로 생성됨. cutoff 이전 가상 발생분은 4)의 expandRec concat을 통해 baseline 계산에만 반영되고 화면에 보일 실제 행은 원래도 없었으므로(반복거래는 즉석 전개) 데이터 유실이 아니다.\n6) build/test: node --check (<script> 블록 추출), node our-assets-v1.14.1/our-assets/test/run.js 전체 통과 확인 — archiveBaselines 호출 경로에 대한 통합 테스트(archiveTxnsBefore 호출 후 잔액이 cutoff 이전과 동일한지) 케이스 추가. APP_VERSION/sw.js CACHE 버전 올리기."
+  },
   "history": [
-    {
-      "cycle": 217,
-      "phase": "review",
-      "timestamp": "2026-10-19T02:08:06.588Z",
-      "summary": "cycle217 develop 커밋(e3ccd40, bulkCatTargets()에 adjust 체크 추가)을 검토. ADJUST_CAT('잔액 조정')을 보호하는 기존 세 경로(openAdjustEdit 전용 편집, doRenameCat/doDeleteCat의 k==='income'&&c===ADJUST_CAT 가드)를 index.html에서 직접 확인했고, histRow가 txRowCore(mode:selMode)로 adjust 거래에도 선택 체크박스를 그대로 렌더함(어떤 경로도 adjust 행을 선택 모드에서 제외하지 않음)을 확인해 이 버그가 실제로 UI에서 도달 가능했음을 재검증. logic.js의 items.some(t=>t.adjust) 체크가 transfer 체크 다음·split/mixed 체크 이전에 들어가 기존 순서를 깨지 않고, bulkCatPickFor의 토스트 분기와 doBulkCat의 safety net까지 일관되게 adjust를 처리함을 추적. 새 테스트 4건(bulkCatTargets 2건: 혼합 선택과 단독 선택 모두 reason:'adjust', doBulkCat safety net 1건, bulkCatPickFor 토스트 1건)이 실제 로직과 정확히 일치. node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1622/1622 통과. logic.js node --check 통과(index.html의 <script> 블록 정규식 추출은 '동적 로더' 주석의 '<script>' 문자열로 인한 기존 알려진 오탐이 재현됐을 뿐 — HTML 주석 제거 후엔 정상임이 cycle216에서 이미 확인된 패턴). APP_VERSION/sw.js CACHE 변경 없음(review 단계, 코드 변경 없음). 실제 버그 없음 — 이상 없음.",
-      "commit": null
-    },
     {
       "cycle": 217,
       "phase": "critique",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-20T17:45:00.000Z",
       "summary": "cycle222 develop 커밋(91b0422, commaQty() maximumFractionDigits 4->8로 암호화폐 소량 보유수량 \"0\" 표시 버그 수정)을 검토. commaQty의 유일한 네 호출부(index.html: assetSubline의 fx/stock/crypto 분기, 수량변경 로그 모달의 delta/prevQty/newQty)를 모두 확인 — 전부 화면 표시 전용이고 assetEval/순자산 계산 경로는 원본 cryptoQty를 그대로 쓰므로 maximumFractionDigits 변경이 평가액 로직에 영향을 주지 않음을 재확인. node -e로 toLocaleString(maximumFractionDigits:8) 동작을 독립적으로 재검증(사토시 단위 0.00001234가 그대로 보존, 음수도 부호 유지, 8자리 초과는 반올림, 1.5/0 등 기존 저정밀 값에 trailing zero 안 붙음) — 새 테스트 3건의 주장과 일치. node our-assets-v1.14.1/our-assets/test/run.js 재실행해 1679/1679 통과 확인. 버그 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 222,
+      "phase": "critique",
+      "timestamp": "2026-10-20T00:00:00.000Z",
+      "summary": "Explore 서브에이전트로 앱 전반을 재탐색(cycle149-222에서 다룬 영역은 전부 제외하도록 명시)했으나 더 시급한 새 약점은 발견되지 않았고, cycle221 critique에서 발견·advance에서 순수함수까지만 구현해둔 '오래된 데이터 정리' 기능(storageSize 경고가 약속하지만 실제로 존재하지 않는 기능, archiveBaselines()가 logic.js:819에 구현·테스트까지 완료됐지만 index.html 호출부가 전무)이 여전히 최우선 과제임을 재확인했다. deleteTxnsUndo(index.html:8292)로 오래된 거래를 지우면 balancesUpTo/assetBase의 baseAmount+전체합 재생 방식 때문에 모든 자산 잔액이 조용히 틀어지는 함정이 두 사이클째 방치된 상태. 기존 관례(renderMenu 백업·데이터 그룹, openMonthSheet 월선택시트, confirmSheet, undoToast, deleteTxnsUndo의 ids/DB.deletedIds 북키핑)에 맞춘 구체적 1사이클 분량 구현 계획(메뉴 진입점 -> 월 선택 -> 확인시트(백업 넛지 포함) -> archiveTxnsBefore() 실행(archiveBaselines 호출, 거래 삭제, undoToast) -> 반복거래는 expandRec concat으로만 영향)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계, state.json 갱신만).",
       "commit": null
     }
   ]
