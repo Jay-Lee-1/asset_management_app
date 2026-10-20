@@ -1,15 +1,8 @@
 {
   "cycle": 223,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 218,
-      "phase": "review",
-      "timestamp": "2026-10-19T06:16:14.000Z",
-      "summary": "cycle218 develop 커밋(3bb5123, asOpenType()의 연금 전환/복귀 시 수동 includeInTotal 복원 버그 수정)을 검토. onPick 로직을 직접 트레이스: (1) cash(includeInTotal:false)->pension->cash 왕복 시 _pensionPrevIncl에 false가 저장되고 복귀 시 그대로 복원됨(수정 전엔 무조건 true로 덮였을 상황), (2) pension을 재선택해도(pkChoose가 현재 값이어도 항상 onPick을 호출함을 pkChoose(8310행)에서 확인) _pensionAutoExcl이 이미 true라 _pensionPrevIncl을 덮어쓰지 않아 기억값이 보존됨, (3) 기존에 저장된 연금 자산을 openAssetSheet로 열 때(3828행, _pensionPrevIncl은 세팅 안 함)는 그대로 true로 복원되는 기존 동작을 유지함, (4) saveAsset의 delete 목록에 _pensionPrevIncl이 추가돼 DB.assets에 임시 필드가 새지 않음. pension<->non-pension<->pension<->non-pension 다중 왕복 경로까지 추적해도 매번 올바르게 복원됨을 확인. 새 테스트 3건(복원/no-op 보존/saveAsset delete)이 로직과 정확히 일치. node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1629/1629 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 218,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-20T21:21:29.796Z",
       "summary": "general-purpose 서브에이전트로 develop 후보를 탐색(cycle149-222에서 다룬 모든 영역 전부 제외하도록 명시: toast/invalidateBalances/split거래/pushCloud gzip/mergeDataLoss/kakaoLogin 병합/nextOutflowCard/#histQ 디바운스/recSaveScopeConfirm 보류/DB.goals·delOwner/#bootSplash/boot() 로컬우선/doExport CSV/bulkCatTargets adjust/crypto 자산종류+주말휴장 회귀/recDates push() 주말이동/asOpenType pension 복원/selectNwOwner 선택id/PIN focus 복원/archiveBaselines+UI 연결/commaQty maximumFractionDigits). logic.js recNthDate(base,n)이 \"반복 횟수 N회\" 종료조건을 endDate로 변환할 때 recDates()를 재사용해 \"엔진과 100% 일치\"를 보장한다고 문서화돼 있는데, 내부에서 쓰는 날짜 범위 버퍼(daily는 n+2일)가 \"후보 개수=결과 개수\"라고 가정한 값이었음을 발견. weekend=\"earlier\"|\"later\"는 토/일 후보를 평일로 당기거나 미루면서 그 평일에 이미 push()된 날짜와 겹쳐 recDates()의 인접 중복 제거로 사라지므로, freq=daily에서는 주 7일 중 사실상 5일치만 결과로 남아 n이 일정 크기를 넘으면(2024-01-01 시작+earlier에서 n=11부터 재현) ds[n-1]이 undefined가 되어 recNthDate가 null을 반환 — saveTx/saveRec/_applyCount/recalcEndCond 경로에서 \"반복 횟수\" 종료조건이 조용히 무한 반복(endDate 미설정)으로 저장될 수 있는 잠재적 데이터 정합성 버그였다. 현재 UI는 weekend를 freq===monthly일 때만 노출하고 recFreq()/sanitizeBackup()이 다른 주기에서는 weekend를 none으로 강제해 지금은 freq=daily+weekend!==none 조합이 실제로 저장되지는 않지만, recNthDate 자신은 그 전제에 기대지 않는 순수 엔진 함수여야 한다는 이 프로젝트의 기존 선례(recDates push() 경계 버그, sanitizeBackup weekend 정규화)를 따라 방어적으로 고쳤다. 수정: 결과가 n개에 못 미치면 날짜 범위를 2배씩 늘려 재생성(평일은 매주 최소 5일 나오므로 항상 수렴, 최대 64배는 방어적 상한). monthly/yearly/weekly(유일하게 UI로 weekend 조정과 함께 쓰이는 monthly 포함)는 n=1..999 전 구간 fuzz 테스트로 회귀 없음 확인. test/run.js에 daily+earlier(n=11/20/31)·daily+later(n=25)가 recDates 결과와 정확히 일치하는지, recCountUntil 역변환 일치, 작은 n/weekend=none 회귀 가드까지 테스트 4건 추가. logic.js만 바꿔 APP_VERSION은 그대로 두고 sw.js CACHE만 v469->v470으로 올렸다(logic.js가 SHELL 캐시 대상). node --check(logic.js, sw.js) 통과. node our-assets-v1.14.1/our-assets/test/run.js 1689/1689 -> 1692/1692 통과.",
       "commit": "753937d"
+    },
+    {
+      "cycle": 223,
+      "phase": "review",
+      "timestamp": "2026-10-20T21:48:00.000Z",
+      "summary": "cycle223 develop 커밋(753937d, recNthDate()가 freq=daily+weekend 조정에서 버퍼 부족으로 큰 n에 null을 반환하던 버그 수정)을 검토. 수정 로직(span을 1부터 시작해 ds.length<n이면 2배씩 늘려 재시도, span<=64 상한)을 직접 추적 — 반복마다 이전 span을 써서 ds를 생성한 뒤 span을 두 배로 올리므로 실제 사용되는 최대 span은 64이고 999개 상한(n은 앞서 Math.min(999,...)로 클램프됨)에도 충분한 여유(평일 비율 7:5 ≈ 1.4배만 필요)가 있어 수렴을 보장함을 확인. 독립적으로 n=1..999 전 구간 × weekend(earlier/later) × 4개 시작일(토/일 포함)로 recNthDate→recDates 생성개수·마지막값 일치, recCountUntil 역변환 일치를 직접 fuzz 검증(0 실패) — 커밋이 주장한 범위보다 넓게 재현해도 문제 없음. monthly/yearly/weekly(day=15, weekend 포함)도 n=1,50,500,999에서 전부 null 없이 성공해 회귀 없음을 재확인. 성능도 최악 케이스(daily+earlier, n=999) 50회 반복에 253ms로 체감 지연 없는 수준. sw.js CACHE v470/APP_VERSION 미변경(logic.js만 변경)도 일관됨. node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1692/1692 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
+      "commit": null
     }
   ]
 }
