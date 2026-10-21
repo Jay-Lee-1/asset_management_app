@@ -1,15 +1,8 @@
 {
   "cycle": 229,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 224,
-      "phase": "review",
-      "timestamp": "2026-10-21T02:10:00.000Z",
-      "summary": "cycle224 develop 커밋(a59c863, matchTxnQuery/matchAssetQuery 검색이 한글 NFC/NFD 정규화 차이로 못 찾던 버그 수정)을 검토. normName()(logic.js:373, .normalize('NFC').trim().replace(whitespace).toLowerCase())과 동일한 전제로 matchTxnQuery/matchAssetQuery 양쪽에 .normalize('NFC')를 hay/q 모두에 추가했음을 직접 확인 — 쉼표 제거(.replace(/,/g,''))는 정규화 뒤에 적용돼도 결과에 영향 없음(정규화가 쉼표 문자 자체를 바꾸지 않음), toLowerCase 순서도 영문 대소문자 비교에 영향 없음. logic.js/index.html 전체에서 toLowerCase().includes(q 패턴으로 자유 텍스트를 매칭하는 함수가 이 두 개뿐임을 grep으로 재확인해(index.html에는 includes 기반 검색 매칭이 따로 없음) 고도화 대상 밖에 비슷한 버그가 남아있지 않음을 확인. 새 테스트 5건(hay가 NFD/검색어가 NFD 각 방향, matchTxnQuery 자산명 매칭 포함)이 실제로 수정된 코드 경로와 정확히 대응됨을 확인. node --check(logic.js, sw.js) 문법 통과, APP_VERSION 1.47.206(index.html 미변경이라 그대로)·sw.js CACHE v472 일치 확인. node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1704/1704 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 224,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-21T21:13:00.000Z",
       "summary": "general-purpose 서브에이전트가 develop 후보를 탐색해 saveAsset()의 자산 귀속(owner) 변경이 그 자산에 연결된 asset형 목표(goal.type==='asset', goal.linkedAssetId)의 owner에 전파되지 않던 버그를 발견 — goalOpenAsset()은 '연결하는 시점'에만 goalDraft.owner를 자산 owner로 맞춰주고, 이후 asOpenOwner()로 자산 귀속을 바꿔도 목표의 owner는 낡은 값으로 남아 goalOwnerEff()/goalsSummaryCard·nearestGoal의 owner 일치 필터가 틀어져 목표가 자산의 새 귀속 캐러셀에서 사라지는 실사용 버그였다(doRenameOwner는 이름변경만 다뤄 이 경로를 커버하지 않음). saveAsset()에서 자산 저장 직후 linkedAssetId가 일치하는 asset형 목표의 owner를 자산의 새 owner로 동기화하고 touch()하도록 고쳤다(networth형 목표·무관한 목표·owner 불변 시는 그대로 둠). test/run.js에 4건 추가(귀속 변경 시 동기화+touch/무관한 목표 보존/owner 불변 시 touch 없음/networth형 목표 영향 없음) — 수정 전 코드로 되돌려 핵심 테스트가 FAIL함을 직접 확인한 뒤 복원. APP_VERSION 1.47.210->1.47.211, sw.js CACHE v477->v478. node --check 통과. node our-assets-v1.14.1/our-assets/test/run.js 1751/1751 -> 1755/1755 통과. 오케스트레이터가 diff/테스트를 직접 재검증한 뒤 commit 31f16d3을 main에 fast-forward해 push했다(이전 실행이 로컬 main을 갱신하지 않고 detached HEAD로 커밋을 남겨둔 상태였어서, fetch로 origin/main이 해당 커밋의 부모와 정확히 일치함을 먼저 확인).",
       "commit": "31f16d3"
+    },
+    {
+      "cycle": 229,
+      "phase": "review",
+      "timestamp": "2026-10-21T22:05:00.000Z",
+      "summary": "cycle229 develop 커밋(31f16d3, saveAsset()에서 자산 귀속(owner) 변경 시 linkedAssetId로 연결된 asset형 목표의 owner도 함께 동기화)을 검토. 전제부터 재검증: goalOpenAsset()(index.html:3216)이 '연결하는 시점'에만 goalDraft.owner=a.owner로 한 번 맞춰줄 뿐이고, doRenameOwner(4197-4198)는 귀속 '이름이 바뀌는' 경로만 goal.owner를 따라가게 해줄 뿐 자산이 다른 기존 귀속으로 옮겨가는 이번 경로는 다루지 않음을 grep으로 직접 확인 — 진단이 정확함. 추가된 한 줄(DB.goals.forEach(g=>{if(g.type==='asset'&&g.linkedAssetId===d.id&&g.owner!==d.owner){g.owner=d.owner;touch(g)}}))을 추적: owner!==d.owner 가드로 불변 시 불필요한 touch 없음, type==='asset' 체크로 networth형(linkedAssetId 항상 null) 영향 없음, linkedAssetId===d.id로 무관한 목표 보존. grep으로 index.html 전체에서 DB.assets[].owner를 직접 대입하는 지점이 asOpenOwner(saveAsset 경유)·doRenameOwner(기존 처리) 두 곳뿐임을 재확인해, 이번 수정이 자산 귀속 변경의 마지막 공백을 덮었고 더 손봐야 할 동일 유형의 누락 경로가 남아있지 않음을 확인. sanitizeBackup()의 owner 검증(6735-6736)은 validOwners 존재 여부만 보고 linkedAssetId와의 교차검증은 하지 않아 이 수정과는 다른(백업 복원 경로) 별개의 공백이라 범위 밖으로 남겨둠(기존에도 있던 공백, 이번 커밋이 만들거나 악화시키지 않음). 새 테스트 4건을 직접 추적해 diff의 가드 분기(owner 변경/무관 목표/owner 불변/networth형)와 정확히 1:1 대응함을 확인. node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1755/1755 통과. APP_VERSION 1.47.211/sw.js CACHE v478 일치 확인(develop에서 이미 반영). 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
+      "commit": null
     }
   ]
 }
