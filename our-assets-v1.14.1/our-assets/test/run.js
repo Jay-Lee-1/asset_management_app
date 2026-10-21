@@ -16454,6 +16454,46 @@ for (const [fn, id] of [['renderAuth', 'auPw'], ['doForgotPasswordLocal', 'frPwI
   });
 }
 
+/* ---------- svg(): 장식용 아이콘에 aria-hidden 추가 (app-evolve cycle225 develop) ----------
+ * svg()가 만드는 <svg>/<span class="cur-sym">(₩ fx 기호)는 index.html 243곳 전부 장식용이다 —
+ * 아이콘만 있는 버튼도 예외 없이 그 버튼 자체에 aria-label이 따로 있고, 글자가 같이 있는 곳도
+ * 그 글자가 이미 의미를 전달한다. 그런데도 <svg>에 role/aria-hidden이 전혀 없어서 일부
+ * 스크린리더(VoiceOver 등)가 <title>도 접근성 이름도 없는 이 <svg>를 그래도 "이미지"로 보고
+ * 읽어, 이미 aria-label로 다 말해준 버튼을 중복으로 읽거나(예: "닫기, 이미지, 닫기 버튼")
+ * 라벨이 없는 드문 경우엔 의미 없는 "이미지"만 따로 읽는 공백이 있었다. 아래는 svg()가 두
+ * 분기(일반 아이콘/fx 통화기호) 모두에서 빠짐없이 aria-hidden="true"를 내는지, 그리고
+ * <svg> 분기는 구형 IE/Edge의 SVG 포커스 버그 방어용 focusable="false"도 함께 내는지 검증한다. */
+test('svg: 일반 아이콘(<svg>)에 aria-hidden="true"와 focusable="false"가 항상 붙는다', () => {
+  const out = sandbox.svg('x');
+  assert.ok(out.startsWith('<svg '), 'svg()가 <svg 로 시작하지 않음');
+  assert.ok(out.includes(' aria-hidden="true"'), 'svg()가 만든 <svg>에 aria-hidden="true"가 없음 — 스크린리더가 장식 아이콘을 "이미지"로 중복 읽을 수 있음');
+  assert.ok(out.includes(' focusable="false"'), 'svg()가 만든 <svg>에 focusable="false"가 없음');
+  assert.ok(out.includes(sandbox.I.x), 'svg()가 I 아이콘 테이블의 path를 그대로 담지 않음');
+});
+test('svg: w(크기) 인자를 줘도 aria-hidden="true"가 그대로 붙는다', () => {
+  const out = sandbox.svg('check', 16);
+  assert.ok(out.includes(' aria-hidden="true"'), 'w 인자를 주면 aria-hidden이 빠짐');
+  assert.ok(out.includes('width:16px;height:16px'), 'w 인자가 width/height style에 반영되지 않음');
+});
+test('svg: fx(₩ 통화기호) 분기도 <span>에 aria-hidden="true"가 붙는다', () => {
+  const out = sandbox.svg('fx');
+  assert.ok(out.includes('<span class="cur-sym" aria-hidden="true">'), 'svg("fx")가 만든 <span>에 aria-hidden="true"가 없음');
+  assert.ok(out.includes('₩'), 'svg("fx")가 ₩ 기호를 담지 않음');
+});
+test('svg: fx 분기에 w를 주면 font-size style과 aria-hidden이 함께 붙는다', () => {
+  const out = sandbox.svg('fx', 20);
+  assert.ok(out.includes('aria-hidden="true"') && out.includes('font-size:16px'), 'svg("fx",20)이 aria-hidden과 font-size(=round(20*0.82)) 둘 다 담지 않음');
+});
+test('index.html: svg()가 그리는 아이콘만 담긴 버튼(아이콘 뒤에 다른 글자 없이 바로 </button>)은 전부 자체 aria-label을 갖고 있다 — 장식 아이콘을 aria-hidden으로 숨긴 뒤에도 그 버튼의 접근성 이름이 남아있는지 확인', () => {
+  const re = /<button[^>]*>\$\{svg\([^)]*\)\}<\/button>/g;
+  let m, checked = 0;
+  while ((m = re.exec(src))) {
+    checked++;
+    assert.ok(/aria-label=/.test(m[0]), `아이콘만 있는 버튼에 aria-label이 없음: ${m[0]}`);
+  }
+  assert.ok(checked >= 20, `아이콘-only 버튼 패턴을 너무 적게 찾음(검증 자체가 깨졌을 가능성, checked=${checked})`);
+});
+
 /* ---------- App-Lock PIN 입력 7곳(lockPinIn/pinNewIn/pinNewIn2/pinOffIn/pinChgCurIn/pinChgNewIn/
  * pinChgNewIn2)에도 togglePwVis 눈 아이콘 토글 추가 (app-evolve cycle159 advance — cycle155가
  * auPw/frPwIn/newPwIn/fpinPwIn 비밀번호 입력에만 적용하고 App-Lock PIN 입력은 범위 밖으로 뺐던
