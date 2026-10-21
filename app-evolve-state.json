@@ -1,15 +1,8 @@
 {
   "cycle": 228,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 223,
-      "phase": "develop",
-      "timestamp": "2026-10-20T21:21:29.796Z",
-      "summary": "general-purpose 서브에이전트로 develop 후보를 탐색(cycle149-222에서 다룬 모든 영역 전부 제외하도록 명시: toast/invalidateBalances/split거래/pushCloud gzip/mergeDataLoss/kakaoLogin 병합/nextOutflowCard/#histQ 디바운스/recSaveScopeConfirm 보류/DB.goals·delOwner/#bootSplash/boot() 로컬우선/doExport CSV/bulkCatTargets adjust/crypto 자산종류+주말휴장 회귀/recDates push() 주말이동/asOpenType pension 복원/selectNwOwner 선택id/PIN focus 복원/archiveBaselines+UI 연결/commaQty maximumFractionDigits). logic.js recNthDate(base,n)이 \"반복 횟수 N회\" 종료조건을 endDate로 변환할 때 recDates()를 재사용해 \"엔진과 100% 일치\"를 보장한다고 문서화돼 있는데, 내부에서 쓰는 날짜 범위 버퍼(daily는 n+2일)가 \"후보 개수=결과 개수\"라고 가정한 값이었음을 발견. weekend=\"earlier\"|\"later\"는 토/일 후보를 평일로 당기거나 미루면서 그 평일에 이미 push()된 날짜와 겹쳐 recDates()의 인접 중복 제거로 사라지므로, freq=daily에서는 주 7일 중 사실상 5일치만 결과로 남아 n이 일정 크기를 넘으면(2024-01-01 시작+earlier에서 n=11부터 재현) ds[n-1]이 undefined가 되어 recNthDate가 null을 반환 — saveTx/saveRec/_applyCount/recalcEndCond 경로에서 \"반복 횟수\" 종료조건이 조용히 무한 반복(endDate 미설정)으로 저장될 수 있는 잠재적 데이터 정합성 버그였다. 현재 UI는 weekend를 freq===monthly일 때만 노출하고 recFreq()/sanitizeBackup()이 다른 주기에서는 weekend를 none으로 강제해 지금은 freq=daily+weekend!==none 조합이 실제로 저장되지는 않지만, recNthDate 자신은 그 전제에 기대지 않는 순수 엔진 함수여야 한다는 이 프로젝트의 기존 선례(recDates push() 경계 버그, sanitizeBackup weekend 정규화)를 따라 방어적으로 고쳤다. 수정: 결과가 n개에 못 미치면 날짜 범위를 2배씩 늘려 재생성(평일은 매주 최소 5일 나오므로 항상 수렴, 최대 64배는 방어적 상한). monthly/yearly/weekly(유일하게 UI로 weekend 조정과 함께 쓰이는 monthly 포함)는 n=1..999 전 구간 fuzz 테스트로 회귀 없음 확인. test/run.js에 daily+earlier(n=11/20/31)·daily+later(n=25)가 recDates 결과와 정확히 일치하는지, recCountUntil 역변환 일치, 작은 n/weekend=none 회귀 가드까지 테스트 4건 추가. logic.js만 바꿔 APP_VERSION은 그대로 두고 sw.js CACHE만 v469->v470으로 올렸다(logic.js가 SHELL 캐시 대상). node --check(logic.js, sw.js) 통과. node our-assets-v1.14.1/our-assets/test/run.js 1689/1689 -> 1692/1692 통과.",
-      "commit": "753937d"
-    },
     {
       "cycle": 223,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-21T16:12:25.348Z",
       "summary": "critique(cycle227)가 세운 계획대로 uid() id 충돌 가능성 + sanitizeBackup() 중복 id 무방어를 고쳤다. (1) index.html:1533 uid()에 모듈 스코프 단조증가 카운터(_uidSeq)를 끼워 Date.now().toString(36)+(_uidSeq++).toString(36)+Math.random().toString(36).slice(2,4) 형태로 바꿔 같은 탭/프로세스 안에서 동기적으로 생성되는 id는 결정론적으로 유일하도록 했다(doCsvImport류 동기 루프 충돌의 근본 해결, 길이는 그대로 유지하려 random 부분을 5글자->2글자로 줄였다). node로 Date.now 고정 후 5000회 연속 호출해 전부 유일함을 직접 확인. (2) sanitizeBackup()(index.html)에 dedupeIds(arr) 내부 헬퍼(기존 id는 Set으로 추적, 중복이면 uid()로 새 id 부여하며 fixedCount++)를 추가하고 txns/assets/recurrences/goals/inquiries/assetQtyLog 여섯 컬렉션 모두에 반환 직전 적용 — 백업 파일/다른 기기·구버전 uid()로 만들어진 레코드가 섞여 들어오는 경우까지 방어한다. mergeCollection(logic.js의 Map 키 충돌로 중복 id 중 나중 것만 생존)과 deleteTxnsUndo(filter(t=>!ids.has(t.id))가 충돌쌍 둘 다 지움) 둘 다 전제하는 id 유일성을 복구 경로에서도 지킨다. test/run.js: uid() 자체의 유일성을 검증하는 고립 vm 컨텍스트 테스트 1건(Date.now 고정, 5000회 연속 호출 전부 유일 — 카운터 없으면 Math.random() 충돌로 실패할 수 있음), sanitizeBackup 중복 id 복구 테스트 3건(txns 중복 1건 복구, 자산/반복거래/목표/문의/보유수량기록 5개 컬렉션 동시 복구+fixedCount=5, 정상 케이스는 무변화 회귀가드) 총 4건 추가. APP_VERSION 1.47.209->1.47.210, sw.js CACHE v476->v477. node --check(추출한 script 블록들, HTML 주석 제거 후) 통과. node our-assets-v1.14.1/our-assets/test/run.js 1741/1741 -> 1745/1745 통과.",
       "commit": null
+    },
+    {
+      "cycle": 228,
+      "phase": "develop",
+      "timestamp": "2026-10-21T17:15:59.000Z",
+      "summary": "general-purpose 서브에이전트가 develop 후보를 탐색하다, 작업 시작 전 베이스라인 node test/run.js가 1744/1745로 실패하는 것을 발견 — 반복 실행 결과 cycle211 회귀 가드인 pushCloud INFLIGHT 테스트(test/run.js ~11224행)가 약 20~30% 빈도로 간헐 실패하는 플레이크였음을 확인. 원인: encodeCloudPayload()의 실제 CompressionStream(zlib 네이티브 콜백) 압축 완료를 setImmediate 틱으로 최대 40회까지만 기다렸는데, 실측 결과 완료까지 필요한 틱 수가 2~679회로 시스템 부하에 따라 크게 흔들리는 반면 실제 경과 시간은 항상 수 ms로 일정했다 — 틱 수는 신뢰할 수 없는 대기 척도. pushCloud/INFLIGHT 가드 자체의 버그는 아니었다. 고정 40틱 루프를 Date.now() 기반 5초 벽시계 데드라인 루프로 교체(정상 동작은 수 ms 안에 빠져나오고, 진짜 멈춤 회귀는 5초 후 기존 updateCallCount 단언이 그대로 잡음). 수정 전 15회 반복 중 4회 실패(약 27%) 재현, 수정 후 25회 연속 1745/1745 통과로 재현 안 됨을 확인. test/run.js 1건의 대기 로직만 교체(테스트 개수 변화 없음, 1745/1745 -> 1745/1745). index.html/logic.js는 손대지 않아 APP_VERSION/sw.js CACHE 버전 변경 불필요. 오케스트레이터가 diff를 직접 재검증(node --check, 3회 연속 전체 테스트 재실행 1745/1745 재확인)한 뒤 main을 f4e47b3로 fast-forward하고 push했다.",
+      "commit": "f4e47b3"
     }
   ]
 }
