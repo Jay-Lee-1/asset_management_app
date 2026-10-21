@@ -9357,6 +9357,49 @@ test('saveAsset: 신규 등록·기존 수정 모두 touch()로 updatedAt이 채
   sandbox.saveAsset(true);
   assert.strictEqual(sandbox.DB.assets[0].updatedAt, 'test-updatedAt', '수정 시에도 updatedAt이 갱신되어야 함');
 });
+/* ---------- saveAsset: 자산의 귀속(owner)이 바뀌면 그 자산에 연결된 asset형 목표도 따라가야 함
+ * (app-evolve cycle230 develop) — goalOpenAsset()은 "연결하는 시점"에만 goalDraft.owner를
+ * 연결 자산의 owner로 맞춰줄 뿐, 이미 연결된 뒤에 asOpenOwner()로 그 자산의 귀속을 바꾸는 경로는
+ * 지금까지 다루지 않아 goal.owner가 낡은 귀속에 그대로 남았다 — goalOwnerEff(g)가 그 낡은 값을
+ * 그대로 돌려줘 goalsSummaryCard/nearestGoal의 owner 일치 필터가 자산의 실제 귀속 캐러셀에서
+ * 그 목표를 더는 찾지 못한다. ---------- */
+test('saveAsset: 자산의 귀속을 바꾸면 그 자산에 연결된(linkedAssetId) asset형 목표의 owner도 함께 바뀌고 touch()된다', () => {
+  const asset = { id: 'a1', type: 'cash', owner: '나', includeInTotal: true, name: '비상금 통장', baseAmount: 100000 };
+  const goal = { id: 'g1', name: '비상금', type: 'asset', linkedAssetId: 'a1', targetAmount: 500000, owner: '나' };
+  sandbox.DB = { assets: [asset], goals: [goal], txns: [], rates: { fx: {}, stocks: {}, goldPerG: 0 } };
+  sandbox.asDraft = { id: 'a1', type: 'cash', owner: '배우자', includeInTotal: true, name: '비상금 통장', _dispAmt: 100000 };
+  sandbox.saveAsset(true);
+  assert.strictEqual(sandbox.DB.assets[0].owner, '배우자', '자산 자체의 owner는 이번 수정값으로 저장됨');
+  assert.strictEqual(sandbox.DB.goals[0].owner, '배우자', '연결된 목표의 owner도 자산의 새 귀속을 따라가야 goalOwnerEff가 일관됨');
+  assert.strictEqual(sandbox.DB.goals[0].updatedAt, 'test-updatedAt', 'touch() 누락 시 mergeCollection이 다른 기기의 동기화 안 된 목표를 조용히 되돌릴 수 있음(saveAsset/doRenameOwner와 동일한 불변식)');
+});
+test('saveAsset: 자산의 귀속이 바뀌어도 그 자산과 연결되지 않은(다른 linkedAssetId) 목표는 건드리지 않는다', () => {
+  const asset = { id: 'a1', type: 'cash', owner: '나', includeInTotal: true, name: '통장', baseAmount: 0 };
+  const unrelated = { id: 'g1', name: '다른 목표', type: 'asset', linkedAssetId: 'a2', targetAmount: 500000, owner: '나', updatedAt: 123 };
+  sandbox.DB = { assets: [asset], goals: [unrelated], txns: [], rates: { fx: {}, stocks: {}, goldPerG: 0 } };
+  sandbox.asDraft = { id: 'a1', type: 'cash', owner: '배우자', includeInTotal: true, name: '통장', _dispAmt: 0 };
+  sandbox.saveAsset(true);
+  assert.strictEqual(sandbox.DB.goals[0].owner, '나', '다른 자산에 연결된 목표는 그대로 유지돼야 함');
+  assert.strictEqual(sandbox.DB.goals[0].updatedAt, 123, 'touch()되지 않아야 함(불필요한 동기화 쓰기 방지)');
+});
+test('saveAsset: 자산의 귀속이 그대로면(안 바뀌었으면) 연결된 목표도 touch()하지 않는다', () => {
+  const asset = { id: 'a1', type: 'cash', owner: '나', includeInTotal: true, name: '통장', baseAmount: 0 };
+  const goal = { id: 'g1', name: '목표', type: 'asset', linkedAssetId: 'a1', targetAmount: 500000, owner: '나', updatedAt: 999 };
+  sandbox.DB = { assets: [asset], goals: [goal], txns: [], rates: { fx: {}, stocks: {}, goldPerG: 0 } };
+  sandbox.asDraft = { id: 'a1', type: 'cash', owner: '나', includeInTotal: true, name: '통장 이름 변경', _dispAmt: 0 };
+  sandbox.saveAsset(true);
+  assert.strictEqual(sandbox.DB.goals[0].owner, '나');
+  assert.strictEqual(sandbox.DB.goals[0].updatedAt, 999, '귀속이 그대로면 목표는 안 건드려야 불필요한 동기화 쓰기가 없음');
+});
+test('saveAsset: networth형(linkedAssetId 없음) 목표는 자산 귀속 변경과 무관하게 건드리지 않는다', () => {
+  const asset = { id: 'a1', type: 'cash', owner: '나', includeInTotal: true, name: '통장', baseAmount: 0 };
+  const nwGoal = { id: 'g1', name: '순자산 목표', type: 'networth', linkedAssetId: null, targetAmount: 500000, owner: '나', updatedAt: 1 };
+  sandbox.DB = { assets: [asset], goals: [nwGoal], txns: [], rates: { fx: {}, stocks: {}, goldPerG: 0 } };
+  sandbox.asDraft = { id: 'a1', type: 'cash', owner: '배우자', includeInTotal: true, name: '통장', _dispAmt: 0 };
+  sandbox.saveAsset(true);
+  assert.strictEqual(nwGoal.owner, '나', 'networth형 목표는 특정 자산에 묶여있지 않으므로 건드리면 안 됨');
+  assert.strictEqual(nwGoal.updatedAt, 1);
+});
 /* ---------- saveAsset: fx/gold/stock(isMarketValued) 수량을 수정하면 DB.assetQtyLog에 변경 전/후
  * 수량이 기록된다(app-evolve cycle138 advance). cash/savings 등(balType)은 수정 시 addBalanceAdjust/
  * updateBalanceAdjust로 거래가 남아 '내역 보기'에서 추적되는데, fx/gold/stock은 saveAsset()이
