@@ -1,15 +1,12 @@
 {
   "cycle": 227,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "uid() id 충돌 가능성 + sanitizeBackup 중복 id 무방어",
+    "why": "index.html:1533 uid()=Date.now().toString(36)+Math.random().toString(36).slice(2,7)는 엔트로피가 약 26비트뿐이고, doCsvImport(index.html:7023-7027)처럼 같은 ms 안에서 동기적으로 다건을 생성하는 경로가 실사용(다년치 CSV 재가져오기)에서 수만 건 규모가 되면 non-trivial 확률로 충돌한다(node로 동일 로직 재현: 5-10k호출 0건, 20-50k호출 0.1-0.25건 평균, 200k호출에서 최대 5건). id를 절대불변으로 가정하는 동기화 아키텍처(mergeCollection, logic.js:147의 new Map(arr.map(r=>[r.id,r]))가 중복id를 조용히 마지막 것만 남기고 덮어씀; deleteTxnsUndo, index.html:8377-8378의 filter(t=>!ids.has(t.id))가 충돌 쌍 중 하나만 지우려다 둘 다 지움)를 15개 이상의 사이클이 공들여 보강해온 전제가 흔들리는데, 정작 sanitizeBackup()은 categories/owners/budgetHistory/catIcon/deletedIds/nwHistory 등 다른 모든 구조적 불변식은 필드별로 검증·복구하면서 id 유일성만은 전혀 검증하지 않는다.",
+    "approach": "1) uid()에 모듈 스코프 단조증가 카운터(_uidSeq)를 하나 더 섞어 같은 탭/프로세스 안에서는 절대 충돌하지 않도록 결정론적으로 고친다(Date.now().toString(36)+(_uidSeq++).toString(36)+Math.random().toString(36).slice(2,5) 형태, 길이 유지). 이게 doCsvImport류 동기 루프 충돌의 근본 해결책. 2) sanitizeBackup()(index.html ~6750-6946, categories/owners/budgetHistory/catIcon/deletedIds/nwHistory를 fixedCount로 세어가며 한 컬렉션씩 복구하는 기존 패턴)에 txns/assets/recurrences/goals/inquiries/assetQtyLog 각각에 대해 중복 id 탐지+재할당(첫 등장만 남기고 이후 중복은 uid()로 새 id 부여) 패스를 추가하고 같은 fixedCount 방식으로 집계한다 — 이미 병합/가져오기된 데이터에 대한 방어. 3) logic.js에 순수함수 형태로 분리 가능하면(예: dedupeIds(arr) 같은) test/run.js에 충돌 쌍 입력 -> 복구 후 유일 id 보장 테스트 추가."
+  },
   "history": [
-    {
-      "cycle": 222,
-      "phase": "critique",
-      "timestamp": "2026-10-20T00:00:00.000Z",
-      "summary": "Explore 서브에이전트로 앱 전반을 재탐색(cycle149-222에서 다룬 영역은 전부 제외하도록 명시)했으나 더 시급한 새 약점은 발견되지 않았고, cycle221 critique에서 발견·advance에서 순수함수까지만 구현해둔 '오래된 데이터 정리' 기능(storageSize 경고가 약속하지만 실제로 존재하지 않는 기능, archiveBaselines()가 logic.js:819에 구현·테스트까지 완료됐지만 index.html 호출부가 전무)이 여전히 최우선 과제임을 재확인했다. deleteTxnsUndo(index.html:8292)로 오래된 거래를 지우면 balancesUpTo/assetBase의 baseAmount+전체합 재생 방식 때문에 모든 자산 잔액이 조용히 틀어지는 함정이 두 사이클째 방치된 상태. 기존 관례(renderMenu 백업·데이터 그룹, openMonthSheet 월선택시트, confirmSheet, undoToast, deleteTxnsUndo의 ids/DB.deletedIds 북키핑)에 맞춘 구체적 1사이클 분량 구현 계획(메뉴 진입점 -> 월 선택 -> 확인시트(백업 넛지 포함) -> archiveTxnsBefore() 실행(archiveBaselines 호출, 거래 삭제, undoToast) -> 반복거래는 expandRec concat으로만 영향)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계, state.json 갱신만).",
-      "commit": null
-    },
     {
       "cycle": 222,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-21T14:12:02.422Z",
       "summary": "cycle227 develop 커밋(6f2eada, netlify.toml에 /logic.js [[headers]] 캐시 안 함 규칙 추가)을 검토. 전제부터 재검증: index.html:1398에 <script src=\"logic.js\"> 가 캐시버스팅 쿼리 없이 그대로 있고 sw.js:11 SHELL 배열에도 './logic.js'가 포함돼 있어, logic.js만 캐시 규칙이 빠져 있었다는 develop 단계 진단이 사실임을 grep으로 직접 확인. netlify.toml 전체를 읽어 추가된 [[headers]] for=\"/logic.js\" 블록이 index.html/sw.js와 동일한 Cache-Control: public, max-age=0, must-revalidate를 쓰고, 앞뒤 블록(index.html/sw.js, manifest.webmanifest/*.png/favicon.ico)의 구조를 깨지 않고 올바른 위치에 삽입됐음을 확인 — TOML 문법도 기존 블록과 일관됨. 새로 추가된 extractHeaderBlock() 테스트 헬퍼(for=\"...\" 마커에서 역방향으로 가장 가까운 [[headers]]를 찾아 다음 [[headers]] 전까지 슬라이스)도 블록 경계를 정확히 잡는 로직임을 확인. node our-assets-v1.14.1/our-assets/test/run.js 재실행해 1741/1741 통과 재확인. 설정 파일 1곳만 바꾸는 작고 범위가 명확한 수정이라 버그 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 227,
+      "phase": "critique",
+      "timestamp": "2026-10-21T00:00:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-227에서 다룬 모든 영역 전부 제외 지시: toast/invalidateBalances/split거래/pushCloud gzip/mergeDataLoss경고/kakaoLogin병합/nextOutflowCard/#histQ디바운스/recSaveScopeConfirm보류/DB.goals·delOwner/#bootSplash/boot()로컬우선/asFx·asGold·asQty Enter제출(되돌림)/doExport CSV/bulkCatTargets adjust/연금전환복원/selectNwOwner선택id/CDN SRI(기각)/dismissedStaleMvIds·budgetCarryFor/crypto자산종류+주말휴장/recDates push()주말이동/archiveBaselines+UI연결/commaQty maximumFractionDigits/recNthDate버퍼버그/mergeRecordFields(보류)/mergeDataLossFields/matchTxnQuery·matchAssetQuery NFC정규화/아이콘배지 WCAG1.4.11/svg() aria-hidden/netlify functions CORS+레이트리미트/sw.js navigate캐시가드/investGainLossCard/netlify.toml logic.js캐시헤더/PIN focus복원/stock-split qty조정(버그아님 결론)/budgetCarryFor재귀(제외)/CSS font-size px(제외)/DB.budgets레거시플랫맵(무해)/checkNotifyAlerts staleness(커버됨)/TYPE_COLOR.gold불일치(흡수됨)/DB.assetQtyLog자동정리부재(제외)). 새로 포착한 공백: uid()(index.html:1533, Date.now().toString(36)+Math.random().toString(36).slice(2,7), 엔트로피 약 26비트)가 doCsvImport(7023-7027)처럼 동기 루프로 다건을 생성하는 경로에서 non-trivial 확률로 충돌 가능(node 재현: 5-10k호출 0건, 20-50k호출 0.1-0.25건 평균, 200k호출 최대5건) — 15개 이상 사이클이 id를 절대불변 전제로 공들여 보강해온 mergeCollection(logic.js:147, Map으로 중복id 중 나중 것만 조용히 생존)·deleteTxnsUndo(8377-8378, 충돌쌍 중 하나 지우려다 둘다 삭제) 경로가 그 가정 위에 서 있는데 sanitizeBackup()은 다른 모든 구조 불변식(categories/owners/budgetHistory/catIcon/deletedIds/nwHistory)은 검증·복구하면서 id 유일성만 전혀 검증하지 않음을 확인. 러너업: 길게 누르는 '오늘 합계 피크' 제스처가 4곳(_sujiTimer/_histTimer/_planT/_mT)에 거의 동일하게 중복 구현돼 있고 그중 온보딩 튜토리얼용 mSuji 사본만 move-cancels-timer 가드가 빠져있음(실데이터 아닌 일회성 온보딩 오버레이 범위라 우선도 낮게 책정, 제외). advance 계획(uid()에 모듈스코프 단조증가 카운터 추가로 동일탭 충돌 원천 차단 + sanitizeBackup()에 컬렉션별 중복id 탐지·재할당 패스 추가(기존 fixedCount 패턴) + test/run.js에 충돌 복구 회귀 테스트)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
       "commit": null
     }
   ]
