@@ -3,7 +3,7 @@
  * 온라인일 때는 항상 최신 index.html 을 먼저 받아옵니다.
  * 파일을 수정하면 아래 CACHE 버전을 올려 주세요. (예: v1 -> v2)
  */
-const CACHE = 'ourassets-v474';
+const CACHE = 'ourassets-v475';
 
 const SHELL = [
   './',
@@ -50,8 +50,14 @@ self.addEventListener('fetch', (e) => {
     e.respondWith(
       fetch(req)
         .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put('./index.html', copy));
+          // 배포 중 일시적인 서버 오류(502/503)나 호스팅의 커스텀 404 응답까지 그대로
+          // 캐시하면, 그 뒤 오프라인 폴백이 "마지막으로 받은 정상 페이지"가 아니라
+          // 그 오류 페이지를 돌려주게 된다(app-evolve cycle226) — 아래 정적 리소스 분기와
+          // 동일하게 status===200인 정상 응답만 캐시에 반영한다.
+          if (res && res.status === 200 && res.type === 'basic') {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put('./index.html', copy));
+          }
           return res;
         })
         .catch(() => caches.match('./index.html').then((r) => r || caches.match('./')))

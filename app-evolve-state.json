@@ -1,15 +1,8 @@
 {
   "cycle": 226,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 221,
-      "phase": "develop",
-      "timestamp": "2026-10-20T13:05:00.000Z",
-      "summary": "Explore 서브에이전트로 PIN 관련 함수 전반을 훑어, doUnlock()(index.html 8710행)만 실패 시 입력칸을 비우고 focus()해 재시도를 쉽게 해주는 반면 자매 함수 doSetPin()/doChangePin()/doDisableAppLock()은 showErr만 하고 포커스를 안 돌려줘, PIN 설정/변경/해제 중 형식 오류나 확인 불일치·오류가 나면(특히 모바일에서 키보드가 닫힌 뒤) 사용자가 손으로 입력칸을 다시 탭해야 하는 불일치를 발견. 세 함수 모두 각 에러 분기 끝에 해당 입력칸(doSetPin: 형식오류->pinNewIn, 확인불일치->pinNewIn2 비우고; doDisableAppLock: 오류->pinOffIn 비우고; doChangePin: 현재PIN오류->pinChgCurIn 비우고, 형식오류->pinChgNewIn, 확인불일치->pinChgNewIn2 비우고)에 doUnlock()과 같은 패턴으로 .focus() 추가(현재 입력이 맞는 값이 아닌 분기는 value도 비움, 형식 오류만 난 분기는 값을 유지해 고쳐 쓰기 쉽게 함). 세 함수 모두 APPLOCK.verify()/setPin() 실제 해시 연산에 엮여 FUNCTIONS(vm 실행형) 밖에 있어(cycle152 critique 주석 참고) test/run.js에 extractFunction 기반 소스 정규식 검증 3건 추가(각 분기의 정확한 focus/value 처리를 문자 그대로 매칭). <script> 블록 4개 모두 node --check 통과. node our-assets-v1.14.1/our-assets/test/run.js 1665->1668 통과. APP_VERSION 1.47.202->1.47.203, sw.js CACHE v465->v466.",
-      "commit": "ff43fb7"
-    },
     {
       "cycle": 221,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-21T08:10:00.000Z",
       "summary": "critique(cycle225) 계획대로 stock.js/rates.js/crypto.js 세 시세 프록시 함수에 공개 남용 완화책을 추가했다. 계획에서 한 가지를 현실에 맞게 조정했다: 'ALLOWED_ORIGINS 기본값은 배포 도메인'이라는 계획은 전제가 틀렸다 — 이 앱은 Netlify Drop으로 임의 서브도메인(https://랜덤이름.netlify.app 또는 사용자가 바꾼 이름)에 배포되므로 리포지토리 코드만으로는 실제 배포 도메인을 알 수 없다. 기본값을 아무 hex나 박아두면 ALLOWED_ORIGINS를 설정하지 않은(아마 대다수인) 실사용자의 실제 배포 사이트 자체가 즉시 CORS로 막히는 더 나쁜 회귀가 된다. 그래서 ALLOWED_ORIGINS 환경변수가 비어있으면(미설정) 기존과 똑같이 Access-Control-Allow-Origin:'*'로 전체 허용하고, 값이 설정된 경우에만 그 쉼표구분 목록에 있는 Origin만 echo(아니면 헤더 생략)하도록 '옵트인 강화'로 설계했다 — 소유자가 자기 배포 도메인을 알고 있는 시점(배포 후)에 스스로 값을 넣어야만 조여지는 구조라, 이번 커밋만으로 깨지는 배포가 없다. 세 함수 모두에 동일하게: isAllowedOrigin(origin,allowlist)/shouldThrottle(history,now,windowMs,maxCount)/corsOrigin(origin,allowlist) 순수함수 신설(getJSON/NAVER_HEADERS처럼 파일별 중복, 기존 관례 그대로), 핸들러 진입부에 웜 컨테이너 단위 레이트리미트(RL_WINDOW_MS=60000ms, RL_MAX=30회 — 실사용은 3분당 1회 수준이라 넉넉한 상한, 초과 시 기존 json() envelope 그대로 429)를 추가, json()이 origin 인자를 받아 ALLOWED_ORIGINS 설정 시에만 Vary:Origin 헤더도 추가(CDN이 다른 Origin에 캐시된 ACAO를 잘못 재사용하지 않도록). curl 등 Origin 헤더가 없는 비브라우저 호출은 CORS로 원천적으로 못 거른다는 한계, 레이트리미트가 콜드스타트마다 리셋되는 best-effort라는 한계 모두 코드 주석에 명시(계획이 요구한 대로). test/run.js에 stockFns/ratesFns/cryptoFns 세 모듈 공통으로 isAllowedOrigin 4건(미설정 시 전체허용/allowlist 매치만 허용/Origin 헤더 없는 호출은 허용/세 모듈 동일 동작)과 shouldThrottle 4건(임계값 이하 허용·누적/초과 시 차단·history 보존/윈도우 밖 오래된 기록 가지치기/세 모듈 공통)을 추가 — 가지치기 테스트는 처음에 일부만 밀려나는 경계값으로 잘못 작성해 FAIL하는 걸 직접 잡아(세 기록 모두 윈도우 밖으로 밀려나는 now 값으로 수정) 고쳤다. index.html/logic.js/sw.js는 전혀 안 건드림(서버리스 함수만 변경이라 SHELL 캐시 대상 아님, APP_VERSION/CACHE 버전 변경 불필요). node --check(stock.js/rates.js/crypto.js) 통과. node our-assets-v1.14.1/our-assets/test/run.js 1715/1715 -> 1723/1723 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 226,
+      "phase": "develop",
+      "timestamp": "2026-10-21T00:00:00.000Z",
+      "summary": "sw.js:49-60 fetch 핸들러의 navigate 분기(온라인일 때 index.html 최신본을 받아 캐시에 반영하는 경로)가 응답을 검증 없이 통째로 c.put()했음을 발견 — 같은 파일의 정적 리소스 분기(63-74행)는 이미 res.status===200 && res.type==='basic' 가드를 거치는데 navigate 분기만 비대칭으로 빠져 있었다(git log -p로 이 부분이 생성 이후 한 번도 수정 안 됐음을 확인). 배포 중 호스팅이 일시적으로 502/503이나 커스텀 404 오류 페이지를 돌려주면 그걸 그대로 오프라인 폴백용 index.html 캐시에 덮어써, 그 뒤 오프라인 전환 시 실제 앱이 아니라 그 오류 페이지가 뜨는 잠재적 버그였다. navigate 분기에도 정적 리소스 분기와 동일한 가드를 추가(캐시 저장만 조건부, return res는 그대로 무조건 수행). test/run.js에 sw.js를 소스 텍스트로 읽어 검증하는 테스트 4건 추가(가드가 put() 앞에 있는지/type===basic까지 확인하는지/return이 조건 없이 일어나는지/정적 리소스 분기 가드가 그대로 남아있는지 회귀 가드) — 수정 전 코드로 되돌려 4건 중 3건이 실제로 FAIL함을 직접 확인한 뒤 복원. sw.js만 변경이라 APP_VERSION은 그대로 두고 CACHE만 v474->v475로 올렸다. node --check(sw.js, test/run.js) 통과. node our-assets-v1.14.1/our-assets/test/run.js 1723/1723 -> 1727/1727 통과.",
       "commit": null
     }
   ]

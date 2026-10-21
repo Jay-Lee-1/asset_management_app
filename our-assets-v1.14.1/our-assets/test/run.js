@@ -37,6 +37,11 @@ const src = fs.readFileSync(HTML_PATH, 'utf8');
 // 모듈이다 — 여기 있는 함수는 extractFunction/extractConst의 특수 케이스에서 벗어난다.
 const LOGIC_PATH = path.join(__dirname, '..', 'logic.js');
 const logicSrc = fs.readFileSync(LOGIC_PATH, 'utf8');
+// sw.js(서비스워커)는 브라우저 전용 전역(self/caches/fetch)에 의존해 vm으로 실행할 수 없으므로,
+// index.html의 정규식 슬라이싱 테스트와 같은 방식으로 소스 문자열만 읽어 회귀 패턴을 검사한다
+// (app-evolve cycle226).
+const SW_PATH = path.join(__dirname, '..', 'sw.js');
+const swSrc = fs.readFileSync(SW_PATH, 'utf8');
 
 function extractFunction(name) {
   const marker = `function ${name}(`;
@@ -19781,6 +19786,56 @@ test('index.html: #bootSplash가 <body> 열림 태그와 #errBanner 사이(즉 #
   const errBannerIdx = src.indexOf('id="errBanner"');
   assert.ok(bodyIdx !== -1 && splashIdx !== -1 && errBannerIdx !== -1, '<body>/#bootSplash/#errBanner 중 하나를 못 찾음');
   assert.ok(bodyIdx < splashIdx && splashIdx < errBannerIdx, '#bootSplash가 <body>와 #errBanner 사이(즉 #app보다 먼저)에 있지 않음 — JS 실행 전 첫 페인트부터 보이지 않을 수 있음');
+});
+
+/* ---------- sw.js fetch 핸들러: navigate 분기 오류 응답 캐시 방지 (app-evolve cycle226) ---------- */
+// 배포 중 서버가 502/503/커스텀 404 같은 비정상 응답을 잠깐 돌려줬을 때, 그걸 그대로
+// index.html 캐시에 덮어쓰면 그 뒤 오프라인 폴백이 깨진 페이지를 돌려주게 된다. 정적
+// 리소스 분기(아래 두 번째 e.respondWith)는 이미 status===200 가드가 있는데 navigate
+// 분기만 빠져 있던 비대칭을 고친 회귀 테스트.
+function extractNavigateBranch() {
+  const marker = "if (req.mode === 'navigate')";
+  const start = swSrc.indexOf(marker);
+  assert.ok(start !== -1, "sw.js에서 req.mode==='navigate' 분기를 찾지 못함");
+  const braceStart = swSrc.indexOf('{', start);
+  let depth = 0, i = braceStart;
+  for (; i < swSrc.length; i++) {
+    const c = swSrc[i];
+    if (c === '{') depth++;
+    else if (c === '}') { depth--; if (depth === 0) { i++; break; } }
+  }
+  assert.strictEqual(depth, 0, 'navigate 분기 중괄호 짝이 맞지 않음');
+  return swSrc.slice(start, i);
+}
+test("sw.js: navigate 분기가 caches.open().put() 전에 res.status===200 가드를 거친다", () => {
+  const branch = extractNavigateBranch();
+  const putIdx = branch.indexOf("c.put('./index.html'");
+  assert.ok(putIdx !== -1, "navigate 분기에서 caches put('./index.html') 호출을 찾지 못함");
+  const guardIdx = branch.indexOf('res.status === 200');
+  assert.ok(guardIdx !== -1, "navigate 분기에 res.status===200 가드가 없음 — 오류 응답까지 캐시될 수 있음");
+  assert.ok(guardIdx < putIdx, "status===200 가드가 caches put()보다 뒤에 있음 — put()이 가드 없이 먼저 실행됨");
+});
+test("sw.js: navigate 분기도 정적 리소스 분기와 동일하게 res.type==='basic'까지 함께 확인한다", () => {
+  const branch = extractNavigateBranch();
+  const guardIdx = branch.indexOf('res.status === 200');
+  assert.ok(guardIdx !== -1);
+  assert.ok(branch.slice(guardIdx, guardIdx + 60).includes("res.type === 'basic'"), "status 가드 바로 옆에 type==='basic' 확인이 없음(정적 리소스 분기와 비대칭)");
+});
+test("sw.js: navigate 분기는 성공 응답이든 아니든 fetch 결과(res)를 그대로 브라우저에 돌려준다", () => {
+  const branch = extractNavigateBranch();
+  // 캐시 저장은 조건부(status===200)지만, 실제 네비게이션 응답 자체는 항상 그대로 반환해야
+  // 한다(오류 페이지를 사용자에게 보여주는 건 정상 동작 — 캐시에만 안 남기면 됨).
+  const returnIdx = branch.indexOf('return res;');
+  assert.ok(returnIdx !== -1, "navigate 분기가 조건 없이 res를 반환하지 않음");
+  const putIdx = branch.indexOf("c.put('./index.html'");
+  assert.ok(putIdx !== -1 && putIdx < returnIdx, "return res가 캐시 저장보다 먼저 있음(순서 확인용 가드)");
+});
+test("sw.js: 정적 리소스 분기(캐시 우선)는 이번 수정 이전부터 이미 status===200 가드를 갖고 있다 — 회귀 가드", () => {
+  // navigate 분기만 고치면서 이 분기를 실수로 건드리지 않았는지 확인.
+  const idx = swSrc.indexOf("res.status === 200 && res.type === 'basic'");
+  assert.ok(idx !== -1, "정적 리소스 분기의 기존 status===200 가드가 사라짐");
+  const secondIdx = swSrc.indexOf("res.status === 200 && res.type === 'basic'", idx + 1);
+  assert.ok(secondIdx !== -1, "navigate 분기와 정적 리소스 분기 양쪽에 가드가 있어야 하는데 하나만 발견됨 — 이번 수정이 반영 안 됐거나 기존 분기가 사라짐");
 });
 
 /* ---------- 실행 ---------- */
