@@ -1,15 +1,12 @@
 {
   "cycle": 229,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "Netlify 시세 프록시 핸들러(stock.js/rates.js/crypto.js) exports.handler 테스트 커버리지 공백 해소",
+    "why": "이 세 함수의 exports.handler(실제 Netlify가 호출하는 진입점: throttle 체크, codes 파싱, 국내/해외/crypto fetch 팬아웃, 8초 budget race, CORS/json 응답 조립)는 어떤 테스트에서도 호출되지 않는다. test/run.js:18206-18208, 18277-18278, 18382가 \"fetch()를 실제로 하는 함수는 네트워크 모킹 인프라가 없어 범위 밖 — 순수 계산/파싱 함수만 검증\"이라고 각 파일마다 명시적으로 자백하며 cycle103/225/228에서 반복 확인됐지만 닫히지 않은 공백이다. 이 핸들러들은 앱의 유일한 서버사이드 트러스트 바운더리(CORS allowlist, rate limit, origin 체크, timeout budget)인데, cycle225(CORS allowlist/throttle 추가)와 cycle228(_shared.js로 유틸 통합)이 바로 이 코드를 건드리면서도 추출된 순수 헬퍼만 격리 테스트했을 뿐 handler가 그 헬퍼들을 실제로 올바르게 연결하는지(429/400/CORS 헤더가 실제 응답에 제대로 실리는지, _shared.js 리팩터가 실제 호출부를 깨지 않았는지)는 어떤 테스트도 검증하지 못한다. 앞으로의 리팩터가 handler 결선을 조용히 회귀시켜도 잡아낼 안전망이 없다.",
+    "approach": "test/run.js에 global.fetch를 저장/복원하는 작은 fetch-mock 헬퍼를 추가한다(테스트별 try/finally로 스코프를 좁혀 테스트 간 누수 방지, 큐에 넣은 canned Response류 객체({ok,status,json()})를 순서대로 반환). stock.js/rates.js/crypto.js 각각에 exports.handler를 직접 호출하는 테스트를 추가: (a) shouldThrottle이 거부할 때 429 + CORS 헤더 확인, (b) codes/cur 파라미터 누락 시 400, (c) upstream JSON을 모킹한 happy path에서 최종 KRW 환산 응답 바디 형태 확인, (d) ALLOWED_ORIGINS 설정/미설정 및 Origin 헤더 일치/불일치에 따른 CORS 헤더 동작(이미 단위테스트된 isAllowedOrigin/corsOrigin을 실제 handler 경로로 재검증), (e) ?debug=1일 때 _debug 객체 전달 확인. stock.js의 실제 8초 HANDLER_BUDGET_MS 타임아웃 race는 실제 wall-clock 대기가 필요하므로 선택적 스트레치로 낮은 우선순위에 둔다. 프로덕션 코드 변경은 없음(index.html/logic.js 불변이므로 APP_VERSION/sw.js CACHE 버전업 불필요) — 순수 테스트 인프라 확장."
+  },
   "history": [
-    {
-      "cycle": 224,
-      "phase": "critique",
-      "timestamp": "2026-10-21T03:14:55.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-224에서 다룬 모든 영역 전부 제외: toast/invalidateBalances/XSS보류/split거래/pushCloud gzip/mergeDataLoss경고/kakaoLogin병합/nextOutflowCard/#histQ디바운스/recSaveScopeConfirm보류/DB.goals·delOwner/#bootSplash/boot()로컬우선/asFx·asGold·asQty Enter제출(되돌림)/doExport CSV/bulkCatTargets adjust/연금전환복원/selectNwOwner선택id/CDN SRI(기각)/dismissedStaleMvIds·budgetCarryFor/crypto자산종류+주말휴장/recDates push()주말이동/PIN focus복원/archiveBaselines+UI연결/commaQty maximumFractionDigits/recNthDate버퍼버그/mergeRecordFields(보류결론 재확인, 재제안안함)/mergeDataLossFields/matchTxnQuery·matchAssetQuery NFC정규화). .a-cash/.a-bank(index.html:276-282)만 --brand-ink(명도대비 확보 전용 어두운 변형, index.html:56 및 각 accent테마별로 재정의)를 쓰는데, 이후 추가된 .a-fx/.a-gold/.a-crypto/.a-save/.a-food/.a-debt는 원색 hex를 그대로 써 라이트 테마에서 WCAG 1.4.11(비텍스트 대비 3:1) 기준을 못 넘김을 실측으로 확인(a-fx 1.88:1/a-gold 2.06:1/a-crypto 2.72:1/a-save 2.79:1/a-food·a-debt 2.92:1 — a-in 3.88:1/a-stock 4.22:1/a-cash 5.48:1은 통과). 동일 hex의 다크테마 값(index.html:76-79)은 전부 5.2~7.2:1로 이미 통과라 라이트 테마에만 있는 공백이며, 자산목록·카테고리선택·거래내역 모든 행이 이 배지를 쓰므로 노출 범위가 넓고 앱이 이미 --brand-ink로 해법을 알면서 나머지 타입에 적용을 안 한 상태. 다음 advance 계획: 각 테마 블록(:root/dark/prefers-color-scheme)에 --fx-ink/--gold-ink/--crypto-ink/--save-ink/--expense-ink를 --brand-ink와 같은 패턴으로 추가(라이트 값은 대응 -soft 배경 대비 4.5:1 이상, 다크 값은 기존 통과값 재사용), .a-fx/.a-gold/.a-crypto/.a-save/.a-food/.a-debt/.a-pension color를 새 변수로 교체, logic.js에 WCAG 상대휘도 contrastRatio(hex1,hex2) 순수함수 신설, test/run.js에 각 배지 fg/bg 쌍이 contrastRatio>=3을 만족하는지 하드코딩 회귀 테스트 추가(TYPE_COLOR 차트 색상은 범위 밖). 러너업: DB.assetQtyLog 자동 정리 부재(저용량이라 archiveTxnsBefore 대비 리스크/가치 낮음), TYPE_COLOR.gold(#C9A227) vs CSS --gold(#BE8E2C) 불일치(본 수정에 흡수되어 별도 사이클 불필요)는 제외. 코드 변경 없음(critique 단계라 state.json만 갱신, pending_advance_plan 저장).",
-      "commit": null
-    },
     {
       "cycle": 224,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-21T22:05:00.000Z",
       "summary": "cycle229 develop 커밋(31f16d3, saveAsset()에서 자산 귀속(owner) 변경 시 linkedAssetId로 연결된 asset형 목표의 owner도 함께 동기화)을 검토. 전제부터 재검증: goalOpenAsset()(index.html:3216)이 '연결하는 시점'에만 goalDraft.owner=a.owner로 한 번 맞춰줄 뿐이고, doRenameOwner(4197-4198)는 귀속 '이름이 바뀌는' 경로만 goal.owner를 따라가게 해줄 뿐 자산이 다른 기존 귀속으로 옮겨가는 이번 경로는 다루지 않음을 grep으로 직접 확인 — 진단이 정확함. 추가된 한 줄(DB.goals.forEach(g=>{if(g.type==='asset'&&g.linkedAssetId===d.id&&g.owner!==d.owner){g.owner=d.owner;touch(g)}}))을 추적: owner!==d.owner 가드로 불변 시 불필요한 touch 없음, type==='asset' 체크로 networth형(linkedAssetId 항상 null) 영향 없음, linkedAssetId===d.id로 무관한 목표 보존. grep으로 index.html 전체에서 DB.assets[].owner를 직접 대입하는 지점이 asOpenOwner(saveAsset 경유)·doRenameOwner(기존 처리) 두 곳뿐임을 재확인해, 이번 수정이 자산 귀속 변경의 마지막 공백을 덮었고 더 손봐야 할 동일 유형의 누락 경로가 남아있지 않음을 확인. sanitizeBackup()의 owner 검증(6735-6736)은 validOwners 존재 여부만 보고 linkedAssetId와의 교차검증은 하지 않아 이 수정과는 다른(백업 복원 경로) 별개의 공백이라 범위 밖으로 남겨둠(기존에도 있던 공백, 이번 커밋이 만들거나 악화시키지 않음). 새 테스트 4건을 직접 추적해 diff의 가드 분기(owner 변경/무관 목표/owner 불변/networth형)와 정확히 1:1 대응함을 확인. node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1755/1755 통과. APP_VERSION 1.47.211/sw.js CACHE v478 일치 확인(develop에서 이미 반영). 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 229,
+      "phase": "critique",
+      "timestamp": "2026-10-21T23:11:10.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-229에서 다룬 모든 영역 전부 제외 지시)한 결과, netlify/functions/{stock.js:19-101, rates.js:17, crypto.js:10}의 exports.handler(실제 Netlify 진입점: throttle/파싱/fetch 팬아웃/8초 budget race/CORS·json 응답 조립)가 어떤 테스트에서도 호출되지 않는 공백을 선택. test/run.js:18206-18208, 18277-18278, 18382가 \"fetch 실행 함수는 네트워크 모킹 인프라 없어 범위 밖 — 순수 계산/파싱 함수만 검증\"이라고 3곳에서 명시적으로 자백하며 cycle103/225/228에서 반복 확인됐지만 닫히지 않았다. cycle225(CORS allowlist/throttle 추가)·228(_shared.js 통합)이 바로 이 코드를 건드렸는데도 추출된 순수 헬퍼만 격리 테스트했지 handler 결선 자체는 검증 안 됨 — 이 세 함수가 앱의 유일한 서버사이드 트러스트 바운더리임을 고려하면 리팩터 회귀를 잡을 안전망이 없는 상태. 검토 후 기각한 대안: 다개월 지출추세 차트(이미 spendTrend/spendTrendBadge로 구현돼 있어 실제로 빠진 게 아님), localStorage 쿼터초과 처리(이미 try/catch+storageOutcomeMsg/toastFail로 처리돼 있어 이미 견고함), sw.js skipWaiting/clients.claim 타이밍 엣지케이스(실존하지만 발생빈도·영향범위가 미검증 보안 바운더리보다 낮음). advance 단계 계획을 pending_advance_plan에 저장. 코드 변경 없음(critique 규칙).",
       "commit": null
     }
   ]
