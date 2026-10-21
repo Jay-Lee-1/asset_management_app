@@ -5186,6 +5186,19 @@ test('matchTxnQuery: 분할 거래의 항목별 메모(splits[].memo)로도 찾�
   const t = { memo: '마트', amount: 10000, fromAssetId: null, toAssetId: null, splits: [{ category: '식비', amount: 7000, memo: '우유' }, { category: '생활용품', amount: 3000, memo: '휴지' }] };
   assert.strictEqual(sandbox.matchTxnQuery(t, '휴지', []), true);
 });
+test('matchTxnQuery: 메모가 조합형(NFD)으로 저장돼 있어도 완성형(NFC) 검색어로 찾을 수 있다(app-evolve cycle224)', () => {
+  const t = { memo: '카페 메모'.normalize('NFD'), category: '식비', fromAssetId: null, toAssetId: null };
+  assert.strictEqual(sandbox.matchTxnQuery(t, '메모', []), true, 'hay가 NFD라도 NFC 검색어로 매칭돼야 함');
+});
+test('matchTxnQuery: 검색어가 조합형(NFD)이어도 완성형(NFC)으로 저장된 메모를 찾을 수 있다', () => {
+  const t = { memo: '카페 메모', category: '식비', fromAssetId: null, toAssetId: null };
+  assert.strictEqual(sandbox.matchTxnQuery(t, '메모'.normalize('NFD'), []), true, '검색어가 NFD라도 NFC로 저장된 hay와 매칭돼야 함');
+});
+test('matchTxnQuery: 자산명이 조합형(NFD)으로 저장돼 있어도 완성형(NFC) 검색어로 찾을 수 있다', () => {
+  const assets = [{ id: 'a1', name: '우리은행'.normalize('NFD') }];
+  const t = { memo: '', category: '이체', fromAssetId: 'a1', toAssetId: null };
+  assert.strictEqual(sandbox.matchTxnQuery(t, '우리은행', assets), true);
+});
 
 /* ---------- matchAssetQuery: 자산 검색도 matchTxnQuery와 동일한 대소문자 무시 includes 규칙 ---------- */
 test('matchAssetQuery: 빈 검색어는 항상 매칭된다', () => {
@@ -5202,6 +5215,12 @@ test('matchAssetQuery: fx 자산은 이름뿐 아니라 보유 통화(currency)�
 });
 test('matchAssetQuery: 이름/통화 어디에도 없으면 매칭되지 않는다', () => {
   assert.strictEqual(sandbox.matchAssetQuery({ name: '우리은행', currency: 'KRW' }, 'xyz'), false);
+});
+test('matchAssetQuery: 자산명이 조합형(NFD)으로 저장돼 있어도 완성형(NFC) 검색어로 찾을 수 있다(app-evolve cycle224)', () => {
+  assert.strictEqual(sandbox.matchAssetQuery({ name: '삼성전자'.normalize('NFD') }, '삼성전자'), true, 'hay가 NFD라도 NFC 검색어로 매칭돼야 함');
+});
+test('matchAssetQuery: 검색어가 조합형(NFD)이어도 완성형(NFC)으로 저장된 자산명을 찾을 수 있다', () => {
+  assert.strictEqual(sandbox.matchAssetQuery({ name: '삼성전자' }, '삼성전자'.normalize('NFD')), true, '검색어가 NFD라도 NFC로 저장된 hay와 매칭돼야 함');
 });
 
 /* ---------- matchesAssetId: 자산 행 '내역' 버튼(openAssetHistory)이 쓰는 계좌 필터 ---------- */

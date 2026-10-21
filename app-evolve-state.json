@@ -1,15 +1,8 @@
 {
   "cycle": 224,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 219,
-      "phase": "develop",
-      "timestamp": "2026-10-20T00:00:00.000Z",
-      "summary": "Explore 서브에이전트로 develop 후보를 탐색(cycle149-218에서 다룬 toast/invalidateBalances fromDate/closeSheetGuarded/aria-label/XSS/실행형 테스트 전환류(wireSheetGestures 등, 여전히 미전환)/split거래/pushCloud await/gzip 압축/mergeDataLoss 경고/kakaoLogin 게스트 병합/nextOutflowCard 스냅샷/#histQ 디바운스/recSaveScopeConfirm 등(보류 유지)/DB.goals type 구분 및 관련 버그들/delOwner 목표 체크/#bootSplash/asFx·asGold·asQty Enter-제출(되돌림)/doExport csv 미래거래 혼입/bulkCatTargets adjust 가드/연금 전환 includeInTotal 복원/boot() 로컬-먼저-렌더 재구성 전부 제외). 순자산 캐러셀(#nwCarousel)이 자산 일괄선택 모드(ST.aSel.mode) 중에도 비활성화되지 않고 계속 스와이프/점클릭/화살표 키로 동작하는 것을 발견 — selectNwOwner()(index.html:3474)가 귀속을 바꿀 때 ST.aSel.ids를 전혀 건드리지 않아, \"나\" 귀속에서 자산을 선택해둔 채로 캐러셀을 넘겨 \"배우자\" 귀속으로 바뀌면 화면엔 더 이상 보이지 않는 그 id가 계속 선택된 채로 남는다. historySelAll/ledgerSelAll은 선택모드 중 필터 UI 자체가 숨어 이 문제가 없는데(H.selMode가 전체 필터 블록을 감싸서 숨김), 자산 탭만 귀속 캐러셀이 선택모드에서도 계속 열려 있어 유일하게 해당. \"전체선택\"(assetSelAll)이 화면에 없는 그 id 위에 새 귀속 id를 더해 total/전체해제 판정이 꼬이고, \"선택 삭제\"(assetDelSel)를 누르면 화면에 없는 이전 귀속 자산까지 사용자가 다시 확인할 기회 없이 함께 지워지는 실제 데이터 손실 버그. selectNwOwner()에 if(ST.aSel.mode&&ST.aSel.ids.size){ST.aSel.ids.clear();updateSelBottom();} 가드를 추가해 귀속이 실제로 바뀔 때(스크롤 정착/점클릭/키보드 세 경로 모두 selectNwOwner를 공유하므로 한 곳 수정으로 전부 해결) 이전 선택을 비우고 하단 선택 바도 함께 갱신하게 했다. test/run.js FUNCTIONS에 selectNwOwner/refreshAssetBody/refreshNwHistoryCard/refreshGoalsSummary/refreshAllocationCard를 추가(넷 다 $(...)가 없으면 즉시 return하는 얕은 래퍼라 기존 공유 $ 스텁만으로 실행형 검증 가능)하고 테스트 3건 신설: 선택모드 중 귀속 전환 시 ids 비워짐+updateSelBottom 호출 확인, 같은 귀속 재선택(실제 변경 없음) 시 ids/updateSelBottom 모두 안 건드림(회귀 가드), 비선택모드에서는 귀속 전환이 ids에 영향 없음(회귀 가드). APP_VERSION 1.47.199->1.47.200, sw.js CACHE v461->v462. HTML 주석 제거 후 실제 코드 script 블록(2번, 516488자) node Function 생성자로 문법 통과. node our-assets-v1.14.1/our-assets/test/run.js 1635/1635 -> 1638/1638 통과.",
-      "commit": "58ab13c"
-    },
     {
       "cycle": 219,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-21T00:16:50.015Z",
       "summary": "critique(cycle223)가 제안한 mergeRecordFields(winner,loser) 필드 단위 병합 계획을 실제 구현 전에 재검토한 결과, 보류하고 더 작고 안전한 대안을 구현했다. 보류 이유: 그 계획은 'winner가 손대지 않은 필드에서 loser 값을 채워 넣는다'는 전제인데, 이 앱의 데이터 모델은 레코드 전체에 updatedAt 하나만 찍고(touch(), index.html:1522-1527) 필드별 변경 시점이 없다 — saveAsset()/saveTx() 등도 '이번에 실제로 바꾼 필드만' 넘기는 게 아니라 폼 전체를 매번 레코드 전체로 치환해 저장한다(saveAsset: DB.assets[i]=d). 그래서 '승자가 실제로 바꾼 필드'와 '승자가 그냥 안 건드려서 오래된 값 그대로인 필드'를 구분할 근거가(공통 조상 스냅샷도, 필드별 타임스탬프도) 전혀 없다. 이걸 무시하고 '두 값이 다르면 무조건 패자 값을 채워 넣는' 식으로 구현하면, 승자가 실제로 의도적으로 되돌리거나 바꾼 값을 패자의 오래된 값으로 조용히 되살리는 '반대 방향의 새 데이터손실 버그'를 만들 위험이 있다(지금의 whole-record LWW보다 더 나쁠 수 있음 — 적어도 지금은 승자의 모든 필드가 일관되게 보존됨). 진짜 필드 단위 병합을 제대로 하려면 saveAsset/saveTx 등 자산·거래를 바꾸는 모든 쓰기 경로에 '이번에 어떤 필드가 실제로 바뀌었는지'부터 먼저 기록하는 인프라(필드별 타임스탬프 또는 touched-field 집합)가 선행돼야 하는데, 이건 호출부 수가 많고 하나라도 빠뜨리면(그 경로는 '아무것도 안 바꿨다'로 오인되어 실제 변경이 패자 값에 덮일 수 있음) 바로 똑같은 위험이 재발하는, 한 advance 사이클 규모를 넘는 별도 작업이다. 사람 리뷰 없이 도는 무인 사이클에서, 실사용자의 자산·거래 데이터에 이런 미검증 가정을 까는 건 리스크/가치가 안 맞다고 판단해 이번엔 짓지 않기로 했다(이 판단 자체를 다음 critique가 같은 전제로 재제안하지 않도록 logic.js mergeCollectionConflicts() 주석에도 남겼다). 대신 cycle211/212가 깔아둔 mergeDataLossCount 경고 인프라를 확장해, mergeCollectionConflicts()(logic.js)가 이제 {id,discardedSide} 외에 실제로 값이 달랐던 필드명(fields, 정렬됨)도 함께 반환하게 하고, mergeRemoteDataIntoLocal()(index.html)이 그 필드명들을 DB.settings.mergeDataLossFields(중복 없이 누적, dismissMergeDataLossWarn()에서 count와 함께 리셋)에 모아, 홈 경고 카드가 '동기화 중 일부 수정이 덮어써졌어요'라는 건수 안내에 더해 '(이름, 잔액 등)'처럼 어떤 항목이 덮어써졌는지도 보여주게 했다(자동 복구는 아니지만, 사용자가 적어도 어느 값을 다시 확인해야 할지 알 수 있어 안전하게 가치를 더함). 자주 나올 만한 필드는 한글 라벨로(name->이름, baseAmount/amountKRW->잔액/금액 등), 매핑이 없는 필드는 원래 키 그대로 보여준다. index.html만 변경이라 APP_VERSION 1.47.205->1.47.206, sw.js CACHE v470->v471. node --check(logic.js, 메인 인라인 <script> 추출본) 통과. node our-assets-v1.14.1/our-assets/test/run.js 1692/1692 -> 1699/1699 통과(mergeCollectionConflicts fields 테스트 2건, mergeRemoteDataIntoLocal mergeDataLossFields 누적/중복제거/무변경 테스트 3건, homeAlerts fields 전달/폴백 테스트 2건, homeAlertCard 필드 라벨 표시 테스트 2건 신설).",
+      "commit": null
+    },
+    {
+      "cycle": 224,
+      "phase": "develop",
+      "timestamp": "2026-10-21T01:12:46.000Z",
+      "summary": "직접 synchronous로 develop 후보를 탐색(cycle149-223에서 다룬 모든 영역 전부 제외: toast/invalidateBalances/split거래/pushCloud gzip/mergeDataLoss/kakaoLogin 병합/nextOutflowCard/#histQ 디바운스/recSaveScopeConfirm 보류/DB.goals·delOwner/#bootSplash/boot() 로컬우선/doExport CSV/bulkCatTargets adjust/crypto 자산종류+주말휴장 회귀/recDates push() 주말이동/asOpenType pension 복원/selectNwOwner 선택id/PIN focus 복원/archiveBaselines+UI 연결/commaQty maximumFractionDigits/recNthDate 버퍼 버그/mergeDataLossFields). logic.js의 normName()(카테고리/귀속 이름 중복 비교용)은 한글 조합형(NFD)·완성형(NFC) 차이를 이미 .normalize('NFC')로 흡수하는데, 같은 문제를 가진 자유 텍스트 검색 함수 matchTxnQuery()/matchAssetQuery()(각각 #histQ 전체내역 검색, 자산 탭 검색이 쓰는 includes 기반 매칭)에는 그 정규화가 전혀 적용돼 있지 않음을 발견 — node로 '메모'.normalize('NFD') !== '메모'(NFC)이고 서로 includes()에 걸리지 않음을 직접 재현해 확인. 메모/자산명이 과거 macOS(HFS+ 파일명은 NFD 저장)에서 복사해 붙여넣었거나 특정 입력 경로로 NFD 형태로 저장된 경우, 화면엔 똑같이 보이는 글자인데도 평소처럼 NFC로 타이핑한 검색어로는 전혀 찾아지지 않는 실사용 버그. 두 함수 모두 비교 직전에 hay/q 양쪽에 .normalize('NFC')를 추가해 normName()과 동일한 전제(저장/표시용 원본은 그대로 두고 비교 시점에만 정규화)로 고쳤다(대소문자 비교·쉼표 처리 등 기존 동작은 그대로 유지). test/run.js에 기존 matchTxnQuery/matchAssetQuery 테스트 뒤에 5건 추가: 메모가 NFD로 저장돼 있어도 NFC 검색어로 찾아지는지, 검색어가 NFD여도 NFC로 저장된 메모를 찾는지, 자산명이 NFD로 저장돼 있어도 매칭되는지(matchTxnQuery 경로), matchAssetQuery에서 hay가 NFD/검색어가 NFD인 두 방향 각각. 수정 전 코드로 되돌려 5건 모두 FAIL함을 직접 확인한 뒤 수정을 복원했다. index.html은 건드리지 않아 APP_VERSION은 그대로 두고, logic.js만 바뀌어(SHELL 캐시 대상) sw.js CACHE만 v471->v472로 올렸다. node --check(logic.js, sw.js) 통과. node our-assets-v1.14.1/our-assets/test/run.js 1699/1699 -> 1704/1704 통과.",
       "commit": null
     }
   ]

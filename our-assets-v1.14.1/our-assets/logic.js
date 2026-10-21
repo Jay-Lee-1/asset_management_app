@@ -410,7 +410,14 @@ function txCatLabel(t){
  * 똑같이 찾을 수 있게 한다(haystack 쪽까지 쉼표를 지우면 메모/자산명에 들어있는 실제 쉼표가
  * 사라지면서 원래라면 안 걸릴 단어가 우연히 이어 붙어 매칭되는 오탐이 생길 수 있어 제외).
  * 분할 거래(t.splits)는 카테고리/메모가 여러 개로 나뉘므로 splitLines()로 모두 모아
- * haystack에 합친다 — 안 그러면 분할된 두 번째 이후 카테고리/메모로는 검색해도 못 찾는다. */
+ * haystack에 합친다 — 안 그러면 분할된 두 번째 이후 카테고리/메모로는 검색해도 못 찾는다.
+ * normName()과 동일한 이유(app-evolve cycle224 develop)로 hay/q 둘 다 .normalize('NFC')를
+ * 거친다 — 한글은 조합형(NFD, 자모가 분리된 코드포인트 나열)과 완성형(NFC, 한 음절=한 코드포인트)
+ * 두 형태가 같은 글자를 서로 다른 문자열로 표현하는데(예: "메모".length는 NFC 2, NFD 4),
+ * JS의 includes()는 코드포인트를 그대로 비교해 두 형태가 섞이면(예: 과거 macOS/HFS+에서 복사해
+ * 붙여넣은 메모·자산명은 NFD로 저장되는 경우가 있음) 검색어와 저장된 글자가 눈에는 완전히
+ * 같아 보여도 전혀 매칭되지 않는다. normName()은 카테고리/귀속 '이름' 중복 비교에만 이 정규화를
+ * 적용했을 뿐, 자유 텍스트 검색(#histQ 전체내역 검색, 자산 검색)에는 적용된 적이 없었다. */
 function matchTxnQuery(t,q,assets){
  if(!q)return true;
  const fa=(assets||[]).find(a=>a.id===t.fromAssetId),ta=(assets||[]).find(a=>a.id===t.toAssetId);
@@ -419,16 +426,17 @@ function matchTxnQuery(t,q,assets){
  const cats=lines.map(s=>s.category||'').join(' ');
  const lineMemos=lines.map(s=>s.memo||'').join(' ');
  const hay=(t.memo||'')+' '+cats+' '+lineMemos+' '+(fa?fa.name:(t.fromAssetName||'—'))+' '+(ta?ta.name:(t.toAssetName||'—'))+' '+amt;
- return hay.toLowerCase().includes(q.toLowerCase().replace(/,/g,''));
+ return hay.normalize('NFC').toLowerCase().includes(q.normalize('NFC').toLowerCase().replace(/,/g,''));
 }
-/* 자산명(+fx 보유통화) 검색 — matchTxnQuery와 동일하게 대소문자 구분 없이 includes로 매칭한다.
+/* 자산명(+fx 보유통화) 검색 — matchTxnQuery와 동일하게 대소문자 구분 없이 includes로 매칭하고,
+ * 같은 이유로 NFC 정규화도 함께 적용한다(위 matchTxnQuery 주석 참고).
  * 자산은 종목코드 같은 별도 필드가 없어 이름이 유일한 식별자이지만(stock은 보유 종목명을
  * name에 직접 쓴다), fx는 화면에 '달러'처럼 이름을 붙여도 실제로 찾는 건 보유 통화(USD 등)인
  * 경우가 많아 currency도 함께 haystack에 넣는다. */
 function matchAssetQuery(a,q){
  if(!q)return true;
  const hay=(a.name||'')+' '+(a.currency||'');
- return hay.toLowerCase().includes(q.toLowerCase());
+ return hay.normalize('NFC').toLowerCase().includes(q.normalize('NFC').toLowerCase());
 }
 /* 계좌(자산) 단위 거래내역 필터 — assetId가 없으면(전체) 항상 통과, 있으면 보내거나 받은 쪽 중 하나라도 일치해야 함 */
 function matchesAssetId(t,assetId){
