@@ -15,6 +15,14 @@
  *   - 타임아웃 + 429/5xx 재시도 추가로 간헐적 차단 완화
  */
 exports.handler = async (event) => {
+  const origin = (event.headers && (event.headers.origin || event.headers.Origin)) || null;
+
+  const rl = shouldThrottle(rlHistory, Date.now(), RL_WINDOW_MS, RL_MAX);
+  rlHistory = rl.history;
+  if (!rl.allow) {
+    return json(429, { error: '요청이 너무 많아요. 잠시 후 다시 시도해 주세요.' }, 0, origin);
+  }
+
   const q = event.queryStringParameters || {};
   const curs = (q.cur || 'USD')
     .split(',')
@@ -78,7 +86,7 @@ exports.handler = async (event) => {
     }
   }
 
-  return json(200, wantDebug ? { ...out, _debug: debug } : out, 300);
+  return json(200, wantDebug ? { ...out, _debug: debug } : out, 300, origin);
 };
 
 /* ── 네이버 시장지표 (신 경로): 1 외화 = ? 원 (엔은 100엔 고시라 100으로 나눔) ──
@@ -203,18 +211,46 @@ function toNum(v) {
 // 엔(JPY)은 100엔 단위로 고시되므로 원화 환산 전에 100으로 나눈다. 나머지 통화는 그대로.
 function applyJpyScale(cur, price) { return cur === 'JPY' ? price / 100 : price; }
 
-function json(status, body, maxAge) {
-  return {
-    statusCode: status,
-    headers: {
-      'Content-Type': 'application/json; charset=utf-8',
-      'Access-Control-Allow-Origin': '*',
-      'Cache-Control': maxAge ? `public, max-age=${maxAge}` : 'no-store'
-    },
-    body: JSON.stringify(body)
+/* ── 공개 프록시 남용 완화 (app-evolve cycle225 critique) ──────────────────────
+ * stock.js와 같은 이유·같은 완화책: ALLOWED_ORIGINS 미설정 시 기존처럼 전체 허용(배포
+ * 도메인을 미리 알 수 없어 기본값을 못 박으면 설정 전 실사용자가 막힘), 설정 시에만
+ * Origin echo로 제한(비브라우저 호출은 CORS로 못 거르는 한계 있음) + 웜 컨테이너 단위
+ * best-effort 레이트리밋(콜드스타트마다 리셋). */
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
+  .split(',').map(s => s.trim()).filter(Boolean);
+const RL_WINDOW_MS = 60000;
+const RL_MAX = 30;
+let rlHistory = [];
+
+function isAllowedOrigin(origin, allowlist) {
+  if (!allowlist || !allowlist.length) return true;
+  if (!origin) return true;
+  return allowlist.includes(origin);
+}
+
+function shouldThrottle(history, now, windowMs, maxCount) {
+  const pruned = (history || []).filter(t => now - t < windowMs);
+  if (pruned.length >= maxCount) return { allow: false, history: pruned };
+  pruned.push(now);
+  return { allow: true, history: pruned };
+}
+
+function corsOrigin(origin, allowlist) {
+  if (!allowlist.length) return '*';
+  return isAllowedOrigin(origin, allowlist) && origin ? origin : null;
+}
+
+function json(status, body, maxAge, origin) {
+  const headers = {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': maxAge ? `public, max-age=${maxAge}` : 'no-store'
   };
+  const aco = corsOrigin(origin, ALLOWED_ORIGINS);
+  if (aco) headers['Access-Control-Allow-Origin'] = aco;
+  if (ALLOWED_ORIGINS.length) headers['Vary'] = 'Origin';
+  return { statusCode: status, headers, body: JSON.stringify(body) };
 }
 
 // 테스트(test/run.js)에서 순수 함수만 골라 require하기 위한 exports.
 // exports.handler는 그대로 유지되므로 Netlify 배포/동작에는 영향 없다.
-module.exports = { ratesUsdBaseToKrw, toNum, pickRows, errText, applyJpyScale };
+module.exports = { ratesUsdBaseToKrw, toNum, pickRows, errText, applyJpyScale, isAllowedOrigin, shouldThrottle };

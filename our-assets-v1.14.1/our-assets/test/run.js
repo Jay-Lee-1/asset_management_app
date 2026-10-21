@@ -18050,6 +18050,59 @@ if (stockFns && ratesFns) {
     assert.strictEqual(m.USD, 1385);
     assert.strictEqual('GBP' in m, false);
   });
+
+  /* ---------- isAllowedOrigin/shouldThrottle: 공개 프록시 남용 완화 (app-evolve cycle225 advance) ----------
+   * stock.js/rates.js/crypto.js 세 함수가 각자 동일한 로직을 복제해 두고 있어(기존 getJSON 등과
+   * 같은 파일별 중복 관례) 세 모듈 전부에 대해 같은 검증을 돌린다. */
+  test('isAllowedOrigin: ALLOWED_ORIGINS가 비어있으면(미설정) 무조건 허용 — 배포 도메인을 몰라도 기존 동작 유지', () => {
+    assert.strictEqual(stockFns.isAllowedOrigin('https://evil.example', []), true);
+    assert.strictEqual(stockFns.isAllowedOrigin(null, []), true);
+    assert.strictEqual(stockFns.isAllowedOrigin(undefined, undefined), true);
+  });
+  test('isAllowedOrigin: allowlist가 있으면 그 안의 Origin만 허용', () => {
+    const allow = ['https://my-app.netlify.app'];
+    assert.strictEqual(stockFns.isAllowedOrigin('https://my-app.netlify.app', allow), true);
+    assert.strictEqual(stockFns.isAllowedOrigin('https://evil.example', allow), false);
+  });
+  test('isAllowedOrigin: allowlist가 있어도 Origin 헤더 자체가 없으면(비브라우저 호출) 허용 — CORS로는 원천적으로 못 거르는 한계', () => {
+    assert.strictEqual(stockFns.isAllowedOrigin(null, ['https://my-app.netlify.app']), true);
+    assert.strictEqual(stockFns.isAllowedOrigin(undefined, ['https://my-app.netlify.app']), true);
+  });
+  test('isAllowedOrigin: rates.js/crypto.js도 동일하게 동작한다', () => {
+    const allow = ['https://my-app.netlify.app'];
+    assert.strictEqual(ratesFns.isAllowedOrigin('https://my-app.netlify.app', allow), true);
+    assert.strictEqual(ratesFns.isAllowedOrigin('https://evil.example', allow), false);
+    assert.strictEqual(cryptoFns.isAllowedOrigin('https://my-app.netlify.app', allow), true);
+    assert.strictEqual(cryptoFns.isAllowedOrigin('https://evil.example', allow), false);
+  });
+
+  test('shouldThrottle: 윈도우 안에서 임계값 이하면 허용하고 history에 쌓는다', () => {
+    let r = stockFns.shouldThrottle([], 1000, 60000, 3);
+    assert.strictEqual(r.allow, true);
+    assert.deepStrictEqual(r.history, [1000]);
+    r = stockFns.shouldThrottle(r.history, 1010, 60000, 3);
+    assert.strictEqual(r.allow, true);
+    r = stockFns.shouldThrottle(r.history, 1020, 60000, 3);
+    assert.strictEqual(r.allow, true);
+    assert.strictEqual(r.history.length, 3);
+  });
+  test('shouldThrottle: 임계값을 넘으면 차단하고(이번 호출은 history에 추가하지 않음) 기존 history는 보존', () => {
+    const history = [1000, 1010, 1020];
+    const r = stockFns.shouldThrottle(history, 1030, 60000, 3);
+    assert.strictEqual(r.allow, false);
+    assert.deepStrictEqual(r.history, [1000, 1010, 1020]);
+  });
+  test('shouldThrottle: 윈도우 밖으로 오래된 기록은 가지치기돼 영구 차단되지 않는다', () => {
+    const history = [1000, 1010, 1020];
+    const now = 1020 + 60000 + 1; // 세 기록 모두 윈도우 밖으로 밀려남
+    const r = stockFns.shouldThrottle(history, now, 60000, 3);
+    assert.strictEqual(r.allow, true);
+    assert.deepStrictEqual(r.history, [now]);
+  });
+  test('shouldThrottle: rates.js/crypto.js도 동일한 순수 로직을 공유한다', () => {
+    assert.strictEqual(ratesFns.shouldThrottle([], 1000, 60000, 3).allow, true);
+    assert.strictEqual(cryptoFns.shouldThrottle([1000, 1010, 1020], 1030, 60000, 3).allow, false);
+  });
 }
 
 /* ---------- netlify/functions/crypto.js: 암호화폐(업비트) 시세 중계 순수 함수 (app-evolve cycle219) ----------

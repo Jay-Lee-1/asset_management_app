@@ -17,6 +17,14 @@
  *   (Stooq는 2026년 키/봇챌린지 도입으로 서버리스에서 사용 불가하여 제외했습니다.)
  */
 exports.handler = async (event) => {
+  const origin = (event.headers && (event.headers.origin || event.headers.Origin)) || null;
+
+  const rl = shouldThrottle(rlHistory, Date.now(), RL_WINDOW_MS, RL_MAX);
+  rlHistory = rl.history;
+  if (!rl.allow) {
+    return json(429, { error: '요청이 너무 많아요. 잠시 후 다시 시도해 주세요.' }, 0, origin);
+  }
+
   const raw = ((event.queryStringParameters || {}).codes || '')
     .split(',')
     .map(c => c.trim().toUpperCase())
@@ -24,7 +32,7 @@ exports.handler = async (event) => {
     .slice(0, 20);
 
   if (!raw.length) {
-    return json(400, { error: 'codes 파라미터가 필요해요 (예: ?codes=005930,AAPL)' });
+    return json(400, { error: 'codes 파라미터가 필요해요 (예: ?codes=005930,AAPL)' }, 0, origin);
   }
 
   const domestic = raw.filter(c => /^\d{6}$/.test(c));
@@ -89,7 +97,7 @@ exports.handler = async (event) => {
   if (timedOut) debug.timedOut = true; // 아직 못 받아온 코드는 out에 없고, wantDebug일 때 errors에도 안 남을 수 있음
 
   const wantDebug = (event.queryStringParameters || {}).debug === '1';
-  return json(200, wantDebug ? { ...out, _debug: debug } : out, timedOut ? 0 : 60);
+  return json(200, wantDebug ? { ...out, _debug: debug } : out, timedOut ? 0 : 60, origin);
 };
 
 /* 해외 시세 → 원화 변환 */
@@ -235,18 +243,54 @@ function toNum(v) {
 // 엔(JPY)은 100엔 단위로 고시되므로 원화 환산 전에 100으로 나눈다. 나머지 통화는 그대로.
 function applyJpyScale(cur, price) { return cur === 'JPY' ? price / 100 : price; }
 
-function json(status, body, maxAge) {
-  return {
-    statusCode: status,
-    headers: {
-      'Content-Type': 'application/json; charset=utf-8',
-      'Access-Control-Allow-Origin': '*',
-      'Cache-Control': maxAge ? `public, max-age=${maxAge}` : 'no-store'
-    },
-    body: JSON.stringify(body)
+/* ── 공개 프록시 남용 완화 (app-evolve cycle225 critique) ──────────────────────
+ * 이 함수는 배포된 정적 사이트의 URL이 devtools/공개 소스로 그대로 노출돼, 제3자가
+ * 인증 없이 그대로 가져다 쓰면 Netlify 함수 쿼터와 FINNHUB_KEY(공유 분당 한도)를
+ * 소진시킬 수 있다. 두 겹의 완화책을 더한다(둘 다 한계가 있음을 주석으로 명시):
+ *
+ * 1) ALLOWED_ORIGINS 환경변수(쉼표구분, 예: https://내사이트.netlify.app) 설정 시에만
+ *    Access-Control-Allow-Origin을 그 목록에 있는 Origin으로만 echo한다. 미설정이면
+ *    배포 도메인을 미리 알 수 없어(Netlify Drop이 임의 서브도메인을 발급) 기존처럼 '*'로
+ *    전체 허용한다 — 설정 전 실사용자를 막는 쪽보다 설정 후에만 조여지는 쪽이 안전.
+ *    curl 등 Origin 헤더 자체가 없는 비브라우저 호출은 CORS로 원천적으로 못 거른다는
+ *    한계가 있다(브라우저 간 도용만 막는 보완책).
+ * 2) shouldThrottle()로 웜 컨테이너 단위(콜드스타트마다 리셋되는 best-effort) 레이트리밋.
+ *    실사용은 3분마다 체크 수준이라 여유 있게 잡되, 쿼터를 통째로 쓸어가는 수준은 막는다. */
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
+  .split(',').map(s => s.trim()).filter(Boolean);
+const RL_WINDOW_MS = 60000;
+const RL_MAX = 30;
+let rlHistory = [];
+
+function isAllowedOrigin(origin, allowlist) {
+  if (!allowlist || !allowlist.length) return true;
+  if (!origin) return true;
+  return allowlist.includes(origin);
+}
+
+function shouldThrottle(history, now, windowMs, maxCount) {
+  const pruned = (history || []).filter(t => now - t < windowMs);
+  if (pruned.length >= maxCount) return { allow: false, history: pruned };
+  pruned.push(now);
+  return { allow: true, history: pruned };
+}
+
+function corsOrigin(origin, allowlist) {
+  if (!allowlist.length) return '*';
+  return isAllowedOrigin(origin, allowlist) && origin ? origin : null;
+}
+
+function json(status, body, maxAge, origin) {
+  const headers = {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': maxAge ? `public, max-age=${maxAge}` : 'no-store'
   };
+  const aco = corsOrigin(origin, ALLOWED_ORIGINS);
+  if (aco) headers['Access-Control-Allow-Origin'] = aco;
+  if (ALLOWED_ORIGINS.length) headers['Vary'] = 'Origin';
+  return { statusCode: status, headers, body: JSON.stringify(body) };
 }
 
 // 테스트(test/run.js)에서 순수 함수만 골라 require하기 위한 exports.
 // exports.handler는 그대로 유지되므로 Netlify 배포/동작에는 영향 없다.
-module.exports = { toKrw, toNum, pickRows, errText, applyJpyScale };
+module.exports = { toKrw, toNum, pickRows, errText, applyJpyScale, isAllowedOrigin, shouldThrottle };
