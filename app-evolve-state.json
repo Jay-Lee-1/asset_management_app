@@ -1,15 +1,8 @@
 {
   "cycle": 228,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 223,
-      "phase": "review",
-      "timestamp": "2026-10-20T21:48:00.000Z",
-      "summary": "cycle223 develop 커밋(753937d, recNthDate()가 freq=daily+weekend 조정에서 버퍼 부족으로 큰 n에 null을 반환하던 버그 수정)을 검토. 수정 로직(span을 1부터 시작해 ds.length<n이면 2배씩 늘려 재시도, span<=64 상한)을 직접 추적 — 반복마다 이전 span을 써서 ds를 생성한 뒤 span을 두 배로 올리므로 실제 사용되는 최대 span은 64이고 999개 상한(n은 앞서 Math.min(999,...)로 클램프됨)에도 충분한 여유(평일 비율 7:5 ≈ 1.4배만 필요)가 있어 수렴을 보장함을 확인. 독립적으로 n=1..999 전 구간 × weekend(earlier/later) × 4개 시작일(토/일 포함)로 recNthDate→recDates 생성개수·마지막값 일치, recCountUntil 역변환 일치를 직접 fuzz 검증(0 실패) — 커밋이 주장한 범위보다 넓게 재현해도 문제 없음. monthly/yearly/weekly(day=15, weekend 포함)도 n=1,50,500,999에서 전부 null 없이 성공해 회귀 없음을 재확인. 성능도 최악 케이스(daily+earlier, n=999) 50회 반복에 253ms로 체감 지연 없는 수준. sw.js CACHE v470/APP_VERSION 미변경(logic.js만 변경)도 일관됨. node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1692/1692 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 223,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-21T17:15:59.000Z",
       "summary": "general-purpose 서브에이전트가 develop 후보를 탐색하다, 작업 시작 전 베이스라인 node test/run.js가 1744/1745로 실패하는 것을 발견 — 반복 실행 결과 cycle211 회귀 가드인 pushCloud INFLIGHT 테스트(test/run.js ~11224행)가 약 20~30% 빈도로 간헐 실패하는 플레이크였음을 확인. 원인: encodeCloudPayload()의 실제 CompressionStream(zlib 네이티브 콜백) 압축 완료를 setImmediate 틱으로 최대 40회까지만 기다렸는데, 실측 결과 완료까지 필요한 틱 수가 2~679회로 시스템 부하에 따라 크게 흔들리는 반면 실제 경과 시간은 항상 수 ms로 일정했다 — 틱 수는 신뢰할 수 없는 대기 척도. pushCloud/INFLIGHT 가드 자체의 버그는 아니었다. 고정 40틱 루프를 Date.now() 기반 5초 벽시계 데드라인 루프로 교체(정상 동작은 수 ms 안에 빠져나오고, 진짜 멈춤 회귀는 5초 후 기존 updateCallCount 단언이 그대로 잡음). 수정 전 15회 반복 중 4회 실패(약 27%) 재현, 수정 후 25회 연속 1745/1745 통과로 재현 안 됨을 확인. test/run.js 1건의 대기 로직만 교체(테스트 개수 변화 없음, 1745/1745 -> 1745/1745). index.html/logic.js는 손대지 않아 APP_VERSION/sw.js CACHE 버전 변경 불필요. 오케스트레이터가 diff를 직접 재검증(node --check, 3회 연속 전체 테스트 재실행 1745/1745 재확인)한 뒤 main을 f4e47b3로 fast-forward하고 push했다.",
       "commit": "f4e47b3"
+    },
+    {
+      "cycle": 228,
+      "phase": "review",
+      "timestamp": "2026-10-21T18:10:00.000Z",
+      "summary": "cycle228 develop 커밋(f4e47b3, pushCloud INFLIGHT 가드 테스트의 고정 40틱 setImmediate 대기를 5초 벽시계 데드라인 while 루프로 교체)을 검토. 진단 전제부터 재검증: 변경 전 코드가 정말 '틱 수'만 세고(for i<40&&updateCallCount<2) 경과 시간은 재지 않았음을 diff로 직접 확인, encodeCloudPayload()가 CompressionStream(zlib 네이티브 콜백)을 거치므로 순수 마이크로태스크 루프로는 끝나지 않는다는 주석의 전제도 코드 구조(await sandbox.pushCloud() 내부에서 encodeCloudPayload 호출)와 일치함을 확인. 교체된 로직(const deadline=Date.now()+5000; while(updateCallCount<2 && Date.now()<deadline) await new Promise(r=>setImmediate(r)))을 직접 추적 — 정상 동작(수 ms 내 완료)에서는 루프가 즉시 빠져나와 기존 대비 테스트 실행 시간에 사실상 변화가 없고, 진짜 멈춤 회귀가 생겨도 5초 후 동일한 updateCallCount/PUSH_CLOUD_INFLIGHT 단언이 여전히 잡아내므로 회귀 탐지력이 그대로 유지됨을 확인. 무한루프·행잉 위험 없음(데드라인으로 상한 보장). node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1745/1745 통과(1회 실행으로는 기존 플레이크 재현 여부를 단정할 수 없으나, develop 단계가 이미 25회 연속 통과로 검증했고 이번 변경은 테스트 인프라 1건뿐이라 index.html/logic.js/sw.js 버전 영향 없음도 재확인). 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
+      "commit": null
     }
   ]
 }
