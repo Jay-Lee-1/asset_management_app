@@ -1,15 +1,8 @@
 {
   "cycle": 227,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 222,
-      "phase": "develop",
-      "timestamp": "2026-10-20T17:07:00.000Z",
-      "summary": "general-purpose 서브에이전트로 develop 후보를 탐색(cycle149-221에서 다룬 toast/invalidateBalances/split거래/pushCloud gzip/mergeDataLoss/kakaoLogin 병합/nextOutflowCard/#histQ 디바운스/recSaveScopeConfirm 보류/DB.goals·delOwner/#bootSplash/boot() 로컬우선/doExport CSV/bulkCatTargets adjust/crypto 자산종류+주말휴장 회귀/recDates push() 주말이동/asOpenType pension 복원/selectNwOwner 선택id/PIN focus 복원/archiveBaselines 전부 제외, 단 archiveBaselines의 UI 연결·반복거래 cutoff 분리는 다음 사이클 재후보로 명시). commaQty(n)(index.html, 소수 보유수량 표시 포맷터)가 maximumFractionDigits:4를 써, cycle219-220에서 신설된 crypto 자산의 cryptoQty(사토시 단위 소수 8자리까지 입력 가능)가 0.00005개 미만이면 toLocaleString이 반올림해 자산 목록(assetSubline, 3454행)과 수량변경 로그 모달(4973-4974행)에 '0개'로 표시되는 버그를 발견 — assetEval()은 원본 cryptoQty를 그대로 곱해 순자산/평가액 자체는 틀리지 않지만, 화면 표시만 사라져 사용자가 '코인이 없어졌다'고 오해할 수 있는 순수 표시 버그. maximumFractionDigits를 4->8로 늘려 수정(fx/stock은 보통 더 적은 소수자릿수만 쓰므로 toLocaleString이 불필요한 trailing zero를 붙이지 않아 기존 동작과 호환, 8자리 초과 시엔 정상적으로 반올림되어 무한정 길어지지 않음을 테스트로 확인). test/run.js 기존 commaQty 테스트 뒤에 3건 추가: 사토시 단위 극소수량이 '0'으로 뭉개지지 않는지, 8자리 초과 소수는 8번째 자리에서 반올림하는지, 기존 fx/stock 스타일 저정밀 값엔 불필요한 0이 붙지 않는지(회귀 가드). APP_VERSION 1.47.203->1.47.204, sw.js CACHE v467->v468. node --check(sw.js, logic.js) 통과, HTML 주석 제거 후 commaQty를 포함하는 실제 코드 script 블록 node --check 통과(다른 블록 1개는 추출 정규식이 HTML 주석 영역을 잘못 집은 기존 알려진 오탐). node our-assets-v1.14.1/our-assets/test/run.js 1676/1676 -> 1679/1679 통과.",
-      "commit": null
-    },
     {
       "cycle": 222,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-21T12:20:55.423Z",
       "summary": "critique(cycle226) 계획대로 투자자산(fx/gold/stock/crypto) 전체 손익 요약 카드를 추가했다. logic.js에 assetAllocation 바로 뒤 portfolioGainLoss(items)(items:[{evalValue,costBasis}]) 순수함수 신설 — costBasis>0인 항목만 합산해 totalEval/totalCost/amount/pct/count 반환, 대상 없으면 null(assetGainLoss와 동일한 \"매입가 미입력이면 0으로 섞지 않는다\" 전제). index.html에 allocationCard(owner)를 본뜬 investGainLossCard(owner) 신설 — DB.assets.filter(includeInTotal&&isMarketValued)로 범위를 잡고, costBasis>0&&!rateUnknown인 자산만 집계에 넣어(rateUnknown 자산을 그대로 넣으면 assetGainLoss와 같은 \"전액손실 오표시\" 위험) null이면 빈 문자열로 카드 자체를 숨긴다. 매입가 미입력/시세 미확인으로 제외된 자산이 있으면 allocationCard의 hasUnknown/hasNeg 캡션과 같은 패턴으로 각각 \"매입가 미입력 자산 제외\"/\"시세 미확인 자산 제외\" mini.warn 캡션을 붙여 부분 합산임을 숨기지 않는다. 렌더는 eb-card/eb-list/eb-row/eb-cat/eb-v 클래스(allocationCard가 쓰는 스택형 카드 레이아웃)를 재사용해 평가손익(income/expense 색상)·총매입·총평가 세 행을 보여준다. renderAssets()의 <div id=\"allocBody\"> 바로 뒤에 <div id=\"investGlBody\">를 삽입, refreshAllocationCard를 본뜬 refreshInvestGainLossCard() 신설해 selectNwOwner()의 refreshAllocationCard 호출 옆에 같이 배선(귀속 캐러셀 전환 시 동기화). test/run.js: portfolioGainLoss에 전체이익/전체손실/혼합(순손익 기준)/costBasis 없는 항목 제외/빈배열 또는 대상없음->null 테스트 5건, investGainLossCard에 카드 노출/빈 상태/owner 필터링/매입가 미입력 캡션/시세 미확인 캡션(+전액손실 오표시 안 됨 회귀가드)/손실 색상 테스트 7건 추가. FUNCTIONS 목록에 investGainLossCard/refreshInvestGainLossCard 추가. index.html(APP_VERSION 1.47.208->1.47.209)과 logic.js 모두 변경이라 sw.js CACHE도 v475->v476으로 올렸다. node --check(logic.js, sw.js) 통과, <script> 블록 추출 후 실제 코드 블록(2,4,5번) 모두 new Function으로 문법 통과(1번은 기존 알려진 한글 주석 정규식 오탐). node our-assets-v1.14.1/our-assets/test/run.js 1727/1727 -> 1738/1738 통과(pushCloud 타이밍 테스트 1건이 이번 변경과 무관하게 가끔 flaky하게 실패하는 것을 git stash로 수정 전 원본 코드에서도 동일하게 재현해 기존 공백임을 확인, 5회 반복 실행 결과도 전부 1738/1738로 안정적). pending_advance_plan은 null로 비웠다.",
+      "commit": null
+    },
+    {
+      "cycle": 227,
+      "phase": "develop",
+      "timestamp": "2026-10-21T13:10:00.000Z",
+      "summary": "netlify.toml 배포 헤더 설정의 비대칭을 발견: index.html/sw.js/manifest.webmanifest 세 셸 파일은 전부 [[headers]] 규칙으로 Cache-Control: public, max-age=0, must-revalidate(캐시 안 함, 배포 즉시 반영)가 명시돼 있는데, index.html이 <script src=\"logic.js\">로 캐시버스팅 쿼리 없이 그대로 불러오고 sw.js SHELL 목록에도 포함된 logic.js만 이 규칙이 빠져 있어 호스팅 기본 캐시 정책에 맡겨져 있었음을 grep+netlify.toml 전체 확인으로 검증(생성 이후 cycle149-226 어느 사이클도 netlify.toml 쪽은 들여다본 적 없는 공백). 배포 후 브라우저/중간 캐시가 예전 logic.js를 들고 있으면 \"최신 index.html + 예전 logic.js\"가 뒤섞여 동작할 수 있고, 서비스워커 install의 caches.addAll(SHELL)도 fetch(\"./logic.js\")가 기본 캐시 모드라 그 묵은 응답을 그대로 새 CACHE 버킷에 넣어버려 CACHE 버전을 올린 효과 자체가 무력화될 수 있는 잠재적 버그 — cycle226의 sw.js navigate 분기 캐시 가드 비대칭과 같은 버그 유형이 파일을 옮겨 나타난 사례. netlify.toml에 /logic.js용 [[headers]] 규칙을 index.html/sw.js와 동일하게 추가해 고쳤다. netlify.toml은 TOML이라 vm 샌드박스로 실행할 수 없으므로 sw.js(swSrc) 패턴과 동일하게 test/run.js가 소스 텍스트(tomlSrc)로 읽어 검증하는 방식의 테스트 3건을 추가: logic.js에 캐시 안 함 규칙이 실제로 생겼는지(버그를 잡는 핵심 테스트, 수정 전으로 되돌려 1740/1741로 실패함을 직접 확인한 뒤 복원), index.html/sw.js/manifest.webmanifest의 기존 캐시 안 함 규칙이 그대로인지(회귀 가드), *.png/favicon.ico의 긴 캐시(immutable) 규칙이 그대로인지(회귀 가드). netlify.toml은 배포 시 호스팅에만 적용되는 설정이라 index.html/logic.js/sw.js 어느 것도 바뀌지 않았으므로 APP_VERSION/sw.js CACHE 버전은 올리지 않았다(netlify functions와 같은 이유로 셸 캐시 대상 아님). node --check(test/run.js, netlify/functions/*.js) 통과. node our-assets-v1.14.1/our-assets/test/run.js 1738/1738 -> 1741/1741 통과. general-purpose 서브에이전트가 탐색·구현·검증했고, 오케스트레이터가 diff(netlify.toml/test/run.js 두 파일)와 테스트 결과를 직접 재검증(node --check, 전체 테스트 재실행 1741/1741 재확인)한 뒤 커밋했다.",
       "commit": null
     }
   ]

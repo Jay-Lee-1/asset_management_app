@@ -16,6 +16,20 @@
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
 
+# logic.js는 index.html이 <script src="logic.js">로 그대로 불러오는 순수 로직 모듈이자
+# sw.js SHELL 목록의 일원이라, index.html과 항상 같은 배포/APP_VERSION으로 묶여 바뀐다 —
+# 그런데 위 index.html/sw.js 규칙과 달리 지금까지 이 파일만 캐시 규칙이 없어 호스팅 기본
+# 캐시 정책에 맡겨져 있었다. index.html은 캐시하지 않아 배포 즉시 최신 HTML을 받아도,
+# 같이 참조하는 logic.js가 브라우저/중간 캐시에 남은 예전 버전이면 "최신 index.html +
+# 예전 logic.js"가 뒤섞여 동작할 수 있다. 서비스워커 설치(install) 시 caches.addAll(SHELL)의
+# fetch('./logic.js')도 기본 캐시 모드라 이 HTTP 캐시를 그대로 따르므로, CACHE 버전을
+# 올려도 새로 만든 캐시에 그 묵은 logic.js가 그대로 들어가 버전을 올린 효과가 없어질 수
+# 있다 — index.html/sw.js와 동일하게 캐시하지 않는다.
+[[headers]]
+  for = "/logic.js"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
 [[headers]]
   for = "/manifest.webmanifest"
   [headers.values]

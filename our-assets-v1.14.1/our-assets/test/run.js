@@ -42,6 +42,10 @@ const logicSrc = fs.readFileSync(LOGIC_PATH, 'utf8');
 // (app-evolve cycle226).
 const SW_PATH = path.join(__dirname, '..', 'sw.js');
 const swSrc = fs.readFileSync(SW_PATH, 'utf8');
+// netlify.toml(배포 헤더 설정)도 JS가 아니라 TOML이라 vm으로 실행할 수 없으므로, sw.js와
+// 동일하게 소스 문자열만 읽어 캐시 헤더 규칙의 존재/내용을 회귀 검사한다(app-evolve cycle227).
+const TOML_PATH = path.join(__dirname, '..', 'netlify.toml');
+const tomlSrc = fs.readFileSync(TOML_PATH, 'utf8');
 
 function extractFunction(name) {
   const marker = `function ${name}(`;
@@ -19934,6 +19938,39 @@ test("sw.js: 정적 리소스 분기(캐시 우선)는 이번 수정 이전부�
   assert.ok(idx !== -1, "정적 리소스 분기의 기존 status===200 가드가 사라짐");
   const secondIdx = swSrc.indexOf("res.status === 200 && res.type === 'basic'", idx + 1);
   assert.ok(secondIdx !== -1, "navigate 분기와 정적 리소스 분기 양쪽에 가드가 있어야 하는데 하나만 발견됨 — 이번 수정이 반영 안 됐거나 기존 분기가 사라짐");
+});
+
+/* ---------- netlify.toml: logic.js 캐시 헤더 (app-evolve cycle227 develop) ---------- */
+// index.html/sw.js/manifest.webmanifest는 "항상 최신본을 받도록" max-age=0, must-revalidate
+// 규칙이 있는데, index.html이 <script src="logic.js">로 그대로 불러오는(캐시버스팅 쿼리 없음)
+// logic.js만 지금까지 이 규칙이 빠져 있었다 — index.html은 최신인데 logic.js가 중간/브라우저
+// 캐시에 남은 예전 버전이면 섞여 동작하고, sw.js install의 caches.addAll(SHELL)도 기본 캐시
+// 모드라 CACHE 버전을 올려도 그 묵은 logic.js를 그대로 새 캐시에 집어넣을 수 있다.
+function extractHeaderBlock(forPath) {
+  const marker = `for = "${forPath}"`;
+  const start = tomlSrc.indexOf(marker);
+  if (start === -1) return null;
+  const blockStart = tomlSrc.lastIndexOf('[[headers]]', start);
+  let blockEnd = tomlSrc.indexOf('[[headers]]', start + marker.length);
+  if (blockEnd === -1) blockEnd = tomlSrc.length;
+  return tomlSrc.slice(blockStart, blockEnd);
+}
+test('netlify.toml: logic.js도 index.html/sw.js처럼 캐시하지 않는 [[headers]] 규칙이 있다', () => {
+  const block = extractHeaderBlock('/logic.js');
+  assert.ok(block, 'netlify.toml에 "/logic.js"용 [[headers]] 규칙이 없음 — logic.js가 index.html과 달리 캐시 정책에 맡겨져, 배포 후에도 예전 버전이 섞여 쓰일 수 있음');
+  assert.ok(block.includes('Cache-Control = "public, max-age=0, must-revalidate"'), '/logic.js 규칙의 Cache-Control이 "public, max-age=0, must-revalidate"가 아님 — 버전 꼬임을 막는 효과가 없음');
+});
+test('netlify.toml: index.html/sw.js/manifest.webmanifest의 캐시 안 함 규칙은 이번 수정으로 그대로 유지된다 — 회귀 가드', () => {
+  ['/index.html', '/sw.js', '/manifest.webmanifest'].forEach(p => {
+    const block = extractHeaderBlock(p);
+    assert.ok(block && block.includes('max-age=0, must-revalidate'), `"${p}" 규칙이 사라지거나 바뀜`);
+  });
+});
+test('netlify.toml: *.png/favicon.ico의 긴 캐시(immutable) 규칙은 logic.js 규칙 추가와 무관하게 그대로다 — 회귀 가드', () => {
+  const pngBlock = extractHeaderBlock('/*.png');
+  const favBlock = extractHeaderBlock('/favicon.ico');
+  assert.ok(pngBlock && pngBlock.includes('max-age=31536000, immutable'), '/*.png 긴 캐시 규칙이 사라지거나 바뀜');
+  assert.ok(favBlock && favBlock.includes('max-age=31536000, immutable'), '/favicon.ico 긴 캐시 규칙이 사라지거나 바뀜');
 });
 
 /* ---------- 실행 ---------- */
