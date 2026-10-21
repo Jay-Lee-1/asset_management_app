@@ -221,13 +221,13 @@ const FUNCTIONS = [
   // 스파이로 대체한다(migrateLegacy/startApp 등과 같은 패턴).
   'heldCurrencies', 'heldStockCodes', 'heldCryptoCodes', 'needFx', 'needStock', 'needCrypto', 'hasRateAssets', 'autoSyncRates',
   'nextBigOutflow', 'dday', 'balanceOn', 'nextOutflowCard', 'monthOutflowCard', 'planGaugeCard', 'homeAlertCard', 'renderHome',
-  'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwPresetSegHTML', 'nwHistoryCard', 'allocationCard', 'doRenameOwner', 'addOwner', 'ownerChipClass',
+  'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwPresetSegHTML', 'nwHistoryCard', 'allocationCard', 'investGainLossCard', 'doRenameOwner', 'addOwner', 'ownerChipClass',
   // selectNwOwner/refreshAssetBody/refreshNwHistoryCard/refreshGoalsSummary/refreshAllocationCard는
   // app-evolve cycle219 develop(귀속 캐러셀이 자산 일괄선택 모드 중에도 계속 동작해, 전환 전
   // 선택해둔 id가 새 귀속에서 안 보이는 채로 ST.aSel.ids에 남는 버그) 검증용 — 넷 다
   // $(...)가 없으면 바로 return하는 얕은 래퍼라(기본 $ 스텁은 'assetBody' 등을 세팅하지 않는 한
   // null을 돌려줌) 기존 공유 스텁만으로 selectNwOwner를 실행형으로 검증할 수 있다.
-  'selectNwOwner', 'refreshAssetBody', 'refreshNwHistoryCard', 'refreshGoalsSummary', 'refreshAllocationCard',
+  'selectNwOwner', 'refreshAssetBody', 'refreshNwHistoryCard', 'refreshGoalsSummary', 'refreshAllocationCard', 'refreshInvestGainLossCard',
   'goalOwnerEff', 'goalHasUnknown', 'goalLinkedAssetGone', 'goalLinkedAssetBroken', 'goalHistoryFor', 'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'syncGoalInputs', 'goalClearDate', 'goalOwnerSel', 'goalTypeSel', 'goalOpenAsset', 'renderGoalForm', 'openGoalForm', 'saveGoal', 'delGoal',
   'openInquiry', 'sendInquiry', 'openInquiryList', 'delInquiry',
   'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetToggleSel', 'visibleAssetsForSel', 'assetSelAll', 'activeSel',
@@ -12900,6 +12900,104 @@ test('allocationCard: 음수 평가액(마이너스통장) 자산이 있으면 "
   sandbox._balCache.clear();
   html = sandbox.allocationCard();
   assert.ok(!html.includes('마이너스 잔액 자산 제외'), '양수로 돌아오면 캡션이 사라져야 함');
+});
+/* ---------- portfolioGainLoss(logic.js)/investGainLossCard: 투자자산 전체 손익 카드
+ * (app-evolve cycle226 critique/advance — assetGainLoss(a)/assetGainLossBadge가 자산 1건씩만
+ * 행 배지로 보여주고, 총자산/비중/순자산추이/목표와 달리 전체 합산 뷰가 없던 공백) ---------- */
+test('portfolioGainLoss: 전부 이익이면 총평가-총매입 금액과 pct를 반환한다', () => {
+  const r = sandbox.portfolioGainLoss([{ evalValue: 1300000, costBasis: 1000000 }, { evalValue: 220000, costBasis: 200000 }]);
+  assert.strictEqual(r.totalEval, 1520000);
+  assert.strictEqual(r.totalCost, 1200000);
+  assert.strictEqual(r.amount, 320000);
+  assert.ok(Math.abs(r.pct - 320000 / 1200000 * 100) < 1e-9);
+  assert.strictEqual(r.count, 2);
+});
+test('portfolioGainLoss: 전부 손실이면 amount/pct가 음수다', () => {
+  const r = sandbox.portfolioGainLoss([{ evalValue: 800000, costBasis: 1000000 }]);
+  assert.strictEqual(r.amount, -200000);
+  assert.strictEqual(r.pct, -20);
+});
+test('portfolioGainLoss: 이익/손실이 섞이면 순합산(총평가-총매입) 기준으로 계산한다', () => {
+  const r = sandbox.portfolioGainLoss([{ evalValue: 1500000, costBasis: 1000000 }, { evalValue: 300000, costBasis: 500000 }]);
+  assert.strictEqual(r.totalEval, 1800000);
+  assert.strictEqual(r.totalCost, 1500000);
+  assert.strictEqual(r.amount, 300000, '개별로는 손실인 자산이 있어도 전체 합산은 순손익 기준이어야 함');
+});
+test('portfolioGainLoss: costBasis가 없거나 0 이하인 항목은 집계에서 제외된다(assetGainLoss와 동일한 전제)', () => {
+  const r = sandbox.portfolioGainLoss([{ evalValue: 1300000, costBasis: 1000000 }, { evalValue: 500000, costBasis: 0 }, { evalValue: 100000, costBasis: undefined }]);
+  assert.strictEqual(r.count, 1, 'costBasis가 없는 두 항목은 분모·분자 모두에서 빠져야 함');
+  assert.strictEqual(r.totalCost, 1000000);
+});
+test('portfolioGainLoss: 빈 배열/대상 없음이면 null(카드를 숨기도록)', () => {
+  assert.strictEqual(sandbox.portfolioGainLoss([]), null);
+  assert.strictEqual(sandbox.portfolioGainLoss(null), null);
+  assert.strictEqual(sandbox.portfolioGainLoss([{ evalValue: 100, costBasis: 0 }]), null, 'costBasis 입력된 항목이 하나도 없으면 null');
+});
+function setupInvestGlDB() {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox.DB = {
+    settings: {},
+    assets: [
+      { id: 'a_cash', name: '내지갑', type: 'cash', owner: '나', baseAmount: 10000, includeInTotal: true },
+      { id: 'a_usd', name: '달러', type: 'fx', owner: '나', currency: 'USD', fxAmount: 100, costBasis: 120000, includeInTotal: true },
+      { id: 'a_gold', name: '금', type: 'gold', owner: '배우자', goldDon: 1, costBasis: 300000, includeInTotal: true },
+    ],
+    txns: [],
+    recurrences: [],
+    rates: { fx: { USD: 1300 }, goldPerG: 90000, stocks: {} },
+  };
+  sandbox._balCache.clear();
+}
+test('investGainLossCard: 매입가가 입력된 투자자산이 있으면 총평가·총매입·평가손익을 보여준다', () => {
+  setupInvestGlDB();
+  const html = sandbox.investGainLossCard();
+  const usdEval = 100 * 1300, goldEval = 1 * sandbox.GOLD_G_PER_DON * 90000;
+  assert.ok(html.includes('투자 손익'));
+  assert.ok(html.includes(sandbox.comma(usdEval + goldEval) + '원'), '총평가는 fx+gold assetEval 합이어야 함');
+  assert.ok(html.includes(sandbox.comma(120000 + 300000) + '원'), '총매입은 두 자산 costBasis 합이어야 함');
+});
+test('investGainLossCard: 매입가가 입력된 투자자산이 전혀 없으면(costBasis 미설정 등) 빈 문자열로 카드를 숨긴다', () => {
+  setupInvestGlDB();
+  delete sandbox.DB.assets.find(a => a.id === 'a_usd').costBasis;
+  delete sandbox.DB.assets.find(a => a.id === 'a_gold').costBasis;
+  sandbox._balCache.clear();
+  assert.strictEqual(sandbox.investGainLossCard(), '');
+  assert.strictEqual(sandbox.investGainLossCard('나'), '');
+});
+test('investGainLossCard: owner를 넘기면 그 귀속의 투자자산만 집계한다', () => {
+  setupInvestGlDB();
+  const meHtml = sandbox.investGainLossCard('나');
+  const usdEval = 100 * 1300;
+  assert.ok(meHtml.includes(sandbox.comma(usdEval) + '원'), '"나"는 달러(fx)만 보유하므로 총평가가 달러 평가액과 같아야 함');
+  assert.ok(!meHtml.includes(sandbox.comma(1 * sandbox.GOLD_G_PER_DON * 90000) + '원'), '배우자 소유 금은 "나" 집계에 섞이면 안 됨');
+});
+test('investGainLossCard: 매입가 미입력 투자자산이 섞여 있으면 "매입가 미입력 자산 제외" 캡션이 붙는다', () => {
+  setupInvestGlDB();
+  delete sandbox.DB.assets.find(a => a.id === 'a_usd').costBasis;
+  sandbox._balCache.clear();
+  const html = sandbox.investGainLossCard();
+  assert.ok(html.includes('매입가 미입력 자산 제외'));
+  assert.ok(!html.includes('시세 미확인 자산 제외'));
+});
+test('investGainLossCard: 시세 미확인(rateUnknown) 투자자산이 섞여 있으면 "시세 미확인 자산 제외" 캡션이 붙는다(assetGainLoss와 동일한 오표시 방지 전제)', () => {
+  setupInvestGlDB();
+  delete sandbox.DB.rates.fx.USD; // 달러 시세 미확인
+  sandbox._balCache.clear();
+  const html = sandbox.investGainLossCard();
+  assert.ok(html.includes('시세 미확인 자산 제외'));
+  assert.ok(!html.includes('매입가 미입력 자산 제외'), '달러는 costBasis가 있으므로 "미입력" 캡션은 붙지 않아야 함');
+  // 달러가 rateUnknown으로 전액 집계에서 빠져도, 전액손실(amount=0-120000)로 오표시되면 안 된다
+  assert.ok(!html.includes('-100.0%'), 'assetGainLoss와 동일하게 rateUnknown 자산은 전액손실로 집계되면 안 됨');
+});
+test('investGainLossCard: 평가손익이 음수면 손실(expense) 색상으로 표시된다', () => {
+  setupInvestGlDB();
+  sandbox.DB.assets.find(a => a.id === 'a_usd').costBasis = 999999999; // 터무니없이 큰 매입가 → 손실
+  delete sandbox.DB.assets.find(a => a.id === 'a_gold').costBasis; // 금은 집계 제외해 단순화
+  sandbox._balCache.clear();
+  const html = sandbox.investGainLossCard('나');
+  assert.ok(html.includes('var(--expense)'), '손실이면 --expense 색상이어야 함');
+  assert.ok(!html.includes('var(--income)'));
 });
 test('openAssetPicker: excludeId(만기이체 picker에서 자기 자신 제외)를 넘기면 그 자산은 목록에서 빠지고 나머지는 그대로 남는다', () => {
   setupAssetPickerDB();

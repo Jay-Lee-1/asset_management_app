@@ -622,6 +622,23 @@ function assetAllocation(items){
  return [...map.entries()].map(([type,amount])=>({type,amount,pct:amount/total*100})).sort((a,b)=>b.amount-a.amount);
 }
 
+/* ================= PORTFOLIO GAIN/LOSS (투자자산 전체 손익, 순수) ================= */
+/* items: [{evalValue,costBasis}] — 호출부(investGainLossCard)가 owner/includeInTotal 필터링과
+ * assetEval/rateUnknown 평가(DB.rates에 의존하는 index.html 쪽 함수)를 이미 끝낸 뒤 넘긴다
+ * (assetAllocation과 동일한 "여기선 DB를 몰라야 한다" 분리). assetGainLoss(a)(index.html)가
+ * 자산 1건의 손익만 계산하고 행별 미니 배지로만 노출되던 공백(app-evolve cycle226 critique)을
+ * 메워, 여러 투자자산의 손익을 총평가-총매입 기준으로 합산한다. costBasis>0인 항목만 더한다
+ * (assetGainLoss와 동일한 전제 — 매입가 미입력이면 손익 자체를 알 수 없어 0으로 섞으면 안 됨).
+ * 대상이 하나도 없으면(costBasis 입력된 투자자산이 전혀 없음) null — 호출부가 카드 자체를 숨긴다. */
+function portfolioGainLoss(items){
+ items=(items||[]).filter(it=>it.costBasis>0);
+ if(!items.length)return null;
+ const totalEval=items.reduce((s,it)=>s+it.evalValue,0);
+ const totalCost=items.reduce((s,it)=>s+it.costBasis,0);
+ const amount=totalEval-totalCost;
+ return {totalEval,totalCost,amount,pct:amount/totalCost*100,count:items.length};
+}
+
 /* ================= CSV IMPORT (순수) ================= */
 /* RFC4180 스타일 CSV 파서. 따옴표로 감싼 필드 안의 콤마/줄바꿈/이스케이프된 큰따옴표("")를
    처리한다(txnsToCSV의 esc()가 만드는 형식과 대칭). BOM 제거, \r\n과 \n 둘 다 줄바꿈으로 인식. */

@@ -1,19 +1,8 @@
 {
-  "cycle": 226,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "포트폴리오 전체 투자 손익(gain/loss) 요약 카드 추가",
-    "why": "assetGainLoss(a)(index.html:2638)는 fx/gold/stock/crypto 자산 '한 개'의 미실현 손익만 계산하고, 유일한 호출부인 assetGainLossBadge->assetSubline(index.html:3479-3492)은 자산 목록의 행별 미니 배지로만 노출된다. grep \"assetGainLoss(\" 결과 호출부가 이 두 곳뿐이라 여러 투자자산을 가진 사용자는 전체 투자 손익(총평가-총매입)을 한눈에 볼 방법이 없고(총자산/총부채, 자산 비중, 순자산 추이, 목표 요약은 모두 전체 합산 카드가 있는데 이 지표만 빠짐), 행마다 다른 비율/금액을 직접 머릿속으로 합산해야 하는 실사용 공백. 버그가 아니라 범위가 명확한 추가 기능.",
-    "approach": "1) logic.js: assetAllocation(items) 바로 뒤에 portfolioGainLoss(items) 순수함수 신설 — items:[{evalValue,costBasis}], costBasis>0인 것만 합산(assetGainLoss의 null-safety 전제와 동일), totalEval/totalCost/amount/pct/count 반환, 대상 없으면 null. 2) index.html: allocationCard(owner)(3027-3058)를 본뜬 investGainLossCard(owner) 신설 — DB.assets.filter(includeInTotal&&시세평가자산&&rate 확인됨)로 items 구성, portfolioGainLoss 호출, null이면 ''(카드 숨김), income/expense 색상 컨벤션(assetGainLossBadge 3479-3482와 동일)으로 금액/퍼센트 렌더, 매입가 미입력/시세 미확인으로 제외된 자산 수를 allocationCard의 hasUnknown/hasNeg 캡션(3049-3055)과 같은 패턴으로 '.mini.warn' 안내(부분 합산임을 숨기지 않기). renderAssets()의 <div id=\"allocBody\"> 바로 뒤(3673)에 <div id=\"investGlBody\">${investGainLossCard(ST.assetOwner)}</div> 삽입. refreshAllocationCard()(3535-3538)를 본뜬 refreshInvestGainLossCard() 신설, selectNwOwner()에서 refreshAllocationCard/refreshGoalsSummary 호출 옆에 같이 호출해 자산주체 전환 시 동기화. 3) test/run.js: portfolioGainLoss에 전체이익/전체손실/혼합/costBasis 없는 항목 제외/빈배열->null 테스트, investGainLossCard가 대상 없을 때 ''를 반환하고 일부 제외 시 경고 캡션을 포함하는지 소스추출 테스트(allocationCard/goalsSummaryCard 테스트 패턴과 동일). 4) index.html(APP_VERSION 1.47.208->1.47.209)과 logic.js 모두 변경되므로 sw.js CACHE도 v475->v476으로 올린다. 범위가 넘치면(예: refreshInvestGainLossCard 배선이 복잡해지면) UI 연결은 다음 사이클로 미루고 순수함수+테스트만 먼저 완료하는 cycle221/222 선례를 따른다."
-  },
+  "cycle": 227,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 221,
-      "phase": "advance",
-      "timestamp": "2026-10-20T16:14:06.000Z",
-      "summary": "critique(cycle221) 계획대로 전체를 끝까지 구현하기엔 범위가 커(archiveTxnsBefore UI 연결, 반복거래 cutoff 분리, confirm/백업 유도 시트까지 한 사이클에 안전하게 담기 어려움), 계획 자체가 명시한 완화 경로대로 범위를 좁혀 순수 함수 archiveBaselines(assets, expandedTxns, cutoffDate, isPendingFn) + 회귀 테스트만 먼저 완료했다. logic.js에 신설 — balancesUpTo()(index.html:2510)와 완전히 같은 base+sign 누적 규칙(자산별 baseAmount/amountKRW를 시작값으로, debt는 sign=-1, fromAssetId는 차감·toAssetId는 가산, t.date<=cutoffDate인 거래만 반영)으로 cutoffDate 시점 각 자산의 잔액을 {assetId:balance}로 돌려준다. isPending()(index.html, DB.settings/DB.recurrences를 읽어 순수 모듈이 직접 참조 불가)이 쓰는 '미확인 이체는 완료 잔액 제외' 규칙과 맞추기 위해, mergeFlatMap의 tombKeyFn(logic.js:293)과 같은 선택적 콜백 패턴으로 isPendingFn을 4번째 인자로 받되 생략하면 전부 확정으로 간주(하위호환). test/run.js에 8건 추가(critique가 직접 재현한 시나리오 그대로 — cutoff 이전 2건 합계 800,000을 흡수한 baseline + cutoff 이후 거래만 재생해도 전체 히스토리 재생과 같은 결과인지, 거래 없을 때 기존 baseAmount/amountKRW 보존, debt 부호반전, 여러 자산 독립 집계(from/to 양쪽), cutoff 경계(당일 포함·다음날 제외), isPendingFn 적용/생략 각 1건). vm 샌드박스 realm이 만든 반환 객체가 host Object와 프로토타입이 달라 deepStrictEqual이 'same structure but not reference-equal'로 실패하는 것을 처음 발견해(assetBalanceSeries 테스트들과 동일한 기존 패턴인데 이번에 처음 누락) JSON.parse(JSON.stringify(...))로 정규화하도록 전부 수정. index.html은 전혀 건드리지 않아(다음 사이클 이후로 미룬 archiveTxnsBefore/UI 연결/반복거래 분리가 그 쪽 몫) APP_VERSION 변경 없음, logic.js만 바뀌었고 sw.js SHELL 캐시 목록에 포함돼 있어 CACHE 버전만 v466->v467로 올렸다(cycle220 advance와 동일 패턴). pending_advance_plan은 계획이 허용한 완화 경로를 따라 비웠다 — 남은 UI 연결/반복거래 cutoff 분리는 critique의 통상적인 재탐색으로 넘긴다. node --check(logic.js, sw.js) 통과. node our-assets-v1.14.1/our-assets/test/run.js 1668/1668 -> 1676/1676 통과.",
-      "commit": null
-    },
     {
       "cycle": 222,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-21T11:00:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-226에서 다룬 모든 영역 전부 제외 지시: toast/invalidateBalances/XSS보류/split거래/pushCloud gzip/mergeDataLoss경고/kakaoLogin병합/nextOutflowCard/#histQ디바운스/recSaveScopeConfirm보류/DB.goals·delOwner/#bootSplash/boot()로컬우선/asFx·asGold·asQty Enter제출(되돌림)/doExport CSV/bulkCatTargets adjust/연금전환복원/selectNwOwner선택id/PIN focus복원/CDN SRI(기각)/dismissedStaleMvIds·budgetCarryFor/crypto자산종류+주말휴장/recDates push()주말이동/archiveBaselines+UI연결/commaQty maximumFractionDigits/recNthDate버퍼버그/mergeRecordFields(보류)/mergeDataLossFields/matchTxnQuery·matchAssetQuery NFC정규화/아이콘배지 WCAG 1.4.11 명도대비/svg() aria-hidden/netlify functions CORS+레이트리미트/sw.js navigate 캐시 가드). assetGainLoss(a)(index.html:2638)가 fx/gold/stock/crypto 자산 '한 개'의 미실현 손익만 계산하고 유일한 호출부(assetGainLossBadge->assetSubline, 3479-3492)가 자산 목록의 행별 미니 배지로만 노출됨을 grep으로 확인(호출부 2곳뿐) — 총자산/총부채, 자산 비중(allocationCard), 순자산 추이, 목표 요약은 모두 전체 합산 카드가 있는데 투자 손익만 전체 합산 뷰가 없어 여러 투자자산을 가진 사용자가 전체 수익률을 한눈에 볼 방법이 없는 실사용 공백을 최우선 과제로 포착. 러너업: 주식분할(stock-split) qty조정(costBasisNeedsUpdate/addCostBasisForBuy, logic.js:578-587 재검토 결과 실제로 버그 아님 — qty만 늘고 추가매수 금액 없으면 costBasis 유지가 split에 정확히 맞는 동작이라 제외), budgetCarryFor 재귀(5636, 24단계 상한)가 렌더마다 spendByCategory 재스캔(범위가 한정적이고 비용 대비 효과 낮아 제외), Netlify 프록시/sw.js/PIN 락/포커스트랩/차트 접근성 전부 재확인 결과 이미 견고하거나 명시적으로 제외된 영역이라 추가 제외. advance 계획(logic.js에 assetAllocation 패턴을 따른 portfolioGainLoss(items) 순수함수 신설, index.html에 allocationCard를 본뜬 investGainLossCard(owner) + refreshInvestGainLossCard() 신설해 renderAssets/selectNwOwner에 배선, test/run.js에 전체이익/손실/혼합/제외/빈값 테스트, APP_VERSION 1.47.208->209·sw.js CACHE v475->476, 범위 넘치면 cycle221/222 선례처럼 순수함수+테스트만 먼저)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "commit": null
+    },
+    {
+      "cycle": 226,
+      "phase": "advance",
+      "timestamp": "2026-10-21T12:20:55.423Z",
+      "summary": "critique(cycle226) 계획대로 투자자산(fx/gold/stock/crypto) 전체 손익 요약 카드를 추가했다. logic.js에 assetAllocation 바로 뒤 portfolioGainLoss(items)(items:[{evalValue,costBasis}]) 순수함수 신설 — costBasis>0인 항목만 합산해 totalEval/totalCost/amount/pct/count 반환, 대상 없으면 null(assetGainLoss와 동일한 \"매입가 미입력이면 0으로 섞지 않는다\" 전제). index.html에 allocationCard(owner)를 본뜬 investGainLossCard(owner) 신설 — DB.assets.filter(includeInTotal&&isMarketValued)로 범위를 잡고, costBasis>0&&!rateUnknown인 자산만 집계에 넣어(rateUnknown 자산을 그대로 넣으면 assetGainLoss와 같은 \"전액손실 오표시\" 위험) null이면 빈 문자열로 카드 자체를 숨긴다. 매입가 미입력/시세 미확인으로 제외된 자산이 있으면 allocationCard의 hasUnknown/hasNeg 캡션과 같은 패턴으로 각각 \"매입가 미입력 자산 제외\"/\"시세 미확인 자산 제외\" mini.warn 캡션을 붙여 부분 합산임을 숨기지 않는다. 렌더는 eb-card/eb-list/eb-row/eb-cat/eb-v 클래스(allocationCard가 쓰는 스택형 카드 레이아웃)를 재사용해 평가손익(income/expense 색상)·총매입·총평가 세 행을 보여준다. renderAssets()의 <div id=\"allocBody\"> 바로 뒤에 <div id=\"investGlBody\">를 삽입, refreshAllocationCard를 본뜬 refreshInvestGainLossCard() 신설해 selectNwOwner()의 refreshAllocationCard 호출 옆에 같이 배선(귀속 캐러셀 전환 시 동기화). test/run.js: portfolioGainLoss에 전체이익/전체손실/혼합(순손익 기준)/costBasis 없는 항목 제외/빈배열 또는 대상없음->null 테스트 5건, investGainLossCard에 카드 노출/빈 상태/owner 필터링/매입가 미입력 캡션/시세 미확인 캡션(+전액손실 오표시 안 됨 회귀가드)/손실 색상 테스트 7건 추가. FUNCTIONS 목록에 investGainLossCard/refreshInvestGainLossCard 추가. index.html(APP_VERSION 1.47.208->1.47.209)과 logic.js 모두 변경이라 sw.js CACHE도 v475->v476으로 올렸다. node --check(logic.js, sw.js) 통과, <script> 블록 추출 후 실제 코드 블록(2,4,5번) 모두 new Function으로 문법 통과(1번은 기존 알려진 한글 주석 정규식 오탐). node our-assets-v1.14.1/our-assets/test/run.js 1727/1727 -> 1738/1738 통과(pushCloud 타이밍 테스트 1건이 이번 변경과 무관하게 가끔 flaky하게 실패하는 것을 git stash로 수정 전 원본 코드에서도 동일하게 재현해 기존 공백임을 확인, 5회 반복 실행 결과도 전부 1738/1738로 안정적). pending_advance_plan은 null로 비웠다.",
       "commit": null
     }
   ]

@@ -1398,7 +1398,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.208';
+const APP_VERSION='1.47.209';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3057,6 +3057,35 @@ function allocationCard(owner){
    <div class="card eb-card"><div class="eb-bar">${seg}</div><div class="eb-list">${rows}</div></div>`;
 }
 
+/* 자산 비중 카드 바로 아래에 꽂는 투자자산 전체 손익 카드 — assetGainLoss(a)/assetGainLossBadge가
+ * 자산 1건씩만 행 배지로 보여주던 걸(assetSubline, 3479행대) 전체 합산 관점으로 보완한다
+ * (app-evolve cycle226 critique/advance — 총자산/비중/순자산추이/목표는 전체 합산 카드가 있는데
+ * 투자 손익만 없던 공백). 집계(portfolioGainLoss)는 logic.js 순수 함수, 여기선 allocationCard와
+ * 동일하게 owner/includeInTotal 필터링과 assetEval/rateUnknown 평가만 맡는다. */
+function investGainLossCard(owner){
+ owner=owner||'all';
+ let items=DB.assets.filter(a=>a.includeInTotal&&isMarketValued(a));
+ if(owner!=='all')items=items.filter(a=>a.owner===owner);
+ const usable=items.filter(a=>a.costBasis>0&&!rateUnknown(a));
+ const gl=portfolioGainLoss(usable.map(a=>({evalValue:assetEval(a),costBasis:a.costBasis})));
+ if(!gl)return '';
+ const up=gl.amount>=0;
+ /* assetGainLoss()와 같은 이유(rateUnknown 시점의 매입가 전액손실 오표시 방지)로 costBasis 미입력/
+  * 시세 미확인 자산은 집계에서 통째로 빠진다 — "일부만 더한 값"임을 숨기지 않고 캡션으로 안내한다
+  * (allocationCard의 hasUnknown/hasNeg 캡션과 동일한 "산술은 그대로 두고 캡션만 붙인다" 원칙). */
+ const hasNoCostBasis=items.some(a=>!(a.costBasis>0));
+ const hasUnknown=items.some(a=>a.costBasis>0&&rateUnknown(a));
+ const captions=[hasNoCostBasis?'매입가 미입력 자산 제외':null,hasUnknown?'시세 미확인 자산 제외':null].filter(Boolean)
+   .map(c=>` <span class="mini warn">${c}</span>`).join('');
+ return `<div class="section-title">투자 손익${captions}</div>
+   <div class="card eb-card"><div class="eb-list">
+     <div class="eb-row"><span class="eb-cat">평가손익</span>
+       <span class="eb-v num" style="color:var(--${up?'income':'expense'})">${up?'+':''}${gl.pct.toFixed(1)}% · ${up?'+':''}${comma(gl.amount)}원</span></div>
+     <div class="eb-row"><span class="eb-cat">총매입</span><span class="eb-v num">${comma(gl.totalCost)}원</span></div>
+     <div class="eb-row"><span class="eb-cat">총평가</span><span class="eb-v num">${comma(gl.totalEval)}원</span></div>
+   </div></div>`;
+}
+
 /* ===== 순자산 목표 (MVP: 순자산 1종, DB.goals) =====
    진행률·투사(goalProgress)는 logic.js 순수 함수 — 여기는 렌더/폼만 담당. */
 function goalOwnerEff(g){ /* goal.owner가 'all'이거나 이미 사라진 귀속이면 전체로 간주 — ST.assetOwner/renderAssets의
@@ -3536,6 +3565,10 @@ function refreshAllocationCard(){ /* 캐러셀 귀속 전환 시 자산 비중 �
  const el=$('allocBody');if(!el)return;
  el.innerHTML=allocationCard(ST.assetOwner);
 }
+function refreshInvestGainLossCard(){ /* 캐러셀 귀속 전환 시 투자 손익 카드도 함께 갱신 — allocationCard와 같은 귀속을 보여줘야 함 */
+ const el=$('investGlBody');if(!el)return;
+ el.innerHTML=investGainLossCard(ST.assetOwner);
+}
 function selectNwOwner(r){ /* 캐러셀 스크롤 정착/점 클릭/키보드 세 경로가 공유하는 귀속 전환 로직 */
  const owner=ownerListArr()[r]||'all';
  if(owner!==ST.assetOwner){
@@ -3553,6 +3586,7 @@ function selectNwOwner(r){ /* 캐러셀 스크롤 정착/점 클릭/키보드 �
    refreshNwHistoryCard();
    refreshGoalsSummary();
    refreshAllocationCard();
+   refreshInvestGainLossCard();
  }
 }
 function gotoNwOwner(i){ /* 점 클릭/화살표 키 경로 — nwClampIdx로 스크롤 경계와 동일하게 clamp/wrap */
@@ -3671,6 +3705,7 @@ function renderAssets(){
  ${_ol.length>1?`<div class="nw-dots">${_ol.map((o,i)=>`<button type="button" class="${i===actIdx?'on':''}" aria-label="${esc(o==='all'?'전체':o)} 보기" aria-current="${i===actIdx?'true':'false'}" onclick="gotoNwOwner(${i})"></button>`).join('')}</div>`:''}
  <div id="nwHistBody">${nwHistoryCard(ST.assetOwner,ST.nwPreset)}</div>
  <div id="allocBody">${allocationCard(ST.assetOwner)}</div>
+ <div id="investGlBody">${investGainLossCard(ST.assetOwner)}</div>
  <div id="goalsSummaryBody">${goalsSummaryCard(ST.assetOwner)}</div>
  ${(!ST.editAssets&&!ST.aSel.mode)?`<div class="searchbar" style="margin-bottom:14px">${svg('search')}<div class="field-clear"><input id="assetQ" aria-label="자산 검색" placeholder="자산 이름 검색" value="${esc(ST.assetQ)}" oninput="ST.assetQ=this.value;assetSelPartial()"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('assetQ')">✕</button></div></div>`:''}
  <div class="as-tools${ST.aSel.mode?' hidden':''}">
