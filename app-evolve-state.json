@@ -1,15 +1,13 @@
 {
   "cycle": 228,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "Netlify 시세 중계 함수 3종(stock.js/rates.js/crypto.js) 공용 유틸 중복 제거",
+    "why": "netlify/functions/stock.js, rates.js, crypto.js 세 파일이 각각 독립적으로 거의 동일한 ~140줄짜리 유틸 블록(getJSON 타임아웃+재시도, sleep/errText/toNum, pickRows/applyJpyScale, isAllowedOrigin/corsOrigin/shouldThrottle/json, ALLOWED_ORIGINS/RL_WINDOW_MS/RL_MAX 파싱)을 복붙으로 유지 중. 이미 drift 시작됨(rates.js getJSON에만 '네트워크성 오류 재시도' 주석이 붙어 더 이상 바이트 단위로 동일하지 않음). test/run.js가 '세 파일이 동일하게 동작한다'를 매번 별도 단언으로 증명해야 하는 상태(18249/18280행). 셋 중 하나만 고치고 나머지를 깜빡하면 자산 종류별로 시세 갱신 신뢰도가 다르게 저하되는 실사용 리스크.",
+    "approach": "1) netlify/functions/_shared.js 신설, sleep/errText/toNum/pickRows/applyJpyScale/getJSON/isAllowedOrigin/corsOrigin/shouldThrottle/json/parseAllowedOrigins를 그 안으로 이동하고 세 파일에서 제거(세 파일은 require로 가져와 각자 module.exports로 재노출해 test/run.js의 기존 require 경로가 안 깨지게 유지). 2) RL_WINDOW_MS/RL_MAX/rlHistory(상태 있는 레이트리밋 버킷)는 공유 모듈로 올리지 않고 각 handler 파일 스코프에 그대로 둬 엔드포인트별 분당 30회 한도가 섞이지 않게 한다(순수함수 shouldThrottle만 공유). 3) test/run.js 상단에 _shared.js require 추가, 18249/18280행의 '동일하게 동작한다' 중복 테스트를 '세 파일이 _shared.js와 참조 동일성(===)을 갖는다'로 교체해 진짜 공유 여부를 검증, _shared.js 자체 호출 테스트 1세트 추가. 4) node test/run.js 전체 통과 확인 + node -e로 세 함수 파일의 require 경로가 안 깨지는지 수동 확인. 5) netlify/functions/*만 변경이라 APP_VERSION/sw.js CACHE 버전은 올리지 않음(sw.js가 /.netlify/functions/ 경로를 캐시 우회함).",
+    "runner_up_rejected": "svg() aria-hidden/아이콘 배지 명도대비/모달 포커스 트랩(cycle224-225 처리됨), 스와이프 삭제 키보드 접근성(탭으로도 동일 경로 있어 공백 아님), 차트/비중 카드 시각장애 접근성(이미 텍스트 대체 수단 있음), PIN/계정 보안(이미 PBKDF2+락아웃+복구코드로 견고), CSV/백업/병합 로직(이미 방어적으로 처리됨), 시세 동기화 실패 노출/재시도(이미 구현됨), netlify CORS/레이트리밋 기능 자체 재검토(cycle225와 중복이라 제외, 이번엔 구조적 중복 제거만), index.html 단일파일 아키텍처 전체 분리(범위 과대)"
+  },
   "history": [
-    {
-      "cycle": 223,
-      "phase": "critique",
-      "timestamp": "2026-10-20T23:15:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-223에서 다룬 모든 영역 전부 제외하도록 명시: toast/invalidateBalances/split거래/pushCloud gzip/mergeDataLoss 경고/kakaoLogin 병합/nextOutflowCard/#histQ 디바운스/recSaveScopeConfirm 보류/DB.goals·delOwner/#bootSplash/boot() 로컬우선/doExport CSV/bulkCatTargets adjust/crypto 자산종류+주말휴장 회귀/recDates push() 주말이동/asOpenType pension 복원/selectNwOwner 선택id/PIN focus 복원/archiveBaselines+UI 연결/commaQty maximumFractionDigits/recNthDate 버퍼 버그 전부 제외). mergeCollection()(logic.js:145-167)이 DB.txns/assets/goals/inquiries/assetQtyLog 다섯 컬렉션 전부에 대해 updatedAt이 더 늦은 쪽의 레코드를 통째로 채택하는 whole-record last-write-wins 방식임을 재확인 — 두 기기(부부/가족 공유 계정, 이 앱의 핵심 사용 시나리오)가 오프라인 중 같은 레코드의 다른 필드를 각각 수정하면 (예: 한쪽이 자산 이름/아이콘을 바꾸고 비슷한 시점에 다른 쪽이 그 자산의 잔액/레이트를 수정) 진 쪽의 수정이 필드 단위로 합쳐지지 않고 레코드 전체가 버려진다. touch()(index.html:1522-1527)의 주석이 updatedAt을 '향후 레코드 단위 병합을 위한 토대'라고 명시하고, mergeCollectionConflicts()(logic.js:168-193)는 이 손실을 DB.settings.mergeDataLossCount로 사후에 세어 경고만 할 뿐 막지는 못함을 확인. 반면 mergeRecurrences()(logic.js:194-230+)는 이미 같은 문제를 skip/edits/confirmedDates를 합집합으로 병합하는 방식으로 recurrences 컬렉션 하나에 대해서만 해결해뒀는데, 이 패턴이 나머지 다섯 컬렉션으로 확장된 적이 없다는 게 남은 공백임을 포착. mergeRecurrences 패턴을 일반화한 mergeRecordFields(winner,loser) 순수함수를 logic.js에 신설해 mergeCollection()의 레코드 전체 채택 분기를 대체하고 (승자 레코드를 기준으로 하되, 승자가 바꾸지 않은 필드에서 패자만 값이 다르면 패자 값을 채워넣는 필드 단위 병합), disjoint-field 병합/same-field 충돌 시 승자 우선/기존 recurrences 테스트 무회귀를 test/run.js에 추가하는 계획을, DB.assets/DB.txns부터 우선 적용하고 goals/inquiries/assetQtyLog로 확장하는 순서로 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
-      "commit": null
-    },
     {
       "cycle": 223,
       "phase": "advance",
@@ -141,6 +139,13 @@
       "phase": "review",
       "timestamp": "2026-10-21T18:10:00.000Z",
       "summary": "cycle228 develop 커밋(f4e47b3, pushCloud INFLIGHT 가드 테스트의 고정 40틱 setImmediate 대기를 5초 벽시계 데드라인 while 루프로 교체)을 검토. 진단 전제부터 재검증: 변경 전 코드가 정말 '틱 수'만 세고(for i<40&&updateCallCount<2) 경과 시간은 재지 않았음을 diff로 직접 확인, encodeCloudPayload()가 CompressionStream(zlib 네이티브 콜백)을 거치므로 순수 마이크로태스크 루프로는 끝나지 않는다는 주석의 전제도 코드 구조(await sandbox.pushCloud() 내부에서 encodeCloudPayload 호출)와 일치함을 확인. 교체된 로직(const deadline=Date.now()+5000; while(updateCallCount<2 && Date.now()<deadline) await new Promise(r=>setImmediate(r)))을 직접 추적 — 정상 동작(수 ms 내 완료)에서는 루프가 즉시 빠져나와 기존 대비 테스트 실행 시간에 사실상 변화가 없고, 진짜 멈춤 회귀가 생겨도 5초 후 동일한 updateCallCount/PUSH_CLOUD_INFLIGHT 단언이 여전히 잡아내므로 회귀 탐지력이 그대로 유지됨을 확인. 무한루프·행잉 위험 없음(데드라인으로 상한 보장). node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1745/1745 통과(1회 실행으로는 기존 플레이크 재현 여부를 단정할 수 없으나, develop 단계가 이미 25회 연속 통과로 검증했고 이번 변경은 테스트 인프라 1건뿐이라 index.html/logic.js/sw.js 버전 영향 없음도 재확인). 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 228,
+      "phase": "critique",
+      "timestamp": "2026-10-21T19:15:14.258Z",
+      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-228에서 다룬 모든 영역 전부 제외 지시: toast/invalidateBalances/split거래/pushCloud gzip/mergeDataLoss경고/kakaoLogin병합/nextOutflowCard/#histQ디바운스/recSaveScopeConfirm보류/DB.goals·delOwner/#bootSplash/boot()로컬우선/asFx·asGold·asQty Enter제출(되돌림)/doExport CSV/bulkCatTargets adjust/연금전환복원/selectNwOwner선택id/CDN SRI(기각)/dismissedStaleMvIds·budgetCarryFor/crypto자산종류+주말휴장/recDates push()주말이동/archiveBaselines+UI연결/commaQty maximumFractionDigits/recNthDate버퍼버그/mergeRecordFields(보류)/mergeDataLossFields/matchTxnQuery·matchAssetQuery NFC정규화/아이콘배지 WCAG1.4.11/svg() aria-hidden/netlify functions CORS+레이트리밋/sw.js navigate캐시가드/investGainLossCard/netlify.toml logic.js캐시헤더/PIN focus복원/stock-split qty조정(버그아님)/budgetCarryFor재귀(제외)/CSS font-size px(제외)/DB.budgets레거시플랫맵(무해)/checkNotifyAlerts staleness(커버됨)/TYPE_COLOR.gold불일치(흡수됨)/DB.assetQtyLog자동정리부재(제외)/uid()충돌+sanitizeBackup dedup/pushCloud INFLIGHT 테스트 플레이크수정). netlify/functions/stock.js·rates.js·crypto.js 세 파일이 getJSON 타임아웃+재시도/sleep·errText·toNum/pickRows·applyJpyScale/isAllowedOrigin·corsOrigin·shouldThrottle·json·ALLOWED_ORIGINS파싱 등 ~140줄짜리 유틸 블록을 손복붙으로 중복 유지 중이며 이미 drift가 시작됐음(rates.js getJSON에만 주석이 붙어 더 이상 바이트 단위로 동일하지 않음)을 diff로 확인. test/run.js가 \"세 파일이 동일하게 동작한다\"를 매번 별도 단언으로 증명해야 하는 구조적 공백. 러너업(기각): svg() aria-hidden류 접근성 전부(이미 처리됨), 스와이프 삭제 키보드 접근성(탭 경로 있어 공백 아님), 차트 접근성(텍스트 대체 이미 있음), PIN/보안(이미 견고), CSV/백업/병합(이미 방어적), 시세 동기화 재시도(이미 구현), CORS/레이트리밋 기능 자체 재검토(cycle225와 중복이라 제외, 구조적 중복만 다룸), index.html 단일파일 분리(범위 과대). advance 계획: netlify/functions/_shared.js 신설해 순수 유틸·CORS/레이트리밋 로직을 이동(단, RL_WINDOW_MS/RL_MAX/rlHistory 상태는 엔드포인트별로 분리 유지해 레이트리밋 버킷이 섞이는 회귀를 막음), 세 파일은 require로 재노출, test/run.js의 \"동일하게 동작한다\" 중복 단언을 참조 동일성(===) 검증으로 교체. netlify/functions만 변경이라 APP_VERSION/sw.js CACHE 버전은 올리지 않음. 코드 변경 없음(critique 단계라 state.json만 갱신, pending_advance_plan 저장).",
       "commit": null
     }
   ]
