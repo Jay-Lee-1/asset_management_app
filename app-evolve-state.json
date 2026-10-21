@@ -1,15 +1,8 @@
 {
   "cycle": 224,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 219,
-      "phase": "review",
-      "timestamp": "2026-10-20T06:00:00.000Z",
-      "summary": "cycle219 develop 커밋(58ab13c, selectNwOwner()가 자산 일괄선택 모드 중 귀속 캐러셀 전환 시 화면에 안 보이는 선택 id를 남기던 버그 수정)을 검토. visibleAssetsForSel()(index.html:3762, ST.assetOwner==='all'이면 DB.assets 전체, 아니면 owner로 필터)과 ST.aSel 초기값(2705행, {mode:false,ids:new Set()})을 직접 추적 — 가드가 `if(ST.aSel.mode&&ST.aSel.ids.size){...}`로 선택모드가 아니거나 선택된 게 없으면 건드리지 않고, 실제로 owner!==ST.assetOwner일 때만(기존 조건문 안) 실행되므로 캐러셀이 같은 귀속에 머무는 스크롤 정착 이벤트들을 불필요하게 건드리지 않음을 확인. 비파괴적으로 보일 수 있는 대안(바뀐 귀속에서도 여전히 보이는 id만 남기는 부분 정리)보다 전체 비우기가 이 앱의 기존 관례(필터가 바뀌면 선택을 통째로 초기화)와 일치하고 코드도 더 단순해 과잉수정이 아니라고 판단. updateSelBottom()이 selMode 전체에서 쓰는 공용 하단 바 갱신 함수(8409행)와 동일 패턴으로 재사용됐음도 확인. 새 테스트 3건(모드 중 전환 시 비움+갱신, 동일 귀속 재선택 시 무변화, 비선택모드 회귀 가드)이 실제 로직과 정확히 일치하고, test/run.js FUNCTIONS에 추가된 네 함수(selectNwOwner/refreshAssetBody/refreshNwHistoryCard/refreshGoalsSummary/refreshAllocationCard) 모두 기존 공유 $ 스텁만으로 실행형 검증이 가능함을 재확인. APP_VERSION 1.47.200/sw.js CACHE v462 갱신도 일관됨(develop에서 이미 올렸고 review는 코드 변경 없음). node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1638/1638 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 219,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-21T01:12:46.000Z",
       "summary": "직접 synchronous로 develop 후보를 탐색(cycle149-223에서 다룬 모든 영역 전부 제외: toast/invalidateBalances/split거래/pushCloud gzip/mergeDataLoss/kakaoLogin 병합/nextOutflowCard/#histQ 디바운스/recSaveScopeConfirm 보류/DB.goals·delOwner/#bootSplash/boot() 로컬우선/doExport CSV/bulkCatTargets adjust/crypto 자산종류+주말휴장 회귀/recDates push() 주말이동/asOpenType pension 복원/selectNwOwner 선택id/PIN focus 복원/archiveBaselines+UI 연결/commaQty maximumFractionDigits/recNthDate 버퍼 버그/mergeDataLossFields). logic.js의 normName()(카테고리/귀속 이름 중복 비교용)은 한글 조합형(NFD)·완성형(NFC) 차이를 이미 .normalize('NFC')로 흡수하는데, 같은 문제를 가진 자유 텍스트 검색 함수 matchTxnQuery()/matchAssetQuery()(각각 #histQ 전체내역 검색, 자산 탭 검색이 쓰는 includes 기반 매칭)에는 그 정규화가 전혀 적용돼 있지 않음을 발견 — node로 '메모'.normalize('NFD') !== '메모'(NFC)이고 서로 includes()에 걸리지 않음을 직접 재현해 확인. 메모/자산명이 과거 macOS(HFS+ 파일명은 NFD 저장)에서 복사해 붙여넣었거나 특정 입력 경로로 NFD 형태로 저장된 경우, 화면엔 똑같이 보이는 글자인데도 평소처럼 NFC로 타이핑한 검색어로는 전혀 찾아지지 않는 실사용 버그. 두 함수 모두 비교 직전에 hay/q 양쪽에 .normalize('NFC')를 추가해 normName()과 동일한 전제(저장/표시용 원본은 그대로 두고 비교 시점에만 정규화)로 고쳤다(대소문자 비교·쉼표 처리 등 기존 동작은 그대로 유지). test/run.js에 기존 matchTxnQuery/matchAssetQuery 테스트 뒤에 5건 추가: 메모가 NFD로 저장돼 있어도 NFC 검색어로 찾아지는지, 검색어가 NFD여도 NFC로 저장된 메모를 찾는지, 자산명이 NFD로 저장돼 있어도 매칭되는지(matchTxnQuery 경로), matchAssetQuery에서 hay가 NFD/검색어가 NFD인 두 방향 각각. 수정 전 코드로 되돌려 5건 모두 FAIL함을 직접 확인한 뒤 수정을 복원했다. index.html은 건드리지 않아 APP_VERSION은 그대로 두고, logic.js만 바뀌어(SHELL 캐시 대상) sw.js CACHE만 v471->v472로 올렸다. node --check(logic.js, sw.js) 통과. node our-assets-v1.14.1/our-assets/test/run.js 1699/1699 -> 1704/1704 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 224,
+      "phase": "review",
+      "timestamp": "2026-10-21T02:10:00.000Z",
+      "summary": "cycle224 develop 커밋(a59c863, matchTxnQuery/matchAssetQuery 검색이 한글 NFC/NFD 정규화 차이로 못 찾던 버그 수정)을 검토. normName()(logic.js:373, .normalize('NFC').trim().replace(whitespace).toLowerCase())과 동일한 전제로 matchTxnQuery/matchAssetQuery 양쪽에 .normalize('NFC')를 hay/q 모두에 추가했음을 직접 확인 — 쉼표 제거(.replace(/,/g,''))는 정규화 뒤에 적용돼도 결과에 영향 없음(정규화가 쉼표 문자 자체를 바꾸지 않음), toLowerCase 순서도 영문 대소문자 비교에 영향 없음. logic.js/index.html 전체에서 toLowerCase().includes(q 패턴으로 자유 텍스트를 매칭하는 함수가 이 두 개뿐임을 grep으로 재확인해(index.html에는 includes 기반 검색 매칭이 따로 없음) 고도화 대상 밖에 비슷한 버그가 남아있지 않음을 확인. 새 테스트 5건(hay가 NFD/검색어가 NFD 각 방향, matchTxnQuery 자산명 매칭 포함)이 실제로 수정된 코드 경로와 정확히 대응됨을 확인. node --check(logic.js, sw.js) 문법 통과, APP_VERSION 1.47.206(index.html 미변경이라 그대로)·sw.js CACHE v472 일치 확인. node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1704/1704 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
       "commit": null
     }
   ]
