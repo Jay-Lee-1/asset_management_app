@@ -1398,7 +1398,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.205';
+const APP_VERSION='1.47.206';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1547,9 +1547,26 @@ function mergeRemoteDataIntoLocal(remoteData){
   * 신호가 없었다(app-evolve cycle211 critique는 assets/goals만 다뤘으나, txns/inquiries/assetQtyLog도
   * 똑같이 whole-record 승자독식이라 cycle212에서 범위를 넓힌다 — txns는 가장 변경 빈도가 높은
   * 컬렉션이라 오히려 이 손실 클래스가 가장 자주 발생할 후보다). mergeRecurrences는
-  * skip/edits/confirmedDates를 합집합으로 보존해 이 클래스를 이미 피해가므로 대상에서 제외. */
- const _mergeDataLossN=mergeCollectionConflicts(DB.txns,remoteData.txns).length+mergeCollectionConflicts(DB.assets,remoteData.assets).length+mergeCollectionConflicts(DB.goals,remoteData.goals).length+mergeCollectionConflicts(DB.inquiries,remoteData.inquiries).length+mergeCollectionConflicts(DB.assetQtyLog,remoteData.assetQtyLog).length;
- if(_mergeDataLossN>0){DB.settings=DB.settings||{};DB.settings.mergeDataLossCount=(DB.settings.mergeDataLossCount||0)+_mergeDataLossN;}
+  * skip/edits/confirmedDates를 합집합으로 보존해 이 클래스를 이미 피해가므로 대상에서 제외.
+  * 어떤 필드가 덮어써졌는지(mergeCollectionConflicts()가 반환하는 fields)도 DB.settings.mergeDataLossFields에
+  * 누적해, 경고 카드가 "무언가 덮어써졌다"는 건수뿐 아니라 "이름/잔액 같은 어떤 값"인지까지 보여줄 수
+  * 있게 한다(app-evolve cycle223 advance) — 필드를 자동으로 되살리는 병합은 레코드별 updatedAt 하나뿐인
+  * 지금 데이터 모델로는 "승자가 실제로 바꾼 필드"와 "그냥 안 건드린 필드"를 구분할 근거가 없어 보류하고
+  * (logic.js mergeCollectionConflicts 주석 참고), 대신 사용자가 뭘 다시 확인해야 할지 아는 선에서만 돕는다. */
+ const _mergeConflicts=[].concat(
+  mergeCollectionConflicts(DB.txns,remoteData.txns),
+  mergeCollectionConflicts(DB.assets,remoteData.assets),
+  mergeCollectionConflicts(DB.goals,remoteData.goals),
+  mergeCollectionConflicts(DB.inquiries,remoteData.inquiries),
+  mergeCollectionConflicts(DB.assetQtyLog,remoteData.assetQtyLog)
+ );
+ if(_mergeConflicts.length>0){
+  DB.settings=DB.settings||{};
+  DB.settings.mergeDataLossCount=(DB.settings.mergeDataLossCount||0)+_mergeConflicts.length;
+  const _fieldSet=new Set(DB.settings.mergeDataLossFields||[]);
+  _mergeConflicts.forEach(c=>c.fields.forEach(f=>_fieldSet.add(f)));
+  DB.settings.mergeDataLossFields=[..._fieldSet].sort();
+ }
  DB.txns=mergeCollection(DB.txns,remoteData.txns,DB.deletedIds,remoteData.deletedIds);
  DB.recurrences=mergeRecurrences(DB.recurrences,remoteData.recurrences,DB.deletedIds,remoteData.deletedIds); /* mergeCollection과 달리 skip/edits/confirmedDates는 합집합으로 보존(logic.js mergeRecurrences 주석 참고) */
  DB.recurrences.forEach(pruneOrphanRecOverrides); /* 병합이 다른 스케줄을 가진 쪽을 base로 고르면 합쳐진 skip/edits/confirmedDates 중 일부가 그 새 스케줄과 안 맞을 수 있어, saveRec 계열과 동일하게 병합 직후에도 정리한다(스케줄·skip/edits/confirmedDates가 그대로면 0건 정리) */
@@ -2274,7 +2291,7 @@ function load(){
 function writeThemeCache(){try{localStorage.setItem('asset_app_theme_cache',JSON.stringify(themeCachePayload(DB.settings)))}catch(e){}}
 function migrate(){
  DB.rates=DB.rates||{};DB.rates.fx=DB.rates.fx||{};DB.rates.stocks=DB.rates.stocks||{};DB.rates.crypto=DB.rates.crypto||{}; /* crypto 자산 종류 신설(app-evolve cycle219) — 기존 계정엔 rates.crypto 버킷이 없어 assetEval()/rateUnknown()의 R.crypto[code] 접근이 터짐 */
- DB.settings=Object.assign({themeMode:'system',includeScheduled:false,assetSort:'custom',histSortAsc:true,confirmTransfers:true,autoRates:true,bigMin:100000,dismissedStaleMvIds:[],persistWarnDismissed:false,storageSizeWarnDismissed:false,clockSkewWarnDismissed:false,mergeDataLossCount:0},DB.settings||{});
+ DB.settings=Object.assign({themeMode:'system',includeScheduled:false,assetSort:'custom',histSortAsc:true,confirmTransfers:true,autoRates:true,bigMin:100000,dismissedStaleMvIds:[],persistWarnDismissed:false,storageSizeWarnDismissed:false,clockSkewWarnDismissed:false,mergeDataLossCount:0,mergeDataLossFields:[]},DB.settings||{});
  if(!Array.isArray(DB.settings.groupOrder)||!DB.settings.groupOrder.length)DB.settings.groupOrder=[...DEFAULT_GROUP_ORDER];
  DEFAULT_GROUP_ORDER.forEach(t=>{if(!DB.settings.groupOrder.includes(t))DB.settings.groupOrder.push(t)});
  delete DB.settings.showScheduled; /* 예정 표시는 홈 '예정 포함'으로 통합 */
@@ -6248,7 +6265,7 @@ function dismissClockSkewWarn(){DB.settings.clockSkewWarnDismissed=true;save();r
 /* persistWarnDismissed와 달리 영구 dismiss가 아니다 — 다음 병합에서 새로 소실이 생기면
  * mergeRemoteDataIntoLocal이 mergeDataLossCount를 다시 쌓아 재경고한다(storageSizeWarnDismissed와
  * 동일한 '문턱을 넘을 때마다 재경고' 관례, app-evolve cycle211 advance). */
-function dismissMergeDataLossWarn(){DB.settings.mergeDataLossCount=0;save();renderCurrent();toast('확인했어요')}
+function dismissMergeDataLossWarn(){DB.settings.mergeDataLossCount=0;DB.settings.mergeDataLossFields=[];save();renderCurrent();toast('확인했어요')}
 function backupDue(){ /* 마지막 파일 내보내기 후 7일 경과 */
  const snooze=DB.settings.backupSnooze||0;
  if(Date.now()<snooze)return false;
@@ -8004,7 +8021,7 @@ function homeAlerts(neg){
   if(shouldWarnClockSkew(_skewSev,DB.settings.clockSkewWarnDismissed))arr.push({kind:'clockSkew',severity:_skewSev});
   /* 문서 단위 push conflict(cloudConflict)와 달리 레코드 단위 merge-time 손실은 merge가 '성공'한 뒤
    * 벌어져 CLOUD_SYNC_STATE가 그대로 'ok'로 남으므로, 별도 카드로 알린다(app-evolve cycle211 advance) */
-  if(DB.settings.mergeDataLossCount>0)arr.push({kind:'mergeDataLoss',count:DB.settings.mergeDataLossCount});
+  if(DB.settings.mergeDataLossCount>0)arr.push({kind:'mergeDataLoss',count:DB.settings.mergeDataLossCount,fields:DB.settings.mergeDataLossFields||[]});
  }
  if(backupDue()&&DB.txns.length)arr.push({kind:'backup'});
  if(shouldWarnUnpersisted(STORAGE_PERSISTED,!!CLOUD_UID)&&!DB.settings.persistWarnDismissed)arr.push({kind:'persist'});
@@ -8169,11 +8186,19 @@ function homeAlertCard(al){
    <div class="ha-b" tabindex="0" role="button" aria-label="기기 시간을 확인해 주세요 · 눌러서 동기화 상태 보기" onclick="openAccountSheet()" onkeydown="rowKeydown(event,openAccountSheet)"><div class="ha-t">${al.severity==='severe'?'기기 시간이 많이 틀려요':'기기 시간을 확인해 주세요'}</div>
      <div class="ha-s">${al.severity==='severe'?'동기화할 때 다른 기기의 최신 수정이 조용히 사라질 수 있어요 · 기기 날짜/시간을 맞춰주세요':'동기화 병합 순서가 바뀔 수 있어요 · 기기 날짜/시간을 맞추는 걸 권장해요'}</div></div>
    <button class="txt-btn" style="flex-shrink:0;padding:6px 10px" onclick="event.stopPropagation();dismissClockSkewWarn()">확인</button></div>`;
- if(al.kind==='mergeDataLoss')return `<div class="home-alert mat">
+ if(al.kind==='mergeDataLoss'){
+   /* al.fields는 이번에 덮어써진 레코드들에서 실제로 값이 달랐던 필드명(내부 스키마 키, 사용자 입력이
+    * 아니므로 esc() 불필요) — 뭐가 덮어써졌는지 알아야 사용자가 어느 값을 다시 확인할지 알 수 있다
+    * (app-evolve cycle223 advance). 자주 보일 만한 필드만 한글로 바꾸고, 나머지는 원래 키 그대로 보여준다 */
+   const _labels={name:'이름',amount:'금액',baseAmount:'잔액',amountKRW:'금액',category:'카테고리',memo:'메모',date:'날짜',icon:'아이콘',owner:'귀속',type:'종류',maturityDate:'만기일',confirmed:'확인여부',stockQty:'보유수량',cryptoQty:'보유수량',fxAmount:'보유수량',goldDon:'보유수량',costBasis:'평단가',fromAssetId:'보내는 자산',toAssetId:'받는 자산',targetAmount:'목표금액',targetDate:'목표일',text:'내용'};
+   const _fields=al.fields||[];
+   const _fieldsTxt=_fields.length?` (${_fields.slice(0,4).map(f=>_labels[f]||f).join(', ')}${_fields.length>4?' 등':''})`:'';
+   return `<div class="home-alert mat">
    <div class="ha-ic">${svg('alert')}</div>
-   <div class="ha-b" tabindex="0" role="button" aria-label="다른 기기와 동시에 수정한 ${al.count}건은 최신 쪽만 반영됐어요 · 눌러서 확인" onclick="dismissMergeDataLossWarn()" onkeydown="rowKeydown(event,dismissMergeDataLossWarn)"><div class="ha-t">동기화 중 일부 수정이 덮어써졌어요</div>
-     <div class="ha-s">다른 기기와 동시에 고친 ${al.count}건은 최신 쪽만 반영됐어요</div></div>
+   <div class="ha-b" tabindex="0" role="button" aria-label="다른 기기와 동시에 수정한 ${al.count}건은 최신 쪽만 반영됐어요${_fieldsTxt} · 눌러서 확인" onclick="dismissMergeDataLossWarn()" onkeydown="rowKeydown(event,dismissMergeDataLossWarn)"><div class="ha-t">동기화 중 일부 수정이 덮어써졌어요</div>
+     <div class="ha-s">다른 기기와 동시에 고친 ${al.count}건은 최신 쪽만 반영됐어요${_fieldsTxt}</div></div>
    <button class="txt-btn" style="flex-shrink:0;padding:6px 10px" onclick="event.stopPropagation();dismissMergeDataLossWarn()">확인</button></div>`;
+ }
  if(al.kind==='confirm')return `<button class="home-alert confirm" onclick="${al.isRec?`confirmRecTransfer('${al.recId}','${al.date}')`:`openConfirmTransfer('${al.id}')`}">
    <div class="ha-ic">${svg('repeat')}</div>
    <div class="ha-b"><div class="ha-t">이체 확인 · ${comma(al.amount)}원</div>

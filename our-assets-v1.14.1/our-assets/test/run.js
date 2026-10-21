@@ -4112,6 +4112,43 @@ test('mergeRemoteDataIntoLocal: inquiries/assetQtyLog 충돌도 txns/assets/goal
   });
   assert.strictEqual(sandbox.DB.settings.mergeDataLossCount, 2, 'inquiries 1건 + assetQtyLog 1건이 합산돼야 함');
 });
+/* mergeCollectionConflicts()가 돌려주는 fields(실제로 달랐던 필드명)를 DB.settings.mergeDataLossFields에
+ * 누적해, 경고가 건수뿐 아니라 "무엇이" 덮어써졌는지도 알려줄 수 있게 한다(app-evolve cycle223 advance) */
+test('mergeRemoteDataIntoLocal: 충돌이 생기면 실제로 달랐던 필드명이 DB.settings.mergeDataLossFields에 중복 없이 누적된다', () => {
+  sandbox.DB = minimalMergeDB({
+    settings: { mergeDataLossCount: 0, mergeDataLossFields: [] },
+    assets: [{ id: 'a1', name: 'local-name', icon: 'bank', updatedAt: 200 }],
+    txns: [{ id: 't1', amount: 5000, category: '식비', updatedAt: 200 }],
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    assets: [{ id: 'a1', name: 'remote-name', icon: 'bank', updatedAt: 100 }],
+    txns: [{ id: 't1', amount: 5000, category: '카페', updatedAt: 100 }],
+    deletedIds: {},
+  });
+  assert.deepStrictEqual(j(sandbox.DB.settings.mergeDataLossFields), ['category', 'name'], 'icon은 양쪽이 같아 충돌이 아니므로 제외되고, 실제로 달랐던 name/category만 정렬되어 담겨야 함');
+});
+test('mergeRemoteDataIntoLocal: 기존에 쌓여 있던 mergeDataLossFields에 새 충돌 필드가 중복 없이 합쳐진다', () => {
+  sandbox.DB = minimalMergeDB({
+    settings: { mergeDataLossCount: 1, mergeDataLossFields: ['name'] },
+    assets: [{ id: 'a1', name: 'local-name', amount: 1000, updatedAt: 200 }],
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    assets: [{ id: 'a1', name: 'local-name', amount: 2000, updatedAt: 100 }],
+    deletedIds: {},
+  });
+  assert.deepStrictEqual(j(sandbox.DB.settings.mergeDataLossFields), ['amount', 'name'], '이번 충돌의 amount가 기존 name에 중복 없이 더해져야 함');
+});
+test('mergeRemoteDataIntoLocal: 충돌이 없으면 mergeDataLossFields가 그대로 유지된다(새로 비워지거나 바뀌지 않음)', () => {
+  sandbox.DB = minimalMergeDB({
+    settings: { mergeDataLossCount: 0, mergeDataLossFields: [] },
+    assets: [{ id: 'a1', name: 'same', updatedAt: 100 }],
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    assets: [{ id: 'a1', name: 'same', updatedAt: 200 }],
+    deletedIds: {},
+  });
+  assert.deepStrictEqual(j(sandbox.DB.settings.mergeDataLossFields), []);
+});
 
 /* ---------- 문의하기(개인 메모): openInquiry/sendInquiry/openInquiryList/delInquiry (app-evolve cycle133 advance)
  * '문의 접수' write-only dead end를 '이 기기에 저장되는 메모'로 재정의하면서 id/touch()/mergeCollection
@@ -9724,12 +9761,18 @@ test('mergeCollection: (회귀 방지) touch() 없이 이름 스냅샷만 찍혔
 
 /* ---------- mergeCollectionConflicts: mergeCollection()이 실제로 병합을 수행하기 전에, 그 병합이
  * 몇 건의 레코드를 조용히 버릴지 미리 세는 순수 헬퍼(app-evolve cycle211 critique/advance) ---------- */
-test('mergeCollectionConflicts: id가 양쪽에 있고 updatedAt이 다르며 나머지 필드도 실제로 다르면 진 쪽을 1건 충돌로 센다', () => {
+test('mergeCollectionConflicts: id가 양쪽에 있고 updatedAt이 다르며 나머지 필드도 실제로 다르면 진 쪽을 1건 충돌로 세고 달랐던 필드명을 반환한다', () => {
   const local = [{ id: 'a1', name: 'local-name', amount: 1000, updatedAt: 200 }];
   const remote = [{ id: 'a1', name: 'remote-name', amount: 2000, updatedAt: 100 }];
   const out = sandbox.mergeCollectionConflicts(local, remote);
   assert.strictEqual(out.length, 1);
-  assert.deepStrictEqual(j(out[0]), { id: 'a1', discardedSide: 'remote' }, 'updatedAt이 더 작은 remote 쪽이 mergeCollection에서 버려지므로 discardedSide는 remote');
+  assert.deepStrictEqual(j(out[0]), { id: 'a1', discardedSide: 'remote', fields: ['amount', 'name'] }, 'updatedAt이 더 작은 remote 쪽이 mergeCollection에서 버려지므로 discardedSide는 remote, fields는 실제로 달랐던 필드명을 정렬해 담아야 함(app-evolve cycle223 advance)');
+});
+test('mergeCollectionConflicts: fields는 실제로 값이 다른 필드만 담고, 같은 값인 필드는 제외한다', () => {
+  const local = [{ id: 'a1', name: 'same', amount: 1000, memo: 'local-memo', updatedAt: 200 }];
+  const remote = [{ id: 'a1', name: 'same', amount: 2000, memo: 'remote-memo', updatedAt: 100 }];
+  const out = sandbox.mergeCollectionConflicts(local, remote);
+  assert.deepStrictEqual(j(out[0].fields), ['amount', 'memo'], 'name은 양쪽이 같으므로 제외되고, 실제로 다른 amount/memo만 fields에 담겨야 함');
 });
 test('mergeCollectionConflicts: mergeCollection과 동일한 입력으로 호출하면 그 호출이 실제로 버릴 레코드 수와 일치한다', () => {
   const local = [{ id: 'a1', name: 'local-name', updatedAt: 100 }];
@@ -9738,6 +9781,7 @@ test('mergeCollectionConflicts: mergeCollection과 동일한 입력으로 호출
   const merged = sandbox.mergeCollection(local, remote, {}, {});
   assert.strictEqual(conflicts.length, 1);
   assert.strictEqual(conflicts[0].discardedSide, 'local');
+  assert.deepStrictEqual(j(conflicts[0].fields), ['name']);
   assert.strictEqual(merged[0].name, 'remote-name', 'mergeCollection도 같은 레코드에서 실제로 local을 버려야 함');
 });
 test('mergeCollectionConflicts: updatedAt이 완전히 같으면(mergeCollection이 그냥 local을 쓰는 경우) 충돌로 치지 않는다', () => {
@@ -15383,14 +15427,24 @@ test('homeAlertCard: clockSkew는 severity별로 다른 문구를 쓰고, 눌러
 /* ---------- homeAlerts/homeAlertCard: mergeDataLoss (app-evolve cycle211 advance) ----------
  * mergeRemoteDataIntoLocal이 DB.settings.mergeDataLossCount에 쌓아둔 레코드 단위 merge-time 손실
  * 건수를 cloudConflict/clockSkew와 같은 CLOUD_UID 전용 지속형 카드로 보여준다. */
-test('homeAlerts: CLOUD_UID가 있고 mergeDataLossCount>0이면 mergeDataLoss 알림을 count와 함께 띄운다', () => {
+test('homeAlerts: CLOUD_UID가 있고 mergeDataLossCount>0이면 mergeDataLoss 알림을 count와 fields와 함께 띄운다', () => {
   setupHomeAlertsDB();
   sandbox.CLOUD_UID = 'u1';
   sandbox.DB.settings.mergeDataLossCount = 2;
+  sandbox.DB.settings.mergeDataLossFields = ['amount', 'name'];
   const alerts = sandbox.homeAlerts([]);
   const al = alerts.find((a) => a.kind === 'mergeDataLoss');
   assert.ok(al, 'mergeDataLoss 알림이 있어야 함');
   assert.strictEqual(al.count, 2);
+  assert.deepStrictEqual(al.fields, ['amount', 'name'], 'DB.settings.mergeDataLossFields가 그대로 전달돼야 함(app-evolve cycle223 advance)');
+});
+test('homeAlerts: mergeDataLossFields가 없으면(기존 사용자 데이터) 빈 배열로 안전하게 폴백한다', () => {
+  setupHomeAlertsDB();
+  sandbox.CLOUD_UID = 'u1';
+  sandbox.DB.settings.mergeDataLossCount = 1;
+  delete sandbox.DB.settings.mergeDataLossFields;
+  const al = sandbox.homeAlerts([]).find((a) => a.kind === 'mergeDataLoss');
+  assert.deepStrictEqual(j(al.fields), [], '이 기능 추가 전에 쌓인 count만 있는 기존 데이터도 터지지 않아야 함');
 });
 test('homeAlerts: CLOUD_UID가 없으면(로컬/카카오 전용) mergeDataLossCount가 있어도 mergeDataLoss를 띄우지 않는다', () => {
   setupHomeAlertsDB();
@@ -15413,6 +15467,17 @@ test('homeAlertCard: mergeDataLoss는 건수를 보여주고, 확인을 누르�
   const html = sandbox.homeAlertCard({ kind: 'mergeDataLoss', count: 3 });
   assert.ok(html.includes('3건'), '건수가 문구에 보여야 함');
   assert.ok(html.includes('dismissMergeDataLossWarn()'), '확인 버튼으로 dismiss할 수 있어야 함');
+});
+test('homeAlertCard: mergeDataLoss는 fields가 있으면 한글로 바꾼 필드명을 함께 보여준다(app-evolve cycle223 advance)', () => {
+  const html = sandbox.homeAlertCard({ kind: 'mergeDataLoss', count: 2, fields: ['name', 'baseAmount'] });
+  assert.ok(html.includes('이름'), 'name은 한글 라벨 "이름"으로 바뀌어 보여야 함');
+  assert.ok(html.includes('잔액'), 'baseAmount는 한글 라벨 "잔액"으로 바뀌어 보여야 함');
+});
+test('homeAlertCard: mergeDataLoss는 라벨이 없는 필드명은 원래 키를 그대로 보여주고, fields가 없거나 비어 있어도 터지지 않는다', () => {
+  const html = sandbox.homeAlertCard({ kind: 'mergeDataLoss', count: 1, fields: ['customField'] });
+  assert.ok(html.includes('customField'), '한글 라벨이 없는 필드는 원래 키 그대로 보여야 함');
+  const htmlNoFields = sandbox.homeAlertCard({ kind: 'mergeDataLoss', count: 1 });
+  assert.ok(htmlNoFields.includes('1건'), 'fields가 없어도(undefined) 터지지 않고 건수는 그대로 보여야 함');
 });
 /* ---------- homeAlerts/homeAlertCard: cloudSyncError (app-evolve cycle170 advance) ----------
  * pushCloud() 실패(CLOUD_SYNC_STATE='error')는 토스트가 1회만 뜨고 사라져, 그 뒤로는 사용자가

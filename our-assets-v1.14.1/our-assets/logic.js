@@ -169,10 +169,20 @@ function mergeCollection(localArr,remoteArr,localDeletedIds,remoteDeletedIds){
  * 미리 알아내는 순수 헬퍼(app-evolve cycle211 critique) — local/remote 양쪽에 같은 id가 있고
  * updatedAt이 서로 다르며(동률이면 mergeCollection은 그냥 local을 쓸 뿐 실제 충돌이 아님) id/updatedAt을
  * 제외한 나머지 필드 중 하나라도 실제로 달라야만(단순히 두 기기가 같은 내용을 다른 시각에 저장한
- * 경우는 손실이 아니므로 제외) "진 쪽의 수정이 버려진다"로 보고 {id,discardedSide}를 반환한다.
+ * 경우는 손실이 아니므로 제외) "진 쪽의 수정이 버려진다"로 보고 {id,discardedSide,fields}를 반환한다.
  * mergeCollection과 완전히 같은 입력으로 호출하면 그 호출이 실제로 몇 건을 소실시킬지 미리 센 뒤
  * 사용자에게 알릴 수 있다(문서 단위 push-time conflict와 달리 레코드 단위 merge-time 손실은 지금까지
- * CLOUD_SYNC_STATE가 'ok'로 남아 아무 신호가 없었음). */
+ * CLOUD_SYNC_STATE가 'ok'로 남아 아무 신호가 없었음).
+ * fields(실제로 값이 다른 필드명, 정렬됨)는 app-evolve cycle223 advance에서 추가됐다 — cycle211 critique가
+ * 제안한 "진 쪽 수정을 필드 단위로 합쳐 살리는" mergeRecordFields(winner,loser) 방식을 실제로 검토한 결과,
+ * 레코드별 updatedAt 하나만 있고 필드별 변경 시점이 없는 현재 데이터 모델에서는 "승자가 실제로 건드린
+ * 필드"와 "승자가 그냥 안 건드려서 오래전 값 그대로인 필드"를 구분할 근거가 전혀 없어(공통 조상 스냅샷도,
+ * 필드별 타임스탬프도 없음) 자동으로 필드를 채워 넣으면 반대의 새 버그(승자가 실제로 되돌린 값을 패자의
+ * 오래된 값으로 되살림)를 조용히 만들 위험이 있다고 판단해 보류했다(이 판단 자체를 app-evolve-state.json
+ * history에 남겨 다음 critique가 같은 미검증 전제로 재제안하지 않게 함). 진짜 필드 단위 병합은 saveAsset/
+ * saveTx 등 모든 쓰기 경로에 "이번에 어떤 필드를 실제로 바꿨는지"부터 먼저 기록해야 가능한, 범위가 훨씬
+ * 큰 별도 작업이다. 그 전 단계로, 손실 경고에 "무엇이 덮어써졌는지"(필드명)까지 보여주면 사용자가 적어도
+ * 어느 값을 다시 확인해야 할지 알 수 있어 안전하게 가치를 더한다. */
 function mergeCollectionConflicts(localArr,remoteArr){
  const lMap=new Map((localArr||[]).map(r=>[r.id,r]));
  const rMap=new Map((remoteArr||[]).map(r=>[r.id,r]));
@@ -184,10 +194,10 @@ function mergeCollectionConflicts(localArr,remoteArr){
   if(lu===ru)return;
   const keys=new Set([...Object.keys(l),...Object.keys(r)]);
   keys.delete('id');keys.delete('updatedAt');
-  let differs=false;
-  for(const k of keys){if(JSON.stringify(l[k])!==JSON.stringify(r[k])){differs=true;break}}
-  if(!differs)return;
-  out.push({id,discardedSide:lu>=ru?'remote':'local'});
+  const fields=[];
+  for(const k of keys){if(JSON.stringify(l[k])!==JSON.stringify(r[k]))fields.push(k)}
+  if(!fields.length)return;
+  out.push({id,discardedSide:lu>=ru?'remote':'local',fields:fields.sort()});
  });
  return out;
 }
