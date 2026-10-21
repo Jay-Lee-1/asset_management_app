@@ -22,11 +22,12 @@ const domstub = require('./domstub.js');
 // netlify/functions/{stock,rates}.js는 브라우저가 아니라 Node(Netlify Functions)에서 도는
 // 평범한 CommonJS 모듈이라, index.html처럼 정규식 슬라이싱을 할 필요 없이 그냥 require한다
 // (module.exports는 exports.handler와 별개로 순수 함수만 추려 노출한다).
-let stockFns = null, ratesFns = null, cryptoFns = null;
+let stockFns = null, ratesFns = null, cryptoFns = null, sharedFns = null;
 try {
   stockFns = require(path.join(__dirname, '..', 'netlify', 'functions', 'stock.js'));
   ratesFns = require(path.join(__dirname, '..', 'netlify', 'functions', 'rates.js'));
   cryptoFns = require(path.join(__dirname, '..', 'netlify', 'functions', 'crypto.js'));
+  sharedFns = require(path.join(__dirname, '..', 'netlify', 'functions', '_shared.js'));
 } catch (e) {
   console.error('경고: netlify/functions require 실패, 관련 테스트를 건너뜁니다 —', e.message);
 }
@@ -18246,12 +18247,11 @@ if (stockFns && ratesFns) {
     assert.strictEqual(stockFns.isAllowedOrigin(null, ['https://my-app.netlify.app']), true);
     assert.strictEqual(stockFns.isAllowedOrigin(undefined, ['https://my-app.netlify.app']), true);
   });
-  test('isAllowedOrigin: rates.js/crypto.js도 동일하게 동작한다', () => {
-    const allow = ['https://my-app.netlify.app'];
-    assert.strictEqual(ratesFns.isAllowedOrigin('https://my-app.netlify.app', allow), true);
-    assert.strictEqual(ratesFns.isAllowedOrigin('https://evil.example', allow), false);
-    assert.strictEqual(cryptoFns.isAllowedOrigin('https://my-app.netlify.app', allow), true);
-    assert.strictEqual(cryptoFns.isAllowedOrigin('https://evil.example', allow), false);
+  test('isAllowedOrigin: stock.js/rates.js/crypto.js 세 파일 모두 _shared.js의 같은 함수를 참조 동일성(===)으로 공유한다(app-evolve cycle228 advance — 복붙 중복 제거)', () => {
+    assert.ok(sharedFns, '_shared.js require 실패');
+    assert.strictEqual(stockFns.isAllowedOrigin, sharedFns.isAllowedOrigin);
+    assert.strictEqual(ratesFns.isAllowedOrigin, sharedFns.isAllowedOrigin);
+    assert.strictEqual(cryptoFns.isAllowedOrigin, sharedFns.isAllowedOrigin);
   });
 
   test('shouldThrottle: 윈도우 안에서 임계값 이하면 허용하고 history에 쌓는다', () => {
@@ -18277,9 +18277,61 @@ if (stockFns && ratesFns) {
     assert.strictEqual(r.allow, true);
     assert.deepStrictEqual(r.history, [now]);
   });
-  test('shouldThrottle: rates.js/crypto.js도 동일한 순수 로직을 공유한다', () => {
-    assert.strictEqual(ratesFns.shouldThrottle([], 1000, 60000, 3).allow, true);
-    assert.strictEqual(cryptoFns.shouldThrottle([1000, 1010, 1020], 1030, 60000, 3).allow, false);
+  test('shouldThrottle: stock.js/rates.js/crypto.js 세 파일 모두 _shared.js의 같은 함수를 참조 동일성(===)으로 공유한다(app-evolve cycle228 advance — 복붙 중복 제거)', () => {
+    assert.ok(sharedFns, '_shared.js require 실패');
+    assert.strictEqual(stockFns.shouldThrottle, sharedFns.shouldThrottle);
+    assert.strictEqual(ratesFns.shouldThrottle, sharedFns.shouldThrottle);
+    assert.strictEqual(cryptoFns.shouldThrottle, sharedFns.shouldThrottle);
+  });
+  test('toNum/errText: stock.js/rates.js/crypto.js 세 파일 모두 _shared.js의 같은 함수를 참조 동일성(===)으로 공유한다', () => {
+    assert.strictEqual(stockFns.toNum, sharedFns.toNum);
+    assert.strictEqual(ratesFns.toNum, sharedFns.toNum);
+    assert.strictEqual(cryptoFns.toNum, sharedFns.toNum);
+    assert.strictEqual(stockFns.errText, sharedFns.errText);
+    assert.strictEqual(cryptoFns.errText, sharedFns.errText);
+  });
+  test('pickRows/applyJpyScale: stock.js/rates.js가 _shared.js의 같은 함수를 참조 동일성(===)으로 공유한다(crypto.js는 미사용이라 범위 밖)', () => {
+    assert.strictEqual(stockFns.pickRows, sharedFns.pickRows);
+    assert.strictEqual(ratesFns.pickRows, sharedFns.pickRows);
+    assert.strictEqual(stockFns.applyJpyScale, sharedFns.applyJpyScale);
+    assert.strictEqual(ratesFns.applyJpyScale, sharedFns.applyJpyScale);
+  });
+}
+
+/* ---------- netlify/functions/_shared.js: 세 시세 프록시가 공유하는 순수 유틸 자체 검증 (app-evolve cycle228 advance) ----------
+ * stock.js/rates.js/crypto.js를 통해 간접적으로도 검증되지만, _shared.js 자체를 직접 호출하는
+ * 테스트를 둬 require 경로 변경(세 파일 → 공유 모듈)이 참조 동일성뿐 아니라 실제 동작도
+ * 그대로 보존했는지 확인한다. */
+if (sharedFns) {
+  test('_shared.parseAllowedOrigins: 쉼표구분 문자열을 trim한 배열로, 빈 값/공백만 있으면 빈 배열', () => {
+    assert.deepStrictEqual(sharedFns.parseAllowedOrigins('https://a.app, https://b.app'), ['https://a.app', 'https://b.app']);
+    assert.deepStrictEqual(sharedFns.parseAllowedOrigins(''), []);
+    assert.deepStrictEqual(sharedFns.parseAllowedOrigins(undefined), []);
+    assert.deepStrictEqual(sharedFns.parseAllowedOrigins(' , ,'), []);
+  });
+  test('_shared.corsOrigin: allowlist가 비어있으면 "*", 있으면 허용된 Origin만 echo하고 아니면 null', () => {
+    assert.strictEqual(sharedFns.corsOrigin('https://evil.example', []), '*');
+    assert.strictEqual(sharedFns.corsOrigin('https://a.app', ['https://a.app']), 'https://a.app');
+    assert.strictEqual(sharedFns.corsOrigin('https://evil.example', ['https://a.app']), null);
+    assert.strictEqual(sharedFns.corsOrigin(null, ['https://a.app']), null);
+  });
+  test('_shared.json: allowedOrigins가 비어있으면 ACAO "*"만 붙고 Vary는 안 붙는다(기존 전체허용 동작 유지)', () => {
+    const r = sharedFns.json(200, { ok: 1 }, 60, 'https://evil.example', []);
+    assert.strictEqual(r.statusCode, 200);
+    assert.strictEqual(r.headers['Access-Control-Allow-Origin'], '*');
+    assert.strictEqual('Vary' in r.headers, false);
+    assert.strictEqual(r.headers['Cache-Control'], 'public, max-age=60');
+    assert.strictEqual(JSON.parse(r.body).ok, 1);
+  });
+  test('_shared.json: allowedOrigins가 있으면 허용된 Origin만 echo하고 Vary: Origin이 붙으며, maxAge=0이면 no-store', () => {
+    const allow = ['https://my-app.netlify.app'];
+    const ok = sharedFns.json(200, {}, 0, 'https://my-app.netlify.app', allow);
+    assert.strictEqual(ok.headers['Access-Control-Allow-Origin'], 'https://my-app.netlify.app');
+    assert.strictEqual(ok.headers['Vary'], 'Origin');
+    assert.strictEqual(ok.headers['Cache-Control'], 'no-store');
+    const blocked = sharedFns.json(429, {}, 0, 'https://evil.example', allow);
+    assert.strictEqual('Access-Control-Allow-Origin' in blocked.headers, false);
+    assert.strictEqual(blocked.headers['Vary'], 'Origin');
   });
 }
 

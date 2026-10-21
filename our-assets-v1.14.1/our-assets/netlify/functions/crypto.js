@@ -59,81 +59,22 @@ function pricesFromTickers(tickers) {
   return out;
 }
 
-/* ── 공통 유틸 (stock.js와 동일한 패턴) ──────────────────────────────────────────────────── */
+/* ── 공통 유틸 (netlify/functions/_shared.js로 이동 — app-evolve cycle228 advance) ─────────── */
+const shared = require('./_shared');
+const { errText, toNum, getJSON, isAllowedOrigin, shouldThrottle } = shared;
+
 const UPBIT_HEADERS = { Accept: 'application/json' };
 
-async function getJSON(url, { headers = {}, ms = 6000, retries = 1 } = {}) {
-  let lastErr;
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), ms);
-    try {
-      const res = await fetch(url, { headers, signal: ctrl.signal });
-      if (!res.ok) {
-        const err = new Error('HTTP ' + res.status);
-        err.status = res.status;
-        if (attempt < retries && (res.status === 429 || res.status >= 500)) { lastErr = err; await sleep(250 + Math.random() * 400); continue; }
-        throw err;
-      }
-      return await res.json();
-    } catch (e) {
-      lastErr = e;
-      if (attempt < retries && e.name === 'AbortError') { await sleep(250); continue; }
-      if (attempt < retries && !e.status) { await sleep(250); continue; }
-      throw e;
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-  throw lastErr;
-}
-
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-function errText(e) { return e && e.status ? ('HTTP ' + e.status) : String(e && e.message || e); }
-
-function toNum(v) {
-  const n = Number(String(v == null ? '' : v).replace(/[^0-9.]/g, ''));
-  return Number.isFinite(n) && n > 0 ? n : 0;
-}
-
 /* ── 공개 프록시 남용 완화 (app-evolve cycle225 critique) ──────────────────────
- * stock.js/rates.js와 같은 이유·같은 완화책: ALLOWED_ORIGINS 미설정 시 기존처럼 전체
- * 허용(배포 도메인을 미리 알 수 없어 기본값을 못 박으면 설정 전 실사용자가 막힘), 설정
- * 시에만 Origin echo로 제한(비브라우저 호출은 CORS로 못 거르는 한계 있음) + 웜 컨테이너
- * 단위 best-effort 레이트리밋(콜드스타트마다 리셋). */
-const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
-  .split(',').map(s => s.trim()).filter(Boolean);
+ * stock.js/rates.js와 같은 이유로 ALLOWED_ORIGINS/RL_WINDOW_MS/RL_MAX/rlHistory는
+ * 엔드포인트별로 분리 유지한다(레이트리밋 버킷이 섞이면 분당 한도가 의도와 달라짐). */
+const ALLOWED_ORIGINS = shared.parseAllowedOrigins(process.env.ALLOWED_ORIGINS);
 const RL_WINDOW_MS = 60000;
 const RL_MAX = 30;
 let rlHistory = [];
 
-function isAllowedOrigin(origin, allowlist) {
-  if (!allowlist || !allowlist.length) return true;
-  if (!origin) return true;
-  return allowlist.includes(origin);
-}
-
-function shouldThrottle(history, now, windowMs, maxCount) {
-  const pruned = (history || []).filter(t => now - t < windowMs);
-  if (pruned.length >= maxCount) return { allow: false, history: pruned };
-  pruned.push(now);
-  return { allow: true, history: pruned };
-}
-
-function corsOrigin(origin, allowlist) {
-  if (!allowlist.length) return '*';
-  return isAllowedOrigin(origin, allowlist) && origin ? origin : null;
-}
-
 function json(status, body, maxAge, origin) {
-  const headers = {
-    'Content-Type': 'application/json; charset=utf-8',
-    'Cache-Control': maxAge ? `public, max-age=${maxAge}` : 'no-store'
-  };
-  const aco = corsOrigin(origin, ALLOWED_ORIGINS);
-  if (aco) headers['Access-Control-Allow-Origin'] = aco;
-  if (ALLOWED_ORIGINS.length) headers['Vary'] = 'Origin';
-  return { statusCode: status, headers, body: JSON.stringify(body) };
+  return shared.json(status, body, maxAge, origin, ALLOWED_ORIGINS);
 }
 
 // 테스트(test/run.js)에서 순수 함수만 골라 require하기 위한 exports.
