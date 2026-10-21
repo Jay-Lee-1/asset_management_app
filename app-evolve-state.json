@@ -1,15 +1,8 @@
 {
   "cycle": 227,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 222,
-      "phase": "review",
-      "timestamp": "2026-10-20T17:45:00.000Z",
-      "summary": "cycle222 develop 커밋(91b0422, commaQty() maximumFractionDigits 4->8로 암호화폐 소량 보유수량 \"0\" 표시 버그 수정)을 검토. commaQty의 유일한 네 호출부(index.html: assetSubline의 fx/stock/crypto 분기, 수량변경 로그 모달의 delta/prevQty/newQty)를 모두 확인 — 전부 화면 표시 전용이고 assetEval/순자산 계산 경로는 원본 cryptoQty를 그대로 쓰므로 maximumFractionDigits 변경이 평가액 로직에 영향을 주지 않음을 재확인. node -e로 toLocaleString(maximumFractionDigits:8) 동작을 독립적으로 재검증(사토시 단위 0.00001234가 그대로 보존, 음수도 부호 유지, 8자리 초과는 반올림, 1.5/0 등 기존 저정밀 값에 trailing zero 안 붙음) — 새 테스트 3건의 주장과 일치. node our-assets-v1.14.1/our-assets/test/run.js 재실행해 1679/1679 통과 확인. 버그 없음.",
-      "commit": null
-    },
     {
       "cycle": 222,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-21T13:10:00.000Z",
       "summary": "netlify.toml 배포 헤더 설정의 비대칭을 발견: index.html/sw.js/manifest.webmanifest 세 셸 파일은 전부 [[headers]] 규칙으로 Cache-Control: public, max-age=0, must-revalidate(캐시 안 함, 배포 즉시 반영)가 명시돼 있는데, index.html이 <script src=\"logic.js\">로 캐시버스팅 쿼리 없이 그대로 불러오고 sw.js SHELL 목록에도 포함된 logic.js만 이 규칙이 빠져 있어 호스팅 기본 캐시 정책에 맡겨져 있었음을 grep+netlify.toml 전체 확인으로 검증(생성 이후 cycle149-226 어느 사이클도 netlify.toml 쪽은 들여다본 적 없는 공백). 배포 후 브라우저/중간 캐시가 예전 logic.js를 들고 있으면 \"최신 index.html + 예전 logic.js\"가 뒤섞여 동작할 수 있고, 서비스워커 install의 caches.addAll(SHELL)도 fetch(\"./logic.js\")가 기본 캐시 모드라 그 묵은 응답을 그대로 새 CACHE 버킷에 넣어버려 CACHE 버전을 올린 효과 자체가 무력화될 수 있는 잠재적 버그 — cycle226의 sw.js navigate 분기 캐시 가드 비대칭과 같은 버그 유형이 파일을 옮겨 나타난 사례. netlify.toml에 /logic.js용 [[headers]] 규칙을 index.html/sw.js와 동일하게 추가해 고쳤다. netlify.toml은 TOML이라 vm 샌드박스로 실행할 수 없으므로 sw.js(swSrc) 패턴과 동일하게 test/run.js가 소스 텍스트(tomlSrc)로 읽어 검증하는 방식의 테스트 3건을 추가: logic.js에 캐시 안 함 규칙이 실제로 생겼는지(버그를 잡는 핵심 테스트, 수정 전으로 되돌려 1740/1741로 실패함을 직접 확인한 뒤 복원), index.html/sw.js/manifest.webmanifest의 기존 캐시 안 함 규칙이 그대로인지(회귀 가드), *.png/favicon.ico의 긴 캐시(immutable) 규칙이 그대로인지(회귀 가드). netlify.toml은 배포 시 호스팅에만 적용되는 설정이라 index.html/logic.js/sw.js 어느 것도 바뀌지 않았으므로 APP_VERSION/sw.js CACHE 버전은 올리지 않았다(netlify functions와 같은 이유로 셸 캐시 대상 아님). node --check(test/run.js, netlify/functions/*.js) 통과. node our-assets-v1.14.1/our-assets/test/run.js 1738/1738 -> 1741/1741 통과. general-purpose 서브에이전트가 탐색·구현·검증했고, 오케스트레이터가 diff(netlify.toml/test/run.js 두 파일)와 테스트 결과를 직접 재검증(node --check, 전체 테스트 재실행 1741/1741 재확인)한 뒤 커밋했다.",
+      "commit": null
+    },
+    {
+      "cycle": 227,
+      "phase": "review",
+      "timestamp": "2026-10-21T14:12:02.422Z",
+      "summary": "cycle227 develop 커밋(6f2eada, netlify.toml에 /logic.js [[headers]] 캐시 안 함 규칙 추가)을 검토. 전제부터 재검증: index.html:1398에 <script src=\"logic.js\"> 가 캐시버스팅 쿼리 없이 그대로 있고 sw.js:11 SHELL 배열에도 './logic.js'가 포함돼 있어, logic.js만 캐시 규칙이 빠져 있었다는 develop 단계 진단이 사실임을 grep으로 직접 확인. netlify.toml 전체를 읽어 추가된 [[headers]] for=\"/logic.js\" 블록이 index.html/sw.js와 동일한 Cache-Control: public, max-age=0, must-revalidate를 쓰고, 앞뒤 블록(index.html/sw.js, manifest.webmanifest/*.png/favicon.ico)의 구조를 깨지 않고 올바른 위치에 삽입됐음을 확인 — TOML 문법도 기존 블록과 일관됨. 새로 추가된 extractHeaderBlock() 테스트 헬퍼(for=\"...\" 마커에서 역방향으로 가장 가까운 [[headers]]를 찾아 다음 [[headers]] 전까지 슬라이스)도 블록 경계를 정확히 잡는 로직임을 확인. node our-assets-v1.14.1/our-assets/test/run.js 재실행해 1741/1741 통과 재확인. 설정 파일 1곳만 바꾸는 작고 범위가 명확한 수정이라 버그 없음.",
       "commit": null
     }
   ]
