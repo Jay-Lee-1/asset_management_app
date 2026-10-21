@@ -11224,11 +11224,19 @@ test('[실행형] pushCloud: 충돌 자동 재시도 중에는 재시도 호출�
   try {
     const p = sandbox.pushCloud();
     // encodeCloudPayload()(app-evolve cycle214 advance)의 실제 CompressionStream 압축은 순수
-    // 마이크로태스크가 아니라 zlib 네이티브 콜백을 거쳐 이벤트 루프를 몇 틱 돈 뒤에야 끝나서(실측
-    // 결과 setImmediate 1~2틱), await Promise.resolve()만 반복하는 마이크로태스크 전용 루프로는
-    // 영원히 안 끝난다 — setImmediate로 매크로태스크 틱을 실제로 돌려야 한다. push가 1차 실패 후
-    // 재시도까지 두 번 압축해야 하므로(최초 push + 병합 뒤 재시도) 여유 있게 40틱까지 돈다.
-    for (let i = 0; i < 40 && updateCallCount < 2; i++) await new Promise((r) => setImmediate(r));
+    // 마이크로태스크가 아니라 zlib 네이티브 콜백을 거쳐 이벤트 루프를 몇 틱 돈 뒤에야 끝나서,
+    // await Promise.resolve()만 반복하는 마이크로태스크 전용 루프로는 영원히 안 끝난다 —
+    // setImmediate로 매크로태스크 틱을 실제로 돌려야 한다. push가 1차 실패 후 재시도까지 두 번
+    // 압축해야 한다(최초 push + 병합 뒤 재시도). 예전엔 이 틱 수를 40회로 고정했는데, 실측해보면
+    // 네이티브 zlib 콜백이 이벤트 루프를 다시 도는 데 필요한 틱 수 자체가 시스템 부하에 따라
+    // 수 틱~수백 틱까지 넓게 흔들린다(동일 머신에서 반복 측정 시 2~679틱, 소요 실제 시간은 매번
+    // 수 ms 이하로 거의 일정) — "틱 수"는 느려진 스케줄러 지연까지 누적해서 세므로 고정 상한과
+    // 안 맞고, "경과 시간"은 실제 작업량과 비례해 항상 일정하다. 그래서 40회 안에 못 끝나면
+    // (특히 CI/샌드박스처럼 느린 환경에서) updateCallCount가 아직 1인 채로 넘어가 아래 단언이
+    // 간헐적으로 실패했다(app-evolve cycle228 develop — 로컬에서 반복 실행 시 20~30% 빈도로 재현).
+    // 틱 수 대신 벽시계 데드라인(최대 5초)으로 바꿔, 실제로는 수 ms 안에 끝나는 이 작업이 어떤
+    // 환경에서도 안정적으로 통과하면서, 정말 멈춰버린 회귀는 5초 뒤 아래 단언 실패로 여전히 잡는다.
+    { const deadline = Date.now() + 5000; while (updateCallCount < 2 && Date.now() < deadline) await new Promise((r) => setImmediate(r)); }
     assert.strictEqual(updateCallCount, 2, '재시도(2번째) 조건부 UPDATE 호출까지 도달해 있어야 함');
     assert.strictEqual(sandbox.PUSH_CLOUD_INFLIGHT, true, '재시도 네트워크 왕복이 아직 끝나지 않았으면 PUSH_CLOUD_INFLIGHT가 계속 true로 남아, 그 사이 끼어드는 다른 트리거(60초 재시도 interval·디바운스 타이머·online 이벤트)의 중복 push를 막아야 함');
     resolveRetry();
