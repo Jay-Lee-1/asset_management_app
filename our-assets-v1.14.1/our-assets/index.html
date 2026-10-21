@@ -54,9 +54,9 @@
   --text:#181B19;--text-2:#67716B;--text-3:#767F79;--on-brand:#FFFFFF;
   --line:#E8EBE8;--line-2:#DDE1DD;
   --brand:#227E72;--brand-ink:#1C6A60;--brand-soft:#E4F0EC;--brand-tint:#F1F8F5;
-  --income:#2E7BC4;--income-soft:#E8F1FB;--expense:#E06457;--expense-soft:#FBE9E6;
-  --gold:#BE8E2C;--gold-soft:#F5ECD5;--stock:#7C5CC4;--stock-soft:#EEE9FA;--save:#2FA36B;--save-soft:#E5F3EC;
-  --crypto:#CB7B2C;--crypto-soft:#F7E8D5;
+  --income:#2E7BC4;--income-soft:#E8F1FB;--expense:#E06457;--expense-soft:#FBE9E6;--expense-ink:#C83425;
+  --gold:#BE8E2C;--gold-soft:#F5ECD5;--gold-ink:#806719;--stock:#7C5CC4;--stock-soft:#EEE9FA;--save:#2FA36B;--save-soft:#E5F3EC;--save-ink:#247B51;
+  --crypto:#CB7B2C;--crypto-soft:#F7E8D5;--crypto-ink:#975B21;
   --sh-sm:0 1px 2px rgba(20,30,25,.05),0 1px 3px rgba(20,30,25,.04);
   --sh-md:0 1px 3px rgba(20,30,25,.04),0 6px 20px rgba(20,30,25,.055);
   --sh-lg:0 10px 44px rgba(18,26,22,.16);--sh-nav:0 -1px 0 var(--line),0 -6px 22px rgba(20,30,25,.04);
@@ -74,9 +74,9 @@ html[data-theme="dark"]{
   --bg:#111417;--surface:#1A1E22;--surface-2:#20252A;--sunken:#171B1F;--scrim:rgba(0,0,0,.58);
   --text:#F2F5F3;--text-2:#AEB8B2;--text-3:#8A948E;--on-brand:#06201D;--line:#333A41;--line-2:#3E464E;
   --brand:#4FB8A8;--brand-ink:#74CFBF;--brand-soft:#1A3F3A;--brand-tint:#183833;
-  --income:#5FA3E3;--income-soft:#182A3B;--expense:#F1897C;--expense-soft:#3A2623;
-  --gold:#DDB55C;--gold-soft:#332B18;--stock:#A78BE6;--stock-soft:#25203A;--save:#5CC48D;--save-soft:#163023;
-  --crypto:#E0A565;--crypto-soft:#3A2C18;
+  --income:#5FA3E3;--income-soft:#182A3B;--expense:#F1897C;--expense-soft:#3A2623;--expense-ink:#F1897C;
+  --gold:#DDB55C;--gold-soft:#332B18;--gold-ink:#DDB55C;--stock:#A78BE6;--stock-soft:#25203A;--save:#5CC48D;--save-soft:#163023;--save-ink:#5CC48D;
+  --crypto:#E0A565;--crypto-soft:#3A2C18;--crypto-ink:#E0A565;
   --sh-sm:0 1px 2px rgba(0,0,0,.4);--sh-md:0 2px 10px rgba(0,0,0,.4);--sh-lg:0 14px 46px rgba(0,0,0,.6);
   --sh-nav:0 -1px 0 var(--line),0 -8px 26px rgba(0,0,0,.4);
   --glass:rgba(24,28,32,.74);--glass-2:rgba(32,37,42,.66);--glass-line:rgba(255,255,255,.16);
@@ -89,9 +89,9 @@ html[data-theme="dark"]{
   --bg:#111417;--surface:#1A1E22;--surface-2:#20252A;--sunken:#171B1F;--scrim:rgba(0,0,0,.58);
   --text:#F2F5F3;--text-2:#AEB8B2;--text-3:#8A948E;--on-brand:#06201D;--line:#333A41;--line-2:#3E464E;
   --brand:#4FB8A8;--brand-ink:#74CFBF;--brand-soft:#1A3F3A;--brand-tint:#183833;
-  --income:#5FA3E3;--income-soft:#182A3B;--expense:#F1897C;--expense-soft:#3A2623;
-  --gold:#DDB55C;--gold-soft:#332B18;--stock:#A78BE6;--stock-soft:#25203A;--save:#5CC48D;--save-soft:#163023;
-  --crypto:#E0A565;--crypto-soft:#3A2C18;
+  --income:#5FA3E3;--income-soft:#182A3B;--expense:#F1897C;--expense-soft:#3A2623;--expense-ink:#F1897C;
+  --gold:#DDB55C;--gold-soft:#332B18;--gold-ink:#DDB55C;--stock:#A78BE6;--stock-soft:#25203A;--save:#5CC48D;--save-soft:#163023;--save-ink:#5CC48D;
+  --crypto:#E0A565;--crypto-soft:#3A2C18;--crypto-ink:#E0A565;
   --sh-sm:0 1px 2px rgba(0,0,0,.4);--sh-md:0 2px 10px rgba(0,0,0,.4);--sh-lg:0 14px 46px rgba(0,0,0,.6);
   --sh-nav:0 -1px 0 var(--line),0 -8px 26px rgba(0,0,0,.4);
   --glass:rgba(24,28,32,.74);--glass-2:rgba(32,37,42,.66);--glass-line:rgba(255,255,255,.16);
@@ -268,17 +268,17 @@ html[data-theme="dark"] .card{box-shadow:var(--sh-md),0 1px 0 rgba(255,255,255,.
    항상 색이 입혀지게 한다. 0~2번은 기존 나/배우자/공용 기본 배치와 같은 brand→stock→income
    순서로 맞춰 기본 3귀속 사용자는 보던 색 그대로 유지된다(app-evolve cycle190 develop). */
 .own-0{background:var(--brand-soft);color:var(--brand-ink)}.own-1{background:var(--stock-soft);color:var(--stock)}
-.own-2{background:var(--income-soft);color:var(--income)}.own-3{background:var(--gold-soft);color:var(--gold)}
-.own-4{background:var(--save-soft);color:var(--save)}
+.own-2{background:var(--income-soft);color:var(--income)}.own-3{background:var(--gold-soft);color:var(--gold-ink)}
+.own-4{background:var(--save-soft);color:var(--save-ink)}
 .avatar{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;flex-shrink:0}
 .avatar svg{width:22px;height:22px}
 .cur-sym{font-size:15px;font-weight:700;letter-spacing:-1.5px;line-height:1;display:inline-flex}
 .a-cash{background:var(--brand-soft);color:var(--brand-ink)}.a-bank{background:var(--brand-soft);color:var(--brand-ink)}
-.a-fx{background:var(--brand-soft);color:#5FBFAE}.a-gold{background:var(--gold-soft);color:#C9A227}
-.a-stock{background:var(--stock-soft);color:var(--stock)}.a-house{background:var(--gold-soft);color:var(--gold)}
-.a-crypto{background:var(--crypto-soft);color:var(--crypto)}
-.a-food{background:var(--expense-soft);color:var(--expense)}.a-etc{background:var(--sunken);color:var(--text-3)}
-.a-save{background:var(--save-soft);color:var(--save)}.a-debt{background:var(--expense-soft);color:var(--expense)}
+.a-fx{background:var(--brand-soft);color:var(--brand-ink)}.a-gold{background:var(--gold-soft);color:var(--gold-ink)}
+.a-stock{background:var(--stock-soft);color:var(--stock)}.a-house{background:var(--gold-soft);color:var(--gold-ink)}
+.a-crypto{background:var(--crypto-soft);color:var(--crypto-ink)}
+.a-food{background:var(--expense-soft);color:var(--expense-ink)}.a-etc{background:var(--sunken);color:var(--text-3)}
+.a-save{background:var(--save-soft);color:var(--save-ink)}.a-debt{background:var(--expense-soft);color:var(--expense-ink)}
 .a-pension{background:var(--income-soft);color:var(--income)}.a-in{background:var(--income-soft);color:var(--income)}
 
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:54px;border-radius:var(--r-md);
@@ -926,9 +926,9 @@ input[type=date]{box-sizing:border-box}
 .manage-row .mn{font-weight:600;font-size:15px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .varpill{flex-shrink:0;font-size:12.5px;font-weight:700;padding:7px 15px;border-radius:var(--r-pill);background:var(--sunken);color:var(--text-3);transition:background .15s,color .15s}
 .varpill.on{background:var(--brand-soft);color:var(--brand-ink)}
-.add-inline .emo-pick.a-food{background:var(--expense-soft);color:var(--expense)}
+.add-inline .emo-pick.a-food{background:var(--expense-soft);color:var(--expense-ink)}
 .add-inline .emo-pick.a-in{background:var(--income-soft);color:var(--income)}
-.add-inline .emo-pick.a-save{background:var(--save-soft);color:var(--save)}
+.add-inline .emo-pick.a-save{background:var(--save-soft);color:var(--save-ink)}
 .manage-row .msub{font-size:12px;color:var(--text-3);font-weight:500;margin-top:2px}
 .manage-row .msub2{font-size:11.5px;color:var(--text-3);font-weight:500;margin-top:1px;opacity:.8}
 .manage-row .mc{display:inline-flex;color:var(--text-3);flex-shrink:0;margin-left:2px}
@@ -1398,7 +1398,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.206';
+const APP_VERSION='1.47.207';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.

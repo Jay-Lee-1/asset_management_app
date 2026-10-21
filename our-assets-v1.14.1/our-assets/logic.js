@@ -862,3 +862,19 @@ function archiveBaselines(assets,expandedTxns,cutoffDate,isPendingFn){
  });
  return map;
 }
+
+/* ================= WCAG 명도대비 (순수) ================= */
+/* .a-cash/.a-bank만 라이트 테마 전용 어두운 변형(--brand-ink)을 써 WCAG 1.4.11(비텍스트
+ * 콘텐츠 3:1)을 넘기는데, 이후 추가된 .a-fx/.a-gold/.a-crypto/.a-save/.a-food/.a-debt/
+ * .own-3/.own-4(index.html)는 원색 변수를 그대로 써 라이트 테마에서 기준에 못 미친다
+ * (app-evolve cycle224 critique — 실측 a-fx 1.88:1~a-debt 2.92:1, --brand-ink 패턴은
+ * 5.48:1). 팔레트를 다시 손볼 때마다 사람이 계산기로 재확인하지 않도록, WCAG 2.x 상대휘도
+ * 공식으로 두 hex 색의 명도대비를 돌려주는 순수 함수를 둔다. test/run.js가 각 배지의 최종
+ * 라이트테마 fg/bg 쌍을 이 함수로 단언해(아이콘 배지는 >=3, 글자가 들어가는 own-3/own-4는
+ * >=4.5) 회귀를 막는다. */
+function contrastRatio(hex1,hex2){
+ function lin(c){c/=255;return c<=0.03928?c/12.92:Math.pow((c+0.055)/1.055,2.4)}
+ function lum(hex){hex=String(hex).replace('#','');const r=parseInt(hex.slice(0,2),16),g=parseInt(hex.slice(2,4),16),b=parseInt(hex.slice(4,6),16);return 0.2126*lin(r)+0.7152*lin(g)+0.0722*lin(b)}
+ const l1=lum(hex1),l2=lum(hex2),hi=Math.max(l1,l2),lo=Math.min(l1,l2);
+ return(hi+0.05)/(lo+0.05);
+}

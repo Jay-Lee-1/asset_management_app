@@ -3207,6 +3207,68 @@ test('archiveBaselines: isPendingFn을 생략하면 모든 거래를 확정된 �
   assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.archiveBaselines(assets, txns, '2025-01-01'))), { a1: 500 });
 });
 
+/* ---------- contrastRatio: WCAG 명도대비 (logic.js, app-evolve cycle224 critique/advance) ----------
+ * .a-cash/.a-bank만 라이트 테마에서 --brand-ink를 써 WCAG 1.4.11(비텍스트 3:1)을 넘기고,
+ * 나머지 자산/귀속 배지(.a-fx/.a-gold/.a-house/.a-crypto/.a-food/.a-debt/.a-save/.own-3/.own-4)는
+ * 원색 변수를 그대로 쓰다가 라이트 테마에서 기준에 못 미쳤다. 이번 cycle224 advance가
+ * --brand-ink와 같은 패턴으로 --gold-ink/--crypto-ink/--save-ink/--expense-ink를 추가해
+ * index.html의 해당 클래스들을 전부 바꿔치기했으므로, 여기선 (1) contrastRatio() 자신이
+ * 알려진 기준값(순수 흑백, WCAG 예시 쌍)과 일치하는지, (2) index.html에 실제로 박아넣은
+ * 라이트/다크 테마 fg/bg 리터럴 쌍이 전부 기준을 만족하는지(아이콘 배지는 >=3, 글자가 들어가는
+ * own-3/own-4는 >=4.5)를 하드코딩해 단언한다 — 리터럴은 index.html을 다시 읽는 게 아니라
+ * 이번 수정이 실제로 적용한 값을 그대로 박아뒀으므로, 다음에 팔레트를 손볼 때 이 값들을 두
+ * 파일에서 동시에 맞춰 옮기지 않으면 바로 FAIL한다. */
+test('contrastRatio: 순수 흑백은 21:1(WCAG 최대치)이고, 같은 색은 1:1이다', () => {
+  assert.ok(Math.abs(sandbox.contrastRatio('#000000', '#FFFFFF') - 21) < 0.01);
+  assert.ok(Math.abs(sandbox.contrastRatio('#227E72', '#227E72') - 1) < 0.001);
+});
+test('contrastRatio: 인자 순서를 바꿔도 같은 값이다(더 밝은 쪽/더 어두운 쪽 자동 판별)', () => {
+  const a = sandbox.contrastRatio('#F5ECD5', '#806719');
+  const b = sandbox.contrastRatio('#806719', '#F5ECD5');
+  assert.ok(Math.abs(a - b) < 0.0001);
+});
+test('contrastRatio: 라이트 테마 자산 배지 fg/bg — cycle224 advance가 적용한 -ink 변수 값들이 WCAG 1.4.11(비텍스트 3:1) 이상이다', () => {
+  const pairs = [
+    ['#E4F0EC', '#1C6A60'], // a-fx (brand-soft/brand-ink, a-cash·a-bank와 동일 패턴으로 통일)
+    ['#F5ECD5', '#806719'], // a-gold·a-house (gold-soft/gold-ink)
+    ['#F7E8D5', '#975B21'], // a-crypto (crypto-soft/crypto-ink)
+    ['#E5F3EC', '#247B51'], // a-save (save-soft/save-ink)
+    ['#FBE9E6', '#C83425'], // a-food·a-debt (expense-soft/expense-ink)
+  ];
+  pairs.forEach(([bg, fg]) => {
+    assert.ok(sandbox.contrastRatio(bg, fg) >= 3, `${bg}/${fg} => ${sandbox.contrastRatio(bg, fg)}`);
+  });
+});
+test('contrastRatio: 라이트 테마 own-3/own-4(.chipmini, 11px bold 텍스트) — 비텍스트 기준(3:1)보다 엄격한 일반 텍스트 기준(4.5:1)도 만족한다', () => {
+  assert.ok(sandbox.contrastRatio('#F5ECD5', '#806719') >= 4.5); // own-3: gold-soft/gold-ink
+  assert.ok(sandbox.contrastRatio('#E5F3EC', '#247B51') >= 4.5); // own-4: save-soft/save-ink
+});
+test('contrastRatio: 다크 테마 fg/bg — -ink 다크 값은 전부 기존(수정 전) 통과값을 그대로 재사용해 다크 모드 외관이 안 바뀌었다', () => {
+  const pairs = [
+    ['#332B18', '#DDB55C'], // a-gold·a-house: gold-ink(다크)=기존 --gold(다크)
+    ['#3A2C18', '#E0A565'], // a-crypto: crypto-ink(다크)=기존 --crypto(다크)
+    ['#163023', '#5CC48D'], // a-save: save-ink(다크)=기존 --save(다크)
+    ['#3A2623', '#F1897C'], // a-food·a-debt: expense-ink(다크)=기존 --expense(다크)
+  ];
+  pairs.forEach(([bg, fg]) => {
+    assert.ok(sandbox.contrastRatio(bg, fg) >= 3, `${bg}/${fg} => ${sandbox.contrastRatio(bg, fg)}`);
+  });
+  // a-fx의 다크 brand-ink(#74CFBF)도 별도로 확인 (own-0/a-cash와 공유하는 실제 값)
+  assert.ok(sandbox.contrastRatio('#1A3F3A', '#74CFBF') >= 3);
+});
+test('contrastRatio: 이번 수정 전 라이트 테마 값(회귀 가드) — 원색 변수를 그대로 썼다면 3:1 미달이었음을 재확인', () => {
+  const before = [
+    ['#E4F0EC', '#5FBFAE'], // a-fx 수정 전
+    ['#F5ECD5', '#C9A227'], // a-gold 수정 전
+    ['#F7E8D5', '#CB7B2C'], // a-crypto 수정 전
+    ['#E5F3EC', '#2FA36B'], // a-save 수정 전
+    ['#FBE9E6', '#E06457'], // a-food·a-debt 수정 전
+  ];
+  before.forEach(([bg, fg]) => {
+    assert.ok(sandbox.contrastRatio(bg, fg) < 3, `${bg}/${fg} => ${sandbox.contrastRatio(bg, fg)}`);
+  });
+});
+
 /* ---------- notifyReliabilityTier/notifyReliabilityMsg: OS 알림 토스트/캡션의 실제 능력 고지
  * (app-evolve cycle145 critique/advance) ----------
  * checkNotifyAlerts()는 document.hidden일 때만 동작하는 foreground/background 로컬 알림일 뿐
