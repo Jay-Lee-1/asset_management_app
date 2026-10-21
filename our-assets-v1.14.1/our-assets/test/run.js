@@ -7625,6 +7625,69 @@ test('sanitizeBackup: 유효한 자산 maturityDate와 만기 미설정(없음/n
   assert.strictEqual(data.assets[2].maturityDate, undefined);
   assert.strictEqual(fixedCount, 0);
 });
+/* ---------- uid()/sanitizeBackup: id 유일성 (app-evolve cycle227 critique → cycle228 advance)
+ * uid()=Date.now()+random 5글자(≈26비트 엔트로피)만으로는 doCsvImport처럼 같은 ms 안에서
+ * 동기적으로 다건을 생성하는 실사용 경로(다년치 CSV 재가져오기)가 수만 건 규모가 되면
+ * non-trivial 확률로 충돌한다. id를 절대불변 키로 믹스하는 mergeCollection()(logic.js의
+ * new Map(arr.map(r=>[r.id,r]))가 중복 id를 조용히 마지막 것만 남기고 덮어씀)과
+ * deleteTxnsUndo(index.html의 filter(t=>!ids.has(t.id))가 충돌 쌍 중 하나만 지우려다 둘 다
+ * 지움)가 모두 "id는 유일하다"를 전제하므로, (1) uid() 자체에 모듈 스코프 단조증가 카운터를
+ * 섞어 같은 탭/프로세스 안의 신규 생성을 결정론적으로 유일하게 만들고, (2) 그래도 다른
+ * 프로세스/구버전 uid()로 만들어진 레코드가 백업 복원·클라우드 풀로 섞여 들어올 수 있으므로
+ * sanitizeBackup()에 모든 주요 컬렉션에 대한 중복 id 탐지+재할당 패스를 추가했다. ---------- */
+test('uid(): Date.now()가 같은 ms에 머물러도(고정 시각) 모듈 스코프 카운터 덕에 동기적으로 수천 번 불러도 전부 유일하다', () => {
+  const ctx = {};
+  class FakeDate extends Date {
+    constructor(...a) { if (a.length) super(...a); else super(1700000000000); }
+    static now() { return 1700000000000; }
+  }
+  ctx.Date = FakeDate;
+  vm.createContext(ctx);
+  vm.runInContext([extractLet('_uidSeq'), extractConst('uid')].join('\n'), ctx, { filename: 'uid-real' });
+  const ids = new Set();
+  for (let i = 0; i < 5000; i++) ids.add(ctx.uid());
+  assert.strictEqual(ids.size, 5000, '같은 ms 안에서 동기 생성된 id가 모두 유일해야 함(카운터 없으면 Math.random() 충돌로 실패할 수 있음)');
+});
+test('sanitizeBackup: 거래 id가 중복이면(다른 기기/구버전 uid()로 만들어진 레코드가 섞인 백업 등) 첫 등장만 남기고 이후 중복엔 새 id를 부여해 유일성을 복구한다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    assets: [],
+    txns: [
+      { id: 't1', date: '2026-01-01', amount: 1000 },
+      { id: 't1', date: '2026-01-02', amount: 2000 },
+    ],
+  });
+  assert.strictEqual(data.txns[0].id, 't1', '첫 등장은 그대로 유지');
+  assert.notStrictEqual(data.txns[1].id, 't1', '중복된 id는 새 id로 바뀌어야 함(mergeCollection의 Map 키 충돌 방지)');
+  assert.strictEqual(data.txns[1].amount, 2000, 'id 외 다른 필드는 그대로 보존');
+  assert.strictEqual(fixedCount, 1);
+});
+test('sanitizeBackup: 자산/반복거래/목표/문의/보유수량기록(assetQtyLog) id 중복도 동일하게 복구한다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [],
+    assets: [{ id: 'a1', type: 'cash' }, { id: 'a1', type: 'savings' }],
+    recurrences: [{ id: 'r1', startDate: '2026-01-01' }, { id: 'r1', startDate: '2026-02-01' }],
+    goals: [{ id: 'g1' }, { id: 'g1' }],
+    inquiries: [{ id: 'q1', text: '메모' }, { id: 'q1', text: '메모' }],
+    assetQtyLog: [{ id: 'l1', assetId: 'a1' }, { id: 'l1', assetId: 'a1' }],
+  });
+  assert.notStrictEqual(data.assets[1].id, 'a1');
+  assert.notStrictEqual(data.recurrences[1].id, 'r1');
+  assert.notStrictEqual(data.goals[1].id, 'g1');
+  assert.notStrictEqual(data.inquiries[1].id, 'q1');
+  assert.notStrictEqual(data.assetQtyLog[1].id, 'l1');
+  assert.strictEqual(fixedCount, 5);
+});
+test('sanitizeBackup: id가 모두 유일하면(정상 케이스) 아무 것도 바꾸지 않는다(회귀 없음)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [{ id: 't1', date: '2026-01-01', amount: 1000 }, { id: 't2', date: '2026-01-02', amount: 2000 }],
+    assets: [{ id: 'a1', type: 'cash' }, { id: 'a2', type: 'cash' }],
+  });
+  assert.strictEqual(data.txns[0].id, 't1');
+  assert.strictEqual(data.txns[1].id, 't2');
+  assert.strictEqual(data.assets[0].id, 'a1');
+  assert.strictEqual(data.assets[1].id, 'a2');
+  assert.strictEqual(fixedCount, 0);
+});
 test('sanitizeBackup: 자산의 잔액성 필드(baseAmount/amountKRW)는 음수를 그대로 허용한다(오버드로우 등 유효 상태)', () => {
   const { data, fixedCount } = sandbox.sanitizeBackup({
     txns: [],

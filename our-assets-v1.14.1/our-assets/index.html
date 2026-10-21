@@ -1398,7 +1398,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.209';
+const APP_VERSION='1.47.210';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1530,7 +1530,13 @@ function svg(n,w){if(n==='fx')return `<span class="cur-sym" aria-hidden="true"${
 
 /* ================= UTILS ================= */
 const $=id=>document.getElementById(id);
-const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+/* uid()는 Date.now()+random 5글자(≈26비트 엔트로피)만으로 유일성을 보장했는데, doCsvImport처럼
+ * 같은 ms 안에서 동기적으로 다건을 생성하는 실사용 경로(수만 건 규모 CSV 재가져오기)에서는
+ * non-trivial 확률로 같은 id가 나온다. 모듈 스코프 단조증가 카운터(_uidSeq)를 끼워 넣어
+ * 같은 탭/프로세스 안에서 생성되는 id는 counter 값이 겹치지 않는 한 결정론적으로 유일해지도록
+ * 한다(길이는 그대로 유지하려고 random 부분을 2글자로 줄였다). */
+let _uidSeq=0;
+const uid=()=>Date.now().toString(36)+(_uidSeq++).toString(36)+Math.random().toString(36).slice(2,4);
 /* 레코드별 updatedAt 타임스탬프. 지금은 아무 데도 안 읽지만(동작 변화 없음), 클라우드 동기화가
  * 현재 문서 전체를 한 덩어리로 취급해 두 기기가 서로 다른 레코드만 고쳐도 충돌 처리되는 문제를
  * 풀려면 향후 레코드 단위 병합이 필요하고, 그 병합은 레코드마다 "언제 바뀌었는지"부터 있어야
@@ -6574,8 +6580,23 @@ const SANITIZE_FREE_FIELDS=['baseAmount','amountKRW']; /* 자산 잔액 — 마�
  * 것으로 보고 통째로 제거한다. */
 function sanitizeBackup(obj){
  let fixedCount=0,droppedCount=0,rangeCount=0;
+ /* uid()에 모듈 스코프 카운터를 섞어 같은 탭/프로세스 안의 신규 생성은 결정론적으로 유일해졌지만,
+  * 백업 파일/다른 기기·다른 시점에서 만들어진 문서가 합쳐지는 이 경로(restoreBackup/pullCloud가
+  * 모두 거침)에서는 여전히 서로 다른 uid() 호출 결과가 우연히 같을 수 있다(복구 전 구버전
+  * uid()로 만들어진 레코드가 섞인 백업 포함). id를 절대불변 키로 믹스하는 mergeCollection()
+  * (logic.js의 new Map(arr.map(r=>[r.id,r]))가 중복 id를 조용히 마지막 것만 남기고 덮어씀)과
+  * deleteTxnsUndo(index.html의 filter(t=>!ids.has(t.id))가 충돌 쌍 중 하나만 지우려다 둘 다
+  * 지움) 둘 다 "id는 유일하다"를 전제하므로, 각 컬렉션에서 첫 등장만 남기고 이후 중복 id는 새
+  * uid()를 부여해 유일성을 복구한다. */
+ const dedupeIds=arr=>{
+  const seen=new Set();
+  return arr.map(d=>{
+   if(seen.has(d.id)){const d2=Object.assign({},d,{id:uid()});fixedCount++;seen.add(d2.id);return d2}
+   seen.add(d.id);return d;
+  });
+ };
  const srcTxns=Array.isArray(obj&&obj.txns)?obj.txns:[];
- const txns=[];
+ let txns=[];
  srcTxns.forEach(t=>{
   if(!t||!t.id||!t.date){droppedCount++;return}
   const d=Object.assign({},t);
@@ -6610,7 +6631,7 @@ function sanitizeBackup(obj){
   txns.push(d);
  });
  const srcAssets=Array.isArray(obj&&obj.assets)?obj.assets:[];
- const assets=[];
+ let assets=[];
  srcAssets.forEach(a=>{
   if(!a||!a.id||!a.type){droppedCount++;return}
   const d=Object.assign({},a);
@@ -6630,7 +6651,7 @@ function sanitizeBackup(obj){
   * 벗어나지 못해 무한루프로 앱이 완전히 멈춘다 — csvDateValid()로 CSV 가져오기와 동일하게
   * 엄격히 검증해 id/date 없는 txns를 제거하는 것과 같은 이유로 통째로 제거한다. */
  const srcRecs=Array.isArray(obj&&obj.recurrences)?obj.recurrences:[];
- const recurrences=[];
+ let recurrences=[];
  srcRecs.forEach(r=>{
   if(!r||!r.id||!csvDateValid(r.startDate)){droppedCount++;return}
   const d=Object.assign({},r);
@@ -6692,7 +6713,7 @@ function sanitizeBackup(obj){
   * 손상되면 goalPct/goalProgress의 진행률·투사가 조용히 오염되고, targetDate가 달력상 무효하면
   * fmtDateFull()이 롤오버된 엉뚱한 날짜를 그대로 보여준다. amount류와 동일하게 여기서 정규화한다. */
  const srcGoals=Array.isArray(obj&&obj.goals)?obj.goals:[];
- const goals=[];
+ let goals=[];
  /* owner(app-evolve cycle124 신설)도 goalOwnerEff가 믿는 'DB.owners 또는 all' 불변식을 백업 복원
   * 경로에서는 아무도 지켜주지 않는다 — 이 백업 자신의 owners 목록(obj.owners)을 기준으로 삼고,
   * 백업에 owners가 없으면 지금 이 기기의 DB.owners로 대체한다. */
@@ -6723,7 +6744,7 @@ function sanitizeBackup(obj){
   * delInquiry()의 q.text.length가 그대로 TypeError로 터진다(다른 기기가 text 없이 만든 메모가
   * 클라우드로 동기화되는 경우 등). amount류와 동일하게 여기서 정규화한다. */
  const srcInquiries=Array.isArray(obj&&obj.inquiries)?obj.inquiries:[];
- const inquiries=[];
+ let inquiries=[];
  srcInquiries.forEach(q=>{
   if(!q||!q.id){droppedCount++;return}
   const d=Object.assign({},q);
@@ -6737,7 +6758,7 @@ function sanitizeBackup(obj){
   * 데이터) 통째로 제거한다. prevQty/newQty는 SANITIZE_QTY_FIELDS와 동일한 수량성 필드라 min 0으로
   * 클램프한다. */
  const srcQtyLog=Array.isArray(obj&&obj.assetQtyLog)?obj.assetQtyLog:[];
- const assetQtyLog=[];
+ let assetQtyLog=[];
  srcQtyLog.forEach(q=>{
   if(!q||!q.id||!q.assetId){droppedCount++;return}
   const d=Object.assign({},q);
@@ -6943,6 +6964,8 @@ function sanitizeBackup(obj){
   }else if(h.byOwner!=null)fixedCount++;
   nwHistory.push(d);
  });
+ txns=dedupeIds(txns);assets=dedupeIds(assets);recurrences=dedupeIds(recurrences);
+ goals=dedupeIds(goals);inquiries=dedupeIds(inquiries);assetQtyLog=dedupeIds(assetQtyLog);
  return {data:Object.assign({},obj,{txns,assets,recurrences,goals,inquiries,assetQtyLog,categories,owners,budgetHistory,budgets,catIcon,catVar,catBudgetRollover,deletedType,deletedBal,deletedIds,nwHistory,settings,rates}),fixedCount,droppedCount,rangeCount};
 }
 /* obj.assets/obj.txns가 배열인지까지 검증한 뒤 DB를 통째로 교체한다. migrate()가 손상된

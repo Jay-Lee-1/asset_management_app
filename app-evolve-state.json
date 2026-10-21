@@ -1,19 +1,8 @@
 {
-  "cycle": 227,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "uid() id 충돌 가능성 + sanitizeBackup 중복 id 무방어",
-    "why": "index.html:1533 uid()=Date.now().toString(36)+Math.random().toString(36).slice(2,7)는 엔트로피가 약 26비트뿐이고, doCsvImport(index.html:7023-7027)처럼 같은 ms 안에서 동기적으로 다건을 생성하는 경로가 실사용(다년치 CSV 재가져오기)에서 수만 건 규모가 되면 non-trivial 확률로 충돌한다(node로 동일 로직 재현: 5-10k호출 0건, 20-50k호출 0.1-0.25건 평균, 200k호출에서 최대 5건). id를 절대불변으로 가정하는 동기화 아키텍처(mergeCollection, logic.js:147의 new Map(arr.map(r=>[r.id,r]))가 중복id를 조용히 마지막 것만 남기고 덮어씀; deleteTxnsUndo, index.html:8377-8378의 filter(t=>!ids.has(t.id))가 충돌 쌍 중 하나만 지우려다 둘 다 지움)를 15개 이상의 사이클이 공들여 보강해온 전제가 흔들리는데, 정작 sanitizeBackup()은 categories/owners/budgetHistory/catIcon/deletedIds/nwHistory 등 다른 모든 구조적 불변식은 필드별로 검증·복구하면서 id 유일성만은 전혀 검증하지 않는다.",
-    "approach": "1) uid()에 모듈 스코프 단조증가 카운터(_uidSeq)를 하나 더 섞어 같은 탭/프로세스 안에서는 절대 충돌하지 않도록 결정론적으로 고친다(Date.now().toString(36)+(_uidSeq++).toString(36)+Math.random().toString(36).slice(2,5) 형태, 길이 유지). 이게 doCsvImport류 동기 루프 충돌의 근본 해결책. 2) sanitizeBackup()(index.html ~6750-6946, categories/owners/budgetHistory/catIcon/deletedIds/nwHistory를 fixedCount로 세어가며 한 컬렉션씩 복구하는 기존 패턴)에 txns/assets/recurrences/goals/inquiries/assetQtyLog 각각에 대해 중복 id 탐지+재할당(첫 등장만 남기고 이후 중복은 uid()로 새 id 부여) 패스를 추가하고 같은 fixedCount 방식으로 집계한다 — 이미 병합/가져오기된 데이터에 대한 방어. 3) logic.js에 순수함수 형태로 분리 가능하면(예: dedupeIds(arr) 같은) test/run.js에 충돌 쌍 입력 -> 복구 후 유일 id 보장 테스트 추가."
-  },
+  "cycle": 228,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 222,
-      "phase": "advance",
-      "timestamp": "2026-10-20T20:15:58.317Z",
-      "summary": "critique(cycle222) 계획대로 archiveBaselines() UI 연결을 끝까지 구현했다. 메뉴 ‹백업 · 데이터› 그룹에 {ic:\"trash\",l:\"오래된 데이터 정리\",a:\"openArchiveOld()\"} 추가. openArchiveOld()는 새 날짜 위젯을 만들지 않고 기존 openMonthSheet(\"archive\")를 그대로 재사용하고(가계부/전체내역/한달플랜과 같은 월 선택 휠), monthWheelApply()에 which===\"archive\" 분기를 추가해 고른 연/월을 archiveMonthPicked(y,m)으로 넘긴다. archiveMonthPicked()는 monthEndStr(y,m)을 cutoffDate로 잡고 DB.txns 중 지워질 건수를 세어(0건이면 confirmSheet 없이 안내 토스트만) confirmSheet(doResetAll()과 같은 위험 액션 패턴)로 건수 안내 + 백업 권장 문구(텍스트 넛지 — exportData() 바로가기 버튼은 confirmSheet 내부에 중첩 시트를 여는 구조가 돼 복잡도가 커 범위를 좁힘)를 띄우고, 확인을 누르면 archiveTxnsBefore(cutoffDate)를 실행한다. archiveTxnsBefore()는 cycle221 advance가 만들어 둔 archiveBaselines(DB.assets, DB.txns.concat(expandRec(RANGE_FROM,cutoffDate)), cutoffDate, isPending)을 처음 실제로 호출해 cutoff 시점 잔액을 계산하고, baselines[a.id]가 현재 assetBase(a)와 실제로 다른 자산에만 baseAmount/amountKRW를 새 값으로 앉히고 touch()한다(fx/stock/gold/crypto처럼 baseAmount/amountKRW를 안 쓰는 시세평가 자산에 쓸모없는 0 필드가 새로 생기는 걸 막음) — 그 다음 deleteTxnsUndo()와 동일한 방식(DB.deletedIds 톰스톤, undoToast)으로 cutoff 이전 DB.txns만 지운다(반복거래는 DB.recurrences를 안 건드려 cutoff 이후 발생은 그대로 생성되고, cutoff 이전 가상 발생분은 baseline 계산에만 반영돼 유실이 아님). undo 콜백은 영향받은 자산만 id로 매칭해 baseAmount/amountKRW를 정확히 복원한다. test/run.js: FUNCTIONS에 archiveTxnsBefore/archiveMonthPicked/openArchiveOld 추가(openMonthSheet는 DOM에 깊이 엮여 FUNCTIONS 밖이라 호출된 which만 기록하는 스파이로 흉내냄), 테스트 10건 신설 — cutoff 이전 두 입금을 흡수해 baseAmount가 정확히 보존되는지, undo로 baseAmount/거래/톰스톤이 정확히 복원되는지, 미확인(pending) 이체가 balancesUpTo와 동일하게 baseline 계산에서 제외되면서도 거래 자체는 그대로 지워지는지, 실제로 안 바뀌는 자산(fx/stock류)은 건드리지 않는지(touch 안 됨, 필드 안 생김), 튜토리얼 중엔 twGuard가 막는지, archiveMonthPicked의 confirmSheet 안내/0건 분기, openArchiveOld가 openMonthSheet(\"archive\")를 부르는지, monthWheelApply의 archive 분기(소스 패턴, DOM 엮여 실행형 밖)와 renderMenu 메뉴 항목(소스 패턴) 배선. APP_VERSION 1.47.204->1.47.205, sw.js CACHE v468->v469. HTML 주석 제거 후 실제 코드 script 블록(2,4,5번) 모두 new Function으로 문법 통과(1번은 기존 알려진 정규식 오탐). node our-assets-v1.14.1/our-assets/test/run.js 1679/1679 -> 1689/1689 통과.",
-      "commit": null
-    },
     {
       "cycle": 223,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-21T00:00:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-227에서 다룬 모든 영역 전부 제외 지시: toast/invalidateBalances/split거래/pushCloud gzip/mergeDataLoss경고/kakaoLogin병합/nextOutflowCard/#histQ디바운스/recSaveScopeConfirm보류/DB.goals·delOwner/#bootSplash/boot()로컬우선/asFx·asGold·asQty Enter제출(되돌림)/doExport CSV/bulkCatTargets adjust/연금전환복원/selectNwOwner선택id/CDN SRI(기각)/dismissedStaleMvIds·budgetCarryFor/crypto자산종류+주말휴장/recDates push()주말이동/archiveBaselines+UI연결/commaQty maximumFractionDigits/recNthDate버퍼버그/mergeRecordFields(보류)/mergeDataLossFields/matchTxnQuery·matchAssetQuery NFC정규화/아이콘배지 WCAG1.4.11/svg() aria-hidden/netlify functions CORS+레이트리미트/sw.js navigate캐시가드/investGainLossCard/netlify.toml logic.js캐시헤더/PIN focus복원/stock-split qty조정(버그아님 결론)/budgetCarryFor재귀(제외)/CSS font-size px(제외)/DB.budgets레거시플랫맵(무해)/checkNotifyAlerts staleness(커버됨)/TYPE_COLOR.gold불일치(흡수됨)/DB.assetQtyLog자동정리부재(제외)). 새로 포착한 공백: uid()(index.html:1533, Date.now().toString(36)+Math.random().toString(36).slice(2,7), 엔트로피 약 26비트)가 doCsvImport(7023-7027)처럼 동기 루프로 다건을 생성하는 경로에서 non-trivial 확률로 충돌 가능(node 재현: 5-10k호출 0건, 20-50k호출 0.1-0.25건 평균, 200k호출 최대5건) — 15개 이상 사이클이 id를 절대불변 전제로 공들여 보강해온 mergeCollection(logic.js:147, Map으로 중복id 중 나중 것만 조용히 생존)·deleteTxnsUndo(8377-8378, 충돌쌍 중 하나 지우려다 둘다 삭제) 경로가 그 가정 위에 서 있는데 sanitizeBackup()은 다른 모든 구조 불변식(categories/owners/budgetHistory/catIcon/deletedIds/nwHistory)은 검증·복구하면서 id 유일성만 전혀 검증하지 않음을 확인. 러너업: 길게 누르는 '오늘 합계 피크' 제스처가 4곳(_sujiTimer/_histTimer/_planT/_mT)에 거의 동일하게 중복 구현돼 있고 그중 온보딩 튜토리얼용 mSuji 사본만 move-cancels-timer 가드가 빠져있음(실데이터 아닌 일회성 온보딩 오버레이 범위라 우선도 낮게 책정, 제외). advance 계획(uid()에 모듈스코프 단조증가 카운터 추가로 동일탭 충돌 원천 차단 + sanitizeBackup()에 컬렉션별 중복id 탐지·재할당 패스 추가(기존 fixedCount 패턴) + test/run.js에 충돌 복구 회귀 테스트)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "commit": null
+    },
+    {
+      "cycle": 227,
+      "phase": "advance",
+      "timestamp": "2026-10-21T16:12:25.348Z",
+      "summary": "critique(cycle227)가 세운 계획대로 uid() id 충돌 가능성 + sanitizeBackup() 중복 id 무방어를 고쳤다. (1) index.html:1533 uid()에 모듈 스코프 단조증가 카운터(_uidSeq)를 끼워 Date.now().toString(36)+(_uidSeq++).toString(36)+Math.random().toString(36).slice(2,4) 형태로 바꿔 같은 탭/프로세스 안에서 동기적으로 생성되는 id는 결정론적으로 유일하도록 했다(doCsvImport류 동기 루프 충돌의 근본 해결, 길이는 그대로 유지하려 random 부분을 5글자->2글자로 줄였다). node로 Date.now 고정 후 5000회 연속 호출해 전부 유일함을 직접 확인. (2) sanitizeBackup()(index.html)에 dedupeIds(arr) 내부 헬퍼(기존 id는 Set으로 추적, 중복이면 uid()로 새 id 부여하며 fixedCount++)를 추가하고 txns/assets/recurrences/goals/inquiries/assetQtyLog 여섯 컬렉션 모두에 반환 직전 적용 — 백업 파일/다른 기기·구버전 uid()로 만들어진 레코드가 섞여 들어오는 경우까지 방어한다. mergeCollection(logic.js의 Map 키 충돌로 중복 id 중 나중 것만 생존)과 deleteTxnsUndo(filter(t=>!ids.has(t.id))가 충돌쌍 둘 다 지움) 둘 다 전제하는 id 유일성을 복구 경로에서도 지킨다. test/run.js: uid() 자체의 유일성을 검증하는 고립 vm 컨텍스트 테스트 1건(Date.now 고정, 5000회 연속 호출 전부 유일 — 카운터 없으면 Math.random() 충돌로 실패할 수 있음), sanitizeBackup 중복 id 복구 테스트 3건(txns 중복 1건 복구, 자산/반복거래/목표/문의/보유수량기록 5개 컬렉션 동시 복구+fixedCount=5, 정상 케이스는 무변화 회귀가드) 총 4건 추가. APP_VERSION 1.47.209->1.47.210, sw.js CACHE v476->v477. node --check(추출한 script 블록들, HTML 주석 제거 후) 통과. node our-assets-v1.14.1/our-assets/test/run.js 1741/1741 -> 1745/1745 통과.",
       "commit": null
     }
   ]
