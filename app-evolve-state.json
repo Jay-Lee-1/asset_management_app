@@ -1,15 +1,12 @@
 {
   "cycle": 224,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "자산/카테고리 아이콘 배지 라이트 테마 WCAG 1.4.11 비텍스트 명도대비 미달 수정 (--brand-ink 패턴을 나머지 배지 색상으로 확장)",
+    "why": "index.html:52-59 :root가 .a-cash/.a-bank에만 --brand-ink(명도대비 확보 전용 어두운 변형, 5.48:1)를 쓰고, 이후 추가된 .a-fx/.a-gold/.a-crypto/.a-save/.a-food/.a-debt(index.html:276-282)는 원색 hex를 그대로 써 라이트 테마에서 WCAG 1.4.11 기준 3:1에 못 미친다(실측: a-fx 1.88:1, a-gold 2.06:1, a-crypto 2.72:1, a-save 2.79:1, a-food/a-debt 2.92:1 — a-in 3.88:1/a-stock 4.22:1/a-cash 5.48:1은 통과). 동일 hex의 다크테마 값(index.html:76-79)은 전부 5.2~7.2:1로 통과하므로 라이트 테마에만 있는 회귀성 공백. 자산 목록/카테고리 선택/거래 내역의 모든 행이 이 배지를 쓰므로 노출 범위가 가장 넓고, 앱이 이미 --brand-ink로 해법을 알면서 나머지 타입에 적용을 안 한 상태라 고도화로 다룰 가치가 가장 높다.",
+    "approach": "1) :root(~56-59)/html[data-theme=dark](~76-79)/prefers-color-scheme dark 블록(~91-94) 각각에 --brand-ink와 동일한 패턴으로 --fx-ink/--gold-ink/--crypto-ink/--save-ink/--expense-ink(food/debt 공용)를 추가(라이트 값은 대응 -soft 배경 대비 4.5:1 이상 확보되도록 어둡게, 다크 값은 기존 통과값 그대로 재사용). data-accent 테마 블록에도 브랜드 계열(해당되는 경우)만 맞춰 반영. 2) index.html:276-282의 .a-fx/.a-gold/.a-crypto/.a-save/.a-food/.a-debt/.a-pension color를 새 -ink 변수로 교체(.a-in/.a-stock/.a-cash는 이미 통과이므로 안 건드림). 3) logic.js에 WCAG 상대휘도 공식 기반 순수함수 contrastRatio(hex1,hex2) 신설(기존 소형 순수 헬퍼들과 같은 스타일). 4) test/run.js에 각 배지의 최종 라이트테마 fg/bg 값을 하드코딩해 contrastRatio(...)>=3(비텍스트 아이콘 기준)을 단언하는 회귀 테스트 추가 — 향후 팔레트 수정이 다시 기준 밑으로 내려가지 않게 가드. TYPE_COLOR(차트 파이 색상, index.html:1712)는 이번 범위에서 건드리지 않음(배경 대비가 아니라 데이터 시리즈 간 구분 문제라 별도 사안). APP_VERSION/sw.js CACHE 올리고 node --check 및 test/run.js 전체 통과 확인."
+  },
   "history": [
-    {
-      "cycle": 219,
-      "phase": "critique",
-      "timestamp": "2026-10-20T07:15:00.000Z",
-      "summary": "Explore 서브에이전트로 앱 전반을 훑어(cycle149-219에서 다룬 toast/invalidateBalances/split거래/pushCloud await·gzip 압축/mergeDataLoss 경고/kakaoLogin 게스트 병합/nextOutflowCard/#histQ 디바운스/recSaveScopeConfirm 등(보류)/DB.goals type 구분/delOwner 목표 체크/#bootSplash/boot() 로컬-먼저-렌더/asFx·asGold·asQty Enter-제출(되돌림)/doExport csv 미래거래/bulkCatTargets adjust 가드/연금 전환 복원/selectNwOwner 선택id 정리 전부 제외) ASSET_TYPES(index.html:1671-1683)에 cash/savings/stock/realestate/debt/pension/fx/gold는 있지만 암호화폐(crypto) 자산 종류가 전혀 없음을 발견 — stock/fx/gold가 이미 쓰는 시세중계(netlify/functions/stock.js)·R.stocks 캐시·assetEval() switch·rateUnknown()/hasRateAssets() staleness 경고·백업 sanitize 패턴이 완비돼 있는데도 crypto만 비어 있어, 암호화폐를 보유한 사용자는 etc/cash에 숫자를 수동 입력할 수밖에 없고 그 값은 자동 시세 갱신·가격 미확인 경고 어디에도 걸리지 않아 순자산이 조용히 틀려진다. ASSET_TYPES/TYPE_COLOR에 crypto 추가, draft에 cryptoCode/cryptoQty(stockCode/stockQty와 동일 패턴), DB.rates.crypto 버킷 신설, assetEval()/rateUnknown()/hasRateAssets()에 crypto 분기 추가, netlify/functions의 stock relay 패턴을 재사용해 업비트 공개 티커 호출 함수 추가, syncRates()/fetchStocks() 흐름과 수동 레이트 에디터 UI에 통합, sanitizeBackup()/migrate에 crypto:{} 디폴트 추가하는 계획을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
-      "commit": null
-    },
     {
       "cycle": 219,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-21T02:10:00.000Z",
       "summary": "cycle224 develop 커밋(a59c863, matchTxnQuery/matchAssetQuery 검색이 한글 NFC/NFD 정규화 차이로 못 찾던 버그 수정)을 검토. normName()(logic.js:373, .normalize('NFC').trim().replace(whitespace).toLowerCase())과 동일한 전제로 matchTxnQuery/matchAssetQuery 양쪽에 .normalize('NFC')를 hay/q 모두에 추가했음을 직접 확인 — 쉼표 제거(.replace(/,/g,''))는 정규화 뒤에 적용돼도 결과에 영향 없음(정규화가 쉼표 문자 자체를 바꾸지 않음), toLowerCase 순서도 영문 대소문자 비교에 영향 없음. logic.js/index.html 전체에서 toLowerCase().includes(q 패턴으로 자유 텍스트를 매칭하는 함수가 이 두 개뿐임을 grep으로 재확인해(index.html에는 includes 기반 검색 매칭이 따로 없음) 고도화 대상 밖에 비슷한 버그가 남아있지 않음을 확인. 새 테스트 5건(hay가 NFD/검색어가 NFD 각 방향, matchTxnQuery 자산명 매칭 포함)이 실제로 수정된 코드 경로와 정확히 대응됨을 확인. node --check(logic.js, sw.js) 문법 통과, APP_VERSION 1.47.206(index.html 미변경이라 그대로)·sw.js CACHE v472 일치 확인. node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1704/1704 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 224,
+      "phase": "critique",
+      "timestamp": "2026-10-21T03:14:55.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-224에서 다룬 모든 영역 전부 제외: toast/invalidateBalances/XSS보류/split거래/pushCloud gzip/mergeDataLoss경고/kakaoLogin병합/nextOutflowCard/#histQ디바운스/recSaveScopeConfirm보류/DB.goals·delOwner/#bootSplash/boot()로컬우선/asFx·asGold·asQty Enter제출(되돌림)/doExport CSV/bulkCatTargets adjust/연금전환복원/selectNwOwner선택id/CDN SRI(기각)/dismissedStaleMvIds·budgetCarryFor/crypto자산종류+주말휴장/recDates push()주말이동/PIN focus복원/archiveBaselines+UI연결/commaQty maximumFractionDigits/recNthDate버퍼버그/mergeRecordFields(보류결론 재확인, 재제안안함)/mergeDataLossFields/matchTxnQuery·matchAssetQuery NFC정규화). .a-cash/.a-bank(index.html:276-282)만 --brand-ink(명도대비 확보 전용 어두운 변형, index.html:56 및 각 accent테마별로 재정의)를 쓰는데, 이후 추가된 .a-fx/.a-gold/.a-crypto/.a-save/.a-food/.a-debt는 원색 hex를 그대로 써 라이트 테마에서 WCAG 1.4.11(비텍스트 대비 3:1) 기준을 못 넘김을 실측으로 확인(a-fx 1.88:1/a-gold 2.06:1/a-crypto 2.72:1/a-save 2.79:1/a-food·a-debt 2.92:1 — a-in 3.88:1/a-stock 4.22:1/a-cash 5.48:1은 통과). 동일 hex의 다크테마 값(index.html:76-79)은 전부 5.2~7.2:1로 이미 통과라 라이트 테마에만 있는 공백이며, 자산목록·카테고리선택·거래내역 모든 행이 이 배지를 쓰므로 노출 범위가 넓고 앱이 이미 --brand-ink로 해법을 알면서 나머지 타입에 적용을 안 한 상태. 다음 advance 계획: 각 테마 블록(:root/dark/prefers-color-scheme)에 --fx-ink/--gold-ink/--crypto-ink/--save-ink/--expense-ink를 --brand-ink와 같은 패턴으로 추가(라이트 값은 대응 -soft 배경 대비 4.5:1 이상, 다크 값은 기존 통과값 재사용), .a-fx/.a-gold/.a-crypto/.a-save/.a-food/.a-debt/.a-pension color를 새 변수로 교체, logic.js에 WCAG 상대휘도 contrastRatio(hex1,hex2) 순수함수 신설, test/run.js에 각 배지 fg/bg 쌍이 contrastRatio>=3을 만족하는지 하드코딩 회귀 테스트 추가(TYPE_COLOR 차트 색상은 범위 밖). 러너업: DB.assetQtyLog 자동 정리 부재(저용량이라 archiveTxnsBefore 대비 리스크/가치 낮음), TYPE_COLOR.gold(#C9A227) vs CSS --gold(#BE8E2C) 불일치(본 수정에 흡수되어 별도 사이클 불필요)는 제외. 코드 변경 없음(critique 단계라 state.json만 갱신, pending_advance_plan 저장).",
       "commit": null
     }
   ]
