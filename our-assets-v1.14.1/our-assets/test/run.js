@@ -18415,6 +18415,187 @@ if (cryptoFns) {
   });
 }
 
+/* ---------- netlify/functions {stock,rates,crypto}.js: exports.handler 결선 검증 (app-evolve cycle230 advance) ----------
+ * cycle103/225/228 모두 "fetch() 의존 함수는 네트워크 모킹 인프라가 없어 범위 밖"이라 남겨두고
+ * 순수 함수만 봤다. 그 사이 cycle225(CORS allowlist/throttle 추가)·cycle228(_shared.js 통합)이
+ * handler 본문을 직접 리팩터했는데도, 추출된 헬퍼가 실제 handler 안에서 제대로 결선됐는지
+ * (429/400/CORS 헤더가 실제 응답에 실리는지) 검증한 테스트가 하나도 없었다.
+ *
+ * 이 공백을 메우려고 global.fetch를 큐 기반으로 바꿔치기하는 핸들러 테스트를 실제로 짜보니,
+ * 세 파일 모두 "module.exports = {...}" 가 파일 맨 위 exports.handler가 가리키던 객체를
+ * 통째로 덮어써 require(file).handler가 undefined가 되는 치명적인 프로덕션 버그가 있었다
+ * (require()는 module.exports를 반환하지, exports 변수 자체를 반환하지 않는다 — 두 변수는
+ * 재할당 전까지만 같은 객체를 가리킨다). Netlify가 바로 이 handler를 호출하므로 세 엔드포인트
+ * 전부가 실제로는 작동하지 않는 상태였다. 이번 사이클에서 stock.js/rates.js/crypto.js의
+ * module.exports 재할당을 Object.assign(기존 handler 보유 객체에 병합)으로 고쳐 복구했다 —
+ * 아래 "require 결과에 handler가 살아있다" 테스트가 바로 이 회귀를 막는다.
+ *
+ * fetch 모킹은 테스트 전체가 아니라 이 블록 안에서만 global.fetch를 바꾸고 매 테스트 종료
+ * 시 finally로 원복한다(다른 블록의 sandbox.fetch 모킹과는 별개 — netlify 함수들은 샌드박스가
+ * 아닌 실제 Node 전역 fetch를 쓴다).
+ *
+ * rlHistory(레이트리밋 버킷)는 각 파일 스코프에 비공개로 닫혀 있어 리셋할 방법이 없으므로,
+ * throttle 테스트는 handler를 실제로 RL_MAX(30)보다 많이 호출해 버킷을 채운다 — 그 결과
+ * 이 프로세스 수명 동안 해당 모듈의 rlHistory가 영구히 소진되므로, 각 파일의 throttle
+ * 테스트는 반드시 그 파일의 다른 handler 테스트들보다 뒤에 둔다(먼저 두면 이후 테스트가
+ * 전부 429로 막힘). */
+if (stockFns && ratesFns && cryptoFns) {
+  const origFetch = global.fetch;
+  function installFetchQueue(responses) {
+    let i = 0;
+    global.fetch = async () => {
+      const r = responses[Math.min(i, responses.length - 1)];
+      i++;
+      if (typeof r === 'function') return r();
+      return r;
+    };
+  }
+  function restoreFetch() { global.fetch = origFetch; }
+  function okJson(body) { return { ok: true, status: 200, json: async () => body }; }
+  function failHttp(status) { return { ok: false, status }; }
+
+  test('stock.handler/rates.handler/crypto.handler: require 결과에 handler가 살아있다(module.exports 전체 재할당이 날려버리지 않는지 — cycle230에서 실제로 날아갔던 회귀)', () => {
+    assert.strictEqual(typeof stockFns.handler, 'function', 'stock.js: require(..).handler가 함수가 아님');
+    assert.strictEqual(typeof ratesFns.handler, 'function', 'rates.js: require(..).handler가 함수가 아님');
+    assert.strictEqual(typeof cryptoFns.handler, 'function', 'crypto.js: require(..).handler가 함수가 아님');
+  });
+
+  test('stock.handler: codes 파라미터가 없으면 400과 "codes" 안내 메시지를 반환한다', async () => {
+    installFetchQueue([okJson({})]);
+    try {
+      const res = await stockFns.handler({ queryStringParameters: {} });
+      assert.strictEqual(res.statusCode, 400);
+      assert.ok(JSON.parse(res.body).error.includes('codes'));
+    } finally { restoreFetch(); }
+  });
+  test('stock.handler: 국내 6자리 코드는 네이버 closePrice를 그대로 { 코드: 원 } 로 반환한다(happy path)', async () => {
+    installFetchQueue([okJson({ closePrice: '79,800' })]);
+    try {
+      const res = await stockFns.handler({ queryStringParameters: { codes: '005930' } });
+      assert.strictEqual(res.statusCode, 200);
+      assert.deepStrictEqual(JSON.parse(res.body), { '005930': 79800 });
+    } finally { restoreFetch(); }
+  });
+  test('stock.handler: ?debug=1이면 응답 바디에 _debug가 포함된다', async () => {
+    installFetchQueue([okJson({ closePrice: '100' })]);
+    try {
+      const res = await stockFns.handler({ queryStringParameters: { codes: '005930', debug: '1' } });
+      assert.ok('_debug' in JSON.parse(res.body), 'debug=1인데 _debug가 응답에 없음');
+    } finally { restoreFetch(); }
+  });
+  test('stock.handler: ALLOWED_ORIGINS 미설정이면 Origin 헤더와 무관하게 CORS를 "*"로 전체 허용한다(기존 동작 유지)', async () => {
+    installFetchQueue([okJson({ closePrice: '100' })]);
+    try {
+      const res = await stockFns.handler({ queryStringParameters: { codes: '005930' }, headers: { origin: 'https://evil.example' } });
+      assert.strictEqual(res.headers['Access-Control-Allow-Origin'], '*');
+    } finally { restoreFetch(); }
+  });
+  test('stock.handler: ALLOWED_ORIGINS 설정 시 handler가 실제로 그 allowlist를 타고 들어가 허용 Origin만 echo하고(+Vary: Origin), 그 외엔 ACAO 헤더 자체를 생략한다', async () => {
+    const modPath = require.resolve(path.join(__dirname, '..', 'netlify', 'functions', 'stock.js'));
+    const prevEnv = process.env.ALLOWED_ORIGINS;
+    process.env.ALLOWED_ORIGINS = 'https://my-app.netlify.app';
+    delete require.cache[modPath];
+    installFetchQueue([okJson({ closePrice: '100' })]);
+    try {
+      const freshStock = require(modPath);
+      const ok = await freshStock.handler({ queryStringParameters: { codes: '005930' }, headers: { origin: 'https://my-app.netlify.app' } });
+      assert.strictEqual(ok.headers['Access-Control-Allow-Origin'], 'https://my-app.netlify.app');
+      assert.strictEqual(ok.headers['Vary'], 'Origin');
+      const blocked = await freshStock.handler({ queryStringParameters: { codes: '005930' }, headers: { origin: 'https://evil.example' } });
+      assert.strictEqual('Access-Control-Allow-Origin' in blocked.headers, false);
+    } finally {
+      restoreFetch();
+      if (prevEnv === undefined) delete process.env.ALLOWED_ORIGINS; else process.env.ALLOWED_ORIGINS = prevEnv;
+      // ALLOWED_ORIGINS를 원복한 뒤 캐시를 다시 비워 재require — 남겨두면 이 모듈 캐시가
+      // "ALLOWED_ORIGINS=my-app.netlify.app"로 고정된 채 남아 같은 프로세스 안의 뒤 코드가
+      // require(path)할 일이 생겨도(현재는 없지만) 엉뚱한 설정을 보게 된다.
+      delete require.cache[modPath];
+      require(modPath);
+    }
+  });
+  test('stock.handler: rate limit(RL_MAX=30/분)을 넘기면 429 + 안내 메시지를 반환한다 — 이 파일의 마지막 handler 테스트여야 함(버킷 영구 소진)', async () => {
+    installFetchQueue([failHttp(404)]);
+    try {
+      let last;
+      for (let i = 0; i < 31; i++) last = await stockFns.handler({ queryStringParameters: {} });
+      assert.strictEqual(last.statusCode, 429);
+      assert.ok(JSON.parse(last.body).error.includes('잠시 후'));
+    } finally { restoreFetch(); }
+  });
+
+  test('rates.handler: cur 파라미터를 생략하면 기본값 USD로 네이버 환율을 조회해 { fx:{USD:...}, goldPerG:0 } 형태로 반환한다(happy path)', async () => {
+    installFetchQueue([okJson({ result: [{ closePrice: '1,385.2' }] })]);
+    try {
+      const res = await ratesFns.handler({ queryStringParameters: {} });
+      assert.strictEqual(res.statusCode, 200);
+      const body = JSON.parse(res.body);
+      assert.strictEqual(body.fx.USD, 1385.2);
+      assert.strictEqual(body.goldPerG, 0);
+    } finally { restoreFetch(); }
+  });
+  test('rates.handler: ?debug=1이면 응답 바디에 _debug가 포함된다', async () => {
+    installFetchQueue([okJson({ result: [{ closePrice: '1385.2' }] })]);
+    try {
+      const res = await ratesFns.handler({ queryStringParameters: { debug: '1' } });
+      assert.ok('_debug' in JSON.parse(res.body), 'debug=1인데 _debug가 응답에 없음');
+    } finally { restoreFetch(); }
+  });
+  test('rates.handler: ALLOWED_ORIGINS 미설정이면 CORS를 "*"로 전체 허용한다(기존 동작 유지)', async () => {
+    installFetchQueue([okJson({ result: [{ closePrice: '1385.2' }] })]);
+    try {
+      const res = await ratesFns.handler({ queryStringParameters: {}, headers: { origin: 'https://evil.example' } });
+      assert.strictEqual(res.headers['Access-Control-Allow-Origin'], '*');
+    } finally { restoreFetch(); }
+  });
+  test('rates.handler: rate limit을 넘기면 429를 반환한다 — 이 파일의 마지막 handler 테스트여야 함(버킷 영구 소진)', async () => {
+    installFetchQueue([failHttp(404)]);
+    try {
+      let last;
+      for (let i = 0; i < 31; i++) last = await ratesFns.handler({ queryStringParameters: {} });
+      assert.strictEqual(last.statusCode, 429);
+    } finally { restoreFetch(); }
+  });
+
+  test('crypto.handler: codes 파라미터가 없으면 400과 "codes" 안내 메시지를 반환한다', async () => {
+    installFetchQueue([okJson([])]);
+    try {
+      const res = await cryptoFns.handler({ queryStringParameters: {} });
+      assert.strictEqual(res.statusCode, 400);
+      assert.ok(JSON.parse(res.body).error.includes('codes'));
+    } finally { restoreFetch(); }
+  });
+  test('crypto.handler: 업비트 티커 응답을 { 코드: 원 } 로 변환해 반환한다(happy path)', async () => {
+    installFetchQueue([okJson([{ market: 'KRW-BTC', trade_price: 143250000 }])]);
+    try {
+      const res = await cryptoFns.handler({ queryStringParameters: { codes: 'BTC' } });
+      assert.strictEqual(res.statusCode, 200);
+      assert.deepStrictEqual(JSON.parse(res.body), { BTC: 143250000 });
+    } finally { restoreFetch(); }
+  });
+  test('crypto.handler: ?debug=1이면 응답 바디에 _debug가 포함된다', async () => {
+    installFetchQueue([okJson([{ market: 'KRW-BTC', trade_price: 100 }])]);
+    try {
+      const res = await cryptoFns.handler({ queryStringParameters: { codes: 'BTC', debug: '1' } });
+      assert.ok('_debug' in JSON.parse(res.body), 'debug=1인데 _debug가 응답에 없음');
+    } finally { restoreFetch(); }
+  });
+  test('crypto.handler: ALLOWED_ORIGINS 미설정이면 CORS를 "*"로 전체 허용한다(기존 동작 유지)', async () => {
+    installFetchQueue([okJson([{ market: 'KRW-BTC', trade_price: 100 }])]);
+    try {
+      const res = await cryptoFns.handler({ queryStringParameters: { codes: 'BTC' }, headers: { origin: 'https://evil.example' } });
+      assert.strictEqual(res.headers['Access-Control-Allow-Origin'], '*');
+    } finally { restoreFetch(); }
+  });
+  test('crypto.handler: rate limit을 넘기면 429를 반환한다 — 이 파일의 마지막 handler 테스트여야 함(버킷 영구 소진)', async () => {
+    installFetchQueue([failHttp(404)]);
+    try {
+      let last;
+      for (let i = 0; i < 31; i++) last = await cryptoFns.handler({ queryStringParameters: {} });
+      assert.strictEqual(last.statusCode, 429);
+    } finally { restoreFetch(); }
+  });
+}
+
 /* ---------- fetchWithTimeout (app-evolve cycle115) ----------
  * fetchFxGold/fetchStocks의 bare fetch가 AbortController/타임아웃이 전혀 없어, 서버가 응답을
  * 멎으면(캡티브 포털·모바일 네트워크 전환·함수 콜드스타트 중 연결 끊김) syncRates()의 syncing

@@ -181,5 +181,8 @@ function json(status, body, maxAge, origin) {
 }
 
 // 테스트(test/run.js)에서 순수 함수만 골라 require하기 위한 exports.
-// exports.handler는 그대로 유지되므로 Netlify 배포/동작에는 영향 없다.
-module.exports = { ratesUsdBaseToKrw, toNum, pickRows, errText, applyJpyScale, isAllowedOrigin, shouldThrottle };
+// module.exports를 통째로 덮어쓰면 맨 위 exports.handler가 가리키던 객체와 끊어져
+// require(this).handler가 undefined가 돼버린다(Netlify가 바로 이 handler를 호출하므로
+// 프로덕션 함수가 완전히 죽는다 — app-evolve cycle230 advance에서 발견/수정).
+// Object.assign으로 기존 module.exports(=exports, handler 보유)에 병합해야 안전하다.
+Object.assign(module.exports, { ratesUsdBaseToKrw, toNum, pickRows, errText, applyJpyScale, isAllowedOrigin, shouldThrottle });

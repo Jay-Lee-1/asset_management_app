@@ -1,19 +1,8 @@
 {
-  "cycle": 229,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "Netlify 시세 프록시 핸들러(stock.js/rates.js/crypto.js) exports.handler 테스트 커버리지 공백 해소",
-    "why": "이 세 함수의 exports.handler(실제 Netlify가 호출하는 진입점: throttle 체크, codes 파싱, 국내/해외/crypto fetch 팬아웃, 8초 budget race, CORS/json 응답 조립)는 어떤 테스트에서도 호출되지 않는다. test/run.js:18206-18208, 18277-18278, 18382가 \"fetch()를 실제로 하는 함수는 네트워크 모킹 인프라가 없어 범위 밖 — 순수 계산/파싱 함수만 검증\"이라고 각 파일마다 명시적으로 자백하며 cycle103/225/228에서 반복 확인됐지만 닫히지 않은 공백이다. 이 핸들러들은 앱의 유일한 서버사이드 트러스트 바운더리(CORS allowlist, rate limit, origin 체크, timeout budget)인데, cycle225(CORS allowlist/throttle 추가)와 cycle228(_shared.js로 유틸 통합)이 바로 이 코드를 건드리면서도 추출된 순수 헬퍼만 격리 테스트했을 뿐 handler가 그 헬퍼들을 실제로 올바르게 연결하는지(429/400/CORS 헤더가 실제 응답에 제대로 실리는지, _shared.js 리팩터가 실제 호출부를 깨지 않았는지)는 어떤 테스트도 검증하지 못한다. 앞으로의 리팩터가 handler 결선을 조용히 회귀시켜도 잡아낼 안전망이 없다.",
-    "approach": "test/run.js에 global.fetch를 저장/복원하는 작은 fetch-mock 헬퍼를 추가한다(테스트별 try/finally로 스코프를 좁혀 테스트 간 누수 방지, 큐에 넣은 canned Response류 객체({ok,status,json()})를 순서대로 반환). stock.js/rates.js/crypto.js 각각에 exports.handler를 직접 호출하는 테스트를 추가: (a) shouldThrottle이 거부할 때 429 + CORS 헤더 확인, (b) codes/cur 파라미터 누락 시 400, (c) upstream JSON을 모킹한 happy path에서 최종 KRW 환산 응답 바디 형태 확인, (d) ALLOWED_ORIGINS 설정/미설정 및 Origin 헤더 일치/불일치에 따른 CORS 헤더 동작(이미 단위테스트된 isAllowedOrigin/corsOrigin을 실제 handler 경로로 재검증), (e) ?debug=1일 때 _debug 객체 전달 확인. stock.js의 실제 8초 HANDLER_BUDGET_MS 타임아웃 race는 실제 wall-clock 대기가 필요하므로 선택적 스트레치로 낮은 우선순위에 둔다. 프로덕션 코드 변경은 없음(index.html/logic.js 불변이므로 APP_VERSION/sw.js CACHE 버전업 불필요) — 순수 테스트 인프라 확장."
-  },
+  "cycle": 230,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 224,
-      "phase": "advance",
-      "timestamp": "2026-10-21T04:20:00.000Z",
-      "summary": "critique(cycle224) 계획대로 자산/카테고리/귀속 아이콘 배지의 라이트 테마 WCAG 1.4.11 명도대비 미달을 고쳤다. 계획에서 한 가지만 바꿨다: .a-fx는 계획대로 새 --fx-ink 변수를 만드는 대신 기존 var(--brand-ink)를 그대로 재사용했다 — a-fx는 배경이 var(--brand-soft)로 이미 accent 테마(indigo/plum/forest/sunset/rose/slate)마다 바뀌는데, 계획대로 고정 hex(#2F776A류)를 새로 넣으면 accent를 바꿀 때마다 배경만 변하고 글자색은 고정이라 accent별로 대비가 다시 깨질 위험이 있었다. brand-ink는 a-cash/a-bank에서 이미 모든 accent 조합으로 검증된 짝이라(직접 계산: default 5.48/indigo 7.26/plum 6.80/forest 6.62/sunset 5.13/rose 5.52/slate 7.58, 전부 >=3) 그걸 그대로 쓰는 게 더 안전하고 코드도 준다. 나머지는 계획대로: :root(index.html:58-59)/html[data-theme=dark]·prefers-color-scheme dark 두 블록에 --gold-ink(#806719, 라이트 4.61:1)/--crypto-ink(#975B21, 4.55:1)/--save-ink(#247B51, 4.56:1)/--expense-ink(#C83425, 4.50:1)를 추가(다크 값은 각각 --gold/--crypto/--save/--expense의 기존 다크값을 그대로 재사용해 다크 모드 외관 불변). .a-gold/.a-crypto/.a-food/.a-debt/.a-save의 color를 새 변수로 교체. 직접 계산기(상대휘도 공식)로 재탐색하다 계획이 언급 안 한 세 군데의 동일 버그를 추가로 발견해 같은 변수로 함께 고쳤다(변수가 어차피 새로 생기므로 위험 없는 1~2줄 추가 범위) — .a-house(index.html:278, gold-soft/var(--gold) 2.51:1 — gold-ink로), .own-3/.own-4(index.html:271-272, 귀속 선택 칩 — gold-soft/gold 2.06:1, save-soft/save 2.79:1 — 각각 gold-ink/save-ink로; .chipmini가 11px bold 글자를 담는 실제 텍스트라 1.4.3 일반텍스트 기준 4.5:1도 적용돼 더 심각한 위반이었음, 새 ink 값 모두 4.5 이상이라 그대로 해결), .add-inline .emo-pick.a-food/.a-save(index.html:929,931 — 빠른입력 이모지 피커의 .a-food/.a-save를 덮어쓰는 더 구체적인 선택자라 base 클래스만 고치면 이 안에서는 여전히 옛 색이 남았을 것). TYPE_COLOR(차트, index.html:1712)는 계획대로 범위 밖. logic.js에 WCAG 2.x 상대휘도 공식 기반 contrastRatio(hex1,hex2) 순수함수 신설(기존 clockSkewSeverity류 소형 헬퍼와 같은 스타일). test/run.js에 6건 추가: 순수흑백 21:1·동색 1:1 기준값, 인자순서 무관, 라이트 테마 5개 배지 쌍(a-fx/a-gold·house/a-crypto/a-save/a-food·debt) 전부 >=3, own-3/own-4는 텍스트라 더 엄격한 >=4.5, 다크 테마 5개 쌍 외관 불변 확인(a-fx 다크는 brand-ink 다크값 #74CFBF로 별도 확인), 수정 전 원색 값들이 실제로 <3이었다는 회귀 가드(테스트 작성 중 다크 테마 테스트 하나에 라이트 brand-ink 값을 잘못 넣어 FAIL하는 걸 직접 잡아 수정 — 테스트가 스스로를 검증). index.html만 변경이라 APP_VERSION 1.47.206->1.47.207, sw.js CACHE v472->v473. node --check(logic.js, sw.js) 통과, HTML 주석 제거 후 <script> 블록 4개 모두 new Function 생성자로 문법 통과. node our-assets-v1.14.1/our-assets/test/run.js 1704/1704 -> 1710/1710 통과. pending_advance_plan은 null로 비웠다.",
-      "commit": null
-    },
     {
       "cycle": 225,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-21T23:11:10.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-229에서 다룬 모든 영역 전부 제외 지시)한 결과, netlify/functions/{stock.js:19-101, rates.js:17, crypto.js:10}의 exports.handler(실제 Netlify 진입점: throttle/파싱/fetch 팬아웃/8초 budget race/CORS·json 응답 조립)가 어떤 테스트에서도 호출되지 않는 공백을 선택. test/run.js:18206-18208, 18277-18278, 18382가 \"fetch 실행 함수는 네트워크 모킹 인프라 없어 범위 밖 — 순수 계산/파싱 함수만 검증\"이라고 3곳에서 명시적으로 자백하며 cycle103/225/228에서 반복 확인됐지만 닫히지 않았다. cycle225(CORS allowlist/throttle 추가)·228(_shared.js 통합)이 바로 이 코드를 건드렸는데도 추출된 순수 헬퍼만 격리 테스트했지 handler 결선 자체는 검증 안 됨 — 이 세 함수가 앱의 유일한 서버사이드 트러스트 바운더리임을 고려하면 리팩터 회귀를 잡을 안전망이 없는 상태. 검토 후 기각한 대안: 다개월 지출추세 차트(이미 spendTrend/spendTrendBadge로 구현돼 있어 실제로 빠진 게 아님), localStorage 쿼터초과 처리(이미 try/catch+storageOutcomeMsg/toastFail로 처리돼 있어 이미 견고함), sw.js skipWaiting/clients.claim 타이밍 엣지케이스(실존하지만 발생빈도·영향범위가 미검증 보안 바운더리보다 낮음). advance 단계 계획을 pending_advance_plan에 저장. 코드 변경 없음(critique 규칙).",
+      "commit": null
+    },
+    {
+      "cycle": 229,
+      "phase": "advance",
+      "timestamp": "2026-10-22T00:13:52.803Z",
+      "summary": "netlify 시세 프록시 3종(stock/rates/crypto.js)의 exports.handler 테스트 커버리지 공백을 메우려고 global.fetch 큐 모킹을 추가해 핸들러를 직접 호출하는 테스트 16개를 작성하던 중, module.exports 전체 재할당이 파일 맨 위 exports.handler를 완전히 지워버려 require(file).handler가 undefined가 되는 치명적 프로덕션 버그를 발견(세 파일 모두 해당, Netlify가 이 handler를 직접 호출하므로 세 엔드포인트가 실제로는 전혀 동작하지 않는 상태였음). module.exports = {...}를 Object.assign(module.exports, {...})로 바꿔 수정하고, 429/400/CORS(ALLOWED_ORIGINS 유무)/debug=1/happy-path를 커버하는 handler 테스트 16개를 추가. 회귀 테스트 1771개 전부 통과.",
       "commit": null
     }
   ]
