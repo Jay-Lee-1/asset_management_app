@@ -3321,6 +3321,31 @@ test('contrastRatio: 이번 수정 전 라이트 테마 값(회귀 가드) — �
   });
 });
 
+/* ---------- contrastRatio: 라이트 테마 --text-3 WCAG AA(일반 텍스트 4.5:1) 보정
+ * (app-evolve cycle235 critique/advance) ----------
+ * --text-3(#767F79)는 index.html 전반의 날짜·동기화 상태·필터칩·section-title 등 10~14.5px
+ * 보조/3차 텍스트에 127회 쓰이는데, 라이트 테마에서 실제로 칠해지는 네 배경(--surface/--bg/
+ * --surface-2/--sunken) 전부에 대해 3.63~4.13:1로 AA 일반 텍스트 기준(4.5:1)에 못 미쳤다.
+ * #656E68로 바꿔 네 배경 모두 4.5:1 이상을 만족시킨다(다크 테마 --text-3은 이미 통과이므로
+ * 미변경). */
+test('contrastRatio: 라이트 테마 --text-3(#656E68)가 실제로 칠해지는 배경 4종 전부에서 WCAG AA 일반 텍스트 기준(4.5:1) 이상이다', () => {
+  const bgs = ['#FFFFFF', '#F4F6F4', '#FAFBFA', '#EEF1EE']; // --surface / --bg / --surface-2 / --sunken
+  bgs.forEach((bg) => {
+    assert.ok(sandbox.contrastRatio(bg, '#656E68') >= 4.5, `${bg}/#656E68 => ${sandbox.contrastRatio(bg, '#656E68')}`);
+  });
+});
+test('contrastRatio: 수정 전 라이트 테마 --text-3 값(회귀 가드) — #767F79는 네 배경 중 하나 이상에서 4.5:1 미달이었음을 재확인', () => {
+  assert.ok(sandbox.contrastRatio('#EEF1EE', '#767F79') < 4.5, `#EEF1EE/#767F79 => ${sandbox.contrastRatio('#EEF1EE', '#767F79')}`);
+});
+test('contrastRatio: --text-2(#67716B)는 이번 수정으로 건드리지 않았고, --surface/--bg/--surface-2에서는 여전히 4.5:1 이상이다', () => {
+  ['#FFFFFF', '#F4F6F4', '#FAFBFA'].forEach((bg) => {
+    assert.ok(sandbox.contrastRatio(bg, '#67716B') >= 4.5, `${bg}/#67716B => ${sandbox.contrastRatio(bg, '#67716B')}`);
+  });
+  // --sunken 배경에서는 --text-2 자체가 이미(이번 수정 전부터) 4.445:1로 AA에 근소하게 미달
+  // — 이번 cycle235 plan의 범위 밖(--text-2는 불변 대상)이라 손대지 않고 사실만 기록해둔다.
+  assert.ok(sandbox.contrastRatio('#EEF1EE', '#67716B') < 4.5, `#EEF1EE/#67716B => ${sandbox.contrastRatio('#EEF1EE', '#67716B')}`);
+});
+
 /* ---------- notifyReliabilityTier/notifyReliabilityMsg: OS 알림 토스트/캡션의 실제 능력 고지
  * (app-evolve cycle145 critique/advance) ----------
  * checkNotifyAlerts()는 document.hidden일 때만 동작하는 foreground/background 로컬 알림일 뿐

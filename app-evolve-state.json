@@ -1,19 +1,8 @@
 {
-  "cycle": 234,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "Fix light-mode --text-3 token to meet WCAG AA 4.5:1 for body text",
-    "why": "--text-3 (#767F79) is used 127 times across index.html for small (10-14.5px) secondary/tertiary text — dates, sync/rate-staleness status, section titles, balance sub-labels, filter chips — and in light mode measures only 3.63-4.13:1 against every surface it's painted on (surface/bg/surface-2/sunken), below the WCAG 2.1 AA 4.5:1 minimum for normal text. Dark mode's --text-3 (#8A948E, ~5.35:1) is unaffected and should not change. This is the broadest-blast-radius accessibility defect currently in the app: it affects nearly every screen for every light-mode user, and is invisible to the existing 1807 functional tests.",
-    "approach": "1) In index.html's :root block (line 54), change --text-3 from #767F79 to a darker value that clears 4.5:1 against the worst-case background it's used on (--sunken #EEF1EE is the darkest background text-3 sits on). Candidate verified with logic.js's existing contrastRatio(hex1,hex2) helper: #656E68 gives 5.27:1/vs #FFFFFF, 4.85:1/vs #F4F6F4, 4.63:1/vs #EEF1EE (all pass); #5F6862 gives more headroom (5.76/5.31/5.06) if a visually-darker tertiary tone is preferred — pick whichever keeps enough visual distinction from --text-2 (#67716B, which must stay unchanged and keep passing). Do NOT touch the dark-theme/system-dark --text-3 definitions at lines 75 and 90 (dark already passes). 2) Add regression tests in test/run.js, following the exact pattern already established for the cycle224 contrast tests (test/run.js:3262-3320, which already require()s sandbox.contrastRatio from logic.js): add assertions that contrastRatio('<new --text-3 light hex>', bg) >= 4.5 for bg in ['#FFFFFF' (--surface), '#F4F6F4' (--bg), '#FAFBFA' (--surface-2), '#EEF1EE' (--sunken)], plus a regression guard asserting the OLD value (#767F79) was indeed <4.5 against at least one of those (mirroring the 'before this fix it was <3:1' regression-guard test at test/run.js:3311-3320) so a future revert is caught. Also assert --text-2 is untouched/still >=4.5 to prevent accidental collateral edits. 3) No logic.js pure-function signatures change and no new runtime capability is needed — this is a pure CSS token edit plus tests. 4) Bump APP_VERSION (index.html:1401, e.g. 1.47.217 -> 1.47.218) per the project's own convention, and bump sw.js's CACHE constant (sw.js:6, e.g. ourassets-v484 -> ourassets-v485) so the new stylesheet is picked up by the install/activate cache-replacement cycle. 5) Do a quick visual pass after the hex change on the few borderline UI spots that layer text-3 over gradient/translucent glass panels (--glass-panel etc.) to confirm no new readability regression, since those backgrounds weren't part of the flat-color contrast check."
-  },
+  "cycle": 235,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 229,
-      "phase": "advance",
-      "timestamp": "2026-10-22T00:13:52.803Z",
-      "summary": "netlify 시세 프록시 3종(stock/rates/crypto.js)의 exports.handler 테스트 커버리지 공백을 메우려고 global.fetch 큐 모킹을 추가해 핸들러를 직접 호출하는 테스트 16개를 작성하던 중, module.exports 전체 재할당이 파일 맨 위 exports.handler를 완전히 지워버려 require(file).handler가 undefined가 되는 치명적 프로덕션 버그를 발견(세 파일 모두 해당, Netlify가 이 handler를 직접 호출하므로 세 엔드포인트가 실제로는 전혀 동작하지 않는 상태였음). module.exports = {...}를 Object.assign(module.exports, {...})로 바꿔 수정하고, 429/400/CORS(ALLOWED_ORIGINS 유무)/debug=1/happy-path를 커버하는 handler 테스트 16개를 추가. 회귀 테스트 1771개 전부 통과.",
-      "commit": null
-    },
     {
       "cycle": 230,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-22T20:15:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-234 전체 다룬 영역 전부 제외 지시, 특히 아직 깊게 안 본 접근성/색상대비 영역을 집중 탐색하도록 지시)한 결과, 라이트모드 --text-3 토큰(index.html:54, #767F79)이 WCAG AA 일반텍스트 기준(4.5:1)에 못 미치는 것을 발견 — 같은 토큰이 날짜·동기화/환율 신선도 상태·섹션 타이틀·잔액 보조라벨·필터칩 등 10~14.5px 보조텍스트에 127회나 쓰이는데, logic.js:915의 contrastRatio() 헬퍼로 실측하면 --surface(#FFFFFF) 4.13:1, --bg(#F4F6F4) 3.80:1, --surface-2(#FAFBFA) 3.98:1, --sunken(#EEF1EE) 3.63:1로 어느 배경에서도 기준 미달(비교: --text-2 #67716B는 흰 카드 위 5.06:1로 통과). cycle224의 기존 대비 작업(logic.js:915 도입, test/run.js:3262-3320)은 아바타 배지 아이콘-배경 간 비텍스트 3:1 기준만 다뤘을 뿐 본문텍스트용 --text-3는 건드리지 않아 겹치지 않는 새 결함. 다크모드 --text-3(#8A948E, 5.35:1)은 이미 통과라 영향 없음. 라이트모드(기본 테마)에서 앱의 거의 모든 화면에 동시에 영향을 미치는, 지금까지 발견한 것 중 가장 넓은 블라스트 반경의 접근성 결함이며 1807개 기능 테스트로는 전혀 잡히지 않는 영역. 러너업 기각: Supabase 클라우드 동기화 3-way 병합(logic.js:160-384, index.html:1554-1650이 이미 tombstone-aware로 매우 성숙하고 cycle122/123/125/133/135/138/177/179/180/192/211/212/223에서 반복 검증됨, 필드 단위 병합 안 하기로 한 의도적 결정도 주석에 남아있어 기각), 사용자 입력 innerHTML/XSS(모든 렌더 지점이 esc() 일관 적용 확인, 실제 벡터 없음), CSV 수입 '다양한 은행 포맷'(이 앱은 자기 자신이 내보낸 고정 7컬럼 CSV만 재수입하는 기능이라 '은행 포맷 다양성'이 적용 대상이 아님, 기존 BOM/따옴표/날짜범위 가드 이미 충분), todayStr()이 기기 로컬 타임존을 쓰고 inQuietWindow()만 고정 KST 보정이 있는 불일치(index.html:1661-1662 vs 3312-3318, 실존하지만 다기기+해외체류라는 좁은 트리거라 대비버그보다 블라스트 반경이 작아 2순위로 보류). advance 계획을 pending_advance_plan에 저장: index.html:54의 --text-3 라이트 hex를 contrastRatio()로 검증된 #656E68(또는 더 짙은 #5F6862)로 교체(다크모드 75/90행은 불변), test/run.js에 cycle224 패턴을 따라 신규 hex가 4개 배경(surface/bg/surface-2/sunken) 모두 4.5:1 이상인지 + 구 값(#767F79)이 실제로 미달이었는지(회귀가드) + --text-2는 영향 없는지 검증하는 테스트 추가, APP_VERSION/sw.js CACHE 버전 범프, glass-panel 등 그라디언트 배경 위 시각 확인. 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "commit": null
+    },
+    {
+      "cycle": 234,
+      "phase": "advance",
+      "timestamp": "2026-10-22T21:12:45.979Z",
+      "summary": "critique(cycle234)가 세운 계획대로 라이트 테마 --text-3 토큰을 #767F79 -> #656E68로 바꿔 WCAG AA 일반 텍스트 기준(4.5:1)을 실제로 칠해지는 4개 배경(--surface/--bg/--surface-2/--sunken) 전부에서 충족시켰다(5.27/4.85/5.08/4.63:1, 기존 4.13/3.80/3.98/3.63:1 전부 미달이었음). 다크 테마 --text-3(라인 75/90)은 이미 통과라 미변경. logic.js의 contrastRatio 순수함수로 직접 계산해 후보값을 정했고(plan이 제시한 #5F6862 대신 시각적 변화가 더 작은 #656E68을 채택), playwright로 두 배경에서 실제 텍스트 크기(10px/12.5px)로 old/new를 나란히 렌더링한 스크린샷으로 가독성 향상과 심각한 시각적 이질감 없음을 눈으로 확인했다. 부수 발견: --text-2(#67716B, 이번 plan 범위 밖이라 미변경)가 --sunken 배경에서 4.445:1로 AA에 근소하게(0.055) 미달인 기존 이슈를 찾아 회귀 테스트 주석과 known_issues에 남겨뒀다(다음 critique가 평가할 후보). test/run.js에 신규 테스트 3건(새 --text-3 4배경 통과, 구 값 회귀 가드, --text-2 불변 확인 겸 위 발견사항 문서화) 추가. APP_VERSION 1.47.217->1.47.218, sw.js CACHE v484->v485 동기 반영. node our-assets-v1.14.1/our-assets/test/run.js 1807/1807 -> 1810/1810 통과. pending_advance_plan은 null로 비웠다.",
       "commit": null
     }
   ]
