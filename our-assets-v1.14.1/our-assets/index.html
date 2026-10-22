@@ -1398,7 +1398,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.215';
+const APP_VERSION='1.47.216';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -8202,11 +8202,22 @@ function notifyAlertInfo(al){
  }
  if(al.kind==='matMulti'&&al.dueCount>0)return{key:`matMulti:${TODAY}:${al.count}`,title:'저축 만기가 임박했어요',body:`저축 만기 ${al.count}건이 있어요`};
  if(al.kind==='budgetOver')return{key:`budget:${al.cat}:${TODAY.slice(0,7)}`,title:'예산을 초과했어요',body:`${al.cat} · ${comma(al.spent)}원 / ${comma(al.budget)}원`};
- if(al.kind==='budgetOverMulti')return{key:`budgetMulti:${TODAY.slice(0,7)}`,title:'예산을 초과했어요',body:`${al.count}개 카테고리가 이번 달 예산을 넘었어요`};
+ /* budgetOverMulti/goalBehindMulti/debtBehindMulti(바로 아래 3개)는 반복 알림을 막기 위해 월 단위로
+  * key를 묶는데(TODAY.slice(0,7)), 지금까지 그 안에 count를 넣지 않아 "이번 달에 이미 한 번 알린
+  * 뒤 묶인 건수가 더 늘어도"(예: 예산 초과 카테고리 2개→3개, 목표 지연 2건→3건, 정체된 부채
+  * 2건→3건) 재알림이 전혀 안 되는 공백이 있었다 — confirmMulti/matMulti(바로 위 두 줄)는
+  * app-evolve cycle156/157에서 이미 "건수가 바뀌면 다시 알린다"로 key에 count를 넣었고, 그때
+  * 추가한 테스트조차 그 패턴을 "budgetOverMulti처럼"이라 적었을 만큼 세 함수가 원래 같은 원칙을
+  * 공유해야 했는데, 실제로는 budgetOverMulti/goalBehindMulti/debtBehindMulti만 count 없이
+  * 남아있었다(app-evolve cycle233 develop — 재탐색 중 테스트 주석과 실제 동작의 불일치로 발견).
+  * confirmMulti/matMulti와 동일하게 count를 key 끝에 추가해, 월 단위 dedupe(같은 상황을 반복
+  * 알리지 않는다는 취지)는 그대로 둔 채 "상황이 바뀌면"(건수 증가뿐 아니라 일부 해소돼 줄어도)
+  * 다시 알리게 한다. */
+ if(al.kind==='budgetOverMulti')return{key:`budgetMulti:${TODAY.slice(0,7)}:${al.count}`,title:'예산을 초과했어요',body:`${al.count}개 카테고리가 이번 달 예산을 넘었어요`};
  if(al.kind==='goalBehind')return{key:`goalBehind:${al.goalId}:${TODAY.slice(0,7)}`,title:'목표가 늦어지고 있어요',body:`${al.name} · 목표일 ${fmtDateFull(al.targetDate)}까지 어려울 것 같아요`};
- if(al.kind==='goalBehindMulti')return{key:`goalBehindMulti:${TODAY.slice(0,7)}`,title:'목표가 늦어지고 있어요',body:`목표 ${al.count}건이 목표일보다 늦어지고 있어요`};
+ if(al.kind==='goalBehindMulti')return{key:`goalBehindMulti:${TODAY.slice(0,7)}:${al.count}`,title:'목표가 늦어지고 있어요',body:`목표 ${al.count}건이 목표일보다 늦어지고 있어요`};
  if(al.kind==='debtBehind')return{key:`debtBehind:${al.assetId}:${TODAY.slice(0,7)}`,title:'부채가 줄지 않고 있어요',body:`${al.name} · 최근엔 ${comma(al.amount)}원에서 줄어들고 있지 않아요`};
- if(al.kind==='debtBehindMulti')return{key:`debtBehindMulti:${TODAY.slice(0,7)}`,title:'부채가 줄지 않고 있어요',body:`부채 ${al.count}건이 최근 줄어들고 있지 않아요`};
+ if(al.kind==='debtBehindMulti')return{key:`debtBehindMulti:${TODAY.slice(0,7)}:${al.count}`,title:'부채가 줄지 않고 있어요',body:`부채 ${al.count}건이 최근 줄어들고 있지 않아요`};
  return null;
 }
 /* 같은 항목(key)은 상태가 유지되는 한 다시 알리지 않는다 — checkNotifyAlerts가 동기화 주기(수 분)마다

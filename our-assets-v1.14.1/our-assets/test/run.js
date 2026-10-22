@@ -15698,8 +15698,17 @@ test('notifyAlertInfo: goalBehind/goalBehindMulti는 budgetOver처럼 월 단위
   assert.ok(info1.title && info1.body, 'OS 알림 제목/본문이 있어야 함');
 
   const info2 = sandbox.notifyAlertInfo({ kind: 'goalBehindMulti', count: 2 });
-  assert.strictEqual(info2.key, 'goalBehindMulti:2026-06');
+  assert.strictEqual(info2.key, 'goalBehindMulti:2026-06:2', '월 단위 키에도 count가 들어가야 함(app-evolve cycle233)');
   assert.ok(info2.title && info2.body, 'OS 알림 제목/본문이 있어야 함');
+});
+test('notifyAlertInfo: goalBehindMulti도 confirmMulti/matMulti처럼 같은 달 안에서 건수가 바뀌면 다시 알리도록 키에 count가 들어간다(app-evolve cycle233)', () => {
+  sandbox.TODAY = '2026-06-15';
+  const gb2 = sandbox.notifyAlertInfo({ kind: 'goalBehindMulti', count: 2 });
+  const gb3 = sandbox.notifyAlertInfo({ kind: 'goalBehindMulti', count: 3 });
+  assert.notStrictEqual(gb3.key, gb2.key, '목표 지연 건수가 2→3으로 늘면 키도 바뀌어 다시 알려야 함');
+  assert.ok(gb3.body.includes('3건'));
+  const gb2Again = sandbox.notifyAlertInfo({ kind: 'goalBehindMulti', count: 2 });
+  assert.strictEqual(gb2Again.key, gb2.key, '건수가 그대로면(같은 달) 같은 키로 여전히 dedupe돼야 함');
 });
 test('homeAlertCard: goalBehind/goalBehindMulti가 각각 openGoalForm/openGoalsList로 연결된다', () => {
   const html1 = sandbox.homeAlertCard({ kind: 'goalBehind', goalId: 'g1', name: '내 집 마련', targetDate: '2026-07-01', projectedDate: null });
@@ -15775,8 +15784,17 @@ test('notifyAlertInfo: debtBehind/debtBehindMulti는 goalBehind처럼 월 단위
   assert.ok(info1.title && info1.body, 'OS 알림 제목/본문이 있어야 함');
 
   const info2 = sandbox.notifyAlertInfo({ kind: 'debtBehindMulti', count: 2 });
-  assert.strictEqual(info2.key, 'debtBehindMulti:2026-06');
+  assert.strictEqual(info2.key, 'debtBehindMulti:2026-06:2', '월 단위 키에도 count가 들어가야 함(app-evolve cycle233)');
   assert.ok(info2.title && info2.body, 'OS 알림 제목/본문이 있어야 함');
+});
+test('notifyAlertInfo: debtBehindMulti도 confirmMulti/matMulti처럼 같은 달 안에서 건수가 바뀌면 다시 알리도록 키에 count가 들어간다(app-evolve cycle233)', () => {
+  sandbox.TODAY = '2026-06-15';
+  const db2 = sandbox.notifyAlertInfo({ kind: 'debtBehindMulti', count: 2 });
+  const db3 = sandbox.notifyAlertInfo({ kind: 'debtBehindMulti', count: 3 });
+  assert.notStrictEqual(db3.key, db2.key, '정체된 부채 건수가 2→3으로 늘면 키도 바뀌어 다시 알려야 함');
+  assert.ok(db3.body.includes('3건'));
+  const db2Again = sandbox.notifyAlertInfo({ kind: 'debtBehindMulti', count: 2 });
+  assert.strictEqual(db2Again.key, db2.key, '건수가 그대로면(같은 달) 같은 키로 여전히 dedupe돼야 함');
 });
 test('homeAlertCard: debtBehind/debtBehindMulti가 각각 openAssetHistory/openDebtBehindList로 연결된다', () => {
   const html1 = sandbox.homeAlertCard({ kind: 'debtBehind', assetId: 'd1', name: '마이너스통장', amount: 550000 });
@@ -16276,9 +16294,32 @@ test('notifyAlertInfo: confirm/budgetOver(Multi)는 즉시 알림 대상이 되�
   const budgetOver = sandbox.notifyAlertInfo({ kind: 'budgetOver', cat: '식비', spent: 150000, budget: 100000 });
   assert.ok(budgetOver && budgetOver.key === 'budget:식비:2026-06');
   const budgetMulti = sandbox.notifyAlertInfo({ kind: 'budgetOverMulti', count: 2 });
-  assert.ok(budgetMulti && budgetMulti.key === 'budgetMulti:2026-06');
+  assert.ok(budgetMulti && budgetMulti.key === 'budgetMulti:2026-06:2', '월 단위 키에도 count가 들어가야 함(app-evolve cycle233)');
   assert.strictEqual(sandbox.notifyAlertInfo({ kind: 'backup' }), null, 'OS 알림 대상이 아닌 kind는 null이어야 함');
   assert.strictEqual(sandbox.notifyAlertInfo({ kind: 'neg', assetId: 'a1' }), null);
+});
+test('notifyAlertInfo: budgetOverMulti도 confirmMulti/matMulti처럼 같은 달 안에서 초과 카테고리 건수가 바뀌면 다시 알리도록 키에 count가 들어간다(app-evolve cycle233)', () => {
+  /* 수정 전에는 budgetOverMulti/goalBehindMulti/debtBehindMulti 세 kind만 key에 count가 없어,
+   * 이번 달에 이미 한 번 OS 알림을 보낸 뒤 묶인 건수가 2→3처럼 더 늘어도(예산을 더 많은 카테고리가
+   * 초과하게 됨) pickNotifyAlerts의 dedupe가 같은 key로 보고 재알림을 영구히 막았다 — confirmMulti/
+   * matMulti는 cycle156/157부터 이미 count로 이 문제를 피해가고 있었다. */
+  sandbox.TODAY = '2026-06-15';
+  const bo2 = sandbox.notifyAlertInfo({ kind: 'budgetOverMulti', count: 2 });
+  const bo3 = sandbox.notifyAlertInfo({ kind: 'budgetOverMulti', count: 3 });
+  assert.notStrictEqual(bo3.key, bo2.key, '예산 초과 카테고리 건수가 2→3으로 늘면 키도 바뀌어 다시 알려야 함');
+  assert.ok(bo3.body.includes('3개'));
+  const bo2Again = sandbox.notifyAlertInfo({ kind: 'budgetOverMulti', count: 2 });
+  assert.strictEqual(bo2Again.key, bo2.key, '건수가 그대로면(같은 달) 같은 키로 여전히 dedupe돼야 함');
+
+  /* pickNotifyAlerts 통합 검증: 2건으로 한 번 알린 뒤, 건수가 3건으로 늘면 같은 notifiedIds에도
+   * 불구하고 다시 toNotify에 포함돼야 한다(날이 안 바뀌어도, confirm/mat의 TODAY 기반 재알림과는
+   * 다른 축인 "건수 변화"로도 재알림돼야 함을 보장). */
+  let picked = sandbox.pickNotifyAlerts([{ kind: 'budgetOverMulti', count: 2 }], {});
+  assert.strictEqual(picked.toNotify.length, 1);
+  picked = sandbox.pickNotifyAlerts([{ kind: 'budgetOverMulti', count: 2 }], picked.notifiedIds);
+  assert.strictEqual(picked.toNotify.length, 0, '같은 건수로 다시 호출하면 이미 보낸 알림이라 억제돼야 함');
+  picked = sandbox.pickNotifyAlerts([{ kind: 'budgetOverMulti', count: 3 }], picked.notifiedIds);
+  assert.strictEqual(picked.toNotify.length, 1, '건수가 늘면 같은 달이어도 다시 알림 대상이 돼야 함');
 });
 test('notifyAlertInfo: 저축 만기(mat)는 오늘·내일만 알림 대상이고, 이틀 뒤부터는 아직 대상이 아니다', () => {
   sandbox.TODAY = '2026-06-15';
