@@ -1398,7 +1398,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.214';
+const APP_VERSION='1.47.215';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -7094,9 +7094,13 @@ function openThemeSheet(){
  const opts=[['system','시스템 설정','휴대폰 설정을 따라가요'],['light','라이트',''],['dark','다크','프리미엄 다크']];
  openSheet(`<h3>화면 테마</h3><div class="opt-list">${opts.map(([v,l,s])=>`<button class="${DB.settings.themeMode===v?'on':''}" onclick="setTheme('${v}')"><span class="rd"></span><div><div>${l}</div>${s?`<div class="ol-sub">${s}</div>`:''}</div></button>`).join('')}</div>`);
 }
+function syncThemeColorMeta(){
+ const dark=DB.settings.themeMode==='dark'||(DB.settings.themeMode==='system'&&matchMedia('(prefers-color-scheme:dark)').matches);
+ const m=document.querySelector('meta[name=theme-color]');
+ if(m)m.setAttribute('content',dark?'#111417':'#F4F6F4');
+}
 function setTheme(v){DB.settings.themeMode=v;document.documentElement.setAttribute('data-theme',v);
- const dark=v==='dark'||(v==='system'&&matchMedia('(prefers-color-scheme:dark)').matches);
- document.querySelector('meta[name=theme-color]').setAttribute('content',dark?'#111417':'#F4F6F4');
+ syncThemeColorMeta();
  writeThemeCache();save();closeSheet();renderMenu();toast('테마를 바꿨어요')}
 /* ── 메인 색 프리셋 ─────────────────────────────────────────────────────────── */
 const ACCENTS=[
@@ -8815,6 +8819,7 @@ function startApp(){
  ST.hist.sortAsc=!!DB.settings.histSortAsc;
  document.documentElement.setAttribute('data-theme',DB.settings.themeMode);
  document.documentElement.setAttribute('data-accent',DB.settings.accent||'teal');
+ syncThemeColorMeta();
  ST.tab='home';
  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));$('page-home').classList.add('active');
  buildNav();document.body.classList.add('show-fab');renderHome();updateAlerts();showApp();wireHdrFade($('page-home'));
@@ -9271,7 +9276,7 @@ setInterval(()=>{if(!document.hidden)pullCloudIfStale().catch(()=>{})},60*1000);
  * 그날 더 편집을 안 하면 영원히 멈췄다(app-evolve cycle170 critique) — PUSH_CLOUD_INFLIGHT가 이미 중복
  * push를 막아주므로 위의 pull interval과 독립적으로 60초마다 재시도만 추가한다. */
 setInterval(()=>{if(!document.hidden&&CLOUD_UID&&DB&&CLOUD_SYNC_STATE==='error')pushCloud().catch(()=>{})},60*1000);
-matchMedia('(prefers-color-scheme:dark)').addEventListener('change',()=>{if(DB.settings.themeMode==='system')renderCurrent()});
+matchMedia('(prefers-color-scheme:dark)').addEventListener('change',()=>{if(DB.settings.themeMode==='system'){syncThemeColorMeta();renderCurrent()}});
 setTimeout(()=>{if(!DB)return;const soon=DB.assets.filter(a=>a.type==='savings'&&a.maturityDate&&a.maturityDate<=addDays(TODAY,7));
  if(soon.length)toast(`저축 만기 ${soon.length}건이 임박했어요`)},1200);
 </script>

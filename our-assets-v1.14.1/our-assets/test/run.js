@@ -10760,6 +10760,77 @@ test('setTheme/applyAccent: 테마·강조색을 바꿀 때마다 writeThemeCach
   const applyAccentBody = extractFunction('applyAccent');
   assert.ok(/writeThemeCache\(\)/.test(applyAccentBody), 'applyAccent()가 writeThemeCache()를 호출하지 않음 — setAccent()가 이걸 거치므로 강조색을 바꿔도 캐시가 안 갱신됨');
 });
+/* syncThemeColorMeta()는 setTheme()/OS 다크모드 자동전환(matchMedia change)/startApp() 세
+ * 호출부가 모두 참조하는 PWA 상태바색(<meta name=theme-color>) 동기화 헬퍼다(app-evolve
+ * cycle232 advance — 테마를 한 번도 안 바꾼 기본값('system') 사용자가 OS 다크/라이트를
+ * 전환해도 이 meta가 갱신되지 않아 상태바 색이 본문 배경과 어긋나던 공백을 닫음). 기존엔
+ * setTheme() 안에 인라인으로만 있던 로직을 헬퍼로 뽑아 재사용한다. document.querySelector에
+ * 엮여 있어 별도 vm 컨텍스트에서 최소 meta 스텁과 matchMedia만 흉내내 실행형으로 검증한다
+ * (recManageCtx 등과 같은 패턴). */
+let _themeColorMetaCtx = null;
+function themeColorMetaCtx() {
+  if (_themeColorMetaCtx) return _themeColorMetaCtx;
+  const ctx = {
+    _metaContent: null,
+    _matchMediaDark: false,
+    document: {
+      querySelector: (sel) => sel === 'meta[name=theme-color]'
+        ? { setAttribute: (n, v) => { if (n === 'content') ctx._metaContent = v; } }
+        : null,
+    },
+    matchMedia: () => ({ matches: ctx._matchMediaDark }),
+  };
+  vm.createContext(ctx);
+  vm.runInContext(extractFunction('syncThemeColorMeta'), ctx, { filename: 'syncThemeColorMeta-real' });
+  _themeColorMetaCtx = ctx;
+  return ctx;
+}
+test('[실행형] syncThemeColorMeta: themeMode가 dark면 matchMedia와 무관하게 다크 상태바색(#111417)을 설정한다', () => {
+  const ctx = themeColorMetaCtx();
+  ctx.DB = { settings: { themeMode: 'dark' } };
+  ctx._matchMediaDark = false;
+  ctx.syncThemeColorMeta();
+  assert.strictEqual(ctx._metaContent, '#111417');
+});
+test('[실행형] syncThemeColorMeta: themeMode가 light면 matchMedia와 무관하게 라이트 상태바색(#F4F6F4)을 설정한다', () => {
+  const ctx = themeColorMetaCtx();
+  ctx.DB = { settings: { themeMode: 'light' } };
+  ctx._matchMediaDark = true;
+  ctx.syncThemeColorMeta();
+  assert.strictEqual(ctx._metaContent, '#F4F6F4');
+});
+test('[실행형] syncThemeColorMeta: themeMode가 system이면 matchMedia(prefers-color-scheme:dark)를 따라간다', () => {
+  const ctx = themeColorMetaCtx();
+  ctx.DB = { settings: { themeMode: 'system' } };
+  ctx._matchMediaDark = true;
+  ctx.syncThemeColorMeta();
+  assert.strictEqual(ctx._metaContent, '#111417', 'system+OS다크인데 다크색으로 안 바뀜');
+  ctx._matchMediaDark = false;
+  ctx.syncThemeColorMeta();
+  assert.strictEqual(ctx._metaContent, '#F4F6F4', 'system+OS라이트인데 라이트색으로 안 바뀜');
+});
+test('setTheme가 meta 갱신을 syncThemeColorMeta() 호출로 위임한다(정적 검사, 인라인 중복 로직 제거 확인)', () => {
+  const body = extractFunction('setTheme');
+  assert.ok(/syncThemeColorMeta\(\)/.test(body), 'setTheme()이 syncThemeColorMeta()를 호출하지 않음');
+  assert.ok(!/theme-color/.test(body), 'setTheme()에 theme-color meta 로직이 중복으로 남아있음 — syncThemeColorMeta()로 위임해야 함');
+});
+test('OS 다크/라이트 자동전환(matchMedia change) 리스너가 시스템 테마일 때 syncThemeColorMeta()로 상태바색도 함께 동기화한다(app-evolve cycle232)', () => {
+  const idx = src.indexOf("matchMedia('(prefers-color-scheme:dark)').addEventListener('change'");
+  assert.ok(idx !== -1, 'OS 다크모드 변경 리스너를 찾지 못함');
+  const stmtEnd = src.indexOf('\n', idx);
+  const stmt = src.slice(idx, stmtEnd);
+  assert.ok(/themeMode===['"]system['"]/.test(stmt), '리스너가 themeMode==="system"일 때만 반응하는 가드를 잃어버림');
+  assert.ok(/syncThemeColorMeta\(\)/.test(stmt), '리스너가 syncThemeColorMeta()를 호출하지 않아, OS 테마가 바뀌어도 상태바색이 어긋난 채 남음');
+  assert.ok(/renderCurrent\(\)/.test(stmt), '리스너가 renderCurrent()를 호출하지 않아 본문 CSS 갱신이 빠짐(기존 동작 회귀)');
+});
+test('startApp()이 부팅 시 DB.settings.themeMode를 data-theme에 반영한 뒤 syncThemeColorMeta()로 상태바색도 맞춘다(정적 검사)', () => {
+  const body = extractFunction('startApp');
+  const themeIdx = body.indexOf("setAttribute('data-theme'");
+  const syncIdx = body.indexOf('syncThemeColorMeta()');
+  assert.ok(themeIdx !== -1, 'startApp()이 data-theme을 설정하지 않음');
+  assert.ok(syncIdx !== -1, 'startApp()이 syncThemeColorMeta()를 호출하지 않아, 부팅 인라인 캐시와 DB.settings가 어긋나는 경우(다른 기기/구버전에서 바뀐 설정) 상태바색이 복구되지 않음');
+  assert.ok(themeIdx < syncIdx, 'data-theme을 설정하기 전에 syncThemeColorMeta()를 불러 옛 테마 기준으로 색이 계산될 위험');
+});
 /* head 최상단 동기 인라인 스크립트 자체는 cycle177의 SDK 로더 테스트 선례(정적 패턴 검사)와 동일한
  * 방식으로 확인한다 — DOM이 없는 vm 샌드박스에서 "첫 페인트 전에 실행돼야 한다"는 속성 자체를
  * 실행으로 검증할 수 없으므로, 원본 텍스트에서의 등장 순서로 그 불변식을 대신 확인한다. */
