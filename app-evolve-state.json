@@ -1,15 +1,8 @@
 {
   "cycle": 234,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 229,
-      "phase": "review",
-      "timestamp": "2026-10-21T22:05:00.000Z",
-      "summary": "cycle229 develop 커밋(31f16d3, saveAsset()에서 자산 귀속(owner) 변경 시 linkedAssetId로 연결된 asset형 목표의 owner도 함께 동기화)을 검토. 전제부터 재검증: goalOpenAsset()(index.html:3216)이 '연결하는 시점'에만 goalDraft.owner=a.owner로 한 번 맞춰줄 뿐이고, doRenameOwner(4197-4198)는 귀속 '이름이 바뀌는' 경로만 goal.owner를 따라가게 해줄 뿐 자산이 다른 기존 귀속으로 옮겨가는 이번 경로는 다루지 않음을 grep으로 직접 확인 — 진단이 정확함. 추가된 한 줄(DB.goals.forEach(g=>{if(g.type==='asset'&&g.linkedAssetId===d.id&&g.owner!==d.owner){g.owner=d.owner;touch(g)}}))을 추적: owner!==d.owner 가드로 불변 시 불필요한 touch 없음, type==='asset' 체크로 networth형(linkedAssetId 항상 null) 영향 없음, linkedAssetId===d.id로 무관한 목표 보존. grep으로 index.html 전체에서 DB.assets[].owner를 직접 대입하는 지점이 asOpenOwner(saveAsset 경유)·doRenameOwner(기존 처리) 두 곳뿐임을 재확인해, 이번 수정이 자산 귀속 변경의 마지막 공백을 덮었고 더 손봐야 할 동일 유형의 누락 경로가 남아있지 않음을 확인. sanitizeBackup()의 owner 검증(6735-6736)은 validOwners 존재 여부만 보고 linkedAssetId와의 교차검증은 하지 않아 이 수정과는 다른(백업 복원 경로) 별개의 공백이라 범위 밖으로 남겨둠(기존에도 있던 공백, 이번 커밋이 만들거나 악화시키지 않음). 새 테스트 4건을 직접 추적해 diff의 가드 분기(owner 변경/무관 목표/owner 불변/networth형)와 정확히 1:1 대응함을 확인. node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1755/1755 통과. APP_VERSION 1.47.211/sw.js CACHE v478 일치 확인(develop에서 이미 반영). 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 229,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-22T18:17:54.000Z",
       "summary": "general-purpose 서브에이전트가 develop 후보를 탐색해 sanitizeBackup()이 recurrences.startDate/endDate, assets.maturityDate, goals.targetDate, nwHistory.date는 모두 csvDateValid()로 검증하면서 거래(txns)의 date 필드만 유독 truthy 체크(!t.date)만 하고 형식/달력 유효성 검증을 빠뜨린 공백을 발견 — \"2026-02-30\"처럼 형식은 맞지만 달력에 없는 날짜가 그대로 통과되면, allTxns()/monthStats()의 문자열 범위 필터(t.date>=from&&t.date<=to)가 \"30\"을 그 달 마지막 날(28/29)보다 사전순으로 크다고 보아 그 달 범위에서 해당 거래를 제외하면서도, balancesUpTo()의 RANGE_FROM 기준 전체 구간 스캔에는 여전히 포함돼 가계부/월간 수지(제외)와 자산 잔액(포함) 사이에 조용한 수치 drift를 만드는 실사용 버그였다. recurrences의 무효 startDate와 동일한 원칙(필수 날짜 무효 시 레코드 전체 드롭)으로 `if(!t||!t.id||!csvDateValid(t.date))`로 확장해 고쳤다. test/run.js에 2건 추가(형식 무효 날짜 드롭, 달력 무효 날짜(\"2026-02-30\"/\"2026-13-01\") 드롭하면서 같은 배치의 유효 거래는 보존). 수정 전 코드로 되돌려 신규 테스트 2건이 FAIL함을 직접 확인한 뒤 복원. APP_VERSION 1.47.216->1.47.217, sw.js CACHE v483->v484. node --check 통과. node our-assets-v1.14.1/our-assets/test/run.js 1805/1805 -> 1807/1807 통과. 오케스트레이터가 diff/테스트를 직접 재검증한 뒤 commit 82da7ef를 origin/main에 fast-forward push했다.",
       "commit": "82da7ef"
+    },
+    {
+      "cycle": 234,
+      "phase": "review",
+      "timestamp": "2026-10-22T19:08:21.721Z",
+      "summary": "cycle234 develop 커밋(82da7ef, sanitizeBackup()의 거래 날짜 t.date에 csvDateValid 검증 추가)을 검토. 수정 전 코드(index.html:6610 부근)를 git show로 직접 확인: 기존엔 '!t.date'로 truthy만 봤고, 형식/달력 유효성은 안 봤음 — 반면 같은 함수 내 recurrences.startDate(6678줄)·asset.maturityDate(6665줄)·goal.targetDate(6747줄)·recurrences.endDate(6686줄)는 전부 csvDateValid()로 검증하고 있어 t.date만 유일하게 빠져 있었다는 진단이 정확함을 확인. 수정된 가드(!t||!t.id||!csvDateValid(t.date))가 recurrences.startDate와 동일한 '필수 날짜 무효 시 레코드 통째로 제거' 패턴을 그대로 따른 것도 일관성 있음(targetDate/endDate/maturityDate는 선택 필드라 null로만 정규화하는 것과 다른 처리인데, t.date는 txn에 필수이므로 recurrences.startDate와 같은 처리가 맞음). csvDateValid(logic.js:687)가 비문자열/undefined/숫자 입력에도 정규식 test()가 문자열로 강제변환돼 안전하게 false만 반환하고 throw하지 않음을 직접 확인해 크래시 위험 없음을 검증. 기존 rangeCount 체크(6652줄, dateBelowRangeFloor/dateAboveRangeCeil)가 이제 항상 유효한 d.date에 대해서만 동작하게 되어 더 안전해짐(부작용 없음). 새 테스트 2건(형식 불일치 날짜 제거, '2026-02-30'/'2026-13-01' 같은 달력상 존재하지 않는 날짜 제거)을 직접 추적해 diff의 분기와 1:1 대응함을 확인. node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1807/1807 통과. APP_VERSION 1.47.217/sw.js CACHE v484 일치 확인(develop에서 이미 반영). 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
+      "commit": null
     }
   ]
 }
