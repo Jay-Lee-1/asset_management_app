@@ -1,15 +1,8 @@
 {
   "cycle": 230,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 225,
-      "phase": "review",
-      "timestamp": "2026-10-21T06:12:22.772Z",
-      "summary": "cycle225 develop 커밋(b9ecf9b, svg() 헬퍼가 만드는 장식용 아이콘(<svg>/fx 통화기호 <span>)에 aria-hidden=\"true\" 추가, <svg> 분기엔 focusable=\"false\"도 추가)을 검토. index.html 전체에서 svg(n,w) 호출부를 직접 훑어 — 아이콘만 있는 버튼(closeSheet, togglePwVis, delOwner/delCat, moveGroup/moveAsset 등 약 24곳)은 전부 자체 aria-label을 갖고 있었고, 텍스트와 나란히 있는 아이콘(버튼 레이블, 토스트 메시지, picker 서브텍스트)은 그 텍스트가 이미 의미를 전달하며, onclick이 달린 비-button 요소(span/div)에서 svg()가 단독 콘텐츠인 경우는 없음을 확인 — aria-hidden 추가로 접근성이 더 나빠지는 사이트는 없었다. 새 테스트 5건 중 특히 아이콘-only 버튼 패턴을 실제 소스에 정규식으로 돌려 전수 검사하는 테스트(checked>=20 가드 포함)가 커밋의 핵심 주장을 코드로 직접 검증하는 방식이라 견고함. node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1715/1715 통과. 인라인 <script> 블록을 node --check로 재검증(실제 코드 블록 2건 모두 통과; 나머지 1건은 코드 설명 주석 안에 있는 \"<script>\" 리터럴 텍스트를 정규식이 오매칭한 것으로 실제 코드 아님). APP_VERSION 1.47.207->1.47.208/sw.js CACHE v473->v474 갱신도 develop에서 이미 반영. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 225,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-22T01:23:36.145Z",
       "summary": "general-purpose 서브에이전트가 develop 후보를 탐색해 archiveTxnsBefore()(index.html)가 cycle222의 archiveBaselines 연결 이후에도 활성 반복거래(DB.recurrences)는 전혀 건드리지 않아, cutoffDate 이전 반복거래 발생분을 자산 baseAmount에 흡수해놓고도 반복 자체(startDate)를 그대로 둬 같은 과거 회차가 다음 balancesUpTo() 계산에서 또 더해지는 이중 계산 버그를 발견(월급/월세/구독 등 흔한 패턴이라 블라스트 반경이 큼; 기존 테스트가 전부 recurrences:[]로만 검증해 이 경로가 전혀 커버되지 않음). logic.js에 recArchiveStartDate(r,cutoffDate,horizonDays)를 추가해 cutoffDate 다음날부터 recDates()로 그 반복 자신의 첫 미래 회차를 구해 startDate로 쓰도록 했다(임의의 날짜로 당기면 weekly/yearly처럼 startDate 자체가 패턴 기준인 주기가 어긋나므로 recDates() 출력을 그대로 재사용해 패턴 보존; 미래 회차가 없으면 cutoffDate+1로만 민다). archiveTxnsBefore()에서 활성 반복거래마다 적용하고 pruneOrphanRecOverrides()로 과거 skip/edits/confirmedDates를 정리하며 undo 클로저도 startDate/skip/edits/confirmedDates를 함께 복원하도록 확장. APP_VERSION 1.47.211→1.47.212, sw.js CACHE v478→v479 동기 반영. test/run.js에 recArchiveStartDate 순수함수 테스트 6개 + archiveTxnsBefore 통합 테스트 5개(이중계산 회귀 가드 포함) 추가, 회귀 테스트 1782개 전부 통과.",
       "commit": "856f913255d2c9e47a0fcfc2e416ea3cf20f2a38"
+    },
+    {
+      "cycle": 230,
+      "phase": "review",
+      "timestamp": "2026-10-22T02:09:21.000Z",
+      "summary": "cycle230 develop 커밋(856f913, archiveTxnsBefore()가 활성 반복거래의 startDate를 recArchiveStartDate()로 cutoff 이후 첫 회차로 당겨 과거 발생분의 이중 계산을 막고 pruneOrphanRecOverrides로 고아 skip/edits/confirmedDates를 정리)을 검토. recArchiveStartDate가 원본(미변경) r.startDate 기준으로 recDates(r,from,to)를 호출해 패턴(월간 day/주간 요일/연간 월일, weekend 조정 포함)을 그대로 보존하는지 로직을 직접 추적, archiveBaselines()가 구 startDate로 베이스라인을 흡수한 뒤에야 r.startDate를 갱신하는 순서(흡수→갱신 순서가 바뀌지 않음)를 확인. expandRec의 `if(!r.active)return` 체크와 새 코드의 `r.active===false` 체크가 불일치하는 것처럼 보여 처음엔 의심했으나, index.html 2323행(DB.recurrences 로드 시 `active:r.active!==false`로 정규화)과 4920행(신규 생성 시 `active:d.active!==false`)이 active를 항상 boolean으로 강제해 undefined가 절대 남지 않는 불변식을 확인 — 실질적으로 동치라 실제 버그 아님. pruneOrphanRecOverrides가 새 startDate 기준으로 valid set을 재계산해 고아 override만 정리하는 것도 확인. node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1782/1782 통과, 신규 11개 테스트(순수함수 6 + 통합 5) 모두 시나리오를 정확히 커버. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
+      "commit": null
     }
   ]
 }
