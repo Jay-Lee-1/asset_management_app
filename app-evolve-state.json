@@ -1,15 +1,12 @@
 {
   "cycle": 231,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "netlify.toml 보안 헤더가 실제 접속 경로 \"/\"에도 적용되도록 보강 + HSTS 추가",
+    "why": "cycle230이 추가한 CSP(frame-ancestors)/X-Frame-Options/X-Content-Type-Options/Referrer-Policy/Permissions-Policy 5개 헤더가 netlify.toml에서 for = \"/index.html\" 블록 하나에만 걸려 있다. Netlify는 요청 경로 리터럴로 헤더 규칙을 매칭하는데, 실제 PWA는 루트 경로(\"/\")로 접속되고 sw.js SHELL의 첫 엔트리도 \"./\"라 \"/index.html\"과는 별개의 리소스로 취급될 수 있다(Netlify 커뮤니티에 동일 사례 보고 있음: https://answers.netlify.com/t/setting-response-headers-only-on-documents/6144). 즉 cycle230이 막으려던 클릭재킹/MIME스니핑 방어가 실사용 경로에서는 무력화될 수 있는 회귀급 공백. 덧붙여 HTTPS 전용 금융 PWA인데 Strict-Transport-Security 헤더가 전혀 없는 것도 같은 파일의 손쉬운 보강 포인트.",
+    "approach": "1) netlify.toml의 for = \"/index.html\" [[headers]] 블록과 동일한 Cache-Control + 5개 보안 헤더를 가진 for = \"/\" 블록을 새로 추가한다(Netlify는 각 path 패턴이 독립 [[headers]] 블록이라 이 방식이 안전). 2) \"/\"와 \"/index.html\" 두 블록 모두에 Strict-Transport-Security = \"max-age=31536000; includeSubDomains\" 를 추가한다. 3) test/run.js의 extractHeaderBlock(forPath) 헬퍼(cycle227/230에서 이미 사용)를 재사용해: for=\"/\" 블록에 6개 헤더(보안5+HSTS)가 정확한 값으로 있는지, \"/\"와\"/index.html\" 두 블록의 헤더값이 서로 drift 없이 일치하는지(향후 한쪽만 고치는 회귀 방지), 기존 /sw.js·/logic.js·/manifest.webmanifest·*.png·/favicon.ico 캐시 규칙이 그대로인지(회귀 가드) 검증하는 테스트를 추가한다. 4) netlify.toml·test/run.js만 변경되므로 APP_VERSION/sw.js CACHE 버전은 올리지 않는다(cycle227/230과 동일 판단). 5) node our-assets-v1.14.1/our-assets/test/run.js 전체 통과를 확인한 뒤 커밋한다."
+  },
   "history": [
-    {
-      "cycle": 226,
-      "phase": "critique",
-      "timestamp": "2026-10-21T11:00:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-226에서 다룬 모든 영역 전부 제외 지시: toast/invalidateBalances/XSS보류/split거래/pushCloud gzip/mergeDataLoss경고/kakaoLogin병합/nextOutflowCard/#histQ디바운스/recSaveScopeConfirm보류/DB.goals·delOwner/#bootSplash/boot()로컬우선/asFx·asGold·asQty Enter제출(되돌림)/doExport CSV/bulkCatTargets adjust/연금전환복원/selectNwOwner선택id/PIN focus복원/CDN SRI(기각)/dismissedStaleMvIds·budgetCarryFor/crypto자산종류+주말휴장/recDates push()주말이동/archiveBaselines+UI연결/commaQty maximumFractionDigits/recNthDate버퍼버그/mergeRecordFields(보류)/mergeDataLossFields/matchTxnQuery·matchAssetQuery NFC정규화/아이콘배지 WCAG 1.4.11 명도대비/svg() aria-hidden/netlify functions CORS+레이트리미트/sw.js navigate 캐시 가드). assetGainLoss(a)(index.html:2638)가 fx/gold/stock/crypto 자산 '한 개'의 미실현 손익만 계산하고 유일한 호출부(assetGainLossBadge->assetSubline, 3479-3492)가 자산 목록의 행별 미니 배지로만 노출됨을 grep으로 확인(호출부 2곳뿐) — 총자산/총부채, 자산 비중(allocationCard), 순자산 추이, 목표 요약은 모두 전체 합산 카드가 있는데 투자 손익만 전체 합산 뷰가 없어 여러 투자자산을 가진 사용자가 전체 수익률을 한눈에 볼 방법이 없는 실사용 공백을 최우선 과제로 포착. 러너업: 주식분할(stock-split) qty조정(costBasisNeedsUpdate/addCostBasisForBuy, logic.js:578-587 재검토 결과 실제로 버그 아님 — qty만 늘고 추가매수 금액 없으면 costBasis 유지가 split에 정확히 맞는 동작이라 제외), budgetCarryFor 재귀(5636, 24단계 상한)가 렌더마다 spendByCategory 재스캔(범위가 한정적이고 비용 대비 효과 낮아 제외), Netlify 프록시/sw.js/PIN 락/포커스트랩/차트 접근성 전부 재확인 결과 이미 견고하거나 명시적으로 제외된 영역이라 추가 제외. advance 계획(logic.js에 assetAllocation 패턴을 따른 portfolioGainLoss(items) 순수함수 신설, index.html에 allocationCard를 본뜬 investGainLossCard(owner) + refreshInvestGainLossCard() 신설해 renderAssets/selectNwOwner에 배선, test/run.js에 전체이익/손실/혼합/제외/빈값 테스트, APP_VERSION 1.47.208->209·sw.js CACHE v475->476, 범위 넘치면 cycle221/222 선례처럼 순수함수+테스트만 먼저)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
-      "commit": null
-    },
     {
       "cycle": 226,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-22T06:05:00.000Z",
       "summary": "cycle231 develop 커밋(d292d83, sanitizeBackup()에 asset형 목표의 owner를 연결 자산 owner로 동기화하는 블록 추가)을 검토. saveGoal()(3254줄)이 실제로 owner:isAsset?(linkedAsset?linkedAsset.owner:...)로 저장 시점에 동기화하고, saveAsset()(4106줄, cycle229)이 자산 owner 변경 시 (DB.goals||[]).forEach로 연결된 asset형 목표 owner를 되맞추는지 직접 grep/Read로 재확인 — develop 커밋이 주장한 \"asset형 목표의 owner는 항상 연결 자산의 owner와 같다\" 불변식이 실제 코드와 일치함을 확인. sanitizeBackup() 전체를 다시 읽어 새 동기화 블록(6761-6764줄)이 참조하는 지역변수 assets가 goals 루프보다 앞(6642-6654줄)에서 이미 정규화돼 있어 순서상 문제 없음을 확인. owner 유효성 검증(validOwners, 6735-6736줄)이 먼저 d.owner를 'all'로 떨어뜨려도 새 블록이 그 뒤에 linkedAsset.owner로 다시 덮어써 saveGoal/saveAsset과 동일하게 validOwners를 무시하는 동작이 의도적으로 일치함을 확인 — goalOwnerEff()(3101줄)가 DB.owners에 없는 owner는 렌더 시점에 'all'로 안전하게 떨어뜨리므로 연결 자산의 owner가 낡은 값이어도 크래시/오염 위험 없음. node our-assets-v1.14.1/our-assets/test/run.js 재실행해 1788/1788 통과 확인. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 231,
+      "phase": "critique",
+      "timestamp": "2026-10-22T07:00:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-231 전체 다룬 영역 전부 제외 지시, 이번 사이클의 sanitizeBackup 목표owner동기화 포함)한 결과, cycle230 advance가 netlify.toml에 추가한 클릭재킹/MIME스니핑 방어 헤더 5종(CSP frame-ancestors/X-Frame-Options/X-Content-Type-Options/Referrer-Policy/Permissions-Policy)이 for = \"/index.html\" 블록 하나에만 걸려 있어, 실제 PWA 접속 경로인 루트(\"/\")에는 적용되지 않을 수 있는 공백을 포착(Netlify는 요청 경로 리터럴로 헤더 규칙을 매칭하며 동일 사례가 Netlify 커뮤니티에 보고돼 있음: https://answers.netlify.com/t/setting-response-headers-only-on-documents/6144). sw.js SHELL의 첫 엔트리도 \"./\"로 index.html과 별도 리소스 취급될 수 있어, 직전 사이클이 닫으려던 클릭재킹 방어가 실사용 경로에서 무력화될 수 있는 회귀급 공백으로 판단. 같은 파일에 Strict-Transport-Security 헤더도 전혀 없음을 함께 확인. 러너업 기각: netlify rate limiter의 in-memory rlHistory가 콜드스타트마다 리셋되는 구조적 약점(외부 스토어 필요해 사이클 범위 초과로 제외), PBKDF2 12만회 반복이 OWASP 권고(약60만회)보다 낮음(짧은 숫자 PIN 오프라인 브루트포스 방어 효과 미미해 실질적 고정이 아니라고 판단해 제외), sw.js 캐시우선 전략 재검토(기존에 이미 견고함 재확인), 모바일 가상키보드 뷰포트 가림(재현 사례 없어 추측성이라 제외). advance 계획(netlify.toml에 for=\"/\" 블록 신설(기존 /index.html 블록과 동일 헤더6종+Cache-Control) + HSTS 추가 + extractHeaderBlock 재사용한 drift방지/회귀 테스트, index.html/logic.js/sw.js 무변경이라 버전 범프 불필요)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
       "commit": null
     }
   ]
