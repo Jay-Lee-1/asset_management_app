@@ -1398,7 +1398,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.212';
+const APP_VERSION='1.47.213';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6742,6 +6742,26 @@ function sanitizeBackup(obj){
    * goalHistoryFor/goalLinkedAssetGone이 이미 "자산이 사라졌으면 추측하지 않고 중립 안내"로 안전하게
    * 처리한다(goalRowHTML 참고) — targetDate/owner와 달리 크래시나 데이터 오염 위험이 없다. */
   if(d.type!=='asset'){if(d.type&&d.type!=='networth')fixedCount++;d.type='networth';d.linkedAssetId=null} /* owner 필드와 동일하게, 그냥 없는 경우(구버전 백업)는 기본값만 채우고 fixedCount를 안 늘린다 — 실제로 손상된(비어있지 않은데 'asset'도 'networth'도 아닌) 값만 "고친 것"으로 센다 */
+  /* saveGoal()은 저장 시점에 asset형 목표의 owner를 항상 연결 자산의 owner로 맞추고(3254줄),
+   * saveAsset()은 자산 귀속이 바뀔 때마다 그 자산에 연결된 목표의 owner를 실시간으로 다시 맞춰준다
+   * ("asset형 목표의 owner는 항상 연결 자산의 owner와 같다"는 불변식, app-evolve cycle229) — 하지만
+   * 그 두 경로 모두 '지금 이 앱에서 편집할 때'만 동작해, 백업 복원(restoreBackup)·클라우드 풀
+   * (resolveCloudPullRemote 등 DB=sanitizeBackup(remote).data로 통째 교체하는 경로)로 들어오는
+   * 문서는 이 검증을 전혀 거치지 않는다. cycle229 수정 이전 버전의 앱이나, 아직 그 수정을 못 받은
+   * 다른 기기에서 만들어진 백업/원격 문서는 자산 귀속을 바꾼 뒤에도 목표의 owner가 낡은 값 그대로
+   * 남아있을 수 있고, 그걸 복원하거나 당겨오면 goalOwnerEff/goalsSummaryCard·nearestGoal의 owner
+   * 일치 필터가 다시 틀어져 목표가 자산의 실제 귀속 캐러셀에서 보이지 않는다 — cycle229가 '실시간
+   * 편집'에서 고친 버그가 '복원'이라는 경로로 그대로 되살아나는 셈이다. 위 owner 검증(validOwners)은
+   * "이 owner 이름이 존재하는가"만 보고 "이 목표가 가리키는 자산이 실제로 그 owner인가"는 보지
+   * 않으므로, 연결 자산이 살아있으면(assets는 바로 위에서 이미 정규화된 배열) 그 쪽을 더 구체적인
+   * 진실로 보고 덮어쓴다 — 자산 자신의 owner가 DB.owners에 없는 낡은 값이어도 goalOwnerEff가 렌더
+   * 시점에 'all'로 안전하게 떨어뜨리므로, 자산과 다시 어긋나게 두는 것보다 낫다(saveAsset 동기화와
+   * 동일한 원칙). 자산이 이미 사라졌으면(goalLinkedAssetGone) 동기화할 기준이 없어 위에서 정해진
+   * owner를 그대로 둔다. */
+  if(d.type==='asset'&&d.linkedAssetId){
+   const linkedAsset=assets.find(x=>x.id===d.linkedAssetId);
+   if(linkedAsset&&linkedAsset.owner!==d.owner){d.owner=linkedAsset.owner;fixedCount++}
+  }
   goals.push(d);
  });
  /* DB.inquiries(문의하기 메모, cycle133)도 txns/assets/recurrences/goals와 같은 검증 분기가

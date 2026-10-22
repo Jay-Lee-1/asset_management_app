@@ -4122,6 +4122,45 @@ test('sanitizeBackup: 백업에 owners 목록이 없으면 지금 이 기기의 
   const r = sandbox.sanitizeBackup({ txns: [], assets: [], goals: [{ id: 'g1', name: '목표', owner: '나' }] });
   assert.strictEqual(r.data.goals[0].owner, '나', 'obj.owners가 없을 때 현재 DB.owners에 있는 이름은 유지돼야 함');
 });
+/* saveGoal()/saveAsset()이 실시간 편집에서 강제하는 "asset형 목표의 owner는 항상 연결 자산의
+ * owner와 같다" 불변식(app-evolve cycle229)을 백업 복원/클라우드 풀 경로(sanitizeBackup)에서도
+ * 지키는지 확인 — cycle229 수정 이전 버전이 만든 백업/원격 문서가 들고 있을 수 있는 낡은 owner를
+ * 복원 시점에 연결 자산 쪽으로 다시 맞춘다. */
+test('sanitizeBackup: type:"asset" 목표의 owner가 연결된 자산의 실제 owner와 다르면(오래된 백업/원격 문서) 자산 쪽으로 맞추고 fixedCount를 센다', () => {
+  const r = sandbox.sanitizeBackup({
+    txns: [], owners: ['나', '배우자'],
+    assets: [{ id: 'a1', type: 'cash', name: '통장', owner: '배우자' }],
+    goals: [{ id: 'g1', name: '비상금', type: 'asset', linkedAssetId: 'a1', owner: '나', targetAmount: 100000 }],
+  });
+  assert.strictEqual(r.data.goals[0].owner, '배우자', 'saveGoal/saveAsset과 동일하게 연결 자산의 owner가 항상 이겨야 함');
+  assert.strictEqual(r.fixedCount, 1);
+});
+test('sanitizeBackup: type:"asset" 목표의 owner가 이미 연결 자산의 owner와 같으면 그대로 두고 fixedCount를 늘리지 않는다(정상 케이스는 회귀 없음)', () => {
+  const r = sandbox.sanitizeBackup({
+    txns: [], owners: ['나'],
+    assets: [{ id: 'a1', type: 'cash', name: '통장', owner: '나' }],
+    goals: [{ id: 'g1', name: '비상금', type: 'asset', linkedAssetId: 'a1', owner: '나', targetAmount: 100000 }],
+  });
+  assert.strictEqual(r.data.goals[0].owner, '나');
+  assert.strictEqual(r.fixedCount, 0);
+});
+test('sanitizeBackup: 연결된 자산이 백업에 없으면(삭제됨) owner를 자산 쪽으로 동기화하지 않고 기존 owner 검증 결과를 그대로 둔다', () => {
+  const r = sandbox.sanitizeBackup({
+    txns: [], owners: ['나'],
+    assets: [],
+    goals: [{ id: 'g1', name: '사라진 자산 목표', type: 'asset', linkedAssetId: 'no-such-asset', owner: '나', targetAmount: 100000 }],
+  });
+  assert.strictEqual(r.data.goals[0].owner, '나', '동기화할 기준 자산이 없으면 owner 검증 결과를 건드리면 안 됨');
+});
+test('sanitizeBackup: type:"networth" 목표는 linkedAssetId가 남아있어도(손상된 데이터) 자산 owner 동기화의 영향을 받지 않는다', () => {
+  const r = sandbox.sanitizeBackup({
+    txns: [], owners: ['나', '배우자'],
+    assets: [{ id: 'a1', type: 'cash', name: '통장', owner: '배우자' }],
+    goals: [{ id: 'g1', name: '순자산 목표', type: 'networth', linkedAssetId: 'a1', owner: '나', targetAmount: 100000 }],
+  });
+  assert.strictEqual(r.data.goals[0].owner, '나', 'networth형은 linkedAssetId가 null로 떨어지므로 자산 owner와 무관해야 함');
+  assert.strictEqual(r.data.goals[0].linkedAssetId, null);
+});
 
 /* mergeRemoteDataIntoLocal이 DB.txns/recurrences/assets처럼 DB.goals도 mergeCollection으로
  * 병합하는지 직접 확인 — cycle122가 DB.goals를 신설할 때 이 배선이 누락됐었다(critique cycle123). */
