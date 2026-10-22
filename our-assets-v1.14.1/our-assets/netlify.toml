@@ -6,10 +6,20 @@
   functions = "netlify/functions"
 
 # 앱 본체와 서비스워커는 항상 최신본을 받도록 캐시하지 않습니다(업데이트 즉시 반영).
+# PIN 잠금·Supabase/Kakao 인증·실제 금융 데이터를 다루는 페이지인데도 지금까지 클릭재킹/
+# MIME스니핑 방어 헤더가 전혀 없었다(app-evolve cycle230 advance). index.html이 inline
+# onclick/인라인 <script>를 광범위하게 쓰므로 script-src를 조이는 엄격한 CSP는 기존 동작을
+# 깨뜨릴 위험이 커서 건드리지 않고, frame-ancestors로 프레이밍만 차단한다(공격자가 투명
+# iframe으로 화면을 감싸 PIN 해제·삭제 버튼 클릭을 가로채는 것을 막음).
 [[headers]]
   for = "/index.html"
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
+    Content-Security-Policy = "frame-ancestors 'none'"
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
 
 [[headers]]
   for = "/sw.js"

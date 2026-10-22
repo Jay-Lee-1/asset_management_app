@@ -1,11 +1,7 @@
 {
-  "cycle": 230,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "netlify.toml에 클릭재킹/MIME스니핑/리퍼러 방어 HTTP 보안 헤더 추가",
-    "why": "이 앱은 PIN 잠금, Supabase/Kakao 인증, 실제 금융 데이터를 다루는데도 배포 레벨 HTTP 응답에 X-Frame-Options/Content-Security-Policy(frame-ancestors)/X-Content-Type-Options/Referrer-Policy/Permissions-Policy가 전혀 설정돼 있지 않다(index.html·sw.js·netlify.toml·netlify/functions/*.js 전체에 grep으로 확인, 토큰 0건). netlify.toml은 지금까지 Cache-Control 규칙만 갖고 있고(cycle227이 logic.js 캐시 규칙을 추가), cycle225의 CORS+레이트리밋은 API 함수(stock/rates/crypto.js) 응답 쪽 범위라 페이지 자체의 프레이밍 방어와는 무관하다. 클릭재킹 방어가 없으면 공격자가 투명 iframe으로 앱 화면(PIN 해제, 설정 변경, 거래/자산 삭제 버튼 등)을 감싸 사용자의 실제 탭을 가로챌 수 있다. index.html이 inline onclick 핸들러와 인라인 <script>를 광범위하게 쓰므로 엄격한 script-src CSP(unsafe-inline 제거)는 실익 대비 리스크가 너무 크지만, frame-ancestors/X-Frame-Options/X-Content-Type-Options/Referrer-Policy는 기존 inline 스크립트 동작에 전혀 영향을 주지 않으면서 가장 비용 대비 효과가 큰 방어선이다.",
-    "approach": "1) netlify.toml: 기존 [[headers]] for=\"/index.html\" 블록(및 필요시 전역 for=\"/*\" 블록을 새로 추가)에 다음을 추가 — Content-Security-Policy: \"frame-ancestors 'none'\" (스크립트 정책은 건드리지 않고 프레이밍만 차단), X-Frame-Options: \"DENY\" (구형 브라우저 폴백), X-Content-Type-Options: \"nosniff\", Referrer-Policy: \"strict-origin-when-cross-origin\", Permissions-Policy: \"camera=(), microphone=(), geolocation=()\" (앱이 쓰지 않는 센서 차단). manifest.webmanifest/sw.js 블록에도 X-Content-Type-Options 정도는 같이 넣을지 검토(프레임 방어는 HTML에만 필요). 2) sw.js/index.html 자체는 변경 불필요 — frame-ancestors/X-Frame-Options는 응답 헤더만으로 동작하므로 PWA standalone 모드(홈화면 추가)나 서비스워커 캐시 동작에 영향 없음(이 자체도 테스트로 확인). 3) test/run.js: 기존 cycle227이 만든 extractHeaderBlock(forPath) 헬퍼를 재사용해 '/index.html' 블록에 새 5개 헤더가 정확한 값으로 있는지 검증하는 테스트 추가, 그리고 기존 Cache-Control 규칙들이 그대로 유지되는지의 회귀 가드 테스트도 추가(cycle227 패턴과 동일하게 '/sw.js'·'/*.png' 등 기존 블록이 안 깨졌는지). 4) 버전 범프: netlify.toml과 test/run.js만 바뀌므로 APP_VERSION/sw.js CACHE 버전 모두 올리지 않음."
-  },
+  "cycle": 231,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
     {
       "cycle": 225,
@@ -145,6 +141,13 @@
       "phase": "critique",
       "timestamp": "2026-10-22T00:00:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-230에서 다룬 모든 영역 전부 제외 지시, archiveTxnsBefore 반복거래 이중계산 버그수정과 netlify handler 테스트 커버리지 포함)한 결과, 배포 레벨 HTTP 보안 헤더 부재를 포착. netlify.toml·index.html·sw.js·netlify/functions/*.js 전체에 X-Frame-Options/Content-Security-Policy(frame-ancestors)/X-Content-Type-Options/Referrer-Policy/Permissions-Policy 토큰이 전혀 없음을 grep으로 확인(0건) — netlify.toml은 지금까지 Cache-Control 규칙(cycle227이 logic.js용 추가)만 갖고 있었고, cycle225의 CORS+레이트리밋은 API 함수(stock/rates/crypto.js) 응답 쪽 범위라 페이지 자체의 프레이밍 방어와는 무관함을 확인. 이 앱은 PIN 잠금화면·Supabase/Kakao 인증·실제 자산·거래 데이터를 다루는 금융 앱인데 클릭재킹 방어가 전혀 없어, 공격자가 투명 iframe으로 앱을 감싸 PIN 해제·설정변경·거래/자산 삭제 같은 동작을 사용자 모르게 유도할 수 있는 여지가 있음. 러너업 기각: CSV 가져오기 범용 은행포맷 확장(스펙 불명확, 가치 낮음), 지출분석 도넛/파이차트(순수 취향, 버그 아님), assetQ 디바운스(histQ와 비용구조 달라 가짜긍정), goal linkedAssetId 삭제처리(cycle214에서 이미 중립안내로 처리됨, 결함없음 재확인), PIN 무차별대입 방어(AUTH._clearFails/APPLOCK_FAIL_KEY 락아웃 이미 존재, 결함없음). advance 계획(netlify.toml에 frame-ancestors 'none'/X-Frame-Options DENY/X-Content-Type-Options nosniff/Referrer-Policy strict-origin-when-cross-origin/Permissions-Policy 추가 + cycle227의 extractHeaderBlock 헬퍼 재사용한 회귀테스트, index.html/logic.js/sw.js 무변경이라 버전 범프 불필요)를 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "commit": null
+    },
+    {
+      "cycle": 230,
+      "phase": "advance",
+      "timestamp": "2026-10-22T03:05:00.000Z",
+      "summary": "critique(cycle230) 계획대로 netlify.toml의 /index.html [[headers]] 블록에 클릭재킹/MIME스니핑/리퍼러/권한 방어 헤더 5개(Content-Security-Policy: frame-ancestors 'none', X-Frame-Options: DENY, X-Content-Type-Options: nosniff, Referrer-Policy: strict-origin-when-cross-origin, Permissions-Policy: camera=()/microphone=()/geolocation=())를 추가했다. index.html이 inline onclick/인라인 <script>를 광범위하게 쓰므로 script-src를 조이는 CSP는 건드리지 않고 frame-ancestors로 프레이밍만 차단(기존 inline 스크립트 동작에 영향 없음, PWA standalone 모드·서비스워커 캐시 동작과도 무관). test/run.js에 cycle227의 extractHeaderBlock(forPath) 헬퍼를 재사용해 새 헤더 5개가 정확한 값으로 있는지 검증하는 테스트 1건, 기존 Cache-Control 규칙이 그대로 유지되는지 회귀 가드 1건 추가. netlify.toml·test/run.js만 변경이라 APP_VERSION/sw.js CACHE 버전은 올리지 않았다. node our-assets-v1.14.1/our-assets/test/run.js 1782/1782 -> 1784/1784 통과. pending_advance_plan은 null로 비웠다.",
       "commit": null
     }
   ]

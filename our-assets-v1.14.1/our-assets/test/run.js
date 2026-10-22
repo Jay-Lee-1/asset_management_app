@@ -20457,6 +20457,24 @@ test('netlify.toml: *.png/favicon.ico의 긴 캐시(immutable) 규칙은 logic.j
   assert.ok(favBlock && favBlock.includes('max-age=31536000, immutable'), '/favicon.ico 긴 캐시 규칙이 사라지거나 바뀜');
 });
 
+/* ---------- netlify.toml: index.html 클릭재킹/MIME스니핑 방어 헤더 (app-evolve cycle230 advance) ---------- */
+// PIN 잠금·실제 금융 데이터를 다루는 페이지인데 배포 레벨에 프레이밍 방어가 전혀 없었다.
+// script-src를 조이는 CSP는 기존 inline 핸들러를 깨뜨리므로 건드리지 않고, frame-ancestors로
+// 프레이밍만 막는다 — 공격자가 투명 iframe으로 화면을 감싸 클릭을 가로채는 걸 방지.
+test('netlify.toml: /index.html에 클릭재킹/MIME스니핑/리퍼러/권한 방어 헤더가 있다', () => {
+  const block = extractHeaderBlock('/index.html');
+  assert.ok(block, 'netlify.toml에 "/index.html"용 [[headers]] 규칙이 없음');
+  assert.ok(block.includes(`Content-Security-Policy = "frame-ancestors 'none'"`), 'frame-ancestors CSP가 없음 — 투명 iframe을 통한 클릭재킹을 막지 못함');
+  assert.ok(block.includes('X-Frame-Options = "DENY"'), 'X-Frame-Options이 없음 — CSP frame-ancestors를 모르는 구형 브라우저에서 클릭재킹 방어가 빠짐');
+  assert.ok(block.includes('X-Content-Type-Options = "nosniff"'), 'X-Content-Type-Options이 없음 — MIME 스니핑 방어가 빠짐');
+  assert.ok(block.includes('Referrer-Policy = "strict-origin-when-cross-origin"'), 'Referrer-Policy가 없음');
+  assert.ok(block.includes('Permissions-Policy = "camera=(), microphone=(), geolocation=()"'), 'Permissions-Policy가 없음 — 앱이 쓰지 않는 센서 접근이 차단되지 않음');
+});
+test('netlify.toml: 새 보안 헤더 추가 후에도 /index.html의 Cache-Control 규칙은 그대로다 — 회귀 가드', () => {
+  const block = extractHeaderBlock('/index.html');
+  assert.ok(block && block.includes('Cache-Control = "public, max-age=0, must-revalidate"'), '/index.html의 캐시 안 함 규칙이 사라지거나 바뀜');
+});
+
 /* ---------- 실행 ---------- */
 // pbkdf2Hash는 Web Crypto(subtle.deriveBits)를 쓰는 비동기 함수라, 러너도 async test를
 // 지원해야 한다 — sync test는 그냥 await해도 즉시 반환되므로 기존 테스트에는 영향 없다.
