@@ -1398,7 +1398,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.211';
+const APP_VERSION='1.47.212';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -8435,11 +8435,29 @@ function archiveTxnsBefore(cutoffDate){
   prevBase[a.id]={baseAmount:a.baseAmount,amountKRW:a.amountKRW};
   if(a.baseAmount!=null)a.baseAmount=baselines[a.id];else a.amountKRW=baselines[a.id];
   touch(a);});
+ /* 활성 반복거래(active!==false)는 DB.txns처럼 실제로 지워지는 레코드가 아니라 매번 RANGE_FROM부터
+  * recDates()/expandRec()로 다시 전개되므로, 위에서 cutoffDate까지의 발생분을 베이스라인에
+  * 흡수해놓고 반복 자체는 그대로 두면 같은 과거 회차가 다음 잔액 계산에서 또 더해져 이중
+  * 계산된다(app-evolve cycle230 critique — cycle222가 연결한 archiveBaselines 경로에 반복거래
+  * 테스트가 전혀 없어 놓친 공백). recArchiveStartDate()(logic.js)로 cutoffDate 이후 첫 회차로
+  * startDate를 당겨 과거분만 더 이상 생성되지 않게 하고, pruneOrphanRecOverrides로 이제 생성되지
+  * 않는 과거 skip/edits/confirmedDates도 함께 정리한다. */
+ const prevRec={};
+ (DB.recurrences||[]).forEach(r=>{
+  if(r.active===false)return; /* expandRec도 비활성 반복은 애초에 전개하지 않으므로(베이스라인에 안 섞임) 손댈 필요 없음 */
+  const newStart=recArchiveStartDate(r,cutoffDate);
+  if(newStart===r.startDate)return;
+  prevRec[r.id]={startDate:r.startDate,skip:r.skip,edits:r.edits,confirmedDates:r.confirmedDates};
+  r.startDate=newStart;
+  pruneOrphanRecOverrides(r);
+  touch(r);
+ });
  DB.txns=DB.txns.filter(t=>t.date>cutoffDate);
  DB.deletedIds=DB.deletedIds||{};const now=Date.now();removed.forEach(t=>DB.deletedIds[t.id]=now);
  save();renderCurrent();
  undoToast(`${removed.length}개의 오래된 내역을 정리했어요`,()=>{
   DB.assets.forEach(a=>{const p=prevBase[a.id];if(!p)return;a.baseAmount=p.baseAmount;a.amountKRW=p.amountKRW;touch(a)});
+  (DB.recurrences||[]).forEach(r=>{const p=prevRec[r.id];if(!p)return;r.startDate=p.startDate;r.skip=p.skip;r.edits=p.edits;r.confirmedDates=p.confirmedDates;touch(r)});
   DB.txns.push(...removed);removed.forEach(t=>delete DB.deletedIds[t.id]);
   save();renderCurrent();toast('되돌렸어요')});
 }

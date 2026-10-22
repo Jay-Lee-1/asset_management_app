@@ -115,6 +115,29 @@ function recCountUntil(base,endDate){ /* 시작일~종료일 사이 반복 횟�
 function truncateRecEnd(base,cutoffDate){ /* 반복을 cutoffDate까지로 자를 때 endDate·count를 항상 함께 맞춘다 — count 없이 endDate만 남으면 clampRecurringToMaturity()가 이 명시적 절단을 자기 auto-clamp로 오인해 나중에 만기 연장 시 삭제된 회차를 되살린다(recApply/recSave/splitRecurrenceAt이 공유하는 불변식) */
  return {endDate:cutoffDate,count:recCountUntil(base,cutoffDate)};
 }
+/* 오래된 거래 아카이브(archiveTxnsBefore/index.html)가 cutoffDate 이전 반복거래 발생분을
+ * archiveBaselines()로 자산 baseAmount에 흡수한 뒤, 그 반복이 다음 잔액 계산에서 같은 과거
+ * 회차를 또 만들어내지 않게 하려면 startDate 자체를 cutoffDate 이후로 당겨야 한다 — 반복거래는
+ * DB.txns처럼 실제로 저장/삭제되는 레코드가 아니라 매번 RANGE_FROM부터 recDates()/expandRec()로
+ * 즉석 재전개되므로, 베이스라인만 바꾸고 startDate를 그대로 두면 흡수된 과거 회차가 다음 계산에서
+ * 또 더해져 이중 계산된다(app-evolve cycle230 critique가 cycle222의 archiveBaselines+UI 연결에서
+ * 발견한 공백 — 테스트가 전부 recurrences:[]만 써서 이 경로를 전혀 검증하지 않고 있었다).
+ * startDate를 cutoffDate+1 같은 임의의 날짜로 당기면 weekly/yearly처럼 startDate 자체가 요일/월일
+ * 기준이 되는 주기가 어긋난다(예: 매주 월요일 반복의 startDate를 화요일로 바꾸면 그 뒤로 전부
+ * 화요일 반복이 됨, monthly는 r.day가 별도 필드라 영향 없지만 weekly/yearly는 startDate가 곧 패턴).
+ * recDates()가 cutoffDate 다음날부터 생성한 '그 반복 자신의 첫 미래 회차'를 그대로 새 startDate로
+ * 쓰면 이미 그 패턴에 맞는 날짜(shiftWeekend 적용 후 값 포함)라 어긋나지 않는다. endDate가
+ * cutoffDate 이전이라 미래 회차가 전혀 없으면(이미 끝난 반복) startDate를 cutoffDate+1로만 밀어
+ * 더는 아무 날짜도 생성되지 않게 한다 — 끝난 반복이라 보존할 패턴 자체가 없으므로 날짜가
+ * 어긋날 일도 없다. horizonDays(기본 400)는 1년 주기(yearly)도 반드시 한 번은 걸리는 여유다.
+ * 변경이 필요 없으면(아직 시작 안 한 미래 반복 등) 받은 r.startDate를 그대로 돌려준다 — 호출부가
+ * '반환값===r.startDate'로 손댈지 말지 판정한다. */
+function recArchiveStartDate(r,cutoffDate,horizonDays){
+ horizonDays=horizonDays||400;
+ const from=addDays(cutoffDate,1);
+ const future=recDates(r,from,addDays(cutoffDate,horizonDays));
+ return future.length?future[0]:from;
+}
 
 /* ================= OWNER / SPEND ANALYSIS ================= */
 /* 거래를 귀속(owner)으로 거른다 — assets는 {id,owner} 배열(DB.assets 그대로 넘기면 됨).

@@ -3217,6 +3217,48 @@ test('archiveBaselines: isPendingFn을 생략하면 모든 거래를 확정된 �
   assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.archiveBaselines(assets, txns, '2025-01-01'))), { a1: 500 });
 });
 
+/* ---------- recArchiveStartDate: 아카이브 후 반복거래 startDate 전진 (순수, logic.js)
+ * (app-evolve cycle230 critique/advance) ----------
+ * archiveBaselines()는 cutoffDate까지의 반복거래 발생분(expandRec(RANGE_FROM,cutoffDate))까지
+ * 베이스라인에 흡수하는데, 반복거래는 DB.txns처럼 지워지는 레코드가 아니라 매번 RANGE_FROM부터
+ * recDates()로 재전개되므로, 반복 자체의 startDate를 cutoffDate 이후로 당기지 않으면 흡수된 과거
+ * 회차가 다음 잔액 계산에서 또 더해져 이중 계산된다(archiveTxnsBefore 통합 테스트가 이 이중 계산을
+ * 직접 재현/검증한다). recArchiveStartDate()는 그 새 startDate를 '그 반복 자신의 cutoffDate 이후
+ * 첫 회차'로 골라, weekly/yearly처럼 startDate 자체가 요일/월일 패턴인 주기가 어긋나지 않게 한다. ---------- */
+test('recArchiveStartDate: monthly(매월 15일) — cutoff 다음 달의 같은 날짜(15일)를 그대로 돌려준다', () => {
+  const r = { freq: 'monthly', day: 15, startDate: '2023-01-15', endDate: null, weekend: 'none' };
+  assert.strictEqual(sandbox.recArchiveStartDate(r, '2024-12-31'), '2025-01-15');
+});
+test('recArchiveStartDate: weekly(매주 월요일) — 요일 패턴이 어긋나지 않고 cutoff 이후 첫 월요일을 돌려준다', () => {
+  const r = { freq: 'weekly', startDate: '2023-01-02', endDate: null, weekend: 'none' }; // 2023-01-02는 월요일
+  const next = sandbox.recArchiveStartDate(r, '2024-12-31');
+  assert.strictEqual(next, '2025-01-06');
+  assert.strictEqual(new Date(next + 'T00:00:00').getDay(), 1, '요일(월요일) 패턴이 그대로 유지되어야 함');
+});
+test('recArchiveStartDate: yearly(매년 6월 15일) — cutoff 이후 돌아오는 해의 같은 월/일을 돌려준다', () => {
+  const r = { freq: 'yearly', startDate: '2020-06-15', endDate: null, weekend: 'none' };
+  assert.strictEqual(sandbox.recArchiveStartDate(r, '2024-12-31'), '2025-06-15');
+});
+test('recArchiveStartDate: 아직 시작하지 않은(startDate가 cutoff 이후인) 반복은 손대지 않고 startDate를 그대로 돌려준다', () => {
+  const r = { freq: 'monthly', day: 1, startDate: '2026-01-01', endDate: null, weekend: 'none' };
+  assert.strictEqual(sandbox.recArchiveStartDate(r, '2024-12-31'), r.startDate);
+});
+test('recArchiveStartDate: endDate가 cutoff 이전이라 더 생성될 회차가 전혀 없는(이미 끝난) 반복은 startDate를 cutoff+1로 밀어 더는 아무 날짜도 생성되지 않게 한다', () => {
+  const r = { freq: 'monthly', day: 1, startDate: '2023-01-01', endDate: '2023-06-01', weekend: 'none' };
+  const next = sandbox.recArchiveStartDate(r, '2024-12-31');
+  assert.strictEqual(next, '2025-01-01');
+  // recDates()가 돌려주는 배열은 vm 샌드박스(다른 realm) 소속이라 메인 realm 리터럴([])과
+  // deepStrictEqual 비교 시 구조가 같아도 실패한다(위 bulkCatTargets 섹션과 동일한 realm 경계
+  // 문제) — length로만 "아무 것도 생성되지 않음"을 확인한다.
+  assert.strictEqual(sandbox.recDates(Object.assign({}, r, { startDate: next }), '2020-01-01', '2030-01-01').length, 0, '밀어낸 뒤로는 아무 회차도 생성되지 않아야 함');
+});
+test('recArchiveStartDate: weekend 조정(earlier)까지 거친 실제 생성값을 그대로 돌려준다(패턴 재가공 없이 recDates의 결과를 그대로 재사용)', () => {
+  const r = { freq: 'monthly', day: 1, startDate: '2023-01-01', endDate: null, weekend: 'earlier' };
+  // 2024-12-01은 일요일이라 earlier 조정으로 2024-11-29(금)로 당겨지는데, cutoff(2024-11-30) 이후만
+  // 찾으므로 그 회차는 제외되고 다음(2025-01-01, 수요일·조정 없음)이 나와야 함
+  assert.strictEqual(sandbox.recArchiveStartDate(r, '2024-11-30'), '2025-01-01');
+});
+
 /* ---------- contrastRatio: WCAG 명도대비 (logic.js, app-evolve cycle224 critique/advance) ----------
  * .a-cash/.a-bank만 라이트 테마에서 --brand-ink를 써 WCAG 1.4.11(비텍스트 3:1)을 넘기고,
  * 나머지 자산/귀속 배지(.a-fx/.a-gold/.a-house/.a-crypto/.a-food/.a-debt/.a-save/.own-3/.own-4)는
@@ -5757,6 +5799,101 @@ test('monthWheelApply: which==="archive"면 고른 연/월로 archiveMonthPicked
 test("renderMenu: '백업 · 데이터' 그룹에 '오래된 데이터 정리' 항목이 openArchiveOld()를 가리킨다(소스 패턴 검증)", () => {
   const body = extractFunction('renderMenu');
   assert.ok(/\{ic:'trash',l:'오래된 데이터 정리',a:"openArchiveOld\(\)"\}/.test(body), "메뉴 항목이 openArchiveOld()를 가리켜야 함");
+});
+
+/* ---------- archiveTxnsBefore × 반복거래(recurrences): startDate 전진으로 이중 계산 방지
+ * (app-evolve cycle230 critique/advance) ----------
+ * 위 archiveTxnsBefore 테스트들은 전부 recurrences:[]만 써서, 활성 반복거래가 cutoffDate 이전에
+ * 실제로 발생시킨 회차를 전혀 검증하지 않고 있었다 — archiveBaselines()는 expandRec(RANGE_FROM,
+ * cutoffDate)로 그 발생분까지 베이스라인에 흡수하지만, 반복거래 자체(DB.recurrences)는 손대지
+ * 않으면 다음 잔액 계산(balancesUpTo 등)이 매번 RANGE_FROM부터 recDates()로 그 반복을 다시
+ * 전개해 같은 과거 회차를 또 더한다(실사용에선 이 버그가 적용되면 '오래된 데이터 정리'를 누른
+ * 자산의 잔액이 그 자리에서 조용히 부풀어 오른다). recArchiveStartDate()(logic.js)로 startDate를
+ * cutoff 이후 첫 회차로 당겨 과거분이 다시 생성되지 않게 하는 배선을 검증한다. ---------- */
+test('archiveTxnsBefore: 활성 반복거래는 베이스라인 흡수 후 startDate가 cutoff 이후 첫 회차로 당겨져, 같은 과거 회차가 다시 전개돼 이중 계산되지 않는다', () => {
+  sandbox.TWi = -1;
+  const a1 = { id: 'a1', type: 'cash', baseAmount: 0 };
+  const r1 = { id: 'r1', active: true, type: 'income', category: '급여', memo: '', amount: 100000, fromAssetId: null, toAssetId: 'a1', freq: 'monthly', day: 15, startDate: '2023-01-15', endDate: null, weekend: 'none', skip: [], edits: {}, confirmedDates: [] };
+  const origR1 = JSON.parse(JSON.stringify(r1));
+  sandbox.DB = { assets: [a1], txns: [], recurrences: [r1], settings: {}, deletedIds: {} };
+  sandbox.lastUndo = null;
+  sandbox._recCache.clear(); // expandRec()는 [from,to] 문자열만으로 캐시하므로, 다른 테스트가 먼저 채워둔
+  // 같은 cutoffDate('2024-12-31') 캐시가 이 테스트의 recurrences를 무시하고 새지 않도록 비운다.
+
+  const target = '2025-03-15'; // cutoff 이후로도 몇 회차 더 지난 임의의 미래 시점
+  // 아카이브를 전혀 하지 않았을 때 target 시점까지 쌓였어야 할 '정답' 회차 수
+  const expectedCount = sandbox.recDates(origR1, sandbox.RANGE_FROM, target).length;
+
+  sandbox.archiveTxnsBefore('2024-12-31');
+
+  assert.strictEqual(r1.startDate, '2025-01-15', "startDate가 cutoff 이후 첫 회차(매월 15일 패턴 유지)로 당겨져야 함");
+  assert.strictEqual(r1.updatedAt, 'test-updatedAt', '반복거래도 touch()되어야 함(mergeCollection 동기화 불변식)');
+
+  // 아카이브 후 target 시점까지의 누적 = 새 baseAmount(흡수분) + (당겨진 startDate부터 target까지 남은 회차 수)
+  const remainingCount = sandbox.recDates(r1, sandbox.RANGE_FROM, target).length;
+  const afterTotal = a1.baseAmount / 100000 + remainingCount;
+  assert.strictEqual(afterTotal, expectedCount, '아카이브 전후로 같은 시점의 누적 회차 수가 같아야 함(과거 회차가 베이스라인과 재전개 양쪽에서 중복되면 afterTotal이 expectedCount보다 커짐)');
+});
+test('archiveTxnsBefore: startDate가 바뀐 반복거래는 더 이상 생성되지 않는 과거 skip/edits/confirmedDates를 pruneOrphanRecOverrides로 함께 정리한다', () => {
+  sandbox.TWi = -1;
+  const a1 = { id: 'a1', type: 'cash', baseAmount: 0 };
+  const r1 = {
+    id: 'r1', active: true, type: 'income', category: '급여', memo: '', amount: 100000, fromAssetId: null, toAssetId: 'a1',
+    freq: 'monthly', day: 15, startDate: '2023-01-15', endDate: null, weekend: 'none',
+    skip: ['2023-02-15'], edits: { '2023-03-15': { amount: 90000 } }, confirmedDates: ['2023-04-15', '2025-02-15'],
+  };
+  sandbox.DB = { assets: [a1], txns: [], recurrences: [r1], settings: {}, deletedIds: {} };
+  sandbox.lastUndo = null;
+  sandbox._recCache.clear();
+  sandbox.archiveTxnsBefore('2024-12-31');
+  // pruneOrphanRecOverrides()가 새로 만든 skip/edits/confirmedDates는 vm 샌드박스(다른 realm)
+  // 소속이라, 메인 realm 리터럴과 deepStrictEqual 비교 시 구조가 같아도 실패한다(위 bulkCatTargets
+  // 섹션과 동일한 realm 경계 문제) — JSON 왕복으로 realm을 벗겨내고 비교한다.
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(r1.skip)), [], 'cutoff 이전 skip은 새 startDate(2025-01-15) 이전이라 더 이상 생성되지 않으므로 정리되어야 함');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(r1.edits)), {}, '마찬가지로 cutoff 이전 edits도 정리되어야 함');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(r1.confirmedDates)), ['2025-02-15'], 'confirmedDates는 여전히 생성되는(2025-02-15) 것만 남고 과거분(2023-04-15)은 정리되어야 함');
+});
+test('archiveTxnsBefore: 아직 시작하지 않은(startDate가 cutoff 이후인) 반복거래는 손대지 않는다', () => {
+  sandbox.TWi = -1;
+  const a1 = { id: 'a1', type: 'cash', baseAmount: 0 };
+  const r1 = { id: 'r1', active: true, type: 'income', category: '급여', memo: '', amount: 100000, fromAssetId: null, toAssetId: 'a1', freq: 'monthly', day: 1, startDate: '2026-01-01', endDate: null, weekend: 'none', skip: [], edits: {}, confirmedDates: [] };
+  sandbox.DB = { assets: [a1], txns: [], recurrences: [r1], settings: {}, deletedIds: {} };
+  sandbox.lastUndo = null;
+  sandbox._recCache.clear();
+  sandbox.archiveTxnsBefore('2024-12-31');
+  assert.strictEqual(r1.startDate, '2026-01-01', '아직 시작하지 않은 반복은 startDate가 그대로여야 함');
+  assert.strictEqual(r1.updatedAt, undefined, '실제로 안 바뀐 반복거래는 touch()되면 안 됨');
+});
+test('archiveTxnsBefore: 비활성(active:false) 반복거래는 expandRec처럼 애초에 베이스라인에 섞이지 않으므로 startDate도 손대지 않는다', () => {
+  sandbox.TWi = -1;
+  const a1 = { id: 'a1', type: 'cash', baseAmount: 0 };
+  const r1 = { id: 'r1', active: false, type: 'income', category: '급여', memo: '', amount: 100000, fromAssetId: null, toAssetId: 'a1', freq: 'monthly', day: 15, startDate: '2023-01-15', endDate: null, weekend: 'none', skip: [], edits: {}, confirmedDates: [] };
+  sandbox.DB = { assets: [a1], txns: [], recurrences: [r1], settings: {}, deletedIds: {} };
+  sandbox.lastUndo = null;
+  sandbox._recCache.clear();
+  sandbox.archiveTxnsBefore('2024-12-31');
+  assert.strictEqual(r1.startDate, '2023-01-15', '비활성 반복은 startDate가 그대로여야 함');
+  assert.strictEqual(r1.updatedAt, undefined, '비활성 반복거래는 touch()되면 안 됨');
+  assert.strictEqual(a1.baseAmount, 0, '비활성 반복은 베이스라인에도 섞이지 않아야 함(expandRec과 동일)');
+});
+test('archiveTxnsBefore: undo하면 바뀐 반복거래의 startDate/skip/edits/confirmedDates가 정확히 원래대로 돌아온다', () => {
+  sandbox.TWi = -1;
+  const a1 = { id: 'a1', type: 'cash', baseAmount: 0 };
+  const r1 = {
+    id: 'r1', active: true, type: 'income', category: '급여', memo: '', amount: 100000, fromAssetId: null, toAssetId: 'a1',
+    freq: 'monthly', day: 15, startDate: '2023-01-15', endDate: null, weekend: 'none',
+    skip: ['2023-02-15'], edits: { '2023-03-15': { amount: 90000 } }, confirmedDates: ['2023-04-15'],
+  };
+  sandbox.DB = { assets: [a1], txns: [], recurrences: [r1], settings: {}, deletedIds: {} };
+  sandbox.lastUndo = null;
+  sandbox._recCache.clear();
+  sandbox.archiveTxnsBefore('2024-12-31');
+  assert.notStrictEqual(r1.startDate, '2023-01-15', '테스트 전제: 아카이브로 startDate가 실제로 바뀌어야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(r1.startDate, '2023-01-15', 'undo하면 startDate가 원래대로 돌아와야 함');
+  assert.deepStrictEqual(r1.skip, ['2023-02-15'], 'undo하면 skip도 원래대로 돌아와야 함');
+  assert.deepStrictEqual(r1.edits, { '2023-03-15': { amount: 90000 } }, 'undo하면 edits도 원래대로 돌아와야 함');
+  assert.deepStrictEqual(r1.confirmedDates, ['2023-04-15'], 'undo하면 confirmedDates도 원래대로 돌아와야 함');
 });
 
 /* ---------- bulkCatTargets(logic.js)/doBulkCat/bulkCatPickFor: 선택 모드(일별거래/전체내역)
