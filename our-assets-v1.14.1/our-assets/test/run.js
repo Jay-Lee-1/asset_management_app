@@ -7700,6 +7700,39 @@ test('sanitizeBackup: 거래 금액이 음수면 0으로 클램프한다(방향�
   assert.strictEqual(data.txns[0].amount, 0);
   assert.strictEqual(fixedCount, 1);
 });
+/* ---------- sanitizeBackup: 거래 날짜도 recurrences.startDate/endDate·assets.maturityDate·
+ * goals.targetDate·nwHistory.date와 동일하게 csvDateValid()로 형식/달력 유효성을 검증해야 하는데,
+ * 유일하게 이 필드만 truthy 여부만 보고 통과시키고 있었다 — "2026-02-30"처럼 모양은 맞지만
+ * 달력에 없는 날짜가 그대로 저장되면, allTxns()/monthStats() 류의 문자열 범위 비교
+ * (t.date>=from&&t.date<=to)가 "30"을 2월 마지막 날(28/29)보다 사전순으로 더 크다고 보고 그
+ * 거래를 2월에서도, 3월에서도 빼버리면서도(어느 달의 범위 문자열에도 걸리지 않음) balancesUpTo류의
+ * 더 넓은 범위(RANGE_FROM~오늘)에는 여전히 걸려 포함된다 — 가계부 월별 합계에는 안 보이는데
+ * 자산 잔액에는 반영되는 조용한 수치 drift. startDate 없는 recurrences와 동일한 원칙으로(이
+ * 함수가 모든 날짜 필드에 공유하는 "필수 날짜가 무효하면 레코드를 버린다"), id 없는 경우와
+ * 똑같이 레코드 자체를 제거한다(app-evolve cycle234 develop). ---------- */
+test('sanitizeBackup: 형식이 날짜가 아닌 거래(date가 "YYYY-MM-DD" 패턴이 아님)는 제거하고 droppedCount로 센다', () => {
+  const { data, droppedCount, fixedCount } = sandbox.sanitizeBackup({
+    assets: [],
+    txns: [{ id: 't1', date: 'not-a-date', amount: 1000 }, { id: 't2', date: '2026-01-02', amount: 2000 }],
+  });
+  assert.strictEqual(data.txns.length, 1);
+  assert.strictEqual(data.txns[0].id, 't2');
+  assert.strictEqual(droppedCount, 1);
+  assert.strictEqual(fixedCount, 0);
+});
+test('sanitizeBackup: 모양은 "YYYY-MM-DD"이지만 달력상 존재하지 않는 거래 날짜(예: 2월 30일, 13월)는 제거한다(조용한 월별 drift 방지)', () => {
+  const { data, droppedCount } = sandbox.sanitizeBackup({
+    assets: [],
+    txns: [
+      { id: 't1', date: '2026-02-30', amount: 1000 },
+      { id: 't2', date: '2026-13-01', amount: 2000 },
+      { id: 't3', date: '2026-02-28', amount: 3000 },
+    ],
+  });
+  assert.strictEqual(data.txns.length, 1, '달력상 유효한 거래만 남아야 함');
+  assert.strictEqual(data.txns[0].id, 't3');
+  assert.strictEqual(droppedCount, 2);
+});
 /* ---------- sanitizeBackup: t.splits(분할 거래, app-evolve cycle198)는 saveTx()가 저장 시점에만
  * 검증하고 백업 복원·클라우드 머지가 공유하는 이 체크포인트에서는 재검증이 없었다(app-evolve
  * cycle200 critique/advance). 손상된 split이 들어오면 splitLines()가 그대로 소비해 예산 집계에
