@@ -1,15 +1,12 @@
 {
   "cycle": 233,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "netlify/functions/stock.js의 Promise.race 8초 deadline 타이머 미해제(clearTimeout 누락) 수정",
+    "why": "stock.js의 handler가 Promise.race([work, deadline])에서 deadline을 만드는 setTimeout(HANDLER_BUDGET_MS=8000ms)을 work가 먼저 끝나도 clearTimeout하지 않는다(rates.js/crypto.js엔 이 패턴 없음, stock.js만의 결함). 테스트 하네스가 handler를 직접 require해서 호출하므로 매 호출마다 8초짜리 타이머가 Node 이벤트 루프를 붙잡아 test/run.js가 실질 테스트는 1.2초인데도 전체 실행에는 ~9초가 걸리고, 이후 모든 cycle의 develop/review/advance가 테스트를 돌릴 때마다 그 비용을 반복해서 치른다. 테스트 비용 문제를 넘어 프로덕션 리소스 누수이기도 하다 — Netlify Functions(람다 기반)의 웜 컨테이너가 재사용될 때마다 정리 안 된 타이머가 쌓일 수 있다.",
+    "approach": "stock.js에서 setTimeout 반환값을 변수(예: deadlineTimer)에 저장 → Promise.race 완료 직후(승패 무관) clearTimeout(deadlineTimer) 호출 추가(이미 해소된 race 결과를 덮어쓰지 않으므로 동작 불변). test/run.js에 global.setTimeout/clearTimeout을 가로채 핸들러 호출마다 생성된 타이머가 반드시 짝이 맞게 clear되는지 검증하는 회귀 테스트 추가(수정 전 상태로 되돌려 FAIL하는지 먼저 확인). netlify/functions만 변경이므로 APP_VERSION/sw.js CACHE 버전은 올리지 않음. 부수효과로 test/run.js 실행시간이 ~9초→~1.2초로 단축될 것으로 예상."
+  },
   "history": [
-    {
-      "cycle": 228,
-      "phase": "critique",
-      "timestamp": "2026-10-21T19:15:14.258Z",
-      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-228에서 다룬 모든 영역 전부 제외 지시: toast/invalidateBalances/split거래/pushCloud gzip/mergeDataLoss경고/kakaoLogin병합/nextOutflowCard/#histQ디바운스/recSaveScopeConfirm보류/DB.goals·delOwner/#bootSplash/boot()로컬우선/asFx·asGold·asQty Enter제출(되돌림)/doExport CSV/bulkCatTargets adjust/연금전환복원/selectNwOwner선택id/CDN SRI(기각)/dismissedStaleMvIds·budgetCarryFor/crypto자산종류+주말휴장/recDates push()주말이동/archiveBaselines+UI연결/commaQty maximumFractionDigits/recNthDate버퍼버그/mergeRecordFields(보류)/mergeDataLossFields/matchTxnQuery·matchAssetQuery NFC정규화/아이콘배지 WCAG1.4.11/svg() aria-hidden/netlify functions CORS+레이트리밋/sw.js navigate캐시가드/investGainLossCard/netlify.toml logic.js캐시헤더/PIN focus복원/stock-split qty조정(버그아님)/budgetCarryFor재귀(제외)/CSS font-size px(제외)/DB.budgets레거시플랫맵(무해)/checkNotifyAlerts staleness(커버됨)/TYPE_COLOR.gold불일치(흡수됨)/DB.assetQtyLog자동정리부재(제외)/uid()충돌+sanitizeBackup dedup/pushCloud INFLIGHT 테스트 플레이크수정). netlify/functions/stock.js·rates.js·crypto.js 세 파일이 getJSON 타임아웃+재시도/sleep·errText·toNum/pickRows·applyJpyScale/isAllowedOrigin·corsOrigin·shouldThrottle·json·ALLOWED_ORIGINS파싱 등 ~140줄짜리 유틸 블록을 손복붙으로 중복 유지 중이며 이미 drift가 시작됐음(rates.js getJSON에만 주석이 붙어 더 이상 바이트 단위로 동일하지 않음)을 diff로 확인. test/run.js가 \"세 파일이 동일하게 동작한다\"를 매번 별도 단언으로 증명해야 하는 구조적 공백. 러너업(기각): svg() aria-hidden류 접근성 전부(이미 처리됨), 스와이프 삭제 키보드 접근성(탭 경로 있어 공백 아님), 차트 접근성(텍스트 대체 이미 있음), PIN/보안(이미 견고), CSV/백업/병합(이미 방어적), 시세 동기화 재시도(이미 구현), CORS/레이트리밋 기능 자체 재검토(cycle225와 중복이라 제외, 구조적 중복만 다룸), index.html 단일파일 분리(범위 과대). advance 계획: netlify/functions/_shared.js 신설해 순수 유틸·CORS/레이트리밋 로직을 이동(단, RL_WINDOW_MS/RL_MAX/rlHistory 상태는 엔드포인트별로 분리 유지해 레이트리밋 버킷이 섞이는 회귀를 막음), 세 파일은 require로 재노출, test/run.js의 \"동일하게 동작한다\" 중복 단언을 참조 동일성(===) 검증으로 교체. netlify/functions만 변경이라 APP_VERSION/sw.js CACHE 버전은 올리지 않음. 코드 변경 없음(critique 단계라 state.json만 갱신, pending_advance_plan 저장).",
-      "commit": null
-    },
     {
       "cycle": 228,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-22T14:50:00.000Z",
       "summary": "cycle233 develop 커밋(c8df82d, notifyAlertInfo()의 budgetOverMulti/goalBehindMulti/debtBehindMulti 월단위 key에 count 추가)을 검토. confirmMulti/matMulti와의 동치성을 직접 확인: pickNotifyAlerts/notifiedIds dedupe 구조(index.html:8225-8239)를 읽어 count를 key에 넣어도 pruneNotifiedIds가 30일 TTL로 계속 정리하므로 키가 무한정 쌓이지 않음을 확인. 세 kind의 호출부(index.html:8158/8174/8179, arr.push({kind:...,count:_bo.length}) 등)를 grep으로 확인해 al.count가 항상 배열 .length(2 이상의 정수)로 전달되어 undefined가 key에 섞일 위험이 없음을 재확인. 월 단위 dedupe 취지(같은 상황 반복 알림 방지)가 건수 변화 시에도 깨지지 않는지 로직을 추적(동일 count면 같은 key로 계속 억제, count가 바뀌면 다른 key로 재알림 — confirmMulti/matMulti가 이미 쓰는 패턴과 동일). node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1804/1804 통과(develop 단계에서 추가한 신규 3건 포함). 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 233,
+      "phase": "critique",
+      "timestamp": "2026-10-22T15:30:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-233 전체 다룬 영역 전부 제외 지시, cycle233 develop의 budgetOverMulti/goalBehindMulti/debtBehindMulti count-key 수정 포함). netlify.toml 보안헤더/CORS·레이트리밋, sw.js 캐시전략, PIN/접근성(키보드 경로, 포커스트랩), CSV txnsToCSV/parseCSV의 BOM 처리(txnsToCSV가 이미 '\\ufeff'를 붙이고 parseCSV도 이미 BOM을 벗겨내 처음엔 새 버그로 의심했으나 코드 확인 후 결함없음 재확인), 반복거래/목표/병합 로직, dead-code 후보(정규식으로 \"정의 1회뿐\" 함수 11개 발견했으나 전부 onclick=\"${pfx}Day('${v}')\" 류 동적 디스패치로 실사용 중인 false positive라 기각), 드래그 재정렬 키보드 대체(cycle108/134에서 이미 구현됨) 등을 훑었으나 모두 과거 cycle이 다뤘거나 결함이 없었다. 실제로 찾은 문제는 test/run.js 실행시간 이상(\"1804/1804 passed\"를 1.2초에 출력하고도 프로세스 종료까지 추가로 ~8초를 더 씀)을 global.setTimeout 가로채기로 역추적한 결과였다: netlify/functions/stock.js:95의 Promise.race([work, deadline])에서 deadline=new Promise(resolve=>setTimeout(()=>{...}, HANDLER_BUDGET_MS=8000ms))이 만드는 타이머를 work가 먼저 끝나도 전혀 clearTimeout하지 않는다(rates.js/crypto.js엔 없는 stock.js만의 패턴). 테스트 하네스가 handler를 CommonJS로 직접 require해 호출하므로 호출마다 리크된 8초 타이머가 이벤트 루프를 끝까지 붙잡아 실측 5개 이상 pending 확인됨 — 테스트 비용 문제를 넘어 Netlify 웜 람다 컨테이너가 재사용될 때마다 쌓일 수 있는 실제 프로덕션 리소스 누수. 러너업 기각: netlify rate limiter in-memory rlHistory 콜드스타트 리셋(외부 스토어 필요, 범위 초과), PBKDF2 반복수(짧은 PIN 대상 실효성 낮아 제외), 공휴일 캘린더(유지보수 부담 과대). advance 계획은 pending_advance_plan에 저장(stock.js clearTimeout 추가 + 타이머 짝맞춤 회귀 테스트, 부수효과로 test/run.js 실행시간 ~9초→~1.2초 단축 예상). 코드 변경 없음(critique 단계라 state.json만 갱신).",
       "commit": null
     }
   ]
