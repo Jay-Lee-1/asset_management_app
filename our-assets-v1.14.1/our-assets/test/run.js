@@ -18811,6 +18811,21 @@ if (stockFns && ratesFns && cryptoFns) {
       assert.ok('_debug' in JSON.parse(res.body), 'debug=1인데 _debug가 응답에 없음');
     } finally { restoreFetch(); }
   });
+  test('stock.handler: work가 deadline보다 먼저 끝나면 8초 deadline setTimeout을 clearTimeout해 이벤트 루프에 남기지 않는다(app-evolve cycle233 advance — stock.js에만 있던 clearTimeout 누락 수정 회귀 가드)', async () => {
+    installFetchQueue([okJson({ closePrice: '100' })]);
+    const origSetTimeout = global.setTimeout, origClearTimeout = global.clearTimeout;
+    let pending = 0;
+    global.setTimeout = (fn, ms, ...args) => { pending++; return origSetTimeout(fn, ms, ...args); };
+    global.clearTimeout = (t) => { if (t) pending--; return origClearTimeout(t); };
+    try {
+      await stockFns.handler({ queryStringParameters: { codes: '005930' } });
+      assert.strictEqual(pending, 0, 'work가 먼저 끝났는데 deadline setTimeout이 clearTimeout되지 않아 누수됨');
+    } finally {
+      global.setTimeout = origSetTimeout;
+      global.clearTimeout = origClearTimeout;
+      restoreFetch();
+    }
+  });
   test('stock.handler: ALLOWED_ORIGINS 미설정이면 Origin 헤더와 무관하게 CORS를 "*"로 전체 허용한다(기존 동작 유지)', async () => {
     installFetchQueue([okJson({ closePrice: '100' })]);
     try {

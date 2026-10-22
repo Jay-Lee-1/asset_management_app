@@ -92,8 +92,10 @@ exports.handler = async (event) => {
     ]);
   })();
 
-  const deadline = new Promise(resolve => setTimeout(() => { timedOut = true; resolve(); }, HANDLER_BUDGET_MS));
+  let deadlineTimer;
+  const deadline = new Promise(resolve => { deadlineTimer = setTimeout(() => { timedOut = true; resolve(); }, HANDLER_BUDGET_MS); });
   await Promise.race([work, deadline]);
+  clearTimeout(deadlineTimer); // work가 먼저 끝나도 deadline 타이머가 이벤트 루프에 남아있지 않도록 해제 (app-evolve cycle233 advance)
   if (timedOut) debug.timedOut = true; // 아직 못 받아온 코드는 out에 없고, wantDebug일 때 errors에도 안 남을 수 있음
 
   const wantDebug = (event.queryStringParameters || {}).debug === '1';

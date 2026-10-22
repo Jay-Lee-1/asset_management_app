@@ -1,19 +1,8 @@
 {
-  "cycle": 233,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "netlify/functions/stock.js의 Promise.race 8초 deadline 타이머 미해제(clearTimeout 누락) 수정",
-    "why": "stock.js의 handler가 Promise.race([work, deadline])에서 deadline을 만드는 setTimeout(HANDLER_BUDGET_MS=8000ms)을 work가 먼저 끝나도 clearTimeout하지 않는다(rates.js/crypto.js엔 이 패턴 없음, stock.js만의 결함). 테스트 하네스가 handler를 직접 require해서 호출하므로 매 호출마다 8초짜리 타이머가 Node 이벤트 루프를 붙잡아 test/run.js가 실질 테스트는 1.2초인데도 전체 실행에는 ~9초가 걸리고, 이후 모든 cycle의 develop/review/advance가 테스트를 돌릴 때마다 그 비용을 반복해서 치른다. 테스트 비용 문제를 넘어 프로덕션 리소스 누수이기도 하다 — Netlify Functions(람다 기반)의 웜 컨테이너가 재사용될 때마다 정리 안 된 타이머가 쌓일 수 있다.",
-    "approach": "stock.js에서 setTimeout 반환값을 변수(예: deadlineTimer)에 저장 → Promise.race 완료 직후(승패 무관) clearTimeout(deadlineTimer) 호출 추가(이미 해소된 race 결과를 덮어쓰지 않으므로 동작 불변). test/run.js에 global.setTimeout/clearTimeout을 가로채 핸들러 호출마다 생성된 타이머가 반드시 짝이 맞게 clear되는지 검증하는 회귀 테스트 추가(수정 전 상태로 되돌려 FAIL하는지 먼저 확인). netlify/functions만 변경이므로 APP_VERSION/sw.js CACHE 버전은 올리지 않음. 부수효과로 test/run.js 실행시간이 ~9초→~1.2초로 단축될 것으로 예상."
-  },
+  "cycle": 234,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 228,
-      "phase": "advance",
-      "timestamp": "2026-10-21T20:12:13.864Z",
-      "summary": "critique(cycle228) 계획대로 netlify/functions/stock.js·rates.js·crypto.js 세 시세 프록시 함수가 복붙으로 유지하던 ~140줄짜리 공용 유틸 블록(getJSON 타임아웃+재시도, errText/toNum/pickRows/applyJpyScale, isAllowedOrigin/corsOrigin/shouldThrottle/json, ALLOWED_ORIGINS 파싱)을 netlify/functions/_shared.js로 이동해 중복을 제거했다. 계획과 다른 점 없이 그대로 구현: RL_WINDOW_MS/RL_MAX/rlHistory(상태 있는 레이트리밋 버킷)는 공유 모듈로 올리지 않고 세 파일 각각의 스코프에 그대로 둬 엔드포인트별 분당 30회 한도가 섞이지 않게 했고, json()은 ALLOWED_ORIGINS를 인자로 받는 _shared.json(status,body,maxAge,origin,allowedOrigins)으로 바꾼 뒤 각 파일에 그 값을 바인딩하는 1줄짜리 로컬 json() 래퍼를 둬 handler 본문(json(status,body,maxAge,origin) 호출부)은 전혀 안 건드렸다. 세 파일 모두 require(\"./_shared\")로 가져와 각자 module.exports로 재노출해 test/run.js의 기존 require(stockFns/ratesFns/cryptoFns) 경로와 기존 단위 테스트는 전부 그대로 통과한다(node -e로 세 파일의 isAllowedOrigin/shouldThrottle/toNum/errText/pickRows/applyJpyScale가 _shared.js의 함수와 참조 동일성(===)을 갖는지, toKrw/ratesUsdBaseToKrw/parseCodes 등 파일별 고유 함수가 정상 동작하는지 직접 확인). test/run.js: 18249/18280행 부근의 \"rates.js/crypto.js도 동일하게 동작한다\" 중복 단언 테스트 2건을 \"세 파일이 _shared.js와 참조 동일성(===)을 갖는다\" 테스트로 교체(isAllowedOrigin·shouldThrottle 각 1건)하고, toNum/errText·pickRows/applyJpyScale 참조 동일성 테스트 2건을 추가로 신설해 앞으로 drift가 생기면(세 파일 중 하나만 로컬에 같은 이름의 함수를 다시 선언하면) 바로 잡히게 했다. _shared.js 자체를 직접 호출하는 테스트 4건(parseAllowedOrigins 파싱, corsOrigin 허용/차단/null, json()의 allowedOrigins 비어있을 때 전체허용+Vary 없음, 설정됐을 때 Origin echo+Vary: Origin+no-store)도 신설해 require 경로 변경이 참조 동일성뿐 아니라 실제 동작도 보존했는지 확인. netlify/functions/*와 test/run.js만 변경이라 APP_VERSION/sw.js CACHE 버전은 올리지 않았다(sw.js가 /.netlify/functions/ 경로를 캐시 대상에서 제외). node --check(_shared.js, stock.js, rates.js, crypto.js, test/run.js) 통과. node our-assets-v1.14.1/our-assets/test/run.js 1745/1745 -> 1751/1751 통과(순삭제 2건 + 신설 4+4건 = +6).",
-      "commit": null
-    },
     {
       "cycle": 229,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-22T15:30:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-233 전체 다룬 영역 전부 제외 지시, cycle233 develop의 budgetOverMulti/goalBehindMulti/debtBehindMulti count-key 수정 포함). netlify.toml 보안헤더/CORS·레이트리밋, sw.js 캐시전략, PIN/접근성(키보드 경로, 포커스트랩), CSV txnsToCSV/parseCSV의 BOM 처리(txnsToCSV가 이미 '\\ufeff'를 붙이고 parseCSV도 이미 BOM을 벗겨내 처음엔 새 버그로 의심했으나 코드 확인 후 결함없음 재확인), 반복거래/목표/병합 로직, dead-code 후보(정규식으로 \"정의 1회뿐\" 함수 11개 발견했으나 전부 onclick=\"${pfx}Day('${v}')\" 류 동적 디스패치로 실사용 중인 false positive라 기각), 드래그 재정렬 키보드 대체(cycle108/134에서 이미 구현됨) 등을 훑었으나 모두 과거 cycle이 다뤘거나 결함이 없었다. 실제로 찾은 문제는 test/run.js 실행시간 이상(\"1804/1804 passed\"를 1.2초에 출력하고도 프로세스 종료까지 추가로 ~8초를 더 씀)을 global.setTimeout 가로채기로 역추적한 결과였다: netlify/functions/stock.js:95의 Promise.race([work, deadline])에서 deadline=new Promise(resolve=>setTimeout(()=>{...}, HANDLER_BUDGET_MS=8000ms))이 만드는 타이머를 work가 먼저 끝나도 전혀 clearTimeout하지 않는다(rates.js/crypto.js엔 없는 stock.js만의 패턴). 테스트 하네스가 handler를 CommonJS로 직접 require해 호출하므로 호출마다 리크된 8초 타이머가 이벤트 루프를 끝까지 붙잡아 실측 5개 이상 pending 확인됨 — 테스트 비용 문제를 넘어 Netlify 웜 람다 컨테이너가 재사용될 때마다 쌓일 수 있는 실제 프로덕션 리소스 누수. 러너업 기각: netlify rate limiter in-memory rlHistory 콜드스타트 리셋(외부 스토어 필요, 범위 초과), PBKDF2 반복수(짧은 PIN 대상 실효성 낮아 제외), 공휴일 캘린더(유지보수 부담 과대). advance 계획은 pending_advance_plan에 저장(stock.js clearTimeout 추가 + 타이머 짝맞춤 회귀 테스트, 부수효과로 test/run.js 실행시간 ~9초→~1.2초 단축 예상). 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "commit": null
+    },
+    {
+      "cycle": 233,
+      "phase": "advance",
+      "timestamp": "2026-10-22T16:20:00.000Z",
+      "summary": "critique(cycle233) 계획대로 netlify/functions/stock.js의 handler에서 Promise.race([work, deadline]) 완료 직후 deadline setTimeout(HANDLER_BUDGET_MS=8000ms)을 clearTimeout하도록 고쳤다. deadline Promise 생성 시 setTimeout 반환값을 deadlineTimer 변수에 저장한 뒤, race 완료 즉시(work가 이겼든 deadline이 이겼든) clearTimeout(deadlineTimer)를 호출 — deadline이 이미 fire된 뒤에 clearTimeout해도 무해하므로 분기 없이 항상 호출, 동작 불변(rates.js/crypto.js엔 이 패턴이 없어 영향 없음). test/run.js에 global.setTimeout/clearTimeout을 가로채 handler 호출 1회당 생성된 타이머 수와 clearTimeout된 수가 상쇄되어 0으로 남는지 검증하는 회귀 테스트 1건 추가(수정 전 코드로 되돌려 이 테스트만 FAIL함을 직접 확인한 뒤 복원 — getJSON의 AbortController 타이머는 자체 finally에서 이미 clearTimeout하므로 깨끗하고, 이번 테스트가 잡아낸 누수는 정확히 stock.js의 deadline 타이머 하나였음). netlify/functions와 test/run.js만 변경이라 APP_VERSION/sw.js CACHE 버전은 올리지 않았다. node --check(stock.js, test/run.js) 통과. node our-assets-v1.14.1/our-assets/test/run.js 1804/1804 -> 1805/1805 통과, 전체 실행시간은 수정 전 이미 ~3초였고(critique가 추정한 ~9초보다 짧음 — 테스트 실행 환경 차이로 보임) 수정 후 ~2.7초로 소폭 개선. pending_advance_plan은 null로 비웠다.",
       "commit": null
     }
   ]
