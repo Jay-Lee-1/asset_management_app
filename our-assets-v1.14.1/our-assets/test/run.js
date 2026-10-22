@@ -3337,13 +3337,35 @@ test('contrastRatio: 라이트 테마 --text-3(#656E68)가 실제로 칠해지�
 test('contrastRatio: 수정 전 라이트 테마 --text-3 값(회귀 가드) — #767F79는 네 배경 중 하나 이상에서 4.5:1 미달이었음을 재확인', () => {
   assert.ok(sandbox.contrastRatio('#EEF1EE', '#767F79') < 4.5, `#EEF1EE/#767F79 => ${sandbox.contrastRatio('#EEF1EE', '#767F79')}`);
 });
-test('contrastRatio: --text-2(#67716B)는 이번 수정으로 건드리지 않았고, --surface/--bg/--surface-2에서는 여전히 4.5:1 이상이다', () => {
+/* ---------- contrastRatio: 라이트 테마 --text-2 WCAG AA(일반 텍스트 4.5:1) 보정
+ * (app-evolve cycle235 develop) ----------
+ * --text-2(#67716B)는 cycle234가 --text-3를 고칠 때 "범위 밖"으로 남겨둔 근소 미달 사례로,
+ * --surface/--bg/--surface-2에서는 4.5:1을 넘지만 --sunken(가장 어두운 배경)에서만 4.445:1로
+ * AA에 0.055 모자랐다. .own-x/.sheet-x/.pk-back/.act-btn 등 실제로 sunken 배경 위에 --text-2
+ * 글자색을 쓰는 곳이 있어(예: own-x의 "x" 라벨, Supabase 테이블 생성 SQL 코드블록) 실사용 결함.
+ * #656F69로 바꿔(원색 대비 R/G/B 각 -2) 네 배경 모두 4.5:1 이상을 만족시키면서도 --text-3
+ * (#656E68)보다는 아주 조금 더 밝게 유지해 두 토큰이 같은 색으로 뭉개지지 않게 했다(다크 테마
+ * --text-2는 이미 통과이므로 미변경). */
+test('contrastRatio: 라이트 테마 --text-2(#656F69)가 실제로 칠해지는 배경 4종 전부에서 WCAG AA 일반 텍스트 기준(4.5:1) 이상이다', () => {
+  const bgs = ['#FFFFFF', '#F4F6F4', '#FAFBFA', '#EEF1EE']; // --surface / --bg / --surface-2 / --sunken
+  bgs.forEach((bg) => {
+    assert.ok(sandbox.contrastRatio(bg, '#656F69') >= 4.5, `${bg}/#656F69 => ${sandbox.contrastRatio(bg, '#656F69')}`);
+  });
+});
+test('contrastRatio: 수정 전 라이트 테마 --text-2 값(회귀 가드) — #67716B는 --sunken에서 4.5:1 미달이었음을 재확인', () => {
+  assert.ok(sandbox.contrastRatio('#EEF1EE', '#67716B') < 4.5, `#EEF1EE/#67716B => ${sandbox.contrastRatio('#EEF1EE', '#67716B')}`);
+  // --surface/--bg/--surface-2에서는 수정 전에도 이미 통과였다(--sunken만 미달이었음을 명확히 함)
   ['#FFFFFF', '#F4F6F4', '#FAFBFA'].forEach((bg) => {
     assert.ok(sandbox.contrastRatio(bg, '#67716B') >= 4.5, `${bg}/#67716B => ${sandbox.contrastRatio(bg, '#67716B')}`);
   });
-  // --sunken 배경에서는 --text-2 자체가 이미(이번 수정 전부터) 4.445:1로 AA에 근소하게 미달
-  // — 이번 cycle235 plan의 범위 밖(--text-2는 불변 대상)이라 손대지 않고 사실만 기록해둔다.
-  assert.ok(sandbox.contrastRatio('#EEF1EE', '#67716B') < 4.5, `#EEF1EE/#67716B => ${sandbox.contrastRatio('#EEF1EE', '#67716B')}`);
+});
+test('contrastRatio: --text-3(#656E68)는 이번 --text-2 수정과 무관하게 그대로다', () => {
+  const bgs = ['#FFFFFF', '#F4F6F4', '#FAFBFA', '#EEF1EE'];
+  bgs.forEach((bg) => {
+    assert.ok(sandbox.contrastRatio(bg, '#656E68') >= 4.5, `${bg}/#656E68 => ${sandbox.contrastRatio(bg, '#656E68')}`);
+  });
+  // 두 토큰이 동일 색으로 뭉개지지 않았는지(새 --text-2가 --text-3보다 미세하게 더 밝음)
+  assert.notStrictEqual('#656F69', '#656E68');
 });
 
 /* ---------- notifyReliabilityTier/notifyReliabilityMsg: OS 알림 토스트/캡션의 실제 능력 고지

@@ -51,7 +51,7 @@
 <style>
 :root{
   --bg:#F4F6F4;--surface:#FFFFFF;--surface-2:#FAFBFA;--sunken:#EEF1EE;--scrim:rgba(22,28,25,.42);
-  --text:#181B19;--text-2:#67716B;--text-3:#656E68;--on-brand:#FFFFFF;
+  --text:#181B19;--text-2:#656F69;--text-3:#656E68;--on-brand:#FFFFFF;
   --line:#E8EBE8;--line-2:#DDE1DD;
   --brand:#227E72;--brand-ink:#1C6A60;--brand-soft:#E4F0EC;--brand-tint:#F1F8F5;
   --income:#2E7BC4;--income-soft:#E8F1FB;--expense:#E06457;--expense-soft:#FBE9E6;--expense-ink:#C83425;
@@ -1398,7 +1398,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.218';
+const APP_VERSION='1.47.219';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.

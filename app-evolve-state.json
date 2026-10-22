@@ -1,15 +1,8 @@
 {
   "cycle": 235,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 230,
-      "phase": "develop",
-      "timestamp": "2026-10-22T01:23:36.145Z",
-      "summary": "general-purpose 서브에이전트가 develop 후보를 탐색해 archiveTxnsBefore()(index.html)가 cycle222의 archiveBaselines 연결 이후에도 활성 반복거래(DB.recurrences)는 전혀 건드리지 않아, cutoffDate 이전 반복거래 발생분을 자산 baseAmount에 흡수해놓고도 반복 자체(startDate)를 그대로 둬 같은 과거 회차가 다음 balancesUpTo() 계산에서 또 더해지는 이중 계산 버그를 발견(월급/월세/구독 등 흔한 패턴이라 블라스트 반경이 큼; 기존 테스트가 전부 recurrences:[]로만 검증해 이 경로가 전혀 커버되지 않음). logic.js에 recArchiveStartDate(r,cutoffDate,horizonDays)를 추가해 cutoffDate 다음날부터 recDates()로 그 반복 자신의 첫 미래 회차를 구해 startDate로 쓰도록 했다(임의의 날짜로 당기면 weekly/yearly처럼 startDate 자체가 패턴 기준인 주기가 어긋나므로 recDates() 출력을 그대로 재사용해 패턴 보존; 미래 회차가 없으면 cutoffDate+1로만 민다). archiveTxnsBefore()에서 활성 반복거래마다 적용하고 pruneOrphanRecOverrides()로 과거 skip/edits/confirmedDates를 정리하며 undo 클로저도 startDate/skip/edits/confirmedDates를 함께 복원하도록 확장. APP_VERSION 1.47.211→1.47.212, sw.js CACHE v478→v479 동기 반영. test/run.js에 recArchiveStartDate 순수함수 테스트 6개 + archiveTxnsBefore 통합 테스트 5개(이중계산 회귀 가드 포함) 추가, 회귀 테스트 1782개 전부 통과.",
-      "commit": "856f913255d2c9e47a0fcfc2e416ea3cf20f2a38"
-    },
     {
       "cycle": 230,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-22T21:12:45.979Z",
       "summary": "critique(cycle234)가 세운 계획대로 라이트 테마 --text-3 토큰을 #767F79 -> #656E68로 바꿔 WCAG AA 일반 텍스트 기준(4.5:1)을 실제로 칠해지는 4개 배경(--surface/--bg/--surface-2/--sunken) 전부에서 충족시켰다(5.27/4.85/5.08/4.63:1, 기존 4.13/3.80/3.98/3.63:1 전부 미달이었음). 다크 테마 --text-3(라인 75/90)은 이미 통과라 미변경. logic.js의 contrastRatio 순수함수로 직접 계산해 후보값을 정했고(plan이 제시한 #5F6862 대신 시각적 변화가 더 작은 #656E68을 채택), playwright로 두 배경에서 실제 텍스트 크기(10px/12.5px)로 old/new를 나란히 렌더링한 스크린샷으로 가독성 향상과 심각한 시각적 이질감 없음을 눈으로 확인했다. 부수 발견: --text-2(#67716B, 이번 plan 범위 밖이라 미변경)가 --sunken 배경에서 4.445:1로 AA에 근소하게(0.055) 미달인 기존 이슈를 찾아 회귀 테스트 주석과 known_issues에 남겨뒀다(다음 critique가 평가할 후보). test/run.js에 신규 테스트 3건(새 --text-3 4배경 통과, 구 값 회귀 가드, --text-2 불변 확인 겸 위 발견사항 문서화) 추가. APP_VERSION 1.47.217->1.47.218, sw.js CACHE v484->v485 동기 반영. node our-assets-v1.14.1/our-assets/test/run.js 1807/1807 -> 1810/1810 통과. pending_advance_plan은 null로 비웠다.",
+      "commit": null
+    },
+    {
+      "cycle": 235,
+      "phase": "develop",
+      "timestamp": "2026-10-22T22:13:59.143Z",
+      "summary": "general-purpose 서브에이전트가 develop 후보를 탐색해 라이트 테마 --text-2 토큰(index.html:54, #67716B)이 --sunken(#EEF1EE) 배경에서 4.445:1로 WCAG AA 일반텍스트 기준(4.5:1)에 0.055 미달임을 발견 — cycle234 critique가 --text-3 수정 당시 \"범위 밖\"으로 남겨두고 known_issues에 기록해둔 항목을 이어서 처리. .own-x(소유자 뱃지 x라벨)/.sheet-x/.pk-back/.act-btn 아이콘버튼 글자색, Supabase SQL 설정 스니펫(<pre> 블록, background:var(--sunken);color:var(--text-2))에서 실제로 쓰이는 조합임을 grep으로 확인한 실사용 결함. --text-2를 #67716B -> #656F69(R/G/B 각 -2)로 바꿔 4개 실배경(surface/bg/surface-2/sunken) 전부 4.5:1 이상을 만족시키면서도 --text-3(#656E68)보다 미세하게 밝게 유지해 두 토큰이 같은 값으로 뭉개지지 않게 했다(다크모드 --text-2는 이미 통과라 미변경). test/run.js: 기존에 --text-2 sunken 미달을 \"범위 밖\"으로만 기록하던 테스트 1건을 교체하고 신규 3건 추가(새 값 4배경 통과, 구 값(#67716B) sunken만 미달·나머지 3배경은 통과였음을 못박는 회귀가드, --text-3는 이번 수정과 무관하게 그대로+두 토큰이 서로 다른 값임을 확인). 새 테스트를 구 값(#67716B)으로 되돌려 1811/1812로 1건 FAIL함을 직접 확인한 뒤 복원. APP_VERSION 1.47.218->1.47.219, sw.js CACHE v485->v486. node --check(test/run.js, sw.js) 통과. node our-assets-v1.14.1/our-assets/test/run.js 1810/1810 -> 1812/1812 통과. 오케스트레이터가 diff/테스트를 직접 재검증한 뒤 커밋한다.",
       "commit": null
     }
   ]
