@@ -11,6 +11,21 @@
 # onclick/인라인 <script>를 광범위하게 쓰므로 script-src를 조이는 엄격한 CSP는 기존 동작을
 # 깨뜨릴 위험이 커서 건드리지 않고, frame-ancestors로 프레이밍만 차단한다(공격자가 투명
 # iframe으로 화면을 감싸 PIN 해제·삭제 버튼 클릭을 가로채는 것을 막음).
+# Netlify는 요청 경로 리터럴로 [[headers]] 규칙을 매칭한다 — 실제 PWA는 루트("/")로 접속되고
+# sw.js SHELL의 첫 엔트리도 "./"라 "/index.html"과는 별개 리소스로 취급될 수 있어(cycle230이
+# "/index.html" 블록에만 넣었던 보안 헤더가 실사용 경로에서 무력화될 수 있던 공백,
+# app-evolve cycle231 advance), 아래 "/" 블록에 동일 헤더를 중복으로 둔다.
+[[headers]]
+  for = "/"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+    Content-Security-Policy = "frame-ancestors 'none'"
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains"
+
 [[headers]]
   for = "/index.html"
   [headers.values]
@@ -20,6 +35,7 @@
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
     Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains"
 
 [[headers]]
   for = "/sw.js"

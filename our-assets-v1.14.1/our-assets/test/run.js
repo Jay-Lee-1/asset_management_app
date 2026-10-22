@@ -20514,6 +20514,55 @@ test('netlify.toml: 새 보안 헤더 추가 후에도 /index.html의 Cache-Cont
   assert.ok(block && block.includes('Cache-Control = "public, max-age=0, must-revalidate"'), '/index.html의 캐시 안 함 규칙이 사라지거나 바뀜');
 });
 
+/* ---------- netlify.toml: "/" 경로에도 보안 헤더 + HSTS (app-evolve cycle231 advance) ---------- */
+// cycle230이 "/index.html" [[headers]] 블록 하나에만 보안 헤더를 걸었는데, 실제 PWA 접속 경로인
+// 루트("/")는 별개 리소스로 취급될 수 있어 그 방어가 실사용 경로에서 무력화될 수 있던 공백.
+test('netlify.toml: "/"(실제 접속 경로)에도 클릭재킹/MIME스니핑/리퍼러/권한 방어 헤더가 있다', () => {
+  const block = extractHeaderBlock('/');
+  assert.ok(block, 'netlify.toml에 "/"용 [[headers]] 규칙이 없음 — 보안 헤더가 "/index.html"에만 걸려 실제 루트 경로 접속 시 무력화될 수 있음');
+  assert.ok(block.includes(`Content-Security-Policy = "frame-ancestors 'none'"`), '"/" 블록에 frame-ancestors CSP가 없음');
+  assert.ok(block.includes('X-Frame-Options = "DENY"'), '"/" 블록에 X-Frame-Options이 없음');
+  assert.ok(block.includes('X-Content-Type-Options = "nosniff"'), '"/" 블록에 X-Content-Type-Options이 없음');
+  assert.ok(block.includes('Referrer-Policy = "strict-origin-when-cross-origin"'), '"/" 블록에 Referrer-Policy가 없음');
+  assert.ok(block.includes('Permissions-Policy = "camera=(), microphone=(), geolocation=()"'), '"/" 블록에 Permissions-Policy가 없음');
+  assert.ok(block.includes('Cache-Control = "public, max-age=0, must-revalidate"'), '"/" 블록의 Cache-Control이 "/index.html"과 다름');
+});
+test('netlify.toml: "/"와 "/index.html" 두 블록의 보안 헤더 값이 서로 drift 없이 일치한다 — 회귀 가드', () => {
+  const rootBlock = extractHeaderBlock('/');
+  const idxBlock = extractHeaderBlock('/index.html');
+  assert.ok(rootBlock && idxBlock, '"/" 또는 "/index.html" [[headers]] 블록을 찾을 수 없음');
+  [
+    'Cache-Control = "public, max-age=0, must-revalidate"',
+    `Content-Security-Policy = "frame-ancestors 'none'"`,
+    'X-Frame-Options = "DENY"',
+    'X-Content-Type-Options = "nosniff"',
+    'Referrer-Policy = "strict-origin-when-cross-origin"',
+    'Permissions-Policy = "camera=(), microphone=(), geolocation=()"',
+    'Strict-Transport-Security = "max-age=31536000; includeSubDomains"',
+  ].forEach(line => {
+    assert.ok(rootBlock.includes(line), `"/" 블록에 누락: ${line}`);
+    assert.ok(idxBlock.includes(line), `"/index.html" 블록에 누락: ${line}`);
+  });
+});
+test('netlify.toml: "/"와 "/index.html" 모두 Strict-Transport-Security(HSTS)가 있다 — HTTPS 전용 금융 PWA 보강', () => {
+  ['/', '/index.html'].forEach(p => {
+    const block = extractHeaderBlock(p);
+    assert.ok(block && block.includes('Strict-Transport-Security = "max-age=31536000; includeSubDomains"'), `"${p}" 블록에 HSTS가 없음`);
+  });
+});
+test('netlify.toml: "/" 블록 추가 후에도 /logic.js·/sw.js·/manifest.webmanifest·*.png·/favicon.ico 캐시 규칙은 그대로다 — 회귀 가드', () => {
+  const logicBlock = extractHeaderBlock('/logic.js');
+  assert.ok(logicBlock && logicBlock.includes('Cache-Control = "public, max-age=0, must-revalidate"'), '/logic.js 규칙이 사라지거나 바뀜');
+  ['/sw.js', '/manifest.webmanifest'].forEach(p => {
+    const block = extractHeaderBlock(p);
+    assert.ok(block && block.includes('max-age=0, must-revalidate'), `"${p}" 규칙이 사라지거나 바뀜`);
+  });
+  const pngBlock = extractHeaderBlock('/*.png');
+  const favBlock = extractHeaderBlock('/favicon.ico');
+  assert.ok(pngBlock && pngBlock.includes('max-age=31536000, immutable'), '/*.png 긴 캐시 규칙이 사라지거나 바뀜');
+  assert.ok(favBlock && favBlock.includes('max-age=31536000, immutable'), '/favicon.ico 긴 캐시 규칙이 사라지거나 바뀜');
+});
+
 /* ---------- 실행 ---------- */
 // pbkdf2Hash는 Web Crypto(subtle.deriveBits)를 쓰는 비동기 함수라, 러너도 async test를
 // 지원해야 한다 — sync test는 그냥 await해도 즉시 반환되므로 기존 테스트에는 영향 없다.

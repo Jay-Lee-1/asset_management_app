@@ -1,19 +1,8 @@
 {
   "cycle": 231,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "netlify.toml 보안 헤더가 실제 접속 경로 \"/\"에도 적용되도록 보강 + HSTS 추가",
-    "why": "cycle230이 추가한 CSP(frame-ancestors)/X-Frame-Options/X-Content-Type-Options/Referrer-Policy/Permissions-Policy 5개 헤더가 netlify.toml에서 for = \"/index.html\" 블록 하나에만 걸려 있다. Netlify는 요청 경로 리터럴로 헤더 규칙을 매칭하는데, 실제 PWA는 루트 경로(\"/\")로 접속되고 sw.js SHELL의 첫 엔트리도 \"./\"라 \"/index.html\"과는 별개의 리소스로 취급될 수 있다(Netlify 커뮤니티에 동일 사례 보고 있음: https://answers.netlify.com/t/setting-response-headers-only-on-documents/6144). 즉 cycle230이 막으려던 클릭재킹/MIME스니핑 방어가 실사용 경로에서는 무력화될 수 있는 회귀급 공백. 덧붙여 HTTPS 전용 금융 PWA인데 Strict-Transport-Security 헤더가 전혀 없는 것도 같은 파일의 손쉬운 보강 포인트.",
-    "approach": "1) netlify.toml의 for = \"/index.html\" [[headers]] 블록과 동일한 Cache-Control + 5개 보안 헤더를 가진 for = \"/\" 블록을 새로 추가한다(Netlify는 각 path 패턴이 독립 [[headers]] 블록이라 이 방식이 안전). 2) \"/\"와 \"/index.html\" 두 블록 모두에 Strict-Transport-Security = \"max-age=31536000; includeSubDomains\" 를 추가한다. 3) test/run.js의 extractHeaderBlock(forPath) 헬퍼(cycle227/230에서 이미 사용)를 재사용해: for=\"/\" 블록에 6개 헤더(보안5+HSTS)가 정확한 값으로 있는지, \"/\"와\"/index.html\" 두 블록의 헤더값이 서로 drift 없이 일치하는지(향후 한쪽만 고치는 회귀 방지), 기존 /sw.js·/logic.js·/manifest.webmanifest·*.png·/favicon.ico 캐시 규칙이 그대로인지(회귀 가드) 검증하는 테스트를 추가한다. 4) netlify.toml·test/run.js만 변경되므로 APP_VERSION/sw.js CACHE 버전은 올리지 않는다(cycle227/230과 동일 판단). 5) node our-assets-v1.14.1/our-assets/test/run.js 전체 통과를 확인한 뒤 커밋한다."
-  },
+  "phase": "review",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 226,
-      "phase": "advance",
-      "timestamp": "2026-10-21T12:20:55.423Z",
-      "summary": "critique(cycle226) 계획대로 투자자산(fx/gold/stock/crypto) 전체 손익 요약 카드를 추가했다. logic.js에 assetAllocation 바로 뒤 portfolioGainLoss(items)(items:[{evalValue,costBasis}]) 순수함수 신설 — costBasis>0인 항목만 합산해 totalEval/totalCost/amount/pct/count 반환, 대상 없으면 null(assetGainLoss와 동일한 \"매입가 미입력이면 0으로 섞지 않는다\" 전제). index.html에 allocationCard(owner)를 본뜬 investGainLossCard(owner) 신설 — DB.assets.filter(includeInTotal&&isMarketValued)로 범위를 잡고, costBasis>0&&!rateUnknown인 자산만 집계에 넣어(rateUnknown 자산을 그대로 넣으면 assetGainLoss와 같은 \"전액손실 오표시\" 위험) null이면 빈 문자열로 카드 자체를 숨긴다. 매입가 미입력/시세 미확인으로 제외된 자산이 있으면 allocationCard의 hasUnknown/hasNeg 캡션과 같은 패턴으로 각각 \"매입가 미입력 자산 제외\"/\"시세 미확인 자산 제외\" mini.warn 캡션을 붙여 부분 합산임을 숨기지 않는다. 렌더는 eb-card/eb-list/eb-row/eb-cat/eb-v 클래스(allocationCard가 쓰는 스택형 카드 레이아웃)를 재사용해 평가손익(income/expense 색상)·총매입·총평가 세 행을 보여준다. renderAssets()의 <div id=\"allocBody\"> 바로 뒤에 <div id=\"investGlBody\">를 삽입, refreshAllocationCard를 본뜬 refreshInvestGainLossCard() 신설해 selectNwOwner()의 refreshAllocationCard 호출 옆에 같이 배선(귀속 캐러셀 전환 시 동기화). test/run.js: portfolioGainLoss에 전체이익/전체손실/혼합(순손익 기준)/costBasis 없는 항목 제외/빈배열 또는 대상없음->null 테스트 5건, investGainLossCard에 카드 노출/빈 상태/owner 필터링/매입가 미입력 캡션/시세 미확인 캡션(+전액손실 오표시 안 됨 회귀가드)/손실 색상 테스트 7건 추가. FUNCTIONS 목록에 investGainLossCard/refreshInvestGainLossCard 추가. index.html(APP_VERSION 1.47.208->1.47.209)과 logic.js 모두 변경이라 sw.js CACHE도 v475->v476으로 올렸다. node --check(logic.js, sw.js) 통과, <script> 블록 추출 후 실제 코드 블록(2,4,5번) 모두 new Function으로 문법 통과(1번은 기존 알려진 한글 주석 정규식 오탐). node our-assets-v1.14.1/our-assets/test/run.js 1727/1727 -> 1738/1738 통과(pushCloud 타이밍 테스트 1건이 이번 변경과 무관하게 가끔 flaky하게 실패하는 것을 git stash로 수정 전 원본 코드에서도 동일하게 재현해 기존 공백임을 확인, 5회 반복 실행 결과도 전부 1738/1738로 안정적). pending_advance_plan은 null로 비웠다.",
-      "commit": null
-    },
     {
       "cycle": 227,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-22T07:00:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-231 전체 다룬 영역 전부 제외 지시, 이번 사이클의 sanitizeBackup 목표owner동기화 포함)한 결과, cycle230 advance가 netlify.toml에 추가한 클릭재킹/MIME스니핑 방어 헤더 5종(CSP frame-ancestors/X-Frame-Options/X-Content-Type-Options/Referrer-Policy/Permissions-Policy)이 for = \"/index.html\" 블록 하나에만 걸려 있어, 실제 PWA 접속 경로인 루트(\"/\")에는 적용되지 않을 수 있는 공백을 포착(Netlify는 요청 경로 리터럴로 헤더 규칙을 매칭하며 동일 사례가 Netlify 커뮤니티에 보고돼 있음: https://answers.netlify.com/t/setting-response-headers-only-on-documents/6144). sw.js SHELL의 첫 엔트리도 \"./\"로 index.html과 별도 리소스 취급될 수 있어, 직전 사이클이 닫으려던 클릭재킹 방어가 실사용 경로에서 무력화될 수 있는 회귀급 공백으로 판단. 같은 파일에 Strict-Transport-Security 헤더도 전혀 없음을 함께 확인. 러너업 기각: netlify rate limiter의 in-memory rlHistory가 콜드스타트마다 리셋되는 구조적 약점(외부 스토어 필요해 사이클 범위 초과로 제외), PBKDF2 12만회 반복이 OWASP 권고(약60만회)보다 낮음(짧은 숫자 PIN 오프라인 브루트포스 방어 효과 미미해 실질적 고정이 아니라고 판단해 제외), sw.js 캐시우선 전략 재검토(기존에 이미 견고함 재확인), 모바일 가상키보드 뷰포트 가림(재현 사례 없어 추측성이라 제외). advance 계획(netlify.toml에 for=\"/\" 블록 신설(기존 /index.html 블록과 동일 헤더6종+Cache-Control) + HSTS 추가 + extractHeaderBlock 재사용한 drift방지/회귀 테스트, index.html/logic.js/sw.js 무변경이라 버전 범프 불필요)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "commit": null
+    },
+    {
+      "cycle": 231,
+      "phase": "advance",
+      "timestamp": "2026-10-22T07:45:00.000Z",
+      "summary": "critique(cycle231) 계획대로 netlify.toml에 for = \"/\" [[headers]] 블록을 새로 추가해 기존 for = \"/index.html\" 블록과 동일한 Cache-Control + 클릭재킹/MIME스니핑/리퍼러/권한 방어 헤더 5종을 실제 접속 경로(\"/\")에도 걸었다. 두 블록 모두에 Strict-Transport-Security = \"max-age=31536000; includeSubDomains\"(HSTS)도 추가했다. test/run.js: extractHeaderBlock('/') 블록 존재+6개 헤더값 검증 1건, \"/\"와\"/index.html\" 두 블록의 헤더값이 서로 drift 없이 일치하는지(향후 한쪽만 고치는 회귀 방지) 1건, 두 블록 모두 HSTS가 있는지 1건, 기존 /logic.js·/sw.js·/manifest.webmanifest·*.png·/favicon.ico 캐시 규칙이 그대로인지(회귀 가드) 1건 총 4건 추가. 수정 전 상태로 되돌려(for=\"/\" 블록 제거) 신규 테스트 포함 9건이 FAIL함을 직접 확인한 뒤 복원해 테스트가 실제로 회귀를 잡는지 검증했다. netlify.toml·test/run.js만 변경되므로 APP_VERSION/sw.js CACHE 버전은 올리지 않았다(cycle227/230과 동일 판단). node --check(test/run.js) 통과. node our-assets-v1.14.1/our-assets/test/run.js 1788/1788 -> 1792/1792 통과. pending_advance_plan은 null로 비웠다.",
       "commit": null
     }
   ]
