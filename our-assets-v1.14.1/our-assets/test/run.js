@@ -16201,7 +16201,7 @@ test('homeAlerts: matMulti의 dueCount는 1일 이내(오늘·내일·지남)로
 test('notifyAlertInfo: confirm/budgetOver(Multi)는 즉시 알림 대상이 되고, backup/neg처럼 관계없는 kind는 대상에서 빠진다', () => {
   sandbox.TODAY = '2026-06-15';
   const confirm = sandbox.notifyAlertInfo({ kind: 'confirm', id: 't1', date: '2026-06-15', from: '통장1', to: '통장2', amount: 10000 });
-  assert.ok(confirm && confirm.key === 'confirm:t1:2026-06-15', '이체 확인 알림은 거래 id+날짜로 키가 잡혀야 함');
+  assert.ok(confirm && confirm.key === 'confirm:2026-06-15:t1:2026-06-15', '이체 확인 알림은 오늘날짜+거래 id+날짜로 키가 잡혀야 함(app-evolve cycle232: confirmMulti처럼 TODAY가 앞에 들어가 날이 바뀌면 다시 알림)');
   const budgetOver = sandbox.notifyAlertInfo({ kind: 'budgetOver', cat: '식비', spent: 150000, budget: 100000 });
   assert.ok(budgetOver && budgetOver.key === 'budget:식비:2026-06');
   const budgetMulti = sandbox.notifyAlertInfo({ kind: 'budgetOverMulti', count: 2 });
@@ -16212,7 +16212,7 @@ test('notifyAlertInfo: confirm/budgetOver(Multi)는 즉시 알림 대상이 되�
 test('notifyAlertInfo: 저축 만기(mat)는 오늘·내일만 알림 대상이고, 이틀 뒤부터는 아직 대상이 아니다', () => {
   sandbox.TODAY = '2026-06-15';
   const today = sandbox.notifyAlertInfo({ kind: 'mat', assetId: 's1', name: '적금', date: '2026-06-15', amount: 1000000 });
-  assert.ok(today && today.key === 'mat:s1:2026-06-15');
+  assert.ok(today && today.key === 'mat:2026-06-15:s1:2026-06-15', '저축 만기 알림은 오늘날짜+자산id+만기일로 키가 잡혀야 함(app-evolve cycle232: matMulti처럼 TODAY가 앞에 들어가 날이 바뀌면 다시 알림)');
   assert.ok(today.body.includes('오늘'), '오늘 만기면 본문에 "오늘"이 들어가야 함');
   const tomorrow = sandbox.notifyAlertInfo({ kind: 'mat', assetId: 's1', name: '적금', date: '2026-06-16', amount: 1000000 });
   assert.ok(tomorrow, '내일 만기는 아직 임박 알림 대상이어야 함');
@@ -16254,10 +16254,50 @@ test('pickNotifyAlerts: 이미 알림 보낸 key는 다시 보내지 않고(dedu
   ];
   const first = sandbox.pickNotifyAlerts(alerts, {});
   assert.strictEqual(first.toNotify.length, 1);
-  assert.strictEqual(first.toNotify[0].key, 'confirm:t1:2026-06-15');
-  assert.ok(first.notifiedIds['confirm:t1:2026-06-15'], '보낸 key는 notifiedIds에 기록돼야 함');
+  assert.strictEqual(first.toNotify[0].key, 'confirm:2026-06-15:t1:2026-06-15');
+  assert.ok(first.notifiedIds['confirm:2026-06-15:t1:2026-06-15'], '보낸 key는 notifiedIds에 기록돼야 함');
   const second = sandbox.pickNotifyAlerts(alerts, first.notifiedIds);
   assert.strictEqual(second.toNotify.length, 0, '같은 key는 두 번째 호출에서 다시 보내면 안 됨');
+});
+/* confirmMulti/matMulti(2건 이상 묶인 경우)는 키에 TODAY가 들어가 매일 다시 알리는데, 정작 1건뿐인
+ * confirm/mat(단일)은 거래 id/자산id+날짜만 키라 날이 바뀌어도 키가 그대로였다(app-evolve cycle232
+ * develop) — 그 결과 미확인 이체·저축 만기가 "1건"인 사람은 앱을 그날 안 열면 다시는 그 알림을
+ * 못 받고, "2건 이상"인 사람만 매일 리마인드를 받는 역전된 비대칭이 있었다. 특히 mat은 날짜가
+ * 지나면 문구 자체가 '내일'→'오늘'→'지났어요'로 바뀌는데도 옛 key로는 pickNotifyAlerts가 같은
+ * 항목으로 보고 "오늘"/"지났어요" 알림을 영구히 억제했다(날짜만 바뀌었을 뿐 새 key를 만들던
+ * confirmMulti/matMulti와 달리, confirm/mat은 날짜가 지나도 key가 전혀 안 바뀌어 생긴 공백). */
+test('notifyAlertInfo: confirm(단일)도 confirmMulti처럼 키에 TODAY가 들어가, 같은 미확인 이체도 날이 바뀌면 다른 key를 받는다(app-evolve cycle232)', () => {
+  const al = { kind: 'confirm', id: 't1', date: '2026-06-10', from: '통장1', to: '통장2', amount: 10000 };
+  sandbox.TODAY = '2026-06-15';
+  const day1 = sandbox.notifyAlertInfo(al);
+  sandbox.TODAY = '2026-06-16';
+  const day2 = sandbox.notifyAlertInfo(al);
+  assert.notStrictEqual(day1.key, day2.key, '같은 미확인 이체(id/날짜 동일)라도 알림을 보내는 날이 다르면 키가 달라져야 confirmMulti와 동일하게 매일 재알림된다');
+});
+test('notifyAlertInfo: mat(단일)도 matMulti처럼 키에 TODAY가 들어가, 내일→오늘→지났어요로 상태가 바뀔 때마다 다른 key를 받는다(app-evolve cycle232)', () => {
+  const assetId = 's1', maturityDate = '2026-06-15';
+  sandbox.TODAY = '2026-06-14';
+  const tomorrow = sandbox.notifyAlertInfo({ kind: 'mat', assetId, name: '적금', date: maturityDate, amount: 1000000 });
+  sandbox.TODAY = '2026-06-15';
+  const today = sandbox.notifyAlertInfo({ kind: 'mat', assetId, name: '적금', date: maturityDate, amount: 1000000 });
+  sandbox.TODAY = '2026-06-16';
+  const overdue = sandbox.notifyAlertInfo({ kind: 'mat', assetId, name: '적금', date: maturityDate, amount: 1000000 });
+  assert.ok(tomorrow && today && overdue, '내일/오늘/지났어요 세 상태 모두 알림 대상이어야 함');
+  assert.notStrictEqual(tomorrow.key, today.key, '내일→오늘로 상태가 바뀌면 키도 달라져야 함');
+  assert.notStrictEqual(today.key, overdue.key, '오늘→지났어요로 상태가 바뀌어도 키가 달라져야 함');
+  assert.notStrictEqual(tomorrow.key, overdue.key);
+});
+test('pickNotifyAlerts: mat 단일 알림은 날이 바뀌어 상태가 달라지면(내일→오늘) notifiedIds에 어제 키가 남아있어도 다시 보내야 한다(app-evolve cycle232 — 수정 전엔 key가 안 바뀌어 영구히 억제됐었음)', () => {
+  const asset = { kind: 'mat', assetId: 's1', name: '적금', date: '2026-06-15', amount: 1000000 };
+  sandbox.TODAY = '2026-06-14'; // 내일
+  const first = sandbox.pickNotifyAlerts([asset], {});
+  assert.strictEqual(first.toNotify.length, 1, '내일 만기는 알림 대상이어야 함');
+  sandbox.TODAY = '2026-06-15'; // 다음날(오늘 만기) — 같은 자산/만기일, notifiedIds엔 어제 보낸 키가 그대로 남아있음
+  const second = sandbox.pickNotifyAlerts([asset], first.notifiedIds);
+  assert.strictEqual(second.toNotify.length, 1, '오늘 만기로 상태가 바뀌었으면 어제 억제 기록과 무관하게 다시 알려야 함');
+  // 같은 날 두 번째 호출(실제 상태 변화 없음)은 여전히 dedupe돼야 함 — 날짜만 추가했을 뿐 그 안의 억제는 그대로
+  const third = sandbox.pickNotifyAlerts([asset], second.notifiedIds);
+  assert.strictEqual(third.toNotify.length, 0, '같은 날 같은 상태로 다시 호출하면 여전히 억제돼야 함(dedupe 자체는 그대로 유지)');
 });
 test('pruneNotifiedIds: 30일 이내 항목은 남기고, 30일 지난 항목은 정리해 무한정 커지지 않게 한다', () => {
   const now = Date.now();
