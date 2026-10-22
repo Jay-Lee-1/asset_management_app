@@ -1,15 +1,8 @@
 {
   "cycle": 234,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 229,
-      "phase": "develop",
-      "timestamp": "2026-10-21T21:13:00.000Z",
-      "summary": "general-purpose 서브에이전트가 develop 후보를 탐색해 saveAsset()의 자산 귀속(owner) 변경이 그 자산에 연결된 asset형 목표(goal.type==='asset', goal.linkedAssetId)의 owner에 전파되지 않던 버그를 발견 — goalOpenAsset()은 '연결하는 시점'에만 goalDraft.owner를 자산 owner로 맞춰주고, 이후 asOpenOwner()로 자산 귀속을 바꿔도 목표의 owner는 낡은 값으로 남아 goalOwnerEff()/goalsSummaryCard·nearestGoal의 owner 일치 필터가 틀어져 목표가 자산의 새 귀속 캐러셀에서 사라지는 실사용 버그였다(doRenameOwner는 이름변경만 다뤄 이 경로를 커버하지 않음). saveAsset()에서 자산 저장 직후 linkedAssetId가 일치하는 asset형 목표의 owner를 자산의 새 owner로 동기화하고 touch()하도록 고쳤다(networth형 목표·무관한 목표·owner 불변 시는 그대로 둠). test/run.js에 4건 추가(귀속 변경 시 동기화+touch/무관한 목표 보존/owner 불변 시 touch 없음/networth형 목표 영향 없음) — 수정 전 코드로 되돌려 핵심 테스트가 FAIL함을 직접 확인한 뒤 복원. APP_VERSION 1.47.210->1.47.211, sw.js CACHE v477->v478. node --check 통과. node our-assets-v1.14.1/our-assets/test/run.js 1751/1751 -> 1755/1755 통과. 오케스트레이터가 diff/테스트를 직접 재검증한 뒤 commit 31f16d3을 main에 fast-forward해 push했다(이전 실행이 로컬 main을 갱신하지 않고 detached HEAD로 커밋을 남겨둔 상태였어서, fetch로 origin/main이 해당 커밋의 부모와 정확히 일치함을 먼저 확인).",
-      "commit": "31f16d3"
-    },
     {
       "cycle": 229,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-22T16:20:00.000Z",
       "summary": "critique(cycle233) 계획대로 netlify/functions/stock.js의 handler에서 Promise.race([work, deadline]) 완료 직후 deadline setTimeout(HANDLER_BUDGET_MS=8000ms)을 clearTimeout하도록 고쳤다. deadline Promise 생성 시 setTimeout 반환값을 deadlineTimer 변수에 저장한 뒤, race 완료 즉시(work가 이겼든 deadline이 이겼든) clearTimeout(deadlineTimer)를 호출 — deadline이 이미 fire된 뒤에 clearTimeout해도 무해하므로 분기 없이 항상 호출, 동작 불변(rates.js/crypto.js엔 이 패턴이 없어 영향 없음). test/run.js에 global.setTimeout/clearTimeout을 가로채 handler 호출 1회당 생성된 타이머 수와 clearTimeout된 수가 상쇄되어 0으로 남는지 검증하는 회귀 테스트 1건 추가(수정 전 코드로 되돌려 이 테스트만 FAIL함을 직접 확인한 뒤 복원 — getJSON의 AbortController 타이머는 자체 finally에서 이미 clearTimeout하므로 깨끗하고, 이번 테스트가 잡아낸 누수는 정확히 stock.js의 deadline 타이머 하나였음). netlify/functions와 test/run.js만 변경이라 APP_VERSION/sw.js CACHE 버전은 올리지 않았다. node --check(stock.js, test/run.js) 통과. node our-assets-v1.14.1/our-assets/test/run.js 1804/1804 -> 1805/1805 통과, 전체 실행시간은 수정 전 이미 ~3초였고(critique가 추정한 ~9초보다 짧음 — 테스트 실행 환경 차이로 보임) 수정 후 ~2.7초로 소폭 개선. pending_advance_plan은 null로 비웠다.",
       "commit": null
+    },
+    {
+      "cycle": 234,
+      "phase": "develop",
+      "timestamp": "2026-10-22T18:17:54.000Z",
+      "summary": "general-purpose 서브에이전트가 develop 후보를 탐색해 sanitizeBackup()이 recurrences.startDate/endDate, assets.maturityDate, goals.targetDate, nwHistory.date는 모두 csvDateValid()로 검증하면서 거래(txns)의 date 필드만 유독 truthy 체크(!t.date)만 하고 형식/달력 유효성 검증을 빠뜨린 공백을 발견 — \"2026-02-30\"처럼 형식은 맞지만 달력에 없는 날짜가 그대로 통과되면, allTxns()/monthStats()의 문자열 범위 필터(t.date>=from&&t.date<=to)가 \"30\"을 그 달 마지막 날(28/29)보다 사전순으로 크다고 보아 그 달 범위에서 해당 거래를 제외하면서도, balancesUpTo()의 RANGE_FROM 기준 전체 구간 스캔에는 여전히 포함돼 가계부/월간 수지(제외)와 자산 잔액(포함) 사이에 조용한 수치 drift를 만드는 실사용 버그였다. recurrences의 무효 startDate와 동일한 원칙(필수 날짜 무효 시 레코드 전체 드롭)으로 `if(!t||!t.id||!csvDateValid(t.date))`로 확장해 고쳤다. test/run.js에 2건 추가(형식 무효 날짜 드롭, 달력 무효 날짜(\"2026-02-30\"/\"2026-13-01\") 드롭하면서 같은 배치의 유효 거래는 보존). 수정 전 코드로 되돌려 신규 테스트 2건이 FAIL함을 직접 확인한 뒤 복원. APP_VERSION 1.47.216->1.47.217, sw.js CACHE v483->v484. node --check 통과. node our-assets-v1.14.1/our-assets/test/run.js 1805/1805 -> 1807/1807 통과. 오케스트레이터가 diff/테스트를 직접 재검증한 뒤 commit 82da7ef를 origin/main에 fast-forward push했다.",
+      "commit": "82da7ef"
     }
   ]
 }
