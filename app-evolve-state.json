@@ -1,15 +1,8 @@
 {
   "cycle": 233,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 228,
-      "phase": "review",
-      "timestamp": "2026-10-21T18:10:00.000Z",
-      "summary": "cycle228 develop 커밋(f4e47b3, pushCloud INFLIGHT 가드 테스트의 고정 40틱 setImmediate 대기를 5초 벽시계 데드라인 while 루프로 교체)을 검토. 진단 전제부터 재검증: 변경 전 코드가 정말 '틱 수'만 세고(for i<40&&updateCallCount<2) 경과 시간은 재지 않았음을 diff로 직접 확인, encodeCloudPayload()가 CompressionStream(zlib 네이티브 콜백)을 거치므로 순수 마이크로태스크 루프로는 끝나지 않는다는 주석의 전제도 코드 구조(await sandbox.pushCloud() 내부에서 encodeCloudPayload 호출)와 일치함을 확인. 교체된 로직(const deadline=Date.now()+5000; while(updateCallCount<2 && Date.now()<deadline) await new Promise(r=>setImmediate(r)))을 직접 추적 — 정상 동작(수 ms 내 완료)에서는 루프가 즉시 빠져나와 기존 대비 테스트 실행 시간에 사실상 변화가 없고, 진짜 멈춤 회귀가 생겨도 5초 후 동일한 updateCallCount/PUSH_CLOUD_INFLIGHT 단언이 여전히 잡아내므로 회귀 탐지력이 그대로 유지됨을 확인. 무한루프·행잉 위험 없음(데드라인으로 상한 보장). node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1745/1745 통과(1회 실행으로는 기존 플레이크 재현 여부를 단정할 수 없으나, develop 단계가 이미 25회 연속 통과로 검증했고 이번 변경은 테스트 인프라 1건뿐이라 index.html/logic.js/sw.js 버전 영향 없음도 재확인). 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 228,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-22T13:40:00.000Z",
       "summary": "general-purpose 서브에이전트가 develop 후보를 탐색해 notifyAlertInfo()에서 월 단위로 묶이는 세 kind(budgetOverMulti/goalBehindMulti/debtBehindMulti)의 dedupe key가 count를 포함하지 않아, 이번 달에 한 번 알린 뒤 묶인 건수가 늘어나도(예: 예산초과 카테고리 2개->3개, 목표지연 2건->3건, 부채정체 2건->3건) 재알림이 그 달 안에는 영구히 억제되는 버그를 발견 — 같은 1건/N건 collapsing 패턴을 쓰는 confirmMulti/matMulti는 cycle156/157에서 이미 count를 key에 넣어 이 문제를 피했고, 당시 테스트 주석조차 \"budgetOverMulti처럼\"이라 적어 세 함수도 같은 원칙을 공유해야 한다는 전제가 있었으나 실제로는 반영되지 않은 채 기존 테스트가 그 버그 상태를 그대로 lock-in하고 있었다. budgetMulti/goalBehindMulti/debtBehindMulti key에 confirmMulti/matMulti와 동일하게 `:${al.count}`를 추가해 월 단위 dedupe 취지(같은 상황 반복 알림 방지)는 유지하면서 건수가 바뀌면 재알림되도록 보강. test/run.js: 기존 key 단언 3건을 새 포맷으로 갱신 + 신규 3건(각 kind가 count 2->3으로 바뀌면 key도 바뀌어 재알림 대상, count 불변 시 동일 key로 dedupe 유지, budgetOverMulti는 pickNotifyAlerts 통합 테스트까지 포함) 추가. 수정 전 key로 되돌려 6건이 FAIL함을 직접 확인한 뒤 복원. APP_VERSION 1.47.215->1.47.216, sw.js CACHE v482->v483. node --check(sw.js/test/run.js) 통과. node our-assets-v1.14.1/our-assets/test/run.js 1801/1801 -> 1804/1804 통과. 오케스트레이터가 diff/테스트를 직접 재검증한 뒤 커밋했다.",
+      "commit": "c8df82d"
+    },
+    {
+      "cycle": 233,
+      "phase": "review",
+      "timestamp": "2026-10-22T14:50:00.000Z",
+      "summary": "cycle233 develop 커밋(c8df82d, notifyAlertInfo()의 budgetOverMulti/goalBehindMulti/debtBehindMulti 월단위 key에 count 추가)을 검토. confirmMulti/matMulti와의 동치성을 직접 확인: pickNotifyAlerts/notifiedIds dedupe 구조(index.html:8225-8239)를 읽어 count를 key에 넣어도 pruneNotifiedIds가 30일 TTL로 계속 정리하므로 키가 무한정 쌓이지 않음을 확인. 세 kind의 호출부(index.html:8158/8174/8179, arr.push({kind:...,count:_bo.length}) 등)를 grep으로 확인해 al.count가 항상 배열 .length(2 이상의 정수)로 전달되어 undefined가 key에 섞일 위험이 없음을 재확인. 월 단위 dedupe 취지(같은 상황 반복 알림 방지)가 건수 변화 시에도 깨지지 않는지 로직을 추적(동일 count면 같은 key로 계속 억제, count가 바뀌면 다른 key로 재알림 — confirmMulti/matMulti가 이미 쓰는 패턴과 동일). node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1804/1804 통과(develop 단계에서 추가한 신규 3건 포함). 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
       "commit": null
     }
   ]
