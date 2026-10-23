@@ -1,15 +1,8 @@
 {
   "cycle": 237,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 232,
-      "phase": "review",
-      "timestamp": "2026-10-22T10:08:05.035Z",
-      "summary": "cycle232 develop 커밋(3445ffb, notifyAlertInfo() 단일 confirm/mat key에 TODAY 미포함으로 영구 1회만 알림 발송되던 버그 수정)을 검토. pickNotifyAlerts/notifiedIds dedupe 구조를 index.html:8208-8224에서 직접 읽어 전제 확인: notifiedIds는 key별 Date.now() 타임스탬프를 저장하고 pruneNotifiedIds가 30일 TTL로 정리하므로, confirm/mat key에 TODAY를 추가해도(Multi 변형과 동일 패턴) 무한정 쌓이지 않고 같은 날 중복 호출도 여전히 notifiedIds로 억제됨을 확인 — 회귀나 누수 없음. mat 분기의 overdue/when 판정 로직(al.date<=addDays(TODAY,1), overdue=al.date<TODAY)은 이번 수정과 무관하게 그대로임도 확인. node our-assets-v1.14.1/our-assets/test/run.js 재실행해 1795/1795 통과 재확인(develop 단계에서 추가한 3건 포함). 작고 범위가 명확한 수정이라 버그 없음.",
-      "commit": null
-    },
     {
       "cycle": 232,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-23T06:10:00.000Z",
       "summary": "general-purpose 서브에이전트가 develop 후보를 탐색해 stock.js에만 있던 전체실행시간 상한(Promise.race([work,deadline]), HANDLER_BUDGET_MS=8000ms — Netlify 서버리스 실행시간 한도(보통 10초)를 넘겨 하드 502가 나는 대신 그때까지 모인 부분 결과를 반환, cycle228 critique가 세운 계획·cycle233 advance가 그 안의 clearTimeout 누락만 고침)이 rates.js/crypto.js에는 애초에 없었던 공백을 발견 — 둘 다 getJSON() 기본값(ms=6000, retries=1)만으로도 업스트림이 느리면 단 한 번의 호출이 최대 ~12.25초가 걸릴 수 있고(rates.js는 네이버→fxFallbackChain→goldApiXau까지 이어지는 최대 4단계 직렬 getJSON이라 최악엔 그보다 훨씬 길다), 세 엔드포인트가 똑같이 '느린 업스트림에도 부분 결과를 돌려준다'는 설계 철학(각 파일 상단 주석)을 표방하면서도 rates/crypto만 실제로는 그 철학을 지킬 방법이 없어 완전한 502로 끝날 수 있었던 실사용 결함. stock.js의 기존 인라인 Promise.race+clearTimeout 패턴을 _shared.js의 공유 헬퍼 raceDeadline(work, budgetMs)로 추출한 뒤, stock.js는 그 헬퍼를 호출하도록 교체(동작 불변)하고 rates.js(전체 fx/gold 파이프라인을 work로 감싸 타임아웃 시 debug.timedOut=true+Cache-Control no-store)와 crypto.js(단일 업비트 호출을 work로 감싸 동일 처리)에 동일하게 적용해 세 파일이 하나의 테스트된 구현을 공유하게 했다. test/run.js: raceDeadline 단위 테스트 2건(work가 먼저 끝나면 timedOut=false+타이머 누수 없음, budgetMs 초과 시 timedOut=true+타이머 정리) + 세 파일이 _shared.js의 같은 함수를 참조 동일성(===)으로 공유하는지(typeof 가드 포함, 셋 다 undefined라도 통과하는 함정 방지) + handler 레벨 '타이머 안 샘' happy-path 테스트 2건(rates.handler/crypto.handler)만으로는 raceDeadline이 아예 안 불려도(=버그가 그대로 있어도) 우연히 통과함을 직접 확인해, 소스 문자열로 raceDeadline(work, HANDLER_BUDGET_MS) 호출과 HANDLER_BUDGET_MS=8000을 못박는 정적 검사 1건을 추가 — 총 6건 추가(1842->1848). 수정 전 코드(raceDeadline 도입 전)로 되돌려 이 중 4건(단위 테스트 2건+참조동일성 1건+소스문자열 검사 1건)이 FAIL함을, handler 레벨 '타이머 안 샘' 테스트 2건은 타이머 자체가 생성되지 않아 오히려 통과해버림을 직접 확인한 뒤 복원. node --check(_shared.js/stock.js/rates.js/crypto.js/test/run.js) 통과. netlify/functions·test만 변경이라 cycle233 advance와 동일한 전례를 따라 APP_VERSION/sw.js CACHE는 범프하지 않았다. 오케스트레이터가 diff를 직접 읽고(세 파일 모두 happy path 로직 무변경 재확인, 과한 주석 길이는 기존 프로젝트 컨벤션과 일치해 그대로 유지) git stash로 변경분을 걷어낸 뒤 1842/1842 통과를 재확인해 수정분이 실제로 더해진 테스트임을 교차검증, node our-assets-v1.14.1/our-assets/test/run.js를 독립적으로 재실행해 1848/1848 통과를 재확인한 뒤 커밋한다.",
+      "commit": null
+    },
+    {
+      "cycle": 237,
+      "phase": "review",
+      "timestamp": "2026-10-23T07:10:00.000Z",
+      "summary": "cycle237 develop 커밋(56e2830, rates.js/crypto.js에 stock.js와 동일한 raceDeadline 8초 전체실행시간 상한 추가 + stock.js의 기존 인라인 구현을 _shared.js 공유 헬퍼로 통합)을 검토. raceDeadline 구현(deadline Promise의 setTimeout 반환값을 timer에 저장 후 Promise.race 완료 즉시 항상 clearTimeout, work가 이기든 deadline이 이기든 무해)을 직접 읽어 cycle233이 stock.js에서 사후에 고친 타이머 누수를 처음부터 피하는 구조임을 확인. rates.js/crypto.js 모두 out/debug가 work IIFE 바깥(클로저 상위)에 선언돼 raceDeadline이 반환된 뒤에도 그때까지 채워진 부분 결과에 안전하게 접근 가능함을 확인 — missing/usdKrw 등 내부 전용 변수만 work 클로저 안으로 옮겨졌을 뿐 외부 참조 없음도 grep으로 재확인. 캐시 maxAge 분기(rates: timedOut?0:300, crypto: (!timedOut&&Object.keys(out).length)?30:0)가 stock.js의 기존 timedOut?0:60 관례와 일치하는 것도 확인(이번에 새로 만든 규칙이 아니라 기존 컨벤션을 따른 것). work 내부가 전부 try/catch로 감싸여 있어(도메스틱/해외 조회, 네이버/폴백 체인, 금 API 등) work 자체가 reject할 경로가 없음을 재확인해 deadline이 먼저 끝났을 때 unhandled rejection 위험이 없음도 점검. node --check(모든 수정 파일) 통과, node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1848/1848 통과(develop 단계에서 추가한 6건 포함, 핸들러 happy-path 테스트만으로는 raceDeadline 미호출 회귀를 못 잡는다는 구조적 공백을 소스 문자열 검사로 보강한 설계도 타당함을 확인). 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
       "commit": null
     }
   ]
