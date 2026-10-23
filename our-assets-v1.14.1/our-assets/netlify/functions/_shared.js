@@ -123,11 +123,20 @@ function clientKeyFromHeaders(headers) {
  * 항상 clearTimeout해(cycle233이 stock.js에서 사후에 고친 누수를, 공유 헬퍼로 빼면서 처음부터
  * 피한다) 이벤트 루프에 남기지 않는다. 반환값은 timedOut 여부뿐이다 — work 쪽이 그때까지
  * 채워둔 out/debug는 호출부가 클로저로 그대로 들고 있으므로(아직 안 끝났어도 그 시점까지 쓴
- * 값은 남아있음) 따로 전달할 필요가 없다. */
+ * 값은 남아있음) 따로 전달할 필요가 없다.
+ *
+ * work가 reject하는 경우(현재 세 호출부 모두 내부에서 항목별로 try/catch해 실제로는 일어나지
+ * 않지만, 이 공유 헬퍼 자체의 계약으로는 막아두지 않은 입력)는 원래 .then(onFulfilled)만 걸어둬
+ * Promise.race가 reject로 끝나면 그 onFulfilled가 아예 안 불려 clearTimeout(timer)가 실행되지
+ * 않았다 — resolve 경로만 정리되고 reject 경로는 budgetMs(최대 8초)짜리 타이머가 그대로 살아
+ * 남는 누수였다(work가 resolve/timeout 중 하나로만 끝난다고 암묵 가정했던 버그, work 자체가
+ * 100% 안전하다는 걸 이 함수가 검증할 방법은 없으므로 "확실한 쪽만 계산" 원칙과 반대로 암묵
+ * 가정에 기댄 셈). .then을 .finally로 바꿔 resolve/reject 양쪽 다 타이머를 정리하면서,
+ * reject는 그대로 통과시켜(work의 실패를 감추지 않음) 호출부가 필요하면 직접 처리하게 한다. */
 function raceDeadline(work, budgetMs) {
   let timer, timedOut = false;
   const deadline = new Promise(resolve => { timer = setTimeout(() => { timedOut = true; resolve(); }, budgetMs); });
-  return Promise.race([work, deadline]).then(() => { clearTimeout(timer); return timedOut; });
+  return Promise.race([work, deadline]).finally(() => clearTimeout(timer)).then(() => timedOut);
 }
 
 function corsOrigin(origin, allowlist) {

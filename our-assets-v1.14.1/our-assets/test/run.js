@@ -19435,6 +19435,23 @@ if (sharedFns) {
       assert.strictEqual(pending, 0, 'timedOut 분기에서도 deadline setTimeout이 정리돼야 함(clearTimeout(이미 fire된 타이머)는 무해)');
     } finally { global.setTimeout = origSetTimeout; global.clearTimeout = origClearTimeout; }
   });
+  /* work가 reject하는 경로 — 현재 stock.js/rates.js/crypto.js의 work는 항목별로 모두 try/catch해
+   * 실제로는 reject하지 않지만, raceDeadline 자신의 계약으로는 그걸 막아두지 않았다. 원래
+   * .then(onFulfilled)만 걸려 있어 Promise.race가 reject로 끝나면 onFulfilled가 안 불려
+   * clearTimeout이 누락됐다(budgetMs짜리 deadline 타이머가 그대로 살아남는 누수). work의 실패
+   * 자체는 그대로 reject로 전파돼야 하므로(감추면 안 됨) assert.rejects로 거부를 확인하면서,
+   * 그 경로에서도 타이머가 정리됐는지 함께 검증한다. */
+  test('_shared.raceDeadline: work가 reject해도 deadline 타이머가 정리되고(누수 없음), work의 실패는 그대로 reject로 전파된다', async () => {
+    const origSetTimeout = global.setTimeout, origClearTimeout = global.clearTimeout;
+    let pending = 0;
+    global.setTimeout = (fn, ms, ...args) => { pending++; return origSetTimeout(fn, ms, ...args); };
+    global.clearTimeout = (t) => { if (t) pending--; return origClearTimeout(t); };
+    try {
+      const work = new Promise((resolve, reject) => origSetTimeout(() => reject(new Error('work 실패')), 5));
+      await assert.rejects(() => sharedFns.raceDeadline(work, 5000), /work 실패/);
+      assert.strictEqual(pending, 0, 'work가 reject했는데 deadline setTimeout이 clearTimeout되지 않아 누수됨');
+    } finally { global.setTimeout = origSetTimeout; global.clearTimeout = origClearTimeout; }
+  });
 }
 
 /* ---------- netlify/functions/crypto.js: 암호화폐(업비트) 시세 중계 순수 함수 (app-evolve cycle219) ----------
