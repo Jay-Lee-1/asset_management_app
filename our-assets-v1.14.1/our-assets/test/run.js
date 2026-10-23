@@ -19472,6 +19472,25 @@ if (cryptoFns) {
     assert.strictEqual(cryptoFns.toNum('abc'), 0);
     assert.strictEqual(cryptoFns.errText({ status: 404 }), 'HTTP 404');
   });
+
+  /* crypto.pricesFromCryptoCompare: 업비트 단일소스 SPOF를 메우는 CryptoCompare pricemulti
+   * 배치 폴백 응답 파서(app-evolve cycle240 critique → advance) */
+  test('crypto.pricesFromCryptoCompare: pricemulti 응답({BTC:{KRW:...}})을 {코드:가격}으로 변환한다', () => {
+    const out = cryptoFns.pricesFromCryptoCompare({ BTC: { KRW: 143250000 }, ETH: { KRW: 5120000.5 } }, ['BTC', 'ETH']);
+    assert.deepStrictEqual(out, { BTC: 143250000, ETH: 5120000.5 });
+  });
+  test('crypto.pricesFromCryptoCompare: 요청한 코드가 응답에 없으면(또는 KRW 필드 누락) 그 코드만 빠진다(예외 없음)', () => {
+    const out = cryptoFns.pricesFromCryptoCompare({ BTC: { KRW: 143250000 }, ETH: {} }, ['BTC', 'ETH', 'XRP']);
+    assert.deepStrictEqual(out, { BTC: 143250000 });
+  });
+  test('crypto.pricesFromCryptoCompare: 0 가격은 걸러낸다(toNum 공유 규약 — pricesFromTickers와 동일)', () => {
+    const out = cryptoFns.pricesFromCryptoCompare({ BTC: { KRW: 0 }, XRP: { KRW: 500 } }, ['BTC', 'XRP']);
+    assert.deepStrictEqual(out, { XRP: 500 });
+  });
+  test('crypto.pricesFromCryptoCompare: json이 비정상(null/배열/Response:Error 등)이어도 터지지 않고 빈 {}를 반환한다', () => {
+    assert.deepStrictEqual(cryptoFns.pricesFromCryptoCompare(null, ['BTC']), {});
+    assert.deepStrictEqual(cryptoFns.pricesFromCryptoCompare({ Response: 'Error', Message: 'not found' }, ['BTC']), {});
+  });
 }
 
 /* ---------- netlify/functions {stock,rates,crypto}.js: exports.handler 결선 검증 (app-evolve cycle230 advance) ----------
@@ -19729,6 +19748,49 @@ if (stockFns && ratesFns && cryptoFns) {
       global.clearTimeout = origClearTimeout;
       restoreFetch();
     }
+  });
+  /* crypto.handler: 업비트 단일소스 SPOF를 메우는 CryptoCompare 배치 폴백 통합 테스트
+   * (app-evolve cycle240 critique → advance) */
+  test('crypto.handler: 업비트가 일부 코드만 성공하면 CryptoCompare 폴백이 나머지 코드를 보완한다', async () => {
+    installFetchQueue([
+      okJson([{ market: 'KRW-BTC', trade_price: 143250000 }]), // 업비트: BTC만 성공, ETH는 응답에 없음(장애/레이트리밋 시뮬레이션)
+      okJson({ ETH: { KRW: 5120000 } }),                        // CryptoCompare: 업비트가 못 채운 ETH만 배치로 보충
+    ]);
+    try {
+      const res = await cryptoFns.handler({ queryStringParameters: { codes: 'BTC,ETH', debug: '1' } });
+      assert.strictEqual(res.statusCode, 200);
+      const body = JSON.parse(res.body);
+      assert.strictEqual(body.BTC, 143250000);
+      assert.strictEqual(body.ETH, 5120000);
+      assert.strictEqual(body._debug.tried.BTC, 'upbit');
+      assert.strictEqual(body._debug.tried.ETH, 'cryptocompare');
+      assert.deepStrictEqual(body._debug.errors, {}, `폴백으로 둘 다 채워졌으면 errors가 비어있어야 함: ${JSON.stringify(body._debug.errors)}`);
+    } finally { restoreFetch(); }
+  });
+  test('crypto.handler: 업비트가 전부 실패해도(장애) CryptoCompare 폴백 단독으로 가격을 채운다', async () => {
+    installFetchQueue([
+      failHttp(404),                       // 업비트: 전체 실패
+      okJson({ BTC: { KRW: 143250000 } }), // CryptoCompare: 폴백 단독으로 채움
+    ]);
+    try {
+      const res = await cryptoFns.handler({ queryStringParameters: { codes: 'BTC', debug: '1' } });
+      assert.strictEqual(res.statusCode, 200);
+      const body = JSON.parse(res.body);
+      assert.strictEqual(body.BTC, 143250000, '업비트 전체 실패 시에도 CryptoCompare 폴백으로 가격을 채워야 함 — 수정 전엔 두 번째 소스가 없어 out={}로 남았음');
+      assert.strictEqual(body._debug.tried.BTC, 'cryptocompare');
+      assert.ok(!('BTC' in body._debug.errors), 'CryptoCompare가 성공했으면 업비트 실패 흔적(errors.BTC)이 지워져 있어야 함');
+    } finally { restoreFetch(); }
+  });
+  test('crypto.handler: 업비트·CryptoCompare 둘 다 실패하면 out={}이고 debug.errors에 사유가 남는다(raceDeadline 8초 예산을 넘기지 않고 정상 종료)', async () => {
+    installFetchQueue([failHttp(404), failHttp(404)]);
+    try {
+      const res = await cryptoFns.handler({ queryStringParameters: { codes: 'BTC', debug: '1' } });
+      assert.strictEqual(res.statusCode, 200);
+      const body = JSON.parse(res.body);
+      assert.deepStrictEqual(Object.keys(body).filter(k => k !== '_debug'), [], '둘 다 실패했으면 가격 데이터가 전혀 없어야 함');
+      assert.ok(body._debug.errors.BTC, '두 소스 모두 실패한 코드는 사유가 debug.errors에 남아있어야 함');
+      assert.ok(!body._debug.timedOut, '이 테스트는 8초 예산과 무관하게 즉시 실패하는 경로라 timedOut이 서면 안 됨');
+    } finally { restoreFetch(); }
   });
   test('crypto.handler: rate limit을 넘기면 429를 반환한다 — 이 파일의 마지막 handler 테스트여야 함(버킷 영구 소진)', async () => {
     installFetchQueue([failHttp(404)]);

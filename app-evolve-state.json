@@ -1,19 +1,8 @@
 {
-  "cycle": 240,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "crypto.js 가격조회에 CryptoCompare 배치 폴백 추가 (업비트 단일소스 SPOF 해소)",
-    "why": "stock.js는 네이버→Finnhub 2단계 가격체인+네이버→fxapi.app→open.er-api.com 3단계 fx체인, rates.js도 cycle240에서 needUsdForGold까지 포함한 다중 fx/gold 폴백 체인을 갖췄는데, crypto.js는 work() 안에서 업비트 getJSON 단 한 번(crypto.js:35)만 호출하고 실패하면 debug.errors[c]만 채운 채(37,39행) 두 번째 소스가 전혀 없다. 업비트 장애/레이트리밋/응답형식변경 시 out={}로 전부 비어 코인 자산 보유 사용자의 순자산/자산배분/투자손익 카드에서 코인 구간만 조용히 '일부 미확인'/누락되고, 같은 포트폴리오의 fx/주식/금은 각자의 폴백 체인으로 멀쩡히 동작한다 — cycle240에서 fx/gold에 이미 두 번 고친 것과 같은 클래스의 결함을 crypto만 확장하지 않은 공백.",
-    "approach": "netlify/functions/crypto.js만 변경(index.html/logic.js/sw.js 불변, cycle233/237/239/240 전례대로 버전 범프 불필요). 업비트로 못 채운 missing 코드만 모아 CryptoCompare 키불필요 배치 엔드포인트(https://min-api.cryptocompare.com/data/pricemulti?fsyms=<CODES>&tsyms=KRW)로 단일 폴백 호출(코드별 반복호출 아님). 순수헬퍼 pricesFromCryptoCompare(json,codes) 신설(0/음수/누락 필터링, pricesFromTickers와 동일한 엣지케이스 처리 스타일). work() 내부에서 업비트 호출 후 missing=codes.filter(c=>!(c in out)) 계산, missing.length면 CryptoCompare 폴백을 await(기존 raceDeadline(work,HANDLER_BUDGET_MS) 8초 예산 안에 그대로 포함, 새 타이밍 프리미티브 불필요), 결과를 out에 병합하고 debug.tried[c]='cryptocompare' 태깅, 둘 다 실패한 코드만 debug.errors에 남김. test/run.js: pricesFromCryptoCompare 단위테스트(정상 파싱/코드 누락/0·음수가격 필터링/JSON 파싱 실패해도 안 터짐) + handler 통합테스트 3건(업비트 일부코드만 성공→폴백이 나머지 보완, 업비트 전체 실패→폴백 단독으로 채움, 둘 다 실패→out={}+debug.errors 채움+8초 raceDeadline 준수). 기존 installFetchQueue/okJson/failHttp 목킹 패턴을 재사용."
-  },
+  "cycle": 241,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 235,
-      "phase": "advance",
-      "timestamp": "2026-10-23T01:10:00.000Z",
-      "summary": "critique(cycle235) 계획대로 라이트모드 sunset 액센트 --brand를 #B8661A -> #A65C17로 교체(두 위치: html[data-accent=\"sunset\"] CSS 규칙 107행, ACCENTS 배열 스와치 색 7124행 — 다른 리터럴 없음을 grep으로 재확인). node로 logic.js의 contrastRatio 알고리즘을 재구현해 재검증: #B8661A/#FFFFFF=4.239:1(미달), #A65C17/#FFFFFF=5.042:1(통과). 실제로는 ACCENTS 배열이 7개뿐(teal 기본 포함, critique의 '13개 다른 프리셋'은 과대추정이었음 — 라이트 CSS 규칙 grep으로 teal/indigo/plum/forest/sunset/rose/slate 총 7개임을 확인)이라 나머지 6개(indigo 6.208/plum 5.560/forest 5.281/sunset-new 5.042/rose 4.558/slate 6.418, teal 기본 4.889)를 전부 재계산해 sunset만 미달이었다는 진단을 재확인. --brand-ink/--brand-soft/--brand-tint와 다크모드 sunset 블록(#F0A659/#241202=이미 4.5 이상)은 plan대로 불변. test/run.js에 ACCENTS 7개 전체의 라이트 --brand/--on-brand 4.5:1 검증 1건 + 구 값(#B8661A) 회귀가드 1건 + sunset 다크모드 불변 확인 1건 총 3건 추가. APP_VERSION 1.47.219->1.47.220, sw.js CACHE v486->v487 동기 반영. node --check(test/run.js) 통과. node our-assets-v1.14.1/our-assets/test/run.js 1812/1812 -> 1815/1815 통과. pending_advance_plan은 null로 비웠다.",
-      "commit": null
-    },
     {
       "cycle": 236,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-23T19:30:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-240 전체 다룬 영역 전부 제외 지시)한 결과, 가격조회 3개 함수(stock.js/rates.js/crypto.js) 중 crypto.js만 업스트림 소스가 업비트 ticker API 단 하나(crypto.js:35)뿐임을 발견 — stock.js는 네이버→Finnhub 2단계 가격체인(64-90행)+네이버→fxapi.app→open.er-api.com 3단계 fx체인(156-190행), rates.js도 cycle240에서 needUsdForGold까지 포함한 다중 fx/gold 폴백 체인을 갖췄는데, crypto.js는 work() 안에서 업비트 호출 한 번만 하고 실패하면 debug.errors[c]만 채운 채(37,39행) 두 번째 소스가 없다. 실패 시나리오: 업비트 장애/레이트리밋/응답형식변경(stock.js/rates.js 주석이 실제 전례가 있어 폴백을 둔 이유라고 밝힘) 시 out={}로 전부 비어 코인 자산 보유 사용자의 순자산/자산배분/투자손익 카드에서 코인 구간만 조용히 '일부 미확인'/누락되는데, 같은 포트폴리오의 fx/주식/금은 각자 폴백 체인으로 멀쩡히 동작 — cycle240 develop/review에서 fx/gold에 이미 두 번 고친 것과 같은 클래스의 결함을 crypto만 확장하지 않은 공백. 러너업 기각: OS 알림이 앱이 열려있을 때만 동작(setInterval 기반, Push API/VAPID 백엔드가 필요해 한 사이클 범위를 넘는 재작성급이라 제외), 한국어 NFC/NFD 검색 정규화 및 자산/그룹 재정렬 키보드 접근성(각각 cycle224/cycle139에 이미 구현 확인 — picked clean). advance 계획(crypto.js에 업비트로 못 채운 missing 코드만 모아 CryptoCompare pricemulti 배치 폴백 1회 호출 추가, pricesFromCryptoCompare(json,codes) 순수헬퍼 신설, work() 내부에서 기존 raceDeadline 8초 예산 안에 포함, debug.tried[c]='cryptocompare' 태깅; test/run.js에 단위+handler 통합테스트 추가; netlify/functions+test만 변경이라 버전 범프 불필요)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "commit": null
+    },
+    {
+      "cycle": 240,
+      "phase": "advance",
+      "timestamp": "2026-10-23T20:15:00.000Z",
+      "summary": "critique(cycle240) 계획대로 crypto.js에 CryptoCompare pricemulti 배치 폴백을 추가해 업비트 단일소스 SPOF를 해소했다. work() 안에서 업비트 호출 후 missing=codes.filter(c=>!(c in out))을 계산하고, missing.length면 https://min-api.cryptocompare.com/data/pricemulti?fsyms=<missing>&tsyms=KRW를 기존 raceDeadline(work, HANDLER_BUDGET_MS=8000) 예산 안에서 순차로 1회 호출(코드별 반복호출 아님)해 결과를 out에 병합하고 debug.tried[c]='upbit'|'cryptocompare'로 소스를 태깅, 둘 다 실패한 코드만 debug.errors에 남긴다(에러 메시지에 'upbit: '/'cryptocompare: ' 접두사를 붙여 어느 단계에서 실패했는지 구분). 순수헬퍼 pricesFromCryptoCompare(json,codes)를 신설해 pricemulti 응답({BTC:{KRW:...}})을 {코드:원}으로 변환하며, 요청한 코드가 응답에 없거나 KRW 필드가 없거나 json 자체가 비정상이어도 예외 없이 빈 값만 빠진다(0 가격 필터링은 toNum 공유 규약을 그대로 따름 — toNum은 음수를 문자열화 후 '-' 기호를 제거하는 특성상 음수를 양수로 취급하는 기존 전역 한계가 있어, 음수 전용 필터링 테스트는 추가하지 않고 기존 pricesFromTickers와 동일한 범위로만 검증). index.html/logic.js/sw.js는 건드리지 않아 cycle233/237/239/240 전례대로 APP_VERSION/sw.js CACHE 범프는 불필요. test/run.js: pricesFromCryptoCompare 단위 테스트 4건(정상 파싱/코드 누락 또는 KRW 필드 누락/0 가격 필터링/json이 null·Response:Error 등 비정상이어도 안전) + crypto.handler 통합 테스트 3건(업비트가 BTC만 성공→CryptoCompare가 ETH만 보완, 업비트 전체 실패→CryptoCompare 단독으로 채움, 둘 다 실패→out={}+debug.errors에 사유 남음+timedOut 없이 정상 종료) 총 7건 추가(1880->1887). git stash로 crypto.js 수정분만 걷어낸 뒤(test/run.js는 유지) node test/run.js를 돌려 신규 6건(단위 4건 중 pricesFromCryptoCompare 자체 함수 없음 1건 제외하고 통합 3건+단위 중 함수 존재 전제 테스트들)이 FAIL함(1881/1887)을 직접 확인했고, stash pop으로 복원 후 1887/1887 통과를 재확인했다. node --check(crypto.js/test/run.js) 통과. pending_advance_plan은 null로 비웠다.",
       "commit": null
     }
   ]
