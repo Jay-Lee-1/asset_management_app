@@ -1,19 +1,8 @@
 {
-  "cycle": 237,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "isDuePending()이 device-local TODAY를 써서 KST 기준 반복이체 '확인 대기' 판정이 최대 ~1일 어긋남",
-    "why": "todayStr()/TODAY(index.html:1723-1724, refreshToday()가 9346-9353에서 갱신)는 기기 로컬 캘린더 날짜를 쓰는데, 반복이체 1일 등 한국 은행업무일에 묶인 이벤트의 '확인 대기' 판정(isDuePending(), index.html:1738: isPending(t)&&t.date<=TODAY)이 그 device-local TODAY를 그대로 쓴다. inQuietWindow()(index.html:3374-3381)는 같은 문제를 이미 'd.getTime()+9*60*60000' UTC+9 보정으로 피해가고 있어 두 함수가 서로 다른 시간대 기준을 쓰는 비일관 상태다. 실패 시나리오: 한국보다 시계가 느린 시간대(미국 UTC-4/-5 등)에 있는 사용자는 한국에서 이미 그 달 1일 이체가 처리된 뒤에도 최대 ~14시간 동안 TODAY가 전월 말일로 남아 isDuePending이 false가 되어 '확인' 버튼이 안 뜨고, 홈 화면 '오늘 확인할 이체' 그룹과 checkNotifyAlerts()/notifyAlertInfo(8279+, 5분 setInterval 8937) 알림에서도 빠진다. 반대로 한국보다 빠른 시간대(호주/일본+1 등)는 실제 처리되기 최대 하루 전에 '확인 대기'로 표시된다. 핵심 반복이체 확인 기능에서 실제로 틀린 결과가 나오는, 교포/해외체류 사용자 세그먼트에 한정되지만 cosmetic이 아닌 진짜 결함. cycle234 critique에서 러너업으로 기각됐다가 cycle237 재탐색에서 재확인: SRI TODO(egress 차단으로 여전히 불가), 카테고리별 예산(이미 구현/테스트됨), CSV 수식 인젝션 가드(이미 처리됨), 차트 접근성(role=img+aria-label+키보드 peek 이미 구현됨), 목표-연결자산 삭제 orphan 처리(이미 가드됨) 등은 전부 기각.",
-    "approach": "1) logic.js 상단 DATE/RECURRENCE 섹션(recDates/shiftWeekend 근처)에 순수함수 kstTodayStr(d) 추가 — inQuietWindow()가 쓰는 것과 동일한 d.getTime()+9*60*60000 UTC+9 보정 기법으로 'YYYY-MM-DD' 반환. 2) isDuePending(t)(index.html:1738)의 t.date<=TODAY를 t.date<=kstTodayStr()로 교체 — TODAY/todayStr() 자체(신규거래 기본 날짜, '오늘' 홈 라벨, 예산월 경계, nwHistory 스냅샷 키)는 손대지 않음(이건 정당하게 '사용자의 로컬 날짜'가 맞는 영역이라 범위 밖). 3) txScheduled()(index.html:1737, '예정' 배지)와 checkNotifyAlerts()의 당일 그룹핑(약 8279-8360)에서 같은 t.date<=TODAY 패턴을 찾아 동일하게 교체해 확인버튼/예정배지/푸시알림 세 곳이 서로 어긋나지 않게 함. 4) inQuietWindow()는 선택적으로 kstTodayStr과 같은 UTC+9 변환을 공유하도록 리팩터(필수 아님, 주석으로 짝지음도 가능). 5) test/run.js에 kstTodayStr 단위 테스트(UTC 15:30=KST 다음날 같은 경계 케이스, inQuietWindow 테스트 스타일 참고) + isDuePending이 device-local TODAY가 KST보다 하루 느릴 때도 KST 기준으로 due 판정하는 회귀 테스트 추가. 6) index.html은 수정하지만 logic.js도 바뀌므로 APP_VERSION(1409행, 1.47.222->1.47.223)과 sw.js CACHE(6행, v489->v490) 동기 범프."
-  },
+  "cycle": 238,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 232,
-      "phase": "advance",
-      "timestamp": "2026-10-22T12:22:32.660Z",
-      "summary": "critique(cycle232) 계획대로 OS 다크/라이트 자동 전환 시 <meta name=\"theme-color\"> 미동기화 버그를 고쳤다. setTheme()(index.html:7097-7099)에 인라인으로만 있던 meta 갱신 로직을 syncThemeColorMeta() 헬퍼로 추출(dark 판정: themeMode===\"dark\" || (themeMode===\"system\" && matchMedia(\"(prefers-color-scheme:dark)\").matches) 후 meta[name=theme-color] content 설정)하고 setTheme()은 이 헬퍼 호출로 교체(중복 로직 제거, 동작 불변). matchMedia(\"(prefers-color-scheme:dark)\").addEventListener(\"change\", ...)(index.html:9279)에서 themeMode===\"system\"일 때 renderCurrent()와 함께 syncThemeColorMeta()도 호출하도록 수정해 OS 테마 전환 중에도 상태바색이 즉시 맞춰지게 했다. startApp()(부팅, 8809행)의 data-theme/data-accent 재적용 지점에도 syncThemeColorMeta() 호출을 추가해 부팅 인라인 캐시와 DB.settings가 어긋나는 드문 경우까지 보강(계획 3번, 선택 항목이었으나 비용이 작아 포함). test/run.js: syncThemeColorMeta() 자체를 별도 vm 컨텍스트(recManageCtx와 같은 패턴, meta/matchMedia 스텁)에서 실행형으로 검증하는 테스트 3건(dark 고정/light 고정/system이 matchMedia를 따라감), setTheme()이 syncThemeColorMeta()로 위임하고 인라인 중복이 남지 않았는지 정적 검사 1건, matchMedia change 리스너가 system 가드 하에 syncThemeColorMeta()+renderCurrent() 둘 다 호출하는지 정적 검사 1건(처음 구현 시 첫 \";\" 기준으로 문장을 잘라 renderCurrent() 호출을 누락 검출하는 버그가 있어 줄 끝(\\n) 기준으로 고쳐 통과시킴), startApp()이 data-theme 설정 이후 syncThemeColorMeta()를 호출하는 순서까지 확인하는 정적 검사 1건 — 총 6건 추가. APP_VERSION 1.47.214->1.47.215, sw.js CACHE v481->v482. node --check(test/run.js) 통과. node our-assets-v1.14.1/our-assets/test/run.js 1795/1795 -> 1801/1801 통과. pending_advance_plan은 null로 비웠다.",
-      "commit": null
-    },
     {
       "cycle": 233,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-23T08:20:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-237 전체 다룬 영역 전부 제외 지시, cycle234 critique가 러너업으로 보류해둔 todayStr() vs inQuietWindow() 시간대 불일치를 재검토 옵션으로 명시)한 결과, 그 러너업을 더 구체화해 채택: isDuePending(t)(index.html:1738, isPending(t)&&t.date<=TODAY)가 device-local TODAY(1723-1724, refreshToday() 9346-9353)를 쓰는데, 반복이체 1일 등 한국 은행업무일 기준 이벤트는 KST 기준이어야 함 — inQuietWindow()(3374-3381)는 이미 d.getTime()+9*60*60000 UTC+9 보정으로 이 문제를 피해가는 반면 isDuePending은 그대로 device-local. 실패 시나리오: 한국보다 시계가 느린 시간대(미국 등) 사용자는 한국에서 이미 이체가 처리된 뒤에도 최대 ~14시간 TODAY가 전월 말일로 남아 '확인' 버튼/홈 '오늘 확인할 이체' 그룹/checkNotifyAlerts() 알림(8279+)에서 모두 빠짐 — 반대로 한국보다 빠른 시간대는 실제 처리 전에 '확인 대기'로 표시됨. 핵심 반복이체 확인 기능의 실제 wrong-outcome이며 교포/해외체류 세그먼트에 한정되지만 cosmetic이 아님. 같은 패턴을 쓰는 txScheduled()(1737, '예정' 배지)와 checkNotifyAlerts() 당일 그룹핑(약 8279-8360)도 함께 고쳐야 세 표시가 서로 어긋나지 않음. 러너업 재확인 후 기각: SRI TODO(index.html:1374-1378, cdn.jsdelivr.net/t1.kakaocdn.net curl이 이 샌드박스에서 connect_rejected로 여전히 막혀 재확인만 함), 카테고리별 예산+롤오버(logic.js:618-639 이미 구현/테스트됨), CSV 수식 인젝션 가드(txnsToCSV/guard/unguardCsv 6405-6435 이미 처리), 차트 접근성(nwChart/assetBalChart 2915-3041 role=img+aria-label+키보드 peek 이미 구현), 목표-연결자산 삭제 orphan 처리(goalLinkedAssetGone() 3182 이미 가드됨). advance 계획을 pending_advance_plan에 저장: logic.js에 inQuietWindow와 동일한 UTC+9 기법을 쓰는 순수함수 kstTodayStr(d) 신설, isDuePending()/txScheduled()/checkNotifyAlerts() 당일 그룹핑의 t.date<=TODAY를 t.date<=kstTodayStr()로 교체(TODAY/todayStr() 자체는 신규거래 기본값·예산월 경계 등 정당히 device-local인 용도라 불변), test/run.js에 kstTodayStr 경계 테스트+isDuePending의 device-local/KST 괴리 회귀 테스트 추가, logic.js도 바뀌므로 APP_VERSION 1.47.222->223/sw.js CACHE v489->v490 동기 범프. 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "commit": null
+    },
+    {
+      "cycle": 237,
+      "phase": "advance",
+      "timestamp": "2026-10-23T09:17:47.599Z",
+      "summary": "critique(cycle237) 계획대로 isDuePending()의 도래 판정을 기기 로컬 TODAY 대신 logic.js의 새 순수함수 kstTodayStr()(inQuietWindow()와 동일한 d.getTime()+9*60*60000 UTC+9 고정 산술)로 바꿔, 한국 은행업무일 기준 반복이체 확인 대기 판정이 기기 시간대에 따라 최대 하루 어긋나던 버그를 고쳤다. isDuePending()이 pendingTransferCount()/확인버튼(txn row)/openConfirmTransferList()/homeAlerts()의 confirm·confirmMulti 알림·checkNotifyAlerts() OS 푸시까지 전부 경유하므로 그 한 지점만 고치면 전부 동기화됨을 호출부 전체(allTxns 필터/4489행 확인버튼) grep으로 재확인했다. 추가로 toggleConfirmTransfers()의 pendingOneOff가 같은 의미를 t.date<=TODAY로 별도 인라인하고 있던 중복을 찾아 isDuePending(t) 호출로 통일(동작 동치 — DB.txns에는 isRec 항목이 없어 isPending()의 t.confirmed===false 분기와 같음). txScheduled()/checkNotifyAlerts()의 당일 그룹핑은 재검토 결과 별도 t.date<=TODAY 패턴이 없어(isFuture()는 의도적으로 기기-로컬 유지, 예정 배지는 isPending()이 날짜와 무관하게 참이라 영향 없음) 추가 수정 불필요였음. 핵심 위험: pendingTransferCount/toggleConfirmTransfers 테스트 11건이 TODAY만 mock하고 kstTodayStr()의 실제 지금(Date)은 mock하지 않아 비결정적이 될 뻔한 것을 발견 — withFakeNow(기존 inQuietWindow 테스트 패턴)를 재사용한 withFakeToday(dateStr,fn) 헬퍼를 추가해 TODAY와 KST 지금을 같은 날짜로 맞춰 11개 기존 테스트를 전부 감쌌다(실제로 2건은 즉시 FAIL했었고, 나머지는 fixture 날짜가 real-now보다 과거라 우연히 통과하고 있었을 뿐이었음 — 수정 전 되돌려 직접 확인). kstTodayStr 경계 테스트 2건(자정 KST 전후, withTZ(America/New_York)에서도 동일) + isDuePending의 device-local/KST 괴리 회귀 테스트 2건(기기가 KST보다 느려도 KST 기준 도래분은 due, 기기가 빨라도 KST 기준 미도래면 due 아님) 총 4건 신규 추가. logic.js도 바뀌므로 APP_VERSION 1.47.222->1.47.223, sw.js CACHE v489->v490 동기 범프. node --check(logic.js/sw.js/test/run.js) 통과. 수정 전 코드로 되돌려 신규 회귀 테스트 2건이 FAIL함을 직접 확인한 뒤 복원. node our-assets-v1.14.1/our-assets/test/run.js 1848/1848 -> 1852/1852 통과.",
       "commit": null
     }
   ]

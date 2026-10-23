@@ -1406,7 +1406,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.222';
+const APP_VERSION='1.47.223';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1735,7 +1735,10 @@ function isPending(t){
  return t.confirmed===false;
 }
 function txScheduled(t){return isFuture(t.date)||isPending(t)}
-function isDuePending(t){return isPending(t)&&t.date<=TODAY}
+/* 도래 판정은 기기 로컬 TODAY가 아니라 kstTodayStr()(logic.js, KST 고정)로 — inQuietWindow()와
+ * 같은 이유: 한국 은행업무일 기준 이벤트라 기기 시간대에 따라 최대 하루 어긋나면 안 된다
+ * (app-evolve cycle237 critique/advance) */
+function isDuePending(t){return isPending(t)&&t.date<=kstTodayStr()}
 function rollPendingTransfers(){ /* 확인 못 한 이체는 다음 날로(밀린 건 오늘로) 이동 */
  if(!DB.settings.confirmTransfers)return;
  let changed=false;
@@ -3544,9 +3547,11 @@ function toggleConfirmTransfers(){
  const turningOff=DB.settings.confirmTransfers;
  if(turningOff){
   /* 일반 이체뿐 아니라 반복 이체(autoConfirm:false)의 도래한 미확인 회차도 함께 센다
-     (pendingTransferCount()/일정 화면과 동일하게 '도래한'(date<=TODAY) 것만 대상 — 아직 안 온
-     미래 회차까지 지금 완료 처리해버리면 안 됨) */
-  const pendingOneOff=DB.txns.filter(t=>t.type==='transfer'&&t.confirmed===false&&t.date<=TODAY);
+     (pendingTransferCount()/일정 화면과 동일하게 '도래한'(isDuePending, KST 기준) 것만 대상 — 아직
+     안 온 미래 회차까지 지금 완료 처리해버리면 안 됨). 전엔 t.date<=TODAY를 여기서만 따로
+     인라인했는데(기기-로컬 TODAY 기준이라 isDuePending()과 다른 기준으로 어긋날 수 있었음),
+     isDuePending()으로 통일한다(app-evolve cycle237 advance) */
+  const pendingOneOff=DB.txns.filter(t=>isDuePending(t));
   const pendingRecList=allTxns(RANGE_FROM,TODAY).filter(t=>t.isRec&&t.type==='transfer'&&isDuePending(t));
   const pending=pendingOneOff.length+pendingRecList.length;
   if(pending){

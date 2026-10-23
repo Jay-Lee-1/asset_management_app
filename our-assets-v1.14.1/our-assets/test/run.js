@@ -1027,6 +1027,26 @@ test('inQuietWindow: 월요일 08:00 KST에 휴장이 끝난다(그 직전 07:59
   });
 });
 
+/* ---------- kstTodayStr: isDuePending()이 inQuietWindow()와 동일한 UTC+9 고정 산술을 공유해야
+ * 한다(app-evolve cycle237 critique/advance) — 자정 KST 전후 경계에서 기기 로컬 날짜와 KST
+ * 날짜가 실제로 하루 갈리는 instant를 골라, UTC 기준 TZ뿐 아니라 America/New_York(UTC-4)에서도
+ * 똑같이 '2026-10-03'이 나와야 기기 시간대와 무관하게 KST에 고정된 것이 맞다. ---------- */
+test('kstTodayStr: 자정(00:00 KST) 전후로 날짜가 바뀐다(그 직전은 전날)', () => {
+  const justBefore = new Date('2026-10-02T14:59:59.999Z'); // = 2026-10-02 23:59:59.999 KST
+  const justAfter = new Date('2026-10-02T15:00:00.000Z'); // = 2026-10-03 00:00:00.000 KST
+  assert.strictEqual(sandbox.kstTodayStr(justBefore), '2026-10-02');
+  assert.strictEqual(sandbox.kstTodayStr(justAfter), '2026-10-03');
+  withTZ('America/New_York', () => {
+    assert.strictEqual(sandbox.kstTodayStr(justBefore), '2026-10-02');
+    assert.strictEqual(sandbox.kstTodayStr(justAfter), '2026-10-03');
+  });
+});
+test('kstTodayStr: 인자 없이 부르면 inQuietWindow()처럼 "지금"(new Date())의 KST 날짜를 쓴다', () => {
+  withFakeNow(new Date('2026-10-02T15:30:00.000Z').getTime(), () => { // = 2026-10-03 00:30 KST
+    assert.strictEqual(sandbox.kstTodayStr(), '2026-10-03');
+  });
+});
+
 // autoSyncRates()/rateStatusText()는 inQuietWindow()를 인자 없이 불러 "지금"(new Date())을
 // 기준으로 판정한다 — 결정적으로 테스트하려면 vm 컨텍스트의 전역 Date 자체를 고정 시각으로
 // 바꿔치기해야 한다. sandbox.Date를 지우면(delete) 컨텍스트 고유 내장 Date로 되돌아간다
@@ -1039,6 +1059,16 @@ function withFakeNow(ms, fn) {
   }
   sandbox.Date = FakeDate;
   try { return fn(); } finally { delete sandbox.Date; }
+}
+
+// isDuePending()(app-evolve cycle237 advance)이 TODAY(기기-로컬) 대신 kstTodayStr()을 인자 없이
+// 불러 "지금"(new Date())의 KST 날짜로 도래 여부를 판정하게 됐다 — pendingTransferCount/
+// toggleConfirmTransfers/homeAlerts의 confirm 알림처럼 이걸 쓰는 로직을 테스트할 땐 TODAY만
+// mock해서는 결정적이지 않다(실제 실행 시각의 KST 날짜가 기준이 되므로). withFakeNow와 같은
+// 방식으로 sandbox.Date를 고정하되, "그 날짜의 KST 정오"를 ms로 골라 dateStr이 kstTodayStr()의
+// 기준으로도 같은 날짜가 되게 한다. TODAY(기기-로컬)는 여전히 테스트가 별도로 세팅해야 한다.
+function withFakeToday(dateStr, fn) {
+  return withFakeNow(new Date(`${dateStr}T12:00:00+09:00`).getTime(), fn);
 }
 
 /* ---------- autoSyncRates/rateStatusText: crypto 전용 보유자는 KRX 주말 휴장 창에서도
@@ -9166,22 +9196,22 @@ function pendingRec(overrides) {
     autoConfirm: false, confirmedDates: [],
   }, overrides);
 }
-test('pendingTransferCount: 반복거래로 생성된 미확인 이체(오늘 도래)도 카운트에 잡힌다', () => {
+test('pendingTransferCount: 반복거래로 생성된 미확인 이체(오늘 도래)도 카운트에 잡힌다', () => withFakeToday('2026-06-15', () => {
   sandbox.TODAY = '2026-06-15';
   sandbox.DB = { settings: { confirmTransfers: true }, txns: [], recurrences: [pendingRec()] };
   assert.strictEqual(sandbox.pendingTransferCount(), 1);
-});
-test('pendingTransferCount: 이미 확인 처리된(confirmedDates 포함) 회차는 카운트에서 빠진다', () => {
+}));
+test('pendingTransferCount: 이미 확인 처리된(confirmedDates 포함) 회차는 카운트에서 빠진다', () => withFakeToday('2026-06-15', () => {
   sandbox.TODAY = '2026-06-15';
   sandbox.DB = { settings: { confirmTransfers: true }, txns: [], recurrences: [pendingRec({ confirmedDates: ['2026-06-15'] })] };
   assert.strictEqual(sandbox.pendingTransferCount(), 0);
-});
-test('pendingTransferCount: autoConfirm이 꺼져 있지 않은(자동확인) 반복이면 카운트되지 않는다', () => {
+}));
+test('pendingTransferCount: autoConfirm이 꺼져 있지 않은(자동확인) 반복이면 카운트되지 않는다', () => withFakeToday('2026-06-15', () => {
   sandbox.TODAY = '2026-06-15';
   sandbox.DB = { settings: { confirmTransfers: true }, txns: [], recurrences: [pendingRec({ autoConfirm: true })] };
   assert.strictEqual(sandbox.pendingTransferCount(), 0);
-});
-test('pendingTransferCount: 일반 미확인 이체(DB.txns)와 반복 미확인 이체를 합쳐서 센다', () => {
+}));
+test('pendingTransferCount: 일반 미확인 이체(DB.txns)와 반복 미확인 이체를 합쳐서 센다', () => withFakeToday('2026-06-15', () => {
   sandbox.TODAY = '2026-06-15';
   sandbox.DB = {
     settings: { confirmTransfers: true },
@@ -9189,10 +9219,30 @@ test('pendingTransferCount: 일반 미확인 이체(DB.txns)와 반복 미확인
     recurrences: [pendingRec()],
   };
   assert.strictEqual(sandbox.pendingTransferCount(), 2);
-});
+}));
 
-/* ---------- toggleConfirmTransfers: 이체 확인 끄기 시 일반 이체뿐 아니라 반복 이체의 미확인 회차도 세야 한다 ---------- */
-test('toggleConfirmTransfers: 반복 이체만 미확인(도래)이어도 끄기 전 확인 시트가 뜬다', () => {
+/* ---------- isDuePending: 기기 로컬 TODAY가 아니라 kstTodayStr()(KST 고정)로 도래를 판정해야 한다
+ * (app-evolve cycle237 critique/advance) — 고치기 전 코드(t.date<=TODAY)는 TODAY가 device-local이라
+ * 한국보다 시계가 느린/빠른 시간대에서 최대 하루 어긋났다. withFakeToday로 "KST 지금"을 고정하고,
+ * sandbox.TODAY(기기 로컬)는 일부러 다른 날짜로 둬 둘이 갈리는 상황을 재현한다. ---------- */
+test('isDuePending: 기기 로컬 TODAY가 KST보다 하루 느려도(예: 미국 사용자) KST 기준으로 이미 도래한 회차는 due로 본다', () => withFakeToday('2026-10-03', () => {
+  sandbox.DB = { settings: { confirmTransfers: true } };
+  sandbox.TODAY = '2026-10-02'; // 기기 로컬은 아직 전날(미국 등 KST보다 느린 시간대를 흉내)
+  const t = { type: 'transfer', date: '2026-10-03', confirmed: false };
+  assert.strictEqual(sandbox.isDuePending(t), true, 'KST 기준 오늘(2026-10-03) 도래분은 기기 로컬 TODAY가 하루 처져 있어도 due여야 함');
+}));
+test('isDuePending: 아직 KST 기준으로도 도래하지 않은(내일) 회차는 기기 로컬 TODAY가 앞서 있어도 due가 아니다', () => withFakeToday('2026-10-02', () => {
+  sandbox.DB = { settings: { confirmTransfers: true } };
+  sandbox.TODAY = '2026-10-03'; // 기기 로컬이 KST보다 하루 빠른 경우(호주/일본+1 등을 흉내)
+  const t = { type: 'transfer', date: '2026-10-03', confirmed: false };
+  assert.strictEqual(sandbox.isDuePending(t), false, 'KST로는 아직 하루 전(2026-10-02)이므로 due가 아니어야 함');
+}));
+
+/* ---------- toggleConfirmTransfers: 이체 확인 끄기 시 일반 이체뿐 아니라 반복 이체의 미확인 회차도 세야 한다.
+ * isDuePending()(app-evolve cycle237 advance)이 kstTodayStr()을 쓰게 된 뒤로, 아래 테스트들은
+ * TODAY(기기-로컬, allTxns 범위용)와 withFakeToday(KST "지금", isDuePending 판정용)를 같은 날짜로
+ * 같이 맞춰줘야 "미래/과거" 경계가 의도한 그대로 결정적으로 재현된다. ---------- */
+test('toggleConfirmTransfers: 반복 이체만 미확인(도래)이어도 끄기 전 확인 시트가 뜬다', () => withFakeToday('2026-06-15', () => {
   sandbox.TODAY = '2026-06-15';
   sandbox.confirmSheetCalls = [];
   sandbox.DB = { settings: { confirmTransfers: true }, txns: [], recurrences: [pendingRec()] };
@@ -9201,8 +9251,8 @@ test('toggleConfirmTransfers: 반복 이체만 미확인(도래)이어도 끄기
   assert.ok(sandbox.confirmSheetCalls[0].msg.includes('1건'));
   // 확인 시트가 뜬 시점엔 아직 꺼지지 않아야 한다(사용자가 콜백을 실행해야 실제로 꺼짐)
   assert.strictEqual(sandbox.DB.settings.confirmTransfers, true);
-});
-test('toggleConfirmTransfers: 확인 시트에서 "끄기"를 누르면 반복 이체의 도래 회차가 confirmedDates에 기록되고 설정이 꺼진다', () => {
+}));
+test('toggleConfirmTransfers: 확인 시트에서 "끄기"를 누르면 반복 이체의 도래 회차가 confirmedDates에 기록되고 설정이 꺼진다', () => withFakeToday('2026-06-15', () => {
   sandbox.TODAY = '2026-06-15';
   sandbox.confirmSheetCalls = [];
   const rec = pendingRec();
@@ -9211,8 +9261,8 @@ test('toggleConfirmTransfers: 확인 시트에서 "끄기"를 누르면 반복 �
   sandbox.confirmSheetCalls[0].cb();
   assert.strictEqual(sandbox.DB.settings.confirmTransfers, false);
   assert.deepStrictEqual(rec.confirmedDates, ['2026-06-15']);
-});
-test('toggleConfirmTransfers: 일반 이체와 반복 이체가 섞여 있으면 둘 다 완료 처리된다', () => {
+}));
+test('toggleConfirmTransfers: 일반 이체와 반복 이체가 섞여 있으면 둘 다 완료 처리된다', () => withFakeToday('2026-06-15', () => {
   sandbox.TODAY = '2026-06-15';
   sandbox.confirmSheetCalls = [];
   const rec = pendingRec();
@@ -9223,16 +9273,16 @@ test('toggleConfirmTransfers: 일반 이체와 반복 이체가 섞여 있으면
   sandbox.confirmSheetCalls[0].cb();
   assert.strictEqual(oneOff.confirmed, true);
   assert.deepStrictEqual(rec.confirmedDates, ['2026-06-15']);
-});
-test('toggleConfirmTransfers: 미확인 이체가 전혀 없으면 확인 시트 없이 바로 꺼진다', () => {
+}));
+test('toggleConfirmTransfers: 미확인 이체가 전혀 없으면 확인 시트 없이 바로 꺼진다', () => withFakeToday('2026-06-15', () => {
   sandbox.TODAY = '2026-06-15';
   sandbox.confirmSheetCalls = [];
   sandbox.DB = { settings: { confirmTransfers: true }, txns: [], recurrences: [] };
   sandbox.toggleConfirmTransfers();
   assert.strictEqual(sandbox.confirmSheetCalls.length, 0);
   assert.strictEqual(sandbox.DB.settings.confirmTransfers, false);
-});
-test('toggleConfirmTransfers: 아직 도래하지 않은(미래 날짜) 일반 이체만 있으면 확인 시트 없이 바로 꺼지고, 그 이체는 미확정으로 남는다', () => {
+}));
+test('toggleConfirmTransfers: 아직 도래하지 않은(미래 날짜) 일반 이체만 있으면 확인 시트 없이 바로 꺼지고, 그 이체는 미확정으로 남는다', () => withFakeToday('2026-06-15', () => {
   sandbox.TODAY = '2026-06-15';
   sandbox.confirmSheetCalls = [];
   const future = { id: 't1', type: 'transfer', date: '2026-06-20', confirmed: false, amount: 5000 };
@@ -9241,8 +9291,8 @@ test('toggleConfirmTransfers: 아직 도래하지 않은(미래 날짜) 일반 �
   assert.strictEqual(sandbox.confirmSheetCalls.length, 0, '미래 이체만으로는 확인 시트가 뜨면 안 됨');
   assert.strictEqual(sandbox.DB.settings.confirmTransfers, false);
   assert.strictEqual(future.confirmed, false, '아직 도래하지 않은 이체는 조기 확정되면 안 됨');
-});
-test('toggleConfirmTransfers: 도래한 이체와 미래 이체가 섞여 있으면 도래한 것만 세고 확정하며, 미래 것은 그대로 둔다', () => {
+}));
+test('toggleConfirmTransfers: 도래한 이체와 미래 이체가 섞여 있으면 도래한 것만 세고 확정하며, 미래 것은 그대로 둔다', () => withFakeToday('2026-06-15', () => {
   sandbox.TODAY = '2026-06-15';
   sandbox.confirmSheetCalls = [];
   const due = { id: 't1', type: 'transfer', date: '2026-06-10', confirmed: false, amount: 5000 };
@@ -9253,8 +9303,8 @@ test('toggleConfirmTransfers: 도래한 이체와 미래 이체가 섞여 있으
   sandbox.confirmSheetCalls[0].cb();
   assert.strictEqual(due.confirmed, true, '도래한 이체는 확정돼야 함');
   assert.strictEqual(future.confirmed, false, '미래 이체는 확정되면 안 됨');
-});
-test('toggleConfirmTransfers: 오늘 날짜 일반 이체는 도래한 것으로 취급돼 확정 대상에 포함된다', () => {
+}));
+test('toggleConfirmTransfers: 오늘 날짜 일반 이체는 도래한 것으로 취급돼 확정 대상에 포함된다', () => withFakeToday('2026-06-15', () => {
   sandbox.TODAY = '2026-06-15';
   sandbox.confirmSheetCalls = [];
   const today = { id: 't1', type: 'transfer', date: '2026-06-15', confirmed: false, amount: 5000 };
@@ -9263,13 +9313,13 @@ test('toggleConfirmTransfers: 오늘 날짜 일반 이체는 도래한 것으로
   assert.strictEqual(sandbox.confirmSheetCalls.length, 1);
   sandbox.confirmSheetCalls[0].cb();
   assert.strictEqual(today.confirmed, true);
-});
+}));
 /* ---------- toggleConfirmTransfers: "끄기" 콜백이 pendingOneOff/pendingRecList를 일괄
  * confirmed=true/confirmedDates.push()로 고치면서 touch()를 전혀 안 불러, mergeCollection()이
  * updatedAt만 보고 승자를 고르는 cloud sync에서 다른 기기의 더 오래된 사본이 이겨 이 일괄 확인
  * 처리가 조용히 되돌아갈 위험이 있었다(app-evolve cycle128 advance, doMaturity/toggleRecActive/
  * toggleAdjustSurplus 쪽과 같은 패턴). ---------- */
-test('toggleConfirmTransfers: "끄기"를 누르면 일괄 확인 처리된 일반 이체/반복거래 모두에 touch()가 호출된다', () => {
+test('toggleConfirmTransfers: "끄기"를 누르면 일괄 확인 처리된 일반 이체/반복거래 모두에 touch()가 호출된다', () => withFakeToday('2026-06-15', () => {
   sandbox.TODAY = '2026-06-15';
   sandbox.confirmSheetCalls = [];
   const rec = pendingRec();
@@ -9279,7 +9329,7 @@ test('toggleConfirmTransfers: "끄기"를 누르면 일괄 확인 처리된 일�
   sandbox.confirmSheetCalls[0].cb();
   assert.strictEqual(oneOff.updatedAt, 'test-updatedAt', '일괄 확인된 일반 이체에도 touch()가 호출되어야 함');
   assert.strictEqual(rec.updatedAt, 'test-updatedAt', '도래 회차가 기록된 반복거래에도 touch()가 호출되어야 함');
-});
+}));
 
 /* ---------- rollPendingTransfers: 이체 확인이 켜진 상태에서 기한이 지난(과거 날짜) 미확인 이체를 오늘로 당긴다 ---------- */
 test('rollPendingTransfers: 이체 확인이 꺼져 있으면 아무것도 하지 않는다', () => {
@@ -16284,7 +16334,7 @@ test('openDebtBehindList: 정체된 부채가 1건이면 바로 그 자산 내�
 });
 /* 미확인 이체(confirm)도 quick/quickMulti·budgetOver/budgetOverMulti와 동일한 1건/N건 묶음 패턴을 쓴다
  * (app-evolve cycle156 critique: 반복 이체를 방치하면 홈 알림이 confirm 카드로 도배되던 비대칭을 해소) */
-test('homeAlerts: 미확인 이체(confirm)가 정확히 1건이면 confirm, 2건으로 늘면 confirmMulti로 묶인다(app-evolve cycle156)', () => {
+test('homeAlerts: 미확인 이체(confirm)가 정확히 1건이면 confirm, 2건으로 늘면 confirmMulti로 묶인다(app-evolve cycle156)', () => withFakeToday('2026-06-15', () => {
   setupHomeAlertsDB();
   sandbox.DB.settings.confirmTransfers = true;
   sandbox.DB.assets.push({ id: 'a1', name: '통장1', owner: '나', type: 'cash', baseAmount: 1000000 });
@@ -16302,7 +16352,7 @@ test('homeAlerts: 미확인 이체(confirm)가 정확히 1건이면 confirm, 2�
   assert.strictEqual(confirm.length, 1);
   assert.strictEqual(confirm[0].kind, 'confirmMulti', '2건이 되면 confirmMulti 하나로 묶여야 함');
   assert.strictEqual(confirm[0].count, 2);
-});
+}));
 test('notifyAlertInfo: confirmMulti도 budgetOverMulti처럼 건수가 바뀌면 다시 알리도록 키에 count가 들어간다(app-evolve cycle156)', () => {
   sandbox.TODAY = '2026-06-15';
   const confirmMulti = sandbox.notifyAlertInfo({ kind: 'confirmMulti', count: 2 });
@@ -16476,7 +16526,7 @@ test('homeAlertCard: matMulti는 openMaturity()로 열리고 건수가 보인다
   assert.ok(html.includes('onclick="openMaturity()"'), 'matMulti 카드가 새 시트를 만들지 않고 기존 openMaturity()를 재사용해야 함');
   assert.ok(html.includes('저축 만기 임박 3건'), '건수가 보여야 함');
 });
-test('openConfirmTransferList: 미확인 이체가 없으면 안내 토스트만 뜨고, 정확히 1건이면 목록 없이 바로 그 건의 개별 확인 시트로 간다(app-evolve cycle156)', () => {
+test('openConfirmTransferList: 미확인 이체가 없으면 안내 토스트만 뜨고, 정확히 1건이면 목록 없이 바로 그 건의 개별 확인 시트로 간다(app-evolve cycle156)', () => withFakeToday('2026-06-15', () => {
   setupHomeAlertsDB();
   sandbox.DB.settings.confirmTransfers = true;
   sandbox.DB.assets.push({ id: 'a1', name: '통장1', owner: '나', type: 'cash', baseAmount: 1000000 });
@@ -16492,8 +16542,8 @@ test('openConfirmTransferList: 미확인 이체가 없으면 안내 토스트만
   sandbox.openConfirmTransferList();
   assert.ok(sandbox.lastSheetHtml, '1건이면 개별 확인 시트가 떠야 함');
   assert.ok(sandbox.lastSheetHtml.includes(`confirmTransferNow('t1')`), '1건이면 목록이 아니라 openConfirmTransfer의 개별 시트로 바로 가야 함');
-});
-test('openConfirmTransferList: 2건 이상이면 일반 이체와 반복 이체를 한 시트에 한 줄씩 보여주고, 각자 올바른 확인 함수로 연결된다(app-evolve cycle156)', () => {
+}));
+test('openConfirmTransferList: 2건 이상이면 일반 이체와 반복 이체를 한 시트에 한 줄씩 보여주고, 각자 올바른 확인 함수로 연결된다(app-evolve cycle156)', () => withFakeToday('2026-06-15', () => {
   setupHomeAlertsDB();
   sandbox.DB.settings.confirmTransfers = true;
   sandbox.DB.assets.push({ id: 'a1', name: '통장1', owner: '나', type: 'cash', baseAmount: 1000000 });
@@ -16512,7 +16562,7 @@ test('openConfirmTransferList: 2건 이상이면 일반 이체와 반복 이체�
   assert.ok(html.includes(`openConfirmTransfer('t1')`), '일반 이체 행은 openConfirmTransfer로 연결돼야 함');
   assert.ok(html.includes(`confirmRecTransfer('r1','2026-06-12')`), '반복 이체 행은 confirmRecTransfer로 연결돼야 함');
   assert.ok(html.includes(sandbox.comma(50000)) && html.includes(sandbox.comma(30000)), '각 행에 금액이 표시돼야 함');
-});
+}));
 /* openNegList: openConfirmTransferList()/openQuickList()와 동일 패턴 — 0건이면 토스트만, 1건이면
  * 목록 없이 바로 plan 탭으로, 2건 이상이면 한 시트에 한 줄씩 보여주고 눌렀을 때 시트를 닫고
  * plan 탭으로 이동한다(sheet 위에 plan 탭이 그대로 깔리는 걸 막기 위해 closeSheet 필요,

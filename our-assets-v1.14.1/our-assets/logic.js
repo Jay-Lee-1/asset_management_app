@@ -8,6 +8,16 @@
  */
 
 /* ================= DATE / RECURRENCE ================= */
+/* 반복이체 1일 등 한국 은행업무일 기준 이벤트의 '오늘'은 기기 로컬 캘린더가 아니라 KST여야 한다 —
+ * index.html의 inQuietWindow()가 쓰는 것과 동일한 d.getTime()+9*60*60000 UTC+9 고정 산술(기기
+ * 시간대/DST 전환 시각 전부 무관)로 'YYYY-MM-DD'를 뽑는다. todayStr()/TODAY(index.html)는 신규거래
+ * 기본 날짜·예산월 경계처럼 정당히 기기-로컬 날짜가 맞는 용도라 그대로 두고, 은행업무일 기준
+ * 도래 판정(isDuePending() 등)만 이걸 쓴다(app-evolve cycle237 critique/advance). */
+function kstTodayStr(d){
+ d=d||new Date();
+ const kst=new Date(d.getTime()+9*60*60000);
+ return `${kst.getUTCFullYear()}-${String(kst.getUTCMonth()+1).padStart(2,'0')}-${String(kst.getUTCDate()).padStart(2,'0')}`;
+}
 function addDays(s,n){const d=new Date(s+'T00:00:00');d.setDate(d.getDate()+n);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
 function daysBetween(a,b){return Math.round((new Date(b+'T00:00:00')-new Date(a+'T00:00:00'))/86400000)}
 function shiftWeekend(ds,mode){ /* 주말 조정: earlier=금요일로 당김, later=월요일로 미룸 */
