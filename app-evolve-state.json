@@ -1,15 +1,12 @@
 {
   "cycle": 236,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "PWA 설치 유도 UI 전면 부재 — manifest/iOS 메타는 완비됐지만 beforeinstallprompt/iOS 안내 코드가 0건",
+    "why": "manifest.webmanifest(display:standalone, start_url/scope:'./', icons 3종 중 icon-512-maskable.png까지)과 index.html 12-15행의 apple-mobile-web-app-capable/mobile-web-app-capable/apple-mobile-web-app-status-bar-style/apple-mobile-web-app-title 메타가 전부 갖춰져 있어 이 앱은 설치 기준(installability criteria)을 이미 100% 만족한다 — 즉 '설치 가능하게 만드는 일'은 처음부터 다 끝나 있었고, '설치하라고 알려주는 일'만 통째로 빠졌다. index.html/logic.js 전체를 grep해도 beforeinstallprompt/appinstalled/display-mode/navigator.standalone/'설치' 문자열이 단 1건도 없다 (sw.js 등록·업데이트 로직은 9341행 showSwUpdateBar() 등으로 꼼꼼히 다뤄진 반면, 설치 자체는 전혀 다뤄진 적 없음 — git log --grep='설치|install' 전체 히스토리에서도 이 주제로 critique/advance가 열린 적이 없음). '우리 가족 공유 가계부'라는 앱 정체성상 매일 열어보는 홈 화면 상주 사용이 핵심 가치인데(cycle159 critique가 같은 이유로 클라우드 공유 기능 공백을 지적한 적 있음), 지금은 사용자가 설치 가능하다는 사실 자체를 모르고 브라우저 탭으로만 계속 쓸 가능성이 높다. 더 구체적으로: Chrome/Android는 beforeinstallprompt를 캡처해 직접 prompt()를 띄우지 않으면 주소창의 작은 아이콘 하나로만 존재해 대부분 사용자가 발견하지 못하고, iOS Safari(한국 모바일 웹 사용자 상당수)는 beforeinstallprompt 자체가 영영 발생하지 않아 '공유 버튼 → 홈 화면에 추가'를 앱이 직접 텍스트로 안내하지 않으면 설치 경로가 사실상 없다 — 이미 iOS 전용 메타까지 깔아둔 것과 대비되는 미완성 상태. 최근 20 cycle(217-236)의 history를 봐도 이 경로는 한 번도 다뤄지지 않았고, 코드/UI/테스트 수준에서 실제로 확인된 새 결함이라 confidence는 high.",
+    "approach": "1) 기존 .sw-update-bar(CSS 990-992행, HTML 1359행, JS showSwUpdateBar() 1408-1413행) 배너 패턴을 그대로 본떠 #installBar 배너를 신설한다(동일한 fixed 하단 바 스타일, role=button/tabindex/rowKeydown 접근성 포함). 2) Android/Chrome 경로: window.addEventListener('beforeinstallprompt', e=>{e.preventDefault(); window._deferredInstallPrompt=e; maybeShowInstallBar()}) 로 이벤트를 캡처해 즉시 기본 미니 인포바를 막고 직접 들고 있다가, 배너 탭 시 _deferredInstallPrompt.prompt()를 호출. appinstalled 이벤트로 배너를 숨기고 '설치됨' 상태를 기록. 3) iOS 경로: beforeinstallprompt가 없는 환경(iOS Safari)은 UA로 iOS를 감지하고 (navigator.userAgent에 iPad/iPhone/iPod, 또는 최신 iPadOS의 Macintosh+ontouchend 감지 포함) 배너 문구를 '공유 버튼(아이콘) → 홈 화면에 추가'로 분기 표시(별도 prompt 호출 없이 안내 텍스트만). 4) 이미 설치된 상태는 window.matchMedia('(display-mode: standalone)').matches || navigator.standalone===true 로 감지해 그 경우엔 beforeinstallprompt 리스너와 무관하게 배너를 절대 띄우지 않는다(이미 설치한 사용자에게 또 띄우는 회귀 방지). 5) 노출 타이밍/스누즈: 설치 상태 플래그는 '기기별'이지 '계정별'이 아니므로(한 사람이 폰에는 설치, PC는 브라우저 탭으로 쓰는 경우가 정상) DB.settings(클라우드 동기화 대상)에 넣지 않고 cycle176의 'asset_app_theme_cache'와 동일한 관례로 순수 localStorage 키(예: 'asset_app_install_dismiss_ts')에 dismiss 타임스탬프만 저장한다 — 기존 tidyList/backup 배너의 snoozeTidy()/snoozeBackup() 패턴처럼 '나중에' 탭 시 일정 기간(예: 14일) 재노출을 미루고, 매 앱 실행마다 뜨지 않게 한다. 최초 설치 유도는 첫 실행 즉시가 아니라(바로 설치 안내를 들이미는 건 거부감을 키움) 기존 패턴(tidyList의 '쓸 일 없는 자산' 등)처럼 최소 며칠/수회 실행 뒤 노출하는 간단한 기준을 둔다. 6) boot() 또는 renderCurrent() 안에서 showSwUpdateBar()와 같은 레벨로 maybeShowInstallBar()를 호출해 탭과 무관하게 전역적으로 노출. 7) test/run.js에 cycle224/234/235 패턴을 따라: beforeinstallprompt 캡처 시 preventDefault가 호출되는지, appinstalled 후 배너가 사라지는지, display-mode:standalone/navigator.standalone일 때 배너를 절대 띄우지 않는지, iOS UA 분기에서 올바른 안내 문구가 나오는지, dismiss 타임스탬프가 재노출을 올바른 기간만큼 미루는지를 실행형 테스트로 추가한다(domstub.js에 matchMedia/beforeinstallprompt 목이 없으면 최소 스텁 추가). 8) UI/로직 변경이므로 APP_VERSION을 올리고 sw.js CACHE 버전도 함께 올려 배포 캐시를 갱신한다."
+  },
   "history": [
-    {
-      "cycle": 231,
-      "phase": "critique",
-      "timestamp": "2026-10-22T07:00:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-231 전체 다룬 영역 전부 제외 지시, 이번 사이클의 sanitizeBackup 목표owner동기화 포함)한 결과, cycle230 advance가 netlify.toml에 추가한 클릭재킹/MIME스니핑 방어 헤더 5종(CSP frame-ancestors/X-Frame-Options/X-Content-Type-Options/Referrer-Policy/Permissions-Policy)이 for = \"/index.html\" 블록 하나에만 걸려 있어, 실제 PWA 접속 경로인 루트(\"/\")에는 적용되지 않을 수 있는 공백을 포착(Netlify는 요청 경로 리터럴로 헤더 규칙을 매칭하며 동일 사례가 Netlify 커뮤니티에 보고돼 있음: https://answers.netlify.com/t/setting-response-headers-only-on-documents/6144). sw.js SHELL의 첫 엔트리도 \"./\"로 index.html과 별도 리소스 취급될 수 있어, 직전 사이클이 닫으려던 클릭재킹 방어가 실사용 경로에서 무력화될 수 있는 회귀급 공백으로 판단. 같은 파일에 Strict-Transport-Security 헤더도 전혀 없음을 함께 확인. 러너업 기각: netlify rate limiter의 in-memory rlHistory가 콜드스타트마다 리셋되는 구조적 약점(외부 스토어 필요해 사이클 범위 초과로 제외), PBKDF2 12만회 반복이 OWASP 권고(약60만회)보다 낮음(짧은 숫자 PIN 오프라인 브루트포스 방어 효과 미미해 실질적 고정이 아니라고 판단해 제외), sw.js 캐시우선 전략 재검토(기존에 이미 견고함 재확인), 모바일 가상키보드 뷰포트 가림(재현 사례 없어 추측성이라 제외). advance 계획(netlify.toml에 for=\"/\" 블록 신설(기존 /index.html 블록과 동일 헤더6종+Cache-Control) + HSTS 추가 + extractHeaderBlock 재사용한 drift방지/회귀 테스트, index.html/logic.js/sw.js 무변경이라 버전 범프 불필요)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
-      "commit": null
-    },
     {
       "cycle": 231,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-23T03:05:00.000Z",
       "summary": "cycle236 develop 커밋(bbcd49c, sanitizeBackup()의 asset.owner 검증 누락 수정 — goal.owner와 동일하게 validOwners로 검증해 무효/누락 시 validOwners[0]로 clamp)을 검토. diff를 직접 읽어 validOwners 계산이 assets forEach보다 앞으로 끌어올려져 goals 블록과 공유됨을 확인(goals 블록의 중복 선언은 제거되고 재사용 주석으로 교체 — const 중복선언 오류 없음, 선언 순서 문제 없음). 자산은 'all' 센티넬이 유효하지 않다는 전제(openAssetSheet/asOpenOwner가 항상 DB.owners 중 하나만 고름, ownerAssets/ownerDebt/allocationCard 등이 a.owner===o 정확히 일치 비교만 씀)를 grep으로 재확인해 goal과 다르게 validOwners[0]로 clamp하는 처리가 올바른 선택임을 검증. validOwners가 완전히 비어있는 극단 케이스(obj.owners도 없고 DB.owners도 없음)에서 clamp를 건너뛰고 원값을 그대로 두는 가드(if(validOwners.length&&...))가 budgetHistory/catIcon과 같은 '판단 근거 없으면 손대지 않는다' 원칙과 일치함도 확인. test/run.js 신규 5건(clamp 정상케이스, owner 누락, 이미 유효, obj.owners 없을 때 DB.owners 대체, 완전히 근거 없을 때 원값 유지)이 diff의 모든 분기와 1:1 대응함을 확인했고, 기존 자산 픽스처 6건에 owner 보강이 DB.owners와 충돌해 의도치 않게 clamp되지 않는지도 케이스별로 추적해 문제 없음을 확인. node our-assets-v1.14.1/our-assets/test/run.js를 독립적으로 재실행해 1820/1820 통과 재확인. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 236,
+      "phase": "critique",
+      "timestamp": "2026-10-23T04:14:52.000Z",
+      "summary": "cycle236 develop/review가 끝난 뒤(sanitizeBackup asset.owner 검증 수정, review는 이상 없음) 앱 전체를 다시 한 걸음 물러나 재탐색. 이미 236 cycle 동안 색상대비/XSS/접근성/데이터유실/동기화/반복거래/예산/넷웍스 등 거의 전 영역이 촘촘히 다뤄져 추가로 겹치지 않는 새 결함을 찾기 어려웠으나(sanitizeBackup 전 컬렉션 검증 완료, nwHistory/settings 검증도 이미 완료, SRI TODO는 이 컨테이너의 egress 정책상 여전히 불가능해 재확인만 하고 제외, 비밀번호 salt+PBKDF2/예산 시간축 등 과거 flagged 항목도 이미 advance에서 해결됨을 git log로 재확인), manifest.webmanifest(standalone/아이콘 3종)와 index.html의 iOS PWA 메타가 설치 기준을 전부 만족시키는데도 beforeinstallprompt/appinstalled/display-mode/navigator.standalone/'설치' 키워드가 코드 전체에 0건임을 grep으로 확인 — 설치 가능하게 만드는 작업은 끝났지만 설치를 유도/안내하는 UI가 전혀 없는 공백을 발견. 매일 홈 화면에서 쓰는 '가족 공유 가계부'라는 앱 정체성에 비해 영향이 크고, 기존 .sw-update-bar 배너 패턴을 그대로 재사용할 수 있어 구현 리스크도 낮다고 판단해 advance 계획으로 채택. pending_advance_plan에 Android(beforeinstallprompt 캡처+prompt) / iOS(UA분기 안내문구) / 이미 설치됨 감지(display-mode/navigator.standalone) / 기기별 localStorage dismiss 스누즈 / 테스트 추가까지 구체적으로 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
       "commit": null
     }
   ]
