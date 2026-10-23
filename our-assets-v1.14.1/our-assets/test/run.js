@@ -19654,6 +19654,26 @@ if (stockFns && ratesFns && cryptoFns) {
       restoreFetch();
     }
   });
+  test('rates.handler: 보유 통화에 USD가 없어도(예: cur=JPY,EUR) 네이버 금 시세만 실패하면 gold-api.com(XAU) 폴백이 USD/KRW 환율을 구해 금 시세를 채운다(app-evolve cycle240 develop — missing이 비어 fxFallbackChain 자체가 건너뛰어지던 버그 수정)', async () => {
+    installFetchQueue([
+      okJson({ result: [{ closePrice: '912.3' }] }),   // 1) naverFx('JPY') — 100엔 고시라 /100
+      okJson({ result: [{ closePrice: '1500.5' }] }),  // 2) naverFx('EUR')
+      okJson({ result: [] }),                          // 3) naverGold() — 네이버 금 시세 비어있음(실패)
+      okJson({ rates: { KRW: 1385.0 } }),               // 4) fxFallbackChain → fxapi.app (USD/KRW만 필요)
+      okJson({ price: 2345.6 }),                        // 5) goldApiXau()
+    ]);
+    try {
+      const res = await ratesFns.handler({ queryStringParameters: { cur: 'JPY,EUR', gold: '1', debug: '1' } });
+      assert.strictEqual(res.statusCode, 200);
+      const body = JSON.parse(res.body);
+      assert.ok(body.fx.JPY > 0, 'JPY 환율이 네이버로 정상 채워져야 함(이 버그와 무관)');
+      assert.ok(body.fx.EUR > 0, 'EUR 환율이 네이버로 정상 채워져야 함(이 버그와 무관)');
+      assert.ok(!('USD' in body.fx), 'USD는 요청하지 않았으므로 fx에 끼워 넣지 않아야 함(fxFallbackChain 재시도의 부작용 없음)');
+      assert.ok(body.goldPerG > 0, '보유 통화에 USD가 없어도 gold-api.com 폴백으로 금 시세를 구해야 함 — 수정 전엔 missing이 비어 USD/KRW 환율을 전혀 못 구해 0으로 남았음');
+      assert.strictEqual(body._debug.source.gold, 'gold-api.com', '네이버 금 실패 후 gold-api.com 폴백 경로를 탔어야 함');
+      assert.ok(!('goldFallback' in body._debug.errors), `goldFallback 에러가 남아있음: ${JSON.stringify(body._debug.errors)}`);
+    } finally { restoreFetch(); }
+  });
   test('rates.handler: rate limit을 넘기면 429를 반환한다 — 이 파일의 마지막 handler 테스트여야 함(버킷 영구 소진)', async () => {
     installFetchQueue([failHttp(404)]);
     try {

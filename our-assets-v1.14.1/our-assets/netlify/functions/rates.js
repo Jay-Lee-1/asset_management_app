@@ -64,7 +64,17 @@ exports.handler = async (event) => {
     // 2) 환율 폴백: 네이버로 못 채운 통화가 있으면 공용 FX 체인으로 보충
     const missing = curs.filter(c => c !== 'KRW' && !out.fx[c]);
     let usdKrw = out.fx.USD || 0;
-    if (missing.length) {
+    // 3)번 금 폴백(gold-api.com)은 XAU(USD/oz)→원 환산에 USD/KRW 환율이 꼭 필요한데, 클라이언트가
+    // 보유 중인 fx 통화만 cur로 보내므로(index.html fetchFxGold의 heldCurrencies()) USD를 전혀
+    // 들고 있지 않은 사용자(예: cur=JPY,EUR + gold=1)는 missing에 'USD'가 들어갈 길이 없다. 그 결과
+    // 요청한 통화(JPY/EUR)는 네이버로 전부 채워져 missing이 비면 이 블록 자체가 건너뛰어지고, 네이버
+    // 금 시세(naverGold)만 따로 실패했을 때 goldApiXau 폴백이 "USD 환율을 구한 적이 없음"으로
+    // 막혀버렸다(app-evolve cycle240 develop) — ratesUsdBaseToKrw()는 curs와 무관하게 _usdKrw를
+    // 항상 함께 돌려주므로, 금 폴백이 필요한데 아직 usdKrw를 못 구했을 때도 같은 체인을 한 번 더
+    // 태워 그 _usdKrw만 흡수한다(missing이 비어 있으면 for 루프는 그대로 아무 것도 안 함 — 요청하지
+    // 않은 USD를 out.fx에 끼워 넣지 않음).
+    const needUsdForGold = wantGold && !out.goldPerG && !usdKrw;
+    if (missing.length || needUsdForGold) {
       try {
         const fx = await fxFallbackChain(curs, debug);   // { USD, JPY, ..., _usdKrw, _src }
         if (fx) {

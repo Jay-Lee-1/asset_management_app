@@ -1,15 +1,8 @@
 {
   "cycle": 240,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 235,
-      "phase": "develop",
-      "timestamp": "2026-10-22T22:13:59.143Z",
-      "summary": "general-purpose 서브에이전트가 develop 후보를 탐색해 라이트 테마 --text-2 토큰(index.html:54, #67716B)이 --sunken(#EEF1EE) 배경에서 4.445:1로 WCAG AA 일반텍스트 기준(4.5:1)에 0.055 미달임을 발견 — cycle234 critique가 --text-3 수정 당시 \"범위 밖\"으로 남겨두고 known_issues에 기록해둔 항목을 이어서 처리. .own-x(소유자 뱃지 x라벨)/.sheet-x/.pk-back/.act-btn 아이콘버튼 글자색, Supabase SQL 설정 스니펫(<pre> 블록, background:var(--sunken);color:var(--text-2))에서 실제로 쓰이는 조합임을 grep으로 확인한 실사용 결함. --text-2를 #67716B -> #656F69(R/G/B 각 -2)로 바꿔 4개 실배경(surface/bg/surface-2/sunken) 전부 4.5:1 이상을 만족시키면서도 --text-3(#656E68)보다 미세하게 밝게 유지해 두 토큰이 같은 값으로 뭉개지지 않게 했다(다크모드 --text-2는 이미 통과라 미변경). test/run.js: 기존에 --text-2 sunken 미달을 \"범위 밖\"으로만 기록하던 테스트 1건을 교체하고 신규 3건 추가(새 값 4배경 통과, 구 값(#67716B) sunken만 미달·나머지 3배경은 통과였음을 못박는 회귀가드, --text-3는 이번 수정과 무관하게 그대로+두 토큰이 서로 다른 값임을 확인). 새 테스트를 구 값(#67716B)으로 되돌려 1811/1812로 1건 FAIL함을 직접 확인한 뒤 복원. APP_VERSION 1.47.218->1.47.219, sw.js CACHE v485->v486. node --check(test/run.js, sw.js) 통과. node our-assets-v1.14.1/our-assets/test/run.js 1810/1810 -> 1812/1812 통과. 오케스트레이터가 diff/테스트를 직접 재검증한 뒤 커밋한다.",
-      "commit": null
-    },
     {
       "cycle": 235,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-23T17:30:00.000Z",
       "summary": "critique(cycle239) 계획대로 _shared.js에 Map 기반 shouldThrottleByKey(map,key,now,windowMs,maxCount)를 신설 — 기존 shouldThrottle(history,...)의 prune/count 로직을 내부에서 그대로 재사용하고, map.size가 500(RL_MAX_KEYS)을 넘으면 Map의 삽입순서(재삽입으로 매번 최신으로 끌어올림)상 가장 오래된 key를 지우는 단순 LRU를 추가했다. 호출자 식별을 위한 clientKeyFromHeaders(headers)도 _shared.js에 신설(x-nf-client-connection-ip 우선, 없으면 x-forwarded-for의 첫 IP(콤마구분), 둘 다 없으면 'unknown') — 원래 계획은 각 핸들러에 인라인 추출이었지만, _shared.js 자체가 '3파일 복붙 drift 방지'가 설립 이유(파일 상단 주석)라 이 로직도 공유 함수로 올려 drift를 피했다. stock.js/rates.js/crypto.js 세 핸들러 모두 let rlHistory=[]를 let rlBuckets=new Map()로 바꾸고, rl.allow/rl.history 2단계 처리를 shouldThrottleByKey(rlBuckets, clientKeyFromHeaders(event.headers), Date.now(), RL_WINDOW_MS, RL_MAX) 단일 호출(boolean 반환)으로 교체했다. 기존 shouldThrottle은 세 파일 모두 손대지 않고 그대로 export 유지(다른 회귀 없음, reference-equality 테스트 그대로 통과). 테스트 없이 호출부만 바꿔 핸들러 레벨 429 소진 테스트(헤더 없이 31회 호출 — clientKeyFromHeaders가 'unknown' 단일 key로 귀결돼 기존과 동일하게 동작)가 그대로 통과함을 확인. test/run.js에 shouldThrottleByKey 4건(서로 다른 key는 안 막음/같은 key는 기존 threshold·prune 동작 유지/500개 cap LRU bounded-size/stock·rates·crypto 참조동일성) + clientKeyFromHeaders 2건(우선순위·콤마구분·fallback 분기/참조동일성) 총 6건 추가. index.html/logic.js/sw.js는 건드리지 않아 APP_VERSION/sw.js CACHE 범프는 불필요(cycle233/237 advance와 동일한 전례). node --check(모든 수정 파일) 통과. git stash로 _shared.js/stock.js/rates.js/crypto.js 수정분만 걷어낸 뒤(test/run.js는 유지) node test/run.js를 돌려 신규 6건 전부가 FAIL함을(1873/1879) 직접 확인했고, stash pop으로 복원 후 1873/1873 -> 1879/1879 통과를 재확인했다. pending_advance_plan은 null로 비웠다.",
+      "commit": null
+    },
+    {
+      "cycle": 240,
+      "phase": "develop",
+      "timestamp": "2026-10-23T18:30:00.000Z",
+      "summary": "general-purpose 서브에이전트(fork)가 develop 후보를 탐색해 rates.js의 환율 폴백 가드(if(missing.length))가 '네이버로 못 채운 통화'만 기준으로 fxFallbackChain을 태우는데, 금 시세(gold-api.com XAU→원 환산)는 USD/KRW 환율이 필요함을 발견 — 클라이언트(index.html fetchFxGold의 heldCurrencies())는 보유 중인 fx 통화만 cur로 보내므로(USD 보유 없이 JPY/EUR만 보유+금 자산도 있는 가계) cur=JPY,EUR&gold=1 요청에서 네이버가 JPY/EUR는 성공시키면 missing이 비어 fxFallbackChain 자체가 건너뛰어지고, 네이버 금 시세(naverGold)만 따로 실패하면 usdKrw를 전혀 못 구해 gold-api.com 폴백이 'no USD rate to convert'로 막혀 이미 코드로 존재하는 두 폴백 소스를 쓰지 못한 채 금 시세가 0으로 남는 실사용 결함(USD 비보유+금 자산 보유 가계가 다다를 수 있는 경로). 러너업 기각: CSV import/export dedupe/splits, doRenameOwner/doRenameCat 참조갱신, 예산 롤오버, archive/baseline 반복거래 가지치기, PWA 설치배너, APPLOCK/비밀번호찾기, tombstone/notified-id GC — 전부 과거 cycle에서 이미 다뤄짐을 재확인; archiveTxnsBefore()의 prevRec 캡처가 pruneOrphanRecOverrides() 호출 전이라 undo시 참조-앨리어싱 버그처럼 보였던 near-miss도 pruneOrphanRecOverrides가 항상 새 배열/객체로 재할당(in-place mutation 없음)함을 확인해 버그 아님으로 기각. rates.js에 needUsdForGold = wantGold && !out.goldPerG && !usdKrw를 추가해 가드를 if(missing.length || needUsdForGold)로 확장 — fxFallbackChain(curs,debug)은 curs와 무관하게 항상 _usdKrw를 함께 돌려주므로(ratesUsdBaseToKrw) 다른 코드 변경 없이 그 값만 흡수, missing이 비어있으면 for(const c of missing) 루프는 그대로 no-op이라 요청하지 않은 USD가 out.fx에 끼어들지 않음(테스트로 확인). test/run.js에 handler 통합 테스트 1건 추가(naver JPY/EUR 성공+금 실패 -> fxapi.app이 USD/KRW 제공 -> gold-api.com이 금시세 제공, fx.JPY/EUR 정상+fx에 USD 미삽입+goldPerG>0+source.gold==='gold-api.com'+errors.goldFallback 없음을 모두 검증). 오케스트레이터가 diff를 직접 읽고 로직을 재확인(ratesUsdBaseToKrw의 _usdKrw가 curs와 무관하게 항상 채워짐, needUsdForGold가 USD를 fx에 끼워넣지 않음) 후, git stash로 rates.js 수정분만 걷어내(test/run.js는 유지) node test/run.js를 돌려 신규 테스트 1건이 기대한 메시지로 FAIL함(1879/1880)을 직접 재현했고 stash pop으로 복원 후 1880/1880 통과를 재확인했다. node --check(rates.js/test/run.js) 통과. netlify/functions·test만 변경이라 cycle233/237/239 advance와 동일한 전례를 따라 APP_VERSION/sw.js CACHE는 범프하지 않았다.",
       "commit": null
     }
   ]
