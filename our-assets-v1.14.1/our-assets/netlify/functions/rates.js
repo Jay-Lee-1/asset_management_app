@@ -35,58 +35,69 @@ exports.handler = async (event) => {
   const out = { fx: {}, goldPerG: 0 };
   const debug = { errors: {}, source: {} };
 
-  // 1) 네이버 우선 시도 (환율 + 금 병렬)
-  await Promise.all([
-    ...curs.map(async (cur) => {
-      if (cur === 'KRW') { out.fx.KRW = 1; debug.source.KRW = 'const'; return; }
-      try {
-        const p = await naverFx(cur);
-        if (p) { out.fx[cur] = p; debug.source[cur] = 'naver'; }
-        else debug.errors[cur] = 'naver: empty';
-      } catch (e) { debug.errors[cur] = 'naver: ' + errText(e); }
-    }),
-    (async () => {
-      if (!wantGold) return;
-      try {
-        const g = await naverGold();
-        if (g) { out.goldPerG = g; debug.source.gold = 'naver'; }
-        else debug.errors.gold = 'naver: empty';
-      } catch (e) { debug.errors.gold = 'naver: ' + errText(e); }
-    })()
-  ]);
+  // 전체 실행시간 상한: 1)~3) 단계가 네이버→fxapi/er-api→gold-api.com까지 최대 4단계 직렬
+  // getJSON을 이어붙이는데, 그 각각이 기본 재시도(ms=6000, retries=1)만으로도 최악 ~12초가
+  // 걸릴 수 있어 이 상한이 없으면 Netlify 서버리스 실행시간 한도(보통 10초)를 넘긴 하드 502로
+  // 끝나버린다 — stock.js가 이미 쓰는 것과 똑같은 '부분 결과라도 돌려준다' 안전장치
+  // (app-evolve cycle237 develop, raceDeadline은 _shared.js 공유 헬퍼).
+  const HANDLER_BUDGET_MS = 8000;
+  const work = (async () => {
+    // 1) 네이버 우선 시도 (환율 + 금 병렬)
+    await Promise.all([
+      ...curs.map(async (cur) => {
+        if (cur === 'KRW') { out.fx.KRW = 1; debug.source.KRW = 'const'; return; }
+        try {
+          const p = await naverFx(cur);
+          if (p) { out.fx[cur] = p; debug.source[cur] = 'naver'; }
+          else debug.errors[cur] = 'naver: empty';
+        } catch (e) { debug.errors[cur] = 'naver: ' + errText(e); }
+      }),
+      (async () => {
+        if (!wantGold) return;
+        try {
+          const g = await naverGold();
+          if (g) { out.goldPerG = g; debug.source.gold = 'naver'; }
+          else debug.errors.gold = 'naver: empty';
+        } catch (e) { debug.errors.gold = 'naver: ' + errText(e); }
+      })()
+    ]);
 
-  // 2) 환율 폴백: 네이버로 못 채운 통화가 있으면 공용 FX 체인으로 보충
-  const missing = curs.filter(c => c !== 'KRW' && !out.fx[c]);
-  let usdKrw = out.fx.USD || 0;
-  if (missing.length) {
-    try {
-      const fx = await fxFallbackChain(curs, debug);   // { USD, JPY, ..., _usdKrw, _src }
-      if (fx) {
-        usdKrw = usdKrw || fx._usdKrw || 0;
-        for (const c of missing) {
-          if (fx[c]) { out.fx[c] = fx[c]; debug.source[c] = fx._src; }
+    // 2) 환율 폴백: 네이버로 못 채운 통화가 있으면 공용 FX 체인으로 보충
+    const missing = curs.filter(c => c !== 'KRW' && !out.fx[c]);
+    let usdKrw = out.fx.USD || 0;
+    if (missing.length) {
+      try {
+        const fx = await fxFallbackChain(curs, debug);   // { USD, JPY, ..., _usdKrw, _src }
+        if (fx) {
+          usdKrw = usdKrw || fx._usdKrw || 0;
+          for (const c of missing) {
+            if (fx[c]) { out.fx[c] = fx[c]; debug.source[c] = fx._src; }
+          }
         }
-      }
-    } catch (e) { debug.errors.fxFallback = errText(e); }
-  }
-
-  // 3) 금 폴백: 네이버 금 실패 시 gold-api.com(XAU, USD/oz) → 원/g 환산
-  if (wantGold && !out.goldPerG) {
-    if (!usdKrw) usdKrw = out.fx.USD || 0;
-    if (usdKrw) {
-      try {
-        const perOzUsd = await goldApiXau();
-        if (perOzUsd) {
-          out.goldPerG = Math.round((perOzUsd * usdKrw) / 31.1034768);
-          debug.source.gold = 'gold-api.com';
-        } else debug.errors.goldFallback = 'gold-api: empty';
-      } catch (e) { debug.errors.goldFallback = errText(e); }
-    } else {
-      debug.errors.goldFallback = 'no USD rate to convert';
+      } catch (e) { debug.errors.fxFallback = errText(e); }
     }
-  }
 
-  return json(200, wantDebug ? { ...out, _debug: debug } : out, 300, origin);
+    // 3) 금 폴백: 네이버 금 실패 시 gold-api.com(XAU, USD/oz) → 원/g 환산
+    if (wantGold && !out.goldPerG) {
+      if (!usdKrw) usdKrw = out.fx.USD || 0;
+      if (usdKrw) {
+        try {
+          const perOzUsd = await goldApiXau();
+          if (perOzUsd) {
+            out.goldPerG = Math.round((perOzUsd * usdKrw) / 31.1034768);
+            debug.source.gold = 'gold-api.com';
+          } else debug.errors.goldFallback = 'gold-api: empty';
+        } catch (e) { debug.errors.goldFallback = errText(e); }
+      } else {
+        debug.errors.goldFallback = 'no USD rate to convert';
+      }
+    }
+  })();
+
+  const timedOut = await raceDeadline(work, HANDLER_BUDGET_MS);
+  if (timedOut) debug.timedOut = true; // 아직 못 받아온 통화/금은 out에 없고, wantDebug일 때 errors에도 안 남을 수 있음
+
+  return json(200, wantDebug ? { ...out, _debug: debug } : out, timedOut ? 0 : 300, origin);
 };
 
 /* ── 네이버 시장지표 (신 경로): 1 외화 = ? 원 (엔은 100엔 고시라 100으로 나눔) ──
@@ -158,7 +169,7 @@ async function goldApiXau() {
 
 /* ── 공통 유틸 (netlify/functions/_shared.js로 이동 — app-evolve cycle228 advance) ─────────── */
 const shared = require('./_shared');
-const { errText, toNum, pickRows, applyJpyScale, getJSON, isAllowedOrigin, shouldThrottle } = shared;
+const { errText, toNum, pickRows, applyJpyScale, getJSON, isAllowedOrigin, shouldThrottle, raceDeadline } = shared;
 
 const NAVER_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
@@ -185,4 +196,4 @@ function json(status, body, maxAge, origin) {
 // require(this).handler가 undefined가 돼버린다(Netlify가 바로 이 handler를 호출하므로
 // 프로덕션 함수가 완전히 죽는다 — app-evolve cycle230 advance에서 발견/수정).
 // Object.assign으로 기존 module.exports(=exports, handler 보유)에 병합해야 안전하다.
-Object.assign(module.exports, { ratesUsdBaseToKrw, toNum, pickRows, errText, applyJpyScale, isAllowedOrigin, shouldThrottle });
+Object.assign(module.exports, { ratesUsdBaseToKrw, toNum, pickRows, errText, applyJpyScale, isAllowedOrigin, shouldThrottle, raceDeadline });

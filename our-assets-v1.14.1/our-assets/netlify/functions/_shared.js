@@ -75,6 +75,28 @@ function shouldThrottle(history, now, windowMs, maxCount) {
   return { allow: true, history: pruned };
 }
 
+/* stock.js는 개별 소스(네이버/Finnhub 등)가 아무리 느리거나 멈춰있어도 Netlify 서버리스
+ * 실행시간 한도(보통 10초)를 넘겨 하드 502가 나는 대신 그때까지 모인 부분 결과를 그대로
+ * 반환하도록 Promise.race([work, deadline]) 전체실행시간 상한을 이미 두고 있었다(app-evolve
+ * cycle228 critique가 세운 계획, cycle233 advance가 그 deadline setTimeout의 clearTimeout
+ * 누락만 고침) — 그런데 rates.js/crypto.js는 이 상한이 애초에 없었다. 둘 다 getJSON()을
+ * 기본값(ms=6000, retries=1)으로 부르므로 업스트림이 느리면 "타임아웃→250ms 대기→재시도
+ * →다시 타임아웃"으로 한 호출만으로도 최대 ~12.25초가 걸리고(rates.js는 환율+금 네이버 조회가
+ * 끝난 뒤에도 fxFallbackChain·goldApiXau로 이어지는 추가 직렬 getJSON까지 있어 최악엔 그보다
+ * 훨씬 길어진다), Netlify가 10초 한도에서 함수를 강제 종료해 "부분 결과"가 아니라 완전한 502
+ * 실패로 끝난다 — 세 엔드포인트가 똑같이 '느린 업스트림에도 부분 결과를 돌려준다'는 설계
+ * 철학(각 파일 상단 주석)을 표방하면서도 rates/crypto만 실제로는 그 철학을 지킬 방법이 없었던
+ * 공백(app-evolve cycle237 develop). work가 예산 안에 끝나든 데드라인이 먼저 끝나든 타이머를
+ * 항상 clearTimeout해(cycle233이 stock.js에서 사후에 고친 누수를, 공유 헬퍼로 빼면서 처음부터
+ * 피한다) 이벤트 루프에 남기지 않는다. 반환값은 timedOut 여부뿐이다 — work 쪽이 그때까지
+ * 채워둔 out/debug는 호출부가 클로저로 그대로 들고 있으므로(아직 안 끝났어도 그 시점까지 쓴
+ * 값은 남아있음) 따로 전달할 필요가 없다. */
+function raceDeadline(work, budgetMs) {
+  let timer, timedOut = false;
+  const deadline = new Promise(resolve => { timer = setTimeout(() => { timedOut = true; resolve(); }, budgetMs); });
+  return Promise.race([work, deadline]).then(() => { clearTimeout(timer); return timedOut; });
+}
+
 function corsOrigin(origin, allowlist) {
   if (!allowlist.length) return '*';
   return isAllowedOrigin(origin, allowlist) && origin ? origin : null;
@@ -93,5 +115,5 @@ function json(status, body, maxAge, origin, allowedOrigins) {
 
 module.exports = {
   sleep, errText, toNum, pickRows, applyJpyScale, getJSON,
-  parseAllowedOrigins, isAllowedOrigin, shouldThrottle, corsOrigin, json
+  parseAllowedOrigins, isAllowedOrigin, shouldThrottle, corsOrigin, json, raceDeadline
 };

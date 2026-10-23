@@ -24,17 +24,28 @@ exports.handler = async (event) => {
   const out = {};
   const debug = { errors: {} };
 
-  try {
-    const markets = marketsParam(codes);
-    const j = await getJSON(`https://api.upbit.com/v1/ticker?markets=${encodeURIComponent(markets)}`, { headers: UPBIT_HEADERS });
-    Object.assign(out, pricesFromTickers(Array.isArray(j) ? j : []));
-    codes.forEach(c => { if (!(c in out)) debug.errors[c] = 'not found'; });
-  } catch (e) {
-    codes.forEach(c => { debug.errors[c] = errText(e); });
-  }
+  // 전체 실행시간 상한: getJSON 자체가 기본 재시도(ms=6000, retries=1)만으로도 업비트가
+  // 느리면 최악 ~12초가 걸릴 수 있어, 이 상한이 없으면 호출이 단 하나뿐인데도 Netlify
+  // 서버리스 실행시간 한도(보통 10초)를 넘긴 하드 502로 끝나버린다 — stock.js/rates.js와
+  // 동일한 '부분 결과라도 돌려준다' 안전장치(app-evolve cycle237 develop, raceDeadline은
+  // _shared.js 공유 헬퍼).
+  const HANDLER_BUDGET_MS = 8000;
+  const work = (async () => {
+    try {
+      const markets = marketsParam(codes);
+      const j = await getJSON(`https://api.upbit.com/v1/ticker?markets=${encodeURIComponent(markets)}`, { headers: UPBIT_HEADERS });
+      Object.assign(out, pricesFromTickers(Array.isArray(j) ? j : []));
+      codes.forEach(c => { if (!(c in out)) debug.errors[c] = 'not found'; });
+    } catch (e) {
+      codes.forEach(c => { debug.errors[c] = errText(e); });
+    }
+  })();
+
+  const timedOut = await raceDeadline(work, HANDLER_BUDGET_MS);
+  if (timedOut) debug.timedOut = true; // 아직 못 받아온 코드는 out에 없고, wantDebug일 때 errors에도 안 남을 수 있음
 
   const wantDebug = (event.queryStringParameters || {}).debug === '1';
-  return json(200, wantDebug ? { ...out, _debug: debug } : out, Object.keys(out).length ? 30 : 0, origin);
+  return json(200, wantDebug ? { ...out, _debug: debug } : out, (!timedOut && Object.keys(out).length) ? 30 : 0, origin);
 };
 
 /* ── codes 파라미터 파싱: 중복 제거·대문자화·업비트 심볼 형태(영문+숫자 2~10자)만 허용 ──────── */
@@ -61,7 +72,7 @@ function pricesFromTickers(tickers) {
 
 /* ── 공통 유틸 (netlify/functions/_shared.js로 이동 — app-evolve cycle228 advance) ─────────── */
 const shared = require('./_shared');
-const { errText, toNum, getJSON, isAllowedOrigin, shouldThrottle } = shared;
+const { errText, toNum, getJSON, isAllowedOrigin, shouldThrottle, raceDeadline } = shared;
 
 const UPBIT_HEADERS = { Accept: 'application/json' };
 
@@ -82,4 +93,4 @@ function json(status, body, maxAge, origin) {
 // require(this).handler가 undefined가 돼버린다(Netlify가 바로 이 handler를 호출하므로
 // 프로덕션 함수가 완전히 죽는다 — app-evolve cycle230 advance에서 발견/수정).
 // Object.assign으로 기존 module.exports(=exports, handler 보유)에 병합해야 안전하다.
-Object.assign(module.exports, { parseCodes, marketsParam, pricesFromTickers, toNum, errText, isAllowedOrigin, shouldThrottle });
+Object.assign(module.exports, { parseCodes, marketsParam, pricesFromTickers, toNum, errText, isAllowedOrigin, shouldThrottle, raceDeadline });

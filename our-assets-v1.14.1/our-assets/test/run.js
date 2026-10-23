@@ -47,6 +47,20 @@ const swSrc = fs.readFileSync(SW_PATH, 'utf8');
 // 동일하게 소스 문자열만 읽어 캐시 헤더 규칙의 존재/내용을 회귀 검사한다(app-evolve cycle227).
 const TOML_PATH = path.join(__dirname, '..', 'netlify.toml');
 const tomlSrc = fs.readFileSync(TOML_PATH, 'utf8');
+// stock.js/rates.js/crypto.js는 require()로 동작 검증을 하지만(위), "work가 budgetMs 전에
+// 끝나면 통과한다"류의 핸들러 테스트는 raceDeadline이 아예 안 불려도(=이번에 고친 버그가
+// 그대로 있어도) 우연히 통과한다(아래 해당 테스트의 주석 참고) — 그 구조적 공백을 소스
+// 문자열 검사로 못박기 위해 sw.js/netlify.toml과 같은 방식으로 원문도 함께 읽는다
+// (app-evolve cycle237 develop).
+const STOCK_PATH = path.join(__dirname, '..', 'netlify', 'functions', 'stock.js');
+const ratesPathForSrc = path.join(__dirname, '..', 'netlify', 'functions', 'rates.js');
+const cryptoPathForSrc = path.join(__dirname, '..', 'netlify', 'functions', 'crypto.js');
+let stockSrc = '', ratesSrc = '', cryptoSrc = '';
+try {
+  stockSrc = fs.readFileSync(STOCK_PATH, 'utf8');
+  ratesSrc = fs.readFileSync(ratesPathForSrc, 'utf8');
+  cryptoSrc = fs.readFileSync(cryptoPathForSrc, 'utf8');
+} catch (e) { /* stockFns 등과 동일하게 require 실패 시의 경고로 충분, 여기서 또 던지지 않음 */ }
 
 function extractFunction(name) {
   const marker = `function ${name}(`;
@@ -18982,6 +18996,15 @@ if (stockFns && ratesFns) {
     assert.strictEqual(ratesFns.isAllowedOrigin, sharedFns.isAllowedOrigin);
     assert.strictEqual(cryptoFns.isAllowedOrigin, sharedFns.isAllowedOrigin);
   });
+  test('raceDeadline: stock.js/rates.js/crypto.js 세 파일 모두 _shared.js의 같은 함수를 참조 동일성(===)으로 공유한다(app-evolve cycle237 develop — stock.js의 기존 인라인 구현을 공유 헬퍼로 통합하면서 rates.js/crypto.js에도 똑같이 적용)', () => {
+    assert.ok(sharedFns, '_shared.js require 실패');
+    // 셋 다 undefined이기만 해도 strictEqual은 통과하므로(참조 동일성 함정), 실제로 함수가
+    // 존재하는지부터 먼저 못박아야 이 테스트가 "raceDeadline이 아예 없는" 회귀를 잡아낸다.
+    assert.strictEqual(typeof sharedFns.raceDeadline, 'function', '_shared.js에 raceDeadline이 없음');
+    assert.strictEqual(stockFns.raceDeadline, sharedFns.raceDeadline);
+    assert.strictEqual(ratesFns.raceDeadline, sharedFns.raceDeadline);
+    assert.strictEqual(cryptoFns.raceDeadline, sharedFns.raceDeadline);
+  });
 
   test('shouldThrottle: 윈도우 안에서 임계값 이하면 허용하고 history에 쌓는다', () => {
     let r = stockFns.shouldThrottle([], 1000, 60000, 3);
@@ -19062,6 +19085,36 @@ if (sharedFns) {
     assert.strictEqual('Access-Control-Allow-Origin' in blocked.headers, false);
     assert.strictEqual(blocked.headers['Vary'], 'Origin');
   });
+  /* raceDeadline: stock.js가 이미 인라인으로 구현해 쓰던 "work가 budgetMs 안에 끝나지 않으면
+   * 그 시점까지의 부분 상태로 넘어간다" Promise.race 패턴을 rates.js/crypto.js도 똑같이 겪는
+   * 문제(둘 다 이 상한이 전혀 없어 getJSON 기본 재시도만으로도 Netlify의 보통 10초 실행시간
+   * 한도를 넘겨 완전한 502로 끝날 수 있었음)라 공유 헬퍼로 뺐다(app-evolve cycle237 develop).
+   * work/budgetMs를 직접 제어할 수 있는 이 레벨에서 fetch/getJSON 없이 빠르고 결정적으로
+   * 검증한다. */
+  test('_shared.raceDeadline: work가 budgetMs 전에 끝나면 timedOut=false를 반환하고, 남은 deadline 타이머를 clearTimeout해 이벤트 루프에 남기지 않는다', async () => {
+    const origSetTimeout = global.setTimeout, origClearTimeout = global.clearTimeout;
+    let pending = 0;
+    global.setTimeout = (fn, ms, ...args) => { pending++; return origSetTimeout(fn, ms, ...args); };
+    global.clearTimeout = (t) => { if (t) pending--; return origClearTimeout(t); };
+    try {
+      const work = new Promise(resolve => origSetTimeout(resolve, 5));
+      const timedOut = await sharedFns.raceDeadline(work, 5000);
+      assert.strictEqual(timedOut, false);
+      assert.strictEqual(pending, 0, 'work가 먼저 끝났는데 deadline setTimeout이 clearTimeout되지 않아 누수됨');
+    } finally { global.setTimeout = origSetTimeout; global.clearTimeout = origClearTimeout; }
+  });
+  test('_shared.raceDeadline: work가 budgetMs 안에 끝나지 않으면 timedOut=true를 반환하고(부분 결과로 넘어감), deadline 타이머도 정상 정리된다', async () => {
+    const origSetTimeout = global.setTimeout, origClearTimeout = global.clearTimeout;
+    let pending = 0;
+    global.setTimeout = (fn, ms, ...args) => { pending++; return origSetTimeout(fn, ms, ...args); };
+    global.clearTimeout = (t) => { if (t) pending--; return origClearTimeout(t); };
+    try {
+      const work = new Promise(resolve => origSetTimeout(resolve, 200)); // budgetMs(20)보다 훨씬 늦게 끝남
+      const timedOut = await sharedFns.raceDeadline(work, 20);
+      assert.strictEqual(timedOut, true);
+      assert.strictEqual(pending, 0, 'timedOut 분기에서도 deadline setTimeout이 정리돼야 함(clearTimeout(이미 fire된 타이머)는 무해)');
+    } finally { global.setTimeout = origSetTimeout; global.clearTimeout = origClearTimeout; }
+  });
 }
 
 /* ---------- netlify/functions/crypto.js: 암호화폐(업비트) 시세 중계 순수 함수 (app-evolve cycle219) ----------
@@ -19139,6 +19192,22 @@ if (stockFns && ratesFns && cryptoFns) {
   function restoreFetch() { global.fetch = origFetch; }
   function okJson(body) { return { ok: true, status: 200, json: async () => body }; }
   function failHttp(status) { return { ok: false, status }; }
+
+  /* 아래 handler 테스트들의 "work가 먼저 끝나면 deadline setTimeout을 clearTimeout한다" 검증은
+   * raceDeadline이 아예 호출되지 않아도(=budget 보호가 전혀 없어도) 통과한다 — 만들 타이머가
+   * 없으면 샐 타이머도 없기 때문이다(실제로 rates.js/crypto.js를 고치기 전 코드로 되돌려
+   * 확인해본 결과). 그래서 "실제로 raceDeadline(work, HANDLER_BUDGET_MS)를 호출해 전체실행시간
+   * 상한을 두고 있는가"는 handler를 실행해서가 아니라 소스 문자열로 직접 못박는다 — sw.js/
+   * netlify.toml처럼 실행할 수 없는 대상에 쓰는 것과 같은 정적 검사 기법을, 실행 가능한 대상에도
+   * "그 경로를 실제로 타는지"를 확실히 하려고 보조로 함께 쓴다(app-evolve cycle237 develop). */
+  test('rates.js/crypto.js: stock.js와 동일하게 raceDeadline(work, HANDLER_BUDGET_MS)로 8초 전체실행시간 상한을 실제로 두고 있다(이번에 새로 추가된 보호 — 소스 문자열로 호출 여부를 직접 확인)', () => {
+    assert.ok(stockSrc && ratesSrc && cryptoSrc, 'netlify/functions 소스를 읽지 못함');
+    assert.match(stockSrc, /raceDeadline\(work,\s*HANDLER_BUDGET_MS\)/, 'stock.js가 raceDeadline을 호출하지 않음(기존에 있던 보호가 사라짐)');
+    assert.match(ratesSrc, /raceDeadline\(work,\s*HANDLER_BUDGET_MS\)/, 'rates.js가 raceDeadline을 호출하지 않음 — getJSON 기본 재시도만으로도 Netlify 10초 한도를 넘겨 하드 502로 끝날 수 있음');
+    assert.match(cryptoSrc, /raceDeadline\(work,\s*HANDLER_BUDGET_MS\)/, 'crypto.js가 raceDeadline을 호출하지 않음 — getJSON 기본 재시도만으로도 Netlify 10초 한도를 넘겨 하드 502로 끝날 수 있음');
+    assert.match(ratesSrc, /HANDLER_BUDGET_MS\s*=\s*8000/, 'rates.js의 HANDLER_BUDGET_MS가 stock.js(8000ms)와 다름');
+    assert.match(cryptoSrc, /HANDLER_BUDGET_MS\s*=\s*8000/, 'crypto.js의 HANDLER_BUDGET_MS가 stock.js(8000ms)와 다름');
+  });
 
   test('stock.handler/rates.handler/crypto.handler: require 결과에 handler가 살아있다(module.exports 전체 재할당이 날려버리지 않는지 — cycle230에서 실제로 날아갔던 회귀)', () => {
     assert.strictEqual(typeof stockFns.handler, 'function', 'stock.js: require(..).handler가 함수가 아님');
@@ -19248,6 +19317,23 @@ if (stockFns && ratesFns && cryptoFns) {
       assert.strictEqual(res.headers['Access-Control-Allow-Origin'], '*');
     } finally { restoreFetch(); }
   });
+  test('rates.handler: stock.js와 동일하게 raceDeadline(8초 전체실행시간 상한)을 거치며, work가 먼저 끝나면 deadline setTimeout을 clearTimeout해 이벤트 루프에 남기지 않는다(app-evolve cycle237 develop — rates.js에 그동안 없던 상한을 추가)', async () => {
+    installFetchQueue([okJson({ result: [{ closePrice: '1385.2' }] })]);
+    const origSetTimeout = global.setTimeout, origClearTimeout = global.clearTimeout;
+    let pending = 0;
+    global.setTimeout = (fn, ms, ...args) => { pending++; return origSetTimeout(fn, ms, ...args); };
+    global.clearTimeout = (t) => { if (t) pending--; return origClearTimeout(t); };
+    try {
+      const res = await ratesFns.handler({ queryStringParameters: {} });
+      assert.strictEqual(res.statusCode, 200);
+      assert.strictEqual(JSON.parse(res.body).fx.USD, 1385.2, 'raceDeadline을 거치면서도 happy path 응답값이 그대로 보존돼야 함');
+      assert.strictEqual(pending, 0, 'work가 먼저 끝났는데 deadline setTimeout이 clearTimeout되지 않아 누수됨');
+    } finally {
+      global.setTimeout = origSetTimeout;
+      global.clearTimeout = origClearTimeout;
+      restoreFetch();
+    }
+  });
   test('rates.handler: rate limit을 넘기면 429를 반환한다 — 이 파일의 마지막 handler 테스트여야 함(버킷 영구 소진)', async () => {
     installFetchQueue([failHttp(404)]);
     try {
@@ -19286,6 +19372,23 @@ if (stockFns && ratesFns && cryptoFns) {
       const res = await cryptoFns.handler({ queryStringParameters: { codes: 'BTC' }, headers: { origin: 'https://evil.example' } });
       assert.strictEqual(res.headers['Access-Control-Allow-Origin'], '*');
     } finally { restoreFetch(); }
+  });
+  test('crypto.handler: stock.js/rates.js와 동일하게 raceDeadline(8초 전체실행시간 상한)을 거치며, work가 먼저 끝나면 deadline setTimeout을 clearTimeout해 이벤트 루프에 남기지 않는다(app-evolve cycle237 develop — crypto.js에 그동안 없던 상한을 추가)', async () => {
+    installFetchQueue([okJson([{ market: 'KRW-BTC', trade_price: 143250000 }])]);
+    const origSetTimeout = global.setTimeout, origClearTimeout = global.clearTimeout;
+    let pending = 0;
+    global.setTimeout = (fn, ms, ...args) => { pending++; return origSetTimeout(fn, ms, ...args); };
+    global.clearTimeout = (t) => { if (t) pending--; return origClearTimeout(t); };
+    try {
+      const res = await cryptoFns.handler({ queryStringParameters: { codes: 'BTC' } });
+      assert.strictEqual(res.statusCode, 200);
+      assert.deepStrictEqual(JSON.parse(res.body), { BTC: 143250000 }, 'raceDeadline을 거치면서도 happy path 응답값이 그대로 보존돼야 함');
+      assert.strictEqual(pending, 0, 'work가 먼저 끝났는데 deadline setTimeout이 clearTimeout되지 않아 누수됨');
+    } finally {
+      global.setTimeout = origSetTimeout;
+      global.clearTimeout = origClearTimeout;
+      restoreFetch();
+    }
   });
   test('crypto.handler: rate limit을 넘기면 429를 반환한다 — 이 파일의 마지막 handler 테스트여야 함(버킷 영구 소진)', async () => {
     installFetchQueue([failHttp(404)]);

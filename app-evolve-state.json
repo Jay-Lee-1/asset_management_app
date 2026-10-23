@@ -1,15 +1,8 @@
 {
   "cycle": 237,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 232,
-      "phase": "develop",
-      "timestamp": "2026-10-22T08:45:00.000Z",
-      "summary": "[state.json 포인터 교정] 이 사이클 시작 시 top-level {cycle:231, phase:\"review\"}가 실제 git 로그/history와 불일치함을 발견: cycle231의 review(07c02d4)->critique(9bab288)->advance(03506f4)가 이미 커밋돼 있었는데, advance 커밋(03506f4)이 history에는 advance 항목을 올바르게 추가했지만 top-level phase/cycle 회전을 'develop'/232가 아니라 'review'/231로 잘못 되돌려놨다(advance 단계 커밋 메시지 작성 시의 실수로 보임). git log의 커밋 순서(develop d292d83 -> review 07c02d4 -> critique 9bab288 -> advance 03506f4)를 근거로 history를 신뢰하고 top-level을 cycle232/phase develop으로 교정한 뒤 이번 호출을 develop 단계로 수행했다. [develop 결과] general-purpose 서브에이전트가 notifyAlertInfo()(index.html)의 OS 알림 dedupe key 비대칭 버그를 발견: confirmMulti/matMulti(2건 이상 묶임)는 key에 TODAY가 들어가 매일 재알림되는데, 단일 항목 confirm/mat은 key가 `kind:id:date`뿐으로 TODAY가 없어 한 번 알림을 보내면 그 거래/만기가 해소되기 전까지 평생 다시 알리지 않았다 — 특히 mat은 날짜가 지나면 문구가 '내일'→'오늘'→'지났어요'로 바뀌는데도 옛 key로 pickNotifyAlerts가 영구히 억제해, 미확인 이체·만기가 1건뿐인 사용자만 반복 알림을 못 받는 역전된 비대칭이었다(2건 이상인 사용자와 반대). confirm/mat 키에도 confirmMulti/matMulti와 동일하게 TODAY를 선두에 추가해 날이 바뀌면 재알림되도록 고쳤다(같은 날 중복 호출은 기존 notifiedIds dedupe로 그대로 억제됨, 로직 변경 없음). APP_VERSION 1.47.213->1.47.214, sw.js CACHE v480->v481. test/run.js: 기존 리터럴 key 단언 3건을 새 key 포맷으로 갱신 + 신규 3건(confirm 날짜별 key 다름/mat 내일·오늘·지났어요 3상태 key 모두 다름/pickNotifyAlerts가 날이 바뀌면 어제 억제기록과 무관하게 재알림하면서도 같은 날 중복은 그대로 억제됨을 통합검증) 추가. 수정 전 키로 되돌려 6건 FAIL함을 직접 확인한 뒤 복원. node --check(sw.js/test/run.js) 통과. node our-assets-v1.14.1/our-assets/test/run.js 1792/1792 -> 1795/1795 통과. 오케스트레이터가 diff/테스트를 직접 재검증한 뒤 커밋한다.",
-      "commit": null
-    },
     {
       "cycle": 232,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-23T05:10:00.000Z",
       "summary": "critique(cycle236) 계획대로 PWA 설치 유도 배너를 신설했다. 기존 .sw-update-bar 패턴을 그대로 본떠 #installBar(CSS .install-bar, HTML installBar div)를 추가하고, isStandalone()/installSnoozed()/bumpInstallVisitCount()/installVisitGateOk()/installBarVisible()/maybeShowInstallBar()/hideInstallBar()/dismissInstallBar()/onInstallBarClick() 함수와 beforeinstallprompt(preventDefault+_deferredInstallPrompt 캡처)/appinstalled(설치완료 플래그+배너숨김) 리스너를 추가했다. Android/Chrome은 _deferredInstallPrompt가 있어야만, iOS(기존 IS_IOS 상수 재사용)는 beforeinstallprompt가 없으므로 UA 분기만으로 '공유 버튼 → 홈 화면에 추가' 안내 문구를 보여준다. isStandalone()(matchMedia display-mode:standalone/navigator.standalone)이면 항상 숨기고, SW_UPDATE_AVAILABLE이면 업데이트 배너에 자리를 양보(controllerchange에서 hideInstallBar() 선호출), '기기별' 설정이라 DB.settings가 아닌 순수 localStorage(asset_app_install_dismiss_ts 14일 스누즈, asset_app_installed 설치완료 플래그, asset_app_visit_count 방문횟수)만 쓴다. 첫 실행 즉시 들이밀지 않도록 startApp()에서 bumpInstallVisitCount()로 누적한 방문횟수가 3회 이상이어야 노출(installVisitGateOk()). startApp()에 bumpInstallVisitCount()+maybeShowInstallBar() 호출을 추가했다. APP_VERSION 1.47.221->1.47.222, sw.js CACHE v488->v489. test/run.js: installBarCtx() vm 헬퍼(domstub 기반, matchMedia/localStorage/navigator.standalone 스텁)로 실행형 테스트 15건(isStandalone 3종/installSnoozed/dismissInstallBar 스누즈타임스탬프/방문게이트 3·4회 경계/installBarVisible의 standalone·SW업데이트·설치완료·스누즈·방문게이트·Android·iOS 분기별 분리 검증/maybeShowInstallBar 숨김·Android·iOS 렌더/onInstallBarClick Android prompt 호출·iOS 토스트) + 정적 검사 4건(beforeinstallprompt의 preventDefault+캡처+재노출판단, appinstalled의 플래그+배너숨김, startApp()의 방문적립+노출판단 호출, controllerchange가 showSwUpdateBar() 전에 hideInstallBar() 호출) 총 22건 추가. 세 가지 결함(preventDefault 누락/방문게이트 임계값 깨짐/appinstalled에서 hideInstallBar 누락)을 각각 주입해 관련 테스트가 FAIL함을 직접 확인한 뒤 복원. general-purpose 서브에이전트(fork)가 구현했고, 오케스트레이터가 diff 전체를 직접 읽어 .sw-update-bar와의 동시 노출 충돌 방지 로직·IS_IOS 재사용 안전성(선언 전 참조가 아니라 이벤트/부팅 시점에만 실행되므로 문제 없음)을 재검증한 뒤, node --check(sw.js/test/run.js) 및 node our-assets-v1.14.1/our-assets/test/run.js를 독립적으로 재실행해 1820/1820 -> 1842/1842 통과를 재확인하고 커밋한다.",
+      "commit": null
+    },
+    {
+      "cycle": 237,
+      "phase": "develop",
+      "timestamp": "2026-10-23T06:10:00.000Z",
+      "summary": "general-purpose 서브에이전트가 develop 후보를 탐색해 stock.js에만 있던 전체실행시간 상한(Promise.race([work,deadline]), HANDLER_BUDGET_MS=8000ms — Netlify 서버리스 실행시간 한도(보통 10초)를 넘겨 하드 502가 나는 대신 그때까지 모인 부분 결과를 반환, cycle228 critique가 세운 계획·cycle233 advance가 그 안의 clearTimeout 누락만 고침)이 rates.js/crypto.js에는 애초에 없었던 공백을 발견 — 둘 다 getJSON() 기본값(ms=6000, retries=1)만으로도 업스트림이 느리면 단 한 번의 호출이 최대 ~12.25초가 걸릴 수 있고(rates.js는 네이버→fxFallbackChain→goldApiXau까지 이어지는 최대 4단계 직렬 getJSON이라 최악엔 그보다 훨씬 길다), 세 엔드포인트가 똑같이 '느린 업스트림에도 부분 결과를 돌려준다'는 설계 철학(각 파일 상단 주석)을 표방하면서도 rates/crypto만 실제로는 그 철학을 지킬 방법이 없어 완전한 502로 끝날 수 있었던 실사용 결함. stock.js의 기존 인라인 Promise.race+clearTimeout 패턴을 _shared.js의 공유 헬퍼 raceDeadline(work, budgetMs)로 추출한 뒤, stock.js는 그 헬퍼를 호출하도록 교체(동작 불변)하고 rates.js(전체 fx/gold 파이프라인을 work로 감싸 타임아웃 시 debug.timedOut=true+Cache-Control no-store)와 crypto.js(단일 업비트 호출을 work로 감싸 동일 처리)에 동일하게 적용해 세 파일이 하나의 테스트된 구현을 공유하게 했다. test/run.js: raceDeadline 단위 테스트 2건(work가 먼저 끝나면 timedOut=false+타이머 누수 없음, budgetMs 초과 시 timedOut=true+타이머 정리) + 세 파일이 _shared.js의 같은 함수를 참조 동일성(===)으로 공유하는지(typeof 가드 포함, 셋 다 undefined라도 통과하는 함정 방지) + handler 레벨 '타이머 안 샘' happy-path 테스트 2건(rates.handler/crypto.handler)만으로는 raceDeadline이 아예 안 불려도(=버그가 그대로 있어도) 우연히 통과함을 직접 확인해, 소스 문자열로 raceDeadline(work, HANDLER_BUDGET_MS) 호출과 HANDLER_BUDGET_MS=8000을 못박는 정적 검사 1건을 추가 — 총 6건 추가(1842->1848). 수정 전 코드(raceDeadline 도입 전)로 되돌려 이 중 4건(단위 테스트 2건+참조동일성 1건+소스문자열 검사 1건)이 FAIL함을, handler 레벨 '타이머 안 샘' 테스트 2건은 타이머 자체가 생성되지 않아 오히려 통과해버림을 직접 확인한 뒤 복원. node --check(_shared.js/stock.js/rates.js/crypto.js/test/run.js) 통과. netlify/functions·test만 변경이라 cycle233 advance와 동일한 전례를 따라 APP_VERSION/sw.js CACHE는 범프하지 않았다. 오케스트레이터가 diff를 직접 읽고(세 파일 모두 happy path 로직 무변경 재확인, 과한 주석 길이는 기존 프로젝트 컨벤션과 일치해 그대로 유지) git stash로 변경분을 걷어낸 뒤 1842/1842 통과를 재확인해 수정분이 실제로 더해진 테스트임을 교차검증, node our-assets-v1.14.1/our-assets/test/run.js를 독립적으로 재실행해 1848/1848 통과를 재확인한 뒤 커밋한다.",
       "commit": null
     }
   ]

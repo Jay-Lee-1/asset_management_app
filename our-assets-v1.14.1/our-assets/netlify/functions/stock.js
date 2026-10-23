@@ -43,9 +43,10 @@ exports.handler = async (event) => {
 
   // 전체 실행시간 상한: 개별 소스가 아무리 느리거나 멈춰있어도(느린 upstream, 네트워크 지연 등)
   // 서버리스 실행시간 한도(보통 10초)를 넘겨 하드 502가 나는 대신, 그때까지 모인 부분 결과를
-  // 그대로 반환한다 — 이 함수가 애초에 지향하는 '부분/저하 결과' 동작을 보장한다.
+  // 그대로 반환한다 — 이 함수가 애초에 지향하는 '부분/저하 결과' 동작을 보장한다. raceDeadline은
+  // _shared.js 공유 헬퍼(app-evolve cycle237 develop — rates.js/crypto.js에도 같은 이유로 적용하면서
+  // 이 파일의 기존 인라인 구현을 그 헬퍼 호출로 통합, 동작은 그대로 유지).
   const HANDLER_BUDGET_MS = 8000;
-  let timedOut = false;
 
   const work = (async () => {
     let fx = null;
@@ -92,10 +93,7 @@ exports.handler = async (event) => {
     ]);
   })();
 
-  let deadlineTimer;
-  const deadline = new Promise(resolve => { deadlineTimer = setTimeout(() => { timedOut = true; resolve(); }, HANDLER_BUDGET_MS); });
-  await Promise.race([work, deadline]);
-  clearTimeout(deadlineTimer); // work가 먼저 끝나도 deadline 타이머가 이벤트 루프에 남아있지 않도록 해제 (app-evolve cycle233 advance)
+  const timedOut = await raceDeadline(work, HANDLER_BUDGET_MS);
   if (timedOut) debug.timedOut = true; // 아직 못 받아온 코드는 out에 없고, wantDebug일 때 errors에도 안 남을 수 있음
 
   const wantDebug = (event.queryStringParameters || {}).debug === '1';
@@ -194,7 +192,7 @@ async function fetchFxToKrw(debug) {
 
 /* ── 공통 유틸 (netlify/functions/_shared.js로 이동 — app-evolve cycle228 advance) ─────────── */
 const shared = require('./_shared');
-const { errText, toNum, pickRows, applyJpyScale, getJSON, isAllowedOrigin, shouldThrottle } = shared;
+const { errText, toNum, pickRows, applyJpyScale, getJSON, isAllowedOrigin, shouldThrottle, raceDeadline } = shared;
 
 const NAVER_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
@@ -222,4 +220,4 @@ function json(status, body, maxAge, origin) {
 // require(this).handler가 undefined가 돼버린다(Netlify가 바로 이 handler를 호출하므로
 // 프로덕션 함수가 완전히 죽는다 — app-evolve cycle230 advance에서 발견/수정).
 // Object.assign으로 기존 module.exports(=exports, handler 보유)에 병합해야 안전하다.
-Object.assign(module.exports, { toKrw, toNum, pickRows, errText, applyJpyScale, isAllowedOrigin, shouldThrottle });
+Object.assign(module.exports, { toKrw, toNum, pickRows, errText, applyJpyScale, isAllowedOrigin, shouldThrottle, raceDeadline });
