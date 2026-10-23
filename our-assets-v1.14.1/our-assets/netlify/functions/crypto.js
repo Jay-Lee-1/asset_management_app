@@ -10,9 +10,8 @@
 exports.handler = async (event) => {
   const origin = (event.headers && (event.headers.origin || event.headers.Origin)) || null;
 
-  const rl = shouldThrottle(rlHistory, Date.now(), RL_WINDOW_MS, RL_MAX);
-  rlHistory = rl.history;
-  if (!rl.allow) {
+  const rlKey = clientKeyFromHeaders(event.headers);
+  if (!shouldThrottleByKey(rlBuckets, rlKey, Date.now(), RL_WINDOW_MS, RL_MAX)) {
     return json(429, { error: '요청이 너무 많아요. 잠시 후 다시 시도해 주세요.' }, 0, origin);
   }
 
@@ -72,17 +71,19 @@ function pricesFromTickers(tickers) {
 
 /* ── 공통 유틸 (netlify/functions/_shared.js로 이동 — app-evolve cycle228 advance) ─────────── */
 const shared = require('./_shared');
-const { errText, toNum, getJSON, isAllowedOrigin, shouldThrottle, raceDeadline } = shared;
+const { errText, toNum, getJSON, isAllowedOrigin, shouldThrottle, shouldThrottleByKey, clientKeyFromHeaders, raceDeadline } = shared;
 
 const UPBIT_HEADERS = { Accept: 'application/json' };
 
-/* ── 공개 프록시 남용 완화 (app-evolve cycle225 critique) ──────────────────────
- * stock.js/rates.js와 같은 이유로 ALLOWED_ORIGINS/RL_WINDOW_MS/RL_MAX/rlHistory는
- * 엔드포인트별로 분리 유지한다(레이트리밋 버킷이 섞이면 분당 한도가 의도와 달라짐). */
+/* ── 공개 프록시 남용 완화 (app-evolve cycle225 critique, cycle239 advance로 caller별 key 분리) ──
+ * stock.js/rates.js와 같은 이유로 ALLOWED_ORIGINS/RL_WINDOW_MS/RL_MAX/rlBuckets는
+ * 엔드포인트별로 분리 유지한다(레이트리밋 버킷이 섞이면 분당 한도가 의도와 달라짐).
+ * rlBuckets는 호출자(IP) key별로 버킷을 나눠, 인스턴스 스케일아웃으로 전역 한도가 느슨해지거나
+ * 다른 사용자 때문에 collateral 429를 맞는 문제를 완화한다(cycle239 critique). */
 const ALLOWED_ORIGINS = shared.parseAllowedOrigins(process.env.ALLOWED_ORIGINS);
 const RL_WINDOW_MS = 60000;
 const RL_MAX = 30;
-let rlHistory = [];
+let rlBuckets = new Map();
 
 function json(status, body, maxAge, origin) {
   return shared.json(status, body, maxAge, origin, ALLOWED_ORIGINS);
@@ -93,4 +94,4 @@ function json(status, body, maxAge, origin) {
 // require(this).handler가 undefined가 돼버린다(Netlify가 바로 이 handler를 호출하므로
 // 프로덕션 함수가 완전히 죽는다 — app-evolve cycle230 advance에서 발견/수정).
 // Object.assign으로 기존 module.exports(=exports, handler 보유)에 병합해야 안전하다.
-Object.assign(module.exports, { parseCodes, marketsParam, pricesFromTickers, toNum, errText, isAllowedOrigin, shouldThrottle, raceDeadline });
+Object.assign(module.exports, { parseCodes, marketsParam, pricesFromTickers, toNum, errText, isAllowedOrigin, shouldThrottle, shouldThrottleByKey, clientKeyFromHeaders, raceDeadline });

@@ -2,9 +2,9 @@
  * 세 파일이 거의 동일한 ~140줄짜리 블록을 복붙으로 유지하다 drift가 시작된 것을 고치기
  * 위해 신설(app-evolve cycle228 advance, cycle228 critique가 세운 계획).
  *
- * RL_WINDOW_MS/RL_MAX/rlHistory(상태 있는 레이트리밋 버킷)는 여기로 올리지 않고 각 파일
+ * RL_WINDOW_MS/RL_MAX/rlBuckets(상태 있는 레이트리밋 버킷)는 여기로 올리지 않고 각 파일
  * 스코프에 그대로 둔다 — 엔드포인트별 분당 호출 한도가 서로 섞이면 안 되기 때문이다.
- * shouldThrottle 자체(순수 계산)만 공유한다. */
+ * shouldThrottle/shouldThrottleByKey/clientKeyFromHeaders 자체(순수 계산)만 공유한다. */
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
@@ -75,6 +75,39 @@ function shouldThrottle(history, now, windowMs, maxCount) {
   return { allow: true, history: pruned };
 }
 
+/* shouldThrottle의 history 배열은 모듈 스코프 단일 변수(엔드포인트당 하나)라 caller를
+ * 구분하지 못한다 — Netlify/Lambda가 트래픽에 따라 여러 인스턴스로 스케일아웃하면 인스턴스마다
+ * 독립된 빈 배열을 갖게 돼 (1) 실질 전역 한도가 의도한 값보다 인스턴스 수만큼 느슨해지고,
+ * (2) 같은 warm 인스턴스에 우연히 걸린, 자신은 요청을 전혀 안 보낸 다른 사용자가 한 명의
+ * 버그 있는/재시도 루프 탭 때문에 429 collateral 차단을 당한다(app-evolve cycle239 critique).
+ * caller별(IP 등) key로 버킷을 나눠 이 둘을 모두 완화한다 — 완전한 cross-instance 전역
+ * 제한에는 외부 스토어(Netlify Blobs/Upstash 등)가 필요해 이번 범위 밖이다. map은
+ * Map<string, number[]>이고 shouldThrottle의 기존 prune/count 로직을 그대로 재사용한다.
+ * map.size가 RL_MAX_KEYS를 넘으면 가장 오래 접근하지 않은(= Map 삽입순서상 가장 앞) key를
+ * 지우는 단순 LRU로 메모리 무한증가를 막는다. */
+const RL_MAX_KEYS = 500;
+
+function shouldThrottleByKey(map, key, now, windowMs, maxCount) {
+  const r = shouldThrottle(map.get(key), now, windowMs, maxCount);
+  map.delete(key); // 재삽입해 Map 순서상 가장 최근 접근으로 끌어올림(LRU 갱신)
+  map.set(key, r.history);
+  if (map.size > RL_MAX_KEYS) map.delete(map.keys().next().value);
+  return r.allow;
+}
+
+/* 레이트리밋 key로 쓸 호출자 식별자. Netlify가 실제 호출자 IP를 담아주는
+ * x-nf-client-connection-ip를 우선 쓰고, 없으면(로컬 개발 등) 표준 x-forwarded-for의 첫 IP를
+ * 쓴다(프록시 체인을 거치면 콤마로 이어지는데 그 첫 항목이 원 클라이언트). 둘 다 없으면
+ * 'unknown' 단일 버킷으로 합쳐 기존 shouldThrottle과 동일하게 동작한다. */
+function clientKeyFromHeaders(headers) {
+  const h = headers || {};
+  const nfIp = h['x-nf-client-connection-ip'] || h['X-Nf-Client-Connection-Ip'];
+  if (nfIp) return String(nfIp).trim();
+  const fwd = h['x-forwarded-for'] || h['X-Forwarded-For'];
+  if (fwd) return String(fwd).split(',')[0].trim();
+  return 'unknown';
+}
+
 /* stock.js는 개별 소스(네이버/Finnhub 등)가 아무리 느리거나 멈춰있어도 Netlify 서버리스
  * 실행시간 한도(보통 10초)를 넘겨 하드 502가 나는 대신 그때까지 모인 부분 결과를 그대로
  * 반환하도록 Promise.race([work, deadline]) 전체실행시간 상한을 이미 두고 있었다(app-evolve
@@ -115,5 +148,6 @@ function json(status, body, maxAge, origin, allowedOrigins) {
 
 module.exports = {
   sleep, errText, toNum, pickRows, applyJpyScale, getJSON,
-  parseAllowedOrigins, isAllowedOrigin, shouldThrottle, corsOrigin, json, raceDeadline
+  parseAllowedOrigins, isAllowedOrigin, shouldThrottle, shouldThrottleByKey, clientKeyFromHeaders,
+  corsOrigin, json, raceDeadline
 };

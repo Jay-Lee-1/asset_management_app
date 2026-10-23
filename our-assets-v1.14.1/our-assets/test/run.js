@@ -19306,6 +19306,55 @@ if (stockFns && ratesFns) {
     assert.strictEqual(ratesFns.shouldThrottle, sharedFns.shouldThrottle);
     assert.strictEqual(cryptoFns.shouldThrottle, sharedFns.shouldThrottle);
   });
+
+  /* ---------- shouldThrottleByKey/clientKeyFromHeaders: 레이트리밋을 caller별로 분리 (app-evolve cycle239 advance) ----------
+   * cycle225의 shouldThrottle은 모듈 스코프 단일 배열(rlHistory)만 써서, Netlify/Lambda가
+   * 트래픽에 따라 여러 인스턴스로 스케일아웃하면 인스턴스마다 독립된 빈 버킷을 갖게 돼 실질
+   * 전역 한도가 느슨해지고, 같은 warm 인스턴스에 우연히 걸린 무고한 사용자가 다른 사용자의
+   * 재시도 폭주 때문에 collateral 429 차단을 당할 수 있었다(cycle239 critique). Map<key,
+   * number[]> 기반으로 caller(IP)별 버킷을 분리한다. */
+  test('shouldThrottleByKey: 서로 다른 key는 한쪽이 maxCount를 넘어도 서로 막지 않는다', () => {
+    const map = new Map();
+    for (let i = 0; i < 3; i++) assert.strictEqual(sharedFns.shouldThrottleByKey(map, 'a', 1000 + i, 60000, 3), true);
+    assert.strictEqual(sharedFns.shouldThrottleByKey(map, 'a', 1003, 60000, 3), false, 'a는 이미 3회 써서 4번째는 막혀야 함');
+    assert.strictEqual(sharedFns.shouldThrottleByKey(map, 'b', 1003, 60000, 3), true, '다른 key b는 a의 소진과 무관하게 허용돼야 함(남의 재시도 폭주로 인한 collateral 차단 방지)');
+  });
+  test('shouldThrottleByKey: 같은 key는 shouldThrottle의 기존 threshold/prune 동작이 키 래퍼를 통해도 그대로 유지된다', () => {
+    const map = new Map();
+    assert.strictEqual(sharedFns.shouldThrottleByKey(map, 'k', 1000, 60000, 3), true);
+    assert.strictEqual(sharedFns.shouldThrottleByKey(map, 'k', 1010, 60000, 3), true);
+    assert.strictEqual(sharedFns.shouldThrottleByKey(map, 'k', 1020, 60000, 3), true);
+    assert.strictEqual(sharedFns.shouldThrottleByKey(map, 'k', 1030, 60000, 3), false, '임계값을 넘으면 차단해야 함');
+    const now = 1020 + 60000 + 1; // 세 기록 모두 윈도우 밖으로 밀려남
+    assert.strictEqual(sharedFns.shouldThrottleByKey(map, 'k', now, 60000, 3), true, '윈도우 밖 기록은 가지치기돼 영구 차단되지 않아야 함');
+  });
+  test('shouldThrottleByKey: map 크기가 cap(500)을 넘으면 가장 오래 접근하지 않은 key를 삭제하는 단순 LRU로 메모리 무한증가를 막는다', () => {
+    const map = new Map();
+    for (let i = 0; i < 501; i++) sharedFns.shouldThrottleByKey(map, 'key' + i, 1000, 60000, 3);
+    assert.strictEqual(map.size, 500, 'cap을 넘겼는데도 map이 계속 자라고 있음(메모리 무한증가 위험)');
+    assert.strictEqual(map.has('key0'), false, '가장 오래된(LRU) key가 삭제되지 않음');
+    assert.strictEqual(map.has('key500'), true, '가장 최근 key가 잘못 삭제됨');
+  });
+  test('shouldThrottleByKey: stock.js/rates.js/crypto.js 세 파일 모두 _shared.js의 같은 함수를 참조 동일성(===)으로 공유한다', () => {
+    assert.ok(sharedFns, '_shared.js require 실패');
+    assert.strictEqual(typeof sharedFns.shouldThrottleByKey, 'function', '_shared.js에 shouldThrottleByKey가 없음');
+    assert.strictEqual(stockFns.shouldThrottleByKey, sharedFns.shouldThrottleByKey);
+    assert.strictEqual(ratesFns.shouldThrottleByKey, sharedFns.shouldThrottleByKey);
+    assert.strictEqual(cryptoFns.shouldThrottleByKey, sharedFns.shouldThrottleByKey);
+  });
+  test('clientKeyFromHeaders: x-nf-client-connection-ip를 우선 쓰고, 없으면 x-forwarded-for의 첫 IP(콤마구분)를, 둘 다 없으면 "unknown"을 쓴다', () => {
+    assert.strictEqual(sharedFns.clientKeyFromHeaders({ 'x-nf-client-connection-ip': '1.2.3.4', 'x-forwarded-for': '9.9.9.9' }), '1.2.3.4');
+    assert.strictEqual(sharedFns.clientKeyFromHeaders({ 'x-forwarded-for': '5.6.7.8, 10.0.0.1' }), '5.6.7.8');
+    assert.strictEqual(sharedFns.clientKeyFromHeaders({}), 'unknown');
+    assert.strictEqual(sharedFns.clientKeyFromHeaders(null), 'unknown');
+    assert.strictEqual(sharedFns.clientKeyFromHeaders(undefined), 'unknown');
+  });
+  test('clientKeyFromHeaders: stock.js/rates.js/crypto.js 세 파일 모두 _shared.js의 같은 함수를 참조 동일성(===)으로 공유한다', () => {
+    assert.strictEqual(typeof sharedFns.clientKeyFromHeaders, 'function', '_shared.js에 clientKeyFromHeaders가 없음');
+    assert.strictEqual(stockFns.clientKeyFromHeaders, sharedFns.clientKeyFromHeaders);
+    assert.strictEqual(ratesFns.clientKeyFromHeaders, sharedFns.clientKeyFromHeaders);
+    assert.strictEqual(cryptoFns.clientKeyFromHeaders, sharedFns.clientKeyFromHeaders);
+  });
   test('toNum/errText: stock.js/rates.js/crypto.js 세 파일 모두 _shared.js의 같은 함수를 참조 동일성(===)으로 공유한다', () => {
     assert.strictEqual(stockFns.toNum, sharedFns.toNum);
     assert.strictEqual(ratesFns.toNum, sharedFns.toNum);
