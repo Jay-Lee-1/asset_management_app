@@ -279,6 +279,34 @@ function mergeRecurrences(localArr,remoteArr,localDeletedIds,remoteDeletedIds){
  });
  return out;
 }
+/* mergeCollectionConflicts와 같은 목적(mergeCollection이 실제로 병합을 수행하기 전에 그 병합이 몇 건을
+ * 조용히 버릴지 미리 세기)이지만 DB.recurrences 전용 — mergeRecurrences()가 skip/edits/confirmedDates는
+ * 합집합으로 보존해 이 셋만 다른 경우는 실제 손실이 아니므로 diff 대상에서 제외하고, day/amount/freq/
+ * startDate/endDate/weekend/category/fromAssetId/toAssetId 등 나머지 스칼라 필드(mergeRecurrences가
+ * updatedAt 승자독식으로 처리하는 부분)만 비교한다. 이 셋을 빼지 않으면 '스케줄은 똑같고 skip/
+ * confirmedDates 회차만 서로 다른' 정상적인 합집합까지 가짜 충돌(과탐)로 잡아버린다 — mergeDataLoss
+ * 경고가 실제로 아무것도 잃지 않은 상황에서도 뜨면 사용자가 경고 자체를 신뢰하지 않게 되므로 과탐
+ * 방지가 과소탐지보다 더 중요하다(app-evolve cycle238 critique/advance — mergeRemoteDataIntoLocal이
+ * txns/assets/goals/inquiries/assetQtyLog 5개만 mergeCollectionConflicts로 다루고 recurrences는
+ * "mergeRecurrences가 이미 피해간다"는 잘못된 전제로 빠져 있던 공백을 메운다). */
+function mergeRecurrenceConflicts(localArr,remoteArr){
+ const lMap=new Map((localArr||[]).map(r=>[r.id,r]));
+ const rMap=new Map((remoteArr||[]).map(r=>[r.id,r]));
+ const out=[];
+ lMap.forEach((l,id)=>{
+  const r=rMap.get(id);
+  if(!r)return;
+  const lu=l.updatedAt||0,ru=r.updatedAt||0;
+  if(lu===ru)return;
+  const keys=new Set([...Object.keys(l),...Object.keys(r)]);
+  keys.delete('id');keys.delete('updatedAt');keys.delete('skip');keys.delete('edits');keys.delete('confirmedDates');
+  const fields=[];
+  for(const k of keys){if(JSON.stringify(l[k])!==JSON.stringify(r[k]))fields.push(k)}
+  if(!fields.length)return;
+  out.push({id,discardedSide:lu>=ru?'remote':'local',fields:fields.sort()});
+ });
+ return out;
+}
 /* 이름 목록(카테고리/귀속) 병합의 바탕 — id가 없는 순수 문자열 배열이라 mergeCollection의
  * id/updatedAt 톰스톤 방식을 그대로 쓸 수 없다. local 순서를 그대로 유지하고, remote에만
  * 있는 이름 중 normalize(정규화) 기준으로 local에 이미 없는 것만 뒤에 덧붙인다(addCat/addOwner가

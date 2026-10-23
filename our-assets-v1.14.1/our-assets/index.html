@@ -1406,7 +1406,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.224';
+const APP_VERSION='1.47.225';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1625,8 +1625,10 @@ function mergeRemoteDataIntoLocal(remoteData){
   * merge-time 손실은 병합이 "성공"한 뒤 벌어져 지금까지 CLOUD_SYNC_STATE가 그대로 'ok'로 남아 아무
   * 신호가 없었다(app-evolve cycle211 critique는 assets/goals만 다뤘으나, txns/inquiries/assetQtyLog도
   * 똑같이 whole-record 승자독식이라 cycle212에서 범위를 넓힌다 — txns는 가장 변경 빈도가 높은
-  * 컬렉션이라 오히려 이 손실 클래스가 가장 자주 발생할 후보다). mergeRecurrences는
-  * skip/edits/confirmedDates를 합집합으로 보존해 이 클래스를 이미 피해가므로 대상에서 제외.
+  * 컬렉션이라 오히려 이 손실 클래스가 가장 자주 발생할 후보다). mergeRecurrences는 skip/edits/
+  * confirmedDates만 합집합으로 보존할 뿐, day/amount/freq/startDate 등 나머지 스칼라 필드는 다른
+  * 컬렉션과 똑같이 updatedAt 승자독식이다 — "이미 피해간다"던 이전 주석은 틀렸고, cycle238에서
+  * logic.js의 mergeRecurrenceConflicts()(skip/edits/confirmedDates만 diff에서 제외)로 이 공백을 메운다.
   * 어떤 필드가 덮어써졌는지(mergeCollectionConflicts()가 반환하는 fields)도 DB.settings.mergeDataLossFields에
   * 누적해, 경고 카드가 "무언가 덮어써졌다"는 건수뿐 아니라 "이름/잔액 같은 어떤 값"인지까지 보여줄 수
   * 있게 한다(app-evolve cycle223 advance) — 필드를 자동으로 되살리는 병합은 레코드별 updatedAt 하나뿐인
@@ -1637,7 +1639,8 @@ function mergeRemoteDataIntoLocal(remoteData){
   mergeCollectionConflicts(DB.assets,remoteData.assets),
   mergeCollectionConflicts(DB.goals,remoteData.goals),
   mergeCollectionConflicts(DB.inquiries,remoteData.inquiries),
-  mergeCollectionConflicts(DB.assetQtyLog,remoteData.assetQtyLog)
+  mergeCollectionConflicts(DB.assetQtyLog,remoteData.assetQtyLog),
+  mergeRecurrenceConflicts(DB.recurrences,remoteData.recurrences)
  );
  if(_mergeConflicts.length>0){
   DB.settings=DB.settings||{};

@@ -4421,6 +4421,39 @@ test('mergeRemoteDataIntoLocal: 충돌이 없으면 mergeDataLossFields가 그�
   });
   assert.deepStrictEqual(j(sandbox.DB.settings.mergeDataLossFields), []);
 });
+/* DB.recurrences는 mergeCollection이 아니라 mergeRecurrences(skip/edits/confirmedDates 합집합 보존)로
+ * 병합되지만, 나머지 스칼라 필드(amount/day 등)는 여전히 updatedAt 승자독식이라 txns/assets/goals와
+ * 똑같은 손실 클래스를 겪는다 — 이전엔 "mergeRecurrences가 이미 피해간다"는 잘못된 전제로 경고 대상에서
+ * 빠져 있었다(app-evolve cycle238 critique/advance, mergeRecurrenceConflicts 신설) */
+test('mergeRemoteDataIntoLocal: recurrences에서 양쪽이 같은 id의 스칼라 필드(amount)를 실제로 다르게 수정했으면 mergeDataLossCount가 늘어난다(txns/assets/goals와 동일한 취급)', () => {
+  sandbox.RANGE_TO = '2026-12-31';
+  sandbox.DB = minimalMergeDB({
+    settings: { mergeDataLossCount: 0, mergeDataLossFields: [] },
+    recurrences: [{ id: 'r1', amount: 10000, day: 5, freq: 'monthly', startDate: '2026-01-01', weekend: 'none', skip: [], edits: {}, updatedAt: 200 }],
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    recurrences: [{ id: 'r1', amount: 99999, day: 5, freq: 'monthly', startDate: '2026-01-01', weekend: 'none', skip: [], edits: {}, updatedAt: 100 }],
+    deletedIds: {},
+  });
+  assert.strictEqual(sandbox.DB.settings.mergeDataLossCount, 1, '기기A의 amount 수정이 기기B(더 큰 updatedAt)의 base 선택에 경고 없이 묻히던 cycle238 버그가 고쳐져야 함');
+  assert.deepStrictEqual(j(sandbox.DB.settings.mergeDataLossFields), ['amount']);
+  assert.strictEqual(sandbox.DB.recurrences.find(r => r.id === 'r1').amount, 10000, 'local이 실제로 이겨야(더 큰 updatedAt) 이 충돌이 현실적임');
+});
+test('mergeRemoteDataIntoLocal: recurrences에서 양쪽이 skip/confirmedDates 회차만 다르게 손댔으면(스칼라 필드는 동일) mergeDataLossCount가 늘지 않는다(둘 다 합집합으로 보존되므로 실제 손실이 아님 — 과탐 방지 회귀가드)', () => {
+  sandbox.RANGE_TO = '2026-12-31';
+  sandbox.DB = minimalMergeDB({
+    settings: { mergeDataLossCount: 0, mergeDataLossFields: [] },
+    recurrences: [{ id: 'r1', amount: 10000, day: 5, freq: 'monthly', startDate: '2026-01-01', weekend: 'none', skip: ['2026-02-05'], edits: {}, confirmedDates: [], updatedAt: 200 }],
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    recurrences: [{ id: 'r1', amount: 10000, day: 5, freq: 'monthly', startDate: '2026-01-01', weekend: 'none', skip: ['2026-03-05'], edits: {}, confirmedDates: ['2026-04-05'], updatedAt: 100 }],
+    deletedIds: {},
+  });
+  assert.strictEqual(sandbox.DB.settings.mergeDataLossCount, 0);
+  assert.deepStrictEqual(j(sandbox.DB.settings.mergeDataLossFields), []);
+  const merged = sandbox.DB.recurrences.find(r => r.id === 'r1');
+  assert.deepStrictEqual(j(merged.skip.slice().sort()), ['2026-02-05', '2026-03-05'], '병합 자체는 평소처럼 둘 다 보존해야 함');
+});
 
 /* ---------- 문의하기(개인 메모): openInquiry/sendInquiry/openInquiryList/delInquiry (app-evolve cycle133 advance)
  * '문의 접수' write-only dead end를 '이 기기에 저장되는 메모'로 재정의하면서 id/touch()/mergeCollection
@@ -10466,6 +10499,35 @@ test('mergeRecurrences: (회귀) 한쪽에서 삭제(tombstone)했지만 다른 
 test('mergeRecurrences: (회귀) localArr/remoteArr/deletedIds가 없어도(undefined) 터지지 않는다', () => {
   const out = sandbox.mergeRecurrences(undefined, undefined, undefined, undefined);
   assert.strictEqual(out.length, 0);
+});
+
+/* ---------- mergeRecurrenceConflicts: mergeCollectionConflicts와 같은 목적이지만 DB.recurrences
+ * 전용 — mergeRecurrences()가 skip/edits/confirmedDates는 합집합으로 보존해 손실이 아니므로 diff
+ * 대상에서 제외해야 한다(app-evolve cycle238 critique/advance) ---------- */
+test('mergeRecurrenceConflicts: id가 양쪽에 있고 updatedAt이 다르며 스칼라 필드(amount 등)도 실제로 다르면 진 쪽을 1건 충돌로 세고 달랐던 필드명을 반환한다', () => {
+  const local = [{ id: 'r1', amount: 10000, day: 5, updatedAt: 200 }];
+  const remote = [{ id: 'r1', amount: 20000, day: 5, updatedAt: 100 }];
+  const out = sandbox.mergeRecurrenceConflicts(local, remote);
+  assert.strictEqual(out.length, 1);
+  assert.deepStrictEqual(j(out[0]), { id: 'r1', discardedSide: 'remote', fields: ['amount'] }, 'day는 양쪽이 같아 제외되고, 실제로 달랐던 amount만 fields에 담겨야 함');
+});
+test('mergeRecurrenceConflicts: skip/edits/confirmedDates만 다르고 스칼라 필드는 전부 같으면 충돌로 치지 않는다(mergeRecurrences가 합집합으로 보존하므로 손실이 아님 — 과탐 방지가 가장 중요한 회귀가드)', () => {
+  const local = [{ id: 'r1', day: 5, amount: 10000, skip: ['2026-02-05'], edits: { '2026-02-05': { amount: 1 } }, confirmedDates: ['2026-01-05'], updatedAt: 200 }];
+  const remote = [{ id: 'r1', day: 5, amount: 10000, skip: ['2026-03-05'], edits: { '2026-03-05': { amount: 2 } }, confirmedDates: ['2026-04-05'], updatedAt: 100 }];
+  assert.strictEqual(sandbox.mergeRecurrenceConflicts(local, remote).length, 0, 'skip/edits/confirmedDates는 mergeRecurrences가 합쳐서 보존하므로 둘 다 다르더라도 실제 손실이 아님');
+});
+test('mergeRecurrenceConflicts: updatedAt이 완전히 같으면(mergeRecurrences가 base=local을 쓰는 경우) 충돌로 치지 않는다', () => {
+  const local = [{ id: 'r1', amount: 1000, updatedAt: 100 }];
+  const remote = [{ id: 'r1', amount: 2000, updatedAt: 100 }];
+  assert.strictEqual(sandbox.mergeRecurrenceConflicts(local, remote).length, 0);
+});
+test('mergeRecurrenceConflicts: id가 한쪽에만 있으면(신규/톰스톤) 충돌이 아니다', () => {
+  const local = [{ id: 'r1', amount: 1000, updatedAt: 100 }];
+  const remote = [{ id: 'r2', amount: 2000, updatedAt: 100 }];
+  assert.strictEqual(sandbox.mergeRecurrenceConflicts(local, remote).length, 0);
+});
+test('mergeRecurrenceConflicts: localArr/remoteArr가 없어도(undefined) 터지지 않는다', () => {
+  assert.strictEqual(sandbox.mergeRecurrenceConflicts(undefined, undefined).length, 0);
 });
 test("mergeRemoteDataIntoLocal: DB.recurrences는 mergeRecurrences로 병합되고, base로 고른 쪽의 스케줄이 다르면 병합 직후 pruneOrphanRecOverrides로 고아가 된 skip/edits가 정리된다(app-evolve cycle177 advance)", () => {
   sandbox.RANGE_TO = '2026-12-31';
