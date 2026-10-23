@@ -222,7 +222,7 @@ const FUNCTIONS = [
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards', 'openTidyAsset', 'openTidyList', 'tidyListSnooze',
   'debtsBehind', 'openDebtBehindList',
   'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate', 'histQInput', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'openCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter', 'histClearTypeFilter',
-  'genSalt', 'pbkdf2Hash', 'genRecoveryCode', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer', 'openConfirmTransfer',
+  'genSalt', 'pbkdf2Hash', 'genRecoveryCode', 'normRecoveryCode', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer', 'openConfirmTransfer',
   'renderLockView', 'openForgotPinSheet', 'doForgotPin', 'tickForgotPinWait',
   'confirmTransferNow', 'postponeTransfer', 'confirmRecNow', 'openConfirmTransferList',
   'foreignSaveIsNewer', 'applyForeignSave', 'openCopyBackup', 'copyBackup', 'findDonors',
@@ -15435,6 +15435,98 @@ test('genRecoveryCode: 매번 다른 코드를 만든다', () => {
   const a = sandbox.genRecoveryCode();
   const b = sandbox.genRecoveryCode();
   assert.notStrictEqual(a, b);
+});
+
+/* ---------- normRecoveryCode: resetPasswordLocal()이 복구 코드를 비교하기 전 'XXXX-XXXX-XXXX'로
+ * 되돌리는 정규화(app-evolve cycle239 develop) — genRecoveryCode()가 늘 하이픈 포함 형태로 해시를
+ * 만들어 두므로, 이미 발급된 계정의 해시를 깨지 않으려면 하이픈을 "빼는" 쪽이 아니라 "다시 끼워
+ * 넣는" 쪽으로 정규화해야 한다. ---------- */
+test('normRecoveryCode: 하이픈 없이 12자만 입력해도 표준 XXXX-XXXX-XXXX 형태로 되돌린다', () => {
+  assert.strictEqual(sandbox.normRecoveryCode('ABCDEFGH2345'), 'ABCD-EFGH-2345');
+});
+test('normRecoveryCode: 소문자+앞뒤 공백은 대문자로 바꾸고 다듬는다', () => {
+  assert.strictEqual(sandbox.normRecoveryCode('  abcd-efgh-2345  '), 'ABCD-EFGH-2345');
+});
+test('normRecoveryCode: 하이픈 자리에 공백이 섞여도(복붙/수기 입력 변형) 같은 표준형으로 모인다', () => {
+  assert.strictEqual(sandbox.normRecoveryCode('ABCD EFGH 2345'), 'ABCD-EFGH-2345');
+  assert.strictEqual(sandbox.normRecoveryCode('ABCD-EFGH 2345'), 'ABCD-EFGH-2345');
+});
+test('normRecoveryCode: 이미 표준형이면 그대로(멱등)', () => {
+  const code = sandbox.genRecoveryCode();
+  assert.strictEqual(sandbox.normRecoveryCode(code), code);
+});
+test('normRecoveryCode: 문자 제거 후 길이가 12자가 아니면(다른 코드·일부만 입력) 하이픈을 끼워 넣지 않고 그대로 돌려준다', () => {
+  assert.strictEqual(sandbox.normRecoveryCode('ABCDEFGH234'), 'ABCDEFGH234'); // 11자
+  assert.strictEqual(sandbox.normRecoveryCode('ABCDEFGH23456'), 'ABCDEFGH23456'); // 13자
+});
+test('normRecoveryCode: null/undefined/빈 문자열도 안 터지고 빈 문자열을 돌려준다', () => {
+  assert.strictEqual(sandbox.normRecoveryCode(null), '');
+  assert.strictEqual(sandbox.normRecoveryCode(undefined), '');
+  assert.strictEqual(sandbox.normRecoveryCode(''), '');
+});
+
+/* ---------- AUTH.resetPasswordLocal 실행형 통합 테스트: genSalt/pbkdf2Hash/genRecoveryCode/
+ * normRecoveryCode/emailKey+AUTH 전체를 실제 localStorage(Map 목업)와 함께 vm에 태워, signUp이
+ * 발급한 해시가 하이픈 포함 형태로 저장된 채로도 '하이픈 없이 입력'/'공백 섞어 입력' 같은 사소한
+ * 서식 차이를 resetPasswordLocal()이 실제로 받아주는지, 그리고 진짜 틀린 코드는 여전히 거부하는지를
+ * 끝까지 실행해 검증한다(APPLOCK 테스트의 makeAppLockCtx와 같은 패턴 — sbReady()를 false로 고정해
+ * 로컬 계정 경로만 타게 한다). ---------- */
+function makeAuthCtx() {
+  const store = new Map();
+  const ctx = {
+    crypto, TextEncoder,
+    localStorage: {
+      getItem: (k) => (store.has(k) ? store.get(k) : null),
+      setItem: (k, v) => { store.set(k, String(v)); },
+      removeItem: (k) => { store.delete(k); },
+    },
+    sbReady: () => false,
+  };
+  vm.createContext(ctx);
+  vm.runInContext(
+    [
+      extractFunction('genSalt'),
+      extractFunction('pbkdf2Hash'),
+      extractFunction('genRecoveryCode'),
+      extractFunction('normRecoveryCode'),
+      extractConst('emailKey'),
+      extractConstBlock('AUTH'),
+    ].join('\n'),
+    ctx
+  );
+  return ctx;
+}
+test('[실행형] AUTH.resetPasswordLocal: 발급받은 복구 코드를 하이픈 없이 입력해도 통과한다(발급 당시 해시는 하이픈 포함 형태로 고정이라 호환성 유지)', async () => {
+  const ctx = makeAuthCtx();
+  const signed = await ctx.AUTH.signUp('user@example.com', 'first-password');
+  assert.ok(signed.ok && signed.recoveryCode, '가입에 성공하고 복구 코드를 돌려줘야 함');
+  const noHyphen = signed.recoveryCode.replace(/-/g, '');
+  const r = await ctx.AUTH.resetPasswordLocal('user@example.com', noHyphen, 'second-password');
+  assert.ok(r.ok, `하이픈만 빠진 올바른 코드는 통과해야 함 (err=${r.err})`);
+  const loginNew = await ctx.AUTH.signIn('user@example.com', 'second-password');
+  assert.ok(loginNew.ok, '재설정한 새 비밀번호로 로그인돼야 함');
+});
+test('[실행형] AUTH.resetPasswordLocal: 소문자 + 하이픈 자리 공백으로 입력해도 통과한다', async () => {
+  const ctx = makeAuthCtx();
+  const signed = await ctx.AUTH.signUp('user2@example.com', 'first-password');
+  const messy = signed.recoveryCode.toLowerCase().replace(/-/g, ' ');
+  const r = await ctx.AUTH.resetPasswordLocal('user2@example.com', messy, 'second-password');
+  assert.ok(r.ok, `소문자+공백 변형도 통과해야 함 (err=${r.err})`);
+});
+test('[실행형] AUTH.resetPasswordLocal: 글자 자체가 틀린 코드는 (서식 관용과 무관하게) 여전히 거부된다', async () => {
+  const ctx = makeAuthCtx();
+  const signed = await ctx.AUTH.signUp('user3@example.com', 'first-password');
+  const wrong = (signed.recoveryCode[0] === 'A' ? 'B' : 'A') + signed.recoveryCode.slice(1);
+  const r = await ctx.AUTH.resetPasswordLocal('user3@example.com', wrong, 'second-password');
+  assert.ok(r.err, '글자가 실제로 다른 코드는 여전히 실패해야 함');
+  assert.match(r.err, /일치하지 않아요/);
+});
+test('[실행형] AUTH.resetPasswordLocal: 재발급된 새 복구 코드는 기존 코드(하이픈 유무 무관)로 더 이상 통과하지 못한다(1회성 유지)', async () => {
+  const ctx = makeAuthCtx();
+  const signed = await ctx.AUTH.signUp('user4@example.com', 'first-password');
+  await ctx.AUTH.resetPasswordLocal('user4@example.com', signed.recoveryCode, 'second-password');
+  const reuse = await ctx.AUTH.resetPasswordLocal('user4@example.com', signed.recoveryCode.replace(/-/g, ''), 'third-password');
+  assert.ok(reuse.err, '이미 재발급된 뒤에는 옛 코드(서식 변형 포함)가 더 이상 통과하면 안 됨');
 });
 
 /* ---------- postponeRecTransfer/confirmRecTransfer: 반복 이체 회차에 개별 금액/메모 수정

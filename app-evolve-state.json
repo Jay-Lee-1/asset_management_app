@@ -1,15 +1,8 @@
 {
   "cycle": 239,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 234,
-      "phase": "develop",
-      "timestamp": "2026-10-22T18:17:54.000Z",
-      "summary": "general-purpose 서브에이전트가 develop 후보를 탐색해 sanitizeBackup()이 recurrences.startDate/endDate, assets.maturityDate, goals.targetDate, nwHistory.date는 모두 csvDateValid()로 검증하면서 거래(txns)의 date 필드만 유독 truthy 체크(!t.date)만 하고 형식/달력 유효성 검증을 빠뜨린 공백을 발견 — \"2026-02-30\"처럼 형식은 맞지만 달력에 없는 날짜가 그대로 통과되면, allTxns()/monthStats()의 문자열 범위 필터(t.date>=from&&t.date<=to)가 \"30\"을 그 달 마지막 날(28/29)보다 사전순으로 크다고 보아 그 달 범위에서 해당 거래를 제외하면서도, balancesUpTo()의 RANGE_FROM 기준 전체 구간 스캔에는 여전히 포함돼 가계부/월간 수지(제외)와 자산 잔액(포함) 사이에 조용한 수치 drift를 만드는 실사용 버그였다. recurrences의 무효 startDate와 동일한 원칙(필수 날짜 무효 시 레코드 전체 드롭)으로 `if(!t||!t.id||!csvDateValid(t.date))`로 확장해 고쳤다. test/run.js에 2건 추가(형식 무효 날짜 드롭, 달력 무효 날짜(\"2026-02-30\"/\"2026-13-01\") 드롭하면서 같은 배치의 유효 거래는 보존). 수정 전 코드로 되돌려 신규 테스트 2건이 FAIL함을 직접 확인한 뒤 복원. APP_VERSION 1.47.216->1.47.217, sw.js CACHE v483->v484. node --check 통과. node our-assets-v1.14.1/our-assets/test/run.js 1805/1805 -> 1807/1807 통과. 오케스트레이터가 diff/테스트를 직접 재검증한 뒤 commit 82da7ef를 origin/main에 fast-forward push했다.",
-      "commit": "82da7ef"
-    },
     {
       "cycle": 234,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-23T13:05:00.000Z",
       "summary": "critique(cycle238) 계획대로 logic.js에 mergeCollectionConflicts와 동일 구조의 mergeRecurrenceConflicts(localArr,remoteArr)를 신설했다 — id/updatedAt 외에 skip/edits/confirmedDates도 diff 대상에서 제외해(mergeRecurrences가 이 셋만 실제로 합집합 보존하므로 다르더라도 손실이 아님) 오탐을 막고, 나머지 스칼라 필드(amount/day/freq/startDate 등)만 비교해 {id,discardedSide,fields}를 반환한다. index.html mergeRemoteDataIntoLocal()의 _mergeConflicts 배열에 mergeRecurrenceConflicts(DB.recurrences,remoteData.recurrences)를 추가했고, DB.recurrences가 mergeRecurrences()로 덮어써지기 전(병합 전 원본이 아직 살아있을 때) 호출되므로 다른 5개 컬렉션과 같은 타이밍을 지킨다. 1628-1629줄의 '이미 피해가므로 대상에서 제외'라는 틀린 주석을 'skip/edits/confirmedDates만 피해가고 나머지 스칼라 필드는 동일 위험이 있어 cycle238에서 범위를 넓혔다'로 정정했다. test/run.js에 mergeRecurrenceConflicts 단위 테스트 5건(스칼라 필드만 다르면 충돌 1건+fields에 필드명 포함 / skip·edits·confirmedDates만 다르고 스칼라는 같으면 충돌 0건=오탐방지 회귀가드(가장 중요) / updatedAt 동일하면 충돌 아님 / id가 한쪽에만 있으면 충돌 아님 / undefined여도 안 터짐) + mergeRemoteDataIntoLocal 통합 테스트 2건(recurrences의 amount만 다르게 수정 → mergeDataLossCount 1 증가 + mergeDataLossFields에 'amount' 포함 / skip·confirmedDates 회차만 다른 경우는 mergeDataLossCount 그대로 0, 병합 자체는 평소처럼 둘 다 보존) 총 7건 추가(1856->1863). git stash로 logic.js/index.html 수정분만 걷어내(test/run.js는 유지) 신규 테스트 중 6건(단위 5건 전부 + 통합 1건, 함수가 없어 TypeError로도 실패)이 FAIL함을 직접 확인했고, 과탐방지 회귀가드 1건은 수정 전에도 recurrences 자체가 전혀 검사 대상이 아니어서 우연히 통과함도 확인한 뒤 stash pop으로 복원 — 이 가드가 '아무것도 안 해도 통과하는' 테스트가 아니라 수정 후에도 여전히 0건을 반환하는지 검증하는 진짜 회귀가드임을 재확인. logic.js와 index.html 둘 다 바뀌므로 APP_VERSION 1.47.224->1.47.225, sw.js CACHE v491->v492 동기 범프. node --check(logic.js/test/run.js) 통과. node our-assets-v1.14.1/our-assets/test/run.js 1856/1856 -> 1863/1863 통과. pending_advance_plan은 null로 비웠다.",
+      "commit": null
+    },
+    {
+      "cycle": 239,
+      "phase": "develop",
+      "timestamp": "2026-10-23T14:19:07.467Z",
+      "summary": "general-purpose 서브에이전트(fork)가 develop 후보를 탐색해 AUTH.resetPasswordLocal()의 복구코드 비교가 (code||\"\").trim().toUpperCase()만 쓰는데, genRecoveryCode()가 늘 4-4-4 하이픈 포함 형태로만 코드를 만들고 그 문자열 그대로를 pbkdf2Hash에 넣어 recoveryHash를 저장하므로, 사용자가 하이픈을 빼거나 공백으로 바꿔 입력하면(복붙/수기 흔한 변형) 글자는 맞아도 해시가 달라져 \"복구 코드가 일치하지 않아요\"로 거부되는 실사용 버그를 발견 — 비밀번호를 잊어 복구 코드로 재설정하려는, 가장 스트레스 큰 플로우에서 사소한 서식 차이로 막히는 결함. index.html에 순수함수 normRecoveryCode(s)를 신설해(하이픈/공백 등 비영숫자 제거+대문자화 후, 정제 결과가 정확히 12자일 때만 4-4-4로 하이픈 재삽입, 아니면 그대로 반환) resetPasswordLocal()의 비교 라인만 normRecoveryCode(code)로 교체했다. 의도적으로 signUp()/해시 생성 쪽은 그대로 두어(이미 발급된 모든 계정의 recoveryHash가 하이픈 포함 형태로 저장돼 있으므로) 기존 복구 코드가 전부 깨지지 않게 했다. test/run.js에 normRecoveryCode 단위 테스트 6건(하이픈 없음/소문자+공백/하이픈자리 공백/멱등/길이 불일치시 그대로 반환/null·undefined·빈문자열 안전)과 makeAuthCtx() vm 헬퍼로 AUTH.resetPasswordLocal 전체를 실행하는 통합 테스트 4건(하이픈 없이 입력해도 통과, 소문자+공백 변형도 통과, 글자가 실제로 다른 코드는 여전히 거부, 재발급 후 옛 코드는 서식 변형과 무관하게 거부=1회성 유지 불변) 총 10건 추가. 수정 전 코드(normRecoveryCode 호출 대신 구 trim/toUpperCase만)로 되돌려 통합 테스트 중 정확히 2건(하이픈 없음·소문자+공백)만 FAIL함을 직접 확인한 뒤 복원(나머지 8건은 normRecoveryCode 헬퍼 자체 또는 호출부와 무관한 분기라 통과가 맞음). APP_VERSION 1.47.225->1.47.226, sw.js CACHE v492->v493 동기 반영. node --check(sw.js/test/run.js/index.html 메인 script 블록) 통과. node our-assets-v1.14.1/our-assets/test/run.js 1863/1863 -> 1873/1873 통과. 오케스트레이터가 diff 전체를 직접 읽고(genRecoveryCode의 문자셋이 정규식과 충돌 없음을 확인, 해시 생성부 불변 확인) 독립적으로 node --check 및 테스트를 재실행해 1873/1873 통과를 재확인한 뒤 커밋한다.",
       "commit": null
     }
   ]

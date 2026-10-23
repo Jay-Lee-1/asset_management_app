@@ -1406,7 +1406,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.225';
+const APP_VERSION='1.47.226';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2213,6 +2213,20 @@ function genRecoveryCode(){
  let s='';for(let i=0;i<12;i++){s+=chars[b[i]%chars.length];if(i%4===3&&i<11)s+='-'}
  return s;
 }
+/* resetPasswordLocal()의 복구 코드 입력을 비교 전에 'XXXX-XXXX-XXXX' 표준형으로 되돌린다.
+ * recoveryHash는 genRecoveryCode()가 만든 하이픈 포함 문자열을 그대로 해시한 것(이미 발급된
+ * 계정 전부가 이 형식으로 저장돼 있어, 해시 쪽 입력 형식을 지금 바꾸면 그 계정들의 복구 코드가
+ * 전부 깨진다 — 절대 하이픈을 뺀 채로 해시하면 안 된다). 반면 사용자가 손으로 적어 둔 코드를
+ * 다시 칠 때는 하이픈을 빼먹거나 띄어쓰기가 섞여도 글자 자체는 맞으면 통과해야 하므로, 입력에서
+ * 하이픈/공백만 제거하고 대문자로 바꾼 뒤 4-4-4로 다시 하이픈을 끼워 넣어 발급 당시와 같은 모양으로
+ * 맞춘다 — 그래야 해시 쪽은 그대로 두고도 '하이픈 빼고 입력' 같은 사소한 서식 차이가 틀린 코드로
+ * 오판되지 않는다(app-evolve cycle239 develop). 길이가 12자가 아니면(애초에 다른 코드이거나 일부만
+ * 입력) 하이픈을 억지로 끼워 넣지 않고 그대로 돌려줘 해시 비교가 자연히 실패하게 둔다. */
+function normRecoveryCode(s){
+ const core=String(s==null?'':s).trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+ if(core.length!==12)return core;
+ return core.slice(0,4)+'-'+core.slice(4,8)+'-'+core.slice(8,12);
+}
 /* PBKDF2-SHA256 120000회 반복 — Web Crypto는 브라우저와 Node(crypto.webcrypto) 양쪽에서
  * 같은 API 모양(subtle.importKey/deriveBits)이라 test/run.js에서도 그대로 돌릴 수 있다. */
 async function pbkdf2Hash(pw,saltHex){
@@ -2321,7 +2335,7 @@ const AUTH={
   const a=this._accts();const rec=a[key];
   if(!rec)return{err:'가입되지 않은 이메일이에요'};
   if(!rec.recoveryHash||!rec.recoverySalt)return{err:'이 계정은 복구 코드가 없어 복구할 수 없어요 · 메뉴 › 데이터 관리에서 백업 파일로 미리 백업해 두세요'};
-  const norm=(code||'').trim().toUpperCase();
+  const norm=normRecoveryCode(code);
   const ok=(await pbkdf2Hash(norm,rec.recoverySalt))===rec.recoveryHash;
   if(!ok){this._recordFail(key);return{err:'복구 코드가 일치하지 않아요'}}
   const salt=genSalt();
