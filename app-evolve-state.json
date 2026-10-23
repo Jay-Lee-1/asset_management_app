@@ -1,15 +1,8 @@
 {
   "cycle": 236,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 231,
-      "phase": "review",
-      "timestamp": "2026-10-22T06:05:00.000Z",
-      "summary": "cycle231 develop 커밋(d292d83, sanitizeBackup()에 asset형 목표의 owner를 연결 자산 owner로 동기화하는 블록 추가)을 검토. saveGoal()(3254줄)이 실제로 owner:isAsset?(linkedAsset?linkedAsset.owner:...)로 저장 시점에 동기화하고, saveAsset()(4106줄, cycle229)이 자산 owner 변경 시 (DB.goals||[]).forEach로 연결된 asset형 목표 owner를 되맞추는지 직접 grep/Read로 재확인 — develop 커밋이 주장한 \"asset형 목표의 owner는 항상 연결 자산의 owner와 같다\" 불변식이 실제 코드와 일치함을 확인. sanitizeBackup() 전체를 다시 읽어 새 동기화 블록(6761-6764줄)이 참조하는 지역변수 assets가 goals 루프보다 앞(6642-6654줄)에서 이미 정규화돼 있어 순서상 문제 없음을 확인. owner 유효성 검증(validOwners, 6735-6736줄)이 먼저 d.owner를 'all'로 떨어뜨려도 새 블록이 그 뒤에 linkedAsset.owner로 다시 덮어써 saveGoal/saveAsset과 동일하게 validOwners를 무시하는 동작이 의도적으로 일치함을 확인 — goalOwnerEff()(3101줄)가 DB.owners에 없는 owner는 렌더 시점에 'all'로 안전하게 떨어뜨리므로 연결 자산의 owner가 낡은 값이어도 크래시/오염 위험 없음. node our-assets-v1.14.1/our-assets/test/run.js 재실행해 1788/1788 통과 확인. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 231,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-23T02:10:00.000Z",
       "summary": "general-purpose 서브에이전트가 develop 후보를 탐색해 sanitizeBackup()이 goal.owner는 이미 obj.owners(또는 DB.owners) 기준 validOwners로 검증해 'all'로 clamp하면서, asset.owner는 전혀 검증하지 않던 비대칭을 발견 — asset.owner는 goal.owner와 달리 'all' 센티넬이 유효하지 않은 필수 필드로(openAssetSheet/asOpenOwner가 항상 DB.owners 중 하나만 고름), 다른 기기에서 귀속을 삭제·오타로 저장한 뒤 동기화 전에 만든 백업/원격 문서를 복원·pull하면 그 자산이 '전체' 보기엔 계속 보이면서 모든 귀속별 탭·카드(ownerAssets/ownerDebt/allocationCard/investGainLossCard/nwHistoryCard 등)에서는 조용히 사라지는 실사용 버그였다. goals 블록보다 앞으로 validOwners 계산을 옮겨 assets/goals가 공유하게 하고, assets forEach에 \"validOwners가 비어있지 않고 d.owner가 없거나 validOwners에 없으면 validOwners[0](첫 번째 실제 귀속)으로 clamp+fixedCount\"를 추가('all'로는 clamp 불가하므로 goal과 다른 처리; validOwners가 완전히 비어 판단 근거가 없는 극히 드문 경우는 budgetHistory/catIcon과 같은 원칙으로 손대지 않음). test/run.js: 기존 자산 픽스처 6건에 owner 필드 보강(세팅된 DB.owners와 충돌해 깨지는 것 방지) + 신규 5건(백업 owners 기준 무효 owner clamp+fixedCount, owner 누락 시 동일, 이미 유효하면 무변화, obj.owners 없을 때 DB.owners로 대체, 판단 근거 전혀 없을 때 원값 유지) 추가. 수정 전 코드로 되돌려 신규 3건(clamp를 실제로 검증하는 테스트)이 FAIL함을 직접 확인한 뒤 복원. APP_VERSION 1.47.220->1.47.221, sw.js CACHE v487->v488 동기 반영. 오케스트레이터가 diff를 직접 읽고(validOwners 공유화·goal과의 'all' 처리 차이 확인) node --check(sw.js) 및 node our-assets-v1.14.1/our-assets/test/run.js를 독립적으로 재실행해 1815/1815 -> 1820/1820 통과를 재확인한 뒤 커밋한다.",
+      "commit": "bbcd49c"
+    },
+    {
+      "cycle": 236,
+      "phase": "review",
+      "timestamp": "2026-10-23T03:05:00.000Z",
+      "summary": "cycle236 develop 커밋(bbcd49c, sanitizeBackup()의 asset.owner 검증 누락 수정 — goal.owner와 동일하게 validOwners로 검증해 무효/누락 시 validOwners[0]로 clamp)을 검토. diff를 직접 읽어 validOwners 계산이 assets forEach보다 앞으로 끌어올려져 goals 블록과 공유됨을 확인(goals 블록의 중복 선언은 제거되고 재사용 주석으로 교체 — const 중복선언 오류 없음, 선언 순서 문제 없음). 자산은 'all' 센티넬이 유효하지 않다는 전제(openAssetSheet/asOpenOwner가 항상 DB.owners 중 하나만 고름, ownerAssets/ownerDebt/allocationCard 등이 a.owner===o 정확히 일치 비교만 씀)를 grep으로 재확인해 goal과 다르게 validOwners[0]로 clamp하는 처리가 올바른 선택임을 검증. validOwners가 완전히 비어있는 극단 케이스(obj.owners도 없고 DB.owners도 없음)에서 clamp를 건너뛰고 원값을 그대로 두는 가드(if(validOwners.length&&...))가 budgetHistory/catIcon과 같은 '판단 근거 없으면 손대지 않는다' 원칙과 일치함도 확인. test/run.js 신규 5건(clamp 정상케이스, owner 누락, 이미 유효, obj.owners 없을 때 DB.owners 대체, 완전히 근거 없을 때 원값 유지)이 diff의 모든 분기와 1:1 대응함을 확인했고, 기존 자산 픽스처 6건에 owner 보강이 DB.owners와 충돌해 의도치 않게 clamp되지 않는지도 케이스별로 추적해 문제 없음을 확인. node our-assets-v1.14.1/our-assets/test/run.js를 독립적으로 재실행해 1820/1820 통과 재확인. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
       "commit": null
     }
   ]
