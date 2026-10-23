@@ -1,15 +1,12 @@
 {
   "cycle": 239,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "Netlify 가격 조회 함수들(stock.js/rates.js/crypto.js)의 rate limiter가 전역 단일 카운터라 caller별로 구분 못 함",
+    "why": "general-purpose 서브에이전트로 앱 전반을 재탐색(색상대비/sanitizeBackup/sync merge/CSV/XSS/반복이체 KST/게스트 가져오기/PWA 설치/raceDeadline/복구코드 등 cycle149-239에서 다룬 전 영역 제외 지시)한 결과, cycle225에서 추가된 '공개 프록시 남용 완화' rate limiter(_shared.js의 shouldThrottle(history,now,windowMs,maxCount))가 client key 없이 모듈 스코프의 단일 배열(stock.js의 rlHistory=[] 등, rates.js/crypto.js도 동일 패턴)만 쓴다는 것을 발견 — Netlify/Lambda가 트래픽에 따라 여러 인스턴스로 스케일아웃하면 인스턴스마다 독립된 빈 버킷을 갖게 돼 (1) 실질 전역 한도가 의도한 30req/min이 아니라 인스턴스 수 x 30req/min로 느슨해지고(정작 트래픽이 몰리는 남용 시나리오에서 완화 효과가 거의 사라짐), (2) 같은 warm 인스턴스에 우연히 걸린, 자신은 요청을 전혀 안 보낸 다른 사용자가 한 명의 버그 있는/재시도 루프 탭 때문에 429로 가격 갱신이 조용히 실패하는 collateral false-positive 차단을 겪는다. 보안/남용완화 로직의 실제 correctness gap으로 cosmetic이 아님. 러너업 기각: budgets가 owner별이 아니라 전역인 점(index.html:5781-5783 주석에 의도된 설계로 명시돼 기각), CSV import가 split 상세를 버리는 점(index.html:6462-6465에 이미 알려진 v1 포맷 한계로 문서화돼 기각), ALLOWED_ORIGINS가 CORS 헤더만 세팅하고 서버측에서 non-browser caller를 막지 못하는 점(_shared.js:56-60 주석에 이미 인정된 한계라 기각).",
+    "approach": "범위: our-assets-v1.14.1/our-assets/netlify/functions/_shared.js + stock.js + rates.js + crypto.js만. index.html/logic.js/sw.js는 건드리지 않으므로 APP_VERSION(현재 1.47.226)/sw.js CACHE(현재 ourassets-v493) 범프 불필요. _shared.js에 키 기반 변형 shouldThrottleByKey(map,key,now,windowMs,maxCount)를 신설 — map은 Map<string, number[]>, 기존 shouldThrottle(history,...)의 prune/count 로직을 내부에서 재사용해 key별 배열을 조회/갱신 후 map에 다시 저장하고, map.size가 예: 500을 넘으면 가장 오래된 key를 삭제하는 단순 LRU로 메모리 무한증가를 막는다. 기존 shouldThrottle은 순수함수 그대로 export 유지(다른 회귀 없음). 각 핸들러(stock.js/rates.js/crypto.js)에서 let rlHistory=[] 를 let rlBuckets=new Map()로 바꾸고, event.headers['x-nf-client-connection-ip']||event.headers['x-forwarded-for'](콤마구분 시 첫 IP)||'unknown'로 key를 뽑아 shouldThrottleByKey(rlBuckets,key,Date.now(),RL_WINDOW_MS,RL_MAX) 호출로 교체(RL_WINDOW_MS/RL_MAX는 파일별로 그대로 유지, stock.js:205-208 주석의 이유도 유지). test/run.js: 기존 shouldThrottle 테스트 블록(약 19247-19307) 패턴을 따라 (a) 서로 다른 key는 한쪽이 maxCount를 넘어도 서로 막지 않음, (b) 같은 key는 기존 threshold/prune 동작이 키 래퍼를 통해도 그대로 유지됨(기존 3개 단언 재사용), (c) 500개 넘는 key를 넣었을 때 map.size가 cap을 유지하는 bounded-size 테스트, (d) 기존 19303-19307 identity 테스트처럼 stock/rates/crypto 세 파일이 _shared.js의 같은 shouldThrottleByKey를 참조 동일성(===)으로 공유하는지 검증. 완전한 cross-instance 전역 제한에는 외부 스토어(Netlify Blobs/Upstash 등)가 필요해 이번 범위 밖임을 SRI TODO와 같은 스타일의 주석으로 명시한다."
+  },
   "history": [
-    {
-      "cycle": 234,
-      "phase": "critique",
-      "timestamp": "2026-10-22T20:15:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-234 전체 다룬 영역 전부 제외 지시, 특히 아직 깊게 안 본 접근성/색상대비 영역을 집중 탐색하도록 지시)한 결과, 라이트모드 --text-3 토큰(index.html:54, #767F79)이 WCAG AA 일반텍스트 기준(4.5:1)에 못 미치는 것을 발견 — 같은 토큰이 날짜·동기화/환율 신선도 상태·섹션 타이틀·잔액 보조라벨·필터칩 등 10~14.5px 보조텍스트에 127회나 쓰이는데, logic.js:915의 contrastRatio() 헬퍼로 실측하면 --surface(#FFFFFF) 4.13:1, --bg(#F4F6F4) 3.80:1, --surface-2(#FAFBFA) 3.98:1, --sunken(#EEF1EE) 3.63:1로 어느 배경에서도 기준 미달(비교: --text-2 #67716B는 흰 카드 위 5.06:1로 통과). cycle224의 기존 대비 작업(logic.js:915 도입, test/run.js:3262-3320)은 아바타 배지 아이콘-배경 간 비텍스트 3:1 기준만 다뤘을 뿐 본문텍스트용 --text-3는 건드리지 않아 겹치지 않는 새 결함. 다크모드 --text-3(#8A948E, 5.35:1)은 이미 통과라 영향 없음. 라이트모드(기본 테마)에서 앱의 거의 모든 화면에 동시에 영향을 미치는, 지금까지 발견한 것 중 가장 넓은 블라스트 반경의 접근성 결함이며 1807개 기능 테스트로는 전혀 잡히지 않는 영역. 러너업 기각: Supabase 클라우드 동기화 3-way 병합(logic.js:160-384, index.html:1554-1650이 이미 tombstone-aware로 매우 성숙하고 cycle122/123/125/133/135/138/177/179/180/192/211/212/223에서 반복 검증됨, 필드 단위 병합 안 하기로 한 의도적 결정도 주석에 남아있어 기각), 사용자 입력 innerHTML/XSS(모든 렌더 지점이 esc() 일관 적용 확인, 실제 벡터 없음), CSV 수입 '다양한 은행 포맷'(이 앱은 자기 자신이 내보낸 고정 7컬럼 CSV만 재수입하는 기능이라 '은행 포맷 다양성'이 적용 대상이 아님, 기존 BOM/따옴표/날짜범위 가드 이미 충분), todayStr()이 기기 로컬 타임존을 쓰고 inQuietWindow()만 고정 KST 보정이 있는 불일치(index.html:1661-1662 vs 3312-3318, 실존하지만 다기기+해외체류라는 좁은 트리거라 대비버그보다 블라스트 반경이 작아 2순위로 보류). advance 계획을 pending_advance_plan에 저장: index.html:54의 --text-3 라이트 hex를 contrastRatio()로 검증된 #656E68(또는 더 짙은 #5F6862)로 교체(다크모드 75/90행은 불변), test/run.js에 cycle224 패턴을 따라 신규 hex가 4개 배경(surface/bg/surface-2/sunken) 모두 4.5:1 이상인지 + 구 값(#767F79)이 실제로 미달이었는지(회귀가드) + --text-2는 영향 없는지 검증하는 테스트 추가, APP_VERSION/sw.js CACHE 버전 범프, glass-panel 등 그라디언트 배경 위 시각 확인. 코드 변경 없음(critique 단계라 state.json만 갱신).",
-      "commit": null
-    },
     {
       "cycle": 234,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-23T14:30:00.000Z",
       "summary": "cycle239 develop 커밋(bdf80dd, AUTH.resetPasswordLocal()의 복구 코드 비교에 normRecoveryCode() 정규화 추가)을 검토. git show로 diff 확인: 기존엔 (code||'').trim().toUpperCase()만으로 비교해 하이픈을 빼거나 공백으로 바꿔 입력하면 해시가 달라져 정당한 코드가 거부됐던 결함이 맞음을 확인. normRecoveryCode()는 trim/toUpperCase 후 [^A-Z0-9]를 전부 제거해 하이픈·공백 등 구분자 차이를 흡수하고, 길이가 정확히 12자일 때만 4-4-4로 하이픈을 재삽입 — genRecoveryCode()가 실제로 만드는 형식(chars 33종, i%4===3&&i<11에서 하이픈 삽입, 결과 XXXX-XXXX-XXXX)과 정확히 일치함을 라인 2210-2215 대조로 검증. 길이가 12자가 아니면(다른 코드·일부 입력) 하이픈을 끼워 넣지 않고 그대로 반환해 해시 비교가 자연히 실패하도록 둔 것도 안전함. recoveryHash 생성부(가입/재설정 시 genRecoveryCode() 결과를 그대로 해시)는 전혀 손대지 않아 기존 발급 코드들과 하위 호환이 유지됨을 확인. null/undefined/빈 문자열 입력 시 String(s==null?'':s)로 안전하게 빈 문자열 처리되어 크래시 위험 없음. 신규 단위 테스트 10건(하이픈 생략, 소문자+공백, 구분자가 공백으로 바뀐 경우, 이미 표준형인 경우의 멱등성, 길이 불일치 시 그대로 반환, null/undefined/빈값)이 diff의 분기와 1:1 대응하며 전부 통과함을 node our-assets-v1.14.1/our-assets/test/run.js로 재확인(1873/1873). APP_VERSION 1.47.226/sw.js CACHE 범프 동기화 확인. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 239,
+      "phase": "critique",
+      "timestamp": "2026-10-23T16:15:57.033Z",
+      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-239 전체 다룬 영역 전부 제외 지시)한 결과, Netlify 가격조회 함수(stock.js/rates.js/crypto.js)의 cycle225 rate limiter가 client key 없이 모듈 스코프 단일 배열(rlHistory)만 써서 인스턴스 스케일아웃 시 전역 한도가 느슨해지고(인스턴스 수배로 완화됨) 같은 warm 인스턴스에 우연히 걸린 무고한 사용자가 다른 사용자의 재시도 폭주로 429 collateral 차단을 당할 수 있는 공백을 발견 — 보안/남용완화 로직의 실제 correctness gap. 러너업 기각: budgets 전역설계(이미 의도적 문서화), CSV split 상세 누락(이미 알려진 v1 포맷 한계), ALLOWED_ORIGINS가 서버측 강제가 아닌 점(이미 주석으로 인정된 한계). advance 계획(_shared.js에 Map 기반 shouldThrottleByKey + IP 추출 + 500개 cap LRU, 세 핸들러 교체, test/run.js에 키분리/기존동작유지/bounded-size/참조동일성 테스트 추가, index.html/logic.js/sw.js 불변이라 버전 범프 불필요)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
       "commit": null
     }
   ]
