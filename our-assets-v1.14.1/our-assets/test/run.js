@@ -3368,6 +3368,34 @@ test('contrastRatio: --text-3(#656E68)는 이번 --text-2 수정과 무관하게
   assert.notStrictEqual('#656F69', '#656E68');
 });
 
+/* ---------- contrastRatio: ACCENTS 전체(라이트 모드) --brand vs --on-brand WCAG AA 보정
+ * (app-evolve cycle235 advance) ----------
+ * .btn-primary·.sch-chip.on·.empty-cta 등 가장 자주 쓰이는 전역 버튼들이 --brand 배경에
+ * --on-brand 글자를 16px bold(일반 텍스트 기준 4.5:1 적용)로 얹는다. '선셋' 프리셋만
+ * --brand(#B8661A)/--on-brand(#FFFFFF)가 4.239:1로 AA 미달이었고, 나머지 6개 프리셋(teal·
+ * indigo·plum·forest·rose·slate)은 전부 4.5:1 이상이었다. sunset의 --brand만 #A65C17로
+ * 바꿔(라이트 전용, --brand-ink/--brand-soft/--brand-tint·다크모드는 불변) 5.04:1로 올린다. */
+test('contrastRatio: 라이트 모드 ACCENTS 전부 --brand/--on-brand가 WCAG AA 일반 텍스트 기준(4.5:1) 이상이다(.btn-primary 등 전역 버튼)', () => {
+  const pairs = [
+    ['teal(기본)', '#227E72', '#FFFFFF'],
+    ['indigo', '#4B54C6', '#FFFFFF'],
+    ['plum', '#9A4B8F', '#FFFFFF'],
+    ['forest', '#1E7A57', '#FFFFFF'],
+    ['sunset', '#A65C17', '#FFFFFF'],
+    ['rose', '#C24D74', '#FFFFFF'],
+    ['slate', '#4A6178', '#FFFFFF'],
+  ];
+  pairs.forEach(([name, brand, onBrand]) => {
+    assert.ok(sandbox.contrastRatio(brand, onBrand) >= 4.5, `${name}: ${brand}/${onBrand} => ${sandbox.contrastRatio(brand, onBrand)}`);
+  });
+});
+test('contrastRatio: 수정 전 라이트 모드 sunset --brand 값(회귀 가드) — #B8661A는 #FFFFFF 대비 4.5:1 미달(4.239:1)이었음을 재확인', () => {
+  assert.ok(sandbox.contrastRatio('#B8661A', '#FFFFFF') < 4.5, `#B8661A/#FFFFFF => ${sandbox.contrastRatio('#B8661A', '#FFFFFF')}`);
+});
+test('contrastRatio: sunset 다크모드 --brand/--on-brand(#F0A659/#241202)는 이번 라이트 전용 수정과 무관하게 이미 기준을 만족한다', () => {
+  assert.ok(sandbox.contrastRatio('#F0A659', '#241202') >= 4.5, `#F0A659/#241202 => ${sandbox.contrastRatio('#F0A659', '#241202')}`);
+});
+
 /* ---------- notifyReliabilityTier/notifyReliabilityMsg: OS 알림 토스트/캡션의 실제 능력 고지
  * (app-evolve cycle145 critique/advance) ----------
  * checkNotifyAlerts()는 document.hidden일 때만 동작하는 foreground/background 로컬 알림일 뿐

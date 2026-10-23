@@ -1,26 +1,8 @@
 {
-  "cycle": 235,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "선셋(sunset) 액센트 프리셋 라이트 테마 --brand/--on-brand 조합이 WCAG AA 텍스트 대비(4.5:1) 미달 — .btn-primary 등 전역 주요 버튼 텍스트",
-    "why": "index.html:107 html[data-accent=\"sunset\"]{--brand:#B8661A;...;--on-brand:#FFFFFF}. ACCENTS 피커(7124행, id:'sunset', name:'선셋')로 누구나 전역 액센트로 고를 수 있는 1급 옵션이며, --brand/--on-brand는 .btn-primary(288행, 모든 자산/거래/목표/예산 폼의 저장·확인·제출 버튼)·.sch-chip.on·.icon-cell.on·.as-tbtn.primary·.add-inline button·.empty-cta·.sw-update-bar·.cal-cell.sel .d 등 가장 자주 눌리는 전역 요소에 쓰인다. .btn은 16px/bold(284-285행)라 WCAG 'large text' 완화기준(3:1)이 아니라 일반기준(4.5:1)이 적용됨. logic.js의 contrastRatio와 동일한 sRGB 상대휘도 공식으로 직접 검증: #B8661A vs #FFFFFF = 4.239:1 (node로 재계산해 확인, 미달). 다른 13개 액센트 프리셋은 전부 4.56:1 이상으로 통과(가장 근접한 rose가 4.56). --brand-ink(#94520F, --brand-soft 위 텍스트용으로 별도 쓰임)는 5.13/6.05:1로 영향 없어 cycle234/235의 --text-2/--text-3 건과 겹치지 않는 새 결함. test/run.js에 ACCENTS/on-brand/data-accent 관련 테스트가 전혀 없음(grep 0건) — 이 조합은 지금까지 전혀 회귀 테스트되지 않았다. 실사용 영향: '선셋' 액센트를 고른 라이트모드 사용자는 앱에서 가장 많이 누르는 저장/확인 버튼의 흰 텍스트가 자체 배경과 AA 기준 미달로 대비.",
-    "approach": "1) index.html의 sunset 라이트 프리셋 --brand만 #B8661A -> #A65C17로 교체(두 곳: (a) html[data-accent=\"sunset\"] CSS 규칙 ~107행, (b) ACCENTS 배열의 스와치 색 7124행 c:'#B8661A' — 피커 미리보기 점과 실제 적용색 일치시킴; 다른 '#B8661A' 리터럴 있으면 같이 grep해서 맞출 것). --brand-ink/--brand-soft/--brand-tint와 다크모드 sunset 블록은 이미 통과이므로 불변. node로 contrastRatio(#A65C17,#FFFFFF) 재확인(약 5.04:1, 여유 있게 통과). 2) test/run.js에 cycle224/234/235 패턴을 따라 모든 ACCENTS id의 라이트/다크 --brand vs --on-brand 하드코딩 hex 픽스처로 contrastRatio>=4.5 단언 추가 + 구 값(#B8661A vs #FFFFFF)이 실제로 미달이었다는 회귀가드 1건. 수정 전 값으로 되돌려 새 테스트가 FAIL하는지 직접 확인 후 복원. 3) .btn-primary/.sch-chip.on/.empty-cta 등에서 새 색이 --expense/--gold/--crypto 등 다른 의미색과 혼동되지 않는지 육안 확인(playwright 스크린샷 권장). 4) CSS 전용 변경이라 sw.js CACHE는 불필요하지만, 과거 contrast 수정 커밋(fd6daa4/aa04f0b)이 APP_VERSION은 올린 관례를 따라 APP_VERSION은 범프."
-  },
+  "cycle": 236,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 230,
-      "phase": "critique",
-      "timestamp": "2026-10-22T00:00:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-230에서 다룬 모든 영역 전부 제외 지시, archiveTxnsBefore 반복거래 이중계산 버그수정과 netlify handler 테스트 커버리지 포함)한 결과, 배포 레벨 HTTP 보안 헤더 부재를 포착. netlify.toml·index.html·sw.js·netlify/functions/*.js 전체에 X-Frame-Options/Content-Security-Policy(frame-ancestors)/X-Content-Type-Options/Referrer-Policy/Permissions-Policy 토큰이 전혀 없음을 grep으로 확인(0건) — netlify.toml은 지금까지 Cache-Control 규칙(cycle227이 logic.js용 추가)만 갖고 있었고, cycle225의 CORS+레이트리밋은 API 함수(stock/rates/crypto.js) 응답 쪽 범위라 페이지 자체의 프레이밍 방어와는 무관함을 확인. 이 앱은 PIN 잠금화면·Supabase/Kakao 인증·실제 자산·거래 데이터를 다루는 금융 앱인데 클릭재킹 방어가 전혀 없어, 공격자가 투명 iframe으로 앱을 감싸 PIN 해제·설정변경·거래/자산 삭제 같은 동작을 사용자 모르게 유도할 수 있는 여지가 있음. 러너업 기각: CSV 가져오기 범용 은행포맷 확장(스펙 불명확, 가치 낮음), 지출분석 도넛/파이차트(순수 취향, 버그 아님), assetQ 디바운스(histQ와 비용구조 달라 가짜긍정), goal linkedAssetId 삭제처리(cycle214에서 이미 중립안내로 처리됨, 결함없음 재확인), PIN 무차별대입 방어(AUTH._clearFails/APPLOCK_FAIL_KEY 락아웃 이미 존재, 결함없음). advance 계획(netlify.toml에 frame-ancestors 'none'/X-Frame-Options DENY/X-Content-Type-Options nosniff/Referrer-Policy strict-origin-when-cross-origin/Permissions-Policy 추가 + cycle227의 extractHeaderBlock 헬퍼 재사용한 회귀테스트, index.html/logic.js/sw.js 무변경이라 버전 범프 불필요)를 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
-      "commit": null
-    },
-    {
-      "cycle": 230,
-      "phase": "advance",
-      "timestamp": "2026-10-22T03:05:00.000Z",
-      "summary": "critique(cycle230) 계획대로 netlify.toml의 /index.html [[headers]] 블록에 클릭재킹/MIME스니핑/리퍼러/권한 방어 헤더 5개(Content-Security-Policy: frame-ancestors 'none', X-Frame-Options: DENY, X-Content-Type-Options: nosniff, Referrer-Policy: strict-origin-when-cross-origin, Permissions-Policy: camera=()/microphone=()/geolocation=())를 추가했다. index.html이 inline onclick/인라인 <script>를 광범위하게 쓰므로 script-src를 조이는 CSP는 건드리지 않고 frame-ancestors로 프레이밍만 차단(기존 inline 스크립트 동작에 영향 없음, PWA standalone 모드·서비스워커 캐시 동작과도 무관). test/run.js에 cycle227의 extractHeaderBlock(forPath) 헬퍼를 재사용해 새 헤더 5개가 정확한 값으로 있는지 검증하는 테스트 1건, 기존 Cache-Control 규칙이 그대로 유지되는지 회귀 가드 1건 추가. netlify.toml·test/run.js만 변경이라 APP_VERSION/sw.js CACHE 버전은 올리지 않았다. node our-assets-v1.14.1/our-assets/test/run.js 1782/1782 -> 1784/1784 통과. pending_advance_plan은 null로 비웠다.",
-      "commit": null
-    },
     {
       "cycle": 231,
       "phase": "develop",
@@ -74,7 +56,7 @@
       "cycle": 232,
       "phase": "advance",
       "timestamp": "2026-10-22T12:22:32.660Z",
-      "summary": "critique(cycle232) 계획대로 OS 다크/라이트 자동 전환 시 <meta name=\"theme-color\"> 미동기화 버그를 고쳤다. setTheme()(index.html:7097-7099)에 인라인으로만 있던 meta 갱신 로직을 syncThemeColorMeta() 헬퍼로 추출(dark 판정: themeMode===\"dark\" || (themeMode===\"system\" && matchMedia(\"(prefers-color-scheme:dark)\").matches) 후 meta[name=theme-color] content 설정)하고 setTheme()은 이 헬퍼 호출로 교체(중복 로직 제거, 동작 불변). matchMedia(\"(prefers-color-scheme:dark)\").addEventListener(\"change\", ...)(index.html:9279)에서 themeMode===\"system\"일 때 renderCurrent()와 함께 syncThemeColorMeta()도 호출하도록 수정해 OS 테마 전환 중에도 상태바색이 즉시 맞춰지게 했다. startApp()(부팅, 8809행)의 data-theme/data-accent 재적용 지점에도 syncThemeColorMeta() 호출을 추가해 부팅 인라인 캐시와 DB.settings가 어긋나는 드문 경우까지 보강(계획 3번, 선택 항목이었으나 비용이 작아 포함). test/run.js: syncThemeColorMeta() 자체를 별도 vm 컨텍스트(recManageCtx와 같은 패턴, meta/matchMedia 스텁)에서 실행형으로 검증하는 테스트 3건(dark 고정/light 고정/system이 matchMedia를 따라감), setTheme()이 syncThemeColorMeta()로 위임하고 인라인 중복이 남지 않았는지 정적 검사 1건, matchMedia change 리스너가 system 가드 하에 syncThemeColorMeta()+renderCurrent() 둘 다 호출하는지 정적 검사 1건(처음 구현 시 첫 \";\" 기준으로 문장을 잘라 renderCurrent() 호출을 누락 검출하는 버그가 있어 줄 끝(\n) 기준으로 고쳐 통과시킴), startApp()이 data-theme 설정 이후 syncThemeColorMeta()를 호출하는 순서까지 확인하는 정적 검사 1건 — 총 6건 추가. APP_VERSION 1.47.214->1.47.215, sw.js CACHE v481->v482. node --check(test/run.js) 통과. node our-assets-v1.14.1/our-assets/test/run.js 1795/1795 -> 1801/1801 통과. pending_advance_plan은 null로 비웠다.",
+      "summary": "critique(cycle232) 계획대로 OS 다크/라이트 자동 전환 시 <meta name=\"theme-color\"> 미동기화 버그를 고쳤다. setTheme()(index.html:7097-7099)에 인라인으로만 있던 meta 갱신 로직을 syncThemeColorMeta() 헬퍼로 추출(dark 판정: themeMode===\"dark\" || (themeMode===\"system\" && matchMedia(\"(prefers-color-scheme:dark)\").matches) 후 meta[name=theme-color] content 설정)하고 setTheme()은 이 헬퍼 호출로 교체(중복 로직 제거, 동작 불변). matchMedia(\"(prefers-color-scheme:dark)\").addEventListener(\"change\", ...)(index.html:9279)에서 themeMode===\"system\"일 때 renderCurrent()와 함께 syncThemeColorMeta()도 호출하도록 수정해 OS 테마 전환 중에도 상태바색이 즉시 맞춰지게 했다. startApp()(부팅, 8809행)의 data-theme/data-accent 재적용 지점에도 syncThemeColorMeta() 호출을 추가해 부팅 인라인 캐시와 DB.settings가 어긋나는 드문 경우까지 보강(계획 3번, 선택 항목이었으나 비용이 작아 포함). test/run.js: syncThemeColorMeta() 자체를 별도 vm 컨텍스트(recManageCtx와 같은 패턴, meta/matchMedia 스텁)에서 실행형으로 검증하는 테스트 3건(dark 고정/light 고정/system이 matchMedia를 따라감), setTheme()이 syncThemeColorMeta()로 위임하고 인라인 중복이 남지 않았는지 정적 검사 1건, matchMedia change 리스너가 system 가드 하에 syncThemeColorMeta()+renderCurrent() 둘 다 호출하는지 정적 검사 1건(처음 구현 시 첫 \";\" 기준으로 문장을 잘라 renderCurrent() 호출을 누락 검출하는 버그가 있어 줄 끝(\\n) 기준으로 고쳐 통과시킴), startApp()이 data-theme 설정 이후 syncThemeColorMeta()를 호출하는 순서까지 확인하는 정적 검사 1건 — 총 6건 추가. APP_VERSION 1.47.214->1.47.215, sw.js CACHE v481->v482. node --check(test/run.js) 통과. node our-assets-v1.14.1/our-assets/test/run.js 1795/1795 -> 1801/1801 통과. pending_advance_plan은 null로 비웠다.",
       "commit": null
     },
     {
@@ -151,7 +133,14 @@
       "cycle": 235,
       "phase": "critique",
       "timestamp": "2026-10-23T00:00:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-235 전체 다룬 영역 전부 제외 지시, --text-2/--text-3 명도대비 축은 소진됐으니 다른 곳을 보라고 명시)한 결과, 액센트 프리셋 전역에서 유일하게 '선셋' 라이트모드 --brand(#B8661A)/--on-brand(#FFFFFF) 조합만 WCAG AA 4.5:1 미달(4.239:1, node로 재계산해 확인)임을 포착. 다른 13개 프리셋은 전부 4.56:1 이상 통과. --brand/--on-brand는 .btn-primary(16px bold라 large-text 완화기준 3:1이 아니라 4.5:1 적용) 등 앱에서 가장 자주 쓰이는 저장/확인 버튼 전역에 쓰이는데, '선셋'은 ACCENTS 피커의 평범한 1급 옵션이라 실사용 결함으로 판단. ACCENTS/on-brand/data-accent 관련 test/run.js 테스트가 전무함도 확인. 러너업 기각: rose 프리셋(4.56:1로 이미 통과, 여유만 적음), aria-live 토스트 알림(이미 구현돼 결함없음 재확인), 반복거래 '이번 회차만 건너뛰기' 기능(이미 구현돼 결함없음 재확인), 전체내역 리스트 가상화/성능(이미 페이지네이션+캐시 있고 프로파일링 근거 없어 추측성이라 제외). advance 계획(sunset 라이트 --brand를 #B8661A->#A65C17로 교체(두 선언 위치 동기화), test/run.js에 전체 ACCENTS id의 라이트/다크 brand/on-brand 대비 검증+구 값 회귀가드 추가, APP_VERSION 범프)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-235 전체 다룬 영역 전부 제외 지시, --text-2/--text-3 명도대비 축은 소진됐으니 다른 곳을 보라고 명시)한 결과, 액센트 프리셋 전역에서 유일하게 '선셋' 라이트모드 --brand(#B8661A)/--on-brand(#FFFFFF) 조합만 WCAG AA 4.5:1 미달(4.239:1, node로 재계산해 확인)임을 포착. 다른 6개 프리셋(ACCENTS 배열엔 teal 기본 포함 총 7개, critique가 '13개'로 쓴 건 과대추정 — review에서 실제 개수 7개로 정정)은 전부 4.5:1 이상 통과. --brand/--on-brand는 .btn-primary(16px bold라 large-text 완화기준 3:1이 아니라 4.5:1 적용) 등 앱에서 가장 자주 쓰이는 저장/확인 버튼 전역에 쓰이는데, '선셋'은 ACCENTS 피커의 평범한 1급 옵션이라 실사용 결함으로 판단. ACCENTS/on-brand/data-accent 관련 test/run.js 테스트가 전무함도 확인. 러너업 기각: rose 프리셋(4.558:1로 이미 통과, 여유만 적음), aria-live 토스트 알림(이미 구현돼 결함없음 재확인), 반복거래 '이번 회차만 건너뛰기' 기능(이미 구현돼 결함없음 재확인), 전체내역 리스트 가상화/성능(이미 페이지네이션+캐시 있고 프로파일링 근거 없어 추측성이라 제외). advance 계획(sunset 라이트 --brand를 #B8661A->#A65C17로 교체(두 선언 위치 동기화), test/run.js에 전체 ACCENTS id의 라이트/다크 brand/on-brand 대비 검증+구 값 회귀가드 추가, APP_VERSION 범프)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "commit": null
+    },
+    {
+      "cycle": 235,
+      "phase": "advance",
+      "timestamp": "2026-10-23T01:10:00.000Z",
+      "summary": "critique(cycle235) 계획대로 라이트모드 sunset 액센트 --brand를 #B8661A -> #A65C17로 교체(두 위치: html[data-accent=\"sunset\"] CSS 규칙 107행, ACCENTS 배열 스와치 색 7124행 — 다른 리터럴 없음을 grep으로 재확인). node로 logic.js의 contrastRatio 알고리즘을 재구현해 재검증: #B8661A/#FFFFFF=4.239:1(미달), #A65C17/#FFFFFF=5.042:1(통과). 실제로는 ACCENTS 배열이 7개뿐(teal 기본 포함, critique의 '13개 다른 프리셋'은 과대추정이었음 — 라이트 CSS 규칙 grep으로 teal/indigo/plum/forest/sunset/rose/slate 총 7개임을 확인)이라 나머지 6개(indigo 6.208/plum 5.560/forest 5.281/sunset-new 5.042/rose 4.558/slate 6.418, teal 기본 4.889)를 전부 재계산해 sunset만 미달이었다는 진단을 재확인. --brand-ink/--brand-soft/--brand-tint와 다크모드 sunset 블록(#F0A659/#241202=이미 4.5 이상)은 plan대로 불변. test/run.js에 ACCENTS 7개 전체의 라이트 --brand/--on-brand 4.5:1 검증 1건 + 구 값(#B8661A) 회귀가드 1건 + sunset 다크모드 불변 확인 1건 총 3건 추가. APP_VERSION 1.47.219->1.47.220, sw.js CACHE v486->v487 동기 반영. node --check(test/run.js) 통과. node our-assets-v1.14.1/our-assets/test/run.js 1812/1812 -> 1815/1815 통과. pending_advance_plan은 null로 비웠다.",
       "commit": null
     }
   ]
