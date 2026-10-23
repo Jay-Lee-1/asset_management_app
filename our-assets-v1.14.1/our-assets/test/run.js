@@ -232,7 +232,7 @@ const FUNCTIONS = [
  'notifyAlertInfo', 'pickNotifyAlerts', 'pruneNotifiedIds', 'syncNotifyPermission',
   'catIconOf', 'catGlyph', 'openCatManage', 'openCatPicker',
   'catListOf', 'catAv', 'assetPickBtn', 'endCondFields', 'dayPickerHTML', 'openFormSheet', 'renderTxSheet', '_applyType', '_applyFreq', '_applyDay', '_applyCount', '_applyOpenCat', '_applyOpenAsset', 'txType', 'txToggleRepeat',
-  'accountName', 'dbIsEmpty', 'guestHasData',
+  'accountName', 'dbIsEmpty', 'guestHasData', 'importGuestDataInto',
   'txScheduled', 'monthStats', 'monthStats2', 'expenseByCat', 'needGold', 'inQuietWindow', 'fmtSynced', 'rateStatusText',
   // heldCurrencies/heldStockCodes/heldCryptoCodes/needFx/needStock/needCrypto/hasRateAssets/autoSyncRates는
   // app-evolve cycle220 develop(crypto만 보유해도 주말 휴장 시간대에 자동 갱신·"주말 휴장" 표시가
@@ -17357,7 +17357,11 @@ test('kakaoLogin: 성공 콜백이 doLogin()과 같은 패턴으로 dbIsEmpty(DB
   const body = extractFunction('kakaoLogin');
   assert.ok(/dbIsEmpty\(DB\)&&guestHasData\(\)/.test(body), 'kakaoLogin 성공 콜백에 dbIsEmpty(DB)&&guestHasData() 체크가 없음');
   assert.ok(body.includes("confirmSheet('데이터 가져오기'"), 'kakaoLogin 성공 콜백에 게스트 데이터 가져오기 제안 confirmSheet가 없음');
-  assert.ok(/DB=JSON\.parse\(guestRaw\);migrate\(\);save\(\);renderCurrent\(\);toast\('데이터를 가져왔어요'\)/.test(body), 'confirmSheet 콜백이 doLogin()과 같은 방식으로 게스트 DB를 가져오지 않음');
+  // app-evolve cycle238 develop: 예전엔 confirmSheet 콜백이 DB=JSON.parse(guestRaw);migrate();save()로
+  // sanitizeBackup() 검증을 거치지 않고 통째로 DB를 바꿔치기했다 — 이제는 doLogin()/doSignup()과
+  // 동일하게 restoreBackup()과 같은 경로(sanitizeBackup→DB 교체→migrate, 실패 시 롤백)를 쓰는
+  // importGuestDataInto(guestRaw) 공용 헬퍼를 호출해야 한다.
+  assert.ok(/toast\(importGuestDataInto\(guestRaw\)\?'데이터를 가져왔어요':'가져오기에 실패했어요'\)/.test(body), 'confirmSheet 콜백이 doLogin()과 같은 방식(importGuestDataInto)으로 게스트 DB를 가져오지 않음');
 });
 test('kakaoLogin: 게스트 데이터가 있지만 이 계정이 비어있지 않으면 doLogin()과 같은 "합쳐지지 않았어요" 안내 토스트를 띄운다', () => {
   const body = extractFunction('kakaoLogin');
@@ -17366,6 +17370,69 @@ test('kakaoLogin: 게스트 데이터가 있지만 이 계정이 비어있지 �
 test('kakaoLogin: 게스트 데이터가 없으면 기존처럼 평범한 로그인 완료 토스트만 띄운다(else 분기)', () => {
   const body = extractFunction('kakaoLogin');
   assert.ok(body.includes("else toast('카카오 로그인 완료 · '+nick)"), 'kakaoLogin의 else 분기에 기존 로그인 완료 토스트가 없음(guestHasData가 false일 때의 기본 동작)');
+});
+test('doLogin/doSignup도 kakaoLogin과 동일하게 importGuestDataInto(guestRaw)를 호출한다(세 로그인 경로 중 하나만 고치고 나머지를 깜빡하는 "배선 누락" 회귀 방지)', () => {
+  const doLoginBody = extractFunction('doLogin');
+  const doSignupBody = extractFunction('doSignup');
+  assert.ok(doLoginBody.includes('importGuestDataInto(guestRaw)'), 'doLogin이 importGuestDataInto(guestRaw)를 쓰지 않음');
+  assert.ok(doSignupBody.includes('importGuestDataInto(guestRaw)'), 'doSignup이 importGuestDataInto(guestRaw)를 쓰지 않음');
+});
+
+/* ---------- importGuestDataInto: 게스트→계정 데이터 가져오기도 sanitizeBackup()을 거친다
+ * (app-evolve cycle238 develop) ----------
+ * kakaoLogin()/doLogin()/doSignup() 세 로그인 경로는 로그인 전 게스트로 입력해둔 데이터가 있으면
+ * confirmSheet로 물어본 뒤 그 게스트 DB를 그대로 로그인한 계정의 DB로 가져오는데, 똑같이 "통째
+ * DB 교체"를 하는 백업 파일 복원(importFile 핸들러→restoreBackup)이나 클라우드 풀/병합
+ * (resolveCloudPullRemote 등)은 전부 DB를 바꿔 끼우기 전에 sanitizeBackup()으로 손상된 날짜
+ * (csvDateValid)·중복 id 등을 정제·제거하는 반면, 이 세 곳은 지금까지 `DB=JSON.parse(guestRaw);
+ * migrate();save()`로 그 검증을 전혀 거치지 않고 raw 파싱 결과를 그대로 얹었다. 게스트 데이터도
+ * 이 앱 자신의 save()가 쓴 것이라 보통은 깨끗하지만, sanitizeBackup의 검증 항목 중 상당수(예:
+ * cycle234가 고친 txn.date 형식/달력 유효성 검사)는 그 검증이 생기기 전 버전에서 저장된 뒤
+ * migrate()만으로는 못 고쳐지는 값으로 localStorage에 그대로 남아있을 수 있다. */
+test('importGuestDataInto: 유효한 게스트 백업은 restoreBackup()과 동일한 경로로 DB를 교체하고 save()/renderCurrent()를 호출한 뒤 true를 반환한다', () => {
+  sandbox.DB = { assets: [{ id: 'acct-old' }], txns: [], categories: {}, catIcon: {}, catVar: {}, budgets: {}, owners: ['나'], recurrences: [] };
+  const saveOrig = sandbox.save, renderOrig = sandbox.renderCurrent;
+  let saveCalled = 0, renderCalled = 0;
+  sandbox.save = () => { saveCalled++; };
+  sandbox.renderCurrent = () => { renderCalled++; };
+  try {
+    const guestRaw = JSON.stringify({ assets: [{ id: 'guest-a1', type: 'cash' }], txns: [{ id: 'guest-t1', date: '2026-03-10' }] });
+    const ok = sandbox.importGuestDataInto(guestRaw);
+    assert.strictEqual(ok, true, '정상 게스트 백업이면 true를 반환해야 함');
+    assert.ok(sandbox.DB.assets.some(a => a.id === 'guest-a1'), 'DB가 게스트 자산으로 교체되어야 함');
+    assert.ok(sandbox.DB.txns.some(t => t.id === 'guest-t1'), 'DB가 게스트 거래로 교체되어야 함');
+    assert.strictEqual(saveCalled, 1, 'save()가 정확히 한 번 호출되어야 함');
+    assert.strictEqual(renderCalled, 1, 'renderCurrent()가 정확히 한 번 호출되어야 함');
+  } finally {
+    sandbox.save = saveOrig; sandbox.renderCurrent = renderOrig;
+  }
+});
+test('importGuestDataInto: 손상된 게스트 거래(달력에 없는 날짜)는 sanitizeBackup()이 걸러내 DB에 들어가지 않는다 — 수정 전에는 검증 없이 그대로 들어갔음', () => {
+  sandbox.DB = { assets: [], txns: [], categories: {}, catIcon: {}, catVar: {}, budgets: {}, owners: ['나'], recurrences: [] };
+  sandbox.save = () => {}; sandbox.renderCurrent = () => {};
+  const guestRaw = JSON.stringify({
+    assets: [{ id: 'guest-a1', type: 'cash' }],
+    txns: [
+      { id: 'guest-ok', date: '2026-03-10' },
+      { id: 'guest-bad', date: '2026-02-30' } /* 달력상 존재하지 않는 날짜 — csvDateValid()가 false */
+    ]
+  });
+  const ok = sandbox.importGuestDataInto(guestRaw);
+  assert.strictEqual(ok, true);
+  assert.ok(sandbox.DB.txns.some(t => t.id === 'guest-ok'), '유효한 거래는 그대로 남아야 함');
+  assert.ok(!sandbox.DB.txns.some(t => t.id === 'guest-bad'), '달력에 없는 날짜의 거래는 sanitizeBackup()이 제거해야 함 — 수정 전엔 검증 없이 그대로 DB.txns에 들어갔음');
+});
+test('importGuestDataInto: JSON 파싱 실패나 최소 스키마(assets/txns 배열) 불일치면 DB를 건드리지 않고 false를 반환한다', () => {
+  const orig = { assets: [{ id: 'safe' }], txns: [], categories: {}, catIcon: {}, catVar: {}, budgets: {}, owners: ['나'], recurrences: [] };
+  sandbox.DB = orig;
+  assert.strictEqual(sandbox.importGuestDataInto('이것은 JSON이 아님{{{'), false, '깨진 JSON이면 false를 반환해야 함');
+  assert.strictEqual(sandbox.DB, orig, '깨진 JSON이면 DB를 건드리지 않아야 함');
+  assert.strictEqual(sandbox.importGuestDataInto(JSON.stringify({ assets: 'not-an-array', txns: [] })), false, 'assets가 배열이 아니면 false를 반환해야 함');
+  assert.strictEqual(sandbox.DB, orig, 'assets가 배열이 아니면 DB를 건드리지 않아야 함');
+  assert.strictEqual(sandbox.importGuestDataInto(JSON.stringify({ assets: [], txns: {} })), false, 'txns가 배열이 아니면 false를 반환해야 함');
+  assert.strictEqual(sandbox.DB, orig, 'txns가 배열이 아니면 DB를 건드리지 않아야 함');
+  assert.strictEqual(sandbox.importGuestDataInto(null), false, 'null 입력이면 false를 반환해야 함(JSON.parse(null)은 예외 없이 null을 돌려줌)');
+  assert.strictEqual(sandbox.DB, orig, 'null 입력이면 DB를 건드리지 않아야 함');
 });
 
 /* ---------- togglePwVis: 비밀번호 입력칸(auPw/frPwIn/newPwIn)에 표시/숨기기 눈 아이콘 토글을

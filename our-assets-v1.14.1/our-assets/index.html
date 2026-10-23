@@ -1406,7 +1406,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.223';
+const APP_VERSION='1.47.224';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1878,6 +1878,29 @@ function emptyDB(){return {
  };}
 function dbIsEmpty(db){return !db||!((db.assets&&db.assets.length)||(db.txns&&db.txns.length))}
 function guestHasData(){try{const g=JSON.parse(localStorage.getItem('asset_app_db_v3__guest')||'{}');return !!((g.assets&&g.assets.length)||(g.txns&&g.txns.length))}catch(e){return false}}
+/* 게스트로 쓰던 데이터를 로그인/가입한 계정으로 가져올 때 쓰는 공용 헬퍼 — kakaoLogin/doLogin/
+ * doSignup 세 곳이 각자 `DB=JSON.parse(guestRaw);migrate();save()`로 똑같이 구현하고 있었는데,
+ * 같은 "통째 DB 교체" 작업인 백업 파일 복원(importFile 핸들러→restoreBackup)이나 클라우드
+ * 풀/병합(resolveCloudPullRemote 등)은 전부 DB를 바꾸기 전에 sanitizeBackup()을 거쳐 손상된
+ * 날짜(csvDateValid)·귀속/카테고리 참조·중복 id 등을 정제하거나 제거하는데, 이 경로만 그
+ * 검증을 전혀 거치지 않고 raw 파싱 결과를 그대로 DB에 얹었다(app-evolve cycle238 develop) —
+ * 게스트 데이터도 이 앱 자신의 save()가 쓴 것이라 보통은 깨끗하지만, sanitizeBackup의 검증
+ * 항목(예: cycle234가 고친 txn.date 형식/달력 유효성 검사) 중 상당수가 그 검증이 생기기 전
+ * 버전에서 저장된 뒤 지금까지 migrate()만으로는 못 고쳐지는 값으로 localStorage에 그대로
+ * 남아있을 수 있고, 그런 게스트 데이터는 로그인 시점에 검증 없이 그대로 계정 DB가 돼버린다.
+ * restoreBackup()과 완전히 동일한 경로(sanitizeBackup→DB 교체→migrate, migrate 실패 시 자동
+ * 롤백)를 그대로 재사용한다. 성공하면 true, 실패(JSON 파싱 오류·최소 스키마 불일치·migrate
+ * 예외)면 DB를 건드리지 않고 false를 돌려준다. */
+function importGuestDataInto(guestRaw){
+ try{
+  const raw=JSON.parse(guestRaw);
+  if(!raw||!Array.isArray(raw.assets)||!Array.isArray(raw.txns))return false;
+  const{data:obj}=sanitizeBackup(raw);
+  restoreBackup(obj);
+  save();renderCurrent();
+  return true;
+ }catch(e){return false}
+}
 
 let DB, STORAGE_OK=true, STORAGE_PERSISTED=null, TAB_SAVED_AT=0, TAB_SYNC_PENDING=null, DB_JSON_LEN=0;
 /* localStorage는 오리진당 보통 5~10MB로 quota가 걸려 있다(브라우저마다 다름). save()가 매번 DB
@@ -9199,7 +9222,7 @@ function kakaoLogin(){
      const id='kakao:'+res.id;const nick=(res.kakao_account&&res.kakao_account.profile&&res.kakao_account.profile.nickname)||'카카오 사용자';
      AUTH.kakaoUpsert(id,nick);GUEST=false;localStorage.setItem('asset_app_guest','0');AUTH.setSession(id);startApp();
      const guestRaw=localStorage.getItem('asset_app_db_v3__guest');
-     if(dbIsEmpty(DB)&&guestHasData())confirmSheet('데이터 가져오기','방금까지 게스트로 입력한 자산·내역이 있어요. 이 계정으로 가져올까요?','가져오기',()=>{try{DB=JSON.parse(guestRaw);migrate();save();renderCurrent();toast('데이터를 가져왔어요')}catch(e){toast('가져오기에 실패했어요')}});
+     if(dbIsEmpty(DB)&&guestHasData())confirmSheet('데이터 가져오기','방금까지 게스트로 입력한 자산·내역이 있어요. 이 계정으로 가져올까요?','가져오기',()=>{toast(importGuestDataInto(guestRaw)?'데이터를 가져왔어요':'가져오기에 실패했어요')});
      else if(!dbIsEmpty(DB)&&guestHasData())toast('카카오 로그인 완료 · '+nick+' · 게스트로 입력한 데이터는 이 계정에 합쳐지지 않았어요');
      else toast('카카오 로그인 완료 · '+nick);
    },fail(){authErr('카카오 사용자 정보를 가져오지 못했어요.')}})},
@@ -9226,7 +9249,7 @@ async function doLogin(){
  if(r.cloud)cloudAuthResult=await afterCloudAuth(r.uid);
  startApp();
  const guestRaw=localStorage.getItem('asset_app_db_v3__guest');
- if(dbIsEmpty(DB)&&guestHasData())confirmSheet('데이터 가져오기','방금까지 게스트로 입력한 자산·내역이 있어요. 이 계정으로 가져올까요?','가져오기',()=>{try{DB=JSON.parse(guestRaw);migrate();save();renderCurrent();toast('데이터를 가져왔어요')}catch(e){toast('가져오기에 실패했어요')}});
+ if(dbIsEmpty(DB)&&guestHasData())confirmSheet('데이터 가져오기','방금까지 게스트로 입력한 자산·내역이 있어요. 이 계정으로 가져올까요?','가져오기',()=>{toast(importGuestDataInto(guestRaw)?'데이터를 가져왔어요':'가져오기에 실패했어요')});
  else if(cloudAuthResult&&cloudAuthResult.status==='guestMerged')toast('로그인했어요 · '+r.email+' · 게스트로 입력한 데이터를 이 계정으로 가져왔어요');
  else{if(!dbIsEmpty(DB)&&guestHasData())toast('로그인했어요 · '+r.email+' · 게스트로 입력한 데이터는 이 계정에 합쳐지지 않았어요');else toast('로그인했어요 · '+r.email)}
 }
@@ -9245,7 +9268,7 @@ async function doSignup(){
  const guestRaw=localStorage.getItem('asset_app_db_v3__guest');
  startApp();
  const afterSignupFlow=()=>{
-  if(guestHasData())confirmSheet('데이터 가져오기','방금까지 게스트로 입력한 자산·내역이 있어요. 새 계정으로 가져올까요?','가져오기',()=>{try{DB=JSON.parse(guestRaw);migrate();save();renderCurrent();toast('데이터를 가져왔어요')}catch(e){toast('가져오기에 실패했어요')}});
+  if(guestHasData())confirmSheet('데이터 가져오기','방금까지 게스트로 입력한 자산·내역이 있어요. 새 계정으로 가져올까요?','가져오기',()=>{toast(importGuestDataInto(guestRaw)?'데이터를 가져왔어요':'가져오기에 실패했어요')});
   else toast('가입 완료 · '+r.email);
  };
  if(r.recoveryCode)showRecoveryCode(r.recoveryCode,'비밀번호를 잊으면 이 코드로만 복구할 수 있어요. 지금 안전한 곳에 적어 두세요 — 다시 보여드리지 않아요.',afterSignupFlow);
