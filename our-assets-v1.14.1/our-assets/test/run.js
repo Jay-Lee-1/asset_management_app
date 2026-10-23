@@ -10978,6 +10978,217 @@ test('startApp()이 부팅 시 DB.settings.themeMode를 data-theme에 반영한 
   assert.ok(syncIdx !== -1, 'startApp()이 syncThemeColorMeta()를 호출하지 않아, 부팅 인라인 캐시와 DB.settings가 어긋나는 경우(다른 기기/구버전에서 바뀐 설정) 상태바색이 복구되지 않음');
   assert.ok(themeIdx < syncIdx, 'data-theme을 설정하기 전에 syncThemeColorMeta()를 불러 옛 테마 기준으로 색이 계산될 위험');
 });
+/* ---------- 설치 유도 배너(installBar) ----------
+ * manifest.webmanifest/iOS 메타는 설치 기준을 이미 만족시키는데도 beforeinstallprompt/appinstalled/
+ * display-mode/navigator.standalone을 다루는 코드가 전혀 없어 설치 가능하다는 사실 자체를 알려줄
+ * 방법이 없던 공백을 닫은 기능이다(app-evolve cycle236 advance). isStandalone()이 참조하는
+ * matchMedia는 bare 식별자 호출(브라우저에서는 window.matchMedia와 동일 객체)이라 vm 컨텍스트에도
+ * top-level과 window 양쪽에 같은 스텁을 올려야 한다(themeColorMetaCtx와 달리 window도 필요). */
+function installBarCtx() {
+  const dom = domstub.createDocument();
+  const bar = dom.createElement('div'); bar.id = 'installBar'; dom.body.appendChild(bar);
+  const store = {};
+  const ctx = {
+    navigator: { standalone: false },
+    localStorage: {
+      getItem: (k) => Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null,
+      setItem: (k, v) => { store[k] = String(v); },
+    },
+    document: dom,
+    $: (id) => dom.getElementById(id),
+    svg: () => 'SVG',
+    toastCalls: [],
+    toast: (msg) => { ctx.toastCalls.push(msg); },
+    IS_IOS: false,
+    SW_UPDATE_AVAILABLE: false,
+    _standaloneMatches: false,
+    _store: store,
+  };
+  ctx.matchMedia = () => ({ matches: ctx._standaloneMatches });
+  ctx.window = { matchMedia: ctx.matchMedia, _deferredInstallPrompt: null };
+  vm.createContext(ctx);
+  vm.runInContext([
+    extractFunction('isStandalone'),
+    extractFunction('installSnoozed'),
+    extractFunction('bumpInstallVisitCount'),
+    extractFunction('installVisitGateOk'),
+    extractFunction('installBarVisible'),
+    extractFunction('maybeShowInstallBar'),
+    extractFunction('hideInstallBar'),
+    extractFunction('dismissInstallBar'),
+    extractFunction('onInstallBarClick'),
+  ].join('\n'), ctx, { filename: 'install-bar-real' });
+  return ctx;
+}
+// installBarVisible()이 true를 내려면 거쳐야 하는 공통 전제(스누즈 안 됨/설치 안 됨/방문 3회 이상)를
+// 매 테스트에서 반복하지 않도록 모아둔 헬퍼.
+function primeInstallGateOk(ctx) { ctx.bumpInstallVisitCount(); ctx.bumpInstallVisitCount(); ctx.bumpInstallVisitCount(); }
+test('[실행형] isStandalone: matchMedia(display-mode:standalone)가 matches면 true', () => {
+  const ctx = installBarCtx();
+  ctx._standaloneMatches = true;
+  assert.strictEqual(ctx.isStandalone(), true);
+});
+test('[실행형] isStandalone: navigator.standalone===true(구형 iOS Safari 전용 플래그)면 matchMedia와 무관하게 true', () => {
+  const ctx = installBarCtx();
+  ctx._standaloneMatches = false;
+  ctx.navigator.standalone = true;
+  assert.strictEqual(ctx.isStandalone(), true);
+});
+test('[실행형] isStandalone: 둘 다 아니면 false(브라우저 탭으로 열려 있는 일반 상태)', () => {
+  const ctx = installBarCtx();
+  assert.strictEqual(ctx.isStandalone(), false);
+});
+test('[실행형] installSnoozed: dismissInstallBar()가 찍은 미래 타임스탬프면 true, 지난 타임스탬프/없음이면 false', () => {
+  const ctx = installBarCtx();
+  assert.strictEqual(ctx.installSnoozed(), false, '아무 스누즈도 없는 최초 상태는 false여야 함');
+  ctx._store['asset_app_install_dismiss_ts'] = String(Date.now() + 1000);
+  assert.strictEqual(ctx.installSnoozed(), true, '미래 타임스탬프인데 스누즈 중으로 안 봄');
+  ctx._store['asset_app_install_dismiss_ts'] = String(Date.now() - 1000);
+  assert.strictEqual(ctx.installSnoozed(), false, '이미 지난 타임스탬프인데 여전히 스누즈 중으로 봄(14일 뒤 재노출 실패)');
+});
+test('[실행형] dismissInstallBar: "나중에" 탭 시 14일 뒤로 스누즈 타임스탬프를 찍고 배너를 숨긴다', () => {
+  const ctx = installBarCtx();
+  const bar = ctx.$('installBar'); bar.classList.add('show');
+  const before = Date.now();
+  ctx.dismissInstallBar();
+  assert.ok(!bar.classList.contains('show'), '스누즈했는데 배너가 안 숨겨짐');
+  const ts = +ctx._store['asset_app_install_dismiss_ts'];
+  assert.ok(ts >= before + 14 * 24 * 60 * 60 * 1000 - 1000 && ts <= before + 14 * 24 * 60 * 60 * 1000 + 1000, '스누즈 기간이 14일이 아님');
+});
+test('[실행형] 방문 횟수 게이트: bumpInstallVisitCount() 3회 미만이면 installVisitGateOk()가 false, 3회부터 true', () => {
+  const ctx = installBarCtx();
+  assert.strictEqual(ctx.installVisitGateOk(), false, '0회인데 게이트가 열려있음');
+  ctx.bumpInstallVisitCount();
+  assert.strictEqual(ctx.installVisitGateOk(), false, '1회인데 게이트가 열려있음(첫 실행에 바로 들이밀면 거부감 유발)');
+  ctx.bumpInstallVisitCount();
+  assert.strictEqual(ctx.installVisitGateOk(), false, '2회인데 게이트가 열려있음');
+  ctx.bumpInstallVisitCount();
+  assert.strictEqual(ctx.installVisitGateOk(), true, '3회째인데 게이트가 아직 닫혀있음');
+});
+test('[실행형] installBarVisible: 이미 standalone(설치됨)으로 떠 있으면 다른 조건과 무관하게 항상 false', () => {
+  const ctx = installBarCtx();
+  primeInstallGateOk(ctx);
+  ctx._standaloneMatches = true;
+  ctx.window._deferredInstallPrompt = {};
+  assert.strictEqual(ctx.installBarVisible(), false, '이미 standalone인데도 설치 배너를 또 띄우려 함(재설치 유도 회귀)');
+});
+test('[실행형] installBarVisible: SW 업데이트 배너가 뜰 차례(SW_UPDATE_AVAILABLE)면 설치 배너는 양보한다', () => {
+  const ctx = installBarCtx();
+  primeInstallGateOk(ctx);
+  ctx.window._deferredInstallPrompt = {};
+  ctx.SW_UPDATE_AVAILABLE = true;
+  assert.strictEqual(ctx.installBarVisible(), false, '업데이트 배너와 설치 배너가 동시에 뜰 수 있음(자리 경쟁)');
+});
+test('[실행형] installBarVisible: appinstalled로 asset_app_installed가 찍혀 있으면 이번 세션에서 standalone 감지가 안 돼도 다시 안 띄운다', () => {
+  const ctx = installBarCtx();
+  primeInstallGateOk(ctx);
+  ctx.window._deferredInstallPrompt = {};
+  ctx._store['asset_app_installed'] = '1';
+  assert.strictEqual(ctx.installBarVisible(), false);
+});
+test('[실행형] installBarVisible: 스누즈 중이면 방문횟수/deferredPrompt가 갖춰져도 false', () => {
+  const ctx = installBarCtx();
+  primeInstallGateOk(ctx);
+  ctx.window._deferredInstallPrompt = {};
+  ctx._store['asset_app_install_dismiss_ts'] = String(Date.now() + 1000);
+  assert.strictEqual(ctx.installBarVisible(), false);
+});
+test('[실행형] installBarVisible: 방문 3회 미달이면 Android(deferredPrompt 있음)/iOS 모두 아직 false(최초 실행 즉시 들이밀지 않음)', () => {
+  const ctxA = installBarCtx();
+  ctxA.window._deferredInstallPrompt = {};
+  assert.strictEqual(ctxA.installBarVisible(), false, 'Android: 방문 게이트 무시하고 바로 뜸');
+  const ctxI = installBarCtx();
+  ctxI.IS_IOS = true;
+  assert.strictEqual(ctxI.installBarVisible(), false, 'iOS: 방문 게이트 무시하고 바로 뜸');
+});
+test('[실행형] installBarVisible: Android/Chrome은 beforeinstallprompt를 캡처한 _deferredInstallPrompt가 있어야만 true', () => {
+  const ctx = installBarCtx();
+  primeInstallGateOk(ctx);
+  assert.strictEqual(ctx.installBarVisible(), false, 'deferredInstallPrompt가 없는데도 true — beforeinstallprompt 캡처 전에 배너를 띄우면 탭해도 아무 반응 없음');
+  ctx.window._deferredInstallPrompt = {};
+  assert.strictEqual(ctx.installBarVisible(), true, 'deferredInstallPrompt를 캡처했는데도 배너를 안 띄움');
+});
+test('[실행형] installBarVisible: iOS Safari는 beforeinstallprompt가 영영 안 뜨므로 _deferredInstallPrompt 없이도 true(안내문구 전용 분기)', () => {
+  const ctx = installBarCtx();
+  primeInstallGateOk(ctx);
+  ctx.IS_IOS = true;
+  assert.strictEqual(ctx.installBarVisible(), true, 'iOS인데 deferredInstallPrompt가 없다는 이유로 배너를 안 띄움 — iOS는 이 이벤트가 원래 없음');
+});
+test('[실행형] maybeShowInstallBar: 조건이 안 맞으면 배너에서 show 클래스를 제거한다(이미 떠 있던 배너를 다시 숨기는 경로)', () => {
+  const ctx = installBarCtx();
+  const bar = ctx.$('installBar'); bar.classList.add('show');
+  ctx.maybeShowInstallBar(); // 방문 게이트 미달 → 숨겨야 함
+  assert.ok(!bar.classList.contains('show'));
+});
+test('[실행형] maybeShowInstallBar: Android 조건 충족 시 show 클래스를 붙이고 "나중에" 닫기 버튼을 그린다', () => {
+  const ctx = installBarCtx();
+  primeInstallGateOk(ctx);
+  ctx.window._deferredInstallPrompt = {};
+  ctx.maybeShowInstallBar();
+  const bar = ctx.$('installBar');
+  assert.ok(bar.classList.contains('show'));
+  assert.ok(/dismissInstallBar/.test(bar.innerHTML), '닫기 버튼이 dismissInstallBar()를 호출하지 않음');
+  assert.ok(!/공유 버튼/.test(bar.innerHTML), 'Android 분기인데 iOS 안내 문구가 섞임');
+});
+test('[실행형] maybeShowInstallBar: iOS 조건 충족 시 "공유 버튼 → 홈 화면에 추가" 안내 문구로 분기한다', () => {
+  const ctx = installBarCtx();
+  primeInstallGateOk(ctx);
+  ctx.IS_IOS = true;
+  ctx.maybeShowInstallBar();
+  const bar = ctx.$('installBar');
+  assert.ok(bar.classList.contains('show'));
+  assert.ok(/공유 버튼/.test(bar.innerHTML), 'iOS 분기인데 공유 버튼 안내 문구가 없음');
+});
+test('[실행형] onInstallBarClick: Android에서 캡처해둔 deferredInstallPrompt.prompt()를 호출하고 응답 후 비운다', async () => {
+  const ctx = installBarCtx();
+  let promptCalled = false, resolveChoice;
+  ctx.window._deferredInstallPrompt = {
+    prompt: () => { promptCalled = true; },
+    userChoice: new Promise((res) => { resolveChoice = res; }),
+  };
+  ctx.onInstallBarClick();
+  assert.ok(promptCalled, 'Android에서 탭했는데 캡처해둔 prompt()를 호출하지 않음');
+  resolveChoice('accepted');
+  await Promise.resolve().then(() => {}).then(() => {});
+  assert.strictEqual(ctx.window._deferredInstallPrompt, null, '응답 후 deferredInstallPrompt를 비우지 않아 다음 탭에서 오래된 프롬프트를 재사용하려 함');
+});
+test('[실행형] onInstallBarClick: iOS에서는 prompt()가 없으므로 캡처된 이벤트를 건드리지 않고 안내 토스트만 띄운다', () => {
+  const ctx = installBarCtx();
+  ctx.IS_IOS = true;
+  ctx.window._deferredInstallPrompt = null;
+  ctx.onInstallBarClick();
+  assert.strictEqual(ctx.toastCalls.length, 1, 'iOS 탭 시 안내 토스트를 띄우지 않음');
+  assert.ok(/공유 버튼/.test(ctx.toastCalls[0]), '토스트 문구가 공유 버튼 안내가 아님');
+});
+test('beforeinstallprompt 리스너가 기본 미니 인포바를 막고(preventDefault) 이벤트를 들고 있다가 배너 노출을 판단한다(정적 검사)', () => {
+  const idx = src.indexOf("addEventListener('beforeinstallprompt'");
+  assert.ok(idx !== -1, "beforeinstallprompt 리스너를 찾지 못함 — 설치 가능 여부를 전혀 캡처하지 않음");
+  const stmtEnd = src.indexOf('\n', idx);
+  const stmt = src.slice(idx, stmtEnd);
+  assert.ok(/e\.preventDefault\(\)/.test(stmt), 'beforeinstallprompt에서 preventDefault()를 안 불러 브라우저 기본 미니 인포바가 그대로 뜸');
+  assert.ok(/_deferredInstallPrompt=e/.test(stmt), '캡처한 이벤트를 저장하지 않아 나중에 prompt()를 호출할 방법이 없음');
+  assert.ok(/maybeShowInstallBar\(\)/.test(stmt), '캡처 즉시 배너 노출 판단을 다시 하지 않음(부팅보다 늦게 이벤트가 뜨는 경우를 놓침)');
+});
+test('appinstalled 리스너가 캡처해둔 이벤트를 비우고 설치 완료 플래그를 남기며 배너를 숨긴다(정적 검사)', () => {
+  const idx = src.indexOf("addEventListener('appinstalled'");
+  assert.ok(idx !== -1, 'appinstalled 리스너를 찾지 못함 — 설치 완료 후에도 배너가 계속 뜰 수 있음');
+  const end = src.indexOf('});', idx) + 3;
+  const stmt = src.slice(idx, end);
+  assert.ok(/_deferredInstallPrompt=null/.test(stmt), '설치 완료 후 옛 deferredInstallPrompt를 비우지 않음');
+  assert.ok(/asset_app_installed/.test(stmt), "설치 완료를 영속 기록하지 않아, standalone 감지가 안 되는 세션에서 배너가 다시 뜰 수 있음");
+  assert.ok(/hideInstallBar\(\)/.test(stmt), '설치 완료 후에도 배너를 안 숨김');
+});
+test('startApp()이 부팅마다 bumpInstallVisitCount()로 방문 횟수를 적립하고 maybeShowInstallBar()로 설치 배너 노출을 판단한다(정적 검사)', () => {
+  const body = extractFunction('startApp');
+  assert.ok(/bumpInstallVisitCount\(\)/.test(body), 'startApp()이 방문 횟수를 적립하지 않아 방문 게이트가 영원히 0에 머묾');
+  assert.ok(/maybeShowInstallBar\(\)/.test(body), 'startApp()이 설치 배너 노출을 판단하지 않아, iOS처럼 이벤트에 의존하지 않는 분기는 영영 안 뜸');
+});
+test('SW 업데이트 배너가 뜨는 controllerchange 경로가 먼저 떠 있었을 설치 배너를 숨긴다(두 배너가 동시에 겹치지 않도록, 정적 검사)', () => {
+  const idx = src.indexOf('showSwUpdateBar();');
+  assert.ok(idx !== -1, 'showSwUpdateBar() 호출을 찾지 못함');
+  const before = src.slice(Math.max(0, idx - 200), idx);
+  assert.ok(/hideInstallBar\(\)/.test(before), 'controllerchange가 showSwUpdateBar() 직전에 hideInstallBar()를 안 불러, 두 배너가 동시에 뜰 수 있음');
+});
 /* head 최상단 동기 인라인 스크립트 자체는 cycle177의 SDK 로더 테스트 선례(정적 패턴 검사)와 동일한
  * 방식으로 확인한다 — DOM이 없는 vm 샌드박스에서 "첫 페인트 전에 실행돼야 한다"는 속성 자체를
  * 실행으로 검증할 수 없으므로, 원본 텍스트에서의 등장 순서로 그 불변식을 대신 확인한다. */

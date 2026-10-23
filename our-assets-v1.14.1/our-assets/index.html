@@ -990,6 +990,13 @@ html[data-theme="dark"] .toast.undo .toast-undo{color:var(--brand-ink)}
 .sw-update-bar{display:none;position:fixed;left:12px;right:12px;bottom:calc(var(--nav-h) + var(--ad-h) + env(safe-area-inset-bottom) + 12px);z-index:199;align-items:center;gap:10px;padding:13px 16px;border-radius:var(--r-md);background:var(--brand);color:var(--on-brand);font-size:13.5px;font-weight:700;box-shadow:var(--sh-lg);cursor:pointer}
 .sw-update-bar.show{display:flex}
 .sw-update-bar svg{width:18px;height:18px;flex-shrink:0}
+/* install-bar: sw-update-bar와 같은 자리를 쓰지만 둘이 동시에 뜨지는 않는다
+ * (maybeShowInstallBar()가 SW_UPDATE_AVAILABLE이면 항상 숨김 — app-evolve cycle236 advance) */
+.install-bar{display:none;position:fixed;left:12px;right:12px;bottom:calc(var(--nav-h) + var(--ad-h) + env(safe-area-inset-bottom) + 12px);z-index:199;align-items:center;gap:10px;padding:13px 16px;border-radius:var(--r-md);background:var(--brand);color:var(--on-brand);font-size:13.5px;font-weight:700;box-shadow:var(--sh-lg);cursor:pointer}
+.install-bar.show{display:flex}
+.install-bar svg{width:18px;height:18px;flex-shrink:0}
+.install-bar .ib-txt{flex:1}
+.install-bar .ib-x{flex-shrink:0;background:transparent;border:0;color:var(--on-brand);font-weight:700;font-size:13px;padding:6px 10px;opacity:.85;cursor:pointer}
 .err-banner{display:none;position:fixed;left:0;right:0;top:0;z-index:400;align-items:center;gap:10px;padding:calc(env(safe-area-inset-top) + 10px) 16px 10px;background:var(--expense);color:#fff;font-size:13.5px;font-weight:700;box-shadow:var(--sh-lg)}
 .err-banner.show{display:flex}
 .err-banner svg{width:18px;height:18px;flex-shrink:0}
@@ -1357,6 +1364,7 @@ body.selmode .fab{display:none}
 <button class="fab" id="fab" onclick="fabTap()" aria-label="추가"></button>
 <div class="selbar-bottom" id="selBarBottom"></div>
 <div class="sw-update-bar" id="swUpdateBar" onclick="reloadForUpdate()" role="button" tabindex="0" onkeydown="rowKeydown(event,reloadForUpdate)"></div>
+<div class="install-bar" id="installBar" role="button" tabindex="0" onclick="onInstallBarClick()" onkeydown="rowKeydown(event,onInstallBarClick)"></div>
 <div class="toast-wrap" id="toastWrap"></div>
 <div class="sr-only" id="ariaLivePolite" role="status" aria-live="polite" aria-atomic="true"></div>
 <div class="sr-only" id="ariaLiveAssertive" role="alert" aria-live="assertive" aria-atomic="true"></div>
@@ -1398,7 +1406,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.221';
+const APP_VERSION='1.47.222';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1411,6 +1419,60 @@ function showSwUpdateBar(){
  el.classList.add('show');
  if(document.getElementById('page-menu').classList.contains('active'))renderMenu();
 }
+
+/* ================= PWA 설치 유도 배너 =================
+ * manifest.webmanifest/iOS 메타는 설치 기준을 이미 다 만족하지만, 설치 가능하다는 사실을
+ * 알려주는 UI가 전혀 없었다(app-evolve cycle236 critique). beforeinstallprompt(Android/Chrome)를
+ * 캡처해 직접 들고 있다가 배너 탭 시 띄우고, beforeinstallprompt가 영영 안 뜨는 iOS Safari는
+ * UA로 감지해 "공유 → 홈 화면에 추가" 안내 문구로 분기한다. 이미 설치된 사용자에게는 절대
+ * 다시 띄우지 않는다. IS_IOS는 이 함수들보다 한참 아래(라인 ~6336)에서 선언되지만, 이
+ * 함수들은 이벤트/부팅 시점에만 "실행"되고 그 시점엔 이미 스크립트 전체가 로드돼 있으므로
+ * 참조에 문제가 없다(라인 5534의 기존 함수가 이미 같은 방식으로 IS_IOS를 참조 중). */
+function isStandalone(){return (window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true}
+function installSnoozed(){let t=0;try{t=+(localStorage.getItem('asset_app_install_dismiss_ts')||0)}catch(e){}return Date.now()<t}
+/* 첫 실행 즉시 설치를 들이밀면 거부감만 키우므로(tidyList 등과 같은 원칙), 최소 3회 실행 후부터
+ * 노출 대상으로 본다. 카운터 증가는 boot당 1회만 일어나야 하므로 startApp()에서만 부른다 —
+ * installBarVisible() 자체는 카운터를 건드리지 않아 몇 번을 불러도 상태가 바뀌지 않는다. */
+function bumpInstallVisitCount(){let n=0;try{n=(parseInt(localStorage.getItem('asset_app_visit_count'),10)||0)+1;localStorage.setItem('asset_app_visit_count',String(n))}catch(e){}}
+function installVisitGateOk(){let n=0;try{n=parseInt(localStorage.getItem('asset_app_visit_count'),10)||0}catch(e){}return n>=3}
+function installBarVisible(){
+ if(isStandalone())return false;
+ if(SW_UPDATE_AVAILABLE)return false; /* 업데이트 배너가 더 급함 — 동시에 띄우지 않는다 */
+ try{if(localStorage.getItem('asset_app_installed')==='1')return false}catch(e){}
+ if(installSnoozed())return false;
+ if(!installVisitGateOk())return false;
+ if(IS_IOS)return true; /* iOS는 beforeinstallprompt가 없어 캡처 여부와 무관하게 안내문구만 보여준다 */
+ return !!window._deferredInstallPrompt;
+}
+function maybeShowInstallBar(){
+ const el=$('installBar');if(!el)return;
+ if(!installBarVisible()){el.classList.remove('show');return}
+ el.innerHTML=svg('download',18)+(IS_IOS
+   ?'<span class="ib-txt">홈 화면에 추가하면 더 빠르게 열 수 있어요 · 공유 버튼 → 홈 화면에 추가</span>'
+   :'<span class="ib-txt">홈 화면에 추가하고 더 빠르게 열어보세요</span>')
+   +'<button type="button" class="ib-x" onclick="event.stopPropagation();dismissInstallBar()">나중에</button>';
+ el.classList.add('show');
+}
+function hideInstallBar(){const el=$('installBar');if(el)el.classList.remove('show')}
+function dismissInstallBar(){
+ try{localStorage.setItem('asset_app_install_dismiss_ts',String(Date.now()+14*24*60*60*1000))}catch(e){}
+ hideInstallBar();
+ toast('14일 뒤에 다시 알려드릴게요');
+}
+function onInstallBarClick(){
+ if(IS_IOS){toast('공유 버튼을 눌러 "홈 화면에 추가"를 선택하세요');return}
+ const p=window._deferredInstallPrompt;if(!p)return;
+ p.prompt();
+ p.userChoice.then(()=>{window._deferredInstallPrompt=null;hideInstallBar()}).catch(()=>{});
+}
+/* beforeinstallprompt는 로드당 한 번만 뜨고, 리스너가 미리 붙어 있어야 잡히므로 가능한 한 일찍
+ * 최상위 스코프에서 등록한다(boot()/startApp() 뒤로 미루지 않음). */
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();window._deferredInstallPrompt=e;maybeShowInstallBar()});
+window.addEventListener('appinstalled',()=>{
+ window._deferredInstallPrompt=null;
+ try{localStorage.setItem('asset_app_installed','1')}catch(e){}
+ hideInstallBar();
+});
 
 /* ================= 전역 에러 바운더리 =================
  * recordError()가 로깅과 사용자 노출(showErrBanner)을 모두 담당하는 단일 지점이다.
@@ -8855,6 +8917,7 @@ function hideBootSplash(){const el=$('bootSplash');if(el)el.remove()}
 function showApp(){hideBootSplash();$('authView').style.display='none';$('app').style.display=''}
 function startApp(){
  load();
+ bumpInstallVisitCount();
  syncNotifyPermission();
  try{localStorage.removeItem('ourassets_snapshots')}catch(e){} /* 구 자동백업 저장소 정리 */
  rollPendingTransfers();
@@ -8863,6 +8926,7 @@ function startApp(){
  document.documentElement.setAttribute('data-theme',DB.settings.themeMode);
  document.documentElement.setAttribute('data-accent',DB.settings.accent||'teal');
  syncThemeColorMeta();
+ maybeShowInstallBar();
  ST.tab='home';
  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));$('page-home').classList.add('active');
  buildNav();document.body.classList.add('show-fab');renderHome();updateAlerts();showApp();wireHdrFade($('page-home'));
@@ -9338,6 +9402,7 @@ if('serviceWorker' in navigator){
   navigator.serviceWorker.addEventListener('controllerchange',function(){
     if(!hadController){hadController=true;return}
     SW_UPDATE_AVAILABLE=true;
+    hideInstallBar(); /* 업데이트 배너가 더 급하다 — 설치 배너가 떠 있었다면 자리를 비켜준다 */
     showSwUpdateBar();
   });
   window.addEventListener('load',function(){
