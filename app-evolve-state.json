@@ -1,15 +1,8 @@
 {
   "cycle": 238,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 233,
-      "phase": "develop",
-      "timestamp": "2026-10-22T13:40:00.000Z",
-      "summary": "general-purpose 서브에이전트가 develop 후보를 탐색해 notifyAlertInfo()에서 월 단위로 묶이는 세 kind(budgetOverMulti/goalBehindMulti/debtBehindMulti)의 dedupe key가 count를 포함하지 않아, 이번 달에 한 번 알린 뒤 묶인 건수가 늘어나도(예: 예산초과 카테고리 2개->3개, 목표지연 2건->3건, 부채정체 2건->3건) 재알림이 그 달 안에는 영구히 억제되는 버그를 발견 — 같은 1건/N건 collapsing 패턴을 쓰는 confirmMulti/matMulti는 cycle156/157에서 이미 count를 key에 넣어 이 문제를 피했고, 당시 테스트 주석조차 \"budgetOverMulti처럼\"이라 적어 세 함수도 같은 원칙을 공유해야 한다는 전제가 있었으나 실제로는 반영되지 않은 채 기존 테스트가 그 버그 상태를 그대로 lock-in하고 있었다. budgetMulti/goalBehindMulti/debtBehindMulti key에 confirmMulti/matMulti와 동일하게 `:${al.count}`를 추가해 월 단위 dedupe 취지(같은 상황 반복 알림 방지)는 유지하면서 건수가 바뀌면 재알림되도록 보강. test/run.js: 기존 key 단언 3건을 새 포맷으로 갱신 + 신규 3건(각 kind가 count 2->3으로 바뀌면 key도 바뀌어 재알림 대상, count 불변 시 동일 key로 dedupe 유지, budgetOverMulti는 pickNotifyAlerts 통합 테스트까지 포함) 추가. 수정 전 key로 되돌려 6건이 FAIL함을 직접 확인한 뒤 복원. APP_VERSION 1.47.215->1.47.216, sw.js CACHE v482->v483. node --check(sw.js/test/run.js) 통과. node our-assets-v1.14.1/our-assets/test/run.js 1801/1801 -> 1804/1804 통과. 오케스트레이터가 diff/테스트를 직접 재검증한 뒤 커밋했다.",
-      "commit": "c8df82d"
-    },
     {
       "cycle": 233,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-23T09:17:47.599Z",
       "summary": "critique(cycle237) 계획대로 isDuePending()의 도래 판정을 기기 로컬 TODAY 대신 logic.js의 새 순수함수 kstTodayStr()(inQuietWindow()와 동일한 d.getTime()+9*60*60000 UTC+9 고정 산술)로 바꿔, 한국 은행업무일 기준 반복이체 확인 대기 판정이 기기 시간대에 따라 최대 하루 어긋나던 버그를 고쳤다. isDuePending()이 pendingTransferCount()/확인버튼(txn row)/openConfirmTransferList()/homeAlerts()의 confirm·confirmMulti 알림·checkNotifyAlerts() OS 푸시까지 전부 경유하므로 그 한 지점만 고치면 전부 동기화됨을 호출부 전체(allTxns 필터/4489행 확인버튼) grep으로 재확인했다. 추가로 toggleConfirmTransfers()의 pendingOneOff가 같은 의미를 t.date<=TODAY로 별도 인라인하고 있던 중복을 찾아 isDuePending(t) 호출로 통일(동작 동치 — DB.txns에는 isRec 항목이 없어 isPending()의 t.confirmed===false 분기와 같음). txScheduled()/checkNotifyAlerts()의 당일 그룹핑은 재검토 결과 별도 t.date<=TODAY 패턴이 없어(isFuture()는 의도적으로 기기-로컬 유지, 예정 배지는 isPending()이 날짜와 무관하게 참이라 영향 없음) 추가 수정 불필요였음. 핵심 위험: pendingTransferCount/toggleConfirmTransfers 테스트 11건이 TODAY만 mock하고 kstTodayStr()의 실제 지금(Date)은 mock하지 않아 비결정적이 될 뻔한 것을 발견 — withFakeNow(기존 inQuietWindow 테스트 패턴)를 재사용한 withFakeToday(dateStr,fn) 헬퍼를 추가해 TODAY와 KST 지금을 같은 날짜로 맞춰 11개 기존 테스트를 전부 감쌌다(실제로 2건은 즉시 FAIL했었고, 나머지는 fixture 날짜가 real-now보다 과거라 우연히 통과하고 있었을 뿐이었음 — 수정 전 되돌려 직접 확인). kstTodayStr 경계 테스트 2건(자정 KST 전후, withTZ(America/New_York)에서도 동일) + isDuePending의 device-local/KST 괴리 회귀 테스트 2건(기기가 KST보다 느려도 KST 기준 도래분은 due, 기기가 빨라도 KST 기준 미도래면 due 아님) 총 4건 신규 추가. logic.js도 바뀌므로 APP_VERSION 1.47.222->1.47.223, sw.js CACHE v489->v490 동기 범프. node --check(logic.js/sw.js/test/run.js) 통과. 수정 전 코드로 되돌려 신규 회귀 테스트 2건이 FAIL함을 직접 확인한 뒤 복원. node our-assets-v1.14.1/our-assets/test/run.js 1848/1848 -> 1852/1852 통과.",
       "commit": null
+    },
+    {
+      "cycle": 238,
+      "phase": "develop",
+      "timestamp": "2026-10-23T10:23:35.350Z",
+      "summary": "general-purpose 서브에이전트가 develop 후보를 탐색해 kakaoLogin()/doLogin()/doSignup() 세 곳 모두 게스트 모드 localStorage 데이터를 로그인한 계정 DB로 가져올 때 동일한 인라인 코드(DB=JSON.parse(guestRaw);migrate();save();renderCurrent())를 썼는데, 이것이 백업파일 복원(restoreBackup())이나 클라우드 pull/merge 등 다른 모든 전체-DB 교체 경로가 공통으로 거치는 sanitizeBackup() 검증(잘못된/달력상 무효한 날짜 레코드 제거, id 중복제거, owner/category 참조 보정, 금액 clamp 등)을 유일하게 건너뛰는 공백임을 발견 — 게스트 데이터는 보통 앱 자신의 save()가 쓴 것이라 깨끗하지만, sanitizeBackup의 특정 검증(예: cycle234에서 추가된 txn.date 달력 유효성 체크)이 생기기 전 구버전으로 저장돼 localStorage에 남아있던 데이터는 로그인 시 검증 없이 그대로 계정 DB로 승격될 수 있었다. index.html에 공유 헬퍼 importGuestDataInto(guestRaw)를 신설해(parse+최소 스키마 검증+sanitizeBackup()+restoreBackup() 경로 재사용) 세 호출부가 모두 이 헬퍼를 쓰도록 통일. test/run.js: 기존 kakaoLogin 소스패턴 단언 테스트를 새 헬퍼 호출 검증으로 교체 + doLogin/doSignup도 같은 헬퍼를 쓰는지 확인하는 정적 테스트 1건 + importGuestDataInto 자체의 실행형 테스트 3건(정상 가져오기, 달력상 무효한 날짜('2026-02-30') 거래가 sanitizeBackup에 의해 제거되면서 같은 배치의 유효 거래는 보존, JSON 파싱 실패/배열 아님/null 입력 시 false 반환+DB 불변) 추가. 세 호출부를 구 인라인 코드로 되돌려 신규/수정 테스트 2건이 FAIL함을 직접 확인한 뒤 복원. APP_VERSION 1.47.223->1.47.224, sw.js CACHE v490->v491 동기 반영. node our-assets-v1.14.1/our-assets/test/run.js 1852/1852 -> 1856/1856 통과.",
+      "commit": "c4f8728"
     }
   ]
 }
