@@ -1398,7 +1398,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.220';
+const APP_VERSION='1.47.221';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6652,6 +6652,20 @@ function sanitizeBackup(obj){
   if(dateBelowRangeFloor(d.date)||dateAboveRangeCeil(d.date))rangeCount++;
   txns.push(d);
  });
+ /* owner(자산의 귀속)는 goal.owner와 달리 'all' 센티넬을 허용하지 않는 필수 필드다 — asDraft가
+  * openAssetSheet()에서 항상 DB.owners[0]을 기본값으로 채우고(asOpenOwner 피커도 DB.owners 중
+  * 하나만 고르게 함), ownerAssets/ownerDebt/allocationCard/investGainLossCard/nwHistoryCard 등
+  * 모든 귀속별 집계·필터가 a.owner===o(정확히 일치) 비교만 쓴다. 백업/클라우드 풀 경로로
+  * 들어오는 자산의 owner가 이 백업 자신의 owners 목록(obj.owners, 없으면 이 기기의 DB.owners)에
+  * 없는 낡은/손상된 이름이면(예: 다른 기기에서 귀속을 삭제·오타로 저장한 뒤 동기화 전에 백업한
+  * 경우, 또는 손으로 편집한 백업 파일) 그 자산은 '전체' 보기에선 계속 보이면서도 모든 귀속별
+  * 탭·카드에서는 조용히 사라진 것처럼 보인다 — 목표(goal.owner)는 이미 cycle124부터 이 함수가
+  * validOwners로 검증해 'all'로 clamp하는데, 똑같이 사용자가 저장 시점에 전혀 거를 수 없는 이
+  * 경로(sanitizeBackup)에서 자산만 그 검증이 빠져 있었다(app-evolve cycle236 develop). 'all'로는
+  * clamp할 수 없으므로(자산에는 유효한 값이 아님) 이 백업이 아는 첫 번째 실제 귀속으로 떨어뜨린다
+  * — delOwner()가 "쓰는 자산이 있으면 귀속을 못 지운다"로 지키는 "모든 자산은 실존하는 귀속을
+  * 가진다" 불변식과 같은 방향이다. */
+ const validOwners=Array.isArray(obj&&obj.owners)?obj.owners:(DB.owners||[]);
  const srcAssets=Array.isArray(obj&&obj.assets)?obj.assets:[];
  let assets=[];
  srcAssets.forEach(a=>{
@@ -6663,6 +6677,12 @@ function sanitizeBackup(obj){
    * startDate/endDate와 동일하게 csvDateValid()로 형식/달력 유효성만 검증해 깨졌으면 null로
    * 정규화한다 — 그대로 두면 doMaturity/openMaturity의 날짜 비교가 깨진 문자열을 그대로 쓴다. */
   if(d.maturityDate&&!csvDateValid(d.maturityDate)){d.maturityDate=null;fixedCount++}
+  /* validOwners가 비어있으면(이 백업에도 obj.owners가 없고 이 기기의 DB.owners도 아직 없는 극히
+   * 드문 경우 — 정상 실사용에서는 migrate()가 항상 기본 귀속을 채워 DB.owners가 빈 적이 없음)
+   * 무엇이 "유효한 귀속"인지 판단할 근거 자체가 없으므로, 근거 없이 임의 문자열을 지어내지 않고
+   * 받은 값을 그대로 둔다 — budgetHistory/catIcon 등 다른 블록이 '판단 근거가 없으면 손대지
+   * 않는다'로 지키는 것과 같은 원칙. */
+  if(validOwners.length&&(!d.owner||!validOwners.includes(d.owner))){d.owner=validOwners[0];fixedCount++}
   assets.push(d);
  });
  /* 반복거래는 한 레코드가 recDates()로 매달 새 거래를 계속 만들어내므로, amount가 손상되면
@@ -6737,9 +6757,8 @@ function sanitizeBackup(obj){
  const srcGoals=Array.isArray(obj&&obj.goals)?obj.goals:[];
  let goals=[];
  /* owner(app-evolve cycle124 신설)도 goalOwnerEff가 믿는 'DB.owners 또는 all' 불변식을 백업 복원
-  * 경로에서는 아무도 지켜주지 않는다 — 이 백업 자신의 owners 목록(obj.owners)을 기준으로 삼고,
-  * 백업에 owners가 없으면 지금 이 기기의 DB.owners로 대체한다. */
- const validOwners=Array.isArray(obj&&obj.owners)?obj.owners:(DB.owners||[]);
+  * 경로에서는 아무도 지켜주지 않는다 — validOwners(위 assets 블록에서 이미 계산, 이 백업 자신의
+  * owners 목록 또는 이 기기의 DB.owners)를 그대로 재사용한다. */
  srcGoals.forEach(g=>{
   if(!g||!g.id){droppedCount++;return}
   const d=Object.assign({},g);

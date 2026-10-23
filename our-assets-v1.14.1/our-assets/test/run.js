@@ -7875,7 +7875,7 @@ test('sanitizeBackup: 유효한 split(2개 이상, 합계 일치)은 그대로 �
 test('sanitizeBackup: 자산의 보유수량 필드(fxAmount/goldDon/stockQty)는 음수면 0으로 클램프한다', () => {
   const { data, fixedCount } = sandbox.sanitizeBackup({
     txns: [],
-    assets: [{ id: 'a1', type: 'fx', fxAmount: -100 }, { id: 'a2', type: 'gold', goldDon: -3 }],
+    assets: [{ id: 'a1', type: 'fx', owner: '나', fxAmount: -100 }, { id: 'a2', type: 'gold', owner: '나', goldDon: -3 }],
   });
   assert.strictEqual(data.assets[0].fxAmount, 0);
   assert.strictEqual(data.assets[1].goldDon, 0);
@@ -7888,8 +7888,8 @@ test('sanitizeBackup: 형식/달력상 무효한 자산 maturityDate는 null로 
   const { data, fixedCount } = sandbox.sanitizeBackup({
     txns: [],
     assets: [
-      { id: 'a1', type: 'savings', maturityDate: 'not-a-date' },
-      { id: 'a2', type: 'savings', maturityDate: '2026-13-01' },
+      { id: 'a1', type: 'savings', owner: '나', maturityDate: 'not-a-date' },
+      { id: 'a2', type: 'savings', owner: '나', maturityDate: '2026-13-01' },
     ],
   });
   assert.strictEqual(data.assets[0].maturityDate, null);
@@ -7900,9 +7900,9 @@ test('sanitizeBackup: 유효한 자산 maturityDate와 만기 미설정(없음/n
   const { data, fixedCount } = sandbox.sanitizeBackup({
     txns: [],
     assets: [
-      { id: 'a1', type: 'savings', maturityDate: '2026-06-15' },
-      { id: 'a2', type: 'savings', maturityDate: null },
-      { id: 'a3', type: 'cash' },
+      { id: 'a1', type: 'savings', owner: '나', maturityDate: '2026-06-15' },
+      { id: 'a2', type: 'savings', owner: '나', maturityDate: null },
+      { id: 'a3', type: 'cash', owner: '나' },
     ],
   });
   assert.strictEqual(data.assets[0].maturityDate, '2026-06-15');
@@ -7949,7 +7949,7 @@ test('sanitizeBackup: 거래 id가 중복이면(다른 기기/구버전 uid()로
 test('sanitizeBackup: 자산/반복거래/목표/문의/보유수량기록(assetQtyLog) id 중복도 동일하게 복구한다', () => {
   const { data, fixedCount } = sandbox.sanitizeBackup({
     txns: [],
-    assets: [{ id: 'a1', type: 'cash' }, { id: 'a1', type: 'savings' }],
+    assets: [{ id: 'a1', type: 'cash', owner: '나' }, { id: 'a1', type: 'savings', owner: '나' }],
     recurrences: [{ id: 'r1', startDate: '2026-01-01' }, { id: 'r1', startDate: '2026-02-01' }],
     goals: [{ id: 'g1' }, { id: 'g1' }],
     inquiries: [{ id: 'q1', text: '메모' }, { id: 'q1', text: '메모' }],
@@ -7965,7 +7965,7 @@ test('sanitizeBackup: 자산/반복거래/목표/문의/보유수량기록(asset
 test('sanitizeBackup: id가 모두 유일하면(정상 케이스) 아무 것도 바꾸지 않는다(회귀 없음)', () => {
   const { data, fixedCount } = sandbox.sanitizeBackup({
     txns: [{ id: 't1', date: '2026-01-01', amount: 1000 }, { id: 't2', date: '2026-01-02', amount: 2000 }],
-    assets: [{ id: 'a1', type: 'cash' }, { id: 'a2', type: 'cash' }],
+    assets: [{ id: 'a1', type: 'cash', owner: '나' }, { id: 'a2', type: 'cash', owner: '나' }],
   });
   assert.strictEqual(data.txns[0].id, 't1');
   assert.strictEqual(data.txns[1].id, 't2');
@@ -7976,10 +7976,49 @@ test('sanitizeBackup: id가 모두 유일하면(정상 케이스) 아무 것도 
 test('sanitizeBackup: 자산의 잔액성 필드(baseAmount/amountKRW)는 음수를 그대로 허용한다(오버드로우 등 유효 상태)', () => {
   const { data, fixedCount } = sandbox.sanitizeBackup({
     txns: [],
-    assets: [{ id: 'a1', type: 'cash', baseAmount: -1000 }],
+    assets: [{ id: 'a1', type: 'cash', owner: '나', baseAmount: -1000 }],
   });
   assert.strictEqual(data.assets[0].baseAmount, -1000);
   assert.strictEqual(fixedCount, 0);
+});
+/* ---------- sanitizeBackup: 자산의 owner도 목표(goal.owner)와 동일하게 이 백업(obj.owners) 기준으로
+ * 검증해야 한다(app-evolve cycle236 develop) — 'all' 센티넬은 자산에 유효하지 않으므로 첫 번째
+ * 실제 귀속으로 떨어뜨린다. ---------- */
+test('sanitizeBackup: 자산의 owner가 이 백업(obj.owners) 기준으로 존재하지 않는 귀속이면 첫 번째 실제 귀속으로 떨어뜨리고 fixedCount를 센다', () => {
+  const r = sandbox.sanitizeBackup({
+    txns: [], owners: ['나', '배우자'],
+    assets: [{ id: 'a1', type: 'cash', owner: '사라진귀속' }],
+  });
+  assert.strictEqual(r.data.assets[0].owner, '나');
+  assert.strictEqual(r.fixedCount, 1);
+});
+test('sanitizeBackup: 자산에 owner가 없으면(손상된 백업) 첫 번째 실제 귀속을 채우고 fixedCount를 센다', () => {
+  const r = sandbox.sanitizeBackup({
+    txns: [], owners: ['배우자', '나'],
+    assets: [{ id: 'a1', type: 'cash' }],
+  });
+  assert.strictEqual(r.data.assets[0].owner, '배우자');
+  assert.strictEqual(r.fixedCount, 1);
+});
+test('sanitizeBackup: 자산의 owner가 obj.owners에 실제로 있으면 그대로 둔다(정상 케이스는 회귀 없음)', () => {
+  const r = sandbox.sanitizeBackup({
+    txns: [], owners: ['나', '배우자'],
+    assets: [{ id: 'a1', type: 'cash', owner: '배우자' }],
+  });
+  assert.strictEqual(r.data.assets[0].owner, '배우자');
+  assert.strictEqual(r.fixedCount, 0);
+});
+test('sanitizeBackup: 백업에 owners 목록이 없으면 지금 이 기기의 DB.owners를 기준으로 자산의 owner를 검증한다', () => {
+  sandbox.DB = { owners: ['나'] };
+  const r = sandbox.sanitizeBackup({ txns: [], assets: [{ id: 'a1', type: 'cash', owner: '없는귀속' }] });
+  assert.strictEqual(r.data.assets[0].owner, '나', 'obj.owners가 없으면 현재 DB.owners 기준으로 검증·보정돼야 함');
+  assert.strictEqual(r.fixedCount, 1);
+});
+test('sanitizeBackup: 이 백업에도 obj.owners가 없고 이 기기의 DB.owners도 없으면(극히 드문 경우) 판단 근거가 없어 자산의 owner를 그대로 둔다', () => {
+  sandbox.DB = {};
+  const r = sandbox.sanitizeBackup({ txns: [], assets: [{ id: 'a1', type: 'cash', owner: '아무이름' }] });
+  assert.strictEqual(r.data.assets[0].owner, '아무이름', '검증 기준 자체가 없으면 근거 없이 임의 문자열을 지어내지 않아야 함');
+  assert.strictEqual(r.fixedCount, 0);
 });
 test('sanitizeBackup: id/date 등 필수 필드가 없는 레코드는 통째로 제거하고 droppedCount로 센다', () => {
   const { data, droppedCount } = sandbox.sanitizeBackup({
