@@ -1,15 +1,12 @@
 {
   "cycle": 245,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "수입 분석(카테고리별 수입 추이) 화면 신설",
+    "why": "지출은 openSpendAnalysis()(index.html:5896-5939)가 spendByCategory/spendTrend(index.html:5802-5828)로 카테고리별 금액·3개월 평균 대비 증감·예산진행률까지 보여주는 반면, 수입(income) 카테고리는 거래 입력(DB.categories.income)만 있고 어떤 분석 화면도 없다. 월급 외 부수입·투자수익 등 여러 수입원을 쓰는 실제 사용자는 '이번 달 수입이 왜 늘었는지'를 지출처럼 확인할 방법이 전혀 없다. buildExpenseBarHtml(index.html:3419-3435)은 이름만 expense지만 실제로는 범용 카테고리 스택바 렌더러라 수입에도 그대로 재사용 가능한데도 현재 expenseBreakdownCard(index.html:2940,3436)에서만 쓰인다.",
+    "approach": "logic.js에 spendByCategory와 대칭되는 incomeByCategory(y,m,owner)·incomeTrend(c,y,m,n,owner)를 추가(예산 관련 budgetForMonth 호출부는 제외, 잔액조정 inSurplus 처리 로직은 동일 패턴 재사용). index.html에 openIncomeAnalysis() 시트를 openSpendAnalysis()와 유사하되 예산 카드 없이 구성하고, buildExpenseBarHtml(rows.map(r=>({cat:r.c,v:r.v})))로 스택바 재사용. 진입점은 홈 수입 섹션 또는 '이번 달 수지' 카드의 수입 항목에 '수입 분석' 링크(기존 지출 분석 링크 패턴, index.html:8370 자리 참고) 추가. test/run.js FUNCTIONS 목록(약 210행 부근)에 incomeByCategory/incomeTrend 추가하고 spendByCategory 테스트(9210행대)를 그대로 미러링한 테스트 작성(잔액조정 제외/포함, 수입이 아닌 거래 제외 등). 순수 로직 추가라 APP_VERSION/sw.js CACHE는 UI 변경이 있으니 통상적으로 bump(App 기존 관례상 매 advance마다 올림)."
+  },
   "history": [
-    {
-      "cycle": 240,
-      "phase": "critique",
-      "timestamp": "2026-10-23T19:30:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-240 전체 다룬 영역 전부 제외 지시)한 결과, 가격조회 3개 함수(stock.js/rates.js/crypto.js) 중 crypto.js만 업스트림 소스가 업비트 ticker API 단 하나(crypto.js:35)뿐임을 발견 — stock.js는 네이버→Finnhub 2단계 가격체인(64-90행)+네이버→fxapi.app→open.er-api.com 3단계 fx체인(156-190행), rates.js도 cycle240에서 needUsdForGold까지 포함한 다중 fx/gold 폴백 체인을 갖췄는데, crypto.js는 work() 안에서 업비트 호출 한 번만 하고 실패하면 debug.errors[c]만 채운 채(37,39행) 두 번째 소스가 없다. 실패 시나리오: 업비트 장애/레이트리밋/응답형식변경(stock.js/rates.js 주석이 실제 전례가 있어 폴백을 둔 이유라고 밝힘) 시 out={}로 전부 비어 코인 자산 보유 사용자의 순자산/자산배분/투자손익 카드에서 코인 구간만 조용히 '일부 미확인'/누락되는데, 같은 포트폴리오의 fx/주식/금은 각자 폴백 체인으로 멀쩡히 동작 — cycle240 develop/review에서 fx/gold에 이미 두 번 고친 것과 같은 클래스의 결함을 crypto만 확장하지 않은 공백. 러너업 기각: OS 알림이 앱이 열려있을 때만 동작(setInterval 기반, Push API/VAPID 백엔드가 필요해 한 사이클 범위를 넘는 재작성급이라 제외), 한국어 NFC/NFD 검색 정규화 및 자산/그룹 재정렬 키보드 접근성(각각 cycle224/cycle139에 이미 구현 확인 — picked clean). advance 계획(crypto.js에 업비트로 못 채운 missing 코드만 모아 CryptoCompare pricemulti 배치 폴백 1회 호출 추가, pricesFromCryptoCompare(json,codes) 순수헬퍼 신설, work() 내부에서 기존 raceDeadline 8초 예산 안에 포함, debug.tried[c]='cryptocompare' 태깅; test/run.js에 단위+handler 통합테스트 추가; netlify/functions+test만 변경이라 버전 범프 불필요)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
-      "commit": null
-    },
     {
       "cycle": 240,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-24T15:05:00.000Z",
       "summary": "cycle245 develop 커밋(de57733, DB.inquiries 저장 메모에 editInquiry/saveInquiryEdit 수정 기능 추가)을 검토. diff를 직접 읽어 renameOwnerSheet/renameCatSheet가 쓰는 '수정 act-btn + 입력 시트' 패턴(markup/aria-label/.two-btn/svg('edit') 재사용)과 글자 그대로 일치함을 grep으로 대조 확인. esc(q.text)가 textarea에 기존 내용을 채울 때 <,>,&,\",' 전부 이스케이프하므로(logic.js:431) </textarea> 조기 종료나 속성 주입 둘 다 불가능함을 확인. saveInquiryEdit이 touchSave(q)로 updatedAt만 새로 찍고 date는 그대로 둬 mergeCollection()이 다른 기기 병합 시 이 수정을 최신으로 인식하도록 한 설계가 DB.inquiries의 기존 병합 배선(1661행, cycle133)과 정합함을 확인. 빈/공백뿐 입력은 trim 후 거부하고 기존 text를 그대로 둠, 존재하지 않는 id는 두 함수 모두 조용히 no-op — 호출부(onclick 인라인)가 항상 실제 q.id를 넘기므로 실사용 경로에서 도달 불가능한 방어적 분기이되 부작용은 없음. 신규 테스트 6건이 diff의 각 분기(미리채움/빈내용거부/trim+date보존/없는id no-op/버튼 노출)에 1:1 대응함을 확인. node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행 결과 1938/1938 통과. APP_VERSION 1.47.234/sw.js CACHE v501 범프가 index.html 변경과 일치. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 245,
+      "phase": "critique",
+      "timestamp": "2026-10-24T15:40:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-245 전체 다룬 영역 전부 제외 지시)한 결과, 지출 분석(openSpendAnalysis, index.html:5896-5939)은 spendByCategory/spendTrend(index.html:5802-5828)로 카테고리별 금액·3개월 평균 추세·예산 이월까지 꽉 갖춰져 있는데, 수입(income) 카테고리는 거래 입력만 가능하고 대응하는 분석 화면이 전혀 없는 비대칭을 발견 — 월급 외 부수입/투자수익 등 여러 수입원을 쓰는 사용자가 '이번 달 수입이 왜 늘었는지'를 지출처럼 확인할 방법이 없다. buildExpenseBarHtml(index.html:3419-3435)은 이름만 expense지만 실제로는 범용 카테고리 스택바 렌더러라 수입에도 그대로 재사용 가능한데도 현재 expenseBreakdownCard(index.html:2940,3436) 한 곳에서만 쓰이는 점도 재사용 여지를 뒷받침. 탐색 범위: index.html 9703줄 전체를 Home/Assets/Ledger/Recurring/Categories/지출분석/Plan/Menu/Settings/Help/Inquiry 섹션별로 grep+Read, logic.js 순수함수 목록, netlify 3종, sw.js, test/run.js FUNCTIONS 추출 목록까지 확인. TODO/FIXME 및 '아직/나중에/지원 안' 주석 전수 그렙 결과 접근성(aria-label 153곳·role=dialog·rowKeydown 전면 적용)과 에러 상태(syncRates의 fxFail/stockFail/cryptoFail+failStreak, STORAGE_OK 배너)는 이미 꼼꼼히 구현돼 있음을 확인. 러너업 기각: buildExpenseBarHtml의 aria-hidden 스택바에 스크린리더 텍스트 대안 추가(index.html:3415-3418 주석이 이미 책임을 호출부로 넘기는 알려진 설계이고 호출부가 이미 텍스트 목록 병행 제공 중 — 중복), CSV 가져오기 분할거래(splits) 지원(index.html:6552-6554, cycle198에서 이미 '알려진 제한'으로 확정), CDN SRI 해시 추가(index.html:1378 TODO, CDN 버전이 수시로 바뀌어 유지보수 부담 대비 가치가 낮고 오프라인 우선 PWA라 공급망 노출면도 제한적), 부채/연금 자산 전용 분석(assetBalChart가 이미 자산 타입 공통으로 잔액추이를 제공해 '카테고리 분해'가 구조적으로 불필요). advance 계획(logic.js에 spendByCategory/spendTrend와 대칭되는 incomeByCategory(y,m,owner)·incomeTrend(c,y,m,n,owner) 추가, index.html에 openIncomeAnalysis() 시트를 openSpendAnalysis()와 유사하되 예산 카드 없이 구성하고 buildExpenseBarHtml 재사용, '이번 달 수지' 카드의 수입 항목에 '수입 분석' 링크 추가, test/run.js FUNCTIONS 목록 및 spendByCategory 테스트를 미러링한 신규 테스트 작성, UI 변경이 있으니 APP_VERSION/sw.js CACHE 범프)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
       "commit": null
     }
   ]
