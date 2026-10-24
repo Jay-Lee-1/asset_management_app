@@ -208,7 +208,7 @@ const FUNCTIONS = [
   'sanitizeAmount', 'sanitizeBackup',
   'saveRec', 'recHistFieldsChanged', 'recScheduleShapeChanged', 'pruneOrphanRecOverrides', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
   'expandRec', 'allTxns', 'txnsByDateInRange', 'spendByCategory', 'spendTrend', 'spendTrendBadge', 'histSumTotals',
-  'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'expenseBreakdownCard',
+  'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'buildExpenseBarHtml', 'expenseBreakdownCard',
   'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asOpenCur', 'asCur', 'asToggleNeg', 'openAssetSheet', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'mergeRemoteDataIntoLocal', 'snapshotLocalDeviceFields', 'restoreLocalDeviceFields', 'fmtAmt', 'fmtQty',
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges', 'shouldRetryCloudSync',
   'pullCloud', 'afterCloudAuth', 'resolveCloudPullRemote', 'pushCloud', 'measureCloudClockSkew',
@@ -5789,6 +5789,44 @@ test('expenseBreakdownCard: 카테고리명에 HTML 특수문자가 있어도 �
 test('expenseBreakdownCard: 평범한 카테고리명은 그대로 표시된다', () => {
   const html = sandbox.expenseBreakdownCard([{ cat: '식비', v: 5000 }], 5000);
   assert.ok(html.includes('식비'));
+});
+/* ---------- buildExpenseBarHtml: 홈 브리핑 카드와 지출 분석 상세 시트가 공유하는 스택바+범례 ---------- */
+test('buildExpenseBarHtml: 카테고리가 없거나 합계가 0이면 빈 문자열을 돌려준다(빈 카드 박스가 그려지면 안 됨)', () => {
+  assert.strictEqual(sandbox.buildExpenseBarHtml([]), '');
+  assert.strictEqual(sandbox.buildExpenseBarHtml([{ cat: '식비', v: 0 }]), '');
+});
+test('buildExpenseBarHtml: 퍼센트 합이 정확히 100이 되도록 최대 잔여법으로 보정한다', () => {
+  const html = sandbox.buildExpenseBarHtml([{ cat: 'A', v: 1 }, { cat: 'B', v: 1 }, { cat: 'C', v: 1 }]);
+  const pcs = [...html.matchAll(/class="eb-pc num">(\d+)%/g)].map((m) => Number(m[1]));
+  assert.strictEqual(pcs.reduce((s, v) => s + v, 0), 100, `퍼센트 합이 100이어야 함 (실제: ${pcs.join('+')})`);
+});
+test('openSpendAnalysis: 총 지출 카드 바로 아래 buildExpenseBarHtml 비중 스택바가 장식용(aria-hidden)으로 삽입된다', () => {
+  const ctx = spendAnalysisCtx();
+  ctx.DB = { owners: [], assets: [], recurrences: [], budgetHistory: {}, catBudgetRollover: {}, txns: [
+    { id: '1', type: 'expense', category: '식비', amount: 30000, date: '2026-06-10', confirmed: true },
+    { id: '2', type: 'expense', category: '교통', amount: 10000, date: '2026-06-11', confirmed: true },
+  ] };
+  ctx.ST = { ledger: { y: 2026, m: 6 }, spendOwner: '전체' };
+  ctx.lastSheetHtml = null;
+  ctx.openSpendAnalysis();
+  const html = ctx.lastSheetHtml;
+  assert.ok(html.includes('aria-hidden="true"'), '장식용 비중 바를 감싼 카드에 aria-hidden이 없음(바로 아래 spend-row 목록이 접근 가능한 형태로 같은 데이터를 이미 제공)');
+  assert.ok(html.includes('class="eb-bar"') && html.includes('class="eb-list"'), 'Home 브리핑 카드와 같은 eb-bar/eb-list 마크업이 재사용되지 않음');
+  // spendByCategory는 {c,v}를 돌려주는데 buildExpenseBarHtml은 {cat,v}를 기대한다 — 매핑이 틀리면
+  // esc(c.cat)가 undefined를 이스케이프해 카테고리명이 통째로 빠진다.
+  assert.ok(html.includes('class="eb-cat">식비') && html.includes('class="eb-cat">교통'), 'spendByCategory의 c를 cat으로 매핑하지 않아 카테고리명이 비어 있음');
+  const totalIdx = html.indexOf('총 지출');
+  const barIdx = html.indexOf('class="eb-bar"');
+  const listIdx = html.indexOf('class="spend-row"');
+  assert.ok(totalIdx !== -1 && barIdx !== -1 && listIdx !== -1 && totalIdx < barIdx && barIdx < listIdx, '비중 바는 총 지출 카드 바로 아래·spend-row 목록 바로 위에 있어야 함');
+});
+test('openSpendAnalysis: 이번 달 지출이 전부 0원(예산만 있고 미사용)이면 빈 비중 바 카드가 그려지지 않는다', () => {
+  const ctx = spendAnalysisCtx();
+  ctx.DB = { owners: [], assets: [], recurrences: [], budgetHistory: { 식비: [{ from: '2026-01', amount: 40000 }] }, catBudgetRollover: {}, txns: [] };
+  ctx.ST = { ledger: { y: 2026, m: 6 }, spendOwner: '전체' };
+  ctx.lastSheetHtml = null;
+  ctx.openSpendAnalysis();
+  assert.ok(!ctx.lastSheetHtml.includes('class="eb-bar"'), '지출이 0원이면 빈 eb-card가 그려지면 안 됨');
 });
 
 /* ---------- deleteTxnsUndo: 단일/대량 삭제 공용 되돌리기 인프라 (delAdjust도 여기 합류) ---------- */

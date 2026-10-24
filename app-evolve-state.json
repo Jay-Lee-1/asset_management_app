@@ -1,19 +1,8 @@
 {
-  "cycle": 242,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "지출 분석 상세 시트(openSpendAnalysis)에 Home 요약카드의 지출 비중 스택바 시각화(expenseBreakdownCard)를 재사용",
-    "why": "Home 브리핑 카드는 renderHome()이 expenseByCat(y,m)(index.html:2903) 결과를 expenseBreakdownCard(cats,...)(index.html:2936, 함수 본문 3411-3429, CSS .eb-bar/.eb-row 249-250)로 넘겨 비중 스택바+색상 범례를 보여주는데, 같은 제목('…지출 분석')을 쓰는 '더 상세한' 화면인 openSpendAnalysis()(index.html:5869-5905, ledger의 sumTap()과 Home 자체 링크로 진입)는 spendByCategory(y,m,ST.spendOwner)(5776, {c,v} 형태) 결과를 flat한 spend-row 목록(예산 진행바만 있고 전체 대비 비중 시각화 없음)으로만 보여줘, 앱에서 가장 많이 보는 분석 화면이 teaser보다 시각적으로 덜 informative한 역전이 있다. 사용자가 카테고리별 지출 비중을 한눈에 비교하려면 각 행의 숫자/퍼센트를 직접 암산해야 한다.",
-    "approach": "1) index.html의 expenseBreakdownCard(cats,...) 중 스택바+범례 HTML/퍼센트 계산(largest-remainder 라운딩, PAL 색상 배열) 부분만 작은 공유 순수함수로 분리(예: buildExpenseBarHtml(cats) — cats는 {cat,v}[] 형태, section-title/총액 블록은 호출부에 맡기고 bar+legend만 HTML 문자열 반환). expenseBreakdownCard는 이 헬퍼를 호출해 기존 동작 그대로 유지. 2) openSpendAnalysis()에서 rows=spendByCategory(...)({c,v}) 를 cats=rows.map(r=>({cat:r.c,v:r.v}))로 매핑해 buildExpenseBarHtml(cats) 호출, 반환 HTML을 기존 '총 지출' 카드 바로 아래·spend-row 목록 바로 위에 삽입(목록 자체는 budget-vs-spent/추세뱃지/openCatHistory 드릴인을 그대로 유지하므로 교체 대상 아님). 3) 접근성: 이 바는 장식용으로 aria-hidden=\"true\" 처리(바로 아래 spend-row 목록이 동일 데이터를 접근 가능한 형태로 이미 제공하므로 별도 키보드 인터랙션 불필요 — nwChart처럼 유일한 접근 경로가 아님). 4) test/run.js: 기존 expenseBreakdownCard escaping 테스트(소스 추출 목록에 이미 있음, ~5784 부근 참고)가 새 공유 헬퍼를 검증하도록 유지/이동, openSpendAnalysis가 buildExpenseBarHtml을 호출하는지 + 매핑이 올바른지(c->cat) 확인하는 테스트 추가. 5) index.html만 변경이므로 APP_VERSION/sw.js CACHE 동기 범프 필요(전례 규칙). 스키마/동기화/저장공간 변경 없는 순수 프레젠테이션 추가라 리스크 낮음."
-  },
+  "cycle": 243,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 237,
-      "phase": "advance",
-      "timestamp": "2026-10-23T09:17:47.599Z",
-      "summary": "critique(cycle237) 계획대로 isDuePending()의 도래 판정을 기기 로컬 TODAY 대신 logic.js의 새 순수함수 kstTodayStr()(inQuietWindow()와 동일한 d.getTime()+9*60*60000 UTC+9 고정 산술)로 바꿔, 한국 은행업무일 기준 반복이체 확인 대기 판정이 기기 시간대에 따라 최대 하루 어긋나던 버그를 고쳤다. isDuePending()이 pendingTransferCount()/확인버튼(txn row)/openConfirmTransferList()/homeAlerts()의 confirm·confirmMulti 알림·checkNotifyAlerts() OS 푸시까지 전부 경유하므로 그 한 지점만 고치면 전부 동기화됨을 호출부 전체(allTxns 필터/4489행 확인버튼) grep으로 재확인했다. 추가로 toggleConfirmTransfers()의 pendingOneOff가 같은 의미를 t.date<=TODAY로 별도 인라인하고 있던 중복을 찾아 isDuePending(t) 호출로 통일(동작 동치 — DB.txns에는 isRec 항목이 없어 isPending()의 t.confirmed===false 분기와 같음). txScheduled()/checkNotifyAlerts()의 당일 그룹핑은 재검토 결과 별도 t.date<=TODAY 패턴이 없어(isFuture()는 의도적으로 기기-로컬 유지, 예정 배지는 isPending()이 날짜와 무관하게 참이라 영향 없음) 추가 수정 불필요였음. 핵심 위험: pendingTransferCount/toggleConfirmTransfers 테스트 11건이 TODAY만 mock하고 kstTodayStr()의 실제 지금(Date)은 mock하지 않아 비결정적이 될 뻔한 것을 발견 — withFakeNow(기존 inQuietWindow 테스트 패턴)를 재사용한 withFakeToday(dateStr,fn) 헬퍼를 추가해 TODAY와 KST 지금을 같은 날짜로 맞춰 11개 기존 테스트를 전부 감쌌다(실제로 2건은 즉시 FAIL했었고, 나머지는 fixture 날짜가 real-now보다 과거라 우연히 통과하고 있었을 뿐이었음 — 수정 전 되돌려 직접 확인). kstTodayStr 경계 테스트 2건(자정 KST 전후, withTZ(America/New_York)에서도 동일) + isDuePending의 device-local/KST 괴리 회귀 테스트 2건(기기가 KST보다 느려도 KST 기준 도래분은 due, 기기가 빨라도 KST 기준 미도래면 due 아님) 총 4건 신규 추가. logic.js도 바뀌므로 APP_VERSION 1.47.222->1.47.223, sw.js CACHE v489->v490 동기 범프. node --check(logic.js/sw.js/test/run.js) 통과. 수정 전 코드로 되돌려 신규 회귀 테스트 2건이 FAIL함을 직접 확인한 뒤 복원. node our-assets-v1.14.1/our-assets/test/run.js 1848/1848 -> 1852/1852 통과.",
-      "commit": null
-    },
     {
       "cycle": 238,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-24T04:14:24.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(최근 cycle237-242가 다룬 가격조회 폴백/raceDeadline/계정탈퇴/planNegatives 영역 전부 제외 지시)한 결과, 지출 분석 상세 시트가 Home 요약카드보다 덜 informative한 역전을 발견 — Home의 expenseBreakdownCard(index.html:3411-3429, cats={cat,v}[])는 비중 스택바+색상 범례(.eb-bar/.eb-row, CSS 249-250)를 보여주는데, 같은 제목('…지출 분석')의 더 상세한 화면인 openSpendAnalysis()(5869-5905, spendByCategory() rows={c,v}[] 사용)는 flat한 spend-row 목록(예산진행바만 있음)만 보여줘 전체 대비 비중을 한눈에 볼 수 없다. 러너업 기각: OS 알림 완전-닫힘 시 미동작(서버 푸시/VAPID 백엔드 신설이 필요해 한 사이클 범위를 넘는 신규 의존성/백엔드 서피스라 제외), 영수증/사진 첨부(이미 플래그된 localStorage 용량 한도(STORAGE_SIZE_WARN_LEN/CRIT_LEN, 1914)와 직접 충돌 + 신규 클라우드 스토리지 배선이 필요한 큰 설계 서피스라 제외), 장기 복리/목표 투사 고도화(Plan 탭이 현재 단일자산 근시일 현금흐름 뷰라 요구사항이 불분명한 투기성 과제라 제외). 탐색 중 검색/예산/목표/부채추적/원가-손익/CSV import-export/저장공간 아카이빙/접근 가능한 휠피커/멀티탭 저장 락/에러 바운더리/PWA 설치배너/OS 알림(포그라운드) 등은 이미 높은 수준으로 구현돼 있음을 확인(241사이클 누적 성숙도). advance 계획을 pending_advance_plan에 저장: expenseBreakdownCard의 스택바+범례 HTML 생성부를 공유 순수함수로 분리해 openSpendAnalysis()에서도 같은 비중 시각화를 재사용(장식용 aria-hidden, 기존 spend-row 목록은 그대로 유지), 신규 의존성/스키마/동기화 변경 없는 순수 프레젠테이션 추가. 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "commit": null
+    },
+    {
+      "cycle": 242,
+      "phase": "advance",
+      "timestamp": "2026-10-24T05:00:00.000Z",
+      "summary": "critique(cycle242) 계획대로 expenseBreakdownCard(index.html, Home 브리핑)의 스택바+범례 HTML 생성부(퍼센트 largest-remainder 보정, PAL 색상, eb-bar/eb-row 마크업)를 새 공유 순수함수 buildExpenseBarHtml(cats) (cats={cat,v}[])로 분리했다. expenseBreakdownCard는 total/섹션타이틀 래핑만 맡고 이 헬퍼를 호출하도록 바꿔 기존 동작은 그대로 유지. openSpendAnalysis()에 total(전체 지출)이 0이 아닐 때만 buildExpenseBarHtml(rows.map(r=>({cat:r.c,v:r.v}))) 결과를 \"총 지출\" 카드 바로 아래·예산요약/spend-row 목록 바로 위에 삽입했다(spendByCategory가 돌려주는 {c,v}를 buildExpenseBarHtml이 기대하는 {cat,v}로 매핑 — 안 하면 esc(c.cat)이 undefined를 찍어 카테고리명이 통째로 비어 보이는 버그가 났을 지점). 이 바는 장식용이라 감싸는 카드에 aria-hidden=\"true\"를 줬다(바로 아래 spend-row 목록이 같은 데이터를 접근 가능한 형태로 이미 제공 — Home 화면과 달리 유일한 접근 경로가 아님). 예산만 있고 이번 달 지출이 전부 0원인 케이스는 total===0 가드로 빈 eb-card가 그려지지 않게 처리. test/run.js: FUNCTIONS 목록에 buildExpenseBarHtml 추가, 기존 expenseBreakdownCard 이스케이핑 테스트는 그대로 유지(공유 헬퍼를 통해 간접 검증됨), buildExpenseBarHtml 단독 테스트 2건(빈/0원 입력 시 빈 문자열, 퍼센트 합 100% 보정) + spendAnalysisCtx()(격리된 vm 컨텍스트, openSpendAnalysis를 실제로 실행)로 openSpendAnalysis가 이 바를 총지출 카드 아래·spend-row 목록 위에 aria-hidden으로 삽입하고 c→cat 매핑이 올바른지(카테고리명이 비지 않는지) 확인하는 테스트, 지출 0원이면 빈 바가 안 뜨는 테스트까지 총 4건 신규 추가. index.html/sw.js만 변경되므로 APP_VERSION 1.47.228->1.47.229, sw.js CACHE v495->v496 동기 범프. node our-assets-v1.14.1/our-assets/test/run.js 1902/1902 -> 1906/1906 통과. pending_advance_plan은 null로 비움.",
       "commit": null
     }
   ]

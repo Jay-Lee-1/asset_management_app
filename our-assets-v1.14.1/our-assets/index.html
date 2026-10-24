@@ -1406,7 +1406,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.228';
+const APP_VERSION='1.47.229';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3408,9 +3408,12 @@ function delGoal(id){
 }
 
 /* ② 오늘 브리핑 카드 */
-function expenseBreakdownCard(cats,_ignore){
- if(!cats.length)return '';
- const spent=cats.reduce((s,c)=>s+c.v,0); /* 분모=카테고리 합계 (예정 포함 전체와 일치) */
+/* 카테고리별 지출 비중 스택바+범례(색상 점·퍼센트·금액) — expenseBreakdownCard(홈 브리핑)와
+ * openSpendAnalysis(지출 분석 상세 시트)가 공유하는 순수 렌더 함수. cats는 {cat,v}[] (정렬은
+ * 호출부 책임). 반환 HTML은 스스로 접근성 트리에 참여하지 않으므로(장식), 같은 데이터를
+ * 접근 가능한 형태(목록 등)로 따로 보여주지 않는 화면에서 쓸 때는 호출부가 책임지고 노출해야 한다. */
+function buildExpenseBarHtml(cats){
+ const spent=cats.reduce((s,c)=>s+c.v,0);
  if(!spent)return '';
  const PAL=['var(--brand)','var(--gold)','var(--stock)','var(--income)','var(--expense)','#7CC7B8','#C9A227','var(--save)'];
  const col=i=>PAL[i%PAL.length];
@@ -3424,9 +3427,15 @@ function expenseBreakdownCard(cats,_ignore){
    `<div class="eb-row"><span class="eb-dot" style="background:${col(i)}"></span>
      <span class="eb-cat">${esc(c.cat)}</span><span class="eb-pc num">${floor[i]}%</span><span class="eb-v num">${comma(c.v)}원</span></div>`).join('');
  const seg=cats.map((c,i)=>`<i style="width:${c.v/spent*100}%;background:${col(i)}"></i>`).join('');
+ return `<div class="eb-bar">${seg}</div><div class="eb-list">${rows}</div>`;
+}
+function expenseBreakdownCard(cats,_ignore){
+ if(!cats.length)return '';
+ const spent=cats.reduce((s,c)=>s+c.v,0); /* 분모=카테고리 합계 (예정 포함 전체와 일치) */
+ if(!spent)return '';
  return `<div class="section-title">이번 달 지출 분석</div>
    <div class="card eb-card"><div class="eb-total"><span>총 지출</span><b class="num">${comma(spent)}원</b></div>
-     <div class="eb-bar">${seg}</div><div class="eb-list">${rows}</div></div>`;
+     ${buildExpenseBarHtml(cats)}</div>`;
 }
 function fitText(el){if(!el)return;const max=parseFloat(el.dataset.max||18);el.style.fontSize=max+'px';let s=max,g=0;
  while(el.scrollWidth>el.clientWidth+0.5&&s>9&&g<70){s-=0.5;el.style.fontSize=s+'px';g++}}
@@ -5899,6 +5908,7 @@ function openSpendAnalysis(){
  openSheet(`<h3>${m}월 지출 분석</h3><div class="desc">카테고리를 눌러 예산을 정해보세요 · 예정 포함</div>
   <div class="seg" role="group" aria-label="귀속 선택"><div class="seg-blob"></div>${['전체',...DB.owners].map((o,oi)=>`<button class="${ST.spendOwner===o?'on':''}" aria-pressed="${ST.spendOwner===o}" onclick="spendOwnerSel(${oi})">${esc(o)}</button>`).join('')}</div>
   <div class="card" style="text-align:center;padding:16px;margin-bottom:12px"><div style="font-size:12.5px;color:var(--text-3);font-weight:700">총 지출</div><div class="num" style="font-size:26px;font-weight:700;color:var(--expense);margin-top:2px">${comma(total)}원</div>${totalDeltaPct!==null?`<div style="margin-top:4px">${spendTrendBadge(totalDeltaPct,'최근 3개월 평균 대비 ')}</div>`:''}</div>
+  ${total?`<div class="card eb-card" style="margin-bottom:12px" aria-hidden="true">${buildExpenseBarHtml(rows.map(r=>({cat:r.c,v:r.v})))}</div>`:''}
   ${tb.budgetedTotal?`<div class="card" style="text-align:center;padding:16px;margin-bottom:12px">
    <div style="font-size:12.5px;color:var(--text-3);font-weight:700">이번 달 예산</div>
    <div class="num" style="font-size:16px;font-weight:700;margin-top:4px;color:${tbp.over?'var(--expense)':'var(--text)'}">${comma(tb.budgetedTotal)}원 중 ${comma(tb.spentOnBudgeted)}원 사용 · ${tbp.pct}%</div>
