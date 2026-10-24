@@ -249,7 +249,7 @@ const FUNCTIONS = [
   'selectNwOwner', 'refreshAssetBody', 'refreshNwHistoryCard', 'refreshGoalsSummary', 'refreshAllocationCard', 'refreshInvestGainLossCard',
   'goalOwnerEff', 'goalHasUnknown', 'goalLinkedAssetGone', 'goalLinkedAssetBroken', 'goalHistoryFor', 'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'syncGoalInputs', 'goalClearDate', 'goalOwnerSel', 'goalTypeSel', 'goalOpenAsset', 'renderGoalForm', 'openGoalForm', 'saveGoal', 'delGoal',
   'openInquiry', 'sendInquiry', 'openInquiryList', 'delInquiry',
-  'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetToggleSel', 'visibleAssetsForSel', 'assetSelAll', 'activeSel',
+  'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetQInput', 'assetToggleSel', 'visibleAssetsForSel', 'assetSelAll', 'activeSel',
   'modeSeg', 'monthNav', 'abbr', 'calCellsFor', 'ledSumInner', 'ledSumBox', 'ledSumTap', 'calPane', 'txRowCore', 'txRow', 'dayTxns',
   'ledgerRowsHtml', 'ledgerDayHeadHtml', 'renderLedger', 'selDayPartial',
   'ledgerSelPartial', 'ledgerToggleSel', 'ledgerSelAll', 'visibleTx',
@@ -333,7 +333,10 @@ const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'AS
 // _histTimer는 histQInput()이 참조하는 #histQ 검색 디바운스 타이머 _histQT를 함께 끌어오기
 // 위한 것 — 소스에서 `let _histTimer=null,_histPeeking=false,_histQT=null;` 한 줄로 선언돼
 // 있어 "_histTimer"만 추출해도 셋 다 딸려온다(_sujiTimer와 같은 패턴, app-evolve cycle217 advance).
-const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer', '_histTimer'];
+// _assetQT는 assetQInput()이 참조하는 #assetQ 검색 디바운스 타이머(histQInput과 동일한 패턴을
+// assetQ에도 적용 — app-evolve cycle243 develop)라 같은 이유(let 선언, realm에 안 붙음)로
+// LETS를 통해 가져온다.
+const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer', '_histTimer', '_assetQT'];
 
 const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(extractConst).join('\n') + '\n' + LETS.map(extractLet).join('\n');
 
@@ -20199,6 +20202,78 @@ if (stockFns && ratesFns && cryptoFns) {
       assert.strictEqual(invalidateCalls, 1);
       assert.strictEqual(updateCalls, 1);
       assert.strictEqual(sandbox.ST.hist.q, '   ', 'trim은 즉시실행 판단에만 쓰고, 실제 ST.hist.q에는 원본 입력을 그대로 저장해야 함');
+    } finally { restore(); }
+  });
+})();
+
+/* ---------- assetQInput (app-evolve cycle243 develop) ----------
+ * #assetQ(자산 검색) oninput이 바로 위 histQInput과 똑같은 공백을 갖고 있었다 — 매 키 입력마다
+ * 동기로 assetSelPartial()을 불러 assetBodyHTML() 전체(자산 그룹별 합계·시세평가 포함)를 다시
+ * 그렸다. cycle212~216 critique가 "검색엔 디바운스가 빠졌다"고 지목했을 때 histQ(cycle217 advance)만
+ * 고쳐졌고 assetQ는 그대로 남아있던 비일관성을 histQInput과 동일한 패턴으로 맞춘다. */
+(() => {
+  const origSetTimeout = sandbox.setTimeout, origClearTimeout = sandbox.clearTimeout,
+    origAssetSelPartial = sandbox.assetSelPartial;
+  function restore() {
+    sandbox.setTimeout = origSetTimeout; sandbox.clearTimeout = origClearTimeout;
+    sandbox.assetSelPartial = origAssetSelPartial;
+  }
+
+  test('assetQInput: 입력값은 ST.assetQ에 즉시 반영되지만, assetSelPartial은 220ms 디바운스 후에야 불린다', () => {
+    sandbox.ST = { assetQ: '' };
+    let partialCalls = 0, capturedMs = null;
+    sandbox.setTimeout = (fn, ms) => { capturedMs = ms; return 'timer'; };
+    sandbox.clearTimeout = () => {};
+    sandbox.assetSelPartial = () => { partialCalls++; };
+    try {
+      sandbox.assetQInput('삼성');
+      assert.strictEqual(sandbox.ST.assetQ, '삼성', '입력값은 디바운스와 무관하게 즉시 반영돼야 함');
+      assert.strictEqual(partialCalls, 0, '타이머가 실제로 실행되기 전에는 assetSelPartial이 불리면 안 됨');
+      assert.strictEqual(capturedMs, 220, '디바운스 지연은 220ms여야 함');
+    } finally { restore(); }
+  });
+
+  test('assetQInput: 연속 입력마다 이전 디바운스 타이머를 지우고 새로 하나만 건다(마지막 키 입력 220ms 후 한 번만 재계산)', () => {
+    sandbox.ST = { assetQ: '' };
+    let setCalls = 0, clearCalls = 0;
+    sandbox.setTimeout = () => { setCalls++; return 'timer' + setCalls; };
+    sandbox.clearTimeout = () => { clearCalls++; };
+    sandbox.assetSelPartial = () => {};
+    try {
+      sandbox.assetQInput('삼');
+      sandbox.assetQInput('삼성');
+      sandbox.assetQInput('삼성전자');
+      assert.strictEqual(setCalls, 3, '매 입력마다 새 타이머를 예약해야 함');
+      assert.strictEqual(clearCalls, 3, '매 입력이 이전 타이머를 지워야 함(쌓여서 여러 번 재계산되는 걸 방지)');
+    } finally { restore(); }
+  });
+
+  test('assetQInput: 검색어를 지우면(clrInput → 빈 문자열) 디바운스 없이 즉시 assetSelPartial을 부른다', () => {
+    sandbox.ST = { assetQ: '아무거나' };
+    let partialCalls = 0, setCalls = 0, clearCalls = 0;
+    sandbox.setTimeout = () => { setCalls++; return 'timer'; };
+    sandbox.clearTimeout = () => { clearCalls++; };
+    sandbox.assetSelPartial = () => { partialCalls++; };
+    try {
+      sandbox.assetQInput('');
+      assert.strictEqual(setCalls, 0, '빈 문자열이면 디바운스 타이머를 걸지 않고 즉시 실행해야 함(지우기 버튼 지연 체감 방지)');
+      assert.strictEqual(clearCalls, 1, '혹시 남아있던 이전 타이머는 지워야 함');
+      assert.strictEqual(partialCalls, 1);
+      assert.strictEqual(sandbox.ST.assetQ, '');
+    } finally { restore(); }
+  });
+
+  test('assetQInput: 공백만 입력해도(trim 결과 빈 문자열) 지우기와 동일하게 즉시 실행된다', () => {
+    sandbox.ST = { assetQ: '' };
+    let partialCalls = 0, setCalls = 0;
+    sandbox.setTimeout = () => { setCalls++; return 'timer'; };
+    sandbox.clearTimeout = () => {};
+    sandbox.assetSelPartial = () => { partialCalls++; };
+    try {
+      sandbox.assetQInput('   ');
+      assert.strictEqual(setCalls, 0, '공백뿐인 입력도 디바운스 없이 즉시 실행해야 함');
+      assert.strictEqual(partialCalls, 1);
+      assert.strictEqual(sandbox.ST.assetQ, '   ', 'trim은 즉시실행 판단에만 쓰고, 실제 ST.assetQ에는 원본 입력을 그대로 저장해야 함');
     } finally { restore(); }
   });
 })();

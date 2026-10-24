@@ -1406,7 +1406,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.229';
+const APP_VERSION='1.47.230';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3865,7 +3865,7 @@ function renderAssets(){
  <div id="allocBody">${allocationCard(ST.assetOwner)}</div>
  <div id="investGlBody">${investGainLossCard(ST.assetOwner)}</div>
  <div id="goalsSummaryBody">${goalsSummaryCard(ST.assetOwner)}</div>
- ${(!ST.editAssets&&!ST.aSel.mode)?`<div class="searchbar" style="margin-bottom:14px">${svg('search')}<div class="field-clear"><input id="assetQ" aria-label="자산 검색" placeholder="자산 이름 검색" value="${esc(ST.assetQ)}" oninput="ST.assetQ=this.value;assetSelPartial()"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('assetQ')">✕</button></div></div>`:''}
+ ${(!ST.editAssets&&!ST.aSel.mode)?`<div class="searchbar" style="margin-bottom:14px">${svg('search')}<div class="field-clear"><input id="assetQ" aria-label="자산 검색" placeholder="자산 이름 검색" value="${esc(ST.assetQ)}" oninput="assetQInput(this.value)"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('assetQ')">✕</button></div></div>`:''}
  <div class="as-tools${ST.aSel.mode?' hidden':''}">
    <div class="as-actions">${ST.editAssets?`<button class="as-tbtn primary" onclick="ST.editAssets=false;save();renderAssets()">${svg('check')} 완료</button>`:
     `<button class="as-tbtn" onclick="openSortSheet()">${svg('sort')} 정렬</button>
@@ -4015,6 +4015,19 @@ function assetSelPartial(){
  updateSelBottom();
  requestAnimationFrame(fitAll);
  return true;
+}
+let _assetQT=null;
+/* #assetQ(자산 검색) 입력 디바운스 — histQInput(아래, #histQ 전체내역 검색)과 같은 이유다:
+ * assetSelPartial()이 글자 하나 칠 때마다 동기로 assetBodyHTML() 전체(자산 그룹별 합계·시세평가 포함)를
+ * 다시 그렸다 — wireNwCarousel의 디바운스 관례가 검색엔 빠진 비일관성을 cycle212~216 critique가
+ * 지목했을 때 histQ만 고치고(cycle216 advance) 자산 검색(assetQ)엔 같은 패턴을 놓쳤던 공백
+ * (app-evolve cycle243 develop). 지우기(×) 버튼(clrInput)이 만드는 빈 문자열 입력은 histQInput과
+ * 동일하게 디바운스 없이 즉시 반영한다. */
+function assetQInput(v){
+ ST.assetQ=v;
+ clearTimeout(_assetQT);
+ if(v.trim()===''){assetSelPartial();return}
+ _assetQT=setTimeout(assetSelPartial,220);
 }
 function assetToggleSel(id){if(window._lpJustFired){window._lpJustFired=false;return}ST.aSel.ids.has(id)?ST.aSel.ids.delete(id):ST.aSel.ids.add(id);if(!assetSelPartial())renderAssets()}
 function visibleAssetsForSel(){return ST.assetOwner==='all'?DB.assets:DB.assets.filter(a=>a.owner===ST.assetOwner)} /* 귀속 필터가 켜져 있으면 화면에 보이는 자산만 전체선택/삭제 대상으로 삼는다 */

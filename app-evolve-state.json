@@ -1,15 +1,8 @@
 {
   "cycle": 243,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 238,
-      "phase": "develop",
-      "timestamp": "2026-10-23T10:23:35.350Z",
-      "summary": "general-purpose 서브에이전트가 develop 후보를 탐색해 kakaoLogin()/doLogin()/doSignup() 세 곳 모두 게스트 모드 localStorage 데이터를 로그인한 계정 DB로 가져올 때 동일한 인라인 코드(DB=JSON.parse(guestRaw);migrate();save();renderCurrent())를 썼는데, 이것이 백업파일 복원(restoreBackup())이나 클라우드 pull/merge 등 다른 모든 전체-DB 교체 경로가 공통으로 거치는 sanitizeBackup() 검증(잘못된/달력상 무효한 날짜 레코드 제거, id 중복제거, owner/category 참조 보정, 금액 clamp 등)을 유일하게 건너뛰는 공백임을 발견 — 게스트 데이터는 보통 앱 자신의 save()가 쓴 것이라 깨끗하지만, sanitizeBackup의 특정 검증(예: cycle234에서 추가된 txn.date 달력 유효성 체크)이 생기기 전 구버전으로 저장돼 localStorage에 남아있던 데이터는 로그인 시 검증 없이 그대로 계정 DB로 승격될 수 있었다. index.html에 공유 헬퍼 importGuestDataInto(guestRaw)를 신설해(parse+최소 스키마 검증+sanitizeBackup()+restoreBackup() 경로 재사용) 세 호출부가 모두 이 헬퍼를 쓰도록 통일. test/run.js: 기존 kakaoLogin 소스패턴 단언 테스트를 새 헬퍼 호출 검증으로 교체 + doLogin/doSignup도 같은 헬퍼를 쓰는지 확인하는 정적 테스트 1건 + importGuestDataInto 자체의 실행형 테스트 3건(정상 가져오기, 달력상 무효한 날짜('2026-02-30') 거래가 sanitizeBackup에 의해 제거되면서 같은 배치의 유효 거래는 보존, JSON 파싱 실패/배열 아님/null 입력 시 false 반환+DB 불변) 추가. 세 호출부를 구 인라인 코드로 되돌려 신규/수정 테스트 2건이 FAIL함을 직접 확인한 뒤 복원. APP_VERSION 1.47.223->1.47.224, sw.js CACHE v490->v491 동기 반영. node our-assets-v1.14.1/our-assets/test/run.js 1852/1852 -> 1856/1856 통과.",
-      "commit": "c4f8728"
-    },
     {
       "cycle": 238,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-24T05:00:00.000Z",
       "summary": "critique(cycle242) 계획대로 expenseBreakdownCard(index.html, Home 브리핑)의 스택바+범례 HTML 생성부(퍼센트 largest-remainder 보정, PAL 색상, eb-bar/eb-row 마크업)를 새 공유 순수함수 buildExpenseBarHtml(cats) (cats={cat,v}[])로 분리했다. expenseBreakdownCard는 total/섹션타이틀 래핑만 맡고 이 헬퍼를 호출하도록 바꿔 기존 동작은 그대로 유지. openSpendAnalysis()에 total(전체 지출)이 0이 아닐 때만 buildExpenseBarHtml(rows.map(r=>({cat:r.c,v:r.v}))) 결과를 \"총 지출\" 카드 바로 아래·예산요약/spend-row 목록 바로 위에 삽입했다(spendByCategory가 돌려주는 {c,v}를 buildExpenseBarHtml이 기대하는 {cat,v}로 매핑 — 안 하면 esc(c.cat)이 undefined를 찍어 카테고리명이 통째로 비어 보이는 버그가 났을 지점). 이 바는 장식용이라 감싸는 카드에 aria-hidden=\"true\"를 줬다(바로 아래 spend-row 목록이 같은 데이터를 접근 가능한 형태로 이미 제공 — Home 화면과 달리 유일한 접근 경로가 아님). 예산만 있고 이번 달 지출이 전부 0원인 케이스는 total===0 가드로 빈 eb-card가 그려지지 않게 처리. test/run.js: FUNCTIONS 목록에 buildExpenseBarHtml 추가, 기존 expenseBreakdownCard 이스케이핑 테스트는 그대로 유지(공유 헬퍼를 통해 간접 검증됨), buildExpenseBarHtml 단독 테스트 2건(빈/0원 입력 시 빈 문자열, 퍼센트 합 100% 보정) + spendAnalysisCtx()(격리된 vm 컨텍스트, openSpendAnalysis를 실제로 실행)로 openSpendAnalysis가 이 바를 총지출 카드 아래·spend-row 목록 위에 aria-hidden으로 삽입하고 c→cat 매핑이 올바른지(카테고리명이 비지 않는지) 확인하는 테스트, 지출 0원이면 빈 바가 안 뜨는 테스트까지 총 4건 신규 추가. index.html/sw.js만 변경되므로 APP_VERSION 1.47.228->1.47.229, sw.js CACHE v495->v496 동기 범프. node our-assets-v1.14.1/our-assets/test/run.js 1902/1902 -> 1906/1906 통과. pending_advance_plan은 null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 243,
+      "phase": "develop",
+      "timestamp": "2026-10-24T06:15:57.600Z",
+      "summary": "자산 검색(#assetQ, renderAssets의 검색바)이 매 키 입력마다 동기로 assetSelPartial()을 불러 assetBodyHTML() 전체(자산 그룹별 합계·시세평가 포함 재계산)를 다시 그리던 공백을 발견 — index.html 5310행 근처 histQInput() 주석이 명시하듯 cycle212~216 critique는 \"wireNwCarousel의 clearTimeout/setTimeout 디바운스 관례가 검색엔 빠진 비일관성\"을 지목했고 cycle217 advance가 전체내역 검색(#histQ)엔 220ms 디바운스를 적용했지만, 똑같은 패턴(oninput마다 전체 리스트 재렌더)을 쓰는 자산관리 탭의 자산 검색(#assetQ, 3868행)은 그 수정 대상에서 빠진 채 \"ST.assetQ=this.value;assetSelPartial()\" 인라인 호출로 남아있었다. index.html에 histQInput과 동일한 구조의 assetQInput(v)을 신설(let _assetQT=null 타이머, 빈 문자열/공백뿐인 입력은 즉시 assetSelPartial() 실행, 그 외엔 220ms 디바운스 후 실행)하고 #assetQ의 oninput을 assetQInput(this.value)로 교체. clrInput()이 디스패치하는 input 이벤트가 그대로 이 핸들러를 타므로 지우기(×) 버튼도 histQ와 동일하게 즉시 반영된다. test/run.js: FUNCTIONS에 assetQInput 추가, LETS에 _assetQT 추가(extractLet이 단독 let 선언을 그대로 끌어옴), histQInput 4종 테스트(즉시반영+디바운스/연속입력 시 타이머 교체/지우기 즉시실행/공백뿐 입력 즉시실행)를 assetSelPartial 기준으로 그대로 미러링해 4건 추가. APP_VERSION 1.47.229->1.47.230, sw.js CACHE v496->v497 동기 반영. node our-assets-v1.14.1/our-assets/test/run.js 1906/1906 -> 1910/1910 통과.",
       "commit": null
     }
   ]
