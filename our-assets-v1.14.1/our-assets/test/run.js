@@ -248,7 +248,7 @@ const FUNCTIONS = [
   // null을 돌려줌) 기존 공유 스텁만으로 selectNwOwner를 실행형으로 검증할 수 있다.
   'selectNwOwner', 'refreshAssetBody', 'refreshNwHistoryCard', 'refreshGoalsSummary', 'refreshAllocationCard', 'refreshInvestGainLossCard',
   'goalOwnerEff', 'goalHasUnknown', 'goalLinkedAssetGone', 'goalLinkedAssetBroken', 'goalHistoryFor', 'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'syncGoalInputs', 'goalClearDate', 'goalOwnerSel', 'goalTypeSel', 'goalOpenAsset', 'renderGoalForm', 'openGoalForm', 'saveGoal', 'delGoal',
-  'openInquiry', 'sendInquiry', 'openInquiryList', 'delInquiry',
+  'openInquiry', 'sendInquiry', 'openInquiryList', 'delInquiry', 'editInquiry', 'saveInquiryEdit',
   'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetQInput', 'assetToggleSel', 'visibleAssetsForSel', 'assetSelAll', 'activeSel',
   'modeSeg', 'monthNav', 'abbr', 'calCellsFor', 'ledSumInner', 'ledSumBox', 'ledSumTap', 'calPane', 'txRowCore', 'txRow', 'dayTxns',
   'ledgerRowsHtml', 'ledgerDayHeadHtml', 'renderLedger', 'selDayPartial',
@@ -646,7 +646,7 @@ const sandbox = {
   // 있음) 안전하게 넘어가는 분기를 검증한다.
   bootSplashEl: { remove: () => { sandbox.bootSplashRemoveCalls++; } },
   bootSplashRemoveCalls: 0,
-  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'budgetIn' ? { value: sandbox.budgetInValue } : id === 'goalName' ? (sandbox.goalNameValue === undefined ? null : { value: sandbox.goalNameValue }) : id === 'goalAmt' ? (sandbox.goalAmtValue === undefined ? null : { value: sandbox.goalAmtValue }) : id === 'inqText' ? (sandbox.inqTextValue === undefined ? null : { value: sandbox.inqTextValue }) : id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-plan' ? sandbox.pagePlanEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : id === 'ledgerCard' ? (sandbox.ledgerCardMissing ? null : sandbox.ledgerCardEl) : id === 'assetBody' ? (sandbox.assetBodyMissing ? null : sandbox.assetBodyEl) : id === 'newOwner' ? (sandbox.newOwnerValue === undefined ? null : { value: sandbox.newOwnerValue }) : id === 'renameOwner' ? (sandbox.renameOwnerValue === undefined ? null : { value: sandbox.renameOwnerValue }) : id === 'auEmail' ? (sandbox.auEmailValue === undefined ? null : { value: sandbox.auEmailValue }) : id === 'fpinPwIn' ? (sandbox.fpinPwInValue === undefined ? null : { value: sandbox.fpinPwInValue }) : id === 'fpinErr' ? sandbox.fpinErrEl : id === 'fpinBtn' ? sandbox.fpinBtnEl : id === 'fpinWaitMsg' ? sandbox.fpinWaitMsgEl : id === 'importFile' ? sandbox.importFileEl : id === 'bootSplash' ? (sandbox.bootSplashMissing ? null : sandbox.bootSplashEl) : null,
+  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'budgetIn' ? { value: sandbox.budgetInValue } : id === 'goalName' ? (sandbox.goalNameValue === undefined ? null : { value: sandbox.goalNameValue }) : id === 'goalAmt' ? (sandbox.goalAmtValue === undefined ? null : { value: sandbox.goalAmtValue }) : id === 'inqText' ? (sandbox.inqTextValue === undefined ? null : { value: sandbox.inqTextValue }) : id === 'inqEditText' ? (sandbox.inqEditTextValue === undefined ? null : { value: sandbox.inqEditTextValue }) :id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-plan' ? sandbox.pagePlanEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : id === 'ledgerCard' ? (sandbox.ledgerCardMissing ? null : sandbox.ledgerCardEl) : id === 'assetBody' ? (sandbox.assetBodyMissing ? null : sandbox.assetBodyEl) : id === 'newOwner' ? (sandbox.newOwnerValue === undefined ? null : { value: sandbox.newOwnerValue }) : id === 'renameOwner' ? (sandbox.renameOwnerValue === undefined ? null : { value: sandbox.renameOwnerValue }) : id === 'auEmail' ? (sandbox.auEmailValue === undefined ? null : { value: sandbox.auEmailValue }) : id === 'fpinPwIn' ? (sandbox.fpinPwInValue === undefined ? null : { value: sandbox.fpinPwInValue }) : id === 'fpinErr' ? sandbox.fpinErrEl : id === 'fpinBtn' ? sandbox.fpinBtnEl : id === 'fpinWaitMsg' ? sandbox.fpinWaitMsgEl : id === 'importFile' ? sandbox.importFileEl : id === 'bootSplash' ? (sandbox.bootSplashMissing ? null : sandbox.bootSplashEl) : null,
   bkTextEl: { value: 'backup-text', select: () => {}, setSelectionRange: () => {} },
   // copyBackup()의 navigator.clipboard 체크가 ReferenceError 없이 "지원 안 함"으로 지나가게
   // 하는 최소 흉내(document.execCommand는 try/catch로 감싸져 있어 굳이 스텁이 필요 없음).
@@ -4525,6 +4525,57 @@ test('delInquiry: undoToast의 되돌리기를 누르면 메모가 되살아나�
   assert.strictEqual(sandbox.DB.inquiries[0].id, 'q1');
   assert.strictEqual(sandbox.DB.inquiries[0].updatedAt, 'test-updatedAt');
   assert.strictEqual(sandbox.DB.deletedIds.q1, undefined, '되돌리면 톰스톤도 지워져야 함');
+});
+
+/* ---------- editInquiry/saveInquiryEdit: 저장한 메모 수정 (app-evolve cycle245 develop) ----------
+ * 지금까지 저장한 메모는 추가(sendInquiry)·삭제(delInquiry)만 가능했고, 오타를 고치거나 내용을
+ * 보강하려면 지우고 새로 쓰는 수밖에 없었다(그러면 작성일(date)도 오늘로 바뀌어 원래 적어둔
+ * 시점을 잃는다) — renameOwnerSheet/renameCatSheet와 동일한 "수정" 버튼 + 입력 시트 패턴을 메모에도
+ * 적용한다. ---------- */
+test('editInquiry: 존재하지 않는 id면 시트를 띄우지 않는다', () => {
+  sandbox.DB = { inquiries: [{ id: 'q1', text: '메모', updatedAt: 1 }] };
+  sandbox.lastSheetHtml = null;
+  sandbox.editInquiry('없는id');
+  assert.strictEqual(sandbox.lastSheetHtml, null);
+});
+test('editInquiry: 기존 메모 내용을 그대로 채운 수정 시트를 띄운다', () => {
+  sandbox.DB = { inquiries: [{ id: 'q1', text: '다크모드 OLED 옵션', updatedAt: 1 }] };
+  sandbox.editInquiry('q1');
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('메모 수정'));
+  assert.ok(html.includes('다크모드 OLED 옵션'), '기존 내용이 textarea에 채워져 있어야 함');
+  assert.ok(html.includes("saveInquiryEdit('q1')"), '저장 버튼이 saveInquiryEdit을 이 id로 불러야 함');
+});
+test('saveInquiryEdit: 내용을 비우면 저장하지 않고 안내 토스트만 띄운다(기존 내용도 그대로)', () => {
+  sandbox.DB = { inquiries: [{ id: 'q1', text: '원래 내용', updatedAt: 1 }] };
+  sandbox.inqEditTextValue = '   ';
+  sandbox.lastToast = null;
+  sandbox.saveInquiryEdit('q1');
+  assert.strictEqual(sandbox.lastToast, '메모 내용을 입력해 주세요');
+  assert.strictEqual(sandbox.DB.inquiries[0].text, '원래 내용');
+});
+test('saveInquiryEdit: 내용을 바꿔 저장하면 text가 갱신되고 touchSave로 updatedAt이 다시 찍힌다(mergeCollection이 다른 기기와 병합할 때 이 수정을 최신으로 인식하도록)', () => {
+  sandbox.DB = { inquiries: [{ id: 'q1', text: '원래 내용', date: '2026-01-01', updatedAt: 1 }] };
+  sandbox.inqEditTextValue = '  고친 내용  ';
+  sandbox.saveInquiryEdit('q1');
+  assert.strictEqual(sandbox.DB.inquiries[0].text, '고친 내용', '앞뒤 공백은 trim되어야 함');
+  assert.strictEqual(sandbox.DB.inquiries[0].updatedAt, 'test-updatedAt');
+  assert.strictEqual(sandbox.DB.inquiries[0].date, '2026-01-01', '작성일(date)은 수정해도 그대로 유지돼야 함');
+});
+test('saveInquiryEdit: 존재하지 않는 id를 넘기면 아무 일도 하지 않는다', () => {
+  sandbox.DB = { inquiries: [{ id: 'q1', text: '원래 내용', updatedAt: 1 }] };
+  sandbox.inqEditTextValue = '새 내용';
+  sandbox.lastToast = null;
+  sandbox.saveInquiryEdit('없는id');
+  assert.strictEqual(sandbox.DB.inquiries[0].text, '원래 내용');
+  assert.strictEqual(sandbox.lastToast, null);
+});
+test('openInquiryList: 각 메모 행에 수정(editInquiry) 버튼이 삭제 버튼과 함께 있다', () => {
+  sandbox.DB = { inquiries: [{ id: 'q1', text: '메모', updatedAt: 1 }] };
+  sandbox.openInquiryList();
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.includes("editInquiry('q1')"), '수정 버튼이 있어야 함');
+  assert.ok(html.includes("delInquiry('q1')"), '삭제 버튼도 그대로 있어야 함');
 });
 
 /* mergeRemoteDataIntoLocal이 DB.goals처럼 DB.inquiries도 mergeCollection으로 병합하는지 확인

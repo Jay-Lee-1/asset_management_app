@@ -1410,7 +1410,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.233';
+const APP_VERSION='1.47.234';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6243,10 +6243,29 @@ function sendInquiry(){
 function openInquiryList(){
  const items=[...(DB.inquiries||[])].sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
  openSheet(`<h3>저장한 메모</h3><div class="desc">문의하기에서 적어둔 메모예요. 백업에 포함돼요</div>
-  ${items.length?items.map(q=>`<div class="manage-row" style="align-items:flex-start"><div style="flex:1;min-width:0"><div class="mn" style="white-space:pre-wrap;word-break:break-word">${esc(q.text)}</div><div class="msub">${q.date||''}</div></div><div class="row-acts"><button class="act-btn danger" aria-label="메모 삭제" onclick="delInquiry('${q.id}')">${svg('trash')}</button></div></div>`).join('')
+  ${items.length?items.map(q=>`<div class="manage-row" style="align-items:flex-start"><div style="flex:1;min-width:0"><div class="mn" style="white-space:pre-wrap;word-break:break-word">${esc(q.text)}</div><div class="msub">${q.date||''}</div></div><div class="row-acts"><button class="act-btn" aria-label="메모 수정" onclick="editInquiry('${q.id}')">${svg('edit')}</button><button class="act-btn danger" aria-label="메모 삭제" onclick="delInquiry('${q.id}')">${svg('trash')}</button></div></div>`).join('')
    :`<div class="empty"><div class="ei">${svg('chat')}</div><div class="et">저장한 메모가 없어요</div></div>`}
   <div style="height:12px"></div><button class="btn btn-soft" onclick="openInquiry()">+ 새 메모 작성</button>
   <button class="btn btn-primary" style="margin-top:9px" onclick="closeSheet()">닫기</button>`);
+}
+/* 지금까지 저장한 메모는 추가(sendInquiry)·삭제(delInquiry)만 가능하고 고칠 방법이 없었다 —
+ * renameOwnerSheet/renameCatSheet가 이미 쓰는 "수정" act-btn + 입력 시트 패턴을 그대로 따라
+ * 내용만 바꿔 저장할 수 있게 한다(app-evolve cycle245 develop). date(작성일)는 손대지 않고
+ * touchSave()로 updatedAt만 새로 찍어 mergeCollection()이 이 수정을 다른 기기와의 병합에서
+ * 최신으로 인식하게 한다(sendInquiry가 touch() 없이 저장해 write-only였던 것과 같은 이유로,
+ * 수정도 touch 없이 저장하면 다른 기기의 옛 사본이 이 수정을 조용히 덮어쓸 수 있음). */
+function editInquiry(id){
+ const q=(DB.inquiries||[]).find(x=>x.id===id);if(!q)return;
+ openSheet(`<h3>메모 수정</h3><div class="desc">내용을 고쳐서 저장해요.</div>
+  <div class="field"><textarea id="inqEditText" placeholder="내용을 입력해 주세요">${esc(q.text)}</textarea></div>
+  <div class="two-btn"><button class="btn btn-soft cancel" onclick="openInquiryList()">취소</button><button class="btn btn-primary" onclick="saveInquiryEdit('${id}')">저장</button></div>`);
+ setTimeout(()=>{const t=$('inqEditText');t&&t.focus()},300);
+}
+function saveInquiryEdit(id){
+ const q=(DB.inquiries||[]).find(x=>x.id===id);if(!q)return;
+ const t=$('inqEditText');const v=(t&&t.value||'').trim();
+ if(!v){toast('메모 내용을 입력해 주세요');return}
+ q.text=v;touchSave(q);closeSheet();openInquiryList();toast('메모를 수정했어요');
 }
 function delInquiry(id){
  const q=(DB.inquiries||[]).find(x=>x.id===id);if(!q)return;
