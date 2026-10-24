@@ -1,15 +1,8 @@
 {
   "cycle": 243,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 238,
-      "phase": "review",
-      "timestamp": "2026-10-23T11:05:00.000Z",
-      "summary": "cycle238 develop 커밋(c4f8728, kakaoLogin/doLogin/doSignup의 게스트→계정 데이터 가져오기에 sanitizeBackup() 검증을 추가하는 importGuestDataInto() 헬퍼 도입)을 검토. diff를 직접 읽어 importGuestDataInto(guestRaw)가 JSON.parse→최소 스키마(assets/txns 배열) 검증→sanitizeBackup(raw)로 data 추출→restoreBackup(obj)(DB 교체+migrate, migrate 실패 시 자동 롤백)→save()+renderCurrent()→true 반환, 예외 시 false 반환(restoreBackup이 이미 DB를 롤백해두므로 추가 롤백 불필요) 흐름이 기존 importFile 핸들러(백업파일 복원)와 완전히 같은 경로를 재사용함을 확인. sanitizeBackup 내부의 validOwners 계산(index.html:6758, obj.owners 없으면 DB.owners로 대체)이 importGuestDataInto 호출 시점엔 DB가 아직 로그인 후의 새(보통 비어있는) 계정 DB라는 점에서 restoreBackup 경로와 동일한 전제를 공유함도 확인. save()가 내부적으로 _saveCore에서 invalidateBalances(opts&&opts.fromDate,opts)를 opts 없이 호출해(=fromDate undefined) 이미 _balCache를 통째로 비우므로, importFile 핸들러가 save() 이후 별도로 invalidateBalances()를 또 부르는 것과 달리 importGuestDataInto가 그 호출을 생략해도 캐시 누락 문제가 없음을 _saveCore 소스(index.html:2492)로 직접 확인. 세 호출부(kakaoLogin/doLogin/doSignup) 모두 동일한 toast(importGuestDataInto(guestRaw)?...) 패턴으로 통일되어 '한 곳만 고치고 나머지를 깜빡'하는 배선 누락이 없음을 grep으로 재확인. 신규 테스트 3건(정상 가져오기, 달력상 무효 날짜 거래 제거, JSON파싱/스키마 실패 시 DB 불변+false)과 doLogin/doSignup 배선 테스트 1건이 diff의 각 분기와 1:1 대응함을 확인. node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행 결과 1856/1856 통과, node --check(index.html 추출 스크립트 없이 test/run.js만) 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 238,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-24T06:15:57.600Z",
       "summary": "자산 검색(#assetQ, renderAssets의 검색바)이 매 키 입력마다 동기로 assetSelPartial()을 불러 assetBodyHTML() 전체(자산 그룹별 합계·시세평가 포함 재계산)를 다시 그리던 공백을 발견 — index.html 5310행 근처 histQInput() 주석이 명시하듯 cycle212~216 critique는 \"wireNwCarousel의 clearTimeout/setTimeout 디바운스 관례가 검색엔 빠진 비일관성\"을 지목했고 cycle217 advance가 전체내역 검색(#histQ)엔 220ms 디바운스를 적용했지만, 똑같은 패턴(oninput마다 전체 리스트 재렌더)을 쓰는 자산관리 탭의 자산 검색(#assetQ, 3868행)은 그 수정 대상에서 빠진 채 \"ST.assetQ=this.value;assetSelPartial()\" 인라인 호출로 남아있었다. index.html에 histQInput과 동일한 구조의 assetQInput(v)을 신설(let _assetQT=null 타이머, 빈 문자열/공백뿐인 입력은 즉시 assetSelPartial() 실행, 그 외엔 220ms 디바운스 후 실행)하고 #assetQ의 oninput을 assetQInput(this.value)로 교체. clrInput()이 디스패치하는 input 이벤트가 그대로 이 핸들러를 타므로 지우기(×) 버튼도 histQ와 동일하게 즉시 반영된다. test/run.js: FUNCTIONS에 assetQInput 추가, LETS에 _assetQT 추가(extractLet이 단독 let 선언을 그대로 끌어옴), histQInput 4종 테스트(즉시반영+디바운스/연속입력 시 타이머 교체/지우기 즉시실행/공백뿐 입력 즉시실행)를 assetSelPartial 기준으로 그대로 미러링해 4건 추가. APP_VERSION 1.47.229->1.47.230, sw.js CACHE v496->v497 동기 반영. node our-assets-v1.14.1/our-assets/test/run.js 1906/1906 -> 1910/1910 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 243,
+      "phase": "review",
+      "timestamp": "2026-10-24T07:08:33.667Z",
+      "summary": "develop(cycle243, assetQInput 신설: #assetQ 자산검색에 histQInput과 동일한 220ms 디바운스/빈문자열 즉시실행 패턴 적용) 커밋을 검토. diff를 직접 읽어 assetQInput(v)가 histQInput(v)과 1:1 동일 구조(ST.assetQ=v로 즉시 반영 -> clearTimeout(_assetQT) -> v.trim()==='' 이면 즉시 assetSelPartial(), 아니면 220ms setTimeout)임을 확인. assetSelPartial이 ST.assetQ를 live로 읽어 assetBodyHTML을 재계산하므로 debounce 콜백 시점에 값이 바뀌어 있어도 stale 값 사용 문제가 없음을 확인. #assetQ input은 renderAssets()의 searchbar 마크업에 있고 #assetBody와는 분리된 별도 div라서, clrInput(assetQ)가 el.value='' 세팅 후 dispatch하는 input 이벤트가 assetQInput('')을 즉시 경로로 태워도 그 뒤의 el.focus()가 assetSelPartial()의 #assetBody.innerHTML 교체로 무효화되지 않음을 index.html 3876행(#assetBody 위치)과 4296행(clrInput 구현)으로 직접 확인 — histQ와 동일한 전제. 신규 테스트 4건이 즉시반영/디바운스시점/연속입력시 타이머 교체/지우기·공백 즉시실행 네 분기에 1:1 대응함을 확인. node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행 결과 1910/1910 통과(develop 단계가 주장한 수치와 일치). 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
       "commit": null
     }
   ]
