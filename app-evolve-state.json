@@ -1,22 +1,12 @@
 {
   "cycle": 242,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "지출 분석 상세 시트(openSpendAnalysis)에 Home 요약카드의 지출 비중 스택바 시각화(expenseBreakdownCard)를 재사용",
+    "why": "Home 브리핑 카드는 renderHome()이 expenseByCat(y,m)(index.html:2903) 결과를 expenseBreakdownCard(cats,...)(index.html:2936, 함수 본문 3411-3429, CSS .eb-bar/.eb-row 249-250)로 넘겨 비중 스택바+색상 범례를 보여주는데, 같은 제목('…지출 분석')을 쓰는 '더 상세한' 화면인 openSpendAnalysis()(index.html:5869-5905, ledger의 sumTap()과 Home 자체 링크로 진입)는 spendByCategory(y,m,ST.spendOwner)(5776, {c,v} 형태) 결과를 flat한 spend-row 목록(예산 진행바만 있고 전체 대비 비중 시각화 없음)으로만 보여줘, 앱에서 가장 많이 보는 분석 화면이 teaser보다 시각적으로 덜 informative한 역전이 있다. 사용자가 카테고리별 지출 비중을 한눈에 비교하려면 각 행의 숫자/퍼센트를 직접 암산해야 한다.",
+    "approach": "1) index.html의 expenseBreakdownCard(cats,...) 중 스택바+범례 HTML/퍼센트 계산(largest-remainder 라운딩, PAL 색상 배열) 부분만 작은 공유 순수함수로 분리(예: buildExpenseBarHtml(cats) — cats는 {cat,v}[] 형태, section-title/총액 블록은 호출부에 맡기고 bar+legend만 HTML 문자열 반환). expenseBreakdownCard는 이 헬퍼를 호출해 기존 동작 그대로 유지. 2) openSpendAnalysis()에서 rows=spendByCategory(...)({c,v}) 를 cats=rows.map(r=>({cat:r.c,v:r.v}))로 매핑해 buildExpenseBarHtml(cats) 호출, 반환 HTML을 기존 '총 지출' 카드 바로 아래·spend-row 목록 바로 위에 삽입(목록 자체는 budget-vs-spent/추세뱃지/openCatHistory 드릴인을 그대로 유지하므로 교체 대상 아님). 3) 접근성: 이 바는 장식용으로 aria-hidden=\"true\" 처리(바로 아래 spend-row 목록이 동일 데이터를 접근 가능한 형태로 이미 제공하므로 별도 키보드 인터랙션 불필요 — nwChart처럼 유일한 접근 경로가 아님). 4) test/run.js: 기존 expenseBreakdownCard escaping 테스트(소스 추출 목록에 이미 있음, ~5784 부근 참고)가 새 공유 헬퍼를 검증하도록 유지/이동, openSpendAnalysis가 buildExpenseBarHtml을 호출하는지 + 매핑이 올바른지(c->cat) 확인하는 테스트 추가. 5) index.html만 변경이므로 APP_VERSION/sw.js CACHE 동기 범프 필요(전례 규칙). 스키마/동기화/저장공간 변경 없는 순수 프레젠테이션 추가라 리스크 낮음."
+  },
   "history": [
-    {
-      "cycle": 237,
-      "phase": "review",
-      "timestamp": "2026-10-23T07:10:00.000Z",
-      "summary": "cycle237 develop 커밋(56e2830, rates.js/crypto.js에 stock.js와 동일한 raceDeadline 8초 전체실행시간 상한 추가 + stock.js의 기존 인라인 구현을 _shared.js 공유 헬퍼로 통합)을 검토. raceDeadline 구현(deadline Promise의 setTimeout 반환값을 timer에 저장 후 Promise.race 완료 즉시 항상 clearTimeout, work가 이기든 deadline이 이기든 무해)을 직접 읽어 cycle233이 stock.js에서 사후에 고친 타이머 누수를 처음부터 피하는 구조임을 확인. rates.js/crypto.js 모두 out/debug가 work IIFE 바깥(클로저 상위)에 선언돼 raceDeadline이 반환된 뒤에도 그때까지 채워진 부분 결과에 안전하게 접근 가능함을 확인 — missing/usdKrw 등 내부 전용 변수만 work 클로저 안으로 옮겨졌을 뿐 외부 참조 없음도 grep으로 재확인. 캐시 maxAge 분기(rates: timedOut?0:300, crypto: (!timedOut&&Object.keys(out).length)?30:0)가 stock.js의 기존 timedOut?0:60 관례와 일치하는 것도 확인(이번에 새로 만든 규칙이 아니라 기존 컨벤션을 따른 것). work 내부가 전부 try/catch로 감싸여 있어(도메스틱/해외 조회, 네이버/폴백 체인, 금 API 등) work 자체가 reject할 경로가 없음을 재확인해 deadline이 먼저 끝났을 때 unhandled rejection 위험이 없음도 점검. node --check(모든 수정 파일) 통과, node our-assets-v1.14.1/our-assets/test/run.js 재실행 결과 1848/1848 통과(develop 단계에서 추가한 6건 포함, 핸들러 happy-path 테스트만으로는 raceDeadline 미호출 회귀를 못 잡는다는 구조적 공백을 소스 문자열 검사로 보강한 설계도 타당함을 확인). 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
-      "commit": null
-    },
-    {
-      "cycle": 237,
-      "phase": "critique",
-      "timestamp": "2026-10-23T08:20:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-237 전체 다룬 영역 전부 제외 지시, cycle234 critique가 러너업으로 보류해둔 todayStr() vs inQuietWindow() 시간대 불일치를 재검토 옵션으로 명시)한 결과, 그 러너업을 더 구체화해 채택: isDuePending(t)(index.html:1738, isPending(t)&&t.date<=TODAY)가 device-local TODAY(1723-1724, refreshToday() 9346-9353)를 쓰는데, 반복이체 1일 등 한국 은행업무일 기준 이벤트는 KST 기준이어야 함 — inQuietWindow()(3374-3381)는 이미 d.getTime()+9*60*60000 UTC+9 보정으로 이 문제를 피해가는 반면 isDuePending은 그대로 device-local. 실패 시나리오: 한국보다 시계가 느린 시간대(미국 등) 사용자는 한국에서 이미 이체가 처리된 뒤에도 최대 ~14시간 TODAY가 전월 말일로 남아 '확인' 버튼/홈 '오늘 확인할 이체' 그룹/checkNotifyAlerts() 알림(8279+)에서 모두 빠짐 — 반대로 한국보다 빠른 시간대는 실제 처리 전에 '확인 대기'로 표시됨. 핵심 반복이체 확인 기능의 실제 wrong-outcome이며 교포/해외체류 세그먼트에 한정되지만 cosmetic이 아님. 같은 패턴을 쓰는 txScheduled()(1737, '예정' 배지)와 checkNotifyAlerts() 당일 그룹핑(약 8279-8360)도 함께 고쳐야 세 표시가 서로 어긋나지 않음. 러너업 재확인 후 기각: SRI TODO(index.html:1374-1378, cdn.jsdelivr.net/t1.kakaocdn.net curl이 이 샌드박스에서 connect_rejected로 여전히 막혀 재확인만 함), 카테고리별 예산+롤오버(logic.js:618-639 이미 구현/테스트됨), CSV 수식 인젝션 가드(txnsToCSV/guard/unguardCsv 6405-6435 이미 처리), 차트 접근성(nwChart/assetBalChart 2915-3041 role=img+aria-label+키보드 peek 이미 구현), 목표-연결자산 삭제 orphan 처리(goalLinkedAssetGone() 3182 이미 가드됨). advance 계획을 pending_advance_plan에 저장: logic.js에 inQuietWindow와 동일한 UTC+9 기법을 쓰는 순수함수 kstTodayStr(d) 신설, isDuePending()/txScheduled()/checkNotifyAlerts() 당일 그룹핑의 t.date<=TODAY를 t.date<=kstTodayStr()로 교체(TODAY/todayStr() 자체는 신규거래 기본값·예산월 경계 등 정당히 device-local인 용도라 불변), test/run.js에 kstTodayStr 경계 테스트+isDuePending의 device-local/KST 괴리 회귀 테스트 추가, logic.js도 바뀌므로 APP_VERSION 1.47.222->223/sw.js CACHE v489->v490 동기 범프. 코드 변경 없음(critique 단계라 state.json만 갱신).",
-      "commit": null
-    },
     {
       "cycle": 237,
       "phase": "advance",
@@ -148,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-24T03:10:00.000Z",
       "summary": "cycle242 develop 커밋(36624b8, planNegatives()가 firstNeg와 minBal을 서로 다른 날짜일 수 있는데도 {date:firstNeg,min:minBal}로 묶어 반환하던 날짜·금액 불일치 수정)을 검토. diff를 직접 읽고 minBal이 전역 최솟값이므로 firstNeg가 존재하면 반드시 minBal<=balance(firstNeg)<0이 성립하고, perAssetDates가 날짜 순서로 순회되며 firstNeg 이전 날짜들은 전부 b>=0(정의상)이라 minDate가 firstNeg보다 앞설 수 없음을 직접 추론해 minDate>=firstNeg가 항상 보장됨을 확인(즉 '마이너스가 되기도 전인 과거 날짜를 min으로 잘못 가리키는' 회귀는 구조적으로 불가능). out 배열의 정렬 기준이 firstNeg date에서 minDate로 바뀌어 여러 통장이 있을 때 목록 순서가 '처음 마이너스 되는 순'에서 '최저점 순'으로 미묘하게 달라지지만, acctSafety/openNegList/homeAlerts 세 호출부 모두 date와 min을 한 문장으로 묶어 보여주는 용도일 뿐 순서 자체에 의존하는 로직이 없어 회귀가 아님을 호출부 재확인으로 검증. 호출부 3곳(index.html:5604-5605, 7941-7949, 8326/8594) 모두 수정된 date 필드를 그대로 쓰고 있어 배선 누락 없음. node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행 결과 1902/1902 통과. APP_VERSION 1.47.228/sw.js CACHE v495 범프도 index.html 변경과 일치해 타당. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 242,
+      "phase": "critique",
+      "timestamp": "2026-10-24T04:14:24.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(최근 cycle237-242가 다룬 가격조회 폴백/raceDeadline/계정탈퇴/planNegatives 영역 전부 제외 지시)한 결과, 지출 분석 상세 시트가 Home 요약카드보다 덜 informative한 역전을 발견 — Home의 expenseBreakdownCard(index.html:3411-3429, cats={cat,v}[])는 비중 스택바+색상 범례(.eb-bar/.eb-row, CSS 249-250)를 보여주는데, 같은 제목('…지출 분석')의 더 상세한 화면인 openSpendAnalysis()(5869-5905, spendByCategory() rows={c,v}[] 사용)는 flat한 spend-row 목록(예산진행바만 있음)만 보여줘 전체 대비 비중을 한눈에 볼 수 없다. 러너업 기각: OS 알림 완전-닫힘 시 미동작(서버 푸시/VAPID 백엔드 신설이 필요해 한 사이클 범위를 넘는 신규 의존성/백엔드 서피스라 제외), 영수증/사진 첨부(이미 플래그된 localStorage 용량 한도(STORAGE_SIZE_WARN_LEN/CRIT_LEN, 1914)와 직접 충돌 + 신규 클라우드 스토리지 배선이 필요한 큰 설계 서피스라 제외), 장기 복리/목표 투사 고도화(Plan 탭이 현재 단일자산 근시일 현금흐름 뷰라 요구사항이 불분명한 투기성 과제라 제외). 탐색 중 검색/예산/목표/부채추적/원가-손익/CSV import-export/저장공간 아카이빙/접근 가능한 휠피커/멀티탭 저장 락/에러 바운더리/PWA 설치배너/OS 알림(포그라운드) 등은 이미 높은 수준으로 구현돼 있음을 확인(241사이클 누적 성숙도). advance 계획을 pending_advance_plan에 저장: expenseBreakdownCard의 스택바+범례 HTML 생성부를 공유 순수함수로 분리해 openSpendAnalysis()에서도 같은 비중 시각화를 재사용(장식용 aria-hidden, 기존 spend-row 목록은 그대로 유지), 신규 의존성/스키마/동기화 변경 없는 순수 프레젠테이션 추가. 코드 변경 없음(critique 단계라 state.json만 갱신).",
       "commit": null
     }
   ]
