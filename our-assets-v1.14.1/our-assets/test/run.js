@@ -208,7 +208,7 @@ const FUNCTIONS = [
   'sanitizeAmount', 'sanitizeBackup',
   'saveRec', 'recHistFieldsChanged', 'recScheduleShapeChanged', 'pruneOrphanRecOverrides', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
   'expandRec', 'allTxns', 'txnsByDateInRange', 'spendByCategory', 'spendTrend', 'spendTrendBadge', 'incomeByCategory', 'incomeTrend', 'incomeTrendBadge', 'histSumTotals',
-  'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'buildExpenseBarHtml', 'expenseBreakdownCard',
+  'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'buildExpenseBarHtml', 'expenseBreakdownCard', 'incomeBreakdownCard',
   'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asOpenCur', 'asCur', 'asToggleNeg', 'openAssetSheet', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'mergeRemoteDataIntoLocal', 'snapshotLocalDeviceFields', 'restoreLocalDeviceFields', 'fmtAmt', 'fmtQty',
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges', 'shouldRetryCloudSync',
   'pullCloud', 'afterCloudAuth', 'resolveCloudPullRemote', 'pushCloud', 'measureCloudClockSkew',
@@ -6115,6 +6115,24 @@ test('expenseBreakdownCard: 카테고리명에 HTML 특수문자가 있어도 �
 test('expenseBreakdownCard: 평범한 카테고리명은 그대로 표시된다', () => {
   const html = sandbox.expenseBreakdownCard([{ cat: '식비', v: 5000 }], 5000);
   assert.ok(html.includes('식비'));
+});
+/* ---------- incomeBreakdownCard: expenseBreakdownCard와 대칭되는 홈 수입 분석 카드(app-evolve cycle246 develop) ---------- */
+test('incomeBreakdownCard: 카테고리가 없거나 합계가 0이면 빈 문자열을 돌려준다(expenseBreakdownCard와 동일하게 빈 카드를 광고하지 않음)', () => {
+  assert.strictEqual(sandbox.incomeBreakdownCard([]), '');
+  assert.strictEqual(sandbox.incomeBreakdownCard([{ cat: '급여', v: 0 }]), '');
+});
+test('incomeBreakdownCard: 카테고리명에 HTML 특수문자가 있어도 이스케이프되어 렌더링을 깨지 않는다(expenseBreakdownCard와 동일한 이스케이프 경로 — buildExpenseBarHtml 공유)', () => {
+  const html = sandbox.incomeBreakdownCard([{ cat: '부수입&용돈<script>', v: 10000 }]);
+  assert.ok(html.includes('부수입&amp;용돈&lt;script&gt;'), 'HTML이 이스케이프되어야 함');
+  assert.ok(!html.includes('<script>'), '원본 태그가 그대로 남아있으면 안 됨');
+});
+test('incomeBreakdownCard: 총 수입 금액과 카테고리별 스택바/범례가 함께 렌더되고 수입 분석 화면으로 가는 링크가 있다', () => {
+  const html = sandbox.incomeBreakdownCard([{ cat: '급여', v: 3000000 }, { cat: '용돈', v: 200000 }]);
+  assert.ok(html.includes('총 수입'), '총 수입 라벨이 있어야 함');
+  assert.ok(html.includes('3,200,000원'), '총 수입 금액(카테고리 합계)이 맞아야 함');
+  assert.ok(html.includes('급여') && html.includes('용돈'), '카테고리별 행이 렌더돼야 함');
+  assert.ok(html.includes('class="eb-bar"') && html.includes('class="eb-list"'), 'expenseBreakdownCard와 동일한 eb-bar/eb-list 마크업(buildExpenseBarHtml)을 공유해야 함');
+  assert.ok(html.includes('onclick="openIncomeAnalysis()"'), '수입 분석 화면으로 가는 링크가 있어야 함(openSpendAnalysis 링크와 대칭)');
 });
 /* ---------- buildExpenseBarHtml: 홈 브리핑 카드와 지출 분석 상세 시트가 공유하는 스택바+범례 ---------- */
 test('buildExpenseBarHtml: 카테고리가 없거나 합계가 0이면 빈 문자열을 돌려준다(빈 카드 박스가 그려지면 안 됨)', () => {
@@ -18379,6 +18397,17 @@ test('renderHome: 정상 DB로 호출하면 예외 없이 실행되고 기본 �
   assert.ok(html.includes('이번 달 살림'), '홈 헤더가 렌더돼야 함');
   assert.ok(html.includes('이번 달 예정 대비 오늘까지'), '플랜 게이지 섹션 타이틀이 렌더돼야 함');
   assert.ok(html.includes('식비'), '지출 분석 카드에 카테고리명이 나와야 함');
+  assert.ok(html.includes('이번 달 수입 분석'), '이번 달 수입이 있으면 수입 분석 카드가 렌더돼야 함(app-evolve cycle246 develop)');
+  assert.ok(html.includes('급여'), '수입 분석 카드에 카테고리명이 나와야 함');
+  assert.ok(html.includes('onclick="openIncomeAnalysis()"'), '수입 분석 카드에 수입 분석 화면으로 가는 링크가 있어야 함');
+});
+test('renderHome: 이번 달 수입이 전혀 없으면 수입 분석 카드 자체가 렌더되지 않는다(expenseBreakdownCard와 동일한 "빈 카드 숨김" 원칙)', () => {
+  setupHomeDB();
+  sandbox.DB.assets = [{ id: 'a1', name: '주계좌', owner: '나', type: 'cash', baseAmount: 500000 }];
+  sandbox.DB.txns = [{ id: 't1', date: '2026-06-05', type: 'expense', category: '식비', amount: 20000, fromAssetId: 'a1' }];
+  sandbox.renderHome();
+  const html = sandbox.pageHomeEl.innerHTML;
+  assert.ok(!html.includes('이번 달 수입 분석'), '이번 달 수입이 없으면 수입 분석 카드가 렌더되면 안 됨');
 });
 test('renderHome: homeAlerts()가 항목을 반환하면 alert-stack이 렌더되고 알림 내용이 실제로 나온다', () => {
   setupHomeDB();

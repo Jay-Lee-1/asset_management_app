@@ -1410,7 +1410,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.235';
+const APP_VERSION='1.47.236';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2905,6 +2905,7 @@ function renderHome(){
  const y=TM.y,m=TM.m;ST.home={y,m}; /* 홈은 항상 이번 달 */
  const S=monthStats(y,m);
  const cats=expenseByCat(y,m);
+ const icats=incomeByCategory(y,m,'전체').map(r=>({cat:r.c,v:r.v})); /* incomeBreakdownCard(아래)에 넘길 모양을 맞춘다 — incomeByCategory는 openIncomeAnalysis와 같은 {c,v}[]를 돌려주는데, buildExpenseBarHtml/expenseBreakdownCard는 {cat,v}[]를 기대한다(expenseByCat과 동일 모양) */
 
  // 상단 알림 (잔액 부족 경고 · 만기 · 확인 필요 이체 등)
  const neg=planNegatives();
@@ -2938,6 +2939,7 @@ function renderHome(){
  <div class="section-title" style="margin-top:8px">이번 달 예정 대비 오늘까지</div>
  ${planGaugeCard(S,y,m)}
  ${expenseBreakdownCard(cats,S.expense)}
+ ${incomeBreakdownCard(icats)}
 
  ${mkt.length?`<div class="section-title">시세 <span class="link" role="button" tabindex="0" aria-label="시세 연동 관리" onclick="openRateSheet()" onkeydown="rowKeydown(event,()=>openRateSheet())">연동 관리 ${svg('chev')}</span></div>
  <div class="card"><div class="mkt-head"><div><div class="t">시세</div><div class="ts">${rateStatusText()}</div></div>
@@ -3439,6 +3441,23 @@ function expenseBreakdownCard(cats,_ignore){
  if(!spent)return '';
  return `<div class="section-title">이번 달 지출 분석</div>
    <div class="card eb-card"><div class="eb-total"><span>총 지출</span><b class="num">${comma(spent)}원</b></div>
+     ${buildExpenseBarHtml(cats)}</div>`;
+}
+/* expenseBreakdownCard와 대칭되는 수입 쪽 홈 브리핑 카드 — 수입 분석(openIncomeAnalysis, app-evolve
+ * cycle245 advance) 화면이 생기면서 가계부 카테고리 관리 화면(openCatManage)엔 '수입 분석' 진입점이
+ * 생겼지만, 홈 화면은 지출만 보여주고 수입은 전혀 보여주지 않는 비대칭이 남아 있었다(app-evolve
+ * cycle246 develop) — 월급 외 부수입이 여러 번 들어오는 달에도 홈에서는 그 구성을 전혀 알 수 없었다.
+ * buildExpenseBarHtml(스택바+범례)을 expenseBreakdownCard와 그대로 공유해 같은 디자인을 쓴다.
+ * expenseBreakdownCard 자신은 분석 링크가 없고 그 역할을 monthOutflowCard(바로 위, '지출 분석' 링크)가
+ * 대신하는데, 수입 쪽엔 그런 카드가 없어 이 카드가 섹션 타이틀에 직접 링크를 붙인다(openCatManage의
+ * '수입 카테고리' 섹션 타이틀과 동일한 패턴). 이번 달 수입이 전혀 없으면(신규 가입 직후 등)
+ * expenseBreakdownCard와 동일한 원칙으로 빈 카드를 광고하지 않고 숨긴다. */
+function incomeBreakdownCard(cats){
+ if(!cats.length)return '';
+ const inc=cats.reduce((s,c)=>s+c.v,0);
+ if(!inc)return '';
+ return `<div class="section-title">이번 달 수입 분석 <span class="link" role="button" tabindex="0" aria-label="수입 분석" onclick="openIncomeAnalysis()" onkeydown="rowKeydown(event,()=>openIncomeAnalysis())">수입 분석 ${svg('chev')}</span></div>
+   <div class="card eb-card"><div class="eb-total"><span>총 수입</span><b class="num">${comma(inc)}원</b></div>
      ${buildExpenseBarHtml(cats)}</div>`;
 }
 function fitText(el){if(!el)return;const max=parseFloat(el.dataset.max||18);el.style.fontSize=max+'px';let s=max,g=0;
