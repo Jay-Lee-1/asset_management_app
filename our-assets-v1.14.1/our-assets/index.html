@@ -1410,7 +1410,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.236';
+const APP_VERSION='1.47.237';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5725,6 +5725,7 @@ function renderMenu(){
    {ic:'users',l:'귀속 관리',v:DB.owners.length+'개',a:"asDraft=null;openOwnerSheet()"},
    {ic:'repeat',l:'반복 내역 관리',v:DB.recurrences.length+'개',a:"openRecManage()"},
    {ic:'target',l:'목표 관리',v:DB.goals.length+'개',a:"openGoalsList()"},
+   {ic:'calendar',l:'연간 결산',a:"openYearReview(TM.y)"},
   ]},
   {cap:'알림 · 기준',items:[
    {ic:'check',l:'이체 확인',sw:!!DB.settings.confirmTransfers,a:"toggleConfirmTransfers()"},
@@ -5983,6 +5984,94 @@ function incomeTrendBadge(deltaPct,label){
  const color=flat?'var(--text-3)':`var(--${up?'income':'expense'})`;
  const arrow=flat?'':(up?'▲':'▼');
  return `<span class="trend" style="color:${color}">${label||''}${arrow}${Math.abs(deltaPct)}%</span>`;
+}
+/* spendByCategory/incomeByCategory와 동일한 owner·inSurplus·분할거래 집계 규칙을 한 해(1/1~12/31)
+ * 전체로 확장 — 예산(budgetHistory)은 월 단위 개념이라 spendByCategory의 유니온 스텝만 뺀다. */
+function yearSpendByCategory(y,owner='전체'){
+ const map={};
+ filterTxnsByOwner(allTxns(`${y}-01-01`,`${y}-12-31`),DB.assets,owner).forEach(t=>{
+   if(t.type!=='expense')return;if(t.adjust&&!t.inSurplus)return;
+   splitLines(t).forEach(s=>{map[s.category]=(map[s.category]||0)+s.amount});
+ });
+ return Object.entries(map).map(([c,v])=>({c,v})).sort((a,b)=>b.v-a.v);
+}
+function yearIncomeByCategory(y,owner='전체'){
+ const map={};
+ filterTxnsByOwner(allTxns(`${y}-01-01`,`${y}-12-31`),DB.assets,owner).forEach(t=>{
+   if(t.type!=='income')return;if(t.adjust&&!t.inSurplus)return;
+   splitLines(t).forEach(s=>{map[s.category]=(map[s.category]||0)+s.amount});
+ });
+ return Object.entries(map).map(([c,v])=>({c,v})).sort((a,b)=>b.v-a.v);
+}
+/* 1~12월 각각의 총수입/총지출 — spendByCategory/incomeByCategory를 달마다 호출해 합산하는
+ * 기존 트렌드 함수들과 동일한 월 순회 방식. 카테고리 구분 없이 월 합계만 필요해 각 달의 rows를
+ * reduce로 더한다. */
+function yearMonthlyNet(y,owner='전체'){
+ const out=[];
+ for(let m=1;m<=12;m++){
+  const income=incomeByCategory(y,m,owner).reduce((s,r)=>s+r.v,0);
+  const expense=spendByCategory(y,m,owner).reduce((s,r)=>s+r.v,0);
+  out.push({m,income,expense});
+ }
+ return out;
+}
+/* 저축률=(수입-지출)/수입*100. 수입이 0 이하면 비교 기준이 없어 null(spendTrend 등의 null-safe
+ * 관례와 동일 — 호출부가 배지/카드를 숨긴다). 지출이 수입보다 많으면 음수 저축률도 그대로 둔다. */
+function savingsRate(income,expense){
+ if(income<=0)return null;
+ return Math.round((income-expense)/income*100);
+}
+/* 연간 결산(openYearReview) 요약 — 총수입/총지출/순저축액/저축률과 전년(y-1) 대비 YoY delta,
+ * 지출·수입 카테고리 TOP3(buildExpenseBarHtml로 스택바 렌더)까지 한 번에 묶는다. yoy.income/expense는
+ * 전년 수입/지출이 0이면(비교 기준 없음) null, yoy.rate는 올해·전년 저축률 중 하나라도 null이면
+ * null — 포인트 차이(%p)로 둬서 저축률(이미 퍼센트)끼리의 비율 변화가 아니라 단순 증감만 보여준다. */
+function yearSummary(y,owner='전체'){
+ const expRows=yearSpendByCategory(y,owner),incRows=yearIncomeByCategory(y,owner);
+ const expense=expRows.reduce((s,r)=>s+r.v,0),income=incRows.reduce((s,r)=>s+r.v,0);
+ const net=income-expense,rate=savingsRate(income,expense);
+ const pyExpRows=yearSpendByCategory(y-1,owner),pyIncRows=yearIncomeByCategory(y-1,owner);
+ const pyExpense=pyExpRows.reduce((s,r)=>s+r.v,0),pyIncome=pyIncRows.reduce((s,r)=>s+r.v,0);
+ const pyRate=savingsRate(pyIncome,pyExpense);
+ const yoy={
+  income:pyIncome?Math.round((income-pyIncome)/pyIncome*100):null,
+  expense:pyExpense?Math.round((expense-pyExpense)/pyExpense*100):null,
+  rate:(rate===null||pyRate===null)?null:rate-pyRate,
+ };
+ return{y,income,expense,net,savingsRate:rate,topExpenseCats:expRows.slice(0,3),topIncomeCats:incRows.slice(0,3),monthly:yearMonthlyNet(y,owner),yoy};
+}
+/* 연간 결산 시트 — 연도 전환(◀/▶), 총수입/총지출/순저축액/저축률 4칸 요약(전년대비 배지),
+ * 지출·수입 카테고리 TOP3 스택바(buildExpenseBarHtml 재사용). 해당 연도에 거래가 전혀 없으면
+ * (수입·지출 모두 0) 빈 상태만 보여주고 요약·TOP3는 그리지 않는다(openSpendAnalysis의 empty 패턴). */
+function openYearReview(y){
+ y=y||TM.y;
+ const switcher=`<div class="card" style="display:flex;align-items:center;justify-content:center;gap:18px;padding:10px;margin-bottom:12px">
+   <button type="button" class="act-btn" aria-label="${y-1}년 보기" onclick="openYearReview(${y-1})">${svg('chevL')}</button>
+   <span style="font-weight:700;font-size:16px">${y}년</span>
+   <button type="button" class="act-btn" aria-label="${y+1}년 보기" onclick="openYearReview(${y+1})">${svg('chevR')}</button>
+ </div>`;
+ const s=yearSummary(y,'전체');
+ if(!s.income&&!s.expense){
+  openSheet(`<h3>연간 결산</h3>${switcher}
+   <div class="empty"><div class="ei">${svg('calendar')}</div><div class="et">아직 ${y}년 기록이 없어요</div><div class="es">거래가 쌓이면 연간 결산을 볼 수 있어요</div></div>
+   <div style="height:12px"></div><button class="btn btn-soft" onclick="closeSheet()">닫기</button>`);
+  return;
+ }
+ const incBadge=s.yoy.income!==null?incomeTrendBadge(s.yoy.income,'전년대비 '):'';
+ const expBadge=s.yoy.expense!==null?spendTrendBadge(s.yoy.expense,'전년대비 '):'';
+ const rateBadge=s.yoy.rate!==null?incomeTrendBadge(s.yoy.rate,'전년대비 '):'';
+ openSheet(`<h3>연간 결산</h3><div class="desc">${y}년 한 해를 돌아봐요</div>
+  ${switcher}
+  <div class="card" style="padding:16px 14px;margin-bottom:12px">
+   <div class="hrt-grid">
+    <div class="hrt-c"><span class="k">총수입</span><span class="v plus num">${comma(s.income)}원</span>${incBadge}</div>
+    <div class="hrt-c"><span class="k">총지출</span><span class="v minus num">${comma(s.expense)}원</span>${expBadge}</div>
+    <div class="hrt-c"><span class="k">순저축액</span><span class="v save num">${comma(s.net)}원</span></div>
+    <div class="hrt-c"><span class="k">저축률</span><span class="v num">${s.savingsRate===null?'—':s.savingsRate+'%'}</span>${rateBadge}</div>
+   </div>
+  </div>
+  ${s.expense?`<div class="card" style="margin-bottom:12px"><div class="section-title" style="margin-top:0">지출 TOP3</div><div aria-hidden="true">${buildExpenseBarHtml(s.topExpenseCats.map(r=>({cat:r.c,v:r.v})))}</div></div>`:''}
+  ${s.income?`<div class="card" style="margin-bottom:12px"><div class="section-title" style="margin-top:0">수입 TOP3</div><div aria-hidden="true">${buildExpenseBarHtml(s.topIncomeCats.map(r=>({cat:r.c,v:r.v})))}</div></div>`:''}
+  <div style="height:12px"></div><button class="btn btn-soft" onclick="closeSheet()">닫기</button>`);
 }
 function openSpendAnalysis(){
  if(ST.spendOwner!=='전체'&&!DB.owners.includes(ST.spendOwner))ST.spendOwner='전체'; /* 귀속 사라지면 전체로 (renderAssets/renderPlan과 동일 패턴) */

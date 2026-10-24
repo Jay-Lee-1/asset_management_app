@@ -208,6 +208,7 @@ const FUNCTIONS = [
   'sanitizeAmount', 'sanitizeBackup',
   'saveRec', 'recHistFieldsChanged', 'recScheduleShapeChanged', 'pruneOrphanRecOverrides', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
   'expandRec', 'allTxns', 'txnsByDateInRange', 'spendByCategory', 'spendTrend', 'spendTrendBadge', 'incomeByCategory', 'incomeTrend', 'incomeTrendBadge', 'histSumTotals',
+  'yearSpendByCategory', 'yearIncomeByCategory', 'yearMonthlyNet', 'savingsRate', 'yearSummary', 'openYearReview',
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'buildExpenseBarHtml', 'expenseBreakdownCard', 'incomeBreakdownCard',
   'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asOpenCur', 'asCur', 'asToggleNeg', 'openAssetSheet', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'mergeRemoteDataIntoLocal', 'snapshotLocalDeviceFields', 'restoreLocalDeviceFields', 'fmtAmt', 'fmtQty',
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges', 'shouldRetryCloudSync',
@@ -6213,6 +6214,74 @@ test('openIncomeAnalysis: 예산 관련 UI가 전혀 없다(수입에는 예산 
   assert.ok(!ctx.lastSheetHtml.includes('예산'), '수입 분석 시트에 예산 관련 문구가 있으면 안 됨');
 });
 
+/* ---------- openYearReview: openSpendAnalysis/openIncomeAnalysis보다 큰 1년 범위로 총수입/총지출/
+ * 순저축액/저축률과 전년대비 배지, 지출·수입 카테고리 TOP3 스택바를 보여주는 연간 결산
+ * (app-evolve cycle246 advance). 연도 전환 버튼(◀/▶)이 각각 openYearReview(y-1)/(y+1)을 부른다. ---------- */
+test('openYearReview: 해당 연도에 거래가 전혀 없으면 빈 상태만 보여주고 요약 카드는 그리지 않는다', () => {
+  const ctx = yearReviewCtx();
+  ctx.DB = { owners: [], assets: [], recurrences: [], txns: [] };
+  ctx.lastSheetHtml = null;
+  ctx.openYearReview(2026);
+  const html = ctx.lastSheetHtml;
+  assert.ok(html.includes('아직 2026년 기록이 없어요'), '빈 상태 문구가 없음');
+  assert.ok(!html.includes('class="hrt-grid"'), '거래가 없으면 요약 카드(hrt-grid)가 그려지면 안 됨');
+  assert.ok(!html.includes('class="eb-bar"'), '거래가 없으면 TOP3 스택바가 그려지면 안 됨');
+});
+test('openYearReview: 총수입/총지출/순저축액/저축률 카드와 지출·수입 TOP3 스택바를 보여주고, c→cat 매핑이 올바르다', () => {
+  const ctx = yearReviewCtx();
+  ctx.DB = { owners: [], assets: [], recurrences: [], txns: [
+    { id: '1', type: 'income', category: '급여', amount: 1000000, date: '2026-01-10', confirmed: true },
+    { id: '2', type: 'expense', category: '식비', amount: 400000, date: '2026-02-05', confirmed: true },
+  ] };
+  ctx.lastSheetHtml = null;
+  ctx.openYearReview(2026);
+  const html = ctx.lastSheetHtml;
+  assert.ok(html.includes('class="hrt-grid"'), '요약 카드(hrt-grid)가 없음');
+  assert.ok(html.includes('1,000,000원'), '총수입 금액이 없음');
+  assert.ok(html.includes('400,000원'), '총지출 금액이 없음');
+  assert.ok(html.includes('60%'), '저축률((100만-40만)/100만*100=60%)이 없음');
+  // yearSpendByCategory/yearIncomeByCategory는 {c,v}를 돌려주는데 buildExpenseBarHtml은 {cat,v}를
+  // 기대한다 — 매핑이 틀리면 esc(c.cat)이 undefined를 이스케이프해 카테고리명이 통째로 빠진다.
+  assert.ok(html.includes('class="eb-cat">급여'), 'yearIncomeByCategory의 c를 cat으로 매핑하지 않아 카테고리명이 비어 있음');
+  assert.ok(html.includes('class="eb-cat">식비'), 'yearSpendByCategory의 c를 cat으로 매핑하지 않아 카테고리명이 비어 있음');
+});
+test('openYearReview: 전년 자료가 없으면(비교 기준 없음) YoY 배지가 전혀 렌더되지 않는다(null-safe)', () => {
+  const ctx = yearReviewCtx();
+  ctx.DB = { owners: [], assets: [], recurrences: [], txns: [
+    { id: '1', type: 'income', category: '급여', amount: 500000, date: '2026-03-10', confirmed: true },
+  ] };
+  ctx.lastSheetHtml = null;
+  ctx.openYearReview(2026);
+  assert.ok(!ctx.lastSheetHtml.includes('전년대비'), '전년 자료가 없으면 전년대비 배지가 아예 없어야 함');
+});
+test('openYearReview: y를 생략하면 TM.y(올해)를 쓴다', () => {
+  const ctx = yearReviewCtx();
+  ctx.DB = { owners: [], assets: [], recurrences: [], txns: [] };
+  ctx.TM = { y: 2031 };
+  ctx.lastSheetHtml = null;
+  ctx.openYearReview();
+  assert.ok(ctx.lastSheetHtml.includes('2031년'), 'y 생략 시 TM.y를 연도로 써야 함');
+});
+test('openYearReview: 연도 전환 버튼이 각각 y-1/y+1로 openYearReview를 다시 호출한다', () => {
+  const ctx = yearReviewCtx();
+  ctx.DB = { owners: [], assets: [], recurrences: [], txns: [] };
+  ctx.lastSheetHtml = null;
+  ctx.openYearReview(2026);
+  assert.ok(ctx.lastSheetHtml.includes('onclick="openYearReview(2025)"'), '◀ 버튼이 전년도를 호출해야 함');
+  assert.ok(ctx.lastSheetHtml.includes('onclick="openYearReview(2027)"'), '▶ 버튼이 다음해를 호출해야 함');
+});
+test('openYearReview: 카테고리명에 HTML 특수문자가 있어도 이스케이프되어 렌더링을 깨지 않는다', () => {
+  const ctx = yearReviewCtx();
+  ctx.DB = { owners: [], assets: [], recurrences: [], txns: [
+    { id: '1', type: 'income', category: '부수입&용돈<script>', amount: 100000, date: '2026-04-10', confirmed: true },
+  ] };
+  ctx.lastSheetHtml = null;
+  ctx.openYearReview(2026);
+  const html = ctx.lastSheetHtml;
+  assert.ok(html.includes('부수입&amp;용돈&lt;script&gt;'), 'HTML이 이스케이프되어야 함');
+  assert.ok(!html.includes('<script>'), '원본 태그가 그대로 남아있으면 안 됨');
+});
+
 /* ---------- deleteTxnsUndo: 단일/대량 삭제 공용 되돌리기 인프라 (delAdjust도 여기 합류) ---------- */
 test('deleteTxnsUndo: 지정한 id의 내역을 삭제하고, undo 콜백을 부르면 정확히 복원한다', () => {
   sandbox.TWi = -1;
@@ -9606,6 +9675,158 @@ test('incomeTrendBadge: 색이 spendTrendBadge와 반대다 — 양수(수입 �
   assert.match(sandbox.incomeTrendBadge(25), /▲25%/);
   assert.match(sandbox.incomeTrendBadge(-10), /var\(--expense\)/);
   assert.match(sandbox.incomeTrendBadge(-10), /▼10%/);
+});
+
+/* ---------- yearSpendByCategory/yearIncomeByCategory/yearMonthlyNet/savingsRate/yearSummary:
+ * 연간 결산(openYearReview, app-evolve cycle246 advance) 집계 — spendByCategory/incomeByCategory와
+ * 동일한 owner·inSurplus·분할거래 집계 규칙을 1/1~12/31 범위로 확장한 것이라, 그 테스트들을
+ * 연 단위로 미러링한다. ---------- */
+test('yearSpendByCategory: 수지에 포함되지 않은 잔액 조정 지출은 연간 합계에서도 제외된다', () => {
+  sandbox.DB = {
+    txns: [
+      { date: '2026-02-05', type: 'expense', category: '식비', amount: 30000 },
+      { date: '2026-11-10', type: 'expense', category: '잔액 조정', amount: 5000, adjust: true, inSurplus: false },
+    ],
+    recurrences: [],
+  };
+  const rows = sandbox.yearSpendByCategory(2026);
+  assert.deepStrictEqual(Array.from(rows).map(r => ({ c: r.c, v: r.v })), [{ c: '식비', v: 30000 }]);
+});
+test('yearSpendByCategory: 월을 가리지 않고 1~12월 전체를 집계한다', () => {
+  sandbox.DB = {
+    txns: [
+      { date: '2026-01-05', type: 'expense', category: '식비', amount: 10000 },
+      { date: '2026-06-05', type: 'expense', category: '식비', amount: 20000 },
+      { date: '2026-12-31', type: 'expense', category: '식비', amount: 30000 },
+      { date: '2025-12-31', type: 'expense', category: '식비', amount: 99999 }, // 전년도는 제외
+      { date: '2027-01-01', type: 'expense', category: '식비', amount: 99999 }, // 다음 해도 제외
+    ],
+    recurrences: [],
+  };
+  const byCat = Object.fromEntries(Array.from(sandbox.yearSpendByCategory(2026)).map(r => [r.c, r.v]));
+  assert.strictEqual(byCat['식비'], 60000, '2026년 1/6/12월 합계만 집계되어야 함(전년/다음해 제외)');
+});
+test('yearSpendByCategory: owner를 주면 그 귀속(fromAssetId 기준)의 지출만 집계한다(spendByCategory와 동일한 owner 규칙)', () => {
+  sandbox.DB = {
+    assets: [{ id: 'a1', owner: '나' }, { id: 'a2', owner: '배우자' }],
+    txns: [
+      { date: '2026-03-05', type: 'expense', category: '식비', amount: 10000, fromAssetId: 'a1' },
+      { date: '2026-08-05', type: 'expense', category: '식비', amount: 20000, fromAssetId: 'a2' },
+    ],
+    recurrences: [],
+  };
+  const byCat = Object.fromEntries(Array.from(sandbox.yearSpendByCategory(2026, '나')).map(r => [r.c, r.v]));
+  assert.strictEqual(byCat['식비'], 10000, '나의 지출만 집계되어야 함');
+});
+test('yearSpendByCategory: 분할 거래(t.splits)는 각 항목을 자기 카테고리로 따로 집계한다', () => {
+  sandbox.DB = {
+    txns: [
+      { date: '2026-04-05', type: 'expense', category: '쇼핑', amount: 70000, splits: [{ category: '쇼핑', amount: 50000 }, { category: '생활용품', amount: 20000 }] },
+    ],
+    recurrences: [],
+  };
+  const byCat = Object.fromEntries(Array.from(sandbox.yearSpendByCategory(2026)).map(r => [r.c, r.v]));
+  assert.strictEqual(byCat['쇼핑'], 50000);
+  assert.strictEqual(byCat['생활용품'], 20000);
+});
+test('yearIncomeByCategory: 수지 포함으로 켜둔(inSurplus:true) 잔액 조정 수입은 연간 합계에 그대로 합산된다', () => {
+  sandbox.DB = {
+    txns: [
+      { date: '2026-05-05', type: 'income', category: '급여', amount: 3000000 },
+      { date: '2026-09-10', type: 'income', category: '잔액 조정', amount: 5000, adjust: true, inSurplus: true },
+    ],
+    recurrences: [],
+  };
+  const byCat = Object.fromEntries(Array.from(sandbox.yearIncomeByCategory(2026)).map(r => [r.c, r.v]));
+  assert.strictEqual(byCat['급여'], 3000000);
+  assert.strictEqual(byCat['잔액 조정'], 5000);
+});
+test('yearIncomeByCategory: owner를 주면 그 귀속(toAssetId 기준)의 수입만 집계하고, 분할 거래도 항목별로 집계한다', () => {
+  sandbox.DB = {
+    assets: [{ id: 'a1', owner: '나' }, { id: 'a2', owner: '배우자' }],
+    txns: [
+      { date: '2026-02-05', type: 'income', category: '급여', amount: 3200000, toAssetId: 'a1', splits: [{ category: '급여', amount: 3000000 }, { category: '용돈', amount: 200000 }] },
+      { date: '2026-07-05', type: 'income', category: '급여', amount: 500000, toAssetId: 'a2' },
+    ],
+    recurrences: [],
+  };
+  const byCat = Object.fromEntries(Array.from(sandbox.yearIncomeByCategory(2026, '나')).map(r => [r.c, r.v]));
+  assert.strictEqual(byCat['급여'], 3000000, '배우자의 수입은 제외되고, 분할된 급여 항목만 집계되어야 함');
+  assert.strictEqual(byCat['용돈'], 200000);
+});
+test('yearMonthlyNet: 1~12월 각각의 수입/지출 합계를 배열로 반환한다', () => {
+  sandbox.DB = {
+    txns: [
+      { date: '2026-01-10', type: 'income', category: '급여', amount: 100000 },
+      { date: '2026-01-15', type: 'expense', category: '식비', amount: 30000 },
+      { date: '2026-07-01', type: 'income', category: '급여', amount: 200000 },
+    ],
+    recurrences: [],
+  };
+  const months = sandbox.yearMonthlyNet(2026);
+  assert.strictEqual(months.length, 12, '12개월치가 모두 있어야 함');
+  // sandbox(vm) 객체 리터럴은 호스트 리터럴과 다른 realm이라 deepStrictEqual이 구조가 같아도
+  // reference-equal 검사(프로토타입 비교)에서 실패한다 — parseCSV 테스트와 동일하게 JSON
+  // 왕복으로 realm을 정규화한다.
+  const norm = (o) => JSON.parse(JSON.stringify(o));
+  assert.deepStrictEqual(norm(months[0]), { m: 1, income: 100000, expense: 30000 });
+  assert.deepStrictEqual(norm(months[6]), { m: 7, income: 200000, expense: 0 });
+  assert.deepStrictEqual(norm(months[1]), { m: 2, income: 0, expense: 0 }, '거래가 없는 달은 0이어야 함');
+});
+test('savingsRate: 수입에서 지출을 뺀 나머지의 비율을 반올림해 반환한다', () => {
+  assert.strictEqual(sandbox.savingsRate(1000000, 700000), 30);
+  assert.strictEqual(sandbox.savingsRate(1000000, 1000000), 0);
+});
+test('savingsRate: 수입이 0 이하면 비교 기준이 없어 null을 반환한다(경계값)', () => {
+  assert.strictEqual(sandbox.savingsRate(0, 0), null);
+  assert.strictEqual(sandbox.savingsRate(0, 10000), null);
+  assert.strictEqual(sandbox.savingsRate(-5000, 0), null);
+});
+test('savingsRate: 지출이 수입보다 많으면 음수 저축률을 그대로 반환한다(경계값)', () => {
+  assert.strictEqual(sandbox.savingsRate(500000, 800000), -60);
+});
+test('yearSummary: 총수입/총지출/순저축액/저축률과 카테고리 TOP3를 함께 반환한다', () => {
+  sandbox.DB = {
+    txns: [
+      { date: '2026-01-10', type: 'income', category: '급여', amount: 800000 },
+      { date: '2026-01-15', type: 'expense', category: '식비', amount: 300000 },
+      { date: '2026-02-20', type: 'expense', category: '교통', amount: 100000 },
+    ],
+    recurrences: [],
+  };
+  const s = sandbox.yearSummary(2026);
+  assert.strictEqual(s.income, 800000);
+  assert.strictEqual(s.expense, 400000);
+  assert.strictEqual(s.net, 400000);
+  assert.strictEqual(s.savingsRate, 50);
+  assert.deepStrictEqual(Array.from(s.topExpenseCats.map(r => r.c)), ['식비', '교통']);
+  assert.deepStrictEqual(Array.from(s.topIncomeCats.map(r => r.c)), ['급여']);
+});
+test('yearSummary: 전년 수입이 0이면(비교 기준 없음) YoY delta가 모두 null이다(null-safe, 전년 자료가 없는 첫 해 등)', () => {
+  sandbox.DB = {
+    txns: [{ date: '2026-03-10', type: 'income', category: '급여', amount: 500000 }],
+    recurrences: [],
+  };
+  const s = sandbox.yearSummary(2026);
+  assert.strictEqual(s.yoy.income, null);
+  assert.strictEqual(s.yoy.expense, null, '전년 지출이 0이면 지출 YoY도 null');
+  assert.strictEqual(s.yoy.rate, null, '전년 저축률이 null이면 저축률 YoY도 null');
+});
+test('yearSummary: 전년 대비 수입/지출/저축률 YoY delta를 올해-전년 기준으로 계산한다', () => {
+  sandbox.DB = {
+    txns: [
+      { date: '2025-04-10', type: 'income', category: '급여', amount: 1000000 },
+      { date: '2025-04-15', type: 'expense', category: '식비', amount: 800000 }, // 전년 저축률 20%
+      { date: '2026-04-10', type: 'income', category: '급여', amount: 1200000 }, // 수입 +20%
+      { date: '2026-04-15', type: 'expense', category: '식비', amount: 600000 }, // 지출 -25%, 저축률 50%
+    ],
+    recurrences: [],
+  };
+  const s = sandbox.yearSummary(2026);
+  assert.strictEqual(s.savingsRate, 50);
+  assert.strictEqual(s.yoy.income, 20, '100만원 -> 120만원은 +20%');
+  assert.strictEqual(s.yoy.expense, -25, '80만원 -> 60만원은 -25%');
+  assert.strictEqual(s.yoy.rate, 30, '저축률 20% -> 50%는 +30%p');
 });
 
 /* ---------- histSumTotals: 전체내역 검색 합계 카드도 monthStats2()와 같은 규칙으로 잔액 조정을 뺀다 ---------- */
@@ -15198,6 +15419,12 @@ test('renderMenu: 결제 연동 없이 toast만 띄우던 "Pro로 업그레이�
   assert.ok(!body.includes("toast('Pro 안내')"), "동작 없는 toast('Pro 안내') 더미 핸들러가 아직 남아있음");
   assert.ok(!body.includes('Pro로 업그레이드'), '"Pro로 업그레이드" 문구가 아직 남아있음');
 });
+/* 연간 결산(openYearReview, app-evolve cycle246 advance) 진입점 — '가계부' 그룹에 다른 항목들과
+ * 동일한 {ic,l,a} 패턴으로 추가되어 TM.y(올해)로 연다. */
+test('renderMenu: "가계부" 그룹에 연간 결산(openYearReview) 진입점이 있다', () => {
+  const body = extractFunction('renderMenu');
+  assert.ok(/\{ic:'calendar',l:'연간 결산',a:"openYearReview\(TM\.y\)"\}/.test(body), '연간 결산 메뉴 항목이 없거나 형식이 다름');
+});
 test('openSpendAnalysis: 지출 분석 카테고리 행(spend-row)에 키보드/스크린리더 접근 패턴이 있다', () => {
   const body = extractFunction('openSpendAnalysis');
   assert.ok(/class="spend-row"[^>]*role="button"/.test(body), 'spend-row에 role="button"이 없음');
@@ -15252,6 +15479,21 @@ function incomeAnalysisCtx() {
   vm.runInContext(extracted, ctx, { filename: 'extracted-from-index.html' });
   vm.runInContext(extractFunction('openIncomeAnalysis'), ctx, { filename: 'openIncomeAnalysis-real' });
   _incomeAnalysisCtx = ctx;
+  return ctx;
+}
+let _yearReviewCtx = null;
+function yearReviewCtx() {
+  if (_yearReviewCtx) return _yearReviewCtx;
+  const ctx = {
+    lastSheetHtml: null,
+    openSheet: (html) => { ctx.lastSheetHtml = html; },
+    svg: () => '',
+  };
+  vm.createContext(ctx);
+  vm.runInContext(logicSrc, ctx, { filename: 'logic.js' });
+  vm.runInContext(extracted, ctx, { filename: 'extracted-from-index.html' });
+  vm.runInContext(extractFunction('openYearReview'), ctx, { filename: 'openYearReview-real' });
+  _yearReviewCtx = ctx;
   return ctx;
 }
 /* 예산 요약 카드가 totalBudgetSummary()의 overCount(개별 카테고리별 예산 초과 수)를 전혀
