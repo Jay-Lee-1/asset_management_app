@@ -258,6 +258,10 @@ const FUNCTIONS = [
   'refreshPlanBody', 'planAsset', 'nextGroupOrder', 'movedGroupOrder', 'moveGroup', 'movedAssetOrder', 'moveAsset', 'monthSwipeCommitDir', 'overlayEscapeTarget', 'recFreq', 'recFreqLabel',
   'planSplitTransfer', 'planTransfer',
   'sbErrMsg', 'isRlsPolicyError', 'deleteCloudAccountData', 'doDeleteAccount',
+  // openHelp는 app-evolve cycle244 develop(helpBackupNote 와이어링 검증용)에서 끌어왔다 — openSheet
+  // 스텁만으로 실행형 검증이 가능해(DOM 전역을 직접 건드리지 않음) cycle152가 가져온 다른 함수들과
+  // 같은 기준으로 바로 추가한다.
+  'openHelp',
   // 아래 10개는 app-evolve cycle152 advance가 FUNCTIONS 커버리지 공백(critique가 지적한 48개
   // 미검증 render*/open*/do* 함수)에서 끌어온 것 — openSheet/openTxSheet/openRecSheet/renderMenu/
   // renderAssetSheet처럼 DOM 전역(classList, requestAnimationFrame 등)에 깊이 엮인 화면 진입점은
@@ -22133,6 +22137,70 @@ test('netlify.toml: "/" 블록 추가 후에도 /logic.js·/sw.js·/manifest.web
   const favBlock = extractHeaderBlock('/favicon.ico');
   assert.ok(pngBlock && pngBlock.includes('max-age=31536000, immutable'), '/*.png 긴 캐시 규칙이 사라지거나 바뀜');
   assert.ok(favBlock && favBlock.includes('max-age=31536000, immutable'), '/favicon.ico 긴 캐시 규칙이 사라지거나 바뀜');
+});
+
+/* ---------- helpBackupNote/openHelp: 도움말의 '💾 백업' 행이 계정 종류를 가린다
+ * openAccountSheet/doDeleteAccount는 이미 kind==='email'&&AUTH.rec(SESSION).cloud(isCloudAcct)로
+ * "이 계정이 Supabase 클라우드에도 동기화되는가"를 구분해 안내 문구를 나누는데, 일반 도움말
+ * (openHelp)의 백업 행만 그 구분 없이 모든 계정(게스트·카카오·클라우드 이메일)에 똑같이
+ * "데이터는 이 기기에만 저장돼요"라고 단정해왔다 — 클라우드 동기화를 켠 사용자에겐 사실이
+ * 아니다(app-evolve cycle244 develop). ---------- */
+test('helpBackupNote: 클라우드 미동기화(게스트·카카오·일반 이메일)는 "이 기기에만" 저장된다고 안내한다', () => {
+  const note = sandbox.helpBackupNote(false);
+  assert.ok(note.includes('<b>이 기기에만</b>'), '비클라우드 계정에 "이 기기에만" 문구가 없음');
+  assert.ok(!note.includes('클라우드'), '비클라우드 계정 안내에 클라우드 언급이 섞여 있으면 안 됨');
+});
+test('helpBackupNote: 클라우드 동기화 계정은 "이 기기에만"이라고 단정하지 않고 클라우드에도 저장된다고 안내한다', () => {
+  const note = sandbox.helpBackupNote(true);
+  assert.ok(!note.includes('<b>이 기기에만</b>'), '클라우드 동기화 계정인데도 "이 기기에만"이라고 단정함(사실이 아님)');
+  assert.ok(note.includes('클라우드'), '클라우드 동기화 계정 안내에 클라우드 언급이 없음');
+});
+test('helpBackupNote: 두 경우 모두 파일 백업(데이터 내보내기) 안내는 그대로 유지한다', () => {
+  [false, true].forEach(isCloudAcct => {
+    const note = sandbox.helpBackupNote(isCloudAcct);
+    assert.ok(note.includes('데이터 내보내기'), `isCloudAcct=${isCloudAcct}일 때 파일 백업 안내가 빠짐`);
+    assert.ok(note.includes('7일마다'), `isCloudAcct=${isCloudAcct}일 때 7일 리마인드 안내가 빠짐`);
+  });
+});
+test('openHelp: 클라우드 동기화 이메일 계정이면 백업 행에 helpBackupNote(true)를 그대로 쓴다(이 기기에만 저장된다고 잘못 말하지 않음)', () => {
+  const sessionOrig = sandbox.SESSION, authOrig = sandbox.AUTH;
+  sandbox.SESSION = 'user@example.com';
+  sandbox.AUTH = { rec: () => ({ cloud: true }) };
+  sandbox.lastSheetHtml = null;
+  try {
+    sandbox.openHelp();
+    assert.ok(sandbox.lastSheetHtml.includes(sandbox.helpBackupNote(true)), 'openHelp가 클라우드 계정용 helpBackupNote(true) 문구를 쓰지 않음');
+    assert.ok(!sandbox.lastSheetHtml.includes('<b>이 기기에만</b>'), '클라우드 계정인데도 "이 기기에만" 문구가 그대로 남아있음');
+  } finally {
+    sandbox.SESSION = sessionOrig;
+    sandbox.AUTH = authOrig;
+  }
+});
+test('openHelp: 게스트(미로그인)는 백업 행에 helpBackupNote(false)를 그대로 쓴다', () => {
+  const sessionOrig = sandbox.SESSION, authOrig = sandbox.AUTH;
+  sandbox.SESSION = '';
+  sandbox.AUTH = { rec: () => null };
+  sandbox.lastSheetHtml = null;
+  try {
+    sandbox.openHelp();
+    assert.ok(sandbox.lastSheetHtml.includes(sandbox.helpBackupNote(false)), 'openHelp가 게스트용 helpBackupNote(false) 문구를 쓰지 않음');
+  } finally {
+    sandbox.SESSION = sessionOrig;
+    sandbox.AUTH = authOrig;
+  }
+});
+test('openHelp: 카카오 로그인(기기 로컬 전용, cloud 플래그 없음)도 helpBackupNote(false)를 쓴다 — 계정이 있어도 클라우드 동기화가 아니면 "이 기기에만"', () => {
+  const sessionOrig = sandbox.SESSION, authOrig = sandbox.AUTH;
+  sandbox.SESSION = 'kakao-1';
+  sandbox.AUTH = { rec: () => ({ kakao: true, nick: '테스터' }) };
+  sandbox.lastSheetHtml = null;
+  try {
+    sandbox.openHelp();
+    assert.ok(sandbox.lastSheetHtml.includes('<b>이 기기에만</b>'), '카카오 계정인데도 클라우드 동기화 문구를 써서 "다른 기기에도 있다"고 오해를 줄 수 있음');
+  } finally {
+    sandbox.SESSION = sessionOrig;
+    sandbox.AUTH = authOrig;
+  }
 });
 
 /* ---------- 실행 ---------- */

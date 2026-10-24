@@ -1410,7 +1410,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.231';
+const APP_VERSION='1.47.232';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6448,6 +6448,10 @@ function twRender(st,el){
 
 }
 function openHelp(){
+ /* openAccountSheet/doDeleteAccount와 동일한 기준(kind==='email'&&AUTH.rec(SESSION).cloud) —
+  * 게스트·카카오는 둘 다 기기 로컬 전용이라 isCloudAcct=false로 같이 묶인다(helpBackupNote 주석,
+  * app-evolve cycle244 develop). */
+ const isCloudAcct=accountKind()==='email'&&!!(AUTH.rec(SESSION)&&AUTH.rec(SESSION).cloud);
  const rows=[
   ['🌱 이 앱은','카드값·월세·관리비처럼 <b>큰돈이 빠져나가는 날</b>에 통장이 버티는지 미리 보여줘요. 매일 적는 가계부가 아니라, 한 달에 몇 번만 넣어도 되는 <b>통장 잔액 시뮬레이터</b>예요.'],
   ['🏠 홈','<b>다음에 나갈 큰돈</b>이 가장 먼저 보여요. 그날 잔액이 모자라면 [해결 방법 보기]로 여유 있는 통장에서 미리 옮기는 <b>예정 이체</b>를 남길 수 있어요. 아래 <b>이번 달에 나갈 돈</b>에서 항목을 누르면 가계부의 그 내역으로 바로 이동해요.'],
@@ -6459,7 +6463,7 @@ function openHelp(){
   ['📅 한달 플랜','통장별로 하루하루 잔액이 어떻게 변하는지 봐요. 그 날 잔액이 마이너스면 빨간 종🔔으로 알려줘요. <b>오늘로</b> 버튼으로 언제든 오늘 위치로 돌아와요.'],
   ['✅ 이체 확인','예약한 이체는 <b>실제로 옮겼는지 확인</b>받아요. 확인 전까지는 예정으로 남고, 안 하면 다음 날로 밀려요. (메뉴에서 끌 수 있어요)'],
   ['🎨 내 취향대로','메뉴 › <b>메인 색</b>에서 앱 포인트 색을 7가지 중에 고를 수 있어요. 다크모드도 함께 지원돼요.'],
-  ['💾 백업','데이터는 <b>이 기기에만</b> 저장돼요. 메뉴 › 데이터 내보내기로 파일(iCloud 등)에 백업하고, 7일마다 홈에서 잊지 않게 알려드려요.'],
+  ['💾 백업',helpBackupNote(isCloudAcct)],
  ];
  openSheet(`<h3>도움말</h3><div class="desc">처음이라면 이렇게 시작해 보세요</div>
   <button class="btn btn-soft" style="margin-bottom:16px" onclick="openTutorial(0,true)">${svg('play')} 튜토리얼 다시 보기</button>
