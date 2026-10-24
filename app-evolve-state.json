@@ -1,15 +1,8 @@
 {
   "cycle": 245,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 240,
-      "phase": "develop",
-      "timestamp": "2026-10-23T18:30:00.000Z",
-      "summary": "general-purpose 서브에이전트(fork)가 develop 후보를 탐색해 rates.js의 환율 폴백 가드(if(missing.length))가 '네이버로 못 채운 통화'만 기준으로 fxFallbackChain을 태우는데, 금 시세(gold-api.com XAU→원 환산)는 USD/KRW 환율이 필요함을 발견 — 클라이언트(index.html fetchFxGold의 heldCurrencies())는 보유 중인 fx 통화만 cur로 보내므로(USD 보유 없이 JPY/EUR만 보유+금 자산도 있는 가계) cur=JPY,EUR&gold=1 요청에서 네이버가 JPY/EUR는 성공시키면 missing이 비어 fxFallbackChain 자체가 건너뛰어지고, 네이버 금 시세(naverGold)만 따로 실패하면 usdKrw를 전혀 못 구해 gold-api.com 폴백이 'no USD rate to convert'로 막혀 이미 코드로 존재하는 두 폴백 소스를 쓰지 못한 채 금 시세가 0으로 남는 실사용 결함(USD 비보유+금 자산 보유 가계가 다다를 수 있는 경로). 러너업 기각: CSV import/export dedupe/splits, doRenameOwner/doRenameCat 참조갱신, 예산 롤오버, archive/baseline 반복거래 가지치기, PWA 설치배너, APPLOCK/비밀번호찾기, tombstone/notified-id GC — 전부 과거 cycle에서 이미 다뤄짐을 재확인; archiveTxnsBefore()의 prevRec 캡처가 pruneOrphanRecOverrides() 호출 전이라 undo시 참조-앨리어싱 버그처럼 보였던 near-miss도 pruneOrphanRecOverrides가 항상 새 배열/객체로 재할당(in-place mutation 없음)함을 확인해 버그 아님으로 기각. rates.js에 needUsdForGold = wantGold && !out.goldPerG && !usdKrw를 추가해 가드를 if(missing.length || needUsdForGold)로 확장 — fxFallbackChain(curs,debug)은 curs와 무관하게 항상 _usdKrw를 함께 돌려주므로(ratesUsdBaseToKrw) 다른 코드 변경 없이 그 값만 흡수, missing이 비어있으면 for(const c of missing) 루프는 그대로 no-op이라 요청하지 않은 USD가 out.fx에 끼어들지 않음(테스트로 확인). test/run.js에 handler 통합 테스트 1건 추가(naver JPY/EUR 성공+금 실패 -> fxapi.app이 USD/KRW 제공 -> gold-api.com이 금시세 제공, fx.JPY/EUR 정상+fx에 USD 미삽입+goldPerG>0+source.gold==='gold-api.com'+errors.goldFallback 없음을 모두 검증). 오케스트레이터가 diff를 직접 읽고 로직을 재확인(ratesUsdBaseToKrw의 _usdKrw가 curs와 무관하게 항상 채워짐, needUsdForGold가 USD를 fx에 끼워넣지 않음) 후, git stash로 rates.js 수정분만 걷어내(test/run.js는 유지) node test/run.js를 돌려 신규 테스트 1건이 기대한 메시지로 FAIL함(1879/1880)을 직접 재현했고 stash pop으로 복원 후 1880/1880 통과를 재확인했다. node --check(rates.js/test/run.js) 통과. netlify/functions·test만 변경이라 cycle233/237/239 advance와 동일한 전례를 따라 APP_VERSION/sw.js CACHE는 범프하지 않았다.",
-      "commit": null
-    },
     {
       "cycle": 240,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-24T13:10:00.000Z",
       "summary": "자산 목록 CSV(assetsToCSV)와 순자산 추이 CSV(nwHistoryToCSV) 내보내기를 추가. exportData() 시트에 두 버튼 신설, doExport(mode,kind)에 assetsCsv/nwCsv 분기 추가(평가는 doExport가 assetEval/assetGainLoss로 끝낸 뒤 순수 포맷터에 넘김). test/run.js에 회귀 테스트 다수 추가, 전체 1932개 통과. APP_VERSION/CACHE 버전 동기 범프.",
       "commit": null
+    },
+    {
+      "cycle": 245,
+      "phase": "develop",
+      "timestamp": "2026-10-24T14:19:16.180Z",
+      "summary": "fork 서브에이전트가 develop 후보를 탐색해 문의하기(DB.inquiries) 저장 메모가 지금까지 추가(sendInquiry)/삭제(delInquiry)만 가능하고 수정이 전혀 불가능했던 공백을 발견 — 오타를 고치거나 내용을 보완하려면 삭제 후 재작성해야 했고 그러면 원래 작성일(date)도 잃는 문제였다. 러너업 기각: 검색어 하이라이트(txRow/histRow가 toggle 핸들러명만 다르고 완전히 동일한 마크업을 내야 한다는 기존 회귀 가드 테스트와 충돌해 드롭), 반복거래 CSV 내보내기(이미 제외 목록인 CSV import/export 일반 범주와 겹쳐 드롭). renameOwnerSheet/renameCatSheet와 동일한 \"수정 버튼 + 입력 시트\" 패턴을 따라 editInquiry(id)(미리채운 수정 시트)/saveInquiryEdit(id)(빈 내용 거부, text 갱신, touchSave()로 updatedAt만 갱신해 date는 보존, 재렌더) 신설, openInquiryList() 행에 기존 삭제 버튼 옆 \"수정\" 버튼 추가. index.html 변경이라 APP_VERSION 1.47.233->1.47.234, sw.js CACHE v500->v501 동기 범프. test/run.js: FUNCTIONS에 editInquiry/saveInquiryEdit 추가, $ mock에 inqEditText 스텁 추가, 신규 테스트 6건(id 없으면 두 함수 모두 no-op, 시트가 기존 text로 미리 채워짐, 빈 내용 거부 시 toast+변경없음, 성공 시 trim+updatedAt 갱신+date 보존, openInquiryList에 수정 버튼이 삭제 버튼과 함께 나타남) 추가(1932->1938). git stash push -- index.html sw.js로 구현만 걷어낸 뒤(test/run.js는 유지) 테스트 스위트가 editInquiry를 찾지 못해 즉시 크래시함을 직접 확인해 신규 테스트가 실제 구현에 의존함을 재검증하고 stash pop으로 복원한 뒤 오케스트레이터가 독립적으로 node our-assets-v1.14.1/our-assets/test/run.js를 재실행해 1938/1938 통과를 재확인하고 커밋한다.",
+      "commit": "de57733"
     }
   ]
 }
