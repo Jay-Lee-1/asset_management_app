@@ -5396,6 +5396,52 @@ test('buildImportPreview: 정말 새 카테고리인데 같은 파일 안에 공
   assert.strictEqual(preview.items[0].txn.category, '새카테고리');
   assert.strictEqual(preview.items[1].txn.category, '새카테고리');
 });
+/* ---------- buildImportPreview: invalidCount 하나로 뭉개지던 date/type/amount/category/asset
+ * 5가지 제외 사유를 사유별로 세고, 행 번호·원본 셀 일부를 표본으로 남긴다(app-evolve cycle243
+ * critique → advance). 어떤 행이 왜 걸렸는지 보여줘야 사용자가 CSV를 고칠 수 있다. */
+test('buildImportPreview: invalidCount를 date/type/amount/category/asset 사유별로 나눠 세고, 합은 invalidCount와 같다', () => {
+  const csv = '날짜,구분,카테고리,금액,보내는 자산,받는 자산,메모\r\n' +
+    'bad-date,지출,식비,1000,주계좌,,\r\n' +
+    '2026-01-01,알수없음,식비,1000,주계좌,,\r\n' +
+    '2026-01-01,지출,식비,abc,주계좌,,\r\n' +
+    '2026-01-01,지출,,1000,주계좌,,\r\n' +
+    '2026-01-01,지출,식비,1000,,,\r\n';
+  const preview = sandbox.buildImportPreview(csv, [{ id: 'a1', name: '주계좌' }], { expense: ['식비'], income: [], saving: [] }, []);
+  // preview.invalidByReason은 vm 샌드박스 realm의 객체라 host realm 리터럴과 deepStrictEqual이
+  // "구조는 같지만 참조 동일하지 않음"으로 실패한다 — JSON.parse(JSON.stringify(...))로 host
+  // realm 값으로 정규화해 비교한다(parseCSV 테스트와 동일 패턴, 4760행 참고).
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(preview.invalidByReason)), { date: 1, type: 1, amount: 1, category: 1, asset: 1 });
+  const sum = Object.values(preview.invalidByReason).reduce((a, b) => a + b, 0);
+  assert.strictEqual(sum, preview.invalidCount, '사유별 합이 invalidCount와 같아야 함');
+  assert.strictEqual(preview.invalidCount, 5);
+});
+test('buildImportPreview: invalid/range/future 각각 행 번호·사유·원본 셀을 담은 표본을 최대 5건까지만 남긴다(응답 크기 억제)', () => {
+  sandbox.TODAY = '2026-06-15';
+  const rows = [];
+  for (let i = 0; i < 7; i++) rows.push(`bad-date-${i},지출,식비,1000,,,`);
+  rows.push('2022-12-31,지출,식비,1000,,,range행'); // RANGE_FROM(2023-01-01) 이전
+  rows.push('2026-06-16,지출,식비,1000,,,future행'); // RANGE_TO 안이지만 TODAY 이후(아직 안 지난)
+  const csv = '날짜,구분,카테고리,금액,보내는 자산,받는 자산,메모\r\n' + rows.join('\r\n') + '\r\n';
+  const preview = sandbox.buildImportPreview(csv, [], { expense: ['식비'], income: [], saving: [] }, []);
+  assert.strictEqual(preview.invalidCount, 7, '7개 invalid 행 전부 카운트는 돼야 함');
+  assert.strictEqual(preview.samples.invalid.length, 5, 'invalid 표본은 SAMPLE_CAP(5)을 넘지 않아야 함');
+  assert.strictEqual(preview.samples.invalid[0].row, 2, '헤더가 1행이므로 첫 데이터 행은 2행');
+  assert.strictEqual(preview.samples.invalid[0].reason, 'date');
+  assert.ok(preview.samples.invalid[0].cells.includes('bad-date-0'), '표본에 원본 셀 값이 남아있어야 함');
+  assert.strictEqual(preview.samples.range.length, 1);
+  assert.strictEqual(preview.samples.range[0].row, 9);
+  assert.strictEqual(preview.samples.future.length, 1);
+  assert.strictEqual(preview.samples.future[0].row, 10);
+});
+test('buildImportPreview: unmatchedAssetNames는 중복 제거·정렬되고, 중복(dup) 행의 unmatched 자산명은 제외한다(assetUnmatchedCount와 동일 필터)', () => {
+  const txns = [{ id: 't1', date: '2026-01-01', type: 'expense', category: '식비', amount: 5000, fromAssetId: null, toAssetId: null, fromAssetName: '없는통장', memo: '' }];
+  const csv = '날짜,구분,카테고리,금액,보내는 자산,받는 자산,메모\r\n' +
+    '2026-01-01,지출,식비,5000,없는통장,,\r\n' + // 위 txns와 동일 키 → dup
+    '2026-01-02,지출,식비,3000,없는통장,,\r\n' + // 새 행, 같은 unmatched 자산명
+    '2026-01-03,수입,급여,2000,,없는통장2,\r\n';
+  const preview = sandbox.buildImportPreview(csv, [], { expense: ['식비'], income: ['급여'], saving: [] }, txns);
+  assert.deepStrictEqual(Array.from(preview.unmatchedAssetNames), ['없는통장', '없는통장2'], '가나다 정렬된 중복 제거 목록이어야 함');
+});
 test('doCsvImport: newCats에 기존 카테고리의 공백/대소문자 변형이 섞여 있어도 DB.categories에 중복 추가하지 않는다', () => {
   sandbox.DB = { categories: { expense: ['Rent'], income: [], saving: [] }, txns: [] };
   sandbox.window._csvImport = {
@@ -5406,6 +5452,84 @@ test('doCsvImport: newCats에 기존 카테고리의 공백/대소문자 변형�
   };
   sandbox.doCsvImport();
   assert.deepStrictEqual(sandbox.DB.categories.expense, ['Rent'], '기존 카테고리와 근접중복이면 DB.categories에 추가되면 안 됨');
+});
+
+/* openCsvImportPreview는 메인 sandbox에선 openSheet가 no-op 스텁이라 렌더 결과를 못 본다 —
+ * spendAnalysisCtx()와 같은 패턴으로, 이 함수와 그 보조 함수(csvSampleRowHtml/csvSampleBlock/
+ * CSV_INVALID_REASON_LABEL)만 logic.js(esc) 위에 올린 독립 vm 컨텍스트에서 실제로 실행해
+ * 렌더된 HTML을 검증한다(app-evolve cycle243 advance). */
+let _csvImportPreviewCtx = null;
+function csvImportPreviewCtx() {
+  if (_csvImportPreviewCtx) return _csvImportPreviewCtx;
+  const ctx = {
+    lastSheetHtml: null,
+    openSheet: (html) => { ctx.lastSheetHtml = html; },
+    svg: () => '',
+    window: {},
+  };
+  vm.createContext(ctx);
+  vm.runInContext(logicSrc, ctx, { filename: 'logic.js' });
+  vm.runInContext(extractConst('CSV_INVALID_REASON_LABEL'), ctx, { filename: 'CSV_INVALID_REASON_LABEL' });
+  vm.runInContext(extractFunction('csvSampleRowHtml'), ctx, { filename: 'csvSampleRowHtml' });
+  vm.runInContext(extractFunction('csvSampleBlock'), ctx, { filename: 'csvSampleBlock' });
+  vm.runInContext(extractFunction('openCsvImportPreview'), ctx, { filename: 'openCsvImportPreview' });
+  _csvImportPreviewCtx = ctx;
+  return ctx;
+}
+test('openCsvImportPreview: invalid/range/future 각 사유 블록을 펼침(<details>)으로 보여주고, 표본이 잘렸으면 "N건 중 M건만 표시"를 덧붙인다', () => {
+  const ctx = csvImportPreviewCtx();
+  ctx.openCsvImportPreview({
+    totalRows: 10, newCount: 2, dupCount: 0,
+    invalidCount: 7, invalidByReason: { date: 7, type: 0, amount: 0, category: 0, asset: 0 },
+    rangeCount: 1, futureCount: 1, assetUnmatchedCount: 0,
+    samples: {
+      invalid: [{ row: 2, reason: 'date', cells: ['bad-date', '지출', '식비', '1000', '', ''] }],
+      range: [{ row: 9, cells: ['2022-12-31', '지출', '식비', '1000', '', ''] }],
+      future: [{ row: 10, cells: ['2099-01-01', '지출', '식비', '1000', '', ''] }],
+    },
+    unmatchedAssetNames: [],
+    newCats: { expense: [], income: [], saving: [] },
+  });
+  const html = ctx.lastSheetHtml;
+  assert.ok(html.includes('형식을 알 수 없는 행 보기 (7건 중 1건만 표시)'), '표본이 실제 개수보다 적으면 잘렸다는 안내가 있어야 함');
+  assert.ok(html.includes('2행'), '표본 행에 행 번호가 있어야 함');
+  assert.ok(html.includes('날짜 형식 오류'), '표본 행에 사람이 읽을 사유 라벨이 있어야 함');
+  assert.ok(html.includes('bad-date'), '표본 행에 원본 셀 값이 있어야 함');
+  assert.ok(!html.includes('날짜 범위를 벗어난 행 보기 (1건 중 1건만 표시)'), '표본 개수와 실제 개수가 같으면 잘렸다는 안내를 붙이면 안 됨');
+  assert.ok(html.includes('날짜 범위를 벗어난 행 보기'));
+  assert.ok(html.includes('예정(미래) 날짜 행 보기'));
+});
+test('openCsvImportPreview: 표본이 없는 사유(count가 0)는 펼침 블록 자체를 만들지 않는다', () => {
+  const ctx = csvImportPreviewCtx();
+  ctx.openCsvImportPreview({
+    totalRows: 1, newCount: 1, dupCount: 0,
+    invalidCount: 0, invalidByReason: { date: 0, type: 0, amount: 0, category: 0, asset: 0 },
+    rangeCount: 0, futureCount: 0, assetUnmatchedCount: 0,
+    samples: { invalid: [], range: [], future: [] },
+    unmatchedAssetNames: [],
+    newCats: { expense: [], income: [], saving: [] },
+  });
+  const html = ctx.lastSheetHtml;
+  assert.ok(!html.includes('<details'), '제외된 행이 하나도 없으면 펼침 블록이 전혀 없어야 함');
+});
+test('openCsvImportPreview: 매칭 안 된 자산명 목록을 펼침으로 보여주고, 카테고리/자산명의 HTML 특수문자를 이스케이프한다', () => {
+  const ctx = csvImportPreviewCtx();
+  ctx.openCsvImportPreview({
+    totalRows: 2, newCount: 2, dupCount: 0,
+    invalidCount: 1, invalidByReason: { date: 0, type: 0, amount: 0, category: 0, asset: 1 },
+    rangeCount: 0, futureCount: 0, assetUnmatchedCount: 1,
+    samples: {
+      invalid: [{ row: 3, reason: 'asset', cells: ['2026-01-01', '지출', '<b>식비</b>', '1000', '', ''] }],
+      range: [], future: [],
+    },
+    unmatchedAssetNames: ['<없는통장>', '정상통장'],
+    newCats: { expense: [], income: [], saving: [] },
+  });
+  const html = ctx.lastSheetHtml;
+  assert.ok(html.includes('매칭 안 된 자산명 보기 (2개)'));
+  assert.ok(html.includes('&lt;없는통장&gt;'), '자산명의 <,> 가 이스케이프되지 않고 그대로 삽입되면 XSS 위험');
+  assert.ok(!html.includes('<없는통장>'), 'esc() 없이 원문 그대로 삽입되면 안 됨');
+  assert.ok(html.includes('&lt;b&gt;식비&lt;/b&gt;'), '표본 셀 안의 HTML 특수문자도 이스케이프돼야 함');
 });
 
 /* ---------- doCsvImport: undoToast의 되돌리기가 DB.deletedIds 톰스톤을 전혀 남기지 않던 버그의

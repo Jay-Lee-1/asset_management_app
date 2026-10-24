@@ -787,6 +787,10 @@ html.no-ad .ad-slot{display:none}
 .sheet-x svg{width:15px;height:15px}
 .sheet-x:active{transform:scale(.88)}
 .sheet h3{font-size:19px;font-weight:700;margin-bottom:4px;padding-right:38px}.sheet .desc{font-size:13.5px;color:var(--text-2);margin-bottom:18px}
+.csv-detail{margin:-8px 0 14px;font-size:12.5px;color:var(--text-3)}
+.csv-detail summary{cursor:pointer;color:var(--text-2);font-weight:600;padding:4px 0}
+.csv-detail .csv-sample-row{padding:5px 0 5px 14px;border-bottom:1px solid var(--line-2);word-break:break-all}
+.csv-detail .csv-sample-row:last-child{border-bottom:none}
 .tx-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px;padding-right:38px}
 .tx-head h3{margin-bottom:0;padding-right:0}
 .seg{position:relative;display:flex;background:var(--sunken);border-radius:var(--r-sm);padding:4px;margin-bottom:16px;gap:2px}
@@ -1406,7 +1410,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.230';
+const APP_VERSION='1.47.231';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6611,10 +6615,24 @@ function buildImportPreview(text,assets,categories,existingTxns){
  const usedCounts=new Map();
  const items=[];
  let invalidCount=0,rangeCount=0,futureCount=0;
+ /* cycle243 advance: invalidCount 하나로 뭉개지던 date/type/amount/category/asset 5가지 사유를
+    따로 세고(assetUnmatchedCount가 이미 쓰는 'asset 매칭 실패'와는 다른 축 — 여긴 이름 자체가
+    비어 요구사항을 못 채운 '하드 invalid' 케이스), 각 사유별로 행 번호+원본 셀 일부를
+    SAMPLE_CAP개까지만 담아 응답 크기를 억제한다. */
+ const invalidByReason={date:0,type:0,amount:0,category:0,asset:0};
+ const SAMPLE_CAP=5;
+ const samples={invalid:[],range:[],future:[]};
+ const addSample=(bucket,entry)=>{if(samples[bucket].length<SAMPLE_CAP)samples[bucket].push(entry)};
  const newCats={expense:new Set(),income:new Set(),saving:new Set()};
- dataRows.forEach(cells=>{
+ dataRows.forEach((cells,idx)=>{
+  const row=idx+2; /* 헤더가 CSV 1행이므로 데이터 행은 2행부터 */
   const r=csvRowToImportTxn(cells,assets);
-  if(!r.ok){if(r.error==='range')rangeCount++;else if(r.error==='future')futureCount++;else invalidCount++;return}
+  if(!r.ok){
+   if(r.error==='range'){rangeCount++;addSample('range',{row,cells:cells.slice(0,6)})}
+   else if(r.error==='future'){futureCount++;addSample('future',{row,cells:cells.slice(0,6)})}
+   else{invalidCount++;if(r.error in invalidByReason)invalidByReason[r.error]++;addSample('invalid',{row,reason:r.error,cells:cells.slice(0,6)})}
+   return;
+  }
   /* addCat/renameCatSheet와 같은 normName() 근접중복 판정을 CSV 카테고리에도 적용 — 그대로 두면
      "식비 "(공백)·"식비"(연속공백)·대소문자 변형이 원본과 다른 별도 카테고리로 생성돼
      지출분석/예산 집계가 같은 카테고리인데 둘로 쪼개진다. 일치하는 기존/이번 가져오기 신규
@@ -6632,15 +6650,21 @@ function buildImportPreview(text,assets,categories,existingTxns){
   items.push({txn:r.txn,dup,unmatched:r.unmatched});
  });
  const newCount=items.filter(x=>!x.dup).length;
+ /* assetUnmatchedCount와 같은 필터(!dup && unmatched.length)로 모은, 실제로 가져와질 행들의
+    안 맞은 자산명만 중복제거+가나다 정렬 — dup 행의 unmatched는 애초에 안 가져오므로 제외. */
+ const unmatchedAssetNames=[...new Set(items.filter(x=>!x.dup&&x.unmatched.length).flatMap(x=>x.unmatched))].sort((a,b)=>a.localeCompare(b,'ko'));
  return{
   items,
   totalRows:dataRows.length,
   invalidCount,
+  invalidByReason,
   rangeCount,
   futureCount,
   dupCount:items.length-newCount,
   newCount,
   assetUnmatchedCount:items.filter(x=>!x.dup&&x.unmatched.length).length,
+  unmatchedAssetNames,
+  samples,
   newCats:{expense:[...newCats.expense],income:[...newCats.income],saving:[...newCats.saving]}
  };
 }
@@ -7241,6 +7265,22 @@ $('importCsvFile').addEventListener('change',e=>{
  r.readAsText(f);
 });
 /* 가져오기 전 미리보기 — 새 내역/중복/형식 오류/자산 미매칭 건수와 새로 생길 카테고리를 보여준다. */
+/* cycle243 advance: invalid/range/future 사유 코드를 사람이 읽을 라벨로 바꾸고, 표본 1건을
+   "N행 · 사유 · 원본 셀 일부" 한 줄로 그린다 — 어떤 행·어떤 값이 걸렸는지 보여줘야 사용자가
+   CSV를 고칠 수 있다(buildImportPreview의 samples 참고). */
+const CSV_INVALID_REASON_LABEL={date:'날짜 형식 오류',type:'구분 값 오류',amount:'금액 오류',category:'카테고리 누락',asset:'자산 누락'};
+function csvSampleRowHtml(s){
+ const parts=[`${s.row}행`];
+ if(s.reason)parts.push(CSV_INVALID_REASON_LABEL[s.reason]||s.reason);
+ const cellsTxt=(s.cells||[]).filter(c=>c).join(' / ');
+ if(cellsTxt)parts.push(cellsTxt);
+ return `<div class="csv-sample-row">${parts.map(esc).join(' · ')}</div>`;
+}
+function csvSampleBlock(label,arr,totalCount){
+ if(!arr||!arr.length)return '';
+ const more=totalCount>arr.length?` (${totalCount}건 중 ${arr.length}건만 표시)`:'';
+ return `<details class="csv-detail"><summary>${esc(label+more)}</summary>${arr.map(csvSampleRowHtml).join('')}</details>`;
+}
 function openCsvImportPreview(preview){
  window._csvImport=preview;
  const stats=[
@@ -7252,8 +7292,15 @@ function openCsvImportPreview(preview){
   preview.assetUnmatchedCount?`자산 매칭 안 됨 ${preview.assetUnmatchedCount}건 · 내역엔 남지만 자산 잔액엔 반영 안 돼요`:null,
  ].filter(Boolean);
  const newCatList=[...preview.newCats.expense,...preview.newCats.income,...preview.newCats.saving];
+ const details=[
+  csvSampleBlock('형식을 알 수 없는 행 보기',preview.samples&&preview.samples.invalid,preview.invalidCount),
+  csvSampleBlock('날짜 범위를 벗어난 행 보기',preview.samples&&preview.samples.range,preview.rangeCount),
+  csvSampleBlock('예정(미래) 날짜 행 보기',preview.samples&&preview.samples.future,preview.futureCount),
+  preview.unmatchedAssetNames&&preview.unmatchedAssetNames.length?`<details class="csv-detail"><summary>${esc('매칭 안 된 자산명 보기 ('+preview.unmatchedAssetNames.length+'개)')}</summary><div class="csv-sample-row">${esc(preview.unmatchedAssetNames.join(', '))}</div></details>`:'',
+ ].filter(Boolean).join('');
  openSheet(`<h3>거래 내역 가져오기</h3>
   <div class="desc">${stats.map(s=>`· ${esc(s)}`).join('<br>')}${newCatList.length?`<br>· 새 카테고리 ${newCatList.length}개 자동 생성: ${esc(newCatList.join(', '))}`:''}</div>
+  ${details}
   ${preview.newCount?`<button class="btn btn-primary" onclick="doCsvImport()">${svg('restore')} ${preview.newCount}건 가져오기</button>`
    :`<div class="desc" style="color:var(--text-3)">가져올 새 내역이 없어요</div>`}`);
 }
