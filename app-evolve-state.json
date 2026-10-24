@@ -1,15 +1,12 @@
 {
   "cycle": 243,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "CSV 가져오기 미리보기에 제외 사유별 상세 진단 추가",
+    "why": "buildImportPreview()(index.html:6598)가 date/type/amount/asset/category 5가지 서로 다른 csvRowToImportTxn 오류 사유(index.html:6559,6569,6571,6573-6575,6576)를 range/future 둘만 구분하고 나머지 전부를 invalidCount 하나로(6617) 뭉개며, openCsvImportPreview()(7244)는 그 숫자만 보여주고 어떤 행·어떤 자산명이 걸렸는지 전혀 보여주지 않아 수백 행짜리 CSV 가져오기에서 사용자가 무엇을 고쳐야 할지 알 수 없다. assetUnmatchedCount도 어떤 자산명이 안 맞았는지 숨긴다.",
+    "approach": "buildImportPreview()에 사유별 서브카운트(invalidByReason:{date,type,amount,category} — asset은 범위 밖, 아래 unmatched와 구분해서 남김) 추가. dataRows.forEach 루프에서 range/future 외 모든 invalid 행과 unmatched 자산에 대해 원본 행 번호+원문 일부 필드를 최대 5개씩 모아 samples:{invalid:[{row,reason,cells}],range:[...],future:[...]} 형태로 리턴에 포함(표본만 담아 응답 크기 억제). assetUnmatchedCount를 만드는 필터 옆에서 안 맞은 자산명 Set을 모아 unmatchedAssetNames:[...](중복제거+정렬)도 리턴. openCsvImportPreview()의 stats 각 줄 옆에 펼침 목록을 추가해 samples/unmatchedAssetNames를 행번호·사유와 함께 보여줌(esc() 필수 — 자산명/카테고리는 사용자 입력). 가져오기 자체 동작(doCsvImport)은 바꾸지 않음. csvRowToImportTxn()은 변경 없음(이미 5가지 error 사유를 구분해서 던짐). test/run.js: buildImportPreview 블록 옆에 사유별 서브카운트 분리/samples N개 cap/unmatchedAssetNames 중복제거·정렬/dup 행은 집계에서 빠짐/openCsvImportPreview 렌더 결과에 esc 누락 없이 삽입되는지 테스트 추가. index.html만 변경이므로 APP_VERSION/sw.js CACHE 동기 범프 필요."
+  },
   "history": [
-    {
-      "cycle": 238,
-      "phase": "critique",
-      "timestamp": "2026-10-23T12:10:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-238 전체 다룬 영역 전부 제외 지시)한 결과, DB.recurrences 3-way 병합의 mergeDataLoss 경고 공백을 발견 — logic.js:252-281 mergeRecurrences()는 skip/edits/confirmedDates만 합집합 보존하고 나머지 스칼라 필드(amount/day/freq/startDate/endDate/weekend 등)는 base=(l.updatedAt>=r.updatedAt?l:r) 승자독식으로 패자 수정을 조용히 버리는데(test/run.js:10423-10429가 이 동작을 '정상'으로 고정), index.html:1628-1641 mergeRemoteDataIntoLocal()은 txns/assets/goals/inquiries/assetQtyLog 5개만 mergeCollectionConflicts()로 이 손실을 세어 DB.settings.mergeDataLossCount/mergeDataLossFields에 경고로 남기고 recurrences는 '이미 피해간다'는 1628-1629줄의 틀린 주석 근거로 대상에서 빠져 있음을 코드 직접 대조로 확인(sed로 양쪽 라인 재확인 완료). 실패 시나리오: 가족 공유 동기화에서 기기A가 반복이체 금액을 오프라인 수정, 기기B가 같은 거래의 day를 오프라인 수정(updatedAt 더 큼) → 동기화 시 기기B가 base로 선택돼 day는 반영되지만 기기A의 금액 수정은 경고 없이 사라지고 매달 틀린 금액으로 계속 반복 생성(1회성 거래였다면 떴을 mergeDataLoss 경고가 반복거래에는 없음 — 손실이 매달 반복돼 blast radius가 더 큼). 러너업 기각: sanitizeBackup 검증 공백(cycle198-238에 걸쳐 전 필드 이미 검증 완료, 재확인 결과 더 이상 공백 없음), csvDedupeKey가 splits 미반영(buildImportPreview가 splitLines()로 이미 올바르게 처리, 버그 아님), mergeRates()의 fx/stock/crypto 통째 교체(거의 동시 갱신 설계라 실질적 손실 없음), assetQtyLog 무한증가(수동 이벤트라 체감 크기까지 수년 걸림, 추측성 성능이슈로 기각). advance 계획을 pending_advance_plan에 저장: logic.js에 mergeRecurrenceConflicts(id/updatedAt/skip/edits/confirmedDates 제외하고 diff 탐지) 신설, index.html _mergeConflicts 배열에 추가(DB.recurrences 덮어쓰기 전 호출), 오탐방지 회귀가드(skip만 달라도 충돌 0건) 포함 테스트 다수 추가, APP_VERSION/sw.js CACHE 동기 범프. 코드 변경 없음(critique 단계라 state.json만 갱신).",
-      "commit": null
-    },
     {
       "cycle": 238,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-24T07:08:33.667Z",
       "summary": "develop(cycle243, assetQInput 신설: #assetQ 자산검색에 histQInput과 동일한 220ms 디바운스/빈문자열 즉시실행 패턴 적용) 커밋을 검토. diff를 직접 읽어 assetQInput(v)가 histQInput(v)과 1:1 동일 구조(ST.assetQ=v로 즉시 반영 -> clearTimeout(_assetQT) -> v.trim()==='' 이면 즉시 assetSelPartial(), 아니면 220ms setTimeout)임을 확인. assetSelPartial이 ST.assetQ를 live로 읽어 assetBodyHTML을 재계산하므로 debounce 콜백 시점에 값이 바뀌어 있어도 stale 값 사용 문제가 없음을 확인. #assetQ input은 renderAssets()의 searchbar 마크업에 있고 #assetBody와는 분리된 별도 div라서, clrInput(assetQ)가 el.value='' 세팅 후 dispatch하는 input 이벤트가 assetQInput('')을 즉시 경로로 태워도 그 뒤의 el.focus()가 assetSelPartial()의 #assetBody.innerHTML 교체로 무효화되지 않음을 index.html 3876행(#assetBody 위치)과 4296행(clrInput 구현)으로 직접 확인 — histQ와 동일한 전제. 신규 테스트 4건이 즉시반영/디바운스시점/연속입력시 타이머 교체/지우기·공백 즉시실행 네 분기에 1:1 대응함을 확인. node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행 결과 1910/1910 통과(develop 단계가 주장한 수치와 일치). 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 243,
+      "phase": "critique",
+      "timestamp": "2026-10-24T08:16:19.585Z",
+      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-243 전체 다룬 영역 전부 제외 지시)한 결과, CSV 거래 내역 가져오기 미리보기가 제외 사유를 행 단위로 전혀 보여주지 않는 공백을 발견 — buildImportPreview()(index.html:6598)는 csvRowToImportTxn()이 던지는 date/type/amount/asset/category 5가지 오류 사유(6559/6569/6571/6573-6575/6576) 중 range/future 둘만 구분해 나머지 전부를 invalidCount 하나(6617)로 뭉개고, assetUnmatchedCount도 어떤 자산명이 안 맞았는지 숨긴다. openCsvImportPreview()(7244)는 그 숫자만 나열할 뿐 어떤 행·자산명인지 전혀 보여주지 않아, 수백 행짜리 첫 이행 가져오기에서 사용자가 \"형식을 알 수 없는 23행\" 중 뭘 고쳐야 하는지 알 길이 없다(이체/저축/지출/수입 자산 불일치는 unmatched로 내역엔 남지만 잔액엔 조용히 반영 안 되는 부분실패로도 이어짐). 러너업 기각: SRI 해시 TODO(index.html:1374, 이 세션 네트워크 정책도 jsdelivr/kakaocdn을 403 차단해 환경 제약으로 여전히 불가), toNum()의 음수→양수 취식(cycle240이 이미 전역 한계로 인지), 라이트모드 rose 버튼 대비(4.56:1로 WCAG AA 통과, 기준 미달 아님). advance 계획을 pending_advance_plan에 저장(아래 참고 — 코드 리뷰로 csvRowToImportTxn의 오류 사유가 보고서가 말한 4개가 아니라 date 포함 5개임을 추가 확인해 계획에 반영). 코드 변경 없음(critique 단계라 state.json만 갱신).",
       "commit": null
     }
   ]
