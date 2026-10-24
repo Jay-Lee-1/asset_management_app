@@ -1406,7 +1406,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.226';
+const APP_VERSION='1.47.227';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1943,6 +1943,12 @@ function sbReady(){const c=sbCfg();if(!c.url||!c.key||!window.supabase)return fa
  * changePassword/resetPassword 흐름에서만 나오는 Supabase 메시지 — 순서상 generic한 /password/i보다
  * 앞에 둬야 "새 비밀번호가 기존과 같음" 에러가 엉뚱하게 "6자 이상" 메시지로 뭉개지지 않는다. */
 function sbErrMsg(e){const m=(e&&e.message)||'';if(/registered|already/i.test(m))return'이미 가입된 이메일이에요';if(/invalid login|invalid.*credentials/i.test(m))return'이메일 또는 비밀번호가 올바르지 않아요';if(/confirm/i.test(m))return'이메일 인증이 필요해요 · 메일함을 확인해 주세요';if(/different from the old password/i.test(m))return'새 비밀번호는 기존 비밀번호와 달라야 해요';if(/security purposes|rate limit/i.test(m))return'요청이 너무 잦아요 · 잠시 후 다시 시도해 주세요';if(/password/i.test(m))return'비밀번호는 6자 이상이어야 해요';return m||'클라우드 연결에 실패했어요'}
+/* PostgREST가 RLS 정책이 없거나(delete 정책 미설정 등) 막힌 쓰기를 거부할 때 쓰는 42501
+ * (insufficient_privilege)과, 메시지에 policy/RLS/row-level security가 들어간 경우를 네트워크
+ * 장애·인증 만료 같은 다른 사유와 구분한다 — deleteCloudAccountData()가 '셀프호스팅 Supabase에
+ * delete 정책을 아직 추가하지 않았다'는 구체적 안내로 바꿔줄 수 있게(app-evolve cycle241 advance,
+ * 계정 탈퇴 기능이 openHelpCloud() SQL에 delete 정책을 새로 추가하면서 생긴 공백). */
+function isRlsPolicyError(e){if(!e)return false;if(e.code==='42501')return true;const m=((e.message||'')+' '+(e.details||'')+' '+(e.hint||''));return/row-level security|policy|\brls\b/i.test(m)}
 /* 동기화 상태: 'idle'|'syncing'|'ok'|'error'|'conflict' — 계정 화면에 표시, 실패/충돌은 1회만 토스트 */
 let CLOUD_SYNC_STATE='idle';let CLOUD_LAST_OK=null;let CLOUD_LAST_SYNCED_AT=null;
 let CLOUD_ERR_TOASTED=false;let CLOUD_CONFLICT_TOASTED=false;
@@ -2051,6 +2057,21 @@ async function measureCloudClockSkew(){
 }
 let SB_PUSH_T=null;
 function scheduleCloudPush(){if(!sbReady()||!CLOUD_UID)return;clearTimeout(SB_PUSH_T);SB_PUSH_T=setTimeout(()=>pushCloud().catch(()=>{}),1200)}
+/* 계정 탈퇴(doDeleteAccount) 전용 — 클라우드 계정은 anon key로 auth.admin.deleteUser를 부를 수
+ * 없어(관리자 권한 전용 API) Supabase Auth 로그인 자체는 앱에서 지울 수 없다. 대신 지울 수 있는
+ * 유일한 범위인 user_data 행(실제 자산 데이터)만 삭제한다 — openHelpCloud()의 안내문과 일치시킨다
+ * (app-evolve cycle241 advance). */
+async function deleteCloudAccountData(){
+ if(!sbReady()||!CLOUD_UID)return{err:'클라우드 계정이 아니에요'};
+ try{
+  const{error}=await withTimeout(SB.from('user_data').delete().eq('user_id',CLOUD_UID));
+  if(error){
+   if(isRlsPolicyError(error))return{err:'Supabase에 데이터 삭제 권한(delete 정책)이 없어요 · 메뉴 › 계정 › 클라우드 동기화 설정의 안내 SQL을 다시 실행해 주세요'};
+   return{err:sbErrMsg(error)};
+  }
+  return{ok:true};
+ }catch(e){return{err:'클라우드 연결에 실패했어요 · 인터넷 연결을 확인해 주세요'}}
+}
 /* 이 기기 clock 기준으로 로컬 저장 시각(dataKey()+'__savedAt', save()가 갱신)과 마지막으로
  * 클라우드와 확인된 시각(dataKey()+'__syncedAt', pullCloud/pushCloud 성공 시 갱신)을 비교한다.
  * 둘 다 서버 시각이 아니라 이 기기의 Date.now()라서 서버-클라이언트 시계 오차 걱정이 없다. */
@@ -2349,6 +2370,21 @@ const AUTH={
  kakaoUpsert(id,nick){const a=this._accts();if(!a[emailKey(id)])a[emailKey(id)]={email:id,kakao:true,nick:nick||'',created:Date.now()};else if(nick)a[emailKey(id)].nick=nick;this._write(a)},
  rec(email){return this._accts()[emailKey(email)]||null},
  signOut(){SESSION='';localStorage.setItem('asset_app_session','');CLOUD_UID=null;if(SB)try{SB.auth.signOut().catch(()=>{})}catch(e){}},
+ /* doDeleteAccount() 전용 — 계정 레코드(_accts) 및 그 계정의 로그인 실패 카운터(_fails)를 둘 다
+  * 지워야 그 이메일로 재가입할 수 있다(doResetAll()은 DB만 비우고 이 레코드는 전혀 안 지워서
+  * 로컬 계정은 탈퇴해도 재가입이 영구히 막혀 있었다 — app-evolve cycle241 critique/advance).
+  * 다른 계정은 손대지 않도록 withoutKey(logic.js)로 해당 key만 제거한 얕은 복사를 되써준다.
+  * 되돌리기(undo)를 위해 지워지기 전 레코드를 반환하고(없었으면 null), 자체적으로는 아무것도
+  * 저장하지 않는 doDeleteAccount()의 snapshot/undo와 달리 이 메서드 자체는 즉시 커밋한다 —
+  * 호출부가 undo 시 반환값을 that._write(Object.assign(...))로 복원한다. */
+ deleteLocalAccountRecord(email){
+  const key=emailKey(email);
+  const a=this._accts();const rec=a[key]||null;
+  if(rec){this._write(withoutKey(a,key))}
+  const f=this._fails();
+  if(f[key]){this._writeFails(withoutKey(f,key))}
+  return rec;
+ },
 };
 /* 기기 단위 앱 잠금(PIN) — AUTH와 별개의 보안 계층이라 계정/클라우드 동기화 대상이 아니다.
  * 가족 공유 계정이라도 기기마다 PIN이 다를 수 있어야 하므로 DB.settings가 아니라
@@ -5664,6 +5700,7 @@ function openAccountSheet(){
     ${kind==='kakao'?`<button onclick="openKakaoSwitchSheet()"><div><div>이메일로 전환해 동기화하기</div><div class="ol-sub">카카오 계정은 다른 기기와 동기화되지 않아요</div></div></button>`:''}
     <button onclick="openHelpCloud()"><div><div>이메일 로그인 · 클라우드 동기화 설정</div><div class="ol-sub">${cloudOn?'Supabase 연결됨':'Supabase 연결하면 다른 기기에서도 같은 데이터를 봐요'}</div></div></button>
     <button onclick="openHelpKakao()"><div><div>카카오 로그인 설정 방법</div><div class="ol-sub">JavaScript 키·도메인 등록 안내</div></div></button>
+    ${kind!=='guest'?`<button onclick="doDeleteAccount()"><div><div style="color:var(--expense)">계정 탈퇴</div><div class="ol-sub">데이터와 계정을 영구히 삭제해요 · '전체 초기화'와 달리 계정 자체도 지워요</div></div></button>`:''}
   </div>`);
 }
 /* 카카오 계정은 dataKey()가 kakao id로 분리된 로컬 DB를 쓰므로, 이메일로 로그인한다고 데이터가
@@ -5700,10 +5737,13 @@ create policy "select own" on public.user_data
 create policy "insert own" on public.user_data
   for insert with check (auth.uid() = user_id);
 create policy "update own" on public.user_data
-  for update using (auth.uid() = user_id);</pre>
+  for update using (auth.uid() = user_id);
+create policy "delete own" on public.user_data
+  for delete using (auth.uid() = user_id);</pre>
+   <p style="font-size:12px;color:var(--text-3)">이미 테이블을 만들어 쓰고 있다면 <b>delete own</b> 정책만 없을 수 있어요 — 위 SQL 전체를 다시 실행해도 안전해요(이미 있는 정책은 에러가 나니 <code>create policy "delete own"...</code> 줄만 따로 실행해도 돼요). 이 정책이 없으면 계정 탈퇴 시 클라우드 데이터 삭제가 거부돼요.</p>
    <p><b>3) 이메일 인증(선택)</b><br><b>Authentication › Providers › Email</b>에서 'Confirm email'을 꺼두면 가입 즉시 로그인돼요. 켜두면 가입 후 메일의 인증 링크를 눌러야 로그인할 수 있어요.</p>
    <p><b>4) 사용하기</b><br>저장 후 이메일로 가입하면, 그 다음부터는 같은 이메일·비밀번호로 다른 기기에서 로그인해도 같은 데이터를 볼 수 있어요.</p>
-   <p><b>5) 배우자·가족과 함께 쓰려면</b><br>지금 구조는 로그인 계정 1개 = 데이터 1벌이에요. 배우자가 이메일을 따로 만들어 가입하면 완전히 별개의 데이터가 생겨서, 각자 입력한 자산·내역이 서로에게 보이지 않아요(귀속을 '배우자'로 나눠 써도 마찬가지예요 — 같은 계정 안의 이름표일 뿐입니다). 함께 보고 쓰려면 <b>같은 이메일·비밀번호로 각자의 기기에서 로그인</b>하세요. 이 방법을 쓸 때는 비밀번호를 신뢰하는 사람과만 공유하고, 비밀번호 변경이나 계정 삭제는 미리 상의한 뒤 진행하세요(다른 기기가 조용히 로그아웃될 수 있어요).</p>
+   <p><b>5) 배우자·가족과 함께 쓰려면</b><br>지금 구조는 로그인 계정 1개 = 데이터 1벌이에요. 배우자가 이메일을 따로 만들어 가입하면 완전히 별개의 데이터가 생겨서, 각자 입력한 자산·내역이 서로에게 보이지 않아요(귀속을 '배우자'로 나눠 써도 마찬가지예요 — 같은 계정 안의 이름표일 뿐입니다). 함께 보고 쓰려면 <b>같은 이메일·비밀번호로 각자의 기기에서 로그인</b>하세요. 이 방법을 쓸 때는 비밀번호를 신뢰하는 사람과만 공유하고, 비밀번호 변경이나 계정 삭제는 미리 상의한 뒤 진행하세요(다른 기기가 조용히 로그아웃될 수 있어요 — 계정 탈퇴는 메뉴 › 계정에서 할 수 있지만, 클라우드 로그인 자체는 Supabase 대시보드에서 지워야만 완전히 없어져요).</p>
    <p><b>6) 비밀번호를 잊었을 때</b><br>로그인 화면의 '비밀번호를 잊으셨나요?'로 재설정 메일을 보낼 수 있어요. 다만 Supabase <b>Authentication › URL Configuration</b>의 <b>Site URL</b>·<b>Redirect URLs</b>에 이 앱을 올린 도메인이 등록돼 있어야 메일의 링크가 정상적으로 이 앱으로 돌아와요. 메일 문구를 바꾸고 싶다면 <b>Authentication › Email Templates › Reset Password</b>에서 수정할 수 있어요.</p>
   </div>`);
 }
@@ -9385,6 +9425,33 @@ function doResetAll(){confirmSheet('전체 초기화',`${accountKind()==='guest'
  const snapshot=DB;DB=emptyDB();migrate();save({deferCloudPush:true});closeSheet();ST.tab='home';go('home');
  const resetPushT=setTimeout(scheduleCloudPush,6000);
  undoToast('전체 초기화했어요',()=>{clearTimeout(resetPushT);DB=snapshot;save();renderCurrent();toast('되돌렸어요')})})}
+/* doResetAll()은 DB(자산·내역 등)만 비우고 계정 레코드(AUTH._accts/_fails)는 전혀 안 지워서,
+ * 탈퇴해도 같은 이메일로 재가입이 영구히 막혀 있던 공백 — 계정 레코드 삭제까지 더한 별도 플로우.
+ * 클라우드 계정은 anon key 권한상 Supabase Auth 사용자 자체(이메일·비밀번호 로그인)는 앱에서
+ * 지울 수 없어(deleteCloudAccountData 주석 참고) 그 사실을 확인 문구에 명시한다. doResetAll과
+ * 같은 6초 grace undo 패턴을 그대로 쓰되, 실제 계정 레코드 삭제·클라우드 행 삭제는 grace가
+ * 끝난 뒤(되돌리지 않았을 때)에만 실행해 되돌리기 중엔 아무것도 지워지지 않는다(app-evolve
+ * cycle241 advance). */
+function doDeleteAccount(){
+ const email=SESSION,kind=accountKind();
+ const isCloudAcct=kind==='email'&&!!(AUTH.rec(email)&&AUTH.rec(email).cloud);
+ const cloudNote=isCloudAcct?' 클라우드 로그인(이메일·비밀번호) 자체는 앱 권한으로는 지울 수 없어 남아있어요 — 완전히 없애려면 Supabase 대시보드에서 직접 사용자를 삭제해 주세요.':'';
+ confirmSheet('계정 탈퇴',`${esc(accountName())} 계정의 모든 자산·내역·반복·설정이 영구히 삭제되고, 이 계정 자체도 지워져 같은 이메일로 다시 가입할 수 있게 돼요. 탈퇴 직후 잠깐 동안만 되돌릴 수 있어요.${cloudNote} 정말 탈퇴할까요?`,'탈퇴',()=>{
+  const snapshot=DB;
+  const acctSnapshot=AUTH.rec(email);const failsSnapshot=AUTH._fails()[emailKey(email)]||null;
+  DB=emptyDB();migrate();save({deferCloudPush:true});closeSheet();ST.tab='home';go('home');
+  const deleteT=setTimeout(async()=>{
+   AUTH.deleteLocalAccountRecord(email);
+   if(isCloudAcct){const r=await deleteCloudAccountData();if(r&&r.err)toast(r.err)}
+   try{if(kind==='kakao'&&window.Kakao&&window.Kakao.Auth&&typeof window.Kakao.Auth.getAccessToken==='function'&&window.Kakao.Auth.getAccessToken())window.Kakao.Auth.logout(()=>{})}catch(e){}
+   AUTH.signOut();GUEST=false;localStorage.setItem('asset_app_guest','0');showAuth();
+  },6000);
+  undoToast('계정을 탈퇴했어요',()=>{
+   clearTimeout(deleteT);DB=snapshot;
+   if(acctSnapshot){const a=AUTH._accts();a[emailKey(email)]=acctSnapshot;AUTH._write(a)}
+   if(failsSnapshot){const f=AUTH._fails();f[emailKey(email)]=failsSnapshot;AUTH._writeFails(f)}
+   save();renderCurrent();toast('되돌렸어요')
+  })})}
 
 boot();
 /* 날짜 넘어감 대응: 앱 복귀/포커스/1분마다 '오늘'을 다시 계산해 화면을 갱신 */

@@ -956,3 +956,13 @@ function contrastRatio(hex1,hex2){
  const l1=lum(hex1),l2=lum(hex2),hi=Math.max(l1,l2),lo=Math.min(l1,l2);
  return(hi+0.05)/(lo+0.05);
 }
+
+/* ================= 객체 유틸 (순수) ================= */
+/* AUTH.deleteLocalAccountRecord(index.html)가 asset_app_accounts/asset_app_login_fails 맵에서
+ * 탈퇴하는 계정 1건만 제거할 때 쓴다 — 원본 obj는 건드리지 않고(불변) key가 없으면 얕은 복사만
+ * 돌려준다(app-evolve cycle241 advance). */
+function withoutKey(obj,key){
+ const r=Object.assign({},obj);
+ delete r[key];
+ return r;
+}

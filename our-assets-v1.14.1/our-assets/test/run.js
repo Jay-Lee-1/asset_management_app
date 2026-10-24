@@ -257,7 +257,7 @@ const FUNCTIONS = [
   'lowestInMonth', 'planBalInner', 'planBalCard', 'planTrackHTML', 'planRowsHTML', 'renderPlan',
   'refreshPlanBody', 'planAsset', 'nextGroupOrder', 'movedGroupOrder', 'moveGroup', 'movedAssetOrder', 'moveAsset', 'monthSwipeCommitDir', 'overlayEscapeTarget', 'recFreq', 'recFreqLabel',
   'planSplitTransfer', 'planTransfer',
-  'sbErrMsg',
+  'sbErrMsg', 'isRlsPolicyError', 'deleteCloudAccountData', 'doDeleteAccount',
   // 아래 10개는 app-evolve cycle152 advance가 FUNCTIONS 커버리지 공백(critique가 지적한 48개
   // 미검증 render*/open*/do* 함수)에서 끌어온 것 — openSheet/openTxSheet/openRecSheet/renderMenu/
   // renderAssetSheet처럼 DOM 전역(classList, requestAnimationFrame 등)에 깊이 엮인 화면 진입점은
@@ -311,7 +311,7 @@ const FUNCTIONS = [
 // 테스트가 eye<->eyeOff 전환을 실제 아이콘 문자열(sandbox.I.eye/eyeOff)과 비교해 검증한다.
 // RATE_TTL은 autoSyncRates()가 참조하는 10분 쿨다운 상수(app-evolve cycle220 develop,
 // crypto 전용 보유자 주말 휴장 자동갱신 회귀 수정 검증용).
-const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL'];
+const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'emailKey'];
 // _histCache는 filteredHist()가 재대입(={key,list})하는 let 선언이라 CONSTS(extractConst)로는
 // 못 끌어오므로 별도의 LETS 목록으로 extractLet을 통해 가져온다.
 // _copyIsCsv도 같은 이유(openCopyBackup()이 재대입)로 LETS를 통해 가져온다.
@@ -430,7 +430,10 @@ const sandbox = {
   // exists()/current()는 boot()가 직접 참조한다(AUTH.exists(SESSION)로 지역 계정 존재 확인,
   // AUTH.current()로 "로그인된 사용자가 있는가" 분기) — 기본값은 SESSION/AUTH.current를 직접
   // 세팅하는 boot() 테스트들이 로그인 전 상태(둘 다 falsy)를 가정하므로 true/null로 둔다.
-  AUTH: { rec: () => null, signOut: () => { sandbox.authSignOutCalls++; }, exists: () => true, current: () => null },
+  // _accts/_write/_fails/_writeFails/deleteLocalAccountRecord는 doDeleteAccount() 테스트용 —
+  // 기본값은 빈 저장소를 흉내낸다(app-evolve cycle241 advance, 각 테스트는 필요에 따라
+  // sandbox.AUTH를 통째로 바꿔 끼운다).
+  AUTH: { rec: () => null, signOut: () => { sandbox.authSignOutCalls++; }, exists: () => true, current: () => null, _accts: () => ({}), _write: () => {}, _fails: () => ({}), _writeFails: () => {}, deleteLocalAccountRecord: () => null },
   // GUEST는 index.html에서 `let GUEST=localStorage.getItem('asset_app_guest')==='1'`로 파생되는
   // 비순수 상태라(SESSION/CLOUD_UID와 같은 이유) doLogout/doResetAll 테스트에서 직접 세팅한다.
   GUEST: null,
@@ -15483,6 +15486,10 @@ function makeAuthCtx() {
     sbReady: () => false,
   };
   vm.createContext(ctx);
+  // AUTH.deleteLocalAccountRecord(app-evolve cycle241 advance)가 withoutKey(logic.js)를
+  // 참조하므로, index.html 추출 코드보다 먼저 logic.js를 그대로 로드해 둔다(index.html이
+  // <script src="logic.js">로 먼저 로드하는 실제 순서와 동일).
+  vm.runInContext(logicSrc, ctx, { filename: 'logic.js' });
   vm.runInContext(
     [
       extractFunction('genSalt'),
@@ -15527,6 +15534,42 @@ test('[실행형] AUTH.resetPasswordLocal: 재발급된 새 복구 코드는 기
   await ctx.AUTH.resetPasswordLocal('user4@example.com', signed.recoveryCode, 'second-password');
   const reuse = await ctx.AUTH.resetPasswordLocal('user4@example.com', signed.recoveryCode.replace(/-/g, ''), 'third-password');
   assert.ok(reuse.err, '이미 재발급된 뒤에는 옛 코드(서식 변형 포함)가 더 이상 통과하면 안 됨');
+});
+
+/* ---------- AUTH.deleteLocalAccountRecord: 계정 탈퇴(doDeleteAccount, app-evolve cycle241
+ * advance) 전용 — doResetAll()이 DB만 비우고 이 레코드는 전혀 안 지워서 로컬 계정이 탈퇴 후에도
+ * 같은 이메일로 재가입이 영구히 막혀 있던 공백을 메운다. ---------- */
+test('[실행형] AUTH.deleteLocalAccountRecord: 대상 계정의 계정레코드와 로그인실패카운터만 지우고 다른 계정은 그대로 둔다', async () => {
+  const ctx = makeAuthCtx();
+  await ctx.AUTH.signUp('keep@example.com', 'first-password');
+  await ctx.AUTH.signUp('bye@example.com', 'first-password');
+  // bye@example.com의 로그인 실패 카운터를 먼저 쌓아둔다(틀린 비밀번호 2회)
+  await ctx.AUTH.signIn('bye@example.com', 'wrong-pw');
+  await ctx.AUTH.signIn('bye@example.com', 'wrong-pw');
+  const beforeFails = JSON.parse(ctx.localStorage.getItem('asset_app_login_fails'));
+  assert.ok(beforeFails['bye@example.com'], '실패 카운터가 먼저 쌓여 있어야 이 테스트가 의미가 있음');
+
+  const removed = ctx.AUTH.deleteLocalAccountRecord('bye@example.com');
+  assert.ok(removed && removed.email === 'bye@example.com', '지워지기 전 계정 레코드를 돌려주지 않음(되돌리기용)');
+
+  const accts = JSON.parse(ctx.localStorage.getItem('asset_app_accounts'));
+  assert.strictEqual(accts['bye@example.com'], undefined, '탈퇴한 계정이 accounts 맵에 남아있음');
+  assert.ok(accts['keep@example.com'], '다른 계정까지 지워짐(과도한 범위)');
+
+  const fails = JSON.parse(ctx.localStorage.getItem('asset_app_login_fails'));
+  assert.strictEqual(fails['bye@example.com'], undefined, '탈퇴한 계정의 로그인 실패 카운터가 남아있음');
+
+  // 지운 뒤에는 같은 이메일로 재가입할 수 있어야 함 — doResetAll만으로는 막혀 있던 공백 그 자체.
+  const resignup = await ctx.AUTH.signUp('bye@example.com', 'another-password');
+  assert.ok(resignup.ok, '탈퇴 후에도 같은 이메일로 재가입이 막혀 있음');
+});
+test('[실행형] AUTH.deleteLocalAccountRecord: 존재하지 않는 계정을 지우려 하면 null을 돌려주고 아무 것도 건드리지 않는다', async () => {
+  const ctx = makeAuthCtx();
+  await ctx.AUTH.signUp('only@example.com', 'first-password');
+  const removed = ctx.AUTH.deleteLocalAccountRecord('ghost@example.com');
+  assert.strictEqual(removed, null, '존재하지 않는 계정인데 null이 아닌 값을 돌려줌');
+  const accts = JSON.parse(ctx.localStorage.getItem('asset_app_accounts'));
+  assert.ok(accts['only@example.com'], '존재하는 다른 계정이 영향을 받음');
 });
 
 /* ---------- postponeRecTransfer/confirmRecTransfer: 반복 이체 회차에 개별 금액/메모 수정
@@ -20964,6 +21007,231 @@ test('[실행형] doResetAll: 확인 시트에서 초기화를 누르면 DB가 �
   } finally {
     sandbox.DB = dbOrig;
     sandbox.ST = stOrig;
+  }
+});
+
+/* ---------- 계정 탈퇴(doDeleteAccount/AUTH.deleteLocalAccountRecord/deleteCloudAccountData/
+ * isRlsPolicyError/withoutKey): doResetAll()은 DB(자산·내역 등)만 비우고 계정 레코드
+ * (AUTH._accts/_fails)는 전혀 안 지워서, 탈퇴해도 같은 이메일로 재가입이 영구히 막혀 있던
+ * 공백을 메운다(app-evolve cycle241 critique/advance). doResetAll과 같은 6초 grace undo
+ * 패턴을 따르므로, 위 doResetAll 테스트처럼 sandbox.setTimeout을 캡처해 "6초가 지나고
+ * 되돌리지 않은 상황"과 "6초 안에 되돌린 상황"을 각각 흉내낸다. ---------- */
+test('withoutKey: 지정한 key만 제거한 새 객체를 돌려주고 원본은 바꾸지 않는다', () => {
+  const obj = { a: 1, b: 2, c: 3 };
+  const r = sandbox.withoutKey(obj, 'b');
+  assert.deepStrictEqual(Array.from(Object.keys(r)).sort(), ['a', 'c'], '지정한 key만 빠진 모양이 아님');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(obj)), { a: 1, b: 2, c: 3 }, '원본 객체가 변형됨(불변성 위반)');
+});
+test('withoutKey: 없는 key를 지워도 안 터지고 얕은 복사만 돌려준다(no-op)', () => {
+  const obj = { a: 1 };
+  const r = sandbox.withoutKey(obj, 'zzz');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(r)), { a: 1 }, '없는 key를 지웠을 뿐인데 내용이 달라짐');
+  assert.notStrictEqual(r, obj, '원본과 같은 참조를 돌려줌(얕은 복사가 아님)');
+});
+
+test('isRlsPolicyError: Postgres 42501 코드와 policy/RLS 메시지를 네트워크·인증 에러와 구분한다', () => {
+  assert.strictEqual(sandbox.isRlsPolicyError({ code: '42501', message: 'permission denied for table user_data' }), true, '42501 코드를 RLS로 인식하지 못함');
+  assert.strictEqual(sandbox.isRlsPolicyError({ message: 'new row violates row-level security policy for table "user_data"' }), true, 'row-level security 메시지를 인식하지 못함');
+  assert.strictEqual(sandbox.isRlsPolicyError({ message: 'Missing delete policy for this operation' }), true, 'policy 메시지를 인식하지 못함');
+  assert.strictEqual(sandbox.isRlsPolicyError({ message: 'Failed to fetch' }), false, '일반 네트워크 에러까지 RLS로 오판함');
+  assert.strictEqual(sandbox.isRlsPolicyError({ code: 'PGRST301', message: 'JWT expired' }), false, '인증 만료 에러를 RLS 정책 문제로 오판함');
+  assert.strictEqual(sandbox.isRlsPolicyError(null), false, 'null 입력에 안전하지 않음');
+  assert.strictEqual(sandbox.isRlsPolicyError(undefined), false, 'undefined 입력에 안전하지 않음');
+});
+
+test('[실행형] deleteCloudAccountData: 클라우드 계정이 아니면(CLOUD_UID 없음) SB를 부르지 않고 에러를 돌려준다', async () => {
+  const cloudUidOrig = sandbox.CLOUD_UID, sbOrig = sandbox.SB;
+  sandbox.CLOUD_UID = null;
+  sandbox.SB = { from: () => { throw new Error('호출되면 안 됨'); } };
+  try {
+    const r = await sandbox.deleteCloudAccountData();
+    assert.ok(r && r.err, 'CLOUD_UID가 없을 때 에러를 돌려주지 않음');
+  } finally {
+    sandbox.CLOUD_UID = cloudUidOrig; sandbox.SB = sbOrig;
+  }
+});
+test('[실행형] deleteCloudAccountData: SB.from("user_data").delete().eq("user_id",CLOUD_UID)가 성공하면 {ok:true}를 돌려준다', async () => {
+  const cloudUidOrig = sandbox.CLOUD_UID, sbOrig = sandbox.SB;
+  sandbox.CLOUD_UID = 'u1';
+  let deleteEqArg = null, fromTable = null;
+  sandbox.SB = { from: (table) => { fromTable = table; return { delete: () => ({ eq: async (col, val) => { deleteEqArg = [col, val]; return { error: null }; } }) }; } };
+  try {
+    const r = await sandbox.deleteCloudAccountData();
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(r)), { ok: true });
+    assert.strictEqual(fromTable, 'user_data', 'user_data 테이블이 아닌 다른 테이블을 건드림');
+    assert.deepStrictEqual(deleteEqArg, ['user_id', 'u1'], 'CLOUD_UID로 필터링하지 않아 다른 사용자 행까지 지울 위험');
+  } finally {
+    sandbox.CLOUD_UID = cloudUidOrig; sandbox.SB = sbOrig;
+  }
+});
+test('[실행형] deleteCloudAccountData: delete 정책이 없어 RLS가 막으면(42501) 구체적인 안내 메시지를 돌려준다', async () => {
+  const cloudUidOrig = sandbox.CLOUD_UID, sbOrig = sandbox.SB;
+  sandbox.CLOUD_UID = 'u1';
+  sandbox.SB = { from: () => ({ delete: () => ({ eq: async () => ({ error: { code: '42501', message: 'permission denied' } }) }) }) };
+  try {
+    const r = await sandbox.deleteCloudAccountData();
+    assert.ok(r && r.err);
+    assert.match(r.err, /delete 정책/, 'RLS 정책 누락을 구체적으로 안내하지 않음(그냥 범용 에러 메시지만 돌려줌)');
+  } finally {
+    sandbox.CLOUD_UID = cloudUidOrig; sandbox.SB = sbOrig;
+  }
+});
+test('[실행형] deleteCloudAccountData: 일반 네트워크 오류는 RLS 전용 메시지 대신 sbErrMsg()의 범용 메시지를 돌려준다', async () => {
+  const cloudUidOrig = sandbox.CLOUD_UID, sbOrig = sandbox.SB;
+  sandbox.CLOUD_UID = 'u1';
+  sandbox.SB = { from: () => ({ delete: () => ({ eq: async () => ({ error: { message: 'Failed to fetch' } }) }) }) };
+  try {
+    const r = await sandbox.deleteCloudAccountData();
+    assert.ok(r && r.err);
+    assert.ok(!/delete 정책/.test(r.err), '네트워크 에러인데 RLS 전용 메시지를 잘못 돌려줌');
+  } finally {
+    sandbox.CLOUD_UID = cloudUidOrig; sandbox.SB = sbOrig;
+  }
+});
+test('[실행형] deleteCloudAccountData: SB 호출 자체가 throw해도(네트워크 단절) 안전하게 에러를 돌려준다', async () => {
+  const cloudUidOrig = sandbox.CLOUD_UID, sbOrig = sandbox.SB;
+  sandbox.CLOUD_UID = 'u1';
+  sandbox.SB = { from: () => { throw new Error('network down'); } };
+  try {
+    const r = await sandbox.deleteCloudAccountData();
+    assert.ok(r && r.err, 'SB 호출이 throw하면 크래시 없이 에러를 돌려줘야 함');
+  } finally {
+    sandbox.CLOUD_UID = cloudUidOrig; sandbox.SB = sbOrig;
+  }
+});
+
+test('[실행형] doDeleteAccount: 로컬 이메일 계정 — 확인 후 DB를 비우고, 6초 뒤에야 계정 레코드를 지우고 로그아웃한다(클라우드 삭제는 호출 안 함)', async () => {
+  const sessionOrig = sandbox.SESSION, authOrig = sandbox.AUTH, dbOrig = sandbox.DB, stOrig = sandbox.ST, guestOrig = sandbox.GUEST;
+  const setTimeoutOrig = sandbox.setTimeout, deleteCloudOrig = sandbox.deleteCloudAccountData;
+  sandbox.SESSION = 'user@example.com';
+  sandbox.GUEST = false;
+  const deleteLocalCalls = [];
+  sandbox.AUTH = {
+    rec: () => ({ email: 'user@example.com', pass: 'hash' }), // 로컬 계정(클라우드 아님)
+    _fails: () => ({}),
+    deleteLocalAccountRecord: (email) => { deleteLocalCalls.push(email); return { email, pass: 'hash' }; },
+    signOut: () => { sandbox.authSignOutCalls++; },
+  };
+  sandbox.authSignOutCalls = 0;
+  let cloudDeleteCalls = 0;
+  sandbox.deleteCloudAccountData = async () => { cloudDeleteCalls++; return { ok: true }; };
+  const originalDb = { owners: ['나'], assets: [{ id: 'a1' }], txns: [{ id: 't1' }], categories: { expense: [], income: [], saving: [] } };
+  sandbox.DB = originalDb;
+  sandbox.ST = { tab: 'ledger' };
+  sandbox.closeSheetCalls = 0;
+  sandbox.goCalls = [];
+  sandbox.confirmSheetCalls = [];
+  sandbox.showAuthCalls = 0;
+  sandbox._lsSetCalls = [];
+  sandbox.lastUndo = null;
+  let capturedFn = null, capturedMs = null;
+  sandbox.setTimeout = (fn, ms) => { capturedFn = fn; capturedMs = ms; return 'delete-timer'; };
+  try {
+    sandbox.doDeleteAccount();
+    assert.strictEqual(sandbox.confirmSheetCalls.length, 1, '탈퇴 전 확인 시트를 띄우지 않음');
+    assert.strictEqual(sandbox.confirmSheetCalls[0].title, '계정 탈퇴');
+    assert.ok(!/Supabase 대시보드/.test(sandbox.confirmSheetCalls[0].msg), '로컬 계정인데 클라우드 전용 안내가 섞여 있음');
+    assert.strictEqual(sandbox.DB, originalDb, '확인 전에 벌써 DB가 바뀜(확인 없이 바로 실행)');
+    sandbox.confirmSheetCalls[0].cb(); // "탈퇴" 확인 버튼을 누른 상태를 흉내냄
+    assert.notStrictEqual(sandbox.DB, originalDb, '확인 후 DB가 비워지지 않음');
+    assert.deepStrictEqual(Array.from(sandbox.DB.assets), [], '확인 후 자산이 비어있지 않음');
+    assert.strictEqual(sandbox.closeSheetCalls, 1);
+    assert.ok(sandbox.goCalls.includes('home'));
+    assert.strictEqual(capturedMs, 6000, '계정 탈퇴도 doResetAll과 같은 6초 grace 뒤에만 실제로 지워야 함');
+    assert.strictEqual(deleteLocalCalls.length, 0, '6초가 지나기 전인데 벌써 계정 레코드를 지움');
+    assert.strictEqual(cloudDeleteCalls, 0);
+    assert.ok(sandbox.lastUndo && sandbox.lastUndo.msg === '계정을 탈퇴했어요', '되돌리기 토스트를 띄우지 않음');
+    await capturedFn(); // 되돌리지 않은 채 6초가 지난 상황을 흉내냄
+    assert.deepStrictEqual(deleteLocalCalls, ['user@example.com'], '6초 뒤 AUTH.deleteLocalAccountRecord가 호출되지 않음');
+    assert.strictEqual(cloudDeleteCalls, 0, '로컬 계정인데 deleteCloudAccountData가 호출됨');
+    assert.strictEqual(sandbox.authSignOutCalls, 1, '탈퇴 후 AUTH.signOut이 호출되지 않음');
+    assert.strictEqual(sandbox.GUEST, false);
+    assert.deepStrictEqual(sandbox._lsSetCalls[sandbox._lsSetCalls.length - 1], ['asset_app_guest', '0']);
+    assert.strictEqual(sandbox.showAuthCalls, 1, '탈퇴 후 로그인 화면으로 가지 않음');
+  } finally {
+    sandbox.SESSION = sessionOrig; sandbox.AUTH = authOrig; sandbox.DB = dbOrig; sandbox.ST = stOrig; sandbox.GUEST = guestOrig;
+    sandbox.setTimeout = setTimeoutOrig; sandbox.deleteCloudAccountData = deleteCloudOrig;
+  }
+});
+test('[실행형] doDeleteAccount: 클라우드 이메일 계정 — 6초 뒤 deleteCloudAccountData도 함께 호출하고, 실패하면 토스트로 안내한다', async () => {
+  const sessionOrig = sandbox.SESSION, authOrig = sandbox.AUTH, dbOrig = sandbox.DB, stOrig = sandbox.ST, guestOrig = sandbox.GUEST;
+  const setTimeoutOrig = sandbox.setTimeout, deleteCloudOrig = sandbox.deleteCloudAccountData;
+  sandbox.SESSION = 'cloud@example.com';
+  sandbox.GUEST = false;
+  const deleteLocalCalls = [];
+  sandbox.AUTH = {
+    rec: () => ({ email: 'cloud@example.com', cloud: true }),
+    _fails: () => ({}),
+    deleteLocalAccountRecord: (email) => { deleteLocalCalls.push(email); return { email, cloud: true }; },
+    signOut: () => { sandbox.authSignOutCalls++; },
+  };
+  sandbox.authSignOutCalls = 0;
+  let cloudDeleteCalls = 0;
+  sandbox.deleteCloudAccountData = async () => { cloudDeleteCalls++; return { err: 'Supabase에 데이터 삭제 권한(delete 정책)이 없어요' }; };
+  sandbox.DB = { owners: ['나'], assets: [], txns: [], categories: { expense: [], income: [], saving: [] } };
+  sandbox.ST = { tab: 'ledger' };
+  sandbox.closeSheetCalls = 0; sandbox.goCalls = []; sandbox.confirmSheetCalls = []; sandbox.showAuthCalls = 0; sandbox.toastCalls = []; sandbox.lastUndo = null;
+  let capturedFn = null;
+  sandbox.setTimeout = (fn) => { capturedFn = fn; return 'delete-timer'; };
+  try {
+    sandbox.doDeleteAccount();
+    assert.match(sandbox.confirmSheetCalls[0].msg, /Supabase 대시보드/, '클라우드 계정인데 Auth 로그인 자체는 못 지운다는 안내가 없음');
+    sandbox.confirmSheetCalls[0].cb();
+    await capturedFn();
+    assert.deepStrictEqual(deleteLocalCalls, ['cloud@example.com']);
+    assert.strictEqual(cloudDeleteCalls, 1, '클라우드 계정인데 deleteCloudAccountData를 호출하지 않음');
+    assert.ok(sandbox.toastCalls.includes('Supabase에 데이터 삭제 권한(delete 정책)이 없어요'), '클라우드 삭제 실패를 사용자에게 알리지 않음');
+    assert.strictEqual(sandbox.authSignOutCalls, 1, '클라우드 삭제가 실패해도 로그아웃은 진행돼야 함');
+  } finally {
+    sandbox.SESSION = sessionOrig; sandbox.AUTH = authOrig; sandbox.DB = dbOrig; sandbox.ST = stOrig; sandbox.GUEST = guestOrig;
+    sandbox.setTimeout = setTimeoutOrig; sandbox.deleteCloudAccountData = deleteCloudOrig;
+  }
+});
+test('[실행형] doDeleteAccount: 6초 안에 되돌리면 DB와 계정 레코드(계정+로그인실패카운터) 모두 복원되고, 실제 삭제는 전혀 실행되지 않는다', () => {
+  const sessionOrig = sandbox.SESSION, authOrig = sandbox.AUTH, dbOrig = sandbox.DB, stOrig = sandbox.ST;
+  const setTimeoutOrig = sandbox.setTimeout, clearTimeoutOrig = sandbox.clearTimeout, deleteCloudOrig = sandbox.deleteCloudAccountData;
+  sandbox.SESSION = 'user@example.com';
+  const acctRecord = { email: 'user@example.com', pass: 'hash' };
+  const failsRecord = { count: 2, last: 123456 };
+  const deleteLocalCalls = [];
+  const writeCalls = [], writeFailsCalls = [];
+  sandbox.AUTH = {
+    rec: () => acctRecord,
+    _fails: () => ({ 'user@example.com': failsRecord }),
+    _accts: () => ({}),
+    _write: (a) => { writeCalls.push(a); },
+    _writeFails: (f) => { writeFailsCalls.push(f); },
+    deleteLocalAccountRecord: (email) => { deleteLocalCalls.push(email); return acctRecord; },
+    signOut: () => { sandbox.authSignOutCalls++; },
+  };
+  sandbox.authSignOutCalls = 0;
+  let cloudDeleteCalls = 0;
+  sandbox.deleteCloudAccountData = async () => { cloudDeleteCalls++; return { ok: true }; };
+  const originalDb = { owners: ['나'], assets: [{ id: 'a1' }], txns: [{ id: 't1' }], categories: { expense: [], income: [], saving: [] } };
+  sandbox.DB = originalDb;
+  sandbox.ST = { tab: 'ledger' };
+  sandbox.closeSheetCalls = 0; sandbox.goCalls = []; sandbox.confirmSheetCalls = []; sandbox.lastUndo = null; sandbox.toastCalls = [];
+  const clearTimeoutCalls = [];
+  sandbox.setTimeout = () => 'delete-timer';
+  sandbox.clearTimeout = (id) => { clearTimeoutCalls.push(id); };
+  try {
+    sandbox.doDeleteAccount();
+    sandbox.confirmSheetCalls[0].cb();
+    const wipedDb = sandbox.DB;
+    sandbox.lastUndo.undoFn(); // "되돌리기"를 누른 상태를 흉내냄
+    assert.deepStrictEqual(clearTimeoutCalls, ['delete-timer'], '되돌리기를 눌러도 예약된 삭제 타이머를 취소하지 않음');
+    assert.strictEqual(sandbox.DB, originalDb, '되돌리기를 눌러도 원래 DB로 복원되지 않음');
+    assert.notStrictEqual(sandbox.DB, wipedDb);
+    assert.strictEqual(writeCalls.length, 1, '되돌리기가 계정 레코드를 복원하지 않음');
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(writeCalls[0])), { 'user@example.com': acctRecord });
+    assert.strictEqual(writeFailsCalls.length, 1, '되돌리기가 로그인 실패 카운터를 복원하지 않음');
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(writeFailsCalls[0])), { 'user@example.com': failsRecord });
+    assert.strictEqual(deleteLocalCalls.length, 0, '되돌렸는데도 계정 레코드가 지워짐');
+    assert.strictEqual(cloudDeleteCalls, 0, '되돌렸는데도 클라우드 데이터가 지워짐');
+    assert.strictEqual(sandbox.authSignOutCalls, 0, '되돌렸는데도 로그아웃이 실행됨');
+  } finally {
+    sandbox.SESSION = sessionOrig; sandbox.AUTH = authOrig; sandbox.DB = dbOrig; sandbox.ST = stOrig;
+    sandbox.setTimeout = setTimeoutOrig; sandbox.clearTimeout = clearTimeoutOrig; sandbox.deleteCloudAccountData = deleteCloudOrig;
   }
 });
 
