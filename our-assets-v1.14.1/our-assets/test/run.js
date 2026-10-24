@@ -16058,6 +16058,26 @@ test('planNegatives: 지금은 플러스지만 예정 지출로 특정 날짜부
   assert.strictEqual(out[0].date, '2026-06-20', '마이너스로 처음 전환되는 날짜를 찾아야 함');
   assert.strictEqual(out[0].min, -5000, '이후 입금으로 회복돼도 구간 내 최소 잔액을 유지해야 함');
 });
+test('planNegatives: 마이너스로 처음 떨어진 뒤 입금으로 회복했다가 나중에 더 크게 떨어지면, date는 "처음 마이너스가 된 날"이 아니라 min이 실제로 찍히는 날이어야 한다(app-evolve cycle242 develop — 날짜/금액 불일치 수정)', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox.DISP_TO = sandbox.addDays(sandbox.TODAY, 92);
+  sandbox._balCache.clear();
+  sandbox.DB = {
+    settings: {},
+    assets: [{ id: 'a1', name: '통장1', owner: '나', type: 'cash', baseAmount: 0 }],
+    txns: [
+      { id: 't1', date: '2026-06-16', type: 'expense', category: '식비', amount: 100, fromAssetId: 'a1' }, // 0 -> -100 (첫 마이너스)
+      { id: 't2', date: '2026-06-17', type: 'income', category: '용돈', amount: 1000, toAssetId: 'a1' }, // -100 -> 900 (회복)
+      { id: 't3', date: '2026-06-25', type: 'expense', category: '식비', amount: 5000, fromAssetId: 'a1' }, // 900 -> -4100 (진짜 최저점)
+    ],
+    recurrences: [],
+  };
+  const out = sandbox.planNegatives();
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].min, -4100, '구간 전체에서 가장 낮은 잔액을 찾아야 함');
+  assert.strictEqual(out[0].date, '2026-06-25', 'date는 min(-4100원)이 실제로 나타나는 날짜(06-25)여야 한다 — 수정 전에는 첫 마이너스 날짜(06-16)가 그대로 쓰여, acctSafety/openNegList/homeAlerts(\'neg\')가 "06-16부터 -4100원까지 내려가요"처럼 그 날짜엔 틀린(실제로는 -100원인) 금액을 보여주고 goPlanTo로 눌러서 이동해도 화면엔 -4100원이 아니라 -100원이 보이는 날짜·금액 불일치가 있었다');
+});
 test('planNegatives: 저축 등 플랜 대상이 아닌 통장(isPlanAcct=false)은 마이너스여도 목록에 포함되지 않는다(회귀 확인)', () => {
   sandbox.TODAY = '2026-06-15';
   sandbox.RANGE_TO = '2099-12-31';

@@ -1406,7 +1406,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.227';
+const APP_VERSION='1.47.228';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -7903,13 +7903,25 @@ function planNegatives(){ /* 통장별 · 예정 끝까지 · '하루 합산(일
  });
  const balMap=balancesAtDates(Array.from(allDates));
  plAssets.forEach(a=>{
-   let firstNeg=null,minBal=Infinity;
+   /* firstNeg(처음 마이너스로 내려가는 날)와 minBal(전체 기간 중 가장 낮은 잔액)은 서로 다른
+      날짜일 수 있다 — 한 번 마이너스로 떨어졌다가 중간에 입금으로 회복한 뒤 나중에 더 크게
+      떨어지는 경우(예: 6/2에 -100원까지 내려갔다가 6/3에 입금으로 +900원 회복, 6/10에 다시
+      -4100원까지 떨어짐). 아래에서 date에 firstNeg를 그대로 썼었는데, 호출부(acctSafety/
+      openNegList/homeAlerts 'neg')가 모두 이 date와 min을 "{date}부터 · 잔액이 {min}원까지
+      내려가요"로 한 문장에 묶어 보여주고 goPlanTo(assetId,date)로 바로 그 날짜로 이동시킨다 —
+      위 예시라면 실제로는 6/2에 -100원인데도 "6/2부터 -4100원까지 내려가요"라고 보여주고
+      눌러서 이동한 화면에도 -4100원이 아니라 -100원이 보여, 표시된 금액과 날짜가 서로 다른
+      시점을 가리키는 불일치가 났다. min이 실제로 나타나는 날짜(minDate)를 date로 써서 둘이
+      항상 같은 시점을 가리키게 한다(app-evolve cycle242 develop) — firstNeg는 "마이너스가
+      시작되는지" 여부(알림을 띄울지)를 판정하는 트리거로만 쓰고, 보여주는 날짜는 그 트리거와
+      무관하게 항상 min이 실제로 찍히는 날로 고정한다. */
+   let firstNeg=null,minBal=Infinity,minDate=null;
    perAssetDates.get(a.id).forEach(date=>{
      const b=balanceAtFromMap(balMap,date,a.id);
-     if(b<minBal)minBal=b;
+     if(b<minBal){minBal=b;minDate=date;}
      if(b<0&&!firstNeg)firstNeg=date;
    });
-   if(firstNeg)out.push({assetId:a.id,name:a.name,owner:a.owner,date:firstNeg,min:minBal});
+   if(firstNeg)out.push({assetId:a.id,name:a.name,owner:a.owner,date:minDate,min:minBal});
  });
  return out.sort((x,z)=>x.date<z.date?-1:1);
 }
