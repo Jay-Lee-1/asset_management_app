@@ -1,15 +1,12 @@
 {
   "cycle": 241,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "계정 탈퇴(회원 탈퇴) 기능 부재 — doResetAll()은 데이터만 지우고 계정 자체(로컬 accounts map 또는 Supabase Auth 사용자)는 남음",
+    "why": "AUTH.signUp/_accts()가 쓰는 localStorage[asset_app_accounts]의 계정 레코드(email/salt/PBKDF2 해시/복구코드 해시)를 doResetAll()이 전혀 지우지 않아 로컬 계정은 그 이메일로 재가입이 영원히 불가능하고, 클라우드 계정도 user_data 행만 비우고 Supabase Auth 사용자는 그대로 남는다(anon key로는 auth.admin.deleteUser 불가). 그런데 openHelpCloud()의 안내문구는 부부 공유 시 '비밀번호 변경이나 계정 삭제는 미리 상의하라'며 존재하지 않는 기능을 언급하고 있고, Supabase 셋업 SQL도 delete 정책이 없어 설령 코드가 있어도 RLS가 막는다. 탈퇴 후 재가입 불가/이별·중고폰 판매 후 비밀번호를 아는 사람이 로그인 가능 등 실사용자 영향이 있고, 다른 파괴적 동작(doResetAll 등)과 동일한 6초 grace undo 패턴을 그대로 재사용할 수 있어 한 사이클 범위에 맞는 구체적 구현 계획이 선다. sync 폴링 간격, 1만 줄 단일파일 구조 등 다른 후보는 이미 다뤄졌거나 범위가 과도해(리라이트급) 기각했다.",
+    "approach": "index.html AUTH 객체 근처에 AUTH.deleteLocalAccountRecord(email)(accounts map + login_fails map에서 해당 키 제거, 제거된 레코드 반환)과 async deleteCloudAccountData()(SB.from('user_data').delete().eq('user_id',CLOUD_UID), 실패 시 isRlsPolicyError(err)로 RLS 정책 누락을 구분해 안내) 신설. logic.js에 순수 헬퍼 withoutKey(obj,key) 추가(이미 동치 함수 있으면 재사용). openAccountSheet()에 '계정 탈퇴(데이터 영구 삭제)' 버튼 추가 -> doDeleteAccount(): confirmSheet로 로컬/클라우드 데이터는 지워지지만 클라우드 계정의 Supabase Auth 로그인 자체는 anon key 권한상 앱에서 지울 수 없어 완전히 이메일을 해지하려면 Supabase 대시보드에서 직접 지워야 한다는 점을 명시 -> doResetAll의 resetPushT 6초 grace 패턴을 그대로 따라 DB/계정레코드/클라우드 상태 스냅샷 후 undoToast로 복원 가능하게 하고, 그 뒤 실제 로컬 레코드 삭제+클라우드 행 삭제 실행. openHelpCloud()의 SQL에 delete 정책(create policy \"delete own\" on public.user_data for delete using (auth.uid() = user_id);) 추가 및 기존 셀프호스팅 사용자에게 재실행 안내 문구 추가. test/run.js: withoutKey(불변성/키없음 no-op), isRlsPolicyError(42501/policy·RLS 문자열 매칭/일반 네트워크 에러와 구분), AUTH.deleteLocalAccountRecord(대상 계정만 제거, 다른 계정/실패카운터는 불변) 단위 테스트 추가. index.html(신규 UI/함수)과 logic.js(withoutKey) 변경이므로 APP_VERSION(1.47.226->다음)과 sw.js CACHE(v493->다음) 동기 범프 필요."
+  },
   "history": [
-    {
-      "cycle": 236,
-      "phase": "critique",
-      "timestamp": "2026-10-23T04:14:52.000Z",
-      "summary": "cycle236 develop/review가 끝난 뒤(sanitizeBackup asset.owner 검증 수정, review는 이상 없음) 앱 전체를 다시 한 걸음 물러나 재탐색. 이미 236 cycle 동안 색상대비/XSS/접근성/데이터유실/동기화/반복거래/예산/넷웍스 등 거의 전 영역이 촘촘히 다뤄져 추가로 겹치지 않는 새 결함을 찾기 어려웠으나(sanitizeBackup 전 컬렉션 검증 완료, nwHistory/settings 검증도 이미 완료, SRI TODO는 이 컨테이너의 egress 정책상 여전히 불가능해 재확인만 하고 제외, 비밀번호 salt+PBKDF2/예산 시간축 등 과거 flagged 항목도 이미 advance에서 해결됨을 git log로 재확인), manifest.webmanifest(standalone/아이콘 3종)와 index.html의 iOS PWA 메타가 설치 기준을 전부 만족시키는데도 beforeinstallprompt/appinstalled/display-mode/navigator.standalone/'설치' 키워드가 코드 전체에 0건임을 grep으로 확인 — 설치 가능하게 만드는 작업은 끝났지만 설치를 유도/안내하는 UI가 전혀 없는 공백을 발견. 매일 홈 화면에서 쓰는 '가족 공유 가계부'라는 앱 정체성에 비해 영향이 크고, 기존 .sw-update-bar 배너 패턴을 그대로 재사용할 수 있어 구현 리스크도 낮다고 판단해 advance 계획으로 채택. pending_advance_plan에 Android(beforeinstallprompt 캡처+prompt) / iOS(UA분기 안내문구) / 이미 설치됨 감지(display-mode/navigator.standalone) / 기기별 localStorage dismiss 스누즈 / 테스트 추가까지 구체적으로 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
-      "commit": null
-    },
     {
       "cycle": 236,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-23T23:08:07.830Z",
       "summary": "cycle241 develop 커밋(d608924, _shared.js raceDeadline이 work reject 시 deadline setTimeout을 정리하지 않던 타이머 누수 수정 — .then(onFulfilled)을 .finally(clearTimeout)+.then(timedOut)으로 교체해 resolve/reject 양쪽 다 정리하면서 reject는 그대로 전파)을 검토. diff를 직접 읽어 Promise.finally가 원래 settle 값/사유를 그대로 통과시키므로 reject 전파 동작(호출부 await 시 그대로 throw)은 변경 전과 동일하고 타이머 정리만 추가됐음을 확인 — 호출부(stock.js/rates.js/crypto.js)는 모두 work를 항목별 try/catch해 실제로 reject하지 않으므로 현재 관측 가능한 동작 변화는 없음(누수만 제거). 신규 테스트가 global.setTimeout/clearTimeout 가로채기로 pending 카운트를 세는 기존 두 케이스와 동일 패턴을 따르고 assert.rejects로 reject 전파까지 함께 검증함을 확인, 수정 전 코드로는 FAIL(clearTimeout 호출 0)함을 커밋 메시지가 명시. node --check(_shared.js) 통과, node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행해 1888/1888 통과 재확인. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 241,
+      "phase": "critique",
+      "timestamp": "2026-10-24T00:14:26.656Z",
+      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-241 전체 다룬 영역 전부 제외 지시)한 결과, 계정 탈퇴(회원 삭제) 기능이 아예 없는 공백을 발견 — doResetAll()(index.html:9384-9387)은 DB를 emptyDB()로 되돌리고(클라우드는 빈 payload를 push) 끝나며, AUTH.signUp이 localStorage[asset_app_accounts]에 쓰는 계정 레코드(email/salt/PBKDF2 해시/복구코드 해시)는 전혀 지우지 않아 로컬 계정은 그 이메일로 재가입이 영구히 불가능하고, 클라우드 계정도 Supabase Auth 사용자 자체(anon key로는 admin.deleteUser 불가)가 남는다. openHelpCloud()(~5706)의 안내문구는 부부 공유 시 '비밀번호 변경이나 계정 삭제는 미리 상의하라'며 존재하지 않는 기능을 언급 중이고, Supabase 셋업 SQL(~5688-5700)에는 delete RLS 정책 자체가 없어 설령 코드를 추가해도 막힌다. 러너업 기각: Supabase 폴링 동기화 주기(cycle236-241에 걸쳐 이미 반복적으로 다뤄짐, 의도된 트레이드오프), 캐러셀/드래그 wireXxx 리스너 누수 의심(직접 확인 결과 매 렌더 innerHTML 전체교체로 리스너도 같이 버려져 버그 아님, wireHdrFade는 이미 _hdrWired 가드 있음), 단일 9471줄 index.html 구조 자체(리라이트급이라 스코프 밖), RLS delete 정책 누락 단독(너무 작아 계정탈퇴 계획에 포함시킴). advance 계획을 pending_advance_plan에 저장: AUTH.deleteLocalAccountRecord/deleteCloudAccountData/isRlsPolicyError/doDeleteAccount 신설, logic.js withoutKey 순수헬퍼, openAccountSheet() 버튼+doResetAll과 동일한 6초 grace undo 패턴, openHelpCloud() SQL에 delete 정책 추가, 테스트 다수. index.html/logic.js 변경이므로 APP_VERSION/sw.js CACHE 동기 범프 필요. 코드 변경 없음(critique 단계라 state.json만 갱신).",
       "commit": null
     }
   ]
