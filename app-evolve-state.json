@@ -1,15 +1,8 @@
 {
   "cycle": 244,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 239,
-      "phase": "review",
-      "timestamp": "2026-10-23T14:30:00.000Z",
-      "summary": "cycle239 develop 커밋(bdf80dd, AUTH.resetPasswordLocal()의 복구 코드 비교에 normRecoveryCode() 정규화 추가)을 검토. git show로 diff 확인: 기존엔 (code||'').trim().toUpperCase()만으로 비교해 하이픈을 빼거나 공백으로 바꿔 입력하면 해시가 달라져 정당한 코드가 거부됐던 결함이 맞음을 확인. normRecoveryCode()는 trim/toUpperCase 후 [^A-Z0-9]를 전부 제거해 하이픈·공백 등 구분자 차이를 흡수하고, 길이가 정확히 12자일 때만 4-4-4로 하이픈을 재삽입 — genRecoveryCode()가 실제로 만드는 형식(chars 33종, i%4===3&&i<11에서 하이픈 삽입, 결과 XXXX-XXXX-XXXX)과 정확히 일치함을 라인 2210-2215 대조로 검증. 길이가 12자가 아니면(다른 코드·일부 입력) 하이픈을 끼워 넣지 않고 그대로 반환해 해시 비교가 자연히 실패하도록 둔 것도 안전함. recoveryHash 생성부(가입/재설정 시 genRecoveryCode() 결과를 그대로 해시)는 전혀 손대지 않아 기존 발급 코드들과 하위 호환이 유지됨을 확인. null/undefined/빈 문자열 입력 시 String(s==null?'':s)로 안전하게 빈 문자열 처리되어 크래시 위험 없음. 신규 단위 테스트 10건(하이픈 생략, 소문자+공백, 구분자가 공백으로 바뀐 경우, 이미 표준형인 경우의 멱등성, 길이 불일치 시 그대로 반환, null/undefined/빈값)이 diff의 분기와 1:1 대응하며 전부 통과함을 node our-assets-v1.14.1/our-assets/test/run.js로 재확인(1873/1873). APP_VERSION 1.47.226/sw.js CACHE 범프 동기화 확인. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 239,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-24T10:30:00.000Z",
       "summary": "general-purpose 서브에이전트(fork)가 develop 후보를 탐색해 도움말(openHelp, index.html:6450)의 '💾 백업' 행이 계정 종류와 무관하게 항상 \"데이터는 이 기기에만 저장돼요\"라고 단정하던 공백을 발견 — 이메일로 가입해 Supabase 클라우드 동기화를 켠 계정(isCloudAcct, openAccountSheet/doDeleteAccount가 이미 kind==='email'&&AUTH.rec(SESSION).cloud로 구분하는 것과 동일한 기준)도 게스트·카카오(둘 다 기기 로컬 전용)와 똑같이 취급돼, 실제로는 Supabase 클라우드에도 데이터가 함께 저장되고 다른 기기에서도 보이는데 도움말만 그 사실을 숨기던 실사용 결함(openAccountSheet 화면은 이미 \"다른 기기에서도 같은 데이터를 볼 수 있어요\"로 정확히 구분해서 안내 중이라 두 화면 간 불일치였음). logic.js에 순수함수 helpBackupNote(isCloudAcct) 신설(true면 '이 기기와 클라우드에도 함께' 저장, false면 기존 '이 기기에만' 문구 — 파일 백업 안내 문장은 두 경우 모두 유지), index.html openHelp()에서 accountKind()==='email'&&AUTH.rec(SESSION).cloud로 isCloudAcct를 계산해 '💾 백업' 행에 적용. APP_VERSION 1.47.231->1.47.232, sw.js CACHE v498->v499 동기 범프. test/run.js에 helpBackupNote 문구 테스트 3건 + openHelp() 실행형 테스트 3건(클라우드 이메일 계정/게스트/카카오 각각 올바른 문구를 쓰는지) 총 6건 추가(1916->1922). 오케스트레이터가 diff를 직접 읽어 accountKind()==='email'&&AUTH.rec(SESSION).cloud 기준이 openAccountSheet(5715행)·doDeleteAccount(9523행)의 기존 패턴과 일치함을 대조 확인했고, 독립적으로 node --check(logic.js/sw.js/test/run.js) 및 전체 테스트(1922/1922)를 재실행한 뒤, git stash push --keep-index로 index.html/logic.js/sw.js 수정분만 걷어내(test/run.js는 유지) 신규 6건 중 5건이 'helpBackupNote is not a function'으로 FAIL함(1917/1922)을 직접 재현하고 stash pop으로 복원 후 1922/1922 통과를 재확인했다. 컨테이너 시작 시 로컬 main 브랜치가 detached HEAD로 origin/main(38c5f6f)과 같은 커밋을 가리키고 있었으나 브랜치 포인터가 구버전(6a516f7)이던 것을 발견해 git checkout -B main으로 현재 HEAD(origin/main과 동일)에 맞춰 재설정했다(cycle241/243과 동일한 클래스의 컨테이너 재시작 아티팩트, 데이터 손실 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 244,
+      "phase": "review",
+      "timestamp": "2026-10-24T10:30:00.000Z",
+      "summary": "cycle244 develop 커밋(98c4f79, openHelp의 '💾 백업' 행이 계정 종류와 무관하게 항상 \"이 기기에만\" 저장된다고 말하던 문제 수정)을 검토. git show로 diff 확인: helpBackupNote(isCloudAcct) 호출의 isCloudAcct 산출식(accountKind()==='email'&&!!(AUTH.rec(SESSION)&&AUTH.rec(SESSION).cloud))이 openAccountSheet(index.html:5715)·doDeleteAccount(index.html:9523)가 이미 쓰는 기준과 변수명·연산자까지 글자 그대로 일치함을 grep으로 대조해 확인 — 클라우드 동기화 판정 기준이 세 곳에서 drift 없이 통일됨. accountKind()는 SESSION 없으면 'guest', AUTH.rec(SESSION).kakao면 'kakao', 아니면 'email'을 반환(index.html:2429)하므로 게스트·카카오는 isCloudAcct 계산 자체가 분기 밖에서 바로 false로 떨어져 helpBackupNote(false)로 기존 문구(\"이 기기에만\")가 그대로 유지됨을 확인. helpBackupNote 자체는 순수함수로 분기 두 개만 가진 간단한 삼항이라 로직 결함 여지가 적음. 신규 테스트 6건(helpBackupNote(false)/helpBackupNote(true) 각각의 문구 분기, 두 경우 모두 파일백업/7일 리마인드 문구 보존, openHelp가 클라우드 이메일·게스트·카카오 세 계정 유형 각각에 올바른 문구를 실제로 꽂아 쓰는지 DOM 스텁으로 실행형 검증)이 diff의 분기와 1:1 대응함을 확인. node our-assets-v1.14.1/our-assets/test/run.js로 전체 재실행해 1922/1922 통과 확인(신규 6건 포함, 기존 1916건 회귀 없음). APP_VERSION 1.47.231→1.47.232, sw.js CACHE v498→v499 범프가 index.html(logic.js는 별도 캐시 규칙으로 버전 문자열 없음)과 함께 동기화됐음을 확인. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
       "commit": null
     }
   ]
