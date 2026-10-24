@@ -195,7 +195,7 @@ const FUNCTIONS = [
   'dateBelowRangeFloor', 'dateAboveRangeCeil', 'recalcEndCond', 'isVarCat', 'setCatVar', 'toggleCatVarUI', 'activeRecsForAssets', 'activeRecsForCat',
   'num', 'doRenameCat', 'doDeleteCat', 'totalBudgetSummary', 'budgetForMonth', 'setBudgetFrom', 'addCat',
   'isBudgetRolloverCat', 'setBudgetRolloverCat', 'toggleBudgetRolloverUI', 'budgetCarryFor', 'budgetForMonthWithCarry',
-  'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV',
+  'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'assetsToCSV', 'nwHistoryToCSV',
   'unguardCsv', 'csvRowToImportTxn', 'buildImportPreview', 'doCsvImport',
   'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo', 'delAsset', 'assetDelSel', 'unsnapshotAssetName', 'doBulkCat', 'bulkCatPickFor',
   // archiveTxnsBefore/archiveMonthPicked/openArchiveOld는 app-evolve cycle222 advance('오래된
@@ -4808,6 +4808,91 @@ test('txnsToCSV→csvRowToImportTxn round-trip: 메모/카테고리/자산명이
   assert.strictEqual(r.txn.category, "'=특가", '카테고리의 원본 \'가 보존돼야 함');
   assert.strictEqual(r.txn.memo, "'-환불 예정", '메모의 원본 \'가 보존돼야 함');
   assert.strictEqual(r.txn.fromAssetId, 'a1', '자산명의 원본 \'가 보존돼 정확히 매칭돼야 함');
+});
+/* ---------- assetsToCSV: 자산 목록 CSV 내보내기(app-evolve cycle244 advance) ---------- */
+test('assetsToCSV: 빈 배열이면 BOM과 헤더만 있는 한 줄을 반환한다', () => {
+  const csv = sandbox.assetsToCSV([]);
+  assert.strictEqual(csv, '﻿자산명,유형,귀속,통화/수량,평가금액,매입원가,손익,전체 합계 포함');
+});
+test('assetsToCSV: 자산명/귀속에 콤마·큰따옴표가 있으면 필드 전체를 따옴표로 감싼다', () => {
+  const csv = sandbox.assetsToCSV([
+    { name: '급여, 통장', owner: '엄마"아빠', type: 'cash', includeInTotal: true, evalValue: 10000 },
+  ]);
+  const rows = sandbox.parseCSV(csv);
+  assert.strictEqual(rows[1][0], '급여, 통장');
+  assert.strictEqual(rows[1][2], '엄마"아빠');
+});
+test('assetsToCSV: 자산명이 =,+,-,@ 로 시작하면 앞에 \'를 붙여 수식 인젝션을 막는다(txnsToCSV의 guard와 동일 규칙)', () => {
+  const csv = sandbox.assetsToCSV([
+    { name: '=HYPERLINK("evil")', owner: '+엄마', type: 'cash', includeInTotal: true, evalValue: 0 },
+  ]);
+  const rows = sandbox.parseCSV(csv);
+  assert.strictEqual(rows[1][0], "'=HYPERLINK(\"evil\")");
+  assert.strictEqual(rows[1][2], "'+엄마");
+});
+test('assetsToCSV: fx/gold/stock/crypto는 통화·수량을 종류별 단위로 포맷한다', () => {
+  const csv = sandbox.assetsToCSV([
+    { name: '달러', type: 'fx', currency: 'USD', fxAmount: 1000, includeInTotal: true, evalValue: 1350000 },
+    { name: '골드바', type: 'gold', goldDon: 2.5, includeInTotal: true, evalValue: 900000 },
+    { name: '삼성전자', type: 'stock', stockCode: '005930', stockQty: 10, includeInTotal: true, evalValue: 800000 },
+    { name: '비트코인', type: 'crypto', cryptoCode: 'BTC', cryptoQty: 0.01, includeInTotal: true, evalValue: 1000000 },
+  ]);
+  const rows = sandbox.parseCSV(csv);
+  assert.strictEqual(rows[1][3], 'USD 1000');
+  assert.strictEqual(rows[2][3], '2.5돈');
+  assert.strictEqual(rows[3][3], '005930 10주');
+  assert.strictEqual(rows[4][3], 'BTC 0.01개');
+});
+test('assetsToCSV: 평가금액/매입원가/손익은 호출부가 얹어준 evalValue/costBasis/gainLoss를 그대로 쓰고, costBasis<=0이면 매입원가·손익은 빈 칸으로 남긴다', () => {
+  const csv = sandbox.assetsToCSV([
+    { name: '삼성전자', type: 'stock', stockCode: '005930', stockQty: 10, includeInTotal: true, evalValue: 800000, costBasis: 700000, gainLoss: 100000 },
+    { name: '현금', type: 'cash', includeInTotal: true, evalValue: 500000, costBasis: 0 },
+  ]);
+  const rows = sandbox.parseCSV(csv);
+  assert.strictEqual(rows[1][4], '800000');
+  assert.strictEqual(rows[1][5], '700000');
+  assert.strictEqual(rows[1][6], '100000');
+  assert.strictEqual(rows[2][4], '500000');
+  assert.strictEqual(rows[2][5], '', 'costBasis<=0이면 매입원가는 빈 칸(assetGainLoss의 "매입가 모름" 전제와 동일)');
+  assert.strictEqual(rows[2][6], '', 'costBasis<=0이면 손익도 빈 칸');
+});
+test('assetsToCSV: 부채는 assetEval()의 "잔여원금(양수)" 컨벤션을 그대로 두고(음수로 다시 뒤집지 않음), includeInTotal이 꺼져 있으면 N으로 표시한다', () => {
+  const csv = sandbox.assetsToCSV([
+    { name: '마이너스통장', type: 'debt', includeInTotal: false, evalValue: 3000000 },
+  ]);
+  const rows = sandbox.parseCSV(csv);
+  assert.strictEqual(rows[1][1], '부채');
+  assert.strictEqual(rows[1][4], '3000000', '부채 평가금액은 assetEval() 그대로(양수) — 홈 합계처럼 음수로 뒤집지 않음');
+  assert.strictEqual(rows[1][7], 'N');
+});
+/* ---------- nwHistoryToCSV: 순자산 추이 CSV 내보내기(app-evolve cycle244 advance) ---------- */
+test('nwHistoryToCSV: 빈 배열이면 BOM과 헤더만 있는 한 줄을 반환한다', () => {
+  const csv = sandbox.nwHistoryToCSV([]);
+  assert.strictEqual(csv, '﻿날짜,총자산,총부채,순자산');
+});
+test('nwHistoryToCSV: date/ta/td/nw을 날짜순으로 펼치고, nw이 없으면 ta-td로 계산해 채운다(updateNwHistory가 항상 nw을 넣지만 대비용 폴백)', () => {
+  const csv = sandbox.nwHistoryToCSV([
+    { date: '2026-02-01', ta: 2000, td: 300 },
+    { date: '2026-01-01', ta: 1000, td: 200, nw: 800 },
+  ]);
+  const rows = JSON.parse(JSON.stringify(sandbox.parseCSV(csv)));
+  assert.strictEqual(rows.length, 3, '헤더 1줄 + 데이터 2줄');
+  assert.deepStrictEqual(rows[1], ['2026-01-01', '1000', '200', '800']);
+  assert.deepStrictEqual(rows[2], ['2026-02-01', '2000', '300', '1700']);
+});
+test('nwHistoryToCSV: byOwner는 귀속마다 집합이 달라 고정 컬럼에 담지 않고 내보내지 않는다(알려진 범위)', () => {
+  const csv = sandbox.nwHistoryToCSV([
+    { date: '2026-01-01', ta: 1000, td: 0, nw: 1000, byOwner: { 엄마: { ta: 600, td: 0 }, 아빠: { ta: 400, td: 0 } } },
+  ]);
+  assert.ok(!csv.includes('엄마') && !csv.includes('아빠'), 'byOwner 세부값은 CSV에 섞여나오면 안 됨');
+});
+/* ---------- doExport(assetsCsv/nwCsv) 배선 회귀: exportData() 시트의 새 버튼이 doExport로 올바르게 연결되는지.
+ * exportData()는 canShareFiles()/svg()/IS_IOS 등 FUNCTIONS 목록 밖의 의존이 많아 실행형으로 돌리지 않고,
+ * homeAlertCard 테스트(위)와 동일하게 extractFunction으로 원본 소스만 떼어 onclick 배선을 정적으로 검사한다. */
+test('exportData: 자산 목록/순자산 추이 CSV 버튼이 각각 kind="assetsCsv"/"nwCsv"로 doExport를 부른다', () => {
+  const body = extractFunction('exportData');
+  assert.ok(body.includes("doExport('${sharable?'share':'download'}','assetsCsv')"), '자산 목록 CSV 버튼이 없음');
+  assert.ok(body.includes("doExport('${sharable?'share':'download'}','nwCsv')"), '순자산 추이 CSV 버튼이 없음');
 });
 test('csvDateValid: YYYY-MM-DD 형식이 아니거나 실존하지 않는 날짜(예: 2월 30일)는 거부한다', () => {
   assert.strictEqual(sandbox.csvDateValid('2026-01-15'), true);

@@ -1410,7 +1410,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.232';
+const APP_VERSION='1.47.233';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6539,6 +6539,44 @@ function txnsToCSV(txns,assets){
  ].map(esc).join(',')));
  return '\ufeff'+[header,...rows].join('\r\n');
 }
+/* 자산 목록 CSV — 순수 함수(DOM/DB 전역 참조 없음). evalValue(평가금액)/gainLoss(손익)는
+   assetEval()/assetGainLoss()가 DB.rates(시세평가 자산)·DB.txns(현금·저축·부동산 등 원장 잔액)에
+   의존해 전역 없이는 계산할 수 없으므로, assetAllocation/portfolioGainLoss(logic.js)와 같은 원칙으로
+   호출부(doExport)가 이미 평가를 끝낸 값을 asset 레코드에 evalValue/gainLoss로 얹어 items로 넘긴다.
+   그 밖의 통화/수량·귀속·자산명은 asset 레코드 자체 필드라 이 함수 안에서 그대로 포맷한다. */
+function assetsToCSV(items){
+ const typeLabel={cash:'현금예금',savings:'저축',stock:'주식',realestate:'부동산',debt:'부채',pension:'연금 미래자산',fx:'외화',gold:'금',crypto:'코인',etc:'기타'};
+ /* 자산명/귀속명도 사용자 자유입력이라 txnsToCSV와 동일한 CSV 인젝션 방어가 필요하다(guard/esc 동일 규칙). */
+ const guard=v=>{const s=String(v==null?'':v);return /^['=+\-@\t\r]/.test(s)?"'"+s:s};
+ const esc=v=>{const s=String(v==null?'':v);return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s};
+ const header=['자산명','유형','귀속','통화/수량','평가금액','매입원가','손익','전체 합계 포함'].map(esc).join(',');
+ const qtyLabel=a=>{
+  if(a.type==='fx')return `${a.currency||''} ${a.fxAmount||0}`.trim();
+  if(a.type==='gold')return `${a.goldDon||0}돈`;
+  if(a.type==='stock')return `${a.stockCode||''} ${a.stockQty||0}주`.trim();
+  if(a.type==='crypto')return `${a.cryptoCode||''} ${a.cryptoQty||0}개`.trim();
+  return '';
+ };
+ /* 부채는 assetEval()이 이미 '잔여원금(양수)' 컨벤션으로 돌려주므로(index.html balanceAt 주석) 여기서
+    다시 부호를 뒤집지 않는다 — 홈 합계처럼 음수로 보이게 하려면 호출부가 따로 뒤집어야 할 몫. */
+ const rows=(items||[]).map(a=>[
+  guard(a.name||''),typeLabel[a.type]||a.type||'',guard(a.owner||''),guard(qtyLabel(a)),
+  a.evalValue!=null?a.evalValue:'',a.costBasis>0?a.costBasis:'',a.gainLoss!=null?a.gainLoss:'',
+  a.includeInTotal?'Y':'N'
+ ].map(esc).join(','));
+ return '\ufeff'+[header,...rows].join('\r\n');
+}
+/* 순자산 추이 CSV — 순수 함수. DB.nwHistory 항목({date,ta,td,nw,byOwner?}, updateNwHistory 참고)을
+   그대로 받아 날짜/총자산/총부채/순자산 4컬럼으로 펼친다. byOwner(귀속별 세부값)는 귀속 집합이
+   계정마다 달라 고정 컬럼으로 담을 수 없어 내보내지 않는다 — 귀속별 추이는 화면(목표/귀속별 보기)에서
+   확인하는 걸 알려진 범위로 둔다. */
+function nwHistoryToCSV(hist){
+ const esc=v=>{const s=String(v==null?'':v);return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s};
+ const header=['날짜','총자산','총부채','순자산'].map(esc).join(',');
+ const rows=(hist||[]).slice().sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0)
+  .map(h=>[h.date,h.ta,h.td,h.nw!=null?h.nw:(h.ta-h.td)].map(esc).join(','));
+ return '\ufeff'+[header,...rows].join('\r\n');
+}
 /* ===== 거래 내역 CSV 가져오기 — 순수 함수(DOM/DB 전역 참조 없음) ===== */
 /* txnsToCSV의 guard(v)가 =,+,-,@,\t,\r(또는 원본이 이미 '로 시작하는 경우) 앞에 붙인 보호용 '를
  * 되돌린다 — guard가 "원본이 '로 시작하면 무조건 보호용 '를 하나 더 붙인다"로 바뀌었으므로
@@ -6687,13 +6725,29 @@ function exportData(){ /* 저장 방식 선택 */
   <button class="pk-item" onclick="closeSheet();doExport('${sharable?'share':'download'}','csv')">
     <div class="pav" style="background:var(--sunken);color:var(--text-2)">${svg('ledger')}</div>
     <div class="pbody"><div class="pn">거래 내역 CSV로 내보내기</div><div class="psub">스프레드시트 앱에서 열어볼 수 있어요</div></div>
+    <div class="pc">${svg('chev')}</div></button>
+  <button class="pk-item" onclick="closeSheet();doExport('${sharable?'share':'download'}','assetsCsv')">
+    <div class="pav" style="background:var(--sunken);color:var(--text-2)">${svg('wallet')}</div>
+    <div class="pbody"><div class="pn">자산 목록 CSV로 내보내기</div><div class="psub">지금 등록된 자산을 스프레드시트로 꺼내요</div></div>
+    <div class="pc">${svg('chev')}</div></button>
+  <button class="pk-item" onclick="closeSheet();doExport('${sharable?'share':'download'}','nwCsv')">
+    <div class="pav" style="background:var(--sunken);color:var(--text-2)">${svg('chart')}</div>
+    <div class="pbody"><div class="pn">순자산 추이 CSV로 내보내기</div><div class="psub">날짜별 총자산·총부채·순자산 기록이에요</div></div>
     <div class="pc">${svg('chev')}</div></button>`);
 }
+/* kind별 CSV 파일명 접두사/공유 제목/복사 안내 — csv(거래내역)는 기존 그대로, assetsCsv/nwCsv는
+   이번에 새로 추가된 자산 목록/순자산 추이 내보내기(app-evolve cycle244 advance). */
+const CSV_KIND_META={
+ csv:{prefix:'history',shareTitle:'거래 내역 CSV',copyTitle:'거래 내역 데이터 복사'},
+ assetsCsv:{prefix:'assets',shareTitle:'자산 목록 CSV',copyTitle:'자산 목록 데이터 복사'},
+ nwCsv:{prefix:'networth',shareTitle:'순자산 추이 CSV',copyTitle:'순자산 추이 데이터 복사'},
+};
 async function doExport(mode,kind){
- const isCsv=kind==='csv';
+ const csvMeta=CSV_KIND_META[kind];
+ const isCsv=!!csvMeta;
  const d=new Date();const pad=n=>String(n).padStart(2,'0');
  const stamp=`${String(d.getFullYear()).slice(2)}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}`;
- const name=isCsv?`history_${stamp}.csv`:`backup_${stamp}.json`;
+ const name=isCsv?`${csvMeta.prefix}_${stamp}.csv`:`backup_${stamp}.json`;
  /* 반복거래는 확인 전까지 DB.txns에 저장되지 않고 expandRec()이 매번 즉석 생성하는
     가상 행이라(allTxns 패턴 참고, index.html:1960) 합쳐주지 않으면 CSV에서 통째로 빠진다.
     잔액 조정(adjust) 항목은 monthStats/histSumTotals 등 다른 모든 집계가 항목별 포함 설정
@@ -6706,17 +6760,23 @@ async function doExport(mode,kind){
     집계까지 된다(app-evolve cycle216 critique) — 미래에 저장될 수도 있는 수동 거래(DB.txns에
     이미 미래 날짜로 들어간 실거래, 위 range 체크는 RANGE_TO까지만 막음)도 "아직 일어나지 않은
     일"이라는 점은 같으므로 똑같이 제외한다. */
- const text=isCsv?txnsToCSV(DB.txns.concat(expandRec(RANGE_FROM,RANGE_TO)).filter(t=>!(t.adjust&&!t.inSurplus)&&t.date<=TODAY),DB.assets):JSON.stringify(DB,null,2);
+ /* assetsCsv/nwCsv도 evalValue/gainLoss(assetEval/assetGainLoss)처럼 DB.rates·DB.txns에 의존하는
+    평가를 doExport(이미 DB 전역을 쓰는 호출부)가 끝낸 뒤, 포맷팅만 하는 순수 함수(assetsToCSV/
+    nwHistoryToCSV)에 결과만 넘긴다(assetsToCSV/nwHistoryToCSV 주석 참고). */
+ const text=kind==='assetsCsv'?assetsToCSV(DB.assets.map(a=>Object.assign({},a,{evalValue:assetEval(a),gainLoss:(assetGainLoss(a)||{}).amount})))
+  :kind==='nwCsv'?nwHistoryToCSV(DB.nwHistory)
+  :kind==='csv'?txnsToCSV(DB.txns.concat(expandRec(RANGE_FROM,RANGE_TO)).filter(t=>!(t.adjust&&!t.inSurplus)&&t.date<=TODAY),DB.assets)
+  :JSON.stringify(DB,null,2);
  const mime=isCsv?'text/csv':'application/json';
  /* CSV는 복원용 백업이 아니므로 백업 알림 상태(lastExport/backupSnooze)를 건드리지 않는다 */
  const done=msg=>{if(!isCsv){DB.settings.lastExport=Date.now();DB.settings.backupSnooze=0;save();renderCurrent();}toast(msg)};
- const copyFallback=reason=>openCopyBackup(text,reason,isCsv?{title:'거래 내역 데이터 복사',note:'스프레드시트 앱에서 열 때는 이 내용을 .csv 파일로 저장해 불러오면 돼요.',isCsv:true}:null);
+ const copyFallback=reason=>openCopyBackup(text,reason,isCsv?{title:csvMeta.copyTitle,note:'스프레드시트 앱에서 열 때는 이 내용을 .csv 파일로 저장해 불러오면 돼요.',isCsv:true}:null);
 
  /* 1) 공유 시트 — 되면 이게 가장 확실 */
  if(mode==='share'){
   try{
    const file=new File([text],name,{type:mime});
-   await navigator.share({files:[file],title:isCsv?'거래 내역 CSV':'우리의 자산 백업'});
+   await navigator.share({files:[file],title:isCsv?csvMeta.shareTitle:'우리의 자산 백업'});
    done(isCsv?'CSV 파일을 저장했어요':'백업 파일을 저장했어요');
    return;
   }catch(e){

@@ -1,19 +1,8 @@
 {
-  "cycle": 244,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "자산 목록 CSV 내보내기 (거래내역만 가능하던 CSV 내보내기를 자산/순자산 이력으로 확장)",
-    "why": "exportData()(index.html:6675)는 JSON 전체 백업과 txnsToCSV(거래내역)만 제공하고, 현재 자산 목록(이름/유형/귀속/통화·수량/평가금액/매입원가/손익)이나 DB.nwHistory(순자산 시계열, updateNwHistory/pruneNwHistory가 관리, 2843/2851행)를 CSV로 꺼낼 방법이 없다. '자산관리' 앱인데 자산 자체는 스프레드시트로 못 꺼내는 건 실사용 결함이자, 거래내역만 doExport()의 공유/다운로드/클립보드 폴백까지 갖춘 정교한 경로를 갖고 자산/순자산은 아예 없는 기능 비일관성이다.",
-    "approach": "1) txnsToCSV(index.html:6521) 옆에 순수함수 assetsToCSV(assets, rates) 신설 — 컬럼: 자산명/유형/귀속/통화또는수량(fx·gold·stock·crypto)/평가금액(assetEval 사용)/매입원가(costBasis)/손익(assetGainLoss)/includeInTotal, 기존 CSV escaping/quoting 규칙 그대로 재사용. 2) nwHistoryToCSV(nwHistory) 추가(date,ta,td,byOwner,nw 컬럼) — DB.nwHistory 항목 {date,ta,td,byOwner} 형태 그대로 반영. 3) exportData()의 시트(6675-6690)에 '자산 목록 CSV로 내보내기' 버튼 추가, doExport(mode,kind)(6692)에 kind==='assetsCsv' 분기 추가해 assets_${stamp}.csv 생성 — 기존 share/download/copy-fallback 배선은 그대로 재사용. 4) test/run.js FUNCTIONS에 assetsToCSV/nwHistoryToCSV 추가하고, 빈 목록/쉼표·쌍따옴표 포함 자산명 이스케이핑/fx·gold·stock·crypto 수량 포맷/부채(debt) 자산의 음수·양수 부호(assetEval 컨벤션과 일치) 테스트 추가. 5) index.html 변경이므로 APP_VERSION과 sw.js CACHE 동기 범프 필요."
-  },
+  "cycle": 245,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 239,
-      "phase": "advance",
-      "timestamp": "2026-10-23T17:30:00.000Z",
-      "summary": "critique(cycle239) 계획대로 _shared.js에 Map 기반 shouldThrottleByKey(map,key,now,windowMs,maxCount)를 신설 — 기존 shouldThrottle(history,...)의 prune/count 로직을 내부에서 그대로 재사용하고, map.size가 500(RL_MAX_KEYS)을 넘으면 Map의 삽입순서(재삽입으로 매번 최신으로 끌어올림)상 가장 오래된 key를 지우는 단순 LRU를 추가했다. 호출자 식별을 위한 clientKeyFromHeaders(headers)도 _shared.js에 신설(x-nf-client-connection-ip 우선, 없으면 x-forwarded-for의 첫 IP(콤마구분), 둘 다 없으면 'unknown') — 원래 계획은 각 핸들러에 인라인 추출이었지만, _shared.js 자체가 '3파일 복붙 drift 방지'가 설립 이유(파일 상단 주석)라 이 로직도 공유 함수로 올려 drift를 피했다. stock.js/rates.js/crypto.js 세 핸들러 모두 let rlHistory=[]를 let rlBuckets=new Map()로 바꾸고, rl.allow/rl.history 2단계 처리를 shouldThrottleByKey(rlBuckets, clientKeyFromHeaders(event.headers), Date.now(), RL_WINDOW_MS, RL_MAX) 단일 호출(boolean 반환)으로 교체했다. 기존 shouldThrottle은 세 파일 모두 손대지 않고 그대로 export 유지(다른 회귀 없음, reference-equality 테스트 그대로 통과). 테스트 없이 호출부만 바꿔 핸들러 레벨 429 소진 테스트(헤더 없이 31회 호출 — clientKeyFromHeaders가 'unknown' 단일 key로 귀결돼 기존과 동일하게 동작)가 그대로 통과함을 확인. test/run.js에 shouldThrottleByKey 4건(서로 다른 key는 안 막음/같은 key는 기존 threshold·prune 동작 유지/500개 cap LRU bounded-size/stock·rates·crypto 참조동일성) + clientKeyFromHeaders 2건(우선순위·콤마구분·fallback 분기/참조동일성) 총 6건 추가. index.html/logic.js/sw.js는 건드리지 않아 APP_VERSION/sw.js CACHE 범프는 불필요(cycle233/237 advance와 동일한 전례). node --check(모든 수정 파일) 통과. git stash로 _shared.js/stock.js/rates.js/crypto.js 수정분만 걷어낸 뒤(test/run.js는 유지) node test/run.js를 돌려 신규 6건 전부가 FAIL함을(1873/1879) 직접 확인했고, stash pop으로 복원 후 1873/1873 -> 1879/1879 통과를 재확인했다. pending_advance_plan은 null로 비웠다.",
-      "commit": null
-    },
     {
       "cycle": 240,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-24T11:15:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-244 전체 다룬 영역 전부 제외 지시)한 결과, exportData()(index.html:6675)가 JSON 전체 백업과 txnsToCSV(거래내역)만 제공하고 현재 자산 목록(이름/유형/귀속/통화·수량/평가금액/매입원가/손익)이나 DB.nwHistory(순자산 시계열, updateNwHistory/pruneNwHistory가 관리, 2843/2851행)를 CSV로 꺼낼 방법이 전혀 없는 공백을 발견 — '자산관리' 앱인데 자산 자체는 스프레드시트로 못 꺼내는 실사용 결함이자, 거래내역만 doExport()의 공유/다운로드/클립보드 폴백까지 갖춘 정교한 경로를 갖고 자산/순자산엔 아예 없는 기능 비일관성. 러너업 기각: 격주/반월 반복주기(index.html:4686, 월급이 거의 다 월 1회라 가치 낮음), 앱이 완전히 닫혔을 때 OS 알림 미동작(실은 setInterval(checkNotifyAlerts,5분)가 9108행에서 가시성과 무관하게 이미 재폴링 중이라 기각 대상 자체가 착오), 부채/목표 상환일 투사(logic.js:569-625 goalProgress/debtPayoffProjection로 이미 구현됨), 주식 배당/이자 추적(이미 '수입으로 직접 기록'하는 워크어라운드와 중복이 커서 범위 확장 위험). advance 계획(assetsToCSV/nwHistoryToCSV 순수함수 신설, exportData 시트+doExport에 kind==='assetsCsv' 분기 추가, 기존 share/download/copy-fallback 재사용, test/run.js에 이스케이핑·fx/gold/stock/crypto 수량 포맷·부채 부호 테스트 추가, index.html 변경이라 APP_VERSION/sw.js CACHE 동기 범프 필요)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "commit": null
+    },
+    {
+      "cycle": 244,
+      "phase": "advance",
+      "timestamp": "2026-10-24T13:10:00.000Z",
+      "summary": "자산 목록 CSV(assetsToCSV)와 순자산 추이 CSV(nwHistoryToCSV) 내보내기를 추가. exportData() 시트에 두 버튼 신설, doExport(mode,kind)에 assetsCsv/nwCsv 분기 추가(평가는 doExport가 assetEval/assetGainLoss로 끝낸 뒤 순수 포맷터에 넘김). test/run.js에 회귀 테스트 다수 추가, 전체 1932개 통과. APP_VERSION/CACHE 버전 동기 범프.",
       "commit": null
     }
   ]
