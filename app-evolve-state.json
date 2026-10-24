@@ -1,15 +1,12 @@
 {
   "cycle": 244,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "자산 목록 CSV 내보내기 (거래내역만 가능하던 CSV 내보내기를 자산/순자산 이력으로 확장)",
+    "why": "exportData()(index.html:6675)는 JSON 전체 백업과 txnsToCSV(거래내역)만 제공하고, 현재 자산 목록(이름/유형/귀속/통화·수량/평가금액/매입원가/손익)이나 DB.nwHistory(순자산 시계열, updateNwHistory/pruneNwHistory가 관리, 2843/2851행)를 CSV로 꺼낼 방법이 없다. '자산관리' 앱인데 자산 자체는 스프레드시트로 못 꺼내는 건 실사용 결함이자, 거래내역만 doExport()의 공유/다운로드/클립보드 폴백까지 갖춘 정교한 경로를 갖고 자산/순자산은 아예 없는 기능 비일관성이다.",
+    "approach": "1) txnsToCSV(index.html:6521) 옆에 순수함수 assetsToCSV(assets, rates) 신설 — 컬럼: 자산명/유형/귀속/통화또는수량(fx·gold·stock·crypto)/평가금액(assetEval 사용)/매입원가(costBasis)/손익(assetGainLoss)/includeInTotal, 기존 CSV escaping/quoting 규칙 그대로 재사용. 2) nwHistoryToCSV(nwHistory) 추가(date,ta,td,byOwner,nw 컬럼) — DB.nwHistory 항목 {date,ta,td,byOwner} 형태 그대로 반영. 3) exportData()의 시트(6675-6690)에 '자산 목록 CSV로 내보내기' 버튼 추가, doExport(mode,kind)(6692)에 kind==='assetsCsv' 분기 추가해 assets_${stamp}.csv 생성 — 기존 share/download/copy-fallback 배선은 그대로 재사용. 4) test/run.js FUNCTIONS에 assetsToCSV/nwHistoryToCSV 추가하고, 빈 목록/쉼표·쌍따옴표 포함 자산명 이스케이핑/fx·gold·stock·crypto 수량 포맷/부채(debt) 자산의 음수·양수 부호(assetEval 컨벤션과 일치) 테스트 추가. 5) index.html 변경이므로 APP_VERSION과 sw.js CACHE 동기 범프 필요."
+  },
   "history": [
-    {
-      "cycle": 239,
-      "phase": "critique",
-      "timestamp": "2026-10-23T16:15:57.033Z",
-      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-239 전체 다룬 영역 전부 제외 지시)한 결과, Netlify 가격조회 함수(stock.js/rates.js/crypto.js)의 cycle225 rate limiter가 client key 없이 모듈 스코프 단일 배열(rlHistory)만 써서 인스턴스 스케일아웃 시 전역 한도가 느슨해지고(인스턴스 수배로 완화됨) 같은 warm 인스턴스에 우연히 걸린 무고한 사용자가 다른 사용자의 재시도 폭주로 429 collateral 차단을 당할 수 있는 공백을 발견 — 보안/남용완화 로직의 실제 correctness gap. 러너업 기각: budgets 전역설계(이미 의도적 문서화), CSV split 상세 누락(이미 알려진 v1 포맷 한계), ALLOWED_ORIGINS가 서버측 강제가 아닌 점(이미 주석으로 인정된 한계). advance 계획(_shared.js에 Map 기반 shouldThrottleByKey + IP 추출 + 500개 cap LRU, 세 핸들러 교체, test/run.js에 키분리/기존동작유지/bounded-size/참조동일성 테스트 추가, index.html/logic.js/sw.js 불변이라 버전 범프 불필요)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
-      "commit": null
-    },
     {
       "cycle": 239,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-24T10:30:00.000Z",
       "summary": "cycle244 develop 커밋(98c4f79, openHelp의 '💾 백업' 행이 계정 종류와 무관하게 항상 \"이 기기에만\" 저장된다고 말하던 문제 수정)을 검토. git show로 diff 확인: helpBackupNote(isCloudAcct) 호출의 isCloudAcct 산출식(accountKind()==='email'&&!!(AUTH.rec(SESSION)&&AUTH.rec(SESSION).cloud))이 openAccountSheet(index.html:5715)·doDeleteAccount(index.html:9523)가 이미 쓰는 기준과 변수명·연산자까지 글자 그대로 일치함을 grep으로 대조해 확인 — 클라우드 동기화 판정 기준이 세 곳에서 drift 없이 통일됨. accountKind()는 SESSION 없으면 'guest', AUTH.rec(SESSION).kakao면 'kakao', 아니면 'email'을 반환(index.html:2429)하므로 게스트·카카오는 isCloudAcct 계산 자체가 분기 밖에서 바로 false로 떨어져 helpBackupNote(false)로 기존 문구(\"이 기기에만\")가 그대로 유지됨을 확인. helpBackupNote 자체는 순수함수로 분기 두 개만 가진 간단한 삼항이라 로직 결함 여지가 적음. 신규 테스트 6건(helpBackupNote(false)/helpBackupNote(true) 각각의 문구 분기, 두 경우 모두 파일백업/7일 리마인드 문구 보존, openHelp가 클라우드 이메일·게스트·카카오 세 계정 유형 각각에 올바른 문구를 실제로 꽂아 쓰는지 DOM 스텁으로 실행형 검증)이 diff의 분기와 1:1 대응함을 확인. node our-assets-v1.14.1/our-assets/test/run.js로 전체 재실행해 1922/1922 통과 확인(신규 6건 포함, 기존 1916건 회귀 없음). APP_VERSION 1.47.231→1.47.232, sw.js CACHE v498→v499 범프가 index.html(logic.js는 별도 캐시 규칙으로 버전 문자열 없음)과 함께 동기화됐음을 확인. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 244,
+      "phase": "critique",
+      "timestamp": "2026-10-24T11:15:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-244 전체 다룬 영역 전부 제외 지시)한 결과, exportData()(index.html:6675)가 JSON 전체 백업과 txnsToCSV(거래내역)만 제공하고 현재 자산 목록(이름/유형/귀속/통화·수량/평가금액/매입원가/손익)이나 DB.nwHistory(순자산 시계열, updateNwHistory/pruneNwHistory가 관리, 2843/2851행)를 CSV로 꺼낼 방법이 전혀 없는 공백을 발견 — '자산관리' 앱인데 자산 자체는 스프레드시트로 못 꺼내는 실사용 결함이자, 거래내역만 doExport()의 공유/다운로드/클립보드 폴백까지 갖춘 정교한 경로를 갖고 자산/순자산엔 아예 없는 기능 비일관성. 러너업 기각: 격주/반월 반복주기(index.html:4686, 월급이 거의 다 월 1회라 가치 낮음), 앱이 완전히 닫혔을 때 OS 알림 미동작(실은 setInterval(checkNotifyAlerts,5분)가 9108행에서 가시성과 무관하게 이미 재폴링 중이라 기각 대상 자체가 착오), 부채/목표 상환일 투사(logic.js:569-625 goalProgress/debtPayoffProjection로 이미 구현됨), 주식 배당/이자 추적(이미 '수입으로 직접 기록'하는 워크어라운드와 중복이 커서 범위 확장 위험). advance 계획(assetsToCSV/nwHistoryToCSV 순수함수 신설, exportData 시트+doExport에 kind==='assetsCsv' 분기 추가, 기존 share/download/copy-fallback 재사용, test/run.js에 이스케이핑·fx/gold/stock/crypto 수량 포맷·부채 부호 테스트 추가, index.html 변경이라 APP_VERSION/sw.js CACHE 동기 범프 필요)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
       "commit": null
     }
   ]
