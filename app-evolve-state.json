@@ -1,7 +1,11 @@
 {
   "cycle": 246,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "연간 결산(연간 리뷰) 화면 신설 — 총수입/총지출/저축률/전년대비/카테고리 TOP3",
+    "why": "openSpendAnalysis/openIncomeAnalysis가 모두 월 단위뿐이라 1년 전체를 돌아볼 화면이 없고, 수입·지출 분석이 둘 다 있는데도 '저축률' 지표가 앱 전체에 단 한 곳도 계산되어 있지 않다(grep 0건). 연말이 가까운 시점에 가장 체감 가치가 큰 공백이며, 기존에 다룬 '월별 수입 분석 신설'과는 다른 전년대비·연간 리캡 관점이다.",
+    "approach": "1) index.html '===== 지출/수입 분석 =====' 섹션(5860~5986줄 부근, spendByCategory/incomeByCategory/*TrendBadge 바로 아래) 또는 logic.js에 순수 함수 추가: yearSpendByCategory(y,owner)/yearIncomeByCategory(y,owner)(allTxns(연초,연말) 기준으로 spendByCategory/incomeByCategory와 동일한 owner·isPending·splits 처리 로직 재사용), yearMonthlyNet(y,owner)(1~12월 각각의 수입/지출 합계 배열, monthStats2 패턴 재사용), savingsRate(income,expense)(income<=0이면 null, 아니면 Math.round((income-expense)/income*100)), yearSummary(y,owner)(income/expense/net/savingsRate/topExpenseCats 3개/topIncomeCats 3개/monthly를 묶어서 반환, prevYear(y-1) 요약도 함께 계산해 YoY delta 제공 — 전년 데이터가 없으면 delta는 null로 두어 spendTrendBadge류가 이미 쓰는 'null-safe' 관례를 따름). 2) 새 render 함수 openYearReview(y)를 MENU/HISTORY 섹션 부근(5987줄 openSpendAnalysis 근처)에 추가 — 상단에 ◀ y년 ▶ 전환(가벼운 전/후 버튼), 총수입/총지출/순저축액/저축률 카드, 전년대비 배지(수입/지출/저축률 각각 ▲▼), buildExpenseBarHtml()을 재사용한 카테고리 TOP3 스택바 2개(지출/수입), 거래가 전혀 없는 해는 '아직 ${y}년 기록이 없어요' 빈 상태(기존 empty 패턴). 3) 진입점은 renderMenu()(5719줄 부근)에 '리포트' 메뉴 항목으로 추가(예: {ic:'calendar',l:'연간 결산',a:'openYearReview(TM.y)'}) — 홈 카드 추가는 이번 cycle 범위 밖(수입분석 카드처럼 다음 develop 사이클에서 별도 검토). 4) test/run.js: 193~211줄 FUNCTIONS 배열에 yearSpendByCategory/yearIncomeByCategory/yearMonthlyNet/savingsRate/yearSummary 추가, incomeByCategory/incomeBreakdownCard 테스트 블록(9516줄대, 6119줄대)과 동일한 패턴으로 (a) owner 필터, (b) isPending 제외, (c) 분할거래(splits) 집계, (d) savingsRate의 income=0/income<expense(음수 저축률) 경계값, (e) openYearReview 빈 상태·YoY 배지 null-safety·HTML 이스케이프 테스트를 추가. 5) index.html 1413줄 APP_VERSION을 1.47.236 → 1.47.237로, sw.js 6줄 CACHE를 'ourassets-v503' → 'ourassets-v504'로 범프(신규 화면·함수 추가로 캐시 갱신 필요)."
+  },
   "history": [
     {
       "cycle": 241,
@@ -141,6 +145,13 @@
       "phase": "review",
       "timestamp": "2026-10-24T18:25:00.000Z",
       "summary": "cycle246 develop 커밋(3dde682, 홈 화면에 expenseBreakdownCard와 대칭되는 incomeBreakdownCard(cats) 신설)을 검토. diff를 직접 읽어 다음을 확인: (1) incomeByCategory(y,m,'전체')는 filterTxnsByOwner가 owner=='전체'일 때 필터 없이 그대로 반환하므로 expenseByCat(y,m)이 owner 구분 없이 전체 합산하는 것과 동일한 \"전체 소유자\" 의미로 일관됨(logic.js:158-159 확인) — owner 파라미터를 명시적으로 넘겼지만 기본값('전체')과 같아 동작 차이 없음. (2) incomeBreakdownCard는 expenseBreakdownCard와 완전히 같은 빈 카드 숨김 규칙(cats.length 체크 + 합계 0 체크)과 buildExpenseBarHtml 공유 재사용으로 작성돼 기존 패턴과 분기 없음. (3) renderHome에 삽입된 위치(expenseBreakdownCard 바로 다음)가 다른 카드들의 렌더 순서나 상태(ST.home)에 영향 없음. (4) 테스트가 실제 구현에 의존함을 커밋 메시지가 stash 재현으로 이미 검증했고, node our-assets-v1.14.1/our-assets/test/run.js를 독립적으로 재실행해 1960/1960 통과 재확인. 실제 버그를 찾지 못했다 — 이상 없음, 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 246,
+      "phase": "critique",
+      "timestamp": "2026-10-24T19:05:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-246까지 다뤄졌거나 기각된 주제 전부 제외 지시 — 계정탈퇴/planNegatives/지출분석 스택바/자산검색 디바운스/CSV미리보기 상세/백업문구/CSV내보내기/문의수정/수입분석 화면·홈카드 등)한 결과, openSpendAnalysis/openIncomeAnalysis가 모두 월 단위뿐이라 1년 전체를 돌아보는 연간 결산 화면이 전혀 없고, grep으로 '저축률/savingsRate/savingRate'가 코드 전체에서 0건임을 확인해 수입·지출 분석이 둘 다 있는데도 개인재무 가장 기본 지표인 저축률이 앱 어디에도 계산되어 있지 않은 공백을 발견했다. 연말이 가까운 시점이라 체감 가치가 크고, 월별 수입분석 신설(cycle245)과는 전년대비·연간 리캡이라는 다른 관점이라 중복 아님. 러너업 기각: 구독(반복지출) 월 합계 요약 카드(범위가 작아 develop에 더 적합, 지출분석 카테고리 합계와 가치 겹침), 홈 카드 드래그 재배열(구조적 공백이 아닌 UX 기호 문제, 리스크 대비 효용 낮음), 알림 히스토리/인앱 알림 센터(톰스톤·병합 로직까지 새로 설계해야 해 단일 사이클 범위 초과, 기각된 'OS 알림' 주제와 인접). advance 계획을 pending_advance_plan에 저장: yearSpendByCategory/yearIncomeByCategory/yearMonthlyNet/savingsRate(income,expense)/yearSummary(y,owner) 순수함수 신설(spendByCategory/incomeByCategory와 동일 owner·isPending·splits 처리 재사용, income<=0이면 저축률 null), openYearReview(y) 화면 신설(전년대비 배지, buildExpenseBarHtml 재사용한 지출/수입 TOP3 스택바, 빈 상태 처리), renderMenu()에 '연간 결산' 진입점 추가, test/run.js에 owner필터/isPending제외/분할거래/저축률 경계값/빈상태 테스트 추가, APP_VERSION 1.47.236->1.47.237·sw.js CACHE v503->v504 범프 필요. 코드 변경 없음(critique 단계라 state.json만 갱신).",
       "commit": null
     }
   ]
