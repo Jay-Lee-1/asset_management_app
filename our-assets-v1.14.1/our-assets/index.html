@@ -1410,7 +1410,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.237';
+const APP_VERSION='1.47.238';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2896,7 +2896,7 @@ let TM=ym(TODAY);TM.d=+TODAY.slice(8,10);
 let ST={tab:'home',ledgerMode:'cal',assetOwner:'all',assetQ:'',nwPreset:'m3',ledger:{y:TM.y,m:TM.m,sel:TODAY},home:{y:TM.y,m:TM.m},
  hist:{cat:'전체',q:'',assetId:null,catExact:null,catExactType:null,owner:'전체',selMode:false,sel:new Set(),sortAsc:false,
    range:{from:`${TM.y}-01-01`,to:`${TM.y}-12-31`},preset:'year',page:1,avgMode:false,balPreset:'m3'},
- plan:{owner:'전체',assetId:null,y:TM.y,m:TM.m},spendOwner:'전체',editAssets:false,aSel:{mode:false,ids:new Set()},lSel:{mode:false,ids:new Set()}};
+ plan:{owner:'전체',assetId:null,y:TM.y,m:TM.m},spendOwner:'전체',yearReview:{y:TM.y},editAssets:false,aSel:{mode:false,ids:new Set()},lSel:{mode:false,ids:new Set()}};
 const TABS=[{id:'home',label:'홈',icon:'home'},{id:'assets',label:'자산관리',icon:'wallet'},{id:'ledger',label:'가계부',icon:'ledger'},{id:'plan',label:'한달 플랜',icon:'plan'},{id:'menu',label:'메뉴',icon:'menu'}];
 
 /* ================= HOME ================= */
@@ -6042,16 +6042,19 @@ function yearSummary(y,owner='전체'){
 /* 연간 결산 시트 — 연도 전환(◀/▶), 총수입/총지출/순저축액/저축률 4칸 요약(전년대비 배지),
  * 지출·수입 카테고리 TOP3 스택바(buildExpenseBarHtml 재사용). 해당 연도에 거래가 전혀 없으면
  * (수입·지출 모두 0) 빈 상태만 보여주고 요약·TOP3는 그리지 않는다(openSpendAnalysis의 empty 패턴). */
+function yearOwnerSel(i){const list=['전체',...DB.owners];ST.spendOwner=list[i]||'전체';openYearReview(ST.yearReview.y);}
 function openYearReview(y){
- y=y||TM.y;
+ y=y||ST.yearReview.y||TM.y;ST.yearReview.y=y;
+ if(ST.spendOwner!=='전체'&&!DB.owners.includes(ST.spendOwner))ST.spendOwner='전체'; /* 귀속 사라지면 전체로 (openSpendAnalysis/openIncomeAnalysis와 동일 가드) */
  const switcher=`<div class="card" style="display:flex;align-items:center;justify-content:center;gap:18px;padding:10px;margin-bottom:12px">
    <button type="button" class="act-btn" aria-label="${y-1}년 보기" onclick="openYearReview(${y-1})">${svg('chevL')}</button>
    <span style="font-weight:700;font-size:16px">${y}년</span>
    <button type="button" class="act-btn" aria-label="${y+1}년 보기" onclick="openYearReview(${y+1})">${svg('chevR')}</button>
  </div>`;
- const s=yearSummary(y,'전체');
+ const ownerSeg=DB.owners.length?`<div class="seg" role="group" aria-label="귀속 선택"><div class="seg-blob"></div>${['전체',...DB.owners].map((o,oi)=>`<button class="${ST.spendOwner===o?'on':''}" aria-pressed="${ST.spendOwner===o}" onclick="yearOwnerSel(${oi})">${esc(o)}</button>`).join('')}</div>`:'';
+ const s=yearSummary(y,ST.spendOwner);
  if(!s.income&&!s.expense){
-  openSheet(`<h3>연간 결산</h3>${switcher}
+  openSheet(`<h3>연간 결산</h3>${switcher}${ownerSeg}
    <div class="empty"><div class="ei">${svg('calendar')}</div><div class="et">아직 ${y}년 기록이 없어요</div><div class="es">거래가 쌓이면 연간 결산을 볼 수 있어요</div></div>
    <div style="height:12px"></div><button class="btn btn-soft" onclick="closeSheet()">닫기</button>`);
   return;
@@ -6060,7 +6063,7 @@ function openYearReview(y){
  const expBadge=s.yoy.expense!==null?spendTrendBadge(s.yoy.expense,'전년대비 '):'';
  const rateBadge=s.yoy.rate!==null?incomeTrendBadge(s.yoy.rate,'전년대비 '):'';
  openSheet(`<h3>연간 결산</h3><div class="desc">${y}년 한 해를 돌아봐요</div>
-  ${switcher}
+  ${switcher}${ownerSeg}
   <div class="card" style="padding:16px 14px;margin-bottom:12px">
    <div class="hrt-grid">
     <div class="hrt-c"><span class="k">총수입</span><span class="v plus num">${comma(s.income)}원</span>${incBadge}</div>

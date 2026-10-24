@@ -6220,6 +6220,7 @@ test('openIncomeAnalysis: 예산 관련 UI가 전혀 없다(수입에는 예산 
 test('openYearReview: 해당 연도에 거래가 전혀 없으면 빈 상태만 보여주고 요약 카드는 그리지 않는다', () => {
   const ctx = yearReviewCtx();
   ctx.DB = { owners: [], assets: [], recurrences: [], txns: [] };
+  ctx.ST = { spendOwner: '전체', yearReview: { y: 2026 } };
   ctx.lastSheetHtml = null;
   ctx.openYearReview(2026);
   const html = ctx.lastSheetHtml;
@@ -6233,6 +6234,7 @@ test('openYearReview: 총수입/총지출/순저축액/저축률 카드와 지�
     { id: '1', type: 'income', category: '급여', amount: 1000000, date: '2026-01-10', confirmed: true },
     { id: '2', type: 'expense', category: '식비', amount: 400000, date: '2026-02-05', confirmed: true },
   ] };
+  ctx.ST = { spendOwner: '전체', yearReview: { y: 2026 } };
   ctx.lastSheetHtml = null;
   ctx.openYearReview(2026);
   const html = ctx.lastSheetHtml;
@@ -6250,6 +6252,7 @@ test('openYearReview: 전년 자료가 없으면(비교 기준 없음) YoY 배�
   ctx.DB = { owners: [], assets: [], recurrences: [], txns: [
     { id: '1', type: 'income', category: '급여', amount: 500000, date: '2026-03-10', confirmed: true },
   ] };
+  ctx.ST = { spendOwner: '전체', yearReview: { y: 2026 } };
   ctx.lastSheetHtml = null;
   ctx.openYearReview(2026);
   assert.ok(!ctx.lastSheetHtml.includes('전년대비'), '전년 자료가 없으면 전년대비 배지가 아예 없어야 함');
@@ -6257,14 +6260,25 @@ test('openYearReview: 전년 자료가 없으면(비교 기준 없음) YoY 배�
 test('openYearReview: y를 생략하면 TM.y(올해)를 쓴다', () => {
   const ctx = yearReviewCtx();
   ctx.DB = { owners: [], assets: [], recurrences: [], txns: [] };
+  ctx.ST = { spendOwner: '전체', yearReview: {} };
   ctx.TM = { y: 2031 };
   ctx.lastSheetHtml = null;
   ctx.openYearReview();
   assert.ok(ctx.lastSheetHtml.includes('2031년'), 'y 생략 시 TM.y를 연도로 써야 함');
 });
+test('openYearReview: y를 생략하면 TM.y보다 먼저 ST.yearReview.y(마지막으로 보던 연도)를 쓴다', () => {
+  const ctx = yearReviewCtx();
+  ctx.DB = { owners: [], assets: [], recurrences: [], txns: [] };
+  ctx.ST = { spendOwner: '전체', yearReview: { y: 2024 } };
+  ctx.TM = { y: 2031 };
+  ctx.lastSheetHtml = null;
+  ctx.openYearReview();
+  assert.ok(ctx.lastSheetHtml.includes('2024년'), 'y 생략 시 ST.yearReview.y가 TM.y보다 우선해야 함');
+});
 test('openYearReview: 연도 전환 버튼이 각각 y-1/y+1로 openYearReview를 다시 호출한다', () => {
   const ctx = yearReviewCtx();
   ctx.DB = { owners: [], assets: [], recurrences: [], txns: [] };
+  ctx.ST = { spendOwner: '전체', yearReview: { y: 2026 } };
   ctx.lastSheetHtml = null;
   ctx.openYearReview(2026);
   assert.ok(ctx.lastSheetHtml.includes('onclick="openYearReview(2025)"'), '◀ 버튼이 전년도를 호출해야 함');
@@ -6275,11 +6289,66 @@ test('openYearReview: 카테고리명에 HTML 특수문자가 있어도 이스�
   ctx.DB = { owners: [], assets: [], recurrences: [], txns: [
     { id: '1', type: 'income', category: '부수입&용돈<script>', amount: 100000, date: '2026-04-10', confirmed: true },
   ] };
+  ctx.ST = { spendOwner: '전체', yearReview: { y: 2026 } };
   ctx.lastSheetHtml = null;
   ctx.openYearReview(2026);
   const html = ctx.lastSheetHtml;
   assert.ok(html.includes('부수입&amp;용돈&lt;script&gt;'), 'HTML이 이스케이프되어야 함');
   assert.ok(!html.includes('<script>'), '원본 태그가 그대로 남아있으면 안 됨');
+});
+/* openSpendAnalysis/openIncomeAnalysis와 동일한 ST.spendOwner 귀속 필터를 연간 결산에도
+ * 추가(app-evolve cycle247 develop) — 세 화면이 같은 ST.spendOwner를 공유해, 지출/수입
+ * 분석에서 귀속을 바꾸면 연간 결산도 그 귀속으로 열린다. */
+test('openYearReview: 귀속(owner) 등록이 하나도 없으면 귀속 필터 세그먼트가 아예 안 그려진다', () => {
+  const ctx = yearReviewCtx();
+  ctx.DB = { owners: [], assets: [], recurrences: [], txns: [
+    { id: '1', type: 'income', category: '급여', amount: 500000, date: '2026-01-10', confirmed: true },
+  ] };
+  ctx.ST = { spendOwner: '전체', yearReview: { y: 2026 } };
+  ctx.lastSheetHtml = null;
+  ctx.openYearReview(2026);
+  assert.ok(!ctx.lastSheetHtml.includes('class="seg" role="group" aria-label="귀속 선택"'), '귀속이 없으면 귀속 필터 세그먼트가 없어야 함');
+});
+test('openYearReview: 귀속이 있으면 openSpendAnalysis/openIncomeAnalysis와 동일한 귀속 필터 세그먼트를 보여주고, 선택된 귀속에 aria-pressed/on이 붙는다', () => {
+  const ctx = yearReviewCtx();
+  ctx.DB = { owners: ['나', '배우자'], assets: [], recurrences: [], txns: [
+    { id: '1', type: 'income', category: '급여', amount: 500000, date: '2026-01-10', confirmed: true },
+  ] };
+  ctx.ST = { spendOwner: '배우자', yearReview: { y: 2026 } };
+  ctx.lastSheetHtml = null;
+  ctx.openYearReview(2026);
+  const html = ctx.lastSheetHtml;
+  assert.ok(html.includes('class="seg" role="group" aria-label="귀속 선택"'), '귀속이 있으면 귀속 필터 세그먼트가 있어야 함');
+  assert.ok(/<button class="on" aria-pressed="true" onclick="yearOwnerSel\(2\)">배우자<\/button>/.test(html), '선택된 귀속(배우자)에 on/aria-pressed가 붙어야 함');
+  assert.ok(/<button class="" aria-pressed="false" onclick="yearOwnerSel\(0\)">전체<\/button>/.test(html), '선택되지 않은 귀속(전체)엔 on이 붙으면 안 됨');
+});
+test('openYearReview: ST.spendOwner로 특정 귀속을 지정하면 그 귀속의 거래만 요약·TOP3에 집계된다(spendByCategory/incomeByCategory와 동일한 owner 규칙)', () => {
+  const ctx = yearReviewCtx();
+  ctx.DB = {
+    owners: ['나', '배우자'],
+    assets: [{ id: 'a1', owner: '나' }, { id: 'a2', owner: '배우자' }],
+    recurrences: [],
+    txns: [
+      { id: '1', type: 'income', category: '급여', amount: 1000000, date: '2026-01-10', confirmed: true, toAssetId: 'a1' },
+      { id: '2', type: 'income', category: '급여', amount: 2000000, date: '2026-01-11', confirmed: true, toAssetId: 'a2' },
+    ],
+  };
+  ctx.ST = { spendOwner: '나', yearReview: { y: 2026 } };
+  ctx.lastSheetHtml = null;
+  ctx.openYearReview(2026);
+  assert.ok(ctx.lastSheetHtml.includes('1,000,000원'), '나의 귀속 거래만 집계되어 총수입이 100만원이어야 함');
+  assert.ok(!ctx.lastSheetHtml.includes('2,000,000원'), '배우자 귀속 거래(200만원)는 집계에서 빠져야 함');
+});
+test('openYearReview: ST.spendOwner가 더 이상 존재하지 않는 귀속이면 전체로 되돌린다(openSpendAnalysis/openIncomeAnalysis와 동일한 가드)', () => {
+  const ctx = yearReviewCtx();
+  ctx.DB = { owners: ['나'], assets: [], recurrences: [], txns: [
+    { id: '1', type: 'income', category: '급여', amount: 500000, date: '2026-01-10', confirmed: true },
+  ] };
+  ctx.ST = { spendOwner: '삭제된귀속', yearReview: { y: 2026 } };
+  ctx.lastSheetHtml = null;
+  ctx.openYearReview(2026);
+  assert.strictEqual(ctx.ST.spendOwner, '전체', '존재하지 않는 귀속은 전체로 되돌려야 함');
+  assert.ok(ctx.lastSheetHtml.includes('500,000원'), '전체로 되돌린 뒤엔 모든 거래가 집계되어야 함');
 });
 
 /* ---------- deleteTxnsUndo: 단일/대량 삭제 공용 되돌리기 인프라 (delAdjust도 여기 합류) ---------- */
