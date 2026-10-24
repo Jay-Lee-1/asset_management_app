@@ -207,7 +207,7 @@ const FUNCTIONS = [
   'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'writeThemeCache', 'restoreBackup', 'storageOutcomeMsg', 'shouldWarnUnpersisted', 'shouldWarnStorageSize', 'toggleRecActive', 'toggleAdjustSurplus', 'touchSave',
   'sanitizeAmount', 'sanitizeBackup',
   'saveRec', 'recHistFieldsChanged', 'recScheduleShapeChanged', 'pruneOrphanRecOverrides', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
-  'expandRec', 'allTxns', 'txnsByDateInRange', 'spendByCategory', 'spendTrend', 'spendTrendBadge', 'histSumTotals',
+  'expandRec', 'allTxns', 'txnsByDateInRange', 'spendByCategory', 'spendTrend', 'spendTrendBadge', 'incomeByCategory', 'incomeTrend', 'incomeTrendBadge', 'histSumTotals',
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'buildExpenseBarHtml', 'expenseBreakdownCard',
   'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asOpenCur', 'asCur', 'asToggleNeg', 'openAssetSheet', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'mergeRemoteDataIntoLocal', 'snapshotLocalDeviceFields', 'restoreLocalDeviceFields', 'fmtAmt', 'fmtQty',
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges', 'shouldRetryCloudSync',
@@ -221,7 +221,7 @@ const FUNCTIONS = [
   'detectStaleMarketValuedTxns', 'delBudget', 'saveBudget', 'openBudgetPrompt', 'openBigMinSheet',
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards', 'openTidyAsset', 'openTidyList', 'tidyListSnooze',
   'debtsBehind', 'openDebtBehindList',
-  'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate', 'histQInput', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'openCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter', 'histClearTypeFilter',
+  'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate', 'histQInput', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'openCatHistory', 'openIncomeCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter', 'histClearTypeFilter',
   'genSalt', 'pbkdf2Hash', 'genRecoveryCode', 'normRecoveryCode', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer', 'openConfirmTransfer',
   'renderLockView', 'openForgotPinSheet', 'doForgotPin', 'tickForgotPinWait',
   'confirmTransferNow', 'postponeTransfer', 'confirmRecNow', 'openConfirmTransferList',
@@ -2543,6 +2543,13 @@ test('doRenameCat: catExact는 지출(expense) 전용 필터이므로 수입/저
   sandbox.catRenameDraft = { name: '용돈', icon: '' };
   sandbox.doRenameCat('income', 0);
   assert.strictEqual(sandbox.ST.hist.catExact, '식비', '수입 카테고리 이름변경은 지출 전용 catExact 필터와 무관해야 함');
+});
+test("doRenameCat: ST.hist.catExactType이 'income'이면 수입 카테고리 이름변경도 ST.hist.catExact를 새 이름으로 함께 옮긴다", () => {
+  sandbox.DB = { categories: { income: ['식비'] }, catIcon: {}, catVar: {}, txns: [], recurrences: [] };
+  sandbox.ST = { hist: { catExact: '식비', catExactType: 'income', owner: '전체' } };
+  sandbox.catRenameDraft = { name: '용돈', icon: '' };
+  sandbox.doRenameCat('income', 0);
+  assert.strictEqual(sandbox.ST.hist.catExact, '용돈', "catExactType이 'income'이면 수입 카테고리 이름변경도 따라가야 함");
 });
 
 /* ---------- delOwner: 귀속 삭제도 delCat/delTx처럼 undo 가능해야 한다 (cycle28) ---------- */
@@ -5833,6 +5840,29 @@ test('filteredHist: catExact는 지출(expense)만, 카테고리명이 정확히
   const list = sandbox.filteredHist();
   assert.deepStrictEqual(list.map((t) => t.id), ['t1'], 'expense+카테고리명이 정확히 일치하는 것만 남아야 함');
 });
+test("filteredHist: catExactType이 'income'이면 지출/저축이 아니라 수입만, 카테고리명이 정확히 일치하는 것만 매칭한다", () => {
+  setupHistoryDB();
+  sandbox.DB.txns = [
+    { id: 't1', date: '2026-06-01', type: 'income', category: '식비', amount: 1000 },
+    { id: 't2', date: '2026-06-02', type: 'income', category: '교통', amount: 2000 },
+    { id: 't3', date: '2026-06-03', type: 'expense', category: '식비', amount: 3000 }, // 유형이 다른 동일 카테고리명
+  ];
+  sandbox.ST.hist.catExact = '식비';
+  sandbox.ST.hist.catExactType = 'income';
+  const list = sandbox.filteredHist();
+  assert.deepStrictEqual(list.map((t) => t.id), ['t1'], 'income+카테고리명이 정확히 일치하는 것만 남아야 함');
+});
+test("filteredHist: catExactType이 'income'이어도 분할 거래(t.splits)는 항목 중 하나라도 일치하면 매칭한다", () => {
+  setupHistoryDB();
+  sandbox.DB.txns = [
+    { id: 't1', date: '2026-06-01', type: 'income', category: '급여', amount: 10000, splits: [{ category: '급여', amount: 7000 }, { category: '용돈', amount: 3000 }] },
+    { id: 't2', date: '2026-06-02', type: 'income', category: '교통', amount: 2000 },
+  ];
+  sandbox.ST.hist.catExact = '용돈';
+  sandbox.ST.hist.catExactType = 'income';
+  const list = sandbox.filteredHist();
+  assert.deepStrictEqual(list.map((t) => t.id), ['t1'], '분할 항목 중 용돈이 있는 t1만 매칭돼야 함(최상위 category는 급여인데도)');
+});
 test('filteredHist: catExact가 비어있으면(null) 평소처럼 걸러지지 않는다', () => {
   setupHistoryDB();
   sandbox.DB.txns = [{ id: 't1', date: '2026-06-01', type: 'expense', category: '식비', amount: 1000 }];
@@ -5927,6 +5957,35 @@ test('openCatHistory: idx가 가리키는 행이 없으면(삭제/재정렬 등)
   sandbox.ST.ledger = { y: 2026, m: 5 };
   sandbox.DB.txns = [];
   sandbox.openCatHistory(0);
+  assert.strictEqual(sandbox.ST.hist.catExact, null);
+  assert.deepStrictEqual(sandbox.goCalls, [], 'go()가 호출되지 않아야 함');
+});
+test("openIncomeCatHistory: ST.ledger 월 기준 범위로 좁히고 ST.spendOwner를 귀속 필터로 반영하며, catExact/catExactType을 'income'으로 세팅한다", () => {
+  setupHistoryDB();
+  sandbox.goCalls = [];
+  sandbox.ST.spendOwner = '나';
+  sandbox.ST.ledger = { y: 2026, m: 5 };
+  sandbox.ST.hist.assetId = 'a1'; sandbox.ST.hist.cat = '지출'; sandbox.ST.hist.q = 'abc';
+  sandbox.DB.assets = [{ id: 'a1', name: '내 카드', owner: '나' }];
+  sandbox.DB.txns = [{ id: 't1', date: '2026-05-10', type: 'income', category: '급여', amount: 3000000, toAssetId: 'a1' }]; // income은 toAssetId 기준으로 귀속을 본다(filterTxnsByOwner)
+  sandbox.openIncomeCatHistory(0); // incomeByCategory(2026,5,'나')의 유일한 행(급여)
+  assert.strictEqual(sandbox.ST.hist.catExact, '급여');
+  assert.strictEqual(sandbox.ST.hist.catExactType, 'income', "지출 전용 필터와 섞이지 않도록 'income'으로 명시해야 함");
+  assert.strictEqual(sandbox.ST.hist.owner, '나');
+  assert.strictEqual(sandbox.ST.hist.cat, '전체', '거래유형 필터는 리셋돼야 함');
+  assert.strictEqual(sandbox.ST.hist.q, '', '검색어는 리셋돼야 함');
+  assert.strictEqual(sandbox.ST.hist.assetId, null, '계좌 필터는 리셋돼야 함');
+  assert.strictEqual(sandbox.ST.hist.range.from, '2026-05-01', '수입 분석이 보던 달로 범위가 좁혀져야 함(from)');
+  assert.strictEqual(sandbox.ST.hist.range.to, '2026-05-31', '수입 분석이 보던 달로 범위가 좁혀져야 함(to)');
+  assert.deepStrictEqual(sandbox.goCalls, ['history'], "화면만 전체내역 탭으로 전환해야 함(go('history'))");
+});
+test('openIncomeCatHistory: idx가 가리키는 행이 없으면(삭제/재정렬 등) 아무 것도 바꾸지 않는다', () => {
+  setupHistoryDB();
+  sandbox.goCalls = [];
+  sandbox.ST.spendOwner = '전체';
+  sandbox.ST.ledger = { y: 2026, m: 5 };
+  sandbox.DB.txns = [];
+  sandbox.openIncomeCatHistory(0);
   assert.strictEqual(sandbox.ST.hist.catExact, null);
   assert.deepStrictEqual(sandbox.goCalls, [], 'go()가 호출되지 않아야 함');
 });
@@ -6094,6 +6153,46 @@ test('openSpendAnalysis: 이번 달 지출이 전부 0원(예산만 있고 미�
   ctx.lastSheetHtml = null;
   ctx.openSpendAnalysis();
   assert.ok(!ctx.lastSheetHtml.includes('class="eb-bar"'), '지출이 0원이면 빈 eb-card가 그려지면 안 됨');
+});
+
+/* ---------- openIncomeAnalysis: openSpendAnalysis와 대칭되는 수입 분석 시트. 예산 개념이 없어
+ * 예산 카드/버짓 바가 없다는 점만 빼면 총액 카드+eb-bar 비중 스택바+카테고리별 행 구조는 동일하다 ---------- */
+test('openIncomeAnalysis: 총 수입 카드와 카테고리별 비중 스택바를 보여주고, c→cat 매핑이 올바르다', () => {
+  const ctx = incomeAnalysisCtx();
+  ctx.DB = { owners: [], assets: [], recurrences: [], txns: [
+    { id: '1', type: 'income', category: '급여', amount: 3000000, date: '2026-06-10', confirmed: true },
+    { id: '2', type: 'income', category: '용돈', amount: 100000, date: '2026-06-11', confirmed: true },
+  ] };
+  ctx.ST = { ledger: { y: 2026, m: 6 }, spendOwner: '전체' };
+  ctx.lastSheetHtml = null;
+  ctx.openIncomeAnalysis();
+  const html = ctx.lastSheetHtml;
+  assert.ok(html.includes('총 수입'), '총 수입 카드가 없음');
+  assert.ok(html.includes('var(--income)'), '총액이 income색으로 표시되지 않음');
+  assert.ok(html.includes('class="eb-bar"') && html.includes('class="eb-list"'), 'eb-bar/eb-list 마크업이 재사용되지 않음');
+  // incomeByCategory는 {c,v}를 돌려주는데 buildExpenseBarHtml은 {cat,v}를 기대한다 — 매핑이 틀리면
+  // esc(c.cat)가 undefined를 이스케이프해 카테고리명이 통째로 빠진다.
+  assert.ok(html.includes('class="eb-cat">급여') && html.includes('class="eb-cat">용돈'), 'incomeByCategory의 c를 cat으로 매핑하지 않아 카테고리명이 비어 있음');
+});
+test('openIncomeAnalysis: 이번 달 수입이 0원이면 스택바 카드가 안 뜨고 빈 상태 문구를 보여준다', () => {
+  const ctx = incomeAnalysisCtx();
+  ctx.DB = { owners: [], assets: [], recurrences: [], txns: [] };
+  ctx.ST = { ledger: { y: 2026, m: 6 }, spendOwner: '전체' };
+  ctx.lastSheetHtml = null;
+  ctx.openIncomeAnalysis();
+  const html = ctx.lastSheetHtml;
+  assert.ok(html.includes('아직 들어온 수입이 없어요'), '수입이 0원일 때 빈 상태 문구가 없음');
+  assert.ok(!html.includes('class="eb-card"'), '수입이 0원이면 빈 eb-card가 그려지면 안 됨');
+});
+test('openIncomeAnalysis: 예산 관련 UI가 전혀 없다(수입에는 예산 개념이 없음)', () => {
+  const ctx = incomeAnalysisCtx();
+  ctx.DB = { owners: [], assets: [], recurrences: [], txns: [
+    { id: '1', type: 'income', category: '급여', amount: 3000000, date: '2026-06-10', confirmed: true },
+  ] };
+  ctx.ST = { ledger: { y: 2026, m: 6 }, spendOwner: '전체' };
+  ctx.lastSheetHtml = null;
+  ctx.openIncomeAnalysis();
+  assert.ok(!ctx.lastSheetHtml.includes('예산'), '수입 분석 시트에 예산 관련 문구가 있으면 안 됨');
 });
 
 /* ---------- deleteTxnsUndo: 단일/대량 삭제 공용 되돌리기 인프라 (delAdjust도 여기 합류) ---------- */
@@ -9394,6 +9493,101 @@ test('spendTrendBadge: deltaPct가 0이면 화살표 없이 중립색으로 표�
   const html = sandbox.spendTrendBadge(0);
   assert.match(html, /var\(--text-3\)/);
   assert.match(html, />0%</);
+});
+
+/* ---------- incomeByCategory/incomeTrend/incomeTrendBadge: spendByCategory/spendTrend/spendTrendBadge와 대칭되는 수입 쪽 집계 ---------- */
+test('incomeByCategory: 수지에 포함되지 않은 잔액 조정 수입은 집계에서 제외된다', () => {
+  sandbox.DB = {
+    txns: [
+      { date: '2026-06-05', type: 'income', category: '급여', amount: 3000000 },
+      { date: '2026-06-10', type: 'income', category: '잔액 조정', amount: 5000, adjust: true, inSurplus: false },
+    ],
+    recurrences: [],
+  };
+  const rows = sandbox.incomeByCategory(2026, 6);
+  assert.deepStrictEqual(Array.from(rows).map(r => ({ c: r.c, v: r.v })), [{ c: '급여', v: 3000000 }]);
+});
+test('incomeByCategory: 수지 포함으로 켜둔(inSurplus:true) 잔액 조정 수입은 그대로 합산된다', () => {
+  sandbox.DB = {
+    txns: [
+      { date: '2026-06-05', type: 'income', category: '급여', amount: 3000000 },
+      { date: '2026-06-10', type: 'income', category: '잔액 조정', amount: 5000, adjust: true, inSurplus: true },
+    ],
+    recurrences: [],
+  };
+  const rows = sandbox.incomeByCategory(2026, 6);
+  const byCat = Object.fromEntries(Array.from(rows).map(r => [r.c, r.v]));
+  assert.strictEqual(byCat['잔액 조정'], 5000);
+});
+test('incomeByCategory: 지출/저축 등 수입이 아닌 거래는 집계하지 않는다', () => {
+  sandbox.DB = {
+    txns: [
+      { date: '2026-06-05', type: 'expense', category: '식비', amount: 10000 },
+      { date: '2026-06-06', type: 'saving', category: '적금', amount: 50000 },
+    ],
+    recurrences: [],
+  };
+  assert.deepStrictEqual(Array.from(sandbox.incomeByCategory(2026, 6)), []);
+});
+test('incomeByCategory: 분할 거래(t.splits)는 각 항목을 자기 카테고리로 따로 집계한다', () => {
+  sandbox.DB = {
+    txns: [
+      { date: '2026-06-05', type: 'income', category: '급여', amount: 3200000, splits: [{ category: '급여', amount: 3000000 }, { category: '용돈', amount: 200000 }] },
+      { date: '2026-06-06', type: 'income', category: '급여', amount: 100000 },
+    ],
+    recurrences: [],
+  };
+  const byCat = Object.fromEntries(Array.from(sandbox.incomeByCategory(2026, 6)).map(r => [r.c, r.v]));
+  assert.strictEqual(byCat['급여'], 3100000, '분할의 급여 3,000,000 + 일반 거래의 급여 100,000');
+  assert.strictEqual(byCat['용돈'], 200000);
+});
+test('incomeTrend: 최근 3개월 평균보다 이번 달에 더 벌었으면 양수 deltaPct를 반환한다', () => {
+  sandbox.DB = {
+    txns: [
+      { date: '2026-03-05', type: 'income', category: '급여', amount: 100000 }, // 3월
+      { date: '2026-04-05', type: 'income', category: '급여', amount: 100000 }, // 4월
+      { date: '2026-05-05', type: 'income', category: '급여', amount: 100000 }, // 5월(=지난달)
+      { date: '2026-06-05', type: 'income', category: '급여', amount: 200000 }, // 6월(이번 달)
+    ],
+    recurrences: [],
+  };
+  const t = sandbox.incomeTrend('급여', 2026, 6);
+  assert.strictEqual(t.avg, 100000, '최근 3개월(3~5월) 평균은 이번 달을 빼고 계산해야 함');
+  assert.strictEqual(t.prevMonth, 100000, '지난달(5월) 수입');
+  assert.strictEqual(t.deltaPct, 100, '10만원 평균 대비 20만원 수입은 +100%');
+});
+test('incomeTrend: 최근 3개월치 수입이 전혀 없으면(avg=0) deltaPct는 null이다', () => {
+  sandbox.DB = {
+    txns: [{ date: '2026-06-05', type: 'income', category: '급여', amount: 50000 }],
+    recurrences: [],
+  };
+  const t = sandbox.incomeTrend('급여', 2026, 6);
+  assert.strictEqual(t.avg, 0);
+  assert.strictEqual(t.deltaPct, null);
+});
+test('incomeTrend: 연초(1월)를 조회하면 이전 해로 넘어가 최근 3개월을 계산한다', () => {
+  sandbox.DB = {
+    txns: [
+      { date: '2025-10-05', type: 'income', category: '급여', amount: 30000 },
+      { date: '2025-11-05', type: 'income', category: '급여', amount: 30000 },
+      { date: '2025-12-05', type: 'income', category: '급여', amount: 30000 },
+      { date: '2026-01-05', type: 'income', category: '급여', amount: 60000 },
+    ],
+    recurrences: [],
+  };
+  const t = sandbox.incomeTrend('급여', 2026, 1);
+  assert.strictEqual(t.avg, 30000);
+  assert.strictEqual(t.prevMonth, 30000, '전월(2025-12) 수입');
+  assert.strictEqual(t.deltaPct, 100);
+});
+test('incomeTrendBadge: deltaPct가 null이면 배지를 렌더하지 않는다', () => {
+  assert.strictEqual(sandbox.incomeTrendBadge(null), '');
+});
+test('incomeTrendBadge: 색이 spendTrendBadge와 반대다 — 양수(수입 증가)는 income색 위쪽 화살표를, 음수(수입 감소)는 expense색 아래쪽 화살표를 쓴다', () => {
+  assert.match(sandbox.incomeTrendBadge(25), /var\(--income\)/);
+  assert.match(sandbox.incomeTrendBadge(25), /▲25%/);
+  assert.match(sandbox.incomeTrendBadge(-10), /var\(--expense\)/);
+  assert.match(sandbox.incomeTrendBadge(-10), /▼10%/);
 });
 
 /* ---------- histSumTotals: 전체내역 검색 합계 카드도 monthStats2()와 같은 규칙으로 잔액 조정을 뺀다 ---------- */
@@ -15027,6 +15221,21 @@ function spendAnalysisCtx() {
   _spendAnalysisCtx = ctx;
   return ctx;
 }
+let _incomeAnalysisCtx = null;
+function incomeAnalysisCtx() {
+  if (_incomeAnalysisCtx) return _incomeAnalysisCtx;
+  const ctx = {
+    lastSheetHtml: null,
+    openSheet: (html) => { ctx.lastSheetHtml = html; },
+    svg: () => '',
+  };
+  vm.createContext(ctx);
+  vm.runInContext(logicSrc, ctx, { filename: 'logic.js' });
+  vm.runInContext(extracted, ctx, { filename: 'extracted-from-index.html' });
+  vm.runInContext(extractFunction('openIncomeAnalysis'), ctx, { filename: 'openIncomeAnalysis-real' });
+  _incomeAnalysisCtx = ctx;
+  return ctx;
+}
 /* 예산 요약 카드가 totalBudgetSummary()의 overCount(개별 카테고리별 예산 초과 수)를 전혀
  * 보여주지 않고 있었다 — tbp.over는 카테고리 전체 합계 기준이라, 한 카테고리가 크게 초과해도
  * 다른 카테고리가 그만큼 덜 써서 합계가 예산 이내면 전체 바는 초과 아님(브랜드색)으로만 보이고,
@@ -17468,6 +17677,16 @@ test('openCatManage: saving/income 탭에는 이월 토글 pill이 없다', () =
   sandbox.openCatManage('income');
   assert.ok(!sandbox.lastSheetHtml.includes('toggleBudgetRolloverUI'), 'income 탭에 이월 토글이 그려짐');
 });
+test("openCatManage: 수입 탭에는 '수입 분석' 링크가 있고, 지출/저축 탭에는 없다", () => {
+  setupCatManageDB();
+  sandbox.openCatManage('income');
+  assert.ok(sandbox.lastSheetHtml.includes('수입 분석'), '수입 탭에 수입 분석 링크가 없음');
+  assert.ok(sandbox.lastSheetHtml.includes('onclick="openIncomeAnalysis()"'), '수입 분석 링크의 onclick 연결이 없음');
+  sandbox.openCatManage('expense');
+  assert.ok(!sandbox.lastSheetHtml.includes('수입 분석'), '지출 탭에 수입 분석 링크가 그려지면 안 됨');
+  sandbox.openCatManage('saving');
+  assert.ok(!sandbox.lastSheetHtml.includes('수입 분석'), '저축 탭에 수입 분석 링크가 그려지면 안 됨');
+});
 test('toggleBudgetRolloverUI: 버튼 클릭 시 상태를 토글하고 DOM(classList/textContent/aria-pressed)을 즉시 갱신한다', () => {
   setupCatManageDB();
   const btn = { classList: { toggle(cls, on) { this.on = !!on; }, on: false }, textContent: '이월 안함', ariaPressed: null, setAttribute(name, v) { if (name === 'aria-pressed') this.ariaPressed = v; } };
@@ -18827,7 +19046,7 @@ function setupHistoryDB() {
   sandbox.histListEl._html = '';
   sandbox.ST = {
     hist: {
-      cat: '전체', q: '', assetId: null, catExact: null, owner: '전체', selMode: false, sel: new Set(), sortAsc: false,
+      cat: '전체', q: '', assetId: null, catExact: null, catExactType: null, owner: '전체', selMode: false, sel: new Set(), sortAsc: false,
       range: { from: '2026-01-01', to: '2026-12-31' }, preset: 'year', page: 1, avgMode: false,
     },
   };
