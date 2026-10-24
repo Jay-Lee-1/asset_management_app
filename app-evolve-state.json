@@ -1,15 +1,8 @@
 {
   "cycle": 246,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 241,
-      "phase": "review",
-      "timestamp": "2026-10-23T23:08:07.830Z",
-      "summary": "cycle241 develop 커밋(d608924, _shared.js raceDeadline이 work reject 시 deadline setTimeout을 정리하지 않던 타이머 누수 수정 — .then(onFulfilled)을 .finally(clearTimeout)+.then(timedOut)으로 교체해 resolve/reject 양쪽 다 정리하면서 reject는 그대로 전파)을 검토. diff를 직접 읽어 Promise.finally가 원래 settle 값/사유를 그대로 통과시키므로 reject 전파 동작(호출부 await 시 그대로 throw)은 변경 전과 동일하고 타이머 정리만 추가됐음을 확인 — 호출부(stock.js/rates.js/crypto.js)는 모두 work를 항목별 try/catch해 실제로 reject하지 않으므로 현재 관측 가능한 동작 변화는 없음(누수만 제거). 신규 테스트가 global.setTimeout/clearTimeout 가로채기로 pending 카운트를 세는 기존 두 케이스와 동일 패턴을 따르고 assert.rejects로 reject 전파까지 함께 검증함을 확인, 수정 전 코드로는 FAIL(clearTimeout 호출 0)함을 커밋 메시지가 명시. node --check(_shared.js) 통과, node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행해 1888/1888 통과 재확인. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 241,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-24T18:10:00.000Z",
       "summary": "general-purpose 서브에이전트가 develop 후보를 탐색해 홈 화면(renderHome)이 expenseBreakdownCard(지출 분해 카드)만 보여주고 cycle245가 신설한 수입 분석(openIncomeAnalysis/incomeByCategory)에 대응하는 홈 카드가 전혀 없는 비대칭을 발견 — openCatManage에는 '수입 분석' 진입점이 생겼지만 홈에서는 이번 달 수입 구성을 전혀 볼 수 없었다. 러너업 기각: CDN SRI 해시(index.html의 기존 TODO(SRI) 주석, 이 컨테이너 샌드박스가 cdn.jsdelivr.net/t1.kakaocdn.net egress를 403으로 막아 재확인 불가 — 보류), openAssetPicker 검색창(자산 목록이 길 때의 UX 폴리시, 필터링+피커 상호작용까지 포함해 '작다'는 기준을 넘어 드롭). expenseBreakdownCard와 대칭되는 incomeBreakdownCard(cats) 함수를 신설해 renderHome에 ${incomeBreakdownCard(icats)}로 삽입 — buildExpenseBarHtml(스택바+범례) 공유 재사용, 이번 달 수입이 0이면 expenseBreakdownCard와 동일 원칙으로 빈 카드를 숨김, 섹션 타이틀에 직접 '수입 분석' 링크(openCatManage 수입 섹션과 동일 패턴)를 붙여 openIncomeAnalysis()로 진입. APP_VERSION 1.47.235->1.47.236, sw.js CACHE v502->v503 동기 범프. test/run.js: FUNCTIONS에 incomeBreakdownCard 등록, 단위 테스트 3건(빈/0원시 ''·HTML 이스케이프·총액+행+링크) + renderHome 스모크 테스트 확장(수입 있을 때 카드/카테고리명/링크 노출, 수입 없을 때 카드 부재) 1건 추가(1956->1960). git stash로 index.html/sw.js만 걷어낸 뒤(test/run.js는 유지) 신규 테스트가 incomeBreakdownCard를 찾지 못해 즉시 크래시함을 직접 확인(0 tests ran)하고 stash pop으로 복원 후 1960/1960 재확인. node --check(추출한 <script> 블록/test/run.js/sw.js) 통과. 오케스트레이터가 diff를 직접 읽어 변경 범위가 이 카드 하나로 좁게 유지됐음을 재검증하고 node test/run.js를 독립적으로 재실행해 1960/1960 재확인. 커밋 과정에서 이 컨테이너의 git HEAD가 detached 상태였음을 발견(cycle241/243/244/245와 동일한 컨테이너 재시작 아티팩트) — local HEAD가 origin/main(13c8aea)과 완전히 동일함을 fetch로 확인한 뒤 git checkout -B main으로 재부착하고 그 위에 이번 커밋을 쌓아 push한다. 이전 cycle245 advance->develop 전환 시 cycle 번호가 245에 머물러 있던 오케스트레이터 버그를 이번 커밋에서 246으로 보정.",
+      "commit": null
+    },
+    {
+      "cycle": 246,
+      "phase": "review",
+      "timestamp": "2026-10-24T18:25:00.000Z",
+      "summary": "cycle246 develop 커밋(3dde682, 홈 화면에 expenseBreakdownCard와 대칭되는 incomeBreakdownCard(cats) 신설)을 검토. diff를 직접 읽어 다음을 확인: (1) incomeByCategory(y,m,'전체')는 filterTxnsByOwner가 owner=='전체'일 때 필터 없이 그대로 반환하므로 expenseByCat(y,m)이 owner 구분 없이 전체 합산하는 것과 동일한 \"전체 소유자\" 의미로 일관됨(logic.js:158-159 확인) — owner 파라미터를 명시적으로 넘겼지만 기본값('전체')과 같아 동작 차이 없음. (2) incomeBreakdownCard는 expenseBreakdownCard와 완전히 같은 빈 카드 숨김 규칙(cats.length 체크 + 합계 0 체크)과 buildExpenseBarHtml 공유 재사용으로 작성돼 기존 패턴과 분기 없음. (3) renderHome에 삽입된 위치(expenseBreakdownCard 바로 다음)가 다른 카드들의 렌더 순서나 상태(ST.home)에 영향 없음. (4) 테스트가 실제 구현에 의존함을 커밋 메시지가 stash 재현으로 이미 검증했고, node our-assets-v1.14.1/our-assets/test/run.js를 독립적으로 재실행해 1960/1960 통과 재확인. 실제 버그를 찾지 못했다 — 이상 없음, 코드 변경 없음.",
       "commit": null
     }
   ]
