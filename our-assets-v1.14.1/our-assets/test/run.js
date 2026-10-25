@@ -218,7 +218,7 @@ const FUNCTIONS = [
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
   'clampDay', 'saveTx', 'duplicateTx', 'assetBase', 'balancesUpTo', 'balanceAt', 'balancesAtDates', 'balanceAtFromMap',
   'addBalanceAdjust', 'updateBalanceAdjust', 'toggleConfirmTransfers', 'rollPendingTransfers',
-  'assetEval', 'assetGainLoss', 'assetGainLossBadge', 'costBasisField', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'delOwner', 'doMaturity', 'openMaturity', 'firstCash',
+  'assetEval', 'assetGainLoss', 'assetGainLossBadge', 'costBasisField', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'pkFilteredAssets', 'pkEmptyHtml', 'pkAssetQInput', 'refreshPkAssetList', 'movePkBlob', 'pkBack', 'pkChoose', 'pkPickAsset', 'sheetSlideBack', 'delOwner', 'doMaturity', 'openMaturity', 'firstCash',
   'detectStaleMarketValuedTxns', 'delBudget', 'saveBudget', 'openBudgetPrompt', 'openBigMinSheet',
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards', 'openTidyAsset', 'openTidyList', 'tidyListSnooze',
   'debtsBehind', 'openDebtBehindList',
@@ -341,7 +341,10 @@ const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'AS
 // _assetQT는 assetQInput()이 참조하는 #assetQ 검색 디바운스 타이머(histQInput과 동일한 패턴을
 // assetQ에도 적용 — app-evolve cycle243 develop)라 같은 이유(let 선언, realm에 안 붙음)로
 // LETS를 통해 가져온다.
-const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer', '_histTimer', '_assetQT'];
+// _pkQ는 openAssetPicker()의 자산 검색(pkAssetQInput/refreshPkAssetList)이 참조하는 쿼리 문자열이고,
+// `let _pkQ='',_pkQT=null,_pkOpts=null;` 한 줄로 선언돼 있어 "_pkQ"만 추출해도 디바운스 타이머·피커
+// 옵션 보관용 셋 다 딸려온다(_histTimer/_assetQT와 같은 패턴, app-evolve cycle248 advance).
+const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer', '_histTimer', '_assetQT', '_pkQ'];
 
 const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(extractConst).join('\n') + '\n' + LETS.map(extractLet).join('\n');
 
@@ -14694,6 +14697,165 @@ test('openAssetPicker: cashOnly/excludeMarketValued 필터로 0개가 되는 경
   const html = sandbox.lastPickerHtml;
   assert.ok(!html.includes('선택할 자산이 없어요'));
   assert.ok(html.includes('class="empty"') && html.includes('class="empty-cta"'));
+});
+
+/* ---------- openAssetPicker 검색(app-evolve cycle248 advance) ----------
+ * 계좌·카드·적금을 10개 이상 쓰는 멀티뱅킹 사용자는 거래 입력(from/to)·목표 연결 자산·만기이체
+ * 통장 선택처럼 가장 흔한 동작마다 이 피커의 긴 목록을 스크롤해야 했다 — Assets탭(assetQInput)
+ * /전체내역(histQInput)에는 이미 있는 검색이 이 피커엔 전혀 없었던 공백(cycle243/246이 발견하고도
+ * "피커 상호작용까지 포함해 작다는 기준을 넘는다"며 advance로 미뤄둔 항목). matchAssetQuery(logic.js,
+ * 이름+fx 보유통화 검색)를 그대로 재사용해 pkFilteredAssets()가 cashOnly/excludeMarketValued/
+ * excludeDebt/excludeId 옵션과 같은 자리에서 함께 걸러낸다. ---------- */
+test('pkFilteredAssets: 검색어는 matchAssetQuery와 동일한 규칙(이름/fx 보유통화, 대소문자·NFC 무시)으로 옵션 필터와 함께 적용된다', () => {
+  setupAssetPickerDB();
+  const { html: all } = sandbox.pkFilteredAssets({}, '');
+  assert.ok(all.includes('data-val="a_usd"') && all.includes('data-val="a_cash"'), '검색어가 없으면 전체가 그대로 나와야 함');
+  const { html: byName, any: anyName } = sandbox.pkFilteredAssets({}, '적금');
+  assert.ok(!byName.includes('data-val="a_cash"') && byName.includes('data-val="a_sav"'), '이름으로 좁혀져야 함');
+  assert.strictEqual(anyName, true);
+  const { html: byCurrency } = sandbox.pkFilteredAssets({}, 'usd');
+  assert.ok(byCurrency.includes('data-val="a_usd"') && !byCurrency.includes('data-val="a_cash"'), 'fx 보유통화로도 찾아야 함(matchAssetQuery와 동일)');
+  const { html: combo } = sandbox.pkFilteredAssets({ excludeMarketValued: true }, '달러');
+  assert.ok(!combo.includes('data-val="a_usd"'), 'excludeMarketValued 같은 옵션 필터가 검색보다 먼저 적용돼야 함(옵션상 아예 후보가 아니면 검색으로도 못 찾음)');
+});
+test('pkFilteredAssets: 검색어와 일치하는 자산이 하나도 없으면 html은 비고 any(옵션상 후보 존재 여부)는 true로 남는다', () => {
+  setupAssetPickerDB();
+  const { html, any } = sandbox.pkFilteredAssets({}, '존재하지않는자산명');
+  assert.strictEqual(html, '');
+  assert.strictEqual(any, true, '옵션 필터만 놓고 보면 고를 자산이 있었다는 사실은 구분돼야 함');
+});
+test('pkFilteredAssets: 옵션 필터만으로 이미 후보가 0개면(검색어 유무와 무관) any는 false다', () => {
+  setupAssetPickerDB();
+  sandbox.DB.assets = sandbox.DB.assets.filter((a) => a.type === 'fx'); // 현금성 자산 없음
+  const { html, any } = sandbox.pkFilteredAssets({ cashOnly: true }, '');
+  assert.strictEqual(html, '');
+  assert.strictEqual(any, false);
+});
+test('pkEmptyHtml: any=true(검색어 때문에 0건)면 Assets탭과 동일한 "일치하는 자산이 없어요" 안내를, any=false(원래부터 후보 없음)면 기존 "등록된 자산이 없어요" CTA를 보여준다', () => {
+  const searchEmpty = sandbox.pkEmptyHtml('존재하지않는자산명', true);
+  assert.ok(searchEmpty.includes("'존재하지않는자산명'와 일치하는 자산이 없어요"));
+  assert.ok(!searchEmpty.includes('empty-cta'), '검색 결과 0건은 자산 추가 CTA를 보일 이유가 없음');
+  const noCandidates = sandbox.pkEmptyHtml('', false);
+  assert.ok(noCandidates.includes('등록된 자산이 없어요') && noCandidates.includes('empty-cta'));
+});
+test('openAssetPicker: 고를 자산이 하나라도 있으면 Assets탭(assetQInput)과 동일한 패턴의 검색바(#pkQ)를 함께 연다', () => {
+  setupAssetPickerDB();
+  sandbox.lastPickerHtml = null;
+  sandbox.openAssetPicker({ onPick: () => {} });
+  const html = sandbox.lastPickerHtml;
+  assert.ok(html.includes('id="pkQ"') && html.includes('aria-label="자산 검색"') && html.includes('oninput="pkAssetQInput(this.value)"'));
+});
+test('openAssetPicker: 고를 자산이 애초에 0개면(기존 .empty CTA만 보임) 검색바를 보이지 않는다', () => {
+  sandbox.TODAY = '2026-06-15'; sandbox.RANGE_TO = '2099-12-31';
+  sandbox.DB = { settings: { groupOrder: ['cash'] }, assets: [], txns: [], recurrences: [], rates: {} };
+  sandbox._balCache.clear();
+  sandbox.lastPickerHtml = null;
+  sandbox.openAssetPicker({ onPick: () => {} });
+  assert.ok(!sandbox.lastPickerHtml.includes('id="pkQ"'), '검색할 대상 자체가 없으면 검색바가 무의미하므로 숨겨야 함');
+});
+(() => {
+  // refreshPkAssetList()가 #pkGroup만 다시 그리는지, movePkBlob()이 '.on' 항목을 못 찾아도
+  // (자산이 0~1개뿐이거나 검색으로 모두 걸러진 상태) 크래시 없이 조용히 넘어가는지 확인한다.
+  // domstub은 innerHTML을 실제로 파싱하지 않으므로(querySelector로 되읽지 않음), movePkBlob이
+  // 참조하는 querySelector만 항상 null을 돌려주는 최소 스텁으로 채운다.
+  function fakePkGroup() {
+    let _html = '';
+    return { get innerHTML() { return _html; }, set innerHTML(v) { _html = v; }, querySelector: () => null };
+  }
+  function fakePkBlob() {
+    return { classList: { add: () => {}, remove: () => {} }, style: {}, offsetWidth: 0, offsetHeight: 0, offsetLeft: 0, offsetTop: 0 };
+  }
+  test('refreshPkAssetList: #pkGroup이 없으면(피커가 이미 닫힌 뒤 디바운스 타이머가 늦게 발화) 조용히 아무 일도 하지 않는다', () => {
+    const $orig = sandbox.$;
+    sandbox.$ = () => null;
+    try { assert.doesNotThrow(() => sandbox.refreshPkAssetList()); } finally { sandbox.$ = $orig; }
+  });
+  test('refreshPkAssetList: _pkOpts/_pkQ를 다시 읽어 #pkGroup 내용을 검색어에 맞게 새로 그리고, 자산이 1개뿐이라 ".on" 항목이 없어도 movePkBlob이 크래시하지 않는다', () => {
+    setupAssetPickerDB();
+    sandbox.DB.assets = [sandbox.DB.assets.find((a) => a.id === 'a_cash')]; // 자산 1개뿐
+    const grp = fakePkGroup(), blob = fakePkBlob();
+    const $orig = sandbox.$;
+    sandbox.$ = (id) => (id === 'pkGroup' ? grp : id === 'pkBlob' ? blob : null);
+    sandbox._pkOpts = {};
+    sandbox._pkQ = '';
+    try {
+      assert.doesNotThrow(() => sandbox.refreshPkAssetList());
+      assert.ok(grp.innerHTML.includes('data-val="a_cash"'));
+      sandbox._pkQ = '없는자산';
+      assert.doesNotThrow(() => sandbox.refreshPkAssetList());
+      assert.ok(grp.innerHTML.includes("일치하는 자산이 없어요"), '검색으로 0건이 되면 #pkGroup이 empty 패턴으로 바뀌어야 함');
+    } finally { sandbox.$ = $orig; sandbox._pkOpts = null; sandbox._pkQ = ''; }
+  });
+})();
+(() => {
+  // pkAssetQInput은 assetQInput/histQInput과 동일한 220ms 디바운스 패턴을 따라야 한다
+  // (app-evolve cycle212~217/243이 지목한 비일관성과 같은 종류를 새 기능에서 재현하지 않기 위함).
+  const origSetTimeout = sandbox.setTimeout, origClearTimeout = sandbox.clearTimeout,
+    origRefresh = sandbox.refreshPkAssetList;
+  function restore() {
+    sandbox.setTimeout = origSetTimeout; sandbox.clearTimeout = origClearTimeout;
+    sandbox.refreshPkAssetList = origRefresh;
+  }
+  test('pkAssetQInput: 입력값은 즉시 반영되지만, refreshPkAssetList는 220ms 디바운스 후에야 불린다', () => {
+    sandbox._pkQ = '';
+    let calls = 0, capturedMs = null;
+    sandbox.setTimeout = (fn, ms) => { capturedMs = ms; return 'timer'; };
+    sandbox.clearTimeout = () => {};
+    sandbox.refreshPkAssetList = () => { calls++; };
+    try {
+      sandbox.pkAssetQInput('삼성');
+      assert.strictEqual(sandbox._pkQ, '삼성');
+      assert.strictEqual(calls, 0, '타이머가 실제로 실행되기 전에는 refreshPkAssetList가 불리면 안 됨');
+      assert.strictEqual(capturedMs, 220);
+    } finally { restore(); }
+  });
+  test('pkAssetQInput: 연속 입력마다 이전 디바운스 타이머를 지우고 새로 하나만 건다', () => {
+    let setCalls = 0, clearCalls = 0;
+    sandbox.setTimeout = () => { setCalls++; return 'timer' + setCalls; };
+    sandbox.clearTimeout = () => { clearCalls++; };
+    sandbox.refreshPkAssetList = () => {};
+    try {
+      sandbox.pkAssetQInput('삼');
+      sandbox.pkAssetQInput('삼성');
+      sandbox.pkAssetQInput('삼성전자');
+      assert.strictEqual(setCalls, 3);
+      assert.strictEqual(clearCalls, 3);
+    } finally { restore(); }
+  });
+  test('pkAssetQInput: 검색어를 지우면(clrInput → 빈 문자열) 디바운스 없이 즉시 refreshPkAssetList를 부른다', () => {
+    sandbox._pkQ = '아무거나';
+    let calls = 0, setCalls = 0;
+    sandbox.setTimeout = () => { setCalls++; return 'timer'; };
+    sandbox.clearTimeout = () => {};
+    sandbox.refreshPkAssetList = () => { calls++; };
+    try {
+      sandbox.pkAssetQInput('');
+      assert.strictEqual(setCalls, 0);
+      assert.strictEqual(calls, 1);
+      assert.strictEqual(sandbox._pkQ, '');
+    } finally { restore(); }
+  });
+})();
+test('pkBack: 뒤로 갈 화면이 없으면 closeSheet()을 부르고, 검색 상태(_pkQ/_pkOpts)도 함께 정리한다', () => {
+  sandbox._pkQ = '달러'; sandbox._pkOpts = { cashOnly: true }; sandbox.window._pkBack = null;
+  sandbox.closeSheetCalls = 0;
+  sandbox.pkBack();
+  assert.strictEqual(sandbox.closeSheetCalls, 1);
+  assert.strictEqual(sandbox._pkQ, '');
+  assert.strictEqual(sandbox._pkOpts, null);
+});
+test('pkChoose: 값을 고르면(물방울 애니메이션 전) _pkQ/_pkOpts를 즉시 정리해 다음 피커가 이전 검색어를 물려받지 않는다', () => {
+  sandbox._pkQ = '달러'; sandbox._pkOpts = { cashOnly: true };
+  sandbox.window._pkPick = () => {}; sandbox.window._pkBack = () => {};
+  const $orig = sandbox.$;
+  sandbox.$ = () => null; // grp 없음 → 바로 f(val) 분기
+  try {
+    sandbox.pkChoose('a_cash');
+    assert.strictEqual(sandbox._pkQ, '');
+    assert.strictEqual(sandbox._pkOpts, null);
+    assert.strictEqual(sandbox.window._pkPick, null);
+    assert.strictEqual(sandbox.window._pkBack, null);
+  } finally { sandbox.$ = $orig; }
 });
 
 /* ---------- _applyOpenAsset: 이체/저축 입력 화면(txOpenAsset/recOpenAsset)에서 보내는/받는

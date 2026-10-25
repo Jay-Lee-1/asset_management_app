@@ -1410,7 +1410,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.240';
+const APP_VERSION='1.47.241';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -9082,15 +9082,49 @@ function openPicker(title,bodyHtml,back){window._pkBack=back||null;
  if(back)window._pkBack=()=>{back();const nsc=$('sheetScroll');if(nsc)nsc.scrollTop=savedTop;}; /* 나올 때 복원 */
  const topBtn=back?`<button class="pk-back" onclick="pkBack()" aria-label="뒤로">${svg('chevL')}</button>`:'';
  openSheet(`<div class="pk-h">${title}</div>`+bodyHtml, back?topBtn:undefined);}
-function pkBack(){const b=window._pkBack;window._pkBack=null;if(b)sheetSlideBack(b);else closeSheet()}
-function openAssetPicker(o){o=o||{};let html='';
- DB.settings.groupOrder.forEach(t=>{let items=DB.assets.filter(a=>a.type===t);if(o.cashOnly)items=items.filter(isCashLike);if(o.excludeMarketValued)items=items.filter(a=>!isMarketValued(a));if(o.excludeDebt)items=items.filter(a=>a.type!=='debt');if(o.excludeId)items=items.filter(a=>a.id!==o.excludeId);if(!items.length)return;
+let _pkQ='',_pkQT=null,_pkOpts=null;
+function pkBack(){const b=window._pkBack;window._pkBack=null;_pkQ='';clearTimeout(_pkQT);_pkQT=null;_pkOpts=null;if(b)sheetSlideBack(b);else closeSheet()}
+/* 자산 피커(openAssetPicker) 목록 — matchAssetQuery(logic.js)로 필터링. _pkOpts(cashOnly/excludeMarketValued/
+ * excludeDebt/excludeId)는 피커를 처음 열 때 고른 조건이라 검색 중에도 그대로 유지해야 하므로 전역에 보관해
+ * 두고 refreshPkAssetList()가 매 입력마다 다시 읽는다(assetQInput이 ST.assetQ를 쓰는 것과 같은 이유).
+ * any는 옵션만 적용했을 때 후보가 하나라도 있는지로, 검색어 때문에 0건이 된 것(Assets탭과 동일한 "일치하는
+ * 자산이 없어요" 안내)과 애초에 고를 자산이 없는 것(기존 "등록된 자산이 없어요" CTA)을 구분하는 데 쓴다. */
+function pkFilteredAssets(o,q){
+ let any=false,html='';
+ DB.settings.groupOrder.forEach(t=>{
+   let items=DB.assets.filter(a=>a.type===t);
+   if(o.cashOnly)items=items.filter(isCashLike);
+   if(o.excludeMarketValued)items=items.filter(a=>!isMarketValued(a));
+   if(o.excludeDebt)items=items.filter(a=>a.type!=='debt');
+   if(o.excludeId)items=items.filter(a=>a.id!==o.excludeId);
+   if(!items.length)return;
+   any=true;
+   if(q)items=items.filter(a=>matchAssetQuery(a,q));
+   if(!items.length)return;
    html+=`<div class="pk-cap">${ASSET_TYPES[t].label}</div>`;
    items.forEach(a=>{const ty=ASSET_TYPES[a.type];const bal=a.type==='debt'?-assetEval(a):assetEval(a);
      html+=`<button class="pk-item hasamt ${a.id===o.current?'on':''}" data-val="${a.id}" onclick="pkPickAsset('${a.id}')"><div class="pav ${ty.cls}">${svg(ty.icon)}</div><div class="pbody"><div class="pn">${esc(a.name)}</div><div class="psub"><span class="chipmini ${ownerChipClass(a.owner)}">${esc(a.owner)}</span>${ty.label}</div></div><div class="amt num">${comma(bal)}원</div></button>`;});
  });
- if(!html)html=`<div class="empty"><div class="ei">${svg('wallet')}</div><div class="et">등록된 자산이 없어요</div><div class="es">자산관리에서 통장·자산을 먼저 등록해 주세요</div><button class="empty-cta" onclick="openAssetSheet()">${svg('plus')} 자산 추가하기</button></div>`;
- window._pkPick=o.onPick;openPicker(o.title||'통장 선택','<div class="pk-group" id="pkGroup"><div class="pk-blob" id="pkBlob"></div>'+html+'</div>',o.back);
+ return {html,any};
+}
+function pkEmptyHtml(q,any){
+ if(any&&q)return `<div class="empty"><div class="ei">${svg('search')}</div><div class="et">'${esc(q)}'와 일치하는 자산이 없어요</div><div class="es">다른 이름으로 검색해 보세요</div></div>`;
+ return `<div class="empty"><div class="ei">${svg('wallet')}</div><div class="et">등록된 자산이 없어요</div><div class="es">자산관리에서 통장·자산을 먼저 등록해 주세요</div><button class="empty-cta" onclick="openAssetSheet()">${svg('plus')} 자산 추가하기</button></div>`;
+}
+/* assetQInput/histQInput과 동일한 220ms 디바운스 — refreshPkAssetList()가 #pkGroup만 다시 그려 검색바
+ * 자체는 다시 그리지 않는다(assetSelPartial이 #assetBody만 바꾸는 것과 같은 이유). */
+function pkAssetQInput(v){_pkQ=v;clearTimeout(_pkQT);if(v.trim()===''){refreshPkAssetList();return}_pkQT=setTimeout(refreshPkAssetList,220);}
+function refreshPkAssetList(){
+ const grp=$('pkGroup');if(!grp)return; /* 디바운스 타이머가 피커를 닫은 뒤 늦게 발화할 수 있어 방어 */
+ const{html,any}=pkFilteredAssets(_pkOpts||{},_pkQ);
+ grp.innerHTML='<div class="pk-blob" id="pkBlob"></div>'+(html||pkEmptyHtml(_pkQ,any));
+ movePkBlob(false);
+}
+function openAssetPicker(o){o=o||{};_pkOpts=o;_pkQ='';clearTimeout(_pkQT);_pkQT=null;
+ const{html,any}=pkFilteredAssets(o,'');
+ const body=html||pkEmptyHtml('',any);
+ const searchBar=any?`<div class="searchbar" style="margin-bottom:14px">${svg('search')}<div class="field-clear"><input id="pkQ" aria-label="자산 검색" placeholder="자산 이름 검색" value="" oninput="pkAssetQInput(this.value)"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('pkQ')">✕</button></div></div>`:'';
+ window._pkPick=o.onPick;openPicker(o.title||'통장 선택',searchBar+'<div class="pk-group" id="pkGroup"><div class="pk-blob" id="pkBlob"></div>'+body+'</div>',o.back);
  requestAnimationFrame(()=>requestAnimationFrame(()=>movePkBlob(false)));}
 function movePkBlob(animate){
  const grp=$('pkGroup'),blob=$('pkBlob');if(!grp||!blob)return;
@@ -9109,6 +9143,7 @@ function movePkBlob(animate){
 function pkChoose(val){ /* 물방울 이동 → 잠깐 멈춤 → 닫기 */
  const grp=$('pkGroup');const f=window._pkPick;
  window._pkPick=null;window._pkBack=null;
+ _pkQ='';clearTimeout(_pkQT);_pkQT=null;_pkOpts=null;
  if(!grp){if(f)f(val);return}
  grp.querySelectorAll('.pk-item').forEach(b=>b.classList.toggle('on',b.dataset.val===String(val)));
  movePkBlob(true);
