@@ -1,15 +1,8 @@
 {
   "cycle": 249,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 244,
-      "phase": "develop",
-      "timestamp": "2026-10-24T10:30:00.000Z",
-      "summary": "general-purpose 서브에이전트(fork)가 develop 후보를 탐색해 도움말(openHelp, index.html:6450)의 '💾 백업' 행이 계정 종류와 무관하게 항상 \"데이터는 이 기기에만 저장돼요\"라고 단정하던 공백을 발견 — 이메일로 가입해 Supabase 클라우드 동기화를 켠 계정(isCloudAcct, openAccountSheet/doDeleteAccount가 이미 kind==='email'&&AUTH.rec(SESSION).cloud로 구분하는 것과 동일한 기준)도 게스트·카카오(둘 다 기기 로컬 전용)와 똑같이 취급돼, 실제로는 Supabase 클라우드에도 데이터가 함께 저장되고 다른 기기에서도 보이는데 도움말만 그 사실을 숨기던 실사용 결함(openAccountSheet 화면은 이미 \"다른 기기에서도 같은 데이터를 볼 수 있어요\"로 정확히 구분해서 안내 중이라 두 화면 간 불일치였음). logic.js에 순수함수 helpBackupNote(isCloudAcct) 신설(true면 '이 기기와 클라우드에도 함께' 저장, false면 기존 '이 기기에만' 문구 — 파일 백업 안내 문장은 두 경우 모두 유지), index.html openHelp()에서 accountKind()==='email'&&AUTH.rec(SESSION).cloud로 isCloudAcct를 계산해 '💾 백업' 행에 적용. APP_VERSION 1.47.231->1.47.232, sw.js CACHE v498->v499 동기 범프. test/run.js에 helpBackupNote 문구 테스트 3건 + openHelp() 실행형 테스트 3건(클라우드 이메일 계정/게스트/카카오 각각 올바른 문구를 쓰는지) 총 6건 추가(1916->1922). 오케스트레이터가 diff를 직접 읽어 accountKind()==='email'&&AUTH.rec(SESSION).cloud 기준이 openAccountSheet(5715행)·doDeleteAccount(9523행)의 기존 패턴과 일치함을 대조 확인했고, 독립적으로 node --check(logic.js/sw.js/test/run.js) 및 전체 테스트(1922/1922)를 재실행한 뒤, git stash push --keep-index로 index.html/logic.js/sw.js 수정분만 걷어내(test/run.js는 유지) 신규 6건 중 5건이 'helpBackupNote is not a function'으로 FAIL함(1917/1922)을 직접 재현하고 stash pop으로 복원 후 1922/1922 통과를 재확인했다. 컨테이너 시작 시 로컬 main 브랜치가 detached HEAD로 origin/main(38c5f6f)과 같은 커밋을 가리키고 있었으나 브랜치 포인터가 구버전(6a516f7)이던 것을 발견해 git checkout -B main으로 현재 HEAD(origin/main과 동일)에 맞춰 재설정했다(cycle241/243과 동일한 클래스의 컨테이너 재시작 아티팩트, 데이터 손실 없음).",
-      "commit": null
-    },
     {
       "cycle": 244,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-25T06:17:41.331Z",
       "summary": "카테고리(지출/수입/저축) 관리 화면(openCatManage, index.html:6262)에 순서를 바꿀 방법이 전혀 없는 공백을 발견 — addCat()이 항상 배열 끝에 push만 해서, 자주 쓰는 카테고리를 거래 입력 카테고리 피커 맨 위로 올리고 싶어도 할 수 없었다. 자산 그룹(moveGroup)·그룹 안 개별 자산(moveAsset)은 이미 같은 .grp-move 위/아래 버튼 패턴으로 순서를 바꿀 수 있는 것과 비일관성이고, cycle248 critique가 자산 피커 검색에 밀려 다음 순번으로 미뤄둔 항목이라 규모도 develop 한 사이클에 맞다. movedGroupOrder/movedAssetOrder와 같은 \"인접 교환, 경계면 null\" 패턴의 movedCatOrder(arr,i,dir)를 신설(인덱스 기반 swap, 자산처럼 id맵이 아니라 배열 전체를 반환 — DB.categories[k]는 배열 순서 자체가 순서인 문자열 목록이라 별도 order 필드가 없음)하고, moveCat(k,i,dev)이 이를 써서 DB.categories[k]를 바꾼 뒤 save()+openCatManage(k)로 재렌더한다. openCatManage의 카테고리 행에 moveGroup/moveAsset과 동일한 마크업(.grp-move/.grp-move-btn, aria-label \"{이름} 위로/아래로 이동\", 경계에서 disabled)으로 버튼을 추가했고, 수정/삭제 액션이 숨겨지는 ADJUST_CAT(수입의 자동 생성 잔액조정 카테고리) 행에서는 이동 버튼도 함께 숨겼다. mergeNameListWithTombstones(logic.js)가 local 배열을 그대로 base로 쓰고 remote의 새 이름만 끝에 추가하는 방식이라, 수동으로 바꾼 순서가 기기 간 동기화로 되돌아가지 않음을 코드로 확인. test/run.js: movedCatOrder 순수함수 테스트 4건(중간 위/아래 교환, 경계 null, 원본 불변), openCatManage 마크업 테스트 2건(경계 disabled 상태, ADJUST_CAT 행의 이동 버튼 숨김), moveCat 동작 테스트 2건(인접 교환+재렌더, 경계 no-op) 총 8건 추가. index.html 변경이라 APP_VERSION 1.47.241->1.47.242, sw.js CACHE v508->v509 동기 범프. node --check(추출한 <script> 블록)로 문법 확인, node test/run.js로 2011/2011 통과 재확인.",
+      "commit": null
+    },
+    {
+      "cycle": 249,
+      "phase": "review",
+      "timestamp": "2026-10-25T07:07:47.057Z",
+      "summary": "cycle249 develop 커밋(7a59732, 카테고리 관리(openCatManage)에 moveGroup/moveAsset과 동일한 .grp-move 위/아래 순서 이동 버튼 추가)을 검토. diff를 직접 읽어 movedCatOrder(arr,i,dir)가 movedGroupOrder/movedAssetOrder와 동일한 \"인접 교환, 경계면 null\" 규칙을 따르되, DB.categories[k]가 id 맵이 아니라 순서 자체가 의미인 문자열 배열이라 바뀐 배열 전체를 반환하도록 설계가 올바르게 달라졌음을 확인. openCatManage 행에 추가된 moveBtns 마크업(.grp-move/.grp-move-btn, aria-label, 경계 disabled)이 moveGroup/moveAsset 마크업과 글자 그대로 동일한 패턴임을 grep으로 대조 확인. isSysAdjust(ADJUST_CAT, 잔액조정 자동 생성 카테고리) 행에서 수정/삭제와 함께 이동 버튼도 숨겨짐을 확인 — 기존 varPill/rollPill과 같은 조건으로 묶여 있어 누락 위험 없음. moveCat(k,i,dir)이 null을 돌려받으면(경계) 조용히 return해 save()/재렌더를 건너뛰는 안전한 가드도 확인. mergeNameListWithTombstones가 local 배열을 그대로 base로 써 수동 순서가 동기화로 되돌아가지 않는다는 커밋 메시지의 주장을 logic.js에서 직접 코드로 재확인. 신규 테스트 8건이 diff의 각 분기(중간/경계 교환, 원본 불변, 행 마크업 disabled 상태, ADJUST_CAT 숨김, moveCat 재렌더/경계 no-op)에 1:1 대응함을 확인. APP_VERSION 1.47.242/sw.js CACHE v509 범프가 index.html 변경과 일치. node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행 결과 2011/2011 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
