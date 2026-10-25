@@ -1,15 +1,8 @@
 {
   "cycle": 248,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 243,
-      "phase": "develop",
-      "timestamp": "2026-10-24T06:15:57.600Z",
-      "summary": "자산 검색(#assetQ, renderAssets의 검색바)이 매 키 입력마다 동기로 assetSelPartial()을 불러 assetBodyHTML() 전체(자산 그룹별 합계·시세평가 포함 재계산)를 다시 그리던 공백을 발견 — index.html 5310행 근처 histQInput() 주석이 명시하듯 cycle212~216 critique는 \"wireNwCarousel의 clearTimeout/setTimeout 디바운스 관례가 검색엔 빠진 비일관성\"을 지목했고 cycle217 advance가 전체내역 검색(#histQ)엔 220ms 디바운스를 적용했지만, 똑같은 패턴(oninput마다 전체 리스트 재렌더)을 쓰는 자산관리 탭의 자산 검색(#assetQ, 3868행)은 그 수정 대상에서 빠진 채 \"ST.assetQ=this.value;assetSelPartial()\" 인라인 호출로 남아있었다. index.html에 histQInput과 동일한 구조의 assetQInput(v)을 신설(let _assetQT=null 타이머, 빈 문자열/공백뿐인 입력은 즉시 assetSelPartial() 실행, 그 외엔 220ms 디바운스 후 실행)하고 #assetQ의 oninput을 assetQInput(this.value)로 교체. clrInput()이 디스패치하는 input 이벤트가 그대로 이 핸들러를 타므로 지우기(×) 버튼도 histQ와 동일하게 즉시 반영된다. test/run.js: FUNCTIONS에 assetQInput 추가, LETS에 _assetQT 추가(extractLet이 단독 let 선언을 그대로 끌어옴), histQInput 4종 테스트(즉시반영+디바운스/연속입력 시 타이머 교체/지우기 즉시실행/공백뿐 입력 즉시실행)를 assetSelPartial 기준으로 그대로 미러링해 4건 추가. APP_VERSION 1.47.229->1.47.230, sw.js CACHE v496->v497 동기 반영. node our-assets-v1.14.1/our-assets/test/run.js 1906/1906 -> 1910/1910 통과.",
-      "commit": null
-    },
     {
       "cycle": 243,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-25T02:12:42.000Z",
       "summary": "홈에서 열리는 지출 분석/수입 분석/예산 설정/목표 기능이 도움말(openHelp, index.html:6657)의 안내 행에 전혀 등장하지 않아(rows 배열에 '예산'/'목표'/'분석' 키워드가 하나도 없었음 — 전체 텍스트를 grep으로 확인), 튜토리얼(TW, 6558행)에도 없는 이 기능들을 발견할 방법이 도움말 어디에도 없던 공백을 발견. openSpendAnalysis/openIncomeAnalysis가 홈의 '이번 달에 나갈 돈'/'이번 달 수입 분석' 섹션타이틀 링크로, openGoalsList가 홈의 목표 섹션/메뉴로 열리는 걸 grep으로 확인한 뒤, '🏠 홈' 행 바로 다음에 새 행 '📊 분석 · 예산 · 목표'를 추가(index.html rows 배열, 기존 이모지와 중복 없음 확인). 문구는 지출/수입 분석에서 카테고리별 비중·추이를 보고, 지출 분석에서 카테고리를 누르면 예산을 정할 수 있으며(openBudgetPrompt), 목표는 순자산/특정 자산의 목표액 대비 진행률을 보여준다는 내용. 순수 텍스트 추가라 로직 변경 없음. index.html만 변경되므로 APP_VERSION 1.47.239->1.47.240, sw.js CACHE v506->v507 동기 범프. test/run.js: 기존 openHelp 테스트들(클라우드/게스트/카카오 백업 문구 분기) 바로 뒤에 새 테스트 1건 추가 — openHelp()가 그린 lastSheetHtml에 '지출 분석'/'수입 분석'/'예산'/'목표' 네 키워드가 모두 포함되는지 확인. <script> 블록도 node --check로 별도 수동 검증(정규식 오매칭으로 생긴 가짜 에러 1건 제외, 실제 APP_VERSION이 든 메인 스크립트 블록은 문제 없음). node test/run.js 1989/1989 -> 1990/1990 통과.",
+      "commit": "cb7fc31"
+    },
+    {
+      "cycle": 248,
+      "phase": "review",
+      "timestamp": "2026-10-25T02:50:00.000Z",
+      "summary": "cycle248 develop 커밋(cb7fc31, 도움말에 '📊 분석 · 예산 · 목표' 안내 행 추가)을 검토. diff를 직접 읽어 순수 텍스트 한 줄 추가 외 로직 변경이 없음을 확인. 안내 문구가 가리키는 세 진입점을 grep으로 대조: 지출 분석을 누르면 openBudgetPrompt(idx)로 이어지는 카테고리 행이 index.html:6107/6135에 실제 존재(문구가 말한 '카테고리를 누르면 예산을 정할 수 있다'가 정확), 목표는 goalProgress(logic.js)/openGoalsList(index.html:3321)가 순자산·자산별 진행률을 이미 계산해 보여주고 있어 문구와 일치. 새 행이 기존 '🏠 홈' 행 바로 뒤에 삽입돼 다른 행의 순서·키를 건드리지 않았고, rows 배열 전체에서 이모지 중복도 없음을 확인. 신규 테스트 1건(lastSheetHtml에 '지출 분석'/'수입 분석'/'예산'/'목표' 네 키워드 포함 확인)이 추가된 행의 내용과 1:1 대응함을 확인. node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행 결과 1990/1990 통과(develop 단계가 주장한 수치와 일치). APP_VERSION 1.47.240/sw.js CACHE v507 범프가 index.html 변경과 일치. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
