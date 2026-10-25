@@ -193,7 +193,7 @@ function extractMainScript() {
 const FUNCTIONS = [
   'addMonths', 'fetchWithTimeout', 'withTimeout',
   'dateBelowRangeFloor', 'dateAboveRangeCeil', 'recalcEndCond', 'isVarCat', 'setCatVar', 'toggleCatVarUI', 'activeRecsForAssets', 'activeRecsForCat',
-  'num', 'doRenameCat', 'doDeleteCat', 'totalBudgetSummary', 'budgetForMonth', 'setBudgetFrom', 'addCat',
+  'num', 'doRenameCat', 'doDeleteCat', 'totalBudgetSummary', 'budgetForMonth', 'setBudgetFrom', 'addCat', 'movedCatOrder', 'moveCat',
   'isBudgetRolloverCat', 'setBudgetRolloverCat', 'toggleBudgetRolloverUI', 'budgetCarryFor', 'budgetForMonthWithCarry',
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'assetsToCSV', 'nwHistoryToCSV',
   'unguardCsv', 'csvRowToImportTxn', 'buildImportPreview', 'doCsvImport',
@@ -18247,6 +18247,41 @@ test('openCatManage: newCat(카테고리 추가 입력)도 다른 이름 입력�
   assert.ok(html.includes('<div class="field-clear"><input id="newCat"'), 'newCat 입력이 field-clear로 감싸져 있지 않음');
   assert.ok(html.includes(`<button type="button" class="fc-x" aria-label="카테고리 이름 지우기" onclick="clrInput('newCat')">`), 'newCat에 fc-x 지우기 버튼의 clrInput 연결이 없음');
 });
+/* 카테고리는 addCat()이 끝에 push만 해서 추가된 순서 그대로 영원히 고정이라, 자주 쓰는 카테고리를
+ * 거래 입력 카테고리 피커 맨 위로 올릴 방법이 전혀 없었다 — 자산 그룹(moveGroup)·그룹 안 개별
+ * 자산(moveAsset)은 이미 같은 .grp-move 위/아래 버튼으로 순서를 바꿀 수 있는 것과의 비일관성
+ * (cycle248 critique가 자산 피커 검색에 밀려 다음 순번으로 미뤄둔 항목, app-evolve cycle251 develop).
+ * moveGroup/moveAsset과 동일한 마크업(.grp-move/.grp-move-btn, aria-label "{이름} 위로/아래로 이동",
+ * 경계에서 disabled)을 그대로 재사용한다. */
+test('openCatManage: 각 카테고리 행에 위/아래 이동 버튼이 있고, 맨 위/맨 아래 항목은 그쪽 버튼이 disabled다', () => {
+  setupCatManageDB();
+  sandbox.openCatManage('expense');
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.includes(`aria-label="식비 위로 이동" onclick="moveCat('expense',0,-1)" disabled>`), '첫 항목(식비)의 위로 이동 버튼이 disabled여야 함');
+  assert.ok(html.includes(`aria-label="식비 아래로 이동" onclick="moveCat('expense',0,1)">`) && !html.includes(`aria-label="식비 아래로 이동" onclick="moveCat('expense',0,1)" disabled>`), '첫 항목(식비)의 아래로 이동 버튼은 활성 상태여야 함');
+  assert.ok(html.includes(`aria-label="교통 아래로 이동" onclick="moveCat('expense',1,1)" disabled>`), '마지막 항목(교통)의 아래로 이동 버튼이 disabled여야 함');
+  assert.ok(html.includes(`aria-label="교통 위로 이동" onclick="moveCat('expense',1,-1)">`) && !html.includes(`aria-label="교통 위로 이동" onclick="moveCat('expense',1,-1)" disabled>`), '마지막 항목(교통)의 위로 이동 버튼은 활성 상태여야 함');
+});
+test('openCatManage: income 탭의 ADJUST_CAT(잔액 조정)은 이동 버튼도 숨긴다(수정/삭제와 동일)', () => {
+  setupCatManageDB();
+  sandbox.openCatManage('income');
+  const html = sandbox.lastSheetHtml;
+  assert.ok(!html.includes(`moveCat('income',1,`), 'ADJUST_CAT(인덱스 1)의 이동 버튼이 그려지면 안 됨');
+  assert.ok(html.includes(`moveCat('income',0,`), '일반 카테고리(급여)의 이동 버튼은 그려져야 함');
+});
+test('moveCat: 인접 항목과 순서를 바꾸고 저장 후 같은 탭을 다시 연다', () => {
+  setupCatManageDB();
+  sandbox.moveCat('expense', 0, 1);
+  assert.deepStrictEqual(sandbox.DB.categories.expense, ['교통', '식비']);
+  assert.ok(sandbox.lastSheetHtml.includes('<h3>카테고리 관리</h3>'), '같은 관리 시트를 다시 열어야 함');
+});
+test('moveCat: 경계(맨 위를 위로, 맨 아래를 아래로)에서는 아무것도 바꾸지 않는다', () => {
+  setupCatManageDB();
+  sandbox.moveCat('expense', 0, -1);
+  assert.deepStrictEqual(sandbox.DB.categories.expense, ['식비', '교통'], '경계에서는 순서가 바뀌면 안 됨');
+  sandbox.moveCat('expense', 1, 1);
+  assert.deepStrictEqual(sandbox.DB.categories.expense, ['식비', '교통'], '경계에서는 순서가 바뀌면 안 됨');
+});
 
 /* ---------- openCatPicker: 카테고리명 onclick 문자열보간 인젝션 봉합 회귀 (app-evolve cycle82 advance) ----------
  * critique(cycle82)가 발견: openCatPicker()가 카테고리명 c를 표시 텍스트만 esc()로 감싸고
@@ -20119,6 +20154,31 @@ test('movedAssetOrder: 반환된 order 맵은 넘겨준 ids(그 그룹 안 자�
   assert.strictEqual(map.cash2, 0);
   assert.strictEqual(map.cash1, 1);
   assert.strictEqual(Object.keys(map).sort().join(','), ids.slice().sort().join(','));
+});
+
+/* ---------- movedCatOrder: openCatManage()의 카테고리 위/아래 이동 버튼(moveCat())이 쓰는 순수
+ * 로직 (app-evolve cycle251 develop). movedAssetOrder와 같은 인접 교환(swap) 규칙이지만, 대상이
+ * id로 찾아야 하는 자산이 아니라 '배열 순서 자체가 순서'인 카테고리 문자열 목록이라 id 조회 없이
+ * 인덱스로 직접 교환하고, order 맵이 아니라 바뀐 배열 전체를 반환한다. */
+test('movedCatOrder: 중간 항목을 위로 이동하면 바로 앞 항목과 자리를 바꾼다', () => {
+  const arr = ['식비', '교통', '문화'];
+  assert.deepStrictEqual(sandbox.movedCatOrder(arr, 1, -1), ['교통', '식비', '문화']);
+});
+test('movedCatOrder: 중간 항목을 아래로 이동하면 바로 뒤 항목과 자리를 바꾼다', () => {
+  const arr = ['식비', '교통', '문화'];
+  assert.deepStrictEqual(sandbox.movedCatOrder(arr, 1, 1), ['식비', '문화', '교통']);
+});
+test('movedCatOrder: 맨 위 항목을 위로, 맨 아래 항목을 아래로 이동하려 하면(경계) null을 반환한다', () => {
+  const arr = ['식비', '교통', '문화'];
+  assert.strictEqual(sandbox.movedCatOrder(arr, 0, -1), null);
+  assert.strictEqual(sandbox.movedCatOrder(arr, 2, 1), null);
+});
+test('movedCatOrder: 원본 배열을 변경하지 않고 새 배열을 반환한다', () => {
+  const arr = ['식비', '교통'];
+  const out = sandbox.movedCatOrder(arr, 0, 1);
+  assert.deepStrictEqual(arr, ['식비', '교통'], '원본 배열은 그대로 유지돼야 함');
+  assert.deepStrictEqual(out, ['교통', '식비']);
+  assert.notStrictEqual(out, arr, '새 배열 인스턴스를 반환해야 함');
 });
 
 /* ---------- nwClampIdx: Assets 탭 귀속(나/배우자/공용/전체) 캐러셀의 점 클릭/화살표 키가 쓰는

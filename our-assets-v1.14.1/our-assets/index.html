@@ -1410,7 +1410,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.241';
+const APP_VERSION='1.47.242';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4123,6 +4123,20 @@ function moveAsset(id,dir){
  });
  save();renderAssets();
 }
+/* movedGroupOrder/movedAssetOrder와 같은 "인접 교환, 경계면 null" 패턴 — 자산 그룹·자산 개별
+ * 항목은 이미 moveGroup()/moveAsset()으로 순서를 바꿀 수 있는데, DB.categories[k]는 addCat()이
+ * 끝에 push만 해서 추가된 순서 그대로 영원히 고정이라 자주 쓰는 카테고리를 거래 입력 카테고리
+ * 피커 맨 위로 올릴 방법이 전혀 없었다(cycle248 critique가 자산 피커 검색에 밀려 다음 순번으로
+ * 미뤄둔 항목). DB.categories[k]는 자산과 달리 별도 order 필드가 없는 '배열 순서 자체가 순서'인
+ * 문자열 목록이라, moveCat()이 이 배열을 그대로 바꿔 쓰면 되므로 id→order 맵 대신 바뀐 배열을
+ * 그대로 반환한다. */
+function movedCatOrder(arr,i,dir){
+ const j=i+dir;
+ if(i<0||i>=arr.length||j<0||j>=arr.length)return null;
+ const out=arr.slice();
+ [out[i],out[j]]=[out[j],out[i]];
+ return out;
+}
 
 /* 자산 등록/수정 시트 */
 let asDraft=null;
@@ -6250,7 +6264,8 @@ function openCatManage(kind,keep){
     const varPill=k==='saving'?'':`<button class="varpill ${isVarCat(k,c)?'on':''}" aria-label="${esc(c)} 변동 카테고리 설정" aria-pressed="${isVarCat(k,c)}" onclick="toggleCatVarUI('${k}',${i},this)">${isVarCat(k,c)?'변동':'고정'}</button>`;
     const rollPill=k==='expense'?`<button class="varpill ${isBudgetRolloverCat(c)?'on':''}" aria-label="${esc(c)} 예산 이월 설정" aria-pressed="${isBudgetRolloverCat(c)}" onclick="toggleBudgetRolloverUI(${i},this)">${isBudgetRolloverCat(c)?'이월':'이월 안함'}</button>`:''; /* 예산 이월은 지출 카테고리에만 있는 설정(saving/income 대상 아님) — budgetHistory와 동일한 범위 */
     const acts=isSysAdjust?`<span class="mini">자동 생성</span>`:`<div class="row-acts"><button class="act-btn" aria-label="${esc(c)} 수정" onclick="renameCatSheet('${k}',${i})">${svg('edit')}</button><button class="act-btn danger" aria-label="${esc(c)} 삭제" onclick="delCat('${k}',${i})">${svg('trash')}</button></div>`;
-    return `<div class="manage-row"><div class="avatar ${avCls}" style="width:36px;height:36px;border-radius:11px">${catGlyph(k,c,18,'tag')}</div><div class="mn">${esc(c)}</div>${isSysAdjust?'':varPill}${rollPill}${acts}</div>`;
+    const moveBtns=isSysAdjust?'':`<div class="grp-move"><button type="button" class="grp-move-btn" aria-label="${esc(c)} 위로 이동" onclick="moveCat('${k}',${i},-1)"${i===0?' disabled':''}>${svg('arrowUp')}</button><button type="button" class="grp-move-btn" aria-label="${esc(c)} 아래로 이동" onclick="moveCat('${k}',${i},1)"${i===DB.categories[k].length-1?' disabled':''}>${svg('arrowDn')}</button></div>`;
+    return `<div class="manage-row"><div class="avatar ${avCls}" style="width:36px;height:36px;border-radius:11px">${catGlyph(k,c,18,'tag')}</div><div class="mn">${esc(c)}</div>${isSysAdjust?'':varPill}${rollPill}${moveBtns}${acts}</div>`;
    }).join('')}</div>
   <div class="add-inline"><button class="emo-pick ${avCls}" onclick="pickCatAddIcon('${k}')" aria-label="아이콘 선택">${svg(trigIcon,20)}</button><div class="field-clear"><input id="newCat" placeholder="새 ${CAT_LABEL[k]} 카테고리" value="${catAddDraft.name.replace(/"/g,'&quot;')}" oninput="catAddDraft.name=this.value" onkeydown="if(event.key==='Enter'&&!event.isComposing)addCat('${k}')"><button type="button" class="fc-x" aria-label="카테고리 이름 지우기" onclick="clrInput('newCat')">✕</button></div><button onclick="addCat('${k}')" aria-label="${CAT_LABEL[k]} 카테고리 추가">${svg('plus')}</button></div>
   <div style="height:14px"></div><button class="btn btn-primary" onclick="closeSheet()">완료</button>`);
@@ -6264,6 +6279,11 @@ function addCat(k){const v=(($('newCat')&&$('newCat').value)||catAddDraft.name||
  if(catAddDraft.icon)DB.catIcon[catKey(k,v)]=catAddDraft.icon;
  catAddDraft={name:'',icon:''};
  DB.deletedIds=DB.deletedIds||{};delete DB.deletedIds[catTombKey(k,v)];
+ save();openCatManage(k)}
+function moveCat(k,i,dir){
+ const arr=movedCatOrder(DB.categories[k],i,dir);
+ if(!arr)return;
+ DB.categories[k]=arr;
  save();openCatManage(k)}
 /* 삭제될 카테고리를 참조하는 '활성' 반복거래를 찾는다 — activeRecsForAssets(2334)와 같은 이유:
    반복거래는 과거 기록이 아니라 계속 새 항목을 만들어내는 생성기라, 카테고리 삭제 후에도
