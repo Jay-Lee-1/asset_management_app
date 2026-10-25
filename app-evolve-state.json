@@ -1,7 +1,11 @@
 {
   "cycle": 249,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "mergeRemoteDataIntoLocal() 누락 방지용 'DB 스키마 완전성 가드' 테스트 신설 (test/run.js만 변경)",
+    "why": "migrate()(index.html:2454-2498)가 초기화하는 모든 최상위 DB.* 필드가 mergeRemoteDataIntoLocal()(index.html:1620-1707)에 실제로 병합 배선돼 있는지 검증하는 일반 가드가 없음. 이 프로젝트 역사상 '새 DB 컬렉션 추가 시 머지 배선을 빠뜨림' 버그가 최소 9번(cycle122/123 goals, 133 inquiries, 135 deletedType/deletedBal, 138 assetQtyLog, 179/180/181 categories/owners/budgetHistory tombstones, 192 rates, 211/212/223 merge-time data-loss detection, 238 recurrences) 독립적으로 재발견·수정됐다 — 테스트 2만여 건이 전부 필드별 reactive 검증이라 '다음에 추가될 새 필드'는 여전히 못 잡는다. 두 기기(부부)가 각각 새 필드에 쓴 내용이 다음 동기화에서 경고 없이 조용히 사라지는 시나리오가 과거 패턴 그대로 재발할 위험.",
+    "approach": "index.html/sw.js 변경 없음, APP_VERSION/CACHE 범프 불필요 — test/run.js에만 추가. (1) 기존 extractFunction/FUNCTIONS 하니스로 migrate()와 mergeRemoteDataIntoLocal() 소스를 추출. (2) migrate() 소스에서 정규식 /DB\\.(\\w+)\\s*=/g로 최상위 DB.* 필드 전체(앱 자신의 암묵적 스키마)를 뽑는다. (3) 두 제외 집합을 소스 코드 주석에 근거해 명시: LOCAL_ONLY_DB_FIELDS={settings,nwHistory}(index.html:1664-1666, snapshotLocalDeviceFields 1715에 문서화된 예외), MIGRATION_FLAG_FIELDS={catsV2,_budgetHistV1,_varMigrated,_sortV2,_schV2}(1회성 부팅 플래그, 동기화 대상 아님). (4) 제외되지 않은 필드마다 mergeRemoteDataIntoLocal() 소스 문자열에 'DB.'+field가 실제로 등장하는지 assert — 이게 cycle122/133/138/179/180/192 전부를 출시 전에 잡았을 체크. (5) 체커 자체가 실제로 동작하는지 확인하는 자가 테스트 1건: migrate류 가짜 문자열에 merge류 가짜 문자열엔 없는 필드(DB.newThing=DB.newThing||[])를 심어 체커가 이를 flag하는지 확인(이 프로젝트가 기존에 하던 'stash로 구현 제거 후 테스트가 실패하는지 직접 확인'하는 습관과 동일한 취지). 예상 테스트 +2건. node our-assets-v1.14.1/our-assets/test/run.js로 신규 테스트 통과 및 전체 회귀 없음 확인."
+  },
   "history": [
     {
       "cycle": 244,
@@ -141,6 +145,13 @@
       "phase": "review",
       "timestamp": "2026-10-25T07:07:47.057Z",
       "summary": "cycle249 develop 커밋(7a59732, 카테고리 관리(openCatManage)에 moveGroup/moveAsset과 동일한 .grp-move 위/아래 순서 이동 버튼 추가)을 검토. diff를 직접 읽어 movedCatOrder(arr,i,dir)가 movedGroupOrder/movedAssetOrder와 동일한 \"인접 교환, 경계면 null\" 규칙을 따르되, DB.categories[k]가 id 맵이 아니라 순서 자체가 의미인 문자열 배열이라 바뀐 배열 전체를 반환하도록 설계가 올바르게 달라졌음을 확인. openCatManage 행에 추가된 moveBtns 마크업(.grp-move/.grp-move-btn, aria-label, 경계 disabled)이 moveGroup/moveAsset 마크업과 글자 그대로 동일한 패턴임을 grep으로 대조 확인. isSysAdjust(ADJUST_CAT, 잔액조정 자동 생성 카테고리) 행에서 수정/삭제와 함께 이동 버튼도 숨겨짐을 확인 — 기존 varPill/rollPill과 같은 조건으로 묶여 있어 누락 위험 없음. moveCat(k,i,dir)이 null을 돌려받으면(경계) 조용히 return해 save()/재렌더를 건너뛰는 안전한 가드도 확인. mergeNameListWithTombstones가 local 배열을 그대로 base로 써 수동 순서가 동기화로 되돌아가지 않는다는 커밋 메시지의 주장을 logic.js에서 직접 코드로 재확인. 신규 테스트 8건이 diff의 각 분기(중간/경계 교환, 원본 불변, 행 마크업 disabled 상태, ADJUST_CAT 숨김, moveCat 재렌더/경계 no-op)에 1:1 대응함을 확인. APP_VERSION 1.47.242/sw.js CACHE v509 범프가 index.html 변경과 일치. node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행 결과 2011/2011 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 249,
+      "phase": "critique",
+      "timestamp": "2026-10-25T08:00:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-249 전체 다룬 영역·기각 항목 전부 제외 지시)한 결과, mergeRemoteDataIntoLocal()(index.html:1620-1707)이 migrate()(2454-2498)가 초기화하는 모든 최상위 DB.* 필드를 수동으로 하나씩 병합 배선하는데, 이 '새 DB 컬렉션 추가 시 머지 배선을 빠뜨림' 버그 클래스가 프로젝트 역사상 최소 9번(cycle122/123 goals, 133 inquiries, 135 deletedType/deletedBal, 138 assetQtyLog, 179/180/181 categories/owners/budgetHistory tombstones, 192 rates, 211/212/223 merge-time data-loss detection, 238 recurrences) 독립적으로 재발견·수정됐음을 발견 — 테스트 2만여 건이 전부 필드별 reactive 검증이라 다음에 추가될 새 필드는 여전히 못 잡는 구조적 공백. 러너업 기각: 반복거래 관리(openRecManage) 귀속 필터(History/SpendAnalysis 등과 비대칭이긴 하나 cycle248이 이미 같은 화면에서 '항목 수가 적어 가치 낮음'으로 기각한 근거가 그대로 적용), 매도 시 실현손익 추적(costBasis가 미실현만 다루고 매도는 scaleCostBasisForSale로 원가만 축소 — 실제 공백이나 매도 이벤트 기록이라는 새 데이터 모델이 필요해 범위 초과, 이미 기각된 주식 배당 자동추적과 같은 클래스), index.html 9947줄 단일 파일 모놀리식 분리(아키텍처 부채 맞으나 재작성급 리그레션 위험 대비 즉각적 사용자 가치 없음). advance 계획(test/run.js에 'DB 스키마 완전성 가드' 테스트 신설 — migrate()에서 추출한 최상위 DB.* 필드 전체가 LOCAL_ONLY_DB_FIELDS/MIGRATION_FLAG_FIELDS 제외 후 mergeRemoteDataIntoLocal() 소스에 'DB.'+field로 실제 등장하는지 assert, 체커가 실제로 fire하는지 가짜 입력으로 자가검증하는 테스트 1건 추가, index.html/sw.js 변경 없음·버전범프 불필요)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
       "commit": null
     }
   ]
