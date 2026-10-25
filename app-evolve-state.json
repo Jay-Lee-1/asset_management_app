@@ -1,15 +1,8 @@
 {
   "cycle": 250,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 250,
-      "phase": "develop",
-      "timestamp": "2026-10-25T10:00:00.000Z",
-      "summary": "fork 서브에이전트가 develop 후보를 탐색해 yearSummary()(cycle246 advance 신설, index.html:6046-6059)가 매번 계산해 돌려주는 s.monthly(yearMonthlyNet의 12개월 수입/지출 배열)가 openYearReview() 어디에서도 쓰이지 않고 버려지는 데드 데이터였음을 발견 — 연간 결산 화면이 총계와 카테고리 TOP3만 보여줘서 '몇 월에 유독 많이 썼는지/벌었는지'를 전혀 알 수 없었다. 러너업 기각: nwhChart/assetBalChart급 키보드 피크 내비게이션을 갖춘 새 라인차트 컴포넌트(한 사이클 범위를 넘는 과한 설계), 자산 메모/수입분석 수정흐름/반복거래 일시정지(코드 확인 결과 이미 존재). openSpendAnalysis가 쓰는 .spend-row/.spend-mid/.spend-track/.spend-amt 마크업을 그대로 재사용해 월별 흐름 카드를 신설(index.html:6081-6093, 6107) — 12개월 중 최댓값(maxMo) 대비 비율로 수입/지출 바 폭을 정하고, 금액은 항상 comma() 텍스트로도 노출해(바는 장식일 뿐) 추가 접근성 작업이 불필요하게 했다. CSS에 .spend-track i.income{background:var(--income)}(budgeted/over와 동일한 variant 패턴) 1줄 추가(index.html:1336). 새 top-level 함수는 없어 FUNCTIONS/LETS 테스트 하네스 등록 변경 불필요. index.html/sw.js 변경이라 APP_VERSION 1.47.242->1.47.243, sw.js CACHE v509->v510 동기 범프. test/run.js: 기존 빈 상태 테스트에 '월별 흐름' 카드 미노출 단언 추가, 신규 테스트 1건(1월 수입 100만원이 연중 최댓값이라 바 폭 100%, 2월 지출 50만원이 50% 폭, 금액 텍스트 둘 다 노출) 추가(2013->2014). node --check(sw.js/test/run.js) 통과. 오케스트레이터가 diff를 직접 읽어 변경 범위가 월별 흐름 카드 하나로 좁게 유지됐음을 재검증하고 node test/run.js를 독립적으로 재실행해 2014/2014 재확인. 컨테이너 시작 시 로컬 main이 origin/main(e946a7a)과 동일한 커밋을 가리키면서도 detached HEAD 상태였음을 발견(cycle241/243~249와 동일한 클래스의 컨테이너 재시작 아티팩트) — git checkout -B main으로 재부착한 뒤 이번 커밋을 쌓아 push한다.",
-      "commit": "bad0955"
-    },
     {
       "cycle": 245,
       "phase": "develop",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-25T09:00:00.000Z",
       "summary": "critique(cycle249) 계획대로 'DB 스키마 완전성 가드' 테스트를 신설했다(test/run.js만 변경, index.html/sw.js 변경 없음). migrate()와 mergeRemoteDataIntoLocal() 소스를 extractFunction으로 추출해 /DB\\.(\\w+)\\s*=/g로 migrate()의 최상위 DB.* 필드 20개를 전부 뽑고, 제외 대상 3종을 소스 근거와 함께 명시: LOCAL_ONLY_DB_FIELDS={settings,nwHistory}(기기-로컬 전용, snapshotLocalDeviceFields 주석), MIGRATION_FLAG_FIELDS={catsV2,_budgetHistV1,_varMigrated,_sortV2,_schV2}(1회성 부팅 플래그). 계획엔 없었지만 직접 돌려본 결과 DB.budgets가 두 제외 집합 어디에도 안 들어가는데도 mergeRemoteDataIntoLocal()에 전혀 등장하지 않아 가드가 즉시 실패 상태로 나왔다 — 조사해보니 DB.budgets는 budgetHistory 신설 전 레거시 flat 맵으로, migrate()의 _budgetHistV1 가드가 최초 1회만 소비하고 이후 index.html 어디서도 다시 쓰지 않는 동결된 필드임을 grep으로 확인(쓰기 경로가 없고, sanitizeBackup()의 동명 지역변수는 DB.budgets 자체가 아님). 두 기기 모두 매 부팅 migrate()를 먼저 돌리므로 새 코드로 병합에 들어올 때는 이미 변환이 끝나 있어 병합 여부가 무의미하다 — LEGACY_FROZEN_FIELDS={budgets}로 세 번째 제외 집합을 신설하고 이유를 테스트 코드 주석에 근거와 함께 남겼다(실제 동기화 버그가 아니라 가드 자체의 범위를 정확히 좁힌 것). 자가검증 테스트는 계획대로 가짜 migrate/merge 문자열에 병합 안 된 필드(DB.newThing)를 심어 체커가 이를 잡아내는지 확인하는 1건으로 작성했고, 추가로 실제 index.html 소스에 가짜 'DB.bogusNewField=' 대입을 합성 주입해 실제 운영 코드에 대해서도 가드가 fire함을 node -e로 별도 확인(테스트 파일엔 포함하지 않음, 일회성 검증). node our-assets-v1.14.1/our-assets/test/run.js 2011->2013/2013 통과. git status로 test/run.js 외 변경 없음 확인.",
+      "commit": null
+    },
+    {
+      "cycle": 250,
+      "phase": "review",
+      "timestamp": "2026-10-25T10:30:00.000Z",
+      "summary": "cycle250 develop 커밋(60cf9a3, 연간 결산(openYearReview)에 월별 수입/지출 흐름 카드 추가)을 검토. diff를 직접 읽어 yearMonthlyNet(y,owner)이 돌려주는 {m,income,expense} 필드명과 렌더 코드(mo.m/mo.income/mo.expense)가 정확히 일치함을 확인(index.html:6028-6036). income/expense는 incomeByCategory/spendByCategory의 reduce 합산값이라 항상 0 이상이므로 maxMo=Math.max(1,...)의 1 하한이 \"12개월 전부 0\"인 경우에만 분모가 되어 0/0 NaN을 막는 안전한 가드임을 확인 — 거래가 전혀 없는 해는 openYearReview이 이미 상위에서 빈 상태로 조기 return하므로(s.income||s.expense 체크) 월별 흐름 카드 자체가 그 경로에 진입하지 않아 가드가 사실상 이중 방어임도 확인. openSpendAnalysis의 .spend-row/.spend-track 마크업을 그대로 재사용했고 i.income{background:var(--income)} CSS 1줄 추가가 기존 budgeted/over variant 패턴과 동일함을 grep으로 대조. 신규 테스트 1건(1월 수입 100만원=최댓값→100%, 2월 지출 50만원=50%, 금액 텍스트 병행 노출)과 기존 빈 상태 테스트에 추가된 '월별 흐름' 미노출 단언이 diff의 두 분기에 1:1 대응함을 확인. node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행 결과 2014/2014 통과(develop 단계 주장과 일치). APP_VERSION 1.47.243/sw.js CACHE v510 범프가 index.html 변경과 일치. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
