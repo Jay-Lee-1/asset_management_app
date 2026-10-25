@@ -1,7 +1,11 @@
 {
   "cycle": 251,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "은행/카드사 CSV 거래내역 가져오기 — 열 매핑(컬럼 매칭) 기반 범용 가져오기 추가",
+    "why": "CSV 거래내역 가져오기(openCsvImportInfo, index.html:7129)는 '이 앱이 직접 내보낸 CSV'만 받는다. csvRowToImportTxn(index.html:6899)이 날짜/구분/카테고리/금액/보내는자산/받는자산/메모 7칸 고정 포맷을 강제하고, buildImportPreview(index.html:6946)는 parseCSV 결과의 1행(헤더)을 무조건 버려 앱 자신의 헤더만 기대한다. 실제 사용자가 은행/카드사에서 내려받은 CSV를 그대로 가져올 길이 전혀 없어 '수개월치 과거 내역을 손으로 입력하지 않고 가져오기'라는 가장 흔한 온보딩 시나리오가 막혀 있다. git log에서 은행/카드/거래내역/포맷/컬럼 키워드로 확인한 cycle243(38c5f6f/1f91062)은 기존 자기-포맷 가져오기의 진단 메시지만 개선했을 뿐 고정 컬럼 가정 자체는 건드리지 않아 중복이 아니다.",
+    "approach": "1) logic.js에 OWN_CSV_HEADER 상수(['날짜','구분','카테고리','금액','보내는 자산','받는 자산','메모'], 현재 txnsToCSV index.html:6833에 리터럴로만 있던 것을 공유 상수로 추출)와 detectOwnCsvFormat(headerRow) 순수함수(헤더 배열이 OWN_CSV_HEADER와 정확히 일치하는지)를 추가. 2) index.html:7620의 importCsvFile change 핸들러에서 parseCSV 후 detectOwnCsvFormat(rows[0])이 true면 기존 buildImportPreview 경로를 그대로 쓰고(자기-포맷 라운드트립 동작 무변경), false면 새 화면 openCsvColumnMap(headerRow, dataRows)를 연다. 3) openCsvColumnMap: openSheet 카드 패턴으로 날짜 열/메모 열 단일선택 리스트(openPicker류 마크업 재사용), 금액 모드(한 열 +/- vs 입금/출금 두 열) 토글 후 해당 열 선택, openAssetPicker({cashOnly:true})로 이 파일 전체가 속할 단일 자산 1개 선택(행별 계정명 매칭을 완전히 회피하는 핵심 단순화), openCatPicker로 전체 행에 적용할 기본 카테고리 1개 선택. 각 열 선택 아래 dataRows에서 뽑은 실제 샘플값 2~3개를 보여줘 사용자가 매핑을 확인하게 한다. 4) logic.js(또는 index.html, assets 필요시)에 순수함수 mapGenericCsvRow(cells, headerIdx, mapping, targetAssetId) 추가 — csvRowToImportTxn과 동일한 반환 shape({ok:false,error:'date'|'amount'} 또는 {ok:true,unmatched:[],txn})을 돌려줘 날짜는 csvDateValid 재사용(실패시 error:'date'), 금액은 모드별로 음수/입금열=income(toAssetId=targetAssetId), 양수/출금열=expense(fromAssetId=targetAssetId), 두 열 다 채워지거나 둘 다 비면 error:'amount'. 카테고리는 선택한 기본값 고정, 메모는 매핑된 열. 5) 매핑된 행들을 csvDedupeKey(logic.js)로 중복 제거해 buildImportPreview와 동일한 반환 shape(totalRows/newCount/dupCount/invalidCount/rangeCount/futureCount/items/newCats/unmatchedAssetNames/samples)을 만들어 openCsvImportPreview(index.html:7650)/doCsvImport(index.html:7673)의 undo-toast+tombstone 커밋 로직은 전혀 건드리지 않는다(이 shape만 소비하므로). 6) openCsvImportInfo(index.html:7130) 안내문에 '맞지 않는 CSV는 열 매칭 화면으로 안내'한다는 문구 추가. 7) EUC-KR 인코딩 이슈(index.html:7621 FileReader.readAsText)는 이번 사이클 범위 밖 — 코드 주석으로 TODO만 남긴다. index.html/sw.js 변경이므로 APP_VERSION(index.html:1415, '1.47.245'->'1.47.246')과 sw.js CACHE(6행, 'ourassets-v512'->'ourassets-v513') 동기 범프 필요. DB.* 스키마 변경 없음(머지 가드 영향 없음). test/run.js에 추가할 테스트: detectOwnCsvFormat(정확 일치 true/임의 은행 헤더 false/칸 수 다르거나 순서 바뀐 근접-불일치 false), mapGenericCsvRow(출금열만->expense+fromAssetId, 입금열만->income+toAssetId, 양쪽 다 채움->error:'amount', 양쪽 다 비거나 0->error:'amount', 잘못된 날짜->error:'date', 성공 shape이 csvRowToImportTxn과 필드 단위로 일치), 합성 은행 CSV(헤더 재배열+입출금 분리) 1건을 detectOwnCsvFormat->mapGenericCsvRow(행별)->csvDedupeKey 전체 경로로 돌려 최종 item 개수/shape를 검증하는 통합형 테스트 1건, detectOwnCsvFormat이 true를 반환하는 기존 자기-포맷 라운드트립 경로가 이번 변경으로 전혀 달라지지 않았음을 재확인하는 케이스 1건."
+  },
   "history": [
     {
       "cycle": 246,
@@ -141,6 +145,13 @@
       "phase": "review",
       "timestamp": "2026-10-25T15:09:19.863Z",
       "summary": "cycle251 develop 커밋(4ea02ff, 연간 결산(openYearReview)의 지출/수입 TOP3 카드에서 aria-hidden=\"true\" 래퍼 제거)을 검토. buildExpenseBarHtml의 다른 호출부(openIncomeAnalysis:5360, openSpendAnalysis:6203)는 같은 데이터를 보여주는 접근 가능한 body 목록(role=button spend-row, aria-label에 카테고리명+금액 포함)이 바로 뒤에 있어 aria-hidden이 정당하지만, openYearReview의 TOP3 카드는 요약 화면이라 그런 별도 접근 가능한 목록이 전혀 없음을 코드로 직접 대조 확인 — develop 커밋의 주장과 일치, 실제 접근성 버그였고 수정이 올바르다. 신규 테스트 1건이 TOP3 카드 블록만 슬라이스해 aria-hidden 부재를 좁게 단언하는 방식(svg 장식 아이콘의 정당한 aria-hidden과 혼동 없음)도 diff와 1:1 대응함을 확인. node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행 결과 2030/2030 통과(develop 단계 주장과 일치). node --check(sw.js/test/run.js) 통과. APP_VERSION 1.47.245/sw.js CACHE v512 범프가 index.html 변경과 일치. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 251,
+      "phase": "critique",
+      "timestamp": "2026-10-25T16:20:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle122-251 전체 다룬 영역·기각 항목 전부 제외 지시)한 결과, CSV 거래내역 가져오기(openCsvImportInfo, index.html:7129)가 '이 앱이 직접 내보낸 CSV'만 받는다는 공백을 발견 — csvRowToImportTxn(6899)이 날짜/구분/카테고리/금액/보내는자산/받는자산/메모 7칸 고정 포맷을 강제하고, buildImportPreview(6946)는 parseCSV 결과 1행(헤더)을 무조건 버려 앱 자신의 헤더만 기대한다. 은행/카드사 CSV를 그대로 가져올 길이 전혀 없어 '수개월치 과거 내역을 손으로 입력하지 않고 가져오기'라는 가장 흔한 온보딩 시나리오가 완전히 막혀 있다. git log를 은행/카드/거래내역/포맷/컬럼 키워드로 확인해 cycle243(38c5f6f/1f91062, CSV 가져오기 미리보기 진단 메시지 개선)과 중복이 아님을 검증 — 그 커밋은 기존 자기-포맷 가져오기의 제외 사유 진단만 개선했을 뿐 고정 컬럼 가정 자체는 건드리지 않았다. 러너업 기각: 다중/외화 거래 직접 입력(통화+환율 필드를 거래입력/History/분석화면/CSV 전체에 꿰어야 해 기각된 실현손익/부채이자 추적과 같은 새 데이터모델 클래스), 거래 태그(기존에 없는 새 배열 필드+필터 UI 신설이 필요해 기각된 카테고리 커스텀 색상/전체예산 필드와 같은 클래스), 연간결산 공유 이미지(이미 백업/CSV 내보내기+share API가 풍부해 수요 추측성 낮은 기각된 반복거래 CSV 내보내기와 같은 근거). advance 계획(logic.js에 OWN_CSV_HEADER 상수+detectOwnCsvFormat 순수함수 추출, 자기-포맷이 아니면 openCsvColumnMap 새 화면으로 안내해 날짜/메모 열+금액모드(한 열 +/- 또는 입금/출금 두 열)+단일 대상 자산(openAssetPicker 재사용)+기본 카테고리 1개를 매핑, mapGenericCsvRow 순수함수가 csvRowToImportTxn과 동일한 반환 shape을 돌려줘 기존 csvDedupeKey/openCsvImportPreview/doCsvImport 파이프라인을 그대로 재사용, APP_VERSION/sw.js CACHE 동기 범프, test/run.js에 detectOwnCsvFormat·mapGenericCsvRow·합성 은행CSV 통합 테스트 추가)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
       "commit": null
     }
   ]
