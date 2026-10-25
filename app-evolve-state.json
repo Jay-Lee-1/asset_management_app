@@ -1,15 +1,12 @@
 {
   "cycle": 247,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "전체내역(History) 탭에 귀속(owner) 필터 세그 추가 — histOwnerSel",
+    "why": "filteredHist()(index.html:5222)는 H.owner(ST.hist.owner)가 세팅되면 이미 filterTxnsByOwner로 걸러주고, doRenameOwner(4387)/renderHistory의 삭제 가드까지 이 필드를 정교하게 유지하는데, 사용자가 H.owner를 직접 세팅할 UI가 전혀 없다(openCatHistory/openIncomeCatHistory의 드릴다운으로만 간접 세팅되고 histClearFilter/histClearCatFilter가 다른 필터와 묶어 리셋). 홈/자산/Plan/지출분석/수입분석/연간결산은 전부 전체·나·배우자 귀속 세그나 캐러셀을 갖췄는데 가장 자주 쓰는 전체내역 탭만 빠져있는 비대칭 — \"배우자 거래만 검색\" 같은 가장 흔한 시나리오가 안 됨.",
+    "approach": "1) index.html에 histOwnerSel(i) 신설 — spendOwnerSel(6127)/incomeOwnerSel(5299)과 동일 패턴: list=['전체',...DB.owners]; H.owner=list[i]||'전체'; histInvalidate(); renderHistory(). 2) renderHistory()(5318)에 openSpendAnalysis(6101)의 .seg role=group aria-label 귀속 선택 마크업을 그대로 복사해 검색바 다음·기존 assetId/catExact/cat 칩 앞에 삽입, H.selMode일 때는 검색바처럼 숨김, 기존 requestAnimationFrame(moveSegBlobs) 재사용. 3) 단일 귀속 가구 처리는 분석 화면 선례(항상 표시)를 따르는 걸 권장. 4) catExact 칩의 ' · 귀속' 중복 표기는 유지해도 무해 — 지우지 않아도 됨. 5) histClearFilter/histClearCatFilter(5411,5413)는 지금처럼 귀속도 함께 '전체'로 리셋하는 동작 유지(세그로 다시 켤 수 있으니 문제 없음). 6) test/run.js FUNCTIONS에 histOwnerSel 추가, spendOwnerSel 마크업 테스트(15507행)를 미러링해 (a) 세그 마크업 aria-pressed/onclick 생성 (b) 호출 후 ST.hist.owner 변경+filteredHist 결과 필터링 (c) catExact/assetId/cat 필터와 직교적으로 공존 (d) selMode일 때 세그 숨김, 총 4건 이상 추가. 7) APP_VERSION 1.47.238->1.47.239, sw.js CACHE v505->v506 동기 범프 필요(index.html 변경)."
+  },
   "history": [
-    {
-      "cycle": 242,
-      "phase": "review",
-      "timestamp": "2026-10-24T03:10:00.000Z",
-      "summary": "cycle242 develop 커밋(36624b8, planNegatives()가 firstNeg와 minBal을 서로 다른 날짜일 수 있는데도 {date:firstNeg,min:minBal}로 묶어 반환하던 날짜·금액 불일치 수정)을 검토. diff를 직접 읽고 minBal이 전역 최솟값이므로 firstNeg가 존재하면 반드시 minBal<=balance(firstNeg)<0이 성립하고, perAssetDates가 날짜 순서로 순회되며 firstNeg 이전 날짜들은 전부 b>=0(정의상)이라 minDate가 firstNeg보다 앞설 수 없음을 직접 추론해 minDate>=firstNeg가 항상 보장됨을 확인(즉 '마이너스가 되기도 전인 과거 날짜를 min으로 잘못 가리키는' 회귀는 구조적으로 불가능). out 배열의 정렬 기준이 firstNeg date에서 minDate로 바뀌어 여러 통장이 있을 때 목록 순서가 '처음 마이너스 되는 순'에서 '최저점 순'으로 미묘하게 달라지지만, acctSafety/openNegList/homeAlerts 세 호출부 모두 date와 min을 한 문장으로 묶어 보여주는 용도일 뿐 순서 자체에 의존하는 로직이 없어 회귀가 아님을 호출부 재확인으로 검증. 호출부 3곳(index.html:5604-5605, 7941-7949, 8326/8594) 모두 수정된 date 필드를 그대로 쓰고 있어 배선 누락 없음. node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행 결과 1902/1902 통과. APP_VERSION 1.47.228/sw.js CACHE v495 범프도 index.html 변경과 일치해 타당. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 242,
       "phase": "critique",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-24T22:40:00.000Z",
       "summary": "cycle247 develop 커밋(86e4886, 연간 결산(openYearReview)에 지출/수입 분석과 동일한 ST.spendOwner 귀속 필터 추가)을 검토. diff를 직접 읽어 yearOwnerSel(i)가 spendOwnerSel(index.html:6127)/incomeOwnerSel(5299)과 글자 그대로 동일한 패턴(list=['전체',...DB.owners]; ST.spendOwner=list[i]||'전체')임을 grep으로 대조 확인. openYearReview의 '귀속 사라지면 전체로' 가드(ST.spendOwner!=='전체'&&!DB.owners.includes(...))도 두 형제 화면과 동일 위치·조건으로 적용됨을 확인. ST.yearReview={y} 신설로 연도 전환(◀/▶)이 openYearReview(y-1/y+1)을 직접 호출해도 yearOwnerSel이 같은 연도를 유지함(ST.yearReview.y를 읽어 재호출)을 확인 — renderMenu의 진입점(openYearReview(TM.y))은 y를 항상 명시적으로 넘기므로 영향 없음. s=yearSummary(y,ST.spendOwner) 호출이 빈 상태 분기 이전에 와 있어 가드가 빈 상태 렌더에도 적용됨을 확인. 신규/보강 테스트 9건(세그먼트 노출/비노출, aria-pressed, toAssetId 기준 귀속별 집계, 존재하지 않는 귀속 가드, 연도 유지)이 diff의 각 분기와 1:1 대응함을 확인. node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행 결과 1985/1985 통과. node --check(sw.js/test/run.js) 통과. APP_VERSION 1.47.238/sw.js CACHE v505 범프가 index.html 변경과 일치. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 247,
+      "phase": "critique",
+      "timestamp": "2026-10-25T00:14:09.960Z",
+      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-247 전체 다룬 영역 전부 제외 지시)한 결과, 전체내역(History) 탭에 귀속(owner) 필터 UI가 전혀 없는 공백을 발견 — filteredHist()(index.html:5222)는 H.owner가 세팅되면 이미 filterTxnsByOwner로 걸러주고 doRenameOwner(4387)/renderHistory 삭제가드까지 이 필드를 정교하게 유지하는데도, 사용자가 직접 세팅할 UI가 없다(openCatHistory/openIncomeCatHistory 드릴다운으로만 간접 세팅, histClearFilter/histClearCatFilter가 다른 필터와 묶어 통째로 리셋). test/run.js 10곳 넘는 테스트가 sandbox.ST.hist.owner='나'로 필드를 직접 주입해 propagation/guard만 검증하는 것도 UI 세터 부재의 증거. 홈/자산/Plan/지출분석/수입분석/연간결산은 전부 전체·나·배우자 귀속 세그/캐러셀을 갖췄는데 가장 자주 쓰는 전체내역 탭만 빠진 비대칭(부부가 \"배우자 거래만 검색\" 하려는 가장 흔한 시나리오가 막힘). 러너업 기각: 매니페스트 shortcuts+딥링크 라우팅(실제 공백이나 핵심 일상 플로우보다 체감 가치 낮고 신규 라우팅 상태 설계 필요), 부채 자산 이자율 자동적립(상환스케줄·이자계산 새 설계 필요해 범위 초과, 기각된 주식배당 자동추적과 같은 클래스), 반복내역 CSV 내보내기(assetsToCSV/nwHistoryToCSV로 쉽게 미러링 가능하나 설정값이라 실사용 수요 낮음), 카테고리 전체 총예산 필드(budgetedTotal이 파생값뿐인 공백 맞으나 이월/이력 구조와 얽혀 새 진실 소스 생길 위험, 설계 선행 필요). advance 계획(histOwnerSel 신설, renderHistory에 spendOwnerSel과 동일한 .seg 마크업 삽입, test/run.js에 마크업·필터링·직교성·selMode 테스트 추가, APP_VERSION/CACHE 동기 범프)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
       "commit": null
     }
   ]
