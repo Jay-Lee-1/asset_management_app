@@ -6281,6 +6281,29 @@ test('openYearReview: 총수입/총지출/순저축액/저축률 카드와 지�
   assert.ok(html.includes('class="eb-cat">급여'), 'yearIncomeByCategory의 c를 cat으로 매핑하지 않아 카테고리명이 비어 있음');
   assert.ok(html.includes('class="eb-cat">식비'), 'yearSpendByCategory의 c를 cat으로 매핑하지 않아 카테고리명이 비어 있음');
 });
+/* 지출 TOP3/수입 TOP3 카드는 openSpendAnalysis/openIncomeAnalysis처럼 전체 카테고리를 보여주는
+ * 별도 목록이 없는 요약 화면이라, buildExpenseBarHtml의 반환 HTML(eb-list에 카테고리명·퍼센트·
+ * 금액이 실제 텍스트로 들어있음)을 aria-hidden으로 감싸면 스크린 리더 사용자에게 TOP3 전체가
+ * 안 들린다(app-evolve cycle251 develop, cycle246 advance가 이 화면을 신설할 때부터 있던 공백). */
+test('openYearReview: 지출/수입 TOP3 카드는 buildExpenseBarHtml 출력을 aria-hidden으로 감싸지 않아 스크린 리더에도 카테고리명이 노출된다', () => {
+  const ctx = yearReviewCtx();
+  ctx.DB = { owners: [], assets: [], recurrences: [], txns: [
+    { id: '1', type: 'income', category: '급여', amount: 1000000, date: '2026-01-10', confirmed: true },
+    { id: '2', type: 'expense', category: '식비', amount: 400000, date: '2026-02-05', confirmed: true },
+  ] };
+  ctx.ST = { spendOwner: '전체', yearReview: { y: 2026 } };
+  ctx.lastSheetHtml = null;
+  ctx.openYearReview(2026);
+  const html = ctx.lastSheetHtml;
+  assert.ok(html.includes('지출 TOP3') && html.includes('수입 TOP3'), 'TOP3 섹션 타이틀이 있어야 함');
+  // svg() 아이콘 자체는 장식이라 aria-hidden="true"가 정상(line 1601) — TOP3 카드를 감싸는
+  // <div aria-hidden="true">...eb-list...</div> 래퍼만 없어야 하므로, 카드 블록을 직접 잘라
+  // 그 안에 aria-hidden 속성이 전혀 없는지만 좁게 확인한다.
+  const expCard = html.slice(html.indexOf('지출 TOP3'), html.indexOf('수입 TOP3'));
+  const incCard = html.slice(html.indexOf('수입 TOP3'), html.indexOf('</button>', html.indexOf('수입 TOP3')));
+  assert.ok(!expCard.includes('aria-hidden'), '지출 TOP3 카드에 aria-hidden 래퍼가 남아 있으면 안 됨');
+  assert.ok(!incCard.includes('aria-hidden'), '수입 TOP3 카드에 aria-hidden 래퍼가 남아 있으면 안 됨');
+});
 test('openYearReview: 전년 자료가 없으면(비교 기준 없음) YoY 배지가 전혀 렌더되지 않는다(null-safe)', () => {
   const ctx = yearReviewCtx();
   ctx.DB = { owners: [], assets: [], recurrences: [], txns: [
