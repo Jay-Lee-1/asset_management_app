@@ -23186,6 +23186,49 @@ test('openHelp: 지출 분석/수입 분석/예산/목표를 안내하는 행이
   });
 });
 
+/* ---------- mergeRemoteDataIntoLocal(): DB 스키마 완전성 가드
+ * migrate()가 초기화하는 모든 최상위 DB.* 필드가 mergeRemoteDataIntoLocal()에 실제로 병합
+ * 배선돼 있는지 검증하는 일반 가드. "새 DB 컬렉션 추가 시 머지 배선을 빠뜨림" 버그 클래스가
+ * 프로젝트 역사상 최소 9번(cycle122/123 goals, 133 inquiries, 135 deletedType/deletedBal,
+ * 138 assetQtyLog, 179/180/181 categories/owners/budgetHistory tombstones, 192 rates,
+ * 211/212/223 merge-time data-loss detection, 238 recurrences) 독립적으로 재발견·수정됐는데도
+ * 지금까지 필드별 reactive 테스트만 있어 "다음에 추가될 새 필드"는 여전히 못 잡았다
+ * (app-evolve cycle249 critique/advance). sw.js/netlify.toml 테스트와 같은 방식으로 함수
+ * 소스 텍스트를 그대로 검사한다 — vm 실행이 필요 없다. ---------- */
+test('DB 스키마 완전성 가드: migrate()의 모든 최상위 DB.* 필드는 mergeRemoteDataIntoLocal()에 병합 배선돼 있다', () => {
+  const migrateSrc = extractFunction('migrate');
+  const mergeSrc = extractFunction('mergeRemoteDataIntoLocal');
+  const fields = [...new Set([...migrateSrc.matchAll(/DB\.(\w+)\s*=/g)].map(m => m[1]))];
+  assert.ok(fields.length > 10, 'migrate()에서 뽑힌 DB.* 필드 수가 비정상적으로 적음 — 추출 정규식이 깨졌을 수 있음');
+
+  // settings/nwHistory: 기기-로컬 전용 필드라 mergeRemoteDataIntoLocal()이 의도적으로 건드리지
+  // 않는다(index.html의 snapshotLocalDeviceFields 주석, mergeRemoteDataIntoLocal 바로 위 주석에
+  // 동일하게 문서화됨).
+  const LOCAL_ONLY_DB_FIELDS = new Set(['settings', 'nwHistory']);
+  // 부팅 시 1회만 도는 마이그레이션 완료 플래그 — 동기화할 "데이터"가 아니라 "이 기기가 이
+  // 변환을 이미 했다"는 로컬 상태다(모두 migrate() 안에서 if(!DB._xxx){...;DB._xxx=true} 형태로만
+  // 쓰임).
+  const MIGRATION_FLAG_FIELDS = new Set(['catsV2', '_budgetHistV1', '_varMigrated', '_sortV2', '_schV2']);
+  // DB.budgets: budgetHistory 신설 전의 시간축 없는 레거시 flat 맵. migrate()의 _budgetHistV1
+  // 가드가 최초 1회만 DB.budgetHistory로 변환해 소비하고, 그 뒤로는 index.html 어디서도
+  // DB.budgets에 다시 쓰지 않는다(sanitizeBackup()의 동명 지역변수 budgets은 백업 복원 시
+  // 레거시 스키마를 정리할 뿐 DB.budgets 자체가 아님). 새 코드를 쓰는 두 기기는 각자 부팅 때
+  // migrate()로 이미 변환을 끝낸 뒤에만 병합에 들어오므로(migrate()는 매 부팅 가장 먼저 실행됨),
+  // 이 필드는 병합 여부가 더는 아무 영향을 주지 않는 동결(frozen)된 레거시다.
+  const LEGACY_FROZEN_FIELDS = new Set(['budgets']);
+
+  const excluded = new Set([...LOCAL_ONLY_DB_FIELDS, ...MIGRATION_FLAG_FIELDS, ...LEGACY_FROZEN_FIELDS]);
+  const missing = fields.filter(f => !excluded.has(f) && !mergeSrc.includes('DB.' + f));
+  assert.deepStrictEqual(missing, [], `migrate()가 초기화하지만 mergeRemoteDataIntoLocal()이 병합하지 않는 DB 필드: ${missing.join(', ')}`);
+});
+test('DB 스키마 완전성 가드 자가검증: 병합 배선이 빠진 가짜 필드를 실제로 잡아낸다', () => {
+  const fakeMigrateSrc = 'function migrate(){DB.newThing=DB.newThing||[];}';
+  const fakeMergeSrc = 'function mergeRemoteDataIntoLocal(remoteData){DB.other=remoteData.other;}';
+  const fields = [...new Set([...fakeMigrateSrc.matchAll(/DB\.(\w+)\s*=/g)].map(m => m[1]))];
+  const missing = fields.filter(f => !fakeMergeSrc.includes('DB.' + f));
+  assert.deepStrictEqual(missing, ['newThing'], '체커가 병합 배선이 빠진 가짜 필드를 잡아내지 못함(위양성/위음성 가능성)');
+});
+
 /* ---------- 실행 ---------- */
 // pbkdf2Hash는 Web Crypto(subtle.deriveBits)를 쓰는 비동기 함수라, 러너도 async test를
 // 지원해야 한다 — sync test는 그냥 await해도 즉시 반환되므로 기존 테스트에는 영향 없다.
