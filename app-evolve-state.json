@@ -1,15 +1,8 @@
 {
   "cycle": 248,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 242,
-      "phase": "advance",
-      "timestamp": "2026-10-24T05:00:00.000Z",
-      "summary": "critique(cycle242) 계획대로 expenseBreakdownCard(index.html, Home 브리핑)의 스택바+범례 HTML 생성부(퍼센트 largest-remainder 보정, PAL 색상, eb-bar/eb-row 마크업)를 새 공유 순수함수 buildExpenseBarHtml(cats) (cats={cat,v}[])로 분리했다. expenseBreakdownCard는 total/섹션타이틀 래핑만 맡고 이 헬퍼를 호출하도록 바꿔 기존 동작은 그대로 유지. openSpendAnalysis()에 total(전체 지출)이 0이 아닐 때만 buildExpenseBarHtml(rows.map(r=>({cat:r.c,v:r.v}))) 결과를 \"총 지출\" 카드 바로 아래·예산요약/spend-row 목록 바로 위에 삽입했다(spendByCategory가 돌려주는 {c,v}를 buildExpenseBarHtml이 기대하는 {cat,v}로 매핑 — 안 하면 esc(c.cat)이 undefined를 찍어 카테고리명이 통째로 비어 보이는 버그가 났을 지점). 이 바는 장식용이라 감싸는 카드에 aria-hidden=\"true\"를 줬다(바로 아래 spend-row 목록이 같은 데이터를 접근 가능한 형태로 이미 제공 — Home 화면과 달리 유일한 접근 경로가 아님). 예산만 있고 이번 달 지출이 전부 0원인 케이스는 total===0 가드로 빈 eb-card가 그려지지 않게 처리. test/run.js: FUNCTIONS 목록에 buildExpenseBarHtml 추가, 기존 expenseBreakdownCard 이스케이핑 테스트는 그대로 유지(공유 헬퍼를 통해 간접 검증됨), buildExpenseBarHtml 단독 테스트 2건(빈/0원 입력 시 빈 문자열, 퍼센트 합 100% 보정) + spendAnalysisCtx()(격리된 vm 컨텍스트, openSpendAnalysis를 실제로 실행)로 openSpendAnalysis가 이 바를 총지출 카드 아래·spend-row 목록 위에 aria-hidden으로 삽입하고 c→cat 매핑이 올바른지(카테고리명이 비지 않는지) 확인하는 테스트, 지출 0원이면 빈 바가 안 뜨는 테스트까지 총 4건 신규 추가. index.html/sw.js만 변경되므로 APP_VERSION 1.47.228->1.47.229, sw.js CACHE v495->v496 동기 범프. node our-assets-v1.14.1/our-assets/test/run.js 1902/1902 -> 1906/1906 통과. pending_advance_plan은 null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 243,
       "phase": "develop",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-25T01:11:58.015Z",
       "summary": "critique(cycle247) 계획대로 전체내역(History) 탭에 귀속(owner) 필터 세그를 추가했다. index.html renderHistory()의 검색바 다음·기존 assetId/catExact/cat 칩 앞에 spendOwnerSel/incomeOwnerSel과 동일한 .seg role=group aria-label='귀속 선택' 마크업을 삽입(moveSegBlobs는 querySelectorAll('.seg')로 이미 다중 seg를 지원해 그대로 재사용). 새 histOwnerSel(i) 함수를 histClearFilter 바로 앞에 추가 — spendOwnerSel과 달리 시트가 아니라 탭 화면이라 openXxxAnalysis() 재호출 대신 histInvalidate()+renderHistory()로 그 자리를 다시 그린다. H.selMode일 때는 다른 검색 UI와 함께 숨겨지고, 범위 밖 인덱스는 '전체'로 폴백한다. catExact/assetId/cat 필터와는 독립적으로 공존하며, histClearFilter/histClearCatFilter는 기존처럼 owner도 함께 '전체'로 리셋하는 동작을 그대로 유지(세그로 다시 켤 수 있어 문제 없음). test/run.js: FUNCTIONS에 histOwnerSel 추가, setupHistoryDB() 픽스처에 DB.owners(이전엔 없었는데 이제 .seg가 무조건 참조)를 추가해 기존 renderHistory 테스트들이 깨지지 않게 했고, 신규 테스트 4건(세그 렌더+on/aria-pressed 일치, selMode 시 숨김, histOwnerSel이 owner 변경+filteredHist 결과 필터링+범위 밖 인덱스 폴백, 다른 필터 상태 보존) 추가. index.html/sw.js 변경이라 APP_VERSION 1.47.238->1.47.239, sw.js CACHE v505->v506 동기 범프. node our-assets-v1.14.1/our-assets/test/run.js 1989/1989 통과. pending_advance_plan은 null로 비웠다.",
+      "commit": null
+    },
+    {
+      "cycle": 248,
+      "phase": "develop",
+      "timestamp": "2026-10-25T02:12:42.000Z",
+      "summary": "홈에서 열리는 지출 분석/수입 분석/예산 설정/목표 기능이 도움말(openHelp, index.html:6657)의 안내 행에 전혀 등장하지 않아(rows 배열에 '예산'/'목표'/'분석' 키워드가 하나도 없었음 — 전체 텍스트를 grep으로 확인), 튜토리얼(TW, 6558행)에도 없는 이 기능들을 발견할 방법이 도움말 어디에도 없던 공백을 발견. openSpendAnalysis/openIncomeAnalysis가 홈의 '이번 달에 나갈 돈'/'이번 달 수입 분석' 섹션타이틀 링크로, openGoalsList가 홈의 목표 섹션/메뉴로 열리는 걸 grep으로 확인한 뒤, '🏠 홈' 행 바로 다음에 새 행 '📊 분석 · 예산 · 목표'를 추가(index.html rows 배열, 기존 이모지와 중복 없음 확인). 문구는 지출/수입 분석에서 카테고리별 비중·추이를 보고, 지출 분석에서 카테고리를 누르면 예산을 정할 수 있으며(openBudgetPrompt), 목표는 순자산/특정 자산의 목표액 대비 진행률을 보여준다는 내용. 순수 텍스트 추가라 로직 변경 없음. index.html만 변경되므로 APP_VERSION 1.47.239->1.47.240, sw.js CACHE v506->v507 동기 범프. test/run.js: 기존 openHelp 테스트들(클라우드/게스트/카카오 백업 문구 분기) 바로 뒤에 새 테스트 1건 추가 — openHelp()가 그린 lastSheetHtml에 '지출 분석'/'수입 분석'/'예산'/'목표' 네 키워드가 모두 포함되는지 확인. <script> 블록도 node --check로 별도 수동 검증(정규식 오매칭으로 생긴 가짜 에러 1건 제외, 실제 APP_VERSION이 든 메인 스크립트 블록은 문제 없음). node test/run.js 1989/1989 -> 1990/1990 통과.",
       "commit": null
     }
   ]

@@ -22950,6 +22950,19 @@ test('openHelp: 카카오 로그인(기기 로컬 전용, cloud 플래그 없음
     sandbox.AUTH = authOrig;
   }
 });
+/* 도움말(openHelp)이 지출/수입 분석·예산·목표를 전혀 언급하지 않아, 이 기능들을 쓰는 법을
+ * 도움말/튜토리얼 어디서도 찾을 수 없었다(app-evolve cycle248 develop) — 세 기능 모두 홈
+ * 화면에서 열리므로 '🏠 홈' 행 바로 뒤에 한 행을 추가해 발견 가능하게 한다. */
+test('openHelp: 지출 분석/수입 분석/예산/목표를 안내하는 행이 있다', () => {
+  sandbox.SESSION = '';
+  sandbox.AUTH = { rec: () => null };
+  sandbox.lastSheetHtml = null;
+  sandbox.openHelp();
+  const html = sandbox.lastSheetHtml;
+  ['지출 분석', '수입 분석', '예산', '목표'].forEach(kw => {
+    assert.ok(html.includes(kw), `도움말에 '${kw}' 안내가 없음`);
+  });
+});
 
 /* ---------- 실행 ---------- */
 // pbkdf2Hash는 Web Crypto(subtle.deriveBits)를 쓰는 비동기 함수라, 러너도 async test를
