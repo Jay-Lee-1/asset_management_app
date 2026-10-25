@@ -1,14 +1,14 @@
 {
   "cycle": 250,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
-      "cycle": 244,
-      "phase": "advance",
-      "timestamp": "2026-10-24T13:10:00.000Z",
-      "summary": "자산 목록 CSV(assetsToCSV)와 순자산 추이 CSV(nwHistoryToCSV) 내보내기를 추가. exportData() 시트에 두 버튼 신설, doExport(mode,kind)에 assetsCsv/nwCsv 분기 추가(평가는 doExport가 assetEval/assetGainLoss로 끝낸 뒤 순수 포맷터에 넘김). test/run.js에 회귀 테스트 다수 추가, 전체 1932개 통과. APP_VERSION/CACHE 버전 동기 범프.",
-      "commit": null
+      "cycle": 250,
+      "phase": "develop",
+      "timestamp": "2026-10-25T10:00:00.000Z",
+      "summary": "fork 서브에이전트가 develop 후보를 탐색해 yearSummary()(cycle246 advance 신설, index.html:6046-6059)가 매번 계산해 돌려주는 s.monthly(yearMonthlyNet의 12개월 수입/지출 배열)가 openYearReview() 어디에서도 쓰이지 않고 버려지는 데드 데이터였음을 발견 — 연간 결산 화면이 총계와 카테고리 TOP3만 보여줘서 '몇 월에 유독 많이 썼는지/벌었는지'를 전혀 알 수 없었다. 러너업 기각: nwhChart/assetBalChart급 키보드 피크 내비게이션을 갖춘 새 라인차트 컴포넌트(한 사이클 범위를 넘는 과한 설계), 자산 메모/수입분석 수정흐름/반복거래 일시정지(코드 확인 결과 이미 존재). openSpendAnalysis가 쓰는 .spend-row/.spend-mid/.spend-track/.spend-amt 마크업을 그대로 재사용해 월별 흐름 카드를 신설(index.html:6081-6093, 6107) — 12개월 중 최댓값(maxMo) 대비 비율로 수입/지출 바 폭을 정하고, 금액은 항상 comma() 텍스트로도 노출해(바는 장식일 뿐) 추가 접근성 작업이 불필요하게 했다. CSS에 .spend-track i.income{background:var(--income)}(budgeted/over와 동일한 variant 패턴) 1줄 추가(index.html:1336). 새 top-level 함수는 없어 FUNCTIONS/LETS 테스트 하네스 등록 변경 불필요. index.html/sw.js 변경이라 APP_VERSION 1.47.242->1.47.243, sw.js CACHE v509->v510 동기 범프. test/run.js: 기존 빈 상태 테스트에 '월별 흐름' 카드 미노출 단언 추가, 신규 테스트 1건(1월 수입 100만원이 연중 최댓값이라 바 폭 100%, 2월 지출 50만원이 50% 폭, 금액 텍스트 둘 다 노출) 추가(2013->2014). node --check(sw.js/test/run.js) 통과. 오케스트레이터가 diff를 직접 읽어 변경 범위가 월별 흐름 카드 하나로 좁게 유지됐음을 재검증하고 node test/run.js를 독립적으로 재실행해 2014/2014 재확인. 컨테이너 시작 시 로컬 main이 origin/main(e946a7a)과 동일한 커밋을 가리키면서도 detached HEAD 상태였음을 발견(cycle241/243~249와 동일한 클래스의 컨테이너 재시작 아티팩트) — git checkout -B main으로 재부착한 뒤 이번 커밋을 쌓아 push한다.",
+      "commit": "bad0955"
     },
     {
       "cycle": 245,

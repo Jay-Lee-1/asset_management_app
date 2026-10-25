@@ -6230,6 +6230,29 @@ test('openYearReview: 해당 연도에 거래가 전혀 없으면 빈 상태만 
   assert.ok(html.includes('아직 2026년 기록이 없어요'), '빈 상태 문구가 없음');
   assert.ok(!html.includes('class="hrt-grid"'), '거래가 없으면 요약 카드(hrt-grid)가 그려지면 안 됨');
   assert.ok(!html.includes('class="eb-bar"'), '거래가 없으면 TOP3 스택바가 그려지면 안 됨');
+  assert.ok(!html.includes('월별 흐름'), '거래가 없으면 월별 흐름 카드도 그려지면 안 됨');
+});
+/* yearSummary가 돌려주는 s.monthly(yearMonthlyNet)가 지금까지 openYearReview 어디에서도
+ * 쓰이지 않고 계산만 되다 버려지던 데드 데이터였다(app-evolve cycle250 develop) — "몇 월에
+ * 유독 많이 썼는지"를 연간 결산에서 전혀 알 수 없었다. spend-row/spend-track(openSpendAnalysis와
+ * 동일 마크업)을 재사용한 월별 수입/지출 바를 추가. */
+test('openYearReview: 월별 흐름 카드가 s.monthly를 12개월 수입/지출 바로 보여준다(최댓값 대비 폭 비율)', () => {
+  const ctx = yearReviewCtx();
+  ctx.DB = { owners: [], assets: [], recurrences: [], txns: [
+    { id: '1', type: 'income', category: '급여', amount: 1000000, date: '2026-01-10', confirmed: true },
+    { id: '2', type: 'expense', category: '식비', amount: 500000, date: '2026-02-05', confirmed: true },
+  ] };
+  ctx.ST = { spendOwner: '전체', yearReview: { y: 2026 } };
+  ctx.lastSheetHtml = null;
+  ctx.openYearReview(2026);
+  const html = ctx.lastSheetHtml;
+  assert.ok(html.includes('월별 흐름'), '월별 흐름 섹션 제목이 없음');
+  const jan = html.slice(html.indexOf('<div class="spend-nm">1월</div>'), html.indexOf('<div class="spend-nm">2월</div>'));
+  assert.ok(jan.includes('<i class="income" style="width:100%"></i>'), '1월 수입(100만원)이 연중 최댓값이라 바 폭이 100%여야 함');
+  assert.ok(jan.includes('class="a num plus">1,000,000원'), '1월 수입 금액이 텍스트로도 보여야 함(바는 장식일 뿐)');
+  const feb = html.slice(html.indexOf('<div class="spend-nm">2월</div>'), html.indexOf('<div class="spend-nm">3월</div>'));
+  assert.ok(feb.includes('<i style="width:50%"></i>'), '2월 지출(50만원)이 최댓값(100만원)의 절반이라 바 폭이 50%여야 함');
+  assert.ok(feb.includes('class="a num minus" style="margin-top:2px">500,000원'), '2월 지출 금액이 텍스트로도 보여야 함');
 });
 test('openYearReview: 총수입/총지출/순저축액/저축률 카드와 지출·수입 TOP3 스택바를 보여주고, c→cat 매핑이 올바르다', () => {
   const ctx = yearReviewCtx();

@@ -1333,6 +1333,7 @@ body.selmode .fab{display:none}
 .spend-track i{display:block;height:100%;background:var(--expense);border-radius:5px}
 .spend-track i.budgeted{background:var(--brand)}
 .spend-track i.over{background:var(--expense)}
+.spend-track i.income{background:var(--income)}
 .spend-amt{text-align:right;flex-shrink:0}
 .spend-amt .a{font-size:14px;font-weight:700}.spend-amt .p{font-size:11px;color:var(--text-3);font-weight:600;margin-top:1px}
 .spend-amt .a.over,.spend-amt .p.over{color:var(--expense)}
@@ -1410,7 +1411,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.242';
+const APP_VERSION='1.47.243';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6080,6 +6081,19 @@ function openYearReview(y){
  const incBadge=s.yoy.income!==null?incomeTrendBadge(s.yoy.income,'전년대비 '):'';
  const expBadge=s.yoy.expense!==null?spendTrendBadge(s.yoy.expense,'전년대비 '):'';
  const rateBadge=s.yoy.rate!==null?incomeTrendBadge(s.yoy.rate,'전년대비 '):'';
+ /* 월별 흐름: yearSummary가 이미 계산해 돌려주던 s.monthly(yearMonthlyNet)가 이 화면 어디에서도
+  * 쓰이지 않고 버려지고 있었다(app-evolve cycle250 develop) — 총계·TOP3 카테고리만 보여줘서는
+  * "몇 월에 유독 많이 썼는지"를 알 방법이 없었다. spend-row/spend-track(openSpendAnalysis와 동일
+  * 마크업)을 재사용해 월별 수입/지출 바를 그린다 — 최댓값(maxMo) 대비 비율로 폭을 정해 12개 달이
+  * 서로 비교 가능하게 하고, 숫자 자체는 항상 텍스트로 노출돼 있어(장식 바와 달리) 별도 접근성
+  * 보강이 필요 없다. */
+ const maxMo=Math.max(1,...s.monthly.flatMap(mo=>[mo.income,mo.expense]));
+ const moRows=s.monthly.map(mo=>`<div class="spend-row" style="cursor:default">
+   <div class="spend-mid"><div class="spend-nm">${mo.m}월</div>
+    <div class="spend-track"><i class="income" style="width:${mo.income/maxMo*100}%"></i></div>
+    <div class="spend-track" style="margin-top:4px"><i style="width:${mo.expense/maxMo*100}%"></i></div>
+   </div>
+   <div class="spend-amt"><div class="a num plus">${comma(mo.income)}원</div><div class="a num minus" style="margin-top:2px">${comma(mo.expense)}원</div></div></div>`).join('');
  openSheet(`<h3>연간 결산</h3><div class="desc">${y}년 한 해를 돌아봐요</div>
   ${switcher}${ownerSeg}
   <div class="card" style="padding:16px 14px;margin-bottom:12px">
@@ -6090,6 +6104,7 @@ function openYearReview(y){
     <div class="hrt-c"><span class="k">저축률</span><span class="v num">${s.savingsRate===null?'—':s.savingsRate+'%'}</span>${rateBadge}</div>
    </div>
   </div>
+  <div class="card" style="padding:2px 14px;margin-bottom:12px"><div class="section-title" style="margin-top:0">월별 흐름</div>${moRows}</div>
   ${s.expense?`<div class="card" style="margin-bottom:12px"><div class="section-title" style="margin-top:0">지출 TOP3</div><div aria-hidden="true">${buildExpenseBarHtml(s.topExpenseCats.map(r=>({cat:r.c,v:r.v})))}</div></div>`:''}
   ${s.income?`<div class="card" style="margin-bottom:12px"><div class="section-title" style="margin-top:0">수입 TOP3</div><div aria-hidden="true">${buildExpenseBarHtml(s.topIncomeCats.map(r=>({cat:r.c,v:r.v})))}</div></div>`:''}
   <div style="height:12px"></div><button class="btn btn-soft" onclick="closeSheet()">닫기</button>`);
