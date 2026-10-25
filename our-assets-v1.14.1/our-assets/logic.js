@@ -737,6 +737,58 @@ function csvDedupeKey(t){
   t.toAssetName!=null?('n:'+t.toAssetName):('i:'+(t.toAssetId||'')),
   t.memo||''].join('|');
 }
+/* ===== 범용(은행/카드사) CSV 가져오기 — 열 매핑 ===== */
+/* txnsToCSV가 내보내는 이 앱 자신의 CSV 헤더(순서 고정) — detectOwnCsvFormat/csvRowToImportTxn이
+ * 암묵적으로 가정해 온 "날짜,구분,카테고리,금액,보내는 자산,받는 자산,메모" 7칸을 공유 상수로
+ * 뽑아낸다(원래 txnsToCSV 안에 리터럴로만 있었음, app-evolve cycle251 advance). */
+const OWN_CSV_HEADER=['날짜','구분','카테고리','금액','보내는 자산','받는 자산','메모'];
+/* CSV 첫 행(헤더)이 이 앱이 직접 내보낸 형식과 정확히 같은지 판정한다 — 칸 수가 다르거나 순서가
+ * 바뀌었거나 한 칸이라도 문구가 다르면 false(=은행/카드사 등 외부 CSV로 간주, 호출부가
+ * openCsvColumnMap으로 안내한다). 느슨한 부분일치는 쓰지 않는다 — "날짜"/"거래일"처럼 비슷해
+ * 보이는 표기를 자기-포맷으로 오인하면 csvRowToImportTxn의 고정 컬럼 가정이 엉뚱한 칸을 읽어
+ * 조용히 잘못된 거래를 만들어 버린다. */
+function detectOwnCsvFormat(headerRow){
+ if(!Array.isArray(headerRow)||headerRow.length!==OWN_CSV_HEADER.length)return false;
+ return headerRow.every((c,i)=>String(c==null?'':c).trim()===OWN_CSV_HEADER[i]);
+}
+/* 은행/카드사 CSV 한 행을 txn 후보로 변환한다(열 매핑 기반, csvRowToImportTxn과 대칭). mapping은
+ * openCsvColumnMap이 사용자에게 받은 선택을 모은 것 — dateCol(필수, 열 인덱스)·memoCol(선택, 없으면
+ * null)·mode('signed'=금액 한 열에 +/-로 방향을 구분, 'split'=입금/출금 두 열로 분리)·amountCol
+ * (signed일 때 열 인덱스)·inCol/outCol(split일 때 열 인덱스, 둘 중 하나는 null일 수 있음)·category
+ * (전체 행에 똑같이 붙일 기본 카테고리 — 사용자가 피커로 고른 기존 카테고리라 신규 생성 분기가
+ * 필요 없다). targetAssetId는 이 파일 전체가 속한 단일 자산 id(행별 계정명 매칭을 완전히 피하기
+ * 위해 openCsvColumnMap이 피커로 미리 확정해 둔다) — csvRowToImportTxn과 달리 자산을 "찾는" 과정
+ * 자체가 없어 unmatched는 항상 []다. 반환 shape은 csvRowToImportTxn과 필드 단위로 같다
+ * ({ok:false,error:'date'|'amount'} 또는 {ok:true,unmatched:[],txn}) — range(RANGE_FROM~RANGE_TO
+ * 밖)·future(미래 날짜) 판정은 여기서 하지 않는다. TODAY/RANGE_FROM/RANGE_TO가 index.html 전역이라
+ * 이 순수 함수(logic.js)에서는 볼 수 없으므로, 성공한 날짜에 대해 호출부(index.html의
+ * buildGenericImportPreview)가 csvRowToImportTxn과 짝이 맞게 덧씌운다. */
+function mapGenericCsvRow(cells,mapping,targetAssetId){
+ const date=String((cells&&cells[mapping.dateCol])||'').trim();
+ if(!csvDateValid(date))return{ok:false,error:'date'};
+ const memo=mapping.memoCol!=null?String((cells&&cells[mapping.memoCol])||'').trim():'';
+ const parseNum=v=>{const s=String(v==null?'':v).trim().replace(/,/g,'');if(s==='')return 0;const n=Number(s);return Number.isFinite(n)?n:NaN};
+ let type,amount;
+ if(mapping.mode==='split'){
+  const inVal=mapping.inCol!=null?parseNum(cells[mapping.inCol]):0;
+  const outVal=mapping.outCol!=null?parseNum(cells[mapping.outCol]):0;
+  const inOk=Number.isFinite(inVal)&&inVal>0;
+  const outOk=Number.isFinite(outVal)&&outVal>0;
+  if(inOk===outOk)return{ok:false,error:'amount'}; /* 둘 다 비었거나(0/빈칸) 둘 다 채워진 행은 방향을 알 수 없음 */
+  type=inOk?'income':'expense';
+  amount=Math.round(inOk?inVal:outVal);
+ }else{
+  const raw=mapping.amountCol!=null?parseNum(cells[mapping.amountCol]):NaN;
+  if(!Number.isFinite(raw)||raw===0)return{ok:false,error:'amount'};
+  type=raw>0?'income':'expense';
+  amount=Math.round(Math.abs(raw));
+ }
+ if(!Number.isInteger(amount)||amount<=0)return{ok:false,error:'amount'};
+ const txn={type,date,category:mapping.category,amount,memo};
+ txn.fromAssetId=type==='expense'?targetAssetId:null;
+ txn.toAssetId=type==='income'?targetAssetId:null;
+ return{ok:true,unmatched:[],txn};
+}
 
 /* 선택 모드(일별거래/전체내역)에서 고른 거래들에 카테고리 일괄 변경을 적용할 수 있는지 판정한다
  * (app-evolve cycle136 critique/advance — activeSel()/updateSelBottom()이 전체선택/닫기/삭제

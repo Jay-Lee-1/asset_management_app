@@ -1412,7 +1412,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.245';
+const APP_VERSION='1.47.246';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -7012,6 +7012,55 @@ function buildImportPreview(text,assets,categories,existingTxns){
   newCats:{expense:[...newCats.expense],income:[...newCats.income],saving:[...newCats.saving]}
  };
 }
+/* 범용(은행/카드사) CSV 가져오기 미리보기 — buildImportPreview와 반환 shape이 완전히 같아
+   openCsvImportPreview/doCsvImport을 전혀 건드리지 않고 그대로 재사용한다(이 둘은 shape만
+   소비하므로, app-evolve cycle251 advance). mapGenericCsvRow(logic.js)가 date/amount만
+   검증하므로, csvRowToImportTxn과 짝이 맞게 range(RANGE_FROM~RANGE_TO 밖)·future(미래 날짜)
+   판정은 성공한 날짜에 대해 여기서 덧씌운다. category는 매핑 단계에서 이미 기존 카테고리 중
+   하나로 고정해 고르므로 newCats는 항상 비어 있고, asset도 피커로 미리 확정해 unmatched/
+   assetUnmatchedCount도 항상 0/[]다. existingTxns는 buildImportPreview와 동일하게 반복거래
+   회차까지 펼쳐서(DB.txns.concat(expandRec(...))) 넘겨받아야 중복 판정이 맞는다. */
+function buildGenericImportPreview(dataRows,mapping,targetAssetId,existingTxns){
+ const existingCounts=new Map();
+ (existingTxns||[]).forEach(t=>{splitLines(t).forEach(s=>{
+  const k=csvDedupeKey(Object.assign({},t,{category:s.category,amount:s.amount,memo:s.memo||t.memo}));
+  existingCounts.set(k,(existingCounts.get(k)||0)+1);
+ })});
+ const usedCounts=new Map();
+ const items=[];
+ let invalidCount=0,rangeCount=0,futureCount=0;
+ const invalidByReason={date:0,type:0,amount:0,category:0,asset:0};
+ const SAMPLE_CAP=5;
+ const samples={invalid:[],range:[],future:[]};
+ const addSample=(bucket,entry)=>{if(samples[bucket].length<SAMPLE_CAP)samples[bucket].push(entry)};
+ (dataRows||[]).forEach((cells,idx)=>{
+  const row=idx+2; /* 헤더가 1행이므로 데이터 행은 2행부터 */
+  const r=mapGenericCsvRow(cells,mapping,targetAssetId);
+  if(!r.ok){invalidCount++;invalidByReason[r.error]++;addSample('invalid',{row,reason:r.error,cells:(cells||[]).slice(0,6)});return}
+  if(dateBelowRangeFloor(r.txn.date)||dateAboveRangeCeil(r.txn.date)){rangeCount++;addSample('range',{row,cells:(cells||[]).slice(0,6)});return}
+  if(r.txn.date>TODAY){futureCount++;addSample('future',{row,cells:(cells||[]).slice(0,6)});return}
+  const key=csvDedupeKey(r.txn);
+  const used=usedCounts.get(key)||0;
+  const dup=used<(existingCounts.get(key)||0);
+  usedCounts.set(key,used+1);
+  items.push({txn:r.txn,dup,unmatched:r.unmatched});
+ });
+ const newCount=items.filter(x=>!x.dup).length;
+ return{
+  items,
+  totalRows:(dataRows||[]).length,
+  invalidCount,
+  invalidByReason,
+  rangeCount,
+  futureCount,
+  dupCount:items.length-newCount,
+  newCount,
+  assetUnmatchedCount:0,
+  unmatchedAssetNames:[],
+  samples,
+  newCats:{expense:[],income:[],saving:[]}
+ };
+}
 function exportData(){ /* 저장 방식 선택 */
  const sharable=canShareFiles();
  openSheet(`<h3>데이터 내보내기</h3>
@@ -7129,7 +7178,7 @@ function importData(){
 function openCsvImportInfo(){
  openSheet(`<h3>거래 내역 CSV 가져오기</h3>
   <div class="desc">이 앱의 <b>거래 내역 CSV로 내보내기</b>로 만든 파일을 골라 주세요.<br>
-  <span style="color:var(--text-3);font-size:12.5px">기존 데이터는 그대로 두고 새 내역만 <b>추가</b>돼요. 이미 있는 내역(같은 날짜·구분·금액·카테고리·자산·메모)은 중복으로 건너뛰고, 가져오기 전에 몇 건이 들어갈지 미리 보여드려요.</span></div>
+  <span style="color:var(--text-3);font-size:12.5px">기존 데이터는 그대로 두고 새 내역만 <b>추가</b>돼요. 이미 있는 내역(같은 날짜·구분·금액·카테고리·자산·메모)은 중복으로 건너뛰고, 가져오기 전에 몇 건이 들어갈지 미리 보여드려요. 은행·카드사에서 내려받은 CSV를 고르면 열 매칭 화면으로 안내해 드려요.</span></div>
   <button class="btn btn-primary" onclick="closeSheet();$('importCsvFile').click()">${svg('ledger')} CSV 파일 고르기</button>`);
 }
 /* 백업 복원(파일)·클라우드 풀(pullCloud) 양쪽이 공유하는 숫자 필드 검증. 검증 없이 DB에
@@ -7622,14 +7671,106 @@ $('importCsvFile').addEventListener('change',e=>{
  r.onerror=()=>{toast('파일을 읽지 못했어요');e.target.value=''};
  r.onload=()=>{
   try{
-   const preview=buildImportPreview(String(r.result),DB.assets,DB.categories,DB.txns.concat(expandRec(RANGE_FROM,RANGE_TO)));
-   if(!preview.totalRows){toast('가져올 내역을 찾지 못했어요');return}
-   openCsvImportPreview(preview);
+   /* TODO(EUC-KR): readAsText 기본 인코딩은 UTF-8이라, 국내 은행/카드사가 흔히 내려주는
+    * EUC-KR/CP949 CSV는 한글이 깨져 들어올 수 있다 — 이번 열 매핑 가져오기(app-evolve cycle251
+    * advance)의 범위 밖으로 남긴다(다음 cycle이 TextDecoder('euc-kr')로 재시도하는 방식을 검토). */
+   const text=String(r.result);
+   const rows=parseCSV(text);
+   if(!rows.length){toast('가져올 내역을 찾지 못했어요');return}
+   if(detectOwnCsvFormat(rows[0])){
+    const preview=buildImportPreview(text,DB.assets,DB.categories,DB.txns.concat(expandRec(RANGE_FROM,RANGE_TO)));
+    if(!preview.totalRows){toast('가져올 내역을 찾지 못했어요');return}
+    openCsvImportPreview(preview);
+   }else{
+    const dataRows=rows.slice(1);
+    if(!dataRows.length){toast('가져올 내역을 찾지 못했어요');return}
+    openCsvColumnMap(rows[0],dataRows);
+   }
   }catch(_){toast('올바른 CSV 파일이 아니에요')}
   finally{e.target.value=''}
  };
  r.readAsText(f);
 });
+let _csvMap=null;
+/* dataRows에서 col번째 열의 실제 값 2~3개를 뽑아 보여준다 — 열 이름만으로는 어느 열이 날짜/금액인지
+ * 헷갈리는 CSV가 많아, 매핑 화면의 각 선택 행에 실제 셀 값을 샘플로 함께 보여줘 확인할 수 있게 한다. */
+function csvColSample(col){
+ if(col==null||!_csvMap)return '';
+ const vals=_csvMap.dataRows.slice(0,3).map(r=>String((r&&r[col])||'').trim()).filter(Boolean);
+ return vals.join(', ');
+}
+function csvMapFieldHtml(label,value,onclick){
+ return `<button class="pk-item" onclick="${onclick}"><div class="pav" style="background:var(--sunken);color:var(--text-2)">${svg('tag')}</div><div class="pbody"><div class="pn">${esc(label)}</div><div class="psub">${value?esc(value):'선택해 주세요'}</div></div><div class="pc">${svg('chevR')}</div></button>`;
+}
+/* 은행/카드사 CSV 가져오기 — 열 매핑 화면. detectOwnCsvFormat(logic.js)이 false를 반환한(이 앱이
+ * 직접 내보낸 CSV가 아닌) 파일을 골랐을 때 importCsvFile change 핸들러가 이 화면으로 안내한다.
+ * headerRow/dataRows는 parseCSV(text)가 그대로 돌려준 1행(헤더)/나머지 행이다 — 사용자가 날짜·
+ * 메모 열, 금액 형식(한 열 +/- 또는 입금/출금 두 열), 이 파일 전체가 속할 단일 자산, 기본
+ * 카테고리를 고르면 mapGenericCsvRow(logic.js)/buildGenericImportPreview가 csvRowToImportTxn/
+ * buildImportPreview와 같은 모양의 결과를 만들어 기존 openCsvImportPreview/doCsvImport 파이프라인을
+ * 그대로 재사용한다(app-evolve cycle251 advance). */
+function openCsvColumnMap(headerRow,dataRows){
+ _csvMap={headerRow:headerRow||[],dataRows:dataRows||[],dateCol:null,memoCol:null,mode:'signed',amountCol:null,inCol:null,outCol:null,assetId:null,catKind:'expense',category:null};
+ renderCsvColumnMap();
+}
+function renderCsvColumnMap(){
+ const m=_csvMap;if(!m)return;
+ const colLabel=i=>i==null?'':(m.headerRow[i]||`${i+1}번째 열`);
+ const assetName=m.assetId?((DB.assets.find(a=>a.id===m.assetId)||{}).name||''):'';
+ const amountFieldsHtml=m.mode==='signed'
+  ?csvMapFieldHtml('금액 열',colLabel(m.amountCol),"csvMapPickCol('amountCol','금액 열',false)")
+  :csvMapFieldHtml('입금 열',colLabel(m.inCol),"csvMapPickCol('inCol','입금 열',true)")
+   +csvMapFieldHtml('출금 열',colLabel(m.outCol),"csvMapPickCol('outCol','출금 열',true)");
+ const canImport=m.dateCol!=null&&(m.mode==='signed'?m.amountCol!=null:(m.inCol!=null||m.outCol!=null))&&m.assetId&&m.category;
+ openSheet(`<h3>CSV 열 매칭</h3>
+  <div class="desc">이 파일의 각 열이 무엇인지 알려주세요.<br><span style="color:var(--text-3);font-size:12.5px">선택 아래에 실제 값 예시를 보여드려요.</span></div>
+  ${csvMapFieldHtml('날짜 열',colLabel(m.dateCol),"csvMapPickCol('dateCol','날짜 열',false)")}
+  <div class="seg" role="group" aria-label="금액 형식" style="margin:10px 0"><div class="seg-blob"></div>
+   <button class="${m.mode==='signed'?'on':''}" aria-pressed="${m.mode==='signed'}" onclick="csvMapSetMode('signed')">금액 한 열(+/-)</button>
+   <button class="${m.mode==='split'?'on':''}" aria-pressed="${m.mode==='split'}" onclick="csvMapSetMode('split')">입금·출금 두 열</button>
+  </div>
+  ${amountFieldsHtml}
+  ${csvMapFieldHtml('메모 열(선택)',colLabel(m.memoCol),"csvMapPickCol('memoCol','메모 열',true)")}
+  ${csvMapFieldHtml('어느 자산의 내역인가요',assetName,"csvMapPickAsset()")}
+  <div class="seg" role="group" aria-label="기본 카테고리 종류" style="margin:10px 0"><div class="seg-blob"></div>
+   ${['expense','income','saving'].map(k=>`<button class="${m.catKind===k?'on':''}" aria-pressed="${m.catKind===k}" onclick="csvMapSetCatKind('${k}')">${CAT_LABEL[k]}</button>`).join('')}
+  </div>
+  ${csvMapFieldHtml('기본 카테고리',m.category||'',"csvMapPickCategory()")}
+  ${canImport?`<button class="btn btn-primary" style="margin-top:6px" onclick="csvMapApply()">${svg('ledger')} 다음</button>`
+   :`<div class="desc" style="color:var(--text-3)">모든 항목을 선택해야 다음으로 넘어갈 수 있어요</div>`}`);
+ requestAnimationFrame(()=>requestAnimationFrame(moveSegBlobs));
+}
+function csvMapSetMode(mode){if(!_csvMap||_csvMap.mode===mode)return;_csvMap.mode=mode;if(mode==='signed'){_csvMap.inCol=null;_csvMap.outCol=null}else _csvMap.amountCol=null;renderCsvColumnMap();}
+function csvMapSetCatKind(kind){if(!_csvMap||_csvMap.catKind===kind)return;_csvMap.catKind=kind;_csvMap.category=null;renderCsvColumnMap();}
+function csvMapColChosen(field,idx){if(!_csvMap)return;_csvMap[field]=idx;renderCsvColumnMap();}
+/* 열 선택 피커 — openPicker를 직접 재사용한 pk-item 목록(allowNone이면 '선택 안 함' 포함). 각
+ * 항목 아래에 csvColSample()로 실제 데이터 값 예시를 보여준다. */
+function csvMapPickCol(field,title,allowNone){
+ if(!_csvMap)return;
+ const m=_csvMap;
+ const noneBtn=allowNone?`<button class="pk-item" onclick="csvMapColChosen('${field}',null)"><div class="pav" style="background:var(--sunken);color:var(--text-2)">${svg('x')}</div><div class="pbody"><div class="pn">선택 안 함</div></div></button>`:'';
+ const html=m.headerRow.map((h,i)=>{const sample=csvColSample(i);
+  return `<button class="pk-item" onclick="csvMapColChosen('${field}',${i})"><div class="pav" style="background:var(--sunken);color:var(--text-2)">${svg('tag')}</div><div class="pbody"><div class="pn">${esc(h||(i+1)+'번째 열')}</div>${sample?`<div class="psub">예: ${esc(sample)}</div>`:''}</div></button>`;}).join('');
+ openPicker(title,`<div class="pk-group">${noneBtn}${html}</div>`,renderCsvColumnMap);
+}
+function csvMapPickAsset(){
+ if(!_csvMap)return;
+ openAssetPicker({current:_csvMap.assetId,title:'어느 자산의 내역인가요',cashOnly:true,back:renderCsvColumnMap,onPick:id=>{_csvMap.assetId=id;renderCsvColumnMap()}});
+}
+function csvMapPickCategory(){
+ if(!_csvMap)return;
+ openCatPicker({kind:_csvMap.catKind,current:_csvMap.category,back:renderCsvColumnMap,onPick:c=>{_csvMap.category=c;renderCsvColumnMap()}});
+}
+/* 매핑을 확정해 미리보기로 넘어간다 — buildGenericImportPreview가 buildImportPreview와 같은
+ * shape을 돌려주므로 openCsvImportPreview/doCsvImport은 이 함수가 어느 경로로 왔는지 전혀 모른다. */
+function csvMapApply(){
+ const m=_csvMap;if(!m)return;
+ const mapping={dateCol:m.dateCol,memoCol:m.memoCol,mode:m.mode,amountCol:m.amountCol,inCol:m.inCol,outCol:m.outCol,category:m.category};
+ const preview=buildGenericImportPreview(m.dataRows,mapping,m.assetId,DB.txns.concat(expandRec(RANGE_FROM,RANGE_TO)));
+ _csvMap=null;
+ if(!preview.totalRows){toast('가져올 내역을 찾지 못했어요');closeSheet();return}
+ openCsvImportPreview(preview);
+}
 /* 가져오기 전 미리보기 — 새 내역/중복/형식 오류/자산 미매칭 건수와 새로 생길 카테고리를 보여준다. */
 /* cycle243 advance: invalid/range/future 사유 코드를 사람이 읽을 라벨로 바꾸고, 표본 1건을
    "N행 · 사유 · 원본 셀 일부" 한 줄로 그린다 — 어떤 행·어떤 값이 걸렸는지 보여줘야 사용자가

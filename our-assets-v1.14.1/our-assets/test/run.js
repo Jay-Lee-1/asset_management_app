@@ -197,6 +197,11 @@ const FUNCTIONS = [
   'isBudgetRolloverCat', 'setBudgetRolloverCat', 'toggleBudgetRolloverUI', 'budgetCarryFor', 'budgetForMonthWithCarry',
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'assetsToCSV', 'nwHistoryToCSV',
   'unguardCsv', 'csvRowToImportTxn', 'buildImportPreview', 'doCsvImport',
+  // openCsvColumnMap/buildGenericImportPreview 등은 app-evolve cycle251 advance(은행/카드사 CSV
+  // 열 매핑 가져오기) 구현 검증용 — detectOwnCsvFormat/mapGenericCsvRow는 logic.js 전용(전체 로드돼
+  // 자동으로 끌어와지므로 FUNCTIONS에 올릴 필요 없음), 이 목록엔 index.html에 남아있는 쪽만 올린다.
+  'buildGenericImportPreview', 'csvColSample', 'csvMapFieldHtml', 'openCsvColumnMap', 'renderCsvColumnMap',
+  'csvMapSetMode', 'csvMapSetCatKind', 'csvMapColChosen', 'csvMapPickCol', 'csvMapPickAsset', 'csvMapPickCategory', 'csvMapApply',
   'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo', 'delAsset', 'assetDelSel', 'unsnapshotAssetName', 'doBulkCat', 'bulkCatPickFor',
   // archiveTxnsBefore/archiveMonthPicked/openArchiveOld는 app-evolve cycle222 advance('오래된
   // 데이터 정리' 메뉴 — cycle221 critique/advance가 준비해 둔 archiveBaselines()를 처음 실제로
@@ -344,7 +349,10 @@ const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'AS
 // _pkQ는 openAssetPicker()의 자산 검색(pkAssetQInput/refreshPkAssetList)이 참조하는 쿼리 문자열이고,
 // `let _pkQ='',_pkQT=null,_pkOpts=null;` 한 줄로 선언돼 있어 "_pkQ"만 추출해도 디바운스 타이머·피커
 // 옵션 보관용 셋 다 딸려온다(_histTimer/_assetQT와 같은 패턴, app-evolve cycle248 advance).
-const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer', '_histTimer', '_assetQT', '_pkQ', '_bioAutoTried'];
+// _csvMap은 openCsvColumnMap()이 참조하는 "열 매핑 중인 CSV" 상태(headerRow/dataRows/선택값)라
+// 같은 이유(let 선언, realm에 안 붙음)로 LETS를 통해 가져온다(_pkQ와 같은 패턴, app-evolve
+// cycle251 advance).
+const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer', '_histTimer', '_assetQT', '_pkQ', '_bioAutoTried', '_csvMap'];
 
 const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(extractConst).join('\n') + '\n' + LETS.map(extractLet).join('\n');
 
@@ -5434,6 +5442,180 @@ test('buildImportPreview: 기존 내역에 키가 같은 게 1건만 있으면, 
   const preview = sandbox.buildImportPreview(csv, [], { expense: ['식비'], income: [], saving: [] }, txns);
   assert.strictEqual(preview.newCount, 1);
   assert.strictEqual(preview.dupCount, 1);
+});
+/* ---------- 은행/카드사 CSV 가져오기 — 열 매핑(app-evolve cycle251 advance) ----------
+ * detectOwnCsvFormat/mapGenericCsvRow는 logic.js 전용 순수 함수(csvDateValid와 같은 realm을
+ * 공유해야 해 전체 모듈을 로드한 sandbox에서 그대로 끌어온다). */
+test('detectOwnCsvFormat: 이 앱이 내보낸 헤더와 정확히 같으면 true', () => {
+  assert.strictEqual(sandbox.detectOwnCsvFormat(['날짜', '구분', '카테고리', '금액', '보내는 자산', '받는 자산', '메모']), true);
+});
+test('detectOwnCsvFormat: 임의의 은행 CSV 헤더는 false', () => {
+  assert.strictEqual(sandbox.detectOwnCsvFormat(['거래일시', '적요', '출금액', '입금액', '거래후잔액', '메모']), false);
+});
+test('detectOwnCsvFormat: 칸 수가 다르거나 순서가 바뀐 근접-불일치도 false(느슨한 부분일치를 쓰지 않음)', () => {
+  assert.strictEqual(sandbox.detectOwnCsvFormat(['날짜', '구분', '카테고리', '금액', '보내는 자산', '받는 자산']), false, '칸 수가 모자라면 false');
+  assert.strictEqual(sandbox.detectOwnCsvFormat(['구분', '날짜', '카테고리', '금액', '보내는 자산', '받는 자산', '메모']), false, '순서가 바뀌면 false');
+  assert.strictEqual(sandbox.detectOwnCsvFormat(null), false, '헤더 자체가 없으면 false');
+});
+test('detectOwnCsvFormat: doExport(txnsToCSV)가 실제로 내보낸 CSV의 첫 행을 그대로 넣어도 true(기존 자기-포맷 라운드트립 경로 재확인)', () => {
+  const csv = sandbox.txnsToCSV([{ date: '2026-01-01', type: 'expense', category: '식비', amount: 1000, memo: '' }], []);
+  const headerRow = sandbox.parseCSV(csv)[0];
+  assert.strictEqual(sandbox.detectOwnCsvFormat(headerRow), true);
+});
+test('mapGenericCsvRow: 금액 한 열(signed) 모드에서 음수는 지출로 fromAssetId를 채운다', () => {
+  const r = sandbox.mapGenericCsvRow(['2026-01-01', '-5000', '점심'], { dateCol: 0, amountCol: 1, memoCol: 2, mode: 'signed', category: '식비' }, 'a1');
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.txn.type, 'expense');
+  assert.strictEqual(r.txn.amount, 5000);
+  assert.strictEqual(r.txn.fromAssetId, 'a1'); assert.strictEqual(r.txn.toAssetId, null);
+  assert.strictEqual(r.txn.category, '식비'); assert.strictEqual(r.txn.memo, '점심');
+  assert.strictEqual(r.unmatched.length, 0); // vm 다른 realm의 빈 배열은 deepStrictEqual([])과 참조동등성 비교에서 걸림(csvRowToImportTxn 테스트들과 같은 cross-realm 이슈)
+});
+test('mapGenericCsvRow: 금액 한 열(signed) 모드에서 양수는 수입으로 toAssetId를 채운다', () => {
+  const r = sandbox.mapGenericCsvRow(['2026-01-01', '300000', ''], { dateCol: 0, amountCol: 1, memoCol: null, mode: 'signed', category: '급여' }, 'a1');
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.txn.type, 'income');
+  assert.strictEqual(r.txn.fromAssetId, null); assert.strictEqual(r.txn.toAssetId, 'a1');
+});
+test('mapGenericCsvRow: 출금 열만 채워지면 지출, 입금 열만 채워지면 수입(split 모드)', () => {
+  const out = sandbox.mapGenericCsvRow(['2026-01-01', '', '5,000'], { dateCol: 0, inCol: 1, outCol: 2, mode: 'split', category: '식비' }, 'a1');
+  assert.strictEqual(out.ok, true); assert.strictEqual(out.txn.type, 'expense'); assert.strictEqual(out.txn.amount, 5000); assert.strictEqual(out.txn.fromAssetId, 'a1');
+  const inn = sandbox.mapGenericCsvRow(['2026-01-01', '300,000', ''], { dateCol: 0, inCol: 1, outCol: 2, mode: 'split', category: '급여' }, 'a1');
+  assert.strictEqual(inn.ok, true); assert.strictEqual(inn.txn.type, 'income'); assert.strictEqual(inn.txn.amount, 300000); assert.strictEqual(inn.txn.toAssetId, 'a1');
+});
+test("mapGenericCsvRow: split 모드에서 입금·출금 둘 다 채워지거나 둘 다 비어 있으면 error:'amount'", () => {
+  const both = sandbox.mapGenericCsvRow(['2026-01-01', '1000', '2000'], { dateCol: 0, inCol: 1, outCol: 2, mode: 'split', category: '식비' }, 'a1');
+  assert.strictEqual(both.ok, false); assert.strictEqual(both.error, 'amount');
+  const none = sandbox.mapGenericCsvRow(['2026-01-01', '0', ''], { dateCol: 0, inCol: 1, outCol: 2, mode: 'split', category: '식비' }, 'a1');
+  assert.strictEqual(none.ok, false); assert.strictEqual(none.error, 'amount');
+});
+test("mapGenericCsvRow: 날짜가 유효하지 않으면 error:'date', 금액이 0/빈칸/숫자가 아니면 error:'amount'", () => {
+  const badDate = sandbox.mapGenericCsvRow(['2026-13-01', '1000'], { dateCol: 0, amountCol: 1, mode: 'signed', category: '식비' }, 'a1');
+  assert.strictEqual(badDate.ok, false); assert.strictEqual(badDate.error, 'date');
+  const zero = sandbox.mapGenericCsvRow(['2026-01-01', '0'], { dateCol: 0, amountCol: 1, mode: 'signed', category: '식비' }, 'a1');
+  assert.strictEqual(zero.ok, false); assert.strictEqual(zero.error, 'amount');
+  const nan = sandbox.mapGenericCsvRow(['2026-01-01', '안녕'], { dateCol: 0, amountCol: 1, mode: 'signed', category: '식비' }, 'a1');
+  assert.strictEqual(nan.ok, false); assert.strictEqual(nan.error, 'amount');
+});
+test('mapGenericCsvRow: 성공 shape의 필드 집합이 csvRowToImportTxn과 같다(ok/unmatched/txn.type·date·category·amount·memo·fromAssetId·toAssetId)', () => {
+  const own = sandbox.csvRowToImportTxn(['2026-01-01', '지출', '식비', '1000', '주계좌', '', '점심'], [{ id: 'a1', name: '주계좌' }]);
+  const generic = sandbox.mapGenericCsvRow(['2026-01-01', '1000', '점심'], { dateCol: 0, amountCol: 1, memoCol: 2, mode: 'signed', category: '식비' }, 'a1');
+  assert.deepStrictEqual(Object.keys(own).sort(), Object.keys(generic).sort());
+  assert.deepStrictEqual(Object.keys(own.txn).sort(), Object.keys(generic.txn).sort());
+});
+test('buildGenericImportPreview: 합성 은행 CSV(헤더 재배열+입출금 분리)를 detectOwnCsvFormat→mapGenericCsvRow→csvDedupeKey 전체 경로로 돌리면 올바른 item 개수/shape이 나온다', () => {
+  // 실제 은행 CSV는 '거래일,출금액,입금액,메모' 순서로 우리 포맷과 전혀 다른 헤더를 쓴다고 가정.
+  const bankCsv = '거래일,출금액,입금액,메모\r\n' +
+    '2026-01-05,5000,,점심\r\n' +      // 지출
+    '2026-01-10,,300000,월급\r\n' +     // 수입
+    '2026-01-15,0,0,무효행\r\n' +       // 둘 다 비어 invalid
+    'bad-date,1000,,메모\r\n';          // 날짜 무효
+  const rows = sandbox.parseCSV(bankCsv);
+  assert.strictEqual(sandbox.detectOwnCsvFormat(rows[0]), false, '은행 CSV는 자기-포맷으로 오인되면 안 됨');
+  const dataRows = rows.slice(1);
+  const mapping = { dateCol: 0, outCol: 1, inCol: 2, memoCol: 3, mode: 'split', category: '생활비' };
+  const preview = sandbox.buildGenericImportPreview(dataRows, mapping, 'a1', []);
+  assert.strictEqual(preview.totalRows, 4);
+  assert.strictEqual(preview.invalidCount, 2, '무효 금액 1건 + 무효 날짜 1건');
+  assert.strictEqual(preview.newCount, 2);
+  assert.strictEqual(preview.dupCount, 0);
+  assert.strictEqual(preview.assetUnmatchedCount, 0);
+  assert.strictEqual(preview.unmatchedAssetNames.length, 0); // cross-realm 빈 배열 비교 이슈(위 unmatched와 동일)
+  assert.deepStrictEqual(Array.from(preview.newCats.expense), []);
+  const expense = preview.items.find(x => x.txn.type === 'expense');
+  const income = preview.items.find(x => x.txn.type === 'income');
+  assert.strictEqual(expense.txn.fromAssetId, 'a1'); assert.strictEqual(expense.txn.amount, 5000); assert.strictEqual(expense.txn.category, '생활비');
+  assert.strictEqual(income.txn.toAssetId, 'a1'); assert.strictEqual(income.txn.amount, 300000);
+});
+test('buildGenericImportPreview: 기존 내역과 날짜/구분/금액/카테고리/자산/메모가 전부 같으면 dup으로 건너뛴다(csvDedupeKey 공유)', () => {
+  const dataRows = [['2026-01-05', '5000', '', '점심']];
+  const mapping = { dateCol: 0, outCol: 1, inCol: 2, memoCol: 3, mode: 'split', category: '식비' };
+  const existing = [{ id: 't1', date: '2026-01-05', type: 'expense', category: '식비', amount: 5000, fromAssetId: 'a1', toAssetId: null, memo: '점심' }];
+  const preview = sandbox.buildGenericImportPreview(dataRows, mapping, 'a1', existing);
+  assert.strictEqual(preview.newCount, 0);
+  assert.strictEqual(preview.dupCount, 1);
+});
+/* ---------- openCsvColumnMap/renderCsvColumnMap — 열 매핑 화면(app-evolve cycle251 advance) ---------- */
+function setupCsvMapDB() {
+  sandbox.DB = {
+    settings: { groupOrder: ['cash', 'savings'] },
+    categories: { expense: ['식비'], income: ['급여'], saving: ['적금'] },
+    catIcon: {}, catVar: {},
+    assets: [{ id: 'a_cash', name: '지갑', type: 'cash', owner: '나', baseAmount: 0, includeInTotal: true }],
+    txns: [], recurrences: [],
+  };
+  sandbox.lastSheetHtml = null; sandbox.lastPickerHtml = null; sandbox._csvMap = null;
+}
+test('openCsvColumnMap: 아무것도 선택하지 않은 초기 화면은 "다음" 버튼 없이 안내만 보여주고, 각 필드는 아직 선택 전 상태다', () => {
+  setupCsvMapDB();
+  sandbox.openCsvColumnMap(['거래일', '출금액', '입금액', '메모'], [['2026-01-05', '5000', '', '점심']]);
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('날짜 열') && html.includes('메모 열'), '필드 선택 행들이 있어야 함');
+  assert.ok(!html.includes('csvMapApply()'), '필수 항목을 아직 안 골랐으면 다음 버튼이 없어야 함');
+  assert.ok(html.includes('모든 항목을 선택해야'), '안내 문구가 있어야 함');
+});
+test('csvMapSetMode: signed↔split 전환 시 반대 모드의 열 선택을 초기화하고, 모드에 맞는 필드만 보여준다', () => {
+  setupCsvMapDB();
+  sandbox.openCsvColumnMap(['날짜', '출금', '입금'], [['2026-01-05', '5000', '']]);
+  sandbox._csvMap.amountCol = 1;
+  sandbox.csvMapSetMode('split');
+  assert.strictEqual(sandbox._csvMap.amountCol, null, 'split로 바꾸면 signed 전용 amountCol이 비워져야 함');
+  assert.ok(sandbox.lastSheetHtml.includes('입금 열') && sandbox.lastSheetHtml.includes('출금 열'));
+  sandbox._csvMap.inCol = 2;
+  sandbox.csvMapSetMode('signed');
+  assert.strictEqual(sandbox._csvMap.inCol, null, 'signed로 바꾸면 split 전용 inCol/outCol이 비워져야 함');
+  assert.ok(sandbox.lastSheetHtml.includes('금액 열'));
+});
+test('csvMapSetCatKind: 카테고리 종류를 바꾸면 이미 고른 기본 카테고리를 비운다(다른 종류 목록이라 더 이상 유효하지 않음)', () => {
+  setupCsvMapDB();
+  sandbox.openCsvColumnMap(['날짜', '금액'], [['2026-01-05', '5000']]);
+  sandbox._csvMap.category = '식비';
+  sandbox.csvMapSetCatKind('income');
+  assert.strictEqual(sandbox._csvMap.catKind, 'income');
+  assert.strictEqual(sandbox._csvMap.category, null);
+});
+test('csvMapPickCol: 열 목록 피커를 열면 각 헤더 이름과 실제 데이터 값 예시가 함께 보이고, allowNone이면 "선택 안 함"이 맨 위에 있다', () => {
+  setupCsvMapDB();
+  sandbox.openCsvColumnMap(['날짜', '메모'], [['2026-01-05', '점심'], ['2026-01-06', '커피']]);
+  sandbox.csvMapPickCol('memoCol', '메모 열', true);
+  const html = sandbox.lastPickerHtml;
+  assert.ok(html.includes('선택 안 함'));
+  assert.ok(html.includes('메모'));
+  assert.ok(html.includes('예: 점심, 커피'), '선택 행 아래에 실제 셀 값 예시가 보여야 함');
+});
+test('csvMapColChosen: 열을 고르면 _csvMap 필드가 바뀌고 화면이 다시 그려진다', () => {
+  setupCsvMapDB();
+  sandbox.openCsvColumnMap(['날짜', '금액'], [['2026-01-05', '5000']]);
+  sandbox.csvMapColChosen('dateCol', 0);
+  assert.strictEqual(sandbox._csvMap.dateCol, 0);
+  assert.ok(sandbox.lastSheetHtml, '다시 렌더돼야 함');
+  sandbox.csvMapColChosen('memoCol', null);
+  assert.strictEqual(sandbox._csvMap.memoCol, null, '"선택 안 함"은 null로 저장돼야 함');
+});
+test('csvMapPickAsset/csvMapPickCategory: 피커가 cashOnly/kind 옵션으로 열리고, onPick이 _csvMap에 반영된다', () => {
+  setupCsvMapDB();
+  sandbox.openCsvColumnMap(['날짜', '금액'], [['2026-01-05', '5000']]);
+  sandbox.csvMapPickAsset();
+  assert.ok(sandbox.lastPickerHtml.includes('data-val="a_cash"'), 'cashOnly 자산 피커가 열려야 함');
+  sandbox._csvMap.assetId = 'a_cash';
+  sandbox.renderCsvColumnMap();
+  assert.ok(sandbox.lastSheetHtml.includes('지갑'), '고른 자산 이름이 화면에 보여야 함');
+  sandbox.csvMapPickCategory();
+  assert.ok(sandbox.lastPickerHtml.includes('식비'), 'catKind 기본값(expense) 카테고리 목록이 보여야 함');
+});
+test('csvMapApply: 모든 항목을 채우면 buildGenericImportPreview 결과로 openCsvImportPreview를 호출하고 _csvMap은 비워진다', () => {
+  setupCsvMapDB();
+  // openCsvImportPreview는 main sandbox FUNCTIONS에 없다(별도 isolated ctx에서만 실행형으로 검증,
+  // 위 csvImportPreviewCtx 참고) — 여기선 csvMapApply가 그 함수를 실제로 호출하며 넘기는 preview
+  // shape만 캡처하는 얕은 스텁으로 흉내낸다(다른 테스트들의 renderFn 스텁과 같은 패턴).
+  sandbox.openCsvImportPreview = (p) => { sandbox._lastGenericPreview = p; };
+  sandbox.openCsvColumnMap(['날짜', '금액', '메모'], [['2026-01-05', '-5000', '점심']]);
+  Object.assign(sandbox._csvMap, { dateCol: 0, amountCol: 1, memoCol: 2, mode: 'signed', assetId: 'a_cash', category: '식비' });
+  sandbox.csvMapApply();
+  assert.strictEqual(sandbox._csvMap, null, '적용 후 임시 매핑 상태를 비워야 함');
+  assert.ok(sandbox._lastGenericPreview, 'openCsvImportPreview가 호출돼야 함');
+  assert.strictEqual(sandbox._lastGenericPreview.newCount, 1);
+  assert.strictEqual(sandbox._lastGenericPreview.items[0].txn.type, 'expense');
 });
 /* ---------- doCsvImport: 일괄 저장되는 거래에도 touch()로 updatedAt 스탬프
  * (app-evolve cycle88 advance, doMaturity/addBalanceAdjust 쪽과 동일 목적) ---------- */
