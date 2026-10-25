@@ -1,15 +1,12 @@
 {
   "cycle": 248,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "자산 피커(openAssetPicker)에 검색 기능 추가",
+    "why": "openAssetPicker(index.html:9086-9094)는 거래 입력(from/to, _applyOpenAsset:4782), 목표 연결 자산(3361), 저축 만기이체 통장(4153) 선택에 공통으로 쓰이는 가장 빈번한 피커인데, DB.settings.groupOrder별로 전체 자산을 나열만 하고 matchAssetQuery 같은 필터 호출이 전혀 없어 검색/필터 UI가 없다. 계좌·카드·적금을 10개 이상 쓰는 멀티뱅킹 사용자는 거래 입력이라는 가장 흔한 동작마다 긴 리스트를 스크롤해야 하는 실사용 결함. cycle246 develop에서 이미 'openAssetPicker 검색창… 피커 상호작용까지 포함해 작다는 기준을 넘어 드롭'으로 advance 범위로 명시적으로 미뤄둔 항목이라 규모가 맞다.",
+    "approach": "matchAssetQuery(a,q)는 logic.js:497에 이미 있어 재사용(수정 불필요). index.html:9086 openAssetPicker(o)의 항목 렌더를 refreshPkAssetList()로 분리하고, 최초 호출 시 Assets탭(3891 .searchbar/.field-clear 패턴, aria-label='자산 검색') 그대로 재사용한 검색바를 삽입. 신설: let _pkQ='',_pkQT=null (9085 부근) / function pkAssetQInput(v){_pkQ=v;clearTimeout(_pkQT);v.trim()===''?refreshPkAssetList():_pkQT=setTimeout(refreshPkAssetList,220)} — assetQInput(4049)/histQInput(5393)과 동일 220ms 디바운스 패턴. refreshPkAssetList()는 #pkGroup 내부만 재생성(그룹핑 유지, matchAssetQuery(a,_pkQ) 필터 추가), 결과 0건이면 Assets탭(3874)과 동일한 \"'${q}'와 일치하는 자산이 없어요\" empty 패턴, 끝에 movePkBlob(false) 재호출. pkBack(9085)/pkChoose(9109)에서 _pkQ=''/clearTimeout(_pkQT) 정리(9246의 _histQT 언마운트 정리 패턴과 동일). 기각 후보: 카테고리 수동 재정렬(openCatManage:6240, 카테고리 수가 적어 스크롤 고통이 picker만큼 크지 않음, 우선순위 낮음), Plan/Recurring 관리 검색(openRecManage:6344, 반복거래 수가 통상 적어 검색 필요성 낮음, 공백 아님으로 확인). 테스트(test/run.js)에 pkAssetQInput 디바운스(빈문자열 즉시/비면 220ms), matchAssetQuery 재사용 검증, 검색결과 0건 empty state, 자산 1개 이하일 때 movePkBlob(on=null) 가드로 크래시 없는지 4~5건 추가. index.html 로직 변경이므로 APP_VERSION/sw.js CACHE 동기 범프 필요."
+  },
   "history": [
-    {
-      "cycle": 243,
-      "phase": "review",
-      "timestamp": "2026-10-24T07:08:33.667Z",
-      "summary": "develop(cycle243, assetQInput 신설: #assetQ 자산검색에 histQInput과 동일한 220ms 디바운스/빈문자열 즉시실행 패턴 적용) 커밋을 검토. diff를 직접 읽어 assetQInput(v)가 histQInput(v)과 1:1 동일 구조(ST.assetQ=v로 즉시 반영 -> clearTimeout(_assetQT) -> v.trim()==='' 이면 즉시 assetSelPartial(), 아니면 220ms setTimeout)임을 확인. assetSelPartial이 ST.assetQ를 live로 읽어 assetBodyHTML을 재계산하므로 debounce 콜백 시점에 값이 바뀌어 있어도 stale 값 사용 문제가 없음을 확인. #assetQ input은 renderAssets()의 searchbar 마크업에 있고 #assetBody와는 분리된 별도 div라서, clrInput(assetQ)가 el.value='' 세팅 후 dispatch하는 input 이벤트가 assetQInput('')을 즉시 경로로 태워도 그 뒤의 el.focus()가 assetSelPartial()의 #assetBody.innerHTML 교체로 무효화되지 않음을 index.html 3876행(#assetBody 위치)과 4296행(clrInput 구현)으로 직접 확인 — histQ와 동일한 전제. 신규 테스트 4건이 즉시반영/디바운스시점/연속입력시 타이머 교체/지우기·공백 즉시실행 네 분기에 1:1 대응함을 확인. node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행 결과 1910/1910 통과(develop 단계가 주장한 수치와 일치). 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 243,
       "phase": "critique",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-25T02:50:00.000Z",
       "summary": "cycle248 develop 커밋(cb7fc31, 도움말에 '📊 분석 · 예산 · 목표' 안내 행 추가)을 검토. diff를 직접 읽어 순수 텍스트 한 줄 추가 외 로직 변경이 없음을 확인. 안내 문구가 가리키는 세 진입점을 grep으로 대조: 지출 분석을 누르면 openBudgetPrompt(idx)로 이어지는 카테고리 행이 index.html:6107/6135에 실제 존재(문구가 말한 '카테고리를 누르면 예산을 정할 수 있다'가 정확), 목표는 goalProgress(logic.js)/openGoalsList(index.html:3321)가 순자산·자산별 진행률을 이미 계산해 보여주고 있어 문구와 일치. 새 행이 기존 '🏠 홈' 행 바로 뒤에 삽입돼 다른 행의 순서·키를 건드리지 않았고, rows 배열 전체에서 이모지 중복도 없음을 확인. 신규 테스트 1건(lastSheetHtml에 '지출 분석'/'수입 분석'/'예산'/'목표' 네 키워드 포함 확인)이 추가된 행의 내용과 1:1 대응함을 확인. node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행 결과 1990/1990 통과(develop 단계가 주장한 수치와 일치). APP_VERSION 1.47.240/sw.js CACHE v507 범프가 index.html 변경과 일치. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 248,
+      "phase": "critique",
+      "timestamp": "2026-10-25T04:15:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-248 전체 다룬 영역·기각 항목 전부 제외 지시)한 결과, 자산 피커(openAssetPicker, index.html:9086-9094)에 검색 기능이 전혀 없는 공백을 발견 — 거래 입력(from/to, _applyOpenAsset:4782), 목표 연결 자산(3361), 저축 만기이체 통장(4153) 선택에 공통으로 쓰이는 가장 빈번한 피커인데 DB.settings.groupOrder별로 전체 자산을 나열만 하고 matchAssetQuery 같은 필터 호출이 전혀 없다. 계좌·카드·적금을 10개 이상 쓰는 멀티뱅킹 사용자는 거래 입력이라는 가장 흔한 동작마다 긴 리스트를 스크롤해야 하는 실사용 결함이며, cycle246 develop에서 이미 'openAssetPicker 검색창… 피커 상호작용까지 포함해 작다는 기준을 넘어 드롭'으로 advance 범위로 명시적으로 미뤄둔 항목이라 규모가 맞다. 러너업 기각: 카테고리 수동 재정렬(openCatManage:6240, 카테고리 수가 보통 적어 스크롤 고통이 picker만큼 크지 않아 우선순위 낮음), Plan/Recurring 관리 검색(openRecManage:6344, 반복거래 수가 통상 적어 코드 확인상 별도 공백이 아님). advance 계획(matchAssetQuery(logic.js:497) 재사용, pkAssetQInput/refreshPkAssetList 신설해 assetQInput/histQInput과 동일 220ms 디바운스 패턴 적용, Assets탭 searchbar/empty 패턴 재사용, pkBack/pkChoose에서 쿼리 상태 정리, test/run.js에 디바운스·필터·empty state·1개 이하 자산 가드 테스트 4~5건 추가, APP_VERSION/sw.js CACHE 동기 범프)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
       "commit": null
     }
   ]
