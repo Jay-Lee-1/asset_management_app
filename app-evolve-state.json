@@ -1,15 +1,16 @@
 {
   "cycle": 250,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "앱 잠금에 생체 인증(Face ID·지문) 옵션 추가",
+    "why": "APPLOCK(index.html:2402-2425)은 PIN 전용이고 renderLockView()(9517-9530)도 PIN 입력칸만 보여준다 — WebAuthn/PublicKeyCredential/생체 관련 코드가 전무함(grep 0건). 금융 앱을 하루에도 여러 번 여는데 매번 PIN을 손으로 입력해야 하는 건 가장 자주 부딪히는 마찰이고, 주류 금융 앱은 전부 지원하는 기능이다. cycle122-250 전체에서 PIN 메커니즘(유예시간/잠금 백오프/PIN 분실 복구) 외에는 인증 UX를 건드린 적이 없어 완전히 새로운 영역.",
+    "approach": "APPLOCK_KEY와 동일한 '기기-로컬, DB/클라우드 동기화 대상 아님' 패턴으로 새 BIOUNLOCK 객체 신설(localStorage 별도 키, 예: asset_app_biounlock). available()(PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable 피처감지, async), enabled(), register()(navigator.credentials.create, rp.id=location.hostname, authenticatorAttachment:'platform', 자격증명 id를 로컬 저장 — 이건 서버 검증 없는 '기존 PIN 위에 얹는 로컬 편의 게이트'일 뿐이라고 주석에 명시, 기존 PIN이 '암호화 키가 아니라 기기-로컬 화면 잠금'이라는 설명과 같은 톤), unlock()(navigator.credentials.get, 성공시 {ok:true}, 실패/취소시 {err:...}로 PIN 입력 폴백 — brute-force 잠금 카운터에는 영향 없음), disable(). APPLOCK.disable() 호출 시 BIOUNLOCK도 함께 disable 하도록 cascading cleanup 추가(catIcon/catVar/budgetHistory가 카테고리 삭제 시 함께 정리되는 cycle181/194 관례와 동일 원칙 — PIN 없는 생체인증 유령 설정 방지). UI: renderMenu() 앱 잠금 섹션(5752-5753)에 APPLOCK.enabled()&&BIOUNLOCK.available() 조건부 토글 행 추가(기존 {ic,l,sw,a} 패턴). renderLockView()(9517)에 BIOUNLOCK.enabled()면 'Face ID·지문으로 잠금 해제' 버튼을 추가하고 최초 렌더 시 1회 자동으로 unlock() 트리거, 실패/취소 시 조용히 기존 PIN 입력으로 폴백. 테스트: 실제 WebAuthn 호출은 Node에서 테스트 불가하므로 APPLOCK 테스트와 동일하게 localStorage 모킹 기반 순수 로직만 테스트(BIOUNLOCK register/enabled/disable 라운드트립, APPLOCK.disable()이 BIOUNLOCK도 함께 지우는지, renderMenu/renderLockView HTML에 조건별로 버튼이 노출/숨김되는지). index.html 변경이라 APP_VERSION/sw.js CACHE 동기 범프 필요.",
+    "runner_ups": [
+      "목표(goal) 보관함 — 달성된 목표가 openGoalsList()에서 영원히 안 빠짐(openArchiveOld()와 비대칭이나 목표 수가 보통 적어 체감 가치 낮음)",
+      "카테고리 커스텀 색상 — 지금은 아이콘만 있고 색상은 팔레트 인덱스 자동 배정(buildExpenseBarHtml)이라 이미 구분되므로 가치가 작음"
+    ]
+  },
   "history": [
-    {
-      "cycle": 245,
-      "phase": "develop",
-      "timestamp": "2026-10-24T14:19:16.180Z",
-      "summary": "fork 서브에이전트가 develop 후보를 탐색해 문의하기(DB.inquiries) 저장 메모가 지금까지 추가(sendInquiry)/삭제(delInquiry)만 가능하고 수정이 전혀 불가능했던 공백을 발견 — 오타를 고치거나 내용을 보완하려면 삭제 후 재작성해야 했고 그러면 원래 작성일(date)도 잃는 문제였다. 러너업 기각: 검색어 하이라이트(txRow/histRow가 toggle 핸들러명만 다르고 완전히 동일한 마크업을 내야 한다는 기존 회귀 가드 테스트와 충돌해 드롭), 반복거래 CSV 내보내기(이미 제외 목록인 CSV import/export 일반 범주와 겹쳐 드롭). renameOwnerSheet/renameCatSheet와 동일한 \"수정 버튼 + 입력 시트\" 패턴을 따라 editInquiry(id)(미리채운 수정 시트)/saveInquiryEdit(id)(빈 내용 거부, text 갱신, touchSave()로 updatedAt만 갱신해 date는 보존, 재렌더) 신설, openInquiryList() 행에 기존 삭제 버튼 옆 \"수정\" 버튼 추가. index.html 변경이라 APP_VERSION 1.47.233->1.47.234, sw.js CACHE v500->v501 동기 범프. test/run.js: FUNCTIONS에 editInquiry/saveInquiryEdit 추가, $ mock에 inqEditText 스텁 추가, 신규 테스트 6건(id 없으면 두 함수 모두 no-op, 시트가 기존 text로 미리 채워짐, 빈 내용 거부 시 toast+변경없음, 성공 시 trim+updatedAt 갱신+date 보존, openInquiryList에 수정 버튼이 삭제 버튼과 함께 나타남) 추가(1932->1938). git stash push -- index.html sw.js로 구현만 걷어낸 뒤(test/run.js는 유지) 테스트 스위트가 editInquiry를 찾지 못해 즉시 크래시함을 직접 확인해 신규 테스트가 실제 구현에 의존함을 재검증하고 stash pop으로 복원한 뒤 오케스트레이터가 독립적으로 node our-assets-v1.14.1/our-assets/test/run.js를 재실행해 1938/1938 통과를 재확인하고 커밋한다.",
-      "commit": "de57733"
-    },
     {
       "cycle": 245,
       "phase": "review",
@@ -141,6 +142,13 @@
       "phase": "review",
       "timestamp": "2026-10-25T10:30:00.000Z",
       "summary": "cycle250 develop 커밋(60cf9a3, 연간 결산(openYearReview)에 월별 수입/지출 흐름 카드 추가)을 검토. diff를 직접 읽어 yearMonthlyNet(y,owner)이 돌려주는 {m,income,expense} 필드명과 렌더 코드(mo.m/mo.income/mo.expense)가 정확히 일치함을 확인(index.html:6028-6036). income/expense는 incomeByCategory/spendByCategory의 reduce 합산값이라 항상 0 이상이므로 maxMo=Math.max(1,...)의 1 하한이 \"12개월 전부 0\"인 경우에만 분모가 되어 0/0 NaN을 막는 안전한 가드임을 확인 — 거래가 전혀 없는 해는 openYearReview이 이미 상위에서 빈 상태로 조기 return하므로(s.income||s.expense 체크) 월별 흐름 카드 자체가 그 경로에 진입하지 않아 가드가 사실상 이중 방어임도 확인. openSpendAnalysis의 .spend-row/.spend-track 마크업을 그대로 재사용했고 i.income{background:var(--income)} CSS 1줄 추가가 기존 budgeted/over variant 패턴과 동일함을 grep으로 대조. 신규 테스트 1건(1월 수입 100만원=최댓값→100%, 2월 지출 50만원=50%, 금액 텍스트 병행 노출)과 기존 빈 상태 테스트에 추가된 '월별 흐름' 미노출 단언이 diff의 두 분기에 1:1 대응함을 확인. node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행 결과 2014/2014 통과(develop 단계 주장과 일치). APP_VERSION 1.47.243/sw.js CACHE v510 범프가 index.html 변경과 일치. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 250,
+      "phase": "critique",
+      "timestamp": "2026-10-25T12:15:05.224Z",
+      "summary": "general-purpose 서브에이전트(fork)로 앱 전반을 재탐색(cycle122-250 전체 다룬 영역·기각 항목 전부 제외 지시)한 결과, 앱 잠금(APPLOCK, index.html:2402-2425)이 PIN 전용이고 renderLockView()(9517-9530)도 PIN 입력칸만 보여줄 뿐 WebAuthn/생체인증 관련 코드가 전무함(grep 0건)을 발견 — 금융 앱을 하루에도 여러 번 여는데 매번 PIN을 손으로 입력해야 하는 가장 흔한 마찰이고, 주류 금융 앱이 전부 지원하는 기능이며 cycle122-250 전체에서 인증 UX를 건드린 적이 없는 완전히 새로운 영역. 탐색 범위: 예산/연간결산/수입분석/귀속필터/자산피커/카테고리 재정렬/히스토리 페이지네이션/포커스트랩·aria-live 차트 피크/멀티탭 저장 레이스/목표 관리 등 기존에 다뤄진 영역 전부 재확인해 중복 없음을 검증. 러너업 기각: 목표(goal) 보관함(달성 목표가 openGoalsList에서 영원히 안 빠짐, 목표 수가 보통 적어 체감 가치 낮음), 카테고리 커스텀 색상(이미 팔레트 자동 배정으로 구분됨). advance 계획(APPLOCK_KEY와 동일한 기기-로컬 패턴으로 BIOUNLOCK 객체 신설 — register/unlock/disable, APPLOCK.disable() 시 cascading cleanup, renderMenu/renderLockView에 조건부 UI, localStorage 모킹 기반 순수 로직 테스트, APP_VERSION/sw.js CACHE 범프)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
       "commit": null
     }
   ]
