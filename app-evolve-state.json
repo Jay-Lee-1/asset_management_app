@@ -1,15 +1,8 @@
 {
   "cycle": 251,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 245,
-      "phase": "advance",
-      "timestamp": "2026-10-24T17:37:00.000Z",
-      "summary": "critique(cycle245) 계획대로 지출 분석(openSpendAnalysis/spendByCategory/spendTrend)과 대칭되는 수입 분석 화면을 신설했다. incomeByCategory(y,m,owner)/incomeTrend(c,y,m,n,owner)/incomeTrendBadge(deltaPct,label)를 spendByCategory/spendTrend/spendTrendBadge 바로 뒤(index.html)에 추가 — 단, critique 계획이 \"logic.js에 추가\"라고 적었던 건 착오였다(spendByCategory 자체가 allTxns/filterTxnsByOwner/DB 같은 index.html 전역에 의존해 logic.js가 아니라 index.html에 있으므로, 대칭 함수도 같은 자리에 둬야 함); 구현 중 이 점을 바로잡았다. 예산(budgetHistory) 유니온 스텝만 빼고 잔액조정 inSurplus 처리·분할거래 집계·owner 필터는 spendByCategory와 동일 규칙. incomeTrendBadge는 색 의미가 반대(수입 증가=income색 좋음, 감소=expense색 나쁨)인 별도 함수로 신설. openIncomeAnalysis()/incomeOwnerSel()/openIncomeCatHistory()를 openCatHistory() 바로 뒤에 추가 — 예산 카드 없음, buildExpenseBarHtml(rows.map(r=>({cat:r.c,v:r.v})))로 비중 스택바 재사용(c→cat 매핑 누락 시 카테고리명이 통째로 빠지는 기존 버그 클래스를 테스트로 확인). 귀속 필터(ST.spendOwner)는 지출 분석과 공유. 카테고리 행 클릭은 예산 설정이 아니라 바로 해당 카테고리 내역 드릴다운(openIncomeCatHistory)으로, 이 과정에서 ST.hist.catExact(전체내역 탭의 카테고리 드릴다운 필터, openCatHistory가 세팅)가 지금까지 \"항상 expense\"로 하드코딩돼 있던 것을 ST.hist.catExactType 필드로 일반화했다 — filteredHist의 필터를 t.type===(H.catExactType||'expense')로, doRenameCat의 필터 동기화를 (ST.hist.catExactType||'expense')===k로 바꿔 catExactType이 비어있으면(과거 호출부·테스트) 기존처럼 항상 expense로 동작하게 하는 하위호환 기본값을 유지 — 이 기본값이 없으면 cycle182가 고쳤던 \"이름변경 후 드릴다운 필터가 옛 이름에 남는\" 버그 클래스를 catExactType 없이 쓰던 기존 테스트 3건이 깨졌을 것. openCatHistory는 이제 catExactType='expense'를 명시적으로 세팅, openIncomeCatHistory는 'income'. catExact를 null로 되돌리는 4곳(초기 ST 리터럴/sumTap/openAssetHistory/histClearFilter/histClearCatFilter)에도 catExactType=null을 같이 추가해 유령 타입이 남지 않게 했다. 진입점은 openCatManage('income')의 카테고리 목록 위에 기존 \"지출 분석\"/\"목표 관리\" 링크와 동일한 .section-title .link 패턴으로 \"수입 분석\" 링크 추가(별도 CSS 없음 — 기존 .spend-row/.spend-av.a-in/.eb-bar/.eb-list/.section-title .link를 모두 그대로 재사용). APP_VERSION 1.47.234->1.47.235, sw.js CACHE v501->v502 동기 범프. test/run.js: FUNCTIONS에 incomeByCategory/incomeTrend/incomeTrendBadge/openIncomeCatHistory 추가. incomeByCategory 4건(잔액조정 제외/포함, 수입 아닌 거래 제외, 분할거래 집계)+incomeTrend 3건+incomeTrendBadge 2건(색 반전 명시 검증)을 spendByCategory/spendTrend/spendTrendBadge 테스트 미러링으로 추가(예산 관련 테스트는 해당 없어 제외). filteredHist/doRenameCat에 catExactType='income' 경로 신규 테스트 3건 추가 — 기존 catExactType 미설정 테스트 3건이 새 (||'expense') 기본값 로직에서도 그대로 통과함을 재확인. openIncomeCatHistory 테스트 2건(정상/idx 없음). spendAnalysisCtx를 미러링한 incomeAnalysisCtx 신설해 openIncomeAnalysis 테스트 3건(총수입+c→cat 매핑, 0원시 빈상태, 예산 문구 전혀 없음). openCatManage 수입탭 전용 링크 노출 테스트 1건. 총 1921->1956(35건 추가). fork 서브에이전트가 구현했고, 오케스트레이터가 diff 전체를 직접 읽어 r.c->cat 매핑/catExactType 기본값 하위호환 로직/CSS 미추가를 재검증한 뒤, node --check(logic.js/sw.js/test/run.js) 및 node test/run.js를 독립적으로 재실행해 1956/1956 통과를 재확인했다. git stash push로 index.html/sw.js만 걷어낸 뒤(test/run.js는 유지) 테스트 스위트가 incomeByCategory를 찾지 못해 즉시 크래시함을 직접 재현해 신규 테스트가 실제 구현에 의존함을 재검증하고 stash pop으로 복원 후 1956/1956 재확인. 커밋 과정에서 이 컨테이너의 로컬 main이 detached HEAD 상태였음을 발견해(cycle241/243/244와 동일한 클래스의 컨테이너 재시작 아티팩트) origin/main과 동일한 현재 HEAD(8baaf6b)로 git checkout -B main 재설정한 뒤 이번 커밋을 쌓아 push한다.",
-      "commit": null
-    },
     {
       "cycle": 246,
       "phase": "develop",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-25T14:05:00.000Z",
       "summary": "오케스트레이터(나)가 직접 앱 전반을 탐색해(cycle149-250 전체 다룬 영역·기각 항목 재확인) 연간 결산(openYearReview, cycle246 advance 신설)의 지출 TOP3/수입 TOP3 카드가 buildExpenseBarHtml()의 반환 HTML 전체를 <div aria-hidden=\"true\">로 감싸고 있는데, 이 화면엔 openSpendAnalysis/openIncomeAnalysis처럼 같은 카테고리·금액을 접근 가능한 형태로 따로 보여주는 전체 목록이 전혀 없어(요약 화면이라 TOP3만 표시) 스크린 리더 사용자에게 TOP3 섹션 전체(카테고리명·퍼센트·금액)가 통째로 안 들리는 버그를 발견했다. buildExpenseBarHtml 자체의 doc 주석(index.html, 함수 바로 위)이 '같은 데이터를 접근 가능한 형태로 따로 보여주지 않는 화면에서는 호출부가 책임지고 노출해야 한다'고 명시하는데, openYearReview의 두 TOP3 카드만 이 조건을 어기고 있었다 — cycle245 critique가 이미 검토했던 다른 호출부들(openSpendAnalysis/openIncomeAnalysis의 본문 목록, expenseBreakdownCard/incomeBreakdownCard는 원래 aria-hidden 자체가 없음)은 전부 문제가 없었지만, openYearReview는 그보다 나중(cycle246)에 신설돼 그 검토 대상이 아니었다. 수정은 두 TOP3 카드를 감싸던 <div aria-hidden=\"true\">...</div> 래퍼를 제거해 buildExpenseBarHtml의 eb-list(카테고리명·퍼센트·금액이 이미 실제 텍스트로 들어있음)가 그대로 노출되게 했다(색상만 있는 eb-bar 막대는 텍스트가 없어 스크린 리더가 자연히 건너뜀). index.html만 변경이라 APP_VERSION 1.47.244->1.47.245, sw.js CACHE v511->v512 동기 범프. test/run.js: 기존 TOP3 테스트 바로 뒤에 신규 테스트 1건 추가 — 처음엔 html 전체에 aria-hidden이 하나도 없어야 한다고 너무 넓게 단언해 svg() 아이콘 자체의 정당한 aria-hidden=\"true\"(장식 아이콘, index.html:1601)에 걸려 실패했고, TOP3 카드 블록만 슬라이스해서 그 안에 aria-hidden이 없는지만 좁게 확인하도록 고쳤다(2029->2030). git stash push로 index.html/sw.js만 걷어낸 뒤(test/run.js는 유지) 신규 테스트가 즉시 FAIL함을 직접 확인해 실제 구현에 의존함을 재검증하고 stash pop으로 복원 후 2030/2030 재확인. node --check(sw.js/test/run.js) 통과. 컨테이너 시작 시 로컬 main이 origin/main(bd94979)과 동일한 커밋을 가리키면서도 detached HEAD 상태였음을 발견(cycle241/243~250과 동일한 클래스의 컨테이너 재시작 아티팩트) — git checkout -B main origin/main으로 재부착한 뒤 이번 커밋을 쌓아 push한다.",
+      "commit": null
+    },
+    {
+      "cycle": 251,
+      "phase": "review",
+      "timestamp": "2026-10-25T15:09:19.863Z",
+      "summary": "cycle251 develop 커밋(4ea02ff, 연간 결산(openYearReview)의 지출/수입 TOP3 카드에서 aria-hidden=\"true\" 래퍼 제거)을 검토. buildExpenseBarHtml의 다른 호출부(openIncomeAnalysis:5360, openSpendAnalysis:6203)는 같은 데이터를 보여주는 접근 가능한 body 목록(role=button spend-row, aria-label에 카테고리명+금액 포함)이 바로 뒤에 있어 aria-hidden이 정당하지만, openYearReview의 TOP3 카드는 요약 화면이라 그런 별도 접근 가능한 목록이 전혀 없음을 코드로 직접 대조 확인 — develop 커밋의 주장과 일치, 실제 접근성 버그였고 수정이 올바르다. 신규 테스트 1건이 TOP3 카드 블록만 슬라이스해 aria-hidden 부재를 좁게 단언하는 방식(svg 장식 아이콘의 정당한 aria-hidden과 혼동 없음)도 diff와 1:1 대응함을 확인. node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행 결과 2030/2030 통과(develop 단계 주장과 일치). node --check(sw.js/test/run.js) 통과. APP_VERSION 1.47.245/sw.js CACHE v512 범프가 index.html 변경과 일치. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
