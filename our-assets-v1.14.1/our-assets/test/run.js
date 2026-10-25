@@ -222,7 +222,7 @@ const FUNCTIONS = [
   'detectStaleMarketValuedTxns', 'delBudget', 'saveBudget', 'openBudgetPrompt', 'openBigMinSheet',
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards', 'openTidyAsset', 'openTidyList', 'tidyListSnooze',
   'debtsBehind', 'openDebtBehindList',
-  'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate', 'histQInput', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'openCatHistory', 'openIncomeCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter', 'histClearTypeFilter',
+  'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate', 'histQInput', 'histOwnerSel', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'openCatHistory', 'openIncomeCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter', 'histClearTypeFilter',
   'genSalt', 'pbkdf2Hash', 'genRecoveryCode', 'normRecoveryCode', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer', 'openConfirmTransfer',
   'renderLockView', 'openForgotPinSheet', 'doForgotPin', 'tickForgotPinWait',
   'confirmTransferNow', 'postponeTransfer', 'confirmRecNow', 'openConfirmTransferList',
@@ -19392,6 +19392,7 @@ function setupHistoryDB() {
   };
   sandbox.DB = {
     settings: { includeScheduled: true },
+    owners: ['나', '배우자'],
     assets: [],
     txns: [],
     recurrences: [],
@@ -19616,6 +19617,58 @@ test("histPreset('year'): 커스텀 범위로 좁혀둔 뒤에도 다시 '올해
   assert.strictEqual(sandbox.ST.hist.preset, 'year');
   assert.strictEqual(sandbox.ST.hist.range.from, '2026-01-01');
   assert.strictEqual(sandbox.ST.hist.range.to, '2026-12-31');
+});
+
+/* ---------- renderHistory/histOwnerSel: 전체내역 탭 귀속 필터 세그먼트 (app-evolve cycle247
+ * advance) ----------
+ * filteredHist()는 ST.hist.owner가 세팅되면 filterTxnsByOwner로 이미 걸러주고, doRenameOwner(이름
+ * 변경)/renderHistory(귀속 삭제 가드, cycle181)까지 이 필드를 정교하게 유지하는데, 사용자가
+ * ST.hist.owner를 직접 세팅할 UI가 전혀 없었다(openCatHistory/openIncomeCatHistory의 드릴다운으로만
+ * 간접 세팅되고 histClearFilter/histClearCatFilter가 다른 필터와 묶어 리셋). 홈/자산/Plan/
+ * 지출분석/수입분석/연간결산은 전부 전체·나·배우자 귀속 세그나 캐러셀을 갖췄는데 가장 자주 쓰는
+ * 전체내역 탭만 빠져있던 비대칭을 spendOwnerSel/incomeOwnerSel과 동일한 .seg 패턴으로 메웠다.
+ * ---------- */
+test('renderHistory: 귀속 필터 세그먼트가 렌더되고, ST.hist.owner와 일치하는 칩에만 on/aria-pressed가 붙는다', () => {
+  setupHistoryDB();
+  sandbox.ST.hist.owner = '배우자';
+  sandbox.renderHistory();
+  const html = sandbox.pageHistoryEl.innerHTML;
+  assert.ok(/<div class="seg" role="group" aria-label="귀속 선택">/.test(html), '귀속 필터 세그먼트 래퍼가 없음');
+  assert.ok(html.includes('onclick="histOwnerSel(0)"'), '전체 칩이 histOwnerSel(0)로 연결돼야 함');
+  assert.ok(html.includes('onclick="histOwnerSel(2)"'), "DB.owners=['나','배우자']일 때 '배우자'는 세 번째(index 2) 칩이어야 함");
+  assert.ok(/class="on" aria-pressed="true" onclick="histOwnerSel\(2\)"/.test(html), "ST.hist.owner==='배우자'면 그 칩만 on이어야 함");
+  assert.ok(!/class="on"[^>]*histOwnerSel\(0\)/.test(html), "owner가 '전체'가 아니면 전체 칩은 on이 아니어야 함");
+});
+test('renderHistory: 선택(selMode) 중에는 귀속 필터 세그먼트도 다른 검색 UI와 함께 숨겨진다', () => {
+  setupHistoryDB();
+  sandbox.ST.hist.selMode = true;
+  sandbox.renderHistory();
+  assert.ok(!sandbox.pageHistoryEl.innerHTML.includes('histOwnerSel'), '선택 모드에서는 귀속 필터 세그먼트가 렌더되지 않아야 함');
+});
+test('histOwnerSel: ST.hist.owner를 DB.owners[i]로 바꾸고 전체내역을 다시 그린다(범위 밖 인덱스는 전체로 폴백)', () => {
+  setupHistoryDB();
+  sandbox.DB.assets = [
+    { id: 'a1', name: '내 카드', owner: '나' },
+    { id: 'a2', name: '배우자 카드', owner: '배우자' },
+  ];
+  sandbox.DB.txns = [
+    { id: 't1', date: '2026-06-01', type: 'expense', category: '식비', amount: 1000, fromAssetId: 'a1' },
+    { id: 't2', date: '2026-06-02', type: 'expense', category: '식비', amount: 2000, fromAssetId: 'a2' },
+  ];
+  sandbox.histOwnerSel(2); // ['전체','나','배우자'][2] === '배우자'
+  assert.strictEqual(sandbox.ST.hist.owner, '배우자');
+  assert.ok(sandbox.histListEl.innerHTML.includes('2,000원') && !sandbox.histListEl.innerHTML.includes('1,000원'), '배우자 귀속 거래만 보여야 함');
+  sandbox.histOwnerSel(99); // 존재하지 않는 인덱스
+  assert.strictEqual(sandbox.ST.hist.owner, '전체', "list[i]가 없으면 '전체'로 폴백해야 함");
+});
+test('histOwnerSel: catExact/q 같은 다른 필터 상태는 건드리지 않는다(histClearFilter와 달리 단독 전환)', () => {
+  setupHistoryDB();
+  sandbox.ST.hist.q = '검색어유지';
+  sandbox.ST.hist.catExact = '식비';
+  sandbox.histOwnerSel(1);
+  assert.strictEqual(sandbox.ST.hist.owner, '나');
+  assert.strictEqual(sandbox.ST.hist.q, '검색어유지');
+  assert.strictEqual(sandbox.ST.hist.catExact, '식비');
 });
 
 /* ---------- txRow/histRow: 공용 txRowCore 동기화 회귀 (app-evolve cycle126 advance) ----------

@@ -1,19 +1,8 @@
 {
-  "cycle": 247,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "전체내역(History) 탭에 귀속(owner) 필터 세그 추가 — histOwnerSel",
-    "why": "filteredHist()(index.html:5222)는 H.owner(ST.hist.owner)가 세팅되면 이미 filterTxnsByOwner로 걸러주고, doRenameOwner(4387)/renderHistory의 삭제 가드까지 이 필드를 정교하게 유지하는데, 사용자가 H.owner를 직접 세팅할 UI가 전혀 없다(openCatHistory/openIncomeCatHistory의 드릴다운으로만 간접 세팅되고 histClearFilter/histClearCatFilter가 다른 필터와 묶어 리셋). 홈/자산/Plan/지출분석/수입분석/연간결산은 전부 전체·나·배우자 귀속 세그나 캐러셀을 갖췄는데 가장 자주 쓰는 전체내역 탭만 빠져있는 비대칭 — \"배우자 거래만 검색\" 같은 가장 흔한 시나리오가 안 됨.",
-    "approach": "1) index.html에 histOwnerSel(i) 신설 — spendOwnerSel(6127)/incomeOwnerSel(5299)과 동일 패턴: list=['전체',...DB.owners]; H.owner=list[i]||'전체'; histInvalidate(); renderHistory(). 2) renderHistory()(5318)에 openSpendAnalysis(6101)의 .seg role=group aria-label 귀속 선택 마크업을 그대로 복사해 검색바 다음·기존 assetId/catExact/cat 칩 앞에 삽입, H.selMode일 때는 검색바처럼 숨김, 기존 requestAnimationFrame(moveSegBlobs) 재사용. 3) 단일 귀속 가구 처리는 분석 화면 선례(항상 표시)를 따르는 걸 권장. 4) catExact 칩의 ' · 귀속' 중복 표기는 유지해도 무해 — 지우지 않아도 됨. 5) histClearFilter/histClearCatFilter(5411,5413)는 지금처럼 귀속도 함께 '전체'로 리셋하는 동작 유지(세그로 다시 켤 수 있으니 문제 없음). 6) test/run.js FUNCTIONS에 histOwnerSel 추가, spendOwnerSel 마크업 테스트(15507행)를 미러링해 (a) 세그 마크업 aria-pressed/onclick 생성 (b) 호출 후 ST.hist.owner 변경+filteredHist 결과 필터링 (c) catExact/assetId/cat 필터와 직교적으로 공존 (d) selMode일 때 세그 숨김, 총 4건 이상 추가. 7) APP_VERSION 1.47.238->1.47.239, sw.js CACHE v505->v506 동기 범프 필요(index.html 변경)."
-  },
+  "cycle": 248,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 242,
-      "phase": "critique",
-      "timestamp": "2026-10-24T04:14:24.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(최근 cycle237-242가 다룬 가격조회 폴백/raceDeadline/계정탈퇴/planNegatives 영역 전부 제외 지시)한 결과, 지출 분석 상세 시트가 Home 요약카드보다 덜 informative한 역전을 발견 — Home의 expenseBreakdownCard(index.html:3411-3429, cats={cat,v}[])는 비중 스택바+색상 범례(.eb-bar/.eb-row, CSS 249-250)를 보여주는데, 같은 제목('…지출 분석')의 더 상세한 화면인 openSpendAnalysis()(5869-5905, spendByCategory() rows={c,v}[] 사용)는 flat한 spend-row 목록(예산진행바만 있음)만 보여줘 전체 대비 비중을 한눈에 볼 수 없다. 러너업 기각: OS 알림 완전-닫힘 시 미동작(서버 푸시/VAPID 백엔드 신설이 필요해 한 사이클 범위를 넘는 신규 의존성/백엔드 서피스라 제외), 영수증/사진 첨부(이미 플래그된 localStorage 용량 한도(STORAGE_SIZE_WARN_LEN/CRIT_LEN, 1914)와 직접 충돌 + 신규 클라우드 스토리지 배선이 필요한 큰 설계 서피스라 제외), 장기 복리/목표 투사 고도화(Plan 탭이 현재 단일자산 근시일 현금흐름 뷰라 요구사항이 불분명한 투기성 과제라 제외). 탐색 중 검색/예산/목표/부채추적/원가-손익/CSV import-export/저장공간 아카이빙/접근 가능한 휠피커/멀티탭 저장 락/에러 바운더리/PWA 설치배너/OS 알림(포그라운드) 등은 이미 높은 수준으로 구현돼 있음을 확인(241사이클 누적 성숙도). advance 계획을 pending_advance_plan에 저장: expenseBreakdownCard의 스택바+범례 HTML 생성부를 공유 순수함수로 분리해 openSpendAnalysis()에서도 같은 비중 시각화를 재사용(장식용 aria-hidden, 기존 spend-row 목록은 그대로 유지), 신규 의존성/스키마/동기화 변경 없는 순수 프레젠테이션 추가. 코드 변경 없음(critique 단계라 state.json만 갱신).",
-      "commit": null
-    },
     {
       "cycle": 242,
       "phase": "advance",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-25T00:14:09.960Z",
       "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-247 전체 다룬 영역 전부 제외 지시)한 결과, 전체내역(History) 탭에 귀속(owner) 필터 UI가 전혀 없는 공백을 발견 — filteredHist()(index.html:5222)는 H.owner가 세팅되면 이미 filterTxnsByOwner로 걸러주고 doRenameOwner(4387)/renderHistory 삭제가드까지 이 필드를 정교하게 유지하는데도, 사용자가 직접 세팅할 UI가 없다(openCatHistory/openIncomeCatHistory 드릴다운으로만 간접 세팅, histClearFilter/histClearCatFilter가 다른 필터와 묶어 통째로 리셋). test/run.js 10곳 넘는 테스트가 sandbox.ST.hist.owner='나'로 필드를 직접 주입해 propagation/guard만 검증하는 것도 UI 세터 부재의 증거. 홈/자산/Plan/지출분석/수입분석/연간결산은 전부 전체·나·배우자 귀속 세그/캐러셀을 갖췄는데 가장 자주 쓰는 전체내역 탭만 빠진 비대칭(부부가 \"배우자 거래만 검색\" 하려는 가장 흔한 시나리오가 막힘). 러너업 기각: 매니페스트 shortcuts+딥링크 라우팅(실제 공백이나 핵심 일상 플로우보다 체감 가치 낮고 신규 라우팅 상태 설계 필요), 부채 자산 이자율 자동적립(상환스케줄·이자계산 새 설계 필요해 범위 초과, 기각된 주식배당 자동추적과 같은 클래스), 반복내역 CSV 내보내기(assetsToCSV/nwHistoryToCSV로 쉽게 미러링 가능하나 설정값이라 실사용 수요 낮음), 카테고리 전체 총예산 필드(budgetedTotal이 파생값뿐인 공백 맞으나 이월/이력 구조와 얽혀 새 진실 소스 생길 위험, 설계 선행 필요). advance 계획(histOwnerSel 신설, renderHistory에 spendOwnerSel과 동일한 .seg 마크업 삽입, test/run.js에 마크업·필터링·직교성·selMode 테스트 추가, APP_VERSION/CACHE 동기 범프)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "commit": null
+    },
+    {
+      "cycle": 247,
+      "phase": "advance",
+      "timestamp": "2026-10-25T01:11:58.015Z",
+      "summary": "critique(cycle247) 계획대로 전체내역(History) 탭에 귀속(owner) 필터 세그를 추가했다. index.html renderHistory()의 검색바 다음·기존 assetId/catExact/cat 칩 앞에 spendOwnerSel/incomeOwnerSel과 동일한 .seg role=group aria-label='귀속 선택' 마크업을 삽입(moveSegBlobs는 querySelectorAll('.seg')로 이미 다중 seg를 지원해 그대로 재사용). 새 histOwnerSel(i) 함수를 histClearFilter 바로 앞에 추가 — spendOwnerSel과 달리 시트가 아니라 탭 화면이라 openXxxAnalysis() 재호출 대신 histInvalidate()+renderHistory()로 그 자리를 다시 그린다. H.selMode일 때는 다른 검색 UI와 함께 숨겨지고, 범위 밖 인덱스는 '전체'로 폴백한다. catExact/assetId/cat 필터와는 독립적으로 공존하며, histClearFilter/histClearCatFilter는 기존처럼 owner도 함께 '전체'로 리셋하는 동작을 그대로 유지(세그로 다시 켤 수 있어 문제 없음). test/run.js: FUNCTIONS에 histOwnerSel 추가, setupHistoryDB() 픽스처에 DB.owners(이전엔 없었는데 이제 .seg가 무조건 참조)를 추가해 기존 renderHistory 테스트들이 깨지지 않게 했고, 신규 테스트 4건(세그 렌더+on/aria-pressed 일치, selMode 시 숨김, histOwnerSel이 owner 변경+filteredHist 결과 필터링+범위 밖 인덱스 폴백, 다른 필터 상태 보존) 추가. index.html/sw.js 변경이라 APP_VERSION 1.47.238->1.47.239, sw.js CACHE v505->v506 동기 범프. node our-assets-v1.14.1/our-assets/test/run.js 1989/1989 통과. pending_advance_plan은 null로 비웠다.",
       "commit": null
     }
   ]

@@ -1410,7 +1410,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.238';
+const APP_VERSION='1.47.239';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5326,6 +5326,7 @@ function renderHistory(){
  <div class="searchbar" style="flex:1">${svg('search')}<div class="field-clear"><input id="histQ" aria-label="내역 검색" placeholder="메모·카테고리·자산·금액 검색" value="${esc(H.q)}" oninput="histQInput(this.value)"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('histQ')">✕</button></div></div>
  <button type="button" class="sch-chip" aria-label="내역 선택" onclick="ST.hist.selMode=true;updateHist();updateSelBottom()">${svg('check',14)}</button>
  </div>
+ <div class="seg" role="group" aria-label="귀속 선택"><div class="seg-blob"></div>${['전체',...DB.owners].map((o,oi)=>`<button type="button" class="${H.owner===o?'on':''}" aria-pressed="${H.owner===o}" onclick="histOwnerSel(${oi})">${esc(o)}</button>`).join('')}</div>
  ${H.assetId?`<button type="button" class="sch-chip on" style="margin-bottom:14px" onclick="histClearAssetFilter()" aria-label="${esc((DB.assets.find(a=>a.id===H.assetId)||{}).name||'계좌')} 필터 해제">${esc((DB.assets.find(a=>a.id===H.assetId)||{}).name||'계좌')} ${svg('x',14)}</button>
  <div id="assetBalCard">${assetBalCard(H.assetId,H.balPreset)}</div>`:''}
  ${H.catExact?`<button type="button" class="sch-chip on" style="margin-bottom:14px" onclick="histClearCatFilter()" aria-label="${esc(H.catExact)} 필터 해제">${esc(H.catExact)}${H.owner&&H.owner!=='전체'?` · ${esc(H.owner)}`:''} ${svg('x',14)}</button>`:''}
@@ -5408,6 +5409,9 @@ function histPeekKey(e){
  histPeekStart();
 }
 function setHistMode(today){const c=$('histTotLive');if(!c||!_histLive)return;const L=_histLive;c.innerHTML=ledSumInner(L.a,L.sc,today);c.classList.toggle('peek',today);requestAnimationFrame(fitAll)}
+/* 전체내역 귀속 세그먼트 전환 — spendOwnerSel/incomeOwnerSel과 같은 패턴이지만, 그 둘은 시트(openSheet)라
+ * 시트를 통째로 다시 열지만 전체내역은 탭 화면이라 renderHistory()로 그 자리를 다시 그린다. */
+function histOwnerSel(i){const list=['전체',...DB.owners];ST.hist.owner=list[i]||'전체';histInvalidate();renderHistory()}
 function histClearFilter(){ST.hist.cat='전체';ST.hist.q='';ST.hist.assetId=null;ST.hist.catExact=null;ST.hist.catExactType=null;ST.hist.owner='전체';histInvalidate();renderHistory()}
 function histClearAssetFilter(){ST.hist.assetId=null;histInvalidate();renderHistory()}
 function histClearCatFilter(){ST.hist.catExact=null;ST.hist.catExactType=null;ST.hist.owner='전체';histInvalidate();renderHistory()}
