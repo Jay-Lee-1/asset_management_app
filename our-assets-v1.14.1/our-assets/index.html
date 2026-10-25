@@ -1296,6 +1296,7 @@ body.selmode .fab{display:none}
 .auth-guest:active{color:var(--text)}
 .auth-forgot{display:block;width:100%;text-align:center;font-size:12.5px;font-weight:600;color:var(--text-3);text-decoration:underline;margin-top:2px}
 .auth-forgot:active{color:var(--text-2)}
+.auth-bio{height:48px;font-size:14.5px;margin-bottom:16px}
 .auth-note{font-size:11.5px;color:var(--text-3);line-height:1.65;margin-top:16px;text-align:center}
 .auth-note b{color:var(--text-2)}
 .kkey{margin-top:12px;padding:14px;border-radius:14px;background:var(--surface-2);border:1px solid var(--line-2);text-align:left}
@@ -1411,12 +1412,16 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.243';
+const APP_VERSION='1.47.244';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
  * 하단 배너 노출 + 버전 정보 메뉴 문구 전환에 쓰인다 (index.html 끝부분 SW 등록 스크립트에서 세팅). */
 let SW_UPDATE_AVAILABLE=false;
+/* BIOUNLOCK.available()은 비동기라 renderMenu()처럼 매번 동기로 그려야 하는 함수 안에서 직접 await할
+ * 수 없다 — SW_UPDATE_AVAILABLE과 같은 패턴으로, startApp()에서 1회 비동기로 물어본 결과를 여기 캐싱해
+ * 두고 renderMenu()는 이 값만 동기로 읽는다(app-evolve cycle250 advance). */
+let BIOUNLOCK_AVAILABLE=false;
 function reloadForUpdate(){location.reload()}
 function showSwUpdateBar(){
  const el=$('swUpdateBar');if(!el)return;
@@ -2421,7 +2426,54 @@ const APPLOCK={
   AUTH._clearFails(APPLOCK_FAIL_KEY);
   return{ok:true};
  },
- disable(){try{localStorage.removeItem(APPLOCK_KEY)}catch(e){}AUTH._clearFails(APPLOCK_FAIL_KEY)},
+ disable(){try{localStorage.removeItem(APPLOCK_KEY)}catch(e){}AUTH._clearFails(APPLOCK_FAIL_KEY);BIOUNLOCK.disable()}, /* PIN 없는 생체인증 유령 설정이 남지 않게 cascade(app-evolve cycle250 advance, catIcon/catVar/budgetHistory가 카테고리 삭제 시 함께 정리되는 cycle181/194와 같은 원칙) */
+};
+/* 생체 인증(Face ID·지문)으로 매번 PIN을 치지 않고 잠금을 풀 수 있게 하는 선택적 편의 레이어
+ * (app-evolve cycle250 advance). 서버 검증이 없는 WebAuthn platform authenticator 자격증명이라
+ * APPLOCK PIN 위에 얹는 '이 기기 전용' 편의 게이트일 뿐 PIN을 대체하는 보안 계층이 아니다 — PIN이
+ * 암호화 키가 아니라 기기-로컬 화면 잠금이라는 것과 같은 톤(위 2394행 주석 참고). 그래서 등록 상태도
+ * APPLOCK과 동일하게 DB/클라우드 동기화 대상이 아닌 기기-로컬 localStorage에만 둔다. PIN이 꺼지면
+ * 생체인증만 남아 "PIN 없이 생체인증만으로 잠김"이라는 애매한 상태가 생기므로, APPLOCK.disable()이
+ * 항상 이 객체의 disable()도 함께 부른다(위). */
+const BIOUNLOCK_KEY='asset_app_biounlock';
+const BIOUNLOCK={
+ _read(){try{return JSON.parse(localStorage.getItem(BIOUNLOCK_KEY)||'null')}catch(e){return null}},
+ _write(s){localStorage.setItem(BIOUNLOCK_KEY,JSON.stringify(s))},
+ enabled(){const s=this._read();return !!(s&&s.enabled)},
+ async available(){
+  try{return !!(window.PublicKeyCredential&&await window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable())}
+  catch(e){return false}
+ },
+ async register(){
+  try{
+   const cred=await navigator.credentials.create({publicKey:{
+    challenge:crypto.getRandomValues(new Uint8Array(32)),
+    rp:{id:location.hostname,name:'우리의 자산'},
+    user:{id:crypto.getRandomValues(new Uint8Array(16)),name:accountName(),displayName:accountName()},
+    pubKeyCredParams:[{type:'public-key',alg:-7},{type:'public-key',alg:-257}],
+    authenticatorSelection:{authenticatorAttachment:'platform',userVerification:'required'},
+    timeout:60000,
+   }});
+   if(!cred)return{err:'등록이 취소됐어요'};
+   this._write({enabled:true,credId:bytesToBase64(new Uint8Array(cred.rawId))});
+   return{ok:true};
+  }catch(e){return{err:'생체 인증을 등록하지 못했어요'}}
+ },
+ async unlock(){ /* brute-force 잠금 카운터(AUTH._lockStatus)는 건드리지 않는다 — 실패/취소는 그냥
+  * PIN 입력으로 조용히 폴백하면 될 뿐, PIN 자체를 틀린 게 아니라서 백오프를 쌓을 이유가 없다 */
+  const s=this._read();
+  if(!s||!s.enabled)return{err:'등록된 생체 인증이 없어요'};
+  try{
+   const cred=await navigator.credentials.get({publicKey:{
+    challenge:crypto.getRandomValues(new Uint8Array(32)),
+    allowCredentials:[{type:'public-key',id:base64ToBytes(s.credId)}],
+    userVerification:'required',
+    timeout:60000,
+   }});
+   return cred?{ok:true}:{err:'인증에 실패했어요'};
+  }catch(e){return{err:'인증이 취소되거나 실패했어요'}}
+ },
+ disable(){try{localStorage.removeItem(BIOUNLOCK_KEY)}catch(e){}},
 };
 const KAKAO_JS_KEY=''; /* 선택: 여기에 직접 넣어도 되고, 앱 로그인 화면에서 붙여넣어도 됩니다 */
 function getKakaoKey(){try{return (localStorage.getItem('asset_app_kakao_key')||'').trim()||KAKAO_JS_KEY}catch(e){return KAKAO_JS_KEY}}
@@ -5751,6 +5803,7 @@ function renderMenu(){
    {ic:'bell',l:(typeof Notification!=='undefined'&&Notification.permission==='denied')?'OS 알림 · 차단됨':'OS 알림',sw:!!DB.settings.osNotify,a:"toggleOsNotify()"},
    {ic:'lock',l:'앱 잠금(PIN)',sw:APPLOCK.enabled(),a:"toggleAppLock()"},
    ...(APPLOCK.enabled()?[{ic:'lock',l:'PIN 변경',a:"openChangePinSheet()"},{ic:'lock',l:'재잠금 시점',v:graceLabel(),a:"openAppLockGraceSheet()"}]:[]),
+   ...(APPLOCK.enabled()&&BIOUNLOCK_AVAILABLE?[{ic:'lock',l:'Face ID·지문으로 잠금 해제',sw:BIOUNLOCK.enabled(),a:"toggleBioUnlock()"}]:[]),
    {ic:'chart',l:'큰 지출 기준',v:comma(bigMin())+'원',a:"openBigMinSheet()"},
    {ic:'sync',l:'시세 연동',v:rateStatusMenu(),a:"openRateSheet()"},
   ]},
@@ -9441,6 +9494,7 @@ function startApp(){
  buildNav();document.body.classList.add('show-fab');renderHome();updateAlerts();showApp();wireHdrFade($('page-home'));
  maybeTutorial(); /* 첫 실행 튜토리얼 */
  requestPersistentStorage(); /* 브라우저 storage eviction으로부터 로컬 데이터 보호 요청(비동기, 결과는 홈 알림에 반영) */
+ BIOUNLOCK.available().then(v=>{BIOUNLOCK_AVAILABLE=v;if(ST.tab==='menu')renderCurrent()}).catch(()=>{}); /* feature-detect 결과가 늦게 와도 메뉴 탭에 있다면 토글 행을 즉시 반영 */
  autoSyncRates();                       /* 시작 시 1회 */
  setInterval(autoSyncRates,3*60*1000); /* 3분마다 확인 → 10분 지났으면 갱신 */
  setInterval(checkNotifyAlerts,5*60*1000); /* 5분마다 확인 → 백그라운드일 때만 OS 알림 발송 */
@@ -9502,9 +9556,12 @@ function showAuth(){hideBootSplash();$('app').style.display='none';$('authView')
  * 트리거(백그라운드 전환, 콜드부트)에서 쓰이므로 AUTHKEY 같은 기존 플래그와 섞지 않는다. */
 let APP_LOCKED=false;
 let APP_HIDDEN_AT=0; /* 마지막으로 백그라운드로 전환된 시각(ms). 유예시간 안에 돌아오면 재인증 없이 자동 해제한다 */
+let _bioAutoTried=false; /* lockApp()이 새로 열릴 때마다 1회만 자동 시도하도록 리셋 — renderLockView()는
+ * PIN 백오프 카운트다운 재시도 타이머로도 반복 호출되므로, 여기서 리셋해 두지 않으면 틱마다 다시 떴다 */
 function lockApp(){
  if(APP_LOCKED||!APPLOCK.enabled())return;
  APP_LOCKED=true;
+ _bioAutoTried=false;
  $('app').style.display='none';$('lockView').style.display='flex';
  renderLockView();
 }
@@ -9516,10 +9573,12 @@ function unlockApp(){
 }
 function renderLockView(){
  const lock=AUTH._lockStatus(APPLOCK_FAIL_KEY);
+ const bio=BIOUNLOCK.enabled();
  $('lockView').innerHTML=`<div class="auth-card">
    <div class="auth-logo">🔒</div>
    <div class="auth-title">잠겨 있어요</div>
    <div class="auth-sub">설정한 PIN을 입력해 주세요</div>
+   ${bio?`<button type="button" class="btn btn-soft auth-bio" id="bioUnlockBtn" onclick="tryBioUnlock()">${svg('lock',18)}Face ID·지문으로 잠금 해제</button>`:''}
    <div class="auth-field"><label for="lockPinIn">PIN</label><div class="pw-wrap"><input id="lockPinIn" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="PIN 입력" ${lock.locked?'disabled':''} onkeydown="if(event.key==='Enter')doUnlock()"><button type="button" class="pw-x" aria-label="PIN 표시" onclick="togglePwVis('lockPinIn')">${svg('eye',18)}</button></div></div>
    <div id="lockErr" class="auth-err" style="display:${lock.locked?'block':'none'}">${lock.locked?`너무 많이 틀렸어요 · ${lock.waitSec}초 후 다시 시도해 주세요`:''}</div>
    <button class="btn btn-primary auth-submit" id="lockSubmitBtn" ${lock.locked?'disabled':''} onclick="doUnlock()">확인</button>
@@ -9527,6 +9586,16 @@ function renderLockView(){
  </div>`;
  if(lock.locked){clearTimeout(window._lockRetryT);window._lockRetryT=setTimeout(renderLockView,lock.waitSec*1000+200)}
  else setTimeout(()=>{const e=$('lockPinIn');e&&e.focus()},120);
+ if(bio&&!_bioAutoTried){_bioAutoTried=true;tryBioUnlock()}
+}
+/* 생체 인증 실패/취소는 brute-force 카운터(AUTH._lockStatus)에 영향 없이 조용히 기존 PIN 입력으로
+ * 폴백한다 — 이미 화면에 PIN 입력칸이 함께 떠 있으므로 에러 토스트조차 띄우지 않는다. */
+async function tryBioUnlock(){
+ const btn=$('bioUnlockBtn');if(btn&&btn.disabled)return;
+ if(btn)btn.disabled=true;
+ const r=await BIOUNLOCK.unlock();
+ if(btn)btn.disabled=false;
+ if(r.ok)unlockApp();
 }
 async function doUnlock(){
  const btn=$('lockSubmitBtn');if(btn&&btn.disabled)return;
@@ -9665,6 +9734,14 @@ async function doForgotPin(){
 function toggleAppLock(){
  if(APPLOCK.enabled())openDisableAppLockSheet();
  else openSetPinSheet();
+}
+/* 생체인증 토글은 PIN 토글(toggleAppLock)과 달리 끌 때 확인 절차가 없다 — 꺼도 PIN이라는
+ * 실제 보안 계층은 그대로 남아 있어 보안이 약해지지 않는 순수 편의 설정이기 때문 */
+async function toggleBioUnlock(){
+ if(BIOUNLOCK.enabled()){BIOUNLOCK.disable();renderCurrent();toast('Face ID·지문 잠금 해제를 껐어요');return}
+ const r=await BIOUNLOCK.register();
+ if(r.err){toast(r.err);return}
+ renderCurrent();toast('Face ID·지문으로 잠금을 해제할 수 있어요');
 }
 function renderAuth(){
  const login=authMode==='login';

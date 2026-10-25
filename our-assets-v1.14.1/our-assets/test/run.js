@@ -344,7 +344,7 @@ const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'AS
 // _pkQ는 openAssetPicker()의 자산 검색(pkAssetQInput/refreshPkAssetList)이 참조하는 쿼리 문자열이고,
 // `let _pkQ='',_pkQT=null,_pkOpts=null;` 한 줄로 선언돼 있어 "_pkQ"만 추출해도 디바운스 타이머·피커
 // 옵션 보관용 셋 다 딸려온다(_histTimer/_assetQT와 같은 패턴, app-evolve cycle248 advance).
-const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer', '_histTimer', '_assetQT', '_pkQ'];
+const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer', '_histTimer', '_assetQT', '_pkQ', '_bioAutoTried'];
 
 const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(extractConst).join('\n') + '\n' + LETS.map(extractLet).join('\n');
 
@@ -670,6 +670,14 @@ const sandbox = {
   APPLOCK: { disable: () => { sandbox.appLockDisableCalls++; }, enabled: () => false },
   unlockAppCalls: 0,
   unlockApp: () => { sandbox.unlockAppCalls++; },
+  // BIOUNLOCK(생체 인증, app-evolve cycle250 advance)도 APPLOCK과 같은 이유로 실제 WebAuthn
+  // 객체 대신 스파이로 흉내낸다. enabled()의 기본값은 PIN처럼 미등록(false)으로 둬, bio가
+  // false인 기본 경로에서 renderLockView()가 tryBioUnlock()을 호출하지 않는 것(아래)까지
+  // 함께 재현한다. 실제 WebAuthn API 호출 자체(navigator.credentials.*)는 isolated
+  // makeAppLockCtx 쪽(아래 BIOUNLOCK 전용 테스트)에서 별도로 검증한다.
+  tryBioUnlockCalls: 0,
+  tryBioUnlock: () => { sandbox.tryBioUnlockCalls++; },
+  BIOUNLOCK: { disable: () => {}, enabled: () => false },
   // renderLockView()가 잠김(backoff) 상태에서 재시도 타이머를 재설정할 때 부르는
   // clearTimeout — setTimeout처럼 화면 전용이라 no-op으로 흉내낸다.
   clearTimeout: () => {},
@@ -16219,10 +16227,25 @@ test('pbkdf2Hash: 같은 비밀번호라도 salt가 다르면 다른 해시가 �
  * 끝까지 실행해 검증해야 하므로, sandbox.localStorage(단일 _lsRaw 스텁)가 아니라 실제
  * get/set이 맞물리는 Map 기반 목업을 둔 별도 vm 컨텍스트에 AUTH+APPLOCK+genSalt+pbkdf2Hash를
  * 함께 태운다(nwChartPeekKey 완전 실행형 파일럿과 같은 패턴). */
-function makeAppLockCtx() {
+// webauthn(선택)로 navigator.credentials.create/get, window.PublicKeyCredential 가용성을
+// 테스트별로 흉내낸다 — 기본값은 전부 "미지원"(create/get는 거부, PublicKeyCredential 없음)으로
+// 둬, BIOUNLOCK과 무관한 기존 APPLOCK 전용 테스트가 아무 영향을 받지 않게 한다(app-evolve cycle250 advance,
+// BIOUNLOCK이 APPLOCK.disable()에서 cascade로 불려 같은 vm 컨텍스트에 함께 로드해야 함).
+function makeAppLockCtx(webauthn) {
   const store = new Map();
   const ctx = {
-    crypto, TextEncoder,
+    crypto, TextEncoder, btoa, atob,
+    location: { hostname: 'test.local' },
+    accountName: () => '테스터',
+    navigator: {
+      credentials: {
+        create: (webauthn && webauthn.create) || (async () => { throw new Error('플랫폼이 WebAuthn을 지원하지 않음(테스트 기본값)'); }),
+        get: (webauthn && webauthn.get) || (async () => { throw new Error('플랫폼이 WebAuthn을 지원하지 않음(테스트 기본값)'); }),
+      },
+    },
+    window: (webauthn && typeof webauthn.platformAvailable === 'boolean')
+      ? { PublicKeyCredential: { isUserVerifyingPlatformAuthenticatorAvailable: async () => webauthn.platformAvailable } }
+      : {}, // PublicKeyCredential 자체가 없음 — available()의 feature-detect가 false로 떨어짐
     localStorage: {
       getItem: (k) => (store.has(k) ? store.get(k) : null),
       setItem: (k, v) => { store.set(k, String(v)); },
@@ -16231,7 +16254,7 @@ function makeAppLockCtx() {
   };
   vm.createContext(ctx);
   vm.runInContext(
-    [extractFunction('genSalt'), extractFunction('pbkdf2Hash'), extractConst('APPLOCK_KEY'), extractConst('APPLOCK_FAIL_KEY'), extractConstBlock('AUTH'), extractConstBlock('APPLOCK')].join('\n'),
+    [extractFunction('genSalt'), extractFunction('pbkdf2Hash'), extractFunction('bytesToBase64'), extractFunction('base64ToBytes'), extractConst('APPLOCK_KEY'), extractConst('APPLOCK_FAIL_KEY'), extractConstBlock('AUTH'), extractConst('BIOUNLOCK_KEY'), extractConstBlock('BIOUNLOCK'), extractConstBlock('APPLOCK')].join('\n'),
     ctx
   );
   return ctx;
@@ -16332,6 +16355,144 @@ test('index.html 소스: visibilitychange 핸들러가 hidden 분기에서 lockA
   assert.match(handler, /if\(appIsOpen\(\)\)\{APP_HIDDEN_AT=Date\.now\(\);lockApp\(\)\}/, 'hidden으로 전환되면 그레이스 판단 없이 즉시 lockApp()을 불러 화면을 가려야 함');
   assert.match(handler, /APPLOCK\.getGrace\(\)/, '돌아올 때 getGrace()로 유예시간을 비교해야 함');
   assert.match(handler, /unlockApp\(\)/, '유예시간 안이면 unlockApp()으로 PIN 재입력 없이 풀어야 함');
+});
+
+/* ---------- BIOUNLOCK(생체 인증으로 PIN 입력을 대신하는 선택적 편의 레이어, app-evolve cycle250
+ * advance): APPLOCK PIN 위에 얹는 기기-로컬 편의 게이트일 뿐이라 서버 검증이 없고, 실제
+ * navigator.credentials.create/get(WebAuthn) 호출은 Node에서 재현할 수 없어 makeAppLockCtx의
+ * webauthn 옵션으로 흉내낸다(기본값은 "미지원"이라 BIOUNLOCK과 무관한 기존 APPLOCK 테스트엔
+ * 영향 없음). PIN이 암호화 키가 아니라는 설계를 그대로 물려받아, unlock() 실패/취소는
+ * AUTH._lockStatus의 brute-force 카운터를 전혀 건드리지 않는다(PIN 자체를 틀린 게 아님). ---------- */
+test('BIOUNLOCK: 초기 상태(미등록)에서는 enabled()가 false이고, unlock()은 navigator.credentials.get을 부르지 않고 바로 에러를 돌려준다', async () => {
+  let getCalls = 0;
+  const ctx = makeAppLockCtx({ get: async () => { getCalls++; return {}; } });
+  assert.strictEqual(ctx.BIOUNLOCK.enabled(), false);
+  const r = await ctx.BIOUNLOCK.unlock();
+  assert.ok(r.err, '등록된 생체 인증이 없으면 에러를 돌려줘야 함');
+  assert.strictEqual(getCalls, 0, '등록 전엔 navigator.credentials.get을 부르면 안 됨');
+});
+test('BIOUNLOCK: register()가 성공하면 enabled()가 true가 되고, credential id가 base64 문자열로 왕복 저장된다', async () => {
+  const fakeRawId = new Uint8Array([1, 2, 3, 4, 5]).buffer;
+  const ctx = makeAppLockCtx({ create: async () => ({ rawId: fakeRawId }) });
+  const r = await ctx.BIOUNLOCK.register();
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(ctx.BIOUNLOCK.enabled(), true);
+  const raw = JSON.parse(ctx.localStorage.getItem('asset_app_biounlock'));
+  assert.strictEqual(typeof raw.credId, 'string', 'credId가 base64 문자열로 저장돼야 함');
+  assert.deepStrictEqual(Array.from(ctx.base64ToBytes(raw.credId)), [1, 2, 3, 4, 5], 'rawId 바이트가 base64 왕복 후에도 그대로여야 함');
+});
+test('BIOUNLOCK: register()가 취소되면(credential 없음) err를 돌려주고 enabled()는 그대로 false다', async () => {
+  const ctx = makeAppLockCtx({ create: async () => null });
+  const r = await ctx.BIOUNLOCK.register();
+  assert.ok(r.err);
+  assert.strictEqual(ctx.BIOUNLOCK.enabled(), false);
+});
+test('BIOUNLOCK: register()가 예외를 던지면(미지원 플랫폼 등, 테스트 기본값) err를 돌려주고 enabled()는 그대로 false다', async () => {
+  const ctx = makeAppLockCtx(); // 기본값: navigator.credentials.create가 항상 throw
+  const r = await ctx.BIOUNLOCK.register();
+  assert.ok(r.err);
+  assert.strictEqual(ctx.BIOUNLOCK.enabled(), false);
+});
+test('BIOUNLOCK: register() 성공 후 unlock()은 저장된 credId를 allowCredentials로 그대로 넘겨 navigator.credentials.get을 호출하고, 성공하면 ok:true를 돌려준다', async () => {
+  const fakeRawId = new Uint8Array([9, 8, 7]).buffer;
+  let seenAllow = null;
+  const ctx = makeAppLockCtx({
+    create: async () => ({ rawId: fakeRawId }),
+    get: async (opts) => { seenAllow = opts.publicKey.allowCredentials; return { ok: true }; },
+  });
+  await ctx.BIOUNLOCK.register();
+  const r = await ctx.BIOUNLOCK.unlock();
+  assert.strictEqual(r.ok, true);
+  assert.ok(seenAllow && seenAllow[0] && seenAllow[0].id, 'unlock()이 등록된 credId를 allowCredentials로 넘겨야 함');
+  assert.deepStrictEqual(Array.from(seenAllow[0].id), [9, 8, 7]);
+});
+test('BIOUNLOCK: unlock()이 실패하면(get이 null을 반환) err를 돌려주고, brute-force 실패 카운터(asset_app_login_fails)는 전혀 건드리지 않는다', async () => {
+  const ctx = makeAppLockCtx({ create: async () => ({ rawId: new Uint8Array([1]).buffer }), get: async () => null });
+  await ctx.BIOUNLOCK.register();
+  const r = await ctx.BIOUNLOCK.unlock();
+  assert.ok(r.err);
+  assert.strictEqual(ctx.localStorage.getItem('asset_app_login_fails'), null, 'BIOUNLOCK 실패가 APPLOCK/AUTH의 PIN brute-force 카운터를 건드리면 안 됨');
+});
+test('BIOUNLOCK: unlock()이 예외를 던지면(사용자 취소 등) err를 돌려준다', async () => {
+  const ctx = makeAppLockCtx({ create: async () => ({ rawId: new Uint8Array([1]).buffer }), get: async () => { throw new Error('cancelled'); } });
+  await ctx.BIOUNLOCK.register();
+  const r = await ctx.BIOUNLOCK.unlock();
+  assert.ok(r.err);
+});
+test('BIOUNLOCK: disable()은 등록 정보를 지워 enabled()를 다시 false로 되돌린다', async () => {
+  const ctx = makeAppLockCtx({ create: async () => ({ rawId: new Uint8Array([1]).buffer }) });
+  await ctx.BIOUNLOCK.register();
+  assert.strictEqual(ctx.BIOUNLOCK.enabled(), true);
+  ctx.BIOUNLOCK.disable();
+  assert.strictEqual(ctx.BIOUNLOCK.enabled(), false);
+});
+test('APPLOCK: disable()은 PIN 설정뿐 아니라 BIOUNLOCK(생체 인증)도 함께 비활성화한다 — PIN 없는 생체인증 유령 설정 방지(cycle181/194가 카테고리 삭제 시 catIcon/catVar/budgetHistory를 함께 정리하는 것과 같은 원칙)', async () => {
+  const ctx = makeAppLockCtx({ create: async () => ({ rawId: new Uint8Array([1, 2]).buffer }) });
+  await ctx.APPLOCK.setPin('1234');
+  await ctx.BIOUNLOCK.register();
+  assert.strictEqual(ctx.BIOUNLOCK.enabled(), true);
+  ctx.APPLOCK.disable();
+  assert.strictEqual(ctx.APPLOCK.enabled(), false);
+  assert.strictEqual(ctx.BIOUNLOCK.enabled(), false, 'APPLOCK을 끄면 BIOUNLOCK도 함께 꺼져야 함');
+});
+test('BIOUNLOCK: available()은 PublicKeyCredential 자체가 없는(구형) 환경에서는 false다(feature-detect, 테스트 기본값)', async () => {
+  const ctx = makeAppLockCtx();
+  assert.strictEqual(await ctx.BIOUNLOCK.available(), false);
+});
+test('BIOUNLOCK: available()은 isUserVerifyingPlatformAuthenticatorAvailable()의 결과를 그대로 반영한다', async () => {
+  const ctxTrue = makeAppLockCtx({ platformAvailable: true });
+  assert.strictEqual(await ctxTrue.BIOUNLOCK.available(), true);
+  const ctxFalse = makeAppLockCtx({ platformAvailable: false });
+  assert.strictEqual(await ctxFalse.BIOUNLOCK.available(), false);
+});
+test('BIOUNLOCK: available() 체크 자체가 예외를 던져도(일부 브라우저의 구현 버그) 조용히 false로 떨어진다', async () => {
+  const ctx = makeAppLockCtx();
+  ctx.window.PublicKeyCredential = { isUserVerifyingPlatformAuthenticatorAvailable: async () => { throw new Error('boom'); } };
+  assert.strictEqual(await ctx.BIOUNLOCK.available(), false);
+});
+
+/* ---------- renderMenu/renderLockView의 생체 인증 UI 배선(app-evolve cycle250 advance) ---------- */
+test('renderMenu: APPLOCK이 켜져 있고(기기가 지원해) BIOUNLOCK_AVAILABLE이면 "알림 · 기준" 그룹에 생체 인증 토글 행이 있다', () => {
+  const body = extractFunction('renderMenu');
+  assert.ok(body.includes('APPLOCK.enabled()&&BIOUNLOCK_AVAILABLE'), 'renderMenu가 PIN 활성 상태와 기기 지원 여부를 함께 조건으로 걸지 않음');
+  assert.ok(body.includes(`l:'Face ID·지문으로 잠금 해제',sw:BIOUNLOCK.enabled(),a:"toggleBioUnlock()"`), 'renderMenu의 생체 인증 토글 행이 BIOUNLOCK.enabled()/toggleBioUnlock()에 연결돼 있지 않음');
+});
+test('renderLockView: BIOUNLOCK.enabled()가 true면 Face ID·지문 버튼을 보여주고, 최초 렌더에서 1회만 자동으로 tryBioUnlock()을 트리거한다(재렌더에선 다시 트리거하지 않음)', () => {
+  const $orig = sandbox.$;
+  const bioOrig = sandbox.BIOUNLOCK;
+  const authOrig = sandbox.AUTH;
+  const lockViewEl = { _html: '', set innerHTML(v) { this._html = v; }, get innerHTML() { return this._html; } };
+  sandbox.$ = (id) => (id === 'lockView' ? lockViewEl : $orig(id));
+  sandbox.AUTH = { _lockStatus: () => ({ locked: false, waitSec: 0 }) };
+  sandbox.BIOUNLOCK = { enabled: () => true };
+  sandbox._bioAutoTried = false;
+  sandbox.tryBioUnlockCalls = 0;
+  try {
+    sandbox.renderLockView();
+    assert.ok(lockViewEl.innerHTML.includes('id="bioUnlockBtn"'), '생체 인증 버튼이 렌더되지 않음');
+    assert.ok(lockViewEl.innerHTML.includes('Face ID·지문으로 잠금 해제'), '생체 인증 버튼 문구가 없음');
+    assert.strictEqual(sandbox.tryBioUnlockCalls, 1, '최초 렌더에서 1회 자동 트리거돼야 함');
+    sandbox.renderLockView(); // PIN 백오프 카운트다운 틱 등으로 재렌더되는 상황을 재현
+    assert.strictEqual(sandbox.tryBioUnlockCalls, 1, '재렌더에서는 추가로 트리거되면 안 됨(_bioAutoTried 가드)');
+  } finally {
+    sandbox.$ = $orig; sandbox.BIOUNLOCK = bioOrig; sandbox.AUTH = authOrig; sandbox._bioAutoTried = false;
+  }
+});
+test('renderLockView: BIOUNLOCK.enabled()가 false(기본값)면 생체 인증 버튼이 없고 자동 트리거도 하지 않는다', () => {
+  const $orig = sandbox.$;
+  const authOrig = sandbox.AUTH;
+  const lockViewEl = { _html: '', set innerHTML(v) { this._html = v; }, get innerHTML() { return this._html; } };
+  sandbox.$ = (id) => (id === 'lockView' ? lockViewEl : $orig(id));
+  sandbox.AUTH = { _lockStatus: () => ({ locked: false, waitSec: 0 }) };
+  sandbox._bioAutoTried = false;
+  sandbox.tryBioUnlockCalls = 0;
+  try {
+    sandbox.renderLockView();
+    assert.ok(!lockViewEl.innerHTML.includes('bioUnlockBtn'), 'BIOUNLOCK이 꺼져 있으면 버튼이 없어야 함');
+    assert.strictEqual(sandbox.tryBioUnlockCalls, 0, 'BIOUNLOCK이 꺼져 있으면 자동 트리거도 없어야 함');
+  } finally {
+    sandbox.$ = $orig; sandbox.AUTH = authOrig; sandbox._bioAutoTried = false;
+  }
 });
 
 /* ---------- PIN을 잊었을 때의 탈출구(app-evolve cycle151 develop) — APPLOCK에는 복구 코드

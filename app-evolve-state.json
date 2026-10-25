@@ -1,23 +1,8 @@
 {
-  "cycle": 250,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "앱 잠금에 생체 인증(Face ID·지문) 옵션 추가",
-    "why": "APPLOCK(index.html:2402-2425)은 PIN 전용이고 renderLockView()(9517-9530)도 PIN 입력칸만 보여준다 — WebAuthn/PublicKeyCredential/생체 관련 코드가 전무함(grep 0건). 금융 앱을 하루에도 여러 번 여는데 매번 PIN을 손으로 입력해야 하는 건 가장 자주 부딪히는 마찰이고, 주류 금융 앱은 전부 지원하는 기능이다. cycle122-250 전체에서 PIN 메커니즘(유예시간/잠금 백오프/PIN 분실 복구) 외에는 인증 UX를 건드린 적이 없어 완전히 새로운 영역.",
-    "approach": "APPLOCK_KEY와 동일한 '기기-로컬, DB/클라우드 동기화 대상 아님' 패턴으로 새 BIOUNLOCK 객체 신설(localStorage 별도 키, 예: asset_app_biounlock). available()(PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable 피처감지, async), enabled(), register()(navigator.credentials.create, rp.id=location.hostname, authenticatorAttachment:'platform', 자격증명 id를 로컬 저장 — 이건 서버 검증 없는 '기존 PIN 위에 얹는 로컬 편의 게이트'일 뿐이라고 주석에 명시, 기존 PIN이 '암호화 키가 아니라 기기-로컬 화면 잠금'이라는 설명과 같은 톤), unlock()(navigator.credentials.get, 성공시 {ok:true}, 실패/취소시 {err:...}로 PIN 입력 폴백 — brute-force 잠금 카운터에는 영향 없음), disable(). APPLOCK.disable() 호출 시 BIOUNLOCK도 함께 disable 하도록 cascading cleanup 추가(catIcon/catVar/budgetHistory가 카테고리 삭제 시 함께 정리되는 cycle181/194 관례와 동일 원칙 — PIN 없는 생체인증 유령 설정 방지). UI: renderMenu() 앱 잠금 섹션(5752-5753)에 APPLOCK.enabled()&&BIOUNLOCK.available() 조건부 토글 행 추가(기존 {ic,l,sw,a} 패턴). renderLockView()(9517)에 BIOUNLOCK.enabled()면 'Face ID·지문으로 잠금 해제' 버튼을 추가하고 최초 렌더 시 1회 자동으로 unlock() 트리거, 실패/취소 시 조용히 기존 PIN 입력으로 폴백. 테스트: 실제 WebAuthn 호출은 Node에서 테스트 불가하므로 APPLOCK 테스트와 동일하게 localStorage 모킹 기반 순수 로직만 테스트(BIOUNLOCK register/enabled/disable 라운드트립, APPLOCK.disable()이 BIOUNLOCK도 함께 지우는지, renderMenu/renderLockView HTML에 조건별로 버튼이 노출/숨김되는지). index.html 변경이라 APP_VERSION/sw.js CACHE 동기 범프 필요.",
-    "runner_ups": [
-      "목표(goal) 보관함 — 달성된 목표가 openGoalsList()에서 영원히 안 빠짐(openArchiveOld()와 비대칭이나 목표 수가 보통 적어 체감 가치 낮음)",
-      "카테고리 커스텀 색상 — 지금은 아이콘만 있고 색상은 팔레트 인덱스 자동 배정(buildExpenseBarHtml)이라 이미 구분되므로 가치가 작음"
-    ]
-  },
+  "cycle": 251,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 245,
-      "phase": "review",
-      "timestamp": "2026-10-24T15:05:00.000Z",
-      "summary": "cycle245 develop 커밋(de57733, DB.inquiries 저장 메모에 editInquiry/saveInquiryEdit 수정 기능 추가)을 검토. diff를 직접 읽어 renameOwnerSheet/renameCatSheet가 쓰는 '수정 act-btn + 입력 시트' 패턴(markup/aria-label/.two-btn/svg('edit') 재사용)과 글자 그대로 일치함을 grep으로 대조 확인. esc(q.text)가 textarea에 기존 내용을 채울 때 <,>,&,\",' 전부 이스케이프하므로(logic.js:431) </textarea> 조기 종료나 속성 주입 둘 다 불가능함을 확인. saveInquiryEdit이 touchSave(q)로 updatedAt만 새로 찍고 date는 그대로 둬 mergeCollection()이 다른 기기 병합 시 이 수정을 최신으로 인식하도록 한 설계가 DB.inquiries의 기존 병합 배선(1661행, cycle133)과 정합함을 확인. 빈/공백뿐 입력은 trim 후 거부하고 기존 text를 그대로 둠, 존재하지 않는 id는 두 함수 모두 조용히 no-op — 호출부(onclick 인라인)가 항상 실제 q.id를 넘기므로 실사용 경로에서 도달 불가능한 방어적 분기이되 부작용은 없음. 신규 테스트 6건이 diff의 각 분기(미리채움/빈내용거부/trim+date보존/없는id no-op/버튼 노출)에 1:1 대응함을 확인. node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행 결과 1938/1938 통과. APP_VERSION 1.47.234/sw.js CACHE v501 범프가 index.html 변경과 일치. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 245,
       "phase": "critique",
@@ -149,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-25T12:15:05.224Z",
       "summary": "general-purpose 서브에이전트(fork)로 앱 전반을 재탐색(cycle122-250 전체 다룬 영역·기각 항목 전부 제외 지시)한 결과, 앱 잠금(APPLOCK, index.html:2402-2425)이 PIN 전용이고 renderLockView()(9517-9530)도 PIN 입력칸만 보여줄 뿐 WebAuthn/생체인증 관련 코드가 전무함(grep 0건)을 발견 — 금융 앱을 하루에도 여러 번 여는데 매번 PIN을 손으로 입력해야 하는 가장 흔한 마찰이고, 주류 금융 앱이 전부 지원하는 기능이며 cycle122-250 전체에서 인증 UX를 건드린 적이 없는 완전히 새로운 영역. 탐색 범위: 예산/연간결산/수입분석/귀속필터/자산피커/카테고리 재정렬/히스토리 페이지네이션/포커스트랩·aria-live 차트 피크/멀티탭 저장 레이스/목표 관리 등 기존에 다뤄진 영역 전부 재확인해 중복 없음을 검증. 러너업 기각: 목표(goal) 보관함(달성 목표가 openGoalsList에서 영원히 안 빠짐, 목표 수가 보통 적어 체감 가치 낮음), 카테고리 커스텀 색상(이미 팔레트 자동 배정으로 구분됨). advance 계획(APPLOCK_KEY와 동일한 기기-로컬 패턴으로 BIOUNLOCK 객체 신설 — register/unlock/disable, APPLOCK.disable() 시 cascading cleanup, renderMenu/renderLockView에 조건부 UI, localStorage 모킹 기반 순수 로직 테스트, APP_VERSION/sw.js CACHE 범프)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "commit": null
+    },
+    {
+      "cycle": 250,
+      "phase": "advance",
+      "timestamp": "2026-10-25T13:20:41.256Z",
+      "summary": "critique(cycle250) 계획대로 앱 잠금(APPLOCK)에 생체 인증(Face ID·지문) 옵션을 추가했다. APPLOCK_KEY와 동일한 기기-로컬 localStorage 패턴으로 BIOUNLOCK_KEY/BIOUNLOCK 객체를 신설(index.html, APPLOCK 바로 뒤) — available()(window.PublicKeyCredential 존재+isUserVerifyingPlatformAuthenticatorAvailable() feature-detect, 둘 다 window.PublicKeyCredential로 일관되게 참조해 혼용 버그를 피함), register()(navigator.credentials.create, rp.id=location.hostname, authenticatorAttachment:'platform', 기존 bytesToBase64/base64ToBytes(클라우드 페이로드 인코딩에 쓰던 헬퍼)를 그대로 재사용해 credential id만 로컬에 base64로 저장 — 서버 검증 없는 PIN 위의 편의 게이트일 뿐이라는 설계를 주석에 명시), unlock()(navigator.credentials.get, 성공 {ok:true}/실패·취소 {err} — AUTH._lockStatus brute-force 카운터는 건드리지 않음), disable(). APPLOCK.disable()이 이제 BIOUNLOCK.disable()도 함께 호출해 PIN 없는 생체인증 유령 설정을 방지(cycle181/194의 카테고리 cascading cleanup과 같은 원칙). UI: BIOUNLOCK.available()은 비동기라 매번 동기로 그리는 renderMenu() 안에서 직접 await할 수 없으므로, SW_UPDATE_AVAILABLE과 같은 패턴으로 startApp()에서 1회 비동기 체크해 BIOUNLOCK_AVAILABLE에 캐싱하고 renderMenu()는 이 값만 동기로 읽는다. renderMenu()의 '알림 · 기준' 그룹에 APPLOCK.enabled()&&BIOUNLOCK_AVAILABLE 조건부 토글 행({ic,l,sw,a} 기존 패턴) 추가, toggleBioUnlock()은 PIN 토글(toggleAppLock)과 달리 끌 때 확인 절차 없음(꺼도 보안 저하 없는 순수 편의 설정이기 때문). renderLockView()에는 BIOUNLOCK.enabled()면 Face ID·지문 버튼을 보여주고, lockApp()이 열릴 때마다 리셋되는 _bioAutoTried 플래그로 최초 렌더에서만 1회 자동 unlock()을 트리거(PIN 백오프 카운트다운 재시도 타이머로 renderLockView가 반복 호출돼도 재트리거되지 않음), 실패/취소는 이미 떠 있는 PIN 입력으로 조용히 폴백. CSS는 .auth-bio 한 줄만 추가(기존 .btn/.btn-soft가 이미 inline-flex+gap이라 아이콘+텍스트 정렬에 별도 flex 규칙 불필요). APP_VERSION 1.47.243->1.47.244, sw.js CACHE v510->v511 동기 범프. test/run.js: 실제 WebAuthn 호출은 Node에서 재현 불가능하므로, 기존 makeAppLockCtx(APPLOCK 전용 isolated vm ctx)를 webauthn 옵션(navigator.credentials.create/get, window.PublicKeyCredential 가용성을 테스트별로 모킹, 기본값은 전부 '미지원')으로 확장하고 여기에 BIOUNLOCK_KEY/BIOUNLOCK/bytesToBase64/base64ToBytes 추출을 추가 — APPLOCK.disable()의 cascade(BIOUNLOCK.disable() 호출)가 같은 vm 컨텍스트에서 실제로 동작해야 하기 때문. BIOUNLOCK 순수 로직 테스트 12건(미등록 시 unlock이 navigator.get을 안 부름, register 성공/취소/예외, unlock이 allowCredentials로 저장된 credId를 그대로 넘김, unlock 실패/예외 시 brute-force 카운터 불변, disable 왕복, APPLOCK.disable() cascade, available()의 PublicKeyCredential 부재/반영/예외 3가지) + renderMenu 정적 패턴 테스트 1건 + renderLockView 실행형 테스트 2건(BIOUNLOCK enabled 시 버튼 노출+1회만 자동 트리거, disabled 시 버튼 없음·트리거 없음) 총 15건 추가(2014->2029). 이 과정에서 처음엔 APPLOCK.disable()이 cascade로 부르는 BIOUNLOCK이 isolated ctx에 없어 기존 APPLOCK 테스트 2건이, renderLockView가 참조하는 _bioAutoTried/BIOUNLOCK/tryBioUnlock이 메인 sandbox에 없어 기존 renderLockView 테스트 1건이 깨졌다 — makeAppLockCtx 확장과 LETS에 _bioAutoTried 추가, 메인 sandbox에 APPLOCK과 동일한 스파이 패턴으로 BIOUNLOCK/tryBioUnlock 스텁을 추가해 모두 해결했고 2029/2029 재확인. node --check(sw.js/test/run.js) 통과, 추출한 <script> 블록 중 APP_VERSION이 든 메인 블록은 node -e(new Function)으로 별도 재확인(block 1의 파싱 실패는 git stash로 수정 전 원본에서도 동일 재현돼 이번 변경과 무관한 기존 한계임을 확인). git stash push로 index.html/sw.js만 걷어낸 뒤(test/run.js는 유지) extractLet('_bioAutoTried')가 index.html에서 못 찾아 즉시 크래시함을 직접 확인해 신규 테스트가 실제 구현에 의존함을 재검증하고 stash pop으로 복원 후 2029/2029 재확인. pending_advance_plan은 null로 비웠다.",
       "commit": null
     }
   ]
