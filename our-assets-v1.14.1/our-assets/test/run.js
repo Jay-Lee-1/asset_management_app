@@ -6312,6 +6312,20 @@ test('openAssetHistory: catExact/owner 필터도 함께 리셋한다(openCatHist
   assert.strictEqual(sandbox.ST.hist.owner, '전체');
   assert.deepStrictEqual(sandbox.goCalls, ['history']);
 });
+/* openCatHistory/openIncomeCatHistory는 드릴다운한 그 달로 range/preset을 좁히는데(위 테스트들),
+ * openAssetHistory는 반대로 '이 계좌의 전체내역'을 보여줘야 하는 화면이라 range를 안 건드리면
+ * History 탭에 남아있던 이전 기간(예: 그 계좌에 거래가 없는 달)이 그대로 남아 전체내역인데도
+ * 텅 비어 보인다(app-evolve cycle256 develop). */
+test('openAssetHistory: 이전에 남아있던 range/preset(예: openCatHistory가 좁힌 특정 월)을 전체 기간으로 되돌린다', () => {
+  setupHistoryDB();
+  sandbox.goCalls = [];
+  sandbox.ST.hist.range = { from: '2026-05-01', to: '2026-05-31' };
+  sandbox.ST.hist.preset = 'custom';
+  sandbox.openAssetHistory('a1');
+  assert.strictEqual(sandbox.ST.hist.range.from, sandbox.RANGE_FROM);
+  assert.strictEqual(sandbox.ST.hist.range.to, sandbox.RANGE_TO);
+  assert.strictEqual(sandbox.ST.hist.preset, 'custom');
+});
 
 /* ---------- openAssetHistory가 fx/gold/stock에선 전체내역 대신 수량 변경 기록(openAssetQtyLog)으로
  * 가고, 그 시트의 delAssetQtyLog가 delGoal/delInquiry와 동일한 확인+undoToast+톰스톤 패턴을

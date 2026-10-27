@@ -1,15 +1,8 @@
 {
   "cycle": 256,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 251,
-      "phase": "develop",
-      "timestamp": "2026-10-25T14:05:00.000Z",
-      "summary": "오케스트레이터(나)가 직접 앱 전반을 탐색해 연간 결산(openYearReview, cycle246 advance 신설)의 지출 TOP3/수입 TOP3 카드가 buildExpenseBarHtml()의 반환 HTML 전체를 <div aria-hidden=\"true\">로 감싸고 있는데, 이 화면엔 openSpendAnalysis/openIncomeAnalysis처럼 같은 카테고리·금액을 접근 가능한 형태로 따로 보여주는 전체 목록이 전혀 없어 스크린 리더 사용자에게 TOP3 섹션 전체가 통째로 안 들리는 버그를 발견해 aria-hidden 래퍼를 제거했다. index.html만 변경이라 APP_VERSION 1.47.244->1.47.245, sw.js CACHE v511->v512 동기 범프. test/run.js: 신규 테스트 1건 추가(2029->2030).",
-      "commit": "4ea02ff"
-    },
     {
       "cycle": 251,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-27T20:15:00.000Z",
       "summary": "critique(cycle255) 계획대로 귀속 선택 세그먼트 렌더링 중복을 공유 헬퍼 ownerSegHtml(current,onClickFor,opts)로 통합하되, 구현 전 계획의 전제 하나를 코드로 직접 검증해 바로잡았다 — critique는 'DB.owners는 opt-in이라 1인 가구는 보통 DB.owners=[]'라고 가정했지만, migrate()(index.html:2548, DB.owners=(DB.owners&&DB.owners.length)?DB.owners:['나','배우자','공용'])가 매 load()마다 비어있으면 기본 3귀속을 강제로 채우고 delOwner()(4467)도 '귀속은 최소 1개 필요'로 0까지 지우는 걸 막아, 정상 실사용에서 DB.owners가 빈 적은 전혀 없다(sanitizeBackup 주변 주석 7334-7335도 이미 같은 사실을 '극히 드문 경우'로 명시). 그래서 '1인 가구 대부분이 겪는 흔한 공백'이라는 critique의 동기는 틀렸지만, openYearReview(cycle246)가 이미 이 DB.owners=[] 케이스를 테스트(test/run.js: '귀속이 없으면 귀속 필터 세그먼트가 없어야 함')로 못박아 둔 걸 보면 이 프로젝트가 '근거 없는 극단치라도 한 번 테스트로 박아두면 다른 호출부도 일관되게 지킨다'는 관례를 이미 채택했음을 확인했고, 5곳의 마크업 중복 통합 자체도 critique의 전제와 무관하게 독립적으로 가치 있는 리팩터링이라 계획을 그대로(가드 포함) 구현하는 것으로 결정했다. index.html:3457 바로 뒤에 ownerSegHtml 신설(DB.owners 비면 ''; opts.sentinelValue/sentinelLabel로 goalOwnerSel의 'all'→'전체' 특수 케이스, opts.typeButton으로 renderHistory만 쓰는 type=\"button\" 차이를 흡수 — 이 typeButton 차이는 critique 계획엔 없던 것으로, 각 호출부 원문을 직접 대조해 발견). openIncomeAnalysis(5403)/renderHistory(5441,type=\"button\" 유지)/openYearReview(6171, 기존 DB.owners.length 삼항 제거)/openSpendAnalysis(6246)/renderGoalForm(3468, ownerSeg가 빈 문자열이면 '귀속' label과 필드 자체를 함께 숨김, 자산연결 모드가 아닐 때만)까지 5개 호출부를 전부 교체. index.html만 변경이라 APP_VERSION 1.47.253→1.47.254, sw.js CACHE v520→v521 동기 범프. test/run.js: FUNCTIONS에 ownerSegHtml 추가(안 하면 vm 샌드박스에서 'ownerSegHtml is not defined'로 49건 연쇄 실패 — 실제로 한 번 겪고 고침). 깨진 openSpendAnalysis 리터럴 소스 정규식 테스트 1건을 spendAnalysisCtx() 실행 기반 검증으로 교체하고 DB.owners=[]→세그 없음 테스트를 같은 자리에 추가, openIncomeAnalysis/renderHistory/renderGoalForm에도 각각 동일한 DB.owners=[] 회귀 가드 테스트를 새로 추가(openYearReview의 기존 패턴과 동일), ownerSegHtml 자체 단위 테스트 7건(빈 배열→'', 순서, on/aria-pressed, sentinel 오버라이드, typeButton, onClickFor 삽입, 래퍼 마크업) 신설 — 총 11건 추가(2093→2104). node test/run.js 2104/2104 통과, node --check(logic.js) 통과, 메인 <script> 블록 node --check 파싱 통과(비-메인 블록 1건은 cycle248부터 알려진 정규식 오매칭 false positive). pending_advance_plan은 null로 비웠다.",
+      "commit": null
+    },
+    {
+      "cycle": 256,
+      "phase": "develop",
+      "timestamp": "2026-10-27T00:00:00.000Z",
+      "summary": "fork 서브에이전트로 앱 전반을 재탐색(cycle122-255가 다룬 영역 전부 제외 지시)한 결과, openAssetHistory(index.html:5358)가 ST.hist.cat/q/catExact/owner 등은 리셋하면서 ST.hist.range/preset은 손대지 않는 버그를 발견 — 반면 같은 History 탭으로 드릴다운하는 openCatHistory/openIncomeCatHistory는 둘 다 ST.hist.range={from,to};ST.hist.preset='custom'을 명시적으로 세팅함. 그 결과 openCatHistory로 특정 월(예: 2026-05)로 범위를 좁힌 뒤 자산 화면에서 \"내역 보기\"(openAssetHistory)를 누르면, 해당 계좌에 그 달 거래가 없는 경우 \"전체내역\"을 보여줘야 할 화면이 조용히 텅 비어 보이는 버그였음. 고정폭 전체 범위 RANGE_FROM~RANGE_TO로 리셋하고 preset='custom'으로 맞춰 수정. index.html만 변경이라 APP_VERSION 1.47.254->1.47.255, sw.js CACHE v521->v522 동기 범프. test/run.js: 기존 range를 남은 상태로 두고 openAssetHistory 호출 시 RANGE_FROM/RANGE_TO로 리셋되는지 확인하는 회귀 테스트 1건 추가(2104->2105).",
       "commit": null
     }
   ]

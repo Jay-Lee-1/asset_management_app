@@ -1412,7 +1412,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.254';
+const APP_VERSION='1.47.255';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5358,7 +5358,9 @@ function filteredHist(){
 function openAssetHistory(assetId){
  const a=DB.assets.find(x=>x.id===assetId);
  if(a&&isMarketValued(a)){openAssetQtyLog(assetId);return}
- ST.hist.assetId=assetId;ST.hist.cat='전체';ST.hist.q='';ST.hist.catExact=null;ST.hist.catExactType=null;ST.hist.owner='전체';ST.hist.selMode=false;ST.hist.sel.clear();histInvalidate();
+ ST.hist.assetId=assetId;ST.hist.cat='전체';ST.hist.q='';ST.hist.catExact=null;ST.hist.catExactType=null;ST.hist.owner='전체';ST.hist.selMode=false;ST.hist.sel.clear();
+ ST.hist.range={from:RANGE_FROM,to:RANGE_TO};ST.hist.preset='custom'; /* openCatHistory처럼 범위도 리셋 — 안 하면 History 탭에 남아있던 이전 기간(예: 특정 월)이 그대로 남아 이 계좌에 그 기간 내역이 없으면 '전체내역'인데도 텅 비어 보인다 */
+ histInvalidate();
  go('history');
 }
 /* fx/gold/stock 전용 보유수량 변경 기록 목록 — openAssetHistory()가 이 자산들에 한해 전체내역
