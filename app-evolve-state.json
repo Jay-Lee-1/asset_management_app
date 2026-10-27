@@ -1,15 +1,12 @@
 {
   "cycle": 254,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "PWA 앱 아이콘 숏컷(long-press shortcuts) + ?action= 딥링크로 지출/수입/이체 빠른 입력",
+    "why": "앱은 설치형 PWA(manifest.webmanifest, display:standalone)인데 manifest에 shortcuts 배열이 없고, index.html은 location.search/location.hash를 전혀 읽지 않는다(grep 0건). 매일 여러 번 거래를 기록하는 앱인데 지금은 앱 열기→홈 렌더 대기→FAB(fabTap, index.html:4744)→'내역'→openTxSheet()(4767, 기본 expense)→수입/이체면 txType()(4891)으로 전환까지 거쳐야 한다. 안드로이드/데스크톱 PWA의 아이콘 롱프레스 숏컷은 표준 지원 기능이고, 스키마 변경·PIN/암호화 영역 접촉이 전혀 없는 순수 추가적 UX라 무인 사이클로 안전하게 구현할 수 있다. (기각한 대안: 전역 통합검색-화면별 렌더 패턴이 달라 리스크 큼; 부채 상환 시뮬레이션-이자 모델링까지 필요해 범위 과대; PDF 월간 명세서-CSV/JSON 백업이 이미 데이터 이동성을 커버; 양도소득세 추적-락롯 추적+세율 UI까지 필요해 한 사이클 범위를 크게 초과.)",
+    "approach": "1) manifest.webmanifest에 shortcuts 배열 추가 — ./?action=addExpense, ./?action=addIncome, ./?action=addTransfer 3개 항목, 기존 icon-192.png 재사용(새 아이콘 자산 불필요). 2) sw.js CACHE 버전 범프(manifest.webmanifest가 SHELL 목록에 있어 재캐시 필요). 3) index.html의 순수 함수 구역에 parseShortcutAction(search) 신설: /[?&]action=([a-zA-Z]+)/.exec(search||'') 매칭, 문자열 입력만 받는 순수함수라 test/run.js에서 바로 테스트 가능. 4) boot()/startApp()(index.html 9700대) 흐름에서, 잠금이 없으면(!APPLOCK.enabled()) startApp() 이후 location.search를 parseShortcutAction으로 읽어 addExpense→openTxSheet()(이미 기본값), addIncome→openTxSheet();txType('income'), addTransfer→openTxSheet();txType('transfer')로 분기한 뒤 history.replaceState(null,'',location.pathname)로 쿼리스트링을 지운다(재진입/새로고침 시 중복 실행 방지). 5) 잠금이 걸려있으면(APPLOCK.enabled()) boot 시점엔 액션을 바로 실행하지 말고 모듈 전역 변수(예: PENDING_SHORTCUT_ACTION)에 저장해두고, unlockApp() 성공 직후($('app').style.display='' 다음)에 꺼내 실행 후 비운다. 6) test/run.js: parseShortcutAction에 대해 ?action=addIncome, ?action=addExpense&x=1, 쿼리스트링 없음, 잘못된 형식 등 순수 문자열 입력 케이스를 추가. boot/unlockApp 쪽 DOM 배선은 기존 테스트 스위트 패턴 밖이라 유닛 테스트 대상이 아니며, 구현 후 run 스킬로 실제 ?action= 네비게이션이 올바른 시트 타입을 열고 URL이 정리되는지 수동 확인한다."
+  },
   "history": [
-    {
-      "cycle": 249,
-      "phase": "review",
-      "timestamp": "2026-10-25T07:07:47.057Z",
-      "summary": "cycle249 develop 커밋(7a59732, 카테고리 관리(openCatManage)에 moveGroup/moveAsset과 동일한 .grp-move 위/아래 순서 이동 버튼 추가)을 검토. movedCatOrder(arr,i,dir)가 movedGroupOrder/movedAssetOrder와 동일한 \"인접 교환, 경계면 null\" 규칙을 따르되, DB.categories[k]가 id 맵이 아니라 순서 자체가 의미인 문자열 배열이라 바뀐 배열 전체를 반환하도록 설계가 올바르게 달라졌음을 확인. isSysAdjust(ADJUST_CAT) 행에서 이동 버튼도 함께 숨겨짐을 확인. mergeNameListWithTombstones가 local 배열을 그대로 base로 써 수동 순서가 동기화로 되돌아가지 않는다는 주장을 logic.js에서 직접 코드로 재확인. 신규 테스트 8건이 diff의 각 분기에 1:1 대응함을 확인. node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행 결과 2011/2011 통과. APP_VERSION 1.47.242/sw.js CACHE v509 범프가 index.html 변경과 일치. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 249,
       "phase": "critique",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-27T13:45:00.000Z",
       "summary": "cycle254 develop 커밋(62a9ae8, txSplitAdd/txSplitRemove에 syncTxInputs() 누락 수정)을 검토. txType(4891)/txToggleRepeat(4892) 등 txDraft를 바꾸고 renderTxSheet()로 재렌더하는 다른 모든 핸들러가 재렌더 전에 syncTxInputs()를 먼저 부르는 패턴과 코드로 직접 대조해 이 수정이 같은 패턴을 그대로 따름을 확인. syncTxInputs()(4834) 자체는 DOM 3개 요소를 읽어 txDraft에 반영하고 스크롤 위치를 기록할 뿐 다른 부작용이 없어, txSplitRemove의 '분할 2개 이하면 삭제 거부' 가드보다 먼저 불려도 안전함을 확인(가드가 막아도 동기화만 일어나고 삭제는 안 됨 — 새 테스트 3번째 케이스가 바로 이를 확인). 신규 테스트 3건이 추가/삭제/가드-통과 세 분기에 1:1 대응함을 확인. node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행 결과 2080/2080 통과(develop 단계가 주장한 수치와 일치). node --check(logic.js) 통과, 메인 <script> 블록 vm.Script 파싱 통과(비-메인 블록 1건은 cycle248부터 알려진 정규식 오매칭 false positive). APP_VERSION 1.47.251/sw.js CACHE v518 범프가 index.html 변경과 일치. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 254,
+      "phase": "critique",
+      "timestamp": "2026-10-27T14:55:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle122-254 전체 다룬 영역·기각 항목 전부 제외 지시, 특히 APPLOCK PIN 기반 전체 DB 암호화는 cycle252-253에서 boot 순서·세션 키 부재·forgot-PIN 데이터무손실 보장 충돌·약한 PIN 브루트포스 저항 등으로 이미 심층 기각되었으니 재추진 금지로 명시)한 결과를 바탕으로 선정. 러너업: 전역 통합검색(화면별 렌더 패턴이 달라 리스크 큼), 부채 상환 시뮬레이션(이자 모델링까지 필요해 범위 과대), PDF 월간 명세서(CSV/JSON 백업이 이미 데이터 이동성 커버), 양도소득세 추적(락롯 추적+세율 UI 필요, 한 사이클 범위 크게 초과). 채택: PWA 앱 아이콘 롱프레스 숏컷(manifest.webmanifest shortcuts) + ?action= 딥링크로 지출/수입/이체 빠른 입력 — manifest에 shortcuts 배열이 없고 index.html이 location.search를 전혀 읽지 않음(grep 0건)을 확인, 매일 여러 번 쓰는 거래 입력이 지금은 앱 열기→홈 렌더→FAB→내역→시트(기본 expense)→필요시 txType 전환까지 거쳐야 하는 공백을 발견. 스키마·PIN/암호화 영역을 전혀 건들지 않는 순수 추가적 UX라 무인 사이클에 적합 판단. 구체 계획(parseShortcutAction 순수함수, boot/unlockApp 분기, manifest shortcuts 3개, sw.js 캐시 범프, 테스트 추가)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
       "commit": null
     }
   ]
