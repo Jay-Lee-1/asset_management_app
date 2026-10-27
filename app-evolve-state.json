@@ -1,15 +1,12 @@
 {
   "cycle": 255,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "귀속(owner) 선택 세그먼트 렌더링 중복 통합 + DB.owners=[] 가드 누락 수정",
+    "why": "spendOwnerSel/incomeOwnerSel/histOwnerSel/yearOwnerSel/goalOwnerSel 5곳이 거의 동일한 '귀속 선택' 세그먼트 마크업을 각자 베껴 쓰고 있는데, openYearReview(index.html:6171, cycle246)만 DB.owners.length?...:'' 가드를 갖고 있고 나머지 4곳(renderGoalForm:3468, openIncomeAnalysis:5403, renderHistory:5441, openSpendAnalysis:6246)엔 가드가 없다. DB.owners는 opt-in 기능(addOwner)이라 대부분의 1인 가구 사용자는 DB.owners=[]이고, 이 경우 list=['전체'] 하나뿐인 세그가 그려져 role=\"group\" aria-label=\"귀속 선택\"에 버튼이 하나뿐인 동작 없는 UI/DOM/접근성 노이즈가 지출분석·수입분석·전체내역·목표추가 4개 화면에 남는다.",
+    "approach": "index.html:3458(renderGoalForm 바로 앞)에 공유 헬퍼 ownerSegHtml(current, onClickFor, opts) 신설 — DB.owners가 비어있으면 ''을 반환, 아니면 [sentinelValue,...DB.owners]로 세그 HTML을 그린다(sentinelValue/sentinelLabel opts로 goalOwnerSel의 'all'→'전체' 특수 케이스 지원). 5개 호출부를 전부 이 헬퍼 호출로 교체한다: openIncomeAnalysis(5403)/renderHistory(5441)/openSpendAnalysis(6246)는 그대로 교체, openYearReview(6171)는 기존 DB.owners.length 삼항을 헬퍼 호출로 교체(동작 동일), renderGoalForm(3468)은 ownerSeg가 빈 문자열이면 '귀속' label과 필드 전체를 함께 숨기도록 구조를 바꾼다(자산연결 모드가 아닐 때만). goalOwnerSel 등 5개 onclick 핸들러 함수 자체는 변경하지 않는다(인덱스 로직 그대로). index.html만 변경이므로 APP_VERSION/sw.js CACHE 동기 범프. test/run.js: test/run.js:16094-16100의 openSpendAnalysis 리터럴 소스 정규식 테스트를 ownerSegHtml 직접 단위 테스트 또는 spendAnalysisCtx() 실행 기반 검증으로 교체(교체 안 하면 정규식이 더 이상 매치 안 돼 실패). ownerSegHtml 신규 테스트 추가(DB.owners=[]→'' 반환, N+1 버튼 순서, current 매칭 시 on/aria-pressed, sentinelValue/sentinelLabel 오버라이드, onClickFor 문자열 삽입). test/run.js:6623-6624(year)와 20579(hist)의 렌더링-출력 기반(소스 아님) 정규식은 그대로 통과하는지 재실행으로 확인만. renderGoalForm(test/run.js:16544)/renderHistory(test/run.js:16587,20362) 관련 다른 리터럴 소스 검사가 있는지 한 번 더 grep. 커밋 전 node test/run.js 전체 통과, node --check(logic.js), 메인 <script> 블록 vm.Script 파싱 확인 필수."
+  },
   "history": [
-    {
-      "cycle": 250,
-      "phase": "critique",
-      "timestamp": "2026-10-25T12:15:05.224Z",
-      "summary": "general-purpose 서브에이전트(fork)로 앱 전반을 재탐색(cycle122-250 전체 다룬 영역·기각 항목 전부 제외 지시)한 결과, 앱 잠금(APPLOCK, index.html:2402-2425)이 PIN 전용이고 renderLockView()(9517-9530)도 PIN 입력칸만 보여줄 뿐 WebAuthn/생체인증 관련 코드가 전무함(grep 0건)을 발견. advance 계획(BIOUNLOCK 신설 — register/unlock/disable, APPLOCK.disable() 시 cascading cleanup, renderMenu/renderLockView에 조건부 UI)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
-      "commit": null
-    },
     {
       "cycle": 250,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-27T18:05:00.000Z",
       "summary": "cycle255 develop 커밋(51006c9, 거래 입력 분할 모드의 splitFieldHTML에 항목별 메모 입력칸 추가 + txSplitMemo 핸들러 신설)을 검토. logic.js의 matchTxnQuery(lineMemos=lines.map(s=>s.memo||'')...)가 읽는 필드명이 's.memo'로 txSplitMemo(i,el){txDraft.splits[i].memo=el.value}가 쓰는 필드명과 정확히 일치함을 코드로 대조 확인. splitFieldHTML의 새 input이 esc(s.memo||'')로 값을 이스케이프해 기존 금액 input과 동일한 field-clear 패턴을 따르고, 지우기(×) 버튼은 openSheet()가 호출하는 fcWire()의 범용 '.field-clear input' 셀렉터로 자동 배선됨을 확인(새 input id에 대한 특별 배선 불필요, 코드로 확인). saveTx()가 d.splits를 그대로 저장해 memo 필드가 손실 없이 영속화됨을 확인. node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행 결과 2093/2093 통과(develop 단계가 주장한 수치와 일치). node --check(logic.js) 통과. APP_VERSION 1.47.253/sw.js CACHE v520 범프가 index.html 변경과 일치. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 255,
+      "phase": "critique",
+      "timestamp": "2026-10-27T19:05:00.000Z",
+      "summary": "general-purpose 서브에이전트(fork)로 앱 전반을 재탐색(cycle122-255 전체 다룬 영역·기각 항목 전부 제외, APPLOCK PIN 기반 전체 DB 암호화는 cycle252-253에서 boot 순서·세션 키 부재·forgot-PIN 데이터무손실 보장 충돌·약한 PIN 브루트포스 저항으로 이미 심층 기각되었으니 재추진 금지로 명시)한 결과를 바탕으로 선정. 귀속(owner) 선택 세그먼트 렌더링이 spendOwnerSel/incomeOwnerSel/histOwnerSel/yearOwnerSel/goalOwnerSel 5곳에 거의 동일한 마크업으로 중복돼 있는데, openYearReview(index.html:6171, cycle246)만 DB.owners.length?...:'' 가드를 갖고 나머지 4곳(renderGoalForm:3468, openIncomeAnalysis:5403, renderHistory:5441, openSpendAnalysis:6246)엔 가드가 없음을 발견 — DB.owners는 opt-in(addOwner)이라 1인 가구는 DB.owners=[]이고, 이 경우 '전체' 버튼 하나뿐인 동작 없는 세그가 지출분석·수입분석·전체내역·목표추가 4개 화면에 그려짐(연간결산만 이미 올바르게 숨김). 러너업 기각: TODO(SRI) CDN 스크립트 해시(이 컨테이너 자체가 해당 CDN 호스트를 네트워크 정책상 막고 있어 코드 변경으로 해결 불가), 자산-목표 귀속 동기화(이미 cycle230에서 해결됨, 재확인만), 시트/다이얼로그 포커스 트랩(이미 overlayEscapeTarget/sheetFocusables로 일반화돼 구현됨, index.html:7940-8019). advance 계획(공유 헬퍼 ownerSegHtml(current,onClickFor,opts) 신설 후 5개 호출부 교체, test/run.js:16094-16100의 openSpendAnalysis 리터럴 소스 정규식 테스트를 실행 기반 검증으로 교체 필요, ownerSegHtml 신규 단위 테스트 추가)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
       "commit": null
     }
   ]
