@@ -1,15 +1,8 @@
 {
   "cycle": 255,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 250,
-      "phase": "review",
-      "timestamp": "2026-10-25T10:30:00.000Z",
-      "summary": "cycle250 develop 커밋(60cf9a3, 연간 결산(openYearReview)에 월별 수입/지출 흐름 카드 추가)을 검토. yearMonthlyNet(y,owner)이 돌려주는 {m,income,expense} 필드명과 렌더 코드가 정확히 일치함을 확인. maxMo=Math.max(1,...)의 1 하한이 0/0 NaN을 막는 안전한 가드임을 확인(빈 상태는 상위에서 이미 조기 return해 이중 방어). 신규 테스트 1건이 diff의 두 분기에 1:1 대응함을 확인. node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행 결과 2014/2014 통과. APP_VERSION 1.47.243/sw.js CACHE v510 범프가 index.html 변경과 일치. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 250,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-27T17:13:45.293Z",
       "summary": "앱 전반 재탐색(fork 서브에이전트, cycle249-254가 다룬 영역 전부 제외 지시) 결과, 거래 입력 분할 모드(여러 카테고리로 나누기)의 데이터 모델(t.splits=[{category,amount,memo?}])과 검색(matchTxnQuery의 lineMemos)은 이미 분할 항목별 메모를 지원하는데, 실제 입력 UI(splitFieldHTML, index.html:4846)는 카테고리 선택과 금액 입력만 그리고 txToggleSplit()/txSplitAdd()가 memo:''로 고정 초기화할 뿐이라 분할 항목에 메모를 적을 방법이 전혀 없는 죽은 필드였음을 발견. splitFieldHTML에 항목별 메모 input(id=splitMemo{i}, 기존 금액 input과 동일한 field-clear 패턴)을 추가하고 txSplitMemo(i,el) 핸들러를 신설해 배선. openSheet()가 이미 호출하는 fcWire()가 새 input의 지우기(×) 버튼도 자동 배선하므로 추가 배선 불필요. logic.js 변경 없음(데이터 모델/검색은 이미 완비). test/run.js에 [실행형] 테스트 2건 추가(txSplitMemo 단위 테스트, splitFieldHTML이 id/oninput 배선과 esc()를 통한 따옴표 이스케이프까지 포함해 메모 input을 올바르게 그리는지 렌더 테스트). APP_VERSION 1.47.252→1.47.253, sw.js CACHE v519→v520. node our-assets-v1.14.1/our-assets/test/run.js 2091→2093/2093 통과.",
+      "commit": "51006c9"
+    },
+    {
+      "cycle": 255,
+      "phase": "review",
+      "timestamp": "2026-10-27T18:05:00.000Z",
+      "summary": "cycle255 develop 커밋(51006c9, 거래 입력 분할 모드의 splitFieldHTML에 항목별 메모 입력칸 추가 + txSplitMemo 핸들러 신설)을 검토. logic.js의 matchTxnQuery(lineMemos=lines.map(s=>s.memo||'')...)가 읽는 필드명이 's.memo'로 txSplitMemo(i,el){txDraft.splits[i].memo=el.value}가 쓰는 필드명과 정확히 일치함을 코드로 대조 확인. splitFieldHTML의 새 input이 esc(s.memo||'')로 값을 이스케이프해 기존 금액 input과 동일한 field-clear 패턴을 따르고, 지우기(×) 버튼은 openSheet()가 호출하는 fcWire()의 범용 '.field-clear input' 셀렉터로 자동 배선됨을 확인(새 input id에 대한 특별 배선 불필요, 코드로 확인). saveTx()가 d.splits를 그대로 저장해 memo 필드가 손실 없이 영속화됨을 확인. node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행 결과 2093/2093 통과(develop 단계가 주장한 수치와 일치). node --check(logic.js) 통과. APP_VERSION 1.47.253/sw.js CACHE v520 범프가 index.html 변경과 일치. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
