@@ -247,6 +247,11 @@ const FUNCTIONS = [
   'heldCurrencies', 'heldStockCodes', 'heldCryptoCodes', 'needFx', 'needStock', 'needCrypto', 'hasRateAssets', 'autoSyncRates',
   'nextBigOutflow', 'dday', 'balanceOn', 'nextOutflowCard', 'monthOutflowCard', 'planGaugeCard', 'homeAlertCard', 'renderHome',
   'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwPresetSegHTML', 'nwHistoryCard', 'allocationCard', 'investGainLossCard', 'doRenameOwner', 'addOwner', 'ownerChipClass',
+  // ownerSegHtml(app-evolve cycle255 advance)은 spendOwnerSel/incomeOwnerSel/histOwnerSel/
+  // yearOwnerSel/goalOwnerSel 5곳이 각자 베껴 쓰던 귀속 선택 세그먼트 마크업을 모은 공유 헬퍼 —
+  // 그 5곳을 부르는 openSpendAnalysis/openIncomeAnalysis/renderHistory/openYearReview/
+  // renderGoalForm이 모두 이 함수를 호출하므로 FUNCTIONS에 반드시 함께 올라가야 한다.
+  'ownerSegHtml',
   // selectNwOwner/refreshAssetBody/refreshNwHistoryCard/refreshGoalsSummary/refreshAllocationCard는
   // app-evolve cycle219 develop(귀속 캐러셀이 자산 일괄선택 모드 중에도 계속 동작해, 전환 전
   // 선택해둔 id가 새 귀속에서 안 보이는 채로 ST.aSel.ids에 남는 버그) 검증용 — 넷 다
@@ -2682,6 +2687,50 @@ test('ownerChipClass: DB.owners에 없는(삭제된) 귀속 이름은 own-0으�
   assert.strictEqual(sandbox.ownerChipClass('이미삭제된귀속'), 'own-0');
 });
 
+/* ---------- ownerSegHtml: spendOwnerSel/incomeOwnerSel/histOwnerSel/yearOwnerSel/goalOwnerSel
+ * 5곳이 각자 베껴 쓰던 귀속 선택 세그먼트 마크업을 모은 공유 헬퍼(app-evolve cycle255 advance). ---------- */
+test('ownerSegHtml: DB.owners가 비어있으면 빈 문자열을 돌려준다(동작 없는 1버튼 세그를 그리지 않음, openYearReview의 기존 가드와 동일)', () => {
+  sandbox.DB = { owners: [] };
+  assert.strictEqual(sandbox.ownerSegHtml('전체', (i) => `spendOwnerSel(${i})`), '');
+});
+test('ownerSegHtml: 센티넬(전체) 버튼 뒤에 DB.owners를 순서대로 이어붙인다', () => {
+  sandbox.DB = { owners: ['나', '배우자'] };
+  const html = sandbox.ownerSegHtml('전체', (i) => `spendOwnerSel(${i})`);
+  assert.ok(
+    /onclick="spendOwnerSel\(0\)">전체<\/button>.*onclick="spendOwnerSel\(1\)">나<\/button>.*onclick="spendOwnerSel\(2\)">배우자<\/button>/.test(html),
+    '전체→나→배우자 순서로 버튼이 그려지지 않음'
+  );
+});
+test('ownerSegHtml: current와 일치하는 버튼에만 on 클래스/aria-pressed=true가 붙는다', () => {
+  sandbox.DB = { owners: ['나', '배우자'] };
+  const html = sandbox.ownerSegHtml('나', (i) => `spendOwnerSel(${i})`);
+  assert.ok(/<button class="on" aria-pressed="true" onclick="spendOwnerSel\(1\)">나<\/button>/.test(html), '선택된 귀속(나)에 on/aria-pressed가 붙어야 함');
+  assert.ok(/<button class="" aria-pressed="false" onclick="spendOwnerSel\(0\)">전체<\/button>/.test(html), '선택 안 된 전체엔 on이 붙으면 안 됨');
+});
+test('ownerSegHtml: opts.sentinelValue/sentinelLabel로 내부 값과 표시 라벨을 다르게 쓸 수 있다(goalOwnerSel의 "all"→"전체")', () => {
+  sandbox.DB = { owners: ['나'] };
+  const html = sandbox.ownerSegHtml('all', (i) => `goalOwnerSel(${i},true)`, { sentinelValue: 'all', sentinelLabel: '전체' });
+  assert.ok(
+    /<button class="on" aria-pressed="true" onclick="goalOwnerSel\(0,true\)">전체<\/button>/.test(html),
+    'sentinelValue("all")로 비교하고 sentinelLabel("전체")로 표시해야 함'
+  );
+});
+test('ownerSegHtml: opts.typeButton이면 버튼에 type="button"이 붙는다(renderHistory처럼 탭 화면에서 쓰는 경우)', () => {
+  sandbox.DB = { owners: ['나'] };
+  const html = sandbox.ownerSegHtml('전체', (i) => `histOwnerSel(${i})`, { typeButton: true });
+  assert.ok(html.includes('<button type="button" class="on" aria-pressed="true" onclick="histOwnerSel(0)">전체</button>'), 'typeButton 옵션이면 type="button"이 붙어야 함');
+});
+test('ownerSegHtml: onClickFor(i)가 돌려준 문자열이 각 버튼의 onclick 속성에 그대로 삽입된다', () => {
+  sandbox.DB = { owners: ['나'] };
+  const html = sandbox.ownerSegHtml('전체', (i) => `spendOwnerSel(${i})`);
+  assert.ok(html.includes('onclick="spendOwnerSel(0)"') && html.includes('onclick="spendOwnerSel(1)"'), 'onClickFor가 만든 onclick 문자열이 각 버튼에 그대로 들어가야 함');
+});
+test('ownerSegHtml: 래퍼에 role="group"/aria-label="귀속 선택", seg-blob이 있다', () => {
+  sandbox.DB = { owners: ['나'] };
+  const html = sandbox.ownerSegHtml('전체', (i) => `spendOwnerSel(${i})`);
+  assert.ok(html.startsWith('<div class="seg" role="group" aria-label="귀속 선택"><div class="seg-blob"></div>'), '세그먼트 래퍼/블롭이 없거나 형식이 다름');
+});
+
 /* ---------- doRenameOwner: 이름변경도 delOwner과 동일하게 옛 이름을 톰스톤해야 한다(app-evolve cycle180) ----------
  * doRenameCat과 완전히 동일한 사연 — doRenameOwner는 assets/goals의 owner를 old에서 v로 옮기지만
  * DB.owners에서 old 자체를 지우는 것과 동치인데도 ownerTombKey 톰스톤을 남기지 않아,
@@ -4051,6 +4100,14 @@ test('renderGoalForm: 귀속 세그먼트가 goalDraft.owner와 일치하는 버
   assert.ok(/aria-pressed="true"[^>]*>배우자/.test(sandbox.lastSheetHtml), '배우자 버튼의 aria-pressed가 true가 아님');
   assert.ok(/aria-pressed="false"[^>]*>전체/.test(sandbox.lastSheetHtml), '전체 버튼의 aria-pressed가 false가 아님');
   assert.ok(/role="group" aria-label="귀속 선택"/.test(sandbox.lastSheetHtml), '귀속 세그먼트 래퍼에 role="group"/aria-label이 없음');
+});
+test('renderGoalForm: 귀속이 하나도 없으면(DB.owners=[]) 자산 연결 모드가 아닐 때 귀속 필드 전체(라벨 포함)가 렌더되지 않는다(app-evolve cycle255 advance)', () => {
+  sandbox.DB = { owners: [] };
+  sandbox.goalDraft = { id: 'g1', name: '', targetAmount: 0, targetDate: '', type: 'networth', owner: 'all' };
+  sandbox.lastSheetHtml = null;
+  sandbox.renderGoalForm(false);
+  assert.ok(!sandbox.lastSheetHtml.includes('<label>귀속</label>'), '귀속이 없으면 귀속 라벨도 함께 숨겨져야 함');
+  assert.ok(!sandbox.lastSheetHtml.includes('role="group" aria-label="귀속 선택"'), '귀속이 없으면 귀속 선택 세그먼트도 없어야 함');
 });
 test('goalOwnerSel: 귀속 버튼을 고르면 입력값을 먼저 동기화한 뒤 goalDraft.owner를 바꾸고 폼을 다시 연다', () => {
   sandbox.DB = { owners: ['나', '배우자'] };
@@ -6467,6 +6524,14 @@ test('openIncomeAnalysis: 예산 관련 UI가 전혀 없다(수입에는 예산 
   ctx.lastSheetHtml = null;
   ctx.openIncomeAnalysis();
   assert.ok(!ctx.lastSheetHtml.includes('예산'), '수입 분석 시트에 예산 관련 문구가 있으면 안 됨');
+});
+test('openIncomeAnalysis: 귀속(owner) 등록이 하나도 없으면(DB.owners=[]) openYearReview(cycle246)와 동일하게 귀속 필터 세그먼트가 아예 안 그려진다(app-evolve cycle255 advance)', () => {
+  const ctx = incomeAnalysisCtx();
+  ctx.DB = { owners: [], assets: [], recurrences: [], txns: [] };
+  ctx.ST = { ledger: { y: 2026, m: 6 }, spendOwner: '전체' };
+  ctx.lastSheetHtml = null;
+  ctx.openIncomeAnalysis();
+  assert.ok(!ctx.lastSheetHtml.includes('class="seg" role="group" aria-label="귀속 선택"'), '귀속이 없으면 귀속 필터 세그먼트가 없어야 함');
 });
 
 /* ---------- openYearReview: openSpendAnalysis/openIncomeAnalysis보다 큰 1년 범위로 총수입/총지출/
@@ -16090,14 +16155,28 @@ test('openSpendAnalysis: 지출 분석 카테고리 행(spend-row)에 키보드/
   assert.ok(body.includes('onkeydown="rowKeydown(event,()=>openBudgetPrompt('), 'spend-row에 rowKeydown 연결이 없음');
 });
 /* 지출분석 귀속 필터 세그먼트도 class="on"만으로 선택 상태를 표시해 스크린리더가 어떤 귀속이
- * 선택돼 있는지 알 수 없던 공백 — app-evolve cycle147 critique/advance. */
+ * 선택돼 있는지 알 수 없던 공백 — app-evolve cycle147 critique/advance. 이 세그먼트는 app-evolve
+ * cycle255 advance부터 공유 헬퍼 ownerSegHtml()이 그려서 openSpendAnalysis 소스 자체에는 더 이상
+ * 세그 마크업 리터럴이 없다 — 그래서 소스-매칭 대신 openYearReview의 기존 실행형 패턴(yearReviewCtx)과
+ * 동일하게 spendAnalysisCtx로 실제로 렌더해 검증한다. */
 test('openSpendAnalysis: 귀속 필터 세그먼트 버튼에 aria-pressed, 래퍼에 role/aria-label이 있다', () => {
-  const body = extractFunction('openSpendAnalysis');
-  assert.ok(
-    /\['전체',\.\.\.DB\.owners\]\.map\(\(o,oi\)=>`<button class="\$\{ST\.spendOwner===o\?'on':''\}" aria-pressed="\$\{ST\.spendOwner===o\}" onclick="spendOwnerSel/.test(body),
-    '귀속 필터 세그먼트 버튼에 aria-pressed가 없음'
-  );
-  assert.ok(/<div class="seg" role="group" aria-label="귀속 선택">/.test(body), '귀속 필터 세그먼트 래퍼에 role="group"/aria-label이 없음');
+  const ctx = spendAnalysisCtx();
+  ctx.DB = { owners: ['나', '배우자'], assets: [], recurrences: [], budgetHistory: {}, catBudgetRollover: {}, txns: [] };
+  ctx.ST = { ledger: { y: 2026, m: 6 }, spendOwner: '배우자' };
+  ctx.lastSheetHtml = null;
+  ctx.openSpendAnalysis();
+  const html = ctx.lastSheetHtml;
+  assert.ok(html.includes('<div class="seg" role="group" aria-label="귀속 선택">'), '귀속 필터 세그먼트 래퍼에 role="group"/aria-label이 없음');
+  assert.ok(/<button class="on" aria-pressed="true" onclick="spendOwnerSel\(2\)">배우자<\/button>/.test(html), '선택된 귀속(배우자)에 on/aria-pressed가 붙어야 함');
+  assert.ok(/<button class="" aria-pressed="false" onclick="spendOwnerSel\(0\)">전체<\/button>/.test(html), '선택되지 않은 귀속(전체)엔 on이 붙으면 안 됨');
+});
+test('openSpendAnalysis: 귀속(owner) 등록이 하나도 없으면(DB.owners=[]) openYearReview(cycle246)와 동일하게 귀속 필터 세그먼트가 아예 안 그려진다', () => {
+  const ctx = spendAnalysisCtx();
+  ctx.DB = { owners: [], assets: [], recurrences: [], budgetHistory: {}, catBudgetRollover: {}, txns: [] };
+  ctx.ST = { ledger: { y: 2026, m: 6 }, spendOwner: '전체' };
+  ctx.lastSheetHtml = null;
+  ctx.openSpendAnalysis();
+  assert.ok(!ctx.lastSheetHtml.includes('class="seg" role="group" aria-label="귀속 선택"'), '귀속이 없으면 귀속 필터 세그먼트가 없어야 함');
 });
 /* 메인 sandbox에서 openSpendAnalysis는 화면 전용 부수효과(saveBudget/delBudget이 저장·삭제
  * 끝에 재렌더용으로 부름)라 계속 no-op 스텁(위쪽 공유 stub 객체)으로 둬야 한다 — 그 두 함수의
@@ -20578,6 +20657,13 @@ test('renderHistory: 귀속 필터 세그먼트가 렌더되고, ST.hist.owner�
   assert.ok(html.includes('onclick="histOwnerSel(2)"'), "DB.owners=['나','배우자']일 때 '배우자'는 세 번째(index 2) 칩이어야 함");
   assert.ok(/class="on" aria-pressed="true" onclick="histOwnerSel\(2\)"/.test(html), "ST.hist.owner==='배우자'면 그 칩만 on이어야 함");
   assert.ok(!/class="on"[^>]*histOwnerSel\(0\)/.test(html), "owner가 '전체'가 아니면 전체 칩은 on이 아니어야 함");
+});
+test('renderHistory: 귀속(owner) 등록이 하나도 없으면(DB.owners=[]) openYearReview(cycle246)와 동일하게 귀속 필터 세그먼트가 아예 안 그려진다(app-evolve cycle255 advance)', () => {
+  setupHistoryDB();
+  sandbox.DB.owners = [];
+  sandbox.renderHistory();
+  const html = sandbox.pageHistoryEl.innerHTML;
+  assert.ok(!html.includes('class="seg" role="group" aria-label="귀속 선택"'), '귀속이 없으면 귀속 필터 세그먼트가 없어야 함');
 });
 test('renderHistory: 선택(selMode) 중에는 귀속 필터 세그먼트도 다른 검색 UI와 함께 숨겨진다', () => {
   setupHistoryDB();

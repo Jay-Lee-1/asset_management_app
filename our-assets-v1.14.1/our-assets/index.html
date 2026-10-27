@@ -1412,7 +1412,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.253';
+const APP_VERSION='1.47.254';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3455,6 +3455,20 @@ function goalOpenAsset(editing){
 function syncGoalInputs(){const d=goalDraft;if(!d)return;if($('goalName'))d.name=$('goalName').value||'';if($('goalAmt'))d.targetAmount=num($('goalAmt'))}
 function goalClearDate(editing){syncGoalInputs();goalDraft.targetDate='';renderGoalForm(editing)}
 function goalOwnerSel(i,editing){syncGoalInputs();const list=['all',...(DB.owners||[])];goalDraft.owner=list[i]||'all';renderGoalForm(editing)} /* 자산 ownerPick과 달리 '전체'(가구 공동 목표) 선택지가 있어 asOpenOwner의 전용 시트 대신 spendOwnerSel과 같은 인라인 seg를 쓴다 */
+/* 귀속 선택 세그먼트 — spendOwnerSel/incomeOwnerSel/histOwnerSel/yearOwnerSel/goalOwnerSel 5곳이
+ * 거의 동일한 마크업을 각자 베껴 쓰고 있던 걸 하나로 모은다(app-evolve cycle255 advance). DB.owners가
+ * 비어있으면 openYearReview(cycle246)가 이미 그래 왔듯 ''을 돌려줘 버튼 하나뿐인 동작 없는 세그를
+ * 그리지 않는다. opts.sentinelValue/sentinelLabel: goalOwnerSel만 내부 값('all')과 표시 라벨('전체')이
+ * 다르다. opts.typeButton: renderHistory(탭 화면이라 다른 버튼들도 전부 type="button")만 필요하다. */
+function ownerSegHtml(current,onClickFor,opts){
+ if(!DB.owners||!DB.owners.length)return '';
+ opts=opts||{};
+ const sentinelValue=opts.sentinelValue!==undefined?opts.sentinelValue:'전체';
+ const sentinelLabel=opts.sentinelLabel||sentinelValue;
+ const typeAttr=opts.typeButton?' type="button"':'';
+ const list=[sentinelValue,...DB.owners];
+ return `<div class="seg" role="group" aria-label="귀속 선택"><div class="seg-blob"></div>${list.map((o,oi)=>`<button${typeAttr} class="${current===o?'on':''}" aria-pressed="${current===o}" onclick="${onClickFor(oi)}">${o===sentinelValue?esc(sentinelLabel):esc(o)}</button>`).join('')}</div>`;
+}
 function renderGoalForm(editing){
  const d=goalDraft;
  const isAsset=d.type==='asset';
@@ -3464,8 +3478,9 @@ function renderGoalForm(editing){
   </div></div>`;
  /* isAsset이 아닐 때는 assetPickBtn(DB.assets.find 의존)을 평가하지 않아야 해서(goalsSummaryCard 등
   * 테스트의 최소 DB={goals,nwHistory}처럼 DB.assets가 없을 수 있음) 삼항 분기 안에서만 조건부로 만든다 */
+ const goalOwnerSeg=isAsset?'':ownerSegHtml(d.owner||'all',oi=>`goalOwnerSel(${oi},${editing})`,{sentinelValue:'all',sentinelLabel:'전체'});
  const ownerOrAssetField=isAsset?`<div class="field"><label>연결할 자산</label>${assetPickBtn(d.linkedAssetId,`goalOpenAsset(${editing})`)}</div>`
-  :`<div class="field"><label>귀속</label><div class="seg" role="group" aria-label="귀속 선택"><div class="seg-blob"></div>${['all',...(DB.owners||[])].map((o,oi)=>`<button class="${(d.owner||'all')===o?'on':''}" aria-pressed="${(d.owner||'all')===o}" onclick="goalOwnerSel(${oi},${editing})">${o==='all'?'전체':esc(o)}</button>`).join('')}</div></div>`;
+  :(goalOwnerSeg?`<div class="field"><label>귀속</label>${goalOwnerSeg}</div>`:'');
  openSheet(`<h3>${editing?'목표 수정':'목표 추가'}</h3><div class="desc">${isAsset?'연결한 자산의 잔액이 이 금액에 도달하는 걸 목표로 추적해요':'순자산이 이 금액에 도달하는 걸 목표로 추적해요'}</div>
   <div class="field"><label for="goalName">목표 이름</label><div class="field-clear"><input id="goalName" value="${esc(d.name||'')}" placeholder="예: 내 집 마련 자금"><button type="button" class="fc-x" aria-label="이름 지우기" onclick="clrInput('goalName')">✕</button></div></div>
   ${typeSeg}
@@ -5400,7 +5415,7 @@ function openIncomeAnalysis(){
     <div class="spend-amt"><div class="a num">${comma(r.v)}원</div><div class="p">${pct}%</div></div></div>`}).join('')
    :`<div class="empty"><div class="ei">${svg('chart')}</div><div class="et">아직 들어온 수입이 없어요</div></div>`;
  openSheet(`<h3>${m}월 수입 분석</h3><div class="desc">카테고리를 눌러 내역을 확인해요 · 예정 포함</div>
-  <div class="seg" role="group" aria-label="귀속 선택"><div class="seg-blob"></div>${['전체',...DB.owners].map((o,oi)=>`<button class="${ST.spendOwner===o?'on':''}" aria-pressed="${ST.spendOwner===o}" onclick="incomeOwnerSel(${oi})">${esc(o)}</button>`).join('')}</div>
+  ${ownerSegHtml(ST.spendOwner,oi=>`incomeOwnerSel(${oi})`)}
   <div class="card" style="text-align:center;padding:16px;margin-bottom:12px"><div style="font-size:12.5px;color:var(--text-3);font-weight:700">총 수입</div><div class="num" style="font-size:26px;font-weight:700;color:var(--income);margin-top:2px">${comma(total)}원</div>${totalDeltaPct!==null?`<div style="margin-top:4px">${incomeTrendBadge(totalDeltaPct,'최근 3개월 평균 대비 ')}</div>`:''}</div>
   ${total?`<div class="card eb-card" style="margin-bottom:12px" aria-hidden="true">${buildExpenseBarHtml(rows.map(r=>({cat:r.c,v:r.v})))}</div>`:''}
   <div class="card" style="padding:2px 14px">${body}</div>
@@ -5438,7 +5453,7 @@ function renderHistory(){
  <div class="searchbar" style="flex:1">${svg('search')}<div class="field-clear"><input id="histQ" aria-label="내역 검색" placeholder="메모·카테고리·자산·금액 검색" value="${esc(H.q)}" oninput="histQInput(this.value)"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('histQ')">✕</button></div></div>
  <button type="button" class="sch-chip" aria-label="내역 선택" onclick="ST.hist.selMode=true;updateHist();updateSelBottom()">${svg('check',14)}</button>
  </div>
- <div class="seg" role="group" aria-label="귀속 선택"><div class="seg-blob"></div>${['전체',...DB.owners].map((o,oi)=>`<button type="button" class="${H.owner===o?'on':''}" aria-pressed="${H.owner===o}" onclick="histOwnerSel(${oi})">${esc(o)}</button>`).join('')}</div>
+ ${ownerSegHtml(H.owner,oi=>`histOwnerSel(${oi})`,{typeButton:true})}
  ${H.assetId?`<button type="button" class="sch-chip on" style="margin-bottom:14px" onclick="histClearAssetFilter()" aria-label="${esc((DB.assets.find(a=>a.id===H.assetId)||{}).name||'계좌')} 필터 해제">${esc((DB.assets.find(a=>a.id===H.assetId)||{}).name||'계좌')} ${svg('x',14)}</button>
  <div id="assetBalCard">${assetBalCard(H.assetId,H.balPreset)}</div>`:''}
  ${H.catExact?`<button type="button" class="sch-chip on" style="margin-bottom:14px" onclick="histClearCatFilter()" aria-label="${esc(H.catExact)} 필터 해제">${esc(H.catExact)}${H.owner&&H.owner!=='전체'?` · ${esc(H.owner)}`:''} ${svg('x',14)}</button>`:''}
@@ -6168,7 +6183,7 @@ function openYearReview(y){
    <span style="font-weight:700;font-size:16px">${y}년</span>
    <button type="button" class="act-btn" aria-label="${y+1}년 보기" onclick="openYearReview(${y+1})">${svg('chevR')}</button>
  </div>`;
- const ownerSeg=DB.owners.length?`<div class="seg" role="group" aria-label="귀속 선택"><div class="seg-blob"></div>${['전체',...DB.owners].map((o,oi)=>`<button class="${ST.spendOwner===o?'on':''}" aria-pressed="${ST.spendOwner===o}" onclick="yearOwnerSel(${oi})">${esc(o)}</button>`).join('')}</div>`:'';
+ const ownerSeg=ownerSegHtml(ST.spendOwner,oi=>`yearOwnerSel(${oi})`);
  const s=yearSummary(y,ST.spendOwner);
  if(!s.income&&!s.expense){
   openSheet(`<h3>연간 결산</h3>${switcher}${ownerSeg}
@@ -6243,7 +6258,7 @@ function openSpendAnalysis(){
     <div class="spend-amt"><div class="a num${overCls}">${comma(r.v)}${budget?`<span class="bgt">/${comma(budget)}</span>`:''}원</div><div class="p${overCls}">${pct}%${budget?' 사용':''}</div></div></div>`}).join('')
    :`<div class="empty"><div class="ei">${svg('chart')}</div><div class="et">아직 쓴 게 없어요 👏</div><div class="es">이대로만 가면 완벽해요</div></div>`;
  openSheet(`<h3>${m}월 지출 분석</h3><div class="desc">카테고리를 눌러 예산을 정해보세요 · 예정 포함</div>
-  <div class="seg" role="group" aria-label="귀속 선택"><div class="seg-blob"></div>${['전체',...DB.owners].map((o,oi)=>`<button class="${ST.spendOwner===o?'on':''}" aria-pressed="${ST.spendOwner===o}" onclick="spendOwnerSel(${oi})">${esc(o)}</button>`).join('')}</div>
+  ${ownerSegHtml(ST.spendOwner,oi=>`spendOwnerSel(${oi})`)}
   <div class="card" style="text-align:center;padding:16px;margin-bottom:12px"><div style="font-size:12.5px;color:var(--text-3);font-weight:700">총 지출</div><div class="num" style="font-size:26px;font-weight:700;color:var(--expense);margin-top:2px">${comma(total)}원</div>${totalDeltaPct!==null?`<div style="margin-top:4px">${spendTrendBadge(totalDeltaPct,'최근 3개월 평균 대비 ')}</div>`:''}</div>
   ${total?`<div class="card eb-card" style="margin-bottom:12px" aria-hidden="true">${buildExpenseBarHtml(rows.map(r=>({cat:r.c,v:r.v})))}</div>`:''}
   ${tb.budgetedTotal?`<div class="card" style="text-align:center;padding:16px;margin-bottom:12px">
