@@ -228,7 +228,7 @@ const FUNCTIONS = [
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards', 'openTidyAsset', 'openTidyList', 'tidyListSnooze',
   'debtsBehind', 'openDebtBehindList',
   'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate', 'histQInput', 'histOwnerSel', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'openCatHistory', 'openIncomeCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter', 'histClearTypeFilter',
-  'genSalt', 'pbkdf2Hash', 'genRecoveryCode', 'normRecoveryCode', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer', 'openConfirmTransfer',
+  'genSalt', 'pbkdf2Hash', 'dbEncryptKey', 'encryptDbBlob', 'decryptDbBlob', 'genRecoveryCode', 'normRecoveryCode', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer', 'openConfirmTransfer',
   'renderLockView', 'openForgotPinSheet', 'doForgotPin', 'tickForgotPinWait',
   'confirmTransferNow', 'postponeTransfer', 'confirmRecNow', 'openConfirmTransferList',
   'foreignSaveIsNewer', 'applyForeignSave', 'openCopyBackup', 'copyBackup', 'findDonors',
@@ -16450,6 +16450,44 @@ test('pbkdf2Hash: 같은 비밀번호라도 salt가 다르면 다른 해시가 �
   const h1 = await sandbox.pbkdf2Hash('same-password', s1);
   const h2 = await sandbox.pbkdf2Hash('same-password', s2);
   assert.notStrictEqual(h1, h2);
+});
+
+/* ---------- encryptDbBlob/decryptDbBlob(app-evolve cycle252 advance): APPLOCK PIN을 로컬 저장소
+ * 암호화 키로 쓰기 위한 순수 암/복호화 유틸 — 아직 _saveCore()/load()에는 연결되지 않았다(위
+ * encryptDbBlob 선언부 주석 참고, 배선은 범위가 커 다음 사이클로 미뤘다). 여기서는 이 두 함수가
+ * 독립적으로 올바른 라운드트립 동작을 하는지만 검증한다. ---------- */
+test('encryptDbBlob/decryptDbBlob: 같은 PIN으로 왕복하면 원본 JSON을 그대로 복원한다', async () => {
+  const json = JSON.stringify({ txns: [{ id: 'a1', amount: 12345 }], settings: { themeMode: 'dark' } });
+  const blob = await sandbox.encryptDbBlob(json, '1234');
+  assert.strictEqual(blob.v, 1);
+  assert.match(blob.salt, /^[0-9a-f]{32}$/);
+  assert.ok(!blob.ct.includes('"amount"') && !blob.ct.includes('12345'), 'ct는 base64 암호문이어야 하고 평문 필드명/값이 그대로 보이면 안 됨');
+  const restored = await sandbox.decryptDbBlob(blob, '1234');
+  assert.strictEqual(restored, json);
+});
+test('encryptDbBlob/decryptDbBlob: 매번 다른 salt/iv를 써서 같은 평문·PIN이라도 ct가 매번 달라진다(패턴 유출 방지)', async () => {
+  const json = JSON.stringify({ a: 1 });
+  const b1 = await sandbox.encryptDbBlob(json, '0000');
+  const b2 = await sandbox.encryptDbBlob(json, '0000');
+  assert.notStrictEqual(b1.salt, b2.salt);
+  assert.notStrictEqual(b1.iv, b2.iv);
+  assert.notStrictEqual(b1.ct, b2.ct);
+  assert.strictEqual(await sandbox.decryptDbBlob(b1, '0000'), json);
+  assert.strictEqual(await sandbox.decryptDbBlob(b2, '0000'), json);
+});
+test('decryptDbBlob: 틀린 PIN으로는 예외를 던지지 않고 null을 돌려준다(AES-GCM 인증 실패를 복호화 실패로 자연히 처리)', async () => {
+  const blob = await sandbox.encryptDbBlob(JSON.stringify({ secret: 'ok' }), 'right-pin');
+  assert.strictEqual(await sandbox.decryptDbBlob(blob, 'wrong-pin'), null);
+});
+test('decryptDbBlob: ciphertext가 변조되면 null을 돌려준다(위변조 탐지)', async () => {
+  const blob = await sandbox.encryptDbBlob(JSON.stringify({ secret: 'ok' }), '1234');
+  const tampered = Object.assign({}, blob, { ct: sandbox.bytesToBase64(sandbox.base64ToBytes(blob.ct).map((b, i) => i === 0 ? b ^ 1 : b)) });
+  assert.strictEqual(await sandbox.decryptDbBlob(tampered, '1234'), null);
+});
+test('decryptDbBlob: 모르는 버전이거나 모양이 아니면(평문 raw DB 등) null을 돌려준다 — 평문→암호화 마이그레이션 분기가 이 신호로 구분할 수 있어야 함', async () => {
+  assert.strictEqual(await sandbox.decryptDbBlob(null, '1234'), null);
+  assert.strictEqual(await sandbox.decryptDbBlob({ txns: [] }, '1234'), null, '평문 DB 객체를 그대로 넘기면(마이그레이션 전 포맷) v 필드가 없어 null');
+  assert.strictEqual(await sandbox.decryptDbBlob({ v: 2, salt: 'x', iv: 'y', ct: 'z' }, '1234'), null, '모르는 버전');
 });
 
 /* ---------- APPLOCK(기기 단위 앱 잠금 PIN, app-evolve cycle148 advance): genSalt/pbkdf2Hash로

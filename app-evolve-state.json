@@ -1,19 +1,12 @@
 {
-  "cycle": 252,
-  "phase": "advance",
+  "cycle": 253,
+  "phase": "develop",
   "pending_advance_plan": {
-    "title": "앱 잠금(PIN)의 실효성 — localStorage 평문 저장 암호화",
-    "why": "lockApp()/unlockApp()(index.html:9708,9715)은 $('app').style.display='none'으로 화면만 가리는 UI 오버레이일 뿐, 실제 데이터는 save()→_saveCore()(2602)가 PIN 설정 여부와 무관하게 항상 localStorage.setItem(dataKey(),JSON.stringify(DB))(2620)로 평문 저장하고 load()(2483)도 복호화 없이 JSON.parse한다. 기기 탈취·공유 PC·devtools Application 탭 접근 시 PIN/BIOUNLOCK을 켜도 금액·계좌명·메모가 그대로 노출돼, '잠금'이라는 이름이 주는 기대와 실제 보호 수준의 격차가 크다.",
-    "approach": "APPLOCK PIN을 키 유도 재료로 써서 저장 시점에 DB JSON을 AES-GCM으로 암호화한다. pbkdf2Hash(2263, PIN 해시용)와 동일한 SubtleCrypto PBKDF2 패턴으로 키를 유도하고, encodeCloudPayload/decodeCloudPayload(2014/2025)와 비슷한 형태로 순수 함수 encryptDbBlob(json,pin)/decryptDbBlob(blob,pin)을 logic.js 또는 index.html에 추가한다. _saveCore()/load()에서 APPLOCK.enabled()일 때만 버전 마커 prefix로 평문과 구분되는 암호화 저장소 포맷을 쓰도록 분기(평문→암호화 마이그레이션 지원)하고, doUnlock()에서 PIN 검증 성공 시 해당 PIN으로 즉시 DB를 복호화해 메모리에 올린다. 기존 openForgotPinSheet 플로우에 PIN 분실 시 복호화 불가(복구 불가) 안내를 추가한다. test/run.js에 암/복호화 라운드트립(같은 PIN→원본 복원, 틀린 PIN→실패) 순수 함수 단위 테스트를 추가한다."
+    "title": "암호화된 로컬 저장소 포맷으로의 배선(1단계: cross-tab 충돌 해소를 뺀 단일 탭 load/save만)",
+    "why": "cycle252 advance가 encryptDbBlob/decryptDbBlob(index.html, pbkdf2Hash 바로 뒤)를 순수 함수로 만들고 라운드트립/오답PIN/변조/버전가드 테스트 5건으로 검증까지 마쳤지만 _saveCore()/load()에는 아직 연결하지 않아, APPLOCK을 켜도 localStorage엔 여전히 평문 DB가 그대로 저장된다. 전체 배선(cross-tab 병합+cloud pull 병합까지 전부 비동기 전환)을 한 사이클에 몰아넣으면 실제 사용자 데이터를 잠글 위험이 큰 재작성급 변경이라는 게 cycle252 advance의 결론이었다.",
+    "approach": "배선을 더 작은 단위로 쪼갠다. 1단계(이번 후속 제안)는 cross-tab 동시 열림(foreignSaveIsNewer/applyForeignSave/handleForeignStorage)과 cloud pull 병합(resolveCloudPullRemote 2205/2219)은 건드리지 않고 그대로 두고, APPLOCK.enabled()일 때만 _saveCore()의 마지막 localStorage.setItem(dataKey(),json) 한 곳과 load()의 raw 읽기 한 곳만 바꾸는 가장 좁은 시작점을 설계해본다 — 예를 들어 저장은 fire-and-forget 비동기로 암호화(쓰기 타이밍이 늦어져도 cross-tab 레이스는 기존에도 완벽히 원자적이지 않았으므로 추가 리스크가 작은지 먼저 코드로 검증), load()는 어차피 boot 시 1회뿐이라 async로 바꿔도 호출부(한 곳인지 확인)가 await 가능한지부터 조사한다. cross-tab 동시 열림 시나리오(foreignRaw를 동기로 읽는 2611행)가 암호화 포맷에서 어떻게 깨지는지(복호화를 또 기다려야 함) 반드시 먼저 설계로 정리하고, 안전하게 못 끝내면 또 되돌리고 더 쪼갠다. 평문→암호화 마이그레이션(최초 1회, decryptDbBlob이 null을 돌려주면 raw를 그대로 평문 DB로 간주)과 openForgotPinSheet에 복호화 불가(복구 불가) 경고 추가도 이 배선 단계에 포함."
   },
   "history": [
-    {
-      "cycle": 247,
-      "phase": "critique",
-      "timestamp": "2026-10-25T00:14:09.960Z",
-      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-247 전체 다룬 영역 전부 제외 지시)한 결과, 전체내역(History) 탭에 귀속(owner) 필터 UI가 전혀 없는 공백을 발견 — filteredHist()(index.html:5222)는 H.owner가 세팅되면 이미 filterTxnsByOwner로 걸러주고 doRenameOwner(4387)/renderHistory 삭제가드까지 이 필드를 정교하게 유지하는데도, 사용자가 직접 세팅할 UI가 없다(openCatHistory/openIncomeCatHistory 드릴다운으로만 간접 세팅, histClearFilter/histClearCatFilter가 다른 필터와 묶어 통째로 리셋). test/run.js 10곳 넘는 테스트가 sandbox.ST.hist.owner='나'로 필드를 직접 주입해 propagation/guard만 검증하는 것도 UI 세터 부재의 증거. 홈/자산/Plan/지출분석/수입분석/연간결산은 전부 전체·나·배우자 귀속 세그/캐러셀을 갖췄는데 가장 자주 쓰는 전체내역 탭만 빠진 비대칭(부부가 \"배우자 거래만 검색\" 하려는 가장 흔한 시나리오가 막힘). 러너업 기각: 매니페스트 shortcuts+딥링크 라우팅(실제 공백이나 핵심 일상 플로우보다 체감 가치 낮고 신규 라우팅 상태 설계 필요), 부채 자산 이자율 자동적립(상환스케줄·이자계산 새 설계 필요해 범위 초과, 기각된 주식배당 자동추적과 같은 클래스), 반복내역 CSV 내보내기(assetsToCSV/nwHistoryToCSV로 쉽게 미러링 가능하나 설정값이라 실사용 수요 낮음), 카테고리 전체 총예산 필드(budgetedTotal이 파생값뿐인 공백 맞으나 이월/이력 구조와 얽혀 새 진실 소스 생길 위험, 설계 선행 필요). advance 계획(histOwnerSel 신설, renderHistory에 spendOwnerSel과 동일한 .seg 마크업 삽입, test/run.js에 마크업·필터링·직교성·selMode 테스트 추가, APP_VERSION/CACHE 동기 범프)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
-      "commit": null
-    },
     {
       "cycle": 247,
       "phase": "advance",
@@ -145,6 +138,13 @@
       "phase": "critique",
       "timestamp": "2026-10-27T06:40:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-252 전체 다룬 영역·기각 항목 전부 제외 지시)한 결과, 앱 잠금(APPLOCK, index.html:2402-2425)이 lockApp()/unlockApp()(9708/9715)으로 화면만 가리는 UI 오버레이일 뿐, save()→_saveCore()(2602)가 PIN 설정 여부와 무관하게 localStorage.setItem(dataKey(),JSON.stringify(DB))(2620)로 항상 평문 저장하고 load()(2483)도 복호화 없이 JSON.parse하는 것을 발견 — 기기 탈취·공유 PC·devtools Application 탭 접근 시 PIN/BIOUNLOCK(cycle250 advance)을 켜도 금액·계좌명·메모가 그대로 노출되는 '잠금'이라는 이름과 실제 보호 수준의 격차. export/backup, 전체내역 페이지네이션·디바운스 검색, OS 알림(checkNotifyAlerts) dedupe, 클라우드 동기화 충돌·재시도 로직은 코드로 확인 후 이미 정교하게 다뤄져 있어 제외했고, spendOwnerSel/incomeOwnerSel/histOwnerSel/yearOwnerSel/goalOwnerSel 5곳 이상에 걸친 귀속 세그먼트 렌더링 중복은 tech-debt 후보로 검토했으나 화면별 재렌더 방식이 달라 리팩터링 범위 대비 체감 효과가 작아 차순위로 두고, 보안 격차가 더 근본적이고 사용자가 오해하기 쉬운 문제라 이번 사이클 최우선으로 선정. advance 계획(pbkdf2Hash(2263) 패턴으로 키 유도, encryptDbBlob/decryptDbBlob 신설, _saveCore()/load()를 APPLOCK.enabled() 시 암호화 포맷으로 분기, doUnlock()에서 PIN으로 즉시 복호화, 라운드트립 테스트 추가)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "commit": null
+    },
+    {
+      "cycle": 252,
+      "phase": "advance",
+      "timestamp": "2026-10-27T08:12:30.685Z",
+      "summary": "critique(cycle252) 계획(앱 잠금 PIN을 키로 쓴 localStorage 평문 저장 암호화)의 실제 배선 범위를 코드로 직접 확인한 결과, save()가 ~70곳에서 호출되는 동기 함수이고 _saveCore()가 cross-tab 충돌 해소(foreignSaveIsNewer+dataKey() raw 동기 읽기, index.html:2609-2613)를 암호화 포맷 전제 없이 동기로 수행하며, load()/applyForeignSave()/resolveCloudPullRemote() 등 dataKey() raw 접근 지점(2205,2219,2485,2611,2634)이 전부 동기 코드라는 것을 확인했다. Web Crypto의 SubtleCrypto.encrypt/decrypt는 본질적으로 Promise만 돌려줘 동기 API가 없으므로, 계획대로 _saveCore()/load()를 암호화 포맷으로 분기하려면 이 지점들 전체를 비동기로 바꿔야 하는데, 이는 \"다음 걸음\"이 아니라 저장 아키텍처 재작성이고 사람이 보기 전에 바로 origin에 push되는 무인 사이클에서 돌리기엔 실제 사용자 금융 데이터를 잠글 위험(subtle crypto 버그 하나가 데이터 영구 접근불가로 이어질 수 있음)이 과하다고 판단해 배선은 보류했다. 대신 계획이 이미 명시했던 재료(pbkdf2Hash와 동일한 PBKDF2-SHA256 120000회 반복으로 AES-GCM CryptoKey를 유도하는 dbEncryptKey, encodeCloudPayload/decodeCloudPayload와 같은 모양의 encryptDbBlob(json,pin)/decryptDbBlob(blob,pin))을 index.html에 pbkdf2Hash 바로 뒤에 순수 함수로 구현했다 — AES-GCM은 인증 암호화라 틀린 PIN·변조된 ciphertext가 decrypt() 예외로 자연히 드러나 별도 체크섬이 불필요하고, decryptDbBlob은 그 예외를 null로 흡수해 평문→암호화 마이그레이션 분기가 나중에 \"복호화 실패=아직 평문\"으로 구분할 수 있는 신호를 이미 돌려준다. _saveCore()/load()에는 아직 연결하지 않아 런타임 동작은 전혀 바뀌지 않았다(순수 함수 추가뿐). index.html/sw.js 변경이라 APP_VERSION 1.47.247->1.47.248, sw.js CACHE v514->v515 동기 범프. test/run.js: FUNCTIONS에 dbEncryptKey/encryptDbBlob/decryptDbBlob 추가, 신규 라운드트립/변조/오답PIN/버전가드 테스트 5건 추가(2053->2058). node test/run.js 2058/2058 통과, node --check(logic.js) 및 메인 <script> 블록 vm.Script 파싱 통과. pending_advance_plan은 null로 비우지 않고 다음 critique가 훨씬 작은 단위로 쪼갤 수 있도록 배선 전용 후속 계획으로 교체했다.",
       "commit": null
     }
   ]

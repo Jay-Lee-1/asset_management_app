@@ -1412,7 +1412,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.247';
+const APP_VERSION='1.47.248';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2265,6 +2265,41 @@ async function pbkdf2Hash(pw,saltHex){
  const keyMaterial=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw),{name:'PBKDF2'},false,['deriveBits']);
  const bits=await crypto.subtle.deriveBits({name:'PBKDF2',salt,iterations:120000,hash:'SHA-256'},keyMaterial,256);
  return Array.from(new Uint8Array(bits),b=>b.toString(16).padStart(2,'0')).join('');
+}
+/* APPLOCK PIN을 로컬 저장소 암호화 키로 쓰기 위한 순수 암/복호화 유틸(app-evolve cycle252 advance).
+ * APPLOCK.enabled()를 켜도 lockApp()/unlockApp()은 화면만 가리는 UI 오버레이일 뿐 _saveCore()/load()는
+ * 여전히 평문 JSON.stringify(DB)를 localStorage에 그대로 쓰는데(기기 탈취·공유 PC·devtools Application
+ * 탭에서 그대로 노출), 이 두 함수는 그 격차를 메울 암호화 포맷의 재료다. pbkdf2Hash와 동일한
+ * PBKDF2-SHA256 120000회 반복으로 PIN+salt에서 바로 AES-GCM CryptoKey를 유도해(해시 문자열을
+ * 거치지 않고 deriveKey로 한 번에) encodeCloudPayload/decodeCloudPayload와 같은 "직렬화 가능한 평범한
+ * 객체를 돌려주는 async 순수 함수" 모양을 따른다. AES-GCM은 인증 암호화라 틀린 PIN이나 변조된
+ * ciphertext는 decrypt()가 자체적으로 예외를 던져 복호화 실패로 자연히 드러난다(별도 체크섬 불필요).
+ * 아직 _saveCore()/load()에는 연결하지 않았다 — save()가 ~70곳에서 호출되는 동기 함수라 실제로
+ * 쓰려면 cross-tab 병합(foreignSaveIsNewer/applyForeignSave)과 cloud pull 병합 경로(resolveCloudPullRemote
+ * 등 dataKey() raw 접근 지점 전체)를 함께 비동기로 바꿔야 하는데, 그 범위는 "다음 걸음"이 아니라
+ * 저장 아키텍처 재작성에 가까워 한 사이클(특히 사람이 보기 전에 바로 origin에 push되는 무인 사이클)에
+ * 안전하게 끝내기엔 과하다고 판단했다. 이번 사이클은 그 배선 없이도 독립적으로 옳음을 라운드트립
+ * 테스트로 검증할 수 있는 이 두 순수 함수까지만 만들어, 다음 critique/advance가 배선 사이클을 훨씬
+ * 더 작고 검증 가능한 단위로 쪼개 진행할 수 있게 한다. */
+async function dbEncryptKey(pin,saltHex){
+ const salt=new Uint8Array(saltHex.match(/.{2}/g).map(h=>parseInt(h,16)));
+ const keyMaterial=await crypto.subtle.importKey('raw',new TextEncoder().encode(pin),{name:'PBKDF2'},false,['deriveKey']);
+ return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:120000,hash:'SHA-256'},keyMaterial,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);
+}
+async function encryptDbBlob(json,pin){
+ const salt=genSalt();
+ const iv=crypto.getRandomValues(new Uint8Array(12));
+ const key=await dbEncryptKey(pin,salt);
+ const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,new TextEncoder().encode(json));
+ return{v:1,salt,iv:bytesToBase64(iv),ct:bytesToBase64(new Uint8Array(ct))};
+}
+async function decryptDbBlob(blob,pin){
+ if(!blob||blob.v!==1||typeof blob.salt!=='string'||typeof blob.iv!=='string'||typeof blob.ct!=='string')return null;
+ try{
+  const key=await dbEncryptKey(pin,blob.salt);
+  const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:base64ToBytes(blob.iv)},key,base64ToBytes(blob.ct));
+  return new TextDecoder().decode(pt);
+ }catch(e){return null}
 }
 const AUTH={
  _accts(){try{return JSON.parse(localStorage.getItem('asset_app_accounts')||'{}')}catch(e){return {}}},
