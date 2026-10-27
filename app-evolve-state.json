@@ -1,6 +1,6 @@
 {
   "cycle": 253,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": {
     "title": "암호화된 로컬 저장소 포맷으로의 배선(1단계: cross-tab 충돌 해소를 뺀 단일 탭 load/save만)",
     "why": "cycle252 advance가 encryptDbBlob/decryptDbBlob(index.html, pbkdf2Hash 바로 뒤)를 순수 함수로 만들고 라운드트립/오답PIN/변조/버전가드 테스트 5건으로 검증까지 마쳤지만 _saveCore()/load()에는 아직 연결하지 않아, APPLOCK을 켜도 localStorage엔 여전히 평문 DB가 그대로 저장된다. 전체 배선(cross-tab 병합+cloud pull 병합까지 전부 비동기 전환)을 한 사이클에 몰아넣으면 실제 사용자 데이터를 잠글 위험이 큰 재작성급 변경이라는 게 cycle252 advance의 결론이었다.",
@@ -145,6 +145,13 @@
       "phase": "develop",
       "timestamp": "2026-10-27T09:40:00.000Z",
       "summary": "cycle251/252가 신설한 '은행/카드사 CSV 거래내역 가져오기'(openCsvColumnMap, csvMapPickAsset)가 기능 이름과 실제 동작이 어긋난 공백을 발견 — csvMapPickAsset이 openAssetPicker를 cashOnly:true(isCashLike=cash|savings만, index.html:2854)로 여는데, 신용카드를 debt형 자산으로 등록한 사용자는 바로 그 '카드사' CSV를 가져올 대상 자산으로 자기 카드를 전혀 고를 수 없었다. 코드로 교차확인: _applyOpenAsset(일반 거래 입력의 보내는/받는 자산 선택, 4884행)은 excludeMarketValued만 쓰고 debt는 전혀 막지 않아 수동 입력으로는 debt 계좌에 거래를 기록할 수 있고, assetBalanceSeries(logic.js, sign=-1)도 debt로의 입금(toAssetId, 상환)은 금액 감소·출금(fromAssetId, 카드 사용)은 금액 증가로 올바르게 반영해 debt를 거래 대상으로 쓰는 게 기존에 이미 지원되는 설계임을 확인했다. pkFilteredAssets(index.html:9362)에 새 옵션 cashOrDebt(isCashLike(a)||a.type==='debt')를 추가하고 csvMapPickAsset만 cashOnly→cashOrDebt로 교체 — isCashLike 자체나 기존 cashOnly 사용처(asOpenMat의 만기이체 통장 선택, 8683행의 findDonors)는 그대로 둬 회귀 위험을 없앴다. index.html/sw.js 변경이라 APP_VERSION 1.47.248->1.47.249, sw.js CACHE v515->v516 동기 범프. test/run.js: pkFilteredAssets에 cashOrDebt가 debt를 포함하면서도 fx/gold/stock은 여전히 제외하고 cashOnly는 기존처럼 debt를 제외함(회귀 가드)을 확인하는 테스트 1건, csvMapPickAsset이 실제로 debt형 자산(신용카드)을 피커에 보여주고 고를 수 있음을 확인하는 테스트 1건 추가(2058->2060). node test/run.js 2060/2060 통과(서브에이전트로 독립 재검증), node --check(logic.js) 및 메인 <script> 블록 vm.Script 파싱 통과.",
+      "commit": "24dd8fe"
+    },
+    {
+      "cycle": 253,
+      "phase": "review",
+      "timestamp": "2026-10-27T10:30:00.000Z",
+      "summary": "cycle253 develop 커밋(24dd8fe, CSV 가져오기 대상 자산 피커를 cashOnly→cashOrDebt로 교체해 debt형 자산(신용카드)도 고를 수 있게 함)을 검토. isCashLike(index.html:2854)가 cash|savings만 다루므로 cashOrDebt=isCashLike(a)||a.type==='debt' 추가가 debt를 중복 없이 정확히 더함을 코드로 확인. 기존 cashOnly 사용처(asOpenMat 만기이체 통장, findDonors)는 그대로 cashOnly를 쓰고 있어 회귀 없음을 diff로 확인. mapGenericCsvRow(logic.js:782)의 income/expense→to/fromAssetId 부호 매핑은 이 커밋이 손대지 않은 기존 로직이고, debt 대상이어도 _applyOpenAsset/assetBalanceSeries와 동일한 '피대상 자산 기준 입출금' 의미론을 그대로 따르므로 카드 CSV의 부호 해석은 사용자가 열 매핑 단계에서 직접 정하는 기존 설계 범위이지 이 커밋이 새로 깨뜬 것이 아님을 확인(새 버그 아님). node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행 결과 2060/2060 통과(develop 단계가 주장한 수치와 일치). 메인 <script> 블록(APP_VERSION 포함) node vm.Script 파싱 통과(비-메인 블록 1건 에러는 cycle248부터 알려진 정규식 오매칭 false positive). node --check(logic.js) 통과. APP_VERSION 1.47.249/sw.js CACHE v516 범프가 index.html 변경과 일치. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
