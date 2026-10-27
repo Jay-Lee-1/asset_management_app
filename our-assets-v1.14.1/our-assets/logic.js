@@ -499,6 +499,13 @@ function matchAssetQuery(a,q){
  const hay=(a.name||'')+' '+(a.currency||'');
  return hay.normalize('NFC').toLowerCase().includes(q.normalize('NFC').toLowerCase());
 }
+/* 카테고리명 검색 — matchAssetQuery와 동일한 규칙(대소문자 무시 includes + NFC 정규화)을 카테고리
+ * 피커(openCatPicker, index.html)에 적용한다(app-evolve cycle253 critique → cycle254 advance).
+ * 카테고리는 이름 하나뿐인 문자열이라 matchAssetQuery처럼 부가 필드를 haystack에 더할 필요가 없다. */
+function matchCatQuery(c,q){
+ if(!q)return true;
+ return String(c||'').normalize('NFC').toLowerCase().includes(q.normalize('NFC').toLowerCase());
+}
 /* 계좌(자산) 단위 거래내역 필터 — assetId가 없으면(전체) 항상 통과, 있으면 보내거나 받은 쪽 중 하나라도 일치해야 함 */
 function matchesAssetId(t,assetId){
  if(!assetId)return true;

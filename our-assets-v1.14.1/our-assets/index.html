@@ -1412,7 +1412,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.249';
+const APP_VERSION='1.47.250';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -9443,11 +9443,41 @@ function openCurrencyPicker(o){const html=CURRENCY_LIST.map(c=>`<button class="p
  window._pkPick=o.onPick;openPicker('통화 선택','<div class="pk-group" id="pkGroup"><div class="pk-blob" id="pkBlob"></div>'+html+'</div>',o.back);
  requestAnimationFrame(()=>requestAnimationFrame(()=>movePkBlob(false)));}
 function pkPickCurrency(c){pkChoose(c)}
-function openCatPicker(o){const avc=catAv(o.kind);
- const grid=catListOf(o.kind).map(c=>`<button class="pk-cat ${c===o.current?'on':''}" data-cat="${esc(c)}"><div class="cav ${avc}">${catGlyph(o.kind,c,18,'tag')}</div>${esc(c)}</button>`).join('');
+/* 카테고리 피커(openCatPicker) 그리드 — matchCatQuery(logic.js)로 필터링. pkFilteredAssets와 같은
+ * 모양의 {html,any}를 돌려주지만, doDeleteCat이 "최소 1개"를 항상 보장해(카테고리는 절대 0개가 될
+ * 수 없음) any는 사실상 늘 true다 — pkEmptyHtml처럼 "원래부터 후보 없음"과 "검색으로 0건"을 구분할
+ * 필요가 없어 catEmptyHtml은 검색어 전용 안내만 보여준다(app-evolve cycle253 critique → 254 advance). */
+function catFilteredGrid(kind,current,q){
+ const avc=catAv(kind);
+ let items=catListOf(kind);
+ const any=items.length>0;
+ if(q)items=items.filter(c=>matchCatQuery(c,q));
+ const html=items.map(c=>`<button class="pk-cat ${c===current?'on':''}" data-cat="${esc(c)}"><div class="cav ${avc}">${catGlyph(kind,c,18,'tag')}</div>${esc(c)}</button>`).join('');
+ return {html,any};
+}
+function catEmptyHtml(q){
+ return `<div class="empty"><div class="ei">${svg('search')}</div><div class="et">'${esc(q)}'와 일치하는 카테고리가 없어요</div><div class="es">다른 이름으로 검색해 보세요</div></div>`;
+}
+/* 카테고리 수가 기본값(6개 이하) 범위면 검색이 오히려 번거로우므로, 이 임계값을 넘을 때만
+ * 검색바를 보여준다(openAssetPicker는 항상 보이지만, 자산은 기본 0개라 상황이 다름). */
+const CAT_PICKER_SEARCH_THRESHOLD=8;
+/* pkAssetQInput과 동일한 220ms 디바운스 — refreshPkCatList()가 #catGrid 내부만 다시 그려 검색바
+ * 자체는 다시 그리지 않는다. */
+function pkCatQInput(v){_pkQ=v;clearTimeout(_pkQT);if(v.trim()===''){refreshPkCatList();return}_pkQT=setTimeout(refreshPkCatList,220);}
+function refreshPkCatList(){
+ const grid=$('catGrid');if(!grid)return; /* 디바운스 타이머가 피커를 닫은 뒤 늦게 발화할 수 있어 방어 */
+ const opts=_pkOpts||{};
+ const{html}=catFilteredGrid(opts.kind,opts.current,_pkQ);
+ grid.innerHTML='<div class="cat-blob" id="catBlob"></div>'+(html||catEmptyHtml(_pkQ));
+ moveCatBlob(false);
+}
+function openCatPicker(o){_pkOpts=o;_pkQ='';clearTimeout(_pkQT);_pkQT=null;
+ const{html}=catFilteredGrid(o.kind,o.current,'');
+ const showSearch=catListOf(o.kind).length>CAT_PICKER_SEARCH_THRESHOLD;
+ const searchBar=showSearch?`<div class="searchbar" style="margin-bottom:14px">${svg('search')}<div class="field-clear"><input id="pkCatQ" aria-label="카테고리 검색" placeholder="카테고리 검색" value="" oninput="pkCatQInput(this.value)"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('pkCatQ')">✕</button></div></div>`:'';
  window._pkPick=o.onPick;
- openPicker((CAT_LABEL[o.kind]||'')+' 카테고리',`<div class="pk-cat-grid" id="catGrid"><div class="cat-blob" id="catBlob"></div>${grid}</div><div style="height:14px"></div><button class="btn btn-soft" onclick="openCatManage('${o.kind}')">카테고리 추가·관리</button>`,o.back);
- const catGridEl=$('catGrid'); /* 카테고리명을 onclick 문자열에 보간하면 인젝션이 되므로, data-cat만 이스케이프해 심고 위임 클릭으로 읽는다 */
+ openPicker((CAT_LABEL[o.kind]||'')+' 카테고리',searchBar+`<div class="pk-cat-grid" id="catGrid"><div class="cat-blob" id="catBlob"></div>${html}</div><div style="height:14px"></div><button class="btn btn-soft" onclick="openCatManage('${o.kind}')">카테고리 추가·관리</button>`,o.back);
+ const catGridEl=$('catGrid'); /* 카테고리명을 onclick 문자열에 보간하면 인젝션이 되므로, data-cat만 이스케이프해 심고 위임 클릭으로 읽는다(refreshPkCatList가 #catGrid의 innerHTML만 바꿔도 이 위임은 그대로 살아있음) */
  if(catGridEl)catGridEl.onclick=e=>{const b=e.target.closest('.pk-cat');if(b)pkPickCat(b.dataset.cat)};
  requestAnimationFrame(()=>requestAnimationFrame(()=>moveCatBlob(false)));
 }
@@ -9467,6 +9497,7 @@ function moveCatBlob(animate){
 }
 function pkPickCat(c){
  const grid=$('catGrid');
+ _pkQ='';clearTimeout(_pkQT);_pkQT=null;_pkOpts=null; /* pkChoose(자산 피커)와 동일하게 검색 상태도 함께 정리 */
  if(grid){ /* 물방울이 선택한 카테고리로 이동 → 잠깐 멈춤 → 닫기 */
   grid.querySelectorAll('.pk-cat').forEach(b=>b.classList.toggle('on',b.dataset.cat===c));
   moveCatBlob(true);

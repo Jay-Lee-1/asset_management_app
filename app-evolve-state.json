@@ -1,19 +1,8 @@
 {
-  "cycle": 253,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "거래 입력 카테고리 피커(openCatPicker)에 검색 추가 — cycle248이 자산 피커(openAssetPicker)에 준 수정을 아직 못 받은 자매 피커",
-    "why": "openCatPicker(index.html:9446-9453)가 catListOf(o.kind)를 필터 없이 그대로 나열한다. 자산 피커(openAssetPicker, 9402-9407)는 cycle248에서 이미 pkAssetQInput/refreshPkAssetList+matchAssetQuery(logic.js:497)로 검색이 추가됐는데, 호출 빈도가 훨씬 높은 카테고리 피커엔 같은 수정이 빠졌다. 호출부: 일반 거래 입력(_applyOpenCat, 4883), 분할 거래 줄별 카테고리(4879), CSV 가져오기 기본 카테고리 매핑(7799, cycle251-253 신설 기능), 일괄 카테고리 변경(bulkCatPickFor, 9488) — 앱에서 가장 자주 여는 화면 중 하나다. addCat()(6382)엔 카테고리 수 제한이 없어 분류를 세분화한 가계일수록(기본값 6개를 훌쩍 넘김) 매번 스크롤·스캔을 강요받는다. 러너업 기각: 영수증/사진 첨부(grep으로 전무함을 확인했으나 스키마+내보내기+클라우드 payload 크기까지 한꺼번에 건드려 cycle252가 암호화 배선을 보류한 것과 같은 '한 사이클에 과한 범위'), 반복거래 발생 전 사전 알림(homeAlerts/notifyAlertInfo, 8925-9021이 이미 확인/만기이체/예산초과/목표지연/부채지연/음수 잔액을 다루고 있어 추가 가치가 낮음).",
-    "approach": "cycle248 자산 피커 패턴을 그대로 복제한다. logic.js에 matchAssetQuery(497) 옆에 matchCatQuery(catName,q) 신설(NFC 정규화+소문자 includes, fx 보유통화 매칭 부분만 뺌). index.html: pkFilteredAssets(9370-9388)와 같은 {html,any} 모양의 catFilteredGrid(kind,current,q)를 openCatPicker(9446) 안의 인라인 map 대신 쓰게 교체하고, pkAssetQInput/refreshPkAssetList(9395-9401)와 동일한 220ms 디바운스로 pkCatQInput/refreshPkCatList 신설 — #catGrid만 재렌더(시트 전체 재오픈 금지). openAssetPicker와 달리 카테고리 기본값은 6개뿐이라 항상 검색창을 보여주면 과하므로, catListOf(o.kind).length가 임계값(예: 8)을 넘을 때만 검색창을 노출하도록 명시적으로 설계한다. pkBack/pkChoose(9358, 9422-9431)에서 기존 _pkQ/_pkQT 전역을 그대로 재사용해도 되는지(openAssetPicker와 openCatPicker가 동시에 열리지 않음을 확인한 뒤) 결정. test/run.js에 cycle248과 동급 분량(matchCatQuery 단위 테스트, catFilteredGrid 필터/현재선택유지/빈결과 구분 테스트, 임계값 이상에서만 검색창이 뜨는 통합 테스트) 추가. index.html/logic.js/sw.js 변경이므로 APP_VERSION/sw.js CACHE 동기 범프."
-  },
+  "cycle": 254,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 248,
-      "phase": "critique",
-      "timestamp": "2026-10-25T04:15:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-248 전체 다룬 영역·기각 항목 전부 제외 지시)한 결과, 자산 피커(openAssetPicker, index.html:9086-9094)에 검색 기능이 전혀 없는 공백을 발견 — 거래 입력(from/to, _applyOpenAsset:4782), 목표 연결 자산(3361), 저축 만기이체 통장(4153) 선택에 공통으로 쓰이는 가장 빈번한 피커인데 DB.settings.groupOrder별로 전체 자산을 나열만 하고 matchAssetQuery 같은 필터 호출이 전혀 없다. 계좌·카드·적금을 10개 이상 쓰는 멀티뱅킹 사용자는 거래 입력이라는 가장 흔한 동작마다 긴 리스트를 스크롤해야 하는 실사용 결함이며, cycle246 develop에서 이미 'openAssetPicker 검색창… 피커 상호작용까지 포함해 작다는 기준을 넘어 드롭'으로 advance 범위로 명시적으로 미뤄둔 항목이라 규모가 맞다. 러너업 기각: 카테고리 수동 재정렬(openCatManage:6240, 카테고리 수가 보통 적어 스크롤 고통이 picker만큼 크지 않아 우선순위 낮음), Plan/Recurring 관리 검색(openRecManage:6344, 반복거래 수가 통상 적어 코드 확인상 별도 공백이 아님). advance 계획(matchAssetQuery(logic.js:497) 재사용, pkAssetQInput/refreshPkAssetList 신설해 assetQInput/histQInput과 동일 220ms 디바운스 패턴 적용, Assets탭 searchbar/empty 패턴 재사용, pkBack/pkChoose에서 쿼리 상태 정리, test/run.js에 디바운스·필터·empty state·1개 이하 자산 가드 테스트 4~5건 추가, APP_VERSION/sw.js CACHE 동기 범프)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
-      "commit": null
-    },
     {
       "cycle": 248,
       "phase": "advance",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-27T12:10:00.000Z",
       "summary": "이번 critique는 두 갈래로 진행했다. (1) cycle252 advance가 다음 critique에 넘긴 'APPLOCK 암호화 배선' 후속 계획을 직접 코드로 재검증한 결과, cycle252가 찾은 동기/비동기 문제보다 더 근본적인 결함 3가지를 추가로 발견해 이 계획 전체를 보류(shelve)했다: ① boot()(9693)가 startApp()으로 DB를 평문 그대로 load()해 화면을 이미 그린 뒤에야 lockApp()(9752, 9704행 'startApp();if(APPLOCK.enabled())lockApp()')을 호출해 PIN을 요구하므로, 지금 순서 그대로는 load() 시점에 PIN이 아예 존재하지 않아 복호화가 불가능하다 — 해결하려면 '잠겨 있으면 먼저 PIN 화면만 그리고 성공해야 load()/startApp()을 부른다'로 boot 순서 자체를 바꿔야 한다(cycle218 critique가 공들여 없앤 '빈 화면 대기'를 다시 만들지 않게 신중한 설계가 필요). ② APPLOCK.verify()/setPin()(2454/2448)은 PIN을 해시 비교에만 쓰고 끝나 세션 동안 평문 PIN·파생 키를 메모리에 전혀 안 남기는데, save()가 ~70곳에서 호출되는 동안 매번 암호화하려면 unlock 성공 시 파생된 비-추출가능 CryptoKey를 모듈 전역에 캐시해 세션 내내 유지하는 새 상태가 필요하다. ③ 가장 심각한 건 openForgotPinSheet(9876, cycle151/155 설계)의 기존 사용자 보장과의 정면 충돌 — 지금은 'PIN은 암호화 키가 아니라 단순 기기-로컬 화면 잠금이라, 데이터는 건드리지 않고 APPLOCK만 초기화해도 안전하다'(9879 주석)가 이메일 계정은 비밀번호 재확인만으로, 게스트/카카오 계정은 강제 대기만으로 PIN을 잊어도 데이터를 잃지 않는다고 명시적으로 약속하는데, PIN이 진짜 암호화 키가 되면 이 탈출구는 원천적으로 막힌다(PIN을 모르면 ciphertext를 복호화할 방법이 없음) — 금융 데이터 앱에서 '4~6자리 숫자를 잊으면 전체 자산 내역이 영구히 사라진다'는 트레이드오프를 조용히 들여오는 셈이고, 4~6자리 PIN은 공간이 10,000~1,000,000개뿐이라 PBKDF2 120000회를 거쳐도 탈취된 blob에 대한 오프라인 전수조사가 로그인 비밀번호 해시보다 훨씬 쉬워(브루트포스 저항력이 약함) 보안 이득 대비 데이터 손실 리스크가 비대칭적으로 크다. 세 가지를 종합해 'PIN을 키로 쓴 전체 DB 암호화'는 다음 advance 한 사이클로 안전하게 좁힐 수 있는 범위가 아니라고 결론짓고 pending_advance_plan에서 내렸다 — 이 분석을 history에 남겨 다음 critique가 같은 길을 다시 걷지 않게 한다(재추진하려면 boot 순서 재설계+세션 키 캐시+forgot-PIN UX 전면 재설계를 모두 포함하는 별도의 더 큰 결정이 필요하고, PIN 대신 복구 가능한 다른 키 소스를 쓰는 대안도 함께 검토해야 함). (2) 대신 general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-253 전체 다룬 영역·기각 항목 전부 제외, APPLOCK 암호화는 위 분석으로 별도 처리 중이니 제외하라고 명시 지시)한 결과, 거래 입력 카테고리 피커(openCatPicker, index.html:9446-9453)가 cycle248에서 자산 피커(openAssetPicker)에 준 검색 기능을 못 받은 자매 피커라는 공백을 발견 — catListOf(o.kind)를 필터 없이 그대로 나열하고, addCat()(6382)엔 카테고리 수 제한이 없어 분류를 세분화한 가계일수록 가장 빈번한 화면(거래 입력 _applyOpenCat:4883, 분할 거래:4879, CSV 매핑 기본 카테고리:7799, 일괄 변경 bulkCatPickFor:9488)에서 스크롤·스캔을 강요한다. 러너업 기각: 영수증/사진 첨부(grep으로 전무함을 확인했으나 스키마+내보내기+클라우드 payload 크기까지 한꺼번에 건드려 '한 사이클에 과한 범위'), 반복거래 발생 전 사전 알림(homeAlerts/notifyAlertInfo, 8925-9021이 이미 확인/만기이체/예산초과/목표지연/부채지연/음수 잔액을 다뤄 추가 가치가 낮음). advance 계획(logic.js에 matchCatQuery 신설, pkFilteredAssets/pkAssetQInput/refreshPkAssetList 패턴을 복제해 catFilteredGrid/pkCatQInput/refreshPkCatList 추가, 카테고리 수가 8개 넘을 때만 검색창 노출, test/run.js에 cycle248과 동급 분량의 테스트 추가)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "commit": null
+    },
+    {
+      "cycle": 253,
+      "phase": "advance",
+      "timestamp": "2026-10-27T12:14:52.301Z",
+      "summary": "critique(cycle253)가 세운 계획대로 거래 입력 카테고리 피커(openCatPicker)에 검색 기능을 추가했다. matchAssetQuery(logic.js)와 동일한 규칙(대소문자·NFC 무시 부분일치)의 matchCatQuery(c,q)를 logic.js에 신설하고, pkFilteredAssets와 같은 {html,any} 모양의 catFilteredGrid(kind,current,q)로 openCatPicker의 기존 인라인 map을 교체했다. pkAssetQInput/refreshPkAssetList와 동일한 220ms 디바운스로 pkCatQInput/refreshPkCatList를 신설해 #catGrid만 재렌더하고, pkPickCat도 pkChoose와 동일하게 커밋 시 _pkQ/_pkOpts를 정리하도록 맞췄다. 카테고리는 기본값이 6개뿐이라(자산은 기본 0개) 항상 검색바를 보이면 번거로우므로 CAT_PICKER_SEARCH_THRESHOLD(8)를 넘을 때만 검색바를 보이도록 명시적으로 설계했다. _pkQ/_pkOpts 전역은 openAssetPicker/openCatPicker가 동시에 열리지 않음을 확인한 뒤 그대로 재사용. index.html/logic.js/sw.js 변경이라 APP_VERSION 1.47.249->1.47.250, sw.js CACHE v516->v517 동기 범프. test/run.js에 matchCatQuery/catFilteredGrid/catEmptyHtml/임계값 기반 검색바 노출/refreshPkCatList/pkCatQInput 디바운스/pkPickCat 정리 테스트 17건 추가, node test/run.js로 2077/2077 통과 확인.",
       "commit": null
     }
   ]

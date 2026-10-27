@@ -236,7 +236,7 @@ const FUNCTIONS = [
   'backupDue', 'planNegatives', 'homeAlerts', 'updateAlerts', 'goPlanTo', 'openNegList',
   'openStaleMvReview', 'dismissStaleMv', 'pruneDismissedStaleMvIds',
  'notifyAlertInfo', 'pickNotifyAlerts', 'pruneNotifiedIds', 'syncNotifyPermission',
-  'catIconOf', 'catGlyph', 'openCatManage', 'openCatPicker',
+  'catIconOf', 'catGlyph', 'openCatManage', 'openCatPicker', 'catFilteredGrid', 'catEmptyHtml', 'pkCatQInput', 'refreshPkCatList', 'moveCatBlob', 'pkPickCat',
   'catListOf', 'catAv', 'assetPickBtn', 'endCondFields', 'dayPickerHTML', 'openFormSheet', 'renderTxSheet', '_applyType', '_applyFreq', '_applyDay', '_applyCount', '_applyOpenCat', '_applyOpenAsset', 'txType', 'txToggleRepeat',
   'accountName', 'dbIsEmpty', 'guestHasData', 'importGuestDataInto',
   'txScheduled', 'monthStats', 'monthStats2', 'expenseByCat', 'needGold', 'inQuietWindow', 'fmtSynced', 'rateStatusText',
@@ -321,7 +321,7 @@ const FUNCTIONS = [
 // 테스트가 eye<->eyeOff 전환을 실제 아이콘 문자열(sandbox.I.eye/eyeOff)과 비교해 검증한다.
 // RATE_TTL은 autoSyncRates()가 참조하는 10분 쿨다운 상수(app-evolve cycle220 develop,
 // crypto 전용 보유자 주말 휴장 자동갱신 회귀 수정 검증용).
-const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'emailKey'];
+const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'emailKey', 'CAT_PICKER_SEARCH_THRESHOLD'];
 // _histCache는 filteredHist()가 재대입(={key,list})하는 let 선언이라 CONSTS(extractConst)로는
 // 못 끌어오므로 별도의 LETS 목록으로 extractLet을 통해 가져온다.
 // _copyIsCsv도 같은 이유(openCopyBackup()이 재대입)로 LETS를 통해 가져온다.
@@ -6038,6 +6038,27 @@ test('matchAssetQuery: 자산명이 조합형(NFD)으로 저장돼 있어도 완
 });
 test('matchAssetQuery: 검색어가 조합형(NFD)이어도 완성형(NFC)으로 저장된 자산명을 찾을 수 있다', () => {
   assert.strictEqual(sandbox.matchAssetQuery({ name: '삼성전자' }, '삼성전자'.normalize('NFD')), true, '검색어가 NFD라도 NFC로 저장된 hay와 매칭돼야 함');
+});
+
+/* ---------- matchCatQuery: 카테고리명 검색도 matchAssetQuery와 동일한 규칙(대소문자 무시
+ * includes + NFC 정규화) ---------- (app-evolve cycle253 critique → cycle254 advance) */
+test('matchCatQuery: 빈 검색어는 항상 매칭된다', () => {
+  assert.strictEqual(sandbox.matchCatQuery('식비', ''), true);
+});
+test('matchCatQuery: 이름 일부만 입력해도 부분일치로 찾을 수 있다', () => {
+  assert.strictEqual(sandbox.matchCatQuery('경조사비', '경조'), true);
+});
+test('matchCatQuery: 대소문자를 구분하지 않는다', () => {
+  assert.strictEqual(sandbox.matchCatQuery('Netflix', 'netflix'), true);
+});
+test('matchCatQuery: 일치하지 않으면 false다', () => {
+  assert.strictEqual(sandbox.matchCatQuery('식비', 'xyz'), false);
+});
+test('matchCatQuery: 카테고리명이 조합형(NFD)으로 저장돼 있어도 완성형(NFC) 검색어로 찾을 수 있다', () => {
+  assert.strictEqual(sandbox.matchCatQuery('용돈'.normalize('NFD'), '용돈'), true);
+});
+test('matchCatQuery: 검색어가 조합형(NFD)이어도 완성형(NFC)으로 저장된 카테고리명을 찾을 수 있다', () => {
+  assert.strictEqual(sandbox.matchCatQuery('용돈', '용돈'.normalize('NFD')), true);
 });
 
 /* ---------- matchesAssetId: 자산 행 '내역' 버튼(openAssetHistory)이 쓰는 계좌 필터 ---------- */
@@ -18806,6 +18827,130 @@ test('openCatPicker: 카테고리명에 큰따옴표가 섞여 있어도 새 HTM
   const html = sandbox.lastPickerHtml;
   assert.ok(!html.includes('onmouseover="alert'), '큰따옴표가 이스케이프되지 않으면 data-cat 속성을 깨고 onmouseover 속성이 실제 따옴표로 새로 열려야 하는데, 이스케이프됐다면 그런 일이 없어야 함');
   assert.ok(html.includes('&quot;'), '큰따옴표는 &quot;로 이스케이프돼야 함');
+});
+
+/* ---------- openCatPicker 검색(app-evolve cycle253 critique → cycle254 advance) ----------
+ * openAssetPicker(cycle248)가 먼저 받은 검색을, 호출 빈도가 훨씬 높은 카테고리 피커(일반 거래
+ * 입력/분할 거래 줄별 카테고리/CSV 가져오기 기본 카테고리/일괄 카테고리 변경)엔 아직 못 받았던
+ * 공백을 메운다. 다만 카테고리는 기본값이 6개뿐이라(자산은 기본 0개) 항상 검색바를 보이면
+ * 오히려 번거로우므로, CAT_PICKER_SEARCH_THRESHOLD(8)를 넘을 때만 보인다. ---------- */
+test('catFilteredGrid: 검색어는 matchCatQuery와 동일한 규칙(대소문자·NFC 무시 부분일치)으로 걸러낸다', () => {
+  sandbox.DB = { categories: { expense: ['식비', '교통', '경조사비'] }, catIcon: {}, catVar: {} };
+  const { html: all, any: anyAll } = sandbox.catFilteredGrid('expense', null, '');
+  assert.ok(all.includes('data-cat="식비"') && all.includes('data-cat="교통"') && all.includes('data-cat="경조사비"'));
+  assert.strictEqual(anyAll, true);
+  const { html: byQ, any: anyQ } = sandbox.catFilteredGrid('expense', null, '경조');
+  assert.ok(!byQ.includes('data-cat="식비"') && byQ.includes('data-cat="경조사비"'), '검색어로 좁혀져야 함');
+  assert.strictEqual(anyQ, true, '옵션상(종류 기준) 후보가 있었다는 사실은 검색 결과와 무관하게 true로 남아야 함(pkFilteredAssets의 any와 동일한 의미)');
+});
+test('catFilteredGrid: 검색어와 일치하는 카테고리가 하나도 없으면 html은 빈 문자열이다', () => {
+  sandbox.DB = { categories: { expense: ['식비', '교통'] }, catIcon: {}, catVar: {} };
+  const { html, any } = sandbox.catFilteredGrid('expense', null, '존재하지않는카테고리');
+  assert.strictEqual(html, '');
+  assert.strictEqual(any, true);
+});
+test('catFilteredGrid: current와 일치하는 카테고리 버튼에만 on 클래스가 붙는다', () => {
+  sandbox.DB = { categories: { expense: ['식비', '교통'] }, catIcon: {}, catVar: {} };
+  const { html } = sandbox.catFilteredGrid('expense', '교통', '');
+  assert.ok(/class="pk-cat on" data-cat="교통"/.test(html));
+  assert.ok(/class="pk-cat " data-cat="식비"/.test(html));
+});
+test('catEmptyHtml: 검색어와 일치하는 카테고리가 없다는 안내(Assets탭/자산 피커와 동일한 패턴)를 보여준다', () => {
+  const html = sandbox.catEmptyHtml('존재하지않는카테고리');
+  assert.ok(html.includes("'존재하지않는카테고리'와 일치하는 카테고리가 없어요"));
+  assert.ok(html.includes('다른 이름으로 검색해 보세요'));
+});
+test('openCatPicker: 카테고리가 CAT_PICKER_SEARCH_THRESHOLD 이하면(기본값 그대로인 경우 포함) 검색바를 보이지 않는다', () => {
+  setupCatPickerDB(); // expense: 식비/교통 2개뿐
+  sandbox.openCatPicker({ kind: 'expense', onPick: () => {} });
+  assert.ok(!sandbox.lastPickerHtml.includes('id="pkCatQ"'), '카테고리가 몇 개뿐이면 검색이 번거로울 뿐이므로 숨겨야 함');
+});
+test('openCatPicker: 카테고리가 CAT_PICKER_SEARCH_THRESHOLD를 넘으면 자산 피커(pkQ)와 동일한 패턴의 검색바(#pkCatQ)를 함께 연다', () => {
+  const many = Array.from({ length: sandbox.CAT_PICKER_SEARCH_THRESHOLD + 1 }, (_, i) => `카테고리${i}`);
+  sandbox.DB = { categories: { expense: many }, catIcon: {}, catVar: {} };
+  sandbox.lastPickerHtml = null;
+  sandbox.openCatPicker({ kind: 'expense', onPick: () => {} });
+  const html = sandbox.lastPickerHtml;
+  assert.ok(html.includes('id="pkCatQ"') && html.includes('aria-label="카테고리 검색"') && html.includes('oninput="pkCatQInput(this.value)"'));
+});
+(() => {
+  // refreshPkCatList()가 #catGrid만 다시 그리는지, moveCatBlob()이 '.on' 항목을 못 찾아도
+  // (검색으로 모두 걸러진 상태) 크래시 없이 조용히 넘어가는지 확인한다(refreshPkAssetList와 동일한 패턴).
+  function fakeCatGrid() {
+    let _html = '';
+    return { get innerHTML() { return _html; }, set innerHTML(v) { _html = v; }, querySelector: () => null };
+  }
+  function fakeCatBlob() {
+    return { classList: { add: () => {}, remove: () => {} }, style: {}, offsetWidth: 0, offsetHeight: 0, offsetLeft: 0, offsetTop: 0 };
+  }
+  test('refreshPkCatList: #catGrid가 없으면(피커가 이미 닫힌 뒤 디바운스 타이머가 늦게 발화) 조용히 아무 일도 하지 않는다', () => {
+    const $orig = sandbox.$;
+    sandbox.$ = () => null;
+    try { assert.doesNotThrow(() => sandbox.refreshPkCatList()); } finally { sandbox.$ = $orig; }
+  });
+  test('refreshPkCatList: _pkOpts(kind/current)를 다시 읽어 #catGrid 내용을 검색어에 맞게 새로 그리고, 결과가 없어도 moveCatBlob이 크래시하지 않는다', () => {
+    sandbox.DB = { categories: { expense: ['식비', '교통'] }, catIcon: {}, catVar: {} };
+    const grid = fakeCatGrid(), blob = fakeCatBlob();
+    const $orig = sandbox.$;
+    sandbox.$ = (id) => (id === 'catGrid' ? grid : id === 'catBlob' ? blob : null);
+    sandbox._pkOpts = { kind: 'expense', current: '교통' };
+    sandbox._pkQ = '';
+    try {
+      assert.doesNotThrow(() => sandbox.refreshPkCatList());
+      assert.ok(grid.innerHTML.includes('data-cat="식비"') && /class="pk-cat on" data-cat="교통"/.test(grid.innerHTML));
+      sandbox._pkQ = '없는카테고리';
+      assert.doesNotThrow(() => sandbox.refreshPkCatList());
+      assert.ok(grid.innerHTML.includes('일치하는 카테고리가 없어요'), '검색으로 0건이 되면 #catGrid가 empty 패턴으로 바뀌어야 함');
+    } finally { sandbox.$ = $orig; sandbox._pkOpts = null; sandbox._pkQ = ''; }
+  });
+})();
+(() => {
+  // pkCatQInput은 pkAssetQInput과 동일한 220ms 디바운스 패턴을 따라야 한다(비일관성 재현 방지).
+  const origSetTimeout = sandbox.setTimeout, origClearTimeout = sandbox.clearTimeout,
+    origRefresh = sandbox.refreshPkCatList;
+  function restore() {
+    sandbox.setTimeout = origSetTimeout; sandbox.clearTimeout = origClearTimeout;
+    sandbox.refreshPkCatList = origRefresh;
+  }
+  test('pkCatQInput: 입력값은 즉시 반영되지만, refreshPkCatList는 220ms 디바운스 후에야 불린다', () => {
+    sandbox._pkQ = '';
+    let calls = 0, capturedMs = null;
+    sandbox.setTimeout = (fn, ms) => { capturedMs = ms; return 'timer'; };
+    sandbox.clearTimeout = () => {};
+    sandbox.refreshPkCatList = () => { calls++; };
+    try {
+      sandbox.pkCatQInput('식비');
+      assert.strictEqual(sandbox._pkQ, '식비');
+      assert.strictEqual(calls, 0, '타이머가 실제로 실행되기 전에는 refreshPkCatList가 불리면 안 됨');
+      assert.strictEqual(capturedMs, 220);
+    } finally { restore(); }
+  });
+  test('pkCatQInput: 검색어를 지우면(clrInput → 빈 문자열) 디바운스 없이 즉시 refreshPkCatList를 부른다', () => {
+    sandbox._pkQ = '아무거나';
+    let calls = 0, setCalls = 0;
+    sandbox.setTimeout = () => { setCalls++; return 'timer'; };
+    sandbox.clearTimeout = () => {};
+    sandbox.refreshPkCatList = () => { calls++; };
+    try {
+      sandbox.pkCatQInput('');
+      assert.strictEqual(setCalls, 0);
+      assert.strictEqual(calls, 1);
+      assert.strictEqual(sandbox._pkQ, '');
+    } finally { restore(); }
+  });
+})();
+test('pkPickCat: 카테고리를 고르면(물방울 애니메이션 전) _pkQ/_pkOpts를 즉시 정리해 다음 피커가 이전 검색어를 물려받지 않는다(pkChoose와 동일한 패턴)', () => {
+  sandbox._pkQ = '식비'; sandbox._pkOpts = { kind: 'expense', current: '교통' };
+  sandbox.window._pkPick = () => {}; sandbox.window._pkBack = () => {};
+  const $orig = sandbox.$;
+  sandbox.$ = () => null; // grid 없음 → 바로 f(c) 분기
+  try {
+    sandbox.pkPickCat('교통');
+    assert.strictEqual(sandbox._pkQ, '');
+    assert.strictEqual(sandbox._pkOpts, null);
+    assert.strictEqual(sandbox.window._pkPick, null);
+    assert.strictEqual(sandbox.window._pkBack, null);
+  } finally { sandbox.$ = $orig; }
 });
 
 /* ---------- renderTxSheet: 렌더 함수 스모크 테스트 ----------
