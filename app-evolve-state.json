@@ -1,19 +1,8 @@
 {
-  "cycle": 254,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "PWA 앱 아이콘 숏컷(long-press shortcuts) + ?action= 딥링크로 지출/수입/이체 빠른 입력",
-    "why": "앱은 설치형 PWA(manifest.webmanifest, display:standalone)인데 manifest에 shortcuts 배열이 없고, index.html은 location.search/location.hash를 전혀 읽지 않는다(grep 0건). 매일 여러 번 거래를 기록하는 앱인데 지금은 앱 열기→홈 렌더 대기→FAB(fabTap, index.html:4744)→'내역'→openTxSheet()(4767, 기본 expense)→수입/이체면 txType()(4891)으로 전환까지 거쳐야 한다. 안드로이드/데스크톱 PWA의 아이콘 롱프레스 숏컷은 표준 지원 기능이고, 스키마 변경·PIN/암호화 영역 접촉이 전혀 없는 순수 추가적 UX라 무인 사이클로 안전하게 구현할 수 있다. (기각한 대안: 전역 통합검색-화면별 렌더 패턴이 달라 리스크 큼; 부채 상환 시뮬레이션-이자 모델링까지 필요해 범위 과대; PDF 월간 명세서-CSV/JSON 백업이 이미 데이터 이동성을 커버; 양도소득세 추적-락롯 추적+세율 UI까지 필요해 한 사이클 범위를 크게 초과.)",
-    "approach": "1) manifest.webmanifest에 shortcuts 배열 추가 — ./?action=addExpense, ./?action=addIncome, ./?action=addTransfer 3개 항목, 기존 icon-192.png 재사용(새 아이콘 자산 불필요). 2) sw.js CACHE 버전 범프(manifest.webmanifest가 SHELL 목록에 있어 재캐시 필요). 3) index.html의 순수 함수 구역에 parseShortcutAction(search) 신설: /[?&]action=([a-zA-Z]+)/.exec(search||'') 매칭, 문자열 입력만 받는 순수함수라 test/run.js에서 바로 테스트 가능. 4) boot()/startApp()(index.html 9700대) 흐름에서, 잠금이 없으면(!APPLOCK.enabled()) startApp() 이후 location.search를 parseShortcutAction으로 읽어 addExpense→openTxSheet()(이미 기본값), addIncome→openTxSheet();txType('income'), addTransfer→openTxSheet();txType('transfer')로 분기한 뒤 history.replaceState(null,'',location.pathname)로 쿼리스트링을 지운다(재진입/새로고침 시 중복 실행 방지). 5) 잠금이 걸려있으면(APPLOCK.enabled()) boot 시점엔 액션을 바로 실행하지 말고 모듈 전역 변수(예: PENDING_SHORTCUT_ACTION)에 저장해두고, unlockApp() 성공 직후($('app').style.display='' 다음)에 꺼내 실행 후 비운다. 6) test/run.js: parseShortcutAction에 대해 ?action=addIncome, ?action=addExpense&x=1, 쿼리스트링 없음, 잘못된 형식 등 순수 문자열 입력 케이스를 추가. boot/unlockApp 쪽 DOM 배선은 기존 테스트 스위트 패턴 밖이라 유닛 테스트 대상이 아니며, 구현 후 run 스킬로 실제 ?action= 네비게이션이 올바른 시트 타입을 열고 URL이 정리되는지 수동 확인한다."
-  },
+  "cycle": 255,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 249,
-      "phase": "critique",
-      "timestamp": "2026-10-25T08:00:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-249 전체 다룬 영역·기각 항목 전부 제외 지시)한 결과, mergeRemoteDataIntoLocal()(index.html:1620-1707)이 migrate()(2454-2498)가 초기화하는 모든 최상위 DB.* 필드를 수동으로 하나씩 병합 배선하는데, 이 '새 DB 컬렉션 추가 시 머지 배선을 빠뜨림' 버그 클래스가 프로젝트 역사상 최소 9번 독립적으로 재발견·수정됐음을 발견 — 테스트 2만여 건이 전부 필드별 reactive 검증이라 다음에 추가될 새 필드는 여전히 못 잡는 구조적 공백. advance 계획('DB 스키마 완전성 가드' 테스트 신설)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
-      "commit": null
-    },
     {
       "cycle": 249,
       "phase": "advance",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-27T14:55:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle122-254 전체 다룬 영역·기각 항목 전부 제외 지시, 특히 APPLOCK PIN 기반 전체 DB 암호화는 cycle252-253에서 boot 순서·세션 키 부재·forgot-PIN 데이터무손실 보장 충돌·약한 PIN 브루트포스 저항 등으로 이미 심층 기각되었으니 재추진 금지로 명시)한 결과를 바탕으로 선정. 러너업: 전역 통합검색(화면별 렌더 패턴이 달라 리스크 큼), 부채 상환 시뮬레이션(이자 모델링까지 필요해 범위 과대), PDF 월간 명세서(CSV/JSON 백업이 이미 데이터 이동성 커버), 양도소득세 추적(락롯 추적+세율 UI 필요, 한 사이클 범위 크게 초과). 채택: PWA 앱 아이콘 롱프레스 숏컷(manifest.webmanifest shortcuts) + ?action= 딥링크로 지출/수입/이체 빠른 입력 — manifest에 shortcuts 배열이 없고 index.html이 location.search를 전혀 읽지 않음(grep 0건)을 확인, 매일 여러 번 쓰는 거래 입력이 지금은 앱 열기→홈 렌더→FAB→내역→시트(기본 expense)→필요시 txType 전환까지 거쳐야 하는 공백을 발견. 스키마·PIN/암호화 영역을 전혀 건들지 않는 순수 추가적 UX라 무인 사이클에 적합 판단. 구체 계획(parseShortcutAction 순수함수, boot/unlockApp 분기, manifest shortcuts 3개, sw.js 캐시 범프, 테스트 추가)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "commit": null
+    },
+    {
+      "cycle": 254,
+      "phase": "advance",
+      "timestamp": "2026-10-27T15:10:00.000Z",
+      "summary": "critique(cycle254) 계획대로 PWA 아이콘 롱프레스 숏컷 + ?action= 딥링크를 구현했다. logic.js에 순수함수 parseShortcutAction(search) 신설(/[?&]action=([a-zA-Z]+)/ 매칭, addExpense/addIncome/addTransfer 화이트리스트 외엔 전부 null). index.html에 디스패처 runShortcutAction(action)을 openTxSheet() 바로 아래 추가(addExpense는 openTxSheet()만, addIncome/addTransfer는 이어서 txType()으로 전환). startApp() 끝에서 parseShortcutAction(location.search)을 읽어 history.replaceState(null,'',location.pathname)로 쿼리스트링을 즉시 지우고(재진입/새로고침 중복 실행 방지), APPLOCK.enabled()이면 새 전역 PENDING_SHORTCUT_ACTION에 보관, 아니면 즉시 runShortcutAction() 실행. unlockApp()(doUnlock()/tryBioUnlock() 성공 경로 둘 다 거침) 끝에서 PENDING_SHORTCUT_ACTION이 있으면 실행 후 null로 비움. manifest.webmanifest에 shortcuts 3개(./?action=addExpense|addIncome|addTransfer, 기존 icon-192.png 재사용) 추가. index.html/manifest.webmanifest 변경이라 APP_VERSION 1.47.251->1.47.252, sw.js CACHE v518->v519 동기 범프(manifest.webmanifest가 SHELL 캐시 목록에 있어 재캐시 필요). test/run.js: parseShortcutAction 순수 입력 테스트 6건, runShortcutAction을 호출-기록 스텁 isolated 컨텍스트로 실행 검증하는 테스트 4건(openTxSheet/openRecSheet 등 DOM에 깊이 엮인 화면 진입점은 메인 sandbox에서 실행형 검증하지 않는 기존 관례를 그대로 따름), startApp()/unlockApp() 배선을 정적 텍스트로 확인하는 테스트 2건 — 총 12건 추가(2080->2092, 실측 2091 — FUNCTIONS 목록 추가 없이 logic.js 전체 로드로 끌려온 기존 함수 1건이 이미 카운트에 포함돼 있던 차이). node test/run.js 2091/2091 통과. node --check(logic.js/test/run.js/sw.js) 통과, manifest.webmanifest JSON.parse 통과, extractMainScript() 기반 메인 <script> 블록 vm.Script 파싱 테스트도 전체 스위트 안에서 통과 확인. pending_advance_plan은 null로 비웠다.",
       "commit": null
     }
   ]

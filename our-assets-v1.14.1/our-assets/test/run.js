@@ -23934,6 +23934,86 @@ test('DB 스키마 완전성 가드 자가검증: 병합 배선이 빠진 가짜
   assert.deepStrictEqual(missing, ['newThing'], '체커가 병합 배선이 빠진 가짜 필드를 잡아내지 못함(위양성/위음성 가능성)');
 });
 
+/* ---------- parseShortcutAction: manifest.webmanifest shortcuts(아이콘 롱프레스)/?action= 딥링크
+ * 쿼리스트링 해석 (app-evolve cycle254 critique → advance) ---------- */
+test('parseShortcutAction: 쿼리스트링이 없으면 null이다', () => {
+  assert.strictEqual(sandbox.parseShortcutAction(''), null);
+  assert.strictEqual(sandbox.parseShortcutAction(null), null);
+  assert.strictEqual(sandbox.parseShortcutAction(undefined), null);
+});
+test('parseShortcutAction: action=addExpense/addIncome/addTransfer를 그대로 돌려준다', () => {
+  assert.strictEqual(sandbox.parseShortcutAction('?action=addExpense'), 'addExpense');
+  assert.strictEqual(sandbox.parseShortcutAction('?action=addIncome'), 'addIncome');
+  assert.strictEqual(sandbox.parseShortcutAction('?action=addTransfer'), 'addTransfer');
+});
+test('parseShortcutAction: action이 쿼리의 첫 파라미터가 아니어도 &로 찾아낸다', () => {
+  assert.strictEqual(sandbox.parseShortcutAction('?x=1&action=addIncome'), 'addIncome');
+});
+test('parseShortcutAction: 화이트리스트 3개 외의 action 값은 null이다(임의의 시트가 열리지 않도록)', () => {
+  assert.strictEqual(sandbox.parseShortcutAction('?action=deleteEverything'), null);
+  assert.strictEqual(sandbox.parseShortcutAction('?action='), null, 'action= 뒤에 값이 없으면 null이어야 함');
+});
+test('parseShortcutAction: #으로 시작하는 해시는 쿼리스트링이 아니므로 매칭되지 않는다', () => {
+  assert.strictEqual(sandbox.parseShortcutAction('#action=addExpense'), null);
+});
+
+/* ---------- runShortcutAction: parseShortcutAction이 돌려준 액션을 실제 거래 입력 시트로
+ * 연결하는 디스패처. openTxSheet/txType 자체는 DOM 전역에 깊이 엮여 메인 sandbox에서 실행형으로
+ * 검증하지 않는 기존 관례(위 'openTxSheet' 관련 주석 참고)를 그대로 따라, 여기서도 isolated
+ * 컨텍스트에 호출 기록용 스텁만 올려 "어떤 순서로 무엇을 호출했는지"만 검증한다. ---------- */
+function shortcutActionCtx() {
+  const calls = [];
+  const ctx = {
+    calls,
+    openTxSheet: () => { calls.push('openTxSheet'); },
+    txType: (t) => { calls.push('txType:' + t); },
+  };
+  vm.createContext(ctx);
+  vm.runInContext(extractFunction('runShortcutAction'), ctx, { filename: 'runShortcutAction-real' });
+  return ctx;
+}
+test('runShortcutAction: addExpense는 openTxSheet()만 호출한다(기본 type이 이미 expense라 전환 불필요)', () => {
+  const ctx = shortcutActionCtx();
+  ctx.runShortcutAction('addExpense');
+  assert.deepStrictEqual(ctx.calls, ['openTxSheet']);
+});
+test('runShortcutAction: addIncome은 openTxSheet() 후 txType("income")으로 전환한다', () => {
+  const ctx = shortcutActionCtx();
+  ctx.runShortcutAction('addIncome');
+  assert.deepStrictEqual(ctx.calls, ['openTxSheet', 'txType:income']);
+});
+test('runShortcutAction: addTransfer는 openTxSheet() 후 txType("transfer")으로 전환한다', () => {
+  const ctx = shortcutActionCtx();
+  ctx.runShortcutAction('addTransfer');
+  assert.deepStrictEqual(ctx.calls, ['openTxSheet', 'txType:transfer']);
+});
+test('runShortcutAction: 화이트리스트 밖의 값(또는 null)은 아무것도 호출하지 않는다', () => {
+  const ctx = shortcutActionCtx();
+  ctx.runShortcutAction('bogus');
+  ctx.runShortcutAction(null);
+  assert.deepStrictEqual(ctx.calls, []);
+});
+
+/* ---------- startApp()/unlockApp()이 ?action= 딥링크를 올바르게 배선하는지 정적 검사. 앱 잠금이
+ * 걸려 있으면 PIN/생체인증을 풀기 전에 시트를 열면 안 되므로(아직 그릴 화면이 없음) 즉시 실행과
+ * 지연 실행(PENDING_SHORTCUT_ACTION)을 분기하는지, 그리고 doUnlock()/tryBioUnlock() 성공 경로가
+ * 모두 거치는 unlockApp()이 그 지연된 액션을 실행 후 비우는지를 소스 텍스트로 확인한다
+ * (실행형 검증은 startApp()/unlockApp() 자체가 DOM 전역에 깊이 엮여 범위 밖 — 위 installBarCtx류
+ * 패턴과 달리 공유 스텁만으론 안전하게 흉내낼 수 없다). ---------- */
+test('startApp()이 ?action= 딥링크를 parseShortcutAction으로 해석해 history.replaceState로 쿼리스트링을 지우고, 잠금 여부에 따라 즉시 실행하거나 PENDING_SHORTCUT_ACTION에 보관한다', () => {
+  const body = extractFunction('startApp');
+  assert.ok(body.includes('parseShortcutAction(location.search)'), 'startApp()이 parseShortcutAction(location.search)를 호출하지 않음');
+  assert.ok(body.includes("history.replaceState(null,'',location.pathname)"), 'startApp()이 쿼리스트링을 지우는 history.replaceState를 호출하지 않음 — 재진입/새로고침 시 중복 실행 위험');
+  assert.ok(body.includes('APPLOCK.enabled())PENDING_SHORTCUT_ACTION='), 'startApp()이 잠금 상태에서는 즉시 실행하지 않고 PENDING_SHORTCUT_ACTION에 보관하는 분기가 없음 — 잠겨 있을 때 시트가 그려질 화면 없이 열릴 위험');
+  assert.ok(body.includes('else runShortcutAction('), 'startApp()이 잠금 해제 상태에서 runShortcutAction()을 즉시 호출하지 않음');
+});
+test('unlockApp()이 PENDING_SHORTCUT_ACTION을 실행 후 비운다 — doUnlock()/tryBioUnlock() 성공 경로 모두 unlockApp()을 거치므로 PIN/생체인증 둘 다 커버된다', () => {
+  const body = extractFunction('unlockApp');
+  assert.ok(body.includes('if(PENDING_SHORTCUT_ACTION)'), 'unlockApp()이 PENDING_SHORTCUT_ACTION을 확인하지 않음');
+  assert.ok(body.includes('runShortcutAction(a)'), 'unlockApp()이 보관된 액션으로 runShortcutAction()을 호출하지 않음');
+  assert.ok(body.includes('PENDING_SHORTCUT_ACTION=null'), 'unlockApp()이 실행 후 PENDING_SHORTCUT_ACTION을 비우지 않아, 다음 백그라운드→잠금→해제 때 같은 액션이 중복 실행될 위험');
+});
+
 /* ---------- 실행 ---------- */
 // pbkdf2Hash는 Web Crypto(subtle.deriveBits)를 쓰는 비동기 함수라, 러너도 async test를
 // 지원해야 한다 — sync test는 그냥 await해도 즉시 반환되므로 기존 테스트에는 영향 없다.

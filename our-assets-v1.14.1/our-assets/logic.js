@@ -1060,3 +1060,16 @@ function helpBackupNote(isCloudAcct){
   ?'데이터는 이 기기와 <b>클라우드에도 함께</b> 저장돼요. 그래도 메뉴 › 데이터 내보내기로 파일(iCloud 등)에 따로 백업해두면 더 안전해요. 7일마다 홈에서 잊지 않게 알려드려요.'
   :'데이터는 <b>이 기기에만</b> 저장돼요. 메뉴 › 데이터 내보내기로 파일(iCloud 등)에 백업하고, 7일마다 홈에서 잊지 않게 알려드려요.';
 }
+
+/* ================= PWA 숏컷 딥링크 (순수) ================= */
+/* manifest.webmanifest의 shortcuts(아이콘 롱프레스로 뜨는 바로가기)가 ./?action=xxx 형태로 앱을
+ * 여는데, 이 쿼리스트링을 해석해 어떤 거래 입력 시트를 열지 결정한다. location.search를 직접
+ * 참조하지 않는 순수 함수로 둬 테스트 가능하게 하고, 호출부(index.html의 startApp())가
+ * location.search를 넘겨준다. 화이트리스트 3개 외에는 전부 null — 모르는 쿼리로 임의의 시트가
+ * 열리지 않게 한다(app-evolve cycle254 critique → advance). */
+function parseShortcutAction(search){
+ const m=/[?&]action=([a-zA-Z]+)/.exec(search||'');
+ if(!m)return null;
+ const a=m[1];
+ return(a==='addExpense'||a==='addIncome'||a==='addTransfer')?a:null;
+}

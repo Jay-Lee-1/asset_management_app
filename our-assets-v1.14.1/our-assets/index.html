@@ -1412,7 +1412,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.251';
+const APP_VERSION='1.47.252';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4765,6 +4765,14 @@ document.addEventListener('click',e=>{
  closeFabPop();
 },true);
 function openTxSheet(){window._recCtx=null;_formScroll=0;_txFocusAmt=true;txDraft={id:null,type:'expense',date:ST.ledger.sel,category:DB.categories.expense[0],memo:'',amount:0,fromAssetId:firstCash(),toAssetId:null,repeat:false,freq:'monthly',day:null,endDate:null,count:null};snapDraft('tx');renderTxSheet()}
+/* manifest.webmanifest shortcuts(아이콘 롱프레스)/?action= 딥링크가 공통으로 쓰는 디스패처.
+ * openTxSheet()의 기본 type은 이미 'expense'라 addExpense는 추가 전환이 필요 없다
+ * (app-evolve cycle254 advance). */
+function runShortcutAction(action){
+ if(action==='addExpense')openTxSheet();
+ else if(action==='addIncome'){openTxSheet();txType('income')}
+ else if(action==='addTransfer'){openTxSheet();txType('transfer')}
+}
 function firstCash(excludeId){const a=DB.assets.find(x=>isCashLike(x)&&x.id!==excludeId);return a?a.id:null}
 function catListOf(type){return type==='income'?DB.categories.income:type==='saving'?DB.categories.saving:type==='expense'?DB.categories.expense:[]}
 /* tx(내역 입력)/rec(반복 설정) 폼이 공유하는 '반복일' 선택 UI. pfx='tx' 또는 'rec' */
@@ -9720,6 +9728,12 @@ function startApp(){
  autoSyncRates();                       /* 시작 시 1회 */
  setInterval(autoSyncRates,3*60*1000); /* 3분마다 확인 → 10분 지났으면 갱신 */
  setInterval(checkNotifyAlerts,5*60*1000); /* 5분마다 확인 → 백그라운드일 때만 OS 알림 발송 */
+ const _shortcutAction=parseShortcutAction(location.search);
+ if(_shortcutAction){
+  history.replaceState(null,'',location.pathname); /* 재진입/새로고침 시 중복 실행 방지 */
+  if(APPLOCK.enabled())PENDING_SHORTCUT_ACTION=_shortcutAction; /* unlockApp() 성공 후 실행 */
+  else runShortcutAction(_shortcutAction);
+ }
 }
 async function boot(){
  migrateLegacy();
@@ -9778,6 +9792,8 @@ function showAuth(){hideBootSplash();$('app').style.display='none';$('authView')
  * 트리거(백그라운드 전환, 콜드부트)에서 쓰이므로 AUTHKEY 같은 기존 플래그와 섞지 않는다. */
 let APP_LOCKED=false;
 let APP_HIDDEN_AT=0; /* 마지막으로 백그라운드로 전환된 시각(ms). 유예시간 안에 돌아오면 재인증 없이 자동 해제한다 */
+let PENDING_SHORTCUT_ACTION=null; /* startApp()이 잠긴 상태에서 ?action= 딥링크를 받으면 여기 보관해두고,
+ * unlockApp() 성공 직후(PIN·생체인증 모두) 1회 실행한다(app-evolve cycle254 advance). */
 let _bioAutoTried=false; /* lockApp()이 새로 열릴 때마다 1회만 자동 시도하도록 리셋 — renderLockView()는
  * PIN 백오프 카운트다운 재시도 타이머로도 반복 호출되므로, 여기서 리셋해 두지 않으면 틱마다 다시 떴다 */
 function lockApp(){
@@ -9792,6 +9808,7 @@ function unlockApp(){
  $('lockView').style.display='none';$('lockView').innerHTML='';
  $('app').style.display='';
  maybeRollDay(); /* 잠겨 있던 동안 넘어간 날짜/동기화를 지금 반영 */
+ if(PENDING_SHORTCUT_ACTION){const a=PENDING_SHORTCUT_ACTION;PENDING_SHORTCUT_ACTION=null;runShortcutAction(a)}
 }
 function renderLockView(){
  const lock=AUTH._lockStatus(APPLOCK_FAIL_KEY);
