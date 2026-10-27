@@ -14013,6 +14013,44 @@ test('[실행형] txSplitRemove: 분할이 2개뿐이면 기존 가드로 삭제
   assert.strictEqual(ctx.txDraft.splits.length, 2, '분할 최소 2개 가드로 삭제 자체는 막혀야 함(회귀 없음)');
   assert.strictEqual(ctx.txDraft.amount, 12000, '가드로 삭제가 막혀도 syncTxInputs는 먼저 불려 금액은 동기화돼야 함');
 });
+/* ---------- splitFieldHTML/txSplitMemo: 분할 항목별 메모가 입력 UI로 이어지지 않던 공백 (app-evolve
+ * cycle255 develop) — 데이터 모델(t.splits=[{category,amount,memo?}])과 검색(matchTxnQuery의
+ * lineMemos)은 이미 분할별 메모를 지원하는데, splitFieldHTML()은 카테고리 선택/금액 입력만 그리고
+ * txToggleSplit()/txSplitAdd()가 memo:''로 고정 초기화할 뿐 메모를 입력할 수단이 전혀 없었다.
+ * splitFieldHTML에 항목별 메모 input을 추가하고 txSplitMemo(i,el)을 신설해 이 공백을 메웠다. */
+test('[실행형] txSplitMemo: 항목별 메모 입력값을 해당 split의 memo 필드에 반영한다', () => {
+  const ctx = {
+    txDraft: {
+      type: 'expense', category: '식비', amount: 5000, memo: '',
+      splits: [{ category: '식비', amount: 3000, memo: '' }, { category: '생활용품', amount: 2000, memo: '' }],
+    },
+  };
+  vm.createContext(ctx);
+  vm.runInContext(extractFunction('txSplitMemo'), ctx, { filename: 'txSplitMemo-real' });
+  ctx.txSplitMemo(1, { value: '세제' });
+  assert.strictEqual(ctx.txDraft.splits[1].memo, '세제', 'txSplitMemo가 해당 인덱스 split의 memo를 갱신해야 함');
+  assert.strictEqual(ctx.txDraft.splits[0].memo, '', '다른 split의 memo는 건드리지 않아야 함');
+});
+test('[실행형] splitFieldHTML: 각 분할 항목마다 메모 입력(id=splitMemo{i}, oninput=txSplitMemo)을 그려낸다', () => {
+  const ctx = {
+    esc: (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])),
+    comma: (n) => String(n),
+    svg: () => '',
+    catAv: () => 'a-food',
+    catGlyph: () => '',
+  };
+  vm.createContext(ctx);
+  vm.runInContext(extractFunction('splitFieldHTML'), ctx, { filename: 'splitFieldHTML-real' });
+  const d = {
+    type: 'expense', amount: 5000,
+    splits: [{ category: '식비', amount: 3000, memo: '마트"할인"' }, { category: '생활용품', amount: 2000, memo: '' }],
+  };
+  const html = ctx.splitFieldHTML(d);
+  assert.ok(html.includes('id="splitMemo0"'), '첫 번째 항목에 메모 입력칸(id=splitMemo0)이 있어야 함');
+  assert.ok(html.includes('id="splitMemo1"'), '두 번째 항목에도 메모 입력칸(id=splitMemo1)이 있어야 함');
+  assert.ok(html.includes('oninput="txSplitMemo(0,this)"'), '메모 입력이 txSplitMemo(i,this)로 배선돼야 함');
+  assert.ok(html.includes('마트&quot;할인&quot;'), '기존 메모 값을 esc()로 이스케이프해 value에 되돌려줘야 함(따옴표로 인한 속성 깨짐 방지)');
+});
 /* ---------- saveTx/saveRec: expense/income에 자산 선택 없이 저장되던 버그 (app-evolve cycle81 develop) ----------
  * transfer/saving은 fromAssetId/toAssetId가 없으면 '보내는·받는 자산을 선택해 주세요' 토스트로
  * 막았지만, expense/income은 이 가드가 전혀 없이 d.type==='expense'?d.toAssetId=null:... 로 남은

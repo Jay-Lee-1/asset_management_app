@@ -1,15 +1,8 @@
 {
   "cycle": 255,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 249,
-      "phase": "advance",
-      "timestamp": "2026-10-25T09:00:00.000Z",
-      "summary": "critique(cycle249) 계획대로 'DB 스키마 완전성 가드' 테스트를 신설했다(test/run.js만 변경, index.html/sw.js 변경 없음). migrate()와 mergeRemoteDataIntoLocal() 소스를 extractFunction으로 추출해 최상위 DB.* 필드를 전부 뽑고, LOCAL_ONLY_DB_FIELDS/MIGRATION_FLAG_FIELDS/LEGACY_FROZEN_FIELDS(DB.budgets, 레거시 1회성 동결 필드로 조사 확인) 세 제외 집합으로 걸러 나머지가 mergeRemoteDataIntoLocal()에 실제로 등장하는지 assert. 자가검증 테스트 1건 포함. node our-assets-v1.14.1/our-assets/test/run.js 2011->2013/2013 통과.",
-      "commit": null
-    },
     {
       "cycle": 250,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-27T15:10:00.000Z",
       "summary": "critique(cycle254) 계획대로 PWA 아이콘 롱프레스 숏컷 + ?action= 딥링크를 구현했다. logic.js에 순수함수 parseShortcutAction(search) 신설(/[?&]action=([a-zA-Z]+)/ 매칭, addExpense/addIncome/addTransfer 화이트리스트 외엔 전부 null). index.html에 디스패처 runShortcutAction(action)을 openTxSheet() 바로 아래 추가(addExpense는 openTxSheet()만, addIncome/addTransfer는 이어서 txType()으로 전환). startApp() 끝에서 parseShortcutAction(location.search)을 읽어 history.replaceState(null,'',location.pathname)로 쿼리스트링을 즉시 지우고(재진입/새로고침 중복 실행 방지), APPLOCK.enabled()이면 새 전역 PENDING_SHORTCUT_ACTION에 보관, 아니면 즉시 runShortcutAction() 실행. unlockApp()(doUnlock()/tryBioUnlock() 성공 경로 둘 다 거침) 끝에서 PENDING_SHORTCUT_ACTION이 있으면 실행 후 null로 비움. manifest.webmanifest에 shortcuts 3개(./?action=addExpense|addIncome|addTransfer, 기존 icon-192.png 재사용) 추가. index.html/manifest.webmanifest 변경이라 APP_VERSION 1.47.251->1.47.252, sw.js CACHE v518->v519 동기 범프(manifest.webmanifest가 SHELL 캐시 목록에 있어 재캐시 필요). test/run.js: parseShortcutAction 순수 입력 테스트 6건, runShortcutAction을 호출-기록 스텁 isolated 컨텍스트로 실행 검증하는 테스트 4건(openTxSheet/openRecSheet 등 DOM에 깊이 엮인 화면 진입점은 메인 sandbox에서 실행형 검증하지 않는 기존 관례를 그대로 따름), startApp()/unlockApp() 배선을 정적 텍스트로 확인하는 테스트 2건 — 총 12건 추가(2080->2092, 실측 2091 — FUNCTIONS 목록 추가 없이 logic.js 전체 로드로 끌려온 기존 함수 1건이 이미 카운트에 포함돼 있던 차이). node test/run.js 2091/2091 통과. node --check(logic.js/test/run.js/sw.js) 통과, manifest.webmanifest JSON.parse 통과, extractMainScript() 기반 메인 <script> 블록 vm.Script 파싱 테스트도 전체 스위트 안에서 통과 확인. pending_advance_plan은 null로 비웠다.",
+      "commit": null
+    },
+    {
+      "cycle": 255,
+      "phase": "develop",
+      "timestamp": "2026-10-27T17:13:45.293Z",
+      "summary": "앱 전반 재탐색(fork 서브에이전트, cycle249-254가 다룬 영역 전부 제외 지시) 결과, 거래 입력 분할 모드(여러 카테고리로 나누기)의 데이터 모델(t.splits=[{category,amount,memo?}])과 검색(matchTxnQuery의 lineMemos)은 이미 분할 항목별 메모를 지원하는데, 실제 입력 UI(splitFieldHTML, index.html:4846)는 카테고리 선택과 금액 입력만 그리고 txToggleSplit()/txSplitAdd()가 memo:''로 고정 초기화할 뿐이라 분할 항목에 메모를 적을 방법이 전혀 없는 죽은 필드였음을 발견. splitFieldHTML에 항목별 메모 input(id=splitMemo{i}, 기존 금액 input과 동일한 field-clear 패턴)을 추가하고 txSplitMemo(i,el) 핸들러를 신설해 배선. openSheet()가 이미 호출하는 fcWire()가 새 input의 지우기(×) 버튼도 자동 배선하므로 추가 배선 불필요. logic.js 변경 없음(데이터 모델/검색은 이미 완비). test/run.js에 [실행형] 테스트 2건 추가(txSplitMemo 단위 테스트, splitFieldHTML이 id/oninput 배선과 esc()를 통한 따옴표 이스케이프까지 포함해 메모 input을 올바르게 그리는지 렌더 테스트). APP_VERSION 1.47.252→1.47.253, sw.js CACHE v519→v520. node our-assets-v1.14.1/our-assets/test/run.js 2091→2093/2093 통과.",
       "commit": null
     }
   ]
