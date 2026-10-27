@@ -701,6 +701,22 @@ function portfolioGainLoss(items){
 }
 
 /* ================= CSV IMPORT (순수) ================= */
+/* CSV 파일 바이트를 문자열로 디코딩한다 — 이 앱이 내보낸 CSV는 항상 UTF-8이지만, 국내 은행/
+ * 카드사가 흔히 내려주는 CSV는 EUC-KR/CP949라 FileReader.readAsText(기본 UTF-8)로 그대로 읽으면
+ * 한글이 깨진다(이전까지 TODO(EUC-KR)로 남겨뒀던 공백, app-evolve cycle252 develop).
+ * TextDecoder('utf-8',{fatal:true})로 엄격 검증해 먼저 시도한다 — 한글 EUC-KR 2바이트 시퀀스는
+ * 거의 항상 유효한 UTF-8 연속 바이트 규칙을 어겨 strict 모드가 던지므로, "진짜 UTF-8"과
+ * "UTF-8로 보이지만 실은 EUC-KR"을 섞어 틀리게 맞다고 판정할 위험이 낮다. 실패하면 euc-kr로
+ * 재시도(브라우저/Node 둘 다 WHATWG 인코딩 표준의 windows-949 별칭으로 지원), euc-kr 디코더
+ * 자체가 없는(구형) 환경이면 손실 허용 UTF-8(치환 문자로 깨진 바이트를 대체)로 최후 폴백해 최소한
+ * 파일을 읽지 못해 가져오기 자체가 막히는 일은 없게 한다. bytes는 Uint8Array(또는 바이트 값
+ * 배열) — index.html은 FileReader.readAsArrayBuffer 결과를 new Uint8Array로 감싸 넘긴다. */
+function decodeCsvBytes(bytes){
+ const buf=bytes instanceof Uint8Array?bytes:new Uint8Array(bytes||[]);
+ try{return new TextDecoder('utf-8',{fatal:true}).decode(buf)}catch(_){}
+ try{return new TextDecoder('euc-kr').decode(buf)}catch(_){}
+ return new TextDecoder('utf-8').decode(buf);
+}
 /* RFC4180 스타일 CSV 파서. 따옴표로 감싼 필드 안의 콤마/줄바꿈/이스케이프된 큰따옴표("")를
    처리한다(txnsToCSV의 esc()가 만드는 형식과 대칭). BOM 제거, \r\n과 \n 둘 다 줄바꿈으로 인식. */
 function parseCSV(text){

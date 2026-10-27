@@ -1412,7 +1412,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.246';
+const APP_VERSION='1.47.247';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -7671,10 +7671,10 @@ $('importCsvFile').addEventListener('change',e=>{
  r.onerror=()=>{toast('파일을 읽지 못했어요');e.target.value=''};
  r.onload=()=>{
   try{
-   /* TODO(EUC-KR): readAsText 기본 인코딩은 UTF-8이라, 국내 은행/카드사가 흔히 내려주는
-    * EUC-KR/CP949 CSV는 한글이 깨져 들어올 수 있다 — 이번 열 매핑 가져오기(app-evolve cycle251
-    * advance)의 범위 밖으로 남긴다(다음 cycle이 TextDecoder('euc-kr')로 재시도하는 방식을 검토). */
-   const text=String(r.result);
+   /* readAsText 대신 readAsArrayBuffer+decodeCsvBytes(logic.js)를 쓴다 — 국내 은행/카드사가
+    * 흔히 내려주는 EUC-KR/CP949 CSV도 한글이 깨지지 않게 자동으로 재시도한다(app-evolve
+    * cycle252 develop, 이전 cycle251 advance가 TODO로 남겨뒀던 공백). */
+   const text=decodeCsvBytes(new Uint8Array(r.result));
    const rows=parseCSV(text);
    if(!rows.length){toast('가져올 내역을 찾지 못했어요');return}
    if(detectOwnCsvFormat(rows[0])){
@@ -7689,7 +7689,7 @@ $('importCsvFile').addEventListener('change',e=>{
   }catch(_){toast('올바른 CSV 파일이 아니에요')}
   finally{e.target.value=''}
  };
- r.readAsText(f);
+ r.readAsArrayBuffer(f);
 });
 let _csvMap=null;
 /* dataRows에서 col번째 열의 실제 값 2~3개를 뽑아 보여준다 — 열 이름만으로는 어느 열이 날짜/금액인지

@@ -363,6 +363,13 @@ const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(
 // 대상이 아님) 실제 소스 대신, 어떤 id로 호출됐는지만 기록하는 스텁으로 대체한다 —
 // doRenameCat의 UI 스텁($, toast 등)과 같은 이유.
 const sandbox = {
+  // TextDecoder/TextEncoder는 vm.createContext가 만드는 새 컨텍스트에 자동으로 들어오지 않는
+  // Node 전역이라(ECMAScript 표준 빌트인이 아니라 WHATWG 인코딩 표준 API) decodeCsvBytes(logic.js,
+  // app-evolve cycle252 develop)를 테스트하려면 호스트의 것을 직접 노출해야 한다 — 브라우저에선
+  // 항상 전역으로 있으므로 실제 앱 동작과 다르지 않다. TextEncoder는 테스트가 UTF-8 바이트를
+  // 만들 때만 쓰고 앱 코드 자체는 쓰지 않는다.
+  TextDecoder,
+  TextEncoder,
   DB: null,
   TODAY: null,
   // TM은 index.html에서 `let TM=ym(TODAY)`로 파생되는 "현재 보고 있는 달"({y,m})인데,
@@ -4835,6 +4842,26 @@ test('txnsToCSV+doExport 필터: doExport와 같이 date<=TODAY로도 걸러내�
 });
 
 /* ---------- 거래 내역 CSV 가져오기 (app-evolve cycle54 advance) ---------- */
+/* decodeCsvBytes(logic.js, app-evolve cycle252 develop) — 국내 은행/카드사 CSV가 흔히 EUC-KR/
+ * CP949로 내려오는데도 FileReader.readAsText(기본 UTF-8)로 그대로 읽으면 한글이 깨지던
+ * 공백(cycle251 advance가 TODO(EUC-KR)로 남겨둠)의 회귀 테스트. EUC-KR 바이트는 python3의
+ * 'cp949' 인코더로 뽑은 값을 하드코딩했다(이 프로젝트엔 인코딩 변환 라이브러리가 없음). */
+test('decodeCsvBytes: 유효한 UTF-8 바이트는 그대로 디코딩한다(이 앱이 내보낸 CSV의 평소 경로)', () => {
+  const bytes = new sandbox.TextEncoder().encode('날짜,구분\n2026-01-01,지출');
+  assert.strictEqual(sandbox.decodeCsvBytes(bytes), '날짜,구분\n2026-01-01,지출');
+});
+test('decodeCsvBytes: UTF-8로 유효하지 않은 바이트는 EUC-KR/CP949로 재시도해 한글을 복원한다', () => {
+  assert.strictEqual(sandbox.decodeCsvBytes(Uint8Array.from([189, 197, 199, 209, 196, 171, 181, 229])), '신한카드');
+  assert.strictEqual(sandbox.decodeCsvBytes(Uint8Array.from([189, 186, 197, 184, 185, 247, 189, 186])), '스타벅스');
+  assert.strictEqual(sandbox.decodeCsvBytes(Uint8Array.from([176, 197, 183, 161, 192, 207, 189, 195])), '거래일시');
+});
+test('decodeCsvBytes: 일반 배열로 넘겨도(Uint8Array가 아니어도) 동작한다', () => {
+  assert.strictEqual(sandbox.decodeCsvBytes([189, 197, 199, 209, 196, 171, 181, 229]), '신한카드');
+});
+test('decodeCsvBytes: 빈 바이트는 빈 문자열', () => {
+  assert.strictEqual(sandbox.decodeCsvBytes(new Uint8Array(0)), '');
+  assert.strictEqual(sandbox.decodeCsvBytes([]), '');
+});
 test('parseCSV: 따옴표로 감싼 필드 안의 콤마/줄바꿈/이스케이프된 큰따옴표를 올바르게 되돌린다', () => {
   // vm 샌드박스 안에서 만들어진 배열은 host의 Array와 realm이 달라 deepStrictEqual이
   // (값은 같아도) 실패하므로, JSON round-trip으로 host realm 구조로 정규화한다.
