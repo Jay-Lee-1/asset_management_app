@@ -1,15 +1,8 @@
 {
   "cycle": 254,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 249,
-      "phase": "develop",
-      "timestamp": "2026-10-25T06:17:41.331Z",
-      "summary": "카테고리(지출/수입/저축) 관리 화면(openCatManage, index.html:6262)에 순서를 바꿀 방법이 전혀 없는 공백을 발견 — addCat()이 항상 배열 끝에 push만 해서, 자주 쓰는 카테고리를 거래 입력 카테고리 피커 맨 위로 올리고 싶어도 할 수 없었다. 자산 그룹(moveGroup)·그룹 안 개별 자산(moveAsset)은 이미 같은 .grp-move 위/아래 버튼 패턴으로 순서를 바꿀 수 있는 것과 비일관성이고, cycle248 critique가 자산 피커 검색에 밀려 다음 순번으로 미뤄둔 항목이라 규모도 develop 한 사이클에 맞다. movedGroupOrder/movedAssetOrder와 같은 \"인접 교환, 경계면 null\" 패턴의 movedCatOrder(arr,i,dir)를 신설하고, moveCat(k,i,dev)이 이를 써서 DB.categories[k]를 바꾼 뒤 save()+openCatManage(k)로 재렌더한다. test/run.js: movedCatOrder/openCatManage/moveCat 테스트 8건 추가. index.html 변경이라 APP_VERSION 1.47.241->1.47.242, sw.js CACHE v508->v509 동기 범프. node --check(추출한 <script> 블록)로 문법 확인, node test/run.js로 2011/2011 통과 재확인.",
-      "commit": null
-    },
     {
       "cycle": 249,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-27T13:21:02.613Z",
       "summary": "거래 입력 분할 모드(여러 카테고리로 나누기)의 txSplitAdd(index.html:4865)/txSplitRemove(4872)가 재렌더 전에 syncTxInputs()를 부르지 않는 버그를 발견 — txType/txToggleRepeat/txSplitOpenCat 등 txDraft를 바꾸고 renderTxSheet()로 재렌더하는 다른 모든 핸들러는 재렌더 전에 syncTxInputs()로 #txAmt/#txMemo의 DOM 값을 먼저 txDraft에 반영하는데, 이 둘만 빠져 있었다. renderTxSheet()가 매번 #txAmt/#txMemo의 value를 d.amount/d.memo로 통째로 다시 쓰므로, 분할 추가/삭제 버튼을 누르면 아직 blur 전인 입력값(전체 금액/메모)이 조용히 사라지는 버그(saveTx()는 자체 syncTxInputs() 호출이 있어 최종 저장값은 되돌아간 값이 저장됨). 두 함수 맨 앞에 syncTxInputs() 호출을 추가해 다른 핸들러와 같은 패턴으로 맞췄다. index.html만 로직 변경(1줄+1줄), sw.js는 캐시 버전만 동기 범프. APP_VERSION 1.47.250->1.47.251, sw.js CACHE v517->v518. test/run.js: isDraftDirty 테스트와 같은 패턴(실제 syncTxInputs/num 소스를 격리 vm 컨텍스트에서 실행)으로 3건 추가 — 추가/삭제 각각 금액·메모 동기화 확인, 그리고 분할 최소 2개 가드로 삭제가 막혀도 syncTxInputs는 가드보다 먼저 불려 동기화가 일어남을 확인하는 회귀 가드. node test/run.js 2077->2080/2080 통과. node --check(logic.js/test/run.js) 통과, 메인 <script> 블록 vm.Script 파싱 통과(비-메인 블록 1건은 cycle248부터 알려진 정규식 오매칭 false positive).",
+      "commit": "62a9ae8"
+    },
+    {
+      "cycle": 254,
+      "phase": "review",
+      "timestamp": "2026-10-27T13:45:00.000Z",
+      "summary": "cycle254 develop 커밋(62a9ae8, txSplitAdd/txSplitRemove에 syncTxInputs() 누락 수정)을 검토. txType(4891)/txToggleRepeat(4892) 등 txDraft를 바꾸고 renderTxSheet()로 재렌더하는 다른 모든 핸들러가 재렌더 전에 syncTxInputs()를 먼저 부르는 패턴과 코드로 직접 대조해 이 수정이 같은 패턴을 그대로 따름을 확인. syncTxInputs()(4834) 자체는 DOM 3개 요소를 읽어 txDraft에 반영하고 스크롤 위치를 기록할 뿐 다른 부작용이 없어, txSplitRemove의 '분할 2개 이하면 삭제 거부' 가드보다 먼저 불려도 안전함을 확인(가드가 막아도 동기화만 일어나고 삭제는 안 됨 — 새 테스트 3번째 케이스가 바로 이를 확인). 신규 테스트 3건이 추가/삭제/가드-통과 세 분기에 1:1 대응함을 확인. node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행 결과 2080/2080 통과(develop 단계가 주장한 수치와 일치). node --check(logic.js) 통과, 메인 <script> 블록 vm.Script 파싱 통과(비-메인 블록 1건은 cycle248부터 알려진 정규식 오매칭 false positive). APP_VERSION 1.47.251/sw.js CACHE v518 범프가 index.html 변경과 일치. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
