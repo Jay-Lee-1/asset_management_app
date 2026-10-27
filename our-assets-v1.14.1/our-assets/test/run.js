@@ -5619,16 +5619,30 @@ test('csvMapColChosen: 열을 고르면 _csvMap 필드가 바뀌고 화면이 �
   sandbox.csvMapColChosen('memoCol', null);
   assert.strictEqual(sandbox._csvMap.memoCol, null, '"선택 안 함"은 null로 저장돼야 함');
 });
-test('csvMapPickAsset/csvMapPickCategory: 피커가 cashOnly/kind 옵션으로 열리고, onPick이 _csvMap에 반영된다', () => {
+test('csvMapPickAsset/csvMapPickCategory: 피커가 cashOrDebt/kind 옵션으로 열리고, onPick이 _csvMap에 반영된다', () => {
   setupCsvMapDB();
   sandbox.openCsvColumnMap(['날짜', '금액'], [['2026-01-05', '5000']]);
   sandbox.csvMapPickAsset();
-  assert.ok(sandbox.lastPickerHtml.includes('data-val="a_cash"'), 'cashOnly 자산 피커가 열려야 함');
+  assert.ok(sandbox.lastPickerHtml.includes('data-val="a_cash"'), 'cashOrDebt 자산 피커가 열려야 함');
   sandbox._csvMap.assetId = 'a_cash';
   sandbox.renderCsvColumnMap();
   assert.ok(sandbox.lastSheetHtml.includes('지갑'), '고른 자산 이름이 화면에 보여야 함');
   sandbox.csvMapPickCategory();
   assert.ok(sandbox.lastPickerHtml.includes('식비'), 'catKind 기본값(expense) 카테고리 목록이 보여야 함');
+});
+/* "은행/카드사 CSV"라는 기능 이름 그대로, 신용카드를 debt형 자산으로 등록한 사용자도 그 카드의
+ * 명세서 CSV를 가져올 대상으로 고를 수 있어야 한다 — cashOnly였을 때는 debt가 통째로 빠져 있었음
+ * (app-evolve cycle253 develop). */
+test('csvMapPickAsset: debt형 자산(신용카드)도 가져오기 대상으로 고를 수 있다', () => {
+  setupCsvMapDB();
+  sandbox.DB.settings.groupOrder = ['cash', 'savings', 'debt'];
+  sandbox.DB.assets.push({ id: 'a_card', name: '신용카드', type: 'debt', owner: '나', baseAmount: 0, includeInTotal: true });
+  sandbox.openCsvColumnMap(['날짜', '금액'], [['2026-01-05', '5000']]);
+  sandbox.csvMapPickAsset();
+  assert.ok(sandbox.lastPickerHtml.includes('data-val="a_card"'), 'debt형 자산도 목록에 나와야 함');
+  sandbox._csvMap.assetId = 'a_card';
+  sandbox.renderCsvColumnMap();
+  assert.ok(sandbox.lastSheetHtml.includes('신용카드'), '고른 카드 이름이 화면에 보여야 함');
 });
 test('csvMapApply: 모든 항목을 채우면 buildGenericImportPreview 결과로 openCsvImportPreview를 호출하고 _csvMap은 비워진다', () => {
   setupCsvMapDB();
@@ -14993,6 +15007,20 @@ test('pkFilteredAssets: 옵션 필터만으로 이미 후보가 0개면(검색�
   const { html, any } = sandbox.pkFilteredAssets({ cashOnly: true }, '');
   assert.strictEqual(html, '');
   assert.strictEqual(any, false);
+});
+/* cashOrDebt(app-evolve cycle253 develop) — csvMapPickAsset("은행/카드사 CSV" 가져오기 대상 선택)처럼
+ * 통장뿐 아니라 신용카드를 debt형 자산으로 등록한 경우도 대상으로 고를 수 있어야 하는 피커가 쓰는 옵션.
+ * cashOnly(현금성만, 부채 제외)와 반대로 cashOrDebt는 현금성+부채를 남기고 시세평가형(fx/gold/stock
+ * 등)만 제외한다. */
+test('pkFilteredAssets: cashOrDebt는 cashOnly와 달리 debt형 자산(신용카드 등)도 남기지만 fx/gold/stock은 여전히 제외한다', () => {
+  setupAssetPickerDB();
+  sandbox.DB.settings.groupOrder = ['cash', 'savings', 'fx', 'gold', 'stock', 'debt'];
+  sandbox.DB.assets.push({ id: 'a_card', name: '신용카드', type: 'debt', owner: '나', baseAmount: 30000, includeInTotal: true });
+  const { html: cashOnly } = sandbox.pkFilteredAssets({ cashOnly: true }, '');
+  assert.ok(!cashOnly.includes('data-val="a_card"'), 'cashOnly는 기존처럼 debt를 제외해야 함(만기이체 picker 등 회귀 가드)');
+  const { html: cashOrDebt } = sandbox.pkFilteredAssets({ cashOrDebt: true }, '');
+  assert.ok(cashOrDebt.includes('data-val="a_card"') && cashOrDebt.includes('data-val="a_cash"') && cashOrDebt.includes('data-val="a_sav"'), 'cashOrDebt는 현금성+debt를 모두 남겨야 함');
+  assert.ok(!cashOrDebt.includes('data-val="a_usd"') && !cashOrDebt.includes('data-val="a_gold"') && !cashOrDebt.includes('data-val="a_samsung"'), 'cashOrDebt라도 시세평가형(fx/gold/stock)은 제외해야 함');
 });
 test('pkEmptyHtml: any=true(검색어 때문에 0건)면 Assets탭과 동일한 "일치하는 자산이 없어요" 안내를, any=false(원래부터 후보 없음)면 기존 "등록된 자산이 없어요" CTA를 보여준다', () => {
   const searchEmpty = sandbox.pkEmptyHtml('존재하지않는자산명', true);

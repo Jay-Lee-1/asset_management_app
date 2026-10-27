@@ -1,19 +1,12 @@
 {
   "cycle": 253,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": {
     "title": "암호화된 로컬 저장소 포맷으로의 배선(1단계: cross-tab 충돌 해소를 뺀 단일 탭 load/save만)",
     "why": "cycle252 advance가 encryptDbBlob/decryptDbBlob(index.html, pbkdf2Hash 바로 뒤)를 순수 함수로 만들고 라운드트립/오답PIN/변조/버전가드 테스트 5건으로 검증까지 마쳤지만 _saveCore()/load()에는 아직 연결하지 않아, APPLOCK을 켜도 localStorage엔 여전히 평문 DB가 그대로 저장된다. 전체 배선(cross-tab 병합+cloud pull 병합까지 전부 비동기 전환)을 한 사이클에 몰아넣으면 실제 사용자 데이터를 잠글 위험이 큰 재작성급 변경이라는 게 cycle252 advance의 결론이었다.",
     "approach": "배선을 더 작은 단위로 쪼갠다. 1단계(이번 후속 제안)는 cross-tab 동시 열림(foreignSaveIsNewer/applyForeignSave/handleForeignStorage)과 cloud pull 병합(resolveCloudPullRemote 2205/2219)은 건드리지 않고 그대로 두고, APPLOCK.enabled()일 때만 _saveCore()의 마지막 localStorage.setItem(dataKey(),json) 한 곳과 load()의 raw 읽기 한 곳만 바꾸는 가장 좁은 시작점을 설계해본다 — 예를 들어 저장은 fire-and-forget 비동기로 암호화(쓰기 타이밍이 늦어져도 cross-tab 레이스는 기존에도 완벽히 원자적이지 않았으므로 추가 리스크가 작은지 먼저 코드로 검증), load()는 어차피 boot 시 1회뿐이라 async로 바꿔도 호출부(한 곳인지 확인)가 await 가능한지부터 조사한다. cross-tab 동시 열림 시나리오(foreignRaw를 동기로 읽는 2611행)가 암호화 포맷에서 어떻게 깨지는지(복호화를 또 기다려야 함) 반드시 먼저 설계로 정리하고, 안전하게 못 끝내면 또 되돌리고 더 쪼갠다. 평문→암호화 마이그레이션(최초 1회, decryptDbBlob이 null을 돌려주면 raw를 그대로 평문 DB로 간주)과 openForgotPinSheet에 복호화 불가(복구 불가) 경고 추가도 이 배선 단계에 포함."
   },
   "history": [
-    {
-      "cycle": 247,
-      "phase": "advance",
-      "timestamp": "2026-10-25T01:11:58.015Z",
-      "summary": "critique(cycle247) 계획대로 전체내역(History) 탭에 귀속(owner) 필터 세그를 추가했다. index.html renderHistory()의 검색바 다음·기존 assetId/catExact/cat 칩 앞에 spendOwnerSel/incomeOwnerSel과 동일한 .seg role=group aria-label='귀속 선택' 마크업을 삽입(moveSegBlobs는 querySelectorAll('.seg')로 이미 다중 seg를 지원해 그대로 재사용). 새 histOwnerSel(i) 함수를 histClearFilter 바로 앞에 추가 — spendOwnerSel과 달리 시트가 아니라 탭 화면이라 openXxxAnalysis() 재호출 대신 histInvalidate()+renderHistory()로 그 자리를 다시 그린다. H.selMode일 때는 다른 검색 UI와 함께 숨겨지고, 범위 밖 인덱스는 '전체'로 폴백한다. catExact/assetId/cat 필터와는 독립적으로 공존하며, histClearFilter/histClearCatFilter는 기존처럼 owner도 함께 '전체'로 리셋하는 동작을 그대로 유지(세그로 다시 켤 수 있어 문제 없음). test/run.js: FUNCTIONS에 histOwnerSel 추가, setupHistoryDB() 픽스처에 DB.owners(이전엔 없었는데 이제 .seg가 무조건 참조)를 추가해 기존 renderHistory 테스트들이 깨지지 않게 했고, 신규 테스트 4건(세그 렌더+on/aria-pressed 일치, selMode 시 숨김, histOwnerSel이 owner 변경+filteredHist 결과 필터링+범위 밖 인덱스 폴백, 다른 필터 상태 보존) 추가. index.html/sw.js 변경이라 APP_VERSION 1.47.238->1.47.239, sw.js CACHE v505->v506 동기 범프. node our-assets-v1.14.1/our-assets/test/run.js 1989/1989 통과. pending_advance_plan은 null로 비웠다.",
-      "commit": null
-    },
     {
       "cycle": 248,
       "phase": "develop",
@@ -145,6 +138,13 @@
       "phase": "advance",
       "timestamp": "2026-10-27T08:12:30.685Z",
       "summary": "critique(cycle252) 계획(앱 잠금 PIN을 키로 쓴 localStorage 평문 저장 암호화)의 실제 배선 범위를 코드로 직접 확인한 결과, save()가 ~70곳에서 호출되는 동기 함수이고 _saveCore()가 cross-tab 충돌 해소(foreignSaveIsNewer+dataKey() raw 동기 읽기, index.html:2609-2613)를 암호화 포맷 전제 없이 동기로 수행하며, load()/applyForeignSave()/resolveCloudPullRemote() 등 dataKey() raw 접근 지점(2205,2219,2485,2611,2634)이 전부 동기 코드라는 것을 확인했다. Web Crypto의 SubtleCrypto.encrypt/decrypt는 본질적으로 Promise만 돌려줘 동기 API가 없으므로, 계획대로 _saveCore()/load()를 암호화 포맷으로 분기하려면 이 지점들 전체를 비동기로 바꿔야 하는데, 이는 \"다음 걸음\"이 아니라 저장 아키텍처 재작성이고 사람이 보기 전에 바로 origin에 push되는 무인 사이클에서 돌리기엔 실제 사용자 금융 데이터를 잠글 위험(subtle crypto 버그 하나가 데이터 영구 접근불가로 이어질 수 있음)이 과하다고 판단해 배선은 보류했다. 대신 계획이 이미 명시했던 재료(pbkdf2Hash와 동일한 PBKDF2-SHA256 120000회 반복으로 AES-GCM CryptoKey를 유도하는 dbEncryptKey, encodeCloudPayload/decodeCloudPayload와 같은 모양의 encryptDbBlob(json,pin)/decryptDbBlob(blob,pin))을 index.html에 pbkdf2Hash 바로 뒤에 순수 함수로 구현했다 — AES-GCM은 인증 암호화라 틀린 PIN·변조된 ciphertext가 decrypt() 예외로 자연히 드러나 별도 체크섬이 불필요하고, decryptDbBlob은 그 예외를 null로 흡수해 평문→암호화 마이그레이션 분기가 나중에 \"복호화 실패=아직 평문\"으로 구분할 수 있는 신호를 이미 돌려준다. _saveCore()/load()에는 아직 연결하지 않아 런타임 동작은 전혀 바뀌지 않았다(순수 함수 추가뿐). index.html/sw.js 변경이라 APP_VERSION 1.47.247->1.47.248, sw.js CACHE v514->v515 동기 범프. test/run.js: FUNCTIONS에 dbEncryptKey/encryptDbBlob/decryptDbBlob 추가, 신규 라운드트립/변조/오답PIN/버전가드 테스트 5건 추가(2053->2058). node test/run.js 2058/2058 통과, node --check(logic.js) 및 메인 <script> 블록 vm.Script 파싱 통과. pending_advance_plan은 null로 비우지 않고 다음 critique가 훨씬 작은 단위로 쪼갤 수 있도록 배선 전용 후속 계획으로 교체했다.",
+      "commit": null
+    },
+    {
+      "cycle": 253,
+      "phase": "develop",
+      "timestamp": "2026-10-27T09:40:00.000Z",
+      "summary": "cycle251/252가 신설한 '은행/카드사 CSV 거래내역 가져오기'(openCsvColumnMap, csvMapPickAsset)가 기능 이름과 실제 동작이 어긋난 공백을 발견 — csvMapPickAsset이 openAssetPicker를 cashOnly:true(isCashLike=cash|savings만, index.html:2854)로 여는데, 신용카드를 debt형 자산으로 등록한 사용자는 바로 그 '카드사' CSV를 가져올 대상 자산으로 자기 카드를 전혀 고를 수 없었다. 코드로 교차확인: _applyOpenAsset(일반 거래 입력의 보내는/받는 자산 선택, 4884행)은 excludeMarketValued만 쓰고 debt는 전혀 막지 않아 수동 입력으로는 debt 계좌에 거래를 기록할 수 있고, assetBalanceSeries(logic.js, sign=-1)도 debt로의 입금(toAssetId, 상환)은 금액 감소·출금(fromAssetId, 카드 사용)은 금액 증가로 올바르게 반영해 debt를 거래 대상으로 쓰는 게 기존에 이미 지원되는 설계임을 확인했다. pkFilteredAssets(index.html:9362)에 새 옵션 cashOrDebt(isCashLike(a)||a.type==='debt')를 추가하고 csvMapPickAsset만 cashOnly→cashOrDebt로 교체 — isCashLike 자체나 기존 cashOnly 사용처(asOpenMat의 만기이체 통장 선택, 8683행의 findDonors)는 그대로 둬 회귀 위험을 없앴다. index.html/sw.js 변경이라 APP_VERSION 1.47.248->1.47.249, sw.js CACHE v515->v516 동기 범프. test/run.js: pkFilteredAssets에 cashOrDebt가 debt를 포함하면서도 fx/gold/stock은 여전히 제외하고 cashOnly는 기존처럼 debt를 제외함(회귀 가드)을 확인하는 테스트 1건, csvMapPickAsset이 실제로 debt형 자산(신용카드)을 피커에 보여주고 고를 수 있음을 확인하는 테스트 1건 추가(2058->2060). node test/run.js 2060/2060 통과(서브에이전트로 독립 재검증), node --check(logic.js) 및 메인 <script> 블록 vm.Script 파싱 통과.",
       "commit": null
     }
   ]

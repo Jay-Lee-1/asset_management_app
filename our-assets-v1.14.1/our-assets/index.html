@@ -1412,7 +1412,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.248';
+const APP_VERSION='1.47.249';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -7788,9 +7788,11 @@ function csvMapPickCol(field,title,allowNone){
   return `<button class="pk-item" onclick="csvMapColChosen('${field}',${i})"><div class="pav" style="background:var(--sunken);color:var(--text-2)">${svg('tag')}</div><div class="pbody"><div class="pn">${esc(h||(i+1)+'번째 열')}</div>${sample?`<div class="psub">예: ${esc(sample)}</div>`:''}</div></button>`;}).join('');
  openPicker(title,`<div class="pk-group">${noneBtn}${html}</div>`,renderCsvColumnMap);
 }
+/* cashOrDebt(cashOnly+부채) — "은행/카드사 CSV"라는 기능 이름 그대로, 신용카드를 debt형 자산으로
+ * 등록한 사용자도 그 카드 명세서를 가져올 수 있어야 한다(pkFilteredAssets 주석 참고). */
 function csvMapPickAsset(){
  if(!_csvMap)return;
- openAssetPicker({current:_csvMap.assetId,title:'어느 자산의 내역인가요',cashOnly:true,back:renderCsvColumnMap,onPick:id=>{_csvMap.assetId=id;renderCsvColumnMap()}});
+ openAssetPicker({current:_csvMap.assetId,title:'어느 자산의 내역인가요',cashOrDebt:true,back:renderCsvColumnMap,onPick:id=>{_csvMap.assetId=id;renderCsvColumnMap()}});
 }
 function csvMapPickCategory(){
  if(!_csvMap)return;
@@ -9354,16 +9356,23 @@ function openPicker(title,bodyHtml,back){window._pkBack=back||null;
  openSheet(`<div class="pk-h">${title}</div>`+bodyHtml, back?topBtn:undefined);}
 let _pkQ='',_pkQT=null,_pkOpts=null;
 function pkBack(){const b=window._pkBack;window._pkBack=null;_pkQ='';clearTimeout(_pkQT);_pkQT=null;_pkOpts=null;if(b)sheetSlideBack(b);else closeSheet()}
-/* 자산 피커(openAssetPicker) 목록 — matchAssetQuery(logic.js)로 필터링. _pkOpts(cashOnly/excludeMarketValued/
- * excludeDebt/excludeId)는 피커를 처음 열 때 고른 조건이라 검색 중에도 그대로 유지해야 하므로 전역에 보관해
- * 두고 refreshPkAssetList()가 매 입력마다 다시 읽는다(assetQInput이 ST.assetQ를 쓰는 것과 같은 이유).
- * any는 옵션만 적용했을 때 후보가 하나라도 있는지로, 검색어 때문에 0건이 된 것(Assets탭과 동일한 "일치하는
- * 자산이 없어요" 안내)과 애초에 고를 자산이 없는 것(기존 "등록된 자산이 없어요" CTA)을 구분하는 데 쓴다. */
+/* 자산 피커(openAssetPicker) 목록 — matchAssetQuery(logic.js)로 필터링. _pkOpts(cashOnly/cashOrDebt/
+ * excludeMarketValued/excludeDebt/excludeId)는 피커를 처음 열 때 고른 조건이라 검색 중에도 그대로 유지해야
+ * 하므로 전역에 보관해 두고 refreshPkAssetList()가 매 입력마다 다시 읽는다(assetQInput이 ST.assetQ를 쓰는
+ * 것과 같은 이유). cashOrDebt는 cashOnly(현금성만)에 부채를 더한 집합 — 은행/카드사 CSV 가져오기(
+ * csvMapPickAsset)처럼 통장과 "카드사" 모두를 대상으로 삼을 수 있어야 하는 피커가 쓴다: 신용카드를
+ * debt형 자산으로 등록한 사용자도 그 카드의 명세서 CSV를 가져올 수 있어야 하는데(기능 이름 자체가
+ * "은행/카드사 CSV"), _applyOpenAsset(거래 입력의 보내는/받는 자산 선택)은 원래부터 debt를 막지 않고
+ * assetBalanceSeries(logic.js, sign=-1)도 debt로의 입금/출금을 상환/사용으로 올바르게 반영하므로, CSV
+ * 가져오기 대상만 cashOnly로 더 좁게 막아둘 이유가 없었다(app-evolve cycle253 develop). any는 옵션만
+ * 적용했을 때 후보가 하나라도 있는지로, 검색어 때문에 0건이 된 것(Assets탭과 동일한 "일치하는 자산이
+ * 없어요" 안내)과 애초에 고를 자산이 없는 것(기존 "등록된 자산이 없어요" CTA)을 구분하는 데 쓴다. */
 function pkFilteredAssets(o,q){
  let any=false,html='';
  DB.settings.groupOrder.forEach(t=>{
    let items=DB.assets.filter(a=>a.type===t);
    if(o.cashOnly)items=items.filter(isCashLike);
+   if(o.cashOrDebt)items=items.filter(a=>isCashLike(a)||a.type==='debt');
    if(o.excludeMarketValued)items=items.filter(a=>!isMarketValued(a));
    if(o.excludeDebt)items=items.filter(a=>a.type!=='debt');
    if(o.excludeId)items=items.filter(a=>a.id!==o.excludeId);
