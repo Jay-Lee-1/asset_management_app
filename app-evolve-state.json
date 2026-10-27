@@ -1,15 +1,12 @@
 {
   "cycle": 252,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "앱 잠금(PIN)의 실효성 — localStorage 평문 저장 암호화",
+    "why": "lockApp()/unlockApp()(index.html:9708,9715)은 $('app').style.display='none'으로 화면만 가리는 UI 오버레이일 뿐, 실제 데이터는 save()→_saveCore()(2602)가 PIN 설정 여부와 무관하게 항상 localStorage.setItem(dataKey(),JSON.stringify(DB))(2620)로 평문 저장하고 load()(2483)도 복호화 없이 JSON.parse한다. 기기 탈취·공유 PC·devtools Application 탭 접근 시 PIN/BIOUNLOCK을 켜도 금액·계좌명·메모가 그대로 노출돼, '잠금'이라는 이름이 주는 기대와 실제 보호 수준의 격차가 크다.",
+    "approach": "APPLOCK PIN을 키 유도 재료로 써서 저장 시점에 DB JSON을 AES-GCM으로 암호화한다. pbkdf2Hash(2263, PIN 해시용)와 동일한 SubtleCrypto PBKDF2 패턴으로 키를 유도하고, encodeCloudPayload/decodeCloudPayload(2014/2025)와 비슷한 형태로 순수 함수 encryptDbBlob(json,pin)/decryptDbBlob(blob,pin)을 logic.js 또는 index.html에 추가한다. _saveCore()/load()에서 APPLOCK.enabled()일 때만 버전 마커 prefix로 평문과 구분되는 암호화 저장소 포맷을 쓰도록 분기(평문→암호화 마이그레이션 지원)하고, doUnlock()에서 PIN 검증 성공 시 해당 PIN으로 즉시 DB를 복호화해 메모리에 올린다. 기존 openForgotPinSheet 플로우에 PIN 분실 시 복호화 불가(복구 불가) 안내를 추가한다. test/run.js에 암/복호화 라운드트립(같은 PIN→원본 복원, 틀린 PIN→실패) 순수 함수 단위 테스트를 추가한다."
+  },
   "history": [
-    {
-      "cycle": 247,
-      "phase": "review",
-      "timestamp": "2026-10-24T22:40:00.000Z",
-      "summary": "cycle247 develop 커밋(86e4886, 연간 결산(openYearReview)에 지출/수입 분석과 동일한 ST.spendOwner 귀속 필터 추가)을 검토. diff를 직접 읽어 yearOwnerSel(i)가 spendOwnerSel(index.html:6127)/incomeOwnerSel(5299)과 글자 그대로 동일한 패턴(list=['전체',...DB.owners]; ST.spendOwner=list[i]||'전체')임을 grep으로 대조 확인. openYearReview의 '귀속 사라지면 전체로' 가드(ST.spendOwner!=='전체'&&!DB.owners.includes(...))도 두 형제 화면과 동일 위치·조건으로 적용됨을 확인. ST.yearReview={y} 신설로 연도 전환(◀/▶)이 openYearReview(y-1/y+1)을 직접 호출해도 yearOwnerSel이 같은 연도를 유지함(ST.yearReview.y를 읽어 재호출)을 확인 — renderMenu의 진입점(openYearReview(TM.y))은 y를 항상 명시적으로 넘기므로 영향 없음. s=yearSummary(y,ST.spendOwner) 호출이 빈 상태 분기 이전에 와 있어 가드가 빈 상태 렌더에도 적용됨을 확인. 신규/보강 테스트 9건(세그먼트 노출/비노출, aria-pressed, toAssetId 기준 귀속별 집계, 존재하지 않는 귀속 가드, 연도 유지)이 diff의 각 분기와 1:1 대응함을 확인. node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행 결과 1985/1985 통과. node --check(sw.js/test/run.js) 통과. APP_VERSION 1.47.238/sw.js CACHE v505 범프가 index.html 변경과 일치. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 247,
       "phase": "critique",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-27T05:30:00.000Z",
       "summary": "cycle252 develop 커밋(ca25979, 은행/카드사 CSV 가져오기의 EUC-KR/CP949 인코딩 자동 복원)을 검토. decodeCsvBytes(logic.js)의 3단 폴백(strict UTF-8 → euc-kr → lossy UTF-8)을 직접 코드로 대조 확인했고, parseCSV가 선행 BOM(\\uFEFF)을 이미 별도로 벗겨내므로 이 앱 자신이 내보낸 UTF-8(+BOM) CSV는 1차 strict 디코딩이 그대로 성공해 기존 자기-포맷 라운드트립 경로가 무변경임을 확인. importCsvFile 핸들러가 readAsText→readAsArrayBuffer로 바뀌면서 r.result(ArrayBuffer)를 Uint8Array로 감싸 넘기는 지점, 그리고 detectOwnCsvFormat/openCsvColumnMap 분기 이후 로직은 decodeCsvBytes가 돌려주는 text 외엔 그대로임을 diff로 확인. node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행 결과 2053/2053 통과(develop 단계가 주장한 수치와 일치). node --check(logic.js/sw.js) 통과. APP_VERSION 1.47.247/sw.js CACHE v514 범프가 index.html/logic.js 변경과 일치. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 252,
+      "phase": "critique",
+      "timestamp": "2026-10-27T06:40:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-252 전체 다룬 영역·기각 항목 전부 제외 지시)한 결과, 앱 잠금(APPLOCK, index.html:2402-2425)이 lockApp()/unlockApp()(9708/9715)으로 화면만 가리는 UI 오버레이일 뿐, save()→_saveCore()(2602)가 PIN 설정 여부와 무관하게 localStorage.setItem(dataKey(),JSON.stringify(DB))(2620)로 항상 평문 저장하고 load()(2483)도 복호화 없이 JSON.parse하는 것을 발견 — 기기 탈취·공유 PC·devtools Application 탭 접근 시 PIN/BIOUNLOCK(cycle250 advance)을 켜도 금액·계좌명·메모가 그대로 노출되는 '잠금'이라는 이름과 실제 보호 수준의 격차. export/backup, 전체내역 페이지네이션·디바운스 검색, OS 알림(checkNotifyAlerts) dedupe, 클라우드 동기화 충돌·재시도 로직은 코드로 확인 후 이미 정교하게 다뤄져 있어 제외했고, spendOwnerSel/incomeOwnerSel/histOwnerSel/yearOwnerSel/goalOwnerSel 5곳 이상에 걸친 귀속 세그먼트 렌더링 중복은 tech-debt 후보로 검토했으나 화면별 재렌더 방식이 달라 리팩터링 범위 대비 체감 효과가 작아 차순위로 두고, 보안 격차가 더 근본적이고 사용자가 오해하기 쉬운 문제라 이번 사이클 최우선으로 선정. advance 계획(pbkdf2Hash(2263) 패턴으로 키 유도, encryptDbBlob/decryptDbBlob 신설, _saveCore()/load()를 APPLOCK.enabled() 시 암호화 포맷으로 분기, doUnlock()에서 PIN으로 즉시 복호화, 라운드트립 테스트 추가)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
       "commit": null
     }
   ]
