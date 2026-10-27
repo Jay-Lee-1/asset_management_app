@@ -1,19 +1,8 @@
 {
-  "cycle": 256,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "목표(Goal) 달성 시 1회성 축하 알림(goalAchieved) 신설",
-    "why": "homeAlerts()(index.html:8947-9012)는 목표가 '늦어지고 있을 때'(goalBehind/goalBehindMulti, 목표일 못 맞출 추세)만 홈 카드+OS 푸시로 알리고, 목표를 '달성했을 때'는 아무 알림도 없다 — goalRowHTML/openGoalsList의 조용한 '달성' 배지 하나가 전부라, 사용자가 전체내역/목표 화면을 직접 열어보지 않는 한 저축 목표 달성이라는 긍정적 순간을 영영 놓칠 수 있다. budgetOver/goalBehind/debtBehind처럼 이미 확립된 '부정적 사건은 즉시 알림' 패턴에 정확히 대칭되는 긍정적 사건 알림이 빠진 구조적 공백.",
-    "approach": "1) 데이터 모델: DB.goals 각 항목(index.html:2581 스키마 주석)에 선택 필드 achievedAckAt(최초 달성을 알림으로 확인/통지한 시각, 기본 null) 추가. **중요 함정**: saveGoal()(index.html:3504)이 rec을 필드 나열로 새로 구성하므로, achievedAckAt을 createdAt처럼 `achievedAckAt:d.achievedAckAt||null`로 명시적으로 이어주지 않으면 사용자가 달성한 목표를 한 번이라도 수정(이름/금액 등)할 때 이 필드가 조용히 사라져 재알림이 발생한다. 2) logic.js에 goalProgress/goalIsOverdue 바로 아래 순수함수 goalNewlyAchieved(goal,progress) = progress.achieved && !goal.achievedAckAt 신설, test/run.js에 achieved=false/achieved+ack없음(true)/achieved+ack있음(false) 3케이스 추가. 3) homeAlerts()의 _gb(goalBehind) 블록 바로 뒤에 대칭 블록 추가: DB.goals를 goalProgress+goalHistoryFor로 평가해 goalNewlyAchieved인 것만 골라(goalHasUnknown/goalLinkedAssetGone 가드는 goalBehind와 동일하게 적용 — 미확인 자산 상태에서 오탐 달성 방지), budgetOver와 동일한 단일/복수 collapsing 패턴으로 kind:'goalAchieved'(goalId,name,amount)/'goalAchievedMulti'(count) 추가. 4) homeAlertCard(al)에 축하 카피('목표를 달성했어요 🎉'+이름+금액, 복수는 openGoalsList로) 카드 추가 — 이 알림은 budgetOver처럼 다음 달에 자연 해소되는 게 아니라 achievedAckAt을 써주기 전까진 영원히 true로 남으므로, 카드 탭 시 해당 목표로 이동하면서 동시에 achievedAckAt=Date.now()를 그 목표에 기록+save()하는 ackGoalAchieved(goalId) 핸들러로 onclick을 연결해야 카드가 다시 사라진다(단순 openGoalForm 재사용 금지). 5) checkNotifyAlerts()의 OS푸시 경로(notifyAlertInfo 테이블, 9049행 goalBehind 옆)에도 goalAchieved/goalAchievedMulti 문구 추가 — 이 경로는 DB.settings.notifiedAlertIds(월 키 없이 goalId만, pruneNotifiedIds가 30일 뒤 정리)로 1차 중복 방지하고, achievedAckAt이 최종 진실의 원천이므로 둘이 같은 goalId를 가리키되 역할은 분리(OS푸시 dedupe vs 홈카드 존재 여부)됨을 주석으로 명확히 할 것. 6) 목표 금액을 나중에 올려 achieved가 다시 false가 되는 경우를 대비해, saveGoal()에서 목표 수정 시 새 targetAmount로 goalProgress를 재계산해 더 이상 achieved가 아니면 achievedAckAt을 null로 리셋하는 로직 추가(재달성 시 다시 축하 가능하게) — 이 리셋 규칙 자체도 test/run.js에 케이스 추가. 7) 전부 로직 변경이므로 APP_VERSION/sw.js CACHE 동기 범프 필수, node test/run.js로 전체 통과 확인."
-  },
+  "cycle": 257,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 251,
-      "phase": "advance",
-      "timestamp": "2026-10-25T17:20:54.475Z",
-      "summary": "critique(cycle251) 계획대로 은행/카드사 CSV 거래내역 가져오기(열 매핑)를 신설했다. logic.js에 OWN_CSV_HEADER 상수와 detectOwnCsvFormat(headerRow)/mapGenericCsvRow(cells,mapping,targetAssetId) 순수함수 추가 — mapGenericCsvRow는 csvRowToImportTxn과 필드 단위로 같은 shape을 돌려준다. index.html에 buildGenericImportPreview 신설, importCsvFile change 핸들러를 detectOwnCsvFormat(rows[0])로 분기(자기-포맷은 기존 경로 무변경, 아니면 openCsvColumnMap 열 매핑 화면으로 안내)하도록 바꿨다. openCsvColumnMap/renderCsvColumnMap 화면 신설(날짜·메모 열, 금액 형식, 대상 자산, 기본 카테고리를 매핑). EUC-KR 인코딩(FileReader.readAsText 기본 UTF-8) 이슈는 계획대로 TODO 주석만 남기고 범위 밖으로 뒀다. index.html/sw.js 변경이라 APP_VERSION 1.47.245->1.47.246, sw.js CACHE v512->v513 동기 범프. test/run.js: 신규 테스트 19건 추가(2030->2049).",
-      "commit": null
-    },
     {
       "cycle": 252,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-27T20:30:00.000Z",
       "summary": "fork 서브에이전트로 앱 전반을 재탐색(cycle122-256 전체 다룬 영역·기각 항목 전부 제외 지시, 특히 APPLOCK PIN 기반 전체 DB 암호화는 재추진 금지로 명시)한 결과, homeAlerts()(index.html:8947-9012)가 목표 지연(goalBehind/goalBehindMulti)·예산 초과(budgetOver)·부채 상환 정체(debtBehind) 등 '나쁜 사건'은 전부 홈 카드+OS 푸시로 알리면서, 정확히 대칭되는 '목표 달성'에는 알림이 전혀 없고 goalRowHTML의 조용한 '달성' 배지 하나뿐임을 발견. 러너업 기각: 부채 완납 축하(동일한 공백이지만 범위를 목표 하나로 좁혀 이번엔 제외, 차순위 후보로 남김), 전역 통합검색(리스크 큼), PDF 명세서(CSV 백업이 이미 커버), 접근성 전수조사(aria-label 184건/aria-hidden 19건 등 샘플 점검 결과 이미 촘촘해 추가 가치 낮음). 채택 계획: logic.js에 goalNewlyAchieved(goal,progress) 순수함수 신설, DB.goals에 achievedAckAt 필드 추가, homeAlerts/checkNotifyAlerts/homeAlertCard에 goalAchieved(Multi) 알림 배선 — saveGoal()이 rec을 필드 나열로 재구성해 achievedAckAt을 명시적으로 이어주지 않으면 목표 수정 시 조용히 사라져 재알림되는 함정과, 이 알림은 budgetOver와 달리 자연 해소되지 않으므로 카드 탭 시 achievedAckAt을 직접 기록하는 ack 핸들러가 필요하다는 점을 상세 명시해 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "commit": null
+    },
+    {
+      "cycle": 256,
+      "phase": "advance",
+      "timestamp": "2026-10-27T21:00:00.000Z",
+      "summary": "critique(cycle256) 계획대로 목표 달성 축하 알림(goalAchieved/goalAchievedMulti)을 구현했다. logic.js에 goalIsOverdue 바로 뒤 순수함수 goalNewlyAchieved(goal,progress)=progress.achieved&&!goal.achievedAckAt 신설. DB.goals 스키마 주석(index.html:2581)에 achievedAckAt 필드 추가. homeAlerts()의 _gb(goalBehind) 블록 바로 뒤에 대칭 블록 추가 — DB.goals를 goalProgress+goalHistoryFor로 평가해 goalNewlyAchieved인 것만 골라(goalHasUnknown/goalLinkedAssetGone 가드를 goalBehind와 동일하게 적용) budgetOver와 동일한 단일/복수 collapsing 패턴으로 kind:'goalAchieved'(goalId,name,amount)/'goalAchievedMulti'(count) 추가. homeAlertCard에 '목표를 달성했어요 🎉' 카드 추가(단일은 ackGoalAchieved, 복수는 openGoalsList). checkNotifyAlerts()의 OS푸시 경로(notifyAlertInfo)에도 goalAchieved/goalAchievedMulti 문구 추가 — budgetOverMulti 등과 달리 월 단위로 자연 해소되지 않는 영구 상태라 key에 월을 넣지 않고 goalId/count만 씀. saveGoal()에 achievedAckAt:d.achievedAckAt||null 명시적 이어주기 + 목표 금액을 올려 더는 achieved가 아니게 되면 achievedAckAt을 null로 리셋하는 로직 추가. 새 함수 ackGoalAchieved(id)를 신설해 '목표를 실제로 열어 봄 = ack'으로 묶고, goalRowHTML/openGoalsList 행의 onclick도 openGoalForm에서 ackGoalAchieved로 교체해 Multi 카드가 목표 목록을 둘러보는 것만으로도 자연히 해소되게 했다(단순 openGoalForm 재사용 금지 — 플랜이 지적한 대로 ack 기록이 반드시 필요). index.html/logic.js/sw.js 변경이라 APP_VERSION 1.47.255→1.47.256, sw.js CACHE v522→v523 동기 범프. test/run.js: goalNewlyAchieved 단위 테스트 3건, homeAlerts goalAchieved/goalAchievedMulti collapsing·미달성 제외·이미 ack된 목표 제외·goalHasUnknown 가드 억제/해제 5건, notifyAlertInfo 키 검증 1건, homeAlertCard 렌더 1건, saveGoal의 achievedAckAt 이어주기/리셋/신규목표 기본값 3건, ackGoalAchieved 실행형 2건 — 총 15건 추가(2105→2120). 기존 saveGoal(asset형) 테스트 1건은 새로 추가된 goalProgress(rec,goalHistoryFor(rec),TODAY) 호출이 DB.txns/recurrences를 요구해 깨졌던 걸 최소 고정(txns:[],recurrences:[],settings) 추가로 수정. node test/run.js 2120/2120 통과, node --check(logic.js/test/run.js/sw.js) 통과, extractMainScript() 기반 메인 <script> 블록 vm.runInContext 통과, manifest.webmanifest JSON.parse 통과. pending_advance_plan은 null로 비웠다.",
       "commit": null
     }
   ]

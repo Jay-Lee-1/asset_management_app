@@ -258,7 +258,7 @@ const FUNCTIONS = [
   // $(...)가 없으면 바로 return하는 얕은 래퍼라(기본 $ 스텁은 'assetBody' 등을 세팅하지 않는 한
   // null을 돌려줌) 기존 공유 스텁만으로 selectNwOwner를 실행형으로 검증할 수 있다.
   'selectNwOwner', 'refreshAssetBody', 'refreshNwHistoryCard', 'refreshGoalsSummary', 'refreshAllocationCard', 'refreshInvestGainLossCard',
-  'goalOwnerEff', 'goalHasUnknown', 'goalLinkedAssetGone', 'goalLinkedAssetBroken', 'goalHistoryFor', 'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'syncGoalInputs', 'goalClearDate', 'goalOwnerSel', 'goalTypeSel', 'goalOpenAsset', 'renderGoalForm', 'openGoalForm', 'saveGoal', 'delGoal',
+  'goalOwnerEff', 'goalHasUnknown', 'goalLinkedAssetGone', 'goalLinkedAssetBroken', 'goalHistoryFor', 'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'syncGoalInputs', 'goalClearDate', 'goalOwnerSel', 'goalTypeSel', 'goalOpenAsset', 'renderGoalForm', 'openGoalForm', 'saveGoal', 'delGoal', 'ackGoalAchieved',
   'openInquiry', 'sendInquiry', 'openInquiryList', 'delInquiry', 'editInquiry', 'saveInquiryEdit',
   'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetQInput', 'assetToggleSel', 'visibleAssetsForSel', 'assetSelAll', 'activeSel',
   'modeSeg', 'monthNav', 'abbr', 'calCellsFor', 'ledSumInner', 'ledSumBox', 'ledSumTap', 'calPane', 'txRowCore', 'txRow', 'dayTxns',
@@ -1975,6 +1975,20 @@ test('goalIsOverdue: 목표일이 과거이고 아직 미달성이면 true', () 
 });
 test('goalIsOverdue: 목표일이 미래면(아직 안 지남) false', () => {
   assert.strictEqual(sandbox.goalIsOverdue('2026-12-01', false, '2026-06-01'), false);
+});
+
+/* ---------- goalNewlyAchieved: 달성했지만 아직 ack(achievedAckAt) 안 된 목표 판정 (app-evolve cycle256 critique/advance) ----------
+ * homeAlerts()의 goalBehind(늦어짐)와 정확히 대칭되는 긍정적 사건 판정의 핵심 순수 함수. */
+test('goalNewlyAchieved: achieved=false면 achievedAckAt 유무와 무관하게 항상 false', () => {
+  assert.strictEqual(sandbox.goalNewlyAchieved({ id: 'g1' }, { achieved: false }), false);
+  assert.strictEqual(sandbox.goalNewlyAchieved({ id: 'g1', achievedAckAt: null }, { achieved: false }), false);
+});
+test('goalNewlyAchieved: achieved=true이고 achievedAckAt이 없으면(null/undefined) true', () => {
+  assert.strictEqual(sandbox.goalNewlyAchieved({ id: 'g1', achievedAckAt: null }, { achieved: true }), true);
+  assert.strictEqual(sandbox.goalNewlyAchieved({ id: 'g1' }, { achieved: true }), true, 'achievedAckAt 필드 자체가 없는(구버전 목표) 경우도 true여야 함');
+});
+test('goalNewlyAchieved: achieved=true인데 achievedAckAt이 이미 기록돼 있으면 false(이미 확인/통지함)', () => {
+  assert.strictEqual(sandbox.goalNewlyAchieved({ id: 'g1', achievedAckAt: Date.now() }, { achieved: true }), false);
 });
 
 /* ---------- debtPayoffProjection: debt 자산 상환완료 예상일 투사 (app-evolve cycle144 advance) ----------
@@ -4150,7 +4164,9 @@ test('saveGoal: type:"asset"인데 linkedAssetId가 없으면 저장하지 않�
   assert.ok(sandbox.lastToast && sandbox.lastToast.includes('연결할 자산'), '연결할 자산을 선택해 달라는 안내가 떠야 함');
 });
 test('saveGoal: type:"asset"으로 저장하면 linkedAssetId를 그대로 담고, owner는 사용자가 고른 값과 무관하게 연결 자산의 owner로 맞춘다', () => {
-  sandbox.DB = { owners: ['나', '배우자'], assets: [{ id: 'a1', type: 'savings', owner: '배우자' }], goals: [] };
+  // saveGoal이 achievedAckAt 리셋 여부를 판단하려고 goalProgress(rec,goalHistoryFor(rec),TODAY)를 부르는데(cycle256),
+  // asset형 goalHistoryFor는 allTxns(DB.txns/recurrences 참조)까지 내려가므로 최소 고정도 함께 채워야 한다.
+  sandbox.DB = { owners: ['나', '배우자'], assets: [{ id: 'a1', type: 'savings', owner: '배우자' }], goals: [], txns: [], recurrences: [], settings: { confirmTransfers: false } };
   sandbox.goalDraft = { id: 'test-uid', name: '', type: 'asset', linkedAssetId: 'a1', owner: '나', targetAmount: 0, targetDate: null };
   sandbox.goalNameValue = '비상금';
   sandbox.goalAmtValue = '1,000,000';
@@ -4167,6 +4183,68 @@ test('saveGoal: type:"networth"로 저장하면 linkedAssetId는 항상 null로 
   sandbox.saveGoal(false);
   assert.strictEqual(sandbox.DB.goals[0].type, 'networth');
   assert.strictEqual(sandbox.DB.goals[0].linkedAssetId, null);
+});
+/* saveGoal의 achievedAckAt 명시적 이어주기/리셋 — rec을 필드 나열로 새로 구성하므로 achievedAckAt을
+ * d.achievedAckAt||null로 명시하지 않으면 사용자가 달성한 목표를 한 번이라도 수정할 때 조용히 사라져
+ * goalNewlyAchieved가 다시 true가 돼 재알림이 발생한다(app-evolve cycle256 advance). */
+test('saveGoal: 이미 달성·ack된 목표를 (여전히 달성 상태로) 수정해도 achievedAckAt을 그대로 이어간다(사라지면 재알림 버그)', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.DB = { owners: ['나'], assets: [], goals: [{ id: 'g1', name: '비상금', type: 'networth', targetAmount: 1000000, targetDate: null, owner: 'all', achievedAckAt: 1700000000000 }], nwHistory: [{ date: '2026-06-15', nw: 2000000 }] }; // cur(2000000) >= target(1000000) → 수정 후에도 여전히 achieved
+  sandbox.goalDraft = { id: 'g1', name: '비상금', type: 'networth', linkedAssetId: null, owner: 'all', targetAmount: 1000000, targetDate: null, achievedAckAt: 1700000000000 };
+  sandbox.goalNameValue = '비상금(수정)';
+  sandbox.goalAmtValue = '1,000,000';
+  sandbox.saveGoal(true);
+  assert.strictEqual(sandbox.DB.goals[0].achievedAckAt, 1700000000000, '여전히 달성 상태라면 이름만 고쳐도 achievedAckAt이 그대로 남아있어야 함');
+});
+test('saveGoal: 목표 금액을 올려 더 이상 achieved가 아니게 되면 achievedAckAt을 null로 리셋한다(재달성 시 다시 축하 가능하게)', () => {
+  sandbox.DB = { owners: ['나'], assets: [], goals: [{ id: 'g1', name: '비상금', type: 'networth', targetAmount: 500000, targetDate: null, owner: 'all', achievedAckAt: 1700000000000 }], nwHistory: [{ date: '2026-06-15', nw: 1000000 }] }; // 이미 달성·ack된 목표
+  sandbox.goalDraft = { id: 'g1', name: '비상금', type: 'networth', linkedAssetId: null, owner: 'all', targetAmount: 500000, targetDate: null, achievedAckAt: 1700000000000 };
+  sandbox.goalNameValue = '비상금';
+  sandbox.goalAmtValue = '2,000,000'; // 목표를 500000 -> 2000000으로 올려 더는 achieved가 아니게 됨(cur=1000000)
+  sandbox.saveGoal(true);
+  assert.strictEqual(sandbox.DB.goals[0].achievedAckAt, null, '더 이상 achieved가 아니면 ack도 리셋돼야 재달성 시 다시 축하 알림이 뜸');
+});
+test('saveGoal: 새 목표는 achievedAckAt이 null로 시작한다', () => {
+  sandbox.DB = { owners: ['나'], assets: [], goals: [], nwHistory: [] };
+  sandbox.goalDraft = { id: 'test-uid', name: '', type: 'networth', linkedAssetId: null, owner: 'all', targetAmount: 0, targetDate: null };
+  sandbox.goalNameValue = '새 목표';
+  sandbox.goalAmtValue = '1,000,000';
+  sandbox.saveGoal(false);
+  assert.strictEqual(sandbox.DB.goals[0].achievedAckAt, null);
+});
+/* ackGoalAchieved: 홈 알림의 goalAchieved 카드와 goalRowHTML/openGoalsList 행 진입점이 공유하는 ack+이동 핸들러
+ * (app-evolve cycle256 advance) */
+test('[실행형] ackGoalAchieved: 달성했지만 아직 ack 안 된 목표를 열면 achievedAckAt을 기록하고 save() 후 openGoalForm으로 이동한다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.DB = { owners: ['나'], assets: [], goals: [{ id: 'g1', name: '비상금', type: 'networth', targetAmount: 500000, targetDate: null, owner: 'all', achievedAckAt: null }], nwHistory: [{ date: '2026-06-15', nw: 1000000 }] };
+  let savedCalled = false;
+  const origSave = sandbox.save;
+  sandbox.save = () => { savedCalled = true; };
+  let openedId = null;
+  const origOpen = sandbox.openGoalForm;
+  sandbox.openGoalForm = (id) => { openedId = id; };
+  sandbox.ackGoalAchieved('g1');
+  assert.ok(sandbox.DB.goals[0].achievedAckAt, 'achievedAckAt이 기록돼야 함');
+  assert.ok(savedCalled, 'save()가 호출돼야 함');
+  assert.strictEqual(openedId, 'g1', 'openGoalForm으로 이동해야 함');
+  sandbox.save = origSave;
+  sandbox.openGoalForm = origOpen;
+});
+test('[실행형] ackGoalAchieved: 아직 달성 못했거나 이미 ack된 목표는 achievedAckAt을 건드리지 않고 그대로 openGoalForm만 호출한다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.DB = { owners: ['나'], assets: [], goals: [{ id: 'g1', name: '진행중', type: 'networth', targetAmount: 2000000, targetDate: null, owner: 'all', achievedAckAt: null }, { id: 'g2', name: '이미ack됨', type: 'networth', targetAmount: 500000, targetDate: null, owner: 'all', achievedAckAt: 1700000000000 }], nwHistory: [{ date: '2026-06-15', nw: 1000000 }] };
+  let saveCallCount = 0;
+  const origSave = sandbox.save;
+  sandbox.save = () => { saveCallCount++; };
+  const origOpen = sandbox.openGoalForm;
+  sandbox.openGoalForm = () => {};
+  sandbox.ackGoalAchieved('g1'); // 미달성(cur 1000000 < target 2000000)
+  assert.strictEqual(sandbox.DB.goals[0].achievedAckAt, null);
+  sandbox.ackGoalAchieved('g2'); // 달성했지만 이미 ack됨
+  assert.strictEqual(sandbox.DB.goals[1].achievedAckAt, 1700000000000, '이미 있던 ack 시각이 덮어써지면 안 됨');
+  assert.strictEqual(saveCallCount, 0, '둘 다 ack할 게 없으므로 save()가 호출되면 안 됨');
+  sandbox.save = origSave;
+  sandbox.openGoalForm = origOpen;
 });
 test('goalHistoryFor/goalLinkedAssetGone: asset형 목표는 연결된 자산 하나의 잔액 추이(assetBalanceSeries)를 쓰고, networth형은 그대로 nwHistoryForOwner를 쓴다', () => {
   sandbox.TODAY = '2026-06-15';
@@ -18074,6 +18152,83 @@ test('homeAlertCard: goalBehind/goalBehindMulti가 각각 openGoalForm/openGoals
   const html2 = sandbox.homeAlertCard({ kind: 'goalBehindMulti', count: 2 });
   assert.ok(html2.includes('openGoalsList()'));
   assert.ok(html2.includes('2건'));
+});
+/* 목표 달성(goalAchieved/goalAchievedMulti) — goalBehind/goalBehindMulti(늦어짐)와 정확히 대칭되는 긍정적 사건.
+ * goalNewlyAchieved(달성했지만 achievedAckAt 없음)가 정확히 1건이면 단일, 2건 이상이면 묶인다(budgetOver와
+ * 동일한 collapsing 패턴, app-evolve cycle256 critique/advance). */
+test('homeAlerts: 달성했지만 아직 ack 안 된 목표가 정확히 1개면 goalAchieved, 2개로 늘면 goalAchievedMulti로 묶인다', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.nwHistory = [
+    { date: '2026-05-01', nw: 1000000 },
+    { date: '2026-06-15', nw: 2000000 },
+  ];
+  sandbox.DB.goals = [{ id: 'g1', name: '비상금', type: 'networth', targetAmount: 1500000, targetDate: null, owner: 'all' }];
+  let alerts = sandbox.homeAlerts([]);
+  let ga = alerts.filter((a) => a.kind === 'goalAchieved' || a.kind === 'goalAchievedMulti');
+  assert.strictEqual(ga.length, 1);
+  assert.strictEqual(ga[0].kind, 'goalAchieved', '정확히 1개면 goalAchieved여야 함');
+  assert.strictEqual(ga[0].goalId, 'g1');
+  assert.strictEqual(ga[0].name, '비상금');
+  assert.strictEqual(ga[0].amount, 2000000);
+
+  sandbox.DB.goals.push({ id: 'g2', name: '차 바꾸기', type: 'networth', targetAmount: 500000, targetDate: null, owner: 'all' });
+  alerts = sandbox.homeAlerts([]);
+  ga = alerts.filter((a) => a.kind === 'goalAchieved' || a.kind === 'goalAchievedMulti');
+  assert.strictEqual(ga.length, 1);
+  assert.strictEqual(ga[0].kind, 'goalAchievedMulti', '2개로 늘면 goalAchievedMulti 하나로 묶여야 함');
+  assert.strictEqual(ga[0].count, 2);
+});
+test('homeAlerts: 아직 목표를 달성하지 못했으면 goalAchieved로 뜨지 않는다(회귀 확인)', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.nwHistory = [{ date: '2026-06-15', nw: 500000 }];
+  sandbox.DB.goals = [{ id: 'g1', name: '비상금', type: 'networth', targetAmount: 1500000, targetDate: null, owner: 'all' }];
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'goalAchieved' || a.kind === 'goalAchievedMulti'));
+});
+test('homeAlerts: achievedAckAt이 이미 기록된 목표는 달성 상태가 유지돼도 goalAchieved로 다시 뜨지 않는다(ackGoalAchieved가 남긴 기록)', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.nwHistory = [{ date: '2026-06-15', nw: 2000000 }];
+  sandbox.DB.goals = [{ id: 'g1', name: '비상금', type: 'networth', targetAmount: 1500000, targetDate: null, owner: 'all', achievedAckAt: Date.now() }];
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'goalAchieved' || a.kind === 'goalAchievedMulti'), 'ack된 목표는 다시 축하 알림이 뜨면 안 됨');
+});
+test('homeAlerts: 목표 귀속에 시세 미확인(rateUnknown) 자산이 있으면 달성했어도 goalAchieved 알림이 억제된다(goalBehind와 동일한 가드)', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.rates = { fx: {}, goldPerG: 0, stocks: {} }; // USD 시세 미확인
+  sandbox.DB.assets = [{ id: 'a_usd', name: '달러', type: 'fx', owner: '나', currency: 'USD', fxAmount: 100, includeInTotal: true }];
+  sandbox.DB.nwHistory = [{ date: '2026-06-15', nw: 2000000 }];
+  sandbox.DB.goals = [{ id: 'g1', name: '비상금', type: 'networth', targetAmount: 1500000, targetDate: null, owner: 'all' }];
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'goalAchieved' || a.kind === 'goalAchievedMulti'), '시세 미확인 자산이 있으면 달성 알림이 억제돼야 함');
+});
+test('homeAlerts: 시세가 모두 확인되면 goalAchieved 억제가 풀려 다시 뜬다(회귀 확인)', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.rates = { fx: { USD: 1300 }, goldPerG: 90000, stocks: {} }; // 시세 전부 확인됨
+  sandbox.DB.assets = [{ id: 'a_usd', name: '달러', type: 'fx', owner: '나', currency: 'USD', fxAmount: 100, includeInTotal: true }];
+  sandbox.DB.nwHistory = [{ date: '2026-06-15', nw: 2000000 }];
+  sandbox.DB.goals = [{ id: 'g1', name: '비상금', type: 'networth', targetAmount: 1500000, targetDate: null, owner: 'all' }];
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(alerts.some((a) => a.kind === 'goalAchieved' || a.kind === 'goalAchievedMulti'), '시세가 다 확인되면 억제가 풀려 다시 달성 알림이 떠야 함');
+});
+test('notifyAlertInfo: goalAchieved/goalAchievedMulti는 월 키 없이 goalId/count만으로 dedupe한다(budgetOverMulti 등과 달리 ack 전까지 영구 상태라 월이 바뀌어도 매일 재알림하지 않음, app-evolve cycle256)', () => {
+  const info1 = sandbox.notifyAlertInfo({ kind: 'goalAchieved', goalId: 'g1', name: '비상금', amount: 2000000 });
+  assert.strictEqual(info1.key, 'goalAchieved:g1');
+  assert.ok(info1.title && info1.body, 'OS 알림 제목/본문이 있어야 함');
+  assert.ok(info1.body.includes('비상금'));
+
+  const info2 = sandbox.notifyAlertInfo({ kind: 'goalAchievedMulti', count: 2 });
+  assert.strictEqual(info2.key, 'goalAchievedMulti:2');
+  assert.ok(info2.title && info2.body, 'OS 알림 제목/본문이 있어야 함');
+  assert.ok(info2.body.includes('2건'));
+});
+test('homeAlertCard: goalAchieved는 ackGoalAchieved(openGoalForm 아님)로, goalAchievedMulti는 openGoalsList로 연결된다', () => {
+  const html1 = sandbox.homeAlertCard({ kind: 'goalAchieved', goalId: 'g1', name: '비상금', amount: 2000000 });
+  assert.ok(html1.includes("ackGoalAchieved('g1')"), '단순 openGoalForm이 아니라 ack까지 겸하는 ackGoalAchieved로 연결돼야 카드가 사라짐');
+  assert.ok(html1.includes('비상금'));
+
+  const html2 = sandbox.homeAlertCard({ kind: 'goalAchievedMulti', count: 3 });
+  assert.ok(html2.includes('openGoalsList()'));
+  assert.ok(html2.includes('3건'));
 });
 /* 상환 추세가 정체/악화된 부채(debtBehind/debtBehindMulti) — goalBehind/goalBehindMulti와 동일한 1건/N건
  * 묶음 패턴을 부채에도 적용. debtPayoffProjection()의 추세 투사(완납했거나, 추세대로면 완납 예상일이

@@ -1412,7 +1412,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.255';
+const APP_VERSION='1.47.256';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2578,7 +2578,7 @@ function migrate(){
  if(!DB.categories.expense||!DB.categories.expense.length)DB.categories.expense=[...EXP_CATS_DEFAULT];
  DB.inquiries=DB.inquiries||[];
  DB.inquiries.forEach(q=>{if(!q.id)q.id=uid();if(!q.updatedAt)q.updatedAt=Date.now()}); /* id/updatedAt은 cycle133에 추가된 필드라 그 전에 저장된 메모엔 없음 — 없으면 mergeCollection()이 모든 레코드를 같은 undefined id로 취급해 하나로 뭉개버림 */
- DB.goals=DB.goals||[]; /* 목표: [{id,name,type:'networth'|'asset',linkedAssetId,targetAmount,targetDate,owner,createdAt}] — linkedAssetId는 type:'asset'일 때만 쓰며(cycle214), 'networth'는 항상 null/없음 */
+ DB.goals=DB.goals||[]; /* 목표: [{id,name,type:'networth'|'asset',linkedAssetId,targetAmount,targetDate,owner,createdAt,achievedAckAt}] — linkedAssetId는 type:'asset'일 때만 쓰며(cycle214), 'networth'는 항상 null/없음. achievedAckAt: 목표 달성 축하 알림을 확인(ack)한 시각(ms) 또는 null(cycle256, saveGoal이 명시적으로 이어주지 않으면 수정할 때마다 사라짐) */
  DB.goals.forEach(g=>{if(!g.owner)g.owner='all'}); /* owner는 cycle124에 추가된 필드라 그 전에 생긴 목표엔 없음 — 'all'(전체)로 채워야 goalOwnerEff/nwHistoryForOwner가 가구 전체 추이로 올바르게 처리함 */
  DB.assetQtyLog=DB.assetQtyLog||[]; /* fx/gold/stock/crypto 보유수량 변경 기록: [{id,assetId,date,prevQty,newQty,field}] — field는 'fxAmount'|'goldDon'|'stockQty'|'cryptoQty' (app-evolve cycle138) */
  DB.deletedIds=gcTombstones(DB.deletedIds||{},Date.now()); /* 부팅 때마다 오래된 tombstone 정리(GC) */
@@ -3389,7 +3389,7 @@ function goalRowHTML(g){
  const assetBroken=goalLinkedAssetBroken(g);
  const hasUnknown=goalHasUnknown(g);
  const overdue=goalIsOverdue(g.targetDate,p.achieved,TODAY); /* homeAlerts()의 goalBehind 알림은 hist.length>=2·!hasUnknown을 요구해 안 뜰 때가 있어도, 목표 화면 자체엔 지남 표시가 있어야 함(app-evolve cycle195 develop) */
- return `<div class="pg-row" tabindex="0" role="button" aria-label="${esc(g.name)} 목표 진행률 ${p.pct}%${overdue?' 목표일 지남':''}" onclick="openGoalForm('${g.id}')" onkeydown="rowKeydown(event,()=>openGoalForm('${g.id}'))">
+ return `<div class="pg-row" tabindex="0" role="button" aria-label="${esc(g.name)} 목표 진행률 ${p.pct}%${overdue?' 목표일 지남':''}" onclick="ackGoalAchieved('${g.id}')" onkeydown="rowKeydown(event,()=>ackGoalAchieved('${g.id}'))">
    <div class="pg-head"><span class="pg-k">${esc(g.name)}${assetGone?' <span class="mini warn">연결된 자산이 삭제됐어요</span>':assetBroken?' <span class="mini warn">연결된 자산을 추적할 수 없어요</span>':hasUnknown?' <span class="mini warn">일부 미확인</span>':''}${overdue?' <span class="mini warn">목표일 지남</span>':''}${p.achieved?`<span class="pg-done" style="color:${color};background:color-mix(in srgb,${color} 15%,transparent)">달성</span>`:''}</span>
      <span class="pg-nums"><b class="num">${comma(p.cur)}</b><span class="pg-of num"> / ${comma(p.target)}원</span></span></div>
    <div class="pg-bar"><i style="width:${p.pct}%;background:${color}"></i></div>
@@ -3415,7 +3415,7 @@ function openGoalsList(){ /* 관리 목록은 캐러셀 귀속과 무관하게 �
    const assetBroken=goalLinkedAssetBroken(g); /* goalRowHTML()과 동일 캡션(app-evolve cycle214 develop) */
    const hasUnknown=goalHasUnknown(g); /* goalRowHTML()과 동일 캡션(app-evolve cycle186 advance) */
    const overdue=goalIsOverdue(g.targetDate,p.achieved,TODAY); /* goalRowHTML()과 동일 판정(app-evolve cycle195 develop) */
-   return `<div class="manage-row" tabindex="0" role="button" aria-label="${esc(g.name)} 목표 진행률 ${p.pct}%${overdue?' 목표일 지남':''}" onclick="openGoalForm('${g.id}')" onkeydown="rowKeydown(event,()=>openGoalForm('${g.id}'))">
+   return `<div class="manage-row" tabindex="0" role="button" aria-label="${esc(g.name)} 목표 진행률 ${p.pct}%${overdue?' 목표일 지남':''}" onclick="ackGoalAchieved('${g.id}')" onkeydown="rowKeydown(event,()=>ackGoalAchieved('${g.id}'))">
     <div class="avatar a-save" style="width:38px;height:38px">${svg('target')}</div>
     <div style="flex:1;min-width:0"><div class="mn">${esc(g.name)} ${p.achieved?'<span class="mini">달성</span>':''}</div>
      <div class="msub">${comma(p.cur)} / ${comma(p.target)}원 · ${p.pct}%${ownerBadge}</div>
@@ -3501,10 +3501,24 @@ function saveGoal(editing){
  const isAsset=d.type==='asset';
  if(isAsset&&!d.linkedAssetId){toast('연결할 자산을 선택해 주세요');return}
  const linkedAsset=isAsset?(DB.assets||[]).find(x=>x.id===d.linkedAssetId):null;
- const rec=touch({id:d.id,name:d.name,type:isAsset?'asset':'networth',linkedAssetId:isAsset?d.linkedAssetId:null,targetAmount:Math.round(d.targetAmount),targetDate:d.targetDate||null,owner:isAsset?(linkedAsset?linkedAsset.owner:(d.owner||'all')):(d.owner||'all'),createdAt:d.createdAt||Date.now()}); /* touch() 누락 시 mergeRemoteDataIntoLocal의 mergeCollection()이 updatedAt만 보고 병합하다 다른 기기의 동기화 안 된 목표를 이 저장이 조용히 되돌릴 수 있음(saveAsset 등과 동일한 불변식). asset형은 owner를 연결 자산의 귀속으로 맞춰 goalOwnerEff/캐러셀 필터가 일관되게 동작하게 함 */
+ const rec=touch({id:d.id,name:d.name,type:isAsset?'asset':'networth',linkedAssetId:isAsset?d.linkedAssetId:null,targetAmount:Math.round(d.targetAmount),targetDate:d.targetDate||null,owner:isAsset?(linkedAsset?linkedAsset.owner:(d.owner||'all')):(d.owner||'all'),createdAt:d.createdAt||Date.now(),achievedAckAt:d.achievedAckAt||null}); /* touch() 누락 시 mergeRemoteDataIntoLocal의 mergeCollection()이 updatedAt만 보고 병합하다 다른 기기의 동기화 안 된 목표를 이 저장이 조용히 되돌릴 수 있음(saveAsset 등과 동일한 불변식). asset형은 owner를 연결 자산의 귀속으로 맞춰 goalOwnerEff/캐러셀 필터가 일관되게 동작하게 함. achievedAckAt을 d.achievedAckAt||null로 명시적으로 이어주지 않으면 목표를 한 번이라도 수정할 때 조용히 사라져 goalNewlyAchieved가 다시 true가 되어 재알림이 발생함(app-evolve cycle256 advance) */
+ if(!goalProgress(rec,goalHistoryFor(rec),TODAY).achieved)rec.achievedAckAt=null; /* 목표 금액을 나중에 올려 더는 achieved가 아니게 되면 ack도 리셋 — 재달성 시 다시 축하 알림이 뜨게 함(cycle256) */
  const i=(DB.goals||[]).findIndex(x=>x.id===d.id);
  if(i>=0)DB.goals[i]=rec;else DB.goals.push(rec);
  save();goalDraft=null;closeSheet();renderCurrent();toast(editing?'목표를 수정했어요':'목표를 추가했어요');
+}
+/* 목표 상세로 이동하는 모든 진입점(goalRowHTML/openGoalsList 행, 홈 알림의 goalAchieved 카드)을 openGoalForm
+ * 대신 이 함수로 거치게 한다 — 사용자가 달성한 목표를 실제로 열어 봤다는 사실 자체를 ack으로 기록해야
+ * homeAlerts()의 goalAchieved(Multi) 카드가 다시 사라진다(budgetOver처럼 다음 달에 자연 해소되지 않으므로
+ * 명시적 ack이 필요, app-evolve cycle256 advance). 달성 전/이미 ack된 목표는 goalNewlyAchieved가 false라
+ * openGoalForm만 호출하는 것과 동일하게 동작 — 안전하게 모든 호출부에서 재사용 가능. */
+function ackGoalAchieved(id){
+ const g=(DB.goals||[]).find(x=>x.id===id);
+ if(g){
+  const p=goalProgress(g,goalHistoryFor(g),TODAY);
+  if(goalNewlyAchieved(g,p)){g.achievedAckAt=Date.now();save();}
+ }
+ openGoalForm(id);
 }
 function delGoal(id){
  const g=(DB.goals||[]).find(x=>x.id===id);if(!g)return;
@@ -9004,6 +9018,17 @@ function homeAlerts(neg){
    .sort((a,b)=>a.g.targetDate<b.g.targetDate?-1:1);
  if(_gb.length===1){const{g,p}=_gb[0];arr.push({kind:'goalBehind',goalId:g.id,name:g.name,targetDate:g.targetDate,projectedDate:p.projectedDate});}
  else if(_gb.length>1)arr.push({kind:'goalBehindMulti',count:_gb.length});
+ /* 목표 달성: goalBehind(늦어짐)와 정확히 대칭되는 긍정적 사건 — 목표가 achieved인데 아직 ack(achievedAckAt)
+  * 안 됐으면 포함한다(goalNewlyAchieved). achieved는 추세가 아니라 현재 snapshot만으로 판정되므로 goalBehind의
+  * hist.length>=2·targetDate 존재 요건은 필요 없지만, 미확인 자산 가드(goalHasUnknown)·연결 자산 삭제 가드
+  * (goalLinkedAssetGone)는 똑같이 적용해 미확인 시세로 오탐 달성되는 걸 막는다(app-evolve cycle256 advance).
+  * budgetOver/goalBehind와 동일한 단일/복수 collapsing 패턴. 한 번 뜬 뒤엔 ackGoalAchieved(목표 상세 진입)가
+  * achievedAckAt을 남겨야 사라지므로, budgetOver처럼 다음 달에 자연 해소되지 않는다. */
+ const _ga=(DB.goals||[]).map(g=>({g,p:goalProgress(g,goalHistoryFor(g).filter(h=>h.date<=TODAY),TODAY)}))
+   .filter(({g,p})=>goalNewlyAchieved(g,p)&&!goalHasUnknown(g)&&!goalLinkedAssetGone(g))
+   .sort((a,b)=>a.g.name<b.g.name?-1:1);
+ if(_ga.length===1){const{g,p}=_ga[0];arr.push({kind:'goalAchieved',goalId:g.id,name:g.name,amount:p.cur});}
+ else if(_ga.length>1)arr.push({kind:'goalAchievedMulti',count:_ga.length});
  /* 상환 추세가 정체/악화된 부채: debtsBehind()(homeAlerts 바로 앞) 참고. goalBehind와 동일한
   * 단일/복수 collapsing 패턴(app-evolve cycle174 advance) */
  const _db=debtsBehind();
@@ -9048,6 +9073,12 @@ function notifyAlertInfo(al){
  if(al.kind==='budgetOverMulti')return{key:`budgetMulti:${TODAY.slice(0,7)}:${al.count}`,title:'예산을 초과했어요',body:`${al.count}개 카테고리가 이번 달 예산을 넘었어요`};
  if(al.kind==='goalBehind')return{key:`goalBehind:${al.goalId}:${TODAY.slice(0,7)}`,title:'목표가 늦어지고 있어요',body:`${al.name} · 목표일 ${fmtDateFull(al.targetDate)}까지 어려울 것 같아요`};
  if(al.kind==='goalBehindMulti')return{key:`goalBehindMulti:${TODAY.slice(0,7)}:${al.count}`,title:'목표가 늦어지고 있어요',body:`목표 ${al.count}건이 목표일보다 늦어지고 있어요`};
+ /* goalAchieved(Multi)는 goalBehindMulti 등과 달리 월 단위로 자연 해소되지 않는 '영구' 상태라(ack 전까지
+  * achievedAckAt이 계속 비어 있음) key에 월(TODAY.slice(0,7))을 넣지 않는다 — 한 번 보내고 나면 ack하거나
+  * (achievedAckAt 기록 → 이 kind가 더는 homeAlerts()에서 안 나와 재호출 자체가 없음) 30일 지나 notifiedIds가
+  * pruneNotifiedIds로 정리될 때까지 매일 다시 알리지 않는다(app-evolve cycle256 advance). */
+ if(al.kind==='goalAchieved')return{key:`goalAchieved:${al.goalId}`,title:'목표를 달성했어요 🎉',body:`${al.name} · ${comma(al.amount)}원`};
+ if(al.kind==='goalAchievedMulti')return{key:`goalAchievedMulti:${al.count}`,title:'목표를 달성했어요 🎉',body:`목표 ${al.count}건을 달성했어요`};
  if(al.kind==='debtBehind')return{key:`debtBehind:${al.assetId}:${TODAY.slice(0,7)}`,title:'부채가 줄지 않고 있어요',body:`${al.name} · 최근엔 ${comma(al.amount)}원에서 줄어들고 있지 않아요`};
  if(al.kind==='debtBehindMulti')return{key:`debtBehindMulti:${TODAY.slice(0,7)}:${al.count}`,title:'부채가 줄지 않고 있어요',body:`부채 ${al.count}건이 최근 줄어들고 있지 않아요`};
  return null;
@@ -9212,6 +9243,16 @@ function homeAlertCard(al){
  if(al.kind==='goalBehindMulti')return `<button class="home-alert mat" onclick="openGoalsList()">
    <div class="ha-ic">${svg('target')}</div>
    <div class="ha-b"><div class="ha-t">목표가 늦어지고 있어요 ${al.count}건</div>
+     <div class="ha-s">눌러서 한 번에 확인</div></div>
+   <div class="ha-c">${svg('chev')}</div></button>`;
+ if(al.kind==='goalAchieved')return `<button class="home-alert" onclick="ackGoalAchieved('${al.goalId}')">
+   <div class="ha-ic">${svg('target')}</div>
+   <div class="ha-b"><div class="ha-t">목표를 달성했어요 🎉 · ${esc(al.name)}</div>
+     <div class="ha-s">${comma(al.amount)}원 · 눌러서 확인하세요</div></div>
+   <div class="ha-c">${svg('chev')}</div></button>`;
+ if(al.kind==='goalAchievedMulti')return `<button class="home-alert" onclick="openGoalsList()">
+   <div class="ha-ic">${svg('target')}</div>
+   <div class="ha-b"><div class="ha-t">목표를 달성했어요 🎉 ${al.count}건</div>
      <div class="ha-s">눌러서 한 번에 확인</div></div>
    <div class="ha-c">${svg('chev')}</div></button>`;
  if(al.kind==='debtBehind')return `<button class="home-alert mat" onclick="openAssetHistory('${al.assetId}')">

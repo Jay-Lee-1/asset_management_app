@@ -603,6 +603,15 @@ function goalIsOverdue(targetDate,achieved,today){
  return !!(targetDate&&!achieved&&targetDate<today);
 }
 
+/* 목표를 막 달성했지만 아직 확인(ack)하지 않은 상태 — homeAlerts()의 goalAchieved(Multi) 알림이 이 함수로
+ * 판단한다. progress.achieved(현재 cur>=target)인데 goal.achievedAckAt이 없으면(ackGoalAchieved가 아직 기록을
+ * 안 남김) true. budgetOver/goalBehind/debtBehind처럼 '나쁜 사건'만 알리던 homeAlerts()에 정확히 대칭되는
+ * 긍정적 사건 판정(app-evolve cycle256 critique/advance). saveGoal()이 목표 금액을 올려 더는 achieved가
+ * 아니게 되면 achievedAckAt을 null로 리셋해, 다시 achieved가 되면 이 함수가 또 true를 돌려주게 한다. */
+function goalNewlyAchieved(goal,progress){
+ return !!(progress&&progress.achieved&&goal&&!goal.achievedAckAt);
+}
+
 /* debt 자산의 상환완료 예상일 투사 — goalProgress와 동일한 '최근 trendWindowDays일(기본 90일) 구간의
  * 처음·끝 두 점 선형투사' 철학을 공유한다. pts는 assetBalanceSeries(assetId,...,sign=-1)가 반환하는
  * 날짜순 {date,bal} 배열을 그대로 받는다(부채 잔액은 양수로 표현되고 갚을수록 줄어듦). 잔액이 이미
