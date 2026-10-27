@@ -1,15 +1,8 @@
 {
   "cycle": 254,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 248,
-      "phase": "advance",
-      "timestamp": "2026-10-25T05:18:03.086Z",
-      "summary": "critique(cycle248) 계획대로 자산 피커(openAssetPicker)에 검색 기능을 추가했다. 옵션(cashOnly/excludeMarketValued/excludeDebt/excludeId) 필터와 matchAssetQuery(logic.js, 이름+fx 보유통화, 대소문자/NFC 무시) 검색을 한 자리에서 적용하는 pkFilteredAssets(o,q)를 신설해 openAssetPicker()의 기존 인라인 렌더 로직을 이 함수로 교체하고, 결과가 없을 때 '검색어 때문에 0건'과 '애초에 후보가 없음'을 pkFilteredAssets의 any 플래그로 구분하는 pkEmptyHtml(q,any)도 함께 뽑았다. index.html/sw.js 변경이라 APP_VERSION 1.47.240->1.47.241, sw.js CACHE v507->v508 동기 범프. test/run.js: 신규 테스트 13건 추가(2030->2049는 오타, 실제 1990->2003). node our-assets-v1.14.1/our-assets/test/run.js 1990->2003/2003 통과. pending_advance_plan은 null로 비웠다.",
-      "commit": null
-    },
     {
       "cycle": 249,
       "phase": "develop",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-27T12:14:52.301Z",
       "summary": "critique(cycle253)가 세운 계획대로 거래 입력 카테고리 피커(openCatPicker)에 검색 기능을 추가했다. matchAssetQuery(logic.js)와 동일한 규칙(대소문자·NFC 무시 부분일치)의 matchCatQuery(c,q)를 logic.js에 신설하고, pkFilteredAssets와 같은 {html,any} 모양의 catFilteredGrid(kind,current,q)로 openCatPicker의 기존 인라인 map을 교체했다. pkAssetQInput/refreshPkAssetList와 동일한 220ms 디바운스로 pkCatQInput/refreshPkCatList를 신설해 #catGrid만 재렌더하고, pkPickCat도 pkChoose와 동일하게 커밋 시 _pkQ/_pkOpts를 정리하도록 맞췄다. 카테고리는 기본값이 6개뿐이라(자산은 기본 0개) 항상 검색바를 보이면 번거로우므로 CAT_PICKER_SEARCH_THRESHOLD(8)를 넘을 때만 검색바를 보이도록 명시적으로 설계했다. _pkQ/_pkOpts 전역은 openAssetPicker/openCatPicker가 동시에 열리지 않음을 확인한 뒤 그대로 재사용. index.html/logic.js/sw.js 변경이라 APP_VERSION 1.47.249->1.47.250, sw.js CACHE v516->v517 동기 범프. test/run.js에 matchCatQuery/catFilteredGrid/catEmptyHtml/임계값 기반 검색바 노출/refreshPkCatList/pkCatQInput 디바운스/pkPickCat 정리 테스트 17건 추가, node test/run.js로 2077/2077 통과 확인.",
+      "commit": null
+    },
+    {
+      "cycle": 254,
+      "phase": "develop",
+      "timestamp": "2026-10-27T13:21:02.613Z",
+      "summary": "거래 입력 분할 모드(여러 카테고리로 나누기)의 txSplitAdd(index.html:4865)/txSplitRemove(4872)가 재렌더 전에 syncTxInputs()를 부르지 않는 버그를 발견 — txType/txToggleRepeat/txSplitOpenCat 등 txDraft를 바꾸고 renderTxSheet()로 재렌더하는 다른 모든 핸들러는 재렌더 전에 syncTxInputs()로 #txAmt/#txMemo의 DOM 값을 먼저 txDraft에 반영하는데, 이 둘만 빠져 있었다. renderTxSheet()가 매번 #txAmt/#txMemo의 value를 d.amount/d.memo로 통째로 다시 쓰므로, 분할 추가/삭제 버튼을 누르면 아직 blur 전인 입력값(전체 금액/메모)이 조용히 사라지는 버그(saveTx()는 자체 syncTxInputs() 호출이 있어 최종 저장값은 되돌아간 값이 저장됨). 두 함수 맨 앞에 syncTxInputs() 호출을 추가해 다른 핸들러와 같은 패턴으로 맞췄다. index.html만 로직 변경(1줄+1줄), sw.js는 캐시 버전만 동기 범프. APP_VERSION 1.47.250->1.47.251, sw.js CACHE v517->v518. test/run.js: isDraftDirty 테스트와 같은 패턴(실제 syncTxInputs/num 소스를 격리 vm 컨텍스트에서 실행)으로 3건 추가 — 추가/삭제 각각 금액·메모 동기화 확인, 그리고 분할 최소 2개 가드로 삭제가 막혀도 syncTxInputs는 가드보다 먼저 불려 동기화가 일어남을 확인하는 회귀 가드. node test/run.js 2077->2080/2080 통과. node --check(logic.js/test/run.js) 통과, 메인 <script> 블록 vm.Script 파싱 통과(비-메인 블록 1건은 cycle248부터 알려진 정규식 오매칭 false positive).",
       "commit": null
     }
   ]

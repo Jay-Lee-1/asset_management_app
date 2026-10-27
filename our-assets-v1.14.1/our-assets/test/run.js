@@ -13935,6 +13935,84 @@ test('saveTx: 메모를 비워두면 분할이어도 첫 항목의 카테고리�
   sandbox.saveTx();
   assert.strictEqual(sandbox.DB.txns[0].memo, '식비');
 });
+/* ---------- txSplitAdd/txSplitRemove: syncTxInputs() 누락으로 방금 타이핑한 전체 금액/메모가
+ * 재렌더 때 되돌아가던 버그 (app-evolve cycle254 develop) — txType/txToggleRepeat/txSplitOpenCat 등
+ * txDraft를 바꾸고 renderTxSheet()로 재렌더하는 다른 모든 핸들러는 재렌더 전에 반드시 syncTxInputs()로
+ * #txAmt/#txMemo의 현재 DOM 값을 txDraft에 먼저 반영하는데, txSplitAdd/txSplitRemove만 이 호출이
+ * 빠져 있었다. renderTxSheet()가 #txAmt/#txMemo의 value를 매번 d.amount/d.memo로 통째로 다시 쓰므로,
+ * 분할 추가/삭제 버튼을 누르는 순간 아직 blur되지 않은 입력값이 조용히 사라지는 버그였다.
+ * syncTxInputs()는 DOM을 직접 읽는 비순수 함수라 위쪽 공유 sandbox에선 no-op으로 흉내내므로(saveTx
+ * 테스트와 같은 이유), 여기선 isDraftDirty 테스트와 같은 패턴으로 실제 소스를 격리 실행해 검증한다. */
+test('[실행형] txSplitAdd: 분할 항목을 추가하기 전에 syncTxInputs()를 불러, 방금 타이핑한 전체 금액/메모가 되돌아가지 않는다', () => {
+  const ctx = {
+    $: (id) => ctx._els[id] || null,
+    _els: {},
+    _formScroll: 0,
+    txDraft: {
+      type: 'expense', category: '식비', amount: 5000, memo: '마트',
+      splits: [{ category: '식비', amount: 5000, memo: '' }, { category: '생활용품', amount: 0, memo: '' }],
+    },
+    DB: { categories: { expense: ['식비', '생활용품', '교통'] } },
+    renderTxSheet: () => {},
+  };
+  vm.createContext(ctx);
+  vm.runInContext(
+    [extractFunction('num'), extractFunction('syncTxInputs'), extractFunction('catListOf'), extractFunction('txSplitAdd')].join('\n'),
+    ctx, { filename: 'txSplitAdd-real' }
+  );
+  // 아직 blur되지 않아 syncTxInputs가 안 불린, 막 타이핑한 DOM 값
+  ctx._els.txAmt = { value: '80,000' };
+  ctx._els.txMemo = { value: '마트(할인)' };
+  ctx.txSplitAdd();
+  assert.strictEqual(ctx.txDraft.amount, 80000, 'txSplitAdd가 분할 추가 전에 syncTxInputs를 불러 방금 타이핑한 금액을 반영했어야 함');
+  assert.strictEqual(ctx.txDraft.memo, '마트(할인)', 'txSplitAdd가 분할 추가 전에 syncTxInputs를 불러 방금 타이핑한 메모를 반영했어야 함');
+  assert.strictEqual(ctx.txDraft.splits.length, 3, '분할 항목이 1개 늘어야 함');
+  assert.strictEqual(ctx.txDraft.splits[2].category, '교통', '아직 안 쓴 카테고리를 다음 항목으로 추가해야 함');
+});
+test('[실행형] txSplitRemove: 항목을 삭제하기 전에 syncTxInputs()를 불러, 방금 타이핑한 전체 금액/메모가 되돌아가지 않는다', () => {
+  const ctx = {
+    $: (id) => ctx._els[id] || null,
+    _els: {},
+    _formScroll: 0,
+    txDraft: {
+      type: 'expense', category: '식비', amount: 5000, memo: '마트',
+      splits: [{ category: '식비', amount: 3000, memo: '' }, { category: '생활용품', amount: 2000, memo: '' }, { category: '교통', amount: 0, memo: '' }],
+    },
+    renderTxSheet: () => {},
+  };
+  vm.createContext(ctx);
+  vm.runInContext(
+    [extractFunction('num'), extractFunction('syncTxInputs'), extractFunction('txSplitRemove')].join('\n'),
+    ctx, { filename: 'txSplitRemove-real' }
+  );
+  ctx._els.txAmt = { value: '9,000' };
+  ctx._els.txMemo = { value: '마트+편의점' };
+  ctx.txSplitRemove(2);
+  assert.strictEqual(ctx.txDraft.amount, 9000, 'txSplitRemove가 항목 삭제 전에 syncTxInputs를 불러 방금 타이핑한 금액을 반영했어야 함');
+  assert.strictEqual(ctx.txDraft.memo, '마트+편의점', 'txSplitRemove가 항목 삭제 전에 syncTxInputs를 불러 방금 타이핑한 메모를 반영했어야 함');
+  assert.strictEqual(ctx.txDraft.splits.length, 2, '지정한 항목이 삭제되어야 함');
+});
+test('[실행형] txSplitRemove: 분할이 2개뿐이면 기존 가드로 삭제는 막히지만, syncTxInputs()는 그 가드보다 먼저 불려 금액/메모 동기화는 그대로 일어난다', () => {
+  const ctx = {
+    $: (id) => ctx._els[id] || null,
+    _els: {},
+    _formScroll: 0,
+    txDraft: {
+      type: 'expense', category: '식비', amount: 5000, memo: '',
+      splits: [{ category: '식비', amount: 5000, memo: '' }, { category: '생활용품', amount: 0, memo: '' }],
+    },
+    renderTxSheet: () => {},
+  };
+  vm.createContext(ctx);
+  vm.runInContext(
+    [extractFunction('num'), extractFunction('syncTxInputs'), extractFunction('txSplitRemove')].join('\n'),
+    ctx, { filename: 'txSplitRemove-guard-real' }
+  );
+  ctx._els.txAmt = { value: '12,000' };
+  ctx.txSplitRemove(0);
+  assert.strictEqual(ctx.txDraft.splits.length, 2, '분할 최소 2개 가드로 삭제 자체는 막혀야 함(회귀 없음)');
+  assert.strictEqual(ctx.txDraft.amount, 12000, '가드로 삭제가 막혀도 syncTxInputs는 먼저 불려 금액은 동기화돼야 함');
+});
 /* ---------- saveTx/saveRec: expense/income에 자산 선택 없이 저장되던 버그 (app-evolve cycle81 develop) ----------
  * transfer/saving은 fromAssetId/toAssetId가 없으면 '보내는·받는 자산을 선택해 주세요' 토스트로
  * 막았지만, expense/income은 이 가드가 전혀 없이 d.type==='expense'?d.toAssetId=null:... 로 남은

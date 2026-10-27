@@ -1412,7 +1412,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.250';
+const APP_VERSION='1.47.251';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4863,14 +4863,14 @@ function txToggleSplit(){
  renderTxSheet();
 }
 function txSplitAdd(){
- const d=txDraft;if(!Array.isArray(d.splits))return;
+ syncTxInputs();const d=txDraft;if(!Array.isArray(d.splits))return; /* 분할 추가 전에 전체 금액/메모 입력값을 draft에 반영 — 안 하면 재렌더 시 방금 타이핑한 값이 되돌아간다(app-evolve cycle254 develop) */
  const used=new Set(d.splits.map(s=>s.category));
  const next=catListOf(d.type).find(c=>!used.has(c))||catListOf(d.type)[0]||'기타';
  d.splits.push({category:next,amount:0,memo:''});
  renderTxSheet();
 }
 function txSplitRemove(i){
- const d=txDraft;if(!Array.isArray(d.splits)||d.splits.length<=2)return; /* 분할은 최소 2개 — 1개로 줄어들면 '분할'의 의미가 없어지므로 일반 입력으로 끄게 유도 */
+ syncTxInputs();const d=txDraft;if(!Array.isArray(d.splits)||d.splits.length<=2)return; /* 분할은 최소 2개 — 1개로 줄어들면 '분할'의 의미가 없어지므로 일반 입력으로 끄게 유도 */
  d.splits.splice(i,1);
  renderTxSheet();
 }
