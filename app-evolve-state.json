@@ -1,15 +1,8 @@
 {
   "cycle": 256,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 251,
-      "phase": "review",
-      "timestamp": "2026-10-25T15:09:19.863Z",
-      "summary": "cycle251 develop 커밋(4ea02ff, 연간 결산(openYearReview)의 지출/수입 TOP3 카드에서 aria-hidden=\"true\" 래퍼 제거)을 검토. buildExpenseBarHtml의 다른 호출부(openIncomeAnalysis/openSpendAnalysis)는 접근 가능한 별도 목록이 있어 aria-hidden이 정당하지만 openYearReview는 요약 화면이라 그런 목록이 없어 실제 접근성 버그였고 수정이 올바름을 코드로 직접 대조 확인. node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행 결과 2030/2030 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 251,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-27T00:00:00.000Z",
       "summary": "fork 서브에이전트로 앱 전반을 재탐색(cycle122-255가 다룬 영역 전부 제외 지시)한 결과, openAssetHistory(index.html:5358)가 ST.hist.cat/q/catExact/owner 등은 리셋하면서 ST.hist.range/preset은 손대지 않는 버그를 발견 — 반면 같은 History 탭으로 드릴다운하는 openCatHistory/openIncomeCatHistory는 둘 다 ST.hist.range={from,to};ST.hist.preset='custom'을 명시적으로 세팅함. 그 결과 openCatHistory로 특정 월(예: 2026-05)로 범위를 좁힌 뒤 자산 화면에서 \"내역 보기\"(openAssetHistory)를 누르면, 해당 계좌에 그 달 거래가 없는 경우 \"전체내역\"을 보여줘야 할 화면이 조용히 텅 비어 보이는 버그였음. 고정폭 전체 범위 RANGE_FROM~RANGE_TO로 리셋하고 preset='custom'으로 맞춰 수정. index.html만 변경이라 APP_VERSION 1.47.254->1.47.255, sw.js CACHE v521->v522 동기 범프. test/run.js: 기존 range를 남은 상태로 두고 openAssetHistory 호출 시 RANGE_FROM/RANGE_TO로 리셋되는지 확인하는 회귀 테스트 1건 추가(2104->2105).",
+      "commit": "d70fa8b"
+    },
+    {
+      "cycle": 256,
+      "phase": "review",
+      "timestamp": "2026-10-27T00:10:00.000Z",
+      "summary": "cycle256 develop 커밋(d70fa8b, openAssetHistory가 ST.hist.range/preset을 리셋하지 않던 버그를 RANGE_FROM~RANGE_TO/'custom'으로 리셋하게 고침)을 검토. openAssetHistory의 모든 호출부(index.html:3971 자산 행 '내역 보기', 8940/8942 동명자산 피커, 9217 debtBehind 홈 알림)가 전부 '이 자산의 전체내역'을 보여주려는 의도라 좁혀진 이전 range를 보존해야 할 이유가 없음을 코드로 직접 대조 확인. RANGE_FROM/RANGE_TO가 이미 allTxns(RANGE_FROM,RANGE_TO) 등에서 쓰이는 앱의 표준 전체 범위라 재사용이 적절. node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행 결과 2105/2105 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
