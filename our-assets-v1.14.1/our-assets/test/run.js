@@ -1313,6 +1313,23 @@ test('[실행형] recFreqLabel: openRecManage 목록이 쓰는 실제 함수가 
   );
 });
 
+/* ---------- monthlyEquivalent: openRecManage의 반복 내역 월 총액 합계용 월 환산 (app-evolve cycle258 critique/advance) ---------- */
+test('monthlyEquivalent: monthly는 금액 그대로 월 환산된다', () => {
+  assert.strictEqual(sandbox.monthlyEquivalent({ freq: 'monthly', amount: 50000 }), 50000);
+});
+test('monthlyEquivalent: weekly는 연 발생횟수(365/7)를 12로 나눈 월 평균으로 환산된다', () => {
+  assert.strictEqual(sandbox.monthlyEquivalent({ freq: 'weekly', amount: 10000 }), 10000 * 365 / 7 / 12);
+});
+test('monthlyEquivalent: daily는 연 365회를 12로 나눈 월 평균으로 환산된다', () => {
+  assert.strictEqual(sandbox.monthlyEquivalent({ freq: 'daily', amount: 1000 }), 1000 * 365 / 12);
+});
+test('monthlyEquivalent: yearly는 금액을 12로 나눈 값으로 환산된다', () => {
+  assert.strictEqual(sandbox.monthlyEquivalent({ freq: 'yearly', amount: 120000 }), 10000);
+});
+test('monthlyEquivalent: active 여부는 이 함수가 신경쓰지 않는다 — 필터링은 호출부(openRecManage) 책임', () => {
+  assert.strictEqual(sandbox.monthlyEquivalent({ freq: 'monthly', amount: 30000, active: false }), 30000);
+});
+
 /* ---------- recalcEndCond: 주기/반복일/주말규칙/시작일 변경 시 count↔endDate 쌍이 새 기준으로 재계산돼야 함 (cycle53) ---------- */
 test('recalcEndCond: 매월 반복 횟수 12로 endDate를 고정한 뒤 매주로 주기를 바꾸면 endDate가 새 주기 기준 12회로 재계산된다', () => {
   const monthly = { freq: 'monthly', day: 1, startDate: '2026-01-10', weekend: 'none', count: 12, endDate: null };

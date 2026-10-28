@@ -89,6 +89,18 @@ function recFreqLabelStr(freq,day,startDate){
  if(freq==='weekly')return `매주 ${['일','월','화','수','목','금','토'][d.getDay()]}요일`;
  return `매년 ${d.getMonth()+1}월 ${d.getDate()}일`;
 }
+/* 반복 내역 관리 화면(openRecManage/index.html)의 월 총액 합계용 — freq별 금액을 월 기준으로
+ * 환산한다. weekly/daily는 "1년에 몇 번 발생하는가"(365/7, 365)를 12로 나눠 평균 월 환산액을
+ * 구하고(2월만 짧다거나 매달 발생 횟수가 4~5회로 들쭉날쭉한 것까지 반영하는 정확한 월 평균),
+ * yearly는 단순히 12로 나눈다. active 여부 필터링은 호출부 책임(이 함수는 r.amount만 본다).
+ * (app-evolve cycle258 critique/advance) */
+function monthlyEquivalent(r){
+ const amt=Number(r.amount)||0;
+ if(r.freq==='weekly')return amt*365/7/12;
+ if(r.freq==='daily')return amt*365/12;
+ if(r.freq==='yearly')return amt/12;
+ return amt; /* monthly (및 알 수 없는 freq에 대한 안전한 기본값) */
+}
 /* 반복 종료 조건: 횟수 ↔ 종료일 (엔진 recDates 재사용 → 규칙 100% 일치) */
 function addMonthsStr(ds,m){const d=new Date(ds+'T00:00:00');d.setMonth(d.getMonth()+m);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
 function recNthDate(base,n){ /* n번째 반복 날짜 */

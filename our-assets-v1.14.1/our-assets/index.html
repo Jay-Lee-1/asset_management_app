@@ -1412,7 +1412,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.259';
+const APP_VERSION='1.47.260';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6533,10 +6533,12 @@ function doRenameCat(k,i){const v=((catRenameDraft.name!=null?catRenameDraft.nam
 function recFreqLabel(r){return recFreqLabelStr(r.freq,r.day,r.startDate)}
 function openRecManage(){
  const groups=[['expense','지출','a-food'],['income','수입','a-in'],['saving','저축','a-save'],['transfer','내부이체','a-etc']];
- let body='';
+ let body='';let expenseMonthly=0;
  groups.forEach(([ty,label,av])=>{
   const list=DB.recurrences.filter(r=>r.type===ty);if(!list.length)return;
-  body+=`<div class="menu-cap" style="margin-top:8px">${label} · ${list.length}개</div><div class="card" style="margin-bottom:6px">`+list.map(r=>{
+  const monthlySum=list.filter(r=>r.active).reduce((s,r)=>s+monthlyEquivalent(r),0);
+  if(ty==='expense')expenseMonthly=monthlySum;
+  body+=`<div class="menu-cap" style="margin-top:8px">${label} · ${list.length}개${monthlySum?` · 월 약 ${comma(Math.round(monthlySum))}원`:''}</div><div class="card" style="margin-bottom:6px">`+list.map(r=>{
    const period=`${(r.startDate||'').slice(0,7).replace('-','.')}${r.endDate?` ~ ${r.endDate.slice(0,7).replace('-','.')}`:' ~'}`;
    return `<div class="manage-row" tabindex="0" role="button" aria-label="${esc(r.category)} ${recFreqLabel(r)} ${comma(r.amount)}원${r.active?'':' 중지됨'}" onclick="editRec('${r.id}')" onkeydown="rowKeydown(event,()=>editRec('${r.id}'))"><div class="avatar ${av}" style="width:38px;height:38px;${r.active?'':'opacity:.4'}">${r.type==='transfer'?svg('transfer'):catGlyph(r.type,r.category,null,'repeat')}</div>
     <div style="flex:1;min-width:0"><div class="mn">${esc(r.category)} ${r.active?'':'<span class="mini">중지</span>'}</div>
@@ -6547,7 +6549,8 @@ function openRecManage(){
   }).join('')+`</div>`;
  });
  if(!body)body=`<div class="empty"><div class="ei">${svg('repeat')}</div><div class="et">반복되는 게 아직 없어요</div><div class="es">월세·구독처럼 매달 나가는 걸 등록해두면 편해요</div></div>`;
- openSheet(`<h3>반복 내역 관리</h3><div class="desc">탭하면 수정·삭제할 수 있어요 · ▶/⏸로 일시중지</div>${body}
+ const summary=expenseMonthly?`<div class="card" style="margin-bottom:10px;padding:12px 16px"><div style="font-size:13px;color:var(--text-2)">매달 약 <b style="color:var(--text);font-size:15px">${comma(Math.round(expenseMonthly))}원</b>이 고정으로 나가요</div></div>`:'';
+ openSheet(`<h3>반복 내역 관리</h3><div class="desc">탭하면 수정·삭제할 수 있어요 · ▶/⏸로 일시중지</div>${summary}${body}
   <div style="height:14px"></div><button class="btn btn-primary" onclick="openRecSheet()">${svg('plus')} 반복 추가</button>`);
 }
 function toggleRecActive(id){const r=DB.recurrences.find(x=>x.id===id);if(!r)return;r.active=!r.active;touchSave(r);renderCurrent();openRecManage();toast(r.active?'반복을 다시 시작했어요':'반복을 일시중지했어요')}
