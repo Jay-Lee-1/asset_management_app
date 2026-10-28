@@ -1,15 +1,8 @@
 {
   "cycle": 260,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 255,
-      "phase": "develop",
-      "timestamp": "2026-10-27T17:13:45.293Z",
-      "summary": "앱 전반 재탐색(fork 서브에이전트) 결과, 거래 입력 분할 모드의 데이터 모델(t.splits=[{category,amount,memo?}])과 검색(matchTxnQuery)은 이미 분할 항목별 메모를 지원하는데, 실제 입력 UI(splitFieldHTML)는 카테고리 선택과 금액 입력만 그리고 memo:''로 고정 초기화할 뿐이라 분할 항목에 메모를 적을 방법이 전혀 없는 죽은 필드였음을 발견. splitFieldHTML에 항목별 메모 input 추가하고 txSplitMemo(i,el) 핸들러 신설. APP_VERSION 1.47.252→1.47.253, sw.js CACHE v519→v520. test/run.js 2건 추가(2091→2093). node test/run.js 2093/2093 통과.",
-      "commit": "51006c9"
-    },
     {
       "cycle": 255,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-28T11:14:05.858Z",
       "summary": "critique(cycle259) 계획대로 전역 통합검색(openGlobalSearch)을 구현. index.html에 openGlobalSearch/gsQInput/globalSearchBody 신설(openSheet 인프라 재사용) — 입력 하나로 DB.txns(matchTxnQuery)/DB.assets(matchAssetQuery)/DB.categories.expense|income|saving(matchCatQuery)을 동시에 220ms 디바운스 필터링해 거래·자산·카테고리 3그룹(그룹별 상위 20건 cap, 거래는 날짜 내림차순)으로 렌더링. 거래 행은 txRowCore 재사용(탭하면 rowTap→editTx), 자산/카테고리 행은 각각 openAssetSheet(a.id)/openCatManage(kind) 직접 호출(기존 openRecManage/asset-item 행처럼 openSheet가 같은 시트를 덮어써 닫기 불필요). 진입점은 pageHead(menu 탭 헤더)에 검색 아이콘 버튼(.icon-btn, 기존에 정의만 돼 있던 미사용 CSS 클래스) 추가. APP_VERSION 1.47.261->1.47.262, sw.js CACHE v528->v529 동기 범프. test/run.js에 세 매칭 함수가 같은 단어에 그룹별로 독립 매칭/비매칭하는지 검증하는 회귀 테스트 2건 추가(2155->2157). node test/run.js 2157/2157 통과, node --check(logic.js/sw.js/test/run.js) 및 HTML 주석을 제거한 뒤 추출한 index.html 인라인 스크립트 4블록 구문 검증 모두 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 260,
+      "phase": "develop",
+      "timestamp": "2026-10-28T12:00:00.000Z",
+      "summary": "fork 서브에이전트로 탐색한 결과, matchTxnQuery(logic.js)가 분할 거래(t.splits)의 카테고리/메모는 splitLines()로 모아 haystack에 포함시키면서 개별 분할 금액(splits[].amount)은 빼놓고 최상위 합계(t.amount, saveTx()가 항상 분할 전체 합계로 강제)만 넣는 공백을 발견 — 마트 영수증을 식비 30,000+생활용품 20,000으로 분할한 거래를 '20000'으로 검색(cycle259 advance 전역 통합검색 포함, 기존 내역 검색도 동일)해도 전체 합계 50,000만 매칭 대상이라 못 찾는 버그였음. splitLines()로 이미 구한 lines에서 각 분할 금액을 join해 haystack에 추가(lineAmts). index.html 변경 없이 logic.js만 수정이라 APP_VERSION 1.47.262->1.47.263, sw.js CACHE v529->v530 동기 범프. test/run.js에 분할 금액 매칭/일반 거래 합계 매칭 회귀/무관한 숫자 비매칭 3건 추가(2157->2160). node test/run.js 2160/2160 통과, node --check(logic.js/test/run.js/sw.js) 및 HTML 주석 제거 후 추출한 index.html 인라인 스크립트 4블록 구문 검증 통과.",
       "commit": null
     }
   ]

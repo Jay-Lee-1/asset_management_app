@@ -482,8 +482,10 @@ function txCatLabel(t){
  * 금액은 쉼표 없는 숫자 그대로 들어있으므로, 검색어 쪽 쉼표만 지워 "50000"이든 "50,000"이든
  * 똑같이 찾을 수 있게 한다(haystack 쪽까지 쉼표를 지우면 메모/자산명에 들어있는 실제 쉼표가
  * 사라지면서 원래라면 안 걸릴 단어가 우연히 이어 붙어 매칭되는 오탐이 생길 수 있어 제외).
- * 분할 거래(t.splits)는 카테고리/메모가 여러 개로 나뉘므로 splitLines()로 모두 모아
- * haystack에 합친다 — 안 그러면 분할된 두 번째 이후 카테고리/메모로는 검색해도 못 찾는다.
+ * 분할 거래(t.splits)는 카테고리/메모/금액이 여러 개로 나뉘므로 splitLines()로 모두 모아
+ * haystack에 합친다 — 안 그러면 분할된 두 번째 이후 카테고리/메모/금액으로는 검색해도 못
+ * 찾는다(금액은 t.amount가 항상 분할 전체 합계라 saveTx()의 불변식상 개별 분할 금액과 다를 수
+ * 있음 — app-evolve cycle260 develop).
  * normName()과 동일한 이유(app-evolve cycle224 develop)로 hay/q 둘 다 .normalize('NFC')를
  * 거친다 — 한글은 조합형(NFD, 자모가 분리된 코드포인트 나열)과 완성형(NFC, 한 음절=한 코드포인트)
  * 두 형태가 같은 글자를 서로 다른 문자열로 표현하는데(예: "메모".length는 NFC 2, NFD 4),
@@ -510,7 +512,8 @@ function matchTxnQuery(t,q,assets){
  const lines=splitLines(t);
  const cats=lines.map(s=>s.category||'').join(' ');
  const lineMemos=lines.map(s=>s.memo||'').join(' ');
- const hay=(t.memo||'')+' '+cats+' '+lineMemos+' '+(fa?fa.name:(t.fromAssetName||'—'))+' '+(ta?ta.name:(t.toAssetName||'—'))+' '+amt;
+ const lineAmts=lines.map(s=>s.amount!=null?String(s.amount):'').join(' ');
+ const hay=(t.memo||'')+' '+cats+' '+lineMemos+' '+(fa?fa.name:(t.fromAssetName||'—'))+' '+(ta?ta.name:(t.toAssetName||'—'))+' '+amt+' '+lineAmts;
  const normHay=hay.normalize('NFC').toLowerCase();
  const terms=searchTerms(q.normalize('NFC').toLowerCase().replace(/,/g,''));
  if(!terms.length)return true;

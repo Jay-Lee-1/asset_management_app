@@ -6259,6 +6259,18 @@ test('matchTxnQuery: 분할 거래의 항목별 메모(splits[].memo)로도 찾�
   const t = { memo: '마트', amount: 10000, fromAssetId: null, toAssetId: null, splits: [{ category: '식비', amount: 7000, memo: '우유' }, { category: '생활용품', amount: 3000, memo: '휴지' }] };
   assert.strictEqual(sandbox.matchTxnQuery(t, '휴지', []), true);
 });
+test('matchTxnQuery: 분할 거래는 최상위 합계(t.amount)가 아니라 개별 분할 금액(splits[].amount)으로도 찾을 수 있다(app-evolve cycle260)', () => {
+  const t = { memo: '마트', amount: 10000, fromAssetId: null, toAssetId: null, splits: [{ category: '식비', amount: 7000 }, { category: '생활용품', amount: 3000 }] };
+  assert.strictEqual(sandbox.matchTxnQuery(t, '3000', []), true, '최상위 합계 10000이 아니라 두 번째 분할 금액 3000으로도 찾아야 함');
+});
+test('matchTxnQuery: 분할 거래가 아닌 일반 거래는 여전히 최상위 합계(t.amount)로 찾을 수 있다(회귀)', () => {
+  const t = { memo: '마트', amount: 10000, category: '식비', fromAssetId: null, toAssetId: null };
+  assert.strictEqual(sandbox.matchTxnQuery(t, '10000', []), true);
+});
+test('matchTxnQuery: 분할 거래 금액 검색은 어느 필드에도 없는 숫자에는 매칭되지 않는다', () => {
+  const t = { memo: '마트', amount: 10000, fromAssetId: null, toAssetId: null, splits: [{ category: '식비', amount: 7000 }, { category: '생활용품', amount: 3000 }] };
+  assert.strictEqual(sandbox.matchTxnQuery(t, '9999', []), false);
+});
 test('matchTxnQuery: 메모가 조합형(NFD)으로 저장돼 있어도 완성형(NFC) 검색어로 찾을 수 있다(app-evolve cycle224)', () => {
   const t = { memo: '카페 메모'.normalize('NFD'), category: '식비', fromAssetId: null, toAssetId: null };
   assert.strictEqual(sandbox.matchTxnQuery(t, '메모', []), true, 'hay가 NFD라도 NFC 검색어로 매칭돼야 함');
