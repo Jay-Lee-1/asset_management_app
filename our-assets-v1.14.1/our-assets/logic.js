@@ -964,6 +964,26 @@ function assetBalanceSeries(txns,assetId,base,sign,dates){
   return {date:d,bal};
  });
 }
+/* 자산 하나의 "실제 최고 잔액"(정확값) — assetBalanceSeries와 같은 재생 규칙을 쓰지만, 임의로
+ * 뽑은 날짜(dates)에서만 샘플링하지 않고 거래 하나하나를 전부 순회해 매 거래 직후의 잔액을 본다.
+ * 잔액은 거래가 없는 동안은 상수(계단함수)이므로 진짜 최대값은 항상 "거래 직후" 시점에만
+ * 나타난다 — 그 사이를 건너뛰는 날짜 샘플링은 최대값이 두 샘플 사이에서 반짝 올랐다가 가라앉으면
+ * 그대로 놓친다. debtsPaidOff()(index.html)가 "완납 전 가장 많이 빌렸던 금액"을 구할 때 기존에
+ * assetBalanceSeries(...,assetBalSampleDates(RANGE_FROM,TODAY,60))로 60개 점만 보던 게 바로 이
+ * 함정이었다 — RANGE_FROM~TODAY가 60일보다 훨씬 길면(실제로는 2023-01-01~오늘, 약 20일 간격)
+ * 그 20여 일 안에서 빚이 확 늘었다가 다 갚이는(카드 단기 사용처럼 흔한 패턴) 경우 피크가 조용히
+ * 축소돼 알림에 실제보다 작은 금액이 뜬다(app-evolve cycle258 develop). */
+function assetBalancePeak(txns,assetId,base,sign){
+ const sorted=(txns||[]).filter(t=>t.fromAssetId===assetId||t.toAssetId===assetId)
+   .slice().sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
+ let bal=base,peak=base;
+ sorted.forEach(t=>{
+  if(t.fromAssetId===assetId)bal-=sign*t.amount;
+  if(t.toAssetId===assetId)bal+=sign*t.amount;
+  if(bal>peak)peak=bal;
+ });
+ return peak;
+}
 
 /* ================= OS 알림 신뢰도 (순수) ================= */
 /* checkNotifyAlerts()(index.html)는 별도 푸시 서버 없이 로컬 Notification API만 쓰고, 화면이

@@ -3320,6 +3320,44 @@ test('assetBalanceSeries: 다른 자산의 거래는 무시한다', () => {
   assert.deepStrictEqual(out, [{ date: '2026-01-20', bal: 1000 }]);
 });
 
+/* ---------- assetBalancePeak: 자산 하나의 "정확한" 최고 잔액 (app-evolve cycle258 develop) ----------
+ * debtsPaidOff()(index.html)가 쓰던 assetBalanceSeries(...,assetBalSampleDates(...,60))는 60개
+ * 샘플 지점에서만 잔액을 보므로, 두 샘플 사이에서 반짝 올랐다가 가라앉는 피크를 놓칠 수 있었다.
+ * assetBalancePeak는 날짜 샘플링 없이 거래를 전부 순회해 매 거래 직후의 잔액을 보므로 항상 정확하다. */
+test('assetBalancePeak: 거래가 없으면 기준액이 곧 최고 잔액이다', () => {
+  assert.strictEqual(sandbox.assetBalancePeak([], 'a1', 10000, 1), 10000);
+});
+test('assetBalancePeak: 일반 자산(sign=1)은 입금 때 오른 값이 최고 잔액이고, 이후 출금으로 내려가도 유지된다', () => {
+  const txns = [
+    { date: '2026-01-10', toAssetId: 'a1', amount: 5000 },   // 1000 -> 6000
+    { date: '2026-01-20', fromAssetId: 'a1', amount: 4000 }, // 6000 -> 2000
+  ];
+  assert.strictEqual(sandbox.assetBalancePeak(txns, 'a1', 1000, 1), 6000);
+});
+test('assetBalancePeak: 부채(sign=-1)는 출금(카드 사용 등)이 잔액을 올리므로 그 지점이 최고 잔액이다', () => {
+  const txns = [
+    { date: '2026-01-10', fromAssetId: 'd1', amount: 500000 }, // 사용 -> 100000+500000
+    { date: '2026-02-10', toAssetId: 'd1', amount: 600000 },   // 완납 -> 0
+  ];
+  assert.strictEqual(sandbox.assetBalancePeak(txns, 'd1', 100000, -1), 600000);
+});
+test('assetBalancePeak: 샘플링 간격보다 짧게 반짝 올랐다가 가라앉은 피크도(샘플링 기반 assetBalanceSeries와 달리) 정확히 잡아낸다', () => {
+  // RANGE_FROM~TODAY가 60개 샘플보다 훨씬 길면(실제 앱은 2023-01-01~오늘) 샘플 간격이 수십 일에
+  // 달해, 그 안에서 짧게 벌어지는 스파이크는 두 샘플 사이에 끼여 통째로 사라진다 — 바로 이 함정을
+  // 재현한다: 넓은 범위를 60개로 샘플링하면 중간의 짧은 스파이크(1월 10일~12일)는 어느 샘플
+  // 지점에도 걸리지 않아 assetBalanceSeries 기반 최대값은 기준액(0)과 같아진다.
+  const from = '2023-01-01', to = '2026-10-28';
+  const txns = [
+    { date: '2024-01-10', fromAssetId: 'd1', amount: 1200000 }, // 사용 -> 1200000
+    { date: '2024-01-12', toAssetId: 'd1', amount: 1200000 },   // 바로 완납 -> 0
+  ];
+  const dates = sandbox.assetBalSampleDates(from, to, 60);
+  const sampledSeries = sandbox.assetBalanceSeries(txns, 'd1', 0, -1, dates);
+  const sampledMax = sampledSeries.reduce((m, pt) => Math.max(m, pt.bal), 0);
+  assert.strictEqual(sampledMax, 0, '샘플링만 쓰면 스파이크가 통째로 사라져 피크가 0으로 보여야 함(기존 버그 재현)');
+  assert.strictEqual(sandbox.assetBalancePeak(txns, 'd1', 0, -1), 1200000, '샘플링 없이 거래를 전부 보면 실제 피크를 정확히 잡아야 함');
+});
+
 /* ---------- archiveBaselines: 오래된 거래 아카이브용 cutoffDate 시점 잔액 계산 (순수)
  * (app-evolve cycle221 critique/advance) ----------
  * dismissStorageSizeWarn()가 권하는 '오래된 데이터 정리'의 유일한 실제 경로(전체내역 일괄삭제)는
@@ -18418,6 +18456,24 @@ test('homeAlerts: 완납된 부채가 정확히 1개면 debtPaidOff, 2개로 늘
   assert.strictEqual(dp.length, 1);
   assert.strictEqual(dp[0].kind, 'debtPaidOffMulti', '2개로 늘면 debtPaidOffMulti 하나로 묶여야 함');
   assert.strictEqual(dp[0].count, 2);
+});
+test('homeAlerts: debtPaidOff의 amount는 RANGE_FROM~TODAY 전체에서 "정확한" 피크를 보여줘야 한다 — 샘플링 지점 사이에 낀 짧은 스파이크도 놓치지 않는다(app-evolve cycle258 develop)', () => {
+  setupHomeAlertsDB();
+  // debtsPaidOff()가 쓰던 예전 구현(assetBalanceSeries+assetBalSampleDates(60))은 RANGE_FROM~TODAY
+  // 구간을 60개 점으로만 샘플링해 간격이 수십 일에 달했다 — 그 틈에 낀 스파이크는 어느 샘플에도
+  // 걸리지 않아 피크가 조용히 작게 보였다. 실제 샘플 간격 안에서 스파이크 날짜를 직접 골라 재현한다.
+  const dates = sandbox.assetBalSampleDates(sandbox.RANGE_FROM, sandbox.TODAY, 60);
+  const gapStart = dates[10]; // 양 옆에 충분한 간격이 남도록 중간 지점을 고른다
+  const spikeDate = sandbox.addDays(gapStart, 1);
+  const payoffDate = sandbox.addDays(gapStart, 2);
+  assert.ok(payoffDate < dates[11], '스파이크가 다음 샘플 지점보다 먼저 끝나야 재현 조건이 성립함');
+  sandbox.DB.assets.push({ id: 'd1', name: '스파이크 대출', owner: '나', type: 'debt', baseAmount: 0, includeInTotal: true, payoffAckAt: null });
+  sandbox.DB.txns.push({ date: spikeDate, type: 'expense', fromAssetId: 'd1', amount: 3000000 }); // 대출로 큰 지출 -> 잔액 3,000,000
+  sandbox.DB.txns.push({ date: payoffDate, type: 'income', toAssetId: 'd1', amount: 3000000 }); // 바로 완납 -> 0
+  const alerts = sandbox.homeAlerts([]);
+  const dp = alerts.find((a) => a.kind === 'debtPaidOff');
+  assert.ok(dp, '완납 알림이 떠야 함');
+  assert.strictEqual(dp.amount, 3000000, '샘플링 틈에 낀 스파이크여도 실제로 가장 많이 빚졌던 금액을 정확히 보여줘야 함');
 });
 test('homeAlerts: 아직 안 갚은(진행 중) 부채는 debtPaidOff에 포함되지 않는다(회귀 확인)', () => {
   setupHomeAlertsDB();

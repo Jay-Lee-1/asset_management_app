@@ -1412,7 +1412,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.258';
+const APP_VERSION='1.47.259';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -8983,14 +8983,18 @@ function openDebtBehindList(){ /* openNegList()와 동일 패턴 — 1건이면 
  * 있는 debt 중 debtNewlyPaidOff(achieved인데 아직 ack 안 됨)인 것만 추린다. 완납 시점엔 잔액이
  * 0이라 assetEval()을 그대로 쓰면 축하 문구에 보여줄 숫자가 없으므로, 각 항목에 peak(조회 구간 중
  * 가장 많이 빚졌던 금액 — "이만큼 다 갚았어요"로 보여줄 값)를 함께 돌려준다(app-evolve cycle257
- * advance). homeAlerts()와 openDebtPaidOffList() 둘 다 이 공유 헬퍼를 쓴다(debtsBehind/
+ * advance). peak은 assetBalancePeak(logic.js)로 거래 하나하나를 직접 순회해 정확히 구한다 —
+ * debtPayoffProjection(p)이 쓰는 dates(60개 샘플)로 같이 구하면 RANGE_FROM~TODAY가 샘플 간격보다
+ * 짧은 기간 안에 반짝 빚이 늘었다가 다 갚이는 경우 피크가 조용히 축소될 수 있었다(app-evolve
+ * cycle258 develop이 고침 — p(투사)는 추세용 근사라 샘플링을 그대로 두지만 peak(사실 표시용)만
+ * 정확값으로 분리). homeAlerts()와 openDebtPaidOffList() 둘 다 이 공유 헬퍼를 쓴다(debtsBehind/
  * openDebtBehindList와 동일한 공유 구조). */
 function debtsPaidOff(){
  const txns=allTxns(RANGE_FROM,TODAY).filter(t=>!isPending(t));
  const dates=assetBalSampleDates(RANGE_FROM,TODAY,60);
  return DB.assets.filter(a=>a.includeInTotal&&a.type==='debt'&&txns.some(t=>t.fromAssetId===a.id||t.toAssetId===a.id)).map(a=>{
    const pts=assetBalanceSeries(txns,a.id,assetBase(a),-1,dates);
-   return{a,p:debtPayoffProjection(pts,TODAY),peak:pts.reduce((m,pt)=>Math.max(m,pt.bal),0)};
+   return{a,p:debtPayoffProjection(pts,TODAY),peak:assetBalancePeak(txns,a.id,assetBase(a),-1)};
   }).filter(({a,p})=>debtNewlyPaidOff(a,p))
   .map(({a,peak})=>({id:a.id,name:a.name,amount:peak}))
   .sort((x,y)=>x.name<y.name?-1:1);
