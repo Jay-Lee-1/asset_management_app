@@ -1,26 +1,8 @@
 {
-  "cycle": 262,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "부채 상환 추가 납입 시뮬레이터 (what-if)",
-    "why": "debtPayoffProjection(logic.js)이 이미 최근 추세로 '이 속도면 언제 다 갚는다'를 보여주지만, '매달 얼마 더 갚으면 언제 끝나는지'는 전혀 볼 수 없음. debt 자산엔 interestRate/APR 필드가 없어(grep으로 확인) 진짜 상환계산(amortization)은 스키마 확장이 필요한 큰 작업이지만, 추세-기반 what-if는 스키마 변경 없이 기존 추세 계산만 확장하면 됨. 과거 두 번의 critique에서 러너업으로 반복 거론된 항목.",
-    "approach": "1) logic.js: debtPayoffProjection(pts,today,trendWindowDays)의 내부 기울기 계산을 새 순수함수 debtPayoffRate(pts,today,trendWindowDays)로 추출(동일한 windowed first/last point slope), debtPayoffProjection은 이를 호출하도록 리팩터(기존 테스트 결과 불변 확인 필수). 2) logic.js: debtPayoffWhatIf(pts,today,extraPerMonth,trendWindowDays) 신설 — {achieved,projectedDate} 동일 형태. last.bal<=0이면 achieved:true. baseRate=max(0,debtPayoffRate(...)) (악화중인 추세가 extra를 깎아먹지 않게). effectiveRate=baseRate+(extraPerMonth>0?extraPerMonth/30:0). effectiveRate>0이면 projectedDate=addDays(last.date,Math.ceil(last.bal/effectiveRate)), 아니면 null. 3) index.html: assetBalCard() 안의 인라인 pfPts 계산(pfFrom=addDays(to,-90) clamped RANGE_FROM, assetBalSampleDates, assetBalanceSeries sign=-1, 약 3197~3207행)을 공유 헬퍼 debtPayoffPtsFor(a)로 추출(순수 리팩터, 출력 불변). 4) index.html: a.type==='debt' 블록에서 기존 '이 속도로 갚으면...' 문구 아래에 금액 입력 필드 추가(.field-clear/fmtAmt 패턴 재사용, 라벨 '매달 추가로 얼마씩 더 갚으면?'), oninput으로 debtWhatIfUpdate(assetId) 호출 — num()으로 읽고 debtPayoffPtsFor(a)+debtPayoffWhatIf 호출해 결과를 형제 div#debtWhatIfResult에 textContent로만 갱신(전체 카드 재렌더 없이, assetBalPeek류 경량 업데이트 패턴). 베이스라인 projectedDate와 비교해 '더 빨라진 개월수'도 함께 표시. 5) APP_VERSION과 sw.js CACHE 동기 범프. 6) test/run.js: debtPayoffRate 추출 검증, debtPayoffWhatIf의 extra=0(기존 projectedDate와 동일)/achieved 케이스/추세 악화+extra>0/extra 클수록 더 빠른 날짜 — 각 케이스 단위 테스트 추가 후 node test/run.js 및 node --check(logic.js/sw.js/test/run.js), 인라인 스크립트 구문 검증 통과 확인."
-  },
+  "cycle": 263,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 257,
-      "phase": "critique",
-      "timestamp": "2026-10-28T00:00:00.000Z",
-      "summary": "cycle256 critique가 러너업으로 남겨둔 '부채 완납 축하'를 이어받아 코드로 직접 검증. debt는 DB.assets의 type:'debt' 항목(음수 평가 없음)이라 goalHasUnknown 같은 가드가 불필요함을 확인. debtPayoffProjection이 이미 achieved를 순수함수로 반환. debtsBehind()가 쓰는 '거래 이력이 1건이라도 있는 debt만 대상' 가드를 재사용하면 됨. asDraft가 deep clone이라 saveAsset은 saveGoal 같은 필드 나열 재구성 함정이 없음. advance 구현 계획을 pending_advance_plan에 저장.",
-      "commit": null
-    },
-    {
-      "cycle": 257,
-      "phase": "advance",
-      "timestamp": "2026-10-28T01:30:00.000Z",
-      "summary": "critique(cycle257) 계획대로 부채 완납 축하 알림(debtPaidOff/debtPaidOffMulti)을 구현. debtNewlyPaidOff 신설, asset.payoffAckAt 필드, debtsPaidOff()/openDebtPaidOffList()/ackDebtPayoff() 신설(debtsBehind와 대칭), homeAlerts/checkNotifyAlerts/homeAlertCard 배선. peak(완납 전 최고 빚)은 이 시점엔 assetBalanceSeries+assetBalSampleDates(60) 샘플링 기반으로 계산 — cycle258 develop이 나중에 이 샘플링의 부정확성을 발견해 고침. APP_VERSION 1.47.257->1.47.258, sw.js CACHE v524->v525. test/run.js 16건 추가(2126->2142). node test/run.js 2142/2142 통과. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 258,
       "phase": "develop",
@@ -152,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-28T22:10:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(budget/goal/net worth trend/bulk select/투자자산 cost-basis P/L까지 이미 성숙함을 확인, APPLOCK PIN 전체 DB 암호화 재추진 금지 유지)한 결과, 이미 절반쯔 구현돼 있는 debtPayoffProjection(추세 기반 '이 속도면 언제 다 갚는다' 관찰형 투사)의 자연스러운 확장인 부채 상환 추가 납입 시뮬레이터(what-if: '매달 얼마 더 갚으면 언제 끝나는지')가 과거 두 cycle(258/261)에서 러너업으로 반복 거론됐으나 아직 구현되지 않았음을 확인 — debt 자산에 interestRate/APR 필드가 없어(grep 확인) 진짜 상환계산은 스키마 확장이 필요하지만, 추세-기반 what-if는 기존 debtPayoffRate 추출만으로 스키마 변경 없이 가능함. 러너업: 투자자산 목표비중 리밸런싱 알림(target% 필드 신규 필요, 보류), 홈 알림의 실제 OS 푸시 알림화(서버 측 VAPID 필요, 큰 작업), 기존 러너업(PDF 명세서/접근성 전수조사) 유지. 채택 계획(debtPayoffRate 추출 + debtPayoffWhatIf 신설 + assetBalCard에 입력/경량 업데이트 배선)을 pending_advance_plan에 저장. 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 262,
+      "phase": "advance",
+      "timestamp": "2026-10-28T23:10:00.000Z",
+      "summary": "critique(cycle262) 계획대로 부채 상환 추가 납입 시뮬레이터(what-if)를 구현. logic.js: debtPayoffProjection이 쓰던 '최근 90일 창 처음·끝 두 점 선형 일별 감소율' 계산을 순수함수 debtPayoffRate(pts,today,trendWindowDays)로 추출(debtPayoffProjection은 이를 호출하도록 리팩터, 기존 debtPayoffProjection 테스트 전부 그대로 통과 확인 — 동작 불변). debtPayoffWhatIf(pts,today,extraPerMonth,trendWindowDays) 신설 — baseRate=max(0,debtPayoffRate(...))(악화 추세가 추가 납입분을 깎아먹지 않게), effectiveRate=baseRate+extra/30, extra=0이면 debtPayoffProjection과 항상 같은 projectedDate. index.html: assetBalCard() 안의 인라인 pfFrom/pfPts 계산(preset과 무관한 고정 90일 재샘플링)을 공유 헬퍼 debtPayoffPtsFor(a)로 추출(기존 pfFrom===from 재사용 최적화는 버리고 항상 재샘플링 — 같은 입력이면 같은 값이라 출력 불변, 순수 리팩터)하고 debtWhatIfUpdate(assetId)가 카드 재렌더 없이도 같은 포인트를 쓸 수 있게 함. debt 미완납 상태에만 '매달 추가로 얼마씩 더 갚으면?' 입력 필드(.field-clear/fmtAmt 패턴 재사용, ST.hist.debtWhatIfExtra에 보존)를 추가하고 oninput으로 debtWhatIfUpdate가 결과 div#debtWhatIfResult의 textContent만 갱신(assetBalPeek류 경량 업데이트, 베이스라인과 비교한 '약 N개월 빨라져요' 표시 포함). assetBalPresetSel(기간 세그먼트 전환)에도 fcWire() 호출을 추가해 재렌더되는 입력의 지우기(×) 버튼이 계속 배선되게 함. openAssetHistory가 다른 debt로 넘어갈 때 ST.hist.debtWhatIfExtra를 0으로 리셋(새어듦 방지). 기존 '소스 패턴' 테스트 하나(assetBalCard가 pfFrom을 인라인 계산한다고 가정)는 추출된 구조에 맞게 debtPayoffPtsFor 쪽을 보도록 갱신. APP_VERSION 1.47.267->1.47.268, sw.js CACHE v534->v535 동기 범프. test/run.js: debtPayoffRate 3건+debtPayoffWhatIf 4건(achieved/extra=0 베이스라인 동일/악화추세+extra>0/단조성)+[실행형] assetBalCard what-if 필드 렌더링 2건(기본값/양수 입력값 반영)+완납 상태엔 필드 없음 1건+debtWhatIfUpdate 실행형 2건+openAssetHistory 리셋 1건 추가(2174->2185). node test/run.js 2185/2185 통과, node --check(logic.js/sw.js/test/run.js) 및 HTML 주석 제거 후 추출한 index.html 인라인 스크립트 4블록 구문 검증 통과. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

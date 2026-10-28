@@ -1416,7 +1416,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.267';
+const APP_VERSION='1.47.268';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2990,7 +2990,7 @@ function visibleTx(t){return DB.settings.includeScheduled||!txScheduled(t)}
 let TM=ym(TODAY);TM.d=+TODAY.slice(8,10);
 let ST={tab:'home',ledgerMode:'cal',assetOwner:'all',assetQ:'',nwPreset:'m3',ledger:{y:TM.y,m:TM.m,sel:TODAY},home:{y:TM.y,m:TM.m},
  hist:{cat:'전체',q:'',assetId:null,catExact:null,catExactType:null,owner:'전체',selMode:false,sel:new Set(),sortAsc:false,
-   range:{from:`${TM.y}-01-01`,to:`${TM.y}-12-31`},preset:'year',page:1,avgMode:false,balPreset:'m3'},
+   range:{from:`${TM.y}-01-01`,to:`${TM.y}-12-31`},preset:'year',page:1,avgMode:false,balPreset:'m3',debtWhatIfExtra:0},
  plan:{owner:'전체',assetId:null,y:TM.y,m:TM.m},spendOwner:'전체',yearReview:{y:TM.y},editAssets:false,aSel:{mode:false,ids:new Set()},lSel:{mode:false,ids:new Set()}};
 const TABS=[{id:'home',label:'홈',icon:'home'},{id:'assets',label:'자산관리',icon:'wallet'},{id:'ledger',label:'가계부',icon:'ledger'},{id:'plan',label:'한달 플랜',icon:'plan'},{id:'menu',label:'메뉴',icon:'menu'}];
 
@@ -3164,6 +3164,43 @@ function nwChartPeekEnd(){
  * 거래가 없거나(또는 샘플 포인트가 1개뿐인 신규 자산) 추이를 그릴 수 없으면 빈 상태 안내로 대체
  * (app-evolve cycle140 critique/advance — renderAssetSheet/openAssetHistory 둘 다 개별 자산의
  * 현재 금액만 보여주고 추이가 전혀 없던 공백 해소). */
+/* debt 자산의 '최근 90일(또는 RANGE_FROM까지) 고정 구간' 투사용 잔액 포인트 — assetBalCard의
+ * 차트 기간 탭(preset)과 무관하게 투사 기준을 고정하기 위해 쓰던 인라인 계산을 분리했다. debtWhatIfUpdate
+ * (아래)가 what-if 입력값만 바뀌었을 때 카드 전체를 다시 그리지 않고도 같은 포인트를 다시 구할 수 있어야
+ * 해서 분리한다(app-evolve cycle262 advance). assetBalCard가 preset에 따라 이미 들고 있는 txns/pts를
+ * 재사용하던 기존 최적화(pfFrom이 보여지는 기간과 같으면 pts를 그대로 매핑)는 버리고 항상 새로
+ * 샘플링한다 — 같은 입력(pfFrom,to,60)이면 어차피 같은 값이 나오므로 결과는 그대로다(순수 리팩터). */
+function debtPayoffPtsFor(a){
+ const to=TODAY;
+ let pfFrom=addDays(to,-90);
+ if(pfFrom<RANGE_FROM)pfFrom=RANGE_FROM;
+ const txns=allTxns(RANGE_FROM,to).filter(t=>!isPending(t));
+ const pfDates=assetBalSampleDates(pfFrom,to,60);
+ const pfSeries=assetBalanceSeries(txns,a.id,assetBase(a),-1,pfDates);
+ return pfSeries.map(p=>({date:p.date,bal:p.bal}));
+}
+/* debtPayoffProjection(베이스라인)과 debtPayoffWhatIf(추가 납입 반영)의 결과를 같은 문구 형식으로
+ * 합쳐준다 — debtWhatIfUpdate가 카드 전체를 재렌더하지 않고 이 문구만 textContent로 갱신할 때도
+ * assetBalCard의 최초 렌더와 완전히 같은 문구가 나오게 한다. */
+function debtWhatIfText(wi,pf){
+ if(wi.achieved)return '이미 다 갚았어요';
+ if(!wi.projectedDate)return '이렇게 더 갚아도 최근 추세로는 다 갚는 날을 가늠하기 어려워요';
+ if(!pf.projectedDate)return `매달 이만큼 더 갚으면 ${shortDate2(wi.projectedDate)}쯤 다 갚아요`;
+ const monthsSaved=Math.round(daysBetween(wi.projectedDate,pf.projectedDate)/30);
+ return monthsSaved>0?`매달 이만큼 더 갚으면 ${shortDate2(wi.projectedDate)}쯤 다 갚아요 (약 ${monthsSaved}개월 빨라져요)`:`매달 이만큼 더 갚으면 ${shortDate2(wi.projectedDate)}쯤 다 갚아요`;
+}
+/* debtWhatIfExtra 입력이 바뀔 때마다 카드 전체를 다시 그리지 않고 결과 문구만 갱신 — assetBalPeek류
+ * 경량 업데이트와 같은 원칙(app-evolve cycle262 advance). */
+function debtWhatIfUpdate(assetId){
+ const a=DB.assets.find(x=>x.id===assetId);if(!a)return;
+ const resEl=$('debtWhatIfResult');if(!resEl)return;
+ const extra=num($('debtWhatIfExtra'));
+ ST.hist.debtWhatIfExtra=extra;
+ const pfPts=debtPayoffPtsFor(a);
+ const pf=debtPayoffProjection(pfPts,TODAY);
+ const wi=debtPayoffWhatIf(pfPts,TODAY,extra);
+ resEl.textContent=debtWhatIfText(wi,pf);
+}
 function assetBalCard(assetId,preset){
  preset=preset||'m3';
  const a=DB.assets.find(x=>x.id===assetId);
@@ -3195,18 +3232,15 @@ function assetBalCard(assetId,preset){
     까지) 고정 구간으로 다시 샘플링해 선택된 기간 탭과 무관하게 같은 투사일이 나오게 한다. */
  let payoffHTML='';
  if(a.type==='debt'){
-  let pfFrom=addDays(to,-90);
-  if(pfFrom<RANGE_FROM)pfFrom=RANGE_FROM;
-  let pfPts;
-  if(pfFrom===from){
-   pfPts=pts.map(p=>({date:p.date,bal:p.nw}));
-  }else{
-   const pfDates=assetBalSampleDates(pfFrom,to,60);
-   const pfSeries=assetBalanceSeries(txns,a.id,assetBase(a),-1,pfDates);
-   pfPts=pfSeries.map(p=>({date:p.date,bal:p.bal}));
-  }
+  const pfPts=debtPayoffPtsFor(a);
   const pf=debtPayoffProjection(pfPts,TODAY);
   payoffHTML=`<div class="msub2" style="margin-top:4px">${pf.achieved?'이미 다 갚았어요':pf.projectedDate?`이 속도로 갚으면 ${shortDate2(pf.projectedDate)}쯤 다 갚아요`:'최근엔 줄어들고 있지 않아요'}</div>`;
+  if(!pf.achieved){
+   const extra=ST.hist.debtWhatIfExtra||0;
+   const wi=debtPayoffWhatIf(pfPts,TODAY,extra);
+   payoffHTML+=`<div class="field" style="margin-top:10px"><label for="debtWhatIfExtra">매달 추가로 얼마씩 더 갚으면?</label><div class="field-clear"><input id="debtWhatIfExtra" class="num" inputmode="numeric" value="${extra?comma(extra):''}" placeholder="0" oninput="fmtAmt(this);debtWhatIfUpdate('${a.id}')"><button type="button" class="fc-x" aria-label="추가 납입액 지우기" onclick="clrInput('debtWhatIfExtra');debtWhatIfUpdate('${a.id}')">✕</button></div></div>
+   <div class="msub2" id="debtWhatIfResult" style="margin-top:4px">${debtWhatIfText(wi,pf)}</div>`;
+  }
  }
  return `<div class="card nwh-card">
    <div class="section-title" style="margin-top:0">잔액 추이</div>
@@ -3232,6 +3266,7 @@ function assetBalPresetSel(assetId,p){
  const hadFocus=el.contains(document.activeElement);
  el.innerHTML=assetBalCard(assetId,p);
  if(hadFocus){const on=el.querySelector('.seg button.on');if(on)on.focus()}
+ try{fcWire()}catch(e){} /* debt what-if 입력(field-clear)이 이 innerHTML 교체로 새로 생겨도 지우기(×) 버튼이 배선되게 */
  requestAnimationFrame(()=>{try{moveSegBlobs()}catch(e){}});
 }
 let _assetBalChartPts=null,_assetBalPeekIdx=null;
@@ -5434,7 +5469,7 @@ function filteredHist(){
 function openAssetHistory(assetId){
  const a=DB.assets.find(x=>x.id===assetId);
  if(a&&isMarketValued(a)){openAssetQtyLog(assetId);return}
- ST.hist.assetId=assetId;ST.hist.cat='전체';ST.hist.q='';ST.hist.catExact=null;ST.hist.catExactType=null;ST.hist.owner='전체';ST.hist.selMode=false;ST.hist.sel.clear();
+ ST.hist.assetId=assetId;ST.hist.cat='전체';ST.hist.q='';ST.hist.catExact=null;ST.hist.catExactType=null;ST.hist.owner='전체';ST.hist.selMode=false;ST.hist.sel.clear();ST.hist.debtWhatIfExtra=0; /* 이전에 보던 debt 자산의 what-if 추가 납입 입력값이 다른 자산으로 새어들지 않게 초기화 */
  ST.hist.range={from:RANGE_FROM,to:RANGE_TO};ST.hist.preset='custom'; /* openCatHistory처럼 범위도 리셋 — 안 하면 History 탭에 남아있던 이전 기간(예: 특정 월)이 그대로 남아 이 계좌에 그 기간 내역이 없으면 '전체내역'인데도 텅 비어 보인다 */
  histInvalidate();
  go('history');

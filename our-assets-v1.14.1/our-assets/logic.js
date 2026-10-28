@@ -658,21 +658,51 @@ function goalNewlyAchieved(goal,progress){
  * 안에 2점 미만이면(신규 사용자 등) 전체 이력으로 폴백해 기존 동작을 유지한다. 포인트가 2개 미만이거나
  * 처음·끝 구간의 일별 감소율이 0 이하(안 갚고 있거나 오히려 늘고 있음)면 projectedDate:null —
  * goalProgress와 마찬가지로 '못 갚는다'를 추측으로 단정하지 않고 모른다고 말하는 쪽을 택한다. */
-function debtPayoffProjection(pts,today,trendWindowDays){
+/* debtPayoffProjection이 쓰던 '최근 trendWindowDays일 구간의 처음·끝 두 점 선형 일별 감소율'
+ * 계산만 떼어낸 순수 함수 — debtPayoffWhatIf(바로 아래)가 추가 납입 없이도 이미 줄고 있는
+ * 속도(baseRate)를 알아야 해서 debtPayoffProjection과 중복 구현하지 않고 공유한다
+ * (app-evolve cycle262 advance). hist가 비어있거나 1점뿐이면 0(추세를 모름) — 호출부가
+ * achieved/빈 이력 처리를 각자의 맥락에 맞게 먼저 걸러낸 뒤 쓰는 것을 전제한다. */
+function debtPayoffRate(pts,today,trendWindowDays){
  trendWindowDays=trendWindowDays||90;
+ const hist=(pts||[]).filter(p=>p.date<=today);
+ if(hist.length<2)return 0;
+ const last=hist[hist.length-1];
+ const cutoff=addDays(last.date,-trendWindowDays);
+ const windowed=hist.filter(h=>h.date>cutoff);
+ const first=(windowed.length>=2?windowed:hist)[0];
+ const days=daysBetween(first.date,last.date);
+ return days>0?(first.bal-last.bal)/days:0;
+}
+function debtPayoffProjection(pts,today,trendWindowDays){
  const hist=(pts||[]).filter(p=>p.date<=today);
  if(!hist.length)return {achieved:false,projectedDate:null};
  const last=hist[hist.length-1];
  if(last.bal<=0)return {achieved:true,projectedDate:null};
- let projectedDate=null;
- if(hist.length>=2){
-  const cutoff=addDays(last.date,-trendWindowDays);
-  const windowed=hist.filter(h=>h.date>cutoff);
-  const first=(windowed.length>=2?windowed:hist)[0];
-  const days=daysBetween(first.date,last.date);
-  const rate=days>0?(first.bal-last.bal)/days:0;
-  if(rate>0)projectedDate=addDays(last.date,Math.ceil(last.bal/rate));
- }
+ const rate=debtPayoffRate(pts,today,trendWindowDays);
+ const projectedDate=rate>0?addDays(last.date,Math.ceil(last.bal/rate)):null;
+ return {achieved:false,projectedDate};
+}
+
+/* debtPayoffProjection의 what-if 확장 — '이 속도면 언제 다 갚는다'(관찰형)에서 한 걸음 나가
+ * '매달 얼마씩 더 갚으면 언제 끝나는지'를 보여준다(app-evolve cycle262 critique가 두 차례
+ * 러너업으로 거론한 뒤 advance로 채택). extraPerMonth<=0이면 기존 추세 그대로이므로
+ * debtPayoffProjection과 항상 같은 projectedDate를 돌려준다(호출부가 베이스라인 비교에 쓸 수
+ * 있도록). baseRate는 음수(빚이 늘고 있음)면 0으로 바닥을 깐다 — 악화 중인 추세가 사용자가
+ * 입력한 추가 납입액을 깎아먹어 '더 내도 오히려 늦어짐' 같은 혼란스러운 결과를 만들지 않게
+ * 한다(이미 음수인 채로 추가 납입=0이면 debtPayoffProjection처럼 projectedDate:null을 돌려줄
+ * 뿐, extra>0일 땐 그 추가분만으로 계산한다). 한 달=30일 근사는 이 앱의 monthlyEquivalent(위)가
+ * weekly/daily를 월 환산할 때 쓰는 365/12 근사와 다르지만, 여기선 사용자가 입력하는 '매달'
+ * 자체가 이미 근사 개념(실제 상환일이 매달 같은 날짜가 아닐 수 있음)이라 30일 단순 환산으로
+ * 충분하다. */
+function debtPayoffWhatIf(pts,today,extraPerMonth,trendWindowDays){
+ const hist=(pts||[]).filter(p=>p.date<=today);
+ if(!hist.length)return {achieved:false,projectedDate:null};
+ const last=hist[hist.length-1];
+ if(last.bal<=0)return {achieved:true,projectedDate:null};
+ const baseRate=Math.max(0,debtPayoffRate(pts,today,trendWindowDays));
+ const effectiveRate=baseRate+(extraPerMonth>0?extraPerMonth/30:0);
+ const projectedDate=effectiveRate>0?addDays(last.date,Math.ceil(last.bal/effectiveRate)):null;
  return {achieved:false,projectedDate};
 }
 

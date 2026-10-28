@@ -227,6 +227,10 @@ const FUNCTIONS = [
   'detectStaleMarketValuedTxns', 'delBudget', 'saveBudget', 'openBudgetPrompt', 'openBigMinSheet',
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards', 'openTidyAsset', 'openTidyList', 'tidyListSnooze',
   'debtsBehind', 'openDebtBehindList', 'debtsPaidOff', 'openDebtPaidOffList', 'ackDebtPayoff',
+  // debtPayoffPtsFor/debtWhatIfText/debtWhatIfUpdate는 부채 상환 추가 납입 시뮬레이터(what-if,
+  // app-evolve cycle262 advance) 구현 — assetBalCard가 debtPayoffPtsFor/debtWhatIfText를 직접
+  // 호출하므로(debt 분기) 그 둘은 assetBalCard를 쓰는 어떤 sandbox에도 함께 올라가야 한다.
+  'debtPayoffPtsFor', 'debtWhatIfText', 'debtWhatIfUpdate',
   'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate', 'histQInput', 'histOwnerSel', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'openCatHistory', 'openIncomeCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter', 'histClearTypeFilter',
   'genSalt', 'pbkdf2Hash', 'dbEncryptKey', 'encryptDbBlob', 'decryptDbBlob', 'genRecoveryCode', 'normRecoveryCode', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer', 'openConfirmTransfer',
   'renderLockView', 'openForgotPinSheet', 'doForgotPin', 'tickForgotPinWait',
@@ -674,7 +678,11 @@ const sandbox = {
   // 있음) 안전하게 넘어가는 분기를 검증한다.
   bootSplashEl: { remove: () => { sandbox.bootSplashRemoveCalls++; } },
   bootSplashRemoveCalls: 0,
-  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'budgetIn' ? { value: sandbox.budgetInValue } : id === 'goalName' ? (sandbox.goalNameValue === undefined ? null : { value: sandbox.goalNameValue }) : id === 'goalAmt' ? (sandbox.goalAmtValue === undefined ? null : { value: sandbox.goalAmtValue }) : id === 'inqText' ? (sandbox.inqTextValue === undefined ? null : { value: sandbox.inqTextValue }) : id === 'inqEditText' ? (sandbox.inqEditTextValue === undefined ? null : { value: sandbox.inqEditTextValue }) :id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-plan' ? sandbox.pagePlanEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : id === 'ledgerCard' ? (sandbox.ledgerCardMissing ? null : sandbox.ledgerCardEl) : id === 'assetBody' ? (sandbox.assetBodyMissing ? null : sandbox.assetBodyEl) : id === 'newOwner' ? (sandbox.newOwnerValue === undefined ? null : { value: sandbox.newOwnerValue }) : id === 'renameOwner' ? (sandbox.renameOwnerValue === undefined ? null : { value: sandbox.renameOwnerValue }) : id === 'auEmail' ? (sandbox.auEmailValue === undefined ? null : { value: sandbox.auEmailValue }) : id === 'fpinPwIn' ? (sandbox.fpinPwInValue === undefined ? null : { value: sandbox.fpinPwInValue }) : id === 'fpinErr' ? sandbox.fpinErrEl : id === 'fpinBtn' ? sandbox.fpinBtnEl : id === 'fpinWaitMsg' ? sandbox.fpinWaitMsgEl : id === 'importFile' ? sandbox.importFileEl : id === 'bootSplash' ? (sandbox.bootSplashMissing ? null : sandbox.bootSplashEl) : null,
+  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'budgetIn' ? { value: sandbox.budgetInValue } : id === 'goalName' ? (sandbox.goalNameValue === undefined ? null : { value: sandbox.goalNameValue }) : id === 'goalAmt' ? (sandbox.goalAmtValue === undefined ? null : { value: sandbox.goalAmtValue }) : id === 'inqText' ? (sandbox.inqTextValue === undefined ? null : { value: sandbox.inqTextValue }) : id === 'inqEditText' ? (sandbox.inqEditTextValue === undefined ? null : { value: sandbox.inqEditTextValue }) :id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-plan' ? sandbox.pagePlanEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : id === 'ledgerCard' ? (sandbox.ledgerCardMissing ? null : sandbox.ledgerCardEl) : id === 'assetBody' ? (sandbox.assetBodyMissing ? null : sandbox.assetBodyEl) : id === 'newOwner' ? (sandbox.newOwnerValue === undefined ? null : { value: sandbox.newOwnerValue }) : id === 'renameOwner' ? (sandbox.renameOwnerValue === undefined ? null : { value: sandbox.renameOwnerValue }) : id === 'auEmail' ? (sandbox.auEmailValue === undefined ? null : { value: sandbox.auEmailValue }) : id === 'fpinPwIn' ? (sandbox.fpinPwInValue === undefined ? null : { value: sandbox.fpinPwInValue }) : id === 'fpinErr' ? sandbox.fpinErrEl : id === 'fpinBtn' ? sandbox.fpinBtnEl : id === 'fpinWaitMsg' ? sandbox.fpinWaitMsgEl : id === 'importFile' ? sandbox.importFileEl : id === 'bootSplash' ? (sandbox.bootSplashMissing ? null : sandbox.bootSplashEl) : id === 'debtWhatIfExtra' ? (sandbox.debtWhatIfExtraValue === undefined ? null : { value: sandbox.debtWhatIfExtraValue }) : id === 'debtWhatIfResult' ? (sandbox.debtWhatIfResultMissing ? null : sandbox.debtWhatIfResultEl) : null,
+  // debtWhatIfResultEl은 debtWhatIfUpdate()가 textContent를 직접 대입하는 결과 표시 엘리먼트
+  // (부채 상환 추가 납입 시뮬레이터, app-evolve cycle262 advance) — bkTextEl처럼 호출 간에도
+  // 값이 남는 공유 객체로 선언해 textContent 갱신을 검사할 수 있게 한다.
+  debtWhatIfResultEl: { textContent: '' },
   bkTextEl: { value: 'backup-text', select: () => {}, setSelectionRange: () => {} },
   // copyBackup()의 navigator.clipboard 체크가 ReferenceError 없이 "지원 안 함"으로 지나가게
   // 하는 최소 흉내(document.execCommand는 try/catch로 감싸져 있어 굳이 스텁이 필요 없음).
@@ -2058,6 +2066,52 @@ test('debtPayoffProjection: 최근 90일 창 안에 포인트가 1개뿐이면(�
   const p = sandbox.debtPayoffProjection(pts, '2026-04-01');
   assert.strictEqual(p.achieved, false);
   assert.strictEqual(p.projectedDate, '2026-07-10', '창 안에 2점 미만이면 전체 이력(두 점)으로 폴백해 투사 자체가 사라지면 안 됨');
+});
+/* ---------- debtPayoffRate/debtPayoffWhatIf: 부채 상환 추가 납입 시뮬레이터 (app-evolve cycle262
+ * advance) ---------- debtPayoffRate는 debtPayoffProjection이 쓰던 '최근 trendWindowDays일 구간의
+ * 일별 감소율' 계산만 떼어낸 것이라, 리팩터 전후로 debtPayoffProjection의 동작 자체가 바뀌지
+ * 않았는지도 위 기존 테스트들이 이미 보장한다. debtPayoffWhatIf는 그 rate에 매달 추가 납입액을
+ * 더해 "얼마나 빨라지는지"를 본다. */
+test('debtPayoffRate: 꾸준히 갚고 있으면 양수 일별 감소율을 돌려준다(debtPayoffProjection과 같은 10일/10만원 시나리오 = 1만원/일)', () => {
+  const pts = [{ date: '2026-01-01', bal: 300000 }, { date: '2026-01-11', bal: 200000 }];
+  assert.strictEqual(sandbox.debtPayoffRate(pts, '2026-01-11'), 10000);
+});
+test('debtPayoffRate: 잔액이 늘고 있으면(악화 중) 음수를 돌려준다 — debtPayoffProjection과 달리 0으로 깎지 않고 실제 추세를 그대로 알려준다', () => {
+  const pts = [{ date: '2026-01-01', bal: 400000 }, { date: '2026-02-01', bal: 500000 }];
+  assert.strictEqual(sandbox.debtPayoffRate(pts, '2026-02-01'), -100000 / 31);
+});
+test('debtPayoffRate: 포인트가 1개 이하면(추세를 모름) 0을 돌려준다', () => {
+  assert.strictEqual(sandbox.debtPayoffRate([{ date: '2026-01-01', bal: 500000 }], '2026-01-01'), 0);
+  assert.strictEqual(sandbox.debtPayoffRate([], '2026-01-01'), 0);
+});
+test('debtPayoffWhatIf: 잔액이 이미 0 이하면 achieved=true이고(추가 납입과 무관) 투사 날짜는 null이다', () => {
+  const pts = [{ date: '2026-01-01', bal: 100000 }, { date: '2026-02-01', bal: 0 }];
+  const wi = sandbox.debtPayoffWhatIf(pts, '2026-02-01', 50000);
+  assert.strictEqual(wi.achieved, true);
+  assert.strictEqual(wi.projectedDate, null);
+});
+test('debtPayoffWhatIf: 추가 납입액이 0이면 debtPayoffProjection과 정확히 같은 투사일을 돌려준다(베이스라인 비교 전제)', () => {
+  const pts = [{ date: '2026-01-01', bal: 300000 }, { date: '2026-01-11', bal: 200000 }];
+  const pf = sandbox.debtPayoffProjection(pts, '2026-01-11');
+  const wi = sandbox.debtPayoffWhatIf(pts, '2026-01-11', 0);
+  assert.strictEqual(wi.projectedDate, pf.projectedDate);
+  assert.strictEqual(wi.projectedDate, '2026-01-31');
+});
+test('debtPayoffWhatIf: 추세가 악화 중(음수 rate)이어도 추가 납입액만으로 effectiveRate를 계산해 투사일이 나온다(악화 추세가 추가분을 깎아먹지 않음)', () => {
+  const pts = [{ date: '2026-01-01', bal: 400000 }, { date: '2026-02-01', bal: 500000 }]; // 오히려 늘어남
+  const pf = sandbox.debtPayoffProjection(pts, '2026-02-01');
+  assert.strictEqual(pf.projectedDate, null, '베이스라인은 악화 중이라 투사 불가(회귀 확인)');
+  const wi = sandbox.debtPayoffWhatIf(pts, '2026-02-01', 150000); // 매달 15만원 추가 = 5000/일
+  assert.strictEqual(wi.achieved, false);
+  assert.strictEqual(wi.projectedDate, sandbox.addDays('2026-02-01', Math.ceil(500000 / 5000)), '매달 추가 납입분(5000/일)만으로 투사해야 함');
+});
+test('debtPayoffWhatIf: 추가 납입액이 클수록 투사일이 더 빨라진다(단조성)', () => {
+  const pts = [{ date: '2026-01-01', bal: 300000 }, { date: '2026-01-11', bal: 200000 }]; // baseRate=10000/일
+  const none = sandbox.debtPayoffWhatIf(pts, '2026-01-11', 0).projectedDate;
+  const some = sandbox.debtPayoffWhatIf(pts, '2026-01-11', 60000).projectedDate; // +2000/일
+  const more = sandbox.debtPayoffWhatIf(pts, '2026-01-11', 300000).projectedDate; // +10000/일
+  assert.ok(some < none, '추가 납입이 있으면 추가 없을 때보다 빨라야 함');
+  assert.ok(more < some, '추가 납입이 더 크면 더 빨라야 함');
 });
 /* ---------- debtNewlyPaidOff: 완납했지만 아직 ack(payoffAckAt) 안 된 부채 판정 (app-evolve cycle257 advance) ----------
  * goalNewlyAchieved와 정확히 같은 모양 — achieved는 debtPayoffProjection()의 반환값을 그대로 받는다. */
@@ -6614,6 +6668,39 @@ test('openAssetHistory: 이전에 남아있던 range/preset(예: openCatHistory�
   assert.strictEqual(sandbox.ST.hist.range.from, sandbox.RANGE_FROM);
   assert.strictEqual(sandbox.ST.hist.range.to, sandbox.RANGE_TO);
   assert.strictEqual(sandbox.ST.hist.preset, 'custom');
+});
+test('openAssetHistory: 이전에 다른 debt 자산을 보며 입력해둔 what-if 추가 납입액(ST.hist.debtWhatIfExtra)을 0으로 초기화한다(다른 자산으로 새어들지 않게)', () => {
+  setupHistoryDB();
+  sandbox.goCalls = [];
+  sandbox.ST.hist.debtWhatIfExtra = 300000;
+  sandbox.openAssetHistory('a1');
+  assert.strictEqual(sandbox.ST.hist.debtWhatIfExtra, 0);
+});
+/* ---------- debtWhatIfUpdate: 부채 상환 추가 납입 시뮬레이터의 경량 업데이트 핸들러 (app-evolve
+ * cycle262 advance) — 카드를 통째로 다시 그리지 않고 입력값만 읽어 ST.hist에 반영하고 결과
+ * 영역(#debtWhatIfResult)의 textContent만 갱신한다(assetBalPeek류 패턴). ---------- */
+test('[실행형] debtWhatIfUpdate: 입력값을 ST.hist.debtWhatIfExtra에 반영하고(쉼표 포맷 포함) 결과 영역 textContent를 갱신한다', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_FROM = '2023-01-01';
+  const to = sandbox.TODAY;
+  const txns = [-85, -75, -65, -55, -45, -35, -25, -15, -5].map((n, i) => ({
+    id: 'p' + i, date: sandbox.addDays(to, n), type: 'income', toAssetId: 'd1', amount: 30000,
+  }));
+  sandbox.DB = { assets: [{ id: 'd1', type: 'debt', baseAmount: 900000 }], txns, recurrences: [], settings: { confirmTransfers: false } };
+  sandbox.ST = { hist: { debtWhatIfExtra: 0 } };
+  sandbox.debtWhatIfExtraValue = '300,000';
+  sandbox.debtWhatIfResultEl.textContent = '';
+  sandbox.debtWhatIfUpdate('d1');
+  assert.strictEqual(sandbox.ST.hist.debtWhatIfExtra, 300000, 'num()으로 쉼표를 벗겨 읽은 숫자가 ST.hist.debtWhatIfExtra에 반영돼야 함');
+  assert.ok(/매달 이만큼 더 갚으면 \d{2}\/\d{2}쯤 다 갚아요 \(약 \d+개월 빨라져요\)/.test(sandbox.debtWhatIfResultEl.textContent), 'debtWhatIfResult의 textContent가 assetBalCard와 같은 debtWhatIfText 문구로 갱신돼야 함');
+});
+test('[실행형] debtWhatIfUpdate: 존재하지 않는 자산이거나 결과 영역(#debtWhatIfResult)이 이미 사라졌으면(시트가 닫힌 뒤 등) 아무 것도 하지 않고 조용히 반환한다', () => {
+  sandbox.DB = { assets: [{ id: 'd1', type: 'debt', baseAmount: 900000 }], txns: [], recurrences: [], settings: { confirmTransfers: false } };
+  sandbox.ST = { hist: { debtWhatIfExtra: 0 } };
+  assert.doesNotThrow(() => sandbox.debtWhatIfUpdate('nonexistent'), '존재하지 않는 자산 id도 안전하게 넘어가야 함');
+  sandbox.debtWhatIfResultMissing = true;
+  assert.doesNotThrow(() => sandbox.debtWhatIfUpdate('d1'), '결과 영역이 없어도(시트 닫힘 등) 안전하게 넘어가야 함');
+  sandbox.debtWhatIfResultMissing = false;
 });
 
 /* ---------- openAssetHistory가 fx/gold/stock에선 전체내역 대신 수량 변경 기록(openAssetQtyLog)으로
@@ -23161,12 +23248,18 @@ test('assetBalCard: 기간 세그먼트 버튼에 aria-pressed, 래퍼에 role/a
  * (2) 그 패턴이 의도한 로직(preset별 clipped pts 직접 투사 vs 고정 90일 재샘플링)대로 동작하는지
  * assetBalCard가 호출하는 실제 logic.js 함수(assetBalSampleDates/assetBalanceSeries/
  * debtPayoffProjection)로 재현한다. */
-test('assetBalCard: debt 완납 투사는 preset 클립 pts가 아니라 고정 90일 pfPts를 debtPayoffProjection에 넘긴다(소스 패턴)', () => {
-  const body = extractFunction('assetBalCard');
-  assert.ok(/let pfFrom=addDays\(to,-90\);/.test(body), 'assetBalCard가 preset과 무관한 고정 90일 pfFrom을 계산하지 않음');
-  assert.ok(/if\(pfFrom<RANGE_FROM\)pfFrom=RANGE_FROM;/.test(body), 'pfFrom이 RANGE_FROM 아래로 못 내려가게 클램프하지 않음');
-  assert.ok(/if\(pfFrom===from\)\{/.test(body), 'pfFrom이 현재 preset의 from과 같을 때(m3) pts를 재사용하는 분기가 없음');
-  assert.ok(/debtPayoffProjection\(pfPts,TODAY\)/.test(body), 'debtPayoffProjection이 preset 클립 pts가 아니라 pfPts를 받지 않음');
+test('assetBalCard: debt 완납 투사는 preset 클립 pts가 아니라 고정 90일 pfPts(debtPayoffPtsFor)를 debtPayoffProjection에 넘긴다(소스 패턴)', () => {
+  // app-evolve cycle262 advance: assetBalCard가 인라인으로 하던 pfFrom/pfPts 계산을
+  // debtPayoffPtsFor(a)로 추출(debtWhatIfUpdate가 카드 재렌더 없이도 같은 포인트를 다시
+  // 구할 수 있어야 해서) — 그 인라인 pfFrom/pfPts 패턴은 이제 assetBalCard가 아니라
+  // debtPayoffPtsFor 쪽에 있어야 한다. assetBalCard 쪽은 그 헬퍼를 호출해 결과를
+  // debtPayoffProjection에 그대로 넘기는지만 확인한다.
+  const cardBody = extractFunction('assetBalCard');
+  assert.ok(/const pfPts=debtPayoffPtsFor\(a\);/.test(cardBody), 'assetBalCard가 debtPayoffPtsFor(a)를 호출하지 않음');
+  assert.ok(/debtPayoffProjection\(pfPts,TODAY\)/.test(cardBody), 'debtPayoffProjection이 preset 클립 pts가 아니라 pfPts를 받지 않음');
+  const helperBody = extractFunction('debtPayoffPtsFor');
+  assert.ok(/let pfFrom=addDays\(to,-90\);/.test(helperBody), 'debtPayoffPtsFor가 preset과 무관한 고정 90일 pfFrom을 계산하지 않음');
+  assert.ok(/if\(pfFrom<RANGE_FROM\)pfFrom=RANGE_FROM;/.test(helperBody), 'pfFrom이 RANGE_FROM 아래로 못 내려가게 클램프하지 않음');
 });
 test('assetBalCard 완납 투사 로직: "1개월" preset처럼 pts 자체가 90일보다 짧으면 31~90일 전 상환 활동이 안 보여 정체로 오판하지만, 고정 90일 pfPts로 재샘플링하면 드러난다', () => {
   const to = '2026-06-15';
@@ -23217,6 +23310,9 @@ function assetBalCardCtx() {
   vm.runInContext(logicSrc, ctx, { filename: 'logic.js' });
   vm.runInContext(extracted, ctx, { filename: 'extracted-from-index.html' });
   vm.runInContext(extractFunction('assetBalCard'), ctx, { filename: 'assetBalCard-real' });
+  // ST.hist.debtWhatIfExtra는 debt 분기(what-if 시뮬레이터)가 참조한다 — 기존 테스트들은 ST를
+  // 전혀 세팅하지 않았으므로 기본값 0(추가 납입 없음, 기존 동작과 동일)으로 초기화해둔다.
+  ctx.ST = { hist: { debtWhatIfExtra: 0 } };
   _assetBalCardCtx = ctx;
   return ctx;
 }
@@ -23259,6 +23355,7 @@ test('[실행형] assetBalCard: debt 자산이 이미 다 갚았으면(최근 �
   const html = ctx.assetBalCard('d1', 'm3');
   assert.ok(html.includes('이미 다 갚았어요'), '9번의 70,000원 상환(총 630,000)이 base 500,000을 넘으면 완납 문구가 떠야 함');
   assert.ok(!html.includes('이 속도로 갚으면'), '완납 상태에서는 투사 문구가 섞이면 안 됨');
+  assert.ok(!html.includes('id="debtWhatIfExtra"'), '완납 상태에서는 더 갚을 필요가 없으니 what-if 입력 필드가 뜨면 안 됨');
 });
 test('[실행형] assetBalCard: debt 자산이 꾸준히 갚히는 추세면 "이 속도로 갚으면 ...쯤 다 갚아요" 투사 문구가 뜬다', () => {
   const ctx = assetBalCardCtx();
@@ -23271,6 +23368,24 @@ test('[실행형] assetBalCard: debt 자산이 꾸준히 갚히는 추세면 "�
   ctx.DB = assetBalCardFixtureDB([{ id: 'd1', type: 'debt', baseAmount: 900000 }], txns);
   const html = ctx.assetBalCard('d1', 'm3');
   assert.ok(/이 속도로 갚으면 \d{2}\/\d{2}쯤 다 갚아요/.test(html), '270,000원을 갚고도 아직 630,000원이 남았으면(미완납) shortDate2 포맷의 투사일 문구가 떠야 함');
+  assert.ok(html.includes('id="debtWhatIfExtra"'), '미완납 debt에는 what-if 추가 납입 입력 필드가 있어야 함');
+  assert.ok(html.includes('id="debtWhatIfResult"'), '미완납 debt에는 what-if 결과 영역이 있어야 함');
+  assert.ok(html.includes('매달 이만큼 더 갚으면'), 'ST.hist.debtWhatIfExtra 기본값(0)에서도 베이스라인과 같은 투사일 문구가(아직 추가 납입 없음) 떠야 함');
+});
+test('[실행형] assetBalCard: ST.hist.debtWhatIfExtra가 양수면 what-if 입력 필드에 그 값이 채워지고, 베이스라인보다 빨라진 투사일+빨라진 개월수 문구가 뜬다', () => {
+  const ctx = assetBalCardCtx();
+  const to = '2026-06-15';
+  ctx.TODAY = to;
+  ctx.RANGE_FROM = '2023-01-01';
+  const txns = [-85, -75, -65, -55, -45, -35, -25, -15, -5].map((n, i) => ({
+    id: 'p' + i, date: ctx.addDays(to, n), type: 'income', toAssetId: 'd1', amount: 30000,
+  }));
+  ctx.DB = assetBalCardFixtureDB([{ id: 'd1', type: 'debt', baseAmount: 900000 }], txns);
+  ctx.ST = { hist: { debtWhatIfExtra: 300000 } };
+  const html = ctx.assetBalCard('d1', 'm3');
+  assert.ok(html.includes('value="300,000"'), '입력 필드가 ST.hist.debtWhatIfExtra를 comma 포맷으로 그대로 보여줘야 함');
+  assert.ok(/매달 이만큼 더 갚으면 \d{2}\/\d{2}쯤 다 갚아요 \(약 \d+개월 빨라져요\)/.test(html), '추가 납입이 있으면 베이스라인보다 빨라진 개월수가 함께 떠야 함');
+  ctx.ST = { hist: { debtWhatIfExtra: 0 } }; // 다음 테스트로 새어들지 않게 원복
 });
 test('[실행형] assetBalCard: debt 자산에 상환 활동이 전혀 없으면(추세 없음) "최근엔 줄어들고 있지 않아요"가 뜬다', () => {
   const ctx = assetBalCardCtx();
