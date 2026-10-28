@@ -1,15 +1,12 @@
 {
   "cycle": 257,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "부채 완납 축하 알림(debtPaidOff/debtPaidOffMulti) 신설 — goalAchieved(cycle256)와 대칭되는 debt 쪽 긍정적 사건 알림",
+    "why": "homeAlerts()는 목표 지연(goalBehind)/예산초과(budgetOver)/부채 상환정체(debtBehind) 같은 '나쁜 사건'과 목표 달성(goalAchieved, cycle256)이라는 '좋은 사건'을 이미 다루지만, 부채 쪽에는 나쁜 사건(debtBehind)만 있고 완전히 대칭되는 좋은 사건(완납)이 없다. assetBalCard가 자산 상세를 열어야만 보여주던 '이미 다 갚았어요' 사실을 홈 카드+OS 푸시로도 알려 사용자가 직접 그 부채의 상세를 열어보지 않으면 놓치는 공백을 메운다.",
+    "approach": "1) logic.js: debtPayoffProjection 바로 뒤에 순수함수 `function debtNewlyPaidOff(asset,payoff){return !!(payoff&&payoff.achieved&&asset&&!asset.payoffAckAt)}` 신설(goalNewlyAchieved와 동일한 모양). 2) index.html 자산 스키마 주석(ASSET_TYPES 선언 근처 또는 DB.assets 관련 주석)에 debt형 자산엔 `payoffAckAt`(완납 축하 알림 ack 시각, ms 또는 null) 필드가 있을 수 있다고 한 줄 추가 — saveAsset이 deep-clone 기반이라 migrate()에서 기본값 백필은 불필요(undefined는 falsy로 자연히 동작). 3) index.html에 ackDebtPayoff(assetId) 함수를 ackGoalAchieved(index.html:3515-3521) 패턴 그대로 신설: 해당 debt 자산을 찾아 debtsBehind()와 동일한 방식(allTxns(RANGE_FROM,TODAY) 중 isPending 제외, assetBalSampleDates, assetBalanceSeries(...,sign=-1))으로 그 자산 하나의 pts를 만들고 debtPayoffProjection으로 payoff를 구해 debtNewlyPaidOff(asset,payoff)면 `asset.payoffAckAt=Date.now();touch(asset);save();` 후 `openAssetHistory(assetId)`로 이동(= '실제로 열어 봄'을 ack으로 묶는 cycle256 관례 재사용). 4) homeAlerts()의 debtBehind 블록(index.html:9032-9035) 바로 뒤에 대칭 블록 추가: `DB.assets.filter(a=>a.includeInTotal&&a.type==='debt'&&txns.some(...))`로 debtsBehind()와 동일한 '거래 이력 1건 이상' 가드를 적용한 뒤 각각 debtPayoffProjection으로 payoff를 구해 debtNewlyPaidOff(a,payoff)인 것만 추려 budgetOver/goalAchieved와 동일한 단일/복수 collapsing 패턴으로 kind:'debtPaidOff'(assetId,name,amount)/'debtPaidOffMulti'(count)를 arr에 push. txns/dates 변수는 debtsBehind()와 별개로 이 블록 안에서 새로 선언(_gb/_ga가 goalProgress를 각자 다시 계산하는 기존 중복 관례를 그대로 따름 — 공유 헬퍼로 추출하는 리팩터링은 이번 사이클 범위 밖). 5) homeAlertCard(index.html:9144~)에 goalAchieved/goalAchievedMulti 카드(9248-9256) 바로 아래, debtBehind 카드(9258) 위나 아래에 대칭 카드 추가: 단일은 `<button class=\"home-alert\" onclick=\"ackDebtPayoff('${al.assetId}')\">...부채를 다 갚았어요 🎉 · ${esc(al.name)}...${comma(al.amount)}원...</button>`, 복수는 `onclick=\"openDebtPaidOffList()\"`로 새 목록 시트를 연다(아이콘은 svg('debt') 재사용). 6) openDebtBehindList(index.html:8952-8961) 바로 아래에 동일 패턴의 openDebtPaidOffList() 신설: 완납&&!ack인 debt 목록을 모아 0건이면 toast, 1건이면 즉시 ackDebtPayoff(그 자산 id) 호출, 2건 이상이면 시트에서 각 행 tap 시 closeSheet();ackDebtPayoff(id) 하도록 openDebtBehindList을 그대로 복제해 onclick만 ackDebtPayoff로 교체. 7) notifyAlertInfo(index.html:9080-9083 근처)에 goalAchieved와 동일하게 월(TODAY.slice(0,7)) 없이 영구 key로 `if(al.kind==='debtPaidOff')return{key:'debtPaidOff:'+al.assetId,title:'빚을 다 갚았어요 🎉',body:al.name+' · '+comma(al.amount)+'원'}` / `debtPaidOffMulti`도 동일 패턴(goalAchievedMulti처럼 key에 count만) 추가. 8) 알려진 한계(advance 구현 시 주석으로 명시): 완납 후 같은 부채에 다시 돈을 빌려 잔액이 늘었다가 다시 완납되는 재발 케이스는, saveAsset 편집으로 금액을 늘리는 경우가 아니라 거래(transaction) 누적으로 자연히 벌어지므로 goal의 saveGoal 리셋과 달리 자동으로 payoffAckAt을 null로 되돌리는 지점이 없다 — goal도 '지출로 인한 자연 변동'에선 리셋하지 않는 동일한 한계를 이미 수용했으므로 이번에도 같은 스코프로 맞추고, 완전한 재알림 보장은 범위 밖으로 명시적으로 남긴다. 9) APP_VERSION/sw.js CACHE 동기 범프. 10) test/run.js: debtNewlyPaidOff 단위 테스트(achieved&&ack없음→true / achieved&&ack있음→false / achieved:false→false), homeAlerts의 debtPaidOff/debtPaidOffMulti collapsing·거래이력 없는 신규 0원 debt 제외·이미 ack된 debt 제외 테스트(debtBehind 테스트와 대칭으로 작성), notifyAlertInfo 키 검증(월 없는 영구 key), homeAlertCard 렌더 테스트, ackDebtPayoff 실행형 테스트(payoffAckAt 기록 + openAssetHistory 호출을 기록하는 스텁 검증, ackGoalAchieved 테스트 패턴 재사용) 추가."
+  },
   "history": [
-    {
-      "cycle": 252,
-      "phase": "critique",
-      "timestamp": "2026-10-27T06:40:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-252 전체 다룬 영역·기각 항목 전부 제외 지시)한 결과, 앱 잠금(APPLOCK, index.html:2402-2425)이 lockApp()/unlockApp()(9708/9715)으로 화면만 가리는 UI 오버레이일 뿐, save()→_saveCore()(2602)가 PIN 설정 여부와 무관하게 localStorage.setItem(dataKey(),JSON.stringify(DB))(2620)로 항상 평문 저장하고 load()(2483)도 복호화 없이 JSON.parse하는 것을 발견 — 기기 탈취·공유 PC·devtools Application 탭 접근 시 PIN/BIOUNLOCK(cycle250 advance)을 켜도 금액·계좌명·메모가 그대로 노출되는 '잠금'이라는 이름과 실제 보호 수준의 격차. export/backup, 전체내역 페이지네이션·디바운스 검색, OS 알림(checkNotifyAlerts) dedupe, 클라우드 동기화 충돌·재시도 로직은 코드로 확인 후 이미 정교하게 다뤄져 있어 제외했고, spendOwnerSel/incomeOwnerSel/histOwnerSel/yearOwnerSel/goalOwnerSel 5곳 이상에 걸친 귀속 세그먼트 렌더링 중복은 tech-debt 후보로 검토했으나 화면별 재렌더 방식이 달라 리팩터링 범위 대비 체감 효과가 작아 차순위로 두고, 보안 격차가 더 근본적이고 사용자가 오해하기 쉬운 문제라 이번 사이클 최우선으로 선정. advance 계획(pbkdf2Hash(2263) 패턴으로 키 유도, encryptDbBlob/decryptDbBlob 신설, _saveCore()/load()를 APPLOCK.enabled() 시 암호화 포맷으로 분기, doUnlock()에서 PIN으로 즉시 복호화, 라운드트립 테스트 추가)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
-      "commit": null
-    },
     {
       "cycle": 252,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-28T01:07:59.000Z",
       "summary": "cycle257 develop 커밋(1e482c2, 검색어 공백 토큰화 AND 매칭으로 matchTxnQuery/matchAssetQuery/matchCatQuery 통합)을 검토. 신설된 searchTerms(q)가 trim 후 /\\s+/로 토큰화하고 빈 토큰을 거르는 로직을 직접 대조 확인: 토큰 1개(공백 없는 기존 입력)는 기존 includes()와 동일하고, 공백뿐인 검색어는 terms.length===0으로 빈 검색어와 동일하게 전체 통과한다. matchTxnQuery만 쉼표 제거(.replace(/,/g,''))를 토큰화 이전에 적용해 금액 검색(쉼표 유무 무관)을 그대로 보존하고, matchAssetQuery/matchCatQuery는 쉼표 제거를 적용하지 않아(기존에도 안 했음) 회귀 없음을 확인. 세 함수의 호출부(index.html: pkFilteredAssets/openCatPicker/#histQ 전체내역 검색 등)가 모두 사용자가 타이핑한 쿼리 문자열을 그대로 넘기므로 새 AND 규칙이 자연스럽게 적용됨. node test/run.js 독립 재실행 결과 2126/2126 통과(develop 단계가 주장한 수치와 일치), node --check logic.js/test/run.js 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 257,
+      "phase": "critique",
+      "timestamp": "2026-10-28T00:00:00.000Z",
+      "summary": "cycle256 critique가 러너업으로 남겨둔 '부채 완납 축하'를 이어받아 코드로 직접 검증했다. debt는 DB.debts 같은 별도 구조가 아니라 DB.assets의 type:'debt' 항목(음수 평가, assetEval은 debt도 assetBalance로 잔액식 평가 — index.html:2735-2743, 2855 isMarketValued에 포함 안 됨)이라 시세 미확인(rateUnknown) 걱정이 없어 goalHasUnknown 같은 가드가 불필요함을 확인했다. debtPayoffProjection(logic.js:646-663)이 이미 achieved(최신 잔액<=0)를 순수함수로 반환하고, assetBalCard(index.html:3190-3201)는 이를 '이미 다 갚았어요' 캡션으로만 조용히 보여줄 뿐 homeAlerts()/OS푸시엔 연결되어 있지 않다 — debtBehind(index.html:9032-9035, 나쁜 사건)만 있고 정확히 대칭되는 '완납'(좋은 사건) 알림이 없는 공백은 goalAchieved(cycle256)와 동일한 모양. debtsBehind()(index.html:8941-8949)가 이미 '거래 이력이 1건이라도 있는 debt만 대상'이라는 가드를 쓰고 있어(신규 등록만 해둔 0원 부채가 즉시 achieved:true로 오탐되는 걸 막음) 새 알림도 동일 가드를 그대로 재사용하면 된다. 자산 편집(saveAsset, index.html:4353-4430)은 goal과 달리 asDraft가 JSON.parse(JSON.stringify(기존 자산))로 만든 완전한 deep clone이라(index.html:4262) 새 ack 필드를 추가해도 saveGoal처럼 필드 나열로 재구성하는 함정이 없어 수정 시 자동으로 보존된다 — 다만 빚을 다시 늘리는 거래가 들어와 achieved가 다시 false가 됐다가 또 완납되는 재발 케이스에서 ack를 리셋하는 지점은 goal의 saveGoal 리셋과 달리 자연스러운 '거래' 경로라 존재하지 않는다는 한계가 있음을 advance 구현자가 인지해야 한다(goal도 saveGoal 편집 경로만 리셋하고 지출으로 인한 자연 변동은 리셋하지 않는 동일한 한계를 이미 수용했으므로, 같은 수준의 스코프로 맞추면 됨 — 완벽한 재알림 보장은 이번 사이클 범위 밖). 러너업 기각: 전역 통합검색(리스크 큼, 재확인), PDF 명세서(CSV가 이미 커버, 재확인), 영수증/사진 첨부(범위 과대, 재확인) — 전부 기존 기각 유지, 새로 조사하지 않음.",
       "commit": null
     }
   ]
