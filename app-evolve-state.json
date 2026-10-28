@@ -1,15 +1,12 @@
 {
   "cycle": 261,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "거래에 영수증 사진 첨부",
+    "why": "지출 내역에 메모는 입력할 수 있지만 영수증/증빙 사진을 남길 방법이 전혀 없다. 사업비 처리, 환불/보증 대비, 공동 가계부에서 '이게 무슨 지출이었는지' 나중에 확인해야 하는 실제 상황에서 바로 체감되는 공백이고, 다른 가계부 앱이 기본 제공하는 기능이라 사용자가 아쉬워할 가능성이 높다. 범용 CSV 가져오기, 완납/목표 축하 알림, 반복내역 월 합계, 전역 통합검색 등 이미 폭넓게 구현된 기능들 사이에서 유일하게 뚜렷하게 비어있는 공백으로 확인됨(FileReader는 JSON/CSV 가져오기에만 쓰이고 accept=\"image/*\" input 자체가 없음).",
+    "approach": "txDraft/DB.txns 레코드에 선택적 photo(압축된 JPEG dataURL 문자열, 1장) 필드 추가. index.html renderTxSheet()(txDraft 폼, ~4817줄 부근) 메모 입력칸 아래에 <input type=\"file\" accept=\"image/*\" capture=\"environment\"> + 썸네일/삭제 버튼 추가. 저장 전 <canvas>로 최대 변 800px, JPEG quality ~0.6으로 리사이즈/압축해 장당 수십~100KB대로 캡(캡 수치는 logic.js 상수로 두고 테스트 가능하게). saveTx()(4997줄)에 photo 필드 전달 경로 추가, txRowCore(4760줄 부근)에 작은 썸네일 아이콘 노출, 탭하면 openSheet 재사용한 풀스크린 뷰어. CSV 내보내기(txnsToCSV)에는 넣지 않고, '복사해서 백업'(openCopyBackup, 텍스트 클립보드) 경로는 사진 있으면 용량 커지므로 제외하거나 안내, JSON 파일 저장/클라우드 동기화(mergeCollection)에만 포함. 반복거래(DB.recurrences)는 스키마에 사진 자리가 없으니 범위 밖(일반 1회성 거래만). test/run.js에 용량 캡 판정 등 순수 로직 단위 테스트 추가. index.html/logic.js 변경이므로 APP_VERSION과 sw.js CACHE 동기 범프."
+  },
   "history": [
-    {
-      "cycle": 256,
-      "phase": "critique",
-      "timestamp": "2026-10-27T20:30:00.000Z",
-      "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, homeAlerts()가 목표 지연·예산 초과·부채 상환 정체 등 '나쁜 사건'은 전부 알리면서, 정확히 대칭되는 '목표 달성'에는 알림이 전혀 없음을 발견. 러너업: 부채 완납 축하(차순위로 남김), 전역 통합검색, PDF 명세서, 접근성 전수조사(이미 촘촘함). 채택 계획(goalNewlyAchieved, achievedAckAt, homeAlerts/checkNotifyAlerts/homeAlertCard 배선)을 pending_advance_plan에 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 256,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-28T17:10:51.641Z",
       "summary": "cycle261 develop 커밋(be4c5ba, 전역 통합검색 세 그룹에 capGroup 기반 더보기(gsMore) 도입)을 검토. globalSearchBody가 헤더 건수는 전체 매칭 수(txnsAll/assetsAll/catsAll.length)로, 렌더 목록은 capGroup으로 자른 shown 배열로 분리해 쓰는 것을 코드로 확인 — 기존 hist-more/of-more 관례(남은 건수 표시)와 동일한 모양. GS_EXPAND가 입력(gsQInput)과 시트 재오픈(openGlobalSearch) 양쪽에서 초기화돼 이전 검색어의 펼침 상태가 새 검색에 새어들지 않음을 확인. capGroup 자체는 순수함수로 cap 이하/이상/expand:true/빈 배열 네 갈래를 모두 올바르게 처리. node test/run.js 독립 재실행 결과 2166/2166 통과, node --check(logic.js/sw.js/test/run.js) 통과, APP_VERSION(1.47.265)/sw.js CACHE(v532) 동기화 확인. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 261,
+      "phase": "critique",
+      "timestamp": "2026-10-28T18:05:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(budget/goal/debt payoff projection/연간 결산/자산 비중/실시간 시세 연동/캘린더형 가계부/CSV 중복검사/클라우드 동기화 충돌 알림까지 이미 폭넓게 구현돼 있음을 확인)한 결과, 거래/자산/메모 어디에도 영수증·증빙 사진을 첨부할 방법이 전혀 없는(accept=\"image/*\" input 자체가 없음) 공백을 발견. 러너업: 부채 상환 추가 납입 시뮬레이터(what-if), 투자자산 목표 비중 리밸런싱 알림, 기존 러너업(PDF 명세서/접근성 전수조사/아카이브 선제 안내) 유지, APPLOCK PIN 전체 DB 암호화 재추진 금지 유지. 채택 계획(거래에 영수증 사진 첨부: photo dataURL 필드, canvas 리사이즈/압축 캡, renderTxSheet/txRowCore/saveTx 배선, CSV 내보내기·복사백업 제외하고 JSON/클라우드 동기화에만 포함)을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     }
   ]
