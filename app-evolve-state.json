@@ -1,22 +1,12 @@
 {
   "cycle": 258,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "반복 내역(고정비) 월 총액 합계 표시",
+    "why": "반복거래 CRUD/일시중지/요일·월일 레이블(recFreqLabelStr)은 이미 충실한데, openRecManage()(index.html:6534)가 freq별 개별 금액만 나열하고 월 기준으로 환산해 합산한 총액을 전혀 보여주지 않는다. '고정비' 기본 카테고리(logic.js:1824)까지 있을 만큼 고정비 개념이 있는 가계부 앱에서, 반복 항목이 늘어날수록 월 총액 감을 잃기 쉬운 흔하고 실질적인 공백.",
+    "approach": "logic.js에 순수함수 monthlyEquivalent(r) 신설(recFreqLabelStr 근처): monthly->amount, weekly->amount*365/7/12, daily->amount*365/12, yearly->amount/12. active 필터링은 호출부 책임. index.html openRecManage()에서 그룹(expense/income/saving/transfer)별로 list.filter(r=>r.active).reduce(monthlyEquivalent 합산) 결과를 menu-cap 옆에 표시하고, 상단에 지출 기준 전체 합계 카드('매달 약 OOO원이 고정으로 나가요') 추가. test/run.js에 monthlyEquivalent 단위 테스트(freq별 변환, active=false 제외) 추가. APP_VERSION/sw.js CACHE 동기 범프."
+  },
   "history": [
-    {
-      "cycle": 253,
-      "phase": "critique",
-      "timestamp": "2026-10-27T12:10:00.000Z",
-      "summary": "이번 critique는 두 갈래로 진행했다. (1) APPLOCK PIN 기반 전체 DB 암호화 계획을 직접 코드로 재검증한 결과, boot 순서 문제·세션 키 캐시 부재·forgot-PIN 데이터무손실 보장과의 정면 충돌·약한 PIN 브루트포스 저항 등 근본 결함을 발견해 이 계획 전체를 보류(shelve)했다 — 재추진하려면 boot 순서 재설계+세션 키 캐시+forgot-PIN UX 전면 재설계를 모두 포함하는 별도의 더 큰 결정이 필요함을 history에 남겨 다음 critique가 같은 길을 다시 걷지 않게 함. (2) general-purpose 서브에이전트로 재탐색한 결과, 거래 입력 카테고리 피커(openCatPicker)가 cycle248에서 자산 피커에 준 검색 기능을 못 받은 공백을 발견 — advance 계획(matchCatQuery/catFilteredGrid/pkCatQInput/refreshPkCatList 신설)을 pending_advance_plan에 저장.",
-      "commit": null
-    },
-    {
-      "cycle": 253,
-      "phase": "advance",
-      "timestamp": "2026-10-27T12:14:52.301Z",
-      "summary": "critique(cycle253)가 세운 계획대로 거래 입력 카테고리 피커(openCatPicker)에 검색 기능을 추가했다. matchCatQuery(logic.js) 신설, pkFilteredAssets와 같은 모양의 catFilteredGrid(kind,current,q)로 교체, pkCatQInput/refreshPkCatList 신설(220ms 디바운스), CAT_PICKER_SEARCH_THRESHOLD(8) 적용. APP_VERSION 1.47.249->1.47.250, sw.js CACHE v516->v517. test/run.js 17건 추가(2060->2077). node test/run.js 2077/2077 통과.",
-      "commit": null
-    },
     {
       "cycle": 254,
       "phase": "develop",
@@ -141,6 +131,13 @@
       "phase": "review",
       "timestamp": "2026-10-28T04:30:00.000Z",
       "summary": "cycle258 develop 커밋(cd359e7, debtsPaidOff()의 peak 계산을 assetBalanceSeries 60개 샘플링에서 assetBalancePeak(거래 전수 순회)로 교체)을 검토. assetBalancePeak가 assetBalanceSeries와 동일한 필터/정렬/부호 규칙을 쓰면서도 peak 초기값을 base로 둬 기존 reduce(...,0) 방식보다 오히려 더 정확함(샘플 날짜가 첫 거래 이전을 못 비추는 경계 상황까지 커버)을 코드로 확인. 추가된 단위 테스트 4건(거래 없음/일반자산/부채/샘플링 틈새 스파이크 대조)과 회귀 테스트 1건이 핵심 시나리오를 잘 덮음. node test/run.js 독립 재실행 결과 2147/2147 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 258,
+      "phase": "critique",
+      "timestamp": "2026-10-28T05:10:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(APPLOCK PIN 기반 전체 DB 암호화는 재추진 금지로 명시)한 결과, openRecManage()(index.html:6534)가 반복거래를 freq별 개별 금액으로만 나열하고 월 기준 환산 합계를 전혀 보여주지 않는 공백을 발견 — '고정비' 기본 카테고리(logic.js:1824)까지 있을 만큼 고정비 개념이 있는데 '매달 총 얼마가 고정으로 나가는지'를 한눈에 보여주는 집계가 없음. 러너업: 거래량 증가 시 아카이브 선제 안내(archiveTxnsBefore, 성능 문제 체감 전이라 낮은 우선순위), 특정 빈 catch(line 7662 인근 pushCloud 실패 무알림, develop/review가 다룰 범위), 기존 러너업(전역 통합검색/PDF 명세서/접근성 전수조사) 유지. 채택 계획(monthlyEquivalent(r) 신설, openRecManage()에 그룹별+전체 월 합계 표시)을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     }
   ]
