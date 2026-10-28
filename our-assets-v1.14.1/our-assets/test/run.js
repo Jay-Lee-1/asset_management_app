@@ -238,6 +238,10 @@ const FUNCTIONS = [
  'notifyAlertInfo', 'pickNotifyAlerts', 'pruneNotifiedIds', 'syncNotifyPermission',
   'catIconOf', 'catGlyph', 'openCatManage', 'openCatPicker', 'catFilteredGrid', 'catEmptyHtml', 'pkCatQInput', 'refreshPkCatList', 'moveCatBlob', 'pkPickCat',
   'catListOf', 'catAv', 'assetPickBtn', 'endCondFields', 'dayPickerHTML', 'openFormSheet', 'renderTxSheet', '_applyType', '_applyFreq', '_applyDay', '_applyCount', '_applyOpenCat', '_applyOpenAsset', 'txType', 'txToggleRepeat',
+  // txPhotoFieldHTML(영수증 사진 첨부 필드, app-evolve cycle261 advance)은 renderTxSheet가 항상
+  // 부르므로(반복 미켜짐 분기) renderTxSheet를 쓰는 모든 테스트(duplicateTx/saveTx/txType 등)의
+  // 공유 sandbox에 함께 올라가야 한다.
+  'txPhotoFieldHTML',
   'accountName', 'dbIsEmpty', 'guestHasData', 'importGuestDataInto',
   'txScheduled', 'monthStats', 'monthStats2', 'expenseByCat', 'needGold', 'inQuietWindow', 'fmtSynced', 'rateStatusText',
   // heldCurrencies/heldStockCodes/heldCryptoCodes/needFx/needStock/needCrypto/hasRateAssets/autoSyncRates는
@@ -23615,6 +23619,30 @@ test('capGroup: 빈 배열/undefined도 안 터지고 remain:0이다', () => {
   // 동일하게 JSON 라운드트립으로 realm을 벗겨내고 비교한다.
   assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.capGroup([], 20, false))), { shown: [], remain: 0 }, '빈 배열 처리가 틀림');
   assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.capGroup(undefined, 20, false))), { shown: [], remain: 0 }, 'undefined 입력 처리가 틀림');
+});
+
+/* ---------- photoResizeDims(logic.js): 거래 영수증 사진 첨부(txPhotoPick/index.html)가 canvas로
+ * 그리기 전에 목표 크기를 구하는 데 쓴다 — 원본이 이미 maxSide 이하면 그대로, 넘으면 긴 변을
+ * maxSide로 맞춰 가로세로 비율을 유지한 채 축소한다(app-evolve cycle261 critique → advance) ---------- */
+test('photoResizeDims: 두 변 모두 maxSide 이하면 원본 크기를 그대로 돌려준다', () => {
+  const r = sandbox.photoResizeDims(600, 400, 800);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(r)), { w: 600, h: 400 }, '축소가 필요 없는데 크기가 바뀜');
+});
+test('photoResizeDims: 가로가 더 길면 가로를 maxSide로 맞추고 세로는 비율대로 줄인다', () => {
+  const r = sandbox.photoResizeDims(3000, 1500, 800);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(r)), { w: 800, h: 400 }, '가로가 긴 사진의 리사이즈 비율이 틀림');
+});
+test('photoResizeDims: 세로가 더 길면 세로를 maxSide로 맞추고 가로는 비율대로 줄인다', () => {
+  const r = sandbox.photoResizeDims(1500, 3000, 800);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(r)), { w: 400, h: 800 }, '세로가 긴 사진의 리사이즈 비율이 틀림');
+});
+test('photoResizeDims: 한 변만 maxSide를 넘어도(정사각형이 아닌 경우) 긴 변 기준으로 축소한다', () => {
+  const r = sandbox.photoResizeDims(800, 1600, 800);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(r)), { w: 400, h: 800 }, '한 변만 넘는 경우의 축소가 틀림');
+});
+test('photoResizeDims: 너비/높이가 0이거나 비정상이면 0x0을 돌려주고 터지지 않는다', () => {
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.photoResizeDims(0, 0, 800))), { w: 0, h: 0 }, '0x0 입력 처리가 틀림');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.photoResizeDims(NaN, 100, 800))), { w: 0, h: 0 }, 'NaN 입력 처리가 틀림');
 });
 
 test('isRlsPolicyError: Postgres 42501 코드와 policy/RLS 메시지를 네트워크·인증 에러와 구분한다', () => {

@@ -1249,6 +1249,10 @@ body.selmode .fab{display:none}
 .confirm-btn:active{transform:scale(.93)}
 .dup-btn{flex-shrink:0;margin-left:8px;width:30px;height:30px;border-radius:999px;display:grid;place-items:center;color:var(--text-3);background:var(--surface-2)}
 .dup-btn:active{transform:scale(.88);color:var(--text)}
+.tx-photo-mini{width:28px;height:28px;border-radius:7px;object-fit:cover;flex-shrink:0;margin-left:8px;box-shadow:0 0 0 1px var(--line)}
+.tx-photo-pick{display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer}
+.tx-photo-wrap{display:flex;align-items:center;gap:12px}
+.tx-photo-thumb{width:64px;height:64px;border-radius:var(--r-sm);object-fit:cover;flex-shrink:0;box-shadow:0 0 0 1px var(--line);cursor:pointer}
 .ha-ic{width:38px;height:38px;border-radius:11px;background:var(--expense);color:#fff;display:grid;place-items:center;flex-shrink:0}
 .ha-ic svg{width:19px;height:19px}
 .ha-b{flex:1;min-width:0}
@@ -1412,7 +1416,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.265';
+const APP_VERSION='1.47.266';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4764,7 +4768,7 @@ function txRowCore(t,sel){
  return `<div class="swipe" data-id="${t.id}" data-rec="${t.isRec?t.recId:''}" data-date="${t.date}" ${t.isRec?'':'data-lp="1"'}>  <div class="swipe-content" tabindex="0" role="button" aria-label="${esc(t.memo||catLabel)} ${sign}${comma(t.amount)}원" onclick="rowTap(this)" onkeydown="rowKeydown(event,()=>rowTap(this))"><div class="avatar ${av}" style="width:40px;height:40px">${glyph}</div>
    <div style="flex:1;min-width:0"><div class="nm-row"><span class="nm">${esc(t.memo||catLabel)}</span>${isSplit?`<span class="mini" title="분할 거래">${esc(catLabel)}</span>`:''}${t.isRec?`<span class="rec-ic" title="반복">${svg('repeat')}</span>`:''}</div>
     ${asset?`<div class="flow-sub"><span class="fl">${esc(asset)}</span>${txScheduled(t)?'<span class="sch-dot"></span>':''}</div>`:(txScheduled(t)?`<div class="flow-sub"><span class="sch-dot"></span><span class="fl">예정</span></div>`:'')}</div>
-   <div class="amt num ${cls}">${sign}${comma(t.amount)}원</div>${(!t.isRec&&!t.adjust&&!isDuePending(t))?`<button class="dup-btn" onclick="event.stopPropagation();duplicateTx('${t.id}')" aria-label="복제">${svg('copy',16)}</button>`:''}${isDuePending(t)?`<button class="confirm-btn" onclick="event.stopPropagation();${t.isRec?`confirmRecTransfer('${t.recId}','${t.date}')`:`openConfirmTransfer('${t.id}')`}">확인</button>`:''}</div></div>`;
+   <div class="amt num ${cls}">${sign}${comma(t.amount)}원</div>${t.photo?`<img src="${t.photo}" class="tx-photo-mini" alt="영수증" onclick="event.stopPropagation();openPhotoViewer(this.src)">`:''}${(!t.isRec&&!t.adjust&&!isDuePending(t))?`<button class="dup-btn" onclick="event.stopPropagation();duplicateTx('${t.id}')" aria-label="복제">${svg('copy',16)}</button>`:''}${isDuePending(t)?`<button class="confirm-btn" onclick="event.stopPropagation();${t.isRec?`confirmRecTransfer('${t.recId}','${t.date}')`:`openConfirmTransfer('${t.id}')`}">확인</button>`:''}</div></div>`;
 }
 function txRow(t){return txRowCore(t,{mode:ST.lSel.mode,has:id=>ST.lSel.ids.has(id),onToggle:'ledgerToggleSel'})}
 function rowTap(el){ /* 내역 탭 → 수정 (길게 누르면 다중 선택·삭제) */
@@ -4814,7 +4818,7 @@ document.addEventListener('click',e=>{
  e.preventDefault();e.stopPropagation(); /* 외부 클릭은 '취소'만 — 하부 요소 선택 방지 */
  closeFabPop();
 },true);
-function openTxSheet(){window._recCtx=null;_formScroll=0;_txFocusAmt=true;txDraft={id:null,type:'expense',date:ST.ledger.sel,category:DB.categories.expense[0],memo:'',amount:0,fromAssetId:firstCash(),toAssetId:null,repeat:false,freq:'monthly',day:null,endDate:null,count:null};snapDraft('tx');renderTxSheet()}
+function openTxSheet(){window._recCtx=null;_formScroll=0;_txFocusAmt=true;txDraft={id:null,type:'expense',date:ST.ledger.sel,category:DB.categories.expense[0],memo:'',amount:0,fromAssetId:firstCash(),toAssetId:null,repeat:false,freq:'monthly',day:null,endDate:null,count:null,photo:null};snapDraft('tx');renderTxSheet()}
 /* manifest.webmanifest shortcuts(아이콘 롱프레스)/?action= 딥링크가 공통으로 쓰는 디스패처.
  * openTxSheet()의 기본 type은 이미 'expense'라 addExpense는 추가 전환이 필요 없다
  * (app-evolve cycle254 advance). */
@@ -4881,6 +4885,7 @@ function renderTxSheet(){
     <input id="txDate" type="hidden" value="${d.date}"></div>
   ${catField}${assetFields}
   <div class="field"><label for="txMemo">메모</label><div class="field-clear"><input id="txMemo" value="${esc(d.memo||'')}" placeholder="${rpt?'예: 넷플릭스 구독':'예: 점심 김밥'}"${memoEnterSubmit}><button type="button" class="fc-x" aria-label="메모 지우기" onclick="clrInput('txMemo')">✕</button></div></div>
+  ${rpt?'':txPhotoFieldHTML(d)}
   ${repeatFields}
   ${editing?
    `<div class="two-btn"><button class="btn btn-danger cancel" onclick="delTx('${d.id}','','${d.date}')">${svg('trash')} 삭제</button>
@@ -4994,6 +4999,42 @@ function txClearEnd(){syncTxInputs();txDraft.endDate=null;txDraft.count=null;ren
 function recCount(v){_applyCount('rec',recDraft,v)}
 function recOpenEnd(){syncRecInputs();openFieldDatePicker(recDraft.endDate||TODAY,ds=>{recDraft.endDate=ds;recDraft.count=recCountUntil({freq:recDraft.freq,day:recDraft.day,startDate:recDraft.startDate,weekend:recDraft.weekend},ds);renderRecSheet()})}
 function recClearEnd(){syncRecInputs();recDraft.endDate=null;recDraft.count=null;renderRecSheet()}
+/* 영수증 사진 첨부(선택, 1장): DB.txns 레코드에 photo(JPEG dataURL)로 다른 필드와 동일하게 그대로
+ * 얹는다 — CSV 내보내기(txnsToCSV)/복사해서 백업(openCopyBackup)은 각자 자기 컬럼만 쓰는 별도
+ * 포맷이라 자동으로 빠지고, JSON 파일 저장(doExport의 JSON.stringify(DB))·클라우드 동기화
+ * (mergeCollection은 레코드 전체를 병합)에는 다른 필드와 동일하게 그대로 실린다. DB.recurrences는
+ * 스키마에 자리가 없어 반복(rpt) 켜짐 상태에서는 이 필드 자체를 숨긴다(renderTxSheet 호출부).
+ * 원본을 그대로 저장하면 전체 DB가 localStorage에 JSON 통째로 저장되는 구조(save() 주석 참고)를
+ * 금방 잠식하므로, canvas로 한 변 TX_PHOTO_MAX_SIDE 이하로 축소하고 JPEG TX_PHOTO_QUALITY로
+ * 압축해 장당 수십~100KB대로 캡한다(캡 수치 자체는 logic.js의 photoResizeDims로 분리해 테스트
+ * 가능하게 함, app-evolve cycle261 critique → advance). */
+function txPhotoFieldHTML(d){
+ return `<div class="field"><label>영수증 사진 (선택)</label>${d.photo
+  ?`<div class="tx-photo-wrap"><img src="${d.photo}" class="tx-photo-thumb" alt="영수증 미리보기" onclick="openPhotoViewer(this.src)">
+     <button type="button" class="btn btn-soft" style="flex:1" onclick="txPhotoRemove()">${svg('trash',16)} 사진 삭제</button></div>`
+  :`<label class="btn btn-soft tx-photo-pick"><input type="file" accept="image/*" capture="environment" style="display:none" onchange="txPhotoPick(this)">${svg('receipt',16)} 사진 추가</label>`}</div>`;
+}
+function txPhotoPick(el){
+ const f=el.files&&el.files[0];if(!f)return;
+ syncTxInputs();
+ const r=new FileReader();
+ r.onerror=()=>{toast('사진을 읽지 못했어요');el.value=''};
+ r.onload=()=>{
+  const img=new Image();
+  img.onerror=()=>{toast('사진을 불러오지 못했어요');el.value=''};
+  img.onload=()=>{
+   const{w,h}=photoResizeDims(img.naturalWidth,img.naturalHeight,TX_PHOTO_MAX_SIDE);
+   const c=document.createElement('canvas');c.width=w;c.height=h;
+   c.getContext('2d').drawImage(img,0,0,w,h);
+   txDraft.photo=c.toDataURL('image/jpeg',TX_PHOTO_QUALITY);
+   renderTxSheet();
+  };
+  img.src=r.result;
+ };
+ r.readAsDataURL(f);
+}
+function txPhotoRemove(){syncTxInputs();txDraft.photo=null;renderTxSheet()}
+function openPhotoViewer(src){openSheet(`<h3>영수증 사진</h3><div style="text-align:center"><img src="${src}" alt="영수증 사진" style="max-width:100%;border-radius:var(--r-sm)"></div><button class="btn btn-soft" style="width:100%;margin-top:14px" onclick="closeSheet()">닫기</button>`)}
 function saveTx(){
  if(twGuard())return;
  syncTxInputs();const d=txDraft;if(_savedDrafts.has(d))return;if(!d.amount){toast('금액을 입력해 주세요');return}

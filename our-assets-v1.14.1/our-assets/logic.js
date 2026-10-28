@@ -1139,6 +1139,22 @@ function capGroup(arr,cap,expand){
  return{shown:arr.slice(0,cap),remain:arr.length-cap};
 }
 
+/* ================= 거래 영수증 사진 (순수) ================= */
+/* txPhotoPick(index.html)이 <input type="file">로 받은 원본 사진을 그대로 저장하면, 전체 DB가
+ * localStorage에 JSON 통째로 저장되는 구조(index.html save() 주석 참고)를 사진 몇 장만으로도
+ * 금방 잠식한다. 그래서 canvas로 그리기 전에 한 변을 TX_PHOTO_MAX_SIDE 이하로 줄이고 JPEG
+ * TX_PHOTO_QUALITY로 압축해 장당 수십~100KB대로 캡하는데, 그 목표 크기 계산만 순수 함수로
+ * 분리해 canvas/Image 없이도 테스트 가능하게 한다(실제 그리기는 호출부가 canvas로 수행). 원본이
+ * 이미 두 변 모두 maxSide 이하면 손대지 않고 그대로 둔다(app-evolve cycle261 critique → advance). */
+const TX_PHOTO_MAX_SIDE=800,TX_PHOTO_QUALITY=0.6;
+function photoResizeDims(w,h,maxSide){
+ w=Number(w)||0;h=Number(h)||0;maxSide=maxSide||TX_PHOTO_MAX_SIDE;
+ if(w<=0||h<=0)return{w:0,h:0};
+ if(w<=maxSide&&h<=maxSide)return{w:Math.round(w),h:Math.round(h)};
+ const scale=maxSide/Math.max(w,h);
+ return{w:Math.max(1,Math.round(w*scale)),h:Math.max(1,Math.round(h*scale))};
+}
+
 /* ================= 도움말 백업 안내 (순수) ================= */
 /* openHelp()의 '💾 백업' 행은 지금까지 계정 종류와 무관하게 항상 "데이터는 이 기기에만
  * 저장돼요"라고 단정했는데, 이메일 계정으로 클라우드 동기화를 켠 사용자(isCloudAcct —
