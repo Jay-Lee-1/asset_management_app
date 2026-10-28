@@ -841,7 +841,18 @@ function mapGenericCsvRow(cells,mapping,targetAssetId){
  const date=String((cells&&cells[mapping.dateCol])||'').trim();
  if(!csvDateValid(date))return{ok:false,error:'date'};
  const memo=mapping.memoCol!=null?String((cells&&cells[mapping.memoCol])||'').trim():'';
- const parseNum=v=>{const s=String(v==null?'':v).trim().replace(/,/g,'');if(s==='')return 0;const n=Number(s);return Number.isFinite(n)?n:NaN};
+ /* 일부 은행/카드사(특히 해외카드 이용내역) CSV는 음수를 '-5000' 대신 회계 표기 괄호
+  * '(5,000)'로 적는다 — 쉼표만 벗겨내던 기존 parseNum은 이런 행을 Number('(5000)')=NaN으로
+  * 떨어뜨려 signed 모드 지출 행 전체가 error:'amount'로 가져오기에서 통째로 빠졌다. 괄호를
+  * 벗기고 음수로 뒤집은 뒤 나머지는 기존과 동일하게 처리한다(app-evolve cycle259 develop). */
+ const parseNum=v=>{
+  let s=String(v==null?'':v).trim().replace(/,/g,'');
+  if(s==='')return 0;
+  let neg=false;
+  if(/^\(.*\)$/.test(s)){neg=true;s=s.slice(1,-1)}
+  const n=Number(s);
+  return Number.isFinite(n)?(neg?-n:n):NaN;
+ };
  let type,amount;
  if(mapping.mode==='split'){
   const inVal=mapping.inCol!=null?parseNum(cells[mapping.inCol]):0;

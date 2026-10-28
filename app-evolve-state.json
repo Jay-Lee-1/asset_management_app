@@ -1,6 +1,6 @@
 {
   "cycle": 259,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
@@ -134,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-28T06:00:00.000Z",
       "summary": "critique(cycle258) 계획대로 반복 내역 월 총액 합계 표시를 구현. logic.js에 순수함수 monthlyEquivalent(r) 신설(monthly->amount, weekly->amount*365/7/12, daily->amount*365/12, yearly->amount/12; active 필터링은 호출부 책임). index.html openRecManage()에서 그룹(지출/수입/저축/내부이체)별로 active 반복만 합산해 menu-cap 옆에 '월 약 N원' 표시, 지출 그룹 합계로 상단에 '매달 약 N원이 고정으로 나가요' 요약 카드 추가. APP_VERSION 1.47.259->1.47.260, sw.js CACHE v526->v527 동기 범프. test/run.js에 monthlyEquivalent 단위 테스트 5건 추가(2147->2152). node test/run.js 2152/2152 통과, node --check(logic.js/test/run.js) 통과. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 259,
+      "phase": "develop",
+      "timestamp": "2026-10-28T08:16:10.481Z",
+      "summary": "범용(은행/카드사) CSV 가져오기의 mapGenericCsvRow(logic.js)이 signed 모드 금액 열에서 쉼표만 벗겨내고 회계 표기 괄호(\"(5,000)\"=음수)는 전혀 인식하지 못해, 그런 행이 전부 error:amount로 가져오기에서 빠지는 공백을 발견 — 해외카드 이용내역 등에서 흔한 음수 표기 방식. parseNum이 전체 문자열이 괄호로 감싸였으면 벗기고 음수로 뒤집도록 수정(괄호 안쪽이 숫자가 아니거나 빈 괄호면 그대로 NaN/0으로 걸러짐, split 모드 동작은 변화 없음). APP_VERSION 1.47.260->1.47.261, sw.js CACHE v527->v528 동기 범프. test/run.js에 괄호쉼표/괄호단독/빈괄호 케이스 3건 추가(2152->2155). node test/run.js 2155/2155 통과, node --check(logic.js/test/run.js) 및 index.html 인라인 스크립트 4블록 구문 검증 통과.",
       "commit": null
     }
   ]

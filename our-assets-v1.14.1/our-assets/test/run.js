@@ -5743,6 +5743,23 @@ test('mapGenericCsvRow: 금액 한 열(signed) 모드에서 양수는 수입으�
   assert.strictEqual(r.txn.type, 'income');
   assert.strictEqual(r.txn.fromAssetId, null); assert.strictEqual(r.txn.toAssetId, 'a1');
 });
+test('mapGenericCsvRow: 괄호 회계표기("(5,000)")도 음수로 해석해 지출로 가져온다(app-evolve cycle259)', () => {
+  const r = sandbox.mapGenericCsvRow(['2026-01-01', '(5,000)', '해외카드'], { dateCol: 0, amountCol: 1, memoCol: 2, mode: 'signed', category: '식비' }, 'a1');
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.txn.type, 'expense');
+  assert.strictEqual(r.txn.amount, 5000);
+  assert.strictEqual(r.txn.fromAssetId, 'a1'); assert.strictEqual(r.txn.toAssetId, null);
+});
+test('mapGenericCsvRow: 쉼표 없는 괄호 표기("(5000)")도 음수로 해석된다', () => {
+  const r = sandbox.mapGenericCsvRow(['2026-01-01', '(5000)'], { dateCol: 0, amountCol: 1, mode: 'signed', category: '식비' }, 'a1');
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.txn.type, 'expense');
+  assert.strictEqual(r.txn.amount, 5000);
+});
+test("mapGenericCsvRow: 빈 괄호('()')는 숫자가 아니라 0이 되어 error:'amount'로 걸러진다", () => {
+  const r = sandbox.mapGenericCsvRow(['2026-01-01', '()'], { dateCol: 0, amountCol: 1, mode: 'signed', category: '식비' }, 'a1');
+  assert.strictEqual(r.ok, false); assert.strictEqual(r.error, 'amount');
+});
 test('mapGenericCsvRow: 출금 열만 채워지면 지출, 입금 열만 채워지면 수입(split 모드)', () => {
   const out = sandbox.mapGenericCsvRow(['2026-01-01', '', '5,000'], { dateCol: 0, inCol: 1, outCol: 2, mode: 'split', category: '식비' }, 'a1');
   assert.strictEqual(out.ok, true); assert.strictEqual(out.txn.type, 'expense'); assert.strictEqual(out.txn.amount, 5000); assert.strictEqual(out.txn.fromAssetId, 'a1');
