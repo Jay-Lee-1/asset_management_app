@@ -6152,6 +6152,28 @@ test('matchTxnQuery: 자산명이 조합형(NFD)으로 저장돼 있어도 완�
   assert.strictEqual(sandbox.matchTxnQuery(t, '우리은행', assets), true);
 });
 
+/* ---------- matchTxnQuery/matchAssetQuery/matchCatQuery: 검색어를 공백으로 띄워 쓰면 여러 단어
+ * 모두 포함(AND)으로 좁혀진다(app-evolve cycle257 develop) — 기존엔 공백 포함 검색어 전체를 하나의
+ * literal로 includes() 비교해, 메모/카테고리/자산명처럼 서로 다른 haystack 필드에 걸쳐 있는 단어
+ * 조합은 띄어 써서 좁혀 찾을 방법이 없었다. */
+test('matchTxnQuery: 검색어를 띄어 쓰면 메모·카테고리처럼 서로 다른 필드에 나뉜 단어도 모두 포함해야 매칭된다(AND)', () => {
+  const t = { memo: '스타벅스', category: '카페/음료', fromAssetId: null, toAssetId: null };
+  assert.strictEqual(sandbox.matchTxnQuery(t, '스타벅스 카페', []), true, '메모+카테고리에 각각 나뉜 두 단어가 모두 있으면 매칭');
+  assert.strictEqual(sandbox.matchTxnQuery(t, '스타벅스 편의점', []), false, '한 단어라도 어느 필드에도 없으면 매칭 안 됨');
+});
+test('matchTxnQuery: 단어 순서가 haystack과 달라도(카테고리 먼저, 검색어는 메모 먼저) 매칭된다', () => {
+  const t = { memo: '스타벅스', category: '카페/음료', fromAssetId: null, toAssetId: null };
+  assert.strictEqual(sandbox.matchTxnQuery(t, '카페 스타벅스', []), true);
+});
+test('matchTxnQuery: 검색어가 공백뿐이면 빈 검색어와 동일하게 전체 통과시킨다', () => {
+  const t = { memo: '아무거나', category: '기타', fromAssetId: null, toAssetId: null };
+  assert.strictEqual(sandbox.matchTxnQuery(t, '   ', []), true);
+});
+test('matchTxnQuery: 단어 사이 공백이 여러 칸이거나 앞뒤에 공백이 있어도 똑같이 AND로 동작한다', () => {
+  const t = { memo: '스타벅스', category: '카페/음료', fromAssetId: null, toAssetId: null };
+  assert.strictEqual(sandbox.matchTxnQuery(t, '  스타벅스   카페  ', []), true);
+});
+
 /* ---------- matchAssetQuery: 자산 검색도 matchTxnQuery와 동일한 대소문자 무시 includes 규칙 ---------- */
 test('matchAssetQuery: 빈 검색어는 항상 매칭된다', () => {
   assert.strictEqual(sandbox.matchAssetQuery({ name: '카카오뱅크' }, ''), true);
@@ -6174,6 +6196,10 @@ test('matchAssetQuery: 자산명이 조합형(NFD)으로 저장돼 있어도 완
 test('matchAssetQuery: 검색어가 조합형(NFD)이어도 완성형(NFC)으로 저장된 자산명을 찾을 수 있다', () => {
   assert.strictEqual(sandbox.matchAssetQuery({ name: '삼성전자' }, '삼성전자'.normalize('NFD')), true, '검색어가 NFD라도 NFC로 저장된 hay와 매칭돼야 함');
 });
+test('matchAssetQuery: 검색어를 띄어 쓰면 이름+통화처럼 서로 다른 필드에 나뉜 단어도 모두 포함해야 매칭된다(AND, app-evolve cycle257)', () => {
+  assert.strictEqual(sandbox.matchAssetQuery({ name: '달러', currency: 'USD' }, '달러 usd'), true);
+  assert.strictEqual(sandbox.matchAssetQuery({ name: '달러', currency: 'USD' }, '달러 eur'), false);
+});
 
 /* ---------- matchCatQuery: 카테고리명 검색도 matchAssetQuery와 동일한 규칙(대소문자 무시
  * includes + NFC 정규화) ---------- (app-evolve cycle253 critique → cycle254 advance) */
@@ -6194,6 +6220,10 @@ test('matchCatQuery: 카테고리명이 조합형(NFD)으로 저장돼 있어도
 });
 test('matchCatQuery: 검색어가 조합형(NFD)이어도 완성형(NFC)으로 저장된 카테고리명을 찾을 수 있다', () => {
   assert.strictEqual(sandbox.matchCatQuery('용돈', '용돈'.normalize('NFD')), true);
+});
+test('matchCatQuery: 검색어를 띄어 쓰면 두 단어가 모두 포함돼야 매칭된다(AND, app-evolve cycle257)', () => {
+  assert.strictEqual(sandbox.matchCatQuery('경조사비', '경조 사비'), true);
+  assert.strictEqual(sandbox.matchCatQuery('경조사비', '경조 외식'), false);
 });
 
 /* ---------- matchesAssetId: 자산 행 '내역' 버튼(openAssetHistory)이 쓰는 계좌 필터 ---------- */

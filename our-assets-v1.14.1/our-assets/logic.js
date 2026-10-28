@@ -479,6 +479,18 @@ function txCatLabel(t){
  * 붙여넣은 메모·자산명은 NFD로 저장되는 경우가 있음) 검색어와 저장된 글자가 눈에는 완전히
  * 같아 보여도 전혀 매칭되지 않는다. normName()은 카테고리/귀속 '이름' 중복 비교에만 이 정규화를
  * 적용했을 뿐, 자유 텍스트 검색(#histQ 전체내역 검색, 자산 검색)에는 적용된 적이 없었다. */
+/* 검색어를 공백 기준으로 토큰화해 트림 후 빈 토큰을 거른다 — matchTxnQuery/matchAssetQuery/
+ * matchCatQuery가 공유하는 "여러 단어를 띄어 쓰면 AND(모두 포함)로 좁혀진다" 규칙의 토큰화
+ * 단계. 기존엔 공백을 포함한 검색어 전체를 하나의 literal로 includes() 비교해, haystack 안에
+ * 정확히 같은 순서·간격으로 붙어 있지 않으면(예: 메모 "스타벅스"+카테고리 "카페음료"에 대해
+ * "스타벅스 카페"로 좁혀 찾으려는 경우) 전혀 매칭되지 않았다 — 자산명/카테고리처럼 서로 다른
+ * haystack 필드에 걸쳐 있는 단어 조합은 사용자가 띄어 써도 좁혀 찾을 방법이 없었다
+ * (app-evolve cycle257 develop). 토큰이 하나뿐이면(기존처럼 공백 없이 입력) 그 한 토큰의
+ * includes()와 동일해 기존 동작을 그대로 보존한다. 토큰이 하나도 안 남으면(검색어가 공백뿐)
+ * 빈 검색어와 동일하게 전체 통과시킨다. */
+function searchTerms(q){
+ return String(q||'').trim().split(/\s+/).filter(Boolean);
+}
 function matchTxnQuery(t,q,assets){
  if(!q)return true;
  const fa=(assets||[]).find(a=>a.id===t.fromAssetId),ta=(assets||[]).find(a=>a.id===t.toAssetId);
@@ -487,7 +499,10 @@ function matchTxnQuery(t,q,assets){
  const cats=lines.map(s=>s.category||'').join(' ');
  const lineMemos=lines.map(s=>s.memo||'').join(' ');
  const hay=(t.memo||'')+' '+cats+' '+lineMemos+' '+(fa?fa.name:(t.fromAssetName||'—'))+' '+(ta?ta.name:(t.toAssetName||'—'))+' '+amt;
- return hay.normalize('NFC').toLowerCase().includes(q.normalize('NFC').toLowerCase().replace(/,/g,''));
+ const normHay=hay.normalize('NFC').toLowerCase();
+ const terms=searchTerms(q.normalize('NFC').toLowerCase().replace(/,/g,''));
+ if(!terms.length)return true;
+ return terms.every(term=>normHay.includes(term));
 }
 /* 자산명(+fx 보유통화) 검색 — matchTxnQuery와 동일하게 대소문자 구분 없이 includes로 매칭하고,
  * 같은 이유로 NFC 정규화도 함께 적용한다(위 matchTxnQuery 주석 참고).
@@ -497,14 +512,20 @@ function matchTxnQuery(t,q,assets){
 function matchAssetQuery(a,q){
  if(!q)return true;
  const hay=(a.name||'')+' '+(a.currency||'');
- return hay.normalize('NFC').toLowerCase().includes(q.normalize('NFC').toLowerCase());
+ const normHay=hay.normalize('NFC').toLowerCase();
+ const terms=searchTerms(q.normalize('NFC').toLowerCase());
+ if(!terms.length)return true;
+ return terms.every(term=>normHay.includes(term));
 }
 /* 카테고리명 검색 — matchAssetQuery와 동일한 규칙(대소문자 무시 includes + NFC 정규화)을 카테고리
  * 피커(openCatPicker, index.html)에 적용한다(app-evolve cycle253 critique → cycle254 advance).
  * 카테고리는 이름 하나뿐인 문자열이라 matchAssetQuery처럼 부가 필드를 haystack에 더할 필요가 없다. */
 function matchCatQuery(c,q){
  if(!q)return true;
- return String(c||'').normalize('NFC').toLowerCase().includes(q.normalize('NFC').toLowerCase());
+ const normHay=String(c||'').normalize('NFC').toLowerCase();
+ const terms=searchTerms(q.normalize('NFC').toLowerCase());
+ if(!terms.length)return true;
+ return terms.every(term=>normHay.includes(term));
 }
 /* 계좌(자산) 단위 거래내역 필터 — assetId가 없으면(전체) 항상 통과, 있으면 보내거나 받은 쪽 중 하나라도 일치해야 함 */
 function matchesAssetId(t,assetId){
