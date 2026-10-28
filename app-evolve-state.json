@@ -1,19 +1,8 @@
 {
-  "cycle": 260,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "전역 통합검색이 반복거래(가상 전개) 거래를 못 찾는 공백 수정",
-    "why": "cycle259 advance가 신설한 전역 통합검색 globalSearchBody()(index.html:5903)는 거래를 DB.txns.filter(t=>matchTxnQuery(...))로만 찾는데, 반복거래(매달 넷플릭스/월세/급여 등)는 DB.txns에 실물로 저장되지 않고 expandRec()을 통해 그때그때 가상으로 전개된다(allTxns, index.html:2713). 반면 같은 matchTxnQuery를 쓰는 전체내역 자체 검색 filteredHist()(index.html:5374)는 반드시 allTxns(RANGE_FROM,RANGE_TO)를 거쳐 반복거래 전개분까지 포함해서 찾는다. 그 결과 사용자가 반복거래로만 존재하는 거래를 통합검색에 입력하면 거래 그룹이 통째로 비어 보이는데, 같은 단어로 전체내역 자체 검색을 하면 바로 찾아지는 역설적 상황이 된다.",
-    "approach": "globalSearchBody()의 txns 조회를 DB.txns.filter(...) 대신 allTxns(RANGE_FROM,RANGE_TO).filter(t=>matchTxnQuery(t,q,DB.assets))로 바꿔 filteredHist와 동일한 소스를 쓰게 한다. 가상 반복거래 행은 t.id가 'rec_'+recId+'_'+date 형태라 txRowCore(이미 isRec/data-rec 처리 지원, index.html:4764)가 그대로 렌더링 가능함을 확인하고, 정렬(날짜 내림차순)·상위 20건 cap 로직은 그대로 유지한다. allTxns 기반 필터에 반복거래 전개 결과가 포함되는지 확인하는 순수 로직 회귀 테스트를 1~2건 추가한다."
-  },
+  "cycle": 261,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 255,
-      "phase": "advance",
-      "timestamp": "2026-10-27T20:15:00.000Z",
-      "summary": "critique(cycle255) 계획대로 귀속 선택 세그먼트 렌더링 중복을 공유 헬퍼 ownerSegHtml(current,onClickFor,opts)로 통합. 5개 호출부(renderGoalForm/openIncomeAnalysis/renderHistory/openYearReview/openSpendAnalysis) 전부 교체. APP_VERSION 1.47.253->1.47.254, sw.js CACHE v520->v521. test/run.js 11건 추가(2093->2104). node test/run.js 2104/2104 통과.",
-      "commit": null
-    },
     {
       "cycle": 256,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-28T13:10:00.000Z",
       "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색한 결과, cycle259 advance가 신설한 전역 통합검색 globalSearchBody()(index.html:5903)가 거래를 DB.txns.filter(...)로만 찾아 DB.txns에 실물로 저장되지 않고 expandRec()으로 가상 전개되는 반복거래(매달 넷플릭스/월세/급여 등)를 못 찾는 공백을 발견 — 같은 matchTxnQuery를 쓰는 전체내역 자체 검색 filteredHist()는 allTxns()를 거쳐 반복거래 전개분까지 찾아내므로, 막 추가된 \"통합\"검색이 오히려 덜 찾는 역설적 상황. advance 계획(globalSearchBody의 txns 조회를 allTxns(RANGE_FROM,RANGE_TO).filter(...)로 교체)을 pending_advance_plan에 저장. 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 260,
+      "phase": "advance",
+      "timestamp": "2026-10-28T13:40:00.000Z",
+      "summary": "critique(cycle260) 계획대로 전역 통합검색의 거래 조회 소스를 DB.txns.filter(...)에서 allTxns(RANGE_FROM,RANGE_TO).filter(t=>matchTxnQuery(t,q,DB.assets))로 교체(index.html globalSearchBody). txRowCore가 이미 isRec/data-rec 가상 반복거래 행 렌더링을 지원해 추가 분기 없이 그대로 재사용 가능함을 확인, 정렬·상위 20건 cap 로직은 그대로 유지. index.html만 변경이라 APP_VERSION 1.47.263->1.47.264, sw.js CACHE v530->v531 동기 범프. test/run.js에 allTxns 기반 필터가 반복거래(expandRec 전개분)를 찾아내는 회귀 테스트와 DB.txns.filter만 쓰면(수정 전 버그) 못 찾는다는 대조 테스트 2건 추가(2160->2162). node test/run.js 2162/2162 통과, node --check(sw.js/test/run.js) 및 HTML 주석 제거 후 추출한 index.html 인라인 스크립트 4블록 구문 검증 통과. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

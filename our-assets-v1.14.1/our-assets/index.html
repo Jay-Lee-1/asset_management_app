@@ -1412,7 +1412,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.263';
+const APP_VERSION='1.47.264';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5900,7 +5900,7 @@ function gsQInput(v){clearTimeout(_gsQT);_gsQT=setTimeout(()=>{const b=$('gsBody
 function globalSearchBody(qRaw){
  const q=(qRaw||'').trim();
  if(!q)return `<div class="empty"><div class="ei">${svg('search')}</div><div class="et">거래·자산·카테고리를 한 번에 찾아요</div><div class="es">메모·카테고리·자산명·금액으로 검색해 보세요</div></div>`;
- const txns=DB.txns.filter(t=>matchTxnQuery(t,q,DB.assets)).sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:0).slice(0,20);
+ const txns=allTxns(RANGE_FROM,RANGE_TO).filter(t=>matchTxnQuery(t,q,DB.assets)).sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:0).slice(0,20); /* DB.txns만 보면 반복거래(expandRec 가상 전개분)를 놓친다 — filteredHist와 같은 소스로 통일(app-evolve cycle260 advance) */
  const assets=DB.assets.filter(a=>matchAssetQuery(a,q)).slice(0,20);
  const cats=[];
  ['expense','income','saving'].forEach(k=>DB.categories[k].filter(c=>matchCatQuery(c,q)).forEach(c=>cats.push({kind:k,name:c})));

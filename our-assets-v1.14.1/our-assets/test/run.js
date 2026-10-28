@@ -6378,6 +6378,31 @@ test('전역 통합검색: 거래에만 있는 단어는 자산/카테고리 매
   assert.strictEqual(sandbox.matchCatQuery('식비', '전기요금'), false);
 });
 
+/* ---------- 전역 통합검색 거래 그룹의 소스: DB.txns에 실물로 저장되지 않고 expandRec()이
+ * 즉석 전개하는 반복거래(매달 넷플릭스 등)도 찾아져야 전체내역 자체 검색(filteredHist,
+ * allTxns 기반)과 동작이 같아진다(app-evolve cycle260 critique → advance). globalSearchBody()가
+ * 고치기 전처럼 DB.txns.filter(...)만 쓰면 반복거래만 있는 검색어는 통째로 빠진다. */
+test('전역 통합검색 거래 소스: allTxns(RANGE_FROM,RANGE_TO).filter(matchTxnQuery)는 반복거래(expandRec 전개분)도 찾아낸다', () => {
+  sandbox._recCache.clear();
+  sandbox.DB = {
+    txns: [{ id: 't1', date: '2026-01-01', type: 'expense', category: '식비', amount: -5000, fromAssetId: 'a1', memo: '점심' }],
+    recurrences: [{ id: 'r1', active: true, freq: 'monthly', day: 1, startDate: '2026-01-01', endDate: null, weekend: 'none', type: 'expense', category: '구독', memo: '넷플릭스', amount: -17000, fromAssetId: 'a1', skip: [], edits: {} }],
+    assets: [{ id: 'a1', name: '주계좌' }],
+  };
+  const found = sandbox.allTxns(sandbox.RANGE_FROM, sandbox.RANGE_TO).filter(t => sandbox.matchTxnQuery(t, '넷플릭스', sandbox.DB.assets));
+  assert.ok(found.length > 0, '넷플릭스는 DB.txns에 없고 expandRec()이 매달 가상으로 전개하므로, allTxns 기반 필터는 그 전개분에서 찾아야 함');
+  assert.ok(found.every(t => t.isRec), '찾은 결과는 전부 가상 반복거래 행이어야 함(실물 거래가 아님)');
+});
+test('전역 통합검색 거래 소스: DB.txns.filter(matchTxnQuery)만 쓰면(수정 전 버그) 반복거래만 있는 검색어는 못 찾는다', () => {
+  sandbox.DB = {
+    txns: [{ id: 't1', date: '2026-01-01', type: 'expense', category: '식비', amount: -5000, fromAssetId: 'a1', memo: '점심' }],
+    recurrences: [{ id: 'r1', active: true, freq: 'monthly', day: 1, startDate: '2026-01-01', endDate: null, weekend: 'none', type: 'expense', category: '구독', memo: '넷플릭스', amount: -17000, fromAssetId: 'a1', skip: [], edits: {} }],
+    assets: [{ id: 'a1', name: '주계좌' }],
+  };
+  const found = sandbox.DB.txns.filter(t => sandbox.matchTxnQuery(t, '넷플릭스', sandbox.DB.assets));
+  assert.strictEqual(found.length, 0, 'DB.txns에는 반복거래 실물이 없으므로 수정 전 globalSearchBody() 방식으로는 아무것도 찾지 못함(이 버그를 고친 동작이 바로 위 테스트)');
+});
+
 /* ---------- matchesAssetId: 자산 행 '내역' 버튼(openAssetHistory)이 쓰는 계좌 필터 ---------- */
 test('matchesAssetId: assetId가 없으면(전체) 항상 매칭된다', () => {
   const t = { fromAssetId: 'a1', toAssetId: null };
