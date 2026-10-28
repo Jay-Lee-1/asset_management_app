@@ -1,15 +1,8 @@
 {
   "cycle": 259,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 254,
-      "phase": "review",
-      "timestamp": "2026-10-27T13:45:00.000Z",
-      "summary": "cycle254 develop 커밋(62a9ae8, txSplitAdd/txSplitRemove에 syncTxInputs() 누락 수정)을 검토. 다른 모든 핸들러의 '재렌더 전 syncTxInputs()' 패턴과 코드로 직접 대조해 같은 패턴을 그대로 따름을 확인. node test/run.js 독립 재실행 결과 2080/2080 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 254,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-28T08:16:10.481Z",
       "summary": "범용(은행/카드사) CSV 가져오기의 mapGenericCsvRow(logic.js)이 signed 모드 금액 열에서 쉼표만 벗겨내고 회계 표기 괄호(\"(5,000)\"=음수)는 전혀 인식하지 못해, 그런 행이 전부 error:amount로 가져오기에서 빠지는 공백을 발견 — 해외카드 이용내역 등에서 흔한 음수 표기 방식. parseNum이 전체 문자열이 괄호로 감싸였으면 벗기고 음수로 뒤집도록 수정(괄호 안쪽이 숫자가 아니거나 빈 괄호면 그대로 NaN/0으로 걸러짐, split 모드 동작은 변화 없음). APP_VERSION 1.47.260->1.47.261, sw.js CACHE v527->v528 동기 범프. test/run.js에 괄호쉼표/괄호단독/빈괄호 케이스 3건 추가(2152->2155). node test/run.js 2155/2155 통과, node --check(logic.js/test/run.js) 및 index.html 인라인 스크립트 4블록 구문 검증 통과.",
+      "commit": "b3edf58"
+    },
+    {
+      "cycle": 259,
+      "phase": "review",
+      "timestamp": "2026-10-28T09:00:00.000Z",
+      "summary": "cycle259 develop 커밋(b3edf58, mapGenericCsvRow의 signed 모드 괄호 회계표기 음수 인식)을 검토. split 모드의 inCol/outCol에 괄호값이 들어오는 경우까지 코드로 대조: parseNum이 괄호를 음수로 뒤집어도 inOk/outOk는 '>0'을 요구하므로 음수가 되면 그대로 false가 되어 수정 전(NaN도 false)과 동일하게 error:'amount'로 걸러짐을 확인 — 커밋 메시지의 'split 모드 동작은 변화 없음' 주장이 사실임을 검증. 공백 포함 괄호('( 5,000 )')도 Number()의 트리밍으로 정상 처리됨을 확인. node test/run.js 독립 재실행 결과 2155/2155 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
