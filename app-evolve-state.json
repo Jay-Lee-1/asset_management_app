@@ -1,19 +1,8 @@
 {
-  "cycle": 259,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "전역 통합검색(글로벌 서치) 신설",
-    "why": "logic.js에 matchTxnQuery/matchAssetQuery/matchCatQuery/searchTerms가 이미 있고 각각 거래내역(histQ)/자산선택(assetQ)/카테고리선택(catQ) 화면에서 개별적으로 쓰이고 있지만, 어느 화면에 있는지 몰라도 한 번에 거래+자산+카테고리를 가로질러 찾을 수 있는 단일 진입점이 없다. 사용자가 과거 거래를 찾으려면 먼저 그게 거래내역/자산/카테고리 중 어디 있을지부터 추측해야 하는 공백. pushCloud 실패는 이미 cloudSyncFailed()의 toast+homeAlerts(cycle211)로 눈에 보이게 처리돼 있어 더 다룰 게 없었고, PDF 명세서/아카이브 선제 안내는 아직 체감되는 문제가 없어 우선순위가 낮다고 판단.",
-    "approach": "index.html에 openGlobalSearch() 신설(openSheet() 인프라 재사용). 입력 하나(histQ/fcWire 패턴과 동일하게 디바운스+지우기 버튼)에 매 입력마다 DB.txns를 matchTxnQuery, DB.assets를 matchAssetQuery, DB.categories.expense/income/saving을 matchCatQuery로 동시에 필터링해 \"거래/자산/카테고리\" 3개 그룹으로 나눠 렌더링(그룹별 상위 20건 cap, 거래는 날짜 내림차순). 거래 행은 txRowCore(t, sel) 재사용해 탭하면 editTx(t.id,t.recId,t.date)로 바로 편집 시트 열기, 자산 행은 탭하면 openAssetSheet(a.id), 카테고리 행은 탭하면 openCatManage(kind)로 이동(카테고리 자체는 전용 화면이 없으니 관리 화면으로). 진입점은 menu 탭 상단(또는 home 탭 헤더)에 검색 아이콘 버튼 하나 추가해 openGlobalSearch() 호출. 새 상태는 없음(순수 읽기+네비게이션), DB 스키마 변경 없음. test/run.js에는 matchTxnQuery/matchAssetQuery/matchCatQuery를 조합해 \"여러 그룹에 걸친 동시 검색\" 케이스(특정 단어가 거래 메모와 자산명 양쪽에 있을 때 둘 다 결과에 포함되는지) 회귀 테스트 추가. index.html/logic.js 변경이므로 APP_VERSION과 sw.js CACHE 동기 범프 필수."
-  },
+  "cycle": 260,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 254,
-      "phase": "advance",
-      "timestamp": "2026-10-27T15:10:00.000Z",
-      "summary": "critique(cycle254) 계획대로 PWA 아이콘 롱프레스 숏컷 + ?action= 딥링크를 구현했다. logic.js에 순수함수 parseShortcutAction(search) 신설, index.html에 디스패처 runShortcutAction(action) 추가, startApp()/unlockApp() 배선(APPLOCK 걸려있으면 PENDING_SHORTCUT_ACTION에 보관 후 unlock 성공 시 실행), manifest.webmanifest에 shortcuts 3개 추가. APP_VERSION 1.47.251->1.47.252, sw.js CACHE v518->v519. test/run.js 12건 추가(2080->2092, 실측 2091). node test/run.js 2091/2091 통과. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 255,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-28T10:10:33.067Z",
       "summary": "fork 서브에이전트로 pushCloud 주변 실패 처리(cloudSyncFailed/toast/homeAlerts cycle211)를 직접 코드로 확인한 결과 이미 충분히 처리돼 있어 러너업에서 제외. matchTxnQuery/matchAssetQuery/matchCatQuery/searchTerms가 전부 logic.js에 이미 존재하지만 거래내역/자산선택/카테고리선택 화면 각각에서만 쓰이고 있어, 세 가지를 한 입력으로 동시에 가로질러 찾는 전역 통합검색 진입점이 빠져있는 공백을 발견. advance 계획을 pending_advance_plan에 저장.",
+      "commit": null
+    },
+    {
+      "cycle": 259,
+      "phase": "advance",
+      "timestamp": "2026-10-28T11:14:05.858Z",
+      "summary": "critique(cycle259) 계획대로 전역 통합검색(openGlobalSearch)을 구현. index.html에 openGlobalSearch/gsQInput/globalSearchBody 신설(openSheet 인프라 재사용) — 입력 하나로 DB.txns(matchTxnQuery)/DB.assets(matchAssetQuery)/DB.categories.expense|income|saving(matchCatQuery)을 동시에 220ms 디바운스 필터링해 거래·자산·카테고리 3그룹(그룹별 상위 20건 cap, 거래는 날짜 내림차순)으로 렌더링. 거래 행은 txRowCore 재사용(탭하면 rowTap→editTx), 자산/카테고리 행은 각각 openAssetSheet(a.id)/openCatManage(kind) 직접 호출(기존 openRecManage/asset-item 행처럼 openSheet가 같은 시트를 덮어써 닫기 불필요). 진입점은 pageHead(menu 탭 헤더)에 검색 아이콘 버튼(.icon-btn, 기존에 정의만 돼 있던 미사용 CSS 클래스) 추가. APP_VERSION 1.47.261->1.47.262, sw.js CACHE v528->v529 동기 범프. test/run.js에 세 매칭 함수가 같은 단어에 그룹별로 독립 매칭/비매칭하는지 검증하는 회귀 테스트 2건 추가(2155->2157). node test/run.js 2157/2157 통과, node --check(logic.js/sw.js/test/run.js) 및 HTML 주석을 제거한 뒤 추출한 index.html 인라인 스크립트 4블록 구문 검증 모두 통과.",
       "commit": null
     }
   ]

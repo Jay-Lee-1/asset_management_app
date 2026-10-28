@@ -1412,7 +1412,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.261';
+const APP_VERSION='1.47.262';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5883,6 +5883,46 @@ function planAsset(id){const a=DB.assets.find(x=>x.id===id);
  ST.plan.assetId=id;closeSheet();
  if(!refreshPlanBody())renderPlan();}
 
+/* ================= 전역 통합검색 ================= */
+/* matchTxnQuery/matchAssetQuery/matchCatQuery(logic.js)는 전체내역(histQ)/자산검색(assetQ)/
+ * 카테고리피커(catQ) 화면에 각각 따로 배선돼 있어, 거래·자산·카테고리 중 어디 있을지부터
+ * 추측해야만 찾을 수 있었다 — 이 세 검색을 한 입력으로 동시에 가로질러 찾는 단일 진입점을
+ * 신설한다(app-evolve cycle259 critique → advance). 순수 조회+화면 전환만 하고 DB를 바꾸지
+ * 않으므로 새 상태나 스키마 변경은 없다. 결과가 너무 많아지면 화면이 무거워지므로 그룹별
+ * 상위 20건으로 cap한다(그 이상은 각 화면의 전용 검색을 쓰면 됨). */
+let _gsQT=null;
+function openGlobalSearch(){
+ openSheet(`<h3>통합 검색</h3>
+  <div class="searchbar" style="margin-bottom:14px">${svg('search')}<div class="field-clear"><input id="gsQ" aria-label="통합 검색" placeholder="거래·자산·카테고리 검색" value="" oninput="gsQInput(this.value)"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('gsQ')">✕</button></div></div>
+  <div id="gsBody">${globalSearchBody('')}</div>`);
+}
+function gsQInput(v){clearTimeout(_gsQT);_gsQT=setTimeout(()=>{const b=$('gsBody');if(b)b.innerHTML=globalSearchBody(v)},220);}
+function globalSearchBody(qRaw){
+ const q=(qRaw||'').trim();
+ if(!q)return `<div class="empty"><div class="ei">${svg('search')}</div><div class="et">거래·자산·카테고리를 한 번에 찾아요</div><div class="es">메모·카테고리·자산명·금액으로 검색해 보세요</div></div>`;
+ const txns=DB.txns.filter(t=>matchTxnQuery(t,q,DB.assets)).sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:0).slice(0,20);
+ const assets=DB.assets.filter(a=>matchAssetQuery(a,q)).slice(0,20);
+ const cats=[];
+ ['expense','income','saving'].forEach(k=>DB.categories[k].filter(c=>matchCatQuery(c,q)).forEach(c=>cats.push({kind:k,name:c})));
+ const catsCapped=cats.slice(0,20);
+ if(!txns.length&&!assets.length&&!catsCapped.length)
+  return `<div class="empty"><div class="ei">${svg('search')}</div><div class="et">'${esc(q)}'와 일치하는 결과가 없어요</div><div class="es">다른 말로 검색해 보세요</div></div>`;
+ let html='';
+ if(txns.length)html+=`<div class="menu-cap" style="margin-top:8px">거래 · ${txns.length}건</div><div class="card">${txns.map(t=>txRowCore(t,{mode:false})).join('')}</div>`;
+ if(assets.length)html+=`<div class="menu-cap" style="margin-top:14px">자산 · ${assets.length}개</div><div class="card">${assets.map(a=>{
+   const ty=ASSET_TYPES[a.type],val=a.type==='debt'?-assetEval(a):assetEval(a);
+   return `<div class="asset-item" tabindex="0" role="button" aria-label="${esc(a.name)} ${won(val)}" onclick="openAssetSheet('${a.id}')" onkeydown="rowKeydown(event,()=>openAssetSheet('${a.id}'))">
+    <div class="avatar ${ty.cls}">${svg(ty.icon)}</div>
+    <div style="flex:1;min-width:0"><div class="nm"><span class="nmt">${esc(a.name)}</span></div>
+     <div class="sub"><span class="chipmini ${ownerChipClass(a.owner)}">${esc(a.owner)}</span><span>${assetSubline(a)}</span></div></div>
+    <div class="val"><div class="k num ${a.type==='debt'?'minus':''}">${won(val)}</div></div></div>`;
+  }).join('')}</div>`;
+ if(catsCapped.length)html+=`<div class="menu-cap" style="margin-top:14px">카테고리 · ${catsCapped.length}개</div><div class="card">${catsCapped.map(c=>
+   `<div class="manage-row" tabindex="0" role="button" aria-label="${esc(c.name)} ${CAT_LABEL[c.kind]} 카테고리" onclick="openCatManage('${c.kind}')" onkeydown="rowKeydown(event,()=>openCatManage('${c.kind}'))"><div class="avatar ${catAv(c.kind)}" style="width:36px;height:36px;border-radius:11px">${catGlyph(c.kind,c.name,18,'tag')}</div><div class="mn">${esc(c.name)}</div><span class="chipmini">${CAT_LABEL[c.kind]}</span><div class="mc">${svg('chev')}</div></div>`
+  ).join('')}</div>`;
+ return html;
+}
+
 /* ================= MENU ================= */
 function renderMenu(){
  const modeLabel={system:'시스템 설정',light:'라이트',dark:'다크'}[DB.settings.themeMode];
@@ -8501,6 +8541,7 @@ function pageHead(tab,extra){
   acts=modeSeg(tab)+`<button class="sch-chip today-chip" onclick="goToday()">${svg('clock')}오늘로</button>`;
  }
  else if(tab==='plan')acts=`<button class="sch-chip today-chip" onclick="goToday()">${svg('clock')}오늘로</button>`;
+ else if(tab==='menu')acts=`<button type="button" class="icon-btn" aria-label="통합 검색" onclick="openGlobalSearch()">${svg('search')}</button>`; /* 거래/자산/카테고리를 가로질러 찾는 단일 진입점(app-evolve cycle259 advance) */
  acts+=(extra||'');
  return `<div class="hdr"><div class="hd-l"><div class="sub">우리의 자산</div><h1>${PAGE_TITLE[tab]}</h1></div>${acts?`<div class="hdr-actions">${acts}</div>`:''}</div>`;
 }

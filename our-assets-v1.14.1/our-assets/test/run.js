@@ -6347,6 +6347,25 @@ test('matchCatQuery: 검색어를 띄어 쓰면 두 단어가 모두 포함돼�
   assert.strictEqual(sandbox.matchCatQuery('경조사비', '경조 외식'), false);
 });
 
+/* ---------- 전역 통합검색(openGlobalSearch, index.html): 같은 검색어가 거래/자산/카테고리
+ * 세 그룹에 걸쳐 있으면 세 함수(matchTxnQuery/matchAssetQuery/matchCatQuery) 모두가 독립적으로
+ * 매칭해야 한다 — 한 입력으로 세 그룹을 동시에 가로질러 찾는 통합검색의 전제(app-evolve
+ * cycle259 critique → advance)를 각 그룹의 매칭 함수 단위에서 검증한다. */
+test('전역 통합검색: 같은 단어("스타벅스")가 거래 메모·자산명·카테고리명에 각각 있으면 세 매칭 함수가 모두 true를 돌려준다', () => {
+  const t = { memo: '스타벅스 강남점', category: '카페', fromAssetId: null, toAssetId: null };
+  const a = { name: '스타벅스상품권', currency: null };
+  assert.strictEqual(sandbox.matchTxnQuery(t, '스타벅스', []), true);
+  assert.strictEqual(sandbox.matchAssetQuery(a, '스타벅스'), true);
+  assert.strictEqual(sandbox.matchCatQuery('스타벅스정기구독', '스타벅스'), true);
+});
+test('전역 통합검색: 거래에만 있는 단어는 자산/카테고리 매칭 함수에선 매칭되지 않는다(그룹이 섞이지 않음)', () => {
+  const t = { memo: '전기요금', category: '관리비', fromAssetId: null, toAssetId: null };
+  const a = { name: '국민은행', currency: 'KRW' };
+  assert.strictEqual(sandbox.matchTxnQuery(t, '전기요금', []), true);
+  assert.strictEqual(sandbox.matchAssetQuery(a, '전기요금'), false);
+  assert.strictEqual(sandbox.matchCatQuery('식비', '전기요금'), false);
+});
+
 /* ---------- matchesAssetId: 자산 행 '내역' 버튼(openAssetHistory)이 쓰는 계좌 필터 ---------- */
 test('matchesAssetId: assetId가 없으면(전체) 항상 매칭된다', () => {
   const t = { fromAssetId: 'a1', toAssetId: null };
