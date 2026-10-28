@@ -1,22 +1,8 @@
 {
   "cycle": 262,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 256,
-      "phase": "advance",
-      "timestamp": "2026-10-27T21:00:00.000Z",
-      "summary": "critique(cycle256) 계획대로 목표 달성 축하 알림(goalAchieved/goalAchievedMulti)을 구현. goalNewlyAchieved 신설, DB.goals.achievedAckAt 필드 추가, homeAlerts/checkNotifyAlerts/homeAlertCard 배선, ackGoalAchieved 신설. APP_VERSION 1.47.255->1.47.256, sw.js CACHE v522->v523. test/run.js 15건 추가(2105->2120). node test/run.js 2120/2120 통과. pending_advance_plan null로 비움.",
-      "commit": null
-    },
-    {
-      "cycle": 257,
-      "phase": "develop",
-      "timestamp": "2026-10-28T00:13:53.287Z",
-      "summary": "검색어에 여러 단어를 띄어써서 좁히는 기능이 빠져있던 공백을 발견 — matchTxnQuery/matchAssetQuery/matchCatQuery가 전부 질의 전체를 하나의 부분문자열로 비교해 메모·카테고리처럼 다른 필드에 단어가 나뉘면 매칭 안 됨. searchTerms(q) 헬퍼 신설해 토큰화 AND 매칭으로 재배선(단일 단어는 기존과 동일, 회귀 없음). APP_VERSION 1.47.256->1.47.257, sw.js CACHE v523->v524. test/run.js 6건 추가(2120->2126). node test/run.js 2126/2126 통과.",
-      "commit": "1e482c2"
-    },
     {
       "cycle": 257,
       "phase": "review",
@@ -148,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-28T19:00:00.000Z",
       "summary": "critique(cycle261) 계획대로 거래 영수증 사진 첨부를 구현. logic.js에 순수함수 photoResizeDims(w,h,maxSide)와 상수 TX_PHOTO_MAX_SIDE(800)/TX_PHOTO_QUALITY(0.6) 신설(canvas 없이 목표 리사이즈 크기만 계산). index.html: txDraft에 photo(JPEG dataURL) 필드 추가, renderTxSheet() 메모 필드 아래에 txPhotoFieldHTML(d) 삽입(반복(rpt) 켜짐 상태엔 숨김 — DB.recurrences는 스키마에 자리가 없음), txPhotoPick(FileReader readAsDataURL→Image→canvas 리사이즈/압축→txDraft.photo)/txPhotoRemove/openPhotoViewer(풀스크린 뷰어, openSheet 재사용) 신설. txRowCore에 photo 있으면 28px 미니 썸네일(.tx-photo-mini) 노출, 탭하면 풀스크린 뷰어. saveTx()는 d 객체를 그대로 DB.txns에 저장하므로 별도 배선 없이 photo가 함께 저장됨. CSV 내보내기(txnsToCSV)는 자기 컬럼만 쓰는 별도 포맷이라 자동 제외, '복사해서 백업'(openCopyBackup)에 넘겨지는 text는 doExport가 만드는 전체 JSON 백업과 동일 경로라 사진이 커지면 클립보드 복사량도 커지지만 이미 공유/다운로드가 1차 경로이고 복사는 그게 막혔을 때만 쓰는 예외 경로라 별도 분기 없이 둠(러너업 — 복사 경로 사진 제외/경고는 이후 develop/review가 필요시 다룰 과제로 남김). CSS .tx-photo-mini/.tx-photo-wrap/.tx-photo-thumb/.tx-photo-pick 신설. APP_VERSION 1.47.265->1.47.266, sw.js CACHE v532->v533 동기 범프. test/run.js: photoResizeDims 단위 테스트 5건 추가(2166->2171), 그리고 renderTxSheet를 쓰는 기존 테스트(duplicateTx/txType 등)의 공유 FUNCTIONS 추출 목록에 txPhotoFieldHTML을 추가로 올려야 함을 처음 실행에서 발견(txPhotoFieldHTML is not defined로 7건 FAIL) — 추가 후 재실행. node test/run.js 2171/2171 통과, node --check(logic.js/sw.js/test/run.js) 및 HTML 주석 제거 후 추출한 index.html 인라인 스크립트 4블록 구문 검증 통과. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 262,
+      "phase": "develop",
+      "timestamp": "2026-10-28T20:12:30.749Z",
+      "summary": "fork 서브에이전트 없이 critique(cycle261 advance)가 명시적으로 남긴 러너업(복사해서 백업(openCopyBackup) 경로에 사진 제외/경고 미구현)을 이어받아 처리. doExport()의 JSON 백업이 공유/파일 저장(Blob/File)에 실패해 copyFallback으로 떨어질 때만 영수증 사진이 쌓인 백업이 textarea select+execCommand('copy') 복사를 느리게 하거나 실패시킬 수 있는 공백을 발견 — logic.js에 순수 함수 txnPhotoCount(txns)/redactTxnPhotos(dbLike)(JSON.stringify replacer로 photo 키만 null화) 신설. index.html doExport()의 copyFallback을 사진이 있으면 redactTxnPhotos(DB) 결과로, 제외된 장수와 파일로 다시 내보내라는 안내를 note에 포함해 openCopyBackup을 열도록 재배선(공유/파일 저장 경로는 원본 text 그대로 유지, CSV 경로는 변경 없음). APP_VERSION 1.47.266->1.47.267, sw.js CACHE v533->v534 동기 범프. test/run.js에 txnPhotoCount 2건 + redactTxnPhotos(사진만 제거, 나머지 필드/txns 밖 필드는 보존) 1건 추가(2171->2174). node test/run.js 2174/2174 통과, node --check(logic.js/sw.js/test/run.js) 통과.",
       "commit": null
     }
   ]

@@ -23645,6 +23645,26 @@ test('photoResizeDims: 너비/높이가 0이거나 비정상이면 0x0을 돌려
   assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.photoResizeDims(NaN, 100, 800))), { w: 0, h: 0 }, 'NaN 입력 처리가 틀림');
 });
 
+/* ---------- txnPhotoCount/redactTxnPhotos(logic.js): doExport()의 복사 경로(openCopyBackup)는
+ * textarea select+execCommand('copy') 의존이라, 영수증 사진(dataURL)이 쌓인 백업은 수 MB로 불어나
+ * 복사가 느려지거나 실패할 수 있다 — doExport()가 복사 경로로 떨어질 때만 photo 필드를 제외한
+ * 텍스트를 보여주고 제외한 장수를 안내하는 데 쓴다(app-evolve cycle262 develop) ---------- */
+test('txnPhotoCount: photo가 있는 거래만 센다', () => {
+  assert.strictEqual(sandbox.txnPhotoCount([{ id: 1, photo: 'data:x' }, { id: 2 }, { id: 3, photo: null }, { id: 4, photo: 'data:y' }]), 2, '사진 있는 거래 수를 틀리게 셈');
+});
+test('txnPhotoCount: 빈 배열/undefined도 안 터지고 0이다', () => {
+  assert.strictEqual(sandbox.txnPhotoCount([]), 0, '빈 배열 처리가 틀림');
+  assert.strictEqual(sandbox.txnPhotoCount(undefined), 0, 'undefined 입력 처리가 틀림');
+});
+test('redactTxnPhotos: txns의 photo 필드만 null로 바꾸고 나머지 값은 그대로 보존한다', () => {
+  const db = { settings: { a: 1 }, txns: [{ id: 't1', amount: 1000, photo: 'data:image/jpeg;base64,AAAA' }, { id: 't2', amount: 2000 }] };
+  const out = JSON.parse(sandbox.redactTxnPhotos(db));
+  assert.strictEqual(out.txns[0].photo, null, '사진이 있던 거래의 photo가 제거되지 않음');
+  assert.strictEqual(out.txns[0].amount, 1000, '사진 제거 중 다른 필드까지 바뀜');
+  assert.strictEqual(out.txns[1].amount, 2000, '사진 없는 거래가 영향받음');
+  assert.strictEqual(out.settings.a, 1, 'txns 밖의 필드까지 영향받음');
+});
+
 test('isRlsPolicyError: Postgres 42501 코드와 policy/RLS 메시지를 네트워크·인증 에러와 구분한다', () => {
   assert.strictEqual(sandbox.isRlsPolicyError({ code: '42501', message: 'permission denied for table user_data' }), true, '42501 코드를 RLS로 인식하지 못함');
   assert.strictEqual(sandbox.isRlsPolicyError({ message: 'new row violates row-level security policy for table "user_data"' }), true, 'row-level security 메시지를 인식하지 못함');

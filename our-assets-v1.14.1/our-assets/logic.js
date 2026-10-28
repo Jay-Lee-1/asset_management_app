@@ -1155,6 +1155,16 @@ function photoResizeDims(w,h,maxSide){
  return{w:Math.max(1,Math.round(w*scale)),h:Math.max(1,Math.round(h*scale))};
 }
 
+/* ================= 복사해서 백업 중 사진 제외 (순수) ================= */
+/* openCopyBackup(index.html)으로 넘어가는 클립보드 복사는 textarea select+execCommand('copy')
+ * 의존인데, 영수증 사진(dataURL)이 쌓인 백업은 장당 수십~100KB(photoResizeDims 주석 참고)씩이라
+ * 금방 수백 KB~수 MB로 불어나 일부 환경에서 복사가 느려지거나 조용히 실패할 수 있다(app-evolve
+ * cycle262 develop). 공유/파일 저장(doExport 1·2 경로)은 Blob/File이라 이 문제가 없으니, 복사
+ * 경로로 떨어질 때만 photo 필드를 제외한다 — 그 외 값은 그대로 보존(JSON.stringify replacer가
+ * 'photo' 키가 아닌 값은 손대지 않고 반환). */
+function txnPhotoCount(txns){return (txns||[]).filter(t=>t&&t.photo).length}
+function redactTxnPhotos(dbLike){return JSON.stringify(dbLike,(k,v)=>k==='photo'?null:v,2)}
+
 /* ================= 도움말 백업 안내 (순수) ================= */
 /* openHelp()의 '💾 백업' 행은 지금까지 계정 종류와 무관하게 항상 "데이터는 이 기기에만
  * 저장돼요"라고 단정했는데, 이메일 계정으로 클라우드 동기화를 켠 사용자(isCloudAcct —
