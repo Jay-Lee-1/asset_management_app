@@ -1412,7 +1412,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.257';
+const APP_VERSION='1.47.258';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1803,6 +1803,9 @@ const ASSET_TYPES={
  crypto:{label:'코인',icon:'coins',cls:'a-crypto'},
  etc:{label:'기타',icon:'wallet',cls:'a-etc'},
 };
+/* debt형 자산엔 payoffAckAt(완납 축하 알림을 확인(ack)한 시각, ms 또는 null/undefined)이 있을 수
+ * 있다 — DB.goals의 achievedAckAt(cycle256)과 동일한 역할. saveAsset()의 asDraft는 JSON 딥클론이라
+ * (goalDraft와 달리 필드 나열로 재구성하지 않음) 기본값 백필이 필요 없다(app-evolve cycle257 advance). */
 const DEFAULT_GROUP_ORDER=Object.keys(ASSET_TYPES);
 const TYPE_COLOR={cash:'var(--brand)',savings:'var(--save)',stock:'var(--stock)',realestate:'var(--gold)',debt:'var(--expense)',pension:'var(--income)',fx:'#7CC7B8',gold:'#C9A227',crypto:'var(--crypto)',etc:'var(--text-3)'};
 /* netlify/functions/rates.js는 임의의 ISO 3자리 통화코드를 폴백 체인으로 처리할 수 있지만,
@@ -3519,6 +3522,24 @@ function ackGoalAchieved(id){
   if(goalNewlyAchieved(g,p)){g.achievedAckAt=Date.now();save();}
  }
  openGoalForm(id);
+}
+/* ackGoalAchieved(바로 위)와 동일한 역할 — debtPaidOff(Multi) 홈 알림 카드가 ack 없이 그냥
+ * openAssetHistory만 열면 다음 렌더에서도 똑같이 떠 사라지지 않으므로, '실제로 열어 봄'을 ack으로
+ * 기록하는 이 함수를 거치게 한다(app-evolve cycle257 advance). debtsBehind()/assetBalCard와 동일한
+ * 방식(RANGE_FROM~TODAY 실제 잔액 추이, sign=-1)으로 이 자산 하나의 payoff를 다시 계산한다 —
+ * debtsPaidOff()가 이미 돌려준 리스트를 재사용하지 않는 이유는 ackGoalAchieved도 goalProgress를
+ * id 하나로 다시 계산하는 동일한 관례를 따르기 때문. 완납 전/이미 ack된 부채는 debtNewlyPaidOff가
+ * false라 openAssetHistory만 호출하는 것과 동일하게 동작 — 안전하게 모든 호출부에서 재사용 가능. */
+function ackDebtPayoff(assetId){
+ const a=DB.assets.find(x=>x.id===assetId);
+ if(a){
+  const txns=allTxns(RANGE_FROM,TODAY).filter(t=>!isPending(t));
+  const dates=assetBalSampleDates(RANGE_FROM,TODAY,60);
+  const pts=assetBalanceSeries(txns,a.id,assetBase(a),-1,dates);
+  const p=debtPayoffProjection(pts,TODAY);
+  if(debtNewlyPaidOff(a,p)){a.payoffAckAt=Date.now();touch(a);save();}
+ }
+ openAssetHistory(assetId);
 }
 function delGoal(id){
  const g=(DB.goals||[]).find(x=>x.id===id);if(!g)return;
@@ -8958,6 +8979,32 @@ function openDebtBehindList(){ /* openNegList()와 동일 패턴 — 1건이면 
     <div class="pbody"><div class="pn">${esc(a.name)}</div><div class="psub">${comma(assetEval(a))}원 · 최근엔 줄어들고 있지 않아요</div></div>
     <div class="pc">${svg('chevR')}</div></button>`).join('')}</div>`);
 }
+/* 완납된 부채 목록 — debtsBehind()(바로 위)와 정확히 대칭되는 긍정적 사건. 거래 이력이 1건이라도
+ * 있는 debt 중 debtNewlyPaidOff(achieved인데 아직 ack 안 됨)인 것만 추린다. 완납 시점엔 잔액이
+ * 0이라 assetEval()을 그대로 쓰면 축하 문구에 보여줄 숫자가 없으므로, 각 항목에 peak(조회 구간 중
+ * 가장 많이 빚졌던 금액 — "이만큼 다 갚았어요"로 보여줄 값)를 함께 돌려준다(app-evolve cycle257
+ * advance). homeAlerts()와 openDebtPaidOffList() 둘 다 이 공유 헬퍼를 쓴다(debtsBehind/
+ * openDebtBehindList와 동일한 공유 구조). */
+function debtsPaidOff(){
+ const txns=allTxns(RANGE_FROM,TODAY).filter(t=>!isPending(t));
+ const dates=assetBalSampleDates(RANGE_FROM,TODAY,60);
+ return DB.assets.filter(a=>a.includeInTotal&&a.type==='debt'&&txns.some(t=>t.fromAssetId===a.id||t.toAssetId===a.id)).map(a=>{
+   const pts=assetBalanceSeries(txns,a.id,assetBase(a),-1,dates);
+   return{a,p:debtPayoffProjection(pts,TODAY),peak:pts.reduce((m,pt)=>Math.max(m,pt.bal),0)};
+  }).filter(({a,p})=>debtNewlyPaidOff(a,p))
+  .map(({a,peak})=>({id:a.id,name:a.name,amount:peak}))
+  .sort((x,y)=>x.name<y.name?-1:1);
+}
+function openDebtPaidOffList(){ /* openDebtBehindList()와 동일 패턴 — 1건이면 바로 ack, 여러 건이면 시트에서 고른다 */
+ const list=debtsPaidOff();
+ if(!list.length){toast('완납 축하 알림이 없어요');closeSheet();return}
+ if(list.length===1){closeSheet();ackDebtPayoff(list[0].id);return}
+ openSheet(`<h3>부채 완납 🎉</h3><div class="desc">다 갚은 부채 ${list.length}건이에요. 눌러서 확인하세요.</div>
+  <div style="display:flex;flex-direction:column;gap:8px">${list.map(a=>`<button class="pick" onclick="closeSheet();ackDebtPayoff('${a.id}')">
+    <div class="pav a-debt">${svg('debt')}</div>
+    <div class="pbody"><div class="pn">${esc(a.name)}</div><div class="psub">${comma(a.amount)}원을 다 갚았어요</div></div>
+    <div class="pc">${svg('chevR')}</div></button>`).join('')}</div>`);
+}
 function homeAlerts(neg){
  const arr=[];
  if(CLOUD_UID&&CLOUD_SYNC_STATE==='conflict')arr.push({kind:'cloudConflict'});
@@ -9034,6 +9081,14 @@ function homeAlerts(neg){
  const _db=debtsBehind();
  if(_db.length===1){const a=_db[0];arr.push({kind:'debtBehind',assetId:a.id,name:a.name,amount:assetEval(a)});}
  else if(_db.length>1)arr.push({kind:'debtBehindMulti',count:_db.length});
+ /* 부채 완납: debtBehind(정체)와 정확히 대칭되는 긍정적 사건 — goalAchieved(cycle256)와 같은
+  * 모양으로, debtsPaidOff()(debtsBehind 바로 아래)가 이미 '거래 이력 1건 이상' 가드와 ack 여부
+  * 판정을 다 끝내 돌려준다. budgetOver/goalAchieved/debtBehind와 동일한 단일/복수 collapsing
+  * 패턴. 한 번 뜬 뒤엔 ackDebtPayoff(부채 상세 진입)가 payoffAckAt을 남겨야 사라지므로, debtBehind
+  * 처럼 추세가 바뀌어 자연 해소되지 않는다(app-evolve cycle257 advance). */
+ const _dp=debtsPaidOff();
+ if(_dp.length===1){const d=_dp[0];arr.push({kind:'debtPaidOff',assetId:d.id,name:d.name,amount:d.amount});}
+ else if(_dp.length>1)arr.push({kind:'debtPaidOffMulti',count:_dp.length});
  return arr;
 }
 /* homeAlerts()가 계산한 알림 중 "오늘 확정 대기 이체 / 임박한 저축 만기(1~2일 이내) / 예산 초과"처럼
@@ -9081,6 +9136,12 @@ function notifyAlertInfo(al){
  if(al.kind==='goalAchievedMulti')return{key:`goalAchievedMulti:${al.count}`,title:'목표를 달성했어요 🎉',body:`목표 ${al.count}건을 달성했어요`};
  if(al.kind==='debtBehind')return{key:`debtBehind:${al.assetId}:${TODAY.slice(0,7)}`,title:'부채가 줄지 않고 있어요',body:`${al.name} · 최근엔 ${comma(al.amount)}원에서 줄어들고 있지 않아요`};
  if(al.kind==='debtBehindMulti')return{key:`debtBehindMulti:${TODAY.slice(0,7)}:${al.count}`,title:'부채가 줄지 않고 있어요',body:`부채 ${al.count}건이 최근 줄어들고 있지 않아요`};
+ /* debtPaidOff(Multi)는 goalAchieved(Multi)와 동일하게 월 단위로 자연 해소되지 않는 '영구' 상태라
+  * key에 월을 넣지 않는다 — 한 번 보내고 나면 ack하거나(payoffAckAt 기록 → 이 kind가 더는
+  * homeAlerts()에서 안 나와 재호출 자체가 없음) 30일 지나 notifiedIds가 pruneNotifiedIds로
+  * 정리될 때까지 매일 다시 알리지 않는다(app-evolve cycle257 advance). */
+ if(al.kind==='debtPaidOff')return{key:`debtPaidOff:${al.assetId}`,title:'빚을 다 갚았어요 🎉',body:`${al.name} · ${comma(al.amount)}원`};
+ if(al.kind==='debtPaidOffMulti')return{key:`debtPaidOffMulti:${al.count}`,title:'빚을 다 갚았어요 🎉',body:`부채 ${al.count}건을 다 갚았어요`};
  return null;
 }
 /* 같은 항목(key)은 상태가 유지되는 한 다시 알리지 않는다 — checkNotifyAlerts가 동기화 주기(수 분)마다
@@ -9263,6 +9324,16 @@ function homeAlertCard(al){
  if(al.kind==='debtBehindMulti')return `<button class="home-alert mat" onclick="openDebtBehindList()">
    <div class="ha-ic">${svg('debt')}</div>
    <div class="ha-b"><div class="ha-t">부채가 줄지 않고 있어요 ${al.count}건</div>
+     <div class="ha-s">눌러서 한 번에 확인</div></div>
+   <div class="ha-c">${svg('chev')}</div></button>`;
+ if(al.kind==='debtPaidOff')return `<button class="home-alert" onclick="ackDebtPayoff('${al.assetId}')">
+   <div class="ha-ic">${svg('debt')}</div>
+   <div class="ha-b"><div class="ha-t">부채를 다 갚았어요 🎉 · ${esc(al.name)}</div>
+     <div class="ha-s">${comma(al.amount)}원 · 눌러서 확인하세요</div></div>
+   <div class="ha-c">${svg('chev')}</div></button>`;
+ if(al.kind==='debtPaidOffMulti')return `<button class="home-alert" onclick="openDebtPaidOffList()">
+   <div class="ha-ic">${svg('debt')}</div>
+   <div class="ha-b"><div class="ha-t">부채를 다 갚았어요 🎉 ${al.count}건</div>
      <div class="ha-s">눌러서 한 번에 확인</div></div>
    <div class="ha-c">${svg('chev')}</div></button>`;
  if(al.kind==='negMulti')return `<button class="home-alert" onclick="openNegList()">

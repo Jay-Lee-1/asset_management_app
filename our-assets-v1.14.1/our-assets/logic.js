@@ -661,6 +661,15 @@ function debtPayoffProjection(pts,today,trendWindowDays){
  return {achieved:false,projectedDate};
 }
 
+/* debt 자산의 완납 축하 알림 판정 — goalNewlyAchieved(위)와 정확히 같은 모양. payoff는
+ * debtPayoffProjection()의 반환값을 그대로 받는다: achieved(최신 잔액<=0)인데 아직
+ * ack(asset.payoffAckAt)가 안 됐으면 true. goal과 달리 debt는 asDraft가 saveAsset에서 항상
+ * JSON 딥클론으로 만들어지므로(필드 나열로 재구성하지 않음) payoffAckAt은 자산 수정 시에도
+ * 저절로 보존된다 — saveGoal처럼 명시적으로 이어줄 필요가 없다(app-evolve cycle257 advance). */
+function debtNewlyPaidOff(asset,payoff){
+ return !!(payoff&&payoff.achieved&&asset&&!asset.payoffAckAt);
+}
+
 /* ================= 매입원가(costBasis) 수량변경 보정 (순수) ================= */
 /* fx/gold/stock(isMarketValued)은 가중평균 없이 사용자가 한 번 입력한 총 매입금액 단일값을
  * costBasis로 쓴다(assetGainLoss). saveAsset()이 수량만 바꿔 덮어쓰면 costBasis는 그대로 남아

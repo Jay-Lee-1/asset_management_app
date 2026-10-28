@@ -226,7 +226,7 @@ const FUNCTIONS = [
   'assetEval', 'assetGainLoss', 'assetGainLossBadge', 'costBasisField', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'pkFilteredAssets', 'pkEmptyHtml', 'pkAssetQInput', 'refreshPkAssetList', 'movePkBlob', 'pkBack', 'pkChoose', 'pkPickAsset', 'sheetSlideBack', 'delOwner', 'doMaturity', 'openMaturity', 'firstCash',
   'detectStaleMarketValuedTxns', 'delBudget', 'saveBudget', 'openBudgetPrompt', 'openBigMinSheet',
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards', 'openTidyAsset', 'openTidyList', 'tidyListSnooze',
-  'debtsBehind', 'openDebtBehindList',
+  'debtsBehind', 'openDebtBehindList', 'debtsPaidOff', 'openDebtPaidOffList', 'ackDebtPayoff',
   'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate', 'histQInput', 'histOwnerSel', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'openCatHistory', 'openIncomeCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter', 'histClearTypeFilter',
   'genSalt', 'pbkdf2Hash', 'dbEncryptKey', 'encryptDbBlob', 'decryptDbBlob', 'genRecoveryCode', 'normRecoveryCode', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer', 'openConfirmTransfer',
   'renderLockView', 'openForgotPinSheet', 'doForgotPin', 'tickForgotPinWait',
@@ -2037,6 +2037,23 @@ test('debtPayoffProjection: 최근 90일 창 안에 포인트가 1개뿐이면(�
   const p = sandbox.debtPayoffProjection(pts, '2026-04-01');
   assert.strictEqual(p.achieved, false);
   assert.strictEqual(p.projectedDate, '2026-07-10', '창 안에 2점 미만이면 전체 이력(두 점)으로 폴백해 투사 자체가 사라지면 안 됨');
+});
+/* ---------- debtNewlyPaidOff: 완납했지만 아직 ack(payoffAckAt) 안 된 부채 판정 (app-evolve cycle257 advance) ----------
+ * goalNewlyAchieved와 정확히 같은 모양 — achieved는 debtPayoffProjection()의 반환값을 그대로 받는다. */
+test('debtNewlyPaidOff: achieved=false면 payoffAckAt 유무와 무관하게 항상 false', () => {
+  assert.strictEqual(sandbox.debtNewlyPaidOff({ id: 'd1' }, { achieved: false }), false);
+  assert.strictEqual(sandbox.debtNewlyPaidOff({ id: 'd1', payoffAckAt: null }, { achieved: false }), false);
+});
+test('debtNewlyPaidOff: achieved=true이고 payoffAckAt이 없으면(null/undefined) true', () => {
+  assert.strictEqual(sandbox.debtNewlyPaidOff({ id: 'd1', payoffAckAt: null }, { achieved: true }), true);
+  assert.strictEqual(sandbox.debtNewlyPaidOff({ id: 'd1' }, { achieved: true }), true, 'payoffAckAt 필드 자체가 없는(구버전 부채) 경우도 true여야 함');
+});
+test('debtNewlyPaidOff: achieved=true인데 payoffAckAt이 이미 기록돼 있으면 false(이미 확인/통지함)', () => {
+  assert.strictEqual(sandbox.debtNewlyPaidOff({ id: 'd1', payoffAckAt: Date.now() }, { achieved: true }), false);
+});
+test('debtNewlyPaidOff: asset/payoff가 null/undefined여도 터지지 않고 false를 돌려준다', () => {
+  assert.strictEqual(sandbox.debtNewlyPaidOff(null, { achieved: true }), false);
+  assert.strictEqual(sandbox.debtNewlyPaidOff({ id: 'd1' }, null), false);
 });
 
 /* ---------- budgetForMonth/setBudgetFrom: 예산은 시점별 이력이라 과거/미래 조회에 서로 다른 값을 돌려줘야 한다 ---------- */
@@ -4245,6 +4262,38 @@ test('[실행형] ackGoalAchieved: 아직 달성 못했거나 이미 ack된 목�
   assert.strictEqual(saveCallCount, 0, '둘 다 ack할 게 없으므로 save()가 호출되면 안 됨');
   sandbox.save = origSave;
   sandbox.openGoalForm = origOpen;
+});
+/* ackDebtPayoff: 홈 알림의 debtPaidOff 카드와 openDebtPaidOffList 행이 공유하는 ack+이동 핸들러
+ * (ackGoalAchieved와 동일한 모양, app-evolve cycle257 advance) */
+test('[실행형] ackDebtPayoff: 완납했지만 아직 ack 안 된 부채를 열면 payoffAckAt을 기록하고 save() 후 openAssetHistory로 이동한다', () => {
+  setupHistoryDB();
+  sandbox.DB.assets.push({ id: 'd1', name: '다 갚은 빚', owner: '나', type: 'debt', baseAmount: 100000, includeInTotal: true, payoffAckAt: null });
+  sandbox.DB.txns.push({ date: '2024-01-10', type: 'income', toAssetId: 'd1', amount: 100000 }); // 완납
+  let saveCalled = false;
+  const origSave = sandbox.save;
+  sandbox.save = () => { saveCalled = true; };
+  sandbox.goCalls = [];
+  sandbox.ackDebtPayoff('d1');
+  assert.ok(sandbox.DB.assets[0].payoffAckAt, 'payoffAckAt이 기록돼야 함');
+  assert.ok(saveCalled, 'save()가 호출돼야 함');
+  assert.deepStrictEqual(sandbox.goCalls, ['history'], 'openAssetHistory로 이동해야 함');
+  assert.strictEqual(sandbox.ST.hist.assetId, 'd1');
+  sandbox.save = origSave;
+});
+test('[실행형] ackDebtPayoff: 아직 안 갚았거나 이미 ack된 부채는 payoffAckAt을 건드리지 않고 그대로 openAssetHistory만 호출한다', () => {
+  setupHistoryDB();
+  sandbox.DB.assets.push({ id: 'd1', name: '아직 갚는 중', owner: '나', type: 'debt', baseAmount: 500000, includeInTotal: true, payoffAckAt: null });
+  sandbox.DB.assets.push({ id: 'd2', name: '이미ack됨', owner: '나', type: 'debt', baseAmount: 100000, includeInTotal: true, payoffAckAt: 1700000000000 });
+  sandbox.DB.txns.push({ date: '2024-01-10', type: 'income', toAssetId: 'd2', amount: 100000 }); // d2는 완납이지만 이미 ack
+  let saveCallCount = 0;
+  const origSave = sandbox.save;
+  sandbox.save = () => { saveCallCount++; };
+  sandbox.ackDebtPayoff('d1'); // 아직 안 갚음(baseAmount 500000, 거래 없음)
+  assert.strictEqual(sandbox.DB.assets[0].payoffAckAt, null);
+  sandbox.ackDebtPayoff('d2'); // 완납했지만 이미 ack됨
+  assert.strictEqual(sandbox.DB.assets[1].payoffAckAt, 1700000000000, '이미 있던 ack 시각이 덮어써지면 안 됨');
+  assert.strictEqual(saveCallCount, 0, '둘 다 ack할 게 없으므로 save()가 호출되면 안 됨');
+  sandbox.save = origSave;
 });
 test('goalHistoryFor/goalLinkedAssetGone: asset형 목표는 연결된 자산 하나의 잔액 추이(assetBalanceSeries)를 쓰고, networth형은 그대로 nwHistoryForOwner를 쓴다', () => {
   sandbox.TODAY = '2026-06-15';
@@ -18346,6 +18395,77 @@ test('homeAlertCard: debtBehind/debtBehindMulti가 각각 openAssetHistory/openD
   assert.ok(html2.includes('openDebtBehindList()'));
   assert.ok(html2.includes('2건'));
 });
+/* 완납된 부채(debtPaidOff/debtPaidOffMulti) — debtBehind/debtBehindMulti(바로 위)와 정확히 대칭되는
+ * 긍정적 사건. goalAchieved/goalAchievedMulti와 동일한 1건/N건 묶음 패턴(app-evolve cycle257 advance).
+ * amount는 완납 시점엔 잔액이 0이라 assetEval() 그대로는 보여줄 숫자가 없으므로, 조회 구간 중 가장
+ * 많이 빚졌던 금액(peak)을 쓴다. */
+test('homeAlerts: 완납된 부채가 정확히 1개면 debtPaidOff, 2개로 늘면 debtPaidOffMulti로 묶인다', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.assets.push({ id: 'd1', name: '다 갚은 빚', owner: '나', type: 'debt', baseAmount: 100000, includeInTotal: true, payoffAckAt: null });
+  sandbox.DB.txns.push({ date: '2024-01-10', type: 'income', toAssetId: 'd1', amount: 100000 }); // 완납
+  let alerts = sandbox.homeAlerts([]);
+  let dp = alerts.filter((a) => a.kind === 'debtPaidOff' || a.kind === 'debtPaidOffMulti');
+  assert.strictEqual(dp.length, 1);
+  assert.strictEqual(dp[0].kind, 'debtPaidOff', '정확히 1개면 debtPaidOff여야 함');
+  assert.strictEqual(dp[0].assetId, 'd1');
+  assert.strictEqual(dp[0].name, '다 갚은 빚');
+  assert.strictEqual(dp[0].amount, 100000, '완납 전 가장 많이 빚졌던 금액(peak)을 보여줘야 함');
+
+  sandbox.DB.assets.push({ id: 'd2', name: '또 다 갚은 빚', owner: '나', type: 'debt', baseAmount: 50000, includeInTotal: true, payoffAckAt: null });
+  sandbox.DB.txns.push({ date: '2024-02-10', type: 'income', toAssetId: 'd2', amount: 50000 });
+  alerts = sandbox.homeAlerts([]);
+  dp = alerts.filter((a) => a.kind === 'debtPaidOff' || a.kind === 'debtPaidOffMulti');
+  assert.strictEqual(dp.length, 1);
+  assert.strictEqual(dp[0].kind, 'debtPaidOffMulti', '2개로 늘면 debtPaidOffMulti 하나로 묶여야 함');
+  assert.strictEqual(dp[0].count, 2);
+});
+test('homeAlerts: 아직 안 갚은(진행 중) 부채는 debtPaidOff에 포함되지 않는다(회귀 확인)', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.assets.push({ id: 'd1', name: '갚는 중', owner: '나', type: 'debt', baseAmount: 600000, includeInTotal: true });
+  sandbox.DB.txns.push({ date: '2024-01-10', type: 'income', toAssetId: 'd1', amount: 50000 });
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'debtPaidOff' || a.kind === 'debtPaidOffMulti'), '아직 완납 안 됐으면 debtPaidOff로 뜨면 안 됨');
+});
+test('homeAlerts: 이미 ack된 완납 부채는 다시 debtPaidOff로 뜨지 않는다(ackDebtPayoff가 남긴 기록)', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.assets.push({ id: 'd1', name: '다 갚고 확인함', owner: '나', type: 'debt', baseAmount: 100000, includeInTotal: true, payoffAckAt: 1700000000000 });
+  sandbox.DB.txns.push({ date: '2024-01-10', type: 'income', toAssetId: 'd1', amount: 100000 });
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'debtPaidOff' || a.kind === 'debtPaidOffMulti'), '이미 ack됐으면 다시 뜨면 안 됨');
+});
+test('homeAlerts: 거래 이력이 전혀 없는 신규 0원 부채는 완납으로 오탐되지 않는다(debtsBehind와 동일한 가드)', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.assets.push({ id: 'd1', name: '방금 등록한 0원 빚', owner: '나', type: 'debt', baseAmount: 0, includeInTotal: true });
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'debtPaidOff' || a.kind === 'debtPaidOffMulti'), '거래 이력이 없으면 신규로 보고 완납 판단 자체를 하면 안 됨');
+});
+test('homeAlerts: includeInTotal=false인 완납 부채는 debtPaidOff에 포함되지 않는다(회귀 확인)', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.assets.push({ id: 'd1', name: '총계 제외 빚', owner: '나', type: 'debt', baseAmount: 100000, includeInTotal: false });
+  sandbox.DB.txns.push({ date: '2024-01-10', type: 'income', toAssetId: 'd1', amount: 100000 });
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'debtPaidOff' || a.kind === 'debtPaidOffMulti'), 'includeInTotal=false면 완납 판단에서도 빠져야 함');
+});
+test('notifyAlertInfo: debtPaidOff/debtPaidOffMulti는 월 키 없이 assetId/count만으로 dedupe한다(goalAchieved와 동일하게 ack 전까지 영구 상태, app-evolve cycle257)', () => {
+  const info1 = sandbox.notifyAlertInfo({ kind: 'debtPaidOff', assetId: 'd1', name: '다 갚은 빚', amount: 100000 });
+  assert.strictEqual(info1.key, 'debtPaidOff:d1');
+  assert.ok(info1.title && info1.body, 'OS 알림 제목/본문이 있어야 함');
+  assert.ok(info1.body.includes('다 갚은 빚'));
+
+  const info2 = sandbox.notifyAlertInfo({ kind: 'debtPaidOffMulti', count: 2 });
+  assert.strictEqual(info2.key, 'debtPaidOffMulti:2');
+  assert.ok(info2.title && info2.body, 'OS 알림 제목/본문이 있어야 함');
+  assert.ok(info2.body.includes('2건'));
+});
+test('homeAlertCard: debtPaidOff는 ackDebtPayoff(openAssetHistory 아님)로, debtPaidOffMulti는 openDebtPaidOffList로 연결된다', () => {
+  const html1 = sandbox.homeAlertCard({ kind: 'debtPaidOff', assetId: 'd1', name: '다 갚은 빚', amount: 100000 });
+  assert.ok(html1.includes("ackDebtPayoff('d1')"), '단순 openAssetHistory가 아니라 ack까지 겸하는 ackDebtPayoff로 연결돼야 카드가 사라짐');
+  assert.ok(html1.includes('다 갚은 빚'));
+
+  const html2 = sandbox.homeAlertCard({ kind: 'debtPaidOffMulti', count: 3 });
+  assert.ok(html2.includes('openDebtPaidOffList()'));
+  assert.ok(html2.includes('3건'));
+});
 /* ---------- rateUnknownTotal: 시세 미확인(rateUnknown) 시장가 자산은 assetEval()이 ||0으로
  * 평가해 totalAssets/nwPane 히어로/그룹소계에 경고 없이 ₩0으로 섞여 들어간다 — 개별 행 배지만으론
  * 상단 숫자가 틀렸다는 걸 알 수 없어, staleMv와 동일한 단일 alert-kind push 패턴으로 추가한
@@ -18450,6 +18570,40 @@ test('openDebtBehindList: 정체된 부채가 1건이면 바로 그 자산 내�
   sandbox.lastSheetHtml = null;
   sandbox.openDebtBehindList();
   assert.ok(sandbox.lastSheetHtml && sandbox.lastSheetHtml.includes('마이너스통장') && sandbox.lastSheetHtml.includes('신용대출'), '2건이면 시트에서 둘 다 고를 수 있어야 함');
+});
+/* debtsPaidOff()/openDebtPaidOffList() — openDebtBehindList()와 동일한 패턴이지만, 완납 알림은
+ * 한 번 뜬 뒤엔 ackDebtPayoff가 기록을 남겨야 다시 안 뜨므로(goalAchieved와 동일), 1건일 때도
+ * openAssetHistory 대신 ackDebtPayoff를 거쳐야 한다는 점이 다르다(app-evolve cycle257 advance). */
+test('openDebtPaidOffList: 완납된 부채가 0건이면 안내 토스트를 띄우고 시트를 닫는다', () => {
+  setupHistoryDB();
+  sandbox.closeSheetCalls = 0;
+  sandbox.lastToast = null;
+  sandbox.openDebtPaidOffList();
+  assert.strictEqual(sandbox.lastToast, '완납 축하 알림이 없어요');
+  assert.strictEqual(sandbox.closeSheetCalls, 1);
+});
+test('openDebtPaidOffList: 완납된 부채가 1건이면 closeSheet 후 바로 ack하고 그 자산 내역을 연다', () => {
+  setupHistoryDB();
+  sandbox.DB.assets.push({ id: 'd1', name: '다 갚은 빚', owner: '나', type: 'debt', baseAmount: 100000, includeInTotal: true, payoffAckAt: null });
+  sandbox.DB.txns.push({ date: '2024-01-10', type: 'income', toAssetId: 'd1', amount: 100000 });
+  sandbox.goCalls = [];
+  sandbox.closeSheetCalls = 0;
+  sandbox.openDebtPaidOffList();
+  assert.strictEqual(sandbox.closeSheetCalls, 1, '시트 위에 history 탭이 깔리지 않도록 먼저 닫아야 함');
+  assert.deepStrictEqual(sandbox.goCalls, ['history']);
+  assert.strictEqual(sandbox.ST.hist.assetId, 'd1');
+  assert.ok(sandbox.DB.assets[0].payoffAckAt, '1건이어도 ack까지 기록돼야 다시 뜨지 않음(openDebtBehindList와 다른 점)');
+});
+test('openDebtPaidOffList: 완납된 부채가 여러 건이면 시트에서 각각 고를 수 있고, 각 행이 ackDebtPayoff로 연결된다', () => {
+  setupHistoryDB();
+  sandbox.DB.assets.push({ id: 'd1', name: '다 갚은 빚', owner: '나', type: 'debt', baseAmount: 100000, includeInTotal: true, payoffAckAt: null });
+  sandbox.DB.assets.push({ id: 'd2', name: '또 다 갚은 빚', owner: '나', type: 'debt', baseAmount: 50000, includeInTotal: true, payoffAckAt: null });
+  sandbox.DB.txns.push({ date: '2024-01-10', type: 'income', toAssetId: 'd1', amount: 100000 });
+  sandbox.DB.txns.push({ date: '2024-02-10', type: 'income', toAssetId: 'd2', amount: 50000 });
+  sandbox.lastSheetHtml = null;
+  sandbox.openDebtPaidOffList();
+  assert.ok(sandbox.lastSheetHtml && sandbox.lastSheetHtml.includes('다 갚은 빚') && sandbox.lastSheetHtml.includes('또 다 갚은 빚'), '2건이면 시트에서 둘 다 고를 수 있어야 함');
+  assert.ok(sandbox.lastSheetHtml.includes("ackDebtPayoff('d1')") && sandbox.lastSheetHtml.includes("ackDebtPayoff('d2')"), '각 행이 (단순 openAssetHistory가 아니라) ackDebtPayoff로 연결돼야 함');
 });
 /* 미확인 이체(confirm)도 quick/quickMulti·budgetOver/budgetOverMulti와 동일한 1건/N건 묶음 패턴을 쓴다
  * (app-evolve cycle156 critique: 반복 이체를 방치하면 홈 알림이 confirm 카드로 도배되던 비대칭을 해소) */
