@@ -1,15 +1,8 @@
 {
   "cycle": 257,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 252,
-      "phase": "review",
-      "timestamp": "2026-10-27T05:30:00.000Z",
-      "summary": "cycle252 develop 커밋(ca25979, 은행/카드사 CSV 가져오기의 EUC-KR/CP949 인코딩 자동 복원)을 검토. decodeCsvBytes(logic.js)의 3단 폴백(strict UTF-8 → euc-kr → lossy UTF-8)을 직접 코드로 대조 확인했고, parseCSV가 선행 BOM(\\uFEFF)을 이미 별도로 벗겨내므로 이 앱 자신이 내보낸 UTF-8(+BOM) CSV는 1차 strict 디코딩이 그대로 성공해 기존 자기-포맷 라운드트립 경로가 무변경임을 확인. importCsvFile 핸들러가 readAsText→readAsArrayBuffer로 바뀌면서 r.result(ArrayBuffer)를 Uint8Array로 감싸 넘기는 지점, 그리고 detectOwnCsvFormat/openCsvColumnMap 분기 이후 로직은 decodeCsvBytes가 돌려주는 text 외엔 그대로임을 diff로 확인. node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행 결과 2053/2053 통과(develop 단계가 주장한 수치와 일치). node --check(logic.js/sw.js) 통과. APP_VERSION 1.47.247/sw.js CACHE v514 범프가 index.html/logic.js 변경과 일치. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 252,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-28T00:13:53.287Z",
       "summary": "검색어에 여러 단어를 띄어써서 좁히는 기능이 빠져있던 공백을 발견 — logic.js의 matchTxnQuery/matchAssetQuery/matchCatQuery(거래내역·자산피커·카테고리피커 검색)가 전부 질의 문자열 전체를 하나의 부분문자열로 includes() 비교해, 메모와 카테고리처럼 서로 다른 필드에 단어가 나뉘어 있으면(예: 메모=\"스타벅스\", 카테고리=\"카페/음료\") \"스타벅스 카페\"처럼 두 단어로 검색해도 매칭되지 않았음(실제로는 두 단어 모두 존재하는데도). logic.js에 공유 헬퍼 searchTerms(q)를 신설해 질의를 공백 기준으로 토큰화하고, 세 매치 함수 전부 \"모든 토큰이 해당 필드들 중 어딘가에 등장해야 매치\"(AND)로 재배선 — 기존 대소문자/NFC 무시 부분일치 규칙은 토큰 단위로 그대로 유지해 단일 단어 질의는 기존과 동일하게 동작(회귀 위험 없는 순수 확장), 공백만 있는 질의도 기존처럼 전체 매치. logic.js만 변경이라 index.html/sw.js 동기 버전 범프: APP_VERSION 1.47.256->1.47.257, sw.js CACHE v523->v524. test/run.js: 세 함수 전부에 대해 AND 매칭(서로 다른 필드에 나뉜 단어), 토큰 중 하나라도 없으면 불일치, 단어 순서 무관, 공백만 있는 질의, 연속 공백 처리까지 회귀 테스트 6건 추가. node test/run.js 2120->2126/2126 통과, node --check(logic.js/test/run.js) 통과.",
       "commit": "1e482c2"
+    },
+    {
+      "cycle": 257,
+      "phase": "review",
+      "timestamp": "2026-10-28T01:07:59.000Z",
+      "summary": "cycle257 develop 커밋(1e482c2, 검색어 공백 토큰화 AND 매칭으로 matchTxnQuery/matchAssetQuery/matchCatQuery 통합)을 검토. 신설된 searchTerms(q)가 trim 후 /\\s+/로 토큰화하고 빈 토큰을 거르는 로직을 직접 대조 확인: 토큰 1개(공백 없는 기존 입력)는 기존 includes()와 동일하고, 공백뿐인 검색어는 terms.length===0으로 빈 검색어와 동일하게 전체 통과한다. matchTxnQuery만 쉼표 제거(.replace(/,/g,''))를 토큰화 이전에 적용해 금액 검색(쉼표 유무 무관)을 그대로 보존하고, matchAssetQuery/matchCatQuery는 쉼표 제거를 적용하지 않아(기존에도 안 했음) 회귀 없음을 확인. 세 함수의 호출부(index.html: pkFilteredAssets/openCatPicker/#histQ 전체내역 검색 등)가 모두 사용자가 타이핑한 쿼리 문자열을 그대로 넘기므로 새 AND 규칙이 자연스럽게 적용됨. node test/run.js 독립 재실행 결과 2126/2126 통과(develop 단계가 주장한 수치와 일치), node --check logic.js/test/run.js 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "commit": null
     }
   ]
 }
