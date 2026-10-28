@@ -1,15 +1,8 @@
 {
   "cycle": 258,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 253,
-      "phase": "review",
-      "timestamp": "2026-10-27T10:30:00.000Z",
-      "summary": "cycle253 develop 커밋(24dd8fe, CSV 가져오기 대상 자산 피커를 cashOnly→cashOrDebt로 교체해 debt형 자산(신용카드)도 고를 수 있게 함)을 검토. isCashLike(index.html:2854)가 cash|savings만 다루므로 cashOrDebt=isCashLike(a)||a.type==='debt' 추가가 debt를 중복 없이 정확히 더함을 코드로 확인. 기존 cashOnly 사용처(asOpenMat 만기이체 통장, findDonors)는 그대로 cashOnly를 쓰고 있어 회귀 없음을 diff로 확인. node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행 결과 2060/2060 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 253,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-28T00:00:00.000Z",
       "summary": "fork 서브에이전트로 코드베이스를 탐색한 결과, cycle257 advance가 신설한 debtsPaidOff()(index.html)가 '완납 전 가장 많이 빚졌던 금액'(peak)을 assetBalanceSeries(...,assetBalSampleDates(RANGE_FROM,TODAY,60))의 60개 샘플 포인트 중 최댓값으로 구하는 버그를 발견 — RANGE_FROM(2023-01-01)~TODAY 구간이 60개보다 훨씬 길어(실제로는 약 20여 일 간격) 그 틈새에서 반짝 빚이 늘었다가 다 갚이는(카드 단기 사용 등 흔한 패턴) 경우 스파이크가 어느 샘플에도 걸리지 않아 피크가 조용히 축소(심하면 0까지)돼 보이는 버그였음. 잔액은 거래가 없는 동안 상수(계단함수)라 진짜 최대값은 항상 거래 직후 시점에만 나타난다는 점을 이용해, 날짜 샘플링 없이 거래를 전부 순회해 정확한 최댓값을 구하는 새 순수함수 assetBalancePeak(txns,assetId,base,sign)를 logic.js에 신설(assetBalanceSeries 바로 뒤)하고, debtsPaidOff()의 peak 계산만 이걸로 교체(debtPayoffProjection이 쓰는 추세 투사는 근사치로 의도된 설계라 그대로 둠). index.html/logic.js 변경이라 APP_VERSION 1.47.258->1.47.259, sw.js CACHE v525->v526 동기 범프. test/run.js: assetBalancePeak 단위 테스트 4건(거래 없음/일반자산 최고점 유지/부채 최고점/샘플링 간격보다 짧은 스파이크를 샘플링 기반 assetBalanceSeries는 놓치지만 assetBalancePeak는 정확히 잡아낸다는 대조 테스트), homeAlerts의 debtPaidOff.amount가 실제 샘플 간격 틈에 낀 스파이크에도 정확한 피크를 보여주는 회귀 테스트 1건 — 총 5건 추가(2142->2147). node test/run.js 2147/2147 통과, node --check(logic.js/test/run.js) 통과. 커밋 cd359e7, origin/main에 push 완료(로컬 main 브랜치 ref가 이전 세션에서 detached 상태로 낡아 있던 것도 같이 복구).",
       "commit": "cd359e7"
+    },
+    {
+      "cycle": 258,
+      "phase": "review",
+      "timestamp": "2026-10-28T04:30:00.000Z",
+      "summary": "cycle258 develop 커밋(cd359e7, debtsPaidOff()의 peak 계산을 assetBalanceSeries 60개 샘플링에서 assetBalancePeak(거래 전수 순회)로 교체)을 검토. assetBalancePeak가 assetBalanceSeries와 동일한 필터/정렬/부호 규칙을 쓰면서도 peak 초기값을 base로 둬 기존 reduce(...,0) 방식보다 오히려 더 정확함(샘플 날짜가 첫 거래 이전을 못 비추는 경계 상황까지 커버)을 코드로 확인. 추가된 단위 테스트 4건(거래 없음/일반자산/부채/샘플링 틈새 스파이크 대조)과 회귀 테스트 1건이 핵심 시나리오를 잘 덮음. node test/run.js 독립 재실행 결과 2147/2147 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "commit": null
     }
   ]
 }
