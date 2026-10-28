@@ -1,7 +1,11 @@
 {
   "cycle": 262,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "부채 상환 추가 납입 시뮬레이터 (what-if)",
+    "why": "debtPayoffProjection(logic.js)이 이미 최근 추세로 '이 속도면 언제 다 갚는다'를 보여주지만, '매달 얼마 더 갚으면 언제 끝나는지'는 전혀 볼 수 없음. debt 자산엔 interestRate/APR 필드가 없어(grep으로 확인) 진짜 상환계산(amortization)은 스키마 확장이 필요한 큰 작업이지만, 추세-기반 what-if는 스키마 변경 없이 기존 추세 계산만 확장하면 됨. 과거 두 번의 critique에서 러너업으로 반복 거론된 항목.",
+    "approach": "1) logic.js: debtPayoffProjection(pts,today,trendWindowDays)의 내부 기울기 계산을 새 순수함수 debtPayoffRate(pts,today,trendWindowDays)로 추출(동일한 windowed first/last point slope), debtPayoffProjection은 이를 호출하도록 리팩터(기존 테스트 결과 불변 확인 필수). 2) logic.js: debtPayoffWhatIf(pts,today,extraPerMonth,trendWindowDays) 신설 — {achieved,projectedDate} 동일 형태. last.bal<=0이면 achieved:true. baseRate=max(0,debtPayoffRate(...)) (악화중인 추세가 extra를 깎아먹지 않게). effectiveRate=baseRate+(extraPerMonth>0?extraPerMonth/30:0). effectiveRate>0이면 projectedDate=addDays(last.date,Math.ceil(last.bal/effectiveRate)), 아니면 null. 3) index.html: assetBalCard() 안의 인라인 pfPts 계산(pfFrom=addDays(to,-90) clamped RANGE_FROM, assetBalSampleDates, assetBalanceSeries sign=-1, 약 3197~3207행)을 공유 헬퍼 debtPayoffPtsFor(a)로 추출(순수 리팩터, 출력 불변). 4) index.html: a.type==='debt' 블록에서 기존 '이 속도로 갚으면...' 문구 아래에 금액 입력 필드 추가(.field-clear/fmtAmt 패턴 재사용, 라벨 '매달 추가로 얼마씩 더 갚으면?'), oninput으로 debtWhatIfUpdate(assetId) 호출 — num()으로 읽고 debtPayoffPtsFor(a)+debtPayoffWhatIf 호출해 결과를 형제 div#debtWhatIfResult에 textContent로만 갱신(전체 카드 재렌더 없이, assetBalPeek류 경량 업데이트 패턴). 베이스라인 projectedDate와 비교해 '더 빨라진 개월수'도 함께 표시. 5) APP_VERSION과 sw.js CACHE 동기 범프. 6) test/run.js: debtPayoffRate 추출 검증, debtPayoffWhatIf의 extra=0(기존 projectedDate와 동일)/achieved 케이스/추세 악화+extra>0/extra 클수록 더 빠른 날짜 — 각 케이스 단위 테스트 추가 후 node test/run.js 및 node --check(logic.js/sw.js/test/run.js), 인라인 스크립트 구문 검증 통과 확인."
+  },
   "history": [
     {
       "cycle": 257,
@@ -141,6 +145,13 @@
       "phase": "review",
       "timestamp": "2026-10-28T21:00:00.000Z",
       "summary": "cycle262 develop 커밋(6a6bae7, doExport()의 복사(클립보드) 경로에서만 redactTxnPhotos로 영수증 photo 필드를 제외하도록 재배선)을 검토. photo 키가 DB 전체에서 txn 레코드에만 쓰이는 필드임을 grep으로 확인(index.html:5002 주석과 일치) — redactTxnPhotos의 JSON.stringify replacer가 키 이름만으로 'photo'를 null화해도 다른 객체(설정/자산/카테고리)를 건드릴 위험이 없음. text(JSON.stringify(DB,null,2))와 redactTxnPhotos(DB)(같은 2-space indent, photo만 다른 replacer)가 동일한 포맷을 유지해 복사본과 원본 백업 포맷이 어긋나지 않음을 확인. openCopyBackup(text,reason,override)의 override가 선택 인자라 photoCount===0일 때 세 번째 인자를 생략해도 안전함을 확인. node test/run.js 독립 재실행 결과 2174/2174 통과, node --check(logic.js/sw.js/test/run.js) 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 262,
+      "phase": "critique",
+      "timestamp": "2026-10-28T22:10:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(budget/goal/net worth trend/bulk select/투자자산 cost-basis P/L까지 이미 성숙함을 확인, APPLOCK PIN 전체 DB 암호화 재추진 금지 유지)한 결과, 이미 절반쯔 구현돼 있는 debtPayoffProjection(추세 기반 '이 속도면 언제 다 갚는다' 관찰형 투사)의 자연스러운 확장인 부채 상환 추가 납입 시뮬레이터(what-if: '매달 얼마 더 갚으면 언제 끝나는지')가 과거 두 cycle(258/261)에서 러너업으로 반복 거론됐으나 아직 구현되지 않았음을 확인 — debt 자산에 interestRate/APR 필드가 없어(grep 확인) 진짜 상환계산은 스키마 확장이 필요하지만, 추세-기반 what-if는 기존 debtPayoffRate 추출만으로 스키마 변경 없이 가능함. 러너업: 투자자산 목표비중 리밸런싱 알림(target% 필드 신규 필요, 보류), 홈 알림의 실제 OS 푸시 알림화(서버 측 VAPID 필요, 큰 작업), 기존 러너업(PDF 명세서/접근성 전수조사) 유지. 채택 계획(debtPayoffRate 추출 + debtPayoffWhatIf 신설 + assetBalCard에 입력/경량 업데이트 배선)을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     }
   ]
