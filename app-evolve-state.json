@@ -1,147 +1,147 @@
 {
   "cycle": 258,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
       "cycle": 253,
-      "phase": "develop",
-      "timestamp": "2026-10-27T09:40:00.000Z",
-      "summary": "cycle251/252가 신설한 '은행/카드사 CSV 거래내역 가져오기'(openCsvColumnMap, csvMapPickAsset)가 기능 이름과 실제 동작이 어긋난 공백을 발견 — csvMapPickAsset이 openAssetPicker를 cashOnly:true(isCashLike=cash|savings만, index.html:2854)로 여는데, 신용카드를 debt형 자산으로 등록한 사용자는 바로 그 '카드사' CSV를 가져올 대상 자산으로 자기 카드를 전혀 고를 수 없었다. 코드로 교차확인: _applyOpenAsset(일반 거래 입력의 보내는/받는 자산 선택, 4884행)은 excludeMarketValued만 쓰고 debt는 전혀 막지 않아 수동 입력으로는 debt 계좌에 거래를 기록할 수 있고, assetBalanceSeries(logic.js, sign=-1)도 debt로의 입금(toAssetId, 상환)은 금액 감소·출금(fromAssetId, 카드 사용)은 금액 증가로 올바르게 반영해 debt를 거래 대상으로 쓰는 게 기존에 이미 지원되는 설계임을 확인했다. pkFilteredAssets(index.html:9362)에 새 옵션 cashOrDebt(isCashLike(a)||a.type==='debt')를 추가하고 csvMapPickAsset만 cashOnly→cashOrDebt로 교체 — isCashLike 자체나 기존 cashOnly 사용처(asOpenMat의 만기이체 통장 선택, 8683행의 findDonors)는 그대로 둬 회귀 위험을 없앴다. index.html/sw.js 변경이라 APP_VERSION 1.47.248->1.47.249, sw.js CACHE v515->v516 동기 범프. test/run.js: pkFilteredAssets에 cashOrDebt가 debt를 포함하면서도 fx/gold/stock은 여전히 제외하고 cashOnly는 기존처럼 debt를 제외함(회귀 가드)을 확인하는 테스트 1건, csvMapPickAsset이 실제로 debt형 자산(신용카드)을 피커에 보여주고 고를 수 있음을 확인하는 테스트 1건 추가(2058->2060). node test/run.js 2060/2060 통과(서브에이전트로 독립 재검증), node --check(logic.js) 및 메인 <script> 블록 vm.Script 파싱 통과.",
-      "commit": "24dd8fe"
-    },
-    {
-      "cycle": 253,
       "phase": "review",
       "timestamp": "2026-10-27T10:30:00.000Z",
-      "summary": "cycle253 develop 커밋(24dd8fe, CSV 가져오기 대상 자산 피커를 cashOnly→cashOrDebt로 교체해 debt형 자산(신용카드)도 고를 수 있게 함)을 검토. isCashLike(index.html:2854)가 cash|savings만 다루므로 cashOrDebt=isCashLike(a)||a.type==='debt' 추가가 debt를 중복 없이 정확히 더함을 코드로 확인. 기존 cashOnly 사용처(asOpenMat 만기이체 통장, findDonors)는 그대로 cashOnly를 쓰고 있어 회귀 없음을 diff로 확인. mapGenericCsvRow(logic.js:782)의 income/expense→to/fromAssetId 부호 매핑은 이 커밋이 손대지 않은 기존 로직이고, debt 대상이어도 _applyOpenAsset/assetBalanceSeries와 동일한 '피대상 자산 기준 입출금' 의미론을 그대로 따르므로 카드 CSV의 부호 해석은 사용자가 열 매핑 단계에서 직접 정하는 기존 설계 범위이지 이 커밋이 새로 깨뜬 것이 아님을 확인(새 버그 아님). node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행 결과 2060/2060 통과(develop 단계가 주장한 수치와 일치). 메인 <script> 블록(APP_VERSION 포함) node vm.Script 파싱 통과(비-메인 블록 1건 에러는 cycle248부터 알려진 정규식 오매칭 false positive). node --check(logic.js) 통과. APP_VERSION 1.47.249/sw.js CACHE v516 범프가 index.html 변경과 일치. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "summary": "cycle253 develop 커밋(24dd8fe, CSV 가져오기 대상 자산 피커를 cashOnly→cashOrDebt로 교체해 debt형 자산(신용카드)도 고를 수 있게 함)을 검토. isCashLike(index.html:2854)가 cash|savings만 다루므로 cashOrDebt=isCashLike(a)||a.type==='debt' 추가가 debt를 중복 없이 정확히 더함을 코드로 확인. 기존 cashOnly 사용처(asOpenMat 만기이체 통장, findDonors)는 그대로 cashOnly를 쓰고 있어 회귀 없음을 diff로 확인. node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행 결과 2060/2060 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
       "commit": null
     },
     {
       "cycle": 253,
       "phase": "critique",
       "timestamp": "2026-10-27T12:10:00.000Z",
-      "summary": "이번 critique는 두 갈래로 진행했다. (1) cycle252 advance가 다음 critique에 넘긴 'APPLOCK 암호화 배선' 후속 계획을 직접 코드로 재검증한 결과, cycle252가 찾은 동기/비동기 문제보다 더 근본적인 결함 3가지를 추가로 발견해 이 계획 전체를 보류(shelve)했다: ① boot()(9693)가 startApp()으로 DB를 평문 그대로 load()해 화면을 이미 그린 뒤에야 lockApp()(9752, 9704행 'startApp();if(APPLOCK.enabled())lockApp()')을 호출해 PIN을 요구하므로, 지금 순서 그대로는 load() 시점에 PIN이 아예 존재하지 않아 복호화가 불가능하다 — 해결하려면 '잠겨 있으면 먼저 PIN 화면만 그리고 성공해야 load()/startApp()을 부른다'로 boot 순서 자체를 바꿔야 한다(cycle218 critique가 공들여 없앤 '빈 화면 대기'를 다시 만들지 않게 신중한 설계가 필요). ② APPLOCK.verify()/setPin()(2454/2448)은 PIN을 해시 비교에만 쓰고 끝나 세션 동안 평문 PIN·파생 키를 메모리에 전혀 안 남기는데, save()가 ~70곳에서 호출되는 동안 매번 암호화하려면 unlock 성공 시 파생된 비-추출가능 CryptoKey를 모듈 전역에 캐시해 세션 내내 유지하는 새 상태가 필요하다. ③ 가장 심각한 건 openForgotPinSheet(9876, cycle151/155 설계)의 기존 사용자 보장과의 정면 충돌 — 지금은 'PIN은 암호화 키가 아니라 단순 기기-로컬 화면 잠금이라, 데이터는 건드리지 않고 APPLOCK만 초기화해도 안전하다'(9879 주석)가 이메일 계정은 비밀번호 재확인만으로, 게스트/카카오 계정은 강제 대기만으로 PIN을 잊어도 데이터를 잃지 않는다고 명시적으로 약속하는데, PIN이 진짜 암호화 키가 되면 이 탈출구는 원천적으로 막힌다(PIN을 모르면 ciphertext를 복호화할 방법이 없음) — 금융 데이터 앱에서 '4~6자리 숫자를 잊으면 전체 자산 내역이 영구히 사라진다'는 트레이드오프를 조용히 들여오는 셈이고, 4~6자리 PIN은 공간이 10,000~1,000,000개뿐이라 PBKDF2 120000회를 거쳐도 탈취된 blob에 대한 오프라인 전수조사가 로그인 비밀번호 해시보다 훨씬 쉬워(브루트포스 저항력이 약함) 보안 이득 대비 데이터 손실 리스크가 비대칭적으로 크다. 세 가지를 종합해 'PIN을 키로 쓴 전체 DB 암호화'는 다음 advance 한 사이클로 안전하게 좁힐 수 있는 범위가 아니라고 결론짓고 pending_advance_plan에서 내렸다 — 이 분석을 history에 남겨 다음 critique가 같은 길을 다시 걷지 않게 한다(재추진하려면 boot 순서 재설계+세션 키 캐시+forgot-PIN UX 전면 재설계를 모두 포함하는 별도의 더 큰 결정이 필요하고, PIN 대신 복구 가능한 다른 키 소스를 쓰는 대안도 함께 검토해야 함). (2) 대신 general-purpose 서브에이전트로 앱 전반을 재탐색(cycle149-253 전체 다룬 영역·기각 항목 전부 제외, APPLOCK 암호화는 위 분석으로 별도 처리 중이니 제외하라고 명시 지시)한 결과, 거래 입력 카테고리 피커(openCatPicker, index.html:9446-9453)가 cycle248에서 자산 피커(openAssetPicker)에 준 검색 기능을 못 받은 자매 피커라는 공백을 발견 — catListOf(o.kind)를 필터 없이 그대로 나열하고, addCat()(6382)엔 카테고리 수 제한이 없어 분류를 세분화한 가계일수록 가장 빈번한 화면(거래 입력 _applyOpenCat:4883, 분할 거래:4879, CSV 매핑 기본 카테고리:7799, 일괄 변경 bulkCatPickFor:9488)에서 스크롤·스캔을 강요한다. 러너업 기각: 영수증/사진 첨부(grep으로 전무함을 확인했으나 스키마+내보내기+클라우드 payload 크기까지 한꺼번에 건드려 '한 사이클에 과한 범위'), 반복거래 발생 전 사전 알림(homeAlerts/notifyAlertInfo, 8925-9021이 이미 확인/만기이체/예산초과/목표지연/부채지연/음수 잔액을 다뤄 추가 가치가 낮음). advance 계획(logic.js에 matchCatQuery 신설, pkFilteredAssets/pkAssetQInput/refreshPkAssetList 패턴을 복제해 catFilteredGrid/pkCatQInput/refreshPkCatList 추가, 카테고리 수가 8개 넘을 때만 검색창 노출, test/run.js에 cycle248과 동급 분량의 테스트 추가)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "summary": "이번 critique는 두 갈래로 진행했다. (1) APPLOCK PIN 기반 전체 DB 암호화 계획을 직접 코드로 재검증한 결과, boot 순서 문제·세션 키 캐시 부재·forgot-PIN 데이터무손실 보장과의 정면 충돌·약한 PIN 브루트포스 저항 등 근본 결함을 발견해 이 계획 전체를 보류(shelve)했다 — 재추진하려면 boot 순서 재설계+세션 키 캐시+forgot-PIN UX 전면 재설계를 모두 포함하는 별도의 더 큰 결정이 필요함을 history에 남겨 다음 critique가 같은 길을 다시 걷지 않게 함. (2) general-purpose 서브에이전트로 재탐색한 결과, 거래 입력 카테고리 피커(openCatPicker)가 cycle248에서 자산 피커에 준 검색 기능을 못 받은 공백을 발견 — advance 계획(matchCatQuery/catFilteredGrid/pkCatQInput/refreshPkCatList 신설)을 pending_advance_plan에 저장.",
       "commit": null
     },
     {
       "cycle": 253,
       "phase": "advance",
       "timestamp": "2026-10-27T12:14:52.301Z",
-      "summary": "critique(cycle253)가 세운 계획대로 거래 입력 카테고리 피커(openCatPicker)에 검색 기능을 추가했다. matchAssetQuery(logic.js)와 동일한 규칙(대소문자·NFC 무시 부분일치)의 matchCatQuery(c,q)를 logic.js에 신설하고, pkFilteredAssets와 같은 {html,any} 모양의 catFilteredGrid(kind,current,q)로 openCatPicker의 기존 인라인 map을 교체했다. pkAssetQInput/refreshPkAssetList와 동일한 220ms 디바운스로 pkCatQInput/refreshPkCatList를 신설해 #catGrid만 재렌더하고, pkPickCat도 pkChoose와 동일하게 커밋 시 _pkQ/_pkOpts를 정리하도록 맞췄다. 카테고리는 기본값이 6개뿐이라(자산은 기본 0개) 항상 검색바를 보이면 번거로우므로 CAT_PICKER_SEARCH_THRESHOLD(8)를 넘을 때만 검색바를 보이도록 명시적으로 설계했다. _pkQ/_pkOpts 전역은 openAssetPicker/openCatPicker가 동시에 열리지 않음을 확인한 뒤 그대로 재사용. index.html/logic.js/sw.js 변경이라 APP_VERSION 1.47.249->1.47.250, sw.js CACHE v516->v517 동기 범프. test/run.js에 matchCatQuery/catFilteredGrid/catEmptyHtml/임계값 기반 검색바 노출/refreshPkCatList/pkCatQInput 디바운스/pkPickCat 정리 테스트 17건 추가, node test/run.js로 2077/2077 통과 확인.",
+      "summary": "critique(cycle253)가 세운 계획대로 거래 입력 카테고리 피커(openCatPicker)에 검색 기능을 추가했다. matchCatQuery(logic.js) 신설, pkFilteredAssets와 같은 모양의 catFilteredGrid(kind,current,q)로 교체, pkCatQInput/refreshPkCatList 신설(220ms 디바운스), CAT_PICKER_SEARCH_THRESHOLD(8) 적용. APP_VERSION 1.47.249->1.47.250, sw.js CACHE v516->v517. test/run.js 17건 추가(2060->2077). node test/run.js 2077/2077 통과.",
       "commit": null
     },
     {
       "cycle": 254,
       "phase": "develop",
       "timestamp": "2026-10-27T13:21:02.613Z",
-      "summary": "거래 입력 분할 모드(여러 카테고리로 나누기)의 txSplitAdd(index.html:4865)/txSplitRemove(4872)가 재렌더 전에 syncTxInputs()를 부르지 않는 버그를 발견 — txType/txToggleRepeat/txSplitOpenCat 등 txDraft를 바꾸고 renderTxSheet()로 재렌더하는 다른 모든 핸들러는 재렌더 전에 syncTxInputs()로 #txAmt/#txMemo의 DOM 값을 먼저 txDraft에 반영하는데, 이 둘만 빠져 있었다. renderTxSheet()가 매번 #txAmt/#txMemo의 value를 d.amount/d.memo로 통째로 다시 쓰므로, 분할 추가/삭제 버튼을 누르면 아직 blur 전인 입력값(전체 금액/메모)이 조용히 사라지는 버그(saveTx()는 자체 syncTxInputs() 호출이 있어 최종 저장값은 되돌아간 값이 저장됨). 두 함수 맨 앞에 syncTxInputs() 호출을 추가해 다른 핸들러와 같은 패턴으로 맞췄다. index.html만 로직 변경(1줄+1줄), sw.js는 캐시 버전만 동기 범프. APP_VERSION 1.47.250->1.47.251, sw.js CACHE v517->v518. test/run.js: isDraftDirty 테스트와 같은 패턴(실제 syncTxInputs/num 소스를 격리 vm 컨텍스트에서 실행)으로 3건 추가 — 추가/삭제 각각 금액·메모 동기화 확인, 그리고 분할 최소 2개 가드로 삭제가 막혀도 syncTxInputs는 가드보다 먼저 불려 동기화가 일어남을 확인하는 회귀 가드. node test/run.js 2077->2080/2080 통과. node --check(logic.js/test/run.js) 통과, 메인 <script> 블록 vm.Script 파싱 통과(비-메인 블록 1건은 cycle248부터 알려진 정규식 오매칭 false positive).",
+      "summary": "거래 입력 분할 모드(여러 카테고리로 나누기)의 txSplitAdd/txSplitRemove가 재렌더 전에 syncTxInputs()를 부르지 않는 버그를 발견 — 다른 모든 핸들러는 재렌더 전에 syncTxInputs()를 먼저 부르는데 이 둘만 빠져 있어, 분할 추가/삭제 버튼을 누르면 아직 blur 전인 입력값(전체 금액/메모)이 조용히 사라지는 버그였음. 두 함수 맨 앞에 syncTxInputs() 호출을 추가해 다른 핸들러와 같은 패턴으로 맞췄다. APP_VERSION 1.47.250->1.47.251, sw.js CACHE v517->v518. test/run.js 3건 추가(2077->2080). node test/run.js 2080/2080 통과.",
       "commit": "62a9ae8"
     },
     {
       "cycle": 254,
       "phase": "review",
       "timestamp": "2026-10-27T13:45:00.000Z",
-      "summary": "cycle254 develop 커밋(62a9ae8, txSplitAdd/txSplitRemove에 syncTxInputs() 누락 수정)을 검토. txType(4891)/txToggleRepeat(4892) 등 txDraft를 바꾸고 renderTxSheet()로 재렌더하는 다른 모든 핸들러가 재렌더 전에 syncTxInputs()를 먼저 부르는 패턴과 코드로 직접 대조해 이 수정이 같은 패턴을 그대로 따름을 확인. syncTxInputs()(4834) 자체는 DOM 3개 요소를 읽어 txDraft에 반영하고 스크롤 위치를 기록할 뿐 다른 부작용이 없어, txSplitRemove의 '분할 2개 이하면 삭제 거부' 가드보다 먼저 불려도 안전함을 확인(가드가 막아도 동기화만 일어나고 삭제는 안 됨 — 새 테스트 3번째 케이스가 바로 이를 확인). 신규 테스트 3건이 추가/삭제/가드-통과 세 분기에 1:1 대응함을 확인. node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행 결과 2080/2080 통과(develop 단계가 주장한 수치와 일치). node --check(logic.js) 통과, 메인 <script> 블록 vm.Script 파싱 통과(비-메인 블록 1건은 cycle248부터 알려진 정규식 오매칭 false positive). APP_VERSION 1.47.251/sw.js CACHE v518 범프가 index.html 변경과 일치. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "summary": "cycle254 develop 커밋(62a9ae8, txSplitAdd/txSplitRemove에 syncTxInputs() 누락 수정)을 검토. 다른 모든 핸들러의 '재렌더 전 syncTxInputs()' 패턴과 코드로 직접 대조해 같은 패턴을 그대로 따름을 확인. node test/run.js 독립 재실행 결과 2080/2080 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
       "commit": null
     },
     {
       "cycle": 254,
       "phase": "critique",
       "timestamp": "2026-10-27T14:55:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(cycle122-254 전체 다룬 영역·기각 항목 전부 제외 지시, 특히 APPLOCK PIN 기반 전체 DB 암호화는 cycle252-253에서 boot 순서·세션 키 부재·forgot-PIN 데이터무손실 보장 충돌·약한 PIN 브루트포스 저항 등으로 이미 심층 기각되었으니 재추진 금지로 명시)한 결과를 바탕으로 선정. 러너업: 전역 통합검색(화면별 렌더 패턴이 달라 리스크 큼), 부채 상환 시뮬레이션(이자 모델링까지 필요해 범위 과대), PDF 월간 명세서(CSV/JSON 백업이 이미 데이터 이동성 커버), 양도소득세 추적(락롯 추적+세율 UI 필요, 한 사이클 범위 크게 초과). 채택: PWA 앱 아이콘 롱프레스 숏컷(manifest.webmanifest shortcuts) + ?action= 딥링크로 지출/수입/이체 빠른 입력 — manifest에 shortcuts 배열이 없고 index.html이 location.search를 전혀 읽지 않음(grep 0건)을 확인, 매일 여러 번 쓰는 거래 입력이 지금은 앱 열기→홈 렌더→FAB→내역→시트(기본 expense)→필요시 txType 전환까지 거쳐야 하는 공백을 발견. 스키마·PIN/암호화 영역을 전혀 건들지 않는 순수 추가적 UX라 무인 사이클에 적합 판단. 구체 계획(parseShortcutAction 순수함수, boot/unlockApp 분기, manifest shortcuts 3개, sw.js 캐시 범프, 테스트 추가)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(APPLOCK PIN 기반 전체 DB 암호화는 재추진 금지로 명시)한 결과, PWA 앱 아이콘 롱프레스 숏컷(manifest.webmanifest shortcuts) + ?action= 딥링크로 지출/수입/이체 빠른 입력이 빠져있는 공백을 발견 — manifest에 shortcuts 배열이 없고 index.html이 location.search를 전혀 읽지 않음을 확인. 스키마·PIN/암호화 영역을 전혀 건들지 않는 순수 추가적 UX라 무인 사이클에 적합 판단. 구체 계획을 pending_advance_plan에 저장.",
       "commit": null
     },
     {
       "cycle": 254,
       "phase": "advance",
       "timestamp": "2026-10-27T15:10:00.000Z",
-      "summary": "critique(cycle254) 계획대로 PWA 아이콘 롱프레스 숏컷 + ?action= 딥링크를 구현했다. logic.js에 순수함수 parseShortcutAction(search) 신설(/[?&]action=([a-zA-Z]+)/ 매칭, addExpense/addIncome/addTransfer 화이트리스트 외엔 전부 null). index.html에 디스패처 runShortcutAction(action)을 openTxSheet() 바로 아래 추가(addExpense는 openTxSheet()만, addIncome/addTransfer는 이어서 txType()으로 전환). startApp() 끝에서 parseShortcutAction(location.search)을 읽어 history.replaceState(null,'',location.pathname)로 쿼리스트링을 즉시 지우고(재진입/새로고침 중복 실행 방지), APPLOCK.enabled()이면 새 전역 PENDING_SHORTCUT_ACTION에 보관, 아니면 즉시 runShortcutAction() 실행. unlockApp()(doUnlock()/tryBioUnlock() 성공 경로 둘 다 거침) 끝에서 PENDING_SHORTCUT_ACTION이 있으면 실행 후 null로 비움. manifest.webmanifest에 shortcuts 3개(./?action=addExpense|addIncome|addTransfer, 기존 icon-192.png 재사용) 추가. index.html/manifest.webmanifest 변경이라 APP_VERSION 1.47.251->1.47.252, sw.js CACHE v518->v519 동기 범프(manifest.webmanifest가 SHELL 캐시 목록에 있어 재캐시 필요). test/run.js: parseShortcutAction 순수 입력 테스트 6건, runShortcutAction을 호출-기록 스텁 isolated 컨텍스트로 실행 검증하는 테스트 4건(openTxSheet/openRecSheet 등 DOM에 깊이 엮인 화면 진입점은 메인 sandbox에서 실행형 검증하지 않는 기존 관례를 그대로 따름), startApp()/unlockApp() 배선을 정적 텍스트로 확인하는 테스트 2건 — 총 12건 추가(2080->2092, 실측 2091 — FUNCTIONS 목록 추가 없이 logic.js 전체 로드로 끌려온 기존 함수 1건이 이미 카운트에 포함돼 있던 차이). node test/run.js 2091/2091 통과. node --check(logic.js/test/run.js/sw.js) 통과, manifest.webmanifest JSON.parse 통과, extractMainScript() 기반 메인 <script> 블록 vm.Script 파싱 테스트도 전체 스위트 안에서 통과 확인. pending_advance_plan은 null로 비웠다.",
+      "summary": "critique(cycle254) 계획대로 PWA 아이콘 롱프레스 숏컷 + ?action= 딥링크를 구현했다. logic.js에 순수함수 parseShortcutAction(search) 신설, index.html에 디스패처 runShortcutAction(action) 추가, startApp()/unlockApp() 배선(APPLOCK 걸려있으면 PENDING_SHORTCUT_ACTION에 보관 후 unlock 성공 시 실행), manifest.webmanifest에 shortcuts 3개 추가. APP_VERSION 1.47.251->1.47.252, sw.js CACHE v518->v519. test/run.js 12건 추가(2080->2092, 실측 2091). node test/run.js 2091/2091 통과. pending_advance_plan null로 비움.",
       "commit": null
     },
     {
       "cycle": 255,
       "phase": "develop",
       "timestamp": "2026-10-27T17:13:45.293Z",
-      "summary": "앱 전반 재탐색(fork 서브에이전트, cycle249-254가 다룬 영역 전부 제외 지시) 결과, 거래 입력 분할 모드(여러 카테고리로 나누기)의 데이터 모델(t.splits=[{category,amount,memo?}])과 검색(matchTxnQuery의 lineMemos)은 이미 분할 항목별 메모를 지원하는데, 실제 입력 UI(splitFieldHTML, index.html:4846)는 카테고리 선택과 금액 입력만 그리고 txToggleSplit()/txSplitAdd()가 memo:''로 고정 초기화할 뿐이라 분할 항목에 메모를 적을 방법이 전혀 없는 죽은 필드였음을 발견. splitFieldHTML에 항목별 메모 input(id=splitMemo{i}, 기존 금액 input과 동일한 field-clear 패턴)을 추가하고 txSplitMemo(i,el) 핸들러를 신설해 배선. openSheet()가 이미 호출하는 fcWire()가 새 input의 지우기(×) 버튼도 자동 배선하므로 추가 배선 불필요. logic.js 변경 없음(데이터 모델/검색은 이미 완비). test/run.js에 [실행형] 테스트 2건 추가(txSplitMemo 단위 테스트, splitFieldHTML이 id/oninput 배선과 esc()를 통한 따옴표 이스케이프까지 포함해 메모 input을 올바르게 그리는지 렌더 테스트). APP_VERSION 1.47.252→1.47.253, sw.js CACHE v519→v520. node our-assets-v1.14.1/our-assets/test/run.js 2091→2093/2093 통과.",
+      "summary": "앱 전반 재탐색(fork 서브에이전트) 결과, 거래 입력 분할 모드의 데이터 모델(t.splits=[{category,amount,memo?}])과 검색(matchTxnQuery)은 이미 분할 항목별 메모를 지원하는데, 실제 입력 UI(splitFieldHTML)는 카테고리 선택과 금액 입력만 그리고 memo:''로 고정 초기화할 뿐이라 분할 항목에 메모를 적을 방법이 전혀 없는 죽은 필드였음을 발견. splitFieldHTML에 항목별 메모 input 추가하고 txSplitMemo(i,el) 핸들러 신설. APP_VERSION 1.47.252→1.47.253, sw.js CACHE v519→v520. test/run.js 2건 추가(2091→2093). node test/run.js 2093/2093 통과.",
       "commit": "51006c9"
     },
     {
       "cycle": 255,
       "phase": "review",
       "timestamp": "2026-10-27T18:05:00.000Z",
-      "summary": "cycle255 develop 커밋(51006c9, 거래 입력 분할 모드의 splitFieldHTML에 항목별 메모 입력칸 추가 + txSplitMemo 핸들러 신설)을 검토. logic.js의 matchTxnQuery(lineMemos=lines.map(s=>s.memo||'')...)가 읽는 필드명이 's.memo'로 txSplitMemo(i,el){txDraft.splits[i].memo=el.value}가 쓰는 필드명과 정확히 일치함을 코드로 대조 확인. splitFieldHTML의 새 input이 esc(s.memo||'')로 값을 이스케이프해 기존 금액 input과 동일한 field-clear 패턴을 따르고, 지우기(×) 버튼은 openSheet()가 호출하는 fcWire()의 범용 '.field-clear input' 셀렉터로 자동 배선됨을 확인(새 input id에 대한 특별 배선 불필요, 코드로 확인). saveTx()가 d.splits를 그대로 저장해 memo 필드가 손실 없이 영속화됨을 확인. node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행 결과 2093/2093 통과(develop 단계가 주장한 수치와 일치). node --check(logic.js) 통과. APP_VERSION 1.47.253/sw.js CACHE v520 범프가 index.html 변경과 일치. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "summary": "cycle255 develop 커밋(51006c9, splitFieldHTML에 항목별 메모 입력칸 추가)을 검토. matchTxnQuery가 읽는 필드명('s.memo')과 txSplitMemo가 쓰는 필드명이 정확히 일치함을 코드로 대조 확인. node test/run.js 독립 재실행 결과 2093/2093 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
       "commit": null
     },
     {
       "cycle": 255,
       "phase": "critique",
       "timestamp": "2026-10-27T19:05:00.000Z",
-      "summary": "general-purpose 서브에이전트(fork)로 앱 전반을 재탐색(cycle122-255 전체 다룬 영역·기각 항목 전부 제외, APPLOCK PIN 기반 전체 DB 암호화는 cycle252-253에서 boot 순서·세션 키 부재·forgot-PIN 데이터무손실 보장 충돌·약한 PIN 브루트포스 저항으로 이미 심층 기각되었으니 재추진 금지로 명시)한 결과를 바탕으로 선정. 귀속(owner) 선택 세그먼트 렌더링이 spendOwnerSel/incomeOwnerSel/histOwnerSel/yearOwnerSel/goalOwnerSel 5곳에 거의 동일한 마크업으로 중복돼 있는데, openYearReview(index.html:6171, cycle246)만 DB.owners.length?...:'' 가드를 갖고 나머지 4곳(renderGoalForm:3468, openIncomeAnalysis:5403, renderHistory:5441, openSpendAnalysis:6246)엔 가드가 없음을 발견 — DB.owners는 opt-in(addOwner)이라 1인 가구는 DB.owners=[]이고, 이 경우 '전체' 버튼 하나뿐인 동작 없는 세그가 지출분석·수입분석·전체내역·목표추가 4개 화면에 그려짐(연간결산만 이미 올바르게 숨김). 러너업 기각: TODO(SRI) CDN 스크립트 해시(이 컨테이너 자체가 해당 CDN 호스트를 네트워크 정책상 막고 있어 코드 변경으로 해결 불가), 자산-목표 귀속 동기화(이미 cycle230에서 해결됨, 재확인만), 시트/다이얼로그 포커스 트랩(이미 overlayEscapeTarget/sheetFocusables로 일반화돼 구현됨, index.html:7940-8019). advance 계획(공유 헬퍼 ownerSegHtml(current,onClickFor,opts) 신설 후 5개 호출부 교체, test/run.js:16094-16100의 openSpendAnalysis 리터럴 소스 정규식 테스트를 실행 기반 검증으로 교체 필요, ownerSegHtml 신규 단위 테스트 추가)을 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "summary": "general-purpose 서브에이전트(fork)로 앱 전반을 재탐색(APPLOCK PIN 기반 전체 DB 암호화는 재추진 금지로 명시)한 결과를 바탕으로 선정. 귀속(owner) 선택 세그먼트 렌더링이 spendOwnerSel/incomeOwnerSel/histOwnerSel/yearOwnerSel/goalOwnerSel 5곳에 거의 동일한 마크업으로 중복돼 있는데, openYearReview(cycle246)만 DB.owners.length 가드를 갖고 나머지 4곳엔 가드가 없음을 발견. advance 계획(공유 헬퍼 ownerSegHtml 신설 후 5개 호출부 교체)을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     },
     {
       "cycle": 255,
       "phase": "advance",
       "timestamp": "2026-10-27T20:15:00.000Z",
-      "summary": "critique(cycle255) 계획대로 귀속 선택 세그먼트 렌더링 중복을 공유 헬퍼 ownerSegHtml(current,onClickFor,opts)로 통합하되, 구현 전 계획의 전제 하나를 코드로 직접 검증해 바로잡았다 — critique는 'DB.owners는 opt-in이라 1인 가구는 보통 DB.owners=[]'라고 가정했지만, migrate()(index.html:2548, DB.owners=(DB.owners&&DB.owners.length)?DB.owners:['나','배우자','공용'])가 매 load()마다 비어있으면 기본 3귀속을 강제로 채우고 delOwner()(4467)도 '귀속은 최소 1개 필요'로 0까지 지우는 걸 막아, 정상 실사용에서 DB.owners가 빈 적은 전혀 없다(sanitizeBackup 주변 주석 7334-7335도 이미 같은 사실을 '극히 드문 경우'로 명시). 그래서 '1인 가구 대부분이 겪는 흔한 공백'이라는 critique의 동기는 틀렸지만, openYearReview(cycle246)가 이미 이 DB.owners=[] 케이스를 테스트(test/run.js: '귀속이 없으면 귀속 필터 세그먼트가 없어야 함')로 못박아 둔 걸 보면 이 프로젝트가 '근거 없는 극단치라도 한 번 테스트로 박아두면 다른 호출부도 일관되게 지킨다'는 관례를 이미 채택했음을 확인했고, 5곳의 마크업 중복 통합 자체도 critique의 전제와 무관하게 독립적으로 가치 있는 리팩터링이라 계획을 그대로(가드 포함) 구현하는 것으로 결정했다. index.html:3457 바로 뒤에 ownerSegHtml 신설(DB.owners 비면 ''; opts.sentinelValue/sentinelLabel로 goalOwnerSel의 'all'→'전체' 특수 케이스, opts.typeButton으로 renderHistory만 쓰는 type=\"button\" 차이를 흡수 — 이 typeButton 차이는 critique 계획엔 없던 것으로, 각 호출부 원문을 직접 대조해 발견). openIncomeAnalysis(5403)/renderHistory(5441,type=\"button\" 유지)/openYearReview(6171, 기존 DB.owners.length 삼항 제거)/openSpendAnalysis(6246)/renderGoalForm(3468, ownerSeg가 빈 문자열이면 '귀속' label과 필드 자체를 함께 숨김, 자산연결 모드가 아닐 때만)까지 5개 호출부를 전부 교체. index.html만 변경이라 APP_VERSION 1.47.253→1.47.254, sw.js CACHE v520→v521 동기 범프. test/run.js: FUNCTIONS에 ownerSegHtml 추가(안 하면 vm 샌드박스에서 'ownerSegHtml is not defined'로 49건 연쇄 실패 — 실제로 한 번 겪고 고침). 깨진 openSpendAnalysis 리터럴 소스 정규식 테스트 1건을 spendAnalysisCtx() 실행 기반 검증으로 교체하고 DB.owners=[]→세그 없음 테스트를 같은 자리에 추가, openIncomeAnalysis/renderHistory/renderGoalForm에도 각각 동일한 DB.owners=[] 회귀 가드 테스트를 새로 추가(openYearReview의 기존 패턴과 동일), ownerSegHtml 자체 단위 테스트 7건(빈 배열→'', 순서, on/aria-pressed, sentinel 오버라이드, typeButton, onClickFor 삽입, 래퍼 마크업) 신설 — 총 11건 추가(2093→2104). node test/run.js 2104/2104 통과, node --check(logic.js) 통과, 메인 <script> 블록 node --check 파싱 통과(비-메인 블록 1건은 cycle248부터 알려진 정규식 오매칭 false positive). pending_advance_plan은 null로 비웠다.",
+      "summary": "critique(cycle255) 계획대로 귀속 선택 세그먼트 렌더링 중복을 공유 헬퍼 ownerSegHtml(current,onClickFor,opts)로 통합. 5개 호출부(renderGoalForm/openIncomeAnalysis/renderHistory/openYearReview/openSpendAnalysis) 전부 교체. APP_VERSION 1.47.253->1.47.254, sw.js CACHE v520->v521. test/run.js 11건 추가(2093->2104). node test/run.js 2104/2104 통과.",
       "commit": null
     },
     {
       "cycle": 256,
       "phase": "develop",
       "timestamp": "2026-10-27T00:00:00.000Z",
-      "summary": "fork 서브에이전트로 앱 전반을 재탐색(cycle122-255가 다룬 영역 전부 제외 지시)한 결과, openAssetHistory(index.html:5358)가 ST.hist.cat/q/catExact/owner 등은 리셋하면서 ST.hist.range/preset은 손대지 않는 버그를 발견 — 반면 같은 History 탭으로 드릴다운하는 openCatHistory/openIncomeCatHistory는 둘 다 ST.hist.range={from,to};ST.hist.preset='custom'을 명시적으로 세팅함. 그 결과 openCatHistory로 특정 월(예: 2026-05)로 범위를 좁힌 뒤 자산 화면에서 \"내역 보기\"(openAssetHistory)를 누르면, 해당 계좌에 그 달 거래가 없는 경우 \"전체내역\"을 보여줘야 할 화면이 조용히 텅 비어 보이는 버그였음. 고정폭 전체 범위 RANGE_FROM~RANGE_TO로 리셋하고 preset='custom'으로 맞춰 수정. index.html만 변경이라 APP_VERSION 1.47.254->1.47.255, sw.js CACHE v521->v522 동기 범프. test/run.js: 기존 range를 남은 상태로 두고 openAssetHistory 호출 시 RANGE_FROM/RANGE_TO로 리셋되는지 확인하는 회귀 테스트 1건 추가(2104->2105).",
+      "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, openAssetHistory(index.html:5358)가 ST.hist.cat/q/catExact/owner 등은 리셋하면서 ST.hist.range/preset은 손대지 않는 버그를 발견 — openCatHistory로 특정 월로 범위를 좁힌 뒤 자산 화면에서 '내역 보기'를 누르면 '전체내역'을 보여줘야 할 화면이 조용히 텅 비어 보이는 버그였음. RANGE_FROM~RANGE_TO/'custom'으로 리셋하도록 수정. APP_VERSION 1.47.254->1.47.255, sw.js CACHE v521->v522. test/run.js 1건 추가(2104->2105).",
       "commit": "d70fa8b"
     },
     {
       "cycle": 256,
       "phase": "review",
       "timestamp": "2026-10-27T00:10:00.000Z",
-      "summary": "cycle256 develop 커밋(d70fa8b, openAssetHistory가 ST.hist.range/preset을 리셋하지 않던 버그를 RANGE_FROM~RANGE_TO/'custom'으로 리셋하게 고침)을 검토. openAssetHistory의 모든 호출부(index.html:3971 자산 행 '내역 보기', 8940/8942 동명자산 피커, 9217 debtBehind 홈 알림)가 전부 '이 자산의 전체내역'을 보여주려는 의도라 좁혀진 이전 range를 보존해야 할 이유가 없음을 코드로 직접 대조 확인. RANGE_FROM/RANGE_TO가 이미 allTxns(RANGE_FROM,RANGE_TO) 등에서 쓰이는 앱의 표준 전체 범위라 재사용이 적절. node our-assets-v1.14.1/our-assets/test/run.js 독립 재실행 결과 2105/2105 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "summary": "cycle256 develop 커밋(d70fa8b)을 검토. openAssetHistory의 모든 호출부가 전부 '이 자산의 전체내역'을 보여주려는 의도라 좁혀진 이전 range를 보존해야 할 이유가 없음을 확인. node test/run.js 2105/2105 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
       "commit": null
     },
     {
       "cycle": 256,
       "phase": "critique",
       "timestamp": "2026-10-27T20:30:00.000Z",
-      "summary": "fork 서브에이전트로 앱 전반을 재탐색(cycle122-256 전체 다룬 영역·기각 항목 전부 제외 지시, 특히 APPLOCK PIN 기반 전체 DB 암호화는 재추진 금지로 명시)한 결과, homeAlerts()(index.html:8947-9012)가 목표 지연(goalBehind/goalBehindMulti)·예산 초과(budgetOver)·부채 상환 정체(debtBehind) 등 '나쁜 사건'은 전부 홈 카드+OS 푸시로 알리면서, 정확히 대칭되는 '목표 달성'에는 알림이 전혀 없고 goalRowHTML의 조용한 '달성' 배지 하나뿐임을 발견. 러너업 기각: 부채 완납 축하(동일한 공백이지만 범위를 목표 하나로 좁혀 이번엔 제외, 차순위 후보로 남김), 전역 통합검색(리스크 큼), PDF 명세서(CSV 백업이 이미 커버), 접근성 전수조사(aria-label 184건/aria-hidden 19건 등 샘플 점검 결과 이미 촘촘해 추가 가치 낮음). 채택 계획: logic.js에 goalNewlyAchieved(goal,progress) 순수함수 신설, DB.goals에 achievedAckAt 필드 추가, homeAlerts/checkNotifyAlerts/homeAlertCard에 goalAchieved(Multi) 알림 배선 — saveGoal()이 rec을 필드 나열로 재구성해 achievedAckAt을 명시적으로 이어주지 않으면 목표 수정 시 조용히 사라져 재알림되는 함정과, 이 알림은 budgetOver와 달리 자연 해소되지 않으므로 카드 탭 시 achievedAckAt을 직접 기록하는 ack 핸들러가 필요하다는 점을 상세 명시해 pending_advance_plan에 저장. 코드 변경 없음(critique 단계라 state.json만 갱신).",
+      "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, homeAlerts()가 목표 지연·예산 초과·부채 상환 정체 등 '나쁜 사건'은 전부 알리면서, 정확히 대칭되는 '목표 달성'에는 알림이 전혀 없음을 발견. 러너업: 부채 완납 축하(차순위로 남김), 전역 통합검색, PDF 명세서, 접근성 전수조사(이미 촘촘함). 채택 계획(goalNewlyAchieved, achievedAckAt, homeAlerts/checkNotifyAlerts/homeAlertCard 배선)을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     },
     {
       "cycle": 256,
       "phase": "advance",
       "timestamp": "2026-10-27T21:00:00.000Z",
-      "summary": "critique(cycle256) 계획대로 목표 달성 축하 알림(goalAchieved/goalAchievedMulti)을 구현했다. logic.js에 goalIsOverdue 바로 뒤 순수함수 goalNewlyAchieved(goal,progress)=progress.achieved&&!goal.achievedAckAt 신설. DB.goals 스키마 주석(index.html:2581)에 achievedAckAt 필드 추가. homeAlerts()의 _gb(goalBehind) 블록 바로 뒤에 대칭 블록 추가 — DB.goals를 goalProgress+goalHistoryFor로 평가해 goalNewlyAchieved인 것만 골라(goalHasUnknown/goalLinkedAssetGone 가드를 goalBehind와 동일하게 적용) budgetOver와 동일한 단일/복수 collapsing 패턴으로 kind:'goalAchieved'(goalId,name,amount)/'goalAchievedMulti'(count) 추가. homeAlertCard에 '목표를 달성했어요 🎉' 카드 추가(단일은 ackGoalAchieved, 복수는 openGoalsList). checkNotifyAlerts()의 OS푸시 경로(notifyAlertInfo)에도 goalAchieved/goalAchievedMulti 문구 추가 — budgetOverMulti 등과 달리 월 단위로 자연 해소되지 않는 영구 상태라 key에 월을 넣지 않고 goalId/count만 씀. saveGoal()에 achievedAckAt:d.achievedAckAt||null 명시적 이어주기 + 목표 금액을 올려 더는 achieved가 아니게 되면 achievedAckAt을 null로 리셋하는 로직 추가. 새 함수 ackGoalAchieved(id)를 신설해 '목표를 실제로 열어 봄 = ack'으로 묶고, goalRowHTML/openGoalsList 행의 onclick도 openGoalForm에서 ackGoalAchieved로 교체해 Multi 카드가 목표 목록을 둘러보는 것만으로도 자연히 해소되게 했다(단순 openGoalForm 재사용 금지 — 플랜이 지적한 대로 ack 기록이 반드시 필요). index.html/logic.js/sw.js 변경이라 APP_VERSION 1.47.255→1.47.256, sw.js CACHE v522→v523 동기 범프. test/run.js: goalNewlyAchieved 단위 테스트 3건, homeAlerts goalAchieved/goalAchievedMulti collapsing·미달성 제외·이미 ack된 목표 제외·goalHasUnknown 가드 억제/해제 5건, notifyAlertInfo 키 검증 1건, homeAlertCard 렌더 1건, saveGoal의 achievedAckAt 이어주기/리셋/신규목표 기본값 3건, ackGoalAchieved 실행형 2건 — 총 15건 추가(2105→2120). 기존 saveGoal(asset형) 테스트 1건은 새로 추가된 goalProgress(rec,goalHistoryFor(rec),TODAY) 호출이 DB.txns/recurrences를 요구해 깨졌던 걸 최소 고정(txns:[],recurrences:[],settings) 추가로 수정. node test/run.js 2120/2120 통과, node --check(logic.js/test/run.js/sw.js) 통과, extractMainScript() 기반 메인 <script> 블록 vm.runInContext 통과, manifest.webmanifest JSON.parse 통과. pending_advance_plan은 null로 비웠다.",
+      "summary": "critique(cycle256) 계획대로 목표 달성 축하 알림(goalAchieved/goalAchievedMulti)을 구현. goalNewlyAchieved 신설, DB.goals.achievedAckAt 필드 추가, homeAlerts/checkNotifyAlerts/homeAlertCard 배선, ackGoalAchieved 신설. APP_VERSION 1.47.255->1.47.256, sw.js CACHE v522->v523. test/run.js 15건 추가(2105->2120). node test/run.js 2120/2120 통과. pending_advance_plan null로 비움.",
       "commit": null
     },
     {
       "cycle": 257,
       "phase": "develop",
       "timestamp": "2026-10-28T00:13:53.287Z",
-      "summary": "검색어에 여러 단어를 띄어써서 좁히는 기능이 빠져있던 공백을 발견 — logic.js의 matchTxnQuery/matchAssetQuery/matchCatQuery(거래내역·자산피커·카테고리피커 검색)가 전부 질의 문자열 전체를 하나의 부분문자열로 includes() 비교해, 메모와 카테고리처럼 서로 다른 필드에 단어가 나뉘어 있으면(예: 메모=\"스타벅스\", 카테고리=\"카페/음료\") \"스타벅스 카페\"처럼 두 단어로 검색해도 매칭되지 않았음(실제로는 두 단어 모두 존재하는데도). logic.js에 공유 헬퍼 searchTerms(q)를 신설해 질의를 공백 기준으로 토큰화하고, 세 매치 함수 전부 \"모든 토큰이 해당 필드들 중 어딘가에 등장해야 매치\"(AND)로 재배선 — 기존 대소문자/NFC 무시 부분일치 규칙은 토큰 단위로 그대로 유지해 단일 단어 질의는 기존과 동일하게 동작(회귀 위험 없는 순수 확장), 공백만 있는 질의도 기존처럼 전체 매치. logic.js만 변경이라 index.html/sw.js 동기 버전 범프: APP_VERSION 1.47.256->1.47.257, sw.js CACHE v523->v524. test/run.js: 세 함수 전부에 대해 AND 매칭(서로 다른 필드에 나뉜 단어), 토큰 중 하나라도 없으면 불일치, 단어 순서 무관, 공백만 있는 질의, 연속 공백 처리까지 회귀 테스트 6건 추가. node test/run.js 2120->2126/2126 통과, node --check(logic.js/test/run.js) 통과.",
+      "summary": "검색어에 여러 단어를 띄어써서 좁히는 기능이 빠져있던 공백을 발견 — matchTxnQuery/matchAssetQuery/matchCatQuery가 전부 질의 전체를 하나의 부분문자열로 비교해 메모·카테고리처럼 다른 필드에 단어가 나뉘면 매칭 안 됨. searchTerms(q) 헬퍼 신설해 토큰화 AND 매칭으로 재배선(단일 단어는 기존과 동일, 회귀 없음). APP_VERSION 1.47.256->1.47.257, sw.js CACHE v523->v524. test/run.js 6건 추가(2120->2126). node test/run.js 2126/2126 통과.",
       "commit": "1e482c2"
     },
     {
       "cycle": 257,
       "phase": "review",
       "timestamp": "2026-10-28T01:07:59.000Z",
-      "summary": "cycle257 develop 커밋(1e482c2, 검색어 공백 토큰화 AND 매칭으로 matchTxnQuery/matchAssetQuery/matchCatQuery 통합)을 검토. 신설된 searchTerms(q)가 trim 후 /\\s+/로 토큰화하고 빈 토큰을 거르는 로직을 직접 대조 확인: 토큰 1개(공백 없는 기존 입력)는 기존 includes()와 동일하고, 공백뿐인 검색어는 terms.length===0으로 빈 검색어와 동일하게 전체 통과한다. matchTxnQuery만 쉼표 제거(.replace(/,/g,''))를 토큰화 이전에 적용해 금액 검색(쉼표 유무 무관)을 그대로 보존하고, matchAssetQuery/matchCatQuery는 쉼표 제거를 적용하지 않아(기존에도 안 했음) 회귀 없음을 확인. 세 함수의 호출부(index.html: pkFilteredAssets/openCatPicker/#histQ 전체내역 검색 등)가 모두 사용자가 타이핑한 쿼리 문자열을 그대로 넘기므로 새 AND 규칙이 자연스럽게 적용됨. node test/run.js 독립 재실행 결과 2126/2126 통과(develop 단계가 주장한 수치와 일치), node --check logic.js/test/run.js 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "summary": "cycle257 develop 커밋(1e482c2)을 검토. searchTerms(q)가 토큰 1개(기존 입력)는 기존 includes()와 동일하게 동작, 금액 검색 쉼표 제거도 보존됨을 확인. node test/run.js 2126/2126 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음.",
       "commit": null
     },
     {
       "cycle": 257,
       "phase": "critique",
       "timestamp": "2026-10-28T00:00:00.000Z",
-      "summary": "cycle256 critique가 러너업으로 남겨둔 '부채 완납 축하'를 이어받아 코드로 직접 검증했다. debt는 DB.debts 같은 별도 구조가 아니라 DB.assets의 type:'debt' 항목(음수 평가, assetEval은 debt도 assetBalance로 잔액식 평가 — index.html:2735-2743, 2855 isMarketValued에 포함 안 됨)이라 시세 미확인(rateUnknown) 걱정이 없어 goalHasUnknown 같은 가드가 불필요함을 확인했다. debtPayoffProjection(logic.js:646-663)이 이미 achieved(최신 잔액<=0)를 순수함수로 반환하고, assetBalCard(index.html:3190-3201)는 이를 '이미 다 갚았어요' 캡션으로만 조용히 보여줄 뿐 homeAlerts()/OS푸시엔 연결되어 있지 않다 — debtBehind(index.html:9032-9035, 나쁜 사건)만 있고 정확히 대칭되는 '완납'(좋은 사건) 알림이 없는 공백은 goalAchieved(cycle256)와 동일한 모양. debtsBehind()(index.html:8941-8949)가 이미 '거래 이력이 1건이라도 있는 debt만 대상'이라는 가드를 쓰고 있어(신규 등록만 해둔 0원 부채가 즉시 achieved:true로 오탐되는 걸 막음) 새 알림도 동일 가드를 그대로 재사용하면 된다. 자산 편집(saveAsset, index.html:4353-4430)은 goal과 달리 asDraft가 JSON.parse(JSON.stringify(기존 자산))로 만든 완전한 deep clone이라(index.html:4262) 새 ack 필드를 추가해도 saveGoal처럼 필드 나열로 재구성하는 함정이 없어 수정 시 자동으로 보존된다 — 다만 빚을 다시 늘리는 거래가 들어와 achieved가 다시 false가 됐다가 또 완납되는 재발 케이스에서 ack를 리셋하는 지점은 goal의 saveGoal 리셋과 달리 자연스러운 '거래' 경로라 존재하지 않는다는 한계가 있음을 advance 구현자가 인지해야 한다(goal도 saveGoal 편집 경로만 리셋하고 지출으로 인한 자연 변동은 리셋하지 않는 동일한 한계를 이미 수용했으므로, 같은 수준의 스코프로 맞추면 됨 — 완벽한 재알림 보장은 이번 사이클 범위 밖). 러너업 기각: 전역 통합검색(리스크 큼, 재확인), PDF 명세서(CSV가 이미 커버, 재확인), 영수증/사진 첨부(범위 과대, 재확인) — 전부 기존 기각 유지, 새로 조사하지 않음.",
+      "summary": "cycle256 critique가 러너업으로 남겨둔 '부채 완납 축하'를 이어받아 코드로 직접 검증. debt는 DB.assets의 type:'debt' 항목(음수 평가 없음)이라 goalHasUnknown 같은 가드가 불필요함을 확인. debtPayoffProjection이 이미 achieved를 순수함수로 반환. debtsBehind()가 쓰는 '거래 이력이 1건이라도 있는 debt만 대상' 가드를 재사용하면 됨. asDraft가 deep clone이라 saveAsset은 saveGoal 같은 필드 나열 재구성 함정이 없음. advance 구현 계획을 pending_advance_plan에 저장.",
       "commit": null
     },
     {
       "cycle": 257,
       "phase": "advance",
       "timestamp": "2026-10-28T01:30:00.000Z",
-      "summary": "critique(cycle257)가 세운 계획대로 부채 완납 축하 알림(debtPaidOff/debtPaidOffMulti)을 구현했다. logic.js에 debtPayoffProjection 바로 뒤 순수함수 debtNewlyPaidOff(asset,payoff)=payoff.achieved&&!asset.payoffAckAt 신설(goalNewlyAchieved와 동일한 모양). ASSET_TYPES 선언 바로 뒤에 debt형 자산의 payoffAckAt 필드 주석 추가 — saveAsset()의 asDraft가 JSON 딥클론이라(goalDraft와 달리 필드 나열로 재구성하지 않음) saveGoal처럼 명시적으로 이어줄 필요가 없음을 코드로 확인하고 그대로 명시. 계획을 그대로 따르지 않고 한 가지를 바꿨다: critique가 제안한 'amount=assetEval(a)'는 완납 시점엔 잔액이 0이라 축하 문구에 쓸 숫자가 없다는 걸 구현 중 발견해, 대신 debtsBehind() 바로 아래에 공유 헬퍼 debtsPaidOff()를 신설(debtsBehind와 완전히 대칭되는 구조 — homeAlerts()와 openDebtPaidOffList() 둘 다 재사용)하고 각 항목에 peak(조회 구간 중 가장 많이 빚졌던 금액)을 amount로 돌려주게 했다. homeAlerts()의 debtBehind 블록 바로 뒤에 debtsPaidOff() 기반 대칭 블록 추가(budgetOver/goalAchieved와 동일한 단일/복수 collapsing). homeAlertCard에 '부채를 다 갚았어요 🎉' 카드 추가(단일은 ackDebtPayoff, 복수는 openDebtPaidOffList). checkNotifyAlerts()의 OS푸시 경로(notifyAlertInfo)에도 debtPaidOff/debtPaidOffMulti 문구 추가 — goalAchieved와 동일하게 월 단위가 아닌 영구 key(assetId/count만). openDebtBehindList() 바로 아래에 openDebtPaidOffList() 신설: 0건 토스트, 1건이면 closeSheet 후 즉시 ackDebtPayoff, 2건 이상이면 시트에서 각 행이 ackDebtPayoff로 연결(openDebtBehindList은 1건일 때 단순 openAssetHistory만 호출하지만, 완납 알림은 ack을 남겨야 다시 안 뜨므로 1건이어도 ackDebtPayoff를 거친다는 차이가 있음). ackGoalAchieved 바로 아래에 ackDebtPayoff(assetId) 신설: debtsBehind()와 동일한 방식(RANGE_FROM~TODAY 실제 잔액 추이, sign=-1)으로 그 자산 하나의 payoff를 다시 계산해 debtNewlyPaidOff면 payoffAckAt 기록 후 save(), 이어서 openAssetHistory로 이동. 알려진 한계(코드 주석으로 명시): 완납 후 같은 부채에 다시 돈을 빌려 잔액이 늘었다가 재완납되는 경우, 거래 누적으로 자연히 벌어지는 변동이라 goal의 saveGoal 리셋(목표금액을 올려 재조정하는 명시적 편집 경로)과 달리 payoffAckAt을 되돌리는 지점이 없다 — goal도 '지출로 인한 자연 변동'은 리셋하지 않는 동일한 한계를 이미 수용했으므로 같은 스코프로 맞춤. index.html/logic.js/sw.js 변경이라 APP_VERSION 1.47.257->1.47.258, sw.js CACHE v524->v525 동기 범프. test/run.js: debtNewlyPaidOff 단위 테스트 4건, ackDebtPayoff 실행형 테스트 2건(payoffAckAt 기록+save+openAssetHistory 이동 / 미달성·이미ack 시 아무 변화 없음), homeAlerts debtPaidOff/debtPaidOffMulti collapsing·진행중 제외·이미ack 제외·거래이력없는 0원 신규 제외·includeInTotal=false 제외 5건, notifyAlertInfo 영구키 검증 1건, homeAlertCard 렌더 1건, openDebtPaidOffList 0/1/N건 분기 3건 — 총 16건 추가(2126->2142). FUNCTIONS 목록에 debtsPaidOff/openDebtPaidOffList/ackDebtPayoff 추가(안 하면 vm 샌드박스 'is not defined'로 다른 homeAlerts 테스트 49건까지 연쇄 실패 — cycle255가 겪은 것과 동일한 함정, 추가 직후 재확인). node test/run.js 2142/2142 통과, node --check(logic.js/test/run.js/sw.js) 통과, manifest.webmanifest JSON.parse 통과. pending_advance_plan은 null로 비웠다.",
+      "summary": "critique(cycle257) 계획대로 부채 완납 축하 알림(debtPaidOff/debtPaidOffMulti)을 구현. debtNewlyPaidOff 신설, asset.payoffAckAt 필드, debtsPaidOff()/openDebtPaidOffList()/ackDebtPayoff() 신설(debtsBehind와 대칭), homeAlerts/checkNotifyAlerts/homeAlertCard 배선. peak(완납 전 최고 빚)은 이 시점엔 assetBalanceSeries+assetBalSampleDates(60) 샘플링 기반으로 계산 — cycle258 develop이 나중에 이 샘플링의 부정확성을 발견해 고침. APP_VERSION 1.47.257->1.47.258, sw.js CACHE v524->v525. test/run.js 16건 추가(2126->2142). node test/run.js 2142/2142 통과. pending_advance_plan null로 비움.",
       "commit": null
+    },
+    {
+      "cycle": 258,
+      "phase": "develop",
+      "timestamp": "2026-10-28T00:00:00.000Z",
+      "summary": "fork 서브에이전트로 코드베이스를 탐색한 결과, cycle257 advance가 신설한 debtsPaidOff()(index.html)가 '완납 전 가장 많이 빚졌던 금액'(peak)을 assetBalanceSeries(...,assetBalSampleDates(RANGE_FROM,TODAY,60))의 60개 샘플 포인트 중 최댓값으로 구하는 버그를 발견 — RANGE_FROM(2023-01-01)~TODAY 구간이 60개보다 훨씬 길어(실제로는 약 20여 일 간격) 그 틈새에서 반짝 빚이 늘었다가 다 갚이는(카드 단기 사용 등 흔한 패턴) 경우 스파이크가 어느 샘플에도 걸리지 않아 피크가 조용히 축소(심하면 0까지)돼 보이는 버그였음. 잔액은 거래가 없는 동안 상수(계단함수)라 진짜 최대값은 항상 거래 직후 시점에만 나타난다는 점을 이용해, 날짜 샘플링 없이 거래를 전부 순회해 정확한 최댓값을 구하는 새 순수함수 assetBalancePeak(txns,assetId,base,sign)를 logic.js에 신설(assetBalanceSeries 바로 뒤)하고, debtsPaidOff()의 peak 계산만 이걸로 교체(debtPayoffProjection이 쓰는 추세 투사는 근사치로 의도된 설계라 그대로 둠). index.html/logic.js 변경이라 APP_VERSION 1.47.258->1.47.259, sw.js CACHE v525->v526 동기 범프. test/run.js: assetBalancePeak 단위 테스트 4건(거래 없음/일반자산 최고점 유지/부채 최고점/샘플링 간격보다 짧은 스파이크를 샘플링 기반 assetBalanceSeries는 놓치지만 assetBalancePeak는 정확히 잡아낸다는 대조 테스트), homeAlerts의 debtPaidOff.amount가 실제 샘플 간격 틈에 낀 스파이크에도 정확한 피크를 보여주는 회귀 테스트 1건 — 총 5건 추가(2142->2147). node test/run.js 2147/2147 통과, node --check(logic.js/test/run.js) 통과. 커밋 cd359e7, origin/main에 push 완료(로컬 main 브랜치 ref가 이전 세션에서 detached 상태로 낡아 있던 것도 같이 복구).",
+      "commit": "cd359e7"
     }
   ]
 }
