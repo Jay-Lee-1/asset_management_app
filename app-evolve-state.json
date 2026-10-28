@@ -1,22 +1,12 @@
 {
   "cycle": 260,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "전역 통합검색이 반복거래(가상 전개) 거래를 못 찾는 공백 수정",
+    "why": "cycle259 advance가 신설한 전역 통합검색 globalSearchBody()(index.html:5903)는 거래를 DB.txns.filter(t=>matchTxnQuery(...))로만 찾는데, 반복거래(매달 넷플릭스/월세/급여 등)는 DB.txns에 실물로 저장되지 않고 expandRec()을 통해 그때그때 가상으로 전개된다(allTxns, index.html:2713). 반면 같은 matchTxnQuery를 쓰는 전체내역 자체 검색 filteredHist()(index.html:5374)는 반드시 allTxns(RANGE_FROM,RANGE_TO)를 거쳐 반복거래 전개분까지 포함해서 찾는다. 그 결과 사용자가 반복거래로만 존재하는 거래를 통합검색에 입력하면 거래 그룹이 통째로 비어 보이는데, 같은 단어로 전체내역 자체 검색을 하면 바로 찾아지는 역설적 상황이 된다.",
+    "approach": "globalSearchBody()의 txns 조회를 DB.txns.filter(...) 대신 allTxns(RANGE_FROM,RANGE_TO).filter(t=>matchTxnQuery(t,q,DB.assets))로 바꿔 filteredHist와 동일한 소스를 쓰게 한다. 가상 반복거래 행은 t.id가 'rec_'+recId+'_'+date 형태라 txRowCore(이미 isRec/data-rec 처리 지원, index.html:4764)가 그대로 렌더링 가능함을 확인하고, 정렬(날짜 내림차순)·상위 20건 cap 로직은 그대로 유지한다. allTxns 기반 필터에 반복거래 전개 결과가 포함되는지 확인하는 순수 로직 회귀 테스트를 1~2건 추가한다."
+  },
   "history": [
-    {
-      "cycle": 255,
-      "phase": "review",
-      "timestamp": "2026-10-27T18:05:00.000Z",
-      "summary": "cycle255 develop 커밋(51006c9, splitFieldHTML에 항목별 메모 입력칸 추가)을 검토. matchTxnQuery가 읽는 필드명('s.memo')과 txSplitMemo가 쓰는 필드명이 정확히 일치함을 코드로 대조 확인. node test/run.js 독립 재실행 결과 2093/2093 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
-    {
-      "cycle": 255,
-      "phase": "critique",
-      "timestamp": "2026-10-27T19:05:00.000Z",
-      "summary": "general-purpose 서브에이전트(fork)로 앱 전반을 재탐색(APPLOCK PIN 기반 전체 DB 암호화는 재추진 금지로 명시)한 결과를 바탕으로 선정. 귀속(owner) 선택 세그먼트 렌더링이 spendOwnerSel/incomeOwnerSel/histOwnerSel/yearOwnerSel/goalOwnerSel 5곳에 거의 동일한 마크업으로 중복돼 있는데, openYearReview(cycle246)만 DB.owners.length 가드를 갖고 나머지 4곳엔 가드가 없음을 발견. advance 계획(공유 헬퍼 ownerSegHtml 신설 후 5개 호출부 교체)을 pending_advance_plan에 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 255,
       "phase": "advance",
@@ -148,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-28T12:30:00.000Z",
       "summary": "cycle260 develop 커밋(f5c8eb6, matchTxnQuery가 분할 거래의 최상위 합계(t.amount)뿐 아니라 개별 분할 금액(splits[].amount)으로도 매칭되게 lineAmts 추가)을 검토. splitLines()가 비분할 거래엔 [{amount:t.amount,...}] 하나만 반환해 lineAmts가 기존 amt와 중복될 뿐 새 오매칭을 만들지 않음을 코드로 확인. 전역 통합검색(cycle259 advance)과 기존 내역 검색(#histQ) 양쪽 호출부 모두 matchTxnQuery를 그대로 재사용하므로 수정이 자동으로 양쪽에 적용됨을 확인. 추가된 테스트 3건(분할 금액 매칭/합계 매칭 회귀/비매칭)이 핵심 시나리오를 잘 덮음. node test/run.js 독립 재실행 결과 2160/2160 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 260,
+      "phase": "critique",
+      "timestamp": "2026-10-28T13:10:00.000Z",
+      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색한 결과, cycle259 advance가 신설한 전역 통합검색 globalSearchBody()(index.html:5903)가 거래를 DB.txns.filter(...)로만 찾아 DB.txns에 실물로 저장되지 않고 expandRec()으로 가상 전개되는 반복거래(매달 넷플릭스/월세/급여 등)를 못 찾는 공백을 발견 — 같은 matchTxnQuery를 쓰는 전체내역 자체 검색 filteredHist()는 allTxns()를 거쳐 반복거래 전개분까지 찾아내므로, 막 추가된 \"통합\"검색이 오히려 덜 찾는 역설적 상황. advance 계획(globalSearchBody의 txns 조회를 allTxns(RANGE_FROM,RANGE_TO).filter(...)로 교체)을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     }
   ]
