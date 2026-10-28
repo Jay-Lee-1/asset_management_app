@@ -23588,6 +23588,35 @@ test('withoutKey: 없는 key를 지워도 안 터지고 얕은 복사만 돌려�
   assert.notStrictEqual(r, obj, '원본과 같은 참조를 돌려줌(얕은 복사가 아님)');
 });
 
+/* ---------- capGroup(logic.js): 전역 통합검색(globalSearchBody/index.html)이 거래·자산·카테고리
+ * 세 그룹을 cap개로 자르고 남은 건수를 알리는 데 쓴다(hist-more/of-more와 같은 관례, app-evolve
+ * cycle261 develop) ---------- */
+test('capGroup: 배열 길이가 cap 이하면 자르지 않고 remain:0이다', () => {
+  const r = sandbox.capGroup([1, 2, 3], 20, false);
+  assert.deepStrictEqual(r.shown, [1, 2, 3], 'cap 이하인데도 잘림');
+  assert.strictEqual(r.remain, 0, 'cap 이하인데 remain이 0이 아님');
+});
+test('capGroup: 배열 길이가 cap을 넘으면 cap개로 자르고 남은 개수를 remain으로 돌려준다', () => {
+  const arr = Array.from({ length: 25 }, (_, i) => i);
+  const r = sandbox.capGroup(arr, 20, false);
+  assert.strictEqual(r.shown.length, 20, 'cap개로 안 잘림');
+  assert.deepStrictEqual(r.shown, arr.slice(0, 20), '앞에서부터 cap개가 아님(순서가 바뀜)');
+  assert.strictEqual(r.remain, 5, '남은 개수(25-20=5)가 틀림');
+});
+test('capGroup: expand가 true면 cap을 넘어도 자르지 않고 remain:0이다(더보기를 누른 뒤)', () => {
+  const arr = Array.from({ length: 25 }, (_, i) => i);
+  const r = sandbox.capGroup(arr, 20, true);
+  assert.deepStrictEqual(r.shown, arr, 'expand:true인데도 잘림');
+  assert.strictEqual(r.remain, 0, 'expand:true인데 remain이 0이 아님');
+});
+test('capGroup: 빈 배열/undefined도 안 터지고 remain:0이다', () => {
+  // vm 샌드박스가 만든 리턴 객체는 host 쪽 {} 리터럴과 내용이 같아도 realm(프로토타입 체인)이
+  // 달라 deepStrictEqual이 "구조는 같은데 참조가 다르다"로 실패시킨다 — withoutKey 테스트와
+  // 동일하게 JSON 라운드트립으로 realm을 벗겨내고 비교한다.
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.capGroup([], 20, false))), { shown: [], remain: 0 }, '빈 배열 처리가 틀림');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.capGroup(undefined, 20, false))), { shown: [], remain: 0 }, 'undefined 입력 처리가 틀림');
+});
+
 test('isRlsPolicyError: Postgres 42501 코드와 policy/RLS 메시지를 네트워크·인증 에러와 구분한다', () => {
   assert.strictEqual(sandbox.isRlsPolicyError({ code: '42501', message: 'permission denied for table user_data' }), true, '42501 코드를 RLS로 인식하지 못함');
   assert.strictEqual(sandbox.isRlsPolicyError({ message: 'new row violates row-level security policy for table "user_data"' }), true, 'row-level security 메시지를 인식하지 못함');

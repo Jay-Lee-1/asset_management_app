@@ -1126,6 +1126,18 @@ function withoutKey(obj,key){
  delete r[key];
  return r;
 }
+/* 전역 통합검색(globalSearchBody/index.html)의 거래·자산·카테고리 세 그룹이 각각 상위 cap개로
+ * 조용히 잘려 있었다 — filteredHist()의 '더보기 N건 남음'(hist-more), monthOutflowCard()의
+ * '외 N건 더 보기'(of-more)처럼 이 앱은 캡에 걸리면 항상 남은 건수를 알리고 펼칠 수 있게 하는
+ * 관례가 있는데, cycle259 advance가 신설한 전역 통합검색만 그 관례 없이 slice(0,20)로 끝이었다
+ * (예: '스타벅스'처럼 자주 쓰는 검색어는 거래가 20건을 가뿐히 넘는데, 정확히 20건만 있는 것처럼
+ * 보여 나머지를 찾을 길이 없었음). expand가 true거나 배열이 cap 이하면 자르지 않고 remain:0,
+ * 아니면 cap개까지 자르고 남은 개수를 remain으로 돌려준다(app-evolve cycle261 develop). */
+function capGroup(arr,cap,expand){
+ arr=arr||[];
+ if(expand||arr.length<=cap)return{shown:arr,remain:0};
+ return{shown:arr.slice(0,cap),remain:arr.length-cap};
+}
 
 /* ================= 도움말 백업 안내 (순수) ================= */
 /* openHelp()의 '💾 백업' 행은 지금까지 계정 종류와 무관하게 항상 "데이터는 이 기기에만
