@@ -213,7 +213,7 @@ const FUNCTIONS = [
   'sanitizeAmount', 'sanitizeBackup',
   'saveRec', 'recHistFieldsChanged', 'recScheduleShapeChanged', 'pruneOrphanRecOverrides', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
   'expandRec', 'allTxns', 'txnsByDateInRange', 'spendByCategory', 'spendTrend', 'spendTrendBadge', 'incomeByCategory', 'incomeTrend', 'incomeTrendBadge', 'histSumTotals',
-  'yearSpendByCategory', 'yearIncomeByCategory', 'yearMonthlyNet', 'savingsRate', 'yearSummary', 'openYearReview',
+  'yearSpendByCategory', 'yearIncomeByCategory', 'yearRealizedGain', 'yearMonthlyNet', 'savingsRate', 'yearSummary', 'openYearReview',
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'buildExpenseBarHtml', 'expenseBreakdownCard', 'incomeBreakdownCard',
   'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asOpenCur', 'asCur', 'asToggleNeg', 'openAssetSheet', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'mergeRemoteDataIntoLocal', 'snapshotLocalDeviceFields', 'restoreLocalDeviceFields', 'fmtAmt', 'fmtQty',
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges', 'shouldRetryCloudSync',
@@ -7208,6 +7208,60 @@ test('openYearReview: 총수입/총지출/순저축액/저축률 카드와 지�
   assert.ok(html.includes('class="eb-cat">급여'), 'yearIncomeByCategory의 c를 cat으로 매핑하지 않아 카테고리명이 비어 있음');
   assert.ok(html.includes('class="eb-cat">식비'), 'yearSpendByCategory의 c를 cat으로 매핑하지 않아 카테고리명이 비어 있음');
 });
+/* 부분매도 실현손익(realizedGainForSale/totalRealizedGain, cycle265-266)이 자산별 보유수량 로그
+ * (openAssetQtyLog)에만 보이고, 더 큰 그림을 보여주는 연간 결산에는 전혀 반영되지 않던 공백을
+ * 메운다 — yearRealizedGain(DB.assetQtyLog를 연도로 필터링해 totalRealizedGain으로 합산)을
+ * yearSummary.investGain으로 받아, investGainLossCard와 동일한 색상 규칙으로 요약 카드 바로
+ * 아래에 노출한다(app-evolve cycle267 critique/advance). */
+test('openYearReview: 투자 실현손익이 있으면 색상 규칙(>=0이면 income색)대로 카드를 보여준다', () => {
+  const ctx = yearReviewCtx();
+  ctx.DB = { owners: [], assets: [], recurrences: [],
+    txns: [{ id: '1', type: 'income', category: '급여', amount: 500000, date: '2026-01-10', confirmed: true }],
+    assetQtyLog: [{ date: '2026-06-01', assetId: 'a1', realizedGain: 70000 }],
+  };
+  ctx.ST = { spendOwner: '전체', yearReview: { y: 2026 } };
+  ctx.lastSheetHtml = null;
+  ctx.openYearReview(2026);
+  const html = ctx.lastSheetHtml;
+  assert.ok(html.includes('올해 투자 실현손익'), '투자 실현손익 카드가 보여야 함');
+  assert.ok(html.includes('var(--income)'), '이익이면 income색이어야 함');
+  assert.ok(html.includes('+70,000원'));
+});
+test('openYearReview: 투자 실현손익이 손실이면 expense색으로 보여준다', () => {
+  const ctx = yearReviewCtx();
+  ctx.DB = { owners: [], assets: [], recurrences: [],
+    txns: [{ id: '1', type: 'income', category: '급여', amount: 500000, date: '2026-01-10', confirmed: true }],
+    assetQtyLog: [{ date: '2026-06-01', assetId: 'a1', realizedGain: -30000 }],
+  };
+  ctx.ST = { spendOwner: '전체', yearReview: { y: 2026 } };
+  ctx.lastSheetHtml = null;
+  ctx.openYearReview(2026);
+  const html = ctx.lastSheetHtml;
+  assert.ok(html.includes('var(--expense)'), '손실이면 expense색이어야 함');
+  assert.ok(html.includes('-30,000원'));
+});
+test('openYearReview: 투자 실현손익 기록이 없으면 카드 자체를 그리지 않는다', () => {
+  const ctx = yearReviewCtx();
+  ctx.DB = { owners: [], assets: [], recurrences: [],
+    txns: [{ id: '1', type: 'income', category: '급여', amount: 500000, date: '2026-01-10', confirmed: true }],
+  };
+  ctx.ST = { spendOwner: '전체', yearReview: { y: 2026 } };
+  ctx.lastSheetHtml = null;
+  ctx.openYearReview(2026);
+  assert.ok(!ctx.lastSheetHtml.includes('올해 투자 실현손익'));
+});
+test('openYearReview: 수입·지출 거래가 없어도 그 해 투자 실현손익 기록이 있으면 빈 상태로 가려지지 않는다', () => {
+  const ctx = yearReviewCtx();
+  ctx.DB = { owners: [], assets: [], recurrences: [], txns: [],
+    assetQtyLog: [{ date: '2026-06-01', assetId: 'a1', realizedGain: 70000 }],
+  };
+  ctx.ST = { spendOwner: '전체', yearReview: { y: 2026 } };
+  ctx.lastSheetHtml = null;
+  ctx.openYearReview(2026);
+  const html = ctx.lastSheetHtml;
+  assert.ok(!html.includes('아직 2026년 기록이 없어요'), '투자 실현손익이 있으니 빈 상태가 아니어야 함');
+  assert.ok(html.includes('올해 투자 실현손익'));
+});
 /* 지출 TOP3/수입 TOP3 카드는 openSpendAnalysis/openIncomeAnalysis처럼 전체 카테고리를 보여주는
  * 별도 목록이 없는 요약 화면이라, buildExpenseBarHtml의 반환 HTML(eb-list에 카테고리명·퍼센트·
  * 금액이 실제 텍스트로 들어있음)을 aria-hidden으로 감싸면 스크린 리더 사용자에게 TOP3 전체가
@@ -10881,6 +10935,65 @@ test('yearSummary: 전년 대비 수입/지출/저축률 YoY delta를 올해-전
   assert.strictEqual(s.yoy.expense, -25, '80만원 -> 60만원은 -25%');
   assert.strictEqual(s.yoy.rate, 30, '저축률 20% -> 50%는 +30%p');
 });
+
+/* ---------- yearRealizedGain(index.html, 순수 보조): 연간 결산이 그 해의 투자 실현손익을
+ * DB.assetQtyLog에서 집계 — totalRealizedGain(logic.js)을 재사용해 로직을 중복하지 않는다
+ * (app-evolve cycle267 advance) ---------- */
+test('yearRealizedGain: 해당 연도의 realizedGain만 totalRealizedGain으로 합산한다(다른 연도는 제외)', () => {
+  sandbox.DB = {
+    assetQtyLog: [
+      { date: '2026-03-01', assetId: 'a1', realizedGain: 50000 },
+      { date: '2026-09-01', assetId: 'a1', realizedGain: -20000 },
+      { date: '2025-12-31', assetId: 'a1', realizedGain: 999999 },
+    ],
+  };
+  assert.strictEqual(sandbox.yearRealizedGain(2026), 30000);
+});
+test('yearRealizedGain: 해당 연도에 realizedGain이 있는 기록이 하나도 없으면(매도 자체가 없거나 매도금액 미입력) null', () => {
+  sandbox.DB = { assetQtyLog: [{ date: '2026-03-01', assetId: 'a1', realizedGain: null }] };
+  assert.strictEqual(sandbox.yearRealizedGain(2026), null);
+  sandbox.DB = { assetQtyLog: [] };
+  assert.strictEqual(sandbox.yearRealizedGain(2026), null);
+});
+test('yearRealizedGain: owner를 주면 그 귀속 소유 자산(DB.assets)의 기록만 집계한다', () => {
+  sandbox.DB = {
+    assets: [{ id: 'a1', owner: '나' }, { id: 'a2', owner: '배우자' }],
+    assetQtyLog: [
+      { date: '2026-03-01', assetId: 'a1', realizedGain: 50000 },
+      { date: '2026-04-01', assetId: 'a2', realizedGain: -20000 },
+    ],
+  };
+  assert.strictEqual(sandbox.yearRealizedGain(2026, '나'), 50000, '배우자 소유 자산의 기록은 제외되어야 함');
+  assert.strictEqual(sandbox.yearRealizedGain(2026, '전체'), 30000, '전체는 owner와 무관하게 다 더해야 함');
+});
+test('yearRealizedGain: owner 필터일 때 자산이 삭제돼 못 찾으면(소유자를 알 수 없음) 제외된다', () => {
+  sandbox.DB = {
+    assets: [{ id: 'a1', owner: '나' }],
+    assetQtyLog: [{ date: '2026-03-01', assetId: 'deleted-asset', realizedGain: 50000 }],
+  };
+  assert.strictEqual(sandbox.yearRealizedGain(2026, '나'), null);
+});
+test('yearSummary: 그 해 투자 실현손익(investGain)을 함께 반환한다(yearRealizedGain 재사용)', () => {
+  sandbox.DB = {
+    txns: [{ date: '2026-01-10', type: 'income', category: '급여', amount: 500000 }],
+    recurrences: [],
+    assetQtyLog: [
+      { date: '2026-05-01', assetId: 'a1', realizedGain: 70000 },
+      { date: '2026-11-01', assetId: 'a1', realizedGain: -10000 },
+    ],
+  };
+  const s = sandbox.yearSummary(2026);
+  assert.strictEqual(s.investGain, 60000);
+});
+test('yearSummary: 그 해에 투자 실현손익 기록이 없으면 investGain은 null이다(0과 모름을 구분)', () => {
+  sandbox.DB = {
+    txns: [{ date: '2026-01-10', type: 'income', category: '급여', amount: 500000 }],
+    recurrences: [],
+  };
+  const s = sandbox.yearSummary(2026);
+  assert.strictEqual(s.investGain, null);
+});
+
 
 /* ---------- histSumTotals: 전체내역 검색 합계 카드도 monthStats2()와 같은 규칙으로 잔액 조정을 뺀다 ---------- */
 test('histSumTotals: 수지에 포함되지 않은 잔액 조정은 실제/예정 합계 어느 쪽에서도 제외된다', () => {

@@ -1,19 +1,8 @@
 {
-  "cycle": 266,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "연간 결산(연말정산) 화면에 투자 실현손익 누락",
-    "why": "cycle265-266에서 부분매도 실현손익(realizedGainForSale)을 기록하고 자산별 합계(totalRealizedGain, openAssetQtyLog)까지 보여주게 됐지만, 더 큰 그림을 보여주는 연간 결산(openYearReview/yearSummary, index.html:6366-6440)은 여전히 수입/지출/순저축액/저축률만 집계하고 DB.assetQtyLog의 realizedGain을 전혀 참조하지 않는다. 투자자산을 운용하는 사용자가 '올 한 해 투자로 실제로 얼마를 벌거나 잃었는지'를 보려면 자산마다 openAssetQtyLog를 하나씩 열어 합계를 일일이 더해야 하는 공백이 남아있다 — cycle266은 '자산별' 합계만 풀었을 뿐 '연도 전체' 합계는 다루지 않았다.",
-    "approach": "index.html의 yearSpendByCategory/yearIncomeByCategory 옆에 순수 보조 함수 yearRealizedGain(y,owner='전체')를 추가 — DB.assetQtyLog를 (q.date||'').slice(0,4)===String(y)로 연도 필터링하고, owner!=='전체'면 DB.assets.find(a=>a.id===q.assetId)?.owner===owner로 추가 필터링한 뒤, 새 집계 로직을 중복 작성하지 않고 logic.js의 기존 순수함수 totalRealizedGain(items)에 그대로 넘겨 재사용한다. yearSummary()의 반환 객체에 investGain 필드를 추가하고, openYearReview()의 4칸 요약(hrt-grid) 바로 아래에 investGain!=null일 때만(0과 '해당 연도에 매도 기록 없음'을 구분하는 기존 null 관례 유지) 작은 카드로 '올해 투자 실현손익 ±N원'을 investGainLossCard와 동일한 색상 규칙(>=0?var(--income):var(--expense))으로 노출한다. 전년도 YoY는 범위를 벗어나므로 이번 사이클에서는 다루지 않는다."
-  },
+  "cycle": 267,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 261,
-      "phase": "advance",
-      "timestamp": "2026-10-28T19:00:00.000Z",
-      "summary": "critique(cycle261) 계획대로 거래 영수증 사진 첨부를 구현. logic.js에 순수함수 photoResizeDims(w,h,maxSide)와 상수 TX_PHOTO_MAX_SIDE(800)/TX_PHOTO_QUALITY(0.6) 신설(canvas 없이 목표 리사이즈 크기만 계산). index.html: txDraft에 photo(JPEG dataURL) 필드 추가, renderTxSheet() 메모 필드 아래에 txPhotoFieldHTML(d) 삽입(반복(rpt) 켜짐 상태엔 숨김 — DB.recurrences는 스키마에 자리가 없음), txPhotoPick(FileReader readAsDataURL→Image→canvas 리사이즈/압축→txDraft.photo)/txPhotoRemove/openPhotoViewer(풀스크린 뷰어, openSheet 재사용) 신설. txRowCore에 photo 있으면 28px 미니 썸네일(.tx-photo-mini) 노출, 탭하면 풀스크린 뷰어. saveTx()는 d 객체를 그대로 DB.txns에 저장하므로 별도 배선 없이 photo가 함께 저장됨. CSV 내보내기(txnsToCSV)는 자기 컬럼만 쓰는 별도 포맷이라 자동 제외, '복사해서 백업'(openCopyBackup)에 넘겨지는 text는 doExport가 만드는 전체 JSON 백업과 동일 경로라 사진이 커지면 클립보드 복사량도 커지지만 이미 공유/다운로드가 1차 경로이고 복사는 그게 막혔을 때만 쓰는 예외 경로라 별도 분기 없이 둠(러너업 — 복사 경로 사진 제외/경고는 이후 develop/review가 필요시 다룰 과제로 남김). CSS .tx-photo-mini/.tx-photo-wrap/.tx-photo-thumb/.tx-photo-pick 신설. APP_VERSION 1.47.265->1.47.266, sw.js CACHE v532->v533 동기 범프. test/run.js: photoResizeDims 단위 테스트 5건 추가(2166->2171), 그리고 renderTxSheet를 쓰는 기존 테스트(duplicateTx/txType 등)의 공유 FUNCTIONS 추출 목록에 txPhotoFieldHTML을 추가로 올려야 함을 처음 실행에서 발견(txPhotoFieldHTML is not defined로 7건 FAIL) — 추가 후 재실행. node test/run.js 2171/2171 통과, node --check(logic.js/sw.js/test/run.js) 및 HTML 주석 제거 후 추출한 index.html 인라인 스크립트 4블록 구문 검증 통과. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 262,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-29T14:40:44.000Z",
       "summary": "fork 서브에이전트로 앱 전반을 재탐색(sync/tombstone 시스템, 자산 이체 흐름, 반복거래 skip, 전체내역 검색 debounce 등은 이미 성숙함을 확인, SRI TODO(index.html:1384)는 이 컨테이너의 cdn.jsdelivr.net/t1.kakaocdn.net egress가 여전히 403으로 차단돼 불가로 재확인)한 결과, cycle265-266이 만든 부분매도 실현손익 기록(realizedGainForSale/totalRealizedGain)이 자산별 보유수량 로그(openAssetQtyLog)에만 노출되고, 더 상위 요약 화면인 연간 결산(openYearReview/yearSummary)은 여전히 수입/지출/저축률만 보여줘 '올해 투자로 얼마를 벌었는지'를 한눈에 볼 방법이 없는 공백을 발견. 채택 계획(yearRealizedGain 신설 + yearSummary.investGain 배선 + openYearReview 카드 노출, 기존 totalRealizedGain/null 관례 재사용)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 266,
+      "phase": "advance",
+      "timestamp": "2026-10-29T15:50:00.000Z",
+      "summary": "critique(cycle266) 계획대로 연간 결산(연말정산)에 투자 실현손익을 추가. index.html의 yearSpendByCategory/yearIncomeByCategory 옆에 순수 보조 함수 yearRealizedGain(y,owner='전체') 신설 — DB.assetQtyLog를 (q.date||'').slice(0,4)===String(y)로 연도 필터링하고, owner!=='전체'면 DB.assets.find(a=>a.id===q.assetId)?.owner===owner로 추가 필터링한 뒤 새 집계 로직을 짜지 않고 logic.js의 기존 totalRealizedGain(items)에 그대로 넘겨 재사용(계획대로). yearSummary()의 반환 객체에 investGain:yearRealizedGain(y,owner) 필드 추가. openYearReview()의 4칸 요약(hrt-grid) 바로 아래에 investGain!=null일 때만(0과 '매도 기록 없음'을 구분하는 기존 null 관례 유지) openAssetQtyLog의 '누적 실현손익' 카드와 동일한 마크업·색상 규칙(>=0?var(--income):var(--expense))으로 '올해 투자 실현손익' 카드 노출. 구현 중 계획에 없던 공백을 하나 추가로 발견해 함께 고침 — 투자자산만 쓰고 현금 수입/지출 거래가 전혀 없는 해라면 investGain이 있어도 if(!s.income&&!s.expense) 빈 상태 분기(\"아직 N년 기록이 없어요\")에 가려져 카드 자체가 안 보였을 공백이라, 조건에 &&s.investGain==null을 추가해 투자 실현손익만 있는 해도 빈 상태를 건너뛰게 함. 전년도 YoY는 계획대로 이번 사이클에서 다루지 않음. index.html만 변경이라 APP_VERSION 1.47.275->1.47.276, sw.js CACHE v542->v543 동기 범프. test/run.js: yearRealizedGain 단위 테스트 4건(연도 필터/기록 없음→null/owner 필터/삭제된 자산 제외)+yearSummary.investGain 배선 2건(있음/없음)+openYearReview 카드 렌더링 4건(이익 income색/손실 expense색/기록 없으면 카드 미노출/투자손익만 있어도 빈 상태 아님) 추가(2221->2231, FUNCTIONS 목록에 yearRealizedGain도 추가). node test/run.js 2231/2231 통과, node --check(logic.js/sw.js/test/run.js) 및 HTML 주석 제거 후 추출한 index.html 인라인 스크립트 4블록 구문 검증(new Function) 통과. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]
