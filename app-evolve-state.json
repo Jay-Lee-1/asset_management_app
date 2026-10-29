@@ -1,15 +1,8 @@
 {
   "cycle": 268,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 263,
-      "phase": "develop",
-      "timestamp": "2026-10-29T00:00:00.000Z",
-      "summary": "fork 서브에이전트로 탐색한 결과, duplicateTx()(index.html:5132, '복제(빠른 재입력)')가 confirmed/updatedAt은 지우면서 cycle261에서 신설된 photo(영수증 사진 dataURL) 필드는 그대로 복사해, 다른 날짜의 다른 지출을 복제해도 원본 영수증 사진이 새 draft에 그대로 붙어오는 공백을 발견 — 서로 다른 구매를 나타내는데 같은 영수증 사진을 공유하게 돼 혼란스럽고, 저장 시 DB.txns의 base64 이미지가 조용히 두 배로 쌓임(DB_JSON_LEN/STORAGE_SIZE_WARN_LEN이 이미 용량을 추적하는 민감 영역). duplicateTx()의 필드 삭제 줄에 delete d.photo; 추가. index.html만 변경이라 APP_VERSION 1.47.268->1.47.269, sw.js CACHE v535->v536 동기 범프. test/run.js에 duplicateTx가 photo를 지우고 원본 레코드는 그대로 유지한다는 회귀 테스트 1건 추가(2185->2186, 기존 confirmed 테스트 바로 옆). node test/run.js 2186/2186 통과, node --check(logic.js/sw.js/test/run.js) 및 HTML 주석 제거 후 추출한 index.html 인라인 스크립트 5블록 구문 검증 통과.",
-      "commit": "49a74ed"
-    },
     {
       "cycle": 263,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-29T19:08:00.000Z",
       "summary": "연간 결산 투자 실현손익 카드에 전년대비(YoY) 배지 추가 — yearSummary.yoy.investDelta(원 단위 증감, income/expense의 퍼센트 기반 배지와 달리 음수 기준값에서도 안전)를 계산하고 openYearReview 카드에 렌더. 단위/렌더 테스트 추가, APP_VERSION/CACHE 동기 범프.",
       "commit": null
+    },
+    {
+      "cycle": 268,
+      "phase": "develop",
+      "timestamp": "2026-10-29T20:18:41.571Z",
+      "summary": "설정 > 저축 만기 알림(openMaturity) 목록이 soon(만기 30일 이내) 판정만으로 임박 뱃지를 달아, 이미 지난(overdue) 만기도 임박으로 잘못 표시하던 공백을 발견 — 같은 데이터를 쓰는 homeAlerts의 OS 푸시(notifyAlertInfo)는 cycle232에서 이미 overdue를 '만기가 지났어요'로 따로 구분했고, goalProgress의 목표일 지남도 mini warn(경고색)+'지남'으로 표시하는데 이 목록만 그 구분이 없었음(기존 setupMaturityDB 테스트 픽스처 자체가 TODAY보다 5일 전 만기를 쓰고 있었는데도 이 라벨 오류가 테스트되지 않고 있었음). openMaturity()에 overdue(a.maturityDate<TODAY) 변수를 추가해 지난 만기는 mini warn+'만기 지남', 아직 안 지난 만기는 그대로 mini sch+'임박'으로 분기(이체 버튼 노출 조건인 soon은 그대로 유지). index.html만 변경이라 APP_VERSION 1.47.279->1.47.280, sw.js CACHE v546->v547 동기 범프. test/run.js에 지난 만기/아직 안 지난 만기 두 경우를 모두 검증하는 회귀 테스트 1건 추가(2238->2239). node test/run.js 2239/2239 통과, node --check(logic.js/sw.js/test/run.js) 통과, 메인 인라인 스크립트는 test/run.js의 extractMainScript가 그대로 로드/실행하므로 테스트 통과 자체가 구문 검증을 포함함. 부가 발견: 작업 시작 시 로컬 HEAD가 detached 상태였고 로컬 main 브랜치 ref가 origin보다 56커밋 뒤처진 캐시값(cca017a)이었음 — git fetch origin --unshallow로 origin/main의 실제 최신값(1ac6ccb, 로컬 HEAD와 정확히 일치)을 확인한 뒤 fast-forward로 안전하게 push, 이후 로컬 main도 origin/main으로 ff. origin에는 이 세션이 만들지 않은 app-evolve-recovered-*/orphaned-work-*/force-reset-* 등 과거 git 상태 복구용 백업 브랜치가 다수 존재함(이번 사이클에서 건드리지 않음, 삭제·정리는 범위 밖).",
+      "commit": "a55ccf4"
     }
   ]
 }
