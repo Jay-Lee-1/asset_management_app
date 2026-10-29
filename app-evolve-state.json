@@ -1,15 +1,8 @@
 {
   "cycle": 264,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 259,
-      "phase": "review",
-      "timestamp": "2026-10-28T09:00:00.000Z",
-      "summary": "cycle259 develop 커밋(b3edf58, mapGenericCsvRow의 signed 모드 괄호 회계표기 음수 인식)을 검토. split 모드의 inCol/outCol에 괄호값이 들어오는 경우까지 코드로 대조: parseNum이 괄호를 음수로 뒤집어도 inOk/outOk는 '>0'을 요구하므로 음수가 되면 그대로 false가 되어 수정 전(NaN도 false)과 동일하게 error:'amount'로 걸러짐을 확인 — 커밋 메시지의 'split 모드 동작은 변화 없음' 주장이 사실임을 검증. 공백 포함 괄호('( 5,000 )')도 Number()의 트리밍으로 정상 처리됨을 확인. node test/run.js 독립 재실행 결과 2155/2155 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 259,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-29T04:10:25.631Z",
       "summary": "코드 전반을 재탐색(카테고리 합치기(cycle263 advance)의 마이그레이션/undo/budgetHistory 병합 로직을 직접 대조 검증했으나 버그 없음 확인)한 결과, 거래 롱프레스 선택 UX의 흔적인 .swipe.open .swipe-content CSS 규칙(index.html)과 전역 변수 let openSwipeRow=null;, 그리고 .swipe-actions button CSS 셀렉터 조각이 실제로는 어디서도 .open 클래스를 추가하거나 .swipe-actions 엘리먼트를 만들거나 openSwipeRow를 읽/쓰는 코드가 없어 완전한 죽은 코드임을 grep으로 확인(cycle263 critique가 러너업으로 남긴 항목) — 스와이프-공개(swipe-to-reveal) UI는 실제로 구현된 적 없이 CSS/변수만 남아있던 흔적. 세 군데 모두 제거(동작 변경 없음, .swipe/.swipe-content 자체는 거래 행 구조로 계속 쓰여 그대로 유지). index.html만 변경이라 APP_VERSION 1.47.270->1.47.271, sw.js CACHE v537->v538 동기 범프. 동작 변화가 없는 순수 죽은 코드 제거라 새 테스트는 추가하지 않음(기존에도 이 심볼들을 참조하는 테스트가 없었음을 확인). node test/run.js 2201/2201 통과(회귀 없음), node --check(logic.js/sw.js/test/run.js) 및 HTML 주석 제거 후 추출한 index.html 인라인 스크립트 4블록(5개 중 1개는 빈 블록) 구문 검증 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 264,
+      "phase": "review",
+      "timestamp": "2026-10-29T05:07:49.002Z",
+      "summary": "cycle264 develop 커밋(5c7baeb, 쓰이지 않는 스와이프-공개 UI 흔적 제거: .swipe.open .swipe-content CSS 규칙, let openSwipeRow=null; 전역 변수, .swipe-actions button CSS 셀렉터 조각)을 검토. grep으로 세 심볼 모두 index.html 전체에서 완전히 제거됐고 잔존 참조가 없음을 확인 — .swipe/.swipe-content 자체(거래 행 구조)는 그대로 유지돼 거래 내역 UI에 영향 없음. APP_VERSION(1.47.271)과 sw.js CACHE(v538) 동기화 확인. node test/run.js 독립 재실행 결과 2201/2201 통과(회귀 없음), node --check(sw.js/test/run.js) 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
