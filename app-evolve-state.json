@@ -1,26 +1,8 @@
 {
-  "cycle": 265,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "매도(수량 감소) 시 실현손익(realized gain) 기록 — 매입 쪽 addCostBasisForBuy의 대칭 짝",
-    "why": "logic.js의 scaleCostBasisForSale(cycle190)/addCostBasisForBuy(cycle191)는 fx/gold/stock/crypto(isMarketValued) 자산의 수량 변경 시 매입원가(costBasis)를 보정하는 짝인데, 매수 쪽은 saveAsset()이 costBasisField의 '이번에 추가로 투입한 금액' 입력을 받아 addCostBasisForBuy로 반영하고 assetQtyLog에 addedAmount로 남기지만(index.html:4455,4460), 매도 쪽은 scaleCostBasisForSale이 평단을 유지한 채 costBasis를 비례 축소만 하고 끝난다(index.html:4454) — '이번에 받은 매도 금액(proceeds)'을 입력받을 자리가 전혀 없고, 그 결과 이번 매도로 실현된 손익(realized gain = proceeds - 제거된 costBasis)이 앱 어디에도 기록되지 않는다. grep으로 'realized'/'매도 금액'/'실현손익' 관련 코드가 전혀 없음을 확인. assetGainLoss는 보유 중인 수량 기준 미실현(unrealized) 손익만 보여주므로, 부분 매도를 반복하면 그때그때의 실제 수익/손실이 영구히 사라진다. 러너업: (a) 투자자산 목표비중 리밸런싱 알림 — 과거 여러 cycle(critique 다수 포함 cycle262까지)에서 반복 거론됐으나 target% 스키마 필드가 필요해 보류 지속, 이번에도 같은 이유로 보류. (b) assetQtyLog 항목에 edit(수정) 기능 추가(현재 delete만 가능) — 과거 입력 실수를 고치는 용도로는 유용하지만 delete+재입력으로 충분히 우회 가능해 매도 실현손익 공백보다 가치가 낮다고 판단.",
-    "approach": "logic.js: scaleCostBasisForSale 바로 아래에 순수 함수 realizedGainForSale(origQty,newQty,origCostBasis,saleProceeds) 신설 — origQty>newQty>=0 && origCostBasis>0 전제 하에 costBasisRemoved=origCostBasis-scaleCostBasisForSale(origQty,newQty,origCostBasis)를 구하고, saleProceeds>0이면 {costBasisRemoved,realizedGain:saleProceeds-costBasisRemoved}를, saleProceeds가 없으면({costBasisRemoved,realizedGain:null})을 반환(추측하지 않는다는 기존 원칙 유지, addCostBasisForBuy와 동일하게 falsy 입력 가드). index.html: costBasisField(d,editing) 함수의 needsUpdate(매수 경고) 분기 옆에 대칭되는 매도 분기를 추가 — d._origQty가 있고 현재 qty입력값이 _origQty보다 줄었으면(costBasisNeedsUpdate의 반대 방향, 새 헬퍼 costBasisNeedsSaleInput(origQty,newQty,costBasis) 또는 조건 인라인) '이번에 받은 매도 금액 (원, 선택)' 입력 필드(id='asSaleProceeds', costBasisField의 asAddedCost와 동일한 field-clear/fmtAmt 패턴)를 노출하고 qtyBasisWarn()과 같은 라이브 토글 함수(가령 qtySaleWarn 또는 qtyBasisWarn 확장)로 입력 중에도 보이게 함. saveAsset()의 if(newQty<prevQty) 분기(index.html:4454)에서 d._saleProceeds>0이면 realizedGainForSale(prevQty,newQty,DB.assets[i].costBasis,d._saleProceeds)를 호출해 qtyLogEntry에 saleProceeds/realizedGain 필드로 함께 기록(addedAmount와 대칭되는 이름). openAssetQtyLog()의 row 렌더링(index.html:5516-5520)에 q.saleProceeds>0이면 '매도 N원 · 실현손익 +/-M원'을 addedAmount 표시와 같은 자리에 병렬로 추가. test/run.js에 realizedGainForSale 단위 테스트(proceeds 없음→null, 이익/손실/손익0 각 케이스, 음수 가드)와 saveAsset/qtyLog 배선 테스트(필드 노출 조건, 저장 시 qtyLogEntry에 반영) 추가. DB.assetQtyLog는 이미 mergeCollection 배선이 돼 있어(cycle138) 새 필드 추가만으로 동기화 문제 없음. index.html/logic.js 변경이므로 APP_VERSION과 sw.js CACHE 동기 범프 필수."
-  },
+  "cycle": 266,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 260,
-      "phase": "critique",
-      "timestamp": "2026-10-28T13:10:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색한 결과, cycle259 advance가 신설한 전역 통합검색 globalSearchBody()(index.html:5903)가 거래를 DB.txns.filter(...)로만 찾아 DB.txns에 실물로 저장되지 않고 expandRec()으로 가상 전개되는 반복거래(매달 넷플릭스/월세/급여 등)를 못 찾는 공백을 발견 — 같은 matchTxnQuery를 쓰는 전체내역 자체 검색 filteredHist()는 allTxns()를 거쳐 반복거래 전개분까지 찾아내므로, 막 추가된 \"통합\"검색이 오히려 덜 찾는 역설적 상황. advance 계획(globalSearchBody의 txns 조회를 allTxns(RANGE_FROM,RANGE_TO).filter(...)로 교체)을 pending_advance_plan에 저장. 코드 변경 없음.",
-      "commit": null
-    },
-    {
-      "cycle": 260,
-      "phase": "advance",
-      "timestamp": "2026-10-28T13:40:00.000Z",
-      "summary": "critique(cycle260) 계획대로 전역 통합검색의 거래 조회 소스를 DB.txns.filter(...)에서 allTxns(RANGE_FROM,RANGE_TO).filter(t=>matchTxnQuery(t,q,DB.assets))로 교체(index.html globalSearchBody). txRowCore가 이미 isRec/data-rec 가상 반복거래 행 렌더링을 지원해 추가 분기 없이 그대로 재사용 가능함을 확인, 정렬·상위 20건 cap 로직은 그대로 유지. index.html만 변경이라 APP_VERSION 1.47.263->1.47.264, sw.js CACHE v530->v531 동기 범프. test/run.js에 allTxns 기반 필터가 반복거래(expandRec 전개분)를 찾아내는 회귀 테스트와 DB.txns.filter만 쓰면(수정 전 버그) 못 찾는다는 대조 테스트 2건 추가(2160->2162). node test/run.js 2162/2162 통과, node --check(sw.js/test/run.js) 및 HTML 주석 제거 후 추출한 index.html 인라인 스크립트 4블록 구문 검증 통과. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 261,
       "phase": "develop",
@@ -152,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-29T10:11:20.000Z",
       "summary": "fork 서브에이전트 없이 직접 앱 전반(globalSearch/debt payoff/photo attach/category merge/CSV import/budget·income·year review 분석 화면/asset transfer/qty log/multi-currency 등)을 재탐색한 결과, logic.js의 scaleCostBasisForSale(cycle190)/addCostBasisForBuy(cycle191)가 수량 증가(매수) 쪽은 '추가로 투입한 금액' 입력을 받아 costBasis를 늘려주고 assetQtyLog에 addedAmount로 남기는 반면(index.html:4455,4460), 수량 감소(매도) 쪽은 평단 유지한 채 costBasis를 비례 축소만 하고 끝나(index.html:4454) '이번에 받은 매도 금액(proceeds)'을 받을 자리가 전혀 없어 실현손익(realized gain)이 앱 어디에도 기록되지 않는 비대칭을 발견 — grep으로 'realized'/'매도 금액'/'실현손익' 구현이 전혀 없음을 확인. assetGainLoss는 보유분 기준 미실현 손익만 보여줘, 부분 매도를 반복하면 그때그때의 실제 수익/손실 기록이 영구히 사라짐. 러너업으로 (a) 투자자산 리밸런싱 알림(스키마 확장 필요, 지속 보류), (b) assetQtyLog 항목 edit 기능(delete+재입력 우회 가능해 우선순위 낮음)을 검토했으나 기각. 채택 계획(realizedGainForSale 신설 + costBasisField 매도 입력 필드 + saveAsset/qtyLog 배선 + openAssetQtyLog 표시)을 pending_advance_plan에 저장. 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 265,
+      "phase": "advance",
+      "timestamp": "2026-10-29T11:20:00.000Z",
+      "summary": "critique(cycle265) 계획대로 매도(수량 감소) 시 실현손익(realized gain) 기록을 구현. logic.js: scaleCostBasisForSale 바로 아래에 순수 함수 realizedGainForSale(origQty,newQty,origCostBasis,saleProceeds) 신설 — scaleCostBasisForSale과 동일한 가드(origQty>0&&newQty>0&&newQty<origQty&&origCostBasis>0, 전량매도(newQty=0)는 delAsset 등 별도 경로의 몫이라 제외)를 공유하고, costBasisRemoved=origCostBasis-scaleCostBasisForSale(...)을 구한 뒤 saleProceeds>0이면 {costBasisRemoved,realizedGain:saleProceeds-costBasisRemoved}를, 없으면(추측하지 않음) {costBasisRemoved,realizedGain:null}을 반환 — addCostBasisForBuy(cycle191)의 매도 쪽 대칭 짝. index.html: costBasisField(d,editing)의 needsUpdate(매수 경고) 분기 옆에 대칭되는 needsSale 분기(d._origQty가 있고 costBasis>0이고 현재 수량이 _origQty보다 줄었을 때) 추가 — asAddedCostField와 동일한 field-clear/fmtAmt 패턴으로 '이번에 받은 매도 금액 (원, 선택)' 입력(id=asSaleProceeds) 노출, 경고 캡션(asQtyBasisWarn)도 매수/매도 두 메시지를 분기. qtyBasisWarn()이 입력 중에도(리렌더 없이) asSaleProceedsField를 같은 조건으로 토글하도록 확장. syncAssetInputs가 asSaleProceeds를 d._saleProceeds로 읽어들이고, saveAsset()의 if(newQty<prevQty) 분기에서 realizedGainForSale(prevQty,newQty,d.costBasis,saleProceeds)을 호출해 결과(realizedGain!=null인 경우만)를 qtyLogEntry에 saleProceeds/realizedGain으로 남김(addedAmount와 대칭). openAssetQtyLog()의 row 렌더링에 q.saleProceeds>0이면 '매도 N원 · 실현손익 +/-M원'을 addedAmount 표시와 같은 자리에 병렬로 추가(comma()가 음수에 '-'를 그대로 포함해 손실도 자연스럽게 표시). index.html/logic.js 변경이라 APP_VERSION 1.47.273->1.47.274, sw.js CACHE v540->v541 동기 범프. 기존 costBasisField 테스트 2건(수량 줄면 경고+입력창이 항상 숨김을 가정)이 새 매도 분기와 충돌해 FAIL — 변경된 동작(매도 시에도 이제 경고+입력창이 뜸)에 맞게 기대값을 갱신해 통과시킴. test/run.js에 realizedGainForSale 단위 테스트 3건(이익/손실/손익0, proceeds 없음→null, 가드 6케이스)+costBasisField 매도 분기 렌더링 1건+saveAsset 배선 테스트 3건(저장 시 기록/미입력 시 기록 안 함/추가매수 중엔 무시)+openAssetQtyLog 표시 1건 추가(2218개 중 신규 8건 포함, 2210->2218). node test/run.js 2218/2218 통과, node --check(logic.js/sw.js/test/run.js) 및 HTML 주석 제거 후 추출한 index.html 인라인 스크립트 4블록 구문 검증(new Function) 통과. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

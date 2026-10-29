@@ -6942,6 +6942,21 @@ test('openAssetQtyLog: 날짜·부호 있는 변화량을 보여주고, 최신(u
   assert.ok(html.includes('달러통장'));
   assert.ok(html.indexOf('-30') < html.indexOf('+50'), '최신 기록(q2, -30)이 더 오래된 기록(q1, +50)보다 먼저 나와야 함');
 });
+test('openAssetQtyLog: saleProceeds/realizedGain이 있는 매도 기록은 "매도 N원 · 실현손익 +/-M원"을 함께 보여준다', () => {
+  sandbox.DB = {
+    assets: [{ id: 'a1', type: 'stock', name: '삼성전자', stockCode: '005930', stockQty: 10 }],
+    assetQtyLog: [
+      { id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 20, newQty: 10, field: 'stockQty', updatedAt: 100, saleProceeds: 200000, realizedGain: 50000 },
+      { id: 'q2', assetId: 'a1', date: '2026-02-01', prevQty: 30, newQty: 20, field: 'stockQty', updatedAt: 200, saleProceeds: 100000, realizedGain: -20000 },
+      { id: 'q3', assetId: 'a1', date: '2026-03-01', prevQty: 15, newQty: 10, field: 'stockQty', updatedAt: 300 },
+    ],
+  };
+  sandbox.openAssetQtyLog('a1');
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('매도 200,000원 · 실현손익 +50,000원'), '이익은 + 기호와 함께 표시');
+  assert.ok(html.includes('매도 100,000원 · 실현손익 -20,000원'), '손실은 - 기호와 함께(comma가 음수 부호를 그대로 포함) 표시');
+  assert.ok(!html.includes('매도 0원'), 'saleProceeds가 없는 기록(q3, 투입/매도 입력 없이 단순 조정)엔 매도 문구가 없어야 함');
+});
 test('delAssetQtyLog: 바로 지우지 않고 확인 시트를 띄우며, 확인해야 DB.assetQtyLog에서 제거되고 DB.deletedIds에 톰스톤이 남는다', () => {
   sandbox.DB = { assets: [{ id: 'a1', type: 'stock', name: '삼성전자', stockCode: '005930', stockQty: 10 }],
     assetQtyLog: [{ id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 5, newQty: 10, field: 'stockQty', updatedAt: 1 }], deletedIds: {} };
@@ -11699,6 +11714,36 @@ test('saveAsset: 수량이 줄 때(매도)는 _addedCost가 있어도 무시되�
   assert.strictEqual(sandbox.DB.assets[0].costBasis, 150000, '매도 중에는 추가매수용 _addedCost를 쓰지 않음');
   assert.ok(!('addedAmount' in sandbox.DB.assetQtyLog[0]));
 });
+/* ---------- saveAsset: 일부 매도 시 "받은 매도 금액"(_saleProceeds)을 입력하면 realizedGainForSale로
+ * 실현손익을 계산해 assetQtyLog에 saleProceeds/realizedGain으로 남긴다 — addedAmount와 대칭되는
+ * 매도 쪽 배선(app-evolve cycle265 advance) ---------- */
+test('saveAsset: 매도 시 "받은 매도 금액"(_saleProceeds)을 입력하면 assetQtyLog에 saleProceeds/realizedGain이 함께 기록된다', () => {
+  const asset = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 20, costBasis: 300000 };
+  sandbox.DB = { assets: [asset], assetQtyLog: [], rates: { fx: {}, stocks: { '005930': 20000 }, goldPerG: 0 } };
+  sandbox.asDraft = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 10, costBasis: 300000, _saleProceeds: 200000 };
+  sandbox.saveAsset(true);
+  assert.strictEqual(sandbox.DB.assets[0].costBasis, 150000, '매도 금액 입력과 무관하게 매입원가 비례 축소는 그대로 적용');
+  assert.strictEqual(sandbox.DB.assetQtyLog[0].saleProceeds, 200000);
+  assert.strictEqual(sandbox.DB.assetQtyLog[0].realizedGain, 50000, '매도금액 200,000 - 빠져나간 매입원가 150,000 = 이익 50,000');
+  assert.ok(!('_saleProceeds' in sandbox.DB.assets[0]), '_saleProceeds는 임시 입력값이라 저장된 자산에 남으면 안 됨');
+});
+test('saveAsset: 매도 금액을 입력하지 않으면(매도인데도) assetQtyLog에 saleProceeds/realizedGain을 남기지 않는다(추측하지 않음)', () => {
+  const asset = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 20, costBasis: 300000 };
+  sandbox.DB = { assets: [asset], assetQtyLog: [], rates: { fx: {}, stocks: { '005930': 20000 }, goldPerG: 0 } };
+  sandbox.asDraft = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 10, costBasis: 300000 };
+  sandbox.saveAsset(true);
+  assert.ok(!('saleProceeds' in sandbox.DB.assetQtyLog[0]));
+  assert.ok(!('realizedGain' in sandbox.DB.assetQtyLog[0]));
+});
+test('saveAsset: 수량이 늘 때(추가매수)는 _saleProceeds가 있어도 무시된다(매도 전용 입력이라 섞이면 안 됨)', () => {
+  const asset = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 10, costBasis: 100000 };
+  sandbox.DB = { assets: [asset], assetQtyLog: [], rates: { fx: {}, stocks: { '005930': 15000 }, goldPerG: 0 } };
+  sandbox.asDraft = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 20, costBasis: 100000, _saleProceeds: 999999 };
+  sandbox.saveAsset(true);
+  assert.strictEqual(sandbox.DB.assets[0].costBasis, 100000, '추가매수 중에는 매도용 _saleProceeds를 쓰지 않음');
+  assert.ok(!('saleProceeds' in sandbox.DB.assetQtyLog[0]));
+  assert.ok(!('realizedGain' in sandbox.DB.assetQtyLog[0]));
+});
 /* ---------- addCostBasisForBuy(logic.js, 순수): 추가매수 시 "이번에 추가로 투입한 금액"만 기존
  * costBasis에 더한다 — scaleCostBasisForSale의 반대 방향 짝(app-evolve cycle191 advance) ---------- */
 test('addCostBasisForBuy: addedAmount를 기존 costBasis에 더한다', () => {
@@ -11711,6 +11756,31 @@ test('addCostBasisForBuy: addedAmount가 0 이하/미입력이면 origCostBasis�
   assert.strictEqual(sandbox.addCostBasisForBuy(100000, -5000), 100000);
   assert.strictEqual(sandbox.addCostBasisForBuy(100000, undefined), 100000);
 });
+/* ---------- realizedGainForSale(logic.js, 순수): 일부 매도 시 "받은 매도 금액"을 입력받으면
+ * 실현손익을 계산한다 — addCostBasisForBuy와 대칭되는 매도 쪽 짝(app-evolve cycle265 advance) ---------- */
+test('realizedGainForSale: 매도 금액을 받으면 이번 매도로 빠져나간 매입원가(costBasisRemoved)와 실현손익(이익/손실/손익0)을 계산한다', () => {
+  const profit = sandbox.realizedGainForSale(20, 10, 300000, 200000); // 20->10주, 매입원가 300,000원의 절반(150,000원)이 빠져나감
+  assert.strictEqual(profit.costBasisRemoved, 150000);
+  assert.strictEqual(profit.realizedGain, 50000, '매도금액 200,000 - 빠져나간 매입원가 150,000 = 이익 50,000');
+  const loss = sandbox.realizedGainForSale(20, 10, 300000, 100000);
+  assert.strictEqual(loss.realizedGain, -50000, '매도금액 100,000 - 빠져나간 매입원가 150,000 = 손실 -50,000');
+  const breakeven = sandbox.realizedGainForSale(20, 10, 300000, 150000);
+  assert.strictEqual(breakeven.realizedGain, 0, '매도금액이 빠져나간 매입원가와 같으면 손익 0');
+});
+test('realizedGainForSale: 매도 금액을 입력하지 않으면(0/미입력) 추측하지 않고 realizedGain을 null로 둔다(costBasisRemoved는 계산)', () => {
+  const noProceeds = sandbox.realizedGainForSale(20, 10, 300000, 0);
+  assert.strictEqual(noProceeds.costBasisRemoved, 150000);
+  assert.strictEqual(noProceeds.realizedGain, null);
+  assert.strictEqual(sandbox.realizedGainForSale(20, 10, 300000, undefined).realizedGain, null);
+});
+test('realizedGainForSale: origQty/newQty/origCostBasis가 유효하지 않거나(0 이하/없음) 수량이 늘거나 그대로면 가드에 걸려 null을 반환한다(scaleCostBasisForSale과 동일한 가드)', () => {
+  assert.strictEqual(sandbox.realizedGainForSale(0, 0, 100000, 50000), null);
+  assert.strictEqual(sandbox.realizedGainForSale(10, 0, 100000, 50000), null, '전량매도(newQty=0)는 delAsset 등 별도 경로의 몫');
+  assert.strictEqual(sandbox.realizedGainForSale(10, 5, 0, 50000), null, '매입원가가 없으면 뺄 것이 없어 계산 불가');
+  assert.strictEqual(sandbox.realizedGainForSale(10, 5, undefined, 50000), null);
+  assert.strictEqual(sandbox.realizedGainForSale(10, 20, 100000, 50000), null, '수량이 늘면(추가매수) 매도가 아님');
+  assert.strictEqual(sandbox.realizedGainForSale(10, 10, 100000, 50000), null, '수량 불변');
+});
 /* ---------- costBasisField: 편집 중 보유 수량이 _origQty(openAssetSheet 스냅샷)보다 늘면
  * (추가매수) costBasisNeedsUpdate 경고 캡션과 "이번에 추가로 투입한 금액" 입력창(asAddedCostField)을
  * 함께 즉시 렌더한다. 줄어드는 경우는 saveAsset()이 자동 보정하므로 둘 다 뜨면 안 된다. ---------- */
@@ -11722,11 +11792,26 @@ test('costBasisField: 수량이 _origQty보다 늘면 경고 캡션+추가 투�
   assert.ok(grown.includes('아래에 이번에 추가로 투입한 금액만 입력하면'));
   assert.ok(grown.includes('id="asAddedCost"'), '추가 투입 금액 입력 필드(asAddedCost)가 있어야 함');
   const shrunk = sandbox.costBasisField({ type: 'stock', stockQty: 5, costBasis: 100000, _origQty: 10 }, true);
-  assert.ok(shrunk.includes('id="asQtyBasisWarn" style="display:none"'), '줄었으면 경고가 필요 없음');
-  assert.ok(shrunk.includes('id="asAddedCostField" style="display:none"'), '줄었으면 추가 투입 금액 입력창도 숨겨야 함');
+  assert.ok(shrunk.includes('id="asAddedCostField" style="display:none"'), '줄었으면(매도) 추가 투입 금액 입력창은 그대로 숨겨야 함');
+  assert.ok(shrunk.includes('id="asSaleProceedsField" style="display:block"'), '줄었으면(매도) 대신 매도 금액 입력창이 떠야 함(app-evolve cycle265 advance)');
   const fresh = sandbox.costBasisField({ type: 'stock', stockQty: 20, costBasis: 100000 }, false);
   assert.ok(fresh.includes('id="asQtyBasisWarn" style="display:none"'), '신규 등록(_origQty 없음)은 비교 기준이 없으므로 항상 숨김');
   assert.ok(fresh.includes('id="asAddedCostField" style="display:none"'));
+});
+/* ---------- costBasisField: 수량이 _origQty보다 줄고(일부 매도) costBasis가 있으면, addedCostField와
+ * 대칭되는 asSaleProceedsField("이번에 받은 매도 금액")를 보여준다(app-evolve cycle265 advance) ---------- */
+test('costBasisField: 수량이 줄고 매입원가가 있으면 매도 금액 입력창(asSaleProceedsField)이 뜨고, 매입원가가 없거나 수량이 늘면 숨겨진다', () => {
+  const sold = sandbox.costBasisField({ type: 'stock', stockQty: 5, costBasis: 100000, _origQty: 10 }, true);
+  assert.ok(sold.includes('id="asSaleProceedsField" style="display:block"'), '수량이 줄고 매입원가가 있으면 매도 금액 입력창이 보여야 함');
+  assert.ok(sold.includes('id="asQtyBasisWarn" style="display:block"'));
+  assert.ok(sold.includes('이번에 받은 매도 금액을 입력하면 실현손익을 기록해요'));
+  assert.ok(sold.includes('id="asSaleProceeds"'), '매도 금액 입력 필드(asSaleProceeds)가 있어야 함');
+  const soldNoBasis = sandbox.costBasisField({ type: 'stock', stockQty: 5, costBasis: 0, _origQty: 10 }, true);
+  assert.ok(soldNoBasis.includes('id="asSaleProceedsField" style="display:none"'), '매입원가가 없으면 뺄 것이 없어 매도 금액 입력창이 필요 없음');
+  const grown = sandbox.costBasisField({ type: 'stock', stockQty: 20, costBasis: 100000, _origQty: 10 }, true);
+  assert.ok(grown.includes('id="asSaleProceedsField" style="display:none"'), '수량이 늘면(추가매수) 매도 금액 입력창이 필요 없음');
+  const fresh = sandbox.costBasisField({ type: 'stock', stockQty: 5, costBasis: 100000 }, false);
+  assert.ok(fresh.includes('id="asSaleProceedsField" style="display:none"'), '신규 등록(_origQty 없음)은 비교 기준이 없으므로 항상 숨김');
 });
 /* ---------- saveAsset: 주식 자산의 종목코드가 비어 있으면 저장을 막는다 (cycle58 develop).
  * syncAssetInputs()는 종목코드를 trim/uppercase만 할 뿐 필수 여부를 검사하지 않고, saveAsset()도
@@ -17193,7 +17278,8 @@ test("costBasisField: fx/gold/stock 공용 매입금액 입력(asCostBasis)에 E
   assert.strictEqual(
     sandbox.costBasisField({ costBasis: 0 }, false),
     '<div class="field"><label for="asCostBasis">매입 금액 (원, 선택)</label><div class="field-clear"><input id="asCostBasis" class="num" inputmode="numeric" value="" placeholder="입력 시 손익을 계산해요" oninput="fmtAmt(this,false)" onkeydown="if(event.key===\'Enter\'&&!event.isComposing)saveAsset(false)"><button type="button" class="fc-x" aria-label="매입 금액 지우기" onclick="clrInput(\'asCostBasis\')">✕</button></div><div class="day-warn" id="asQtyBasisWarn" style="display:none"></div></div>\n' +
-    ' <div class="field" id="asAddedCostField" style="display:none"><label for="asAddedCost">이번에 추가로 투입한 금액 (원, 선택)</label><div class="field-clear"><input id="asAddedCost" class="num" inputmode="numeric" value="" placeholder="신규 매수에 쓴 금액만 입력하면 자동으로 더해드려요" oninput="fmtAmt(this,false)" onkeydown="if(event.key===\'Enter\'&&!event.isComposing)saveAsset(false)"><button type="button" class="fc-x" aria-label="추가 투입 금액 지우기" onclick="clrInput(\'asAddedCost\')">✕</button></div></div>'
+    ' <div class="field" id="asAddedCostField" style="display:none"><label for="asAddedCost">이번에 추가로 투입한 금액 (원, 선택)</label><div class="field-clear"><input id="asAddedCost" class="num" inputmode="numeric" value="" placeholder="신규 매수에 쓴 금액만 입력하면 자동으로 더해드려요" oninput="fmtAmt(this,false)" onkeydown="if(event.key===\'Enter\'&&!event.isComposing)saveAsset(false)"><button type="button" class="fc-x" aria-label="추가 투입 금액 지우기" onclick="clrInput(\'asAddedCost\')">✕</button></div></div>\n' +
+    ' <div class="field" id="asSaleProceedsField" style="display:none"><label for="asSaleProceeds">이번에 받은 매도 금액 (원, 선택)</label><div class="field-clear"><input id="asSaleProceeds" class="num" inputmode="numeric" value="" placeholder="이번 매도로 받은 금액만 입력하면 실현손익을 기록해요" oninput="fmtAmt(this,false)" onkeydown="if(event.key===\'Enter\'&&!event.isComposing)saveAsset(false)"><button type="button" class="fc-x" aria-label="매도 금액 지우기" onclick="clrInput(\'asSaleProceeds\')">✕</button></div></div>'
   );
   assert.ok(sandbox.costBasisField({ costBasis: 0 }, true).includes('saveAsset(true)'), 'editing=true(수정 모드)일 때 saveAsset 호출에 전달되지 않음');
 });

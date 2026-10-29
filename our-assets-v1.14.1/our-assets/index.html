@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.273';
+const APP_VERSION='1.47.274';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4335,7 +4335,8 @@ function syncAssetInputs(){const d=asDraft;const g=id=>$(id);
  if(g('asCode')){const v=g('asCode').value.trim().toUpperCase();if(d.type==='crypto')d.cryptoCode=v;else d.stockCode=v;}
  if(g('asQty')){const v=Math.max(0,parseFloat((g('asQty').value||'0').replace(/,/g,''))||0);if(d.type==='crypto')d.cryptoQty=v;else d.stockQty=v;}
  if(g('asCostBasis')){const n=num(g('asCostBasis'),false);if(n>0)d.costBasis=n;else delete d.costBasis;}
- if(g('asAddedCost'))d._addedCost=num(g('asAddedCost'),false);}
+ if(g('asAddedCost'))d._addedCost=num(g('asAddedCost'),false);
+ if(g('asSaleProceeds'))d._saleProceeds=num(g('asSaleProceeds'),false);}
 function asOpenType(){syncAssetInputs();openTypePicker({current:asDraft.type,back:()=>renderAssetSheet(!!asDraft.id),onPick:k=>{if(k==='pension'){if(!asDraft._pensionAutoExcl)asDraft._pensionPrevIncl=asDraft.includeInTotal; /* 이미 연금 상태(재선택)면 덮어쓰지 않음 — 그 전에 기억해둔 원래 값을 지켜야 함 */
  asDraft.includeInTotal=false;asDraft._pensionAutoExcl=true}else if(asDraft._pensionAutoExcl){asDraft.includeInTotal=asDraft._pensionPrevIncl!==undefined?asDraft._pensionPrevIncl:true; /* 연금으로 들어오기 전 값(수동으로 순자산 제외했던 자산 포함)을 복원 — 기존 연금 자산을 열 때(openAssetSheet)처럼 _pensionPrevIncl이 없으면 기존처럼 true로 복원 */
  delete asDraft._pensionPrevIncl;asDraft._pensionAutoExcl=false}asDraft.type=k;if(k==='savings'&&!asDraft.maturityTargetId)asDraft.maturityTargetId=firstCash(asDraft.id);renderAssetSheet(!!asDraft.id)}})}
@@ -4348,12 +4349,16 @@ function costBasisField(d,editing){ /* fx/gold/stock 공통 — 매입 원가는
    남아 손익이 과대 표시되므로, "이번에 추가로 투입한 금액"을 따로 입력받아 saveAsset()이
    addCostBasisForBuy로 자동으로 더해준다(기존 asCostBasis 입력창은 누적 총액을 직접 덮어쓰고
    싶은 사용자를 위해 그대로 둠) — 줄어드는 경우(일부 매도)는 scaleCostBasisForSale로 자동 비례
-   축소하므로 별도 입력이 필요 없다(app-evolve cycle190/191 advance) */
+   축소하므로 매입원가 자체는 별도 입력이 필요 없지만, "이번에 받은 매도 금액"을 입력하면
+   realizedGainForSale로 이번 매도의 실현손익을 계산해 assetQtyLog에 남긴다(addCostBasisForBuy의
+   매도 쪽 대칭 짝, app-evolve cycle190/191/265 advance) */
  const qtyField=d.type==='fx'?'fxAmount':d.type==='gold'?'goldDon':d.type==='crypto'?'cryptoQty':'stockQty';
  const needsUpdate=editing&&d._origQty!=null&&costBasisNeedsUpdate(d._origQty,d[qtyField]||0,d.costBasis);
- const warnMsg=needsUpdate?'보유 수량이 늘었어요 · 아래에 이번에 추가로 투입한 금액만 입력하면 자동으로 더해드려요':'';
+ const needsSale=editing&&d._origQty!=null&&d.costBasis>0&&(d[qtyField]||0)<d._origQty;
+ const warnMsg=needsUpdate?'보유 수량이 늘었어요 · 아래에 이번에 추가로 투입한 금액만 입력하면 자동으로 더해드려요':needsSale?'보유 수량이 줄었어요 · 아래에 이번에 받은 매도 금액을 입력하면 실현손익을 기록해요':'';
  return `<div class="field"><label for="asCostBasis">매입 금액 (원, 선택)</label><div class="field-clear"><input id="asCostBasis" class="num" inputmode="numeric" value="${d.costBasis?comma(d.costBasis):''}" placeholder="입력 시 손익을 계산해요" oninput="fmtAmt(this,false)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveAsset(${editing})"><button type="button" class="fc-x" aria-label="매입 금액 지우기" onclick="clrInput('asCostBasis')">✕</button></div><div class="day-warn" id="asQtyBasisWarn" style="display:${warnMsg?'block':'none'}">${esc(warnMsg)}</div></div>
- <div class="field" id="asAddedCostField" style="display:${needsUpdate?'block':'none'}"><label for="asAddedCost">이번에 추가로 투입한 금액 (원, 선택)</label><div class="field-clear"><input id="asAddedCost" class="num" inputmode="numeric" value="${d._addedCost?comma(d._addedCost):''}" placeholder="신규 매수에 쓴 금액만 입력하면 자동으로 더해드려요" oninput="fmtAmt(this,false)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveAsset(${editing})"><button type="button" class="fc-x" aria-label="추가 투입 금액 지우기" onclick="clrInput('asAddedCost')">✕</button></div></div>`;
+ <div class="field" id="asAddedCostField" style="display:${needsUpdate?'block':'none'}"><label for="asAddedCost">이번에 추가로 투입한 금액 (원, 선택)</label><div class="field-clear"><input id="asAddedCost" class="num" inputmode="numeric" value="${d._addedCost?comma(d._addedCost):''}" placeholder="신규 매수에 쓴 금액만 입력하면 자동으로 더해드려요" oninput="fmtAmt(this,false)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveAsset(${editing})"><button type="button" class="fc-x" aria-label="추가 투입 금액 지우기" onclick="clrInput('asAddedCost')">✕</button></div></div>
+ <div class="field" id="asSaleProceedsField" style="display:${needsSale?'block':'none'}"><label for="asSaleProceeds">이번에 받은 매도 금액 (원, 선택)</label><div class="field-clear"><input id="asSaleProceeds" class="num" inputmode="numeric" value="${d._saleProceeds?comma(d._saleProceeds):''}" placeholder="이번 매도로 받은 금액만 입력하면 실현손익을 기록해요" oninput="fmtAmt(this,false)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveAsset(${editing})"><button type="button" class="fc-x" aria-label="매도 금액 지우기" onclick="clrInput('asSaleProceeds')">✕</button></div></div>`;
 }
 function renderAssetSheet(editing){
  const d=asDraft;const ty=ASSET_TYPES[d.type];
@@ -4428,7 +4433,8 @@ function saveAsset(editing){
  const balKey=(d.type==='cash'||d.type==='savings')?'baseAmount':'amountKRW';
  const entered=balType?(d._dispAmt!=null?d._dispAmt:(d[balKey]||0)):0; /* 사용자가 입력한 '현재 금액' */
  const addedCost=d._addedCost>0?d._addedCost:0; /* costBasisField의 "이번에 추가로 투입한 금액" — 추가매수(수량 증가) 시 addCostBasisForBuy로 더해줄 몫 */
- delete d._dispAmt;delete d._pensionAutoExcl;delete d._pensionPrevIncl;delete d._origQty;delete d._addedCost;
+ const saleProceeds=d._saleProceeds>0?d._saleProceeds:0; /* costBasisField의 "이번에 받은 매도 금액" — 일부 매도(수량 감소) 시 realizedGainForSale로 실현손익을 계산할 몫 */
+ delete d._dispAmt;delete d._pensionAutoExcl;delete d._pensionPrevIncl;delete d._origQty;delete d._addedCost;delete d._saleProceeds;
  const dup=DB.assets.find(a=>a.id!==d.id&&normName(a.name)===normName(d.name)&&a.type===d.type); /* 살아있는 동명(대소문자·연속 공백 개수 무시)·동종 (신규/수정 공통) */
  if(dup){toast(dup.name===d.name?'같은 이름·종류의 자산이 이미 있어요':`비슷한 이름의 자산이 있어요: ${dup.name}`);return;} /* 중복 차단 */
  /* 표시 잔액이 입력값과 같도록 기준값 역산 (오늘까지의 순입출금 기여분 제외) */
@@ -4451,13 +4457,17 @@ function saveAsset(editing){
        수량이 언제·얼마나 바뀌었는지 아무 기록도 남지 않았다(app-evolve cycle138 advance) */
      const qtyField=d.type==='fx'?'fxAmount':d.type==='gold'?'goldDon':d.type==='crypto'?'cryptoQty':'stockQty';
      const prevQty=DB.assets[i][qtyField]||0,newQty=d[qtyField]||0;
-     if(newQty<prevQty)d.costBasis=scaleCostBasisForSale(prevQty,newQty,d.costBasis); /* 일부 매도/정정: 평단 유지한 채 비례 축소 */
-     else if(newQty>prevQty&&addedCost>0)d.costBasis=addCostBasisForBuy(d.costBasis,addedCost); /* 추가매수: costBasisField의 "추가로 투입한 금액" 입력이 있으면 자동으로 더해줌(없으면 그대로 두고 qtyBasisWarn이 안내, app-evolve cycle191 advance) */
+     let saleResult=null;
+     if(newQty<prevQty){
+       saleResult=realizedGainForSale(prevQty,newQty,d.costBasis,saleProceeds); /* costBasisField의 "받은 매도 금액" 입력이 있으면 실현손익을 계산(없으면 realizedGain:null, app-evolve cycle265 advance) */
+       d.costBasis=scaleCostBasisForSale(prevQty,newQty,d.costBasis); /* 일부 매도/정정: 평단 유지한 채 비례 축소 */
+     }else if(newQty>prevQty&&addedCost>0)d.costBasis=addCostBasisForBuy(d.costBasis,addedCost); /* 추가매수: costBasisField의 "추가로 투입한 금액" 입력이 있으면 자동으로 더해줌(없으면 그대로 두고 qtyBasisWarn이 안내, app-evolve cycle191 advance) */
      DB.assets[i]=d;
      if(prevQty!==newQty){
        DB.assetQtyLog=DB.assetQtyLog||[];
        const qtyLogEntry={id:uid(),assetId:d.id,date:TODAY,prevQty,newQty,field:qtyField};
        if(newQty>prevQty&&addedCost>0)qtyLogEntry.addedAmount=addedCost; /* 투입액 이력을 openAssetQtyLog에서 재구성할 수 있도록 남김 */
+       if(saleResult&&saleResult.realizedGain!=null){qtyLogEntry.saleProceeds=saleProceeds;qtyLogEntry.realizedGain=saleResult.realizedGain;} /* 실현손익 이력을 openAssetQtyLog에서 재구성할 수 있도록 남김 */
        DB.assetQtyLog.push(touch(qtyLogEntry));
      }
    }else{
@@ -5311,15 +5321,17 @@ function dayWarn(pfx,v){const w=$(pfx+'DayWarn');if(!w)return;
  else if(v!==''&&n<1)msg='1일부터 넣을 수 있어요 · 저장하면 1일로 맞춰져요';
  w.textContent=msg;w.style.display=msg?'block':'none';}
 /* asFx/asGold/asQty 입력 시 즉시 costBasisField 아래 경고 캡션 + asAddedCostField(추가 투입 금액
- * 입력창)을 토글(전체 리렌더 없이) — dayWarn과 동일한 패턴. asDraft._origQty가 없으면(신규 등록)
- * 비교 기준이 없으므로 항상 숨긴다 */
-function qtyBasisWarn(inp){const w=$('asQtyBasisWarn');const af=$('asAddedCostField');if(!w)return;
- if(asDraft._origQty==null){w.style.display='none';if(af)af.style.display='none';return}
+ * 입력창)/asSaleProceedsField(매도 금액 입력창)를 토글(전체 리렌더 없이) — dayWarn과 동일한
+ * 패턴. asDraft._origQty가 없으면(신규 등록) 비교 기준이 없으므로 항상 숨긴다 */
+function qtyBasisWarn(inp){const w=$('asQtyBasisWarn');const af=$('asAddedCostField');const sf=$('asSaleProceedsField');if(!w)return;
+ if(asDraft._origQty==null){w.style.display='none';if(af)af.style.display='none';if(sf)sf.style.display='none';return}
  const v=parseFloat((inp.value||'0').replace(/,/g,''))||0;
  const needsUpdate=costBasisNeedsUpdate(asDraft._origQty,v,asDraft.costBasis);
- const msg=needsUpdate?'보유 수량이 늘었어요 · 아래에 이번에 추가로 투입한 금액만 입력하면 자동으로 더해드려요':'';
+ const needsSale=asDraft.costBasis>0&&v<asDraft._origQty;
+ const msg=needsUpdate?'보유 수량이 늘었어요 · 아래에 이번에 추가로 투입한 금액만 입력하면 자동으로 더해드려요':needsSale?'보유 수량이 줄었어요 · 아래에 이번에 받은 매도 금액을 입력하면 실현손익을 기록해요':'';
  w.textContent=msg;w.style.display=msg?'block':'none';
- if(af)af.style.display=needsUpdate?'block':'none';}
+ if(af)af.style.display=needsUpdate?'block':'none';
+ if(sf)sf.style.display=needsSale?'block':'none';}
 function clampDay(d){ /* 저장 시 보정 */
  if(typeof d.day!=='number'||isNaN(d.day)){d.day=1;return '1일로 맞췄어요'}
  if(d.day>31){d.day=31;return '31일로 맞췄어요'}
@@ -5514,9 +5526,10 @@ function openAssetQtyLog(assetId){
  const unit=a.type==='fx'?a.currency:(a.type==='gold'?'돈':(a.type==='crypto'?'개':'주'));
  const items=(DB.assetQtyLog||[]).filter(q=>q.assetId===assetId).sort((x,y)=>(y.updatedAt||0)-(x.updatedAt||0));
  const row=q=>{const delta=q.newQty-q.prevQty;const sign=delta>0?'+':'';
+  const gainTxt=q.realizedGain!=null?` · 실현손익 ${q.realizedGain>0?'+':''}${comma(q.realizedGain)}원`:'';
   return `<div class="manage-row" style="align-items:flex-start"><div style="flex:1;min-width:0">
     <div class="mn num">${sign}${commaQty(delta)} ${esc(unit)}</div>
-    <div class="msub">${q.date||''} · ${commaQty(q.prevQty)} → ${commaQty(q.newQty)} ${esc(unit)}${q.addedAmount>0?` · 투입 ${comma(q.addedAmount)}원`:''}</div></div>
+    <div class="msub">${q.date||''} · ${commaQty(q.prevQty)} → ${commaQty(q.newQty)} ${esc(unit)}${q.addedAmount>0?` · 투입 ${comma(q.addedAmount)}원`:''}${q.saleProceeds>0?` · 매도 ${comma(q.saleProceeds)}원${gainTxt}`:''}</div></div>
    <div class="row-acts"><button class="act-btn danger" aria-label="수량 변경 기록 삭제" onclick="delAssetQtyLog('${q.id}')">${svg('trash')}</button></div></div>`};
  openSheet(`<h3>${esc(a.name)} 수량 변경 기록</h3><div class="desc">보유 수량을 직접 수정할 때마다 남는 기록이에요. 거래 내역과는 별도예요</div>
   ${items.length?items.map(row).join(''):`<div class="empty"><div class="ei">${svg('receipt')}</div><div class="et">아직 수량 변경 기록이 없어요</div></div>`}

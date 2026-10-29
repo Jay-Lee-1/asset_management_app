@@ -737,6 +737,18 @@ function addCostBasisForBuy(origCostBasis,addedAmount){
  if(!(addedAmount>0))return origCostBasis;
  return Math.round((origCostBasis||0)+addedAmount);
 }
+/* 일부 매도 시 "이번에 받은 매도 금액"을 입력받으면 실현손익(realized gain)을 계산한다 —
+ * addCostBasisForBuy와 대칭되는 매도 쪽 짝. scaleCostBasisForSale이 비례 축소하는 costBasis
+ * 감소분(costBasisRemoved=이번 매도로 빠져나간 매입원가)을 구하고, saleProceeds를 받았으면
+ * realizedGain=saleProceeds-costBasisRemoved로, 받지 않았으면(추측하지 않는다는 원칙) null로
+ * 둔다. 가드는 scaleCostBasisForSale과 동일(newQty>0 — 전량 매도는 delAsset 등 별도 경로의
+ * 몫이라 여기서 다루지 않는다, app-evolve cycle265 advance) */
+function realizedGainForSale(origQty,newQty,origCostBasis,saleProceeds){
+ if(!(origQty>0)||!(newQty>0)||!(origCostBasis>0)||newQty>=origQty)return null;
+ const costBasisRemoved=origCostBasis-scaleCostBasisForSale(origQty,newQty,origCostBasis);
+ if(!(saleProceeds>0))return {costBasisRemoved,realizedGain:null};
+ return {costBasisRemoved,realizedGain:saleProceeds-costBasisRemoved};
+}
 
 /* ================= 예산 이월(rollover, 순수) ================= */
 /* budgetForMonth(index.html)는 '카테고리→[{from,amount}]' effective-dated flat 값을 그대로 쓰는
