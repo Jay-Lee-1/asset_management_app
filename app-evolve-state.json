@@ -1,7 +1,11 @@
 {
   "cycle": 268,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "매도(실현손익) 내역 CSV 내보내기 추가",
+    "why": "cycle265-267이 만든 realizedGainForSale/totalRealizedGain/yearRealizedGain은 openAssetQtyLog(index.html:5536)와 openYearReview(index.html:6421)에서 자산별/연도별로만 보이고, exportData()의 CSV 메뉴(index.html:7470-7493, CSV_KIND_META에 csv/assetsCsv/nwCsv만 존재, index.html:7497)에는 매도·실현손익 내역을 내보낼 방법이 없어 세금 신고나 성과 분석을 위해 스프레드시트로 뽑을 길이 전체 JSON 백업을 뒤지는 것뿐임.",
+    "approach": "assetsToCSV/nwHistoryToCSV(index.html:7255/7281) 옆에 순수 함수 assetQtyLogToCSV(items,assets) 신설 — 동일한 guard/esc CSV 인젝션 방지 패턴 재사용. DB.assetQtyLog 중 realizedGain!=null인 항목만 필터링, 컬럼: 날짜/자산명/유형/귀속/매도 전 수량/매도 후 수량/매도금액(saleProceeds)/차감된 매입원가(costBasisRemoved)/실현손익(realizedGain). CSV_KIND_META에 gainCsv 항목 추가, exportData() 시트에 버튼 추가, doExport()의 기존 share/download/copy-fallback 파이프라인(index.html:7502) 재사용. index.html만 변경, APP_VERSION/sw.js CACHE 동기 범프, test/run.js에 assetQtyLogToCSV 단위 테스트(빈 경우/여러 자산/CSV 인젝션 가드) 추가."
+  },
   "history": [
     {
       "cycle": 263,
@@ -141,6 +145,13 @@
       "phase": "review",
       "timestamp": "2026-10-29T20:45:00.000Z",
       "summary": "cycle268 develop 커밋(a55ccf4, openMaturity에 overdue(a.maturityDate<TODAY) 분기 추가 — 지난 만기는 mini warn+'만기 지남', 아직 안 지난 만기는 mini sch+'임박')을 검토. overdue 정의(a.maturityDate<TODAY)가 notifyAlertInfo(index.html:9441, const overdue=al.date<TODAY)와 정확히 같고, 뱃지 스타일(mini warn+'지남')도 goalProgress의 목표일 지남 표시(goalIsOverdue 기반, mini warn+'지남')와 일치함을 grep/코드 대조로 확인 — 기존 관례를 정확히 재사용. 이체 버튼 노출 조건(soon)은 그대로 유지돼 만기가 지난 저축도 여전히 이체할 수 있음을 확인(의도대로). 새 회귀 테스트가 지난 만기/아직 안 지난 만기 두 경우를 모두 검증해 핵심 시나리오를 잘 덮음. node test/run.js 독립 재실행 결과 2239/2239 통과, node --check(logic.js/sw.js/test/run.js) 통과, APP_VERSION(1.47.280)/sw.js CACHE(v547) 동기화 확인. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 268,
+      "phase": "critique",
+      "timestamp": "2026-10-29T21:30:00.000Z",
+      "summary": "fork 서브에이전트로 앱 전반을 재탐색(SRI TODO는 CDN egress 차단으로 여전히 불가, 투자 리밸런싱 알림은 target% 스키마 필요해 다수 사이클째 보류 유지, 자산배분 시계열 버전도 범위상 과해 재보류)한 결과, cycle265-267이 만든 매도 실현손익 집계(realizedGainForSale/totalRealizedGain/yearRealizedGain)가 openAssetQtyLog/openYearReview에서 화면으로만 보이고, exportData()의 CSV 내보내기 메뉴(CSV_KIND_META: csv/assetsCsv/nwCsv만 존재)에는 매도·실현손익 내역을 뽑을 길이 전혀 없어 세금 신고·성과 분석 시 전체 JSON 백업을 뒤지는 것 외엔 방법이 없는 공백을 발견. 채택 계획(assetQtyLogToCSV 신설 + CSV_KIND_META에 gainCsv 추가 + exportData 버튼 배선, 기존 assetsToCSV/nwHistoryToCSV의 guard/esc 패턴과 doExport 파이프라인 재사용)을 pending_advance_plan에 저장. 러너업: (a) 예산 한도 변경 이력 CSV 내보내기(사용자 가치 낮아 보류), (b) 투자 리밸런싱 알림(기존과 동일한 이유로 재기각). 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
