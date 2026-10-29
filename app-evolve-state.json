@@ -1,15 +1,8 @@
 {
   "cycle": 265,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 260,
-      "phase": "review",
-      "timestamp": "2026-10-28T12:30:00.000Z",
-      "summary": "cycle260 develop 커밋(f5c8eb6, matchTxnQuery가 분할 거래의 최상위 합계(t.amount)뿐 아니라 개별 분할 금액(splits[].amount)으로도 매칭되게 lineAmts 추가)을 검토. splitLines()가 비분할 거래엔 [{amount:t.amount,...}] 하나만 반환해 lineAmts가 기존 amt와 중복될 뿐 새 오매칭을 만들지 않음을 코드로 확인. 전역 통합검색(cycle259 advance)과 기존 내역 검색(#histQ) 양쪽 호출부 모두 matchTxnQuery를 그대로 재사용하므로 수정이 자동으로 양쪽에 적용됨을 확인. 추가된 테스트 3건(분할 금액 매칭/합계 매칭 회귀/비매칭)이 핵심 시나리오를 잘 덮음. node test/run.js 독립 재실행 결과 2160/2160 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 260,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-29T08:18:16.171Z",
       "summary": "코드 전반을 재탐색(이전 cycle들이 다룬 영역과 중복 없는지 확인)한 결과, 은행/카드사 CSV 가져오기의 열 매칭 화면(openCsvColumnMap/cycle251 advance)이 날짜·금액(또는 입금/출금)·메모 각 필드를 독립적인 피커(csvMapPickCol)로 고르게 하면서, 사용자가 \"거래일시\"/\"등록일시\"처럼 이름이 비슷한 두 열을 헷갈려 같은 열을 서로 다른 역할(예: 날짜와 금액)에 겹쳐 고르는 것을 막을 방법이 전혀 없는 공백을 발견 — 그렇게 겹쳐 고르면 mapGenericCsvRow가 한 열의 값을 두 역할로 동시에 읽어 거의 모든 행이 조용히 형식 오류(invalid)로 빠지는데, 원인이 \"열 선택 실수\"라는 걸 사용자가 알 길이 없었음. logic.js에 순수 함수 csvMapColConflict(mapping,field,idx) 신설 — idx가 field 자신이 아닌 다른 필드(dateCol/memoCol/amountCol/inCol/outCol)에 이미 쓰이고 있으면 true, idx===null(선택 안 함)이나 field 자신이 쓰고 있는 값은 충돌로 보지 않음(재선택 가능). index.html의 csvMapPickCol이 헤더 열 목록을 렌더링할 때 이 함수로 다른 필드가 이미 쓰고 있는 열을 후보에서 완전히 제외하도록 배선 — csvMapPickAsset/openCatPicker의 exclude 관례(고를 수 없는 항목은 애초에 보여주지 않음)와 동일한 패턴. 열 매핑 중 모드를 바꾸거나(csvMapSetMode) 필드를 비우면 그 열이 다시 다른 필드의 후보로 돌아옴(상태 자체는 그대로 _csvMap을 읽으므로 추가 배선 불필요). index.html/logic.js 변경이라 APP_VERSION 1.47.272->1.47.273, sw.js CACHE v539->v540 동기 범프. test/run.js에 csvMapColConflict 단위 테스트 4건(충돌/자기자신 제외/null 제외/무관한 idx) + csvMapPickCol 배선 테스트 3건(다른 필드가 쓰는 열 제외/자기 자신은 안 숨김/split 모드 inCol-outCol 상호 제외) 추가(2203->2210). node test/run.js 2210/2210 통과, node --check(logic.js/sw.js/test/run.js) 및 HTML 주석 제거 후 추출한 index.html 인라인 스크립트 4블록(5개 중 1개는 빈 블록) 구문 검증 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 265,
+      "phase": "review",
+      "timestamp": "2026-10-29T09:08:37.408Z",
+      "summary": "cycle265 develop 커밋(8d89af5, CSV 열 매칭(csvMapPickCol)에서 다른 필드(dateCol/memoCol/amountCol/inCol/outCol)가 이미 쓰고 있는 열을 후보에서 제외하는 csvMapColConflict 배선)을 검토. _csvMap 초기화(index.html:8076)에서 다섯 필드가 항상 null로 시작해(undefined 아님) csvMapColConflict의 idx==null 가드가 항상 올바르게 동작함을 확인. csvMapSetMode가 모드 전환 시 반대 모드 필드(amountCol ↔ inCol/outCol)를 null로 비워 그 열이 다시 후보로 돌아온다는 설명을 코드로 확인(signed->split: amountCol=null, split->signed: inCol=outCol=null). 자기 자신 필드가 쓰는 값은 충돌로 안 보여 재선택이 막히지 않음도 확인. node test/run.js 독립 재실행 결과 2210/2210 통과, node --check(logic.js/sw.js/test/run.js) 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
