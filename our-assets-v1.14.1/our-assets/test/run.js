@@ -7289,6 +7289,56 @@ test('openYearReview: 투자 실현손익이 손실이면 expense색으로 보�
   assert.ok(html.includes('var(--expense)'), '손실이면 expense색이어야 함');
   assert.ok(html.includes('-30,000원'));
 });
+/* 투자 실현손익 카드에도 전년대비(YoY) 배지를 추가 — income/expense/저축률 4개 요약 카드는 모두
+ * 전년대비 배지가 있었는데 유일하게 이 카드만 없었다(app-evolve cycle267 critique/advance). */
+test('openYearReview: 올해·전년 모두 투자 실현손익이 있으면 투자 실현손익 카드에도 전년대비 배지가 붙는다', () => {
+  const ctx = yearReviewCtx();
+  ctx.DB = { owners: [], assets: [], recurrences: [],
+    txns: [{ id: '1', type: 'income', category: '급여', amount: 500000, date: '2026-01-10', confirmed: true }],
+    assetQtyLog: [
+      { date: '2025-06-01', assetId: 'a1', realizedGain: 20000 },
+      { date: '2026-06-01', assetId: 'a1', realizedGain: 70000 },
+    ],
+  };
+  ctx.ST = { spendOwner: '전체', yearReview: { y: 2026 } };
+  ctx.lastSheetHtml = null;
+  ctx.openYearReview(2026);
+  const html = ctx.lastSheetHtml;
+  const card = html.slice(html.indexOf('올해 투자 실현손익'), html.indexOf('월별 흐름'));
+  assert.ok(card.includes('전년대비'), '전년 실현손익이 있으면 전년대비 배지가 있어야 함');
+  assert.ok(card.includes('var(--income)'), '올해(+70,000)가 전년(+20,000)보다 늘었으면 income색이어야 함');
+  assert.ok(card.includes('▲50,000원'), '70000-20000=50000 증가');
+});
+test('openYearReview: 투자 실현손익이 전년보다 줄었으면 배지가 expense색·▼로 표시된다', () => {
+  const ctx = yearReviewCtx();
+  ctx.DB = { owners: [], assets: [], recurrences: [],
+    txns: [{ id: '1', type: 'income', category: '급여', amount: 500000, date: '2026-01-10', confirmed: true }],
+    assetQtyLog: [
+      { date: '2025-06-01', assetId: 'a1', realizedGain: 90000 },
+      { date: '2026-06-01', assetId: 'a1', realizedGain: 70000 },
+    ],
+  };
+  ctx.ST = { spendOwner: '전체', yearReview: { y: 2026 } };
+  ctx.lastSheetHtml = null;
+  ctx.openYearReview(2026);
+  const html = ctx.lastSheetHtml;
+  const card = html.slice(html.indexOf('올해 투자 실현손익'), html.indexOf('월별 흐름'));
+  assert.ok(card.includes('var(--expense)'), '70,000이 90,000보다 줄었으면 expense색이어야 함');
+  assert.ok(card.includes('▼20,000원'));
+});
+test('openYearReview: 전년에 투자 실현손익 기록이 없으면(비교 기준 없음) 투자 실현손익 카드에 전년대비 배지가 없다', () => {
+  const ctx = yearReviewCtx();
+  ctx.DB = { owners: [], assets: [], recurrences: [],
+    txns: [{ id: '1', type: 'income', category: '급여', amount: 500000, date: '2026-01-10', confirmed: true }],
+    assetQtyLog: [{ date: '2026-06-01', assetId: 'a1', realizedGain: 70000 }],
+  };
+  ctx.ST = { spendOwner: '전체', yearReview: { y: 2026 } };
+  ctx.lastSheetHtml = null;
+  ctx.openYearReview(2026);
+  const html = ctx.lastSheetHtml;
+  const card = html.slice(html.indexOf('올해 투자 실현손익'), html.indexOf('월별 흐름'));
+  assert.ok(!card.includes('전년대비'), '전년 자료가 없으면 전년대비 배지가 없어야 함');
+});
 test('openYearReview: 투자 실현손익 기록이 없으면 카드 자체를 그리지 않는다', () => {
   const ctx = yearReviewCtx();
   ctx.DB = { owners: [], assets: [], recurrences: [],
@@ -11041,6 +11091,37 @@ test('yearSummary: 그 해에 투자 실현손익 기록이 없으면 investGain
   };
   const s = sandbox.yearSummary(2026);
   assert.strictEqual(s.investGain, null);
+});
+/* yoy.investDelta: investGain은 income/expense와 달리 음수(손실)일 수 있고 기준값(전년 실현손익)도
+ * 0 근처거나 음수일 수 있어 퍼센트 기반 YoY를 쓰면 왜곡되거나 Infinity/NaN이 난다 — 그래서 원
+ * 단위 증감(올해-전년) 그대로 둔다(app-evolve cycle267 advance). */
+test('yearSummary: 올해·전년 모두 투자 실현손익이 있으면 yoy.investDelta를 올해-전년 금액으로 계산한다', () => {
+  sandbox.DB = {
+    txns: [], recurrences: [],
+    assetQtyLog: [
+      { date: '2025-05-01', assetId: 'a1', realizedGain: 20000 },
+      { date: '2026-05-01', assetId: 'a1', realizedGain: 70000 },
+    ],
+  };
+  const s = sandbox.yearSummary(2026);
+  assert.strictEqual(s.investGain, 70000);
+  assert.strictEqual(s.yoy.investDelta, 50000);
+});
+test('yearSummary: 올해 또는 전년 중 한쪽에만 투자 실현손익 기록이 있으면(비교 기준 없음) yoy.investDelta는 null이다', () => {
+  sandbox.DB = {
+    txns: [], recurrences: [],
+    assetQtyLog: [{ date: '2026-05-01', assetId: 'a1', realizedGain: 70000 }],
+  };
+  let s = sandbox.yearSummary(2026);
+  assert.strictEqual(s.yoy.investDelta, null, '전년 기록이 없으면 null');
+  sandbox.DB.assetQtyLog = [{ date: '2025-05-01', assetId: 'a1', realizedGain: 70000 }];
+  s = sandbox.yearSummary(2026);
+  assert.strictEqual(s.yoy.investDelta, null, '올해 기록이 없으면 null');
+});
+test('yearSummary: 올해·전년 모두 투자 실현손익 기록이 없으면 yoy.investDelta도 null이다', () => {
+  sandbox.DB = { txns: [], recurrences: [] };
+  const s = sandbox.yearSummary(2026);
+  assert.strictEqual(s.yoy.investDelta, null);
 });
 
 

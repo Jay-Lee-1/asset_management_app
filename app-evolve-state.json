@@ -1,19 +1,8 @@
 {
-  "cycle": 267,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "연간 결산 투자 실현손익 카드에 전년대비(YoY) 비교 추가",
-    "why": "yearSummary()(index.html:6396)는 총수입/총지출/저축률엔 전년(y-1) 대비 yoy delta를 계산해 openYearReview()가 incBadge/expBadge/rateBadge(index.html:6430-6432,6456-6459)로 보여주지만, cycle266 advance가 추가한 investGain(올해 투자 실현손익, index.html:6408,6462)에는 전년대비 비교가 없음 — cycle266 advance 커밋 노트에 '전년도 YoY는 계획대로 이번 사이클에서 다루지 않음'이라고 명시적으로 보류되어 있고 이후 어느 사이클도 다시 집지 않음. 결과적으로 연간 결산 4개 요약 카드 중 유일하게 '전년대비' 배지가 없는 카드로 남아, 사용자가 올해 투자 성과가 작년보다 나아졌는지 나빠졌는지 한눈에 비교할 방법이 없음.",
-    "approach": "yearSummary(y,owner)에 pyInvestGain=yearRealizedGain(y-1,owner)를 계산해 yoy 객체에 investDelta:(investGain==null||pyInvestGain==null)?null:investGain-pyInvestGain 필드를 추가(기존 income/expense/rate와 동일한 null-vs-zero 관례 — 올해·전년 중 하나라도 매도 기록이 없으면 비교 기준이 없다고 보고 null). 주의할 점: investGain은 income/expense와 달리 음수(손실)가 될 수 있고 기준값(pyInvestGain)도 0 근처이거나 음수일 수 있어, income/expense/rate가 쓰는 퍼센트 기반 incomeTrendBadge(deltaPct,label)(index.html:6335, Math.round(delta/기준*100)% 표시)를 그대로 재사용하면 기준이 0 또는 음수일 때 퍼센트가 왜곡되거나 Infinity/NaN이 날 수 있음 — 그대로 재사용하지 말 것. 대신 investDelta를 '원' 단위 증감 그대로 보여주는 작은 배지(incomeTrendBadge와 같은 <span class=\"trend\"> 마크업/색상 규칙은 재사용하되 내용은 금액+화살표, color는 investDelta>=0?var(--income):var(--expense))를 openYearReview()의 investGain 카드(index.html:6462)에 investDelta!=null일 때만 추가. index.html만 변경이므로 APP_VERSION/sw.js CACHE 동기 범프. test/run.js에 yearSummary.yoy.investDelta 단위 테스트(양쪽 기록 있음→델타 계산/한쪽만 기록 있음→null/둘다 없음→null, 기존 yearRealizedGain·yearSummary.investGain 테스트 블록 바로 옆) + openYearReview 배지 렌더링 테스트(이익 개선/악화/델타 없으면 배지 미노출) 추가."
-  },
+  "cycle": 268,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 262,
-      "phase": "advance",
-      "timestamp": "2026-10-28T23:10:00.000Z",
-      "summary": "critique(cycle262) 계획대로 부채 상환 추가 납입 시뮬레이터(what-if)를 구현. logic.js: debtPayoffProjection이 쓰던 '최근 90일 창 처음·끝 두 점 선형 일별 감소율' 계산을 순수함수 debtPayoffRate(pts,today,trendWindowDays)로 추출(debtPayoffProjection은 이를 호출하도록 리팩터, 기존 debtPayoffProjection 테스트 전부 그대로 통과 확인 — 동작 불변). debtPayoffWhatIf(pts,today,extraPerMonth,trendWindowDays) 신설 — baseRate=max(0,debtPayoffRate(...))(악화 추세가 추가 납입분을 깎아먹지 않게), effectiveRate=baseRate+extra/30, extra=0이면 debtPayoffProjection과 항상 같은 projectedDate. index.html: assetBalCard() 안의 인라인 pfFrom/pfPts 계산(preset과 무관한 고정 90일 재샘플링)을 공유 헬퍼 debtPayoffPtsFor(a)로 추출(기존 pfFrom===from 재사용 최적화는 버리고 항상 재샘플링 — 같은 입력이면 같은 값이라 출력 불변, 순수 리팩터)하고 debtWhatIfUpdate(assetId)가 카드 재렌더 없이도 같은 포인트를 쓸 수 있게 함. debt 미완납 상태에만 '매달 추가로 얼마씩 더 갚으면?' 입력 필드(.field-clear/fmtAmt 패턴 재사용, ST.hist.debtWhatIfExtra에 보존)를 추가하고 oninput으로 debtWhatIfUpdate가 결과 div#debtWhatIfResult의 textContent만 갱신(assetBalPeek류 경량 업데이트, 베이스라인과 비교한 '약 N개월 빨라져요' 표시 포함). assetBalPresetSel(기간 세그먼트 전환)에도 fcWire() 호출을 추가해 재렌더되는 입력의 지우기(×) 버튼이 계속 배선되게 함. openAssetHistory가 다른 debt로 넘어갈 때 ST.hist.debtWhatIfExtra를 0으로 리셋(새어듦 방지). 기존 '소스 패턴' 테스트 하나(assetBalCard가 pfFrom을 인라인 계산한다고 가정)는 추출된 구조에 맞게 debtPayoffPtsFor 쪽을 보도록 갱신. APP_VERSION 1.47.267->1.47.268, sw.js CACHE v534->v535 동기 범프. test/run.js: debtPayoffRate 3건+debtPayoffWhatIf 4건(achieved/extra=0 베이스라인 동일/악화추세+extra>0/단조성)+[실행형] assetBalCard what-if 필드 렌더링 2건(기본값/양수 입력값 반영)+완납 상태엔 필드 없음 1건+debtWhatIfUpdate 실행형 2건+openAssetHistory 리셋 1건 추가(2174->2185). node test/run.js 2185/2185 통과, node --check(logic.js/sw.js/test/run.js) 및 HTML 주석 제거 후 추출한 index.html 인라인 스크립트 4블록 구문 검증 통과. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 263,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-29T18:11:26.759Z",
       "summary": "fork 서브에이전트로 앱 전반을 재탐색(이미 다룬 영역들과 중복 없는지 확인)한 결과, yearSummary()(index.html:6396)의 yoy 객체가 수입/지출/저축률엔 전년대비(YoY) delta를 계산해 openYearReview()가 배지로 보여주지만, cycle266 advance가 추가한 investGain(올해 투자 실현손익)에는 전년대비 비교가 아예 없음을 발견 — cycle266 advance 커밋 노트에 \"전년도 YoY는 계획대로 이번 사이클에서 다루지 않음\"이라 명시적으로 보류됐고 이후 어느 사이클도 다시 집지 않아, 연간 결산 4개 요약 카드 중 유일하게 \"전년대비\" 배지가 없는 카드로 남아있었음. 채택 계획(yearSummary에 pyInvestGain/yoy.investDelta 추가 + openYearReview에 원 단위 증감 배지 노출, income/expense가 쓰는 퍼센트 기반 incomeTrendBadge는 investGain이 음수/0 근처 기준값을 가질 수 있어 그대로 재사용하면 안 된다는 주의사항 포함)을 pending_advance_plan에 저장. 러너업: (a) 투자 리밸런싱 알림(target% 스키마 필요, 다수 사이클에 걸쳐 반복 보류 중, 여전히 미채택), (b) assetAllocation()의 시계열(historical) 버전(현재는 스냅샷만 존재, nwHistoryForOwner급 신규 인프라 필요해 범위상 한 사이클엔 과함, 별도 critique에서 재검토 예정). 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 267,
+      "phase": "advance",
+      "timestamp": "2026-10-29T19:08:00.000Z",
+      "summary": "연간 결산 투자 실현손익 카드에 전년대비(YoY) 배지 추가 — yearSummary.yoy.investDelta(원 단위 증감, income/expense의 퍼센트 기반 배지와 달리 음수 기준값에서도 안전)를 계산하고 openYearReview 카드에 렌더. 단위/렌더 테스트 추가, APP_VERSION/CACHE 동기 범프.",
       "commit": null
     }
   ]
