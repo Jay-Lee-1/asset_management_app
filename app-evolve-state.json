@@ -1,6 +1,6 @@
 {
   "cycle": 266,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
     {
@@ -141,6 +141,13 @@
       "phase": "develop",
       "timestamp": "2026-10-29T12:33:41.000Z",
       "summary": "fork 서브에이전트로 탐색한 결과, cycle265 advance가 신설한 부분매도 실현손익(realizedGainForSale) 기록이 openAssetQtyLog 각 행에만 표시되고, 한 자산을 여러 번 나눠 판 경우 전체 합계를 보여줄 데가 없어 사용자가 각 기록을 일일이 더해야 하는 공백을 발견. logic.js에 순수 함수 totalRealizedGain(items) 신설(realizedGain!=null인 기록만 합산, 하나도 없으면 null — goalProgress/debtPayoffProjection과 동일하게 0과 모름을 구분). index.html openAssetQtyLog가 이 합계를 investGainLossCard와 동일한 색상 규칙(var(--income)/var(--expense))으로 시트 상단에 카드로 보여주게 배선. APP_VERSION 1.47.274->1.47.275, sw.js CACHE v541->v542 동기 범프. test/run.js에 totalRealizedGain 단위 테스트 3건 추가(2218->2221). node test/run.js 2221/2221 통과, node --check(logic.js/test/run.js) 및 HTML 주석 제거 후 추출한 index.html 인라인 스크립트 3블록 구문 검증 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 266,
+      "phase": "review",
+      "timestamp": "2026-10-29T13:05:00.000Z",
+      "summary": "cycle266 develop 커밋(399ac71, openAssetQtyLog 시트 상단에 누적 실현손익 카드 totalRealizedGain 추가)을 검토. totalRealizedGain이 items를 받아 realizedGain!=null인 기록만 더하고 하나도 없으면 null을 반환하는 것을 코드로 확인 — 대상 items가 호출부(openAssetQtyLog)에서 이미 assetId로 필터된 배열이라 다른 자산의 기록이 섞여 합산될 위험이 없음. 색상 규칙(totalGain>=0?var(--income):var(--expense))이 investGainLossCard의 up=gl.amount>=0 패턴과 정확히 일치함을 대조 확인. comma()가 음수에 '-'를 포함해 표시하므로 손실 합계도 올바르게 보임. node test/run.js 독립 재실행 결과 2221/2221 통과, node --check(logic.js/sw.js/test/run.js) 통과, APP_VERSION(1.47.275)/sw.js CACHE(v542) 동기화 확인. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
