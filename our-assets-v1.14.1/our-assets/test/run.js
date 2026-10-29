@@ -13974,6 +13974,13 @@ test('duplicateTx: confirmed 필드를 지워 saveTx()가 새 날짜 기준으�
   sandbox.duplicateTx('t2');
   assert.strictEqual('confirmed' in sandbox.txDraft, false, '복제 draft엔 원본의 confirmed가 남아있지 않아야 함');
 });
+test('duplicateTx: photo(영수증 사진) 필드를 지워 복제본이 원본 영수증을 그대로 들고가지 않는다(app-evolve cycle263 develop)', () => {
+  sandbox.TODAY = '2026-03-10';
+  sandbox.DB = { assets: [], txns: [{ id: 't2b', type: 'expense', date: '2026-01-05', category: '카페', memo: '', amount: 4500, fromAssetId: 'a1', toAssetId: null, photo: 'data:image/jpeg;base64,AAAA' }] };
+  sandbox.duplicateTx('t2b');
+  assert.strictEqual('photo' in sandbox.txDraft, false, '복제 draft엔 원본의 영수증 사진이 남아있지 않아야 함(다른 날짜의 다른 지출이므로)');
+  assert.strictEqual(sandbox.DB.txns[0].photo, 'data:image/jpeg;base64,AAAA', '원본 레코드의 photo는 그대로 유지돼야 함');
+});
 test('duplicateTx: 잔액조정(adjust) 레코드는 복제 대상에서 제외된다', () => {
   sandbox.TODAY = '2026-03-10';
   sandbox.DB = { txns: [{ id: 't3', type: 'expense', date: '2026-01-05', category: '잔액조정', memo: '', amount: 1000, adjust: true, adjustAsset: 'a1' }] };

@@ -1,15 +1,8 @@
 {
   "cycle": 263,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 258,
-      "phase": "develop",
-      "timestamp": "2026-10-28T00:00:00.000Z",
-      "summary": "fork 서브에이전트로 코드베이스를 탐색한 결과, cycle257 advance가 신설한 debtsPaidOff()(index.html)가 '완납 전 가장 많이 빚졌던 금액'(peak)을 assetBalanceSeries(...,assetBalSampleDates(RANGE_FROM,TODAY,60))의 60개 샘플 포인트 중 최댓값으로 구하는 버그를 발견 — RANGE_FROM(2023-01-01)~TODAY 구간이 60개보다 훨씬 길어(실제로는 약 20여 일 간격) 그 틈새에서 반짝 빚이 늘었다가 다 갚이는(카드 단기 사용 등 흔한 패턴) 경우 스파이크가 어느 샘플에도 걸리지 않아 피크가 조용히 축소(심하면 0까지)돼 보이는 버그였음. 잔액은 거래가 없는 동안 상수(계단함수)라 진짜 최대값은 항상 거래 직후 시점에만 나타난다는 점을 이용해, 날짜 샘플링 없이 거래를 전부 순회해 정확한 최댓값을 구하는 새 순수함수 assetBalancePeak(txns,assetId,base,sign)를 logic.js에 신설(assetBalanceSeries 바로 뒤)하고, debtsPaidOff()의 peak 계산만 이걸로 교체(debtPayoffProjection이 쓰는 추세 투사는 근사치로 의도된 설계라 그대로 둠). index.html/logic.js 변경이라 APP_VERSION 1.47.258->1.47.259, sw.js CACHE v525->v526 동기 범프. test/run.js: assetBalancePeak 단위 테스트 4건(거래 없음/일반자산 최고점 유지/부채 최고점/샘플링 간격보다 짧은 스파이크를 샘플링 기반 assetBalanceSeries는 놓치지만 assetBalancePeak는 정확히 잡아낸다는 대조 테스트), homeAlerts의 debtPaidOff.amount가 실제 샘플 간격 틈에 낀 스파이크에도 정확한 피크를 보여주는 회귀 테스트 1건 — 총 5건 추가(2142->2147). node test/run.js 2147/2147 통과, node --check(logic.js/test/run.js) 통과. 커밋 cd359e7, origin/main에 push 완료(로컬 main 브랜치 ref가 이전 세션에서 detached 상태로 낡아 있던 것도 같이 복구).",
-      "commit": "cd359e7"
-    },
     {
       "cycle": 258,
       "phase": "review",
@@ -105,7 +98,7 @@
       "cycle": 261,
       "phase": "critique",
       "timestamp": "2026-10-28T18:05:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(budget/goal/debt payoff projection/연간 결산/자산 비중/실시간 시세 연동/캘린더형 가계부/CSV 중복검사/클라우드 동기화 충돌 알림까지 이미 폭넓게 구현돼 있음을 확인)한 결과, 거래/자산/메모 어디에도 영수증·증빙 사진을 첨부할 방법이 전혀 없는(accept=\"image/*\" input 자체가 없음) 공백을 발견. 러너업: 부채 상환 추가 납입 시뮬레이터(what-if), 투자자산 목표 비중 리밸런싱 알림, 기존 러너업(PDF 명세서/접근성 전수조사/아카이브 선제 안내) 유지, APPLOCK PIN 전체 DB 암호화 재추진 금지 유지. 채택 계획(거래에 영수증 사진 첨부: photo dataURL 필드, canvas 리사이즈/압축 캡, renderTxSheet/txRowCore/saveTx 배선, CSV 내보내기·복사백업 제외하고 JSON/클라우드 동기화에만 포함)을 pending_advance_plan에 저장. 코드 변경 없음.",
+      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(budget/goal/net worth trend/bulk select/투자자산 cost-basis P/L까지 이미 성숙함을 확인, APPLOCK PIN 전체 DB 암호화 재추진 금지 유지)한 결과, 이미 절반쯔 구현돼 있는 debtPayoffProjection(추세 기반 '이 속도면 언제 다 갚는다' 관찰형 투사)의 자연스러운 확장인 부채 상환 추가 납입 시뮬레이터(what-if: '매달 얼마 더 갚으면 언제 끝나는지')가 과거 두 cycle(258/261)에서 러너업으로 반복 거론됐으나 아직 구현되지 않았음을 확인 — debt 자산에 interestRate/APR 필드가 없어(grep 확인) 진짜 상환계산은 스키마 확장이 필요하지만, 추세-기반 what-if는 기존 debtPayoffRate 추출만으로 스키마 변경 없이 가능함. 러너업: 투자자산 목표비중 리밸런싱 알림(target% 필드 신규 필요, 보류), 홈 알림의 실제 OS 푸시 알림화(서버 측 VAPID 필요, 큰 작업), 기존 러너업(PDF 명세서/접근성 전수조사) 유지. 채택 계획(debtPayoffRate 추출 + debtPayoffWhatIf 신설 + assetBalCard에 입력/경량 업데이트 배선)을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     },
     {
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-28T23:10:00.000Z",
       "summary": "critique(cycle262) 계획대로 부채 상환 추가 납입 시뮬레이터(what-if)를 구현. logic.js: debtPayoffProjection이 쓰던 '최근 90일 창 처음·끝 두 점 선형 일별 감소율' 계산을 순수함수 debtPayoffRate(pts,today,trendWindowDays)로 추출(debtPayoffProjection은 이를 호출하도록 리팩터, 기존 debtPayoffProjection 테스트 전부 그대로 통과 확인 — 동작 불변). debtPayoffWhatIf(pts,today,extraPerMonth,trendWindowDays) 신설 — baseRate=max(0,debtPayoffRate(...))(악화 추세가 추가 납입분을 깎아먹지 않게), effectiveRate=baseRate+extra/30, extra=0이면 debtPayoffProjection과 항상 같은 projectedDate. index.html: assetBalCard() 안의 인라인 pfFrom/pfPts 계산(preset과 무관한 고정 90일 재샘플링)을 공유 헬퍼 debtPayoffPtsFor(a)로 추출(기존 pfFrom===from 재사용 최적화는 버리고 항상 재샘플링 — 같은 입력이면 같은 값이라 출력 불변, 순수 리팩터)하고 debtWhatIfUpdate(assetId)가 카드 재렌더 없이도 같은 포인트를 쓸 수 있게 함. debt 미완납 상태에만 '매달 추가로 얼마씩 더 갚으면?' 입력 필드(.field-clear/fmtAmt 패턴 재사용, ST.hist.debtWhatIfExtra에 보존)를 추가하고 oninput으로 debtWhatIfUpdate가 결과 div#debtWhatIfResult의 textContent만 갱신(assetBalPeek류 경량 업데이트, 베이스라인과 비교한 '약 N개월 빨라져요' 표시 포함). assetBalPresetSel(기간 세그먼트 전환)에도 fcWire() 호출을 추가해 재렌더되는 입력의 지우기(×) 버튼이 계속 배선되게 함. openAssetHistory가 다른 debt로 넘어갈 때 ST.hist.debtWhatIfExtra를 0으로 리셋(새어듦 방지). 기존 '소스 패턴' 테스트 하나(assetBalCard가 pfFrom을 인라인 계산한다고 가정)는 추출된 구조에 맞게 debtPayoffPtsFor 쪽을 보도록 갱신. APP_VERSION 1.47.267->1.47.268, sw.js CACHE v534->v535 동기 범프. test/run.js: debtPayoffRate 3건+debtPayoffWhatIf 4건(achieved/extra=0 베이스라인 동일/악화추세+extra>0/단조성)+[실행형] assetBalCard what-if 필드 렌더링 2건(기본값/양수 입력값 반영)+완납 상태엔 필드 없음 1건+debtWhatIfUpdate 실행형 2건+openAssetHistory 리셋 1건 추가(2174->2185). node test/run.js 2185/2185 통과, node --check(logic.js/sw.js/test/run.js) 및 HTML 주석 제거 후 추출한 index.html 인라인 스크립트 4블록 구문 검증 통과. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 263,
+      "phase": "develop",
+      "timestamp": "2026-10-29T00:00:00.000Z",
+      "summary": "fork 서브에이전트로 탐색한 결과, duplicateTx()(index.html:5132, '복제(빠른 재입력)')가 confirmed/updatedAt은 지우면서 cycle261에서 신설된 photo(영수증 사진 dataURL) 필드는 그대로 복사해, 다른 날짜의 다른 지출을 복제해도 원본 영수증 사진이 새 draft에 그대로 붙어오는 공백을 발견 — 서로 다른 구매를 나타내는데 같은 영수증 사진을 공유하게 돼 혼란스럽고, 저장 시 DB.txns의 base64 이미지가 조용히 두 배로 쌓임(DB_JSON_LEN/STORAGE_SIZE_WARN_LEN이 이미 용량을 추적하는 민감 영역). duplicateTx()의 필드 삭제 줄에 delete d.photo; 추가. index.html만 변경이라 APP_VERSION 1.47.268->1.47.269, sw.js CACHE v535->v536 동기 범프. test/run.js에 duplicateTx가 photo를 지우고 원본 레코드는 그대로 유지한다는 회귀 테스트 1건 추가(2185->2186, 기존 confirmed 테스트 바로 옆). node test/run.js 2186/2186 통과, node --check(logic.js/sw.js/test/run.js) 및 HTML 주석 제거 후 추출한 index.html 인라인 스크립트 5블록 구문 검증 통과.",
       "commit": null
     }
   ]
