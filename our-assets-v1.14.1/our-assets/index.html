@@ -1416,7 +1416,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.269';
+const APP_VERSION='1.47.270';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1570,6 +1570,7 @@ const I={
  cake:'<path d="M4 21h16M5 21v-7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v7M4 16c1.5 0 1.5 1.4 3 1.4S8.5 16 10 16s1.5 1.4 3 1.4S14.5 16 16 16s1.5 1.4 3 1.4"/><path d="M12 8.5V6M9 9V7M15 9V7"/>',
  ticket:'<path d="M4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2 2 2 0 0 0 0 4 2 2 0 0 1-2 2H6a2 2 0 0 1-2-2 2 2 0 0 0 0-4z"/><path d="M13 6.5v11"/>',
  repeat:'<path d="M4 8h12a4 4 0 0 1 4 4M4 8l3-3M4 8l3 3"/><path d="M20 16H8a4 4 0 0 1-4-4M20 16l-3 3M20 16l-3-3"/>',
+ merge:'<path d="M7 4v5a5 5 0 0 0 10 0V4"/><path d="M12 14v6"/><path d="M9 17l3 3 3-3"/>',
  download:'<path d="M12 4v11M8 11l4 4 4-4M5 20h14"/>',restore:'<path d="M12 20v-11M8 13l4-4 4 4M5 4h14"/>',
  help:'<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 0 1 4.5 1.5c0 2-2.5 2-2.5 3.5"/><circle cx="12" cy="17.5" r=".6" fill="currentColor"/>',
  info:'<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><circle cx="12" cy="8" r=".7" fill="currentColor"/>',
@@ -6560,7 +6561,8 @@ function openCatManage(kind,keep){
     const isSysAdjust=k==='income'&&c===ADJUST_CAT; /* 거래에서 자동 생성되는 시스템 카테고리 — 이름변경/삭제 못 하게 액션 대신 안내만 보여준다 */
     const varPill=k==='saving'?'':`<button class="varpill ${isVarCat(k,c)?'on':''}" aria-label="${esc(c)} 변동 카테고리 설정" aria-pressed="${isVarCat(k,c)}" onclick="toggleCatVarUI('${k}',${i},this)">${isVarCat(k,c)?'변동':'고정'}</button>`;
     const rollPill=k==='expense'?`<button class="varpill ${isBudgetRolloverCat(c)?'on':''}" aria-label="${esc(c)} 예산 이월 설정" aria-pressed="${isBudgetRolloverCat(c)}" onclick="toggleBudgetRolloverUI(${i},this)">${isBudgetRolloverCat(c)?'이월':'이월 안함'}</button>`:''; /* 예산 이월은 지출 카테고리에만 있는 설정(saving/income 대상 아님) — budgetHistory와 동일한 범위 */
-    const acts=isSysAdjust?`<span class="mini">자동 생성</span>`:`<div class="row-acts"><button class="act-btn" aria-label="${esc(c)} 수정" onclick="renameCatSheet('${k}',${i})">${svg('edit')}</button><button class="act-btn danger" aria-label="${esc(c)} 삭제" onclick="delCat('${k}',${i})">${svg('trash')}</button></div>`;
+    const canMerge=!isSysAdjust&&DB.categories[k].some((x,xi)=>xi!==i&&!(k==='income'&&x===ADJUST_CAT)); /* 합칠 대상이 하나도 없으면(자기 자신뿐이거나, income에서 나머지가 ADJUST_CAT뿐이면) 버튼을 숨긴다 */
+    const acts=isSysAdjust?`<span class="mini">자동 생성</span>`:`<div class="row-acts">${canMerge?`<button class="act-btn" aria-label="${esc(c)} 다른 카테고리로 합치기" onclick="openCatMergePicker('${k}',${i})">${svg('merge')}</button>`:''}<button class="act-btn" aria-label="${esc(c)} 수정" onclick="renameCatSheet('${k}',${i})">${svg('edit')}</button><button class="act-btn danger" aria-label="${esc(c)} 삭제" onclick="delCat('${k}',${i})">${svg('trash')}</button></div>`;
     const moveBtns=isSysAdjust?'':`<div class="grp-move"><button type="button" class="grp-move-btn" aria-label="${esc(c)} 위로 이동" onclick="moveCat('${k}',${i},-1)"${i===0?' disabled':''}>${svg('arrowUp')}</button><button type="button" class="grp-move-btn" aria-label="${esc(c)} 아래로 이동" onclick="moveCat('${k}',${i},1)"${i===DB.categories[k].length-1?' disabled':''}>${svg('arrowDn')}</button></div>`;
     return `<div class="manage-row"><div class="avatar ${avCls}" style="width:36px;height:36px;border-radius:11px">${catGlyph(k,c,18,'tag')}</div><div class="mn">${esc(c)}</div>${isSysAdjust?'':varPill}${rollPill}${moveBtns}${acts}</div>`;
    }).join('')}</div>
@@ -6655,6 +6657,99 @@ function doRenameCat(k,i){const v=((catRenameDraft.name!=null?catRenameDraft.nam
   if(ST.hist&&ST.hist.catExact===old&&(ST.hist.catExactType||'expense')===k)ST.hist.catExact=v; /* 전체내역 탭의 분석화면 카테고리 드릴다운 필터(ST.hist.catExact, openCatHistory/openIncomeCatHistory가 세팅하고 ST.hist.catExactType으로 유형을 구분·필터 자체는 filteredHist의 (H.catExactType||'expense') 규칙과 동일)가 doRenameOwner의 ST.hist.owner와 똑같은 사연으로 낡은 이름에 남아있었다 — DB.txns는 위에서 이미 새 이름으로 옮겼으므로, 그 상태로 전체내역 탭에 돌아가면 칩은 새 이름이 아니라 옛 이름을 보여주면서 필터(t.category===old 그대로)는 어떤 거래와도 안 맞아 내역이 영원히 빈 화면으로 보인다(app-evolve cycle182). catExactType이 없던(과거 expense 전용) 데이터도 ||'expense' 기본값으로 그대로 맞으므로 수입 카테고리 이름변경이 지출 전용 필터를 잘못 건드리지 않는다 */
  }
  save();renderCurrent();openCatManage(k);toast('카테고리를 수정했어요')}
+
+/* 합치기 전 영향 범위를 보여주는 집계(app-evolve cycle263 critique 계획) — activeRecsForCat과
+ * 달리 비활성 반복거래도 포함한다. mergeCatInto는 doDeleteCat처럼 반복거래를 비활성화하지 않고
+ * 활성 상태를 그대로 유지한 채 category만 옮기므로, 비활성 반복거래도 '영향받는' 것이 맞다. */
+function catMergeCounts(k,from){
+ const txCount=DB.txns.filter(t=>t.type===k&&(Array.isArray(t.splits)&&t.splits.length?(t.category===from||t.splits.some(s=>s.category===from)):t.category===from)).length;
+ const recCount=DB.recurrences.filter(r=>r.type===k&&r.category===from).length;
+ return{txCount,recCount};
+}
+/* openCatManage 각 행의 합치기(merge) 버튼 → 대상 카테고리 피커. 기존 openCatPicker(txOpenCat 등이
+ * 이미 쓰는)를 그대로 재사용하되, 자기 자신(그리고 income이면 ADJUST_CAT)을 대상 목록에서
+ * 빼야 해 catFilteredGrid/openCatPicker에 exclude를 새로 추가했다(위 참고). */
+function openCatMergePicker(k,i){
+ const from=DB.categories[k][i];
+ const exclude=k==='income'?[from,ADJUST_CAT]:[from];
+ openCatPicker({kind:k,current:null,exclude,back:()=>openCatManage(k),onPick:to=>confirmCatMerge(k,i,to)});
+}
+function confirmCatMerge(k,i,to){
+ const from=DB.categories[k][i];
+ const{txCount,recCount}=catMergeCounts(k,from);
+ const impact=txCount||recCount?` 내역 ${txCount}건`+(recCount?`·반복거래 ${recCount}개`:'')+`가 '${esc(to)}'로 옮겨가요.`:' 연결된 내역이 없어요.';
+ confirmSheet('카테고리 합치기',`'${esc(from)}' 카테고리를 '${esc(to)}'에 합칠까요?`+impact,'합치기',()=>mergeCatInto(k,i,to));
+}
+/* 카테고리 합치기 — doRenameCat의 마이그레이션(txns/splits/recurrences 이동, memo 동행,
+ * catTombKey 톰스톤)을 거의 그대로 재사용하지만 대상(toName)이 새 이름이 아니라 이미 존재하는
+ * 다른 카테고리라는 점이 다르다(app-evolve cycle263 critique 계획). doDeleteCat과 달리 연결된
+ * 반복거래를 비활성화하지 않고 합쳐진 카테고리로 그대로 이어 쓴다 — 삭제가 아니라 통합이므로
+ * 발생은 계속돼야 맞다. catIcon/catVar/catBudgetRollover는 대상(toName)이 이미 가진 설정을
+ * 그대로 두고 from 쪽만 지운다(합치기는 "역사를 한쪽으로 모으는" 것이지 "대상의 아이콘·스타일을
+ * 바꾸는" 것이 아니라서, rename처럼 그대로 이동시키면 사용자가 공들여 골라둔 대상의 설정을
+ * 조용히 덮어쓰게 됨). budgetHistory(시점별 예산 한도)만은 실제 숫자 데이터라 두 쪽 다 버리면
+ * 안 되므로 logic.js의 mergeBudgetHistory를 같은 key(toName)로 재사용해 from 월(from)/toName의
+ * from(월) 키 유니온으로 합치고, 같은 달에 둘 다 있으면 mergeBudgetHistory의 "local 우선" 규칙을
+ * 그대로 써 대상(toName) 쪽 값이 이긴다. */
+function mergeCatInto(k,i,toName){
+ const from=DB.categories[k][i];
+ if(from==null||from===toName||!DB.categories[k].includes(toName))return;
+ if(k==='income'&&(from===ADJUST_CAT||toName===ADJUST_CAT)){toast('자동으로 생성되는 카테고리는 합칠 수 없어요');return}
+ if(DB.categories[k].length<=1){toast('카테고리는 최소 1개가 필요해요');return}
+ DB.catIcon=DB.catIcon||{};DB.catVar=DB.catVar||{};DB.budgetHistory=DB.budgetHistory||{};DB.catBudgetRollover=DB.catBudgetRollover||{};
+ const icon=DB.catIcon[catKey(k,from)];const wasVar=isVarCat(k,from);
+ const hadBudget=k==='expense'&&from in DB.budgetHistory;const fromBudget=hadBudget?DB.budgetHistory[from]:undefined;
+ const toBudgetBefore=(k==='expense'&&toName in DB.budgetHistory)?DB.budgetHistory[toName].slice():undefined;
+ const wasRollover=k==='expense'&&isBudgetRolloverCat(from);
+ const txItems=[];
+ DB.txns.forEach(t=>{ /* doRenameCat과 동일한 분할/최상위 category 이동 규칙 — 복원을 위해 바뀐 레코드만 이전 값과 함께 모아둔다 */
+  if(t.type!==k)return;
+  const prevCat=t.category,prevMemo=t.memo,prevSplits=Array.isArray(t.splits)?t.splits.map(s=>s.category):null;
+  let changed=false;
+  if(Array.isArray(t.splits)&&t.splits.length){
+   t.splits.forEach(s=>{if(s.category===from){s.category=toName;changed=true}});
+   if(t.category===from){t.category=toName;changed=true}
+  }else if(t.category===from){t.category=toName;changed=true}
+  if(changed){if(t.memo===from)t.memo=toName;txItems.push({t,prevCat,prevMemo,prevSplits})}
+ });
+ const recItems=[];
+ DB.recurrences.forEach(r=>{ /* doDeleteCat과 달리 active는 그대로 두고 category만 옮긴다 */
+  if(r.type!==k||r.category!==from)return;
+  const prevCat=r.category,prevMemo=r.memo;
+  r.category=toName;if(r.memo===from)r.memo=toName;
+  recItems.push({r,prevCat,prevMemo});
+ });
+ if(k==='expense'){
+  if(hadBudget||toName in DB.budgetHistory){
+   const merged=mergeBudgetHistory({[toName]:DB.budgetHistory[toName]||[]},{[toName]:fromBudget||[]})[toName];
+   if(merged.length)DB.budgetHistory[toName]=merged;else delete DB.budgetHistory[toName];
+  }
+  delete DB.budgetHistory[from];
+  delete DB.catBudgetRollover[catKey('expense',from)];
+ }
+ delete DB.catIcon[catKey(k,from)];
+ delete DB.catVar[catKey(k,from)];
+ DB.categories[k].splice(i,1);
+ DB.deletedIds=DB.deletedIds||{};DB.deletedIds[catTombKey(k,from)]=Date.now(); /* doDeleteCat과 동일한 톰스톤 — 없으면 아직 이 합치기를 모르는 다른 기기의 사본이 from을 되살림 */
+ const hadExactFilter=ST.hist&&ST.hist.catExact===from&&(ST.hist.catExactType||'expense')===k; /* doRenameCat과 동일한 전체내역 드릴다운 필터 보정(app-evolve cycle182) */
+ if(hadExactFilter)ST.hist.catExact=toName;
+ touchSave(...txItems.map(x=>x.t),...recItems.map(x=>x.r));renderCurrent();openCatManage(k);
+ undoToast(`'${from}' 카테고리를 '${toName}'에 합쳤어요`+(txItems.length||recItems.length?` · 내역 ${txItems.length}건·반복거래 ${recItems.length}개 복원`:''),()=>{
+  txItems.forEach(({t,prevCat,prevMemo,prevSplits})=>{t.category=prevCat;t.memo=prevMemo;if(prevSplits)t.splits.forEach((s,idx)=>{s.category=prevSplits[idx]})});
+  recItems.forEach(({r,prevCat,prevMemo})=>{r.category=prevCat;r.memo=prevMemo});
+  DB.categories[k].splice(i,0,from);
+  if(icon)DB.catIcon[catKey(k,from)]=icon;
+  if(wasVar)DB.catVar[catKey(k,from)]=true;
+  if(k==='expense'){
+   if(hadBudget){DB.budgetHistory=DB.budgetHistory||{};DB.budgetHistory[from]=fromBudget}
+   if(toBudgetBefore!==undefined)DB.budgetHistory[toName]=toBudgetBefore;else delete DB.budgetHistory[toName];
+  }
+  if(wasRollover)DB.catBudgetRollover[catKey('expense',from)]=true;
+  delete DB.deletedIds[catTombKey(k,from)];
+  if(hadExactFilter)ST.hist.catExact=from;
+  touchSave(...txItems.map(x=>x.t),...recItems.map(x=>x.r));renderCurrent();openCatManage(k);toast('되돌렸어요')
+ })
+}
 
 function recFreqLabel(r){return recFreqLabelStr(r.freq,r.day,r.startDate)}
 function openRecManage(){
@@ -9731,9 +9826,10 @@ function pkPickCurrency(c){pkChoose(c)}
  * 모양의 {html,any}를 돌려주지만, doDeleteCat이 "최소 1개"를 항상 보장해(카테고리는 절대 0개가 될
  * 수 없음) any는 사실상 늘 true다 — pkEmptyHtml처럼 "원래부터 후보 없음"과 "검색으로 0건"을 구분할
  * 필요가 없어 catEmptyHtml은 검색어 전용 안내만 보여준다(app-evolve cycle253 critique → 254 advance). */
-function catFilteredGrid(kind,current,q){
+function catFilteredGrid(kind,current,q,exclude){
  const avc=catAv(kind);
  let items=catListOf(kind);
+ if(exclude&&exclude.length)items=items.filter(c=>!exclude.includes(c)); /* 카테고리 합치기 피커(openCatMergePicker)가 합칠 카테고리 자신과(income은 ADJUST_CAT도) 대상 목록에서 빼기 위해 씀(app-evolve cycle263 advance) */
  const any=items.length>0;
  if(q)items=items.filter(c=>matchCatQuery(c,q));
  const html=items.map(c=>`<button class="pk-cat ${c===current?'on':''}" data-cat="${esc(c)}"><div class="cav ${avc}">${catGlyph(kind,c,18,'tag')}</div>${esc(c)}</button>`).join('');
@@ -9751,12 +9847,12 @@ function pkCatQInput(v){_pkQ=v;clearTimeout(_pkQT);if(v.trim()===''){refreshPkCa
 function refreshPkCatList(){
  const grid=$('catGrid');if(!grid)return; /* 디바운스 타이머가 피커를 닫은 뒤 늦게 발화할 수 있어 방어 */
  const opts=_pkOpts||{};
- const{html}=catFilteredGrid(opts.kind,opts.current,_pkQ);
+ const{html}=catFilteredGrid(opts.kind,opts.current,_pkQ,opts.exclude);
  grid.innerHTML='<div class="cat-blob" id="catBlob"></div>'+(html||catEmptyHtml(_pkQ));
  moveCatBlob(false);
 }
 function openCatPicker(o){_pkOpts=o;_pkQ='';clearTimeout(_pkQT);_pkQT=null;
- const{html}=catFilteredGrid(o.kind,o.current,'');
+ const{html}=catFilteredGrid(o.kind,o.current,'',o.exclude);
  const showSearch=catListOf(o.kind).length>CAT_PICKER_SEARCH_THRESHOLD;
  const searchBar=showSearch?`<div class="searchbar" style="margin-bottom:14px">${svg('search')}<div class="field-clear"><input id="pkCatQ" aria-label="카테고리 검색" placeholder="카테고리 검색" value="" oninput="pkCatQInput(this.value)"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('pkCatQ')">✕</button></div></div>`:'';
  window._pkPick=o.onPick;

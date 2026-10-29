@@ -193,7 +193,7 @@ function extractMainScript() {
 const FUNCTIONS = [
   'addMonths', 'fetchWithTimeout', 'withTimeout',
   'dateBelowRangeFloor', 'dateAboveRangeCeil', 'recalcEndCond', 'isVarCat', 'setCatVar', 'toggleCatVarUI', 'activeRecsForAssets', 'activeRecsForCat',
-  'num', 'doRenameCat', 'doDeleteCat', 'totalBudgetSummary', 'budgetForMonth', 'setBudgetFrom', 'addCat', 'movedCatOrder', 'moveCat',
+  'num', 'doRenameCat', 'doDeleteCat', 'catMergeCounts', 'openCatMergePicker', 'confirmCatMerge', 'mergeCatInto', 'totalBudgetSummary', 'budgetForMonth', 'setBudgetFrom', 'addCat', 'movedCatOrder', 'moveCat',
   'isBudgetRolloverCat', 'setBudgetRolloverCat', 'toggleBudgetRolloverUI', 'budgetCarryFor', 'budgetForMonthWithCarry',
   'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'assetsToCSV', 'nwHistoryToCSV',
   'unguardCsv', 'csvRowToImportTxn', 'buildImportPreview', 'doCsvImport',
@@ -2688,6 +2688,173 @@ test("doRenameCat: ST.hist.catExactType이 'income'이면 수입 카테고리 �
   sandbox.catRenameDraft = { name: '용돈', icon: '' };
   sandbox.doRenameCat('income', 0);
   assert.strictEqual(sandbox.ST.hist.catExact, '용돈', "catExactType이 'income'이면 수입 카테고리 이름변경도 따라가야 함");
+});
+
+/* ---------- mergeCatInto: 카테고리 합치기(app-evolve cycle263 advance) ---------- */
+test('mergeCatInto: 거래/반복거래의 category가 대상 이름으로 옮겨가고, 반복거래는 doDeleteCat과 달리 비활성화되지 않는다', () => {
+  sandbox.DB = {
+    categories: { expense: ['커피', '식비'] }, catIcon: {}, catVar: {}, budgetHistory: {}, catBudgetRollover: {},
+    txns: [{ id: 't1', type: 'expense', category: '커피', memo: '커피' }],
+    recurrences: [{ id: 'r1', type: 'expense', category: '커피', memo: '커피', active: true }],
+  };
+  sandbox.mergeCatInto('expense', 0, '식비');
+  assert.deepStrictEqual(sandbox.DB.categories.expense, ['식비'], '합쳐진 카테고리는 목록에서 빠져야 함');
+  assert.strictEqual(sandbox.DB.txns[0].category, '식비');
+  assert.strictEqual(sandbox.DB.txns[0].memo, '식비', '메모가 옛 카테고리명과 같았다면(자동 채움) 함께 옮겨야 함');
+  assert.strictEqual(sandbox.DB.recurrences[0].category, '식비');
+  assert.strictEqual(sandbox.DB.recurrences[0].active, true, 'doDeleteCat과 달리 반복거래를 비활성화하면 안 됨');
+});
+test('mergeCatInto: 분할 거래는 from으로 된 항목만 옮기고, 최상위 category(fallback)도 함께 맞춘다', () => {
+  sandbox.DB = {
+    categories: { expense: ['식비', '외식비'] }, catIcon: {}, catVar: {}, budgetHistory: {}, catBudgetRollover: {}, recurrences: [],
+    txns: [{ id: 't1', type: 'expense', category: '식비', memo: '마트', splits: [{ category: '식비', amount: 7000 }, { category: '생활용품', amount: 3000 }] }],
+  };
+  sandbox.mergeCatInto('expense', 0, '외식비');
+  assert.deepStrictEqual(sandbox.DB.txns[0].splits, [{ category: '외식비', amount: 7000 }, { category: '생활용품', amount: 3000 }], '다른 항목은 그대로 둬야 함');
+  assert.strictEqual(sandbox.DB.txns[0].category, '외식비');
+});
+test('mergeCatInto: budgetHistory는 from(월) 키로 유니온되고, 같은 달이 양쪽에 있으면 대상(toName) 값이 이긴다', () => {
+  sandbox.DB = {
+    categories: { expense: ['커피', '식비'] }, catIcon: {}, catVar: {}, catBudgetRollover: {},
+    budgetHistory: {
+      커피: [{ from: '2026-01', amount: 30000 }, { from: '2026-03', amount: 50000 }],
+      식비: [{ from: '2026-01', amount: 200000 }, { from: '2026-02', amount: 210000 }],
+    },
+    txns: [], recurrences: [],
+  };
+  sandbox.mergeCatInto('expense', 0, '식비');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.DB.budgetHistory.식비)), [
+    { from: '2026-01', amount: 200000 },
+    { from: '2026-02', amount: 210000 },
+    { from: '2026-03', amount: 50000 },
+  ], '같은 달(2026-01)은 대상이 이기고, 서로 다른 달은 모두 살아남아야 함');
+  assert.strictEqual('커피' in sandbox.DB.budgetHistory, false, 'from의 예산 이력은 더 이상 남아있으면 안 됨');
+});
+test('mergeCatInto: catIcon/catVar/catBudgetRollover는 대상(toName)이 가진 설정을 그대로 두고, from 쪽만 지운다', () => {
+  sandbox.DB = {
+    categories: { expense: ['커피', '식비'] },
+    catIcon: { 'expense:커피': 'coffee', 'expense:식비': 'restaurant' },
+    catVar: { 'expense:커피': true },
+    catBudgetRollover: { 'expense:커피': true },
+    budgetHistory: {}, txns: [], recurrences: [],
+  };
+  sandbox.mergeCatInto('expense', 0, '식비');
+  assert.strictEqual('expense:커피' in sandbox.DB.catIcon, false, 'from의 아이콘은 지워져야 함');
+  assert.strictEqual(sandbox.DB.catIcon['expense:식비'], 'restaurant', '대상의 아이콘은 그대로 유지돼야 함(from 아이콘으로 덮어쓰면 안 됨)');
+  assert.strictEqual(sandbox.isVarCat('expense', '식비'), false, '대상이 원래 변동 카테고리가 아니었다면 합친 뒤에도 그대로여야 함');
+  assert.strictEqual(sandbox.isBudgetRolloverCat('식비'), false, '대상의 이월 설정도 from 때문에 바뀌면 안 됨');
+});
+test('mergeCatInto: ST.hist.catExact가 from을 보고 있었다면 toName으로 함께 옮겨간다(doRenameCat과 동일한 규칙)', () => {
+  sandbox.DB = { categories: { expense: ['커피', '식비'] }, catIcon: {}, catVar: {}, budgetHistory: {}, txns: [], recurrences: [] };
+  sandbox.ST = { hist: { catExact: '커피', owner: '전체' } };
+  sandbox.mergeCatInto('expense', 0, '식비');
+  assert.strictEqual(sandbox.ST.hist.catExact, '식비');
+});
+test('mergeCatInto: from을 톰스톤해 다른 기기가 되살리지 못하게 한다', () => {
+  sandbox.DB = { categories: { expense: ['커피', '식비'] }, catIcon: {}, catVar: {}, budgetHistory: {}, deletedIds: {}, txns: [], recurrences: [] };
+  sandbox.mergeCatInto('expense', 0, '식비');
+  assert.ok(sandbox.catTombKey('expense', '커피') in sandbox.DB.deletedIds);
+});
+test('mergeCatInto: 카테고리가 1개뿐이면 합칠 수 없다(안전장치)', () => {
+  sandbox.DB = { categories: { expense: ['식비'] }, catIcon: {}, catVar: {}, budgetHistory: {}, txns: [], recurrences: [] };
+  sandbox.lastToast = null;
+  sandbox.mergeCatInto('expense', 0, '식비'); // toName도 목록에 없으므로(자기 자신 제외 시 없음) 어차피 no-op
+  assert.deepStrictEqual(sandbox.DB.categories.expense, ['식비']);
+});
+test('mergeCatInto: 수입의 잔액 조정(ADJUST_CAT)은 from/to 어느 쪽으로도 합칠 수 없다', () => {
+  sandbox.DB = { categories: { income: ['급여', sandbox.ADJUST_CAT] }, catIcon: {}, catVar: {}, budgetHistory: {}, txns: [], recurrences: [] };
+  sandbox.lastToast = null;
+  sandbox.mergeCatInto('income', 1, '급여');
+  assert.deepStrictEqual(sandbox.DB.categories.income, ['급여', sandbox.ADJUST_CAT]);
+  assert.ok(sandbox.lastToast);
+  sandbox.lastToast = null;
+  sandbox.mergeCatInto('income', 0, sandbox.ADJUST_CAT);
+  assert.deepStrictEqual(sandbox.DB.categories.income, ['급여', sandbox.ADJUST_CAT]);
+  assert.ok(sandbox.lastToast);
+});
+test('mergeCatInto: undoToast로 되돌리면 카테고리/거래/반복거래/아이콘/예산/이월설정/톰스톤이 모두 합치기 전 상태로 복원된다', () => {
+  sandbox.DB = {
+    categories: { expense: ['커피', '식비'] },
+    catIcon: { 'expense:커피': 'coffee' },
+    catVar: { 'expense:커피': true },
+    catBudgetRollover: { 'expense:커피': true },
+    budgetHistory: { 커피: [{ from: '2026-01', amount: 30000 }], 식비: [{ from: '2026-02', amount: 200000 }] },
+    deletedIds: {},
+    txns: [{ id: 't1', type: 'expense', category: '커피', memo: '커피' }],
+    recurrences: [{ id: 'r1', type: 'expense', category: '커피', memo: '커피', active: false }],
+  };
+  sandbox.ST = { hist: { catExact: '커피', owner: '전체' } };
+  sandbox.mergeCatInto('expense', 0, '식비');
+  sandbox.lastUndo.undoFn();
+  assert.deepStrictEqual(sandbox.DB.categories.expense, ['커피', '식비'], '원래 순서(index)로 복원돼야 함');
+  assert.strictEqual(sandbox.DB.txns[0].category, '커피');
+  assert.strictEqual(sandbox.DB.txns[0].memo, '커피');
+  assert.strictEqual(sandbox.DB.recurrences[0].category, '커피');
+  assert.strictEqual(sandbox.DB.recurrences[0].active, false, '합치기가 손대지 않았던 active 값도 그대로여야 함');
+  assert.strictEqual(sandbox.DB.catIcon['expense:커피'], 'coffee');
+  assert.strictEqual(sandbox.isVarCat('expense', '커피'), true);
+  assert.strictEqual(sandbox.isBudgetRolloverCat('커피'), true);
+  assert.deepStrictEqual(sandbox.DB.budgetHistory.커피, [{ from: '2026-01', amount: 30000 }]);
+  assert.deepStrictEqual(sandbox.DB.budgetHistory.식비, [{ from: '2026-02', amount: 200000 }], '대상의 예산 이력도 합치기 전 상태로 되돌아가야 함');
+  assert.strictEqual(sandbox.catTombKey('expense', '커피') in sandbox.DB.deletedIds, false);
+  assert.strictEqual(sandbox.ST.hist.catExact, '커피');
+});
+
+/* ---------- catMergeCounts: 합치기 확인 시트가 보여주는 영향 범위 집계 ---------- */
+test('catMergeCounts: 최상위 category/분할 거래/반복거래(비활성 포함)를 모두 센다', () => {
+  sandbox.DB = {
+    txns: [
+      { type: 'expense', category: '커피' },
+      { type: 'expense', category: '식비', splits: [{ category: '커피', amount: 1000 }, { category: '생활용품', amount: 2000 }] },
+      { type: 'expense', category: '식비' },
+      { type: 'income', category: '커피' }, // 다른 타입이라 제외돼야 함
+    ],
+    recurrences: [
+      { type: 'expense', category: '커피', active: true },
+      { type: 'expense', category: '커피', active: false },
+      { type: 'expense', category: '식비', active: true },
+    ],
+  };
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.catMergeCounts('expense', '커피'))), { txCount: 2, recCount: 2 });
+});
+test('catMergeCounts: 연결된 내역이 없으면 0/0을 돌려준다', () => {
+  sandbox.DB = { txns: [], recurrences: [] };
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.catMergeCounts('expense', '커피'))), { txCount: 0, recCount: 0 });
+});
+
+/* ---------- confirmCatMerge/openCatMergePicker: 합치기 진입점 와이어링 ---------- */
+test('confirmCatMerge: confirmSheet에 영향받는 내역/반복거래 건수를 안내하고, 확인을 누르면 mergeCatInto가 실행된다', () => {
+  sandbox.DB = {
+    categories: { expense: ['커피', '식비'] }, catIcon: {}, catVar: {}, budgetHistory: {},
+    txns: [{ id: 't1', type: 'expense', category: '커피' }],
+    recurrences: [{ id: 'r1', type: 'expense', category: '커피', active: true }],
+  };
+  sandbox.confirmSheetCalls = [];
+  sandbox.confirmCatMerge('expense', 0, '식비');
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 1);
+  assert.ok(/내역 1건/.test(sandbox.confirmSheetCalls[0].msg) && /반복거래 1개/.test(sandbox.confirmSheetCalls[0].msg));
+  assert.deepStrictEqual(sandbox.DB.categories.expense, ['커피', '식비'], '확인 전에는 아직 합쳐지면 안 됨');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.deepStrictEqual(sandbox.DB.categories.expense, ['식비'], '확인을 누르면 실제로 합쳐져야 함');
+});
+test('openCatMergePicker: 자기 자신을 대상 목록에서 빼고 카테고리 피커를 연다', () => {
+  sandbox.DB = { categories: { expense: ['커피', '식비', '교통비'] } };
+  sandbox._pkOpts = null;
+  sandbox.openCatMergePicker('expense', 0);
+  assert.strictEqual(sandbox._pkOpts.kind, 'expense');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox._pkOpts.exclude)), ['커피']);
+});
+test('openCatMergePicker: income은 자기 자신과 ADJUST_CAT을 모두 대상 목록에서 뺀다', () => {
+  sandbox.DB = { categories: { income: ['급여', '용돈', sandbox.ADJUST_CAT] } };
+  sandbox._pkOpts = null;
+  sandbox.openCatMergePicker('income', 0);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox._pkOpts.exclude)), ['급여', sandbox.ADJUST_CAT]);
+});
+test('catFilteredGrid: exclude로 넘긴 카테고리명은 피커 그리드에 그려지지 않는다', () => {
+  sandbox.DB = { categories: { expense: ['커피', '식비', '교통비'] } };
+  const { html } = sandbox.catFilteredGrid('expense', null, '', ['커피']);
+  assert.ok(!html.includes('data-cat="커피"'));
+  assert.ok(html.includes('data-cat="식비"') && html.includes('data-cat="교통비"'));
 });
 
 /* ---------- delOwner: 귀속 삭제도 delCat/delTx처럼 undo 가능해야 한다 (cycle28) ---------- */

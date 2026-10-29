@@ -1,24 +1,13 @@
 {
-  "cycle": 263,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "카테고리 합치기(merge) 기능 신설",
-    "why": "openCatManage에 rename(doRenameCat)과 delete(doDeleteCat)만 있고 merge가 없어, 중복/유사 카테고리(예: 커피/카페)가 생기면 내역을 한쪽으로 합칠 방법이 없다 — rename은 한쪽 이름을 지울 뿐 두 역사를 못 합치고, delete는 연결 내역을 카테고리 목록에서 고아로 만든다(기존 내역의 이름 문자열만 남고 반복거래는 비활성화됨). 예산/지출분석/검색 집계가 두 이름으로 쪼개진 채 계속 과소집계된다.",
-    "approach": "mergeCatInto(k,fromName,toName) 신설 — doRenameCat이 이미 하는 마이그레이션(DB.txns 및 t.splits[].category 이동, DB.recurrences 이동, catIcon/catVar/catBudgetRollover 이동 또는 대상 설정 우선 유지, budgetHistory 병합, catTombKey 톰스톤, ST.hist.catExact 보정)을 거의 그대로 재사용하되 target은 기존 카테고리명. doDeleteCat과 달리 recs를 비활성화하지 않고 r.category=toName으로 이동. UI: openCatManage() 각 행에 \"다른 카테고리로 합치기\" 진입점 추가 → 대상 카테고리 picker(같은 kind 내 자기 자신 제외) → 영향받는 내역/반복거래 건수를 보여주는 confirmSheet → mergeCatInto 호출 → undoToast로 되돌리기 지원(doDeleteCat과 동일 패턴). test/run.js에 splits 포함/budgetHistory 병합/rollover 유지/톰스톤/ST.hist.catExact 보정 등 doRenameCat 테스트와 대칭되는 회귀 테스트 추가."
-  },
+  "cycle": 264,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 258,
-      "phase": "advance",
-      "timestamp": "2026-10-28T06:00:00.000Z",
-      "summary": "critique(cycle258) 계획대로 반복 내역 월 총액 합계 표시를 구현. logic.js에 순수함수 monthlyEquivalent(r) 신설(monthly->amount, weekly->amount*365/7/12, daily->amount*365/12, yearly->amount/12; active 필터링은 호출부 책임). index.html openRecManage()에서 그룹(지출/수입/저축/내부이체)별로 active 반복만 합산해 menu-cap 옆에 '월 약 N원' 표시, 지출 그룹 합계로 상단에 '매달 약 N원이 고정으로 나가요' 요약 카드 추가. APP_VERSION 1.47.259->1.47.260, sw.js CACHE v526->v527 동기 범프. test/run.js에 monthlyEquivalent 단위 테스트 5건 추가(2147->2152). node test/run.js 2152/2152 통과, node --check(logic.js/test/run.js) 통과. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 259,
       "phase": "develop",
       "timestamp": "2026-10-28T08:16:10.481Z",
-      "summary": "범용(은행/카드사) CSV 가져오기의 mapGenericCsvRow(logic.js)이 signed 모드 금액 열에서 쉼표만 벗겨내고 회계 표기 괄호(\"(5,000)\"=음수)는 전혀 인식하지 못해, 그런 행이 전부 error:amount로 가져오기에서 빠지는 공백을 발견 — 해외카드 이용내역 등에서 흔한 음수 표기 방식. parseNum이 전체 문자열이 괄호로 감싸였으면 벗기고 음수로 뒤집도록 수정(괄호 안쪽이 숫자가 아니거나 빈 괄호면 그대로 NaN/0으로 걸러짐, split 모드 동작은 변화 없음). APP_VERSION 1.47.260->1.47.261, sw.js CACHE v527->v528 동기 범프. test/run.js에 괄호쉼표/괄호단독/빈괄호 케이스 3건 추가(2152->2155). node test/run.js 2155/2155 통과, node --check(logic.js/test/run.js) 및 index.html 인라인 스크립트 4블록 구문 검증 통과.",
+      "summary": "범용(은행/카드사) CSV 가져오기의 mapGenericCsvRow(logic.js)이 signed 모드 금액 열에서 쉼표만 벗겨내고 회계 표기 괄호(\"(5,000)\"=음수)는 전혀 인식하지 못해, 그런 행이 전부 error:amount로 가져오기에서 빠지는 공백을 발견 — 해외카드 이용내역 등에서 흔한 음수 표기 방식. parseNum이 전체 문자열이 괄호로 감싸졌으면 벗기고 음수로 뒤집도록 수정(괄호 안쪽이 숫자가 아니거나 빈 괄호면 그대로 NaN/0으로 걸러짐, split 모드 동작은 변화 없음). APP_VERSION 1.47.260->1.47.261, sw.js CACHE v527->v528 동기 범프. test/run.js에 괄호쉼표/괄호단독/빈괄호 케이스 3건 추가(2152->2155). node test/run.js 2155/2155 통과, node --check(logic.js/test/run.js) 및 index.html 인라인 스크립트 4블록 구문 검증 통과.",
       "commit": "b3edf58"
     },
     {
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-29T02:10:08.898Z",
       "summary": "general-purpose 수준으로 앱 전반을 재탐색(스와이프-공개 UI 흔적인 .swipe.open CSS/openSwipeRow 변수가 실제로는 어디서도 쓰이지 않는 죽은 코드임을 확인 — 러너업으로만 기록, 범위가 작아 develop/review 몫), 순자산/목표 추이 기반 투사(goalProgress/debtPayoffProjection)가 이미 성숙해 별도 현금흐름 예측 기능은 중복으로 판단, SRI TODO(index.html:1384)는 이 컨테이너 네트워크 정책상 여전히 불가로 재확인)한 결과, openCatManage에 카테고리 rename(doRenameCat)·delete(doDeleteCat)은 있지만 merge가 없어 중복 카테고리의 내역/반복거래/예산이력을 합칠 방법이 없는 공백을 발견. 채택 계획(mergeCatInto 신설 — doRenameCat의 마이그레이션 로직 재사용 + openCatManage에 합치기 진입점)을 pending_advance_plan에 저장. 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 263,
+      "phase": "advance",
+      "timestamp": "2026-10-29T03:30:00.000Z",
+      "summary": "critique(cycle263) 계획대로 카테고리 합치기(merge) 기능을 구현. index.html: mergeCatInto(k,i,toName) 신설 — doRenameCat과 동일한 txns/splits/recurrences 이동 규칙(단 doDeleteCat과 달리 반복거래를 비활성화하지 않고 category만 옮김), catIcon/catVar/catBudgetRollover는 대상(toName)이 이미 가진 설정을 그대로 두고 from 쪽만 제거(합치기가 대상의 아이콘·스타일을 조용히 덮어쓰지 않도록), budgetHistory만 logic.js의 mergeBudgetHistory를 같은 key(toName)로 재사용해 from(월) 단위로 유니온하고 같은 달 충돌 시 대상이 이기게 함, catTombKey 톰스톤과 ST.hist.catExact 보정은 doRenameCat과 동일. catMergeCounts(k,from)로 영향받는 최상위/분할 내역·반복거래(비활성 포함) 건수를 집계해 confirmCatMerge()의 confirmSheet에 안내하고, undoToast로 카테고리/거래/반복거래/아이콘/예산/이월설정/톰스톤을 전부 되돌릴 수 있게 지원(doDeleteCat과 동일 패턴). UI: I에 신규 svg 아이콘 'merge' 추가, openCatManage() 각 행의 수정/삭제 버튼 옆에 합치기 버튼 추가(대상이 하나도 없으면, 즉 자기 자신뿐이거나 income에서 나머지가 ADJUST_CAT뿐이면 숨김) → openCatMergePicker가 기존 openCatPicker를 재사용해 대상 피커를 염(자기 자신, income은 ADJUST_CAT도 대상 목록에서 빼기 위해 catFilteredGrid/openCatPicker에 exclude 파라미터 신설, 기존 두 호출부엔 영향 없음) → confirmCatMerge. APP_VERSION 1.47.269->1.47.270, sw.js CACHE v536->v537 동기 범프. test/run.js에 mergeCatInto 9건+catMergeCounts 2건+confirmCatMerge/openCatMergePicker/catFilteredGrid(exclude) 4건 추가(2186->2201, 샌드박스 realm 경계로 인한 deepStrictEqual 교차-realm 비교 실패는 기존 관례대로 JSON 라운드트립으로 해결). node test/run.js 2201/2201 통과, node --check(logic.js/sw.js/test/run.js) 및 HTML 주석 제거 후 추출한 index.html 인라인 스크립트 4블록 구문 검증 통과. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]
