@@ -16503,6 +16503,28 @@ test('openMaturity: 만기일을 shortDate 형식으로 보여주고 ISO 원문�
   assert.ok(sandbox.lastSheetHtml.includes(sandbox.shortDate('2026-06-10')), '만기일이 shortDate 형식으로 보여야 함');
   assert.ok(!sandbox.lastSheetHtml.includes('만기 2026-06-10'), '만기일이 가공 없이 ISO 원문 그대로 노출되면 안 됨');
 });
+/* ---------- openMaturity: 이미 지난 만기를 '임박'이라고 잘못 부르던 버그(app-evolve cycle268 develop)
+ * — setupMaturityDB()의 기본 픽스처(TODAY='2026-06-15', maturityDate='2026-06-10')가 이미 5일
+ * 지난 만기인데도, soon(30일 이내) 판정만 보고 overdue 여부를 가리지 않아 '임박'(mini sch, 노란색)
+ * 뱃지를 달았다. notifyAlertInfo(홈 알림 OS 푸시)는 overdue를 '만기가 지났어요'로 따로 부르고(
+ * cycle232가 바로 이 구분을 고쳤다), goalProgress의 목표일 지남도 'mini warn'(빨간색) + '지남'을
+ * 쓰는 것과 같은 관례를 이 목록에도 맞춘다. ---------- */
+test('openMaturity: 이미 지난 만기는 "임박"이 아니라 "만기 지남"으로, 아직 안 지난 만기는 그대로 "임박"으로 보인다', () => {
+  setupMaturityDB();
+  sandbox.lastSheetHtml = null;
+  sandbox.openMaturity();
+  assert.ok(sandbox.lastSheetHtml.includes('만기 지남'), '5일 지난 만기(2026-06-10 < TODAY 2026-06-15)는 "만기 지남"으로 보여야 함');
+  assert.ok(!sandbox.lastSheetHtml.includes('>임박<'), '지난 만기에는 "임박" 뱃지가 달리면 안 됨');
+  assert.ok(sandbox.lastSheetHtml.includes('mini warn'), '지난 만기 뱃지는 목표일 지남과 동일한 경고색(mini warn)을 써야 함');
+
+  setupMaturityDB();
+  sandbox.DB.assets.find(a => a.id === 'a_sav').maturityDate = '2026-06-20'; // TODAY(06-15)로부터 5일 뒤, 아직 안 지남
+  sandbox.lastSheetHtml = null;
+  sandbox.openMaturity();
+  assert.ok(sandbox.lastSheetHtml.includes('>임박<'), '아직 안 지난 만기(30일 이내)는 그대로 "임박"으로 보여야 함');
+  assert.ok(!sandbox.lastSheetHtml.includes('만기 지남'), '아직 안 지난 만기에는 "만기 지남"이 붙으면 안 됨');
+  assert.ok(sandbox.lastSheetHtml.includes('mini sch'), '아직 안 지난 만기 뱃지는 기존처럼 일정색(mini sch)을 써야 함');
+});
 /* ---------- doMaturity: maturityDate=null로 지우는 자산 자체에는 touch()가 없어, cloud sync
  * 병합 시 다른 기기의 더 오래된 사본이 이겨 만기 처리(이체 생성+플래그 클리어)가 되돌아가면
  * maturityDate가 되살아나 '만기 임박' 알림이 재발하고, 사용자가 다시 '이체'를 누르면 동일 금액의

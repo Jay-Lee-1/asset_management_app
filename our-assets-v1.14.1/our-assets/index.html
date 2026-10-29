@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.279';
+const APP_VERSION='1.47.280';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6561,8 +6561,9 @@ function openMaturity(){
  const sav=DB.assets.filter(a=>a.type==='savings'&&a.maturityDate);
  openSheet(`<h3>저축 만기 알림</h3><div class="desc">만기 30일 이내 저축을 알려드려요</div>
   ${sav.length?sav.map(a=>{const target=DB.assets.find(x=>x.id===a.maturityTargetId);const soon=a.maturityDate<=addDays(TODAY,30);
+   const overdue=a.maturityDate<TODAY; /* notifyAlertInfo(9442줄)는 이미 지난 만기를 '임박'이 아니라 '지났어요'로 구분해 부르는데, 이 줄은 그 구분 없이 overdue인 저축도 그대로 '임박'이라고 써 cycle232가 OS 알림에서 고친 혼동을 목록 화면에는 그대로 남겨뒀었다(app-evolve cycle268 develop) */
    const mDate=a.maturityDate<=TODAY?a.maturityDate:TODAY; /* doMaturity()가 실제로 이체할 금액(만기일 기준 실잔액)과 같은 값을 미리보여줌 — assetEval()의 예정 포함 투영과는 다를 수 있음 */
-   return `<div class="manage-row"><div style="flex:1"><div class="mn">${esc(a.name)} ${soon?'<span class="mini sch">임박</span>':''}</div><div class="msub">만기 ${shortDate(a.maturityDate)} · ${comma(balanceAt(a.id,mDate))}원 → ${target?esc(target.name):'미지정'}</div></div>
+   return `<div class="manage-row"><div style="flex:1"><div class="mn">${esc(a.name)} ${soon?`<span class="mini ${overdue?'warn':'sch'}">${overdue?'만기 지남':'임박'}</span>`:''}</div><div class="msub">만기 ${shortDate(a.maturityDate)} · ${comma(balanceAt(a.id,mDate))}원 → ${target?esc(target.name):'미지정'}</div></div>
     ${soon?`<button class="btn-sm btn btn-primary" style="width:auto;padding:0 14px" onclick="doMaturity('${a.id}')">이체</button>`:''}</div>`}).join('')
    :`<div class="empty"><div class="ei">${svg('piggy')}</div><div class="et">아직 모으는 중인 게 없네요</div><div class="es">작게라도 시작해볼까요?</div></div>`}
   <div style="height:12px"></div><button class="btn btn-soft" onclick="closeSheet()">닫기</button>`);
