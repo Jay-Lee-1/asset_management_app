@@ -1,15 +1,8 @@
 {
   "cycle": 264,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 259,
-      "phase": "develop",
-      "timestamp": "2026-10-28T08:16:10.481Z",
-      "summary": "범용(은행/카드사) CSV 가져오기의 mapGenericCsvRow(logic.js)이 signed 모드 금액 열에서 쉼표만 벗겨내고 회계 표기 괄호(\"(5,000)\"=음수)는 전혀 인식하지 못해, 그런 행이 전부 error:amount로 가져오기에서 빠지는 공백을 발견 — 해외카드 이용내역 등에서 흔한 음수 표기 방식. parseNum이 전체 문자열이 괄호로 감싸졌으면 벗기고 음수로 뒤집도록 수정(괄호 안쪽이 숫자가 아니거나 빈 괄호면 그대로 NaN/0으로 걸러짐, split 모드 동작은 변화 없음). APP_VERSION 1.47.260->1.47.261, sw.js CACHE v527->v528 동기 범프. test/run.js에 괄호쉼표/괄호단독/빈괄호 케이스 3건 추가(2152->2155). node test/run.js 2155/2155 통과, node --check(logic.js/test/run.js) 및 index.html 인라인 스크립트 4블록 구문 검증 통과.",
-      "commit": "b3edf58"
-    },
     {
       "cycle": 259,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-29T03:30:00.000Z",
       "summary": "critique(cycle263) 계획대로 카테고리 합치기(merge) 기능을 구현. index.html: mergeCatInto(k,i,toName) 신설 — doRenameCat과 동일한 txns/splits/recurrences 이동 규칙(단 doDeleteCat과 달리 반복거래를 비활성화하지 않고 category만 옮김), catIcon/catVar/catBudgetRollover는 대상(toName)이 이미 가진 설정을 그대로 두고 from 쪽만 제거(합치기가 대상의 아이콘·스타일을 조용히 덮어쓰지 않도록), budgetHistory만 logic.js의 mergeBudgetHistory를 같은 key(toName)로 재사용해 from(월) 단위로 유니온하고 같은 달 충돌 시 대상이 이기게 함, catTombKey 톰스톤과 ST.hist.catExact 보정은 doRenameCat과 동일. catMergeCounts(k,from)로 영향받는 최상위/분할 내역·반복거래(비활성 포함) 건수를 집계해 confirmCatMerge()의 confirmSheet에 안내하고, undoToast로 카테고리/거래/반복거래/아이콘/예산/이월설정/톰스톤을 전부 되돌릴 수 있게 지원(doDeleteCat과 동일 패턴). UI: I에 신규 svg 아이콘 'merge' 추가, openCatManage() 각 행의 수정/삭제 버튼 옆에 합치기 버튼 추가(대상이 하나도 없으면, 즉 자기 자신뿐이거나 income에서 나머지가 ADJUST_CAT뿐이면 숨김) → openCatMergePicker가 기존 openCatPicker를 재사용해 대상 피커를 염(자기 자신, income은 ADJUST_CAT도 대상 목록에서 빼기 위해 catFilteredGrid/openCatPicker에 exclude 파라미터 신설, 기존 두 호출부엔 영향 없음) → confirmCatMerge. APP_VERSION 1.47.269->1.47.270, sw.js CACHE v536->v537 동기 범프. test/run.js에 mergeCatInto 9건+catMergeCounts 2건+confirmCatMerge/openCatMergePicker/catFilteredGrid(exclude) 4건 추가(2186->2201, 샌드박스 realm 경계로 인한 deepStrictEqual 교차-realm 비교 실패는 기존 관례대로 JSON 라운드트립으로 해결). node test/run.js 2201/2201 통과, node --check(logic.js/sw.js/test/run.js) 및 HTML 주석 제거 후 추출한 index.html 인라인 스크립트 4블록 구문 검증 통과. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 264,
+      "phase": "develop",
+      "timestamp": "2026-10-29T04:10:25.631Z",
+      "summary": "코드 전반을 재탐색(카테고리 합치기(cycle263 advance)의 마이그레이션/undo/budgetHistory 병합 로직을 직접 대조 검증했으나 버그 없음 확인)한 결과, 거래 롱프레스 선택 UX의 흔적인 .swipe.open .swipe-content CSS 규칙(index.html)과 전역 변수 let openSwipeRow=null;, 그리고 .swipe-actions button CSS 셀렉터 조각이 실제로는 어디서도 .open 클래스를 추가하거나 .swipe-actions 엘리먼트를 만들거나 openSwipeRow를 읽/쓰는 코드가 없어 완전한 죽은 코드임을 grep으로 확인(cycle263 critique가 러너업으로 남긴 항목) — 스와이프-공개(swipe-to-reveal) UI는 실제로 구현된 적 없이 CSS/변수만 남아있던 흔적. 세 군데 모두 제거(동작 변경 없음, .swipe/.swipe-content 자체는 거래 행 구조로 계속 쓰여 그대로 유지). index.html만 변경이라 APP_VERSION 1.47.270->1.47.271, sw.js CACHE v537->v538 동기 범프. 동작 변화가 없는 순수 죽은 코드 제거라 새 테스트는 추가하지 않음(기존에도 이 심볼들을 참조하는 테스트가 없었음을 확인). node test/run.js 2201/2201 통과(회귀 없음), node --check(logic.js/sw.js/test/run.js) 및 HTML 주석 제거 후 추출한 index.html 인라인 스크립트 4블록(5개 중 1개는 빈 블록) 구문 검증 통과.",
       "commit": null
     }
   ]

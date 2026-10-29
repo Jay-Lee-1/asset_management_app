@@ -166,7 +166,7 @@ input,select,textarea{font-family:inherit}
 .month-chip:active{background:var(--sunken)}.month-chip svg{width:18px;height:18px;color:var(--text-2)}
 
 /* iOS-like press animations */
-.icon-btn,.txt-btn,.chip,.mnav button,.sch-chip,.month-chip,.summary>button,.filter-2 button,.seg button,.opt-grid button,.sync-btn,.menu-item,.add-inline button,.swipe-actions button{transition:transform .18s var(--spring),background .15s,color .15s,border-color .15s,box-shadow .15s}
+.icon-btn,.txt-btn,.chip,.mnav button,.sch-chip,.month-chip,.summary>button,.filter-2 button,.seg button,.opt-grid button,.sync-btn,.menu-item,.add-inline button{transition:transform .18s var(--spring),background .15s,color .15s,border-color .15s,box-shadow .15s}
 .icon-btn:active,.mnav button:active{transform:scale(.88)}
 .sch-chip:active,.chip:active,.sync-btn:active,.add-inline button:active{transform:scale(.93)}
 .txt-btn:active,.month-chip:active,.summary>button:active{transform:scale(.95)}
@@ -511,7 +511,6 @@ body.dp-open .page{overflow:hidden}
 .swipe{position:relative;overflow:hidden}
 .swipe+.swipe{border-top:1px solid var(--line)}
 .swipe-content{position:relative;background:var(--surface);transition:transform .26s var(--ease);z-index:1;display:flex;align-items:center;gap:12px;padding:13px 16px}
-.swipe.open .swipe-content{transform:translateX(-152px)}
 .swipe-content .nm{font-weight:600;font-size:15px}
 .swipe-content .tag{display:flex;gap:5px;margin-top:4px;flex-wrap:wrap}
 .nm-row{display:flex;align-items:center;gap:5px;min-width:0}
@@ -1416,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.270';
+const APP_VERSION='1.47.271';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -8453,7 +8452,6 @@ function confirmSheet(title,msg,ok,cb){window._cf=cb;
 function fmtAmt(inp,allowNeg){const neg=allowNeg&&/^-/.test(inp.value);let v=inp.value.replace(/[^0-9]/g,'');inp.value=v?(neg?'-':'')+Number(v).toLocaleString('ko-KR'):(neg?'-':'')}
 function fmtQty(inp){let v=inp.value.replace(/[^0-9.]/g,'');const dot=v.indexOf('.');if(dot!==-1)v=v.slice(0,dot+1)+v.slice(dot+1).replace(/\./g,'');inp.value=v}
 
-let openSwipeRow=null;
 function wireLongPress(root,onLong){
  if(!root)return;
  const cb=onLong||((id)=>{if(!ST.hist.selMode){ST.hist.selMode=true;ST.hist.sel.add(id);updateHist();updateSelBottom()}});
