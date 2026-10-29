@@ -749,6 +749,16 @@ function realizedGainForSale(origQty,newQty,origCostBasis,saleProceeds){
  if(!(saleProceeds>0))return {costBasisRemoved,realizedGain:null};
  return {costBasisRemoved,realizedGain:saleProceeds-costBasisRemoved};
 }
+/* openAssetQtyLog(index.html)가 한 자산의 수량 변경 기록 목록에 매도마다 realizedGain을 보여주지만,
+ * 한 자산을 여러 날에 걸쳐 나눠 판 경우(부분매도 여러 번) 전체 합계를 보여줄 데가 없어 사용자가
+ * 각 기록을 일일이 더해야 했다(app-evolve cycle266 develop). realizedGain!=null인 기록만 더하고,
+ * 하나도 없으면(이 자산에 실현손익을 기록한 매도가 아직 없음) null — goalProgress/
+ * debtPayoffProjection과 동일하게 '0원'과 '모름'을 구분한다. */
+function totalRealizedGain(items){
+ const withGain=(items||[]).filter(q=>q.realizedGain!=null);
+ if(!withGain.length)return null;
+ return withGain.reduce((s,q)=>s+q.realizedGain,0);
+}
 
 /* ================= 예산 이월(rollover, 순수) ================= */
 /* budgetForMonth(index.html)는 '카테고리→[{from,amount}]' effective-dated flat 값을 그대로 쓰는

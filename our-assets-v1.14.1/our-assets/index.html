@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.274';
+const APP_VERSION='1.47.275';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5525,6 +5525,7 @@ function openAssetQtyLog(assetId){
  const a=DB.assets.find(x=>x.id===assetId);if(!a)return;
  const unit=a.type==='fx'?a.currency:(a.type==='gold'?'돈':(a.type==='crypto'?'개':'주'));
  const items=(DB.assetQtyLog||[]).filter(q=>q.assetId===assetId).sort((x,y)=>(y.updatedAt||0)-(x.updatedAt||0));
+ const totalGain=totalRealizedGain(items); /* 부분매도를 여러 번 나눠 한 경우 각 행의 실현손익을 일일이 더하지 않아도 되도록 합계를 보여준다(app-evolve cycle266 develop) */
  const row=q=>{const delta=q.newQty-q.prevQty;const sign=delta>0?'+':'';
   const gainTxt=q.realizedGain!=null?` · 실현손익 ${q.realizedGain>0?'+':''}${comma(q.realizedGain)}원`:'';
   return `<div class="manage-row" style="align-items:flex-start"><div style="flex:1;min-width:0">
@@ -5532,6 +5533,7 @@ function openAssetQtyLog(assetId){
     <div class="msub">${q.date||''} · ${commaQty(q.prevQty)} → ${commaQty(q.newQty)} ${esc(unit)}${q.addedAmount>0?` · 투입 ${comma(q.addedAmount)}원`:''}${q.saleProceeds>0?` · 매도 ${comma(q.saleProceeds)}원${gainTxt}`:''}</div></div>
    <div class="row-acts"><button class="act-btn danger" aria-label="수량 변경 기록 삭제" onclick="delAssetQtyLog('${q.id}')">${svg('trash')}</button></div></div>`};
  openSheet(`<h3>${esc(a.name)} 수량 변경 기록</h3><div class="desc">보유 수량을 직접 수정할 때마다 남는 기록이에요. 거래 내역과는 별도예요</div>
+  ${totalGain!=null?`<div class="card" style="text-align:center;padding:14px;margin-bottom:12px"><span style="font-size:12.5px;color:var(--text-3);font-weight:700">누적 실현손익</span><div class="num" style="font-size:18px;font-weight:700;margin-top:4px;color:${totalGain>=0?'var(--income)':'var(--expense)'}">${totalGain>0?'+':''}${comma(totalGain)}원</div></div>`:''}
   ${items.length?items.map(row).join(''):`<div class="empty"><div class="ei">${svg('receipt')}</div><div class="et">아직 수량 변경 기록이 없어요</div></div>`}
   <div style="height:12px"></div><button class="btn btn-primary" onclick="closeSheet()">닫기</button>`);
 }

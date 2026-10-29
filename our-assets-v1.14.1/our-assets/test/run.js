@@ -11781,6 +11781,21 @@ test('realizedGainForSale: origQty/newQty/origCostBasis가 유효하지 않거�
   assert.strictEqual(sandbox.realizedGainForSale(10, 20, 100000, 50000), null, '수량이 늘면(추가매수) 매도가 아님');
   assert.strictEqual(sandbox.realizedGainForSale(10, 10, 100000, 50000), null, '수량 불변');
 });
+/* ---------- totalRealizedGain(logic.js, 순수): openAssetQtyLog가 한 자산을 여러 번 나눠 판
+ * 기록들의 실현손익을 합산해 누적 실현손익을 보여준다(app-evolve cycle266 develop) ---------- */
+test('totalRealizedGain: realizedGain이 있는 기록만 더한다(이익/손실 섞여도 합산)', () => {
+  const items = [{ realizedGain: 50000 }, { realizedGain: -20000 }, { realizedGain: 10000 }];
+  assert.strictEqual(sandbox.totalRealizedGain(items), 40000);
+});
+test('totalRealizedGain: realizedGain:null인 기록은 합계에서 빠진다(매도금액 미입력 기록 혼재)', () => {
+  const items = [{ realizedGain: 50000 }, { realizedGain: null }, { addedAmount: 10000 }];
+  assert.strictEqual(sandbox.totalRealizedGain(items), 50000);
+});
+test('totalRealizedGain: realizedGain이 있는 기록이 하나도 없으면(빈 배열 포함) 추측하지 않고 null', () => {
+  assert.strictEqual(sandbox.totalRealizedGain([]), null);
+  assert.strictEqual(sandbox.totalRealizedGain([{ realizedGain: null }, { addedAmount: 5000 }]), null);
+  assert.strictEqual(sandbox.totalRealizedGain(null), null);
+});
 /* ---------- costBasisField: 편집 중 보유 수량이 _origQty(openAssetSheet 스냅샷)보다 늘면
  * (추가매수) costBasisNeedsUpdate 경고 캡션과 "이번에 추가로 투입한 금액" 입력창(asAddedCostField)을
  * 함께 즉시 렌더한다. 줄어드는 경우는 saveAsset()이 자동 보정하므로 둘 다 뜨면 안 된다. ---------- */

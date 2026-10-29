@@ -1,15 +1,8 @@
 {
   "cycle": 266,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 261,
-      "phase": "develop",
-      "timestamp": "2026-10-28T16:24:34.066Z",
-      "summary": "fork 서브에이전트로 탐색한 결과, cycle259 advance가 신설한 전역 통합검색(globalSearchBody)이 거래/자산/카테고리 세 그룹을 각각 상위 20건으로 slice(0,20)해 조용히 자르기만 하고, 이 앱의 기존 관례(filteredHist의 hist-more 더보기 N건 남음, monthOutflowCard의 of-more 외 N건 더 보기)와 달리 남은 건수를 알리거나 펼칠 방법이 전혀 없는 공백을 발견 — 예: '스타벅스'처럼 자주 쓰는 검색어는 거래가 20건을 쉽게 넘는데, 정확히 20건만 있는 것처럼 보여 나머지를 찾을 길이 없었음. logic.js에 순수 함수 capGroup(arr,cap,expand) 신설(hist-more와 동일한 shown/remain 모양)하고, index.html globalSearchBody가 이걸로 거래/자산/카테고리 세 그룹 모두 cap한 뒤 remain>0이면 hist-more 스타일 더보기 버튼(gsMore(kind))을 붙이게 재배선. 헤더의 건수도 capped 길이 대신 전체 매칭 건수로 정정. 검색어가 바뀌거나 시트를 다시 열면 GS_EXPAND를 초기화해 항상 접힌 상태로 시작. APP_VERSION 1.47.264->1.47.265, sw.js CACHE v531->v532 동기 범프. test/run.js에 capGroup 단위 테스트 4건 추가(2162->2166, 샌드박스 realm 경계로 인한 deepStrictEqual 교차-realm 비교 실패는 withoutKey 테스트와 동일하게 JSON 라운드트립으로 해결). node test/run.js 2166/2166 통과, node --check(logic.js/sw.js/test/run.js) 및 HTML 주석 제거 후 추출한 index.html 인라인 스크립트 5블록 구문 검증 통과.",
-      "commit": null
-    },
     {
       "cycle": 261,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-29T11:20:00.000Z",
       "summary": "critique(cycle265) 계획대로 매도(수량 감소) 시 실현손익(realized gain) 기록을 구현. logic.js: scaleCostBasisForSale 바로 아래에 순수 함수 realizedGainForSale(origQty,newQty,origCostBasis,saleProceeds) 신설 — scaleCostBasisForSale과 동일한 가드(origQty>0&&newQty>0&&newQty<origQty&&origCostBasis>0, 전량매도(newQty=0)는 delAsset 등 별도 경로의 몫이라 제외)를 공유하고, costBasisRemoved=origCostBasis-scaleCostBasisForSale(...)을 구한 뒤 saleProceeds>0이면 {costBasisRemoved,realizedGain:saleProceeds-costBasisRemoved}를, 없으면(추측하지 않음) {costBasisRemoved,realizedGain:null}을 반환 — addCostBasisForBuy(cycle191)의 매도 쪽 대칭 짝. index.html: costBasisField(d,editing)의 needsUpdate(매수 경고) 분기 옆에 대칭되는 needsSale 분기(d._origQty가 있고 costBasis>0이고 현재 수량이 _origQty보다 줄었을 때) 추가 — asAddedCostField와 동일한 field-clear/fmtAmt 패턴으로 '이번에 받은 매도 금액 (원, 선택)' 입력(id=asSaleProceeds) 노출, 경고 캡션(asQtyBasisWarn)도 매수/매도 두 메시지를 분기. qtyBasisWarn()이 입력 중에도(리렌더 없이) asSaleProceedsField를 같은 조건으로 토글하도록 확장. syncAssetInputs가 asSaleProceeds를 d._saleProceeds로 읽어들이고, saveAsset()의 if(newQty<prevQty) 분기에서 realizedGainForSale(prevQty,newQty,d.costBasis,saleProceeds)을 호출해 결과(realizedGain!=null인 경우만)를 qtyLogEntry에 saleProceeds/realizedGain으로 남김(addedAmount와 대칭). openAssetQtyLog()의 row 렌더링에 q.saleProceeds>0이면 '매도 N원 · 실현손익 +/-M원'을 addedAmount 표시와 같은 자리에 병렬로 추가(comma()가 음수에 '-'를 그대로 포함해 손실도 자연스럽게 표시). index.html/logic.js 변경이라 APP_VERSION 1.47.273->1.47.274, sw.js CACHE v540->v541 동기 범프. 기존 costBasisField 테스트 2건(수량 줄면 경고+입력창이 항상 숨김을 가정)이 새 매도 분기와 충돌해 FAIL — 변경된 동작(매도 시에도 이제 경고+입력창이 뜸)에 맞게 기대값을 갱신해 통과시킴. test/run.js에 realizedGainForSale 단위 테스트 3건(이익/손실/손익0, proceeds 없음→null, 가드 6케이스)+costBasisField 매도 분기 렌더링 1건+saveAsset 배선 테스트 3건(저장 시 기록/미입력 시 기록 안 함/추가매수 중엔 무시)+openAssetQtyLog 표시 1건 추가(2218개 중 신규 8건 포함, 2210->2218). node test/run.js 2218/2218 통과, node --check(logic.js/sw.js/test/run.js) 및 HTML 주석 제거 후 추출한 index.html 인라인 스크립트 4블록 구문 검증(new Function) 통과. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 266,
+      "phase": "develop",
+      "timestamp": "2026-10-29T12:33:41.000Z",
+      "summary": "fork 서브에이전트로 탐색한 결과, cycle265 advance가 신설한 부분매도 실현손익(realizedGainForSale) 기록이 openAssetQtyLog 각 행에만 표시되고, 한 자산을 여러 번 나눠 판 경우 전체 합계를 보여줄 데가 없어 사용자가 각 기록을 일일이 더해야 하는 공백을 발견. logic.js에 순수 함수 totalRealizedGain(items) 신설(realizedGain!=null인 기록만 합산, 하나도 없으면 null — goalProgress/debtPayoffProjection과 동일하게 0과 모름을 구분). index.html openAssetQtyLog가 이 합계를 investGainLossCard와 동일한 색상 규칙(var(--income)/var(--expense))으로 시트 상단에 카드로 보여주게 배선. APP_VERSION 1.47.274->1.47.275, sw.js CACHE v541->v542 동기 범프. test/run.js에 totalRealizedGain 단위 테스트 3건 추가(2218->2221). node test/run.js 2221/2221 통과, node --check(logic.js/test/run.js) 및 HTML 주석 제거 후 추출한 index.html 인라인 스크립트 3블록 구문 검증 통과.",
       "commit": null
     }
   ]
