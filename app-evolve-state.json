@@ -1,7 +1,11 @@
 {
   "cycle": 264,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "영수증 사진 Web Share Target 지원 (OS 공유 시트 -> 거래 등록)",
+    "why": "manifest.webmanifest에 shortcuts만 있고 share_target 키가 없으며, sw.js:38의 if (req.method !== 'GET') return;가 모든 비-GET 요청을 무시해 OS 공유 시트로 PWA에 파일을 보낼 길이 원천적으로 없음. cycle261 advance가 영수증 사진 첨부(txDraft.photo, txPhotoPick, photoResizeDims 등)를 이미 구현했는데도, 카메라/갤러리/은행앱에서 사진을 '공유'해 바로 거래로 등록하는 길이 없어 반드시 앱을 먼저 열고 거래를 시작한 뒤 파일 피커로 골라야 함 — 방금 쓴 기능 자체가 남긴 공백.",
+    "approach": "manifest.webmanifest에 share_target(action:'./share-receipt', method:'POST', enctype:'multipart/form-data', params.files:[{name:'photo',accept:['image/*']}]) 추가. sw.js의 'GET 아니면 무시' 분기 앞에 POST && pathname.endsWith('/share-receipt') 케이스를 추가해 req.formData()에서 photo File을 꺼내 Cache Storage에 고정 키(예: ./__shared-photo__)로 저장한 뒤 Response.redirect('./?action=shareReceipt')로 응답. index.html의 runShortcutAction(기존 addExpense/addIncome/addTransfer 처리부 근처)에 action==='shareReceipt' 케이스를 추가해 caches.open(CACHE).then(c=>c.match('./__shared-photo__'))로 blob을 읽고, 기존 txPhotoPick이 쓰는 photoResizeDims/TX_PHOTO_MAX_SIDE/TX_PHOTO_QUALITY(logic.js) 경로로 리사이즈/압축해 dataURL을 만든 뒤 openTxSheet()로 새 txDraft.photo에 세팅, 끝나면 캐시 엔트리를 삭제해 재방문 시 사진이 다시 나타나지 않게 함. APP_VERSION/sw.js CACHE 동기 범프. fetch/캐시 플러밍 자체는 test/run.js 구조상 단위 테스트 불가 영역이므로 커밋 메시지에 테스트 공백으로 명시하고, 새로 분리되는 순수 헬퍼가 있다면 그것만 테스트에 추가."
+  },
   "history": [
     {
       "cycle": 259,
@@ -141,6 +145,13 @@
       "phase": "review",
       "timestamp": "2026-10-29T05:07:49.002Z",
       "summary": "cycle264 develop 커밋(5c7baeb, 쓰이지 않는 스와이프-공개 UI 흔적 제거: .swipe.open .swipe-content CSS 규칙, let openSwipeRow=null; 전역 변수, .swipe-actions button CSS 셀렉터 조각)을 검토. grep으로 세 심볼 모두 index.html 전체에서 완전히 제거됐고 잔존 참조가 없음을 확인 — .swipe/.swipe-content 자체(거래 행 구조)는 그대로 유지돼 거래 내역 UI에 영향 없음. APP_VERSION(1.47.271)과 sw.js CACHE(v538) 동기화 확인. node test/run.js 독립 재실행 결과 2201/2201 통과(회귀 없음), node --check(sw.js/test/run.js) 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 264,
+      "phase": "critique",
+      "timestamp": "2026-10-29T06:05:00.000Z",
+      "summary": "fork 서브에이전트로 앱 전반을 재탐색(CSV 임포트/다중화폐/cost-basis/debt/goal/budget 시스템은 이미 성숙, 접근성은 아이콘 버튼 39개 전부 aria-label·role=switch/button·키보드 핸들러를 갖추고 있어 지금 당장 고를 만한 뚜렷한 공백 없음, 리밸런싱 알림/PDF 명세서/실제 OS 푸시는 스키마 확장 또는 서버 백엔드가 필요해 이번에도 보류)한 결과, manifest.webmanifest에 share_target 키가 없고 sw.js:38의 'GET 아니면 무시' 분기가 모든 POST를 버려 cycle261 advance가 신설한 영수증 사진 첨부 기능임에도 OS 공유 시트(카메라/갤러리/은행앱)에서 사진을 곧장 앱으로 보내 거래로 등록할 길이 없는 공백을 발견 — 앱을 먼저 열고 거래를 시작해 파일 피커로 골라야만 하는 우회만 존재. 서버 없는 정적 PWA 범위 안에서(Cache Storage + sw.js fetch 핸들러 + 기존 photoResizeDims 재사용) 한 사이클에 구현 가능하다고 판단해 채택 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     }
   ]
