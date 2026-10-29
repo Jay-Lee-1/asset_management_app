@@ -689,6 +689,11 @@ const sandbox = {
   navigator: {},
   toast: (msg) => { sandbox.lastToast = msg; sandbox.toastCalls.push(msg); },
   toastCalls: [],
+  // announceLive는 toast()와 독립적으로 debtWhatIfUpdate()(app-evolve cycle267 develop)가 직접
+  // 불러 textContent 경량 업데이트와 같은 문구를 aria-live 리전에도 공지한다 — toast처럼 실제
+  // DOM 리전 대신 호출 여부/문구만 기록하는 스파이로 흉내낸다.
+  announceLive: (msg) => { sandbox.announceLiveCalls.push(msg); },
+  announceLiveCalls: [],
   // Notification은 브라우저 전용 전역이라(SESSION/CLOUD_UID와 같은 이유) syncNotifyPermission()/
   // toggleOsNotify() 테스트에서 {permission:'granted'|'denied'|'default'}로 직접 세팅한다.
   // undefined로 두면 실제 코드의 typeof Notification==='undefined' 분기(미지원 브라우저)를 재현한다.
@@ -6891,8 +6896,11 @@ test('openAssetHistory: 이전에 다른 debt 자산을 보며 입력해둔 what
 });
 /* ---------- debtWhatIfUpdate: 부채 상환 추가 납입 시뮬레이터의 경량 업데이트 핸들러 (app-evolve
  * cycle262 advance) — 카드를 통째로 다시 그리지 않고 입력값만 읽어 ST.hist에 반영하고 결과
- * 영역(#debtWhatIfResult)의 textContent만 갱신한다(assetBalPeek류 패턴). ---------- */
-test('[실행형] debtWhatIfUpdate: 입력값을 ST.hist.debtWhatIfExtra에 반영하고(쉼표 포맷 포함) 결과 영역 textContent를 갱신한다', () => {
+ * 영역(#debtWhatIfResult)의 textContent만 갱신한다(assetBalPeek류 패턴). 결과 문구는 toast()/
+ * celebrate()와 동일하게 announceLive()로도 공지한다 — textContent만 바꿔서는 입력창에 포커스가
+ * 머무는 스크린리더 사용자에게 갱신된 결과가 전혀 읽히지 않던 공백(app-evolve cycle267 develop).
+ * ---------- */
+test('[실행형] debtWhatIfUpdate: 입력값을 ST.hist.debtWhatIfExtra에 반영하고(쉼표 포맷 포함) 결과 영역 textContent를 갱신하고 announceLive로도 같은 문구를 공지한다', () => {
   sandbox.TODAY = '2026-06-15';
   sandbox.RANGE_FROM = '2023-01-01';
   const to = sandbox.TODAY;
@@ -6903,17 +6911,22 @@ test('[실행형] debtWhatIfUpdate: 입력값을 ST.hist.debtWhatIfExtra에 반�
   sandbox.ST = { hist: { debtWhatIfExtra: 0 } };
   sandbox.debtWhatIfExtraValue = '300,000';
   sandbox.debtWhatIfResultEl.textContent = '';
+  sandbox.announceLiveCalls = [];
   sandbox.debtWhatIfUpdate('d1');
   assert.strictEqual(sandbox.ST.hist.debtWhatIfExtra, 300000, 'num()으로 쉼표를 벗겨 읽은 숫자가 ST.hist.debtWhatIfExtra에 반영돼야 함');
   assert.ok(/매달 이만큼 더 갚으면 \d{2}\/\d{2}쯤 다 갚아요 \(약 \d+개월 빨라져요\)/.test(sandbox.debtWhatIfResultEl.textContent), 'debtWhatIfResult의 textContent가 assetBalCard와 같은 debtWhatIfText 문구로 갱신돼야 함');
+  assert.strictEqual(sandbox.announceLiveCalls.length, 1, 'announceLive가 정확히 1번 불려야 함');
+  assert.strictEqual(sandbox.announceLiveCalls[0], sandbox.debtWhatIfResultEl.textContent, 'announceLive에 공지되는 문구가 textContent에 쓴 문구와 정확히 같아야 함');
 });
-test('[실행형] debtWhatIfUpdate: 존재하지 않는 자산이거나 결과 영역(#debtWhatIfResult)이 이미 사라졌으면(시트가 닫힌 뒤 등) 아무 것도 하지 않고 조용히 반환한다', () => {
+test('[실행형] debtWhatIfUpdate: 존재하지 않는 자산이거나 결과 영역(#debtWhatIfResult)이 이미 사라졌으면(시트가 닫힌 뒤 등) 아무 것도 하지 않고 조용히 반환한다(announceLive도 불리지 않음)', () => {
   sandbox.DB = { assets: [{ id: 'd1', type: 'debt', baseAmount: 900000 }], txns: [], recurrences: [], settings: { confirmTransfers: false } };
   sandbox.ST = { hist: { debtWhatIfExtra: 0 } };
+  sandbox.announceLiveCalls = [];
   assert.doesNotThrow(() => sandbox.debtWhatIfUpdate('nonexistent'), '존재하지 않는 자산 id도 안전하게 넘어가야 함');
   sandbox.debtWhatIfResultMissing = true;
   assert.doesNotThrow(() => sandbox.debtWhatIfUpdate('d1'), '결과 영역이 없어도(시트 닫힘 등) 안전하게 넘어가야 함');
   sandbox.debtWhatIfResultMissing = false;
+  assert.strictEqual(sandbox.announceLiveCalls.length, 0, '두 조기 반환 경로 모두 announceLive를 부르지 않아야 함');
 });
 
 /* ---------- openAssetHistory가 fx/gold/stock에선 전체내역 대신 수량 변경 기록(openAssetQtyLog)으로

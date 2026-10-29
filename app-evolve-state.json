@@ -1,15 +1,8 @@
 {
   "cycle": 267,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 262,
-      "phase": "develop",
-      "timestamp": "2026-10-28T20:12:30.749Z",
-      "summary": "fork 서브에이전트 없이 critique(cycle261 advance)가 명시적으로 남긴 러너업(복사해서 백업(openCopyBackup) 경로에 사진 제외/경고 미구현)을 이어받아 처리. doExport()의 JSON 백업이 공유/파일 저장(Blob/File)에 실패해 copyFallback으로 떨어질 때만 영수증 사진이 쌓인 백업이 textarea select+execCommand('copy') 복사를 느리게 하거나 실패시킬 수 있는 공백을 발견 — logic.js에 순수 함수 txnPhotoCount(txns)/redactTxnPhotos(dbLike)(JSON.stringify replacer로 photo 키만 null화) 신설. index.html doExport()의 copyFallback을 사진이 있으면 redactTxnPhotos(DB) 결과로, 제외된 장수와 파일로 다시 내보내라는 안내를 note에 포함해 openCopyBackup을 열도록 재배선(공유/파일 저장 경로는 원본 text 그대로 유지, CSV 경로는 변경 없음). APP_VERSION 1.47.266->1.47.267, sw.js CACHE v533->v534 동기 범프. test/run.js에 txnPhotoCount 2건 + redactTxnPhotos(사진만 제거, 나머지 필드/txns 밖 필드는 보존) 1건 추가(2171->2174). node test/run.js 2174/2174 통과, node --check(logic.js/sw.js/test/run.js) 통과.",
-      "commit": "6a6bae7"
-    },
     {
       "cycle": 262,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-29T15:50:00.000Z",
       "summary": "critique(cycle266) 계획대로 연간 결산(연말정산)에 투자 실현손익을 추가. index.html의 yearSpendByCategory/yearIncomeByCategory 옆에 순수 보조 함수 yearRealizedGain(y,owner='전체') 신설 — DB.assetQtyLog를 (q.date||'').slice(0,4)===String(y)로 연도 필터링하고, owner!=='전체'면 DB.assets.find(a=>a.id===q.assetId)?.owner===owner로 추가 필터링한 뒤 새 집계 로직을 짜지 않고 logic.js의 기존 totalRealizedGain(items)에 그대로 넘겨 재사용(계획대로). yearSummary()의 반환 객체에 investGain:yearRealizedGain(y,owner) 필드 추가. openYearReview()의 4칸 요약(hrt-grid) 바로 아래에 investGain!=null일 때만(0과 '매도 기록 없음'을 구분하는 기존 null 관례 유지) openAssetQtyLog의 '누적 실현손익' 카드와 동일한 마크업·색상 규칙(>=0?var(--income):var(--expense))으로 '올해 투자 실현손익' 카드 노출. 구현 중 계획에 없던 공백을 하나 추가로 발견해 함께 고침 — 투자자산만 쓰고 현금 수입/지출 거래가 전혀 없는 해라면 investGain이 있어도 if(!s.income&&!s.expense) 빈 상태 분기(\"아직 N년 기록이 없어요\")에 가려져 카드 자체가 안 보였을 공백이라, 조건에 &&s.investGain==null을 추가해 투자 실현손익만 있는 해도 빈 상태를 건너뛰게 함. 전년도 YoY는 계획대로 이번 사이클에서 다루지 않음. index.html만 변경이라 APP_VERSION 1.47.275->1.47.276, sw.js CACHE v542->v543 동기 범프. test/run.js: yearRealizedGain 단위 테스트 4건(연도 필터/기록 없음→null/owner 필터/삭제된 자산 제외)+yearSummary.investGain 배선 2건(있음/없음)+openYearReview 카드 렌더링 4건(이익 income색/손실 expense색/기록 없으면 카드 미노출/투자손익만 있어도 빈 상태 아님) 추가(2221->2231, FUNCTIONS 목록에 yearRealizedGain도 추가). node test/run.js 2231/2231 통과, node --check(logic.js/sw.js/test/run.js) 및 HTML 주석 제거 후 추출한 index.html 인라인 스크립트 4블록 구문 검증(new Function) 통과. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 267,
+      "phase": "develop",
+      "timestamp": "2026-10-29T16:50:00.000Z",
+      "summary": "부채 상환 추가 납입 시뮬레이터(what-if, cycle262 advance)의 결과 영역(#debtWhatIfResult)이 debtWhatIfUpdate()에서 textContent만 직접 대입해 갱신되고 있어, toast()/celebrate()/nwChartPeekMove가 이미 쓰는 announceLive() aria-live 공지 관례를 따르지 않는 공백을 발견 — 입력창(#debtWhatIfExtra)에 포커스가 머무는 스크린리더 사용자는 타이핑할 때마다 바뀌는 결과 문구를 전혀 들을 수 없었음. debtWhatIfUpdate()에서 resEl.textContent를 설정한 직후 같은 문구로 announceLive(text)를 호출하도록 수정(toast 패턴과 동일). index.html만 변경이라 APP_VERSION 1.47.276->1.47.277, sw.js CACHE v543->v544 동기 범프. 공유 테스트 sandbox에 announceLive 스파이(announceLiveCalls)를 신설(이전엔 정의돼 있지 않아 실제 코드에 추가했다면 ReferenceError로 기존 debtWhatIfUpdate 테스트가 깨졌을 것)하고, 기존 두 debtWhatIfUpdate 테스트를 확장해 정상 경로에서 announceLive가 textContent와 동일한 문구로 정확히 1번 불리는지, 두 조기 반환 경로(존재하지 않는 자산/결과 영역 없음)에서는 전혀 불리지 않는지 검증(새 test() 케이스 추가 없이 기존 케이스에 assert만 추가해 테스트 총수는 2231로 동일). node test/run.js 2231/2231 통과, node --check(logic.js/sw.js/test/run.js) 및 HTML 주석 제거 후 추출한 index.html 인라인 스크립트 4블록 구문 검증(new Function) 통과.",
       "commit": null
     }
   ]

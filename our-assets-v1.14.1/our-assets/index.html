@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.276';
+const APP_VERSION='1.47.277';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3190,7 +3190,10 @@ function debtWhatIfText(wi,pf){
  return monthsSaved>0?`매달 이만큼 더 갚으면 ${shortDate2(wi.projectedDate)}쯤 다 갚아요 (약 ${monthsSaved}개월 빨라져요)`:`매달 이만큼 더 갚으면 ${shortDate2(wi.projectedDate)}쯤 다 갚아요`;
 }
 /* debtWhatIfExtra 입력이 바뀔 때마다 카드 전체를 다시 그리지 않고 결과 문구만 갱신 — assetBalPeek류
- * 경량 업데이트와 같은 원칙(app-evolve cycle262 advance). */
+ * 경량 업데이트와 같은 원칙(app-evolve cycle262 advance). textContent만 직접 대입해서는 포커스가
+ * 입력창(#debtWhatIfExtra)에 머무는 스크린리더 사용자에게 결과가 전혀 읽히지 않는 공백이 있었다 —
+ * toast()/celebrate()/nwChartPeekMove가 이미 쓰는 announceLive() 패턴을 그대로 재사용해
+ * 같은 문구를 화면엔 안 보이는 aria-live 리전에도 공지한다(app-evolve cycle267 develop). */
 function debtWhatIfUpdate(assetId){
  const a=DB.assets.find(x=>x.id===assetId);if(!a)return;
  const resEl=$('debtWhatIfResult');if(!resEl)return;
@@ -3199,7 +3202,9 @@ function debtWhatIfUpdate(assetId){
  const pfPts=debtPayoffPtsFor(a);
  const pf=debtPayoffProjection(pfPts,TODAY);
  const wi=debtPayoffWhatIf(pfPts,TODAY,extra);
- resEl.textContent=debtWhatIfText(wi,pf);
+ const text=debtWhatIfText(wi,pf);
+ resEl.textContent=text;
+ announceLive(text);
 }
 function assetBalCard(assetId,preset){
  preset=preset||'m3';
