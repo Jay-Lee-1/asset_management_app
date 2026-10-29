@@ -907,6 +907,17 @@ function mapGenericCsvRow(cells,mapping,targetAssetId){
  txn.toAssetId=type==='income'?targetAssetId:null;
  return{ok:true,unmatched:[],txn};
 }
+/* CSV 열 매칭(csvMapPickCol/index.html)에서 idx가 field가 아닌 다른 필드에 이미 쓰이고 있는지
+ * 판정한다 — "거래일시"/"등록일시"처럼 이름이 비슷한 두 열을 헷갈려 같은 열을 날짜·금액 등 서로
+ * 다른 역할에 겹쳐 고르면, mapGenericCsvRow(위)가 한 열의 값을 두 역할로 동시에 읽어(예: 금액
+ * 열의 숫자를 날짜로도 해석 시도) 거의 모든 행이 조용히 형식 오류로 빠지는데, 지금까지는 열 선택
+ * 화면이 이미 다른 역할에 쓰인 열까지 후보로 그대로 보여줘 이 사고를 막을 길이 없었다(app-evolve
+ * cycle265 develop). field 자기 자신이 이미 가진 값은 충돌로 보지 않는다(재선택 가능해야 함).
+ * idx===null("선택 안 함")은 항상 false — 여러 필드가 동시에 비어 있는 건 정상이다. */
+function csvMapColConflict(mapping,field,idx){
+ if(idx==null||!mapping)return false;
+ return ['dateCol','memoCol','amountCol','inCol','outCol'].some(f=>f!==field&&mapping[f]===idx);
+}
 
 /* 선택 모드(일별거래/전체내역)에서 고른 거래들에 카테고리 일괄 변경을 적용할 수 있는지 판정한다
  * (app-evolve cycle136 critique/advance — activeSel()/updateSelBottom()이 전체선택/닫기/삭제

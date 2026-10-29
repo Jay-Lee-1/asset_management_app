@@ -6048,6 +6048,20 @@ test('buildGenericImportPreview: 기존 내역과 날짜/구분/금액/카테고
   assert.strictEqual(preview.newCount, 0);
   assert.strictEqual(preview.dupCount, 1);
 });
+/* ---------- csvMapColConflict: CSV 열 매칭에서 다른 필드가 이미 쓰고 있는 열 판정(app-evolve cycle265 develop) ---------- */
+test('csvMapColConflict: 다른 필드가 쓰고 있는 열 인덱스면 true', () => {
+  assert.strictEqual(sandbox.csvMapColConflict({ dateCol: 0, amountCol: 1, memoCol: null }, 'memoCol', 0), true);
+  assert.strictEqual(sandbox.csvMapColConflict({ dateCol: 0, inCol: 2, outCol: 2 }, 'outCol', 2), true, 'inCol이 먼저 2를 쓰고 있으면 outCol이 같은 2를 고르는 것도 충돌');
+});
+test('csvMapColConflict: 자기 자신 필드가 이미 쓰고 있는 값은 충돌로 보지 않는다(재선택 가능)', () => {
+  assert.strictEqual(sandbox.csvMapColConflict({ dateCol: 0, amountCol: 1 }, 'dateCol', 0), false);
+});
+test('csvMapColConflict: idx가 null("선택 안 함")이면 항상 false', () => {
+  assert.strictEqual(sandbox.csvMapColConflict({ dateCol: 0 }, 'memoCol', null), false);
+});
+test('csvMapColConflict: 어느 필드도 안 쓰는 idx면 false', () => {
+  assert.strictEqual(sandbox.csvMapColConflict({ dateCol: 0, amountCol: 1 }, 'memoCol', 2), false);
+});
 /* ---------- openCsvColumnMap/renderCsvColumnMap — 열 매핑 화면(app-evolve cycle251 advance) ---------- */
 function setupCsvMapDB() {
   sandbox.DB = {
@@ -6095,6 +6109,33 @@ test('csvMapPickCol: 열 목록 피커를 열면 각 헤더 이름과 실제 데
   assert.ok(html.includes('선택 안 함'));
   assert.ok(html.includes('메모'));
   assert.ok(html.includes('예: 점심, 커피'), '선택 행 아래에 실제 셀 값 예시가 보여야 함');
+});
+/* csvMapColConflict(logic.js)를 실제 피커 렌더링에 배선한 결과 확인 — 비슷한 이름의 두 열(예: "거래일시"
+ * vs "등록일시")을 헷갈려 같은 열을 날짜/금액처럼 서로 다른 역할에 겹쳐 고르는 사고를, 이미 다른 필드가
+ * 쓰고 있는 열을 후보 목록에서 완전히 빼서 막는다(app-evolve cycle265 develop). */
+test('csvMapPickCol: 다른 필드가 이미 쓰고 있는 열은 후보 목록에서 빠진다', () => {
+  setupCsvMapDB();
+  sandbox.openCsvColumnMap(['거래일시', '금액', '메모'], [['2026-01-05', '5000', '점심']]);
+  sandbox._csvMap.dateCol = 0;
+  sandbox.csvMapPickCol('amountCol', '금액 열', false);
+  const html = sandbox.lastPickerHtml;
+  assert.ok(!html.includes('거래일시'), 'dateCol이 이미 쓰고 있는 열은 금액 열 후보에서 빠져야 함');
+  assert.ok(html.includes('금액') && html.includes('메모'), '아직 안 쓰인 다른 열들은 그대로 후보에 남아야 함');
+});
+test('csvMapPickCol: 필드 자기 자신이 이미 고른 열은 숨기지 않는다(재선택 가능)', () => {
+  setupCsvMapDB();
+  sandbox.openCsvColumnMap(['거래일시', '금액'], [['2026-01-05', '5000']]);
+  sandbox._csvMap.dateCol = 0;
+  sandbox.csvMapPickCol('dateCol', '날짜 열', false);
+  assert.ok(sandbox.lastPickerHtml.includes('거래일시'), '자기 자신이 쓰고 있는 열은 그대로 보여야 함');
+});
+test('csvMapPickCol: split 모드에서 입금 열이 고른 열은 출금 열 후보에서 빠진다', () => {
+  setupCsvMapDB();
+  sandbox.openCsvColumnMap(['날짜', '입출금', '메모'], [['2026-01-05', '5000', '점심']]);
+  sandbox.csvMapSetMode('split');
+  sandbox._csvMap.inCol = 1;
+  sandbox.csvMapPickCol('outCol', '출금 열', true);
+  assert.ok(!sandbox.lastPickerHtml.includes('입출금'), 'inCol이 쓰고 있는 열은 outCol 후보에서도 빠져야 함');
 });
 test('csvMapColChosen: 열을 고르면 _csvMap 필드가 바뀌고 화면이 다시 그려진다', () => {
   setupCsvMapDB();

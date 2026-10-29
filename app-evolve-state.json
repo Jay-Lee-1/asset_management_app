@@ -1,15 +1,8 @@
 {
   "cycle": 265,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 260,
-      "phase": "develop",
-      "timestamp": "2026-10-28T12:00:00.000Z",
-      "summary": "fork 서브에이전트로 탐색한 결과, matchTxnQuery(logic.js)가 분할 거래(t.splits)의 카테고리/메모는 splitLines()로 모아 haystack에 포함시키면서 개별 분할 금액(splits[].amount)은 빼놓고 최상위 합계(t.amount, saveTx()가 항상 분할 전체 합계로 강제)만 넣는 공백을 발견 — 마트 영수증을 식비 30,000+생활용품 20,000으로 분할한 거래를 '20000'으로 검색(cycle259 advance 전역 통합검색 포함, 기존 내역 검색도 동일)해도 전체 합계 50,000만 매칭 대상이라 못 찾는 버그였음. splitLines()로 이미 구한 lines에서 각 분할 금액을 join해 haystack에 추가(lineAmts). index.html 변경 없이 logic.js만 수정이라 APP_VERSION 1.47.262->1.47.263, sw.js CACHE v529->v530 동기 범프. test/run.js에 분할 금액 매칭/일반 거래 합계 매칭 회귀/무관한 숫자 비매칭 3건 추가(2157->2160). node test/run.js 2160/2160 통과, node --check(logic.js/test/run.js/sw.js) 및 HTML 주석 제거 후 추출한 index.html 인라인 스크립트 4블록 구문 검증 통과.",
-      "commit": "f5c8eb6"
-    },
     {
       "cycle": 260,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-29T07:20:00.000Z",
       "summary": "critique(cycle264) 계획대로 영수증 사진 Web Share Target을 구현. manifest.webmanifest에 share_target(action:'./share-receipt', POST, multipart/form-data, files:[{name:'photo',accept:['image/*']}]) 추가. sw.js: 'GET 아니면 무시' 분기 앞에 POST && pathname.endsWith('/share-receipt') 케이스를 추가해 req.formData()의 photo File을 CACHE와 분리된 고정 캐시 SHARE_CACHE('ourassets-share-inbox', 버전과 무관해 activate가 지워도 안전)에 SHARE_PHOTO_KEY로 저장한 뒤 303으로 './?action=shareReceipt'에 리다이렉트. activate의 구캐시 정리 필터에 SHARE_CACHE 예외 추가. logic.js의 parseShortcutAction 화이트리스트에 'shareReceipt' 추가. index.html: runShortcutAction에 shareReceipt 케이스(openTxSheet() 후 loadSharedReceiptPhoto() 비동기 호출) 추가, loadSharedReceiptPhoto()가 SHARE_CACHE에서 blob을 읽어(다 쓰면 캐시 삭제) 기존 txPhotoPick과 동일한 photoResizeDims/TX_PHOTO_MAX_SIDE/TX_PHOTO_QUALITY 경로로 리사이즈해 txDraft.photo에 세팅 후 renderTxSheet(). 구현 중 test/run.js의 touch()-before-save() 정적 가드 테스트가 새로 FAIL하는 것을 발견 — 원인은 내 코드가 아니라 index.html의 기존 `accept=\"image/*\"`(cycle261 advance가 추가한 사진 첨부 input) 문자열이 테스트의 나이브한 `/\\*...*\\/` 주석 제거 정규식에 '주석 시작'으로 오인되어 그 뒤 진짜 '*/'(다른 함수 안 주석)까지 수백 줄을 통째로 지워버리는 잠재 결함이었고, 내가 추가한 새 블록 주석이 그 잘못 매칭된 구간의 경계를 우연히 바꿔 숨어있던 오탐이 드러난 것 — test/run.js의 정규식에 `(?!\")` 음성 전방탐색을 추가해 근본 수정(이미지 MIME 와일드카드를 주석 시작으로 오인하지 않게). APP_VERSION 1.47.271->1.47.272, sw.js CACHE v538->v539 동기 범프. test/run.js에 parseShortcutAction(shareReceipt 허용)+runShortcutAction(shareReceipt가 openTxSheet 후 loadSharedReceiptPhoto 호출) 회귀 테스트 2건 추가(2201->2203). node test/run.js 2203/2203 통과, node --check(sw.js) 및 HTML 주석 제거 후 추출한 index.html 인라인 스크립트 4블록 구문 검증 통과. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 265,
+      "phase": "develop",
+      "timestamp": "2026-10-29T08:18:16.171Z",
+      "summary": "코드 전반을 재탐색(이전 cycle들이 다룬 영역과 중복 없는지 확인)한 결과, 은행/카드사 CSV 가져오기의 열 매칭 화면(openCsvColumnMap/cycle251 advance)이 날짜·금액(또는 입금/출금)·메모 각 필드를 독립적인 피커(csvMapPickCol)로 고르게 하면서, 사용자가 \"거래일시\"/\"등록일시\"처럼 이름이 비슷한 두 열을 헷갈려 같은 열을 서로 다른 역할(예: 날짜와 금액)에 겹쳐 고르는 것을 막을 방법이 전혀 없는 공백을 발견 — 그렇게 겹쳐 고르면 mapGenericCsvRow가 한 열의 값을 두 역할로 동시에 읽어 거의 모든 행이 조용히 형식 오류(invalid)로 빠지는데, 원인이 \"열 선택 실수\"라는 걸 사용자가 알 길이 없었음. logic.js에 순수 함수 csvMapColConflict(mapping,field,idx) 신설 — idx가 field 자신이 아닌 다른 필드(dateCol/memoCol/amountCol/inCol/outCol)에 이미 쓰이고 있으면 true, idx===null(선택 안 함)이나 field 자신이 쓰고 있는 값은 충돌로 보지 않음(재선택 가능). index.html의 csvMapPickCol이 헤더 열 목록을 렌더링할 때 이 함수로 다른 필드가 이미 쓰고 있는 열을 후보에서 완전히 제외하도록 배선 — csvMapPickAsset/openCatPicker의 exclude 관례(고를 수 없는 항목은 애초에 보여주지 않음)와 동일한 패턴. 열 매핑 중 모드를 바꾸거나(csvMapSetMode) 필드를 비우면 그 열이 다시 다른 필드의 후보로 돌아옴(상태 자체는 그대로 _csvMap을 읽으므로 추가 배선 불필요). index.html/logic.js 변경이라 APP_VERSION 1.47.272->1.47.273, sw.js CACHE v539->v540 동기 범프. test/run.js에 csvMapColConflict 단위 테스트 4건(충돌/자기자신 제외/null 제외/무관한 idx) + csvMapPickCol 배선 테스트 3건(다른 필드가 쓰는 열 제외/자기 자신은 안 숨김/split 모드 inCol-outCol 상호 제외) 추가(2203->2210). node test/run.js 2210/2210 통과, node --check(logic.js/sw.js/test/run.js) 및 HTML 주석 제거 후 추출한 index.html 인라인 스크립트 4블록(5개 중 1개는 빈 블록) 구문 검증 통과.",
       "commit": null
     }
   ]

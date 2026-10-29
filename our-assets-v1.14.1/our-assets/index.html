@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.272';
+const APP_VERSION='1.47.273';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -8107,12 +8107,18 @@ function csvMapSetMode(mode){if(!_csvMap||_csvMap.mode===mode)return;_csvMap.mod
 function csvMapSetCatKind(kind){if(!_csvMap||_csvMap.catKind===kind)return;_csvMap.catKind=kind;_csvMap.category=null;renderCsvColumnMap();}
 function csvMapColChosen(field,idx){if(!_csvMap)return;_csvMap[field]=idx;renderCsvColumnMap();}
 /* 열 선택 피커 — openPicker를 직접 재사용한 pk-item 목록(allowNone이면 '선택 안 함' 포함). 각
- * 항목 아래에 csvColSample()로 실제 데이터 값 예시를 보여준다. */
+ * 항목 아래에 csvColSample()로 실제 데이터 값 예시를 보여준다. 다른 필드가 이미 쓰고 있는 열은
+ * csvMapColConflict(logic.js)로 걸러 후보에서 완전히 뺀다 — csvMapPickAsset의 exclude처럼
+ * "애초에 고를 수 없는 항목은 보여주지 않는다"는 이 피커들의 공통 관례를 따른다(app-evolve
+ * cycle265 develop, 이전엔 걸러주는 게 없어 비슷한 이름의 두 열을 헷갈려 같은 열을 두 역할에
+ * 겹쳐 고르는 실수를 막을 길이 없었다). */
 function csvMapPickCol(field,title,allowNone){
  if(!_csvMap)return;
  const m=_csvMap;
  const noneBtn=allowNone?`<button class="pk-item" onclick="csvMapColChosen('${field}',null)"><div class="pav" style="background:var(--sunken);color:var(--text-2)">${svg('x')}</div><div class="pbody"><div class="pn">선택 안 함</div></div></button>`:'';
- const html=m.headerRow.map((h,i)=>{const sample=csvColSample(i);
+ const html=m.headerRow.map((h,i)=>{
+  if(csvMapColConflict(m,field,i))return '';
+  const sample=csvColSample(i);
   return `<button class="pk-item" onclick="csvMapColChosen('${field}',${i})"><div class="pav" style="background:var(--sunken);color:var(--text-2)">${svg('tag')}</div><div class="pbody"><div class="pn">${esc(h||(i+1)+'번째 열')}</div>${sample?`<div class="psub">예: ${esc(sample)}</div>`:''}</div></button>`;}).join('');
  openPicker(title,`<div class="pk-group">${noneBtn}${html}</div>`,renderCsvColumnMap);
 }
