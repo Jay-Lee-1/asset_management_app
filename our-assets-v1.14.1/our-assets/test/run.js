@@ -195,7 +195,7 @@ const FUNCTIONS = [
   'dateBelowRangeFloor', 'dateAboveRangeCeil', 'recalcEndCond', 'isVarCat', 'setCatVar', 'toggleCatVarUI', 'activeRecsForAssets', 'activeRecsForCat',
   'num', 'doRenameCat', 'doDeleteCat', 'catMergeCounts', 'openCatMergePicker', 'confirmCatMerge', 'mergeCatInto', 'totalBudgetSummary', 'budgetForMonth', 'setBudgetFrom', 'addCat', 'movedCatOrder', 'moveCat',
   'isBudgetRolloverCat', 'setBudgetRolloverCat', 'toggleBudgetRolloverUI', 'budgetCarryFor', 'budgetForMonthWithCarry',
-  'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'assetsToCSV', 'nwHistoryToCSV',
+  'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'assetsToCSV', 'nwHistoryToCSV', 'assetQtyLogToCSV',
   'unguardCsv', 'csvRowToImportTxn', 'buildImportPreview', 'doCsvImport',
   // openCsvColumnMap/buildGenericImportPreview 등은 app-evolve cycle251 advance(은행/카드사 CSV
   // 열 매핑 가져오기) 구현 검증용 — detectOwnCsvFormat/mapGenericCsvRow는 logic.js 전용(전체 로드돼
@@ -5468,13 +5468,73 @@ test('nwHistoryToCSV: byOwner는 귀속마다 집합이 달라 고정 컬럼에 
   ]);
   assert.ok(!csv.includes('엄마') && !csv.includes('아빠'), 'byOwner 세부값은 CSV에 섞여나오면 안 됨');
 });
-/* ---------- doExport(assetsCsv/nwCsv) 배선 회귀: exportData() 시트의 새 버튼이 doExport로 올바르게 연결되는지.
+/* ---------- assetQtyLogToCSV: 매도(실현손익) 내역 CSV 내보내기(app-evolve cycle268 advance) ---------- */
+test('assetQtyLogToCSV: 빈 배열이면 BOM과 헤더만 있는 한 줄을 반환한다', () => {
+  const csv = sandbox.assetQtyLogToCSV([], []);
+  assert.strictEqual(csv, '﻿날짜,자산명,유형,귀속,매도 전 수량,매도 후 수량,매도금액,차감된 매입원가,실현손익');
+});
+test('assetQtyLogToCSV: realizedGain==null인 기록(매도금액 미입력)은 제외하고, realizedGain!=null인 기록만 날짜순으로 담는다', () => {
+  const assets = [{ id: 'a1', name: '삼성전자', type: 'stock', owner: '엄마' }];
+  const csv = sandbox.assetQtyLogToCSV([
+    { assetId: 'a1', date: '2026-03-01', prevQty: 20, newQty: 10, saleProceeds: 200000, realizedGain: 50000 },
+    { assetId: 'a1', date: '2026-01-01', prevQty: 30, newQty: 20, realizedGain: null },
+    { assetId: 'a1', date: '2026-02-01', prevQty: 40, newQty: 30, addedAmount: 100000 },
+  ], assets);
+  const rows = JSON.parse(JSON.stringify(sandbox.parseCSV(csv)));
+  assert.strictEqual(rows.length, 2, '헤더 1줄 + realizedGain!=null인 데이터 1줄만');
+  assert.deepStrictEqual(rows[1], ['2026-03-01', '삼성전자', '주식', '엄마', '20', '10', '200000', '150000', '50000']);
+});
+test('assetQtyLogToCSV: 차감된 매입원가(costBasisRemoved)는 qtyLogEntry에 저장돼 있지 않으므로 saleProceeds-realizedGain으로 되돌려 구한다(손실 매도 포함)', () => {
+  const assets = [{ id: 'a1', name: '비트코인', type: 'crypto', owner: '아빠' }];
+  const csv = sandbox.assetQtyLogToCSV([
+    { assetId: 'a1', date: '2026-01-01', prevQty: 1, newQty: 0.5, saleProceeds: 100000, realizedGain: -20000 },
+  ], assets);
+  const rows = sandbox.parseCSV(csv);
+  assert.strictEqual(rows[1][7], '120000', 'costBasisRemoved = saleProceeds(100000) - realizedGain(-20000)');
+  assert.strictEqual(rows[1][8], '-20000');
+});
+test('assetQtyLogToCSV: 날짜가 여러 건이면 날짜 오름차순으로 정렬한다', () => {
+  const assets = [{ id: 'a1', name: '금', type: 'gold', owner: '엄마' }];
+  const csv = sandbox.assetQtyLogToCSV([
+    { assetId: 'a1', date: '2026-03-01', prevQty: 10, newQty: 5, saleProceeds: 300000, realizedGain: 10000 },
+    { assetId: 'a1', date: '2026-01-01', prevQty: 20, newQty: 10, saleProceeds: 300000, realizedGain: 20000 },
+  ], assets);
+  const rows = sandbox.parseCSV(csv);
+  assert.strictEqual(rows[1][0], '2026-01-01');
+  assert.strictEqual(rows[2][0], '2026-03-01');
+});
+test('assetQtyLogToCSV: 자산이 이미 삭제됐으면(DB.assets에서 못 찾음) 이름/유형/귀속을 빈 칸으로 남긴다(추측하지 않음)', () => {
+  const csv = sandbox.assetQtyLogToCSV([
+    { assetId: 'gone', date: '2026-01-01', prevQty: 10, newQty: 5, saleProceeds: 50000, realizedGain: 10000 },
+  ], []);
+  const rows = sandbox.parseCSV(csv);
+  assert.strictEqual(rows[1][1], '');
+  assert.strictEqual(rows[1][2], '');
+  assert.strictEqual(rows[1][3], '');
+});
+test('assetQtyLogToCSV: 자산명/귀속에 콤마·큰따옴표가 있으면 필드 전체를 따옴표로 감싸고, =,+,-,@ 로 시작하면 \'를 붙여 수식 인젝션을 막는다', () => {
+  const assets = [{ id: 'a1', name: '=HYPERLINK("evil")', type: 'stock', owner: '엄마, 아빠' }];
+  const csv = sandbox.assetQtyLogToCSV([
+    { assetId: 'a1', date: '2026-01-01', prevQty: 10, newQty: 5, saleProceeds: 50000, realizedGain: 10000 },
+  ], assets);
+  const rows = sandbox.parseCSV(csv);
+  assert.strictEqual(rows[1][1], "'=HYPERLINK(\"evil\")");
+  assert.strictEqual(rows[1][3], '엄마, 아빠');
+});
+/* ---------- doExport(assetsCsv/nwCsv/gainCsv) 배선 회귀: exportData() 시트의 새 버튼이 doExport로 올바르게 연결되는지.
  * exportData()는 canShareFiles()/svg()/IS_IOS 등 FUNCTIONS 목록 밖의 의존이 많아 실행형으로 돌리지 않고,
  * homeAlertCard 테스트(위)와 동일하게 extractFunction으로 원본 소스만 떼어 onclick 배선을 정적으로 검사한다. */
-test('exportData: 자산 목록/순자산 추이 CSV 버튼이 각각 kind="assetsCsv"/"nwCsv"로 doExport를 부른다', () => {
+test('exportData: 자산 목록/순자산 추이/매도 내역 CSV 버튼이 각각 kind="assetsCsv"/"nwCsv"/"gainCsv"로 doExport를 부른다', () => {
   const body = extractFunction('exportData');
   assert.ok(body.includes("doExport('${sharable?'share':'download'}','assetsCsv')"), '자산 목록 CSV 버튼이 없음');
   assert.ok(body.includes("doExport('${sharable?'share':'download'}','nwCsv')"), '순자산 추이 CSV 버튼이 없음');
+  assert.ok(body.includes("doExport('${sharable?'share':'download'}','gainCsv')"), '매도(실현손익) 내역 CSV 버튼이 없음');
+});
+test('CSV_KIND_META/doExport: gainCsv가 assetQtyLogToCSV(DB.assetQtyLog, DB.assets)로 연결돼 있다', () => {
+  const metaBody = extractConst('CSV_KIND_META');
+  assert.ok(/gainCsv\s*:\s*\{/.test(metaBody), 'CSV_KIND_META에 gainCsv 항목이 없음');
+  const exportBody = extractFunction('doExport');
+  assert.ok(exportBody.includes("kind==='gainCsv'?assetQtyLogToCSV(DB.assetQtyLog,DB.assets)"), 'doExport가 gainCsv를 assetQtyLogToCSV로 연결하지 않음');
 });
 test('csvDateValid: YYYY-MM-DD 형식이 아니거나 실존하지 않는 날짜(예: 2월 30일)는 거부한다', () => {
   assert.strictEqual(sandbox.csvDateValid('2026-01-15'), true);
