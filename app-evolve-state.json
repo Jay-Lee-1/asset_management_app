@@ -1,15 +1,8 @@
 {
   "cycle": 263,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 258,
-      "phase": "review",
-      "timestamp": "2026-10-28T04:30:00.000Z",
-      "summary": "cycle258 develop 커밋(cd359e7, debtsPaidOff()의 peak 계산을 assetBalanceSeries 60개 샘플링에서 assetBalancePeak(거래 전수 순회)로 교체)을 검토. assetBalancePeak가 assetBalanceSeries와 동일한 필터/정렬/부호 규칙을 쓰면서도 peak 초기값을 base로 둬 기존 reduce(...,0) 방식보다 오히려 더 정확함(샘플 날짜가 첫 거래 이전을 못 비추는 경계 상황까지 커버)을 코드로 확인. 추가된 단위 테스트 4건(거래 없음/일반자산/부채/샘플링 틈새 스파이크 대조)과 회귀 테스트 1건이 핵심 시나리오를 잘 덮음. node test/run.js 독립 재실행 결과 2147/2147 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 258,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-29T00:00:00.000Z",
       "summary": "fork 서브에이전트로 탐색한 결과, duplicateTx()(index.html:5132, '복제(빠른 재입력)')가 confirmed/updatedAt은 지우면서 cycle261에서 신설된 photo(영수증 사진 dataURL) 필드는 그대로 복사해, 다른 날짜의 다른 지출을 복제해도 원본 영수증 사진이 새 draft에 그대로 붙어오는 공백을 발견 — 서로 다른 구매를 나타내는데 같은 영수증 사진을 공유하게 돼 혼란스럽고, 저장 시 DB.txns의 base64 이미지가 조용히 두 배로 쌓임(DB_JSON_LEN/STORAGE_SIZE_WARN_LEN이 이미 용량을 추적하는 민감 영역). duplicateTx()의 필드 삭제 줄에 delete d.photo; 추가. index.html만 변경이라 APP_VERSION 1.47.268->1.47.269, sw.js CACHE v535->v536 동기 범프. test/run.js에 duplicateTx가 photo를 지우고 원본 레코드는 그대로 유지한다는 회귀 테스트 1건 추가(2185->2186, 기존 confirmed 테스트 바로 옆). node test/run.js 2186/2186 통과, node --check(logic.js/sw.js/test/run.js) 및 HTML 주석 제거 후 추출한 index.html 인라인 스크립트 5블록 구문 검증 통과.",
+      "commit": "49a74ed"
+    },
+    {
+      "cycle": 263,
+      "phase": "review",
+      "timestamp": "2026-10-29T01:00:00.000Z",
+      "summary": "cycle263 develop 커밋(49a74ed, duplicateTx가 복제 draft에서 원본 영수증 photo 필드를 지우도록 수정)을 검토. editTx()(index.html:5121)는 같은 레코드를 id 유지한 채 그대로 복사해 photo를 지우지 않는 것이 맞고, duplicateTx()만 새 레코드를 만드는 경로라 photo를 지우는 게 옳음을 grep/코드 대조로 확인 — 두 함수가 혼동되지 않게 올바르게 분리돼 있음. 추가된 회귀 테스트가 복제본엔 photo가 없고 원본 DB.txns 레코드는 그대로 유지됨을 함께 검증해 핵심 시나리오를 잘 덮음. node test/run.js 독립 재실행 결과 2186/2186 통과, node --check(logic.js/sw.js/test/run.js) 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
