@@ -1,22 +1,12 @@
 {
   "cycle": 266,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "연간 결산(연말정산) 화면에 투자 실현손익 누락",
+    "why": "cycle265-266에서 부분매도 실현손익(realizedGainForSale)을 기록하고 자산별 합계(totalRealizedGain, openAssetQtyLog)까지 보여주게 됐지만, 더 큰 그림을 보여주는 연간 결산(openYearReview/yearSummary, index.html:6366-6440)은 여전히 수입/지출/순저축액/저축률만 집계하고 DB.assetQtyLog의 realizedGain을 전혀 참조하지 않는다. 투자자산을 운용하는 사용자가 '올 한 해 투자로 실제로 얼마를 벌거나 잃었는지'를 보려면 자산마다 openAssetQtyLog를 하나씩 열어 합계를 일일이 더해야 하는 공백이 남아있다 — cycle266은 '자산별' 합계만 풀었을 뿐 '연도 전체' 합계는 다루지 않았다.",
+    "approach": "index.html의 yearSpendByCategory/yearIncomeByCategory 옆에 순수 보조 함수 yearRealizedGain(y,owner='전체')를 추가 — DB.assetQtyLog를 (q.date||'').slice(0,4)===String(y)로 연도 필터링하고, owner!=='전체'면 DB.assets.find(a=>a.id===q.assetId)?.owner===owner로 추가 필터링한 뒤, 새 집계 로직을 중복 작성하지 않고 logic.js의 기존 순수함수 totalRealizedGain(items)에 그대로 넘겨 재사용한다. yearSummary()의 반환 객체에 investGain 필드를 추가하고, openYearReview()의 4칸 요약(hrt-grid) 바로 아래에 investGain!=null일 때만(0과 '해당 연도에 매도 기록 없음'을 구분하는 기존 null 관례 유지) 작은 카드로 '올해 투자 실현손익 ±N원'을 investGainLossCard와 동일한 색상 규칙(>=0?var(--income):var(--expense))으로 노출한다. 전년도 YoY는 범위를 벗어나므로 이번 사이클에서는 다루지 않는다."
+  },
   "history": [
-    {
-      "cycle": 261,
-      "phase": "review",
-      "timestamp": "2026-10-28T17:10:51.641Z",
-      "summary": "cycle261 develop 커밋(be4c5ba, 전역 통합검색 세 그룹에 capGroup 기반 더보기(gsMore) 도입)을 검토. globalSearchBody가 헤더 건수는 전체 매칭 수(txnsAll/assetsAll/catsAll.length)로, 렌더 목록은 capGroup으로 자른 shown 배열로 분리해 쓰는 것을 코드로 확인 — 기존 hist-more/of-more 관례(남은 건수 표시)와 동일한 모양. GS_EXPAND가 입력(gsQInput)과 시트 재오픈(openGlobalSearch) 양쪽에서 초기화돼 이전 검색어의 펼침 상태가 새 검색에 새어들지 않음을 확인. capGroup 자체는 순수함수로 cap 이하/이상/expand:true/빈 배열 네 갈래를 모두 올바르게 처리. node test/run.js 독립 재실행 결과 2166/2166 통과, node --check(logic.js/sw.js/test/run.js) 통과, APP_VERSION(1.47.265)/sw.js CACHE(v532) 동기화 확인. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
-    {
-      "cycle": 261,
-      "phase": "critique",
-      "timestamp": "2026-10-28T18:05:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(budget/goal/net worth trend/bulk select/투자자산 cost-basis P/L까지 이미 성숙함을 확인, APPLOCK PIN 전체 DB 암호화 재추진 금지 유지)한 결과, 이미 절반쯔 구현돼 있는 debtPayoffProjection(추세 기반 '이 속도면 언제 다 갚는다' 관찰형 투사)의 자연스러운 확장인 부채 상환 추가 납입 시뮬레이터(what-if: '매달 얼마 더 갚으면 언제 끝나는지')가 과거 두 cycle(258/261)에서 러너업으로 반복 거론됐으나 아직 구현되지 않았음을 확인 — debt 자산에 interestRate/APR 필드가 없어(grep 확인) 진짜 상환계산은 스키마 확장이 필요하지만, 추세-기반 what-if는 기존 debtPayoffRate 추출만으로 스키마 변경 없이 가능함. 러너업: 투자자산 목표비중 리밸런싱 알림(target% 필드 신규 필요, 보류), 홈 알림의 실제 OS 푸시 알림화(서버 측 VAPID 필요, 큰 작업), 기존 러너업(PDF 명세서/접근성 전수조사) 유지. 채택 계획(debtPayoffRate 추출 + debtPayoffWhatIf 신설 + assetBalCard에 입력/경량 업데이트 배선)을 pending_advance_plan에 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 261,
       "phase": "advance",
@@ -148,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-29T13:05:00.000Z",
       "summary": "cycle266 develop 커밋(399ac71, openAssetQtyLog 시트 상단에 누적 실현손익 카드 totalRealizedGain 추가)을 검토. totalRealizedGain이 items를 받아 realizedGain!=null인 기록만 더하고 하나도 없으면 null을 반환하는 것을 코드로 확인 — 대상 items가 호출부(openAssetQtyLog)에서 이미 assetId로 필터된 배열이라 다른 자산의 기록이 섞여 합산될 위험이 없음. 색상 규칙(totalGain>=0?var(--income):var(--expense))이 investGainLossCard의 up=gl.amount>=0 패턴과 정확히 일치함을 대조 확인. comma()가 음수에 '-'를 포함해 표시하므로 손실 합계도 올바르게 보임. node test/run.js 독립 재실행 결과 2221/2221 통과, node --check(logic.js/sw.js/test/run.js) 통과, APP_VERSION(1.47.275)/sw.js CACHE(v542) 동기화 확인. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 266,
+      "phase": "critique",
+      "timestamp": "2026-10-29T14:40:44.000Z",
+      "summary": "fork 서브에이전트로 앱 전반을 재탐색(sync/tombstone 시스템, 자산 이체 흐름, 반복거래 skip, 전체내역 검색 debounce 등은 이미 성숙함을 확인, SRI TODO(index.html:1384)는 이 컨테이너의 cdn.jsdelivr.net/t1.kakaocdn.net egress가 여전히 403으로 차단돼 불가로 재확인)한 결과, cycle265-266이 만든 부분매도 실현손익 기록(realizedGainForSale/totalRealizedGain)이 자산별 보유수량 로그(openAssetQtyLog)에만 노출되고, 더 상위 요약 화면인 연간 결산(openYearReview/yearSummary)은 여전히 수입/지출/저축률만 보여줘 '올해 투자로 얼마를 벌었는지'를 한눈에 볼 방법이 없는 공백을 발견. 채택 계획(yearRealizedGain 신설 + yearSummary.investGain 배선 + openYearReview 카드 노출, 기존 totalRealizedGain/null 관례 재사용)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
