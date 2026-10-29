@@ -1,26 +1,8 @@
 {
-  "cycle": 264,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "영수증 사진 Web Share Target 지원 (OS 공유 시트 -> 거래 등록)",
-    "why": "manifest.webmanifest에 shortcuts만 있고 share_target 키가 없으며, sw.js:38의 if (req.method !== 'GET') return;가 모든 비-GET 요청을 무시해 OS 공유 시트로 PWA에 파일을 보낼 길이 원천적으로 없음. cycle261 advance가 영수증 사진 첨부(txDraft.photo, txPhotoPick, photoResizeDims 등)를 이미 구현했는데도, 카메라/갤러리/은행앱에서 사진을 '공유'해 바로 거래로 등록하는 길이 없어 반드시 앱을 먼저 열고 거래를 시작한 뒤 파일 피커로 골라야 함 — 방금 쓴 기능 자체가 남긴 공백.",
-    "approach": "manifest.webmanifest에 share_target(action:'./share-receipt', method:'POST', enctype:'multipart/form-data', params.files:[{name:'photo',accept:['image/*']}]) 추가. sw.js의 'GET 아니면 무시' 분기 앞에 POST && pathname.endsWith('/share-receipt') 케이스를 추가해 req.formData()에서 photo File을 꺼내 Cache Storage에 고정 키(예: ./__shared-photo__)로 저장한 뒤 Response.redirect('./?action=shareReceipt')로 응답. index.html의 runShortcutAction(기존 addExpense/addIncome/addTransfer 처리부 근처)에 action==='shareReceipt' 케이스를 추가해 caches.open(CACHE).then(c=>c.match('./__shared-photo__'))로 blob을 읽고, 기존 txPhotoPick이 쓰는 photoResizeDims/TX_PHOTO_MAX_SIDE/TX_PHOTO_QUALITY(logic.js) 경로로 리사이즈/압축해 dataURL을 만든 뒤 openTxSheet()로 새 txDraft.photo에 세팅, 끝나면 캐시 엔트리를 삭제해 재방문 시 사진이 다시 나타나지 않게 함. APP_VERSION/sw.js CACHE 동기 범프. fetch/캐시 플러밍 자체는 test/run.js 구조상 단위 테스트 불가 영역이므로 커밋 메시지에 테스트 공백으로 명시하고, 새로 분리되는 순수 헬퍼가 있다면 그것만 테스트에 추가."
-  },
+  "cycle": 265,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 259,
-      "phase": "critique",
-      "timestamp": "2026-10-28T10:10:33.067Z",
-      "summary": "fork 서브에이전트로 pushCloud 주변 실패 처리(cloudSyncFailed/toast/homeAlerts cycle211)를 직접 코드로 확인한 결과 이미 충분히 처리돼 있어 러너업에서 제외. matchTxnQuery/matchAssetQuery/matchCatQuery/searchTerms가 전부 logic.js에 이미 존재하지만 거래내역/자산선택/카테고리선택 화면 각각에서만 쓰이고 있어, 세 가지를 한 입력으로 동시에 가로질러 찾는 전역 통합검색 진입점이 빠져있는 공백을 발견. advance 계획을 pending_advance_plan에 저장.",
-      "commit": null
-    },
-    {
-      "cycle": 259,
-      "phase": "advance",
-      "timestamp": "2026-10-28T11:14:05.858Z",
-      "summary": "critique(cycle259) 계획대로 전역 통합검색(openGlobalSearch)을 구현. index.html에 openGlobalSearch/gsQInput/globalSearchBody 신설(openSheet 인프라 재사용) — 입력 하나로 DB.txns(matchTxnQuery)/DB.assets(matchAssetQuery)/DB.categories.expense|income|saving(matchCatQuery)을 동시에 220ms 디바운스 필터링해 거래·자산·카테고리 3그룹(그룹별 상위 20건 cap, 거래는 날짜 내림차순)으로 렌더링. 거래 행은 txRowCore 재사용(탭하면 rowTap→editTx), 자산/카테고리 행은 각각 openAssetSheet(a.id)/openCatManage(kind) 직접 호출(기존 openRecManage/asset-item 행처럼 openSheet가 같은 시트를 덮어써 닫기 불필요). 진입점은 pageHead(menu 탭 헤더)에 검색 아이콘 버튼(.icon-btn, 기존에 정의만 돼 있던 미사용 CSS 클래스) 추가. APP_VERSION 1.47.261->1.47.262, sw.js CACHE v528->v529 동기 범프. test/run.js에 세 매칭 함수가 같은 단어에 그룹별로 독립 매칭/비매칭하는지 검증하는 회귀 테스트 2건 추가(2155->2157). node test/run.js 2157/2157 통과, node --check(logic.js/sw.js/test/run.js) 및 HTML 주석을 제거한 뒤 추출한 index.html 인라인 스크립트 4블록 구문 검증 모두 통과.",
-      "commit": null
-    },
     {
       "cycle": 260,
       "phase": "develop",
@@ -152,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-29T06:05:00.000Z",
       "summary": "fork 서브에이전트로 앱 전반을 재탐색(CSV 임포트/다중화폐/cost-basis/debt/goal/budget 시스템은 이미 성숙, 접근성은 아이콘 버튼 39개 전부 aria-label·role=switch/button·키보드 핸들러를 갖추고 있어 지금 당장 고를 만한 뚜렷한 공백 없음, 리밸런싱 알림/PDF 명세서/실제 OS 푸시는 스키마 확장 또는 서버 백엔드가 필요해 이번에도 보류)한 결과, manifest.webmanifest에 share_target 키가 없고 sw.js:38의 'GET 아니면 무시' 분기가 모든 POST를 버려 cycle261 advance가 신설한 영수증 사진 첨부 기능임에도 OS 공유 시트(카메라/갤러리/은행앱)에서 사진을 곧장 앱으로 보내 거래로 등록할 길이 없는 공백을 발견 — 앱을 먼저 열고 거래를 시작해 파일 피커로 골라야만 하는 우회만 존재. 서버 없는 정적 PWA 범위 안에서(Cache Storage + sw.js fetch 핸들러 + 기존 photoResizeDims 재사용) 한 사이클에 구현 가능하다고 판단해 채택 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 264,
+      "phase": "advance",
+      "timestamp": "2026-10-29T07:20:00.000Z",
+      "summary": "critique(cycle264) 계획대로 영수증 사진 Web Share Target을 구현. manifest.webmanifest에 share_target(action:'./share-receipt', POST, multipart/form-data, files:[{name:'photo',accept:['image/*']}]) 추가. sw.js: 'GET 아니면 무시' 분기 앞에 POST && pathname.endsWith('/share-receipt') 케이스를 추가해 req.formData()의 photo File을 CACHE와 분리된 고정 캐시 SHARE_CACHE('ourassets-share-inbox', 버전과 무관해 activate가 지워도 안전)에 SHARE_PHOTO_KEY로 저장한 뒤 303으로 './?action=shareReceipt'에 리다이렉트. activate의 구캐시 정리 필터에 SHARE_CACHE 예외 추가. logic.js의 parseShortcutAction 화이트리스트에 'shareReceipt' 추가. index.html: runShortcutAction에 shareReceipt 케이스(openTxSheet() 후 loadSharedReceiptPhoto() 비동기 호출) 추가, loadSharedReceiptPhoto()가 SHARE_CACHE에서 blob을 읽어(다 쓰면 캐시 삭제) 기존 txPhotoPick과 동일한 photoResizeDims/TX_PHOTO_MAX_SIDE/TX_PHOTO_QUALITY 경로로 리사이즈해 txDraft.photo에 세팅 후 renderTxSheet(). 구현 중 test/run.js의 touch()-before-save() 정적 가드 테스트가 새로 FAIL하는 것을 발견 — 원인은 내 코드가 아니라 index.html의 기존 `accept=\"image/*\"`(cycle261 advance가 추가한 사진 첨부 input) 문자열이 테스트의 나이브한 `/\\*...*\\/` 주석 제거 정규식에 '주석 시작'으로 오인되어 그 뒤 진짜 '*/'(다른 함수 안 주석)까지 수백 줄을 통째로 지워버리는 잠재 결함이었고, 내가 추가한 새 블록 주석이 그 잘못 매칭된 구간의 경계를 우연히 바꿔 숨어있던 오탐이 드러난 것 — test/run.js의 정규식에 `(?!\")` 음성 전방탐색을 추가해 근본 수정(이미지 MIME 와일드카드를 주석 시작으로 오인하지 않게). APP_VERSION 1.47.271->1.47.272, sw.js CACHE v538->v539 동기 범프. test/run.js에 parseShortcutAction(shareReceipt 허용)+runShortcutAction(shareReceipt가 openTxSheet 후 loadSharedReceiptPhoto 호출) 회귀 테스트 2건 추가(2201->2203). node test/run.js 2203/2203 통과, node --check(sw.js) 및 HTML 주석 제거 후 추출한 index.html 인라인 스크립트 4블록 구문 검증 통과. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

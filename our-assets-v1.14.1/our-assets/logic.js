@@ -1218,11 +1218,12 @@ function helpBackupNote(isCloudAcct){
 /* manifest.webmanifest의 shortcuts(아이콘 롱프레스로 뜨는 바로가기)가 ./?action=xxx 형태로 앱을
  * 여는데, 이 쿼리스트링을 해석해 어떤 거래 입력 시트를 열지 결정한다. location.search를 직접
  * 참조하지 않는 순수 함수로 둬 테스트 가능하게 하고, 호출부(index.html의 startApp())가
- * location.search를 넘겨준다. 화이트리스트 3개 외에는 전부 null — 모르는 쿼리로 임의의 시트가
- * 열리지 않게 한다(app-evolve cycle254 critique → advance). */
+ * location.search를 넘겨준다. 화이트리스트 외에는 전부 null — 모르는 쿼리로 임의의 시트가
+ * 열리지 않게 한다(app-evolve cycle254 critique → advance). shareReceipt는 manifest의
+ * share_target → sw.js가 ?action=shareReceipt로 리다이렉트해 들어오는 값이다(cycle264 advance). */
 function parseShortcutAction(search){
  const m=/[?&]action=([a-zA-Z]+)/.exec(search||'');
  if(!m)return null;
  const a=m[1];
- return(a==='addExpense'||a==='addIncome'||a==='addTransfer')?a:null;
+ return(a==='addExpense'||a==='addIncome'||a==='addTransfer'||a==='shareReceipt')?a:null;
 }

@@ -922,8 +922,13 @@ function test(name, fn) { tests.push({ name, fn }); }
 function findTouchBeforeSaveViolations() {
   // 주석(/* ... */) 안에 "touchSave()"/"save()"라는 말이 그대로 등장하면(이 테스트 코드 자신의
   // 설명 주석 포함) 실제 호출로 오인되므로, 길이를 보존한 공백으로 먼저 지워 라인 번호/오프셋에는
-  // 영향을 주지 않으면서 텍스트 매칭에서만 제외한다.
-  const body = src.replace(/\/\*[\s\S]*?\*\//g, (m) => ' '.repeat(m.length));
+  // 영향을 주지 않으면서 텍스트 매칭에서만 제외한다. index.html의 `accept="image/*"` 같은 MIME
+  // 와일드카드 문자열이 "/*"로 끝나는 바람에 실제 주석이 아닌데도 주석 시작으로 오인되어, 그
+  // 뒤로 나오는 진짜 다음 "*/"까지(여러 함수를 건너뛰어) 통째로 지워버리는 사고가 있었다 —
+  // 그 결과 함수 경계 스캐너가 엉뚱한 함수들을 하나로 합쳐 버려 이 테스트가 오경보를 낸다
+  // (app-evolve cycle264 advance). 실제 블록 주석은 "/*" 바로 다음이 "로 이어지는 법이 없으므로
+  // 그 경우만 제외한다.
+  const body = src.replace(/\/\*(?!")[\s\S]*?\*\//g, (m) => ' '.repeat(m.length));
   const fnStartRe = /^(?:async function|function) (\w+)\(/gm;
   const fns = [];
   let fm;
@@ -24935,10 +24940,13 @@ test('parseShortcutAction: action=addExpense/addIncome/addTransfer를 그대로 
   assert.strictEqual(sandbox.parseShortcutAction('?action=addIncome'), 'addIncome');
   assert.strictEqual(sandbox.parseShortcutAction('?action=addTransfer'), 'addTransfer');
 });
+test('parseShortcutAction: action=shareReceipt(Web Share Target → sw.js 리다이렉트)도 그대로 돌려준다', () => {
+  assert.strictEqual(sandbox.parseShortcutAction('?action=shareReceipt'), 'shareReceipt');
+});
 test('parseShortcutAction: action이 쿼리의 첫 파라미터가 아니어도 &로 찾아낸다', () => {
   assert.strictEqual(sandbox.parseShortcutAction('?x=1&action=addIncome'), 'addIncome');
 });
-test('parseShortcutAction: 화이트리스트 3개 외의 action 값은 null이다(임의의 시트가 열리지 않도록)', () => {
+test('parseShortcutAction: 화이트리스트 밖의 action 값은 null이다(임의의 시트가 열리지 않도록)', () => {
   assert.strictEqual(sandbox.parseShortcutAction('?action=deleteEverything'), null);
   assert.strictEqual(sandbox.parseShortcutAction('?action='), null, 'action= 뒤에 값이 없으면 null이어야 함');
 });
@@ -24956,6 +24964,7 @@ function shortcutActionCtx() {
     calls,
     openTxSheet: () => { calls.push('openTxSheet'); },
     txType: (t) => { calls.push('txType:' + t); },
+    loadSharedReceiptPhoto: () => { calls.push('loadSharedReceiptPhoto'); },
   };
   vm.createContext(ctx);
   vm.runInContext(extractFunction('runShortcutAction'), ctx, { filename: 'runShortcutAction-real' });
@@ -24975,6 +24984,11 @@ test('runShortcutAction: addTransfer는 openTxSheet() 후 txType("transfer")으�
   const ctx = shortcutActionCtx();
   ctx.runShortcutAction('addTransfer');
   assert.deepStrictEqual(ctx.calls, ['openTxSheet', 'txType:transfer']);
+});
+test('runShortcutAction: shareReceipt는 openTxSheet() 후 loadSharedReceiptPhoto()로 공유받은 사진을 비동기로 불러온다', () => {
+  const ctx = shortcutActionCtx();
+  ctx.runShortcutAction('shareReceipt');
+  assert.deepStrictEqual(ctx.calls, ['openTxSheet', 'loadSharedReceiptPhoto']);
 });
 test('runShortcutAction: 화이트리스트 밖의 값(또는 null)은 아무것도 호출하지 않는다', () => {
   const ctx = shortcutActionCtx();

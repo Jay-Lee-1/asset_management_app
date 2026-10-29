@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.271';
+const APP_VERSION='1.47.272';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4856,11 +4856,14 @@ document.addEventListener('click',e=>{
 function openTxSheet(){window._recCtx=null;_formScroll=0;_txFocusAmt=true;txDraft={id:null,type:'expense',date:ST.ledger.sel,category:DB.categories.expense[0],memo:'',amount:0,fromAssetId:firstCash(),toAssetId:null,repeat:false,freq:'monthly',day:null,endDate:null,count:null,photo:null};snapDraft('tx');renderTxSheet()}
 /* manifest.webmanifest shortcuts(아이콘 롱프레스)/?action= 딥링크가 공통으로 쓰는 디스패처.
  * openTxSheet()의 기본 type은 이미 'expense'라 addExpense는 추가 전환이 필요 없다
- * (app-evolve cycle254 advance). */
+ * (app-evolve cycle254 advance). shareReceipt는 OS 공유 시트(카메라/갤러리/은행앱)에서 "공유"로
+ * 넘어온 영수증 사진을 곧장 지출 시트에 붙여준다 — 로드는 비동기라 loadSharedReceiptPhoto()로
+ * 분리한다(app-evolve cycle264 advance). */
 function runShortcutAction(action){
  if(action==='addExpense')openTxSheet();
  else if(action==='addIncome'){openTxSheet();txType('income')}
  else if(action==='addTransfer'){openTxSheet();txType('transfer')}
+ else if(action==='shareReceipt'){openTxSheet();loadSharedReceiptPhoto()}
 }
 function firstCash(excludeId){const a=DB.assets.find(x=>isCashLike(x)&&x.id!==excludeId);return a?a.id:null}
 function catListOf(type){return type==='income'?DB.categories.income:type==='saving'?DB.categories.saving:type==='expense'?DB.categories.expense:[]}
@@ -5067,6 +5070,35 @@ function txPhotoPick(el){
   img.src=r.result;
  };
  r.readAsDataURL(f);
+}
+/* sw.js의 SHARE_CACHE/SHARE_PHOTO_KEY와 이름이 반드시 일치해야 한다(고정 문자열, 캐시 버전과
+ * 무관). runShortcutAction('shareReceipt')가 openTxSheet() 직후 호출한다. txPhotoPick과 동일한
+ * photoResizeDims/TX_PHOTO_MAX_SIDE/TX_PHOTO_QUALITY 경로로 리사이즈해 txDraft.photo에 세팅하고,
+ * 다 쓴 캐시 항목은 지워 재방문 시 사진이 다시 나타나지 않게 한다(app-evolve cycle264 advance). */
+const SHARE_CACHE='ourassets-share-inbox',SHARE_PHOTO_KEY='./__shared-photo__';
+async function loadSharedReceiptPhoto(){
+ if(!('caches' in window))return;
+ try{
+  const cache=await caches.open(SHARE_CACHE);
+  const res=await cache.match(SHARE_PHOTO_KEY);
+  if(!res)return;
+  await cache.delete(SHARE_PHOTO_KEY);
+  const blob=await res.blob();
+  const dataUrl=await new Promise((resolve,reject)=>{
+   const r=new FileReader();
+   r.onerror=()=>reject(r.error);
+   r.onload=()=>resolve(r.result);
+   r.readAsDataURL(blob);
+  });
+  const img=await new Promise((resolve,reject)=>{
+   const im=new Image();im.onerror=reject;im.onload=()=>resolve(im);im.src=dataUrl;
+  });
+  const{w,h}=photoResizeDims(img.naturalWidth,img.naturalHeight,TX_PHOTO_MAX_SIDE);
+  const c=document.createElement('canvas');c.width=w;c.height=h;
+  c.getContext('2d').drawImage(img,0,0,w,h);
+  txDraft.photo=c.toDataURL('image/jpeg',TX_PHOTO_QUALITY);
+  renderTxSheet();
+ }catch(e){toast('공유받은 사진을 불러오지 못했어요')}
 }
 function txPhotoRemove(){syncTxInputs();txDraft.photo=null;renderTxSheet()}
 function openPhotoViewer(src){openSheet(`<h3>영수증 사진</h3><div style="text-align:center"><img src="${src}" alt="영수증 사진" style="max-width:100%;border-radius:var(--r-sm)"></div><button class="btn btn-soft" style="width:100%;margin-top:14px" onclick="closeSheet()">닫기</button>`)}

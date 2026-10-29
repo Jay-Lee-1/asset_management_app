@@ -3,7 +3,14 @@
  * 온라인일 때는 항상 최신 index.html 을 먼저 받아옵니다.
  * 파일을 수정하면 아래 CACHE 버전을 올려 주세요. (예: v1 -> v2)
  */
-const CACHE = 'ourassets-v538';
+const CACHE = 'ourassets-v539';
+
+/* Web Share Target(manifest.webmanifest의 share_target)으로 OS 공유 시트에서 넘어온 영수증
+ * 사진을 index.html이 읽어갈 때까지 잠깐 보관하는 전용 캐시. CACHE(앱 쉘)와 이름을 분리해
+ * 아래 activate가 구버전 캐시를 정리할 때 함께 지워지지 않게 한다 — 공유 직후 SW가 업데이트되는
+ * 드문 타이밍에도 막 받은 사진이 날아가지 않도록(app-evolve cycle264 advance). */
+const SHARE_CACHE = 'ourassets-share-inbox';
+const SHARE_PHOTO_KEY = './__shared-photo__';
 
 const SHELL = [
   './',
@@ -28,16 +35,37 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE && k !== SHARE_CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
 
+/* OS 공유 시트(사진 앱/카메라/은행 앱 등)가 manifest의 share_target으로 보낸 POST를 받아
+ * 파일을 SHARE_CACHE에 고정 키로 저장하고, index.html의 runShortcutAction('shareReceipt')가
+ * 받도록 ?action=shareReceipt로 리다이렉트한다(app-evolve cycle264 advance). 303으로 응답해야
+ * 브라우저가 POST가 아닌 GET으로 리다이렉트를 따라간다. */
+async function handleShareReceipt(req) {
+  try {
+    const formData = await req.formData();
+    const file = formData.get('photo');
+    if (file && typeof file.size === 'number' && file.size > 0) {
+      const cache = await caches.open(SHARE_CACHE);
+      await cache.put(SHARE_PHOTO_KEY, new Response(file, { headers: { 'Content-Type': file.type || 'image/jpeg' } }));
+    }
+  } catch (e) {}
+  return Response.redirect('./?action=shareReceipt', 303);
+}
+
 self.addEventListener('fetch', (e) => {
   const req = e.request;
-  if (req.method !== 'GET') return;
-
   const url = new URL(req.url);
+
+  if (req.method === 'POST' && url.origin === self.location.origin && url.pathname.endsWith('/share-receipt')) {
+    e.respondWith(handleShareReceipt(req));
+    return;
+  }
+
+  if (req.method !== 'GET') return;
 
   // 다른 도메인(카카오 SDK, 폰트 CDN 등)은 가로채지 않고 네트워크로 직접 보냅니다.
   if (url.origin !== self.location.origin) return;
