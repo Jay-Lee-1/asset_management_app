@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.277';
+const APP_VERSION='1.47.278';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3193,7 +3193,13 @@ function debtWhatIfText(wi,pf){
  * 경량 업데이트와 같은 원칙(app-evolve cycle262 advance). textContent만 직접 대입해서는 포커스가
  * 입력창(#debtWhatIfExtra)에 머무는 스크린리더 사용자에게 결과가 전혀 읽히지 않는 공백이 있었다 —
  * toast()/celebrate()/nwChartPeekMove가 이미 쓰는 announceLive() 패턴을 그대로 재사용해
- * 같은 문구를 화면엔 안 보이는 aria-live 리전에도 공지한다(app-evolve cycle267 develop). */
+ * 같은 문구를 화면엔 안 보이는 aria-live 리전에도 공지한다(app-evolve cycle267 develop).
+ * 단, 이 함수는 금액 입력란의 oninput마다 호출되므로 announceLive를 그대로 매 keystroke마다
+ * 부르면 숫자를 한 자리씩 입력할 때마다 스크린리더가 문장 전체를 끊어 읽어 오히려 방해가 된다 —
+ * assetQInput/histQInput/pkAssetQInput류가 입력 디바운스에 쓰는 220ms 관례(app-evolve
+ * cycle212~217/243)를 그대로 가져와 타이핑이 잠시 멈췄을 때만 공지한다(app-evolve cycle267
+ * review). 화면에 보이는 textContent는 기존대로 매 keystroke마다 즉시 갱신된다. */
+let _debtWhatIfAnnT=null;
 function debtWhatIfUpdate(assetId){
  const a=DB.assets.find(x=>x.id===assetId);if(!a)return;
  const resEl=$('debtWhatIfResult');if(!resEl)return;
@@ -3204,7 +3210,8 @@ function debtWhatIfUpdate(assetId){
  const wi=debtPayoffWhatIf(pfPts,TODAY,extra);
  const text=debtWhatIfText(wi,pf);
  resEl.textContent=text;
- announceLive(text);
+ clearTimeout(_debtWhatIfAnnT);
+ _debtWhatIfAnnT=setTimeout(()=>announceLive(text),220);
 }
 function assetBalCard(assetId,preset){
  preset=preset||'m3';

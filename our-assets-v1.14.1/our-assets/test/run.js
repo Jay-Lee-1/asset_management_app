@@ -365,7 +365,10 @@ const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'AS
 // _csvMap은 openCsvColumnMap()이 참조하는 "열 매핑 중인 CSV" 상태(headerRow/dataRows/선택값)라
 // 같은 이유(let 선언, realm에 안 붙음)로 LETS를 통해 가져온다(_pkQ와 같은 패턴, app-evolve
 // cycle251 advance).
-const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer', '_histTimer', '_assetQT', '_pkQ', '_bioAutoTried', '_csvMap'];
+// _debtWhatIfAnnT는 debtWhatIfUpdate()가 announceLive 공지를 220ms 디바운스할 때 쓰는
+// 타이머(assetQT/histTimer와 같은 패턴)라 같은 이유로 LETS를 통해 가져온다(app-evolve
+// cycle267 review).
+const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer', '_histTimer', '_assetQT', '_pkQ', '_bioAutoTried', '_csvMap', '_debtWhatIfAnnT'];
 
 const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(extractConst).join('\n') + '\n' + LETS.map(extractLet).join('\n');
 
@@ -6899,25 +6902,58 @@ test('openAssetHistory: 이전에 다른 debt 자산을 보며 입력해둔 what
  * 영역(#debtWhatIfResult)의 textContent만 갱신한다(assetBalPeek류 패턴). 결과 문구는 toast()/
  * celebrate()와 동일하게 announceLive()로도 공지한다 — textContent만 바꿔서는 입력창에 포커스가
  * 머무는 스크린리더 사용자에게 갱신된 결과가 전혀 읽히지 않던 공백(app-evolve cycle267 develop).
+ * 단, 이 함수는 금액 입력란의 oninput마다 호출되므로 announceLive 자체는 assetQInput/
+ * histWinput류와 같은 220ms 디바운스 뒤에만 불린다 — 그대로 매 keystroke마다 불렀다면 숫자를
+ * 한 자리씩 입력할 때마다 스크린리더가 문장 전체를 끊어 읽어 오히려 방해였을 것(app-evolve
+ * cycle267 review). textContent는 디바운스 없이 항상 즉시 갱신된다.
  * ---------- */
-test('[실행형] debtWhatIfUpdate: 입력값을 ST.hist.debtWhatIfExtra에 반영하고(쉼표 포맷 포함) 결과 영역 textContent를 갱신하고 announceLive로도 같은 문구를 공지한다', () => {
-  sandbox.TODAY = '2026-06-15';
-  sandbox.RANGE_FROM = '2023-01-01';
-  const to = sandbox.TODAY;
-  const txns = [-85, -75, -65, -55, -45, -35, -25, -15, -5].map((n, i) => ({
-    id: 'p' + i, date: sandbox.addDays(to, n), type: 'income', toAssetId: 'd1', amount: 30000,
-  }));
-  sandbox.DB = { assets: [{ id: 'd1', type: 'debt', baseAmount: 900000 }], txns, recurrences: [], settings: { confirmTransfers: false } };
-  sandbox.ST = { hist: { debtWhatIfExtra: 0 } };
-  sandbox.debtWhatIfExtraValue = '300,000';
-  sandbox.debtWhatIfResultEl.textContent = '';
-  sandbox.announceLiveCalls = [];
-  sandbox.debtWhatIfUpdate('d1');
-  assert.strictEqual(sandbox.ST.hist.debtWhatIfExtra, 300000, 'num()으로 쉼표를 벗겨 읽은 숫자가 ST.hist.debtWhatIfExtra에 반영돼야 함');
-  assert.ok(/매달 이만큼 더 갚으면 \d{2}\/\d{2}쯤 다 갚아요 \(약 \d+개월 빨라져요\)/.test(sandbox.debtWhatIfResultEl.textContent), 'debtWhatIfResult의 textContent가 assetBalCard와 같은 debtWhatIfText 문구로 갱신돼야 함');
-  assert.strictEqual(sandbox.announceLiveCalls.length, 1, 'announceLive가 정확히 1번 불려야 함');
-  assert.strictEqual(sandbox.announceLiveCalls[0], sandbox.debtWhatIfResultEl.textContent, 'announceLive에 공지되는 문구가 textContent에 쓴 문구와 정확히 같아야 함');
-});
+(() => {
+  const origSetTimeout = sandbox.setTimeout, origClearTimeout = sandbox.clearTimeout;
+  function restoreTimers() { sandbox.setTimeout = origSetTimeout; sandbox.clearTimeout = origClearTimeout; }
+  test('[실행형] debtWhatIfUpdate: 입력값을 ST.hist.debtWhatIfExtra에 반영하고(쉼표 포맷 포함) 결과 영역 textContent는 즉시 갱신하고, announceLive는 220ms 디바운스 뒤 같은 문구로 정확히 1번 공지한다', () => {
+    sandbox.TODAY = '2026-06-15';
+    sandbox.RANGE_FROM = '2023-01-01';
+    const to = sandbox.TODAY;
+    const txns = [-85, -75, -65, -55, -45, -35, -25, -15, -5].map((n, i) => ({
+      id: 'p' + i, date: sandbox.addDays(to, n), type: 'income', toAssetId: 'd1', amount: 30000,
+    }));
+    sandbox.DB = { assets: [{ id: 'd1', type: 'debt', baseAmount: 900000 }], txns, recurrences: [], settings: { confirmTransfers: false } };
+    sandbox.ST = { hist: { debtWhatIfExtra: 0 } };
+    sandbox.debtWhatIfExtraValue = '300,000';
+    sandbox.debtWhatIfResultEl.textContent = '';
+    sandbox.announceLiveCalls = [];
+    let capturedMs = null;
+    sandbox.setTimeout = (fn, ms) => { capturedMs = ms; fn(); return 'timer'; };
+    sandbox.clearTimeout = () => {};
+    try {
+      sandbox.debtWhatIfUpdate('d1');
+      assert.strictEqual(sandbox.ST.hist.debtWhatIfExtra, 300000, 'num()으로 쉼표를 벗겨 읽은 숫자가 ST.hist.debtWhatIfExtra에 반영돼야 함');
+      assert.ok(/매달 이만큼 더 갚으면 \d{2}\/\d{2}쯤 다 갚아요 \(약 \d+개월 빨라져요\)/.test(sandbox.debtWhatIfResultEl.textContent), 'debtWhatIfResult의 textContent가 assetBalCard와 같은 debtWhatIfText 문구로 갱신돼야 함');
+      assert.strictEqual(capturedMs, 220, '다른 입력 필드와 같은 220ms 디바운스를 써야 함');
+      assert.strictEqual(sandbox.announceLiveCalls.length, 1, 'announceLive가 정확히 1번 불려야 함');
+      assert.strictEqual(sandbox.announceLiveCalls[0], sandbox.debtWhatIfResultEl.textContent, 'announceLive에 공지되는 문구가 textContent에 쓴 문구와 정확히 같아야 함');
+    } finally { restoreTimers(); }
+  });
+  test('[실행형] debtWhatIfUpdate: 연속 입력마다 이전 announceLive 디바운스 타이머를 지우고 새로 하나만 건다(매 keystroke마다 스크린리더가 끊어 읽지 않도록)', () => {
+    sandbox.TODAY = '2026-06-15';
+    sandbox.RANGE_FROM = '2023-01-01';
+    sandbox.DB = { assets: [{ id: 'd1', type: 'debt', baseAmount: 900000 }], txns: [], recurrences: [], settings: { confirmTransfers: false } };
+    sandbox.ST = { hist: { debtWhatIfExtra: 0 } };
+    let setCalls = 0, clearCalls = 0;
+    sandbox.setTimeout = () => { setCalls++; return 'timer' + setCalls; };
+    sandbox.clearTimeout = () => { clearCalls++; };
+    try {
+      sandbox.debtWhatIfExtraValue = '1';
+      sandbox.debtWhatIfUpdate('d1');
+      sandbox.debtWhatIfExtraValue = '12';
+      sandbox.debtWhatIfUpdate('d1');
+      sandbox.debtWhatIfExtraValue = '123';
+      sandbox.debtWhatIfUpdate('d1');
+      assert.strictEqual(setCalls, 3, 'keystroke마다 디바운스 타이머를 새로 걸어야 함(announceLive는 아직 안 불림)');
+      assert.strictEqual(clearCalls, 3, 'keystroke마다 이전 타이머를 지워야 중복 공지가 안 쌓임');
+    } finally { restoreTimers(); }
+  });
+})();
 test('[실행형] debtWhatIfUpdate: 존재하지 않는 자산이거나 결과 영역(#debtWhatIfResult)이 이미 사라졌으면(시트가 닫힌 뒤 등) 아무 것도 하지 않고 조용히 반환한다(announceLive도 불리지 않음)', () => {
   sandbox.DB = { assets: [{ id: 'd1', type: 'debt', baseAmount: 900000 }], txns: [], recurrences: [], settings: { confirmTransfers: false } };
   sandbox.ST = { hist: { debtWhatIfExtra: 0 } };
