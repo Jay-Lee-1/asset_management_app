@@ -1,7 +1,11 @@
 {
   "cycle": 265,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "매도(수량 감소) 시 실현손익(realized gain) 기록 — 매입 쪽 addCostBasisForBuy의 대칭 짝",
+    "why": "logic.js의 scaleCostBasisForSale(cycle190)/addCostBasisForBuy(cycle191)는 fx/gold/stock/crypto(isMarketValued) 자산의 수량 변경 시 매입원가(costBasis)를 보정하는 짝인데, 매수 쪽은 saveAsset()이 costBasisField의 '이번에 추가로 투입한 금액' 입력을 받아 addCostBasisForBuy로 반영하고 assetQtyLog에 addedAmount로 남기지만(index.html:4455,4460), 매도 쪽은 scaleCostBasisForSale이 평단을 유지한 채 costBasis를 비례 축소만 하고 끝난다(index.html:4454) — '이번에 받은 매도 금액(proceeds)'을 입력받을 자리가 전혀 없고, 그 결과 이번 매도로 실현된 손익(realized gain = proceeds - 제거된 costBasis)이 앱 어디에도 기록되지 않는다. grep으로 'realized'/'매도 금액'/'실현손익' 관련 코드가 전혀 없음을 확인. assetGainLoss는 보유 중인 수량 기준 미실현(unrealized) 손익만 보여주므로, 부분 매도를 반복하면 그때그때의 실제 수익/손실이 영구히 사라진다. 러너업: (a) 투자자산 목표비중 리밸런싱 알림 — 과거 여러 cycle(critique 다수 포함 cycle262까지)에서 반복 거론됐으나 target% 스키마 필드가 필요해 보류 지속, 이번에도 같은 이유로 보류. (b) assetQtyLog 항목에 edit(수정) 기능 추가(현재 delete만 가능) — 과거 입력 실수를 고치는 용도로는 유용하지만 delete+재입력으로 충분히 우회 가능해 매도 실현손익 공백보다 가치가 낮다고 판단.",
+    "approach": "logic.js: scaleCostBasisForSale 바로 아래에 순수 함수 realizedGainForSale(origQty,newQty,origCostBasis,saleProceeds) 신설 — origQty>newQty>=0 && origCostBasis>0 전제 하에 costBasisRemoved=origCostBasis-scaleCostBasisForSale(origQty,newQty,origCostBasis)를 구하고, saleProceeds>0이면 {costBasisRemoved,realizedGain:saleProceeds-costBasisRemoved}를, saleProceeds가 없으면({costBasisRemoved,realizedGain:null})을 반환(추측하지 않는다는 기존 원칙 유지, addCostBasisForBuy와 동일하게 falsy 입력 가드). index.html: costBasisField(d,editing) 함수의 needsUpdate(매수 경고) 분기 옆에 대칭되는 매도 분기를 추가 — d._origQty가 있고 현재 qty입력값이 _origQty보다 줄었으면(costBasisNeedsUpdate의 반대 방향, 새 헬퍼 costBasisNeedsSaleInput(origQty,newQty,costBasis) 또는 조건 인라인) '이번에 받은 매도 금액 (원, 선택)' 입력 필드(id='asSaleProceeds', costBasisField의 asAddedCost와 동일한 field-clear/fmtAmt 패턴)를 노출하고 qtyBasisWarn()과 같은 라이브 토글 함수(가령 qtySaleWarn 또는 qtyBasisWarn 확장)로 입력 중에도 보이게 함. saveAsset()의 if(newQty<prevQty) 분기(index.html:4454)에서 d._saleProceeds>0이면 realizedGainForSale(prevQty,newQty,DB.assets[i].costBasis,d._saleProceeds)를 호출해 qtyLogEntry에 saleProceeds/realizedGain 필드로 함께 기록(addedAmount와 대칭되는 이름). openAssetQtyLog()의 row 렌더링(index.html:5516-5520)에 q.saleProceeds>0이면 '매도 N원 · 실현손익 +/-M원'을 addedAmount 표시와 같은 자리에 병렬로 추가. test/run.js에 realizedGainForSale 단위 테스트(proceeds 없음→null, 이익/손실/손익0 각 케이스, 음수 가드)와 saveAsset/qtyLog 배선 테스트(필드 노출 조건, 저장 시 qtyLogEntry에 반영) 추가. DB.assetQtyLog는 이미 mergeCollection 배선이 돼 있어(cycle138) 새 필드 추가만으로 동기화 문제 없음. index.html/logic.js 변경이므로 APP_VERSION과 sw.js CACHE 동기 범프 필수."
+  },
   "history": [
     {
       "cycle": 260,
@@ -141,6 +145,13 @@
       "phase": "review",
       "timestamp": "2026-10-29T09:08:37.408Z",
       "summary": "cycle265 develop 커밋(8d89af5, CSV 열 매칭(csvMapPickCol)에서 다른 필드(dateCol/memoCol/amountCol/inCol/outCol)가 이미 쓰고 있는 열을 후보에서 제외하는 csvMapColConflict 배선)을 검토. _csvMap 초기화(index.html:8076)에서 다섯 필드가 항상 null로 시작해(undefined 아님) csvMapColConflict의 idx==null 가드가 항상 올바르게 동작함을 확인. csvMapSetMode가 모드 전환 시 반대 모드 필드(amountCol ↔ inCol/outCol)를 null로 비워 그 열이 다시 후보로 돌아온다는 설명을 코드로 확인(signed->split: amountCol=null, split->signed: inCol=outCol=null). 자기 자신 필드가 쓰는 값은 충돌로 안 보여 재선택이 막히지 않음도 확인. node test/run.js 독립 재실행 결과 2210/2210 통과, node --check(logic.js/sw.js/test/run.js) 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 265,
+      "phase": "critique",
+      "timestamp": "2026-10-29T10:11:20.000Z",
+      "summary": "fork 서브에이전트 없이 직접 앱 전반(globalSearch/debt payoff/photo attach/category merge/CSV import/budget·income·year review 분석 화면/asset transfer/qty log/multi-currency 등)을 재탐색한 결과, logic.js의 scaleCostBasisForSale(cycle190)/addCostBasisForBuy(cycle191)가 수량 증가(매수) 쪽은 '추가로 투입한 금액' 입력을 받아 costBasis를 늘려주고 assetQtyLog에 addedAmount로 남기는 반면(index.html:4455,4460), 수량 감소(매도) 쪽은 평단 유지한 채 costBasis를 비례 축소만 하고 끝나(index.html:4454) '이번에 받은 매도 금액(proceeds)'을 받을 자리가 전혀 없어 실현손익(realized gain)이 앱 어디에도 기록되지 않는 비대칭을 발견 — grep으로 'realized'/'매도 금액'/'실현손익' 구현이 전혀 없음을 확인. assetGainLoss는 보유분 기준 미실현 손익만 보여줘, 부분 매도를 반복하면 그때그때의 실제 수익/손실 기록이 영구히 사라짐. 러너업으로 (a) 투자자산 리밸런싱 알림(스키마 확장 필요, 지속 보류), (b) assetQtyLog 항목 edit 기능(delete+재입력 우회 가능해 우선순위 낮음)을 검토했으나 기각. 채택 계획(realizedGainForSale 신설 + costBasisField 매도 입력 필드 + saveAsset/qtyLog 배선 + openAssetQtyLog 표시)을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     }
   ]
