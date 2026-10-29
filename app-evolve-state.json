@@ -1,15 +1,12 @@
 {
   "cycle": 263,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "카테고리 합치기(merge) 기능 신설",
+    "why": "openCatManage에 rename(doRenameCat)과 delete(doDeleteCat)만 있고 merge가 없어, 중복/유사 카테고리(예: 커피/카페)가 생기면 내역을 한쪽으로 합칠 방법이 없다 — rename은 한쪽 이름을 지울 뿐 두 역사를 못 합치고, delete는 연결 내역을 카테고리 목록에서 고아로 만든다(기존 내역의 이름 문자열만 남고 반복거래는 비활성화됨). 예산/지출분석/검색 집계가 두 이름으로 쪼개진 채 계속 과소집계된다.",
+    "approach": "mergeCatInto(k,fromName,toName) 신설 — doRenameCat이 이미 하는 마이그레이션(DB.txns 및 t.splits[].category 이동, DB.recurrences 이동, catIcon/catVar/catBudgetRollover 이동 또는 대상 설정 우선 유지, budgetHistory 병합, catTombKey 톰스톤, ST.hist.catExact 보정)을 거의 그대로 재사용하되 target은 기존 카테고리명. doDeleteCat과 달리 recs를 비활성화하지 않고 r.category=toName으로 이동. UI: openCatManage() 각 행에 \"다른 카테고리로 합치기\" 진입점 추가 → 대상 카테고리 picker(같은 kind 내 자기 자신 제외) → 영향받는 내역/반복거래 건수를 보여주는 confirmSheet → mergeCatInto 호출 → undoToast로 되돌리기 지원(doDeleteCat과 동일 패턴). test/run.js에 splits 포함/budgetHistory 병합/rollover 유지/톰스톤/ST.hist.catExact 보정 등 doRenameCat 테스트와 대칭되는 회귀 테스트 추가."
+  },
   "history": [
-    {
-      "cycle": 258,
-      "phase": "critique",
-      "timestamp": "2026-10-28T05:10:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(APPLOCK PIN 기반 전체 DB 암호화는 재추진 금지로 명시)한 결과, openRecManage()(index.html:6534)가 반복거래를 freq별 개별 금액으로만 나열하고 월 기준 환산 합계를 전혀 보여주지 않는 공백을 발견 — '고정비' 기본 카테고리(logic.js:1824)까지 있을 만큼 고정비 개념이 있는데 '매달 총 얼마가 고정으로 나가는지'를 한눈에 보여주는 집계가 없음. 러너업: 거래량 증가 시 아카이브 선제 안내(archiveTxnsBefore, 성능 문제 체감 전이라 낮은 우선순위), 특정 빈 catch(line 7662 인근 pushCloud 실패 무알림, develop/review가 다룰 범위), 기존 러너업(전역 통합검색/PDF 명세서/접근성 전수조사) 유지. 채택 계획(monthlyEquivalent(r) 신설, openRecManage()에 그룹별+전체 월 합계 표시)을 pending_advance_plan에 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 258,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-29T01:00:00.000Z",
       "summary": "cycle263 develop 커밋(49a74ed, duplicateTx가 복제 draft에서 원본 영수증 photo 필드를 지우도록 수정)을 검토. editTx()(index.html:5121)는 같은 레코드를 id 유지한 채 그대로 복사해 photo를 지우지 않는 것이 맞고, duplicateTx()만 새 레코드를 만드는 경로라 photo를 지우는 게 옳음을 grep/코드 대조로 확인 — 두 함수가 혼동되지 않게 올바르게 분리돼 있음. 추가된 회귀 테스트가 복제본엔 photo가 없고 원본 DB.txns 레코드는 그대로 유지됨을 함께 검증해 핵심 시나리오를 잘 덮음. node test/run.js 독립 재실행 결과 2186/2186 통과, node --check(logic.js/sw.js/test/run.js) 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 263,
+      "phase": "critique",
+      "timestamp": "2026-10-29T02:10:08.898Z",
+      "summary": "general-purpose 수준으로 앱 전반을 재탐색(스와이프-공개 UI 흔적인 .swipe.open CSS/openSwipeRow 변수가 실제로는 어디서도 쓰이지 않는 죽은 코드임을 확인 — 러너업으로만 기록, 범위가 작아 develop/review 몫), 순자산/목표 추이 기반 투사(goalProgress/debtPayoffProjection)가 이미 성숙해 별도 현금흐름 예측 기능은 중복으로 판단, SRI TODO(index.html:1384)는 이 컨테이너 네트워크 정책상 여전히 불가로 재확인)한 결과, openCatManage에 카테고리 rename(doRenameCat)·delete(doDeleteCat)은 있지만 merge가 없어 중복 카테고리의 내역/반복거래/예산이력을 합칠 방법이 없는 공백을 발견. 채택 계획(mergeCatInto 신설 — doRenameCat의 마이그레이션 로직 재사용 + openCatManage에 합치기 진입점)을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     }
   ]
