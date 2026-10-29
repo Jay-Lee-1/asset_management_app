@@ -1,15 +1,12 @@
 {
   "cycle": 267,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "연간 결산 투자 실현손익 카드에 전년대비(YoY) 비교 추가",
+    "why": "yearSummary()(index.html:6396)는 총수입/총지출/저축률엔 전년(y-1) 대비 yoy delta를 계산해 openYearReview()가 incBadge/expBadge/rateBadge(index.html:6430-6432,6456-6459)로 보여주지만, cycle266 advance가 추가한 investGain(올해 투자 실현손익, index.html:6408,6462)에는 전년대비 비교가 없음 — cycle266 advance 커밋 노트에 '전년도 YoY는 계획대로 이번 사이클에서 다루지 않음'이라고 명시적으로 보류되어 있고 이후 어느 사이클도 다시 집지 않음. 결과적으로 연간 결산 4개 요약 카드 중 유일하게 '전년대비' 배지가 없는 카드로 남아, 사용자가 올해 투자 성과가 작년보다 나아졌는지 나빠졌는지 한눈에 비교할 방법이 없음.",
+    "approach": "yearSummary(y,owner)에 pyInvestGain=yearRealizedGain(y-1,owner)를 계산해 yoy 객체에 investDelta:(investGain==null||pyInvestGain==null)?null:investGain-pyInvestGain 필드를 추가(기존 income/expense/rate와 동일한 null-vs-zero 관례 — 올해·전년 중 하나라도 매도 기록이 없으면 비교 기준이 없다고 보고 null). 주의할 점: investGain은 income/expense와 달리 음수(손실)가 될 수 있고 기준값(pyInvestGain)도 0 근처이거나 음수일 수 있어, income/expense/rate가 쓰는 퍼센트 기반 incomeTrendBadge(deltaPct,label)(index.html:6335, Math.round(delta/기준*100)% 표시)를 그대로 재사용하면 기준이 0 또는 음수일 때 퍼센트가 왜곡되거나 Infinity/NaN이 날 수 있음 — 그대로 재사용하지 말 것. 대신 investDelta를 '원' 단위 증감 그대로 보여주는 작은 배지(incomeTrendBadge와 같은 <span class=\"trend\"> 마크업/색상 규칙은 재사용하되 내용은 금액+화살표, color는 investDelta>=0?var(--income):var(--expense))를 openYearReview()의 investGain 카드(index.html:6462)에 investDelta!=null일 때만 추가. index.html만 변경이므로 APP_VERSION/sw.js CACHE 동기 범프. test/run.js에 yearSummary.yoy.investDelta 단위 테스트(양쪽 기록 있음→델타 계산/한쪽만 기록 있음→null/둘다 없음→null, 기존 yearRealizedGain·yearSummary.investGain 테스트 블록 바로 옆) + openYearReview 배지 렌더링 테스트(이익 개선/악화/델타 없으면 배지 미노출) 추가."
+  },
   "history": [
-    {
-      "cycle": 262,
-      "phase": "critique",
-      "timestamp": "2026-10-28T22:10:00.000Z",
-      "summary": "general-purpose 서브에이전트로 앱 전반을 재탐색(budget/goal/net worth trend/bulk select/투자자산 cost-basis P/L까지 이미 성숙함을 확인, APPLOCK PIN 전체 DB 암호화 재추진 금지 유지)한 결과, 이미 절반쯔 구현돼 있는 debtPayoffProjection(추세 기반 '이 속도면 언제 다 갚는다' 관찰형 투사)의 자연스러운 확장인 부채 상환 추가 납입 시뮬레이터(what-if: '매달 얼마 더 갚으면 언제 끝나는지')가 과거 두 cycle(258/261)에서 러너업으로 반복 거론됐으나 아직 구현되지 않았음을 확인 — debt 자산에 interestRate/APR 필드가 없어(grep 확인) 진짜 상환계산은 스키마 확장이 필요하지만, 추세-기반 what-if는 기존 debtPayoffRate 추출만으로 스키마 변경 없이 가능함. 러너업: 투자자산 목표비중 리밸런싱 알림(target% 필드 신규 필요, 보류), 홈 알림의 실제 OS 푸시 알림화(서버 측 VAPID 필요, 큰 작업), 기존 러너업(PDF 명세서/접근성 전수조사) 유지. 채택 계획(debtPayoffRate 추출 + debtPayoffWhatIf 신설 + assetBalCard에 입력/경량 업데이트 배선)을 pending_advance_plan에 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 262,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-29T17:10:00.000Z",
       "summary": "cycle267 develop 커밋(39e77fe, debtWhatIfUpdate()가 announceLive로도 결과를 공지하도록 추가)을 검토. 실제 버그 발견: debtWhatIfUpdate는 #debtWhatIfExtra의 oninput마다(키 입력 한 번마다) 호출되는데, announceLive를 디바운스 없이 그대로 불러 사용자가 금액을 한 자리씩 입력할 때마다 스크린리더가 문장 전체를 끊어 읽는 접근성 안티패턴이 됨(WAI-ARIA에서 경고하는 live region 과다 공지). textContent 갱신은 그대로 매 keystroke마다 즉시 처리하되, announceLive 호출만 assetQInput/histQInput/pkAssetQInput이 이미 쓰는 220ms 디바운스 관례(_debtWhatIfAnnT 타이머)를 따르도록 작은 범위로 수정. 디바운스 도입으로 깨진 기존 실행형 테스트(동기 1회 호출을 가정)를 setTimeout 모킹 패턴(pkAssetQInput 테스트와 동일)으로 갱신하고, 연속 입력 시 타이머가 매번 clearTimeout+새로 설정되는지 확인하는 테스트를 추가함. LETS 추출 목록에 _debtWhatIfAnnT 등록. node test/run.js 2232/2232 통과, node --check(index.html 메인 스크립트/logic.js/sw.js/test/run.js) 통과. APP_VERSION 1.47.278, sw.js CACHE v545로 갱신.",
+      "commit": null
+    },
+    {
+      "cycle": 267,
+      "phase": "critique",
+      "timestamp": "2026-10-29T18:11:26.759Z",
+      "summary": "fork 서브에이전트로 앱 전반을 재탐색(이미 다룬 영역들과 중복 없는지 확인)한 결과, yearSummary()(index.html:6396)의 yoy 객체가 수입/지출/저축률엔 전년대비(YoY) delta를 계산해 openYearReview()가 배지로 보여주지만, cycle266 advance가 추가한 investGain(올해 투자 실현손익)에는 전년대비 비교가 아예 없음을 발견 — cycle266 advance 커밋 노트에 \"전년도 YoY는 계획대로 이번 사이클에서 다루지 않음\"이라 명시적으로 보류됐고 이후 어느 사이클도 다시 집지 않아, 연간 결산 4개 요약 카드 중 유일하게 \"전년대비\" 배지가 없는 카드로 남아있었음. 채택 계획(yearSummary에 pyInvestGain/yoy.investDelta 추가 + openYearReview에 원 단위 증감 배지 노출, income/expense가 쓰는 퍼센트 기반 incomeTrendBadge는 investGain이 음수/0 근처 기준값을 가질 수 있어 그대로 재사용하면 안 된다는 주의사항 포함)을 pending_advance_plan에 저장. 러너업: (a) 투자 리밸런싱 알림(target% 스키마 필요, 다수 사이클에 걸쳐 반복 보류 중, 여전히 미채택), (b) assetAllocation()의 시계열(historical) 버전(현재는 스냅샷만 존재, nwHistoryForOwner급 신규 인프라 필요해 범위상 한 사이클엔 과함, 별도 critique에서 재검토 예정). 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
