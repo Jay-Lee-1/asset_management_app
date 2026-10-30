@@ -1,150 +1,146 @@
 {
-  "cycle": 269,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "시세 동기화 반복 실패를 홈 알림 카드(staleRates)로 노출",
-    "why": "syncRates()가 실패해도 R.failStreak/R.fxFail/R.stockFail/R.cryptoFail만 쌓이고, rateUnknown()은 '한 번도 못 받아온 상태'만 감지해 rateUnknownTotal을 띄우므로, 최초 성공 이후 반복 실패(예: API 장애)는 홈 어디에도 안 보인다. 시세 시트를 열어 rateStatusText()의 '최신 아님' 캡션을 읽어야만 알 수 있어, cloudSyncError/persist/storageSize처럼 지속 실패를 홈 카드로 알리는 기존 관례와 비대칭적이다. 자산 총액이 조용히 오래된 시세로 계산되고 있을 수 있다는 걸 사용자가 모른다.",
-    "approach": "homeAlerts()에 새 kind 'staleRates' 추가: hasRateAssets() && (DB.rates.failStreak||0)>=3 조건(10분 자동 재시도 기준 약 30분 이상 연속 실패, 일시적 네트워크 블립으로 인한 오탐 방지 — clockSkewSeverity의 warn/crit 임계값 설계와 같은 취지)일 때 push. cloudSyncError와 동일하게 수동 dismiss 없이, 다음 syncRates() 성공으로 failStreak가 0으로 리셋되면 자연 소멸. 카드 CTA는 openRateSheet()로 연결해 바로 재시도/확인하게 안내. OS 푸시(notifyAlertInfo) 대상에는 포함하지 않음 — '오늘 안 열면 놓치는' 긴급 알림이 아니라 backup/persist/storageSize와 같은 성격이므로 홈 카드로 충분. 회귀 테스트: failStreak 임계값 경계(2/3), 성공 후 리셋, hasRateAssets()=false일 때 미표시."
-  },
+  "cycle": 270,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 264,
-      "phase": "advance",
-      "timestamp": "2026-10-29T07:20:00.000Z",
-      "summary": "critique(cycle264) 계획대로 영수증 사진 Web Share Target을 구현. manifest.webmanifest에 share_target(action:'./share-receipt', POST, multipart/form-data, files:[{name:'photo',accept:['image/*']}]) 추가. sw.js: 'GET 아니면 무시' 분기 앞에 POST && pathname.endsWith('/share-receipt') 케이스를 추가해 req.formData()의 photo File을 CACHE와 분리된 고정 캐시 SHARE_CACHE('ourassets-share-inbox', 버전과 무관해 activate가 지워도 안전)에 SHARE_PHOTO_KEY로 저장한 뒤 303으로 './?action=shareReceipt'에 리다이렉트. activate의 구캐시 정리 필터에 SHARE_CACHE 예외 추가. logic.js의 parseShortcutAction 화이트리스트에 'shareReceipt' 추가. index.html: runShortcutAction에 shareReceipt 케이스(openTxSheet() 후 loadSharedReceiptPhoto() 비동기 호출) 추가, loadSharedReceiptPhoto()가 SHARE_CACHE에서 blob을 읽어(다 쓰면 캐시 삭제) 기존 txPhotoPick과 동일한 photoResizeDims/TX_PHOTO_MAX_SIDE/TX_PHOTO_QUALITY 경로로 리사이즈해 txDraft.photo에 세팅 후 renderTxSheet(). 구현 중 test/run.js의 touch()-before-save() 정적 가드 테스트가 새로 FAIL하는 것을 발견 — 원인은 내 코드가 아니라 index.html의 기존 `accept=\"image/*\"`(cycle261 advance가 추가한 사진 첨부 input) 문자열이 테스트의 나이브한 `/\\*...*\\/` 주석 제거 정규식에 '주석 시작'으로 오인되어 그 뒤 진짜 '*/'(다른 함수 안 주석)까지 수백 줄을 통째로 지워버리는 잠재 결함이었고, 내가 추가한 새 블록 주석이 그 잘못 매칭된 구간의 경계를 우연히 바꿔 숨어있던 오탐이 드러난 것 — test/run.js의 정규식에 `(?!\")` 음성 전방탐색을 추가해 근본 수정(이미지 MIME 와일드카드를 주석 시작으로 오인하지 않게). APP_VERSION 1.47.271->1.47.272, sw.js CACHE v538->v539 동기 범프. test/run.js에 parseShortcutAction(shareReceipt 허용)+runShortcutAction(shareReceipt가 openTxSheet 후 loadSharedReceiptPhoto 호출) 회귀 테스트 2건 추가(2201->2203). node test/run.js 2203/2203 통과, node --check(sw.js) 및 HTML 주석 제거 후 추출한 index.html 인라인 스크립트 4블록 구문 검증 통과. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 265,
       "phase": "develop",
       "timestamp": "2026-10-29T08:18:16.171Z",
-      "summary": "코드 전반을 재탐색(이전 cycle들이 다룬 영역과 중복 없는지 확인)한 결과, 은행/카드사 CSV 가져오기의 열 매칭 화면(openCsvColumnMap/cycle251 advance)이 날짜·금액(또는 입금/출금)·메모 각 필드를 독립적인 피커(csvMapPickCol)로 고르게 하면서, 사용자가 \"거래일시\"/\"등록일시\"처럼 이름이 비슷한 두 열을 헷갈려 같은 열을 서로 다른 역할(예: 날짜와 금액)에 겹쳐 고르는 것을 막을 방법이 전혀 없는 공백을 발견 — 그렇게 겹쳐 고르면 mapGenericCsvRow가 한 열의 값을 두 역할로 동시에 읽어 거의 모든 행이 조용히 형식 오류(invalid)로 빠지는데, 원인이 \"열 선택 실수\"라는 걸 사용자가 알 길이 없었음. logic.js에 순수 함수 csvMapColConflict(mapping,field,idx) 신설 — idx가 field 자신이 아닌 다른 필드(dateCol/memoCol/amountCol/inCol/outCol)에 이미 쓰이고 있으면 true, idx===null(선택 안 함)이나 field 자신이 쓰고 있는 값은 충돌로 보지 않음(재선택 가능). index.html의 csvMapPickCol이 헤더 열 목록을 렌더링할 때 이 함수로 다른 필드가 이미 쓰고 있는 열을 후보에서 완전히 제외하도록 배선 — csvMapPickAsset/openCatPicker의 exclude 관례(고를 수 없는 항목은 애초에 보여주지 않음)와 동일한 패턴. 열 매핑 중 모드를 바꾸거나(csvMapSetMode) 필드를 비우면 그 열이 다시 다른 필드의 후보로 돌아옴(상태 자체는 그대로 _csvMap을 읽으므로 추가 배선 불필요). index.html/logic.js 변경이라 APP_VERSION 1.47.272->1.47.273, sw.js CACHE v539->v540 동기 범프. test/run.js에 csvMapColConflict 단위 테스트 4건(충돌/자기자신 제외/null 제외/무관한 idx) + csvMapPickCol 배선 테스트 3건(다른 필드가 쓰는 열 제외/자기 자신은 안 숨김/split 모드 inCol-outCol 상호 제외) 추가(2203->2210). node test/run.js 2210/2210 통과, node --check(logic.js/sw.js/test/run.js) 및 HTML 주석 제거 후 추출한 index.html 인라인 스크립트 4블록(5개 중 1개는 빈 블록) 구문 검증 통과.",
+      "summary": "코드 전반을 재탐색(이전 cycle들이 다룬 영역과 중복 없는지 확인)한 결과, 은행/카드사 CSV 가져오기의 열 매칭 화면(openCsvColumnMap/cycle251 advance)이 날짜·금액(또는 입금/출금)·메모 각 필드를 독립적인 피커(csvMapPickCol)로 고르게 하면서, 사용자가 \"거래일시\"/\"등록일시\"처럼 이름이 비슷한 두 열을 헷갈려 같은 열을 서로 다른 역할(예: 날짜와 금액)에 겹쳐 고르는 것을 막을 방법이 전혀 없는 공백을 발견 — 그렇게 겹쳐 고르면 mapGenericCsvRow가 한 열의 값을 두 역할로 동시에 읽어 거의 모든 행이 조용히 형식 오류(invalid)로 빠지는데, 원인이 \"열 선택 실수\"라는 걸 사용자가 알 길이 없었음. logic.js에 순수 함수 csvMapColConflict(mapping,field,idx) 신설, index.html의 csvMapPickCol이 이 함수로 다른 필드가 이미 쓰고 있는 열을 후보에서 완전히 제외하도록 배선. node test/run.js 2210/2210 통과.",
       "commit": null
     },
     {
       "cycle": 265,
       "phase": "review",
       "timestamp": "2026-10-29T09:08:37.408Z",
-      "summary": "cycle265 develop 커밋(8d89af5, CSV 열 매칭(csvMapPickCol)에서 다른 필드(dateCol/memoCol/amountCol/inCol/outCol)가 이미 쓰고 있는 열을 후보에서 제외하는 csvMapColConflict 배선)을 검토. _csvMap 초기화(index.html:8076)에서 다섯 필드가 항상 null로 시작해(undefined 아님) csvMapColConflict의 idx==null 가드가 항상 올바르게 동작함을 확인. csvMapSetMode가 모드 전환 시 반대 모드 필드(amountCol ↔ inCol/outCol)를 null로 비워 그 열이 다시 후보로 돌아온다는 설명을 코드로 확인(signed->split: amountCol=null, split->signed: inCol=outCol=null). 자기 자신 필드가 쓰는 값은 충돌로 안 보여 재선택이 막히지 않음도 확인. node test/run.js 독립 재실행 결과 2210/2210 통과, node --check(logic.js/sw.js/test/run.js) 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "summary": "cycle265 develop 커밋(8d89af5, CSV 열 매칭 충돌 방지 배선)을 검토. _csvMap 초기화, csvMapSetMode 모드 전환 시 반대 모드 필드 초기화 등 핵심 동작 코드로 확인. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
       "commit": null
     },
     {
       "cycle": 265,
       "phase": "critique",
       "timestamp": "2026-10-29T10:11:20.000Z",
-      "summary": "fork 서브에이전트 없이 직접 앱 전반(globalSearch/debt payoff/photo attach/category merge/CSV import/budget·income·year review 분석 화면/asset transfer/qty log/multi-currency 등)을 재탐색한 결과, logic.js의 scaleCostBasisForSale(cycle190)/addCostBasisForBuy(cycle191)가 수량 증가(매수) 쪽은 '추가로 투입한 금액' 입력을 받아 costBasis를 늘려주고 assetQtyLog에 addedAmount로 남기는 반면(index.html:4455,4460), 수량 감소(매도) 쪽은 평단 유지한 채 costBasis를 비례 축소만 하고 끝나(index.html:4454) '이번에 받은 매도 금액(proceeds)'을 받을 자리가 전혀 없어 실현손익(realized gain)이 앱 어디에도 기록되지 않는 비대칭을 발견 — grep으로 'realized'/'매도 금액'/'실현손익' 구현이 전혀 없음을 확인. assetGainLoss는 보유분 기준 미실현 손익만 보여줘, 부분 매도를 반복하면 그때그때의 실제 수익/손실 기록이 영구히 사라짐. 러너업으로 (a) 투자자산 리밸런싱 알림(스키마 확장 필요, 지속 보류), (b) assetQtyLog 항목 edit 기능(delete+재입력 우회 가능해 우선순위 낮음)을 검토했으나 기각. 채택 계획(realizedGainForSale 신설 + costBasisField 매도 입력 필드 + saveAsset/qtyLog 배선 + openAssetQtyLog 표시)을 pending_advance_plan에 저장. 코드 변경 없음.",
+      "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, 수량 감소(매도) 시 '이번에 받은 매도 금액'을 받을 자리가 없어 실현손익(realized gain)이 앱 어디에도 기록되지 않는 비대칭을 발견. 채택 계획(realizedGainForSale 신설 + costBasisField 매도 입력 필드 + saveAsset/qtyLog 배선 + openAssetQtyLog 표시)을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     },
     {
       "cycle": 265,
       "phase": "advance",
       "timestamp": "2026-10-29T11:20:00.000Z",
-      "summary": "critique(cycle265) 계획대로 매도(수량 감소) 시 실현손익(realized gain) 기록을 구현. logic.js: scaleCostBasisForSale 바로 아래에 순수 함수 realizedGainForSale(origQty,newQty,origCostBasis,saleProceeds) 신설 — scaleCostBasisForSale과 동일한 가드(origQty>0&&newQty>0&&newQty<origQty&&origCostBasis>0, 전량매도(newQty=0)는 delAsset 등 별도 경로의 몫이라 제외)를 공유하고, costBasisRemoved=origCostBasis-scaleCostBasisForSale(...)을 구한 뒤 saleProceeds>0이면 {costBasisRemoved,realizedGain:saleProceeds-costBasisRemoved}를, 없으면(추측하지 않음) {costBasisRemoved,realizedGain:null}을 반환 — addCostBasisForBuy(cycle191)의 매도 쪽 대칭 짝. index.html: costBasisField(d,editing)의 needsUpdate(매수 경고) 분기 옆에 대칭되는 needsSale 분기(d._origQty가 있고 costBasis>0이고 현재 수량이 _origQty보다 줄었을 때) 추가 — asAddedCostField와 동일한 field-clear/fmtAmt 패턴으로 '이번에 받은 매도 금액 (원, 선택)' 입력(id=asSaleProceeds) 노출, 경고 캡션(asQtyBasisWarn)도 매수/매도 두 메시지를 분기. qtyBasisWarn()이 입력 중에도(리렌더 없이) asSaleProceedsField를 같은 조건으로 토글하도록 확장. syncAssetInputs가 asSaleProceeds를 d._saleProceeds로 읽어들이고, saveAsset()의 if(newQty<prevQty) 분기에서 realizedGainForSale(prevQty,newQty,d.costBasis,saleProceeds)을 호출해 결과(realizedGain!=null인 경우만)를 qtyLogEntry에 saleProceeds/realizedGain으로 남김(addedAmount와 대칭). openAssetQtyLog()의 row 렌더링에 q.saleProceeds>0이면 '매도 N원 · 실현손익 +/-M원'을 addedAmount 표시와 같은 자리에 병렬로 추가(comma()가 음수에 '-'를 그대로 포함해 손실도 자연스럽게 표시). index.html/logic.js 변경이라 APP_VERSION 1.47.273->1.47.274, sw.js CACHE v540->v541 동기 범프. 기존 costBasisField 테스트 2건(수량 줄면 경고+입력창이 항상 숨김을 가정)이 새 매도 분기와 충돌해 FAIL — 변경된 동작(매도 시에도 이제 경고+입력창이 뜸)에 맞게 기대값을 갱신해 통과시킴. test/run.js에 realizedGainForSale 단위 테스트 3건(이익/손실/손익0, proceeds 없음→null, 가드 6케이스)+costBasisField 매도 분기 렌더링 1건+saveAsset 배선 테스트 3건(저장 시 기록/미입력 시 기록 안 함/추가매수 중엔 무시)+openAssetQtyLog 표시 1건 추가(2218개 중 신규 8건 포함, 2210->2218). node test/run.js 2218/2218 통과, node --check(logic.js/sw.js/test/run.js) 및 HTML 주석 제거 후 추출한 index.html 인라인 스크립트 4블록 구문 검증(new Function) 통과. pending_advance_plan null로 비움.",
+      "summary": "critique(cycle265) 계획대로 매도(수량 감소) 시 실현손익(realized gain) 기록을 구현. logic.js realizedGainForSale 신설, index.html costBasisField 매도 분기/saveAsset 배선/openAssetQtyLog 표시 추가. APP_VERSION 1.47.273->1.47.274, sw.js CACHE v540->v541. node test/run.js 2218/2218 통과. pending_advance_plan null로 비움.",
       "commit": null
     },
     {
       "cycle": 266,
       "phase": "develop",
       "timestamp": "2026-10-29T12:33:41.000Z",
-      "summary": "fork 서브에이전트로 탐색한 결과, cycle265 advance가 신설한 부분매도 실현손익(realizedGainForSale) 기록이 openAssetQtyLog 각 행에만 표시되고, 한 자산을 여러 번 나눠 판 경우 전체 합계를 보여줄 데가 없어 사용자가 각 기록을 일일이 더해야 하는 공백을 발견. logic.js에 순수 함수 totalRealizedGain(items) 신설(realizedGain!=null인 기록만 합산, 하나도 없으면 null — goalProgress/debtPayoffProjection과 동일하게 0과 모름을 구분). index.html openAssetQtyLog가 이 합계를 investGainLossCard와 동일한 색상 규칙(var(--income)/var(--expense))으로 시트 상단에 카드로 보여주게 배선. APP_VERSION 1.47.274->1.47.275, sw.js CACHE v541->v542 동기 범프. test/run.js에 totalRealizedGain 단위 테스트 3건 추가(2218->2221). node test/run.js 2221/2221 통과, node --check(logic.js/test/run.js) 및 HTML 주석 제거 후 추출한 index.html 인라인 스크립트 3블록 구문 검증 통과.",
+      "summary": "fork 서브에이전트로 탐색한 결과, 부분매도 실현손익 기록이 openAssetQtyLog 각 행에만 표시되고 전체 합계를 보여줄 데가 없는 공백을 발견. logic.js totalRealizedGain(items) 신설, index.html openAssetQtyLog가 investGainLossCard와 동일한 색상 규칙으로 합계 카드 노출. APP_VERSION 1.47.274->1.47.275, sw.js CACHE v541->v542. node test/run.js 2221/2221 통과.",
       "commit": null
     },
     {
       "cycle": 266,
       "phase": "review",
       "timestamp": "2026-10-29T13:05:00.000Z",
-      "summary": "cycle266 develop 커밋(399ac71, openAssetQtyLog 시트 상단에 누적 실현손익 카드 totalRealizedGain 추가)을 검토. totalRealizedGain이 items를 받아 realizedGain!=null인 기록만 더하고 하나도 없으면 null을 반환하는 것을 코드로 확인 — 대상 items가 호출부(openAssetQtyLog)에서 이미 assetId로 필터된 배열이라 다른 자산의 기록이 섞여 합산될 위험이 없음. 색상 규칙(totalGain>=0?var(--income):var(--expense))이 investGainLossCard의 up=gl.amount>=0 패턴과 정확히 일치함을 대조 확인. comma()가 음수에 '-'를 포함해 표시하므로 손실 합계도 올바르게 보임. node test/run.js 독립 재실행 결과 2221/2221 통과, node --check(logic.js/sw.js/test/run.js) 통과, APP_VERSION(1.47.275)/sw.js CACHE(v542) 동기화 확인. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "summary": "cycle266 develop 커밋(399ac71, 누적 실현손익 카드 totalRealizedGain)을 검토. items가 이미 assetId로 필터된 배열이라 다른 자산 기록이 섞일 위험 없음을 확인. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
       "commit": null
     },
     {
       "cycle": 266,
       "phase": "critique",
       "timestamp": "2026-10-29T14:40:44.000Z",
-      "summary": "fork 서브에이전트로 앱 전반을 재탐색(sync/tombstone 시스템, 자산 이체 흐름, 반복거래 skip, 전체내역 검색 debounce 등은 이미 성숙함을 확인, SRI TODO(index.html:1384)는 이 컨테이너의 cdn.jsdelivr.net/t1.kakaocdn.net egress가 여전히 403으로 차단돼 불가로 재확인)한 결과, cycle265-266이 만든 부분매도 실현손익 기록(realizedGainForSale/totalRealizedGain)이 자산별 보유수량 로그(openAssetQtyLog)에만 노출되고, 더 상위 요약 화면인 연간 결산(openYearReview/yearSummary)은 여전히 수입/지출/저축률만 보여줘 '올해 투자로 얼마를 벌었는지'를 한눈에 볼 방법이 없는 공백을 발견. 채택 계획(yearRealizedGain 신설 + yearSummary.investGain 배선 + openYearReview 카드 노출, 기존 totalRealizedGain/null 관례 재사용)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
+      "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, 부분매도 실현손익 기록이 openAssetQtyLog에만 노출되고 연간 결산(openYearReview/yearSummary)엔 '올해 투자로 얼마를 벌었는지'를 볼 방법이 없는 공백을 발견. 채택 계획(yearRealizedGain 신설 + yearSummary.investGain 배선 + openYearReview 카드 노출)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
       "commit": null
     },
     {
       "cycle": 266,
       "phase": "advance",
       "timestamp": "2026-10-29T15:50:00.000Z",
-      "summary": "critique(cycle266) 계획대로 연간 결산(연말정산)에 투자 실현손익을 추가. index.html의 yearSpendByCategory/yearIncomeByCategory 옆에 순수 보조 함수 yearRealizedGain(y,owner='전체') 신설 — DB.assetQtyLog를 (q.date||'').slice(0,4)===String(y)로 연도 필터링하고, owner!=='전체'면 DB.assets.find(a=>a.id===q.assetId)?.owner===owner로 추가 필터링한 뒤 새 집계 로직을 짜지 않고 logic.js의 기존 totalRealizedGain(items)에 그대로 넘겨 재사용(계획대로). yearSummary()의 반환 객체에 investGain:yearRealizedGain(y,owner) 필드 추가. openYearReview()의 4칸 요약(hrt-grid) 바로 아래에 investGain!=null일 때만(0과 '매도 기록 없음'을 구분하는 기존 null 관례 유지) openAssetQtyLog의 '누적 실현손익' 카드와 동일한 마크업·색상 규칙(>=0?var(--income):var(--expense))으로 '올해 투자 실현손익' 카드 노출. 구현 중 계획에 없던 공백을 하나 추가로 발견해 함께 고침 — 투자자산만 쓰고 현금 수입/지출 거래가 전혀 없는 해라면 investGain이 있어도 if(!s.income&&!s.expense) 빈 상태 분기(\"아직 N년 기록이 없어요\")에 가려져 카드 자체가 안 보였을 공백이라, 조건에 &&s.investGain==null을 추가해 투자 실현손익만 있는 해도 빈 상태를 건너뛰게 함. 전년도 YoY는 계획대로 이번 사이클에서 다루지 않음. index.html만 변경이라 APP_VERSION 1.47.275->1.47.276, sw.js CACHE v542->v543 동기 범프. test/run.js: yearRealizedGain 단위 테스트 4건(연도 필터/기록 없음→null/owner 필터/삭제된 자산 제외)+yearSummary.investGain 배선 2건(있음/없음)+openYearReview 카드 렌더링 4건(이익 income색/손실 expense색/기록 없으면 카드 미노출/투자손익만 있어도 빈 상태 아님) 추가(2221->2231, FUNCTIONS 목록에 yearRealizedGain도 추가). node test/run.js 2231/2231 통과, node --check(logic.js/sw.js/test/run.js) 및 HTML 주석 제거 후 추출한 index.html 인라인 스크립트 4블록 구문 검증(new Function) 통과. pending_advance_plan null로 비움.",
+      "summary": "critique(cycle266) 계획대로 연간 결산에 투자 실현손익 추가. yearRealizedGain 신설, yearSummary().investGain 배선, openYearReview 카드 노출(0과 '기록 없음' 구분하는 null 관례 유지). 투자손익만 있어도 빈 상태를 건너뛰게 조건 보강. APP_VERSION 1.47.275->1.47.276, sw.js CACHE v542->v543. node test/run.js 2231/2231 통과. pending_advance_plan null로 비움.",
       "commit": null
     },
     {
       "cycle": 267,
       "phase": "develop",
       "timestamp": "2026-10-29T16:50:00.000Z",
-      "summary": "부채 상환 추가 납입 시뮬레이터(what-if, cycle262 advance)의 결과 영역(#debtWhatIfResult)이 debtWhatIfUpdate()에서 textContent만 직접 대입해 갱신되고 있어, toast()/celebrate()/nwChartPeekMove가 이미 쓰는 announceLive() aria-live 공지 관례를 따르지 않는 공백을 발견 — 입력창(#debtWhatIfExtra)에 포커스가 머무는 스크린리더 사용자는 타이핑할 때마다 바뀌는 결과 문구를 전혀 들을 수 없었음. debtWhatIfUpdate()에서 resEl.textContent를 설정한 직후 같은 문구로 announceLive(text)를 호출하도록 수정(toast 패턴과 동일). index.html만 변경이라 APP_VERSION 1.47.276->1.47.277, sw.js CACHE v543->v544 동기 범프. 공유 테스트 sandbox에 announceLive 스파이(announceLiveCalls)를 신설(이전엔 정의돼 있지 않아 실제 코드에 추가했다면 ReferenceError로 기존 debtWhatIfUpdate 테스트가 깨졌을 것)하고, 기존 두 debtWhatIfUpdate 테스트를 확장해 정상 경로에서 announceLive가 textContent와 동일한 문구로 정확히 1번 불리는지, 두 조기 반환 경로(존재하지 않는 자산/결과 영역 없음)에서는 전혀 불리지 않는지 검증(새 test() 케이스 추가 없이 기존 케이스에 assert만 추가해 테스트 총수는 2231로 동일). node test/run.js 2231/2231 통과, node --check(logic.js/sw.js/test/run.js) 및 HTML 주석 제거 후 추출한 index.html 인라인 스크립트 4블록 구문 검증(new Function) 통과.",
+      "summary": "부채 상환 what-if 결과 영역이 announceLive() 관례를 따르지 않아 스크린리더 사용자가 결과 변화를 못 듣는 공백을 발견. debtWhatIfUpdate()에 announceLive 호출 추가. APP_VERSION 1.47.276->1.47.277, sw.js CACHE v543->v544. node test/run.js 2231/2231 통과.",
       "commit": null
     },
     {
       "cycle": 267,
       "phase": "review",
       "timestamp": "2026-10-29T17:10:00.000Z",
-      "summary": "cycle267 develop 커밋(39e77fe, debtWhatIfUpdate()가 announceLive로도 결과를 공지하도록 추가)을 검토. 실제 버그 발견: debtWhatIfUpdate는 #debtWhatIfExtra의 oninput마다(키 입력 한 번마다) 호출되는데, announceLive를 디바운스 없이 그대로 불러 사용자가 금액을 한 자리씩 입력할 때마다 스크린리더가 문장 전체를 끊어 읽는 접근성 안티패턴이 됨(WAI-ARIA에서 경고하는 live region 과다 공지). textContent 갱신은 그대로 매 keystroke마다 즉시 처리하되, announceLive 호출만 assetQInput/histQInput/pkAssetQInput이 이미 쓰는 220ms 디바운스 관례(_debtWhatIfAnnT 타이머)를 따르도록 작은 범위로 수정. 디바운스 도입으로 깨진 기존 실행형 테스트(동기 1회 호출을 가정)를 setTimeout 모킹 패턴(pkAssetQInput 테스트와 동일)으로 갱신하고, 연속 입력 시 타이머가 매번 clearTimeout+새로 설정되는지 확인하는 테스트를 추가함. LETS 추출 목록에 _debtWhatIfAnnT 등록. node test/run.js 2232/2232 통과, node --check(index.html 메인 스크립트/logic.js/sw.js/test/run.js) 통과. APP_VERSION 1.47.278, sw.js CACHE v545로 갱신.",
+      "summary": "cycle267 develop 커밋(39e77fe)을 검토. 실제 버그 발견: announceLive가 디바운스 없이 keystroke마다 불려 접근성 안티패턴이 됨. 220ms 디바운스(_debtWhatIfAnnT) 관례를 적용해 수정. node test/run.js 2232/2232 통과. APP_VERSION 1.47.278, sw.js CACHE v545.",
       "commit": null
     },
     {
       "cycle": 267,
       "phase": "critique",
       "timestamp": "2026-10-29T18:11:26.759Z",
-      "summary": "fork 서브에이전트로 앱 전반을 재탐색(이미 다룬 영역들과 중복 없는지 확인)한 결과, yearSummary()(index.html:6396)의 yoy 객체가 수입/지출/저축률엔 전년대비(YoY) delta를 계산해 openYearReview()가 배지로 보여주지만, cycle266 advance가 추가한 investGain(올해 투자 실현손익)에는 전년대비 비교가 아예 없음을 발견 — cycle266 advance 커밋 노트에 \"전년도 YoY는 계획대로 이번 사이클에서 다루지 않음\"이라 명시적으로 보류됐고 이후 어느 사이클도 다시 집지 않아, 연간 결산 4개 요약 카드 중 유일하게 \"전년대비\" 배지가 없는 카드로 남아있었음. 채택 계획(yearSummary에 pyInvestGain/yoy.investDelta 추가 + openYearReview에 원 단위 증감 배지 노출, income/expense가 쓰는 퍼센트 기반 incomeTrendBadge는 investGain이 음수/0 근처 기준값을 가질 수 있어 그대로 재사용하면 안 된다는 주의사항 포함)을 pending_advance_plan에 저장. 러너업: (a) 투자 리밸런싱 알림(target% 스키마 필요, 다수 사이클에 걸쳐 반복 보류 중, 여전히 미채택), (b) assetAllocation()의 시계열(historical) 버전(현재는 스냅샷만 존재, nwHistoryForOwner급 신규 인프라 필요해 범위상 한 사이클엔 과함, 별도 critique에서 재검토 예정). 코드 변경 없음(state.json만 커밋).",
+      "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, yearSummary()의 yoy 객체가 수입/지출/저축률엔 전년대비 delta를 계산하지만 investGain(cycle266 advance)엔 YoY 비교가 없는 공백을 발견. 채택 계획(yearSummary에 pyInvestGain/yoy.investDelta 추가 + 원 단위 증감 배지 노출)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
       "commit": null
     },
     {
       "cycle": 267,
       "phase": "advance",
       "timestamp": "2026-10-29T19:08:00.000Z",
-      "summary": "연간 결산 투자 실현손익 카드에 전년대비(YoY) 배지 추가 — yearSummary.yoy.investDelta(원 단위 증감, income/expense의 퍼센트 기반 배지와 달리 음수 기준값에서도 안전)를 계산하고 openYearReview 카드에 렌더. 단위/렌더 테스트 추가, APP_VERSION/CACHE 동기 범프.",
+      "summary": "연간 결산 투자 실현손익 카드에 전년대비(YoY) 배지 추가 — yearSummary.yoy.investDelta(원 단위 증감)를 계산하고 openYearReview 카드에 렌더. 단위/렌더 테스트 추가, APP_VERSION/CACHE 동기 범프.",
       "commit": null
     },
     {
       "cycle": 268,
       "phase": "develop",
       "timestamp": "2026-10-29T20:18:41.571Z",
-      "summary": "설정 > 저축 만기 알림(openMaturity) 목록이 soon(만기 30일 이내) 판정만으로 임박 뱃지를 달아, 이미 지난(overdue) 만기도 임박으로 잘못 표시하던 공백을 발견 — 같은 데이터를 쓰는 homeAlerts의 OS 푸시(notifyAlertInfo)는 cycle232에서 이미 overdue를 '만기가 지났어요'로 따로 구분했고, goalProgress의 목표일 지남도 mini warn(경고색)+'지남'으로 표시하는데 이 목록만 그 구분이 없었음(기존 setupMaturityDB 테스트 픽스처 자체가 TODAY보다 5일 전 만기를 쓰고 있었는데도 이 라벨 오류가 테스트되지 않고 있었음). openMaturity()에 overdue(a.maturityDate<TODAY) 변수를 추가해 지난 만기는 mini warn+'만기 지남', 아직 안 지난 만기는 그대로 mini sch+'임박'으로 분기(이체 버튼 노출 조건인 soon은 그대로 유지). index.html만 변경이라 APP_VERSION 1.47.279->1.47.280, sw.js CACHE v546->v547 동기 범프. test/run.js에 지난 만기/아직 안 지난 만기 두 경우를 모두 검증하는 회귀 테스트 1건 추가(2238->2239). node test/run.js 2239/2239 통과, node --check(logic.js/sw.js/test/run.js) 통과, 메인 인라인 스크립트는 test/run.js의 extractMainScript가 그대로 로드/실행하므로 테스트 통과 자체가 구문 검증을 포함함. 부가 발견: 작업 시작 시 로컬 HEAD가 detached 상태였고 로컬 main 브랜치 ref가 origin보다 56커밋 뒤처진 캐시값(cca017a)이었음 — git fetch origin --unshallow로 origin/main의 실제 최신값(1ac6ccb, 로컬 HEAD와 정확히 일치)을 확인한 뒤 fast-forward로 안전하게 push, 이후 로컬 main도 origin/main으로 ff. origin에는 이 세션이 만들지 않은 app-evolve-recovered-*/orphaned-work-*/force-reset-* 등 과거 git 상태 복구용 백업 브랜치가 다수 존재함(이번 사이클에서 건드리지 않음, 삭제·정리는 범위 밖).",
+      "summary": "설정 > 저축 만기 알림(openMaturity) 목록이 soon 판정만으로 임박 뱃지를 달아 이미 지난(overdue) 만기도 임박으로 잘못 표시하던 공백을 발견. overdue 분기 추가(지난 만기는 mini warn+'만기 지남'). APP_VERSION 1.47.279->1.47.280, sw.js CACHE v546->v547. node test/run.js 2239/2239 통과.",
       "commit": "a55ccf4"
     },
     {
       "cycle": 268,
       "phase": "review",
       "timestamp": "2026-10-29T20:45:00.000Z",
-      "summary": "cycle268 develop 커밋(a55ccf4, openMaturity에 overdue(a.maturityDate<TODAY) 분기 추가 — 지난 만기는 mini warn+'만기 지남', 아직 안 지난 만기는 mini sch+'임박')을 검토. overdue 정의(a.maturityDate<TODAY)가 notifyAlertInfo(index.html:9441, const overdue=al.date<TODAY)와 정확히 같고, 뱃지 스타일(mini warn+'지남')도 goalProgress의 목표일 지남 표시(goalIsOverdue 기반, mini warn+'지남')와 일치함을 grep/코드 대조로 확인 — 기존 관례를 정확히 재사용. 이체 버튼 노출 조건(soon)은 그대로 유지돼 만기가 지난 저축도 여전히 이체할 수 있음을 확인(의도대로). 새 회귀 테스트가 지난 만기/아직 안 지난 만기 두 경우를 모두 검증해 핵심 시나리오를 잘 덮음. node test/run.js 독립 재실행 결과 2239/2239 통과, node --check(logic.js/sw.js/test/run.js) 통과, APP_VERSION(1.47.280)/sw.js CACHE(v547) 동기화 확인. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "summary": "cycle268 develop 커밋(a55ccf4)을 검토. overdue 정의가 notifyAlertInfo/goalProgress의 기존 관례와 일치함을 확인. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
       "commit": null
     },
     {
       "cycle": 268,
       "phase": "critique",
       "timestamp": "2026-10-29T21:30:00.000Z",
-      "summary": "fork 서브에이전트로 앱 전반을 재탐색(SRI TODO는 CDN egress 차단으로 여전히 불가, 투자 리밸런싱 알림은 target% 스키마 필요해 다수 사이클째 보류 유지, 자산배분 시계열 버전도 범위상 과해 재보류)한 결과, cycle265-267이 만든 매도 실현손익 집계(realizedGainForSale/totalRealizedGain/yearRealizedGain)가 openAssetQtyLog/openYearReview에서 화면으로만 보이고, exportData()의 CSV 내보내기 메뉴(CSV_KIND_META: csv/assetsCsv/nwCsv만 존재)에는 매도·실현손익 내역을 뽑을 길이 전혀 없어 세금 신고·성과 분석 시 전체 JSON 백업을 뒤지는 것 외엔 방법이 없는 공백을 발견. 채택 계획(assetQtyLogToCSV 신설 + CSV_KIND_META에 gainCsv 추가 + exportData 버튼 배선, 기존 assetsToCSV/nwHistoryToCSV의 guard/esc 패턴과 doExport 파이프라인 재사용)을 pending_advance_plan에 저장. 러너업: (a) 예산 한도 변경 이력 CSV 내보내기(사용자 가치 낮아 보류), (b) 투자 리밸런싱 알림(기존과 동일한 이유로 재기각). 코드 변경 없음(state.json만 커밋).",
+      "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, 매도 실현손익 집계(realizedGainForSale/totalRealizedGain/yearRealizedGain)가 화면으로만 보이고 CSV 내보내기(CSV_KIND_META)에는 길이 없는 공백을 발견. 채택 계획(assetQtyLogToCSV 신설 + CSV_KIND_META에 gainCsv 추가 + exportData 배선)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
       "commit": null
     },
     {
       "cycle": 268,
       "phase": "advance",
       "timestamp": "2026-10-29T22:40:00.000Z",
-      "summary": "critique(cycle268) 계획대로 매도(실현손익) 내역 CSV 내보내기를 구현. index.html의 assetsToCSV/nwHistoryToCSV 옆에 순수 함수 assetQtyLogToCSV(items,assets) 신설 — 동일한 guard/esc CSV 인젝션 방지 패턴 재사용. DB.assetQtyLog 중 realizedGain!=null인 항목만 날짜 오름차순으로 필터링해 날짜/자산명/유형/귀속/매도 전 수량/매도 후 수량/매도금액/차감된 매입원가/실현손익 9컬럼으로 펼침 — 차감된 매입원가(costBasisRemoved)는 qtyLogEntry에 따로 저장돼 있지 않아(realizedGainForSale의 식 그대로) saleProceeds-realizedGain으로 되돌려 구함. 자산이 이미 삭제됐으면(assetId를 DB.assets에서 못 찾음) 이름/유형/귀속은 빈 칸으로 남김(추측하지 않음). CSV_KIND_META에 gainCsv(prefix:'realized-gains') 항목 추가, exportData() 시트에 '매도(실현손익) 내역 CSV로 내보내기' 버튼(svg('receipt')) 추가, doExport()에 kind==='gainCsv' 분기로 assetQtyLogToCSV(DB.assetQtyLog,DB.assets) 연결 — 기존 share/download/copy-fallback 파이프라인 그대로 재사용. index.html만 변경이라 APP_VERSION 1.47.280->1.47.281, sw.js CACHE v547->v548 동기 범프. test/run.js에 assetQtyLogToCSV 단위 테스트 6건(빈 배열/realizedGain==null 제외+날짜순/costBasisRemoved 역산(손실 포함)/날짜 정렬/삭제된 자산 빈 칸/CSV 인젝션 가드)+exportData 버튼 배선 1건(gainCsv 추가 검증으로 기존 테스트 확장)+CSV_KIND_META·doExport 배선 1건 추가, FUNCTIONS 목록에 assetQtyLogToCSV 등록(2239->2246). 삭제된 자산 빈 칸 테스트에서 vm 샌드박스 realm 경계로 인한 deepStrictEqual 교차-realm 비교 실패를 발견해 strictEqual 개별 비교로 수정(기존 관례인 JSON 라운드트립과 동일한 근본 원인). node test/run.js 2246/2246 통과. pending_advance_plan null로 비움.",
+      "summary": "critique(cycle268) 계획대로 매도(실현손익) 내역 CSV 내보내기를 구현. assetQtyLogToCSV 신설(9컬럼), CSV_KIND_META에 gainCsv 추가, exportData()/doExport() 배선. APP_VERSION 1.47.280->1.47.281, sw.js CACHE v547->v548. node test/run.js 2246/2246 통과. pending_advance_plan null로 비움.",
       "commit": null
     },
     {
       "cycle": 269,
       "phase": "develop",
       "timestamp": "2026-10-30T00:13:51.333Z",
-      "summary": "통합검색(openGlobalSearch/globalSearchBody)이 거래·자산·카테고리까지만 가로질러 찾고 목표(DB.goals)는 전혀 검색 대상이 아니던 공백을 발견 — matchTxnQuery/matchAssetQuery/matchCatQuery처럼 각 그룹마다 전용 매칭 함수가 있는데 목표만 없어, 목표 이름으로 아무리 입력해도 통합검색에 잡히지 않았음. logic.js에 matchCatQuery와 동일한 규칙(대소문자 무시 includes + NFC 정규화 + 공백 AND, searchTerms 재사용)의 순수 함수 matchGoalQuery(g,q) 신설(g가 null/name 없음이면 빈 문자열로 안전 처리). index.html globalSearchBody()에 goalsAll=(DB.goals||[]).filter(g=>matchGoalQuery(g,q)) 추가하고, capGroup/moreBtn 관례(GS_CAP=20, GS_EXPAND.goals)를 다른 세 그룹과 동일하게 적용, 빈 결과 판정(!txnsAll.length&&...)에도 !goalsAll.length 추가. 목표 행은 openGoalsList()의 manage-row 마크업(avatar target 아이콘, 진행률 pct, 달성/지남 뱃지)을 그대로 재사용해 onclick=ackGoalAchieved(g.id)로 이동(목표 목록과 동일한 진입점). 검색창 placeholder/빈 상태 안내 문구에도 목표를 추가. index.html/logic.js 변경이라 APP_VERSION 1.47.281->1.47.282, sw.js CACHE v548->v549 동기 범프. test/run.js에 matchGoalQuery 단위 테스트 8건(빈 검색어/부분일치/대소문자/불일치/NFD 저장·검색 양방향/공백 AND/goal이 null이거나 name 없을 때 안전)을 matchCatQuery 테스트와 동일한 패턴으로 추가하고, 기존 통합검색 교차 그룹 테스트 2건(스타벅스 매칭/전기요금 그룹 분리)에 matchGoalQuery도 포함시켜 확장(2246->2254). node test/run.js 2254/2254 통과, node --check(logic.js/sw.js/test/run.js) 통과 — 메인 인라인 스크립트는 test/run.js의 extractMainScript가 그대로 로드/실행하므로 테스트 통과 자체가 구문 검증을 포함함.",
+      "summary": "통합검색(openGlobalSearch/globalSearchBody)이 거래·자산·카테고리까지만 가로질러 찾고 목표(DB.goals)는 검색 대상이 아니던 공백을 발견. logic.js matchGoalQuery(g,q) 신설, index.html globalSearchBody()에 goals 그룹 배선(capGroup/GS_EXPAND 관례 재사용). APP_VERSION 1.47.281->1.47.282, sw.js CACHE v548->v549. node test/run.js 2254/2254 통과.",
       "commit": null
     },
     {
       "cycle": 269,
       "phase": "review",
       "timestamp": "2026-10-30T01:00:00.000Z",
-      "summary": "cycle269 develop 커밋(0bf9baa, 통합검색에 matchGoalQuery 배선해 목표 그룹 추가)을 검토. goalProgress(g,goalHistoryFor(g),TODAY)/goalIsOverdue(g.targetDate,p.achieved,TODAY) 호출이 openGoalsList()와 동일한 시그니처·인자임을 코드 대조로 확인(검색 결과 행은 ownerBadge/assetGone/assetBroken/hasUnknown/targetDate 캡션을 생략한 더 단순한 변형이지만 이는 의도된 지면 축소일 뿐 버그 아님). capGroup/GS_EXPAND.goals/gsMore('goals') 키가 txns/assets/cats와 동일한 패턴으로 충돌 없이 배선됨을 확인. matchGoalQuery는 logic.js에 있어(index.html 메인 스크립트의 FUNCTIONS 화이트리스트 대상이 아님) cycle268 advance의 assetQtyLogToCSV와 달리 별도 등록이 필요 없음을 확인. node test/run.js 독립 재실행 결과 2254/2254 통과, node --check(logic.js/sw.js/test/run.js) 통과, APP_VERSION(1.47.282)/sw.js CACHE(v549) 동기화 확인. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "summary": "cycle269 develop 커밋(0bf9baa, 통합검색에 matchGoalQuery 배선)을 검토. openGoalsList()와 동일한 goalProgress/goalIsOverdue 시그니처 사용 확인, capGroup/GS_EXPAND.goals 충돌 없이 배선됨 확인. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
       "commit": null
     },
     {
       "cycle": 269,
       "phase": "critique",
       "timestamp": "2026-10-30T02:20:00.000Z",
-      "summary": "fork 서브에이전트로 앱 전반을 재탐색(이미 다룬 영역과 중복 없는지 확인)한 결과, syncRates()(index.html:3729-3762)가 실패마다 R.failStreak/R.fxFail/R.stockFail/R.cryptoFail을 쌓지만, homeAlerts()의 유일한 시세 관련 카드인 rateUnknownTotal(index.html:9412-9413)의 근거 함수 rateUnknown(a)(index.html:2866-2873)은 R.fx[cur]/R.goldPerG/R.stocks[code]/R.crypto[code]가 '한 번도 못 받아온(null)' 경우만 감지해, 최초 성공 이후 반복 실패(API 장애 등)는 failStreak가 계속 올라가도 homeAlerts()에 그 값을 읽는 분기가 전혀 없어 홈 어디에도 드러나지 않음을 발견 — rateStatusText()(index.html:3780-3788)의 '최신 아님' 캡션은 시세 시트를 직접 열어야만 보여, cloudSyncError/persist/storageSize처럼 지속 실패를 홈 카드로 알리는 기존 관례와 비대칭. 자산 총액이 조용히 오래된 시세로 계산될 수 있는데 사용자가 알 길이 없음. 러너업: (a) assetQtyLog 항목 edit(delete+재입력 우회 가능, cycle265 critique에서도 저가치로 기각 재확인), (b) allTxns/expandRec 대용량 성능(실측 근거 없이 추측이라 범위 밖). 채택 계획(homeAlerts에 staleRates kind 추가 — hasRateAssets()&&failStreak>=3 조건, cloudSyncError처럼 성공 시 자연 소멸, openRateSheet() CTA, OS 푸시 대상 제외)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
+      "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, syncRates()가 실패마다 failStreak를 쌓지만 homeAlerts()의 rateUnknownTotal은 '한 번도 못 받아온' 경우만 감지해, 최초 성공 이후 반복 실패(API 장애)는 홈 어디에도 안 보이는 공백을 발견 — cloudSyncError/persist/storageSize처럼 지속 실패를 홈 카드로 알리는 기존 관례와 비대칭. 채택 계획(homeAlerts에 staleRates kind 추가 — hasRateAssets()&&failStreak>=3 조건, 성공 시 자연 소멸, openRateSheet() CTA, OS 푸시 대상 제외)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 269,
+      "phase": "advance",
+      "timestamp": "2026-10-30T03:30:00.000Z",
+      "summary": "critique(cycle269) 계획대로 시세 동기화 반복 실패를 홈 알림 카드(staleRates)로 노출. homeAlerts()에 hasRateAssets()&&(DB.rates&&DB.rates.failStreak||0)>=3 조건으로 kind:'staleRates' 추가(cloudSyncError처럼 성공 시 failStreak=0으로 자연 소멸, OS 푸시 notifyAlertInfo 대상에선 제외). 카드 렌더 case 추가(rateUnknownTotal과 동일한 모양, openRateSheet() CTA). APP_VERSION 1.47.282->1.47.283, sw.js CACHE v549->v550. test/run.js에 homeAlerts 임계값 경계(failStreak 2/3) 테스트, 성공 후 리셋+hasRateAssets()=false 미표시 테스트, notifyAlertInfo가 staleRates를 OS 푸시 대상에서 제외하는(null 반환) 테스트 총 3건 추가. node test/run.js 2257/2257 통과, 블록2(메인 스크립트) node --check 통과. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

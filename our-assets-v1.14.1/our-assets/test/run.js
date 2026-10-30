@@ -4710,6 +4710,38 @@ test('homeAlerts: 연결 자산 종류가 바뀌어 추적 불가능해진 asset
   assert.ok(!alerts.some((a) => a.kind === 'goalBehind' || a.kind === 'goalBehindMulti'), 'debt로 바뀐 연결 자산 때문에 sign이 반대로 계산되는 오탐이 뜨면 안 됨');
 });
 
+test('homeAlerts: 시세 동기화가 연속 3회 이상 실패하면 staleRates 카드가 뜨고, 2회까지는 안 뜬다(app-evolve cycle269 advance)', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.assets = [{ id: 'a1', type: 'stock', stockCode: '005930', owner: '나', includeInTotal: true, stockQty: 1 }];
+  sandbox.DB.rates = { fx: {}, stocks: { '005930': 79800 }, crypto: {}, syncedAt: Date.now(), failStreak: 2 };
+  let alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'staleRates'), '연속 실패 2회는 일시적 블립일 수 있어 아직 뜨면 안 됨');
+
+  sandbox.DB.rates.failStreak = 3;
+  alerts = sandbox.homeAlerts([]);
+  assert.ok(alerts.some((a) => a.kind === 'staleRates'), '연속 실패 3회(약 30분+)부터는 카드로 알려야 함');
+});
+test('homeAlerts: staleRates는 다음 syncRates() 성공으로 failStreak가 0이 되면 자연 소멸하고, 시세 연동 자산이 없으면 실패 중이어도 안 뜬다', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.assets = [{ id: 'a1', type: 'stock', stockCode: '005930', owner: '나', includeInTotal: true, stockQty: 1 }];
+  sandbox.DB.rates = { fx: {}, stocks: { '005930': 79800 }, crypto: {}, syncedAt: Date.now(), failStreak: 5 };
+  let alerts = sandbox.homeAlerts([]);
+  assert.ok(alerts.some((a) => a.kind === 'staleRates'));
+
+  sandbox.DB.rates.failStreak = 0; // 다음 동기화 성공
+  alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'staleRates'), '성공해서 failStreak가 0으로 리셋되면 사라져야 함');
+
+  sandbox.DB.assets = []; // 시세 연동이 필요한 자산 자체가 없음(hasRateAssets()=false)
+  sandbox.DB.rates.failStreak = 5;
+  alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'staleRates'), '시세 연동 대상 자산이 없으면 failStreak와 무관하게 뜨면 안 됨');
+});
+test('notifyAlertInfo: staleRates는 OS 푸시 대상이 아니다(backup/persist처럼 홈 카드로만 충분)', () => {
+  sandbox.TODAY = '2026-06-15';
+  assert.strictEqual(sandbox.notifyAlertInfo({ kind: 'staleRates' }), null);
+});
+
 test('doRenameOwner: 이름변경 시 DB.goals의 owner도 함께 옮기고 touch()로 updatedAt을 다시 찍는다(mergeCollection 병합 불변식)', () => {
   sandbox.DB = {
     owners: ['나', '아빠'], assets: [],

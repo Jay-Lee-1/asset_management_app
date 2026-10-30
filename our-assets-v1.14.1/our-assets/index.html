@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.282';
+const APP_VERSION='1.47.283';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -9386,6 +9386,14 @@ function homeAlerts(neg){
    * 벌어져 CLOUD_SYNC_STATE가 그대로 'ok'로 남으므로, 별도 카드로 알린다(app-evolve cycle211 advance) */
   if(DB.settings.mergeDataLossCount>0)arr.push({kind:'mergeDataLoss',count:DB.settings.mergeDataLossCount,fields:DB.settings.mergeDataLossFields||[]});
  }
+ /* rateUnknownTotal(바로 아래)은 "한 번도 못 받아온 상태"만 잡아, 최초 성공 이후 syncRates()가
+  * 반복 실패(API 장애 등)해도 홈 어디에도 안 보이고 시세 시트를 직접 열어야만 rateStatusText()의
+  * '최신 아님' 캡션으로 알 수 있었다. failStreak>=3(10분 자동 재시도 기준 약 30분 이상 연속 실패로,
+  * 일시적 네트워크 블립 오탐을 피한다)이면 cloudSyncError와 동일하게 수동 dismiss 없이 카드로
+  * 알리고, 다음 syncRates() 성공으로 failStreak가 0으로 리셋되면 자연 소멸한다. OS 푸시
+  * (notifyAlertInfo) 대상엔 넣지 않음 — backup/persist/storageSize와 같은 성격의 카드로 충분
+  * (app-evolve cycle269 critique/advance) */
+ if(hasRateAssets()&&(DB.rates&&DB.rates.failStreak||0)>=3)arr.push({kind:'staleRates'});
  if(backupDue()&&DB.txns.length)arr.push({kind:'backup'});
  if(shouldWarnUnpersisted(STORAGE_PERSISTED,!!CLOUD_UID)&&!DB.settings.persistWarnDismissed)arr.push({kind:'persist'});
  if(shouldWarnStorageSize(DB_JSON_LEN,DB.settings.storageSizeWarnDismissed,STORAGE_SIZE_WARN_LEN,STORAGE_SIZE_CRIT_LEN))arr.push({kind:'storageSize'});
@@ -9653,6 +9661,11 @@ function homeAlertCard(al){
    <div class="ha-ic">${svg('alert')}</div>
    <div class="ha-b"><div class="ha-t">시세 미확인 자산 ${al.count}건이 총자산에서 빠졌어요</div>
      <div class="ha-s">가격을 받아오기 전까지 ₩0으로 계산돼요 · 눌러서 시세 연동을 확인하세요</div></div>
+   <div class="ha-c">${svg('chev')}</div></button>`;
+ if(al.kind==='staleRates')return `<button class="home-alert" onclick="openRateSheet()">
+   <div class="ha-ic">${svg('alert')}</div>
+   <div class="ha-b"><div class="ha-t">시세 갱신이 계속 실패하고 있어요</div>
+     <div class="ha-s">마지막 성공 시세로 계산 중이에요 · 눌러서 시세 연동을 확인하세요</div></div>
    <div class="ha-c">${svg('chev')}</div></button>`;
  if(al.kind==='budgetOver')return `<button class="home-alert" onclick="openSpendAnalysisThisMonth()">
    <div class="ha-ic">${svg('alert')}</div>
