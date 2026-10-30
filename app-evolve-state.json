@@ -1,19 +1,8 @@
 {
-  "cycle": 270,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "거래/반복거래 입력 시 메모 기반 카테고리 추천",
-    "why": "renderTxSheet()/recDraft 흐름에서 카테고리는 매번 DB.categories.expense[0]로만 기본 설정되어, 같은 메모(예: '스타벅스', '넷플릭스')를 수십 번 입력해도 사용자가 매번 직접 카테고리를 다시 골라야 하는 반복 마찰이 앱에서 가장 자주 쓰는 화면(거래 입력)에 그대로 남아 있음. 최근 사이클(실현손익 표시/CSV/연간결산/YoY, 통합검색 목표 커버리지, 시세동기화 알림, 만기 overdue, 부채 what-if 디바운스)은 모두 이 영역을 건드리지 않음 — 중복 없음.",
-    "approach": "logic.js에 순수함수 suggestCategoryForMemo(memo, txns, type) 추가: 메모 정규화(NFC/trim/lowercase, matchGoalQuery와 동일 스타일) 후 type 일치 + 메모 일치 거래들 중 최다 빈도 카테고리 반환(동률이면 최신 거래 우선), 매칭 없으면 null. index.html에서 renderTxSheet()의 메모 입력 핸들러에 디바운스(기존 _debtWhatIfAnnT 패턴 재사용, ~200ms) 적용해 suggestCategoryForMemo 호출 → 매칭 시 txDraft.category를 바로 덮어쓰지 않고 '추천: {category}' 칩 + 적용 버튼으로 노출, 사용자가 카테고리를 이미 직접 바꾼 경우(_catUserTouched 플래그)엔 추천을 띄우지 않음. 동일 패턴을 recDraft(반복거래 입력)에도 배선. test/run.js에 suggestCategoryForMemo 케이스(정확 일치/불일치/동률 시 최신 우선/type 필터) 추가. APP_VERSION/sw.js CACHE 동기 범프, node test/run.js 통과 확인."
-  },
+  "cycle": 271,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 265,
-      "phase": "advance",
-      "timestamp": "2026-10-29T11:20:00.000Z",
-      "summary": "critique(cycle265) 계획대로 매도(수량 감소) 시 실현손익(realized gain) 기록을 구현. logic.js realizedGainForSale 신설, index.html costBasisField 매도 분기/saveAsset 배선/openAssetQtyLog 표시 추가. APP_VERSION 1.47.273->1.47.274, sw.js CACHE v540->v541. node test/run.js 2218/2218 통과. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 266,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-30T06:10:00.000Z",
       "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, 거래 입력(renderTxSheet)/반복거래 입력(recDraft)에서 카테고리가 매번 DB.categories.expense[0]로만 기본 설정되어 동일 메모를 반복 입력해도 카테고리 추천/자동완성이 전혀 없는 핵심 화면의 반복 마찰을 발견. 채택 계획(logic.js suggestCategoryForMemo(memo, txns, type) 신설 + 메모 입력에 디바운스로 배선 + 추천 칩/적용 버튼, 사용자가 이미 고른 경우 덮어쓰지 않음 + recDraft에도 동일 배선)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 270,
+      "phase": "advance",
+      "timestamp": "2026-10-30T07:20:00.000Z",
+      "summary": "critique(cycle270) 계획대로 거래/반복거래 입력에 메모 기반 카테고리 추천을 구현. logic.js suggestCategoryForMemo(memo,txns,type) 신설(완전일치 + splitLines 훑기 + 빈도/최신 우선). index.html에 txMemoInput/txCatSuggestUpdate/txApplyCatSuggest와 recMemoInput/recCatSuggestUpdate/recApplyCatSuggest 배선(220ms 디바운스, txt-btn 칩+적용). _applyOpenCat에서 사용자가 직접 고르면 _catUserTouched=true로 추천을 끄고, _applyType에서 유형이 바뀌면 플래그를 지운다. 분할 입력(splits) 중엔 추천을 끈다. test/run.js에 suggestCategoryForMemo 케이스 9건(정확일치/불일치/부분일치 제외/type 필터/동률 시 최신 우선/분할/정규화/빈 메모) 추가. APP_VERSION 1.47.284->1.47.285, sw.js CACHE v551->v552. node test/run.js 2269/2269 통과, 메인 스크립트 node --check 통과. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

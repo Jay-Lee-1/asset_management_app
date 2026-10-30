@@ -553,6 +553,36 @@ function matchGoalQuery(g,q){
  if(!terms.length)return true;
  return terms.every(term=>normHay.includes(term));
 }
+/* 메모 기반 카테고리 추천 — 거래/반복거래 입력(index.html txMemoInput/recMemoInput)에서 "스타벅스",
+ * "넷플릭스"처럼 같은 메모를 반복 입력할 때마다 카테고리를 DB.categories.expense[0] 기본값에서
+ * 매번 다시 골라야 하는 마찰을 줄인다(app-evolve cycle270 critique). matchTxnQuery 같은 검색
+ * 함수와 달리 "비슷한 메모"가 아니라 "똑같은 메모"일 때만 추천해야 오추천이 안 생기므로 includes가
+ * 아닌 완전 일치를 쓴다. splitLines(t)로 분할 거래의 각 줄(memo,category)까지 모두 훑어(검색
+ * 함수들과 동일 관례) type이 같고 메모가 일치하는 줄들의 카테고리별 빈도를 센 뒤, 가장 빈도가 높은
+ * 카테고리를 돌려준다. 빈도가 같으면 더 최근 거래(t.date, 같으면 배열에서 더 뒤쪽=나중에 추가된
+ * 거래)의 카테고리를 우선한다. 일치하는 거래가 하나도 없으면 null(호출부는 추천 UI를 숨긴다). */
+function suggestCategoryForMemo(memo,txns,type){
+ const q=String(memo||'').trim().normalize('NFC').toLowerCase();
+ if(!q)return null;
+ const counts=new Map();
+ (txns||[]).forEach((t,idx)=>{
+  if(t.type!==type)return;
+  splitLines(t).forEach(line=>{
+   if(!line.category)return;
+   const lineMemo=String(line.memo||t.memo||'').trim().normalize('NFC').toLowerCase();
+   if(lineMemo!==q)return;
+   const cur=counts.get(line.category)||{count:0,lastDate:'',lastIdx:-1};
+   cur.count++;
+   if(t.date>cur.lastDate||(t.date===cur.lastDate&&idx>cur.lastIdx)){cur.lastDate=t.date;cur.lastIdx=idx}
+   counts.set(line.category,cur);
+  });
+ });
+ let best=null;
+ counts.forEach((v,cat)=>{
+  if(!best||v.count>best.count||(v.count===best.count&&(v.lastDate>best.lastDate||(v.lastDate===best.lastDate&&v.lastIdx>best.lastIdx))))best={cat,...v};
+ });
+ return best?best.cat:null;
+}
 /* 계좌(자산) 단위 거래내역 필터 — assetId가 없으면(전체) 항상 통과, 있으면 보내거나 받은 쪽 중 하나라도 일치해야 함 */
 function matchesAssetId(t,assetId){
  if(!assetId)return true;

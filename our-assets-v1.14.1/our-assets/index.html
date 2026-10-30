@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.284';
+const APP_VERSION='1.47.285';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4944,7 +4944,8 @@ function renderTxSheet(){
     <div class="pav a-etc">${svg('ledger')}</div><div class="pbody"><div class="pn">${fmtDateFull(d.date)}</div><div class="psub">${datePsub}</div></div><div class="pc">${svg('chev')}</div></button>
     <input id="txDate" type="hidden" value="${d.date}"></div>
   ${catField}${assetFields}
-  <div class="field"><label for="txMemo">메모</label><div class="field-clear"><input id="txMemo" value="${esc(d.memo||'')}" placeholder="${rpt?'예: 넷플릭스 구독':'예: 점심 김밥'}"${memoEnterSubmit}><button type="button" class="fc-x" aria-label="메모 지우기" onclick="clrInput('txMemo')">✕</button></div></div>
+  <div class="field"><label for="txMemo">메모</label><div class="field-clear"><input id="txMemo" value="${esc(d.memo||'')}" placeholder="${rpt?'예: 넷플릭스 구독':'예: 점심 김밥'}" oninput="txMemoInput(this)"${memoEnterSubmit}><button type="button" class="fc-x" aria-label="메모 지우기" onclick="clrInput('txMemo')">✕</button></div></div>
+  <div id="txCatSuggest" style="display:none;margin:-4px 0 14px;text-align:right"></div>
   ${rpt?'':txPhotoFieldHTML(d)}
   ${repeatFields}
   ${editing?
@@ -4955,6 +4956,23 @@ function renderTxSheet(){
  setTimeout(()=>{const a=$('txAmt');if(a&&_txFocusAmt)a.focus();_txFocusAmt=false},300);
 }
 function syncTxInputs(){const sh=$('sheetScroll');if(sh)_formScroll=sh.scrollTop;const a=$('txAmt'),dt=$('txDate'),m=$('txMemo');if(a)txDraft.amount=num(a);if(dt&&dt.value)txDraft.date=dt.value;if(m)txDraft.memo=m.value}
+/* 메모 기반 카테고리 추천 칩 — assetQInput류가 쓰는 220ms 입력 디바운스 관례(debtWhatIfUpdate 주석
+ * 참고)를 그대로 가져와, 타이핑이 멈췄을 때만 suggestCategoryForMemo(logic.js)를 돌려 추천 칩을
+ * 띄운다. 분할 입력(splits) 중엔 txDraft.category 자체가 화면에 안 보이므로 추천도 끈다
+ * (app-evolve cycle270 advance). */
+let _txCatSuggT=null;
+function txMemoInput(el){txDraft.memo=el.value;clearTimeout(_txCatSuggT);_txCatSuggT=setTimeout(txCatSuggestUpdate,220)}
+function txCatSuggestUpdate(){
+ const box=$('txCatSuggest');if(!box)return;
+ const d=txDraft;
+ const splitOn=Array.isArray(d.splits)&&d.splits.length>=2;
+ const cat=(d.type==='transfer'||splitOn||d._catUserTouched)?null:suggestCategoryForMemo(d.memo,DB.txns,d.type);
+ if(!cat||cat===d.category){box.style.display='none';box.innerHTML='';box.onclick=null;return}
+ box.innerHTML=`<button type="button" class="txt-btn">${svg('tag')}추천: ${esc(cat)} · 적용</button>`;
+ box.onclick=()=>txApplyCatSuggest(cat);
+ box.style.display='block';
+}
+function txApplyCatSuggest(cat){txDraft.category=cat;const box=$('txCatSuggest');if(box){box.style.display='none';box.innerHTML='';box.onclick=null}renderTxSheet()}
 /* 분할 입력(여러 카테고리로 나누기) UI — txDraft.splits=[{category,amount,memo?}]를 그려낸다.
  * 모든 조각은 앱에 이미 있는 .field/.pick/.field-clear/.fc-x/.txt-btn 컴포넌트만 재사용해
  * 새 CSS 없이도 나머지 입력 필드(카테고리 피커·금액 입력)와 똑같은 모양으로 보이게 한다. */
@@ -5005,9 +5023,12 @@ function txSplitOpenCat(i){
 function txSplitAmt(i,el){fmtAmt(el);txDraft.splits[i].amount=num(el)}
 function txSplitMemo(i,el){txDraft.splits[i].memo=el.value}
 /* tx/rec 폼이 공유하는 카테고리/자산/유형/주기/반복일 변경 로직. draft만 다르고 나머지는 동일해 헬퍼로 통합 */
-function _applyOpenCat(draft,syncFn,renderFn){syncFn();openCatPicker({kind:draft.type,current:draft.category,back:renderFn,onPick:c=>{draft.category=c;renderFn()}})}
+/* 피커로 카테고리를 직접 고르면(=메모 추천이 아니라 사용자 본인의 명시적 선택) _catUserTouched를
+ * 세워 이후 메모를 더 입력해도 추천 칩(txCatSuggestUpdate/recCatSuggestUpdate)이 그 선택을 다시
+ * 덮어쓰려 들지 않게 한다(app-evolve cycle270 advance, suggestCategoryForMemo). */
+function _applyOpenCat(draft,syncFn,renderFn){syncFn();openCatPicker({kind:draft.type,current:draft.category,back:renderFn,onPick:c=>{draft.category=c;draft._catUserTouched=true;renderFn()}})}
 function _applyOpenAsset(draft,which,syncFn,renderFn){syncFn();const isTransferLike=draft.type==='transfer'||draft.type==='saving';openAssetPicker({current:which==='to'?draft.toAssetId:draft.fromAssetId,title:which==='to'?'받는 자산':'보내는 자산',excludeMarketValued:true,excludeId:isTransferLike?(which==='to'?draft.fromAssetId:draft.toAssetId):null,back:renderFn,onPick:id=>{if(which==='to')draft.toAssetId=id;else draft.fromAssetId=id;renderFn()}})}
-function _applyType(draft,t){draft.type=t;draft.category=t==='transfer'?'이체':catListOf(t)[0]||'기타';delete draft.splits; /* 유형이 바뀌면 카테고리 목록 자체가 바뀌므로 이전 유형 기준으로 고른 분할 항목들은 더 이상 유효하지 않음 */
+function _applyType(draft,t){draft.type=t;draft.category=t==='transfer'?'이체':catListOf(t)[0]||'기타';delete draft.splits;delete draft._catUserTouched; /* 유형이 바뀌면 카테고리 목록 자체가 바뀌므로 이전 유형 기준으로 고른 분할 항목들과 '직접 선택' 표시 모두 더 이상 유효하지 않음 */
  if((t==='income'||t==='transfer'||t==='saving')&&!draft.toAssetId)draft.toAssetId=firstCash()}
 function _applyFreq(draft,start,v){draft.freq=v;if(v==='monthly'&&!draft.day)draft.day=Number(String(start).slice(8,10))||1}
 function _applyDay(draft,start,v){if(v==='last'){draft.day='last';draft._custom=false}else if(v==='custom'){draft._custom=true;if([1,5,15,25].includes(draft.day)||draft.day==='last'||!draft.day)draft.day=Number(String(start).slice(8,10))||10}else{draft.day=Number(v);draft._custom=false}}
@@ -5282,6 +5303,21 @@ function openRecSheet(){_formScroll=0;recDraft={id:null,active:true,type:'expens
 function editRec(id){const r=DB.recurrences.find(x=>x.id===id);if(!r)return;_formScroll=0;recDraft=JSON.parse(JSON.stringify(r));snapDraft('rec');renderRecSheet()}
 function syncRecInputs(){const _mm=$('rMemo');if(_mm)recDraft.memo=_mm.value;const sh=$('sheetScroll');if(sh)_formScroll=sh.scrollTop;const a=$('rAmt'),s=$('rStart');if(a)recDraft.amount=num(a);if(s&&s.value)recDraft.startDate=s.value}
 function recOpenCat(){_applyOpenCat(recDraft,syncRecInputs,renderRecSheet)}
+/* txMemoInput/txCatSuggestUpdate와 동일한 패턴(위 주석 참고) — 반복거래 입력에도 같은 메모 기반
+ * 카테고리 추천을 배선한다(app-evolve cycle270 advance). recDraft는 분할을 담을 자리가 없는
+ * 스키마라 splitOn 가드가 필요 없다. */
+let _recCatSuggT=null;
+function recMemoInput(el){recDraft.memo=el.value;clearTimeout(_recCatSuggT);_recCatSuggT=setTimeout(recCatSuggestUpdate,220)}
+function recCatSuggestUpdate(){
+ const box=$('recCatSuggest');if(!box)return;
+ const d=recDraft;
+ const cat=(d.type==='transfer'||d._catUserTouched)?null:suggestCategoryForMemo(d.memo,DB.txns,d.type);
+ if(!cat||cat===d.category){box.style.display='none';box.innerHTML='';box.onclick=null;return}
+ box.innerHTML=`<button type="button" class="txt-btn">${svg('tag')}추천: ${esc(cat)} · 적용</button>`;
+ box.onclick=()=>recApplyCatSuggest(cat);
+ box.style.display='block';
+}
+function recApplyCatSuggest(cat){recDraft.category=cat;const box=$('recCatSuggest');if(box){box.style.display='none';box.innerHTML='';box.onclick=null}renderRecSheet()}
 function recOpenAsset(which){_applyOpenAsset(recDraft,which,syncRecInputs,renderRecSheet)}
 const WK={ /* 주말 조정 어휘 */
  none:['당일 유지','주말이어도 그 날짜에'],
@@ -5307,7 +5343,8 @@ function renderRecSheet(){
  openFormSheet(`<h3>${editing?'반복 수정':'반복 설정'}</h3><div class="desc">고정지출·정기수입·이체·저축을 자동 기록해요</div>
   <div class="seg" role="group" aria-label="구분 선택"><div class="seg-blob"></div>${typeSeg}</div>
   ${catField}
-  <div class="field"><label for="rMemo">메모 <span style="color:var(--text-3);font-weight:600">(선택)</span></label><div class="field-clear"><input id="rMemo" value="${(d.memo&&d.memo!==d.category)?d.memo.replace(/"/g,'&quot;'):''}" placeholder="예: 넷플릭스 구독" oninput="recDraft.memo=this.value"><button type="button" class="fc-x" aria-label="메모 지우기" onclick="clrInput('rMemo')">✕</button></div></div>
+  <div class="field"><label for="rMemo">메모 <span style="color:var(--text-3);font-weight:600">(선택)</span></label><div class="field-clear"><input id="rMemo" value="${(d.memo&&d.memo!==d.category)?d.memo.replace(/"/g,'&quot;'):''}" placeholder="예: 넷플릭스 구독" oninput="recMemoInput(this)"><button type="button" class="fc-x" aria-label="메모 지우기" onclick="clrInput('rMemo')">✕</button></div></div>
+  <div id="recCatSuggest" style="display:none;margin:-4px 0 14px;text-align:right"></div>
   <div class="field"><label for="rAmt">금액</label><div class="field-clear"><input id="rAmt" class="num" inputmode="numeric" value="${d.amount?comma(d.amount):''}" placeholder="0" oninput="fmtAmt(this)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveRec()"><button type="button" class="fc-x" aria-label="금액 지우기" onclick="clrInput('rAmt')">✕</button></div></div>
   ${assetFields}
   <div class="field"><label>주기</label><div class="opt-grid">${freqBtns}</div></div>

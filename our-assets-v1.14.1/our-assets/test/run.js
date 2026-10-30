@@ -6772,6 +6772,63 @@ test('matchGoalQuery: goal이 없거나 name이 없어도 안전하게 false(빈
   assert.strictEqual(sandbox.matchGoalQuery({}, '집'), false);
 });
 
+/* ---------- suggestCategoryForMemo: 거래/반복거래 입력(index.html txMemoInput/recMemoInput)의
+ * 메모 기반 카테고리 추천. matchTxnQuery류(includes 부분일치)와 달리 "똑같은 메모"일 때만
+ * 추천해야 하므로 완전일치만 매칭한다(app-evolve cycle270 critique → advance). */
+test('suggestCategoryForMemo: 메모가 똑같은 거래들 중 가장 많이 쓴 카테고리를 돌려준다', () => {
+  const txns = [
+    { type: 'expense', date: '2026-10-01', memo: '스타벅스', category: '카페' },
+    { type: 'expense', date: '2026-10-05', memo: '스타벅스', category: '카페' },
+    { type: 'expense', date: '2026-10-10', memo: '스타벅스', category: '식비' },
+  ];
+  assert.strictEqual(sandbox.suggestCategoryForMemo('스타벅스', txns, 'expense'), '카페');
+});
+test('suggestCategoryForMemo: 메모가 일치하는 거래가 하나도 없으면 null이다', () => {
+  const txns = [{ type: 'expense', date: '2026-10-01', memo: '스타벅스', category: '카페' }];
+  assert.strictEqual(sandbox.suggestCategoryForMemo('넷플릭스', txns, 'expense'), null);
+});
+test('suggestCategoryForMemo: 메모가 부분적으로만 겹쳐도(완전일치 아님) 매칭하지 않는다 — 검색(includes)과 다른 규칙', () => {
+  const txns = [{ type: 'expense', date: '2026-10-01', memo: '스타벅스 강남점', category: '카페' }];
+  assert.strictEqual(sandbox.suggestCategoryForMemo('스타벅스', txns, 'expense'), null);
+});
+test('suggestCategoryForMemo: type이 다르면 매칭하지 않는다(지출 메모로 수입 추천을 받지 않음)', () => {
+  const txns = [{ type: 'income', date: '2026-10-01', memo: '용돈', category: '기타수입' }];
+  assert.strictEqual(sandbox.suggestCategoryForMemo('용돈', txns, 'expense'), null);
+});
+test('suggestCategoryForMemo: 빈도가 같으면 더 최근 거래(date)의 카테고리를 우선한다', () => {
+  const txns = [
+    { type: 'expense', date: '2026-09-01', memo: '편의점', category: '생활용품' },
+    { type: 'expense', date: '2026-10-15', memo: '편의점', category: '식비' },
+  ];
+  assert.strictEqual(sandbox.suggestCategoryForMemo('편의점', txns, 'expense'), '식비');
+});
+test('suggestCategoryForMemo: 날짜까지 같으면 배열에서 더 뒤쪽(나중에 추가된) 거래를 우선한다', () => {
+  const txns = [
+    { type: 'expense', date: '2026-10-15', memo: '편의점', category: '생활용품' },
+    { type: 'expense', date: '2026-10-15', memo: '편의점', category: '식비' },
+  ];
+  assert.strictEqual(sandbox.suggestCategoryForMemo('편의점', txns, 'expense'), '식비');
+});
+test('suggestCategoryForMemo: 분할 거래(splits)의 각 줄까지 훑어 매칭한다', () => {
+  const txns = [{
+    type: 'expense', date: '2026-10-01', memo: '마트', category: '기타',
+    splits: [{ memo: '마트', category: '식비', amount: 10000 }, { memo: '생활용품', category: '생활용품', amount: 5000 }],
+  }];
+  assert.strictEqual(sandbox.suggestCategoryForMemo('마트', txns, 'expense'), '식비');
+  assert.strictEqual(sandbox.suggestCategoryForMemo('생활용품', txns, 'expense'), '생활용품');
+});
+test('suggestCategoryForMemo: 대소문자를 구분하지 않고 NFC/NFD 정규화 차이도 동일하게 매칭한다', () => {
+  const txns = [{ type: 'expense', date: '2026-10-01', memo: 'Netflix', category: '구독' }];
+  assert.strictEqual(sandbox.suggestCategoryForMemo('netflix', txns, 'expense'), '구독');
+  const txns2 = [{ type: 'expense', date: '2026-10-01', memo: '용돈'.normalize('NFD'), category: '용돈' }];
+  assert.strictEqual(sandbox.suggestCategoryForMemo('용돈', txns2, 'expense'), '용돈');
+});
+test('suggestCategoryForMemo: 메모가 빈 문자열(공백만)이거나 거래 목록이 비어 있으면 null이다', () => {
+  assert.strictEqual(sandbox.suggestCategoryForMemo('', [{ type: 'expense', date: '2026-10-01', memo: '', category: '카페' }], 'expense'), null);
+  assert.strictEqual(sandbox.suggestCategoryForMemo('  ', [], 'expense'), null);
+  assert.strictEqual(sandbox.suggestCategoryForMemo('스타벅스', [], 'expense'), null);
+});
+
 /* ---------- 전역 통합검색(openGlobalSearch, index.html): 같은 검색어가 거래/자산/카테고리
  * 세 그룹에 걸쳐 있으면 세 함수(matchTxnQuery/matchAssetQuery/matchCatQuery) 모두가 독립적으로
  * 매칭해야 한다 — 한 입력으로 세 그룹을 동시에 가로질러 찾는 통합검색의 전제(app-evolve
