@@ -211,7 +211,7 @@ const FUNCTIONS = [
   'deletedAssetHistoryExists', 'relinkDeletedAsset',
   'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'writeThemeCache', 'restoreBackup', 'storageOutcomeMsg', 'shouldWarnUnpersisted', 'shouldWarnStorageSize', 'toggleRecActive', 'toggleAdjustSurplus', 'touchSave',
   'sanitizeAmount', 'sanitizeBackup',
-  'saveRec', 'editRec', 'recHistFieldsChanged', 'recScheduleShapeChanged', 'pruneOrphanRecOverrides', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
+  'saveRec', 'editRec', 'duplicateRec', 'recHistFieldsChanged', 'recScheduleShapeChanged', 'pruneOrphanRecOverrides', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
   'expandRec', 'allTxns', 'txnsByDateInRange', 'spendByCategory', 'spendTrend', 'spendTrendBadge', 'incomeByCategory', 'incomeTrend', 'incomeTrendBadge', 'histSumTotals',
   'yearSpendByCategory', 'yearIncomeByCategory', 'yearRealizedGain', 'yearMonthlyNet', 'savingsRate', 'yearSummary', 'openYearReview',
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'buildExpenseBarHtml', 'expenseBreakdownCard', 'incomeBreakdownCard',
@@ -12155,6 +12155,62 @@ test('duplicateAsset → saveAsset: 복제본을 저장하면 원본은 그대�
   assert.notStrictEqual(dup.id, 'a5', '복제본은 원본과 다른 새 id를 받아야 함');
   assert.strictEqual(dup.name, '토스뱅크 복사');
   assert.strictEqual(dup.baseAmount, 300000, '복제본은 새로 입력한 잔액으로 저장돼야 함');
+});
+/* ---------- duplicateRec: 복제(빠른 재등록) (app-evolve cycle274 develop) ----------
+ * 거래(duplicateTx)·자산(duplicateAsset)엔 전용 복제 기능이 있지만 반복(recurrence)에는 없어,
+ * 조건이 비슷한 구독 등을 여러 개 등록할 때마다 유형·주기·요일·자산을 처음부터 다시 골라야
+ * 하던 기능 대등성 공백을 메운다. 유형/주기/요일/자산/카테고리/금액은 그대로 가져오고,
+ * startDate는 오늘로 새로 잡으며(원본 시작일을 그대로 두면 과거부터 시작하는 회차가 생김),
+ * 그 시작일에 종속된 endDate/count와 원본 고유의 skip/edits/confirmedDates는 비운다. */
+test('duplicateRec: id는 null로, active는 true로, startDate는 TODAY로 리셋되고 endDate/count/skip/edits/confirmedDates는 비워지되 freq/day/category/amount/자산은 그대로 복사된다', () => {
+  sandbox.TODAY = '2026-05-20';
+  sandbox.DB = { recurrences: [{ id: 'r1', type: 'expense', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: '2026-12-05', count: 12, amount: 9900, category: '구독', memo: '넷플릭스', fromAssetId: 'a1', toAssetId: null, active: false, skip: ['2026-03-05'], edits: { '2026-02-05': { amount: 8800 } }, confirmedDates: ['2026-01-05'] }] };
+  sandbox.duplicateRec('r1');
+  assert.strictEqual(sandbox.recDraft.id, null, '복제 draft의 id는 null이어야 saveRec()이 신규 저장 경로를 탐');
+  assert.strictEqual(sandbox.recDraft.active, true, '원본이 중지 상태여도 복제본은 기본적으로 활성 상태로 시작해야 함');
+  assert.strictEqual(sandbox.recDraft.startDate, '2026-05-20', '원본 시작일을 그대로 두면 과거부터 회차가 생기므로 오늘로 리셋되어야 함');
+  assert.strictEqual(sandbox.recDraft.endDate, null, 'endDate는 원본 startDate 기준으로 계산된 값이라 새 startDate와 안 맞으므로 비워야 함');
+  assert.strictEqual(sandbox.recDraft.count, null, 'count도 endDate와 같은 이유로 비워야 함');
+  assert.strictEqual(sandbox.recDraft.skip.length, 0, 'skip은 원본 고유 상태라 복제하지 않아야 함');
+  assert.strictEqual(Object.keys(sandbox.recDraft.edits).length, 0, 'edits도 원본 고유 상태라 복제하지 않아야 함');
+  assert.strictEqual(sandbox.recDraft.confirmedDates.length, 0, 'confirmedDates도 원본 고유 상태라 복제하지 않아야 함');
+  assert.strictEqual(sandbox.recDraft.freq, 'monthly');
+  assert.strictEqual(sandbox.recDraft.day, 5);
+  assert.strictEqual(sandbox.recDraft.category, '구독');
+  assert.strictEqual(sandbox.recDraft.amount, 9900);
+  assert.strictEqual(sandbox.recDraft.fromAssetId, 'a1');
+  assert.strictEqual(sandbox.DB.recurrences[0].startDate, '2026-01-05', '원본 레코드는 건드리지 않아야 함(딥클론)');
+  assert.strictEqual(sandbox.DB.recurrences[0].active, false, '원본의 active 상태도 그대로 유지돼야 함');
+  assert.deepStrictEqual(sandbox.DB.recurrences[0].skip, ['2026-03-05'], '원본의 skip도 그대로 유지돼야 함');
+});
+test('duplicateRec: _recCatSuggAnnounced를 리셋해 이전 시트의 잔여 공지값이 새지 않게 한다', () => {
+  sandbox.TODAY = '2026-05-20';
+  sandbox.DB = { recurrences: [{ id: 'r2', type: 'expense', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, count: null, amount: 1000, category: '관리비', memo: '관리비', fromAssetId: 'a1', toAssetId: null, active: true, skip: [], edits: {} }] };
+  sandbox._recCatSuggAnnounced = '관리비';
+  sandbox.duplicateRec('r2');
+  assert.strictEqual(sandbox._recCatSuggAnnounced, null, 'duplicateRec도 openRecSheet()/editRec()과 동일하게 announced 캐시를 리셋해야 함');
+});
+test('duplicateRec: 존재하지 않는 id는 recDraft를 건드리지 않고 그대로 return한다', () => {
+  sandbox.DB = { recurrences: [] };
+  sandbox.recDraft = null;
+  sandbox.duplicateRec('nope');
+  assert.strictEqual(sandbox.recDraft, null, '존재하지 않는 반복은 draft를 세팅하지 않아야 함');
+});
+test('duplicateRec → saveRec: 복제본을 저장하면 원본은 그대로 남고 독립된 새 레코드가 추가된다', () => {
+  sandbox.TWi = -1;
+  sandbox.TODAY = '2026-05-20';
+  sandbox.DB = { recurrences: [{ id: 'r3', type: 'expense', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, count: null, amount: 1000, category: '관리비', memo: '관리비', fromAssetId: 'a1', toAssetId: null, active: true, skip: [], edits: {} }] };
+  sandbox.duplicateRec('r3');
+  sandbox.saveRec();
+  assert.strictEqual(sandbox.DB.recurrences.length, 2, '원본 1건 + 복제 신규 저장 1건으로 총 2건이어야 함');
+  assert.strictEqual(sandbox.DB.recurrences[0].id, 'r3', '원본 레코드는 그대로 남아야 함');
+  assert.strictEqual(sandbox.DB.recurrences[0].startDate, '2026-01-05', '원본 시작일은 바뀌지 않아야 함');
+  const dup = sandbox.DB.recurrences[1];
+  assert.notStrictEqual(dup.id, 'r3', '복제본은 원본과 다른 새 id를 받아야 함');
+  assert.strictEqual(dup.startDate, '2026-05-20', '복제본의 시작일은 오늘이어야 함');
+  assert.strictEqual(dup.category, '관리비');
+  assert.strictEqual(dup.amount, 1000);
+  assert.strictEqual(dup.active, true);
 });
 test('saveAsset: 신규 등록한 부채에 asDraft.interestRate가 있으면 DB.assets에 그대로 저장되고, 수정 시에도 보존된다', () => {
   sandbox.TWi = -1;

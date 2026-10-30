@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.292';
+const APP_VERSION='1.47.293';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5375,6 +5375,19 @@ function recSave(){
 let recDraft=null;
 function openRecSheet(){_formScroll=0;recDraft={id:null,active:true,type:'expense',category:DB.categories.expense[0],amount:0,fromAssetId:firstCash(),toAssetId:null,freq:'monthly',day:1,startDate:ST.ledger.sel,endDate:null,count:null,skip:[],edits:{}};_recCatSuggAnnounced=null;snapDraft('rec');renderRecSheet()}
 function editRec(id){const r=DB.recurrences.find(x=>x.id===id);if(!r)return;_formScroll=0;recDraft=JSON.parse(JSON.stringify(r));_recCatSuggAnnounced=null;snapDraft('rec');renderRecSheet()}
+/* 복제(빠른 재등록): 거래의 duplicateTx·자산의 duplicateAsset과 같은 이유로, 구독처럼 조건이
+ * 비슷한 반복 항목을 여러 개 등록할 때 유형·주기·요일·자산 같은 구조적 설정은 그대로 가져오고,
+ * startDate는 오늘로 새로 잡는다(원본 시작일을 그대로 두면 과거부터 시작하는 회차가 그대로
+ * 생겨버림). endDate/count는 원본 startDate 기준으로 계산된 값이라 새 startDate와 안 맞으므로
+ * 함께 비워 사용자가 새로 고르게 한다. skip/edits/confirmedDates는 saveRec()의 신규 저장
+ * 분기(push)가 어차피 빈 값으로 덮어쓰지만, 저장 전 폼 상태도 원본과 무관하게 비워 둔다. */
+function duplicateRec(id){
+ const r=DB.recurrences.find(x=>x.id===id);if(!r)return;
+ const d=JSON.parse(JSON.stringify(r));
+ d.id=null;d.active=true;d.startDate=TODAY;d.endDate=null;d.count=null;
+ d.skip=[];d.edits={};d.confirmedDates=[];
+ _formScroll=0;recDraft=d;_recCatSuggAnnounced=null;snapDraft('rec');renderRecSheet();
+}
 function syncRecInputs(){const _mm=$('rMemo');if(_mm)recDraft.memo=_mm.value;const sh=$('sheetScroll');if(sh)_formScroll=sh.scrollTop;const a=$('rAmt'),s=$('rStart');if(a)recDraft.amount=num(a);if(s&&s.value)recDraft.startDate=s.value}
 function recOpenCat(){_applyOpenCat(recDraft,syncRecInputs,renderRecSheet)}
 /* txMemoInput/txCatSuggestUpdate와 동일한 패턴(위 주석 참고) — 반복거래 입력에도 같은 메모 기반
@@ -6985,7 +6998,7 @@ function openRecManage(){
     <div style="flex:1;min-width:0"><div class="mn">${esc(r.category)} ${r.active?'':'<span class="mini">중지</span>'}</div>
      <div class="msub">${recFreqLabel(r)} · ${comma(r.amount)}원</div>
      <div class="msub2">${period}</div></div>
-    <div class="row-acts"><button class="act-btn ${r.active?'':'on'}" onclick="event.stopPropagation();toggleRecActive('${r.id}')" title="${r.active?'일시중지':'다시 시작'}" aria-label="${esc(r.category)} ${r.active?'일시중지':'다시 시작'}">${svg(r.active?'pause':'play')}</button></div>
+    <div class="row-acts"><button type="button" class="act-btn" aria-label="${esc(r.category)} 복제" onclick="event.stopPropagation();duplicateRec('${r.id}')">${svg('copy')}</button><button class="act-btn ${r.active?'':'on'}" onclick="event.stopPropagation();toggleRecActive('${r.id}')" title="${r.active?'일시중지':'다시 시작'}" aria-label="${esc(r.category)} ${r.active?'일시중지':'다시 시작'}">${svg(r.active?'pause':'play')}</button></div>
     <div class="mc">${svg('chev')}</div></div>`;
   }).join('')+`</div>`;
  });
