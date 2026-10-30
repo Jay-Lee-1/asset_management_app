@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.285';
+const APP_VERSION='1.47.286';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2583,6 +2583,14 @@ function migrate(){
   DB.catsV2=true;
  }
  if(!DB.categories.expense||!DB.categories.expense.length)DB.categories.expense=[...EXP_CATS_DEFAULT];
+ if(!DB._catTouchedCleanV1){ /* _catUserTouched는 메모 기반 카테고리 추천(suggestCategoryForMemo, cycle270)이
+  사용자가 이미 카테고리를 직접 고른 입력엔 추천 칩을 덮어씌우지 않으려고 txDraft/recDraft에만 잠깐
+  얹는 UI 전용 플래그인데, saveTx/saveRec이 지우지 않고 draft를 그대로 저장해 그 사이 만들어진 모든
+  거래/반복거래에 영구히 끼어들었다(cycle271 발견·saveTx/saveRec은 고쳤으니 이미 새겨진 것만 1회 정리) */
+  (DB.txns||[]).forEach(t=>{delete t._catUserTouched});
+  (DB.recurrences||[]).forEach(r=>{delete r._catUserTouched});
+  DB._catTouchedCleanV1=true;
+ }
  DB.inquiries=DB.inquiries||[];
  DB.inquiries.forEach(q=>{if(!q.id)q.id=uid();if(!q.updatedAt)q.updatedAt=Date.now()}); /* id/updatedAt은 cycle133에 추가된 필드라 그 전에 저장된 메모엔 없음 — 없으면 mergeCollection()이 모든 레코드를 같은 undefined id로 취급해 하나로 뭉개버림 */
  DB.goals=DB.goals||[]; /* 목표: [{id,name,type:'networth'|'asset',linkedAssetId,targetAmount,targetDate,owner,createdAt,achievedAckAt}] — linkedAssetId는 type:'asset'일 때만 쓰며(cycle214), 'networth'는 항상 null/없음. achievedAckAt: 목표 달성 축하 알림을 확인(ack)한 시각(ms) 또는 null(cycle256, saveGoal이 명시적으로 이어주지 않으면 수정할 때마다 사라짐) */
@@ -5183,6 +5191,7 @@ function saveTx(){
   save({fromDate:d.date});closeSheet();renderCurrent();toast('반복 내역으로 저장했어요');return;
  }
  ['repeat','freq','day','endDate','endMode','count'].forEach(k=>delete d[k]); /* 일회성 내역엔 반복 필드 제거 */
+ delete d._catUserTouched; /* 메모 기반 카테고리 추천(txCatSuggestUpdate)을 억제하려고 draft에만 잠깐 얹는 UI 플래그 — DB.txns 스키마엔 없는 필드라, 지우지 않으면 d가 그대로 저장돼(바로 아래) 매 거래마다 영구히 끼어든다(app-evolve cycle270이 추가했고 cycle271에서 발견) */
  d.memo=(d.memo||'').trim()||d.category; /* 메모 없으면 카테고리로 (saveRec과 동일) */
  if(d.type==='transfer'&&d.confirmed===undefined)d.confirmed=!(DB.settings.confirmTransfers&&isFuture(d.date));
  _savedDrafts.add(d);touch(d);
@@ -5410,6 +5419,7 @@ function saveRec(){
  else if(d.count&&!d.endDate)d.endDate=recNthDate(eb,d.count);
  else if(!d.endDate)d.count=null;
  delete d.endMode;
+ delete d._catUserTouched; /* saveTx와 동일한 이유 — recCatSuggestUpdate 억제용 UI 플래그가 DB.recurrences[i]=d(직접 대입)·Object.assign(바로 아래)로 그대로 저장되지 않도록 지운다(app-evolve cycle270이 추가했고 cycle271에서 발견) */
  d.varying=isVarCat(d.type,d.category); /* 변동 여부는 카테고리에서 파생 */
  const wasEditing=!!d.id;
  _savedDrafts.add(d);touch(d);

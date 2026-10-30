@@ -3357,6 +3357,35 @@ test('migrate: DB._budgetHistV1이 이미 true면(재실행) DB.budgets를 다�
   sandbox.migrate();
   assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 6), 500000, '재실행에서 옛 flat 값으로 되돌리면 안 됨');
 });
+/* ---------- migrate: saveTx/saveRec이 지우기 전(cycle270~271 사이)에 이미 DB.txns/DB.recurrences에
+ * 새겨진 _catUserTouched(메모 기반 카테고리 추천 억제용 UI 전용 플래그)를 1회 정리한다 ---------- */
+test('migrate: 이미 _catUserTouched가 새겨진 기존 txns/recurrences를 1회 정리한다', () => {
+  sandbox.DB = {
+    version: 5, catsV2: true,
+    settings: { themeMode: 'system', includeScheduled: false, assetSort: 'custom', groupOrder: [...sandbox.DEFAULT_GROUP_ORDER] },
+    owners: ['나', '배우자', '공용'],
+    assets: [],
+    txns: [{ id: 't1', type: 'expense', category: '식비', amount: 9000, _catUserTouched: true }],
+    recurrences: [{ id: 'r1', type: 'expense', category: '관리비', amount: 1000, _catUserTouched: true }],
+    inquiries: [],
+    categories: { expense: [...sandbox.EXP_CATS_DEFAULT], income: [...sandbox.INC_CATS_DEFAULT], saving: [...sandbox.SAV_CATS_DEFAULT] },
+  };
+  sandbox.migrate();
+  assert.strictEqual('_catUserTouched' in sandbox.DB.txns[0], false);
+  assert.strictEqual('_catUserTouched' in sandbox.DB.recurrences[0], false);
+  assert.strictEqual(sandbox.DB._catTouchedCleanV1, true);
+});
+test('migrate: DB._catTouchedCleanV1이 이미 true면(재실행) 다시 훑지 않아도 되지만, 남아있던 필드가 있으면 그대로 둔다(중복 실행은 안전해야 함)', () => {
+  sandbox.DB = {
+    version: 5, catsV2: true, _catTouchedCleanV1: true,
+    settings: { themeMode: 'system', includeScheduled: false, assetSort: 'custom', groupOrder: [...sandbox.DEFAULT_GROUP_ORDER] },
+    owners: ['나', '배우자', '공용'],
+    assets: [], txns: [], recurrences: [], inquiries: [],
+    categories: { expense: [...sandbox.EXP_CATS_DEFAULT], income: [...sandbox.INC_CATS_DEFAULT], saving: [...sandbox.SAV_CATS_DEFAULT] },
+  };
+  assert.doesNotThrow(() => sandbox.migrate());
+  assert.strictEqual(sandbox.DB._catTouchedCleanV1, true);
+});
 /* doResetAll()/afterCloudAuth()가 DB=emptyDB() 직후 migrate()를 빠뜨렸던 버그(전체초기화·게스트데이터 없는
  * 신규가입 시 '이체 확인'·'시세 자동 연동' 설정이 조용히 꺼진 채 남음) 재발 방지. emptyDB()는 catIcon/catVar/
  * budgets와 마찬가지로 confirmTransfers/autoRates/histSortAsc/bigMin 등 DB.settings 기본값을 채우지
@@ -14744,6 +14773,40 @@ test('saveTx: 실제 메모 내용은 앞뒤 공백만 trim되고 그대로 유�
   assert.strictEqual(sandbox.DB.txns[0].memo, '점심 김밥', '앞뒤 공백은 제거되고 내용은 그대로 유지되어야 함');
 });
 
+/* ---------- saveTx/saveRec: _catUserTouched(메모 기반 카테고리 추천 억제용 UI 플래그,
+ * suggestCategoryForMemo/txCatSuggestUpdate, app-evolve cycle270)가 DB.txns/DB.recurrences에
+ * 영구히 새겨지던 버그 ----------
+ * 사용자가 카테고리 피커로 직접 카테고리를 고르면 _applyOpenCat()이 draft._catUserTouched=true를
+ * 세우는데, saveTx()/saveRec()이 그 필드를 지우지 않고 draft(d)를 그대로 DB.txns/DB.recurrences에
+ * 대입(saveTx) 또는 Object.assign으로 복사(saveRec의 신규 등록)해, 카테고리를 직접 고른 거의
+ * 모든 거래/반복거래에 스키마에 없는 UI 전용 필드가 영구히 끼어들었다 — JSON 백업(doExport)·
+ * 클라우드 동기화 페이로드에도 그대로 실린다(app-evolve cycle271 develop이 발견·수정). */
+test('saveTx: 카테고리를 직접 고른(_catUserTouched) 거래를 저장해도 그 UI 플래그가 DB.txns에 남지 않는다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { txns: [], settings: {} };
+  sandbox.txDraft = {
+    id: null, type: 'expense', date: '2026-01-15', category: '식비', memo: '마트',
+    amount: 9000, fromAssetId: 'a1', toAssetId: null, repeat: false, _catUserTouched: true,
+  };
+  sandbox.saveTx();
+  assert.strictEqual('_catUserTouched' in sandbox.DB.txns[0], false, '_catUserTouched는 DB.txns에 저장되면 안 되는 UI 전용 필드');
+});
+test('saveRec: 카테고리를 직접 고른(_catUserTouched) 신규 반복을 저장해도 그 UI 플래그가 DB.recurrences에 남지 않는다', () => {
+  sandbox.TWi = -1; sandbox.TODAY = '2026-06-15';
+  sandbox.DB = { recurrences: [] };
+  sandbox.recDraft = { id: null, type: 'expense', freq: 'monthly', day: 5, startDate: '2026-07-05', endDate: null, count: null, amount: 1000, category: '관리비', memo: '관리비', fromAssetId: 'a1', toAssetId: null, active: true, _catUserTouched: true };
+  sandbox.saveRec();
+  assert.strictEqual('_catUserTouched' in sandbox.DB.recurrences[0], false, '_catUserTouched는 DB.recurrences에 저장되면 안 되는 UI 전용 필드');
+});
+test('saveRec: 기존 반복(이력 비영향 필드만 변경, 즉시 적용 경로)을 수정해도 _catUserTouched가 남지 않는다', () => {
+  sandbox.TWi = -1; sandbox.TODAY = '2026-06-15';
+  const r = { id: 'r1', type: 'expense', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, count: null, amount: 1000, category: '관리비', memo: '관리비', fromAssetId: 'a1', toAssetId: null, skip: [], edits: {}, active: true };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.recDraft = { ...JSON.parse(JSON.stringify(r)), memo: '관리비(수정)', _catUserTouched: true };
+  sandbox.saveRec();
+  assert.strictEqual('_catUserTouched' in sandbox.DB.recurrences[0], false, '즉시 적용 경로(DB.recurrences[i]=d)도 _catUserTouched를 남기면 안 됨');
+});
+
 /* ---------- duplicateTx: 복제(빠른 재입력) (app-evolve cycle193 advance) ----------
  * 매일 반복되는 소액 비정형 지출(커피/점심/교통 등)을 유형→카테고리→메모→자산을 매번
  * 처음부터 다시 고르지 않고, 기존 내역을 복사해 날짜만 오늘로 바꿔 새 내역으로 저장할 수
@@ -25551,7 +25614,7 @@ test('DB 스키마 완전성 가드: migrate()의 모든 최상위 DB.* 필드�
   // 부팅 시 1회만 도는 마이그레이션 완료 플래그 — 동기화할 "데이터"가 아니라 "이 기기가 이
   // 변환을 이미 했다"는 로컬 상태다(모두 migrate() 안에서 if(!DB._xxx){...;DB._xxx=true} 형태로만
   // 쓰임).
-  const MIGRATION_FLAG_FIELDS = new Set(['catsV2', '_budgetHistV1', '_varMigrated', '_sortV2', '_schV2']);
+  const MIGRATION_FLAG_FIELDS = new Set(['catsV2', '_budgetHistV1', '_varMigrated', '_sortV2', '_schV2', '_catTouchedCleanV1']);
   // DB.budgets: budgetHistory 신설 전의 시간축 없는 레거시 flat 맵. migrate()의 _budgetHistV1
   // 가드가 최초 1회만 DB.budgetHistory로 변환해 소비하고, 그 뒤로는 index.html 어디서도
   // DB.budgets에 다시 쓰지 않는다(sanitizeBackup()의 동명 지역변수 budgets은 백업 복원 시

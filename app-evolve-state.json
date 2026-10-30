@@ -1,15 +1,8 @@
 {
   "cycle": 271,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 266,
-      "phase": "develop",
-      "timestamp": "2026-10-29T12:33:41.000Z",
-      "summary": "fork 서브에이전트로 탐색한 결과, 부분매도 실현손익 기록이 openAssetQtyLog 각 행에만 표시되고 전체 합계를 보여줄 데가 없는 공백을 발견. logic.js totalRealizedGain(items) 신설, index.html openAssetQtyLog가 investGainLossCard와 동일한 색상 규칙으로 합계 카드 노출. APP_VERSION 1.47.274->1.47.275, sw.js CACHE v541->v542. node test/run.js 2221/2221 통과.",
-      "commit": null
-    },
     {
       "cycle": 266,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-30T07:20:00.000Z",
       "summary": "critique(cycle270) 계획대로 거래/반복거래 입력에 메모 기반 카테고리 추천을 구현. logic.js suggestCategoryForMemo(memo,txns,type) 신설(완전일치 + splitLines 훑기 + 빈도/최신 우선). index.html에 txMemoInput/txCatSuggestUpdate/txApplyCatSuggest와 recMemoInput/recCatSuggestUpdate/recApplyCatSuggest 배선(220ms 디바운스, txt-btn 칩+적용). _applyOpenCat에서 사용자가 직접 고르면 _catUserTouched=true로 추천을 끄고, _applyType에서 유형이 바뀌면 플래그를 지운다. 분할 입력(splits) 중엔 추천을 끈다. test/run.js에 suggestCategoryForMemo 케이스 9건(정확일치/불일치/부분일치 제외/type 필터/동률 시 최신 우선/분할/정규화/빈 메모) 추가. APP_VERSION 1.47.284->1.47.285, sw.js CACHE v551->v552. node test/run.js 2269/2269 통과, 메인 스크립트 node --check 통과. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 271,
+      "phase": "develop",
+      "timestamp": "2026-10-30T08:30:00.000Z",
+      "summary": "cycle270 advance가 추가한 _catUserTouched(메모 기반 카테고리 추천 억제용 UI 전용 플래그, suggestCategoryForMemo)가 saveTx()/saveRec()에서 지워지지 않고 draft(txDraft/recDraft)가 그대로 DB.txns(DB.txns[i]=d)/DB.recurrences(DB.recurrences[i]=d, 신규는 Object.assign({},d,...))에 저장돼, 카테고리를 피커로 직접 고른 거의 모든 거래/반복거래에 스키마에 없는 UI 플래그가 영구히 끼어드는(JSON 백업·클라우드 동기화 페이로드에도 그대로 실림) 버그를 발견. saveTx/saveRec 저장 직전에 각각 delete d._catUserTouched 추가(endMode 등 기존 '일회성/저장 전 지워야 할 draft 전용 필드' 관례와 동일 위치). 이미 그 사이 새겨졌을 레코드를 위해 migrate()에 1회성 정리(_catTouchedCleanV1)도 추가, DB 스키마 완전성 가드 테스트의 MIGRATION_FLAG_FIELDS에 등록. test/run.js에 saveTx/saveRec 저장 후 _catUserTouched 미포함 테스트 3건 + migrate 정리 테스트 2건 추가. APP_VERSION 1.47.285->1.47.286, sw.js CACHE v552->v553. node test/run.js 2274/2274 통과, 메인 스크립트(블록2) node --check(new Function) 통과.",
       "commit": null
     }
   ]
