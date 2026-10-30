@@ -595,6 +595,19 @@ function budgetProgress(spent,budget){
  const ratio=spent/budget;
  return{pct:Math.round(ratio*100),barPct:Math.min(100,ratio*100),over:spent>budget};
 }
+/* 예산은 지금까지 쓴 금액만 보여줄 뿐 "이 페이스대로면 월말엔 얼마나 쓸지"는 budgetProgress/
+ * homeAlerts의 budgetOver 어디에도 없었다 — 목표(goalProgress)·부채상환(debtPayoffProjection)은
+ * 추세로 미리 투사해 선제 경고를 주는데 예산 추적만 "이미 넘은 뒤"에야 알 수 있는 비대칭이
+ * 있었다(app-evolve cycle271 critique). goalProgress와 같은 원칙(복잡한 회귀 대신 단순 선형
+ * 투사)으로, 월 중 경과일 비율만큼 지출이 계속된다고 보고 spent/경과일*총일수로 월말 예상
+ * 지출을 어림한다. today가 대상 달(y,m)이 아니면(이미 끝난 과거 달 조회, 아직 시작 안 한 미래
+ * 달 조회) 경과일 비율 자체가 의미 없으므로 null — 과거 달은 더 쓸 날이 없고, 미래 달은 spent가
+ * 항상 0이라 null이 아니면 매번 0을 투사하게 된다. */
+function projectedMonthSpend(spent,y,m,today){
+ if(!today||today.slice(0,7)!==budgetKey(y,m))return null;
+ const elapsed=Number(today.slice(8,10));
+ return Math.round(spent/elapsed*lastDay(y,m));
+}
 
 /* ================= GOALS (순자산 목표, 순수) ================= */
 /* nwHistory(일별 {date,ta,td,nw,byOwner?} 스냅샷)를 귀속(owner) 하나의 추이로 좁힌다.

@@ -2221,6 +2221,27 @@ test('budgetForMonthEffective: 이번 달 자체에 한도가 없으면(0/미설
   assert.strictEqual(sandbox.budgetForMonthEffective(0, 100000), 0);
 });
 
+/* ---------- projectedMonthSpend(logic.js): 예산 페이스 기반 월말 지출 투사(app-evolve cycle271 critique/advance) ---------- */
+test('projectedMonthSpend: 월 중순(경과일 비율의 역수)만큼 남은 지출이 더 쌓인다고 선형 투사한다', () => {
+  // 6월은 30일, 15일까지 썼으면 절반(1/2)이 지났으므로 남은 지출도 같은 페이스로 한 번 더 쌓인다고 본다(x2).
+  assert.strictEqual(sandbox.projectedMonthSpend(150000, 2026, 6, '2026-06-15'), 300000);
+});
+test('projectedMonthSpend: 월초(1일)엔 하루치만으로 한 달 전체를 투사해 과장되게 큰 값이 나온다', () => {
+  assert.strictEqual(sandbox.projectedMonthSpend(10000, 2026, 6, '2026-06-01'), 300000); // 10000/1*30
+});
+test('projectedMonthSpend: 월말(마지막 날)엔 이미 다 지난 경과일 비율이 1이라 투사값이 지금까지 쓴 금액과 같다', () => {
+  assert.strictEqual(sandbox.projectedMonthSpend(500000, 2026, 6, '2026-06-30'), 500000);
+});
+test('projectedMonthSpend: 조회 대상 달이 이미 끝난 과거 달이면(today가 다음 달 이후) 투사할 미래가 없으므로 null', () => {
+  assert.strictEqual(sandbox.projectedMonthSpend(500000, 2026, 5, '2026-06-15'), null);
+});
+test('projectedMonthSpend: 조회 대상 달이 아직 시작하지 않은 미래 달이면(today가 이전 달) null — spent가 늘 0이라 null이 아니면 매번 0을 투사하게 됨', () => {
+  assert.strictEqual(sandbox.projectedMonthSpend(0, 2026, 7, '2026-06-15'), null);
+});
+test('projectedMonthSpend: today가 없으면(과거 달 이력 조회 등 호출부가 안 넘긴 경우) null', () => {
+  assert.strictEqual(sandbox.projectedMonthSpend(100000, 2026, 6, null), null);
+});
+
 /* ---------- catBudgetRollover 토글 + budgetCarryFor/budgetForMonthWithCarry(index.html): 토글 opt-in 이월 ---------- */
 test('isBudgetRolloverCat/setBudgetRolloverCat: 기본은 꺼짐(false)이고 켜고 끌 수 있다', () => {
   sandbox.DB = { catBudgetRollover: {} };
@@ -17476,6 +17497,11 @@ function spendAnalysisCtx() {
   vm.runInContext(logicSrc, ctx, { filename: 'logic.js' });
   vm.runInContext(extracted, ctx, { filename: 'extracted-from-index.html' });
   vm.runInContext(extractFunction('openSpendAnalysis'), ctx, { filename: 'openSpendAnalysis-real' });
+  // TODAY는 FUNCTIONS/CONSTS/LETS 어디에도 없는 전역이라(assetBalCardCtx 주석과 동일한 이유)
+  // 직접 세팅해야 한다 — projectedMonthSpend(예산 페이스 경고, app-evolve cycle271 advance)가
+  // openSpendAnalysis에서 TODAY를 참조하게 되면서 필요해졌다. 기존 테스트 fixture들이 모두
+  // ST.ledger를 {y:2026,m:6}으로 쓰므로 그 달 중순으로 맞춘다.
+  ctx.TODAY = '2026-06-15';
   _spendAnalysisCtx = ctx;
   return ctx;
 }
@@ -17564,6 +17590,46 @@ test('openSpendAnalysis: 예산 요약 카드에 이월(rollover)로 더해진 �
   const unsetIdx = html.indexOf('예산 미설정 카테고리');
   const carryIdx = html.indexOf('전달 이월');
   assert.ok(unsetIdx !== -1 && carryIdx !== -1 && unsetIdx < carryIdx, '이월 캡션은 unsetCount 캡션보다 뒤에 와야 함');
+});
+/* 예산 페이스 경고 캡션(카테고리 행 + 전체 예산 카드) — projectedMonthSpend(logic.js, app-evolve
+ * cycle271 critique/advance)가 아직 초과하지 않은 카테고리의 월말 예상 지출이 한도를 넘을 것으로
+ * 보일 때만 보여준다. ctx.TODAY='2026-06-15'(6월 15일, 30일 중 절반 경과)라 투사는 spent*2. */
+test('openSpendAnalysis: 아직 초과하지 않았지만 페이스대로면 월말에 넘길 카테고리는 행과 전체 예산 카드 모두에 선제 경고 캡션이 뜬다', () => {
+  const ctx = spendAnalysisCtx();
+  ctx.DB = {
+    owners: [],
+    assets: [],
+    recurrences: [],
+    budgetHistory: { 식비: [{ from: '2026-01', amount: 100000 }] },
+    catBudgetRollover: {},
+    txns: [
+      { id: '1', type: 'expense', category: '식비', amount: 60000, date: '2026-06-10', confirmed: true }, // 투사 120000 > 100000, 아직 60000<=100000(초과 아님)
+    ],
+  };
+  ctx.ST = { ledger: { y: 2026, m: 6 }, spendOwner: '전체' };
+  ctx.lastSheetHtml = null;
+  ctx.openSpendAnalysis();
+  const html = ctx.lastSheetHtml;
+  assert.strictEqual((html.match(/이대로면 .*?원 · 예산 초과 예상/g) || []).length, 1, '카테고리 행에 선제 경고 캡션이 정확히 1번 나와야 함');
+  assert.ok(html.includes(`이대로면 ${ctx.comma(120000)}원 · 예산 초과 예상`), '행 캡션에 투사값(120,000원)이 들어가야 함');
+  assert.ok(html.includes(`이대로면 ${ctx.comma(120000)}원 · 전체 예산 초과 예상`), '전체 예산 카드에도 같은 투사값으로 경고 캡션이 떠야 함');
+});
+test('openSpendAnalysis: 이미 예산을 초과한 카테고리는 선제 경고 캡션이 뜨지 않는다(overCls 빨간 표시로 이미 충분함, 회귀 확인)', () => {
+  const ctx = spendAnalysisCtx();
+  ctx.DB = {
+    owners: [],
+    assets: [],
+    recurrences: [],
+    budgetHistory: { 식비: [{ from: '2026-01', amount: 100000 }] },
+    catBudgetRollover: {},
+    txns: [
+      { id: '1', type: 'expense', category: '식비', amount: 150000, date: '2026-06-10', confirmed: true },
+    ],
+  };
+  ctx.ST = { ledger: { y: 2026, m: 6 }, spendOwner: '전체' };
+  ctx.lastSheetHtml = null;
+  ctx.openSpendAnalysis();
+  assert.ok(!ctx.lastSheetHtml.includes('예산 초과 예상'), '이미 초과했으면 선제 경고 캡션이 뜨면 안 됨');
 });
 test('openSpendAnalysis: 카테고리별 행의 한도 표시는 이월(catBudgetRollover) opt-in 여부에 따라 카테고리마다 다른 실제 숫자를 보여준다', () => {
   const ctx = spendAnalysisCtx();
@@ -19191,6 +19257,47 @@ test('homeAlerts: 예산 이월(catBudgetRollover) 카테고리는 flat이 아�
   assert.strictEqual(bo[0].kind, 'budgetOver');
   assert.strictEqual(bo[0].budget, 130000, '알림에 실린 budget도 flat이 아니라 실질 한도여야 함');
 });
+/* 예산 초과 "예상"(budgetPaceWarn/budgetPaceWarnMulti) — budgetOver(이미 넘은 뒤)와 달리 아직
+ * 안 넘었지만 월 중 페이스를 그대로 유지하면 월말엔 넘길 카테고리를 선제로 알린다(app-evolve
+ * cycle271 critique/advance). setupHomeAlertsDB가 TODAY='2026-06-15'(6월 15일, 30일 중 절반 경과)로
+ * 고정하므로 투사는 항상 spent*2. */
+test('homeAlerts: 아직 초과하지 않았지만 페이스대로면 월말에 넘길 카테고리가 정확히 1개면 budgetPaceWarn, 2개로 늘면 budgetPaceWarnMulti로 묶인다', () => {
+  setupHomeAlertsDB();
+  sandbox.setBudgetFrom('식비', 2026, 6, 100000);
+  sandbox.DB.txns.push({ id: 't1', date: '2026-06-10', type: 'expense', category: '식비', amount: 60000 }); // 투사 120000 > 100000(초과 예상), 지금은 60000<=100000(아직 초과 아님)
+  let alerts = sandbox.homeAlerts([]);
+  let pw = alerts.filter((a) => a.kind === 'budgetPaceWarn' || a.kind === 'budgetPaceWarnMulti');
+  assert.strictEqual(pw.length, 1);
+  assert.strictEqual(pw[0].kind, 'budgetPaceWarn', '정확히 1개면 budgetPaceWarn이어야 함');
+  assert.strictEqual(pw[0].cat, '식비');
+  assert.strictEqual(pw[0].spent, 60000);
+  assert.strictEqual(pw[0].budget, 100000);
+  assert.strictEqual(pw[0].projected, 120000);
+  assert.ok(!alerts.some((a) => a.kind === 'budgetOver' || a.kind === 'budgetOverMulti'), '아직 초과하지 않았으므로 budgetOver는 뜨면 안 됨');
+
+  sandbox.setBudgetFrom('교통', 2026, 6, 50000);
+  sandbox.DB.txns.push({ id: 't2', date: '2026-06-10', type: 'expense', category: '교통', amount: 30000 }); // 투사 60000 > 50000
+  alerts = sandbox.homeAlerts([]);
+  pw = alerts.filter((a) => a.kind === 'budgetPaceWarn' || a.kind === 'budgetPaceWarnMulti');
+  assert.strictEqual(pw.length, 1);
+  assert.strictEqual(pw[0].kind, 'budgetPaceWarnMulti', '2개로 늘면 budgetPaceWarnMulti 하나로 묶여야 함');
+  assert.strictEqual(pw[0].count, 2);
+});
+test('homeAlerts: 이미 예산을 초과한 카테고리는 budgetOver로만 뜨고 budgetPaceWarn에는 중복으로 잡히지 않는다(회귀 확인)', () => {
+  setupHomeAlertsDB();
+  sandbox.setBudgetFrom('식비', 2026, 6, 100000);
+  sandbox.DB.txns.push({ id: 't1', date: '2026-06-10', type: 'expense', category: '식비', amount: 150000 });
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(alerts.some((a) => a.kind === 'budgetOver'));
+  assert.ok(!alerts.some((a) => a.kind === 'budgetPaceWarn' || a.kind === 'budgetPaceWarnMulti'), '이미 초과한 카테고리가 budgetPaceWarn에도 또 잡히면 안 됨');
+});
+test('homeAlerts: 페이스대로 투사해도 한도를 넘지 않으면(투사===한도 경계 포함) budgetPaceWarn이 뜨지 않는다', () => {
+  setupHomeAlertsDB();
+  sandbox.setBudgetFrom('식비', 2026, 6, 100000);
+  sandbox.DB.txns.push({ id: 't1', date: '2026-06-10', type: 'expense', category: '식비', amount: 50000 }); // 투사 100000 === 한도(초과 아님)
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'budgetPaceWarn' || a.kind === 'budgetPaceWarnMulti'));
+});
 /* 목표일보다 늦어지는 목표(goalBehind/goalBehindMulti) — budgetOver/budgetOverMulti와 동일한 1건/N건
  * 묶음 패턴을 goals에도 적용. goalProgress()의 추세 투사(목표일을 못 맞추거나 추세가 0/음수라
  * projectedDate가 안 나옴)를 그대로 재사용하므로, homeAlerts 쪽은 묶음 분기만 검증한다(app-evolve cycle173 advance) */
@@ -20138,6 +20245,27 @@ test('notifyAlertInfo: budgetOverMulti도 confirmMulti/matMulti처럼 같은 달
   assert.strictEqual(picked.toNotify.length, 0, '같은 건수로 다시 호출하면 이미 보낸 알림이라 억제돼야 함');
   picked = sandbox.pickNotifyAlerts([{ kind: 'budgetOverMulti', count: 3 }], picked.notifiedIds);
   assert.strictEqual(picked.toNotify.length, 1, '건수가 늘면 같은 달이어도 다시 알림 대상이 돼야 함');
+});
+/* budgetPaceWarn(Multi) — budgetOver(Multi)와 동일한 월 단위 key + count 포함 규칙을 쓰지만,
+ * key 접두사(budgetPace:/budgetPaceMulti:)가 달라 budgetOver(Multi)의 dedupe와 서로 섞이지
+ * 않는다(app-evolve cycle271 critique/advance). */
+test('notifyAlertInfo: budgetPaceWarn(Multi)는 즉시 알림 대상이고, budgetOver(Multi)와는 다른 key 접두사를 쓴다', () => {
+  sandbox.TODAY = '2026-06-15';
+  const pace = sandbox.notifyAlertInfo({ kind: 'budgetPaceWarn', cat: '식비', spent: 60000, budget: 100000, projected: 120000 });
+  assert.ok(pace && pace.key === 'budgetPace:식비:2026-06');
+  assert.ok(pace.body.includes('120,000') && pace.body.includes('100,000'));
+  const paceMulti = sandbox.notifyAlertInfo({ kind: 'budgetPaceWarnMulti', count: 2 });
+  assert.ok(paceMulti && paceMulti.key === 'budgetPaceMulti:2026-06:2', '월 단위 키에도 count가 들어가야 함(budgetOverMulti와 동일 규칙)');
+});
+test('notifyAlertInfo: budgetPaceWarnMulti도 건수가 바뀌면 같은 달이어도 다시 알림 대상이 된다(budgetOverMulti와 동일 규칙)', () => {
+  sandbox.TODAY = '2026-06-15';
+  const pw2 = sandbox.notifyAlertInfo({ kind: 'budgetPaceWarnMulti', count: 2 });
+  const pw3 = sandbox.notifyAlertInfo({ kind: 'budgetPaceWarnMulti', count: 3 });
+  assert.notStrictEqual(pw3.key, pw2.key, '건수가 2→3으로 늘면 키도 바뀌어 다시 알려야 함');
+  let picked = sandbox.pickNotifyAlerts([{ kind: 'budgetPaceWarnMulti', count: 2 }], {});
+  assert.strictEqual(picked.toNotify.length, 1);
+  picked = sandbox.pickNotifyAlerts([{ kind: 'budgetPaceWarnMulti', count: 2 }], picked.notifiedIds);
+  assert.strictEqual(picked.toNotify.length, 0, '같은 건수로 다시 호출하면 억제돼야 함');
 });
 test('notifyAlertInfo: 저축 만기(mat)는 오늘·내일만 알림 대상이고, 이틀 뒤부터는 아직 대상이 아니다', () => {
   sandbox.TODAY = '2026-06-15';

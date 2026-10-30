@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.286';
+const APP_VERSION='1.47.287';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6539,6 +6539,9 @@ function openSpendAnalysis(){
  if(ST.spendOwner!=='전체'&&!DB.owners.includes(ST.spendOwner))ST.spendOwner='전체'; /* 귀속 사라지면 전체로 (renderAssets/renderPlan과 동일 패턴) */
  const y=ST.ledger.y,m=ST.ledger.m;const rows=spendByCategory(y,m,ST.spendOwner);const total=rows.reduce((s,r)=>s+r.v,0);
  const tb=totalBudgetSummary(rows,y,m);const tbp=budgetProgress(tb.spentOnBudgeted,tb.budgetedTotal);
+ /* 카테고리 행과 동일한 선제 경고(위 paceWarn 주석 참고)를 전체 예산 합계에도 적용 — 아직 전체
+  * 합계가 초과하지 않았을 때만(!tbp.over) 의미 있다. */
+ const tbProj=tb.budgetedTotal&&!tbp.over?projectedMonthSpend(tb.spentOnBudgeted,y,m,TODAY):null;
  let py=y,pm=m,totalAvg=0;for(let i=0;i<3;i++){pm--;if(pm<1){pm=12;py--}totalAvg+=spendByCategory(py,pm,ST.spendOwner).reduce((s,r)=>s+r.v,0)}
  totalAvg=Math.round(totalAvg/3);
  const totalDeltaPct=totalAvg?Math.round((total-totalAvg)/totalAvg*100):null;
@@ -6559,8 +6562,13 @@ function openSpendAnalysis(){
    const barCls=budget?(bp.over?'over':'budgeted'):'';
    const overCls=budget&&bp.over?' over':'';
    const trend=spendTrend(r.c,y,m,3,ST.spendOwner);
+   /* 아직 초과하지 않았지만(!bp.over) 이대로 쓰면 월말엔 넘길 것으로 보이는 카테고리에만 선제
+    * 경고 캡션을 보여준다 — 이미 초과한 행은 overCls(빨간 숫자/바)로 충분히 드러나 있어 중복
+    * 경고가 되지 않게 뺀다(app-evolve cycle271 critique/advance). */
+   const proj=budget&&!bp.over?projectedMonthSpend(r.v,y,m,TODAY):null;
+   const paceWarn=(proj!=null&&proj>budget)?`<div style="font-size:11px;color:var(--gold);margin-top:3px">이대로면 ${comma(proj)}원 · 예산 초과 예상</div>`:'';
    return `<div class="spend-row" tabindex="0" role="button" aria-label="${esc(r.c)} ${comma(r.v)}원" onclick="openBudgetPrompt(${idx})" onkeydown="rowKeydown(event,()=>openBudgetPrompt(${idx}))"><div class="spend-av a-food">${catGlyph('expense',r.c,null,'tag')}</div>
-    <div class="spend-mid"><div class="spend-nm">${esc(r.c)} ${spendTrendBadge(trend.deltaPct)}</div><div class="spend-track"><i class="${barCls}" style="width:${barPct}%"></i></div></div>
+    <div class="spend-mid"><div class="spend-nm">${esc(r.c)} ${spendTrendBadge(trend.deltaPct)}</div><div class="spend-track"><i class="${barCls}" style="width:${barPct}%"></i></div>${paceWarn}</div>
     <div class="row-acts"><button type="button" class="act-btn" aria-label="${esc(r.c)} 내역 보기" onclick="event.stopPropagation();openCatHistory(${idx})">${svg('receipt')}</button></div>
     <div class="spend-amt"><div class="a num${overCls}">${comma(r.v)}${budget?`<span class="bgt">/${comma(budget)}</span>`:''}원</div><div class="p${overCls}">${pct}%${budget?' 사용':''}</div></div></div>`}).join('')
    :`<div class="empty"><div class="ei">${svg('chart')}</div><div class="et">아직 쓴 게 없어요 👏</div><div class="es">이대로만 가면 완벽해요</div></div>`;
@@ -6575,6 +6583,7 @@ function openSpendAnalysis(){
    ${tb.overCount?`<div style="font-size:11.5px;color:var(--expense);margin-top:6px;font-weight:600">예산을 초과한 카테고리 ${tb.overCount}개</div>`:''}
    ${tb.unsetCount?`<div style="font-size:11.5px;color:var(--text-3);margin-top:6px">예산 미설정 카테고리 ${tb.unsetCount}개</div>`:''}
    ${tb.carryTotal?`<div style="font-size:11.5px;color:var(--text-3);margin-top:6px">전달 이월 ${comma(tb.carryTotal)}원 포함</div>`:''}
+   ${tbProj!=null&&tbProj>tb.budgetedTotal?`<div style="font-size:11.5px;color:var(--gold);margin-top:6px;font-weight:600">이대로면 ${comma(tbProj)}원 · 전체 예산 초과 예상</div>`:''}
   </div>`:''}
   <div class="card" style="padding:2px 14px">${body}</div>
   <div style="height:12px"></div><button class="btn btn-soft" onclick="closeSheet()">닫기</button>`);
@@ -9477,6 +9486,21 @@ function homeAlerts(neg){
   * 버그를 고친다(이월 꺼진 카테고리는 budgetCarryFor가 0을 반환해 기존과 동일, app-evolve cycle199 critique/advance) */
  if(_bo.length===1){const r=_bo[0],b=budgetForMonthWithCarry(r.c,TM.y,TM.m);arr.push({kind:'budgetOver',cat:r.c,spent:r.v,budget:b});}
  else if(_bo.length>1)arr.push({kind:'budgetOverMulti',count:_bo.length});
+ /* 예산 초과 "예상": budgetOver(바로 위)는 이미 넘은 뒤에만 뜨고, 목표(goalBehind)/부채상환
+  * (debtBehind)처럼 "이대로면 ~쯤 넘을 것 같다"는 선제 투사가 예산 추적에는 없는 비대칭이
+  * 있었다(app-evolve cycle271 critique/advance). 아직 안 넘었지만(r.v<=b) projectedMonthSpend
+  * (logic.js, 월 중 경과일 비율로 월말 예상 지출을 선형 투사)가 실질 한도를 넘길 것으로 보이는
+  * 카테고리만 골라, budgetOver와 겹치지 않게(한 카테고리가 budgetOver와 budgetPaceWarn에
+  * 동시에 잡히는 일은 없음) budgetOver/budgetOverMulti와 동일한 단일/복수 collapsing 패턴을
+  * 그대로 재사용한다. */
+ const _bpw=spendByCategory(TM.y,TM.m).filter(r=>{
+   const b=budgetForMonthWithCarry(r.c,TM.y,TM.m);
+   if(!(b>0)||r.v>b)return false;
+   const proj=projectedMonthSpend(r.v,TM.y,TM.m,TODAY);
+   return proj!=null&&proj>b;
+ });
+ if(_bpw.length===1){const r=_bpw[0],b=budgetForMonthWithCarry(r.c,TM.y,TM.m);arr.push({kind:'budgetPaceWarn',cat:r.c,spent:r.v,budget:b,projected:projectedMonthSpend(r.v,TM.y,TM.m,TODAY)});}
+ else if(_bpw.length>1)arr.push({kind:'budgetPaceWarnMulti',count:_bpw.length});
  /* 목표일보다 늦어지는 목표: 목표일이 있고 아직 안 달성한 목표 중, goalProgress()의 추세 투사가 목표일을
   * 못 맞추거나(projectedDate>targetDate) 추세가 0/음수라 투사 자체가 안 나오면(projectedDate:null) 포함한다.
   * budgetOver/budgetOverMulti와 동일한 단일/복수 collapsing 패턴(app-evolve cycle173 advance). goalProgress는
@@ -9554,6 +9578,11 @@ function notifyAlertInfo(al){
   * 알리지 않는다는 취지)는 그대로 둔 채 "상황이 바뀌면"(건수 증가뿐 아니라 일부 해소돼 줄어도)
   * 다시 알리게 한다. */
  if(al.kind==='budgetOverMulti')return{key:`budgetMulti:${TODAY.slice(0,7)}:${al.count}`,title:'예산을 초과했어요',body:`${al.count}개 카테고리가 이번 달 예산을 넘었어요`};
+ /* budgetPaceWarn(Multi)도 budgetOver(Multi)와 동일하게 월 단위로 key를 묶어, 같은 달엔 반복
+  * 알리지 않되(이미 넘은 뒤라 상태가 바뀌는 budgetOver로 전환되면 key 접두사가 달라 별도로
+  * 알려짐) 건수가 바뀌면(budgetOverMulti처럼 count를 key에 포함) 다시 알린다. */
+ if(al.kind==='budgetPaceWarn')return{key:`budgetPace:${al.cat}:${TODAY.slice(0,7)}`,title:'예산 초과가 예상돼요',body:`${al.cat} · 이대로면 월말 ${comma(al.projected)}원 / ${comma(al.budget)}원`};
+ if(al.kind==='budgetPaceWarnMulti')return{key:`budgetPaceMulti:${TODAY.slice(0,7)}:${al.count}`,title:'예산 초과가 예상돼요',body:`${al.count}개 카테고리가 이대로면 이번 달 예산을 넘을 것 같아요`};
  if(al.kind==='goalBehind')return{key:`goalBehind:${al.goalId}:${TODAY.slice(0,7)}`,title:'목표가 늦어지고 있어요',body:`${al.name} · 목표일 ${fmtDateFull(al.targetDate)}까지 어려울 것 같아요`};
  if(al.kind==='goalBehindMulti')return{key:`goalBehindMulti:${TODAY.slice(0,7)}:${al.count}`,title:'목표가 늦어지고 있어요',body:`목표 ${al.count}건이 목표일보다 늦어지고 있어요`};
  /* goalAchieved(Multi)는 goalBehindMulti 등과 달리 월 단위로 자연 해소되지 않는 '영구' 상태라(ack 전까지
@@ -9727,6 +9756,16 @@ function homeAlertCard(al){
  if(al.kind==='budgetOverMulti')return `<button class="home-alert" onclick="openSpendAnalysisThisMonth()">
    <div class="ha-ic">${svg('alert')}</div>
    <div class="ha-b"><div class="ha-t">예산을 초과한 카테고리 ${al.count}개</div>
+     <div class="ha-s">눌러서 확인하세요</div></div>
+   <div class="ha-c">${svg('chev')}</div></button>`;
+ if(al.kind==='budgetPaceWarn')return `<button class="home-alert mat" onclick="openSpendAnalysisThisMonth()">
+   <div class="ha-ic">${svg('alert')}</div>
+   <div class="ha-b"><div class="ha-t">${esc(al.cat)} 예산 초과가 예상돼요</div>
+     <div class="ha-s">이대로면 월말 ${comma(al.projected)}원 · 한도 ${comma(al.budget)}원 · 눌러서 확인하세요</div></div>
+   <div class="ha-c">${svg('chev')}</div></button>`;
+ if(al.kind==='budgetPaceWarnMulti')return `<button class="home-alert mat" onclick="openSpendAnalysisThisMonth()">
+   <div class="ha-ic">${svg('alert')}</div>
+   <div class="ha-b"><div class="ha-t">예산 초과가 예상되는 카테고리 ${al.count}개</div>
      <div class="ha-s">눌러서 확인하세요</div></div>
    <div class="ha-c">${svg('chev')}</div></button>`;
  if(al.kind==='goalBehind')return `<button class="home-alert mat" onclick="openGoalForm('${al.goalId}')">

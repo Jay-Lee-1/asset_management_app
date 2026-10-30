@@ -1,19 +1,8 @@
 {
-  "cycle": 271,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "예산 월중 페이스 기반 초과 예상 경고",
-    "why": "homeAlerts()의 budgetOver/budgetOverMulti는 이미 초과한 뒤에만 뜨고, 목표/부채상환처럼 \"이대로면 ~쯤 달성 예상\" 식 선제적 투사가 예산에는 없음 — 월 중반에 이미 80% 썼어도 사전 경고가 전혀 없는 공백.",
-    "approach": "logic.js에 projectedSpendForCategory(c,y,m) 순수 함수 신설(경과일 비율로 월말 예상 지출 산출, 과거/미래 달은 null). openSpendAnalysis() 카테고리 행/전체 예산 카드에 budget&&projected>budget&&pct<100(아직 미초과)일 때만 \"이대로면 예산 초과 예상\" 캡션 추가. homeAlerts()에 budgetPaceWarn(budgetOver와 겹치지 않게 미초과 건만, 월 단위 key로 반복 억제) 카드 신설, 단일/복수 collapsing 패턴(budgetOver/budgetOverMulti) 재사용. 경과일 경계(월초/월말)·이미 초과·예산 미설정 제외 테스트 추가."
-  },
+  "cycle": 272,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 266,
-      "phase": "advance",
-      "timestamp": "2026-10-29T15:50:00.000Z",
-      "summary": "critique(cycle266) 계획대로 연간 결산에 투자 실현손익 추가. yearRealizedGain 신설, yearSummary().investGain 배선, openYearReview 카드 노출(0과 '기록 없음' 구분하는 null 관례 유지). 투자손익만 있어도 빈 상태를 건너뛰게 조건 보강. APP_VERSION 1.47.275->1.47.276, sw.js CACHE v542->v543. node test/run.js 2231/2231 통과. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 267,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-30T10:15:00.000Z",
       "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, homeAlerts()의 budgetOver/budgetOverMulti가 예산을 이미 초과한 뒤에만 경보하고, 목표(goalRowHTML)/부채상환처럼 \"이대로면 ~쯤 달성 예상\" 식 선제적 투사가 예산 추적에는 없는 비대칭을 발견. 채택 계획(projectedSpendForCategory 신설 + openSpendAnalysis 캡션 + homeAlerts budgetPaceWarn 카드)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 271,
+      "phase": "advance",
+      "timestamp": "2026-10-30T11:30:00.000Z",
+      "summary": "critique(cycle271) 계획대로 예산 월중 페이스 기반 초과 예상 경고를 구현. logic.js에 projectedMonthSpend(spent,y,m,today) 순수 함수 신설(경과일 비율 선형 투사로 월말 예상 지출 산출, today가 대상 달이 아니면 null) — 계획이 제안한 'projectedSpendForCategory(c,y,m)' 래퍼 대신, spendByCategory 집계가 이미 끝난 호출부(openSpendAnalysis 행/homeAlerts)가 그 결과(r.v)를 직접 넘기는 더 단순한 시그니처를 택함(불필요한 재조회 없음). openSpendAnalysis() 카테고리 행 + 전체 예산 카드에 budget&&!over&&projected>budget일 때만 '이대로면 N원 · 예산 초과 예상' 캡션 추가(var(--gold), goalBehind 등 '선제 경고'와 같은 색). homeAlerts()에 budgetPaceWarn/budgetPaceWarnMulti 신설 — budgetOver와 겹치지 않게 r.v<=b(아직 미초과)만 보고, 단일/복수 collapsing·notifyAlertInfo 월단위 key+count 패턴(budgetOver/budgetOverMulti와 동일)을 재사용, home-alert 카드엔 'mat'(gold) 클래스로 '이미 넘음'(budgetOver, 기본색)과 시각적으로 구분. 격리 vm 테스트 컨텍스트(spendAnalysisCtx)가 TODAY 전역을 새로 요구하게 돼 ctx.TODAY='2026-06-15' 추가. test/run.js에 projectedMonthSpend 경계(월초/월말/과거달/미래달/today 없음) 6건, homeAlerts budgetPaceWarn(Multi) 단일/복수/budgetOver와 미중복/경계(투사==한도) 3건, notifyAlertInfo budgetPaceWarn(Multi) key/count 2건, openSpendAnalysis 캡션 노출/비노출 2건 추가. APP_VERSION 1.47.286->1.47.287, sw.js CACHE v553->v554. node test/run.js 2287/2287 통과, 메인 스크립트(블록2) node --check 통과. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]
