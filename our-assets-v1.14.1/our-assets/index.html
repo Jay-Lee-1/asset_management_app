@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.287';
+const APP_VERSION='1.47.288';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4883,7 +4883,7 @@ document.addEventListener('click',e=>{
  e.preventDefault();e.stopPropagation(); /* 외부 클릭은 '취소'만 — 하부 요소 선택 방지 */
  closeFabPop();
 },true);
-function openTxSheet(){window._recCtx=null;_formScroll=0;_txFocusAmt=true;txDraft={id:null,type:'expense',date:ST.ledger.sel,category:DB.categories.expense[0],memo:'',amount:0,fromAssetId:firstCash(),toAssetId:null,repeat:false,freq:'monthly',day:null,endDate:null,count:null,photo:null};snapDraft('tx');renderTxSheet()}
+function openTxSheet(){window._recCtx=null;_formScroll=0;_txFocusAmt=true;txDraft={id:null,type:'expense',date:ST.ledger.sel,category:DB.categories.expense[0],memo:'',amount:0,fromAssetId:firstCash(),toAssetId:null,repeat:false,freq:'monthly',day:null,endDate:null,count:null,photo:null};_txCatSuggAnnounced=null;snapDraft('tx');renderTxSheet()}
 /* manifest.webmanifest shortcuts(아이콘 롱프레스)/?action= 딥링크가 공통으로 쓰는 디스패처.
  * openTxSheet()의 기본 type은 이미 'expense'라 addExpense는 추가 전환이 필요 없다
  * (app-evolve cycle254 advance). shareReceipt는 OS 공유 시트(카메라/갤러리/은행앱)에서 "공유"로
@@ -4967,20 +4967,26 @@ function syncTxInputs(){const sh=$('sheetScroll');if(sh)_formScroll=sh.scrollTop
 /* 메모 기반 카테고리 추천 칩 — assetQInput류가 쓰는 220ms 입력 디바운스 관례(debtWhatIfUpdate 주석
  * 참고)를 그대로 가져와, 타이핑이 멈췄을 때만 suggestCategoryForMemo(logic.js)를 돌려 추천 칩을
  * 띄운다. 분할 입력(splits) 중엔 txDraft.category 자체가 화면에 안 보이므로 추천도 끈다
- * (app-evolve cycle270 advance). */
-let _txCatSuggT=null;
+ * (app-evolve cycle270 advance). 칩은 box.style.display 토글/innerHTML만으로 떴다 사라지는 시각
+ * 전용 변화라, 메모 입력란에 머무는 스크린리더 사용자는 추천이 생긴 것 자체를 알 길이 없었다
+ * (debtWhatIfUpdate가 이미 같은 문제를 announceLive()로 풀어둔 것과 동일한 공백, app-evolve
+ * cycle272 develop). _txCatSuggAnnounced로 직전에 공지한 추천값을 기억해, 같은 메모를 계속
+ * 입력하는 동안 동일한 추천이 뜰 때마다 매번 다시 읽어주는 소음은 내지 않는다(추천이 바뀌거나
+ * 칩이 숨겨졌다가 다시 뜰 때만 공지). */
+let _txCatSuggT=null,_txCatSuggAnnounced=null;
 function txMemoInput(el){txDraft.memo=el.value;clearTimeout(_txCatSuggT);_txCatSuggT=setTimeout(txCatSuggestUpdate,220)}
 function txCatSuggestUpdate(){
  const box=$('txCatSuggest');if(!box)return;
  const d=txDraft;
  const splitOn=Array.isArray(d.splits)&&d.splits.length>=2;
  const cat=(d.type==='transfer'||splitOn||d._catUserTouched)?null:suggestCategoryForMemo(d.memo,DB.txns,d.type);
- if(!cat||cat===d.category){box.style.display='none';box.innerHTML='';box.onclick=null;return}
+ if(!cat||cat===d.category){box.style.display='none';box.innerHTML='';box.onclick=null;_txCatSuggAnnounced=null;return}
  box.innerHTML=`<button type="button" class="txt-btn">${svg('tag')}추천: ${esc(cat)} · 적용</button>`;
  box.onclick=()=>txApplyCatSuggest(cat);
  box.style.display='block';
+ if(cat!==_txCatSuggAnnounced){announceLive(`카테고리 추천: ${cat}`);_txCatSuggAnnounced=cat}
 }
-function txApplyCatSuggest(cat){txDraft.category=cat;const box=$('txCatSuggest');if(box){box.style.display='none';box.innerHTML='';box.onclick=null}renderTxSheet()}
+function txApplyCatSuggest(cat){txDraft.category=cat;const box=$('txCatSuggest');if(box){box.style.display='none';box.innerHTML='';box.onclick=null}_txCatSuggAnnounced=null;renderTxSheet()}
 /* 분할 입력(여러 카테고리로 나누기) UI — txDraft.splits=[{category,amount,memo?}]를 그려낸다.
  * 모든 조각은 앱에 이미 있는 .field/.pick/.field-clear/.fc-x/.txt-btn 컴포넌트만 재사용해
  * 새 CSS 없이도 나머지 입력 필드(카테고리 피커·금액 입력)와 똑같은 모양으로 보이게 한다. */
@@ -5308,25 +5314,27 @@ function recSave(){
 
 /* 반복 설정 — 지출/수입/이체/저축, 카테고리 선택 방식 */
 let recDraft=null;
-function openRecSheet(){_formScroll=0;recDraft={id:null,active:true,type:'expense',category:DB.categories.expense[0],amount:0,fromAssetId:firstCash(),toAssetId:null,freq:'monthly',day:1,startDate:ST.ledger.sel,endDate:null,count:null,skip:[],edits:{}};snapDraft('rec');renderRecSheet()}
+function openRecSheet(){_formScroll=0;recDraft={id:null,active:true,type:'expense',category:DB.categories.expense[0],amount:0,fromAssetId:firstCash(),toAssetId:null,freq:'monthly',day:1,startDate:ST.ledger.sel,endDate:null,count:null,skip:[],edits:{}};_recCatSuggAnnounced=null;snapDraft('rec');renderRecSheet()}
 function editRec(id){const r=DB.recurrences.find(x=>x.id===id);if(!r)return;_formScroll=0;recDraft=JSON.parse(JSON.stringify(r));snapDraft('rec');renderRecSheet()}
 function syncRecInputs(){const _mm=$('rMemo');if(_mm)recDraft.memo=_mm.value;const sh=$('sheetScroll');if(sh)_formScroll=sh.scrollTop;const a=$('rAmt'),s=$('rStart');if(a)recDraft.amount=num(a);if(s&&s.value)recDraft.startDate=s.value}
 function recOpenCat(){_applyOpenCat(recDraft,syncRecInputs,renderRecSheet)}
 /* txMemoInput/txCatSuggestUpdate와 동일한 패턴(위 주석 참고) — 반복거래 입력에도 같은 메모 기반
  * 카테고리 추천을 배선한다(app-evolve cycle270 advance). recDraft는 분할을 담을 자리가 없는
- * 스키마라 splitOn 가드가 필요 없다. */
-let _recCatSuggT=null;
+ * 스키마라 splitOn 가드가 필요 없다. _recCatSuggAnnounced도 txCatSuggestUpdate와 동일한 이유로
+ * 추천이 바뀔 때만 announceLive()를 부른다(app-evolve cycle272 develop). */
+let _recCatSuggT=null,_recCatSuggAnnounced=null;
 function recMemoInput(el){recDraft.memo=el.value;clearTimeout(_recCatSuggT);_recCatSuggT=setTimeout(recCatSuggestUpdate,220)}
 function recCatSuggestUpdate(){
  const box=$('recCatSuggest');if(!box)return;
  const d=recDraft;
  const cat=(d.type==='transfer'||d._catUserTouched)?null:suggestCategoryForMemo(d.memo,DB.txns,d.type);
- if(!cat||cat===d.category){box.style.display='none';box.innerHTML='';box.onclick=null;return}
+ if(!cat||cat===d.category){box.style.display='none';box.innerHTML='';box.onclick=null;_recCatSuggAnnounced=null;return}
  box.innerHTML=`<button type="button" class="txt-btn">${svg('tag')}추천: ${esc(cat)} · 적용</button>`;
  box.onclick=()=>recApplyCatSuggest(cat);
  box.style.display='block';
+ if(cat!==_recCatSuggAnnounced){announceLive(`카테고리 추천: ${cat}`);_recCatSuggAnnounced=cat}
 }
-function recApplyCatSuggest(cat){recDraft.category=cat;const box=$('recCatSuggest');if(box){box.style.display='none';box.innerHTML='';box.onclick=null}renderRecSheet()}
+function recApplyCatSuggest(cat){recDraft.category=cat;const box=$('recCatSuggest');if(box){box.style.display='none';box.innerHTML='';box.onclick=null}_recCatSuggAnnounced=null;renderRecSheet()}
 function recOpenAsset(which){_applyOpenAsset(recDraft,which,syncRecInputs,renderRecSheet)}
 const WK={ /* 주말 조정 어휘 */
  none:['당일 유지','주말이어도 그 날짜에'],

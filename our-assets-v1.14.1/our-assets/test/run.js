@@ -242,6 +242,11 @@ const FUNCTIONS = [
  'notifyAlertInfo', 'pickNotifyAlerts', 'pruneNotifiedIds', 'syncNotifyPermission',
   'catIconOf', 'catGlyph', 'openCatManage', 'openCatPicker', 'catFilteredGrid', 'catEmptyHtml', 'pkCatQInput', 'refreshPkCatList', 'moveCatBlob', 'pkPickCat',
   'catListOf', 'catAv', 'assetPickBtn', 'endCondFields', 'dayPickerHTML', 'openFormSheet', 'renderTxSheet', '_applyType', '_applyFreq', '_applyDay', '_applyCount', '_applyOpenCat', '_applyOpenAsset', 'txType', 'txToggleRepeat',
+  // txMemoInput/txCatSuggestUpdate/txApplyCatSuggest·recMemoInput/recCatSuggestUpdate/
+  // recApplyCatSuggest는 메모 기반 카테고리 추천 칩(app-evolve cycle270 advance)의 입력
+  // 디바운스·렌더·적용 핸들러 — openTxSheet/openRecSheet가 매번 $('txCatSuggest')/
+  // $('recCatSuggest')로 참조하므로 renderTxSheet/renderRecSheet를 쓰는 sandbox에 항상 같이 올라가야 한다.
+  'txMemoInput', 'txCatSuggestUpdate', 'txApplyCatSuggest', 'recMemoInput', 'recCatSuggestUpdate', 'recApplyCatSuggest',
   // txPhotoFieldHTML(영수증 사진 첨부 필드, app-evolve cycle261 advance)은 renderTxSheet가 항상
   // 부르므로(반복 미켜짐 분기) renderTxSheet를 쓰는 모든 테스트(duplicateTx/saveTx/txType 등)의
   // 공유 sandbox에 함께 올라가야 한다.
@@ -376,7 +381,11 @@ const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'AS
 // _debtWhatIfAnnT는 debtWhatIfUpdate()가 announceLive 공지를 220ms 디바운스할 때 쓰는
 // 타이머(assetQT/histTimer와 같은 패턴)라 같은 이유로 LETS를 통해 가져온다(app-evolve
 // cycle267 review).
-const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer', '_histTimer', '_assetQT', '_pkQ', '_bioAutoTried', '_csvMap', '_debtWhatIfAnnT'];
+// _txCatSuggT/_recCatSuggT는 각각 `let _txCatSuggT=null,_txCatSuggAnnounced=null;`/
+// `let _recCatSuggT=null,_recCatSuggAnnounced=null;` 한 줄로 선언돼 있어(위 _pkQ와 같은 콤마
+// 선언 패턴), 디바운스 타이머 이름만 올려도 직전 공지값 캐시(_txCatSuggAnnounced/
+// _recCatSuggAnnounced)까지 함께 딸려온다(app-evolve cycle272 develop).
+const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer', '_histTimer', '_assetQT', '_pkQ', '_bioAutoTried', '_csvMap', '_debtWhatIfAnnT', '_txCatSuggT', '_recCatSuggT'];
 
 const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(extractConst).join('\n') + '\n' + LETS.map(extractLet).join('\n');
 
@@ -693,11 +702,20 @@ const sandbox = {
   // 있음) 안전하게 넘어가는 분기를 검증한다.
   bootSplashEl: { remove: () => { sandbox.bootSplashRemoveCalls++; } },
   bootSplashRemoveCalls: 0,
-  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'budgetIn' ? { value: sandbox.budgetInValue } : id === 'goalName' ? (sandbox.goalNameValue === undefined ? null : { value: sandbox.goalNameValue }) : id === 'goalAmt' ? (sandbox.goalAmtValue === undefined ? null : { value: sandbox.goalAmtValue }) : id === 'inqText' ? (sandbox.inqTextValue === undefined ? null : { value: sandbox.inqTextValue }) : id === 'inqEditText' ? (sandbox.inqEditTextValue === undefined ? null : { value: sandbox.inqEditTextValue }) :id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-plan' ? sandbox.pagePlanEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : id === 'ledgerCard' ? (sandbox.ledgerCardMissing ? null : sandbox.ledgerCardEl) : id === 'assetBody' ? (sandbox.assetBodyMissing ? null : sandbox.assetBodyEl) : id === 'newOwner' ? (sandbox.newOwnerValue === undefined ? null : { value: sandbox.newOwnerValue }) : id === 'renameOwner' ? (sandbox.renameOwnerValue === undefined ? null : { value: sandbox.renameOwnerValue }) : id === 'auEmail' ? (sandbox.auEmailValue === undefined ? null : { value: sandbox.auEmailValue }) : id === 'fpinPwIn' ? (sandbox.fpinPwInValue === undefined ? null : { value: sandbox.fpinPwInValue }) : id === 'fpinErr' ? sandbox.fpinErrEl : id === 'fpinBtn' ? sandbox.fpinBtnEl : id === 'fpinWaitMsg' ? sandbox.fpinWaitMsgEl : id === 'importFile' ? sandbox.importFileEl : id === 'bootSplash' ? (sandbox.bootSplashMissing ? null : sandbox.bootSplashEl) : id === 'debtWhatIfExtra' ? (sandbox.debtWhatIfExtraValue === undefined ? null : { value: sandbox.debtWhatIfExtraValue }) : id === 'debtWhatIfResult' ? (sandbox.debtWhatIfResultMissing ? null : sandbox.debtWhatIfResultEl) : null,
+  $: (id) => id === 'txAmt' ? { value: sandbox.txAmtValue } : id === 'qAmt' ? { value: sandbox.qAmtValue } : id === 'budgetIn' ? { value: sandbox.budgetInValue } : id === 'goalName' ? (sandbox.goalNameValue === undefined ? null : { value: sandbox.goalNameValue }) : id === 'goalAmt' ? (sandbox.goalAmtValue === undefined ? null : { value: sandbox.goalAmtValue }) : id === 'inqText' ? (sandbox.inqTextValue === undefined ? null : { value: sandbox.inqTextValue }) : id === 'inqEditText' ? (sandbox.inqEditTextValue === undefined ? null : { value: sandbox.inqEditTextValue }) :id === 'asName' ? (sandbox.asNameValue === undefined ? null : { value: sandbox.asNameValue }) : id === 'errBanner' ? sandbox.errBannerEl : id === 'bkText' ? sandbox.bkTextEl : id === 'planBadge' ? sandbox.planBadgeEl : id === 'page-home' ? sandbox.pageHomeEl : id === 'page-assets' ? sandbox.pageAssetsEl : id === 'page-ledger' ? sandbox.pageLedgerEl : id === 'page-plan' ? sandbox.pagePlanEl : id === 'page-history' ? sandbox.pageHistoryEl : id === 'histTotals' ? sandbox.histTotalsEl : id === 'histList' ? sandbox.histListEl : id === 'ledgerCard' ? (sandbox.ledgerCardMissing ? null : sandbox.ledgerCardEl) : id === 'assetBody' ? (sandbox.assetBodyMissing ? null : sandbox.assetBodyEl) : id === 'newOwner' ? (sandbox.newOwnerValue === undefined ? null : { value: sandbox.newOwnerValue }) : id === 'renameOwner' ? (sandbox.renameOwnerValue === undefined ? null : { value: sandbox.renameOwnerValue }) : id === 'auEmail' ? (sandbox.auEmailValue === undefined ? null : { value: sandbox.auEmailValue }) : id === 'fpinPwIn' ? (sandbox.fpinPwInValue === undefined ? null : { value: sandbox.fpinPwInValue }) : id === 'fpinErr' ? sandbox.fpinErrEl : id === 'fpinBtn' ? sandbox.fpinBtnEl : id === 'fpinWaitMsg' ? sandbox.fpinWaitMsgEl : id === 'importFile' ? sandbox.importFileEl : id === 'bootSplash' ? (sandbox.bootSplashMissing ? null : sandbox.bootSplashEl) : id === 'debtWhatIfExtra' ? (sandbox.debtWhatIfExtraValue === undefined ? null : { value: sandbox.debtWhatIfExtraValue }) : id === 'debtWhatIfResult' ? (sandbox.debtWhatIfResultMissing ? null : sandbox.debtWhatIfResultEl) : id === 'txCatSuggest' ? (sandbox.txCatSuggestMissing ? null : sandbox.txCatSuggestEl) : id === 'recCatSuggest' ? (sandbox.recCatSuggestMissing ? null : sandbox.recCatSuggestEl) : null,
   // debtWhatIfResultEl은 debtWhatIfUpdate()가 textContent를 직접 대입하는 결과 표시 엘리먼트
   // (부채 상환 추가 납입 시뮬레이터, app-evolve cycle262 advance) — bkTextEl처럼 호출 간에도
   // 값이 남는 공유 객체로 선언해 textContent 갱신을 검사할 수 있게 한다.
   debtWhatIfResultEl: { textContent: '' },
+  // txCatSuggestEl/recCatSuggestEl은 txCatSuggestUpdate()/recCatSuggestUpdate()(메모 기반
+  // 카테고리 추천 칩, app-evolve cycle270 advance)가 style.display/innerHTML/onclick을 직접
+  // 대입하는 칩 엘리먼트 흉내 — debtWhatIfResultEl처럼 호출 간에도 값이 남는 공유 객체로
+  // 선언해 칩이 뜨고 사라지는 것을 검사할 수 있게 한다. *Missing=true면 $(...)가 null을 돌려줘
+  // 시트가 이미 닫힌 뒤 호출되는 조기 반환 경로를 재현한다.
+  txCatSuggestEl: { style: { display: 'none' }, innerHTML: '', onclick: null },
+  txCatSuggestMissing: false,
+  recCatSuggestEl: { style: { display: 'none' }, innerHTML: '', onclick: null },
+  recCatSuggestMissing: false,
   bkTextEl: { value: 'backup-text', select: () => {}, setSelectionRange: () => {} },
   // copyBackup()의 navigator.clipboard 체크가 ReferenceError 없이 "지원 안 함"으로 지나가게
   // 하는 최소 흉내(document.execCommand는 try/catch로 감싸져 있어 굳이 스텁이 필요 없음).
@@ -14826,6 +14844,94 @@ test('saveRec: 기존 반복(이력 비영향 필드만 변경, 즉시 적용 �
   sandbox.recDraft = { ...JSON.parse(JSON.stringify(r)), memo: '관리비(수정)', _catUserTouched: true };
   sandbox.saveRec();
   assert.strictEqual('_catUserTouched' in sandbox.DB.recurrences[0], false, '즉시 적용 경로(DB.recurrences[i]=d)도 _catUserTouched를 남기면 안 됨');
+});
+
+/* ---------- txCatSuggestUpdate/recCatSuggestUpdate: 메모 기반 카테고리 추천 칩의 announceLive 공지
+ * (app-evolve cycle272 develop) ----------
+ * 칩은 #txCatSuggest/#recCatSuggest의 style.display 토글+innerHTML 대입만으로 떴다 사라지는
+ * 시각 전용 변화라, debtWhatIfUpdate(cycle267)가 이미 고친 것과 같은 공백이 있었다 — 메모
+ * 입력란에 머무는 스크린리더 사용자는 추천 칩이 생긴 것 자체를 알 길이 없었다. 같은 추천이
+ * 계속 뜨는 동안(타이핑이 이어지는 동안) 매번 다시 읽어주지는 않고, 추천이 바뀌거나 칩이
+ * 숨겨졌다가 다시 뜰 때만 공지한다. */
+test('[실행형] txCatSuggestUpdate: 메모와 정확히 일치하는 과거 내역이 있으면 추천 칩을 띄우고 announceLive로 한 번 공지한다', () => {
+  sandbox._txCatSuggAnnounced = null; // openTxSheet()이 매번 하는 리셋과 동일 — 다른 테스트의 잔여값이 새지 않게
+  sandbox.DB = { txns: [{ id: 't0', type: 'expense', date: '2026-01-01', category: '카페', memo: '스타벅스' }], recurrences: [] };
+  sandbox.txDraft = { type: 'expense', category: '식비', memo: '스타벅스' };
+  sandbox.txCatSuggestEl.style.display = 'none'; sandbox.txCatSuggestEl.innerHTML = ''; sandbox.txCatSuggestEl.onclick = null;
+  sandbox.announceLiveCalls = [];
+  sandbox.txCatSuggestUpdate();
+  assert.strictEqual(sandbox.txCatSuggestEl.style.display, 'block', '추천이 있으면 칩을 보여야 함');
+  assert.ok(sandbox.txCatSuggestEl.innerHTML.includes('카페'), '칩 문구에 추천 카테고리가 들어가야 함');
+  assert.strictEqual(sandbox.announceLiveCalls.length, 1, 'announceLive가 정확히 1번 불려야 함');
+  assert.ok(sandbox.announceLiveCalls[0].includes('카페'), 'announceLive 문구에도 추천 카테고리가 들어가야 함');
+});
+test('[실행형] txCatSuggestUpdate: 같은 추천이 계속 떠 있는 동안(디바운스된 재호출) 매번 다시 공지하지 않는다', () => {
+  sandbox._txCatSuggAnnounced = null;
+  sandbox.DB = { txns: [{ id: 't0', type: 'expense', date: '2026-01-01', category: '카페', memo: '스타벅스' }], recurrences: [] };
+  sandbox.txDraft = { type: 'expense', category: '식비', memo: '스타벅스' };
+  sandbox.txCatSuggestEl.style.display = 'none'; sandbox.txCatSuggestEl.innerHTML = ''; sandbox.txCatSuggestEl.onclick = null;
+  sandbox.announceLiveCalls = [];
+  sandbox.txCatSuggestUpdate();
+  sandbox.txCatSuggestUpdate();
+  sandbox.txCatSuggestUpdate();
+  assert.strictEqual(sandbox.announceLiveCalls.length, 1, '추천 값이 안 바뀌면 announceLive를 다시 부르면 안 됨(끊어 읽기 소음 방지)');
+});
+test('[실행형] txCatSuggestUpdate: 칩이 숨겨졌다가(유형 전환 등) 같은 추천으로 다시 뜨면 다시 공지한다', () => {
+  sandbox._txCatSuggAnnounced = null;
+  sandbox.DB = { txns: [{ id: 't0', type: 'expense', date: '2026-01-01', category: '카페', memo: '스타벅스' }], recurrences: [] };
+  sandbox.txDraft = { type: 'expense', category: '식비', memo: '스타벅스' };
+  sandbox.txCatSuggestEl.style.display = 'none'; sandbox.txCatSuggestEl.innerHTML = ''; sandbox.txCatSuggestEl.onclick = null;
+  sandbox.announceLiveCalls = [];
+  sandbox.txCatSuggestUpdate();
+  sandbox.txDraft.type = 'transfer'; // 이체로 전환되면 추천이 꺼짐(txCatSuggestUpdate의 splitOn/transfer 가드)
+  sandbox.txCatSuggestUpdate();
+  assert.strictEqual(sandbox.txCatSuggestEl.style.display, 'none', '이체 전환 시 칩이 숨겨져야 함');
+  sandbox.txDraft.type = 'expense'; // 다시 지출로 전환하면 같은 추천이 재등장
+  sandbox.txCatSuggestUpdate();
+  assert.strictEqual(sandbox.announceLiveCalls.length, 2, '칩이 한 번 사라졌다가 같은 추천으로 다시 뜨면 다시 공지해야 함');
+});
+test('[실행형] txCatSuggestUpdate: 추천이 없거나(메모 불일치) 분할 입력 중이거나 칩 엘리먼트가 이미 사라졌으면(시트 닫힘) announceLive를 부르지 않는다', () => {
+  sandbox._txCatSuggAnnounced = null;
+  sandbox.DB = { txns: [{ id: 't0', type: 'expense', date: '2026-01-01', category: '카페', memo: '스타벅스' }], recurrences: [] };
+  sandbox.announceLiveCalls = [];
+  sandbox.txDraft = { type: 'expense', category: '식비', memo: '전혀 다른 메모' };
+  sandbox.txCatSuggestUpdate();
+  sandbox.txDraft = { type: 'expense', category: '식비', memo: '스타벅스', splits: [{ category: 'a' }, { category: 'b' }] };
+  sandbox.txCatSuggestUpdate();
+  assert.strictEqual(sandbox.announceLiveCalls.length, 0, '추천이 없거나 분할 중이면 칩도 공지도 없어야 함');
+  sandbox.txDraft = { type: 'expense', category: '식비', memo: '스타벅스' };
+  sandbox.txCatSuggestMissing = true;
+  assert.doesNotThrow(() => sandbox.txCatSuggestUpdate(), '칩 엘리먼트가 사라졌어도(시트 닫힘 등) 안전하게 넘어가야 함');
+  sandbox.txCatSuggestMissing = false;
+  assert.strictEqual(sandbox.announceLiveCalls.length, 0, '칩 엘리먼트가 없는 경로는 announceLive를 부르지 않아야 함');
+});
+test('[실행형] recCatSuggestUpdate: 메모와 정확히 일치하는 과거 내역이 있으면 추천 칩을 띄우고 announceLive로 한 번 공지하며, 같은 추천이면 다시 공지하지 않는다', () => {
+  sandbox._recCatSuggAnnounced = null;
+  sandbox.DB = { txns: [{ id: 't0', type: 'expense', date: '2026-01-01', category: '관리비', memo: '월세' }], recurrences: [] };
+  sandbox.recDraft = { type: 'expense', category: '식비', memo: '월세' };
+  sandbox.recCatSuggestEl.style.display = 'none'; sandbox.recCatSuggestEl.innerHTML = ''; sandbox.recCatSuggestEl.onclick = null;
+  sandbox.announceLiveCalls = [];
+  sandbox.recCatSuggestUpdate();
+  assert.strictEqual(sandbox.recCatSuggestEl.style.display, 'block', '추천이 있으면 칩을 보여야 함');
+  assert.ok(sandbox.recCatSuggestEl.innerHTML.includes('관리비'), '칩 문구에 추천 카테고리가 들어가야 함');
+  assert.strictEqual(sandbox.announceLiveCalls.length, 1, 'announceLive가 정확히 1번 불려야 함');
+  sandbox.recCatSuggestUpdate();
+  assert.strictEqual(sandbox.announceLiveCalls.length, 1, '추천 값이 안 바뀌면 announceLive를 다시 부르면 안 됨');
+});
+test('[실행형] recApplyCatSuggest/txApplyCatSuggest: 추천을 적용해 칩을 닫은 뒤, 같은 추천이 다시 뜨면 다시 공지한다', () => {
+  setupTxSheetDB(); // renderTxSheet()가 assetPickBtn 등에서 DB.assets/DB.categories를 참조하므로 필요
+  sandbox.DB.txns = [{ id: 't0', type: 'expense', date: '2026-01-01', category: '카페', memo: '스타벅스' }];
+  sandbox._txCatSuggAnnounced = null; // 앞선 테스트에서 남은 값이 새지 않게(openTxSheet()이 매번 하는 리셋과 동일)
+  sandbox.txDraft = { type: 'expense', category: '식비', date: '2026-01-01', amount: 1000, fromAssetId: 'a1', toAssetId: null, repeat: false, memo: '스타벅스' };
+  sandbox.txCatSuggestEl.style.display = 'none'; sandbox.txCatSuggestEl.innerHTML = ''; sandbox.txCatSuggestEl.onclick = null;
+  sandbox.announceLiveCalls = [];
+  sandbox.txCatSuggestUpdate();
+  sandbox.txApplyCatSuggest('카페'); // 적용 후 칩이 닫히고 _txCatSuggAnnounced도 리셋되어야 함
+  assert.strictEqual(sandbox.txDraft.category, '카페', '적용하면 draft.category가 추천값으로 바뀌어야 함');
+  assert.strictEqual(sandbox.txCatSuggestEl.style.display, 'none', '적용 후 칩은 닫혀야 함');
+  sandbox.txDraft.category = '식비'; sandbox.txDraft.memo = '스타벅스'; // 같은 메모로 다시 추천 재등장 상황을 재현
+  sandbox.txCatSuggestUpdate();
+  assert.strictEqual(sandbox.announceLiveCalls.length, 2, '적용으로 한 번 닫힌 뒤 같은 추천이 다시 뜨면 또 공지해야 함');
 });
 
 /* ---------- duplicateTx: 복제(빠른 재입력) (app-evolve cycle193 advance) ----------

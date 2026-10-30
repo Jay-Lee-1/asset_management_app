@@ -1,15 +1,8 @@
 {
   "cycle": 272,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 267,
-      "phase": "develop",
-      "timestamp": "2026-10-29T16:50:00.000Z",
-      "summary": "부채 상환 what-if 결과 영역이 announceLive() 관례를 따르지 않아 스크린리더 사용자가 결과 변화를 못 듣는 공백을 발견. debtWhatIfUpdate()에 announceLive 호출 추가. APP_VERSION 1.47.276->1.47.277, sw.js CACHE v543->v544. node test/run.js 2231/2231 통과.",
-      "commit": null
-    },
     {
       "cycle": 267,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-30T11:30:00.000Z",
       "summary": "critique(cycle271) 계획대로 예산 월중 페이스 기반 초과 예상 경고를 구현. logic.js에 projectedMonthSpend(spent,y,m,today) 순수 함수 신설(경과일 비율 선형 투사로 월말 예상 지출 산출, today가 대상 달이 아니면 null) — 계획이 제안한 'projectedSpendForCategory(c,y,m)' 래퍼 대신, spendByCategory 집계가 이미 끝난 호출부(openSpendAnalysis 행/homeAlerts)가 그 결과(r.v)를 직접 넘기는 더 단순한 시그니처를 택함(불필요한 재조회 없음). openSpendAnalysis() 카테고리 행 + 전체 예산 카드에 budget&&!over&&projected>budget일 때만 '이대로면 N원 · 예산 초과 예상' 캡션 추가(var(--gold), goalBehind 등 '선제 경고'와 같은 색). homeAlerts()에 budgetPaceWarn/budgetPaceWarnMulti 신설 — budgetOver와 겹치지 않게 r.v<=b(아직 미초과)만 보고, 단일/복수 collapsing·notifyAlertInfo 월단위 key+count 패턴(budgetOver/budgetOverMulti와 동일)을 재사용, home-alert 카드엔 'mat'(gold) 클래스로 '이미 넘음'(budgetOver, 기본색)과 시각적으로 구분. 격리 vm 테스트 컨텍스트(spendAnalysisCtx)가 TODAY 전역을 새로 요구하게 돼 ctx.TODAY='2026-06-15' 추가. test/run.js에 projectedMonthSpend 경계(월초/월말/과거달/미래달/today 없음) 6건, homeAlerts budgetPaceWarn(Multi) 단일/복수/budgetOver와 미중복/경계(투사==한도) 3건, notifyAlertInfo budgetPaceWarn(Multi) key/count 2건, openSpendAnalysis 캡션 노출/비노출 2건 추가. APP_VERSION 1.47.286->1.47.287, sw.js CACHE v553->v554. node test/run.js 2287/2287 통과, 메인 스크립트(블록2) node --check 통과. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 272,
+      "phase": "develop",
+      "timestamp": "2026-10-30T12:40:00.000Z",
+      "summary": "메모 기반 카테고리 추천 칩(txCatSuggestUpdate/recCatSuggestUpdate, cycle270 advance)이 #txCatSuggest/#recCatSuggest의 style.display 토글+innerHTML 대입만으로 떴다 사라지는 시각 전용 변화라, debtWhatIfUpdate(cycle267)가 이미 고친 것과 같은 공백(스크린리더가 추천이 뜬 것을 알 길이 없음)이 있던 것을 발견. 두 함수에 announceLive() 공지를 추가 — 직전에 공지한 추천값을 모듈 변수(_txCatSuggAnnounced/_recCatSuggAnnounced)로 기억해, 같은 추천이 디바운스 재호출로 계속 뜨는 동안은 매번 다시 읽어주지 않고 추천이 바뀌거나(또는 칩이 숨겨졌다 다시 뜰 때만) 공지한다. openTxSheet/openRecSheet/txApplyCatSuggest/recApplyCatSuggest에서도 이 캐시를 리셋. test/run.js FUNCTIONS/LETS 목록에 txMemoInput/txCatSuggestUpdate/txApplyCatSuggest/recMemoInput/recCatSuggestUpdate/recApplyCatSuggest·_txCatSuggT/_recCatSuggT를 추가(이전엔 이 함수들이 직접 테스트되지 않고 있었음)하고 새 announceLive 동작 테스트 7건 추가. APP_VERSION 1.47.287->1.47.288, sw.js CACHE v554->v555. node test/run.js 2293/2293 통과, 메인 스크립트(블록2) node --check 통과.",
       "commit": null
     }
   ]
