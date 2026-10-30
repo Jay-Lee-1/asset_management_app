@@ -1,15 +1,8 @@
 {
   "cycle": 269,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 264,
-      "phase": "review",
-      "timestamp": "2026-10-29T05:07:49.002Z",
-      "summary": "cycle264 develop 커밋(5c7baeb, 쓰이지 않는 스와이프-공개 UI 흔적 제거: .swipe.open .swipe-content CSS 규칙, let openSwipeRow=null; 전역 변수, .swipe-actions button CSS 셀렉터 조각)을 검토. grep으로 세 심볼 모두 index.html 전체에서 완전히 제거됐고 잔존 참조가 없음을 확인 — .swipe/.swipe-content 자체(거래 행 구조)는 그대로 유지돼 거래 내역 UI에 영향 없음. APP_VERSION(1.47.271)과 sw.js CACHE(v538) 동기화 확인. node test/run.js 독립 재실행 결과 2201/2201 통과(회귀 없음), node --check(sw.js/test/run.js) 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 264,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-30T00:13:51.333Z",
       "summary": "통합검색(openGlobalSearch/globalSearchBody)이 거래·자산·카테고리까지만 가로질러 찾고 목표(DB.goals)는 전혀 검색 대상이 아니던 공백을 발견 — matchTxnQuery/matchAssetQuery/matchCatQuery처럼 각 그룹마다 전용 매칭 함수가 있는데 목표만 없어, 목표 이름으로 아무리 입력해도 통합검색에 잡히지 않았음. logic.js에 matchCatQuery와 동일한 규칙(대소문자 무시 includes + NFC 정규화 + 공백 AND, searchTerms 재사용)의 순수 함수 matchGoalQuery(g,q) 신설(g가 null/name 없음이면 빈 문자열로 안전 처리). index.html globalSearchBody()에 goalsAll=(DB.goals||[]).filter(g=>matchGoalQuery(g,q)) 추가하고, capGroup/moreBtn 관례(GS_CAP=20, GS_EXPAND.goals)를 다른 세 그룹과 동일하게 적용, 빈 결과 판정(!txnsAll.length&&...)에도 !goalsAll.length 추가. 목표 행은 openGoalsList()의 manage-row 마크업(avatar target 아이콘, 진행률 pct, 달성/지남 뱃지)을 그대로 재사용해 onclick=ackGoalAchieved(g.id)로 이동(목표 목록과 동일한 진입점). 검색창 placeholder/빈 상태 안내 문구에도 목표를 추가. index.html/logic.js 변경이라 APP_VERSION 1.47.281->1.47.282, sw.js CACHE v548->v549 동기 범프. test/run.js에 matchGoalQuery 단위 테스트 8건(빈 검색어/부분일치/대소문자/불일치/NFD 저장·검색 양방향/공백 AND/goal이 null이거나 name 없을 때 안전)을 matchCatQuery 테스트와 동일한 패턴으로 추가하고, 기존 통합검색 교차 그룹 테스트 2건(스타벅스 매칭/전기요금 그룹 분리)에 matchGoalQuery도 포함시켜 확장(2246->2254). node test/run.js 2254/2254 통과, node --check(logic.js/sw.js/test/run.js) 통과 — 메인 인라인 스크립트는 test/run.js의 extractMainScript가 그대로 로드/실행하므로 테스트 통과 자체가 구문 검증을 포함함.",
+      "commit": null
+    },
+    {
+      "cycle": 269,
+      "phase": "review",
+      "timestamp": "2026-10-30T01:00:00.000Z",
+      "summary": "cycle269 develop 커밋(0bf9baa, 통합검색에 matchGoalQuery 배선해 목표 그룹 추가)을 검토. goalProgress(g,goalHistoryFor(g),TODAY)/goalIsOverdue(g.targetDate,p.achieved,TODAY) 호출이 openGoalsList()와 동일한 시그니처·인자임을 코드 대조로 확인(검색 결과 행은 ownerBadge/assetGone/assetBroken/hasUnknown/targetDate 캡션을 생략한 더 단순한 변형이지만 이는 의도된 지면 축소일 뿐 버그 아님). capGroup/GS_EXPAND.goals/gsMore('goals') 키가 txns/assets/cats와 동일한 패턴으로 충돌 없이 배선됨을 확인. matchGoalQuery는 logic.js에 있어(index.html 메인 스크립트의 FUNCTIONS 화이트리스트 대상이 아님) cycle268 advance의 assetQtyLogToCSV와 달리 별도 등록이 필요 없음을 확인. node test/run.js 독립 재실행 결과 2254/2254 통과, node --check(logic.js/sw.js/test/run.js) 통과, APP_VERSION(1.47.282)/sw.js CACHE(v549) 동기화 확인. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
