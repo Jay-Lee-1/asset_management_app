@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.289';
+const APP_VERSION='1.47.290';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4062,7 +4062,7 @@ function assetBodyHTML(){
          <div class="avatar ${ty.cls}">${svg(ty.icon)}</div>
          <div style="flex:1;min-width:0"><div class="nm"><span class="nmt">${esc(a.name)}</span>${a.includeInTotal?'':'<span class="chipmini own-x">미포함</span>'}</div>
            <div class="sub"><span class="chipmini ${ownerChipClass(a.owner)}">${esc(a.owner)}</span><span>${assetSubline(a)}</span></div></div>
-         <div class="row-acts"><button type="button" class="act-btn" aria-label="${esc(a.name)} 내역 보기" onclick="event.stopPropagation();openAssetHistory('${a.id}')">${svg('receipt')}</button></div>
+         <div class="row-acts"><button type="button" class="act-btn" aria-label="${esc(a.name)} 복제" onclick="event.stopPropagation();duplicateAsset('${a.id}')">${svg('copy')}</button><button type="button" class="act-btn" aria-label="${esc(a.name)} 내역 보기" onclick="event.stopPropagation();openAssetHistory('${a.id}')">${svg('receipt')}</button></div>
          <div class="val"><div class="k num ${a.type==='debt'?'minus':''}">${won(val)}</div>${showEval?(rateUnknown(a)?'<div class="mini warn">가격 미확인</div>':'<div class="s">평가액</div>'):''}</div></div>`;
      }).join('')+`</div>`;
    });
@@ -4345,6 +4345,27 @@ function openAssetSheet(id){
  if(editing&&isMarketValued(asDraft))asDraft._origQty=asDraft.type==='fx'?(asDraft.fxAmount||0):asDraft.type==='gold'?(asDraft.goldDon||0):asDraft.type==='crypto'?(asDraft.cryptoQty||0):(asDraft.stockQty||0); /* qtyBasisWarn/costBasisField가 수량 증가(추가매수) 경고를 판단할 기준값 — saveAsset()은 이걸 쓰지 않고 DB.assets[i]의 실제 원본값을 다시 읽는다 */
  snapDraft('as');
  renderAssetSheet(editing);
+}
+/* 복제(빠른 재등록): 거래의 duplicateTx(아래 5222행 부근)와 같은 이유로, 가족 구성원별 비슷한
+ * 저축 계좌나 조건이 같은 복수의 대출처럼 반복되는 자산 등록 상황에서 유형·귀속·화폐 등 구조적
+ * 설정은 그대로 가져오고, 보유수량·매입원가·만기일·잔액처럼 자산마다 달라야 할 값은 비워 새로
+ * 입력하게 한다. 잔액(baseAmount/amountKRW)을 그대로 복제해 저장하면 서로 다른 두 자산이 똑같은
+ * 잔액으로 보여 혼란을 주므로 비우고, renderAssetSheet(false)로 열어 saveAsset()이 입력값을
+ * 신규 기준값으로 쓰게 한다(editing=false → 신규 저장 경로). payoffAckAt(부채 완납 ack)처럼 원본
+ * 자산 고유의 상태도 새 자산엔 아직 해당하지 않으므로 지운다. */
+function duplicateAsset(id){
+ const a=DB.assets.find(x=>x.id===id);if(!a)return;
+ const d=JSON.parse(JSON.stringify(a));
+ d.id=null;delete d.order;
+ d.name=(d.name||'')+' 복사';
+ delete d.baseAmount;delete d.amountKRW;delete d.maturityDate;delete d.payoffAckAt;
+ if(isMarketValued(d)){
+   delete d.costBasis;
+   const qtyField=d.type==='fx'?'fxAmount':d.type==='gold'?'goldDon':d.type==='crypto'?'cryptoQty':'stockQty';
+   d[qtyField]=0;
+ }
+ asDraft=d;snapDraft('as');renderAssetSheet(false);
+ setTimeout(()=>{const n=$('asName');if(n){n.focus();n.select()}},300);
 }
 function syncAssetInputs(){const d=asDraft;const g=id=>$(id);
  if(g('asName'))d.name=(g('asName').value||'').trim().normalize('NFC');

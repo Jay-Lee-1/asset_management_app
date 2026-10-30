@@ -1,33 +1,8 @@
 {
   "cycle": 272,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "자산 복제(duplicateAsset) 추가 — 거래의 duplicateTx와 기능 대등성 공백 해소",
-    "why": "거래는 반복 입력 마찰을 줄이기 위한 전용 복제 기능(duplicateTx, index.html:5222, 원장 행의 .dup-btn에서 호출, index.html:4836)이 있지만, 자산에는 동등한 기능이 없다. openAssetSheet(id)(index.html:4340)는 기존 항목 수정 또는 완전히 빈 상태의 신규 생성(asDraft={type:'cash',...} 기본값)만 지원한다. 가족 구성원별로 비슷한 저축 계좌 여러 개를 추가하거나, 같은 종목의 복수 증권 하위 계좌, 조건이 같은 여러 대출을 추가하는 등 실제로 반복되는 입력 상황에서 매번 유형/소유자/화폐/이자율 등을 처음부터 다시 입력해야 한다. duplicateTx가 이미 해결한 것과 동일한 유형의 반복 입력 문제가 자산 쪽에는 방치되어 있는, 사소하지 않은 기능 대등성 공백이다.",
-    "approach": "1) openAssetSheet 근처에 duplicateAsset(id) 신설: JSON.parse(JSON.stringify(...))로 자산을 복제하고 id=null, name에 ' 복사' 접미사(포커스시 선택되어 바로 수정 가능)를 붙인다. stockQty/cryptoQty/fxAmount/goldDon 등 수량 필드는 0으로, costBasis/maturityDate/_dispAmt 등 잔액·내역 파생 필드와 _catUserTouched류 draft 전용 스크래치 필드는 제거한다. type/owner/currency/includeInTotal/이자율·채무 조건 필드는 보존한다. pension 유형의 _pensionAutoExcl 등 자동 상태도 복제하지 않는다(4344 로직 참고). 2) renderAssetSheet(false)로 열어 saveAsset()이 새 id를 발급하고 사용자가 잔액을 직접 확인/입력하게 한다(원본과 동일한 표시 잔액을 그대로 복제해 저장하면 혼란을 주므로). 3) 자산 목록 행 또는 상세 시트 헤더에 거래 행의 .dup-btn과 동일한 아이콘/aria-label 패턴으로 복제 버튼을 배선한다. 4) test/run.js에 duplicateAsset 테스트 추가: 새 id 발급, 원본 비변경, 수량/costBasis/잔액 파생 필드 제거 확인, type/owner/currency 보존 확인, pension 자동상태 미보존 확인. 5) APP_VERSION과 sw.js CACHE를 함께 올리고, 커밋 전 node test/run.js와 메인 스크립트 블록 node --check를 통과시킨다."
-  },
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 267,
-      "phase": "review",
-      "timestamp": "2026-10-29T17:10:00.000Z",
-      "summary": "cycle267 develop 커밋(39e77fe)을 검토. 실제 버그 발견: announceLive가 디바운스 없이 keystroke마다 불려 접근성 안티패턴이 됨. 220ms 디바운스(_debtWhatIfAnnT) 관례를 적용해 수정. node test/run.js 2232/2232 통과. APP_VERSION 1.47.278, sw.js CACHE v545.",
-      "commit": null
-    },
-    {
-      "cycle": 267,
-      "phase": "critique",
-      "timestamp": "2026-10-29T18:11:26.759Z",
-      "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, yearSummary()의 yoy 객체가 수입/지출/저축률엔 전년대비 delta를 계산하지만 investGain(cycle266 advance)엔 YoY 비교가 없는 공백을 발견. 채택 계획(yearSummary에 pyInvestGain/yoy.investDelta 추가 + 원 단위 증감 배지 노출)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
-    {
-      "cycle": 267,
-      "phase": "advance",
-      "timestamp": "2026-10-29T19:08:00.000Z",
-      "summary": "연간 결산 투자 실현손익 카드에 전년대비(YoY) 배지 추가 — yearSummary.yoy.investDelta(원 단위 증감)를 계산하고 openYearReview 카드에 렌더. 단위/렌더 테스트 추가, APP_VERSION/CACHE 동기 범프.",
-      "commit": null
-    },
     {
       "cycle": 268,
       "phase": "develop",
@@ -159,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-30T14:10:00.000Z",
       "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, 거래에는 전용 복제 기능(duplicateTx, .dup-btn)이 있지만 자산에는 동등한 기능이 없는 공백을 발견 — openAssetSheet(id)은 수정 또는 완전 신규 생성만 지원해, 비슷한 계좌/종목/대출을 여러 개 추가할 때 매번 유형·소유자·화폐·이자율을 처음부터 입력해야 함. 백업/복원 에러 처리, 홈 알림 체계, 통합검색, 차트 접근성, 지출분석 UI는 모두 이미 성숙한 상태로 확인되어 제외. 채택 계획(duplicateAsset(id) 신설 — 수량/costBasis/잔액 파생 필드 제거 후 renderAssetSheet(false)로 열기 + 복제 버튼 배선 + 테스트)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 272,
+      "phase": "advance",
+      "timestamp": "2026-10-30T15:29:28.374Z",
+      "summary": "critique(cycle272) 계획대로 자산 복제(duplicateAsset) 기능을 구현. openAssetSheet 근처에 duplicateAsset(id) 신설 — id/order 제거, name에 \" 복사\" 접미사, 잔액(baseAmount/amountKRW)·만기일(maturityDate)·부채 완납 ack(payoffAckAt) 제거, isMarketValued(fx/gold/stock/crypto)면 costBasis 제거 및 수량 필드(stockQty 등) 0으로 초기화, 그 외(type/owner/currency/includeInTotal/maturityTargetId 등 구조적 설정)는 보존. renderAssetSheet(false)로 열어 saveAsset()이 신규 저장 경로를 타게 함. 자산 목록 행(row-acts)에 거래 .dup-btn과 동일한 패턴의 복제 act-btn 배선. test/run.js에 duplicateAsset 테스트 6건 추가(cash/savings/stock/debt 필드 보존·제거, 존재하지 않는 id, duplicateAsset→saveAsset 왕복). APP_VERSION 1.47.289->1.47.290, sw.js CACHE v556->v557. node test/run.js 2302/2302 통과, 메인 스크립트(블록2) node --check 통과. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

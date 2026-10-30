@@ -215,7 +215,7 @@ const FUNCTIONS = [
   'expandRec', 'allTxns', 'txnsByDateInRange', 'spendByCategory', 'spendTrend', 'spendTrendBadge', 'incomeByCategory', 'incomeTrend', 'incomeTrendBadge', 'histSumTotals',
   'yearSpendByCategory', 'yearIncomeByCategory', 'yearRealizedGain', 'yearMonthlyNet', 'savingsRate', 'yearSummary', 'openYearReview',
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'buildExpenseBarHtml', 'expenseBreakdownCard', 'incomeBreakdownCard',
-  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asOpenCur', 'asCur', 'asToggleNeg', 'openAssetSheet', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'mergeRemoteDataIntoLocal', 'snapshotLocalDeviceFields', 'restoreLocalDeviceFields', 'fmtAmt', 'fmtQty',
+  'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asOpenCur', 'asCur', 'asToggleNeg', 'openAssetSheet', 'duplicateAsset', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'mergeRemoteDataIntoLocal', 'snapshotLocalDeviceFields', 'restoreLocalDeviceFields', 'fmtAmt', 'fmtQty',
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges', 'shouldRetryCloudSync',
   'pullCloud', 'afterCloudAuth', 'resolveCloudPullRemote', 'pushCloud', 'measureCloudClockSkew',
   'shouldPullCloud', 'pullCloudIfStale', 'appIsOpen',
@@ -11978,6 +11978,67 @@ test('openAssetSheet: DB에 저장돼 있던 기존 연금 자산을 열어 곧�
   sandbox.lastTypePickerOnPick('cash');
   assert.strictEqual(sandbox.asDraft.type, 'cash');
   assert.strictEqual(sandbox.asDraft.includeInTotal, true, '연금을 거치지 않고 곧장 다른 종류로 바꿔도(만기/전환 편집의 실사용 흐름) 총자산 제외가 자동으로 풀려야 함');
+});
+
+/* ---------- duplicateAsset: 복제(빠른 재등록) (app-evolve cycle272 advance) ----------
+ * 거래엔 전용 복제 기능(duplicateTx)이 있지만 자산에는 없어, 비슷한 계좌/종목/대출을 여러 개
+ * 등록할 때마다 유형·귀속·화폐를 처음부터 다시 골라야 하던 기능 대등성 공백을 메운다.
+ * 유형/귀속/화폐/총자산포함 여부는 그대로 가져오고, 잔액·보유수량·매입원가·만기일처럼 자산마다
+ * 달라야 할 값은 비워 saveAsset()의 신규 저장 경로(editing=false)로 새로 입력받는다. */
+test('duplicateAsset: cash 자산은 id가 null로 바뀌고 잔액(baseAmount)은 지워지되 type/owner/currency/includeInTotal은 그대로 복사된다', () => {
+  sandbox.DB = { assets: [{ id: 'a1', type: 'cash', owner: '나', currency: 'KRW', includeInTotal: true, name: '우리은행 통장', baseAmount: 500000, order: 3 }] };
+  sandbox.duplicateAsset('a1');
+  assert.strictEqual(sandbox.asDraft.id, null, '복제 draft의 id는 null이어야 saveAsset()이 신규 저장 경로를 탐');
+  assert.strictEqual('order' in sandbox.asDraft, false, '복제 draft엔 원본의 order가 남아있지 않아야 함(saveAsset의 신규 저장 분기가 새로 매김)');
+  assert.strictEqual(sandbox.asDraft.name, '우리은행 통장 복사', '이름엔 접미사가 붙어 포커스 시 바로 수정할 수 있어야 함');
+  assert.strictEqual('baseAmount' in sandbox.asDraft, false, '잔액을 그대로 복제하면 두 통장이 같은 잔액으로 보여 혼란을 주므로 지워야 함');
+  assert.strictEqual(sandbox.asDraft.type, 'cash');
+  assert.strictEqual(sandbox.asDraft.owner, '나');
+  assert.strictEqual(sandbox.asDraft.currency, 'KRW');
+  assert.strictEqual(sandbox.asDraft.includeInTotal, true);
+  assert.strictEqual(sandbox.DB.assets[0].baseAmount, 500000, '원본 레코드는 건드리지 않아야 함(딥클론)');
+  assert.strictEqual(sandbox.DB.assets[0].order, 3, '원본 order도 그대로 유지돼야 함');
+});
+test('duplicateAsset: savings 자산은 만기일(maturityDate)이 지워지지만 maturityTargetId(만기 시 이체할 통장)는 구조적 설정이라 그대로 복사된다', () => {
+  sandbox.DB = { assets: [{ id: 'a2', type: 'savings', owner: '나', currency: 'KRW', includeInTotal: true, name: '청년적금', baseAmount: 1000000, maturityDate: '2026-12-31', maturityTargetId: 'a1' }] };
+  sandbox.duplicateAsset('a2');
+  assert.strictEqual('maturityDate' in sandbox.asDraft, false, '만기일은 자산마다 달라야 하므로 복제하지 않아야 함');
+  assert.strictEqual(sandbox.asDraft.maturityTargetId, 'a1', '만기 시 이체할 통장은 유형과 함께 묶이는 구조적 설정이라 그대로 가져와야 함');
+});
+test('duplicateAsset: fx/gold/stock/crypto(시세 평가형) 자산은 보유수량이 0으로, 매입원가(costBasis)는 지워진다', () => {
+  sandbox.DB = { assets: [{ id: 'a3', type: 'stock', owner: '나', currency: 'KRW', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 10, costBasis: 700000 }] };
+  sandbox.duplicateAsset('a3');
+  assert.strictEqual(sandbox.asDraft.stockQty, 0, '보유 수량은 자산마다 달라야 하므로 0으로 비워 새로 입력받아야 함');
+  assert.strictEqual('costBasis' in sandbox.asDraft, false, '매입원가도 자산마다 달라야 하므로 지워야 함');
+  assert.strictEqual(sandbox.asDraft.stockCode, '005930', '종목코드 자체는 구조적 식별 정보라 그대로 가져와야 함');
+});
+test('duplicateAsset: 부채(debt)는 완납 ack 플래그(payoffAckAt)를 새 자산엔 해당하지 않는 원본 고유 상태라 복제하지 않는다', () => {
+  sandbox.DB = { assets: [{ id: 'a4', type: 'debt', owner: '나', currency: 'KRW', includeInTotal: true, name: '학자금 대출', amountKRW: 0, payoffAckAt: 123456 }] };
+  sandbox.duplicateAsset('a4');
+  assert.strictEqual('payoffAckAt' in sandbox.asDraft, false, '완납 ack는 원본 자산의 상태라 새로 만든 자산엔 아직 해당하지 않아야 함');
+  assert.strictEqual('amountKRW' in sandbox.asDraft, false, '부채 금액도 잔액식 자산이라 지워야 함');
+});
+test('duplicateAsset: 존재하지 않는 id는 asDraft를 건드리지 않고 그대로 return한다', () => {
+  sandbox.DB = { assets: [] };
+  sandbox.asDraft = null;
+  sandbox.duplicateAsset('nope');
+  assert.strictEqual(sandbox.asDraft, null, '존재하지 않는 자산은 draft를 세팅하지 않아야 함');
+});
+test('duplicateAsset → saveAsset: 복제본을 저장하면 원본은 그대로 남고 독립된 새 자산이 추가된다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { owners: ['나'], assets: [{ id: 'a5', type: 'cash', owner: '나', currency: 'KRW', includeInTotal: true, name: '토스뱅크', baseAmount: 200000, order: 1 }], txns: [], recurrences: [], goals: [], settings: {} };
+  sandbox._balCache.clear();
+  sandbox.duplicateAsset('a5');
+  sandbox.asDraft.name = '토스뱅크 복사';
+  sandbox.asDraft._dispAmt = 300000;
+  sandbox.saveAsset(false);
+  assert.strictEqual(sandbox.DB.assets.length, 2, '원본 1건 + 복제 신규 저장 1건으로 총 2건이어야 함');
+  assert.strictEqual(sandbox.DB.assets[0].id, 'a5', '원본 레코드는 그대로 남아야 함');
+  assert.strictEqual(sandbox.DB.assets[0].baseAmount, 200000, '원본 잔액은 바뀌지 않아야 함');
+  const dup = sandbox.DB.assets[1];
+  assert.notStrictEqual(dup.id, 'a5', '복제본은 원본과 다른 새 id를 받아야 함');
+  assert.strictEqual(dup.name, '토스뱅크 복사');
+  assert.strictEqual(dup.baseAmount, 300000, '복제본은 새로 입력한 잔액으로 저장돼야 함');
 });
 
 /* ---------- rateUnknown/saveAsset: 새로 등록한 fx/gold/stock 자산이 시세 미동기화 상태에서
