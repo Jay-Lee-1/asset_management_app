@@ -1,15 +1,8 @@
 {
   "cycle": 274,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 269,
-      "phase": "review",
-      "timestamp": "2026-10-30T01:00:00.000Z",
-      "summary": "cycle269 develop 커밋(0bf9baa, 통합검색에 matchGoalQuery 배선)을 검토. openGoalsList()와 동일한 goalProgress/goalIsOverdue 시그니처 사용 확인, capGroup/GS_EXPAND.goals 충돌 없이 배선됨 확인. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 269,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-30T14:40:00.000Z",
       "summary": "거래(duplicateTx)·자산(duplicateAsset)엔 전용 복제 기능이 있지만 반복(recurrence)에는 없어, 조건이 비슷한 구독 등을 여러 개 등록할 때마다 유형·주기·요일·자산을 매번 처음부터 다시 골라야 하던 기능 대등성 공백을 발견. editRec 근처에 duplicateRec(id) 신설 — id=null, active=true(원본이 중지 상태여도 새로 시작), startDate=TODAY로 리셋(원본 시작일을 그대로 두면 과거부터 회차가 생김), 그 시작일에 종속된 endDate/count와 원본 고유의 skip/edits/confirmedDates는 비움(saveRec()의 신규 저장 분기가 어차피 덮어쓰지만 폼 상태도 명시적으로 비움). openRecManage() 행의 row-acts에 duplicateAsset과 동일한 act-btn+svg(copy) 복제 버튼 배선. test/run.js FUNCTIONS 목록에 duplicateRec 추가하고 필드 리셋/보존, _recCatSuggAnnounced 리셋, 존재하지 않는 id, duplicateRec→saveRec 저장 테스트 총 4건 추가(테스트 작성 중 vm cross-realm 배열이라 deepStrictEqual([],[])가 실패하는 걸 발견해 길이 비교로 교체 — 기존 cycle 패턴과 동일). APP_VERSION 1.47.292->1.47.293, sw.js CACHE v559->v560. node test/run.js 2326/2326 통과, 메인 스크립트(1417~10927행) node --check 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 274,
+      "phase": "review",
+      "timestamp": "2026-10-30T21:09:37.000Z",
+      "summary": "cycle274 develop 커밋(0478ff9, 반복(recurrence)에 duplicateRec 추가)을 검토. 신규 저장 경로(wasEditing=!!d.id가 false일 때 push 분기)가 skip/edits/confirmedDates/autoConfirm/varying을 항상 처음부터 재계산해 덮어쓰므로, duplicateRec이 이 필드들을 명시적으로 비우는 것은 안전망일 뿐 실제로 막는 버그는 없음을 확인. svg('copy')+act-btn+row-acts 복제 버튼이 duplicateAsset 행과 동일한 패턴이고 row-acts는 이미 다른 목록(자산/카테고리/소유자)에서도 버튼 2개를 같은 gap:7px로 지원함을 확인. _recCatSuggAnnounced 리셋도 editRec과 동일. node test/run.js 2326/2326 통과, 메인 스크립트(블록2) node --check 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
