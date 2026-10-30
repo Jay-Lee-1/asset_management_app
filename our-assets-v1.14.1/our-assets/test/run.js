@@ -15790,6 +15790,59 @@ test('[실행형] splitFieldHTML: 각 분할 항목마다 메모 입력(id=split
   assert.ok(html.includes('oninput="txSplitMemo(0,this)"'), '메모 입력이 txSplitMemo(i,this)로 배선돼야 함');
   assert.ok(html.includes('마트&quot;할인&quot;'), '기존 메모 값을 esc()로 이스케이프해 value에 되돌려줘야 함(따옴표로 인한 속성 깨짐 방지)');
 });
+/* ---------- splitHintUpdate/txSplitAmt: 분할 금액 입력 중 합계 힌트가 실시간으로 갱신되지 않던 공백
+ * (app-evolve cycle274 critique/advance) — txSplitAmt(i,el)는 커서 위치를 지키려고 renderTxSheet()를
+ * 다시 부르지 않는데, '합계가 모자라요/많아요/일치해요' 힌트(splitFieldHTML의 .psub)는 그 전체
+ * 재렌더 때만 다시 계산됐다. endCondFields의 EndHint와 같은 패턴으로 id="txSplitHint"를 달고
+ * splitHintUpdate(d)가 textContent/색상만 즉시 갱신하도록 고쳤다. */
+test('[실행형] splitHintUpdate: 합계가 전체 금액과 일치하면 힌트 문구와 색상을 기본으로 되돌린다', () => {
+  const ctx = { $: (id) => ctx._els[id] || null, _els: {}, comma: (n) => Math.round(n || 0).toLocaleString('ko-KR') };
+  vm.createContext(ctx);
+  vm.runInContext(extractFunction('splitHintUpdate'), ctx, { filename: 'splitHintUpdate-match-real' });
+  const el = { textContent: '이전 문구', style: { color: 'var(--expense)' } };
+  ctx._els.txSplitHint = el;
+  ctx.splitHintUpdate({ amount: 5000, splits: [{ amount: 3000 }, { amount: 2000 }] });
+  assert.strictEqual(el.textContent, '합계가 전체 금액과 일치해요', '합계가 맞으면 일치 문구로 갱신해야 함');
+  assert.strictEqual(el.style.color, '', '합계가 맞으면 경고색을 지워야 함');
+});
+test('[실행형] splitHintUpdate: 합계가 모자라거나 많으면 차액과 경고색을 함께 갱신한다', () => {
+  const ctx = { $: (id) => ctx._els[id] || null, _els: {}, comma: (n) => Math.round(n || 0).toLocaleString('ko-KR') };
+  vm.createContext(ctx);
+  vm.runInContext(extractFunction('splitHintUpdate'), ctx, { filename: 'splitHintUpdate-diff-real' });
+  const el = { textContent: '', style: { color: '' } };
+  ctx._els.txSplitHint = el;
+  ctx.splitHintUpdate({ amount: 5000, splits: [{ amount: 3000 }, { amount: 1000 }] });
+  assert.strictEqual(el.textContent, '합계가 전체 금액과 1,000원 모자라요', '모자라는 차액을 그대로 보여줘야 함');
+  assert.strictEqual(el.style.color, 'var(--expense)', '합계가 안 맞으면 경고색을 입혀야 함');
+  ctx.splitHintUpdate({ amount: 5000, splits: [{ amount: 3000 }, { amount: 3000 }] });
+  assert.strictEqual(el.textContent, '합계가 전체 금액과 1,000원 많아요', '넘치는 차액도 그대로 보여줘야 함');
+  assert.strictEqual(el.style.color, 'var(--expense)', '넘칠 때도 경고색을 유지해야 함');
+});
+test('[실행형] splitHintUpdate: #txSplitHint가 없거나(다른 시트) splits가 배열이 아니면 아무 것도 하지 않는다', () => {
+  const ctx = { $: () => null, comma: (n) => String(n) };
+  vm.createContext(ctx);
+  vm.runInContext(extractFunction('splitHintUpdate'), ctx, { filename: 'splitHintUpdate-noop-real' });
+  assert.doesNotThrow(() => ctx.splitHintUpdate({ amount: 5000, splits: [{ amount: 3000 }] }), '힌트 엘리먼트가 없으면 조용히 끝나야 함');
+});
+test('[실행형] txSplitAmt: 금액을 반영한 뒤 splitHintUpdate를 호출해 재렌더 없이 힌트를 즉시 갱신한다', () => {
+  const ctx = {
+    $: (id) => ctx._els[id] || null,
+    _els: {},
+    comma: (n) => Math.round(n || 0).toLocaleString('ko-KR'),
+    txDraft: { amount: 5000, splits: [{ category: '식비', amount: 3000 }, { category: '생활용품', amount: 0 }] },
+  };
+  vm.createContext(ctx);
+  vm.runInContext(
+    [extractFunction('num'), extractFunction('fmtAmt'), extractFunction('splitHintUpdate'), extractFunction('txSplitAmt')].join('\n'),
+    ctx, { filename: 'txSplitAmt-real' }
+  );
+  const hintEl = { textContent: '', style: { color: '' } };
+  ctx._els.txSplitHint = hintEl;
+  const amtEl = { value: '2,000' };
+  ctx.txSplitAmt(1, amtEl);
+  assert.strictEqual(ctx.txDraft.splits[1].amount, 2000, '입력값을 해당 split의 amount에 반영해야 함');
+  assert.strictEqual(hintEl.textContent, '합계가 전체 금액과 일치해요', 'renderTxSheet를 다시 부르지 않고도 힌트가 최신 합계로 갱신돼야 함');
+});
 /* ---------- saveTx/saveRec: expense/income에 자산 선택 없이 저장되던 버그 (app-evolve cycle81 develop) ----------
  * transfer/saving은 fromAssetId/toAssetId가 없으면 '보내는·받는 자산을 선택해 주세요' 토스트로
  * 막았지만, expense/income은 이 가드가 전혀 없이 d.type==='expense'?d.toAssetId=null:... 로 남은

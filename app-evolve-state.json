@@ -1,19 +1,8 @@
 {
-  "cycle": 274,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "분할 거래(splits) 금액 입력 중 합계 힌트가 실시간으로 갱신되지 않는 공백 해소",
-    "why": "txSplitAmt(i,el)는 입력값을 txDraft.splits에 반영하고 fmtAmt(el)로 그 입력칸만 포맷할 뿐 renderTxSheet()를 다시 부르지 않는다(커서 위치 보존 의도). 그런데 '합계가 전체 금액과 N원 모자라요/많아요/일치해요' 힌트(splitFieldHTML()의 .psub, id 없음)는 바로 이 renderTxSheet() 전체 재렌더 때만 다시 계산되므로, 분할 금액을 연속으로 고치는 동안 화면엔 직전 재렌더 시점의 낡은 문구가 계속 떠 있다가 다른 동작(항목 추가/삭제/분할 토글)으로 전체가 다시 그려질 때야 맞는 값으로 바뀐다. saveTx()가 저장 시점에 sum!==d.amount를 막아 데이터 자체는 안전하지만, 입력 중 사용자가 보는 안내는 계속 틀린 상태다. 같은 거래 입력 폼 안에 이미 동일한 클래스의 문제를 고친 선례가 있다 — 반복 종료일/횟수 힌트는 id=\"${pfx}EndHint\"를 달아두고 전체 재렌더 없이 $(pfx+'EndHint').textContent만 입력마다 즉시 갱신한다(5131/5148행). 분할 힌트만 이 관례를 안 따르고 있다.",
-    "approach": "splitFieldHTML()의 힌트 <div class=\"psub\">에 id(예: txSplitHint)를 부여. EndHint 갱신 함수와 동일한 패턴으로 splitHintUpdate(d) 신설 — txDraft.splits로 합계/diff를 다시 계산해 $('txSplitHint')가 있으면 textContent와 색상(diff!==0이면 var(--expense))만 갱신, 없으면(분할 미사용/다른 시트) 아무 것도 안 함. txSplitAmt(i,el) 끝에서 splitHintUpdate(txDraft) 호출 추가(전체 renderTxSheet 호출은 그대로 피해 커서 위치 보존). txSplitMemo는 합계에 영향 없으니 그대로 둔다. recDraft(반복)는 분할 기능이 없어 대상 아님. test/run.js에 splitHintUpdate 텍스트/색상 분기(일치·모자람·많음) 유닛 테스트 추가, 기존 saveTx 분할 검증 테스트는 그대로 둔다."
-  },
+  "cycle": 275,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 269,
-      "phase": "advance",
-      "timestamp": "2026-10-30T03:30:00.000Z",
-      "summary": "critique(cycle269) 계획대로 시세 동기화 반복 실패를 홈 알림 카드(staleRates)로 노출. homeAlerts()에 hasRateAssets()&&(DB.rates&&DB.rates.failStreak||0)>=3 조건으로 kind:'staleRates' 추가(cloudSyncError처럼 성공 시 failStreak=0으로 자연 소멸, OS 푸시 notifyAlertInfo 대상에선 제외). 카드 렌더 case 추가(rateUnknownTotal과 동일한 모양, openRateSheet() CTA). APP_VERSION 1.47.282->1.47.283, sw.js CACHE v549->v550. test/run.js에 homeAlerts 임계값 경계(failStreak 2/3) 테스트, 성공 후 리셋+hasRateAssets()=false 미표시 테스트, notifyAlertInfo가 staleRates를 OS 푸시 대상에서 제외하는(null 반환) 테스트 총 3건 추가. node test/run.js 2257/2257 통과, 블록2(메인 스크립트) node --check 통과. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 270,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-30T22:15:48.000Z",
       "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, 거래 입력의 분할(splits) 금액을 고칠 때 txSplitAmt(i,el)가 draft만 갱신하고 전체 재렌더(renderTxSheet)는 피해(커서 위치 보존), 그 결과 '합계가 전체 금액과 모자라요/많아요/일치해요' 힌트(splitFieldHTML의 .psub, id 없음)가 입력 중 내내 직전 재렌더 시점의 낡은 값으로 남아 있는 공백을 발견 — saveTx()의 저장 시 검증(sum!==d.amount 차단)이 있어 데이터는 안전하지만 화면 안내는 계속 틀려 있다. 같은 폼 안에 이미 동일한 클래스를 고친 선례가 있다(반복 종료일/횟수 힌트가 id=\"${pfx}EndHint\"로 전체 재렌더 없이 입력마다 즉시 textContent만 갱신). 백업/복원 에러 처리, 홈 알림 체계, 통합검색, 차트 접근성, 지출분석 UI, 거래·자산·반복 복제 기능 대등성, 메모 기반 카테고리 추천, 부채 이자율/상환 예상, 예산 페이스 경고, 시세 동기화 실패 알림은 모두 이미 성숙 확인되어 재차 제외. 채택 계획(splitFieldHTML 힌트에 id 부여 + splitHintUpdate(d) 신설 + txSplitAmt에서 전체 재렌더 대신 그 함수만 호출, EndHint와 동일한 패턴)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 274,
+      "phase": "advance",
+      "timestamp": "2026-10-30T23:09:03.500Z",
+      "summary": "critique(cycle274) 계획대로 분할(splits) 금액 입력 중 합계 힌트 실시간 갱신 공백을 해소. splitFieldHTML()의 힌트 <div class=\"psub\">에 id=txSplitHint 부여, EndHint(5131/5148행)와 동일한 패턴으로 splitHintUpdate(d) 신설 — $('txSplitHint')가 있으면 textContent/색상(diff!==0이면 var(--expense))만 즉시 갱신. txSplitAmt(i,el) 끝에서 splitHintUpdate(txDraft) 호출 추가(전체 renderTxSheet 재호출은 그대로 피해 커서 위치 보존). txSplitMemo/recDraft는 계획대로 변경 없음. test/run.js에 splitHintUpdate 일치/모자람/많음/엘리먼트 없을 때 noop 4건 + txSplitAmt가 splitHintUpdate를 호출해 재렌더 없이 힌트가 갱신됨을 확인하는 통합 테스트 1건 추가. APP_VERSION 1.47.293->1.47.294, sw.js CACHE v560->v561. node test/run.js 2330/2330 통과, 메인 스크립트(블록2) node --check 통과. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

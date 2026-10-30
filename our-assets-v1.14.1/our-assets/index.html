@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.293';
+const APP_VERSION='1.47.294';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5061,7 +5061,15 @@ function splitFieldHTML(d){
  return `<div class="field" style="margin-bottom:4px"><label>카테고리 분할 <button type="button" class="txt-btn" style="padding:2px 6px" onclick="txToggleSplit()">일반 입력으로</button></label></div>
   ${rows}
   <button type="button" class="btn btn-soft" style="margin-bottom:8px" onclick="txSplitAdd()">${svg('plus')} 분할 추가</button>
-  <div class="psub" style="margin:-4px 0 14px;${diff!==0?'color:var(--expense)':''}">${hint}</div>`;
+  <div class="psub" id="txSplitHint" style="margin:-4px 0 14px;${diff!==0?'color:var(--expense)':''}">${hint}</div>`;
+}
+/* 분할 금액 입력마다 합계 힌트만 즉시 갱신(재렌더 없이, 커서 위치 보존) — endCondFields의 EndHint와 동일한 패턴 */
+function splitHintUpdate(d){
+ const el=$('txSplitHint');if(!el||!Array.isArray(d.splits))return;
+ const total=d.splits.reduce((s,x)=>s+(Number(x.amount)||0),0);
+ const diff=(d.amount||0)-total;
+ el.textContent=diff===0?'합계가 전체 금액과 일치해요':`합계가 전체 금액과 ${comma(Math.abs(diff))}원 ${diff>0?'모자라요':'많아요'}`;
+ el.style.color=diff!==0?'var(--expense)':'';
 }
 /* 분할 켜기/끄기: 켜면 현재 카테고리·전체 금액을 그대로 첫 항목으로 삼고, 아직 안 쓴 카테고리 하나를
  * 두 번째 항목으로 추가해 최소 2개로 시작한다. 끄면 첫 항목의 카테고리를 다시 최상위 category로
@@ -5093,7 +5101,7 @@ function txSplitOpenCat(i){
  syncTxInputs();const d=txDraft;
  openCatPicker({kind:d.type,current:d.splits[i].category,back:renderTxSheet,onPick:c=>{d.splits[i].category=c;renderTxSheet()}});
 }
-function txSplitAmt(i,el){fmtAmt(el);txDraft.splits[i].amount=num(el)}
+function txSplitAmt(i,el){fmtAmt(el);txDraft.splits[i].amount=num(el);splitHintUpdate(txDraft)}
 function txSplitMemo(i,el){txDraft.splits[i].memo=el.value}
 /* tx/rec 폼이 공유하는 카테고리/자산/유형/주기/반복일 변경 로직. draft만 다르고 나머지는 동일해 헬퍼로 통합 */
 /* 피커로 카테고리를 직접 고르면(=메모 추천이 아니라 사용자 본인의 명시적 선택) _catUserTouched를
