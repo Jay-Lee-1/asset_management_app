@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.288';
+const APP_VERSION='1.47.289';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5212,7 +5212,7 @@ function editTx(id,recId,date){
  if(recId){recEditScope(recId,date,'edit');return}
  const t=DB.txns.find(x=>x.id===id);if(!t)return;
  if(t.adjust){openAdjustEdit(t);return} /* 잔액 조정: 전용 편집 */
- window._recCtx=null;_formScroll=0;txDraft=JSON.parse(JSON.stringify(t));snapDraft('tx');renderTxSheet();
+ window._recCtx=null;_formScroll=0;txDraft=JSON.parse(JSON.stringify(t));_txCatSuggAnnounced=null;snapDraft('tx');renderTxSheet();
 }
 /* 복제(빠른 재입력): 매일 반복되는 소액 비정형 지출(커피/점심/교통 등)을 유형→카테고리→
  * 메모→자산을 처음부터 다시 고르지 않고 기존 내역을 복사해 날짜만 오늘로 바꿔 새로 저장할
@@ -5224,7 +5224,7 @@ function duplicateTx(id){
  window._recCtx=null;_formScroll=0;_txFocusAmt=true;
  const d=JSON.parse(JSON.stringify(t));
  d.id=null;d.date=TODAY;delete d.confirmed;delete d.updatedAt;delete d.photo;
- txDraft=d;snapDraft('tx');renderTxSheet();
+ txDraft=d;_txCatSuggAnnounced=null;snapDraft('tx');renderTxSheet();
 }
 /* 잔액 조정 내역 전용 편집: 수지 포함 토글 (기본 제외) */
 function openAdjustEdit(t){
@@ -5315,7 +5315,7 @@ function recSave(){
 /* 반복 설정 — 지출/수입/이체/저축, 카테고리 선택 방식 */
 let recDraft=null;
 function openRecSheet(){_formScroll=0;recDraft={id:null,active:true,type:'expense',category:DB.categories.expense[0],amount:0,fromAssetId:firstCash(),toAssetId:null,freq:'monthly',day:1,startDate:ST.ledger.sel,endDate:null,count:null,skip:[],edits:{}};_recCatSuggAnnounced=null;snapDraft('rec');renderRecSheet()}
-function editRec(id){const r=DB.recurrences.find(x=>x.id===id);if(!r)return;_formScroll=0;recDraft=JSON.parse(JSON.stringify(r));snapDraft('rec');renderRecSheet()}
+function editRec(id){const r=DB.recurrences.find(x=>x.id===id);if(!r)return;_formScroll=0;recDraft=JSON.parse(JSON.stringify(r));_recCatSuggAnnounced=null;snapDraft('rec');renderRecSheet()}
 function syncRecInputs(){const _mm=$('rMemo');if(_mm)recDraft.memo=_mm.value;const sh=$('sheetScroll');if(sh)_formScroll=sh.scrollTop;const a=$('rAmt'),s=$('rStart');if(a)recDraft.amount=num(a);if(s&&s.value)recDraft.startDate=s.value}
 function recOpenCat(){_applyOpenCat(recDraft,syncRecInputs,renderRecSheet)}
 /* txMemoInput/txCatSuggestUpdate와 동일한 패턴(위 주석 참고) — 반복거래 입력에도 같은 메모 기반

@@ -211,7 +211,7 @@ const FUNCTIONS = [
   'deletedAssetHistoryExists', 'relinkDeletedAsset',
   'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'writeThemeCache', 'restoreBackup', 'storageOutcomeMsg', 'shouldWarnUnpersisted', 'shouldWarnStorageSize', 'toggleRecActive', 'toggleAdjustSurplus', 'touchSave',
   'sanitizeAmount', 'sanitizeBackup',
-  'saveRec', 'recHistFieldsChanged', 'recScheduleShapeChanged', 'pruneOrphanRecOverrides', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
+  'saveRec', 'editRec', 'recHistFieldsChanged', 'recScheduleShapeChanged', 'pruneOrphanRecOverrides', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
   'expandRec', 'allTxns', 'txnsByDateInRange', 'spendByCategory', 'spendTrend', 'spendTrendBadge', 'incomeByCategory', 'incomeTrend', 'incomeTrendBadge', 'histSumTotals',
   'yearSpendByCategory', 'yearIncomeByCategory', 'yearRealizedGain', 'yearMonthlyNet', 'savingsRate', 'yearSummary', 'openYearReview',
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'buildExpenseBarHtml', 'expenseBreakdownCard', 'incomeBreakdownCard',
@@ -221,7 +221,7 @@ const FUNCTIONS = [
   'shouldPullCloud', 'pullCloudIfStale', 'appIsOpen',
   'bytesToBase64', 'base64ToBytes', 'encodeCloudPayload', 'decodeCloudPayload',
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
-  'clampDay', 'saveTx', 'duplicateTx', 'assetBase', 'balancesUpTo', 'balanceAt', 'balancesAtDates', 'balanceAtFromMap',
+  'clampDay', 'saveTx', 'duplicateTx', 'editTx', 'assetBase', 'balancesUpTo', 'balanceAt', 'balancesAtDates', 'balanceAtFromMap',
   'addBalanceAdjust', 'updateBalanceAdjust', 'toggleConfirmTransfers', 'rollPendingTransfers',
   'assetEval', 'assetGainLoss', 'assetGainLossBadge', 'costBasisField', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'pkFilteredAssets', 'pkEmptyHtml', 'pkAssetQInput', 'refreshPkAssetList', 'movePkBlob', 'pkBack', 'pkChoose', 'pkPickAsset', 'sheetSlideBack', 'delOwner', 'doMaturity', 'openMaturity', 'firstCash',
   'detectStaleMarketValuedTxns', 'delBudget', 'saveBudget', 'openBudgetPrompt', 'openBigMinSheet',
@@ -14932,6 +14932,34 @@ test('[실행형] recApplyCatSuggest/txApplyCatSuggest: 추천을 적용해 칩�
   sandbox.txDraft.category = '식비'; sandbox.txDraft.memo = '스타벅스'; // 같은 메모로 다시 추천 재등장 상황을 재현
   sandbox.txCatSuggestUpdate();
   assert.strictEqual(sandbox.announceLiveCalls.length, 2, '적용으로 한 번 닫힌 뒤 같은 추천이 다시 뜨면 또 공지해야 함');
+});
+/* editTx/duplicateTx/editRec가 _txCatSuggAnnounced/_recCatSuggAnnounced를 리셋하지 않던 공백
+ * (app-evolve cycle272 review) — openTxSheet()/openRecSheet()(신규 입력 진입점)만 매번 이
+ * 캐시를 null로 리셋했을 뿐, 기존 내역을 열어 수정/복제하는 editTx/duplicateTx/editRec은 그대로
+ * 둬서, 직전에 "새 거래 추가" 시트에서 봤던 추천값이 그대로 남아 있는 채로 편집/복제 시트가
+ * 열렸다. 편집/복제 시트에서 메모를 고쳐 '처음' 뜨는 추천 칩이 우연히 그 잔여값과 같으면
+ * announceLive가 전혀 불리지 않아, 메모 입력란에 머무는 스크린리더 사용자가 칩이 생긴 것 자체를
+ * 놓치는 회귀였다(바로 위 cycle272 develop이 고친 것과 같은 종류의 공백). */
+test('editTx: txDraft를 불러올 때 _txCatSuggAnnounced를 리셋해 이전 시트의 잔여 공지값이 새지 않게 한다', () => {
+  setupTxSheetDB();
+  sandbox.DB.txns = [{ id: 't9', type: 'expense', date: '2026-01-05', category: '식비', memo: '마트' }];
+  sandbox._txCatSuggAnnounced = '식비'; // 직전 "새 거래 추가" 시트에서 '식비'를 공지했던 잔여값
+  sandbox.editTx('t9');
+  assert.strictEqual(sandbox._txCatSuggAnnounced, null, 'editTx는 openTxSheet()과 동일하게 announced 캐시를 리셋해야 함');
+});
+test('duplicateTx: 복제 draft를 세팅할 때 _txCatSuggAnnounced를 리셋해 이전 시트의 잔여 공지값이 새지 않게 한다', () => {
+  setupTxSheetDB();
+  sandbox.DB.txns = [{ id: 't10', type: 'expense', date: '2026-01-05', category: '식비', memo: '마트', fromAssetId: 'a1', toAssetId: null, amount: 1000 }];
+  sandbox._txCatSuggAnnounced = '식비';
+  sandbox.duplicateTx('t10');
+  assert.strictEqual(sandbox._txCatSuggAnnounced, null, 'duplicateTx도 openTxSheet()과 동일하게 announced 캐시를 리셋해야 함');
+});
+test('editRec: recDraft를 불러올 때 _recCatSuggAnnounced를 리셋해 이전 시트의 잔여 공지값이 새지 않게 한다', () => {
+  setupTxSheetDB();
+  sandbox.DB.recurrences = [{ id: 'r9', type: 'expense', freq: 'monthly', day: 5, category: '관리비', memo: '관리비', fromAssetId: 'a1', toAssetId: null, amount: 1000, startDate: '2026-01-05', endDate: null, count: null, skip: [], edits: {}, active: true }];
+  sandbox._recCatSuggAnnounced = '관리비';
+  sandbox.editRec('r9');
+  assert.strictEqual(sandbox._recCatSuggAnnounced, null, 'editRec은 openRecSheet()과 동일하게 announced 캐시를 리셋해야 함');
 });
 
 /* ---------- duplicateTx: 복제(빠른 재입력) (app-evolve cycle193 advance) ----------

@@ -1,6 +1,6 @@
 {
   "cycle": 272,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
     {
@@ -141,6 +141,13 @@
       "phase": "develop",
       "timestamp": "2026-10-30T12:40:00.000Z",
       "summary": "메모 기반 카테고리 추천 칩(txCatSuggestUpdate/recCatSuggestUpdate, cycle270 advance)이 #txCatSuggest/#recCatSuggest의 style.display 토글+innerHTML 대입만으로 떴다 사라지는 시각 전용 변화라, debtWhatIfUpdate(cycle267)가 이미 고친 것과 같은 공백(스크린리더가 추천이 뜬 것을 알 길이 없음)이 있던 것을 발견. 두 함수에 announceLive() 공지를 추가 — 직전에 공지한 추천값을 모듈 변수(_txCatSuggAnnounced/_recCatSuggAnnounced)로 기억해, 같은 추천이 디바운스 재호출로 계속 뜨는 동안은 매번 다시 읽어주지 않고 추천이 바뀌거나(또는 칩이 숨겨졌다 다시 뜰 때만) 공지한다. openTxSheet/openRecSheet/txApplyCatSuggest/recApplyCatSuggest에서도 이 캐시를 리셋. test/run.js FUNCTIONS/LETS 목록에 txMemoInput/txCatSuggestUpdate/txApplyCatSuggest/recMemoInput/recCatSuggestUpdate/recApplyCatSuggest·_txCatSuggT/_recCatSuggT를 추가(이전엔 이 함수들이 직접 테스트되지 않고 있었음)하고 새 announceLive 동작 테스트 7건 추가. APP_VERSION 1.47.287->1.47.288, sw.js CACHE v554->v555. node test/run.js 2293/2293 통과, 메인 스크립트(블록2) node --check 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 272,
+      "phase": "review",
+      "timestamp": "2026-10-30T13:30:00.000Z",
+      "summary": "cycle272 develop 커밋(8794f48, 메모 기반 카테고리 추천 칩에 announceLive 공지 추가)을 검토. openTxSheet/openRecSheet(신규 입력 진입점)만 _txCatSuggAnnounced/_recCatSuggAnnounced를 리셋하고, 기존 내역을 불러오는 editTx/duplicateTx/editRec은 리셋하지 않아, 직전 시트에서 공지됐던 추천값이 편집/복제 시트에 그대로 남아 있다가 우연히 같은 추천이 '처음' 뜰 때 announceLive가 조용히 스킵되는 실제 버그를 발견 — 바로 이 develop 커밋이 고친 것과 같은 종류의 스크린리더 공백. editTx/duplicateTx/editRec 세 곳에 캐시 리셋을 추가해 수정. test/run.js FUNCTIONS 목록에 editTx/editRec을 추가(이전엔 직접 호출 테스트가 없었음)하고 회귀 테스트 3건 추가. APP_VERSION 1.47.288->1.47.289, sw.js CACHE v555->v556. node test/run.js 2296/2296 통과, 메인 스크립트(블록2) node --check 통과.",
       "commit": null
     }
   ]
