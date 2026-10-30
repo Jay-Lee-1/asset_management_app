@@ -1,22 +1,8 @@
 {
   "cycle": 273,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 268,
-      "phase": "develop",
-      "timestamp": "2026-10-29T20:18:41.571Z",
-      "summary": "설정 > 저축 만기 알림(openMaturity) 목록이 soon 판정만으로 임박 뱃지를 달아 이미 지난(overdue) 만기도 임박으로 잘못 표시하던 공백을 발견. overdue 분기 추가(지난 만기는 mini warn+'만기 지남'). APP_VERSION 1.47.279->1.47.280, sw.js CACHE v546->v547. node test/run.js 2239/2239 통과.",
-      "commit": "a55ccf4"
-    },
-    {
-      "cycle": 268,
-      "phase": "review",
-      "timestamp": "2026-10-29T20:45:00.000Z",
-      "summary": "cycle268 develop 커밋(a55ccf4)을 검토. overdue 정의가 notifyAlertInfo/goalProgress의 기존 관례와 일치함을 확인. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 268,
       "phase": "critique",
@@ -148,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-30T16:40:00.000Z",
       "summary": "자산 삭제 시 snapshotAssetName이 fromAssetName/toAssetName(txns/recurrences)만 이름을 스냅샷해두고 DB.assetQtyLog(fx/gold/stock/crypto 보유수량 변경·매도 실현손익 기록)는 빼놓은 공백을 발견 — 매도(실현손익) CSV 내보내기(assetQtyLogToCSV, cycle268 advance)가 assetId로 자산을 못 찾으면 이름/유형/귀속을 빈 칸으로 남기는데(의도된 동작), 자산을 지운 뒤에는 그 실현손익 기록 자체는 여전히 유효한 과거 데이터인데도 어떤 자산이었는지가 영구히 사라졌다. snapshotAssetName/unsnapshotAssetName에 DB.assetQtyLog 순회를 추가해 fromAssetName과 동일하게 q.assetName을 남기고/지우고, relinkDeletedAsset에도 동일한 재연결 분기를 추가(동명·동종 자산으로 재등록하면 txns/recurrences처럼 assetId가 재연결되고 스냅샷은 지워짐). assetQtyLogToCSV는 자산을 못 찾을 때 이름만 q.assetName으로 대신하고 유형/귀속은 기존대로 빈 칸 유지. snapshotAssetName 자체는 balanceAt 체인 때문에 테스트에서 스텁 처리돼 직접 실행 테스트는 못 해(기존 관례와 동일) 텍스트 가드 1건을 추가하고, unsnapshotAssetName/relinkDeletedAsset/assetQtyLogToCSV는 직접 실행 테스트로 커버(기존 테스트 2건 확장 + 신규 4건, 총 6건 추가/확장). APP_VERSION 1.47.290->1.47.291, sw.js CACHE v557->v558. node test/run.js 2306/2306 통과, 메인 스크립트(블록2) node --check 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 273,
+      "phase": "review",
+      "timestamp": "2026-10-30T17:08:44.198Z",
+      "summary": "cycle273 develop 커밋(3b8f08a, 자산 삭제 후 매도(실현손익) CSV 자산명 공백 수정)을 검토. relinkDeletedAsset의 assetQtyLog 재연결 분기가 txns/recurrences와 동일한 가드(deletedType 타입 일치, DB.assets.some으로 유효 자산 여부 확인) 뒤에서만 실행되고 d가 이미 DB.assets에 push된 뒤 호출됨을 확인; assetQtyLogToCSV의 guard()가 폴백 이름(q.assetName)에도 동일하게 적용되어 CSV 인젝션 방어가 유지됨을 확인; deleteAssetsUndo/undo 경로는 snapshotAssetName/unsnapshotAssetName을 그대로 재사용해 별도 배선이 필요 없음을 확인. node test/run.js 2306/2306 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
