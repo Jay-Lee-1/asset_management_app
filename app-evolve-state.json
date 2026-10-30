@@ -1,15 +1,12 @@
 {
   "cycle": 273,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "부채 이자율 입력 + 이자 기준 상환 예상(amortization) 보조 지표 추가",
+    "why": "부채(debt) 자산은 금액만 추적하고 interestRate 필드 자체가 없다(grep으로 확인, index.html 전체에 interestRate/이자율/원리금 매칭 0건). debtWhatIfText/debtWhatIfUpdate(index.html:3193-3223)의 '다 갚는 날' 예상은 오직 최근 90일 실제 상환 추세(debtPayoffPtsFor→debtPayoffProjection/debtPayoffWhatIf)의 선형 추세일 뿐이라, 신규 대출(상환 이력 없음)이거나 최소상환만 하는 이자형 부채(원금이 거의 안 줄거나 늘어나는 경우)에는 추세 자체가 존재하지 않거나 왜곡된 예상을 준다. 이자율을 알고 있는 사용자(전세자금대출/신용대출 등)에게는 이자를 반영한 정직한 상환 기간 계산이 더 유용하고 신뢰할 수 있는 보조 지표가 된다.",
+    "approach": "1) asDraft에 선택 필드 interestRate(연 %, 숫자|null) 추가 — renderAssetSheet()의 공유 필드 블록(index.html:4423 if(['cash',...,'debt'].includes(d.type))) 안에서 d.type==='debt'일 때만 '연 이자율 (%, 선택)' 숫자 입력 하나 추가(기존 asSaleProceeds 필드처럼 선택·placeholder 안내문 포함, saveAsset에서 num()으로 파싱해 저장, 비우면 undefined로 삭제해 하위호환 유지). 2) 새 순수 함수 amortizationPayoffMonths(balance, monthlyPayment, annualRatePct) 신설(기존 debtPayoffProjection 근처) — monthlyPayment<=balance*annualRatePct/12/100이면 null(영원히 못 갚음) 반환, 아니면 표준 상환개월수 공식(n = -log(1 - r*P/A)/log(1+r), r=월이자율)으로 계산, annualRatePct가 0/null이면 단순 balance/monthlyPayment로 폴백. 3) debtWhatIfUpdate(assetId)에서 a.interestRate가 있으면 기존 추세 기반 문구(debtWhatIfText) 아래에 보조 문구 한 줄 추가 — '연 X% 이자 반영 시 매달 Y원 상환하면 약 Z개월' 식, 추가 납입액은 기존 debtWhatIfExtra 입력을 재사용(월 상환액 = 현재 자산 잔액 기반 최근 평균 상환액 추정 대신, 간단히 debtWhatIfExtra가 0이면 숨김 처리해 '얼마씩 갚을지 모르면 계산 안 함'으로 범위를 좁힘 — 과도한 가정 금지). announceLive 패턴은 기존 debtWhatIfUpdate의 디바운스 공지에 이어붙여 재사용. 4) test/run.js에 amortizationPayoffMonths 경계 테스트(이자>상환액→null, 이자 0→단순 나눗셈과 일치, 정상 상환, annualRatePct 미지정) 추가. APP_VERSION/sw.js CACHE 버전 올리고 node test/run.js, node --check 통과 확인."
+  },
   "history": [
-    {
-      "cycle": 268,
-      "phase": "critique",
-      "timestamp": "2026-10-29T21:30:00.000Z",
-      "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, 매도 실현손익 집계(realizedGainForSale/totalRealizedGain/yearRealizedGain)가 화면으로만 보이고 CSV 내보내기(CSV_KIND_META)에는 길이 없는 공백을 발견. 채택 계획(assetQtyLogToCSV 신설 + CSV_KIND_META에 gainCsv 추가 + exportData 배선)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 268,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-30T17:08:44.198Z",
       "summary": "cycle273 develop 커밋(3b8f08a, 자산 삭제 후 매도(실현손익) CSV 자산명 공백 수정)을 검토. relinkDeletedAsset의 assetQtyLog 재연결 분기가 txns/recurrences와 동일한 가드(deletedType 타입 일치, DB.assets.some으로 유효 자산 여부 확인) 뒤에서만 실행되고 d가 이미 DB.assets에 push된 뒤 호출됨을 확인; assetQtyLogToCSV의 guard()가 폴백 이름(q.assetName)에도 동일하게 적용되어 CSV 인젝션 방어가 유지됨을 확인; deleteAssetsUndo/undo 경로는 snapshotAssetName/unsnapshotAssetName을 그대로 재사용해 별도 배선이 필요 없음을 확인. node test/run.js 2306/2306 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 273,
+      "phase": "critique",
+      "timestamp": "2026-10-30T17:45:00.000Z",
+      "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, 부채(debt) 자산에 interestRate 필드 자체가 없어(전체 매칭 0건) debtWhatIfUpdate의 '다 갚는 날' 예상이 오직 최근 90일 실제 상환 추세(선형)에만 의존하는 공백을 발견 — 상환 이력이 없는 신규 대출이나 이자형 최소상환 부채에는 추세가 없거나 왜곡된 예상을 줌. 백업/복원 에러 처리, 홈 알림 체계, 통합검색, 차트 접근성, 지출분석 UI는 이미 성숙 확인되어 재차 제외. 채택 계획(asDraft에 선택 interestRate 필드 + amortizationPayoffMonths 순수 함수 신설 + debtWhatIfUpdate에 이자 반영 보조 문구)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
