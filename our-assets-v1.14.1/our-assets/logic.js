@@ -542,6 +542,17 @@ function matchCatQuery(c,q){
  if(!terms.length)return true;
  return terms.every(term=>normHay.includes(term));
 }
+/* 목표 이름 검색 — matchCatQuery와 동일한 규칙(대소문자 무시 includes + NFC 정규화 + 공백 AND).
+ * 통합검색(globalSearchBody, index.html)이 거래·자산·카테고리까지만 가로질러 찾고 목표는 빠져
+ * 있던 공백을 메운다(app-evolve cycle269 develop) — 목표 이름은 카테고리처럼 문자열 하나뿐이라
+ * matchAssetQuery처럼 부가 필드를 haystack에 더할 필요가 없다. */
+function matchGoalQuery(g,q){
+ if(!q)return true;
+ const normHay=String(g&&g.name||'').normalize('NFC').toLowerCase();
+ const terms=searchTerms(q.normalize('NFC').toLowerCase());
+ if(!terms.length)return true;
+ return terms.every(term=>normHay.includes(term));
+}
 /* 계좌(자산) 단위 거래내역 필터 — assetId가 없으면(전체) 항상 통과, 있으면 보내거나 받은 쪽 중 하나라도 일치해야 함 */
 function matchesAssetId(t,assetId){
  if(!assetId)return true;

@@ -6698,20 +6698,54 @@ test('matchCatQuery: 검색어를 띄어 쓰면 두 단어가 모두 포함돼�
   assert.strictEqual(sandbox.matchCatQuery('경조사비', '경조 외식'), false);
 });
 
+/* ---------- matchGoalQuery: 목표 이름 검색도 matchCatQuery와 동일한 규칙(대소문자 무시
+ * includes + NFC 정규화 + 공백 AND) ---------- 통합검색이 거래/자산/카테고리까지만 가로질러
+ * 찾고 목표는 빠져 있던 공백을 메운다(app-evolve cycle269 develop) */
+test('matchGoalQuery: 빈 검색어는 항상 매칭된다', () => {
+  assert.strictEqual(sandbox.matchGoalQuery({ name: '내 집 마련' }, ''), true);
+});
+test('matchGoalQuery: 이름 일부만 입력해도 부분일치로 찾을 수 있다', () => {
+  assert.strictEqual(sandbox.matchGoalQuery({ name: '내 집 마련 자금' }, '집 마련'), true);
+});
+test('matchGoalQuery: 대소문자를 구분하지 않는다', () => {
+  assert.strictEqual(sandbox.matchGoalQuery({ name: 'Emergency Fund' }, 'emergency'), true);
+});
+test('matchGoalQuery: 일치하지 않으면 false다', () => {
+  assert.strictEqual(sandbox.matchGoalQuery({ name: '내 집 마련' }, 'xyz'), false);
+});
+test('matchGoalQuery: 목표명이 조합형(NFD)으로 저장돼 있어도 완성형(NFC) 검색어로 찾을 수 있다', () => {
+  assert.strictEqual(sandbox.matchGoalQuery({ name: '용돈'.normalize('NFD') }, '용돈'), true);
+});
+test('matchGoalQuery: 검색어가 조합형(NFD)이어도 완성형(NFC)으로 저장된 목표명을 찾을 수 있다', () => {
+  assert.strictEqual(sandbox.matchGoalQuery({ name: '용돈' }, '용돈'.normalize('NFD')), true);
+});
+test('matchGoalQuery: 검색어를 띄어 쓰면 두 단어가 모두 포함돼야 매칭된다(AND)', () => {
+  assert.strictEqual(sandbox.matchGoalQuery({ name: '내 집 마련 자금' }, '집 마련'), true);
+  assert.strictEqual(sandbox.matchGoalQuery({ name: '내 집 마련 자금' }, '집 유학'), false);
+});
+test('matchGoalQuery: goal이 없거나 name이 없어도 안전하게 false(빈 문자열)로 처리한다', () => {
+  assert.strictEqual(sandbox.matchGoalQuery(null, '집'), false);
+  assert.strictEqual(sandbox.matchGoalQuery({}, '집'), false);
+});
+
 /* ---------- 전역 통합검색(openGlobalSearch, index.html): 같은 검색어가 거래/자산/카테고리
  * 세 그룹에 걸쳐 있으면 세 함수(matchTxnQuery/matchAssetQuery/matchCatQuery) 모두가 독립적으로
  * 매칭해야 한다 — 한 입력으로 세 그룹을 동시에 가로질러 찾는 통합검색의 전제(app-evolve
  * cycle259 critique → advance)를 각 그룹의 매칭 함수 단위에서 검증한다. */
-test('전역 통합검색: 같은 단어("스타벅스")가 거래 메모·자산명·카테고리명에 각각 있으면 세 매칭 함수가 모두 true를 돌려준다', () => {
+test('전역 통합검색: 같은 단어("스타벅스")가 거래 메모·자산명·카테고리명·목표명에 각각 있으면 네 매칭 함수가 모두 true를 돌려준다', () => {
   const t = { memo: '스타벅스 강남점', category: '카페', fromAssetId: null, toAssetId: null };
   const a = { name: '스타벅스상품권', currency: null };
+  const g = { name: '스타벅스 카드 충전 목표' };
   assert.strictEqual(sandbox.matchTxnQuery(t, '스타벅스', []), true);
   assert.strictEqual(sandbox.matchAssetQuery(a, '스타벅스'), true);
   assert.strictEqual(sandbox.matchCatQuery('스타벅스정기구독', '스타벅스'), true);
+  assert.strictEqual(sandbox.matchGoalQuery(g, '스타벅스'), true);
 });
-test('전역 통합검색: 거래에만 있는 단어는 자산/카테고리 매칭 함수에선 매칭되지 않는다(그룹이 섞이지 않음)', () => {
+test('전역 통합검색: 거래에만 있는 단어는 자산/카테고리/목표 매칭 함수에선 매칭되지 않는다(그룹이 섞이지 않음)', () => {
   const t = { memo: '전기요금', category: '관리비', fromAssetId: null, toAssetId: null };
   const a = { name: '국민은행', currency: 'KRW' };
+  const g = { name: '내 집 마련' };
+  assert.strictEqual(sandbox.matchGoalQuery(g, '전기요금'), false);
   assert.strictEqual(sandbox.matchTxnQuery(t, '전기요금', []), true);
   assert.strictEqual(sandbox.matchAssetQuery(a, '전기요금'), false);
   assert.strictEqual(sandbox.matchCatQuery('식비', '전기요금'), false);

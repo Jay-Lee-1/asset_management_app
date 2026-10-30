@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.281';
+const APP_VERSION='1.47.282';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6034,23 +6034,25 @@ let _gsQT=null,GS_EXPAND={};
 function openGlobalSearch(){
  GS_EXPAND={};
  openSheet(`<h3>통합 검색</h3>
-  <div class="searchbar" style="margin-bottom:14px">${svg('search')}<div class="field-clear"><input id="gsQ" aria-label="통합 검색" placeholder="거래·자산·카테고리 검색" value="" oninput="gsQInput(this.value)"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('gsQ')">✕</button></div></div>
+  <div class="searchbar" style="margin-bottom:14px">${svg('search')}<div class="field-clear"><input id="gsQ" aria-label="통합 검색" placeholder="거래·자산·카테고리·목표 검색" value="" oninput="gsQInput(this.value)"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('gsQ')">✕</button></div></div>
   <div id="gsBody">${globalSearchBody('')}</div>`);
 }
 function gsQInput(v){clearTimeout(_gsQT);_gsQT=setTimeout(()=>{GS_EXPAND={};const b=$('gsBody');if(b)b.innerHTML=globalSearchBody(v)},220);}
 function gsMore(kind){GS_EXPAND[kind]=true;const b=$('gsBody');if(b)b.innerHTML=globalSearchBody($('gsQ')?$('gsQ').value:'');}
 function globalSearchBody(qRaw){
  const q=(qRaw||'').trim();
- if(!q)return `<div class="empty"><div class="ei">${svg('search')}</div><div class="et">거래·자산·카테고리를 한 번에 찾아요</div><div class="es">메모·카테고리·자산명·금액으로 검색해 보세요</div></div>`;
+ if(!q)return `<div class="empty"><div class="ei">${svg('search')}</div><div class="et">거래·자산·카테고리·목표를 한 번에 찾아요</div><div class="es">메모·카테고리·자산명·금액·목표명으로 검색해 보세요</div></div>`;
  const txnsAll=allTxns(RANGE_FROM,RANGE_TO).filter(t=>matchTxnQuery(t,q,DB.assets)).sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:0); /* DB.txns만 보면 반복거래(expandRec 가상 전개분)를 놓친다 — filteredHist와 같은 소스로 통일(app-evolve cycle260 advance) */
  const assetsAll=DB.assets.filter(a=>matchAssetQuery(a,q));
  const catsAll=[];
  ['expense','income','saving'].forEach(k=>DB.categories[k].filter(c=>matchCatQuery(c,q)).forEach(c=>catsAll.push({kind:k,name:c})));
- if(!txnsAll.length&&!assetsAll.length&&!catsAll.length)
+ const goalsAll=(DB.goals||[]).filter(g=>matchGoalQuery(g,q)); /* 통합검색이 거래·자산·카테고리까지만 가로질러 찾고 목표는 빠져 있던 공백을 메움(app-evolve cycle269 develop) */
+ if(!txnsAll.length&&!assetsAll.length&&!catsAll.length&&!goalsAll.length)
   return `<div class="empty"><div class="ei">${svg('search')}</div><div class="et">'${esc(q)}'와 일치하는 결과가 없어요</div><div class="es">다른 말로 검색해 보세요</div></div>`;
  const {shown:txns,remain:txnsRemain}=capGroup(txnsAll,GS_CAP,GS_EXPAND.txns);
  const {shown:assets,remain:assetsRemain}=capGroup(assetsAll,GS_CAP,GS_EXPAND.assets);
  const {shown:catsCapped,remain:catsRemain}=capGroup(catsAll,GS_CAP,GS_EXPAND.cats);
+ const {shown:goalsCapped,remain:goalsRemain}=capGroup(goalsAll,GS_CAP,GS_EXPAND.goals);
  const moreBtn=(kind,remain)=>remain>0?`<button class="hist-more" onclick="gsMore('${kind}')">더보기 <span class="hm-n">${remain}건 남음</span></button>`:'';
  let html='';
  if(txnsAll.length)html+=`<div class="menu-cap" style="margin-top:8px">거래 · ${txnsAll.length}건</div><div class="card">${txns.map(t=>txRowCore(t,{mode:false})).join('')}</div>${moreBtn('txns',txnsRemain)}`;
@@ -6065,6 +6067,11 @@ function globalSearchBody(qRaw){
  if(catsAll.length)html+=`<div class="menu-cap" style="margin-top:14px">카테고리 · ${catsAll.length}개</div><div class="card">${catsCapped.map(c=>
    `<div class="manage-row" tabindex="0" role="button" aria-label="${esc(c.name)} ${CAT_LABEL[c.kind]} 카테고리" onclick="openCatManage('${c.kind}')" onkeydown="rowKeydown(event,()=>openCatManage('${c.kind}'))"><div class="avatar ${catAv(c.kind)}" style="width:36px;height:36px;border-radius:11px">${catGlyph(c.kind,c.name,18,'tag')}</div><div class="mn">${esc(c.name)}</div><span class="chipmini">${CAT_LABEL[c.kind]}</span><div class="mc">${svg('chev')}</div></div>`
   ).join('')}</div>${moreBtn('cats',catsRemain)}`;
+ if(goalsAll.length)html+=`<div class="menu-cap" style="margin-top:14px">목표 · ${goalsAll.length}개</div><div class="card">${goalsCapped.map(g=>{
+   const p=goalProgress(g,goalHistoryFor(g),TODAY); /* openGoalsList() 행과 동일한 데이터·마크업(app-evolve cycle269 develop) */
+   const overdue=goalIsOverdue(g.targetDate,p.achieved,TODAY);
+   return `<div class="manage-row" tabindex="0" role="button" aria-label="${esc(g.name)} 목표 진행률 ${p.pct}%${overdue?' 목표일 지남':''}" onclick="ackGoalAchieved('${g.id}')" onkeydown="rowKeydown(event,()=>ackGoalAchieved('${g.id}'))"><div class="avatar a-save" style="width:36px;height:36px;border-radius:11px">${svg('target')}</div><div style="flex:1;min-width:0"><div class="mn">${esc(g.name)} ${p.achieved?'<span class="mini">달성</span>':overdue?'<span class="mini warn">지남</span>':''}</div><div class="msub">${comma(p.cur)} / ${comma(p.target)}원 · ${p.pct}%</div></div><div class="mc">${svg('chev')}</div></div>`;
+  }).join('')}</div>${moreBtn('goals',goalsRemain)}`;
  return html;
 }
 
