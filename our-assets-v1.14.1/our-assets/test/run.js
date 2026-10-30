@@ -223,14 +223,17 @@ const FUNCTIONS = [
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
   'clampDay', 'saveTx', 'duplicateTx', 'editTx', 'assetBase', 'balancesUpTo', 'balanceAt', 'balancesAtDates', 'balanceAtFromMap',
   'addBalanceAdjust', 'updateBalanceAdjust', 'toggleConfirmTransfers', 'rollPendingTransfers',
-  'assetEval', 'assetGainLoss', 'assetGainLossBadge', 'costBasisField', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'pkFilteredAssets', 'pkEmptyHtml', 'pkAssetQInput', 'refreshPkAssetList', 'movePkBlob', 'pkBack', 'pkChoose', 'pkPickAsset', 'sheetSlideBack', 'delOwner', 'doMaturity', 'openMaturity', 'firstCash',
+  'assetEval', 'assetGainLoss', 'assetGainLossBadge', 'costBasisField', 'interestRateField', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'pkFilteredAssets', 'pkEmptyHtml', 'pkAssetQInput', 'refreshPkAssetList', 'movePkBlob', 'pkBack', 'pkChoose', 'pkPickAsset', 'sheetSlideBack', 'delOwner', 'doMaturity', 'openMaturity', 'firstCash',
   'detectStaleMarketValuedTxns', 'delBudget', 'saveBudget', 'openBudgetPrompt', 'openBigMinSheet',
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards', 'openTidyAsset', 'openTidyList', 'tidyListSnooze',
   'debtsBehind', 'openDebtBehindList', 'debtsPaidOff', 'openDebtPaidOffList', 'ackDebtPayoff',
   // debtPayoffPtsFor/debtWhatIfText/debtWhatIfUpdate는 부채 상환 추가 납입 시뮬레이터(what-if,
   // app-evolve cycle262 advance) 구현 — assetBalCard가 debtPayoffPtsFor/debtWhatIfText를 직접
   // 호출하므로(debt 분기) 그 둘은 assetBalCard를 쓰는 어떤 sandbox에도 함께 올라가야 한다.
-  'debtPayoffPtsFor', 'debtWhatIfText', 'debtWhatIfUpdate',
+  // debtAmortSuffix는 이자율(interestRate) 기반 상환 개월수 보조 문구(amortizationPayoffMonths,
+  // app-evolve cycle273 advance) — assetBalCard/debtWhatIfUpdate 둘 다 debtWhatIfText 바로 뒤에
+  // 이어붙여 호출하므로 같은 이유로 함께 올라가야 한다.
+  'debtPayoffPtsFor', 'debtWhatIfText', 'debtAmortSuffix', 'debtWhatIfUpdate',
   'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate', 'histQInput', 'histOwnerSel', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'openCatHistory', 'openIncomeCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter', 'histClearTypeFilter',
   'genSalt', 'pbkdf2Hash', 'dbEncryptKey', 'encryptDbBlob', 'decryptDbBlob', 'genRecoveryCode', 'normRecoveryCode', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer', 'openConfirmTransfer',
   'renderLockView', 'openForgotPinSheet', 'doForgotPin', 'tickForgotPinWait',
@@ -2155,6 +2158,37 @@ test('debtPayoffWhatIf: 추가 납입액이 클수록 투사일이 더 빨라진
   const more = sandbox.debtPayoffWhatIf(pts, '2026-01-11', 300000).projectedDate; // +10000/일
   assert.ok(some < none, '추가 납입이 있으면 추가 없을 때보다 빨라야 함');
   assert.ok(more < some, '추가 납입이 더 크면 더 빨라야 함');
+});
+/* ---------- amortizationPayoffMonths: 이자율을 아는 부채의 원리금균등상환 개월수 (app-evolve
+ * cycle273 critique/advance) ---------- debtPayoffProjection/debtPayoffWhatIf(위)과 달리 상환
+ * 이력(추세) 없이 잔액·월 상환액·연 이자율만으로 바로 계산하는 순수 함수. */
+test('amortizationPayoffMonths: 잔액이 0 이하면(완납) 월 상환액/이자율과 무관하게 0', () => {
+  assert.strictEqual(sandbox.amortizationPayoffMonths(0, 100000, 5), 0);
+  assert.strictEqual(sandbox.amortizationPayoffMonths(-1, 100000, 5), 0);
+});
+test('amortizationPayoffMonths: 월 상환액이 0 이하면(얼마씩 갚을지 모름) null', () => {
+  assert.strictEqual(sandbox.amortizationPayoffMonths(1000000, 0, 5), null);
+  assert.strictEqual(sandbox.amortizationPayoffMonths(1000000, -1, 5), null);
+});
+test('amortizationPayoffMonths: 연 이자율이 없거나 0이면 이자 없는 단순 나눗셈(balance/monthlyPayment)으로 폴백한다', () => {
+  assert.strictEqual(sandbox.amortizationPayoffMonths(1000000, 100000, 0), 10);
+  assert.strictEqual(sandbox.amortizationPayoffMonths(1000000, 100000, null), 10);
+  assert.strictEqual(sandbox.amortizationPayoffMonths(1000000, 300000), 4, '연이자율 인자 자체를 안 넘겨도(undefined) 단순 나눗셈 폴백');
+});
+test('amortizationPayoffMonths: 월 이자(balance*r)가 월 상환액 이상이면(원금이 안 줄거나 늘어남) 추측하지 않고 null', () => {
+  // 연 12% = 월 1%, 잔액 1000만원의 월 이자 = 10만원. 월 상환액이 그 이하면 영원히 못 갚음.
+  assert.strictEqual(sandbox.amortizationPayoffMonths(10000000, 100000, 12), null, '월 상환액이 월 이자와 같으면(경계) null');
+  assert.strictEqual(sandbox.amortizationPayoffMonths(10000000, 90000, 12), null, '월 상환액이 월 이자보다 적으면 null');
+});
+test('amortizationPayoffMonths: 표준 원리금균등상환 공식으로 정상 계산한다(월 상환액이 월 이자보다 많으면)', () => {
+  // 연 12%(월 1%), 잔액 100만원, 월 상환액 10만원 → n=-log(1-0.01*1000000/100000)/log(1.01) ≈ 10.48 → 11개월
+  const months = sandbox.amortizationPayoffMonths(1000000, 100000, 12);
+  assert.strictEqual(months, 11);
+});
+test('amortizationPayoffMonths: 월 상환액이 클수록 걸리는 개월수가 줄어든다(단조성)', () => {
+  const slow = sandbox.amortizationPayoffMonths(1000000, 50000, 12);
+  const fast = sandbox.amortizationPayoffMonths(1000000, 200000, 12);
+  assert.ok(fast < slow, '월 상환액이 크면 더 빨리 갚아야 함');
 });
 /* ---------- debtNewlyPaidOff: 완납했지만 아직 ack(payoffAckAt) 안 된 부채 판정 (app-evolve cycle257 advance) ----------
  * goalNewlyAchieved와 정확히 같은 모양 — achieved는 debtPayoffProjection()의 반환값을 그대로 받는다. */
@@ -7279,6 +7313,27 @@ test('openAssetHistory: 이전에 다른 debt 자산을 보며 입력해둔 what
       assert.strictEqual(sandbox.announceLiveCalls[0], sandbox.debtWhatIfResultEl.textContent, 'announceLive에 공지되는 문구가 textContent에 쓴 문구와 정확히 같아야 함');
     } finally { restoreTimers(); }
   });
+  test('[실행형] debtWhatIfUpdate: 자산에 interestRate가 있으면 debtWhatIfText 뒤에 이자 반영 보조 문구(debtAmortSuffix)가 이어붙어 같은 textContent/announceLive로 공지된다', () => {
+    sandbox.TODAY = '2026-06-15';
+    sandbox.RANGE_FROM = '2023-01-01';
+    const to = sandbox.TODAY;
+    const txns = [-85, -75, -65, -55, -45, -35, -25, -15, -5].map((n, i) => ({
+      id: 'p' + i, date: sandbox.addDays(to, n), type: 'income', toAssetId: 'd1', amount: 30000,
+    }));
+    sandbox.DB = { assets: [{ id: 'd1', type: 'debt', interestRate: 10, baseAmount: 900000 }], txns, recurrences: [], settings: { confirmTransfers: false } };
+    sandbox.ST = { hist: { debtWhatIfExtra: 0 } };
+    sandbox.debtWhatIfExtraValue = '100,000';
+    sandbox.debtWhatIfResultEl.textContent = '';
+    sandbox.announceLiveCalls = [];
+    sandbox.setTimeout = (fn) => { fn(); return 'timer'; };
+    sandbox.clearTimeout = () => {};
+    try {
+      sandbox.debtWhatIfUpdate('d1');
+      // 잔액 630,000원(900,000 - 9×30,000), 연 10%, 매달 100,000원 → amortizationPayoffMonths(630000,100000,10)=7
+      assert.ok(sandbox.debtWhatIfResultEl.textContent.includes('연 10% 이자 반영: 매달 100,000원씩 갚으면 약 7개월'), `이자 반영 보조 문구가 textContent에 이어붙지 않음: ${sandbox.debtWhatIfResultEl.textContent}`);
+      assert.strictEqual(sandbox.announceLiveCalls[0], sandbox.debtWhatIfResultEl.textContent, 'announceLive도 이자 반영 보조 문구가 합쳐진 전체 텍스트를 그대로 공지해야 함');
+    } finally { restoreTimers(); }
+  });
   test('[실행형] debtWhatIfUpdate: 연속 입력마다 이전 announceLive 디바운스 타이머를 지우고 새로 하나만 건다(매 keystroke마다 스크린리더가 끊어 읽지 않도록)', () => {
     sandbox.TODAY = '2026-06-15';
     sandbox.RANGE_FROM = '2023-01-01';
@@ -10015,6 +10070,15 @@ test('sanitizeBackup: 자산의 보유수량 필드(fxAmount/goldDon/stockQty)�
   assert.strictEqual(data.assets[1].goldDon, 0);
   assert.strictEqual(fixedCount, 2);
 });
+test('sanitizeBackup: 부채의 연 이자율(interestRate)도 음수면 0으로 클램프한다(app-evolve cycle273 advance)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [],
+    assets: [{ id: 'd1', type: 'debt', owner: '나', interestRate: -5 }, { id: 'd2', type: 'debt', owner: '나', interestRate: 3.5 }],
+  });
+  assert.strictEqual(data.assets[0].interestRate, 0);
+  assert.strictEqual(data.assets[1].interestRate, 3.5, '정상 값은 그대로 둬야 함');
+  assert.strictEqual(fixedCount, 1);
+});
 /* ---------- sanitizeBackup: 저축 자산의 maturityDate도 반복거래 startDate/endDate와 동일하게
  * csvDateValid()로 형식/달력 유효성을 검증한다(app-evolve cycle127 advance). 만기일 없음은
  * 기존에도 정상 상태라(만기 미설정) 레코드를 버리지 않고 깨진 값만 null로 정규화한다. ---------- */
@@ -12092,6 +12156,20 @@ test('duplicateAsset → saveAsset: 복제본을 저장하면 원본은 그대�
   assert.strictEqual(dup.name, '토스뱅크 복사');
   assert.strictEqual(dup.baseAmount, 300000, '복제본은 새로 입력한 잔액으로 저장돼야 함');
 });
+test('saveAsset: 신규 등록한 부채에 asDraft.interestRate가 있으면 DB.assets에 그대로 저장되고, 수정 시에도 보존된다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { owners: ['나'], assets: [], txns: [], recurrences: [], goals: [], settings: {} };
+  sandbox._balCache.clear();
+  sandbox.asDraft = { type: 'debt', owner: '나', currency: 'KRW', includeInTotal: true, name: '신용대출', _dispAmt: 1000000, interestRate: 5.5 };
+  sandbox.saveAsset(false);
+  assert.strictEqual(sandbox.DB.assets.length, 1);
+  assert.strictEqual(sandbox.DB.assets[0].interestRate, 5.5, '신규 저장 시 interestRate가 그대로 저장돼야 함');
+  const id = sandbox.DB.assets[0].id;
+  sandbox.asDraft = JSON.parse(JSON.stringify(sandbox.DB.assets[0]));
+  sandbox.asDraft._dispAmt = 900000;
+  sandbox.saveAsset(true);
+  assert.strictEqual(sandbox.DB.assets.find(a => a.id === id).interestRate, 5.5, '수정 시에도 interestRate가 그대로 보존돼야 함');
+});
 
 /* ---------- rateUnknown/saveAsset: 새로 등록한 fx/gold/stock 자산이 시세 미동기화 상태에서
  * 조용히 ₩0으로 평가되던 버그 (cycle31 critique). assetEval()의 (R.x||0) 폴백은 '아직 시세를
@@ -12711,6 +12789,25 @@ test('syncAssetInputs: 매입 금액 입력을 costBasis로 저장하고, 비우
     input.value = '';
     sandbox.syncAssetInputs();
     assert.strictEqual('costBasis' in sandbox.asDraft, false, '비우면 0으로 남기지 않고 필드 자체를 지워야 undefined와 0을 구분하는 assetGainLoss가 정상 동작함');
+  } finally {
+    sandbox.$ = $orig;
+  }
+});
+/* ---------- syncAssetInputs: 부채(debt) 전용 연 이자율(interestRate) 입력 (app-evolve cycle273
+ * critique/advance) — costBasis와 같은 "선택 입력, 비우면 필드 자체를 지운다" 규약을 따른다.
+ * class="num" inputmode="decimal"(asFx/asGold와 동일)이라 num()이 아니라 parseFloat로 소수를
+ * 그대로 읽는다. ---------- */
+test('syncAssetInputs: 연 이자율 입력을 interestRate로 저장하고(소수 허용), 비우면 필드를 지운다', () => {
+  const $orig = sandbox.$;
+  const input = { value: '3.5' };
+  sandbox.$ = (id) => (id === 'asInterestRate' ? input : null);
+  try {
+    sandbox.asDraft = { type: 'debt', baseAmount: 900000 };
+    sandbox.syncAssetInputs();
+    assert.strictEqual(sandbox.asDraft.interestRate, 3.5, '소수 이자율이 그대로 저장돼야 함');
+    input.value = '';
+    sandbox.syncAssetInputs();
+    assert.strictEqual('interestRate' in sandbox.asDraft, false, '비우면 필드 자체를 지워야 amortizationPayoffMonths/debtAmortSuffix의 interestRate>0 가드가 정상 동작함');
   } finally {
     sandbox.$ = $orig;
   }
@@ -18098,6 +18195,21 @@ test('renderAssetSheet: savings 타입은 만기일 필드를 보여주고, cash
   const cashHtml = renderAsset({ type: 'cash', owner: '나', includeInTotal: true, name: '', baseAmount: 0 });
   assert.ok(!cashHtml.includes('id="asMat"'), 'cash 타입에는 만기일 필드가 없어야 함');
   assert.ok(!cashHtml.includes('id="asCostBasis"'), 'cash 타입에는 매입 원가 필드가 없어야 함(fx/gold/stock 전용)');
+});
+test('renderAssetSheet: debt 타입은 연 이자율 필드(asInterestRate)를 보여주고, cash/savings 타입은 없다(app-evolve cycle273 critique/advance)', () => {
+  const debtHtml = renderAsset({ type: 'debt', owner: '나', includeInTotal: true, name: '', baseAmount: 0 });
+  assert.ok(debtHtml.includes('id="asInterestRate"'), 'debt 타입에는 연 이자율 입력(asInterestRate)이 있어야 함');
+  assert.ok(debtHtml.includes('inputmode="decimal"'), '소수(예: 3.5%) 입력이 가능해야 함');
+  const cashHtml = renderAsset({ type: 'cash', owner: '나', includeInTotal: true, name: '', baseAmount: 0 });
+  assert.ok(!cashHtml.includes('id="asInterestRate"'), 'cash 타입에는 연 이자율 필드가 없어야 함(debt 전용)');
+  const savingsHtml = renderAsset({ type: 'savings', owner: '나', includeInTotal: true, name: '', baseAmount: 0 });
+  assert.ok(!savingsHtml.includes('id="asInterestRate"'), 'savings 타입에도 연 이자율 필드가 없어야 함');
+});
+test('interestRateField: 기존 interestRate 값이 있으면 입력란에 그대로(comma 없이) 채워진다', () => {
+  const html = sandbox.interestRateField({ type: 'debt', interestRate: 4.25 });
+  assert.ok(html.includes('value="4.25"'), '기존 이자율 값이 입력란에 그대로 채워져야 함');
+  const emptyHtml = sandbox.interestRateField({ type: 'debt' });
+  assert.ok(emptyHtml.includes('value=""'), 'interestRate가 없으면 빈 값이어야 함');
 });
 /* renameOwnerSheet/renameCatSheet는 FUNCTIONS(실제 실행) 목록 밖이라 renderAssetSheet의
  * asFx/asGold/asQty 검증과 같은 extractFunction() 소스 패턴 검증을 쓴다(app-evolve cycle148
@@ -24647,6 +24759,64 @@ test('[실행형] assetBalCard: ST.hist.debtWhatIfExtra가 양수면 what-if 입
   assert.ok(html.includes('value="300,000"'), '입력 필드가 ST.hist.debtWhatIfExtra를 comma 포맷으로 그대로 보여줘야 함');
   assert.ok(/매달 이만큼 더 갚으면 \d{2}\/\d{2}쯤 다 갚아요 \(약 \d+개월 빨라져요\)/.test(html), '추가 납입이 있으면 베이스라인보다 빨라진 개월수가 함께 떠야 함');
   ctx.ST = { hist: { debtWhatIfExtra: 0 } }; // 다음 테스트로 새어들지 않게 원복
+});
+/* debtAmortSuffix(이자율 기반 상환 개월수 보조 문구, app-evolve cycle273 critique/advance)는
+ * debtWhatIfText 바로 뒤에 이어붙여 같은 #debtWhatIfResult에 표시된다 — 위 what-if 테스트들과
+ * 같은 d1(baseAmount 900000, 9회×30000원 상환으로 잔액 630000) 픽스처를 그대로 재사용한다. */
+test('[실행형] assetBalCard: 부채에 interestRate가 없으면(기존 부채) debtWhatIfExtra가 양수여도 이자 반영 보조 문구가 섞이지 않는다', () => {
+  const ctx = assetBalCardCtx();
+  const to = '2026-06-15';
+  ctx.TODAY = to;
+  ctx.RANGE_FROM = '2023-01-01';
+  const txns = [-85, -75, -65, -55, -45, -35, -25, -15, -5].map((n, i) => ({
+    id: 'p' + i, date: ctx.addDays(to, n), type: 'income', toAssetId: 'd1', amount: 30000,
+  }));
+  ctx.DB = assetBalCardFixtureDB([{ id: 'd1', type: 'debt', baseAmount: 900000 }], txns);
+  ctx.ST = { hist: { debtWhatIfExtra: 100000 } };
+  const html = ctx.assetBalCard('d1', 'm3');
+  assert.ok(!html.includes('이자'), 'interestRate가 없는 부채는 이자 반영 문구 자체가 없어야 함');
+  ctx.ST = { hist: { debtWhatIfExtra: 0 } };
+});
+test('[실행형] assetBalCard: interestRate가 있어도 debtWhatIfExtra가 0(얼마씩 갚을지 모름)이면 이자 반영 보조 문구를 숨긴다(추측 금지)', () => {
+  const ctx = assetBalCardCtx();
+  const to = '2026-06-15';
+  ctx.TODAY = to;
+  ctx.RANGE_FROM = '2023-01-01';
+  const txns = [-85, -75, -65, -55, -45, -35, -25, -15, -5].map((n, i) => ({
+    id: 'p' + i, date: ctx.addDays(to, n), type: 'income', toAssetId: 'd1', amount: 30000,
+  }));
+  ctx.DB = assetBalCardFixtureDB([{ id: 'd1', type: 'debt', interestRate: 10, baseAmount: 900000 }], txns);
+  const html = ctx.assetBalCard('d1', 'm3'); // ST.hist.debtWhatIfExtra 기본값 0
+  assert.ok(!html.includes('이자'), 'debtWhatIfExtra=0이면 매달 얼마씩 갚을지 모르므로 이자 반영 문구를 보여주면 안 됨');
+});
+test('[실행형] assetBalCard: interestRate와 debtWhatIfExtra가 모두 있으면 원리금균등상환 공식으로 이자 반영 개월수를 보여준다', () => {
+  const ctx = assetBalCardCtx();
+  const to = '2026-06-15';
+  ctx.TODAY = to;
+  ctx.RANGE_FROM = '2023-01-01';
+  const txns = [-85, -75, -65, -55, -45, -35, -25, -15, -5].map((n, i) => ({
+    id: 'p' + i, date: ctx.addDays(to, n), type: 'income', toAssetId: 'd1', amount: 30000,
+  }));
+  ctx.DB = assetBalCardFixtureDB([{ id: 'd1', type: 'debt', interestRate: 10, baseAmount: 900000 }], txns);
+  ctx.ST = { hist: { debtWhatIfExtra: 100000 } };
+  const html = ctx.assetBalCard('d1', 'm3');
+  // 잔액 630,000원(900,000 - 9×30,000), 연 10%, 매달 100,000원 → amortizationPayoffMonths(630000,100000,10)=7
+  assert.ok(html.includes('연 10% 이자 반영: 매달 100,000원씩 갚으면 약 7개월'), `이자 반영 보조 문구가 기대와 다름: ${html}`);
+  ctx.ST = { hist: { debtWhatIfExtra: 0 } };
+});
+test('[실행형] assetBalCard: 월 상환액이 월 이자보다 적으면(영원히 못 갚음) "다 갚을 수 없어요" 문구를 보여준다(추측 투사 대신 정직하게)', () => {
+  const ctx = assetBalCardCtx();
+  const to = '2026-06-15';
+  ctx.TODAY = to;
+  ctx.RANGE_FROM = '2023-01-01';
+  const txns = [-85, -75, -65, -55, -45, -35, -25, -15, -5].map((n, i) => ({
+    id: 'p' + i, date: ctx.addDays(to, n), type: 'income', toAssetId: 'd1', amount: 30000,
+  }));
+  ctx.DB = assetBalCardFixtureDB([{ id: 'd1', type: 'debt', interestRate: 10, baseAmount: 900000 }], txns);
+  ctx.ST = { hist: { debtWhatIfExtra: 500 } }; // 잔액 630,000원의 월 이자(약 525원)보다 적은 월 상환액
+  const html = ctx.assetBalCard('d1', 'm3');
+  assert.ok(html.includes('이자가 매달 500원보다 많아 이렇게는 다 갚을 수 없어요'), `월 상환액이 이자보다 적을 때의 문구가 기대와 다름: ${html}`);
+  ctx.ST = { hist: { debtWhatIfExtra: 0 } };
 });
 test('[실행형] assetBalCard: debt 자산에 상환 활동이 전혀 없으면(추세 없음) "최근엔 줄어들고 있지 않아요"가 뜬다', () => {
   const ctx = assetBalCardCtx();

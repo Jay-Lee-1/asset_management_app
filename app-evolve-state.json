@@ -1,19 +1,8 @@
 {
-  "cycle": 273,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "부채 이자율 입력 + 이자 기준 상환 예상(amortization) 보조 지표 추가",
-    "why": "부채(debt) 자산은 금액만 추적하고 interestRate 필드 자체가 없다(grep으로 확인, index.html 전체에 interestRate/이자율/원리금 매칭 0건). debtWhatIfText/debtWhatIfUpdate(index.html:3193-3223)의 '다 갚는 날' 예상은 오직 최근 90일 실제 상환 추세(debtPayoffPtsFor→debtPayoffProjection/debtPayoffWhatIf)의 선형 추세일 뿐이라, 신규 대출(상환 이력 없음)이거나 최소상환만 하는 이자형 부채(원금이 거의 안 줄거나 늘어나는 경우)에는 추세 자체가 존재하지 않거나 왜곡된 예상을 준다. 이자율을 알고 있는 사용자(전세자금대출/신용대출 등)에게는 이자를 반영한 정직한 상환 기간 계산이 더 유용하고 신뢰할 수 있는 보조 지표가 된다.",
-    "approach": "1) asDraft에 선택 필드 interestRate(연 %, 숫자|null) 추가 — renderAssetSheet()의 공유 필드 블록(index.html:4423 if(['cash',...,'debt'].includes(d.type))) 안에서 d.type==='debt'일 때만 '연 이자율 (%, 선택)' 숫자 입력 하나 추가(기존 asSaleProceeds 필드처럼 선택·placeholder 안내문 포함, saveAsset에서 num()으로 파싱해 저장, 비우면 undefined로 삭제해 하위호환 유지). 2) 새 순수 함수 amortizationPayoffMonths(balance, monthlyPayment, annualRatePct) 신설(기존 debtPayoffProjection 근처) — monthlyPayment<=balance*annualRatePct/12/100이면 null(영원히 못 갚음) 반환, 아니면 표준 상환개월수 공식(n = -log(1 - r*P/A)/log(1+r), r=월이자율)으로 계산, annualRatePct가 0/null이면 단순 balance/monthlyPayment로 폴백. 3) debtWhatIfUpdate(assetId)에서 a.interestRate가 있으면 기존 추세 기반 문구(debtWhatIfText) 아래에 보조 문구 한 줄 추가 — '연 X% 이자 반영 시 매달 Y원 상환하면 약 Z개월' 식, 추가 납입액은 기존 debtWhatIfExtra 입력을 재사용(월 상환액 = 현재 자산 잔액 기반 최근 평균 상환액 추정 대신, 간단히 debtWhatIfExtra가 0이면 숨김 처리해 '얼마씩 갚을지 모르면 계산 안 함'으로 범위를 좁힘 — 과도한 가정 금지). announceLive 패턴은 기존 debtWhatIfUpdate의 디바운스 공지에 이어붙여 재사용. 4) test/run.js에 amortizationPayoffMonths 경계 테스트(이자>상환액→null, 이자 0→단순 나눗셈과 일치, 정상 상환, annualRatePct 미지정) 추가. APP_VERSION/sw.js CACHE 버전 올리고 node test/run.js, node --check 통과 확인."
-  },
+  "cycle": 274,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 268,
-      "phase": "advance",
-      "timestamp": "2026-10-29T22:40:00.000Z",
-      "summary": "critique(cycle268) 계획대로 매도(실현손익) 내역 CSV 내보내기를 구현. assetQtyLogToCSV 신설(9컬럼), CSV_KIND_META에 gainCsv 추가, exportData()/doExport() 배선. APP_VERSION 1.47.280->1.47.281, sw.js CACHE v547->v548. node test/run.js 2246/2246 통과. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 269,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-30T17:45:00.000Z",
       "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, 부채(debt) 자산에 interestRate 필드 자체가 없어(전체 매칭 0건) debtWhatIfUpdate의 '다 갚는 날' 예상이 오직 최근 90일 실제 상환 추세(선형)에만 의존하는 공백을 발견 — 상환 이력이 없는 신규 대출이나 이자형 최소상환 부채에는 추세가 없거나 왜곡된 예상을 줌. 백업/복원 에러 처리, 홈 알림 체계, 통합검색, 차트 접근성, 지출분석 UI는 이미 성숙 확인되어 재차 제외. 채택 계획(asDraft에 선택 interestRate 필드 + amortizationPayoffMonths 순수 함수 신설 + debtWhatIfUpdate에 이자 반영 보조 문구)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 273,
+      "phase": "advance",
+      "timestamp": "2026-10-30T18:30:00.000Z",
+      "summary": "critique(cycle273) 계획대로 부채 이자율 입력 + 이자 기반 상환 예상(amortization)을 구현. logic.js에 amortizationPayoffMonths(balance,monthlyPayment,annualRatePct) 순수 함수 신설(표준 원리금균등상환 공식, 월 이자>=월 상환액이면 null, 이자율 없으면 단순 나눗셈 폴백). asDraft에 선택 필드 interestRate 추가 — interestRateField(d) 신설(costBasisField와 동일한 선택 입력 패턴, class=num inputmode=decimal+fmtQty로 소수 허용), renderAssetSheet의 debt 분기에 배선, syncAssetInputs에서 파싱(비우면 delete), SANITIZE_QTY_FIELDS에도 등록해 백업 복원 시 음수를 0으로 클램프. debtWhatIfText 바로 뒤에 이어붙는 debtAmortSuffix(a,extra,bal) 신설 — 별도 입력을 새로 만들지 않고 기존 debtWhatIfExtra 값을 '매달 갚을 금액'으로 재사용(extra=0이면 추측하지 않고 숨김), assetBalCard 초기 렌더와 debtWhatIfUpdate 양쪽에 배선해 같은 #debtWhatIfResult textContent/announceLive로 공지. duplicateAsset은 interestRate를 구조적 설정으로 보존(수정 없이 기존 로직이 이미 보존). test/run.js FUNCTIONS에 interestRateField/debtAmortSuffix 추가, amortizationPayoffMonths 경계(완납/상환액없음/이자없음 폴백/월이자>=상환액/정상계산/단조성) 7건, syncAssetInputs 저장/삭제 1건, renderAssetSheet 필드 노출 2건, saveAsset 신규/수정 보존 1건, assetBalCard debtAmortSuffix 노출 조건 4건, debtWhatIfUpdate 배선 1건, sanitizeBackup 클램프 1건 총 17건 추가. APP_VERSION 1.47.291->1.47.292, sw.js CACHE v558->v559. node test/run.js 2322/2322 통과, 메인 스크립트(블록2) node --check(new Function) 통과. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

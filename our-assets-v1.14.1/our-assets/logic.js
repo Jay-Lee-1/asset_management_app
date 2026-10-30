@@ -760,6 +760,26 @@ function debtPayoffWhatIf(pts,today,extraPerMonth,trendWindowDays){
  return {achieved:false,projectedDate};
 }
 
+/* debtPayoffProjection/debtPayoffWhatIf는 오직 "최근 90일 실제 상환 추세"의 선형 투사라, 상환
+ * 이력이 아직 없는 신규 대출이나 최소상환만 하는 이자형 부채에는 추세 자체가 없거나(기록 부족)
+ * 왜곡된 투사를 준다(app-evolve cycle273 critique). 자산에 연 이자율(interestRate)을 알고 있는
+ * 사용자에게는 추세와 무관하게 "이자를 반영하면 매달 얼마씩 갚을 때 몇 개월 걸리는지"를 표준
+ * 원리금균등상환(amortization) 공식으로 바로 계산해주는 쪽이 더 정직하고 추세 이력에 의존하지
+ * 않는다. n = -log(1 - r·P/A) / log(1+r) (P=잔액, A=월 상환액, r=월 이자율)을 쓴다 — 월 이자
+ * (balance*r)가 월 상환액 이상이면 원금이 줄지 않거나 오히려 늘어나(음의 로그 입력) 영원히 다
+ * 갚지 못하므로 null을 돌려준다(goalProgress/debtPayoffProjection과 같은 "모르면 추측하지 않는다"
+ * 원칙). annualRatePct가 없거나 0이면 이자가 없는 것으로 보고 단순 나눗셈(balance/monthlyPayment)
+ * 으로 폴백한다 — 이자율을 입력하지 않은 기존 부채도 이 함수를 그대로 쓸 수 있게 한다. */
+function amortizationPayoffMonths(balance,monthlyPayment,annualRatePct){
+ if(!(balance>0))return 0;
+ if(!(monthlyPayment>0))return null;
+ if(!(annualRatePct>0))return Math.ceil(balance/monthlyPayment);
+ const r=annualRatePct/100/12;
+ if(monthlyPayment<=balance*r)return null;
+ const n=-Math.log(1-r*balance/monthlyPayment)/Math.log(1+r);
+ return Math.ceil(n);
+}
+
 /* debt 자산의 완납 축하 알림 판정 — goalNewlyAchieved(위)와 정확히 같은 모양. payoff는
  * debtPayoffProjection()의 반환값을 그대로 받는다: achieved(최신 잔액<=0)인데 아직
  * ack(asset.payoffAckAt)가 안 됐으면 true. goal과 달리 debt는 asDraft가 saveAsset에서 항상

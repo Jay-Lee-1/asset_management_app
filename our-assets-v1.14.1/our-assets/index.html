@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.291';
+const APP_VERSION='1.47.292';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3197,6 +3197,18 @@ function debtWhatIfText(wi,pf){
  const monthsSaved=Math.round(daysBetween(wi.projectedDate,pf.projectedDate)/30);
  return monthsSaved>0?`매달 이만큼 더 갚으면 ${shortDate2(wi.projectedDate)}쯤 다 갚아요 (약 ${monthsSaved}개월 빨라져요)`:`매달 이만큼 더 갚으면 ${shortDate2(wi.projectedDate)}쯤 다 갚아요`;
 }
+/* debtWhatIfText(위)의 추세 기반 투사는 상환 이력(최근 90일)에만 의존해, 이자율을 입력해둔
+ * 부채(interestRate)라면 추세와 무관하게 "이자를 반영하면 매달 이만큼 갚을 때 몇 개월"도 함께
+ * 보여줄 수 있다(amortizationPayoffMonths, app-evolve cycle273 critique/advance). 별도의
+ * "월 상환액" 입력을 새로 만들지 않고 이미 있는 debtWhatIfExtra(매달 추가로 갚는 금액) 입력값을
+ * 그대로 "매달 갚을 금액"으로 재사용한다 — 추세 기반 투사가 추측하지 않는 것과 같은 원칙으로,
+ * extra가 0(얼마씩 갚을지 모름)이면 계산 자체를 하지 않고 빈 문자열을 돌려준다. debtWhatIfText와
+ * 이어붙여 같은 textContent/announceLive 한 곳에 표시해 별도 라이브 리전을 늘리지 않는다. */
+function debtAmortSuffix(a,extra,bal){
+ if(!(a.interestRate>0)||!(extra>0)||!(bal>0))return '';
+ const months=amortizationPayoffMonths(bal,extra,a.interestRate);
+ return months==null?` · 연 ${a.interestRate}% 이자가 매달 ${comma(extra)}원보다 많아 이렇게는 다 갚을 수 없어요`:` · 연 ${a.interestRate}% 이자 반영: 매달 ${comma(extra)}원씩 갚으면 약 ${months}개월`;
+}
 /* debtWhatIfExtra 입력이 바뀔 때마다 카드 전체를 다시 그리지 않고 결과 문구만 갱신 — assetBalPeek류
  * 경량 업데이트와 같은 원칙(app-evolve cycle262 advance). textContent만 직접 대입해서는 포커스가
  * 입력창(#debtWhatIfExtra)에 머무는 스크린리더 사용자에게 결과가 전혀 읽히지 않는 공백이 있었다 —
@@ -3216,7 +3228,8 @@ function debtWhatIfUpdate(assetId){
  const pfPts=debtPayoffPtsFor(a);
  const pf=debtPayoffProjection(pfPts,TODAY);
  const wi=debtPayoffWhatIf(pfPts,TODAY,extra);
- const text=debtWhatIfText(wi,pf);
+ const bal=pfPts.length?pfPts[pfPts.length-1].bal:0;
+ const text=debtWhatIfText(wi,pf)+debtAmortSuffix(a,extra,bal);
  resEl.textContent=text;
  clearTimeout(_debtWhatIfAnnT);
  _debtWhatIfAnnT=setTimeout(()=>announceLive(text),220);
@@ -3258,8 +3271,9 @@ function assetBalCard(assetId,preset){
   if(!pf.achieved){
    const extra=ST.hist.debtWhatIfExtra||0;
    const wi=debtPayoffWhatIf(pfPts,TODAY,extra);
+   const bal=pfPts.length?pfPts[pfPts.length-1].bal:0;
    payoffHTML+=`<div class="field" style="margin-top:10px"><label for="debtWhatIfExtra">매달 추가로 얼마씩 더 갚으면?</label><div class="field-clear"><input id="debtWhatIfExtra" class="num" inputmode="numeric" value="${extra?comma(extra):''}" placeholder="0" oninput="fmtAmt(this);debtWhatIfUpdate('${a.id}')"><button type="button" class="fc-x" aria-label="추가 납입액 지우기" onclick="clrInput('debtWhatIfExtra');debtWhatIfUpdate('${a.id}')">✕</button></div></div>
-   <div class="msub2" id="debtWhatIfResult" style="margin-top:4px">${debtWhatIfText(wi,pf)}</div>`;
+   <div class="msub2" id="debtWhatIfResult" style="margin-top:4px">${debtWhatIfText(wi,pf)}${debtAmortSuffix(a,extra,bal)}</div>`;
   }
  }
  return `<div class="card nwh-card">
@@ -4390,7 +4404,8 @@ function syncAssetInputs(){const d=asDraft;const g=id=>$(id);
  if(g('asQty')){const v=Math.max(0,parseFloat((g('asQty').value||'0').replace(/,/g,''))||0);if(d.type==='crypto')d.cryptoQty=v;else d.stockQty=v;}
  if(g('asCostBasis')){const n=num(g('asCostBasis'),false);if(n>0)d.costBasis=n;else delete d.costBasis;}
  if(g('asAddedCost'))d._addedCost=num(g('asAddedCost'),false);
- if(g('asSaleProceeds'))d._saleProceeds=num(g('asSaleProceeds'),false);}
+ if(g('asSaleProceeds'))d._saleProceeds=num(g('asSaleProceeds'),false);
+ if(g('asInterestRate')){const v=Math.max(0,parseFloat((g('asInterestRate').value||'0').replace(/,/g,''))||0);if(v>0)d.interestRate=v;else delete d.interestRate;}}
 function asOpenType(){syncAssetInputs();openTypePicker({current:asDraft.type,back:()=>renderAssetSheet(!!asDraft.id),onPick:k=>{if(k==='pension'){if(!asDraft._pensionAutoExcl)asDraft._pensionPrevIncl=asDraft.includeInTotal; /* 이미 연금 상태(재선택)면 덮어쓰지 않음 — 그 전에 기억해둔 원래 값을 지켜야 함 */
  asDraft.includeInTotal=false;asDraft._pensionAutoExcl=true}else if(asDraft._pensionAutoExcl){asDraft.includeInTotal=asDraft._pensionPrevIncl!==undefined?asDraft._pensionPrevIncl:true; /* 연금으로 들어오기 전 값(수동으로 순자산 제외했던 자산 포함)을 복원 — 기존 연금 자산을 열 때(openAssetSheet)처럼 _pensionPrevIncl이 없으면 기존처럼 true로 복원 */
  delete asDraft._pensionPrevIncl;asDraft._pensionAutoExcl=false}asDraft.type=k;if(k==='savings'&&!asDraft.maturityTargetId)asDraft.maturityTargetId=firstCash(asDraft.id);renderAssetSheet(!!asDraft.id)}})}
@@ -4414,6 +4429,15 @@ function costBasisField(d,editing){ /* fx/gold/stock 공통 — 매입 원가는
  <div class="field" id="asAddedCostField" style="display:${needsUpdate?'block':'none'}"><label for="asAddedCost">이번에 추가로 투입한 금액 (원, 선택)</label><div class="field-clear"><input id="asAddedCost" class="num" inputmode="numeric" value="${d._addedCost?comma(d._addedCost):''}" placeholder="신규 매수에 쓴 금액만 입력하면 자동으로 더해드려요" oninput="fmtAmt(this,false)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveAsset(${editing})"><button type="button" class="fc-x" aria-label="추가 투입 금액 지우기" onclick="clrInput('asAddedCost')">✕</button></div></div>
  <div class="field" id="asSaleProceedsField" style="display:${needsSale?'block':'none'}"><label for="asSaleProceeds">이번에 받은 매도 금액 (원, 선택)</label><div class="field-clear"><input id="asSaleProceeds" class="num" inputmode="numeric" value="${d._saleProceeds?comma(d._saleProceeds):''}" placeholder="이번 매도로 받은 금액만 입력하면 실현손익을 기록해요" oninput="fmtAmt(this,false)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveAsset(${editing})"><button type="button" class="fc-x" aria-label="매도 금액 지우기" onclick="clrInput('asSaleProceeds')">✕</button></div></div>`;
 }
+/* 부채(debt) 자산 전용 선택 입력 — costBasisField처럼 비우면 그냥 지워진다(num 파싱이
+ * 0이면 d.interestRate를 delete, syncAssetInputs 참고). fx/gold/stock의 보유수량 입력(asFx 등)과
+ * 같은 class="num" inputmode="decimal"+fmtQty 조합을 써서 소수(예: 3.5%) 입력을 허용한다 —
+ * num()은 정수만 파싱해 소수 이자율엔 못 쓴다. 이자율을 입력해두면 debtWhatIfUpdate가 추세
+ * 기반 투사와 별도로 이자를 반영한 상환 개월수도 보여준다(amortizationPayoffMonths,
+ * app-evolve cycle273 critique/advance). */
+function interestRateField(d){
+ return `<div class="field"><label for="asInterestRate">연 이자율 (%, 선택)</label><div class="field-clear"><input id="asInterestRate" class="num" inputmode="decimal" value="${d.interestRate||''}" placeholder="입력하면 이자 반영 상환 예상을 보여줘요" oninput="fmtQty(this)"><button type="button" class="fc-x" aria-label="연 이자율 지우기" onclick="clrInput('asInterestRate')">✕</button></div></div>`;
+}
 function renderAssetSheet(editing){
  const d=asDraft;const ty=ASSET_TYPES[d.type];
  const typePick=`<div class="field"><label>자산 종류</label><button class="pick" onclick="asOpenType()"><div class="pav ${ty.cls}">${svg(ty.icon)}</div><div class="pbody"><div class="pn">${ty.label}</div></div><div class="pc">${svg('chevR')}</div></button></div>`;
@@ -4434,6 +4458,7 @@ function renderAssetSheet(editing){
      <div class="pav a-save">${svg('piggy')}</div><div class="pbody"><div class="pn">${d.maturityDate?fmtDateFull(d.maturityDate):'만기일 선택'}</div></div><div class="pc">${d.maturityDate?`<button type="button" class="fc-x" style="display:inline-flex;position:static;transform:none" aria-label="만기일 지우기" onclick="event.stopPropagation();asDraft.maturityDate='';renderAssetSheet(${editing})" onkeydown="event.stopPropagation()">✕</button>`:svg('chev')}</div></div>
      <input id="asMat" type="hidden" value="${d.maturityDate||''}"></div>
      <div class="field"><label>만기 시 이체할 통장</label>${assetPickBtn(d.maturityTargetId,'asOpenMat()')}</div>`;
+   if(d.type==='debt')fields+=interestRateField(d);
  }else if(d.type==='fx'){
    const curInfo=CURRENCY_LIST.find(x=>x.code===d.currency)||{code:d.currency,label:d.currency};
    fields=nameField+`<div class="field"><label>통화</label><button class="pick" onclick="asOpenCur()"><div class="pav a-fx">${svg('fx')}</div><div class="pbody"><div class="pn">${esc(curInfo.code)}</div><div class="psub">${esc(curInfo.label)}</div></div><div class="pc">${svg('chevR')}</div></button></div>
@@ -7752,7 +7777,7 @@ function sanitizeAmount(v,min){
  if(!Number.isFinite(n))return 0;
  return (min!=null&&n<min)?min:n;
 }
-const SANITIZE_QTY_FIELDS=['fxAmount','goldDon','stockQty','cryptoQty','costBasis']; /* 보유수량 — 음수 불가 */
+const SANITIZE_QTY_FIELDS=['fxAmount','goldDon','stockQty','cryptoQty','costBasis','interestRate']; /* 보유수량 — 음수 불가 */
 const SANITIZE_FREE_FIELDS=['baseAmount','amountKRW']; /* 자산 잔액 — 마이너스도 유효(마이너스통장 등) */
 /* obj를 변형하지 않고 새 객체를 반환한다(restoreBackup의 실패 시 되돌리기 로직과 독립적으로
  * 쓸 수 있게). id(txns는 date도) 없는 레코드는 나머지 로직이 전제하는 최소 형태를 못 갖춘
