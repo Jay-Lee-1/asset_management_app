@@ -1,15 +1,12 @@
 {
   "cycle": 269,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "시세 동기화 반복 실패를 홈 알림 카드(staleRates)로 노출",
+    "why": "syncRates()가 실패해도 R.failStreak/R.fxFail/R.stockFail/R.cryptoFail만 쌓이고, rateUnknown()은 '한 번도 못 받아온 상태'만 감지해 rateUnknownTotal을 띄우므로, 최초 성공 이후 반복 실패(예: API 장애)는 홈 어디에도 안 보인다. 시세 시트를 열어 rateStatusText()의 '최신 아님' 캡션을 읽어야만 알 수 있어, cloudSyncError/persist/storageSize처럼 지속 실패를 홈 카드로 알리는 기존 관례와 비대칭적이다. 자산 총액이 조용히 오래된 시세로 계산되고 있을 수 있다는 걸 사용자가 모른다.",
+    "approach": "homeAlerts()에 새 kind 'staleRates' 추가: hasRateAssets() && (DB.rates.failStreak||0)>=3 조건(10분 자동 재시도 기준 약 30분 이상 연속 실패, 일시적 네트워크 블립으로 인한 오탐 방지 — clockSkewSeverity의 warn/crit 임계값 설계와 같은 취지)일 때 push. cloudSyncError와 동일하게 수동 dismiss 없이, 다음 syncRates() 성공으로 failStreak가 0으로 리셋되면 자연 소멸. 카드 CTA는 openRateSheet()로 연결해 바로 재시도/확인하게 안내. OS 푸시(notifyAlertInfo) 대상에는 포함하지 않음 — '오늘 안 열면 놓치는' 긴급 알림이 아니라 backup/persist/storageSize와 같은 성격이므로 홈 카드로 충분. 회귀 테스트: failStreak 임계값 경계(2/3), 성공 후 리셋, hasRateAssets()=false일 때 미표시."
+  },
   "history": [
-    {
-      "cycle": 264,
-      "phase": "critique",
-      "timestamp": "2026-10-29T06:05:00.000Z",
-      "summary": "fork 서브에이전트로 앱 전반을 재탐색(CSV 임포트/다중화폐/cost-basis/debt/goal/budget 시스템은 이미 성숙, 접근성은 아이콘 버튼 39개 전부 aria-label·role=switch/button·키보드 핸들러를 갖추고 있어 지금 당장 고를 만한 뚜렷한 공백 없음, 리밸런싱 알림/PDF 명세서/실제 OS 푸시는 스키마 확장 또는 서버 백엔드가 필요해 이번에도 보류)한 결과, manifest.webmanifest에 share_target 키가 없고 sw.js:38의 'GET 아니면 무시' 분기가 모든 POST를 버려 cycle261 advance가 신설한 영수증 사진 첨부 기능임에도 OS 공유 시트(카메라/갤러리/은행앱)에서 사진을 곧장 앱으로 보내 거래로 등록할 길이 없는 공백을 발견 — 앱을 먼저 열고 거래를 시작해 파일 피커로 골라야만 하는 우회만 존재. 서버 없는 정적 PWA 범위 안에서(Cache Storage + sw.js fetch 핸들러 + 기존 photoResizeDims 재사용) 한 사이클에 구현 가능하다고 판단해 채택 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 264,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-30T01:00:00.000Z",
       "summary": "cycle269 develop 커밋(0bf9baa, 통합검색에 matchGoalQuery 배선해 목표 그룹 추가)을 검토. goalProgress(g,goalHistoryFor(g),TODAY)/goalIsOverdue(g.targetDate,p.achieved,TODAY) 호출이 openGoalsList()와 동일한 시그니처·인자임을 코드 대조로 확인(검색 결과 행은 ownerBadge/assetGone/assetBroken/hasUnknown/targetDate 캡션을 생략한 더 단순한 변형이지만 이는 의도된 지면 축소일 뿐 버그 아님). capGroup/GS_EXPAND.goals/gsMore('goals') 키가 txns/assets/cats와 동일한 패턴으로 충돌 없이 배선됨을 확인. matchGoalQuery는 logic.js에 있어(index.html 메인 스크립트의 FUNCTIONS 화이트리스트 대상이 아님) cycle268 advance의 assetQtyLogToCSV와 달리 별도 등록이 필요 없음을 확인. node test/run.js 독립 재실행 결과 2254/2254 통과, node --check(logic.js/sw.js/test/run.js) 통과, APP_VERSION(1.47.282)/sw.js CACHE(v549) 동기화 확인. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 269,
+      "phase": "critique",
+      "timestamp": "2026-10-30T02:20:00.000Z",
+      "summary": "fork 서브에이전트로 앱 전반을 재탐색(이미 다룬 영역과 중복 없는지 확인)한 결과, syncRates()(index.html:3729-3762)가 실패마다 R.failStreak/R.fxFail/R.stockFail/R.cryptoFail을 쌓지만, homeAlerts()의 유일한 시세 관련 카드인 rateUnknownTotal(index.html:9412-9413)의 근거 함수 rateUnknown(a)(index.html:2866-2873)은 R.fx[cur]/R.goldPerG/R.stocks[code]/R.crypto[code]가 '한 번도 못 받아온(null)' 경우만 감지해, 최초 성공 이후 반복 실패(API 장애 등)는 failStreak가 계속 올라가도 homeAlerts()에 그 값을 읽는 분기가 전혀 없어 홈 어디에도 드러나지 않음을 발견 — rateStatusText()(index.html:3780-3788)의 '최신 아님' 캡션은 시세 시트를 직접 열어야만 보여, cloudSyncError/persist/storageSize처럼 지속 실패를 홈 카드로 알리는 기존 관례와 비대칭. 자산 총액이 조용히 오래된 시세로 계산될 수 있는데 사용자가 알 길이 없음. 러너업: (a) assetQtyLog 항목 edit(delete+재입력 우회 가능, cycle265 critique에서도 저가치로 기각 재확인), (b) allTxns/expandRec 대용량 성능(실측 근거 없이 추측이라 범위 밖). 채택 계획(homeAlerts에 staleRates kind 추가 — hasRateAssets()&&failStreak>=3 조건, cloudSyncError처럼 성공 시 자연 소멸, openRateSheet() CTA, OS 푸시 대상 제외)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
