@@ -5615,7 +5615,7 @@ test('assetQtyLogToCSV: 날짜가 여러 건이면 날짜 오름차순으로 정
   assert.strictEqual(rows[1][0], '2026-01-01');
   assert.strictEqual(rows[2][0], '2026-03-01');
 });
-test('assetQtyLogToCSV: 자산이 이미 삭제됐으면(DB.assets에서 못 찾음) 이름/유형/귀속을 빈 칸으로 남긴다(추측하지 않음)', () => {
+test('assetQtyLogToCSV: 자산이 이미 삭제됐고 이름 스냅샷도 없으면(마이그레이션 이전 데이터) 이름/유형/귀속을 빈 칸으로 남긴다(추측하지 않음)', () => {
   const csv = sandbox.assetQtyLogToCSV([
     { assetId: 'gone', date: '2026-01-01', prevQty: 10, newQty: 5, saleProceeds: 50000, realizedGain: 10000 },
   ], []);
@@ -5623,6 +5623,26 @@ test('assetQtyLogToCSV: 자산이 이미 삭제됐으면(DB.assets에서 못 찾
   assert.strictEqual(rows[1][1], '');
   assert.strictEqual(rows[1][2], '');
   assert.strictEqual(rows[1][3], '');
+});
+// snapshotAssetName이 자산 삭제 시점에 남기는 assetName 스냅샷(app-evolve cycle273 develop) —
+// 자산이 삭제된 뒤에도 실현손익 기록 자체는 유효한 과거 데이터이므로, 유형/귀속(자산에서만 구할
+// 수 있어 여전히 빈 칸)과 달리 이름만은 이 스냅샷으로 대신 채운다.
+test('assetQtyLogToCSV: 자산을 못 찾아도 assetName 스냅샷이 있으면 이름을 채운다(유형/귀속은 여전히 빈 칸)', () => {
+  const csv = sandbox.assetQtyLogToCSV([
+    { assetId: 'gone', assetName: '카카오뱅크', date: '2026-01-01', prevQty: 10, newQty: 5, saleProceeds: 50000, realizedGain: 10000 },
+  ], []);
+  const rows = sandbox.parseCSV(csv);
+  assert.strictEqual(rows[1][1], '카카오뱅크', '삭제된 자산이라도 스냅샷 이름을 채워야 함');
+  assert.strictEqual(rows[1][2], '', '유형은 자산에서만 구할 수 있어 여전히 빈 칸이어야 함');
+  assert.strictEqual(rows[1][3], '', '귀속도 자산에서만 구할 수 있어 여전히 빈 칸이어야 함');
+});
+test('assetQtyLogToCSV: 자산을 찾았으면 assetName 스냅샷이 남아있어도 살아있는 자산의 실제 이름을 우선한다', () => {
+  const assets = [{ id: 'a1', name: '새이름', type: 'stock', owner: '나' }];
+  const csv = sandbox.assetQtyLogToCSV([
+    { assetId: 'a1', assetName: '옛이름', date: '2026-01-01', prevQty: 10, newQty: 5, saleProceeds: 50000, realizedGain: 10000 },
+  ], assets);
+  const rows = sandbox.parseCSV(csv);
+  assert.strictEqual(rows[1][1], '새이름', '자산을 찾았으면 스냅샷이 아니라 실제 이름을 써야 함');
 });
 test('assetQtyLogToCSV: 자산명/귀속에 콤마·큰따옴표가 있으면 필드 전체를 따옴표로 감싸고, =,+,-,@ 로 시작하면 \'를 붙여 수식 인젝션을 막는다', () => {
   const assets = [{ id: 'a1', name: '=HYPERLINK("evil")', type: 'stock', owner: '엄마, 아빠' }];
@@ -5748,10 +5768,14 @@ test('deletedAssetHistoryExists: DB.deletedType에 기록이 없는(마이그레
   assert.strictEqual(sandbox.deletedAssetHistoryExists('카카오뱅크', 'cash'), false);
 });
 test('relinkDeletedAsset: type이 같을 때만 과거 내역을 새 자산에 재연결한다', () => {
+  // q1(assetQtyLog)은 snapshotAssetName이 남겼을 이름 스냅샷(app-evolve cycle273 develop) —
+  // txns/recurrences와 동일하게 재연결되고 스냅샷은 지워져야 한다.
+  const q1 = { id: 'q1', assetId: 'gone', assetName: '카카오뱅크', date: '2026-01-01', prevQty: 10, newQty: 5 };
   sandbox.DB = {
     deletedType: { '카카오뱅크': 'cash' },
     txns: [{ fromAssetId: 'gone', fromAssetName: '카카오뱅크', toAssetId: null }],
     recurrences: [{ id: 'r1', fromAssetId: 'gone', fromAssetName: '카카오뱅크', toAssetId: null, active: true }],
+    assetQtyLog: [q1],
     assets: [],
   };
   const newCash = { id: 'new1', name: '카카오뱅크', type: 'cash' };
@@ -5759,16 +5783,21 @@ test('relinkDeletedAsset: type이 같을 때만 과거 내역을 새 자산에 �
   assert.strictEqual(sandbox.DB.txns[0].fromAssetId, 'new1', '같은 type이면 거래가 새 자산에 재연결되어야 함');
   assert.strictEqual(sandbox.DB.txns[0].fromAssetName, undefined, '재연결되면 이름 스냅샷은 지워져야 함');
   assert.strictEqual(sandbox.DB.recurrences[0].fromAssetId, 'new1', '같은 type이면 반복거래도 재연결되어야 함');
+  assert.strictEqual(q1.assetId, 'new1', '보유수량 변경기록(assetQtyLog)도 같은 type이면 재연결되어야 함');
+  assert.strictEqual(q1.assetName, undefined, '재연결되면 assetQtyLog의 이름 스냅샷도 지워져야 함');
   // app-evolve cycle143/144: 재연결로 fromAssetId/fromAssetName이 바뀐 레코드는 touch()되어야
   // mergeCollection()이 이 재연결을 다른 기기의 미동기화 사본에게 조용히 되돌리지 않는다.
   assert.strictEqual(sandbox.DB.txns[0].updatedAt, 'test-updatedAt', '재연결된 거래는 touch()로 updatedAt이 갱신되어야 함(mergeCollection 병합 불변식)');
   assert.strictEqual(sandbox.DB.recurrences[0].updatedAt, 'test-updatedAt', '재연결된 반복거래도 touch()로 updatedAt이 갱신되어야 함');
+  assert.strictEqual(q1.updatedAt, 'test-updatedAt', '재연결된 assetQtyLog 기록도 touch()로 updatedAt이 갱신되어야 함');
 });
 test('relinkDeletedAsset: type이 다른 동명 자산으로는 재연결하지 않는다(deletedAssetHistoryExists 가드를 우회한 직접 호출 방어)', () => {
+  const q1 = { id: 'q1', assetId: 'gone', assetName: '카카오뱅크', date: '2026-01-01', prevQty: 10, newQty: 5 };
   sandbox.DB = {
     deletedType: { '카카오뱅크': 'cash' },
     txns: [{ fromAssetId: 'gone', fromAssetName: '카카오뱅크', toAssetId: null }],
     recurrences: [],
+    assetQtyLog: [q1],
     assets: [],
   };
   const newStock = { id: 'new1', name: '카카오뱅크', type: 'stock' };
@@ -5776,6 +5805,8 @@ test('relinkDeletedAsset: type이 다른 동명 자산으로는 재연결하지 
   assert.strictEqual(sandbox.DB.txns[0].fromAssetId, 'gone', 'type이 다르면 fromAssetId가 그대로여야 함');
   assert.strictEqual(sandbox.DB.txns[0].fromAssetName, '카카오뱅크', 'type이 다르면 이름 스냅샷도 지워지지 않아야 함');
   assert.strictEqual(sandbox.DB.txns[0].updatedAt, undefined, '재연결이 아예 일어나지 않았으면 touch()도 호출되면 안 됨');
+  assert.strictEqual(q1.assetId, 'gone', 'type이 다르면 assetQtyLog도 재연결되면 안 됨');
+  assert.strictEqual(q1.assetName, '카카오뱅크', 'type이 다르면 assetQtyLog의 이름 스냅샷도 그대로여야 함');
 });
 test('relinkDeletedAsset: DB.deletedType 기록이 없으면(마이그레이션 이전 데이터) 재연결하지 않는다', () => {
   sandbox.DB = {
@@ -5892,6 +5923,15 @@ test('snapshotAssetName: 삭제 시점 잔액(deletedBal)과 나란히 자산 ty
   const body = extractFunction('snapshotAssetName');
   assert.ok(/DB\.deletedType\s*=\s*DB\.deletedType\s*\|\|\s*\{\}/.test(body), 'DB.deletedType 초기화가 빠짐');
   assert.ok(/DB\.deletedType\[nm\]\s*=\s*a\.type/.test(body), 'DB.deletedType[nm]=a.type 대입이 빠짐');
+});
+// snapshotAssetName 자체는 (위와 동일한 이유로) 직접 실행 테스트를 못 하므로, fromAssetName/
+// toAssetName과 동일하게 DB.assetQtyLog에도 assetName 스냅샷을 남기는 대입이 소스에서 빠지지
+// 않았는지 텍스트 수준에서 가드한다 — 이게 빠지면 매도(실현손익) CSV(assetQtyLogToCSV)가
+// 자산 삭제 후 이름을 영구히 빈 칸으로 잃는다(app-evolve cycle273 develop).
+test('snapshotAssetName: DB.assetQtyLog에도 fromAssetName/toAssetName과 동일하게 assetName 스냅샷을 남긴다', () => {
+  const body = extractFunction('snapshotAssetName');
+  assert.ok(/DB\.assetQtyLog\s*\|\|\s*\[\]\s*\)\.forEach/.test(body), 'DB.assetQtyLog를 순회하는 코드가 빠짐');
+  assert.ok(/q\.assetId===id\)\{q\.assetName=nm;touch\(q\);\}/.test(body), 'q.assetName=nm 대입(또는 touch(q))이 빠짐');
 });
 test('saveAsset: 새 자산 등록 시 삭제된 동명 자산의 type까지 같아야 재연동 시트를 띄운다', () => {
   sandbox.DB = {
@@ -8396,6 +8436,18 @@ test('deleteAssetsUndo: undo 콜백이 snapshotAssetName이 남긴 fromAssetName
     sandbox.csvDedupeKey(t), sandbox.csvDedupeKey(sameTxnRebuiltFromId),
     'undo 후에는 id 기반 키로 비교되어야 CSV 재가져오기 시 같은 거래로 인식됨(수정 전에는 n:통장1 키가 남아 i:a1 키인 새 파싱 결과와 영원히 어긋나 중복 저장됐음)',
   );
+});
+test('unsnapshotAssetName: assetQtyLog에 남은 이름 스냅샷도 txns/recurrences와 동일하게 지우고 touch한다(app-evolve cycle273 develop)', () => {
+  // 실제 snapshotAssetName은 스텁으로 대체돼 있으므로, delAsset()이 삭제 직전에 남겨뒀을
+  // assetName 스냅샷을 그대로 흉내내 미리 세팅해둔다(위 deleteAssetsUndo undo 테스트와 동일 패턴).
+  const q1 = { id: 'q1', assetId: 'a1', assetName: '통장1', date: '2026-01-01', prevQty: 10, newQty: 5 };
+  const q2 = { id: 'q2', assetId: 'other', assetName: '다른자산', date: '2026-01-01', prevQty: 1, newQty: 2 };
+  sandbox.DB = { txns: [], recurrences: [], assetQtyLog: [q1, q2] };
+  sandbox.unsnapshotAssetName('a1');
+  assert.strictEqual(q1.assetName, undefined, 'assetId가 일치하는 기록의 이름 스냅샷을 지워야 함');
+  assert.strictEqual(q1.updatedAt, 'test-updatedAt', 'touch()로 updatedAt이 갱신되어야 함(mergeCollection 병합 불변식)');
+  assert.strictEqual(q2.assetName, '다른자산', 'assetId가 다른 기록은 건드리면 안 됨');
+  assert.strictEqual(q2.updatedAt, undefined, 'assetId가 다른 기록은 touch()되면 안 됨');
 });
 test('deleteAssetsUndo: 삭제 시 DB.deletedIds에 시각을 남기고, undo하면 정확히 지운다(app-evolve cycle89)', () => {
   sandbox.TWi = -1;

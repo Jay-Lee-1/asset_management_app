@@ -1,6 +1,6 @@
 {
-  "cycle": 272,
-  "phase": "develop",
+  "cycle": 273,
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
@@ -141,6 +141,13 @@
       "phase": "advance",
       "timestamp": "2026-10-30T15:29:28.374Z",
       "summary": "critique(cycle272) 계획대로 자산 복제(duplicateAsset) 기능을 구현. openAssetSheet 근처에 duplicateAsset(id) 신설 — id/order 제거, name에 \" 복사\" 접미사, 잔액(baseAmount/amountKRW)·만기일(maturityDate)·부채 완납 ack(payoffAckAt) 제거, isMarketValued(fx/gold/stock/crypto)면 costBasis 제거 및 수량 필드(stockQty 등) 0으로 초기화, 그 외(type/owner/currency/includeInTotal/maturityTargetId 등 구조적 설정)는 보존. renderAssetSheet(false)로 열어 saveAsset()이 신규 저장 경로를 타게 함. 자산 목록 행(row-acts)에 거래 .dup-btn과 동일한 패턴의 복제 act-btn 배선. test/run.js에 duplicateAsset 테스트 6건 추가(cash/savings/stock/debt 필드 보존·제거, 존재하지 않는 id, duplicateAsset→saveAsset 왕복). APP_VERSION 1.47.289->1.47.290, sw.js CACHE v556->v557. node test/run.js 2302/2302 통과, 메인 스크립트(블록2) node --check 통과. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 273,
+      "phase": "develop",
+      "timestamp": "2026-10-30T16:40:00.000Z",
+      "summary": "자산 삭제 시 snapshotAssetName이 fromAssetName/toAssetName(txns/recurrences)만 이름을 스냅샷해두고 DB.assetQtyLog(fx/gold/stock/crypto 보유수량 변경·매도 실현손익 기록)는 빼놓은 공백을 발견 — 매도(실현손익) CSV 내보내기(assetQtyLogToCSV, cycle268 advance)가 assetId로 자산을 못 찾으면 이름/유형/귀속을 빈 칸으로 남기는데(의도된 동작), 자산을 지운 뒤에는 그 실현손익 기록 자체는 여전히 유효한 과거 데이터인데도 어떤 자산이었는지가 영구히 사라졌다. snapshotAssetName/unsnapshotAssetName에 DB.assetQtyLog 순회를 추가해 fromAssetName과 동일하게 q.assetName을 남기고/지우고, relinkDeletedAsset에도 동일한 재연결 분기를 추가(동명·동종 자산으로 재등록하면 txns/recurrences처럼 assetId가 재연결되고 스냅샷은 지워짐). assetQtyLogToCSV는 자산을 못 찾을 때 이름만 q.assetName으로 대신하고 유형/귀속은 기존대로 빈 칸 유지. snapshotAssetName 자체는 balanceAt 체인 때문에 테스트에서 스텁 처리돼 직접 실행 테스트는 못 해(기존 관례와 동일) 텍스트 가드 1건을 추가하고, unsnapshotAssetName/relinkDeletedAsset/assetQtyLogToCSV는 직접 실행 테스트로 커버(기존 테스트 2건 확장 + 신규 4건, 총 6건 추가/확장). APP_VERSION 1.47.290->1.47.291, sw.js CACHE v557->v558. node test/run.js 2306/2306 통과, 메인 스크립트(블록2) node --check 통과.",
       "commit": null
     }
   ]
