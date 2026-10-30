@@ -1,15 +1,8 @@
 {
   "cycle": 270,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 265,
-      "phase": "develop",
-      "timestamp": "2026-10-29T08:18:16.171Z",
-      "summary": "코드 전반을 재탐색(이전 cycle들이 다룬 영역과 중복 없는지 확인)한 결과, 은행/카드사 CSV 가져오기의 열 매칭 화면(openCsvColumnMap/cycle251 advance)이 날짜·금액(또는 입금/출금)·메모 각 필드를 독립적인 피커(csvMapPickCol)로 고르게 하면서, 사용자가 \"거래일시\"/\"등록일시\"처럼 이름이 비슷한 두 열을 헷갈려 같은 열을 서로 다른 역할(예: 날짜와 금액)에 겹쳐 고르는 것을 막을 방법이 전혀 없는 공백을 발견 — 그렇게 겹쳐 고르면 mapGenericCsvRow가 한 열의 값을 두 역할로 동시에 읽어 거의 모든 행이 조용히 형식 오류(invalid)로 빠지는데, 원인이 \"열 선택 실수\"라는 걸 사용자가 알 길이 없었음. logic.js에 순수 함수 csvMapColConflict(mapping,field,idx) 신설, index.html의 csvMapPickCol이 이 함수로 다른 필드가 이미 쓰고 있는 열을 후보에서 완전히 제외하도록 배선. node test/run.js 2210/2210 통과.",
-      "commit": null
-    },
     {
       "cycle": 265,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-30T03:30:00.000Z",
       "summary": "critique(cycle269) 계획대로 시세 동기화 반복 실패를 홈 알림 카드(staleRates)로 노출. homeAlerts()에 hasRateAssets()&&(DB.rates&&DB.rates.failStreak||0)>=3 조건으로 kind:'staleRates' 추가(cloudSyncError처럼 성공 시 failStreak=0으로 자연 소멸, OS 푸시 notifyAlertInfo 대상에선 제외). 카드 렌더 case 추가(rateUnknownTotal과 동일한 모양, openRateSheet() CTA). APP_VERSION 1.47.282->1.47.283, sw.js CACHE v549->v550. test/run.js에 homeAlerts 임계값 경계(failStreak 2/3) 테스트, 성공 후 리셋+hasRateAssets()=false 미표시 테스트, notifyAlertInfo가 staleRates를 OS 푸시 대상에서 제외하는(null 반환) 테스트 총 3건 추가. node test/run.js 2257/2257 통과, 블록2(메인 스크립트) node --check 통과. pending_advance_plan null로 비움.",
       "commit": null
+    },
+    {
+      "cycle": 270,
+      "phase": "develop",
+      "timestamp": "2026-10-30T04:15:52.000Z",
+      "summary": "통합검색(globalSearchBody)의 목표(goal) 결과가 goalRowHTML()/openGoalsList()와 '동일한 마크업'이라는 주석과 달리 실제로는 assetGone/assetBroken/hasUnknown 경고 캡션이 빠져 있던 공백을 발견(cycle269 develop이 goalProgress/goalIsOverdue만 가져오고 캡션은 놓침). globalSearchBody()가 기존 로직 재사용으로 세 캡션을 openGoalsList()와 동일하게 렌더하도록 수정. test/run.js에 자산삭제/추적불가/정상(캡션없음) 3개 테스트 추가. APP_VERSION 1.47.283->1.47.284, sw.js CACHE v550->v551. node test/run.js 2260/2260 통과.",
+      "commit": "ce3b60a"
     }
   ]
 }
