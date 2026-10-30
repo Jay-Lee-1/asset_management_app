@@ -317,6 +317,12 @@ const FUNCTIONS = [
   // $('bootSplash')/.remove() 두 줄뿐인 순수 유틸이라 기존 $ 스텁(bootSplashEl)만으로 실행형
   // 검증이 가능하다.
   'hideBootSplash',
+  // globalSearchBody(통합검색 결과 본문)는 cycle270 develop(목표 결과에 goalRowHTML/openGoalsList와
+  // 동일한 assetGone/assetBroken/hasUnknown 캡션을 붙인 수정) 검증용 — DOM을 직접 건드리지 않고
+  // HTML 문자열만 반환하므로(onclick 등은 문자열 속성일 뿐 실행되지 않음) 기존 공유 스텁만으로
+  // 충분하다. 이미 FUNCTIONS에 있는 txRowCore/ownerChipClass/assetSubline/catAv/catGlyph/
+  // goalLinkedAssetGone/goalLinkedAssetBroken/goalHasUnknown/ackGoalAchieved를 그대로 재사용한다.
+  'globalSearchBody',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -334,7 +340,9 @@ const FUNCTIONS = [
 // 테스트가 eye<->eyeOff 전환을 실제 아이콘 문자열(sandbox.I.eye/eyeOff)과 비교해 검증한다.
 // RATE_TTL은 autoSyncRates()가 참조하는 10분 쿨다운 상수(app-evolve cycle220 develop,
 // crypto 전용 보유자 주말 휴장 자동갱신 회귀 수정 검증용).
-const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'emailKey', 'CAT_PICKER_SEARCH_THRESHOLD'];
+// GS_CAP은 globalSearchBody()가 각 그룹(거래/자산/카테고리/목표)을 몇 건까지 바로 보여줄지 정하는
+// cap 상수(app-evolve cycle261 develop) — globalSearchBody 실행형 테스트가 그대로 참조한다.
+const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'emailKey', 'CAT_PICKER_SEARCH_THRESHOLD', 'GS_CAP'];
 // _histCache는 filteredHist()가 재대입(={key,list})하는 let 선언이라 CONSTS(extractConst)로는
 // 못 끌어오므로 별도의 LETS 목록으로 extractLet을 통해 가져온다.
 // _copyIsCsv도 같은 이유(openCopyBackup()이 재대입)로 LETS를 통해 가져온다.
@@ -398,6 +406,10 @@ const sandbox = {
   // DISP_TO도 RANGE_TO와 같은 이유로 `let DISP_TO=addDays(TODAY,92)` 파생값을 재현하지 않고,
   // hasFutureTxns()를 쓰는 테스트에서 TODAY처럼 직접 세팅한다.
   DISP_TO: null,
+  // GS_EXPAND는 index.html에서 `let _gsQT=null,GS_EXPAND={}`로 선언돼(한 let 문에 묶여
+  // extractLet의 "let GS_EXPAND=" 마커로는 못 찾음) globalSearchBody()의 "더보기" 펼침 상태를
+  // 담는 비순수 UI 상태다 — RANGE_TO/DISP_TO와 같은 이유로 여기서 빈 객체 기본값을 직접 준다.
+  GS_EXPAND: {},
   // CLOUD_UID/CLOUD_SYNC_STATE/STORAGE_PERSISTED는 index.html에서 `let`으로 선언되는 클라우드
   // 로그인/동기화/저장공간 영속 상태로, homeAlerts()가 직접 참조한다. RANGE_TO/DISP_TO와 같은
   // 이유(파생·비순수 상태)로 재현하지 않고 테스트에서 직접 세팅한다.
@@ -6781,6 +6793,48 @@ test('전역 통합검색: 거래에만 있는 단어는 자산/카테고리/목
   assert.strictEqual(sandbox.matchTxnQuery(t, '전기요금', []), true);
   assert.strictEqual(sandbox.matchAssetQuery(a, '전기요금'), false);
   assert.strictEqual(sandbox.matchCatQuery('식비', '전기요금'), false);
+});
+
+/* ---------- globalSearchBody 목표 결과: goalRowHTML/openGoalsList와 동일한 assetGone/assetBroken/
+ * hasUnknown 캡션을 보여줘야 한다 — cycle269 develop이 목표를 통합검색에 추가하면서 goalProgress/
+ * goalIsOverdue만 가져오고 이 세 캡션은 빠뜨려, 연결 자산이 삭제/추적불가거나 일부 미확인인 목표를
+ * 검색으로 찾으면 목표 관리 화면과 다르게 아무 경고도 안 보였다(app-evolve cycle270 develop). */
+function setupGlobalSearchGoalDB(goal) {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2026-12-31';
+  sandbox.GS_EXPAND = {};
+  sandbox.DB = {
+    owners: ['나'],
+    assets: [{ id: 'a1', type: 'savings', owner: '나', baseAmount: 100000, includeInTotal: true }],
+    txns: [],
+    recurrences: [],
+    categories: { expense: [], income: [], saving: [] },
+    settings: { confirmTransfers: false },
+    nwHistory: [],
+    goals: [goal],
+  };
+}
+test('globalSearchBody: 연결 자산이 삭제된 asset형 목표를 검색하면 goalRowHTML/openGoalsList와 동일하게 "연결된 자산이 삭제됐어요" 캡션이 붙는다', () => {
+  setupGlobalSearchGoalDB({ id: 'g1', name: '비상금목표', type: 'asset', linkedAssetId: 'no-such-asset', targetAmount: 200000, owner: '나' });
+  const html = sandbox.globalSearchBody('비상금목표');
+  assert.ok(html.includes('목표 · 1개'));
+  assert.ok(html.includes('연결된 자산이 삭제됐어요'), '수정 전에는 이 캡션이 통합검색 결과에서만 빠져 있었음');
+});
+test('globalSearchBody: 연결 자산이 살아있지만 추적 불가능해진(종류 변경) asset형 목표를 검색하면 "연결된 자산을 추적할 수 없어요" 캡션이 붙는다', () => {
+  const goal = { id: 'g1', name: '비상금목표', type: 'asset', linkedAssetId: 'a1', targetAmount: 200000, owner: '나' };
+  setupGlobalSearchGoalDB(goal);
+  sandbox.DB.assets[0].type = 'stock'; sandbox.DB.assets[0].stockCode = '005930';
+  sandbox.DB.rates = { fx: {}, goldPerG: 1, stocks: {} };
+  const html = sandbox.globalSearchBody('비상금목표');
+  assert.ok(html.includes('연결된 자산을 추적할 수 없어요'));
+  assert.ok(!html.includes('연결된 자산이 삭제됐어요'));
+});
+test('globalSearchBody: 정상적으로 연결된 목표를 검색하면 어떤 경고 캡션도 붙지 않는다(항상 뜨는 회귀 방지)', () => {
+  setupGlobalSearchGoalDB({ id: 'g1', name: '비상금목표', type: 'asset', linkedAssetId: 'a1', targetAmount: 200000, owner: '나' });
+  const html = sandbox.globalSearchBody('비상금목표');
+  assert.ok(!html.includes('연결된 자산이 삭제됐어요'));
+  assert.ok(!html.includes('연결된 자산을 추적할 수 없어요'));
+  assert.ok(!html.includes('일부 미확인'));
 });
 
 /* ---------- 전역 통합검색 거래 그룹의 소스: DB.txns에 실물로 저장되지 않고 expandRec()이

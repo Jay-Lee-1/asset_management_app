@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.283';
+const APP_VERSION='1.47.284';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6068,9 +6068,14 @@ function globalSearchBody(qRaw){
    `<div class="manage-row" tabindex="0" role="button" aria-label="${esc(c.name)} ${CAT_LABEL[c.kind]} 카테고리" onclick="openCatManage('${c.kind}')" onkeydown="rowKeydown(event,()=>openCatManage('${c.kind}'))"><div class="avatar ${catAv(c.kind)}" style="width:36px;height:36px;border-radius:11px">${catGlyph(c.kind,c.name,18,'tag')}</div><div class="mn">${esc(c.name)}</div><span class="chipmini">${CAT_LABEL[c.kind]}</span><div class="mc">${svg('chev')}</div></div>`
   ).join('')}</div>${moreBtn('cats',catsRemain)}`;
  if(goalsAll.length)html+=`<div class="menu-cap" style="margin-top:14px">목표 · ${goalsAll.length}개</div><div class="card">${goalsCapped.map(g=>{
-   const p=goalProgress(g,goalHistoryFor(g),TODAY); /* openGoalsList() 행과 동일한 데이터·마크업(app-evolve cycle269 develop) */
+   const p=goalProgress(g,goalHistoryFor(g),TODAY); /* openGoalsList() 행과 동일한 데이터를 쓰지만, 바로 아래 세 캡션(assetGone/assetBroken/hasUnknown)은
+    * cycle269가 빠뜨려 마크업이 실제로는 달랐다 — 연결 자산이 삭제/추적불가거나 일부 미확인인 목표를 검색으로 찾으면
+    * goalRowHTML/openGoalsList와 달리 통합검색 결과에만 그 경고가 안 보였다(app-evolve cycle270 develop) */
    const overdue=goalIsOverdue(g.targetDate,p.achieved,TODAY);
-   return `<div class="manage-row" tabindex="0" role="button" aria-label="${esc(g.name)} 목표 진행률 ${p.pct}%${overdue?' 목표일 지남':''}" onclick="ackGoalAchieved('${g.id}')" onkeydown="rowKeydown(event,()=>ackGoalAchieved('${g.id}'))"><div class="avatar a-save" style="width:36px;height:36px;border-radius:11px">${svg('target')}</div><div style="flex:1;min-width:0"><div class="mn">${esc(g.name)} ${p.achieved?'<span class="mini">달성</span>':overdue?'<span class="mini warn">지남</span>':''}</div><div class="msub">${comma(p.cur)} / ${comma(p.target)}원 · ${p.pct}%</div></div><div class="mc">${svg('chev')}</div></div>`;
+   const assetGone=goalLinkedAssetGone(g); /* goalRowHTML()/openGoalsList()와 동일 캡션 */
+   const assetBroken=goalLinkedAssetBroken(g);
+   const hasUnknown=goalHasUnknown(g);
+   return `<div class="manage-row" tabindex="0" role="button" aria-label="${esc(g.name)} 목표 진행률 ${p.pct}%${overdue?' 목표일 지남':''}" onclick="ackGoalAchieved('${g.id}')" onkeydown="rowKeydown(event,()=>ackGoalAchieved('${g.id}'))"><div class="avatar a-save" style="width:36px;height:36px;border-radius:11px">${svg('target')}</div><div style="flex:1;min-width:0"><div class="mn">${esc(g.name)} ${p.achieved?'<span class="mini">달성</span>':overdue?'<span class="mini warn">지남</span>':''}</div><div class="msub">${comma(p.cur)} / ${comma(p.target)}원 · ${p.pct}%</div>${assetGone?'<div class="mini warn" style="margin-top:2px">연결된 자산이 삭제됐어요</div>':assetBroken?'<div class="mini warn" style="margin-top:2px">연결된 자산을 추적할 수 없어요</div>':hasUnknown?'<div class="mini warn" style="margin-top:2px">일부 미확인</div>':''}</div><div class="mc">${svg('chev')}</div></div>`;
   }).join('')}</div>${moreBtn('goals',goalsRemain)}`;
  return html;
 }
