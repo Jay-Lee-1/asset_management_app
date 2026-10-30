@@ -1,22 +1,12 @@
 {
   "cycle": 270,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "거래/반복거래 입력 시 메모 기반 카테고리 추천",
+    "why": "renderTxSheet()/recDraft 흐름에서 카테고리는 매번 DB.categories.expense[0]로만 기본 설정되어, 같은 메모(예: '스타벅스', '넷플릭스')를 수십 번 입력해도 사용자가 매번 직접 카테고리를 다시 골라야 하는 반복 마찰이 앱에서 가장 자주 쓰는 화면(거래 입력)에 그대로 남아 있음. 최근 사이클(실현손익 표시/CSV/연간결산/YoY, 통합검색 목표 커버리지, 시세동기화 알림, 만기 overdue, 부채 what-if 디바운스)은 모두 이 영역을 건드리지 않음 — 중복 없음.",
+    "approach": "logic.js에 순수함수 suggestCategoryForMemo(memo, txns, type) 추가: 메모 정규화(NFC/trim/lowercase, matchGoalQuery와 동일 스타일) 후 type 일치 + 메모 일치 거래들 중 최다 빈도 카테고리 반환(동률이면 최신 거래 우선), 매칭 없으면 null. index.html에서 renderTxSheet()의 메모 입력 핸들러에 디바운스(기존 _debtWhatIfAnnT 패턴 재사용, ~200ms) 적용해 suggestCategoryForMemo 호출 → 매칭 시 txDraft.category를 바로 덮어쓰지 않고 '추천: {category}' 칩 + 적용 버튼으로 노출, 사용자가 카테고리를 이미 직접 바꾼 경우(_catUserTouched 플래그)엔 추천을 띄우지 않음. 동일 패턴을 recDraft(반복거래 입력)에도 배선. test/run.js에 suggestCategoryForMemo 케이스(정확 일치/불일치/동률 시 최신 우선/type 필터) 추가. APP_VERSION/sw.js CACHE 동기 범프, node test/run.js 통과 확인."
+  },
   "history": [
-    {
-      "cycle": 265,
-      "phase": "review",
-      "timestamp": "2026-10-29T09:08:37.408Z",
-      "summary": "cycle265 develop 커밋(8d89af5, CSV 열 매칭 충돌 방지 배선)을 검토. _csvMap 초기화, csvMapSetMode 모드 전환 시 반대 모드 필드 초기화 등 핵심 동작 코드로 확인. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
-    {
-      "cycle": 265,
-      "phase": "critique",
-      "timestamp": "2026-10-29T10:11:20.000Z",
-      "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, 수량 감소(매도) 시 '이번에 받은 매도 금액'을 받을 자리가 없어 실현손익(realized gain)이 앱 어디에도 기록되지 않는 비대칭을 발견. 채택 계획(realizedGainForSale 신설 + costBasisField 매도 입력 필드 + saveAsset/qtyLog 배선 + openAssetQtyLog 표시)을 pending_advance_plan에 저장. 코드 변경 없음.",
-      "commit": null
-    },
     {
       "cycle": 265,
       "phase": "advance",
@@ -148,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-30T05:00:00.000Z",
       "summary": "cycle270 develop 커밋(ce3b60a, 통합검색 목표 결과에 assetGone/assetBroken/hasUnknown 캡션 추가)을 검토. goalRowHTML()과 동일한 우선순위(assetGone→assetBroken→hasUnknown)로 같은 판정 함수를 재사용하는 것을 확인, aria-label 등 기존 패턴과도 일치. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 270,
+      "phase": "critique",
+      "timestamp": "2026-10-30T06:10:00.000Z",
+      "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, 거래 입력(renderTxSheet)/반복거래 입력(recDraft)에서 카테고리가 매번 DB.categories.expense[0]로만 기본 설정되어 동일 메모를 반복 입력해도 카테고리 추천/자동완성이 전혀 없는 핵심 화면의 반복 마찰을 발견. 채택 계획(logic.js suggestCategoryForMemo(memo, txns, type) 신설 + 메모 입력에 디바운스로 배선 + 추천 칩/적용 버튼, 사용자가 이미 고른 경우 덮어쓰지 않음 + recDraft에도 동일 배선)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
