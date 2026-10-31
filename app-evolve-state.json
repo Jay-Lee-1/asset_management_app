@@ -1,6 +1,6 @@
 {
   "cycle": 275,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
@@ -142,6 +142,13 @@
       "timestamp": "2026-10-30T23:09:03.500Z",
       "summary": "critique(cycle274) 계획대로 분할(splits) 금액 입력 중 합계 힌트 실시간 갱신 공백을 해소. splitFieldHTML()의 힌트 <div class=\"psub\">에 id=txSplitHint 부여, EndHint(5131/5148행)와 동일한 패턴으로 splitHintUpdate(d) 신설 — $('txSplitHint')가 있으면 textContent/색상(diff!==0이면 var(--expense))만 즉시 갱신. txSplitAmt(i,el) 끝에서 splitHintUpdate(txDraft) 호출 추가(전체 renderTxSheet 재호출은 그대로 피해 커서 위치 보존). txSplitMemo/recDraft는 계획대로 변경 없음. test/run.js에 splitHintUpdate 일치/모자람/많음/엘리먼트 없을 때 noop 4건 + txSplitAmt가 splitHintUpdate를 호출해 재렌더 없이 힌트가 갱신됨을 확인하는 통합 테스트 1건 추가. APP_VERSION 1.47.293->1.47.294, sw.js CACHE v560->v561. node test/run.js 2330/2330 통과, 메인 스크립트(블록2) node --check 통과. pending_advance_plan null로 비움.",
       "commit": null
+    },
+    {
+      "cycle": 275,
+      "phase": "develop",
+      "timestamp": "2026-10-31T00:00:00.000Z",
+      "summary": "거래 목록(txRowCore)의 dup-btn aria-label이 모든 행에서 \"복제\" 하나뿐이라, 스크린리더로 전체내역을 훑는 사용자는 목록 안의 복제 버튼들을 서로 구분할 수 없던 공백을 발견 — duplicateAsset/duplicateRec의 act-btn은 이미 aria-label에 대상 이름(자산명/카테고리)을 포함해 서로 구분되는데, 거래의 dup-btn만 그 원칙에서 비껴나 있었다. txRowCore()의 dup-btn aria-label을 \"${esc(t.memo||catLabel)} 복제\"로 바꿔, 이 함수의 다른 aria-label들과 동일한 memo/catLabel 폴백을 공유하게 함. test/run.js에 memo 있을 때/없을 때(catLabel로 대체)/isRec이면 dup-btn 자체가 없음(회귀 없음) 3건 추가. APP_VERSION 1.47.294->1.47.295, sw.js CACHE v561->v562. node test/run.js 2333/2333 통과, 메인 스크립트(1417~10939행) node --check 통과.",
+      "commit": "35a97c6"
     }
   ]
 }
