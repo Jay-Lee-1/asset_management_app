@@ -1,15 +1,8 @@
 {
   "cycle": 280,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 275,
-      "phase": "review",
-      "timestamp": "2026-10-31T00:30:00.000Z",
-      "summary": "cycle275 develop 커밋(35a97c6, 거래 dup-btn aria-label에 거래 제목 추가)을 검토. esc()가 '&<>\"\\''를 모두 HTML 엔티티로 치환해 memo에 쌍따옴표가 포함돼도 aria-label 속성이 깨지지 않음을 확인; 같은 함수의 다른 aria-label(selectable 행, swipe-content 행)도 동일한 esc(t.memo||catLabel) 폴백을 이미 쓰고 있어 패턴 일치. duplicateAsset/duplicateRec의 act-btn aria-label과도 '대상 이름 + 동작명' 구조가 같음을 확인. node test/run.js 2333/2333 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 275,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-31T20:30:00.000Z",
       "summary": "openRecManage()(반복 내역 관리 목록)와 globalSearchBody()의 통합검색 \"반복\" 그룹이 둘 다 r.category만 제목으로 보여줘, 같은 카테고리(예: \"구독\")의 반복거래가 여러 개면 목록·검색 결과에서 서로 구분이 안 되던 공백을 발견 — saveRec/editRec은 메모를 비워두면 category로 폴백시키지만 메모가 실제로 채워진 경우(예: \"넷플릭스\"/\"왓챠\")에도 두 화면 모두 category만 썼다. cycle279에서 메모 기반 검색(matchRecQuery)까지 추가됐는데, 메모로 매칭된 결과가 화면엔 관련 없는 카테고리 텍스트로만 보이는 불일치도 함께 발견. 두 함수 모두 제목을 r.memo||r.category로 바꾸고 row/dup-btn/pause-resume-btn aria-label에도 동일하게 적용, memo!==category인 경우에만 category를 msub에 보조 정보로 남겨(txRowCore의 memo/catLabel 2단 표시와 동일 패턴) 정보 손실을 막음. catGlyph 아이콘은 category 기준 그대로 유지. test/run.js에 openRecManage/globalSearchBody 각각 2건(동일 카테고리를 메모로 구분/메모=카테고리면 중복 표시 없음) 총 4건 추가. APP_VERSION 1.47.304->1.47.305, sw.js CACHE v571->v572. node test/run.js 2414/2414 통과, 메인 스크립트(블록2) node --check 통과.",
       "commit": "96d9a04"
+    },
+    {
+      "cycle": 280,
+      "phase": "review",
+      "timestamp": "2026-10-31T20:45:00.000Z",
+      "summary": "cycle280 develop 커밋(96d9a04, openRecManage/globalSearchBody 반복 행 제목을 memo||category로 변경)을 검토. title=r.memo||r.category가 saveRec/editRec이 항상 보장하는 memo||category 폴백과 동일 규칙임을 확인, msub의 (r.memo&&r.memo!==r.category)?esc(r.category)+' · ':'' 보조 표시가 txRowCore의 memo/catLabel 2단 표시와 같은 원칙임을 확인. grep으로 esc(r.category)가 더 이상 title 자리에 남아있지 않음을 확인(두 위치 모두 msub 보조 표시로만 남음) — 수정이 누락된 곳 없음. catGlyph 아이콘은 의도대로 category 기준 유지. node test/run.js 2414/2414 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "commit": null
     }
   ]
 }
