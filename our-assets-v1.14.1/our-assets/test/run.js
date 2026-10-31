@@ -7184,6 +7184,41 @@ test('matchGoalQuery: goal이 없거나 name이 없어도 안전하게 false(빈
   assert.strictEqual(sandbox.matchGoalQuery({}, '집'), false);
 });
 
+/* ---------- matchRecQuery: 반복(구독) 검색 — matchGoalQuery와 동일한 규칙(대소문자 무시
+ * includes + NFC 정규화 + 공백 AND), 다만 카테고리+메모 두 필드를 모두 haystack에 넣는다
+ * (matchAssetQuery의 name+currency와 같은 이유). 통합검색이 거래/자산/카테고리/목표까지만
+ * 가로질러 찾고 반복 등록 자체는 빠져 있던 공백을 메운다(app-evolve cycle279 develop). */
+test('matchRecQuery: 빈 검색어는 항상 매칭된다', () => {
+  assert.strictEqual(sandbox.matchRecQuery({ category: '구독', memo: '넷플릭스' }, ''), true);
+});
+test('matchRecQuery: 카테고리로 찾을 수 있다', () => {
+  assert.strictEqual(sandbox.matchRecQuery({ category: '구독', memo: '넷플릭스' }, '구독'), true);
+});
+test('matchRecQuery: 메모로도 찾을 수 있다(카테고리와 다른 필드)', () => {
+  assert.strictEqual(sandbox.matchRecQuery({ category: '구독', memo: '넷플릭스' }, '넷플릭스'), true);
+});
+test('matchRecQuery: 대소문자를 구분하지 않는다', () => {
+  assert.strictEqual(sandbox.matchRecQuery({ category: '구독', memo: 'Netflix' }, 'netflix'), true);
+});
+test('matchRecQuery: 일치하지 않으면 false다', () => {
+  assert.strictEqual(sandbox.matchRecQuery({ category: '구독', memo: '넷플릭스' }, 'xyz'), false);
+});
+test('matchRecQuery: 카테고리/메모가 조합형(NFD)으로 저장돼 있어도 완성형(NFC) 검색어로 찾을 수 있다', () => {
+  assert.strictEqual(sandbox.matchRecQuery({ category: '구독'.normalize('NFD'), memo: '' }, '구독'), true);
+});
+test('matchRecQuery: 검색어가 조합형(NFD)이어도 완성형(NFC)으로 저장된 값을 찾을 수 있다', () => {
+  assert.strictEqual(sandbox.matchRecQuery({ category: '구독', memo: '' }, '구독'.normalize('NFD')), true);
+});
+test('matchRecQuery: 검색어를 띄어 쓰면 카테고리+메모처럼 서로 다른 필드에 나뉜 단어도 모두 포함해야 매칭된다(AND)', () => {
+  assert.strictEqual(sandbox.matchRecQuery({ category: '구독', memo: '넷플릭스' }, '구독 넷플릭스'), true);
+  assert.strictEqual(sandbox.matchRecQuery({ category: '구독', memo: '넷플릭스' }, '구독 왓챠'), false);
+});
+test('matchRecQuery: 반복이 없거나 category/memo가 없어도 안전하게 처리한다', () => {
+  assert.strictEqual(sandbox.matchRecQuery(null, '구독'), false);
+  assert.strictEqual(sandbox.matchRecQuery({}, '구독'), false);
+  assert.strictEqual(sandbox.matchRecQuery({ category: '구독' }, ''), true);
+});
+
 /* ---------- suggestCategoryForMemo: 거래/반복거래 입력(index.html txMemoInput/recMemoInput)의
  * 메모 기반 카테고리 추천. matchTxnQuery류(includes 부분일치)와 달리 "똑같은 메모"일 때만
  * 추천해야 하므로 완전일치만 매칭한다(app-evolve cycle270 critique → advance). */
@@ -7304,6 +7339,48 @@ test('globalSearchBody: 정상적으로 연결된 목표를 검색하면 어떤 
   assert.ok(!html.includes('연결된 자산이 삭제됐어요'));
   assert.ok(!html.includes('연결된 자산을 추적할 수 없어요'));
   assert.ok(!html.includes('일부 미확인'));
+});
+
+/* ---------- globalSearchBody 반복 결과: 통합검색이 거래·자산·카테고리·목표까지만 가로질러 찾고
+ * 반복 등록 자체(DB.recurrences, openRecManage/editRec로 편집·중지하는 실물)는 빠져 있던 공백을
+ * 메운다(app-evolve cycle279 develop) — 매달 전개된 과거 결제 내역(거래 그룹)만으로는 그 구독을
+ * 고치거나 멈출 길이 없었다. */
+function setupGlobalSearchRecDB(rec) {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2026-12-31';
+  sandbox.GS_EXPAND = {};
+  sandbox._recCache.clear();
+  sandbox.DB = {
+    owners: ['나'],
+    assets: [{ id: 'a1', type: 'savings', owner: '나', baseAmount: 100000, includeInTotal: true }],
+    txns: [],
+    recurrences: [rec],
+    categories: { expense: [], income: [], saving: [] },
+    settings: { confirmTransfers: false },
+    nwHistory: [],
+    goals: [],
+  };
+}
+test('globalSearchBody: 반복 등록의 카테고리로 검색하면 "반복" 그룹에 editRec로 이어지는 행이 나온다', () => {
+  setupGlobalSearchRecDB({ id: 'r1', active: true, freq: 'monthly', day: 1, startDate: '2026-01-01', endDate: null, weekend: 'none', type: 'expense', category: '구독', memo: '넷플릭스', amount: -17000, fromAssetId: 'a1', skip: [], edits: {} });
+  const html = sandbox.globalSearchBody('구독');
+  assert.ok(html.includes('반복 · 1개'));
+  assert.ok(html.includes("editRec('r1')"), '행을 탭하면 반복 등록 자체를 수정할 수 있는 editRec로 이어져야 함');
+});
+test('globalSearchBody: 반복 등록의 메모로도 찾을 수 있다(카테고리와 다른 필드)', () => {
+  setupGlobalSearchRecDB({ id: 'r1', active: true, freq: 'monthly', day: 1, startDate: '2026-01-01', endDate: null, weekend: 'none', type: 'expense', category: '구독', memo: '넷플릭스', amount: -17000, fromAssetId: 'a1', skip: [], edits: {} });
+  const html = sandbox.globalSearchBody('넷플릭스');
+  assert.ok(html.includes('반복 · 1개'));
+});
+test('globalSearchBody: 중지된 반복은 "중지됨" 표시가 붙는다', () => {
+  setupGlobalSearchRecDB({ id: 'r1', active: false, freq: 'monthly', day: 1, startDate: '2026-01-01', endDate: null, weekend: 'none', type: 'expense', category: '구독', memo: '넷플릭스', amount: -17000, fromAssetId: 'a1', skip: [], edits: {} });
+  const html = sandbox.globalSearchBody('구독');
+  assert.ok(html.includes('중지'), '비활성 반복은 openRecManage() 행과 동일하게 중지 표시가 붙어야 함');
+});
+test('globalSearchBody: 일치하는 반복이 없으면 "반복" 그룹 자체가 생기지 않는다', () => {
+  setupGlobalSearchRecDB({ id: 'r1', active: true, freq: 'monthly', day: 1, startDate: '2026-01-01', endDate: null, weekend: 'none', type: 'expense', category: '구독', memo: '넷플릭스', amount: -17000, fromAssetId: 'a1', skip: [], edits: {} });
+  const html = sandbox.globalSearchBody('xyz없음');
+  assert.ok(!html.includes('반복 · '));
 });
 
 /* ---------- 전역 통합검색 거래 그룹의 소스: DB.txns에 실물로 저장되지 않고 expandRec()이

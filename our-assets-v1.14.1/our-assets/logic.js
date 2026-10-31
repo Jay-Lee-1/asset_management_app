@@ -601,6 +601,21 @@ function matchGoalQuery(g,q){
  if(!terms.length)return true;
  return terms.every(term=>normHay.includes(term));
 }
+/* 반복(구독) 검색 — matchGoalQuery와 동일한 규칙(대소문자 무시 includes + NFC 정규화 + 공백 AND).
+ * 통합검색(globalSearchBody, index.html)이 거래·자산·카테고리·목표까지만 가로질러 찾고 반복
+ * 등록 자체(DB.recurrences)는 빠져 있던 공백을 메운다(app-evolve cycle279 develop) — 반복거래의
+ * "넷플릭스"를 검색하면 매달 전개된 과거 결제 내역(거래 그룹)만 나오고, 정작 그 구독을 편집·중지할
+ * 수 있는 반복 등록 자체로는 통합검색에서 바로 들어갈 길이 없었다. 반복은 카테고리와 메모 두
+ * 필드 모두 식별에 쓰이므로(openRecManage 행이 카테고리를 제목으로, recMemoInput으로 메모도
+ * 따로 입력받음) matchAssetQuery처럼 두 필드를 모두 haystack에 넣는다. */
+function matchRecQuery(r,q){
+ if(!q)return true;
+ const hay=String(r&&r.category||'')+' '+String(r&&r.memo||'');
+ const normHay=hay.normalize('NFC').toLowerCase();
+ const terms=searchTerms(q.normalize('NFC').toLowerCase());
+ if(!terms.length)return true;
+ return terms.every(term=>normHay.includes(term));
+}
 /* 메모 기반 카테고리 추천 — 거래/반복거래 입력(index.html txMemoInput/recMemoInput)에서 "스타벅스",
  * "넷플릭스"처럼 같은 메모를 반복 입력할 때마다 카테고리를 DB.categories.expense[0] 기본값에서
  * 매번 다시 골라야 하는 마찰을 줄인다(app-evolve cycle270 critique). matchTxnQuery 같은 검색

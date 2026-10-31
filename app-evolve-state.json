@@ -1,22 +1,8 @@
 {
   "cycle": 279,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 273,
-      "phase": "advance",
-      "timestamp": "2026-10-30T18:30:00.000Z",
-      "summary": "critique(cycle273) 계획대로 부채 이자율 입력 + 이자 기반 상환 예상(amortization)을 구현. logic.js에 amortizationPayoffMonths(balance,monthlyPayment,annualRatePct) 순수 함수 신설(표준 원리금균등상환 공식, 월 이자>=월 상환액이면 null, 이자율 없으면 단순 나눗셈 폴백). asDraft에 선택 필드 interestRate 추가 — interestRateField(d) 신설(costBasisField와 동일한 선택 입력 패턴, class=num inputmode=decimal+fmtQty로 소수 허용), renderAssetSheet의 debt 분기에 배선, syncAssetInputs에서 파싱(비우면 delete), SANITIZE_QTY_FIELDS에도 등록해 백업 복원 시 음수를 0으로 클램프. debtWhatIfText 바로 뒤에 이어붙는 debtAmortSuffix(a,extra,bal) 신설 — 별도 입력을 새로 만들지 않고 기존 debtWhatIfExtra 값을 '매달 갚을 금액'으로 재사용(extra=0이면 추측하지 않고 숨김), assetBalCard 초기 렌더와 debtWhatIfUpdate 양쪽에 배선해 같은 #debtWhatIfResult textContent/announceLive로 공지. duplicateAsset은 interestRate를 구조적 설정으로 보존(수정 없이 기존 로직이 이미 보존). test/run.js FUNCTIONS에 interestRateField/debtAmortSuffix 추가, amortizationPayoffMonths 경계(완납/상환액없음/이자없음 폴백/월이자>=상환액/정상계산/단조성) 7건, syncAssetInputs 저장/삭제 1건, renderAssetSheet 필드 노출 2건, saveAsset 신규/수정 보존 1건, assetBalCard debtAmortSuffix 노출 조건 4건, debtWhatIfUpdate 배선 1건, sanitizeBackup 클램프 1건 총 17건 추가. APP_VERSION 1.47.291->1.47.292, sw.js CACHE v558->v559. node test/run.js 2322/2322 통과, 메인 스크립트(블록2) node --check(new Function) 통과. pending_advance_plan null로 비움.",
-      "commit": null
-    },
-    {
-      "cycle": 274,
-      "phase": "develop",
-      "timestamp": "2026-10-30T14:40:00.000Z",
-      "summary": "거래(duplicateTx)·자산(duplicateAsset)엔 전용 복제 기능이 있지만 반복(recurrence)에는 없어, 조건이 비슷한 구독 등을 여러 개 등록할 때마다 유형·주기·요일·자산을 매번 처음부터 다시 골라야 하던 기능 대등성 공백을 발견. editRec 근처에 duplicateRec(id) 신설 — id=null, active=true(원본이 중지 상태여도 새로 시작), startDate=TODAY로 리셋(원본 시작일을 그대로 두면 과거부터 회차가 생김), 그 시작일에 종속된 endDate/count와 원본 고유의 skip/edits/confirmedDates는 비움(saveRec()의 신규 저장 분기가 어차피 덮어쓰지만 폼 상태도 명시적으로 비움). openRecManage() 행의 row-acts에 duplicateAsset과 동일한 act-btn+svg(copy) 복제 버튼 배선. test/run.js FUNCTIONS 목록에 duplicateRec 추가하고 필드 리셋/보존, _recCatSuggAnnounced 리셋, 존재하지 않는 id, duplicateRec→saveRec 저장 테스트 총 4건 추가(테스트 작성 중 vm cross-realm 배열이라 deepStrictEqual([],[])가 실패하는 걸 발견해 길이 비교로 교체 — 기존 cycle 패턴과 동일). APP_VERSION 1.47.292->1.47.293, sw.js CACHE v559->v560. node test/run.js 2326/2326 통과, 메인 스크립트(1417~10927행) node --check 통과.",
-      "commit": null
-    },
     {
       "cycle": 274,
       "phase": "review",
@@ -148,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-31T14:05:00.000Z",
       "summary": "critique(cycle278) 계획대로 전체내역 검색(histQ)에 금액 비교/범위 연산자를 구현. logic.js에 parseAmountUnit(s) 신설(\"만\"=10000, \"억\"=100000000 단위 접미사를 선택적으로 허용하는 숫자 파싱, 형식이 아니면 null) + parseAmountToken(tok) 신설 — >N/>=N/<N/<=N/N~M(범위) 패턴만 {op,v1[,v2]}로 파싱하고 나머지(순수 숫자 포함)는 null을 돌려줘 matchTxnQuery가 기존 substring 매칭으로 넘기게 함(100% 하위호환). 범위는 입력 순서를 가정하지 않고 Math.min/max로 다시 정렬. amountMatchesToken(amount,parsed)이 Math.abs(amount) 기준으로 비교(음수로 저장된 조정 거래도 지원). matchTxnQuery(logic.js:508)의 terms.every 콜백을 토큰별로 parseAmountToken 우선 시도 후 매칭되면 금액 비교, 아니면 기존 normHay.includes(term)으로 분기하도록 수정 — 연산자 토큰과 일반 텍스트 토큰이 공백으로 섞여도 AND로 결합됨. histQ placeholder(index.html:5781)를 \"메모·카테고리·자산·금액(>10만, 1만~5만) 검색\"으로 갱신해 실제로 지원하는 문법을 광고. test/run.js에 parseAmountToken 경계(>,>=,<,<=,range,역순 범위 재정렬,만/억 단위,순수 숫자→null,연산자 뒤 비숫자→null,범위 한쪽 비숫자→null) 10건 + matchTxnQuery 통합(초과 비교 경계 제외,범위 포함 경계,음수 절대값,연산자+텍스트 AND,기존 부분일치 회귀) 6건, 총 16건 추가(크로스 realm 객체라 deepStrictEqual 대신 필드별 strictEqual 사용, cycle274와 동일 관례). renderHistory 기존 placeholder 텍스트 단언 테스트 1건도 새 문구로 갱신. APP_VERSION 1.47.301->1.47.302, sw.js CACHE v568->v569. node test/run.js 2390/2390 통과, 메인 스크립트(블록2) node --check(new Function) 통과. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 279,
+      "phase": "develop",
+      "timestamp": "2026-10-31T15:10:00.000Z",
+      "summary": "통합검색(globalSearchBody)이 거래·자산·카테고리·목표까지만 가로질러 찾고 반복 등록 자체(DB.recurrences)는 빠져 있던 공백을 발견 — 반복거래의 메모/카테고리로 검색하면 매달 expandRec()이 전개한 과거 결제 내역(거래 그룹)만 나오고, 그 구독을 편집·중지할 수 있는 반복 등록 자체(openRecManage/editRec)로는 통합검색에서 바로 들어갈 길이 없었다. logic.js에 matchRecQuery(r,q) 순수 함수 신설(matchGoalQuery와 동일한 대소문자 무시 includes+NFC 정규화+공백 AND 규칙이지만, matchAssetQuery처럼 category+memo 두 필드를 모두 haystack에 넣음 — 반복은 카테고리가 제목, 메모가 보조 식별자인 두 필드 모두로 찾아야 함). index.html의 globalSearchBody()에 recsAll=(DB.recurrences||[]).filter(r=>matchRecQuery(r,q)) 추가, 결과없음 분기에 !recsAll.length 포함, capGroup으로 recsCapped/recsRemain 산출(기존 txns/assets/cats/goals와 동일 패턴). 렌더는 openRecManage() 행과 동일한 마크업(타입별 avatar 색상, catGlyph(r.type,r.category,18,'repeat')/transfer는 svg('transfer'), 중지된 반복은 opacity+'중지' 배지)을 재사용하되 onclick은 editRec(r.id)로 반복 등록 자체 수정 화면으로 바로 연결(복제/일시중지 버튼은 목록 화면 전용이라 검색 결과에는 넣지 않음, goal 행과 동일하게 단일 탭 동작만 제공). openGlobalSearch()의 placeholder와 globalSearchBody 빈 검색어 안내 문구도 '반복'을 포함하도록 갱신. test/run.js에 matchRecQuery 경계(빈 검색어/카테고리 매칭/메모 매칭/대소문자/불일치/NFD 저장·검색어 양방향/공백 AND/null·필드없음 안전처리) 9건 + globalSearchBody 통합 테스트(검색 시 \"반복\" 그룹 노출+editRec 연결/메모로도 매칭/중지됨 배지/매칭 없으면 그룹 자체가 안 생김) 4건, 총 13건 추가. APP_VERSION 1.47.302->1.47.303, sw.js CACHE v569->v570. node test/run.js 2403/2403 통과.",
       "commit": null
     }
   ]
