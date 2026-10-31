@@ -141,7 +141,7 @@
       "phase": "develop",
       "timestamp": "2026-10-31T08:10:00.000Z",
       "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, CSV 내보내기가 거래·자산목록·순자산추이·매도손익·반복거래 5종은 있지만 목표(DB.goals)만 CSV 내보내기가 전혀 없는 공백을 발견 — openCsvMenu의 pk-item 버튼 5개에도 목표 항목이 없고 goalsToCSV 자체가 코드베이스에 없었다. index.html에 goalsToCSV(items,assets) 순수 함수 신설 (recurrencesToCSV 바로 뒤) — 목표이름/유형/연결자산/목표금액/현재진행금액/달성률/목표일/귀속/달성여부/생성일 10컬럼, guard/esc로 동일한 CSV 인젝션 방어. 현재 진행 금액(cur)·달성률(pct)·달성 여부(achieved)는 DB.goals 레코드 자체 필드가 아니라 goalProgress(logic.js)가 goalHistoryFor를 봐야 구해지는 파생값이라 assetsCsv의 evalValue/gainLoss와 같은 이유로 goalsToCSV 안에서 계산하지 않고 doExport가 미리 계산해 얹어 넘긴다. 연결 자산명(linkedAssetId)은 type이 asset일 때만 채우고 networth면 빈 칸(추측하지 않음), 자산이 삭제됐으면 역시 빈 칸으로 남긴다. CSV_KIND_META에 goalsCsv:{prefix:'goals',...} 추가, doExport의 kind 분기에 kind==='goalsCsv'?goalsToCSV(...) 추가, exportData()에 목표 CSV로 내보내기 pk-item 버튼 배선(svg('target') 아이콘, 기존 목표 UI와 동일 아이콘 재사용). test/run.js FUNCTIONS에 goalsToCSV 추가, 빈 배열/cur·pct·achieved 전달/연결자산 유무·networth 빈칸/연결자산 삭제됨/생성일 정렬+포맷/달성여부 Y/CSV 인젝션 방어 총 7건 + exportData·CSV_KIND_META/doExport 배선 회귀 2건(기존 테스트 확장) 추가. APP_VERSION 1.47.298->1.47.299, sw.js CACHE v565->v566. node test/run.js 2362/2362 통과, 메인 스크립트(블록2) node --check(new Function) 통과.",
-      "commit": null
+      "commit": "89de28e"
     }
   ]
 }
