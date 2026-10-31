@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.299';
+const APP_VERSION='1.47.300';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4380,7 +4380,9 @@ function movedCatOrder(arr,i,dir){
 let asDraft=null;
 function openAssetSheet(id){
  const editing=!!id;
- asDraft=editing?JSON.parse(JSON.stringify(DB.assets.find(a=>a.id===id))):{type:'cash',owner:DB.owners[0],includeInTotal:true,currency:'USD'};
+ const orig=editing?DB.assets.find(a=>a.id===id):null;
+ asDraft=editing?JSON.parse(JSON.stringify(orig)):{type:'cash',owner:DB.owners[0],includeInTotal:true,currency:'USD'};
+ if(editing)asDraft._hadCostBasis=!!(orig&&orig.costBasis>0); /* 이미 매입원가가 있던 기존 자산 표시 — syncAssetInputs가 무관한 필드만 바꿔 저장할 때도 acquiredAt을 멋대로 오늘 날짜로 채우지 않도록(app-evolve cycle277 critique/advance) */
  if(editing&&asDraft.type==='pension')asDraft._pensionAutoExcl=true; /* _pensionAutoExcl은 저장 시 지워지므로, 기존 연금 자산을 열 때마다 "연금은 자동 제외"로 다시 간주해야 전환 시 복원 로직(asOpenType)이 동작함 */
  if(editing&&['cash','savings','realestate','etc','pension','debt'].includes(asDraft.type))asDraft._dispAmt=balanceAt(asDraft.id,TODAY);
  if(editing&&isMarketValued(asDraft))asDraft._origQty=asDraft.type==='fx'?(asDraft.fxAmount||0):asDraft.type==='gold'?(asDraft.goldDon||0):asDraft.type==='crypto'?(asDraft.cryptoQty||0):(asDraft.stockQty||0); /* qtyBasisWarn/costBasisField가 수량 증가(추가매수) 경고를 판단할 기준값 — saveAsset()은 이걸 쓰지 않고 DB.assets[i]의 실제 원본값을 다시 읽는다 */
@@ -4417,7 +4419,7 @@ function syncAssetInputs(){const d=asDraft;const g=id=>$(id);
  if(g('asCode')){const v=g('asCode').value.trim().toUpperCase();if(d.type==='crypto')d.cryptoCode=v;else d.stockCode=v;}
  if(g('asQty')){const v=Math.max(0,parseFloat((g('asQty').value||'0').replace(/,/g,''))||0);if(d.type==='crypto')d.cryptoQty=v;else d.stockQty=v;}
  if(g('asCostBasis')){const n=num(g('asCostBasis'),false);if(n>0)d.costBasis=n;else delete d.costBasis;
-   if(d.costBasis>0){if(!d.acquiredAt)d.acquiredAt=TODAY;}else delete d.acquiredAt;} /* 매입 금액을 처음 입력하는 순간에만 최초 매입일(acquiredAt)을 오늘로 찍는다(annualizedReturn의 보유기간 기준) — 추가매수로 액수만 바뀌는 addCostBasisForBuy 경로는 이미 acquiredAt이 있는 상태에서만 열리므로 건드리지 않음(app-evolve cycle276 critique/advance) */
+   if(d.costBasis>0){if(!d.acquiredAt&&!d._hadCostBasis)d.acquiredAt=TODAY;}else delete d.acquiredAt;} /* 매입 금액을 처음 입력하는 순간에만 최초 매입일(acquiredAt)을 오늘로 찍는다(annualizedReturn의 보유기간 기준) — 추가매수로 액수만 바뀌는 addCostBasisForBuy 경로는 이미 acquiredAt이 있는 상태에서만 열리므로 건드리지 않음(app-evolve cycle276 critique/advance). cycle276 이전부터 costBasis가 있던 기존 자산(_hadCostBasis)은 acquiredAt이 없어도 무관한 필드만 바꿔 저장할 때 오늘 날짜로 잘못 채워지지 않도록 비워 둔다 — 틀린 연환산 수익률보다 미표시가 안전(app-evolve cycle277 critique/advance) */
  if(g('asAddedCost'))d._addedCost=num(g('asAddedCost'),false);
  if(g('asSaleProceeds'))d._saleProceeds=num(g('asSaleProceeds'),false);
  if(g('asInterestRate')){const v=Math.max(0,parseFloat((g('asInterestRate').value||'0').replace(/,/g,''))||0);if(v>0)d.interestRate=v;else delete d.interestRate;}}
@@ -4528,7 +4530,7 @@ function saveAsset(editing){
  const entered=balType?(d._dispAmt!=null?d._dispAmt:(d[balKey]||0)):0; /* 사용자가 입력한 '현재 금액' */
  const addedCost=d._addedCost>0?d._addedCost:0; /* costBasisField의 "이번에 추가로 투입한 금액" — 추가매수(수량 증가) 시 addCostBasisForBuy로 더해줄 몫 */
  const saleProceeds=d._saleProceeds>0?d._saleProceeds:0; /* costBasisField의 "이번에 받은 매도 금액" — 일부 매도(수량 감소) 시 realizedGainForSale로 실현손익을 계산할 몫 */
- delete d._dispAmt;delete d._pensionAutoExcl;delete d._pensionPrevIncl;delete d._origQty;delete d._addedCost;delete d._saleProceeds;
+ delete d._dispAmt;delete d._pensionAutoExcl;delete d._pensionPrevIncl;delete d._origQty;delete d._addedCost;delete d._saleProceeds;delete d._hadCostBasis;
  const dup=DB.assets.find(a=>a.id!==d.id&&normName(a.name)===normName(d.name)&&a.type===d.type); /* 살아있는 동명(대소문자·연속 공백 개수 무시)·동종 (신규/수정 공통) */
  if(dup){toast(dup.name===d.name?'같은 이름·종류의 자산이 이미 있어요':`비슷한 이름의 자산이 있어요: ${dup.name}`);return;} /* 중복 차단 */
  /* 표시 잔액이 입력값과 같도록 기준값 역산 (오늘까지의 순입출금 기여분 제외) */

@@ -13136,6 +13136,85 @@ test('syncAssetInputs: 매입 금액을 비우면(매입원가 미입력으로 �
     sandbox.$ = $orig;
   }
 });
+/* ---------- openAssetSheet/syncAssetInputs: cycle276 이전부터 costBasis>0이던 기존 자산은
+ * acquiredAt이 없는데, syncAssetInputs가 "costBasis>0 && !acquiredAt이면 무조건 TODAY로 채운다"는
+ * 조건만 보고 소유자/화폐/만기일 등 무관한 필드를 바꿔 저장할 때마다 acquiredAt을 저장 시점으로
+ * 잘못 덮어써 annualizedReturn이 왜곡되던 회귀(app-evolve cycle277 critique/advance). openAssetSheet가
+ * 편집 진입 시 원본의 costBasis>0 여부를 asDraft._hadCostBasis에 비영구로 남겨 syncAssetInputs가
+ * 그 경우엔 TODAY를 채우지 않게 막는다. ---------- */
+test('openAssetSheet: 이미 매입원가가 있던 기존 자산을 열면 _hadCostBasis가 true로 찍힌다', () => {
+  sandbox.DB = { settings: {}, assets: [{ id: 'a1', type: 'stock', owner: '나', stockCode: '005930', stockQty: 10, costBasis: 700000 }], txns: [], recurrences: [] };
+  sandbox._balCache.clear();
+  sandbox.openAssetSheet('a1');
+  assert.strictEqual(sandbox.asDraft._hadCostBasis, true);
+});
+test('openAssetSheet: 매입원가가 없는 자산을 열면 _hadCostBasis가 false다(신규 입력 시 TODAY를 찍어야 함)', () => {
+  sandbox.DB = { settings: {}, assets: [{ id: 'a1', type: 'stock', owner: '나', stockCode: '005930', stockQty: 10 }], txns: [], recurrences: [] };
+  sandbox._balCache.clear();
+  sandbox.openAssetSheet('a1');
+  assert.strictEqual(sandbox.asDraft._hadCostBasis, false);
+});
+test('syncAssetInputs: _hadCostBasis=true(기존 자산)면 acquiredAt이 없어도 무관한 필드만 바꿔 저장할 때 TODAY를 채우지 않는다(cycle277 버그 수정)', () => {
+  const $orig = sandbox.$;
+  const input = { value: '700,000' };
+  sandbox.$ = (id) => (id === 'asCostBasis' ? input : null);
+  sandbox.TODAY = '2026-10-31';
+  try {
+    sandbox.asDraft = { type: 'stock', stockCode: '005930', stockQty: 10, costBasis: 700000, _hadCostBasis: true };
+    sandbox.syncAssetInputs();
+    assert.strictEqual('acquiredAt' in sandbox.asDraft, false, '기존 자산은 최초 매입일을 모르므로 추측해 채우면 안 됨(annualizedReturn은 null로 숨겨짐)');
+  } finally {
+    sandbox.$ = $orig;
+  }
+});
+test('syncAssetInputs: _hadCostBasis=false(신규 자산)면 기존 동작대로 매입 금액을 처음 입력한 순간 acquiredAt에 TODAY를 채운다(회귀 없음)', () => {
+  const $orig = sandbox.$;
+  const input = { value: '700,000' };
+  sandbox.$ = (id) => (id === 'asCostBasis' ? input : null);
+  sandbox.TODAY = '2026-10-31';
+  try {
+    sandbox.asDraft = { type: 'stock', stockCode: '005930', stockQty: 10, _hadCostBasis: false };
+    sandbox.syncAssetInputs();
+    assert.strictEqual(sandbox.asDraft.acquiredAt, '2026-10-31');
+  } finally {
+    sandbox.$ = $orig;
+  }
+});
+test('syncAssetInputs: acquiredAt이 이미 있으면 _hadCostBasis 값과 무관하게 그대로 보존된다(회귀 없음)', () => {
+  const $orig = sandbox.$;
+  const input = { value: '700,000' };
+  sandbox.$ = (id) => (id === 'asCostBasis' ? input : null);
+  sandbox.TODAY = '2026-11-15';
+  try {
+    sandbox.asDraft = { type: 'stock', stockCode: '005930', stockQty: 10, costBasis: 700000, acquiredAt: '2026-01-05', _hadCostBasis: true };
+    sandbox.syncAssetInputs();
+    assert.strictEqual(sandbox.asDraft.acquiredAt, '2026-01-05');
+  } finally {
+    sandbox.$ = $orig;
+  }
+});
+test('saveAsset: 저장 시 임시 플래그 _hadCostBasis를 지워 DB/백업에 새지 않는다', () => {
+  const asset = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 10, costBasis: 700000 };
+  sandbox.DB = { assets: [asset], assetQtyLog: [], rates: { fx: {}, stocks: { '005930': 70000 }, goldPerG: 0 } };
+  sandbox.asDraft = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 10, costBasis: 700000, _hadCostBasis: true };
+  sandbox.saveAsset(true);
+  assert.strictEqual('_hadCostBasis' in sandbox.DB.assets[0], false);
+});
+test('duplicateAsset: 복제본은 원본의 _hadCostBasis 여부와 무관하게 costBasis/acquiredAt이 지워지므로, 매입 금액을 처음 입력하면 다시 TODAY가 찍힌다(회귀 없음)', () => {
+  sandbox.DB = { assets: [{ id: 'a1', type: 'stock', owner: '나', stockCode: '005930', stockQty: 10, costBasis: 700000, acquiredAt: '2024-05-01' }] };
+  sandbox.duplicateAsset('a1');
+  assert.strictEqual('_hadCostBasis' in sandbox.asDraft, false, 'duplicateAsset은 DB.assets 레코드를 직접 복제하므로 애초에 _hadCostBasis가 없어야 함');
+  const $orig = sandbox.$;
+  const input = { value: '500,000' };
+  sandbox.$ = (id) => (id === 'asCostBasis' ? input : null);
+  sandbox.TODAY = '2026-10-31';
+  try {
+    sandbox.syncAssetInputs();
+    assert.strictEqual(sandbox.asDraft.acquiredAt, '2026-10-31', '복제본은 새 자산과 동일하게 취급돼 매입 금액 입력 시 최초 매입일이 찍혀야 함');
+  } finally {
+    sandbox.$ = $orig;
+  }
+});
 
 /* ---------- clampRecurringToMaturity: 저축 만기일을 당겼다가 다시 늘려도 자동이체가 예전 만기에
  * 멈춘 채로 영영 안 늘어나던 버그(cycle46 develop). 종료일만 있고 count가 없는 건 이 함수가 자동으로

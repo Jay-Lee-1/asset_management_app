@@ -1,19 +1,8 @@
 {
-  "cycle": 277,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "기존 매입가 자산을 무관한 이유로 저장할 때 acquiredAt이 TODAY로 잘못 찍혀 연환산 수익률이 왜곡되는 버그 수정",
-    "why": "syncAssetInputs()(index.html:4411-4420)가 '매입 금액을 처음 0→양수로 입력하는 순간'만 노린 의도와 달리, costBasis 입력란이 있는 자산 시트에서 saveAsset을 포함해 asOpenType/asOpenOwner/asOpenCur/asOpenMat/asToggleNeg 등이 호출할 때마다 d.costBasis>0 && !d.acquiredAt이면 무조건 acquiredAt=TODAY로 찍는다. cycle276(annualizedReturn) 출시 이전부터 costBasis>0이던 기존 자산은 acquiredAt이 없으므로, 소유자·화폐·만기일 등 전혀 무관한 필드만 바꿔 저장해도 acquiredAt이 실제 매입일 대신 '이번에 저장한 날짜'로 조용히 덮어써진다. annualizedReturn()은 보유기간을 365/days로 거듭제곱하므로 수년치 손익이 며칠짜리 기간으로 계산돼 화면에 실제와 전혀 다른(대개 극단적으로 과장된) 연환산 수익률 배지를 보여준다 — develop 바로 다음에만 도는 review가 advance 커밋 자체는 검토하지 않는 로테이션 구조의 사각지대 때문에 cycle276 이후 지금까지 못 잡힌 회귀다. fork 서브에이전트가 critique(cycle277) 탐색 중 index.html을 직접 읽고 발견했으며, 본 세션에서 syncAssetInputs 소스와 호출부 6곳을 직접 재확인해 실재함을 검증했다.",
-    "approach": "1) 자산 편집 진입점(editAsset/openAssetSheet가 asDraft=JSON.parse(JSON.stringify(a))로 draft를 만드는 지점)에서 원본 레코드의 costBasis>0 여부를 draft에 비영구 플래그로 심어둔다: asDraft._hadCostBasis=!!(a&&a.costBasis>0) (duplicateAsset(4397)은 costBasis/acquiredAt을 이미 지우므로 플래그가 자연히 falsy). 2) syncAssetInputs()(4419-4420)의 조건을 좁힌다: `if(n>0){if(!d.acquiredAt&&!d._hadCostBasis)d.acquiredAt=TODAY;d.costBasis=n}else{delete d.costBasis;delete d.acquiredAt}` — 이미 costBasis가 있던(_hadCostBasis=true) 자산은 acquiredAt이 없어도 자동으로 채우지 않고 계속 비워 annualizedReturn이 null을 반환하게 둔다(틀린 값보다 안전, costBasis 자체가 선택 입력인 기존 원칙과 동일). 3) addCostBasisForBuy(추가매수) 경로는 이미 acquiredAt이 있는 상태에서만 열리므로 영향 없음을 재확인한다. 4) saveAsset()이 asDraft를 DB.assets에 반영하기 직전에 delete d._hadCostBasis로 임시 플래그를 제거해 DB/백업에 새지 않게 한다(costBasisField 등 다른 _ 접두사 임시 필드와 동일 관례). 5) test/run.js에 회귀 테스트 추가: (a) 신규 자산 costBasis 첫 입력 시 acquiredAt=TODAY(기존 동작 유지), (b) _hadCostBasis=true 상태(기존 자산 시뮬레이션)에서 costBasis>0&&acquiredAt 없음으로 무관한 필드만 바꿔 저장해도 acquiredAt이 그대로 비어 있음(버그 수정 확인), (c) costBasis와 acquiredAt이 모두 있는 자산은 저장해도 acquiredAt 불변, (d) costBasis를 지우면 acquiredAt도 함께 지워짐(기존 동작 유지), (e) duplicateAsset은 costBasis/acquiredAt을 이미 지우므로 _hadCostBasis 유무와 무관함을 확인. node test/run.js 전체 통과 확인 후 APP_VERSION/sw.js CACHE 버전을 올린다."
-  },
+  "cycle": 278,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 272,
-      "phase": "advance",
-      "timestamp": "2026-10-30T15:29:28.374Z",
-      "summary": "critique(cycle272) 계획대로 자산 복제(duplicateAsset) 기능을 구현. openAssetSheet 근처에 duplicateAsset(id) 신설 — id/order 제거, name에 \" 복사\" 접미사, 잔액(baseAmount/amountKRW)·만기일(maturityDate)·부채 완납 ack(payoffAckAt) 제거, isMarketValued(fx/gold/stock/crypto)면 costBasis 제거 및 수량 필드(stockQty 등) 0으로 초기화, 그 외(type/owner/currency/includeInTotal/maturityTargetId 등 구조적 설정)는 보존. renderAssetSheet(false)로 열어 saveAsset()이 신규 저장 경로를 타게 함. 자산 목록 행(row-acts)에 거래 .dup-btn과 동일한 패턴의 복제 act-btn 배선. test/run.js에 duplicateAsset 테스트 6건 추가(cash/savings/stock/debt 필드 보존·제거, 존재하지 않는 id, duplicateAsset→saveAsset 왕복). APP_VERSION 1.47.289->1.47.290, sw.js CACHE v556->v557. node test/run.js 2302/2302 통과, 메인 스크립트(블록2) node --check 통과. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 273,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-31T10:14:06.444Z",
       "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, 새로운 기능 공백보다 먼저 cycle276에서 막 추가된 annualizedReturn/acquiredAt 기능 자체에 숨어있던 correctness 버그를 발견 — syncAssetInputs()(index.html:4411-4420)가 매입 금액을 처음 입력하는 순간만 노린 의도와 달리, saveAsset 포함 여러 호출 경로에서 d.costBasis>0 && !d.acquiredAt이면 항상 acquiredAt=TODAY로 찍는다. cycle276 이전부터 costBasis>0이던 기존 자산은 acquiredAt이 없어, 소유자/화폐/만기일 등 무관한 필드만 바꿔 저장해도 acquiredAt이 저장 시점으로 덮어써지고, annualizedReturn이 수년치 손익을 며칠짜리 보유기간으로 나눠 극단적으로 틀린 연환산 수익률을 보여주게 된다. develop 바로 다음에만 도는 review가 advance 커밋은 검토하지 않는 사각지대 때문에 지금까지 못 잡힌 회귀. 본 세션에서 syncAssetInputs 소스와 호출부(saveAsset/asOpenType/asOpenOwner/asOpenCur/asOpenMat/asToggleNeg 등 6곳)를 직접 재확인해 실재함을 검증. 채택 계획(_hadCostBasis 임시 플래그로 기존 자산의 acquiredAt 자동 채움 방지 + saveAsset 저장 전 플래그 제거 + 테스트 5건)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 277,
+      "phase": "advance",
+      "timestamp": "2026-10-31T11:20:00.000Z",
+      "summary": "critique(cycle277) 계획대로 기존 매입원가 자산의 acquiredAt 오염 버그를 수정. openAssetSheet()가 편집 진입 시 원본 레코드의 costBasis>0 여부를 asDraft._hadCostBasis에 비영구로 남김(duplicateAsset은 DB.assets 레코드를 직접 복제해 애초에 이 플래그가 없으므로 자연히 신규 자산과 동일하게 동작). syncAssetInputs()의 조건을 if(!d.acquiredAt&&!d._hadCostBasis)d.acquiredAt=TODAY로 좁혀, 이미 costBasis가 있던(_hadCostBasis=true) 기존 자산은 acquiredAt이 없어도 무관한 필드만 바꿔 저장할 때 더는 TODAY로 자동 채워지지 않고 계속 비워 annualizedReturn이 null을 반환하게 둠(틀린 값보다 안전). saveAsset()이 asDraft를 DB.assets에 반영하기 직전 delete d._hadCostBasis로 임시 플래그를 제거해 DB/백업에 새지 않게 함(costBasisField 등 다른 _ 접두사 임시 필드와 동일 관례). test/run.js에 openAssetSheet의 _hadCostBasis 설정(기존 자산 true/신규 자산 false) 2건, syncAssetInputs의 버그 재현·수정 확인 3건(기존 자산 TODAY 미채움, 신규 자산 기존 동작 유지, acquiredAt 이미 있으면 보존), saveAsset 저장 시 임시 플래그 제거 1건, duplicateAsset 복제본은 영향 없음 1건, 총 7건 추가. APP_VERSION 1.47.299->1.47.300, sw.js CACHE v566->v567. node test/run.js 2369/2369 통과, 메인 스크립트(블록2) node --check(new Function) 통과. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]
