@@ -1,22 +1,8 @@
 {
   "cycle": 275,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 270,
-      "phase": "develop",
-      "timestamp": "2026-10-30T04:15:52.000Z",
-      "summary": "통합검색(globalSearchBody)의 목표(goal) 결과가 goalRowHTML()/openGoalsList()와 '동일한 마크업'이라는 주석과 달리 실제로는 assetGone/assetBroken/hasUnknown 경고 캡션이 빠져 있던 공백을 발견(cycle269 develop이 goalProgress/goalIsOverdue만 가져오고 캡션은 놓침). globalSearchBody()가 기존 로직 재사용으로 세 캡션을 openGoalsList()와 동일하게 렌더하도록 수정. test/run.js에 자산삭제/추적불가/정상(캡션없음) 3개 테스트 추가. APP_VERSION 1.47.283->1.47.284, sw.js CACHE v550->v551. node test/run.js 2260/2260 통과.",
-      "commit": "ce3b60a"
-    },
-    {
-      "cycle": 270,
-      "phase": "review",
-      "timestamp": "2026-10-30T05:00:00.000Z",
-      "summary": "cycle270 develop 커밋(ce3b60a, 통합검색 목표 결과에 assetGone/assetBroken/hasUnknown 캡션 추가)을 검토. goalRowHTML()과 동일한 우선순위(assetGone→assetBroken→hasUnknown)로 같은 판정 함수를 재사용하는 것을 확인, aria-label 등 기존 패턴과도 일치. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 270,
       "phase": "critique",
@@ -149,6 +135,13 @@
       "timestamp": "2026-10-31T00:00:00.000Z",
       "summary": "거래 목록(txRowCore)의 dup-btn aria-label이 모든 행에서 \"복제\" 하나뿐이라, 스크린리더로 전체내역을 훑는 사용자는 목록 안의 복제 버튼들을 서로 구분할 수 없던 공백을 발견 — duplicateAsset/duplicateRec의 act-btn은 이미 aria-label에 대상 이름(자산명/카테고리)을 포함해 서로 구분되는데, 거래의 dup-btn만 그 원칙에서 비껴나 있었다. txRowCore()의 dup-btn aria-label을 \"${esc(t.memo||catLabel)} 복제\"로 바꿔, 이 함수의 다른 aria-label들과 동일한 memo/catLabel 폴백을 공유하게 함. test/run.js에 memo 있을 때/없을 때(catLabel로 대체)/isRec이면 dup-btn 자체가 없음(회귀 없음) 3건 추가. APP_VERSION 1.47.294->1.47.295, sw.js CACHE v561->v562. node test/run.js 2333/2333 통과, 메인 스크립트(1417~10939행) node --check 통과.",
       "commit": "35a97c6"
+    },
+    {
+      "cycle": 275,
+      "phase": "review",
+      "timestamp": "2026-10-31T00:30:00.000Z",
+      "summary": "cycle275 develop 커밋(35a97c6, 거래 dup-btn aria-label에 거래 제목 추가)을 검토. esc()가 '&<>\"\\''를 모두 HTML 엔티티로 치환해 memo에 쌍따옴표가 포함돼도 aria-label 속성이 깨지지 않음을 확인; 같은 함수의 다른 aria-label(selectable 행, swipe-content 행)도 동일한 esc(t.memo||catLabel) 폴백을 이미 쓰고 있어 패턴 일치. duplicateAsset/duplicateRec의 act-btn aria-label과도 '대상 이름 + 동작명' 구조가 같음을 확인. node test/run.js 2333/2333 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "commit": null
     }
   ]
 }
