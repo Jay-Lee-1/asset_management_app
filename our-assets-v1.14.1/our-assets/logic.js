@@ -549,6 +549,17 @@ function amountMatchesToken(amount,parsed){
   default:return false;
  }
 }
+/* parseAmountToken은 공백 없이 붙여 쓴 ">10만"/"1만~5만"만 인식해, "> 10만"처럼 연산자·범위
+ * 구분자 뒤에 자연스럽게 띄어 쓰면 searchTerms가 ">"와 "10만"을 별개 토큰으로 쪼개버려 둘 다
+ * null이 되고 조용히 0건으로 떨어졌다(app-evolve cycle279 critique). 공백 바로 뒤가 숫자로
+ * 시작할 때만(일반 텍스트 토큰화에 영향 없도록) 연산자/~ 주변 공백을 미리 붙여, searchTerms가
+ * 쪼개기 전에 하나의 토큰으로 남긴다. */
+function normalizeAmountSpacing(q){
+ let s=String(q||'');
+ s=s.replace(/(>=|<=|>|<)\s+(?=\d)/g,'$1');
+ s=s.replace(/(\d+(?:\.\d+)?(?:만|억)?)\s*~\s*(?=\d)/g,'$1~');
+ return s;
+}
 function matchTxnQuery(t,q,assets){
  if(!q)return true;
  const fa=(assets||[]).find(a=>a.id===t.fromAssetId),ta=(assets||[]).find(a=>a.id===t.toAssetId);
@@ -559,7 +570,7 @@ function matchTxnQuery(t,q,assets){
  const lineAmts=lines.map(s=>s.amount!=null?String(s.amount):'').join(' ');
  const hay=(t.memo||'')+' '+cats+' '+lineMemos+' '+(fa?fa.name:(t.fromAssetName||'—'))+' '+(ta?ta.name:(t.toAssetName||'—'))+' '+amt+' '+lineAmts;
  const normHay=hay.normalize('NFC').toLowerCase();
- const terms=searchTerms(q.normalize('NFC').toLowerCase().replace(/,/g,''));
+ const terms=searchTerms(normalizeAmountSpacing(q.normalize('NFC').toLowerCase().replace(/,/g,'')));
  if(!terms.length)return true;
  return terms.every(term=>{
   const parsed=parseAmountToken(term);

@@ -7080,6 +7080,47 @@ test('matchTxnQuery: 금액의 일부 숫자만 넣는 기존 부분일치는 �
   assert.strictEqual(sandbox.matchTxnQuery(t, '2345', []), true);
 });
 
+/* ---------- normalizeAmountSpacing: 연산자/범위 뒤에 띄어 쓴 금액도 받아준다(app-evolve cycle279
+ * critique) — parseAmountToken은 ">10만"처럼 붙여 쓴 입력만 인식해, "> 10만"처럼 자연스럽게
+ * 띄어 쓰면 searchTerms가 ">"와 "10만"을 별개 토큰으로 쪼개 조용히 0건이 됐었다. */
+test('normalizeAmountSpacing: ">"/">="/"<"/"<=" 뒤에 공백이 있어도 숫자와 붙여준다', () => {
+  assert.strictEqual(sandbox.normalizeAmountSpacing('> 10000'), '>10000');
+  assert.strictEqual(sandbox.normalizeAmountSpacing('>= 10만'), '>=10만');
+  assert.strictEqual(sandbox.normalizeAmountSpacing('< 10000'), '<10000');
+  assert.strictEqual(sandbox.normalizeAmountSpacing('<= 1.5억'), '<=1.5억');
+});
+test('normalizeAmountSpacing: "~" 범위 구분자 양쪽 공백을(한쪽만 있어도) 숫자와 붙여준다', () => {
+  assert.strictEqual(sandbox.normalizeAmountSpacing('1만 ~ 5만'), '1만~5만');
+  assert.strictEqual(sandbox.normalizeAmountSpacing('5만~ 1만'), '5만~1만');
+  assert.strictEqual(sandbox.normalizeAmountSpacing('1만 ~5만'), '1만~5만');
+});
+test('normalizeAmountSpacing: 공백 뒤가 숫자로 시작하지 않으면 일반 텍스트는 건드리지 않는다', () => {
+  assert.strictEqual(sandbox.normalizeAmountSpacing('스타벅스 카페'), '스타벅스 카페');
+  assert.strictEqual(sandbox.normalizeAmountSpacing('할인 10% 적용'), '할인 10% 적용', '공백 앞에 연산자/숫자~가 없으면 보존돼야 함');
+});
+test('normalizeAmountSpacing: 이미 붙여 쓴 입력은 그대로 유지된다(idempotent)', () => {
+  assert.strictEqual(sandbox.normalizeAmountSpacing('>10000'), '>10000');
+  assert.strictEqual(sandbox.normalizeAmountSpacing('1만~5만'), '1만~5만');
+});
+test('matchTxnQuery: 연산자 뒤에 공백을 넣어 자연스럽게 입력해도("> 10000") 금액 비교로 매칭된다', () => {
+  const big = { memo: '', category: '식비', amount: 110000, fromAssetId: null, toAssetId: null };
+  const small = { memo: '', category: '식비', amount: 10000, fromAssetId: null, toAssetId: null };
+  assert.strictEqual(sandbox.matchTxnQuery(big, '> 10000', []), true);
+  assert.strictEqual(sandbox.matchTxnQuery(small, '> 10000', []), false);
+});
+test('matchTxnQuery: 범위 연산자 "~" 양쪽에 공백을 넣어도("1만 ~ 5만") 범위 비교로 매칭된다', () => {
+  const inRange = { memo: '', category: '식비', amount: 30000, fromAssetId: null, toAssetId: null };
+  const outOfRange = { memo: '', category: '식비', amount: 60000, fromAssetId: null, toAssetId: null };
+  assert.strictEqual(sandbox.matchTxnQuery(inRange, '1만 ~ 5만', []), true);
+  assert.strictEqual(sandbox.matchTxnQuery(outOfRange, '1만 ~ 5만', []), false);
+  assert.strictEqual(sandbox.matchTxnQuery(inRange, '5만 ~ 1만', []), true, '거꾸로 띄어 써도 재정렬되어야 함');
+});
+test('matchTxnQuery: 연산자와 무관한 일반 텍스트+숫자 조합은 공백 정규화 후에도 기존처럼 두 토큰 AND로 동작한다(회귀)', () => {
+  const t = { memo: '스타벅스', category: '카페', amount: 10000, fromAssetId: null, toAssetId: null };
+  assert.strictEqual(sandbox.matchTxnQuery(t, '스타벅스 10000', []), true, '공백 앞이 연산자가 아니므로 두 토큰으로 남아 각각 매칭돼야 함');
+  assert.strictEqual(sandbox.matchTxnQuery(t, '스타벅스 99999', []), false);
+});
+
 /* ---------- matchTxnQuery/matchAssetQuery/matchCatQuery: 검색어를 공백으로 띄워 쓰면 여러 단어
  * 모두 포함(AND)으로 좁혀진다(app-evolve cycle257 develop) — 기존엔 공백 포함 검색어 전체를 하나의
  * literal로 includes() 비교해, 메모/카테고리/자산명처럼 서로 다른 haystack 필드에 걸쳐 있는 단어
