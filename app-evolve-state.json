@@ -1,15 +1,8 @@
 {
   "cycle": 279,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 274,
-      "phase": "review",
-      "timestamp": "2026-10-30T21:09:37.000Z",
-      "summary": "cycle274 develop 커밋(0478ff9, 반복(recurrence)에 duplicateRec 추가)을 검토. 신규 저장 경로(wasEditing=!!d.id가 false일 때 push 분기)가 skip/edits/confirmedDates/autoConfirm/varying을 항상 처음부터 재계산해 덮어쓰므로, duplicateRec이 이 필드들을 명시적으로 비우는 것은 안전망일 뿐 실제로 막는 버그는 없음을 확인. svg('copy')+act-btn+row-acts 복제 버튼이 duplicateAsset 행과 동일한 패턴이고 row-acts는 이미 다른 목록(자산/카테고리/소유자)에서도 버튼 2개를 같은 gap:7px로 지원함을 확인. _recCatSuggAnnounced 리셋도 editRec과 동일. node test/run.js 2326/2326 통과, 메인 스크립트(블록2) node --check 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 274,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-31T15:10:00.000Z",
       "summary": "통합검색(globalSearchBody)이 거래·자산·카테고리·목표까지만 가로질러 찾고 반복 등록 자체(DB.recurrences)는 빠져 있던 공백을 발견 — 반복거래의 메모/카테고리로 검색하면 매달 expandRec()이 전개한 과거 결제 내역(거래 그룹)만 나오고, 그 구독을 편집·중지할 수 있는 반복 등록 자체(openRecManage/editRec)로는 통합검색에서 바로 들어갈 길이 없었다. logic.js에 matchRecQuery(r,q) 순수 함수 신설(matchGoalQuery와 동일한 대소문자 무시 includes+NFC 정규화+공백 AND 규칙이지만, matchAssetQuery처럼 category+memo 두 필드를 모두 haystack에 넣음 — 반복은 카테고리가 제목, 메모가 보조 식별자인 두 필드 모두로 찾아야 함). index.html의 globalSearchBody()에 recsAll=(DB.recurrences||[]).filter(r=>matchRecQuery(r,q)) 추가, 결과없음 분기에 !recsAll.length 포함, capGroup으로 recsCapped/recsRemain 산출(기존 txns/assets/cats/goals와 동일 패턴). 렌더는 openRecManage() 행과 동일한 마크업(타입별 avatar 색상, catGlyph(r.type,r.category,18,'repeat')/transfer는 svg('transfer'), 중지된 반복은 opacity+'중지' 배지)을 재사용하되 onclick은 editRec(r.id)로 반복 등록 자체 수정 화면으로 바로 연결(복제/일시중지 버튼은 목록 화면 전용이라 검색 결과에는 넣지 않음, goal 행과 동일하게 단일 탭 동작만 제공). openGlobalSearch()의 placeholder와 globalSearchBody 빈 검색어 안내 문구도 '반복'을 포함하도록 갱신. test/run.js에 matchRecQuery 경계(빈 검색어/카테고리 매칭/메모 매칭/대소문자/불일치/NFD 저장·검색어 양방향/공백 AND/null·필드없음 안전처리) 9건 + globalSearchBody 통합 테스트(검색 시 \"반복\" 그룹 노출+editRec 연결/메모로도 매칭/중지됨 배지/매칭 없으면 그룹 자체가 안 생김) 4건, 총 13건 추가. APP_VERSION 1.47.302->1.47.303, sw.js CACHE v569->v570. node test/run.js 2403/2403 통과.",
+      "commit": "d92c656"
+    },
+    {
+      "cycle": 279,
+      "phase": "review",
+      "timestamp": "2026-10-31T16:30:00.000Z",
+      "summary": "cycle279 develop 커밋(d92c656, 통합검색에 반복(구독) 등록 자체 검색 추가)을 검토. matchRecQuery(category+memo haystack, NFC 정규화+대소문자 무시+공백 AND)가 matchGoalQuery/matchAssetQuery와 동일한 규칙임을 확인, null/필드 없음 가드(r&&r.category)도 일치. globalSearchBody의 avatar 분기(a-food/a-in/a-save/a-etc)와 catGlyph(r.type,r.category,18,'repeat')/transfer는 svg('transfer') 처리가 openRecManage() 행의 로직과 동일함을 코드로 직접 대조 확인(아이콘 크기 18/avatar 36px·11px는 같은 함수 안의 카테고리 그룹과 동일 패턴, openRecManage의 38px/size=null과는 다르지만 검색 결과 리스트 전용 스타일이라 문제 없음). editRec(id)가 DB.recurrences.find로 안전 처리됨을 확인, recFreqLabel(r)도 openRecManage()와 동일 함수 재사용. node --check로 메인 스크립트(블록2)와 logic.js 구문 모두 통과 확인, node test/run.js 2403/2403 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
