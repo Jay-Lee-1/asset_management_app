@@ -1,15 +1,8 @@
 {
   "cycle": 278,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 273,
-      "phase": "develop",
-      "timestamp": "2026-10-30T16:40:00.000Z",
-      "summary": "자산 삭제 시 snapshotAssetName이 fromAssetName/toAssetName(txns/recurrences)만 이름을 스냅샷해두고 DB.assetQtyLog(fx/gold/stock/crypto 보유수량 변경·매도 실현손익 기록)는 빼놓은 공백을 발견 — 매도(실현손익) CSV 내보내기(assetQtyLogToCSV, cycle268 advance)가 assetId로 자산을 못 찾으면 이름/유형/귀속을 빈 칸으로 남기는데(의도된 동작), 자산을 지운 뒤에는 그 실현손익 기록 자체는 여전히 유효한 과거 데이터인데도 어떤 자산이었는지가 영구히 사라졌다. snapshotAssetName/unsnapshotAssetName에 DB.assetQtyLog 순회를 추가해 fromAssetName과 동일하게 q.assetName을 남기고/지우고, relinkDeletedAsset에도 동일한 재연결 분기를 추가(동명·동종 자산으로 재등록하면 txns/recurrences처럼 assetId가 재연결되고 스냅샷은 지워짐). assetQtyLogToCSV는 자산을 못 찾을 때 이름만 q.assetName으로 대신하고 유형/귀속은 기존대로 빈 칸 유지. snapshotAssetName 자체는 balanceAt 체인 때문에 테스트에서 스텁 처리돼 직접 실행 테스트는 못 해(기존 관례와 동일) 텍스트 가드 1건을 추가하고, unsnapshotAssetName/relinkDeletedAsset/assetQtyLogToCSV는 직접 실행 테스트로 커버(기존 테스트 2건 확장 + 신규 4건, 총 6건 추가/확장). APP_VERSION 1.47.290->1.47.291, sw.js CACHE v557->v558. node test/run.js 2306/2306 통과, 메인 스크립트(블록2) node --check 통과.",
-      "commit": null
-    },
     {
       "cycle": 273,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-31T11:20:00.000Z",
       "summary": "critique(cycle277) 계획대로 기존 매입원가 자산의 acquiredAt 오염 버그를 수정. openAssetSheet()가 편집 진입 시 원본 레코드의 costBasis>0 여부를 asDraft._hadCostBasis에 비영구로 남김(duplicateAsset은 DB.assets 레코드를 직접 복제해 애초에 이 플래그가 없으므로 자연히 신규 자산과 동일하게 동작). syncAssetInputs()의 조건을 if(!d.acquiredAt&&!d._hadCostBasis)d.acquiredAt=TODAY로 좁혀, 이미 costBasis가 있던(_hadCostBasis=true) 기존 자산은 acquiredAt이 없어도 무관한 필드만 바꿔 저장할 때 더는 TODAY로 자동 채워지지 않고 계속 비워 annualizedReturn이 null을 반환하게 둠(틀린 값보다 안전). saveAsset()이 asDraft를 DB.assets에 반영하기 직전 delete d._hadCostBasis로 임시 플래그를 제거해 DB/백업에 새지 않게 함(costBasisField 등 다른 _ 접두사 임시 필드와 동일 관례). test/run.js에 openAssetSheet의 _hadCostBasis 설정(기존 자산 true/신규 자산 false) 2건, syncAssetInputs의 버그 재현·수정 확인 3건(기존 자산 TODAY 미채움, 신규 자산 기존 동작 유지, acquiredAt 이미 있으면 보존), saveAsset 저장 시 임시 플래그 제거 1건, duplicateAsset 복제본은 영향 없음 1건, 총 7건 추가. APP_VERSION 1.47.299->1.47.300, sw.js CACHE v566->v567. node test/run.js 2369/2369 통과, 메인 스크립트(블록2) node --check(new Function) 통과. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 278,
+      "phase": "develop",
+      "timestamp": "2026-10-31T12:30:00.000Z",
+      "summary": "CSV 내보내기가 거래·자산목록·순자산추이·매도손익·반복거래·목표 6종은 있지만 DB.budgetHistory/DB.catBudgetRollover(카테고리별 월 예산 설정·이월 opt-in)만 CSV 내보내기가 전혀 없는 공백을 발견 — openCsvMenu의 pk-item 버튼 6개에도 예산 항목이 없고 budgetHistoryToCSV 자체가 코드베이스에 없었다. index.html에 budgetHistoryToCSV(budgetHistory,catBudgetRollover) 순수 함수 신설(goalsToCSV 바로 뒤) — 카테고리/적용 시작월/월 예산/이월 여부 4컬럼, guard/esc로 동일한 CSV 인젝션 방어. budgetHistory[카테고리]는 적용 시작월(from) 오름차순 배열(setBudgetFrom)이라 한 카테고리가 여러 행으로 펼쳐지며, Object.keys 순서에 기대지 않고 카테고리명 오름차순으로 먼저 정렬한 뒤 같은 카테고리 안에서 적용 시작월 오름차순으로 다시 정렬한다. 이월 여부는 catBudgetRollover[catKey('expense',cat)]로 조회(isBudgetRolloverCat과 동일 키 규칙). 레거시 플랫 예산(migrate() 1회 변환이 남긴 BUDGET_EPOCH='2000-01')도 그대로 적용 시작월에 내보낸다. CSV_KIND_META에 budgetCsv:{prefix:'budgets',...} 추가, doExport의 kind 분기에 kind==='budgetCsv'?budgetHistoryToCSV(DB.budgetHistory,DB.catBudgetRollover) 추가(gainCsv/recsCsv처럼 추가 평가 없이 DB 값을 그대로 넘김), exportData()에 '예산 설정 CSV로 내보내기' pk-item 버튼 배선(svg('coins') 아이콘). test/run.js FUNCTIONS에 budgetHistoryToCSV 추가, 빈 객체/한 카테고리 다건 펼침+이월 Y/이월 꺼짐·미설정 N/카테고리명·시작월 2단 정렬/레거시 BUDGET_EPOCH 보존/CSV 인젝션 방어 총 6건 + exportData·CSV_KIND_META/doExport 배선 회귀 2건(기존 테스트 확장) 추가. APP_VERSION 1.47.300->1.47.301, sw.js CACHE v567->v568. node test/run.js 2375/2375 통과, 메인 스크립트(블록2) node --check(new Function) 통과.",
       "commit": null
     }
   ]

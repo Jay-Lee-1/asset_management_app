@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.300';
+const APP_VERSION='1.47.301';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -7535,6 +7535,27 @@ function goalsToCSV(items,assets){
  ].map(esc).join(','));
  return '﻿'+[header,...rows].join('\r\n');
 }
+/* 예산(카테고리별 월 한도) 설정 CSV — 순수 함수(DOM/DB 전역 참조 없음, catBudgetRollover는 이월
+   opt-in 여부 조회용 인자). budgetHistory[카테고리]는 적용 시작월(from, "YYYY-MM") 오름차순으로
+   쌓인 {from,amount} 배열(setBudgetFrom)이라, 한 카테고리가 여러 행으로 펼쳐질 수 있다 —
+   recurrencesToCSV/goalsToCSV와 같은 패턴(guard/esc 동일 CSV 인젝션 방어). Object.keys 순서는
+   보장되지 않으므로 카테고리명 오름차순으로 먼저 정렬하고, 같은 카테고리 안에서는 적용 시작월
+   오름차순으로 다시 정렬한다(budgetHistory 저장 순서에 기대지 않음). from이 migrate()의 1회
+   변환이 남긴 레거시 플랫 예산(BUDGET_EPOCH='2000-01')이면 그 값 그대로 내보낸다 — 어떤 실제
+   조회 달보다도 이른 값이라 '처음부터 적용'이라는 뜻을 그대로 전달한다. */
+function budgetHistoryToCSV(budgetHistory,catBudgetRollover){
+ const guard=v=>{const s=String(v==null?'':v);return /^['=+\-@\t\r]/.test(s)?"'"+s:s};
+ const esc=v=>{const s=String(v==null?'':v);return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s};
+ const header=['카테고리','적용 시작월','월 예산','이월 여부'].map(esc).join(',');
+ const cats=Object.keys(budgetHistory||{}).sort((a,b)=>a<b?-1:a>b?1:0);
+ const rows=[];
+ cats.forEach(c=>{
+  const entries=(budgetHistory[c]||[]).slice().sort((a,b)=>(a.from||'')<(b.from||'')?-1:(a.from||'')>(b.from||'')?1:0);
+  const rollover=(catBudgetRollover||{})[catKey('expense',c)]?'Y':'N';
+  entries.forEach(e=>{rows.push([guard(c),e.from||'',e.amount||0,rollover].map(esc).join(','))});
+ });
+ return '﻿'+[header,...rows].join('\r\n');
+}
 /* ===== 거래 내역 CSV 가져오기 — 순수 함수(DOM/DB 전역 참조 없음) ===== */
 /* txnsToCSV의 guard(v)가 =,+,-,@,\t,\r(또는 원본이 이미 '로 시작하는 경우) 앞에 붙인 보호용 '를
  * 되돌린다 — guard가 "원본이 '로 시작하면 무조건 보호용 '를 하나 더 붙인다"로 바뀌었으므로
@@ -7752,13 +7773,18 @@ function exportData(){ /* 저장 방식 선택 */
   <button class="pk-item" onclick="closeSheet();doExport('${sharable?'share':'download'}','goalsCsv')">
     <div class="pav" style="background:var(--sunken);color:var(--text-2)">${svg('target')}</div>
     <div class="pbody"><div class="pn">목표 CSV로 내보내기</div><div class="psub">설정한 목표와 진행률을 스프레드시트로 꺼내요</div></div>
+    <div class="pc">${svg('chev')}</div></button>
+  <button class="pk-item" onclick="closeSheet();doExport('${sharable?'share':'download'}','budgetCsv')">
+    <div class="pav" style="background:var(--sunken);color:var(--text-2)">${svg('coins')}</div>
+    <div class="pbody"><div class="pn">예산 설정 CSV로 내보내기</div><div class="psub">카테고리별 월 예산과 이월 설정을 스프레드시트로 꺼내요</div></div>
     <div class="pc">${svg('chev')}</div></button>`);
 }
 /* kind별 CSV 파일명 접두사/공유 제목/복사 안내 — csv(거래내역)는 기존 그대로, assetsCsv/nwCsv는
    이번에 새로 추가된 자산 목록/순자산 추이 내보내기(app-evolve cycle244 advance), gainCsv는
    매도(실현손익) 내역 내보내기(app-evolve cycle268 advance), recsCsv는 반복거래(구독/정기결제)
    목록 내보내기(app-evolve cycle275 advance), goalsCsv는 목표(순자산/특정 자산) 목록 내보내기
-   (app-evolve cycle277 develop). */
+   (app-evolve cycle277 develop), budgetCsv는 카테고리별 예산 설정 내보내기(app-evolve
+   cycle278 develop). */
 const CSV_KIND_META={
  csv:{prefix:'history',shareTitle:'거래 내역 CSV',copyTitle:'거래 내역 데이터 복사'},
  assetsCsv:{prefix:'assets',shareTitle:'자산 목록 CSV',copyTitle:'자산 목록 데이터 복사'},
@@ -7766,6 +7792,7 @@ const CSV_KIND_META={
  gainCsv:{prefix:'realized-gains',shareTitle:'매도(실현손익) 내역 CSV',copyTitle:'매도(실현손익) 내역 데이터 복사'},
  recsCsv:{prefix:'recurrences',shareTitle:'반복거래 CSV',copyTitle:'반복거래 데이터 복사'},
  goalsCsv:{prefix:'goals',shareTitle:'목표 CSV',copyTitle:'목표 데이터 복사'},
+ budgetCsv:{prefix:'budgets',shareTitle:'예산 설정 CSV',copyTitle:'예산 설정 데이터 복사'},
 };
 async function doExport(mode,kind){
  const csvMeta=CSV_KIND_META[kind];
@@ -7796,6 +7823,7 @@ async function doExport(mode,kind){
   :kind==='gainCsv'?assetQtyLogToCSV(DB.assetQtyLog,DB.assets)
   :kind==='recsCsv'?recurrencesToCSV(DB.recurrences,DB.assets)
   :kind==='goalsCsv'?goalsToCSV((DB.goals||[]).map(g=>{const p=goalProgress(g,goalHistoryFor(g),TODAY);return Object.assign({},g,{cur:p.cur,pct:p.pct,achieved:p.achieved})}),DB.assets)
+  :kind==='budgetCsv'?budgetHistoryToCSV(DB.budgetHistory,DB.catBudgetRollover)
   :kind==='csv'?txnsToCSV(DB.txns.concat(expandRec(RANGE_FROM,RANGE_TO)).filter(t=>!(t.adjust&&!t.inSurplus)&&t.date<=TODAY),DB.assets)
   :JSON.stringify(DB,null,2);
  const mime=isCsv?'text/csv':'application/json';

@@ -195,7 +195,7 @@ const FUNCTIONS = [
   'dateBelowRangeFloor', 'dateAboveRangeCeil', 'recalcEndCond', 'isVarCat', 'setCatVar', 'toggleCatVarUI', 'activeRecsForAssets', 'activeRecsForCat',
   'num', 'doRenameCat', 'doDeleteCat', 'catMergeCounts', 'openCatMergePicker', 'confirmCatMerge', 'mergeCatInto', 'totalBudgetSummary', 'budgetForMonth', 'setBudgetFrom', 'addCat', 'movedCatOrder', 'moveCat',
   'isBudgetRolloverCat', 'setBudgetRolloverCat', 'toggleBudgetRolloverUI', 'budgetCarryFor', 'budgetForMonthWithCarry',
-  'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'assetsToCSV', 'nwHistoryToCSV', 'assetQtyLogToCSV', 'recurrencesToCSV', 'goalsToCSV',
+  'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'assetsToCSV', 'nwHistoryToCSV', 'assetQtyLogToCSV', 'recurrencesToCSV', 'goalsToCSV', 'budgetHistoryToCSV',
   'unguardCsv', 'csvRowToImportTxn', 'buildImportPreview', 'doCsvImport',
   // openCsvColumnMap/buildGenericImportPreview 등은 app-evolve cycle251 advance(은행/카드사 CSV
   // 열 매핑 가져오기) 구현 검증용 — detectOwnCsvFormat/mapGenericCsvRow는 logic.js 전용(전체 로드돼
@@ -5839,26 +5839,66 @@ test('goalsToCSV: 목표 이름/귀속에 콤마·큰따옴표가 있으면 필�
   assert.strictEqual(row[0], "'=HYPERLINK(\"evil\")");
   assert.strictEqual(row[7], '메모, 콤마');
 });
+/* ---------- budgetHistoryToCSV: 카테고리별 예산 설정 CSV 내보내기(app-evolve cycle278 develop) ---------- */
+test('budgetHistoryToCSV: 빈 객체면 BOM과 헤더만 있는 한 줄을 반환한다', () => {
+  const csv = sandbox.budgetHistoryToCSV({}, {});
+  assert.strictEqual(csv, '﻿카테고리,적용 시작월,월 예산,이월 여부');
+});
+test('budgetHistoryToCSV: 한 카테고리에 적용 시작월이 여러 개면 그만큼 행이 펼쳐지고, 이월 여부는 catBudgetRollover로 결정한다', () => {
+  const csv = sandbox.budgetHistoryToCSV(
+    { 식비: [{ from: '2026-01', amount: 300000 }, { from: '2026-03', amount: 350000 }] },
+    { 'expense:식비': true }
+  );
+  const rows = sandbox.parseCSV(csv);
+  assert.strictEqual(rows.length, 3, '헤더 + 2행');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(rows[1])), ['식비', '2026-01', '300000', 'Y']);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(rows[2])), ['식비', '2026-03', '350000', 'Y']);
+});
+test('budgetHistoryToCSV: 이월(catBudgetRollover)이 꺼져 있거나 설정 자체가 없으면 N이다', () => {
+  const csv = sandbox.budgetHistoryToCSV({ 교통: [{ from: '2026-01', amount: 100000 }] }, {});
+  assert.strictEqual(sandbox.parseCSV(csv)[1][3], 'N');
+});
+test('budgetHistoryToCSV: 카테고리명 오름차순으로 먼저 정렬하고, 같은 카테고리 안에서는 적용 시작월 오름차순으로 정렬한다(Object.keys 순서에 기대지 않음)', () => {
+  const csv = sandbox.budgetHistoryToCSV(
+    { 식비: [{ from: '2026-05', amount: 1 }, { from: '2026-02', amount: 2 }], 쇼핑: [{ from: '2026-01', amount: 3 }] },
+    {}
+  );
+  const rows = sandbox.parseCSV(csv);
+  assert.strictEqual(rows[1][0], '쇼핑', '카테고리명 오름차순이면 쇼핑이 식비보다 먼저 나와야 함');
+  assert.strictEqual(rows[2][1], '2026-02', '식비 카테고리 안에서는 적용 시작월 오름차순(02월이 05월보다 먼저)');
+  assert.strictEqual(rows[3][1], '2026-05');
+});
+test('budgetHistoryToCSV: 레거시 플랫 예산(BUDGET_EPOCH)도 그대로 적용 시작월에 내보낸다', () => {
+  const csv = sandbox.budgetHistoryToCSV({ 통신비: [{ from: sandbox.BUDGET_EPOCH, amount: 50000 }] }, {});
+  assert.strictEqual(sandbox.parseCSV(csv)[1][1], sandbox.BUDGET_EPOCH);
+});
+test('budgetHistoryToCSV: 카테고리명에 콤마·큰따옴표가 있으면 필드 전체를 따옴표로 감싸고, =,+,-,@ 로 시작하면 \'를 붙여 수식 인젝션을 막는다', () => {
+  const csv = sandbox.budgetHistoryToCSV({ '=HYPERLINK("evil")': [{ from: '2026-01', amount: 1 }] }, {});
+  assert.strictEqual(sandbox.parseCSV(csv)[1][0], "'=HYPERLINK(\"evil\")");
+});
 /* ---------- doExport(assetsCsv/nwCsv/gainCsv/recsCsv) 배선 회귀: exportData() 시트의 새 버튼이 doExport로 올바르게 연결되는지.
  * exportData()는 canShareFiles()/svg()/IS_IOS 등 FUNCTIONS 목록 밖의 의존이 많아 실행형으로 돌리지 않고,
  * homeAlertCard 테스트(위)와 동일하게 extractFunction으로 원본 소스만 떼어 onclick 배선을 정적으로 검사한다. */
-test('exportData: 자산 목록/순자산 추이/매도 내역/반복거래/목표 CSV 버튼이 각각 kind="assetsCsv"/"nwCsv"/"gainCsv"/"recsCsv"/"goalsCsv"로 doExport를 부른다', () => {
+test('exportData: 자산 목록/순자산 추이/매도 내역/반복거래/목표/예산 설정 CSV 버튼이 각각 kind="assetsCsv"/"nwCsv"/"gainCsv"/"recsCsv"/"goalsCsv"/"budgetCsv"로 doExport를 부른다', () => {
   const body = extractFunction('exportData');
   assert.ok(body.includes("doExport('${sharable?'share':'download'}','assetsCsv')"), '자산 목록 CSV 버튼이 없음');
   assert.ok(body.includes("doExport('${sharable?'share':'download'}','nwCsv')"), '순자산 추이 CSV 버튼이 없음');
   assert.ok(body.includes("doExport('${sharable?'share':'download'}','gainCsv')"), '매도(실현손익) 내역 CSV 버튼이 없음');
   assert.ok(body.includes("doExport('${sharable?'share':'download'}','recsCsv')"), '반복거래 CSV 버튼이 없음');
   assert.ok(body.includes("doExport('${sharable?'share':'download'}','goalsCsv')"), '목표 CSV 버튼이 없음');
+  assert.ok(body.includes("doExport('${sharable?'share':'download'}','budgetCsv')"), '예산 설정 CSV 버튼이 없음');
 });
-test('CSV_KIND_META/doExport: gainCsv/recsCsv/goalsCsv가 각각 assetQtyLogToCSV/recurrencesToCSV/goalsToCSV로 연결돼 있다', () => {
+test('CSV_KIND_META/doExport: gainCsv/recsCsv/goalsCsv/budgetCsv가 각각 assetQtyLogToCSV/recurrencesToCSV/goalsToCSV/budgetHistoryToCSV로 연결돼 있다', () => {
   const metaBody = extractConst('CSV_KIND_META');
   assert.ok(/gainCsv\s*:\s*\{/.test(metaBody), 'CSV_KIND_META에 gainCsv 항목이 없음');
   assert.ok(/recsCsv\s*:\s*\{/.test(metaBody), 'CSV_KIND_META에 recsCsv 항목이 없음');
   assert.ok(/goalsCsv\s*:\s*\{/.test(metaBody), 'CSV_KIND_META에 goalsCsv 항목이 없음');
+  assert.ok(/budgetCsv\s*:\s*\{/.test(metaBody), 'CSV_KIND_META에 budgetCsv 항목이 없음');
   const exportBody = extractFunction('doExport');
   assert.ok(exportBody.includes("kind==='gainCsv'?assetQtyLogToCSV(DB.assetQtyLog,DB.assets)"), 'doExport가 gainCsv를 assetQtyLogToCSV로 연결하지 않음');
   assert.ok(exportBody.includes("kind==='recsCsv'?recurrencesToCSV(DB.recurrences,DB.assets)"), 'doExport가 recsCsv를 recurrencesToCSV로 연결하지 않음');
   assert.ok(exportBody.includes("kind==='goalsCsv'?goalsToCSV("), 'doExport가 goalsCsv를 goalsToCSV로 연결하지 않음');
+  assert.ok(exportBody.includes("kind==='budgetCsv'?budgetHistoryToCSV(DB.budgetHistory,DB.catBudgetRollover)"), 'doExport가 budgetCsv를 budgetHistoryToCSV로 연결하지 않음');
 });
 test('csvDateValid: YYYY-MM-DD 형식이 아니거나 실존하지 않는 날짜(예: 2월 30일)는 거부한다', () => {
   assert.strictEqual(sandbox.csvDateValid('2026-01-15'), true);

@@ -3,7 +3,7 @@
  * 온라인일 때는 항상 최신 index.html 을 먼저 받아옵니다.
  * 파일을 수정하면 아래 CACHE 버전을 올려 주세요. (예: v1 -> v2)
  */
-const CACHE = 'ourassets-v567';
+const CACHE = 'ourassets-v568';
 
 /* Web Share Target(manifest.webmanifest의 share_target)으로 OS 공유 시트에서 넘어온 영수증
  * 사진을 index.html이 읽어갈 때까지 잠깐 보관하는 전용 캐시. CACHE(앱 쉘)와 이름을 분리해
