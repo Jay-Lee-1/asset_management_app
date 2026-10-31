@@ -1,15 +1,8 @@
 {
   "cycle": 280,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 275,
-      "phase": "develop",
-      "timestamp": "2026-10-31T00:00:00.000Z",
-      "summary": "거래 목록(txRowCore)의 dup-btn aria-label이 모든 행에서 \"복제\" 하나뿐이라, 스크린리더로 전체내역을 훑는 사용자는 목록 안의 복제 버튼들을 서로 구분할 수 없던 공백을 발견 — duplicateAsset/duplicateRec의 act-btn은 이미 aria-label에 대상 이름(자산명/카테고리)을 포함해 서로 구분되는데, 거래의 dup-btn만 그 원칙에서 비껴나 있었다. txRowCore()의 dup-btn aria-label을 \"${esc(t.memo||catLabel)} 복제\"로 바꿔, 이 함수의 다른 aria-label들과 동일한 memo/catLabel 폴백을 공유하게 함. test/run.js에 memo 있을 때/없을 때(catLabel로 대체)/isRec이면 dup-btn 자체가 없음(회귀 없음) 3건 추가. APP_VERSION 1.47.294->1.47.295, sw.js CACHE v561->v562. node test/run.js 2333/2333 통과, 메인 스크립트(1417~10939행) node --check 통과.",
-      "commit": "35a97c6"
-    },
     {
       "cycle": 275,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-10-31T19:20:00.000Z",
       "summary": "critique(cycle279) 계획대로 전체내역 검색(histQ)의 금액 비교/범위 연산자가 공백 포함 입력에서 조용히 0건으로 실패하는 버그를 수정. logic.js에 normalizeAmountSpacing(q) 순수 함수를 신설(parseAmountToken 바로 뒤) — 비교 연산자(>,>=,<,<=) 뒤의 공백은 그 뒤가 숫자로 시작할 때만 제거(/(>=|<=|>|<)\\s+(?=\\d)/g), ~ 범위 구분자 앞뒤 공백은 앞쪽이 숫자(+선택적 만/억 단위) 뒤쪽이 숫자로 시작할 때만 제거(/(\\d+(?:\\.\\d+)?(?:만|억)?)\\s*~\\s*(?=\\d)/g) — 둘 다 숫자 바로 인접 조건으로 좁혀 일반 텍스트 검색(예: \"할인 10% 적용\")은 건드리지 않는다. matchTxnQuery(logic.js:552)의 기존 q.normalize('NFC').toLowerCase().replace(/,/g,'') 바로 바깥을 normalizeAmountSpacing으로 감싸 searchTerms에 넘기기 전에 띄어 쓴 연산자/범위를 다시 붙인다. histQ placeholder(index.html:5781)는 계획대로 변경하지 않음(이미 올바른 압축 표기를 보여주고 있고 이번 수정은 그 표기와 다르게 써도 받아주는 관용성 추가일 뿐). test/run.js에 normalizeAmountSpacing 경계(>/>=/<=/< 뒤 공백, ~ 양쪽/한쪽 공백, 일반 텍스트 보존, idempotent) 4건 + matchTxnQuery 통합(\"> 10000\" 비교, \"1만 ~ 5만\"/\"5만 ~ 1만\" 범위, 연산자 아닌 일반 텍스트+숫자 조합은 기존처럼 두 토큰 AND 유지) 3건, 총 7건 추가. APP_VERSION 1.47.303->1.47.304, sw.js CACHE v570->v571. node test/run.js 2410/2410 통과, 메인 스크립트(블록2)/logic.js/sw.js node --check 통과. pending_advance_plan null로 비움.",
       "commit": null
+    },
+    {
+      "cycle": 280,
+      "phase": "develop",
+      "timestamp": "2026-10-31T20:30:00.000Z",
+      "summary": "openRecManage()(반복 내역 관리 목록)와 globalSearchBody()의 통합검색 \"반복\" 그룹이 둘 다 r.category만 제목으로 보여줘, 같은 카테고리(예: \"구독\")의 반복거래가 여러 개면 목록·검색 결과에서 서로 구분이 안 되던 공백을 발견 — saveRec/editRec은 메모를 비워두면 category로 폴백시키지만 메모가 실제로 채워진 경우(예: \"넷플릭스\"/\"왓챠\")에도 두 화면 모두 category만 썼다. cycle279에서 메모 기반 검색(matchRecQuery)까지 추가됐는데, 메모로 매칭된 결과가 화면엔 관련 없는 카테고리 텍스트로만 보이는 불일치도 함께 발견. 두 함수 모두 제목을 r.memo||r.category로 바꾸고 row/dup-btn/pause-resume-btn aria-label에도 동일하게 적용, memo!==category인 경우에만 category를 msub에 보조 정보로 남겨(txRowCore의 memo/catLabel 2단 표시와 동일 패턴) 정보 손실을 막음. catGlyph 아이콘은 category 기준 그대로 유지. test/run.js에 openRecManage/globalSearchBody 각각 2건(동일 카테고리를 메모로 구분/메모=카테고리면 중복 표시 없음) 총 4건 추가. APP_VERSION 1.47.304->1.47.305, sw.js CACHE v571->v572. node test/run.js 2414/2414 통과, 메인 스크립트(블록2) node --check 통과.",
+      "commit": "96d9a04"
     }
   ]
 }
