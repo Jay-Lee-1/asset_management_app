@@ -1,22 +1,12 @@
 {
   "cycle": 275,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "반복거래 CSV 내보내기 추가",
+    "why": "assetsToCSV(cycle244)/nwHistoryToCSV(cycle244)/assetQtyLogToCSV(cycle268)로 백업/CSV 메뉴가 거래·자산·순자산추이·매도손익 4종을 모두 지원하는데, DB.recurrences(반복거래·구독)만 CSV 내보내기가 전혀 없다. openCsvMenu(line ~7680 부근)의 pk-item 버튼 4개와 CSV_KIND_META/doExport의 kind 분기에 반복거래만 빠져 있어, 구독·정기결제 목록을 외부 스프레드시트로 점검·백업하려는 사용자에게 비대칭적 공백이다.",
+    "approach": "index.html에 recurrencesToCSV(items) 순수 함수 신설(assetsToCSV와 동일한 패턴 — type/category/amount/cycle/startDate/active/owner/assetId→자산명 컬럼, guard()로 CSV 인젝션 방어). CSV_KIND_META에 recsCsv:{prefix:'recurrences',shareTitle:'반복거래 CSV',copyTitle:'반복거래 데이터 복사'} 추가, doExport의 kind 분기에 kind==='recsCsv'?recurrencesToCSV(DB.recurrences) 추가, openCsvMenu에 pk-item 버튼 추가(gainCsv 버튼과 동일 구조). test/run.js에 recurrencesToCSV 필드/이스케이프/빈 배열 케이스 추가. APP_VERSION/sw.js CACHE 버전 올리고 node test/run.js 통과 확인."
+  },
   "history": [
-    {
-      "cycle": 270,
-      "phase": "critique",
-      "timestamp": "2026-10-30T06:10:00.000Z",
-      "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, 거래 입력(renderTxSheet)/반복거래 입력(recDraft)에서 카테고리가 매번 DB.categories.expense[0]로만 기본 설정되어 동일 메모를 반복 입력해도 카테고리 추천/자동완성이 전혀 없는 핵심 화면의 반복 마찰을 발견. 채택 계획(logic.js suggestCategoryForMemo(memo, txns, type) 신설 + 메모 입력에 디바운스로 배선 + 추천 칩/적용 버튼, 사용자가 이미 고른 경우 덮어쓰지 않음 + recDraft에도 동일 배선)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
-    {
-      "cycle": 270,
-      "phase": "advance",
-      "timestamp": "2026-10-30T07:20:00.000Z",
-      "summary": "critique(cycle270) 계획대로 거래/반복거래 입력에 메모 기반 카테고리 추천을 구현. logic.js suggestCategoryForMemo(memo,txns,type) 신설(완전일치 + splitLines 훑기 + 빈도/최신 우선). index.html에 txMemoInput/txCatSuggestUpdate/txApplyCatSuggest와 recMemoInput/recCatSuggestUpdate/recApplyCatSuggest 배선(220ms 디바운스, txt-btn 칩+적용). _applyOpenCat에서 사용자가 직접 고르면 _catUserTouched=true로 추천을 끄고, _applyType에서 유형이 바뀌면 플래그를 지운다. 분할 입력(splits) 중엔 추천을 끈다. test/run.js에 suggestCategoryForMemo 케이스 9건(정확일치/불일치/부분일치 제외/type 필터/동률 시 최신 우선/분할/정규화/빈 메모) 추가. APP_VERSION 1.47.284->1.47.285, sw.js CACHE v551->v552. node test/run.js 2269/2269 통과, 메인 스크립트 node --check 통과. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 271,
       "phase": "develop",
@@ -141,6 +131,13 @@
       "phase": "review",
       "timestamp": "2026-10-31T00:30:00.000Z",
       "summary": "cycle275 develop 커밋(35a97c6, 거래 dup-btn aria-label에 거래 제목 추가)을 검토. esc()가 '&<>\"\\''를 모두 HTML 엔티티로 치환해 memo에 쌍따옴표가 포함돼도 aria-label 속성이 깨지지 않음을 확인; 같은 함수의 다른 aria-label(selectable 행, swipe-content 행)도 동일한 esc(t.memo||catLabel) 폴백을 이미 쓰고 있어 패턴 일치. duplicateAsset/duplicateRec의 act-btn aria-label과도 '대상 이름 + 동작명' 구조가 같음을 확인. node test/run.js 2333/2333 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 275,
+      "phase": "critique",
+      "timestamp": "2026-10-31T01:15:00.000Z",
+      "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, CSV_KIND_META/doExport가 거래·자산목록·순자산추이·매도손익(assetQtyLogToCSV, cycle268) 4종의 CSV 내보내기는 모두 지원하지만 DB.recurrences(반복거래·구독)는 recurrencesToCSV 자체가 코드베이스에 없어 CSV 내보내기가 전혀 없는 공백을 발견 — openCsvMenu의 pk-item 버튼 4개에도 반복거래 항목이 없다. 메모 기반 카테고리 추천, 거래·자산·반복 복제 기능 대등성, 예산 페이스 경고, 부채 이자율/상환 예상, 분할 합계 힌트, 백업/복원 에러 처리, 홈 알림 체계, 통합검색, 차트 접근성, 지출분석 UI, 각종 aria-label/announceLive 공백은 모두 이미 성숙 확인되어 재차 제외. 채택 계획(recurrencesToCSV(items) 신설 + CSV_KIND_META에 recsCsv 추가 + doExport/openCsvMenu 배선 + 테스트)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
