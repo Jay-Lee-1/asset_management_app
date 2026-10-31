@@ -195,7 +195,7 @@ const FUNCTIONS = [
   'dateBelowRangeFloor', 'dateAboveRangeCeil', 'recalcEndCond', 'isVarCat', 'setCatVar', 'toggleCatVarUI', 'activeRecsForAssets', 'activeRecsForCat',
   'num', 'doRenameCat', 'doDeleteCat', 'catMergeCounts', 'openCatMergePicker', 'confirmCatMerge', 'mergeCatInto', 'totalBudgetSummary', 'budgetForMonth', 'setBudgetFrom', 'addCat', 'movedCatOrder', 'moveCat',
   'isBudgetRolloverCat', 'setBudgetRolloverCat', 'toggleBudgetRolloverUI', 'budgetCarryFor', 'budgetForMonthWithCarry',
-  'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'assetsToCSV', 'nwHistoryToCSV', 'assetQtyLogToCSV', 'recurrencesToCSV',
+  'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'assetsToCSV', 'nwHistoryToCSV', 'assetQtyLogToCSV', 'recurrencesToCSV', 'goalsToCSV',
   'unguardCsv', 'csvRowToImportTxn', 'buildImportPreview', 'doCsvImport',
   // openCsvColumnMap/buildGenericImportPreview 등은 app-evolve cycle251 advance(은행/카드사 CSV
   // 열 매핑 가져오기) 구현 검증용 — detectOwnCsvFormat/mapGenericCsvRow는 logic.js 전용(전체 로드돼
@@ -5787,23 +5787,78 @@ test('recurrencesToCSV: 메모/귀속에 콤마·큰따옴표가 있으면 필�
   assert.strictEqual(row[7], "'=HYPERLINK(\"evil\")");
   assert.strictEqual(row[10], '메모, 콤마');
 });
+/* ---------- goalsToCSV: 목표(순자산/특정 자산) 목록 CSV 내보내기(app-evolve cycle277 develop) ---------- */
+test('goalsToCSV: 빈 배열이면 BOM과 헤더만 있는 한 줄을 반환한다', () => {
+  const csv = sandbox.goalsToCSV([], []);
+  assert.strictEqual(csv, '﻿목표 이름,유형,연결 자산,목표 금액,현재 진행 금액,달성률(%),목표일,귀속,달성 여부,생성일');
+});
+test('goalsToCSV: cur/pct/achieved는 items에 이미 얹혀 있는 값을 그대로 쓴다(goalProgress는 doExport가 미리 계산)', () => {
+  const csv = sandbox.goalsToCSV([
+    { name: '내 집 마련', type: 'networth', targetAmount: 100000000, targetDate: '2030-01-01', owner: 'all', createdAt: Date.parse('2026-01-05'), cur: 30000000, pct: 30, achieved: false },
+  ], []);
+  const row = JSON.parse(JSON.stringify(sandbox.parseCSV(csv)[1]));
+  assert.deepStrictEqual(row, ['내 집 마련', '순자산 전체', '', '100000000', '30000000', '30', '2030-01-01', 'all', 'N', '2026-01-05']);
+});
+test('goalsToCSV: type이 asset이면 연결 자산 이름을 채우고, networth면 추측하지 않고 빈 칸으로 둔다', () => {
+  const assets = [{ id: 'a1', name: '해외주식 계좌' }];
+  const csv = sandbox.goalsToCSV([
+    { name: '주식 목표', type: 'asset', linkedAssetId: 'a1', targetAmount: 5000000, owner: 'all', createdAt: Date.parse('2026-02-01'), cur: 0, pct: 0, achieved: false },
+    { name: '순자산 목표', type: 'networth', linkedAssetId: 'a1', targetAmount: 5000000, owner: 'all', createdAt: Date.parse('2026-02-02'), cur: 0, pct: 0, achieved: false },
+  ], assets);
+  const rows = sandbox.parseCSV(csv);
+  assert.strictEqual(rows[1][2], '해외주식 계좌', 'asset 타입은 연결 자산명을 채워야 함');
+  assert.strictEqual(rows[2][2], '', 'networth 타입은 linkedAssetId가 있어도 연결 자산 칸이 비어야 함');
+});
+test('goalsToCSV: 연결 자산을 찾을 수 없으면(삭제됨) 빈 칸으로 남긴다(추측하지 않음)', () => {
+  const csv = sandbox.goalsToCSV([
+    { name: '목표', type: 'asset', linkedAssetId: 'gone', targetAmount: 1000000, owner: 'all', createdAt: Date.now(), cur: 0, pct: 0, achieved: false },
+  ], []);
+  assert.strictEqual(sandbox.parseCSV(csv)[1][2], '');
+});
+test('goalsToCSV: 생성일(createdAt, epoch ms) 오름차순으로 정렬하고 YYYY-MM-DD로 포맷한다', () => {
+  const csv = sandbox.goalsToCSV([
+    { name: '나중 목표', type: 'networth', targetAmount: 1, owner: 'all', createdAt: Date.parse('2026-03-01'), cur: 0, pct: 0, achieved: false },
+    { name: '먼저 목표', type: 'networth', targetAmount: 1, owner: 'all', createdAt: Date.parse('2026-01-01'), cur: 0, pct: 0, achieved: false },
+  ], []);
+  const rows = sandbox.parseCSV(csv);
+  assert.strictEqual(rows[1][0], '먼저 목표', '생성일이 더 이른 목표가 먼저 나와야 함');
+  assert.strictEqual(rows[1][9], '2026-01-01');
+  assert.strictEqual(rows[2][9], '2026-03-01');
+});
+test('goalsToCSV: 달성한 목표는 달성 여부 컬럼이 Y다', () => {
+  const csv = sandbox.goalsToCSV([
+    { name: '다 모았다', type: 'networth', targetAmount: 1000, owner: 'all', createdAt: Date.now(), cur: 1000, pct: 100, achieved: true },
+  ], []);
+  assert.strictEqual(sandbox.parseCSV(csv)[1][8], 'Y');
+});
+test('goalsToCSV: 목표 이름/귀속에 콤마·큰따옴표가 있으면 필드 전체를 따옴표로 감싸고, =,+,-,@ 로 시작하면 \'를 붙여 수식 인젝션을 막는다', () => {
+  const csv = sandbox.goalsToCSV([
+    { name: '=HYPERLINK("evil")', type: 'networth', targetAmount: 1000, owner: '메모, 콤마', createdAt: Date.now(), cur: 0, pct: 0, achieved: false },
+  ], []);
+  const row = sandbox.parseCSV(csv)[1];
+  assert.strictEqual(row[0], "'=HYPERLINK(\"evil\")");
+  assert.strictEqual(row[7], '메모, 콤마');
+});
 /* ---------- doExport(assetsCsv/nwCsv/gainCsv/recsCsv) 배선 회귀: exportData() 시트의 새 버튼이 doExport로 올바르게 연결되는지.
  * exportData()는 canShareFiles()/svg()/IS_IOS 등 FUNCTIONS 목록 밖의 의존이 많아 실행형으로 돌리지 않고,
  * homeAlertCard 테스트(위)와 동일하게 extractFunction으로 원본 소스만 떼어 onclick 배선을 정적으로 검사한다. */
-test('exportData: 자산 목록/순자산 추이/매도 내역/반복거래 CSV 버튼이 각각 kind="assetsCsv"/"nwCsv"/"gainCsv"/"recsCsv"로 doExport를 부른다', () => {
+test('exportData: 자산 목록/순자산 추이/매도 내역/반복거래/목표 CSV 버튼이 각각 kind="assetsCsv"/"nwCsv"/"gainCsv"/"recsCsv"/"goalsCsv"로 doExport를 부른다', () => {
   const body = extractFunction('exportData');
   assert.ok(body.includes("doExport('${sharable?'share':'download'}','assetsCsv')"), '자산 목록 CSV 버튼이 없음');
   assert.ok(body.includes("doExport('${sharable?'share':'download'}','nwCsv')"), '순자산 추이 CSV 버튼이 없음');
   assert.ok(body.includes("doExport('${sharable?'share':'download'}','gainCsv')"), '매도(실현손익) 내역 CSV 버튼이 없음');
   assert.ok(body.includes("doExport('${sharable?'share':'download'}','recsCsv')"), '반복거래 CSV 버튼이 없음');
+  assert.ok(body.includes("doExport('${sharable?'share':'download'}','goalsCsv')"), '목표 CSV 버튼이 없음');
 });
-test('CSV_KIND_META/doExport: gainCsv/recsCsv가 각각 assetQtyLogToCSV/recurrencesToCSV로 연결돼 있다', () => {
+test('CSV_KIND_META/doExport: gainCsv/recsCsv/goalsCsv가 각각 assetQtyLogToCSV/recurrencesToCSV/goalsToCSV로 연결돼 있다', () => {
   const metaBody = extractConst('CSV_KIND_META');
   assert.ok(/gainCsv\s*:\s*\{/.test(metaBody), 'CSV_KIND_META에 gainCsv 항목이 없음');
   assert.ok(/recsCsv\s*:\s*\{/.test(metaBody), 'CSV_KIND_META에 recsCsv 항목이 없음');
+  assert.ok(/goalsCsv\s*:\s*\{/.test(metaBody), 'CSV_KIND_META에 goalsCsv 항목이 없음');
   const exportBody = extractFunction('doExport');
   assert.ok(exportBody.includes("kind==='gainCsv'?assetQtyLogToCSV(DB.assetQtyLog,DB.assets)"), 'doExport가 gainCsv를 assetQtyLogToCSV로 연결하지 않음');
   assert.ok(exportBody.includes("kind==='recsCsv'?recurrencesToCSV(DB.recurrences,DB.assets)"), 'doExport가 recsCsv를 recurrencesToCSV로 연결하지 않음');
+  assert.ok(exportBody.includes("kind==='goalsCsv'?goalsToCSV("), 'doExport가 goalsCsv를 goalsToCSV로 연결하지 않음');
 });
 test('csvDateValid: YYYY-MM-DD 형식이 아니거나 실존하지 않는 날짜(예: 2월 30일)는 거부한다', () => {
   assert.strictEqual(sandbox.csvDateValid('2026-01-15'), true);

@@ -1,15 +1,8 @@
 {
   "cycle": 277,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 272,
-      "phase": "develop",
-      "timestamp": "2026-10-30T12:40:00.000Z",
-      "summary": "메모 기반 카테고리 추천 칩(txCatSuggestUpdate/recCatSuggestUpdate, cycle270 advance)이 #txCatSuggest/#recCatSuggest의 style.display 토글+innerHTML 대입만으로 떴다 사라지는 시각 전용 변화라, debtWhatIfUpdate(cycle267)가 이미 고친 것과 같은 공백(스크린리더가 추천이 뜬 것을 알 길이 없음)이 있던 것을 발견. 두 함수에 announceLive() 공지를 추가 — 직전에 공지한 추천값을 모듈 변수(_txCatSuggAnnounced/_recCatSuggAnnounced)로 기억해, 같은 추천이 디바운스 재호출로 계속 뜨는 동안은 매번 다시 읽어주지 않고 추천이 바뀌거나(또는 칩이 숨겨졌다 다시 뜰 때만) 공지한다. openTxSheet/openRecSheet/txApplyCatSuggest/recApplyCatSuggest에서도 이 캐시를 리셋. test/run.js FUNCTIONS/LETS 목록에 txMemoInput/txCatSuggestUpdate/txApplyCatSuggest/recMemoInput/recCatSuggestUpdate/recApplyCatSuggest·_txCatSuggT/_recCatSuggT를 추가(이전엔 이 함수들이 직접 테스트되지 않고 있었음)하고 새 announceLive 동작 테스트 7건 추가. APP_VERSION 1.47.287->1.47.288, sw.js CACHE v554->v555. node test/run.js 2293/2293 통과, 메인 스크립트(블록2) node --check 통과.",
-      "commit": null
-    },
     {
       "cycle": 272,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-31T07:13:31.053Z",
       "summary": "critique(cycle276) 계획대로 시장가 평가 자산(fx/gold/stock/crypto)에 연환산 수익률(annualized return) 보조 캡션을 구현. logic.js에 annualizedReturn(costBasis,evalValue,acquiredAt,today) 순수 함수 신설 — costBasis<=0/acquiredAt 없음/보유 30일 미만이면 null(짧은 기간을 1년으로 거듭제곱 확대하는 왜곡 방지), 그 외엔 (evalValue/costBasis)^(365/days)-1. asDraft에 선택 필드 acquiredAt 추가 — syncAssetInputs()의 asCostBasis 입력 처리 바로 뒤에서, 매입 금액이 처음 0→양수로 바뀌는 순간에만 TODAY로 찍고(이미 있으면 덮어쓰지 않아 추가매수/부분매도로 costBasis가 다시 쓰여도 최초 매입일은 보존) 매입 금액이 지워지면 함께 삭제. assetGainLossBadge()가 gl.amount+a.costBasis로 evalValue를 역산해(assetEval 재호출 없이) annualizedReturn을 구해 같은 색상 span 안에 \"· 연 N%\"로 이어붙임. duplicateAsset은 costBasis와 함께 acquiredAt도 지움(복제본은 매입 금액을 다시 입력하는 시점에 새로 찍힘). sanitizeBackup은 maturityDate와 동일하게 acquiredAt을 csvDateValid()로 검증하되, costBasis처럼 \"없는 게 정상\"인 선택 필드라 null이 아니라 필드 자체를 삭제. test/run.js에 annualizedReturn 경계(매입원가/acquiredAt 없음, 30일 미만, 정확 1년, 손실·전액손실, 보유기간 길수록 완만해짐) 7건 + syncAssetInputs acquiredAt 최초 설정/보존·삭제 2건 + duplicateAsset acquiredAt 삭제 확장 1건 + assetGainLossBadge 연환산 노출/숨김 3건 + sanitizeBackup acquiredAt 검증 2건, 총 15건 추가. APP_VERSION 1.47.297->1.47.298, sw.js CACHE v564->v565. node test/run.js 2355/2355 통과, 메인 스크립트(블록2) 구문 검증 통과. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 277,
+      "phase": "develop",
+      "timestamp": "2026-10-31T08:10:00.000Z",
+      "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, CSV 내보내기가 거래·자산목록·순자산추이·매도손익·반복거래 5종은 있지만 목표(DB.goals)만 CSV 내보내기가 전혀 없는 공백을 발견 — openCsvMenu의 pk-item 버튼 5개에도 목표 항목이 없고 goalsToCSV 자체가 코드베이스에 없었다. index.html에 goalsToCSV(items,assets) 순수 함수 신설 (recurrencesToCSV 바로 뒤) — 목표이름/유형/연결자산/목표금액/현재진행금액/달성률/목표일/귀속/달성여부/생성일 10컬럼, guard/esc로 동일한 CSV 인젝션 방어. 현재 진행 금액(cur)·달성률(pct)·달성 여부(achieved)는 DB.goals 레코드 자체 필드가 아니라 goalProgress(logic.js)가 goalHistoryFor를 봐야 구해지는 파생값이라 assetsCsv의 evalValue/gainLoss와 같은 이유로 goalsToCSV 안에서 계산하지 않고 doExport가 미리 계산해 얹어 넘긴다. 연결 자산명(linkedAssetId)은 type이 asset일 때만 채우고 networth면 빈 칸(추측하지 않음), 자산이 삭제됐으면 역시 빈 칸으로 남긴다. CSV_KIND_META에 goalsCsv:{prefix:'goals',...} 추가, doExport의 kind 분기에 kind==='goalsCsv'?goalsToCSV(...) 추가, exportData()에 목표 CSV로 내보내기 pk-item 버튼 배선(svg('target') 아이콘, 기존 목표 UI와 동일 아이콘 재사용). test/run.js FUNCTIONS에 goalsToCSV 추가, 빈 배열/cur·pct·achieved 전달/연결자산 유무·networth 빈칸/연결자산 삭제됨/생성일 정렬+포맷/달성여부 Y/CSV 인젝션 방어 총 7건 + exportData·CSV_KIND_META/doExport 배선 회귀 2건(기존 테스트 확장) 추가. APP_VERSION 1.47.298->1.47.299, sw.js CACHE v565->v566. node test/run.js 2362/2362 통과, 메인 스크립트(블록2) node --check(new Function) 통과.",
       "commit": null
     }
   ]
