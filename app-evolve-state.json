@@ -1,15 +1,8 @@
 {
   "cycle": 276,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 271,
-      "phase": "review",
-      "timestamp": "2026-10-30T09:05:00.000Z",
-      "summary": "cycle271 develop 커밋(a6360bc, _catUserTouched가 DB에 영구히 새겨지던 버그 수정)을 검토. delete d._catUserTouched가 saveTx/saveRec의 모든 분기(recSaveScopeConfirm으로 빠지는 경로 포함, return 전에 이미 삭제됨)보다 먼저 실행되어 어떤 저장 경로로도 플래그가 새지 않음을 확인. migrate() 1회성 정리도 _catTouchedCleanV1 가드로 중복 실행에 안전. node test/run.js 2274/2274 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 271,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-31T03:10:00.000Z",
       "summary": "거래·자산·반복(duplicateTx/duplicateAsset/duplicateRec)엔 전용 복제 기능이 있지만 목표(DB.goals)에는 없어, 비슷한 목표를 또 세울 때마다 유형·금액·날짜를 처음부터 다시 입력해야 하던 기능 대등성 공백을 발견. openGoalForm 근처에 duplicateGoal(id) 신설 — id는 uid()로 새로 받고(saveGoal이 d.id로 신규/수정을 가르므로 duplicateAsset의 id=null 방식이 아니라 openGoalForm의 신규 draft 방식을 따름), name에 ' 복사' 접미사, owner는 goalOwnerEff(g)로 재계산(귀속이 그 사이 삭제됐으면 'all'로), createdAt은 복제 시점으로 다시 찍고, achievedAckAt(원본의 달성 확인 이력, cycle256)은 새 목표와 무관하므로 비움. type/linkedAssetId/targetAmount/targetDate는 구조적 설정으로 보존. openGoalsList() 행에 duplicateAsset/duplicateRec과 동일한 row-acts+act-btn(copy 아이콘, event.stopPropagation으로 ackGoalAchieved 네비게이션과 분리) 복제 버튼 배선. test/run.js FUNCTIONS에 duplicateGoal 추가하고 필드 보존/삭제, 귀속 소실 시 'all' 폴백, 존재하지 않는 id, duplicateGoal→saveGoal 왕복 총 4건 추가. APP_VERSION 1.47.296->1.47.297, sw.js CACHE v563->v564. node test/run.js 2343/2343 통과, 메인 스크립트(블록2) node --check(new Function) 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 276,
+      "phase": "review",
+      "timestamp": "2026-10-31T05:07:45.192Z",
+      "summary": "cycle276 develop 커밋(ccccf8c, 목표(goal) 복제 duplicateGoal 추가)을 검토. saveGoal()의 push vs replace 분기(DB.goals.findIndex(x=>x.id===d.id))가 d.id=uid()로 새 id를 받은 복제본에서 항상 findIndex===-1이 되어 신규 push 경로를 타는 것을 확인(원본 레코드는 변경되지 않음). duplicateAsset/duplicateRec과 동일하게 open*Form을 거치지 않고 draft+renderGoalForm(false)를 직접 호출하는 패턴임을 확인, owner는 openGoalForm(editing)과 동일하게 goalOwnerEff(g)로 재계산되어 사라진 귀속이 all로 떨어짐을 확인. openGoalsList() 행의 복제 act-btn이 event.stopPropagation()으로 행 전체의 ackGoalAchieved 네비게이션과 분리됨을 확인(duplicateAsset/duplicateRec 행과 동일 패턴). node test/run.js 2343/2343 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
