@@ -10211,6 +10211,35 @@ test('sanitizeBackup: 유효한 자산 maturityDate와 만기 미설정(없음/n
   assert.strictEqual(data.assets[2].maturityDate, undefined);
   assert.strictEqual(fixedCount, 0);
 });
+/* ---------- sanitizeBackup: 시세평가 자산의 acquiredAt(최초 매입일, annualizedReturn의 보유기간
+ * 기준, app-evolve cycle276 advance)도 maturityDate와 동일하게 csvDateValid()로 형식/달력 유효성을
+ * 검증한다. 그대로 두면 daysBetween()이 Invalid Date에서 NaN을 만들어 annualizedReturn()이
+ * NaN을 그대로 배지에 보여준다. maturityDate는 null로 정규화하지만, acquiredAt은 costBasis처럼
+ * "없는 게 정상"인 선택 필드라 null이 아니라 필드 자체를 지운다. ---------- */
+test('sanitizeBackup: 형식/달력상 무효한 자산 acquiredAt은 필드 자체를 지우고(null로 바꾸지 않음) fixedCount를 센다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [],
+    assets: [
+      { id: 'a1', type: 'stock', owner: '나', costBasis: 100000, acquiredAt: 'not-a-date' },
+      { id: 'a2', type: 'stock', owner: '나', costBasis: 100000, acquiredAt: '2026-02-30' },
+    ],
+  });
+  assert.strictEqual('acquiredAt' in data.assets[0], false);
+  assert.strictEqual('acquiredAt' in data.assets[1], false);
+  assert.strictEqual(fixedCount, 2);
+});
+test('sanitizeBackup: 유효한 자산 acquiredAt과 매입원가 미입력(없음)은 그대로 둔다(정상 케이스는 회귀 없음)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [],
+    assets: [
+      { id: 'a1', type: 'stock', owner: '나', costBasis: 100000, acquiredAt: '2026-01-05' },
+      { id: 'a2', type: 'stock', owner: '나' },
+    ],
+  });
+  assert.strictEqual(data.assets[0].acquiredAt, '2026-01-05');
+  assert.strictEqual('acquiredAt' in data.assets[1], false);
+  assert.strictEqual(fixedCount, 0);
+});
 /* ---------- uid()/sanitizeBackup: id 유일성 (app-evolve cycle227 critique → cycle228 advance)
  * uid()=Date.now()+random 5글자(≈26비트 엔트로피)만으로는 doCsvImport처럼 같은 ms 안에서
  * 동기적으로 다건을 생성하는 실사용 경로(다년치 CSV 재가져오기)가 수만 건 규모가 되면
@@ -12224,11 +12253,12 @@ test('duplicateAsset: savings 자산은 만기일(maturityDate)이 지워지지�
   assert.strictEqual('maturityDate' in sandbox.asDraft, false, '만기일은 자산마다 달라야 하므로 복제하지 않아야 함');
   assert.strictEqual(sandbox.asDraft.maturityTargetId, 'a1', '만기 시 이체할 통장은 유형과 함께 묶이는 구조적 설정이라 그대로 가져와야 함');
 });
-test('duplicateAsset: fx/gold/stock/crypto(시세 평가형) 자산은 보유수량이 0으로, 매입원가(costBasis)는 지워진다', () => {
-  sandbox.DB = { assets: [{ id: 'a3', type: 'stock', owner: '나', currency: 'KRW', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 10, costBasis: 700000 }] };
+test('duplicateAsset: fx/gold/stock/crypto(시세 평가형) 자산은 보유수량이 0으로, 매입원가(costBasis)와 최초 매입일(acquiredAt)은 지워진다', () => {
+  sandbox.DB = { assets: [{ id: 'a3', type: 'stock', owner: '나', currency: 'KRW', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 10, costBasis: 700000, acquiredAt: '2026-01-05' }] };
   sandbox.duplicateAsset('a3');
   assert.strictEqual(sandbox.asDraft.stockQty, 0, '보유 수량은 자산마다 달라야 하므로 0으로 비워 새로 입력받아야 함');
   assert.strictEqual('costBasis' in sandbox.asDraft, false, '매입원가도 자산마다 달라야 하므로 지워야 함');
+  assert.strictEqual('acquiredAt' in sandbox.asDraft, false, '최초 매입일도 새 자산엔 해당하지 않으므로 지워야 함(annualizedReturn, cycle276 advance)');
   assert.strictEqual(sandbox.asDraft.stockCode, '005930', '종목코드 자체는 구조적 식별 정보라 그대로 가져와야 함');
 });
 test('duplicateAsset: 부채(debt)는 완납 ack 플래그(payoffAckAt)를 새 자산엔 해당하지 않는 원본 고유 상태라 복제하지 않는다', () => {
@@ -12694,6 +12724,34 @@ test('totalRealizedGain: realizedGain이 있는 기록이 하나도 없으면(�
   assert.strictEqual(sandbox.totalRealizedGain([{ realizedGain: null }, { addedAmount: 5000 }]), null);
   assert.strictEqual(sandbox.totalRealizedGain(null), null);
 });
+/* ---------- annualizedReturn(logic.js, 순수): assetGainLoss()/assetGainLossBadge()의 손익
+ * 금액·퍼센트는 보유 기간을 전혀 반영하지 않아 1개월 보유 5% 수익과 3년 보유 5% 수익이 화면상
+ * 똑같이 보이던 공백을 메운다(app-evolve cycle276 critique/advance) ---------- */
+test('annualizedReturn: 매입원가가 없거나(0 이하) acquiredAt이 없으면 추측하지 않고 null', () => {
+  assert.strictEqual(sandbox.annualizedReturn(0, 1100000, '2025-01-01', '2026-01-01'), null);
+  assert.strictEqual(sandbox.annualizedReturn(-1, 1100000, '2025-01-01', '2026-01-01'), null);
+  assert.strictEqual(sandbox.annualizedReturn(1000000, 1100000, null, '2026-01-01'), null);
+  assert.strictEqual(sandbox.annualizedReturn(1000000, 1100000, undefined, '2026-01-01'), null);
+});
+test('annualizedReturn: 보유 기간이 30일 미만이면 짧은 기간을 1년으로 거듭제곱 확대하는 왜곡이 너무 커서 null', () => {
+  assert.strictEqual(sandbox.annualizedReturn(1000000, 1010000, '2026-01-01', '2026-01-20'), null, '19일 보유는 30일 미만');
+  assert.strictEqual(sandbox.annualizedReturn(1000000, 1010000, '2026-01-01', '2026-01-30'), null, '29일 보유도 30일 미만(경계)');
+});
+test('annualizedReturn: 정확히 1년(365일) 보유면 단순 수익률과 같아진다(거듭제곱 지수가 1)', () => {
+  const ann = sandbox.annualizedReturn(1000000, 1100000, '2025-01-01', '2026-01-01');
+  assert.ok(Math.abs(ann - 10) < 1e-9, `10%에 근접해야 함: ${ann}`);
+});
+test('annualizedReturn: 손실도 음수로 정상 계산되고, 평가액이 0이어도(전액 손실) -100%로 NaN 없이 계산된다', () => {
+  const loss = sandbox.annualizedReturn(1000000, 900000, '2025-01-01', '2026-01-01');
+  assert.ok(Math.abs(loss - (-10)) < 1e-9, `-10%에 근접해야 함: ${loss}`);
+  assert.strictEqual(sandbox.annualizedReturn(1000000, 0, '2025-01-01', '2026-01-01'), -100);
+});
+test('annualizedReturn: 보유 기간이 길수록(동일 수익률이라도) 연환산 수치는 더 완만해진다(3년 10% < 1년 10%)', () => {
+  const oneYear = sandbox.annualizedReturn(1000000, 1100000, '2025-01-01', '2026-01-01');
+  const threeYear = sandbox.annualizedReturn(1000000, 1100000, '2023-01-01', '2026-01-01');
+  assert.ok(threeYear > 0 && threeYear < oneYear, `3년 보유 연환산(${threeYear})이 1년(${oneYear})보다 낮아야 함`);
+});
+
 /* ---------- costBasisField: 편집 중 보유 수량이 _origQty(openAssetSheet 스냅샷)보다 늘면
  * (추가매수) costBasisNeedsUpdate 경고 캡션과 "이번에 추가로 투입한 금액" 입력창(asAddedCostField)을
  * 함께 즉시 렌더한다. 줄어드는 경우는 saveAsset()이 자동 보정하므로 둘 다 뜨면 안 된다. ---------- */
@@ -12896,6 +12954,27 @@ test('assetGainLossBadge: costBasis 미설정이면 빈 문자열(배지 없음)
   sandbox.DB = { rates: { fx: {}, stocks: { '005930': 12000 }, goldPerG: 0 } };
   assert.strictEqual(sandbox.assetGainLossBadge({ type: 'stock', stockCode: '005930', stockQty: 10 }), '');
 });
+/* ---------- assetGainLossBadge: acquiredAt(최초 매입일)이 있으면 손익 배지에 연환산 수익률
+ * (annualizedReturn)을 보조로 덧붙인다(app-evolve cycle276 advance) ---------- */
+test('assetGainLossBadge: acquiredAt이 있고 보유기간이 30일 이상이면 연환산 수익률을 같은 배지에 이어붙인다', () => {
+  sandbox.DB = { rates: { fx: {}, stocks: { '005930': 13200 }, goldPerG: 0 } };
+  sandbox.TODAY = '2026-01-01';
+  const badge = sandbox.assetGainLossBadge({ type: 'stock', stockCode: '005930', stockQty: 10, costBasis: 100000, acquiredAt: '2025-01-01' });
+  assert.ok(badge.includes('+32.0%'), badge);
+  assert.ok(badge.includes('연 +32.0%'), `정확히 1년 보유라 단순 수익률과 같은 연환산 수치가 같은 색상 span 안에 있어야 함: ${badge}`);
+});
+test('assetGainLossBadge: acquiredAt이 없으면(기존 자산·매입원가만 아는 경우) 연환산 부분 없이 기존 배지 그대로다', () => {
+  sandbox.DB = { rates: { fx: {}, stocks: { '005930': 13200 }, goldPerG: 0 } };
+  sandbox.TODAY = '2026-01-01';
+  const badge = sandbox.assetGainLossBadge({ type: 'stock', stockCode: '005930', stockQty: 10, costBasis: 100000 });
+  assert.ok(badge.includes('+32.0%') && !badge.includes('연 '), badge);
+});
+test('assetGainLossBadge: acquiredAt이 있어도 보유기간이 30일 미만이면 연환산 부분을 숨긴다(과장 왜곡 방지)', () => {
+  sandbox.DB = { rates: { fx: {}, stocks: { '005930': 13200 }, goldPerG: 0 } };
+  sandbox.TODAY = '2026-01-10';
+  const badge = sandbox.assetGainLossBadge({ type: 'stock', stockCode: '005930', stockQty: 10, costBasis: 100000, acquiredAt: '2026-01-01' });
+  assert.ok(!badge.includes('연 '), badge);
+});
 test('assetSubline: fx/gold/stock은 costBasis가 있을 때만 손익 배지를 덧붙인다', () => {
   sandbox.DB = { rates: { fx: { USD: 1400 }, stocks: {}, goldPerG: 500000 } };
   const noBasis = sandbox.assetSubline({ type: 'fx', currency: 'USD', fxAmount: 100 });
@@ -12967,6 +13046,37 @@ test('syncAssetInputs: 연 이자율 입력을 interestRate로 저장하고(소�
     input.value = '';
     sandbox.syncAssetInputs();
     assert.strictEqual('interestRate' in sandbox.asDraft, false, '비우면 필드 자체를 지워야 amortizationPayoffMonths/debtAmortSuffix의 interestRate>0 가드가 정상 동작함');
+  } finally {
+    sandbox.$ = $orig;
+  }
+});
+/* ---------- syncAssetInputs: 매입 금액(costBasis)을 처음 입력하는 순간에만 최초 매입일
+ * (acquiredAt)을 오늘로 찍는다(annualizedReturn의 보유기간 기준, app-evolve cycle276 advance) ---------- */
+test('syncAssetInputs: 매입 금액을 처음 입력하면 acquiredAt이 오늘 날짜로 찍히지만, 이미 있으면 덮어쓰지 않는다', () => {
+  const $orig = sandbox.$;
+  const input = { value: '1,000,000' };
+  sandbox.$ = (id) => (id === 'asCostBasis' ? input : null);
+  sandbox.TODAY = '2026-10-31';
+  try {
+    sandbox.asDraft = { type: 'stock', stockCode: '005930', stockQty: 10 };
+    sandbox.syncAssetInputs();
+    assert.strictEqual(sandbox.asDraft.acquiredAt, '2026-10-31', '매입원가를 처음 입력한 날이 최초 매입일로 찍혀야 함');
+    sandbox.TODAY = '2026-11-15'; /* 다른 날 같은 draft를 다시 sync해도(추가매수 등) 이미 있는 acquiredAt은 그대로 */
+    sandbox.syncAssetInputs();
+    assert.strictEqual(sandbox.asDraft.acquiredAt, '2026-10-31', '추가매수로 다시 sync돼도 최초 매입일은 바뀌면 안 됨');
+  } finally {
+    sandbox.$ = $orig;
+  }
+});
+test('syncAssetInputs: 매입 금액을 비우면(매입원가 미입력으로 되돌림) acquiredAt도 함께 지운다', () => {
+  const $orig = sandbox.$;
+  const input = { value: '' };
+  sandbox.$ = (id) => (id === 'asCostBasis' ? input : null);
+  try {
+    sandbox.asDraft = { type: 'stock', stockCode: '005930', stockQty: 10, costBasis: 700000, acquiredAt: '2026-01-05' };
+    sandbox.syncAssetInputs();
+    assert.strictEqual('costBasis' in sandbox.asDraft, false);
+    assert.strictEqual('acquiredAt' in sandbox.asDraft, false, '매입원가가 없어지면 최초 매입일도 더는 의미가 없으므로 함께 지워야 함');
   } finally {
     sandbox.$ = $orig;
   }

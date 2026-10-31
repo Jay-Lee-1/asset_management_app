@@ -1,11 +1,7 @@
 {
-  "cycle": 276,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "시장가 평가 자산(fx/gold/stock/crypto)에 연환산 수익률(annualized return) 추가",
-    "why": "assetGainLoss()가 보여주는 손익 금액/퍼센트는 보유 기간을 반영하지 않아, 1개월 보유와 3년 보유의 동일한 5% 수익이 똑같이 보인다. costBasis 입력 시점(acquiredAt)을 기록해두면 CAGR 성격의 연환산 수익률을 보조 지표로 보여줄 수 있어, 투자 성과를 기간 보정해 비교할 수 있게 된다.",
-    "approach": "asDraft에 선택 필드 acquiredAt(costBasis 최초 입력 시 TODAY로 자동 세팅, 추가매수 시엔 변경 안 함)을 추가. logic.js에 annualizedReturn(costBasis, evalValue, acquiredAt, today) 순수 함수 신설 — 보유일수<30일이거나 costBasis<=0이면 null, 그 외엔 (evalValue/costBasis)^(365/days)-1. assetGainLoss()/assetGainLossBadge() 근처에 보조 캡션으로 노출(연환산 N% 식, costBasisField와 동일한 선택 입력 패턴). duplicateAsset은 acquiredAt을 복제 시점으로 재설정. SANITIZE_QTY_FIELDS류 백업 정제, test/run.js에 경계(30일 미만/정확 1년/손실/필드 없음) 케이스 추가."
-  },
+  "cycle": 277,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
     {
       "cycle": 272,
@@ -138,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-31T06:10:00.000Z",
       "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, fx/gold/stock/crypto 시장가 평가 자산의 손익 표시(assetGainLoss/assetGainLossBadge)가 보유 기간을 전혀 반영하지 않아 1개월 보유 5% 수익과 3년 보유 5% 수익이 화면상 똑같이 보이는 공백을 발견 — costBasis는 있지만 언제부터 보유했는지(acquiredAt)가 없어 기간 보정 수익률(CAGR 성격의 연환산 수익률)을 계산할 길이 없다. assetQtyLog가 opt-in이라 최초 매수 체결 기록이 없는 경우가 많아 전체 현금흐름 기반 XIRR은 부정확할 수 있다고 보고 제외, 구독/리밸런싱 제안이나 세금 추정은 이 앱의 한국 개인 재무관리 범위를 벗어난다고 보고 제외, 거래 목록 성능/가상화는 월 단위로 이미 범위가 좁혀져 실질적 병목이 아니라고 보고 제외. 통합검색, 잠금/암호화, 클라우드 동기화 3-way 병합, 예산 롤오버, 카테고리 병합, 복제 기능 대등성, 목표/부채 투사, 각종 CSV 내보내기도 모두 이미 성숙 확인되어 제외. 채택 계획(asDraft에 선택 필드 acquiredAt 추가 + logic.js annualizedReturn(costBasis,evalValue,acquiredAt,today) 순수 함수 신설 + assetGainLoss 근처 보조 캡션 + duplicateAsset에서 acquiredAt 복제 시점으로 재설정)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 276,
+      "phase": "advance",
+      "timestamp": "2026-10-31T07:13:31.053Z",
+      "summary": "critique(cycle276) 계획대로 시장가 평가 자산(fx/gold/stock/crypto)에 연환산 수익률(annualized return) 보조 캡션을 구현. logic.js에 annualizedReturn(costBasis,evalValue,acquiredAt,today) 순수 함수 신설 — costBasis<=0/acquiredAt 없음/보유 30일 미만이면 null(짧은 기간을 1년으로 거듭제곱 확대하는 왜곡 방지), 그 외엔 (evalValue/costBasis)^(365/days)-1. asDraft에 선택 필드 acquiredAt 추가 — syncAssetInputs()의 asCostBasis 입력 처리 바로 뒤에서, 매입 금액이 처음 0→양수로 바뀌는 순간에만 TODAY로 찍고(이미 있으면 덮어쓰지 않아 추가매수/부분매도로 costBasis가 다시 쓰여도 최초 매입일은 보존) 매입 금액이 지워지면 함께 삭제. assetGainLossBadge()가 gl.amount+a.costBasis로 evalValue를 역산해(assetEval 재호출 없이) annualizedReturn을 구해 같은 색상 span 안에 \"· 연 N%\"로 이어붙임. duplicateAsset은 costBasis와 함께 acquiredAt도 지움(복제본은 매입 금액을 다시 입력하는 시점에 새로 찍힘). sanitizeBackup은 maturityDate와 동일하게 acquiredAt을 csvDateValid()로 검증하되, costBasis처럼 \"없는 게 정상\"인 선택 필드라 null이 아니라 필드 자체를 삭제. test/run.js에 annualizedReturn 경계(매입원가/acquiredAt 없음, 30일 미만, 정확 1년, 손실·전액손실, 보유기간 길수록 완만해짐) 7건 + syncAssetInputs acquiredAt 최초 설정/보존·삭제 2건 + duplicateAsset acquiredAt 삭제 확장 1건 + assetGainLossBadge 연환산 노출/숨김 3건 + sanitizeBackup acquiredAt 검증 2건, 총 15건 추가. APP_VERSION 1.47.297->1.47.298, sw.js CACHE v564->v565. node test/run.js 2355/2355 통과, 메인 스크립트(블록2) 구문 검증 통과. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

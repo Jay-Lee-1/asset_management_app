@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.297';
+const APP_VERSION='1.47.298';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3912,7 +3912,9 @@ function groupItems(type){
 function assetGainLossBadge(a){
  const gl=assetGainLoss(a);if(!gl)return '';
  const up=gl.amount>=0;
- return ` · <span style="color:var(--${up?'income':'expense'})">${up?'+':''}${gl.pct.toFixed(1)}% · ${up?'+':''}${comma(gl.amount)}원</span>`;
+ const ann=annualizedReturn(a.costBasis,gl.amount+a.costBasis,a.acquiredAt,TODAY); /* gl.amount=assetEval(a)-a.costBasis이므로 evalValue를 다시 구하려 assetEval을 또 부르지 않고 역산 */
+ const annPart=ann!=null?` · 연 ${ann>=0?'+':''}${ann.toFixed(1)}%`:'';
+ return ` · <span style="color:var(--${up?'income':'expense'})">${up?'+':''}${gl.pct.toFixed(1)}% · ${up?'+':''}${comma(gl.amount)}원${annPart}</span>`;
 }
 function assetSubline(a){
  const R=DB.rates;
@@ -4399,7 +4401,7 @@ function duplicateAsset(id){
  d.name=(d.name||'')+' 복사';
  delete d.baseAmount;delete d.amountKRW;delete d.maturityDate;delete d.payoffAckAt;
  if(isMarketValued(d)){
-   delete d.costBasis;
+   delete d.costBasis;delete d.acquiredAt; /* 매입원가와 함께 최초 매입일도 새 자산엔 해당하지 않으므로 지운다 — syncAssetInputs()가 나중에 매입 금액을 입력하는 시점에 다시 오늘 날짜로 찍는다 */
    const qtyField=d.type==='fx'?'fxAmount':d.type==='gold'?'goldDon':d.type==='crypto'?'cryptoQty':'stockQty';
    d[qtyField]=0;
  }
@@ -4414,7 +4416,8 @@ function syncAssetInputs(){const d=asDraft;const g=id=>$(id);
  if(g('asGold'))d.goldDon=Math.max(0,parseFloat((g('asGold').value||'0').replace(/,/g,''))||0);
  if(g('asCode')){const v=g('asCode').value.trim().toUpperCase();if(d.type==='crypto')d.cryptoCode=v;else d.stockCode=v;}
  if(g('asQty')){const v=Math.max(0,parseFloat((g('asQty').value||'0').replace(/,/g,''))||0);if(d.type==='crypto')d.cryptoQty=v;else d.stockQty=v;}
- if(g('asCostBasis')){const n=num(g('asCostBasis'),false);if(n>0)d.costBasis=n;else delete d.costBasis;}
+ if(g('asCostBasis')){const n=num(g('asCostBasis'),false);if(n>0)d.costBasis=n;else delete d.costBasis;
+   if(d.costBasis>0){if(!d.acquiredAt)d.acquiredAt=TODAY;}else delete d.acquiredAt;} /* 매입 금액을 처음 입력하는 순간에만 최초 매입일(acquiredAt)을 오늘로 찍는다(annualizedReturn의 보유기간 기준) — 추가매수로 액수만 바뀌는 addCostBasisForBuy 경로는 이미 acquiredAt이 있는 상태에서만 열리므로 건드리지 않음(app-evolve cycle276 critique/advance) */
  if(g('asAddedCost'))d._addedCost=num(g('asAddedCost'),false);
  if(g('asSaleProceeds'))d._saleProceeds=num(g('asSaleProceeds'),false);
  if(g('asInterestRate')){const v=Math.max(0,parseFloat((g('asInterestRate').value||'0').replace(/,/g,''))||0);if(v>0)d.interestRate=v;else delete d.interestRate;}}
@@ -7940,6 +7943,14 @@ function sanitizeBackup(obj){
    * startDate/endDate와 동일하게 csvDateValid()로 형식/달력 유효성만 검증해 깨졌으면 null로
    * 정규화한다 — 그대로 두면 doMaturity/openMaturity의 날짜 비교가 깨진 문자열을 그대로 쓴다. */
   if(d.maturityDate&&!csvDateValid(d.maturityDate)){d.maturityDate=null;fixedCount++}
+  /* acquiredAt(최초 매입일, annualizedReturn의 보유기간 기준, app-evolve cycle276 advance)도
+   * costBasis처럼 없는 게 정상 상태(매입원가 미입력)라 레코드를 버리지 않고, 있는데 형식/달력상
+   * 무효하면(예: "2026-02-30") maturityDate와 동일하게 csvDateValid()로 검증해 지운다 — 그대로
+   * 두면 daysBetween()이 Invalid Date에서 NaN을 만들어 annualizedReturn()이 Math.pow(x,NaN)=NaN을
+   * 그대로 배지에 표시한다. maturityDate처럼 null로 두지 않고 지우는 건, costBasis 없는 자산엔
+   * acquiredAt도 없는 게 정상이라 'acquiredAt' in d로 유무를 가르는 코드(syncAssetInputs)와
+   * 형태를 맞추기 위함. */
+  if(d.acquiredAt&&!csvDateValid(d.acquiredAt)){delete d.acquiredAt;fixedCount++}
   /* validOwners가 비어있으면(이 백업에도 obj.owners가 없고 이 기기의 DB.owners도 아직 없는 극히
    * 드문 경우 — 정상 실사용에서는 migrate()가 항상 기본 귀속을 채워 DB.owners가 빈 적이 없음)
    * 무엇이 "유효한 귀속"인지 판단할 근거 자체가 없으므로, 근거 없이 임의 문자열을 지어내지 않고

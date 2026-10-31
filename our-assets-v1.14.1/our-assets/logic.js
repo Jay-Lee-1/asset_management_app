@@ -833,6 +833,20 @@ function totalRealizedGain(items){
  if(!withGain.length)return null;
  return withGain.reduce((s,q)=>s+q.realizedGain,0);
 }
+/* assetGainLoss()/assetGainLossBadge()의 손익 금액·퍼센트는 보유 기간을 전혀 반영하지 않아,
+ * 1개월 보유 5% 수익과 3년 보유 5% 수익이 화면상 똑같이 보인다(app-evolve cycle276 critique).
+ * acquiredAt(최초 매입 시점, saveAsset이 costBasis를 처음 설정할 때만 찍고 추가매수 시엔
+ * 건드리지 않음)이 있을 때만 CAGR 성격의 연환산 수익률을 보조로 계산한다. 보유기간이 30일
+ * 미만이면 짧은 기간을 1년으로 거듭제곱 확대하는 왜곡이 너무 커서(예: 하루 1% 수익이 연
+ * 수천%로 보임) goalProgress/debtPayoffProjection과 같은 "모르면 추측하지 않는다" 원칙으로 null을
+ * 돌려준다. evalValue는 수량 필드가 항상 0 이상으로 clamp돼 있어 음수가 될 수 없으므로
+ * evalValue/costBasis는 항상 0 이상이라 거듭제곱 결과가 NaN이 되지 않는다(0이면 -100%). */
+function annualizedReturn(costBasis,evalValue,acquiredAt,today){
+ if(!(costBasis>0)||!acquiredAt)return null;
+ const days=daysBetween(acquiredAt,today);
+ if(!(days>=30))return null;
+ return (Math.pow(evalValue/costBasis,365/days)-1)*100;
+}
 
 /* ================= 예산 이월(rollover, 순수) ================= */
 /* budgetForMonth(index.html)는 '카테고리→[{from,amount}]' effective-dated flat 값을 그대로 쓰는
