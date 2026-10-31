@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.304';
+const APP_VERSION='1.47.305';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6237,7 +6237,12 @@ function globalSearchBody(qRaw){
   }).join('')}</div>${moreBtn('goals',goalsRemain)}`;
  if(recsAll.length)html+=`<div class="menu-cap" style="margin-top:14px">반복 · ${recsAll.length}개</div><div class="card">${recsCapped.map(r=>{
    const av=r.type==='expense'?'a-food':r.type==='income'?'a-in':r.type==='saving'?'a-save':'a-etc'; /* openRecManage() 행과 동일한 타입별 색상 */
-   return `<div class="manage-row" tabindex="0" role="button" aria-label="${esc(r.category)} ${recFreqLabel(r)} ${comma(r.amount)}원${r.active?'':' 중지됨'}" onclick="editRec('${r.id}')" onkeydown="rowKeydown(event,()=>editRec('${r.id}'))"><div class="avatar ${av}" style="width:36px;height:36px;border-radius:11px;${r.active?'':'opacity:.4'}">${r.type==='transfer'?svg('transfer'):catGlyph(r.type,r.category,18,'repeat')}</div><div style="flex:1;min-width:0"><div class="mn">${esc(r.category)} ${r.active?'':'<span class="mini">중지</span>'}</div><div class="msub">${recFreqLabel(r)} · ${comma(r.amount)}원</div></div><div class="mc">${svg('chev')}</div></div>`;
+   /* openRecManage() 행과 동일하게 제목은 memo(없으면 category)를 쓰고, memo가 category와 다를 때만
+    * category를 보조로 보여준다(app-evolve cycle280 develop) — 특히 matchRecQuery가 메모로도 찾아주는
+    * (cycle279) 만큼, "넷플릭스"를 검색해 찾은 결과가 "구독"이라고만 떠서 검색어와 무관해 보이면
+    * 안 된다. */
+   const title=r.memo||r.category;
+   return `<div class="manage-row" tabindex="0" role="button" aria-label="${esc(title)} ${recFreqLabel(r)} ${comma(r.amount)}원${r.active?'':' 중지됨'}" onclick="editRec('${r.id}')" onkeydown="rowKeydown(event,()=>editRec('${r.id}'))"><div class="avatar ${av}" style="width:36px;height:36px;border-radius:11px;${r.active?'':'opacity:.4'}">${r.type==='transfer'?svg('transfer'):catGlyph(r.type,r.category,18,'repeat')}</div><div style="flex:1;min-width:0"><div class="mn">${esc(title)} ${r.active?'':'<span class="mini">중지</span>'}</div><div class="msub">${(r.memo&&r.memo!==r.category)?esc(r.category)+' · ':''}${recFreqLabel(r)} · ${comma(r.amount)}원</div></div><div class="mc">${svg('chev')}</div></div>`;
   }).join('')}</div>${moreBtn('recs',recsRemain)}`;
  return html;
 }
@@ -7029,11 +7034,19 @@ function openRecManage(){
   if(ty==='expense')expenseMonthly=monthlySum;
   body+=`<div class="menu-cap" style="margin-top:8px">${label} · ${list.length}개${monthlySum?` · 월 약 ${comma(Math.round(monthlySum))}원`:''}</div><div class="card" style="margin-bottom:6px">`+list.map(r=>{
    const period=`${(r.startDate||'').slice(0,7).replace('-','.')}${r.endDate?` ~ ${r.endDate.slice(0,7).replace('-','.')}`:' ~'}`;
-   return `<div class="manage-row" tabindex="0" role="button" aria-label="${esc(r.category)} ${recFreqLabel(r)} ${comma(r.amount)}원${r.active?'':' 중지됨'}" onclick="editRec('${r.id}')" onkeydown="rowKeydown(event,()=>editRec('${r.id}'))"><div class="avatar ${av}" style="width:38px;height:38px;${r.active?'':'opacity:.4'}">${r.type==='transfer'?svg('transfer'):catGlyph(r.type,r.category,null,'repeat')}</div>
-    <div style="flex:1;min-width:0"><div class="mn">${esc(r.category)} ${r.active?'':'<span class="mini">중지</span>'}</div>
-     <div class="msub">${recFreqLabel(r)} · ${comma(r.amount)}원</div>
+   /* 제목은 memo(없으면 category — saveRec/editRec이 항상 보장하는 폴백, 위 recMemoInput 주석 참고)를
+    * 먼저 쓴다 — 같은 카테고리("구독" 등)로 묶인 반복이 여러 개면(넷플릭스/왓챠 등) 지금까지 이
+    * 목록은 category만 보여줘 전부 "구독"으로 똑같이 떠 서로 구분할 수 없었다(editRec/quick-confirm/
+    * homeAlerts는 이미 memo||category를 제목으로 쓰는데 이 목록만 category 고정이었음, app-evolve
+    * cycle280 develop). memo가 category와 다를 때만(=사용자가 실제로 구분용 메모를 입력했을 때만)
+    * msub에 category를 보조로 덧붙여, 제목만 봐도 어느 카테고리인지 여전히 알 수 있게 한다
+    * (txRowCore의 memo/catLabel 2단 표시와 동일한 원칙). */
+   const title=r.memo||r.category;
+   return `<div class="manage-row" tabindex="0" role="button" aria-label="${esc(title)} ${recFreqLabel(r)} ${comma(r.amount)}원${r.active?'':' 중지됨'}" onclick="editRec('${r.id}')" onkeydown="rowKeydown(event,()=>editRec('${r.id}'))"><div class="avatar ${av}" style="width:38px;height:38px;${r.active?'':'opacity:.4'}">${r.type==='transfer'?svg('transfer'):catGlyph(r.type,r.category,null,'repeat')}</div>
+    <div style="flex:1;min-width:0"><div class="mn">${esc(title)} ${r.active?'':'<span class="mini">중지</span>'}</div>
+     <div class="msub">${(r.memo&&r.memo!==r.category)?esc(r.category)+' · ':''}${recFreqLabel(r)} · ${comma(r.amount)}원</div>
      <div class="msub2">${period}</div></div>
-    <div class="row-acts"><button type="button" class="act-btn" aria-label="${esc(r.category)} 복제" onclick="event.stopPropagation();duplicateRec('${r.id}')">${svg('copy')}</button><button class="act-btn ${r.active?'':'on'}" onclick="event.stopPropagation();toggleRecActive('${r.id}')" title="${r.active?'일시중지':'다시 시작'}" aria-label="${esc(r.category)} ${r.active?'일시중지':'다시 시작'}">${svg(r.active?'pause':'play')}</button></div>
+    <div class="row-acts"><button type="button" class="act-btn" aria-label="${esc(title)} 복제" onclick="event.stopPropagation();duplicateRec('${r.id}')">${svg('copy')}</button><button class="act-btn ${r.active?'':'on'}" onclick="event.stopPropagation();toggleRecActive('${r.id}')" title="${r.active?'일시중지':'다시 시작'}" aria-label="${esc(title)} ${r.active?'일시중지':'다시 시작'}">${svg(r.active?'pause':'play')}</button></div>
     <div class="mc">${svg('chev')}</div></div>`;
   }).join('')+`</div>`;
  });

@@ -7413,6 +7413,24 @@ test('globalSearchBody: 반복 등록의 메모로도 찾을 수 있다(카테�
   const html = sandbox.globalSearchBody('넷플릭스');
   assert.ok(html.includes('반복 · 1개'));
 });
+/* 행 제목은 category가 아니라 memo(있으면)를 먼저 써야 한다 — editRec/quick-confirm/homeAlerts가 이미
+ * 공유하는 memo||category 관례를 openRecManage()/globalSearchBody()의 반복 행만 따르지 않고 category만
+ * 고정으로 보여줘, 같은 카테고리("구독")로 묶인 반복이 여러 개면(넷플릭스/왓챠 등) 검색 결과에서도
+ * 서로 구분이 안 됐다(app-evolve cycle280 develop) — "넷플릭스"로 찾았는데 행엔 "구독"이라고만 뜨면
+ * 검색어와 무관해 보인다. */
+test('globalSearchBody: 반복 행 제목은 memo를 먼저 쓰고(카테고리가 아님), category는 msub에 보조로 붙는다', () => {
+  setupGlobalSearchRecDB({ id: 'r1', active: true, freq: 'monthly', day: 1, startDate: '2026-01-01', endDate: null, weekend: 'none', type: 'expense', category: '구독', memo: '넷플릭스', amount: -17000, fromAssetId: 'a1', skip: [], edits: {} });
+  const html = sandbox.globalSearchBody('넷플릭스');
+  assert.ok(html.includes('<div class="mn">넷플릭스 '), '제목(mn)은 memo("넷플릭스")여야 함');
+  assert.ok(html.includes('aria-label="넷플릭스 '), 'aria-label도 memo를 먼저 써야 함');
+  assert.ok(html.includes('구독 · '), 'memo가 category와 다르면 category를 msub에 보조로 보여줘야 함');
+});
+test('globalSearchBody: 반복에 커스텀 메모가 없으면(memo===category) category를 중복 표시하지 않는다', () => {
+  setupGlobalSearchRecDB({ id: 'r1', active: true, freq: 'monthly', day: 1, startDate: '2026-01-01', endDate: null, weekend: 'none', type: 'expense', category: '월세', memo: '월세', amount: -500000, fromAssetId: 'a1', skip: [], edits: {} });
+  const html = sandbox.globalSearchBody('월세');
+  assert.ok(html.includes('<div class="mn">월세 '), '제목은 여전히 category와 같은 값(월세)으로 떠야 함');
+  assert.ok(!html.includes('월세 · 월세'), 'memo와 category가 같으면 msub에서 category를 중복으로 또 붙이면 안 됨');
+});
 test('globalSearchBody: 중지된 반복은 "중지됨" 표시가 붙는다', () => {
   setupGlobalSearchRecDB({ id: 'r1', active: false, freq: 'monthly', day: 1, startDate: '2026-01-01', endDate: null, weekend: 'none', type: 'expense', category: '구독', memo: '넷플릭스', amount: -17000, fromAssetId: 'a1', skip: [], edits: {} });
   const html = sandbox.globalSearchBody('구독');
@@ -16961,6 +16979,37 @@ test('[실행형] openRecManage: DB.recurrences가 비어있으면 빈 상태 �
   const html = ctx.lastSheetHtml;
   assert.ok(html.includes('반복되는 게 아직 없어요'), '반복거래가 하나도 없으면 빈 상태 문구가 떠야 함');
   assert.ok(!html.includes('menu-cap'), '빈 상태에서는 그룹 헤더가 전혀 뜨면 안 됨');
+});
+/* 같은 카테고리("구독")로 묶인 반복이 여러 개면 지금까지 이 목록의 제목이 category 고정이라 전부
+ * "구독"으로 똑같이 떠 구분할 수 없었다 — editRec/quick-confirm/homeAlerts가 이미 쓰는 memo||category
+ * 관례로 맞춘다(app-evolve cycle280 develop). */
+test('[실행형] openRecManage: 같은 카테고리의 반복 두 건은 memo로 서로 구분된다(제목이 category로 겹치지 않음)', () => {
+  const ctx = recManageCtx();
+  ctx.DB = {
+    recurrences: [
+      { id: 'r1', type: 'expense', category: '구독', memo: '넷플릭스', amount: 17000, freq: 'monthly', day: 1, startDate: '2026-01-01', active: true },
+      { id: 'r2', type: 'expense', category: '구독', memo: '왓챠', amount: 9900, freq: 'monthly', day: 5, startDate: '2026-01-05', active: true },
+    ],
+  };
+  ctx.openRecManage();
+  const html = ctx.lastSheetHtml;
+  assert.ok(html.includes('<div class="mn">넷플릭스 '), '첫 번째 행 제목은 memo("넷플릭스")여야 함');
+  assert.ok(html.includes('<div class="mn">왓챠 '), '두 번째 행 제목은 memo("왓챠")여야 함');
+  assert.ok(html.includes('aria-label="넷플릭스 복제"'), '복제 버튼 aria-label도 memo를 써서 서로 구분돼야 함(dup-btn과 동일 원칙)');
+  assert.ok(html.includes('aria-label="왓챠 복제"'));
+  assert.ok(html.includes('구독 · '), 'memo가 category와 다르면 category를 msub에 보조로 보여줘야 함');
+});
+test('[실행형] openRecManage: 커스텀 메모가 없으면(memo===category) 제목에 category를 쓰고 msub에 중복 표시하지 않는다', () => {
+  const ctx = recManageCtx();
+  ctx.DB = {
+    recurrences: [
+      { id: 'r1', type: 'expense', category: '월세', memo: '월세', amount: 500000, freq: 'monthly', day: 1, startDate: '2026-01-01', active: true },
+    ],
+  };
+  ctx.openRecManage();
+  const html = ctx.lastSheetHtml;
+  assert.ok(html.includes('<div class="mn">월세 '), '제목은 category와 같은 값(월세)으로 떠야 함');
+  assert.ok(!html.includes('월세 · 월세'), 'memo와 category가 같으면 msub에서 category를 중복으로 또 붙이면 안 됨');
 });
 
 /* ---------- addBalanceAdjust/updateBalanceAdjust: 부채(debt) 자산에 잔액 조정 내역을
