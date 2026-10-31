@@ -1,15 +1,12 @@
 {
   "cycle": 279,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "전체내역 검색(histQ) 금액 비교 연산자가 공백 포함 입력에서 조용히 0건으로 실패하는 버그 수정",
+    "why": "cycle278 advance가 추가한 금액 비교/범위 연산자(parseAmountToken, logic.js:527)는 검색어를 공백으로 나눈 토큰(searchTerms, logic.js:505) 각각에 독립적으로 적용된다. \">10만\"처럼 붙여 쓰면 정상 동작하지만, 연산자 뒤에 공백을 넣어 \"> 10만\"처럼 자연스럽게(수식처럼) 입력하면 \">\"와 \"10만\"이 서로 다른 토큰으로 쪼개진다. node -e로 직접 재현한 결과 두 토큰 모두 parseAmountToken이 null을 반환해 matchTxnQuery(logic.js:552)가 일반 텍스트 부분일치로 떨어지는데, \">\"라는 글자가 들어있는 거래 메모/카테고리/자산명은 거의 없으므로 terms.every() AND 조건이 항상 실패해 검색 결과가 조용히 0건이 된다. placeholder(index.html:5781)가 광고하는 압축 표기(\">10만\", \"1만~5만\")와 다르게 썼을 뿐인데 오류 안내 없이 \"해당하는 내역이 없다\"는 화면이 뜨는 건 cycle278이 해소하려 했던 원래 공백(금액 비교가 전혀 안 됨)과 체감상 구분이 안 되는 사용자 혼란이다. cycle278 advance 커밋은 review 단계의 검토를 받은 적이 없다(review는 바로 다음 develop 커밋만 보는 사각지대, cycle277 critique가 이미 지적한 동일한 패턴) — 그래서 critique에서 직접 전체 앱을 재탐색하다 이 코드를 다시 짚어 검증했다. SRI 해시 TODO(index.html:1383, cdn.jsdelivr.net/t1.kakaocdn.net egress 차단으로 실제 바이트를 못 받아 둠)는 이번에도 같은 네트워크 정책으로 재확인(curl CONNECT 403)해 여전히 이 환경에서 처리 불가능하므로 재차 보류. 영수증 사진(txPhotoFieldHTML)이 별도 blob 저장소 없이 거래 레코드에 base64로 직접 들어가 duplicateTx가 delete d.photo로 이미 정리하므로 저장공간 누수 의심도 배제. APPLOCK의 brute-force 방지(AUTH._lockStatus/pbkdf2Hash)와 영수증 공유(share_target/sw.js)도 이미 성숙 확인되어 제외.",
+    "approach": "logic.js에 normalizeAmountSpacing(q) 순수 함수를 신설 — 비교 연산자(>,>=,<,<=) 바로 뒤와 숫자 사이의 공백, 그리고 ~ 범위 구분자 앞뒤의 공백을 \"공백 다음이 숫자(,로 시작하는 천단위 구분 포함/만·억 단위 포함)일 때만\" 제거한다(일반 텍스트 검색에 영향 주지 않도록 숫자가 바로 뒤따르는 경우로 좁힘). matchTxnQuery(logic.js:552)가 기존 q.normalize('NFC').toLowerCase().replace(/,/g,'') 바로 뒤에 normalizeAmountSpacing을 추가로 적용해 searchTerms에 넘기기 전에 띄어 쓴 연산자/범위를 다시 붙인다. histQ placeholder 문구(index.html:5781)는 그대로 둔다(이미 올바른 압축 표기를 보여주고 있고, 이번 수정은 그 표기와 다르게 써도 받아주는 관용성 추가일 뿐). test/run.js에 normalizeAmountSpacing 경계(연산자+공백+숫자, 범위 양쪽 공백, 공백 뒤 숫자가 아니면 보존돼 일반 텍스트 안 건드림) + matchTxnQuery 통합(\"> 10만\", \">= 10만\", \"1만 ~ 5만\", \"5만~ 1만\" 등) + 기존 공백 없는 케이스 회귀 테스트를 추가한다. APP_VERSION/sw.js CACHE는 평소 관례대로 올린다."
+  },
   "history": [
-    {
-      "cycle": 274,
-      "phase": "critique",
-      "timestamp": "2026-10-30T22:15:48.000Z",
-      "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, 거래 입력의 분할(splits) 금액을 고칠 때 txSplitAmt(i,el)가 draft만 갱신하고 전체 재렌더(renderTxSheet)는 피해(커서 위치 보존), 그 결과 '합계가 전체 금액과 모자라요/많아요/일치해요' 힌트(splitFieldHTML의 .psub, id 없음)가 입력 중 내내 직전 재렌더 시점의 낡은 값으로 남아 있는 공백을 발견 — saveTx()의 저장 시 검증(sum!==d.amount 차단)이 있어 데이터는 안전하지만 화면 안내는 계속 틀려 있다. 같은 폼 안에 이미 동일한 클래스를 고친 선례가 있다(반복 종료일/횟수 힌트가 id=\"${pfx}EndHint\"로 전체 재렌더 없이 입력마다 즉시 textContent만 갱신). 백업/복원 에러 처리, 홈 알림 체계, 통합검색, 차트 접근성, 지출분석 UI, 거래·자산·반복 복제 기능 대등성, 메모 기반 카테고리 추천, 부채 이자율/상환 예상, 예산 페이스 경고, 시세 동기화 실패 알림은 모두 이미 성숙 확인되어 재차 제외. 채택 계획(splitFieldHTML 힌트에 id 부여 + splitHintUpdate(d) 신설 + txSplitAmt에서 전체 재렌더 대신 그 함수만 호출, EndHint와 동일한 패턴)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 274,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-31T16:30:00.000Z",
       "summary": "cycle279 develop 커밋(d92c656, 통합검색에 반복(구독) 등록 자체 검색 추가)을 검토. matchRecQuery(category+memo haystack, NFC 정규화+대소문자 무시+공백 AND)가 matchGoalQuery/matchAssetQuery와 동일한 규칙임을 확인, null/필드 없음 가드(r&&r.category)도 일치. globalSearchBody의 avatar 분기(a-food/a-in/a-save/a-etc)와 catGlyph(r.type,r.category,18,'repeat')/transfer는 svg('transfer') 처리가 openRecManage() 행의 로직과 동일함을 코드로 직접 대조 확인(아이콘 크기 18/avatar 36px·11px는 같은 함수 안의 카테고리 그룹과 동일 패턴, openRecManage의 38px/size=null과는 다르지만 검색 결과 리스트 전용 스타일이라 문제 없음). editRec(id)가 DB.recurrences.find로 안전 처리됨을 확인, recFreqLabel(r)도 openRecManage()와 동일 함수 재사용. node --check로 메인 스크립트(블록2)와 logic.js 구문 모두 통과 확인, node test/run.js 2403/2403 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 279,
+      "phase": "critique",
+      "timestamp": "2026-10-31T18:14:43.000Z",
+      "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, CSV 내보내기·복제 기능 대등성·접근성(포커스 트랩/aria-live)·PIN 잠금 brute-force 방지·영수증 사진 공유(share_target)·오프라인/온라인 재동기화·앱 알림 체계는 모두 이미 성숙 확인되어 제외하고, SRI 해시 TODO(index.html:1383)는 cdn.jsdelivr.net/t1.kakaocdn.net egress가 이번에도 차단돼 있어(curl CONNECT 403으로 재확인) 여전히 처리 불가능하므로 다시 보류했다. 대신 cycle278 advance가 추가한 전체내역 검색(histQ)의 금액 비교/범위 연산자(parseAmountToken, logic.js:527) 자체에서 새 버그를 발견 — 이 코드는 review 단계의 검토를 받은 적이 없는 사각지대(cycle277 critique가 이미 지적한 것과 같은 패턴)라 critique에서 직접 재검증했다. 연산자 뒤에 공백을 넣어 \"> 10만\"처럼 자연스럽게 입력하면 searchTerms가 \">\"와 \"10만\"을 서로 다른 토큰으로 쪼개 둘 다 parseAmountToken이 null을 반환하고 일반 텍스트 부분일치로 떨어지는데, \">\" 글자가 들어있는 거래는 거의 없어 AND 조건이 항상 실패해 검색 결과가 오류 안내 없이 조용히 0건이 된다 — node -e로 직접 재현해 두 토큰 모두 null이 됨을 확인했다. 채택 계획(logic.js에 normalizeAmountSpacing(q) 신설 + matchTxnQuery에서 searchTerms 전에 적용 + 공백 포함 연산자/범위 입력 테스트 추가)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
