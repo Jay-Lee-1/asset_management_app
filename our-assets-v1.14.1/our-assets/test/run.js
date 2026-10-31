@@ -195,7 +195,7 @@ const FUNCTIONS = [
   'dateBelowRangeFloor', 'dateAboveRangeCeil', 'recalcEndCond', 'isVarCat', 'setCatVar', 'toggleCatVarUI', 'activeRecsForAssets', 'activeRecsForCat',
   'num', 'doRenameCat', 'doDeleteCat', 'catMergeCounts', 'openCatMergePicker', 'confirmCatMerge', 'mergeCatInto', 'totalBudgetSummary', 'budgetForMonth', 'setBudgetFrom', 'addCat', 'movedCatOrder', 'moveCat',
   'isBudgetRolloverCat', 'setBudgetRolloverCat', 'toggleBudgetRolloverUI', 'budgetCarryFor', 'budgetForMonthWithCarry',
-  'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'assetsToCSV', 'nwHistoryToCSV', 'assetQtyLogToCSV',
+  'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'assetsToCSV', 'nwHistoryToCSV', 'assetQtyLogToCSV', 'recurrencesToCSV',
   'unguardCsv', 'csvRowToImportTxn', 'buildImportPreview', 'doCsvImport',
   // openCsvColumnMap/buildGenericImportPreview 등은 app-evolve cycle251 advance(은행/카드사 CSV
   // 열 매핑 가져오기) 구현 검증용 — detectOwnCsvFormat/mapGenericCsvRow는 logic.js 전용(전체 로드돼
@@ -5687,20 +5687,78 @@ test('assetQtyLogToCSV: 자산명/귀속에 콤마·큰따옴표가 있으면 �
   assert.strictEqual(rows[1][1], "'=HYPERLINK(\"evil\")");
   assert.strictEqual(rows[1][3], '엄마, 아빠');
 });
-/* ---------- doExport(assetsCsv/nwCsv/gainCsv) 배선 회귀: exportData() 시트의 새 버튼이 doExport로 올바르게 연결되는지.
+/* ---------- recurrencesToCSV: 반복거래(구독/정기결제) 목록 CSV 내보내기(app-evolve cycle275 advance) ---------- */
+test('recurrencesToCSV: 빈 배열이면 BOM과 헤더만 있는 한 줄을 반환한다', () => {
+  const csv = sandbox.recurrencesToCSV([], []);
+  assert.strictEqual(csv, '﻿유형,카테고리,금액,주기,시작일,종료일,활성,귀속,보내는 자산,받는 자산,메모');
+});
+test('recurrencesToCSV: 지출은 fromAssetId 자산의 owner를, 수입은 toAssetId 자산의 owner를 귀속으로 쓴다(filterTxnsByOwner와 같은 규칙)', () => {
+  const assets = [{ id: 'cash', name: '지갑', owner: '엄마' }, { id: 'bank', name: '은행', owner: '아빠' }];
+  const csv = sandbox.recurrencesToCSV([
+    { type: 'expense', category: '구독', amount: 9900, freq: 'monthly', day: 15, startDate: '2026-01-15', endDate: null, active: true, fromAssetId: 'cash', toAssetId: null, memo: '넷플릭스' },
+    { type: 'income', category: '용돈', amount: 50000, freq: 'monthly', day: 1, startDate: '2026-02-01', endDate: null, active: true, fromAssetId: null, toAssetId: 'bank', memo: '' },
+  ], assets);
+  const rows = JSON.parse(JSON.stringify(sandbox.parseCSV(csv)));
+  assert.deepStrictEqual(rows[1], ['지출', '구독', '9900', '매월 15일', '2026-01-15', '', 'Y', '엄마', '지갑', '', '넷플릭스']);
+  assert.deepStrictEqual(rows[2], ['수입', '용돈', '50000', '매월 1일', '2026-02-01', '', 'Y', '아빠', '', '은행', '']);
+});
+test('recurrencesToCSV: 이체는 fromAssetId 자산의 owner를 우선하고, 없으면 toAssetId 자산의 owner로 대신한다', () => {
+  const assetsFrom = [{ id: 'a', name: 'A통장', owner: '나' }, { id: 'b', name: 'B통장', owner: '엄마' }];
+  const csvFrom = sandbox.recurrencesToCSV([
+    { type: 'transfer', category: '이체', amount: 100000, freq: 'monthly', day: 1, startDate: '2026-01-01', endDate: null, active: true, fromAssetId: 'a', toAssetId: 'b' },
+  ], assetsFrom);
+  assert.strictEqual(sandbox.parseCSV(csvFrom)[1][7], '나', 'fromAssetId 자산의 owner를 우선해야 함');
+  const assetsNoFrom = [{ id: 'b', name: 'B통장', owner: '엄마' }];
+  const csvNoFrom = sandbox.recurrencesToCSV([
+    { type: 'transfer', category: '이체', amount: 100000, freq: 'monthly', day: 1, startDate: '2026-01-01', endDate: null, active: true, fromAssetId: 'gone', toAssetId: 'b' },
+  ], assetsNoFrom);
+  assert.strictEqual(sandbox.parseCSV(csvNoFrom)[1][7], '엄마', 'fromAssetId 자산을 못 찾으면 toAssetId 자산의 owner로 대신해야 함');
+});
+test('recurrencesToCSV: 자산이 삭제돼 fromAssetId/toAssetId를 못 찾으면 자산명은 *AssetName 스냅샷으로, 귀속은 빈 칸으로 남긴다', () => {
+  const csv = sandbox.recurrencesToCSV([
+    { type: 'expense', category: '월세', amount: 500000, freq: 'monthly', day: 25, startDate: '2026-01-25', endDate: null, active: false, fromAssetId: 'gone', fromAssetName: '옛 통장', toAssetId: null },
+  ], []);
+  const row = sandbox.parseCSV(csv)[1];
+  assert.strictEqual(row[6], 'N', '중지된 반복은 활성 컬럼이 N이어야 함');
+  assert.strictEqual(row[7], '', '자산을 못 찾으면 귀속은 추측하지 않고 빈 칸이어야 함');
+  assert.strictEqual(row[8], '옛 통장', '자산을 못 찾아도 fromAssetName 스냅샷으로 자산명을 채워야 함');
+});
+test('recurrencesToCSV: weekly/yearly 주기 레이블(recFreqLabelStr)과 날짜 오름차순 정렬을 그대로 반영한다', () => {
+  const csv = sandbox.recurrencesToCSV([
+    { type: 'expense', category: '용돈', amount: 10000, freq: 'weekly', day: null, startDate: '2026-03-02', endDate: null, active: true, fromAssetId: null, toAssetId: null },
+    { type: 'expense', category: '보험', amount: 300000, freq: 'yearly', day: null, startDate: '2026-01-10', endDate: null, active: true, fromAssetId: null, toAssetId: null },
+  ], []);
+  const rows = sandbox.parseCSV(csv);
+  assert.strictEqual(rows[1][4], '2026-01-10', '시작일 오름차순으로 정렬돼야 함(보험이 먼저)');
+  assert.strictEqual(rows[1][3], '매년 1월 10일');
+  assert.strictEqual(rows[2][3], '매주 월요일', '2026-03-02는 월요일');
+});
+test('recurrencesToCSV: 메모/귀속에 콤마·큰따옴표가 있으면 필드 전체를 따옴표로 감싸고, =,+,-,@ 로 시작하면 \'를 붙여 수식 인젝션을 막는다', () => {
+  const assets = [{ id: 'a1', name: '지갑', owner: '=HYPERLINK("evil")' }];
+  const csv = sandbox.recurrencesToCSV([
+    { type: 'expense', category: '구독', amount: 9900, freq: 'monthly', day: 1, startDate: '2026-01-01', endDate: null, active: true, fromAssetId: 'a1', toAssetId: null, memo: '메모, 콤마' },
+  ], assets);
+  const row = sandbox.parseCSV(csv)[1];
+  assert.strictEqual(row[7], "'=HYPERLINK(\"evil\")");
+  assert.strictEqual(row[10], '메모, 콤마');
+});
+/* ---------- doExport(assetsCsv/nwCsv/gainCsv/recsCsv) 배선 회귀: exportData() 시트의 새 버튼이 doExport로 올바르게 연결되는지.
  * exportData()는 canShareFiles()/svg()/IS_IOS 등 FUNCTIONS 목록 밖의 의존이 많아 실행형으로 돌리지 않고,
  * homeAlertCard 테스트(위)와 동일하게 extractFunction으로 원본 소스만 떼어 onclick 배선을 정적으로 검사한다. */
-test('exportData: 자산 목록/순자산 추이/매도 내역 CSV 버튼이 각각 kind="assetsCsv"/"nwCsv"/"gainCsv"로 doExport를 부른다', () => {
+test('exportData: 자산 목록/순자산 추이/매도 내역/반복거래 CSV 버튼이 각각 kind="assetsCsv"/"nwCsv"/"gainCsv"/"recsCsv"로 doExport를 부른다', () => {
   const body = extractFunction('exportData');
   assert.ok(body.includes("doExport('${sharable?'share':'download'}','assetsCsv')"), '자산 목록 CSV 버튼이 없음');
   assert.ok(body.includes("doExport('${sharable?'share':'download'}','nwCsv')"), '순자산 추이 CSV 버튼이 없음');
   assert.ok(body.includes("doExport('${sharable?'share':'download'}','gainCsv')"), '매도(실현손익) 내역 CSV 버튼이 없음');
+  assert.ok(body.includes("doExport('${sharable?'share':'download'}','recsCsv')"), '반복거래 CSV 버튼이 없음');
 });
-test('CSV_KIND_META/doExport: gainCsv가 assetQtyLogToCSV(DB.assetQtyLog, DB.assets)로 연결돼 있다', () => {
+test('CSV_KIND_META/doExport: gainCsv/recsCsv가 각각 assetQtyLogToCSV/recurrencesToCSV로 연결돼 있다', () => {
   const metaBody = extractConst('CSV_KIND_META');
   assert.ok(/gainCsv\s*:\s*\{/.test(metaBody), 'CSV_KIND_META에 gainCsv 항목이 없음');
+  assert.ok(/recsCsv\s*:\s*\{/.test(metaBody), 'CSV_KIND_META에 recsCsv 항목이 없음');
   const exportBody = extractFunction('doExport');
   assert.ok(exportBody.includes("kind==='gainCsv'?assetQtyLogToCSV(DB.assetQtyLog,DB.assets)"), 'doExport가 gainCsv를 assetQtyLogToCSV로 연결하지 않음');
+  assert.ok(exportBody.includes("kind==='recsCsv'?recurrencesToCSV(DB.recurrences,DB.assets)"), 'doExport가 recsCsv를 recurrencesToCSV로 연결하지 않음');
 });
 test('csvDateValid: YYYY-MM-DD 형식이 아니거나 실존하지 않는 날짜(예: 2월 30일)는 거부한다', () => {
   assert.strictEqual(sandbox.csvDateValid('2026-01-15'), true);

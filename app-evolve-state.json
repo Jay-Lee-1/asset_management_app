@@ -1,11 +1,7 @@
 {
-  "cycle": 275,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "반복거래 CSV 내보내기 추가",
-    "why": "assetsToCSV(cycle244)/nwHistoryToCSV(cycle244)/assetQtyLogToCSV(cycle268)로 백업/CSV 메뉴가 거래·자산·순자산추이·매도손익 4종을 모두 지원하는데, DB.recurrences(반복거래·구독)만 CSV 내보내기가 전혀 없다. openCsvMenu(line ~7680 부근)의 pk-item 버튼 4개와 CSV_KIND_META/doExport의 kind 분기에 반복거래만 빠져 있어, 구독·정기결제 목록을 외부 스프레드시트로 점검·백업하려는 사용자에게 비대칭적 공백이다.",
-    "approach": "index.html에 recurrencesToCSV(items) 순수 함수 신설(assetsToCSV와 동일한 패턴 — type/category/amount/cycle/startDate/active/owner/assetId→자산명 컬럼, guard()로 CSV 인젝션 방어). CSV_KIND_META에 recsCsv:{prefix:'recurrences',shareTitle:'반복거래 CSV',copyTitle:'반복거래 데이터 복사'} 추가, doExport의 kind 분기에 kind==='recsCsv'?recurrencesToCSV(DB.recurrences) 추가, openCsvMenu에 pk-item 버튼 추가(gainCsv 버튼과 동일 구조). test/run.js에 recurrencesToCSV 필드/이스케이프/빈 배열 케이스 추가. APP_VERSION/sw.js CACHE 버전 올리고 node test/run.js 통과 확인."
-  },
+  "cycle": 276,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
     {
       "cycle": 271,
@@ -138,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-10-31T01:15:00.000Z",
       "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, CSV_KIND_META/doExport가 거래·자산목록·순자산추이·매도손익(assetQtyLogToCSV, cycle268) 4종의 CSV 내보내기는 모두 지원하지만 DB.recurrences(반복거래·구독)는 recurrencesToCSV 자체가 코드베이스에 없어 CSV 내보내기가 전혀 없는 공백을 발견 — openCsvMenu의 pk-item 버튼 4개에도 반복거래 항목이 없다. 메모 기반 카테고리 추천, 거래·자산·반복 복제 기능 대등성, 예산 페이스 경고, 부채 이자율/상환 예상, 분할 합계 힌트, 백업/복원 에러 처리, 홈 알림 체계, 통합검색, 차트 접근성, 지출분석 UI, 각종 aria-label/announceLive 공백은 모두 이미 성숙 확인되어 재차 제외. 채택 계획(recurrencesToCSV(items) 신설 + CSV_KIND_META에 recsCsv 추가 + doExport/openCsvMenu 배선 + 테스트)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 275,
+      "phase": "advance",
+      "timestamp": "2026-10-31T02:00:00.000Z",
+      "summary": "critique(cycle275) 계획대로 반복거래(구독/정기결제) CSV 내보내기를 구현. index.html에 recurrencesToCSV(items,assets) 순수 함수 신설(assetQtyLogToCSV 바로 뒤) — 유형/카테고리/금액/주기(recFreqLabelStr 재사용)/시작일/종료일/활성(Y/N)/귀속/보내는 자산/받는 자산/메모 11컬럼, guard/esc로 동일한 CSV 인젝션 방어. 귀속(owner)은 DB.recurrences 레코드 자체엔 없는 필드라 새로 추측해 저장하지 않고, filterTxnsByOwner(logic.js)와 동일한 규칙(지출→fromAssetId, 수입→toAssetId, 이체/저축→fromAssetId||toAssetId 자산의 owner)으로 내보낼 때만 역산 — 자산을 못 찾으면 추측하지 않고 빈 칸(assetQtyLogToCSV와 동일 원칙), 자산명만 *AssetName 스냅샷으로 대신. CSV_KIND_META에 recsCsv:{prefix:'recurrences',...} 추가, doExport의 kind 분기에 kind==='recsCsv'?recurrencesToCSV(DB.recurrences,DB.assets) 추가, exportData()에 '반복거래 CSV로 내보내기' pk-item 버튼 배선(gainCsv 버튼과 동일 구조, svg('repeat') 아이콘). test/run.js FUNCTIONS에 recurrencesToCSV 추가, 빈 배열/지출·수입 owner 역산/이체 fromAssetId 우선·fallback/자산 삭제 시 스냅샷+귀속 빈칸/주기 레이블+날짜 정렬/CSV 인젝션 방어 총 6건 + exportData·CSV_KIND_META/doExport 배선 회귀 2건(기존 테스트 확장) 추가. APP_VERSION 1.47.295->1.47.296, sw.js CACHE v562->v563. node test/run.js 2339/2339 통과, 메인 스크립트(블록2) node --check(new Function) 통과. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]
