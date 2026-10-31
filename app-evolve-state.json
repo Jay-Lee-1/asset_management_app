@@ -1,22 +1,12 @@
 {
   "cycle": 276,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "시장가 평가 자산(fx/gold/stock/crypto)에 연환산 수익률(annualized return) 추가",
+    "why": "assetGainLoss()가 보여주는 손익 금액/퍼센트는 보유 기간을 반영하지 않아, 1개월 보유와 3년 보유의 동일한 5% 수익이 똑같이 보인다. costBasis 입력 시점(acquiredAt)을 기록해두면 CAGR 성격의 연환산 수익률을 보조 지표로 보여줄 수 있어, 투자 성과를 기간 보정해 비교할 수 있게 된다.",
+    "approach": "asDraft에 선택 필드 acquiredAt(costBasis 최초 입력 시 TODAY로 자동 세팅, 추가매수 시엔 변경 안 함)을 추가. logic.js에 annualizedReturn(costBasis, evalValue, acquiredAt, today) 순수 함수 신설 — 보유일수<30일이거나 costBasis<=0이면 null, 그 외엔 (evalValue/costBasis)^(365/days)-1. assetGainLoss()/assetGainLossBadge() 근처에 보조 캡션으로 노출(연환산 N% 식, costBasisField와 동일한 선택 입력 패턴). duplicateAsset은 acquiredAt을 복제 시점으로 재설정. SANITIZE_QTY_FIELDS류 백업 정제, test/run.js에 경계(30일 미만/정확 1년/손실/필드 없음) 케이스 추가."
+  },
   "history": [
-    {
-      "cycle": 271,
-      "phase": "critique",
-      "timestamp": "2026-10-30T10:15:00.000Z",
-      "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, homeAlerts()의 budgetOver/budgetOverMulti가 예산을 이미 초과한 뒤에만 경보하고, 목표(goalRowHTML)/부채상환처럼 \"이대로면 ~쯤 달성 예상\" 식 선제적 투사가 예산 추적에는 없는 비대칭을 발견. 채택 계획(projectedSpendForCategory 신설 + openSpendAnalysis 캡션 + homeAlerts budgetPaceWarn 카드)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
-    {
-      "cycle": 271,
-      "phase": "advance",
-      "timestamp": "2026-10-30T11:30:00.000Z",
-      "summary": "critique(cycle271) 계획대로 예산 월중 페이스 기반 초과 예상 경고를 구현. logic.js에 projectedMonthSpend(spent,y,m,today) 순수 함수 신설(경과일 비율 선형 투사로 월말 예상 지출 산출, today가 대상 달이 아니면 null) — 계획이 제안한 'projectedSpendForCategory(c,y,m)' 래퍼 대신, spendByCategory 집계가 이미 끝난 호출부(openSpendAnalysis 행/homeAlerts)가 그 결과(r.v)를 직접 넘기는 더 단순한 시그니처를 택함(불필요한 재조회 없음). openSpendAnalysis() 카테고리 행 + 전체 예산 카드에 budget&&!over&&projected>budget일 때만 '이대로면 N원 · 예산 초과 예상' 캡션 추가(var(--gold), goalBehind 등 '선제 경고'와 같은 색). homeAlerts()에 budgetPaceWarn/budgetPaceWarnMulti 신설 — budgetOver와 겹치지 않게 r.v<=b(아직 미초과)만 보고, 단일/복수 collapsing·notifyAlertInfo 월단위 key+count 패턴(budgetOver/budgetOverMulti와 동일)을 재사용, home-alert 카드엔 'mat'(gold) 클래스로 '이미 넘음'(budgetOver, 기본색)과 시각적으로 구분. 격리 vm 테스트 컨텍스트(spendAnalysisCtx)가 TODAY 전역을 새로 요구하게 돼 ctx.TODAY='2026-06-15' 추가. test/run.js에 projectedMonthSpend 경계(월초/월말/과거달/미래달/today 없음) 6건, homeAlerts budgetPaceWarn(Multi) 단일/복수/budgetOver와 미중복/경계(투사==한도) 3건, notifyAlertInfo budgetPaceWarn(Multi) key/count 2건, openSpendAnalysis 캡션 노출/비노출 2건 추가. APP_VERSION 1.47.286->1.47.287, sw.js CACHE v553->v554. node test/run.js 2287/2287 통과, 메인 스크립트(블록2) node --check 통과. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 272,
       "phase": "develop",
@@ -141,6 +131,13 @@
       "phase": "review",
       "timestamp": "2026-10-31T05:07:45.192Z",
       "summary": "cycle276 develop 커밋(ccccf8c, 목표(goal) 복제 duplicateGoal 추가)을 검토. saveGoal()의 push vs replace 분기(DB.goals.findIndex(x=>x.id===d.id))가 d.id=uid()로 새 id를 받은 복제본에서 항상 findIndex===-1이 되어 신규 push 경로를 타는 것을 확인(원본 레코드는 변경되지 않음). duplicateAsset/duplicateRec과 동일하게 open*Form을 거치지 않고 draft+renderGoalForm(false)를 직접 호출하는 패턴임을 확인, owner는 openGoalForm(editing)과 동일하게 goalOwnerEff(g)로 재계산되어 사라진 귀속이 all로 떨어짐을 확인. openGoalsList() 행의 복제 act-btn이 event.stopPropagation()으로 행 전체의 ackGoalAchieved 네비게이션과 분리됨을 확인(duplicateAsset/duplicateRec 행과 동일 패턴). node test/run.js 2343/2343 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 276,
+      "phase": "critique",
+      "timestamp": "2026-10-31T06:10:00.000Z",
+      "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, fx/gold/stock/crypto 시장가 평가 자산의 손익 표시(assetGainLoss/assetGainLossBadge)가 보유 기간을 전혀 반영하지 않아 1개월 보유 5% 수익과 3년 보유 5% 수익이 화면상 똑같이 보이는 공백을 발견 — costBasis는 있지만 언제부터 보유했는지(acquiredAt)가 없어 기간 보정 수익률(CAGR 성격의 연환산 수익률)을 계산할 길이 없다. assetQtyLog가 opt-in이라 최초 매수 체결 기록이 없는 경우가 많아 전체 현금흐름 기반 XIRR은 부정확할 수 있다고 보고 제외, 구독/리밸런싱 제안이나 세금 추정은 이 앱의 한국 개인 재무관리 범위를 벗어난다고 보고 제외, 거래 목록 성능/가상화는 월 단위로 이미 범위가 좁혀져 실질적 병목이 아니라고 보고 제외. 통합검색, 잠금/암호화, 클라우드 동기화 3-way 병합, 예산 롤오버, 카테고리 병합, 복제 기능 대등성, 목표/부채 투사, 각종 CSV 내보내기도 모두 이미 성숙 확인되어 제외. 채택 계획(asDraft에 선택 필드 acquiredAt 추가 + logic.js annualizedReturn(costBasis,evalValue,acquiredAt,today) 순수 함수 신설 + assetGainLoss 근처 보조 캡션 + duplicateAsset에서 acquiredAt 복제 시점으로 재설정)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
