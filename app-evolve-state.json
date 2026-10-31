@@ -1,15 +1,8 @@
 {
   "cycle": 278,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 273,
-      "phase": "review",
-      "timestamp": "2026-10-30T17:08:44.198Z",
-      "summary": "cycle273 develop 커밋(3b8f08a, 자산 삭제 후 매도(실현손익) CSV 자산명 공백 수정)을 검토. relinkDeletedAsset의 assetQtyLog 재연결 분기가 txns/recurrences와 동일한 가드(deletedType 타입 일치, DB.assets.some으로 유효 자산 여부 확인) 뒤에서만 실행되고 d가 이미 DB.assets에 push된 뒤 호출됨을 확인; assetQtyLogToCSV의 guard()가 폴백 이름(q.assetName)에도 동일하게 적용되어 CSV 인젝션 방어가 유지됨을 확인; deleteAssetsUndo/undo 경로는 snapshotAssetName/unsnapshotAssetName을 그대로 재사용해 별도 배선이 필요 없음을 확인. node test/run.js 2306/2306 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 273,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-10-31T12:30:00.000Z",
       "summary": "CSV 내보내기가 거래·자산목록·순자산추이·매도손익·반복거래·목표 6종은 있지만 DB.budgetHistory/DB.catBudgetRollover(카테고리별 월 예산 설정·이월 opt-in)만 CSV 내보내기가 전혀 없는 공백을 발견 — openCsvMenu의 pk-item 버튼 6개에도 예산 항목이 없고 budgetHistoryToCSV 자체가 코드베이스에 없었다. index.html에 budgetHistoryToCSV(budgetHistory,catBudgetRollover) 순수 함수 신설(goalsToCSV 바로 뒤) — 카테고리/적용 시작월/월 예산/이월 여부 4컬럼, guard/esc로 동일한 CSV 인젝션 방어. budgetHistory[카테고리]는 적용 시작월(from) 오름차순 배열(setBudgetFrom)이라 한 카테고리가 여러 행으로 펼쳐지며, Object.keys 순서에 기대지 않고 카테고리명 오름차순으로 먼저 정렬한 뒤 같은 카테고리 안에서 적용 시작월 오름차순으로 다시 정렬한다. 이월 여부는 catBudgetRollover[catKey('expense',cat)]로 조회(isBudgetRolloverCat과 동일 키 규칙). 레거시 플랫 예산(migrate() 1회 변환이 남긴 BUDGET_EPOCH='2000-01')도 그대로 적용 시작월에 내보낸다. CSV_KIND_META에 budgetCsv:{prefix:'budgets',...} 추가, doExport의 kind 분기에 kind==='budgetCsv'?budgetHistoryToCSV(DB.budgetHistory,DB.catBudgetRollover) 추가(gainCsv/recsCsv처럼 추가 평가 없이 DB 값을 그대로 넘김), exportData()에 '예산 설정 CSV로 내보내기' pk-item 버튼 배선(svg('coins') 아이콘). test/run.js FUNCTIONS에 budgetHistoryToCSV 추가, 빈 객체/한 카테고리 다건 펼침+이월 Y/이월 꺼짐·미설정 N/카테고리명·시작월 2단 정렬/레거시 BUDGET_EPOCH 보존/CSV 인젝션 방어 총 6건 + exportData·CSV_KIND_META/doExport 배선 회귀 2건(기존 테스트 확장) 추가. APP_VERSION 1.47.300->1.47.301, sw.js CACHE v567->v568. node test/run.js 2375/2375 통과, 메인 스크립트(블록2) node --check(new Function) 통과.",
+      "commit": "1357e53"
+    },
+    {
+      "cycle": 278,
+      "phase": "review",
+      "timestamp": "2026-10-31T12:45:00.000Z",
+      "summary": "cycle278 develop 커밋(1357e53, 예산 설정 CSV 내보내기 budgetHistoryToCSV 추가)을 검토. catBudgetRollover 조회 키 catKey('expense',c)가 isBudgetRolloverCat과 동일한 규칙임을 코드에서 직접 확인(budgetHistory는 플랫 카테고리명 키, catBudgetRollover만 catKey 접두사를 쓰는 기존 관례와 일치). budgetHistory는 setBudgetFrom을 통해서만 채워지고 예산이 전혀 없는 카테고리는 키 자체가 없어 budgetHistoryToCSV가 빈 배열로 건너뛰는 것을 확인(예산 미설정 카테고리는 행이 생기지 않음 — 의도대로). 카테고리명/적용 시작월 2단 정렬이 Object.keys 순서에 기대지 않아 환경에 따라 달라지지 않음을 확인. guard/esc가 recurrencesToCSV/goalsToCSV와 동일한 CSV 인젝션 방어 패턴임을 확인. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋). node test/run.js 2375/2375 통과, 메인 스크립트(블록2) node --check 통과.",
       "commit": null
     }
   ]
