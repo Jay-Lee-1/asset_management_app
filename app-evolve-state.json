@@ -1,15 +1,12 @@
 {
   "cycle": 278,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "전체내역 검색(histQ)에 금액 비교/범위 연산자 지원 추가",
+    "why": "filteredHist()(index.html:5662)는 유형/텍스트검색/자산/카테고리/귀속 필터만 있고 금액 범위 필터가 없다. 검색창 placeholder(index.html:5781)는 이미 \"메모·카테고리·자산·금액 검색\"이라고 광고하지만, 실제 matchTxnQuery(logic.js:508)는 금액을 String(t.amount)로 바꿔 substring 포함 매칭만 해서 \"10000\"을 입력하면 110000/210000원도 다 걸려 \"얼마 이상/이하만 보기\"가 불가능하다. 통합검색·CSV 내보내기 7종·복제 기능 대등성 등 과거 성숙 확인 영역과 겹치지 않는 새로 검증된 공백.",
+    "approach": "새 필터 UI를 만들지 않고 기존 histQ 검색창 문법만 확장(저위험). 1) logic.js에 순수 함수 parseAmountToken(tok) 신설 — >N, >=N, <N, <=N, N~M(범위) 패턴을 {op,v1,v2} 또는 null(일반 텍스트)로 반환. 2) matchTxnQuery(t,q,assets) 수정 — searchTerms(q) 토큰화 후 각 토큰을 parseAmountToken에 먼저 통과시켜, 연산자 토큰은 Math.abs(t.amount) 비교로, 나머지는 기존 substring 매칭으로 AND 결합(기존 동작 100% 하위호환). 3) histQ placeholder에 힌트 추가(예: \"메모·카테고리·자산·금액(>10만, 1만~5만) 검색\"). 4) test/run.js에 parseAmountToken 경계(>,>=,<,<=,범위,잘못된 형식→null) + matchTxnQuery가 연산자 토큰과 일반 텍스트 토큰을 함께 AND 처리하는 통합 테스트 추가."
+  },
   "history": [
-    {
-      "cycle": 273,
-      "phase": "critique",
-      "timestamp": "2026-10-30T17:45:00.000Z",
-      "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, 부채(debt) 자산에 interestRate 필드 자체가 없어(전체 매칭 0건) debtWhatIfUpdate의 '다 갚는 날' 예상이 오직 최근 90일 실제 상환 추세(선형)에만 의존하는 공백을 발견 — 상환 이력이 없는 신규 대출이나 이자형 최소상환 부채에는 추세가 없거나 왜곡된 예상을 줌. 백업/복원 에러 처리, 홈 알림 체계, 통합검색, 차트 접근성, 지출분석 UI는 이미 성숙 확인되어 재차 제외. 채택 계획(asDraft에 선택 interestRate 필드 + amortizationPayoffMonths 순수 함수 신설 + debtWhatIfUpdate에 이자 반영 보조 문구)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 273,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-10-31T12:45:00.000Z",
       "summary": "cycle278 develop 커밋(1357e53, 예산 설정 CSV 내보내기 budgetHistoryToCSV 추가)을 검토. catBudgetRollover 조회 키 catKey('expense',c)가 isBudgetRolloverCat과 동일한 규칙임을 코드에서 직접 확인(budgetHistory는 플랫 카테고리명 키, catBudgetRollover만 catKey 접두사를 쓰는 기존 관례와 일치). budgetHistory는 setBudgetFrom을 통해서만 채워지고 예산이 전혀 없는 카테고리는 키 자체가 없어 budgetHistoryToCSV가 빈 배열로 건너뛰는 것을 확인(예산 미설정 카테고리는 행이 생기지 않음 — 의도대로). 카테고리명/적용 시작월 2단 정렬이 Object.keys 순서에 기대지 않아 환경에 따라 달라지지 않음을 확인. guard/esc가 recurrencesToCSV/goalsToCSV와 동일한 CSV 인젝션 방어 패턴임을 확인. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋). node test/run.js 2375/2375 통과, 메인 스크립트(블록2) node --check 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 278,
+      "phase": "critique",
+      "timestamp": "2026-10-31T13:10:00.000Z",
+      "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, 전체내역 검색창(histQ)의 placeholder가 \"메모·카테고리·자산·금액 검색\"이라고 광고하지만 실제 matchTxnQuery(logic.js:508)는 금액을 String(t.amount)로 바꿔 substring 포함 매칭만 해서(\"10000\" 입력 시 110000/210000원도 매칭) \"얼마 이상/이하만 보기\"가 전혀 안 되는 공백을 발견. 메모 기반 카테고리 추천, 거래·자산·반복·목표 복제 대등성, 예산 페이스 경고/롤오버, 부채 이자율/상환 예상, 분할 합계 힌트, 백업/복원 에러 처리, 홈 알림 체계, 통합검색, 차트 접근성, 지출분석 UI, aria-label/announceLive 공백, CSV 내보내기 7종, 시세 동기화 실패 알림, 잠금/암호화, 클라우드 동기화 3-way 병합, 연환산 수익률은 모두 이미 성숙 확인되어 재차 제외. 채택 계획(logic.js에 parseAmountToken(tok) 순수 함수 신설 + matchTxnQuery에서 토큰별로 연산자/일반 텍스트 분기 AND 결합 + histQ placeholder 힌트 갱신 + 테스트)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
