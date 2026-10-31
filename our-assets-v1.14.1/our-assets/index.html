@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.296';
+const APP_VERSION='1.47.297';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3497,6 +3497,7 @@ function openGoalsList(){ /* 관리 목록은 캐러셀 귀속과 무관하게 �
      <div class="msub">${comma(p.cur)} / ${comma(p.target)}원 · ${p.pct}%${ownerBadge}</div>
      ${assetGone?'<div class="mini warn" style="margin-top:2px">연결된 자산이 삭제됐어요</div>':assetBroken?'<div class="mini warn" style="margin-top:2px">연결된 자산을 추적할 수 없어요</div>':hasUnknown?'<div class="mini warn" style="margin-top:2px">일부 미확인</div>':''}
      ${g.targetDate?`<div class="msub2">목표일 ${fmtDateFull(g.targetDate)}${overdue?' <span class="mini warn">지남</span>':''}</div>`:''}</div>
+    <div class="row-acts"><button type="button" class="act-btn" aria-label="${esc(g.name)} 복제" onclick="event.stopPropagation();duplicateGoal('${g.id}')">${svg('copy')}</button></div>
     <div class="mc">${svg('chev')}</div></div>`;
  }).join('')}</div>`:`<div class="empty"><div class="ei">${svg('target')}</div><div class="et">아직 목표가 없어요</div><div class="es">순자산 목표를 세우면 진행 상황을 추적할 수 있어요</div></div>`;
  openSheet(`<h3>목표 관리</h3><div class="desc">탭하면 수정·삭제할 수 있어요</div>${body}
@@ -3508,6 +3509,17 @@ function openGoalForm(id){
  goalDraft=g?{...g,owner:goalOwnerEff(g)}:{id:uid(),name:'',type:'networth',linkedAssetId:null,targetAmount:0,targetDate:'',owner:'all',createdAt:Date.now()};
  snapDraft('goal');
  renderGoalForm(!!g);
+}
+/* 복제: 거래·자산·반복의 duplicateTx/duplicateAsset/duplicateRec과 같은 이유로, 비슷한 목표를
+ * 또 세울 때 유형·금액·날짜·귀속을 그대로 가져온다. achievedAckAt(cycle256)은 원본의 달성 확인
+ * 이력일 뿐 새 목표와 무관하므로 비운다. createdAt도 새 레코드 생성 시점으로 다시 찍는다. */
+function duplicateGoal(id){
+ const g=(DB.goals||[]).find(x=>x.id===id);if(!g)return;
+ const d=JSON.parse(JSON.stringify(g));
+ d.id=uid();d.name=(d.name||'')+' 복사';d.owner=goalOwnerEff(g);d.createdAt=Date.now();
+ delete d.achievedAckAt;
+ goalDraft=d;snapDraft('goal');renderGoalForm(false);
+ setTimeout(()=>{const n=$('goalName');if(n){n.focus();n.select()}},300);
 }
 /* 목표 유형 전환(순자산 전체 ↔ 특정 자산) — 자산 전환 시 연결 자산은 그대로 두고(재선택 유도), 순자산으로
  * 되돌리면 linkedAssetId를 지워 saveGoal이 혼란 없이 type:'networth' 레코드를 저장하게 한다. */

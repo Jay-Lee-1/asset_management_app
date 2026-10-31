@@ -274,7 +274,7 @@ const FUNCTIONS = [
   // $(...)가 없으면 바로 return하는 얕은 래퍼라(기본 $ 스텁은 'assetBody' 등을 세팅하지 않는 한
   // null을 돌려줌) 기존 공유 스텁만으로 selectNwOwner를 실행형으로 검증할 수 있다.
   'selectNwOwner', 'refreshAssetBody', 'refreshNwHistoryCard', 'refreshGoalsSummary', 'refreshAllocationCard', 'refreshInvestGainLossCard',
-  'goalOwnerEff', 'goalHasUnknown', 'goalLinkedAssetGone', 'goalLinkedAssetBroken', 'goalHistoryFor', 'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'syncGoalInputs', 'goalClearDate', 'goalOwnerSel', 'goalTypeSel', 'goalOpenAsset', 'renderGoalForm', 'openGoalForm', 'saveGoal', 'delGoal', 'ackGoalAchieved',
+  'goalOwnerEff', 'goalHasUnknown', 'goalLinkedAssetGone', 'goalLinkedAssetBroken', 'goalHistoryFor', 'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'syncGoalInputs', 'goalClearDate', 'goalOwnerSel', 'goalTypeSel', 'goalOpenAsset', 'renderGoalForm', 'openGoalForm', 'duplicateGoal', 'saveGoal', 'delGoal', 'ackGoalAchieved',
   'openInquiry', 'sendInquiry', 'openInquiryList', 'delInquiry', 'editInquiry', 'saveInquiryEdit',
   'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetQInput', 'assetToggleSel', 'visibleAssetsForSel', 'assetSelAll', 'activeSel',
   'modeSeg', 'monthNav', 'abbr', 'calCellsFor', 'ledSumInner', 'ledSumBox', 'ledSumTap', 'calPane', 'txRowCore', 'txRow', 'dayTxns',
@@ -4635,6 +4635,51 @@ test('saveGoal: 새 목표는 achievedAckAt이 null로 시작한다', () => {
   sandbox.goalAmtValue = '1,000,000';
   sandbox.saveGoal(false);
   assert.strictEqual(sandbox.DB.goals[0].achievedAckAt, null);
+});
+/* ---------- duplicateGoal: 복제(app-evolve cycle276 develop) ----------
+ * 거래·자산·반복(duplicateTx/duplicateAsset/duplicateRec)엔 전용 복제가 있지만 목표에는 없어,
+ * 비슷한 목표를 또 세울 때마다 유형·금액·날짜를 처음부터 다시 입력해야 하던 기능 대등성 공백을
+ * 메운다. type/linkedAssetId/targetAmount/targetDate/owner는 그대로 가져오고, achievedAckAt(원본의
+ * 달성 확인 이력)은 새 목표와 무관하므로 비운다. */
+test('duplicateGoal: id는 새로 받고 이름엔 "복사"가 붙되 type/targetAmount/targetDate/linkedAssetId는 그대로 복사되고 achievedAckAt은 비워진다', () => {
+  sandbox.DB = { owners: ['나'], assets: [{ id: 'a1', type: 'savings', owner: '나' }], goals: [{ id: 'g1', name: '비상금', type: 'asset', linkedAssetId: 'a1', targetAmount: 5000000, targetDate: '2026-12-31', owner: '나', createdAt: 1700000000000, achievedAckAt: 1700000000000 }] };
+  sandbox.duplicateGoal('g1');
+  assert.notStrictEqual(sandbox.goalDraft.id, 'g1', '복제본은 원본과 다른 새 id를 받아야 함');
+  assert.strictEqual(sandbox.goalDraft.name, '비상금 복사');
+  assert.strictEqual(sandbox.goalDraft.type, 'asset');
+  assert.strictEqual(sandbox.goalDraft.linkedAssetId, 'a1');
+  assert.strictEqual(sandbox.goalDraft.targetAmount, 5000000);
+  assert.strictEqual(sandbox.goalDraft.targetDate, '2026-12-31');
+  assert.strictEqual(sandbox.goalDraft.owner, '나');
+  assert.strictEqual(sandbox.goalDraft.achievedAckAt, undefined, '원본의 달성 확인 이력은 새 목표와 무관하므로 비워야 함');
+  assert.notStrictEqual(sandbox.goalDraft.createdAt, 1700000000000, 'createdAt도 복제 시점으로 다시 찍어야 함');
+  assert.strictEqual(sandbox.DB.goals[0].id, 'g1', '원본 레코드는 건드리지 않아야 함(딥클론)');
+  assert.strictEqual(sandbox.DB.goals[0].name, '비상금', '원본 이름도 그대로 유지돼야 함');
+});
+test('duplicateGoal: 귀속이 이미 삭제된 목표를 복제하면 goalOwnerEff처럼 "all"로 떨어진다', () => {
+  sandbox.DB = { owners: ['나'], assets: [], goals: [{ id: 'g2', name: '여행자금', type: 'networth', targetAmount: 3000000, targetDate: null, owner: '배우자' }] }; // '배우자'는 이미 삭제된 귀속(DB.owners에 없음)
+  sandbox.duplicateGoal('g2');
+  assert.strictEqual(sandbox.goalDraft.owner, 'all', '사라진 귀속을 그대로 복사하면 캐러셀 필터에서 영구히 안 보이게 되므로 전체로 떨어져야 함');
+});
+test('duplicateGoal: 존재하지 않는 id는 goalDraft를 건드리지 않고 그대로 return한다', () => {
+  sandbox.DB = { goals: [] };
+  sandbox.goalDraft = null;
+  sandbox.duplicateGoal('nope');
+  assert.strictEqual(sandbox.goalDraft, null, '존재하지 않는 목표는 draft를 세팅하지 않아야 함');
+});
+test('duplicateGoal → saveGoal: 복제본을 저장하면 원본은 그대로 남고 독립된 새 목표가 추가된다', () => {
+  sandbox.DB = { owners: ['나'], assets: [], goals: [{ id: 'g3', name: '내 집 마련', type: 'networth', targetAmount: 100000000, targetDate: '2030-01-01', owner: 'all', createdAt: 1600000000000 }], nwHistory: [] };
+  sandbox.duplicateGoal('g3');
+  sandbox.goalNameValue = '내 집 마련 복사';
+  sandbox.goalAmtValue = '100,000,000';
+  sandbox.saveGoal(false);
+  assert.strictEqual(sandbox.DB.goals.length, 2, '원본 1건 + 복제 신규 저장 1건으로 총 2건이어야 함');
+  assert.strictEqual(sandbox.DB.goals[0].id, 'g3', '원본 레코드는 그대로 남아야 함');
+  assert.strictEqual(sandbox.DB.goals[0].targetDate, '2030-01-01', '원본은 바뀌지 않아야 함');
+  const dup = sandbox.DB.goals[1];
+  assert.notStrictEqual(dup.id, 'g3', '복제본은 원본과 다른 새 id를 받아야 함');
+  assert.strictEqual(dup.name, '내 집 마련 복사');
+  assert.strictEqual(dup.targetAmount, 100000000);
 });
 /* ackGoalAchieved: 홈 알림의 goalAchieved 카드와 goalRowHTML/openGoalsList 행 진입점이 공유하는 ack+이동 핸들러
  * (app-evolve cycle256 advance) */
