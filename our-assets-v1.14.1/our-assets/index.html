@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.294';
+const APP_VERSION='1.47.295';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4883,6 +4883,10 @@ function txRowCore(t,sel){
  const faN=assetNm(t.fromAssetId,t.fromAssetName),taN=assetNm(t.toAssetId,t.toAssetName);
  const asset=t.type==='income'?(taN!=='—'?taN:''):(t.type==='transfer'||t.type==='saving')?`${faN==='—'?'':faN}→${taN==='—'?'':taN}`:(faN!=='—'?faN:'');
  const catLabel=txCatLabel(t),isSplit=splitLines(t).length>1; /* 분할 거래(t.splits)는 "카테고리 N개"로 뭉뚱그린 라벨을 쓴다(app-evolve cycle198 advance) */
+ /* dup-btn의 aria-label이 거래 내용과 무관하게 모든 행에서 "복제" 하나뿐이면, 스크린리더로 전체내역을
+  * 훑는 사용자는 목록 안의 복제 버튼들을 서로 구분할 수 없다 — duplicateAsset/duplicateRec의
+  * act-btn은 이미 대상 이름을 aria-label에 포함하므로(예: "학자금 대출 복제"), 같은 원칙으로 거래
+  * 제목(memo 또는 catLabel, 이 함수의 다른 aria-label들과 동일한 폴백)을 덧붙인다. */
  if(sel.mode){const on=sel.has(t.id);const selectable=!t.isRec;
   return `<div class="swipe" data-id="${t.id}"><div class="swipe-content${on?' sel-on':''}" ${selectable?`onclick="${sel.onToggle}('${t.id}')" tabindex="0" role="button" aria-pressed="${on}" aria-label="${esc(t.memo||catLabel)} ${sign}${comma(t.amount)}원" onkeydown="rowKeydown(event,()=>${sel.onToggle}('${t.id}'))"`:''} style="${selectable?'':'opacity:.45'}">
    <div class="sel-check ${on?'on':''}">${svg('check')}</div>
@@ -4892,7 +4896,7 @@ function txRowCore(t,sel){
  return `<div class="swipe" data-id="${t.id}" data-rec="${t.isRec?t.recId:''}" data-date="${t.date}" ${t.isRec?'':'data-lp="1"'}>  <div class="swipe-content" tabindex="0" role="button" aria-label="${esc(t.memo||catLabel)} ${sign}${comma(t.amount)}원" onclick="rowTap(this)" onkeydown="rowKeydown(event,()=>rowTap(this))"><div class="avatar ${av}" style="width:40px;height:40px">${glyph}</div>
    <div style="flex:1;min-width:0"><div class="nm-row"><span class="nm">${esc(t.memo||catLabel)}</span>${isSplit?`<span class="mini" title="분할 거래">${esc(catLabel)}</span>`:''}${t.isRec?`<span class="rec-ic" title="반복">${svg('repeat')}</span>`:''}</div>
     ${asset?`<div class="flow-sub"><span class="fl">${esc(asset)}</span>${txScheduled(t)?'<span class="sch-dot"></span>':''}</div>`:(txScheduled(t)?`<div class="flow-sub"><span class="sch-dot"></span><span class="fl">예정</span></div>`:'')}</div>
-   <div class="amt num ${cls}">${sign}${comma(t.amount)}원</div>${t.photo?`<img src="${t.photo}" class="tx-photo-mini" alt="영수증" onclick="event.stopPropagation();openPhotoViewer(this.src)">`:''}${(!t.isRec&&!t.adjust&&!isDuePending(t))?`<button class="dup-btn" onclick="event.stopPropagation();duplicateTx('${t.id}')" aria-label="복제">${svg('copy',16)}</button>`:''}${isDuePending(t)?`<button class="confirm-btn" onclick="event.stopPropagation();${t.isRec?`confirmRecTransfer('${t.recId}','${t.date}')`:`openConfirmTransfer('${t.id}')`}">확인</button>`:''}</div></div>`;
+   <div class="amt num ${cls}">${sign}${comma(t.amount)}원</div>${t.photo?`<img src="${t.photo}" class="tx-photo-mini" alt="영수증" onclick="event.stopPropagation();openPhotoViewer(this.src)">`:''}${(!t.isRec&&!t.adjust&&!isDuePending(t))?`<button class="dup-btn" onclick="event.stopPropagation();duplicateTx('${t.id}')" aria-label="${esc(t.memo||catLabel)} 복제">${svg('copy',16)}</button>`:''}${isDuePending(t)?`<button class="confirm-btn" onclick="event.stopPropagation();${t.isRec?`confirmRecTransfer('${t.recId}','${t.date}')`:`openConfirmTransfer('${t.id}')`}">확인</button>`:''}</div></div>`;
 }
 function txRow(t){return txRowCore(t,{mode:ST.lSel.mode,has:id=>ST.lSel.ids.has(id),onToggle:'ledgerToggleSel'})}
 function rowTap(el){ /* 내역 탭 → 수정 (길게 누르면 다중 선택·삭제) */

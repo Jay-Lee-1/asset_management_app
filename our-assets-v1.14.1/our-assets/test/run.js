@@ -22852,6 +22852,29 @@ test('txRowCore: 선택 모드에서도 분할 거래는 "카테고리 N개"를 
   assert.ok(html.includes('카테고리 2개'));
 });
 
+/* ---------- txRowCore: dup-btn aria-label에 거래 제목을 포함 (app-evolve cycle275 develop) ----------
+ * duplicateAsset/duplicateRec의 act-btn은 aria-label에 대상 이름을 포함해 목록 안에서 서로 구분되는데,
+ * 거래 목록의 dup-btn만 모든 행에서 "복제" 하나뿐이라 스크린리더로는 어느 거래의 복제 버튼인지 알 수
+ * 없었다. memo가 있으면 memo를, 없으면 catLabel을(이 함수의 다른 aria-label과 동일한 폴백) 덧붙인다. */
+test('txRowCore: dup-btn aria-label에 메모가 포함된다(복제 버튼을 서로 구분할 수 있어야 함)', () => {
+  const t = makeTxRowFixture();
+  sandbox.ST = { lSel: { mode: false, ids: new Set() } };
+  const html = sandbox.txRow(t);
+  assert.ok(html.includes('aria-label="점심 김밥 복제"'), 'memo가 있으면 dup-btn aria-label에 memo가 포함돼야 함');
+});
+test('txRowCore: 메모 없는 거래는 dup-btn aria-label이 카테고리로 대체된다', () => {
+  const t = { id: 't1', date: '2026-06-10', type: 'expense', category: '식비', memo: '', amount: 8000, fromAssetId: 'a1' };
+  sandbox.ST = { lSel: { mode: false, ids: new Set() } };
+  const html = sandbox.txRow(t);
+  assert.ok(html.includes('aria-label="식비 복제"'), 'memo가 없으면 dup-btn aria-label이 catLabel(카테고리)로 대체돼야 함');
+});
+test('txRowCore: 반복/확인대기/조정 거래는 dup-btn 자체가 없다(회귀 없음)', () => {
+  const t = makeTxRowFixture();
+  sandbox.ST = { lSel: { mode: false, ids: new Set() } };
+  t.isRec = true;
+  assert.ok(!sandbox.txRow(t).includes('dup-btn'), 'isRec이면 dup-btn이 없어야 함');
+});
+
 /* ---------- renderPlan: 렌더 함수 스모크 테스트 (app-evolve cycle57 critique/advance) ----------
  * render* 함수 중 실행 커버리지가 전혀 없던 유이한 함수(다른 하나는 정적 템플릿인 renderMenu)였다.
  * 지금까지 renderPlan 테스트(위쪽의 esc/접근성/owner 가드 테스트들)는 전부 extractFunction()으로
