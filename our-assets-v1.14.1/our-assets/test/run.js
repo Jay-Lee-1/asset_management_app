@@ -13441,6 +13441,59 @@ test('syncAssetInputs: acquiredAt이 이미 있으면 _hadCostBasis 값과 무�
     sandbox.$ = $orig;
   }
 });
+/* ---------- syncAssetInputs: 매입일(asAcquiredAt) pick 필드 — 사용자가 직접 고른 날짜는
+ * 자동 TODAY 스탬프보다 먼저 반영되어 덮어쓰이지 않는다(app-evolve cycle281 advance) ---------- */
+test('syncAssetInputs: asAcquiredAt 필드로 사용자가 과거 매입일을 직접 고르면 자동 TODAY 스탬프가 그 값을 덮어쓰지 않는다(신규 자산, _hadCostBasis=false)', () => {
+  const $orig = sandbox.$;
+  const costInput = { value: '700,000' };
+  const dateInput = { value: '2023-03-10' };
+  sandbox.$ = (id) => (id === 'asCostBasis' ? costInput : id === 'asAcquiredAt' ? dateInput : null);
+  sandbox.TODAY = '2026-10-31';
+  try {
+    sandbox.asDraft = { type: 'stock', stockCode: '005930', stockQty: 10, _hadCostBasis: false };
+    sandbox.syncAssetInputs();
+    assert.strictEqual(sandbox.asDraft.acquiredAt, '2023-03-10', '사용자가 고른 날짜가 TODAY로 덮어써지면 안 됨');
+  } finally {
+    sandbox.$ = $orig;
+  }
+});
+test('syncAssetInputs: asAcquiredAt 필드가 비어 있으면(아직 안 고름) 기존 동작대로 TODAY 자동 스탬프가 그대로 동작한다(회귀 없음)', () => {
+  const $orig = sandbox.$;
+  const costInput = { value: '700,000' };
+  const dateInput = { value: '' };
+  sandbox.$ = (id) => (id === 'asCostBasis' ? costInput : id === 'asAcquiredAt' ? dateInput : null);
+  sandbox.TODAY = '2026-10-31';
+  try {
+    sandbox.asDraft = { type: 'stock', stockCode: '005930', stockQty: 10, _hadCostBasis: false };
+    sandbox.syncAssetInputs();
+    assert.strictEqual(sandbox.asDraft.acquiredAt, '2026-10-31');
+  } finally {
+    sandbox.$ = $orig;
+  }
+});
+test('syncAssetInputs: asAcquiredAt으로 레거시 자산(_hadCostBasis=true, acquiredAt 없음)에 실제 매입일을 소급 입력하면 그 날짜가 반영되고 annualizedReturn이 그 날짜 기준으로 계산된다', () => {
+  const $orig = sandbox.$;
+  const costInput = { value: '700,000' };
+  const dateInput = { value: '2024-01-01' };
+  sandbox.$ = (id) => (id === 'asCostBasis' ? costInput : id === 'asAcquiredAt' ? dateInput : null);
+  sandbox.TODAY = '2026-10-31';
+  try {
+    sandbox.asDraft = { type: 'stock', stockCode: '005930', stockQty: 10, costBasis: 700000, _hadCostBasis: true };
+    sandbox.syncAssetInputs();
+    assert.strictEqual(sandbox.asDraft.acquiredAt, '2024-01-01', '레거시 자산도 이 필드로 매입일을 소급 입력할 수 있어야 함');
+    const ann = sandbox.annualizedReturn(sandbox.asDraft.costBasis, 770000, sandbox.asDraft.acquiredAt, sandbox.TODAY);
+    assert.ok(ann != null, '매입일이 채워졌으니 annualizedReturn이 더 이상 null이 아니어야 함');
+  } finally {
+    sandbox.$ = $orig;
+  }
+});
+test('costBasisField: 매입일 pick 필드의 onPick 콜백이 TODAY보다 미래인 날짜를 고르면 toastFail로 막고 asDraft.acquiredAt을 건드리지 않는다', () => {
+  const body = extractFunction('costBasisField');
+  assert.ok(
+    /openFieldDatePicker\(asDraft\.acquiredAt\|\|TODAY,ds=>\{if\(ds>TODAY\)\{toastFail\('매입일은 오늘보다 미래일 수 없어요'\);return\}asDraft\.acquiredAt=ds;renderAssetSheet\(/.test(body),
+    '매입일 pick 필드에 미래 날짜 차단(ds>TODAY 가드)이 없음'
+  );
+});
 test('saveAsset: 저장 시 임시 플래그 _hadCostBasis를 지워 DB/백업에 새지 않는다', () => {
   const asset = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 10, costBasis: 700000 };
   sandbox.DB = { assets: [asset], assetQtyLog: [], rates: { fx: {}, stocks: { '005930': 70000 }, goldPerG: 0 } };
@@ -19018,6 +19071,9 @@ test("costBasisField: fx/gold/stock 공용 매입금액 입력(asCostBasis)에 E
   assert.strictEqual(
     sandbox.costBasisField({ costBasis: 0 }, false),
     '<div class="field"><label for="asCostBasis">매입 금액 (원, 선택)</label><div class="field-clear"><input id="asCostBasis" class="num" inputmode="numeric" value="" placeholder="입력 시 손익을 계산해요" oninput="fmtAmt(this,false)" onkeydown="if(event.key===\'Enter\'&&!event.isComposing)saveAsset(false)"><button type="button" class="fc-x" aria-label="매입 금액 지우기" onclick="clrInput(\'asCostBasis\')">✕</button></div><div class="day-warn" id="asQtyBasisWarn" style="display:none"></div></div>\n' +
+    ' <div class="field"><label>매입일 (선택)</label><div class="pick placeholder" style="cursor:pointer" tabindex="0" role="button" aria-label="매입일 선택" onclick="syncAssetInputs();openFieldDatePicker(asDraft.acquiredAt||TODAY,ds=>{if(ds>TODAY){toastFail(\'매입일은 오늘보다 미래일 수 없어요\');return}asDraft.acquiredAt=ds;renderAssetSheet(false)})" onkeydown="rowKeydown(event,()=>{syncAssetInputs();openFieldDatePicker(asDraft.acquiredAt||TODAY,ds=>{if(ds>TODAY){toastFail(\'매입일은 오늘보다 미래일 수 없어요\');return}asDraft.acquiredAt=ds;renderAssetSheet(false)})})">\n' +
+    '   <div class="pav a-save">' + sandbox.svg('calendar') + '</div><div class="pbody"><div class="pn">모르면 비워두세요</div></div><div class="pc">' + sandbox.svg('chev') + '</div></div>\n' +
+    '   <input id="asAcquiredAt" type="hidden" value=""></div>\n' +
     ' <div class="field" id="asAddedCostField" style="display:none"><label for="asAddedCost">이번에 추가로 투입한 금액 (원, 선택)</label><div class="field-clear"><input id="asAddedCost" class="num" inputmode="numeric" value="" placeholder="신규 매수에 쓴 금액만 입력하면 자동으로 더해드려요" oninput="fmtAmt(this,false)" onkeydown="if(event.key===\'Enter\'&&!event.isComposing)saveAsset(false)"><button type="button" class="fc-x" aria-label="추가 투입 금액 지우기" onclick="clrInput(\'asAddedCost\')">✕</button></div></div>\n' +
     ' <div class="field" id="asSaleProceedsField" style="display:none"><label for="asSaleProceeds">이번에 받은 매도 금액 (원, 선택)</label><div class="field-clear"><input id="asSaleProceeds" class="num" inputmode="numeric" value="" placeholder="이번 매도로 받은 금액만 입력하면 실현손익을 기록해요" oninput="fmtAmt(this,false)" onkeydown="if(event.key===\'Enter\'&&!event.isComposing)saveAsset(false)"><button type="button" class="fc-x" aria-label="매도 금액 지우기" onclick="clrInput(\'asSaleProceeds\')">✕</button></div></div>'
   );

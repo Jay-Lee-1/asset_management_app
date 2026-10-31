@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.305';
+const APP_VERSION='1.47.306';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4418,6 +4418,7 @@ function syncAssetInputs(){const d=asDraft;const g=id=>$(id);
  if(g('asGold'))d.goldDon=Math.max(0,parseFloat((g('asGold').value||'0').replace(/,/g,''))||0);
  if(g('asCode')){const v=g('asCode').value.trim().toUpperCase();if(d.type==='crypto')d.cryptoCode=v;else d.stockCode=v;}
  if(g('asQty')){const v=Math.max(0,parseFloat((g('asQty').value||'0').replace(/,/g,''))||0);if(d.type==='crypto')d.cryptoQty=v;else d.stockQty=v;}
+ if(g('asAcquiredAt')){const v=g('asAcquiredAt').value;if(v)d.acquiredAt=v;} /* 사용자가 매입일 pick 필드로 직접 고른 날짜가 있으면 먼저 반영 — 비어 있으면(아직 안 고름) 건드리지 않아 아래 자동 TODAY 스탬프 로직이 그대로 동작한다(app-evolve cycle281 advance) */
  if(g('asCostBasis')){const n=num(g('asCostBasis'),false);if(n>0)d.costBasis=n;else delete d.costBasis;
    if(d.costBasis>0){if(!d.acquiredAt&&!d._hadCostBasis)d.acquiredAt=TODAY;}else delete d.acquiredAt;} /* 매입 금액을 처음 입력하는 순간에만 최초 매입일(acquiredAt)을 오늘로 찍는다(annualizedReturn의 보유기간 기준) — 추가매수로 액수만 바뀌는 addCostBasisForBuy 경로는 이미 acquiredAt이 있는 상태에서만 열리므로 건드리지 않음(app-evolve cycle276 critique/advance). cycle276 이전부터 costBasis가 있던 기존 자산(_hadCostBasis)은 acquiredAt이 없어도 무관한 필드만 바꿔 저장할 때 오늘 날짜로 잘못 채워지지 않도록 비워 둔다 — 틀린 연환산 수익률보다 미표시가 안전(app-evolve cycle277 critique/advance) */
  if(g('asAddedCost'))d._addedCost=num(g('asAddedCost'),false);
@@ -4443,6 +4444,9 @@ function costBasisField(d,editing){ /* fx/gold/stock 공통 — 매입 원가는
  const needsSale=editing&&d._origQty!=null&&d.costBasis>0&&(d[qtyField]||0)<d._origQty;
  const warnMsg=needsUpdate?'보유 수량이 늘었어요 · 아래에 이번에 추가로 투입한 금액만 입력하면 자동으로 더해드려요':needsSale?'보유 수량이 줄었어요 · 아래에 이번에 받은 매도 금액을 입력하면 실현손익을 기록해요':'';
  return `<div class="field"><label for="asCostBasis">매입 금액 (원, 선택)</label><div class="field-clear"><input id="asCostBasis" class="num" inputmode="numeric" value="${d.costBasis?comma(d.costBasis):''}" placeholder="입력 시 손익을 계산해요" oninput="fmtAmt(this,false)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveAsset(${editing})"><button type="button" class="fc-x" aria-label="매입 금액 지우기" onclick="clrInput('asCostBasis')">✕</button></div><div class="day-warn" id="asQtyBasisWarn" style="display:${warnMsg?'block':'none'}">${esc(warnMsg)}</div></div>
+ <div class="field"><label>매입일 (선택)</label><div class="pick ${d.acquiredAt?'':'placeholder'}" style="cursor:pointer" tabindex="0" role="button" aria-label="매입일 ${d.acquiredAt?fmtDateFull(d.acquiredAt):'선택'}" onclick="syncAssetInputs();openFieldDatePicker(asDraft.acquiredAt||TODAY,ds=>{if(ds>TODAY){toastFail('매입일은 오늘보다 미래일 수 없어요');return}asDraft.acquiredAt=ds;renderAssetSheet(${editing})})" onkeydown="rowKeydown(event,()=>{syncAssetInputs();openFieldDatePicker(asDraft.acquiredAt||TODAY,ds=>{if(ds>TODAY){toastFail('매입일은 오늘보다 미래일 수 없어요');return}asDraft.acquiredAt=ds;renderAssetSheet(${editing})})})">
+   <div class="pav a-save">${svg('calendar')}</div><div class="pbody"><div class="pn">${d.acquiredAt?fmtDateFull(d.acquiredAt):'모르면 비워두세요'}</div></div><div class="pc">${d.acquiredAt?`<button type="button" class="fc-x" style="display:inline-flex;position:static;transform:none" aria-label="매입일 지우기" onclick="event.stopPropagation();asDraft.acquiredAt='';renderAssetSheet(${editing})" onkeydown="event.stopPropagation()">✕</button>`:svg('chev')}</div></div>
+   <input id="asAcquiredAt" type="hidden" value="${d.acquiredAt||''}"></div>
  <div class="field" id="asAddedCostField" style="display:${needsUpdate?'block':'none'}"><label for="asAddedCost">이번에 추가로 투입한 금액 (원, 선택)</label><div class="field-clear"><input id="asAddedCost" class="num" inputmode="numeric" value="${d._addedCost?comma(d._addedCost):''}" placeholder="신규 매수에 쓴 금액만 입력하면 자동으로 더해드려요" oninput="fmtAmt(this,false)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveAsset(${editing})"><button type="button" class="fc-x" aria-label="추가 투입 금액 지우기" onclick="clrInput('asAddedCost')">✕</button></div></div>
  <div class="field" id="asSaleProceedsField" style="display:${needsSale?'block':'none'}"><label for="asSaleProceeds">이번에 받은 매도 금액 (원, 선택)</label><div class="field-clear"><input id="asSaleProceeds" class="num" inputmode="numeric" value="${d._saleProceeds?comma(d._saleProceeds):''}" placeholder="이번 매도로 받은 금액만 입력하면 실현손익을 기록해요" oninput="fmtAmt(this,false)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveAsset(${editing})"><button type="button" class="fc-x" aria-label="매도 금액 지우기" onclick="clrInput('asSaleProceeds')">✕</button></div></div>`;
 }
