@@ -1,11 +1,7 @@
 {
-  "cycle": 278,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "전체내역 검색(histQ)에 금액 비교/범위 연산자 지원 추가",
-    "why": "filteredHist()(index.html:5662)는 유형/텍스트검색/자산/카테고리/귀속 필터만 있고 금액 범위 필터가 없다. 검색창 placeholder(index.html:5781)는 이미 \"메모·카테고리·자산·금액 검색\"이라고 광고하지만, 실제 matchTxnQuery(logic.js:508)는 금액을 String(t.amount)로 바꿔 substring 포함 매칭만 해서 \"10000\"을 입력하면 110000/210000원도 다 걸려 \"얼마 이상/이하만 보기\"가 불가능하다. 통합검색·CSV 내보내기 7종·복제 기능 대등성 등 과거 성숙 확인 영역과 겹치지 않는 새로 검증된 공백.",
-    "approach": "새 필터 UI를 만들지 않고 기존 histQ 검색창 문법만 확장(저위험). 1) logic.js에 순수 함수 parseAmountToken(tok) 신설 — >N, >=N, <N, <=N, N~M(범위) 패턴을 {op,v1,v2} 또는 null(일반 텍스트)로 반환. 2) matchTxnQuery(t,q,assets) 수정 — searchTerms(q) 토큰화 후 각 토큰을 parseAmountToken에 먼저 통과시켜, 연산자 토큰은 Math.abs(t.amount) 비교로, 나머지는 기존 substring 매칭으로 AND 결합(기존 동작 100% 하위호환). 3) histQ placeholder에 힌트 추가(예: \"메모·카테고리·자산·금액(>10만, 1만~5만) 검색\"). 4) test/run.js에 parseAmountToken 경계(>,>=,<,<=,범위,잘못된 형식→null) + matchTxnQuery가 연산자 토큰과 일반 텍스트 토큰을 함께 AND 처리하는 통합 테스트 추가."
-  },
+  "cycle": 279,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
     {
       "cycle": 273,
@@ -145,6 +141,13 @@
       "phase": "critique",
       "timestamp": "2026-10-31T13:10:00.000Z",
       "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, 전체내역 검색창(histQ)의 placeholder가 \"메모·카테고리·자산·금액 검색\"이라고 광고하지만 실제 matchTxnQuery(logic.js:508)는 금액을 String(t.amount)로 바꿔 substring 포함 매칭만 해서(\"10000\" 입력 시 110000/210000원도 매칭) \"얼마 이상/이하만 보기\"가 전혀 안 되는 공백을 발견. 메모 기반 카테고리 추천, 거래·자산·반복·목표 복제 대등성, 예산 페이스 경고/롤오버, 부채 이자율/상환 예상, 분할 합계 힌트, 백업/복원 에러 처리, 홈 알림 체계, 통합검색, 차트 접근성, 지출분석 UI, aria-label/announceLive 공백, CSV 내보내기 7종, 시세 동기화 실패 알림, 잠금/암호화, 클라우드 동기화 3-way 병합, 연환산 수익률은 모두 이미 성숙 확인되어 재차 제외. 채택 계획(logic.js에 parseAmountToken(tok) 순수 함수 신설 + matchTxnQuery에서 토큰별로 연산자/일반 텍스트 분기 AND 결합 + histQ placeholder 힌트 갱신 + 테스트)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 278,
+      "phase": "advance",
+      "timestamp": "2026-10-31T14:05:00.000Z",
+      "summary": "critique(cycle278) 계획대로 전체내역 검색(histQ)에 금액 비교/범위 연산자를 구현. logic.js에 parseAmountUnit(s) 신설(\"만\"=10000, \"억\"=100000000 단위 접미사를 선택적으로 허용하는 숫자 파싱, 형식이 아니면 null) + parseAmountToken(tok) 신설 — >N/>=N/<N/<=N/N~M(범위) 패턴만 {op,v1[,v2]}로 파싱하고 나머지(순수 숫자 포함)는 null을 돌려줘 matchTxnQuery가 기존 substring 매칭으로 넘기게 함(100% 하위호환). 범위는 입력 순서를 가정하지 않고 Math.min/max로 다시 정렬. amountMatchesToken(amount,parsed)이 Math.abs(amount) 기준으로 비교(음수로 저장된 조정 거래도 지원). matchTxnQuery(logic.js:508)의 terms.every 콜백을 토큰별로 parseAmountToken 우선 시도 후 매칭되면 금액 비교, 아니면 기존 normHay.includes(term)으로 분기하도록 수정 — 연산자 토큰과 일반 텍스트 토큰이 공백으로 섞여도 AND로 결합됨. histQ placeholder(index.html:5781)를 \"메모·카테고리·자산·금액(>10만, 1만~5만) 검색\"으로 갱신해 실제로 지원하는 문법을 광고. test/run.js에 parseAmountToken 경계(>,>=,<,<=,range,역순 범위 재정렬,만/억 단위,순수 숫자→null,연산자 뒤 비숫자→null,범위 한쪽 비숫자→null) 10건 + matchTxnQuery 통합(초과 비교 경계 제외,범위 포함 경계,음수 절대값,연산자+텍스트 AND,기존 부분일치 회귀) 6건, 총 16건 추가(크로스 realm 객체라 deepStrictEqual 대신 필드별 strictEqual 사용, cycle274와 동일 관례). renderHistory 기존 placeholder 텍스트 단언 테스트 1건도 새 문구로 갱신. APP_VERSION 1.47.301->1.47.302, sw.js CACHE v568->v569. node test/run.js 2390/2390 통과, 메인 스크립트(블록2) node --check(new Function) 통과. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

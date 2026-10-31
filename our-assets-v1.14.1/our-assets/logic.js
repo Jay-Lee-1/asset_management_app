@@ -505,6 +505,50 @@ function txCatLabel(t){
 function searchTerms(q){
  return String(q||'').trim().split(/\s+/).filter(Boolean);
 }
+/* "10만"/"1.5억"처럼 "만"(10,000)·"억"(100,000,000) 단위 접미사를 선택적으로 허용하는 숫자 하나를
+ * 파싱한다(parseAmountToken 전용 헬퍼) — histQ placeholder가 광고하는 "10만", "1만~5만" 같은
+ * 입력을 실제로 지원하려면 순수 숫자 문자열만 받아서는 안 된다. 접미사가 없으면 그대로의 숫자,
+ * 형식이 아니면(빈 문자열, 단위 뒤에 글자가 더 있음 등) null을 돌려준다. */
+function parseAmountUnit(s){
+ const m=/^(\d+(?:\.\d+)?)(만|억)?$/.exec(String(s||''));
+ if(!m)return null;
+ const n=parseFloat(m[1]);
+ if(!isFinite(n))return null;
+ return n*(m[2]==='만'?10000:m[2]==='억'?100000000:1);
+}
+/* 전체내역 검색(histQ)의 금액 비교/범위 연산자 — matchTxnQuery는 기존에 금액을 String(t.amount)로
+ * 바꿔 substring 포함 매칭만 했기 때문에 "10000"을 검색하면 110000/210000원도 함께 걸려 "얼마
+ * 이상/이하만 보기"가 전혀 불가능했다(app-evolve cycle278 critique). 검색어 토큰 하나가
+ * >N / >=N / <N / <=N / N~M(범위) 형태면 {op,v1[,v2]}를, 그 외엔(기존처럼 순수 숫자나 일반 텍스트)
+ * null을 돌려줘 matchTxnQuery가 그 토큰을 지금까지와 똑같이 substring 매칭으로 처리하게 한다 —
+ * 그래서 기존에 금액 일부만 입력해 부분일치로 찾던 동작(예: "2345")은 전혀 바뀌지 않는다(100%
+ * 하위호환). 범위는 입력 순서를 가정하지 않고 작은 값/큰 값으로 다시 정렬한다("5만~1만"도
+ * "1만~5만"과 동일하게 동작). */
+function parseAmountToken(tok){
+ const s=String(tok||'');
+ let m=/^(>=|<=|>|<)(.+)$/.exec(s);
+ if(m){
+  const v=parseAmountUnit(m[2]);
+  return v==null?null:{op:m[1],v1:v};
+ }
+ m=/^(.+)~(.+)$/.exec(s);
+ if(m){
+  const a=parseAmountUnit(m[1]),b=parseAmountUnit(m[2]);
+  return (a==null||b==null)?null:{op:'range',v1:Math.min(a,b),v2:Math.max(a,b)};
+ }
+ return null;
+}
+function amountMatchesToken(amount,parsed){
+ const v=Math.abs(amount);
+ switch(parsed.op){
+  case '>':return v>parsed.v1;
+  case '>=':return v>=parsed.v1;
+  case '<':return v<parsed.v1;
+  case '<=':return v<=parsed.v1;
+  case 'range':return v>=parsed.v1&&v<=parsed.v2;
+  default:return false;
+ }
+}
 function matchTxnQuery(t,q,assets){
  if(!q)return true;
  const fa=(assets||[]).find(a=>a.id===t.fromAssetId),ta=(assets||[]).find(a=>a.id===t.toAssetId);
@@ -517,7 +561,11 @@ function matchTxnQuery(t,q,assets){
  const normHay=hay.normalize('NFC').toLowerCase();
  const terms=searchTerms(q.normalize('NFC').toLowerCase().replace(/,/g,''));
  if(!terms.length)return true;
- return terms.every(term=>normHay.includes(term));
+ return terms.every(term=>{
+  const parsed=parseAmountToken(term);
+  if(parsed)return t.amount!=null&&amountMatchesToken(t.amount,parsed);
+  return normHay.includes(term);
+ });
 }
 /* 자산명(+fx 보유통화) 검색 — matchTxnQuery와 동일하게 대소문자 구분 없이 includes로 매칭하고,
  * 같은 이유로 NFC 정규화도 함께 적용한다(위 matchTxnQuery 주석 참고).

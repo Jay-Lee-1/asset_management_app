@@ -7008,6 +7008,78 @@ test('matchTxnQuery: 자산명이 조합형(NFD)으로 저장돼 있어도 완�
   assert.strictEqual(sandbox.matchTxnQuery(t, '우리은행', assets), true);
 });
 
+/* ---------- parseAmountToken: histQ 검색어의 금액 비교/범위 연산자 파싱(app-evolve cycle278) ----------
+ * vm 크로스 realm 객체는 deepStrictEqual로 통째로 비교하면 프로토타입이 달라 실패한다(history의
+ * duplicateRec 테스트가 배열에서 겪은 것과 동일한 이유) — 필드별로 strictEqual한다. */
+test('parseAmountToken: ">N"은 초과 비교로 파싱된다', () => {
+  const p = sandbox.parseAmountToken('>10000');
+  assert.strictEqual(p.op, '>'); assert.strictEqual(p.v1, 10000);
+});
+test('parseAmountToken: ">=N"은 이상 비교로 파싱된다', () => {
+  const p = sandbox.parseAmountToken('>=10000');
+  assert.strictEqual(p.op, '>='); assert.strictEqual(p.v1, 10000);
+});
+test('parseAmountToken: "<N"은 미만 비교로 파싱된다', () => {
+  const p = sandbox.parseAmountToken('<10000');
+  assert.strictEqual(p.op, '<'); assert.strictEqual(p.v1, 10000);
+});
+test('parseAmountToken: "<=N"은 이하 비교로 파싱된다', () => {
+  const p = sandbox.parseAmountToken('<=10000');
+  assert.strictEqual(p.op, '<='); assert.strictEqual(p.v1, 10000);
+});
+test('parseAmountToken: "N~M"은 범위로 파싱되고 작은 값이 v1, 큰 값이 v2가 된다', () => {
+  const p = sandbox.parseAmountToken('10000~50000');
+  assert.strictEqual(p.op, 'range'); assert.strictEqual(p.v1, 10000); assert.strictEqual(p.v2, 50000);
+});
+test('parseAmountToken: 범위를 거꾸로 입력해도("5만~1만") 작은 값/큰 값으로 다시 정렬된다', () => {
+  const p = sandbox.parseAmountToken('5만~1만');
+  assert.strictEqual(p.op, 'range'); assert.strictEqual(p.v1, 10000); assert.strictEqual(p.v2, 50000);
+});
+test('parseAmountToken: "만"/"억" 단위 접미사를 허용한다(10만=100000, 1.5억=150000000)', () => {
+  const p1 = sandbox.parseAmountToken('>10만');
+  assert.strictEqual(p1.op, '>'); assert.strictEqual(p1.v1, 100000);
+  const p2 = sandbox.parseAmountToken('<=1.5억');
+  assert.strictEqual(p2.op, '<='); assert.strictEqual(p2.v1, 150000000);
+});
+test('parseAmountToken: 연산자/물결 없는 순수 숫자는 null(일반 텍스트 substring 매칭으로 넘긴다)', () => {
+  assert.strictEqual(sandbox.parseAmountToken('10000'), null);
+});
+test('parseAmountToken: 연산자 뒤에 숫자가 아닌 글자가 오면 null(일반 텍스트로 취급)', () => {
+  assert.strictEqual(sandbox.parseAmountToken('>스타벅스'), null);
+  assert.strictEqual(sandbox.parseAmountToken('>'), null);
+});
+test('parseAmountToken: 범위 한쪽이 숫자가 아니면 null', () => {
+  assert.strictEqual(sandbox.parseAmountToken('1만~커피'), null);
+});
+test('matchTxnQuery: ">N"으로 금액이 N을 초과하는 거래만 찾을 수 있다(기존 substring과 달리 오탐이 없다)', () => {
+  const big = { memo: '', category: '식비', amount: 110000, fromAssetId: null, toAssetId: null };
+  const small = { memo: '', category: '식비', amount: 10000, fromAssetId: null, toAssetId: null };
+  assert.strictEqual(sandbox.matchTxnQuery(big, '>10000', []), true);
+  assert.strictEqual(sandbox.matchTxnQuery(small, '>10000', []), false, '경계값(=10000)은 초과가 아니므로 제외되어야 함');
+});
+test('matchTxnQuery: "N~M" 범위에 들어가는 금액만 찾을 수 있고 범위 경계는 포함한다', () => {
+  const inRange = { memo: '', category: '식비', amount: 30000, fromAssetId: null, toAssetId: null };
+  const atEdge = { memo: '', category: '식비', amount: 50000, fromAssetId: null, toAssetId: null };
+  const outOfRange = { memo: '', category: '식비', amount: 60000, fromAssetId: null, toAssetId: null };
+  assert.strictEqual(sandbox.matchTxnQuery(inRange, '1만~5만', []), true);
+  assert.strictEqual(sandbox.matchTxnQuery(atEdge, '1만~5만', []), true, '범위 경계값은 포함되어야 함');
+  assert.strictEqual(sandbox.matchTxnQuery(outOfRange, '1만~5만', []), false);
+});
+test('matchTxnQuery: 음수로 저장된 금액도 절대값으로 비교된다', () => {
+  const t = { memo: '', category: '조정', amount: -20000, fromAssetId: null, toAssetId: null };
+  assert.strictEqual(sandbox.matchTxnQuery(t, '>10000', []), true);
+});
+test('matchTxnQuery: 연산자 토큰과 일반 텍스트 토큰을 띄어 쓰면 AND로 결합된다', () => {
+  const t = { memo: '스타벅스', category: '카페', amount: 15000, fromAssetId: null, toAssetId: null };
+  assert.strictEqual(sandbox.matchTxnQuery(t, '스타벅스 >10000', []), true);
+  assert.strictEqual(sandbox.matchTxnQuery(t, '스타벅스 >20000', []), false, '금액 조건은 만족하지 않으므로 제외되어야 함');
+  assert.strictEqual(sandbox.matchTxnQuery(t, '편의점 >10000', []), false, '텍스트 조건은 만족하지 않으므로 제외되어야 함');
+});
+test('matchTxnQuery: 금액의 일부 숫자만 넣는 기존 부분일치는 연산자 도입 후에도 그대로 동작한다(회귀)', () => {
+  const t = { memo: '', category: '식비', amount: 123456, fromAssetId: null, toAssetId: null };
+  assert.strictEqual(sandbox.matchTxnQuery(t, '2345', []), true);
+});
+
 /* ---------- matchTxnQuery/matchAssetQuery/matchCatQuery: 검색어를 공백으로 띄워 쓰면 여러 단어
  * 모두 포함(AND)으로 좁혀진다(app-evolve cycle257 develop) — 기존엔 공백 포함 검색어 전체를 하나의
  * literal로 includes() 비교해, 메모/카테고리/자산명처럼 서로 다른 haystack 필드에 걸쳐 있는 단어
@@ -22881,7 +22953,7 @@ test('renderHistory: 일치하는 거래가 없으면 예외 없이 실행되고
   assert.doesNotThrow(() => sandbox.renderHistory());
   const html = sandbox.pageHistoryEl.innerHTML;
   assert.ok(html, "$('page-history').innerHTML이 채워져야 함");
-  assert.ok(html.includes('메모·카테고리·자산·금액 검색'), '전체 내역 탭 검색바가 렌더돼야 함');
+  assert.ok(html.includes('메모·카테고리·자산·금액(>10만, 1만~5만) 검색'), '전체 내역 탭 검색바가 렌더돼야 함');
   assert.ok(sandbox.histListEl.innerHTML.includes('이 기간에는 내역이 없어요'), '내역이 없으면 빈 상태 안내가 나와야 함');
 });
 /* app-evolve cycle149 develop: histQ(전체내역 검색창)는 txAmt/budgetIn/newOwner 등 다른 텍스트
