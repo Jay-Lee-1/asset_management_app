@@ -1,15 +1,12 @@
 {
   "cycle": 281,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "카테고리 아이콘 선택기(openIconPicker)의 aria-label이 내부 키 그대로 노출되는 접근성 결함 수정",
+    "why": "fork 서브에이전트로 앱 전반(CSV 임포트/익스포트, 부채 이자율/상환 what-if, 다중화폐 fx, undo 커버리지, 메인 시트/날짜피커 포커스트랩·inert·Escape·드래그닫기, 빈 상태, manifest/share_target/바로가기)을 재탐색했고 모두 이미 성숙 확인되어 제외. 대신 index.html:6818 openIconPicker()의 셀 버튼이 aria-label=\"${k} 아이콘\"으로 렌더링되는데 svg(k,22)는 aria-hidden=true(index.html:1605)라 버튼의 유일한 접근 가능한 이름이 이 aria-label뿐이다. k는 'food','fuel','gcap','briefcase' 같은 내부 아이콘 키 문자열이라 스크린리더가 \"food 아이콘\", \"gcap 아이콘\"처럼 영어 키를 그대로 읽어준다. 앱의 다른 모든 다이얼로그(목표/자산 행, 날짜피커, 차트)는 전부 한글 aria-label을 쓰므로 이 아이콘 피커만 유일한 예외(ICON_LABEL_KO류 매핑이 코드베이스에 전혀 없음을 grep으로 확인). pickCatAddIcon/pickCatRenameIcon 두 호출 경로에서 재현되는 실재하는 좁은 범위의 회귀이며, develop 한 사이클 안에 안전하게 끝낼 수 있는 크기다.",
+    "approach": "1) index.html:6809 CAT_ICON_SET 선언 바로 뒤에 const ICON_LABEL_KO={...} 신설 — CAT_ICON_SET.expense/income/saving에 등장하는 모든 아이콘 키의 합집합(food, restaurant, coffee, cart, house, car, bus, fuel, phone, bolt, droplet, shirt, scissors, health, ticket, film, game, plane, pet, baby, gcap, book, heart, cake, gift, receipt, repeat, users, wallet, tag, briefcase, arrowUp, chart, coins, bank, plus, lock, calendar, target, shield, seedling, bell 등, 실제 CAT_ICON_SET 내용을 다시 읽어 정확한 키 목록 확정)을 짧은 한글 명사로 매핑(예: food→'음식', fuel→'주유', gcap→'학자금', briefcase→'직장', arrowUp→'입금', seedling→'저축'). 기존 CAT_LABEL/ASSET_TYPES 라벨 톤과 맞춘다. 2) openIconPicker(index.html:6818)의 aria-label=\"${k} 아이콘\"을 aria-label=\"${ICON_LABEL_KO[k]||k} 아이콘\"으로 변경(매핑 누락 키는 안전하게 원래 키로 폴백). 3) test/run.js에 테스트 추가 — extractConstBlock으로 CAT_ICON_SET과 ICON_LABEL_KO를 함께 추출해 vm 실행 후 [...CAT_ICON_SET.expense,...CAT_ICON_SET.income,...CAT_ICON_SET.saving]의 모든 키가 ICON_LABEL_KO에 /[가-힣]/ 정규식을 만족하는 비어있지 않은 값을 갖는지 단언, 그리고 index.html 소스 문자열에서 옛 템플릿 aria-label=\"${k} 아이콘\" 리터럴(치환 전 그대로)이 더는 남아있지 않은지 source-string 검사로 회귀를 가드. 4) APP_VERSION과 sw.js CACHE 버전을 함께 올리고 node test/run.js 전체 통과 확인 후 커밋."
+  },
   "history": [
-    {
-      "cycle": 276,
-      "phase": "critique",
-      "timestamp": "2026-10-31T06:10:00.000Z",
-      "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, fx/gold/stock/crypto 시장가 평가 자산의 손익 표시(assetGainLoss/assetGainLossBadge)가 보유 기간을 전혀 반영하지 않아 1개월 보유 5% 수익과 3년 보유 5% 수익이 화면상 똑같이 보이는 공백을 발견 — costBasis는 있지만 언제부터 보유했는지(acquiredAt)가 없어 기간 보정 수익률(CAGR 성격의 연환산 수익률)을 계산할 길이 없다. assetQtyLog가 opt-in이라 최초 매수 체결 기록이 없는 경우가 많아 전체 현금흐름 기반 XIRR은 부정확할 수 있다고 보고 제외, 구독/리밸런싱 제안이나 세금 추정은 이 앱의 한국 개인 재무관리 범위를 벗어난다고 보고 제외, 거래 목록 성능/가상화는 월 단위로 이미 범위가 좁혀져 실질적 병목이 아니라고 보고 제외. 통합검색, 잠금/암호화, 클라우드 동기화 3-way 병합, 예산 롤오버, 카테고리 병합, 복제 기능 대등성, 목표/부채 투사, 각종 CSV 내보내기도 모두 이미 성숙 확인되어 제외. 채택 계획(asDraft에 선택 필드 acquiredAt 추가 + logic.js annualizedReturn(costBasis,evalValue,acquiredAt,today) 순수 함수 신설 + assetGainLoss 근처 보조 캡션 + duplicateAsset에서 acquiredAt 복제 시점으로 재설정)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 276,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-01T00:30:00.000Z",
       "summary": "cycle281 develop 커밋(2e5ee72, 자산 목록 CSV 내보내기에 손익률/연환산수익률/매입일 컬럼 추가)을 검토. doExport 호출부가 gl=assetGainLoss(a)/ev=assetEval(a)를 한 번만 평가해 evalValue/gainLoss/gainLossPct/ann에 얹는 방식이 assetsCsv/goalsCsv의 기존 \"호출부가 평가를 끝낸 값만 넘긴다\" 관례를 그대로 따름을 확인. annualizedReturn(a.costBasis,ev,a.acquiredAt,TODAY)가 assetGainLoss(gl)의 isMarketValued/rateUnknown 게이트와 별도로 호출되는 점을 짚었으나, acquiredAt/costBasisField UI가 fx/gold/stock/crypto(isMarketValued)에만 배선돼 있어(cash/savings/realestate/etc/pension/debt엔 매입일 입력 자체가 없음) 실무에서 비시세평가 자산엔 acquiredAt이 찍히지 않으므로 annualizedReturn의 !acquiredAt 가드가 그대로 null을 돌려줘 실제 불일치로 이어지지 않음을 grep으로 확인. round2 중복 선언 없음, 헤더 인덱스(7/8/9/10)와 테스트 단언이 일치함을 확인. node test/run.js 2419/2419 통과, 메인 스크립트(블록2) node --check(new Function) 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 281,
+      "phase": "critique",
+      "timestamp": "2026-11-01T02:10:37.469Z",
+      "summary": "fork 서브에이전트로 앱 전반(CSV 임포트/익스포트, 부채 이자율/상환 what-if, 다중화폐 fx, undo 커버리지, 메인 시트/날짜피커 포커스트랩·inert·Escape·드래그닫기, 빈 상태, manifest/share_target/바로가기)을 재탐색한 결과 모두 이미 성숙 확인되어 제외. 대신 카테고리 아이콘 선택기 openIconPicker(index.html:6818)의 버튼이 aria-label=\"${k} 아이콘\"으로 렌더링되는데, 내부 svg(k,22)는 aria-hidden=true(index.html:1605)라 이 aria-label이 버튼의 유일한 접근 가능한 이름임을 확인 — k는 food/fuel/gcap/briefcase 같은 영문 내부 키라 스크린리더가 영어 키를 그대로 읽어줌(한글 라벨 매핑 ICON_LABEL_KO가 코드베이스에 전혀 없음을 grep으로 확인). 앱의 다른 모든 다이얼로그는 전부 한글 aria-label을 쓰는 것과 대비되는 유일한 예외. pickCatAddIcon/pickCatRenameIcon 두 호출 경로에서 재현. 채택 계획(CAT_ICON_SET 바로 뒤에 ICON_LABEL_KO 한글 매핑 신설 + openIconPicker의 aria-label을 매핑값(폴백 포함)으로 교체 + 모든 아이콘 키가 한글 라벨을 갖는지/옛 영문 템플릿이 남아있지 않은지 테스트)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
