@@ -604,13 +604,27 @@ function matchCatQuery(c,q){
 /* 목표 이름 검색 — matchCatQuery와 동일한 규칙(대소문자 무시 includes + NFC 정규화 + 공백 AND).
  * 통합검색(globalSearchBody, index.html)이 거래·자산·카테고리까지만 가로질러 찾고 목표는 빠져
  * 있던 공백을 메운다(app-evolve cycle269 develop) — 목표 이름은 카테고리처럼 문자열 하나뿐이라
- * matchAssetQuery처럼 부가 필드를 haystack에 더할 필요가 없다. */
+ * matchAssetQuery처럼 부가 필드를 haystack에 더할 필요가 없다.
+ * 금액(targetAmount) 매칭은 cycle279/283에서 matchTxnQuery/matchRecQuery에만 들어갔고 여기엔
+ * 빠져 있었다(app-evolve cycle284 develop) — globalSearchBody의 빈 상태 안내문이 "메모·카테고리·
+ * 자산명·금액·목표명·반복명으로 검색해 보세요"라고 금액 검색을 목표에도 명시해 놓고도, 실제로는
+ * g.targetAmount가 haystack에 전혀 들어가지 않아 500만원짜리 목표를 "5000000"으로 찾을 수
+ * 없었다. matchTxnQuery/matchRecQuery와 동일하게 term 하나가 parseAmountToken으로 파싱되면
+ * (>, >=, <, <=, 범위) g.targetAmount를 amountMatchesToken으로 비교하고, 그 외엔 기존처럼 금액
+ * 문자열도 haystack에 포함해 substring 매칭을 그대로 지원한다(기존 동작과 100% 하위호환). */
 function matchGoalQuery(g,q){
  if(!q)return true;
- const normHay=String(g&&g.name||'').normalize('NFC').toLowerCase();
- const terms=searchTerms(q.normalize('NFC').toLowerCase());
+ if(!g)return false;
+ const amt=g.targetAmount!=null?String(g.targetAmount):'';
+ const hay=(g.name||'')+' '+amt;
+ const normHay=hay.normalize('NFC').toLowerCase();
+ const terms=searchTerms(normalizeAmountSpacing(q.normalize('NFC').toLowerCase().replace(/,/g,'')));
  if(!terms.length)return true;
- return terms.every(term=>normHay.includes(term));
+ return terms.every(term=>{
+  const parsed=parseAmountToken(term);
+  if(parsed)return g.targetAmount!=null&&amountMatchesToken(g.targetAmount,parsed);
+  return normHay.includes(term);
+ });
 }
 /* 반복(구독) 검색 — matchGoalQuery와 동일한 규칙(대소문자 무시 includes + NFC 정규화 + 공백 AND).
  * 통합검색(globalSearchBody, index.html)이 거래·자산·카테고리·목표까지만 가로질러 찾고 반복

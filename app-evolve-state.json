@@ -1,6 +1,6 @@
 {
   "cycle": 284,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
@@ -106,6 +106,13 @@
       "phase": "advance",
       "timestamp": "2026-11-01T10:20:00.000Z",
       "summary": "critique(cycle283) 계획대로 연간 결산 YoY를 YTD(동기간) 비교로 고쳤다. (1) yearSpendByCategory/yearIncomeByCategory/yearRealizedGain에 선택적 endDate 인자 추가(기본 null이면 기존처럼 그 해 12/31·연도 전체). (2) yearSummary(y,owner)에서 y===TM.y(올해)면 전년 비교 상한을 전년의 같은 월/일로 맞춘다 — TM.d가 전년엔 없는 날짜면(올해 2/29, 전년 평년) lastDay(y-1,TM.m)로 클램프. y가 과거(완결된) 연도면 상한 없이(null) 기존처럼 전년 전체와 비교. yoy.isYTD 플래그 추가. (3) openYearReview에 isYTD일 때 \"올해는 아직 진행 중이에요 · 전년 동기간과 비교\" 안내 추가. (4) 부수적으로 발견한 실제 버그를 같은 커밋에서 고쳤다: refreshToday()(날짜 자동 갱신, 자정 넘어 포그라운드 복귀 시)가 TM=ym(TODAY)만 하고 TM.d를 갱신하지 않아, 앱을 오래 띄워둔 채 날짜가 바뀌면 TM.d가 이전 날짜로 고정돼 버리는 기존 버그를 발견 — 초기 로드 때(2999행)와 동일하게 TM.d=+TODAY.slice(8,10)을 추가했다(이 버그는 내 새 YTD 계산이 TM.d에 의존하게 되면서 처음으로 실제 영향력이 생겼다). (5) test/run.js: yearSpendByCategory/yearIncomeByCategory/yearRealizedGain endDate 경계값 테스트 3건, yearSummary YTD 비교(경계값·윤년 클램프·과거 연도 미적용·isYTD 플래그) 5건, openYearReview YTD 안내 문구 노출 2건, 총 10건 추가(2466->2476 통과). 기존 yearSummary 테스트 8건과 yearReviewCtx 테스트 전체가 테스트 하네스 공유 상태(sandbox.TM/ctx.TM이 다른 테스트의 부산물로 {y:2026,m:6} 등을 남겨두던 것)에 암묵적으로 의존하게 되는 걸 발견해, 각 테스트가 TM을 명시적으로 세팅하도록 고쳤다(yearReviewCtx 팩토리는 2099년으로 기본값 고정, sandbox 쪽 8개 테스트는 각자 2099년을 명시). APP_VERSION 1.47.310->1.47.311, sw.js CACHE v577->v578. node test/run.js 2476/2476 통과, 메인 스크립트(블록3)/logic.js/sw.js 구문 검증 통과. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 284,
+      "phase": "develop",
+      "timestamp": "2026-11-01T12:00:00.000Z",
+      "summary": "matchGoalQuery(logic.js, 목표 통합검색)가 g.targetAmount를 haystack에 전혀 넣지 않아, globalSearchBody 빈 상태 안내문이 '메모·카테고리·자산명·금액·목표명·반복명으로 검색해 보세요'라고 금액 검색을 목표에도 명시해 놓고도 실제로는 금액 검색이 전혀 동작하지 않던 공백을 발견(cycle283의 matchRecQuery와 동일한 클래스의 누락, 금액검색 롤아웃이 아직 닿지 않은 마지막 엔티티). matchRecQuery와 동일한 규칙으로 금액 매칭을 추가(parseAmountToken/amountMatchesToken/normalizeAmountSpacing 재사용). test/run.js에 7건 추가(2476->2483 통과). APP_VERSION 1.47.311->1.47.312, sw.js CACHE v578->v579. node test/run.js 2483/2483 통과, logic.js/sw.js 구문 검증(node --check) 통과, 메인 스크립트 블록2~4 구문 검증 통과.",
       "commit": null
     }
   ]

@@ -7363,6 +7363,43 @@ test('matchGoalQuery: goal이 없거나 name이 없어도 안전하게 false(빈
   assert.strictEqual(sandbox.matchGoalQuery(null, '집'), false);
   assert.strictEqual(sandbox.matchGoalQuery({}, '집'), false);
 });
+/* 금액(targetAmount) 검색 — matchTxnQuery/matchRecQuery는 이미 지원하지만 matchGoalQuery는
+ * targetAmount를 haystack에 넣지 않아 빠져 있었다(app-evolve cycle284 develop). globalSearchBody의
+ * 안내문이 금액 검색을 목표에도 명시하므로, matchRecQuery와 동일한 규칙(부분일치 + 쉼표 무시 +
+ * >/>=/</<=/범위 연산자)을 적용한다. */
+test('matchGoalQuery: 목표 금액으로도 검색할 수 있다(쉼표 없이 입력)', () => {
+  const g = { name: '비상금', targetAmount: 5000000 };
+  assert.strictEqual(sandbox.matchGoalQuery(g, '5000000'), true);
+});
+test('matchGoalQuery: 검색어에 쉼표가 있어도("5,000,000") 쉼표 없는 금액과 매칭된다', () => {
+  const g = { name: '비상금', targetAmount: 5000000 };
+  assert.strictEqual(sandbox.matchGoalQuery(g, '5,000,000'), true);
+});
+test('matchGoalQuery: 금액의 일부 숫자만 넣어도 부분일치로 찾을 수 있다(기존 텍스트 검색과 동일한 includes 규칙)', () => {
+  const g = { name: '비상금', targetAmount: 5000000 };
+  assert.strictEqual(sandbox.matchGoalQuery(g, '5000'), true);
+});
+test('matchGoalQuery: 금액이 일치하지 않고 이름에도 없으면 매칭되지 않는다', () => {
+  const g = { name: '비상금', targetAmount: 5000000 };
+  assert.strictEqual(sandbox.matchGoalQuery(g, '9999999'), false);
+});
+test('matchGoalQuery: ">N"/"<N"/"N~M" 연산자로 목표 금액을 비교·범위 검색할 수 있다(기존 substring과 달리 오탐이 없다)', () => {
+  const g = { name: '비상금', targetAmount: 5000000 };
+  assert.strictEqual(sandbox.matchGoalQuery(g, '>1000만'), false);
+  assert.strictEqual(sandbox.matchGoalQuery(g, '<1000만'), true);
+  assert.strictEqual(sandbox.matchGoalQuery(g, '>=500만'), true);
+  assert.strictEqual(sandbox.matchGoalQuery(g, '400만~600만'), true);
+  assert.strictEqual(sandbox.matchGoalQuery(g, '600만~700만'), false);
+});
+test('matchGoalQuery: 연산자 뒤에 공백을 자연스럽게 넣어도("> 100만") 금액 비교로 매칭된다', () => {
+  const g = { name: '비상금', targetAmount: 5000000 };
+  assert.strictEqual(sandbox.matchGoalQuery(g, '> 100만'), true);
+});
+test('matchGoalQuery: 금액 연산자와 텍스트 검색어를 함께 띄어 써도 AND로 좁혀진다', () => {
+  const g = { name: '비상금', targetAmount: 5000000 };
+  assert.strictEqual(sandbox.matchGoalQuery(g, '비상금 >100만'), true);
+  assert.strictEqual(sandbox.matchGoalQuery(g, '비상금 >1000만'), false, '금액 조건은 만족하지 않으므로 제외되어야 함');
+});
 
 /* ---------- matchRecQuery: 반복(구독) 검색 — matchGoalQuery와 동일한 규칙(대소문자 무시
  * includes + NFC 정규화 + 공백 AND), 다만 카테고리+메모 두 필드를 모두 haystack에 넣는다
