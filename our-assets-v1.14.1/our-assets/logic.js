@@ -618,10 +618,17 @@ function matchGoalQuery(g,q){
  * "넷플릭스"를 검색하면 매달 전개된 과거 결제 내역(거래 그룹)만 나오고, 정작 그 구독을 편집·중지할
  * 수 있는 반복 등록 자체로는 통합검색에서 바로 들어갈 길이 없었다. 반복은 카테고리와 메모 두
  * 필드 모두 식별에 쓰이므로(openRecManage 행이 카테고리를 제목으로, recMemoInput으로 메모도
- * 따로 입력받음) matchAssetQuery처럼 두 필드를 모두 haystack에 넣는다. */
+ * 따로 입력받음) matchAssetQuery처럼 두 필드를 모두 haystack에 넣는다.
+ * DB.recurrences가 분할(splits)을 지원하게 되면서(app-evolve cycle282 advance) splitLines(r)로
+ * 모든 분할 항목의 category/memo까지 haystack에 모은다 — matchTxnQuery가 분할 거래를 찾는 것과
+ * 동일한 이유로, 두 번째 이후 분할 항목의 카테고리/메모로 검색해도 찾을 수 있어야 한다. */
 function matchRecQuery(r,q){
  if(!q)return true;
- const hay=String(r&&r.category||'')+' '+String(r&&r.memo||'');
+ if(!r)return false;
+ const lines=splitLines(r);
+ const cats=lines.map(s=>s.category||'').join(' ');
+ const lineMemos=lines.map(s=>s.memo||'').join(' ');
+ const hay=cats+' '+String(r.memo||'')+' '+lineMemos;
  const normHay=hay.normalize('NFC').toLowerCase();
  const terms=searchTerms(q.normalize('NFC').toLowerCase());
  if(!terms.length)return true;

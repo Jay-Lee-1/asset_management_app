@@ -1,150 +1,118 @@
 {
-  "cycle": 282,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "반복거래(구독 등)에 분할(splits) 카테고리 지원",
-    "why": "logic.js의 splitLines(t)(462-473행)는 이미 t.splits가 없으면 t.category/t.amount 단일 쌍으로 안전하게 폴백하는 범용 헬퍼라, expenseByCat/spendByCategory/matchTxnQuery/txCatLabel 등 집계·검색 함수들이 분할 여부와 무관하게 이 헬퍼 하나만 거치면 되도록 이미 설계돼 있다. 그런데 DB.recurrences는 애초에 splits를 담을 자리가 없는 스키마라(txToggleRepeat 5146행 '반복거래는 분할을 담을 자리가 없는 스키마라 반복을 켜면 분할을 되돌린다', saveTx 5274행 동일 주석, saveRec/renderRecSheet엔 분할 UI 자체가 없음), 매달 같은 날 같은 금액으로 나가지만 여러 카테고리에 걸친 자동결제(예: 통신+OTT 결합요금, 관리비+주차비 묶음 자동이체)는 반복거래로 등록하는 순간 사용자가 '제일 비슷한 카테고리 하나'를 억지로 골라야 한다 — cycle198이 일반 거래(DB.txns)에서 똑같은 공백을 없앴던 것과 정확히 같은 모양의 공백이 반복거래 쪽에만 남아있다. expandRec(2708행)이 생성하는 가상 거래 인스턴스에 splits를 실어주기만 하면 splitLines() 기반의 모든 하위 집계·검색 로직은 수정 없이 그대로 분할을 인식하므로, 설계상 이미 거의 준비된 공백을 메우는 작업이다.",
-    "approach": "범위가 커질 수 있으니 1차로 openRecManage/editRec/saveRec/renderRecSheet 경로(반복 '관리' 화면에서 직접 만들고 고치는 흐름)에만 분할을 넣고, saveTx의 '거래 입력 중 반복 켜기' 경로(5273행)는 이번엔 그대로 분할을 되돌리는 현재 동작을 유지해도 된다(다음 cycle로 미뤄도 무방) — 두 경로가 당분간 다르게 동작해도 txToggleRepeat의 기존 주석처럼 명확히 문서화하면 괜찮다. ① DB.recurrences 레코드에 splits:[{category,amount,memo?}]|null 필드 추가. ② renderRecSheet에 splitFieldHTML과 동일한 UI(txToggleSplit/txSplitAdd/txSplitRemove/txSplitOpenCat과 짝이 되는 recToggleSplit/recSplitAdd/recSplitRemove/recSplitOpenCat, recDraft 기준)를 추가하고 saveRec()에 saveTx(5257-5262행)와 동일한 분할 합계=전체금액 검증을 추가. ③ expandRec(2708행)이 매 회차 인스턴스에 splits:(ed.splits!=null?ed.splits:r.splits)를 실어주도록 수정(개별 회차 수정 오버라이드도 ed.memo/ed.amount와 동일한 패턴으로 splits를 덮어쓸 수 있게). ④ doRenameCat/doDeleteCat/mergeCatInto가 지금 r.category만 보고 옮기는 부분을 txns의 분할 처리와 동일한 패턴(Array.isArray(r.splits)&&r.splits.length이면 splits 항목들도 순회해 옮기고, 최상위 r.category는 하위호환 fallback으로 유지)으로 확장. matchRecQuery(logic.js)도 splitLines(r) 기반으로 카테고리/메모를 모아 검색하도록 확장(현재는 r.category/r.memo만 봄). ⑤ recHistFieldsChanged에 splits 비교 추가(스케줄/금액처럼 과거 회차에 영향을 주는 필드이므로 바뀌면 recSaveScopeConfirm을 거쳐야 함). ⑥ recurrencesToCSV는 cycle198이 거래 CSV에 내린 결론(분할은 내보내기 전용, 가져오기 미지원)과 동일하게 알려진 제한으로 명시하고 손대지 않아도 됨(범위를 좁히기 위한 선택). ⑦ test/run.js에 splitFieldHTML 짝 함수들의 UI 상태 전이, saveRec 검증, expandRec의 splits 전파/오버라이드, doRenameCat/doDeleteCat/mergeCatInto의 분할 반복거래 처리, matchRecQuery 분할 검색 테스트를 추가. 항상 node test/run.js로 전체 회귀 통과를 확인하고 APP_VERSION/sw.js CACHE를 올린다."
-  },
+  "cycle": 283,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 277,
-      "phase": "advance",
-      "timestamp": "2026-10-31T11:20:00.000Z",
-      "summary": "critique(cycle277) 계획대로 기존 매입원가 자산의 acquiredAt 오염 버그를 수정. openAssetSheet()가 편집 진입 시 원본 레코드의 costBasis>0 여부를 asDraft._hadCostBasis에 비영구로 남김(duplicateAsset은 DB.assets 레코드를 직접 복제해 애초에 이 플래그가 없으므로 자연히 신규 자산과 동일하게 동작). syncAssetInputs()의 조건을 if(!d.acquiredAt&&!d._hadCostBasis)d.acquiredAt=TODAY로 좁혀, 이미 costBasis가 있던(_hadCostBasis=true) 기존 자산은 acquiredAt이 없어도 무관한 필드만 바꿔 저장할 때 더는 TODAY로 자동 채워지지 않고 계속 비워 annualizedReturn이 null을 반환하게 둠(틀린 값보다 안전). saveAsset()이 asDraft를 DB.assets에 반영하기 직전 delete d._hadCostBasis로 임시 플래그를 제거해 DB/백업에 새지 않게 함(costBasisField 등 다른 _ 접두사 임시 필드와 동일 관례). test/run.js에 openAssetSheet의 _hadCostBasis 설정(기존 자산 true/신규 자산 false) 2건, syncAssetInputs의 버그 재현·수정 확인 3건(기존 자산 TODAY 미채움, 신규 자산 기존 동작 유지, acquiredAt 이미 있으면 보존), saveAsset 저장 시 임시 플래그 제거 1건, duplicateAsset 복제본은 영향 없음 1건, 총 7건 추가. APP_VERSION 1.47.299->1.47.300, sw.js CACHE v566->v567. node test/run.js 2369/2369 통과, 메인 스크립트(블록2) node --check(new Function) 통과. pending_advance_plan null로 비움.",
-      "commit": null
-    },
-    {
-      "cycle": 278,
-      "phase": "develop",
-      "timestamp": "2026-10-31T12:30:00.000Z",
-      "summary": "CSV 내보내기가 거래·자산목록·순자산추이·매도손익·반복거래·목표 6종은 있지만 DB.budgetHistory/DB.catBudgetRollover(카테고리별 월 예산 설정·이월 opt-in)만 CSV 내보내기가 전혀 없는 공백을 발견 — openCsvMenu의 pk-item 버튼 6개에도 예산 항목이 없고 budgetHistoryToCSV 자체가 코드베이스에 없었다. index.html에 budgetHistoryToCSV(budgetHistory,catBudgetRollover) 순수 함수 신설(goalsToCSV 바로 뒤) — 카테고리/적용 시작월/월 예산/이월 여부 4컬럼, guard/esc로 동일한 CSV 인젝션 방어. budgetHistory[카테고리]는 적용 시작월(from) 오름차순 배열(setBudgetFrom)이라 한 카테고리가 여러 행으로 펼쳐지며, Object.keys 순서에 기대지 않고 카테고리명 오름차순으로 먼저 정렬한 뒤 같은 카테고리 안에서 적용 시작월 오름차순으로 다시 정렬한다. 이월 여부는 catBudgetRollover[catKey('expense',cat)]로 조회(isBudgetRolloverCat과 동일 키 규칙). 레거시 플랫 예산(migrate() 1회 변환이 남긴 BUDGET_EPOCH='2000-01')도 그대로 적용 시작월에 내보낸다. CSV_KIND_META에 budgetCsv:{prefix:'budgets',...} 추가, doExport의 kind 분기에 kind==='budgetCsv'?budgetHistoryToCSV(DB.budgetHistory,DB.catBudgetRollover) 추가(gainCsv/recsCsv처럼 추가 평가 없이 DB 값을 그대로 넘김), exportData()에 '예산 설정 CSV로 내보내기' pk-item 버튼 배선(svg('coins') 아이콘). test/run.js FUNCTIONS에 budgetHistoryToCSV 추가, 빈 객체/한 카테고리 다건 펼침+이월 Y/이월 꺼짐·미설정 N/카테고리명·시작월 2단 정렬/레거시 BUDGET_EPOCH 보존/CSV 인젝션 방어 총 6건 + exportData·CSV_KIND_META/doExport 배선 회귀 2건(기존 테스트 확장) 추가. APP_VERSION 1.47.300->1.47.301, sw.js CACHE v567->v568. node test/run.js 2375/2375 통과, 메인 스크립트(블록2) node --check(new Function) 통과.",
-      "commit": "1357e53"
-    },
-    {
-      "cycle": 278,
-      "phase": "review",
-      "timestamp": "2026-10-31T12:45:00.000Z",
-      "summary": "cycle278 develop 커밋(1357e53, 예산 설정 CSV 내보내기 budgetHistoryToCSV 추가)을 검토. catBudgetRollover 조회 키 catKey('expense',c)가 isBudgetRolloverCat과 동일한 규칙임을 코드에서 직접 확인(budgetHistory는 플랫 카테고리명 키, catBudgetRollover만 catKey 접두사를 쓰는 기존 관례와 일치). budgetHistory는 setBudgetFrom을 통해서만 채워지고 예산이 전혀 없는 카테고리는 키 자체가 없어 budgetHistoryToCSV가 빈 배열로 건너뛰는 것을 확인(예산 미설정 카테고리는 행이 생기지 않음 — 의도대로). 카테고리명/적용 시작월 2단 정렬이 Object.keys 순서에 기대지 않아 환경에 따라 달라지지 않음을 확인. guard/esc가 recurrencesToCSV/goalsToCSV와 동일한 CSV 인젝션 방어 패턴임을 확인. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋). node test/run.js 2375/2375 통과, 메인 스크립트(블록2) node --check 통과.",
-      "commit": null
-    },
-    {
-      "cycle": 278,
-      "phase": "critique",
-      "timestamp": "2026-10-31T13:10:00.000Z",
-      "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, 전체내역 검색창(histQ)의 placeholder가 \"메모·카테고리·자산·금액 검색\"이라고 광고하지만 실제 matchTxnQuery(logic.js:508)는 금액을 String(t.amount)로 바꿔 substring 포함 매칭만 해서(\"10000\" 입력 시 110000/210000원도 매칭) \"얼마 이상/이하만 보기\"가 전혀 안 되는 공백을 발견. 메모 기반 카테고리 추천, 거래·자산·반복·목표 복제 대등성, 예산 페이스 경고/롤오버, 부채 이자율/상환 예상, 분할 합계 힌트, 백업/복원 에러 처리, 홈 알림 체계, 통합검색, 차트 접근성, 지출분석 UI, aria-label/announceLive 공백, CSV 내보내기 7종, 시세 동기화 실패 알림, 잠금/암호화, 클라우드 동기화 3-way 병합, 연환산 수익률은 모두 이미 성숙 확인되어 재차 제외. 채택 계획(logic.js에 parseAmountToken(tok) 순수 함수 신설 + matchTxnQuery에서 토큰별로 연산자/일반 텍스트 분기 AND 결합 + histQ placeholder 힌트 갱신 + 테스트)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
-    {
-      "cycle": 278,
-      "phase": "advance",
-      "timestamp": "2026-10-31T14:05:00.000Z",
-      "summary": "critique(cycle278) 계획대로 전체내역 검색(histQ)에 금액 비교/범위 연산자를 구현. logic.js에 parseAmountUnit(s) 신설(\"만\"=10000, \"억\"=100000000 단위 접미사를 선택적으로 허용하는 숫자 파싱, 형식이 아니면 null) + parseAmountToken(tok) 신설 — >N/>=N/<N/<=N/N~M(범위) 패턴만 {op,v1[,v2]}로 파싱하고 나머지(순수 숫자 포함)는 null을 돌려줘 matchTxnQuery가 기존 substring 매칭으로 넘기게 함(100% 하위호환). 범위는 입력 순서를 가정하지 않고 Math.min/max로 다시 정렬. amountMatchesToken(amount,parsed)이 Math.abs(amount) 기준으로 비교(음수로 저장된 조정 거래도 지원). matchTxnQuery(logic.js:508)의 terms.every 콜백을 토큰별로 parseAmountToken 우선 시도 후 매칭되면 금액 비교, 아니면 기존 normHay.includes(term)으로 분기하도록 수정 — 연산자 토큰과 일반 텍스트 토큰이 공백으로 섞여도 AND로 결합됨. histQ placeholder(index.html:5781)를 \"메모·카테고리·자산·금액(>10만, 1만~5만) 검색\"으로 갱신해 실제로 지원하는 문법을 광고. test/run.js에 parseAmountToken 경계(>,>=,<,<=,range,역순 범위 재정렬,만/억 단위,순수 숫자→null,연산자 뒤 비숫자→null,범위 한쪽 비숫자→null) 10건 + matchTxnQuery 통합(초과 비교 경계 제외,범위 포함 경계,음수 절대값,연산자+텍스트 AND,기존 부분일치 회귀) 6건, 총 16건 추가(크로스 realm 객체라 deepStrictEqual 대신 필드별 strictEqual 사용, cycle274와 동일 관례). renderHistory 기존 placeholder 텍스트 단언 테스트 1건도 새 문구로 갱신. APP_VERSION 1.47.301->1.47.302, sw.js CACHE v568->v569. node test/run.js 2390/2390 통과, 메인 스크립트(블록2) node --check(new Function) 통과. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 279,
       "phase": "develop",
       "timestamp": "2026-10-31T15:10:00.000Z",
-      "summary": "통합검색(globalSearchBody)이 거래·자산·카테고리·목표까지만 가로질러 찾고 반복 등록 자체(DB.recurrences)는 빠져 있던 공백을 발견 — 반복거래의 메모/카테고리로 검색하면 매달 expandRec()이 전개한 과거 결제 내역(거래 그룹)만 나오고, 그 구독을 편집·중지할 수 있는 반복 등록 자체(openRecManage/editRec)로는 통합검색에서 바로 들어갈 길이 없었다. logic.js에 matchRecQuery(r,q) 순수 함수 신설(matchGoalQuery와 동일한 대소문자 무시 includes+NFC 정규화+공백 AND 규칙이지만, matchAssetQuery처럼 category+memo 두 필드를 모두 haystack에 넣음 — 반복은 카테고리가 제목, 메모가 보조 식별자인 두 필드 모두로 찾아야 함). index.html의 globalSearchBody()에 recsAll=(DB.recurrences||[]).filter(r=>matchRecQuery(r,q)) 추가, 결과없음 분기에 !recsAll.length 포함, capGroup으로 recsCapped/recsRemain 산출(기존 txns/assets/cats/goals와 동일 패턴). 렌더는 openRecManage() 행과 동일한 마크업(타입별 avatar 색상, catGlyph(r.type,r.category,18,'repeat')/transfer는 svg('transfer'), 중지된 반복은 opacity+'중지' 배지)을 재사용하되 onclick은 editRec(r.id)로 반복 등록 자체 수정 화면으로 바로 연결(복제/일시중지 버튼은 목록 화면 전용이라 검색 결과에는 넣지 않음, goal 행과 동일하게 단일 탭 동작만 제공). openGlobalSearch()의 placeholder와 globalSearchBody 빈 검색어 안내 문구도 '반복'을 포함하도록 갱신. test/run.js에 matchRecQuery 경계(빈 검색어/카테고리 매칭/메모 매칭/대소문자/불일치/NFD 저장·검색어 양방향/공백 AND/null·필드없음 안전처리) 9건 + globalSearchBody 통합 테스트(검색 시 \"반복\" 그룹 노출+editRec 연결/메모로도 매칭/중지됨 배지/매칭 없으면 그룹 자체가 안 생김) 4건, 총 13건 추가. APP_VERSION 1.47.302->1.47.303, sw.js CACHE v569->v570. node test/run.js 2403/2403 통과.",
+      "summary": "통합검색(globalSearchBody)이 거래·자산·카테고리·목표까지만 가로질러 찾고 반복 등록 자체(DB.recurrences)는 빠져 있던 공백을 발견 — 반복거래의 메모/카테고리로 검색하면 매달 expandRec()이 전개한 과거 결제 내역(거래 그룹)만 나오고, 그 구독을 편집·중지할 수 있는 반복 등록 자체(openRecManage/editRec)로는 통합검색에서 바로 들어갈 길이 없었다. logic.js에 matchRecQuery(r,q) 순수 함수 신설, globalSearchBody()에 반복 그룹 추가. test/run.js에 13건 추가. APP_VERSION 1.47.302->1.47.303, sw.js CACHE v569->v570.",
       "commit": "d92c656"
     },
     {
       "cycle": 279,
       "phase": "review",
       "timestamp": "2026-10-31T16:30:00.000Z",
-      "summary": "cycle279 develop 커밋(d92c656, 통합검색에 반복(구독) 등록 자체 검색 추가)을 검토. matchRecQuery(category+memo haystack, NFC 정규화+대소문자 무시+공백 AND)가 matchGoalQuery/matchAssetQuery와 동일한 규칙임을 확인, null/필드 없음 가드(r&&r.category)도 일치. globalSearchBody의 avatar 분기(a-food/a-in/a-save/a-etc)와 catGlyph(r.type,r.category,18,'repeat')/transfer는 svg('transfer') 처리가 openRecManage() 행의 로직과 동일함을 코드로 직접 대조 확인(아이콘 크기 18/avatar 36px·11px는 같은 함수 안의 카테고리 그룹과 동일 패턴, openRecManage의 38px/size=null과는 다르지만 검색 결과 리스트 전용 스타일이라 문제 없음). editRec(id)가 DB.recurrences.find로 안전 처리됨을 확인, recFreqLabel(r)도 openRecManage()와 동일 함수 재사용. node --check로 메인 스크립트(블록2)와 logic.js 구문 모두 통과 확인, node test/run.js 2403/2403 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "summary": "cycle279 develop 커밋(d92c656) 검토 — 실제 버그 없음, 코드 변경 없음(state.json만 커밋).",
       "commit": null
     },
     {
       "cycle": 279,
       "phase": "critique",
       "timestamp": "2026-10-31T18:14:43.000Z",
-      "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, CSV 내보내기·복제 기능 대등성·접근성(포커스 트랩/aria-live)·PIN 잠금 brute-force 방지·영수증 사진 공유(share_target)·오프라인/온라인 재동기화·앱 알림 체계는 모두 이미 성숙 확인되어 제외하고, SRI 해시 TODO(index.html:1383)는 cdn.jsdelivr.net/t1.kakaocdn.net egress가 이번에도 차단돼 있어(curl CONNECT 403으로 재확인) 여전히 처리 불가능하므로 다시 보류했다. 대신 cycle278 advance가 추가한 전체내역 검색(histQ)의 금액 비교/범위 연산자(parseAmountToken, logic.js:527) 자체에서 새 버그를 발견 — 이 코드는 review 단계의 검토를 받은 적이 없는 사각지대(cycle277 critique가 이미 지적한 것과 같은 패턴)라 critique에서 직접 재검증했다. 연산자 뒤에 공백을 넣어 \"> 10만\"처럼 자연스럽게 입력하면 searchTerms가 \">\"와 \"10만\"을 서로 다른 토큰으로 쪼개 둘 다 parseAmountToken이 null을 반환하고 일반 텍스트 부분일치로 떨어지는데, \">\" 글자가 들어있는 거래는 거의 없어 AND 조건이 항상 실패해 검색 결과가 오류 안내 없이 조용히 0건이 된다 — node -e로 직접 재현해 두 토큰 모두 null이 됨을 확인했다. 채택 계획(logic.js에 normalizeAmountSpacing(q) 신설 + matchTxnQuery에서 searchTerms 전에 적용 + 공백 포함 연산자/범위 입력 테스트 추가)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
+      "summary": "히스토리 검색(histQ)의 금액 비교/범위 연산자가 \"> 10만\"처럼 공백을 넣으면 조용히 0건으로 떨어지는 버그 발견. normalizeAmountSpacing 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     },
     {
       "cycle": 279,
       "phase": "advance",
       "timestamp": "2026-10-31T19:20:00.000Z",
-      "summary": "critique(cycle279) 계획대로 전체내역 검색(histQ)의 금액 비교/범위 연산자가 공백 포함 입력에서 조용히 0건으로 실패하는 버그를 수정. logic.js에 normalizeAmountSpacing(q) 순수 함수를 신설(parseAmountToken 바로 뒤) — 비교 연산자(>,>=,<,<=) 뒤의 공백은 그 뒤가 숫자로 시작할 때만 제거(/(>=|<=|>|<)\\s+(?=\\d)/g), ~ 범위 구분자 앞뒤 공백은 앞쪽이 숫자(+선택적 만/억 단위) 뒤쪽이 숫자로 시작할 때만 제거(/(\\d+(?:\\.\\d+)?(?:만|억)?)\\s*~\\s*(?=\\d)/g) — 둘 다 숫자 바로 인접 조건으로 좁혀 일반 텍스트 검색(예: \"할인 10% 적용\")은 건드리지 않는다. matchTxnQuery(logic.js:552)의 기존 q.normalize('NFC').toLowerCase().replace(/,/g,'') 바로 바깥을 normalizeAmountSpacing으로 감싸 searchTerms에 넘기기 전에 띄어 쓴 연산자/범위를 다시 붙인다. histQ placeholder(index.html:5781)는 계획대로 변경하지 않음(이미 올바른 압축 표기를 보여주고 있고 이번 수정은 그 표기와 다르게 써도 받아주는 관용성 추가일 뿐). test/run.js에 normalizeAmountSpacing 경계(>/>=/<=/< 뒤 공백, ~ 양쪽/한쪽 공백, 일반 텍스트 보존, idempotent) 4건 + matchTxnQuery 통합(\"> 10000\" 비교, \"1만 ~ 5만\"/\"5만 ~ 1만\" 범위, 연산자 아닌 일반 텍스트+숫자 조합은 기존처럼 두 토큰 AND 유지) 3건, 총 7건 추가. APP_VERSION 1.47.303->1.47.304, sw.js CACHE v570->v571. node test/run.js 2410/2410 통과, 메인 스크립트(블록2)/logic.js/sw.js node --check 통과. pending_advance_plan null로 비움.",
+      "summary": "critique(cycle279) 계획대로 normalizeAmountSpacing(q) 신설, matchTxnQuery에 적용. test/run.js에 7건 추가. APP_VERSION 1.47.303->1.47.304, sw.js CACHE v570->v571. pending_advance_plan null로 비움.",
       "commit": null
     },
     {
       "cycle": 280,
       "phase": "develop",
       "timestamp": "2026-10-31T20:30:00.000Z",
-      "summary": "openRecManage()(반복 내역 관리 목록)와 globalSearchBody()의 통합검색 \"반복\" 그룹이 둘 다 r.category만 제목으로 보여줘, 같은 카테고리(예: \"구독\")의 반복거래가 여러 개면 목록·검색 결과에서 서로 구분이 안 되던 공백을 발견 — saveRec/editRec은 메모를 비워두면 category로 폴백시키지만 메모가 실제로 채워진 경우(예: \"넷플릭스\"/\"왓챠\")에도 두 화면 모두 category만 썼다. cycle279에서 메모 기반 검색(matchRecQuery)까지 추가됐는데, 메모로 매칭된 결과가 화면엔 관련 없는 카테고리 텍스트로만 보이는 불일치도 함께 발견. 두 함수 모두 제목을 r.memo||r.category로 바꾸고 row/dup-btn/pause-resume-btn aria-label에도 동일하게 적용, memo!==category인 경우에만 category를 msub에 보조 정보로 남겨(txRowCore의 memo/catLabel 2단 표시와 동일 패턴) 정보 손실을 막음. catGlyph 아이콘은 category 기준 그대로 유지. test/run.js에 openRecManage/globalSearchBody 각각 2건(동일 카테고리를 메모로 구분/메모=카테고리면 중복 표시 없음) 총 4건 추가. APP_VERSION 1.47.304->1.47.305, sw.js CACHE v571->v572. node test/run.js 2414/2414 통과, 메인 스크립트(블록2) node --check 통과.",
+      "summary": "openRecManage()/globalSearchBody()가 둘 다 r.category만 제목으로 보여줘 같은 카테고리의 반복거래를 구분 못 하던 공백 발견 — 제목을 memo||category로 변경. test/run.js에 4건 추가. APP_VERSION 1.47.304->1.47.305, sw.js CACHE v571->v572.",
       "commit": "96d9a04"
     },
     {
       "cycle": 280,
       "phase": "review",
       "timestamp": "2026-10-31T20:45:00.000Z",
-      "summary": "cycle280 develop 커밋(96d9a04, openRecManage/globalSearchBody 반복 행 제목을 memo||category로 변경)을 검토. title=r.memo||r.category가 saveRec/editRec이 항상 보장하는 memo||category 폴백과 동일 규칙임을 확인, msub의 (r.memo&&r.memo!==r.category)?esc(r.category)+' · ':'' 보조 표시가 txRowCore의 memo/catLabel 2단 표시와 같은 원칙임을 확인. grep으로 esc(r.category)가 더 이상 title 자리에 남아있지 않음을 확인(두 위치 모두 msub 보조 표시로만 남음) — 수정이 누락된 곳 없음. catGlyph 아이콘은 의도대로 category 기준 유지. node test/run.js 2414/2414 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "summary": "cycle280 develop 커밋(96d9a04) 검토 — 실제 버그 없음, 코드 변경 없음(state.json만 커밋).",
       "commit": null
     },
     {
       "cycle": 280,
       "phase": "critique",
       "timestamp": "2026-10-31T21:50:00.000Z",
-      "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, 최근 추가된 recurrencesToCSV/goalsToCSV/budgetHistoryToCSV, histQ 금액 비교·범위 연산자(parseAmountToken/amountMatchesToken/normalizeAmountSpacing, node로 음수·0·역순 범위·공백 패턴 직접 재현 검증), cycle280 develop의 반복 목록/통합검색 제목 memo||category 수정(catGlyph/undoToast/quick-confirm 등 다른 노출 지점까지 grep 추적, 누락 없음)은 모두 설계 의도대로 정확히 동작해 새 버그 없음을 확인. 대신 자산 등록 폼(costBasisField, index.html:4433-4446)에는 '매입 금액' 입력만 있고 '매입일' 입력 UI 자체가 없어, syncAssetInputs()(index.html:4422)가 매입금액을 처음 입력하는 순간(=대부분 데이터 입력일, 실제 매입일이 아님)을 acquiredAt으로 조용히 찍어버리는 공백을 발견 — 그 결과 cycle276에서 추가된 연환산 수익률(annualizedReturn) 배지가 30일이 지나는 순간부터 실제 보유기간이 아닌 가짜 보유기간으로 거듭제곱 왜곡된 수치를 보여주고, 사용자는 이를 고칠 방법이 전혀 없다(_hadCostBasis는 덮어쓰기 방지용일 뿐 올바른 날짜 입력 경로가 아님). 틀린 수익률을 정상처럼 보여주는 게 미표시보다 나쁘다고 판단해 이를 다음 advance로 채택. 채택 계획(costBasisField에 만기일(asMat)과 동일한 openFieldDatePicker 패턴으로 '매입일(선택)' 필드 추가 + syncAssetInputs는 사용자가 직접 고른 날짜를 덮어쓰지 않도록 보존 + TODAY 이하 범위 제한 + 레거시 자산 소급 입력 허용 + 테스트)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
+      "summary": "자산 등록 폼에 '매입일' 입력 UI 자체가 없어 syncAssetInputs가 매입금액을 처음 입력하는 순간을 acquiredAt으로 조용히 찍어버리는 공백 발견 — 연환산 수익률이 가짜 보유기간으로 왜곡됨. costBasisField에 매입일 입력 추가 계획을 pending_advance_plan에 저장.",
       "commit": null
     },
     {
       "cycle": 280,
       "phase": "advance",
       "timestamp": "2026-10-31T23:11:05.411Z",
-      "summary": "자산 매입일(acquiredAt) 직접 입력 UI 추가: costBasisField에 만기일과 동일한 pick 패턴의 매입일 필드를 넣어, 매입금액 입력 시 자동으로 TODAY가 찍히던 것과 별개로 사용자가 실제 매입일을 직접 고르거나(레거시 자산 소급 입력 포함) 지울 수 있게 함. 미래 날짜는 toastFail로 차단. syncAssetInputs가 hidden asAcquiredAt 값을 먼저 반영해 자동 TODAY 스탬프보다 우선하도록 수정. 회귀 테스트 4개 추가, 기존 snapshot 테스트 1개 갱신.",
+      "summary": "자산 매입일(acquiredAt) 직접 입력 UI 추가. 회귀 테스트 4개 추가, 기존 snapshot 테스트 1개 갱신.",
       "commit": null
     },
     {
       "cycle": 281,
       "phase": "develop",
       "timestamp": "2026-11-01T00:15:22.000Z",
-      "summary": "자산 목록 CSV 내보내기(assetsToCSV)가 평가금액/매입원가/손익만 담고, 화면(assetGainLossBadge)에 이미 보이는 손익률(%)·연환산수익률(%)·매입일(acquiredAt, 바로 전 cycle280 advance가 추가한 필드)은 내보내지 못하던 공백을 발견 — 백업/스프레드시트 분석용으로 내보낸 CSV가 화면보다 정보가 적었다. assetsToCSV 헤더에 손익률(%)/연환산수익률(%)/매입일 3개 컬럼을 손익과 전체합계포함 사이에 추가하고, 값은 호출부(doExport)가 이미 평가를 끝낸 값만 받는 기존 원칙을 그대로 따라 gainLossPct/ann을 assetGainLoss()/annualizedReturn()(logic.js)로 계산해 얹음(acquiredAt은 asset 레코드 자체 필드라 그대로). gainLossPct/ann은 소수 둘째 자리로 round2해 부동소수점 꼬리가 CSV에 남지 않게 함. 기존 assetsToCSV 테스트 중 빈 배열 헤더 문자열과 부채 includeInTotal N 위치(인덱스 7->10)가 새 컬럼 삽입으로 깨져 있어 함께 갱신하고, 신규 컬럼의 값/null 폴백을 검증하는 테스트 1건 추가. APP_VERSION 1.47.306->1.47.307, sw.js CACHE v573->v574. node test/run.js 2419/2419 통과, logic.js node --check 통과.",
+      "summary": "자산 목록 CSV 내보내기(assetsToCSV)에 손익률/연환산수익률/매입일 3컬럼 추가. APP_VERSION 1.47.306->1.47.307, sw.js CACHE v573->v574. node test/run.js 2419/2419 통과.",
       "commit": "2e5ee72"
     },
     {
       "cycle": 281,
       "phase": "review",
       "timestamp": "2026-11-01T00:30:00.000Z",
-      "summary": "cycle281 develop 커밋(2e5ee72, 자산 목록 CSV 내보내기에 손익률/연환산수익률/매입일 컬럼 추가)을 검토. doExport 호출부가 gl=assetGainLoss(a)/ev=assetEval(a)를 한 번만 평가해 evalValue/gainLoss/gainLossPct/ann에 얹는 방식이 assetsCsv/goalsCsv의 기존 \"호출부가 평가를 끝낸 값만 넘긴다\" 관례를 그대로 따름을 확인. annualizedReturn(a.costBasis,ev,a.acquiredAt,TODAY)가 assetGainLoss(gl)의 isMarketValued/rateUnknown 게이트와 별도로 호출되는 점을 짚었으나, acquiredAt/costBasisField UI가 fx/gold/stock/crypto(isMarketValued)에만 배선돼 있어(cash/savings/realestate/etc/pension/debt엔 매입일 입력 자체가 없음) 실무에서 비시세평가 자산엔 acquiredAt이 찍히지 않으므로 annualizedReturn의 !acquiredAt 가드가 그대로 null을 돌려줘 실제 불일치로 이어지지 않음을 grep으로 확인. round2 중복 선언 없음, 헤더 인덱스(7/8/9/10)와 테스트 단언이 일치함을 확인. node test/run.js 2419/2419 통과, 메인 스크립트(블록2) node --check(new Function) 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "summary": "cycle281 develop 커밋(2e5ee72) 검토 — 실제 버그 없음, 코드 변경 없음(state.json만 커밋).",
       "commit": null
     },
     {
       "cycle": 281,
       "phase": "critique",
       "timestamp": "2026-11-01T02:10:37.469Z",
-      "summary": "fork 서브에이전트로 앱 전반(CSV 임포트/익스포트, 부채 이자율/상환 what-if, 다중화폐 fx, undo 커버리지, 메인 시트/날짜피커 포커스트랩·inert·Escape·드래그닫기, 빈 상태, manifest/share_target/바로가기)을 재탐색한 결과 모두 이미 성숙 확인되어 제외. 대신 카테고리 아이콘 선택기 openIconPicker(index.html:6818)의 버튼이 aria-label=\"${k} 아이콘\"으로 렌더링되는데, 내부 svg(k,22)는 aria-hidden=true(index.html:1605)라 이 aria-label이 버튼의 유일한 접근 가능한 이름임을 확인 — k는 food/fuel/gcap/briefcase 같은 영문 내부 키라 스크린리더가 영어 키를 그대로 읽어줌(한글 라벨 매핑 ICON_LABEL_KO가 코드베이스에 전혀 없음을 grep으로 확인). 앱의 다른 모든 다이얼로그는 전부 한글 aria-label을 쓰는 것과 대비되는 유일한 예외. pickCatAddIcon/pickCatRenameIcon 두 호출 경로에서 재현. 채택 계획(CAT_ICON_SET 바로 뒤에 ICON_LABEL_KO 한글 매핑 신설 + openIconPicker의 aria-label을 매핑값(폴백 포함)으로 교체 + 모든 아이콘 키가 한글 라벨을 갖는지/옛 영문 템플릿이 남아있지 않은지 테스트)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
+      "summary": "카테고리 아이콘 선택기(openIconPicker)의 aria-label이 영문 내부 키(food/gcap 등)를 그대로 노출하는 접근성 결함 발견. ICON_LABEL_KO 한글 매핑 계획을 pending_advance_plan에 저장.",
       "commit": null
     },
     {
       "cycle": 281,
       "phase": "advance",
       "timestamp": "2026-11-01T03:40:00.000Z",
-      "summary": "critique(cycle281) 계획대로 카테고리 아이콘 선택기(openIconPicker)의 aria-label 접근성 결함을 수정. CAT_ICON_SET(index.html:6809) 바로 뒤에 const ICON_LABEL_KO={...} 신설 — CAT_ICON_SET.expense/income/saving에 등장하는 43개 키 전체(food→'음식', gcap→'학자금', briefcase→'직장', arrowUp→'입금', seedling→'적립' 등)를 짧은 한글 명사로 매핑. openIconPicker(index.html:6818)의 aria-label=\"${k} 아이콘\"을 aria-label=\"${ICON_LABEL_KO[k]||k} 아이콘\"으로 변경(매핑에 없는 키는 안전하게 원래 키로 폴백 — current가 CAT_ICON_SET 밖의 값이면 목록 맨 앞에 끼워지는 기존 경로가 있어 폴백이 꼭 필요함). test/run.js의 FUNCTIONS에 openIconPicker/pickCatIcon, CONSTS에 CAT_ICON_SET/ICON_LABEL_KO 추가 후 — openIconPicker 호출 시 food/gcap/briefcase/piggy 등 한글 aria-label이 나오고 영문 키가 더는 안 나오는지 3건, ICON_LABEL_KO 매핑 누락 키 폴백 1건, CAT_ICON_SET 세 타입의 합집합 전체가 /[가-힣]/를 만족하는 한글 라벨을 갖는지 완전성 가드 1건, 옛 영문 템플릿 리터럴이 소스에 남아있지 않은지 source-string 회귀 가드 1건, 총 6건 추가. APP_VERSION 1.47.307->1.47.308, sw.js CACHE v574->v575. node test/run.js 2424/2424 통과, 메인 스크립트(블록2)/logic.js/sw.js 구문 검증 통과. pending_advance_plan null로 비움.",
+      "summary": "ICON_LABEL_KO 한글 매핑 신설, openIconPicker aria-label을 한글 라벨로 교체. 테스트 6건 추가. APP_VERSION 1.47.307->1.47.308, sw.js CACHE v574->v575. pending_advance_plan null로 비움.",
       "commit": null
     },
     {
       "cycle": 282,
       "phase": "develop",
       "timestamp": "2026-11-01T04:14:51.303Z",
-      "summary": "logic.js의 99개 순수 함수를 test/run.js 테스트 커버리지와 전수 대조한 결과, parseAmountUnit과 amountMatchesToken(둘 다 cycle278-279에서 histQ 금액 비교/범위 검색을 위해 추가됨) 단 2개만 직접 테스트가 전혀 없고 parseAmountToken/matchTxnQuery 통합 테스트로만 간접 검증되고 있던 공백을 발견 — >=/<= 경계 포함 여부, 범위 양끝 포함, 음수 금액의 abs() 처리, 단위 파서의 비정상 입력(음수 기호, 다중 소수점, trailing garbage) 등 경계 동작이 한 번도 직접 단언되지 않았다. test/run.js에 parseAmountUnit 5건(순수 숫자/소수, 만·억 단위 변환, 빈값/null/undefined, 비정상 입력 거부, 음수 기호 미지원)과 amountMatchesToken 6건(>,>=,<,<= 경계 포함/배제, 범위 양끝 포함, 음수 금액 abs() 처리) 총 11건을 parseAmountToken/normalizeAmountSpacing 테스트 블록 근처에 추가(logic.js는 vm 샌드박스에 전체 로드되므로 FUNCTIONS 배선 불필요). index.html/logic.js/sw.js 코드 변경 없음(테스트 전용 cycle)이라 APP_VERSION/CACHE는 그대로 유지(1.47.308/v575). node test/run.js 2424->2435 통과.",
+      "summary": "logic.js의 parseAmountUnit/amountMatchesToken(cycle278-279 추가)에 직접 단위 테스트가 전혀 없던 공백 발견 — 경계 동작 11건 추가. 코드 변경 없음(테스트 전용 cycle). node test/run.js 2424->2435 통과.",
       "commit": "021c708"
     },
     {
       "cycle": 282,
       "phase": "review",
       "timestamp": "2026-11-01T05:05:00.000Z",
-      "summary": "cycle282 develop 커밋(021c708, parseAmountUnit/amountMatchesToken 직접 단위 테스트 11건 추가)을 검토. logic.js의 실제 구현(parseAmountUnit 512-518행, amountMatchesToken 541-551행)을 직접 읽고 11건 전부의 기대값을 대조 — 정규식 /^(\\d+(?:\\.\\d+)?)(만|억)?$/이 '10만원'(trailing 글자)과 '1.2.3'(다중 소수점)을 거부하고 음수 기호를 지원하지 않는다는 단언, 네 연산자(>,>=,<,<=)의 경계 포함/배제와 range 양끝 포함, Math.abs() 음수 처리 단언이 모두 실제 구현과 정확히 일치함을 확인. 코드 변경 없이 테스트만 추가한 cycle이라 회귀 위험 자체가 낮음. node test/run.js 2435/2435 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "summary": "cycle282 develop 커밋(021c708) 검토 — 실제 버그 없음, 코드 변경 없음(state.json만 커밋).",
       "commit": null
     },
     {
       "cycle": 282,
       "phase": "critique",
       "timestamp": "2026-11-01T06:20:00.000Z",
-      "summary": "fork 서브에이전트로 앱 전반을 재탐색(카테고리 삭제/이름변경/합치기의 톰스톤·예산 이월 처리, 목표(goal)의 자산 연결 끊김 처리, 자산 재등록 재연결, CSV 가져오기 분할 미지원 등 모든 '합치기/삭제/재연결' 류 데이터 무결성 경로, 드래그 정렬·스와이프 제스처의 키보드 대안, 다크모드, 성능(expandRec 캐시·txnsByDateInRange 버킷화))을 둘러봤고 전부 이미 성숙 확인되어 제외했다. 대신 logic.js의 splitLines(t)(462행, '거래 1건이 카테고리 하나에 묶이지 않고 여러 카테고리로 나뉠 수 있게 하는 헬퍼')가 t.splits가 없으면 단일 category/amount로 안전하게 폴백해 expenseByCat/matchTxnQuery 등 모든 하위 집계·검색이 분할 여부를 몰라도 되도록 설계돼 있는데, DB.recurrences(반복거래)는 애초에 splits를 담을 자리가 없어(txToggleRepeat 5146행과 saveTx 5274행이 반복을 켜는 순간 분할을 되돌리고, openRecManage의 전용 편집 화면(renderRecSheet/saveRec)에는 분할 UI 자체가 없음) 통신+OTT 결합요금· 관리비+주차비 묶음 자동이체처럼 여러 카테고리에 걸친 고정 지출을 반복거래로 등록할 때마다 카테고리 하나를 억지로 골라야 하는 공백을 발견 — cycle198이 일반 거래에서 없앤 것과 정확히 같은 모양의 공백이 반복거래에만 남아있다. expandRec이 splits를 실어주기만 하면 splitLines() 체인이 수정 없이 그대로 동작하므로 설계상 이미 준비된 공백임을 코드로 직접 확인했다. 채택 계획(1차로 openRecManage 편집 화면 경로에 분할 UI/검증/expandRec 전파/카테고리 삭제·이름변경·합치기·검색 확장을 추가, saveTx의 '입력 중 반복 켜기' 경로는 범위를 좁히기 위해 이번엔 유지 가능)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
+      "summary": "DB.recurrences(반복거래)가 분할(splits)을 담을 자리가 없는 스키마라, 통신+OTT 결합요금처럼 여러 카테고리에 걸친 고정 지출을 반복거래로 등록할 때마다 카테고리 하나를 억지로 골라야 하는 공백 발견 — cycle198이 일반 거래에서 없앤 것과 동일한 공백이 반복거래에만 남아있음. 1차로 반복 관리 화면(openRecManage/editRec/saveRec/renderRecSheet) 경로에만 분할을 넣는 계획을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 282,
+      "phase": "advance",
+      "timestamp": "2026-11-01T07:30:00.000Z",
+      "summary": "critique(cycle282) 계획대로 DB.recurrences에 분할(splits) 지원을 추가했다. (1) DB.recurrences 레코드가 splits:[{category,amount,memo?}]를 가질 수 있게 함. (2) renderRecSheet에 splitFieldHTML(d,pfx)을 pfx 파라미터로 일반화해 tx/rec 양쪽에서 재사용(onclick/oninput을 ${pfx}SplitXxx로 배선, 공유 id를 txSplitHint->splitHint로 통일), recToggleSplit/recSplitAdd/recSplitRemove/recSplitOpenCat/recSplitAmt/recSplitMemo를 tx 짝 함수와 동일한 규칙으로 신설. (3) recCatSuggestUpdate에 splitOn 가드 추가(분할 중엔 카테고리 추천 끔). (4) saveRec()에 saveTx와 동일한 분할 합계=전체금액 검증 추가. (5) expandRec()이 매 회차 가상 인스턴스에 splits:(ed.splits!==undefined?ed.splits:r.splits)를 실어 splitLines() 기반 집계·검색이 수정 없이 분할을 인식하게 함. (6) recHistFieldsChanged에 splits 비교 추가(JSON.stringify 내용 비교, 배열 참조 비교의 항상-true 함정 회피). (7) activeRecsForCat/catMergeCounts/doRenameCat/mergeCatInto가 모두 분할 항목까지 보도록 확장(txns의 기존 분할 처리와 동일한 패턴), mergeCatInto의 undo 복원도 분할 카테고리까지 되돌림. (8) logic.js의 matchRecQuery가 splitLines(r) 기반으로 모든 분할 항목의 category/memo까지 검색하도록 확장. saveTx의 '거래 입력 중 반복 켜기' 경로(txToggleRepeat)는 계획대로 범위를 좁혀 그대로 분할을 되돌리는 동작을 유지하고, 관련 주석 3곳을 이제는 틀린 전역 제약(반복거래는 분할을 담을 자리가 없다는 설명)에서 정확한 설명으로 교정했다. test/run.js에 matchRecQuery 분할 검색 4건, doRenameCat/mergeCatInto/activeRecsForCat/catMergeCounts 분할 반복거래 처리 7건, expandRec splits 전파 2건, recHistFieldsChanged splits 비교 1건, saveRec 분할 검증 4건, splitFieldHTML pfx 배선 1건, recToggleSplit/recSplitAdd/recSplitRemove/recSplitOpenCat/recSplitAmt/recSplitMemo 실행형 테스트 7건, 총 26건 추가(2435->2458 통과). APP_VERSION 1.47.308->1.47.309, sw.js CACHE v575->v576. node test/run.js 2458/2458 통과, 메인 스크립트(블록2)/logic.js/sw.js 구문 검증 통과. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

@@ -1849,6 +1849,30 @@ test('doRenameCat: 분할 거래의 어느 항목에도 old 카테고리가 없�
   assert.strictEqual(sandbox.DB.txns[0].category, '식비', '최상위 category도 그대로 유지');
   assert.strictEqual(sandbox.DB.txns[0].updatedAt, 1, '바뀐 게 없으면 touch()도 호출되면 안 됨');
 });
+/* 분할 반복거래(r.splits)도 분할 거래(t.splits)와 동일한 이동 규칙을 따른다 — DB.recurrences가
+ * 분할을 담을 수 있게 되면서(app-evolve cycle282 advance) 반복거래도 old 카테고리로 된 분할
+ * 항목만 각각 옮기고, 최상위 category(fallback)도 같이 맞춘다. */
+test('doRenameCat: 분할 반복거래는 old 카테고리로 된 항목만 각각 새 이름으로 옮기고, 다른 항목은 그대로 둔다', () => {
+  sandbox.DB = {
+    categories: { expense: ['통신'] }, catIcon: {}, catVar: {}, txns: [],
+    recurrences: [{ id: 'r1', type: 'expense', category: '통신', memo: '결합요금', splits: [{ category: '통신', amount: 30000 }, { category: 'OTT', amount: 20000 }] }],
+  };
+  sandbox.catRenameDraft = { name: '통신비', icon: '' };
+  sandbox.doRenameCat('expense', 0);
+  assert.deepStrictEqual(sandbox.DB.recurrences[0].splits, [{ category: '통신비', amount: 30000 }, { category: 'OTT', amount: 20000 }]);
+  assert.strictEqual(sandbox.DB.recurrences[0].category, '통신비', '최상위 category(fallback)도 splits[0]과 같이 옮겨야 함');
+  assert.strictEqual(sandbox.DB.recurrences[0].memo, '결합요금', '직접 입력한 메모는 그대로 유지돼야 함');
+});
+test('doRenameCat: 분할 반복거래의 어느 항목에도 old 카테고리가 없으면 손대지 않는다(touch도 안 됨)', () => {
+  sandbox.DB = {
+    categories: { expense: ['여행'] }, catIcon: {}, catVar: {}, txns: [],
+    recurrences: [{ id: 'r1', type: 'expense', category: '통신', memo: '결합요금', updatedAt: 1, splits: [{ category: '통신', amount: 30000 }, { category: 'OTT', amount: 20000 }] }],
+  };
+  sandbox.catRenameDraft = { name: '휴가', icon: '' };
+  sandbox.doRenameCat('expense', 0);
+  assert.deepStrictEqual(sandbox.DB.recurrences[0].splits, [{ category: '통신', amount: 30000 }, { category: 'OTT', amount: 20000 }], '여행(old)은 이 반복거래의 어느 항목에도 없으니 그대로 유지');
+  assert.strictEqual(sandbox.DB.recurrences[0].updatedAt, 1, '바뀐 게 없으면 touch()도 호출되면 안 됨');
+});
 
 /* ---------- doRenameCat: 카테고리 이름이 바뀐 txns/recurrences에도 touch()로 updatedAt이 갱신돼야 함 (app-evolve cycle92 advance) ----------
  * doRenameOwner()와 완전히 같은 이유로(위 doRenameOwner touch() 테스트 참고), mergeCollection()의
@@ -2613,6 +2637,15 @@ test('activeRecsForCat: 무관한 카테고리는 빈 배열을 반환한다', (
   };
   assert.deepStrictEqual(sandbox.activeRecsForCat('expense', '외식'), []);
 });
+/* 분할(splits) 지원 — 최상위 category엔 없고 분할 항목에만 들어있는 카테고리도 찾아야 한다,
+ * 안 그러면 그 카테고리를 삭제해도 분할로만 참조하는 반복거래가 계속 그 이름으로 발생한다
+ * (app-evolve cycle282 advance). */
+test('activeRecsForCat: 최상위 category엔 없고 분할(splits) 항목에만 있는 카테고리도 찾아낸다', () => {
+  sandbox.DB = {
+    recurrences: [{ id: 'r1', active: true, type: 'expense', category: '통신', splits: [{ category: '통신', amount: 30000 }, { category: 'OTT', amount: 20000 }] }],
+  };
+  assert.deepStrictEqual(sandbox.activeRecsForCat('expense', 'OTT').map(r => r.id), ['r1']);
+});
 
 /* ---------- doDeleteCat: 연결된 활성 반복거래를 비활성화하고, undo로 카테고리+반복거래 모두 복원한다 ---------- */
 test('doDeleteCat: 연결된 활성 반복거래를 비활성화하고, undo 콜백을 부르면 카테고리와 반복거래 상태를 모두 복원한다', () => {
@@ -2816,6 +2849,20 @@ test('mergeCatInto: 분할 거래는 from으로 된 항목만 옮기고, 최상�
   assert.deepStrictEqual(sandbox.DB.txns[0].splits, [{ category: '외식비', amount: 7000 }, { category: '생활용품', amount: 3000 }], '다른 항목은 그대로 둬야 함');
   assert.strictEqual(sandbox.DB.txns[0].category, '외식비');
 });
+/* 분할 반복거래(r.splits)도 분할 거래와 동일한 이동 규칙을 따른다(app-evolve cycle282 advance) */
+test('mergeCatInto: 분할 반복거래는 from으로 된 항목만 옮기고, undoToast로 되돌리면 분할 카테고리도 원래대로 복원된다', () => {
+  sandbox.DB = {
+    categories: { expense: ['통신', '외식비'] }, catIcon: {}, catVar: {}, budgetHistory: {}, catBudgetRollover: {}, txns: [],
+    recurrences: [{ id: 'r1', type: 'expense', category: '통신', memo: '결합요금', active: true, splits: [{ category: '통신', amount: 30000 }, { category: 'OTT', amount: 20000 }] }],
+  };
+  sandbox.mergeCatInto('expense', 0, '외식비');
+  assert.deepStrictEqual(sandbox.DB.recurrences[0].splits, [{ category: '외식비', amount: 30000 }, { category: 'OTT', amount: 20000 }], '다른 항목(OTT)은 그대로 둬야 함');
+  assert.strictEqual(sandbox.DB.recurrences[0].category, '외식비');
+  assert.strictEqual(sandbox.DB.recurrences[0].active, true, 'doDeleteCat과 달리 반복거래를 비활성화하면 안 됨');
+  sandbox.lastUndo.undoFn();
+  assert.deepStrictEqual(sandbox.DB.recurrences[0].splits, [{ category: '통신', amount: 30000 }, { category: 'OTT', amount: 20000 }], 'undo로 분할 카테고리도 원래대로 복원돼야 함');
+  assert.strictEqual(sandbox.DB.recurrences[0].category, '통신');
+});
 test('mergeCatInto: budgetHistory는 from(월) 키로 유니온되고, 같은 달이 양쪽에 있으면 대상(toName) 값이 이긴다', () => {
   sandbox.DB = {
     categories: { expense: ['커피', '식비'] }, catIcon: {}, catVar: {}, catBudgetRollover: {},
@@ -2923,6 +2970,16 @@ test('catMergeCounts: 최상위 category/분할 거래/반복거래(비활성 �
 test('catMergeCounts: 연결된 내역이 없으면 0/0을 돌려준다', () => {
   sandbox.DB = { txns: [], recurrences: [] };
   assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.catMergeCounts('expense', '커피'))), { txCount: 0, recCount: 0 });
+});
+test('catMergeCounts: 반복거래도 최상위 category 외에 분할(splits) 항목에만 있는 카테고리까지 센다(app-evolve cycle282 advance)', () => {
+  sandbox.DB = {
+    txns: [],
+    recurrences: [
+      { type: 'expense', category: '통신', splits: [{ category: '통신', amount: 30000 }, { category: 'OTT', amount: 20000 }] },
+      { type: 'expense', category: '식비' },
+    ],
+  };
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.catMergeCounts('expense', 'OTT'))), { txCount: 0, recCount: 1 });
 });
 
 /* ---------- confirmCatMerge/openCatMergePicker: 합치기 진입점 와이어링 ---------- */
@@ -7341,6 +7398,23 @@ test('matchRecQuery: 반복이 없거나 category/memo가 없어도 안전하게
   assert.strictEqual(sandbox.matchRecQuery({}, '구독'), false);
   assert.strictEqual(sandbox.matchRecQuery({ category: '구독' }, ''), true);
 });
+/* 분할(splits) 지원 — DB.recurrences가 splits를 담을 수 있게 되면서(app-evolve cycle282 advance)
+ * splitLines(r)로 모든 분할 항목의 category/memo까지 haystack에 모은다(matchTxnQuery가 분할
+ * 거래를 찾는 것과 동일한 이유). */
+test('matchRecQuery: 분할 거래는 최상위 category 외에 두 번째 이후 분할 항목의 카테고리로도 찾을 수 있다', () => {
+  const r = { category: '통신', memo: '결합요금', splits: [{ category: '통신', amount: 30000 }, { category: 'OTT', amount: 20000 }] };
+  assert.strictEqual(sandbox.matchRecQuery(r, 'OTT'), true, '최상위 category엔 없고 두 번째 분할 항목에만 있는 카테고리도 찾아야 함');
+  assert.strictEqual(sandbox.matchRecQuery(r, '통신'), true);
+  assert.strictEqual(sandbox.matchRecQuery(r, '왓챠'), false);
+});
+test('matchRecQuery: 분할 거래는 각 항목의 memo로도 찾을 수 있다', () => {
+  const r = { category: '통신', memo: '결합요금', splits: [{ category: '통신', amount: 30000, memo: 'SKT' }, { category: 'OTT', amount: 20000, memo: '넷플릭스' }] };
+  assert.strictEqual(sandbox.matchRecQuery(r, '넷플릭스'), true, '두 번째 분할 항목의 memo로도 찾아야 함');
+});
+test('matchRecQuery: splits가 없거나 빈 배열이면 기존처럼 최상위 category/memo만 본다(하위호환)', () => {
+  assert.strictEqual(sandbox.matchRecQuery({ category: '구독', memo: '넷플릭스', splits: [] }, '넷플릭스'), true);
+  assert.strictEqual(sandbox.matchRecQuery({ category: '구독', memo: '넷플릭스', splits: null }, '구독'), true);
+});
 
 /* ---------- suggestCategoryForMemo: 거래/반복거래 입력(index.html txMemoInput/recMemoInput)의
  * 메모 기반 카테고리 추천. matchTxnQuery류(includes 부분일치)와 달리 "똑같은 메모"일 때만
@@ -9446,6 +9520,17 @@ test('recHistFieldsChanged: fromAssetId/toAssetId/amount/category/day/freq/start
 test('recHistFieldsChanged: 메모만 바뀌면 false (이력 비영향 필드)', () => {
   const orig = { fromAssetId: 'a1', toAssetId: 'a2', amount: 1000, category: '식비', day: 5, freq: 'monthly', startDate: '2026-01-05', memo: 'm', weekend: 'none' };
   assert.strictEqual(sandbox.recHistFieldsChanged(orig, { ...orig, memo: '다른 메모' }), false);
+});
+/* splits도 amount/category와 동일하게 과거 회차의 집계에 그대로 반영되므로 포함해야 한다
+ * (app-evolve cycle282 advance). editRec()은 JSON.parse(JSON.stringify(r))로 orig와 완전히 다른
+ * 배열 객체를 만들므로 !==(참조 비교)로는 항상 true가 나와 JSON.stringify로 내용을 비교한다. */
+test('recHistFieldsChanged: splits 내용이 바뀌면 true(배열 참조가 달라도 내용이 같으면 false)', () => {
+  const orig = { fromAssetId: 'a1', toAssetId: 'a2', amount: 1000, category: '식비', day: 5, freq: 'monthly', startDate: '2026-01-05', memo: 'm', weekend: 'none', splits: [{ category: '식비', amount: 700 }, { category: '생활용품', amount: 300 }] };
+  const sameSplitsNewArray = JSON.parse(JSON.stringify(orig.splits));
+  assert.strictEqual(sandbox.recHistFieldsChanged(orig, { ...orig, splits: sameSplitsNewArray }), false, '배열 레퍼런스만 다르고 내용이 같으면 변경 아님');
+  assert.strictEqual(sandbox.recHistFieldsChanged(orig, { ...orig, splits: [{ category: '식비', amount: 600 }, { category: '생활용품', amount: 400 }] }), true, '분할 금액이 바뀌면 변경');
+  assert.strictEqual(sandbox.recHistFieldsChanged(orig, { ...orig, splits: undefined }), true, '분할을 끄면(splits 제거) 변경');
+  assert.strictEqual(sandbox.recHistFieldsChanged({ ...orig, splits: undefined }, { ...orig, splits: undefined }), false, 'splits가 둘 다 없으면 변경 아님');
 });
 
 test('splitRecurrenceAt: 원본은 effectiveDate 직전까지로 잘리고 count가 재계산된다', () => {
@@ -16520,17 +16605,172 @@ test('[실행형] splitFieldHTML: 각 분할 항목마다 메모 입력(id=split
   assert.ok(html.includes('oninput="txSplitMemo(0,this)"'), '메모 입력이 txSplitMemo(i,this)로 배선돼야 함');
   assert.ok(html.includes('마트&quot;할인&quot;'), '기존 메모 값을 esc()로 이스케이프해 value에 되돌려줘야 함(따옴표로 인한 속성 깨짐 방지)');
 });
+/* DB.recurrences가 분할을 지원하게 되면서(app-evolve cycle282 advance) splitFieldHTML(d,pfx)가
+ * pfx('rec')에 따라 rec* 핸들러 이름으로 onclick/oninput을 배선하는지 확인한다 — renderRecSheet가
+ * splitFieldHTML(d,'rec')을 그대로 호출한다. */
+test('[실행형] splitFieldHTML: pfx="rec"를 넘기면 onclick/oninput이 rec* 핸들러로 배선된다', () => {
+  const ctx = {
+    esc: (s) => String(s == null ? '' : s),
+    comma: (n) => String(n),
+    svg: () => '',
+    catAv: () => 'a-food',
+    catGlyph: () => '',
+  };
+  vm.createContext(ctx);
+  vm.runInContext(extractFunction('splitFieldHTML'), ctx, { filename: 'splitFieldHTML-rec-real' });
+  const d = { type: 'expense', amount: 50000, splits: [{ category: '통신', amount: 30000, memo: '' }, { category: 'OTT', amount: 20000, memo: '' }] };
+  const html = ctx.splitFieldHTML(d, 'rec');
+  assert.ok(html.includes('onclick="recToggleSplit()"'), '일반 입력으로 전환 버튼이 recToggleSplit()으로 배선돼야 함');
+  assert.ok(html.includes('onclick="recSplitAdd()"'), '분할 추가 버튼이 recSplitAdd()로 배선돼야 함');
+  assert.ok(html.includes('onclick="recSplitOpenCat(0)"'), '카테고리 피커가 recSplitOpenCat(i)로 배선돼야 함');
+  assert.ok(html.includes('oninput="recSplitAmt(0,this)"'), '금액 입력이 recSplitAmt(i,this)로 배선돼야 함');
+  assert.ok(html.includes('oninput="recSplitMemo(0,this)"'), '메모 입력이 recSplitMemo(i,this)로 배선돼야 함');
+  assert.ok(html.includes('onclick="recSplitRemove(0)"') || !html.includes('삭제'), '항목이 2개뿐이면 삭제 버튼 자체가 없어도 됨(splits.length>2 가드)');
+  assert.ok(!html.includes('txToggleSplit') && !html.includes('txSplitAdd'), 'tx* 핸들러가 섞여 들어가면 안 됨');
+});
+/* ---------- recToggleSplit/recSplitAdd/recSplitRemove/recSplitOpenCat/recSplitAmt/recSplitMemo:
+ * txToggleSplit/txSplitAdd/txSplitRemove/txSplitOpenCat/txSplitAmt/txSplitMemo와 완전히 동일한
+ * 규칙을 recDraft 기준으로 재구현한 반복 관리 화면의 분할 입력(app-evolve cycle282 advance). ---------- */
+test('[실행형] recToggleSplit: 분할을 켜면 현재 카테고리·금액을 첫 항목으로, 아직 안 쓴 카테고리를 두 번째 항목으로 삼아 최소 2개로 시작한다', () => {
+  const ctx = {
+    $: () => null,
+    recDraft: { type: 'expense', category: '통신', amount: 30000 },
+    DB: { categories: { expense: ['통신', 'OTT', '교통'] } },
+    renderRecSheet: () => {},
+  };
+  vm.createContext(ctx);
+  vm.runInContext(
+    [extractFunction('num'), extractFunction('syncRecInputs'), extractFunction('catListOf'), extractFunction('recToggleSplit')].join('\n'),
+    ctx, { filename: 'recToggleSplit-on-real' }
+  );
+  ctx.recToggleSplit();
+  assert.strictEqual(ctx.recDraft.splits.length, 2);
+  assert.strictEqual(ctx.recDraft.splits[0].category, '통신');
+  assert.strictEqual(ctx.recDraft.splits[0].amount, 30000);
+  assert.strictEqual(ctx.recDraft.splits[0].memo, '');
+  assert.strictEqual(ctx.recDraft.splits[1].category, 'OTT', '아직 안 쓴 카테고리를 두 번째 항목으로 삼아야 함');
+  assert.strictEqual(ctx.recDraft.splits[1].amount, 0);
+  assert.strictEqual(ctx.recDraft.splits[1].memo, '');
+});
+test('[실행형] recToggleSplit: 분할이 켜진 상태에서 다시 부르면 첫 항목의 카테고리를 최상위로 되돌리고 splits를 지운다', () => {
+  const ctx = {
+    $: () => null,
+    recDraft: { type: 'expense', category: '통신', amount: 50000, splits: [{ category: 'OTT', amount: 30000 }, { category: '교통', amount: 20000 }] },
+    DB: { categories: { expense: ['통신', 'OTT', '교통'] } },
+    renderRecSheet: () => {},
+  };
+  vm.createContext(ctx);
+  vm.runInContext(
+    [extractFunction('num'), extractFunction('syncRecInputs'), extractFunction('catListOf'), extractFunction('recToggleSplit')].join('\n'),
+    ctx, { filename: 'recToggleSplit-off-real' }
+  );
+  ctx.recToggleSplit();
+  assert.strictEqual(ctx.recDraft.category, 'OTT', '최상위 category는 첫 분할 항목으로 되돌아가야 함');
+  assert.strictEqual(ctx.recDraft.splits, undefined, 'splits는 지워져야 함');
+});
+test('[실행형] recSplitAdd: 분할 항목을 추가하기 전에 syncRecInputs()를 불러, 방금 타이핑한 전체 금액/메모가 되돌아가지 않는다', () => {
+  const ctx = {
+    $: (id) => ctx._els[id] || null,
+    _els: {},
+    _formScroll: 0,
+    recDraft: {
+      type: 'expense', category: '통신', amount: 30000, memo: '결합요금',
+      splits: [{ category: '통신', amount: 30000, memo: '' }, { category: 'OTT', amount: 0, memo: '' }],
+    },
+    DB: { categories: { expense: ['통신', 'OTT', '교통'] } },
+    renderRecSheet: () => {},
+  };
+  vm.createContext(ctx);
+  vm.runInContext(
+    [extractFunction('num'), extractFunction('syncRecInputs'), extractFunction('catListOf'), extractFunction('recSplitAdd')].join('\n'),
+    ctx, { filename: 'recSplitAdd-real' }
+  );
+  ctx._els.rAmt = { value: '80,000' };
+  ctx._els.rMemo = { value: '결합요금(변경)' };
+  ctx.recSplitAdd();
+  assert.strictEqual(ctx.recDraft.amount, 80000, 'recSplitAdd가 분할 추가 전에 syncRecInputs를 불러 방금 타이핑한 금액을 반영했어야 함');
+  assert.strictEqual(ctx.recDraft.memo, '결합요금(변경)', 'recSplitAdd가 분할 추가 전에 syncRecInputs를 불러 방금 타이핑한 메모를 반영했어야 함');
+  assert.strictEqual(ctx.recDraft.splits.length, 3, '분할 항목이 1개 늘어야 함');
+  assert.strictEqual(ctx.recDraft.splits[2].category, '교통', '아직 안 쓴 카테고리를 다음 항목으로 추가해야 함');
+});
+test('[실행형] recSplitRemove: 항목을 삭제하기 전에 syncRecInputs()를 불러, 방금 타이핑한 전체 금액/메모가 되돌아가지 않는다', () => {
+  const ctx = {
+    $: (id) => ctx._els[id] || null,
+    _els: {},
+    _formScroll: 0,
+    recDraft: {
+      type: 'expense', category: '통신', amount: 30000, memo: '결합요금',
+      splits: [{ category: '통신', amount: 10000, memo: '' }, { category: 'OTT', amount: 20000, memo: '' }, { category: '교통', amount: 0, memo: '' }],
+    },
+    renderRecSheet: () => {},
+  };
+  vm.createContext(ctx);
+  vm.runInContext(
+    [extractFunction('num'), extractFunction('syncRecInputs'), extractFunction('recSplitRemove')].join('\n'),
+    ctx, { filename: 'recSplitRemove-real' }
+  );
+  ctx._els.rAmt = { value: '30,000' };
+  ctx._els.rMemo = { value: '결합요금(변경)' };
+  ctx.recSplitRemove(2);
+  assert.strictEqual(ctx.recDraft.amount, 30000, 'recSplitRemove가 항목 삭제 전에 syncRecInputs를 불러 방금 타이핑한 금액을 반영했어야 함');
+  assert.strictEqual(ctx.recDraft.memo, '결합요금(변경)', 'recSplitRemove가 항목 삭제 전에 syncRecInputs를 불러 방금 타이핑한 메모를 반영했어야 함');
+  assert.strictEqual(ctx.recDraft.splits.length, 2, '지정한 항목이 삭제되어야 함');
+});
+test('[실행형] recSplitOpenCat: 지정한 분할 항목의 카테고리를 피커로 바꿀 수 있게 openCatPicker를 배선한다', () => {
+  const ctx = {
+    $: () => null,
+    recDraft: { type: 'expense', splits: [{ category: '통신', amount: 30000 }, { category: 'OTT', amount: 20000 }] },
+    renderRecSheet: () => {},
+    openCatPicker: (opts) => { ctx._pickerOpts = opts; },
+  };
+  vm.createContext(ctx);
+  vm.runInContext(
+    [extractFunction('syncRecInputs'), extractFunction('num'), extractFunction('recSplitOpenCat')].join('\n'),
+    ctx, { filename: 'recSplitOpenCat-real' }
+  );
+  ctx.recSplitOpenCat(1);
+  assert.strictEqual(ctx._pickerOpts.kind, 'expense');
+  assert.strictEqual(ctx._pickerOpts.current, 'OTT');
+  ctx._pickerOpts.onPick('넷플릭스');
+  assert.strictEqual(ctx.recDraft.splits[1].category, '넷플릭스', 'onPick이 지정한 분할 항목의 category를 바꿔야 함');
+});
+test('[실행형] recSplitAmt: 금액을 반영한 뒤 splitHintUpdate를 호출해 재렌더 없이 힌트를 즉시 갱신한다', () => {
+  const ctx = {
+    $: (id) => ctx._els[id] || null,
+    _els: {},
+    comma: (n) => Math.round(n || 0).toLocaleString('ko-KR'),
+    recDraft: { amount: 50000, splits: [{ category: '통신', amount: 30000 }, { category: 'OTT', amount: 0 }] },
+  };
+  vm.createContext(ctx);
+  vm.runInContext(
+    [extractFunction('num'), extractFunction('fmtAmt'), extractFunction('splitHintUpdate'), extractFunction('recSplitAmt')].join('\n'),
+    ctx, { filename: 'recSplitAmt-real' }
+  );
+  const hintEl = { textContent: '', style: { color: '' } };
+  ctx._els.splitHint = hintEl;
+  const amtEl = { value: '20,000' };
+  ctx.recSplitAmt(1, amtEl);
+  assert.strictEqual(ctx.recDraft.splits[1].amount, 20000, '입력값을 해당 split의 amount에 반영해야 함');
+  assert.strictEqual(hintEl.textContent, '합계가 전체 금액과 일치해요', 'renderRecSheet를 다시 부르지 않고도 힌트가 최신 합계로 갱신돼야 함');
+});
+test('[실행형] recSplitMemo: 입력값을 해당 split의 memo에 반영한다', () => {
+  const ctx = { recDraft: { splits: [{ category: '통신', amount: 30000, memo: '' }, { category: 'OTT', amount: 20000, memo: '' }] } };
+  vm.createContext(ctx);
+  vm.runInContext(extractFunction('recSplitMemo'), ctx, { filename: 'recSplitMemo-real' });
+  ctx.recSplitMemo(1, { value: '넷플릭스' });
+  assert.strictEqual(ctx.recDraft.splits[1].memo, '넷플릭스');
+});
 /* ---------- splitHintUpdate/txSplitAmt: 분할 금액 입력 중 합계 힌트가 실시간으로 갱신되지 않던 공백
  * (app-evolve cycle274 critique/advance) — txSplitAmt(i,el)는 커서 위치를 지키려고 renderTxSheet()를
  * 다시 부르지 않는데, '합계가 모자라요/많아요/일치해요' 힌트(splitFieldHTML의 .psub)는 그 전체
- * 재렌더 때만 다시 계산됐다. endCondFields의 EndHint와 같은 패턴으로 id="txSplitHint"를 달고
+ * 재렌더 때만 다시 계산됐다. endCondFields의 EndHint와 같은 패턴으로 id="splitHint"를 달고
  * splitHintUpdate(d)가 textContent/색상만 즉시 갱신하도록 고쳤다. */
 test('[실행형] splitHintUpdate: 합계가 전체 금액과 일치하면 힌트 문구와 색상을 기본으로 되돌린다', () => {
   const ctx = { $: (id) => ctx._els[id] || null, _els: {}, comma: (n) => Math.round(n || 0).toLocaleString('ko-KR') };
   vm.createContext(ctx);
   vm.runInContext(extractFunction('splitHintUpdate'), ctx, { filename: 'splitHintUpdate-match-real' });
   const el = { textContent: '이전 문구', style: { color: 'var(--expense)' } };
-  ctx._els.txSplitHint = el;
+  ctx._els.splitHint = el;
   ctx.splitHintUpdate({ amount: 5000, splits: [{ amount: 3000 }, { amount: 2000 }] });
   assert.strictEqual(el.textContent, '합계가 전체 금액과 일치해요', '합계가 맞으면 일치 문구로 갱신해야 함');
   assert.strictEqual(el.style.color, '', '합계가 맞으면 경고색을 지워야 함');
@@ -16540,7 +16780,7 @@ test('[실행형] splitHintUpdate: 합계가 모자라거나 많으면 차액과
   vm.createContext(ctx);
   vm.runInContext(extractFunction('splitHintUpdate'), ctx, { filename: 'splitHintUpdate-diff-real' });
   const el = { textContent: '', style: { color: '' } };
-  ctx._els.txSplitHint = el;
+  ctx._els.splitHint = el;
   ctx.splitHintUpdate({ amount: 5000, splits: [{ amount: 3000 }, { amount: 1000 }] });
   assert.strictEqual(el.textContent, '합계가 전체 금액과 1,000원 모자라요', '모자라는 차액을 그대로 보여줘야 함');
   assert.strictEqual(el.style.color, 'var(--expense)', '합계가 안 맞으면 경고색을 입혀야 함');
@@ -16548,7 +16788,7 @@ test('[실행형] splitHintUpdate: 합계가 모자라거나 많으면 차액과
   assert.strictEqual(el.textContent, '합계가 전체 금액과 1,000원 많아요', '넘치는 차액도 그대로 보여줘야 함');
   assert.strictEqual(el.style.color, 'var(--expense)', '넘칠 때도 경고색을 유지해야 함');
 });
-test('[실행형] splitHintUpdate: #txSplitHint가 없거나(다른 시트) splits가 배열이 아니면 아무 것도 하지 않는다', () => {
+test('[실행형] splitHintUpdate: #splitHint가 없거나(다른 시트) splits가 배열이 아니면 아무 것도 하지 않는다', () => {
   const ctx = { $: () => null, comma: (n) => String(n) };
   vm.createContext(ctx);
   vm.runInContext(extractFunction('splitHintUpdate'), ctx, { filename: 'splitHintUpdate-noop-real' });
@@ -16567,7 +16807,7 @@ test('[실행형] txSplitAmt: 금액을 반영한 뒤 splitHintUpdate를 호출�
     ctx, { filename: 'txSplitAmt-real' }
   );
   const hintEl = { textContent: '', style: { color: '' } };
-  ctx._els.txSplitHint = hintEl;
+  ctx._els.splitHint = hintEl;
   const amtEl = { value: '2,000' };
   ctx.txSplitAmt(1, amtEl);
   assert.strictEqual(ctx.txDraft.splits[1].amount, 2000, '입력값을 해당 split의 amount에 반영해야 함');
@@ -16669,6 +16909,68 @@ test('saveRec: 시작일이 RANGE_TO 이후이면 토스트만 뜨고 저장되�
   sandbox.saveRec();
   assert.strictEqual(sandbox.DB.recurrences.length, 0, 'RANGE_TO 이후 시작일은 저장되면 안 됨');
   assert.ok(sandbox.toastCalls.some(m => m.includes('2028-06-15')), '상한 날짜를 알려주는 토스트가 떠야 함');
+});
+
+/* ---------- saveRec: 분할 입력(여러 카테고리로 나누기) 검증 (app-evolve cycle282 advance) ----------
+ * saveTx와 동일한 불변식(amount는 분할 여부와 무관하게 늘 전체 합계) — DB.recurrences가 분할을
+ * 지원하게 되면서 반복 관리 화면(openRecManage/saveRec)에도 같은 검증을 추가했다. */
+test('saveRec: 분할 항목의 금액 합이 전체 금액과 다르면 토스트만 뜨고 저장되지 않는다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { recurrences: [], settings: {} };
+  sandbox.recDraft = {
+    id: null, type: 'expense', category: '통신', memo: '결합요금', amount: 50000,
+    fromAssetId: 'a1', toAssetId: null, freq: 'monthly', day: 10,
+    startDate: '2026-01-15', endDate: null, count: null, weekend: 'onDay',
+    splits: [{ category: '통신', amount: 30000 }, { category: 'OTT', amount: 10000 }], // 합계 40000 ≠ 50000
+  };
+  sandbox.toastCalls = [];
+  sandbox.saveRec();
+  assert.strictEqual(sandbox.DB.recurrences.length, 0, '합계가 다르면 저장되면 안 됨');
+  assert.ok(sandbox.toastCalls.includes('분할 금액의 합이 전체 금액과 달라요'));
+});
+test('saveRec: 분할 항목에 카테고리가 비어있으면 토스트만 뜨고 저장되지 않는다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { recurrences: [], settings: {} };
+  sandbox.recDraft = {
+    id: null, type: 'expense', category: '통신', memo: '결합요금', amount: 50000,
+    fromAssetId: 'a1', toAssetId: null, freq: 'monthly', day: 10,
+    startDate: '2026-01-15', endDate: null, count: null, weekend: 'onDay',
+    splits: [{ category: '통신', amount: 30000 }, { category: '', amount: 20000 }],
+  };
+  sandbox.toastCalls = [];
+  sandbox.saveRec();
+  assert.strictEqual(sandbox.DB.recurrences.length, 0);
+  assert.ok(sandbox.toastCalls.includes('분할 항목의 카테고리를 선택해 주세요'));
+});
+test('saveRec: 분할 항목에 금액이 비어있으면(0) 토스트만 뜨고 저장되지 않는다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { recurrences: [], settings: {} };
+  sandbox.recDraft = {
+    id: null, type: 'expense', category: '통신', memo: '결합요금', amount: 50000,
+    fromAssetId: 'a1', toAssetId: null, freq: 'monthly', day: 10,
+    startDate: '2026-01-15', endDate: null, count: null, weekend: 'onDay',
+    splits: [{ category: '통신', amount: 50000 }, { category: 'OTT', amount: 0 }],
+  };
+  sandbox.toastCalls = [];
+  sandbox.saveRec();
+  assert.strictEqual(sandbox.DB.recurrences.length, 0);
+  assert.ok(sandbox.toastCalls.includes('분할 항목의 금액을 입력해 주세요'));
+});
+test('saveRec: 분할 항목의 합이 전체 금액과 같으면 정상 저장되고, 최상위 category는 첫 항목으로 설정된다(하위호환 fallback)', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { recurrences: [], settings: {} };
+  sandbox.recDraft = {
+    id: null, type: 'expense', category: '통신', memo: '결합요금', amount: 50000,
+    fromAssetId: 'a1', toAssetId: null, freq: 'monthly', day: 10,
+    startDate: '2026-01-15', endDate: null, count: null, weekend: 'onDay',
+    splits: [{ category: '통신', amount: 30000 }, { category: 'OTT', amount: 20000 }],
+  };
+  sandbox.saveRec();
+  assert.strictEqual(sandbox.DB.recurrences.length, 1);
+  const r = sandbox.DB.recurrences[0];
+  assert.strictEqual(r.amount, 50000, '최상위 amount는 분할 여부와 무관하게 전체 합계로 유지되어야 함');
+  assert.strictEqual(r.category, '통신', '최상위 category는 첫 항목으로 설정되어야 함');
+  assert.deepStrictEqual(r.splits, [{ category: '통신', amount: 30000 }, { category: 'OTT', amount: 20000 }]);
 });
 
 /* ---------- balancesUpTo: 단일 슬롯 캐시를 다중 슬롯(Map)으로 바꾼 회귀 테스트 ----------
@@ -16897,6 +17199,26 @@ test('expandRec: _recCache를 비우면 새로 추가된 반복거래가 다음 
   assert.strictEqual(sandbox.expandRec('2026-06-01', '2026-06-01').length, 1, '캐시를 비우지 않으면 새 반복거래가 반영되면 안 됨(캐시 동작 확인)');
   sandbox._recCache.clear();
   assert.strictEqual(sandbox.expandRec('2026-06-01', '2026-06-01').length, 2, '캐시를 비운 뒤에는 새 반복거래가 반영되어야 함');
+});
+/* DB.recurrences가 분할(splits)을 지원하게 되면서(app-evolve cycle282 advance) expandRec()이 매
+ * 회차 가상 인스턴스에도 r.splits를 그대로 실어줘야 splitLines() 기반 집계·검색(expenseByCat/
+ * matchTxnQuery 등)이 수정 없이 분할을 인식한다. */
+test('expandRec: r.splits가 있으면 매 회차 가상 인스턴스에도 그대로 실어준다', () => {
+  sandbox._recCache.clear();
+  sandbox.DB = {
+    recurrences: [{ id: 'r1', active: true, freq: 'monthly', day: 1, startDate: '2026-01-01', endDate: null, weekend: 'none', type: 'expense', category: '통신', memo: '결합요금', amount: 50000, skip: [], edits: {}, splits: [{ category: '통신', amount: 30000 }, { category: 'OTT', amount: 20000 }] }],
+  };
+  const out = sandbox.expandRec('2026-06-01', '2026-06-01');
+  assert.strictEqual(out.length, 1);
+  assert.deepStrictEqual(out[0].splits, [{ category: '통신', amount: 30000 }, { category: 'OTT', amount: 20000 }]);
+});
+test('expandRec: r.splits가 없으면(하위호환) 가상 인스턴스의 splits도 undefined다', () => {
+  sandbox._recCache.clear();
+  sandbox.DB = {
+    recurrences: [{ id: 'r1', active: true, freq: 'monthly', day: 1, startDate: '2026-01-01', endDate: null, weekend: 'none', type: 'expense', category: '식비', memo: '', amount: 10000, skip: [], edits: {} }],
+  };
+  const out = sandbox.expandRec('2026-06-01', '2026-06-01');
+  assert.strictEqual(out[0].splits, undefined);
 });
 
 /* ---------- updateBalanceAdjust: 자산 수정 화면에서 채워진 잔액 캐시가 조정 내역

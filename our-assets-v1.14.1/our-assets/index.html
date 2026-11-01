@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.308';
+const APP_VERSION='1.47.309';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2715,6 +2715,7 @@ function expandRec(from,to){
    const ed=(r.edits||{})[d]||{};
    out.push({id:'rec_'+r.id+'_'+d,recId:r.id,date:d,type:r.type,category:r.category,
      memo:ed.memo!=null?ed.memo:r.memo,amount:ed.amount!=null?ed.amount:r.amount,
+     splits:ed.splits!==undefined?ed.splits:r.splits, /* r.splits가 있으면 매 회차 가상 인스턴스에 그대로 실어, splitLines() 기반 집계·검색(expenseByCat/matchTxnQuery 등)이 수정 없이 분할을 인식하게 한다(app-evolve cycle282 advance). ed.splits는 아직 개별 회차 수정(recApply/recSave)에서 쓰지 않아 항상 undefined라 r.splits로 떨어지지만, memo/amount와 동일한 오버라이드 패턴을 미리 열어둔다 */
      fromAssetId:r.fromAssetId,toAssetId:r.toAssetId,fromAssetName:r.fromAssetName,toAssetName:r.toAssetName,isRec:true});
   });
  });
@@ -5006,8 +5007,10 @@ function renderTxSheet(){
  const rpt=showRepeat&&d.repeat;
  const typeSeg=[['expense','지출'],['income','수입'],['transfer','이체'],['saving','저축']].map(([v,l])=>`<button class="${d.type===v?'on':''}" aria-pressed="${d.type===v}" onclick="txType('${v}')">${l}</button>`).join('');
  /* 분할 입력(여러 카테고리로 나누기): d.splits=[{category,amount,memo?}]가 2개 이상이면 분할
-    모드. 반복(rpt)이 켜진 동안엔 토글 자체를 숨긴다 — 반복거래(DB.recurrences)는 카테고리/금액이
-    단일 쌍으로 고정된 전혀 다른 스키마라 분할을 담을 자리가 없다(app-evolve cycle198 critique/advance). */
+    모드. 반복(rpt)이 켜진 동안엔 토글 자체를 숨긴다 — 거래 입력 중 반복을 켜는 이 간단 경로는
+    범위를 좁혀 분할을 지원하지 않는다(txToggleRepeat가 켜는 순간 되돌림, app-evolve cycle198
+    critique/advance). DB.recurrences 자체는 반복 관리 화면(openRecManage/saveRec)에서 분할을
+    지원한다(app-evolve cycle282 advance) — 저장 후 반복 관리에서 분할을 추가할 수 있다. */
  const splitOn=!rpt&&d.type!=='transfer'&&Array.isArray(d.splits)&&d.splits.length>=2;
  const catField=d.type==='transfer'?'':(splitOn?splitFieldHTML(d):
   `<div class="field"><label>카테고리</label><button class="pick" onclick="txOpenCat()"><div class="pav ${catAv(d.type)}">${catGlyph(d.type,d.category,null,'tag')}</div><div class="pbody"><div class="pn">${esc(d.category)}</div></div><div class="pc">${svg('chevR')}</div></button></div>${rpt?'':`<div style="margin:2px 0 14px;text-align:right"><button type="button" class="txt-btn" onclick="txToggleSplit()">여러 카테고리로 나누기</button></div>`}`);
@@ -5071,26 +5074,30 @@ function txCatSuggestUpdate(){
  if(cat!==_txCatSuggAnnounced){announceLive(`카테고리 추천: ${cat}`);_txCatSuggAnnounced=cat}
 }
 function txApplyCatSuggest(cat){txDraft.category=cat;const box=$('txCatSuggest');if(box){box.style.display='none';box.innerHTML='';box.onclick=null}_txCatSuggAnnounced=null;renderTxSheet()}
-/* 분할 입력(여러 카테고리로 나누기) UI — txDraft.splits=[{category,amount,memo?}]를 그려낸다.
+/* 분할 입력(여러 카테고리로 나누기) UI — d.splits=[{category,amount,memo?}]를 그려낸다.
  * 모든 조각은 앱에 이미 있는 .field/.pick/.field-clear/.fc-x/.txt-btn 컴포넌트만 재사용해
- * 새 CSS 없이도 나머지 입력 필드(카테고리 피커·금액 입력)와 똑같은 모양으로 보이게 한다. */
-function splitFieldHTML(d){
+ * 새 CSS 없이도 나머지 입력 필드(카테고리 피커·금액 입력)와 똑같은 모양으로 보이게 한다.
+ * pfx('tx'|'rec')로 onclick 핸들러 이름을 바꿔 txDraft/recDraft 양쪽에서 재사용한다 — 거래 폼과
+ * 반복 관리 폼은 시트 하나만 열려 있어 겹칠 일이 없으므로 id(splitAmt0 등)는 그대로 공유해도
+ * 된다(app-evolve cycle282 advance, 반복거래 분할 지원). */
+function splitFieldHTML(d,pfx){
+ pfx=pfx||'tx';
  const total=d.splits.reduce((s,x)=>s+(Number(x.amount)||0),0);
  const diff=(d.amount||0)-total;
- const rows=d.splits.map((s,i)=>`<div class="field" style="margin-bottom:8px"><label>항목 ${i+1}${d.splits.length>2?` <button type="button" class="txt-btn" style="padding:2px 6px" onclick="txSplitRemove(${i})" aria-label="항목 ${i+1} 삭제">${svg('trash',14)} 삭제</button>`:''}</label>
-   <button class="pick" onclick="txSplitOpenCat(${i})"><div class="pav ${catAv(d.type)}">${catGlyph(d.type,s.category,null,'tag')}</div><div class="pbody"><div class="pn">${esc(s.category||'카테고리 선택')}</div></div><div class="pc">${svg('chevR')}</div></button>
-   <div class="field-clear" style="margin-top:6px"><input id="splitAmt${i}" class="amount-in num" inputmode="numeric" value="${s.amount?comma(s.amount):''}" placeholder="0" aria-label="항목 ${i+1} 금액" oninput="txSplitAmt(${i},this)"><button type="button" class="fc-x" aria-label="항목 ${i+1} 금액 지우기" onclick="clrInput('splitAmt${i}')">✕</button></div>
-   <div class="field-clear" style="margin-top:6px"><input id="splitMemo${i}" value="${esc(s.memo||'')}" placeholder="항목 ${i+1} 메모(선택)" aria-label="항목 ${i+1} 메모" oninput="txSplitMemo(${i},this)"><button type="button" class="fc-x" aria-label="항목 ${i+1} 메모 지우기" onclick="clrInput('splitMemo${i}')">✕</button></div>
+ const rows=d.splits.map((s,i)=>`<div class="field" style="margin-bottom:8px"><label>항목 ${i+1}${d.splits.length>2?` <button type="button" class="txt-btn" style="padding:2px 6px" onclick="${pfx}SplitRemove(${i})" aria-label="항목 ${i+1} 삭제">${svg('trash',14)} 삭제</button>`:''}</label>
+   <button class="pick" onclick="${pfx}SplitOpenCat(${i})"><div class="pav ${catAv(d.type)}">${catGlyph(d.type,s.category,null,'tag')}</div><div class="pbody"><div class="pn">${esc(s.category||'카테고리 선택')}</div></div><div class="pc">${svg('chevR')}</div></button>
+   <div class="field-clear" style="margin-top:6px"><input id="splitAmt${i}" class="amount-in num" inputmode="numeric" value="${s.amount?comma(s.amount):''}" placeholder="0" aria-label="항목 ${i+1} 금액" oninput="${pfx}SplitAmt(${i},this)"><button type="button" class="fc-x" aria-label="항목 ${i+1} 금액 지우기" onclick="clrInput('splitAmt${i}')">✕</button></div>
+   <div class="field-clear" style="margin-top:6px"><input id="splitMemo${i}" value="${esc(s.memo||'')}" placeholder="항목 ${i+1} 메모(선택)" aria-label="항목 ${i+1} 메모" oninput="${pfx}SplitMemo(${i},this)"><button type="button" class="fc-x" aria-label="항목 ${i+1} 메모 지우기" onclick="clrInput('splitMemo${i}')">✕</button></div>
   </div>`).join('');
  const hint=diff===0?'합계가 전체 금액과 일치해요':`합계가 전체 금액과 ${comma(Math.abs(diff))}원 ${diff>0?'모자라요':'많아요'}`;
- return `<div class="field" style="margin-bottom:4px"><label>카테고리 분할 <button type="button" class="txt-btn" style="padding:2px 6px" onclick="txToggleSplit()">일반 입력으로</button></label></div>
+ return `<div class="field" style="margin-bottom:4px"><label>카테고리 분할 <button type="button" class="txt-btn" style="padding:2px 6px" onclick="${pfx}ToggleSplit()">일반 입력으로</button></label></div>
   ${rows}
-  <button type="button" class="btn btn-soft" style="margin-bottom:8px" onclick="txSplitAdd()">${svg('plus')} 분할 추가</button>
-  <div class="psub" id="txSplitHint" style="margin:-4px 0 14px;${diff!==0?'color:var(--expense)':''}">${hint}</div>`;
+  <button type="button" class="btn btn-soft" style="margin-bottom:8px" onclick="${pfx}SplitAdd()">${svg('plus')} 분할 추가</button>
+  <div class="psub" id="splitHint" style="margin:-4px 0 14px;${diff!==0?'color:var(--expense)':''}">${hint}</div>`;
 }
 /* 분할 금액 입력마다 합계 힌트만 즉시 갱신(재렌더 없이, 커서 위치 보존) — endCondFields의 EndHint와 동일한 패턴 */
 function splitHintUpdate(d){
- const el=$('txSplitHint');if(!el||!Array.isArray(d.splits))return;
+ const el=$('splitHint');if(!el||!Array.isArray(d.splits))return;
  const total=d.splits.reduce((s,x)=>s+(Number(x.amount)||0),0);
  const diff=(d.amount||0)-total;
  el.textContent=diff===0?'합계가 전체 금액과 일치해요':`합계가 전체 금액과 ${comma(Math.abs(diff))}원 ${diff>0?'모자라요':'많아요'}`;
@@ -5143,7 +5150,7 @@ function txOpenAsset(which){_applyOpenAsset(txDraft,which,syncTxInputs,renderTxS
 function txType(t){if(navigator.vibrate)navigator.vibrate(6);syncTxInputs();_applyType(txDraft,t);renderTxSheet()}
 function txToggleRepeat(){syncTxInputs();txDraft.repeat=!txDraft.repeat;
  if(txDraft.repeat&&(txDraft.freq==='monthly'||!txDraft.freq)&&!txDraft.day)txDraft.day=Number(String(txDraft.date).slice(8,10))||1;
- if(txDraft.repeat){if(txDraft.splits&&txDraft.splits.length)txDraft.category=txDraft.splits[0].category||txDraft.category;delete txDraft.splits} /* 반복거래(DB.recurrences)는 분할을 담을 자리가 없는 스키마라 반복을 켜면 분할을 되돌림 */
+ if(txDraft.repeat){if(txDraft.splits&&txDraft.splits.length)txDraft.category=txDraft.splits[0].category||txDraft.category;delete txDraft.splits} /* DB.recurrences 자체는 이제 반복 관리 화면(openRecManage/saveRec)에서 분할을 지원하지만(app-evolve cycle282 advance), 거래 입력 중 반복을 켜는 이 간단 경로는 범위를 좁혀 분할을 되돌린다 — 필요하면 저장 후 반복 관리에서 분할을 추가할 수 있다 */
  renderTxSheet()}
 function txFreq(v){syncTxInputs();_applyFreq(txDraft,txDraft.date,v);recalcEndCond(txDraft,txDraft.date);renderTxSheet()}
 function txDayInput(el){const v=(el.value||'').replace(/[^0-9]/g,'').slice(0,2);if(el.value!==v)el.value=v;txDraft.day=v===''?'':Number(v);dayWarn('tx',v);if(v!=='')recalcEndCond(txDraft,txDraft.date)}
@@ -5271,7 +5278,7 @@ function saveTx(){
  if(d.type==='income'&&!d.toAssetId){toast('자산을 선택해 주세요');return}
  if(d.type==='expense')d.toAssetId=null;else if(d.type==='income')d.fromAssetId=null;
  if(!d.id&&d.repeat){ /* 반복 ON → 반복 항목으로 저장 (일회성 내역 대신) */
-  delete d.splits; /* DB.recurrences는 분할을 담을 자리가 없는 스키마(txToggleRepeat이 이미 지우지만 방어적으로 한 번 더) */
+  delete d.splits; /* 거래 입력 중 반복을 켜는 이 경로는 분할을 되돌린다(txToggleRepeat이 이미 지우지만 방어적으로 한 번 더) — DB.recurrences 자체는 반복 관리 화면(saveRec)에서 분할을 지원한다(app-evolve cycle282 advance) */
   const cat=d.type==='transfer'?'이체':d.category;
   const freq=d.freq||'monthly';
   if(freq==='monthly'&&d.day!=='last'){const m=clampDay(d);if(m)toast(m)}
@@ -5424,15 +5431,18 @@ function duplicateRec(id){
 function syncRecInputs(){const _mm=$('rMemo');if(_mm)recDraft.memo=_mm.value;const sh=$('sheetScroll');if(sh)_formScroll=sh.scrollTop;const a=$('rAmt'),s=$('rStart');if(a)recDraft.amount=num(a);if(s&&s.value)recDraft.startDate=s.value}
 function recOpenCat(){_applyOpenCat(recDraft,syncRecInputs,renderRecSheet)}
 /* txMemoInput/txCatSuggestUpdate와 동일한 패턴(위 주석 참고) — 반복거래 입력에도 같은 메모 기반
- * 카테고리 추천을 배선한다(app-evolve cycle270 advance). recDraft는 분할을 담을 자리가 없는
- * 스키마라 splitOn 가드가 필요 없다. _recCatSuggAnnounced도 txCatSuggestUpdate와 동일한 이유로
- * 추천이 바뀔 때만 announceLive()를 부른다(app-evolve cycle272 develop). */
+ * 카테고리 추천을 배선한다(app-evolve cycle270 advance). DB.recurrences가 분할(splits)을
+ * 지원하게 되면서(app-evolve cycle282 advance) txCatSuggestUpdate와 동일하게 splitOn 가드가
+ * 필요해졌다 — 분할 입력 중엔 recDraft.category 자체가 화면에 안 보이므로 추천도 끈다.
+ * _recCatSuggAnnounced도 txCatSuggestUpdate와 동일한 이유로 추천이 바뀔 때만 announceLive()를
+ * 부른다(app-evolve cycle272 develop). */
 let _recCatSuggT=null,_recCatSuggAnnounced=null;
 function recMemoInput(el){recDraft.memo=el.value;clearTimeout(_recCatSuggT);_recCatSuggT=setTimeout(recCatSuggestUpdate,220)}
 function recCatSuggestUpdate(){
  const box=$('recCatSuggest');if(!box)return;
  const d=recDraft;
- const cat=(d.type==='transfer'||d._catUserTouched)?null:suggestCategoryForMemo(d.memo,DB.txns,d.type);
+ const splitOn=Array.isArray(d.splits)&&d.splits.length>=2;
+ const cat=(d.type==='transfer'||splitOn||d._catUserTouched)?null:suggestCategoryForMemo(d.memo,DB.txns,d.type);
  if(!cat||cat===d.category){box.style.display='none';box.innerHTML='';box.onclick=null;_recCatSuggAnnounced=null;return}
  box.innerHTML=`<button type="button" class="txt-btn">${svg('tag')}추천: ${esc(cat)} · 적용</button>`;
  box.onclick=()=>recApplyCatSuggest(cat);
@@ -5441,6 +5451,40 @@ function recCatSuggestUpdate(){
 }
 function recApplyCatSuggest(cat){recDraft.category=cat;const box=$('recCatSuggest');if(box){box.style.display='none';box.innerHTML='';box.onclick=null}_recCatSuggAnnounced=null;renderRecSheet()}
 function recOpenAsset(which){_applyOpenAsset(recDraft,which,syncRecInputs,renderRecSheet)}
+/* 반복 관리 화면의 분할 입력(여러 카테고리로 나누기) — txToggleSplit/txSplitAdd/txSplitRemove/
+ * txSplitOpenCat/txSplitAmt/txSplitMemo와 완전히 동일한 규칙을 recDraft 기준으로 재구현한다
+ * (splitFieldHTML(d,'rec')이 이 이름들을 그대로 호출한다, app-evolve cycle282 advance critique
+ * 계획). 통신+OTT 결합요금·관리비+주차비 묶음 자동이체처럼 한 반복거래가 여러 카테고리에 걸친
+ * 경우를 '제일 비슷한 카테고리 하나'로 억지로 고르지 않아도 되게 한다. */
+function recToggleSplit(){
+ syncRecInputs();const d=recDraft;
+ if(Array.isArray(d.splits)&&d.splits.length){d.category=d.splits[0].category||d.category;delete d.splits}
+ else{
+  const cats=catListOf(d.type);
+  const first=d.category||cats[0]||'기타';
+  const second=cats.find(c=>c!==first)||first;
+  d.splits=[{category:first,amount:d.amount||0,memo:''},{category:second,amount:0,memo:''}];
+ }
+ renderRecSheet();
+}
+function recSplitAdd(){
+ syncRecInputs();const d=recDraft;if(!Array.isArray(d.splits))return;
+ const used=new Set(d.splits.map(s=>s.category));
+ const next=catListOf(d.type).find(c=>!used.has(c))||catListOf(d.type)[0]||'기타';
+ d.splits.push({category:next,amount:0,memo:''});
+ renderRecSheet();
+}
+function recSplitRemove(i){
+ syncRecInputs();const d=recDraft;if(!Array.isArray(d.splits)||d.splits.length<=2)return;
+ d.splits.splice(i,1);
+ renderRecSheet();
+}
+function recSplitOpenCat(i){
+ syncRecInputs();const d=recDraft;
+ openCatPicker({kind:d.type,current:d.splits[i].category,back:renderRecSheet,onPick:c=>{d.splits[i].category=c;renderRecSheet()}});
+}
+function recSplitAmt(i,el){fmtAmt(el);recDraft.splits[i].amount=num(el);splitHintUpdate(recDraft)}
+function recSplitMemo(i,el){recDraft.splits[i].memo=el.value}
 const WK={ /* 주말 조정 어휘 */
  none:['당일 유지','주말이어도 그 날짜에'],
  earlier:['앞당겨 금요일','주말이면 하루 앞 금요일에 (급여)'],
@@ -5454,7 +5498,12 @@ function setRecWeekend(v){recDraft.weekend=v;recalcEndCond(recDraft,recDraft.sta
 function renderRecSheet(){
  const d=recDraft;const editing=!!d.id;
  const typeSeg=[['expense','지출'],['income','수입'],['transfer','이체'],['saving','저축']].map(([v,l])=>`<button class="${d.type===v?'on':''}" aria-pressed="${d.type===v}" onclick="recType('${v}')">${l}</button>`).join('');
- const catField=d.type!=='transfer'?`<div class="field"><label>카테고리</label><button class="pick" onclick="recOpenCat()"><div class="pav ${catAv(d.type)}">${catGlyph(d.type,d.category,null,'tag')}</div><div class="pbody"><div class="pn">${esc(d.category)}</div></div><div class="pc">${svg('chevR')}</div></button></div>`:'';
+ /* 분할 입력(여러 카테고리로 나누기): renderTxSheet의 splitOn과 동일한 규칙(d.splits=
+    [{category,amount,memo?}]가 2개 이상이면 분할 모드) — 반복 관리 화면은 rpt 같은 '간단 입력 중
+    반복 켜기' 상태가 없으므로 그 가드만 빠진다(app-evolve cycle282 advance). */
+ const splitOn=d.type!=='transfer'&&Array.isArray(d.splits)&&d.splits.length>=2;
+ const catField=d.type==='transfer'?'':(splitOn?splitFieldHTML(d,'rec'):
+  `<div class="field"><label>카테고리</label><button class="pick" onclick="recOpenCat()"><div class="pav ${catAv(d.type)}">${catGlyph(d.type,d.category,null,'tag')}</div><div class="pbody"><div class="pn">${esc(d.category)}</div></div><div class="pc">${svg('chevR')}</div></button></div><div style="margin:2px 0 14px;text-align:right"><button type="button" class="txt-btn" onclick="recToggleSplit()">여러 카테고리로 나누기</button></div>`);
  const freqBtns=[['monthly','매월'],['weekly','매주'],['daily','매일'],['yearly','매년']].map(([v,l])=>`<button class="${d.freq===v?'on':''}" onclick="recFreq('${v}')">${l}</button>`).join('');
  let dayField='';
  if(d.freq==='monthly')dayField=dayPickerHTML(d,'rec');
@@ -5467,7 +5516,7 @@ function renderRecSheet(){
   ${catField}
   <div class="field"><label for="rMemo">메모 <span style="color:var(--text-3);font-weight:600">(선택)</span></label><div class="field-clear"><input id="rMemo" value="${(d.memo&&d.memo!==d.category)?d.memo.replace(/"/g,'&quot;'):''}" placeholder="예: 넷플릭스 구독" oninput="recMemoInput(this)"><button type="button" class="fc-x" aria-label="메모 지우기" onclick="clrInput('rMemo')">✕</button></div></div>
   <div id="recCatSuggest" style="display:none;margin:-4px 0 14px;text-align:right"></div>
-  <div class="field"><label for="rAmt">금액</label><div class="field-clear"><input id="rAmt" class="num" inputmode="numeric" value="${d.amount?comma(d.amount):''}" placeholder="0" oninput="fmtAmt(this)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveRec()"><button type="button" class="fc-x" aria-label="금액 지우기" onclick="clrInput('rAmt')">✕</button></div></div>
+  <div class="field"><label for="rAmt">${splitOn?'전체 금액':'금액'}</label><div class="field-clear"><input id="rAmt" class="num" inputmode="numeric" value="${d.amount?comma(d.amount):''}" placeholder="0" oninput="fmtAmt(this)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveRec()"><button type="button" class="fc-x" aria-label="금액 지우기" onclick="clrInput('rAmt')">✕</button></div></div>
   ${assetFields}
   <div class="field"><label>주기</label><div class="opt-grid">${freqBtns}</div></div>
   ${dayField}
@@ -5523,6 +5572,13 @@ function saveRec(){
  if(d.type==='expense'&&!d.fromAssetId){toast('자산을 선택해 주세요');return}
  if(d.type==='income'&&!d.toAssetId){toast('자산을 선택해 주세요');return}
  if(d.type==='expense')d.toAssetId=null;else if(d.type==='income')d.fromAssetId=null;
+ if(d.type!=='transfer'&&Array.isArray(d.splits)&&d.splits.length){ /* 분할 입력 검증 — saveTx와 동일한 불변식(합계=전체 금액)을 반복거래에도 적용한다(app-evolve cycle282 advance) */
+  if(d.splits.some(s=>!s.category)){toast('분할 항목의 카테고리를 선택해 주세요');return}
+  if(d.splits.some(s=>!s.amount)){toast('분할 항목의 금액을 입력해 주세요');return}
+  const sum=d.splits.reduce((s,x)=>s+(Number(x.amount)||0),0);
+  if(sum!==d.amount){toast('분할 금액의 합이 전체 금액과 달라요');return}
+  d.category=d.splits[0].category; /* 최상위 category는 하위호환 fallback(첫 항목) — saveTx와 동일 */
+ }
  if(d.type==='transfer')d.category='이체';
  if(d.endDate&&d.endDate<d.startDate){toast('종료일은 시작일 이후로 선택해 주세요');return}
  if(d.freq==='monthly'&&d.day!=='last'){const m=clampDay(d);if(m)toast(m)}
@@ -5564,8 +5620,15 @@ function saveRec(){
  toast(wasEditing?(cleaned>0?`반복을 수정했어요 · 새 일정과 안 맞는 개별 삭제·수정 ${cleaned}건을 정리했어요`:'반복을 수정했어요'):'반복 설정을 저장했어요');
 }
 /* 반복 이력(과거 회차)에 영향을 주는 필드만 비교: 메모는 소급 적용돼도 무해하지만,
-   weekend는 recDates()의 shiftWeekend()가 과거 회차의 날짜도 그대로 재계산해 바꾸므로 포함해야 한다 */
-function recHistFieldsChanged(orig,d){return ['fromAssetId','toAssetId','amount','category','day','freq','startDate','weekend'].some(k=>orig[k]!==d[k])}
+   weekend는 recDates()의 shiftWeekend()가 과거 회차의 날짜도 그대로 재계산해 바꾸므로 포함해야 한다.
+   splits도 amount/category와 동일하게 과거 회차의 집계(expenseByCat 등)에 그대로 반영되는 값이라
+   포함해야 한다(app-evolve cycle282 advance) — 배열이라 !==로는 항상 true가 나오므로(참조 비교)
+   JSON.stringify로 내용을 비교한다(snapDraft가 쓰는 것과 동일한 방식, editRec의 JSON 클론 때문에
+   orig/d의 splits는 매번 다른 배열 객체다). */
+function recHistFieldsChanged(orig,d){
+ if(['fromAssetId','toAssetId','amount','category','day','freq','startDate','weekend'].some(k=>orig[k]!==d[k]))return true;
+ return JSON.stringify(orig.splits||null)!==JSON.stringify(d.splits||null);
+}
 /* recHistFieldsChanged의 부분집합: day/freq/startDate/weekend만 — 이 넷은 recDates()가 생성하는
    날짜 자체를 바꾸므로, orig.skip/edits(옛 스케줄 기준 절대 날짜)가 새 스케줄과 안 맞게 될 수 있다.
    fromAssetId/amount/category 등은 날짜 생성에 영향 없어 skip/edits와 무관하다(app-evolve cycle173). */
@@ -6873,9 +6936,12 @@ function moveCat(k,i,dir){
  save();openCatManage(k)}
 /* 삭제될 카테고리를 참조하는 '활성' 반복거래를 찾는다 — activeRecsForAssets(2334)와 같은 이유:
    반복거래는 과거 기록이 아니라 계속 새 항목을 만들어내는 생성기라, 카테고리 삭제 후에도
-   방치하면 이미 사라진 카테고리명으로 영원히 '발생'해 집계를 조용히 오염시킨다. */
+   방치하면 이미 사라진 카테고리명으로 영원히 '발생'해 집계를 조용히 오염시킨다. 분할(splits)
+   항목에만 들어있는 카테고리도 걸러야 한다(최상위 category만 보면 분할의 두 번째 이후 항목이
+   삭제된 카테고리로 계속 발생함, app-evolve cycle282 advance) — catMergeCounts의 txCount와
+   동일한 규칙. */
 function activeRecsForCat(type,name){
- return DB.recurrences.filter(r=>r.active&&r.type===type&&r.category===name);
+ return DB.recurrences.filter(r=>r.active&&r.type===type&&(Array.isArray(r.splits)&&r.splits.length?(r.category===name||r.splits.some(s=>s.category===name)):r.category===name));
 }
 function delCat(k,i){const c=DB.categories[k][i];
  if(DB.categories[k].length<=1){toast('카테고리는 최소 1개가 필요해요');return}
@@ -6938,7 +7004,15 @@ function doRenameCat(k,i){const v=((catRenameDraft.name!=null?catRenameDraft.nam
    }else if(t.category===old){t.category=v;changed=true}
    if(changed){if(t.memo===old)t.memo=v;touch(t)}
   });
-  DB.recurrences.forEach(r=>{if(r.type===k&&r.category===old){r.category=v;if(r.memo===old)r.memo=v;touch(r)}});
+  DB.recurrences.forEach(r=>{ /* 분할 거래와 동일한 분할/최상위 category 이동 규칙(app-evolve cycle282 advance) — 위 DB.txns 루프와 같은 패턴 */
+   if(r.type!==k)return;
+   let changed=false;
+   if(Array.isArray(r.splits)&&r.splits.length){
+    r.splits.forEach(s=>{if(s.category===old){s.category=v;changed=true}});
+    if(r.category===old){r.category=v;changed=true}
+   }else if(r.category===old){r.category=v;changed=true}
+   if(changed){if(r.memo===old)r.memo=v;touch(r)}
+  });
   if(k==='expense'&&DB.budgetHistory&&old in DB.budgetHistory){DB.budgetHistory[v]=DB.budgetHistory[old];delete DB.budgetHistory[old]} /* 이름 변경 시 예산 이력도 함께 이동 */
   DB.deletedIds=DB.deletedIds||{};DB.deletedIds[catTombKey(k,old)]=Date.now();delete DB.deletedIds[catTombKey(k,v)]; /* old 이름도 doDeleteCat처럼 톰스톤해야 함 — 안 그러면 mergeNameListWithTombstones가 old를 '살아있다'고 보고 아직 이 이름변경을 모르는 다른 기기의 사본이 old를 되살림(app-evolve cycle180). v가 과거에 삭제됐던 이름이면 그 톰스톤은 지워 되살림을 허용 */
   if(ST.hist&&ST.hist.catExact===old&&(ST.hist.catExactType||'expense')===k)ST.hist.catExact=v; /* 전체내역 탭의 분석화면 카테고리 드릴다운 필터(ST.hist.catExact, openCatHistory/openIncomeCatHistory가 세팅하고 ST.hist.catExactType으로 유형을 구분·필터 자체는 filteredHist의 (H.catExactType||'expense') 규칙과 동일)가 doRenameOwner의 ST.hist.owner와 똑같은 사연으로 낡은 이름에 남아있었다 — DB.txns는 위에서 이미 새 이름으로 옮겼으므로, 그 상태로 전체내역 탭에 돌아가면 칩은 새 이름이 아니라 옛 이름을 보여주면서 필터(t.category===old 그대로)는 어떤 거래와도 안 맞아 내역이 영원히 빈 화면으로 보인다(app-evolve cycle182). catExactType이 없던(과거 expense 전용) 데이터도 ||'expense' 기본값으로 그대로 맞으므로 수입 카테고리 이름변경이 지출 전용 필터를 잘못 건드리지 않는다 */
@@ -6950,7 +7024,7 @@ function doRenameCat(k,i){const v=((catRenameDraft.name!=null?catRenameDraft.nam
  * 활성 상태를 그대로 유지한 채 category만 옮기므로, 비활성 반복거래도 '영향받는' 것이 맞다. */
 function catMergeCounts(k,from){
  const txCount=DB.txns.filter(t=>t.type===k&&(Array.isArray(t.splits)&&t.splits.length?(t.category===from||t.splits.some(s=>s.category===from)):t.category===from)).length;
- const recCount=DB.recurrences.filter(r=>r.type===k&&r.category===from).length;
+ const recCount=DB.recurrences.filter(r=>r.type===k&&(Array.isArray(r.splits)&&r.splits.length?(r.category===from||r.splits.some(s=>s.category===from)):r.category===from)).length; /* 반복거래도 txCount와 동일하게 분할 항목까지 본다(app-evolve cycle282 advance) */
  return{txCount,recCount};
 }
 /* openCatManage 각 행의 합치기(merge) 버튼 → 대상 카테고리 피커. 기존 openCatPicker(txOpenCat 등이
@@ -7000,11 +7074,15 @@ function mergeCatInto(k,i,toName){
   if(changed){if(t.memo===from)t.memo=toName;txItems.push({t,prevCat,prevMemo,prevSplits})}
  });
  const recItems=[];
- DB.recurrences.forEach(r=>{ /* doDeleteCat과 달리 active는 그대로 두고 category만 옮긴다 */
-  if(r.type!==k||r.category!==from)return;
-  const prevCat=r.category,prevMemo=r.memo;
-  r.category=toName;if(r.memo===from)r.memo=toName;
-  recItems.push({r,prevCat,prevMemo});
+ DB.recurrences.forEach(r=>{ /* doDeleteCat과 달리 active는 그대로 두고 category만 옮긴다. doRenameCat과 동일한 분할/최상위 category 이동 규칙(app-evolve cycle282 advance) — 위 DB.txns 루프와 같은 패턴 */
+  if(r.type!==k)return;
+  const prevCat=r.category,prevMemo=r.memo,prevSplits=Array.isArray(r.splits)?r.splits.map(s=>s.category):null;
+  let changed=false;
+  if(Array.isArray(r.splits)&&r.splits.length){
+   r.splits.forEach(s=>{if(s.category===from){s.category=toName;changed=true}});
+   if(r.category===from){r.category=toName;changed=true}
+  }else if(r.category===from){r.category=toName;changed=true}
+  if(changed){if(r.memo===from)r.memo=toName;recItems.push({r,prevCat,prevMemo,prevSplits})}
  });
  if(k==='expense'){
   if(hadBudget||toName in DB.budgetHistory){
@@ -7023,7 +7101,7 @@ function mergeCatInto(k,i,toName){
  touchSave(...txItems.map(x=>x.t),...recItems.map(x=>x.r));renderCurrent();openCatManage(k);
  undoToast(`'${from}' 카테고리를 '${toName}'에 합쳤어요`+(txItems.length||recItems.length?` · 내역 ${txItems.length}건·반복거래 ${recItems.length}개 복원`:''),()=>{
   txItems.forEach(({t,prevCat,prevMemo,prevSplits})=>{t.category=prevCat;t.memo=prevMemo;if(prevSplits)t.splits.forEach((s,idx)=>{s.category=prevSplits[idx]})});
-  recItems.forEach(({r,prevCat,prevMemo})=>{r.category=prevCat;r.memo=prevMemo});
+  recItems.forEach(({r,prevCat,prevMemo,prevSplits})=>{r.category=prevCat;r.memo=prevMemo;if(prevSplits)r.splits.forEach((s,idx)=>{s.category=prevSplits[idx]})});
   DB.categories[k].splice(i,0,from);
   if(icon)DB.catIcon[catKey(k,from)]=icon;
   if(wasVar)DB.catVar[catKey(k,from)]=true;
