@@ -1,15 +1,12 @@
 {
   "cycle": 286,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "검색 매칭 함수(matchTxnQuery/matchRecQuery/matchGoalQuery)의 금액 매칭 로직을 공통 헬퍼로 추출",
+    "why": "logic.js의 matchTxnQuery/matchRecQuery/matchGoalQuery 세 함수가 거의 동일한 금액 매칭 블록(normalizeAmountSpacing으로 전처리 → searchTerms로 토큰화 → term마다 parseAmountToken 시도 → amountMatchesToken으로 본문/분할액 비교, 아니면 includes)을 각자 따로 들고 있다. 이 중복 때문에 지난 네 사이클(279/283/284/286) 동안 똑같은 클래스의 버그가 한 함수씩 순서대로 발견/수정되는 양상이 반복됐다: cycle279가 matchTxnQuery에만 금액 비교 연산자를 넣었고, cycle283이 그제서야 matchRecQuery에 같은 기능을 따라 넣었고, cycle284가 matchGoalQuery에 또 따라 넣었고, cycle286이 matchTxnQuery만 분할 라인(lines.some) 비교가 빠져 matchRecQuery와 갈라져 있던 걸 다시 맞췄다. 세 함수가 물리적으로 분리된 코드라 한 곳만 고치고 나머지를 잊는 실수가 구조적으로 반복되고 있고, 다음에 금액 검색 규칙이 또 바뀌면(예: 통화 단위 지원, 음수 금액 등) 같은 패턴의 공백이 다시 생길 가능성이 높다.",
+    "approach": "logic.js에 공통 헬퍼(예: matchQueryGeneric(hay, amountCandidates, q))를 신설해 normalizeAmountSpacing→searchTerms→term별 parseAmountToken/amountMatchesToken-또는-includes 판정 로직을 한 곳에만 둔다. amountCandidates는 호출부가 [t.amount, ...lines.map(l=>l.amount)] 식으로 넘기는 숫자 배열로 받아 매칭 종류(거래/반복/목표)별 차이는 호출부의 haystack 조립과 amountCandidates 배열 구성만 다르게 하고, 핵심 비교 로직은 헬퍼 하나로 통일한다. matchTxnQuery/matchRecQuery/matchGoalQuery를 이 헬퍼를 호출하는 얇은 wrapper로 다시 작성하고, 기존 동작(대소문자 무시, NFC 정규화, 공백 AND, substring 매칭, 분할 라인 포함)을 100% 보존해야 하므로 test/run.js의 기존 테스트를 모두 통과시키는 것으로 회귀 여부를 확인한다. matchAssetQuery/matchCatQuery처럼 금액 개념이 없는 단순 문자열 검색 함수는 이번 범위에서 제외한다(이미 로직이 짧고 드리프트 사례가 없었음)."
+  },
   "history": [
-    {
-      "cycle": 281,
-      "phase": "critique",
-      "timestamp": "2026-11-01T02:10:37.469Z",
-      "summary": "카테고리 아이콘 선택기(openIconPicker)의 aria-label이 영문 내부 키(food/gcap 등)를 그대로 노출하는 접근성 결함 발견. ICON_LABEL_KO 한글 매핑 계획을 pending_advance_plan에 저장.",
-      "commit": null
-    },
     {
       "cycle": 281,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-01T21:40:00.000Z",
       "summary": "cycle286 develop 커밋(8e637c6) 검토 — matchTxnQuery의 lines=splitLines(t) 활용이 matchRecQuery(라인 652)의 패턴과 정확히 일치함을 확인. 분할 없는 일반 거래는 splitLines가 [{amount:t.amount,...}] 하나만 반환해 lines.some 쪽도 t.amount와 동일하게 평가되므로 OR 추가가 회귀를 만들지 않는다. matchGoalQuery는 splits 개념이 없어 동일한 공백 대상이 아님도 확인. node test/run.js 2520/2520 재확인 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 286,
+      "phase": "critique",
+      "timestamp": "2026-11-01T22:10:36.397Z",
+      "summary": "matchTxnQuery/matchRecQuery/matchGoalQuery 세 검색 함수가 금액 매칭 로직(정규화→토큰화→연산자 파싱→비교)을 거의 동일하게 중복 보유하고 있어, 지난 네 사이클(279/283/284/286) 동안 한 함수만 고치고 나머지를 깜빡하는 동일 클래스 버그가 반복 발생한 구조적 약점 발견. 공통 헬퍼로 추출하는 계획을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
