@@ -221,7 +221,7 @@ const FUNCTIONS = [
   'shouldPullCloud', 'pullCloudIfStale', 'appIsOpen',
   'bytesToBase64', 'base64ToBytes', 'encodeCloudPayload', 'decodeCloudPayload',
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
-  'clampDay', 'saveTx', 'duplicateTx', 'editTx', 'assetBase', 'balancesUpTo', 'balanceAt', 'balancesAtDates', 'balanceAtFromMap',
+  'clampDay', 'saveTx', 'commitTx', 'duplicateTx', 'editTx', 'assetBase', 'balancesUpTo', 'balanceAt', 'balancesAtDates', 'balanceAtFromMap',
   'addBalanceAdjust', 'updateBalanceAdjust', 'toggleConfirmTransfers', 'rollPendingTransfers',
   'assetEval', 'assetGainLoss', 'assetGainLossBadge', 'costBasisField', 'interestRateField', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'pkFilteredAssets', 'pkEmptyHtml', 'pkAssetQInput', 'refreshPkAssetList', 'movePkBlob', 'pkBack', 'pkChoose', 'pkPickAsset', 'sheetSlideBack', 'delOwner', 'doMaturity', 'openMaturity', 'firstCash',
   'detectStaleMarketValuedTxns', 'delBudget', 'saveBudget', 'openBudgetPrompt', 'openBigMinSheet',
@@ -6409,6 +6409,70 @@ test('csvDedupeKey: 연결된 자산은 id로, 스냅샷 이름은 이름으로 
   const byName = { date: '2026-01-01', type: 'expense', amount: 1000, category: '식비', fromAssetName: 'a1', toAssetId: null, memo: '' };
   assert.notStrictEqual(sandbox.csvDedupeKey(byId), sandbox.csvDedupeKey(byName));
   assert.strictEqual(sandbox.csvDedupeKey(byId), sandbox.csvDedupeKey({ ...byId }));
+});
+/* ---------- findPossibleDuplicateTx: saveTx 수동 입력 중복 경고(app-evolve cycle284 advance) ---------- */
+test('findPossibleDuplicateTx: 날짜/금액/카테고리/자산이 모두 같은 지출이 있으면 그 내역을 돌려준다', () => {
+  const existing = { id: 't1', date: '2026-06-15', type: 'expense', amount: 5000, category: '식비', fromAssetId: 'a1', toAssetId: null };
+  const draft = { id: null, date: '2026-06-15', type: 'expense', amount: 5000, category: '식비', fromAssetId: 'a1', toAssetId: null };
+  assert.strictEqual(sandbox.findPossibleDuplicateTx([existing], draft), existing);
+});
+test('findPossibleDuplicateTx: 날짜가 다르면 중복이 아니다', () => {
+  const existing = { id: 't1', date: '2026-06-14', type: 'expense', amount: 5000, category: '식비', fromAssetId: 'a1', toAssetId: null };
+  const draft = { id: null, date: '2026-06-15', type: 'expense', amount: 5000, category: '식비', fromAssetId: 'a1', toAssetId: null };
+  assert.strictEqual(sandbox.findPossibleDuplicateTx([existing], draft), null);
+});
+test('findPossibleDuplicateTx: 금액이 다르면 중복이 아니다', () => {
+  const existing = { id: 't1', date: '2026-06-15', type: 'expense', amount: 5000, category: '식비', fromAssetId: 'a1', toAssetId: null };
+  const draft = { id: null, date: '2026-06-15', type: 'expense', amount: 5001, category: '식비', fromAssetId: 'a1', toAssetId: null };
+  assert.strictEqual(sandbox.findPossibleDuplicateTx([existing], draft), null);
+});
+test('findPossibleDuplicateTx: 카테고리가 다르면 중복이 아니다', () => {
+  const existing = { id: 't1', date: '2026-06-15', type: 'expense', amount: 5000, category: '식비', fromAssetId: 'a1', toAssetId: null };
+  const draft = { id: null, date: '2026-06-15', type: 'expense', amount: 5000, category: '교통', fromAssetId: 'a1', toAssetId: null };
+  assert.strictEqual(sandbox.findPossibleDuplicateTx([existing], draft), null);
+});
+test('findPossibleDuplicateTx: 지출은 fromAssetId가 다르면 중복이 아니다(toAssetId는 보지 않음)', () => {
+  const existing = { id: 't1', date: '2026-06-15', type: 'expense', amount: 5000, category: '식비', fromAssetId: 'a1', toAssetId: null };
+  const draft = { id: null, date: '2026-06-15', type: 'expense', amount: 5000, category: '식비', fromAssetId: 'a2', toAssetId: null };
+  assert.strictEqual(sandbox.findPossibleDuplicateTx([existing], draft), null);
+});
+test('findPossibleDuplicateTx: 수입은 toAssetId를 비교한다', () => {
+  const existing = { id: 't1', date: '2026-06-15', type: 'income', amount: 300000, category: '급여', fromAssetId: null, toAssetId: 'a1' };
+  const same = { id: null, date: '2026-06-15', type: 'income', amount: 300000, category: '급여', fromAssetId: null, toAssetId: 'a1' };
+  const diff = { id: null, date: '2026-06-15', type: 'income', amount: 300000, category: '급여', fromAssetId: null, toAssetId: 'a2' };
+  assert.strictEqual(sandbox.findPossibleDuplicateTx([existing], same), existing);
+  assert.strictEqual(sandbox.findPossibleDuplicateTx([existing], diff), null);
+});
+test('findPossibleDuplicateTx: 저축은 fromAssetId·toAssetId 둘 다 같아야 중복으로 본다', () => {
+  const existing = { id: 't1', date: '2026-06-15', type: 'saving', amount: 100000, category: '청약', fromAssetId: 'a1', toAssetId: 'a2' };
+  const same = { id: null, date: '2026-06-15', type: 'saving', amount: 100000, category: '청약', fromAssetId: 'a1', toAssetId: 'a2' };
+  const diffFrom = { id: null, date: '2026-06-15', type: 'saving', amount: 100000, category: '청약', fromAssetId: 'a3', toAssetId: 'a2' };
+  assert.strictEqual(sandbox.findPossibleDuplicateTx([existing], same), existing);
+  assert.strictEqual(sandbox.findPossibleDuplicateTx([existing], diffFrom), null);
+});
+test('findPossibleDuplicateTx: 이체(transfer)는 카테고리가 없어 비교 대상에서 제외한다(항상 null)', () => {
+  const existing = { id: 't1', date: '2026-06-15', type: 'transfer', amount: 10000, fromAssetId: 'a1', toAssetId: 'a2' };
+  const draft = { id: null, date: '2026-06-15', type: 'transfer', amount: 10000, fromAssetId: 'a1', toAssetId: 'a2' };
+  assert.strictEqual(sandbox.findPossibleDuplicateTx([existing], draft), null);
+});
+test('findPossibleDuplicateTx: 분할(splits) 거래는 1차 범위에서 제외한다', () => {
+  const existing = { id: 't1', date: '2026-06-15', type: 'expense', amount: 5000, category: '식비', fromAssetId: 'a1', toAssetId: null };
+  const draft = { id: null, date: '2026-06-15', type: 'expense', amount: 5000, category: '식비', fromAssetId: 'a1', toAssetId: null, splits: [{ category: '식비', amount: 5000 }] };
+  assert.strictEqual(sandbox.findPossibleDuplicateTx([existing], draft), null);
+});
+test('findPossibleDuplicateTx: 잔액 조정(adjust) 내역은 비교 대상에서 제외한다', () => {
+  const existing = { id: 't1', date: '2026-06-15', type: 'expense', amount: 5000, category: '식비', fromAssetId: 'a1', toAssetId: null, adjust: true };
+  const draft = { id: null, date: '2026-06-15', type: 'expense', amount: 5000, category: '식비', fromAssetId: 'a1', toAssetId: null };
+  assert.strictEqual(sandbox.findPossibleDuplicateTx([existing], draft), null);
+});
+test('findPossibleDuplicateTx: 자기 자신(id가 같은 기존 항목)은 중복으로 보지 않는다', () => {
+  const existing = { id: 't1', date: '2026-06-15', type: 'expense', amount: 5000, category: '식비', fromAssetId: 'a1', toAssetId: null };
+  const draft = { id: 't1', date: '2026-06-15', type: 'expense', amount: 5000, category: '식비', fromAssetId: 'a1', toAssetId: null };
+  assert.strictEqual(sandbox.findPossibleDuplicateTx([existing], draft), null);
+});
+test('findPossibleDuplicateTx: txns가 비었거나 draft가 비어 있으면 안전하게 null', () => {
+  assert.strictEqual(sandbox.findPossibleDuplicateTx([], { date: '2026-06-15', type: 'expense', amount: 5000, category: '식비', fromAssetId: 'a1' }), null);
+  assert.strictEqual(sandbox.findPossibleDuplicateTx([{ date: '2026-06-15', type: 'expense', amount: 5000, category: '식비', fromAssetId: 'a1' }], null), null);
 });
 test('buildImportPreview: doExport가 내보낸 CSV를 그대로 다시 가져오려 하면 전부 중복으로 건너뛴다', () => {
   const assets = [{ id: 'a1', name: '주계좌' }];
@@ -16125,6 +16189,52 @@ test('saveTx: 카테고리를 직접 고른(_catUserTouched) 거래를 저장해
   sandbox.saveTx();
   assert.strictEqual('_catUserTouched' in sandbox.DB.txns[0], false, '_catUserTouched는 DB.txns에 저장되면 안 되는 UI 전용 필드');
 });
+
+/* ---------- saveTx/commitTx: 수동 입력 중복 경고(findPossibleDuplicateTx, app-evolve cycle284 advance) ----------
+ * 저장 로직을 commitTx()로 분리해, 신규 저장 직전에 비슷한 기존 거래가 있으면 저장을 막지 않고
+ * confirmSheet로 한 번 더 확인시킨다(logic.js findPossibleDuplicateTx 주석 참고). */
+test('saveTx: 새 일회성 거래가 기존 거래와 날짜/금액/카테고리/자산이 완전히 겹치면 바로 저장하지 않고 confirmSheet로 확인한다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { txns: [{ id: 'e1', date: '2026-01-15', type: 'expense', amount: 9000, category: '식비', fromAssetId: 'a1', toAssetId: null }], settings: {} };
+  sandbox.txDraft = { id: null, type: 'expense', date: '2026-01-15', category: '식비', memo: '', amount: 9000, fromAssetId: 'a1', toAssetId: null, repeat: false };
+  sandbox.confirmSheetCalls = [];
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 1, '중복 가능성이 있으면 confirmSheet가 떠야 함');
+  assert.strictEqual(sandbox.DB.txns.length, 1, '확인하기 전까지는 저장되면 안 됨');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.txns.length, 2, '확인(그래도 저장)을 누르면 commitTx가 실행되어 저장되어야 함');
+});
+test('saveTx: 비슷한 거래가 없으면 confirmSheet 없이 바로 저장된다(정상 케이스는 회귀 없음)', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { txns: [], settings: {} };
+  sandbox.txDraft = { id: null, type: 'expense', date: '2026-01-15', category: '식비', memo: '', amount: 9000, fromAssetId: 'a1', toAssetId: null, repeat: false };
+  sandbox.confirmSheetCalls = [];
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0);
+  assert.strictEqual(sandbox.DB.txns.length, 1);
+});
+test('saveTx: 기존 거래를 수정(d.id 있음)할 때는 다른 거래와 값이 겹쳐도 중복 확인을 하지 않는다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { txns: [
+    { id: 'e1', date: '2026-01-15', type: 'expense', amount: 9000, category: '식비', fromAssetId: 'a1', toAssetId: null },
+    { id: 'e2', date: '2026-01-10', type: 'expense', amount: 5000, category: '교통', fromAssetId: 'a1', toAssetId: null },
+  ], settings: {} };
+  sandbox.txDraft = { id: 'e2', type: 'expense', date: '2026-01-15', category: '식비', memo: '', amount: 9000, fromAssetId: 'a1', toAssetId: null, repeat: false };
+  sandbox.confirmSheetCalls = [];
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0, '수정 경로는 중복 확인 대상이 아님');
+  assert.strictEqual(sandbox.DB.txns.find((t) => t.id === 'e2').amount, 9000, '수정이 그대로 반영되어야 함');
+});
+test('saveTx: 이체(transfer)는 같은 날짜/금액/자산 거래가 있어도 confirmSheet 없이 바로 저장된다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { txns: [{ id: 'e1', date: '2026-01-15', type: 'transfer', amount: 10000, fromAssetId: 'a1', toAssetId: 'a2', confirmed: true }], settings: {} };
+  sandbox.txDraft = { id: null, type: 'transfer', date: '2026-01-15', memo: '', amount: 10000, fromAssetId: 'a1', toAssetId: 'a2', repeat: false };
+  sandbox.confirmSheetCalls = [];
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0, '이체는 중복 확인 대상에서 제외됨(findPossibleDuplicateTx 주석 참고)');
+  assert.strictEqual(sandbox.DB.txns.length, 2);
+});
+
 test('saveRec: 카테고리를 직접 고른(_catUserTouched) 신규 반복을 저장해도 그 UI 플래그가 DB.recurrences에 남지 않는다', () => {
   sandbox.TWi = -1; sandbox.TODAY = '2026-06-15';
   sandbox.DB = { recurrences: [] };

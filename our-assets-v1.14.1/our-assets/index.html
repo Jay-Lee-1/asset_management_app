@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.312';
+const APP_VERSION='1.47.313';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5295,6 +5295,14 @@ function saveTx(){
    skip:[],edits:{},autoConfirm:true,confirmedDates:[],varying:isVarCat(d.type,cat)}));
   save({fromDate:d.date});closeSheet();renderCurrent();toast('반복 내역으로 저장했어요');return;
  }
+ if(!d.id&&findPossibleDuplicateTx(DB.txns,d)){ /* 수정이 아니라 신규 저장일 때만 — 비슷한 내역이 이미 있으면 막지 않고 한 번 더 확인시킨다(app-evolve cycle284 advance) */
+  confirmSheet('비슷한 내역이 있어요',`${shortDate(d.date)} · ${esc(d.category)} · ${comma(d.amount)}원 내역이 이미 있어요.<br>그래도 저장할까요?`,'그래도 저장',commitTx);
+  return;
+ }
+ commitTx();
+}
+function commitTx(){
+ const d=txDraft;
  ['repeat','freq','day','endDate','endMode','count'].forEach(k=>delete d[k]); /* 일회성 내역엔 반복 필드 제거 */
  delete d._catUserTouched; /* 메모 기반 카테고리 추천(txCatSuggestUpdate)을 억제하려고 draft에만 잠깐 얹는 UI 플래그 — DB.txns 스키마엔 없는 필드라, 지우지 않으면 d가 그대로 저장돼(바로 아래) 매 거래마다 영구히 끼어든다(app-evolve cycle270이 추가했고 cycle271에서 발견) */
  d.memo=(d.memo||'').trim()||d.category; /* 메모 없으면 카테고리로 (saveRec과 동일) */

@@ -1,33 +1,8 @@
 {
-  "cycle": 284,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "일회성 거래 저장 시 중복 입력 경고 없음",
-    "why": "saveTx()(index.html)는 자산 등록의 근접중복 차단(normName, saveAsset)과 CSV 가져오기의 중복 제거(txns.length-newCount)는 이미 갖췄지만, 가장 흔한 수동 입력 경로인 일반 거래 저장에는 어떤 중복 검사도 없다. 커피/점심처럼 매일 비슷한 금액을 입력하는 습관 때문에, 같은 날 같은 거래를 두 번 저장해도(화면 전환 중 두 번 탭, 방금 입력한 걸 깜빡하고 다시 입력 등) 완전히 조용히 통과된다 — 잔액·지출 집계가 소리 없이 틀어지는 전형적 실수 패턴인데 지금은 걸러낼 안전망이 전혀 없다.",
-    "approach": "saveTx()에서 신규(비수정, !d.id) 일반 거래(transfer 제외, 1차 범위는 splits 없는 단일 카테고리 한정)를 실제로 저장하기 직전, DB.txns 안에서 같은 date+type+amount+category+(type에 맞는 fromAssetId 또는 toAssetId)를 가진 기존 항목이 있는지 찾는다. logic.js에 순수 함수 findPossibleDuplicateTx(txns,draft)를 추가해 테스트 가능하게 만들고, 찾으면 저장을 막지 않고 confirmSheet로 '비슷한 내역이 이미 있어요 — 그래도 저장할까요?'를 띄운다(기존 confirmSheet 패턴 재사용, 확인하면 같은 draft로 실제 저장을 진행하고 그 재호출에서는 다시 걸리지 않도록 가드). 과도한 오탐을 피하려고 완전 일치(날짜 하루 단위, 금액 정확히 같음, 카테고리 동일)만 잡고 분할 거래/이체/수정(이미 있는 항목을 편집하는 경우)은 1차 범위에서 제외한다. test/run.js에 findPossibleDuplicateTx 단위 테스트(완전 일치/다른 날짜/다른 금액/다른 카테고리/다른 자산/분할 제외 등) 추가, APP_VERSION/sw.js CACHE 올리기."
-  },
+  "cycle": 285,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 280,
-      "phase": "review",
-      "timestamp": "2026-10-31T20:45:00.000Z",
-      "summary": "cycle280 develop 커밋(96d9a04) 검토 — 실제 버그 없음, 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
-    {
-      "cycle": 280,
-      "phase": "critique",
-      "timestamp": "2026-10-31T21:50:00.000Z",
-      "summary": "자산 등록 폼에 '매입일' 입력 UI 자체가 없어 syncAssetInputs가 매입금액을 처음 입력하는 순간을 acquiredAt으로 조용히 찍어버리는 공백 발견 — 연환산 수익률이 가짜 보유기간으로 왜곡됨. costBasisField에 매입일 입력 추가 계획을 pending_advance_plan에 저장.",
-      "commit": null
-    },
-    {
-      "cycle": 280,
-      "phase": "advance",
-      "timestamp": "2026-10-31T23:11:05.411Z",
-      "summary": "자산 매입일(acquiredAt) 직접 입력 UI 추가. 회귀 테스트 4개 추가, 기존 snapshot 테스트 1개 갱신.",
-      "commit": null
-    },
     {
       "cycle": 281,
       "phase": "develop",
@@ -81,56 +56,63 @@
       "cycle": 282,
       "phase": "advance",
       "timestamp": "2026-11-01T07:30:00.000Z",
-      "summary": "critique(cycle282) 계획대로 DB.recurrences에 분할(splits) 지원을 추가했다. (1) DB.recurrences 레코드가 splits:[{category,amount,memo?}]를 가질 수 있게 함. (2) renderRecSheet에 splitFieldHTML(d,pfx)을 pfx 파라미터로 일반화해 tx/rec 양쪽에서 재사용(onclick/oninput을 ${pfx}SplitXxx로 배선, 공유 id를 txSplitHint->splitHint로 통일), recToggleSplit/recSplitAdd/recSplitRemove/recSplitOpenCat/recSplitAmt/recSplitMemo를 tx 짝 함수와 동일한 규칙으로 신설. (3) recCatSuggestUpdate에 splitOn 가드 추가(분할 중엔 카테고리 추천 끔). (4) saveRec()에 saveTx와 동일한 분할 합계=전체금액 검증 추가. (5) expandRec()이 매 회차 가상 인스턴스에 splits:(ed.splits!==undefined?ed.splits:r.splits)를 실어 splitLines() 기반 집계·검색이 수정 없이 분할을 인식하게 함. (6) recHistFieldsChanged에 splits 비교 추가(JSON.stringify 내용 비교, 배열 참조 비교의 항상-true 함정 회피). (7) activeRecsForCat/catMergeCounts/doRenameCat/mergeCatInto가 모두 분할 항목까지 보도록 확장(txns의 기존 분할 처리와 동일한 패턴), mergeCatInto의 undo 복원도 분할 카테고리까지 되돌림. (8) logic.js의 matchRecQuery가 splitLines(r) 기반으로 모든 분할 항목의 category/memo까지 검색하도록 확장. saveTx의 '거래 입력 중 반복 켜기' 경로(txToggleRepeat)는 계획대로 범위를 좁혀 그대로 분할을 되돌리는 동작을 유지하고, 관련 주석 3곳을 이제는 틀린 전역 제약(반복거래는 분할을 담을 자리가 없다는 설명)에서 정확한 설명으로 교정했다. test/run.js에 matchRecQuery 분할 검색 4건, doRenameCat/mergeCatInto/activeRecsForCat/catMergeCounts 분할 반복거래 처리 7건, expandRec splits 전파 2건, recHistFieldsChanged splits 비교 1건, saveRec 분할 검증 4건, splitFieldHTML pfx 배선 1건, recToggleSplit/recSplitAdd/recSplitRemove/recSplitOpenCat/recSplitAmt/recSplitMemo 실행형 테스트 7건, 총 26건 추가(2435->2458 통과). APP_VERSION 1.47.308->1.47.309, sw.js CACHE v575->v576. node test/run.js 2458/2458 통과, 메인 스크립트(블록2)/logic.js/sw.js 구문 검증 통과. pending_advance_plan null로 비움.",
+      "summary": "critique(cycle282) 계획대로 DB.recurrences에 분할(splits) 지원을 추가했다. splitFieldHTML을 pfx로 일반화해 tx/rec 공유, recToggleSplit/recSplitAdd/recSplitRemove/recSplitOpenCat/recSplitAmt/recSplitMemo 신설, saveRec 분할 검증, expandRec splits 전파, recHistFieldsChanged splits 비교, activeRecsForCat/catMergeCounts/doRenameCat/mergeCatInto 분할 인식, matchRecQuery 분할 검색 확장. 테스트 26건 추가(2435->2458). APP_VERSION 1.47.308->1.47.309, sw.js CACHE v575->v576. pending_advance_plan null로 비움.",
       "commit": null
     },
     {
       "cycle": 283,
       "phase": "develop",
       "timestamp": "2026-11-01T08:10:00.000Z",
-      "summary": "matchRecQuery(logic.js, 반복/구독 통합검색)가 r.amount/분할 금액을 haystack에 전혀 넣지 않아, globalSearchBody 빈 상태 안내문이 '금액으로도 검색 가능'이라고 명시해 놓고도 실제로는 금액 검색이 전혀 동작하지 않던 공백을 발견 — matchTxnQuery는 이미 지원하는 기능(쉼표 무시 부분일치 + >/>=/</<=/범위 연산자, 분할 항목별 금액 포함)인데 matchRecQuery만 빠져 있었다. matchTxnQuery와 동일한 규칙으로 금액 매칭을 추가(parseAmountToken/amountMatchesToken/normalizeAmountSpacing 재사용, splitLines(r) 기반 분할 금액 포함). test/run.js에 8건 추가(2458->2466 통과). APP_VERSION 1.47.309->1.47.310, sw.js CACHE v576->v577. node test/run.js 2466/2466 통과, 메인 스크립트(블록2)/logic.js/sw.js 구문 검증 통과.",
+      "summary": "matchRecQuery(반복/구독 통합검색)가 금액 검색을 지원하지 않던 공백 발견(matchTxnQuery는 이미 지원). matchTxnQuery와 동일한 규칙으로 금액 매칭 추가. 테스트 8건 추가(2458->2466). APP_VERSION 1.47.309->1.47.310, sw.js CACHE v576->v577.",
       "commit": "7040eb2"
     },
     {
       "cycle": 283,
       "phase": "review",
       "timestamp": "2026-11-01T09:05:00.000Z",
-      "summary": "cycle283 develop 커밋(7040eb2) 검토 — 호출부(globalSearchBody, 단일 호출지)·회귀 테스트(2466/2466)·구문 모두 정상, 실제 버그 없음. 다만 비교/범위 연산자(>n, n~m) 분기에서 matchRecQuery는 r.amount와 분할 라인 금액을 모두(OR) 검사하도록 짜여 있는데, matchTxnQuery의 동일 분기는 t.amount만 검사하고 분할 라인은 보지 않는 비대칭을 발견 — 커밋 주석은 \"matchTxnQuery와 동일한 규칙\"이라 적었지만 실제로는 matchRecQuery가 더 넓다(범위 연산자에서 분할 금액이 전체합과 다를 때 의미 있는 차이, >/>=/</<= 단일 경계에서는 분할이 전체합을 넘을 수 없어 사실상 동일). 급한 버그는 아니라 고치지 않고 critique가 참고하도록 기록만 남김(코드 변경 없음, state.json만 커밋).",
+      "summary": "cycle283 develop 커밋(7040eb2) 검토 — 실제 버그 없음. matchRecQuery/matchTxnQuery의 비교연산자 분기에서 분할 라인 처리 범위가 미묘하게 다른 점을 발견했지만 급하지 않아 critique 참고용으로만 기록(코드 변경 없음, state.json만 커밋).",
       "commit": null
     },
     {
       "cycle": 283,
       "phase": "critique",
       "timestamp": "2026-11-01T09:10:00.000Z",
-      "summary": "연간 결산(openYearReview/yearSummary)의 전년대비(YoY) 비교가 올해(진행 중인 해)를 볼 때도 전년 \"전체\"(1/1~12/31)와 비교해, 아직 안 끝난 해의 수입/지출 YoY%가 실제 추세가 아니라 \"올해가 안 끝나서\" 생기는 왜곡을 담고 있는 문제 발견. 전년 비교 구간을 올해의 동일 기간(YTD)으로 맞추는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
+      "summary": "연간 결산(yearSummary) YoY가 올해(진행 중인 해)도 전년 \"전체\"와 비교해 왜곡되는 문제 발견. 전년 비교 구간을 YTD(동기간)로 맞추는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
       "commit": null
     },
     {
       "cycle": 283,
       "phase": "advance",
       "timestamp": "2026-11-01T10:20:00.000Z",
-      "summary": "critique(cycle283) 계획대로 연간 결산 YoY를 YTD(동기간) 비교로 고쳤다. (1) yearSpendByCategory/yearIncomeByCategory/yearRealizedGain에 선택적 endDate 인자 추가(기본 null이면 기존처럼 그 해 12/31·연도 전체). (2) yearSummary(y,owner)에서 y===TM.y(올해)면 전년 비교 상한을 전년의 같은 월/일로 맞춘다 — TM.d가 전년엔 없는 날짜면(올해 2/29, 전년 평년) lastDay(y-1,TM.m)로 클램프. y가 과거(완결된) 연도면 상한 없이(null) 기존처럼 전년 전체와 비교. yoy.isYTD 플래그 추가. (3) openYearReview에 isYTD일 때 \"올해는 아직 진행 중이에요 · 전년 동기간과 비교\" 안내 추가. (4) 부수적으로 발견한 실제 버그를 같은 커밋에서 고쳤다: refreshToday()(날짜 자동 갱신, 자정 넘어 포그라운드 복귀 시)가 TM=ym(TODAY)만 하고 TM.d를 갱신하지 않아, 앱을 오래 띄워둔 채 날짜가 바뀌면 TM.d가 이전 날짜로 고정돼 버리는 기존 버그를 발견 — 초기 로드 때(2999행)와 동일하게 TM.d=+TODAY.slice(8,10)을 추가했다(이 버그는 내 새 YTD 계산이 TM.d에 의존하게 되면서 처음으로 실제 영향력이 생겼다). (5) test/run.js: yearSpendByCategory/yearIncomeByCategory/yearRealizedGain endDate 경계값 테스트 3건, yearSummary YTD 비교(경계값·윤년 클램프·과거 연도 미적용·isYTD 플래그) 5건, openYearReview YTD 안내 문구 노출 2건, 총 10건 추가(2466->2476 통과). 기존 yearSummary 테스트 8건과 yearReviewCtx 테스트 전체가 테스트 하네스 공유 상태(sandbox.TM/ctx.TM이 다른 테스트의 부산물로 {y:2026,m:6} 등을 남겨두던 것)에 암묵적으로 의존하게 되는 걸 발견해, 각 테스트가 TM을 명시적으로 세팅하도록 고쳤다(yearReviewCtx 팩토리는 2099년으로 기본값 고정, sandbox 쪽 8개 테스트는 각자 2099년을 명시). APP_VERSION 1.47.310->1.47.311, sw.js CACHE v577->v578. node test/run.js 2476/2476 통과, 메인 스크립트(블록3)/logic.js/sw.js 구문 검증 통과. pending_advance_plan null로 비움.",
+      "summary": "연간 결산 YoY를 YTD(동기간) 비교로 고쳤다(yearSpendByCategory/yearIncomeByCategory/yearRealizedGain에 endDate 인자, yearSummary의 올해 윤년 클램프, openYearReview 안내 문구). 부수적으로 refreshToday()가 TM.d를 갱신하지 않던 버그도 발견해 같은 커밋에서 수정. 테스트 10건 추가(2466->2476), 기존 테스트의 암묵적 TM 공유상태 의존도 함께 정리. APP_VERSION 1.47.310->1.47.311, sw.js CACHE v577->v578. pending_advance_plan null로 비움.",
       "commit": null
     },
     {
       "cycle": 284,
       "phase": "develop",
       "timestamp": "2026-11-01T12:00:00.000Z",
-      "summary": "matchGoalQuery(logic.js, 목표 통합검색)가 g.targetAmount를 haystack에 전혀 넣지 않아, globalSearchBody 빈 상태 안내문이 '메모·카테고리·자산명·금액·목표명·반복명으로 검색해 보세요'라고 금액 검색을 목표에도 명시해 놓고도 실제로는 금액 검색이 전혀 동작하지 않던 공백을 발견(cycle283의 matchRecQuery와 동일한 클래스의 누락, 금액검색 롤아웃이 아직 닿지 않은 마지막 엔티티). matchRecQuery와 동일한 규칙으로 금액 매칭을 추가(parseAmountToken/amountMatchesToken/normalizeAmountSpacing 재사용). test/run.js에 7건 추가(2476->2483 통과). APP_VERSION 1.47.311->1.47.312, sw.js CACHE v578->v579. node test/run.js 2483/2483 통과, logic.js/sw.js 구문 검증(node --check) 통과, 메인 스크립트 블록2~4 구문 검증 통과.",
+      "summary": "matchGoalQuery(목표 통합검색)가 금액(targetAmount) 검색을 지원하지 않던 공백 발견(cycle283의 matchRecQuery와 동일 클래스, 금액검색 롤아웃의 마지막 엔티티). matchRecQuery와 동일한 규칙으로 금액 매칭 추가. 테스트 7건 추가(2476->2483). APP_VERSION 1.47.311->1.47.312, sw.js CACHE v578->v579.",
       "commit": "06a6c71"
     },
     {
       "cycle": 284,
       "phase": "review",
       "timestamp": "2026-11-01T13:05:00.000Z",
-      "summary": "cycle284 develop 커밋(06a6c71) 검토 — matchGoalQuery가 matchRecQuery/matchTxnQuery와 완전히 동일한 규칙(NFC 정규화, 쉼표 제거, normalizeAmountSpacing, 연산자 파싱 우선 후 substring 폴백)으로 구현됐고, 호출부(globalSearchBody, index.html:6272 단일 호출지)도 정상, targetAmount는 saveGoal에서 항상 양수로 저장되지만 null 가드도 matchRecQuery와 동일하게 방어적으로 처리됨. node test/run.js 2483/2483 통과, node --check logic.js/sw.js 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
+      "summary": "cycle284 develop 커밋(06a6c71) 검토 — matchGoalQuery 구현/호출부/테스트(2483/2483) 모두 정상, 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
       "commit": null
     },
     {
       "cycle": 284,
       "phase": "critique",
       "timestamp": "2026-11-01T14:15:00.000Z",
-      "summary": "saveTx()(일반 거래 저장)에 중복 입력 경고가 전혀 없는 공백 발견 — 자산 등록(saveAsset의 근접중복 차단)과 CSV 가져오기(중복 제거)는 이미 중복을 거르는데, 가장 흔한 수동 입력 경로만 안전망이 없어 같은 날 같은 거래를 두 번 저장해도 조용히 통과된다. 같은 date+type+amount+category+자산을 가진 기존 거래가 있으면 저장을 막지 않고 confirmSheet로 한 번 더 확인시키는 계획을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
+      "summary": "saveTx()(일반 거래 저장)에 중복 입력 경고가 전혀 없는 공백 발견 — 자산 등록(saveAsset)과 CSV 가져오기는 중복을 거르는데, 가장 흔한 수동 입력 경로만 안전망이 없다. 같은 date+type+amount+category+자산을 가진 기존 거래가 있으면 저장을 막지 않고 confirmSheet로 한 번 더 확인시키는 계획을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 284,
+      "phase": "advance",
+      "timestamp": "2026-11-01T16:40:00.000Z",
+      "summary": "critique(cycle284) 계획대로 일회성 거래 저장(saveTx)에 중복 입력 경고를 추가했다. (1) logic.js에 순수 함수 findPossibleDuplicateTx(txns,draft) 신설 — 신규(!draft.id) 거래만 대상, 이체(카테고리 없음)·분할(splits)·잔액조정(adjust) 내역은 1차 범위에서 제외, date+type+amount+category가 모두 같고 type별 자산(expense→fromAssetId, income→toAssetId, saving→from·to 둘 다)까지 같아야 중복으로 본다. (2) saveTx()의 저장 커밋 로직(반복 필드 제거~DB.txns 반영~토스트)을 commitTx()로 분리하고, 반복 등록 분기 이후·신규 저장일 때만 findPossibleDuplicateTx로 검사해 걸리면 기존 confirmSheet 패턴으로 '그래도 저장'을 한 번 더 확인시킨다(취소 시 기존 confirmSheet 관례대로 시트가 닫히고 저장되지 않음, 확인 시 commitTx()를 그대로 호출). (3) test/run.js FUNCTIONS 목록에 commitTx 추가, findPossibleDuplicateTx 단위 테스트 12건(완전일치/날짜·금액·카테고리·자산 다름/수입 toAssetId/저축 양쪽 자산/이체·분할·조정 제외/자기자신 제외/빈 입력)과 saveTx 통합 테스트 4건(중복 시 confirmSheet 호출 후 확인하면 저장/중복 없으면 즉시 저장/수정 경로는 대상 아님/이체는 제외) 추가(2483->2499 통과). APP_VERSION 1.47.312->1.47.313, sw.js CACHE v579->v580. node test/run.js 2499/2499 통과, logic.js/sw.js 구문 검증(node --check) 통과. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

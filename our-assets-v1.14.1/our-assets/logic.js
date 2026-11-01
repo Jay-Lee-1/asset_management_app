@@ -1062,6 +1062,29 @@ function csvDedupeKey(t){
   t.toAssetName!=null?('n:'+t.toAssetName):('i:'+(t.toAssetId||'')),
   t.memo||''].join('|');
 }
+/* ================= 거래 중복 입력 탐지 (순수) ================= */
+/* 자산 등록(saveAsset의 근접중복 차단)과 CSV 가져오기(csvDedupeKey)는 이미 중복을 거르지만,
+ * 가장 흔한 수동 입력 경로(saveTx)에는 안전망이 없었다 — 커피/점심처럼 매일 비슷한 금액을 넣는
+ * 습관 때문에 화면 전환 중 두 번 탭하거나 방금 입력한 걸 깜빡하고 다시 입력해도 조용히 통과된다.
+ * 저장을 막지 않고 호출부(index.html saveTx)가 확인창을 띄울지 판단하는 데 쓰는 "가능한 중복"
+ * 탐지기라, 오탐을 줄이려 완전 일치(날짜·금액·카테고리 모두 동일)만 잡는다. 1차 범위라
+ * 이체(transfer, 카테고리가 없어 비교 불가)와 분할(splits, 상위 category가 첫 항목 fallback일
+ * 뿐이라 자칫 전혀 다른 분할 내역을 같다고 오판할 수 있음) 거래는 대상에서 제외하고, 잔액 조정
+ * 내역(adjust)도 수동 입력이 아니라 비교 대상에서 뺀다. 자산 비교는 type에 따라 의미가 다른
+ * 칸을 본다 — expense는 fromAssetId, income은 toAssetId, saving은 거래 성격상(이체처럼 두 자산을
+ * 모두 씀) fromAssetId·toAssetId 둘 다 같아야 같은 내역으로 본다(app-evolve cycle284 advance). */
+function findPossibleDuplicateTx(txns,draft){
+ if(!draft||draft.type==='transfer')return null;
+ if(Array.isArray(draft.splits)&&draft.splits.length)return null;
+ if(!draft.date||!draft.amount||!draft.category)return null;
+ return (txns||[]).find(t=>{
+  if(!t||t.id===draft.id||t.adjust)return false;
+  if(t.date!==draft.date||t.type!==draft.type||t.amount!==draft.amount||t.category!==draft.category)return false;
+  if(draft.type==='income')return t.toAssetId===draft.toAssetId;
+  if(draft.type==='saving')return t.fromAssetId===draft.fromAssetId&&t.toAssetId===draft.toAssetId;
+  return t.fromAssetId===draft.fromAssetId;
+ })||null;
+}
 /* ===== 범용(은행/카드사) CSV 가져오기 — 열 매핑 ===== */
 /* txnsToCSV가 내보내는 이 앱 자신의 CSV 헤더(순서 고정) — detectOwnCsvFormat/csvRowToImportTxn이
  * 암묵적으로 가정해 온 "날짜,구분,카테고리,금액,보내는 자산,받는 자산,메모" 7칸을 공유 상수로
