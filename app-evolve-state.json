@@ -1,15 +1,12 @@
 {
   "cycle": 282,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "반복거래(구독 등)에 분할(splits) 카테고리 지원",
+    "why": "logic.js의 splitLines(t)(462-473행)는 이미 t.splits가 없으면 t.category/t.amount 단일 쌍으로 안전하게 폴백하는 범용 헬퍼라, expenseByCat/spendByCategory/matchTxnQuery/txCatLabel 등 집계·검색 함수들이 분할 여부와 무관하게 이 헬퍼 하나만 거치면 되도록 이미 설계돼 있다. 그런데 DB.recurrences는 애초에 splits를 담을 자리가 없는 스키마라(txToggleRepeat 5146행 '반복거래는 분할을 담을 자리가 없는 스키마라 반복을 켜면 분할을 되돌린다', saveTx 5274행 동일 주석, saveRec/renderRecSheet엔 분할 UI 자체가 없음), 매달 같은 날 같은 금액으로 나가지만 여러 카테고리에 걸친 자동결제(예: 통신+OTT 결합요금, 관리비+주차비 묶음 자동이체)는 반복거래로 등록하는 순간 사용자가 '제일 비슷한 카테고리 하나'를 억지로 골라야 한다 — cycle198이 일반 거래(DB.txns)에서 똑같은 공백을 없앴던 것과 정확히 같은 모양의 공백이 반복거래 쪽에만 남아있다. expandRec(2708행)이 생성하는 가상 거래 인스턴스에 splits를 실어주기만 하면 splitLines() 기반의 모든 하위 집계·검색 로직은 수정 없이 그대로 분할을 인식하므로, 설계상 이미 거의 준비된 공백을 메우는 작업이다.",
+    "approach": "범위가 커질 수 있으니 1차로 openRecManage/editRec/saveRec/renderRecSheet 경로(반복 '관리' 화면에서 직접 만들고 고치는 흐름)에만 분할을 넣고, saveTx의 '거래 입력 중 반복 켜기' 경로(5273행)는 이번엔 그대로 분할을 되돌리는 현재 동작을 유지해도 된다(다음 cycle로 미뤄도 무방) — 두 경로가 당분간 다르게 동작해도 txToggleRepeat의 기존 주석처럼 명확히 문서화하면 괜찮다. ① DB.recurrences 레코드에 splits:[{category,amount,memo?}]|null 필드 추가. ② renderRecSheet에 splitFieldHTML과 동일한 UI(txToggleSplit/txSplitAdd/txSplitRemove/txSplitOpenCat과 짝이 되는 recToggleSplit/recSplitAdd/recSplitRemove/recSplitOpenCat, recDraft 기준)를 추가하고 saveRec()에 saveTx(5257-5262행)와 동일한 분할 합계=전체금액 검증을 추가. ③ expandRec(2708행)이 매 회차 인스턴스에 splits:(ed.splits!=null?ed.splits:r.splits)를 실어주도록 수정(개별 회차 수정 오버라이드도 ed.memo/ed.amount와 동일한 패턴으로 splits를 덮어쓸 수 있게). ④ doRenameCat/doDeleteCat/mergeCatInto가 지금 r.category만 보고 옮기는 부분을 txns의 분할 처리와 동일한 패턴(Array.isArray(r.splits)&&r.splits.length이면 splits 항목들도 순회해 옮기고, 최상위 r.category는 하위호환 fallback으로 유지)으로 확장. matchRecQuery(logic.js)도 splitLines(r) 기반으로 카테고리/메모를 모아 검색하도록 확장(현재는 r.category/r.memo만 봄). ⑤ recHistFieldsChanged에 splits 비교 추가(스케줄/금액처럼 과거 회차에 영향을 주는 필드이므로 바뀌면 recSaveScopeConfirm을 거쳐야 함). ⑥ recurrencesToCSV는 cycle198이 거래 CSV에 내린 결론(분할은 내보내기 전용, 가져오기 미지원)과 동일하게 알려진 제한으로 명시하고 손대지 않아도 됨(범위를 좁히기 위한 선택). ⑦ test/run.js에 splitFieldHTML 짝 함수들의 UI 상태 전이, saveRec 검증, expandRec의 splits 전파/오버라이드, doRenameCat/doDeleteCat/mergeCatInto의 분할 반복거래 처리, matchRecQuery 분할 검색 테스트를 추가. 항상 node test/run.js로 전체 회귀 통과를 확인하고 APP_VERSION/sw.js CACHE를 올린다."
+  },
   "history": [
-    {
-      "cycle": 277,
-      "phase": "critique",
-      "timestamp": "2026-10-31T10:14:06.444Z",
-      "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, 새로운 기능 공백보다 먼저 cycle276에서 막 추가된 annualizedReturn/acquiredAt 기능 자체에 숨어있던 correctness 버그를 발견 — syncAssetInputs()(index.html:4411-4420)가 매입 금액을 처음 입력하는 순간만 노린 의도와 달리, saveAsset 포함 여러 호출 경로에서 d.costBasis>0 && !d.acquiredAt이면 항상 acquiredAt=TODAY로 찍는다. cycle276 이전부터 costBasis>0이던 기존 자산은 acquiredAt이 없어, 소유자/화폐/만기일 등 무관한 필드만 바꿔 저장해도 acquiredAt이 저장 시점으로 덮어써지고, annualizedReturn이 수년치 손익을 며칠짜리 보유기간으로 나눠 극단적으로 틀린 연환산 수익률을 보여주게 된다. develop 바로 다음에만 도는 review가 advance 커밋은 검토하지 않는 사각지대 때문에 지금까지 못 잡힌 회귀. 본 세션에서 syncAssetInputs 소스와 호출부(saveAsset/asOpenType/asOpenOwner/asOpenCur/asOpenMat/asToggleNeg 등 6곳)를 직접 재확인해 실재함을 검증. 채택 계획(_hadCostBasis 임시 플래그로 기존 자산의 acquiredAt 자동 채움 방지 + saveAsset 저장 전 플래그 제거 + 테스트 5건)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 277,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-01T05:05:00.000Z",
       "summary": "cycle282 develop 커밋(021c708, parseAmountUnit/amountMatchesToken 직접 단위 테스트 11건 추가)을 검토. logic.js의 실제 구현(parseAmountUnit 512-518행, amountMatchesToken 541-551행)을 직접 읽고 11건 전부의 기대값을 대조 — 정규식 /^(\\d+(?:\\.\\d+)?)(만|억)?$/이 '10만원'(trailing 글자)과 '1.2.3'(다중 소수점)을 거부하고 음수 기호를 지원하지 않는다는 단언, 네 연산자(>,>=,<,<=)의 경계 포함/배제와 range 양끝 포함, Math.abs() 음수 처리 단언이 모두 실제 구현과 정확히 일치함을 확인. 코드 변경 없이 테스트만 추가한 cycle이라 회귀 위험 자체가 낮음. node test/run.js 2435/2435 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 282,
+      "phase": "critique",
+      "timestamp": "2026-11-01T06:20:00.000Z",
+      "summary": "fork 서브에이전트로 앱 전반을 재탐색(카테고리 삭제/이름변경/합치기의 톰스톤·예산 이월 처리, 목표(goal)의 자산 연결 끊김 처리, 자산 재등록 재연결, CSV 가져오기 분할 미지원 등 모든 '합치기/삭제/재연결' 류 데이터 무결성 경로, 드래그 정렬·스와이프 제스처의 키보드 대안, 다크모드, 성능(expandRec 캐시·txnsByDateInRange 버킷화))을 둘러봤고 전부 이미 성숙 확인되어 제외했다. 대신 logic.js의 splitLines(t)(462행, '거래 1건이 카테고리 하나에 묶이지 않고 여러 카테고리로 나뉠 수 있게 하는 헬퍼')가 t.splits가 없으면 단일 category/amount로 안전하게 폴백해 expenseByCat/matchTxnQuery 등 모든 하위 집계·검색이 분할 여부를 몰라도 되도록 설계돼 있는데, DB.recurrences(반복거래)는 애초에 splits를 담을 자리가 없어(txToggleRepeat 5146행과 saveTx 5274행이 반복을 켜는 순간 분할을 되돌리고, openRecManage의 전용 편집 화면(renderRecSheet/saveRec)에는 분할 UI 자체가 없음) 통신+OTT 결합요금· 관리비+주차비 묶음 자동이체처럼 여러 카테고리에 걸친 고정 지출을 반복거래로 등록할 때마다 카테고리 하나를 억지로 골라야 하는 공백을 발견 — cycle198이 일반 거래에서 없앤 것과 정확히 같은 모양의 공백이 반복거래에만 남아있다. expandRec이 splits를 실어주기만 하면 splitLines() 체인이 수정 없이 그대로 동작하므로 설계상 이미 준비된 공백임을 코드로 직접 확인했다. 채택 계획(1차로 openRecManage 편집 화면 경로에 분할 UI/검증/expandRec 전파/카테고리 삭제·이름변경·합치기·검색 확장을 추가, saveTx의 '입력 중 반복 켜기' 경로는 범위를 좁히기 위해 이번엔 유지 가능)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
