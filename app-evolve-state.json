@@ -1,15 +1,8 @@
 {
   "cycle": 281,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 276,
-      "phase": "review",
-      "timestamp": "2026-10-31T05:07:45.192Z",
-      "summary": "cycle276 develop 커밋(ccccf8c, 목표(goal) 복제 duplicateGoal 추가)을 검토. saveGoal()의 push vs replace 분기(DB.goals.findIndex(x=>x.id===d.id))가 d.id=uid()로 새 id를 받은 복제본에서 항상 findIndex===-1이 되어 신규 push 경로를 타는 것을 확인(원본 레코드는 변경되지 않음). duplicateAsset/duplicateRec과 동일하게 open*Form을 거치지 않고 draft+renderGoalForm(false)를 직접 호출하는 패턴임을 확인, owner는 openGoalForm(editing)과 동일하게 goalOwnerEff(g)로 재계산되어 사라진 귀속이 all로 떨어짐을 확인. openGoalsList() 행의 복제 act-btn이 event.stopPropagation()으로 행 전체의 ackGoalAchieved 네비게이션과 분리됨을 확인(duplicateAsset/duplicateRec 행과 동일 패턴). node test/run.js 2343/2343 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 276,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-01T00:15:22.000Z",
       "summary": "자산 목록 CSV 내보내기(assetsToCSV)가 평가금액/매입원가/손익만 담고, 화면(assetGainLossBadge)에 이미 보이는 손익률(%)·연환산수익률(%)·매입일(acquiredAt, 바로 전 cycle280 advance가 추가한 필드)은 내보내지 못하던 공백을 발견 — 백업/스프레드시트 분석용으로 내보낸 CSV가 화면보다 정보가 적었다. assetsToCSV 헤더에 손익률(%)/연환산수익률(%)/매입일 3개 컬럼을 손익과 전체합계포함 사이에 추가하고, 값은 호출부(doExport)가 이미 평가를 끝낸 값만 받는 기존 원칙을 그대로 따라 gainLossPct/ann을 assetGainLoss()/annualizedReturn()(logic.js)로 계산해 얹음(acquiredAt은 asset 레코드 자체 필드라 그대로). gainLossPct/ann은 소수 둘째 자리로 round2해 부동소수점 꼬리가 CSV에 남지 않게 함. 기존 assetsToCSV 테스트 중 빈 배열 헤더 문자열과 부채 includeInTotal N 위치(인덱스 7->10)가 새 컬럼 삽입으로 깨져 있어 함께 갱신하고, 신규 컬럼의 값/null 폴백을 검증하는 테스트 1건 추가. APP_VERSION 1.47.306->1.47.307, sw.js CACHE v573->v574. node test/run.js 2419/2419 통과, logic.js node --check 통과.",
+      "commit": "2e5ee72"
+    },
+    {
+      "cycle": 281,
+      "phase": "review",
+      "timestamp": "2026-11-01T00:30:00.000Z",
+      "summary": "cycle281 develop 커밋(2e5ee72, 자산 목록 CSV 내보내기에 손익률/연환산수익률/매입일 컬럼 추가)을 검토. doExport 호출부가 gl=assetGainLoss(a)/ev=assetEval(a)를 한 번만 평가해 evalValue/gainLoss/gainLossPct/ann에 얹는 방식이 assetsCsv/goalsCsv의 기존 \"호출부가 평가를 끝낸 값만 넘긴다\" 관례를 그대로 따름을 확인. annualizedReturn(a.costBasis,ev,a.acquiredAt,TODAY)가 assetGainLoss(gl)의 isMarketValued/rateUnknown 게이트와 별도로 호출되는 점을 짚었으나, acquiredAt/costBasisField UI가 fx/gold/stock/crypto(isMarketValued)에만 배선돼 있어(cash/savings/realestate/etc/pension/debt엔 매입일 입력 자체가 없음) 실무에서 비시세평가 자산엔 acquiredAt이 찍히지 않으므로 annualizedReturn의 !acquiredAt 가드가 그대로 null을 돌려줘 실제 불일치로 이어지지 않음을 grep으로 확인. round2 중복 선언 없음, 헤더 인덱스(7/8/9/10)와 테스트 단언이 일치함을 확인. node test/run.js 2419/2419 통과, 메인 스크립트(블록2) node --check(new Function) 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
