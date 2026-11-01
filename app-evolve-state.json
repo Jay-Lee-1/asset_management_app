@@ -1,15 +1,8 @@
 {
   "cycle": 286,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 281,
-      "phase": "develop",
-      "timestamp": "2026-11-01T00:15:22.000Z",
-      "summary": "자산 목록 CSV 내보내기(assetsToCSV)에 손익률/연환산수익률/매입일 3컬럼 추가. APP_VERSION 1.47.306->1.47.307, sw.js CACHE v573->v574. node test/run.js 2419/2419 통과.",
-      "commit": "2e5ee72"
-    },
     {
       "cycle": 281,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-01T21:00:00.000Z",
       "summary": "critique(cycle285) 계획대로 반복(구독) 등록(saveRec)에 중복 입력 경고를 추가했다. (1) logic.js에 순수 함수 findPossibleDuplicateRec(recurrences,draft) 신설 — 신규(!draft.id) 등록만 대상, 이미 중지한(active:false) 반복은 제외, type+freq+day+amount+category가 모두 같고(splits가 있으면 JSON.stringify로 내용까지 비교) type별 자산(expense→fromAssetId, income→toAssetId, transfer·saving→fromAssetId·toAssetId 둘 다)까지 같아야 중복으로 본다. (2) saveRec()의 저장 커밋 로직(더블탭 가드~cleaned 계산~DB.recurrences 반영~토스트)을 commitRec(d,wasEditing)으로 분리하고, wasEditing이 false일 때만 findPossibleDuplicateRec으로 검사해 걸리면 saveTx와 동일한 confirmSheet 패턴('비슷한 반복이 있어요' / '그래도 등록')으로 한 번 더 확인시킨다(취소 시 저장되지 않고 시트 유지, 확인 시 commitRec을 그대로 호출). (3) test/run.js FUNCTIONS에 commitRec 추가, findPossibleDuplicateRec 단위 테스트 13건(완전일치/freq·day·금액·카테고리·자산 다름/수입 toAssetId/이체·저축 양쪽 자산/splits 내용 비교/자기자신(수정 경로) 제외/비활성 반복 제외/빈 입력)과 saveRec 통합 테스트 4건(중복 시 confirmSheet 호출 후 확인하면 저장/중복 없으면 즉시 저장/수정 경로는 대상 아님/중지된 구독은 제외) 추가. 기존 'duplicateRec → saveRec' 테스트도 갱신했다 — duplicateRec은 startDate만 오늘로 바꾸고 나머지(type/freq/day/amount/category/자산)는 원본과 그대로 같게 복제하므로, 복제 즉시 재저장하면 이제 confirmSheet가 뜨는 게 의도된 동작이다(확인 후 저장되는 것으로 테스트 변경). APP_VERSION 1.47.314->1.47.315, sw.js CACHE v581->v582. node test/run.js 2502->2518 전체 통과, logic.js/sw.js/script 블록 구문 검증(node --check) 통과. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 286,
+      "phase": "develop",
+      "timestamp": "2026-11-01T20:09:54.238Z",
+      "summary": "matchTxnQuery(거래 검색)의 비교/범위 연산자(>,<,~)가 분할 거래(t.splits)에서 최상위 합계(t.amount)만 보고 개별 분할 금액은 보지 않던 공백 발견 — matchRecQuery(cycle282 이후 splits 지원)는 r.amount와 각 분할 금액을 모두 비교하는데 matchTxnQuery만 갈라져 있어, 분할된 작은 금액을 \"<N\"/범위로 찾으려 하면(예: 10000원 거래 중 식비 7000+생활용품 3000을 \"<4000\"으로 찾기) 못 찾고 substring(\"3000\")으로는 찾히는 비일관이 있었다. matchRecQuery와 동일한 패턴(t.amount 비교 OR lines.some 비교)으로 통일. 테스트 2건 추가(2518->2520). APP_VERSION 1.47.315->1.47.316, sw.js CACHE v582->v583. node test/run.js 2520/2520 통과.",
       "commit": null
     }
   ]

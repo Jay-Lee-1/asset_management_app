@@ -492,7 +492,13 @@ function txCatLabel(t){
  * JS의 includes()는 코드포인트를 그대로 비교해 두 형태가 섞이면(예: 과거 macOS/HFS+에서 복사해
  * 붙여넣은 메모·자산명은 NFD로 저장되는 경우가 있음) 검색어와 저장된 글자가 눈에는 완전히
  * 같아 보여도 전혀 매칭되지 않는다. normName()은 카테고리/귀속 '이름' 중복 비교에만 이 정규화를
- * 적용했을 뿐, 자유 텍스트 검색(#histQ 전체내역 검색, 자산 검색)에는 적용된 적이 없었다. */
+ * 적용했을 뿐, 자유 텍스트 검색(#histQ 전체내역 검색, 자산 검색)에는 적용된 적이 없었다.
+ * 금액 비교/범위 연산자(parseAmountToken)는 cycle278에서 t.amount(분할 전체 합계)만 비교했고,
+ * matchRecQuery(cycle282 이후 splits 지원)는 r.amount와 각 분할 금액을 모두 비교하는데 여기만
+ * t.amount만 봐 분할 거래에서 둘의 동작이 갈라져 있었다(app-evolve cycle286 develop) — "생활용품
+ * 3000원" 분할이 섞인 1만원 거래를 ">2000"으로는 못 찾고 "3000"(substring)으로는 찾히는 식으로,
+ * 같은 분할 금액을 연산자냐 평문이냐에 따라 다르게 취급해 사용자가 보기엔 그냥 버그였다.
+ * matchRecQuery와 동일하게 t.amount 비교에 lines(splitLines(t)) 각 항목의 비교를 or로 더한다. */
 /* 검색어를 공백 기준으로 토큰화해 트림 후 빈 토큰을 거른다 — matchTxnQuery/matchAssetQuery/
  * matchCatQuery가 공유하는 "여러 단어를 띄어 쓰면 AND(모두 포함)로 좁혀진다" 규칙의 토큰화
  * 단계. 기존엔 공백을 포함한 검색어 전체를 하나의 literal로 includes() 비교해, haystack 안에
@@ -574,7 +580,7 @@ function matchTxnQuery(t,q,assets){
  if(!terms.length)return true;
  return terms.every(term=>{
   const parsed=parseAmountToken(term);
-  if(parsed)return t.amount!=null&&amountMatchesToken(t.amount,parsed);
+  if(parsed)return (t.amount!=null&&amountMatchesToken(t.amount,parsed))||lines.some(l=>l.amount!=null&&amountMatchesToken(l.amount,parsed));
   return normHay.includes(term);
  });
 }

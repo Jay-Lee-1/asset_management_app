@@ -7351,6 +7351,20 @@ test('matchTxnQuery: 금액의 일부 숫자만 넣는 기존 부분일치는 �
   const t = { memo: '', category: '식비', amount: 123456, fromAssetId: null, toAssetId: null };
   assert.strictEqual(sandbox.matchTxnQuery(t, '2345', []), true);
 });
+test('matchTxnQuery: 분할 거래는 "<N"/범위 연산자도 최상위 합계가 아니라 개별 분할 금액으로 매칭될 수 있다(app-evolve cycle286, matchRecQuery와 동일 규칙)', () => {
+  // 최상위 합계(10000)는 ">" 계열 연산자라면 항상 분할 금액(7000/3000) 각각보다 크거나 같아 "<"/범위처럼
+  // 상한이 있는 연산자에서만 합계만 보던 기존 버그와 수정 후 동작이 실제로 갈린다.
+  const t = { memo: '', amount: 10000, splits: [{ category: '식비', amount: 7000 }, { category: '생활용품', amount: 3000 }], fromAssetId: null, toAssetId: null };
+  assert.strictEqual(sandbox.matchTxnQuery(t, '<4000', []), true, '합계(10000)는 4000 미만이 아니지만 두 번째 분할 금액(3000)이 4000 미만이므로 매칭되어야 함');
+  assert.strictEqual(sandbox.matchTxnQuery(t, '<2000', []), false, '합계(10000)도 어느 분할 금액(7000/3000)도 2000 미만이 아니므로 매칭되지 않아야 함');
+  assert.strictEqual(sandbox.matchTxnQuery(t, '2500~3500', []), true, '합계(10000)는 이 범위 밖이지만 두 번째 분할 금액(3000)이 범위 안이므로 매칭되어야 함');
+  assert.strictEqual(sandbox.matchTxnQuery(t, '4000~5000', []), false, '합계(10000)도 어느 분할 금액(7000/3000)도 이 범위에 들어가지 않으므로 매칭되지 않아야 함');
+});
+test('matchTxnQuery: 분할 거래가 아닌 일반 거래는 비교 연산자에서도 최상위 금액 하나로만 비교된다(회귀)', () => {
+  const t = { memo: '', category: '식비', amount: 10000, fromAssetId: null, toAssetId: null };
+  assert.strictEqual(sandbox.matchTxnQuery(t, '>8000', []), true);
+  assert.strictEqual(sandbox.matchTxnQuery(t, '>20000', []), false);
+});
 
 /* ---------- normalizeAmountSpacing: 연산자/범위 뒤에 띄어 쓴 금액도 받아준다(app-evolve cycle279
  * critique) — parseAmountToken은 ">10만"처럼 붙여 쓴 입력만 인식해, "> 10만"처럼 자연스럽게
