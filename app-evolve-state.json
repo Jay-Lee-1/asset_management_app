@@ -1,11 +1,7 @@
 {
-  "cycle": 285,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "반복(구독) 등록(saveRec)에 saveTx의 중복 입력 경고가 없음",
-    "why": "cycle284가 일회성 거래 저장(saveTx)에 findPossibleDuplicateTx 중복 경고를 추가했지만, 반복/구독 등록(saveRec)에는 이 안전망이 전혀 없다(grep 결과 findPossibleDuplicateRec 류 함수 없음). saveRec은 이미 더블탭 가드(_savedDrafts)를 갖고 있어 같은 제출을 두 번 누르는 사고는 막지만, 별개 입력 세션에서 같은 구독(예: 넷플릭스 15,000원 매달 5일)을 실수로 다시 등록하는 경우는 전혀 막지 못한다. 일회성 거래의 중복은 한 번의 이중 지출로 끝나지만, 반복거래의 중복은 매달 자동으로 계속 이중 집계되어 지출 분석·예산·순자산 계산에 조용히 누적되는 더 큰 피해를 낸다 — saveTx보다 우선순위가 높은 동일 클래스의 공백.",
-    "approach": "logic.js에 순수 함수 findPossibleDuplicateRec(recurrences, draft)를 신설한다. 신규(!draft.id) 저장만 대상으로 하고, active한 기존 반복 중 type+freq+day+amount+category(분할이 있으면 splits도 JSON 비교)가 모두 같고, type별 자산(expense→fromAssetId, income→toAssetId, transfer·saving→fromAssetId·toAssetId 둘 다)까지 같은 항목이 있으면 중복으로 본다(비활성(active:false) 반복은 제외 — 이미 중지한 구독을 참고해 비슷한 걸 새로 등록하는 정상 사용을 막지 않기 위해). saveRec()에서 모든 기존 검증(금액/자산/분할/종료일 등)을 통과하고 cleaned 계산 이전, wasEditing이 false일 때만 findPossibleDuplicateRec으로 검사해 걸리면 saveTx와 동일한 confirmSheet 패턴('이미 비슷한 반복이 있어요' / '그래도 등록' · 취소)으로 한 번 더 확인시킨다(취소 시 기존 confirmSheet 관례대로 저장되지 않고 시트가 유지됨, 확인 시 나머지 saveRec 로직을 그대로 진행). commitTx처럼 saveRec의 저장 커밋부를 분리할 필요는 없다(saveTx와 달리 반복 등록 분기 자체가 없어 분기 지점이 하나뿐). test/run.js FUNCTIONS에 findPossibleDuplicateRec 추가, 단위 테스트(완전일치/freq·day·금액·카테고리·자산 다름/transfer·saving 양쪽 자산 비교/분할 비교/자기자신(수정 경로) 제외/비활성 반복 제외/빈 입력) 및 saveRec 통합 테스트(중복 시 confirmSheet 호출 후 확인하면 저장/중복 없으면 즉시 저장/수정 경로는 대상 아님) 추가. APP_VERSION/sw.js CACHE 올리고 node test/run.js 전체 통과, script 블록 node --check 확인."
-  },
+  "cycle": 286,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
     {
       "cycle": 281,
@@ -138,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-01T19:40:00.000Z",
       "summary": "반복/구독 등록(saveRec)에 saveTx(cycle284)가 가진 중복 입력 경고가 없는 공백 발견 — saveRec의 더블탭 가드(_savedDrafts)는 같은 제출의 중복만 막고, 별개 세션에서 같은 구독을 다시 등록하는 실수는 못 막는다. 반복거래 중복은 매달 자동으로 계속 이중 집계되어 일회성 거래 중복보다 피해가 크다. findPossibleDuplicateRec 신설 계획을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 285,
+      "phase": "advance",
+      "timestamp": "2026-11-01T21:00:00.000Z",
+      "summary": "critique(cycle285) 계획대로 반복(구독) 등록(saveRec)에 중복 입력 경고를 추가했다. (1) logic.js에 순수 함수 findPossibleDuplicateRec(recurrences,draft) 신설 — 신규(!draft.id) 등록만 대상, 이미 중지한(active:false) 반복은 제외, type+freq+day+amount+category가 모두 같고(splits가 있으면 JSON.stringify로 내용까지 비교) type별 자산(expense→fromAssetId, income→toAssetId, transfer·saving→fromAssetId·toAssetId 둘 다)까지 같아야 중복으로 본다. (2) saveRec()의 저장 커밋 로직(더블탭 가드~cleaned 계산~DB.recurrences 반영~토스트)을 commitRec(d,wasEditing)으로 분리하고, wasEditing이 false일 때만 findPossibleDuplicateRec으로 검사해 걸리면 saveTx와 동일한 confirmSheet 패턴('비슷한 반복이 있어요' / '그래도 등록')으로 한 번 더 확인시킨다(취소 시 저장되지 않고 시트 유지, 확인 시 commitRec을 그대로 호출). (3) test/run.js FUNCTIONS에 commitRec 추가, findPossibleDuplicateRec 단위 테스트 13건(완전일치/freq·day·금액·카테고리·자산 다름/수입 toAssetId/이체·저축 양쪽 자산/splits 내용 비교/자기자신(수정 경로) 제외/비활성 반복 제외/빈 입력)과 saveRec 통합 테스트 4건(중복 시 confirmSheet 호출 후 확인하면 저장/중복 없으면 즉시 저장/수정 경로는 대상 아님/중지된 구독은 제외) 추가. 기존 'duplicateRec → saveRec' 테스트도 갱신했다 — duplicateRec은 startDate만 오늘로 바꾸고 나머지(type/freq/day/amount/category/자산)는 원본과 그대로 같게 복제하므로, 복제 즉시 재저장하면 이제 confirmSheet가 뜨는 게 의도된 동작이다(확인 후 저장되는 것으로 테스트 변경). APP_VERSION 1.47.314->1.47.315, sw.js CACHE v581->v582. node test/run.js 2502->2518 전체 통과, logic.js/sw.js/script 블록 구문 검증(node --check) 통과. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

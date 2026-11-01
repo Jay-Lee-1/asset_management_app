@@ -211,7 +211,7 @@ const FUNCTIONS = [
   'deletedAssetHistoryExists', 'relinkDeletedAsset',
   'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'writeThemeCache', 'restoreBackup', 'storageOutcomeMsg', 'shouldWarnUnpersisted', 'shouldWarnStorageSize', 'toggleRecActive', 'toggleAdjustSurplus', 'touchSave',
   'sanitizeAmount', 'sanitizeBackup',
-  'saveRec', 'editRec', 'duplicateRec', 'recHistFieldsChanged', 'recScheduleShapeChanged', 'pruneOrphanRecOverrides', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
+  'saveRec', 'commitRec', 'editRec', 'duplicateRec', 'recHistFieldsChanged', 'recScheduleShapeChanged', 'pruneOrphanRecOverrides', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
   'expandRec', 'allTxns', 'txnsByDateInRange', 'spendByCategory', 'spendTrend', 'spendTrendBadge', 'incomeByCategory', 'incomeTrend', 'incomeTrendBadge', 'histSumTotals',
   'yearSpendByCategory', 'yearIncomeByCategory', 'yearRealizedGain', 'yearMonthlyNet', 'savingsRate', 'yearSummary', 'openYearReview',
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'buildExpenseBarHtml', 'expenseBreakdownCard', 'incomeBreakdownCard',
@@ -6474,6 +6474,75 @@ test('findPossibleDuplicateTx: txns가 비었거나 draft가 비어 있으면 �
   assert.strictEqual(sandbox.findPossibleDuplicateTx([], { date: '2026-06-15', type: 'expense', amount: 5000, category: '식비', fromAssetId: 'a1' }), null);
   assert.strictEqual(sandbox.findPossibleDuplicateTx([{ date: '2026-06-15', type: 'expense', amount: 5000, category: '식비', fromAssetId: 'a1' }], null), null);
 });
+/* ---------- findPossibleDuplicateRec: saveRec 반복 등록 중복 경고(app-evolve cycle285 advance) ---------- */
+test('findPossibleDuplicateRec: type/freq/day/amount/category/자산이 모두 같은 신규 지출 반복이 있으면 그 반복을 돌려준다', () => {
+  const existing = { id: 'r1', active: true, type: 'expense', freq: 'monthly', day: 5, amount: 15000, category: '구독', fromAssetId: 'a1', toAssetId: null };
+  const draft = { id: null, type: 'expense', freq: 'monthly', day: 5, amount: 15000, category: '구독', fromAssetId: 'a1', toAssetId: null };
+  assert.strictEqual(sandbox.findPossibleDuplicateRec([existing], draft), existing);
+});
+test('findPossibleDuplicateRec: freq가 다르면 중복이 아니다', () => {
+  const existing = { id: 'r1', active: true, type: 'expense', freq: 'monthly', day: 5, amount: 15000, category: '구독', fromAssetId: 'a1', toAssetId: null };
+  const draft = { id: null, type: 'expense', freq: 'yearly', day: 5, amount: 15000, category: '구독', fromAssetId: 'a1', toAssetId: null };
+  assert.strictEqual(sandbox.findPossibleDuplicateRec([existing], draft), null);
+});
+test('findPossibleDuplicateRec: day가 다르면 중복이 아니다', () => {
+  const existing = { id: 'r1', active: true, type: 'expense', freq: 'monthly', day: 5, amount: 15000, category: '구독', fromAssetId: 'a1', toAssetId: null };
+  const draft = { id: null, type: 'expense', freq: 'monthly', day: 10, amount: 15000, category: '구독', fromAssetId: 'a1', toAssetId: null };
+  assert.strictEqual(sandbox.findPossibleDuplicateRec([existing], draft), null);
+});
+test('findPossibleDuplicateRec: 금액이 다르면 중복이 아니다', () => {
+  const existing = { id: 'r1', active: true, type: 'expense', freq: 'monthly', day: 5, amount: 15000, category: '구독', fromAssetId: 'a1', toAssetId: null };
+  const draft = { id: null, type: 'expense', freq: 'monthly', day: 5, amount: 15001, category: '구독', fromAssetId: 'a1', toAssetId: null };
+  assert.strictEqual(sandbox.findPossibleDuplicateRec([existing], draft), null);
+});
+test('findPossibleDuplicateRec: 카테고리가 다르면 중복이 아니다', () => {
+  const existing = { id: 'r1', active: true, type: 'expense', freq: 'monthly', day: 5, amount: 15000, category: '구독', fromAssetId: 'a1', toAssetId: null };
+  const draft = { id: null, type: 'expense', freq: 'monthly', day: 5, amount: 15000, category: '통신', fromAssetId: 'a1', toAssetId: null };
+  assert.strictEqual(sandbox.findPossibleDuplicateRec([existing], draft), null);
+});
+test('findPossibleDuplicateRec: 지출은 fromAssetId가 다르면 중복이 아니다', () => {
+  const existing = { id: 'r1', active: true, type: 'expense', freq: 'monthly', day: 5, amount: 15000, category: '구독', fromAssetId: 'a1', toAssetId: null };
+  const draft = { id: null, type: 'expense', freq: 'monthly', day: 5, amount: 15000, category: '구독', fromAssetId: 'a2', toAssetId: null };
+  assert.strictEqual(sandbox.findPossibleDuplicateRec([existing], draft), null);
+});
+test('findPossibleDuplicateRec: 수입은 toAssetId를 비교한다', () => {
+  const existing = { id: 'r1', active: true, type: 'income', freq: 'monthly', day: 25, amount: 3000000, category: '급여', fromAssetId: null, toAssetId: 'a1' };
+  const same = { id: null, type: 'income', freq: 'monthly', day: 25, amount: 3000000, category: '급여', fromAssetId: null, toAssetId: 'a1' };
+  const diff = { id: null, type: 'income', freq: 'monthly', day: 25, amount: 3000000, category: '급여', fromAssetId: null, toAssetId: 'a2' };
+  assert.strictEqual(sandbox.findPossibleDuplicateRec([existing], same), existing);
+  assert.strictEqual(sandbox.findPossibleDuplicateRec([existing], diff), null);
+});
+test('findPossibleDuplicateRec: 이체·저축은 fromAssetId·toAssetId 둘 다 같아야 중복으로 본다', () => {
+  const existingTransfer = { id: 'r1', active: true, type: 'transfer', freq: 'monthly', day: 1, amount: 100000, category: '이체', fromAssetId: 'a1', toAssetId: 'a2' };
+  const sameTransfer = { id: null, type: 'transfer', freq: 'monthly', day: 1, amount: 100000, category: '이체', fromAssetId: 'a1', toAssetId: 'a2' };
+  const diffToTransfer = { id: null, type: 'transfer', freq: 'monthly', day: 1, amount: 100000, category: '이체', fromAssetId: 'a1', toAssetId: 'a3' };
+  assert.strictEqual(sandbox.findPossibleDuplicateRec([existingTransfer], sameTransfer), existingTransfer);
+  assert.strictEqual(sandbox.findPossibleDuplicateRec([existingTransfer], diffToTransfer), null);
+  const existingSaving = { id: 'r2', active: true, type: 'saving', freq: 'monthly', day: 1, amount: 100000, category: '청약', fromAssetId: 'a1', toAssetId: 'a2' };
+  const diffFromSaving = { id: null, type: 'saving', freq: 'monthly', day: 1, amount: 100000, category: '청약', fromAssetId: 'a3', toAssetId: 'a2' };
+  assert.strictEqual(sandbox.findPossibleDuplicateRec([existingSaving], diffFromSaving), null);
+});
+test('findPossibleDuplicateRec: splits 내용까지 같아야 중복으로 본다(다르면 중복 아님)', () => {
+  const existing = { id: 'r1', active: true, type: 'expense', freq: 'monthly', day: 5, amount: 15000, category: '통신', fromAssetId: 'a1', toAssetId: null, splits: [{ category: '통신', amount: 10000 }, { category: 'OTT', amount: 5000 }] };
+  const same = { id: null, type: 'expense', freq: 'monthly', day: 5, amount: 15000, category: '통신', fromAssetId: 'a1', toAssetId: null, splits: [{ category: '통신', amount: 10000 }, { category: 'OTT', amount: 5000 }] };
+  const diffSplit = { id: null, type: 'expense', freq: 'monthly', day: 5, amount: 15000, category: '통신', fromAssetId: 'a1', toAssetId: null, splits: [{ category: '통신', amount: 12000 }, { category: 'OTT', amount: 3000 }] };
+  assert.strictEqual(sandbox.findPossibleDuplicateRec([existing], same), existing);
+  assert.strictEqual(sandbox.findPossibleDuplicateRec([existing], diffSplit), null);
+});
+test('findPossibleDuplicateRec: 수정 경로(draft.id가 있음)는 항상 null — 자기 자신을 중복으로 보지 않음', () => {
+  const existing = { id: 'r1', active: true, type: 'expense', freq: 'monthly', day: 5, amount: 15000, category: '구독', fromAssetId: 'a1', toAssetId: null };
+  const draft = { id: 'r1', type: 'expense', freq: 'monthly', day: 5, amount: 15000, category: '구독', fromAssetId: 'a1', toAssetId: null };
+  assert.strictEqual(sandbox.findPossibleDuplicateRec([existing], draft), null);
+});
+test('findPossibleDuplicateRec: 이미 중지한(active:false) 반복은 비교 대상에서 제외한다', () => {
+  const existing = { id: 'r1', active: false, type: 'expense', freq: 'monthly', day: 5, amount: 15000, category: '구독', fromAssetId: 'a1', toAssetId: null };
+  const draft = { id: null, type: 'expense', freq: 'monthly', day: 5, amount: 15000, category: '구독', fromAssetId: 'a1', toAssetId: null };
+  assert.strictEqual(sandbox.findPossibleDuplicateRec([existing], draft), null);
+});
+test('findPossibleDuplicateRec: recurrences가 비었거나 draft가 비어 있으면 안전하게 null', () => {
+  assert.strictEqual(sandbox.findPossibleDuplicateRec([], { type: 'expense', freq: 'monthly', day: 5, amount: 15000, category: '구독', fromAssetId: 'a1' }), null);
+  assert.strictEqual(sandbox.findPossibleDuplicateRec([{ active: true, type: 'expense', freq: 'monthly', day: 5, amount: 15000, category: '구독', fromAssetId: 'a1' }], null), null);
+});
 test('buildImportPreview: doExport가 내보낸 CSV를 그대로 다시 가져오려 하면 전부 중복으로 건너뛴다', () => {
   const assets = [{ id: 'a1', name: '주계좌' }];
   const txns = [{ id: 't1', date: '2026-01-01', type: 'expense', category: '식비', amount: 5000, fromAssetId: 'a1', toAssetId: null, memo: '점심' }];
@@ -10204,6 +10273,51 @@ test('saveRec: 신규 반복 등록(id 없음)은 기존처럼 회귀 없이 바
   assert.strictEqual(sandbox.DB.recurrences.length, 1);
   assert.strictEqual(sandbox.DB.recurrences[0].id, 'test-uid');
 });
+/* ---------- saveRec: 반복 등록 중복 입력 경고(app-evolve cycle285 advance) ---------- */
+test('saveRec: 신규 반복이 기존 활성 반복과 type/freq/day/amount/category/자산이 완전히 겹치면 바로 저장하지 않고 confirmSheet로 확인한다', () => {
+  sandbox.TWi = -1; sandbox.TODAY = '2026-06-15';
+  sandbox.DB = { recurrences: [{ id: 'r1', active: true, type: 'expense', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, count: null, amount: 15000, category: '구독', memo: '넷플릭스', fromAssetId: 'a1', toAssetId: null, skip: [], edits: {} }] };
+  sandbox.recDraft = { id: null, type: 'expense', freq: 'monthly', day: 5, startDate: '2026-07-05', endDate: null, count: null, amount: 15000, category: '구독', memo: '넷플릭스', fromAssetId: 'a1', toAssetId: null, active: true };
+  sandbox.confirmSheetCalls = [];
+  sandbox.saveRec();
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 1, '중복 가능성이 있으면 confirmSheet가 떠야 함');
+  assert.strictEqual(sandbox.DB.recurrences.length, 1, '확인하기 전까지는 저장되면 안 됨');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.recurrences.length, 2, '확인(그래도 등록)을 누르면 commitRec이 실행되어 저장되어야 함');
+});
+test('saveRec: 비슷한 반복이 없으면 confirmSheet 없이 바로 저장된다(정상 케이스는 회귀 없음)', () => {
+  sandbox.TWi = -1; sandbox.TODAY = '2026-06-15';
+  sandbox.DB = { recurrences: [] };
+  sandbox.recDraft = { id: null, type: 'expense', freq: 'monthly', day: 5, startDate: '2026-07-05', endDate: null, count: null, amount: 15000, category: '구독', memo: '넷플릭스', fromAssetId: 'a1', toAssetId: null, active: true };
+  sandbox.confirmSheetCalls = [];
+  sandbox.saveRec();
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0);
+  assert.strictEqual(sandbox.DB.recurrences.length, 1);
+});
+test('saveRec: 기존 반복을 수정(d.id 있음)할 때는 다른 반복과 값이 겹쳐도 중복 확인을 하지 않는다', () => {
+  sandbox.TWi = -1; sandbox.TODAY = '2026-06-15';
+  sandbox.DB = { recurrences: [
+    { id: 'r1', active: true, type: 'expense', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, count: null, amount: 15000, category: '구독', memo: '넷플릭스', fromAssetId: 'a1', toAssetId: null, skip: [], edits: {} },
+    { id: 'r2', active: true, type: 'expense', freq: 'monthly', day: 10, startDate: '2026-07-10', endDate: null, count: null, amount: 5000, category: '통신', memo: '통신비', fromAssetId: 'a1', toAssetId: null, skip: [], edits: {} },
+  ] };
+  // r2는 시작일이 아직 안 와 과거 회차가 없으므로(recSaveScopeConfirm 경로를 타지 않음), 중복
+  // 확인 스킵 자체만 순수하게 검증한다 — r1과 amount/category/day가 완전히 겹치도록 바꿔도
+  // 수정 경로(d.id 있음)라 findPossibleDuplicateRec이 애초에 호출되지 않아야 한다.
+  sandbox.recDraft = { id: 'r2', type: 'expense', freq: 'monthly', day: 5, startDate: '2026-07-10', endDate: null, count: null, amount: 15000, category: '구독', memo: '넷플릭스', fromAssetId: 'a1', toAssetId: null, active: true };
+  sandbox.confirmSheetCalls = [];
+  sandbox.saveRec();
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0, '수정 경로는 중복 확인 대상이 아님');
+  assert.strictEqual(sandbox.DB.recurrences.find((r) => r.id === 'r2').amount, 15000, '수정이 그대로 반영되어야 함');
+});
+test('saveRec: 이미 중지한(active:false) 반복과 값이 겹쳐도 confirmSheet 없이 바로 저장된다', () => {
+  sandbox.TWi = -1; sandbox.TODAY = '2026-06-15';
+  sandbox.DB = { recurrences: [{ id: 'r1', active: false, type: 'expense', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, count: null, amount: 15000, category: '구독', memo: '넷플릭스(해지)', fromAssetId: 'a1', toAssetId: null, skip: [], edits: {} }] };
+  sandbox.recDraft = { id: null, type: 'expense', freq: 'monthly', day: 5, startDate: '2026-07-05', endDate: null, count: null, amount: 15000, category: '구독', memo: '넷플릭스', fromAssetId: 'a1', toAssetId: null, active: true };
+  sandbox.confirmSheetCalls = [];
+  sandbox.saveRec();
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0, '중지된 구독을 참고해 새로 등록하는 정상 사용은 막지 않아야 함');
+  assert.strictEqual(sandbox.DB.recurrences.length, 2);
+});
 /* ---------- recSaveScopeApply: save({fromDate})로 invalidateBalances의 부분 무효화 경로에 날짜를
  * 넘긴다 (app-evolve cycle210 develop) ----------
  * saveRec()의 확인 시트 없는 즉시 적용 경로는 cycle209에서 이미 save({fromDate})로 넘기게 됐는데,
@@ -13082,7 +13196,15 @@ test('duplicateRec → saveRec: 복제본을 저장하면 원본은 그대로 �
   sandbox.TODAY = '2026-05-20';
   sandbox.DB = { recurrences: [{ id: 'r3', type: 'expense', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, count: null, amount: 1000, category: '관리비', memo: '관리비', fromAssetId: 'a1', toAssetId: null, active: true, skip: [], edits: {} }] };
   sandbox.duplicateRec('r3');
+  // 복제본은 원본과 type/freq/day/amount/category/자산이 완전히 같다(startDate만 오늘로 바뀜) —
+  // findPossibleDuplicateRec은 startDate를 보지 않으므로(app-evolve cycle285 advance), 그대로
+  // 저장하면 confirmSheet가 뜬다. 복제 후 그대로 재저장하는 건 "같은 구독을 또 등록"하는 경우와
+  // 구분이 안 되므로 이 확인은 의도된 동작이다 — 확인(그래도 등록)을 눌러야 저장된다.
+  sandbox.confirmSheetCalls = [];
   sandbox.saveRec();
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 1, '복제본이 원본과 완전히 겹치므로 confirmSheet가 떠야 함');
+  assert.strictEqual(sandbox.DB.recurrences.length, 1, '확인하기 전까지는 저장되면 안 됨');
+  sandbox.confirmSheetCalls[0].cb();
   assert.strictEqual(sandbox.DB.recurrences.length, 2, '원본 1건 + 복제 신규 저장 1건으로 총 2건이어야 함');
   assert.strictEqual(sandbox.DB.recurrences[0].id, 'r3', '원본 레코드는 그대로 남아야 함');
   assert.strictEqual(sandbox.DB.recurrences[0].startDate, '2026-01-05', '원본 시작일은 바뀌지 않아야 함');

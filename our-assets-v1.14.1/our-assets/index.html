@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.314';
+const APP_VERSION='1.47.315';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5600,6 +5600,13 @@ function saveRec(){
  delete d._catUserTouched; /* saveTx와 동일한 이유 — recCatSuggestUpdate 억제용 UI 플래그가 DB.recurrences[i]=d(직접 대입)·Object.assign(바로 아래)로 그대로 저장되지 않도록 지운다(app-evolve cycle270이 추가했고 cycle271에서 발견) */
  d.varying=isVarCat(d.type,d.category); /* 변동 여부는 카테고리에서 파생 */
  const wasEditing=!!d.id;
+ if(!wasEditing&&findPossibleDuplicateRec(DB.recurrences,d)){ /* 수정이 아니라 신규 등록일 때만 — 비슷한 반복이 이미 있으면 막지 않고 한 번 더 확인시킨다(app-evolve cycle285 advance) */
+  confirmSheet('비슷한 반복이 있어요',`${esc(d.category)} · ${comma(d.amount)}원 · ${recFreqLabelStr(d.freq,d.day,d.startDate)} 반복이 이미 있어요.<br>그래도 등록할까요?`,'그래도 등록',()=>commitRec(d,wasEditing));
+  return;
+ }
+ commitRec(d,wasEditing);
+}
+function commitRec(d,wasEditing){
  _savedDrafts.add(d);touch(d);
  let cleaned=0;
  let fromDate=d.startDate; /* invalidateBalances(fromDate)는 fromDate 이전까지만 반영된 _balCache 항목을

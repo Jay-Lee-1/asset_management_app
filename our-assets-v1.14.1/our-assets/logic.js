@@ -1085,6 +1085,30 @@ function findPossibleDuplicateTx(txns,draft){
   return t.fromAssetId===draft.fromAssetId;
  })||null;
 }
+/* ================= 반복(구독) 중복 입력 탐지 (순수) ================= */
+/* 일회성 거래(findPossibleDuplicateTx, cycle284)와 같은 클래스의 공백이 반복 등록(saveRec)에도
+ * 있었다 — saveRec의 더블탭 가드(_savedDrafts)는 같은 제출을 두 번 누르는 사고만 막고, 별개
+ * 입력 세션에서 같은 구독(예: 넷플릭스 15,000원 매달 5일)을 실수로 다시 등록하는 경우는 전혀
+ * 막지 못한다. 일회성 거래 중복은 한 번의 이중 지출로 끝나지만, 반복거래 중복은 매달 자동으로
+ * 계속 이중 집계되어 지출 분석·예산·순자산 계산에 조용히 누적된다(app-evolve cycle285 advance).
+ * 신규(!draft.id) 저장만 대상으로 하고, 이미 중지한 구독(active:false)은 비교에서 뺀다 — 중지한
+ * 걸 참고해 비슷한 걸 새로 등록하는 정상 사용을 막지 않기 위해서다. splits는 findPossibleDuplicateTx
+ * 처럼 제외하지 않고 JSON.stringify로 내용을 비교한다(recHistFieldsChanged와 동일한 방식) — saveRec은
+ * 이미 분할을 지원해(cycle282) splits 자체가 식별 정보의 일부다. 자산 비교는 type에 따라 다르다 —
+ * expense는 fromAssetId, income은 toAssetId, transfer·saving은 두 자산을 모두 쓰므로
+ * fromAssetId·toAssetId 둘 다 같아야 같은 반복으로 본다. */
+function findPossibleDuplicateRec(recurrences,draft){
+ if(!draft||draft.id)return null;
+ if(!draft.freq||!draft.day||!draft.amount||!draft.category)return null;
+ return (recurrences||[]).find(r=>{
+  if(!r||r.active===false)return false;
+  if(r.type!==draft.type||r.freq!==draft.freq||r.day!==draft.day||r.amount!==draft.amount||r.category!==draft.category)return false;
+  if(JSON.stringify(r.splits||null)!==JSON.stringify(draft.splits||null))return false;
+  if(draft.type==='income')return r.toAssetId===draft.toAssetId;
+  if(draft.type==='transfer'||draft.type==='saving')return r.fromAssetId===draft.fromAssetId&&r.toAssetId===draft.toAssetId;
+  return r.fromAssetId===draft.fromAssetId;
+ })||null;
+}
 /* ===== 범용(은행/카드사) CSV 가져오기 — 열 매핑 ===== */
 /* txnsToCSV가 내보내는 이 앱 자신의 CSV 헤더(순서 고정) — detectOwnCsvFormat/csvRowToImportTxn이
  * 암묵적으로 가정해 온 "날짜,구분,카테고리,금액,보내는 자산,받는 자산,메모" 7칸을 공유 상수로
