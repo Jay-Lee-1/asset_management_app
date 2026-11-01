@@ -5585,7 +5585,7 @@ test('txnsToCSV→csvRowToImportTxn round-trip: 메모/카테고리/자산명이
 /* ---------- assetsToCSV: 자산 목록 CSV 내보내기(app-evolve cycle244 advance) ---------- */
 test('assetsToCSV: 빈 배열이면 BOM과 헤더만 있는 한 줄을 반환한다', () => {
   const csv = sandbox.assetsToCSV([]);
-  assert.strictEqual(csv, '﻿자산명,유형,귀속,통화/수량,평가금액,매입원가,손익,전체 합계 포함');
+  assert.strictEqual(csv, '﻿자산명,유형,귀속,통화/수량,평가금액,매입원가,손익,손익률(%),연환산수익률(%),매입일,전체 합계 포함');
 });
 test('assetsToCSV: 자산명/귀속에 콤마·큰따옴표가 있으면 필드 전체를 따옴표로 감싼다', () => {
   const csv = sandbox.assetsToCSV([
@@ -5636,7 +5636,20 @@ test('assetsToCSV: 부채는 assetEval()의 "잔여원금(양수)" 컨벤션을 
   const rows = sandbox.parseCSV(csv);
   assert.strictEqual(rows[1][1], '부채');
   assert.strictEqual(rows[1][4], '3000000', '부채 평가금액은 assetEval() 그대로(양수) — 홈 합계처럼 음수로 뒤집지 않음');
-  assert.strictEqual(rows[1][7], 'N');
+  assert.strictEqual(rows[1][10], 'N');
+});
+test('assetsToCSV: 손익률(%)/연환산수익률(%)/매입일은 호출부가 얹어준 gainLossPct/ann/acquiredAt을 소수 둘째 자리까지 담고, null이면 빈 칸으로 남긴다(app-evolve cycle281 develop)', () => {
+  const csv = sandbox.assetsToCSV([
+    { name: '삼성전자', type: 'stock', stockCode: '005930', stockQty: 10, includeInTotal: true, evalValue: 800000, costBasis: 700000, gainLoss: 100000, gainLossPct: 14.285714285714286, ann: 7.123456, acquiredAt: '2025-01-01' },
+    { name: '현금', type: 'cash', includeInTotal: true, evalValue: 500000, costBasis: 0, gainLossPct: null, ann: null, acquiredAt: null },
+  ]);
+  const rows = sandbox.parseCSV(csv);
+  assert.strictEqual(rows[1][7], '14.29', '부동소수점 꼬리가 남지 않도록 소수 둘째 자리로 반올림');
+  assert.strictEqual(rows[1][8], '7.12');
+  assert.strictEqual(rows[1][9], '2025-01-01');
+  assert.strictEqual(rows[2][7], '', 'gainLossPct가 null이면(매입원가 없음 등) 빈 칸');
+  assert.strictEqual(rows[2][8], '', 'ann이 null이면(매입일 없음·보유 30일 미만 등) 빈 칸');
+  assert.strictEqual(rows[2][9], '', 'acquiredAt이 없으면 빈 칸');
 });
 /* ---------- nwHistoryToCSV: 순자산 추이 CSV 내보내기(app-evolve cycle244 advance) ---------- */
 test('nwHistoryToCSV: 빈 배열이면 BOM과 헤더만 있는 한 줄을 반환한다', () => {

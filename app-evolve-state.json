@@ -1,15 +1,8 @@
 {
   "cycle": 281,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 276,
-      "phase": "develop",
-      "timestamp": "2026-10-31T03:10:00.000Z",
-      "summary": "거래·자산·반복(duplicateTx/duplicateAsset/duplicateRec)엔 전용 복제 기능이 있지만 목표(DB.goals)에는 없어, 비슷한 목표를 또 세울 때마다 유형·금액·날짜를 처음부터 다시 입력해야 하던 기능 대등성 공백을 발견. openGoalForm 근처에 duplicateGoal(id) 신설 — id는 uid()로 새로 받고(saveGoal이 d.id로 신규/수정을 가르므로 duplicateAsset의 id=null 방식이 아니라 openGoalForm의 신규 draft 방식을 따름), name에 ' 복사' 접미사, owner는 goalOwnerEff(g)로 재계산(귀속이 그 사이 삭제됐으면 'all'로), createdAt은 복제 시점으로 다시 찍고, achievedAckAt(원본의 달성 확인 이력, cycle256)은 새 목표와 무관하므로 비움. type/linkedAssetId/targetAmount/targetDate는 구조적 설정으로 보존. openGoalsList() 행에 duplicateAsset/duplicateRec과 동일한 row-acts+act-btn(copy 아이콘, event.stopPropagation으로 ackGoalAchieved 네비게이션과 분리) 복제 버튼 배선. test/run.js FUNCTIONS에 duplicateGoal 추가하고 필드 보존/삭제, 귀속 소실 시 'all' 폴백, 존재하지 않는 id, duplicateGoal→saveGoal 왕복 총 4건 추가. APP_VERSION 1.47.296->1.47.297, sw.js CACHE v563->v564. node test/run.js 2343/2343 통과, 메인 스크립트(블록2) node --check(new Function) 통과.",
-      "commit": null
-    },
     {
       "cycle": 276,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-10-31T23:11:05.411Z",
       "summary": "자산 매입일(acquiredAt) 직접 입력 UI 추가: costBasisField에 만기일과 동일한 pick 패턴의 매입일 필드를 넣어, 매입금액 입력 시 자동으로 TODAY가 찍히던 것과 별개로 사용자가 실제 매입일을 직접 고르거나(레거시 자산 소급 입력 포함) 지울 수 있게 함. 미래 날짜는 toastFail로 차단. syncAssetInputs가 hidden asAcquiredAt 값을 먼저 반영해 자동 TODAY 스탬프보다 우선하도록 수정. 회귀 테스트 4개 추가, 기존 snapshot 테스트 1개 갱신.",
+      "commit": null
+    },
+    {
+      "cycle": 281,
+      "phase": "develop",
+      "timestamp": "2026-11-01T00:15:22.000Z",
+      "summary": "자산 목록 CSV 내보내기(assetsToCSV)가 평가금액/매입원가/손익만 담고, 화면(assetGainLossBadge)에 이미 보이는 손익률(%)·연환산수익률(%)·매입일(acquiredAt, 바로 전 cycle280 advance가 추가한 필드)은 내보내지 못하던 공백을 발견 — 백업/스프레드시트 분석용으로 내보낸 CSV가 화면보다 정보가 적었다. assetsToCSV 헤더에 손익률(%)/연환산수익률(%)/매입일 3개 컬럼을 손익과 전체합계포함 사이에 추가하고, 값은 호출부(doExport)가 이미 평가를 끝낸 값만 받는 기존 원칙을 그대로 따라 gainLossPct/ann을 assetGainLoss()/annualizedReturn()(logic.js)로 계산해 얹음(acquiredAt은 asset 레코드 자체 필드라 그대로). gainLossPct/ann은 소수 둘째 자리로 round2해 부동소수점 꼬리가 CSV에 남지 않게 함. 기존 assetsToCSV 테스트 중 빈 배열 헤더 문자열과 부채 includeInTotal N 위치(인덱스 7->10)가 새 컬럼 삽입으로 깨져 있어 함께 갱신하고, 신규 컬럼의 값/null 폴백을 검증하는 테스트 1건 추가. APP_VERSION 1.47.306->1.47.307, sw.js CACHE v573->v574. node test/run.js 2419/2419 통과, logic.js node --check 통과.",
       "commit": null
     }
   ]

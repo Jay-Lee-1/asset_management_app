@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.306';
+const APP_VERSION='1.47.307';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -7447,17 +7447,20 @@ function txnsToCSV(txns,assets){
  ].map(esc).join(',')));
  return '\ufeff'+[header,...rows].join('\r\n');
 }
-/* 자산 목록 CSV — 순수 함수(DOM/DB 전역 참조 없음). evalValue(평가금액)/gainLoss(손익)는
-   assetEval()/assetGainLoss()가 DB.rates(시세평가 자산)·DB.txns(현금·저축·부동산 등 원장 잔액)에
-   의존해 전역 없이는 계산할 수 없으므로, assetAllocation/portfolioGainLoss(logic.js)와 같은 원칙으로
-   호출부(doExport)가 이미 평가를 끝낸 값을 asset 레코드에 evalValue/gainLoss로 얹어 items로 넘긴다.
-   그 밖의 통화/수량·귀속·자산명은 asset 레코드 자체 필드라 이 함수 안에서 그대로 포맷한다. */
+/* 자산 목록 CSV — 순수 함수(DOM/DB 전역 참조 없음). evalValue(평가금액)/gainLoss(손익)/gainLossPct
+   (손익률)/ann(연환산수익률)는 assetEval()/assetGainLoss()/annualizedReturn()(logic.js)가
+   DB.rates(시세평가 자산)·DB.txns(현금·저축·부동산 등 원장 잔액)에 의존해 전역 없이는 계산할 수
+   없으므로, assetAllocation/portfolioGainLoss(logic.js)와 같은 원칙으로 호출부(doExport)가 이미
+   평가를 끝낸 값을 asset 레코드에 얹어 items로 넘긴다. acquiredAt(매입일)은 자산 레코드 자체
+   필드라 그대로 내보낸다 — 화면(assetGainLossBadge)에 이미 보이는 손익률/연환산수익률/매입일을
+   CSV만 빠뜨리고 있던 공백을 메운다(app-evolve cycle281 develop). 그 밖의 통화/수량·귀속·자산명도
+   asset 레코드 자체 필드라 이 함수 안에서 그대로 포맷한다. */
 function assetsToCSV(items){
  const typeLabel={cash:'현금예금',savings:'저축',stock:'주식',realestate:'부동산',debt:'부채',pension:'연금 미래자산',fx:'외화',gold:'금',crypto:'코인',etc:'기타'};
  /* 자산명/귀속명도 사용자 자유입력이라 txnsToCSV와 동일한 CSV 인젝션 방어가 필요하다(guard/esc 동일 규칙). */
  const guard=v=>{const s=String(v==null?'':v);return /^['=+\-@\t\r]/.test(s)?"'"+s:s};
  const esc=v=>{const s=String(v==null?'':v);return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s};
- const header=['자산명','유형','귀속','통화/수량','평가금액','매입원가','손익','전체 합계 포함'].map(esc).join(',');
+ const header=['자산명','유형','귀속','통화/수량','평가금액','매입원가','손익','손익률(%)','연환산수익률(%)','매입일','전체 합계 포함'].map(esc).join(',');
  const qtyLabel=a=>{
   if(a.type==='fx')return `${a.currency||''} ${a.fxAmount||0}`.trim();
   if(a.type==='gold')return `${a.goldDon||0}돈`;
@@ -7466,10 +7469,17 @@ function assetsToCSV(items){
   return '';
  };
  /* 부채는 assetEval()이 이미 '잔여원금(양수)' 컨벤션으로 돌려주므로(index.html balanceAt 주석) 여기서
-    다시 부호를 뒤집지 않는다 — 홈 합계처럼 음수로 보이게 하려면 호출부가 따로 뒤집어야 할 몫. */
+    다시 부호를 뒤집지 않는다 — 홈 합계처럼 음수로 보이게 하려면 호출부가 따로 뒤집어야 할 몫.
+    gainLossPct/ann은 손익과 마찬가지로 assetGainLoss()가 null(시세평가 자산이 아니거나 매입원가가
+    없거나 시세 미확인)을 돌려주면 같이 비워두고, ann은 매입일이 없거나 보유 30일 미만이면
+    annualizedReturn()이 null을 돌려주는 걸 그대로 따른다(화면의 "모르면 추측하지 않는다" 원칙과
+    동일, assetGainLossBadge 참고). 소수 둘째 자리까지만 남겨 부동소수점 꼬리(0.1+0.2 류)가
+    스프레드시트에 그대로 찍히지 않게 한다. */
+ const round2=n=>Math.round(n*100)/100;
  const rows=(items||[]).map(a=>[
   guard(a.name||''),typeLabel[a.type]||a.type||'',guard(a.owner||''),guard(qtyLabel(a)),
   a.evalValue!=null?a.evalValue:'',a.costBasis>0?a.costBasis:'',a.gainLoss!=null?a.gainLoss:'',
+  a.gainLossPct!=null?round2(a.gainLossPct):'',a.ann!=null?round2(a.ann):'',a.acquiredAt||'',
   a.includeInTotal?'Y':'N'
  ].map(esc).join(','));
  return '\ufeff'+[header,...rows].join('\r\n');
@@ -7841,7 +7851,7 @@ async function doExport(mode,kind){
     그대로 넘기면 되는 assetQtyLogToCSV라 추가 평가가 필요 없다. goalsCsv도 같은 원칙 — cur/pct/
     achieved는 goalProgress(logic.js)가 goalHistoryFor(순자산 이력 또는 연결 자산 잔액 추이, 둘 다
     DB 전역 필요)를 봐야 구해지는 파생값이라 goalsToCSV 안이 아니라 여기서 미리 계산해 얹는다. */
- const text=kind==='assetsCsv'?assetsToCSV(DB.assets.map(a=>Object.assign({},a,{evalValue:assetEval(a),gainLoss:(assetGainLoss(a)||{}).amount})))
+ const text=kind==='assetsCsv'?assetsToCSV(DB.assets.map(a=>{const gl=assetGainLoss(a);const ev=assetEval(a);return Object.assign({},a,{evalValue:ev,gainLoss:gl&&gl.amount,gainLossPct:gl&&gl.pct,ann:annualizedReturn(a.costBasis,ev,a.acquiredAt,TODAY)})}))
   :kind==='nwCsv'?nwHistoryToCSV(DB.nwHistory)
   :kind==='gainCsv'?assetQtyLogToCSV(DB.assetQtyLog,DB.assets)
   :kind==='recsCsv'?recurrencesToCSV(DB.recurrences,DB.assets)
