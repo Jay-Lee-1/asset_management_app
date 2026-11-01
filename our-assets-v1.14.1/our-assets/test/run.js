@@ -8490,6 +8490,31 @@ test('openYearReview: ST.spendOwner가 더 이상 존재하지 않는 귀속이�
   assert.strictEqual(ctx.ST.spendOwner, '전체', '존재하지 않는 귀속은 전체로 되돌려야 함');
   assert.ok(ctx.lastSheetHtml.includes('500,000원'), '전체로 되돌린 뒤엔 모든 거래가 집계되어야 함');
 });
+/* y가 올해(TM.y)면 전년대비 배지가 전년 "전체"가 아니라 전년의 같은 기간(YTD)과 비교한 값이라는
+ * 사실을 사용자가 모르면 "전년대비 ▼%"를 실제 추세로 오해할 수 있다 — YoY 배지 근처에 작은
+ * 안내를 추가한다(app-evolve cycle283 critique/advance, s.yoy.isYTD 플래그 참고). */
+test('openYearReview: 올해(y===TM.y)를 보고 있으면 "올해는 아직 진행 중이에요" YTD 안내가 보인다', () => {
+  const ctx = yearReviewCtx();
+  ctx.TM = { y: 2026, m: 11, d: 1 }; // 이 ctx의 다른 테스트들과 공유되는 상태라 명시적으로 세팅(위 8400/8409가 2031로 남겨둔 값에 기대지 않음)
+  ctx.DB = { owners: [], assets: [], recurrences: [], txns: [
+    { id: '1', type: 'income', category: '급여', amount: 500000, date: '2026-01-10', confirmed: true },
+  ] };
+  ctx.ST = { spendOwner: '전체', yearReview: { y: 2026 } };
+  ctx.lastSheetHtml = null;
+  ctx.openYearReview(2026);
+  assert.ok(ctx.lastSheetHtml.includes('올해는 아직 진행 중이에요'), '올해를 보고 있으면 YTD 안내가 있어야 함');
+});
+test('openYearReview: 과거(완결된) 연도를 보고 있으면 YTD 안내가 없다', () => {
+  const ctx = yearReviewCtx();
+  ctx.TM = { y: 2026, m: 11, d: 1 };
+  ctx.DB = { owners: [], assets: [], recurrences: [], txns: [
+    { id: '1', type: 'income', category: '급여', amount: 500000, date: '2025-01-10', confirmed: true },
+  ] };
+  ctx.ST = { spendOwner: '전체', yearReview: { y: 2025 } };
+  ctx.lastSheetHtml = null;
+  ctx.openYearReview(2025);
+  assert.ok(!ctx.lastSheetHtml.includes('올해는 아직 진행 중이에요'), '과거 연도는 YTD 안내가 없어야 함');
+});
 
 /* ---------- deleteTxnsUndo: 단일/대량 삭제 공용 되돌리기 인프라 (delAdjust도 여기 합류) ---------- */
 test('deleteTxnsUndo: 지정한 id의 내역을 삭제하고, undo 콜백을 부르면 정확히 복원한다', () => {
@@ -12056,6 +12081,7 @@ test('savingsRate: 지출이 수입보다 많으면 음수 저축률을 그대�
   assert.strictEqual(sandbox.savingsRate(500000, 800000), -60);
 });
 test('yearSummary: 총수입/총지출/순저축액/저축률과 카테고리 TOP3를 함께 반환한다', () => {
+  sandbox.TM = { y: 2099, m: 1, d: 1 }; // y(2026)!==TM.y라 YTD 분기 없이 전년 전체와 비교(아래 YTD 전용 테스트가 그 분기를 따로 다룸)
   sandbox.DB = {
     txns: [
       { date: '2026-01-10', type: 'income', category: '급여', amount: 800000 },
@@ -12073,6 +12099,7 @@ test('yearSummary: 총수입/총지출/순저축액/저축률과 카테고리 TO
   assert.deepStrictEqual(Array.from(s.topIncomeCats.map(r => r.c)), ['급여']);
 });
 test('yearSummary: 전년 수입이 0이면(비교 기준 없음) YoY delta가 모두 null이다(null-safe, 전년 자료가 없는 첫 해 등)', () => {
+  sandbox.TM = { y: 2099, m: 1, d: 1 };
   sandbox.DB = {
     txns: [{ date: '2026-03-10', type: 'income', category: '급여', amount: 500000 }],
     recurrences: [],
@@ -12083,6 +12110,7 @@ test('yearSummary: 전년 수입이 0이면(비교 기준 없음) YoY delta가 �
   assert.strictEqual(s.yoy.rate, null, '전년 저축률이 null이면 저축률 YoY도 null');
 });
 test('yearSummary: 전년 대비 수입/지출/저축률 YoY delta를 올해-전년 기준으로 계산한다', () => {
+  sandbox.TM = { y: 2099, m: 1, d: 1 };
   sandbox.DB = {
     txns: [
       { date: '2025-04-10', type: 'income', category: '급여', amount: 1000000 },
@@ -12097,6 +12125,109 @@ test('yearSummary: 전년 대비 수입/지출/저축률 YoY delta를 올해-전
   assert.strictEqual(s.yoy.income, 20, '100만원 -> 120만원은 +20%');
   assert.strictEqual(s.yoy.expense, -25, '80만원 -> 60만원은 -25%');
   assert.strictEqual(s.yoy.rate, 30, '저축률 20% -> 50%는 +30%p');
+});
+
+/* ---------- yearSpendByCategory/yearIncomeByCategory/yearRealizedGain: endDate 인자(기본 null,
+ * 주면 12/31 대신 그 날짜까지만) — yearSummary가 올해(진행 중인 해)와 전년을 YTD로 비교할 때
+ * 전년 쪽 상한으로 쓴다(app-evolve cycle283 critique/advance) ---------- */
+test('yearSpendByCategory/yearIncomeByCategory: endDate를 주면 그 날짜까지만(포함) 집계하고, 그 이후 거래는 뺀다', () => {
+  sandbox.DB = {
+    txns: [
+      { date: '2025-02-27', type: 'expense', category: '식비', amount: 10000 },
+      { date: '2025-02-28', type: 'expense', category: '식비', amount: 20000 }, // endDate 당일 — 포함(경계값)
+      { date: '2025-03-01', type: 'expense', category: '식비', amount: 99999 }, // endDate 다음날 — 제외
+      { date: '2025-02-28', type: 'income', category: '급여', amount: 30000 },
+      { date: '2025-03-01', type: 'income', category: '급여', amount: 99999 },
+    ],
+    recurrences: [],
+  };
+  const expByCat = Object.fromEntries(Array.from(sandbox.yearSpendByCategory(2025, '전체', '2025-02-28')).map(r => [r.c, r.v]));
+  assert.strictEqual(expByCat['식비'], 30000, 'endDate(2/28)까지의 지출만(10000+20000) 집계되어야 함');
+  const incByCat = Object.fromEntries(Array.from(sandbox.yearIncomeByCategory(2025, '전체', '2025-02-28')).map(r => [r.c, r.v]));
+  assert.strictEqual(incByCat['급여'], 30000, 'endDate(2/28)까지의 수입만 집계되어야 함');
+});
+test('yearSpendByCategory: endDate를 생략하면 기존처럼 그 해 12/31까지 전체를 집계한다(회귀 가드)', () => {
+  sandbox.DB = {
+    txns: [{ date: '2025-12-31', type: 'expense', category: '식비', amount: 10000 }],
+    recurrences: [],
+  };
+  const byCat = Object.fromEntries(Array.from(sandbox.yearSpendByCategory(2025)).map(r => [r.c, r.v]));
+  assert.strictEqual(byCat['식비'], 10000);
+});
+test('yearRealizedGain: endDate를 주면 그 날짜까지만(포함) realizedGain을 합산한다', () => {
+  sandbox.DB = {
+    assetQtyLog: [
+      { date: '2025-02-28', assetId: 'a1', realizedGain: 50000 }, // endDate 당일 — 포함
+      { date: '2025-03-01', assetId: 'a1', realizedGain: 999999 }, // endDate 다음날 — 제외
+    ],
+  };
+  assert.strictEqual(sandbox.yearRealizedGain(2025, '전체', '2025-02-28'), 50000);
+});
+
+/* ---------- yearSummary: y가 올해(진행 중인 해, TM.y)면 전년 비교 구간을 전년 전체(12/31)가 아니라
+ * 올해와 같은 월/일까지(YTD)로 맞춘다 — 그래야 "전년대비 ▼%" 배지가 올해가 아직 안 끝나서
+ * 생기는 왜곡이 아니라 실제 추세를 보여준다(app-evolve cycle283 critique/advance). y가 과거
+ * (완결된) 연도면 기존처럼 전년 전체와 비교한다. ---------- */
+test('yearSummary: y가 올해(TM.y)면 전년 비교가 "지금까지"로 YTD 비교된다 — 전년의 YTD 이후 거래는 YoY 계산에서 빠진다', () => {
+  sandbox.TM = { y: 2026, m: 11, d: 1 }; // "오늘"이 2026-11-01
+  sandbox.DB = {
+    txns: [
+      { date: '2026-05-10', type: 'income', category: '급여', amount: 1000000 }, // 올해(2026) 수입
+      { date: '2025-05-10', type: 'income', category: '급여', amount: 900000 }, // 전년 YTD(11/1) 이내 — 비교에 포함
+      { date: '2025-12-20', type: 'income', category: '급여', amount: 500000 }, // 전년 YTD 밖(12월) — 아직 안 지난 기간이라 비교에서 빠져야 함
+    ],
+    recurrences: [],
+  };
+  const s = sandbox.yearSummary(2026);
+  assert.strictEqual(s.income, 1000000, '올해 수입 총액 자체는 변함없어야 함');
+  assert.strictEqual(s.yoy.income, 11, '전년 비교 기준이 900000(YTD 이내)여야 함 — 12월분(500000)까지 더해 1400000로 비교하면 -29%가 나와야 하는데, 그러면 올해가 안 끝나서 생기는 왜곡');
+  assert.strictEqual(s.yoy.isYTD, true, '올해를 보고 있으면 isYTD가 true여야 함');
+});
+test('yearSummary: 전년 YTD 상한 당일(경계값)은 비교에 포함된다', () => {
+  sandbox.TM = { y: 2026, m: 11, d: 1 };
+  sandbox.DB = {
+    txns: [
+      { date: '2026-01-10', type: 'expense', category: '식비', amount: 100000 },
+      { date: '2025-11-01', type: 'expense', category: '식비', amount: 80000 }, // 전년 YTD 상한 당일 — 포함돼야 함
+    ],
+    recurrences: [],
+  };
+  const s = sandbox.yearSummary(2026);
+  assert.strictEqual(s.yoy.expense, 25, '100000 vs 80000 => +25%(80000이 빠지면 전년 지출이 0이라 null이 됐을 것)');
+});
+test('yearSummary: TM.d가 전년에는 없는 날짜면(올해 2/29, 전년은 평년) 전년 그 달의 말일로 클램프한다', () => {
+  sandbox.TM = { y: 2028, m: 2, d: 29 }; // 2028은 윤년, "오늘"이 2/29
+  sandbox.DB = {
+    txns: [
+      { date: '2028-01-10', type: 'income', category: '급여', amount: 100000 }, // 올해
+      { date: '2027-02-27', type: 'income', category: '급여', amount: 40000 }, // 전년(평년) 클램프된 2/28 이전 — 포함
+      { date: '2027-02-28', type: 'income', category: '급여', amount: 30000 }, // 전년 2월 말일(클램프된 상한) — 포함
+      { date: '2027-03-01', type: 'income', category: '급여', amount: 999999 }, // 클램프 이후 — 제외
+    ],
+    recurrences: [],
+  };
+  const s = sandbox.yearSummary(2028);
+  assert.strictEqual(s.yoy.income, 43, '전년 비교 기준이 70000(40000+30000)이어야 함 — (100000-70000)/70000*100≈42.9 반올림 43');
+});
+test('yearSummary: y가 과거(완결된) 연도면(y!==TM.y) 전년을 YTD로 자르지 않고 기존처럼 전년 전체(12/31까지)와 비교한다', () => {
+  sandbox.TM = { y: 2026, m: 6, d: 15 }; // "오늘"은 2026년이지만, 보고 있는 해(y)는 이미 끝난 2024년
+  sandbox.DB = {
+    txns: [
+      { date: '2024-01-10', type: 'income', category: '급여', amount: 1100000 },
+      { date: '2023-01-10', type: 'income', category: '급여', amount: 500000 },
+      { date: '2023-12-20', type: 'income', category: '급여', amount: 500000 }, // 2023년 12월분 — 완결된 과거 연도 비교라 그대로 포함돼야 함
+    ],
+    recurrences: [],
+  };
+  const s = sandbox.yearSummary(2024);
+  assert.strictEqual(s.yoy.income, 10, '전년(2023) 전체 1000000(500000+500000) 대비 +10%여야 함 — YTD로 잘렸다면 500000 대비 +120%가 나왔을 것');
+  assert.strictEqual(s.yoy.isYTD, false, '과거 연도를 보면 isYTD가 false여야 함');
+});
+test('yearSummary: isYTD는 y===TM.y일 때만 true다', () => {
+  sandbox.TM = { y: 2026, m: 6, d: 15 };
+  sandbox.DB = { txns: [], recurrences: [] };
+  assert.strictEqual(sandbox.yearSummary(2026).yoy.isYTD, true);
+  assert.strictEqual(sandbox.yearSummary(2025).yoy.isYTD, false);
 });
 
 /* ---------- yearRealizedGain(index.html, 순수 보조): 연간 결산이 그 해의 투자 실현손익을
@@ -12137,6 +12268,7 @@ test('yearRealizedGain: owner 필터일 때 자산이 삭제돼 못 찾으면(�
   assert.strictEqual(sandbox.yearRealizedGain(2026, '나'), null);
 });
 test('yearSummary: 그 해 투자 실현손익(investGain)을 함께 반환한다(yearRealizedGain 재사용)', () => {
+  sandbox.TM = { y: 2099, m: 1, d: 1 };
   sandbox.DB = {
     txns: [{ date: '2026-01-10', type: 'income', category: '급여', amount: 500000 }],
     recurrences: [],
@@ -12149,6 +12281,7 @@ test('yearSummary: 그 해 투자 실현손익(investGain)을 함께 반환한�
   assert.strictEqual(s.investGain, 60000);
 });
 test('yearSummary: 그 해에 투자 실현손익 기록이 없으면 investGain은 null이다(0과 모름을 구분)', () => {
+  sandbox.TM = { y: 2099, m: 1, d: 1 };
   sandbox.DB = {
     txns: [{ date: '2026-01-10', type: 'income', category: '급여', amount: 500000 }],
     recurrences: [],
@@ -12160,6 +12293,7 @@ test('yearSummary: 그 해에 투자 실현손익 기록이 없으면 investGain
  * 0 근처거나 음수일 수 있어 퍼센트 기반 YoY를 쓰면 왜곡되거나 Infinity/NaN이 난다 — 그래서 원
  * 단위 증감(올해-전년) 그대로 둔다(app-evolve cycle267 advance). */
 test('yearSummary: 올해·전년 모두 투자 실현손익이 있으면 yoy.investDelta를 올해-전년 금액으로 계산한다', () => {
+  sandbox.TM = { y: 2099, m: 1, d: 1 };
   sandbox.DB = {
     txns: [], recurrences: [],
     assetQtyLog: [
@@ -12172,6 +12306,7 @@ test('yearSummary: 올해·전년 모두 투자 실현손익이 있으면 yoy.in
   assert.strictEqual(s.yoy.investDelta, 50000);
 });
 test('yearSummary: 올해 또는 전년 중 한쪽에만 투자 실현손익 기록이 있으면(비교 기준 없음) yoy.investDelta는 null이다', () => {
+  sandbox.TM = { y: 2099, m: 1, d: 1 };
   sandbox.DB = {
     txns: [], recurrences: [],
     assetQtyLog: [{ date: '2026-05-01', assetId: 'a1', realizedGain: 70000 }],
@@ -12183,6 +12318,7 @@ test('yearSummary: 올해 또는 전년 중 한쪽에만 투자 실현손익 기
   assert.strictEqual(s.yoy.investDelta, null, '올해 기록이 없으면 null');
 });
 test('yearSummary: 올해·전년 모두 투자 실현손익 기록이 없으면 yoy.investDelta도 null이다', () => {
+  sandbox.TM = { y: 2099, m: 1, d: 1 };
   sandbox.DB = { txns: [], recurrences: [] };
   const s = sandbox.yearSummary(2026);
   assert.strictEqual(s.yoy.investDelta, null);
@@ -19109,6 +19245,13 @@ function yearReviewCtx() {
   vm.runInContext(logicSrc, ctx, { filename: 'logic.js' });
   vm.runInContext(extracted, ctx, { filename: 'extracted-from-index.html' });
   vm.runInContext(extractFunction('openYearReview'), ctx, { filename: 'openYearReview-real' });
+  // TM은 FUNCTIONS/CONSTS/LETS 어디에도 없는 전역이라(spendAnalysisCtx의 TODAY 주석과 동일한
+  // 이유) 직접 세팅해야 한다 — yearSummary(cycle283 critique/advance)가 y===TM.y로 "올해"
+  // 진행 중 여부를 판정하므로, 기존 테스트 fixture들이 모두 쓰는 y=2026과 겹치지 않는 해로
+  // 고정해 둔다(그래야 이 ctx를 쓰는 기존 테스트들이 의도대로 "완결된 과거 연도"를 보는
+  // 시나리오로 남아, YTD 분기가 실수로 끼어들지 않는다). y===TM.y를 직접 테스트하는 케이스는
+  // 테스트가 ctx.TM을 그 테스트 안에서 따로 덮어쓴다(아래 YTD 테스트들 참고).
+  ctx.TM = { y: 2099, m: 1, d: 1 };
   _yearReviewCtx = ctx;
   return ctx;
 }

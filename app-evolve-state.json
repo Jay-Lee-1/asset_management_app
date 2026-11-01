@@ -1,47 +1,8 @@
 {
-  "cycle": 283,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "연간 결산(yearSummary) YoY 비교가 올해(진행 중인 해)를 전년 \"전체\"와 비교해 왜곡됨",
-    "why": "yearSummary(y)는 yoy.income/expense를 yearSpendByCategory(y)/yearIncomeByCategory(y) vs (y-1)로, 둘 다 1/1~12/31 고정 범위로 계산한다(index.html yearSpendByCategory/yearIncomeByCategory, ~6589-6602행; yearSummary ~6642행). y가 올해(TM.y)면 올해 쪽은 아직 다 지나지 않았는데 반복거래는 allTxns()의 expandRec가 연말까지 투영해 섞여 들어가고, 수동 1회성 수입/지출(보너스·연회비 등)은 실제 발생분만 반영된다 — 그 결과 올해를 11월에 열면 \"전년대비 ▼15%\" 같은 배지가 단지 올해가 아직 안 끝나서 생기는 왜곡인지, 실제 추세인지 구분할 길이 없다. openYearReview(6657행)가 이 badge를 그대로 사용자에게 보여주므로 이미 cycle181/182류의 \"조용히 틀린 숫자\" 버그 클래스와 같다.",
-    "approach": "1) yearSpendByCategory/yearIncomeByCategory에 선택적 end-date 인자를 추가(기본은 기존처럼 12/31, 넘기면 그 날짜까지)하거나 별도의 range 버전을 추가. 2) yearSummary(y,owner)에서 y===TM.y일 때, 전년 비교 구간을 전년도의 동일 월/일까지(예: TODAY가 2026-11-01이면 2025-01-01~2025-11-01)로 맞춰 pyExpense/pyIncome/pyRate/pyInvestGain을 계산 — yearRealizedGain도 동일하게 날짜 상한을 받도록 조정. 과거(완전히 끝난) 연도는 기존 동작 그대로 유지. 3) openYearReview에서 y===TM.y일 때 YoY 배지 근처에 작은 안내(\"올해는 아직 진행 중이에요 · 전년 동기간과 비교\")를 추가해 사용자가 오해하지 않게 한다. 4) test/run.js에 yearSummary 테스트 추가: 올해(가짜 TODAY)와 비교할 때 전년 비교가 YTD로 잘리는지, 과거 연도를 볼 때는 전년 전체와 비교하는 동작이 그대로인지 각각 케이스 추가. APP_VERSION/sw.js CACHE 버전 올림."
-  },
+  "cycle": 284,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 279,
-      "phase": "develop",
-      "timestamp": "2026-10-31T15:10:00.000Z",
-      "summary": "통합검색(globalSearchBody)이 거래·자산·카테고리·목표까지만 가로질러 찾고 반복 등록 자체(DB.recurrences)는 빠져 있던 공백을 발견 — 반복거래의 메모/카테고리로 검색하면 매달 expandRec()이 전개한 과거 결제 내역(거래 그룹)만 나오고, 그 구독을 편집·중지할 수 있는 반복 등록 자체(openRecManage/editRec)로는 통합검색에서 바로 들어갈 길이 없었다. logic.js에 matchRecQuery(r,q) 순수 함수 신설, globalSearchBody()에 반복 그룹 추가. test/run.js에 13건 추가. APP_VERSION 1.47.302->1.47.303, sw.js CACHE v569->v570.",
-      "commit": "d92c656"
-    },
-    {
-      "cycle": 279,
-      "phase": "review",
-      "timestamp": "2026-10-31T16:30:00.000Z",
-      "summary": "cycle279 develop 커밋(d92c656) 검토 — 실제 버그 없음, 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
-    {
-      "cycle": 279,
-      "phase": "critique",
-      "timestamp": "2026-10-31T18:14:43.000Z",
-      "summary": "히스토리 검색(histQ)의 금액 비교/범위 연산자가 \"> 10만\"처럼 공백을 넣으면 조용히 0건으로 떨어지는 버그 발견. normalizeAmountSpacing 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
-      "commit": null
-    },
-    {
-      "cycle": 279,
-      "phase": "advance",
-      "timestamp": "2026-10-31T19:20:00.000Z",
-      "summary": "critique(cycle279) 계획대로 normalizeAmountSpacing(q) 신설, matchTxnQuery에 적용. test/run.js에 7건 추가. APP_VERSION 1.47.303->1.47.304, sw.js CACHE v570->v571. pending_advance_plan null로 비움.",
-      "commit": null
-    },
-    {
-      "cycle": 280,
-      "phase": "develop",
-      "timestamp": "2026-10-31T20:30:00.000Z",
-      "summary": "openRecManage()/globalSearchBody()가 둘 다 r.category만 제목으로 보여줘 같은 카테고리의 반복거래를 구분 못 하던 공백 발견 — 제목을 memo||category로 변경. test/run.js에 4건 추가. APP_VERSION 1.47.304->1.47.305, sw.js CACHE v571->v572.",
-      "commit": "96d9a04"
-    },
     {
       "cycle": 280,
       "phase": "review",
@@ -138,6 +99,13 @@
       "phase": "critique",
       "timestamp": "2026-11-01T09:10:00.000Z",
       "summary": "연간 결산(openYearReview/yearSummary)의 전년대비(YoY) 비교가 올해(진행 중인 해)를 볼 때도 전년 \"전체\"(1/1~12/31)와 비교해, 아직 안 끝난 해의 수입/지출 YoY%가 실제 추세가 아니라 \"올해가 안 끝나서\" 생기는 왜곡을 담고 있는 문제 발견. 전년 비교 구간을 올해의 동일 기간(YTD)으로 맞추는 계획을 pending_advance_plan에 저장. 코드 변경 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 283,
+      "phase": "advance",
+      "timestamp": "2026-11-01T10:20:00.000Z",
+      "summary": "critique(cycle283) 계획대로 연간 결산 YoY를 YTD(동기간) 비교로 고쳤다. (1) yearSpendByCategory/yearIncomeByCategory/yearRealizedGain에 선택적 endDate 인자 추가(기본 null이면 기존처럼 그 해 12/31·연도 전체). (2) yearSummary(y,owner)에서 y===TM.y(올해)면 전년 비교 상한을 전년의 같은 월/일로 맞춘다 — TM.d가 전년엔 없는 날짜면(올해 2/29, 전년 평년) lastDay(y-1,TM.m)로 클램프. y가 과거(완결된) 연도면 상한 없이(null) 기존처럼 전년 전체와 비교. yoy.isYTD 플래그 추가. (3) openYearReview에 isYTD일 때 \"올해는 아직 진행 중이에요 · 전년 동기간과 비교\" 안내 추가. (4) 부수적으로 발견한 실제 버그를 같은 커밋에서 고쳤다: refreshToday()(날짜 자동 갱신, 자정 넘어 포그라운드 복귀 시)가 TM=ym(TODAY)만 하고 TM.d를 갱신하지 않아, 앱을 오래 띄워둔 채 날짜가 바뀌면 TM.d가 이전 날짜로 고정돼 버리는 기존 버그를 발견 — 초기 로드 때(2999행)와 동일하게 TM.d=+TODAY.slice(8,10)을 추가했다(이 버그는 내 새 YTD 계산이 TM.d에 의존하게 되면서 처음으로 실제 영향력이 생겼다). (5) test/run.js: yearSpendByCategory/yearIncomeByCategory/yearRealizedGain endDate 경계값 테스트 3건, yearSummary YTD 비교(경계값·윤년 클램프·과거 연도 미적용·isYTD 플래그) 5건, openYearReview YTD 안내 문구 노출 2건, 총 10건 추가(2466->2476 통과). 기존 yearSummary 테스트 8건과 yearReviewCtx 테스트 전체가 테스트 하네스 공유 상태(sandbox.TM/ctx.TM이 다른 테스트의 부산물로 {y:2026,m:6} 등을 남겨두던 것)에 암묵적으로 의존하게 되는 걸 발견해, 각 테스트가 TM을 명시적으로 세팅하도록 고쳤다(yearReviewCtx 팩토리는 2099년으로 기본값 고정, sandbox 쪽 8개 테스트는 각자 2099년을 명시). APP_VERSION 1.47.310->1.47.311, sw.js CACHE v577->v578. node test/run.js 2476/2476 통과, 메인 스크립트(블록3)/logic.js/sw.js 구문 검증 통과. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

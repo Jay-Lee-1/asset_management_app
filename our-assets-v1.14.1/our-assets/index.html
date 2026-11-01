@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.310';
+const APP_VERSION='1.47.311';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6586,18 +6586,20 @@ function incomeTrendBadge(deltaPct,label){
  return `<span class="trend" style="color:${color}">${label||''}${arrow}${Math.abs(deltaPct)}%</span>`;
 }
 /* spendByCategory/incomeByCategory와 동일한 owner·inSurplus·분할거래 집계 규칙을 한 해(1/1~12/31)
- * 전체로 확장 — 예산(budgetHistory)은 월 단위 개념이라 spendByCategory의 유니온 스텝만 뺀다. */
-function yearSpendByCategory(y,owner='전체'){
+ * 전체로 확장 — 예산(budgetHistory)은 월 단위 개념이라 spendByCategory의 유니온 스텝만 뺀다. endDate를
+ * 주면 12/31 대신 그 날짜까지만 본다 — yearSummary가 올해(진행 중인 해)와 전년을 동일 기간(YTD)으로
+ * 비교할 때 전년 쪽 상한으로 쓴다(app-evolve cycle283 critique/advance). */
+function yearSpendByCategory(y,owner='전체',endDate=null){
  const map={};
- filterTxnsByOwner(allTxns(`${y}-01-01`,`${y}-12-31`),DB.assets,owner).forEach(t=>{
+ filterTxnsByOwner(allTxns(`${y}-01-01`,endDate||`${y}-12-31`),DB.assets,owner).forEach(t=>{
    if(t.type!=='expense')return;if(t.adjust&&!t.inSurplus)return;
    splitLines(t).forEach(s=>{map[s.category]=(map[s.category]||0)+s.amount});
  });
  return Object.entries(map).map(([c,v])=>({c,v})).sort((a,b)=>b.v-a.v);
 }
-function yearIncomeByCategory(y,owner='전체'){
+function yearIncomeByCategory(y,owner='전체',endDate=null){
  const map={};
- filterTxnsByOwner(allTxns(`${y}-01-01`,`${y}-12-31`),DB.assets,owner).forEach(t=>{
+ filterTxnsByOwner(allTxns(`${y}-01-01`,endDate||`${y}-12-31`),DB.assets,owner).forEach(t=>{
    if(t.type!=='income')return;if(t.adjust&&!t.inSurplus)return;
    splitLines(t).forEach(s=>{map[s.category]=(map[s.category]||0)+s.amount});
  });
@@ -6609,8 +6611,8 @@ function yearIncomeByCategory(y,owner='전체'){
  * owner가 일치하는 것만 센다 — 자산이 삭제돼 못 찾으면(소유자를 알 수 없음) owner 필터가 있을 때만
  * 제외하고, '전체'일 때는 yearSpendByCategory가 삭제된 카테고리의 과거 거래도 그대로 세는 것과
  * 동일하게 자산 존재 여부와 무관하게 포함한다. */
-function yearRealizedGain(y,owner='전체'){
- const items=(DB.assetQtyLog||[]).filter(q=>(q.date||'').slice(0,4)===String(y));
+function yearRealizedGain(y,owner='전체',endDate=null){
+ const items=(DB.assetQtyLog||[]).filter(q=>(q.date||'').slice(0,4)===String(y)&&(!endDate||q.date<=endDate));
  const filtered=owner==='전체'?items:items.filter(q=>{
    const a=DB.assets.find(x=>x.id===q.assetId);
    return a&&a.owner===owner;
@@ -6643,10 +6645,17 @@ function yearSummary(y,owner='전체'){
  const expRows=yearSpendByCategory(y,owner),incRows=yearIncomeByCategory(y,owner);
  const expense=expRows.reduce((s,r)=>s+r.v,0),income=incRows.reduce((s,r)=>s+r.v,0);
  const net=income-expense,rate=savingsRate(income,expense);
- const pyExpRows=yearSpendByCategory(y-1,owner),pyIncRows=yearIncomeByCategory(y-1,owner);
+ /* y가 올해(진행 중인 해, TM.y)면 올해 쪽은 1/1~"지금"까지만 쌓였는데 전년(y-1)은 늘 1/1~12/31
+  * 전체와 비교해 왔다 — 그 결과 "전년대비 ▼%" 배지가 실제 추세가 아니라 올해가 아직 안 끝나서
+  * 생기는 왜곡을 담았다. 전년 쪽도 올해와 같은 월/일까지(YTD)로 상한을 맞춘다. TM.d가 전년에는
+  * 없는 날짜면(예: 올해 2/29, 전년은 평년) 전년 그 달의 말일로 클램프한다. 과거(완전히 끝난)
+  * 연도를 볼 때는 두 해 모두 꽉 찬 연도라 상한을 둘 이유가 없어 기존처럼 전년 전체와 비교한다
+  * (app-evolve cycle283 critique/advance). */
+ const pyEndDate=y===TM.y?`${y-1}-${String(TM.m).padStart(2,'0')}-${String(Math.min(TM.d,lastDay(y-1,TM.m))).padStart(2,'0')}`:null;
+ const pyExpRows=yearSpendByCategory(y-1,owner,pyEndDate),pyIncRows=yearIncomeByCategory(y-1,owner,pyEndDate);
  const pyExpense=pyExpRows.reduce((s,r)=>s+r.v,0),pyIncome=pyIncRows.reduce((s,r)=>s+r.v,0);
  const pyRate=savingsRate(pyIncome,pyExpense);
- const investGain=yearRealizedGain(y,owner),pyInvestGain=yearRealizedGain(y-1,owner);
+ const investGain=yearRealizedGain(y,owner),pyInvestGain=yearRealizedGain(y-1,owner,pyEndDate);
  const yoy={
   income:pyIncome?Math.round((income-pyIncome)/pyIncome*100):null,
   expense:pyExpense?Math.round((expense-pyExpense)/pyExpense*100):null,
@@ -6657,6 +6666,7 @@ function yearSummary(y,owner='전체'){
    * 중 하나라도 매도 기록이 없으면(null) 비교 기준이 없다고 보고 null(income/expense와 동일 관례,
    * app-evolve cycle267 advance). */
   investDelta:(investGain==null||pyInvestGain==null)?null:investGain-pyInvestGain,
+  isYTD:y===TM.y, /* openYearReview가 "전년 동기간과 비교" 안내를 보여줄지 판단하는 플래그 */
  };
  return{y,income,expense,net,savingsRate:rate,topExpenseCats:expRows.slice(0,3),topIncomeCats:incRows.slice(0,3),monthly:yearMonthlyNet(y,owner),yoy,investGain};
 }
@@ -6709,6 +6719,7 @@ function openYearReview(y){
  openSheet(`<h3>연간 결산</h3><div class="desc">${y}년 한 해를 돌아봐요</div>
   ${switcher}${ownerSeg}
   <div class="card" style="padding:16px 14px;margin-bottom:12px">
+   ${s.yoy.isYTD?`<div style="text-align:center;color:var(--text-3);font-size:11.5px;font-weight:600;margin-bottom:8px">올해는 아직 진행 중이에요 · 전년 동기간과 비교</div>`:''}
    <div class="hrt-grid">
     <div class="hrt-c"><span class="k">총수입</span><span class="v plus num">${comma(s.income)}원</span>${incBadge}</div>
     <div class="hrt-c"><span class="k">총지출</span><span class="v minus num">${comma(s.expense)}원</span>${expBadge}</div>
@@ -11134,7 +11145,7 @@ boot();
 function refreshToday(){
  const t=todayStr();
  if(t===TODAY)return false;
- TODAY=t;TM=ym(TODAY);RANGE_TO=addDays(TODAY,760);DISP_TO=addDays(TODAY,92);
+ TODAY=t;TM=ym(TODAY);TM.d=+TODAY.slice(8,10);RANGE_TO=addDays(TODAY,760);DISP_TO=addDays(TODAY,92); /* TM.d를 안 갱신하면 날짜가 넘어간 뒤 yearSummary의 YTD 비교(위 2999행과 동일 공식)가 깨진다(app-evolve cycle283 advance) */
  invalidateBalances();rollPendingTransfers();
  save(); /* save()가 오늘 날짜 nwHistory 스냅샷을 항상 갱신한다 */
  return true;
