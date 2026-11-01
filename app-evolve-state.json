@@ -1,15 +1,8 @@
 {
   "cycle": 286,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 281,
-      "phase": "review",
-      "timestamp": "2026-11-01T00:30:00.000Z",
-      "summary": "cycle281 develop 커밋(2e5ee72) 검토 — 실제 버그 없음, 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 281,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-01T20:09:54.238Z",
       "summary": "matchTxnQuery(거래 검색)의 비교/범위 연산자(>,<,~)가 분할 거래(t.splits)에서 최상위 합계(t.amount)만 보고 개별 분할 금액은 보지 않던 공백 발견 — matchRecQuery(cycle282 이후 splits 지원)는 r.amount와 각 분할 금액을 모두 비교하는데 matchTxnQuery만 갈라져 있어, 분할된 작은 금액을 \"<N\"/범위로 찾으려 하면(예: 10000원 거래 중 식비 7000+생활용품 3000을 \"<4000\"으로 찾기) 못 찾고 substring(\"3000\")으로는 찾히는 비일관이 있었다. matchRecQuery와 동일한 패턴(t.amount 비교 OR lines.some 비교)으로 통일. 테스트 2건 추가(2518->2520). APP_VERSION 1.47.315->1.47.316, sw.js CACHE v582->v583. node test/run.js 2520/2520 통과.",
+      "commit": "8e637c6"
+    },
+    {
+      "cycle": 286,
+      "phase": "review",
+      "timestamp": "2026-11-01T21:40:00.000Z",
+      "summary": "cycle286 develop 커밋(8e637c6) 검토 — matchTxnQuery의 lines=splitLines(t) 활용이 matchRecQuery(라인 652)의 패턴과 정확히 일치함을 확인. 분할 없는 일반 거래는 splitLines가 [{amount:t.amount,...}] 하나만 반환해 lines.some 쪽도 t.amount와 동일하게 평가되므로 OR 추가가 회귀를 만들지 않는다. matchGoalQuery는 splits 개념이 없어 동일한 공백 대상이 아님도 확인. node test/run.js 2520/2520 재확인 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
       "commit": null
     }
   ]
