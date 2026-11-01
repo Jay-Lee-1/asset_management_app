@@ -7026,6 +7026,70 @@ test('matchTxnQuery: 자산명이 조합형(NFD)으로 저장돼 있어도 완�
   assert.strictEqual(sandbox.matchTxnQuery(t, '우리은행', assets), true);
 });
 
+/* ---------- parseAmountUnit: parseAmountToken이 쓰는 "만"/"억" 단위 숫자 파서(app-evolve cycle278) ----------
+ * parseAmountToken/normalizeAmountSpacing의 기존 테스트들은 이 함수를 항상 ">"/"~"를 통해서만
+ * 간접 호출해, logic.js의 99개 순수 함수 중 parseAmountUnit과 amountMatchesToken 둘만 직접
+ * 호출하는 테스트가 전혀 없었다(app-evolve cycle282 develop) — 경계값(0, 소수, 형식 오류)을
+ * 직접 겪어보지 않고 간접 호출 몇 개만으로 우연히 통과했을 가능성을 막기 위해 단위 테스트를
+ * 추가한다. */
+test('parseAmountUnit: 단위 없는 정수/소수를 그대로 돌려준다', () => {
+  assert.strictEqual(sandbox.parseAmountUnit('10000'), 10000);
+  assert.strictEqual(sandbox.parseAmountUnit('1.5'), 1.5);
+  assert.strictEqual(sandbox.parseAmountUnit('0'), 0);
+});
+test('parseAmountUnit: "만"은 10000배, "억"은 100000000배로 환산한다(소수와 결합 가능)', () => {
+  assert.strictEqual(sandbox.parseAmountUnit('10만'), 100000);
+  assert.strictEqual(sandbox.parseAmountUnit('1.5억'), 150000000);
+  assert.strictEqual(sandbox.parseAmountUnit('2.5만'), 25000);
+});
+test('parseAmountUnit: 빈 문자열/null/undefined는 null이다', () => {
+  assert.strictEqual(sandbox.parseAmountUnit(''), null);
+  assert.strictEqual(sandbox.parseAmountUnit(null), null);
+  assert.strictEqual(sandbox.parseAmountUnit(undefined), null);
+});
+test('parseAmountUnit: 숫자가 아니거나 단위 뒤에 글자가 더 있으면 null', () => {
+  assert.strictEqual(sandbox.parseAmountUnit('커피'), null);
+  assert.strictEqual(sandbox.parseAmountUnit('10만원'), null, '단위 뒤에 글자가 더 있으면 전체 문자열이 숫자+단위 형식이 아니므로 null');
+  assert.strictEqual(sandbox.parseAmountUnit('1.2.3'), null, '소수점이 두 개면 숫자 형식이 아니므로 null');
+});
+test('parseAmountUnit: 음수 기호는 지원하지 않는다(null)', () => {
+  assert.strictEqual(sandbox.parseAmountUnit('-10000'), null, 'amountMatchesToken이 Math.abs로 비교하므로 검색어 자체엔 음수가 필요 없게 설계됨');
+});
+
+/* ---------- amountMatchesToken: parseAmountToken이 돌려준 {op,v1[,v2]}로 실제 금액을 비교하는
+ * 함수(app-evolve cycle278) ----------
+ * matchTxnQuery 통합 테스트들이 ">"/"~"/음수 절대값 비교를 이미 간접 검증하지만, "<"/"<="와
+ * ">="의 경계값(동일값 포함/제외)은 그 어느 통합 테스트도 직접 짚지 않았다 — 네 연산자 전부의
+ * 경계 포함/제외 여부를 이 함수에 직접 단언한다. */
+test('amountMatchesToken: ">"는 경계값을 제외하고(미초과) 초과분만 참이다', () => {
+  assert.strictEqual(sandbox.amountMatchesToken(10000, { op: '>', v1: 10000 }), false);
+  assert.strictEqual(sandbox.amountMatchesToken(10001, { op: '>', v1: 10000 }), true);
+  assert.strictEqual(sandbox.amountMatchesToken(9999, { op: '>', v1: 10000 }), false);
+});
+test('amountMatchesToken: ">="는 경계값을 포함한다', () => {
+  assert.strictEqual(sandbox.amountMatchesToken(10000, { op: '>=', v1: 10000 }), true);
+  assert.strictEqual(sandbox.amountMatchesToken(9999, { op: '>=', v1: 10000 }), false);
+});
+test('amountMatchesToken: "<"는 경계값을 제외하고(미만) 작은 쪽만 참이다', () => {
+  assert.strictEqual(sandbox.amountMatchesToken(10000, { op: '<', v1: 10000 }), false);
+  assert.strictEqual(sandbox.amountMatchesToken(9999, { op: '<', v1: 10000 }), true);
+});
+test('amountMatchesToken: "<="는 경계값을 포함한다', () => {
+  assert.strictEqual(sandbox.amountMatchesToken(10000, { op: '<=', v1: 10000 }), true);
+  assert.strictEqual(sandbox.amountMatchesToken(10001, { op: '<=', v1: 10000 }), false);
+});
+test('amountMatchesToken: "range"는 양쪽 경계값을 모두 포함한다', () => {
+  assert.strictEqual(sandbox.amountMatchesToken(10000, { op: 'range', v1: 10000, v2: 50000 }), true);
+  assert.strictEqual(sandbox.amountMatchesToken(50000, { op: 'range', v1: 10000, v2: 50000 }), true);
+  assert.strictEqual(sandbox.amountMatchesToken(9999, { op: 'range', v1: 10000, v2: 50000 }), false);
+  assert.strictEqual(sandbox.amountMatchesToken(50001, { op: 'range', v1: 10000, v2: 50000 }), false);
+});
+test('amountMatchesToken: 음수로 저장된 금액도 절대값으로 비교된다(네 연산자 전부)', () => {
+  assert.strictEqual(sandbox.amountMatchesToken(-20000, { op: '>', v1: 10000 }), true);
+  assert.strictEqual(sandbox.amountMatchesToken(-5000, { op: '<', v1: 10000 }), true);
+  assert.strictEqual(sandbox.amountMatchesToken(-30000, { op: 'range', v1: 10000, v2: 50000 }), true);
+});
+
 /* ---------- parseAmountToken: histQ 검색어의 금액 비교/범위 연산자 파싱(app-evolve cycle278) ----------
  * vm 크로스 realm 객체는 deepStrictEqual로 통째로 비교하면 프로토타입이 달라 실패한다(history의
  * duplicateRec 테스트가 배열에서 겪은 것과 동일한 이유) — 필드별로 strictEqual한다. */
