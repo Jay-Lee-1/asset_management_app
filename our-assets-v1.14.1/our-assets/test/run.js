@@ -7415,6 +7415,47 @@ test('matchRecQuery: splits가 없거나 빈 배열이면 기존처럼 최상위
   assert.strictEqual(sandbox.matchRecQuery({ category: '구독', memo: '넷플릭스', splits: [] }, '넷플릭스'), true);
   assert.strictEqual(sandbox.matchRecQuery({ category: '구독', memo: '넷플릭스', splits: null }, '구독'), true);
 });
+/* 금액 검색 — matchTxnQuery는 이미 지원하지만 matchRecQuery는 r.amount/분할 금액을 haystack에
+ * 넣지 않아 빠져 있었다(app-evolve cycle283 develop). globalSearchBody의 안내문이 금액 검색을
+ * 반복에도 명시하므로, matchTxnQuery와 동일한 규칙(부분일치 + 쉼표 무시 + >/>=/</<=/범위 연산자)을
+ * 적용한다. */
+test('matchRecQuery: 금액으로도 검색할 수 있다(쉼표 없이 입력)', () => {
+  const r = { category: '구독', memo: '넷플릭스', amount: 15900 };
+  assert.strictEqual(sandbox.matchRecQuery(r, '15900'), true);
+});
+test('matchRecQuery: 검색어에 쉼표가 있어도("15,900") 쉼표 없는 금액과 매칭된다', () => {
+  const r = { category: '구독', memo: '넷플릭스', amount: 15900 };
+  assert.strictEqual(sandbox.matchRecQuery(r, '15,900'), true);
+});
+test('matchRecQuery: 금액의 일부 숫자만 넣어도 부분일치로 찾을 수 있다(기존 텍스트 검색과 동일한 includes 규칙)', () => {
+  const r = { category: '구독', memo: '', amount: 123456 };
+  assert.strictEqual(sandbox.matchRecQuery(r, '2345'), true);
+});
+test('matchRecQuery: 금액이 일치하지 않고 카테고리/메모에도 없으면 매칭되지 않는다', () => {
+  const r = { category: '구독', memo: '넷플릭스', amount: 15900 };
+  assert.strictEqual(sandbox.matchRecQuery(r, '99999'), false);
+});
+test('matchRecQuery: 분할 거래는 최상위 합계(r.amount)가 아니라 개별 분할 금액(splits[].amount)으로도 찾을 수 있다', () => {
+  const r = { category: '통신', memo: '결합요금', amount: 50000, splits: [{ category: '통신', amount: 30000 }, { category: 'OTT', amount: 20000 }] };
+  assert.strictEqual(sandbox.matchRecQuery(r, '20000'), true, '최상위 합계 50000이 아니라 두 번째 분할 금액 20000으로도 찾아야 함');
+});
+test('matchRecQuery: ">N"/"<N"/"N~M" 연산자로 금액을 비교·범위 검색할 수 있다(기존 substring과 달리 오탐이 없다)', () => {
+  const r = { category: '구독', memo: '넷플릭스', amount: 15900 };
+  assert.strictEqual(sandbox.matchRecQuery(r, '>10000'), true);
+  assert.strictEqual(sandbox.matchRecQuery(r, '>20000'), false);
+  assert.strictEqual(sandbox.matchRecQuery(r, '<=15900'), true);
+  assert.strictEqual(sandbox.matchRecQuery(r, '1만~2만'), true);
+  assert.strictEqual(sandbox.matchRecQuery(r, '3만~5만'), false);
+});
+test('matchRecQuery: 연산자 뒤에 공백을 자연스럽게 넣어도("> 10000") 금액 비교로 매칭된다', () => {
+  const r = { category: '구독', memo: '넷플릭스', amount: 15900 };
+  assert.strictEqual(sandbox.matchRecQuery(r, '> 10000'), true);
+});
+test('matchRecQuery: 금액 연산자와 텍스트 검색어를 함께 띄어 써도 AND로 좁혀진다', () => {
+  const r = { category: '구독', memo: '넷플릭스', amount: 15900 };
+  assert.strictEqual(sandbox.matchRecQuery(r, '넷플릭스 >10000'), true);
+  assert.strictEqual(sandbox.matchRecQuery(r, '넷플릭스 >20000'), false, '금액 조건은 만족하지 않으므로 제외되어야 함');
+});
 
 /* ---------- suggestCategoryForMemo: 거래/반복거래 입력(index.html txMemoInput/recMemoInput)의
  * 메모 기반 카테고리 추천. matchTxnQuery류(includes 부분일치)와 달리 "똑같은 메모"일 때만

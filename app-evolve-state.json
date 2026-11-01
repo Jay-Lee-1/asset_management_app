@@ -1,6 +1,6 @@
 {
   "cycle": 283,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
@@ -113,6 +113,13 @@
       "phase": "advance",
       "timestamp": "2026-11-01T07:30:00.000Z",
       "summary": "critique(cycle282) 계획대로 DB.recurrences에 분할(splits) 지원을 추가했다. (1) DB.recurrences 레코드가 splits:[{category,amount,memo?}]를 가질 수 있게 함. (2) renderRecSheet에 splitFieldHTML(d,pfx)을 pfx 파라미터로 일반화해 tx/rec 양쪽에서 재사용(onclick/oninput을 ${pfx}SplitXxx로 배선, 공유 id를 txSplitHint->splitHint로 통일), recToggleSplit/recSplitAdd/recSplitRemove/recSplitOpenCat/recSplitAmt/recSplitMemo를 tx 짝 함수와 동일한 규칙으로 신설. (3) recCatSuggestUpdate에 splitOn 가드 추가(분할 중엔 카테고리 추천 끔). (4) saveRec()에 saveTx와 동일한 분할 합계=전체금액 검증 추가. (5) expandRec()이 매 회차 가상 인스턴스에 splits:(ed.splits!==undefined?ed.splits:r.splits)를 실어 splitLines() 기반 집계·검색이 수정 없이 분할을 인식하게 함. (6) recHistFieldsChanged에 splits 비교 추가(JSON.stringify 내용 비교, 배열 참조 비교의 항상-true 함정 회피). (7) activeRecsForCat/catMergeCounts/doRenameCat/mergeCatInto가 모두 분할 항목까지 보도록 확장(txns의 기존 분할 처리와 동일한 패턴), mergeCatInto의 undo 복원도 분할 카테고리까지 되돌림. (8) logic.js의 matchRecQuery가 splitLines(r) 기반으로 모든 분할 항목의 category/memo까지 검색하도록 확장. saveTx의 '거래 입력 중 반복 켜기' 경로(txToggleRepeat)는 계획대로 범위를 좁혀 그대로 분할을 되돌리는 동작을 유지하고, 관련 주석 3곳을 이제는 틀린 전역 제약(반복거래는 분할을 담을 자리가 없다는 설명)에서 정확한 설명으로 교정했다. test/run.js에 matchRecQuery 분할 검색 4건, doRenameCat/mergeCatInto/activeRecsForCat/catMergeCounts 분할 반복거래 처리 7건, expandRec splits 전파 2건, recHistFieldsChanged splits 비교 1건, saveRec 분할 검증 4건, splitFieldHTML pfx 배선 1건, recToggleSplit/recSplitAdd/recSplitRemove/recSplitOpenCat/recSplitAmt/recSplitMemo 실행형 테스트 7건, 총 26건 추가(2435->2458 통과). APP_VERSION 1.47.308->1.47.309, sw.js CACHE v575->v576. node test/run.js 2458/2458 통과, 메인 스크립트(블록2)/logic.js/sw.js 구문 검증 통과. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 283,
+      "phase": "develop",
+      "timestamp": "2026-11-01T08:10:00.000Z",
+      "summary": "matchRecQuery(logic.js, 반복/구독 통합검색)가 r.amount/분할 금액을 haystack에 전혀 넣지 않아, globalSearchBody 빈 상태 안내문이 '금액으로도 검색 가능'이라고 명시해 놓고도 실제로는 금액 검색이 전혀 동작하지 않던 공백을 발견 — matchTxnQuery는 이미 지원하는 기능(쉼표 무시 부분일치 + >/>=/</<=/범위 연산자, 분할 항목별 금액 포함)인데 matchRecQuery만 빠져 있었다. matchTxnQuery와 동일한 규칙으로 금액 매칭을 추가(parseAmountToken/amountMatchesToken/normalizeAmountSpacing 재사용, splitLines(r) 기반 분할 금액 포함). test/run.js에 8건 추가(2458->2466 통과). APP_VERSION 1.47.309->1.47.310, sw.js CACHE v576->v577. node test/run.js 2466/2466 통과, 메인 스크립트(블록2)/logic.js/sw.js 구문 검증 통과.",
       "commit": null
     }
   ]
