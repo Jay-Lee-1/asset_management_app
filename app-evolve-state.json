@@ -1,19 +1,8 @@
 {
-  "cycle": 281,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "카테고리 아이콘 선택기(openIconPicker)의 aria-label이 내부 키 그대로 노출되는 접근성 결함 수정",
-    "why": "fork 서브에이전트로 앱 전반(CSV 임포트/익스포트, 부채 이자율/상환 what-if, 다중화폐 fx, undo 커버리지, 메인 시트/날짜피커 포커스트랩·inert·Escape·드래그닫기, 빈 상태, manifest/share_target/바로가기)을 재탐색했고 모두 이미 성숙 확인되어 제외. 대신 index.html:6818 openIconPicker()의 셀 버튼이 aria-label=\"${k} 아이콘\"으로 렌더링되는데 svg(k,22)는 aria-hidden=true(index.html:1605)라 버튼의 유일한 접근 가능한 이름이 이 aria-label뿐이다. k는 'food','fuel','gcap','briefcase' 같은 내부 아이콘 키 문자열이라 스크린리더가 \"food 아이콘\", \"gcap 아이콘\"처럼 영어 키를 그대로 읽어준다. 앱의 다른 모든 다이얼로그(목표/자산 행, 날짜피커, 차트)는 전부 한글 aria-label을 쓰므로 이 아이콘 피커만 유일한 예외(ICON_LABEL_KO류 매핑이 코드베이스에 전혀 없음을 grep으로 확인). pickCatAddIcon/pickCatRenameIcon 두 호출 경로에서 재현되는 실재하는 좁은 범위의 회귀이며, develop 한 사이클 안에 안전하게 끝낼 수 있는 크기다.",
-    "approach": "1) index.html:6809 CAT_ICON_SET 선언 바로 뒤에 const ICON_LABEL_KO={...} 신설 — CAT_ICON_SET.expense/income/saving에 등장하는 모든 아이콘 키의 합집합(food, restaurant, coffee, cart, house, car, bus, fuel, phone, bolt, droplet, shirt, scissors, health, ticket, film, game, plane, pet, baby, gcap, book, heart, cake, gift, receipt, repeat, users, wallet, tag, briefcase, arrowUp, chart, coins, bank, plus, lock, calendar, target, shield, seedling, bell 등, 실제 CAT_ICON_SET 내용을 다시 읽어 정확한 키 목록 확정)을 짧은 한글 명사로 매핑(예: food→'음식', fuel→'주유', gcap→'학자금', briefcase→'직장', arrowUp→'입금', seedling→'저축'). 기존 CAT_LABEL/ASSET_TYPES 라벨 톤과 맞춘다. 2) openIconPicker(index.html:6818)의 aria-label=\"${k} 아이콘\"을 aria-label=\"${ICON_LABEL_KO[k]||k} 아이콘\"으로 변경(매핑 누락 키는 안전하게 원래 키로 폴백). 3) test/run.js에 테스트 추가 — extractConstBlock으로 CAT_ICON_SET과 ICON_LABEL_KO를 함께 추출해 vm 실행 후 [...CAT_ICON_SET.expense,...CAT_ICON_SET.income,...CAT_ICON_SET.saving]의 모든 키가 ICON_LABEL_KO에 /[가-힣]/ 정규식을 만족하는 비어있지 않은 값을 갖는지 단언, 그리고 index.html 소스 문자열에서 옛 템플릿 aria-label=\"${k} 아이콘\" 리터럴(치환 전 그대로)이 더는 남아있지 않은지 source-string 검사로 회귀를 가드. 4) APP_VERSION과 sw.js CACHE 버전을 함께 올리고 node test/run.js 전체 통과 확인 후 커밋."
-  },
+  "cycle": 282,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 276,
-      "phase": "advance",
-      "timestamp": "2026-10-31T07:13:31.053Z",
-      "summary": "critique(cycle276) 계획대로 시장가 평가 자산(fx/gold/stock/crypto)에 연환산 수익률(annualized return) 보조 캡션을 구현. logic.js에 annualizedReturn(costBasis,evalValue,acquiredAt,today) 순수 함수 신설 — costBasis<=0/acquiredAt 없음/보유 30일 미만이면 null(짧은 기간을 1년으로 거듭제곱 확대하는 왜곡 방지), 그 외엔 (evalValue/costBasis)^(365/days)-1. asDraft에 선택 필드 acquiredAt 추가 — syncAssetInputs()의 asCostBasis 입력 처리 바로 뒤에서, 매입 금액이 처음 0→양수로 바뀌는 순간에만 TODAY로 찍고(이미 있으면 덮어쓰지 않아 추가매수/부분매도로 costBasis가 다시 쓰여도 최초 매입일은 보존) 매입 금액이 지워지면 함께 삭제. assetGainLossBadge()가 gl.amount+a.costBasis로 evalValue를 역산해(assetEval 재호출 없이) annualizedReturn을 구해 같은 색상 span 안에 \"· 연 N%\"로 이어붙임. duplicateAsset은 costBasis와 함께 acquiredAt도 지움(복제본은 매입 금액을 다시 입력하는 시점에 새로 찍힘). sanitizeBackup은 maturityDate와 동일하게 acquiredAt을 csvDateValid()로 검증하되, costBasis처럼 \"없는 게 정상\"인 선택 필드라 null이 아니라 필드 자체를 삭제. test/run.js에 annualizedReturn 경계(매입원가/acquiredAt 없음, 30일 미만, 정확 1년, 손실·전액손실, 보유기간 길수록 완만해짐) 7건 + syncAssetInputs acquiredAt 최초 설정/보존·삭제 2건 + duplicateAsset acquiredAt 삭제 확장 1건 + assetGainLossBadge 연환산 노출/숨김 3건 + sanitizeBackup acquiredAt 검증 2건, 총 15건 추가. APP_VERSION 1.47.297->1.47.298, sw.js CACHE v564->v565. node test/run.js 2355/2355 통과, 메인 스크립트(블록2) 구문 검증 통과. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 277,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-01T02:10:37.469Z",
       "summary": "fork 서브에이전트로 앱 전반(CSV 임포트/익스포트, 부채 이자율/상환 what-if, 다중화폐 fx, undo 커버리지, 메인 시트/날짜피커 포커스트랩·inert·Escape·드래그닫기, 빈 상태, manifest/share_target/바로가기)을 재탐색한 결과 모두 이미 성숙 확인되어 제외. 대신 카테고리 아이콘 선택기 openIconPicker(index.html:6818)의 버튼이 aria-label=\"${k} 아이콘\"으로 렌더링되는데, 내부 svg(k,22)는 aria-hidden=true(index.html:1605)라 이 aria-label이 버튼의 유일한 접근 가능한 이름임을 확인 — k는 food/fuel/gcap/briefcase 같은 영문 내부 키라 스크린리더가 영어 키를 그대로 읽어줌(한글 라벨 매핑 ICON_LABEL_KO가 코드베이스에 전혀 없음을 grep으로 확인). 앱의 다른 모든 다이얼로그는 전부 한글 aria-label을 쓰는 것과 대비되는 유일한 예외. pickCatAddIcon/pickCatRenameIcon 두 호출 경로에서 재현. 채택 계획(CAT_ICON_SET 바로 뒤에 ICON_LABEL_KO 한글 매핑 신설 + openIconPicker의 aria-label을 매핑값(폴백 포함)으로 교체 + 모든 아이콘 키가 한글 라벨을 갖는지/옛 영문 템플릿이 남아있지 않은지 테스트)을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 281,
+      "phase": "advance",
+      "timestamp": "2026-11-01T03:40:00.000Z",
+      "summary": "critique(cycle281) 계획대로 카테고리 아이콘 선택기(openIconPicker)의 aria-label 접근성 결함을 수정. CAT_ICON_SET(index.html:6809) 바로 뒤에 const ICON_LABEL_KO={...} 신설 — CAT_ICON_SET.expense/income/saving에 등장하는 43개 키 전체(food→'음식', gcap→'학자금', briefcase→'직장', arrowUp→'입금', seedling→'적립' 등)를 짧은 한글 명사로 매핑. openIconPicker(index.html:6818)의 aria-label=\"${k} 아이콘\"을 aria-label=\"${ICON_LABEL_KO[k]||k} 아이콘\"으로 변경(매핑에 없는 키는 안전하게 원래 키로 폴백 — current가 CAT_ICON_SET 밖의 값이면 목록 맨 앞에 끼워지는 기존 경로가 있어 폴백이 꼭 필요함). test/run.js의 FUNCTIONS에 openIconPicker/pickCatIcon, CONSTS에 CAT_ICON_SET/ICON_LABEL_KO 추가 후 — openIconPicker 호출 시 food/gcap/briefcase/piggy 등 한글 aria-label이 나오고 영문 키가 더는 안 나오는지 3건, ICON_LABEL_KO 매핑 누락 키 폴백 1건, CAT_ICON_SET 세 타입의 합집합 전체가 /[가-힣]/를 만족하는 한글 라벨을 갖는지 완전성 가드 1건, 옛 영문 템플릿 리터럴이 소스에 남아있지 않은지 source-string 회귀 가드 1건, 총 6건 추가. APP_VERSION 1.47.307->1.47.308, sw.js CACHE v574->v575. node test/run.js 2424/2424 통과, 메인 스크립트(블록2)/logic.js/sw.js 구문 검증 통과. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

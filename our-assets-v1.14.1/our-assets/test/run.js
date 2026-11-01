@@ -244,6 +244,7 @@ const FUNCTIONS = [
   'openStaleMvReview', 'dismissStaleMv', 'pruneDismissedStaleMvIds',
  'notifyAlertInfo', 'pickNotifyAlerts', 'pruneNotifiedIds', 'syncNotifyPermission',
   'catIconOf', 'catGlyph', 'openCatManage', 'openCatPicker', 'catFilteredGrid', 'catEmptyHtml', 'pkCatQInput', 'refreshPkCatList', 'moveCatBlob', 'pkPickCat',
+  'openIconPicker', 'pickCatIcon',
   'catListOf', 'catAv', 'assetPickBtn', 'endCondFields', 'dayPickerHTML', 'openFormSheet', 'renderTxSheet', '_applyType', '_applyFreq', '_applyDay', '_applyCount', '_applyOpenCat', '_applyOpenAsset', 'txType', 'txToggleRepeat',
   // txMemoInput/txCatSuggestUpdate/txApplyCatSuggest·recMemoInput/recCatSuggestUpdate/
   // recApplyCatSuggest는 메모 기반 카테고리 추천 칩(app-evolve cycle270 advance)의 입력
@@ -350,7 +351,11 @@ const FUNCTIONS = [
 // crypto 전용 보유자 주말 휴장 자동갱신 회귀 수정 검증용).
 // GS_CAP은 globalSearchBody()가 각 그룹(거래/자산/카테고리/목표)을 몇 건까지 바로 보여줄지 정하는
 // cap 상수(app-evolve cycle261 develop) — globalSearchBody 실행형 테스트가 그대로 참조한다.
-const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'emailKey', 'CAT_PICKER_SEARCH_THRESHOLD', 'GS_CAP'];
+// CAT_ICON_SET/ICON_LABEL_KO는 openIconPicker()가 각 타입(expense/income/saving)별 아이콘 키
+// 목록과, 그 키를 읽어주는 한글 aria-label 매핑이다(app-evolve cycle281 advance) — 둘 다 내부에
+// ";"가 없는 단순 object literal이라 extractConstBlock 없이 extractConst로도 끝까지 끌어온다
+// (CAT_LABEL과 같은 패턴).
+const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'emailKey', 'CAT_PICKER_SEARCH_THRESHOLD', 'GS_CAP', 'CAT_ICON_SET', 'ICON_LABEL_KO'];
 // _histCache는 filteredHist()가 재대입(={key,list})하는 let 선언이라 CONSTS(extractConst)로는
 // 못 끌어오므로 별도의 LETS 목록으로 extractLet을 통해 가져온다.
 // _copyIsCsv도 같은 이유(openCopyBackup()이 재대입)로 LETS를 통해 가져온다.
@@ -21733,6 +21738,40 @@ test('openCatManage: income 탭의 ADJUST_CAT(잔액 조정)은 이동 버튼도
   const html = sandbox.lastSheetHtml;
   assert.ok(!html.includes(`moveCat('income',1,`), 'ADJUST_CAT(인덱스 1)의 이동 버튼이 그려지면 안 됨');
   assert.ok(html.includes(`moveCat('income',0,`), '일반 카테고리(급여)의 이동 버튼은 그려져야 함');
+});
+/* openIconPicker의 각 아이콘 버튼은 svg(k,22)가 aria-hidden="true"라(장식용, line 1605 주석 참고)
+ * aria-label이 버튼의 유일한 접근 가능한 이름이다. k는 'food'/'gcap'처럼 내부 식별자 키라
+ * ICON_LABEL_KO 매핑 없이 그대로 쓰면 스크린리더가 영어 키를 읽어준다(app-evolve cycle281
+ * advance, cycle278/279/280 critique와 같은 계열의 aria-label 접근성 수정). */
+test('openIconPicker: 아이콘 버튼 aria-label이 내부 키가 아니라 ICON_LABEL_KO의 한글 이름이다', () => {
+  sandbox.openIconPicker('expense', '', () => {}, null);
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('aria-label="음식 아이콘"'), 'food 키는 "음식 아이콘"으로 읽혀야 함');
+  assert.ok(html.includes('aria-label="학자금 아이콘"'), 'gcap 키는 "학자금 아이콘"으로 읽혀야 함');
+  assert.ok(!html.includes('aria-label="food 아이콘"'), '영문 키가 그대로 aria-label에 남으면 안 됨');
+  assert.ok(!html.includes('aria-label="gcap 아이콘"'), '영문 키가 그대로 aria-label에 남으면 안 됨');
+});
+test('openIconPicker: income/saving 탭도 각자의 키(briefcase/piggy)를 한글로 읽어준다', () => {
+  sandbox.openIconPicker('income', '', () => {}, null);
+  assert.ok(sandbox.lastSheetHtml.includes('aria-label="직장 아이콘"'), 'briefcase 키는 "직장 아이콘"으로 읽혀야 함');
+  sandbox.openIconPicker('saving', '', () => {}, null);
+  assert.ok(sandbox.lastSheetHtml.includes('aria-label="저축 아이콘"'), 'piggy 키는 "저축 아이콘"으로 읽혀야 함');
+});
+test('openIconPicker: ICON_LABEL_KO에 없는 키가 섞여도(폴백) 깨지지 않고 키 자체를 보여준다', () => {
+  // current가 CAT_ICON_SET에 없는 키면 그 키가 목록 맨 앞에 끼워진다(index.html:6817) —
+  // ICON_LABEL_KO에 없는 매핑 누락 키를 "||k" 폴백이 안전하게 받아내는지 확인.
+  sandbox.openIconPicker('expense', '__unknownIcon__', () => {}, null);
+  assert.ok(sandbox.lastSheetHtml.includes('aria-label="__unknownIcon__ 아이콘"'), '매핑에 없는 키는 키 자체로 폴백해야 함');
+});
+test('ICON_LABEL_KO 완전성 가드: CAT_ICON_SET의 expense/income/saving에 등장하는 모든 키가 비어있지 않은 한글 이름을 갖는다', () => {
+  const allKeys = [...new Set([...sandbox.CAT_ICON_SET.expense, ...sandbox.CAT_ICON_SET.income, ...sandbox.CAT_ICON_SET.saving])];
+  assert.ok(allKeys.length > 30, 'CAT_ICON_SET에서 뽑힌 키 수가 비정상적으로 적음 — 추출이 깨졌을 수 있음');
+  const missing = allKeys.filter(k => !/[가-힣]/.test(sandbox.ICON_LABEL_KO[k] || ''));
+  assert.deepStrictEqual(missing, [], `ICON_LABEL_KO에 한글 이름이 없는 아이콘 키: ${missing.join(', ')}`);
+});
+test('index.html 소스 가드: openIconPicker가 옛 영문 키 그대로의 aria-label 템플릿을 더는 쓰지 않는다(회귀 가드)', () => {
+  assert.ok(!src.includes('aria-label="${k} 아이콘"'), '치환 전 영문 키 템플릿 리터럴이 소스에 남아있으면 안 됨');
+  assert.ok(src.includes('aria-label="${ICON_LABEL_KO[k]||k} 아이콘"'), 'ICON_LABEL_KO 폴백 패턴이 소스에 있어야 함');
 });
 test('moveCat: 인접 항목과 순서를 바꾸고 저장 후 같은 탭을 다시 연다', () => {
   setupCatManageDB();

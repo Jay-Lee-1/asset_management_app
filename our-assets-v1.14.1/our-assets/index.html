@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.307';
+const APP_VERSION='1.47.308';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6811,11 +6811,21 @@ const CAT_ICON_SET={
  income:['briefcase','arrowUp','chart','coins','bank','house','gift','heart','wallet','plus','tag'],
  saving:['piggy','bank','lock','calendar','target','shield','house','seedling','coins','bell','gift','tag']
 };
+/* openIconPicker의 aria-label용 한글 이름. 키 자체(food,gcap 등)는 내부 식별자라
+ * 스크린리더가 그대로 읽으면 영어로 들리므로, CAT_ICON_SET에 등장하는 모든 키를 덮는다. */
+const ICON_LABEL_KO={
+ food:'음식',restaurant:'외식',coffee:'커피',cart:'장보기',house:'주거',car:'자동차',bus:'대중교통',fuel:'주유',
+ phone:'통신',bolt:'전기',droplet:'수도',shirt:'의류',scissors:'미용',health:'의료',ticket:'문화',film:'영화',
+ game:'게임',plane:'여행',pet:'반려동물',baby:'육아',gcap:'학자금',book:'도서',heart:'기부',cake:'경조사',
+ gift:'선물',receipt:'세금',repeat:'구독',users:'모임',wallet:'용돈',tag:'기타',briefcase:'직장',arrowUp:'입금',
+ chart:'투자',coins:'부수입',bank:'금융',plus:'추가',piggy:'저축',lock:'보안',calendar:'일정',target:'목표',
+ shield:'보험',seedling:'적립',bell:'알림'
+};
 let _iconCb=null,_iconCancel=null;
 function openIconPicker(type,current,cb,onCancel){_iconCb=cb;_iconCancel=onCancel||null;
  let keys=CAT_ICON_SET[type]||CAT_ICON_SET.expense;
  if(current&&!keys.includes(current))keys=[current,...keys];
- const cells=keys.map(k=>`<button class="icon-cell${k===current?' on':''}" onclick="pickCatIcon('${k}')" aria-label="${k} 아이콘" aria-pressed="${k===current}">${svg(k,22)}</button>`).join('');
+ const cells=keys.map(k=>`<button class="icon-cell${k===current?' on':''}" onclick="pickCatIcon('${k}')" aria-label="${ICON_LABEL_KO[k]||k} 아이콘" aria-pressed="${k===current}">${svg(k,22)}</button>`).join('');
  openSheet(`<h3>아이콘 선택</h3><div class="desc">${CAT_LABEL[type]||''} 카테고리에 어울리는 기호를 골라요</div>
   <div class="icon-grid">${cells}</div>
   <div class="two-btn" style="margin-top:14px"><button class="btn btn-soft" onclick="iconPickerCancel()">취소</button></div>`);
