@@ -566,6 +566,21 @@ function normalizeAmountSpacing(q){
  s=s.replace(/(\d+(?:\.\d+)?(?:만|억)?)\s*~\s*(?=\d)/g,'$1~');
  return s;
 }
+/* matchTxnQuery/matchRecQuery/matchGoalQuery가 각자 따로 들고 있던 "토큰 하나가 금액
+ * 비교/범위 연산자로 파싱되면 amountCandidates 중 하나라도 맞아야 매칭, 아니면 정규화된
+ * haystack에 대한 substring 매칭" 판정을 한 곳으로 모은 공통 헬퍼(app-evolve cycle287
+ * advance) — 세 함수가 물리적으로 분리돼 있어 금액 검색 규칙이 바뀔 때마다(비교연산자 도입,
+ * 분할 지원) 한 함수만 고치고 나머지를 깜빡하는 동일 클래스 버그가 cycle279/283/284/286에서
+ * 순서대로 반복됐다(app-evolve cycle286 critique). amountCandidates는 호출부가 조립해
+ * 넘기는 숫자 배열이며(예: [t.amount, ...lines.map(l=>l.amount)]), normHay는 호출부가 이미
+ * 조립한 haystack(금액 문자열 포함)이라 평문 토큰의 substring 매칭 동작은 그대로다. */
+function matchQueryTerms(normHay,terms,amountCandidates){
+ return terms.every(term=>{
+  const parsed=parseAmountToken(term);
+  if(parsed)return (amountCandidates||[]).some(a=>a!=null&&amountMatchesToken(a,parsed));
+  return normHay.includes(term);
+ });
+}
 function matchTxnQuery(t,q,assets){
  if(!q)return true;
  const fa=(assets||[]).find(a=>a.id===t.fromAssetId),ta=(assets||[]).find(a=>a.id===t.toAssetId);
@@ -578,11 +593,7 @@ function matchTxnQuery(t,q,assets){
  const normHay=hay.normalize('NFC').toLowerCase();
  const terms=searchTerms(normalizeAmountSpacing(q.normalize('NFC').toLowerCase().replace(/,/g,'')));
  if(!terms.length)return true;
- return terms.every(term=>{
-  const parsed=parseAmountToken(term);
-  if(parsed)return (t.amount!=null&&amountMatchesToken(t.amount,parsed))||lines.some(l=>l.amount!=null&&amountMatchesToken(l.amount,parsed));
-  return normHay.includes(term);
- });
+ return matchQueryTerms(normHay,terms,[t.amount,...lines.map(l=>l.amount)]);
 }
 /* 자산명(+fx 보유통화) 검색 — matchTxnQuery와 동일하게 대소문자 구분 없이 includes로 매칭하고,
  * 같은 이유로 NFC 정규화도 함께 적용한다(위 matchTxnQuery 주석 참고).
@@ -626,11 +637,7 @@ function matchGoalQuery(g,q){
  const normHay=hay.normalize('NFC').toLowerCase();
  const terms=searchTerms(normalizeAmountSpacing(q.normalize('NFC').toLowerCase().replace(/,/g,'')));
  if(!terms.length)return true;
- return terms.every(term=>{
-  const parsed=parseAmountToken(term);
-  if(parsed)return g.targetAmount!=null&&amountMatchesToken(g.targetAmount,parsed);
-  return normHay.includes(term);
- });
+ return matchQueryTerms(normHay,terms,[g.targetAmount]);
 }
 /* 반복(구독) 검색 — matchGoalQuery와 동일한 규칙(대소문자 무시 includes + NFC 정규화 + 공백 AND).
  * 통합검색(globalSearchBody, index.html)이 거래·자산·카테고리·목표까지만 가로질러 찾고 반복
@@ -661,11 +668,7 @@ function matchRecQuery(r,q){
  const normHay=hay.normalize('NFC').toLowerCase();
  const terms=searchTerms(normalizeAmountSpacing(q.normalize('NFC').toLowerCase().replace(/,/g,'')));
  if(!terms.length)return true;
- return terms.every(term=>{
-  const parsed=parseAmountToken(term);
-  if(parsed)return (r.amount!=null&&amountMatchesToken(r.amount,parsed))||lines.some(l=>l.amount!=null&&amountMatchesToken(l.amount,parsed));
-  return normHay.includes(term);
- });
+ return matchQueryTerms(normHay,terms,[r.amount,...lines.map(l=>l.amount)]);
 }
 /* 메모 기반 카테고리 추천 — 거래/반복거래 입력(index.html txMemoInput/recMemoInput)에서 "스타벅스",
  * "넷플릭스"처럼 같은 메모를 반복 입력할 때마다 카테고리를 DB.categories.expense[0] 기본값에서

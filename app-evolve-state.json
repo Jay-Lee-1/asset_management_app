@@ -1,19 +1,8 @@
 {
-  "cycle": 286,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "검색 매칭 함수(matchTxnQuery/matchRecQuery/matchGoalQuery)의 금액 매칭 로직을 공통 헬퍼로 추출",
-    "why": "logic.js의 matchTxnQuery/matchRecQuery/matchGoalQuery 세 함수가 거의 동일한 금액 매칭 블록(normalizeAmountSpacing으로 전처리 → searchTerms로 토큰화 → term마다 parseAmountToken 시도 → amountMatchesToken으로 본문/분할액 비교, 아니면 includes)을 각자 따로 들고 있다. 이 중복 때문에 지난 네 사이클(279/283/284/286) 동안 똑같은 클래스의 버그가 한 함수씩 순서대로 발견/수정되는 양상이 반복됐다: cycle279가 matchTxnQuery에만 금액 비교 연산자를 넣었고, cycle283이 그제서야 matchRecQuery에 같은 기능을 따라 넣었고, cycle284가 matchGoalQuery에 또 따라 넣었고, cycle286이 matchTxnQuery만 분할 라인(lines.some) 비교가 빠져 matchRecQuery와 갈라져 있던 걸 다시 맞췄다. 세 함수가 물리적으로 분리된 코드라 한 곳만 고치고 나머지를 잊는 실수가 구조적으로 반복되고 있고, 다음에 금액 검색 규칙이 또 바뀌면(예: 통화 단위 지원, 음수 금액 등) 같은 패턴의 공백이 다시 생길 가능성이 높다.",
-    "approach": "logic.js에 공통 헬퍼(예: matchQueryGeneric(hay, amountCandidates, q))를 신설해 normalizeAmountSpacing→searchTerms→term별 parseAmountToken/amountMatchesToken-또는-includes 판정 로직을 한 곳에만 둔다. amountCandidates는 호출부가 [t.amount, ...lines.map(l=>l.amount)] 식으로 넘기는 숫자 배열로 받아 매칭 종류(거래/반복/목표)별 차이는 호출부의 haystack 조립과 amountCandidates 배열 구성만 다르게 하고, 핵심 비교 로직은 헬퍼 하나로 통일한다. matchTxnQuery/matchRecQuery/matchGoalQuery를 이 헬퍼를 호출하는 얇은 wrapper로 다시 작성하고, 기존 동작(대소문자 무시, NFC 정규화, 공백 AND, substring 매칭, 분할 라인 포함)을 100% 보존해야 하므로 test/run.js의 기존 테스트를 모두 통과시키는 것으로 회귀 여부를 확인한다. matchAssetQuery/matchCatQuery처럼 금액 개념이 없는 단순 문자열 검색 함수는 이번 범위에서 제외한다(이미 로직이 짧고 드리프트 사례가 없었음)."
-  },
+  "cycle": 287,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 281,
-      "phase": "advance",
-      "timestamp": "2026-11-01T03:40:00.000Z",
-      "summary": "ICON_LABEL_KO 한글 매핑 신설, openIconPicker aria-label을 한글 라벨로 교체. 테스트 6건 추가. APP_VERSION 1.47.307->1.47.308, sw.js CACHE v574->v575. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 282,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-01T22:10:36.397Z",
       "summary": "matchTxnQuery/matchRecQuery/matchGoalQuery 세 검색 함수가 금액 매칭 로직(정규화→토큰화→연산자 파싱→비교)을 거의 동일하게 중복 보유하고 있어, 지난 네 사이클(279/283/284/286) 동안 한 함수만 고치고 나머지를 깜빡하는 동일 클래스 버그가 반복 발생한 구조적 약점 발견. 공통 헬퍼로 추출하는 계획을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 286,
+      "phase": "advance",
+      "timestamp": "2026-11-01T23:00:00.000Z",
+      "summary": "critique(cycle286) 계획대로 matchTxnQuery/matchRecQuery/matchGoalQuery의 중복 금액 매칭 로직을 공통 헬퍼로 추출했다. logic.js에 matchQueryTerms(normHay,terms,amountCandidates) 신설 — \"토큰이 금액 연산자로 파싱되면 amountCandidates 중 하나라도 맞아야 매칭, 아니면 normHay.includes(term)\" 판정을 한 곳으로 모음. 세 함수는 각자 조립한 haystack/amountCandidates 배열([t.amount,...lines.map(l=>l.amount)] 또는 [g.targetAmount])만 넘기는 얇은 wrapper로 재작성해, 기존 동작(대소문자 무시/NFC 정규화/공백 AND/substring/분할 라인 포함)을 100% 보존했다. matchAssetQuery/matchCatQuery(금액 개념 없음)는 변경 범위에서 제외. 순수 내부 리팩터링이라 테스트는 그대로(기존 동작 보존이 목적) — node test/run.js 2520/2520 통과(테스트 개수 불변 확인), logic.js/sw.js 구문 검증(node --check) 통과. APP_VERSION 1.47.316->1.47.317, sw.js CACHE v583->v584. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]
