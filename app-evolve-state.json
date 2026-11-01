@@ -1,6 +1,6 @@
 {
   "cycle": 284,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
     {
@@ -113,6 +113,13 @@
       "phase": "develop",
       "timestamp": "2026-11-01T12:00:00.000Z",
       "summary": "matchGoalQuery(logic.js, 목표 통합검색)가 g.targetAmount를 haystack에 전혀 넣지 않아, globalSearchBody 빈 상태 안내문이 '메모·카테고리·자산명·금액·목표명·반복명으로 검색해 보세요'라고 금액 검색을 목표에도 명시해 놓고도 실제로는 금액 검색이 전혀 동작하지 않던 공백을 발견(cycle283의 matchRecQuery와 동일한 클래스의 누락, 금액검색 롤아웃이 아직 닿지 않은 마지막 엔티티). matchRecQuery와 동일한 규칙으로 금액 매칭을 추가(parseAmountToken/amountMatchesToken/normalizeAmountSpacing 재사용). test/run.js에 7건 추가(2476->2483 통과). APP_VERSION 1.47.311->1.47.312, sw.js CACHE v578->v579. node test/run.js 2483/2483 통과, logic.js/sw.js 구문 검증(node --check) 통과, 메인 스크립트 블록2~4 구문 검증 통과.",
+      "commit": "06a6c71"
+    },
+    {
+      "cycle": 284,
+      "phase": "review",
+      "timestamp": "2026-11-01T13:05:00.000Z",
+      "summary": "cycle284 develop 커밋(06a6c71) 검토 — matchGoalQuery가 matchRecQuery/matchTxnQuery와 완전히 동일한 규칙(NFC 정규화, 쉼표 제거, normalizeAmountSpacing, 연산자 파싱 우선 후 substring 폴백)으로 구현됐고, 호출부(globalSearchBody, index.html:6272 단일 호출지)도 정상, targetAmount는 saveGoal에서 항상 양수로 저장되지만 null 가드도 matchRecQuery와 동일하게 방어적으로 처리됨. node test/run.js 2483/2483 통과, node --check logic.js/sw.js 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
       "commit": null
     }
   ]
