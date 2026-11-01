@@ -13247,6 +13247,38 @@ test('saveAsset: 신규 등록·기존 수정 모두 touch()로 updatedAt이 채
   sandbox.saveAsset(true);
   assert.strictEqual(sandbox.DB.assets[0].updatedAt, 'test-updatedAt', '수정 시에도 updatedAt이 갱신되어야 함');
 });
+/* ---------- saveAsset: 더블탭 중복 저장 가드 (app-evolve cycle285 develop) ----------
+ * saveTx/saveRec은 cycle79/app-evolve 때부터 _savedDrafts(WeakSet)로 같은 draft의 재호출을
+ * 조용히 무시하는데, saveAsset()만 이 가드가 빠져 있었다. 신규 등록 경로는 d.id=uid()를 매번
+ * 새로 매겨 같은 draft 객체(d)를 그대로 DB.assets.push하므로, 더블탭하면 같은 객체 참조가
+ * 배열에 두 번 들어가고 두 번째 push 때 매긴 id로 덮어써져 findIndex(a=>a.id===id)가 하나만
+ * 찾는 "참조는 공유하지만 겉보기엔 중복인" 자산이 생긴다. ---------- */
+test('saveAsset: 같은 draft로 두 번 연속 호출해도(더블탭) 신규 자산이 중복 등록되지 않는다', () => {
+  sandbox.DB = { assets: [], rates: { fx: {}, stocks: {}, goldPerG: 0 } };
+  sandbox.asDraft = { type: 'cash', owner: '나', includeInTotal: true, name: '비상금 통장', _dispAmt: 100000 };
+  sandbox.saveAsset(false);
+  sandbox.saveAsset(false);
+  assert.strictEqual(sandbox.DB.assets.length, 1, '같은 draft로 다시 저장해도 자산이 1개만 있어야 함');
+  assert.ok(!('_saved' in sandbox.DB.assets[0]), '가드 마커가 저장된 레코드에 섞여 들어가면 안 됨(WeakSet이어야 함)');
+});
+test('saveAsset: 수정(editing) 경로도 더블탭하면 두 번째 호출은 조용히 무시된다', () => {
+  const asset = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 10 };
+  sandbox.DB = { assets: [asset], assetQtyLog: [], rates: { fx: {}, stocks: { '005930': 70000 }, goldPerG: 0 } };
+  sandbox.asDraft = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 25 };
+  sandbox.saveAsset(true);
+  sandbox.saveAsset(true);
+  assert.strictEqual(sandbox.DB.assets.length, 1);
+  assert.strictEqual(sandbox.DB.assetQtyLog.length, 1, '더블탭으로 수량 변경 로그가 두 번 남으면 안 됨');
+});
+test('saveAsset: 검증 실패로 저장이 막힌 뒤 고쳐서 다시 저장하면(같은 draft 객체) 가드에 걸리지 않고 정상 저장된다', () => {
+  sandbox.DB = { assets: [], rates: { fx: {}, stocks: {}, goldPerG: 0 } };
+  sandbox.asDraft = { type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '', stockQty: 10 };
+  sandbox.saveAsset(false);
+  assert.strictEqual(sandbox.DB.assets.length, 0, '종목코드가 없으면 저장되지 않아야 함');
+  sandbox.asDraft.stockCode = '005930';
+  sandbox.saveAsset(false);
+  assert.strictEqual(sandbox.DB.assets.length, 1, '검증 실패는 가드를 걸지 않으므로 고쳐서 다시 저장하면 성공해야 함');
+});
 /* ---------- saveAsset: 자산의 귀속(owner)이 바뀌면 그 자산에 연결된 asset형 목표도 따라가야 함
  * (app-evolve cycle230 develop) — goalOpenAsset()은 "연결하는 시점"에만 goalDraft.owner를
  * 연결 자산의 owner로 맞춰줄 뿐, 이미 연결된 뒤에 asOpenOwner()로 그 자산의 귀속을 바꾸는 경로는

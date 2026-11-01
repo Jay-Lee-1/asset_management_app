@@ -1,6 +1,6 @@
 {
   "cycle": 285,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
@@ -113,6 +113,13 @@
       "phase": "advance",
       "timestamp": "2026-11-01T16:40:00.000Z",
       "summary": "critique(cycle284) 계획대로 일회성 거래 저장(saveTx)에 중복 입력 경고를 추가했다. (1) logic.js에 순수 함수 findPossibleDuplicateTx(txns,draft) 신설 — 신규(!draft.id) 거래만 대상, 이체(카테고리 없음)·분할(splits)·잔액조정(adjust) 내역은 1차 범위에서 제외, date+type+amount+category가 모두 같고 type별 자산(expense→fromAssetId, income→toAssetId, saving→from·to 둘 다)까지 같아야 중복으로 본다. (2) saveTx()의 저장 커밋 로직(반복 필드 제거~DB.txns 반영~토스트)을 commitTx()로 분리하고, 반복 등록 분기 이후·신규 저장일 때만 findPossibleDuplicateTx로 검사해 걸리면 기존 confirmSheet 패턴으로 '그래도 저장'을 한 번 더 확인시킨다(취소 시 기존 confirmSheet 관례대로 시트가 닫히고 저장되지 않음, 확인 시 commitTx()를 그대로 호출). (3) test/run.js FUNCTIONS 목록에 commitTx 추가, findPossibleDuplicateTx 단위 테스트 12건(완전일치/날짜·금액·카테고리·자산 다름/수입 toAssetId/저축 양쪽 자산/이체·분할·조정 제외/자기자신 제외/빈 입력)과 saveTx 통합 테스트 4건(중복 시 confirmSheet 호출 후 확인하면 저장/중복 없으면 즉시 저장/수정 경로는 대상 아님/이체는 제외) 추가(2483->2499 통과). APP_VERSION 1.47.312->1.47.313, sw.js CACHE v579->v580. node test/run.js 2499/2499 통과, logic.js/sw.js 구문 검증(node --check) 통과. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 285,
+      "phase": "develop",
+      "timestamp": "2026-11-01T17:30:00.000Z",
+      "summary": "saveAsset()에만 saveTx/saveRec이 이미 가진 더블탭 중복 저장 가드(_savedDrafts WeakSet)가 빠져있던 공백 발견 — 신규 등록 경로는 같은 draft 객체를 더블탭하면 참조 공유 중복 자산이 생김(findIndex가 하나만 찾아 이후 수정/삭제가 다른 하나를 조용히 고아로 남김). saveTx/saveRec과 동일한 패턴으로 가드 추가(검증 통과 후에만 _savedDrafts.add(d), 검증 실패 후 재저장은 막지 않음). 테스트 3건 추가(신규/수정 더블탭 무시, 검증실패 후 재저장 정상)(2499->2502 통과). APP_VERSION 1.47.313->1.47.314, sw.js CACHE v580->v581. node test/run.js 2502/2502 통과, script 블록 node --check 통과.",
       "commit": null
     }
   ]
