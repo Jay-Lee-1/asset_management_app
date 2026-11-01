@@ -1,15 +1,8 @@
 {
   "cycle": 282,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 277,
-      "phase": "review",
-      "timestamp": "2026-10-31T09:00:00.000Z",
-      "summary": "cycle277 develop 커밋(89de28e, 목표(goal) CSV 내보내기 goalsToCSV 추가)을 검토. doExport의 goalsCsv 분기가 goalProgress(g,goalHistoryFor(g),TODAY)를 호출하는 인자 순서·조합이 goalRowHTML(화면 진행률 표시)이 쓰는 것과 동일함을 확인(파생값 cur/pct/achieved를 goalsToCSV 밖에서 미리 계산해 얹는 설계가 assetsCsv/gainCsv와 같은 선례를 그대로 따름). goalsToCSV 안의 guard/esc(문자열 필드만 guard, cur/pct/targetAmount 등 숫자 파생값은 guard 없이 esc만)가 assetsToCSV/recurrencesToCSV의 기존 관례와 일치함을 확인. nm()이 연결 자산을 못 찾으면(이미 삭제됨) 추측하지 않고 빈 칸으로 남기는 점도 문서화된 의도와 일치(assetQtyLogToCSV/recurrencesToCSV와 달리 목표는 자산명 스냅샷 필드가 없어 대체할 데이터가 없음을 확인). 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋). node test/run.js 2362/2362 통과, 메인 스크립트(블록2) node --check 통과.",
-      "commit": null
-    },
     {
       "cycle": 277,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-11-01T04:14:51.303Z",
       "summary": "logic.js의 99개 순수 함수를 test/run.js 테스트 커버리지와 전수 대조한 결과, parseAmountUnit과 amountMatchesToken(둘 다 cycle278-279에서 histQ 금액 비교/범위 검색을 위해 추가됨) 단 2개만 직접 테스트가 전혀 없고 parseAmountToken/matchTxnQuery 통합 테스트로만 간접 검증되고 있던 공백을 발견 — >=/<= 경계 포함 여부, 범위 양끝 포함, 음수 금액의 abs() 처리, 단위 파서의 비정상 입력(음수 기호, 다중 소수점, trailing garbage) 등 경계 동작이 한 번도 직접 단언되지 않았다. test/run.js에 parseAmountUnit 5건(순수 숫자/소수, 만·억 단위 변환, 빈값/null/undefined, 비정상 입력 거부, 음수 기호 미지원)과 amountMatchesToken 6건(>,>=,<,<= 경계 포함/배제, 범위 양끝 포함, 음수 금액 abs() 처리) 총 11건을 parseAmountToken/normalizeAmountSpacing 테스트 블록 근처에 추가(logic.js는 vm 샌드박스에 전체 로드되므로 FUNCTIONS 배선 불필요). index.html/logic.js/sw.js 코드 변경 없음(테스트 전용 cycle)이라 APP_VERSION/CACHE는 그대로 유지(1.47.308/v575). node test/run.js 2424->2435 통과.",
       "commit": "021c708"
+    },
+    {
+      "cycle": 282,
+      "phase": "review",
+      "timestamp": "2026-11-01T05:05:00.000Z",
+      "summary": "cycle282 develop 커밋(021c708, parseAmountUnit/amountMatchesToken 직접 단위 테스트 11건 추가)을 검토. logic.js의 실제 구현(parseAmountUnit 512-518행, amountMatchesToken 541-551행)을 직접 읽고 11건 전부의 기대값을 대조 — 정규식 /^(\\d+(?:\\.\\d+)?)(만|억)?$/이 '10만원'(trailing 글자)과 '1.2.3'(다중 소수점)을 거부하고 음수 기호를 지원하지 않는다는 단언, 네 연산자(>,>=,<,<=)의 경계 포함/배제와 range 양끝 포함, Math.abs() 음수 처리 단언이 모두 실제 구현과 정확히 일치함을 확인. 코드 변경 없이 테스트만 추가한 cycle이라 회귀 위험 자체가 낮음. node test/run.js 2435/2435 통과. 실제 버그 없음 — 이상 없음, 코드 변경 없음(state.json만 커밋).",
+      "commit": null
     }
   ]
 }
