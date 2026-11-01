@@ -1,15 +1,8 @@
 {
   "cycle": 282,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 277,
-      "phase": "develop",
-      "timestamp": "2026-10-31T08:10:00.000Z",
-      "summary": "fork 서브에이전트로 앱 전반을 재탐색한 결과, CSV 내보내기가 거래·자산목록·순자산추이·매도손익·반복거래 5종은 있지만 목표(DB.goals)만 CSV 내보내기가 전혀 없는 공백을 발견 — openCsvMenu의 pk-item 버튼 5개에도 목표 항목이 없고 goalsToCSV 자체가 코드베이스에 없었다. index.html에 goalsToCSV(items,assets) 순수 함수 신설 (recurrencesToCSV 바로 뒤) — 목표이름/유형/연결자산/목표금액/현재진행금액/달성률/목표일/귀속/달성여부/생성일 10컬럼, guard/esc로 동일한 CSV 인젝션 방어. 현재 진행 금액(cur)·달성률(pct)·달성 여부(achieved)는 DB.goals 레코드 자체 필드가 아니라 goalProgress(logic.js)가 goalHistoryFor를 봐야 구해지는 파생값이라 assetsCsv의 evalValue/gainLoss와 같은 이유로 goalsToCSV 안에서 계산하지 않고 doExport가 미리 계산해 얹어 넘긴다. 연결 자산명(linkedAssetId)은 type이 asset일 때만 채우고 networth면 빈 칸(추측하지 않음), 자산이 삭제됐으면 역시 빈 칸으로 남긴다. CSV_KIND_META에 goalsCsv:{prefix:'goals',...} 추가, doExport의 kind 분기에 kind==='goalsCsv'?goalsToCSV(...) 추가, exportData()에 목표 CSV로 내보내기 pk-item 버튼 배선(svg('target') 아이콘, 기존 목표 UI와 동일 아이콘 재사용). test/run.js FUNCTIONS에 goalsToCSV 추가, 빈 배열/cur·pct·achieved 전달/연결자산 유무·networth 빈칸/연결자산 삭제됨/생성일 정렬+포맷/달성여부 Y/CSV 인젝션 방어 총 7건 + exportData·CSV_KIND_META/doExport 배선 회귀 2건(기존 테스트 확장) 추가. APP_VERSION 1.47.298->1.47.299, sw.js CACHE v565->v566. node test/run.js 2362/2362 통과, 메인 스크립트(블록2) node --check(new Function) 통과.",
-      "commit": "89de28e"
-    },
     {
       "cycle": 277,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-11-01T03:40:00.000Z",
       "summary": "critique(cycle281) 계획대로 카테고리 아이콘 선택기(openIconPicker)의 aria-label 접근성 결함을 수정. CAT_ICON_SET(index.html:6809) 바로 뒤에 const ICON_LABEL_KO={...} 신설 — CAT_ICON_SET.expense/income/saving에 등장하는 43개 키 전체(food→'음식', gcap→'학자금', briefcase→'직장', arrowUp→'입금', seedling→'적립' 등)를 짧은 한글 명사로 매핑. openIconPicker(index.html:6818)의 aria-label=\"${k} 아이콘\"을 aria-label=\"${ICON_LABEL_KO[k]||k} 아이콘\"으로 변경(매핑에 없는 키는 안전하게 원래 키로 폴백 — current가 CAT_ICON_SET 밖의 값이면 목록 맨 앞에 끼워지는 기존 경로가 있어 폴백이 꼭 필요함). test/run.js의 FUNCTIONS에 openIconPicker/pickCatIcon, CONSTS에 CAT_ICON_SET/ICON_LABEL_KO 추가 후 — openIconPicker 호출 시 food/gcap/briefcase/piggy 등 한글 aria-label이 나오고 영문 키가 더는 안 나오는지 3건, ICON_LABEL_KO 매핑 누락 키 폴백 1건, CAT_ICON_SET 세 타입의 합집합 전체가 /[가-힣]/를 만족하는 한글 라벨을 갖는지 완전성 가드 1건, 옛 영문 템플릿 리터럴이 소스에 남아있지 않은지 source-string 회귀 가드 1건, 총 6건 추가. APP_VERSION 1.47.307->1.47.308, sw.js CACHE v574->v575. node test/run.js 2424/2424 통과, 메인 스크립트(블록2)/logic.js/sw.js 구문 검증 통과. pending_advance_plan null로 비움.",
       "commit": null
+    },
+    {
+      "cycle": 282,
+      "phase": "develop",
+      "timestamp": "2026-11-01T04:14:51.303Z",
+      "summary": "logic.js의 99개 순수 함수를 test/run.js 테스트 커버리지와 전수 대조한 결과, parseAmountUnit과 amountMatchesToken(둘 다 cycle278-279에서 histQ 금액 비교/범위 검색을 위해 추가됨) 단 2개만 직접 테스트가 전혀 없고 parseAmountToken/matchTxnQuery 통합 테스트로만 간접 검증되고 있던 공백을 발견 — >=/<= 경계 포함 여부, 범위 양끝 포함, 음수 금액의 abs() 처리, 단위 파서의 비정상 입력(음수 기호, 다중 소수점, trailing garbage) 등 경계 동작이 한 번도 직접 단언되지 않았다. test/run.js에 parseAmountUnit 5건(순수 숫자/소수, 만·억 단위 변환, 빈값/null/undefined, 비정상 입력 거부, 음수 기호 미지원)과 amountMatchesToken 6건(>,>=,<,<= 경계 포함/배제, 범위 양끝 포함, 음수 금액 abs() 처리) 총 11건을 parseAmountToken/normalizeAmountSpacing 테스트 블록 근처에 추가(logic.js는 vm 샌드박스에 전체 로드되므로 FUNCTIONS 배선 불필요). index.html/logic.js/sw.js 코드 변경 없음(테스트 전용 cycle)이라 APP_VERSION/CACHE는 그대로 유지(1.47.308/v575). node test/run.js 2424->2435 통과.",
+      "commit": "021c708"
     }
   ]
 }
