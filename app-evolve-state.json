@@ -1,15 +1,8 @@
 {
   "cycle": 291,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 286,
-      "phase": "develop",
-      "timestamp": "2026-11-01T20:09:54.238Z",
-      "summary": "matchTxnQuery(거래 검색)의 비교/범위 연산자(>,<,~)가 분할 거래(t.splits)에서 최상위 합계(t.amount)만 보고 개별 분할 금액은 보지 않던 공백 발견 — matchRecQuery와 동일한 패턴(t.amount 비교 OR lines.some 비교)으로 통일. 테스트 2건 추가(2518->2520). APP_VERSION 1.47.315->1.47.316, sw.js CACHE v582->v583. node test/run.js 2520/2520 통과.",
-      "commit": "8e637c6"
-    },
     {
       "cycle": 286,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-11-02T15:40:00.000Z",
       "summary": "critique(cycle290) 계획대로 통합 검색(openGlobalSearch) 진입점을 home과 plan 탭에도 추가했다. 구현 중 확인한 사실: renderHome()은 pageHead()를 거치지 않고 자기 헤더(hdr)를 직접 문자열로 만들어 꽂는다(pageHead 호출부는 assets/ledger/history/plan/menu 5곳뿐, index.html:9370-9379 tab별 acts 분기는 home엔 아예 적용되지 않음) — 그래서 계획대로 pageHead()의 'home' 분기를 고치는 대신, renderHome()의 인라인 hdr 마크업(index.html 상단 $('page-home').innerHTML 템플릿)에 hdr-actions+icon-btn(openGlobalSearch) 버튼을 직접 추가했다. plan 탭은 계획대로 pageHead()의 'plan' 분기에서 기존 '오늘로' 칩 뒤에 같은 버튼을 이어붙여 두 버튼이 hdr-actions에서 공존하게 했다(menu 탭 분기는 그대로 유지). assets/ledger/history는 자체 인라인 검색(assetQ/histQ)이 있어 건드리지 않음. 테스트: renderHome() 실행형 스모크 테스트에 hdr-actions/openGlobalSearch 포함 검증 추가, pageHead('plan')/pageHead('menu')/pageHead('assets') 3건 추가(plan은 오늘로+검색 공존, menu는 기존 동작 회귀 가드, assets는 acts 없음 회귀 가드). 테스트 4건 추가(2550->2554 통과). APP_VERSION 1.47.324->1.47.325, sw.js CACHE v591->v592. node test/run.js 2554/2554 통과, logic.js/sw.js 구문 검증(node --check) 통과, index.html 메인 인라인 script 블록 파싱 스모크 테스트 통과. pending_advance_plan null로 비움.",
       "commit": null
+    },
+    {
+      "cycle": 291,
+      "phase": "develop",
+      "timestamp": "2026-11-02T17:40:05.000Z",
+      "summary": "matchAssetQuery(자산 검색)가 이름+통화+종목코드/심볼만 haystack에 넣고, 자산 목록/피커 행마다 chipmini로 그대로 노출되는 귀속(owner — '본인'/'배우자' 등 사용자가 직접 이름 붙이는 DB.owners 값)은 빠져 있던 공백 발견 — 귀속별로 자산이 여러 개일 때(예: 배우자 명의 계좌가 여러 개) 이름/통화만으론 구분이 안 돼도 화면에 뻔히 보이는 귀속 칩 문구로는 찾을 방법이 없었다. currency/stockCode와 동일한 방식으로 a.owner를 haystack에 추가. 테스트 4건 추가(2554->2556 통과). APP_VERSION 1.47.325->1.47.326, sw.js CACHE v592->v593. node test/run.js 2556/2556 통과, logic.js/sw.js 구문 검증(node --check) 통과.",
+      "commit": "8ac3da6"
     }
   ]
 }
