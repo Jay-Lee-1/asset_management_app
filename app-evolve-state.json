@@ -1,7 +1,11 @@
 {
   "cycle": 292,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "반복 내역 금액 '간편 수정'(recSave)이 분할(splits) 합계 불변식을 깨뜨림",
+    "why": "반복 거래의 개별/이후/전체 범위 금액 수정 폼(renderTxSheet의 rc 분기, index.html:4998-5009)은 금액 입력 하나만 보여주고 분할(splits) UI가 전혀 없다. recApply()(index.html:5387-5392)가 txDraft를 만들 때 r.splits/ed.splits를 전혀 복사하지 않고, recSave()(index.html:5396-5425)도 scope별로 amount/memo만 쓰고(edits[date]={amount,memo} 또는 r.amount=amt 또는 newRec에 amount만 덮어씀) splits는 건드리지 않는다. 반면 saveRec()(index.html:5588-5592)은 sum(splits)===amount 불변식을 저장 시점에 명시적으로 검증한다(cycle282에서 반복에도 적용). 따라서 분할이 있는 반복 거래의 한 회차를 '간편 수정'으로 금액만 바꾸면 r.amount(또는 edits[date].amount)와 r.splits 합계가 어긋나고, splitLines()를 쓰는 카테고리별 지출/예산 리포트와 CSV 카테고리 내보내기는 여전히 옛 분할 합계를 쓰는 반면 원장/잔액 총액은 새 금액을 쓰는 침묵 불일치가 매달 재발한다. scope='one'은 더 심해서 index.html:2722 주석이 이미 edits[date].splits가 '아직 recApply/recSave에서 쓰지 않아 항상 undefined'라고 적어둠. 가장 흔한 '거래 탭하기' 경로에서 핵심 기능(정확한 자산/카테고리 집계)을 조용히 깨는 실제 회귀라 최우선.",
+    "approach": "(1) recApply()에서 txDraft에 splits:(ed.splits!==undefined?ed.splits:r.splits)를 깊은 복사로 포함시켜 expandRec()이 실제로 보여주는 분할과 맞춘다. (2) renderTxSheet()의 rc 분기에서 d.splits.length>=2일 때 splitFieldHTML(d,'tx')를 렌더링(기존 txSplitAmt/txSplitMemo/txSplitAdd/txSplitRemove 핸들러 재사용)해 분할 수정이 가능하게 한다. (3) recSave()에 saveRec()과 동일한 sum(splits)===amt 검증을 추가하고, scope='one'은 edits[date].splits에, scope='future'는 newRec.splits에, scope='all'은 r.splits에 수정된 splits를 반영한다. (4) test/run.js에 recSave의 기존 scope별(one/future/all) 테스트를 분할이 있는 반복 거래로 확장해 저장 후 불변식이 유지되는지 검증하는 회귀 테스트를 추가한다."
+  },
   "history": [
     {
       "cycle": 287,
@@ -141,6 +145,13 @@
       "phase": "review",
       "timestamp": "2026-11-02T23:40:00.000Z",
       "summary": "cycle292 develop 커밋(6e71078) 검토 — recScheduleSameSlot(freq,a,b)이 recFreqLabelStr과 동일한 날짜 파싱 패턴('YYYY-MM-DD'+'T00:00:00' 로컬 파싱, startDate 양쪽에 동일하게 적용되어 기기 시간대 차이가 상쇄됨)을 그대로 재사용함을 확인. monthly('last' 문자열 포함 기존 day 동치 비교 유지)/daily(항상 true)/weekly·yearly(startDate 파생 요일·월일 비교)/startDate 누락 또는 파싱 실패 시 방어적 day 폴백까지 분기 전부 재현 검증. node test/run.js 2571/2571, logic.js/sw.js 구문 검증(node --check) 모두 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 292,
+      "phase": "critique",
+      "timestamp": "2026-11-03T00:50:00.000Z",
+      "summary": "서브에이전트로 앱 전체를 재조사(아키텍처/UX흐름/기술부채/성능/접근성/에러상태), 기존에 다룬/기각한 항목은 전부 제외하도록 지시. 발견: 반복 내역의 개별/이후/전체 범위 금액 '간편 수정'(renderTxSheet의 rc 분기 + recApply/recSave, index.html:4998-5009, 5387-5425)이 분할(splits) UI 자체가 없고 splits를 전혀 복사·검증·저장하지 않아, saveRec()이 저장 시점에 강제하는 sum(splits)===amount 불변식(index.html:5588-5592, cycle282에서 반복에도 적용)을 간편 수정 경로만 피해 간다 — 직접 재현 확인(renderTxSheet rc 분기엔 금액 입력 하나뿐, recApply가 txDraft에 splits 미복사, recSave 세 scope 모두 amount/memo만 씀). 분할 반복 거래의 회차 금액을 간편 수정으로 바꾸면 원장 합계와 카테고리별 리포트(splitLines 기반)가 조용히 어긋나는, 가장 흔한 '탭해서 수정' 경로의 실제 정확성 버그라 최우선 선정. pending_advance_plan에 저장. 기각한 후보: (1) 카테고리 병합/이름변경 — 기존 톰스톤/히스토리 필터 처리가 이미 견고함 확인, (2) localStorage 용량/저장실패 처리 — 이미 toastFail+배너 존재, (3) 환율 조회 실패 — 이미 timeout+Promise.allSettled+'최신 아님' 배지 존재. 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
