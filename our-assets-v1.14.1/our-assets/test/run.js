@@ -7232,6 +7232,13 @@ test('parseAmountUnit: "만"은 10000배, "억"은 100000000배로 환산한다(
   assert.strictEqual(sandbox.parseAmountUnit('1.5억'), 150000000);
   assert.strictEqual(sandbox.parseAmountUnit('2.5만'), 25000);
 });
+/* "천"(1,000) 접미사는 만/억 도입(cycle278) 때 함께 들어가지 않아 "3천"/"5천~1만"처럼 소액대에서
+ * 자연스러운 입력이 조용히 null로 떨어지던 공백이었다(app-evolve cycle288 advance). */
+test('parseAmountUnit: "천"은 1000배로 환산한다(소수와 결합 가능, 단위 없는/만/억과 동일한 자리)', () => {
+  assert.strictEqual(sandbox.parseAmountUnit('3천'), 3000);
+  assert.strictEqual(sandbox.parseAmountUnit('1.5천'), 1500);
+  assert.strictEqual(sandbox.parseAmountUnit('0.5천'), 500);
+});
 test('parseAmountUnit: 빈 문자열/null/undefined는 null이다', () => {
   assert.strictEqual(sandbox.parseAmountUnit(''), null);
   assert.strictEqual(sandbox.parseAmountUnit(null), null);
@@ -7410,6 +7417,15 @@ test('normalizeAmountSpacing: "원"이 금액 뒤가 아니라 다른 자리에 
   assert.strictEqual(sandbox.normalizeAmountSpacing('구독원'), '구독원', '숫자+단위가 아니라 글자 뒤의 원은 그대로');
   assert.strictEqual(sandbox.normalizeAmountSpacing('15900원짜리'), '15900원짜리', '원 뒤에 공백/~/끝이 아니면(더 이어지는 글자) 건드리지 않음');
 });
+/* parseAmountUnit에 "천" 접미사가 추가되면서(app-evolve cycle288 advance) 이 함수가 돌보는
+ * 단위 뒤 "원"/"~" 전처리도 "만|억"만 알던 그대로면 "3천원"/"3천~1만"이 다시 걸리지 않아 null로
+ * 떨어진다 — 만/억과 동일한 자리에 "천"이 추가됐음을 직접 확인한다. */
+test('normalizeAmountSpacing: "천" 단위도 "만"/"억"과 동일하게 "원"/"~" 정규화를 지원한다', () => {
+  assert.strictEqual(sandbox.normalizeAmountSpacing('3천원'), '3천');
+  assert.strictEqual(sandbox.normalizeAmountSpacing('>3천원'), '>3천');
+  assert.strictEqual(sandbox.normalizeAmountSpacing('5천 ~ 1만'), '5천~1만');
+  assert.strictEqual(sandbox.normalizeAmountSpacing('5천원~1만원'), '5천~1만');
+});
 test('matchTxnQuery: 연산자 뒤에 공백을 넣어 자연스럽게 입력해도("> 10000") 금액 비교로 매칭된다', () => {
   const big = { memo: '', category: '식비', amount: 110000, fromAssetId: null, toAssetId: null };
   const small = { memo: '', category: '식비', amount: 10000, fromAssetId: null, toAssetId: null };
@@ -7580,6 +7596,16 @@ test('matchGoalQuery: 목표 금액 뒤에 "원"을 자연스럽게 붙여도("5
   assert.strictEqual(sandbox.matchGoalQuery(g, '5000000원'), true, '연산자 없는 순수 숫자+원도 substring 매칭으로 통과해야 함');
   assert.strictEqual(sandbox.matchGoalQuery(g, '>100만원'), true);
   assert.strictEqual(sandbox.matchGoalQuery(g, '>1000만원'), false);
+});
+/* parseAmountUnit/normalizeAmountSpacing이 "천"을 지원하게 되면서(app-evolve cycle288 advance)
+ * 세 검색 함수(matchTxnQuery/matchRecQuery/matchGoalQuery)가 공유하는 matchQueryTerms를 통해
+ * 자동으로 전파됨을 실증하는 통합 테스트 — matchGoalQuery 하나로 대표 확인한다. */
+test('matchGoalQuery: "천" 단위 비교/범위 검색도 매칭된다(공통 헬퍼를 통해 전파됨)', () => {
+  const g = { name: '비상금', targetAmount: 3000 };
+  assert.strictEqual(sandbox.matchGoalQuery(g, '>2천'), true);
+  assert.strictEqual(sandbox.matchGoalQuery(g, '>5천'), false);
+  assert.strictEqual(sandbox.matchGoalQuery(g, '2천~5천'), true);
+  assert.strictEqual(sandbox.matchGoalQuery(g, '>2천원'), true, '연산자+"천원" 조합도 normalizeAmountSpacing이 먼저 "원"을 지워 비교연산자로 통과해야 함');
 });
 
 /* ---------- matchRecQuery: 반복(구독) 검색 — matchGoalQuery와 동일한 규칙(대소문자 무시
