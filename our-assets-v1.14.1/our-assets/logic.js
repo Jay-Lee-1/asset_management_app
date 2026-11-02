@@ -672,7 +672,12 @@ function matchGoalQuery(g,q){
  * r.amount/분할 금액이 haystack에 전혀 들어가지 않아 월 15,900원짜리 구독을 "15900"으로 찾을 수
  * 없었다. matchTxnQuery와 동일하게 term 하나가 parseAmountToken으로 파싱되면(>, >=, <, <=, 범위)
  * r.amount와 각 분할 금액을 amountMatchesToken으로 비교하고, 그 외엔 기존처럼 금액 문자열도
- * haystack에 포함해 substring 매칭을 그대로 지원한다(기존 동작과 100% 하위호환). */
+ * haystack에 포함해 substring 매칭을 그대로 지원한다(기존 동작과 100% 하위호환).
+ * 반복 주기 레이블(recFreqLabelStr — openRecManage 행이 msub로 그대로 보여주는 "매주 월요일"/
+ * "매월 15일" 같은 문구)은 haystack에 빠져 있어, 화면에 뻔히 보이는 그 문구로는 정작 필터링이
+ * 안 됐다(app-evolve cycle290 develop) — 구독이 여러 개라 카테고리/메모만으로 구분이 안 될 때
+ * (예: 매주 월요일 용돈 vs 매주 금요일 장보기) "월요일"로 좁혀 찾으려 해도 매칭되지 않았다.
+ * recFreqLabelStr은 이미 순수 함수(logic.js)라 추가 의존성 없이 그대로 재사용한다. */
 function matchRecQuery(r,q){
  if(!q)return true;
  if(!r)return false;
@@ -681,7 +686,8 @@ function matchRecQuery(r,q){
  const lineMemos=lines.map(s=>s.memo||'').join(' ');
  const amt=r.amount!=null?String(r.amount):'';
  const lineAmts=lines.map(s=>s.amount!=null?String(s.amount):'').join(' ');
- const hay=cats+' '+String(r.memo||'')+' '+lineMemos+' '+amt+' '+lineAmts;
+ const freqLabel=recFreqLabelStr(r.freq,r.day,r.startDate);
+ const hay=cats+' '+String(r.memo||'')+' '+lineMemos+' '+amt+' '+lineAmts+' '+freqLabel;
  const normHay=hay.normalize('NFC').toLowerCase();
  const terms=searchTerms(normalizeAmountSpacing(q.normalize('NFC').toLowerCase().replace(/,/g,'')));
  if(!terms.length)return true;

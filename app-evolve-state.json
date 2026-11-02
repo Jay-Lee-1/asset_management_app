@@ -1,6 +1,6 @@
 {
   "cycle": 290,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
@@ -134,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-02T11:30:00.000Z",
       "summary": "critique(cycle289) 계획대로 APPLOCK(PIN) 활성 시 JSON 전체 백업 내보내기/가져오기를 PIN으로 암호화했다. (1) doExport(mode,kind)에서 kind가 falsy(JSON 백업)이고 APPLOCK.enabled()이면 promptExportPin()(새 PIN 입력 시트, Promise로 결과 반환)으로 PIN을 받아 APPLOCK.verify()로 확인한 뒤 encryptDbBlob(text,pin)의 결과를 text로 써서 그 뒤 공유/파일저장/복사 폴백 로직은 그대로 둔다. 취소(null)하면 '내보내기를 취소했어요' 토스트 후 중단. copyFallback의 사진-제외 재직렬화(redactTxnPhotos) 분기도 exportPin이 있으면 다시 암호화해, 공유/파일저장이 막혀 클립보드 폴백으로 넘어가도 PIN 보호가 조용히 사라지지 않게 했다(원래 critique 계획엔 없었지만 구현 중 발견한 누락 — text 변수 재사용 분기는 자동으로 암호화됐지만 redactTxnPhotos(DB) 재직렬화 분기는 별도 처리가 필요했음). (2) importFile change 핸들러는 raw가 assets/txns 배열이면 기존처럼 바로 proceedWithBackupObj(평문 복원 로직을 분리한 공유 함수)로, {v:1,salt,iv,ct} 모양이면 openImportPinSheet(raw)로 분기 — doImportPinSubmit이 decryptDbBlob(raw,pin)을 시도해 null(틀린 PIN)이면 importPinIn을 비우고 재시도를 허용, 성공하면 JSON.parse 후 동일한 배열 모양 검증을 거쳐 proceedWithBackupObj로 이어간다. APPLOCK.enabled() 여부와 무관하게 raw의 모양만으로 판단해, 다른 기기에서 PIN 켜고 만든 백업을 PIN 없는 기기로 복원하는 경우도 지원. CSV 내보내기와 클립보드 복사(사진 없을 때의 기본 경로)는 계획대로 건드리지 않음. (3) 2276행 주석 갱신(cycle289가 export/import 두 지점을 연결했음을 기록, save()/load() 전체 배선은 여전히 미연결). (4) 테스트: test/run.js FUNCTIONS에 proceedWithBackupObj/openImportPinSheet 추가(importFile 'change' 최상위 statement가 실제로 호출하므로 필요), LETS에 _importPinRaw 추가. doExport/doExportPinSubmit/doImportPinSubmit은 doSetPin/doChangePin/doDisableAppLock과 같은 이유(PIN 시트 onclick 문자열로만 참조되는 제출 핸들러)로 소스 패턴 테스트만 추가했고, importFile change의 평문/암호화 분기 자체는 실행형 테스트로 검증(암호화 블롭이면 확인 시트 대신 PIN 시트+_importPinRaw 보관, 손상된 파일은 기존처럼 토스트). 기존 평문 백업 복원 실행형 테스트 2건은 proceedWithBackupObj 분리 후에도 그대로 통과(하위호환 확인). 테스트 6건 추가(2539->2545 통과). APP_VERSION 1.47.322->1.47.323, sw.js CACHE v589->v590. node test/run.js 2545/2545 통과, logic.js/sw.js 구문 검증(node --check) 통과, index.html 메인 인라인 script 블록 vm 파싱 스모크 테스트 통과. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 290,
+      "phase": "develop",
+      "timestamp": "2026-11-02T12:16:50.082Z",
+      "summary": "matchRecQuery(반복/구독 검색)가 카테고리/메모/금액까지만 haystack에 넣고, openRecManage 행이 msub로 그대로 보여주는 반복 주기 레이블(recFreqLabelStr — \"매주 월요일\", \"매월 15일\", \"매년 3월 5일\" 등)은 빠져 있던 공백 발견 — 카테고리/메모만으론 구분이 안 되는 같은 유형의 반복이 여러 개일 때(매주 월요일 용돈 vs 매주 금요일 장보기) 화면에 보이는 문구로도 못 찾았다. recFreqLabelStr(r.freq,r.day,r.startDate)를 다른 haystack 필드와 동일하게 이어 붙여, 기존 카테고리/메모/금액 매칭 규칙(AND 토큰화, NFC 정규화)을 그대로 재사용했다. 테스트 5건 추가(2545->2550 통과). APP_VERSION 1.47.323->1.47.324, sw.js CACHE v590->v591. node test/run.js 2550/2550 통과, logic.js/sw.js 구문 검증(node --check) 통과.",
       "commit": null
     }
   ]

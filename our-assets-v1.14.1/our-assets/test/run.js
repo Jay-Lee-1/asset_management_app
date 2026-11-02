@@ -7769,6 +7769,41 @@ test('matchRecQuery: 금액 뒤에 "원"을 자연스럽게 붙여도("15900원"
   assert.strictEqual(sandbox.matchRecQuery(r, '>10000원'), true);
   assert.strictEqual(sandbox.matchRecQuery(r, '>20000원'), false);
 });
+/* 반복 주기 레이블(recFreqLabelStr) 검색 — openRecManage 행이 msub로 그대로 보여주는 "매주
+ * 월요일"/"매월 15일" 같은 문구가 haystack에 빠져 있어, 화면에 보이는 그 문구로는 필터링이 안
+ * 되던 공백을 메운다(app-evolve cycle290 develop). 카테고리/메모만으로 구분이 안 되는 동일
+ * 유형의 반복이 여러 개일 때(매주 월요일 용돈 vs 매주 금요일 장보기) 요일/일자로 좁혀 찾을 수
+ * 있어야 한다. */
+test('matchRecQuery: 반복 주기 레이블(요일)로도 찾을 수 있다 — 같은 카테고리의 서로 다른 요일 구분', () => {
+  const mon = { category: '용돈', memo: '', freq: 'weekly', startDate: '2026-11-02' }; /* 월요일 */
+  const fri = { category: '용돈', memo: '', freq: 'weekly', startDate: '2026-11-06' }; /* 금요일 */
+  assert.strictEqual(sandbox.matchRecQuery(mon, '월요일'), true);
+  assert.strictEqual(sandbox.matchRecQuery(mon, '금요일'), false);
+  assert.strictEqual(sandbox.matchRecQuery(fri, '금요일'), true);
+  assert.strictEqual(sandbox.matchRecQuery(fri, '월요일'), false);
+});
+test('matchRecQuery: 반복 주기 레이블(매월 N일/말일)로도 찾을 수 있다', () => {
+  const r1 = { category: '통신', memo: '', freq: 'monthly', day: 15 };
+  const r2 = { category: '통신', memo: '', freq: 'monthly', day: 'last' };
+  assert.strictEqual(sandbox.matchRecQuery(r1, '15일'), true);
+  assert.strictEqual(sandbox.matchRecQuery(r1, '말일'), false);
+  assert.strictEqual(sandbox.matchRecQuery(r2, '말일'), true);
+});
+test('matchRecQuery: 반복 주기 레이블(매년 M월 D일)로도 찾을 수 있다', () => {
+  const r = { category: '보험', memo: '', freq: 'yearly', startDate: '2026-03-05' };
+  assert.strictEqual(sandbox.matchRecQuery(r, '3월'), true);
+  assert.strictEqual(sandbox.matchRecQuery(r, '4월'), false);
+});
+test('matchRecQuery: 주기 레이블과 카테고리/메모를 함께 띄어 써도 AND로 좁혀진다(카테고리만으론 구분 안 되는 동일 유형)', () => {
+  const allowance = { category: '용돈', memo: '', freq: 'weekly', startDate: '2026-11-02' }; /* 월요일 */
+  const groceries = { category: '용돈', memo: '', freq: 'weekly', startDate: '2026-11-06' }; /* 금요일 */
+  assert.strictEqual(sandbox.matchRecQuery(allowance, '용돈 월요일'), true);
+  assert.strictEqual(sandbox.matchRecQuery(groceries, '용돈 월요일'), false, '카테고리는 같지만 요일이 달라 제외되어야 함');
+});
+test('matchRecQuery: freq/startDate가 없어도(방어적 기본값) 안전하게 처리한다(회귀 방지)', () => {
+  assert.strictEqual(sandbox.matchRecQuery({ category: '구독', memo: '넷플릭스' }, '넷플릭스'), true);
+  assert.strictEqual(sandbox.matchRecQuery({}, '구독'), false);
+});
 
 /* ---------- suggestCategoryForMemo: 거래/반복거래 입력(index.html txMemoInput/recMemoInput)의
  * 메모 기반 카테고리 추천. matchTxnQuery류(includes 부분일치)와 달리 "똑같은 메모"일 때만
