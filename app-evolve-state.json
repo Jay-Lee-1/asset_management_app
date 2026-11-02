@@ -1,15 +1,8 @@
 {
   "cycle": 288,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 283,
-      "phase": "review",
-      "timestamp": "2026-11-01T09:05:00.000Z",
-      "summary": "cycle283 develop 커밋(7040eb2) 검토 — 실제 버그 없음. matchRecQuery/matchTxnQuery의 비교연산자 분기에서 분할 라인 처리 범위가 미묘하게 다른 점을 발견했지만 급하지 않아 critique 참고용으로만 기록(코드 변경 없음, state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 283,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-02T04:10:00.000Z",
       "summary": "범용(은행/카드사) CSV 가져오기(mapGenericCsvRow, app-evolve cycle251 advance)가 날짜 열 값을 csvDateValid()로 YYYY-MM-DD 형식만 받아들이는 공백 발견 — 열 매핑까지 정확히 끝내도, 실제 은행/카드사 CSV가 흔히 쓰는 점(2024.01.15)·슬래시(2024/01/15)·구분자 없음(20240115) 표기나 '이용일시'처럼 날짜+시간이 붙은 칸이면 거의 모든 행이 조용히 error:'date'로 떨어져 이 기능이 그 용도(앱 자체 포맷이 아닌 외부 CSV 가져오기)에선 거의 무력화돼 있었다. logic.js에 순수 함수 normalizeCsvDateCell(s) 신설 — 연도가 맨 앞인 표기(점/슬래시/구분자 없음)만 YYYY-MM-DD로 변환하고 공백 뒤 시간 부분은 버린다. MM/DD/YYYY처럼 연도가 뒤에 오는 표기는 월/일 순서가 로케일마다 반대라 추측하면 위험해 범위에서 제외(기존처럼 error:'date'로 걸러져 사용자가 눈치챔). mapGenericCsvRow가 csvDateValid 호출 전에 이 정규화를 거치게 수정 — csvDateValid()의 달력 유효성 검증(2026-02-30 등)은 그대로 보존. 테스트 6건 추가(normalizeCsvDateCell 단위 3건 + mapGenericCsvRow 통합 3건, 2529->2534 통과). APP_VERSION 1.47.319->1.47.320, sw.js CACHE v586->v587. node test/run.js 2534/2534 통과, logic.js/sw.js 구문 검증(node --check) 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 288,
+      "phase": "review",
+      "timestamp": "2026-11-02T05:08:46.976Z",
+      "summary": "cycle288 develop 커밋(4f4fca6) 검토 — normalizeCsvDateCell이 연도가 맨 앞인 표기(점/슬래시/구분자없음)만 다루고 로케일 모호한 MM/DD/YYYY는 의도적으로 제외한 것 확인, 날짜+시간 결합 칸은 공백 분리로 올바르게 시간부 제거, csvDateValid의 달력 유효성 검증(2026.2.30 등)이 정규화 후에도 그대로 걸러짐을 테스트로 확인. mapGenericCsvRow 호출부(buildGenericImportPreview)도 정규화된 r.txn.date만 일관되게 사용해 원본 셀 값을 따로 쓰는 곳 없음. node test/run.js 2534/2534, logic.js/sw.js 구문 검증(node --check) 모두 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
       "commit": null
     }
   ]
