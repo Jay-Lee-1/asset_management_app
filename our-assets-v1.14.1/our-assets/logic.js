@@ -1135,12 +1135,27 @@ function findPossibleDuplicateTx(txns,draft){
  * 이미 분할을 지원해(cycle282) splits 자체가 식별 정보의 일부다. 자산 비교는 type에 따라 다르다 —
  * expense는 fromAssetId, income은 toAssetId, transfer·saving은 두 자산을 모두 쓰므로
  * fromAssetId·toAssetId 둘 다 같아야 같은 반복으로 본다. */
+/* r.day만 보던 원래 비교는 monthly에서만 맞는다 — day는 사용자가 실제로 고르는 값이지만
+ * (renderRecSheet은 freq==='monthly'일 때만 day 입력 UI를 보여준다), weekly/yearly는 항상
+ * startDate의 요일/월일로 스케줄이 정해지고(recDates 참고) day는 신규 등록 시 기본값 1이
+ * 그대로 남는다. 그래서 요일이 다른 두 매주 반복(예: 매주 월요일 용돈 vs 매주 금요일 장보기)이
+ * 같은 카테고리/금액이면 둘 다 day:1이라 중복으로 오판되고, 월/일이 다른 두 매년 반복도 같은
+ * 이유로 오판된다(app-evolve cycle292 develop). */
+function recScheduleSameSlot(freq,a,b){
+ if(freq==='monthly')return a.day===b.day;
+ if(freq==='daily')return true;
+ if(!a.startDate||!b.startDate)return a.day===b.day; /* 비정상 데이터 방어: day 비교로 폴백 */
+ const da=new Date(a.startDate+'T00:00:00'),db=new Date(b.startDate+'T00:00:00');
+ if(isNaN(da)||isNaN(db))return a.day===b.day;
+ if(freq==='weekly')return da.getDay()===db.getDay();
+ return da.getMonth()===db.getMonth()&&da.getDate()===db.getDate();
+}
 function findPossibleDuplicateRec(recurrences,draft){
  if(!draft||draft.id)return null;
  if(!draft.freq||!draft.day||!draft.amount||!draft.category)return null;
  return (recurrences||[]).find(r=>{
   if(!r||r.active===false)return false;
-  if(r.type!==draft.type||r.freq!==draft.freq||r.day!==draft.day||r.amount!==draft.amount||r.category!==draft.category)return false;
+  if(r.type!==draft.type||r.freq!==draft.freq||!recScheduleSameSlot(r.freq,r,draft)||r.amount!==draft.amount||r.category!==draft.category)return false;
   if(JSON.stringify(r.splits||null)!==JSON.stringify(draft.splits||null))return false;
   if(draft.type==='income')return r.toAssetId===draft.toAssetId;
   if(draft.type==='transfer'||draft.type==='saving')return r.fromAssetId===draft.fromAssetId&&r.toAssetId===draft.toAssetId;

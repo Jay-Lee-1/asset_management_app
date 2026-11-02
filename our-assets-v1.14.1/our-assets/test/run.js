@@ -6558,6 +6558,33 @@ test('findPossibleDuplicateRec: recurrences가 비었거나 draft가 비어 있�
   assert.strictEqual(sandbox.findPossibleDuplicateRec([], { type: 'expense', freq: 'monthly', day: 5, amount: 15000, category: '구독', fromAssetId: 'a1' }), null);
   assert.strictEqual(sandbox.findPossibleDuplicateRec([{ active: true, type: 'expense', freq: 'monthly', day: 5, amount: 15000, category: '구독', fromAssetId: 'a1' }], null), null);
 });
+/* ---------- findPossibleDuplicateRec: weekly/yearly는 day가 아니라 startDate의 요일/월일로
+ * 스케줄이 갈린다(renderRecSheet이 day 입력 UI를 monthly에만 보여줘 weekly/yearly는 신규 등록 시
+ * 기본값 day:1이 그대로 남는다) — recScheduleSameSlot 도입(app-evolve cycle292 develop) ---------- */
+test('findPossibleDuplicateRec: weekly는 day가 아니라 startDate 요일이 같아야 중복으로 본다', () => {
+  const existing = { id: 'r1', active: true, type: 'expense', freq: 'weekly', day: 1, startDate: '2026-01-05', amount: 10000, category: '구독', fromAssetId: 'a1', toAssetId: null };
+  const sameWeekday = { id: null, type: 'expense', freq: 'weekly', day: 1, startDate: '2026-02-02', amount: 10000, category: '구독', fromAssetId: 'a1', toAssetId: null };
+  const diffWeekday = { id: null, type: 'expense', freq: 'weekly', day: 1, startDate: '2026-01-09', amount: 10000, category: '구독', fromAssetId: 'a1', toAssetId: null };
+  assert.strictEqual(sandbox.findPossibleDuplicateRec([existing], sameWeekday), existing, '둘 다 월요일 시작이면 day:1로 같아도 진짜 중복');
+  assert.strictEqual(sandbox.findPossibleDuplicateRec([existing], diffWeekday), null, '월요일 용돈 vs 금요일 장보기처럼 요일이 다르면 day가 우연히 같아도 중복이 아니어야 함');
+});
+test('findPossibleDuplicateRec: yearly는 day가 아니라 startDate 월/일이 같아야 중복으로 본다', () => {
+  const existing = { id: 'r1', active: true, type: 'expense', freq: 'yearly', day: 1, startDate: '2026-03-05', amount: 50000, category: '보험', fromAssetId: 'a1', toAssetId: null };
+  const sameMonthDay = { id: null, type: 'expense', freq: 'yearly', day: 1, startDate: '2027-03-05', amount: 50000, category: '보험', fromAssetId: 'a1', toAssetId: null };
+  const diffMonthDay = { id: null, type: 'expense', freq: 'yearly', day: 1, startDate: '2026-11-05', amount: 50000, category: '보험', fromAssetId: 'a1', toAssetId: null };
+  assert.strictEqual(sandbox.findPossibleDuplicateRec([existing], sameMonthDay), existing);
+  assert.strictEqual(sandbox.findPossibleDuplicateRec([existing], diffMonthDay), null, '3월5일 vs 11월5일처럼 월/일이 다르면 day가 우연히 같아도 중복이 아니어야 함');
+});
+test('findPossibleDuplicateRec: daily는 애초에 day를 쓰지 않으므로 항상 같은 슬롯으로 본다', () => {
+  const existing = { id: 'r1', active: true, type: 'expense', freq: 'daily', day: 1, startDate: '2026-01-01', amount: 4000, category: '커피', fromAssetId: 'a1', toAssetId: null };
+  const draft = { id: null, type: 'expense', freq: 'daily', day: 1, startDate: '2026-06-01', amount: 4000, category: '커피', fromAssetId: 'a1', toAssetId: null };
+  assert.strictEqual(sandbox.findPossibleDuplicateRec([existing], draft), existing);
+});
+test('findPossibleDuplicateRec: weekly/yearly인데 startDate가 없거나 잘못되면 기존 day 비교로 방어적으로 폴백한다', () => {
+  const existing = { id: 'r1', active: true, type: 'expense', freq: 'weekly', day: 1, startDate: null, amount: 10000, category: '구독', fromAssetId: 'a1', toAssetId: null };
+  const sameDay = { id: null, type: 'expense', freq: 'weekly', day: 1, startDate: undefined, amount: 10000, category: '구독', fromAssetId: 'a1', toAssetId: null };
+  assert.strictEqual(sandbox.findPossibleDuplicateRec([existing], sameDay), existing);
+});
 test('buildImportPreview: doExport가 내보낸 CSV를 그대로 다시 가져오려 하면 전부 중복으로 건너뛴다', () => {
   const assets = [{ id: 'a1', name: '주계좌' }];
   const txns = [{ id: 't1', date: '2026-01-01', type: 'expense', category: '식비', amount: 5000, fromAssetId: 'a1', toAssetId: null, memo: '점심' }];

@@ -1,15 +1,8 @@
 {
   "cycle": 292,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 287,
-      "phase": "develop",
-      "timestamp": "2026-11-02T00:00:00.000Z",
-      "summary": "matchTxnQuery/matchRecQuery/matchGoalQuery(금액 검색) 모두가 한국어 사용자가 자연스럽게 붙이는 '원' 단위 접미사('15900원', '>10000원', '1만원~5만원')를 지원하지 않아 조용히 0건으로 떨어지던 공백 발견 — normalizeAmountSpacing에 숫자(+만/억) 바로 뒤의 '원'을 지우는 전처리를 추가해 한 곳의 수정으로 세 함수 모두에 적용되게 했다. 테스트 7건 추가(2520->2526 통과). APP_VERSION 1.47.317->1.47.318, sw.js CACHE v584->v585. node test/run.js 2526/2526 통과.",
-      "commit": "5de902a"
-    },
     {
       "cycle": 287,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-02T21:20:00.000Z",
       "summary": "critique(cycle291) 계획대로 반복 내역 관리(openRecManage)에 인라인 검색(recQ)을 추가했다. openGlobalSearch()/globalSearchBody()와 동일한 패턴: (1) 몸통을 recManageBody(q)로 분리해 지출/수입/저축/이체 그룹별 list에 matchRecQuery(r,q) 필터를 추가(검색어 없으면 기존과 동일하게 전체). (2) openRecManage()는 h3 아래 searchbar(#recQ, placeholder '메모·카테고리·주기 검색')와 결과를 담는 #recBody를 렌더링하고, recQInput(v)가 assetQ/histQ/gsQ와 동일한 220ms 디바운스로 #recBody.innerHTML만 교체(시트는 그대로라 포커스/스크롤 유지, fcWire는 openSheet가 이미 처리하므로 별도 호출 불필요함을 확인). (3) 월 합계 요약 카드(매달 약 N원)는 검색어와 무관하게 항상 전체 기준으로 고정(그룹 헤더의 'N개'만 필터링 반영). (4) 검색 결과 0건이면 '반복이 없어요'와 다른 전용 빈 상태('…와 일치하는 반복이 없어요') 노출. (5) 구현 중 발견한 추가 개선: toggleRecActive(일시중지/재시작)가 매번 openRecManage()로 시트를 통째로 다시 열어 입력 중인 검색어/스크롤 위치가 날아가던 것을 고쳐, #recQ가 열려 있으면 #recBody만 같은 검색어로 다시 그리고 없으면(다른 진입 경로) 기존처럼 전체를 새로 열도록 분기(원래 critique 계획에는 없던 범위지만 검색을 실제로 쓸 때 바로 체감되는 회귀라 같은 사이클에 포함). 테스트: test/run.js의 openRecManage 격리 vm 컨텍스트(recManageCtx)에 recManageBody 추출을 추가해 기존 7건을 그대로 통과시키고, recManageBody/recQInput/toggleRecActive 관련 신규 테스트 13건 추가(검색창·#recBody 마크업, 메모/주기 레이블 매칭 시 그룹별 필터링, 요약 카드 고정, 0건 전용 빈 상태, 빈 검색어=전체 동치, 디바운스 220ms·연속 입력 시 타이머 교체·#recBody 없을 때 안전 가드, toggleRecActive의 검색 상태 보존/폴백). recQInput을 FUNCTIONS에 추가하면서 디바운스 타이머 _recQT를 LETS에 추가(histQInput의 _histQT와 동일 패턴). 테스트 11건 추가(2556->2567 통과). APP_VERSION 1.47.326->1.47.327, sw.js CACHE v593->v594. node test/run.js 2567/2567 통과, logic.js/sw.js 구문 검증(node --check) 통과, index.html 메인 인라인 script 블록 파싱 스모크 테스트 통과. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 292,
+      "phase": "develop",
+      "timestamp": "2026-11-02T22:30:00.000Z",
+      "summary": "findPossibleDuplicateRec(반복 등록 중복 경고)가 freq에 관계없이 r.day!==draft.day로만 스케줄을 비교하던 공백 발견 — day는 monthly에서만 사용자가 실제로 고르는 값이고(renderRecSheet이 day 입력 UI를 monthly에만 보여줌), weekly/yearly는 항상 startDate의 요일/월일로 스케줄이 정해지는데(recDates 참고) day는 신규 등록 시 기본값 1이 그대로 남는다. 그래서 요일이 다른 두 매주 반복(매주 월요일 용돈 vs 매주 금요일 장보기)이 같은 카테고리/금액이면 둘 다 day:1이라 중복으로 오판되고, 월/일이 다른 매년 반복도 같은 이유로 오판됐다. recScheduleSameSlot(freq,a,b) 신설(logic.js) — monthly는 기존 day 비교 유지, daily는 항상 true, weekly/yearly는 startDate에서 요일/월일을 파생해 비교(recFreqLabelStr과 같은 파생 방식 재사용), startDate 누락/파싱 실패 시엔 방어적으로 기존 day 비교로 폴백. findPossibleDuplicateRec의 r.day!==draft.day를 !recScheduleSameSlot(r.freq,r,draft)로 교체. 기존 monthly 전용 테스트(duplicateRec→saveRec 등)는 전부 그대로 통과(회귀 없음). 테스트 4건 추가(weekly 같은/다른 요일, yearly 같은/다른 월일, daily 항상 중복, startDate 없을 때 day 폴백)(2567->2571 통과). APP_VERSION 1.47.327->1.47.328, sw.js CACHE v594->v595. node test/run.js 2571/2571 통과, logic.js/sw.js 구문 검증(node --check) 통과.",
       "commit": null
     }
   ]
