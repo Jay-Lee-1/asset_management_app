@@ -236,6 +236,13 @@ const FUNCTIONS = [
   'debtPayoffPtsFor', 'debtWhatIfText', 'debtAmortSuffix', 'debtWhatIfUpdate',
   'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate', 'histQInput', 'histOwnerSel', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'openCatHistory', 'openIncomeCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter', 'histClearTypeFilter',
   'genSalt', 'pbkdf2Hash', 'dbEncryptKey', 'encryptDbBlob', 'decryptDbBlob', 'genRecoveryCode', 'normRecoveryCode', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer', 'openConfirmTransfer',
+  // proceedWithBackupObj/openImportPinSheet는 PIN으로 암호화된 JSON 백업 복원(app-evolve
+  // cycle289 advance)이 추가한 분기 — importFile 'change' 최상위 statement(아래 extractStatement로
+  // 실행)가 이 둘을 직접 호출하므로(onclick 문자열이 아니라 실제 함수 호출) FUNCTIONS에 없으면
+  // 그 statement를 실행하는 모든 importFile 테스트가 ReferenceError로 깨진다. doImportPinSubmit/
+  // promptExportPin/doExportPinSubmit/cancelExportPin은 doSetPin/doChangePin/doDisableAppLock과
+  // 같은 이유(PIN 시트 onclick 문자열로만 참조되는 제출 핸들러)로 소스 패턴 테스트만 두고 여기 올리지 않는다.
+  'proceedWithBackupObj', 'openImportPinSheet',
   'renderLockView', 'openForgotPinSheet', 'doForgotPin', 'tickForgotPinWait',
   'confirmTransferNow', 'postponeTransfer', 'confirmRecNow', 'openConfirmTransferList',
   'foreignSaveIsNewer', 'applyForeignSave', 'openCopyBackup', 'copyBackup', 'findDonors',
@@ -393,7 +400,10 @@ const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'AS
 // `let _recCatSuggT=null,_recCatSuggAnnounced=null;` 한 줄로 선언돼 있어(위 _pkQ와 같은 콤마
 // 선언 패턴), 디바운스 타이머 이름만 올려도 직전 공지값 캐시(_txCatSuggAnnounced/
 // _recCatSuggAnnounced)까지 함께 딸려온다(app-evolve cycle272 develop).
-const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer', '_histTimer', '_assetQT', '_pkQ', '_bioAutoTried', '_csvMap', '_debtWhatIfAnnT', '_txCatSuggT', '_recCatSuggT'];
+// _importPinRaw는 openImportPinSheet()가 세팅하고 doImportPinSubmit()이 소비하는 "PIN 입력을
+// 기다리는 암호화 백업 원본" 상태라(let 선언, realm에 안 붙음) 같은 이유로 LETS를 통해 가져온다
+// (app-evolve cycle289 advance).
+const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer', '_histTimer', '_assetQT', '_pkQ', '_bioAutoTried', '_csvMap', '_debtWhatIfAnnT', '_txCatSuggT', '_recCatSuggT', '_importPinRaw'];
 
 const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(extractConst).join('\n') + '\n' + LETS.map(extractLet).join('\n');
 
@@ -26898,6 +26908,58 @@ test('doChangePin 소스: 현재 PIN 오류/새 PIN 형식 오류/확인 불일�
   assert.match(fnSrc, /if\(r\.err\)\{if\(btn\)btn\.disabled=false;showErr\(r\.err\);const el=\$\('pinChgCurIn'\);if\(el\)\{el\.value='';el\.focus\(\)\}return\}/, '현재 PIN 오류 분기가 pinChgCurIn을 비우고 focus()하지 않음');
   assert.match(fnSrc, /showErr\('4~6자리 숫자로 입력해 주세요'\);const el=\$\('pinChgNewIn'\);if\(el\)el\.focus\(\);return\}/, '새 PIN 형식 오류 분기가 pinChgNewIn에 focus()하지 않음');
   assert.match(fnSrc, /if\(p1!==p2\)\{if\(btn\)btn\.disabled=false;showErr\('PIN이 일치하지 않아요'\);const el=\$\('pinChgNewIn2'\);if\(el\)\{el\.value='';el\.focus\(\)\}return\}/, '확인 불일치 분기가 pinChgNewIn2를 비우고 focus()하지 않음');
+});
+
+/* ---------- 백업 내보내기/가져오기 PIN 암호화(app-evolve cycle289 advance) ----------
+ * doExport()/importFile 핸들러는 openSheet/APPLOCK.verify/decryptDbBlob 등에 엮여 있어
+ * doSetPin/doChangePin/doDisableAppLock과 같은 이유로 제출 핸들러(doExportPinSubmit/
+ * doImportPinSubmit)는 소스 패턴으로만 검증한다. 다만 importFile 'change' 최상위 statement
+ * 자체는 이미 실행형으로 로드돼 있으므로(위 [실행형] importFile change 테스트들), 평문/암호화
+ * 두 모양을 올바르게 구분해 분기하는지는 실제 실행으로 검증한다. */
+test('doExport 소스: JSON 전체 백업(kind 없음)이고 APPLOCK.enabled()면 promptExportPin()을 await해 PIN을 받고, 취소(null)하면 내보내기를 중단한다', () => {
+  const fnSrc = extractFunction('doExport');
+  assert.ok(fnSrc.includes("if(!isCsv&&APPLOCK.enabled()){\n  exportPin=await promptExportPin();\n  if(exportPin==null){toast('내보내기를 취소했어요');return}\n }"), 'PIN 게이트가 없거나 취소 시 return하지 않음');
+});
+test('doExport 소스: exportPin이 있으면 내보낼 text를 encryptDbBlob으로 암호화하고, copyFallback의 사진-제외 재직렬화(redactTxnPhotos) 분기도 똑같이 다시 암호화한다', () => {
+  const fnSrc = extractFunction('doExport');
+  assert.ok(fnSrc.includes('if(exportPin)text=JSON.stringify(await encryptDbBlob(text,exportPin));'), '본문 text 암호화가 없음');
+  assert.ok(fnSrc.includes('if(exportPin)redacted=JSON.stringify(await encryptDbBlob(redacted,exportPin));'), 'copyFallback 사진-제외 분기가 다시 암호화하지 않음 — PIN 보호가 폴백에서 조용히 사라짐');
+});
+test('doExportPinSubmit 소스: PIN이 틀리면 doUnlock()과 같은 패턴으로 exportPinIn을 비우고 focus()하며, 맞으면 시트를 닫고 Promise를 그 PIN으로 resolve한다', () => {
+  const fnSrc = extractFunction('doExportPinSubmit');
+  assert.match(fnSrc, /if\(r\.err\)\{if\(errEl\)\{errEl\.textContent=r\.err;errEl\.style\.display='block'\}const inp=\$\('exportPinIn'\);if\(inp\)\{inp\.value='';inp\.focus\(\)\}return\}/, 'PIN 오류 분기가 exportPinIn을 비우고 focus()하지 않음');
+  assert.ok(fnSrc.includes('if(_exportPinResolve){const res=_exportPinResolve;_exportPinResolve=null;res(pin)}'), '성공 시 대기 중인 Promise를 입력받은 pin으로 resolve하지 않음');
+});
+test('doImportPinSubmit 소스: decryptDbBlob이 null(틀린 PIN)이면 _importPinRaw를 지우지 않고 importPinIn만 비워 재시도를 허용하고, 복호화에 성공하면 모양 검증 후 proceedWithBackupObj로 이어간다', () => {
+  const fnSrc = extractFunction('doImportPinSubmit');
+  assert.ok(fnSrc.includes("if(json==null){\n  if(errEl){errEl.textContent='PIN이 일치하지 않아요';errEl.style.display='block'}\n  const inp=$('importPinIn');if(inp){inp.value='';inp.focus()}\n  return;\n }"), '틀린 PIN 분기가 재시도 가능한 모양이 아님(조기 return 전에 _importPinRaw를 지우면 재시도가 막힘)');
+  assert.ok(fnSrc.includes('_importPinRaw=null;'), '복호화 성공 후 _importPinRaw를 비우지 않음(다음 가져오기까지 이전 블롭이 남을 수 있음)');
+  assert.ok(fnSrc.includes("if(!Array.isArray(obj.assets)||!Array.isArray(obj.txns))throw 0"), '복호화된 JSON도 평문 백업과 동일한 배열 모양 검증을 거치지 않음');
+  assert.ok(fnSrc.includes('proceedWithBackupObj(obj);'), '복호화 성공 후 proceedWithBackupObj로 이어가지 않음(평문 백업과 다른 복원 경로를 타게 됨)');
+});
+test('[실행형] importFile change: {v:1,salt,iv,ct} 모양의 암호화 백업이면 복원 확인 시트 대신 PIN 입력 시트를 띄우고, 복호화에 쓸 원본을 _importPinRaw에 보관한다', () => {
+  sandbox.confirmSheetCalls = [];
+  sandbox.lastSheetHtml = null;
+  sandbox._importPinRaw = null;
+  const blob = { v: 1, salt: 'aa', iv: 'bb', ct: 'cc' };
+  try {
+    sandbox._importFileChangeCb({ target: { files: [{ __text: JSON.stringify(blob) }], value: '' } });
+    assert.strictEqual(sandbox.confirmSheetCalls.length, 0, '암호화된 백업은 PIN 확인 전에 바로 복원 확인 시트를 띄우면 안 됨');
+    assert.ok(sandbox.lastSheetHtml && sandbox.lastSheetHtml.includes('id="importPinIn"'), 'PIN 입력 시트를 띄우지 않음');
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox._importPinRaw)), blob, '복호화에 쓸 원본 블롭을 _importPinRaw에 보관하지 않음');
+  } finally {
+    sandbox._importPinRaw = null;
+  }
+});
+test('[실행형] importFile change: assets/txns 배열도 아니고 {v:1,salt,iv,ct} 모양도 아니면(손상된 파일) 여전히 "올바른 백업 파일이 아니에요" 토스트로 처리한다(회귀 가드)', () => {
+  sandbox.confirmSheetCalls = [];
+  sandbox.lastSheetHtml = null;
+  sandbox.lastToast = null;
+  sandbox._importPinRaw = null;
+  sandbox._importFileChangeCb({ target: { files: [{ __text: JSON.stringify({ foo: 'bar' }) }], value: '' } });
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0, '손상된 파일인데 복원 확인 시트를 띄움');
+  assert.strictEqual(sandbox._importPinRaw, null, '손상된 파일인데 PIN 시트용 원본을 보관함');
+  assert.strictEqual(sandbox.lastToast, '올바른 백업 파일이 아니에요');
 });
 
 test('[실행형] doForgotPassword: Supabase가 설정돼 있지 않으면(sbCfg().url이 빈 값) 로컬 복구(doForgotPasswordLocal) 시트로 바로 넘어간다', () => {

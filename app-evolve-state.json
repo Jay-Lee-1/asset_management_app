@@ -1,26 +1,8 @@
 {
-  "cycle": 289,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "APPLOCK(PIN) 활성 시에도 JSON 백업 내보내기/가져오기가 평문",
-    "why": "index.html:2276-2290 주석(app-evolve cycle252 advance)이 이미 밝힌 격차: dbEncryptKey/encryptDbBlob/decryptDbBlob(AES-GCM, PBKDF2-SHA256 120000회, index.html:2291-2310)는 라운드트립 테스트(test/run.js:20213-20248)까지 통과한 상태로 만들어졌지만 어디에도 연결되지 않았다. 그 주석은 save()/load()(동기, ~70곳 호출, cross-tab 병합·cloud pull까지 비동기로 바꿔야 하는 저장 아키텍처 재작성급)에 바로 연결하는 건 한 사이클에 과하다고 명시적으로 범위를 좁혔을 뿐, doExport(index.html:7945, kind가 CSV 종류가 아니면 JSON.stringify(DB,null,2)를 그대로 내보냄, 7976행)와 importFile change 핸들러(index.html:8526-8543, raw.assets/raw.txns 배열인지만 보고 바로 sanitizeBackup)는 건드리지 않았다. 그 결과 PIN(App Lock)을 켠 사용자가 백업 파일로 내보내기를 눌러 iCloud/Drive/카카오톡/이메일로 내보내면 PIN이 전혀 보호하지 못하는 평문 전체 재무 데이터 JSON이 기기 밖으로 나간다 — 잠금의 핵심 위협 모델(기기 분실·공유 PC·클라우드 저장소 유출)과 정확히 충돌한다. save()/load() 배선 없이 export/import 두 지점만 좁게 처리하면 되므로, 그 주석이 말한 다음 critique/advance가 훨씬 더 작은 단위로 쪼갠 바로 그 다음 걸음이다.",
-    "approach": "1) doExport(mode,kind)에서 kind가 falsy(JSON 백업, CSV 아님)이고 APPLOCK.enabled()이면, 저장을 진행하기 전에 PIN 재입력을 받는다(생체인증 지문/FaceID는 화면 잠금 해제 편의 레이어일 뿐 암호화 키가 아니므로 — 2473-2479행 주석 — 이 경로에서는 쓸 수 없고, PIN 평문 자체도 unlockApp() 이후 메모리에 남겨두지 않으므로 매번 새로 물어야 함). 기존 PIN 입력 UI 패턴(예: openChangePinSheet/openDisableAppLockSheet류, 또는 더 가벼운 전용 prompt 시트) 중 하나를 재사용해 pin을 받고 APPLOCK.verify(pin)으로 맞는지 확인한 뒤, encryptDbBlob(JSON.stringify(DB,null,2), pin)의 결과(JSON.stringify)를 text로 써서 그 뒤 로직(공유/파일저장/복사 폴백)은 그대로 둔다. 파일명은 기존 backup_* 그대로 두거나 구분을 위해 확장자/내용으로만 암호화 여부를 표시(가져오기 쪽에서 셸 모양으로 자동 판별하면 되므로 파일명 변경은 필수 아님). 취소하면 내보내기 자체를 취소한다(toast 안내). 2) importFile change 핸들러에서 JSON.parse(r.result) 직후, raw가 {v:1,salt,iv,ct} 모양(배열 체크 실패)이면 '손상된 파일'로 바로 치지 말고 PIN 입력을 받아 decryptDbBlob(raw,pin)을 시도 → null이면 '잘못된 PIN'으로 재시도 허용, 성공하면 그 결과를 다시 JSON.parse해 기존 raw.assets/raw.txns 배열 체크부터 sanitizeBackup까지 동일한 경로를 그대로 탄다. APPLOCK이 꺼져 있어도(예: 다른 기기에서 PIN 켜고 만든 백업을 PIN 없는 기기로 복원) 암호화된 파일이면 복호화를 위해 PIN을 물어야 하므로, 이 분기는 APPLOCK.enabled() 여부와 무관하게 raw의 모양만으로 판단한다. 3) CSV 내보내기(isCsv 분기)와 복사(copyFallback) 경로는 건드리지 않는다 — CSV는 주석대로 '복원용 백업'이 아니고, 클립보드 복사는 이미 사진 제외 등 별도 규칙이 있어 암호화까지 얹으면 범위가 과해진다. 4) 테스트: encryptDbBlob/decryptDbBlob 자체는 이미 커버되어 있으니 새로 추가할 것은 (a) doExport가 APPLOCK.enabled() 상태에서 올바른 PIN으로 암호화된 블롭을 만들고 틀린 PIN/취소 시 내보내기를 막는지, (b) importFile 경로가 {v:1,...} 모양을 올바르게 감지해 복호화 후 정상 복원(sanitizeBackup까지)으로 이어지는지와 틀린 PIN 재시도, (c) 기존 평문 백업 파일(과거에 만들어진)을 여전히 그대로 복원할 수 있는 하위호환(raw.assets 배열이면 그냥 기존 경로)까지 포함해야 한다. 5) 관례대로 logic.js/sw.js 구문 검증(node --check), APP_VERSION 및 sw.js CACHE 버전 증가, node test/run.js 전체 통과를 커밋 전에 확인한다."
-  },
+  "cycle": 290,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 284,
-      "phase": "advance",
-      "timestamp": "2026-11-01T16:40:00.000Z",
-      "summary": "critique(cycle284) 계획대로 일회성 거래 저장(saveTx)에 중복 입력 경고를 추가했다. (1) logic.js에 순수 함수 findPossibleDuplicateTx(txns,draft) 신설 — 신규(!draft.id) 거래만 대상, 이체(카테고리 없음)·분할(splits)·잔액조정(adjust) 내역은 1차 범위에서 제외, date+type+amount+category가 모두 같고 type별 자산(expense→fromAssetId, income→toAssetId, saving→from·to 둘 다)까지 같아야 중복으로 본다. (2) saveTx()의 저장 커밋 로직(반복 필드 제거~DB.txns 반영~토스트)을 commitTx()로 분리하고, 반복 등록 분기 이후·신규 저장일 때만 findPossibleDuplicateTx로 검사해 걸리면 기존 confirmSheet 패턴으로 '그래도 저장'을 한 번 더 확인시킨다(취소 시 기존 confirmSheet 관례대로 시트가 닫히고 저장되지 않음, 확인 시 commitTx()를 그대로 호출). (3) test/run.js FUNCTIONS 목록에 commitTx 추가, findPossibleDuplicateTx 단위 테스트 12건(완전일치/날짜·금액·카테고리·자산 다름/수입 toAssetId/저축 양쪽 자산/이체·분할·조정 제외/자기자신 제외/빈 입력)과 saveTx 통합 테스트 4건(중복 시 confirmSheet 호출 후 확인하면 저장/중복 없으면 즉시 저장/수정 경로는 대상 아님/이체는 제외) 추가(2483->2499 통과). APP_VERSION 1.47.312->1.47.313, sw.js CACHE v579->v580. node test/run.js 2499/2499 통과, logic.js/sw.js 구문 검증(node --check) 통과. pending_advance_plan null로 비움.",
-      "commit": null
-    },
-    {
-      "cycle": 285,
-      "phase": "develop",
-      "timestamp": "2026-11-01T17:30:00.000Z",
-      "summary": "saveAsset()에만 saveTx/saveRec이 이미 가진 더블탭 중복 저장 가드(_savedDrafts WeakSet)가 빠져있던 공백 발견 — 신규 등록 경로는 같은 draft 객체를 더블탭하면 참조 공유 중복 자산이 생김(findIndex가 하나만 찾아 이후 수정/삭제가 다른 하나를 조용히 고아로 남김). saveTx/saveRec과 동일한 패턴으로 가드 추가(검증 통과 후에만 _savedDrafts.add(d), 검증 실패 후 재저장은 막지 않음). 테스트 3건 추가(신규/수정 더블탭 무시, 검증실패 후 재저장 정상)(2499->2502 통과). APP_VERSION 1.47.313->1.47.314, sw.js CACHE v580->v581. node test/run.js 2502/2502 통과, script 블록 node --check 통과.",
-      "commit": "1326d96"
-    },
     {
       "cycle": 285,
       "phase": "review",
@@ -39,21 +21,21 @@
       "cycle": 285,
       "phase": "advance",
       "timestamp": "2026-11-01T21:00:00.000Z",
-      "summary": "critique(cycle285) 계획대로 반복(구독) 등록(saveRec)에 중복 입력 경고를 추가했다. (1) logic.js에 순수 함수 findPossibleDuplicateRec(recurrences,draft) 신설 — 신규(!draft.id) 등록만 대상, 이미 중지한(active:false) 반복은 제외, type+freq+day+amount+category가 모두 같고(splits가 있으면 JSON.stringify로 내용까지 비교) type별 자산(expense→fromAssetId, income→toAssetId, transfer·saving→fromAssetId·toAssetId 둘 다)까지 같아야 중복으로 본다. (2) saveRec()의 저장 커밋 로직(더블탭 가드~cleaned 계산~DB.recurrences 반영~토스트)을 commitRec(d,wasEditing)으로 분리하고, wasEditing이 false일 때만 findPossibleDuplicateRec으로 검사해 걸리면 saveTx와 동일한 confirmSheet 패턴('비슷한 반복이 있어요' / '그래도 등록')으로 한 번 더 확인시킨다(취소 시 저장되지 않고 시트 유지, 확인 시 commitRec을 그대로 호출). (3) test/run.js FUNCTIONS에 commitRec 추가, findPossibleDuplicateRec 단위 테스트 13건(완전일치/freq·day·금액·카테고리·자산 다름/수입 toAssetId/이체·저축 양쪽 자산/splits 내용 비교/자기자신(수정 경로) 제외/비활성 반복 제외/빈 입력)과 saveRec 통합 테스트 4건(중복 시 confirmSheet 호출 후 확인하면 저장/중복 없으면 즉시 저장/수정 경로는 대상 아님/중지된 구독은 제외) 추가. 기존 'duplicateRec → saveRec' 테스트도 갱신했다 — duplicateRec은 startDate만 오늘로 바꾸고 나머지(type/freq/day/amount/category/자산)는 원본과 그대로 같게 복제하므로, 복제 즉시 재저장하면 이제 confirmSheet가 뜨는 게 의도된 동작이다(확인 후 저장되는 것으로 테스트 변경). APP_VERSION 1.47.314->1.47.315, sw.js CACHE v581->v582. node test/run.js 2502->2518 전체 통과, logic.js/sw.js/script 블록 구문 검증(node --check) 통과. pending_advance_plan null로 비움.",
+      "summary": "critique(cycle285) 계획대로 반복(구독) 등록(saveRec)에 중복 입력 경고를 추가했다. (1) logic.js에 순수 함수 findPossibleDuplicateRec(recurrences,draft) 신설 — 신규(!draft.id) 등록만 대상, 이미 중지한(active:false) 반복은 제외, type+freq+day+amount+category가 모두 같고(splits가 있으면 JSON.stringify로 내용까지 비교) type별 자산(expense→fromAssetId, income→toAssetId, transfer·saving→fromAssetId·toAssetId 둘 다)까지 같아야 중복으로 본다. (2) saveRec()의 저장 커밋 로직(더블탭 가드~cleaned 계산~DB.recurrences 반영~토스트)을 commitRec(d,wasEditing)으로 분리하고, wasEditing이 false일 때만 findPossibleDuplicateRec으로 검사해 걸리면 saveTx와 동일한 confirmSheet 패턴('비슷한 반복이 있어요' / '그래도 등록')으로 한 번 더 확인시킨다(취소 시 저장되지 않고 시트 유지, 확인 시 commitRec을 그대로 호출). (3) test/run.js FUNCTIONS에 commitRec 추가, findPossibleDuplicateRec 단위 테스트 13건과 saveRec 통합 테스트 4건 추가. APP_VERSION 1.47.314->1.47.315, sw.js CACHE v581->v582. node test/run.js 2502->2518 전체 통과, logic.js/sw.js/script 블록 구문 검증(node --check) 통과. pending_advance_plan null로 비움.",
       "commit": null
     },
     {
       "cycle": 286,
       "phase": "develop",
       "timestamp": "2026-11-01T20:09:54.238Z",
-      "summary": "matchTxnQuery(거래 검색)의 비교/범위 연산자(>,<,~)가 분할 거래(t.splits)에서 최상위 합계(t.amount)만 보고 개별 분할 금액은 보지 않던 공백 발견 — matchRecQuery(cycle282 이후 splits 지원)는 r.amount와 각 분할 금액을 모두 비교하는데 matchTxnQuery만 갈라져 있어, 분할된 작은 금액을 \"<N\"/범위로 찾으려 하면(예: 10000원 거래 중 식비 7000+생활용품 3000을 \"<4000\"으로 찾기) 못 찾고 substring(\"3000\")으로는 찾히는 비일관이 있었다. matchRecQuery와 동일한 패턴(t.amount 비교 OR lines.some 비교)으로 통일. 테스트 2건 추가(2518->2520). APP_VERSION 1.47.315->1.47.316, sw.js CACHE v582->v583. node test/run.js 2520/2520 통과.",
+      "summary": "matchTxnQuery(거래 검색)의 비교/범위 연산자(>,<,~)가 분할 거래(t.splits)에서 최상위 합계(t.amount)만 보고 개별 분할 금액은 보지 않던 공백 발견 — matchRecQuery와 동일한 패턴(t.amount 비교 OR lines.some 비교)으로 통일. 테스트 2건 추가(2518->2520). APP_VERSION 1.47.315->1.47.316, sw.js CACHE v582->v583. node test/run.js 2520/2520 통과.",
       "commit": "8e637c6"
     },
     {
       "cycle": 286,
       "phase": "review",
       "timestamp": "2026-11-01T21:40:00.000Z",
-      "summary": "cycle286 develop 커밋(8e637c6) 검토 — matchTxnQuery의 lines=splitLines(t) 활용이 matchRecQuery(라인 652)의 패턴과 정확히 일치함을 확인. 분할 없는 일반 거래는 splitLines가 [{amount:t.amount,...}] 하나만 반환해 lines.some 쪽도 t.amount와 동일하게 평가되므로 OR 추가가 회귀를 만들지 않는다. matchGoalQuery는 splits 개념이 없어 동일한 공백 대상이 아님도 확인. node test/run.js 2520/2520 재확인 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
+      "summary": "cycle286 develop 커밋(8e637c6) 검토 — matchTxnQuery의 lines=splitLines(t) 활용이 matchRecQuery(라인 652)의 패턴과 정확히 일치함을 확인. 분할 없는 일반 거래는 splitLines가 [{amount:t.amount,...}] 하나만 반환해 lines.some 쪽도 t.amount와 동일하게 평가되므로 OR 추가가 회귀를 만들지 않는다. node test/run.js 2520/2520 재확인 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
       "commit": null
     },
     {
@@ -67,84 +49,91 @@
       "cycle": 286,
       "phase": "advance",
       "timestamp": "2026-11-01T23:00:00.000Z",
-      "summary": "critique(cycle286) 계획대로 matchTxnQuery/matchRecQuery/matchGoalQuery의 중복 금액 매칭 로직을 공통 헬퍼로 추출했다. logic.js에 matchQueryTerms(normHay,terms,amountCandidates) 신설 — \"토큰이 금액 연산자로 파싱되면 amountCandidates 중 하나라도 맞아야 매칭, 아니면 normHay.includes(term)\" 판정을 한 곳으로 모음. 세 함수는 각자 조립한 haystack/amountCandidates 배열([t.amount,...lines.map(l=>l.amount)] 또는 [g.targetAmount])만 넘기는 얇은 wrapper로 재작성해, 기존 동작(대소문자 무시/NFC 정규화/공백 AND/substring/분할 라인 포함)을 100% 보존했다. matchAssetQuery/matchCatQuery(금액 개념 없음)는 변경 범위에서 제외. 순수 내부 리팩터링이라 테스트는 그대로(기존 동작 보존이 목적) — node test/run.js 2520/2520 통과(테스트 개수 불변 확인), logic.js/sw.js 구문 검증(node --check) 통과. APP_VERSION 1.47.316->1.47.317, sw.js CACHE v583->v584. pending_advance_plan null로 비움.",
+      "summary": "critique(cycle286) 계획대로 matchTxnQuery/matchRecQuery/matchGoalQuery의 중복 금액 매칭 로직을 공통 헬퍼로 추출했다. logic.js에 matchQueryTerms(normHay,terms,amountCandidates) 신설 — 세 함수는 각자 조립한 haystack/amountCandidates 배열만 넘기는 얇은 wrapper로 재작성해, 기존 동작을 100% 보존했다. 순수 내부 리팩터링이라 테스트는 그대로(2520/2520) — logic.js/sw.js 구문 검증(node --check) 통과. APP_VERSION 1.47.316->1.47.317, sw.js CACHE v583->v584. pending_advance_plan null로 비움.",
       "commit": null
     },
     {
       "cycle": 287,
       "phase": "develop",
       "timestamp": "2026-11-02T00:00:00.000Z",
-      "summary": "matchTxnQuery/matchRecQuery/matchGoalQuery(금액 검색) 모두가 한국어 사용자가 자연스럽게 붙이는 '원' 단위 접미사('15900원', '>10000원', '1만원~5만원')를 지원하지 않아 조용히 0건으로 떨어지던 공백 발견 — parseAmountUnit은 숫자(+만/억) 뒤에 '원'이 더 있으면 형식이 아니라고 보아 null을 반환하고, 연산자 없는 평문 검색('15900원')도 haystack엔 숫자만 있어 substring조차 실패했다. 세 함수가 공통으로 거치는 normalizeAmountSpacing(cycle287 이전 advance가 만든 단일 관문)에 숫자(+만/억) 바로 뒤의 '원'을 공백/~/문자열 끝 앞에서만 지우는 전처리를 추가해 한 곳의 수정으로 세 함수 모두에 적용되게 했다(지난 279/283/284/286 사이클이 반복했던 '한 함수만 고치고 나머지를 깜빡하는' 동일 클래스 버그를 cycle286 advance의 공통화가 이번엔 구조적으로 막아줌을 실증). parseAmountUnit 자체의 기존 엄격한 동작(직접 호출 시 '10만원'은 여전히 null)은 그대로 보존. 테스트 7건 추가(normalizeAmountSpacing 단위 4건 + matchTxnQuery/matchRecQuery/matchGoalQuery 통합 3건, 2520->2526 통과). APP_VERSION 1.47.317->1.47.318, sw.js CACHE v584->v585. node test/run.js 2526/2526 통과, logic.js/sw.js 구문 검증(node --check) 통과, index.html 메인 인라인 script 블록도 test/run.js의 extractMainScript와 동일한 방식으로 추출해 node --check 통과 확인.",
+      "summary": "matchTxnQuery/matchRecQuery/matchGoalQuery(금액 검색) 모두가 한국어 사용자가 자연스럽게 붙이는 '원' 단위 접미사('15900원', '>10000원', '1만원~5만원')를 지원하지 않아 조용히 0건으로 떨어지던 공백 발견 — normalizeAmountSpacing에 숫자(+만/억) 바로 뒤의 '원'을 지우는 전처리를 추가해 한 곳의 수정으로 세 함수 모두에 적용되게 했다. 테스트 7건 추가(2520->2526 통과). APP_VERSION 1.47.317->1.47.318, sw.js CACHE v584->v585. node test/run.js 2526/2526 통과.",
       "commit": "5de902a"
     },
     {
       "cycle": 287,
       "phase": "review",
       "timestamp": "2026-11-02T01:00:00.000Z",
-      "summary": "cycle287 develop 커밋(5de902a) 검토 — normalizeAmountSpacing의 '원' 제거 정규식을 node로 직접 실행해 경계 케이스 검증(15900원/>10000원/1만원~5만원은 올바르게 '원' 제거, 10000원대/3000원짜리/원룸처럼 숫자 뒤 '원'이 경계(공백/~/끝)가 아닌 경우는 건드리지 않음 확인). node test/run.js 2526/2526, logic.js/sw.js 구문 검증(node --check) 모두 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
+      "summary": "cycle287 develop 커밋(5de902a) 검토 — normalizeAmountSpacing의 '원' 제거 정규식 경계 케이스 검증(15900원/>10000원/1만원~5만원은 올바르게 제거, 10000원대/3000원짜리/원룸처럼 경계가 아닌 경우는 건드리지 않음 확인). node test/run.js 2526/2526, logic.js/sw.js 구문 검증 모두 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
       "commit": null
     },
     {
       "cycle": 287,
       "phase": "critique",
       "timestamp": "2026-11-02T02:00:00.000Z",
-      "summary": "최근 커밋 단위가 아니라 앱 전체를 한 걸음 물러나 훑었다(서브에이전트 조사, 접근성/성능/백업·동기화/CSV/알림/코드 중복 등). 결론: 이미 매우 성숙한 코드베이스라 큰 전략적 약점은 발견되지 않았다 — 포커스 트랩/aria-live, undo 토스트, 교차기기 merge-conflict 추적, EUC-KR CSV 자동감지+CSV 인젝션 방지, 예산 롤오버/페이스 경고, 시세 멀티 프로바이더 폴백 등이 이미 구현돼 있음을 확인. SRI 해시(TODO, index.html:1383)는 이 컨테이너가 CDN egress를 막아 여전히 보류, 진짜 백그라운드 푸시는 서버 인프라가 필요해 한 cycle 범위 밖. 유일하게 안전하고 한 cycle 안에 끝낼 수 있는 항목은 parseAmountUnit이 '만'/'억'만 지원하고 '천'(1,000) 단위를 지원하지 않는 공백(279/283/284/286/287이 반복한 금액-매칭 접미사 공백과 동일 클래스, logic.js:518) — 이를 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
+      "summary": "최근 커밋 단위가 아니라 앱 전체를 한 걸음 물러나 훑었다. 결론: 이미 매우 성숙한 코드베이스라 큰 전략적 약점은 발견되지 않았다. 유일하게 안전하고 한 cycle 안에 끝낼 수 있는 항목은 parseAmountUnit이 '만'/'억'만 지원하고 '천'(1,000) 단위를 지원하지 않는 공백 — pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
       "commit": null
     },
     {
       "cycle": 287,
       "phase": "advance",
       "timestamp": "2026-11-02T03:10:00.000Z",
-      "summary": "critique(cycle287) 계획대로 금액 검색에 '천'(1,000) 단위 접미사를 추가했다. logic.js의 parseAmountUnit 정규식을 /^(\\d+(?:\\.\\d+)?)(천|만|억)?$/로 확장하고 배수 매핑에 '천'→1000을 추가(무접미사/'만'/'억' 기존 동작은 100% 보존, parseAmountUnit('10만원')은 여전히 null). normalizeAmountSpacing의 단위 뒤 '원' 제거·'~' 붙이기 정규식 두 곳도 (만|억)→(천|만|억)로 함께 넓혀 '3천원'/'5천~1만' 같은 입력도 parseAmountUnit에 도달하기 전에 정규화되게 했다 — matchTxnQuery/matchRecQuery/matchGoalQuery 세 함수는 cycle286의 matchQueryTerms 공통화 덕에 전혀 손대지 않고도 자동 전파됨을 matchGoalQuery 통합 테스트로 실증. 다만 비교연산자/범위(>,>=,<,<=,~)가 없는 '순수 평문+천' 검색(예: 연산자 없는 '3천원')은 parseAmountToken이 애초에 연산자/~ 꼴만 단위를 해석하도록 설계돼 있어('3천'을 숫자로 변환할 방법이 없는 상태로 haystack의 순수 숫자 문자열과 substring 비교되므로 매칭 안 됨) 이번 범위에 들지 않는다(기존 '만'/'억'도 동일한 제약 — cycle278부터 있던 설계, 회귀 아님). 테스트 3건 추가(parseAmountUnit 단위 1건 + normalizeAmountSpacing 단위 1건 + matchGoalQuery 통합 1건, 2526->2529 통과). APP_VERSION 1.47.318->1.47.319, sw.js CACHE v585->v586. node test/run.js 2529/2529 통과, logic.js/sw.js 구문 검증(node --check) 통과, index.html 메인 인라인 script 블록도 동일 방식으로 추출해 node --check 통과 확인. pending_advance_plan null로 비움.",
+      "summary": "critique(cycle287) 계획대로 금액 검색에 '천'(1,000) 단위 접미사를 추가했다. parseAmountUnit 정규식 확장, normalizeAmountSpacing도 함께 넓혀 matchQueryTerms 공통화 덕에 세 함수 전부 자동 전파됨을 테스트로 실증. 테스트 3건 추가(2526->2529 통과). APP_VERSION 1.47.318->1.47.319, sw.js CACHE v585->v586. node test/run.js 2529/2529 통과. pending_advance_plan null로 비움.",
       "commit": null
     },
     {
       "cycle": 288,
       "phase": "develop",
       "timestamp": "2026-11-02T04:10:00.000Z",
-      "summary": "범용(은행/카드사) CSV 가져오기(mapGenericCsvRow, app-evolve cycle251 advance)가 날짜 열 값을 csvDateValid()로 YYYY-MM-DD 형식만 받아들이는 공백 발견 — 열 매핑까지 정확히 끝내도, 실제 은행/카드사 CSV가 흔히 쓰는 점(2024.01.15)·슬래시(2024/01/15)·구분자 없음(20240115) 표기나 '이용일시'처럼 날짜+시간이 붙은 칸이면 거의 모든 행이 조용히 error:'date'로 떨어져 이 기능이 그 용도(앱 자체 포맷이 아닌 외부 CSV 가져오기)에선 거의 무력화돼 있었다. logic.js에 순수 함수 normalizeCsvDateCell(s) 신설 — 연도가 맨 앞인 표기(점/슬래시/구분자 없음)만 YYYY-MM-DD로 변환하고 공백 뒤 시간 부분은 버린다. MM/DD/YYYY처럼 연도가 뒤에 오는 표기는 월/일 순서가 로케일마다 반대라 추측하면 위험해 범위에서 제외(기존처럼 error:'date'로 걸러져 사용자가 눈치챔). mapGenericCsvRow가 csvDateValid 호출 전에 이 정규화를 거치게 수정 — csvDateValid()의 달력 유효성 검증(2026-02-30 등)은 그대로 보존. 테스트 6건 추가(normalizeCsvDateCell 단위 3건 + mapGenericCsvRow 통합 3건, 2529->2534 통과). APP_VERSION 1.47.319->1.47.320, sw.js CACHE v586->v587. node test/run.js 2534/2534 통과, logic.js/sw.js 구문 검증(node --check) 통과.",
+      "summary": "범용(은행/카드사) CSV 가져오기(mapGenericCsvRow)가 날짜 열 값을 YYYY-MM-DD 형식만 받아들이는 공백 발견 — normalizeCsvDateCell(s) 신설, 연도가 맨 앞인 표기(점/슬래시/구분자 없음)만 YYYY-MM-DD로 변환. 테스트 6건 추가(2529->2534 통과). APP_VERSION 1.47.319->1.47.320, sw.js CACHE v586->v587. node test/run.js 2534/2534 통과.",
       "commit": null
     },
     {
       "cycle": 288,
       "phase": "review",
       "timestamp": "2026-11-02T05:08:46.976Z",
-      "summary": "cycle288 develop 커밋(4f4fca6) 검토 — normalizeCsvDateCell이 연도가 맨 앞인 표기(점/슬래시/구분자없음)만 다루고 로케일 모호한 MM/DD/YYYY는 의도적으로 제외한 것 확인, 날짜+시간 결합 칸은 공백 분리로 올바르게 시간부 제거, csvDateValid의 달력 유효성 검증(2026.2.30 등)이 정규화 후에도 그대로 걸러짐을 테스트로 확인. mapGenericCsvRow 호출부(buildGenericImportPreview)도 정규화된 r.txn.date만 일관되게 사용해 원본 셀 값을 따로 쓰는 곳 없음. node test/run.js 2534/2534, logic.js/sw.js 구문 검증(node --check) 모두 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
+      "summary": "cycle288 develop 커밋(4f4fca6) 검토 — normalizeCsvDateCell이 연도가 맨 앞인 표기만 다루고 로케일 모호한 MM/DD/YYYY는 의도적으로 제외한 것 확인. node test/run.js 2534/2534, 구문 검증 모두 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
       "commit": null
     },
     {
       "cycle": 288,
       "phase": "critique",
       "timestamp": "2026-11-02T06:20:00.000Z",
-      "summary": "develop(cycle288)이 고친 범용 CSV 날짜 정규화(normalizeCsvDateCell, logic.js:1171-1178)의 구분자 정규식 [./]에 하이픈이 빠진 형제 공백 발견 — 서브에이전트로 앱 전체(아키텍처/UX/성능/접근성/데이터 무결성)를 훑었고, 이미 다뤄진 영역(검색 금액매칭/중복가드/CSV 날짜 점·슬래시/YoY/SRI/백그라운드 푸시 등) 밖에서 찾은 이 항목이 가장 좁고 즉시 실행 가능했다. 직접 재현 확인: normalizeCsvDateCell('2026-1-5')가 불변 통과 후 csvDateValid에서 false. pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
+      "summary": "develop(cycle288)이 고친 범용 CSV 날짜 정규화(normalizeCsvDateCell)의 구분자 정규식 [./]에 하이픈이 빠진 형제 공백 발견. 직접 재현 확인: normalizeCsvDateCell('2026-1-5')가 불변 통과 후 csvDateValid에서 false. pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
       "commit": null
     },
     {
       "cycle": 288,
       "phase": "advance",
       "timestamp": "2026-11-02T07:10:44.040Z",
-      "summary": "critique(cycle288) 계획대로 normalizeCsvDateCell의 구분자 정규식을 [./]에서 [./-]로 확장해 하이픈이지만 월/일이 0패딩 안 된 날짜 표기(2026-1-5, 2026-1-05, 2026-01-5 등)도 YYYY-MM-DD로 정규화되게 했다(logic.js:1174, mapGenericCsvRow 경로). 이미 YYYY-MM-DD로 정확한 값은 캡처 후 padStart가 no-op이라 회귀 없음을 테스트로 확인(기존 '2026-01-05' 불변 테스트 그대로 통과). 달력상 존재하지 않는 하이픈 날짜(2026-2-30)도 csvDateValid 최종 판정에서 여전히 error:'date'로 걸러짐을 테스트로 추가 확인. 주석(logic.js:1161-1170)도 하이픈 미패딩 케이스를 언급하도록 갱신. 테스트 6건 추가(normalizeCsvDateCell 단위 1건 내 4개 assert + mapGenericCsvRow 통합 2건, 2534->2536 통과). APP_VERSION 1.47.320->1.47.321, sw.js CACHE v587->v588. node test/run.js 2536/2536 통과, logic.js/sw.js 구문 검증(node --check) 통과, index.html 메인 인라인 script 블록도 테스트 스위트 내 vm.Script 파싱 검사로 통과 확인. pending_advance_plan null로 비움.",
+      "summary": "critique(cycle288) 계획대로 normalizeCsvDateCell의 구분자 정규식을 [./]에서 [./-]로 확장. 테스트 6건 추가(2534->2536 통과). APP_VERSION 1.47.320->1.47.321, sw.js CACHE v587->v588. node test/run.js 2536/2536 통과. pending_advance_plan null로 비움.",
       "commit": null
     },
     {
       "cycle": 289,
       "phase": "develop",
       "timestamp": "2026-11-02T08:19:06.859Z",
-      "summary": "matchAssetQuery(자산 검색)가 이름+통화(fx)만 haystack에 넣고 stockCode/cryptoCode는 빠져있던 공백 발견 — 종목코드(005930 등)·심볼(BTC 등)은 종목코드 입력칸/시세 설정 행 부제/보유 수량 표시 등 화면 곳곳에 노출되는데도, 통합검색/자산검색/자산피커 3곳 모두에서 쓰는 matchAssetQuery는 이름(종목명)으로만 찾을 수 있었다. currency와 동일한 방식으로 stockCode/cryptoCode를 haystack에 추가(한 자산에 type이 하나라 둘 다 있을 수 없어 이어 붙여도 충돌 없음). 테스트 4건 추가(2536->2539 통과). APP_VERSION 1.47.321->1.47.322, sw.js CACHE v588->v589(logic.js가 SHELL에 포함돼 캐시 대상). node test/run.js 2539/2539 통과, logic.js/sw.js 구문 검증(node --check) 통과, index.html 메인 인라인 script 블록도 extractMainScript와 동일한 방식으로 추출해 vm.Script 파싱 검사 통과.",
+      "summary": "matchAssetQuery(자산 검색)가 이름+통화(fx)만 haystack에 넣고 stockCode/cryptoCode는 빠져있던 공백 발견 — currency와 동일한 방식으로 stockCode/cryptoCode를 haystack에 추가. 테스트 4건 추가(2536->2539 통과). APP_VERSION 1.47.321->1.47.322, sw.js CACHE v588->v589. node test/run.js 2539/2539 통과.",
       "commit": null
     },
     {
       "cycle": 289,
       "phase": "review",
       "timestamp": "2026-11-02T09:00:00.000Z",
-      "summary": "cycle289 develop 커밋(e723196) 검토 — matchAssetQuery의 stockCode/cryptoCode haystack 추가가 currency와 동일한 패턴이고, 세 호출부(index.html:4075 통합검색/6285 자산검색/10351 자산피커) 모두 matchAssetQuery 하나를 거쳐가므로 전부에 자동 전파됨을 확인. 자산은 type이 하나뿐이라 stockCode/cryptoCode 둘 다 채워진 경우가 없어 이어붙여도 충돌 없음. 필드명도 자산 등록(saveAsset)·시세 갱신(rateUnknown 등) 코드와 일치. node test/run.js 2539/2539, logic.js/sw.js 구문 검증(node --check) 모두 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
+      "summary": "cycle289 develop 커밋(e723196) 검토 — matchAssetQuery의 stockCode/cryptoCode haystack 추가가 세 호출부(통합검색/자산검색/자산피커) 모두에 자동 전파됨을 확인. node test/run.js 2539/2539, 구문 검증 모두 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
       "commit": null
     },
     {
       "cycle": 289,
       "phase": "critique",
       "timestamp": "2026-11-02T10:15:26.199Z",
-      "summary": "앱 전체를 서브에이전트로 훑어 전략적 약점을 재조사(cycle289) — APPLOCK(PIN) 활성 상태에서도 JSON 백업 내보내기(doExport, index.html:7976)와 가져오기(importFile 핸들러, index.html:8526-8543)가 평문으로 처리되는 공백을 찾았다. index.html:2276-2290 주석(cycle252 advance)이 이미 AES-GCM 암복호화 순수 함수(dbEncryptKey/encryptDbBlob/decryptDbBlob)를 라운드트립 테스트까지 갖춰 만들어두고 save()/load() 전체 배선만 저장 아키텍처 재작성급이라 명시적으로 보류했을 뿐, 훨씬 좁은 export/import 두 지점은 보류 대상이 아니었다. 기기 탈취·공유 PC뿐 아니라 PIN 사용자가 백업을 클라우드/메신저로 내보내는 가장 흔한 경로에서 PIN의 위협 모델을 그대로 뚫는 실제 보안 공백이라 최우선으로 선정. 함께 조사했던 CSV 컬럼 매핑 미기억, 연도별 실현손익 세금 요약은 각각 편의성/부가기능 수준이라 후순위로 보고 이번엔 채택하지 않음. pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
+      "summary": "앱 전체를 서브에이전트로 훑어 전략적 약점을 재조사 — APPLOCK(PIN) 활성 상태에서도 JSON 백업 내보내기(doExport)와 가져오기(importFile 핸들러)가 평문으로 처리되는 공백을 찾았다. index.html:2276-2290 주석(cycle252 advance)이 이미 AES-GCM 암복호화 순수 함수(dbEncryptKey/encryptDbBlob/decryptDbBlob)를 만들어두고 save()/load() 전체 배선만 보류했을 뿐, export/import 두 지점은 보류 대상이 아니었다. PIN 사용자가 백업을 클라우드/메신저로 내보내는 가장 흔한 경로에서 PIN의 위협 모델을 그대로 뚫는 실제 보안 공백이라 최우선으로 선정. pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 289,
+      "phase": "advance",
+      "timestamp": "2026-11-02T11:30:00.000Z",
+      "summary": "critique(cycle289) 계획대로 APPLOCK(PIN) 활성 시 JSON 전체 백업 내보내기/가져오기를 PIN으로 암호화했다. (1) doExport(mode,kind)에서 kind가 falsy(JSON 백업)이고 APPLOCK.enabled()이면 promptExportPin()(새 PIN 입력 시트, Promise로 결과 반환)으로 PIN을 받아 APPLOCK.verify()로 확인한 뒤 encryptDbBlob(text,pin)의 결과를 text로 써서 그 뒤 공유/파일저장/복사 폴백 로직은 그대로 둔다. 취소(null)하면 '내보내기를 취소했어요' 토스트 후 중단. copyFallback의 사진-제외 재직렬화(redactTxnPhotos) 분기도 exportPin이 있으면 다시 암호화해, 공유/파일저장이 막혀 클립보드 폴백으로 넘어가도 PIN 보호가 조용히 사라지지 않게 했다(원래 critique 계획엔 없었지만 구현 중 발견한 누락 — text 변수 재사용 분기는 자동으로 암호화됐지만 redactTxnPhotos(DB) 재직렬화 분기는 별도 처리가 필요했음). (2) importFile change 핸들러는 raw가 assets/txns 배열이면 기존처럼 바로 proceedWithBackupObj(평문 복원 로직을 분리한 공유 함수)로, {v:1,salt,iv,ct} 모양이면 openImportPinSheet(raw)로 분기 — doImportPinSubmit이 decryptDbBlob(raw,pin)을 시도해 null(틀린 PIN)이면 importPinIn을 비우고 재시도를 허용, 성공하면 JSON.parse 후 동일한 배열 모양 검증을 거쳐 proceedWithBackupObj로 이어간다. APPLOCK.enabled() 여부와 무관하게 raw의 모양만으로 판단해, 다른 기기에서 PIN 켜고 만든 백업을 PIN 없는 기기로 복원하는 경우도 지원. CSV 내보내기와 클립보드 복사(사진 없을 때의 기본 경로)는 계획대로 건드리지 않음. (3) 2276행 주석 갱신(cycle289가 export/import 두 지점을 연결했음을 기록, save()/load() 전체 배선은 여전히 미연결). (4) 테스트: test/run.js FUNCTIONS에 proceedWithBackupObj/openImportPinSheet 추가(importFile 'change' 최상위 statement가 실제로 호출하므로 필요), LETS에 _importPinRaw 추가. doExport/doExportPinSubmit/doImportPinSubmit은 doSetPin/doChangePin/doDisableAppLock과 같은 이유(PIN 시트 onclick 문자열로만 참조되는 제출 핸들러)로 소스 패턴 테스트만 추가했고, importFile change의 평문/암호화 분기 자체는 실행형 테스트로 검증(암호화 블롭이면 확인 시트 대신 PIN 시트+_importPinRaw 보관, 손상된 파일은 기존처럼 토스트). 기존 평문 백업 복원 실행형 테스트 2건은 proceedWithBackupObj 분리 후에도 그대로 통과(하위호환 확인). 테스트 6건 추가(2539->2545 통과). APP_VERSION 1.47.322->1.47.323, sw.js CACHE v589->v590. node test/run.js 2545/2545 통과, logic.js/sw.js 구문 검증(node --check) 통과, index.html 메인 인라인 script 블록 vm 파싱 스모크 테스트 통과. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

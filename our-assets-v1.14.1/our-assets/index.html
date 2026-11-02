@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.322';
+const APP_VERSION='1.47.323';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2287,7 +2287,11 @@ async function pbkdf2Hash(pw,saltHex){
  * 저장 아키텍처 재작성에 가까워 한 사이클(특히 사람이 보기 전에 바로 origin에 push되는 무인 사이클)에
  * 안전하게 끝내기엔 과하다고 판단했다. 이번 사이클은 그 배선 없이도 독립적으로 옳음을 라운드트립
  * 테스트로 검증할 수 있는 이 두 순수 함수까지만 만들어, 다음 critique/advance가 배선 사이클을 훨씬
- * 더 작고 검증 가능한 단위로 쪼개 진행할 수 있게 한다. */
+ * 더 작고 검증 가능한 단위로 쪼개 진행할 수 있게 한다.
+ * cycle289 advance가 그 다음 걸음을 밟았다 — save()/load() 전체 배선은 여전히 손대지 않았지만,
+ * PIN이 지키려는 가장 흔한 위협(백업 파일을 iCloud/메신저 등 기기 밖으로 내보내는 경로)은
+ * doExport()의 JSON 전체 백업 분기와 importFile 변경 핸들러 두 지점만 좁게 연결해도 메울 수 있었다
+ * (promptExportPin/doExportPinSubmit, openImportPinSheet/doImportPinSubmit 참고). */
 async function dbEncryptKey(pin,saltHex){
  const salt=new Uint8Array(saltHex.match(/.{2}/g).map(h=>parseInt(h,16)));
  const keyMaterial=await crypto.subtle.importKey('raw',new TextEncoder().encode(pin),{name:'PBKDF2'},false,['deriveKey']);
@@ -7945,6 +7949,14 @@ const CSV_KIND_META={
 async function doExport(mode,kind){
  const csvMeta=CSV_KIND_META[kind];
  const isCsv=!!csvMeta;
+ /* PIN(App Lock) 활성 시 JSON 전체 백업(kind 없음, CSV 아님)만 암호화한다 — CSV는 '복원용
+    백업'이 아니라 위협 모델 밖이다(위 2276행 주석, app-evolve cycle289 advance). 취소
+    (exportPin===null)하면 내보내기 자체를 중단한다. */
+ let exportPin=null;
+ if(!isCsv&&APPLOCK.enabled()){
+  exportPin=await promptExportPin();
+  if(exportPin==null){toast('내보내기를 취소했어요');return}
+ }
  const d=new Date();const pad=n=>String(n).padStart(2,'0');
  const stamp=`${String(d.getFullYear()).slice(2)}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}`;
  const name=isCsv?`${csvMeta.prefix}_${stamp}.csv`:`backup_${stamp}.json`;
@@ -7966,7 +7978,7 @@ async function doExport(mode,kind){
     그대로 넘기면 되는 assetQtyLogToCSV라 추가 평가가 필요 없다. goalsCsv도 같은 원칙 — cur/pct/
     achieved는 goalProgress(logic.js)가 goalHistoryFor(순자산 이력 또는 연결 자산 잔액 추이, 둘 다
     DB 전역 필요)를 봐야 구해지는 파생값이라 goalsToCSV 안이 아니라 여기서 미리 계산해 얹는다. */
- const text=kind==='assetsCsv'?assetsToCSV(DB.assets.map(a=>{const gl=assetGainLoss(a);const ev=assetEval(a);return Object.assign({},a,{evalValue:ev,gainLoss:gl&&gl.amount,gainLossPct:gl&&gl.pct,ann:annualizedReturn(a.costBasis,ev,a.acquiredAt,TODAY)})}))
+ let text=kind==='assetsCsv'?assetsToCSV(DB.assets.map(a=>{const gl=assetGainLoss(a);const ev=assetEval(a);return Object.assign({},a,{evalValue:ev,gainLoss:gl&&gl.amount,gainLossPct:gl&&gl.pct,ann:annualizedReturn(a.costBasis,ev,a.acquiredAt,TODAY)})}))
   :kind==='nwCsv'?nwHistoryToCSV(DB.nwHistory)
   :kind==='gainCsv'?assetQtyLogToCSV(DB.assetQtyLog,DB.assets)
   :kind==='recsCsv'?recurrencesToCSV(DB.recurrences,DB.assets)
@@ -7974,17 +7986,23 @@ async function doExport(mode,kind){
   :kind==='budgetCsv'?budgetHistoryToCSV(DB.budgetHistory,DB.catBudgetRollover)
   :kind==='csv'?txnsToCSV(DB.txns.concat(expandRec(RANGE_FROM,RANGE_TO)).filter(t=>!(t.adjust&&!t.inSurplus)&&t.date<=TODAY),DB.assets)
   :JSON.stringify(DB,null,2);
+ if(exportPin)text=JSON.stringify(await encryptDbBlob(text,exportPin));
  const mime=isCsv?'text/csv':'application/json';
  /* CSV는 복원용 백업이 아니므로 백업 알림 상태(lastExport/backupSnooze)를 건드리지 않는다 */
  const done=msg=>{if(!isCsv){DB.settings.lastExport=Date.now();DB.settings.backupSnooze=0;save();renderCurrent();}toast(msg)};
  /* 복사 경로(클립보드)는 사진이 쌓이면 수 MB로 불어나 복사가 느려지거나 실패할 수 있어(아래
     redactTxnPhotos 주석 참고) JSON 백업일 때만 photo 필드를 제외한 텍스트로 바꿔 보여준다 —
     공유/파일 저장(위 1·2 경로)은 Blob/File이라 이 문제가 없어 원본 text를 그대로 쓴다. */
- const copyFallback=reason=>{
+ const copyFallback=async reason=>{
   if(isCsv){openCopyBackup(text,reason,{title:csvMeta.copyTitle,note:'스프레드시트 앱에서 열 때는 이 내용을 .csv 파일로 저장해 불러오면 돼요.',isCsv:true});return;}
   const photoCount=txnPhotoCount(DB.txns);
   if(photoCount>0){
-   openCopyBackup(redactTxnPhotos(DB),reason,{note:`복원할 때는 이 내용을 .json 파일로 저장해 불러오면 돼요. 단, 영수증 사진 ${photoCount}장은 용량이 커 복사에서 제외됐어요 — 사진까지 백업하려면 파일로 내보내기를 이용해 주세요.`});
+   /* text는 위에서 이미 exportPin으로 암호화됐지만 이 사진-제외 분기는 DB를 redactTxnPhotos로
+      다시 직렬화하므로, PIN이 걸려 있으면 여기서도 다시 암호화해야 한다 — 안 그러면 공유/파일저장이
+      막혀 이 폴백으로 넘어온 순간 PIN 보호가 조용히 사라진다(app-evolve cycle289 advance). */
+   let redacted=redactTxnPhotos(DB);
+   if(exportPin)redacted=JSON.stringify(await encryptDbBlob(redacted,exportPin));
+   openCopyBackup(redacted,reason,{note:`복원할 때는 이 내용을 .json 파일로 저장해 불러오면 돼요. 단, 영수증 사진 ${photoCount}장은 용량이 커 복사에서 제외됐어요 — 사진까지 백업하려면 파일로 내보내기를 이용해 주세요.`});
    return;
   }
   openCopyBackup(text,reason);
@@ -7999,7 +8017,7 @@ async function doExport(mode,kind){
    return;
   }catch(e){
    if(e&&e.name==='AbortError')return; /* 사용자가 취소 */
-   copyFallback('공유가 막혀 있어요.'); /* 인앱 브라우저 등 */
+   await copyFallback('공유가 막혀 있어요.'); /* 인앱 브라우저 등 */
    return;
   }
  }
@@ -8014,7 +8032,7 @@ async function doExport(mode,kind){
    const w=window.open(url,'_blank');
    if(!w||w.closed||typeof w.closed==='undefined'){
     URL.revokeObjectURL(url);
-    copyFallback('파일 열기가 차단됐어요.');
+    await copyFallback('파일 열기가 차단됐어요.');
     return;
    }
    done('파일이 열렸어요 · 공유 버튼으로 저장하세요');
@@ -8027,8 +8045,40 @@ async function doExport(mode,kind){
   setTimeout(()=>URL.revokeObjectURL(url),20000);
  }catch(e){
   URL.revokeObjectURL(url);
-  copyFallback('파일로 저장할 수 없어요.');
+  await copyFallback('파일로 저장할 수 없어요.');
  }
+}
+/* doExport()가 JSON 전체 백업을 암호화해 내보낼 때 PIN을 받는 시트(app-evolve cycle289 advance).
+ * 생체인증(BIOUNLOCK)은 화면 잠금 해제 편의 레이어일 뿐 암호화 키가 아니라(2473행 주석) 이 경로엔
+ * 쓸 수 없고, PIN 평문도 unlockApp() 이후 메모리에 남겨두지 않으므로 내보낼 때마다 새로 물어야
+ * 한다. openDisableAppLockSheet/doDisableAppLock(아래 PIN 확인 패턴)과 동일한 검증을 쓰되, 결과를
+ * Promise로 돌려줘 doExport()가 await로 이어받게 한다. */
+let _exportPinResolve=null;
+function promptExportPin(){
+ return new Promise(resolve=>{
+  _exportPinResolve=resolve;
+  openSheet(`<h3>백업 내보내기 PIN 확인</h3>
+   <div class="desc">앱 잠금 PIN을 입력하면 백업 파일을 PIN으로 암호화해서 내보내요. 복원할 때도 같은 PIN이 필요해요.</div>
+   <div class="field"><label for="exportPinIn">PIN</label><div class="pw-wrap"><input id="exportPinIn" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="PIN 입력" onkeydown="if(event.key==='Enter')doExportPinSubmit()"><button type="button" class="pw-x" aria-label="PIN 표시" onclick="togglePwVis('exportPinIn')">${svg('eye',18)}</button></div></div>
+   <div id="exportPinErr" class="auth-err" style="display:none"></div>
+   <div class="two-btn" style="margin-top:14px"><button class="btn btn-soft cancel" onclick="cancelExportPin()">취소</button><button class="btn btn-primary" id="exportPinBtn" onclick="doExportPinSubmit()">확인</button></div>`);
+  setTimeout(()=>{const el=$('exportPinIn');el&&el.focus()},120);
+ });
+}
+function cancelExportPin(){
+ closeSheet();
+ if(_exportPinResolve){const r=_exportPinResolve;_exportPinResolve=null;r(null)}
+}
+async function doExportPinSubmit(){
+ const btn=$('exportPinBtn');if(btn&&btn.disabled)return;
+ const pin=($('exportPinIn')&&$('exportPinIn').value)||'';
+ const errEl=$('exportPinErr');if(errEl)errEl.style.display='none';
+ if(btn)btn.disabled=true;
+ const r=await APPLOCK.verify(pin);
+ if(btn)btn.disabled=false;
+ if(r.err){if(errEl){errEl.textContent=r.err;errEl.style.display='block'}const inp=$('exportPinIn');if(inp){inp.value='';inp.focus()}return}
+ closeSheet();
+ if(_exportPinResolve){const res=_exportPinResolve;_exportPinResolve=null;res(pin)}
 }
 
 
@@ -8523,21 +8573,63 @@ function restoreBackup(obj){
  try{migrate()}catch(e){DB=prev;throw e}
  return prev;
 }
+/* obj(이미 sanitizeBackup까지 끝난 평문 백업)를 받아 복원 확인 시트를 띄운다 — 일반 평문 백업
+ * 파일과, PIN으로 암호화된 백업을 복호화한 뒤의 결과(아래 doImportPinSubmit) 양쪽이 공유하는
+ * 경로다(app-evolve cycle289 advance, 암호화 여부와 무관하게 복원 로직은 하나로 유지). */
+function proceedWithBackupObj(raw){
+ const{data:obj,fixedCount,droppedCount,rangeCount}=sanitizeBackup(raw);
+ confirmSheet('데이터 복원','현재 데이터를 백업 파일로 교체할까요?<br><span style="color:var(--text-2);font-size:13px">복원 후 6초 안에는 되돌릴 수 있어요.</span>','복원',()=>{
+  let prev;try{prev=restoreBackup(obj)}catch(err){toast('손상된 백업 파일이라 복원할 수 없어요');return}
+  /* doResetAll과 동일: 안내한 6초 되돌리기 창이 끝나기 전엔 클라우드에 push하지 않는다 */
+  save({deferCloudPush:true});invalidateBalances();renderCurrent();
+  const restorePushT=setTimeout(scheduleCloudPush,6000);
+  const notes=[];if(fixedCount)notes.push(`값 ${fixedCount}건 보정`);if(droppedCount)notes.push(`${droppedCount}건 제외`);
+  if(rangeCount)notes.push(`날짜 범위를 벗어난 ${rangeCount}건은 내역엔 남지만 잔액엔 반영 안 돼요`);
+  const msg=notes.length?`데이터를 복원했어요 · ${notes.join(', ')}`:'데이터를 복원했어요';
+  undoToast(msg,()=>{clearTimeout(restorePushT);DB=prev;save();invalidateBalances();renderCurrent();toast('되돌렸어요')});
+ });
+}
+/* doExport()가 만든 {v:1,salt,iv,ct} 암호화 백업을 복원할 때 PIN을 받는 시트(app-evolve cycle289
+ * advance). APPLOCK.enabled() 여부와 무관하게(다른 기기에서 PIN 켜고 만든 백업을 PIN 없는 기기로
+ * 복원하는 경우도 있으므로) raw의 모양만으로 이 경로를 타고, decryptDbBlob()이 null을 돌려주면
+ * (틀린 PIN) 같은 시트에서 재시도할 수 있게 둔다. */
+let _importPinRaw=null;
+function openImportPinSheet(raw){
+ _importPinRaw=raw;
+ openSheet(`<h3>백업 파일 PIN 입력</h3>
+  <div class="desc">이 백업 파일은 PIN으로 암호화돼 있어요. 백업을 만들 때 쓴 PIN을 입력해 주세요.</div>
+  <div class="field"><label for="importPinIn">PIN</label><div class="pw-wrap"><input id="importPinIn" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="PIN 입력" onkeydown="if(event.key==='Enter')doImportPinSubmit()"><button type="button" class="pw-x" aria-label="PIN 표시" onclick="togglePwVis('importPinIn')">${svg('eye',18)}</button></div></div>
+  <div id="importPinErr" class="auth-err" style="display:none"></div>
+  <div class="two-btn" style="margin-top:14px"><button class="btn btn-soft cancel" onclick="_importPinRaw=null;closeSheet()">취소</button><button class="btn btn-primary" id="importPinBtn" onclick="doImportPinSubmit()">확인</button></div>`);
+ setTimeout(()=>{const el=$('importPinIn');el&&el.focus()},120);
+}
+async function doImportPinSubmit(){
+ const btn=$('importPinBtn');if(btn&&btn.disabled)return;
+ const raw=_importPinRaw;if(!raw)return;
+ const pin=($('importPinIn')&&$('importPinIn').value)||'';
+ const errEl=$('importPinErr');if(errEl)errEl.style.display='none';
+ if(btn)btn.disabled=true;
+ const json=await decryptDbBlob(raw,pin);
+ if(btn)btn.disabled=false;
+ if(json==null){
+  if(errEl){errEl.textContent='PIN이 일치하지 않아요';errEl.style.display='block'}
+  const inp=$('importPinIn');if(inp){inp.value='';inp.focus()}
+  return;
+ }
+ _importPinRaw=null;
+ let obj;try{obj=JSON.parse(json);if(!Array.isArray(obj.assets)||!Array.isArray(obj.txns))throw 0}
+ catch(e){closeSheet();toast('손상된 백업 파일이라 복원할 수 없어요');return}
+ closeSheet();
+ proceedWithBackupObj(obj);
+}
 $('importFile').addEventListener('change',e=>{
  const f=e.target.files[0];if(!f)return;const r=new FileReader();
  r.onerror=()=>{toast('파일을 읽지 못했어요');e.target.value=''};
- r.onload=()=>{try{const raw=JSON.parse(r.result);if(!Array.isArray(raw.assets)||!Array.isArray(raw.txns))throw 0;
-  const{data:obj,fixedCount,droppedCount,rangeCount}=sanitizeBackup(raw);
-  confirmSheet('데이터 복원','현재 데이터를 백업 파일로 교체할까요?<br><span style="color:var(--text-2);font-size:13px">복원 후 6초 안에는 되돌릴 수 있어요.</span>','복원',()=>{
-   let prev;try{prev=restoreBackup(obj)}catch(err){toast('손상된 백업 파일이라 복원할 수 없어요');return}
-   /* doResetAll과 동일: 안내한 6초 되돌리기 창이 끝나기 전엔 클라우드에 push하지 않는다 */
-   save({deferCloudPush:true});invalidateBalances();renderCurrent();
-   const restorePushT=setTimeout(scheduleCloudPush,6000);
-   const notes=[];if(fixedCount)notes.push(`값 ${fixedCount}건 보정`);if(droppedCount)notes.push(`${droppedCount}건 제외`);
-   if(rangeCount)notes.push(`날짜 범위를 벗어난 ${rangeCount}건은 내역엔 남지만 잔액엔 반영 안 돼요`);
-   const msg=notes.length?`데이터를 복원했어요 · ${notes.join(', ')}`:'데이터를 복원했어요';
-   undoToast(msg,()=>{clearTimeout(restorePushT);DB=prev;save();invalidateBalances();renderCurrent();toast('되돌렸어요')});
-  });
+ r.onload=()=>{try{
+  const raw=JSON.parse(r.result);
+  if(Array.isArray(raw.assets)&&Array.isArray(raw.txns)){proceedWithBackupObj(raw);return}
+  if(raw&&raw.v===1&&typeof raw.salt==='string'&&typeof raw.iv==='string'&&typeof raw.ct==='string'){openImportPinSheet(raw);return}
+  throw 0;
  }catch(_){toast('올바른 백업 파일이 아니에요')}finally{e.target.value=''}};
  r.readAsText(f);
 });
