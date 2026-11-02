@@ -6685,6 +6685,12 @@ test('normalizeCsvDateCell: 이미 YYYY-MM-DD이거나 알 수 없는 표기는 
   assert.strictEqual(sandbox.normalizeCsvDateCell('01/05/2026'), '01/05/2026');
   assert.strictEqual(sandbox.normalizeCsvDateCell(''), '');
 });
+test("normalizeCsvDateCell: 하이픈 구분이지만 월/일이 0패딩 안 된 표기(엑셀 수동편집/비-ISO 로케일 CSV 흔함)도 YYYY-MM-DD로 바꾼다(app-evolve cycle288 advance)", () => {
+  assert.strictEqual(sandbox.normalizeCsvDateCell('2026-1-5'), '2026-01-05');
+  assert.strictEqual(sandbox.normalizeCsvDateCell('2026-1-05'), '2026-01-05');
+  assert.strictEqual(sandbox.normalizeCsvDateCell('2026-01-5'), '2026-01-05');
+  assert.strictEqual(sandbox.normalizeCsvDateCell('2026-01-05'), '2026-01-05');
+});
 test("mapGenericCsvRow: 점/슬래시/구분자 없음 날짜 표기(은행 CSV 실무 포맷)도 정상적으로 가져온다(app-evolve cycle288 develop)", () => {
   const dot = sandbox.mapGenericCsvRow(['2026.1.5', '5000'], { dateCol: 0, amountCol: 1, mode: 'signed', category: '식비' }, 'a1');
   assert.strictEqual(dot.ok, true); assert.strictEqual(dot.txn.date, '2026-01-05');
@@ -6698,6 +6704,14 @@ test("mapGenericCsvRow: 점/슬래시/구분자 없음 날짜 표기(은행 CSV 
 test("mapGenericCsvRow: 달력상 존재하지 않는 날짜는 구분자를 바꿔도 여전히 error:'date'(csvDateValid 최종 판정 보존)", () => {
   const badDot = sandbox.mapGenericCsvRow(['2026.2.30', '1000'], { dateCol: 0, amountCol: 1, mode: 'signed', category: '식비' }, 'a1');
   assert.strictEqual(badDot.ok, false); assert.strictEqual(badDot.error, 'date');
+  const badHyphen = sandbox.mapGenericCsvRow(['2026-2-30', '1000'], { dateCol: 0, amountCol: 1, mode: 'signed', category: '식비' }, 'a1');
+  assert.strictEqual(badHyphen.ok, false); assert.strictEqual(badHyphen.error, 'date');
+});
+test("mapGenericCsvRow: 하이픈 구분이지만 월/일 미패딩(2026-1-5류) 날짜 표기도 정상적으로 가져온다(app-evolve cycle288 advance)", () => {
+  const hyphen = sandbox.mapGenericCsvRow(['2026-1-5', '5000'], { dateCol: 0, amountCol: 1, mode: 'signed', category: '식비' }, 'a1');
+  assert.strictEqual(hyphen.ok, true); assert.strictEqual(hyphen.txn.date, '2026-01-05');
+  const hyphenMixed = sandbox.mapGenericCsvRow(['2026-01-5', '5000'], { dateCol: 0, amountCol: 1, mode: 'signed', category: '식비' }, 'a1');
+  assert.strictEqual(hyphenMixed.ok, true); assert.strictEqual(hyphenMixed.txn.date, '2026-01-05');
 });
 test('mapGenericCsvRow: 성공 shape의 필드 집합이 csvRowToImportTxn과 같다(ok/unmatched/txn.type·date·category·amount·memo·fromAssetId·toAssetId)', () => {
   const own = sandbox.csvRowToImportTxn(['2026-01-01', '지출', '식비', '1000', '주계좌', '', '점심'], [{ id: 'a1', name: '주계좌' }]);
