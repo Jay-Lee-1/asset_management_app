@@ -291,6 +291,11 @@ const FUNCTIONS = [
   'fmtDot', 'splitHist', 'histRow', 'histTotHTML', 'updateHist', 'renderHistory', 'histPreset',
   'lowestInMonth', 'planBalInner', 'planBalCard', 'planTrackHTML', 'planRowsHTML', 'renderPlan',
   'refreshPlanBody', 'planAsset', 'nextGroupOrder', 'movedGroupOrder', 'moveGroup', 'movedAssetOrder', 'moveAsset', 'monthSwipeCommitDir', 'overlayEscapeTarget', 'recFreq', 'recFreqLabel',
+  // recManageBody/recQInput은 openRecManage(반복 내역 관리)에 인라인 검색을 추가하면서 몸통을
+  // 분리한 함수들(app-evolve cycle291 advance) — openRecManage 자체는 openSheet 의존이 커서
+  // 여전히 위 openRecManage 스텁(no-op)으로 두지만, 이 둘은 assetQInput/histQInput과 동일하게
+  // DOM 의존이 없거나($('recBody')만 참조) 얕아서 FUNCTIONS로 실제 로드해 검증할 수 있다.
+  'recManageBody', 'recQInput',
   'planSplitTransfer', 'planTransfer',
   'sbErrMsg', 'isRlsPolicyError', 'deleteCloudAccountData', 'doDeleteAccount',
   // openHelp는 app-evolve cycle244 develop(helpBackupNote 와이어링 검증용)에서 끌어왔다 — openSheet
@@ -403,7 +408,7 @@ const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'AS
 // _importPinRaw는 openImportPinSheet()가 세팅하고 doImportPinSubmit()이 소비하는 "PIN 입력을
 // 기다리는 암호화 백업 원본" 상태라(let 선언, realm에 안 붙음) 같은 이유로 LETS를 통해 가져온다
 // (app-evolve cycle289 advance).
-const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer', '_histTimer', '_assetQT', '_pkQ', '_bioAutoTried', '_csvMap', '_debtWhatIfAnnT', '_txCatSuggT', '_recCatSuggT', '_importPinRaw'];
+const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer', '_histTimer', '_assetQT', '_pkQ', '_bioAutoTried', '_csvMap', '_debtWhatIfAnnT', '_txCatSuggT', '_recCatSuggT', '_importPinRaw', '_recQT'];
 
 const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(extractConst).join('\n') + '\n' + LETS.map(extractLet).join('\n');
 
@@ -18030,6 +18035,7 @@ function recManageCtx() {
   vm.runInContext(extractFunction('catIconOf'), ctx, { filename: 'catIconOf-real' });
   vm.runInContext(extractFunction('catGlyph'), ctx, { filename: 'catGlyph-real' });
   vm.runInContext(extractConst('comma'), ctx, { filename: 'comma-real' });
+  vm.runInContext(extractFunction('recManageBody'), ctx, { filename: 'recManageBody-real' });
   vm.runInContext(extractFunction('openRecManage'), ctx, { filename: 'openRecManage-real' });
   _recManageCtx = ctx;
   return ctx;
@@ -18131,6 +18137,151 @@ test('[실행형] openRecManage: 커스텀 메모가 없으면(memo===category) 
   const html = ctx.lastSheetHtml;
   assert.ok(html.includes('<div class="mn">월세 '), '제목은 category와 같은 값(월세)으로 떠야 함');
   assert.ok(!html.includes('월세 · 월세'), 'memo와 category가 같으면 msub에서 category를 중복으로 또 붙이면 안 됨');
+});
+/* ---------- openRecManage/recManageBody: 인라인 검색(recQ) — 자산관리(assetQ)/전체내역(histQ)/
+ * 카테고리 피커(catQ)는 모두 자체 검색창이 있지만 반복 내역 관리만 없어 구독/월세가 많은
+ * 사용자가 4개 그룹을 손으로 스크롤해 찾아야 했다(app-evolve cycle291 critique). matchRecQuery는
+ * 이미 통합검색(gsQ)에 배선돼 있어, openGlobalSearch()/globalSearchBody()와 동일한 패턴(검색창+
+ * #recBody innerHTML 교체)으로 몸통만 recManageBody(q)에 옮겨 재사용한다(advance). ---------- */
+test('[실행형] openRecManage: 검색창(#recQ)과 그 결과를 담는 #recBody가 항상 떠야 한다', () => {
+  const ctx = recManageCtx();
+  ctx.DB = { recurrences: [{ id: 'r1', type: 'expense', category: '월세', amount: 500000, freq: 'monthly', day: 1, startDate: '2026-01-01', active: true }] };
+  ctx.openRecManage();
+  const html = ctx.lastSheetHtml;
+  assert.ok(html.includes('id="recQ"'), '검색 입력창(#recQ)이 떠야 함');
+  assert.ok(html.includes('oninput="recQInput(this.value)"'), '입력마다 recQInput을 불러야 함');
+  assert.ok(html.includes('id="recBody"'), '검색 결과를 담는 #recBody 컨테이너가 떠야 함');
+});
+test('[실행형] recManageBody: 검색어가 메모에만 일치해도 그 그룹만 남고 다른 그룹은 사라진다', () => {
+  const ctx = recManageCtx();
+  ctx.DB = {
+    recurrences: [
+      { id: 'r1', type: 'expense', category: '구독', memo: '넷플릭스', amount: 17000, freq: 'monthly', day: 1, startDate: '2026-01-01', active: true },
+      { id: 'r2', type: 'expense', category: '구독', memo: '왓챠', amount: 9900, freq: 'monthly', day: 5, startDate: '2026-01-05', active: true },
+      { id: 'r3', type: 'income', category: '급여', amount: 3000000, freq: 'monthly', day: 25, startDate: '2026-01-25', active: true },
+    ],
+  };
+  const html = ctx.recManageBody('넷플릭스');
+  assert.ok(html.includes('지출 · 1개'), '지출 그룹은 검색에 걸린 1건만 집계되어야 함(전체 2건이 아니라)');
+  assert.ok(html.includes('<div class="mn">넷플릭스 '), '검색어와 일치하는 행(넷플릭스)만 남아야 함');
+  assert.ok(!html.includes('<div class="mn">왓챠 '), '검색어와 일치하지 않는 같은 그룹의 행(왓챠)은 빠져야 함');
+  assert.ok(!html.includes('수입 ·'), '검색어에 안 걸리는 그룹(수입)은 헤더 자체가 뜨면 안 됨');
+});
+test('[실행형] recManageBody: 반복 주기 레이블(요일/일자)로도 찾을 수 있다(통합검색 matchRecQuery와 동일 규칙)', () => {
+  const ctx = recManageCtx();
+  ctx.DB = {
+    recurrences: [
+      { id: 'r1', type: 'expense', category: '용돈', freq: 'weekly', day: 1, startDate: '2026-01-05', active: true },
+      { id: 'r2', type: 'expense', category: '장보기', freq: 'weekly', day: 5, startDate: '2026-01-02', active: true },
+    ],
+  };
+  const html = ctx.recManageBody('금요일');
+  assert.ok(html.includes('<div class="mn">장보기 '), 'freq 레이블("매주 금요일")로도 매칭돼야 함');
+  assert.ok(!html.includes('<div class="mn">용돈 '), '다른 요일(월요일) 항목은 빠져야 함');
+});
+test('[실행형] recManageBody: 월 합계 요약 카드는 검색어와 무관하게 전체 기준으로 고정된다', () => {
+  const ctx = recManageCtx();
+  ctx.DB = {
+    recurrences: [
+      { id: 'r1', type: 'expense', category: '월세', amount: 500000, freq: 'monthly', day: 1, startDate: '2026-01-01', active: true },
+      { id: 'r2', type: 'expense', category: '구독', memo: '넷플릭스', amount: 17000, freq: 'monthly', day: 5, startDate: '2026-01-05', active: true },
+    ],
+  };
+  const full = ctx.recManageBody('');
+  const filtered = ctx.recManageBody('넷플릭스');
+  assert.ok(full.includes('매달 약') && full.includes('517,000원') && full.includes('이 고정으로 나가요'));
+  assert.ok(filtered.includes('매달 약') && filtered.includes('517,000원') && filtered.includes('이 고정으로 나가요'), '요약 카드는 검색 중에도 전체 합계를 그대로 보여줘야 함(그룹 헤더의 "N개"만 필터링 반영)');
+});
+test('[실행형] recManageBody: 검색 결과가 0건이면 "일치하는 반복이 없어요" 전용 빈 상태가 뜬다(반복 자체가 없다는 문구와 달라야 함)', () => {
+  const ctx = recManageCtx();
+  ctx.DB = { recurrences: [{ id: 'r1', type: 'expense', category: '월세', amount: 500000, freq: 'monthly', day: 1, startDate: '2026-01-01', active: true }] };
+  const html = ctx.recManageBody('존재하지않는검색어');
+  assert.ok(html.includes("'존재하지않는검색어'와 일치하는 반복이 없어요"), '검색어가 포함된 전용 빈 상태 문구여야 함');
+  assert.ok(!html.includes('반복되는 게 아직 없어요'), 'DB에 반복이 있는 상태이므로 "아직 없어요" 문구가 뜨면 안 됨');
+  assert.ok(!html.includes('menu-cap'), '검색 결과가 0건이면 그룹 헤더가 뜨면 안 됨');
+});
+test('[실행형] recManageBody: 빈 검색어는 전체(안 거른) 결과와 동일하다', () => {
+  const ctx = recManageCtx();
+  ctx.DB = {
+    recurrences: [
+      { id: 'r1', type: 'expense', category: '월세', amount: 500000, freq: 'monthly', day: 1, startDate: '2026-01-01', active: true },
+      { id: 'r2', type: 'income', category: '급여', amount: 3000000, freq: 'monthly', day: 25, startDate: '2026-01-25', active: true },
+    ],
+  };
+  assert.strictEqual(ctx.recManageBody(''), ctx.recManageBody('   '), '공백만 입력해도(trim 결과 빈 문자열) 빈 검색어와 동일하게 전체를 보여줘야 함');
+});
+/* recQInput(디바운스)은 histQInput/assetQInput과 동일한 패턴 — 메인 sandbox는 setTimeout/clearTimeout이
+ * 기본 no-op이라(fetchWithTimeout 등과 같은 이유) 이 블록에서만 스파이로 바꿔 검증하고 원복한다. */
+(() => {
+  const origSetTimeout = sandbox.setTimeout, origClearTimeout = sandbox.clearTimeout, orig$ = sandbox.$;
+  function restore() { sandbox.setTimeout = origSetTimeout; sandbox.clearTimeout = origClearTimeout; sandbox.$ = orig$; }
+  test('recQInput: 디바운스(220ms) 후에야 #recBody.innerHTML을 recManageBody(검색어)로 교체한다', () => {
+    sandbox.DB = { recurrences: [{ id: 'r1', type: 'expense', category: '월세', amount: 500000, freq: 'monthly', day: 1, startDate: '2026-01-01', active: true }] };
+    const recBodyEl = { innerHTML: 'old' };
+    let capturedMs = null, timerFn = null;
+    sandbox.setTimeout = (fn, ms) => { capturedMs = ms; timerFn = fn; return 'timer'; };
+    sandbox.clearTimeout = () => {};
+    sandbox.$ = (id) => (id === 'recBody' ? recBodyEl : null);
+    try {
+      sandbox.recQInput('월세');
+      assert.strictEqual(capturedMs, 220, '디바운스 지연은 다른 검색창(assetQ/histQ/gsQ)과 동일하게 220ms여야 함');
+      assert.strictEqual(recBodyEl.innerHTML, 'old', '타이머가 실행되기 전에는 #recBody가 바뀌면 안 됨');
+      timerFn();
+      assert.ok(recBodyEl.innerHTML.includes('<div class="mn">월세 '), '타이머 실행 후 #recBody.innerHTML이 검색 결과로 교체되어야 함');
+    } finally { restore(); }
+  });
+  test('recQInput: 연속 입력마다 이전 타이머를 지우고 새로 하나만 건다', () => {
+    sandbox.DB = { recurrences: [] };
+    let setCalls = 0, clearCalls = 0;
+    sandbox.setTimeout = () => { setCalls++; return 'timer' + setCalls; };
+    sandbox.clearTimeout = () => { clearCalls++; };
+    sandbox.$ = () => null;
+    try {
+      sandbox.recQInput('월');
+      sandbox.recQInput('월세');
+      assert.strictEqual(setCalls, 2);
+      assert.strictEqual(clearCalls, 2, '매 입력이 이전 타이머를 지워야 함(여러 번 겹쳐 재계산되는 걸 방지)');
+    } finally { restore(); }
+  });
+  test('recQInput: #recBody가 화면에 없으면(시트가 이미 닫힌 뒤 늦게 실행된 타이머 등) 조용히 아무 것도 하지 않는다', () => {
+    sandbox.DB = { recurrences: [] };
+    let timerFn = null;
+    sandbox.setTimeout = (fn) => { timerFn = fn; return 'timer'; };
+    sandbox.clearTimeout = () => {};
+    sandbox.$ = () => null;
+    try {
+      sandbox.recQInput('아무거나');
+      assert.doesNotThrow(() => timerFn(), '#recBody가 없을 때도 타이머 콜백이 에러 없이 끝나야 함(gsQInput과 동일한 null 가드)');
+    } finally { restore(); }
+  });
+})();
+/* toggleRecActive: recQ가 화면에 있으면(검색창이 열려있는 상태에서 토글) 전체를 다시 열지 않고
+ * #recBody만 같은 검색어로 다시 그려 검색 상태/스크롤 위치를 지킨다(app-evolve cycle291 advance). */
+test('toggleRecActive: 반복 내역 관리 검색창이 열려 있으면 openRecManage()로 전체를 새로 열지 않고 #recBody만 현재 검색어로 다시 그린다', () => {
+  const rec = { id: 'r1', active: true, type: 'expense', category: '월세', amount: 500000, freq: 'monthly', day: 1, startDate: '2026-01-01' };
+  sandbox.DB = { settings: {}, recurrences: [rec] };
+  const recBodyEl = { innerHTML: 'old' };
+  const orig$ = sandbox.$, origOpenRecManage = sandbox.openRecManage;
+  let openRecManageCalls = 0;
+  sandbox.$ = (id) => (id === 'recQ' ? { value: '월세' } : id === 'recBody' ? recBodyEl : null);
+  sandbox.openRecManage = () => { openRecManageCalls++; };
+  try {
+    sandbox.toggleRecActive('r1');
+    assert.strictEqual(openRecManageCalls, 0, '검색창이 열려 있을 때는 openRecManage()를 다시 부르면 안 됨(검색어/스크롤 유지)');
+    assert.ok(recBodyEl.innerHTML.includes('다시 시작'), '#recBody가 토글(일시중지) 후 상태를 반영한 recManageBody(검색어)로 교체되어야 함');
+  } finally { sandbox.$ = orig$; sandbox.openRecManage = origOpenRecManage; }
+});
+test('toggleRecActive: 검색창이 화면에 없으면(다른 진입 경로) 기존처럼 openRecManage()로 전체를 새로 연다', () => {
+  const rec = { id: 'r1', active: true };
+  sandbox.DB = { settings: {}, recurrences: [rec] };
+  const orig$ = sandbox.$, origOpenRecManage = sandbox.openRecManage;
+  let openRecManageCalls = 0;
+  sandbox.$ = () => null;
+  sandbox.openRecManage = () => { openRecManageCalls++; };
+  try {
+    sandbox.toggleRecActive('r1');
+    assert.strictEqual(openRecManageCalls, 1, '#recQ/#recBody가 없으면 기존 동작(전체 재오픈)으로 폴백해야 함');
+  } finally { sandbox.$ = orig$; sandbox.openRecManage = origOpenRecManage; }
 });
 
 /* ---------- addBalanceAdjust/updateBalanceAdjust: 부채(debt) 자산에 잔액 조정 내역을

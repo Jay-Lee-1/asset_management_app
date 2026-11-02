@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.326';
+const APP_VERSION='1.47.327';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -7148,13 +7148,23 @@ function mergeCatInto(k,i,toName){
 }
 
 function recFreqLabel(r){return recFreqLabelStr(r.freq,r.day,r.startDate)}
+let _recQT=null;
 function openRecManage(){
+ openSheet(`<h3>반복 내역 관리</h3><div class="desc">탭하면 수정·삭제할 수 있어요 · ▶/⏸로 일시중지</div>
+  <div class="searchbar" style="margin-bottom:14px">${svg('search')}<div class="field-clear"><input id="recQ" aria-label="반복 내역 검색" placeholder="메모·카테고리·주기 검색" value="" oninput="recQInput(this.value)"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('recQ')">✕</button></div></div>
+  <div id="recBody">${recManageBody('')}</div>
+  <div style="height:14px"></div><button class="btn btn-primary" onclick="openRecSheet()">${svg('plus')} 반복 추가</button>`);
+}
+function recQInput(v){clearTimeout(_recQT);_recQT=setTimeout(()=>{const b=$('recBody');if(b)b.innerHTML=recManageBody(v)},220);}
+function recManageBody(qRaw){
+ const q=(qRaw||'').trim();
  const groups=[['expense','지출','a-food'],['income','수입','a-in'],['saving','저축','a-save'],['transfer','내부이체','a-etc']];
  let body='';let expenseMonthly=0;
  groups.forEach(([ty,label,av])=>{
-  const list=DB.recurrences.filter(r=>r.type===ty);if(!list.length)return;
-  const monthlySum=list.filter(r=>r.active).reduce((s,r)=>s+monthlyEquivalent(r),0);
+  const full=DB.recurrences.filter(r=>r.type===ty);if(!full.length)return;
+  const monthlySum=full.filter(r=>r.active).reduce((s,r)=>s+monthlyEquivalent(r),0);
   if(ty==='expense')expenseMonthly=monthlySum;
+  const list=q?full.filter(r=>matchRecQuery(r,q)):full;if(!list.length)return;
   body+=`<div class="menu-cap" style="margin-top:8px">${label} · ${list.length}개${monthlySum?` · 월 약 ${comma(Math.round(monthlySum))}원`:''}</div><div class="card" style="margin-bottom:6px">`+list.map(r=>{
    const period=`${(r.startDate||'').slice(0,7).replace('-','.')}${r.endDate?` ~ ${r.endDate.slice(0,7).replace('-','.')}`:' ~'}`;
    /* 제목은 memo(없으면 category — saveRec/editRec이 항상 보장하는 폴백, 위 recMemoInput 주석 참고)를
@@ -7173,12 +7183,19 @@ function openRecManage(){
     <div class="mc">${svg('chev')}</div></div>`;
   }).join('')+`</div>`;
  });
- if(!body)body=`<div class="empty"><div class="ei">${svg('repeat')}</div><div class="et">반복되는 게 아직 없어요</div><div class="es">월세·구독처럼 매달 나가는 걸 등록해두면 편해요</div></div>`;
+ if(!body){
+  body=q?`<div class="empty"><div class="ei">${svg('search')}</div><div class="et">'${esc(q)}'와 일치하는 반복이 없어요</div><div class="es">다른 말로 검색해 보세요</div></div>`
+   :`<div class="empty"><div class="ei">${svg('repeat')}</div><div class="et">반복되는 게 아직 없어요</div><div class="es">월세·구독처럼 매달 나가는 걸 등록해두면 편해요</div></div>`;
+ }
  const summary=expenseMonthly?`<div class="card" style="margin-bottom:10px;padding:12px 16px"><div style="font-size:13px;color:var(--text-2)">매달 약 <b style="color:var(--text);font-size:15px">${comma(Math.round(expenseMonthly))}원</b>이 고정으로 나가요</div></div>`:'';
- openSheet(`<h3>반복 내역 관리</h3><div class="desc">탭하면 수정·삭제할 수 있어요 · ▶/⏸로 일시중지</div>${summary}${body}
-  <div style="height:14px"></div><button class="btn btn-primary" onclick="openRecSheet()">${svg('plus')} 반복 추가</button>`);
+ return `${summary}${body}`;
 }
-function toggleRecActive(id){const r=DB.recurrences.find(x=>x.id===id);if(!r)return;r.active=!r.active;touchSave(r);renderCurrent();openRecManage();toast(r.active?'반복을 다시 시작했어요':'반복을 일시중지했어요')}
+function toggleRecActive(id){const r=DB.recurrences.find(x=>x.id===id);if(!r)return;r.active=!r.active;touchSave(r);renderCurrent();
+ /* 전체를 openRecManage()로 다시 열면 검색창(recQ)에 입력해둔 검색어와 스크롤 위치가 날아간다 —
+    recQ가 화면에 있으면(=반복 내역 관리 시트가 열려 있으면) recBody만 그 값으로 다시 그려
+    검색 상태를 지키고, 없으면(다른 진입 경로) 기존처럼 전체를 새로 연다. */
+ const q=$('recQ');const b=$('recBody');if(q&&b)b.innerHTML=recManageBody(q.value);else openRecManage();
+ toast(r.active?'반복을 다시 시작했어요':'반복을 일시중지했어요')}
 
 function rateStatusMenu(){
  const l=rateAutoLabel();
