@@ -1,29 +1,8 @@
 {
   "cycle": 290,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 285,
-      "phase": "review",
-      "timestamp": "2026-11-01T18:30:00.000Z",
-      "summary": "cycle285 develop 커밋(1326d96) 검토 — saveAsset()의 _savedDrafts 가드가 asDraft가 열릴 때마다 새 객체로 교체되는 지점(renderAssetSheet 호출부, 라인 4385/4411)과 맞물려 saveTx/saveRec과 동일하게 안전하게 동작함을 확인. 가드 추가 위치도 모든 검증(stockCode/cryptoCode/fxAmount/goldDon/stockQty/cryptoQty/만기일/동명 중복)을 통과한 뒤라 검증 실패 후 재저장을 막지 않는다. 실제 버그 없음(코드 변경 없음, node test/run.js 2502/2502 통과 재확인, state.json만 커밋).",
-      "commit": null
-    },
-    {
-      "cycle": 285,
-      "phase": "critique",
-      "timestamp": "2026-11-01T19:40:00.000Z",
-      "summary": "반복/구독 등록(saveRec)에 saveTx(cycle284)가 가진 중복 입력 경고가 없는 공백 발견 — saveRec의 더블탭 가드(_savedDrafts)는 같은 제출의 중복만 막고, 별개 세션에서 같은 구독을 다시 등록하는 실수는 못 막는다. 반복거래 중복은 매달 자동으로 계속 이중 집계되어 일회성 거래 중복보다 피해가 크다. findPossibleDuplicateRec 신설 계획을 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
-    {
-      "cycle": 285,
-      "phase": "advance",
-      "timestamp": "2026-11-01T21:00:00.000Z",
-      "summary": "critique(cycle285) 계획대로 반복(구독) 등록(saveRec)에 중복 입력 경고를 추가했다. (1) logic.js에 순수 함수 findPossibleDuplicateRec(recurrences,draft) 신설 — 신규(!draft.id) 등록만 대상, 이미 중지한(active:false) 반복은 제외, type+freq+day+amount+category가 모두 같고(splits가 있으면 JSON.stringify로 내용까지 비교) type별 자산(expense→fromAssetId, income→toAssetId, transfer·saving→fromAssetId·toAssetId 둘 다)까지 같아야 중복으로 본다. (2) saveRec()의 저장 커밋 로직(더블탭 가드~cleaned 계산~DB.recurrences 반영~토스트)을 commitRec(d,wasEditing)으로 분리하고, wasEditing이 false일 때만 findPossibleDuplicateRec으로 검사해 걸리면 saveTx와 동일한 confirmSheet 패턴('비슷한 반복이 있어요' / '그래도 등록')으로 한 번 더 확인시킨다(취소 시 저장되지 않고 시트 유지, 확인 시 commitRec을 그대로 호출). (3) test/run.js FUNCTIONS에 commitRec 추가, findPossibleDuplicateRec 단위 테스트 13건과 saveRec 통합 테스트 4건 추가. APP_VERSION 1.47.314->1.47.315, sw.js CACHE v581->v582. node test/run.js 2502->2518 전체 통과, logic.js/sw.js/script 블록 구문 검증(node --check) 통과. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 286,
       "phase": "develop",
@@ -141,6 +120,13 @@
       "phase": "develop",
       "timestamp": "2026-11-02T12:16:50.082Z",
       "summary": "matchRecQuery(반복/구독 검색)가 카테고리/메모/금액까지만 haystack에 넣고, openRecManage 행이 msub로 그대로 보여주는 반복 주기 레이블(recFreqLabelStr — \"매주 월요일\", \"매월 15일\", \"매년 3월 5일\" 등)은 빠져 있던 공백 발견 — 카테고리/메모만으론 구분이 안 되는 같은 유형의 반복이 여러 개일 때(매주 월요일 용돈 vs 매주 금요일 장보기) 화면에 보이는 문구로도 못 찾았다. recFreqLabelStr(r.freq,r.day,r.startDate)를 다른 haystack 필드와 동일하게 이어 붙여, 기존 카테고리/메모/금액 매칭 규칙(AND 토큰화, NFC 정규화)을 그대로 재사용했다. 테스트 5건 추가(2545->2550 통과). APP_VERSION 1.47.323->1.47.324, sw.js CACHE v590->v591. node test/run.js 2550/2550 통과, logic.js/sw.js 구문 검증(node --check) 통과.",
+      "commit": "b82480a"
+    },
+    {
+      "cycle": 290,
+      "phase": "review",
+      "timestamp": "2026-11-02T13:30:00.000Z",
+      "summary": "cycle290 develop 커밋(b82480a) 검토 — recFreqLabelStr(freq,day,startDate)가 freq/day/startDate 누락 시에도 방어적으로 '매주'/'매년' 폴백을 반환해 never throw함을 확인(logic.js:83-91). haystack에 이어붙인 freqLabel이 항상 문자열이라 matchQueryTerms의 AND 토큰화·NFC 정규화 경로에 안전하게 합류한다. 신규 테스트 5건(요일 구분, 매월 N일/말일, 매년 M월, AND 결합, freq/startDate 누락 방어)이 핵심 분기를 잘 덮음. node test/run.js 2550/2550, logic.js/sw.js 구문 검증(node --check) 모두 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
       "commit": null
     }
   ]
