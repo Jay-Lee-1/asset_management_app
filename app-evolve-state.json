@@ -1,11 +1,7 @@
 {
-  "cycle": 290,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "홈(및 플랜) 탭에 통합 검색 진입점 추가",
-    "why": "pageHead(tab,extra)의 tab별 acts 분기(index.html:9370-9379)에서 'menu' 탭에만 통합 검색(openGlobalSearch, cycle259) 아이콘이 달려 있고, 가장 자주 보는 기본 화면인 'home'(그리고 'plan')은 acts가 비어 있거나 '오늘로' 칩뿐이라 검색 진입점이 전혀 없다. assets/ledger/history 탭은 각자 자체 인라인 검색(assetQ/histQ)이 있어 괜찮지만, 거래·자산·카테고리·목표·반복을 가로지르는 유일한 통합 검색은 메뉴 탭까지 2탭 이동해야 닿는다.",
-    "approach": "pageHead()의 'home' 분기(현재 acts 없음)에 menu 탭과 동일한 마크업(`<button type=\"button\" class=\"icon-btn\" aria-label=\"통합 검색\" onclick=\"openGlobalSearch()\">${svg('search')}</button>`)을 acts에 추가. 레이아웃이 깨지지 않는지(hdr-actions 영역 폭/정렬) 확인. plan 탭은 이미 '오늘로' 칩이 있으니 검색 아이콘을 같이 둘지, home만 우선 적용할지는 구현 중 판단(두 버튼이 hdr-actions에서 자연스럽게 공존 가능하면 plan에도 추가). test/run.js에 pageHead('home') 출력 문자열에 openGlobalSearch 버튼이 포함되는지 검증하는 테스트 추가. DB/스키마 변경 없는 순수 렌더링/배선 변경이라 기존 로직 테스트에는 영향 없음."
-  },
+  "cycle": 291,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
     {
       "cycle": 286,
@@ -138,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-02T14:35:00.000Z",
       "summary": "서브에이전트로 앱 전체(아키텍처/UX흐름/기술부채/성능/접근성/에러상태)를 재조사. TODO/FIXME 전부 확인, 드래그/키보드 접근성(이동 버튼 폴백 있음), empty-catch 전부 의도된 폴백, CSV 7종 라운드트립, _balCache/_recCache/_histCache 캐시+무효화, 차트 키보드 내비+aria-live, Web Locks 기반 크로스탭/클라우드 충돌 처리 등 대부분 이미 견고함을 확인 — 290 사이클 동안 다져진 코드베이스라 당장 보이는 '쉬운' 약점은 거의 없음. 유일하게 발견한 실제 공백: pageHead()의 tab별 acts 분기(index.html:9370-9379)가 'menu' 탭에만 통합 검색(openGlobalSearch) 아이콘을 달아두고, 가장 자주 보는 'home' 탭(및 'plan')엔 검색 진입점이 전혀 없음 — assets/ledger/history는 자체 인라인 검색이 있어 문제 없지만 거래/자산/카테고리/목표/반복을 가로지르는 유일한 통합 검색은 메뉴까지 2탭 이동해야 닿음. pending_advance_plan에 저장. 기각한 후보: (1) AppLock PIN이 저장 자체(save/load)가 아닌 백업에만 암호화 적용 — cycle252/289 주석이 이미 '한 사이클로는 과한 저장 아키텍처 재작성'이라 명시적으로 보류 판단함, (2) 앱/탭 닫힌 상태에서 OS 푸시 알림 — VAPID/푸시 서버 인프라가 필요해 백엔드 없는 PWA 범위 밖, (3) renderAssetSheet 등 최대 렌더 진입점의 DOM 통합 테스트 공백 — 기존 domstub.js 셈 전략으로 의도적으로 제외된 테스트 인프라 부채, 사용자 체감 버그보다 우선순위 낮음. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 290,
+      "phase": "advance",
+      "timestamp": "2026-11-02T15:40:00.000Z",
+      "summary": "critique(cycle290) 계획대로 통합 검색(openGlobalSearch) 진입점을 home과 plan 탭에도 추가했다. 구현 중 확인한 사실: renderHome()은 pageHead()를 거치지 않고 자기 헤더(hdr)를 직접 문자열로 만들어 꽂는다(pageHead 호출부는 assets/ledger/history/plan/menu 5곳뿐, index.html:9370-9379 tab별 acts 분기는 home엔 아예 적용되지 않음) — 그래서 계획대로 pageHead()의 'home' 분기를 고치는 대신, renderHome()의 인라인 hdr 마크업(index.html 상단 $('page-home').innerHTML 템플릿)에 hdr-actions+icon-btn(openGlobalSearch) 버튼을 직접 추가했다. plan 탭은 계획대로 pageHead()의 'plan' 분기에서 기존 '오늘로' 칩 뒤에 같은 버튼을 이어붙여 두 버튼이 hdr-actions에서 공존하게 했다(menu 탭 분기는 그대로 유지). assets/ledger/history는 자체 인라인 검색(assetQ/histQ)이 있어 건드리지 않음. 테스트: renderHome() 실행형 스모크 테스트에 hdr-actions/openGlobalSearch 포함 검증 추가, pageHead('plan')/pageHead('menu')/pageHead('assets') 3건 추가(plan은 오늘로+검색 공존, menu는 기존 동작 회귀 가드, assets는 acts 없음 회귀 가드). 테스트 4건 추가(2550->2554 통과). APP_VERSION 1.47.324->1.47.325, sw.js CACHE v591->v592. node test/run.js 2554/2554 통과, logic.js/sw.js 구문 검증(node --check) 통과, index.html 메인 인라인 script 블록 파싱 스모크 테스트 통과. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

@@ -23586,6 +23586,19 @@ test('renderHome: 정상 DB로 호출하면 예외 없이 실행되고 기본 �
   assert.ok(html.includes('급여'), '수입 분석 카드에 카테고리명이 나와야 함');
   assert.ok(html.includes('onclick="openIncomeAnalysis()"'), '수입 분석 카드에 수입 분석 화면으로 가는 링크가 있어야 함');
 });
+/* renderHome()은 pageHead()를 거치지 않고 자기 헤더(hdr)를 직접 문자열로 구성한다 — 그래서
+ * ledger/history/plan/menu 탭은 pageHead()의 tab별 acts 분기에 통합 검색(openGlobalSearch) 버튼을
+ * 추가하면 자동으로 받지만, home은 그 분기가 전혀 적용되지 않아 따로 붙여야 했다(app-evolve
+ * cycle290 advance). 거래/자산/카테고리/목표/반복을 가로지르는 유일한 통합 검색 진입점이
+ * 가장 자주 보는 기본 화면에는 없고 menu 탭까지 가야만 닿던 공백을 메운다. */
+test('renderHome: 홈 헤더에 통합 검색(openGlobalSearch) 아이콘이 있다(app-evolve cycle290 advance)', () => {
+  setupHomeDB();
+  sandbox.DB.assets = [{ id: 'a1', name: '주계좌', owner: '나', type: 'cash', baseAmount: 500000 }];
+  sandbox.renderHome();
+  const html = sandbox.pageHomeEl.innerHTML;
+  assert.ok(html.includes('class="hdr-actions"'), '홈 헤더에 hdr-actions 영역이 생겨야 함');
+  assert.ok(html.includes('onclick="openGlobalSearch()"'), '홈 헤더에 통합 검색 버튼이 있어야 함');
+});
 test('renderHome: 이번 달 수입이 전혀 없으면 수입 분석 카드 자체가 렌더되지 않는다(expenseBreakdownCard와 동일한 "빈 카드 숨김" 원칙)', () => {
   setupHomeDB();
   sandbox.DB.assets = [{ id: 'a1', name: '주계좌', owner: '나', type: 'cash', baseAmount: 500000 }];
@@ -24434,6 +24447,24 @@ test('modeSeg: catExact/owner가 모두 기본값이면(cat/q/assetId도 기본�
   setupHistoryDB();
   const html = sandbox.modeSeg('ledger');
   assert.ok(!html.includes('chip-dot'), '모든 필터가 기본값이면 chip-dot이 뜨면 안 됨');
+});
+
+/* pageHead(tab,extra)의 tab별 acts 분기 — menu 탭에만 있던 통합 검색(openGlobalSearch) 버튼을
+ * plan 탭에도 추가했다(home은 pageHead()를 쓰지 않아 renderHome 쪽 테스트에서 따로 가드함,
+ * app-evolve cycle290 advance). ledger/history/assets는 각자 인라인 검색이 있어 제외. */
+test('pageHead: plan 탭은 "오늘로" 칩과 통합 검색 버튼이 함께 나온다(app-evolve cycle290 advance)', () => {
+  const html = sandbox.pageHead('plan');
+  assert.ok(html.includes('onclick="goToday()"'), 'plan 탭에는 여전히 오늘로 칩이 있어야 함');
+  assert.ok(html.includes('onclick="openGlobalSearch()"'), 'plan 탭에 통합 검색 버튼이 추가돼야 함');
+});
+test('pageHead: menu 탭은 기존처럼 통합 검색 버튼만 나온다(회귀 가드)', () => {
+  const html = sandbox.pageHead('menu');
+  assert.ok(html.includes('onclick="openGlobalSearch()"'), 'menu 탭의 통합 검색 버튼이 사라지면 안 됨');
+  assert.ok(!html.includes('onclick="goToday()"'), 'menu 탭에 오늘로 칩이 생기면 안 됨');
+});
+test('pageHead: assets 탭은 acts가 없다(자체 인라인 검색이 있어 pageHead 레벨 버튼이 불필요, 회귀 가드)', () => {
+  const html = sandbox.pageHead('assets');
+  assert.ok(!html.includes('hdr-actions'), 'assets 탭에는 hdr-actions가 생기면 안 됨');
 });
 
 /* ---------- renderHistory/histPreset: 전체내역 기간 빠른 선택 칩 (app-evolve cycle193 develop) ----------

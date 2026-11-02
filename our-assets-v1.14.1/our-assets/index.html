@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.324';
+const APP_VERSION='1.47.325';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3037,7 +3037,7 @@ function renderHome(){
  const mktRows=mkt.map(x=>`<div class="mkt-item"><div class="avatar ${x.cls}">${svg(x.ic)}</div><div><div class="nm">${esc(x.nm)}</div><div class="sub">${esc(x.sub)}</div></div><div class="val">${x.unknown?'<div class="mini warn">미확인</div>':`<div class="price num">${comma(x.price)}원</div>`}</div></div>`).join('');
 
  $('page-home').innerHTML=`
- <div class="hdr"><div class="hd-l"><div class="sub">우리의 자산</div><h1>🌱 이번 달 살림 💸</h1></div></div>
+ <div class="hdr"><div class="hd-l"><div class="sub">우리의 자산</div><h1>🌱 이번 달 살림 💸</h1></div><div class="hdr-actions"><button type="button" class="icon-btn" aria-label="통합 검색" onclick="openGlobalSearch()">${svg('search')}</button></div></div>
  ${alertBanner}
  ${emptyAssetCards()}
 
@@ -9372,7 +9372,7 @@ function pageHead(tab,extra){
  if(tab==='ledger'||tab==='history'){
   acts=modeSeg(tab)+`<button class="sch-chip today-chip" onclick="goToday()">${svg('clock')}오늘로</button>`;
  }
- else if(tab==='plan')acts=`<button class="sch-chip today-chip" onclick="goToday()">${svg('clock')}오늘로</button>`;
+ else if(tab==='plan')acts=`<button class="sch-chip today-chip" onclick="goToday()">${svg('clock')}오늘로</button><button type="button" class="icon-btn" aria-label="통합 검색" onclick="openGlobalSearch()">${svg('search')}</button>`; /* home(위 renderHome)과 plan에 통합 검색 진입점 추가(app-evolve cycle290 advance) — menu까지 2탭 이동해야 닿던 문제 해소 */
  else if(tab==='menu')acts=`<button type="button" class="icon-btn" aria-label="통합 검색" onclick="openGlobalSearch()">${svg('search')}</button>`; /* 거래/자산/카테고리를 가로질러 찾는 단일 진입점(app-evolve cycle259 advance) */
  acts+=(extra||'');
  return `<div class="hdr"><div class="hd-l"><div class="sub">우리의 자산</div><h1>${PAGE_TITLE[tab]}</h1></div>${acts?`<div class="hdr-actions">${acts}</div>`:''}</div>`;
