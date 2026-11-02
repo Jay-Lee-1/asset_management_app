@@ -1,15 +1,8 @@
 {
   "cycle": 287,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 282,
-      "phase": "develop",
-      "timestamp": "2026-11-01T04:14:51.303Z",
-      "summary": "logic.js의 parseAmountUnit/amountMatchesToken(cycle278-279 추가)에 직접 단위 테스트가 전혀 없던 공백 발견 — 경계 동작 11건 추가. 코드 변경 없음(테스트 전용 cycle). node test/run.js 2424->2435 통과.",
-      "commit": "021c708"
-    },
     {
       "cycle": 282,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-01T23:00:00.000Z",
       "summary": "critique(cycle286) 계획대로 matchTxnQuery/matchRecQuery/matchGoalQuery의 중복 금액 매칭 로직을 공통 헬퍼로 추출했다. logic.js에 matchQueryTerms(normHay,terms,amountCandidates) 신설 — \"토큰이 금액 연산자로 파싱되면 amountCandidates 중 하나라도 맞아야 매칭, 아니면 normHay.includes(term)\" 판정을 한 곳으로 모음. 세 함수는 각자 조립한 haystack/amountCandidates 배열([t.amount,...lines.map(l=>l.amount)] 또는 [g.targetAmount])만 넘기는 얇은 wrapper로 재작성해, 기존 동작(대소문자 무시/NFC 정규화/공백 AND/substring/분할 라인 포함)을 100% 보존했다. matchAssetQuery/matchCatQuery(금액 개념 없음)는 변경 범위에서 제외. 순수 내부 리팩터링이라 테스트는 그대로(기존 동작 보존이 목적) — node test/run.js 2520/2520 통과(테스트 개수 불변 확인), logic.js/sw.js 구문 검증(node --check) 통과. APP_VERSION 1.47.316->1.47.317, sw.js CACHE v583->v584. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 287,
+      "phase": "develop",
+      "timestamp": "2026-11-02T00:00:00.000Z",
+      "summary": "matchTxnQuery/matchRecQuery/matchGoalQuery(금액 검색) 모두가 한국어 사용자가 자연스럽게 붙이는 '원' 단위 접미사('15900원', '>10000원', '1만원~5만원')를 지원하지 않아 조용히 0건으로 떨어지던 공백 발견 — parseAmountUnit은 숫자(+만/억) 뒤에 '원'이 더 있으면 형식이 아니라고 보아 null을 반환하고, 연산자 없는 평문 검색('15900원')도 haystack엔 숫자만 있어 substring조차 실패했다. 세 함수가 공통으로 거치는 normalizeAmountSpacing(cycle287 이전 advance가 만든 단일 관문)에 숫자(+만/억) 바로 뒤의 '원'을 공백/~/문자열 끝 앞에서만 지우는 전처리를 추가해 한 곳의 수정으로 세 함수 모두에 적용되게 했다(지난 279/283/284/286 사이클이 반복했던 '한 함수만 고치고 나머지를 깜빡하는' 동일 클래스 버그를 cycle286 advance의 공통화가 이번엔 구조적으로 막아줌을 실증). parseAmountUnit 자체의 기존 엄격한 동작(직접 호출 시 '10만원'은 여전히 null)은 그대로 보존. 테스트 7건 추가(normalizeAmountSpacing 단위 4건 + matchTxnQuery/matchRecQuery/matchGoalQuery 통합 3건, 2520->2526 통과). APP_VERSION 1.47.317->1.47.318, sw.js CACHE v584->v585. node test/run.js 2526/2526 통과, logic.js/sw.js 구문 검증(node --check) 통과, index.html 메인 인라인 script 블록도 test/run.js의 extractMainScript와 동일한 방식으로 추출해 node --check 통과 확인.",
       "commit": null
     }
   ]

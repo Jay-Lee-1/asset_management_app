@@ -7388,6 +7388,28 @@ test('normalizeAmountSpacing: 이미 붙여 쓴 입력은 그대로 유지된다
   assert.strictEqual(sandbox.normalizeAmountSpacing('>10000'), '>10000');
   assert.strictEqual(sandbox.normalizeAmountSpacing('1만~5만'), '1만~5만');
 });
+/* ---------- normalizeAmountSpacing: 금액 뒤의 '원'을 지워준다(app-evolve cycle287 develop) ----------
+ * 연산자 없는 단순 금액 검색("15900원")도, 연산자/범위 검색("「>10000원」, "1만원~5만원")도 '원'이
+ * 붙어 있으면 조용히 0건이 됐었다 — "'원'이 더 있으면 숫자+단위 형식이 아니다"라고 보는
+ * parseAmountUnit의 엄격한 정규식(위 'parseAmountUnit: 숫자가 아니거나...' 테스트가 보장하는
+ * 동작) 자체는 그대로 두고, 그 앞단(normalizeAmountSpacing)에서 숫자(+만/억) 바로 뒤의 '원'을
+ * 공백/~/문자열 끝 앞에서만 미리 지워 parseAmountUnit에 도달하기 전에 없앤다. */
+test('normalizeAmountSpacing: 금액(+만/억) 바로 뒤의 "원"을 지운다', () => {
+  assert.strictEqual(sandbox.normalizeAmountSpacing('15900원'), '15900');
+  assert.strictEqual(sandbox.normalizeAmountSpacing('10만원'), '10만');
+  assert.strictEqual(sandbox.normalizeAmountSpacing('1.5억원'), '1.5억');
+});
+test('normalizeAmountSpacing: 연산자/범위와 "원"을 함께 써도(붙여 쓰거나 띄어 써도) 둘 다 정규화된다', () => {
+  assert.strictEqual(sandbox.normalizeAmountSpacing('>10000원'), '>10000');
+  assert.strictEqual(sandbox.normalizeAmountSpacing('> 10000원'), '>10000');
+  assert.strictEqual(sandbox.normalizeAmountSpacing('1만원~5만원'), '1만~5만');
+  assert.strictEqual(sandbox.normalizeAmountSpacing('1만원 ~ 5만원'), '1만~5만');
+});
+test('normalizeAmountSpacing: "원"이 금액 뒤가 아니라 다른 자리에 쓰이면 건드리지 않는다', () => {
+  assert.strictEqual(sandbox.normalizeAmountSpacing('원룸'), '원룸', '앞에 숫자가 없으면 그대로');
+  assert.strictEqual(sandbox.normalizeAmountSpacing('구독원'), '구독원', '숫자+단위가 아니라 글자 뒤의 원은 그대로');
+  assert.strictEqual(sandbox.normalizeAmountSpacing('15900원짜리'), '15900원짜리', '원 뒤에 공백/~/끝이 아니면(더 이어지는 글자) 건드리지 않음');
+});
 test('matchTxnQuery: 연산자 뒤에 공백을 넣어 자연스럽게 입력해도("> 10000") 금액 비교로 매칭된다', () => {
   const big = { memo: '', category: '식비', amount: 110000, fromAssetId: null, toAssetId: null };
   const small = { memo: '', category: '식비', amount: 10000, fromAssetId: null, toAssetId: null };
@@ -7405,6 +7427,12 @@ test('matchTxnQuery: 연산자와 무관한 일반 텍스트+숫자 조합은 �
   const t = { memo: '스타벅스', category: '카페', amount: 10000, fromAssetId: null, toAssetId: null };
   assert.strictEqual(sandbox.matchTxnQuery(t, '스타벅스 10000', []), true, '공백 앞이 연산자가 아니므로 두 토큰으로 남아 각각 매칭돼야 함');
   assert.strictEqual(sandbox.matchTxnQuery(t, '스타벅스 99999', []), false);
+});
+test('matchTxnQuery: 금액 뒤에 "원"을 자연스럽게 붙여도("15900원"/">10000원") 매칭된다(app-evolve cycle287 develop)', () => {
+  const t = { memo: '', category: '구독', amount: 15900, fromAssetId: null, toAssetId: null };
+  assert.strictEqual(sandbox.matchTxnQuery(t, '15900원', []), true);
+  assert.strictEqual(sandbox.matchTxnQuery(t, '>10000원', []), true);
+  assert.strictEqual(sandbox.matchTxnQuery(t, '>20000원', []), false);
 });
 
 /* ---------- matchTxnQuery/matchAssetQuery/matchCatQuery: 검색어를 공백으로 띄워 쓰면 여러 단어
@@ -7547,6 +7575,12 @@ test('matchGoalQuery: 금액 연산자와 텍스트 검색어를 함께 띄어 �
   assert.strictEqual(sandbox.matchGoalQuery(g, '비상금 >100만'), true);
   assert.strictEqual(sandbox.matchGoalQuery(g, '비상금 >1000만'), false, '금액 조건은 만족하지 않으므로 제외되어야 함');
 });
+test('matchGoalQuery: 목표 금액 뒤에 "원"을 자연스럽게 붙여도("5000000원"/">100만원") 매칭된다(app-evolve cycle287 develop)', () => {
+  const g = { name: '비상금', targetAmount: 5000000 };
+  assert.strictEqual(sandbox.matchGoalQuery(g, '5000000원'), true, '연산자 없는 순수 숫자+원도 substring 매칭으로 통과해야 함');
+  assert.strictEqual(sandbox.matchGoalQuery(g, '>100만원'), true);
+  assert.strictEqual(sandbox.matchGoalQuery(g, '>1000만원'), false);
+});
 
 /* ---------- matchRecQuery: 반복(구독) 검색 — matchGoalQuery와 동일한 규칙(대소문자 무시
  * includes + NFC 정규화 + 공백 AND), 다만 카테고리+메모 두 필드를 모두 haystack에 넣는다
@@ -7639,6 +7673,12 @@ test('matchRecQuery: 금액 연산자와 텍스트 검색어를 함께 띄어 �
   const r = { category: '구독', memo: '넷플릭스', amount: 15900 };
   assert.strictEqual(sandbox.matchRecQuery(r, '넷플릭스 >10000'), true);
   assert.strictEqual(sandbox.matchRecQuery(r, '넷플릭스 >20000'), false, '금액 조건은 만족하지 않으므로 제외되어야 함');
+});
+test('matchRecQuery: 금액 뒤에 "원"을 자연스럽게 붙여도("15900원") 매칭된다(app-evolve cycle287 develop)', () => {
+  const r = { category: '구독', memo: '넷플릭스', amount: 15900 };
+  assert.strictEqual(sandbox.matchRecQuery(r, '15900원'), true);
+  assert.strictEqual(sandbox.matchRecQuery(r, '>10000원'), true);
+  assert.strictEqual(sandbox.matchRecQuery(r, '>20000원'), false);
 });
 
 /* ---------- suggestCategoryForMemo: 거래/반복거래 입력(index.html txMemoInput/recMemoInput)의
