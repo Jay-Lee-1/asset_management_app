@@ -1,15 +1,8 @@
 {
   "cycle": 292,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 287,
-      "phase": "review",
-      "timestamp": "2026-11-02T01:00:00.000Z",
-      "summary": "cycle287 develop 커밋(5de902a) 검토 — normalizeAmountSpacing의 '원' 제거 정규식 경계 케이스 검증(15900원/>10000원/1만원~5만원은 올바르게 제거, 10000원대/3000원짜리/원룸처럼 경계가 아닌 경우는 건드리지 않음 확인). node test/run.js 2526/2526, logic.js/sw.js 구문 검증 모두 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 287,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-02T22:30:00.000Z",
       "summary": "findPossibleDuplicateRec(반복 등록 중복 경고)가 freq에 관계없이 r.day!==draft.day로만 스케줄을 비교하던 공백 발견 — day는 monthly에서만 사용자가 실제로 고르는 값이고(renderRecSheet이 day 입력 UI를 monthly에만 보여줌), weekly/yearly는 항상 startDate의 요일/월일로 스케줄이 정해지는데(recDates 참고) day는 신규 등록 시 기본값 1이 그대로 남는다. 그래서 요일이 다른 두 매주 반복(매주 월요일 용돈 vs 매주 금요일 장보기)이 같은 카테고리/금액이면 둘 다 day:1이라 중복으로 오판되고, 월/일이 다른 매년 반복도 같은 이유로 오판됐다. recScheduleSameSlot(freq,a,b) 신설(logic.js) — monthly는 기존 day 비교 유지, daily는 항상 true, weekly/yearly는 startDate에서 요일/월일을 파생해 비교(recFreqLabelStr과 같은 파생 방식 재사용), startDate 누락/파싱 실패 시엔 방어적으로 기존 day 비교로 폴백. findPossibleDuplicateRec의 r.day!==draft.day를 !recScheduleSameSlot(r.freq,r,draft)로 교체. 기존 monthly 전용 테스트(duplicateRec→saveRec 등)는 전부 그대로 통과(회귀 없음). 테스트 4건 추가(weekly 같은/다른 요일, yearly 같은/다른 월일, daily 항상 중복, startDate 없을 때 day 폴백)(2567->2571 통과). APP_VERSION 1.47.327->1.47.328, sw.js CACHE v594->v595. node test/run.js 2571/2571 통과, logic.js/sw.js 구문 검증(node --check) 통과.",
+      "commit": "6e71078"
+    },
+    {
+      "cycle": 292,
+      "phase": "review",
+      "timestamp": "2026-11-02T23:40:00.000Z",
+      "summary": "cycle292 develop 커밋(6e71078) 검토 — recScheduleSameSlot(freq,a,b)이 recFreqLabelStr과 동일한 날짜 파싱 패턴('YYYY-MM-DD'+'T00:00:00' 로컬 파싱, startDate 양쪽에 동일하게 적용되어 기기 시간대 차이가 상쇄됨)을 그대로 재사용함을 확인. monthly('last' 문자열 포함 기존 day 동치 비교 유지)/daily(항상 true)/weekly·yearly(startDate 파생 요일·월일 비교)/startDate 누락 또는 파싱 실패 시 방어적 day 폴백까지 분기 전부 재현 검증. node test/run.js 2571/2571, logic.js/sw.js 구문 검증(node --check) 모두 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
       "commit": null
     }
   ]
