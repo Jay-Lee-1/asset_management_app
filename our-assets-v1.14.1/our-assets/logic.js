@@ -609,14 +609,17 @@ function matchTxnQuery(t,q,assets){
  if(!terms.length)return true;
  return matchQueryTerms(normHay,terms,[t.amount,...lines.map(l=>l.amount)]);
 }
-/* 자산명(+fx 보유통화) 검색 — matchTxnQuery와 동일하게 대소문자 구분 없이 includes로 매칭하고,
- * 같은 이유로 NFC 정규화도 함께 적용한다(위 matchTxnQuery 주석 참고).
- * 자산은 종목코드 같은 별도 필드가 없어 이름이 유일한 식별자이지만(stock은 보유 종목명을
- * name에 직접 쓴다), fx는 화면에 '달러'처럼 이름을 붙여도 실제로 찾는 건 보유 통화(USD 등)인
- * 경우가 많아 currency도 함께 haystack에 넣는다. */
+/* 자산명(+fx 보유통화+주식/코인 코드) 검색 — matchTxnQuery와 동일하게 대소문자 구분 없이
+ * includes로 매칭하고, 같은 이유로 NFC 정규화도 함께 적용한다(위 matchTxnQuery 주석 참고).
+ * fx는 화면에 '달러'처럼 이름을 붙여도 실제로 찾는 건 보유 통화(USD 등)인 경우가 많아 currency도
+ * 함께 haystack에 넣는다. stock/crypto도 마찬가지로 종목코드(005930 등)·심볼(BTC 등)이 화면
+ * 곳곳(종목코드 입력칸, 시세 설정 행 부제, 보유 수량 표시)에 그대로 노출되는데도 이름(종목명)
+ * 하나만 haystack에 있어 정작 그 코드로는 자산을 찾을 수 없었다(app-evolve cycle289 develop) —
+ * stockCode/cryptoCode를 currency와 같은 방식으로 haystack에 추가. 한 자산에 둘 다 있을 수
+ * 없으므로(type이 하나) 그냥 이어 붙여도 서로 충돌하지 않는다. */
 function matchAssetQuery(a,q){
  if(!q)return true;
- const hay=(a.name||'')+' '+(a.currency||'');
+ const hay=(a.name||'')+' '+(a.currency||'')+' '+(a.stockCode||'')+' '+(a.cryptoCode||'');
  const normHay=hay.normalize('NFC').toLowerCase();
  const terms=searchTerms(q.normalize('NFC').toLowerCase());
  if(!terms.length)return true;

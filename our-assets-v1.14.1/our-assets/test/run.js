@@ -7542,6 +7542,16 @@ test('matchAssetQuery: 검색어를 띄어 쓰면 이름+통화처럼 서로 다
   assert.strictEqual(sandbox.matchAssetQuery({ name: '달러', currency: 'USD' }, '달러 usd'), true);
   assert.strictEqual(sandbox.matchAssetQuery({ name: '달러', currency: 'USD' }, '달러 eur'), false);
 });
+test('matchAssetQuery: 주식 자산은 이름뿐 아니라 종목코드(stockCode)로도 찾을 수 있다(app-evolve cycle289)', () => {
+  assert.strictEqual(sandbox.matchAssetQuery({ name: '삼성전자', stockCode: '005930' }, '005930'), true);
+  assert.strictEqual(sandbox.matchAssetQuery({ name: '애플', stockCode: 'AAPL' }, 'aapl'), true, '종목코드도 대소문자 무시');
+});
+test('matchAssetQuery: 코인 자산은 이름뿐 아니라 심볼(cryptoCode)로도 찾을 수 있다(app-evolve cycle289)', () => {
+  assert.strictEqual(sandbox.matchAssetQuery({ name: '비트코인', cryptoCode: 'BTC' }, 'btc'), true);
+});
+test('matchAssetQuery: 다른 자산의 종목코드/심볼로는 찾히지 않는다', () => {
+  assert.strictEqual(sandbox.matchAssetQuery({ name: '삼성전자', stockCode: '005930' }, '000660'), false);
+});
 
 /* ---------- matchCatQuery: 카테고리명 검색도 matchAssetQuery와 동일한 규칙(대소문자 무시
  * includes + NFC 정규화) ---------- (app-evolve cycle253 critique → cycle254 advance) */
