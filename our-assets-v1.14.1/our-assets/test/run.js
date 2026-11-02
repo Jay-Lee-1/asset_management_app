@@ -6670,6 +6670,35 @@ test("mapGenericCsvRow: 날짜가 유효하지 않으면 error:'date', 금액이
   const nan = sandbox.mapGenericCsvRow(['2026-01-01', '안녕'], { dateCol: 0, amountCol: 1, mode: 'signed', category: '식비' }, 'a1');
   assert.strictEqual(nan.ok, false); assert.strictEqual(nan.error, 'amount');
 });
+test('normalizeCsvDateCell: 점/슬래시/구분자 없음(연도 맨 앞) 표기를 YYYY-MM-DD로 바꾼다(app-evolve cycle288)', () => {
+  assert.strictEqual(sandbox.normalizeCsvDateCell('2026.1.5'), '2026-01-05');
+  assert.strictEqual(sandbox.normalizeCsvDateCell('2026.01.05'), '2026-01-05');
+  assert.strictEqual(sandbox.normalizeCsvDateCell('2026/01/05'), '2026-01-05');
+  assert.strictEqual(sandbox.normalizeCsvDateCell('20260105'), '2026-01-05');
+});
+test('normalizeCsvDateCell: 날짜+시간이 한 칸에 붙어 있으면(이용일시) 시간 부분을 떼어낸다', () => {
+  assert.strictEqual(sandbox.normalizeCsvDateCell('2026-01-05 13:25:33'), '2026-01-05');
+  assert.strictEqual(sandbox.normalizeCsvDateCell('2026.01.05 13:25'), '2026-01-05');
+});
+test('normalizeCsvDateCell: 이미 YYYY-MM-DD이거나 알 수 없는 표기는 그대로 돌려줘(연도가 뒤에 오는 MM/DD/YYYY 등은 추측하지 않음) csvDateValid가 최종 판정하게 한다', () => {
+  assert.strictEqual(sandbox.normalizeCsvDateCell('2026-01-05'), '2026-01-05');
+  assert.strictEqual(sandbox.normalizeCsvDateCell('01/05/2026'), '01/05/2026');
+  assert.strictEqual(sandbox.normalizeCsvDateCell(''), '');
+});
+test("mapGenericCsvRow: 점/슬래시/구분자 없음 날짜 표기(은행 CSV 실무 포맷)도 정상적으로 가져온다(app-evolve cycle288 develop)", () => {
+  const dot = sandbox.mapGenericCsvRow(['2026.1.5', '5000'], { dateCol: 0, amountCol: 1, mode: 'signed', category: '식비' }, 'a1');
+  assert.strictEqual(dot.ok, true); assert.strictEqual(dot.txn.date, '2026-01-05');
+  const slash = sandbox.mapGenericCsvRow(['2026/01/05', '5000'], { dateCol: 0, amountCol: 1, mode: 'signed', category: '식비' }, 'a1');
+  assert.strictEqual(slash.ok, true); assert.strictEqual(slash.txn.date, '2026-01-05');
+  const compact = sandbox.mapGenericCsvRow(['20260105', '5000'], { dateCol: 0, amountCol: 1, mode: 'signed', category: '식비' }, 'a1');
+  assert.strictEqual(compact.ok, true); assert.strictEqual(compact.txn.date, '2026-01-05');
+  const withTime = sandbox.mapGenericCsvRow(['2026-01-05 13:25:33', '5000'], { dateCol: 0, amountCol: 1, mode: 'signed', category: '식비' }, 'a1');
+  assert.strictEqual(withTime.ok, true); assert.strictEqual(withTime.txn.date, '2026-01-05');
+});
+test("mapGenericCsvRow: 달력상 존재하지 않는 날짜는 구분자를 바꿔도 여전히 error:'date'(csvDateValid 최종 판정 보존)", () => {
+  const badDot = sandbox.mapGenericCsvRow(['2026.2.30', '1000'], { dateCol: 0, amountCol: 1, mode: 'signed', category: '식비' }, 'a1');
+  assert.strictEqual(badDot.ok, false); assert.strictEqual(badDot.error, 'date');
+});
 test('mapGenericCsvRow: 성공 shape의 필드 집합이 csvRowToImportTxn과 같다(ok/unmatched/txn.type·date·category·amount·memo·fromAssetId·toAssetId)', () => {
   const own = sandbox.csvRowToImportTxn(['2026-01-01', '지출', '식비', '1000', '주계좌', '', '점심'], [{ id: 'a1', name: '주계좌' }]);
   const generic = sandbox.mapGenericCsvRow(['2026-01-01', '1000', '점심'], { dateCol: 0, amountCol: 1, memoCol: 2, mode: 'signed', category: '식비' }, 'a1');

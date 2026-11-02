@@ -1,15 +1,8 @@
 {
   "cycle": 288,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 283,
-      "phase": "develop",
-      "timestamp": "2026-11-01T08:10:00.000Z",
-      "summary": "matchRecQuery(반복/구독 통합검색)가 금액 검색을 지원하지 않던 공백 발견(matchTxnQuery는 이미 지원). matchTxnQuery와 동일한 규칙으로 금액 매칭 추가. 테스트 8건 추가(2458->2466). APP_VERSION 1.47.309->1.47.310, sw.js CACHE v576->v577.",
-      "commit": "7040eb2"
-    },
     {
       "cycle": 283,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-02T03:10:00.000Z",
       "summary": "critique(cycle287) 계획대로 금액 검색에 '천'(1,000) 단위 접미사를 추가했다. logic.js의 parseAmountUnit 정규식을 /^(\\d+(?:\\.\\d+)?)(천|만|억)?$/로 확장하고 배수 매핑에 '천'→1000을 추가(무접미사/'만'/'억' 기존 동작은 100% 보존, parseAmountUnit('10만원')은 여전히 null). normalizeAmountSpacing의 단위 뒤 '원' 제거·'~' 붙이기 정규식 두 곳도 (만|억)→(천|만|억)로 함께 넓혀 '3천원'/'5천~1만' 같은 입력도 parseAmountUnit에 도달하기 전에 정규화되게 했다 — matchTxnQuery/matchRecQuery/matchGoalQuery 세 함수는 cycle286의 matchQueryTerms 공통화 덕에 전혀 손대지 않고도 자동 전파됨을 matchGoalQuery 통합 테스트로 실증. 다만 비교연산자/범위(>,>=,<,<=,~)가 없는 '순수 평문+천' 검색(예: 연산자 없는 '3천원')은 parseAmountToken이 애초에 연산자/~ 꼴만 단위를 해석하도록 설계돼 있어('3천'을 숫자로 변환할 방법이 없는 상태로 haystack의 순수 숫자 문자열과 substring 비교되므로 매칭 안 됨) 이번 범위에 들지 않는다(기존 '만'/'억'도 동일한 제약 — cycle278부터 있던 설계, 회귀 아님). 테스트 3건 추가(parseAmountUnit 단위 1건 + normalizeAmountSpacing 단위 1건 + matchGoalQuery 통합 1건, 2526->2529 통과). APP_VERSION 1.47.318->1.47.319, sw.js CACHE v585->v586. node test/run.js 2529/2529 통과, logic.js/sw.js 구문 검증(node --check) 통과, index.html 메인 인라인 script 블록도 동일 방식으로 추출해 node --check 통과 확인. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 288,
+      "phase": "develop",
+      "timestamp": "2026-11-02T04:10:00.000Z",
+      "summary": "범용(은행/카드사) CSV 가져오기(mapGenericCsvRow, app-evolve cycle251 advance)가 날짜 열 값을 csvDateValid()로 YYYY-MM-DD 형식만 받아들이는 공백 발견 — 열 매핑까지 정확히 끝내도, 실제 은행/카드사 CSV가 흔히 쓰는 점(2024.01.15)·슬래시(2024/01/15)·구분자 없음(20240115) 표기나 '이용일시'처럼 날짜+시간이 붙은 칸이면 거의 모든 행이 조용히 error:'date'로 떨어져 이 기능이 그 용도(앱 자체 포맷이 아닌 외부 CSV 가져오기)에선 거의 무력화돼 있었다. logic.js에 순수 함수 normalizeCsvDateCell(s) 신설 — 연도가 맨 앞인 표기(점/슬래시/구분자 없음)만 YYYY-MM-DD로 변환하고 공백 뒤 시간 부분은 버린다. MM/DD/YYYY처럼 연도가 뒤에 오는 표기는 월/일 순서가 로케일마다 반대라 추측하면 위험해 범위에서 제외(기존처럼 error:'date'로 걸러져 사용자가 눈치챔). mapGenericCsvRow가 csvDateValid 호출 전에 이 정규화를 거치게 수정 — csvDateValid()의 달력 유효성 검증(2026-02-30 등)은 그대로 보존. 테스트 6건 추가(normalizeCsvDateCell 단위 3건 + mapGenericCsvRow 통합 3건, 2529->2534 통과). APP_VERSION 1.47.319->1.47.320, sw.js CACHE v586->v587. node test/run.js 2534/2534 통과, logic.js/sw.js 구문 검증(node --check) 통과.",
       "commit": null
     }
   ]

@@ -1158,8 +1158,27 @@ function detectOwnCsvFormat(headerRow){
  * 밖)·future(미래 날짜) 판정은 여기서 하지 않는다. TODAY/RANGE_FROM/RANGE_TO가 index.html 전역이라
  * 이 순수 함수(logic.js)에서는 볼 수 없으므로, 성공한 날짜에 대해 호출부(index.html의
  * buildGenericImportPreview)가 csvRowToImportTxn과 짝이 맞게 덧씌운다. */
+/* 은행/카드사 CSV의 날짜 열은 이 앱이 쓰는 YYYY-MM-DD 하나로만 오지 않는다 — 점(2024.01.15)·
+ * 슬래시(2024/01/15)·구분자 없음(20240115) 표기가 실무에서 흔하고, "이용일시"처럼 날짜+시간이
+ * 한 칸에 붙어 오는 경우("2024-01-15 13:25:33")도 있다. mapGenericCsvRow가 csvDateValid()로
+ * 엄격히 YYYY-MM-DD만 받아들이다 보니, 열 매핑까지 정확히 끝낸 뒤에도 실제 은행 CSV는 거의
+ * 모든 행이 조용히 error:'date'로 떨어져 이 기능(app-evolve cycle251 advance) 자체가 무력화돼
+ * 있었다(app-evolve cycle288 develop). 연도가 맨 앞인(한국 금융권 CSV가 거의 예외 없이 쓰는)
+ * 표기만 다룬다 — MM/DD/YYYY처럼 연도가 뒤에 오는 표기는 월/일 순서가 로케일마다 반대라(미국
+ * MM/DD vs 유럽 DD/MM) 추측하면 조용히 틀린 날짜를 만들 위험이 있어 이번 범위에서 뺀다(그런
+ * 열은 지금처럼 error:'date'로 걸러져 가져오기 미리보기에서 사용자가 눈치챌 수 있다 — 틀리게
+ * 가져와지는 것보다 안전). csvDateValid()가 최종 달력 유효성(2026-02-30 등)은 그대로 걸러준다. */
+function normalizeCsvDateCell(s){
+ s=String(s==null?'':s).trim();
+ const datePart=s.split(/\s+/)[0]||'';
+ let m=datePart.match(/^(\d{4})[.\/](\d{1,2})[.\/](\d{1,2})$/);
+ if(m)return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+ m=datePart.match(/^(\d{4})(\d{2})(\d{2})$/);
+ if(m)return `${m[1]}-${m[2]}-${m[3]}`;
+ return datePart;
+}
 function mapGenericCsvRow(cells,mapping,targetAssetId){
- const date=String((cells&&cells[mapping.dateCol])||'').trim();
+ const date=normalizeCsvDateCell((cells&&cells[mapping.dateCol])||'');
  if(!csvDateValid(date))return{ok:false,error:'date'};
  const memo=mapping.memoCol!=null?String((cells&&cells[mapping.memoCol])||'').trim():'';
  /* 일부 은행/카드사(특히 해외카드 이용내역) CSV는 음수를 '-5000' 대신 회계 표기 괄호
