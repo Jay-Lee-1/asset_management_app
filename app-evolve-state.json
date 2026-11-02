@@ -1,15 +1,8 @@
 {
   "cycle": 291,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 286,
-      "phase": "review",
-      "timestamp": "2026-11-01T21:40:00.000Z",
-      "summary": "cycle286 develop 커밋(8e637c6) 검토 — matchTxnQuery의 lines=splitLines(t) 활용이 matchRecQuery(라인 652)의 패턴과 정확히 일치함을 확인. 분할 없는 일반 거래는 splitLines가 [{amount:t.amount,...}] 하나만 반환해 lines.some 쪽도 t.amount와 동일하게 평가되므로 OR 추가가 회귀를 만들지 않는다. node test/run.js 2520/2520 재확인 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 286,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-11-02T17:40:05.000Z",
       "summary": "matchAssetQuery(자산 검색)가 이름+통화+종목코드/심볼만 haystack에 넣고, 자산 목록/피커 행마다 chipmini로 그대로 노출되는 귀속(owner — '본인'/'배우자' 등 사용자가 직접 이름 붙이는 DB.owners 값)은 빠져 있던 공백 발견 — 귀속별로 자산이 여러 개일 때(예: 배우자 명의 계좌가 여러 개) 이름/통화만으론 구분이 안 돼도 화면에 뻔히 보이는 귀속 칩 문구로는 찾을 방법이 없었다. currency/stockCode와 동일한 방식으로 a.owner를 haystack에 추가. 테스트 4건 추가(2554->2556 통과). APP_VERSION 1.47.325->1.47.326, sw.js CACHE v592->v593. node test/run.js 2556/2556 통과, logic.js/sw.js 구문 검증(node --check) 통과.",
       "commit": "8ac3da6"
+    },
+    {
+      "cycle": 291,
+      "phase": "review",
+      "timestamp": "2026-11-02T18:50:00.000Z",
+      "summary": "cycle291 develop 커밋(8ac3da6) 검토 — matchAssetQuery의 a.owner haystack 추가가 currency/stockCode/cryptoCode와 동일한 패턴(빈 문자열 폴백, NFC 정규화 후 단순 이어붙이기)이라 기존 매칭 규칙을 그대로 재사용함을 확인. a.owner가 DB.owners를 가리키는 id가 아니라 평문 문자열('본인'/'배우자' 등, ownerOf()·renameOwnerSheet() 등에서 동일하게 취급)임을 index.html에서 재확인해 검색어와 직접 비교가 의미 있음을 검증. node test/run.js 2556/2556, logic.js/sw.js 구문 검증(node --check) 모두 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
+      "commit": null
     }
   ]
 }
