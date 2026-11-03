@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.334';
+const APP_VERSION='1.47.335';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6607,11 +6607,23 @@ function setBudgetFrom(c,y,m,amount){
  * 깊이를 24개월로 cap해(토글을 몇 년씩 켜둔 카테고리에서 매 조회마다 재귀가 무한정 깊어지는 것을
  * 방지) 그 이상 과거는 이월 없음(0)으로 본다. 예산은 귀속과 무관하게 전역이므로(budgetForMonth와
  * 동일한 관례) spendByCategory도 항상 '전체' 기준으로 조회 — 현재 보고 있는 ST.spendOwner 필터와
- * 무관하게 전달 지출 전체를 봐야 이월 계산이 맞다. */
+ * 무관하게 전달 지출 전체를 봐야 이월 계산이 맞다.
+ * archiveTxnsBefore(오래된 데이터 정리)가 cutoffDate 이전 거래를 DB.txns에서 완전히 지워버리면
+ * 전달이 바로 그 archivedThroughDate 이전인 경우 spendByCategory가 "그 달엔 하나도 안 썼다"로
+ * 보여, 실제로는 다 쓴 예산을 전액 이월로 돌려주는 버그가 있었다(app-evolve cycle295 develop) —
+ * 300,000원 예산을 280,000원 다 쓰고 20,000원만 이월해야 할 달을 정리하면, 다음 달 이월이
+ * 20,000원이 아니라 300,000원 전액으로 부풀려졌다. 그 달의 실제 지출을 archiveTxnsBefore 뒤에는
+ * 알 길이 없으므로("모르면 추측하지 않는다", budgetCarry의 초과분 clamp와 같은 원칙), 전달이
+ * 정리된 범위에 걸리면 이월 자체를 0으로 끊는다 — 전액 이월(실제보다 부풀림)보다 이월 없음(실제보다
+ * 깐깐함)이 예산을 초과해서 쓰게 두는 쪽보다 안전하다. DB.settings.archivedThroughDate는
+ * archiveTxnsBefore가 남기는 기기-로컬 전용 마커(DB.settings 자체가 동기화 대상이 아니므로
+ * mergeRemoteDataIntoLocal 배선이 필요 없음, DB 스키마 완전성 가드 테스트의 LOCAL_ONLY_DB_FIELDS 참고). */
 function budgetCarryFor(c,y,m,depth=0){
  if(!isBudgetRolloverCat(c))return 0;
  if(depth>=24)return 0;
  let py=y,pm=m-1;if(pm<1){pm=12;py--}
+ const archivedThrough=DB.settings&&DB.settings.archivedThroughDate;
+ if(archivedThrough&&monthEndStr(py,pm)<=archivedThrough)return 0;
  const prevBudget=budgetForMonthWithCarry(c,py,pm,depth+1);
  if(!prevBudget)return 0;
  const prevSpent=spendByCategory(py,pm,'전체').find(x=>x.c===c);
@@ -10459,11 +10471,17 @@ function archiveTxnsBefore(cutoffDate){
  });
  DB.txns=DB.txns.filter(t=>t.date>cutoffDate);
  DB.deletedIds=DB.deletedIds||{};const now=Date.now();removed.forEach(t=>DB.deletedIds[t.id]=now);
+ DB.settings=DB.settings||{};
+ const prevArchivedThrough=DB.settings.archivedThroughDate; /* budgetCarryFor(index.html)가 정리된
+  달의 이월을 전액으로 잘못 부풀리지 않도록 남기는 마커(app-evolve cycle295 develop) — 이미 정리한
+  적이 있다면(여러 번 정리) 더 뒤(최신) cutoffDate만 유지한다 */
+ if(!prevArchivedThrough||cutoffDate>prevArchivedThrough)DB.settings.archivedThroughDate=cutoffDate;
  save();renderCurrent();
  undoToast(`${removed.length}개의 오래된 내역을 정리했어요`,()=>{
   DB.assets.forEach(a=>{const p=prevBase[a.id];if(!p)return;a.baseAmount=p.baseAmount;a.amountKRW=p.amountKRW;touch(a)});
   (DB.recurrences||[]).forEach(r=>{const p=prevRec[r.id];if(!p)return;r.startDate=p.startDate;r.skip=p.skip;r.edits=p.edits;r.confirmedDates=p.confirmedDates;touch(r)});
   DB.txns.push(...removed);removed.forEach(t=>delete DB.deletedIds[t.id]);
+  DB.settings.archivedThroughDate=prevArchivedThrough;
   save();renderCurrent();toast('되돌렸어요')});
 }
 /* 선택 모드(일별거래/전체내역)의 '카테고리' 버튼이 피커에서 고른 카테고리를 실제로 적용하는

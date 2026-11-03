@@ -2419,6 +2419,35 @@ test('budgetCarryFor: depth cap(24개월)을 넘는 과거까지 재귀하지 �
   sandbox.DB = { catBudgetRollover: { 'expense:식비': true }, budgetHistory: { 식비: history }, txns: [], recurrences: [] };
   assert.doesNotThrow(() => sandbox.budgetCarryFor('식비', 2026, 6), 'RangeError(스택 초과) 없이 끝나야 함');
 });
+/* archiveTxnsBefore('오래된 데이터 정리')가 cutoffDate 이전 거래를 DB.txns에서 완전히 지워버리면,
+ * budgetCarryFor가 그 달의 지출을 spendByCategory로 다시 조회할 때 "하나도 안 썼다"로 보여 실제론
+ * 다 쓴 예산을 전액 이월로 돌려주는 버그가 있었다(app-evolve cycle295 develop) — 아래 두 테스트는
+ * DB.settings.archivedThroughDate(archiveTxnsBefore가 남기는 마커)가 전달을 덮으면 이월을 0으로
+ * 끊어 이 버그를 막는지, 그리고 그 마커가 전달을 덮지 않을 때는 평소처럼 정상 계산되는지를 검증한다. */
+test('budgetCarryFor: 전달이 archivedThroughDate(오래된 데이터 정리로 거래가 지워진 범위)에 걸리면, 실제론 다 쓴 예산이라도 전액 이월이 아니라 0이 되어야 한다', () => {
+  sandbox.DB = {
+    catBudgetRollover: { 'expense:식비': true },
+    budgetHistory: { 식비: [{ from: '2026-05', amount: 300000 }] },
+    txns: [], // 5월 지출(실제로는 280000을 썼었음) 거래가 정리로 지워져 전달 지출이 0으로 보임
+    recurrences: [],
+    settings: { archivedThroughDate: '2026-05-31' },
+  };
+  assert.strictEqual(
+    sandbox.budgetCarryFor('식비', 2026, 6),
+    0,
+    '거래가 지워져 실제 지출을 알 수 없는 달은 이월 없음(0)으로 봐야 함 — txns가 비어 있다고 300000 전액을 이월하면 안 됨',
+  );
+});
+test('budgetCarryFor: archivedThroughDate가 있어도 전달을 덮지 않으면(그보다 이전 달까지만 정리됨) 평소처럼 지출 기준으로 이월을 계산한다', () => {
+  sandbox.DB = {
+    catBudgetRollover: { 'expense:식비': true },
+    budgetHistory: { 식비: [{ from: '2026-05', amount: 300000 }] },
+    txns: [{ id: '1', type: 'expense', category: '식비', amount: 200000, date: '2026-05-10', confirmed: true }],
+    recurrences: [],
+    settings: { archivedThroughDate: '2026-04-30' }, // 4월까지만 정리됐고 5월 거래는 그대로 남아있음
+  };
+  assert.strictEqual(sandbox.budgetCarryFor('식비', 2026, 6), 100000, '5월은 아직 정리 안 된 범위라 300000 중 200000 사용 → 100000 이월이 정상 계산되어야 함');
+});
 test('budgetForMonthWithCarry: 토글이 꺼져 있으면 기존 budgetForMonth()와 완전히 동일하다(하위호환)', () => {
   sandbox.DB = {
     catBudgetRollover: {},
@@ -9241,6 +9270,31 @@ test('archiveTxnsBefore: undo하면 baseAmount와 지워진 거래가 정확히 
   assert.strictEqual(a1.baseAmount, 0, 'undo하면 baseAmount가 원래 값으로 복원되어야 함');
   assert.ok(sandbox.DB.txns.some(t => t.id === 't1'), 'undo하면 지웠던 거래가 되살아나야 함');
   assert.strictEqual(sandbox.DB.deletedIds.t1, undefined, 'undo하면 톰스톤도 지워져야 함');
+});
+/* budgetCarryFor(위 '토글 opt-in 이월' 섹션)가 정리된 달의 이월을 전액으로 잘못 부풀리지 않도록
+ * archiveTxnsBefore가 남기는 DB.settings.archivedThroughDate 마커(app-evolve cycle295 develop). */
+test('archiveTxnsBefore: DB.settings.archivedThroughDate를 cutoffDate로 남긴다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { assets: [], txns: [{ id: 't1', date: '2023-02-01' }], recurrences: [], settings: {}, deletedIds: {} };
+  sandbox.lastUndo = null;
+  sandbox.archiveTxnsBefore('2024-12-31');
+  assert.strictEqual(sandbox.DB.settings.archivedThroughDate, '2024-12-31');
+});
+test('archiveTxnsBefore: 이미 더 뒤(최신) 날짜까지 정리된 적이 있으면 더 이전 cutoffDate로 다시 정리해도 archivedThroughDate가 뒤로 가지 않는다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { assets: [], txns: [{ id: 't1', date: '2020-01-01' }], recurrences: [], settings: { archivedThroughDate: '2025-06-30' }, deletedIds: {} };
+  sandbox.lastUndo = null;
+  sandbox.archiveTxnsBefore('2024-12-31');
+  assert.strictEqual(sandbox.DB.settings.archivedThroughDate, '2025-06-30', '더 이전 cutoff로는 이미 정리된 더 뒤 날짜를 덮어쓰면 안 됨');
+});
+test('archiveTxnsBefore: undo하면 archivedThroughDate도 정리 이전 값으로 돌아온다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { assets: [], txns: [{ id: 't1', date: '2023-02-01' }], recurrences: [], settings: {}, deletedIds: {} };
+  sandbox.lastUndo = null;
+  sandbox.archiveTxnsBefore('2024-12-31');
+  assert.strictEqual(sandbox.DB.settings.archivedThroughDate, '2024-12-31');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.settings.archivedThroughDate, undefined, 'undo하면 마커도 정리 전(미설정) 상태로 돌아가야 함');
 });
 test('archiveTxnsBefore: 미확인(pending) 이체는 balancesUpTo와 동일하게 baseAmount 계산에서 제외된다(완료 잔액 기준)', () => {
   sandbox.TWi = -1;

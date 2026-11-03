@@ -1,6 +1,6 @@
 {
   "cycle": 295,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
@@ -134,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-03T11:55:00.000Z",
       "summary": "critique(cycle294) 계획대로 spendTrend/incomeTrend의 중복 월별 재계산을 제거했다. makeMonthCatCache(fn,owner)를 새로 만들어 `${y}-${m}` 키로 spendByCategory/incomeByCategory 결과를 메모이즈하는 조회 함수를 돌려주고, openSpendAnalysis()/openIncomeAnalysis()가 화면당 한 번만 만들어 rows/totalAvg 계산과 spendTrend(r.c,y,m,3,owner,catCache)/incomeTrend(...,catCache) 호출에 그대로 재사용한다. spendTrend/incomeTrend는 선택적 cache 인자가 없으면(기존 호출부·테스트) 예전처럼 직접 재계산해 하위호환을 유지한다. 테스트 6건 추가: makeMonthCatCache 메모이즈/달별 분리 2건, cache 유무가 동일 결과를 내는지(spendTrend/incomeTrend) 2건, openSpendAnalysis/openIncomeAnalysis가 카테고리 수와 무관하게 spendByCategory/incomeByCategory를 정확히 4번만 호출하는지(spy) 2건. 테스트 2600->2606 통과. APP_VERSION 1.47.333->1.47.334, sw.js CACHE v600->v601. node test/run.js 2606/2606 통과, index.html 인라인 스크립트(수정된 블록) node --check 통과. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 295,
+      "phase": "develop",
+      "timestamp": "2026-11-03T12:30:00.000Z",
+      "summary": "budgetCarryFor(예산 이월)가 전달 지출을 spendByCategory로 다시 조회하는데, 그 달 거래가 archiveTxnsBefore(오래된 데이터 정리)로 완전히 지워진 뒤면 지출이 0으로 보여 실제로는 다 쓴 예산을 전액 이월로 돌려주던 버그 발견 — 300,000원 예산을 280,000원 써서 20,000원만 이월해야 할 달을 정리하면 다음 달 이월이 300,000원 전액으로 부풀려졌다(서브에이전트 조사로 발견, node로 실제 함수를 추출해 재현 확인). archiveTxnsBefore가 DB.settings.archivedThroughDate(기기-로컬 전용 — settings는 동기화 대상이 아니라 mergeRemoteDataIntoLocal 배선 불필요)에 cutoffDate를 남기고(이미 더 뒤까지 정리됐으면 유지, undo 시 이전 값으로 복원), budgetCarryFor는 전달이 그 범위에 걸리면 지출을 추측하지 않고 이월을 0으로 끊는다(전액 이월보다 이월 없음이 안전). 테스트 5건 추가(2606->2611 통과). APP_VERSION 1.47.334->1.47.335, sw.js CACHE v601->v602. node test/run.js 2611/2611 통과.",
       "commit": null
     }
   ]
