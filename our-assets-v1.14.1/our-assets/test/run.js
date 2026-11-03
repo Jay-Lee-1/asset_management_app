@@ -7541,6 +7541,24 @@ test('normalizeAmountSpacing: "천" 단위도 "만"/"억"과 동일하게 "원"/
   assert.strictEqual(sandbox.normalizeAmountSpacing('5천 ~ 1만'), '5천~1만');
   assert.strictEqual(sandbox.normalizeAmountSpacing('5천원~1만원'), '5천~1만');
 });
+/* parseAmountUnit이 "1억5000만"/"1억5천만"류 복합 억·만 표기를 지원하게 됐지만(app-evolve
+ * cycle293 develop), normalizeAmountSpacing의 "원"/"~" 전처리 패턴은 숫자 바로 뒤에 (천|만|억)
+ * 중 하나만 허용해 "1억5000만원"은(우연히 "5000만원" 부분이 단일 패턴에 걸려) 제대로 줄었지만
+ * "천"과 "만" 두 접미사가 겹친 "1억5천만원"은 숫자 바로 뒤에 "원"이 오지 않는다고 보고 전혀
+ * 매칭되지 않아 끝에 "원"이 남은 채 parseAmountUnit에 전달돼 다시 null로 떨어졌다(app-evolve
+ * cycle293 review) — 1억원대 금액을 '원'까지 붙여 쓰는 가장 흔한 복합 표기가 조용히 0건으로
+ * 떨어지는 실제 버그였다. */
+test('normalizeAmountSpacing: 복합 억·만 표기("1억5천만"류)도 "원"/"~" 정규화를 지원한다', () => {
+  assert.strictEqual(sandbox.normalizeAmountSpacing('1억5천만원'), '1억5천만', '천이 끼어 있어 숫자 바로 뒤가 "원"이 아닌 복합 표기도 지워져야 함');
+  assert.strictEqual(sandbox.normalizeAmountSpacing('1억5000만원'), '1억5000만');
+  assert.strictEqual(sandbox.normalizeAmountSpacing('>1억5천만원'), '>1억5천만');
+  assert.strictEqual(sandbox.normalizeAmountSpacing('1억~1억5천만원'), '1억~1억5천만');
+  assert.strictEqual(sandbox.normalizeAmountSpacing('1억5천만 ~ 2억'), '1억5천만~2억', '복합 표기가 ~ 왼쪽에 와도 공백이 정규화돼야 함');
+});
+test('parseAmountToken: "1억5천만원"처럼 복합 표기에 "원"이 붙어도 비교/범위 연산자가 정상 파싱된다', () => {
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.parseAmountToken(sandbox.normalizeAmountSpacing('>1억5천만원')))), {op:'>',v1:150000000});
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.parseAmountToken(sandbox.normalizeAmountSpacing('1억~1억5천만원')))), {op:'range',v1:100000000,v2:150000000});
+});
 test('matchTxnQuery: 연산자 뒤에 공백을 넣어 자연스럽게 입력해도("> 10000") 금액 비교로 매칭된다', () => {
   const big = { memo: '', category: '식비', amount: 110000, fromAssetId: null, toAssetId: null };
   const small = { memo: '', category: '식비', amount: 10000, fromAssetId: null, toAssetId: null };

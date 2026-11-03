@@ -588,12 +588,22 @@ function amountMatchesToken(amount,parsed){
  * 다른 자리에 쓰인 경우는 \d로 시작하지 않아 전혀 건드리지 않는다.
  * parseAmountUnit에 '천' 접미사가 추가되면서(app-evolve cycle288 advance) 이 함수가 돌보는
  * 단위 뒤 '원'/'~' 전처리도 '만|억'만 알던 그대로 두면 "3천원"/"3천~1만"이 걸리지 않아 다시 null로
- * 떨어지므로 같은 자리에 '천'을 추가했다. */
+ * 떨어지므로 같은 자리에 '천'을 추가했다.
+ * parseAmountUnit이 "1억5000만"/"1억5천만"류 복합 억·만 표기를 지원하게 되면서(app-evolve
+ * cycle293 develop), 여기 단위 패턴은 숫자 바로 뒤에 (천|만|억) 중 하나만 허용해 "1억5000만원"은
+ * (우연히 "5000만원" 부분이 단일 패턴에 걸려) "1억5000만"으로 제대로 줄었지만, "1억5천만원"은
+ * "천"과 "만" 두 접미사가 겹쳐 있어 숫자 바로 뒤에 "원"이 오지 않는다고 보고 전혀 매칭되지 않아
+ * "1억5천만"으로 줄이지 못하고 끝에 "원"이 남아 parseAmountUnit이 다시 null로 떨어졌다(app-evolve
+ * cycle293 review) — "1억5천만원"처럼 1억원대 금액을 '원'까지 붙여 자연스럽게 쓰는, 복합 표기 중
+ * 가장 흔한 형태가 조용히 0건으로 떨어지는 실제 버그였다. 복합 표기((억)?(숫자)(천)?만)를 단일
+ * 접미사 패턴보다 먼저 시도하는 대안으로 추가해 "원"/"~" 전처리가 parseAmountUnit이 아는 두
+ * 형식을 모두 알아보게 한다. */
 function normalizeAmountSpacing(q){
  let s=String(q||'');
- s=s.replace(/(\d+(?:\.\d+)?(?:천|만|억)?)원(?=\s|~|$)/g,'$1');
+ const unit=/(?:\d+억)?\d+(?:\.\d+)?(?:천)?만|\d+(?:\.\d+)?(?:천|만|억)?/;
+ s=s.replace(new RegExp('('+unit.source+')원(?=\\s|~|$)','g'),'$1');
  s=s.replace(/(>=|<=|>|<)\s+(?=\d)/g,'$1');
- s=s.replace(/(\d+(?:\.\d+)?(?:천|만|억)?)\s*~\s*(?=\d)/g,'$1~');
+ s=s.replace(new RegExp('('+unit.source+')\\s*~\\s*(?=\\d)','g'),'$1~');
  return s;
 }
 /* matchTxnQuery/matchRecQuery/matchGoalQuery가 각자 따로 들고 있던 "토큰 하나가 금액
