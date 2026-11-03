@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.331';
+const APP_VERSION='1.47.332';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5635,7 +5635,7 @@ function saveRec(){
 }
 function commitRec(d,wasEditing){
  _savedDrafts.add(d);touch(d);
- let cleaned=0;
+ let cleaned=0,undoFn=null;
  let fromDate=d.startDate; /* invalidateBalances(fromDate)는 fromDate 이전까지만 반영된 _balCache 항목을
   재사용한다 — 시작일을 바꿔 수정한 경우 원래 시작일과 새 시작일 중 더 이른 쪽부터 잔액이 달라질 수
   있으므로 min(orig.startDate,d.startDate)를 넘겨야 한다(saveTx의 min(oldDate,d.date)와 동일한
@@ -5656,11 +5656,16 @@ function commitRec(d,wasEditing){
       그대로면 pruneOrphanRecOverrides가 0을 반환해 평소 동작에는 영향이 없다(app-evolve cycle173 develop). */
    cleaned=pruneOrphanRecOverrides(d);
    DB.recurrences[i]=d;
+   /* recSaveScopeApply와 같은 위험군(과거 기록에도 영향 줄 수 있는 직접 교체)인데 확인 시트가 없다는
+      이유로 되돌릴 수단만 빠져 있었다 — orig는 splitRecurrenceAt/pruneOrphanRecOverrides 어느 쪽도
+      변형하지 않는 원본 참조라 그대로 복원하면 충분하다(app-evolve cycle293 advance). */
+   undoFn=()=>{DB.recurrences[i]=orig;touchSave(orig);renderCurrent();toast('되돌렸어요')};
   }
  }
  else{DB.recurrences.push(Object.assign({},d,{id:uid(),active:d.active!==false,skip:[],edits:{},autoConfirm:d.autoConfirm!==false,confirmedDates:[],varying:!!d.varying}))}
  save({fromDate});closeSheet();renderCurrent();
- toast(wasEditing?(cleaned>0?`반복을 수정했어요 · 새 일정과 안 맞는 개별 삭제·수정 ${cleaned}건을 정리했어요`:'반복을 수정했어요'):'반복 설정을 저장했어요');
+ const msg=wasEditing?(cleaned>0?`반복을 수정했어요 · 새 일정과 안 맞는 개별 삭제·수정 ${cleaned}건을 정리했어요`:'반복을 수정했어요'):'반복 설정을 저장했어요';
+ if(undoFn)undoToast(msg,undoFn);else toast(msg);
 }
 /* 반복 이력(과거 회차)에 영향을 주는 필드만 비교: 메모는 소급 적용돼도 무해하지만,
    weekend는 recDates()의 shiftWeekend()가 과거 회차의 날짜도 그대로 재계산해 바꾸므로 포함해야 한다.
@@ -5744,7 +5749,7 @@ function recSaveScopeConfirm(orig,d,i){
 function recSaveScopeApply(scope){
  const ctx=window._recSaveScope;if(!ctx)return;window._recSaveScope=null;
  const {orig,d,i}=ctx;
- let cleaned=0;
+ let cleaned=0,undoFn;
  /* saveRec()의 확인 시트 없는 즉시 적용 경로는 이미 cycle209에서 save({fromDate:min(orig.startDate,
   * d.startDate)})를 받았는데, 이 확인 시트를 거치는 경로(recSaveScopeApply)만 인자 없는 save()를
   * 그대로 호출해 '전체 적용'/'오늘부터 이후 모두' 둘 다 매번 _balCache를 통째로 비웠다(saveRec과
@@ -5756,12 +5761,18 @@ function recSaveScopeApply(scope){
   const {updatedOriginal,newRec,cleaned:c}=splitRecurrenceAt(orig,d,TODAY);
   cleaned=c;
   DB.recurrences[i]=updatedOriginal;DB.recurrences.push(newRec);
+  /* 자산 삭제(deleteAssetsUndo)·카테고리 삭제(doDeleteCat)·백업 복원(proceedWithBackupObj) 등
+   * 같은 위험군(스스로 '과거 기록도 함께 바뀌어요'라고 경고)이면서도 유일하게 undoToast가 없던
+   * 공백 — orig는 splitRecurrenceAt이 변형하지 않는 원본 참조라 그대로 되돌리면 충분하다
+   * (app-evolve cycle293 advance). */
+  undoFn=()=>{DB.recurrences[i]=orig;DB.recurrences=DB.recurrences.filter(x=>x.id!==newRec.id);touchSave(orig);renderCurrent();toast('되돌렸어요')};
  }else{
   cleaned=pruneOrphanRecOverrides(d);
   DB.recurrences[i]=d;
+  undoFn=()=>{DB.recurrences[i]=orig;touchSave(orig);renderCurrent();toast('되돌렸어요')};
  }
  save({fromDate});closeSheet();renderCurrent();
- toast(cleaned>0?`반복을 수정했어요 · 새 일정과 안 맞는 개별 삭제·수정 ${cleaned}건을 정리했어요`:'반복을 수정했어요');
+ undoToast(cleaned>0?`반복을 수정했어요 · 새 일정과 안 맞는 개별 삭제·수정 ${cleaned}건을 정리했어요`:'반복을 수정했어요',undoFn);
 }
 function delRecConfirm(id){confirmSheet('반복 삭제','이 반복 내역을 삭제할까요? 앞으로 자동 기록이 중단돼요.','삭제',()=>{deleteRecsUndo(new Set([id]))})}
 

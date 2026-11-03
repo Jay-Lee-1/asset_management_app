@@ -10518,24 +10518,25 @@ test("saveRec: day를 바꿔 '전체 적용'하면 새 스케줄과 안 맞는 s
   };
   sandbox.DB = { recurrences: [r] };
   sandbox.recDraft = { ...JSON.parse(JSON.stringify(r)), day: 10 };
-  sandbox.lastToast = null;
+  sandbox.lastUndo = null;
   sandbox.saveRec();
   sandbox.recSaveScopeApply('all');
   const saved = sandbox.DB.recurrences[0];
   assert.strictEqual(saved.day, 10);
   assert.strictEqual(saved.skip.length, 0, '옛 day=5 기준 skip은 새 스케줄과 안 맞아 정리되어야 함');
   assert.strictEqual(Object.keys(saved.edits).length, 0, '옛 day=5 기준 edits도 정리되어야 함');
-  assert.ok(sandbox.lastToast.includes('2건'), '정리된 건수(skip 1 + edits 1 = 2)가 토스트에 안내되어야 함');
+  assert.ok(sandbox.lastUndo && sandbox.lastUndo.msg.includes('2건'), '정리된 건수(skip 1 + edits 1 = 2)가 undoToast 메시지에 안내되어야 함(app-evolve cycle293부터 toast가 아니라 undoToast)');
 });
 test("saveRec: '전체 적용'해도 정리할 고아 항목이 없으면 토스트는 기존 문구 그대로다(회귀 방지)", () => {
   sandbox.TWi = -1; sandbox.TODAY = '2026-06-15'; sandbox.RANGE_TO = '2027-06-15';
   const r = { id: 'r1', type: 'expense', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, count: null, amount: 1000, category: '관리비', memo: '관리비', fromAssetId: 'a1', toAssetId: null, active: true, weekend: 'none', skip: [], edits: {} };
   sandbox.DB = { recurrences: [r] };
   sandbox.recDraft = { ...JSON.parse(JSON.stringify(r)), fromAssetId: 'a2' };
-  sandbox.lastToast = null;
+  sandbox.lastUndo = null;
   sandbox.saveRec();
   sandbox.recSaveScopeApply('all');
-  assert.strictEqual(sandbox.lastToast, '반복을 수정했어요');
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함(app-evolve cycle293부터 toast가 아니라 undoToast)');
+  assert.strictEqual(sandbox.lastUndo.msg, '반복을 수정했어요');
 });
 /* app-evolve cycle173 advance(바로 위)는 recSaveScopeApply('all') 분기에만 pruneOrphanRecOverrides를
  * 배선했는데, saveRec()에는 확인 시트 자체가 아예 뜨지 않고 곧장 덮어쓰는 분기가 하나 더 있다 —
@@ -10556,7 +10557,7 @@ test("saveRec: 과거 회차가 없어 확인 시트 없이 바로 적용되는 
   sandbox.DB = { recurrences: [r] };
   sandbox.recDraft = { ...JSON.parse(JSON.stringify(r)), day: 10 };
   sandbox.lastSheetHtml = null;
-  sandbox.lastToast = null;
+  sandbox.lastUndo = null;
   sandbox.saveRec();
   assert.strictEqual(sandbox.lastSheetHtml, null, '아직 지난 회차가 없으므로 확인 시트가 뜨면 안 됨(즉시 적용 경로)');
   assert.strictEqual(sandbox.DB.recurrences.length, 1);
@@ -10564,7 +10565,7 @@ test("saveRec: 과거 회차가 없어 확인 시트 없이 바로 적용되는 
   assert.strictEqual(saved.day, 10);
   assert.strictEqual(saved.skip.length, 0, '옛 day=5 기준 skip은 새 스케줄과 안 맞아 정리되어야 함');
   assert.strictEqual(Object.keys(saved.edits).length, 0, '옛 day=5 기준 edits도 정리되어야 함');
-  assert.ok(sandbox.lastToast.includes('2건'), '정리된 건수(skip 1 + edits 1 = 2)가 토스트에 안내되어야 함');
+  assert.ok(sandbox.lastUndo && sandbox.lastUndo.msg.includes('2건'), '정리된 건수(skip 1 + edits 1 = 2)가 undoToast 메시지에 안내되어야 함(app-evolve cycle293부터 toast가 아니라 undoToast)');
 });
 /* cycle172/173은 recSaveScopeApply('all') 분기와 확인 시트 없는 즉시 적용 분기만 고쳤고, 'future'
  * (오늘부터 이후 모두) 분기는 splitRecurrenceAt이 만드는 newRec에 pruneOrphanRecOverrides가 전혀
@@ -10580,7 +10581,7 @@ test("saveRec: day를 바꿔 '오늘부터 이후 모두'를 고르면 새로 �
   };
   sandbox.DB = { recurrences: [r] };
   sandbox.recDraft = { ...JSON.parse(JSON.stringify(r)), day: 10 };
-  sandbox.lastToast = null;
+  sandbox.lastUndo = null;
   sandbox.saveRec();
   sandbox.recSaveScopeApply('future');
   assert.strictEqual(sandbox.DB.recurrences.length, 2);
@@ -10590,7 +10591,7 @@ test("saveRec: day를 바꿔 '오늘부터 이후 모두'를 고르면 새로 �
   assert.strictEqual(newRec.day, 10);
   assert.strictEqual(newRec.skip.length, 0, '새 구간으로 넘어간 옛 day=5 기준 skip은 새 day=10 스케줄과 안 맞아 정리되어야 함');
   assert.strictEqual(Object.keys(newRec.edits).length, 0, '새 구간으로 넘어간 옛 day=5 기준 edits도 정리되어야 함');
-  assert.ok(sandbox.lastToast.includes('2건'), '정리된 건수(skip 1 + edits 1 = 2)가 토스트에 안내되어야 함');
+  assert.ok(sandbox.lastUndo && sandbox.lastUndo.msg.includes('2건'), '정리된 건수(skip 1 + edits 1 = 2)가 undoToast 메시지에 안내되어야 함(app-evolve cycle293부터 toast가 아니라 undoToast)');
 });
 test("saveRec: '오늘부터 이후 모두'를 골라도 스케줄이 안 바뀌면(fromAssetId만 변경) 새 구간의 skip/edits가 그대로 남고 토스트도 기존 문구다(회귀 방지)", () => {
   sandbox.TWi = -1; sandbox.TODAY = '2026-06-15'; sandbox.RANGE_TO = '2027-06-15';
@@ -10601,14 +10602,15 @@ test("saveRec: '오늘부터 이후 모두'를 골라도 스케줄이 안 바뀌
   };
   sandbox.DB = { recurrences: [r] };
   sandbox.recDraft = { ...JSON.parse(JSON.stringify(r)), fromAssetId: 'a2' };
-  sandbox.lastToast = null;
+  sandbox.lastUndo = null;
   sandbox.saveRec();
   sandbox.recSaveScopeApply('future');
   const newRec = sandbox.DB.recurrences.find(x => x.id !== 'r1');
   assert.strictEqual(newRec.fromAssetId, 'a2');
   assert.deepStrictEqual(newRec.skip, ['2026-08-05'], '스케줄이 안 바뀌었으면 새 구간의 skip도 그대로 남아야 함');
   assert.strictEqual(JSON.stringify(newRec.edits), JSON.stringify({ '2026-09-05': { amount: 500 } }), '스케줄이 안 바뀌었으면 새 구간의 edits도 그대로 남아야 함');
-  assert.strictEqual(sandbox.lastToast, '반복을 수정했어요', '정리할 게 없으면 토스트 문구는 기존 그대로여야 함');
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함(app-evolve cycle293부터 toast가 아니라 undoToast)');
+  assert.strictEqual(sandbox.lastUndo.msg, '반복을 수정했어요', '정리할 게 없으면 메시지 문구는 기존 그대로여야 함');
 });
 test('saveRec: 같은(확인 시트 없는) 즉시 적용 경로라도 스케줄이 안 바뀌면(fromAssetId만 변경) 기존 skip/edits는 그대로 남고 토스트도 기존 문구다(회귀 방지)', () => {
   sandbox.TWi = -1; sandbox.TODAY = '2026-06-15'; sandbox.RANGE_TO = '2027-06-15';
@@ -10619,13 +10621,14 @@ test('saveRec: 같은(확인 시트 없는) 즉시 적용 경로라도 스케줄
   };
   sandbox.DB = { recurrences: [r] };
   sandbox.recDraft = { ...JSON.parse(JSON.stringify(r)), fromAssetId: 'a2' };
-  sandbox.lastToast = null;
+  sandbox.lastUndo = null;
   sandbox.saveRec();
   const saved = sandbox.DB.recurrences[0];
   assert.strictEqual(saved.fromAssetId, 'a2', '즉시 적용되어야 함');
   assert.deepStrictEqual(saved.skip, ['2026-08-05'], '스케줄이 안 바뀌었으면 기존 skip이 그대로 남아야 함');
   assert.strictEqual(JSON.stringify(saved.edits), JSON.stringify({ '2026-09-05': { amount: 500 } }), '스케줄이 안 바뀌었으면 기존 edits도 그대로 남아야 함');
-  assert.strictEqual(sandbox.lastToast, '반복을 수정했어요', '정리할 게 없으면 토스트 문구는 기존 그대로여야 함');
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함(app-evolve cycle293부터 toast가 아니라 undoToast)');
+  assert.strictEqual(sandbox.lastUndo.msg, '반복을 수정했어요', '정리할 게 없으면 메시지 문구는 기존 그대로여야 함');
 });
 test('saveRec: 신규 반복 등록(id 없음)은 기존처럼 회귀 없이 바로 추가된다', () => {
   sandbox.TWi = -1; sandbox.TODAY = '2026-06-15';
@@ -10729,6 +10732,57 @@ test("recSaveScopeApply('future'): 'future' 분기도 min(orig.startDate,d.start
   } finally { sandbox.save = saveOrig; }
   assert.strictEqual(saveCalls.length, 1);
   assert.strictEqual(saveCalls[0] && saveCalls[0].fromDate, '2026-01-05', "'future' 분기도 원본 시작일을 fromDate로 넘겨야 함(과거 구간은 안 바뀌어도, 더 이른 날짜까지만 캐시를 보존하는 안전한 하한)");
+});
+/* ---------- recSaveScopeApply/commitRec: 반복 수정 경로에 undo 추가 (app-evolve cycle293 advance) ----------
+ * 자산 삭제/카테고리 삭제/일괄 카테고리 변경/CSV 가져오기/백업 복원과 같은 위험군(스스로 '과거
+ * 기록도 함께 바뀌어요'라고 경고)인데도 recSaveScopeApply('future'/'all')와, 확인 시트를 거치지
+ * 않는 commitRec()의 즉시 적용 경로만 유일하게 되돌릴 수단이 없었다(cycle293 critique). */
+test("recSaveScopeApply('all'): undoToast로 되돌리면 원본 레코드가 그대로 복원된다", () => {
+  sandbox.TWi = -1; sandbox.TODAY = '2026-06-15';
+  const r = { id: 'r1', type: 'expense', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, count: null, amount: 1000, category: '관리비', memo: '관리비', fromAssetId: 'a1', toAssetId: null, skip: [], edits: {}, active: true };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.recDraft = { ...JSON.parse(JSON.stringify(r)), amount: 2000, fromAssetId: 'a2' };
+  sandbox.saveRec(); // 과거 회차가 있어 확인 시트로 넘어감
+  sandbox.lastUndo = null;
+  sandbox.recSaveScopeApply('all');
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함');
+  assert.strictEqual(sandbox.DB.recurrences[0].amount, 2000, '적용 직후에는 새 값이어야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.recurrences.length, 1);
+  assert.strictEqual(sandbox.DB.recurrences[0], r, '원본 레코드 참조 그대로 복원되어야 함');
+  assert.strictEqual(sandbox.DB.recurrences[0].amount, 1000, '금액이 원래대로 되돌아가야 함');
+  assert.strictEqual(sandbox.DB.recurrences[0].fromAssetId, 'a1', '결제 계좌도 원래대로 되돌아가야 함');
+});
+test("recSaveScopeApply('future'): undoToast로 되돌리면 분리 생성된 구간이 사라지고 원본이 되돌아온다", () => {
+  sandbox.TWi = -1; sandbox.TODAY = '2026-06-15';
+  const r = { id: 'r1', type: 'expense', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, count: null, amount: 1000, category: '관리비', memo: '관리비', fromAssetId: 'a1', toAssetId: null, skip: [], edits: {}, active: true };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.recDraft = { ...JSON.parse(JSON.stringify(r)), amount: 2000 };
+  sandbox.saveRec();
+  sandbox.lastUndo = null;
+  sandbox.recSaveScopeApply('future');
+  assert.strictEqual(sandbox.DB.recurrences.length, 2, '적용 직후엔 분리된 두 구간이어야 함');
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.recurrences.length, 1, '분리로 새로 생긴 구간이 사라져야 함');
+  assert.strictEqual(sandbox.DB.recurrences[0], r, '원본 레코드 참조 그대로 복원되어야 함');
+  assert.strictEqual(sandbox.DB.recurrences[0].endDate, null, '원본의 endDate(무한 반복)도 되돌아와야 함');
+  assert.strictEqual(sandbox.DB.recurrences[0].amount, 1000);
+});
+test('commitRec: 과거 회차가 없어 확인 시트 없이 즉시 적용되는 경로(스케줄 변경)도 undoToast로 되돌릴 수 있다', () => {
+  sandbox.TWi = -1; sandbox.TODAY = '2026-06-15';
+  const r = { id: 'r1', type: 'expense', freq: 'monthly', day: 5, startDate: '2026-07-05', endDate: null, count: null, amount: 1000, category: '관리비', memo: '관리비', fromAssetId: 'a1', toAssetId: null, skip: [], edits: {}, active: true };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.recDraft = { ...JSON.parse(JSON.stringify(r)), fromAssetId: 'a2', day: 10 };
+  sandbox.lastUndo = null;
+  sandbox.saveRec();
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함');
+  assert.strictEqual(sandbox.DB.recurrences[0].fromAssetId, 'a2', '적용 직후에는 새 값이어야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.recurrences.length, 1);
+  assert.strictEqual(sandbox.DB.recurrences[0], r, '원본 레코드 참조 그대로 복원되어야 함');
+  assert.strictEqual(sandbox.DB.recurrences[0].fromAssetId, 'a1');
+  assert.strictEqual(sandbox.DB.recurrences[0].day, 5);
 });
 /* ---------- deleteRecsUndo: save({fromDate})로 invalidateBalances의 부분 무효화 경로에 날짜를
  * 넘긴다 (app-evolve cycle210 develop) ----------

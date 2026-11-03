@@ -1,19 +1,8 @@
 {
-  "cycle": 293,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "recSaveScopeApply('future'/'all') 반복 수정 전체·이후 적용에 undo 없음",
-    "why": "recSaveScopeConfirm이 '전체 적용'을 고르면 빨간 글씨로 '과거 기록도 함께 바뀌어요 · 잔액 이력이 달라질 수 있어요'라고 명시적으로 경고하는데도, recSaveScopeApply(index.html:5744)의 'future'/'all' 분기는 DB.recurrences를 직접 덮어쓴 뒤 toast(...)만 호출하고 undoToast를 쓰지 않는다. 같은 위험군(자산 삭제 deleteAssetsUndo, 카테고리 삭제 doDeleteCat, 일괄 카테고리 변경 doBulkCat, CSV 가져오기 doCsvImport, 백업 복원 proceedWithBackupObj)은 전부 undoToast로 되돌릴 길을 주는데, 가장 위험하다고 스스로 경고하는 이 경로만 되돌릴 수단이 없다. 사용자가 금액/일정을 잘못 고쳐 '전체 적용'을 누르면 모든 필드를 수동으로 복원해야 한다.",
-    "approach": "recSaveScopeApply 진입 시 scope별로 복원에 필요한 사전 상태를 캡처한다. 'all' 분기는 d로 덮어쓰기 전 orig를 깊은 복사해두고 DB.recurrences[i]=d 적용 후 undoFn에서 DB.recurrences[i]=orig로 되돌린다('all' 분기가 원래 쓰던 pruneOrphanRecOverrides 결과도 원복에 영향 없음, orig 자체가 정리 전 상태이므로). 'future' 분기는 splitRecurrenceAt으로 만들어진 newRec.id와 교체 전 DB.recurrences[i](=원래 레코드, 즉 splitRecurrenceAt 호출 전의 orig)를 캡처해, undoFn에서 DB.recurrences[i]=orig로 복원하고 DB.recurrences=DB.recurrences.filter(x=>x.id!==newRec.id)로 분리 생성된 newRec을 제거한다. 두 분기 모두 마지막 toast(...)를 undoToast(msg, ()=>{ ...복원...; save({fromDate}); renderCurrent(); toast('되돌렸어요'); })로 교체한다 — recSave()의 scope==='all' 분기(약 5440행)가 이미 쓰는 prevAmt/prevMemo/prevSplits 캡처-복원 패턴과 동일한 모양으로 맞춘다. commitRec()의 확인 시트 없는 즉시 적용 경로도 같은 방식으로 undo를 추가해 일관성을 맞춘다. 스키마 변경 없음, build/test는 node test/run.js로 검증."
-  },
+  "cycle": 294,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 288,
-      "phase": "advance",
-      "timestamp": "2026-11-02T07:10:44.040Z",
-      "summary": "critique(cycle288) 계획대로 normalizeCsvDateCell의 구분자 정규식을 [./]에서 [./-]로 확장. 테스트 6건 추가(2534->2536 통과). APP_VERSION 1.47.320->1.47.321, sw.js CACHE v587->v588. node test/run.js 2536/2536 통과. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 289,
       "phase": "develop",
@@ -123,21 +112,21 @@
       "cycle": 292,
       "phase": "advance",
       "timestamp": "2026-11-03T02:10:00.000Z",
-      "summary": "critique(cycle292) 계획대로 반복 내역 '간편 수정'이 분할(splits) 합계 불변식을 지키게 고쳤다. (1) recApply()가 txDraft에 splits(ed.splits!==undefined?ed.splits:r.splits, expandRec과 동일한 폴백)를 깊은 복사로 실어, 폼에서 고쳐도 원본 r.splits/ed.splits가 바로 바뀌지 않게 했다. (2) renderTxSheet()의 rc 분기에서 d.splits.length>=2면 금액 라벨을 '전체 금액'으로 바꾸고 splitFieldHTML(d,'tx',true)를 렌더링 — 기존 txSplitAmt/txSplitMemo/txSplitAdd/txSplitRemove 핸들러를 그대로 재사용한다. 세 번째 인자 noToggle=true는 이 화면에만 추가한 것으로, splitFieldHTML의 '일반 입력으로'(txToggleSplit) 버튼을 숨긴다 — 간편 수정 화면은 edits[date]/newRec/r에 category 오버라이드를 저장할 자리가 없어, 분할을 꺼서 단일 카테고리로 되돌리는 길을 열면 꺼진 채로 저장될 곳이 없기 때문(분할 추가/삭제는 항상 2개 이상을 유지하므로 그대로 둬도 안전). (3) recSave()에 saveRec()과 동일한 분할 검증(카테고리 필수, 금액 필수, sum(splits)===amt)을 추가하고, scope='one'은 edits[date].splits에, scope='future'는 새로 분리된 레코드(newRec.splits)에, scope='all'은 r.splits에 수정된 분할을 반영했다. scope='all'의 undo가 기존엔 amount/memo만 복원했는데 r.splits도 함께 복원하도록 prevSplits를 추가(없으면 분할 수정을 되돌려도 금액만 돌아가고 분할은 안 돌아가는 회귀가 생김). (4) index.html:2722의 stale 주석(ed.splits가 '아직 안 쓰여 항상 undefined'라던 문구)을 scope='one'이 실제로 쓰게 됐다고 갱신. 테스트: recApply가 splits를 깊은 복사로 싣는지(원본 불변, ed.splits 우선, splits 없으면 undefined로 회귀 가드) 3건, recSave 세 scope(one/future/all) 각각 분할 수정이 반영되고 undo로 복원되는지 3건, 분할 검증 실패(합계 불일치/카테고리 누락) 2건, renderTxSheet(rc) 마크업(분할 필드 노출+토글 숨김, splits 없거나 1개면 평소처럼 단일 입력) 2건, splitFieldHTML(d,pfx,noToggle) 실행형 테스트 1건을 추가했다. renderTxSheet(real)가 이제 splitFieldHTML을 호출하는 경로를 타므로 test/run.js FUNCTIONS 공유 sandbox에 splitFieldHTML을 추가했다(안 올리면 recApply/recSave가 분할 있는 회차를 열 때 'splitFieldHTML is not defined'로 깨짐). vm 샌드박스 안에서 JSON.parse로 새로 만들어진 splits 배열은 host 배열과 realm이 달라 deepStrictEqual이 실패하므로, 비교는 기존 recSave future 분할 테스트와 같은 이유로 JSON.stringify 정규화를 썼다. 테스트 11건 추가(2571->2582 통과). APP_VERSION 1.47.328->1.47.329, sw.js CACHE v595->v596. node test/run.js 2582/2582 통과, logic.js/sw.js 구문 검증(node --check) 통과, index.html 메인 인라인 script 블록 vm 파싱 스모크 테스트 통과. pending_advance_plan null로 비움.",
+      "summary": "critique(cycle292) 계획대로 반복 내역 '간편 수정'이 분할(splits) 합계 불변식을 지키게 고쳤다. recApply()가 txDraft에 splits를 깊은 복사로 싣고, renderTxSheet()의 rc 분기가 splitFieldHTML(d,'tx',true)로 분할 입력을 보여주며, recSave()가 saveRec()과 동일한 분할 검증과 scope별(one/future/all) 반영+undo 복원을 추가했다. 테스트 11건 추가(2571->2582 통과). APP_VERSION 1.47.328->1.47.329, sw.js CACHE v595->v596. node test/run.js 2582/2582 통과.",
       "commit": null
     },
     {
       "cycle": 293,
       "phase": "develop",
       "timestamp": "2026-11-03T04:05:00.000Z",
-      "summary": "parseAmountUnit(히스토리/자산/반복 검색의 금액 비교·범위 연산자가 쓰는 '만'/'억' 단위 파서)이 단일 접미사(무접미사/천/만/억)만 받아들여 \"1억5000만\"/\"1억5천만\"처럼 억 단위가 끝나지 않고 만 단위가 바로 이어붙는 복합 표기(1억원대 금액의 가장 흔한 실제 표기)는 통째로 null로 떨어지던 공백 발견 — \">1억5000만\"/\"1억~1억5000만\" 같은 검색이 조용히 0건으로 떨어졌다. 단일 접미사 매칭이 실패하면 \"(X억)?(Y)(천)?만\" 형태를 한 번 더 시도해 억*1e8 + 만 부분(천이 붙으면 *1000)의 합을 돌려주도록 확장. \"2억3천\"처럼 끝에 '만'이 없는 모호한 표기는 뜻을 단정할 수 없어 의도적으로 null로 남겼다. 테스트 6건 추가(2582->2586, 2개는 vm 샌드박스 realm 문제로 JSON 정규화/기대값 수정 거쳐 통과). APP_VERSION 1.47.329->1.47.330, sw.js CACHE v596->v597. node test/run.js 2586/2586 통과, logic.js/sw.js 구문 검증(node --check) 통과.",
+      "summary": "parseAmountUnit(히스토리/자산/반복 검색의 금액 비교·범위 연산자가 쓰는 '만'/'억' 단위 파서)이 단일 접미사(무접미사/천/만/억)만 받아들여 \"1억5000만\"/\"1억5천만\"처럼 억 단위가 끝나지 않고 만 단위가 바로 이어붙는 복합 표기(1억원대 금액의 가장 흔한 실제 표기)는 통째로 null로 떨어지던 공백 발견 — \">1억5000만\"/\"1억~1억5000만\" 같은 검색이 조용히 0건으로 떨어졌다. 단일 접미사 매칭이 실패하면 \"(X억)?(Y)(천)?만\" 형태를 한 번 더 시도해 억*1e8 + 만 부분(천이 붙으면 *1000)의 합을 돌려주도록 확장. \"2억3천\"처럼 끝에 '만'이 없는 모호한 표기는 뜻을 단정할 수 없어 의도적으로 null로 남겼다. 테스트 6건 추가(2582->2586 통과). APP_VERSION 1.47.329->1.47.330, sw.js CACHE v596->v597. node test/run.js 2586/2586 통과, logic.js/sw.js 구문 검증(node --check) 통과.",
       "commit": null
     },
     {
       "cycle": 293,
       "phase": "review",
       "timestamp": "2026-11-03T05:15:00.000Z",
-      "summary": "cycle293 develop 커밋(fb8de82) 검토 — parseAmountUnit의 신규 복합 억·만 표기 지원 자체는 맞지만, 같은 '원'/'~' 전처리를 담당하는 normalizeAmountSpacing의 단위 정규식이 숫자 바로 뒤에 (천|만|억) 중 하나만 허용해 갱신되지 않은 걸 발견했다. 재현: \"1억5000만원\"은(우연히 \"5000만원\" 부분만 단일 패턴에 걸려) \"1억5000만\"으로 제대로 줄었지만, \"천\"과 \"만\" 두 접미사가 겹친 \"1억5천만원\"은 숫자 바로 뒤가 \"원\"이 아니라고 보고 전혀 매칭되지 않아 끝에 \"원\"이 남은 채 parseAmountUnit에 전달돼 다시 null로 떨어졌다 — 1억원대 금액을 '원'까지 붙여 쓰는 가장 흔한 복합 표기가 조용히 0건으로 떨어지는 실제 버그였다. logic.js의 normalizeAmountSpacing(두 replace 모두: '원' 제거/'~' 공백 정규화)에 복합 표기((억)?(숫자)(천)?만) 대안을 단일 접미사 패턴보다 먼저 시도하도록 추가해 수정, 기존 단일 접미사/모호한 \"2억3천\" null 처리/공백 포함 입력은 모두 그대로 보존됨을 직접 재현 확인. 테스트 2건 추가(2586->2588 통과). APP_VERSION 1.47.330->1.47.331, sw.js CACHE v597->v598. node test/run.js 2588/2588 통과, logic.js/sw.js 구문 검증(node --check) 통과.",
+      "summary": "cycle293 develop 커밋(fb8de82) 검토 — parseAmountUnit의 신규 복합 억·만 표기 지원 자체는 맞지만, 같은 '원'/'~' 전처리를 담당하는 normalizeAmountSpacing의 단위 정규식이 숫자 바로 뒤에 (천|만|억) 중 하나만 허용해 갱신되지 않은 걸 발견했다. \"1억5천만원\"처럼 '천'과 '만' 두 접미사가 겹친 표기는 끝에 '원'이 남은 채 parseAmountUnit에 전달돼 다시 null로 떨어지는 실제 버그였다. logic.js의 normalizeAmountSpacing에 복합 표기 대안을 단일 접미사 패턴보다 먼저 시도하도록 추가해 수정. 테스트 2건 추가(2586->2588 통과). APP_VERSION 1.47.330->1.47.331, sw.js CACHE v597->v598. node test/run.js 2588/2588 통과.",
       "commit": null
     },
     {
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-03T06:20:00.000Z",
       "summary": "서브에이전트로 앱 전체를 재조사. 반복 수정의 '전체 적용'/'오늘부터 이후 모두'(recSaveScopeApply, index.html:5744)가 자산 삭제/카테고리 삭제/일괄 카테고리 변경/CSV 가져오기/백업 복원과 같은 위험군인데도(확인 시트에서 스스로 '과거 기록도 함께 바뀌어요 · 잔액 이력이 달라질 수 있어요'라고 경고) 유일하게 undoToast가 없어 되돌릴 수단이 없음을 발견. (부차 후보: 지출/수입 분석 화면의 spendTrend/incomeTrend가 매 카테고리 행마다 3개월치 집계를 캐시 없이 재계산하는 성능 이슈, 목표/예산 목록에 인라인 검색 없음 — 둘 다 이번엔 보류.) pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 293,
+      "phase": "advance",
+      "timestamp": "2026-11-03T07:30:00.000Z",
+      "summary": "critique(cycle293) 계획대로 recSaveScopeApply('future'/'all')와 commitRec()의 확인 시트 없는 즉시 적용 경로에 undoToast를 추가했다. 세 경로 모두 orig(DB.recurrences[i]에 있던 교체 전 원본 참조, splitRecurrenceAt/pruneOrphanRecOverrides 어느 쪽도 변형하지 않음)를 그대로 되돌리는 방식으로 충분했다 — 'future' 분기는 추가로 분리 생성된 newRec을 id로 filter해 제거한다. 세 곳 모두 마지막 toast(...)를 undoToast(msg,undoFn)로 교체. 기존 toast 메시지 문구(정리 건수 안내 등)는 그대로 유지하고 전달 수단만 undoToast로 바꿔, lastToast를 검사하던 기존 회귀 테스트 6건을 lastUndo.msg로 갱신했다. 새 undo 복원 테스트 3건(recSaveScopeApply 'all'/'future', commitRec 즉시 적용 경로 각각 되돌리기 후 원본 레코드 참조·필드가 그대로 복원되는지) 추가. 테스트 2588->2591 통과(6건 수정+3건 추가). APP_VERSION 1.47.331->1.47.332, sw.js CACHE v598->v599. node test/run.js 2591/2591 통과, logic.js/sw.js 구문 검증(node --check) 통과. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]
