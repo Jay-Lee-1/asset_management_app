@@ -1,15 +1,8 @@
 {
   "cycle": 295,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 290,
-      "phase": "review",
-      "timestamp": "2026-11-02T13:30:00.000Z",
-      "summary": "cycle290 develop 커밋(b82480a) 검토 — recFreqLabelStr(freq,day,startDate)가 freq/day/startDate 누락 시에도 방어적으로 폴백을 반환해 never throw함을 확인. node test/run.js 2550/2550 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 290,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-03T12:30:00.000Z",
       "summary": "budgetCarryFor(예산 이월)가 전달 지출을 spendByCategory로 다시 조회하는데, 그 달 거래가 archiveTxnsBefore(오래된 데이터 정리)로 완전히 지워진 뒤면 지출이 0으로 보여 실제로는 다 쓴 예산을 전액 이월로 돌려주던 버그 발견 — 300,000원 예산을 280,000원 써서 20,000원만 이월해야 할 달을 정리하면 다음 달 이월이 300,000원 전액으로 부풀려졌다(서브에이전트 조사로 발견, node로 실제 함수를 추출해 재현 확인). archiveTxnsBefore가 DB.settings.archivedThroughDate(기기-로컬 전용 — settings는 동기화 대상이 아니라 mergeRemoteDataIntoLocal 배선 불필요)에 cutoffDate를 남기고(이미 더 뒤까지 정리됐으면 유지, undo 시 이전 값으로 복원), budgetCarryFor는 전달이 그 범위에 걸리면 지출을 추측하지 않고 이월을 0으로 끊는다(전액 이월보다 이월 없음이 안전). 테스트 5건 추가(2606->2611 통과). APP_VERSION 1.47.334->1.47.335, sw.js CACHE v601->v602. node test/run.js 2611/2611 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 295,
+      "phase": "review",
+      "timestamp": "2026-11-03T13:35:00.000Z",
+      "summary": "cycle295 develop 커밋(6295ac9) 검토 — archivedThrough 체크가 budgetCarryFor 재귀의 매 depth마다 자기 전달을 다시 확인해 여러 달 연속 정리돼도 올바르게 0으로 끊김을 확인. cutoffDate/archivedThroughDate가 항상 archiveMonthPicked()의 monthEndStr(y,m)로만 생성돼(다른 호출부 없음) budgetCarryFor의 monthEndStr(py,pm)<=archivedThrough 비교가 항상 월 경계에 맞게 정렬됨을 검증. DB.settings는 이미 DB 스키마 완전성 가드 테스트의 LOCAL_ONLY_DB_FIELDS에 포함돼 있어 mergeRemoteDataIntoLocal 배선 누락 경고에 걸리지 않음도 확인. node test/run.js 2611/2611 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
       "commit": null
     }
   ]
