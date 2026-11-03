@@ -1416,7 +1416,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.338';
+const APP_VERSION='1.47.339';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5028,7 +5028,7 @@ function renderTxSheet(){
      지킬 수 없다(app-evolve cycle292 critique가 찾은 공백, advance에서 수정). */
   const splitOn=Array.isArray(d.splits)&&d.splits.length>=2;
   openFormSheet(`<h3>반복 내역 수정</h3><div class="desc">'${esc(d.memo||d.category)}' · ${shortDate(rc.date)} · ${SCOPE[rc.scope]}</div>
-   <div class="field"><label for="txAmt">${splitOn?'전체 금액':'금액'}</label><div class="field-clear"><input id="txAmt" class="amount-in num" inputmode="numeric" value="${d.amount?comma(d.amount):''}" placeholder="0" oninput="fmtAmt(this)" onkeydown="if(event.key==='Enter'&&!event.isComposing)recSave()"><button type="button" class="fc-x" aria-label="금액 지우기" onclick="clrInput('txAmt')">✕</button></div></div>
+   <div class="field"><label for="txAmt">${splitOn?'전체 금액':'금액'}</label><div class="field-clear"><input id="txAmt" class="amount-in num" inputmode="numeric" value="${d.amount?comma(d.amount):''}" placeholder="0" oninput="txAmtInput(this)" onkeydown="if(event.key==='Enter'&&!event.isComposing)recSave()"><button type="button" class="fc-x" aria-label="금액 지우기" onclick="clrInput('txAmt')">✕</button></div></div>
    ${splitOn?splitFieldHTML(d,'tx',true):''}
    ${rc.recId?`<button class="rec-detail-link" onclick="openRecDetail('${rc.recId}')">${svg('repeat')} 반복 자체를 세부 편집 ${svg('chevR')}</button>`:''}
    <div class="two-btn"><button class="btn btn-danger cancel" onclick="recCtxDel()">${svg('trash')} 삭제</button>
@@ -5068,7 +5068,7 @@ function renderTxSheet(){
  const memoEnterSubmit=rpt?'':` onkeydown="if(event.key==='Enter'&&!event.isComposing)saveTx()"`; /* 반복 켜짐이면 뒤에 주기/종료조건 필드가 더 있어 제외 */
  openFormSheet(`<div class="tx-head"><h3>${editing?'내역 수정':'내역 입력'}</h3>${repeatChip}</div>
   <div class="seg" role="group" aria-label="구분 선택"><div class="seg-blob"></div>${typeSeg}</div>
-  <div class="field"><label for="txAmt">${splitOn?'전체 금액':'금액'}</label><div class="field-clear"><input id="txAmt" class="amount-in num" inputmode="numeric" value="${d.amount?comma(d.amount):''}" placeholder="0" oninput="fmtAmt(this)"><button type="button" class="fc-x" aria-label="금액 지우기" onclick="clrInput('txAmt')">✕</button></div></div>
+  <div class="field"><label for="txAmt">${splitOn?'전체 금액':'금액'}</label><div class="field-clear"><input id="txAmt" class="amount-in num" inputmode="numeric" value="${d.amount?comma(d.amount):''}" placeholder="0" oninput="txAmtInput(this)"><button type="button" class="fc-x" aria-label="금액 지우기" onclick="clrInput('txAmt')">✕</button></div></div>
   <div class="field"><label>${dateLabel}</label><button class="pick" onclick="syncTxInputs();openFieldDatePicker(txDraft.date,ds=>{txDraft.date=ds;recalcEndCond(txDraft,ds);renderTxSheet()})">
     <div class="pav a-etc">${svg('ledger')}</div><div class="pbody"><div class="pn">${fmtDateFull(d.date)}</div><div class="psub">${datePsub}</div></div><div class="pc">${svg('chev')}</div></button>
     <input id="txDate" type="hidden" value="${d.date}"></div>
@@ -5172,6 +5172,11 @@ function txSplitOpenCat(i){
  openCatPicker({kind:d.type,current:d.splits[i].category,back:renderTxSheet,onPick:c=>{d.splits[i].category=c;renderTxSheet()}});
 }
 function txSplitAmt(i,el){fmtAmt(el);txDraft.splits[i].amount=num(el);splitHintUpdate(txDraft)}
+/* 전체 금액(#txAmt) 입력은 예전엔 fmtAmt(this)만 걸려 있어 txDraft.amount가 갱신되지 않고,
+ * 분할 중이면 splitHint도(txSplitAmt만 호출하므로) 전체 금액을 바꾼 직후엔 그대로 묵어 틀린
+ * 합계를 보여줬다 — 저장 시 saveTx()의 sum!==amount 가드가 막아 데이터는 안전했지만 입력 중
+ * 피드백이 거짓이었다(app-evolve cycle297 develop). */
+function txAmtInput(el){fmtAmt(el);txDraft.amount=num(el);if(Array.isArray(txDraft.splits)&&txDraft.splits.length)splitHintUpdate(txDraft)}
 function txSplitMemo(i,el){txDraft.splits[i].memo=el.value}
 /* tx/rec 폼이 공유하는 카테고리/자산/유형/주기/반복일 변경 로직. draft만 다르고 나머지는 동일해 헬퍼로 통합 */
 /* 피커로 카테고리를 직접 고르면(=메모 추천이 아니라 사용자 본인의 명시적 선택) _catUserTouched를
@@ -5544,6 +5549,9 @@ function recSplitOpenCat(i){
  openCatPicker({kind:d.type,current:d.splits[i].category,back:renderRecSheet,onPick:c=>{d.splits[i].category=c;renderRecSheet()}});
 }
 function recSplitAmt(i,el){fmtAmt(el);recDraft.splits[i].amount=num(el);splitHintUpdate(recDraft)}
+/* txAmtInput과 동일한 공백 — #rAmt(전체 금액)도 fmtAmt(this)만 걸려 있어 분할 중엔 힌트가
+ * 전체 금액 변경에 반응하지 않았다(app-evolve cycle297 develop). */
+function recAmtInput(el){fmtAmt(el);recDraft.amount=num(el);if(Array.isArray(recDraft.splits)&&recDraft.splits.length)splitHintUpdate(recDraft)}
 function recSplitMemo(i,el){recDraft.splits[i].memo=el.value}
 const WK={ /* 주말 조정 어휘 */
  none:['당일 유지','주말이어도 그 날짜에'],
@@ -5576,7 +5584,7 @@ function renderRecSheet(){
   ${catField}
   <div class="field"><label for="rMemo">메모 <span style="color:var(--text-3);font-weight:600">(선택)</span></label><div class="field-clear"><input id="rMemo" value="${(d.memo&&d.memo!==d.category)?d.memo.replace(/"/g,'&quot;'):''}" placeholder="예: 넷플릭스 구독" oninput="recMemoInput(this)"><button type="button" class="fc-x" aria-label="메모 지우기" onclick="clrInput('rMemo')">✕</button></div></div>
   <div id="recCatSuggest" style="display:none;margin:-4px 0 14px;text-align:right"></div>
-  <div class="field"><label for="rAmt">${splitOn?'전체 금액':'금액'}</label><div class="field-clear"><input id="rAmt" class="num" inputmode="numeric" value="${d.amount?comma(d.amount):''}" placeholder="0" oninput="fmtAmt(this)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveRec()"><button type="button" class="fc-x" aria-label="금액 지우기" onclick="clrInput('rAmt')">✕</button></div></div>
+  <div class="field"><label for="rAmt">${splitOn?'전체 금액':'금액'}</label><div class="field-clear"><input id="rAmt" class="num" inputmode="numeric" value="${d.amount?comma(d.amount):''}" placeholder="0" oninput="recAmtInput(this)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveRec()"><button type="button" class="fc-x" aria-label="금액 지우기" onclick="clrInput('rAmt')">✕</button></div></div>
   ${assetFields}
   <div class="field"><label>주기</label><div class="opt-grid">${freqBtns}</div></div>
   ${dayField}

@@ -18127,6 +18127,71 @@ test('[실행형] txSplitAmt: 금액을 반영한 뒤 splitHintUpdate를 호출�
   assert.strictEqual(ctx.txDraft.splits[1].amount, 2000, '입력값을 해당 split의 amount에 반영해야 함');
   assert.strictEqual(hintEl.textContent, '합계가 전체 금액과 일치해요', 'renderTxSheet를 다시 부르지 않고도 힌트가 최신 합계로 갱신돼야 함');
 });
+/* ---------- txAmtInput/recAmtInput: 전체 금액(#txAmt/#rAmt) 입력은 fmtAmt(this)만 걸려 있어
+ * txDraft.amount/recDraft.amount가 갱신되지 않고, 분할 중이면 splitHint도(txSplitAmt/recSplitAmt는
+ * 분할 행 입력에서만 호출되므로) 전체 금액을 바꾼 직후엔 낡은 합계를 그대로 보여줬다 — 저장 시
+ * saveTx()/saveRec()의 sum!==amount 가드가 막아 데이터는 안전했지만 입력 중 피드백이 거짓이었다
+ * (app-evolve cycle297 develop). txSplitAmt/recSplitAmt와 같은 패턴으로 draft.amount를 갱신하고
+ * splits가 있을 때만 splitHintUpdate를 부르게 했다. */
+test('[실행형] txAmtInput: 전체 금액을 txDraft.amount에 반영하고, 분할 중이면 splitHintUpdate로 힌트도 즉시 갱신한다', () => {
+  const ctx = {
+    $: (id) => ctx._els[id] || null,
+    _els: {},
+    comma: (n) => Math.round(n || 0).toLocaleString('ko-KR'),
+    txDraft: { amount: 10000, splits: [{ category: '식비', amount: 10000 }, { category: '생활용품', amount: 0 }] },
+  };
+  vm.createContext(ctx);
+  vm.runInContext(
+    [extractFunction('num'), extractFunction('fmtAmt'), extractFunction('splitHintUpdate'), extractFunction('txAmtInput')].join('\n'),
+    ctx, { filename: 'txAmtInput-real' }
+  );
+  const hintEl = { textContent: '', style: { color: '' } };
+  ctx._els.splitHint = hintEl;
+  const amtEl = { value: '20,000' };
+  ctx.txAmtInput(amtEl);
+  assert.strictEqual(ctx.txDraft.amount, 20000, '전체 금액 입력값을 txDraft.amount에 반영해야 함');
+  assert.strictEqual(amtEl.value, '20,000', 'fmtAmt로 천단위 표시 포맷은 그대로 유지해야 함');
+  assert.strictEqual(hintEl.textContent, '합계가 전체 금액과 10,000원 모자라요', '전체 금액을 바꾼 직후에도(분할 행을 안 건드려도) 힌트가 최신 합계로 갱신돼야 함');
+});
+test('[실행형] txAmtInput: 분할이 꺼져 있으면(splits 없음) splitHintUpdate를 부르지 않는다(#splitHint가 없어 에러가 나지 않아야 함)', () => {
+  const ctx = { $: () => { throw new Error('분할 없을 땐 splitHintUpdate가 $()를 조회하면 안 됨') }, txDraft: { amount: 5000 } };
+  vm.createContext(ctx);
+  vm.runInContext(
+    [extractFunction('num'), extractFunction('fmtAmt'), extractFunction('splitHintUpdate'), extractFunction('txAmtInput')].join('\n'),
+    ctx, { filename: 'txAmtInput-nosplit-real' }
+  );
+  assert.doesNotThrow(() => ctx.txAmtInput({ value: '7,000' }), '분할 없이 전체 금액만 입력해도 조용히 끝나야 함');
+  assert.strictEqual(ctx.txDraft.amount, 7000);
+});
+test('[실행형] recAmtInput: 전체 금액을 recDraft.amount에 반영하고, 분할 중이면 splitHintUpdate로 힌트도 즉시 갱신한다', () => {
+  const ctx = {
+    $: (id) => ctx._els[id] || null,
+    _els: {},
+    comma: (n) => Math.round(n || 0).toLocaleString('ko-KR'),
+    recDraft: { amount: 50000, splits: [{ category: '통신', amount: 30000 }, { category: 'OTT', amount: 20000 }] },
+  };
+  vm.createContext(ctx);
+  vm.runInContext(
+    [extractFunction('num'), extractFunction('fmtAmt'), extractFunction('splitHintUpdate'), extractFunction('recAmtInput')].join('\n'),
+    ctx, { filename: 'recAmtInput-real' }
+  );
+  const hintEl = { textContent: '', style: { color: '' } };
+  ctx._els.splitHint = hintEl;
+  const amtEl = { value: '40,000' };
+  ctx.recAmtInput(amtEl);
+  assert.strictEqual(ctx.recDraft.amount, 40000, '전체 금액 입력값을 recDraft.amount에 반영해야 함');
+  assert.strictEqual(hintEl.textContent, '합계가 전체 금액과 10,000원 많아요', '전체 금액을 바꾼 직후에도 힌트가 최신 합계로 갱신돼야 함');
+});
+test('[실행형] recAmtInput: 분할이 꺼져 있으면(splits 없음) splitHintUpdate를 부르지 않는다(#splitHint가 없어 에러가 나지 않아야 함)', () => {
+  const ctx = { $: () => { throw new Error('분할 없을 땐 splitHintUpdate가 $()를 조회하면 안 됨') }, recDraft: { amount: 5000 } };
+  vm.createContext(ctx);
+  vm.runInContext(
+    [extractFunction('num'), extractFunction('fmtAmt'), extractFunction('splitHintUpdate'), extractFunction('recAmtInput')].join('\n'),
+    ctx, { filename: 'recAmtInput-nosplit-real' }
+  );
+  assert.doesNotThrow(() => ctx.recAmtInput({ value: '9,000' }), '분할 없이 전체 금액만 입력해도 조용히 끝나야 함');
+  assert.strictEqual(ctx.recDraft.amount, 9000);
+});
 /* ---------- saveTx/saveRec: expense/income에 자산 선택 없이 저장되던 버그 (app-evolve cycle81 develop) ----------
  * transfer/saving은 fromAssetId/toAssetId가 없으면 '보내는·받는 자산을 선택해 주세요' 토스트로
  * 막았지만, expense/income은 이 가드가 전혀 없이 d.type==='expense'?d.toAssetId=null:... 로 남은
@@ -20960,14 +21025,14 @@ test('renderTxSheet: 반복이 꺼져 있으면(일반 입력/수정) txMemo가 
 test('renderTxSheet: 반복 개별/범위 수정 시트(rc 분기)의 txAmt(금액)에 Enter-제출이 있다(recSave()가 요구하는 유일한 입력이고, 삭제/저장하기 버튼뿐 뒤따르는 필드가 없음, app-evolve cycle145 develop)', () => {
   const body = extractFunction('renderTxSheet');
   assert.ok(
-    body.includes(`id="txAmt" class="amount-in num" inputmode="numeric" value="${'${d.amount?comma(d.amount):\'\'}'}" placeholder="0" oninput="fmtAmt(this)" onkeydown="if(event.key==='Enter'&&!event.isComposing)recSave()"`),
+    body.includes(`id="txAmt" class="amount-in num" inputmode="numeric" value="${'${d.amount?comma(d.amount):\'\'}'}" placeholder="0" oninput="txAmtInput(this)" onkeydown="if(event.key==='Enter'&&!event.isComposing)recSave()"`),
     'rc 분기의 txAmt에 Enter→recSave() 연결이 없음'
   );
 });
 test('renderRecSheet: rAmt(금액)에 Enter-제출이 있다(saveRec()가 요구하는 유일한 필수 입력이고, 나머지 필드는 모두 기본값이 있음)', () => {
   const body = extractFunction('renderRecSheet');
   assert.ok(
-    body.includes(`id="rAmt" class="num" inputmode="numeric" value="${'${d.amount?comma(d.amount):\'\'}'}" placeholder="0" oninput="fmtAmt(this)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveRec()"`),
+    body.includes(`id="rAmt" class="num" inputmode="numeric" value="${'${d.amount?comma(d.amount):\'\'}'}" placeholder="0" oninput="recAmtInput(this)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveRec()"`),
     'rAmt에 Enter→saveRec() 연결이 없음'
   );
 });

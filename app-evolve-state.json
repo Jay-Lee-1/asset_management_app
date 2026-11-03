@@ -1,29 +1,8 @@
 {
   "cycle": 297,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 291,
-      "phase": "advance",
-      "timestamp": "2026-11-02T21:20:00.000Z",
-      "summary": "critique(cycle291) 계획대로 반복 내역 관리(openRecManage)에 인라인 검색(recQ)을 추가했다. recManageBody(q)로 분리해 matchRecQuery 필터 적용, openGlobalSearch와 동일한 220ms 디바운스 패턴. toggleRecActive도 검색 상태를 보존하도록 함께 수정. 테스트 11건 추가(2556->2567 통과). APP_VERSION 1.47.326->1.47.327, sw.js CACHE v593->v594. node test/run.js 2567/2567 통과. pending_advance_plan null로 비움.",
-      "commit": null
-    },
-    {
-      "cycle": 292,
-      "phase": "develop",
-      "timestamp": "2026-11-02T22:30:00.000Z",
-      "summary": "findPossibleDuplicateRec(반복 등록 중복 경고)가 freq에 관계없이 r.day!==draft.day로만 스케줄을 비교하던 공백 발견 — weekly/yearly는 day가 아니라 startDate의 요일/월일로 스케줄이 정해지는데 day는 항상 기본값 1로 남아 다른 요일/월일의 반복도 중복으로 오판됐다. recScheduleSameSlot(freq,a,b) 신설(logic.js). 테스트 4건 추가(2567->2571 통과). APP_VERSION 1.47.327->1.47.328, sw.js CACHE v594->v595. node test/run.js 2571/2571 통과.",
-      "commit": "6e71078"
-    },
-    {
-      "cycle": 292,
-      "phase": "review",
-      "timestamp": "2026-11-02T23:40:00.000Z",
-      "summary": "cycle292 develop 커밋(6e71078) 검토 — recScheduleSameSlot이 recFreqLabelStr과 동일한 날짜 파싱 패턴을 재사용함을 확인, monthly/daily/weekly/yearly/폴백 분기 전부 재현 검증. node test/run.js 2571/2571 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 292,
       "phase": "critique",
@@ -148,6 +127,13 @@
       "phase": "advance",
       "timestamp": "2026-11-03T18:15:00.000Z",
       "summary": "critique(cycle296) 계획대로 자산 선택모드(ST.aSel)에 일괄 \"총자산 포함/제외\" 전환을 추가했다. logic.js에 assetInclTargets(assets,ids)를 신설해 선택된 자산들의 includeInTotal이 섞여 있는지(mixed)/전부 같은지(allIncluded)를 판단하고, doBulkInclToggle(ids,next)가 doBulkCat과 동일한 touchSave+undoToast 패턴으로 일괄 반영한다. activeSel()의 aSel 분기가 선택 상태에 따라 incl을 null(선택 없음)/['incl']/['excl'](전부 같으면 반대쪽 토글 버튼 하나)/['incl','excl'](섞였으면 둘 다)로 돌려주고, updateSelBottom()이 그 배열을 그대로 버튼으로 렌더(eye/eyeOff 아이콘, has-cat 압축 스타일 재사용). assetInclSel(next)이 바닥바 버튼에서 호출돼 assetDelSel과 동일하게 적용 후 선택모드를 바로 끝낸다. _pensionAutoExcl은 asDraft(초안) 전용 필드라 saveAsset()에서 항상 delete되어 DB.assets에는 절대 남지 않음을 확인해(cycle296 review가 이미 검증한 사실 재확인) 계획에서 우려했던 연금 특수처리는 불필요했다 — 실제 저장된 자산을 다루는 일괄토글은 특별취급 없이 안전함. 테스트 20건 추가: assetInclTargets 5건, doBulkInclToggle 4건, assetInclSel 2건, activeSel의 incl 분기 5건(배열 비교는 Array.from()으로 realm 경계 우회), 기존 activeSel cat 테스트 1건은 그대로 유지. 테스트 2619->2636 통과. APP_VERSION 1.47.337->1.47.338, sw.js CACHE v604->v605. node test/run.js 2636/2636 통과, logic.js/sw.js 구문 검증(node --check) 통과. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 297,
+      "phase": "develop",
+      "timestamp": "2026-11-03T19:20:00.000Z",
+      "summary": "전체 금액(#txAmt/#rAmt) 입력의 oninput이 fmtAmt(this)만 걸려 있어 txDraft.amount/recDraft.amount를 갱신하지 않고, 분할(splits) 중이면 splitHint(합계 힌트)도 전체 금액을 바꾼 직후엔 갱신되지 않던 공백 발견(서브에이전트 조사) — 분할 행(txSplitAmt/recSplitAmt)만 splitHintUpdate를 부르고, bd248b4(cycle274)가 힌트를 신설할 때도 분할 행 입력에만 범위를 좁혀 전체 금액 필드는 다루지 않았다. 10,000원 분할 지출(식비 10,000/생활용품 0)의 전체 금액을 20,000원으로 바꿔도 힌트는 계속 '일치해요'로 남아, 실제로는 10,000원이 모자란 상태를 거짓으로 보여준다 — saveTx()/saveRec()의 sum!==amount 가드가 저장은 막아 데이터는 안전하지만 입력 중 피드백이 틀렸다. txSplitAmt/recSplitAmt와 같은 패턴으로 txAmtInput(el)/recAmtInput(el)을 신설해 draft.amount를 갱신하고 splits가 있을 때만 splitHintUpdate를 부르도록 #txAmt(2곳: 일반 입력 시트+반복 개별/범위 수정 rc 분기)/#rAmt의 oninput을 교체했다. 기존 템플릿 문자열을 검사하던 회귀 테스트 2건을 새 oninput 값으로 갱신. 테스트 4건 추가(2636->2640 통과). APP_VERSION 1.47.338->1.47.339, sw.js CACHE v605->v606. node test/run.js 2640/2640 통과, logic.js/sw.js/index.html 메인 인라인 스크립트 구문 검증(node --check) 통과.",
       "commit": null
     }
   ]
