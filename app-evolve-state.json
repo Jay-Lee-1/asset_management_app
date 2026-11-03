@@ -1,15 +1,8 @@
 {
   "cycle": 298,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 293,
-      "phase": "review",
-      "timestamp": "2026-11-03T05:15:00.000Z",
-      "summary": "cycle293 develop 커밋(fb8de82) 검토 — parseAmountUnit의 신규 복합 억·만 표기 지원 자체는 맞지만, 같은 '원'/'~' 전처리를 담당하는 normalizeAmountSpacing의 단위 정규식이 숫자 바로 뒤에 (천|만|억) 중 하나만 허용해 갱신되지 않은 걸 발견했다. \"1억5천만원\"처럼 '천'과 '만' 두 접미사가 겹친 표기는 끝에 '원'이 남은 채 parseAmountUnit에 전달돼 다시 null로 떨어지는 실제 버그였다. logic.js의 normalizeAmountSpacing에 복합 표기 대안을 단일 접미사 패턴보다 먼저 시도하도록 추가해 수정. 테스트 2건 추가(2586->2588 통과). APP_VERSION 1.47.330->1.47.331, sw.js CACHE v597->v598. node test/run.js 2588/2588 통과.",
-      "commit": null
-    },
     {
       "cycle": 293,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-03T21:10:33.080Z",
       "summary": "mergeAssetInto(자산 합치기, cycle297)가 거래/반복거래의 fromAssetId/toAssetId/adjustAsset은 옮기지만 DB.goals의 linkedAssetId(type:\"asset\" 목표가 가리키는 자산)는 전혀 건드리지 않던 공백 발견 — 목표 생성은 BAL_ASSET_TYPES와 똑같은 잔액식 종류만 연결 대상으로 허용하는데(openAssetForm, excludeMarketValued+excludeDebt), 그 목표가 연결한 자산을 다른 자산에 합치면 자산 자체는 to로 안전하게 보존되는데도 goalLinkedAssetGone()이 \"연결된 자산이 사라졌어요\"로 잘못 표시해 목표 추적이 끊겼다. saveAsset()이 owner 변경 시 연결 목표를 재배선하는 기존 패턴(4703행)과 같은 자리에 적용: mergeAssetInto가 from을 가리키던 goal.linkedAssetId를 to로 옮기고 touchSave에 포함시키며, undoToast 복원 클로저에서 원래 값으로 되돌린다. 테스트 3건 추가(목표가 to로 옮겨가고 touch됨+goalLinkedAssetGone이 false+undo 시 원복, to를 이미 가리키던 목표/networth형 목표는 건드리지 않음). 테스트 2655->2658 통과. APP_VERSION 1.47.340->1.47.341, sw.js CACHE v607->v608. node test/run.js 2658/2658 통과, sw.js 구문 검증(node --check) 통과, index.html 메인 인라인 스크립트(688862자) node --check 통과.",
+      "commit": "e4f020b"
+    },
+    {
+      "cycle": 298,
+      "phase": "review",
+      "timestamp": "2026-11-03T21:45:00.000Z",
+      "summary": "cycle298 develop 커밋(e4f020b) 검토 — goalItems가 DB.goals 중 type==='asset'&&linkedAssetId===fromId인 항목만 모아 to로 옮기고, 이미 to를 가리키던 목표나 networth형 목표는 건드리지 않음을 diff와 신규 테스트 3건으로 확인. goalLinkedAssetGone()은 DB.assets에 linkedAssetId가 존재하는지만 보므로 from 제거+linkedAssetId를 to로 재배선한 뒤에는 항상 false가 됨을 검증. undoToast 복원 클로저가 goalItems.forEach로 prevLinked를 되돌리는 순서가 DB.assets.splice로 from을 되살리는 시점과 독립적이라(목표는 id 참조만 바꾸는 것이라 자산 배열 순서에 의존하지 않음) 충돌 없음을 확인. touchSave에 goalItems를 포함시켜 목표도 함께 touch되는 것도 확인(테스트가 updatedAt 변경을 검사). node test/run.js 2658/2658, index.html 메인 인라인 스크립트 node --check 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
       "commit": null
     }
   ]
