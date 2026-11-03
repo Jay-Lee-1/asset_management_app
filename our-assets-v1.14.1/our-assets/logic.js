@@ -517,13 +517,29 @@ function searchTerms(q){
  * 형식이 아니면(빈 문자열, 단위 뒤에 글자가 더 있음 등) null을 돌려준다.
  * "천"(1,000) 접미사는 만/억 도입(cycle278) 때 함께 들어가지 않아, "3천"/">3천"/"5천~1만"처럼
  * 수천~수만원대에서 자연스러운 입력이 조용히 null로 떨어지던 공백이 있었다(app-evolve cycle288
- * advance) — 만/억과 같은 자리에 추가해 기존 동작(무접미사/만/억)은 그대로 보존한다. */
+ * advance) — 만/억과 같은 자리에 추가해 기존 동작(무접미사/만/억)은 그대로 보존한다.
+ * "1억5000만"/"1억5천만"처럼 억 단위가 끝나지 않고 만 단위가 바로 이어붙는 복합 표기(실생활에서
+ * 1억원대 금액을 가장 흔하게 쓰는 방식)는 위 단일 접미사 정규식에 걸려 통째로 null이 됐다
+ * (app-evolve cycle293 develop) — ">1억5000만"/"1억~1억5000만" 같은 검색이 조용히 0건으로
+ * 떨어지는 실제 공백이었다. "억" 뒤에 글자가 남으면 그 나머지를 "(숫자)(천)?만" 형태로 한 번 더
+ * 시도해, 억 단위 값에 더한다("천"이 붙으면 그 숫자에 다시 1000을 곱한 뒤 만 배 — "5천만"=5*1000*10000).
+ * "2억3천"처럼 끝에 "만"이 없는 표기는(실제 뜻이 "2억3천만"인지 "2억3천원"인지 입력만으로는
+ * 알 수 없어 잘못된 값을 돌려줄 위험이 있으므로) 의도적으로 지원하지 않고 null로 남긴다. */
 function parseAmountUnit(s){
- const m=/^(\d+(?:\.\d+)?)(천|만|억)?$/.exec(String(s||''));
- if(!m)return null;
- const n=parseFloat(m[1]);
- if(!isFinite(n))return null;
- return n*(m[2]==='천'?1000:m[2]==='만'?10000:m[2]==='억'?100000000:1);
+ const str=String(s||'');
+ const m=/^(\d+(?:\.\d+)?)(천|만|억)?$/.exec(str);
+ if(m){
+  const n=parseFloat(m[1]);
+  if(!isFinite(n))return null;
+  return n*(m[2]==='천'?1000:m[2]==='만'?10000:m[2]==='억'?100000000:1);
+ }
+ const m2=/^(?:(\d+)억)?(\d+(?:\.\d+)?)(천)?만$/.exec(str);
+ if(!m2)return null;
+ const eok=m2[1]!==undefined?parseFloat(m2[1])*100000000:0;
+ let man=parseFloat(m2[2]);
+ if(!isFinite(man))return null;
+ if(m2[3]==='천')man*=1000;
+ return eok+man*10000;
 }
 /* 전체내역 검색(histQ)의 금액 비교/범위 연산자 — matchTxnQuery는 기존에 금액을 String(t.amount)로
  * 바꿔 substring 포함 매칭만 했기 때문에 "10000"을 검색하면 110000/210000원도 함께 걸려 "얼마

@@ -7344,6 +7344,30 @@ test('parseAmountUnit: 음수 기호는 지원하지 않는다(null)', () => {
   assert.strictEqual(sandbox.parseAmountUnit('-10000'), null, 'amountMatchesToken이 Math.abs로 비교하므로 검색어 자체엔 음수가 필요 없게 설계됨');
 });
 
+/* "1억5000만"/"1억5천만"처럼 억 단위 뒤에 만 단위가 바로 이어붙는 복합 표기(app-evolve
+ * cycle293 develop) — 실생활에서 1억원대 금액을 가장 흔하게 쓰는 방식인데 기존엔 단일 접미사만
+ * 허용해 통째로 null로 떨어졌다. */
+test('parseAmountUnit: "X억Y만"/"X억Y천만" 복합 표기를 억*1e8 + 만 부분의 합으로 환산한다', () => {
+  assert.strictEqual(sandbox.parseAmountUnit('1억5000만'), 150000000);
+  assert.strictEqual(sandbox.parseAmountUnit('1억5천만'), 150000000);
+  assert.strictEqual(sandbox.parseAmountUnit('2억1만'), 200010000);
+  assert.strictEqual(sandbox.parseAmountUnit('3억'), 300000000, '만 부분이 없는 단순 억 단위는 기존 단일 접미사 분기 그대로 동작');
+});
+test('parseAmountUnit: "X억Y만" 복합 표기도 소수와 결합할 수 있다(Y 부분의 소수)', () => {
+  assert.strictEqual(sandbox.parseAmountUnit('1억2.5만'), 100025000);
+});
+test('parseAmountUnit: "X억"만 쓰고 뒤에 "만"이 없는 표기(예: "2억3천")는 뜻이 모호해 null', () => {
+  assert.strictEqual(sandbox.parseAmountUnit('2억3천'), null, '"2억3천만"인지 "2억3천원"인지 입력만으로 알 수 없어 지원하지 않는다');
+  assert.strictEqual(sandbox.parseAmountUnit('2억3000'), null);
+});
+/* parseAmountToken의 결과는 vm 샌드박스 안에서 만들어진 Object라 host realm의 리터럴과
+ * reference-equal 비교에서 deepStrictEqual이 실패한다(cycle292 advance가 recSave 분할 테스트에서
+ * 겪은 것과 같은 realm 문제) — JSON으로 한 번 오가며 host realm 값으로 정규화해 비교한다. */
+test('parseAmountToken: ">1억5000만"처럼 복합 표기에 비교 연산자가 붙어도 그대로 파싱된다', () => {
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.parseAmountToken('>1억5000만'))), {op:'>',v1:150000000});
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.parseAmountToken('1억~1억5000만'))), {op:'range',v1:100000000,v2:150000000});
+});
+
 /* ---------- amountMatchesToken: parseAmountToken이 돌려준 {op,v1[,v2]}로 실제 금액을 비교하는
  * 함수(app-evolve cycle278) ----------
  * matchTxnQuery 통합 테스트들이 ">"/"~"/음수 절대값 비교를 이미 간접 검증하지만, "<"/"<="와

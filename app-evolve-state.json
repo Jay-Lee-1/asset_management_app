@@ -1,15 +1,8 @@
 {
   "cycle": 293,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 288,
-      "phase": "develop",
-      "timestamp": "2026-11-02T04:10:00.000Z",
-      "summary": "범용(은행/카드사) CSV 가져오기(mapGenericCsvRow)가 날짜 열 값을 YYYY-MM-DD 형식만 받아들이는 공백 발견 — normalizeCsvDateCell(s) 신설, 연도가 맨 앞인 표기(점/슬래시/구분자 없음)만 YYYY-MM-DD로 변환. 테스트 6건 추가(2529->2534 통과). APP_VERSION 1.47.319->1.47.320, sw.js CACHE v586->v587. node test/run.js 2534/2534 통과.",
-      "commit": null
-    },
     {
       "cycle": 288,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-03T02:10:00.000Z",
       "summary": "critique(cycle292) 계획대로 반복 내역 '간편 수정'이 분할(splits) 합계 불변식을 지키게 고쳤다. (1) recApply()가 txDraft에 splits(ed.splits!==undefined?ed.splits:r.splits, expandRec과 동일한 폴백)를 깊은 복사로 실어, 폼에서 고쳐도 원본 r.splits/ed.splits가 바로 바뀌지 않게 했다. (2) renderTxSheet()의 rc 분기에서 d.splits.length>=2면 금액 라벨을 '전체 금액'으로 바꾸고 splitFieldHTML(d,'tx',true)를 렌더링 — 기존 txSplitAmt/txSplitMemo/txSplitAdd/txSplitRemove 핸들러를 그대로 재사용한다. 세 번째 인자 noToggle=true는 이 화면에만 추가한 것으로, splitFieldHTML의 '일반 입력으로'(txToggleSplit) 버튼을 숨긴다 — 간편 수정 화면은 edits[date]/newRec/r에 category 오버라이드를 저장할 자리가 없어, 분할을 꺼서 단일 카테고리로 되돌리는 길을 열면 꺼진 채로 저장될 곳이 없기 때문(분할 추가/삭제는 항상 2개 이상을 유지하므로 그대로 둬도 안전). (3) recSave()에 saveRec()과 동일한 분할 검증(카테고리 필수, 금액 필수, sum(splits)===amt)을 추가하고, scope='one'은 edits[date].splits에, scope='future'는 새로 분리된 레코드(newRec.splits)에, scope='all'은 r.splits에 수정된 분할을 반영했다. scope='all'의 undo가 기존엔 amount/memo만 복원했는데 r.splits도 함께 복원하도록 prevSplits를 추가(없으면 분할 수정을 되돌려도 금액만 돌아가고 분할은 안 돌아가는 회귀가 생김). (4) index.html:2722의 stale 주석(ed.splits가 '아직 안 쓰여 항상 undefined'라던 문구)을 scope='one'이 실제로 쓰게 됐다고 갱신. 테스트: recApply가 splits를 깊은 복사로 싣는지(원본 불변, ed.splits 우선, splits 없으면 undefined로 회귀 가드) 3건, recSave 세 scope(one/future/all) 각각 분할 수정이 반영되고 undo로 복원되는지 3건, 분할 검증 실패(합계 불일치/카테고리 누락) 2건, renderTxSheet(rc) 마크업(분할 필드 노출+토글 숨김, splits 없거나 1개면 평소처럼 단일 입력) 2건, splitFieldHTML(d,pfx,noToggle) 실행형 테스트 1건을 추가했다. renderTxSheet(real)가 이제 splitFieldHTML을 호출하는 경로를 타므로 test/run.js FUNCTIONS 공유 sandbox에 splitFieldHTML을 추가했다(안 올리면 recApply/recSave가 분할 있는 회차를 열 때 'splitFieldHTML is not defined'로 깨짐). vm 샌드박스 안에서 JSON.parse로 새로 만들어진 splits 배열은 host 배열과 realm이 달라 deepStrictEqual이 실패하므로, 비교는 기존 recSave future 분할 테스트와 같은 이유로 JSON.stringify 정규화를 썼다. 테스트 11건 추가(2571->2582 통과). APP_VERSION 1.47.328->1.47.329, sw.js CACHE v595->v596. node test/run.js 2582/2582 통과, logic.js/sw.js 구문 검증(node --check) 통과, index.html 메인 인라인 script 블록 vm 파싱 스모크 테스트 통과. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 293,
+      "phase": "develop",
+      "timestamp": "2026-11-03T04:05:00.000Z",
+      "summary": "parseAmountUnit(히스토리/자산/반복 검색의 금액 비교·범위 연산자가 쓰는 '만'/'억' 단위 파서)이 단일 접미사(무접미사/천/만/억)만 받아들여 \"1억5000만\"/\"1억5천만\"처럼 억 단위가 끝나지 않고 만 단위가 바로 이어붙는 복합 표기(1억원대 금액의 가장 흔한 실제 표기)는 통째로 null로 떨어지던 공백 발견 — \">1억5000만\"/\"1억~1억5000만\" 같은 검색이 조용히 0건으로 떨어졌다. 단일 접미사 매칭이 실패하면 \"(X억)?(Y)(천)?만\" 형태를 한 번 더 시도해 억*1e8 + 만 부분(천이 붙으면 *1000)의 합을 돌려주도록 확장. \"2억3천\"처럼 끝에 '만'이 없는 모호한 표기는 뜻을 단정할 수 없어 의도적으로 null로 남겼다. 테스트 6건 추가(2582->2586, 2개는 vm 샌드박스 realm 문제로 JSON 정규화/기대값 수정 거쳐 통과). APP_VERSION 1.47.329->1.47.330, sw.js CACHE v596->v597. node test/run.js 2586/2586 통과, logic.js/sw.js 구문 검증(node --check) 통과.",
       "commit": null
     }
   ]
