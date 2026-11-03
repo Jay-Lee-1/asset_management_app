@@ -10103,6 +10103,39 @@ test('mergeAssetInto: undo하면 amountKRW를 쓰는 종류도 원래 amountKRW 
   assert.strictEqual(a2.amountKRW, 200000000, '되돌리면 amountKRW가 원래 값으로 복원되어야 함');
   assert.strictEqual(a2.baseAmount, undefined, '되돌린 뒤에도 무관한 필드가 새로 생기면 안 됨');
 });
+test('mergeAssetInto: from을 가리키던 asset형 목표(linkedAssetId)도 to로 옮겨가 goalLinkedAssetGone이 잘못 true가 되지 않는다', () => {
+  const a1 = { id: 'a1', name: '통장1', type: 'cash', baseAmount: 1000 };
+  const a2 = { id: 'a2', name: '통장2', type: 'cash', baseAmount: 2000 };
+  const g1 = { id: 'g1', type: 'asset', linkedAssetId: 'a1', updatedAt: 1 };
+  sandbox.DB = { assets: [a1, a2], txns: [], recurrences: [], goals: [g1] };
+  sandbox.mergeAssetInto('a1', 'a2');
+  assert.strictEqual(g1.linkedAssetId, 'a2', '목표의 연결 자산이 합쳐진 대상으로 옮겨가야 함');
+  assert.strictEqual(g1.updatedAt, 'test-updatedAt', '옮겨간 목표도 touch()되어야 함');
+  assert.strictEqual(sandbox.goalLinkedAssetGone(g1), false, '자산은 살아있으므로 연결이 끊긴 것으로 보이면 안 됨');
+});
+test('mergeAssetInto: undoToast로 되돌리면 목표의 linkedAssetId도 원래 자산(from)으로 복원된다', () => {
+  const a1 = { id: 'a1', name: '통장1', type: 'cash', baseAmount: 1000 };
+  const a2 = { id: 'a2', name: '통장2', type: 'cash', baseAmount: 2000 };
+  const g1 = { id: 'g1', type: 'asset', linkedAssetId: 'a1' };
+  sandbox.DB = { assets: [a1, a2], txns: [], recurrences: [], goals: [g1] };
+  sandbox.lastUndo = null;
+  sandbox.mergeAssetInto('a1', 'a2');
+  assert.strictEqual(g1.linkedAssetId, 'a2');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(g1.linkedAssetId, 'a1', '되돌리면 목표의 연결 자산도 원래대로 복원되어야 함');
+});
+test('mergeAssetInto: from을 가리키지 않는 목표(다른 자산 연결·networth형)는 건드리지 않는다', () => {
+  const a1 = { id: 'a1', name: '통장1', type: 'cash', baseAmount: 1000 };
+  const a2 = { id: 'a2', name: '통장2', type: 'cash', baseAmount: 2000 };
+  const g1 = { id: 'g1', type: 'asset', linkedAssetId: 'a2', updatedAt: 1 };
+  const g2 = { id: 'g2', type: 'networth', linkedAssetId: null, updatedAt: 1 };
+  sandbox.DB = { assets: [a1, a2], txns: [], recurrences: [], goals: [g1, g2] };
+  sandbox.mergeAssetInto('a1', 'a2');
+  assert.strictEqual(g1.linkedAssetId, 'a2', '이미 to를 가리키던 목표는 그대로여야 함');
+  assert.strictEqual(g1.updatedAt, 1, '대상이 아닌 목표는 touch()되면 안 됨');
+  assert.strictEqual(g2.linkedAssetId, null);
+  assert.strictEqual(g2.updatedAt, 1);
+});
 test('openAssetMergePicker: 같은 종류의 자산만, 자기 자신은 제외하고 피커를 연다', () => {
   sandbox.TODAY = '2026-06-15'; sandbox.RANGE_TO = '2099-12-31';
   sandbox.DB = {

@@ -1,15 +1,8 @@
 {
   "cycle": 298,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 293,
-      "phase": "develop",
-      "timestamp": "2026-11-03T04:05:00.000Z",
-      "summary": "parseAmountUnit(히스토리/자산/반복 검색의 금액 비교·범위 연산자가 쓰는 '만'/'억' 단위 파서)이 단일 접미사(무접미사/천/만/억)만 받아들여 \"1억5000만\"/\"1억5천만\"처럼 억 단위가 끝나지 않고 만 단위가 바로 이어붙는 복합 표기(1억원대 금액의 가장 흔한 실제 표기)는 통째로 null로 떨어지던 공백 발견 — \">1억5000만\"/\"1억~1억5000만\" 같은 검색이 조용히 0건으로 떨어졌다. 단일 접미사 매칭이 실패하면 \"(X억)?(Y)(천)?만\" 형태를 한 번 더 시도해 억*1e8 + 만 부분(천이 붙으면 *1000)의 합을 돌려주도록 확장. \"2억3천\"처럼 끝에 '만'이 없는 모호한 표기는 뜻을 단정할 수 없어 의도적으로 null로 남겼다. 테스트 6건 추가(2582->2586 통과). APP_VERSION 1.47.329->1.47.330, sw.js CACHE v596->v597. node test/run.js 2586/2586 통과, logic.js/sw.js 구문 검증(node --check) 통과.",
-      "commit": null
-    },
     {
       "cycle": 293,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-03T20:17:26.500Z",
       "summary": "critique(cycle297) 계획대로 자산 관리에 '다른 자산에 합치기' 기능을 추가했다. mergeCatInto()와 같은 골격(참조 이동+톰스톤+undoToast)으로 mergeAssetInto(fromId,toId)를 신설: assetMergeCounts(id)로 영향받는 거래/반복거래(활성·비활성 모두)를 센 뒤 confirmAssetMerge()의 confirmSheet로 안내 → DB.txns/DB.recurrences의 fromAssetId/toAssetId(조정 내역의 adjustAsset 포함)를 toId로 일괄 치환 → 같은 '잔액식' 종류(cash/savings/realestate/etc/pension/debt, BAL_ASSET_TYPES)일 때만 saveAsset()과 동일한 balKey(baseAmount/amountKRW) 규칙으로 두 자산의 잔액을 합산 → fromId를 deleteAssetsUndo와 동일한 DB.deletedIds 톰스톤과 함께 DB.assets에서 제거 → undoToast로 자산 목록·잔액·참조·톰스톤을 전부 되돌릴 수 있게 했다. 시세평가형(fx/gold/stock/crypto)은 수량·시세를 합치는 별도 규칙이 필요해 1차 범위에서 제외(안내 토스트로 거부). openAssetPicker에 onlyType 옵션을 추가해 openAssetMergePicker()가 같은 종류의 자산만, 자기 자신은 제외하고 보여준다. renderAssetSheet()의 '이 자산 삭제' 링크 위에 '다른 자산에 합치기' 링크를 추가(잔액식 자산을 수정할 때만 노출). 테스트 21건 추가(2634->2655 통과, 기존 cycle296 state의 2636도 중간에 2634로 집계됐으나 최종은 2655). APP_VERSION 1.47.339->1.47.340, sw.js CACHE v606->v607. node test/run.js 2655/2655 통과, index.html 메인 인라인 스크립트/logic.js/sw.js 구문 검증(node --check 및 new Function) 통과. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 298,
+      "phase": "develop",
+      "timestamp": "2026-11-03T21:10:33.080Z",
+      "summary": "mergeAssetInto(자산 합치기, cycle297)가 거래/반복거래의 fromAssetId/toAssetId/adjustAsset은 옮기지만 DB.goals의 linkedAssetId(type:\"asset\" 목표가 가리키는 자산)는 전혀 건드리지 않던 공백 발견 — 목표 생성은 BAL_ASSET_TYPES와 똑같은 잔액식 종류만 연결 대상으로 허용하는데(openAssetForm, excludeMarketValued+excludeDebt), 그 목표가 연결한 자산을 다른 자산에 합치면 자산 자체는 to로 안전하게 보존되는데도 goalLinkedAssetGone()이 \"연결된 자산이 사라졌어요\"로 잘못 표시해 목표 추적이 끊겼다. saveAsset()이 owner 변경 시 연결 목표를 재배선하는 기존 패턴(4703행)과 같은 자리에 적용: mergeAssetInto가 from을 가리키던 goal.linkedAssetId를 to로 옮기고 touchSave에 포함시키며, undoToast 복원 클로저에서 원래 값으로 되돌린다. 테스트 3건 추가(목표가 to로 옮겨가고 touch됨+goalLinkedAssetGone이 false+undo 시 원복, to를 이미 가리키던 목표/networth형 목표는 건드리지 않음). 테스트 2655->2658 통과. APP_VERSION 1.47.340->1.47.341, sw.js CACHE v607->v608. node test/run.js 2658/2658 통과, sw.js 구문 검증(node --check) 통과, index.html 메인 인라인 스크립트(688862자) node --check 통과.",
       "commit": null
     }
   ]
