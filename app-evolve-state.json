@@ -1,15 +1,8 @@
 {
   "cycle": 294,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 289,
-      "phase": "review",
-      "timestamp": "2026-11-02T09:00:00.000Z",
-      "summary": "cycle289 develop 커밋(e723196) 검토 — matchAssetQuery의 stockCode/cryptoCode haystack 추가가 세 호출부(통합검색/자산검색/자산피커) 모두에 자동 전파됨을 확인. node test/run.js 2539/2539, 구문 검증 모두 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 289,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-03T08:40:00.000Z",
       "summary": "목표 관리(openGoalsList)에 검색창이 전혀 없던 공백 발견 — openRecManage(recQ, cycle291 advance)와 같은 패턴으로 인라인 검색(goalQ)을 추가했다. 기존에 이미 있던 matchGoalQuery(통합검색용, 이름+금액 비교/범위 지원)를 그대로 재사용. 다만 목표는 보통 몇 개뿐이라 openCatPicker의 CAT_PICKER_SEARCH_THRESHOLD와 같은 이유로 GOAL_LIST_SEARCH_THRESHOLD(8)를 넘을 때만 검색창을 보여주고, 이하면 기존처럼 검색창 없이 전체를 그대로 보여준다. 본문을 goalsManageBody(q)로 분리해 #goalBody innerHTML만 220ms 디바운스로 교체(goalQInput), 시트 전체를 다시 열지 않는다. 테스트 9건 추가(2591->2600 통과). APP_VERSION 1.47.332->1.47.333, sw.js CACHE v599->v600. node test/run.js 2600/2600 통과.",
+      "commit": "8fa42af"
+    },
+    {
+      "cycle": 294,
+      "phase": "review",
+      "timestamp": "2026-11-03T09:45:00.000Z",
+      "summary": "cycle294 develop 커밋(8fa42af) 검토 — goalsManageBody가 matchGoalQuery/esc를 올바르게 재사용하고, clrInput/goalQInput 모두 대상 엘리먼트 부재(#goalQ가 임계값 미달로 렌더되지 않거나 시트가 닫힌 뒤 늦게 실행되는 경우)를 방어적으로 처리함을 확인. duplicateGoal/saveGoal/delGoal 모두 저장 후 closeSheet()로 시트 전체를 닫으므로(목록에 머물지 않음) 목표 추가/삭제로 개수가 임계값을 넘나들어도 검색창 표시 여부는 다음에 openGoalsList()를 다시 열 때 항상 새로 계산돼 불일치가 생기지 않는다. node test/run.js 2600/2600, logic.js 구문 검증 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
       "commit": null
     }
   ]
