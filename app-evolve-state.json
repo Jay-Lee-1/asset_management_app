@@ -1,15 +1,12 @@
 {
   "cycle": 298,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "전체내역/일별거래 다건 선택 시 계좌(귀속) 일괄 이동 기능 추가",
+    "why": "거래 선택모드(hist.selMode/lSel.mode)는 카테고리 일괄변경(doBulkCat, index.html:10632 / bulkCatTargets, logic.js:1296)과 삭제만 지원하고, 선택한 여러 내역을 다른 계좌(asset)로 한꺼번에 옮기는 기능이 전혀 없다. 단건 수정에서는 이미 _applyOpenAsset(index.html:5272)+txOpenAsset/recOpenAsset로 fromAssetId/toAssetId를 자유롭게 바꿀 수 있고, 잔액은 저장형 필드가 아니라 balancesUpTo가 매번 재생(replay)하는 파생값이라 계좌를 바꿔도 별도 보정 계산이 필요 없다 — 리스크가 큰 기능이 아니라 이미 있는 단건 패턴을 다건에 붙이면 되는 구조다. CSV 가져오기나 수동 입력 중 엉뚱한 계좌로 수십 건이 들어갔을 때 지금은 하나씩 열어 고쳐야 한다. cycle295 critique가 이미 이 공백을 봤지만 그때는 플랜 탭 단일계좌 한계(cycle295 advance로 해결됨)가 더 급해 보류했을 뿐, 공백 자체는 해소되지 않았다.",
+    "approach": "bulkCatTargets와 동일한 골격의 bulkAssetMoveTargets(txns,ids)를 logic.js에 신설해 transfer(양쪽 계좌가 모두 관여해 '이동'이 모호함)·adjust(잔액조정, 계좌에 묶인 의미)는 제외하고 income/expense만 허용, 섞인 type은 허용(한쪽은 fromAssetId, 한쪽은 toAssetId를 바꾸므로 kind 통일 불필요 — bulkCatTargets의 kind 제약과 다름). openAssetPicker({cashOrDebt:true, excludeMarketValued:true,...})로 대상 계좌를 고르게 하고, doBulkAssetMove(ids, newAssetId)가 type별로 fromAssetId 또는 toAssetId만 교체 후 touchSave+undoToast(doBulkCat과 동일 패턴)로 되돌릴 수 있게 한다. 선택바(updateSelBottom)에 세 번째 버튼으로 추가."
+  },
   "history": [
-    {
-      "cycle": 293,
-      "phase": "critique",
-      "timestamp": "2026-11-03T06:20:00.000Z",
-      "summary": "서브에이전트로 앱 전체를 재조사. 반복 수정의 '전체 적용'/'오늘부터 이후 모두'(recSaveScopeApply, index.html:5744)가 자산 삭제/카테고리 삭제/일괄 카테고리 변경/CSV 가져오기/백업 복원과 같은 위험군인데도(확인 시트에서 스스로 '과거 기록도 함께 바뀌어요 · 잔액 이력이 달라질 수 있어요'라고 경고) 유일하게 undoToast가 없어 되돌릴 수단이 없음을 발견. (부차 후보: 지출/수입 분석 화면의 spendTrend/incomeTrend가 매 카테고리 행마다 3개월치 집계를 캐시 없이 재계산하는 성능 이슈, 목표/예산 목록에 인라인 검색 없음 — 둘 다 이번엔 보류.) pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 293,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-03T21:45:00.000Z",
       "summary": "cycle298 develop 커밋(e4f020b) 검토 — goalItems가 DB.goals 중 type==='asset'&&linkedAssetId===fromId인 항목만 모아 to로 옮기고, 이미 to를 가리키던 목표나 networth형 목표는 건드리지 않음을 diff와 신규 테스트 3건으로 확인. goalLinkedAssetGone()은 DB.assets에 linkedAssetId가 존재하는지만 보므로 from 제거+linkedAssetId를 to로 재배선한 뒤에는 항상 false가 됨을 검증. undoToast 복원 클로저가 goalItems.forEach로 prevLinked를 되돌리는 순서가 DB.assets.splice로 from을 되살리는 시점과 독립적이라(목표는 id 참조만 바꾸는 것이라 자산 배열 순서에 의존하지 않음) 충돌 없음을 확인. touchSave에 goalItems를 포함시켜 목표도 함께 touch되는 것도 확인(테스트가 updatedAt 변경을 검사). node test/run.js 2658/2658, index.html 메인 인라인 스크립트 node --check 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 298,
+      "phase": "critique",
+      "timestamp": "2026-11-03T22:50:00.000Z",
+      "summary": "서브에이전트로 앱 전체를 재조사. 발견: 전체내역/일별거래 다건 선택모드는 카테고리 일괄변경(doBulkCat)과 삭제만 지원하고, 선택한 여러 내역을 다른 계좌로 한꺼번에 옮기는 '계좌 일괄 이동' 기능이 없음 — 단건 수정의 _applyOpenAsset(txOpenAsset/recOpenAsset)가 이미 fromAssetId/toAssetId 변경을 지원하고 잔액이 balancesUpTo로 매번 재생되는 파생값이라 리스크가 크지 않은 구조인데도 다건에는 붙어있지 않다. cycle295 critique가 같은 공백을 봤지만 당시 플랜 탭 단일계좌 한계(해결됨)에 밀려 보류됐을 뿐 공백은 그대로 남아있었음을 확인. pending_advance_plan에 저장. (보류: 반복내역 관리 목록 삭제가 편집화면을 거쳐야 하는 점은 cycle297 critique가 이미 develop 사이즈로 분류해 이번 pick과 중복 배제; CSV 내보내기 기간 필터 부재는 백업 전체 내보내기로 우회 가능해 영향 작음; PIN 평문저장/fx·stock 환전기록/주식분할은 기존에 반복 보류된 항목이라 재차 제외.) 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
