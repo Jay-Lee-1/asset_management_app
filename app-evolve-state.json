@@ -1,26 +1,8 @@
 {
-  "cycle": 292,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "반복 내역 금액 '간편 수정'(recSave)이 분할(splits) 합계 불변식을 깨뜨림",
-    "why": "반복 거래의 개별/이후/전체 범위 금액 수정 폼(renderTxSheet의 rc 분기, index.html:4998-5009)은 금액 입력 하나만 보여주고 분할(splits) UI가 전혀 없다. recApply()(index.html:5387-5392)가 txDraft를 만들 때 r.splits/ed.splits를 전혀 복사하지 않고, recSave()(index.html:5396-5425)도 scope별로 amount/memo만 쓰고(edits[date]={amount,memo} 또는 r.amount=amt 또는 newRec에 amount만 덮어씀) splits는 건드리지 않는다. 반면 saveRec()(index.html:5588-5592)은 sum(splits)===amount 불변식을 저장 시점에 명시적으로 검증한다(cycle282에서 반복에도 적용). 따라서 분할이 있는 반복 거래의 한 회차를 '간편 수정'으로 금액만 바꾸면 r.amount(또는 edits[date].amount)와 r.splits 합계가 어긋나고, splitLines()를 쓰는 카테고리별 지출/예산 리포트와 CSV 카테고리 내보내기는 여전히 옛 분할 합계를 쓰는 반면 원장/잔액 총액은 새 금액을 쓰는 침묵 불일치가 매달 재발한다. scope='one'은 더 심해서 index.html:2722 주석이 이미 edits[date].splits가 '아직 recApply/recSave에서 쓰지 않아 항상 undefined'라고 적어둠. 가장 흔한 '거래 탭하기' 경로에서 핵심 기능(정확한 자산/카테고리 집계)을 조용히 깨는 실제 회귀라 최우선.",
-    "approach": "(1) recApply()에서 txDraft에 splits:(ed.splits!==undefined?ed.splits:r.splits)를 깊은 복사로 포함시켜 expandRec()이 실제로 보여주는 분할과 맞춘다. (2) renderTxSheet()의 rc 분기에서 d.splits.length>=2일 때 splitFieldHTML(d,'tx')를 렌더링(기존 txSplitAmt/txSplitMemo/txSplitAdd/txSplitRemove 핸들러 재사용)해 분할 수정이 가능하게 한다. (3) recSave()에 saveRec()과 동일한 sum(splits)===amt 검증을 추가하고, scope='one'은 edits[date].splits에, scope='future'는 newRec.splits에, scope='all'은 r.splits에 수정된 splits를 반영한다. (4) test/run.js에 recSave의 기존 scope별(one/future/all) 테스트를 분할이 있는 반복 거래로 확장해 저장 후 불변식이 유지되는지 검증하는 회귀 테스트를 추가한다."
-  },
+  "cycle": 293,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 287,
-      "phase": "critique",
-      "timestamp": "2026-11-02T02:00:00.000Z",
-      "summary": "최근 커밋 단위가 아니라 앱 전체를 한 걸음 물러나 훑었다. 결론: 이미 매우 성숙한 코드베이스라 큰 전략적 약점은 발견되지 않았다. 유일하게 안전하고 한 cycle 안에 끝낼 수 있는 항목은 parseAmountUnit이 '만'/'억'만 지원하고 '천'(1,000) 단위를 지원하지 않는 공백 — pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
-    {
-      "cycle": 287,
-      "phase": "advance",
-      "timestamp": "2026-11-02T03:10:00.000Z",
-      "summary": "critique(cycle287) 계획대로 금액 검색에 '천'(1,000) 단위 접미사를 추가했다. parseAmountUnit 정규식 확장, normalizeAmountSpacing도 함께 넓혀 matchQueryTerms 공통화 덕에 세 함수 전부 자동 전파됨을 테스트로 실증. 테스트 3건 추가(2526->2529 통과). APP_VERSION 1.47.318->1.47.319, sw.js CACHE v585->v586. node test/run.js 2529/2529 통과. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 288,
       "phase": "develop",
@@ -74,84 +56,91 @@
       "cycle": 289,
       "phase": "advance",
       "timestamp": "2026-11-02T11:30:00.000Z",
-      "summary": "critique(cycle289) 계획대로 APPLOCK(PIN) 활성 시 JSON 전체 백업 내보내기/가져오기를 PIN으로 암호화했다. (1) doExport(mode,kind)에서 kind가 falsy(JSON 백업)이고 APPLOCK.enabled()이면 promptExportPin()(새 PIN 입력 시트, Promise로 결과 반환)으로 PIN을 받아 APPLOCK.verify()로 확인한 뒤 encryptDbBlob(text,pin)의 결과를 text로 써서 그 뒤 공유/파일저장/복사 폴백 로직은 그대로 둔다. 취소(null)하면 '내보내기를 취소했어요' 토스트 후 중단. copyFallback의 사진-제외 재직렬화(redactTxnPhotos) 분기도 exportPin이 있으면 다시 암호화해, 공유/파일저장이 막혀 클립보드 폴백으로 넘어가도 PIN 보호가 조용히 사라지지 않게 했다(원래 critique 계획엔 없었지만 구현 중 발견한 누락 — text 변수 재사용 분기는 자동으로 암호화됐지만 redactTxnPhotos(DB) 재직렬화 분기는 별도 처리가 필요했음). (2) importFile change 핸들러는 raw가 assets/txns 배열이면 기존처럼 바로 proceedWithBackupObj(평문 복원 로직을 분리한 공유 함수)로, {v:1,salt,iv,ct} 모양이면 openImportPinSheet(raw)로 분기 — doImportPinSubmit이 decryptDbBlob(raw,pin)을 시도해 null(틀린 PIN)이면 importPinIn을 비우고 재시도를 허용, 성공하면 JSON.parse 후 동일한 배열 모양 검증을 거쳐 proceedWithBackupObj로 이어간다. APPLOCK.enabled() 여부와 무관하게 raw의 모양만으로 판단해, 다른 기기에서 PIN 켜고 만든 백업을 PIN 없는 기기로 복원하는 경우도 지원. CSV 내보내기와 클립보드 복사(사진 없을 때의 기본 경로)는 계획대로 건드리지 않음. (3) 2276행 주석 갱신(cycle289가 export/import 두 지점을 연결했음을 기록, save()/load() 전체 배선은 여전히 미연결). (4) 테스트: test/run.js FUNCTIONS에 proceedWithBackupObj/openImportPinSheet 추가(importFile 'change' 최상위 statement가 실제로 호출하므로 필요), LETS에 _importPinRaw 추가. doExport/doExportPinSubmit/doImportPinSubmit은 doSetPin/doChangePin/doDisableAppLock과 같은 이유(PIN 시트 onclick 문자열로만 참조되는 제출 핸들러)로 소스 패턴 테스트만 추가했고, importFile change의 평문/암호화 분기 자체는 실행형 테스트로 검증(암호화 블롭이면 확인 시트 대신 PIN 시트+_importPinRaw 보관, 손상된 파일은 기존처럼 토스트). 기존 평문 백업 복원 실행형 테스트 2건은 proceedWithBackupObj 분리 후에도 그대로 통과(하위호환 확인). 테스트 6건 추가(2539->2545 통과). APP_VERSION 1.47.322->1.47.323, sw.js CACHE v589->v590. node test/run.js 2545/2545 통과, logic.js/sw.js 구문 검증(node --check) 통과, index.html 메인 인라인 script 블록 vm 파싱 스모크 테스트 통과. pending_advance_plan null로 비움.",
+      "summary": "critique(cycle289) 계획대로 APPLOCK(PIN) 활성 시 JSON 전체 백업 내보내기/가져오기를 PIN으로 암호화했다. (1) doExport(mode,kind)에서 kind가 falsy(JSON 백업)이고 APPLOCK.enabled()이면 promptExportPin()(새 PIN 입력 시트, Promise로 결과 반환)으로 PIN을 받아 APPLOCK.verify()로 확인한 뒤 encryptDbBlob(text,pin)의 결과를 text로 써서 그 뒤 공유/파일저장/복사 폴백 로직은 그대로 둔다. 취소(null)하면 '내보내기를 취소했어요' 토스트 후 중단. copyFallback의 사진-제외 재직렬화(redactTxnPhotos) 분기도 exportPin이 있으면 다시 암호화해, 공유/파일저장이 막혀 클립보드 폴백으로 넘어가도 PIN 보호가 조용히 사라지지 않게 했다(원래 critique 계획엔 없었지만 구현 중 발견한 누락). (2) importFile change 핸들러는 raw가 assets/txns 배열이면 proceedWithBackupObj로, {v:1,salt,iv,ct} 모양이면 openImportPinSheet(raw)로 분기. (3) 2276행 주석 갱신. (4) 테스트 6건 추가(2539->2545 통과). APP_VERSION 1.47.322->1.47.323, sw.js CACHE v589->v590. node test/run.js 2545/2545 통과. pending_advance_plan null로 비움.",
       "commit": null
     },
     {
       "cycle": 290,
       "phase": "develop",
       "timestamp": "2026-11-02T12:16:50.082Z",
-      "summary": "matchRecQuery(반복/구독 검색)가 카테고리/메모/금액까지만 haystack에 넣고, openRecManage 행이 msub로 그대로 보여주는 반복 주기 레이블(recFreqLabelStr — \"매주 월요일\", \"매월 15일\", \"매년 3월 5일\" 등)은 빠져 있던 공백 발견 — 카테고리/메모만으론 구분이 안 되는 같은 유형의 반복이 여러 개일 때(매주 월요일 용돈 vs 매주 금요일 장보기) 화면에 보이는 문구로도 못 찾았다. recFreqLabelStr(r.freq,r.day,r.startDate)를 다른 haystack 필드와 동일하게 이어 붙여, 기존 카테고리/메모/금액 매칭 규칙(AND 토큰화, NFC 정규화)을 그대로 재사용했다. 테스트 5건 추가(2545->2550 통과). APP_VERSION 1.47.323->1.47.324, sw.js CACHE v590->v591. node test/run.js 2550/2550 통과, logic.js/sw.js 구문 검증(node --check) 통과.",
+      "summary": "matchRecQuery(반복/구독 검색)가 카테고리/메모/금액까지만 haystack에 넣고, openRecManage 행이 msub로 그대로 보여주는 반복 주기 레이블(recFreqLabelStr)은 빠져 있던 공백 발견 — recFreqLabelStr(r.freq,r.day,r.startDate)를 haystack에 추가. 테스트 5건 추가(2545->2550 통과). APP_VERSION 1.47.323->1.47.324, sw.js CACHE v590->v591. node test/run.js 2550/2550 통과.",
       "commit": "b82480a"
     },
     {
       "cycle": 290,
       "phase": "review",
       "timestamp": "2026-11-02T13:30:00.000Z",
-      "summary": "cycle290 develop 커밋(b82480a) 검토 — recFreqLabelStr(freq,day,startDate)가 freq/day/startDate 누락 시에도 방어적으로 '매주'/'매년' 폴백을 반환해 never throw함을 확인(logic.js:83-91). haystack에 이어붙인 freqLabel이 항상 문자열이라 matchQueryTerms의 AND 토큰화·NFC 정규화 경로에 안전하게 합류한다. 신규 테스트 5건(요일 구분, 매월 N일/말일, 매년 M월, AND 결합, freq/startDate 누락 방어)이 핵심 분기를 잘 덮음. node test/run.js 2550/2550, logic.js/sw.js 구문 검증(node --check) 모두 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
+      "summary": "cycle290 develop 커밋(b82480a) 검토 — recFreqLabelStr(freq,day,startDate)가 freq/day/startDate 누락 시에도 방어적으로 폴백을 반환해 never throw함을 확인. node test/run.js 2550/2550 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
       "commit": null
     },
     {
       "cycle": 290,
       "phase": "critique",
       "timestamp": "2026-11-02T14:35:00.000Z",
-      "summary": "서브에이전트로 앱 전체(아키텍처/UX흐름/기술부채/성능/접근성/에러상태)를 재조사. TODO/FIXME 전부 확인, 드래그/키보드 접근성(이동 버튼 폴백 있음), empty-catch 전부 의도된 폴백, CSV 7종 라운드트립, _balCache/_recCache/_histCache 캐시+무효화, 차트 키보드 내비+aria-live, Web Locks 기반 크로스탭/클라우드 충돌 처리 등 대부분 이미 견고함을 확인 — 290 사이클 동안 다져진 코드베이스라 당장 보이는 '쉬운' 약점은 거의 없음. 유일하게 발견한 실제 공백: pageHead()의 tab별 acts 분기(index.html:9370-9379)가 'menu' 탭에만 통합 검색(openGlobalSearch) 아이콘을 달아두고, 가장 자주 보는 'home' 탭(및 'plan')엔 검색 진입점이 전혀 없음 — assets/ledger/history는 자체 인라인 검색이 있어 문제 없지만 거래/자산/카테고리/목표/반복을 가로지르는 유일한 통합 검색은 메뉴까지 2탭 이동해야 닿음. pending_advance_plan에 저장. 기각한 후보: (1) AppLock PIN이 저장 자체(save/load)가 아닌 백업에만 암호화 적용 — cycle252/289 주석이 이미 '한 사이클로는 과한 저장 아키텍처 재작성'이라 명시적으로 보류 판단함, (2) 앱/탭 닫힌 상태에서 OS 푸시 알림 — VAPID/푸시 서버 인프라가 필요해 백엔드 없는 PWA 범위 밖, (3) renderAssetSheet 등 최대 렌더 진입점의 DOM 통합 테스트 공백 — 기존 domstub.js 셈 전략으로 의도적으로 제외된 테스트 인프라 부채, 사용자 체감 버그보다 우선순위 낮음. 코드 변경 없음(state.json만 커밋).",
+      "summary": "서브에이전트로 앱 전체를 재조사. 발견: pageHead()의 tab별 acts 분기가 'menu' 탭에만 통합 검색(openGlobalSearch) 아이콘을 달아두고, 가장 자주 보는 'home'(및 'plan')엔 검색 진입점이 전혀 없음. pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
       "commit": null
     },
     {
       "cycle": 290,
       "phase": "advance",
       "timestamp": "2026-11-02T15:40:00.000Z",
-      "summary": "critique(cycle290) 계획대로 통합 검색(openGlobalSearch) 진입점을 home과 plan 탭에도 추가했다. 구현 중 확인한 사실: renderHome()은 pageHead()를 거치지 않고 자기 헤더(hdr)를 직접 문자열로 만들어 꽂는다(pageHead 호출부는 assets/ledger/history/plan/menu 5곳뿐, index.html:9370-9379 tab별 acts 분기는 home엔 아예 적용되지 않음) — 그래서 계획대로 pageHead()의 'home' 분기를 고치는 대신, renderHome()의 인라인 hdr 마크업(index.html 상단 $('page-home').innerHTML 템플릿)에 hdr-actions+icon-btn(openGlobalSearch) 버튼을 직접 추가했다. plan 탭은 계획대로 pageHead()의 'plan' 분기에서 기존 '오늘로' 칩 뒤에 같은 버튼을 이어붙여 두 버튼이 hdr-actions에서 공존하게 했다(menu 탭 분기는 그대로 유지). assets/ledger/history는 자체 인라인 검색(assetQ/histQ)이 있어 건드리지 않음. 테스트: renderHome() 실행형 스모크 테스트에 hdr-actions/openGlobalSearch 포함 검증 추가, pageHead('plan')/pageHead('menu')/pageHead('assets') 3건 추가(plan은 오늘로+검색 공존, menu는 기존 동작 회귀 가드, assets는 acts 없음 회귀 가드). 테스트 4건 추가(2550->2554 통과). APP_VERSION 1.47.324->1.47.325, sw.js CACHE v591->v592. node test/run.js 2554/2554 통과, logic.js/sw.js 구문 검증(node --check) 통과, index.html 메인 인라인 script 블록 파싱 스모크 테스트 통과. pending_advance_plan null로 비움.",
+      "summary": "critique(cycle290) 계획대로 통합 검색(openGlobalSearch) 진입점을 home과 plan 탭에도 추가했다. renderHome()은 pageHead()를 안 거치므로 자체 hdr 템플릿에 직접 버튼을 추가, plan은 pageHead() 'plan' 분기에 추가. 테스트 4건 추가(2550->2554 통과). APP_VERSION 1.47.324->1.47.325, sw.js CACHE v591->v592. node test/run.js 2554/2554 통과. pending_advance_plan null로 비움.",
       "commit": null
     },
     {
       "cycle": 291,
       "phase": "develop",
       "timestamp": "2026-11-02T17:40:05.000Z",
-      "summary": "matchAssetQuery(자산 검색)가 이름+통화+종목코드/심볼만 haystack에 넣고, 자산 목록/피커 행마다 chipmini로 그대로 노출되는 귀속(owner — '본인'/'배우자' 등 사용자가 직접 이름 붙이는 DB.owners 값)은 빠져 있던 공백 발견 — 귀속별로 자산이 여러 개일 때(예: 배우자 명의 계좌가 여러 개) 이름/통화만으론 구분이 안 돼도 화면에 뻔히 보이는 귀속 칩 문구로는 찾을 방법이 없었다. currency/stockCode와 동일한 방식으로 a.owner를 haystack에 추가. 테스트 4건 추가(2554->2556 통과). APP_VERSION 1.47.325->1.47.326, sw.js CACHE v592->v593. node test/run.js 2556/2556 통과, logic.js/sw.js 구문 검증(node --check) 통과.",
+      "summary": "matchAssetQuery(자산 검색)가 귀속(owner)을 haystack에 넣지 않던 공백 발견 — currency/stockCode와 동일한 방식으로 a.owner를 추가. 테스트 4건 추가(2554->2556 통과). APP_VERSION 1.47.325->1.47.326, sw.js CACHE v592->v593. node test/run.js 2556/2556 통과.",
       "commit": "8ac3da6"
     },
     {
       "cycle": 291,
       "phase": "review",
       "timestamp": "2026-11-02T18:50:00.000Z",
-      "summary": "cycle291 develop 커밋(8ac3da6) 검토 — matchAssetQuery의 a.owner haystack 추가가 currency/stockCode/cryptoCode와 동일한 패턴(빈 문자열 폴백, NFC 정규화 후 단순 이어붙이기)이라 기존 매칭 규칙을 그대로 재사용함을 확인. a.owner가 DB.owners를 가리키는 id가 아니라 평문 문자열('본인'/'배우자' 등, ownerOf()·renameOwnerSheet() 등에서 동일하게 취급)임을 index.html에서 재확인해 검색어와 직접 비교가 의미 있음을 검증. node test/run.js 2556/2556, logic.js/sw.js 구문 검증(node --check) 모두 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
+      "summary": "cycle291 develop 커밋(8ac3da6) 검토 — matchAssetQuery의 a.owner haystack 추가가 기존 패턴을 그대로 재사용함을 확인. node test/run.js 2556/2556 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
       "commit": null
     },
     {
       "cycle": 291,
       "phase": "critique",
       "timestamp": "2026-11-02T20:05:00.000Z",
-      "summary": "앱 전체를 서브에이전트로 재조사(아키텍처/UX흐름/기술부채/성능/접근성/에러상태). 자산관리(assetQ)/전체내역(histQ)/카테고리 피커(catQ)는 모두 자체 인라인 검색창이 있지만 openRecManage('반복 내역 관리', index.html:7151-7180)는 지출/수입/저축/이체 4개 그룹으로만 나눠 전체 목록을 보여줄 뿐 검색창이 전혀 없음을 발견. matchRecQuery는 이미 존재하고 통합검색(gsQ)에 배선돼 있어(cycle279) 로직 공백이 아니라 순수 UI 진입점 공백 — 구독/월세/보험/할부가 많은 사용자가 같은 카테고리로 묶인 반복이 여럿일 때(cycle280이 이미 제목 표시를 memo||category로 고친 그 시나리오) 검색 없이는 손으로 스크롤해 찾아야 한다. openGlobalSearch()의 기존 디바운스+innerHTML 교체 패턴을 그대로 재사용하는 구체적 계획을 pending_advance_plan에 저장. TODO(SRI) 주석(index.html:1383)은 이 컨테이너의 네트워크 정책이 CDN egress를 막아 실제 해시를 계산할 수 없다고 명시적으로 남겨둔 것이라 그대로 둠(재확인만). 기각한 후보: (1) 목표 관리(openGoalsList)도 인라인 검색이 없지만 MVP 특성상 목표 개수가 적어(순자산 1종+자산연계 소수) 반복 내역보다 체감 우선순위가 낮음, (2) AppLock PIN의 save()/load() 전체 암호화 — cycle252/289/290이 이미 반복해서 '한 사이클로는 과한 저장 아키텍처 재작성'이라 보류 판단함, (3) OS 푸시 알림(앱 닫힌 상태) — 백엔드 없는 PWA 범위 밖, 기존 판단 유지. 코드 변경 없음(state.json만 커밋).",
+      "summary": "앱 전체를 서브에이전트로 재조사. openRecManage(반복 내역 관리)가 검색창이 전혀 없음을 발견(matchRecQuery는 이미 존재, 로직 공백이 아니라 UI 진입점 공백). pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
       "commit": null
     },
     {
       "cycle": 291,
       "phase": "advance",
       "timestamp": "2026-11-02T21:20:00.000Z",
-      "summary": "critique(cycle291) 계획대로 반복 내역 관리(openRecManage)에 인라인 검색(recQ)을 추가했다. openGlobalSearch()/globalSearchBody()와 동일한 패턴: (1) 몸통을 recManageBody(q)로 분리해 지출/수입/저축/이체 그룹별 list에 matchRecQuery(r,q) 필터를 추가(검색어 없으면 기존과 동일하게 전체). (2) openRecManage()는 h3 아래 searchbar(#recQ, placeholder '메모·카테고리·주기 검색')와 결과를 담는 #recBody를 렌더링하고, recQInput(v)가 assetQ/histQ/gsQ와 동일한 220ms 디바운스로 #recBody.innerHTML만 교체(시트는 그대로라 포커스/스크롤 유지, fcWire는 openSheet가 이미 처리하므로 별도 호출 불필요함을 확인). (3) 월 합계 요약 카드(매달 약 N원)는 검색어와 무관하게 항상 전체 기준으로 고정(그룹 헤더의 'N개'만 필터링 반영). (4) 검색 결과 0건이면 '반복이 없어요'와 다른 전용 빈 상태('…와 일치하는 반복이 없어요') 노출. (5) 구현 중 발견한 추가 개선: toggleRecActive(일시중지/재시작)가 매번 openRecManage()로 시트를 통째로 다시 열어 입력 중인 검색어/스크롤 위치가 날아가던 것을 고쳐, #recQ가 열려 있으면 #recBody만 같은 검색어로 다시 그리고 없으면(다른 진입 경로) 기존처럼 전체를 새로 열도록 분기(원래 critique 계획에는 없던 범위지만 검색을 실제로 쓸 때 바로 체감되는 회귀라 같은 사이클에 포함). 테스트: test/run.js의 openRecManage 격리 vm 컨텍스트(recManageCtx)에 recManageBody 추출을 추가해 기존 7건을 그대로 통과시키고, recManageBody/recQInput/toggleRecActive 관련 신규 테스트 13건 추가(검색창·#recBody 마크업, 메모/주기 레이블 매칭 시 그룹별 필터링, 요약 카드 고정, 0건 전용 빈 상태, 빈 검색어=전체 동치, 디바운스 220ms·연속 입력 시 타이머 교체·#recBody 없을 때 안전 가드, toggleRecActive의 검색 상태 보존/폴백). recQInput을 FUNCTIONS에 추가하면서 디바운스 타이머 _recQT를 LETS에 추가(histQInput의 _histQT와 동일 패턴). 테스트 11건 추가(2556->2567 통과). APP_VERSION 1.47.326->1.47.327, sw.js CACHE v593->v594. node test/run.js 2567/2567 통과, logic.js/sw.js 구문 검증(node --check) 통과, index.html 메인 인라인 script 블록 파싱 스모크 테스트 통과. pending_advance_plan null로 비움.",
+      "summary": "critique(cycle291) 계획대로 반복 내역 관리(openRecManage)에 인라인 검색(recQ)을 추가했다. recManageBody(q)로 분리해 matchRecQuery 필터 적용, openGlobalSearch와 동일한 220ms 디바운스 패턴. toggleRecActive도 검색 상태를 보존하도록 함께 수정. 테스트 11건 추가(2556->2567 통과). APP_VERSION 1.47.326->1.47.327, sw.js CACHE v593->v594. node test/run.js 2567/2567 통과. pending_advance_plan null로 비움.",
       "commit": null
     },
     {
       "cycle": 292,
       "phase": "develop",
       "timestamp": "2026-11-02T22:30:00.000Z",
-      "summary": "findPossibleDuplicateRec(반복 등록 중복 경고)가 freq에 관계없이 r.day!==draft.day로만 스케줄을 비교하던 공백 발견 — day는 monthly에서만 사용자가 실제로 고르는 값이고(renderRecSheet이 day 입력 UI를 monthly에만 보여줌), weekly/yearly는 항상 startDate의 요일/월일로 스케줄이 정해지는데(recDates 참고) day는 신규 등록 시 기본값 1이 그대로 남는다. 그래서 요일이 다른 두 매주 반복(매주 월요일 용돈 vs 매주 금요일 장보기)이 같은 카테고리/금액이면 둘 다 day:1이라 중복으로 오판되고, 월/일이 다른 매년 반복도 같은 이유로 오판됐다. recScheduleSameSlot(freq,a,b) 신설(logic.js) — monthly는 기존 day 비교 유지, daily는 항상 true, weekly/yearly는 startDate에서 요일/월일을 파생해 비교(recFreqLabelStr과 같은 파생 방식 재사용), startDate 누락/파싱 실패 시엔 방어적으로 기존 day 비교로 폴백. findPossibleDuplicateRec의 r.day!==draft.day를 !recScheduleSameSlot(r.freq,r,draft)로 교체. 기존 monthly 전용 테스트(duplicateRec→saveRec 등)는 전부 그대로 통과(회귀 없음). 테스트 4건 추가(weekly 같은/다른 요일, yearly 같은/다른 월일, daily 항상 중복, startDate 없을 때 day 폴백)(2567->2571 통과). APP_VERSION 1.47.327->1.47.328, sw.js CACHE v594->v595. node test/run.js 2571/2571 통과, logic.js/sw.js 구문 검증(node --check) 통과.",
+      "summary": "findPossibleDuplicateRec(반복 등록 중복 경고)가 freq에 관계없이 r.day!==draft.day로만 스케줄을 비교하던 공백 발견 — weekly/yearly는 day가 아니라 startDate의 요일/월일로 스케줄이 정해지는데 day는 항상 기본값 1로 남아 다른 요일/월일의 반복도 중복으로 오판됐다. recScheduleSameSlot(freq,a,b) 신설(logic.js). 테스트 4건 추가(2567->2571 통과). APP_VERSION 1.47.327->1.47.328, sw.js CACHE v594->v595. node test/run.js 2571/2571 통과.",
       "commit": "6e71078"
     },
     {
       "cycle": 292,
       "phase": "review",
       "timestamp": "2026-11-02T23:40:00.000Z",
-      "summary": "cycle292 develop 커밋(6e71078) 검토 — recScheduleSameSlot(freq,a,b)이 recFreqLabelStr과 동일한 날짜 파싱 패턴('YYYY-MM-DD'+'T00:00:00' 로컬 파싱, startDate 양쪽에 동일하게 적용되어 기기 시간대 차이가 상쇄됨)을 그대로 재사용함을 확인. monthly('last' 문자열 포함 기존 day 동치 비교 유지)/daily(항상 true)/weekly·yearly(startDate 파생 요일·월일 비교)/startDate 누락 또는 파싱 실패 시 방어적 day 폴백까지 분기 전부 재현 검증. node test/run.js 2571/2571, logic.js/sw.js 구문 검증(node --check) 모두 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
+      "summary": "cycle292 develop 커밋(6e71078) 검토 — recScheduleSameSlot이 recFreqLabelStr과 동일한 날짜 파싱 패턴을 재사용함을 확인, monthly/daily/weekly/yearly/폴백 분기 전부 재현 검증. node test/run.js 2571/2571 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
       "commit": null
     },
     {
       "cycle": 292,
       "phase": "critique",
       "timestamp": "2026-11-03T00:50:00.000Z",
-      "summary": "서브에이전트로 앱 전체를 재조사(아키텍처/UX흐름/기술부채/성능/접근성/에러상태), 기존에 다룬/기각한 항목은 전부 제외하도록 지시. 발견: 반복 내역의 개별/이후/전체 범위 금액 '간편 수정'(renderTxSheet의 rc 분기 + recApply/recSave, index.html:4998-5009, 5387-5425)이 분할(splits) UI 자체가 없고 splits를 전혀 복사·검증·저장하지 않아, saveRec()이 저장 시점에 강제하는 sum(splits)===amount 불변식(index.html:5588-5592, cycle282에서 반복에도 적용)을 간편 수정 경로만 피해 간다 — 직접 재현 확인(renderTxSheet rc 분기엔 금액 입력 하나뿐, recApply가 txDraft에 splits 미복사, recSave 세 scope 모두 amount/memo만 씀). 분할 반복 거래의 회차 금액을 간편 수정으로 바꾸면 원장 합계와 카테고리별 리포트(splitLines 기반)가 조용히 어긋나는, 가장 흔한 '탭해서 수정' 경로의 실제 정확성 버그라 최우선 선정. pending_advance_plan에 저장. 기각한 후보: (1) 카테고리 병합/이름변경 — 기존 톰스톤/히스토리 필터 처리가 이미 견고함 확인, (2) localStorage 용량/저장실패 처리 — 이미 toastFail+배너 존재, (3) 환율 조회 실패 — 이미 timeout+Promise.allSettled+'최신 아님' 배지 존재. 코드 변경 없음(state.json만 커밋).",
+      "summary": "서브에이전트로 앱 전체를 재조사. 발견: 반복 내역의 개별/이후/전체 범위 금액 '간편 수정'(renderTxSheet의 rc 분기 + recApply/recSave)이 분할(splits) UI 자체가 없고 splits를 전혀 복사·검증·저장하지 않아, saveRec()이 강제하는 sum(splits)===amount 불변식(cycle282)을 간편 수정 경로만 피해 간다. 분할 반복 거래의 회차 금액을 간편 수정으로 바꾸면 원장 합계와 카테고리별 리포트가 조용히 어긋나는 실제 정확성 버그라 최우선 선정. pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 292,
+      "phase": "advance",
+      "timestamp": "2026-11-03T02:10:00.000Z",
+      "summary": "critique(cycle292) 계획대로 반복 내역 '간편 수정'이 분할(splits) 합계 불변식을 지키게 고쳤다. (1) recApply()가 txDraft에 splits(ed.splits!==undefined?ed.splits:r.splits, expandRec과 동일한 폴백)를 깊은 복사로 실어, 폼에서 고쳐도 원본 r.splits/ed.splits가 바로 바뀌지 않게 했다. (2) renderTxSheet()의 rc 분기에서 d.splits.length>=2면 금액 라벨을 '전체 금액'으로 바꾸고 splitFieldHTML(d,'tx',true)를 렌더링 — 기존 txSplitAmt/txSplitMemo/txSplitAdd/txSplitRemove 핸들러를 그대로 재사용한다. 세 번째 인자 noToggle=true는 이 화면에만 추가한 것으로, splitFieldHTML의 '일반 입력으로'(txToggleSplit) 버튼을 숨긴다 — 간편 수정 화면은 edits[date]/newRec/r에 category 오버라이드를 저장할 자리가 없어, 분할을 꺼서 단일 카테고리로 되돌리는 길을 열면 꺼진 채로 저장될 곳이 없기 때문(분할 추가/삭제는 항상 2개 이상을 유지하므로 그대로 둬도 안전). (3) recSave()에 saveRec()과 동일한 분할 검증(카테고리 필수, 금액 필수, sum(splits)===amt)을 추가하고, scope='one'은 edits[date].splits에, scope='future'는 새로 분리된 레코드(newRec.splits)에, scope='all'은 r.splits에 수정된 분할을 반영했다. scope='all'의 undo가 기존엔 amount/memo만 복원했는데 r.splits도 함께 복원하도록 prevSplits를 추가(없으면 분할 수정을 되돌려도 금액만 돌아가고 분할은 안 돌아가는 회귀가 생김). (4) index.html:2722의 stale 주석(ed.splits가 '아직 안 쓰여 항상 undefined'라던 문구)을 scope='one'이 실제로 쓰게 됐다고 갱신. 테스트: recApply가 splits를 깊은 복사로 싣는지(원본 불변, ed.splits 우선, splits 없으면 undefined로 회귀 가드) 3건, recSave 세 scope(one/future/all) 각각 분할 수정이 반영되고 undo로 복원되는지 3건, 분할 검증 실패(합계 불일치/카테고리 누락) 2건, renderTxSheet(rc) 마크업(분할 필드 노출+토글 숨김, splits 없거나 1개면 평소처럼 단일 입력) 2건, splitFieldHTML(d,pfx,noToggle) 실행형 테스트 1건을 추가했다. renderTxSheet(real)가 이제 splitFieldHTML을 호출하는 경로를 타므로 test/run.js FUNCTIONS 공유 sandbox에 splitFieldHTML을 추가했다(안 올리면 recApply/recSave가 분할 있는 회차를 열 때 'splitFieldHTML is not defined'로 깨짐). vm 샌드박스 안에서 JSON.parse로 새로 만들어진 splits 배열은 host 배열과 realm이 달라 deepStrictEqual이 실패하므로, 비교는 기존 recSave future 분할 테스트와 같은 이유로 JSON.stringify 정규화를 썼다. 테스트 11건 추가(2571->2582 통과). APP_VERSION 1.47.328->1.47.329, sw.js CACHE v595->v596. node test/run.js 2582/2582 통과, logic.js/sw.js 구문 검증(node --check) 통과, index.html 메인 인라인 script 블록 vm 파싱 스모크 테스트 통과. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

@@ -262,6 +262,12 @@ const FUNCTIONS = [
   // 부르므로(반복 미켜짐 분기) renderTxSheet를 쓰는 모든 테스트(duplicateTx/saveTx/txType 등)의
   // 공유 sandbox에 함께 올라가야 한다.
   'txPhotoFieldHTML',
+  // splitFieldHTML은 renderTxSheet(splitOn 분기 및 rc 간편 수정의 분할 분기)·renderRecSheet
+  // 둘 다 d.splits.length>=2일 때 호출한다 — recApply가 txDraft.splits를 깊은 복사로 싣게
+  // 되면서(app-evolve cycle292 advance) renderTxSheet를 거치는 recApply/recSave 테스트도
+  // 분할이 있는 회차를 열면 이 경로를 실행하므로, renderTxSheet를 쓰는 공유 sandbox에
+  // 함께 올라가야 한다(안 올리면 "splitFieldHTML is not defined"로 깨짐).
+  'splitFieldHTML',
   'accountName', 'dbIsEmpty', 'guestHasData', 'importGuestDataInto',
   'txScheduled', 'monthStats', 'monthStats2', 'expenseByCat', 'needGold', 'inQuietWindow', 'fmtSynced', 'rateStatusText',
   // heldCurrencies/heldStockCodes/heldCryptoCodes/needFx/needStock/needCrypto/hasRateAssets/autoSyncRates는
@@ -9827,6 +9833,102 @@ test("recSave: scope='all' 수정은 r.amount를 바꾸고, undo하면 이전 �
   sandbox.lastUndo.undoFn();
   assert.strictEqual(r.amount, 1000, '되돌리면 원래 금액으로 복원되어야 함');
 });
+/* ---------- recApply/recSave: 분할(splits)이 있는 회차의 간편 수정 (app-evolve cycle292 advance) ----------
+ * saveRec()이 저장 시점에 강제하는 sum(splits)===amount 불변식을, 반복 내역 '간편 수정'(scope=
+ * one/future/all) 경로도 지키게 한다. 전에는 recApply가 txDraft에 splits를 전혀 싣지 않고
+ * recSave 세 scope 모두 amount/memo만 썼기 때문에, 분할이 있는 회차의 금액만 바꾸면 원장
+ * 합계와 splitLines() 기반 카테고리 리포트가 조용히 어긋났다(cycle292 critique가 찾은 공백). */
+test("recApply: splits가 있는 회차를 열면 txDraft.splits에 깊은 복사로 실려, 수정해도 r.splits 원본이 바뀌지 않는다", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', type: 'expense', category: '통신', memo: '결합요금', amount: 50000, fromAssetId: 'a1', toAssetId: null, splits: [{ category: '통신', amount: 30000 }, { category: 'OTT', amount: 20000 }] };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.recApply('r1', '2026-02-05', 'edit', 'one');
+  // JSON.parse가 vm 샌드박스 안에서 돌아 realm이 다른 배열을 만들어내므로(위 recSave future 분할
+  // 테스트와 같은 이유) deepStrictEqual 대신 JSON.stringify로 비교한다.
+  assert.strictEqual(JSON.stringify(sandbox.txDraft.splits), JSON.stringify([{ category: '통신', amount: 30000 }, { category: 'OTT', amount: 20000 }]), 'r.splits와 동일한 분할이 txDraft에 실려야 함');
+  sandbox.txDraft.splits[0].amount = 999;
+  assert.strictEqual(r.splits[0].amount, 30000, '깊은 복사라 폼에서 고쳐도 원본 r.splits는 바뀌지 않아야 함');
+});
+test("recApply: scope='one' edits에 splits 오버라이드가 있으면(ed.splits) r.splits 대신 그걸 깊은 복사해 싣는다", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', type: 'expense', category: '통신', amount: 50000, fromAssetId: 'a1', toAssetId: null, splits: [{ category: '통신', amount: 30000 }, { category: 'OTT', amount: 20000 }], edits: { '2026-02-05': { amount: 40000, splits: [{ category: '통신', amount: 25000 }, { category: 'OTT', amount: 15000 }] } } };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.recApply('r1', '2026-02-05', 'edit', 'one');
+  assert.strictEqual(JSON.stringify(sandbox.txDraft.splits), JSON.stringify([{ category: '통신', amount: 25000 }, { category: 'OTT', amount: 15000 }]), 'ed.splits가 r.splits보다 우선해야 함(expandRec과 동일한 폴백)');
+});
+test("recApply: splits가 없는 회차를 열면 txDraft.splits는 undefined로 남는다(회귀 가드)", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', type: 'expense', category: '식비', amount: 10000, fromAssetId: 'a1', toAssetId: null };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.recApply('r1', '2026-02-05', 'edit', 'one');
+  assert.strictEqual(sandbox.txDraft.splits, undefined);
+});
+test("recSave: scope='one'에서 분할 금액을 수정하면 edits[date].splits에 기록되고, undo하면 사라진다", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', amount: 50000, category: '통신', splits: [{ category: '통신', amount: 30000 }, { category: 'OTT', amount: 20000 }], edits: {} };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.window._recCtx = { recId: 'r1', date: '2026-02-05', scope: 'one' };
+  sandbox.txDraft = { amount: 60000, splits: [{ category: '통신', amount: 40000 }, { category: 'OTT', amount: 20000 }] };
+  sandbox.toastCalls = [];
+  sandbox.recSave();
+  assert.strictEqual(r.edits['2026-02-05'].amount, 60000);
+  // vm 샌드박스 안에서 deep copy로 새로 만들어진 splits 배열은 host의 Array/Object와 realm이
+  // 달라 deepStrictEqual이 (값은 같아도) 실패하므로, JSON.stringify로 정규화해 비교한다(위 recSave
+  // future 분할 테스트와 같은 이유).
+  assert.strictEqual(JSON.stringify(r.edits['2026-02-05'].splits), JSON.stringify([{ category: '통신', amount: 40000 }, { category: 'OTT', amount: 20000 }]), '수정한 분할이 edits[date].splits에 기록되어야 함');
+  assert.strictEqual(r.splits[0].amount, 30000, '다른 회차에 쓰는 r.splits 원본은 그대로여야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(r.edits['2026-02-05'], undefined, '되돌리면 해당 날짜의 edits가 통째로 제거되어야 함(이전에 없던 날짜였으므로)');
+});
+test("recSave: scope='future'에서 분할 금액을 수정하면 새로 분리된 레코드의 splits가 수정한 값으로 바뀐다", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', amount: 50000, endDate: null, skip: [], edits: {}, splits: [{ category: '통신', amount: 30000 }, { category: 'OTT', amount: 20000 }] };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.window._recCtx = { recId: 'r1', date: '2026-03-01', scope: 'future' };
+  sandbox.txDraft = { amount: 70000, splits: [{ category: '통신', amount: 50000 }, { category: 'OTT', amount: 20000 }] };
+  sandbox.recSave();
+  const newRec = sandbox.DB.recurrences.find(x => x.id !== 'r1');
+  assert.strictEqual(newRec.amount, 70000);
+  assert.strictEqual(JSON.stringify(newRec.splits), JSON.stringify([{ category: '통신', amount: 50000 }, { category: 'OTT', amount: 20000 }]), '새로 분리된 레코드는 수정한 분할을 반영해야 함');
+  assert.strictEqual(r.splits[0].amount, 30000, '분리 이전(원본) 레코드의 splits는 그대로여야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.recurrences.length, 1, '되돌리면 새로 만든 분리 레코드가 제거되어야 함');
+});
+test("recSave: scope='all'에서 분할 금액을 수정하면 r.splits가 바뀌고, undo하면 원래 분할로 복원된다", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', amount: 50000, splits: [{ category: '통신', amount: 30000 }, { category: 'OTT', amount: 20000 }] };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.window._recCtx = { recId: 'r1', date: '2026-02-05', scope: 'all' };
+  sandbox.txDraft = { amount: 60000, splits: [{ category: '통신', amount: 40000 }, { category: 'OTT', amount: 20000 }] };
+  sandbox.recSave();
+  assert.strictEqual(r.amount, 60000);
+  assert.strictEqual(JSON.stringify(r.splits), JSON.stringify([{ category: '통신', amount: 40000 }, { category: 'OTT', amount: 20000 }]));
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(r.amount, 50000);
+  assert.strictEqual(JSON.stringify(r.splits), JSON.stringify([{ category: '통신', amount: 30000 }, { category: 'OTT', amount: 20000 }]), '되돌리면 원래 분할로 복원되어야 함');
+});
+test("recSave: 분할 금액의 합이 전체 금액과 다르면 토스트만 뜨고 저장되지 않는다(scope='one')", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', amount: 50000, splits: [{ category: '통신', amount: 30000 }, { category: 'OTT', amount: 20000 }], edits: {} };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.window._recCtx = { recId: 'r1', date: '2026-02-05', scope: 'one' };
+  sandbox.txDraft = { amount: 60000, splits: [{ category: '통신', amount: 30000 }, { category: 'OTT', amount: 20000 }] }; // 합계 50000 ≠ 60000
+  sandbox.toastCalls = [];
+  sandbox.recSave();
+  assert.strictEqual(r.edits['2026-02-05'], undefined, '합계가 다르면 저장되면 안 됨');
+  assert.ok(sandbox.toastCalls.includes('분할 금액의 합이 전체 금액과 달라요'));
+});
+test("recSave: 분할 항목에 카테고리가 비어있으면 토스트만 뜨고 저장되지 않는다(scope='all')", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', amount: 50000, splits: [{ category: '통신', amount: 30000 }, { category: 'OTT', amount: 20000 }] };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.window._recCtx = { recId: 'r1', date: '2026-02-05', scope: 'all' };
+  sandbox.txDraft = { amount: 50000, splits: [{ category: '통신', amount: 30000 }, { category: '', amount: 20000 }] };
+  sandbox.toastCalls = [];
+  sandbox.recSave();
+  assert.strictEqual(r.amount, 50000, '검증에 실패하면 저장되면 안 됨');
+  assert.ok(sandbox.toastCalls.includes('분할 항목의 카테고리를 선택해 주세요'));
+});
 /* ---------- recSave/recApply/splitRecurrenceAt: touch()로 updatedAt 스탬프 (app-evolve cycle87 advance) ----------
  * cycle86 advance가 saveTx/saveAsset/saveRec 주경로에만 touch()를 배선했는데, 충돌 위험이 가장 큰
  * 반복거래 개별수정/분리 경로(이 파일의 recSave='one'/'future'/'all', recApply의 delete 분기,
@@ -17324,6 +17426,28 @@ test('[실행형] splitFieldHTML: pfx="rec"를 넘기면 onclick/oninput이 rec*
   assert.ok(html.includes('onclick="recSplitRemove(0)"') || !html.includes('삭제'), '항목이 2개뿐이면 삭제 버튼 자체가 없어도 됨(splits.length>2 가드)');
   assert.ok(!html.includes('txToggleSplit') && !html.includes('txSplitAdd'), 'tx* 핸들러가 섞여 들어가면 안 됨');
 });
+/* 세 번째 인자 noToggle=true는 반복 내역 '간편 수정'(renderTxSheet의 rc 분기)에서만 쓴다 — 그
+ * 화면은 category 오버라이드를 저장할 자리가 없어, 분할을 꺼서 일반 입력으로 되돌리는 길을 열면
+ * 꺼진 채로 저장될 곳이 없다(app-evolve cycle292 advance). 분할 추가/삭제(항상 2개 이상 유지)는
+ * 안전하므로 그대로 남긴다. */
+test('[실행형] splitFieldHTML: noToggle=true를 넘기면 "일반 입력으로" 버튼만 숨기고 나머지는 그대로다', () => {
+  const ctx = {
+    esc: (s) => String(s == null ? '' : s),
+    comma: (n) => String(n),
+    svg: () => '',
+    catAv: () => 'a-food',
+    catGlyph: () => '',
+  };
+  vm.createContext(ctx);
+  vm.runInContext(extractFunction('splitFieldHTML'), ctx, { filename: 'splitFieldHTML-notoggle-real' });
+  const d = { type: 'expense', amount: 50000, splits: [{ category: '통신', amount: 30000, memo: '' }, { category: 'OTT', amount: 20000, memo: '' }] };
+  const html = ctx.splitFieldHTML(d, 'tx', true);
+  assert.ok(!html.includes('txToggleSplit()'), 'noToggle=true면 "일반 입력으로" 버튼이 없어야 함');
+  assert.ok(html.includes('onclick="txSplitAdd()"'), '분할 추가 버튼은 여전히 나와야 함');
+  assert.ok(html.includes('oninput="txSplitAmt(0,this)"'), '금액 입력은 여전히 나와야 함');
+  const htmlDefault = ctx.splitFieldHTML(d, 'tx');
+  assert.ok(htmlDefault.includes('txToggleSplit()'), 'noToggle을 안 넘기면(기존 호출부) 여전히 토글 버튼이 나와야 함(하위호환)');
+});
 /* ---------- recToggleSplit/recSplitAdd/recSplitRemove/recSplitOpenCat/recSplitAmt/recSplitMemo:
  * txToggleSplit/txSplitAdd/txSplitRemove/txSplitOpenCat/txSplitAmt/txSplitMemo와 완전히 동일한
  * 규칙을 recDraft 기준으로 재구현한 반복 관리 화면의 분할 입력(app-evolve cycle282 advance). ---------- */
@@ -23274,6 +23398,33 @@ test('renderTxSheet: window._recCtx가 있으면 반복 개별 수정 모드(금
   assert.ok(html.includes('반복 내역 수정'));
   assert.ok(html.includes('recCtxDel()'), '삭제 버튼은 recCtxDel()을 호출해야 함');
   assert.ok(!html.includes('txToggleRepeat()'), '반복 개별 수정 모드에선 타입/반복 전체 폼이 아니라 금액 입력만 나와야 함');
+});
+/* ---------- renderTxSheet(rc): splits가 있는 회차는 분할 입력을 보여준다 (app-evolve cycle292 advance) ---------- */
+test('renderTxSheet: window._recCtx + d.splits(2개 이상)이면 "전체 금액" 라벨과 분할 입력(splitFieldHTML)이 렌더되고, "일반 입력으로" 토글은 숨긴다', () => {
+  setupTxSheetDB();
+  sandbox.txDraft = { type: 'expense', category: '통신', memo: '결합요금', amount: 50000, splits: [{ category: '통신', amount: 30000 }, { category: 'OTT', amount: 20000 }] };
+  sandbox.window._recCtx = { recId: 'r1', date: '2026-02-05', scope: 'one' };
+  sandbox.renderTxSheet();
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('전체 금액'), 'splits가 있으면 금액 라벨이 "전체 금액"으로 바뀌어야 함');
+  assert.ok(html.includes('id="splitAmt0"') && html.includes('id="splitAmt1"'), '분할 항목 입력이 렌더돼야 함');
+  assert.ok(html.includes('txSplitAmt(0,this)') && html.includes('txSplitAmt(1,this)'), '기존 txSplitAmt 핸들러를 재사용해야 함');
+  assert.ok(!html.includes('txToggleSplit()'), '간편 수정 화면엔 category 오버라이드를 저장할 자리가 없어 "일반 입력으로" 토글을 숨겨야 함');
+  assert.ok(html.includes('txSplitAdd()'), '분할 추가 버튼은 그대로 노출되어야 함(항상 2개 이상 유지)');
+});
+test('renderTxSheet: window._recCtx + d.splits가 없거나 1개뿐이면 평소처럼 "금액" 단일 입력만 렌더된다(회귀 가드)', () => {
+  setupTxSheetDB();
+  sandbox.txDraft = { type: 'expense', category: '식비', memo: '', amount: 5000 };
+  sandbox.window._recCtx = { recId: 'r1', date: '2026-02-05', scope: 'one' };
+  sandbox.renderTxSheet();
+  let html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('>금액<'));
+  assert.ok(!html.includes('id="splitAmt0"'));
+
+  sandbox.txDraft = { type: 'expense', category: '식비', memo: '', amount: 5000, splits: [{ category: '식비', amount: 5000 }] };
+  sandbox.renderTxSheet();
+  html = sandbox.lastSheetHtml;
+  assert.ok(!html.includes('id="splitAmt0"'), 'splits가 1개뿐이면 분할 모드가 아니어야 함');
 });
 test('txType: 타입 전환 시 카테고리와 입금 자산 기본값이 갱신되고 재렌더된다', () => {
   setupTxSheetDB();

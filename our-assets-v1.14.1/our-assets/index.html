@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.328';
+const APP_VERSION='1.47.329';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2719,7 +2719,7 @@ function expandRec(from,to){
    const ed=(r.edits||{})[d]||{};
    out.push({id:'rec_'+r.id+'_'+d,recId:r.id,date:d,type:r.type,category:r.category,
      memo:ed.memo!=null?ed.memo:r.memo,amount:ed.amount!=null?ed.amount:r.amount,
-     splits:ed.splits!==undefined?ed.splits:r.splits, /* r.splits가 있으면 매 회차 가상 인스턴스에 그대로 실어, splitLines() 기반 집계·검색(expenseByCat/matchTxnQuery 등)이 수정 없이 분할을 인식하게 한다(app-evolve cycle282 advance). ed.splits는 아직 개별 회차 수정(recApply/recSave)에서 쓰지 않아 항상 undefined라 r.splits로 떨어지지만, memo/amount와 동일한 오버라이드 패턴을 미리 열어둔다 */
+     splits:ed.splits!==undefined?ed.splits:r.splits, /* r.splits가 있으면 매 회차 가상 인스턴스에 그대로 실어, splitLines() 기반 집계·검색(expenseByCat/matchTxnQuery 등)이 수정 없이 분할을 인식하게 한다(app-evolve cycle282 advance). ed.splits는 memo/amount와 동일한 오버라이드 패턴으로 scope='one' 간편 수정이 실제로 쓴다(app-evolve cycle292 advance) */
      fromAssetId:r.fromAssetId,toAssetId:r.toAssetId,fromAssetName:r.fromAssetName,toAssetName:r.toAssetName,isRec:true});
   });
  });
@@ -4997,10 +4997,15 @@ function dayPickerHTML(d,pfx){
 }
 function renderTxSheet(){
  const d=txDraft;const rc=window._recCtx;
- if(rc){ /* 반복 개별/범위 수정: 금액만 */
+ if(rc){ /* 반복 개별/범위 수정: 금액(+분할이 있으면 분할도) */
   const SCOPE={one:'이 내역만',future:'이후 모두',all:'전체'};
+  /* splits가 있는 회차(expandRec가 r.splits/ed.splits를 그대로 실어 보여준 것)는 분할별로
+     수정하게 한다 — 금액만 받는 입력 하나로는 sum(splits)===amount 불변식을 저장 시점에
+     지킬 수 없다(app-evolve cycle292 critique가 찾은 공백, advance에서 수정). */
+  const splitOn=Array.isArray(d.splits)&&d.splits.length>=2;
   openFormSheet(`<h3>반복 내역 수정</h3><div class="desc">'${esc(d.memo||d.category)}' · ${shortDate(rc.date)} · ${SCOPE[rc.scope]}</div>
-   <div class="field"><label for="txAmt">금액</label><div class="field-clear"><input id="txAmt" class="amount-in num" inputmode="numeric" value="${d.amount?comma(d.amount):''}" placeholder="0" oninput="fmtAmt(this)" onkeydown="if(event.key==='Enter'&&!event.isComposing)recSave()"><button type="button" class="fc-x" aria-label="금액 지우기" onclick="clrInput('txAmt')">✕</button></div></div>
+   <div class="field"><label for="txAmt">${splitOn?'전체 금액':'금액'}</label><div class="field-clear"><input id="txAmt" class="amount-in num" inputmode="numeric" value="${d.amount?comma(d.amount):''}" placeholder="0" oninput="fmtAmt(this)" onkeydown="if(event.key==='Enter'&&!event.isComposing)recSave()"><button type="button" class="fc-x" aria-label="금액 지우기" onclick="clrInput('txAmt')">✕</button></div></div>
+   ${splitOn?splitFieldHTML(d,'tx',true):''}
    ${rc.recId?`<button class="rec-detail-link" onclick="openRecDetail('${rc.recId}')">${svg('repeat')} 반복 자체를 세부 편집 ${svg('chevR')}</button>`:''}
    <div class="two-btn"><button class="btn btn-danger cancel" onclick="recCtxDel()">${svg('trash')} 삭제</button>
     <button class="btn btn-primary" onclick="recSave()">저장하기</button></div>`);
@@ -5085,7 +5090,7 @@ function txApplyCatSuggest(cat){txDraft.category=cat;const box=$('txCatSuggest')
  * pfx('tx'|'rec')로 onclick 핸들러 이름을 바꿔 txDraft/recDraft 양쪽에서 재사용한다 — 거래 폼과
  * 반복 관리 폼은 시트 하나만 열려 있어 겹칠 일이 없으므로 id(splitAmt0 등)는 그대로 공유해도
  * 된다(app-evolve cycle282 advance, 반복거래 분할 지원). */
-function splitFieldHTML(d,pfx){
+function splitFieldHTML(d,pfx,noToggle){
  pfx=pfx||'tx';
  const total=d.splits.reduce((s,x)=>s+(Number(x.amount)||0),0);
  const diff=(d.amount||0)-total;
@@ -5095,7 +5100,11 @@ function splitFieldHTML(d,pfx){
    <div class="field-clear" style="margin-top:6px"><input id="splitMemo${i}" value="${esc(s.memo||'')}" placeholder="항목 ${i+1} 메모(선택)" aria-label="항목 ${i+1} 메모" oninput="${pfx}SplitMemo(${i},this)"><button type="button" class="fc-x" aria-label="항목 ${i+1} 메모 지우기" onclick="clrInput('splitMemo${i}')">✕</button></div>
   </div>`).join('');
  const hint=diff===0?'합계가 전체 금액과 일치해요':`합계가 전체 금액과 ${comma(Math.abs(diff))}원 ${diff>0?'모자라요':'많아요'}`;
- return `<div class="field" style="margin-bottom:4px"><label>카테고리 분할 <button type="button" class="txt-btn" style="padding:2px 6px" onclick="${pfx}ToggleSplit()">일반 입력으로</button></label></div>
+ /* noToggle: 반복 내역 '간편 수정'(rc) 화면에서 쓴다 — 거기는 category 오버라이드를 저장할
+    자리가 없어(edits[date]는 memo/amount/splits만 지원) 분할을 일반 입력으로 끄는 길을 열면
+    꺼진 채로 저장될 곳이 없다. 그래서 그 화면에서만 '일반 입력으로' 버튼을 숨긴다(app-evolve
+    cycle292 advance) — txSplitAdd/Remove는 항상 2개 이상을 유지하므로 그대로 둬도 안전하다. */
+ return `<div class="field" style="margin-bottom:4px"><label>카테고리 분할${noToggle?'':` <button type="button" class="txt-btn" style="padding:2px 6px" onclick="${pfx}ToggleSplit()">일반 입력으로</button>`}</label></div>
   ${rows}
   <button type="button" class="btn btn-soft" style="margin-bottom:8px" onclick="${pfx}SplitAdd()">${svg('plus')} 분할 추가</button>
   <div class="psub" id="splitHint" style="margin:-4px 0 14px;${diff!==0?'color:var(--expense)':''}">${hint}</div>`;
@@ -5385,8 +5394,9 @@ function recApply(recId,date,mode,scope){
   closeSheet();deleteRecsUndo(new Set([recId]));return;
  }
  const ed=(r.edits||{})[date]||{};
+ const srcSplits=ed.splits!==undefined?ed.splits:r.splits; /* expandRec()과 동일한 폴백 — 보여준 것과 똑같은 분할을 수정 폼에 싣는다. 깊은 복사라 폼에서 항목을 더하거나/빼도 r.splits/ed.splits 원본이 바로 바뀌지 않는다(app-evolve cycle292 advance) */
  _formScroll=0;
- txDraft={id:null,type:r.type,date,category:r.category,memo:ed.memo!=null?ed.memo:r.memo,amount:ed.amount!=null?ed.amount:r.amount,fromAssetId:r.fromAssetId,toAssetId:r.toAssetId};
+ txDraft={id:null,type:r.type,date,category:r.category,memo:ed.memo!=null?ed.memo:r.memo,amount:ed.amount!=null?ed.amount:r.amount,splits:srcSplits?JSON.parse(JSON.stringify(srcSplits)):undefined,fromAssetId:r.fromAssetId,toAssetId:r.toAssetId};
  snapDraft('tx');
  window._recCtx={recId,date,scope};
  renderTxSheet();
@@ -5399,9 +5409,21 @@ function recSave(){
  syncTxInputs();
  const amt=txDraft.amount;if(!amt){toast('금액을 입력해 주세요');return}
  const memo=(txDraft.memo||'').trim()||r.category; /* 메모 없으면 카테고리로 (saveTx/saveRec과 동일) */
+ /* 분할(splits) 저장 — saveRec()이 저장 시점에 강제하는 sum(splits)===amount 불변식을 간편
+    수정 경로에도 적용한다. splits가 2개 미만이면(분할 없는 회차) null — 기존 r.splits/
+    ed.splits를 그대로 둔다(app-evolve cycle292 advance, critique가 찾은 공백 수정) */
+ const d=txDraft;
+ let splits=null;
+ if(Array.isArray(d.splits)&&d.splits.length>=2){
+  if(d.splits.some(s=>!s.category)){toast('분할 항목의 카테고리를 선택해 주세요');return}
+  if(d.splits.some(s=>!s.amount)){toast('분할 항목의 금액을 입력해 주세요');return}
+  const sum=d.splits.reduce((s,x)=>s+(Number(x.amount)||0),0);
+  if(sum!==amt){toast('분할 금액의 합이 전체 금액과 달라요');return}
+  splits=JSON.parse(JSON.stringify(d.splits));
+ }
  let undoFn;
  if(ctx.scope==='one'){
-  const edits=(r.edits=r.edits||{});const prevEdit=edits[ctx.date];edits[ctx.date]={amount:amt,memo};touch(r);
+  const edits=(r.edits=r.edits||{});const prevEdit=edits[ctx.date];const edit={amount:amt,memo};if(splits)edit.splits=splits;edits[ctx.date]=edit;touch(r);
   undoFn=()=>{if(prevEdit===undefined)delete edits[ctx.date];else edits[ctx.date]=prevEdit;touchSave(r);renderCurrent();toast('되돌렸어요')};
  }
  else if(ctx.scope==='future'){
@@ -5412,13 +5434,14 @@ function recSave(){
   touch(r);
   const newBase={freq:r.freq,day:r.day,startDate:ctx.date,weekend:r.weekend};
   const newRec=Object.assign({},JSON.parse(JSON.stringify(r)),{id:uid(),startDate:ctx.date,endDate:prevEnd,count:prevEnd?recCountUntil(newBase,prevEnd):null,amount:amt,memo,skip:skipFuture,edits:editsFuture,confirmedDates:confirmedFuture});
+  if(splits)newRec.splits=splits;
   touch(newRec);
   DB.recurrences.push(newRec);
   undoFn=()=>{r.endDate=prevEnd;r.count=prevCount;r.skip=prevSkip;r.edits=prevEdits;r.confirmedDates=prevConfirmed;DB.recurrences=DB.recurrences.filter(x=>x.id!==newRec.id);touchSave(r);renderCurrent();toast('되돌렸어요')};
  }
  else{
-  const prevAmt=r.amount,prevMemo=r.memo;r.amount=amt;r.memo=memo;touch(r);
-  undoFn=()=>{r.amount=prevAmt;r.memo=prevMemo;touchSave(r);renderCurrent();toast('되돌렸어요')};
+  const prevAmt=r.amount,prevMemo=r.memo,prevSplits=r.splits;r.amount=amt;r.memo=memo;if(splits)r.splits=splits;touch(r);
+  undoFn=()=>{r.amount=prevAmt;r.memo=prevMemo;r.splits=prevSplits;touchSave(r);renderCurrent();toast('되돌렸어요')};
  }
  window._recCtx=null;save();closeSheet();renderCurrent();
  undoToast('반복 내역을 수정했어요',undoFn);
