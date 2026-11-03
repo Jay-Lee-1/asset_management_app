@@ -1,15 +1,12 @@
 {
   "cycle": 297,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "자산 합치기(asset merge) 기능 부재 — 카테고리 합치기와 비대칭",
+    "why": "카테고리 관리 화면은 openCatMergePicker()/mergeCatInto()(index.html:7206-7271)로 중복·오타 카테고리를 다른 카테고리로 합쳐 거래·반복거래 참조를 이동시키는 기능이 있지만, 자산 관리 화면(openAssetSheet/renderAssetSheet, index.html:4409-4556)에는 대응 기능이 전혀 없다. 사용자가 같은 계좌를 오타로 두 번 등록했거나 '용돈'/'생활비' 현금 자산을 하나로 합치고 싶어도, 지금은 둘 중 하나를 삭제(history 소실)하거나 영구히 둘 다 들고 다녀야 한다. relinkDeletedAsset()(index.html:4181)이 이미 다른 레코드의 fromAssetId/toAssetId를 재연결하는 로직을 갖고 있어 재사용 가능한 토대도 마련돼 있다.",
+    "approach": "mergeCatInto()(index.html:7228)와 동일한 골격으로 mergeAssetInto(fromId,toId)를 신설: activeRecsForAssets(index.html:4172)로 영향받는 반복거래를 센 뒤 confirmSheet로 영향 안내 → DB.txns/DB.recurrences의 fromAssetId/toAssetId를 toId로 일괄 치환(relinkDeletedAsset의 치환 로직 재사용) → 같은 '잔액식' 그룹(cash/savings/realestate/etc/pension/debt)일 때만 assetBase(toId)에 assetBase(fromId)를 더해 잔액 보존(시세평가형/다른 타입 간 병합은 1차 범위에서 제외) → fromId를 doDeleteCat과 동일한 DB.deletedIds 톰스톤과 함께 삭제 → mergeCatInto와 동일한 undoToast로 되돌리기 제공. UI는 renderAssetSheet 하단 '이 자산 삭제' 링크 옆에 '다른 자산에 합치기' 버튼을 추가하고, openAssetPicker({excludeId, 같은 type만})로 대상을 고르게 한다."
+  },
   "history": [
-    {
-      "cycle": 292,
-      "phase": "critique",
-      "timestamp": "2026-11-03T00:50:00.000Z",
-      "summary": "서브에이전트로 앱 전체를 재조사. 발견: 반복 내역의 개별/이후/전체 범위 금액 '간편 수정'(renderTxSheet의 rc 분기 + recApply/recSave)이 분할(splits) UI 자체가 없고 splits를 전혀 복사·검증·저장하지 않아, saveRec()이 강제하는 sum(splits)===amount 불변식(cycle282)을 간편 수정 경로만 피해 간다. 분할 반복 거래의 회차 금액을 간편 수정으로 바꾸면 원장 합계와 카테고리별 리포트가 조용히 어긋나는 실제 정확성 버그라 최우선 선정. pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 292,
       "phase": "advance",
@@ -140,7 +137,14 @@
       "cycle": 297,
       "phase": "review",
       "timestamp": "2026-11-03T20:25:00.000Z",
-      "summary": "cycle297 develop 커밋(bd6b320) 검토 — txAmtInput/recAmtInput이 txSplitAmt/recSplitAmt와 완전히 같은 패턴(fmtAmt 후 draft.amount 갱신, splits 있을 때만 splitHintUpdate)임을 확인. clrInput('txAmt'/'rAmt')가 value='' 설정 후 input 이벤트를 dispatch해 oninput="txAmtInput(this)"를 그대로 거치므로 지우기 버튼도 동일하게 draft.amount=0과 힌트 갱신으로 이어짐을 검증. syncTxInputs/syncRecInputs가 같은 필드를 다시 num(el)로 읽어 draft.amount에 덮어써도 같은 값을 다시 쓰는 것뿐이라 충돌 없음(단순 중복). node test/run.js 2640/2640 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
+      "summary": "cycle297 develop 커밋(bd6b320) 검토 — txAmtInput/recAmtInput이 txSplitAmt/recSplitAmt와 완전히 같은 패턴(fmtAmt 후 draft.amount 갱신, splits 있을 때만 splitHintUpdate)임을 확인. clrInput('txAmt'/'rAmt')가 value='' 설정 후 input 이벤트를 dispatch해 oninput=\"txAmtInput(this)\"를 그대로 거치므로 지우기 버튼도 동일하게 draft.amount=0과 힌트 갱신으로 이어짐을 검증. syncTxInputs/syncRecInputs가 같은 필드를 다시 num(el)로 읽어 draft.amount에 덮어써도 같은 값을 다시 쓰는 것뿐이라 충돌 없음(단순 중복). node test/run.js 2640/2640 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 297,
+      "phase": "critique",
+      "timestamp": "2026-11-03T19:15:54.067Z",
+      "summary": "서브에이전트로 앱 전체를 재조사. 카테고리 관리에는 openCatMergePicker()/mergeCatInto()(index.html:7206-7271)로 중복 카테고리를 합치는 기능이 있지만 자산 관리(openAssetSheet)에는 대응하는 '자산 합치기' 기능이 전혀 없어, 오타로 중복 등록된 계좌나 합치고 싶은 현금 자산을 삭제(history 소실)하거나 영구히 중복 보유해야 하는 공백을 발견. relinkDeletedAsset()(4181)이 참조 재연결 로직을 이미 갖고 있어 재사용 가능한 토대가 있음. pending_advance_plan에 저장. (보류: fx/stock/gold/crypto 간 환전·매수 거래 기록 부재는 원장 모델 재검토가 필요해 재작성급이라 보류, 반복 내역 관리 목록에서 삭제가 편집 화면을 거쳐야만 되는 점은 영향 작아 develop 사이즈로 보류, 주식 분할 시 보유수량/매입원가 비례조정 부재는 니치하고 범위가 커 보류.) 코드 변경 없음(critique 단계 커밋에서 app-evolve-state.json의 JSON 깨짐도 함께 수정: 직전 review 커밋의 summary 문자열 안에 이스케이프 안 된 쌍따옴표(oninput=\"txAmtInput(this)\")가 들어가 상태 파일이 유효하지 않은 JSON이 돼 있던 것을 발견해 고쳤다).",
       "commit": null
     }
   ]
