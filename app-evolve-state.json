@@ -1,19 +1,8 @@
 {
-  "cycle": 295,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "플랜(가계부 예측) 탭이 계좌 하나만 볼 수 있어 다계좌 사용자의 \"이달에 마이너스 날까?\" 질문에 답을 못 줌",
-    "why": "index.html의 renderPlan()(6249행)과 planRowsHTML()(6207행)은 ST.plan.assetId 단 하나의 통장만 받아 그 계좌의 일별 예상 잔액(반복거래 포함)과 마이너스 전환일을 보여준다. openPlanAsset()(6294행)의 통장 선택 시트도 계좌를 하나씩만 고르게 하고 '전체 계좌 합산' 옵션이 없다. 생활비/비상금 통장을 분리해 쓰는(이 앱이 이미 지원하는 다자산·다귀속) 사용자는 각 계좌를 번갈아 눌러 확인해야 하고, 한 계좌는 흑자인데 다른 계좌가 적자로 돌아서는 시점을 앱이 요약해주지 못한다. 플랜 탭은 이 앱의 핵심 차별 기능(마이너스 예방 알림)인데 단일계좌 한계로 다계좌 사용자에겐 반쪽만 작동한다.",
-    "approach": "openPlanAsset()에 귀속(owner)별 '전체 계좌 합산' 항목을 추가해 ST.plan.assetId가 단일 id 대신 id 배열(또는 null=전체)을 가리키도록 확장. logic.js에 다중 자산 합산 순수 함수(예: sumBalancesAtDates)를 추가하고, planRowsHTML()의 flows 필터와 dayBal 계산을 단일 asset.id 비교에서 Set 기반 다중 id 매칭으로 바꾸되 계좌 간 내부이체는 상쇄되도록 처리. planBalCard/planTrackHTML도 합산 모드를 받아들이게 하고 합산 뷰의 플로우 항목에는 어느 계좌의 이체인지 보조 라벨을 붙인다. 기존 단일계좌 경로는 그대로 두고 '전체'를 추가 선택지로만 넣는다."
-  },
+  "cycle": 296,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 290,
-      "phase": "advance",
-      "timestamp": "2026-11-02T15:40:00.000Z",
-      "summary": "critique(cycle290) 계획대로 통합 검색(openGlobalSearch) 진입점을 home과 plan 탭에도 추가했다. renderHome()은 pageHead()를 안 거치므로 자체 hdr 템플릿에 직접 버튼을 추가, plan은 pageHead() 'plan' 분기에 추가. 테스트 4건 추가(2550->2554 통과). APP_VERSION 1.47.324->1.47.325, sw.js CACHE v591->v592. node test/run.js 2554/2554 통과. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 291,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-03T14:40:00.000Z",
       "summary": "서브에이전트로 앱 전체를 재조사. 발견: 플랜(가계부 예측) 탭이 계좌 하나만 볼 수 있어(renderPlan/planRowsHTML, index.html:6207·6249) 다계좌 사용자가 통장을 번갈아 눌러야 하고 '전체 합산'으로 마이너스 전환일을 요약해주지 못함 — 플랜 탭이 앱의 핵심 차별 기능인데 단일계좌 한계로 반쪽만 작동. pending_advance_plan에 저장. (보류: CDN SRI 해시 누락은 한 줄 보강이라 develop 사이즈, mergeRemoteDataIntoLocal 데이터손실 경고는 이미 여러 사이클째 진행 중인 증분 트랙, 거래 다건 선택 시 귀속 일괄변경 부재는 플랜 탭 건보다 영향 작음, PIN 평문저장은 cycle252/289가 이미 두 번 범위초과로 보류.) 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 295,
+      "phase": "advance",
+      "timestamp": "2026-11-03T16:00:00.000Z",
+      "summary": "critique(cycle295) 계획대로 플랜(가계부 예측) 탭에 귀속별 \"전체 합산\" 선택을 추가했다. ST.plan.assetId가 단일 id 문자열 대신 id 배열도 가리킬 수 있게 넓히고 planIds()/planAssetObj() 정규화 헬퍼를 신설, openPlanAsset()에 통장이 2개 이상인 귀속마다 \"전체 합산\" 버튼(planAssetAll)을 추가했다. lowestInMonth/planBalInner/planBalCard/planRowsHTML/renderPlan/refreshPlanBody를 모두 ids 배열 기준으로 합산 계산하게 고치고, planRowsHTML()은 합산 선택 안의 계좌끼리 주고받은 내부이체는 순잔액에 영향이 없어 흐름 목록에서 제외하며 외부 흐름에는 어느 통장인지 .mini 보조 라벨을 붙인다. 기존 단일계좌 경로/테스트(lowestInMonth(\"a1\",..) 등)는 전부 그대로 통과하도록 하위호환을 유지했다. test/run.js FUNCTIONS 추출 목록에 planIds/planAssetObj/planAssetAll 추가, 신규 테스트 6건(크로스리얼름 배열 비교는 Array.from()으로 우회). 테스트 2611->2617 통과. APP_VERSION 1.47.335->1.47.336, sw.js CACHE v602->v603. node test/run.js 2617/2617 통과, logic.js/sw.js/index.html 인라인 스크립트 구문 검증(node --check) 통과. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

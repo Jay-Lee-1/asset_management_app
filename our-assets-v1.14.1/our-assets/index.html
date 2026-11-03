@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.335';
+const APP_VERSION='1.47.336';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6132,11 +6132,27 @@ function histDelSel(){if(!ST.hist.sel.size){toast('선택된 내역이 없어요
   const ids=new Set(ST.hist.sel);ST.hist.selMode=false;ST.hist.sel.clear();deleteTxnsUndo(ids)});}
 function histCatSel(){bulkCatPickFor(new Set(ST.hist.sel),()=>{ST.hist.selMode=false;ST.hist.sel.clear();updateHist()})}
 /* ================= PLAN ================= */
-function lowestInMonth(assetId,y,m){ /* 그 달 중 잔액이 가장 낮은 날 */
+/* ST.plan.assetId는 원래 단일 통장 id 하나만 가리켰지만(app-evolve cycle295 critique가 발견한
+ * 다계좌 한계), 귀속별 "전체 합산" 선택을 지원하려고 id 배열도 가리킬 수 있게 넓혔다. planIds()는
+ * 그 둘을 항상 배열로 정규화해, 이미 단일 id 문자열로 짜여 있던 호출부·테스트(lowestInMonth('a1',..)
+ * 등)를 그대로 두고도 다계좌 합산 호출부가 추가될 수 있게 한다. */
+function planIds(v){return Array.isArray(v)?v:(v?[v]:[])}
+/* 선택된 id들을 화면이 그대로 쓸 수 있는 "자산 같은" 객체로 바꾼다 — 1개면 실제 DB.assets
+ * 레코드를, 2개 이상이면 그 귀속의 가상 합산 자산(multi:true, ids:[...])을 돌려준다. 실제
+ * 자산이 아니므로 DB에 저장되지 않고 이 렌더 한 번에만 쓰인다. */
+function planAssetObj(ids){
+ if(!ids||!ids.length)return null;
+ if(ids.length===1)return DB.assets.find(x=>x.id===ids[0])||null;
+ const owner=(DB.assets.find(x=>x.id===ids[0])||{}).owner||'';
+ return {multi:true,id:'ALL:'+owner,ids,owner,name:`${owner} 전체`};
+}
+function lowestInMonth(idOrIds,y,m){ /* 그 달 중(여러 계좌면 합산) 잔액이 가장 낮은 날 */
+ const ids=planIds(idOrIds);
+ const idSet=new Set(ids);
  const st=monthStartStr(y,m),en=monthEndStr(y,m);
  const days=new Set([st]);
  allTxns(st,en).forEach(t=>{
-  if(t.fromAssetId!==assetId&&t.toAssetId!==assetId)return;
+  if(!idSet.has(t.fromAssetId)&&!idSet.has(t.toAssetId))return;
   days.add(t.date);
  });
  /* 날짜별로 balanceAt()과 동일한 규칙(balancesAtDates() 참고)을 따라야 미확인 이체 제외 규칙
@@ -6148,19 +6164,20 @@ function lowestInMonth(assetId,y,m){ /* 그 달 중 잔액이 가장 낮은 날 
  const balMap=balancesAtDates(sortedDays);
  let low=null,lowDate=st;
  sortedDays.forEach(d=>{
-  const b=balanceAtFromMap(balMap,d,assetId);
+  const b=ids.reduce((s,id)=>s+balanceAtFromMap(balMap,d,id),0);
   if(low===null||b<low){low=b;lowDate=d}
  });
  return {date:lowDate,amount:low};
 }
 function planBalInner(y,m,a,today){
+ const ids=a.multi?a.ids:[a.id];
  if(today){ /* 롱프레스 중: 오늘까지의 잔액 */
-  const b=balanceAt(a.id,TODAY);
+  const b=ids.reduce((s,id)=>s+balanceAt(id,TODAY),0);
   return `<div class="k">${esc(a.name)} · 오늘까지 잔액</div>
    <div class="v num fit ${b<0?'minus':''}" data-max="30">${comma(b)}원</div>
    <div class="bh-low"><span class="bl-k">기준일</span><span class="bl-v">${shortDate(TODAY)} 까지 반영</span></div>`;
  }
- const bal=balanceAt(a.id,monthEndStr(y,m)),low=lowestInMonth(a.id,y,m);
+ const bal=ids.reduce((s,id)=>s+balanceAt(id,monthEndStr(y,m)),0),low=lowestInMonth(ids,y,m);
  return `<div class="k">${esc(a.name)} · ${m}월 말일 기준 잔액</div>
    <div class="v num fit ${bal<0?'minus':''}" data-max="30">${comma(bal)}원</div>
    <button class="bh-low ${low.amount<0?'bad':''}" onclick="event.stopPropagation();scrollToPlanDay('${low.date}')">
@@ -6172,7 +6189,7 @@ function planBalInner(y,m,a,today){
 let _planLive=null,_planT=null,_planPeek=false;
 function planBalCard(y,m,a,live){
  if(!a)return `<div class="balance-head mc-pane"><div class="k">${m}월 말일 기준 잔액</div><div class="v num">-</div></div>`;
- const bal=balanceAt(a.id,monthEndStr(y,m));
+ const bal=(a.multi?a.ids:[a.id]).reduce((s,id)=>s+balanceAt(id,monthEndStr(y,m)),0);
  if(!live)return `<div class="balance-head mc-pane ${bal<0?'neg':''}">${planBalInner(y,m,a,false)}</div>`;
  _planLive={y,m,a};
  return `<div class="balance-head mc-pane ${bal<0?'neg':''}" id="planBalLive" tabindex="0" role="button" aria-label="이번 달 말일 잔액, 엔터나 스페이스를 누르고 있으면 오늘까지 잔액 보기" onpointerdown="planPeekStart()" onpointermove="planPeekMove()" onpointerup="planPeekEnd()" onpointercancel="planPeekEnd()" onpointerleave="planPeekEnd()" onkeydown="planPeekKey(event)" onkeyup="planPeekEnd()" onblur="planPeekEnd()">${planBalInner(y,m,a,false)}</div>`;
@@ -6206,12 +6223,17 @@ function planTrackHTML(y,m,a){
 }
 function planRowsHTML(a,y,m){
  if(!a)return '';
+ const ids=a.multi?a.ids:[a.id];
+ const idSet=new Set(ids);
  const mStart=monthStartStr(y,m),mEnd=monthEndStr(y,m);
  const flows=[];
  allTxns(mStart,mEnd).forEach(t=>{
-  if(t.fromAssetId!==a.id&&t.toAssetId!==a.id)return;
-  const delta=(t.toAssetId===a.id?t.amount:0)-(t.fromAssetId===a.id?t.amount:0);
-  flows.push({t,delta});
+  const fromIn=idSet.has(t.fromAssetId),toIn=idSet.has(t.toAssetId);
+  if(!fromIn&&!toIn)return;
+  if(a.multi&&fromIn&&toIn)return; /* 합산 선택 안의 계좌끼리 주고받은 돈은 선택 집합 전체로 보면 그대로 있던 돈이라(두 계좌의 잔액 합이 안 바뀜) 흐름 목록에 "+0원"으로 보일 필요가 없다 — dayBal(아래)은 ids 전부를 더해 구하므로 이 줄이 빠져도 잔액 자체는 항상 정확하다 */
+  const delta=(toIn?t.amount:0)-(fromIn?t.amount:0);
+  const acct=a.multi?(fromIn?assetNm(t.fromAssetId,t.fromAssetName):assetNm(t.toAssetId,t.toAssetName)):null; /* 합산 모드에서 이 흐름이 선택 집합 중 어느 계좌의 것인지 보조 라벨로 보여준다 */
+  flows.push({t,delta,acct});
  });
  flows.sort((x,z)=>x.t.date<z.t.date?-1:x.t.date>z.t.date?1:0);
  const dates=[...new Set(flows.map(f=>f.t.date))];
@@ -6225,7 +6247,7 @@ function planRowsHTML(a,y,m){
     날짜가 여러 개(한 달치)라 balanceAt()을 날짜마다 부르면 매번 전체 재스캔이 일어나던
     것을 balancesAtDates()로 한 번에 계산한다(lowestInMonth와 동일한 이유). */
  const balMap=balancesAtDates(dates);
- const dayBal=dates.map(d=>balanceAtFromMap(balMap,d,a.id));
+ const dayBal=dates.map(d=>ids.reduce((s,id)=>s+balanceAtFromMap(balMap,d,id),0));
  let firstNegIdx=-1; /* 잔액이 처음 마이너스가 되는 날 인덱스 */
  const dayNeg=dayBal.map((b,i)=>{const neg=b<0;if(neg&&firstNegIdx<0)firstNegIdx=i;return neg;}); /* 날짜별 실제 잔액 마이너스 여부 */
  return dates.length?dates.map((d,i)=>{
@@ -6238,7 +6260,7 @@ function planRowsHTML(a,y,m){
    const flow=t.type==='income'?(taN!=='—'?taN:''):(t.type==='transfer'||t.type==='saving')?`${faN==='—'?'':faN}→${taN==='—'?'':taN}`:(faN!=='—'?faN:'');
    return `<div class="flow-item" tabindex="0" role="button" aria-label="${esc(t.memo||txCatLabel(t))} ${f.delta>=0?'+':'-'}${comma(Math.abs(f.delta))}원" onclick="planTap('${t.isRec?'':t.id}','${t.isRec?t.recId:''}','${t.date}')" onkeydown="rowKeydown(event,()=>planTap('${t.isRec?'':t.id}','${t.isRec?t.recId:''}','${t.date}'))">
     <div class="avatar ${f.delta>=0?'a-in':'a-food'}" style="width:40px;height:40px">${svg(f.delta>=0?'arrowUp':'arrowDn')}</div>
-    <div style="flex:1;min-width:0"><div class="nm-row"><span class="nm">${esc(t.memo||txCatLabel(t))}</span>${t.isRec?`<span class="rec-ic" title="반복">${svg('repeat')}</span>`:''}</div>${flow?`<div class="flow-sub"><span class="fl">${esc(flow)}</span></div>`:''}</div>
+    <div style="flex:1;min-width:0"><div class="nm-row">${f.acct?`<span class="mini">${esc(f.acct)}</span>`:''}<span class="nm">${esc(t.memo||txCatLabel(t))}</span>${t.isRec?`<span class="rec-ic" title="반복">${svg('repeat')}</span>`:''}</div>${flow?`<div class="flow-sub"><span class="fl">${esc(flow)}</span></div>`:''}</div>
     <div class="rt"><div class="delta num ${f.delta>=0?'pos':'minus'}">${f.delta>=0?'+':'-'}${comma(Math.abs(f.delta))}원</div></div></div>`;
   }).join(''):`<div class="plan-noflow">오늘은 통장이 평화로워요 🌱</div>`;
   return `<div class="plan-day${isToday?' today':''} ${zone}" data-d="${d}"><div class="card plan-card${bal<0?' neg':''}"><div class="plan-day-head${bal<0?' neg':''}">
@@ -6249,8 +6271,11 @@ function planRowsHTML(a,y,m){
 function renderPlan(){
  if(ST.plan.owner!=='전체'&&!DB.owners.includes(ST.plan.owner))ST.plan.owner='전체'; /* 귀속 사라지면 전체로 (renderAssets와 동일 패턴) */
  const cashAssets=DB.assets.filter(a=>isPlanAcct(a)&&(ST.plan.owner==='전체'||a.owner===ST.plan.owner));
- if(!ST.plan.assetId||!cashAssets.find(a=>a.id===ST.plan.assetId))ST.plan.assetId=cashAssets[0]?cashAssets[0].id:null;
- const a=DB.assets.find(x=>x.id===ST.plan.assetId);
+ const wantIds=planIds(ST.plan.assetId);
+ const validIds=wantIds.filter(id=>cashAssets.find(a=>a.id===id));
+ if(validIds.length!==wantIds.length||!validIds.length) /* 자산 삭제 등으로 일부/전부가 사라졌으면 남은 것만, 하나도 안 남으면 첫 통장으로 */
+  ST.plan.assetId=validIds.length?(validIds.length>1?validIds:validIds[0]):(cashAssets[0]?cashAssets[0].id:null);
+ const a=planAssetObj(planIds(ST.plan.assetId));
  const {y,m}=ST.plan;
  $('page-plan').innerHTML=`
  ${pageHead('plan')}
@@ -6273,7 +6298,7 @@ function refreshPlanBody(){
  const fv=page.querySelector('.filter-2 .fv');
  const listEl=page.querySelector('.plan-list');
  if(!vp||!track||!fv||!listEl)return false;
- const a=DB.assets.find(x=>x.id===ST.plan.assetId);
+ const a=planAssetObj(planIds(ST.plan.assetId));
  const {y,m}=ST.plan;
  fv.innerHTML=`${a?esc(a.name):'없음'} ${svg('chevD')}`;
  track.innerHTML=planTrackHTML(y,m,a);
@@ -6294,13 +6319,22 @@ function acctSafety(id){ /* 통장 안전 신호등 — 위험할 때만 말합�
 function openPlanAsset(){
  const cash=DB.assets.filter(isPlanAcct);
  if(!cash.length){openSheet(`<h3>통장 선택</h3><div class="empty"><div class="ei">${svg('bank')}</div><div class="et">현금예금 통장이 없어요</div><div class="es">자산관리에서 통장을 등록해 주세요</div></div>`);return}
+ const curIds=planIds(ST.plan.assetId);
  let html='';
- DB.owners.forEach(ow=>{
+ DB.owners.forEach((ow,oi)=>{
   const list=cash.filter(a=>a.owner===ow);
   if(!list.length)return;
   html+=`<div class="pa-cap"><span class="chipmini ${ownerChipClass(ow)}">${esc(ow)}</span></div><div class="opt-list">`;
+  if(list.length>1){ /* 통장이 여럿인 귀속에만 "전체 합산" 선택지를 둔다 — 하나뿐이면 아래 단일 선택과 같아진다 */
+   const ids=list.map(a=>a.id),idSet=new Set(ids);
+   const isOn=curIds.length===ids.length&&curIds.every(id=>idSet.has(id));
+   html+=`<button class="${isOn?'on':''}" onclick="planAssetAll(${oi})">
+    <span class="rd"></span>
+    <div style="flex:1;min-width:0"><span>전체 합산</span></div>
+    <span class="pa-bal num">${comma(ids.reduce((s,id)=>s+assetBalance(id),0))}원</span></button>`;
+  }
   html+=list.map(a=>{const s=acctSafety(a.id);
-   return `<button class="${ST.plan.assetId===a.id?'on':''}" onclick="planAsset('${a.id}')">
+   return `<button class="${curIds.length===1&&curIds[0]===a.id?'on':''}" onclick="planAsset('${a.id}')">
     <span class="rd"></span>
     <div style="flex:1;min-width:0">
      <div style="display:flex;align-items:center;gap:7px"><i class="sig ${s.lv}"></i><span>${esc(a.name)}</span></div>
@@ -6315,6 +6349,16 @@ function openPlanAsset(){
 function planAsset(id){const a=DB.assets.find(x=>x.id===id);
  if(a)ST.plan.owner=a.owner; /* 귀속은 선택한 통장을 따라감 */
  ST.plan.assetId=id;closeSheet();
+ if(!refreshPlanBody())renderPlan();}
+/* openPlanAsset()의 "전체 합산" 버튼 — 다계좌 사용자가 생활비/비상금처럼 통장을 나눠 써도
+ * (app-evolve cycle295 critique) 번갈아 누르지 않고 한 귀속의 통장 전부를 더한 잔액·마이너스
+ * 전환일을 볼 수 있게 한다. 다른 귀속의 이름을 따라가는 doRenameOwner(3729행)와 같은 이유로
+ * 오타·특수문자 걱정 없이 openOwnerPicker(10610행)처럼 이름 대신 DB.owners 인덱스로 받는다. */
+function planAssetAll(oi){
+ const ow=DB.owners[oi];if(ow==null)return;
+ const ids=DB.assets.filter(isPlanAcct).filter(a=>a.owner===ow).map(a=>a.id);
+ if(!ids.length)return;
+ ST.plan.owner=ow;ST.plan.assetId=ids;closeSheet();
  if(!refreshPlanBody())renderPlan();}
 
 /* ================= 전역 통합검색 ================= */

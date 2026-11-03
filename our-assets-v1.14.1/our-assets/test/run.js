@@ -295,8 +295,13 @@ const FUNCTIONS = [
   'ledgerRowsHtml', 'ledgerDayHeadHtml', 'renderLedger', 'selDayPartial',
   'ledgerSelPartial', 'ledgerToggleSel', 'ledgerSelAll', 'visibleTx',
   'fmtDot', 'splitHist', 'histRow', 'histTotHTML', 'updateHist', 'renderHistory', 'histPreset',
+  // planIds/planAssetObj(app-evolve cycle295 advance)는 ST.plan.assetId가 단일 id 대신 id 배열도
+  // 가리킬 수 있게(귀속별 "전체 합산") 넓히면서 추가된 정규화 헬퍼 — lowestInMonth/planBalInner/
+  // planRowsHTML/renderPlan/refreshPlanBody/openPlanAsset이 모두 이걸 거치므로 FUNCTIONS에
+  // 반드시 함께 올라가야 한다(ownerSegHtml과 같은 이유).
+  'planIds', 'planAssetObj',
   'lowestInMonth', 'planBalInner', 'planBalCard', 'planTrackHTML', 'planRowsHTML', 'renderPlan',
-  'refreshPlanBody', 'planAsset', 'nextGroupOrder', 'movedGroupOrder', 'moveGroup', 'movedAssetOrder', 'moveAsset', 'monthSwipeCommitDir', 'overlayEscapeTarget', 'recFreq', 'recFreqLabel',
+  'refreshPlanBody', 'planAsset', 'planAssetAll', 'nextGroupOrder', 'movedGroupOrder', 'moveGroup', 'movedAssetOrder', 'moveAsset', 'monthSwipeCommitDir', 'overlayEscapeTarget', 'recFreq', 'recFreqLabel',
   // recManageBody/recQInput은 openRecManage(반복 내역 관리)에 인라인 검색을 추가하면서 몸통을
   // 분리한 함수들(app-evolve cycle291 advance) — openRecManage 자체는 openSheet 의존이 커서
   // 여전히 위 openRecManage 스텁(no-op)으로 두지만, 이 둘은 assetQInput/histQInput과 동일하게
@@ -23922,6 +23927,91 @@ test('planAsset: #planVP가 없으면(폴백) renderPlan()으로 전체를 다�
   sandbox.pagePlanEl._html = '';
   sandbox.planAsset('a2'); // $('planVP')가 기본적으로 null이라 refreshPlanBody()가 false를 반환 → renderPlan() 폴백
   assert.ok(sandbox.pagePlanEl.innerHTML, '폴백 시 renderPlan()이 page-plan을 다시 채워야 함');
+});
+
+/* ---------- planIds/planAssetObj/planAssetAll: 플랜 탭 다계좌 "전체 합산" (app-evolve cycle295
+ * critique/advance) ----------
+ * 플랜(가계부 예측) 탭이 통장 하나만 볼 수 있어, 생활비/비상금처럼 통장을 나눠 쓰는 사용자가
+ * "이번 달 마이너스 날까?"를 확인하려면 각 통장을 번갈아 눌러야 했다. ST.plan.assetId가 단일
+ * id 문자열 대신 id 배열도 가리킬 수 있게 넓히고, openPlanAsset()에 귀속별 "전체 합산" 선택지를
+ * 추가했다. */
+test('planIds: 단일 id 문자열/id 배열/null을 항상 배열로 정규화한다', () => {
+  // sandbox 안에서 새로 만들어진 배열은 호스트 Array와 realm이 달라 deepStrictEqual이
+  // "같은 구조지만 참조가 다르다"고 실패하므로(recDates 테스트들과 같은 이유), Array.from()으로
+  // 호스트 realm 배열로 바꿔 비교한다.
+  assert.deepStrictEqual(Array.from(sandbox.planIds('a1')), ['a1']);
+  assert.deepStrictEqual(Array.from(sandbox.planIds(['a1', 'a2'])), ['a1', 'a2']);
+  assert.deepStrictEqual(Array.from(sandbox.planIds(null)), []);
+});
+test('planAssetObj: id 1개면 실제 DB.assets 레코드를, 2개 이상이면 그 귀속의 가상 합산 자산(multi:true)을 돌려준다', () => {
+  setupPlanDB();
+  setPlanTwoAssets();
+  const single = sandbox.planAssetObj(['a1']);
+  assert.strictEqual(single.id, 'a1');
+  assert.strictEqual(single.multi, undefined, '단일 선택은 실제 자산 레코드라 multi 플래그가 없어야 함');
+  const combo = sandbox.planAssetObj(['a1', 'a2']);
+  assert.strictEqual(combo.multi, true);
+  assert.deepStrictEqual(combo.ids, ['a1', 'a2']);
+  assert.strictEqual(combo.name, '나 전체');
+  assert.strictEqual(sandbox.planAssetObj([]), null);
+});
+test('planAssetAll: 귀속의 통장 전체를 id 배열로 선택하고 refreshPlanBody()로 부분 갱신한다', () => {
+  setupPlanDB();
+  setPlanTwoAssets();
+  sandbox.ST.plan.assetId = 'a1';
+  const page = makePlanDom();
+  const $orig = sandbox.$;
+  sandbox.$ = (id) => id === 'page-plan' ? page : id === 'planVP' ? page.vp : $orig(id);
+  try {
+    sandbox.planAssetAll(0); // DB.owners[0] === '나'
+    assert.deepStrictEqual(sandbox.ST.plan.assetId, ['a1', 'a2']);
+    assert.strictEqual(sandbox.ST.plan.owner, '나', '귀속은 합산 대상 귀속을 따라가야 함');
+    assert.ok(page.fv.innerHTML.includes('나 전체'), '필터 라벨이 합산 이름("나 전체")으로 갱신돼야 함');
+  } finally {
+    sandbox.$ = $orig;
+  }
+});
+test('renderPlan: 통장이 하나뿐인 귀속을 고르면 전체 합산 선택이 자동으로 그 통장 단독 선택과 같아진다', () => {
+  setupPlanDB();
+  sandbox.DB.assets = [{ id: 'a1', name: '주계좌', owner: '나', type: 'cash', baseAmount: 10000 }];
+  sandbox.ST.plan.assetId = ['a1', 'a2']; // a2는 더 이상 존재하지 않음(예: 삭제됨)
+  sandbox.renderPlan();
+  assert.strictEqual(sandbox.ST.plan.assetId, 'a1', '유효한 id가 하나만 남으면 배열이 아니라 단일 id로 되돌아가야 함');
+});
+test('renderPlan: 전체 합산(ST.plan.assetId가 id 배열)이면 통장 간 내부이체는 흐름 목록에서 빠지고 외부 흐름만 보조 라벨과 함께 합산 잔액에 반영된다', () => {
+  setupPlanDB();
+  sandbox.DB.assets = [
+    { id: 'a1', name: '월급통장', owner: '나', type: 'cash', baseAmount: 100000 },
+    { id: 'a2', name: '비상금통장', owner: '나', type: 'cash', baseAmount: 50000 },
+  ];
+  sandbox.DB.txns = [
+    { id: 't1', date: '2026-06-05', type: 'income', category: '급여', memo: '월급', amount: 30000, toAssetId: 'a1' },
+    { id: 't2', date: '2026-06-10', type: 'transfer', category: '이체', memo: '비상금 이동', amount: 20000, fromAssetId: 'a1', toAssetId: 'a2' },
+    { id: 't3', date: '2026-06-12', type: 'expense', category: '식비', memo: '장보기', amount: 8000, fromAssetId: 'a2' },
+  ];
+  sandbox.ST.plan.assetId = ['a1', 'a2'];
+  sandbox.renderPlan();
+  const html = sandbox.pagePlanEl.innerHTML;
+  assert.ok(html.includes('나 전체'), '필터 라벨이 "귀속 전체" 이름으로 나와야 함');
+  // 월 말일 기준 합산 잔액: 기초(100000+50000) + 월급(30000) - 장보기(8000) = 172000 — 두 통장 사이의 이체는 합산에서 상쇄됨
+  assert.ok(html.includes('172,000원'), '통장 간 내부이체가 상쇄된 합산 잔액이 보여야 함');
+  assert.ok(html.includes('월급') && html.includes('+30,000원'), '외부에서 들어온 흐름은 그대로 나와야 함');
+  assert.ok(html.includes('<span class="mini">월급통장</span>'), '합산 모드의 외부 흐름에는 어느 통장인지 보조 라벨이 붙어야 함');
+  assert.ok(html.includes('장보기') && html.includes('-8,000원'));
+  assert.ok(html.includes('<span class="mini">비상금통장</span>'));
+  assert.ok(!html.includes('비상금 이동'), '선택된 두 통장 사이의 내부이체는 순잔액에 영향이 없어 흐름 목록에 나오면 안 됨');
+});
+test('renderPlan: 단일 통장 선택(기존 동작)에서는 흐름 항목에 보조 라벨(.mini)이 붙지 않는다', () => {
+  setupPlanDB();
+  setPlanTwoAssets();
+  sandbox.DB.txns = [
+    { id: 't1', date: '2026-06-05', type: 'income', category: '급여', memo: '월급', amount: 30000, toAssetId: 'a1' },
+  ];
+  sandbox.ST.plan.assetId = 'a1';
+  sandbox.renderPlan();
+  const html = sandbox.pagePlanEl.innerHTML;
+  assert.ok(html.includes('월급'));
+  assert.ok(!html.includes('class="mini">월급통장<'), '단일 선택은 합산 모드가 아니라 보조 라벨이 필요 없다');
 });
 
 /* ---------- accountName/esc: self-XSS 봉합 회귀 (d3f7bdc) ---------- */
