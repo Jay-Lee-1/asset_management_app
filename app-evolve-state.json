@@ -1,15 +1,12 @@
 {
   "cycle": 296,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "자산 선택삭제(aSel)에 일괄 \"총자산 포함/제외\" 전환 추가",
+    "why": "총자산 제외(includeInTotal=false)는 연금 자동제외(cycle52)나 오래된/휴면 계좌 수동 제외처럼 이미 핵심적으로 쓰이는 플래그인데, 바꾸는 방법이 자산 수정 시트(asDraft.includeInTotal 스위치, index.html:4539)로 건당 편집뿐이다. 자산 선택모드(ST.aSel)는 선택삭제(assetDelSel)만 있고(거래 선택모드의 histCatSel/ledgerCatSel 같은 두 번째 일괄 동작이 없음) 여러 계좌를 한꺼번에 총자산에서 빼거나 다시 포함시키려면 하나씩 열어 토글해야 한다. index.html:10753-10757의 activeSel() 주석은 \"카테고리\" 개념이 자산에 없어 카테고리형 일괄동작이 없다고 설명하지만, 포함/제외는 카테고리가 아니라 이미 존재하는 불리언 필드라 그 논리가 적용되지 않는다.",
+    "approach": "bulkCatPickFor/doBulkCat(index.html:10735 부근)과 deleteAssetsUndo(10555) 패턴을 따라, (1) assetSelIncl(ids,next) 같은 순수 로직 함수를 추가해 선택된 자산들의 includeInTotal을 일괄로 true/false로 설정하고 바뀐 자산 id/이전 값을 되돌릴 수 있게 반환, (2) doBulkInclToggle(ids,next)가 undoToast로 묶어 반영, (3) activeSel()의 aSel 분기(10757)에 incl 액션을 추가하고 선택 바닥바(updateSelBottom 주변)에 \"포함\"/\"제외\" 버튼을 노출 — 선택된 자산들의 현재 includeInTotal이 섞여 있으면(일부만 포함) 버튼 두 개(포함으로/제외로)를 모두 보여주고, 전부 같으면 반대 상태로 토글하는 버튼 하나만 보여준다. 연금처럼 _pensionAutoExcl이 세팅된 자산은 일괄 \"포함\"에서 제외하거나(asOpenType의 종류별 자동제외 로직과 충돌 방지) 최소한 _pensionAutoExcl을 함께 해제해 다음에 종류를 바꿔도 자동복원 로직이 꼬이지 않게 한다. 완료 후 node test/run.js로 회귀 확인, APP_VERSION/sw.js CACHE 올리기."
+  },
   "history": [
-    {
-      "cycle": 291,
-      "phase": "critique",
-      "timestamp": "2026-11-02T20:05:00.000Z",
-      "summary": "앱 전체를 서브에이전트로 재조사. openRecManage(반복 내역 관리)가 검색창이 전혀 없음을 발견(matchRecQuery는 이미 존재, 로직 공백이 아니라 UI 진입점 공백). pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 291,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-03T17:05:00.000Z",
       "summary": "cycle296 develop 커밋(9c19c91) 검토 — duplicateAsset()의 d.type==='pension' 체크가 openAssetSheet(editing, index.html:4413)의 동일 분기와 완전히 같은 조건·효과를 가짐을 확인. d는 JSON.parse(JSON.stringify(a))로 만든 새 객체(id=null)라 원본 자산이나 asDraft의 기존 상태를 건드리지 않고, _pensionAutoExcl은 saveAsset() 저장 시 항상 delete되므로(index.html:4565) 복제본에도 영구 필드로 남지 않음을 검증. node test/run.js 2619/2619 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 296,
+      "phase": "critique",
+      "timestamp": "2026-11-03T15:10:46.412Z",
+      "summary": "서브에이전트로 앱 전체를 재조사. 발견: 자산 선택모드(ST.aSel)가 선택삭제만 지원하고(assetDelSel), 거래 선택모드(histSel/ledgerSel)에 있는 두 번째 일괄동작(카테고리 변경)에 대응하는 자산 쪽 일괄동작이 전혀 없음 — 총자산 포함/제외(includeInTotal)는 연금 자동제외(cycle52)·휴면계좌 수동제외 등으로 이미 핵심적으로 쓰이는 플래그인데 건당 자산수정 시트에서만 토글 가능. activeSel()의 기존 주석(10754행)은 카테고리 개념이 자산에 없다고만 설명해 이 공백을 가리지 않는다. pending_advance_plan에 저장. (보류: 자산 일괄 \"귀속(owner) 변경\"도 같은 패턴으로 가능하지만 activeSel() 주석의 설계 의도—카테고리류 일괄동작은 건당 수정 시트의 몫—와 더 가깝게 겹쳐 보여 이번엔 포함/제외만 선정; CSV 가져오기/내보내기 전반은 이미 수십 사이클째 세밀하게 다뤄져 더 쪼갤 공백이 안 보임; 카드 결제일/명세서 주기 전용 로직은 애초에 \"변동\" 카테고리로 이미 대체 지원돼 별도 기능이 아님.) 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
