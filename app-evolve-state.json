@@ -1,6 +1,6 @@
 {
   "cycle": 297,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
     {
@@ -134,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-03T19:20:00.000Z",
       "summary": "전체 금액(#txAmt/#rAmt) 입력의 oninput이 fmtAmt(this)만 걸려 있어 txDraft.amount/recDraft.amount를 갱신하지 않고, 분할(splits) 중이면 splitHint(합계 힌트)도 전체 금액을 바꾼 직후엔 갱신되지 않던 공백 발견(서브에이전트 조사) — 분할 행(txSplitAmt/recSplitAmt)만 splitHintUpdate를 부르고, bd248b4(cycle274)가 힌트를 신설할 때도 분할 행 입력에만 범위를 좁혀 전체 금액 필드는 다루지 않았다. 10,000원 분할 지출(식비 10,000/생활용품 0)의 전체 금액을 20,000원으로 바꿔도 힌트는 계속 '일치해요'로 남아, 실제로는 10,000원이 모자란 상태를 거짓으로 보여준다 — saveTx()/saveRec()의 sum!==amount 가드가 저장은 막아 데이터는 안전하지만 입력 중 피드백이 틀렸다. txSplitAmt/recSplitAmt와 같은 패턴으로 txAmtInput(el)/recAmtInput(el)을 신설해 draft.amount를 갱신하고 splits가 있을 때만 splitHintUpdate를 부르도록 #txAmt(2곳: 일반 입력 시트+반복 개별/범위 수정 rc 분기)/#rAmt의 oninput을 교체했다. 기존 템플릿 문자열을 검사하던 회귀 테스트 2건을 새 oninput 값으로 갱신. 테스트 4건 추가(2636->2640 통과). APP_VERSION 1.47.338->1.47.339, sw.js CACHE v605->v606. node test/run.js 2640/2640 통과, logic.js/sw.js/index.html 메인 인라인 스크립트 구문 검증(node --check) 통과.",
+      "commit": "bd6b320"
+    },
+    {
+      "cycle": 297,
+      "phase": "review",
+      "timestamp": "2026-11-03T20:25:00.000Z",
+      "summary": "cycle297 develop 커밋(bd6b320) 검토 — txAmtInput/recAmtInput이 txSplitAmt/recSplitAmt와 완전히 같은 패턴(fmtAmt 후 draft.amount 갱신, splits 있을 때만 splitHintUpdate)임을 확인. clrInput('txAmt'/'rAmt')가 value='' 설정 후 input 이벤트를 dispatch해 oninput="txAmtInput(this)"를 그대로 거치므로 지우기 버튼도 동일하게 draft.amount=0과 힌트 갱신으로 이어짐을 검증. syncTxInputs/syncRecInputs가 같은 필드를 다시 num(el)로 읽어 draft.amount에 덮어써도 같은 값을 다시 쓰는 것뿐이라 충돌 없음(단순 중복). node test/run.js 2640/2640 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
       "commit": null
     }
   ]
