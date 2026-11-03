@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.332';
+const APP_VERSION='1.47.333';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3487,9 +3487,33 @@ function goalsSummaryCard(owner){
  return `<div class="section-title">목표 <span class="link" role="button" tabindex="0" aria-label="목표 관리" onclick="openGoalsList()" onkeydown="rowKeydown(event,()=>openGoalsList())">${gs.length>1?'모두 보기':'관리'} ${svg('chev')}</span></div>
   <div class="card pg-card">${goalRowHTML(nearestGoal(owner))}</div>`;
 }
+/* 목표가 CAT_PICKER_SEARCH_THRESHOLD(카테고리 피커, openCatPicker)개 넘을 때만 검색창을 보여주는
+ * 것과 같은 이유로, 목표도 몇 개뿐이면 검색창이 화면만 차지하고 쓸 일이 없다(app-evolve cycle293
+ * critique → cycle294 develop — openRecManage(recQ)/openAssetPicker(pkQ)는 보통 항목이 많아 늘
+ * 검색창을 보여주지만, 목표는 openCatPicker처럼 보통 몇 개뿐이라 그 패턴을 따른다). */
+const GOAL_LIST_SEARCH_THRESHOLD=8;
+let _goalQT=null;
 function openGoalsList(){ /* 관리 목록은 캐러셀 귀속과 무관하게 전체 목표를 보여준다 — 각 줄의 진행률만 그 목표 자신의 귀속(goalOwnerEff)을 쓴다 */
- const gs=DB.goals||[];
- const body=gs.length?`<div class="card" style="margin-bottom:6px">${gs.map(g=>{
+ const showSearch=(DB.goals||[]).length>GOAL_LIST_SEARCH_THRESHOLD;
+ const searchBar=showSearch?`<div class="searchbar" style="margin-bottom:14px">${svg('search')}<div class="field-clear"><input id="goalQ" aria-label="목표 검색" placeholder="이름·금액 검색" value="" oninput="goalQInput(this.value)"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('goalQ')">✕</button></div></div>`:'';
+ openSheet(`<h3>목표 관리</h3><div class="desc">탭하면 수정·삭제할 수 있어요</div>${searchBar}
+  <div id="goalBody">${goalsManageBody('')}</div>
+  <div style="height:14px"></div><button class="btn btn-primary" onclick="openGoalForm()">${svg('plus')} 목표 추가</button>`);
+}
+/* recQInput/recManageBody(openRecManage)와 동일한 220ms 디바운스 — #goalBody만 다시 그려 시트
+ * 전체(검색창 포함)를 다시 열지 않는다. 금액 검색은 matchGoalQuery(통합검색이 이미 쓰는 순수
+ * 함수, cycle284 advance가 targetAmount 비교/범위까지 지원하게 해뒀다)를 그대로 재사용한다. */
+function goalQInput(v){clearTimeout(_goalQT);_goalQT=setTimeout(()=>{const b=$('goalBody');if(b)b.innerHTML=goalsManageBody(v)},220);}
+function goalsManageBody(qRaw){
+ const q=(qRaw||'').trim();
+ const all=DB.goals||[];
+ const gs=q?all.filter(g=>matchGoalQuery(g,q)):all;
+ if(!gs.length){
+  return all.length
+   ?`<div class="empty"><div class="ei">${svg('search')}</div><div class="et">'${esc(q)}'와 일치하는 목표가 없어요</div><div class="es">다른 말로 검색해 보세요</div></div>`
+   :`<div class="empty"><div class="ei">${svg('target')}</div><div class="et">아직 목표가 없어요</div><div class="es">순자산 목표를 세우면 진행 상황을 추적할 수 있어요</div></div>`;
+ }
+ return `<div class="card" style="margin-bottom:6px">${gs.map(g=>{
    const p=goalProgress(g,goalHistoryFor(g),TODAY);
    const ownerBadge=goalOwnerEff(g)!=='all'?` · ${esc(g.owner)}`:'';
    const assetGone=goalLinkedAssetGone(g); /* goalRowHTML()과 동일 캡션(app-evolve cycle214 advance) */
@@ -3504,9 +3528,7 @@ function openGoalsList(){ /* 관리 목록은 캐러셀 귀속과 무관하게 �
      ${g.targetDate?`<div class="msub2">목표일 ${fmtDateFull(g.targetDate)}${overdue?' <span class="mini warn">지남</span>':''}</div>`:''}</div>
     <div class="row-acts"><button type="button" class="act-btn" aria-label="${esc(g.name)} 복제" onclick="event.stopPropagation();duplicateGoal('${g.id}')">${svg('copy')}</button></div>
     <div class="mc">${svg('chev')}</div></div>`;
- }).join('')}</div>`:`<div class="empty"><div class="ei">${svg('target')}</div><div class="et">아직 목표가 없어요</div><div class="es">순자산 목표를 세우면 진행 상황을 추적할 수 있어요</div></div>`;
- openSheet(`<h3>목표 관리</h3><div class="desc">탭하면 수정·삭제할 수 있어요</div>${body}
-  <div style="height:14px"></div><button class="btn btn-primary" onclick="openGoalForm()">${svg('plus')} 목표 추가</button>`);
+ }).join('')}</div>`;
 }
 let goalDraft=null;
 function openGoalForm(id){

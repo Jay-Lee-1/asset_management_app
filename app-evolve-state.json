@@ -1,15 +1,8 @@
 {
   "cycle": 294,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 289,
-      "phase": "develop",
-      "timestamp": "2026-11-02T08:19:06.859Z",
-      "summary": "matchAssetQuery(자산 검색)가 이름+통화(fx)만 haystack에 넣고 stockCode/cryptoCode는 빠져있던 공백 발견 — currency와 동일한 방식으로 stockCode/cryptoCode를 haystack에 추가. 테스트 4건 추가(2536->2539 통과). APP_VERSION 1.47.321->1.47.322, sw.js CACHE v588->v589. node test/run.js 2539/2539 통과.",
-      "commit": null
-    },
     {
       "cycle": 289,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-03T07:30:00.000Z",
       "summary": "critique(cycle293) 계획대로 recSaveScopeApply('future'/'all')와 commitRec()의 확인 시트 없는 즉시 적용 경로에 undoToast를 추가했다. 세 경로 모두 orig(DB.recurrences[i]에 있던 교체 전 원본 참조, splitRecurrenceAt/pruneOrphanRecOverrides 어느 쪽도 변형하지 않음)를 그대로 되돌리는 방식으로 충분했다 — 'future' 분기는 추가로 분리 생성된 newRec을 id로 filter해 제거한다. 세 곳 모두 마지막 toast(...)를 undoToast(msg,undoFn)로 교체. 기존 toast 메시지 문구(정리 건수 안내 등)는 그대로 유지하고 전달 수단만 undoToast로 바꿔, lastToast를 검사하던 기존 회귀 테스트 6건을 lastUndo.msg로 갱신했다. 새 undo 복원 테스트 3건(recSaveScopeApply 'all'/'future', commitRec 즉시 적용 경로 각각 되돌리기 후 원본 레코드 참조·필드가 그대로 복원되는지) 추가. 테스트 2588->2591 통과(6건 수정+3건 추가). APP_VERSION 1.47.331->1.47.332, sw.js CACHE v598->v599. node test/run.js 2591/2591 통과, logic.js/sw.js 구문 검증(node --check) 통과. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 294,
+      "phase": "develop",
+      "timestamp": "2026-11-03T08:40:00.000Z",
+      "summary": "목표 관리(openGoalsList)에 검색창이 전혀 없던 공백 발견 — openRecManage(recQ, cycle291 advance)와 같은 패턴으로 인라인 검색(goalQ)을 추가했다. 기존에 이미 있던 matchGoalQuery(통합검색용, 이름+금액 비교/범위 지원)를 그대로 재사용. 다만 목표는 보통 몇 개뿐이라 openCatPicker의 CAT_PICKER_SEARCH_THRESHOLD와 같은 이유로 GOAL_LIST_SEARCH_THRESHOLD(8)를 넘을 때만 검색창을 보여주고, 이하면 기존처럼 검색창 없이 전체를 그대로 보여준다. 본문을 goalsManageBody(q)로 분리해 #goalBody innerHTML만 220ms 디바운스로 교체(goalQInput), 시트 전체를 다시 열지 않는다. 테스트 9건 추가(2591->2600 통과). APP_VERSION 1.47.332->1.47.333, sw.js CACHE v599->v600. node test/run.js 2600/2600 통과.",
       "commit": null
     }
   ]

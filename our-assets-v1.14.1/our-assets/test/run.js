@@ -288,7 +288,7 @@ const FUNCTIONS = [
   // $(...)가 없으면 바로 return하는 얕은 래퍼라(기본 $ 스텁은 'assetBody' 등을 세팅하지 않는 한
   // null을 돌려줌) 기존 공유 스텁만으로 selectNwOwner를 실행형으로 검증할 수 있다.
   'selectNwOwner', 'refreshAssetBody', 'refreshNwHistoryCard', 'refreshGoalsSummary', 'refreshAllocationCard', 'refreshInvestGainLossCard',
-  'goalOwnerEff', 'goalHasUnknown', 'goalLinkedAssetGone', 'goalLinkedAssetBroken', 'goalHistoryFor', 'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'syncGoalInputs', 'goalClearDate', 'goalOwnerSel', 'goalTypeSel', 'goalOpenAsset', 'renderGoalForm', 'openGoalForm', 'duplicateGoal', 'saveGoal', 'delGoal', 'ackGoalAchieved',
+  'goalOwnerEff', 'goalHasUnknown', 'goalLinkedAssetGone', 'goalLinkedAssetBroken', 'goalHistoryFor', 'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'goalQInput', 'goalsManageBody', 'syncGoalInputs', 'goalClearDate', 'goalOwnerSel', 'goalTypeSel', 'goalOpenAsset', 'renderGoalForm', 'openGoalForm', 'duplicateGoal', 'saveGoal', 'delGoal', 'ackGoalAchieved',
   'openInquiry', 'sendInquiry', 'openInquiryList', 'delInquiry', 'editInquiry', 'saveInquiryEdit',
   'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetQInput', 'assetToggleSel', 'visibleAssetsForSel', 'assetSelAll', 'activeSel',
   'modeSeg', 'monthNav', 'abbr', 'calCellsFor', 'ledSumInner', 'ledSumBox', 'ledSumTap', 'calPane', 'txRowCore', 'txRow', 'dayTxns',
@@ -373,7 +373,7 @@ const FUNCTIONS = [
 // 목록과, 그 키를 읽어주는 한글 aria-label 매핑이다(app-evolve cycle281 advance) — 둘 다 내부에
 // ";"가 없는 단순 object literal이라 extractConstBlock 없이 extractConst로도 끝까지 끌어온다
 // (CAT_LABEL과 같은 패턴).
-const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'emailKey', 'CAT_PICKER_SEARCH_THRESHOLD', 'GS_CAP', 'CAT_ICON_SET', 'ICON_LABEL_KO'];
+const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'emailKey', 'CAT_PICKER_SEARCH_THRESHOLD', 'GOAL_LIST_SEARCH_THRESHOLD', 'GS_CAP', 'CAT_ICON_SET', 'ICON_LABEL_KO'];
 // _histCache는 filteredHist()가 재대입(={key,list})하는 let 선언이라 CONSTS(extractConst)로는
 // 못 끌어오므로 별도의 LETS 목록으로 extractLet을 통해 가져온다.
 // _copyIsCsv도 같은 이유(openCopyBackup()이 재대입)로 LETS를 통해 가져온다.
@@ -414,7 +414,7 @@ const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'AS
 // _importPinRaw는 openImportPinSheet()가 세팅하고 doImportPinSubmit()이 소비하는 "PIN 입력을
 // 기다리는 암호화 백업 원본" 상태라(let 선언, realm에 안 붙음) 같은 이유로 LETS를 통해 가져온다
 // (app-evolve cycle289 advance).
-const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer', '_histTimer', '_assetQT', '_pkQ', '_bioAutoTried', '_csvMap', '_debtWhatIfAnnT', '_txCatSuggT', '_recCatSuggT', '_importPinRaw', '_recQT'];
+const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer', '_histTimer', '_assetQT', '_pkQ', '_bioAutoTried', '_csvMap', '_debtWhatIfAnnT', '_txCatSuggT', '_recCatSuggT', '_importPinRaw', '_recQT', '_goalQT'];
 
 const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(extractConst).join('\n') + '\n' + LETS.map(extractLet).join('\n');
 
@@ -4294,6 +4294,113 @@ test('openGoalsList: 목표가 있으면 목표별 진행률·목표일을 목�
   assert.ok(sandbox.lastSheetHtml.includes(sandbox.fmtDateFull('2026-12-31')), '목표일은 다른 화면들처럼 사람이 읽는 형식으로 보여야 함(app-evolve cycle159 develop)');
   assert.ok(!sandbox.lastSheetHtml.includes('목표일 2026-12-31<'), '목표일이 가공 없이 ISO 원문 그대로 노출되면 안 됨');
 });
+/* ---------- openGoalsList/goalsManageBody: 인라인 검색(goalQ) — openCatPicker(카테고리 피커)와
+ * 동일하게 항목이 CAT_PICKER_SEARCH_THRESHOLD류 기준을 넘을 때만 검색창을 보여준다(app-evolve
+ * cycle293 critique → cycle294 develop). 통합검색이 이미 쓰는 matchGoalQuery(이름+금액 비교/범위)를
+ * 그대로 재사용해 openRecManage(recQ)와 같은 패턴(검색창+#goalBody innerHTML 교체)을 따른다. ---------- */
+function manyGoals(n) {
+  return Array.from({ length: n }, (_, i) => ({ id: 'g' + i, name: '목표' + i, targetAmount: 1000000 * (i + 1), targetDate: null }));
+}
+test('openGoalsList: 목표가 GOAL_LIST_SEARCH_THRESHOLD개 이하면 검색창(#goalQ)이 뜨지 않는다', () => {
+  sandbox.DB = { goals: manyGoals(sandbox.GOAL_LIST_SEARCH_THRESHOLD), nwHistory: [] };
+  sandbox.lastSheetHtml = null;
+  sandbox.openGoalsList();
+  assert.ok(!sandbox.lastSheetHtml.includes('id="goalQ"'), '목표가 몇 개뿐이면 검색창이 화면만 차지하므로 뜨면 안 됨');
+  assert.ok(sandbox.lastSheetHtml.includes('id="goalBody"'), '검색 결과를 담는 #goalBody 컨테이너는 검색창 유무와 무관하게 항상 떠야 함');
+});
+test('openGoalsList: 목표가 GOAL_LIST_SEARCH_THRESHOLD개를 넘으면 검색창(#goalQ)이 뜬다', () => {
+  sandbox.DB = { goals: manyGoals(sandbox.GOAL_LIST_SEARCH_THRESHOLD + 1), nwHistory: [] };
+  sandbox.lastSheetHtml = null;
+  sandbox.openGoalsList();
+  assert.ok(sandbox.lastSheetHtml.includes('id="goalQ"'), '검색 입력창(#goalQ)이 떠야 함');
+  assert.ok(sandbox.lastSheetHtml.includes('oninput="goalQInput(this.value)"'), '입력마다 goalQInput을 불러야 함');
+});
+test('[실행형] goalsManageBody: 검색어가 이름에 일치하는 목표만 남긴다', () => {
+  sandbox.DB = {
+    goals: [
+      { id: 'g1', name: '내 집 마련', targetAmount: 100000000, targetDate: null },
+      { id: 'g2', name: '비상금', targetAmount: 5000000, targetDate: null },
+    ],
+    nwHistory: [{ date: '2026-01-01', nw: 1000000 }],
+  };
+  sandbox.TODAY = '2026-01-01';
+  const html = sandbox.goalsManageBody('비상금');
+  assert.ok(html.includes('비상금'), '검색어와 일치하는 목표는 남아야 함');
+  assert.ok(!html.includes('내 집 마련'), '검색어와 일치하지 않는 목표는 빠져야 함');
+});
+test('[실행형] goalsManageBody: matchGoalQuery와 동일하게 목표 금액으로도 찾을 수 있다', () => {
+  sandbox.DB = {
+    goals: [
+      { id: 'g1', name: '내 집 마련', targetAmount: 100000000, targetDate: null },
+      { id: 'g2', name: '비상금', targetAmount: 5000000, targetDate: null },
+    ],
+    nwHistory: [{ date: '2026-01-01', nw: 1000000 }],
+  };
+  sandbox.TODAY = '2026-01-01';
+  const html = sandbox.goalsManageBody('1000만~1억5000만');
+  assert.ok(html.includes('내 집 마련'), '1000만~1억5000만 범위에 들어가는 목표 금액(1억)은 걸려야 함');
+  assert.ok(!html.includes('비상금'), '범위 밖인 목표(500만)는 빠져야 함');
+});
+test('[실행형] goalsManageBody: 검색 결과가 0건이면 "일치하는 목표가 없어요" 전용 빈 상태가 뜬다(목표 자체가 없다는 문구와 달라야 함)', () => {
+  sandbox.DB = { goals: [{ id: 'g1', name: '비상금', targetAmount: 5000000, targetDate: null }], nwHistory: [] };
+  const html = sandbox.goalsManageBody('존재하지않는검색어');
+  assert.ok(html.includes("'존재하지않는검색어'와 일치하는 목표가 없어요"), '검색어가 포함된 전용 빈 상태 문구여야 함');
+  assert.ok(!html.includes('아직 목표가 없어요'), 'DB에 목표가 있는 상태이므로 "아직 없어요" 문구가 뜨면 안 됨');
+});
+test('[실행형] goalsManageBody: 빈 검색어는 전체(안 거른) 결과와 동일하다', () => {
+  sandbox.DB = {
+    goals: [
+      { id: 'g1', name: '내 집 마련', targetAmount: 100000000, targetDate: null },
+      { id: 'g2', name: '비상금', targetAmount: 5000000, targetDate: null },
+    ],
+    nwHistory: [{ date: '2026-01-01', nw: 1000000 }],
+  };
+  sandbox.TODAY = '2026-01-01';
+  assert.strictEqual(sandbox.goalsManageBody(''), sandbox.goalsManageBody('   '), '공백만 입력해도(trim 결과 빈 문자열) 빈 검색어와 동일하게 전체를 보여줘야 함');
+});
+(() => {
+  const origSetTimeout = sandbox.setTimeout, origClearTimeout = sandbox.clearTimeout, orig$ = sandbox.$;
+  function restore() { sandbox.setTimeout = origSetTimeout; sandbox.clearTimeout = origClearTimeout; sandbox.$ = orig$; }
+  test('goalQInput: 디바운스(220ms) 후에야 #goalBody.innerHTML을 goalsManageBody(검색어)로 교체한다', () => {
+    sandbox.DB = { goals: [{ id: 'g1', name: '비상금', targetAmount: 5000000, targetDate: null }], nwHistory: [] };
+    const goalBodyEl = { innerHTML: 'old' };
+    let capturedMs = null, timerFn = null;
+    sandbox.setTimeout = (fn, ms) => { capturedMs = ms; timerFn = fn; return 'timer'; };
+    sandbox.clearTimeout = () => {};
+    sandbox.$ = (id) => (id === 'goalBody' ? goalBodyEl : null);
+    try {
+      sandbox.goalQInput('비상금');
+      assert.strictEqual(capturedMs, 220, '디바운스 지연은 다른 검색창(recQ 등)과 동일하게 220ms여야 함');
+      assert.strictEqual(goalBodyEl.innerHTML, 'old', '타이머가 실행되기 전에는 #goalBody가 바뀌면 안 됨');
+      timerFn();
+      assert.ok(goalBodyEl.innerHTML.includes('비상금'), '타이머 실행 후 #goalBody.innerHTML이 검색 결과로 교체되어야 함');
+    } finally { restore(); }
+  });
+  test('goalQInput: 연속 입력마다 이전 타이머를 지우고 새로 하나만 건다', () => {
+    sandbox.DB = { goals: [] };
+    let setCalls = 0, clearCalls = 0;
+    sandbox.setTimeout = () => { setCalls++; return 'timer' + setCalls; };
+    sandbox.clearTimeout = () => { clearCalls++; };
+    sandbox.$ = () => null;
+    try {
+      sandbox.goalQInput('비');
+      sandbox.goalQInput('비상금');
+      assert.strictEqual(setCalls, 2);
+      assert.strictEqual(clearCalls, 2, '매 입력이 이전 타이머를 지워야 함(여러 번 겹쳐 재계산되는 걸 방지)');
+    } finally { restore(); }
+  });
+  test('goalQInput: #goalBody가 화면에 없으면(시트가 이미 닫힌 뒤 늦게 실행된 타이머 등) 조용히 아무 것도 하지 않는다', () => {
+    sandbox.DB = { goals: [] };
+    let timerFn = null;
+    sandbox.setTimeout = (fn) => { timerFn = fn; return 'timer'; };
+    sandbox.clearTimeout = () => {};
+    sandbox.$ = () => null;
+    try {
+      sandbox.goalQInput('아무거나');
+      assert.doesNotThrow(() => timerFn(), '#goalBody가 없을 때도 타이머 콜백이 에러 없이 끝나야 함(recQInput과 동일한 null 가드)');
+    } finally { restore(); }
+  });
+})();
 test('openGoalForm: id 없이 열면 goalDraft가 빈 새 목표로 초기화된다(uid 스텁 경로)', () => {
   sandbox.DB = { goals: [] };
   sandbox.goalDraft = null;
