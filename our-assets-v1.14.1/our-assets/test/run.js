@@ -13820,6 +13820,27 @@ test('duplicateAsset: 부채(debt)는 완납 ack 플래그(payoffAckAt)를 새 �
   assert.strictEqual('payoffAckAt' in sandbox.asDraft, false, '완납 ack는 원본 자산의 상태라 새로 만든 자산엔 아직 해당하지 않아야 함');
   assert.strictEqual('amountKRW' in sandbox.asDraft, false, '부채 금액도 잔액식 자산이라 지워야 함');
 });
+/* ---------- duplicateAsset: 연금 복제의 _pensionAutoExcl 공백 (app-evolve cycle296 develop)
+ * openAssetSheet(editing)은 기존 연금 자산을 열 때 _pensionAutoExcl=true를 세팅해, 사용자가
+ * 나중에 종류를 다른 걸로 바꿔도 asOpenType()이 includeInTotal을 원래대로 복원할 수 있게 한다
+ * (cycle52). 하지만 duplicateAsset()은 openAssetSheet()를 거치지 않고 asDraft를 직접 구성해
+ * 이 플래그가 연금 복제본엔 전혀 세팅되지 않았다 — 연금을 복제한 뒤 종류를 바꾸면
+ * includeInTotal:false(총자산 제외)가 그대로 고착돼, 더 이상 연금이 아닌데도 조용히
+ * 순자산 집계에서 빠지는 실데이터 버그였다. ---------- */
+test('duplicateAsset: 연금 자산을 복제해도 _pensionAutoExcl이 세팅돼, 종류를 바꾸면 총자산 제외가 자동으로 풀린다', () => {
+  sandbox.DB = { assets: [{ id: 'p1', type: 'pension', owner: '나', includeInTotal: false, name: '국민연금', amountKRW: 24000000 }] };
+  sandbox.duplicateAsset('p1');
+  assert.strictEqual(sandbox.asDraft._pensionAutoExcl, true, '연금을 복제한 draft도 기존 연금을 연 것과 똑같이 자동 제외 상태로 간주해야 함');
+  sandbox.asOpenType();
+  sandbox.lastTypePickerOnPick('cash');
+  assert.strictEqual(sandbox.asDraft.type, 'cash');
+  assert.strictEqual(sandbox.asDraft.includeInTotal, true, '연금 복제본의 종류를 바꾸면 총자산 제외가 자동으로 풀려야 함(openAssetSheet 경로와 동일하게)');
+});
+test('duplicateAsset: 연금이 아닌 자산을 복제하면 _pensionAutoExcl이 세팅되지 않는다', () => {
+  sandbox.DB = { assets: [{ id: 'a9', type: 'cash', owner: '나', currency: 'KRW', includeInTotal: true, name: '저축은행 통장', baseAmount: 100000 }] };
+  sandbox.duplicateAsset('a9');
+  assert.strictEqual('_pensionAutoExcl' in sandbox.asDraft, false, '연금이 아닌 자산 복제본엔 이 플래그가 생기면 안 됨');
+});
 test('duplicateAsset: 존재하지 않는 id는 asDraft를 건드리지 않고 그대로 return한다', () => {
   sandbox.DB = { assets: [] };
   sandbox.asDraft = null;

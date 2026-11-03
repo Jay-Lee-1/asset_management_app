@@ -1,15 +1,8 @@
 {
   "cycle": 296,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 291,
-      "phase": "develop",
-      "timestamp": "2026-11-02T17:40:05.000Z",
-      "summary": "matchAssetQuery(자산 검색)가 귀속(owner)을 haystack에 넣지 않던 공백 발견 — currency/stockCode와 동일한 방식으로 a.owner를 추가. 테스트 4건 추가(2554->2556 통과). APP_VERSION 1.47.325->1.47.326, sw.js CACHE v592->v593. node test/run.js 2556/2556 통과.",
-      "commit": "8ac3da6"
-    },
     {
       "cycle": 291,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-03T16:00:00.000Z",
       "summary": "critique(cycle295) 계획대로 플랜(가계부 예측) 탭에 귀속별 \"전체 합산\" 선택을 추가했다. ST.plan.assetId가 단일 id 문자열 대신 id 배열도 가리킬 수 있게 넓히고 planIds()/planAssetObj() 정규화 헬퍼를 신설, openPlanAsset()에 통장이 2개 이상인 귀속마다 \"전체 합산\" 버튼(planAssetAll)을 추가했다. lowestInMonth/planBalInner/planBalCard/planRowsHTML/renderPlan/refreshPlanBody를 모두 ids 배열 기준으로 합산 계산하게 고치고, planRowsHTML()은 합산 선택 안의 계좌끼리 주고받은 내부이체는 순잔액에 영향이 없어 흐름 목록에서 제외하며 외부 흐름에는 어느 통장인지 .mini 보조 라벨을 붙인다. 기존 단일계좌 경로/테스트(lowestInMonth(\"a1\",..) 등)는 전부 그대로 통과하도록 하위호환을 유지했다. test/run.js FUNCTIONS 추출 목록에 planIds/planAssetObj/planAssetAll 추가, 신규 테스트 6건(크로스리얼름 배열 비교는 Array.from()으로 우회). 테스트 2611->2617 통과. APP_VERSION 1.47.335->1.47.336, sw.js CACHE v602->v603. node test/run.js 2617/2617 통과, logic.js/sw.js/index.html 인라인 스크립트 구문 검증(node --check) 통과. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 296,
+      "phase": "develop",
+      "timestamp": "2026-11-03T13:18:13.597Z",
+      "summary": "duplicateAsset()이 연금(pension) 자산을 복제할 때 _pensionAutoExcl 플래그를 세팅하지 않던 공백 발견 — openAssetSheet(editing)은 기존 연금 자산을 열 때 이 플래그를 세팅해 asOpenType()이 종류 전환 시 includeInTotal을 복원할 수 있게 하지만(cycle52), duplicateAsset()은 openAssetSheet를 거치지 않고 asDraft를 직접 구성해 플래그가 빠졌다. 연금을 복제한 뒤 종류를 다른 걸로 바꾸면 includeInTotal:false(총자산 제외)가 고착돼, 더 이상 연금이 아닌데도 조용히 순자산 집계에서 빠지는 실데이터 버그였다. duplicateAsset()에 openAssetSheet와 동일한 d.type==='pension' 체크를 추가해 수정. 테스트 2건 추가(연금 복제 시 플래그 세팅+종류전환 복원 확인, 비연금 복제 시 플래그 미생성 확인). 2617->2619 통과. APP_VERSION 1.47.336->1.47.337, sw.js CACHE v603->v604. node test/run.js 2619/2619 통과, sw.js/logic.js 구문 검증(node --check) 통과.",
       "commit": null
     }
   ]
