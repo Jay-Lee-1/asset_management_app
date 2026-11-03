@@ -1,15 +1,12 @@
 {
   "cycle": 295,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "플랜(가계부 예측) 탭이 계좌 하나만 볼 수 있어 다계좌 사용자의 \"이달에 마이너스 날까?\" 질문에 답을 못 줌",
+    "why": "index.html의 renderPlan()(6249행)과 planRowsHTML()(6207행)은 ST.plan.assetId 단 하나의 통장만 받아 그 계좌의 일별 예상 잔액(반복거래 포함)과 마이너스 전환일을 보여준다. openPlanAsset()(6294행)의 통장 선택 시트도 계좌를 하나씩만 고르게 하고 '전체 계좌 합산' 옵션이 없다. 생활비/비상금 통장을 분리해 쓰는(이 앱이 이미 지원하는 다자산·다귀속) 사용자는 각 계좌를 번갈아 눌러 확인해야 하고, 한 계좌는 흑자인데 다른 계좌가 적자로 돌아서는 시점을 앱이 요약해주지 못한다. 플랜 탭은 이 앱의 핵심 차별 기능(마이너스 예방 알림)인데 단일계좌 한계로 다계좌 사용자에겐 반쪽만 작동한다.",
+    "approach": "openPlanAsset()에 귀속(owner)별 '전체 계좌 합산' 항목을 추가해 ST.plan.assetId가 단일 id 대신 id 배열(또는 null=전체)을 가리키도록 확장. logic.js에 다중 자산 합산 순수 함수(예: sumBalancesAtDates)를 추가하고, planRowsHTML()의 flows 필터와 dayBal 계산을 단일 asset.id 비교에서 Set 기반 다중 id 매칭으로 바꾸되 계좌 간 내부이체는 상쇄되도록 처리. planBalCard/planTrackHTML도 합산 모드를 받아들이게 하고 합산 뷰의 플로우 항목에는 어느 계좌의 이체인지 보조 라벨을 붙인다. 기존 단일계좌 경로는 그대로 두고 '전체'를 추가 선택지로만 넣는다."
+  },
   "history": [
-    {
-      "cycle": 290,
-      "phase": "critique",
-      "timestamp": "2026-11-02T14:35:00.000Z",
-      "summary": "서브에이전트로 앱 전체를 재조사. 발견: pageHead()의 tab별 acts 분기가 'menu' 탭에만 통합 검색(openGlobalSearch) 아이콘을 달아두고, 가장 자주 보는 'home'(및 'plan')엔 검색 진입점이 전혀 없음. pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 290,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-03T13:35:00.000Z",
       "summary": "cycle295 develop 커밋(6295ac9) 검토 — archivedThrough 체크가 budgetCarryFor 재귀의 매 depth마다 자기 전달을 다시 확인해 여러 달 연속 정리돼도 올바르게 0으로 끊김을 확인. cutoffDate/archivedThroughDate가 항상 archiveMonthPicked()의 monthEndStr(y,m)로만 생성돼(다른 호출부 없음) budgetCarryFor의 monthEndStr(py,pm)<=archivedThrough 비교가 항상 월 경계에 맞게 정렬됨을 검증. DB.settings는 이미 DB 스키마 완전성 가드 테스트의 LOCAL_ONLY_DB_FIELDS에 포함돼 있어 mergeRemoteDataIntoLocal 배선 누락 경고에 걸리지 않음도 확인. node test/run.js 2611/2611 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 295,
+      "phase": "critique",
+      "timestamp": "2026-11-03T14:40:00.000Z",
+      "summary": "서브에이전트로 앱 전체를 재조사. 발견: 플랜(가계부 예측) 탭이 계좌 하나만 볼 수 있어(renderPlan/planRowsHTML, index.html:6207·6249) 다계좌 사용자가 통장을 번갈아 눌러야 하고 '전체 합산'으로 마이너스 전환일을 요약해주지 못함 — 플랜 탭이 앱의 핵심 차별 기능인데 단일계좌 한계로 반쪽만 작동. pending_advance_plan에 저장. (보류: CDN SRI 해시 누락은 한 줄 보강이라 develop 사이즈, mergeRemoteDataIntoLocal 데이터손실 경고는 이미 여러 사이클째 진행 중인 증분 트랙, 거래 다건 선택 시 귀속 일괄변경 부재는 플랜 탭 건보다 영향 작음, PIN 평문저장은 cycle252/289가 이미 두 번 범위초과로 보류.) 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
