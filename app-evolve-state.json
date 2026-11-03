@@ -1,33 +1,8 @@
 {
-  "cycle": 294,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "지출/수입 분석 화면의 spendTrend/incomeTrend 중복 재계산 제거(메모이제이션)",
-    "why": "spendByCategory(y,m,owner)/incomeByCategory(y,m,owner)는 각각 해당 달 전체 거래를 처음부터 스캔·분할·집계하는 무거운 함수인데, openSpendAnalysis()(index.html:6812-6852)가 rows용으로 1회 + totalAvg용으로 3회(이전 3개월) 호출한 뒤, 행마다 spendTrend(r.c,...)(6550)가 '같은' 현재 달 + 이전 3개월을 또 처음부터 재계산해 N개 카테고리면 한 화면 렌더에 4+4N번의 전체 월 스캔이 발생한다. incomeTrend/incomeByCategory(5883, 6642)도 수입 분석 화면에서 동일한 패턴을 그대로 반복한다. 몇 년치 거래·십수 개 카테고리를 가진 사용자가 자주 여는 핵심 월간 화면(지출/수입 분석)에서 체감 가능한 지연을 유발하는 실제 성능 문제이며, cycle293 critique에서 이미 한 번 후보로 지목됐다가 보류된 바 있다.",
-    "approach": "1) 화면 1회 렌더에 필요한 월(현재+이전 n개월) × owner 조합의 spendByCategory/incomeByCategory 결과를 한 번만 계산해 `${y}-${m}-${owner}` 키의 로컬 맵(또는 캐시 객체)에 담는다. 2) spendTrend/incomeTrend가 이 맵(또는 조회 함수)을 선택적 인자로 받아, 맵이 주어지면 재계산 없이 거기서 찾아 쓰고, 안 주어지면 기존처럼 직접 재계산하는 하위호환 경로를 유지한다(기존 test/run.js 테스트가 그대로 통과하도록). 3) openSpendAnalysis()와 수입 분석 빌더(5860-5890 부근)를 고쳐 맵을 한 번만 만들고 각 행에서 spendTrend(c, map)/incomeTrend(c, map) 형태로 넘기게 한다. 4) 메모이즈 경로와 기존 재계산 경로가 다중 카테고리·다중 월 픽스처에서 동일한 결과를 내는지 확인하는 테스트를 추가한다. 5) APP_VERSION과 sw.js CACHE를 올리고, 커밋 전에 node our-assets-v1.14.1/our-assets/test/run.js를 반드시 통과시킨다."
-  },
+  "cycle": 295,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 289,
-      "phase": "critique",
-      "timestamp": "2026-11-02T10:15:26.199Z",
-      "summary": "앱 전체를 서브에이전트로 훑어 전략적 약점을 재조사 — APPLOCK(PIN) 활성 상태에서도 JSON 백업 내보내기(doExport)와 가져오기(importFile 핸들러)가 평문으로 처리되는 공백을 찾았다. index.html:2276-2290 주석(cycle252 advance)이 이미 AES-GCM 암복호화 순수 함수(dbEncryptKey/encryptDbBlob/decryptDbBlob)를 만들어두고 save()/load() 전체 배선만 보류했을 뿐, export/import 두 지점은 보류 대상이 아니었다. PIN 사용자가 백업을 클라우드/메신저로 내보내는 가장 흔한 경로에서 PIN의 위협 모델을 그대로 뚫는 실제 보안 공백이라 최우선으로 선정. pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
-    {
-      "cycle": 289,
-      "phase": "advance",
-      "timestamp": "2026-11-02T11:30:00.000Z",
-      "summary": "critique(cycle289) 계획대로 APPLOCK(PIN) 활성 시 JSON 전체 백업 내보내기/가져오기를 PIN으로 암호화했다. (1) doExport(mode,kind)에서 kind가 falsy(JSON 백업)이고 APPLOCK.enabled()이면 promptExportPin()(새 PIN 입력 시트, Promise로 결과 반환)으로 PIN을 받아 APPLOCK.verify()로 확인한 뒤 encryptDbBlob(text,pin)의 결과를 text로 써서 그 뒤 공유/파일저장/복사 폴백 로직은 그대로 둔다. 취소(null)하면 '내보내기를 취소했어요' 토스트 후 중단. copyFallback의 사진-제외 재직렬화(redactTxnPhotos) 분기도 exportPin이 있으면 다시 암호화해, 공유/파일저장이 막혀 클립보드 폴백으로 넘어가도 PIN 보호가 조용히 사라지지 않게 했다(원래 critique 계획엔 없었지만 구현 중 발견한 누락). (2) importFile change 핸들러는 raw가 assets/txns 배열이면 proceedWithBackupObj로, {v:1,salt,iv,ct} 모양이면 openImportPinSheet(raw)로 분기. (3) 2276행 주석 갱신. (4) 테스트 6건 추가(2539->2545 통과). APP_VERSION 1.47.322->1.47.323, sw.js CACHE v589->v590. node test/run.js 2545/2545 통과. pending_advance_plan null로 비움.",
-      "commit": null
-    },
-    {
-      "cycle": 290,
-      "phase": "develop",
-      "timestamp": "2026-11-02T12:16:50.082Z",
-      "summary": "matchRecQuery(반복/구독 검색)가 카테고리/메모/금액까지만 haystack에 넣고, openRecManage 행이 msub로 그대로 보여주는 반복 주기 레이블(recFreqLabelStr)은 빠져 있던 공백 발견 — recFreqLabelStr(r.freq,r.day,r.startDate)를 haystack에 추가. 테스트 5건 추가(2545->2550 통과). APP_VERSION 1.47.323->1.47.324, sw.js CACHE v590->v591. node test/run.js 2550/2550 통과.",
-      "commit": "b82480a"
-    },
     {
       "cycle": 290,
       "phase": "review",
@@ -152,6 +127,13 @@
       "phase": "critique",
       "timestamp": "2026-11-03T10:50:00.000Z",
       "summary": "서브에이전트로 앱 전체를 재조사. openSpendAnalysis()/수입 분석 화면이 spendTrend/incomeTrend를 카테고리 행마다 호출하는데, 그 안에서 현재 달+이전 3개월 spendByCategory/incomeByCategory를 다시 처음부터 전체 스캔해 재계산함을 발견 — rows/totalAvg용으로 이미 계산한 같은 달 데이터를 행마다 또 계산해 N개 카테고리면 렌더 1회당 4+4N번의 전체 월 스캔이 발생하는 성능 문제(cycle293 critique에서 후보로 지목됐다 보류된 항목, 이번엔 채택). PIN 활성 시에도 localStorage 저장/로드가 평문인 문제(index.html:2276-2294 주석)는 여전히 진짜 보안 공백이지만, 이전 cycle252/289가 이미 '저장 아키텍처 재작성에 가깝다'고 분석해 무인 사이클 범위를 벗어난다고 두 번 판단한 바 있어 이번에도 보류. 예산 목록 검색 부재는 develop 사이즈라 판단해 보류. pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 294,
+      "phase": "advance",
+      "timestamp": "2026-11-03T11:55:00.000Z",
+      "summary": "critique(cycle294) 계획대로 spendTrend/incomeTrend의 중복 월별 재계산을 제거했다. makeMonthCatCache(fn,owner)를 새로 만들어 `${y}-${m}` 키로 spendByCategory/incomeByCategory 결과를 메모이즈하는 조회 함수를 돌려주고, openSpendAnalysis()/openIncomeAnalysis()가 화면당 한 번만 만들어 rows/totalAvg 계산과 spendTrend(r.c,y,m,3,owner,catCache)/incomeTrend(...,catCache) 호출에 그대로 재사용한다. spendTrend/incomeTrend는 선택적 cache 인자가 없으면(기존 호출부·테스트) 예전처럼 직접 재계산해 하위호환을 유지한다. 테스트 6건 추가: makeMonthCatCache 메모이즈/달별 분리 2건, cache 유무가 동일 결과를 내는지(spendTrend/incomeTrend) 2건, openSpendAnalysis/openIncomeAnalysis가 카테고리 수와 무관하게 spendByCategory/incomeByCategory를 정확히 4번만 호출하는지(spy) 2건. 테스트 2600->2606 통과. APP_VERSION 1.47.333->1.47.334, sw.js CACHE v600->v601. node test/run.js 2606/2606 통과, index.html 인라인 스크립트(수정된 블록) node --check 통과. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

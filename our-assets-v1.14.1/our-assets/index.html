@@ -1415,7 +1415,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.333';
+const APP_VERSION='1.47.334';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5873,14 +5873,14 @@ function openCatHistory(idx){
  * 같은 귀속을 보고 있다가 전환해도 자연스럽다. */
 function openIncomeAnalysis(){
  if(ST.spendOwner!=='전체'&&!DB.owners.includes(ST.spendOwner))ST.spendOwner='전체'; /* 귀속 사라지면 전체로 (openSpendAnalysis와 동일 가드) */
- const y=ST.ledger.y,m=ST.ledger.m;const rows=incomeByCategory(y,m,ST.spendOwner);const total=rows.reduce((s,r)=>s+r.v,0);
- let py=y,pm=m,totalAvg=0;for(let i=0;i<3;i++){pm--;if(pm<1){pm=12;py--}totalAvg+=incomeByCategory(py,pm,ST.spendOwner).reduce((s,r)=>s+r.v,0)}
+ const y=ST.ledger.y,m=ST.ledger.m;const catCache=makeMonthCatCache(incomeByCategory,ST.spendOwner);const rows=catCache(y,m);const total=rows.reduce((s,r)=>s+r.v,0);
+ let py=y,pm=m,totalAvg=0;for(let i=0;i<3;i++){pm--;if(pm<1){pm=12;py--}totalAvg+=catCache(py,pm).reduce((s,r)=>s+r.v,0)}
  totalAvg=Math.round(totalAvg/3);
  const totalDeltaPct=totalAvg?Math.round((total-totalAvg)/totalAvg*100):null;
  const body=rows.length?rows.map((r,idx)=>{
    const pct=total?Math.round(r.v/total*100):0;
    const barPct=total?r.v/total*100:0;
-   const trend=incomeTrend(r.c,y,m,3,ST.spendOwner);
+   const trend=incomeTrend(r.c,y,m,3,ST.spendOwner,catCache);
    return `<div class="spend-row" tabindex="0" role="button" aria-label="${esc(r.c)} ${comma(r.v)}원" onclick="openIncomeCatHistory(${idx})" onkeydown="rowKeydown(event,()=>openIncomeCatHistory(${idx}))"><div class="spend-av a-in">${catGlyph('income',r.c,null,'tag')}</div>
     <div class="spend-mid"><div class="spend-nm">${esc(r.c)} ${incomeTrendBadge(trend.deltaPct)}</div><div class="spend-track"><i style="width:${barPct}%;background:var(--income)"></i></div></div>
     <div class="spend-amt"><div class="a num">${comma(r.v)}원</div><div class="p">${pct}%</div></div></div>`}).join('')
@@ -6543,20 +6543,37 @@ function spendByCategory(y,m,owner='전체'){ /* 지출 분석은 항상 예정 
  if(DB.budgetHistory)Object.keys(DB.budgetHistory).forEach(c=>{if(!(c in map)&&budgetForMonth(c,y,m))map[c]=0}); /* 이번 달에 쓴 게 없어도 이번 달 기준 예산이 있는 카테고리는 계속 조회/수정/삭제할 수 있게 노출 */
  return Object.entries(map).map(([c,v])=>({c,v})).sort((a,b)=>b.v-a.v);
 }
+/* spendByCategory/incomeByCategory는 해당 달 전체 거래를 처음부터 스캔하는 무거운 집계라, 화면 1회
+ * 렌더에서 같은 (달,owner) 조합을 여러 번 묻는 호출부(openSpendAnalysis가 rows/totalAvg용으로 부르고,
+ * 카테고리 행마다 spendTrend가 같은 달들을 또 재계산)가 중복 스캔을 반복하게 된다. makeMonthCatCache는
+ * fn(=spendByCategory 또는 incomeByCategory)과 owner를 한 번 묶어, `${y}-${m}` 키로 결과를 메모이즈하는
+ * 조회 함수를 돌려준다 — 화면을 열 때 한 번만 만들어 rows 계산과 매 행의 trend 계산에 그대로 재사용한다
+ * (app-evolve cycle294 critique/advance). */
+function makeMonthCatCache(fn,owner){
+ const map=new Map();
+ return(y,m)=>{
+  const key=`${y}-${m}`;
+  if(!map.has(key))map.set(key,fn(y,m,owner));
+  return map.get(key);
+ };
+}
 /* 카테고리별 최근 n개월(기본 3, 이번 달 제외) 지출 평균/지난달 지출 대비 이번 달 지출 증감 — spendByCategory를
  * 그대로 재사용해 카테고리 합산 규칙(잔액 조정 제외 등)을 공유한다. 최근 n개월치가 전부 0(비교 기준 없음)이면
  * deltaPct는 null이라 호출부에서 배지를 숨긴다. owner를 주면 avg/cur 모두 같은 귀속 기준으로 비교한다
- * (호출부가 이미 귀속으로 필터된 cur를 보여주면서 avg만 가구 전체 기준이면 서로 다른 모수를 비교하게 됨). */
-function spendTrend(c,y,m,n=3,owner='전체'){
+ * (호출부가 이미 귀속으로 필터된 cur를 보여주면서 avg만 가구 전체 기준이면 서로 다른 모수를 비교하게 됨).
+ * cache(makeMonthCatCache(spendByCategory,owner)로 만든 조회 함수)를 넘기면 매번 재계산하는 대신 거기서
+ * 찾아 쓴다 — 생략하면(기존 호출부·테스트) 예전과 동일하게 그때그때 spendByCategory를 직접 부른다. */
+function spendTrend(c,y,m,n=3,owner='전체',cache=null){
+ const rowsFor=cache||((yy,mm)=>spendByCategory(yy,mm,owner));
  let py=y,pm=m,total=0,prevMonth=0;
  for(let i=0;i<n;i++){
   pm--;if(pm<1){pm=12;py--}
-  const v=(spendByCategory(py,pm,owner).find(r=>r.c===c)||{v:0}).v;
+  const v=(rowsFor(py,pm).find(r=>r.c===c)||{v:0}).v;
   total+=v;
   if(i===0)prevMonth=v;
  }
  const avg=Math.round(total/n);
- const cur=(spendByCategory(y,m,owner).find(r=>r.c===c)||{v:0}).v;
+ const cur=(rowsFor(y,m).find(r=>r.c===c)||{v:0}).v;
  const deltaPct=avg?Math.round((cur-avg)/avg*100):null;
  return{avg,prevMonth,deltaPct};
 }
@@ -6639,16 +6656,19 @@ function incomeByCategory(y,m,owner='전체'){
  });
  return Object.entries(map).map(([c,v])=>({c,v})).sort((a,b)=>b.v-a.v);
 }
-function incomeTrend(c,y,m,n=3,owner='전체'){
+/* spendTrend와 동일한 메모이즈 cache 인자 — makeMonthCatCache(incomeByCategory,owner)로 만들어 넘기면
+ * 재계산을 건너뛴다(app-evolve cycle294 advance). */
+function incomeTrend(c,y,m,n=3,owner='전체',cache=null){
+ const rowsFor=cache||((yy,mm)=>incomeByCategory(yy,mm,owner));
  let py=y,pm=m,total=0,prevMonth=0;
  for(let i=0;i<n;i++){
   pm--;if(pm<1){pm=12;py--}
-  const v=(incomeByCategory(py,pm,owner).find(r=>r.c===c)||{v:0}).v;
+  const v=(rowsFor(py,pm).find(r=>r.c===c)||{v:0}).v;
   total+=v;
   if(i===0)prevMonth=v;
  }
  const avg=Math.round(total/n);
- const cur=(incomeByCategory(y,m,owner).find(r=>r.c===c)||{v:0}).v;
+ const cur=(rowsFor(y,m).find(r=>r.c===c)||{v:0}).v;
  const deltaPct=avg?Math.round((cur-avg)/avg*100):null;
  return{avg,prevMonth,deltaPct};
 }
@@ -6811,12 +6831,12 @@ function openYearReview(y){
 }
 function openSpendAnalysis(){
  if(ST.spendOwner!=='전체'&&!DB.owners.includes(ST.spendOwner))ST.spendOwner='전체'; /* 귀속 사라지면 전체로 (renderAssets/renderPlan과 동일 패턴) */
- const y=ST.ledger.y,m=ST.ledger.m;const rows=spendByCategory(y,m,ST.spendOwner);const total=rows.reduce((s,r)=>s+r.v,0);
+ const y=ST.ledger.y,m=ST.ledger.m;const catCache=makeMonthCatCache(spendByCategory,ST.spendOwner);const rows=catCache(y,m);const total=rows.reduce((s,r)=>s+r.v,0);
  const tb=totalBudgetSummary(rows,y,m);const tbp=budgetProgress(tb.spentOnBudgeted,tb.budgetedTotal);
  /* 카테고리 행과 동일한 선제 경고(위 paceWarn 주석 참고)를 전체 예산 합계에도 적용 — 아직 전체
   * 합계가 초과하지 않았을 때만(!tbp.over) 의미 있다. */
  const tbProj=tb.budgetedTotal&&!tbp.over?projectedMonthSpend(tb.spentOnBudgeted,y,m,TODAY):null;
- let py=y,pm=m,totalAvg=0;for(let i=0;i<3;i++){pm--;if(pm<1){pm=12;py--}totalAvg+=spendByCategory(py,pm,ST.spendOwner).reduce((s,r)=>s+r.v,0)}
+ let py=y,pm=m,totalAvg=0;for(let i=0;i<3;i++){pm--;if(pm<1){pm=12;py--}totalAvg+=catCache(py,pm).reduce((s,r)=>s+r.v,0)}
  totalAvg=Math.round(totalAvg/3);
  const totalDeltaPct=totalAvg?Math.round((total-totalAvg)/totalAvg*100):null;
  /* totalBudgetSummary()가 집계하는 overCount(개별 카테고리별 예산 초과 수)를 이 요약 카드가
@@ -6835,7 +6855,7 @@ function openSpendAnalysis(){
    const barPct=budget?bp.barPct:(total?r.v/total*100:0);
    const barCls=budget?(bp.over?'over':'budgeted'):'';
    const overCls=budget&&bp.over?' over':'';
-   const trend=spendTrend(r.c,y,m,3,ST.spendOwner);
+   const trend=spendTrend(r.c,y,m,3,ST.spendOwner,catCache);
    /* 아직 초과하지 않았지만(!bp.over) 이대로 쓰면 월말엔 넘길 것으로 보이는 카테고리에만 선제
     * 경고 캡션을 보여준다 — 이미 초과한 행은 overCls(빨간 숫자/바)로 충분히 드러나 있어 중복
     * 경고가 되지 않게 뺀다(app-evolve cycle271 critique/advance). */

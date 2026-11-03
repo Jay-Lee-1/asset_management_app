@@ -212,7 +212,7 @@ const FUNCTIONS = [
   'recApply', 'recSave', 'saveQuickAmount', 'migrate', 'writeThemeCache', 'restoreBackup', 'storageOutcomeMsg', 'shouldWarnUnpersisted', 'shouldWarnStorageSize', 'toggleRecActive', 'toggleAdjustSurplus', 'touchSave',
   'sanitizeAmount', 'sanitizeBackup',
   'saveRec', 'commitRec', 'editRec', 'duplicateRec', 'recHistFieldsChanged', 'recScheduleShapeChanged', 'pruneOrphanRecOverrides', 'splitRecOverrides', 'splitRecurrenceAt', 'recSaveScopeConfirm', 'recSaveScopeApply',
-  'expandRec', 'allTxns', 'txnsByDateInRange', 'spendByCategory', 'spendTrend', 'spendTrendBadge', 'incomeByCategory', 'incomeTrend', 'incomeTrendBadge', 'histSumTotals',
+  'expandRec', 'allTxns', 'txnsByDateInRange', 'spendByCategory', 'spendTrend', 'spendTrendBadge', 'incomeByCategory', 'incomeTrend', 'incomeTrendBadge', 'histSumTotals', 'makeMonthCatCache',
   'yearSpendByCategory', 'yearIncomeByCategory', 'yearRealizedGain', 'yearMonthlyNet', 'savingsRate', 'yearSummary', 'openYearReview',
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'buildExpenseBarHtml', 'expenseBreakdownCard', 'incomeBreakdownCard',
   'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asOpenCur', 'asCur', 'asToggleNeg', 'openAssetSheet', 'duplicateAsset', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'mergeRemoteDataIntoLocal', 'snapshotLocalDeviceFields', 'restoreLocalDeviceFields', 'fmtAmt', 'fmtQty',
@@ -8698,6 +8698,31 @@ test('openSpendAnalysis: 이번 달 지출이 전부 0원(예산만 있고 미�
   ctx.openSpendAnalysis();
   assert.ok(!ctx.lastSheetHtml.includes('class="eb-bar"'), '지출이 0원이면 빈 eb-card가 그려지면 안 됨');
 });
+/* makeMonthCatCache(app-evolve cycle294 advance) 도입 전에는 rows/totalAvg용 4번 호출에 더해
+ * spendTrend가 카테고리 행마다 같은 4개월을 또 재계산해 N개 카테고리면 4+4N번 호출됐다 — 카테고리가
+ * 몇 개든 화면 1회 렌더에 쓰는 (달,owner) 조합은 최대 4개(이번 달+이전 3개월)뿐이므로, 메모이즈가
+ * 제대로 배선됐다면 카테고리 수와 무관하게 정확히 4번만 호출돼야 한다. */
+test('openSpendAnalysis: spendByCategory는 카테고리 수와 무관하게 화면 1회 렌더당 정확히 4번(이번 달+이전 3개월)만 호출된다(makeMonthCatCache 메모이제이션)', () => {
+  const ctx = spendAnalysisCtx();
+  ctx.DB = { owners: [], assets: [], recurrences: [], budgetHistory: {}, catBudgetRollover: {}, txns: [
+    { id: '1', type: 'expense', category: '식비', amount: 30000, date: '2026-06-10', confirmed: true },
+    { id: '2', type: 'expense', category: '교통', amount: 10000, date: '2026-06-11', confirmed: true },
+    { id: '3', type: 'expense', category: '문화', amount: 5000, date: '2026-06-12', confirmed: true },
+    { id: '4', type: 'expense', category: '쇼핑', amount: 7000, date: '2026-06-13', confirmed: true },
+  ] };
+  ctx.ST = { ledger: { y: 2026, m: 6 }, spendOwner: '전체' };
+  ctx.lastSheetHtml = null;
+  const origSpendByCategory = ctx.spendByCategory;
+  let calls = 0;
+  ctx.spendByCategory = (...args) => { calls++; return origSpendByCategory(...args); };
+  try {
+    ctx.openSpendAnalysis();
+    assert.strictEqual(calls, 4, `카테고리 4개인데도 월별 집계가 중복 재계산되면 안 됨(실제 호출 수: ${calls})`);
+    assert.ok(ctx.lastSheetHtml.includes('식비') && ctx.lastSheetHtml.includes('쇼핑'), '메모이즈 경로를 타도 카테고리별 행은 그대로 전부 렌더돼야 함');
+  } finally {
+    ctx.spendByCategory = origSpendByCategory;
+  }
+});
 
 /* ---------- openIncomeAnalysis: openSpendAnalysis와 대칭되는 수입 분석 시트. 예산 개념이 없어
  * 예산 카드/버짓 바가 없다는 점만 빼면 총액 카드+eb-bar 비중 스택바+카테고리별 행 구조는 동일하다 ---------- */
@@ -8745,6 +8770,28 @@ test('openIncomeAnalysis: 귀속(owner) 등록이 하나도 없으면(DB.owners=
   ctx.lastSheetHtml = null;
   ctx.openIncomeAnalysis();
   assert.ok(!ctx.lastSheetHtml.includes('class="seg" role="group" aria-label="귀속 선택"'), '귀속이 없으면 귀속 필터 세그먼트가 없어야 함');
+});
+/* openSpendAnalysis의 makeMonthCatCache 호출 수 테스트(위)와 대칭 — incomeByCategory도 카테고리
+ * 수와 무관하게 화면 1회 렌더당 정확히 4번만 호출돼야 한다(app-evolve cycle294 advance). */
+test('openIncomeAnalysis: incomeByCategory는 카테고리 수와 무관하게 화면 1회 렌더당 정확히 4번(이번 달+이전 3개월)만 호출된다(makeMonthCatCache 메모이제이션)', () => {
+  const ctx = incomeAnalysisCtx();
+  ctx.DB = { owners: [], assets: [], recurrences: [], txns: [
+    { id: '1', type: 'income', category: '급여', amount: 3000000, date: '2026-06-10', confirmed: true },
+    { id: '2', type: 'income', category: '용돈', amount: 100000, date: '2026-06-11', confirmed: true },
+    { id: '3', type: 'income', category: '부수입', amount: 50000, date: '2026-06-12', confirmed: true },
+  ] };
+  ctx.ST = { ledger: { y: 2026, m: 6 }, spendOwner: '전체' };
+  ctx.lastSheetHtml = null;
+  const origIncomeByCategory = ctx.incomeByCategory;
+  let calls = 0;
+  ctx.incomeByCategory = (...args) => { calls++; return origIncomeByCategory(...args); };
+  try {
+    ctx.openIncomeAnalysis();
+    assert.strictEqual(calls, 4, `카테고리 3개인데도 월별 집계가 중복 재계산되면 안 됨(실제 호출 수: ${calls})`);
+    assert.ok(ctx.lastSheetHtml.includes('급여') && ctx.lastSheetHtml.includes('부수입'), '메모이즈 경로를 타도 카테고리별 행은 그대로 전부 렌더돼야 함');
+  } finally {
+    ctx.incomeByCategory = origIncomeByCategory;
+  }
 });
 
 /* ---------- openYearReview: openSpendAnalysis/openIncomeAnalysis보다 큰 1년 범위로 총수입/총지출/
@@ -12708,6 +12755,68 @@ test('incomeTrendBadge: 색이 spendTrendBadge와 반대다 — 양수(수입 �
   assert.match(sandbox.incomeTrendBadge(25), /▲25%/);
   assert.match(sandbox.incomeTrendBadge(-10), /var\(--expense\)/);
   assert.match(sandbox.incomeTrendBadge(-10), /▼10%/);
+});
+
+/* ---------- makeMonthCatCache: openSpendAnalysis/openIncomeAnalysis가 카테고리 행마다 같은
+ * 달을 중복 재계산하지 않도록 spendTrend/incomeTrend에 넘기는 메모이즈 조회 함수(app-evolve
+ * cycle294 critique/advance) ---------- */
+test('makeMonthCatCache: 같은 (y,m) 키는 한 번만 계산하고, 이후 호출은 재계산 없이 같은 결과를 돌려준다', () => {
+  let calls = 0;
+  const fn = (y, m, owner) => { calls++; return [{ c: 'x', v: y * 100 + m, owner }]; };
+  const cache = sandbox.makeMonthCatCache(fn, '전체');
+  const a1 = cache(2026, 6);
+  const a2 = cache(2026, 6);
+  assert.strictEqual(calls, 1, '같은 (y,m)을 두 번 조회해도 fn은 한 번만 호출돼야 함');
+  assert.strictEqual(a1, a2, '캐시 히트는 이전과 동일한 결과(참조)를 그대로 돌려줘야 함');
+});
+test('makeMonthCatCache: 달이 다르면 각각 따로 계산하고, owner는 cache를 만들 때 고정된 값으로 매번 전달한다', () => {
+  const seen = [];
+  const fn = (y, m, owner) => { seen.push([y, m, owner]); return [{ c: 'x', v: 1 }]; };
+  const cache = sandbox.makeMonthCatCache(fn, '나');
+  cache(2026, 5);
+  cache(2026, 6);
+  cache(2026, 5); // 캐시 히트 — seen에 추가되면 안 됨
+  assert.deepStrictEqual(seen, [[2026, 5, '나'], [2026, 6, '나']], '서로 다른 달만 각각 한 번씩 계산되고, owner는 항상 고정값이어야 함');
+});
+test('spendTrend: makeMonthCatCache로 만든 cache를 넘겨도 cache 없이 직접 계산한 결과와 완전히 동일하다(여러 카테고리·여러 달 픽스처)', () => {
+  sandbox.DB = {
+    txns: [
+      { date: '2026-03-05', type: 'expense', category: '식비', amount: 80000 },
+      { date: '2026-03-06', type: 'expense', category: '교통', amount: 20000 },
+      { date: '2026-04-05', type: 'expense', category: '식비', amount: 90000 },
+      { date: '2026-04-06', type: 'expense', category: '교통', amount: 10000 },
+      { date: '2026-05-05', type: 'expense', category: '식비', amount: 70000 },
+      { date: '2026-05-06', type: 'expense', category: '교통', amount: 30000 },
+      { date: '2026-06-05', type: 'expense', category: '식비', amount: 200000 },
+      { date: '2026-06-06', type: 'expense', category: '교통', amount: 5000 },
+    ],
+    recurrences: [],
+  };
+  const cache = sandbox.makeMonthCatCache(sandbox.spendByCategory, '전체');
+  for (const c of ['식비', '교통', '없는카테고리']) {
+    const withoutCache = sandbox.spendTrend(c, 2026, 6, 3, '전체');
+    const withCache = sandbox.spendTrend(c, 2026, 6, 3, '전체', cache);
+    assert.deepStrictEqual(withCache, withoutCache, `카테고리 "${c}"는 cache 유무와 무관하게 같은 결과여야 함`);
+  }
+});
+test('incomeTrend: makeMonthCatCache로 만든 cache를 넘겨도 cache 없이 직접 계산한 결과와 완전히 동일하다(여러 카테고리·여러 달 픽스처)', () => {
+  sandbox.DB = {
+    txns: [
+      { date: '2026-03-05', type: 'income', category: '급여', amount: 3000000 },
+      { date: '2026-03-06', type: 'income', category: '용돈', amount: 100000 },
+      { date: '2026-04-05', type: 'income', category: '급여', amount: 3000000 },
+      { date: '2026-05-05', type: 'income', category: '급여', amount: 3000000 },
+      { date: '2026-05-06', type: 'income', category: '용돈', amount: 50000 },
+      { date: '2026-06-05', type: 'income', category: '급여', amount: 3500000 },
+    ],
+    recurrences: [],
+  };
+  const cache = sandbox.makeMonthCatCache(sandbox.incomeByCategory, '전체');
+  for (const c of ['급여', '용돈', '없는카테고리']) {
+    const withoutCache = sandbox.incomeTrend(c, 2026, 6, 3, '전체');
+    const withCache = sandbox.incomeTrend(c, 2026, 6, 3, '전체', cache);
+    assert.deepStrictEqual(withCache, withoutCache, `카테고리 "${c}"는 cache 유무와 무관하게 같은 결과여야 함`);
+  }
 });
 
 /* ---------- yearSpendByCategory/yearIncomeByCategory/yearMonthlyNet/savingsRate/yearSummary:
