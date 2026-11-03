@@ -203,6 +203,7 @@ const FUNCTIONS = [
   'buildGenericImportPreview', 'csvColSample', 'csvMapFieldHtml', 'openCsvColumnMap', 'renderCsvColumnMap',
   'csvMapSetMode', 'csvMapSetCatKind', 'csvMapColChosen', 'csvMapPickCol', 'csvMapPickAsset', 'csvMapPickCategory', 'csvMapApply',
   'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo', 'delAsset', 'assetDelSel', 'unsnapshotAssetName', 'doBulkCat', 'bulkCatPickFor', 'doBulkInclToggle', 'assetInclSel',
+  'assetMergeCounts', 'openAssetMergePicker', 'confirmAssetMerge', 'mergeAssetInto',
   // archiveTxnsBefore/archiveMonthPicked/openArchiveOld는 app-evolve cycle222 advance('오래된
   // 데이터 정리' 메뉴 — cycle221 critique/advance가 준비해 둔 archiveBaselines()를 처음 실제로
   // 호출) 검증용. archiveBaselines 자체는 logic.js 전용 섹션에서 이미 검증됐으므로 여기선
@@ -378,7 +379,7 @@ const FUNCTIONS = [
 // 목록과, 그 키를 읽어주는 한글 aria-label 매핑이다(app-evolve cycle281 advance) — 둘 다 내부에
 // ";"가 없는 단순 object literal이라 extractConstBlock 없이 extractConst로도 끝까지 끌어온다
 // (CAT_LABEL과 같은 패턴).
-const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'emailKey', 'CAT_PICKER_SEARCH_THRESHOLD', 'GOAL_LIST_SEARCH_THRESHOLD', 'GS_CAP', 'CAT_ICON_SET', 'ICON_LABEL_KO'];
+const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'emailKey', 'CAT_PICKER_SEARCH_THRESHOLD', 'GOAL_LIST_SEARCH_THRESHOLD', 'GS_CAP', 'CAT_ICON_SET', 'ICON_LABEL_KO', 'BAL_ASSET_TYPES'];
 // _histCache는 filteredHist()가 재대입(={key,list})하는 let 선언이라 CONSTS(extractConst)로는
 // 못 끌어오므로 별도의 LETS 목록으로 extractLet을 통해 가져온다.
 // _copyIsCsv도 같은 이유(openCopyBackup()이 재대입)로 LETS를 통해 가져온다.
@@ -9967,6 +9968,171 @@ test('assetDelSel: 확인을 누르면 선택 모드가 꺼지고 선택된 id �
   assert.strictEqual(sandbox.ST.aSel.mode, false, '삭제를 확정하면 선택 모드가 꺼져야 함');
   assert.strictEqual(sandbox.ST.aSel.ids.size, 0, '삭제를 확정하면 선택 목록이 비워져야 함');
   assert.deepStrictEqual(sandbox.DB.assets, [], '선택된 자산 둘 다 삭제되어야 함');
+});
+
+/* ---------- mergeAssetInto: 자산 합치기(app-evolve cycle297 advance) — openCatManage의
+ * mergeCatInto()(합치기)에 대응하는 자산 쪽 기능 부재를 메움. ---------- */
+test('assetMergeCounts: from을 참조하는 거래/반복거래를 fromAssetId·toAssetId 양쪽 다 세고, 비활성 반복거래도 포함한다(catMergeCounts와 동일한 규칙)', () => {
+  sandbox.DB = {
+    assets: [{ id: 'a1', name: '통장1', type: 'cash', baseAmount: 1000 }, { id: 'a2', name: '통장2', type: 'cash', baseAmount: 2000 }],
+    txns: [
+      { id: 't1', fromAssetId: 'a1', toAssetId: null },
+      { id: 't2', fromAssetId: null, toAssetId: 'a1' },
+      { id: 't3', fromAssetId: 'a2', toAssetId: null },
+    ],
+    recurrences: [{ id: 'r1', active: false, fromAssetId: 'a1', toAssetId: null }],
+  };
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.assetMergeCounts('a1'))), { txCount: 2, recCount: 1 });
+});
+test('assetMergeCounts: 연결된 내역이 없으면 0/0을 돌려준다', () => {
+  sandbox.DB = { assets: [], txns: [], recurrences: [] };
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.assetMergeCounts('a1'))), { txCount: 0, recCount: 0 });
+});
+test('confirmAssetMerge: confirmSheet에 영향받는 내역/반복거래 건수를 안내하고, 확인을 누르면 mergeAssetInto가 실행된다', () => {
+  sandbox.DB = {
+    assets: [{ id: 'a1', name: '통장1', type: 'cash', baseAmount: 1000 }, { id: 'a2', name: '통장2', type: 'cash', baseAmount: 2000 }],
+    txns: [{ id: 't1', fromAssetId: 'a1', toAssetId: null }],
+    recurrences: [{ id: 'r1', active: true, fromAssetId: 'a1', toAssetId: null }],
+  };
+  sandbox.confirmSheetCalls = [];
+  sandbox.confirmAssetMerge('a1', 'a2');
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 1);
+  assert.ok(/내역 1건/.test(sandbox.confirmSheetCalls[0].msg) && /반복거래 1개/.test(sandbox.confirmSheetCalls[0].msg));
+  assert.strictEqual(sandbox.DB.assets.length, 2, '확인 전에는 아직 합쳐지면 안 됨');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.assets.length, 1, '확인을 누르면 실제로 합쳐져야 함');
+});
+test('mergeAssetInto: 잔액식 자산(cash)은 baseAmount를 합치고, from을 목록에서 지운다', () => {
+  const a1 = { id: 'a1', name: '통장1', type: 'cash', baseAmount: 1000 };
+  const a2 = { id: 'a2', name: '통장2', type: 'cash', baseAmount: 2000 };
+  sandbox.DB = { assets: [a1, a2], txns: [], recurrences: [] };
+  sandbox.mergeAssetInto('a1', 'a2');
+  assert.deepStrictEqual(sandbox.DB.assets, [a2], 'from은 목록에서 빠지고 to만 남아야 함');
+  assert.strictEqual(a2.baseAmount, 3000, '두 자산의 잔액이 합쳐져야 함');
+});
+test("mergeAssetInto: amountKRW를 쓰는 종류(realestate 등)는 baseAmount가 아니라 amountKRW를 합친다", () => {
+  const a1 = { id: 'a1', name: '집1', type: 'realestate', amountKRW: 100000000 };
+  const a2 = { id: 'a2', name: '집2', type: 'realestate', amountKRW: 200000000 };
+  sandbox.DB = { assets: [a1, a2], txns: [], recurrences: [] };
+  sandbox.mergeAssetInto('a1', 'a2');
+  assert.strictEqual(a2.amountKRW, 300000000);
+  assert.strictEqual(a2.baseAmount, undefined, 'cash/savings 전용 필드가 섞여 들어가면 안 됨');
+});
+test('mergeAssetInto: 거래의 fromAssetId·toAssetId와 조정 내역(adjustAsset)이 모두 대상 자산으로 옮겨간다', () => {
+  const a1 = { id: 'a1', name: '통장1', type: 'cash', baseAmount: 1000 };
+  const a2 = { id: 'a2', name: '통장2', type: 'cash', baseAmount: 2000 };
+  const t1 = { id: 't1', fromAssetId: 'a1', toAssetId: null };
+  const t2 = { id: 't2', fromAssetId: null, toAssetId: 'a1' };
+  const adj = { id: 'adj1', adjust: true, adjustAsset: 'a1', fromAssetId: null, toAssetId: 'a1' };
+  const r1 = { id: 'r1', active: true, fromAssetId: 'a1', toAssetId: null };
+  sandbox.DB = { assets: [a1, a2], txns: [t1, t2, adj], recurrences: [r1] };
+  sandbox.mergeAssetInto('a1', 'a2');
+  assert.strictEqual(t1.fromAssetId, 'a2');
+  assert.strictEqual(t2.toAssetId, 'a2');
+  assert.strictEqual(adj.adjustAsset, 'a2', '조정 내역의 adjustAsset도 옮겨야 updateBalanceAdjust()가 합친 뒤에도 이 조정 내역을 찾을 수 있음');
+  assert.strictEqual(adj.toAssetId, 'a2');
+  assert.strictEqual(r1.fromAssetId, 'a2');
+});
+test('mergeAssetInto: 합쳐진 대상(to)과 옮겨간 거래/반복거래 모두 touch()되어 updatedAt이 갱신된다', () => {
+  const a1 = { id: 'a1', name: '통장1', type: 'cash', baseAmount: 1000 };
+  const a2 = { id: 'a2', name: '통장2', type: 'cash', baseAmount: 2000, updatedAt: 1 };
+  const t1 = { id: 't1', fromAssetId: 'a1', toAssetId: null, updatedAt: 1 };
+  const r1 = { id: 'r1', active: true, fromAssetId: 'a1', toAssetId: null, updatedAt: 1 };
+  sandbox.DB = { assets: [a1, a2], txns: [t1], recurrences: [r1] };
+  sandbox.mergeAssetInto('a1', 'a2');
+  assert.strictEqual(a2.updatedAt, 'test-updatedAt');
+  assert.strictEqual(t1.updatedAt, 'test-updatedAt');
+  assert.strictEqual(r1.updatedAt, 'test-updatedAt');
+});
+test('mergeAssetInto: from을 DB.deletedIds에 톰스톤해 다른 기기가 되살리지 못하게 한다(deleteAssetsUndo와 동일한 규칙)', () => {
+  const a1 = { id: 'a1', name: '통장1', type: 'cash', baseAmount: 1000 };
+  const a2 = { id: 'a2', name: '통장2', type: 'cash', baseAmount: 2000 };
+  sandbox.DB = { assets: [a1, a2], txns: [], recurrences: [] };
+  const before = Date.now();
+  sandbox.mergeAssetInto('a1', 'a2');
+  assert.ok(typeof sandbox.DB.deletedIds.a1 === 'number' && sandbox.DB.deletedIds.a1 >= before, 'from에 삭제 시각이 기록되어야 함');
+});
+test('mergeAssetInto: 종류가 다르면 합치지 않는다(안전장치)', () => {
+  const a1 = { id: 'a1', name: '통장1', type: 'cash', baseAmount: 1000 };
+  const a2 = { id: 'a2', name: '외화', type: 'fx', fxAmount: 100 };
+  sandbox.DB = { assets: [a1, a2], txns: [], recurrences: [] };
+  sandbox.mergeAssetInto('a1', 'a2');
+  assert.strictEqual(sandbox.DB.assets.length, 2, '종류가 다르면 아무 것도 바뀌면 안 됨');
+});
+test('mergeAssetInto: 시세평가형(fx/gold/stock/crypto)은 같은 종류라도 수량·시세를 합치는 규칙이 따로 필요해 1차 범위에서 제외한다', () => {
+  const a1 = { id: 'a1', name: '달러1', type: 'fx', currency: 'USD', fxAmount: 100 };
+  const a2 = { id: 'a2', name: '달러2', type: 'fx', currency: 'USD', fxAmount: 200 };
+  sandbox.DB = { assets: [a1, a2], txns: [], recurrences: [] };
+  sandbox.lastToast = null;
+  sandbox.mergeAssetInto('a1', 'a2');
+  assert.strictEqual(sandbox.DB.assets.length, 2, '시세평가형은 아직 합칠 수 없어야 함');
+  assert.ok(/아직 합칠 수 없/.test(sandbox.lastToast));
+});
+test('mergeAssetInto: 자기 자신에게는 합칠 수 없다(안전장치)', () => {
+  const a1 = { id: 'a1', name: '통장1', type: 'cash', baseAmount: 1000 };
+  sandbox.DB = { assets: [a1], txns: [], recurrences: [] };
+  sandbox.mergeAssetInto('a1', 'a1');
+  assert.strictEqual(sandbox.DB.assets.length, 1);
+  assert.strictEqual(a1.baseAmount, 1000, '잔액이 스스로 더해지면 안 됨');
+});
+test('mergeAssetInto: undoToast로 되돌리면 자산 목록/잔액/거래·반복거래 참조/톰스톤이 모두 합치기 전 상태로 복원된다', () => {
+  const a1 = { id: 'a1', name: '통장1', type: 'cash', baseAmount: 1000 };
+  const a2 = { id: 'a2', name: '통장2', type: 'cash', baseAmount: 2000 };
+  const t1 = { id: 't1', fromAssetId: 'a1', toAssetId: null };
+  const r1 = { id: 'r1', active: true, fromAssetId: null, toAssetId: 'a1' };
+  sandbox.DB = { assets: [a1, a2], txns: [t1], recurrences: [r1] };
+  sandbox.lastUndo = null;
+  sandbox.mergeAssetInto('a1', 'a2');
+  assert.strictEqual(sandbox.DB.assets.length, 1);
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.assets.length, 2, '되돌리면 삭제됐던 자산이 복원되어야 함');
+  assert.deepStrictEqual(sandbox.DB.assets.map((a) => a.id).sort(), ['a1', 'a2']);
+  assert.strictEqual(a2.baseAmount, 2000, '합쳐졌던 잔액이 원래 값으로 복원되어야 함');
+  assert.strictEqual(t1.fromAssetId, 'a1', '거래 참조도 원래 자산으로 복원되어야 함');
+  assert.strictEqual(r1.toAssetId, 'a1', '반복거래 참조도 원래 자산으로 복원되어야 함');
+  assert.strictEqual(sandbox.DB.deletedIds.a1, undefined, '되돌리면 톰스톤도 지워져야 함');
+});
+test('mergeAssetInto: undo하면 amountKRW를 쓰는 종류도 원래 amountKRW 값으로 정확히 복원된다', () => {
+  const a1 = { id: 'a1', name: '집1', type: 'realestate', amountKRW: 100000000 };
+  const a2 = { id: 'a2', name: '집2', type: 'realestate', amountKRW: 200000000 };
+  sandbox.DB = { assets: [a1, a2], txns: [], recurrences: [] };
+  sandbox.lastUndo = null;
+  sandbox.mergeAssetInto('a1', 'a2');
+  assert.strictEqual(a2.amountKRW, 300000000);
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(a2.amountKRW, 200000000, '되돌리면 amountKRW가 원래 값으로 복원되어야 함');
+  assert.strictEqual(a2.baseAmount, undefined, '되돌린 뒤에도 무관한 필드가 새로 생기면 안 됨');
+});
+test('openAssetMergePicker: 같은 종류의 자산만, 자기 자신은 제외하고 피커를 연다', () => {
+  sandbox.TODAY = '2026-06-15'; sandbox.RANGE_TO = '2099-12-31';
+  sandbox.DB = {
+    settings: { groupOrder: ['cash', 'savings'] },
+    assets: [
+      { id: 'a1', name: '통장1', type: 'cash', owner: '나', baseAmount: 1000, includeInTotal: true },
+      { id: 'a2', name: '통장2', type: 'cash', owner: '나', baseAmount: 2000, includeInTotal: true },
+      { id: 'a3', name: '적금', type: 'savings', owner: '나', baseAmount: 3000, includeInTotal: true },
+    ],
+    txns: [], recurrences: [],
+  };
+  sandbox._balCache.clear();
+  sandbox.lastPickerHtml = null;
+  sandbox.openAssetMergePicker('a1');
+  const html = sandbox.lastPickerHtml;
+  assert.ok(!html.includes('data-val="a1"'), '자기 자신은 대상 목록에서 빠져야 함');
+  assert.ok(html.includes('data-val="a2"'), '같은 종류(cash)는 보여야 함');
+  assert.ok(!html.includes('data-val="a3"'), '다른 종류(savings)는 보이면 안 됨');
+});
+test('renderAssetSheet: 잔액식 자산(cash)을 수정할 때만 "다른 자산에 합치기" 링크를 보여주고, 신규 등록·시세평가형(fx)에는 보이지 않는다', () => {
+  sandbox.asDraft = { id: 'a1', type: 'cash', owner: '나', includeInTotal: true, name: '통장1' };
+  sandbox.renderAssetSheet(true);
+  assert.ok(sandbox.lastSheetHtml.includes("openAssetMergePicker('a1')"), '잔액식 자산 수정 화면에는 합치기 링크가 있어야 함');
+  sandbox.asDraft = { type: 'cash', owner: '나', includeInTotal: true, name: '통장1' };
+  sandbox.renderAssetSheet(false);
+  assert.ok(!sandbox.lastSheetHtml.includes('openAssetMergePicker'), '신규 등록 화면에는 합칠 자산 자신이 없으므로 링크가 없어야 함');
+  sandbox.DB = { rates: { fx: { USD: 1300 } } };
+  sandbox.asDraft = { id: 'a2', type: 'fx', owner: '나', includeInTotal: true, name: '달러', currency: 'USD', fxAmount: 100 };
+  sandbox.renderAssetSheet(true);
+  assert.ok(!sandbox.lastSheetHtml.includes('openAssetMergePicker'), '시세평가형(fx)은 1차 범위에서 제외되므로 링크가 없어야 함');
 });
 
 /* ---------- recApply(mode='delete'): 부분 삭제(scope='one'/'future')도 twGuard+undo를 쓴다 ---------- */

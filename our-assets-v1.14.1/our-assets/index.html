@@ -925,6 +925,9 @@ input[type=date]{box-sizing:border-box}
 .del-link{width:100%;height:48px;display:flex;align-items:center;justify-content:center;gap:6px;color:var(--expense);font-size:14px;font-weight:700;margin-top:8px;border-radius:var(--r-sm)}
 .del-link:active{background:var(--expense-soft)}
 .del-link svg{width:17px;height:17px}
+.merge-link{width:100%;height:48px;display:flex;align-items:center;justify-content:center;gap:6px;color:var(--text-2);font-size:14px;font-weight:700;margin-top:8px;border-radius:var(--r-sm)}
+.merge-link:active{background:var(--sunken)}
+.merge-link svg{width:17px;height:17px}
 .manage-row{display:flex;align-items:center;gap:12px;padding:13px 4px}
 .manage-row+.manage-row{border-top:1px solid var(--line)}
 .manage-row .mn{font-weight:600;font-size:15px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1416,7 +1419,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.339';
+const APP_VERSION='1.47.340';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4177,6 +4180,80 @@ function delAsset(id){const a=DB.assets.find(x=>x.id===id);
  const recs=activeRecsForAssets(id);
  const msg=`'${esc(a.name)}'을(를) 삭제할까요?`+(recs.length?` 연결된 반복거래 ${recs.length}개도 함께 비활성화돼요.`:'');
  confirmSheet('자산 삭제',msg,'삭제',()=>{deleteAssetsUndo(new Set([id]))});}
+/* openCatManage의 openCatMergePicker()/mergeCatInto()(합치기, app-evolve cycle263)에 대응하는 자산 쪽
+ * 기능 부재를 메운다(app-evolve cycle297 critique 계획) — 오타로 중복 등록된 통장이나 합치고 싶은
+ * 현금 자산을 삭제(history 소실)하지 않고 하나로 합칠 수 있게 한다. assetEval()이 base(기준액)+
+ * 원장 재생으로 평가하는 '잔액식' 종류(cash/savings/realestate/etc/pension/debt)만 지원한다 —
+ * fx/gold/stock/crypto(isMarketValued)는 수량·시세를 합치는 별도 규칙이 필요해 1차 범위에서
+ * 제외한다. saveAsset()의 balTypes(4560행 부근)와 같은 목록. */
+const BAL_ASSET_TYPES=['cash','savings','realestate','etc','pension','debt'];
+/* 합치기 전 영향 범위 집계 — catMergeCounts와 같은 이유로 활성/비활성 반복거래 모두 센다
+ * (activeRecsForAssets와 달리 mergeAssetInto는 반복거래를 비활성화하지 않고 참조만 옮기므로). */
+function assetMergeCounts(id){
+ const hit=t=>t.fromAssetId===id||t.toAssetId===id;
+ const txCount=DB.txns.filter(hit).length;
+ const recCount=DB.recurrences.filter(hit).length;
+ return{txCount,recCount};
+}
+/* openAssetSheet의 "다른 자산에 합치기" 버튼 → 대상 자산 피커. openAssetPicker에 onlyType을
+ * 새로 추가해(위 pkFilteredAssets 참고) 같은 종류의 자산만, 자기 자신은 제외하고 보여준다. */
+function openAssetMergePicker(id){
+ const from=DB.assets.find(a=>a.id===id);if(!from)return;
+ openAssetPicker({title:'합칠 자산 선택',onlyType:from.type,excludeId:id,back:()=>openAssetSheet(id),onPick:to=>confirmAssetMerge(id,to)});
+}
+function confirmAssetMerge(fromId,toId){
+ const from=DB.assets.find(a=>a.id===fromId),to=DB.assets.find(a=>a.id===toId);
+ if(!from||!to||from.id===to.id)return;
+ const{txCount,recCount}=assetMergeCounts(fromId);
+ const impact=txCount||recCount?` 내역 ${txCount}건`+(recCount?`·반복거래 ${recCount}개`:'')+`가 '${esc(to.name)}'로 옮겨가요.`:' 연결된 내역이 없어요.';
+ confirmSheet('자산 합치기',`'${esc(from.name)}' 자산을 '${esc(to.name)}'에 합칠까요? 두 자산의 잔액이 합쳐져요.`+impact,'합치기',()=>mergeAssetInto(fromId,toId));
+}
+/* 자산 합치기 — mergeCatInto와 같은 골격(참조 이동+톰스톤+undoToast)이지만 대상이 카테고리
+ * 이름이 아니라 다른 자산 레코드라 거래/반복거래의 fromAssetId/toAssetId(및 조정 내역의
+ * adjustAsset)를 옮기고, 종류가 같으므로 balKey(baseAmount 또는 amountKRW, saveAsset과 동일
+ * 규칙)도 하나로 합친다. */
+function mergeAssetInto(fromId,toId){
+ const fi=DB.assets.findIndex(a=>a.id===fromId);
+ const from=fi===-1?null:DB.assets[fi],to=DB.assets.find(a=>a.id===toId);
+ if(!from||!to||from.id===to.id||from.type!==to.type)return;
+ if(!BAL_ASSET_TYPES.includes(from.type)){toast('이 종류의 자산은 아직 합칠 수 없어요');return}
+ const balKey=(from.type==='cash'||from.type==='savings')?'baseAmount':'amountKRW';
+ const txItems=[];
+ DB.txns.forEach(t=>{
+  const prevFrom=t.fromAssetId,prevTo=t.toAssetId,prevAdj=t.adjustAsset;
+  let changed=false;
+  if(t.fromAssetId===fromId){t.fromAssetId=toId;changed=true}
+  if(t.toAssetId===fromId){t.toAssetId=toId;changed=true}
+  if(t.adjust&&t.adjustAsset===fromId){t.adjustAsset=toId;changed=true} /* updateBalanceAdjust가 합친 뒤에도 조정 내역을 찾을 수 있도록 함께 옮김 */
+  if(changed)txItems.push({t,prevFrom,prevTo,prevAdj});
+ });
+ const recItems=[];
+ DB.recurrences.forEach(r=>{
+  const prevFrom=r.fromAssetId,prevTo=r.toAssetId;
+  let changed=false;
+  if(r.fromAssetId===fromId){r.fromAssetId=toId;changed=true}
+  if(r.toAssetId===fromId){r.toAssetId=toId;changed=true}
+  if(changed)recItems.push({r,prevFrom,prevTo});
+ });
+ const toPrevBaseAmount=to.baseAmount,toPrevAmountKRW=to.amountKRW;
+ to[balKey]=Math.round(assetBase(to)+assetBase(from));
+ if(balKey==='baseAmount')delete to.amountKRW;else delete to.baseAmount;
+ DB.assets.splice(fi,1);
+ DB.deletedIds=DB.deletedIds||{};DB.deletedIds[fromId]=Date.now(); /* deleteAssetsUndo와 동일한 톰스톤 — 없으면 mergeRemoteDataIntoLocal이 다른 기기의 사본에서 from을 되살림 */
+ touchSave(to,...txItems.map(x=>x.t),...recItems.map(x=>x.r));
+ renderCurrent();
+ undoToast(`'${from.name}' 자산을 '${to.name}'에 합쳤어요`+(txItems.length||recItems.length?` · 내역 ${txItems.length}건·반복거래 ${recItems.length}개 복원`:''),()=>{
+  txItems.forEach(({t,prevFrom,prevTo,prevAdj})=>{t.fromAssetId=prevFrom;t.toAssetId=prevTo;if(t.adjust)t.adjustAsset=prevAdj});
+  recItems.forEach(({r,prevFrom,prevTo})=>{r.fromAssetId=prevFrom;r.toAssetId=prevTo});
+  to.baseAmount=toPrevBaseAmount;to.amountKRW=toPrevAmountKRW;
+  if(to.baseAmount===undefined)delete to.baseAmount;
+  if(to.amountKRW===undefined)delete to.amountKRW;
+  DB.assets.splice(fi,0,from);
+  delete DB.deletedIds[fromId];
+  touchSave(to,from,...txItems.map(x=>x.t),...recItems.map(x=>x.r));
+  renderCurrent();toast('되돌렸어요')
+ });
+}
 /* 삭제됐던 동명·동종 자산의 과거 내역(스냅샷 이름으로 남은 것)을 자산에 재연결 */
 function relinkDeletedAsset(d){
  const nm=d.name;
@@ -4540,6 +4617,7 @@ function renderAssetSheet(editing){
     <button type="button" class="switch ${d.includeInTotal?'on':''}" role="switch" aria-checked="${d.includeInTotal?'true':'false'}" aria-label="총자산에 포함" onclick="asDraft.includeInTotal=!asDraft.includeInTotal;this.classList.toggle('on');this.setAttribute('aria-checked',this.classList.contains('on'))"><i></i></button></div></div>
   <div class="two-btn"><button class="btn btn-soft cancel" onclick="closeSheet()">취소</button>
     <button class="btn btn-primary" onclick="saveAsset(${editing})">${editing?'수정하기':'등록하기'}</button></div>
+  ${editing&&BAL_ASSET_TYPES.includes(d.type)?`<button class="merge-link" onclick="openAssetMergePicker('${d.id}')">${svg('merge')} 다른 자산에 합치기</button>`:''}
   ${editing?`<button class="del-link" onclick="delAsset('${d.id}')">${svg('trash')} 이 자산 삭제</button>`:''}`);
  setTimeout(()=>{const n=$('asName');if(n&&!editing)n.focus()},300);
 }
@@ -10615,6 +10693,7 @@ function pkFilteredAssets(o,q){
    if(o.excludeMarketValued)items=items.filter(a=>!isMarketValued(a));
    if(o.excludeDebt)items=items.filter(a=>a.type!=='debt');
    if(o.excludeId)items=items.filter(a=>a.id!==o.excludeId);
+   if(o.onlyType)items=items.filter(a=>a.type===o.onlyType); /* openAssetMergePicker가 합칠 자산과 같은 종류만 보이게 쓴다(app-evolve cycle297 advance) */
    if(!items.length)return;
    any=true;
    if(q)items=items.filter(a=>matchAssetQuery(a,q));
