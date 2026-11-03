@@ -202,7 +202,7 @@ const FUNCTIONS = [
   // 자동으로 끌어와지므로 FUNCTIONS에 올릴 필요 없음), 이 목록엔 index.html에 남아있는 쪽만 올린다.
   'buildGenericImportPreview', 'csvColSample', 'csvMapFieldHtml', 'openCsvColumnMap', 'renderCsvColumnMap',
   'csvMapSetMode', 'csvMapSetCatKind', 'csvMapColChosen', 'csvMapPickCol', 'csvMapPickAsset', 'csvMapPickCategory', 'csvMapApply',
-  'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo', 'delAsset', 'assetDelSel', 'unsnapshotAssetName', 'doBulkCat', 'bulkCatPickFor',
+  'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo', 'delAsset', 'assetDelSel', 'unsnapshotAssetName', 'doBulkCat', 'bulkCatPickFor', 'doBulkInclToggle', 'assetInclSel',
   // archiveTxnsBefore/archiveMonthPicked/openArchiveOld는 app-evolve cycle222 advance('오래된
   // 데이터 정리' 메뉴 — cycle221 critique/advance가 준비해 둔 archiveBaselines()를 처음 실제로
   // 호출) 검증용. archiveBaselines 자체는 logic.js 전용 섹션에서 이미 검증됐으므로 여기선
@@ -9537,6 +9537,108 @@ test('bulkCatTargets: splits가 1개짜리 배열이면(분할이 아님) 평소
   const a = { id: 'a', type: 'expense', category: '식비', splits: [{ category: '식비', amount: 1000 }] };
   const r = sandbox.bulkCatTargets([a], new Set(['a']));
   assert.strictEqual(r.ok, true);
+});
+
+/* ---------- assetInclTargets(logic.js)/doBulkInclToggle/assetInclSel: 자산 선택모드(ST.aSel)의
+   총자산 포함/제외 일괄 전환 (app-evolve cycle296 critique → advance) ---------- */
+test('assetInclTargets: 선택이 비었으면 reason:empty', () => {
+  const r = sandbox.assetInclTargets([{ id: 'a', includeInTotal: true }], new Set());
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.reason, 'empty');
+});
+test('assetInclTargets: ids가 실제 자산과 하나도 안 맞아도 reason:empty', () => {
+  const r = sandbox.assetInclTargets([{ id: 'a', includeInTotal: true }], new Set(['없는id']));
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.reason, 'empty');
+});
+test('assetInclTargets: 선택된 자산이 전부 포함 상태면 allIncluded:true, mixed:false', () => {
+  const assets = [{ id: 'a', includeInTotal: true }, { id: 'b', includeInTotal: true }];
+  const r = sandbox.assetInclTargets(assets, new Set(['a', 'b']));
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.allIncluded, true);
+  assert.strictEqual(r.mixed, false);
+});
+test('assetInclTargets: 선택된 자산이 전부 제외 상태면 allIncluded:false, mixed:false', () => {
+  const assets = [{ id: 'a', includeInTotal: false }, { id: 'b', includeInTotal: false }];
+  const r = sandbox.assetInclTargets(assets, new Set(['a', 'b']));
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.allIncluded, false);
+  assert.strictEqual(r.mixed, false);
+});
+test('assetInclTargets: 선택된 자산의 포함 여부가 섞여 있으면 mixed:true', () => {
+  const assets = [{ id: 'a', includeInTotal: true }, { id: 'b', includeInTotal: false }];
+  const r = sandbox.assetInclTargets(assets, new Set(['a', 'b']));
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.mixed, true);
+});
+test('assetInclTargets: 선택되지 않은 자산은 items에 포함되지 않는다', () => {
+  const a = { id: 'a', includeInTotal: true };
+  const b = { id: 'b', includeInTotal: true };
+  const c = { id: 'c', includeInTotal: false }; // 선택 안 됨
+  const r = sandbox.assetInclTargets([a, b, c], new Set(['a', 'b']));
+  assert.deepStrictEqual(r.items, [a, b]);
+});
+
+test('doBulkInclToggle: 선택한 자산들의 includeInTotal을 일괄로 바꾼다', () => {
+  sandbox.TWi = -1;
+  const a1 = { id: 'a1', includeInTotal: true, updatedAt: 1 };
+  const a2 = { id: 'a2', includeInTotal: false, updatedAt: 1 };
+  sandbox.DB = { assets: [a1, a2] };
+  sandbox.lastUndo = null;
+  sandbox.doBulkInclToggle(new Set(['a1', 'a2']), false);
+  assert.strictEqual(a1.includeInTotal, false);
+  assert.strictEqual(a2.includeInTotal, false);
+  assert.strictEqual(a1.updatedAt, 'test-updatedAt', 'touchSave로 touch()가 호출되어야 함(mergeCollection 동기화 불변식)');
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함');
+});
+test('doBulkInclToggle: undo 콜백을 부르면 각 자산의 원래 포함 여부로 정확히 복원한다(섞여 있던 선택도)', () => {
+  sandbox.TWi = -1;
+  const a1 = { id: 'a1', includeInTotal: true, updatedAt: 1 };
+  const a2 = { id: 'a2', includeInTotal: false, updatedAt: 1 };
+  sandbox.DB = { assets: [a1, a2] };
+  sandbox.lastUndo = null;
+  sandbox.doBulkInclToggle(new Set(['a1', 'a2']), true);
+  assert.strictEqual(a1.includeInTotal, true);
+  assert.strictEqual(a2.includeInTotal, true);
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(a1.includeInTotal, true, '원래 true였던 자산은 true로 돌아와야 함');
+  assert.strictEqual(a2.includeInTotal, false, '원래 false였던 자산은 false로 돌아와야 함');
+});
+test('doBulkInclToggle: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 바뀌지 않는다', () => {
+  sandbox.TWi = 0;
+  const a1 = { id: 'a1', includeInTotal: true };
+  sandbox.DB = { assets: [a1] };
+  sandbox.doBulkInclToggle(new Set(['a1']), false);
+  assert.strictEqual(a1.includeInTotal, true);
+  sandbox.TWi = -1;
+});
+test('doBulkInclToggle: assetInclTargets이 실패(빈 선택)로 판정하면 아무 것도 바꾸지 않는다(assetInclSel이 먼저 걸러내므로 여기선 안전망)', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { assets: [] };
+  sandbox.lastUndo = null;
+  sandbox.doBulkInclToggle(new Set(['없는id']), false);
+  assert.strictEqual(sandbox.lastUndo, null, 'undoToast도 호출되지 않아야 함');
+});
+
+test('assetInclSel: 선택이 비어 있으면 안내 토스트만 띄우고 아무 것도 바꾸지 않는다', () => {
+  const a1 = { id: 'a1', includeInTotal: true };
+  sandbox.DB = { assets: [a1] };
+  sandbox.ST.aSel = { mode: true, ids: new Set() };
+  sandbox.lastUndo = null;
+  sandbox.assetInclSel(false);
+  assert.strictEqual(sandbox.lastToast, '선택된 자산이 없어요');
+  assert.strictEqual(a1.includeInTotal, true);
+  assert.strictEqual(sandbox.lastUndo, null);
+});
+test('assetInclSel: 적용 후 선택모드를 끝낸다(assetDelSel과 동일한 동작)', () => {
+  sandbox.TWi = -1;
+  const a1 = { id: 'a1', includeInTotal: true, updatedAt: 1 };
+  sandbox.DB = { assets: [a1] };
+  sandbox.ST.aSel = { mode: true, ids: new Set(['a1']) };
+  sandbox.assetInclSel(false);
+  assert.strictEqual(a1.includeInTotal, false);
+  assert.strictEqual(sandbox.ST.aSel.mode, false, '적용 후 선택모드가 꺼져 있어야 함');
+  assert.strictEqual(sandbox.ST.aSel.ids.size, 0, '적용 후 선택 id도 비워져 있어야 함');
 });
 
 test('doBulkCat: 선택한 거래들의 카테고리를 바꾸고, 메모가 이전 카테고리명과 같았다면(자동 채움) 메모도 함께 옮긴다', () => {
@@ -24816,6 +24918,49 @@ test('activeSel: 자산목록 선택모드(aSel)엔 일괄 카테고리 변경 �
   sandbox.ST.aSel = { mode: true, ids: new Set() };
   const s = sandbox.activeSel();
   assert.strictEqual(s.cat, undefined);
+});
+/* ---------- activeSel: aSel의 incl(총자산 포함/제외 일괄 전환) — cat과 달리 자산엔 이미
+   핵심적으로 쓰이는 불리언 플래그(includeInTotal)가 있어 짝지을 수 있다(app-evolve cycle296
+   critique → advance) ---------- */
+test('activeSel: 선택이 비어 있으면 incl이 null이다(바꿀 대상 자체가 없음)', () => {
+  setupAssetsDB();
+  sandbox.ST.aSel = { mode: true, ids: new Set() };
+  const s = sandbox.activeSel();
+  assert.strictEqual(s.incl, null);
+});
+test('activeSel: 선택된 자산이 전부 포함 상태면 incl이 [excl](반대 상태로 토글하는 버튼 하나만)', () => {
+  setupAssetsDB();
+  sandbox.DB.assets = [
+    { id: 'a1', includeInTotal: true }, { id: 'a2', includeInTotal: true },
+  ];
+  sandbox.ST.aSel = { mode: true, ids: new Set(['a1', 'a2']) };
+  const s = sandbox.activeSel();
+  assert.deepStrictEqual(Array.from(s.incl), ['excl']); // vm 배열 리터럴은 realm이 달라 deepStrictEqual이 reference 비교에서 실패함(위 recDates 주석과 동일한 패턴) — Array.from으로 host realm으로 정규화
+});
+test('activeSel: 선택된 자산이 전부 제외 상태면 incl이 [incl](반대 상태로 토글하는 버튼 하나만)', () => {
+  setupAssetsDB();
+  sandbox.DB.assets = [
+    { id: 'a1', includeInTotal: false }, { id: 'a2', includeInTotal: false },
+  ];
+  sandbox.ST.aSel = { mode: true, ids: new Set(['a1', 'a2']) };
+  const s = sandbox.activeSel();
+  assert.deepStrictEqual(Array.from(s.incl), ['incl']);
+});
+test('activeSel: 선택된 자산의 포함 여부가 섞여 있으면 incl이 [incl,excl](둘 다 보여줌)', () => {
+  setupAssetsDB();
+  sandbox.DB.assets = [
+    { id: 'a1', includeInTotal: true }, { id: 'a2', includeInTotal: false },
+  ];
+  sandbox.ST.aSel = { mode: true, ids: new Set(['a1', 'a2']) };
+  const s = sandbox.activeSel();
+  assert.deepStrictEqual(Array.from(s.incl), ['incl', 'excl']);
+});
+test('activeSel: 일별거래/전체내역 선택모드(lSel/hist)엔 incl이 없다(자산 전용 액션)', () => {
+  setupLedgerDB();
+  sandbox.ST.aSel = { mode: false, ids: new Set() };
+  sandbox.ST.lSel = { mode: true, ids: new Set() };
+  const s = sandbox.activeSel();
+  assert.strictEqual(s.incl, undefined);
 });
 test('activeSel: 일별거래 선택모드(lSel)엔 일괄 카테고리 변경 버튼(cat)이 있다(app-evolve cycle136 advance)', () => {
   setupLedgerDB();

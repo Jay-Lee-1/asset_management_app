@@ -620,11 +620,12 @@ body.dp-open .page{overflow:hidden}
 .sbb svg{width:16px;height:16px}
 .sbb-all{background:var(--glass-panel);color:var(--text)}
 .sbb-cat{background:var(--glass-panel);color:var(--text)}
+.sbb-incl{background:var(--glass-panel);color:var(--text)}
 .sbb-del{background:var(--expense);color:#fff;border-color:var(--glass-border)}
 .sbb:active{transform:scale(.95)}
-/* 선택바에 카테고리 버튼까지 4개(전체선택/카테고리/닫기/삭제)가 들어가는 lSel/hist 모드에선
-   min-width 114px 고정으로 좁은 화면에서 넘칠 수 있어, 그 모드에서만 폭을 콘텐츠에 맞게
-   줄인다(app-evolve cycle136 advance) */
+/* 선택바에 카테고리/포함제외 버튼까지 4~5개(전체선택/카테고리 또는 포함·제외 1~2개/닫기/삭제)가
+   들어가는 lSel/hist/aSel 모드에선 min-width 114px 고정으로 좁은 화면에서 넘칠 수 있어, 그
+   모드에서만 폭을 콘텐츠에 맞게 줄인다(app-evolve cycle136 advance, aSel의 incl은 cycle296 advance) */
 .selbar-bottom.has-cat .sbb{min-width:0;padding:0 12px;font-size:13px}
 .sbb-x{width:46px;height:46px;flex-shrink:0;border-radius:50%;display:grid;place-items:center;color:var(--text-2);
   background:var(--glass-panel);-webkit-backdrop-filter:saturate(180%) blur(30px);backdrop-filter:saturate(180%) blur(30px);
@@ -1415,7 +1416,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.337';
+const APP_VERSION='1.47.338';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -10542,6 +10543,18 @@ function doBulkCat(ids,cat){if(twGuard())return;
  undoToast(`${items.length}개 카테고리를 변경했어요`,()=>{
   items.forEach((t,i)=>{t.category=prev[i].category;t.memo=prev[i].memo});
   touchSave(...items);renderCurrent();toast('되돌렸어요')})}
+/* 자산 선택모드(ST.aSel)의 '포함'/'제외' 바닥바 버튼이 호출 — assetInclSel()이 assetInclTargets()로
+ * 먼저 검증해 넘긴 ids/next만 다루므로 여기선 재검증 없이 바로 적용한다(app-evolve cycle296
+ * critique → advance). doBulkCat과 동일하게 touchSave(...)로 한 번에 touch+save한 뒤 undoToast로
+ * 되돌릴 수 있게 한다. */
+function doBulkInclToggle(ids,next){if(twGuard())return;
+ const r=assetInclTargets(DB.assets,ids);if(!r.ok)return;
+ const items=r.items,prev=items.map(a=>!!a.includeInTotal);
+ items.forEach(a=>{a.includeInTotal=next});
+ touchSave(...items);renderCurrent();
+ undoToast(`${items.length}개 자산을 총자산에 ${next?'포함':'제외'}했어요`,()=>{
+  items.forEach((a,i)=>{a.includeInTotal=prev[i]});
+  touchSave(...items);renderCurrent();toast('되돌렸어요')})}
 function deleteRecsUndo(ids){if(twGuard())return;const removed=DB.recurrences.filter(r=>ids.has(r.id));
  DB.recurrences=DB.recurrences.filter(r=>!ids.has(r.id));
  DB.deletedIds=DB.deletedIds||{};const now=Date.now();ids.forEach(id=>DB.deletedIds[id]=now);
@@ -10737,6 +10750,16 @@ function bulkCatPickFor(ids,afterApply){
  if(!r.ok){toast(r.reason==='transfer'?'이체 내역은 카테고리를 바꿀 수 없어요':r.reason==='mixed'?'같은 종류의 내역만 한번에 바꿀 수 있어요':r.reason==='split'?'분할된 내역은 일괄로 카테고리를 바꿀 수 없어요':r.reason==='adjust'?'잔액 조정 내역은 카테고리를 바꿀 수 없어요':'선택된 내역이 없어요');return}
  openCatPicker({kind:r.kind,current:null,onPick:c=>{closeSheet();doBulkCat(ids,c);if(afterApply)afterApply()}});
 }
+/* 자산 선택모드(ST.aSel) 바닥바의 '포함'/'제외' 버튼이 호출 — activeSel()이 assetInclTargets()로
+ * 이미 섞임 여부를 판단해 ['incl'], ['excl'], ['incl','excl'] 중 하나로 버튼을 결정해 뒀으므로
+ * (updateSelBottom 참고) 여기선 재검증 없이 doBulkInclToggle만 호출한다. ledgerCatSel/histCatSel과
+ * 달리 피커를 거치지 않는 단일 동작이라 바로 선택모드를 끝낸다(assetDelSel과 동일한 순서 —
+ * ST.aSel을 먼저 비우고 ids는 그 전에 복사해둔다, app-evolve cycle296 advance). */
+function assetInclSel(next){
+ if(!ST.aSel.ids.size){toast('선택된 자산이 없어요');return}
+ const ids=new Set(ST.aSel.ids);ST.aSel.mode=false;ST.aSel.ids.clear();
+ doBulkInclToggle(ids,next);
+}
 
 /* ================= ROUTER ================= */
 const renderers={home:renderHome,assets:renderAssets,ledger:renderLedger,history:renderHistory,plan:renderPlan,menu:renderMenu};
@@ -10752,9 +10775,20 @@ function renderCurrent(){
 }
 function activeSel(){
  /* cat(일괄 카테고리 변경)은 자산목록(aSel)엔 없음 — 자산엔 "카테고리" 개념이 아니라 종류/귀속이
-    있고, 그 변경은 이미 자산 수정 시트에서 건당 처리되므로 선택삭제와 짝지을 대상이 아님.
-    일별거래(lSel)/전체내역(hist)만 카테고리가 있는 거래를 다룬다(app-evolve cycle136 advance). */
- if(ST.aSel.mode)return{all:'assetSelAll()',del:'assetDelSel()',size:ST.aSel.ids.size,total:visibleAssetsForSel().length};
+    있고, 그 변경은 이미 자산 수정 시트에서 건당 처리되므로 선택삭제와 짝지을 대상이 아님. 대신
+    자산엔 이미 핵심적으로 쓰이는 불리언 플래그(총자산 포함 여부·includeInTotal)가 있어 incl로
+    짝지을 수 있다 — assetInclTargets(logic.js)로 선택된 자산들의 현재 상태가 섞여 있는지(mixed)
+    판단해, 섞여 있으면 포함/제외 버튼을 둘 다, 전부 같으면 반대 상태로 토글하는 버튼 하나만
+    돌려준다(updateSelBottom이 그대로 렌더). 일별거래(lSel)/전체내역(hist)만 카테고리가 있는
+    거래를 다룬다(app-evolve cycle136 advance, incl은 cycle296 critique → advance로 추가). */
+ if(ST.aSel.mode){
+  let incl=null;
+  if(ST.aSel.ids.size){
+   const r=assetInclTargets(DB.assets,ST.aSel.ids);
+   if(r.ok)incl=r.mixed?['incl','excl']:(r.allIncluded?['excl']:['incl']);
+  }
+  return{all:'assetSelAll()',del:'assetDelSel()',incl,size:ST.aSel.ids.size,total:visibleAssetsForSel().length};
+ }
  if(ST.lSel.mode)return{all:'ledgerSelAll()',del:'ledgerDelSel()',cat:'ledgerCatSel()',size:ST.lSel.ids.size,total:dayTxns(ST.ledger.sel).filter(visibleTx).filter(t=>!t.isRec).length};
  if(ST.hist.selMode)return{all:'histSelAll()',del:'histDelSel()',cat:'histCatSel()',size:ST.hist.sel.size,total:filteredHist().filter(t=>!t.isRec).length};
  return null;
@@ -10763,9 +10797,14 @@ function updateSelBottom(){const el=$('selBarBottom');if(!el)return;const s=acti
  document.body.classList.toggle('selmode',!!s);
  if(!s){el.classList.remove('show');return}
  const allOn=s.total>0&&s.size>=s.total;
- el.classList.toggle('has-cat',!!s.cat);
+ /* s.incl(assetSel 전용)은 ['incl'],['excl'],['incl','excl'] 중 하나이거나(섞인 선택일 때 둘 다),
+    선택이 비었으면 null — activeSel()이 이미 판단해 뒀으므로 여기선 버튼 라벨만 뽑는다
+    (app-evolve cycle296 advance) */
+ const inclBtns=(s.incl||[]).map(k=>k==='incl'?`<button class="sbb sbb-incl" onclick="assetInclSel(true)">${svg('eye')} 포함</button>`:`<button class="sbb sbb-incl" onclick="assetInclSel(false)">${svg('eyeOff')} 제외</button>`).join('');
+ el.classList.toggle('has-cat',!!s.cat||!!(s.incl&&s.incl.length));
  el.innerHTML=`<button class="sbb sbb-all" onclick="${s.all}">${allOn?'전체 해제':'전체 선택'}</button>`
   +(s.cat?`<button class="sbb sbb-cat" onclick="${s.cat}">${svg('tag')} 카테고리</button>`:'')
+  +inclBtns
   +`<button class="sbb-x" onclick="exitSelMode()" aria-label="선택 취소">${svg('x')}</button>`
   +`<button class="sbb sbb-del" onclick="${s.del}">${svg('trash')} 삭제${s.size?' '+s.size:''}</button>`;
  el.classList.add('show');

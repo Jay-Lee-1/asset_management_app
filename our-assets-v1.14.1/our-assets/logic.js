@@ -1305,6 +1305,21 @@ function bulkCatTargets(txns,ids){
  if(items.some(t=>t.type!==kind))return{ok:false,reason:'mixed'};
  return{ok:true,kind,items};
 }
+/* 자산 선택모드(ST.aSel)의 두 번째 일괄동작 — 총자산 포함/제외(includeInTotal) 일괄 전환 대상을
+ * 검증한다. bulkCatTargets와 같은 모양의 {ok,...}를 돌려주되, 거래와 달리 자산엔 이체/조정/분할
+ * 같은 배제 대상이 없어 "선택이 비었거나 실제 자산과 하나도 안 맞으면 실패"만 본다. 선택된
+ * 자산들의 현재 includeInTotal이 섞여 있으면(mixed) 바닥바가 포함/제외 버튼을 둘 다 보여주고,
+ * 전부 같으면(allIncluded로 어느 쪽인지 판단) 반대 상태로 토글하는 버튼 하나만 보여준다
+ * (app-evolve cycle296 critique → advance). */
+function assetInclTargets(assets,ids){
+ const idSet=ids instanceof Set?ids:new Set(ids||[]);
+ if(!idSet.size)return{ok:false,reason:'empty'};
+ const items=(assets||[]).filter(a=>idSet.has(a.id));
+ if(!items.length)return{ok:false,reason:'empty'};
+ const allIncluded=items.every(a=>!!a.includeInTotal);
+ const allExcluded=items.every(a=>!a.includeInTotal);
+ return{ok:true,items,mixed:!allIncluded&&!allExcluded,allIncluded};
+}
 
 /* ================= CAROUSEL INDEX (순수) ================= */
 /* wireNwCarousel()의 클론-루프 스크롤 스냅과 동일한 경계 규칙으로, 화살표 키/점 클릭이 요청한
