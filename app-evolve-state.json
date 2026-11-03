@@ -1,7 +1,11 @@
 {
   "cycle": 294,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "지출/수입 분석 화면의 spendTrend/incomeTrend 중복 재계산 제거(메모이제이션)",
+    "why": "spendByCategory(y,m,owner)/incomeByCategory(y,m,owner)는 각각 해당 달 전체 거래를 처음부터 스캔·분할·집계하는 무거운 함수인데, openSpendAnalysis()(index.html:6812-6852)가 rows용으로 1회 + totalAvg용으로 3회(이전 3개월) 호출한 뒤, 행마다 spendTrend(r.c,...)(6550)가 '같은' 현재 달 + 이전 3개월을 또 처음부터 재계산해 N개 카테고리면 한 화면 렌더에 4+4N번의 전체 월 스캔이 발생한다. incomeTrend/incomeByCategory(5883, 6642)도 수입 분석 화면에서 동일한 패턴을 그대로 반복한다. 몇 년치 거래·십수 개 카테고리를 가진 사용자가 자주 여는 핵심 월간 화면(지출/수입 분석)에서 체감 가능한 지연을 유발하는 실제 성능 문제이며, cycle293 critique에서 이미 한 번 후보로 지목됐다가 보류된 바 있다.",
+    "approach": "1) 화면 1회 렌더에 필요한 월(현재+이전 n개월) × owner 조합의 spendByCategory/incomeByCategory 결과를 한 번만 계산해 `${y}-${m}-${owner}` 키의 로컬 맵(또는 캐시 객체)에 담는다. 2) spendTrend/incomeTrend가 이 맵(또는 조회 함수)을 선택적 인자로 받아, 맵이 주어지면 재계산 없이 거기서 찾아 쓰고, 안 주어지면 기존처럼 직접 재계산하는 하위호환 경로를 유지한다(기존 test/run.js 테스트가 그대로 통과하도록). 3) openSpendAnalysis()와 수입 분석 빌더(5860-5890 부근)를 고쳐 맵을 한 번만 만들고 각 행에서 spendTrend(c, map)/incomeTrend(c, map) 형태로 넘기게 한다. 4) 메모이즈 경로와 기존 재계산 경로가 다중 카테고리·다중 월 픽스처에서 동일한 결과를 내는지 확인하는 테스트를 추가한다. 5) APP_VERSION과 sw.js CACHE를 올리고, 커밋 전에 node our-assets-v1.14.1/our-assets/test/run.js를 반드시 통과시킨다."
+  },
   "history": [
     {
       "cycle": 289,
@@ -141,6 +145,13 @@
       "phase": "review",
       "timestamp": "2026-11-03T09:45:00.000Z",
       "summary": "cycle294 develop 커밋(8fa42af) 검토 — goalsManageBody가 matchGoalQuery/esc를 올바르게 재사용하고, clrInput/goalQInput 모두 대상 엘리먼트 부재(#goalQ가 임계값 미달로 렌더되지 않거나 시트가 닫힌 뒤 늦게 실행되는 경우)를 방어적으로 처리함을 확인. duplicateGoal/saveGoal/delGoal 모두 저장 후 closeSheet()로 시트 전체를 닫으므로(목록에 머물지 않음) 목표 추가/삭제로 개수가 임계값을 넘나들어도 검색창 표시 여부는 다음에 openGoalsList()를 다시 열 때 항상 새로 계산돼 불일치가 생기지 않는다. node test/run.js 2600/2600, logic.js 구문 검증 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 294,
+      "phase": "critique",
+      "timestamp": "2026-11-03T10:50:00.000Z",
+      "summary": "서브에이전트로 앱 전체를 재조사. openSpendAnalysis()/수입 분석 화면이 spendTrend/incomeTrend를 카테고리 행마다 호출하는데, 그 안에서 현재 달+이전 3개월 spendByCategory/incomeByCategory를 다시 처음부터 전체 스캔해 재계산함을 발견 — rows/totalAvg용으로 이미 계산한 같은 달 데이터를 행마다 또 계산해 N개 카테고리면 렌더 1회당 4+4N번의 전체 월 스캔이 발생하는 성능 문제(cycle293 critique에서 후보로 지목됐다 보류된 항목, 이번엔 채택). PIN 활성 시에도 localStorage 저장/로드가 평문인 문제(index.html:2276-2294 주석)는 여전히 진짜 보안 공백이지만, 이전 cycle252/289가 이미 '저장 아키텍처 재작성에 가깝다'고 분석해 무인 사이클 범위를 벗어난다고 두 번 판단한 바 있어 이번에도 보류. 예산 목록 검색 부재는 develop 사이즈라 판단해 보류. pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
