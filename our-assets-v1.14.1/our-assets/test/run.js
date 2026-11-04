@@ -10365,6 +10365,33 @@ test('mergeAssetInto: undoToast로 되돌리면 목표의 linkedAssetId도 원�
   sandbox.lastUndo.undoFn();
   assert.strictEqual(g1.linkedAssetId, 'a1', '되돌리면 목표의 연결 자산도 원래대로 복원되어야 함');
 });
+test('mergeAssetInto: 다른 귀속(owner) 자산끼리 합치면, 연결된 목표의 owner도 to의 owner로 맞춰진다(saveAsset의 owner 재배선과 동일한 이유)', () => {
+  const a1 = { id: 'a1', name: '통장1', type: 'cash', owner: '아빠', baseAmount: 1000 };
+  const a2 = { id: 'a2', name: '통장2', type: 'cash', owner: '엄마', baseAmount: 2000 };
+  const g1 = { id: 'g1', type: 'asset', linkedAssetId: 'a1', owner: '아빠', updatedAt: 1 };
+  sandbox.DB = { assets: [a1, a2], txns: [], recurrences: [], goals: [g1] };
+  sandbox.mergeAssetInto('a1', 'a2');
+  assert.strictEqual(g1.owner, '엄마', '목표의 귀속이 합쳐진 대상(to)의 귀속으로 바뀌어야 함');
+});
+test('mergeAssetInto: 같은 귀속 자산끼리 합치면 목표의 owner는 그대로다', () => {
+  const a1 = { id: 'a1', name: '통장1', type: 'cash', owner: '아빠', baseAmount: 1000 };
+  const a2 = { id: 'a2', name: '통장2', type: 'cash', owner: '아빠', baseAmount: 2000 };
+  const g1 = { id: 'g1', type: 'asset', linkedAssetId: 'a1', owner: '아빠', updatedAt: 1 };
+  sandbox.DB = { assets: [a1, a2], txns: [], recurrences: [], goals: [g1] };
+  sandbox.mergeAssetInto('a1', 'a2');
+  assert.strictEqual(g1.owner, '아빠', '이미 같은 귀속이면 바뀔 필요가 없음');
+});
+test('mergeAssetInto: undoToast로 되돌리면 목표의 owner도 원래 귀속으로 복원된다', () => {
+  const a1 = { id: 'a1', name: '통장1', type: 'cash', owner: '아빠', baseAmount: 1000 };
+  const a2 = { id: 'a2', name: '통장2', type: 'cash', owner: '엄마', baseAmount: 2000 };
+  const g1 = { id: 'g1', type: 'asset', linkedAssetId: 'a1', owner: '아빠' };
+  sandbox.DB = { assets: [a1, a2], txns: [], recurrences: [], goals: [g1] };
+  sandbox.lastUndo = null;
+  sandbox.mergeAssetInto('a1', 'a2');
+  assert.strictEqual(g1.owner, '엄마');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(g1.owner, '아빠', '되돌리면 목표의 귀속도 원래대로 복원되어야 함');
+});
 test('mergeAssetInto: from을 가리키지 않는 목표(다른 자산 연결·networth형)는 건드리지 않는다', () => {
   const a1 = { id: 'a1', name: '통장1', type: 'cash', baseAmount: 1000 };
   const a2 = { id: 'a2', name: '통장2', type: 'cash', baseAmount: 2000 };

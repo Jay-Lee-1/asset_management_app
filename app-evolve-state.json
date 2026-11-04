@@ -1,15 +1,8 @@
 {
   "cycle": 300,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 295,
-      "phase": "develop",
-      "timestamp": "2026-11-03T12:30:00.000Z",
-      "summary": "budgetCarryFor(예산 이월)가 전달 지출을 spendByCategory로 다시 조회하는데, 그 달 거래가 archiveTxnsBefore(오래된 데이터 정리)로 완전히 지워진 뒤면 지출이 0으로 보여 실제로는 다 쓴 예산을 전액 이월로 돌려주던 버그 발견 — 300,000원 예산을 280,000원 써서 20,000원만 이월해야 할 달을 정리하면 다음 달 이월이 300,000원 전액으로 부풀려졌다(서브에이전트 조사로 발견, node로 실제 함수를 추출해 재현 확인). archiveTxnsBefore가 DB.settings.archivedThroughDate(기기-로컬 전용 — settings는 동기화 대상이 아니라 mergeRemoteDataIntoLocal 배선 불필요)에 cutoffDate를 남기고(이미 더 뒤까지 정리됐으면 유지, undo 시 이전 값으로 복원), budgetCarryFor는 전달이 그 범위에 걸리면 지출을 추측하지 않고 이월을 0으로 끊는다(전액 이월보다 이월 없음이 안전). 테스트 5건 추가(2606->2611 통과). APP_VERSION 1.47.334->1.47.335, sw.js CACHE v601->v602. node test/run.js 2611/2611 통과.",
-      "commit": null
-    },
     {
       "cycle": 295,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-04T04:15:17.316Z",
       "summary": "critique(cycle299) 계획대로 homeAlerts()/openSpendAnalysis()의 예산 이월(budgetCarryFor) 재계산을 캐시로 공유했다. budgetCarryFor(c,y,m,depth=0,cache=null)와 budgetForMonthWithCarry(c,y,m,depth=0,cache=null)에 선택적 cache(Map) 인자를 추가해 `${c}:${y}-${m}` 키로 재귀 체인을 메모이즈하고(cache 생략 시 기존과 100% 동일, spendTrend/incomeTrend의 cache 인자(cycle294)와 같은 하위호환 패턴), 재귀 호출에도 그대로 전달한다. totalBudgetSummary(rows,y,m,cache=null)도 같은 cache를 받아 budgetCarryFor에 넘긴다. homeAlerts()는 spendByCategory(TM.y,TM.m)를 한 번만 _spendTM에 담아 budgetOver(_bo)/budgetPaceWarn(_bpw) 필터 양쪪에 재사용하고, const _bwc=new Map()을 만들어 네 군데 budgetForMonthWithCarry 호출(필터 2곳+단일건 alert 생성 2곳)에 전부 넘긴다. openSpendAnalysis()도 const _bwc=new Map()을 만들어 totalBudgetSummary와 카테고리 행 루프(budgetForMonthWithCarry) 양쪪에 공유한다. 테스트 4건 추가: cache 유무가 budgetCarryFor/budgetForMonthWithCarry 결과를 바꾸지 않는지(동등성), 같은 cache를 재사용하면 같은 (카테고리,달)에 spendByCategory를 다시 안 부르는지, homeAlerts에서 이월 켠 카테고리 2개가 모두 초과해도 spendByCategory가 이번 달 1번+카테고리별 전달 1번(총 3번)만 호출되는지(spy, cache 없었다면 6번), openSpendAnalysis에서 이월 켠 카테고리 1개의 전달 조회가 totalBudgetSummary/행 루프 사이에 중복 안 되는지(catCache 4번+budgetCarryFor 1번=5번, cache 없었다면 6번)(spy). 테스트 2678->2682 통과. APP_VERSION 1.47.343->1.47.344, sw.js CACHE v610->v611. node test/run.js 2682/2682 통과, index.html 메인 인라인 스크립트(new Function)/sw.js(node --check) 구문 검증 통과. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 300,
+      "phase": "develop",
+      "timestamp": "2026-11-04T05:13:08.001Z",
+      "summary": "mergeAssetInto(자산 합치기, cycle297)가 from을 가리키던 asset형 목표의 linkedAssetId는 cycle298에서 to로 옮겼지만 goal.owner는 그대로 두던 공백 발견(서브에이전트 조사) — openAssetMergePicker/pkFilteredAssets(onlyType+excludeId만 필터)는 귀속(owner)까지는 걸러주지 않아 다른 귀속 소유의 동종 자산끼리도 합쳐질 수 있는데, 그 경우 목표는 합쳐진 뒤 실제 자산(to)을 계속 추적하면서도 옛 귀속 캐러셀에만 보이는 상태가 된다 — saveAsset()이 자산의 owner가 바뀔 때 연결 목표의 owner를 같이 맞추는 기존 가드(4712행)와 똑같은 어긋남이 합치기 경로에서도 재현됨. mergeAssetInto의 goalItems 루프에 saveAsset과 동일한 g.owner!==to.owner 체크를 추가해 to.owner로 맞추고, undoToast 복원 클로저도 prevOwner로 되돌리게 했다. 테스트 3건 추가(다른 귀속끼리 합치면 목표 owner가 to로 바뀜, 같은 귀속이면 그대로, undo 시 원래 귀속으로 복원). 테스트 2682->2685 통과. APP_VERSION 1.47.344->1.47.345, sw.js CACHE v611->v612. node test/run.js 2685/2685 통과, index.html 메인 인라인 스크립트(vm.Script)/sw.js·logic.js(node --check) 구문 검증 통과.",
       "commit": null
     }
   ]

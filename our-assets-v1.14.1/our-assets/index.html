@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.344';
+const APP_VERSION='1.47.345';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4238,10 +4238,19 @@ function mergeAssetInto(fromId,toId){
  });
  /* linkedAssetId로 from을 가리키던 asset형 목표 — 옮기지 않으면 자산은 to로 안전하게
   * 합쳐졌는데도 goalLinkedAssetGone()이 "연결된 자산이 사라졌어요"로 잘못 표시한다
-  * (saveAsset()의 owner 재배선, 4703행과 동일한 이유로 자산 식별자가 바뀔 때 목표도 같이 옮김). */
+  * (saveAsset()의 owner 재배선, 4703행과 동일한 이유로 자산 식별자가 바뀔 때 목표도 같이 옮김).
+  * openAssetMergePicker가 귀속(owner)까지는 걸러주지 않아 다른 귀속 소유의 동종 자산끼리도
+  * 합쳐질 수 있는데, 그때 linkedAssetId만 옮기고 goal.owner를 그대로 두면 saveAsset()의
+  * owner 재배선(4712행)과 똑같은 어긋남이 생긴다 — 목표는 합쳐진 뒤의 실제 자산(to)을
+  * 추적하면서 옛 귀속 캐러셀에만 계속 보이는 상태가 된다. */
  const goalItems=[];
  (DB.goals||[]).forEach(g=>{
-  if(g.type==='asset'&&g.linkedAssetId===fromId){goalItems.push({g,prevLinked:g.linkedAssetId});g.linkedAssetId=toId}
+  if(g.type==='asset'&&g.linkedAssetId===fromId){
+   const prevOwner=g.owner;
+   goalItems.push({g,prevLinked:g.linkedAssetId,prevOwner});
+   g.linkedAssetId=toId;
+   if(g.owner!==to.owner)g.owner=to.owner;
+  }
  });
  const toPrevBaseAmount=to.baseAmount,toPrevAmountKRW=to.amountKRW;
  to[balKey]=Math.round(assetBase(to)+assetBase(from));
@@ -4253,7 +4262,7 @@ function mergeAssetInto(fromId,toId){
  undoToast(`'${from.name}' 자산을 '${to.name}'에 합쳤어요`+(txItems.length||recItems.length?` · 내역 ${txItems.length}건·반복거래 ${recItems.length}개 복원`:''),()=>{
   txItems.forEach(({t,prevFrom,prevTo,prevAdj})=>{t.fromAssetId=prevFrom;t.toAssetId=prevTo;if(t.adjust)t.adjustAsset=prevAdj});
   recItems.forEach(({r,prevFrom,prevTo})=>{r.fromAssetId=prevFrom;r.toAssetId=prevTo});
-  goalItems.forEach(({g,prevLinked})=>{g.linkedAssetId=prevLinked});
+  goalItems.forEach(({g,prevLinked,prevOwner})=>{g.linkedAssetId=prevLinked;g.owner=prevOwner});
   to.baseAmount=toPrevBaseAmount;to.amountKRW=toPrevAmountKRW;
   if(to.baseAmount===undefined)delete to.baseAmount;
   if(to.amountKRW===undefined)delete to.amountKRW;
