@@ -1356,6 +1356,21 @@ function assetOwnerTargets(assets,ids){
  if(!items.length)return{ok:false,reason:'empty'};
  return{ok:true,items};
 }
+/* 반복 내역 관리 선택모드(ST.recSel)의 일괄 '일시중지'/'다시 시작' 대상을 검증한다. assetInclTargets와
+ * 같은 모양의 {ok,...}를 돌려주되 필드는 active(반복거래의 일시중지 플래그) — 선택된 반복들의 현재
+ * active가 섞여 있으면(mixed) 바닥바가 일시중지/다시시작 버튼을 둘 다 보여주고, 전부 같으면(allActive로
+ * 어느 쪽인지 판단) 반대 상태로 토글하는 버튼 하나만 보여준다(app-evolve cycle301 critique → advance —
+ * deleteRecsUndo(ids)는 이미 Set을 받아 일괄 삭제를 지원했지만 일시중지/재시작엔 대응하는 일괄동작이
+ * 없어 자산/거래 선택모드와 달리 반복 내역 관리만 선택모드 자체가 없던 공백을 메운다). */
+function bulkRecActiveTargets(recs,ids){
+ const idSet=ids instanceof Set?ids:new Set(ids||[]);
+ if(!idSet.size)return{ok:false,reason:'empty'};
+ const items=(recs||[]).filter(r=>idSet.has(r.id));
+ if(!items.length)return{ok:false,reason:'empty'};
+ const allActive=items.every(r=>!!r.active);
+ const allPaused=items.every(r=>!r.active);
+ return{ok:true,items,mixed:!allActive&&!allPaused,allActive};
+}
 
 /* ================= CAROUSEL INDEX (순수) ================= */
 /* wireNwCarousel()의 클론-루프 스크롤 스냅과 동일한 경계 규칙으로, 화살표 키/점 클릭이 요청한

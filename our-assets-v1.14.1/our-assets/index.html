@@ -529,8 +529,8 @@ body.dp-open .page{overflow:hidden}
 .sel-check svg{width:13px;height:13px;color:#fff;opacity:0;transform:scale(.5);transition:opacity .18s,transform .4s var(--bounce)}
 .sel-check.on svg{opacity:1;transform:scale(1)}
 /* 선택된 행 강조 */
-.asset-item.sel-on,.swipe-content.sel-on{background:var(--brand-tint)}
-.asset-item.sel-on .nm,.swipe-content.sel-on .nm{color:var(--brand-ink)}
+.asset-item.sel-on,.swipe-content.sel-on,.manage-row.sel-on{background:var(--brand-tint)}
+.asset-item.sel-on .nm,.swipe-content.sel-on .nm,.manage-row.sel-on .mn{color:var(--brand-ink)}
 /* iOS 롱프레스 반응 — 지그시 눌리는 느낌 */
 .asset-item,.swipe-content{transition:transform .3s var(--bounce),background .18s,box-shadow .25s var(--ease)}
 .lp-press{transform:scale(.965)!important;background:var(--surface-2)!important;border-radius:14px}
@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.347';
+const APP_VERSION='1.47.348';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3009,7 +3009,7 @@ let TM=ym(TODAY);TM.d=+TODAY.slice(8,10);
 let ST={tab:'home',ledgerMode:'cal',assetOwner:'all',assetQ:'',nwPreset:'m3',ledger:{y:TM.y,m:TM.m,sel:TODAY},home:{y:TM.y,m:TM.m},
  hist:{cat:'전체',q:'',assetId:null,catExact:null,catExactType:null,owner:'전체',selMode:false,sel:new Set(),sortAsc:false,
    range:{from:`${TM.y}-01-01`,to:`${TM.y}-12-31`},preset:'year',page:1,avgMode:false,balPreset:'m3',debtWhatIfExtra:0},
- plan:{owner:'전체',assetId:null,y:TM.y,m:TM.m},spendOwner:'전체',yearReview:{y:TM.y},editAssets:false,aSel:{mode:false,ids:new Set()},lSel:{mode:false,ids:new Set()}};
+ plan:{owner:'전체',assetId:null,y:TM.y,m:TM.m},spendOwner:'전체',yearReview:{y:TM.y},editAssets:false,aSel:{mode:false,ids:new Set()},lSel:{mode:false,ids:new Set()},recSel:{mode:false,ids:new Set()}};
 const TABS=[{id:'home',label:'홈',icon:'home'},{id:'assets',label:'자산관리',icon:'wallet'},{id:'ledger',label:'가계부',icon:'ledger'},{id:'plan',label:'한달 플랜',icon:'plan'},{id:'menu',label:'메뉴',icon:'menu'}];
 
 /* ================= HOME ================= */
@@ -7403,9 +7403,12 @@ function recFreqLabel(r){return recFreqLabelStr(r.freq,r.day,r.startDate)}
 let _recQT=null;
 function openRecManage(){
  openSheet(`<h3>반복 내역 관리</h3><div class="desc">탭하면 수정·삭제할 수 있어요 · ▶/⏸로 일시중지</div>
-  <div class="searchbar" style="margin-bottom:14px">${svg('search')}<div class="field-clear"><input id="recQ" aria-label="반복 내역 검색" placeholder="메모·카테고리·주기 검색" value="" oninput="recQInput(this.value)"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('recQ')">✕</button></div></div>
+  ${ST.recSel.mode?'':`<div class="searchbar" style="margin-bottom:14px">${svg('search')}<div class="field-clear"><input id="recQ" aria-label="반복 내역 검색" placeholder="메모·카테고리·주기 검색" value="" oninput="recQInput(this.value)"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('recQ')">✕</button></div></div>
+  <div class="as-tools"><div class="as-actions"><button class="as-tbtn" onclick="ST.recSel.mode=true;openRecManage()">${svg('check')} 선택</button></div></div>`}
   <div id="recBody">${recManageBody('')}</div>
-  <div style="height:14px"></div><button class="btn btn-primary" onclick="openRecSheet()">${svg('plus')} 반복 추가</button>`);
+  <div style="height:14px"></div>${ST.recSel.mode?'':`<button class="btn btn-primary" onclick="openRecSheet()">${svg('plus')} 반복 추가</button>`}`);
+ if(!ST.recSel.mode)wireLongPress($('recBody'),id=>{ST.recSel.mode=true;ST.recSel.ids.add(id);openRecManage()});
+ updateSelBottom();
 }
 function recQInput(v){clearTimeout(_recQT);_recQT=setTimeout(()=>{const b=$('recBody');if(b)b.innerHTML=recManageBody(v)},220);}
 function recManageBody(qRaw){
@@ -7427,10 +7430,21 @@ function recManageBody(qRaw){
     * msub에 category를 보조로 덧붙여, 제목만 봐도 어느 카테고리인지 여전히 알 수 있게 한다
     * (txRowCore의 memo/catLabel 2단 표시와 동일한 원칙). */
    const title=r.memo||r.category;
-   return `<div class="manage-row" tabindex="0" role="button" aria-label="${esc(title)} ${recFreqLabel(r)} ${comma(r.amount)}원${r.active?'':' 중지됨'}" onclick="editRec('${r.id}')" onkeydown="rowKeydown(event,()=>editRec('${r.id}'))"><div class="avatar ${av}" style="width:38px;height:38px;${r.active?'':'opacity:.4'}">${r.type==='transfer'?svg('transfer'):catGlyph(r.type,r.category,null,'repeat')}</div>
-    <div style="flex:1;min-width:0"><div class="mn">${esc(title)} ${r.active?'':'<span class="mini">중지</span>'}</div>
-     <div class="msub">${(r.memo&&r.memo!==r.category)?esc(r.category)+' · ':''}${recFreqLabel(r)} · ${comma(r.amount)}원</div>
-     <div class="msub2">${period}</div></div>
+   const avatarHTML=`<div class="avatar ${av}" style="width:38px;height:38px;${r.active?'':'opacity:.4'}">${r.type==='transfer'?svg('transfer'):catGlyph(r.type,r.category,null,'repeat')}</div>`;
+   const textHTML=`<div style="flex:1;min-width:0"><div class="mn">${esc(title)} ${r.active?'':'<span class="mini">중지</span>'}</div>
+    <div class="msub">${(r.memo&&r.memo!==r.category)?esc(r.category)+' · ':''}${recFreqLabel(r)} · ${comma(r.amount)}원</div>
+    <div class="msub2">${period}</div></div>`;
+   const ariaBase=`${esc(title)} ${recFreqLabel(r)} ${comma(r.amount)}원${r.active?'':' 중지됨'}`;
+   /* 선택모드(ST.recSel) — 자산목록 선택모드(assetItem의 sel-check 체크박스 행, index.html:4114-4120)와
+    * 동일한 패턴으로, 건당 액션 버튼(복제/일시중지/삭제) 자리를 체크박스로 바꾼다. 자산/거래 선택모드는
+    * 이미 선택→일괄동작(삭제·카테고리/계좌/귀속 변경 등)을 갖췄지만 반복 내역 관리 목록만 건당 버튼뿐이라
+    * 구독·보험처럼 수십 건이 쌓인 사용자가 여러 건을 한꺼번에 일시중지·삭제할 수 없던 공백을 메운다
+    * (app-evolve cycle301 critique → advance). */
+   if(ST.recSel.mode){const on=ST.recSel.ids.has(r.id);
+    return `<div class="manage-row${on?' sel-on':''}" tabindex="0" role="button" aria-pressed="${on}" aria-label="${ariaBase}" onclick="recToggleSel('${r.id}')" onkeydown="rowKeydown(event,()=>recToggleSel('${r.id}'))">
+     <div class="sel-check ${on?'on':''}">${svg('check')}</div>${avatarHTML}${textHTML}</div>`;
+   }
+   return `<div class="manage-row" data-id="${r.id}" data-lp="1" tabindex="0" role="button" aria-label="${ariaBase}" onclick="editRec('${r.id}')" onkeydown="rowKeydown(event,()=>editRec('${r.id}'))">${avatarHTML}${textHTML}
     <div class="row-acts"><button type="button" class="act-btn" aria-label="${esc(title)} 복제" onclick="event.stopPropagation();duplicateRec('${r.id}')">${svg('copy')}</button><button class="act-btn ${r.active?'':'on'}" onclick="event.stopPropagation();toggleRecActive('${r.id}')" title="${r.active?'일시중지':'다시 시작'}" aria-label="${esc(title)} ${r.active?'일시중지':'다시 시작'}">${svg(r.active?'pause':'play')}</button><button type="button" class="act-btn danger" aria-label="${esc(title)} 삭제" onclick="event.stopPropagation();delRecConfirm('${r.id}')">${svg('trash')}</button></div>
     <div class="mc">${svg('chev')}</div></div>`;
   }).join('')+`</div>`;
@@ -9318,7 +9332,7 @@ function ensureEdgeGesture(){
    }
  }x0=null;dx=dy=0;};
  edge.addEventListener('touchend',up);edge.addEventListener('touchcancel',up);
-}function closeSheet(){_draftSnap=null;ovHistPop();const sh=$('sheet');sh.style.transition='';sh.style.transform='';sh.style.height='';sh.style.maxHeight='';sh.style.overflow='';sh.classList.remove('expanded','show');$('scrim').classList.remove('show');const eg=$('sheetEdgeGlobal');if(eg)eg.remove();syncOverlayInert();const rf=_sheetReturnFocus;_sheetReturnFocus=null;if(rf&&document.contains(rf))rf.focus();if(TAB_SYNC_PENDING!=null){const at=TAB_SYNC_PENDING;TAB_SYNC_PENDING=null;applyForeignSave(at)}}
+}function closeSheet(){_draftSnap=null;ovHistPop();if(ST.recSel.mode){ST.recSel.mode=false;ST.recSel.ids.clear();updateSelBottom()} /* recSel은 탭(go())이 아니라 시트 안에서만 쓰는 선택모드라, 시트가 닫힐 때(스와이프·스크림 탭 등 openRecManage()를 거치지 않는 경로 포함) 여기서 정리해야 다음에 열 때 선택모드가 그대로 남아있지 않음(app-evolve cycle301 critique → advance) */const sh=$('sheet');sh.style.transition='';sh.style.transform='';sh.style.height='';sh.style.maxHeight='';sh.style.overflow='';sh.classList.remove('expanded','show');$('scrim').classList.remove('show');const eg=$('sheetEdgeGlobal');if(eg)eg.remove();syncOverlayInert();const rf=_sheetReturnFocus;_sheetReturnFocus=null;if(rf&&document.contains(rf))rf.focus();if(TAB_SYNC_PENDING!=null){const at=TAB_SYNC_PENDING;TAB_SYNC_PENDING=null;applyForeignSave(at)}}
 /* 시트를 열 때(openTxSheet/editTx/duplicateTx/recApply, openAssetSheet, openGoalForm,
  * openRecSheet/editRec) snapDraft(kind)로 초안 스냅샷을 찍어두고, 암묵적 닫기 경로
  * (스크림탭/스와이프다운 닫기/뒤로가기)가 그 스냅샷과 달라진 초안을 경고 없이 버리지
@@ -10709,6 +10723,18 @@ function doBulkOwnerMove(ids,newOwner){if(twGuard())return;
   items.forEach((a,i)=>{a.owner=prevOwner[i]});
   goalItems.forEach(x=>{x.g.owner=x.prevOwner});
   touchSave(...items,...goalItems.map(x=>x.g));renderCurrent();toast('되돌렸어요')})}
+/* 반복 내역 관리 선택모드(ST.recSel)의 '일시중지'/'다시 시작' 바닥바 버튼이 호출 — recActiveSel()이
+ * bulkRecActiveTargets()(logic.js)로 먼저 검증해 넘긴 ids/next만 다루므로 여기선 재검증 없이 바로
+ * 적용한다. doBulkInclToggle(자산 선택모드의 '포함'/'제외' 일괄 전환)과 동일하게 touchSave(...)로 한
+ * 번에 touch+save한 뒤 undoToast로 되돌릴 수 있게 한다(app-evolve cycle301 critique → advance). */
+function doBulkRecActive(ids,next){if(twGuard())return;
+ const r=bulkRecActiveTargets(DB.recurrences,ids);if(!r.ok)return;
+ const items=r.items,prev=items.map(x=>!!x.active);
+ items.forEach(x=>{x.active=next});
+ touchSave(...items);renderCurrent();
+ undoToast(`${items.length}개 반복을 ${next?'다시 시작':'일시중지'}했어요`,()=>{
+  items.forEach((x,i)=>{x.active=prev[i]});
+  touchSave(...items);renderCurrent();toast('되돌렸어요')})}
 function deleteRecsUndo(ids){if(twGuard())return;const removed=DB.recurrences.filter(r=>ids.has(r.id));
  DB.recurrences=DB.recurrences.filter(r=>!ids.has(r.id));
  DB.deletedIds=DB.deletedIds||{};const now=Date.now();ids.forEach(id=>DB.deletedIds[id]=now);
@@ -10948,6 +10974,37 @@ function assetOwnerSel(){
  assetOwnerMovePickFor(new Set(ST.aSel.ids),()=>{ST.aSel.mode=false;ST.aSel.ids.clear();renderAssets()});
 }
 
+/* 반복 내역 관리 선택모드(ST.recSel) — assetToggleSel/assetSelAll(자산 선택모드)과 동일한 패턴으로,
+ * recManageBody가 #recBody 안에 있으면(시트가 열려 있으면) 그 부분만 다시 그리고, 없으면(이례적으로
+ * 시트 밖에서 불렸거나 아직 안 열렸으면) openRecManage()로 전체를 새로 연다(app-evolve cycle301
+ * critique → advance). 반복 내역 관리는 검색 상태를 별도로 저장해두지 않고 선택모드 중엔 검색창 자체를
+ * 숨기므로(openRecManage), recManageBody('')로 항상 전체 목록을 기준으로 다시 그린다. */
+function recSelPartial(){const b=$('recBody');if(b){b.innerHTML=recManageBody('');updateSelBottom();return true}return false}
+function recToggleSel(id){if(window._lpJustFired){window._lpJustFired=false;return}ST.recSel.ids.has(id)?ST.recSel.ids.delete(id):ST.recSel.ids.add(id);if(!recSelPartial())openRecManage()}
+function recSelAll(){const items=DB.recurrences||[];if(items.length&&ST.recSel.ids.size>=items.length)ST.recSel.ids.clear();else items.forEach(r=>ST.recSel.ids.add(r.id));if(!recSelPartial())openRecManage()}
+/* 반복 내역 관리 선택모드 바닥바의 '삭제' 버튼 — assetDelSel과 동일하게 confirmSheet로 한 번 확인받은
+ * 뒤 deleteRecsUndo(이미 Set을 받아 일괄 삭제+단일 undo토스트를 지원)를 그대로 재사용한다. delRecConfirm
+ * (건당 삭제)과 같은 문구를 쓴다. confirmSheet가 여는 시트가 현재 열려 있는 "반복 내역 관리" 시트 내용을
+ * 그대로 덮어쓰고, 확인을 누르면 closeSheet() 후 콜백이 실행되어 시트 전체가 닫힌다(delRecConfirm과
+ * 동일한 기존 동작). */
+function recDelSel(){
+ if(!ST.recSel.ids.size){toast('선택된 반복이 없어요');return}
+ confirmSheet('반복 삭제',`<b style="color:var(--expense);font-size:16px">${ST.recSel.ids.size}개</b> 반복 내역을 삭제할까요? 앞으로 자동 기록이 중단돼요.`,'삭제',()=>{
+  const ids=new Set(ST.recSel.ids);ST.recSel.mode=false;ST.recSel.ids.clear();deleteRecsUndo(ids);
+ });
+}
+/* 반복 내역 관리 선택모드 바닥바의 '일시중지'/'다시 시작' 버튼 — activeSel()이 bulkRecActiveTargets()로
+ * 이미 섞임 여부를 판단해 둔 것(updateSelBottom 참고)이므로 여기선 재검증 없이 doBulkRecActive만
+ * 호출한다. assetInclSel과 달리 삭제처럼 시트가 저절로 닫히지 않으므로(doBulkRecActive는 메인 탭만
+ * renderCurrent()로 갱신), 선택모드를 끈 뒤 openRecManage()로 시트를 직접 다시 그려 검색창·추가 버튼을
+ * 복귀시키고 바뀐 active 상태를 반영한다(app-evolve cycle301 critique → advance). */
+function recActiveSel(next){
+ if(!ST.recSel.ids.size){toast('선택된 반복이 없어요');return}
+ const ids=new Set(ST.recSel.ids);ST.recSel.mode=false;ST.recSel.ids.clear();
+ doBulkRecActive(ids,next);
+ openRecManage();
+}
+
 /* ================= ROUTER ================= */
 const renderers={home:renderHome,assets:renderAssets,ledger:renderLedger,history:renderHistory,plan:renderPlan,menu:renderMenu};
 function renderCurrent(){
@@ -10986,6 +11043,21 @@ function activeSel(){
  }
  if(ST.lSel.mode)return{all:'ledgerSelAll()',del:'ledgerDelSel()',cat:'ledgerCatSel()',move:'ledgerAssetMoveSel()',size:ST.lSel.ids.size,total:dayTxns(ST.ledger.sel).filter(visibleTx).filter(t=>!t.isRec).length};
  if(ST.hist.selMode)return{all:'histSelAll()',del:'histDelSel()',cat:'histCatSel()',move:'histAssetMoveSel()',size:ST.hist.sel.size,total:filteredHist().filter(t=>!t.isRec).length};
+ /* 반복 내역 관리 선택모드(ST.recSel) — incl(자산의 총자산 포함/제외)과 동일한 '현재 상태가 섞였는지'
+    판정 모양을 그대로 쓴다. bulkRecActiveTargets(logic.js)가 선택된 반복들의 active가 섞여 있으면
+    (mixed) 일시중지/다시시작 버튼을 둘 다, 전부 같으면(allActive로 어느 쪽인지 판단) 반대 상태로
+    토글하는 버튼 하나만 돌려준다(updateSelBottom이 recActive 배열을 그대로 렌더). 반복 내역 관리는
+    시트 안이라 total은 visibleAssetsForSel처럼 화면에 보이는 범위가 아니라 DB.recurrences 전체다 —
+    선택모드 중엔 검색창을 숨겨 필터가 없기 때문(openRecManage/recManageBody)(app-evolve cycle301
+    critique → advance). */
+ if(ST.recSel.mode){
+  let recActive=null;
+  if(ST.recSel.ids.size){
+   const r=bulkRecActiveTargets(DB.recurrences,ST.recSel.ids);
+   if(r.ok)recActive=r.mixed?['pause','resume']:(r.allActive?['pause']:['resume']);
+  }
+  return{all:'recSelAll()',del:'recDelSel()',recActive,size:ST.recSel.ids.size,total:(DB.recurrences||[]).length};
+ }
  return null;
 }
 function updateSelBottom(){const el=$('selBarBottom');if(!el)return;const s=activeSel();
@@ -10996,12 +11068,16 @@ function updateSelBottom(){const el=$('selBarBottom');if(!el)return;const s=acti
     선택이 비었으면 null — activeSel()이 이미 판단해 뒀으므로 여기선 버튼 라벨만 뽑는다
     (app-evolve cycle296 advance) */
  const inclBtns=(s.incl||[]).map(k=>k==='incl'?`<button class="sbb sbb-incl" onclick="assetInclSel(true)">${svg('eye')} 포함</button>`:`<button class="sbb sbb-incl" onclick="assetInclSel(false)">${svg('eyeOff')} 제외</button>`).join('');
- el.classList.toggle('has-cat',!!s.cat||!!s.move||!!s.ownerMove||!!(s.incl&&s.incl.length));
+ /* s.recActive(recSel 전용)도 incl과 동일한 모양 — ['pause'],['resume'],['pause','resume'] 중 하나
+    (app-evolve cycle301 critique → advance) */
+ const recActiveBtns=(s.recActive||[]).map(k=>k==='pause'?`<button class="sbb sbb-incl" onclick="recActiveSel(false)">${svg('pause')} 일시중지</button>`:`<button class="sbb sbb-incl" onclick="recActiveSel(true)">${svg('play')} 다시 시작</button>`).join('');
+ el.classList.toggle('has-cat',!!s.cat||!!s.move||!!s.ownerMove||!!(s.incl&&s.incl.length)||!!(s.recActive&&s.recActive.length));
  el.innerHTML=`<button class="sbb sbb-all" onclick="${s.all}">${allOn?'전체 해제':'전체 선택'}</button>`
   +(s.cat?`<button class="sbb sbb-cat" onclick="${s.cat}">${svg('tag')} 카테고리</button>`:'')
   +(s.move?`<button class="sbb sbb-move" onclick="${s.move}">${svg('wallet')} 계좌</button>`:'')
   +(s.ownerMove?`<button class="sbb sbb-move" onclick="${s.ownerMove}">${svg('users')} 귀속</button>`:'')
   +inclBtns
+  +recActiveBtns
   +`<button class="sbb-x" onclick="exitSelMode()" aria-label="선택 취소">${svg('x')}</button>`
   +`<button class="sbb sbb-del" onclick="${s.del}">${svg('trash')} 삭제${s.size?' '+s.size:''}</button>`;
  el.classList.add('show');
@@ -11010,6 +11086,7 @@ function exitSelMode(){
  if(ST.aSel.mode){ST.aSel.mode=false;ST.aSel.ids.clear();renderAssets();}
  else if(ST.lSel.mode){ST.lSel.mode=false;ST.lSel.ids.clear();renderLedger();}
  else if(ST.hist.selMode){ST.hist.selMode=false;ST.hist.sel.clear();updateHist();} /* 스크롤 유지 */
+ else if(ST.recSel.mode){ST.recSel.mode=false;ST.recSel.ids.clear();openRecManage();}
  updateSelBottom();
 }
 /* 빈 곳을 탭하면 선택 모드 해제 (항목·버튼·바 제외) */
@@ -11042,7 +11119,7 @@ function navGo(t){ /* 가계부 탭 누르면 마지막 보던 모드(달력/목
 /* 달력↔목록 전환 시 보고 있는 월을 공유 */
 function toList(){histInvalidate();go('history')} /* 달력→전체 */
 function toCal(){go('ledger')} /* 전체→달력 */
-function go(tab){if(ST.aSel.mode){ST.aSel.mode=false;ST.aSel.ids.clear()}if(ST.lSel.mode){ST.lSel.mode=false;ST.lSel.ids.clear()}if(ST.hist.selMode){ST.hist.selMode=false;ST.hist.sel.clear()}
+function go(tab){if(ST.aSel.mode){ST.aSel.mode=false;ST.aSel.ids.clear()}if(ST.lSel.mode){ST.lSel.mode=false;ST.lSel.ids.clear()}if(ST.hist.selMode){ST.hist.selMode=false;ST.hist.sel.clear()}if(ST.recSel.mode){ST.recSel.mode=false;ST.recSel.ids.clear()}
  if(ST.tab==='history'&&tab!=='history')clearTimeout(_histQT); /* 전체내역을 벗어나며 histQ 디바운스 타이머가 남아있으면, 언마운트된 화면을 뒤늦게 updateHist()로 다시 그리지 않도록 정리 */
  const _tnAction=tabNavAction(tab,_tabNavPushed); /* 탭 레벨 백버튼 history entry 판정(logic.js) */
  if(_tnAction==='push'){_tabNavPushed=true;try{history.pushState({tabNav:true},'')}catch(e){}}

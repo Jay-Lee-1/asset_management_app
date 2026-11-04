@@ -204,6 +204,7 @@ const FUNCTIONS = [
   'csvMapSetMode', 'csvMapSetCatKind', 'csvMapColChosen', 'csvMapPickCol', 'csvMapPickAsset', 'csvMapPickCategory', 'csvMapApply',
   'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo', 'delAsset', 'assetDelSel', 'unsnapshotAssetName', 'doBulkCat', 'bulkCatPickFor', 'doBulkInclToggle', 'assetInclSel',
   'doBulkAssetMove', 'bulkAssetMovePickFor', 'ledgerAssetMoveSel', 'histAssetMoveSel', 'doBulkOwnerMove', 'assetOwnerMovePickFor', 'assetOwnerSel',
+  'doBulkRecActive', 'recSelPartial', 'recToggleSel', 'recSelAll', 'recDelSel', 'recActiveSel',
   'assetMergeCounts', 'openAssetMergePicker', 'confirmAssetMerge', 'mergeAssetInto',
   // archiveTxnsBefore/archiveMonthPicked/openArchiveOld는 app-evolve cycle222 advance('오래된
   // 데이터 정리' 메뉴 — cycle221 critique/advance가 준비해 둔 archiveBaselines()를 처음 실제로
@@ -10207,6 +10208,86 @@ test('activeSel: 일별거래/전체내역 선택모드(lSel/hist)엔 ownerMove�
   assert.strictEqual(s.ownerMove, undefined);
 });
 
+/* ---------- bulkRecActiveTargets(logic.js)/doBulkRecActive: 반복 내역 관리 선택모드(ST.recSel)의
+ * 일괄 '일시중지'/'다시 시작' (app-evolve cycle301 critique → advance) ---------- */
+test('bulkRecActiveTargets: 선택이 비었으면 reason:empty', () => {
+  const r = sandbox.bulkRecActiveTargets([{ id: 'r', active: true }], new Set());
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.reason, 'empty');
+});
+test('bulkRecActiveTargets: ids가 실제 반복과 하나도 안 맞아도 reason:empty', () => {
+  const r = sandbox.bulkRecActiveTargets([{ id: 'r', active: true }], new Set(['없는id']));
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.reason, 'empty');
+});
+test('bulkRecActiveTargets: 선택된 반복이 전부 active면 allActive:true, mixed:false', () => {
+  const recs = [{ id: 'r1', active: true }, { id: 'r2', active: true }];
+  const r = sandbox.bulkRecActiveTargets(recs, new Set(['r1', 'r2']));
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.allActive, true);
+  assert.strictEqual(r.mixed, false);
+});
+test('bulkRecActiveTargets: 선택된 반복이 전부 일시중지 상태면 allActive:false, mixed:false', () => {
+  const recs = [{ id: 'r1', active: false }, { id: 'r2', active: false }];
+  const r = sandbox.bulkRecActiveTargets(recs, new Set(['r1', 'r2']));
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.allActive, false);
+  assert.strictEqual(r.mixed, false);
+});
+test('bulkRecActiveTargets: 선택된 반복의 active 여부가 섞여 있으면 mixed:true', () => {
+  const recs = [{ id: 'r1', active: true }, { id: 'r2', active: false }];
+  const r = sandbox.bulkRecActiveTargets(recs, new Set(['r1', 'r2']));
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.mixed, true);
+});
+test('bulkRecActiveTargets: 선택되지 않은 반복은 items에 포함되지 않는다', () => {
+  const r1 = { id: 'r1', active: true };
+  const r2 = { id: 'r2', active: true };
+  const r3 = { id: 'r3', active: false }; // 선택 안 됨
+  const r = sandbox.bulkRecActiveTargets([r1, r2, r3], new Set(['r1', 'r2']));
+  assert.deepStrictEqual(r.items, [r1, r2]);
+});
+test('doBulkRecActive: 선택한 반복들의 active를 일괄로 바꾼다', () => {
+  sandbox.TWi = -1;
+  const r1 = { id: 'r1', active: true, updatedAt: 1 };
+  const r2 = { id: 'r2', active: false, updatedAt: 1 };
+  sandbox.DB = { recurrences: [r1, r2] };
+  sandbox.lastUndo = null;
+  sandbox.doBulkRecActive(new Set(['r1', 'r2']), false);
+  assert.strictEqual(r1.active, false);
+  assert.strictEqual(r2.active, false);
+  assert.strictEqual(r1.updatedAt, 'test-updatedAt', 'touchSave로 touch()가 호출되어야 함(mergeCollection 동기화 불변식)');
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함');
+});
+test('doBulkRecActive: undo 콜백을 부르면 각 반복의 원래 active로 정확히 복원한다(섞여 있던 선택도)', () => {
+  sandbox.TWi = -1;
+  const r1 = { id: 'r1', active: true, updatedAt: 1 };
+  const r2 = { id: 'r2', active: false, updatedAt: 1 };
+  sandbox.DB = { recurrences: [r1, r2] };
+  sandbox.lastUndo = null;
+  sandbox.doBulkRecActive(new Set(['r1', 'r2']), true);
+  assert.strictEqual(r1.active, true);
+  assert.strictEqual(r2.active, true);
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(r1.active, true, '원래 active였던 반복은 true로 돌아와야 함');
+  assert.strictEqual(r2.active, false, '원래 일시중지였던 반복은 false로 돌아와야 함');
+});
+test('doBulkRecActive: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 바뀌지 않는다', () => {
+  sandbox.TWi = 0;
+  const r1 = { id: 'r1', active: true };
+  sandbox.DB = { recurrences: [r1] };
+  sandbox.doBulkRecActive(new Set(['r1']), false);
+  assert.strictEqual(r1.active, true);
+  sandbox.TWi = -1;
+});
+test('doBulkRecActive: bulkRecActiveTargets이 실패(빈 선택)로 판정하면 아무 것도 바꾸지 않는다(recActiveSel이 먼저 걸러내므로 여기선 안전망)', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { recurrences: [] };
+  sandbox.lastUndo = null;
+  sandbox.doBulkRecActive(new Set(['없는id']), false);
+  assert.strictEqual(sandbox.lastUndo, null, 'undoToast도 호출되지 않아야 함');
+});
+
 /* ---------- deleteRecsUndo: 반복 삭제(전체) 공용 되돌리기 인프라 (delRecConfirm/recApply 'all' scope) ---------- */
 test('deleteRecsUndo: 지정한 id의 반복을 삭제하고, undo 콜백을 부르면 정확히 복원한다', () => {
   sandbox.TWi = -1;
@@ -19421,6 +19502,15 @@ function recManageCtx() {
     lastSheetHtml: null,
     openSheet: (html) => { ctx.lastSheetHtml = html; },
     svg: (key) => key,
+    // openRecManage()/recManageBody()가 선택모드(ST.recSel, app-evolve cycle301 critique → advance)를
+    // 참조하게 되면서 이 격리 ctx에도 최소 ST가 있어야 ReferenceError 없이 돌아간다. $/wireLongPress/
+    // updateSelBottom은 이 ctx가 원래부터 의도적으로 격리해 둔 무거운 전역 렌더/DOM 배선이라(주석 참고)
+    // 실제 구현을 끌어오지 않고 안전한 no-op으로만 남겨둔다 — $가 항상 null을 돌려주면 wireLongPress가
+    // 받는 root도 항상 null이라 실제 wireLongPress를 끌어와도 즉시 return하므로 둘 다 안전.
+    ST: { recSel: { mode: false, ids: new Set() } },
+    $: () => null,
+    wireLongPress: () => {},
+    updateSelBottom: () => {},
   };
   vm.createContext(ctx);
   vm.runInContext(logicSrc, ctx, { filename: 'logic.js' });
@@ -19637,6 +19727,74 @@ test('[실행형] recManageBody: 빈 검색어는 전체(안 거른) 결과와 �
   };
   assert.strictEqual(ctx.recManageBody(''), ctx.recManageBody('   '), '공백만 입력해도(trim 결과 빈 문자열) 빈 검색어와 동일하게 전체를 보여줘야 함');
 });
+/* ---------- openRecManage/recManageBody: 선택모드(ST.recSel) — 자산/거래 선택모드는 이미 선택→일괄동작
+ * (삭제·카테고리/계좌/귀속 변경 등) 패턴을 갖췄는데 반복 내역 관리 목록만 건당 버튼(복제/일시중지/삭제)뿐이고
+ * 선택모드가 전혀 없던 공백을 메운다(app-evolve cycle301 critique → advance). recManageCtx()는 ST가 없는
+ * 격리 ctx라 기본 ST.recSel.mode=false를 recManageCtx() 자체에 추가해 뒀고, 각 테스트는 쓰고 나서
+ * finally로 반드시 false로 되돌린다(_recManageCtx가 테스트 전체에서 캐시·재사용되는 싱글턴이라 한
+ * 테스트가 true로 남겨두면 이후의 다른 recManageCtx 테스트들까지 깨짐). ---------- */
+test('[실행형] openRecManage: 선택모드가 아니면 검색창과 "선택" 토글 버튼, "반복 추가" 버튼이 모두 뜬다', () => {
+  const ctx = recManageCtx();
+  ctx.ST.recSel.mode = false;
+  ctx.DB = { recurrences: [{ id: 'r1', type: 'expense', category: '월세', amount: 500000, freq: 'monthly', day: 1, startDate: '2026-01-01', active: true }] };
+  ctx.openRecManage();
+  const html = ctx.lastSheetHtml;
+  assert.ok(html.includes('id="recQ"'), '선택모드가 아니면 검색창이 떠야 함');
+  assert.ok(html.includes('onclick="ST.recSel.mode=true;openRecManage()"'), '선택 토글 버튼이 떠야 함');
+  assert.ok(html.includes('반복 추가'), '선택모드가 아니면 추가 버튼이 떠야 함');
+});
+test('[실행형] openRecManage: 선택모드면 검색창과 "선택" 버튼, "반복 추가" 버튼이 모두 숨겨진다', () => {
+  const ctx = recManageCtx();
+  ctx.ST.recSel.mode = true;
+  try {
+    ctx.DB = { recurrences: [{ id: 'r1', type: 'expense', category: '월세', amount: 500000, freq: 'monthly', day: 1, startDate: '2026-01-01', active: true }] };
+    ctx.openRecManage();
+    const html = ctx.lastSheetHtml;
+    assert.ok(!html.includes('id="recQ"'), '선택모드면 검색창이 뜨면 안 됨(검색 필터 없이 전체를 선택 대상으로 삼음)');
+    assert.ok(!html.includes('반복 추가'), '선택모드면 추가 버튼도 뜨면 안 됨');
+  } finally { ctx.ST.recSel.mode = false; }
+});
+test('[실행형] recManageBody: 선택모드면 각 행에 체크박스(sel-check)가 뜨고 복제/일시중지/삭제 버튼은 사라진다', () => {
+  const ctx = recManageCtx();
+  ctx.ST.recSel.mode = true;
+  try {
+    ctx.DB = { recurrences: [{ id: 'r1', type: 'expense', category: '월세', amount: 500000, freq: 'monthly', day: 1, startDate: '2026-01-01', active: true }] };
+    const html = ctx.recManageBody('');
+    assert.ok(html.includes('sel-check'), '선택모드면 체크박스(sel-check)가 떠야 함');
+    assert.ok(html.includes("onclick=\"recToggleSel('r1')\""), '행을 탭하면 recToggleSel을 불러야 함(editRec 대신)');
+    assert.ok(!html.includes('row-acts'), '선택모드면 건당 액션 버튼(복제/일시중지/삭제)이 없어야 함');
+    assert.ok(!html.includes("duplicateRec('r1')"), '복제 버튼도 없어야 함');
+    assert.ok(!html.includes("delRecConfirm('r1')"), '삭제 버튼도 없어야 함');
+  } finally { ctx.ST.recSel.mode = false; }
+});
+test('[실행형] recManageBody: 선택모드에서 선택된 항목은 sel-on 클래스와 aria-pressed="true"를 갖는다', () => {
+  const ctx = recManageCtx();
+  ctx.ST.recSel.mode = true;
+  ctx.ST.recSel.ids = new Set(['r1']);
+  try {
+    ctx.DB = {
+      recurrences: [
+        { id: 'r1', type: 'expense', category: '월세', amount: 500000, freq: 'monthly', day: 1, startDate: '2026-01-01', active: true },
+        { id: 'r2', type: 'expense', category: '구독', amount: 10000, freq: 'monthly', day: 5, startDate: '2026-01-05', active: true },
+      ],
+    };
+    const html = ctx.recManageBody('');
+    assert.ok(html.includes('sel-on'), '선택된 항목(r1)은 sel-on 클래스가 있어야 함');
+    const onCount = (html.match(/sel-check on/g) || []).length;
+    assert.strictEqual(onCount, 1, '선택된 항목(r1) 하나만 체크된 상태(sel-check on)여야 함');
+    assert.ok(html.includes('aria-pressed="true"'), '선택된 항목은 aria-pressed="true"여야 함');
+    assert.ok(html.includes('aria-pressed="false"'), '선택 안 된 항목(r2)은 aria-pressed="false"여야 함');
+  } finally { ctx.ST.recSel.mode = false; ctx.ST.recSel.ids = new Set(); }
+});
+test('[실행형] recManageBody: 선택모드가 아니면 여전히 기존처럼 체크박스 없이 row-acts(복제/일시중지/삭제)가 뜬다(회귀 가드)', () => {
+  const ctx = recManageCtx();
+  ctx.ST.recSel.mode = false;
+  ctx.DB = { recurrences: [{ id: 'r1', type: 'expense', category: '월세', amount: 500000, freq: 'monthly', day: 1, startDate: '2026-01-01', active: true }] };
+  const html = ctx.recManageBody('');
+  assert.ok(!html.includes('sel-check'), '선택모드가 아니면 체크박스가 없어야 함');
+  assert.ok(html.includes('row-acts'), '선택모드가 아니면 건당 액션 버튼은 그대로 떠야 함');
+  assert.ok(html.includes("onclick=\"editRec('r1')\""), '행을 탭하면 여전히 editRec을 불러야 함');
+});
 /* recQInput(디바운스)은 histQInput/assetQInput과 동일한 패턴 — 메인 sandbox는 setTimeout/clearTimeout이
  * 기본 no-op이라(fetchWithTimeout 등과 같은 이유) 이 블록에서만 스파이로 바꿔 검증하고 원복한다. */
 (() => {
@@ -19644,6 +19802,7 @@ test('[실행형] recManageBody: 빈 검색어는 전체(안 거른) 결과와 �
   function restore() { sandbox.setTimeout = origSetTimeout; sandbox.clearTimeout = origClearTimeout; sandbox.$ = orig$; }
   test('recQInput: 디바운스(220ms) 후에야 #recBody.innerHTML을 recManageBody(검색어)로 교체한다', () => {
     sandbox.DB = { recurrences: [{ id: 'r1', type: 'expense', category: '월세', amount: 500000, freq: 'monthly', day: 1, startDate: '2026-01-01', active: true }] };
+    sandbox.ST = { recSel: { mode: false, ids: new Set() } }; // recManageBody가 이제 ST.recSel.mode를 읽는다(app-evolve cycle301 critique → advance)
     const recBodyEl = { innerHTML: 'old' };
     let capturedMs = null, timerFn = null;
     sandbox.setTimeout = (fn, ms) => { capturedMs = ms; timerFn = fn; return 'timer'; };
@@ -19687,6 +19846,7 @@ test('[실행형] recManageBody: 빈 검색어는 전체(안 거른) 결과와 �
 test('toggleRecActive: 반복 내역 관리 검색창이 열려 있으면 openRecManage()로 전체를 새로 열지 않고 #recBody만 현재 검색어로 다시 그린다', () => {
   const rec = { id: 'r1', active: true, type: 'expense', category: '월세', amount: 500000, freq: 'monthly', day: 1, startDate: '2026-01-01' };
   sandbox.DB = { settings: {}, recurrences: [rec] };
+  sandbox.ST = { recSel: { mode: false, ids: new Set() } }; // recManageBody가 이제 ST.recSel.mode를 읽는다(app-evolve cycle301 critique → advance)
   const recBodyEl = { innerHTML: 'old' };
   const orig$ = sandbox.$, origOpenRecManage = sandbox.openRecManage;
   let openRecManageCalls = 0;
@@ -19709,6 +19869,125 @@ test('toggleRecActive: 검색창이 화면에 없으면(다른 진입 경로) �
     sandbox.toggleRecActive('r1');
     assert.strictEqual(openRecManageCalls, 1, '#recQ/#recBody가 없으면 기존 동작(전체 재오픈)으로 폴백해야 함');
   } finally { sandbox.$ = orig$; sandbox.openRecManage = origOpenRecManage; }
+});
+
+/* ---------- recToggleSel/recSelAll/recDelSel/recActiveSel: 반복 내역 관리 선택모드(ST.recSel)
+ * (app-evolve cycle301 critique → advance) ---------- */
+test('recToggleSel: 선택한 id를 추가하고, #recBody만 다시 그린다(openRecManage() 전체 재오픈 없음)', () => {
+  sandbox.DB = { recurrences: [{ id: 'r1', type: 'expense', category: '월세', amount: 500000, freq: 'monthly', day: 1, startDate: '2026-01-01', active: true }] };
+  sandbox.ST = { recSel: { mode: true, ids: new Set() } };
+  const recBodyEl = { innerHTML: 'old' };
+  const orig$ = sandbox.$, origOpenRecManage = sandbox.openRecManage;
+  let openRecManageCalls = 0;
+  sandbox.$ = (id) => (id === 'recBody' ? recBodyEl : null);
+  sandbox.openRecManage = () => { openRecManageCalls++; };
+  try {
+    sandbox.recToggleSel('r1');
+    assert.ok(sandbox.ST.recSel.ids.has('r1'), 'r1이 선택 목록에 추가돼야 함');
+    assert.strictEqual(openRecManageCalls, 0, '#recBody가 있으면 openRecManage() 전체를 다시 열면 안 됨');
+    assert.ok(recBodyEl.innerHTML.includes('sel-on'), '#recBody가 새 선택 상태(sel-on)로 갱신돼야 함');
+  } finally { sandbox.$ = orig$; sandbox.openRecManage = origOpenRecManage; }
+});
+test('recToggleSel: 같은 id를 다시 호출하면 선택이 해제된다', () => {
+  sandbox.DB = { recurrences: [{ id: 'r1', type: 'expense', category: '월세', amount: 500000, freq: 'monthly', day: 1, startDate: '2026-01-01', active: true }] };
+  sandbox.ST = { recSel: { mode: true, ids: new Set(['r1']) } };
+  const recBodyEl = { innerHTML: 'old' };
+  const orig$ = sandbox.$;
+  sandbox.$ = (id) => (id === 'recBody' ? recBodyEl : null);
+  try {
+    sandbox.recToggleSel('r1');
+    assert.ok(!sandbox.ST.recSel.ids.has('r1'), 'r1이 선택 목록에서 제거돼야 함');
+    assert.ok(!recBodyEl.innerHTML.includes('sel-on'), '선택 해제 후에는 sel-on 클래스가 없어야 함');
+  } finally { sandbox.$ = orig$; }
+});
+test('recToggleSel: #recBody가 없으면(폴백) openRecManage()로 전체를 다시 연다', () => {
+  sandbox.DB = { recurrences: [{ id: 'r1', type: 'expense', category: '월세', amount: 500000, freq: 'monthly', day: 1, startDate: '2026-01-01', active: true }] };
+  sandbox.ST = { recSel: { mode: true, ids: new Set() } };
+  const orig$ = sandbox.$, origOpenRecManage = sandbox.openRecManage;
+  let openRecManageCalls = 0;
+  sandbox.$ = () => null;
+  sandbox.openRecManage = () => { openRecManageCalls++; };
+  try {
+    sandbox.recToggleSel('r1');
+    assert.strictEqual(openRecManageCalls, 1, '#recBody가 없으면 폴백으로 openRecManage()를 불러야 함');
+  } finally { sandbox.$ = orig$; sandbox.openRecManage = origOpenRecManage; }
+});
+test('recSelAll: 전체선택되지 않은 상태에서 부르면 DB.recurrences 전체가 선택된다', () => {
+  sandbox.DB = {
+    recurrences: [
+      { id: 'r1', type: 'expense', category: '월세', amount: 500000, freq: 'monthly', day: 1, startDate: '2026-01-01', active: true },
+      { id: 'r2', type: 'income', category: '급여', amount: 3000000, freq: 'monthly', day: 25, startDate: '2026-01-25', active: true },
+    ],
+  };
+  sandbox.ST = { recSel: { mode: true, ids: new Set() } };
+  const orig$ = sandbox.$, origOpenRecManage = sandbox.openRecManage;
+  sandbox.$ = () => null; // openRecManage 폴백 경로로 충분 — 여기선 선택 집합만 확인
+  sandbox.openRecManage = () => {};
+  try {
+    sandbox.recSelAll();
+    assert.strictEqual(sandbox.ST.recSel.ids.size, 2, '전체선택 시 두 건 모두 선택돼야 함');
+  } finally { sandbox.$ = orig$; sandbox.openRecManage = origOpenRecManage; }
+});
+test('recSelAll: 이미 전체선택된 상태에서 다시 부르면 전체 해제된다', () => {
+  sandbox.DB = { recurrences: [{ id: 'r1', type: 'expense', category: '월세', amount: 500000, freq: 'monthly', day: 1, startDate: '2026-01-01', active: true }] };
+  sandbox.ST = { recSel: { mode: true, ids: new Set(['r1']) } };
+  const orig$ = sandbox.$, origOpenRecManage = sandbox.openRecManage;
+  sandbox.$ = () => null;
+  sandbox.openRecManage = () => {};
+  try {
+    sandbox.recSelAll();
+    assert.strictEqual(sandbox.ST.recSel.ids.size, 0, '전체선택 상태에서 다시 부르면 선택이 모두 해제돼야 함');
+  } finally { sandbox.$ = orig$; sandbox.openRecManage = origOpenRecManage; }
+});
+test('recDelSel: 선택이 비어 있으면 안내 토스트만 띄우고 confirmSheet를 부르지 않는다', () => {
+  sandbox.DB = { recurrences: [{ id: 'r1', active: true }] };
+  sandbox.ST = { recSel: { mode: true, ids: new Set() } };
+  sandbox.confirmSheetCalls = [];
+  sandbox.recDelSel();
+  assert.strictEqual(sandbox.lastToast, '선택된 반복이 없어요');
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0);
+});
+test('recDelSel: 확인을 누르면 선택 모드가 꺼지고 선택된 id 전체가 deleteRecsUndo로 넘어간다', () => {
+  const r1 = { id: 'r1', active: true, type: 'expense', category: '월세', amount: 500000, freq: 'monthly', day: 1, startDate: '2026-01-01' };
+  const r2 = { id: 'r2', active: true, type: 'income', category: '급여', amount: 3000000, freq: 'monthly', day: 25, startDate: '2026-01-25' };
+  sandbox.DB = { settings: {}, recurrences: [r1, r2] };
+  sandbox.ST = { recSel: { mode: true, ids: new Set(['r1', 'r2']) } };
+  sandbox.confirmSheetCalls = [];
+  sandbox.lastUndo = null;
+  sandbox.recDelSel();
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 1);
+  assert.ok(sandbox.confirmSheetCalls[0].msg.includes('2개'), '선택 개수가 확인 메시지에 포함되어야 함');
+  assert.strictEqual(sandbox.ST.recSel.ids.size, 2, 'confirmSheet 콜백을 부르기 전에는 선택이 아직 유지되어야 함');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.ST.recSel.mode, false, '삭제를 확정하면 선택 모드가 꺼져야 함');
+  assert.strictEqual(sandbox.ST.recSel.ids.size, 0, '삭제를 확정하면 선택 목록이 비워져야 함');
+  assert.deepStrictEqual(sandbox.DB.recurrences, [], '선택된 반복 둘 다 삭제되어야 함');
+});
+test('recActiveSel: 선택이 비어 있으면 안내 토스트만 띄우고 아무 것도 바꾸지 않는다', () => {
+  const r1 = { id: 'r1', active: true };
+  sandbox.DB = { recurrences: [r1] };
+  sandbox.ST = { recSel: { mode: true, ids: new Set() } };
+  sandbox.lastUndo = null;
+  sandbox.recActiveSel(false);
+  assert.strictEqual(sandbox.lastToast, '선택된 반복이 없어요');
+  assert.strictEqual(r1.active, true);
+  assert.strictEqual(sandbox.lastUndo, null);
+});
+test('recActiveSel: 적용 후 선택모드를 끄고 openRecManage()로 시트를 다시 그린다(검색창·추가 버튼 복귀)', () => {
+  sandbox.TWi = -1;
+  const r1 = { id: 'r1', active: true, updatedAt: 1 };
+  sandbox.DB = { settings: {}, recurrences: [r1] };
+  sandbox.ST = { recSel: { mode: true, ids: new Set(['r1']) } };
+  const origOpenRecManage = sandbox.openRecManage;
+  let openRecManageCalls = 0;
+  sandbox.openRecManage = () => { openRecManageCalls++; };
+  try {
+    sandbox.recActiveSel(false);
+    assert.strictEqual(r1.active, false);
+    assert.strictEqual(sandbox.ST.recSel.mode, false, '적용 후 선택모드가 꺼져야 함');
+    assert.strictEqual(sandbox.ST.recSel.ids.size, 0);
+    assert.strictEqual(openRecManageCalls, 1, 'doBulkRecActive는 메인 탭만 갱신하므로 시트는 직접 다시 열어야 함');
+  } finally { sandbox.openRecManage = origOpenRecManage; }
 });
 
 /* ---------- addBalanceAdjust/updateBalanceAdjust: 부채(debt) 자산에 잔액 조정 내역을
@@ -25776,6 +26055,44 @@ test('activeSel: 선택된 자산의 포함 여부가 섞여 있으면 incl이 [
   const s = sandbox.activeSel();
   assert.deepStrictEqual(Array.from(s.incl), ['incl', 'excl']);
 });
+
+/* ---------- activeSel: 반복 내역 관리 선택모드(ST.recSel) — incl(자산의 총자산 포함/제외)과 동일한
+ * '현재 상태가 섞였는지' 판정 모양을 recActive로 돌려준다(app-evolve cycle301 critique → advance).
+ * aSel/lSel/hist 세 분기 모두 false여야 recSel 분기까지 떨어지므로 매번 셋 다 명시한다. ---------- */
+test('activeSel: 반복 내역 관리 선택모드(ST.recSel)에서 선택이 비어 있으면 recActive가 null이다', () => {
+  sandbox.ST = { aSel: { mode: false, ids: new Set() }, lSel: { mode: false, ids: new Set() }, hist: { selMode: false }, recSel: { mode: true, ids: new Set() } };
+  sandbox.DB = { recurrences: [{ id: 'r1', active: true }] };
+  const s = sandbox.activeSel();
+  assert.strictEqual(s.recActive, null);
+});
+test('activeSel: 선택된 반복이 전부 active면 recActive가 [pause](반대 상태로 토글하는 버튼 하나만)', () => {
+  sandbox.ST = { aSel: { mode: false, ids: new Set() }, lSel: { mode: false, ids: new Set() }, hist: { selMode: false }, recSel: { mode: true, ids: new Set(['r1', 'r2']) } };
+  sandbox.DB = { recurrences: [{ id: 'r1', active: true }, { id: 'r2', active: true }] };
+  const s = sandbox.activeSel();
+  assert.deepStrictEqual(Array.from(s.recActive), ['pause']);
+});
+test('activeSel: 선택된 반복이 전부 일시중지 상태면 recActive가 [resume](반대 상태로 토글하는 버튼 하나만)', () => {
+  sandbox.ST = { aSel: { mode: false, ids: new Set() }, lSel: { mode: false, ids: new Set() }, hist: { selMode: false }, recSel: { mode: true, ids: new Set(['r1', 'r2']) } };
+  sandbox.DB = { recurrences: [{ id: 'r1', active: false }, { id: 'r2', active: false }] };
+  const s = sandbox.activeSel();
+  assert.deepStrictEqual(Array.from(s.recActive), ['resume']);
+});
+test('activeSel: 선택된 반복의 active 여부가 섞여 있으면 recActive가 [pause,resume](둘 다 보여줌)', () => {
+  sandbox.ST = { aSel: { mode: false, ids: new Set() }, lSel: { mode: false, ids: new Set() }, hist: { selMode: false }, recSel: { mode: true, ids: new Set(['r1', 'r2']) } };
+  sandbox.DB = { recurrences: [{ id: 'r1', active: true }, { id: 'r2', active: false }] };
+  const s = sandbox.activeSel();
+  assert.deepStrictEqual(Array.from(s.recActive), ['pause', 'resume']);
+});
+test('activeSel: 반복 내역 관리 선택모드(ST.recSel)의 all/del은 recSelAll/recDelSel이고, total은 검색 필터 없이 DB.recurrences 전체 개수다', () => {
+  sandbox.ST = { aSel: { mode: false, ids: new Set() }, lSel: { mode: false, ids: new Set() }, hist: { selMode: false }, recSel: { mode: true, ids: new Set(['r1']) } };
+  sandbox.DB = { recurrences: [{ id: 'r1', active: true }, { id: 'r2', active: true }, { id: 'r3', active: true }] };
+  const s = sandbox.activeSel();
+  assert.strictEqual(s.all, 'recSelAll()');
+  assert.strictEqual(s.del, 'recDelSel()');
+  assert.strictEqual(s.size, 1);
+  assert.strictEqual(s.total, 3);
+});
+
 test('activeSel: 일별거래/전체내역 선택모드(lSel/hist)엔 incl이 없다(자산 전용 액션)', () => {
   setupLedgerDB();
   sandbox.ST.aSel = { mode: false, ids: new Set() };
