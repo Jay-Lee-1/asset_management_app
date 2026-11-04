@@ -55,7 +55,7 @@ function recDates(r,from,to){
      if(raw>end)break; /* end를 넘긴 해도 한 번 더 생성해 weekend 조정으로 앞당겨지는 경우를 놓치지 않는다 */
    }
  }else{
-   const step=r.freq==='daily'?1:7;
+   const step=r.freq==='daily'?1:(r.freq==='biweekly'?14:7);
    let cd=new Date(rs);
    /* from 이전 회차는 어차피 push()가 버리므로, weekend 조정(최대 ±2일) 여유를 둔 지점까지는
       건너뛰고 스캔을 시작한다 — 오래전 시작된 daily/weekly 반복거래를 매번 처음부터 순회하지 않기 위함.
@@ -83,10 +83,11 @@ function recDates(r,from,to){
 function recFreqLabelStr(freq,day,startDate){
  if(freq==='monthly')return `매월 ${day==='last'?'말일':day+'일'}`;
  if(freq==='daily')return '매일';
- if(!startDate)return freq==='weekly'?'매주':'매년';
+ if(!startDate)return freq==='weekly'?'매주':(freq==='biweekly'?'격주':'매년');
  const d=new Date(startDate+'T00:00:00');
- if(isNaN(d))return freq==='weekly'?'매주':'매년';
+ if(isNaN(d))return freq==='weekly'?'매주':(freq==='biweekly'?'격주':'매년');
  if(freq==='weekly')return `매주 ${['일','월','화','수','목','금','토'][d.getDay()]}요일`;
+ if(freq==='biweekly')return `격주 ${['일','월','화','수','목','금','토'][d.getDay()]}요일`;
  return `매년 ${d.getMonth()+1}월 ${d.getDate()}일`;
 }
 /* 반복 내역 관리 화면(openRecManage/index.html)의 월 총액 합계용 — freq별 금액을 월 기준으로
@@ -97,6 +98,7 @@ function recFreqLabelStr(freq,day,startDate){
 function monthlyEquivalent(r){
  const amt=Number(r.amount)||0;
  if(r.freq==='weekly')return amt*365/7/12;
+ if(r.freq==='biweekly')return amt*365/14/12;
  if(r.freq==='daily')return amt*365/12;
  if(r.freq==='yearly')return amt/12;
  return amt; /* monthly (및 알 수 없는 freq에 대한 안전한 기본값) */
@@ -124,6 +126,7 @@ function recNthDate(base,n){ /* n번째 반복 날짜 */
   if(f==='monthly')to=addMonthsStr(base.startDate,(n+2)*span);
   else if(f==='yearly')to=addMonthsStr(base.startDate,(n+2)*12*span);
   else if(f==='weekly')to=addDays(base.startDate,(n+2)*7*span);
+  else if(f==='biweekly')to=addDays(base.startDate,(n+2)*14*span);
   else to=addDays(base.startDate,(n+2)*span);
   ds=recDates(rbase,base.startDate,to);
   span*=2;
@@ -1174,6 +1177,7 @@ function recScheduleSameSlot(freq,a,b){
  const da=new Date(a.startDate+'T00:00:00'),db=new Date(b.startDate+'T00:00:00');
  if(isNaN(da)||isNaN(db))return a.day===b.day;
  if(freq==='weekly')return da.getDay()===db.getDay();
+ if(freq==='biweekly')return daysBetween(a.startDate,b.startDate)%14===0;
  return da.getMonth()===db.getMonth()&&da.getDate()===db.getDate();
 }
 function findPossibleDuplicateRec(recurrences,draft){

@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.345';
+const APP_VERSION='1.47.346';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5152,7 +5152,7 @@ function renderTxSheet(){
  const repeatChip=showRepeat?`<button class="sch-chip ${d.repeat?'on':''}" onclick="txToggleRepeat()"><span class="dot"></span>반복</button>`:'';
  let repeatFields='';
  if(rpt){
-  const freqBtns=[['monthly','매월'],['weekly','매주'],['daily','매일'],['yearly','매년']].map(([v,l])=>`<button class="${d.freq===v?'on':''}" onclick="txFreq('${v}')">${l}</button>`).join('');
+  const freqBtns=[['monthly','매월'],['weekly','매주'],['biweekly','격주'],['daily','매일'],['yearly','매년']].map(([v,l])=>`<button class="${d.freq===v?'on':''}" onclick="txFreq('${v}')">${l}</button>`).join('');
   let dayField='';
   if(d.freq==='monthly')dayField=dayPickerHTML(d,'tx');
   repeatFields=`
@@ -5669,7 +5669,7 @@ function renderRecSheet(){
  const splitOn=d.type!=='transfer'&&Array.isArray(d.splits)&&d.splits.length>=2;
  const catField=d.type==='transfer'?'':(splitOn?splitFieldHTML(d,'rec'):
   `<div class="field"><label>카테고리</label><button class="pick" onclick="recOpenCat()"><div class="pav ${catAv(d.type)}">${catGlyph(d.type,d.category,null,'tag')}</div><div class="pbody"><div class="pn">${esc(d.category)}</div></div><div class="pc">${svg('chevR')}</div></button></div><div style="margin:2px 0 14px;text-align:right"><button type="button" class="txt-btn" onclick="recToggleSplit()">여러 카테고리로 나누기</button></div>`);
- const freqBtns=[['monthly','매월'],['weekly','매주'],['daily','매일'],['yearly','매년']].map(([v,l])=>`<button class="${d.freq===v?'on':''}" onclick="recFreq('${v}')">${l}</button>`).join('');
+ const freqBtns=[['monthly','매월'],['weekly','매주'],['biweekly','격주'],['daily','매일'],['yearly','매년']].map(([v,l])=>`<button class="${d.freq===v?'on':''}" onclick="recFreq('${v}')">${l}</button>`).join('');
  let dayField='';
  if(d.freq==='monthly')dayField=dayPickerHTML(d,'rec');
  let assetFields='';

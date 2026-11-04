@@ -1280,6 +1280,19 @@ test('recDates: 윤년 아닌 날짜(예: 6/15)로 시작한 연간 반복은 �
   assert.deepStrictEqual(dates, ['2026-06-15', '2027-06-15', '2028-06-15', '2029-06-15']);
 });
 
+/* ---------- recDates: biweekly(격주) — step=14로 weekly(step=7)와 구분되는 새 주기 (app-evolve cycle300 advance) ---------- */
+test('recDates: biweekly는 14일 간격으로만 생성된다(매주가 아니라 2주마다)', () => {
+  const r = { freq: 'biweekly', startDate: '2026-01-05', endDate: null, weekend: 'none' }; // 2026-01-05는 월요일
+  const dates = Array.from(sandbox.recDates(r, '2026-01-01', '2026-02-28'));
+  assert.deepStrictEqual(dates, ['2026-01-05', '2026-01-19', '2026-02-02', '2026-02-16']);
+});
+test('recDates: biweekly는 weekly와 같은 요일만 생성하지만 절반 빈도다', () => {
+  const biweekly = Array.from(sandbox.recDates({ freq: 'biweekly', startDate: '2026-01-05', endDate: null, weekend: 'none' }, '2026-01-01', '2026-03-01'));
+  const weekly = Array.from(sandbox.recDates({ freq: 'weekly', startDate: '2026-01-05', endDate: null, weekend: 'none' }, '2026-01-01', '2026-03-01'));
+  assert.ok(biweekly.every(d => weekly.includes(d)), 'biweekly 결과는 모두 weekly 결과의 부분집합이어야 함');
+  assert.strictEqual(biweekly.length, Math.ceil(weekly.length / 2));
+});
+
 /* ---------- recNthDate/recCountUntil: 주말 조정 무시 버그 (78d96a5) ---------- */
 function nextSaturdayOnOrAfter(y, m, d) {
   const dt = new Date(y, m - 1, d);
@@ -1350,6 +1363,18 @@ test('recNthDate: 옛 버퍼로도 이미 맞던 작은 n(회귀 가드)과 week
   const none = sandbox.recNthDate({ freq: 'daily', startDate: '2026-01-01', weekend: 'none' }, 20);
   assert.strictEqual(none, '2026-01-20', 'weekend=none이면 n번째는 그냥 startDate+19일');
 });
+test('recNthDate/recCountUntil: biweekly도 recDates 결과와 정확히 일치한다', () => {
+  const base = { freq: 'biweekly', startDate: '2026-01-05', weekend: 'none' };
+  const n = 10;
+  const got = sandbox.recNthDate(base, n);
+  assert.strictEqual(got, '2026-05-11', '2026-01-05 + 9*14일');
+  const generated = sandbox.recDates(
+    { freq: 'biweekly', startDate: base.startDate, endDate: null, weekend: 'none' },
+    base.startDate, got
+  );
+  assert.strictEqual(generated.length, n);
+  assert.strictEqual(sandbox.recCountUntil(base, got), n, 'recCountUntil 역변환도 n과 일치해야 함');
+});
 
 /* ---------- truncateRecEnd: endDate·count를 항상 함께 맞추는 헬퍼 (cycle56, recApply/recSave/splitRecurrenceAt이 공유) ---------- */
 test('truncateRecEnd: 월간 반복을 cutoff 날짜로 자르면 endDate=cutoff, count는 그 시점까지의 실제 발생 횟수와 일치한다', () => {
@@ -1389,6 +1414,13 @@ test('recFreqLabelStr: startDate가 없으면(방어적 처리) weekly/yearly도
   assert.strictEqual(sandbox.recFreqLabelStr('weekly', null, null), '매주');
   assert.strictEqual(sandbox.recFreqLabelStr('yearly', null, undefined), '매년');
 });
+test('recFreqLabelStr: biweekly는 weekly와 동일하게 startDate의 요일을 "격주 ◯요일"로 덧붙인다', () => {
+  assert.strictEqual(sandbox.recFreqLabelStr('biweekly', null, '2026-03-02'), '격주 월요일'); // 2026-03-02는 월요일
+  assert.strictEqual(sandbox.recFreqLabelStr('biweekly', null, '2026-03-06'), '격주 금요일'); // 2026-03-06은 금요일
+});
+test('recFreqLabelStr: biweekly도 startDate가 없으면(방어적 처리) "격주"만 반환한다', () => {
+  assert.strictEqual(sandbox.recFreqLabelStr('biweekly', null, null), '격주');
+});
 test('[실행형] recFreqLabel: openRecManage 목록이 쓰는 실제 함수가 recFreqLabelStr(r.freq,r.day,r.startDate)에 그대로 위임한다', () => {
   assert.strictEqual(
     sandbox.recFreqLabel({ freq: 'weekly', day: null, startDate: '2026-03-06' }),
@@ -1413,6 +1445,9 @@ test('monthlyEquivalent: weekly는 연 발생횟수(365/7)를 12로 나눈 월 �
 });
 test('monthlyEquivalent: daily는 연 365회를 12로 나눈 월 평균으로 환산된다', () => {
   assert.strictEqual(sandbox.monthlyEquivalent({ freq: 'daily', amount: 1000 }), 1000 * 365 / 12);
+});
+test('monthlyEquivalent: biweekly는 연 발생횟수(365/14)를 12로 나눈 월 평균으로 환산된다', () => {
+  assert.strictEqual(sandbox.monthlyEquivalent({ freq: 'biweekly', amount: 20000 }), 20000 * 365 / 14 / 12);
 });
 test('monthlyEquivalent: yearly는 금액을 12로 나눈 값으로 환산된다', () => {
   assert.strictEqual(sandbox.monthlyEquivalent({ freq: 'yearly', amount: 120000 }), 10000);
@@ -6765,6 +6800,13 @@ test('findPossibleDuplicateRec: weekly는 day가 아니라 startDate 요일이 �
   const diffWeekday = { id: null, type: 'expense', freq: 'weekly', day: 1, startDate: '2026-01-09', amount: 10000, category: '구독', fromAssetId: 'a1', toAssetId: null };
   assert.strictEqual(sandbox.findPossibleDuplicateRec([existing], sameWeekday), existing, '둘 다 월요일 시작이면 day:1로 같아도 진짜 중복');
   assert.strictEqual(sandbox.findPossibleDuplicateRec([existing], diffWeekday), null, '월요일 용돈 vs 금요일 장보기처럼 요일이 다르면 day가 우연히 같아도 중복이 아니어야 함');
+});
+test('findPossibleDuplicateRec: biweekly는 요일이 같아도 2주 주기(phase)가 달라야 중복이 아니다', () => {
+  const existing = { id: 'r1', active: true, type: 'expense', freq: 'biweekly', day: 1, startDate: '2026-01-05', amount: 20000, category: '구독', fromAssetId: 'a1', toAssetId: null };
+  const samePhase = { id: null, type: 'expense', freq: 'biweekly', day: 1, startDate: '2026-01-19', amount: 20000, category: '구독', fromAssetId: 'a1', toAssetId: null }; // 14일 뒤, 같은 주기
+  const sameWeekdayDiffPhase = { id: null, type: 'expense', freq: 'biweekly', day: 1, startDate: '2026-01-12', amount: 20000, category: '구독', fromAssetId: 'a1', toAssetId: null }; // 같은 월요일이지만 7일 뒤(반대 주기)
+  assert.strictEqual(sandbox.findPossibleDuplicateRec([existing], samePhase), existing, '14일(배수) 차이는 같은 격주 슬롯이라 중복이어야 함');
+  assert.strictEqual(sandbox.findPossibleDuplicateRec([existing], sameWeekdayDiffPhase), null, '요일이 같아도 7일 차이(다른 주기)면 중복이 아니어야 함');
 });
 test('findPossibleDuplicateRec: yearly는 day가 아니라 startDate 월/일이 같아야 중복으로 본다', () => {
   const existing = { id: 'r1', active: true, type: 'expense', freq: 'yearly', day: 1, startDate: '2026-03-05', amount: 50000, category: '보험', fromAssetId: 'a1', toAssetId: null };

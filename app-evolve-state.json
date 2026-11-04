@@ -1,19 +1,8 @@
 {
-  "cycle": 300,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "반복 내역 주기에 격주(biweekly)/N일 간격 추가",
-    "why": "반복거래 주기(freq)는 daily/weekly/monthly/yearly 네 가지뿐이라(txFreq/recFreq 버튼, index.html:5155,5672) 격주 급여·2주 단위 청소/정수기 렌탈처럼 실제로 흔한 주기를 쓸 수 없어 사용자가 매주로 등록해 매번 하나씩 건너뛰거나(skip 배열이 수동 관리 부담) 매월로 어림잡아 틀린 날짜/금액이 쌓인다. logic.js recDates()는 weekly를 이미 step=7인 daily 변형(line58: const step=r.freq==='daily'?1:7)으로 처리하고 있어 step을 일반화하면 격주(step=14)나 N일 간격을 자연스럽게 확장할 수 있는 구조적 여지가 이미 있다.",
-    "approach": "logic.js recDates()의 step 계산을 r.freq==='daily'?1:(r.freq==='biweekly'?14:7) 형태로 확장(또는 r.freq==='custom'이면 r.interval(일) 사용)하고, monthlyEquivalent()에 biweekly 분기(365/14/12) 추가. index.html의 freqBtns 배열(5155, 5672 두 곳, txFreq/recFreq)에 ['biweekly','격주'] 옵션 추가하고 recFreqLabelStr()(logic.js:83)에 '격주 ◯요일' 레이블 분기 추가. _applyFreq/clampDay 등 freq==='monthly' 전용 분기는 건드리지 않되, freq!=='monthly' 분기에서 biweekly도 weekly와 동일하게 weekend 조정이 적용되는지 확인. 영향 범위가 넓은 48곳의 freq 비교 중 'monthly' 특수처리가 아닌 나머지(daily/weekly를 뭉쳐 처리하는 else 분기들)는 대부분 그대로 통과할 것으로 보이나 하나씩 확인 필요. test/run.js에 recDates/monthlyEquivalent/recFreqLabelStr biweekly 케이스 추가. 1차 범위는 'biweekly' 고정 간격만 추가하고(가장 흔한 요구), 완전 자유로운 N일 커스텀 간격은 UI 입력 필드가 더 필요해 범위 밖으로 둔다."
-  },
+  "cycle": 301,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 295,
-      "phase": "advance",
-      "timestamp": "2026-11-03T16:00:00.000Z",
-      "summary": "critique(cycle295) 계획대로 플랜(가계부 예측) 탭에 귀속별 \"전체 합산\" 선택을 추가했다. ST.plan.assetId가 단일 id 문자열 대신 id 배열도 가리킬 수 있게 넓히고 planIds()/planAssetObj() 정규화 헬퍼를 신설, openPlanAsset()에 통장이 2개 이상인 귀속마다 \"전체 합산\" 버튼(planAssetAll)을 추가했다. lowestInMonth/planBalInner/planBalCard/planRowsHTML/renderPlan/refreshPlanBody를 모두 ids 배열 기준으로 합산 계산하게 고치고, planRowsHTML()은 합산 선택 안의 계좌끼리 주고받은 내부이체는 순잔액에 영향이 없어 흐름 목록에서 제외하며 외부 흐름에는 어느 통장인지 .mini 보조 라벨을 붙인다. 기존 단일계좌 경로/테스트(lowestInMonth(\"a1\",..) 등)는 전부 그대로 통과하도록 하위호환을 유지했다. test/run.js FUNCTIONS 추출 목록에 planIds/planAssetObj/planAssetAll 추가, 신규 테스트 6건(크로스리얼름 배열 비교는 Array.from()으로 우회). 테스트 2611->2617 통과. APP_VERSION 1.47.335->1.47.336, sw.js CACHE v602->v603. node test/run.js 2617/2617 통과, logic.js/sw.js/index.html 인라인 스크립트 구문 검증(node --check) 통과. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 296,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-04T07:10:00.000Z",
       "summary": "서브에이전트로 앱 전체를 재조사. 서브에이전트의 1순위 추천(카테고리 예산을 귀속별로 분리)은 cycle299 critique가 이미 명시한 대로 cycle194/196/295에서 전역 예산을 의도적 설계로 재확인한 항목이라 재채택하지 않고 기각, 2순위 후보를 선정했다. 발견: 반복거래 주기(freq)가 daily/weekly/monthly/yearly 네 가지뿐이라(txFreq/recFreq 버튼, index.html:5155·5672) 격주 급여나 2주 단위 정기 지출처럼 실제로 흔한 주기를 표현할 방법이 없음 — recDates()(logic.js:30)가 weekly를 이미 step=7인 daily 변형(58행: const step=r.freq==='daily'?1:7)으로 처리해 step 일반화로 격주(step=14)를 자연스럽게 확장할 구조적 여지가 있다. pending_advance_plan에 저장(격주만 1차 범위, 완전 자유 N일 간격은 UI 입력 필드가 더 필요해 범위 밖). (보류: 반복 내역 관리 복제/일시중지/삭제는 cycle299에서 이미 다룸; fx/stock 등 자산 간 환전·매수 기록 연동은 원장 모델 재검토급 항목이라 cycle297이 이미 보류한 대로 재차 보류.) 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 300,
+      "phase": "advance",
+      "timestamp": "2026-11-04T08:11:45.213Z",
+      "summary": "critique(cycle300) 계획대로 반복 내역 주기에 '격주(biweekly)'를 추가했다. logic.js: recDates()의 step 계산을 r.freq==='daily'?1:(r.freq==='biweekly'?14:7)로 확장(else 분기, 기존 weekly=7과 분리), monthlyEquivalent()에 biweekly 분기(amt*365/14/12) 추가, recFreqLabelStr()에 '격주 ◯요일' 레이블(weekly와 동일하게 startDate 요일 기반) 추가, recNthDate()의 버퍼 추정식에 biweekly 전용 분기(14*span)를 weekly 옆에 추가(없어도 doubling으로 결국 수렴하지만 weekly와 같은 패턴으로 명시). recScheduleSameSlot()(findPossibleDuplicateRec이 쓰는 '같은 반복 슬롯' 판정)에 biweekly 분기를 추가했다 — 계획에 없던 발견: biweekly를 weekly처럼 요일만 비교하면 같은 요일인데 2주 중 다른 주(7일 차이)인 두 반복을 중복으로 오판하므로, daysBetween(a.startDate,b.startDate)%14===0(요일 일치를 자동 포함)으로 '같은 2주 주기'까지 비교하게 했다. index.html: txFreq/recFreq 각각의 freqBtns 배열(5155, 5672)에 ['biweekly','격주'] 옵션 추가 — _applyFreq/clampDay/weekend 필드 노출/recFreq의 weekend 리셋은 모두 freq==='monthly' 전용 분기라 손대지 않고 그대로 통과함을 코드 확인. sanitizeBackup도 freq별 화이트리스트 검증이 없어(monthly 전용 day/weekend 정규화만 존재) 수정 불필요. 계획이 언급한 완전 자유 N일 간격(custom)은 1차 범위대로 제외. 테스트 10건 추가: recDates biweekly 2건, recFreqLabelStr biweekly 2건, monthlyEquivalent biweekly 1건, recNthDate/recCountUntil biweekly 1건, findPossibleDuplicateRec biweekly phase 판정 1건(14일 차이=중복, 7일 차이=비중복) — 2682->2692 통과. APP_VERSION 1.47.345->1.47.346, sw.js CACHE v612->v613. node test/run.js 2692/2692 통과, logic.js/sw.js node --check 통과, index.html 메인 인라인 스크립트 new Function 구문 검증 통과. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]
