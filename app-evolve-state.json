@@ -1,15 +1,12 @@
 {
   "cycle": 303,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "목표(goals) targetDate 기반 \"월 저축 필요액\" 캡션 추가",
+    "why": "targetDate(목표일)를 입력받지만 goalIsOverdue의 지남 여부 판정 외에는 전혀 쓰이지 않음 — goalProgress()의 projectedDate는 최근 90일 추세 기반이라 targetDate와 무관. 예산/부채상환/만기 등 다른 날짜 기반 기능은 모두 역산 전망을 제공하는데 목표만 입력받은 데드라인을 절반만 쓰는 구조적 공백.",
+    "approach": "logic.js에 amortizationPayoffMonths(logic.js:948) 옆에 순수 함수 requiredMonthlyPace(cur,target,targetDate,today) 신설 — remaining=target-cur, monthsBetween(today,targetDate)(달 단위, 최소 1로 clamp)로 나눠 필요 월 저축액 반환(이미 달성/targetDate 없음/이미 지남이면 null). goalProgress()(logic.js:841-860) 반환 객체에 requiredMonthly 필드 추가(기존 projectedDate와 나란히, 하위호환 위해 targetDate 없으면 null). goalRowHTML()(index.html:3499-3511)의 projectedDate 캡션 아래에 p.requiredMonthly 있을 때 \"목표일까지 매달 약 OOO원 필요해요\" 캡션 추가. 1차 범위: targetDate 설정된 목표의 월 저축 필요액 캡션 노출까지만 — 자동 저축 추천(recurring 생성), 다수 목표 우선순위/자원배분, 홈 알림(homeAlerts 새 kind) 연동은 범위 밖."
+  },
   "history": [
-    {
-      "cycle": 298,
-      "phase": "critique",
-      "timestamp": "2026-11-03T22:50:00.000Z",
-      "summary": "서브에이전트로 앱 전체를 재조사. 발견: 전체내역/일별거래 다건 선택모드는 카테고리 일괄변경(doBulkCat)과 삭제만 지원하고, 선택한 여러 내역을 다른 계좌로 한꺼번에 옮기는 '계좌 일괄 이동' 기능이 없음 — 단건 수정의 _applyOpenAsset(txOpenAsset/recOpenAsset)가 이미 fromAssetId/toAssetId 변경을 지원하고 잔액이 balancesUpTo로 매번 재생되는 파생값이라 리스크가 크지 않은 구조인데도 다건에는 붙어있지 않다. cycle295 critique가 같은 공백을 봤지만 당시 플랜 탭 단일계좌 한계(해결됨)에 밀려 보류됐을 뿐 공백은 그대로 남아있었음을 확인. pending_advance_plan에 저장. (보류: 반복내역 관리 목록 삭제가 편집화면을 거쳐야 하는 점은 cycle297 critique가 이미 develop 사이즈로 분류해 이번 pick과 중복 배제; CSV 내보내기 기간 필터 부재는 백업 전체 내보내기로 우회 가능해 영향 작음; PIN 평문저장/fx·stock 환전기록/주식분할은 기존에 반복 보류된 항목이라 재차 제외.) 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 298,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-04T19:08:06.000Z",
       "summary": "cycle303 develop 커밋(4b0691f) 검토 — PWA 홈 숏컷 shortcuts 배열에 저축(addSaving)을 지출/수입/이체와 동일한 shape(icons 포함)으로 4번째 항목으로 추가했고, parseShortcutAction 화이트리스트와 runShortcutAction 디스패처에 addIncome/addTransfer와 완전히 같은 패턴(openTxSheet() 후 txType('saving'))으로 연결했음을 diff로 확인. txType('saving')이 호출하는 _applyType은 catListOf('saving')이 이미 DB.categories.saving을 돌려주는 기존 분기라 추가 로직 변경이 전혀 필요 없었음을 catListOf/ _applyType 구현으로 재확인. node test/run.js 2754/2754 통과, logic.js/sw.js node --check 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 303,
+      "phase": "critique",
+      "timestamp": "2026-11-04T20:13:02.021Z",
+      "summary": "서브에이전트로 앱 전체를 재조사(이미 처리/보류된 ~25개 항목을 명시해 제외 지시). 발견: 목표(goals)에 targetDate(목표일)를 입력받지만(index.html:3634, saveGoal) 앱이 그 값으로 하는 일은 goalIsOverdue(logic.js:867)의 지남 여부 판정뿐이고, goalProgress()(logic.js:841-860)가 노출하는 유일한 전망인 projectedDate는 최근 90일 추세 기반이라 targetDate와 무관함 — 예산(budgetForMonth)·부채상환(amortizationPayoffMonths)·만기(openMaturity) 등 날짜가 있는 다른 모든 기능은 \"그 날짜까지 얼마/언제\"를 역산해 보여주는데 목표만 입력받은 데드라인을 절반만 쓰는 구조적 공백. pending_advance_plan에 저장(targetDate 설정된 목표에 한해 월 저축 필요액만 goalRowHTML 한 줄 캡션으로 노출 — 자동 저축 추천/다수 목표 우선순위/홈 알림 연동은 범위 밖). (기각: 넷워스 추이 차트 부재 가설은 이미 nwHistoryCard(스파크라인+피크제스처+기간 프리셋+CSV)가 있어 공백 아님; openBudgetPrompt 과거 3개월 평균 프리필 추천은 영향 범위가 작아 2순위로 기각.) 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
