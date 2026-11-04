@@ -1,15 +1,8 @@
 {
   "cycle": 304,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 299,
-      "phase": "review",
-      "timestamp": "2026-11-04T02:15:00.000Z",
-      "summary": "cycle299 develop 커밋(ff29675) 검토 — 반복 내역 관리 행에 추가된 삭제 버튼(act-btn danger, svg('trash'))이 delOwner/delAssetQtyLog/delCat과 동일한 act-btn danger 패턴을 그대로 따르고, delRecConfirm이 이미 confirmSheet+deleteRecsUndo(실행취소 가능)로 구현돼 있어 새 코드는 행 UI 배선뿐임을 diff로 확인. 복제/일시중지 버튼과 같은 onclick=\"event.stopPropagation();...\" 순서라 행 전체 클릭(editRec 진입)으로 전파되지 않음을 신규 테스트 2건과 함께 검증. node test/run.js 2678/2678 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 299,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-04T22:20:00.000Z",
       "summary": "sanitizeBackup()이 반복거래의 amount/day/freq/weekend/endDate는 검증하면서 count(횟수 조건, endDate와 양방향 자동계산되는 짝)만 전혀 검증하지 않던 공백 발견 — editRec()이 레코드를 그대로 복제하므로 손상된 count(문자열/NaN/음수/소수/1000 이상)가 endCondFields()의 횟수 입력창에 그대로 보이고, recalcEndCond()가 recNthDate로 넘길 때는 내부 클램프가 조용히 다른 값으로 바꿔 두 필드가 애초에 어긋나 있었다. _applyCount()(5347줄)와 동일한 공식(Math.min(999,Math.max(0,Math.floor(Number(d.count))||0))||null)으로 정규화하는 블록을 endDate 검증 바로 뒤에 추가 — truthy 여부가 아니라 null 여부로 가드해(d.count!=null) 0/NaN처럼 falsy인 손상값도 놓치지 않는다. 테스트 8케이스(문자열/음수/소수/상한초과/0/정상값/null/필드없음) 1건으로 추가, fixedCount 집계도 함께 검증. 테스트 2766->2767 통과. node --check logic.js/sw.js, manifest.webmanifest JSON 유효성 통과, index.html 인라인 스크립트 추출검사도 기존과 동일한 1건의 기존 오탐만 재확인(새 회귀 없음). APP_VERSION 1.47.352->1.47.353, sw.js CACHE v619->v620.",
+      "commit": null
+    },
+    {
+      "cycle": 304,
+      "phase": "review",
+      "timestamp": "2026-11-04T23:08:01.579Z",
+      "summary": "cycle304 develop 커밋(13ff45d) 검토 — count 정규화 공식이 _applyCount()(Math.min(999,Math.max(0,Math.floor(Number(n))||0))||null)와 완전히 동일함을 diff로 확인, d.count!=null 가드 덕분에 count 필드 자체가 없는 구버전 레코드(r8)는 새로 만들지 않고 그대로 둠을 재확인. endDate/freq/weekend 체크와 독립적으로 삽입돼 있어 순서 영향 없음. node test/run.js 2767/2767 통과, node --check logic.js/sw.js, manifest.webmanifest JSON 유효성 통과. 실제 버그 없음(state.json만 커밋).",
       "commit": null
     }
   ]
