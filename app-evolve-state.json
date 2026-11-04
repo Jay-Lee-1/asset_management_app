@@ -1,15 +1,12 @@
 {
   "cycle": 302,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "long-press-to-peek 제스처(sujiPeek/histPeek/planPeek/mSuji) 공용 makePeekGesture() 헬퍼로 통합",
+    "why": "홈 요약카드(sujiPeek*, ~4884-4899), 전체내역 합계(histPeek*, ~6091-6115), Plan 탭 잔액(planPeek*, ~6297-6318), 모바일 tw 스테이지 요약(mSuji*/mSujiPeekKey, ~7587-7598) 네 곳이 180ms 롱프레스 타이머+navigator.vibrate(8)+peeking 플래그+Start/Move/End+키보드(Escape=해제, Enter/Space만 반응, e.repeat 무시, e.target!==e.currentTarget 가드)를 동일하게 복붙해두고 있다. 각 사이트 주석 자체가 \"sujiPeekKey와 동일 원칙\"이라고 적어둘 정도로 중복이 명시적이며, 모바일판(mSuji*)은 이미 네이밍이 Down/Up으로 드리프트되고 setXMode() 재렌더 델리게이션 없이 자체 innerHTML/classList를 인라인으로 처리해 다른 셋과 어긋나 있다. 이 패턴에 버그가 하나 생기면(과거 사이클들이 고친 종류의 버그처럼) 4곳 중 하나를 빠뜨리기 쉬운 전형적인 복붙 드리프트 리스크.",
+    "approach": "nwChart/assetBalChart 쪽 chartPeekRenderAt이 있는 자리(~3100대) 근처에 순수 팩토리 makePeekGesture(onModeChange,opts)를 추가해 {start,move,end,key,get peeking()} 묶음을 반환하게 한다(delay 기본 180ms, vibrate 플래그는 opts로). 기존 전역 함수명(sujiPeekStart/sujiPeekKey 등)은 그대로 유지하고 각각 _sujiPeek=makePeekGesture(setSujiMode) 같은 객체로 위임하는 얇은 wrapper 한 줄로 바꿔, onpointerdown=/onkeydown= 같은 HTML 속성 문자열(4884, 6104, 6305, 7588)은 전혀 건드리지 않는다. mSuji*는 이번에 setMSujiMode()를 새로 뽑아 다른 셋과 같은 모양으로 맞춘다. _sujiPeeked(peek 해제 직후 다음 탭을 무시하는 ledSumTap 전용 플래그, ~4905)는 공유 상태가 아니므로 팩토리 밖 wrapper 변수로 남긴다. 동작은 100% 동일해야 하는 순수 리팩터이므로 logic.js/테스트 변경 없이, 4개 화면(홈/전체내역/Plan/모바일 스테이지) 수동 스모크 테스트로 확인한다. histTotToggle의 평균모드 토글(histTotLive, 별도 id)은 이 패밀리가 아니므로 손대지 않는다."
+  },
   "history": [
-    {
-      "cycle": 297,
-      "phase": "critique",
-      "timestamp": "2026-11-03T19:15:54.067Z",
-      "summary": "서브에이전트로 앱 전체를 재조사. 카테고리 관리에는 openCatMergePicker()/mergeCatInto()(index.html:7206-7271)로 중복 카테고리를 합치는 기능이 있지만 자산 관리(openAssetSheet)에는 대응하는 '자산 합치기' 기능이 전혀 없어, 오타로 중복 등록된 계좌나 합치고 싶은 현금 자산을 삭제(history 소실)하거나 영구히 중복 보유해야 하는 공백을 발견. relinkDeletedAsset()(4181)이 참조 재연결 로직을 이미 갖고 있어 재사용 가능한 토대가 있음. pending_advance_plan에 저장. (보류: fx/stock/gold/crypto 간 환전·매수 거래 기록 부재는 원장 모델 재검토가 필요해 재작성급이라 보류, 반복 내역 관리 목록에서 삭제가 편집 화면을 거쳐야만 되는 점은 영향 작아 develop 사이즈로 보류, 주식 분할 시 보유수량/매입원가 비례조정 부재는 니치하고 범위가 커 보류.) 코드 변경 없음(critique 단계 커밋에서 app-evolve-state.json의 JSON 깨짐도 함께 수정: 직전 review 커밋의 summary 문자열 안에 이스케이프 안 된 쌍따옴표(oninput=\"txAmtInput(this)\")가 들어가 상태 파일이 유효하지 않은 JSON이 돼 있던 것을 발견해 고쳤다).",
-      "commit": null
-    },
     {
       "cycle": 297,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-04T13:45:00.000Z",
       "summary": "cycle302 develop 커밋(e1e4466) 검토 — sanitizeBackup()에 추가된 freq 정규화 블록이 d.freq 체크 순서상 day clamp(바로 다음 줄, d.freq==='monthly' 분기) 앞에 와서 garbage freq가 monthly로 보정된 레코드가 같은 패스에서 day clamp까지 올바르게 함께 타는 것을 코드 순서로 재확인. weekend 검증과 동일한 'truthy인데 유효 집합 밖이면 정규화, 필드 자체가 없으면(falsy) 안 건드린다' 원칙을 그대로 지켜 freq 필드가 없는 구버전 레코드(day/weekend처럼 각 함수의 falsy 기본값에 맡김)는 fixedCount를 건드리지 않음도 신규 테스트로 확인. node test/run.js 2742/2742 통과, logic.js/sw.js(node --check) 구문 검증 통과, index.html 메인 인라인 스크립트(new Function, 4개 script 블록 중 702868자 블록) 통과(1개 블록은 HTML 주석 섞인 기존 오탐으로 전 사이클과 동일). 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 302,
+      "phase": "critique",
+      "timestamp": "2026-11-04T16:14:03.000Z",
+      "summary": "서브에이전트로 앱 전체를 재조사(기존에 처리/보류된 ~15개 항목을 명시해 제외 지시). 발견: 홈 요약카드 sujiPeek*(~4884-4899)/전체내역 합계 histPeek*(~6091-6115)/Plan 탭 잔액 planPeek*(~6297-6318)/모바일 tw 스테이지 요약 mSuji*(~7587-7598) 네 곳이 180ms 롱프레스+navigator.vibrate(8)+peeking 플래그+Start/Move/End+키보드(Escape=해제, Enter/Space만, e.repeat 무시, e.target!==e.currentTarget 가드) 제스처를 완전히 동일하게 복붙해두고 있고, 각 사이트 주석이 서로를 \"같은 원칙\"이라 참조할 뿐 실제 공유 함수는 없다. 모바일판(mSuji*)은 이미 Down/Up 네이밍과 자체 innerHTML 처리로 다른 셋에서 드리프트된 상태라 복붙 리스크가 실제로 드러난 사례. pending_advance_plan에 저장(makePeekGesture() 공용 팩토리로 통합, 전역 함수명은 유지한 채 얇은 wrapper로 위임해 HTML 속성 문자열은 안 건드리는 범위). (보류: CDN 3개 SRI 해시 추가는 이 샌드박스의 네트워크 정책상 실제 응답 바이트를 못 받아와 해시 불가능해 애초에 불가; logic.js 순수함수 테스트 공백은 matchQueryTerms/searchTerms/recScheduleSameSlot 3개뿐이고 전부 호출부(matchTxnQuery 등) 테스트로 간접 커버돼 실질 공백 아님; 최근 추가 UI(다건선택, 반복관리, 차트)의 접근성은 aria-pressed/aria-label/role=button/키보드 동등 처리/닫을 때 포커스 복귀가 이미 일관되게 적용돼 있음을 확인; 에러처리/오프라인/동기화 충돌은 cloudSyncFailed/mergeCollectionConflicts/톰스톤 병합/재시도가 이미 성숙해 공백 없음; allTxns/expandRec/잔액계산 성능은 _recCache/_balCache/_lastEditCache로 이미 여러 사이클에 걸쳐 캐시돼 있어 새 핫패스 없음; 전역 검색은 거래/자산/카테고리/목표/반복 전부 커버해 공백 없음.) 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
