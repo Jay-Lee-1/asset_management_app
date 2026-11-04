@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.348';
+const APP_VERSION='1.47.349';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -8521,6 +8521,21 @@ function sanitizeBackup(obj){
    * end가 Invalid Date가 되면 cur>endd/cd>end 비교가 항상 false라 루프를 못 벗어난다.
    * 무기한 반복과 동일하게 null로 떨어뜨려 안전한 상태로 정규화한다. */
   if(d.endDate&&!csvDateValid(d.endDate)){d.endDate=null;fixedCount++}
+  /* freq 자체는 지금까지 이 함수가 전혀 검증하지 않던 필드였다 — txFreq()/recFreq()는 버튼으로만
+   * 'monthly'|'weekly'|'biweekly'|'daily'|'yearly' 중 하나를 고르게 해 UI 경로로는 항상 유효한
+   * 값만 들어오지만, 백업/원격 데이터가 그 경로를 거치지 않고 손상된 값(오타, 구버전에만 있던
+   * freq 값 등)을 담고 있으면 recDates()/monthlyEquivalent()/recFreqLabelStr() 세 함수가 서로
+   * 다르게 추측해 조용히 어긋난다: recDates()의 step 계산은 monthly/yearly가 아닌 모든 값을
+   * 'weekly'처럼 7일 간격으로 돌리고, monthlyEquivalent()는 weekly/biweekly/daily/yearly가 아닌
+   * 모든 값을 'monthly'(월 환산 없이 amt 그대로)로 돌리고, recFreqLabelStr()은 monthly/daily/
+   * weekly/biweekly가 아닌 모든 값을 '매년 X월 Y일'로 보여준다 — 즉 같은 손상 데이터를 두고 실제
+   * 거래는 매주 생성되면서 목록엔 "매년"으로 뜨고 월 합계는 월 1회 기준으로 계산되는, 세 화면이
+   * 서로 다른 주기를 믿는 상태가 된다. weekend 검증(바로 아래)과 똑같이 d.freq가 있는데
+   * (truthy) 다섯 값 중 하나가 아닐 때만 saveRec()이 쓰는 기본값('monthly')으로 되돌린다 — 필드
+   * 자체가 없는 경우(freq 신설 전 구버전 레코드 등)는 위 세 함수가 이미 각자 정의한 "falsy
+   * 기본값"에 맡기고 그대로 둔다(day/weekend가 '없으면 안 건드린다'로 지키는 것과 동일한 원칙,
+   * 그 값들만으로 구성된 기존 테스트 픽스처들의 fixedCount도 그대로 유지됨). */
+  if(d.freq&&!['monthly','weekly','biweekly','daily','yearly'].includes(d.freq)){d.freq='monthly';fixedCount++}
   /* 매월 반복의 day는 saveRec/saveTx가 저장 직전 clampDay()로 항상 1~31 숫자 또는 'last'로
    * 맞춰두지만, 백업 파일/원격 데이터는 그 경로를 거치지 않고 그대로 들어온다. 문자열·NaN·음수
    * day가 그대로 남으면 recDates()의 Math.min(r.day,lastDay(y,m))이 "2024-01-NaN"·"2024-01--5"

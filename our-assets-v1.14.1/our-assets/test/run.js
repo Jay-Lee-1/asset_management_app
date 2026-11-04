@@ -12877,6 +12877,62 @@ test("[실행형] sanitizeBackup으로 정규화하지 않으면 freq가 monthly
   const fixed = sandbox.recDates(data.recurrences[0], '2026-01-01', '2026-01-04');
   assert.strictEqual(fixed.length, 4, 'sanitizeBackup이 weekend를 none으로 되돌린 뒤에는 1/1~1/4 매일 정상 생성되어야 함');
 });
+/* freq는 지금까지 sanitizeBackup이 전혀 검증하지 않은 필드였다 — day/weekend와 동일하게, 값이
+ * 있는데(truthy) 'monthly'|'weekly'|'biweekly'|'daily'|'yearly'가 아니면 recDates()/
+ * monthlyEquivalent()/recFreqLabelStr() 세 함수가 서로 다른 기본값으로 추측해(각각 weekly 취급/
+ * monthly 취급/yearly 라벨) 같은 레코드를 두고 실제 생성 주기·월 합계·목록 표시가 전부 어긋난다
+ * (위 8524줄 주석 참고). 필드 자체가 없는 경우는 day/weekend가 '없으면 안 건드린다'로 지키는 것과
+ * 같은 원칙으로 그대로 둔다(아래 "없으면 건드리지 않는다" 테스트). */
+test("sanitizeBackup: 알 수 없는 freq 값('monthly'/'weekly'/'biweekly'/'daily'/'yearly'가 아님)은 'monthly'로 정규화하고 fixedCount를 센다", () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    recurrences: [
+      { id: 'r1', freq: 'garbage', day: 15, startDate: '2026-01-01', amount: 1000 }, // day를 이미 유효하게 줘서 freq 보정과 day clamp를 분리 관찰
+      { id: 'r2', freq: 'weekly', startDate: '2026-01-01', amount: 1000 },
+    ],
+  });
+  assert.strictEqual(data.recurrences[0].freq, 'monthly');
+  assert.strictEqual(data.recurrences[1].freq, 'weekly', '정상 값은 그대로 유지되어야 함');
+  assert.strictEqual(fixedCount, 1);
+});
+test("sanitizeBackup: freq 필드가 없거나(falsy) 이미 유효한 값이면 건드리지 않는다(day/weekend와 동일한 '없으면 그대로' 원칙, 기존 테스트 픽스처들의 fixedCount 회귀 방지)", () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    recurrences: [
+      { id: 'r1', startDate: '2026-01-01', amount: 1000 }, // freq 필드 자체가 없음(구버전 데이터)
+      { id: 'r2', freq: '', startDate: '2026-01-01', amount: 1000 },
+      { id: 'r3', freq: 'biweekly', startDate: '2026-01-01', amount: 1000 },
+    ],
+  });
+  assert.strictEqual('freq' in data.recurrences[0], false);
+  assert.strictEqual(data.recurrences[1].freq, '');
+  assert.strictEqual(data.recurrences[2].freq, 'biweekly');
+  assert.strictEqual(fixedCount, 0);
+});
+test("sanitizeBackup: freq가 monthly로 정규화되면 day도 함께 clampDay 대상이 되어 보정된다(정규화 순서 회귀 가드)", () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    recurrences: [
+      { id: 'r1', freq: 'garbage', startDate: '2026-01-01', amount: 1000, day: 500 },
+    ],
+  });
+  assert.strictEqual(data.recurrences[0].freq, 'monthly');
+  assert.strictEqual(data.recurrences[0].day, 31, 'freq 정규화 이후 day clamp 분기(d.freq===\'monthly\')를 타야 함');
+  assert.strictEqual(fixedCount, 2, 'freq 보정 1 + day clamp 1');
+});
+test("[실행형] sanitizeBackup으로 정규화하지 않으면 손상된 freq에 대해 recDates/monthlyEquivalent/recFreqLabelStr이 서로 다른 주기를 가정한다(정규화 후에는 모두 monthly로 합의)", () => {
+  const corrupted = { freq: 'garbage', day: 15, startDate: '2026-01-15', endDate: null, weekend: 'none' };
+  const generated = sandbox.recDates(corrupted, '2026-01-01', '2026-02-28');
+  assert.strictEqual(generated.length, 7, '정규화 전: recDates는 알 수 없는 freq를 weekly(7일 간격)로 취급해 1/15부터 7회 생성');
+  const label = sandbox.recFreqLabelStr(corrupted.freq, corrupted.day, corrupted.startDate);
+  assert.ok(label.startsWith('매년'), '정규화 전: recFreqLabelStr은 알 수 없는 freq를 yearly 라벨로 보여줌(실제 생성 주기와 불일치)');
+  const { data } = sandbox.sanitizeBackup({ txns: [], assets: [], recurrences: [{ id: 'r1', ...corrupted, amount: 1000 }] });
+  const fixed = data.recurrences[0];
+  assert.strictEqual(fixed.freq, 'monthly');
+  const fixedGenerated = sandbox.recDates(fixed, '2026-01-01', '2026-02-28');
+  assert.strictEqual(fixedGenerated.length, 2, '정규화 후: 1/15, 2/15 매월 생성');
+  assert.strictEqual(sandbox.recFreqLabelStr(fixed.freq, fixed.day, fixed.startDate), '매월 15일', '정규화 후: 세 함수가 모두 매월로 합의');
+});
 /* DB.goals(app-evolve cycle122 신설)는 sanitizeBackup에 검증 분기가 전혀 없어 손상된 백업/원격
  * payload의 targetAmount/targetDate가 그대로 통과했었다(critique cycle123이 발견). */
 test('sanitizeBackup: 목표의 NaN/문자열 목표금액을 보정하고 fixedCount를 센다', () => {

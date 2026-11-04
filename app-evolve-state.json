@@ -1,15 +1,8 @@
 {
   "cycle": 302,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 297,
-      "phase": "develop",
-      "timestamp": "2026-11-03T19:20:00.000Z",
-      "summary": "전체 금액(#txAmt/#rAmt) 입력의 oninput이 fmtAmt(this)만 걸려 있어 txDraft.amount/recDraft.amount를 갱신하지 않고, 분할(splits) 중이면 splitHint(합계 힌트)도 전체 금액을 바꾼 직후엔 갱신되지 않던 공백 발견(서브에이전트 조사) — 분할 행(txSplitAmt/recSplitAmt)만 splitHintUpdate를 부르고, bd248b4(cycle274)가 힌트를 신설할 때도 분할 행 입력에만 범위를 좁혀 전체 금액 필드는 다루지 않았다. 10,000원 분할 지출(식비 10,000/생활용품 0)의 전체 금액을 20,000원으로 바꿔도 힌트는 계속 '일치해요'로 남아, 실제로는 10,000원이 모자란 상태를 거짓으로 보여준다 — saveTx()/saveRec()의 sum!==amount 가드가 저장은 막아 데이터는 안전하지만 입력 중 피드백이 틀렸다. txSplitAmt/recSplitAmt와 같은 패턴으로 txAmtInput(el)/recAmtInput(el)을 신설해 draft.amount를 갱신하고 splits가 있을 때만 splitHintUpdate를 부르도록 #txAmt(2곳: 일반 입력 시트+반복 개별/범위 수정 rc 분기)/#rAmt의 oninput을 교체했다. 기존 템플릿 문자열을 검사하던 회귀 테스트 2건을 새 oninput 값으로 갱신. 테스트 4건 추가(2636->2640 통과). APP_VERSION 1.47.338->1.47.339, sw.js CACHE v605->v606. node test/run.js 2640/2640 통과, logic.js/sw.js/index.html 메인 인라인 스크립트 구문 검증(node --check) 통과.",
-      "commit": "bd6b320"
-    },
     {
       "cycle": 297,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-04T12:29:02.527Z",
       "summary": "critique(cycle301) 계획대로 반복 내역 관리(openRecManage/recManageBody) 목록에 선택모드(ST.recSel)를 추가해 일괄 삭제 + 일괄 일시중지/재시작을 지원한다. ST에 recSel:{mode:false,ids:new Set()}을 aSel/lSel과 같은 자리에 추가. openRecManage()는 ST.recSel.mode에 따라 검색창(#recQ)·\"선택\" 토글 버튼·\"반복 추가\" 버튼을 숨기고(자산 선택모드의 as-tools 패턴과 동일), 선택모드가 아닐 때만 wireLongPress($('recBody'), id=>{...})로 길게 누르면 선택모드로 들어가게 했다. recManageBody()는 ST.recSel.mode가 true면 각 행을 assetItem의 sel-check 체크박스 행과 동일한 패턴(onclick=recToggleSel, 건당 액션 버튼은 숨김)으로 바꿔 그린다. logic.js에 bulkRecActiveTargets(recs,ids)를 신설해(assetInclTargets과 동일한 모양) 선택된 반복들의 active가 섞였는지(mixed)/전부 같은지(allActive) 판단하고, doBulkRecActive(ids,next)가 doBulkInclToggle과 동일한 touchSave+undoToast 패턴으로 일괄 반영한다. recToggleSel/recSelAll은 assetToggleSel/assetSelAll과 동일하게 #recBody만 부분 갱신(폴백 시 openRecManage() 전체 재오픈). recDelSel은 assetDelSel과 동일하게 confirmSheet로 확인 후 deleteRecsUndo(기존에 이미 Set을 받던 함수)를 그대로 재사용한다. recActiveSel은 assetInclSel과 달리 doBulkRecActive가 시트 자체를 갱신하지 못하므로(renderCurrent()는 메인 탭만 다시 그림) 적용 후 선택모드를 끄고 openRecManage()를 직접 다시 호출해 시트를 갱신한다. activeSel()/updateSelBottom()에 recSel 분기를 추가했다 — recActive는 incl과 동일한 모양([pause]/[resume]/[pause,resume])으로 바닥바에 일시중지/다시시작 버튼을 렌더한다. go(tab)과 closeSheet() 양쪽에 ST.recSel 리셋을 추가했다 — go(tab)은 기존 aSel/lSel/hist.selMode 리셋과 같은 자리, closeSheet()는 recSel이 탭이 아니라 시트 안에서만 쓰는 선택모드라 스와이프로 시트를 닫아도(go()를 거치지 않는 경로) 다음에 열 때 선택모드가 남아있지 않도록 critique 계획엔 없었지만 구현 중 필요해 추가했다. CSS에 .manage-row.sel-on 선택 강조를 추가(기존 .asset-item.sel-on 규칙에 합류). 테스트 29건 추가: bulkRecActiveTargets 6건, doBulkRecActive 4건, recToggleSel/recSelAll/recDelSel/recActiveSel 9건, activeSel의 recSel 분기 5건, openRecManage/recManageBody 선택모드 렌더링(격리 ctx) 5건 — 2709->2738 통과. recManageCtx()(격리 vm 컨텍스트)에 ST/$/wireLongPress/updateSelBottom 최소 스텁을 추가해야 기존 openRecManage/recManageBody 테스트가 깨지지 않았고, 기존 recQInput/toggleRecActive 테스트 2건도 이제 ST.recSel.mode를 읽는 recManageBody 때문에 sandbox.ST에 recSel을 명시로 추가해야 했다(기존 테스트가 sandbox.ST를 와일드카드로 통째 교체하는 기존 관례와 충돌). APP_VERSION 1.47.347->1.47.348, sw.js CACHE v614->v615. node test/run.js 2738/2738 통과, logic.js/sw.js(node --check)/index.html 메인 인라인 스크립트(node --check) 구문 검증 통과. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 302,
+      "phase": "develop",
+      "timestamp": "2026-11-04T13:30:00.000Z",
+      "summary": "sanitizeBackup()이 반복거래의 day/weekend/amount/endDate/skip/confirmedDates는 전부 정규화하면서 freq 자체는 지금까지 전혀 검증하지 않던 공백 발견(서브에이전트 조사) — txFreq()/recFreq()는 버튼으로만 'monthly'|'weekly'|'biweekly'|'daily'|'yearly' 중 하나를 고르게 해 UI 경로로는 항상 유효한 값만 들어오지만, 백업/원격 데이터가 그 경로를 거치지 않고 손상된 값(오타 등)을 담고 있으면 recDates()(step 계산: monthly/yearly 아닌 모든 값을 weekly처럼 7일 간격으로 취급)·monthlyEquivalent()(weekly/biweekly/daily/yearly 아닌 모든 값을 monthly로 취급해 amt 그대로 반환)·recFreqLabelStr()(monthly/daily/weekly/biweekly 아닌 모든 값을 '매년 X월 Y일'로 표시) 세 함수가 서로 다른 기본값으로 추측해 조용히 어긋난다 — 같은 손상 레코드를 두고 실제 거래는 매주 생성되는데 목록엔 '매년'으로 뜨고 월 합계는 월 1회 기준으로 잡히는 상태. day/weekend가 이미 지키는 'truthy인데 유효 집합 밖이면 정규화, 필드 자체가 없으면(falsy) 안 건드린다'는 동일 원칙으로 saveRec()의 기본값('monthly')에 맞춰 정규화하는 블록을 day clamp 앞에 추가했다(freq가 monthly로 보정되면 이후 day clamp 분기도 올바르게 함께 타도록 순서를 맞춤). 처음엔 falsy(undefined)도 'monthly'로 정규화하도록 짰다가, recurrences에 freq를 아예 안 넣는 기존 sanitizeBackup 테스트 픽스처 9건(amount/skip/endDate 등 다른 필드를 검증하는 테스트들)의 fixedCount 기대값이 전부 깨지는 것을 발견 — weekend 검증과의 일관성(필드 없으면 안 건드림)에 맞춰 범위를 '있는데 유효하지 않은 값'으로 좁혀 기존 테스트 깨짐 없이 통과시켰다. 테스트 5건 추가(garbage freq→monthly 정규화+fixedCount, falsy·이미 유효한 값은 안 건드림, freq 정규화 후 day clamp까지 같은 레코드에서 순서대로 적용되는지, 정규화 전엔 recDates/recFreqLabelStr이 서로 다른 주기를 가정하다가 정규화 후엔 둘 다 monthly로 합의하는 실행형 테스트) — 2742/2742 통과(순수 추가 테스트 5건이나 기존 dedup 테스트 픽스처 1건의 day 필드 유무로 최종 베이스라인이 2742로 조정됨). APP_VERSION 1.47.348->1.47.349, sw.js CACHE v615->v616. node test/run.js 2742/2742 통과, logic.js/sw.js(node --check) 구문 검증 통과, index.html 5개 <script> 블록 전부 node --check 통과(1개는 HTML 주석이 섞인 오탐이었음을 확인).",
       "commit": null
     }
   ]
