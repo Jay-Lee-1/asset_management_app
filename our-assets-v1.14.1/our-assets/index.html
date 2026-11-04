@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.342';
+const APP_VERSION='1.47.343';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -7410,7 +7410,7 @@ function recManageBody(qRaw){
     <div style="flex:1;min-width:0"><div class="mn">${esc(title)} ${r.active?'':'<span class="mini">중지</span>'}</div>
      <div class="msub">${(r.memo&&r.memo!==r.category)?esc(r.category)+' · ':''}${recFreqLabel(r)} · ${comma(r.amount)}원</div>
      <div class="msub2">${period}</div></div>
-    <div class="row-acts"><button type="button" class="act-btn" aria-label="${esc(title)} 복제" onclick="event.stopPropagation();duplicateRec('${r.id}')">${svg('copy')}</button><button class="act-btn ${r.active?'':'on'}" onclick="event.stopPropagation();toggleRecActive('${r.id}')" title="${r.active?'일시중지':'다시 시작'}" aria-label="${esc(title)} ${r.active?'일시중지':'다시 시작'}">${svg(r.active?'pause':'play')}</button></div>
+    <div class="row-acts"><button type="button" class="act-btn" aria-label="${esc(title)} 복제" onclick="event.stopPropagation();duplicateRec('${r.id}')">${svg('copy')}</button><button class="act-btn ${r.active?'':'on'}" onclick="event.stopPropagation();toggleRecActive('${r.id}')" title="${r.active?'일시중지':'다시 시작'}" aria-label="${esc(title)} ${r.active?'일시중지':'다시 시작'}">${svg(r.active?'pause':'play')}</button><button type="button" class="act-btn danger" aria-label="${esc(title)} 삭제" onclick="event.stopPropagation();delRecConfirm('${r.id}')">${svg('trash')}</button></div>
     <div class="mc">${svg('chev')}</div></div>`;
   }).join('')+`</div>`;
  });

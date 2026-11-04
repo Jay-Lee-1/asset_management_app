@@ -19266,6 +19266,37 @@ test('[실행형] recManageBody: 검색 결과가 0건이면 "일치하는 반�
   assert.ok(!html.includes('반복되는 게 아직 없어요'), 'DB에 반복이 있는 상태이므로 "아직 없어요" 문구가 뜨면 안 됨');
   assert.ok(!html.includes('menu-cap'), '검색 결과가 0건이면 그룹 헤더가 뜨면 안 됨');
 });
+/* 반복 내역 관리 목록은 복제(duplicateRec)/일시중지(toggleRecActive) 버튼은 행에 바로 있었지만
+ * 삭제는 행을 탭해 editRec() 수정 화면까지 들어가야만 delRecConfirm을 쓸 수 있었다 — 자주 하는
+ * 동작인데 단계가 하나 더 필요했던 공백(app-evolve cycle298 critique가 지목한 전체내역 계좌
+ * 일괄이동과 같은 critique 사이클에서, develop 사이즈로는 보류됐던 항목). duplicateRec/
+ * toggleRecActive와 동일하게 event.stopPropagation() 후 delRecConfirm(id)만 부르는 act-btn을
+ * row-acts에 추가한다(develop). delRecConfirm은 이미 confirmSheet+deleteRecsUndo(실행취소 가능)로
+ * 안전하게 구현되어 있어 새 코드는 행 UI 배선뿐이다. */
+test('[실행형] recManageBody: 각 행에 삭제 버튼이 있고, event.stopPropagation() 후 delRecConfirm(id)만 호출한다(행 전체의 editRec로 전파되지 않음)', () => {
+  const ctx = recManageCtx();
+  ctx.DB = {
+    recurrences: [
+      { id: 'r1', type: 'expense', category: '월세', amount: 500000, freq: 'monthly', day: 1, startDate: '2026-01-01', active: true },
+    ],
+  };
+  const html = ctx.recManageBody('');
+  assert.ok(html.includes(`onclick="event.stopPropagation();delRecConfirm('r1')"`), '삭제 버튼은 stopPropagation 후 delRecConfirm(id)만 호출해야 함(행 클릭의 editRec로 전파되면 안 됨)');
+  assert.ok(html.includes('aria-label="월세 삭제"'), '삭제 버튼 aria-label도 복제/토글 버튼과 동일하게 제목으로 구분돼야 함');
+  assert.ok(html.includes('act-btn danger'), '삭제 버튼은 다른 danger 삭제 버튼(delCat/delOwner 등)과 동일한 스타일(act-btn danger)을 써야 함');
+});
+test('[실행형] recManageBody: 같은 카테고리의 반복 두 건은 삭제 버튼 aria-label도 memo로 서로 구분된다', () => {
+  const ctx = recManageCtx();
+  ctx.DB = {
+    recurrences: [
+      { id: 'r1', type: 'expense', category: '구독', memo: '넷플릭스', amount: 17000, freq: 'monthly', day: 1, startDate: '2026-01-01', active: true },
+      { id: 'r2', type: 'expense', category: '구독', memo: '왓챠', amount: 9900, freq: 'monthly', day: 5, startDate: '2026-01-05', active: true },
+    ],
+  };
+  const html = ctx.recManageBody('');
+  assert.ok(html.includes('aria-label="넷플릭스 삭제"'));
+  assert.ok(html.includes('aria-label="왓챠 삭제"'));
+});
 test('[실행형] recManageBody: 빈 검색어는 전체(안 거른) 결과와 동일하다', () => {
   const ctx = recManageCtx();
   ctx.DB = {
