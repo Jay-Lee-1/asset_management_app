@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.343';
+const APP_VERSION='1.47.344';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6760,32 +6760,43 @@ function setBudgetFrom(c,y,m,amount){
  * 정리된 범위에 걸리면 이월 자체를 0으로 끊는다 — 전액 이월(실제보다 부풀림)보다 이월 없음(실제보다
  * 깐깐함)이 예산을 초과해서 쓰게 두는 쪽보다 안전하다. DB.settings.archivedThroughDate는
  * archiveTxnsBefore가 남기는 기기-로컬 전용 마커(DB.settings 자체가 동기화 대상이 아니므로
- * mergeRemoteDataIntoLocal 배선이 필요 없음, DB 스키마 완전성 가드 테스트의 LOCAL_ONLY_DB_FIELDS 참고). */
-function budgetCarryFor(c,y,m,depth=0){
+ * mergeRemoteDataIntoLocal 배선이 필요 없음, DB 스키마 완전성 가드 테스트의 LOCAL_ONLY_DB_FIELDS 참고).
+ * cache(Map)를 넘기면 `${c}:${y}-${m}` 키로 결과를 메모이즈해 재귀 체인(최대 24개월)을 호출부 간에
+ * 공유한다 — 생략하면(기존 호출부·테스트) 매번 새로 계산하는 예전 동작과 100% 동일하다
+ * (app-evolve cycle299 advance, spendTrend/incomeTrend의 cache 인자(cycle294)와 같은 하위호환 패턴). */
+function budgetCarryFor(c,y,m,depth=0,cache=null){
  if(!isBudgetRolloverCat(c))return 0;
  if(depth>=24)return 0;
+ const key=cache&&`${c}:${y}-${m}`;
+ if(cache&&cache.has(key))return cache.get(key);
  let py=y,pm=m-1;if(pm<1){pm=12;py--}
  const archivedThrough=DB.settings&&DB.settings.archivedThroughDate;
- if(archivedThrough&&monthEndStr(py,pm)<=archivedThrough)return 0;
- const prevBudget=budgetForMonthWithCarry(c,py,pm,depth+1);
- if(!prevBudget)return 0;
+ if(archivedThrough&&monthEndStr(py,pm)<=archivedThrough){if(cache)cache.set(key,0);return 0;}
+ const prevBudget=budgetForMonthWithCarry(c,py,pm,depth+1,cache);
+ if(!prevBudget){if(cache)cache.set(key,0);return 0;}
  const prevSpent=spendByCategory(py,pm,'전체').find(x=>x.c===c);
- return budgetCarry(prevBudget,prevSpent?prevSpent.v:0);
+ const result=budgetCarry(prevBudget,prevSpent?prevSpent.v:0);
+ if(cache)cache.set(key,result);
+ return result;
 }
 /* budgetForMonth()에 이월분을 더한 "이번 달에 실제로 쓸 수 있는 한도" — budgetForMonthEffective가
  * 이번 달 자체에 flat 예산이 없으면(0/미설정) 이월이 있어도 0을 그대로 돌려주므로(logic.js 주석
  * 참고), 기존 budgetForMonth()의 "falsy=미설정" 호출부 관례를 그대로 유지한다. depth는
- * budgetCarryFor의 재귀 체인을 위한 내부용 인자로, 바깥 호출부는 그냥 생략하면 된다. */
-function budgetForMonthWithCarry(c,y,m,depth=0){
- return budgetForMonthEffective(budgetForMonth(c,y,m),budgetCarryFor(c,y,m,depth));
+ * budgetCarryFor의 재귀 체인을 위한 내부용 인자, cache는 budgetCarryFor와 동일한 메모이즈
+ * Map으로 그대로 전달한다 — 바깥 호출부는 둘 다 생략하면 된다. */
+function budgetForMonthWithCarry(c,y,m,depth=0,cache=null){
+ return budgetForMonthEffective(budgetForMonth(c,y,m),budgetCarryFor(c,y,m,depth,cache));
 }
 /* 예산이 설정된 카테고리만 골라 해당 달(y,m) 기준 전체 예산 대비 지출을 집계 — 예산이 하나도 없으면 budgetedTotal=0으로 '집계할 게 없음'을 나타낸다.
  * budgetedTotal/overCount는 이월이 적용된 실질 한도(budgetForMonthWithCarry) 기준이고, carryTotal은
- * 그중 이월로 얹힌 금액만 따로 합산해 openSpendAnalysis()의 '전달 이월 N원 포함' 캡션에 쓴다. */
-function totalBudgetSummary(rows,y,m){
+ * 그중 이월로 얹힌 금액만 따로 합산해 openSpendAnalysis()의 '전달 이월 N원 포함' 캡션에 쓴다. cache는
+ * budgetCarryFor와 공유하는 메모이즈 Map(app-evolve cycle299 advance) — openSpendAnalysis()가 이
+ * 호출과 아래 카테고리 행 루프의 budgetForMonthWithCarry 호출에 같은 Map을 넘겨 카테고리당 이월
+ * 재귀 체인을 한 화면에서 한 번만 계산한다. */
+function totalBudgetSummary(rows,y,m,cache=null){
  let budgetedTotal=0,spentOnBudgeted=0,overCount=0,unsetCount=0,carryTotal=0;
  rows.forEach(r=>{
-  const carry=budgetCarryFor(r.c,y,m);
+  const carry=budgetCarryFor(r.c,y,m,0,cache);
   const b=budgetForMonthEffective(budgetForMonth(r.c,y,m),carry);
   if(b){budgetedTotal+=b;spentOnBudgeted+=r.v;if(r.v>b)overCount++;carryTotal+=carry}
   else unsetCount++;
@@ -6987,7 +6998,8 @@ function openYearReview(y){
 function openSpendAnalysis(){
  if(ST.spendOwner!=='전체'&&!DB.owners.includes(ST.spendOwner))ST.spendOwner='전체'; /* 귀속 사라지면 전체로 (renderAssets/renderPlan과 동일 패턴) */
  const y=ST.ledger.y,m=ST.ledger.m;const catCache=makeMonthCatCache(spendByCategory,ST.spendOwner);const rows=catCache(y,m);const total=rows.reduce((s,r)=>s+r.v,0);
- const tb=totalBudgetSummary(rows,y,m);const tbp=budgetProgress(tb.spentOnBudgeted,tb.budgetedTotal);
+ const _bwc=new Map(); /* budgetCarryFor/budgetForMonthWithCarry 메모이즈 Map — 아래 totalBudgetSummary와 카테고리 행 루프가 같은 (카테고리,달) 이월을 두 번 계산하지 않게 공유한다(app-evolve cycle299 advance) */
+ const tb=totalBudgetSummary(rows,y,m,_bwc);const tbp=budgetProgress(tb.spentOnBudgeted,tb.budgetedTotal);
  /* 카테고리 행과 동일한 선제 경고(위 paceWarn 주석 참고)를 전체 예산 합계에도 적용 — 아직 전체
   * 합계가 초과하지 않았을 때만(!tbp.over) 의미 있다. */
  const tbProj=tb.budgetedTotal&&!tbp.over?projectedMonthSpend(tb.spentOnBudgeted,y,m,TODAY):null;
@@ -7004,7 +7016,7 @@ function openSpendAnalysis(){
   * 이월 캡션에 쓴다 — 이 캡션이 원래 이 자리의 HTML 주석이었다(DOM에 그대로 렌더되던 바이트를
   * 평범한 JS 주석으로 옮겨 정리, cycle194 review 지적). */
  const body=rows.length?rows.map((r,idx)=>{
-   const budget=budgetForMonthWithCarry(r.c,y,m); /* 카테고리별 이월(catBudgetRollover)이 켜져 있으면 전달 여윳돈이 더해진 실질 한도를 보여준다(app-evolve cycle194 advance) */
+   const budget=budgetForMonthWithCarry(r.c,y,m,0,_bwc); /* 카테고리별 이월(catBudgetRollover)이 켜져 있으면 전달 여윳돈이 더해진 실질 한도를 보여준다(app-evolve cycle194 advance) */
    const bp=budgetProgress(r.v,budget);
    const pct=budget?bp.pct:(total?Math.round(r.v/total*100):0);
    const barPct=budget?bp.barPct:(total?r.v/total*100:0);
@@ -10179,11 +10191,12 @@ function homeAlerts(neg){
   * (app-evolve cycle183 critique/advance) */
  const _ruCount=DB.assets.filter(a=>a.includeInTotal&&rateUnknown(a)).length;
  if(_ruCount)arr.push({kind:'rateUnknownTotal',count:_ruCount});
- const _bo=spendByCategory(TM.y,TM.m).filter(r=>{const b=budgetForMonthWithCarry(r.c,TM.y,TM.m);return b>0&&r.v>b}); /* 예산 초과 카테고리: 1건이면 그대로, 여러 건이면 하나로 묶음(quick/quickMulti와 동일 패턴).
+ const _spendTM=spendByCategory(TM.y,TM.m);const _bwc=new Map(); /* 이번 달 지출/이월 메모이즈를 budgetOver·budgetPaceWarn 판정 양쪽에 공유한다 — homeAlerts()는 updateAlerts()를 통해 renderCurrent()가 불릴 때마다(거래/자산/목표 저장 거의 전부, 탭 전환마다) 호출되는데, 예전엔 spendByCategory 스캔과 카테고리별 budgetCarryFor의 최대 24개월 재귀 체인을 이 함수 안에서만 4번(10182/10186/10196/10201) 반복했다(app-evolve cycle299 advance, openSpendAnalysis의 cache 공유(바로 위 totalBudgetSummary)와 같은 패턴) */
+ const _bo=_spendTM.filter(r=>{const b=budgetForMonthWithCarry(r.c,TM.y,TM.m,0,_bwc);return b>0&&r.v>b}); /* 예산 초과 카테고리: 1건이면 그대로, 여러 건이면 하나로 묶음(quick/quickMulti와 동일 패턴).
   * budgetForMonth(flat)이 아니라 budgetForMonthWithCarry(실질 한도, flat+이월)를 봐야 openSpendAnalysis/totalBudgetSummary와 판정이 일치한다 — 이월을 켠
   * 카테고리에서 지난달 아낀 돈이 이번 달 실질 한도를 늘려줬는데도 flat 기준으로는 "초과"로 잘못 떠 홈 카드/OS 푸시가 지출분석 화면과 다른 말을 하던
   * 버그를 고친다(이월 꺼진 카테고리는 budgetCarryFor가 0을 반환해 기존과 동일, app-evolve cycle199 critique/advance) */
- if(_bo.length===1){const r=_bo[0],b=budgetForMonthWithCarry(r.c,TM.y,TM.m);arr.push({kind:'budgetOver',cat:r.c,spent:r.v,budget:b});}
+ if(_bo.length===1){const r=_bo[0],b=budgetForMonthWithCarry(r.c,TM.y,TM.m,0,_bwc);arr.push({kind:'budgetOver',cat:r.c,spent:r.v,budget:b});}
  else if(_bo.length>1)arr.push({kind:'budgetOverMulti',count:_bo.length});
  /* 예산 초과 "예상": budgetOver(바로 위)는 이미 넘은 뒤에만 뜨고, 목표(goalBehind)/부채상환
   * (debtBehind)처럼 "이대로면 ~쯤 넘을 것 같다"는 선제 투사가 예산 추적에는 없는 비대칭이
@@ -10192,13 +10205,13 @@ function homeAlerts(neg){
   * 카테고리만 골라, budgetOver와 겹치지 않게(한 카테고리가 budgetOver와 budgetPaceWarn에
   * 동시에 잡히는 일은 없음) budgetOver/budgetOverMulti와 동일한 단일/복수 collapsing 패턴을
   * 그대로 재사용한다. */
- const _bpw=spendByCategory(TM.y,TM.m).filter(r=>{
-   const b=budgetForMonthWithCarry(r.c,TM.y,TM.m);
+ const _bpw=_spendTM.filter(r=>{
+   const b=budgetForMonthWithCarry(r.c,TM.y,TM.m,0,_bwc);
    if(!(b>0)||r.v>b)return false;
    const proj=projectedMonthSpend(r.v,TM.y,TM.m,TODAY);
    return proj!=null&&proj>b;
  });
- if(_bpw.length===1){const r=_bpw[0],b=budgetForMonthWithCarry(r.c,TM.y,TM.m);arr.push({kind:'budgetPaceWarn',cat:r.c,spent:r.v,budget:b,projected:projectedMonthSpend(r.v,TM.y,TM.m,TODAY)});}
+ if(_bpw.length===1){const r=_bpw[0],b=budgetForMonthWithCarry(r.c,TM.y,TM.m,0,_bwc);arr.push({kind:'budgetPaceWarn',cat:r.c,spent:r.v,budget:b,projected:projectedMonthSpend(r.v,TM.y,TM.m,TODAY)});}
  else if(_bpw.length>1)arr.push({kind:'budgetPaceWarnMulti',count:_bpw.length});
  /* 목표일보다 늦어지는 목표: 목표일이 있고 아직 안 달성한 목표 중, goalProgress()의 추세 투사가 목표일을
   * 못 맞추거나(projectedDate>targetDate) 추세가 0/음수라 투사 자체가 안 나오면(projectedDate:null) 포함한다.

@@ -2474,6 +2474,55 @@ test('budgetForMonthWithCarry: 토글이 켜져 있으면 이월분이 더해진
   };
   assert.strictEqual(sandbox.budgetForMonthWithCarry('식비', 2026, 6), 400000, '300000 + 전달 여윳돈 100000');
 });
+/* budgetCarryFor/budgetForMonthWithCarry에 선택적 cache(Map) 인자를 추가해 homeAlerts()/
+ * openSpendAnalysis()가 `${c}:${y}-${m}` 키로 재귀 체인을 공유하게 했다(app-evolve cycle299
+ * advance) — spendTrend/incomeTrend의 cache 인자(cycle294)와 동일한 하위호환 패턴으로,
+ * cache를 넘기든 생략하든 결과는 완전히 같아야 한다. cycle196 체인 시나리오(4월→5월→6월)를
+ * 재사용해 재귀가 깊어져도 동일함을 확인한다. */
+test('budgetCarryFor/budgetForMonthWithCarry: cache(Map)를 넘겨도 생략했을 때와 완전히 동일한 결과를 낸다(app-evolve cycle299 advance)', () => {
+  sandbox.DB = {
+    catBudgetRollover: { 'expense:식비': true },
+    budgetHistory: { 식비: [{ from: '2026-04', amount: 300000 }] },
+    txns: [
+      { id: '1', type: 'expense', category: '식비', amount: 200000, date: '2026-04-10', confirmed: true },
+      { id: '2', type: 'expense', category: '식비', amount: 350000, date: '2026-05-10', confirmed: true },
+    ],
+    recurrences: [],
+  };
+  const withoutCache = sandbox.budgetCarryFor('식비', 2026, 6);
+  const withCache = sandbox.budgetCarryFor('식비', 2026, 6, 0, new Map());
+  assert.strictEqual(withCache, withoutCache, 'cache 유무가 budgetCarryFor 결과를 바꾸면 안 됨');
+  assert.strictEqual(withCache, 50000);
+  assert.strictEqual(
+    sandbox.budgetForMonthWithCarry('식비', 2026, 6, 0, new Map()),
+    sandbox.budgetForMonthWithCarry('식비', 2026, 6),
+    'cache 유무가 budgetForMonthWithCarry 결과를 바꾸면 안 됨',
+  );
+});
+/* 같은 cache(Map)를 재사용하면 같은 (카테고리,달) 조합에 대해 재귀 체인을 다시 타지 않고 캐시된
+ * 값을 그대로 돌려준다 — homeAlerts()/openSpendAnalysis()가 budgetOver/budgetPaceWarn 필터와
+ * 알림 생성 양쪽에서 같은 Map을 넘기는 전제(app-evolve cycle299 advance)를 직접 검증한다. */
+test('budgetCarryFor: 같은 cache(Map)를 재사용하면 같은 (카테고리,달)에 대해 prevSpent 재조회 없이 캐시된 값을 돌려준다', () => {
+  sandbox.DB = {
+    catBudgetRollover: { 'expense:식비': true },
+    budgetHistory: { 식비: [{ from: '2026-05', amount: 300000 }] },
+    txns: [{ id: '1', type: 'expense', category: '식비', amount: 200000, date: '2026-05-10', confirmed: true }],
+    recurrences: [],
+  };
+  const cache = new Map();
+  const first = sandbox.budgetCarryFor('식비', 2026, 6, 0, cache);
+  assert.strictEqual(first, 100000);
+  const origSpendByCategory = sandbox.spendByCategory;
+  let calls = 0;
+  sandbox.spendByCategory = (...args) => { calls++; return origSpendByCategory(...args); };
+  try {
+    const second = sandbox.budgetCarryFor('식비', 2026, 6, 0, cache);
+    assert.strictEqual(second, 100000, '같은 cache를 재사용해도 결과는 그대로여야 함');
+    assert.strictEqual(calls, 0, '캐시에 이미 있는 (카테고리,달)은 spendByCategory를 다시 조회하면 안 됨');
+  } finally {
+    sandbox.spendByCategory = origSpendByCategory;
+  }
+});
 
 /* ---------- totalBudgetSummary: 지출 분석의 해당 달 '예산' 요약 카드 집계 ---------- */
 test('totalBudgetSummary: 예산을 하나도 설정하지 않았으면 budgetedTotal=0(집계할 게 없음)', () => {
@@ -8755,6 +8804,41 @@ test('openSpendAnalysis: spendByCategory는 카테고리 수와 무관하게 화
     ctx.openSpendAnalysis();
     assert.strictEqual(calls, 4, `카테고리 4개인데도 월별 집계가 중복 재계산되면 안 됨(실제 호출 수: ${calls})`);
     assert.ok(ctx.lastSheetHtml.includes('식비') && ctx.lastSheetHtml.includes('쇼핑'), '메모이즈 경로를 타도 카테고리별 행은 그대로 전부 렌더돼야 함');
+  } finally {
+    ctx.spendByCategory = origSpendByCategory;
+  }
+});
+/* 바로 위 테스트와 대칭 — 이월(catBudgetRollover)을 켠 카테고리가 있으면 totalBudgetSummary()와
+ * 카테고리별 행 루프(budgetForMonthWithCarry)가 각자 budgetCarryFor의 전달 조회를 다시 타던
+ * 중복을 _bwc(공유 cache Map)로 없앴다(app-evolve cycle299 advance). budgetCarryFor는 catCache와
+ * 별도로(메모이즈 안 된 채) spendByCategory(py,pm,'전체')를 직접 불러 전달 지출을 조회하므로,
+ * 이월 켠 카테고리 1개당 그 호출이 정확히 1번(이 Map이 없었다면 totalBudgetSummary 1번 + 행 루프
+ * 1번 = 2번 중복됐을 지점)만 일어나는지 — catCache 몫(위 테스트가 보장하는 4번)에 정확히 1번만
+ * 더 얹히는지(4+1=5) 확인한다. */
+test('openSpendAnalysis: 이월(catBudgetRollover) 켠 카테고리의 전달 spendByCategory 조회가 totalBudgetSummary와 카테고리 행 루프 사이에 중복되지 않는다(budgetCarryFor cache 공유)', () => {
+  const ctx = spendAnalysisCtx();
+  ctx.DB = {
+    owners: [], assets: [], recurrences: [],
+    budgetHistory: { 식비: [{ from: '2026-05', amount: 100000 }] },
+    catBudgetRollover: { 'expense:식비': true },
+    txns: [
+      { id: '1', type: 'expense', category: '식비', amount: 70000, date: '2026-05-10', confirmed: true }, // 전달 이월 30000
+      { id: '2', type: 'expense', category: '식비', amount: 120000, date: '2026-06-10', confirmed: true }, // 실질 한도 130000 이내
+    ],
+  };
+  ctx.ST = { ledger: { y: 2026, m: 6 }, spendOwner: '전체' };
+  ctx.lastSheetHtml = null;
+  const origSpendByCategory = ctx.spendByCategory;
+  let calls = 0;
+  ctx.spendByCategory = (...args) => { calls++; return origSpendByCategory(...args); };
+  try {
+    ctx.openSpendAnalysis();
+    assert.ok(ctx.lastSheetHtml.includes('130,000'), '실질 한도(이월 반영)가 화면에 그대로 반영돼야 함(테스트 전제 확인)');
+    assert.strictEqual(
+      calls,
+      5,
+      `catCache 몫(이번 달+이전 3개월=4번) + budgetCarryFor의 전달(5월) 조회 1번 = 5번이어야 함 — cache 공유가 없었다면 totalBudgetSummary/행 루프가 각자 다시 불러 6번이 됐을 지점(실제 호출 수: ${calls})`,
+    );
   } finally {
     ctx.spendByCategory = origSpendByCategory;
   }
@@ -22729,6 +22813,45 @@ test('homeAlerts: 예산 이월(catBudgetRollover) 카테고리는 flat이 아�
   assert.strictEqual(bo.length, 1);
   assert.strictEqual(bo[0].kind, 'budgetOver');
   assert.strictEqual(bo[0].budget, 130000, '알림에 실린 budget도 flat이 아니라 실질 한도여야 함');
+});
+/* homeAlerts()는 updateAlerts()를 통해 renderCurrent()가 불릴 때마다(거래/자산/목표 저장 거의
+ * 전부, 탭 전환마다) 호출되는데, 예전엔 이번 달 spendByCategory를 budgetOver(_bo)/budgetPaceWarn
+ * (_bpw) 필터용으로 각각 따로 불렀고, 이월을 켠 카테고리마다 budgetCarryFor의 전달 조회
+ * (spendByCategory(py,pm,'전체'))도 _bo/_bpw 양쪽에서 중복으로 다시 탔다. _spendTM 공유 +
+ * budgetForMonthWithCarry 메모이즈 Map(_bwc)으로 카테고리 수·필터 수와 무관하게 이번 달 1번 +
+ * 이월 켠 카테고리마다 전달 1번만 조회되는지 확인한다(app-evolve cycle299 advance) — 이 Map이
+ * 없었다면 이번 달 2번(_bo+_bpw) + 전달 2번×2카테고리 = 6번이 됐을 지점. */
+test('homeAlerts: spendByCategory는 이월 켠 카테고리 수와 무관하게 이번 달 1번 + 카테고리별 전달 1번만 호출된다(budgetCarryFor cache 공유)', () => {
+  setupHomeAlertsDB();
+  sandbox.setBudgetRolloverCat('식비', true);
+  sandbox.setBudgetFrom('식비', 2026, 5, 100000);
+  sandbox.DB.txns.push({ id: 't0', date: '2026-05-05', type: 'expense', category: '식비', amount: 70000 }); // 전달 이월 30000
+  sandbox.setBudgetFrom('식비', 2026, 6, 100000);
+  sandbox.DB.txns.push({ id: 't1', date: '2026-06-05', type: 'expense', category: '식비', amount: 150000 }); // 실질 한도 130000 초과
+
+  sandbox.setBudgetRolloverCat('교통', true);
+  sandbox.setBudgetFrom('교통', 2026, 5, 80000);
+  sandbox.DB.txns.push({ id: 't2', date: '2026-05-06', type: 'expense', category: '교통', amount: 50000 }); // 전달 이월 30000
+  sandbox.setBudgetFrom('교통', 2026, 6, 80000);
+  sandbox.DB.txns.push({ id: 't3', date: '2026-06-06', type: 'expense', category: '교통', amount: 130000 }); // 실질 한도 110000 초과
+
+  const origSpendByCategory = sandbox.spendByCategory;
+  let calls = 0;
+  sandbox.spendByCategory = (...args) => { calls++; return origSpendByCategory(...args); };
+  try {
+    const alerts = sandbox.homeAlerts([]);
+    const bo = alerts.filter((a) => a.kind === 'budgetOver' || a.kind === 'budgetOverMulti');
+    assert.strictEqual(bo.length, 1);
+    assert.strictEqual(bo[0].kind, 'budgetOverMulti', '두 카테고리 모두 초과했으므로 묶여야 함(테스트 전제 확인)');
+    assert.strictEqual(bo[0].count, 2);
+    assert.strictEqual(
+      calls,
+      3,
+      `이번 달 1번(_bo/_bpw 공유) + 전달 2번(카테고리별 1번씩, cache로 재조회 안 함) = 3번이어야 함(실제 호출 수: ${calls})`,
+    );
+  } finally {
+    sandbox.spendByCategory = origSpendByCategory;
+  }
 });
 /* 예산 초과 "예상"(budgetPaceWarn/budgetPaceWarnMulti) — budgetOver(이미 넘은 뒤)와 달리 아직
  * 안 넘었지만 월 중 페이스를 그대로 유지하면 월말엔 넘길 카테고리를 선제로 알린다(app-evolve
