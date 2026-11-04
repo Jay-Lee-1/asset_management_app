@@ -1,15 +1,8 @@
 {
   "cycle": 302,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 297,
-      "phase": "review",
-      "timestamp": "2026-11-03T20:25:00.000Z",
-      "summary": "cycle297 develop 커밋(bd6b320) 검토 — txAmtInput/recAmtInput이 txSplitAmt/recSplitAmt와 완전히 같은 패턴(fmtAmt 후 draft.amount 갱신, splits 있을 때만 splitHintUpdate)임을 확인. clrInput('txAmt'/'rAmt')가 value='' 설정 후 input 이벤트를 dispatch해 oninput=\"txAmtInput(this)\"를 그대로 거치므로 지우기 버튼도 동일하게 draft.amount=0과 힌트 갱신으로 이어짐을 검증. syncTxInputs/syncRecInputs가 같은 필드를 다시 num(el)로 읽어 draft.amount에 덮어써도 같은 값을 다시 쓰는 것뿐이라 충돌 없음(단순 중복). node test/run.js 2640/2640 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 297,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-04T13:30:00.000Z",
       "summary": "sanitizeBackup()이 반복거래의 day/weekend/amount/endDate/skip/confirmedDates는 전부 정규화하면서 freq 자체는 지금까지 전혀 검증하지 않던 공백 발견(서브에이전트 조사) — txFreq()/recFreq()는 버튼으로만 'monthly'|'weekly'|'biweekly'|'daily'|'yearly' 중 하나를 고르게 해 UI 경로로는 항상 유효한 값만 들어오지만, 백업/원격 데이터가 그 경로를 거치지 않고 손상된 값(오타 등)을 담고 있으면 recDates()(step 계산: monthly/yearly 아닌 모든 값을 weekly처럼 7일 간격으로 취급)·monthlyEquivalent()(weekly/biweekly/daily/yearly 아닌 모든 값을 monthly로 취급해 amt 그대로 반환)·recFreqLabelStr()(monthly/daily/weekly/biweekly 아닌 모든 값을 '매년 X월 Y일'로 표시) 세 함수가 서로 다른 기본값으로 추측해 조용히 어긋난다 — 같은 손상 레코드를 두고 실제 거래는 매주 생성되는데 목록엔 '매년'으로 뜨고 월 합계는 월 1회 기준으로 잡히는 상태. day/weekend가 이미 지키는 'truthy인데 유효 집합 밖이면 정규화, 필드 자체가 없으면(falsy) 안 건드린다'는 동일 원칙으로 saveRec()의 기본값('monthly')에 맞춰 정규화하는 블록을 day clamp 앞에 추가했다(freq가 monthly로 보정되면 이후 day clamp 분기도 올바르게 함께 타도록 순서를 맞춤). 처음엔 falsy(undefined)도 'monthly'로 정규화하도록 짰다가, recurrences에 freq를 아예 안 넣는 기존 sanitizeBackup 테스트 픽스처 9건(amount/skip/endDate 등 다른 필드를 검증하는 테스트들)의 fixedCount 기대값이 전부 깨지는 것을 발견 — weekend 검증과의 일관성(필드 없으면 안 건드림)에 맞춰 범위를 '있는데 유효하지 않은 값'으로 좁혀 기존 테스트 깨짐 없이 통과시켰다. 테스트 5건 추가(garbage freq→monthly 정규화+fixedCount, falsy·이미 유효한 값은 안 건드림, freq 정규화 후 day clamp까지 같은 레코드에서 순서대로 적용되는지, 정규화 전엔 recDates/recFreqLabelStr이 서로 다른 주기를 가정하다가 정규화 후엔 둘 다 monthly로 합의하는 실행형 테스트) — 2742/2742 통과(순수 추가 테스트 5건이나 기존 dedup 테스트 픽스처 1건의 day 필드 유무로 최종 베이스라인이 2742로 조정됨). APP_VERSION 1.47.348->1.47.349, sw.js CACHE v615->v616. node test/run.js 2742/2742 통과, logic.js/sw.js(node --check) 구문 검증 통과, index.html 5개 <script> 블록 전부 node --check 통과(1개는 HTML 주석이 섞인 오탐이었음을 확인).",
+      "commit": null
+    },
+    {
+      "cycle": 302,
+      "phase": "review",
+      "timestamp": "2026-11-04T13:45:00.000Z",
+      "summary": "cycle302 develop 커밋(e1e4466) 검토 — sanitizeBackup()에 추가된 freq 정규화 블록이 d.freq 체크 순서상 day clamp(바로 다음 줄, d.freq==='monthly' 분기) 앞에 와서 garbage freq가 monthly로 보정된 레코드가 같은 패스에서 day clamp까지 올바르게 함께 타는 것을 코드 순서로 재확인. weekend 검증과 동일한 'truthy인데 유효 집합 밖이면 정규화, 필드 자체가 없으면(falsy) 안 건드린다' 원칙을 그대로 지켜 freq 필드가 없는 구버전 레코드(day/weekend처럼 각 함수의 falsy 기본값에 맡김)는 fixedCount를 건드리지 않음도 신규 테스트로 확인. node test/run.js 2742/2742 통과, logic.js/sw.js(node --check) 구문 검증 통과, index.html 메인 인라인 스크립트(new Function, 4개 script 블록 중 702868자 블록) 통과(1개 블록은 HTML 주석 섞인 기존 오탐으로 전 사이클과 동일). 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
       "commit": null
     }
   ]
