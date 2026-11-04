@@ -1305,6 +1305,25 @@ function bulkCatTargets(txns,ids){
  if(items.some(t=>t.type!==kind))return{ok:false,reason:'mixed'};
  return{ok:true,kind,items};
 }
+/* 선택 모드(일별거래/전체내역)에서 고른 거래들에 계좌(자산) 일괄 이동을 적용할 수 있는지 판정한다
+ * (app-evolve cycle298 critique → advance — 단건 수정(_applyOpenAsset/txOpenAsset/recOpenAsset)엔
+ * 이미 있던 fromAssetId/toAssetId 변경이 다건 선택엔 없던 공백 해소). bulkCatTargets과 달리 종류
+ * 혼합(income+expense)은 허용한다 — expense는 fromAssetId, income은 toAssetId를 바꾸는 것뿐이라
+ * 하나의 피커로 "옮길 계좌"만 고르면 되고, bulkCatTargets의 kind 제약(카테고리 집합이 종류별로
+ * 다름)과는 애초에 막아야 할 이유가 다르다. transfer/saving은 양쪽 계좌가 모두 거래의 의미에
+ * 관여해(어느 쪽을 "이동"할지 모호함) 이체 전용 메뉴(단건 수정)로만 바꿀 수 있게 제외하고, adjust
+ * (잔액 조정 자동 생성 거래)는 updateBalanceAdjust가 adjustAsset으로 자산과 1:1로 묶어 관리하므로
+ * 역시 제외한다. 분할 거래는 bulkCatTargets처럼 "분할은 카테고리당 1개"가 아니라 계좌는 거래
+ * 전체에 하나뿐이라(splits=[{category,amount,memo}]만 가짐) 막을 이유가 없어 허용한다. */
+function bulkAssetMoveTargets(txns,ids){
+ const idSet=ids instanceof Set?ids:new Set(ids||[]);
+ if(!idSet.size)return{ok:false,reason:'empty'};
+ const items=(txns||[]).filter(t=>idSet.has(t.id));
+ if(!items.length)return{ok:false,reason:'empty'};
+ if(items.some(t=>t.type!=='expense'&&t.type!=='income'))return{ok:false,reason:'transfer'};
+ if(items.some(t=>t.adjust))return{ok:false,reason:'adjust'};
+ return{ok:true,items};
+}
 /* 자산 선택모드(ST.aSel)의 두 번째 일괄동작 — 총자산 포함/제외(includeInTotal) 일괄 전환 대상을
  * 검증한다. bulkCatTargets와 같은 모양의 {ok,...}를 돌려주되, 거래와 달리 자산엔 이체/조정/분할
  * 같은 배제 대상이 없어 "선택이 비었거나 실제 자산과 하나도 안 맞으면 실패"만 본다. 선택된

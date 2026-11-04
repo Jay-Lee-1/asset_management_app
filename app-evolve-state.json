@@ -1,19 +1,8 @@
 {
-  "cycle": 298,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "전체내역/일별거래 다건 선택 시 계좌(귀속) 일괄 이동 기능 추가",
-    "why": "거래 선택모드(hist.selMode/lSel.mode)는 카테고리 일괄변경(doBulkCat, index.html:10632 / bulkCatTargets, logic.js:1296)과 삭제만 지원하고, 선택한 여러 내역을 다른 계좌(asset)로 한꺼번에 옮기는 기능이 전혀 없다. 단건 수정에서는 이미 _applyOpenAsset(index.html:5272)+txOpenAsset/recOpenAsset로 fromAssetId/toAssetId를 자유롭게 바꿀 수 있고, 잔액은 저장형 필드가 아니라 balancesUpTo가 매번 재생(replay)하는 파생값이라 계좌를 바꿔도 별도 보정 계산이 필요 없다 — 리스크가 큰 기능이 아니라 이미 있는 단건 패턴을 다건에 붙이면 되는 구조다. CSV 가져오기나 수동 입력 중 엉뚱한 계좌로 수십 건이 들어갔을 때 지금은 하나씩 열어 고쳐야 한다. cycle295 critique가 이미 이 공백을 봤지만 그때는 플랜 탭 단일계좌 한계(cycle295 advance로 해결됨)가 더 급해 보류했을 뿐, 공백 자체는 해소되지 않았다.",
-    "approach": "bulkCatTargets와 동일한 골격의 bulkAssetMoveTargets(txns,ids)를 logic.js에 신설해 transfer(양쪽 계좌가 모두 관여해 '이동'이 모호함)·adjust(잔액조정, 계좌에 묶인 의미)는 제외하고 income/expense만 허용, 섞인 type은 허용(한쪽은 fromAssetId, 한쪽은 toAssetId를 바꾸므로 kind 통일 불필요 — bulkCatTargets의 kind 제약과 다름). openAssetPicker({cashOrDebt:true, excludeMarketValued:true,...})로 대상 계좌를 고르게 하고, doBulkAssetMove(ids, newAssetId)가 type별로 fromAssetId 또는 toAssetId만 교체 후 touchSave+undoToast(doBulkCat과 동일 패턴)로 되돌릴 수 있게 한다. 선택바(updateSelBottom)에 세 번째 버튼으로 추가."
-  },
+  "cycle": 299,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 293,
-      "phase": "advance",
-      "timestamp": "2026-11-03T07:30:00.000Z",
-      "summary": "critique(cycle293) 계획대로 recSaveScopeApply('future'/'all')와 commitRec()의 확인 시트 없는 즉시 적용 경로에 undoToast를 추가했다. 세 경로 모두 orig(DB.recurrences[i]에 있던 교체 전 원본 참조, splitRecurrenceAt/pruneOrphanRecOverrides 어느 쪽도 변형하지 않음)를 그대로 되돌리는 방식으로 충분했다 — 'future' 분기는 추가로 분리 생성된 newRec을 id로 filter해 제거한다. 세 곳 모두 마지막 toast(...)를 undoToast(msg,undoFn)로 교체. 기존 toast 메시지 문구(정리 건수 안내 등)는 그대로 유지하고 전달 수단만 undoToast로 바꿔, lastToast를 검사하던 기존 회귀 테스트 6건을 lastUndo.msg로 갱신했다. 새 undo 복원 테스트 3건(recSaveScopeApply 'all'/'future', commitRec 즉시 적용 경로 각각 되돌리기 후 원본 레코드 참조·필드가 그대로 복원되는지) 추가. 테스트 2588->2591 통과(6건 수정+3건 추가). APP_VERSION 1.47.331->1.47.332, sw.js CACHE v598->v599. node test/run.js 2591/2591 통과, logic.js/sw.js 구문 검증(node --check) 통과. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 294,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-03T22:50:00.000Z",
       "summary": "서브에이전트로 앱 전체를 재조사. 발견: 전체내역/일별거래 다건 선택모드는 카테고리 일괄변경(doBulkCat)과 삭제만 지원하고, 선택한 여러 내역을 다른 계좌로 한꺼번에 옮기는 '계좌 일괄 이동' 기능이 없음 — 단건 수정의 _applyOpenAsset(txOpenAsset/recOpenAsset)가 이미 fromAssetId/toAssetId 변경을 지원하고 잔액이 balancesUpTo로 매번 재생되는 파생값이라 리스크가 크지 않은 구조인데도 다건에는 붙어있지 않다. cycle295 critique가 같은 공백을 봤지만 당시 플랜 탭 단일계좌 한계(해결됨)에 밀려 보류됐을 뿐 공백은 그대로 남아있었음을 확인. pending_advance_plan에 저장. (보류: 반복내역 관리 목록 삭제가 편집화면을 거쳐야 하는 점은 cycle297 critique가 이미 develop 사이즈로 분류해 이번 pick과 중복 배제; CSV 내보내기 기간 필터 부재는 백업 전체 내보내기로 우회 가능해 영향 작음; PIN 평문저장/fx·stock 환전기록/주식분할은 기존에 반복 보류된 항목이라 재차 제외.) 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 298,
+      "phase": "advance",
+      "timestamp": "2026-11-04T00:16:41.622Z",
+      "summary": "critique(cycle298) 계획대로 전체내역/일별거래 선택모드에 계좌(자산) 일괄 이동을 추가했다. logic.js에 bulkAssetMoveTargets(txns,ids)를 신설해 bulkCatTargets과 달리 income/expense 혼합을 허용하고(계좌는 expense는 fromAssetId, income은 toAssetId만 바꾸면 돼 kind 통일이 불필요), 분할 거래도 허용한다(계좌는 거래 전체에 하나뿐이라 splits와 무관) — transfer/saving(양쪽 계좌가 모두 관여해 이동이 모호함)과 adjust(updateBalanceAdjust가 adjustAsset으로 전용 관리)만 제외. doBulkAssetMove(ids,newAssetId)가 type별로 fromAssetId 또는 toAssetId만 교체 후 doBulkCat과 동일한 touchSave+undoToast 패턴으로 되돌릴 수 있게 한다. bulkAssetMovePickFor(ids,afterApply)가 실패 사유별 토스트를 보여주거나 openAssetPicker를 띄워 고른 계좌를 적용한다 — 계획(critique 단계)이 제안한 cashOrDebt+excludeMarketValued 대신 excludeMarketValued만 썼다: cashOrDebt(cash|savings|debt만 남김)는 realestate/etc/pension처럼 잔액식이면서 이미 단건 수정(_applyOpenAsset/txOpenAsset/recOpenAsset)이 허용하는 종류를 다건에서만 더 좁게 막는 회귀가 돼, 단건과 똑같은 선택지(excludeMarketValued만)로 맞췄다. ledgerCatSel/histCatSel과 같은 자리에 ledgerAssetMoveSel()/histAssetMoveSel()을 추가하고 activeSel()이 lSel/hist 분기에 move 키를 돌려주며 updateSelBottom()이 세 번째 바닥바 버튼(지갑 아이콘, has-cat 압축 스타일 재사용)으로 렌더한다. 테스트 17건 추가(bulkAssetMoveTargets 6, doBulkAssetMove 4, bulkAssetMovePickFor 4, activeSel의 move 분기 3) — 2658->2676(FUNCTIONS에 doBulkAssetMove/bulkAssetMovePickFor/ledgerAssetMoveSel/histAssetMoveSel 추가, 자산 피커 렌더에 필요한 DB.recurrences/rates도 테스트 DB에 포함). APP_VERSION 1.47.341->1.47.342, sw.js CACHE v608->v609. node test/run.js 2676/2676 통과, logic.js/sw.js 구문 검증(node --check) 통과, index.html 메인 인라인 스크립트(691616자) new Function 구문 검증 통과. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

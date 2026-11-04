@@ -203,6 +203,7 @@ const FUNCTIONS = [
   'buildGenericImportPreview', 'csvColSample', 'csvMapFieldHtml', 'openCsvColumnMap', 'renderCsvColumnMap',
   'csvMapSetMode', 'csvMapSetCatKind', 'csvMapColChosen', 'csvMapPickCol', 'csvMapPickAsset', 'csvMapPickCategory', 'csvMapApply',
   'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo', 'delAsset', 'assetDelSel', 'unsnapshotAssetName', 'doBulkCat', 'bulkCatPickFor', 'doBulkInclToggle', 'assetInclSel',
+  'doBulkAssetMove', 'bulkAssetMovePickFor', 'ledgerAssetMoveSel', 'histAssetMoveSel',
   'assetMergeCounts', 'openAssetMergePicker', 'confirmAssetMerge', 'mergeAssetInto',
   // archiveTxnsBefore/archiveMonthPicked/openArchiveOld는 app-evolve cycle222 advance('오래된
   // 데이터 정리' 메뉴 — cycle221 critique/advance가 준비해 둔 archiveBaselines()를 처음 실제로
@@ -9745,6 +9746,162 @@ test('bulkCatPickFor: 유효한 선택이면 해당 종류의 카테고리 피�
   assert.strictEqual(sandbox.closeSheetCalls, 1, '되돌아갈 이전 시트가 없는 단독 피커이므로 onPick이 직접 closeSheet를 불러야 함');
   assert.ok(afterApplyCalled, 'afterApply(선택모드 종료)가 호출되어야 함');
   assert.ok(sandbox.lastUndo, 'doBulkCat의 undoToast까지 그대로 이어져야 함');
+});
+
+/* ---------- bulkAssetMoveTargets(logic.js)/doBulkAssetMove/bulkAssetMovePickFor: 선택 모드
+   (일별거래/전체내역)의 계좌(자산) 일괄 이동 (app-evolve cycle298 critique → advance) ---------- */
+test('bulkAssetMoveTargets: 선택이 비었으면 reason:empty', () => {
+  const r = sandbox.bulkAssetMoveTargets([{ id: 'a', type: 'expense' }], new Set());
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.reason, 'empty');
+});
+test('bulkAssetMoveTargets: ids가 실제 거래와 하나도 안 맞아도 reason:empty', () => {
+  const r = sandbox.bulkAssetMoveTargets([{ id: 'a', type: 'expense' }], new Set(['없는id']));
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.reason, 'empty');
+});
+test('bulkAssetMoveTargets: 선택에 이체가 하나라도 섞이면 reason:transfer(양쪽 계좌가 모두 관여해 이동이 모호함)', () => {
+  const txns = [{ id: 'a', type: 'expense' }, { id: 'b', type: 'transfer' }];
+  const r = sandbox.bulkAssetMoveTargets(txns, new Set(['a', 'b']));
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.reason, 'transfer');
+});
+test('bulkAssetMoveTargets: 선택에 저축(saving)이 하나라도 섞이면 transfer와 같은 이유로 reason:transfer', () => {
+  const txns = [{ id: 'a', type: 'income' }, { id: 'b', type: 'saving' }];
+  const r = sandbox.bulkAssetMoveTargets(txns, new Set(['a', 'b']));
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.reason, 'transfer');
+});
+test('bulkAssetMoveTargets: 선택에 잔액 조정(t.adjust) 내역이 하나라도 섞이면 reason:adjust(updateBalanceAdjust가 adjustAsset으로 전용 관리)', () => {
+  const txns = [{ id: 'a', type: 'expense' }, { id: 'b', type: 'income', adjust: true, adjustAsset: 'a1' }];
+  const r = sandbox.bulkAssetMoveTargets(txns, new Set(['a', 'b']));
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.reason, 'adjust');
+});
+test('bulkAssetMoveTargets: income/expense가 섞여도 ok:true(bulkCatTargets의 kind 제약과 달리 계좌 이동은 섞임을 허용)', () => {
+  const txns = [{ id: 'a', type: 'expense' }, { id: 'b', type: 'income' }];
+  const r = sandbox.bulkAssetMoveTargets(txns, new Set(['a', 'b']));
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.items.length, 2);
+});
+test('bulkAssetMoveTargets: 분할 거래(t.splits)도 허용한다(계좌는 거래 전체에 하나뿐이라 카테고리와 달리 막을 이유가 없음)', () => {
+  const txns = [{ id: 'a', type: 'expense', splits: [{ category: '식비', amount: 7000 }, { category: '생활용품', amount: 3000 }] }];
+  const r = sandbox.bulkAssetMoveTargets(txns, new Set(['a']));
+  assert.strictEqual(r.ok, true);
+});
+
+test('doBulkAssetMove: expense 내역은 fromAssetId를, income 내역은 toAssetId를 새 계좌로 바꾼다', () => {
+  sandbox.TWi = -1;
+  const t1 = { id: 'x1', type: 'expense', fromAssetId: 'a_old', toAssetId: null, updatedAt: 1 };
+  const t2 = { id: 'x2', type: 'income', fromAssetId: null, toAssetId: 'a_old', updatedAt: 1 };
+  sandbox.DB = { txns: [t1, t2] };
+  sandbox.lastUndo = null;
+  sandbox.doBulkAssetMove(new Set(['x1', 'x2']), 'a_new');
+  assert.strictEqual(t1.fromAssetId, 'a_new');
+  assert.strictEqual(t1.toAssetId, null, 'expense는 toAssetId를 건드리지 않아야 함');
+  assert.strictEqual(t2.toAssetId, 'a_new');
+  assert.strictEqual(t2.fromAssetId, null, 'income은 fromAssetId를 건드리지 않아야 함');
+  assert.strictEqual(t1.updatedAt, 'test-updatedAt', 'touchSave로 touch()가 호출되어야 함(mergeCollection 동기화 불변식)');
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함');
+});
+test('doBulkAssetMove: undo 콜백을 부르면 각 내역의 원래 fromAssetId/toAssetId로 정확히 복원한다', () => {
+  sandbox.TWi = -1;
+  const t1 = { id: 'x1', type: 'expense', fromAssetId: 'a_old', toAssetId: null, updatedAt: 1 };
+  sandbox.DB = { txns: [t1] };
+  sandbox.lastUndo = null;
+  sandbox.doBulkAssetMove(new Set(['x1']), 'a_new');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(t1.fromAssetId, 'a_old', '되돌리면 원래 계좌로 복원되어야 함');
+});
+test('doBulkAssetMove: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 바뀌지 않는다', () => {
+  sandbox.TWi = 0;
+  const t1 = { id: 'x1', type: 'expense', fromAssetId: 'a_old' };
+  sandbox.DB = { txns: [t1] };
+  sandbox.doBulkAssetMove(new Set(['x1']), 'a_new');
+  assert.strictEqual(t1.fromAssetId, 'a_old');
+  sandbox.TWi = -1;
+});
+test('doBulkAssetMove: bulkAssetMoveTargets이 실패(이체 포함/빈 선택)로 판정하면 아무 것도 바꾸지 않는다(bulkAssetMovePickFor가 먼저 걸러내므로 여기선 안전망)', () => {
+  sandbox.TWi = -1;
+  const t1 = { id: 'x1', type: 'transfer', fromAssetId: 'a_old', toAssetId: 'a_old2' };
+  sandbox.DB = { txns: [t1] };
+  sandbox.lastUndo = null;
+  sandbox.doBulkAssetMove(new Set(['x1']), 'a_new');
+  assert.strictEqual(t1.fromAssetId, 'a_old');
+  assert.strictEqual(t1.toAssetId, 'a_old2');
+  assert.strictEqual(sandbox.lastUndo, null, 'undoToast도 호출되지 않아야 함');
+});
+
+test('bulkAssetMovePickFor: 선택이 비어 있으면 안내 토스트만 띄우고 자산 피커를 열지 않는다', () => {
+  sandbox.DB = { txns: [] };
+  sandbox.lastPickerHtml = null;
+  sandbox.bulkAssetMovePickFor(new Set(), () => {});
+  assert.strictEqual(sandbox.lastToast, '선택된 내역이 없어요');
+  assert.strictEqual(sandbox.lastPickerHtml, null, '피커를 열지 않아야 함');
+});
+test('bulkAssetMovePickFor: 선택에 이체가 섞여 있으면 이체·저축 전용 안내를 띄우고 피커를 열지 않는다', () => {
+  sandbox.DB = { txns: [{ id: 'a', type: 'transfer' }] };
+  sandbox.lastPickerHtml = null;
+  sandbox.bulkAssetMovePickFor(new Set(['a']), () => {});
+  assert.strictEqual(sandbox.lastToast, '이체·저축 내역은 계좌를 한번에 옮길 수 없어요');
+  assert.strictEqual(sandbox.lastPickerHtml, null);
+});
+test('bulkAssetMovePickFor: 선택에 잔액 조정 내역이 섞여 있으면 조정 전용 안내를 띄우고 피커를 열지 않는다', () => {
+  sandbox.DB = { txns: [{ id: 'a', type: 'income', adjust: true, adjustAsset: 'a1' }] };
+  sandbox.lastPickerHtml = null;
+  sandbox.bulkAssetMovePickFor(new Set(['a']), () => {});
+  assert.strictEqual(sandbox.lastToast, '잔액 조정 내역은 계좌를 옮길 수 없어요');
+  assert.strictEqual(sandbox.lastPickerHtml, null);
+});
+test('bulkAssetMovePickFor: 유효한 선택이면 자산 피커를 열고, 고르면 적용→시트 닫기→afterApply까지 이어진다(시세평가 자산은 제외)', () => {
+  sandbox.TWi = -1;
+  const t1 = { id: 'x1', type: 'expense', fromAssetId: 'a_old', toAssetId: null, updatedAt: 1 };
+  sandbox.DB = {
+    settings: { groupOrder: ['cash', 'savings', 'fx'] },
+    assets: [
+      { id: 'a_cash', name: '지갑', type: 'cash', owner: '나', baseAmount: 10000, includeInTotal: true },
+      { id: 'a_usd', name: '달러', type: 'fx', owner: '나', currency: 'USD', fxAmount: 100, includeInTotal: true },
+    ],
+    txns: [t1],
+    recurrences: [],
+    rates: { fx: { USD: 1300 } },
+  };
+  sandbox.lastPickerHtml = null;
+  sandbox.closeSheetCalls = 0;
+  sandbox.lastUndo = null;
+  let afterApplyCalled = false;
+  sandbox.bulkAssetMovePickFor(new Set(['x1']), () => { afterApplyCalled = true; });
+  assert.ok(sandbox.lastPickerHtml, '자산 피커(openAssetPicker)가 열려야 함');
+  assert.ok(sandbox.lastPickerHtml.includes('data-val="a_cash"'), '현금 자산은 후보에 있어야 함');
+  assert.ok(!sandbox.lastPickerHtml.includes('data-val="a_usd"'), '시세평가 자산(fx)은 excludeMarketValued로 제외되어야 함');
+  assert.strictEqual(typeof sandbox.window._pkPick, 'function', 'onPick 콜백이 피커에 전달되어야 함');
+  sandbox.window._pkPick('a_cash'); // 사용자가 피커에서 '지갑'을 고른 상황을 흉내냄
+  assert.strictEqual(t1.fromAssetId, 'a_cash', '고른 계좌가 실제로 적용되어야 함');
+  assert.strictEqual(sandbox.closeSheetCalls, 1, '되돌아갈 이전 시트가 없는 단독 피커이므로 onPick이 직접 closeSheet를 불러야 함');
+  assert.ok(afterApplyCalled, 'afterApply(선택모드 종료)가 호출되어야 함');
+  assert.ok(sandbox.lastUndo, 'doBulkAssetMove의 undoToast까지 그대로 이어져야 함');
+});
+
+test('activeSel: 일별거래 선택모드(lSel)엔 일괄 계좌 이동 버튼(move)이 있다(app-evolve cycle298 advance)', () => {
+  setupLedgerDB();
+  sandbox.ST.aSel = { mode: false, ids: new Set() };
+  sandbox.ST.lSel = { mode: true, ids: new Set() };
+  const s = sandbox.activeSel();
+  assert.strictEqual(s.move, 'ledgerAssetMoveSel()');
+});
+test('activeSel: 전체내역 선택모드(hist.selMode)엔 일괄 계좌 이동 버튼(move)이 있다(app-evolve cycle298 advance)', () => {
+  setupHistoryDB();
+  sandbox.ST.aSel = { mode: false, ids: new Set() };
+  sandbox.ST.lSel = { mode: false, ids: new Set() };
+  sandbox.ST.hist.selMode = true;
+  const s = sandbox.activeSel();
+  assert.strictEqual(s.move, 'histAssetMoveSel()');
+});
+test('activeSel: 자산 선택모드(aSel)엔 move가 없다(자산 자체의 계좌 이동은 성립하지 않는 개념)', () => {
+  setupAssetsDB();
+  sandbox.ST.aSel = { mode: true, ids: new Set() };
+  const s = sandbox.activeSel();
+  assert.strictEqual(s.move, undefined);
 });
 
 /* ---------- deleteRecsUndo: 반복 삭제(전체) 공용 되돌리기 인프라 (delRecConfirm/recApply 'all' scope) ---------- */
