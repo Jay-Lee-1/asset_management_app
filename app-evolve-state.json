@@ -1,15 +1,8 @@
 {
   "cycle": 299,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 294,
-      "phase": "review",
-      "timestamp": "2026-11-03T09:45:00.000Z",
-      "summary": "cycle294 develop 커밋(8fa42af) 검토 — goalsManageBody가 matchGoalQuery/esc를 올바르게 재사용하고, clrInput/goalQInput 모두 대상 엘리먼트 부재(#goalQ가 임계값 미달로 렌더되지 않거나 시트가 닫힌 뒤 늦게 실행되는 경우)를 방어적으로 처리함을 확인. duplicateGoal/saveGoal/delGoal 모두 저장 후 closeSheet()로 시트 전체를 닫으므로(목록에 머물지 않음) 목표 추가/삭제로 개수가 임계값을 넘나들어도 검색창 표시 여부는 다음에 openGoalsList()를 다시 열 때 항상 새로 계산돼 불일치가 생기지 않는다. node test/run.js 2600/2600, logic.js 구문 검증 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 294,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-11-04T01:10:12.163Z",
       "summary": "반복 내역 관리(openRecManage/recManageBody) 목록 행에 복제(duplicateRec)/일시중지(toggleRecActive) 버튼은 바로 있었지만 삭제는 행을 탭해 editRec() 수정 화면까지 들어가야만 delRecConfirm을 쓸 수 있던 공백 발견(cycle297 critique가 이미 지목했지만 영향 작아 develop 사이즈로 보류해뒀던 항목, cycle298 critique는 다른 항목을 채택해 계속 미뤄졌다). duplicateRec/toggleRecActive와 동일한 패턴으로 event.stopPropagation() 후 delRecConfirm(id)만 호출하는 act-btn danger 버튼을 row-acts에 추가했다 — delRecConfirm은 이미 confirmSheet+deleteRecsUndo(실행취소 가능)로 안전하게 구현돼 있어 새 코드는 행 UI 배선뿐이고 로직 변경은 없다. 테스트 2건 추가: 삭제 버튼의 onclick이 event.stopPropagation() 후 delRecConfirm(id)만 호출(행 전체의 editRec로 전파되지 않음)하는지, aria-label이 복제/토글 버튼과 동일하게 memo로 서로 구분되는지. 테스트 2676->2678 통과. APP_VERSION 1.47.342->1.47.343, sw.js CACHE v609->v610. node test/run.js 2678/2678 통과, logic.js/sw.js 구문 검증(node --check) 통과, index.html 메인 인라인 스크립트(691774자) new vm.Script 구문 검증 통과.",
       "commit": "ff296754964cc1b55b4aed6e9348deeaa93e5998"
+    },
+    {
+      "cycle": 299,
+      "phase": "review",
+      "timestamp": "2026-11-04T02:15:00.000Z",
+      "summary": "cycle299 develop 커밋(ff29675) 검토 — 반복 내역 관리 행에 추가된 삭제 버튼(act-btn danger, svg('trash'))이 delOwner/delAssetQtyLog/delCat과 동일한 act-btn danger 패턴을 그대로 따르고, delRecConfirm이 이미 confirmSheet+deleteRecsUndo(실행취소 가능)로 구현돼 있어 새 코드는 행 UI 배선뿐임을 diff로 확인. 복제/일시중지 버튼과 같은 onclick=\"event.stopPropagation();...\" 순서라 행 전체 클릭(editRec 진입)으로 전파되지 않음을 신규 테스트 2건과 함께 검증. node test/run.js 2678/2678 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
+      "commit": null
     }
   ]
 }
