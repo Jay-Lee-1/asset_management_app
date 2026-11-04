@@ -42,6 +42,12 @@
       "short_name": "이체",
       "url": "./?action=addTransfer",
       "icons": [{ "src": "./icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "저축 입력",
+      "short_name": "저축",
+      "url": "./?action=addSaving",
+      "icons": [{ "src": "./icon-192.png", "sizes": "192x192", "type": "image/png" }]
     }
   ]
 }

@@ -1,147 +1,147 @@
 {
-  "cycle": 303,
-  "phase": "develop",
-  "pending_advance_plan": null,
-  "history": [
-    {
-      "cycle": 298,
-      "phase": "develop",
-      "timestamp": "2026-11-03T21:10:33.080Z",
-      "summary": "mergeAssetInto(자산 합치기, cycle297)가 거래/반복거래의 fromAssetId/toAssetId/adjustAsset은 옮기지만 DB.goals의 linkedAssetId(type:\"asset\" 목표가 가리키는 자산)는 전혀 건드리지 않던 공백 발견 — 목표 생성은 BAL_ASSET_TYPES와 똑같은 잔액식 종류만 연결 대상으로 허용하는데(openAssetForm, excludeMarketValued+excludeDebt), 그 목표가 연결한 자산을 다른 자산에 합치면 자산 자체는 to로 안전하게 보존되는데도 goalLinkedAssetGone()이 \"연결된 자산이 사라졌어요\"로 잘못 표시해 목표 추적이 끊겼다. saveAsset()이 owner 변경 시 연결 목표를 재배선하는 기존 패턴(4703행)과 같은 자리에 적용: mergeAssetInto가 from을 가리키던 goal.linkedAssetId를 to로 옮기고 touchSave에 포함시키며, undoToast 복원 클로저에서 원래 값으로 되돌린다. 테스트 3건 추가(목표가 to로 옮겨가고 touch됨+goalLinkedAssetGone이 false+undo 시 원복, to를 이미 가리키던 목표/networth형 목표는 건드리지 않음). 테스트 2655->2658 통과. APP_VERSION 1.47.340->1.47.341, sw.js CACHE v607->v608. node test/run.js 2658/2658 통과, sw.js 구문 검증(node --check) 통과, index.html 메인 인라인 스크립트(688862자) node --check 통과.",
-      "commit": "e4f020b"
-    },
-    {
-      "cycle": 298,
-      "phase": "review",
-      "timestamp": "2026-11-03T21:45:00.000Z",
-      "summary": "cycle298 develop 커밋(e4f020b) 검토 — goalItems가 DB.goals 중 type==='asset'&&linkedAssetId===fromId인 항목만 모아 to로 옮기고, 이미 to를 가리키던 목표나 networth형 목표는 건드리지 않음을 diff와 신규 테스트 3건으로 확인. goalLinkedAssetGone()은 DB.assets에 linkedAssetId가 존재하는지만 보므로 from 제거+linkedAssetId를 to로 재배선한 뒤에는 항상 false가 됨을 검증. undoToast 복원 클로저가 goalItems.forEach로 prevLinked를 되돌리는 순서가 DB.assets.splice로 from을 되살리는 시점과 독립적이라(목표는 id 참조만 바꾸는 것이라 자산 배열 순서에 의존하지 않음) 충돌 없음을 확인. touchSave에 goalItems를 포함시켜 목표도 함께 touch되는 것도 확인(테스트가 updatedAt 변경을 검사). node test/run.js 2658/2658, index.html 메인 인라인 스크립트 node --check 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
-      "commit": null
-    },
-    {
-      "cycle": 298,
-      "phase": "critique",
-      "timestamp": "2026-11-03T22:50:00.000Z",
-      "summary": "서브에이전트로 앱 전체를 재조사. 발견: 전체내역/일별거래 다건 선택모드는 카테고리 일괄변경(doBulkCat)과 삭제만 지원하고, 선택한 여러 내역을 다른 계좌로 한꺼번에 옮기는 '계좌 일괄 이동' 기능이 없음 — 단건 수정의 _applyOpenAsset(txOpenAsset/recOpenAsset)가 이미 fromAssetId/toAssetId 변경을 지원하고 잔액이 balancesUpTo로 매번 재생되는 파생값이라 리스크가 크지 않은 구조인데도 다건에는 붙어있지 않다. cycle295 critique가 같은 공백을 봤지만 당시 플랜 탭 단일계좌 한계(해결됨)에 밀려 보류됐을 뿐 공백은 그대로 남아있었음을 확인. pending_advance_plan에 저장. (보류: 반복내역 관리 목록 삭제가 편집화면을 거쳐야 하는 점은 cycle297 critique가 이미 develop 사이즈로 분류해 이번 pick과 중복 배제; CSV 내보내기 기간 필터 부재는 백업 전체 내보내기로 우회 가능해 영향 작음; PIN 평문저장/fx·stock 환전기록/주식분할은 기존에 반복 보류된 항목이라 재차 제외.) 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
-    {
-      "cycle": 298,
-      "phase": "advance",
-      "timestamp": "2026-11-04T00:16:41.622Z",
-      "summary": "critique(cycle298) 계획대로 전체내역/일별거래 선택모드에 계좌(자산) 일괄 이동을 추가했다. logic.js에 bulkAssetMoveTargets(txns,ids)를 신설해 bulkCatTargets과 달리 income/expense 혼합을 허용하고(계좌는 expense는 fromAssetId, income은 toAssetId만 바꾸면 돼 kind 통일이 불필요), 분할 거래도 허용한다(계좌는 거래 전체에 하나뿐이라 splits와 무관) — transfer/saving(양쪽 계좌가 모두 관여해 이동이 모호함)과 adjust(updateBalanceAdjust가 adjustAsset으로 전용 관리)만 제외. doBulkAssetMove(ids,newAssetId)가 type별로 fromAssetId 또는 toAssetId만 교체 후 doBulkCat과 동일한 touchSave+undoToast 패턴으로 되돌릴 수 있게 한다. bulkAssetMovePickFor(ids,afterApply)가 실패 사유별 토스트를 보여주거나 openAssetPicker를 띄워 고른 계좌를 적용한다 — 계획(critique 단계)이 제안한 cashOrDebt+excludeMarketValued 대신 excludeMarketValued만 썼다: cashOrDebt(cash|savings|debt만 남김)는 realestate/etc/pension처럼 잔액식이면서 이미 단건 수정(_applyOpenAsset/txOpenAsset/recOpenAsset)이 허용하는 종류를 다건에서만 더 좁게 막는 회귀가 돼, 단건과 똑같은 선택지(excludeMarketValued만)로 맞췄다. ledgerCatSel/histCatSel과 같은 자리에 ledgerAssetMoveSel()/histAssetMoveSel()을 추가하고 activeSel()이 lSel/hist 분기에 move 키를 돌려주며 updateSelBottom()이 세 번째 바닥바 버튼(지갑 아이콘, has-cat 압축 스타일 재사용)으로 렌더한다. 테스트 17건 추가(bulkAssetMoveTargets 6, doBulkAssetMove 4, bulkAssetMovePickFor 4, activeSel의 move 분기 3) — 2658->2676(FUNCTIONS에 doBulkAssetMove/bulkAssetMovePickFor/ledgerAssetMoveSel/histAssetMoveSel 추가, 자산 피커 렌더에 필요한 DB.recurrences/rates도 테스트 DB에 포함). APP_VERSION 1.47.341->1.47.342, sw.js CACHE v608->v609. node test/run.js 2676/2676 통과, logic.js/sw.js 구문 검증(node --check) 통과, index.html 메인 인라인 스크립트(691616자) new Function 구문 검증 통과. pending_advance_plan null로 비움.",
-      "commit": null
-    },
-    {
-      "cycle": 299,
-      "phase": "develop",
-      "timestamp": "2026-11-04T01:10:12.163Z",
-      "summary": "반복 내역 관리(openRecManage/recManageBody) 목록 행에 복제(duplicateRec)/일시중지(toggleRecActive) 버튼은 바로 있었지만 삭제는 행을 탭해 editRec() 수정 화면까지 들어가야만 delRecConfirm을 쓸 수 있던 공백 발견(cycle297 critique가 이미 지목했지만 영향 작아 develop 사이즈로 보류해뒀던 항목, cycle298 critique는 다른 항목을 채택해 계속 미뤄졌다). duplicateRec/toggleRecActive와 동일한 패턴으로 event.stopPropagation() 후 delRecConfirm(id)만 호출하는 act-btn danger 버튼을 row-acts에 추가했다 — delRecConfirm은 이미 confirmSheet+deleteRecsUndo(실행취소 가능)로 안전하게 구현돼 있어 새 코드는 행 UI 배선뿐이고 로직 변경은 없다. 테스트 2건 추가: 삭제 버튼의 onclick이 event.stopPropagation() 후 delRecConfirm(id)만 호출(행 전체의 editRec로 전파되지 않음)하는지, aria-label이 복제/토글 버튼과 동일하게 memo로 서로 구분되는지. 테스트 2676->2678 통과. APP_VERSION 1.47.342->1.47.343, sw.js CACHE v609->v610. node test/run.js 2678/2678 통과, logic.js/sw.js 구문 검증(node --check) 통과, index.html 메인 인라인 스크립트(691774자) new vm.Script 구문 검증 통과.",
-      "commit": "ff296754964cc1b55b4aed6e9348deeaa93e5998"
-    },
-    {
-      "cycle": 299,
-      "phase": "review",
-      "timestamp": "2026-11-04T02:15:00.000Z",
-      "summary": "cycle299 develop 커밋(ff29675) 검토 — 반복 내역 관리 행에 추가된 삭제 버튼(act-btn danger, svg('trash'))이 delOwner/delAssetQtyLog/delCat과 동일한 act-btn danger 패턴을 그대로 따르고, delRecConfirm이 이미 confirmSheet+deleteRecsUndo(실행취소 가능)로 구현돼 있어 새 코드는 행 UI 배선뿐임을 diff로 확인. 복제/일시중지 버튼과 같은 onclick=\"event.stopPropagation();...\" 순서라 행 전체 클릭(editRec 진입)으로 전파되지 않음을 신규 테스트 2건과 함께 검증. node test/run.js 2678/2678 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
-      "commit": null
-    },
-    {
-      "cycle": 299,
-      "phase": "critique",
-      "timestamp": "2026-11-04T03:12:24.000Z",
-      "summary": "서브에이전트로 앱 전체를 재조사(이미 처리/보류된 ~20개 항목 제외 지시). 발견: homeAlerts()(10136)가 updateAlerts()를 통해 renderCurrent()(저장 거의 전부+탭전환마다)에서 불리는데, 그 안에서 spendByCategory(TM.y,TM.m)를 _bo(10182)/_bpw(10196) 필터에서 두 번 처음부터 재스캔하고 budgetForMonthWithCarry(6779)를 예산 카테고리마다 필터+alert객체 생성에서 또 호출해(budgetCarryFor(6764)의 최대 24개월 재귀 체인이 매번 재계산됨). openSpendAnalysis()의 totalBudgetSummary(6785)/행 루프(7007)도 서로 다른 캐시로 같은 이월 체인을 또 계산 — cycle294가 고친 분석화면 중복재계산과 같은 종류의 버그지만 분석화면 1회보다 훨씬 자주(앱 전체 저장 동작마다) 반복되는 더 뜨거운 경로. pending_advance_plan에 저장. (보류: 거래 tag/label 시스템은 제품 공백이나 범위/우선순위가 덜 확실해 보류, 자산별(귀속) 예산은 cycle194/196/295가 이미 전역 예산을 의도적 설계로 재확인한 바 있어 재제안하지 않음.) 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
-    {
-      "cycle": 299,
-      "phase": "advance",
-      "timestamp": "2026-11-04T04:15:17.316Z",
-      "summary": "critique(cycle299) 계획대로 homeAlerts()/openSpendAnalysis()의 예산 이월(budgetCarryFor) 재계산을 캐시로 공유했다. budgetCarryFor(c,y,m,depth=0,cache=null)와 budgetForMonthWithCarry(c,y,m,depth=0,cache=null)에 선택적 cache(Map) 인자를 추가해 `${c}:${y}-${m}` 키로 재귀 체인을 메모이즈하고(cache 생략 시 기존과 100% 동일, spendTrend/incomeTrend의 cache 인자(cycle294)와 같은 하위호환 패턴), 재귀 호출에도 그대로 전달한다. totalBudgetSummary(rows,y,m,cache=null)도 같은 cache를 받아 budgetCarryFor에 넘긴다. homeAlerts()는 spendByCategory(TM.y,TM.m)를 한 번만 _spendTM에 담아 budgetOver(_bo)/budgetPaceWarn(_bpw) 필터 양쪪에 재사용하고, const _bwc=new Map()을 만들어 네 군데 budgetForMonthWithCarry 호출(필터 2곳+단일건 alert 생성 2곳)에 전부 넘긴다. openSpendAnalysis()도 const _bwc=new Map()을 만들어 totalBudgetSummary와 카테고리 행 루프(budgetForMonthWithCarry) 양쪪에 공유한다. 테스트 4건 추가: cache 유무가 budgetCarryFor/budgetForMonthWithCarry 결과를 바꾸지 않는지(동등성), 같은 cache를 재사용하면 같은 (카테고리,달)에 spendByCategory를 다시 안 부르는지, homeAlerts에서 이월 켠 카테고리 2개가 모두 초과해도 spendByCategory가 이번 달 1번+카테고리별 전달 1번(총 3번)만 호출되는지(spy, cache 없었다면 6번), openSpendAnalysis에서 이월 켠 카테고리 1개의 전달 조회가 totalBudgetSummary/행 루프 사이에 중복 안 되는지(catCache 4번+budgetCarryFor 1번=5번, cache 없었다면 6번)(spy). 테스트 2678->2682 통과. APP_VERSION 1.47.343->1.47.344, sw.js CACHE v610->v611. node test/run.js 2682/2682 통과, index.html 메인 인라인 스크립트(new Function)/sw.js(node --check) 구문 검증 통과. pending_advance_plan null로 비움.",
-      "commit": null
-    },
-    {
-      "cycle": 300,
-      "phase": "develop",
-      "timestamp": "2026-11-04T05:13:08.001Z",
-      "summary": "mergeAssetInto(자산 합치기, cycle297)가 from을 가리키던 asset형 목표의 linkedAssetId는 cycle298에서 to로 옮겼지만 goal.owner는 그대로 두던 공백 발견(서브에이전트 조사) — openAssetMergePicker/pkFilteredAssets(onlyType+excludeId만 필터)는 귀속(owner)까지는 걸러주지 않아 다른 귀속 소유의 동종 자산끼리도 합쳐질 수 있는데, 그 경우 목표는 합쳐진 뒤 실제 자산(to)을 계속 추적하면서도 옛 귀속 캐러셀에만 보이는 상태가 된다 — saveAsset()이 자산의 owner가 바뀔 때 연결 목표의 owner를 같이 맞추는 기존 가드(4712행)와 똑같은 어긋남이 합치기 경로에서도 재현됨. mergeAssetInto의 goalItems 루프에 saveAsset과 동일한 g.owner!==to.owner 체크를 추가해 to.owner로 맞추고, undoToast 복원 클로저도 prevOwner로 되돌리게 했다. 테스트 3건 추가(다른 귀속끼리 합치면 목표 owner가 to로 바뀜, 같은 귀속이면 그대로, undo 시 원래 귀속으로 복원). 테스트 2682->2685 통과. APP_VERSION 1.47.344->1.47.345, sw.js CACHE v611->v612. node test/run.js 2685/2685 통과, index.html 메인 인라인 스크립트(vm.Script)/sw.js·logic.js(node --check) 구문 검증 통과.",
-      "commit": null
-    },
-    {
-      "cycle": 300,
-      "phase": "review",
-      "timestamp": "2026-11-04T06:09:10.006Z",
-      "summary": "cycle300 develop 커밋(bc8ea10) 검토 — mergeAssetInto의 goalItems 루프에 추가된 g.owner!==to.owner 체크가 saveAsset()의 기존 owner 재배선 가드(4721행: (DB.goals||[]).forEach(g=>{if(g.type==='asset'&&g.linkedAssetId===d.id&&g.owner!==d.owner){g.owner=d.owner;touch(g)}}))와 조건·효과가 완전히 동일함을 diff로 확인. touchSave(to,...,...goalItems.map(x=>x.g))는 owner 체크 추가 전부터 이미 goalItems 전체를 touch하고 있어 이번 변경으로 touch 누락/중복이 생기지 않음도 확인. undo 클로저가 prevOwner로 owner를 되돌리는 순서가 DB.assets.splice로 from을 복원하는 시점과 독립적임(목표는 id 참조만 바꾸는 것이라 자산 배열 순서에 의존하지 않음)을 cycle298 review와 동일한 논리로 재확인. 신규 테스트 3건(다른 귀속 합치면 owner가 to로 바뀜, 같은 귀속이면 불변, undo 시 원복)이 실제로 동작을 검증함을 코드로 추적. node test/run.js 2685/2685 통과, index.html 메인 인라인 스크립트(new Function)/sw.js·logic.js(node --check) 구문 검증 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
-      "commit": null
-    },
-    {
-      "cycle": 300,
-      "phase": "critique",
-      "timestamp": "2026-11-04T07:10:00.000Z",
-      "summary": "서브에이전트로 앱 전체를 재조사. 서브에이전트의 1순위 추천(카테고리 예산을 귀속별로 분리)은 cycle299 critique가 이미 명시한 대로 cycle194/196/295에서 전역 예산을 의도적 설계로 재확인한 항목이라 재채택하지 않고 기각, 2순위 후보를 선정했다. 발견: 반복거래 주기(freq)가 daily/weekly/monthly/yearly 네 가지뿐이라(txFreq/recFreq 버튼, index.html:5155·5672) 격주 급여나 2주 단위 정기 지출처럼 실제로 흔한 주기를 표현할 방법이 없음 — recDates()(logic.js:30)가 weekly를 이미 step=7인 daily 변형(58행: const step=r.freq==='daily'?1:7)으로 처리해 step 일반화로 격주(step=14)를 자연스럽게 확장할 구조적 여지가 있다. pending_advance_plan에 저장(격주만 1차 범위, 완전 자유 N일 간격은 UI 입력 필드가 더 필요해 범위 밖). (보류: 반복 내역 관리 복제/일시중지/삭제는 cycle299에서 이미 다룸; fx/stock 등 자산 간 환전·매수 기록 연동은 원장 모델 재검토급 항목이라 cycle297이 이미 보류한 대로 재차 보류.) 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
-    {
-      "cycle": 300,
-      "phase": "advance",
-      "timestamp": "2026-11-04T08:11:45.213Z",
-      "summary": "critique(cycle300) 계획대로 반복 내역 주기에 '격주(biweekly)'를 추가했다. logic.js: recDates()의 step 계산을 r.freq==='daily'?1:(r.freq==='biweekly'?14:7)로 확장(else 분기, 기존 weekly=7과 분리), monthlyEquivalent()에 biweekly 분기(amt*365/14/12) 추가, recFreqLabelStr()에 '격주 ◯요일' 레이블(weekly와 동일하게 startDate 요일 기반) 추가, recNthDate()의 버퍼 추정식에 biweekly 전용 분기(14*span)를 weekly 옆에 추가(없어도 doubling으로 결국 수렴하지만 weekly와 같은 패턴으로 명시). recScheduleSameSlot()(findPossibleDuplicateRec이 쓰는 '같은 반복 슬롯' 판정)에 biweekly 분기를 추가했다 — 계획에 없던 발견: biweekly를 weekly처럼 요일만 비교하면 같은 요일인데 2주 중 다른 주(7일 차이)인 두 반복을 중복으로 오판하므로, daysBetween(a.startDate,b.startDate)%14===0(요일 일치를 자동 포함)으로 '같은 2주 주기'까지 비교하게 했다. index.html: txFreq/recFreq 각각의 freqBtns 배열(5155, 5672)에 ['biweekly','격주'] 옵션 추가 — _applyFreq/clampDay/weekend 필드 노출/recFreq의 weekend 리셋은 모두 freq==='monthly' 전용 분기라 손대지 않고 그대로 통과함을 코드 확인. sanitizeBackup도 freq별 화이트리스트 검증이 없어(monthly 전용 day/weekend 정규화만 존재) 수정 불필요. 계획이 언급한 완전 자유 N일 간격(custom)은 1차 범위대로 제외. 테스트 10건 추가: recDates biweekly 2건, recFreqLabelStr biweekly 2건, monthlyEquivalent biweekly 1건, recNthDate/recCountUntil biweekly 1건, findPossibleDuplicateRec biweekly phase 판정 1건(14일 차이=중복, 7일 차이=비중복) — 2682->2692 통과. APP_VERSION 1.47.345->1.47.346, sw.js CACHE v612->v613. node test/run.js 2692/2692 통과, logic.js/sw.js node --check 통과, index.html 메인 인라인 스크립트 new Function 구문 검증 통과. pending_advance_plan null로 비움.",
-      "commit": null
-    },
-    {
-      "cycle": 301,
-      "phase": "develop",
-      "timestamp": "2026-11-04T09:12:00.000Z",
-      "summary": "자산 선택모드(ST.aSel)에 일괄 '귀속(owner) 변경'이 없던 공백 발견 — cycle296 critique가 이미 짚어뒀지만 당시엔 포함/제외(includeInTotal) 토글에 밀려 보류됐고 이후로도 아무 사이클이 채택하지 않은 채 그대로 남아 있었다. assetDelSel/doBulkInclToggle과 동일한 골격으로 메움: logic.js에 assetOwnerTargets(assets,ids)를 신설(assetInclTargets과 달리 mixed 판정 없이 선택 존재 여부만 검증 — owner는 피커로 매번 새 값을 고르므로 현재 상태가 섞였는지는 버튼 선택에 영향 없음), doBulkOwnerMove(ids,newOwner)가 doBulkCat과 동일한 touchSave+undoToast 패턴으로 선택된 자산들의 owner를 일괄 치환한다. saveAsset()이 자산 하나의 owner가 바뀔 때 연결된 asset형 목표(goal.linkedAssetId)의 owner를 같이 맞추는 기존 가드(4712행 부근, mergeAssetInto도 cycle300에서 합치기 경로에 동일 적용)와 같은 불변식을 일괄 변경에도 지켜 goalItems로 모아 함께 touchSave+undo한다. assetOwnerMovePickFor(ids,afterApply)가 openOwnerPicker를 띄워 고른 귀속을 적용하고(bulkAssetMovePickFor와 동일하게 단독 피커라 onPick에서 closeSheet), assetOwnerSel()이 ledgerAssetMoveSel/histAssetMoveSel과 같은 이유로(피커를 거치므로) 적용 후에야 선택모드를 끝낸다. activeSel()의 aSel 분기에 ownerMove 키를 추가하고 updateSelBottom()이 네 번째 바닥바 버튼(users 아이콘, has-cat 압축 스타일 재사용)으로 렌더한다. 테스트 24건 추가: assetOwnerTargets 3건, doBulkOwnerMove 8건(일괄 적용/undo/twGuard/빈선택 안전망/이미 같은 귀속이어도 자산은 doBulkCat처럼 무조건 touch되지만 목표는 실제로 안 바뀌면 touch 안 함/목표 owner 동기화/networth형·다른 자산 연결 목표는 무시/undo 시 목표도 복원), assetOwnerMovePickFor 2건, assetOwnerSel 2건, activeSel의 ownerMove 분기 2건(기존 'aSel엔 move가 없다' 테스트와 짝) — test/run.js의 FUNCTIONS 목록에 doBulkOwnerMove/assetOwnerMovePickFor/assetOwnerSel/openOwnerPicker 추가(openOwnerPicker는 기존엔 테스트에서 안 쓰여 빠져 있었음). 테스트 2692->2709 통과. APP_VERSION 1.47.346->1.47.347, sw.js CACHE v613->v614. node test/run.js 2709/2709 통과, logic.js/sw.js(node --check)/index.html 메인 인라인 스크립트(new Function, 696126자) 구문 검증 통과.",
-      "commit": null
-    },
-    {
-      "cycle": 301,
-      "phase": "review",
-      "timestamp": "2026-11-04T10:05:00.000Z",
-      "summary": "cycle301 develop 커밋(6c94019) 검토 — assetOwnerTargets이 assetInclTargets과 달리 mixed 판정 없이 선택 존재/실존 자산 여부만 보는 것이 의도대로임을 확인(owner는 피커로 매번 새 값을 고르므로 현재 상태가 섞였는지는 버튼 선택에 영향 없음). doBulkOwnerMove의 goalItems 수집이 saveAsset()의 owner 재배선 가드(4712행 부근)·mergeAssetInto(cycle300)와 동일한 조건(g.type==='asset'&&g.linkedAssetId===a.id&&g.owner!==newOwner)임을 diff로 재확인. items는 DB.assets를 ids(Set)로 필터한 것이라 중복이 없어 goalItems에 같은 goal이 두 번 들어갈 수 없음을 확인. undoToast가 prevOwner 배열로 자산을, goalItems의 prevOwner로 목표를 각각 되돌리는 것도 mergeAssetInto의 undo 클로저와 같은 패턴. assetOwnerMovePickFor/openOwnerPicker 호출이 back 없이 onPick에서 closeSheet()를 직접 부르는 것도 bulkAssetMovePickFor와 동일한 기존 패턴임을 pkChoose/openPicker 코드로 확인(back이 없어도 openPicker가 back||null로 안전하게 처리). node test/run.js 2709/2709 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
-      "commit": null
-    },
-    {
-      "cycle": 301,
-      "phase": "critique",
-      "timestamp": "2026-11-04T11:05:00.000Z",
-      "summary": "서브에이전트로 앱 전체를 재조사(기존에 처리/보류된 항목 목록을 명시해 제외 지시). 발견: 자산 선택모드(ST.aSel)와 거래 선택모드(ST.lSel/hist.selMode)는 이미 선택→일괄동작 패턴을 갖췄는데 반복 내역 관리 목록(recManageBody, index.html:7404-7437)만 유일하게 건당 버튼(duplicateRec/toggleRecActive/delRecConfirm)뿐이고 선택모드가 전혀 없음을 확인 — deleteRecsUndo(ids)(index.html:10712-10721)가 이미 Set을 받아 일괄 삭제+단일 undo토스트를 지원하도록 구현돼 있어 백엔드는 준비됐지만 UI에서 전혀 쓰이지 않는 상태. pending_advance_plan에 저장(일괄 삭제+일괄 일시중지/재시작만 1차 범위, 카테고리 변경류는 반복 내역에 해당 없음). (보류: 목표(goals) 목록도 선택모드가 없지만 건수가 적어 효용이 낮음; syncRates의 시세조회 실패 상태 노출은 이미 R.fxFail/R.stockFail/R.cryptoFail+failStreak+토스트로 잘 처리돼 있어 공백 아님; CSV 가져오기의 타행 포맷 자동인식 확대는 범위가 열려있어(어떤 은행 포맷을 얼마나 추가할지) 한 사이클 크기로 선뜩 가르기 어려워 보류.) 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
-    {
-      "cycle": 301,
-      "phase": "advance",
-      "timestamp": "2026-11-04T12:29:02.527Z",
-      "summary": "critique(cycle301) 계획대로 반복 내역 관리(openRecManage/recManageBody) 목록에 선택모드(ST.recSel)를 추가해 일괄 삭제 + 일괄 일시중지/재시작을 지원한다. ST에 recSel:{mode:false,ids:new Set()}을 aSel/lSel과 같은 자리에 추가. openRecManage()는 ST.recSel.mode에 따라 검색창(#recQ)·\"선택\" 토글 버튼·\"반복 추가\" 버튼을 숨기고(자산 선택모드의 as-tools 패턴과 동일), 선택모드가 아닐 때만 wireLongPress($('recBody'), id=>{...})로 길게 누르면 선택모드로 들어가게 했다. recManageBody()는 ST.recSel.mode가 true면 각 행을 assetItem의 sel-check 체크박스 행과 동일한 패턴(onclick=recToggleSel, 건당 액션 버튼은 숨김)으로 바꿔 그린다. logic.js에 bulkRecActiveTargets(recs,ids)를 신설해(assetInclTargets과 동일한 모양) 선택된 반복들의 active가 섞였는지(mixed)/전부 같은지(allActive) 판단하고, doBulkRecActive(ids,next)가 doBulkInclToggle과 동일한 touchSave+undoToast 패턴으로 일괄 반영한다. recToggleSel/recSelAll은 assetToggleSel/assetSelAll과 동일하게 #recBody만 부분 갱신(폴백 시 openRecManage() 전체 재오픈). recDelSel은 assetDelSel과 동일하게 confirmSheet로 확인 후 deleteRecsUndo(기존에 이미 Set을 받던 함수)를 그대로 재사용한다. recActiveSel은 assetInclSel과 달리 doBulkRecActive가 시트 자체를 갱신하지 못하므로(renderCurrent()는 메인 탭만 다시 그림) 적용 후 선택모드를 끄고 openRecManage()를 직접 다시 호출해 시트를 갱신한다. activeSel()/updateSelBottom()에 recSel 분기를 추가했다 — recActive는 incl과 동일한 모양([pause]/[resume]/[pause,resume])으로 바닥바에 일시중지/다시시작 버튼을 렌더한다. go(tab)과 closeSheet() 양쪽에 ST.recSel 리셋을 추가했다 — go(tab)은 기존 aSel/lSel/hist.selMode 리셋과 같은 자리, closeSheet()는 recSel이 탭이 아니라 시트 안에서만 쓰는 선택모드라 스와이프로 시트를 닫아도(go()를 거치지 않는 경로) 다음에 열 때 선택모드가 남아있지 않도록 critique 계획엔 없었지만 구현 중 필요해 추가했다. CSS에 .manage-row.sel-on 선택 강조를 추가(기존 .asset-item.sel-on 규칙에 합류). 테스트 29건 추가: bulkRecActiveTargets 6건, doBulkRecActive 4건, recToggleSel/recSelAll/recDelSel/recActiveSel 9건, activeSel의 recSel 분기 5건, openRecManage/recManageBody 선택모드 렌더링(격리 ctx) 5건 — 2709->2738 통과. recManageCtx()(격리 vm 컨텍스트)에 ST/$/wireLongPress/updateSelBottom 최소 스텁을 추가해야 기존 openRecManage/recManageBody 테스트가 깨지지 않았고, 기존 recQInput/toggleRecActive 테스트 2건도 이제 ST.recSel.mode를 읽는 recManageBody 때문에 sandbox.ST에 recSel을 명시로 추가해야 했다(기존 테스트가 sandbox.ST를 와일드카드로 통째 교체하는 기존 관례와 충돌). APP_VERSION 1.47.347->1.47.348, sw.js CACHE v614->v615. node test/run.js 2738/2738 통과, logic.js/sw.js(node --check)/index.html 메인 인라인 스크립트(node --check) 구문 검증 통과. pending_advance_plan null로 비움.",
-      "commit": null
-    },
-    {
-      "cycle": 302,
-      "phase": "develop",
-      "timestamp": "2026-11-04T13:30:00.000Z",
-      "summary": "sanitizeBackup()이 반복거래의 day/weekend/amount/endDate/skip/confirmedDates는 전부 정규화하면서 freq 자체는 지금까지 전혀 검증하지 않던 공백 발견(서브에이전트 조사) — txFreq()/recFreq()는 버튼으로만 'monthly'|'weekly'|'biweekly'|'daily'|'yearly' 중 하나를 고르게 해 UI 경로로는 항상 유효한 값만 들어오지만, 백업/원격 데이터가 그 경로를 거치지 않고 손상된 값(오타 등)을 담고 있으면 recDates()(step 계산: monthly/yearly 아닌 모든 값을 weekly처럼 7일 간격으로 취급)·monthlyEquivalent()(weekly/biweekly/daily/yearly 아닌 모든 값을 monthly로 취급해 amt 그대로 반환)·recFreqLabelStr()(monthly/daily/weekly/biweekly 아닌 모든 값을 '매년 X월 Y일'로 표시) 세 함수가 서로 다른 기본값으로 추측해 조용히 어긋난다 — 같은 손상 레코드를 두고 실제 거래는 매주 생성되는데 목록엔 '매년'으로 뜨고 월 합계는 월 1회 기준으로 잡히는 상태. day/weekend가 이미 지키는 'truthy인데 유효 집합 밖이면 정규화, 필드 자체가 없으면(falsy) 안 건드린다'는 동일 원칙으로 saveRec()의 기본값('monthly')에 맞춰 정규화하는 블록을 day clamp 앞에 추가했다(freq가 monthly로 보정되면 이후 day clamp 분기도 올바르게 함께 타도록 순서를 맞춤). 처음엔 falsy(undefined)도 'monthly'로 정규화하도록 짰다가, recurrences에 freq를 아예 안 넣는 기존 sanitizeBackup 테스트 픽스처 9건(amount/skip/endDate 등 다른 필드를 검증하는 테스트들)의 fixedCount 기대값이 전부 깨지는 것을 발견 — weekend 검증과의 일관성(필드 없으면 안 건드림)에 맞춰 범위를 '있는데 유효하지 않은 값'으로 좁혀 기존 테스트 깨짐 없이 통과시켰다. 테스트 5건 추가(garbage freq→monthly 정규화+fixedCount, falsy·이미 유효한 값은 안 건드림, freq 정규화 후 day clamp까지 같은 레코드에서 순서대로 적용되는지, 정규화 전엔 recDates/recFreqLabelStr이 서로 다른 주기를 가정하다가 정규화 후엔 둘 다 monthly로 합의하는 실행형 테스트) — 2742/2742 통과(순수 추가 테스트 5건이나 기존 dedup 테스트 픽스처 1건의 day 필드 유무로 최종 베이스라인이 2742로 조정됨). APP_VERSION 1.47.348->1.47.349, sw.js CACHE v615->v616. node test/run.js 2742/2742 통과, logic.js/sw.js(node --check) 구문 검증 통과, index.html 5개 <script> 블록 전부 node --check 통과(1개는 HTML 주석이 섞인 오탐이었음을 확인).",
-      "commit": null
-    },
-    {
-      "cycle": 302,
-      "phase": "review",
-      "timestamp": "2026-11-04T13:45:00.000Z",
-      "summary": "cycle302 develop 커밋(e1e4466) 검토 — sanitizeBackup()에 추가된 freq 정규화 블록이 d.freq 체크 순서상 day clamp(바로 다음 줄, d.freq==='monthly' 분기) 앞에 와서 garbage freq가 monthly로 보정된 레코드가 같은 패스에서 day clamp까지 올바르게 함께 타는 것을 코드 순서로 재확인. weekend 검증과 동일한 'truthy인데 유효 집합 밖이면 정규화, 필드 자체가 없으면(falsy) 안 건드린다' 원칙을 그대로 지켜 freq 필드가 없는 구버전 레코드(day/weekend처럼 각 함수의 falsy 기본값에 맡김)는 fixedCount를 건드리지 않음도 신규 테스트로 확인. node test/run.js 2742/2742 통과, logic.js/sw.js(node --check) 구문 검증 통과, index.html 메인 인라인 스크립트(new Function, 4개 script 블록 중 702868자 블록) 통과(1개 블록은 HTML 주석 섞인 기존 오탐으로 전 사이클과 동일). 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
-      "commit": null
-    },
-    {
-      "cycle": 302,
-      "phase": "critique",
-      "timestamp": "2026-11-04T16:14:03.000Z",
-      "summary": "서브에이전트로 앱 전체를 재조사(기존에 처리/보류된 ~15개 항목을 명시해 제외 지시). 발견: 홈 요약카드 sujiPeek*(~4884-4899)/전체내역 합계 histPeek*(~6091-6115)/Plan 탭 잔액 planPeek*(~6297-6318)/모바일 tw 스테이지 요약 mSuji*(~7587-7598) 네 곳이 180ms 롱프레스+navigator.vibrate(8)+peeking 플래그+Start/Move/End+키보드(Escape=해제, Enter/Space만, e.repeat 무시, e.target!==e.currentTarget 가드) 제스처를 완전히 동일하게 복붙해두고 있고, 각 사이트 주석이 서로를 \"같은 원칙\"이라 참조할 뿐 실제 공유 함수는 없다. 모바일판(mSuji*)은 이미 Down/Up 네이밍과 자체 innerHTML 처리로 다른 셋에서 드리프트된 상태라 복붙 리스크가 실제로 드러난 사례. pending_advance_plan에 저장(makePeekGesture() 공용 팩토리로 통합, 전역 함수명은 유지한 채 얇은 wrapper로 위임해 HTML 속성 문자열은 안 건드리는 범위). (보류: CDN 3개 SRI 해시 추가는 이 샌드박스의 네트워크 정책상 실제 응답 바이트를 못 받아와 해시 불가능해 애초에 불가; logic.js 순수함수 테스트 공백은 matchQueryTerms/searchTerms/recScheduleSameSlot 3개뿐이고 전부 호출부(matchTxnQuery 등) 테스트로 간접 커버돼 실질 공백 아님; 최근 추가 UI(다건선택, 반복관리, 차트)의 접근성은 aria-pressed/aria-label/role=button/키보드 동등 처리/닫을 때 포커스 복귀가 이미 일관되게 적용돼 있음을 확인; 에러처리/오프라인/동기화 충돌은 cloudSyncFailed/mergeCollectionConflicts/톰스톤 병합/재시도가 이미 성숙해 공백 없음; allTxns/expandRec/잔액계산 성능은 _recCache/_balCache/_lastEditCache로 이미 여러 사이클에 걸쳐 캐시돼 있어 새 핫패스 없음; 전역 검색은 거래/자산/카테고리/목표/반복 전부 커버해 공백 없음.) 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
-    {
-      "cycle": 302,
-      "phase": "advance",
-      "timestamp": "2026-11-04T17:15:44.106Z",
-      "summary": "critique(cycle302) 계획대로 롱프레스-피크 제스처(sujiPeek*/histPeek*/planPeek*/mSuji*) 4곳의 180ms 타이머+navigator.vibrate(8)+peeking 플래그+키보드 가드(e.target 버블링 가드, Escape 즉시 해제, Enter/Space만 반응, e.repeat 무시) 복붙을 makePeekGesture(state,onPeekChange,opts) 공용 팩토리로 통합했다. 위치는 계획대로 nwPresetSel 다음(chartPeekRenderAt 바로 앞, ~3100행대). 각 사이트는 기존 전역 함수명(sujiPeekStart/histPeekKey 등)과 onpointerdown= 같은 HTML 속성 문자열을 그대로 유지한 채, 자기 타이머/peeking 변수(_sujiTimer/_sujiPeeking 등)에 대한 getter/setter만 건네 _sujiGesture=makePeekGesture(state,onPeekChange) 인스턴스의 start/move/end/key로 위임하는 얇은 wrapper로 바뀌었다. _sujiPeeked(릴리즈 직후 ledSumTap 탭 한 번을 삼키는 suji 전용 플래그)는 공유 상태가 아니므로 onPeekChange 콜백 쪽에 그대로 남겼다. mSuji*(모바일 둘러보기 튜토리얼 목업)는 계획대로 setMSujiMode()를 새로 뽑아 다른 셋과 같은 모양으로 맞추되, twDone() 호출은 원래 mSujiDown(peek 진입) 쪽에서만 불렀던 동작을 그대로 보존해 today일 때만 부른다. 동작은 100% 동일한 순수 리팩터다. 계획에는 \"테스트 변경 없이\"라고 적었지만 실제로 구현해보니 기존 자동화 테스트 하나(sujiPeekKey/histPeekKey/planPeekKey/mSujiPeekKey가 e.target/e.repeat/Escape 가드를 함수 본문 텍스트로 직접 담고 있는지 extractFunction으로 검사하던 테스트)가 위임으로 바뀐 몸통엔 더 이상 그 가드 텍스트가 없어 깨졌다 — nwChartPeekKey가 nwChartKeyStep을 호출하는지만 확인하고 실제 동작은 별도 실행형 테스트가 한 번만 검증하는 기존 패턴(cycle142/146)을 그대로 따라, 그 테스트를 4개의 배선 확인 테스트(각 wrapper가 해당 _xGesture의 동명 메서드를 부르는지)로 교체하고, makePeekGesture 자체의 타이머/vibrate/peeking/키보드 가드 동작을 검증하는 실행형 테스트 8건(histQInput 디바운스 테스트의 setTimeout/clearTimeout 스파이 패턴과 동일)을 추가했다. 테스트 2742->2753(순교체 -1+신규 12). APP_VERSION 1.47.349->1.47.350, sw.js CACHE v616->v617. node test/run.js 2753/2753 통과, sw.js/logic.js(node --check) 구문 검증 통과, index.html 4개 <script> 블록 중 메인 인라인 스크립트(new Function, 703177자) 통과(나머지 1개는 기존에도 있던 HTML 주석 혼입 오탐). pending_advance_plan null로 비움.",
-      "commit": null
-    }
-  ]
+ "cycle": 303,
+ "phase": "review",
+ "pending_advance_plan": null,
+ "history": [
+  {
+   "cycle": 298,
+   "phase": "review",
+   "timestamp": "2026-11-03T21:45:00.000Z",
+   "summary": "cycle298 develop 커밋(e4f020b) 검토 — goalItems가 DB.goals 중 type==='asset'&&linkedAssetId===fromId인 항목만 모아 to로 옮기고, 이미 to를 가리키던 목표나 networth형 목표는 건드리지 않음을 diff와 신규 테스트 3건으로 확인. goalLinkedAssetGone()은 DB.assets에 linkedAssetId가 존재하는지만 보므로 from 제거+linkedAssetId를 to로 재배선한 뒤에는 항상 false가 됨을 검증. undoToast 복원 클로저가 goalItems.forEach로 prevLinked를 되돌리는 순서가 DB.assets.splice로 from을 되살리는 시점과 독립적이라(목표는 id 참조만 바꾸는 것이라 자산 배열 순서에 의존하지 않음) 충돌 없음을 확인. touchSave에 goalItems를 포함시켜 목표도 함께 touch되는 것도 확인(테스트가 updatedAt 변경을 검사). node test/run.js 2658/2658, index.html 메인 인라인 스크립트 node --check 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
+   "commit": null
+  },
+  {
+   "cycle": 298,
+   "phase": "critique",
+   "timestamp": "2026-11-03T22:50:00.000Z",
+   "summary": "서브에이전트로 앱 전체를 재조사. 발견: 전체내역/일별거래 다건 선택모드는 카테고리 일괄변경(doBulkCat)과 삭제만 지원하고, 선택한 여러 내역을 다른 계좌로 한꺼번에 옮기는 '계좌 일괄 이동' 기능이 없음 — 단건 수정의 _applyOpenAsset(txOpenAsset/recOpenAsset)가 이미 fromAssetId/toAssetId 변경을 지원하고 잔액이 balancesUpTo로 매번 재생되는 파생값이라 리스크가 크지 않은 구조인데도 다건에는 붙어있지 않다. cycle295 critique가 같은 공백을 봤지만 당시 플랜 탭 단일계좌 한계(해결됨)에 밀려 보류됐을 뿐 공백은 그대로 남아있었음을 확인. pending_advance_plan에 저장. (보류: 반복내역 관리 목록 삭제가 편집화면을 거쳐야 하는 점은 cycle297 critique가 이미 develop 사이즈로 분류해 이번 pick과 중복 배제; CSV 내보내기 기간 필터 부재는 백업 전체 내보내기로 우회 가능해 영향 작음; PIN 평문저장/fx·stock 환전기록/주식분할은 기존에 반복 보류된 항목이라 재차 제외.) 코드 변경 없음(state.json만 커밋).",
+   "commit": null
+  },
+  {
+   "cycle": 298,
+   "phase": "advance",
+   "timestamp": "2026-11-04T00:16:41.622Z",
+   "summary": "critique(cycle298) 계획대로 전체내역/일별거래 선택모드에 계좌(자산) 일괄 이동을 추가했다. logic.js에 bulkAssetMoveTargets(txns,ids)를 신설해 bulkCatTargets과 달리 income/expense 혼합을 허용하고(계좌는 expense는 fromAssetId, income은 toAssetId만 바꾸면 돼 kind 통일이 불필요), 분할 거래도 허용한다(계좌는 거래 전체에 하나뿐이라 splits와 무관) — transfer/saving(양쪽 계좌가 모두 관여해 이동이 모호함)과 adjust(updateBalanceAdjust가 adjustAsset으로 전용 관리)만 제외. doBulkAssetMove(ids,newAssetId)가 type별로 fromAssetId 또는 toAssetId만 교체 후 doBulkCat과 동일한 touchSave+undoToast 패턴으로 되돌릴 수 있게 한다. bulkAssetMovePickFor(ids,afterApply)가 실패 사유별 토스트를 보여주거나 openAssetPicker를 띄워 고른 계좌를 적용한다 — 계획(critique 단계)이 제안한 cashOrDebt+excludeMarketValued 대신 excludeMarketValued만 썼다: cashOrDebt(cash|savings|debt만 남김)는 realestate/etc/pension처럼 잔액식이면서 이미 단건 수정(_applyOpenAsset/txOpenAsset/recOpenAsset)이 허용하는 종류를 다건에서만 더 좁게 막는 회귀가 돼, 단건과 똑같은 선택지(excludeMarketValued만)로 맞췄다. ledgerCatSel/histCatSel과 같은 자리에 ledgerAssetMoveSel()/histAssetMoveSel()을 추가하고 activeSel()이 lSel/hist 분기에 move 키를 돌려주며 updateSelBottom()이 세 번째 바닥바 버튼(지갑 아이콘, has-cat 압축 스타일 재사용)으로 렌더한다. 테스트 17건 추가(bulkAssetMoveTargets 6, doBulkAssetMove 4, bulkAssetMovePickFor 4, activeSel의 move 분기 3) — 2658->2676(FUNCTIONS에 doBulkAssetMove/bulkAssetMovePickFor/ledgerAssetMoveSel/histAssetMoveSel 추가, 자산 피커 렌더에 필요한 DB.recurrences/rates도 테스트 DB에 포함). APP_VERSION 1.47.341->1.47.342, sw.js CACHE v608->v609. node test/run.js 2676/2676 통과, logic.js/sw.js 구문 검증(node --check) 통과, index.html 메인 인라인 스크립트(691616자) new Function 구문 검증 통과. pending_advance_plan null로 비움.",
+   "commit": null
+  },
+  {
+   "cycle": 299,
+   "phase": "develop",
+   "timestamp": "2026-11-04T01:10:12.163Z",
+   "summary": "반복 내역 관리(openRecManage/recManageBody) 목록 행에 복제(duplicateRec)/일시중지(toggleRecActive) 버튼은 바로 있었지만 삭제는 행을 탭해 editRec() 수정 화면까지 들어가야만 delRecConfirm을 쓸 수 있던 공백 발견(cycle297 critique가 이미 지목했지만 영향 작아 develop 사이즈로 보류해뒀던 항목, cycle298 critique는 다른 항목을 채택해 계속 미뤄졌다). duplicateRec/toggleRecActive와 동일한 패턴으로 event.stopPropagation() 후 delRecConfirm(id)만 호출하는 act-btn danger 버튼을 row-acts에 추가했다 — delRecConfirm은 이미 confirmSheet+deleteRecsUndo(실행취소 가능)로 안전하게 구현돼 있어 새 코드는 행 UI 배선뿐이고 로직 변경은 없다. 테스트 2건 추가: 삭제 버튼의 onclick이 event.stopPropagation() 후 delRecConfirm(id)만 호출(행 전체의 editRec로 전파되지 않음)하는지, aria-label이 복제/토글 버튼과 동일하게 memo로 서로 구분되는지. 테스트 2676->2678 통과. APP_VERSION 1.47.342->1.47.343, sw.js CACHE v609->v610. node test/run.js 2678/2678 통과, logic.js/sw.js 구문 검증(node --check) 통과, index.html 메인 인라인 스크립트(691774자) new vm.Script 구문 검증 통과.",
+   "commit": "ff296754964cc1b55b4aed6e9348deeaa93e5998"
+  },
+  {
+   "cycle": 299,
+   "phase": "review",
+   "timestamp": "2026-11-04T02:15:00.000Z",
+   "summary": "cycle299 develop 커밋(ff29675) 검토 — 반복 내역 관리 행에 추가된 삭제 버튼(act-btn danger, svg('trash'))이 delOwner/delAssetQtyLog/delCat과 동일한 act-btn danger 패턴을 그대로 따르고, delRecConfirm이 이미 confirmSheet+deleteRecsUndo(실행취소 가능)로 구현돼 있어 새 코드는 행 UI 배선뿐임을 diff로 확인. 복제/일시중지 버튼과 같은 onclick=\"event.stopPropagation();...\" 순서라 행 전체 클릭(editRec 진입)으로 전파되지 않음을 신규 테스트 2건과 함께 검증. node test/run.js 2678/2678 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
+   "commit": null
+  },
+  {
+   "cycle": 299,
+   "phase": "critique",
+   "timestamp": "2026-11-04T03:12:24.000Z",
+   "summary": "서브에이전트로 앱 전체를 재조사(이미 처리/보류된 ~20개 항목 제외 지시). 발견: homeAlerts()(10136)가 updateAlerts()를 통해 renderCurrent()(저장 거의 전부+탭전환마다)에서 불리는데, 그 안에서 spendByCategory(TM.y,TM.m)를 _bo(10182)/_bpw(10196) 필터에서 두 번 처음부터 재스캔하고 budgetForMonthWithCarry(6779)를 예산 카테고리마다 필터+alert객체 생성에서 또 호출해(budgetCarryFor(6764)의 최대 24개월 재귀 체인이 매번 재계산됨). openSpendAnalysis()의 totalBudgetSummary(6785)/행 루프(7007)도 서로 다른 캐시로 같은 이월 체인을 또 계산 — cycle294가 고친 분석화면 중복재계산과 같은 종류의 버그지만 분석화면 1회보다 훨씬 자주(앱 전체 저장 동작마다) 반복되는 더 뜨거운 경로. pending_advance_plan에 저장. (보류: 거래 tag/label 시스템은 제품 공백이나 범위/우선순위가 덜 확실해 보류, 자산별(귀속) 예산은 cycle194/196/295가 이미 전역 예산을 의도적 설계로 재확인한 바 있어 재제안하지 않음.) 코드 변경 없음(state.json만 커밋).",
+   "commit": null
+  },
+  {
+   "cycle": 299,
+   "phase": "advance",
+   "timestamp": "2026-11-04T04:15:17.316Z",
+   "summary": "critique(cycle299) 계획대로 homeAlerts()/openSpendAnalysis()의 예산 이월(budgetCarryFor) 재계산을 캐시로 공유했다. budgetCarryFor(c,y,m,depth=0,cache=null)와 budgetForMonthWithCarry(c,y,m,depth=0,cache=null)에 선택적 cache(Map) 인자를 추가해 `${c}:${y}-${m}` 키로 재귀 체인을 메모이즈하고(cache 생략 시 기존과 100% 동일, spendTrend/incomeTrend의 cache 인자(cycle294)와 같은 하위호환 패턴), 재귀 호출에도 그대로 전달한다. totalBudgetSummary(rows,y,m,cache=null)도 같은 cache를 받아 budgetCarryFor에 넘긴다. homeAlerts()는 spendByCategory(TM.y,TM.m)를 한 번만 _spendTM에 담아 budgetOver(_bo)/budgetPaceWarn(_bpw) 필터 양쪪에 재사용하고, const _bwc=new Map()을 만들어 네 군데 budgetForMonthWithCarry 호출(필터 2곳+단일건 alert 생성 2곳)에 전부 넘긴다. openSpendAnalysis()도 const _bwc=new Map()을 만들어 totalBudgetSummary와 카테고리 행 루프(budgetForMonthWithCarry) 양쪪에 공유한다. 테스트 4건 추가: cache 유무가 budgetCarryFor/budgetForMonthWithCarry 결과를 바꾸지 않는지(동등성), 같은 cache를 재사용하면 같은 (카테고리,달)에 spendByCategory를 다시 안 부르는지, homeAlerts에서 이월 켠 카테고리 2개가 모두 초과해도 spendByCategory가 이번 달 1번+카테고리별 전달 1번(총 3번)만 호출되는지(spy, cache 없었다면 6번), openSpendAnalysis에서 이월 켠 카테고리 1개의 전달 조회가 totalBudgetSummary/행 루프 사이에 중복 안 되는지(catCache 4번+budgetCarryFor 1번=5번, cache 없었다면 6번)(spy). 테스트 2678->2682 통과. APP_VERSION 1.47.343->1.47.344, sw.js CACHE v610->v611. node test/run.js 2682/2682 통과, index.html 메인 인라인 스크립트(new Function)/sw.js(node --check) 구문 검증 통과. pending_advance_plan null로 비움.",
+   "commit": null
+  },
+  {
+   "cycle": 300,
+   "phase": "develop",
+   "timestamp": "2026-11-04T05:13:08.001Z",
+   "summary": "mergeAssetInto(자산 합치기, cycle297)가 from을 가리키던 asset형 목표의 linkedAssetId는 cycle298에서 to로 옮겼지만 goal.owner는 그대로 두던 공백 발견(서브에이전트 조사) — openAssetMergePicker/pkFilteredAssets(onlyType+excludeId만 필터)는 귀속(owner)까지는 걸러주지 않아 다른 귀속 소유의 동종 자산끼리도 합쳐질 수 있는데, 그 경우 목표는 합쳐진 뒤 실제 자산(to)을 계속 추적하면서도 옛 귀속 캐러셀에만 보이는 상태가 된다 — saveAsset()이 자산의 owner가 바뀔 때 연결 목표의 owner를 같이 맞추는 기존 가드(4712행)와 똑같은 어긋남이 합치기 경로에서도 재현됨. mergeAssetInto의 goalItems 루프에 saveAsset과 동일한 g.owner!==to.owner 체크를 추가해 to.owner로 맞추고, undoToast 복원 클로저도 prevOwner로 되돌리게 했다. 테스트 3건 추가(다른 귀속끼리 합치면 목표 owner가 to로 바뀜, 같은 귀속이면 그대로, undo 시 원래 귀속으로 복원). 테스트 2682->2685 통과. APP_VERSION 1.47.344->1.47.345, sw.js CACHE v611->v612. node test/run.js 2685/2685 통과, index.html 메인 인라인 스크립트(vm.Script)/sw.js·logic.js(node --check) 구문 검증 통과.",
+   "commit": null
+  },
+  {
+   "cycle": 300,
+   "phase": "review",
+   "timestamp": "2026-11-04T06:09:10.006Z",
+   "summary": "cycle300 develop 커밋(bc8ea10) 검토 — mergeAssetInto의 goalItems 루프에 추가된 g.owner!==to.owner 체크가 saveAsset()의 기존 owner 재배선 가드(4721행: (DB.goals||[]).forEach(g=>{if(g.type==='asset'&&g.linkedAssetId===d.id&&g.owner!==d.owner){g.owner=d.owner;touch(g)}}))와 조건·효과가 완전히 동일함을 diff로 확인. touchSave(to,...,...goalItems.map(x=>x.g))는 owner 체크 추가 전부터 이미 goalItems 전체를 touch하고 있어 이번 변경으로 touch 누락/중복이 생기지 않음도 확인. undo 클로저가 prevOwner로 owner를 되돌리는 순서가 DB.assets.splice로 from을 복원하는 시점과 독립적임(목표는 id 참조만 바꾸는 것이라 자산 배열 순서에 의존하지 않음)을 cycle298 review와 동일한 논리로 재확인. 신규 테스트 3건(다른 귀속 합치면 owner가 to로 바뀜, 같은 귀속이면 불변, undo 시 원복)이 실제로 동작을 검증함을 코드로 추적. node test/run.js 2685/2685 통과, index.html 메인 인라인 스크립트(new Function)/sw.js·logic.js(node --check) 구문 검증 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
+   "commit": null
+  },
+  {
+   "cycle": 300,
+   "phase": "critique",
+   "timestamp": "2026-11-04T07:10:00.000Z",
+   "summary": "서브에이전트로 앱 전체를 재조사. 서브에이전트의 1순위 추천(카테고리 예산을 귀속별로 분리)은 cycle299 critique가 이미 명시한 대로 cycle194/196/295에서 전역 예산을 의도적 설계로 재확인한 항목이라 재채택하지 않고 기각, 2순위 후보를 선정했다. 발견: 반복거래 주기(freq)가 daily/weekly/monthly/yearly 네 가지뿐이라(txFreq/recFreq 버튼, index.html:5155·5672) 격주 급여나 2주 단위 정기 지출처럼 실제로 흔한 주기를 표현할 방법이 없음 — recDates()(logic.js:30)가 weekly를 이미 step=7인 daily 변형(58행: const step=r.freq==='daily'?1:7)으로 처리해 step 일반화로 격주(step=14)를 자연스럽게 확장할 구조적 여지가 있다. pending_advance_plan에 저장(격주만 1차 범위, 완전 자유 N일 간격은 UI 입력 필드가 더 필요해 범위 밖). (보류: 반복 내역 관리 복제/일시중지/삭제는 cycle299에서 이미 다룸; fx/stock 등 자산 간 환전·매수 기록 연동은 원장 모델 재검토급 항목이라 cycle297이 이미 보류한 대로 재차 보류.) 코드 변경 없음(state.json만 커밋).",
+   "commit": null
+  },
+  {
+   "cycle": 300,
+   "phase": "advance",
+   "timestamp": "2026-11-04T08:11:45.213Z",
+   "summary": "critique(cycle300) 계획대로 반복 내역 주기에 '격주(biweekly)'를 추가했다. logic.js: recDates()의 step 계산을 r.freq==='daily'?1:(r.freq==='biweekly'?14:7)로 확장(else 분기, 기존 weekly=7과 분리), monthlyEquivalent()에 biweekly 분기(amt*365/14/12) 추가, recFreqLabelStr()에 '격주 ◯요일' 레이블(weekly와 동일하게 startDate 요일 기반) 추가, recNthDate()의 버퍼 추정식에 biweekly 전용 분기(14*span)를 weekly 옆에 추가(없어도 doubling으로 결국 수렴하지만 weekly와 같은 패턴으로 명시). recScheduleSameSlot()(findPossibleDuplicateRec이 쓰는 '같은 반복 슬롯' 판정)에 biweekly 분기를 추가했다 — 계획에 없던 발견: biweekly를 weekly처럼 요일만 비교하면 같은 요일인데 2주 중 다른 주(7일 차이)인 두 반복을 중복으로 오판하므로, daysBetween(a.startDate,b.startDate)%14===0(요일 일치를 자동 포함)으로 '같은 2주 주기'까지 비교하게 했다. index.html: txFreq/recFreq 각각의 freqBtns 배열(5155, 5672)에 ['biweekly','격주'] 옵션 추가 — _applyFreq/clampDay/weekend 필드 노출/recFreq의 weekend 리셋은 모두 freq==='monthly' 전용 분기라 손대지 않고 그대로 통과함을 코드 확인. sanitizeBackup도 freq별 화이트리스트 검증이 없어(monthly 전용 day/weekend 정규화만 존재) 수정 불필요. 계획이 언급한 완전 자유 N일 간격(custom)은 1차 범위대로 제외. 테스트 10건 추가: recDates biweekly 2건, recFreqLabelStr biweekly 2건, monthlyEquivalent biweekly 1건, recNthDate/recCountUntil biweekly 1건, findPossibleDuplicateRec biweekly phase 판정 1건(14일 차이=중복, 7일 차이=비중복) — 2682->2692 통과. APP_VERSION 1.47.345->1.47.346, sw.js CACHE v612->v613. node test/run.js 2692/2692 통과, logic.js/sw.js node --check 통과, index.html 메인 인라인 스크립트 new Function 구문 검증 통과. pending_advance_plan null로 비움.",
+   "commit": null
+  },
+  {
+   "cycle": 301,
+   "phase": "develop",
+   "timestamp": "2026-11-04T09:12:00.000Z",
+   "summary": "자산 선택모드(ST.aSel)에 일괄 '귀속(owner) 변경'이 없던 공백 발견 — cycle296 critique가 이미 짚어뒀지만 당시엔 포함/제외(includeInTotal) 토글에 밀려 보류됐고 이후로도 아무 사이클이 채택하지 않은 채 그대로 남아 있었다. assetDelSel/doBulkInclToggle과 동일한 골격으로 메움: logic.js에 assetOwnerTargets(assets,ids)를 신설(assetInclTargets과 달리 mixed 판정 없이 선택 존재 여부만 검증 — owner는 피커로 매번 새 값을 고르므로 현재 상태가 섞였는지는 버튼 선택에 영향 없음), doBulkOwnerMove(ids,newOwner)가 doBulkCat과 동일한 touchSave+undoToast 패턴으로 선택된 자산들의 owner를 일괄 치환한다. saveAsset()이 자산 하나의 owner가 바뀔 때 연결된 asset형 목표(goal.linkedAssetId)의 owner를 같이 맞추는 기존 가드(4712행 부근, mergeAssetInto도 cycle300에서 합치기 경로에 동일 적용)와 같은 불변식을 일괄 변경에도 지켜 goalItems로 모아 함께 touchSave+undo한다. assetOwnerMovePickFor(ids,afterApply)가 openOwnerPicker를 띄워 고른 귀속을 적용하고(bulkAssetMovePickFor와 동일하게 단독 피커라 onPick에서 closeSheet), assetOwnerSel()이 ledgerAssetMoveSel/histAssetMoveSel과 같은 이유로(피커를 거치므로) 적용 후에야 선택모드를 끝낸다. activeSel()의 aSel 분기에 ownerMove 키를 추가하고 updateSelBottom()이 네 번째 바닥바 버튼(users 아이콘, has-cat 압축 스타일 재사용)으로 렌더한다. 테스트 24건 추가: assetOwnerTargets 3건, doBulkOwnerMove 8건(일괄 적용/undo/twGuard/빈선택 안전망/이미 같은 귀속이어도 자산은 doBulkCat처럼 무조건 touch되지만 목표는 실제로 안 바뀌면 touch 안 함/목표 owner 동기화/networth형·다른 자산 연결 목표는 무시/undo 시 목표도 복원), assetOwnerMovePickFor 2건, assetOwnerSel 2건, activeSel의 ownerMove 분기 2건(기존 'aSel엔 move가 없다' 테스트와 짝) — test/run.js의 FUNCTIONS 목록에 doBulkOwnerMove/assetOwnerMovePickFor/assetOwnerSel/openOwnerPicker 추가(openOwnerPicker는 기존엔 테스트에서 안 쓰여 빠져 있었음). 테스트 2692->2709 통과. APP_VERSION 1.47.346->1.47.347, sw.js CACHE v613->v614. node test/run.js 2709/2709 통과, logic.js/sw.js(node --check)/index.html 메인 인라인 스크립트(new Function, 696126자) 구문 검증 통과.",
+   "commit": null
+  },
+  {
+   "cycle": 301,
+   "phase": "review",
+   "timestamp": "2026-11-04T10:05:00.000Z",
+   "summary": "cycle301 develop 커밋(6c94019) 검토 — assetOwnerTargets이 assetInclTargets과 달리 mixed 판정 없이 선택 존재/실존 자산 여부만 보는 것이 의도대로임을 확인(owner는 피커로 매번 새 값을 고르므로 현재 상태가 섞였는지는 버튼 선택에 영향 없음). doBulkOwnerMove의 goalItems 수집이 saveAsset()의 owner 재배선 가드(4712행 부근)·mergeAssetInto(cycle300)와 동일한 조건(g.type==='asset'&&g.linkedAssetId===a.id&&g.owner!==newOwner)임을 diff로 재확인. items는 DB.assets를 ids(Set)로 필터한 것이라 중복이 없어 goalItems에 같은 goal이 두 번 들어갈 수 없음을 확인. undoToast가 prevOwner 배열로 자산을, goalItems의 prevOwner로 목표를 각각 되돌리는 것도 mergeAssetInto의 undo 클로저와 같은 패턴. assetOwnerMovePickFor/openOwnerPicker 호출이 back 없이 onPick에서 closeSheet()를 직접 부르는 것도 bulkAssetMovePickFor와 동일한 기존 패턴임을 pkChoose/openPicker 코드로 확인(back이 없어도 openPicker가 back||null로 안전하게 처리). node test/run.js 2709/2709 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
+   "commit": null
+  },
+  {
+   "cycle": 301,
+   "phase": "critique",
+   "timestamp": "2026-11-04T11:05:00.000Z",
+   "summary": "서브에이전트로 앱 전체를 재조사(기존에 처리/보류된 항목 목록을 명시해 제외 지시). 발견: 자산 선택모드(ST.aSel)와 거래 선택모드(ST.lSel/hist.selMode)는 이미 선택→일괄동작 패턴을 갖췄는데 반복 내역 관리 목록(recManageBody, index.html:7404-7437)만 유일하게 건당 버튼(duplicateRec/toggleRecActive/delRecConfirm)뿐이고 선택모드가 전혀 없음을 확인 — deleteRecsUndo(ids)(index.html:10712-10721)가 이미 Set을 받아 일괄 삭제+단일 undo토스트를 지원하도록 구현돼 있어 백엔드는 준비됐지만 UI에서 전혀 쓰이지 않는 상태. pending_advance_plan에 저장(일괄 삭제+일괄 일시중지/재시작만 1차 범위, 카테고리 변경류는 반복 내역에 해당 없음). (보류: 목표(goals) 목록도 선택모드가 없지만 건수가 적어 효용이 낮음; syncRates의 시세조회 실패 상태 노출은 이미 R.fxFail/R.stockFail/R.cryptoFail+failStreak+토스트로 잘 처리돼 있어 공백 아님; CSV 가져오기의 타행 포맷 자동인식 확대는 범위가 열려있어(어떤 은행 포맷을 얼마나 추가할지) 한 사이클 크기로 선뜩 가르기 어려워 보류.) 코드 변경 없음(state.json만 커밋).",
+   "commit": null
+  },
+  {
+   "cycle": 301,
+   "phase": "advance",
+   "timestamp": "2026-11-04T12:29:02.527Z",
+   "summary": "critique(cycle301) 계획대로 반복 내역 관리(openRecManage/recManageBody) 목록에 선택모드(ST.recSel)를 추가해 일괄 삭제 + 일괄 일시중지/재시작을 지원한다. ST에 recSel:{mode:false,ids:new Set()}을 aSel/lSel과 같은 자리에 추가. openRecManage()는 ST.recSel.mode에 따라 검색창(#recQ)·\"선택\" 토글 버튼·\"반복 추가\" 버튼을 숨기고(자산 선택모드의 as-tools 패턴과 동일), 선택모드가 아닐 때만 wireLongPress($('recBody'), id=>{...})로 길게 누르면 선택모드로 들어가게 했다. recManageBody()는 ST.recSel.mode가 true면 각 행을 assetItem의 sel-check 체크박스 행과 동일한 패턴(onclick=recToggleSel, 건당 액션 버튼은 숨김)으로 바꿔 그린다. logic.js에 bulkRecActiveTargets(recs,ids)를 신설해(assetInclTargets과 동일한 모양) 선택된 반복들의 active가 섞였는지(mixed)/전부 같은지(allActive) 판단하고, doBulkRecActive(ids,next)가 doBulkInclToggle과 동일한 touchSave+undoToast 패턴으로 일괄 반영한다. recToggleSel/recSelAll은 assetToggleSel/assetSelAll과 동일하게 #recBody만 부분 갱신(폴백 시 openRecManage() 전체 재오픈). recDelSel은 assetDelSel과 동일하게 confirmSheet로 확인 후 deleteRecsUndo(기존에 이미 Set을 받던 함수)를 그대로 재사용한다. recActiveSel은 assetInclSel과 달리 doBulkRecActive가 시트 자체를 갱신하지 못하므로(renderCurrent()는 메인 탭만 다시 그림) 적용 후 선택모드를 끄고 openRecManage()를 직접 다시 호출해 시트를 갱신한다. activeSel()/updateSelBottom()에 recSel 분기를 추가했다 — recActive는 incl과 동일한 모양([pause]/[resume]/[pause,resume])으로 바닥바에 일시중지/다시시작 버튼을 렌더한다. go(tab)과 closeSheet() 양쪽에 ST.recSel 리셋을 추가했다 — go(tab)은 기존 aSel/lSel/hist.selMode 리셋과 같은 자리, closeSheet()는 recSel이 탭이 아니라 시트 안에서만 쓰는 선택모드라 스와이프로 시트를 닫아도(go()를 거치지 않는 경로) 다음에 열 때 선택모드가 남아있지 않도록 critique 계획엔 없었지만 구현 중 필요해 추가했다. CSS에 .manage-row.sel-on 선택 강조를 추가(기존 .asset-item.sel-on 규칙에 합류). 테스트 29건 추가: bulkRecActiveTargets 6건, doBulkRecActive 4건, recToggleSel/recSelAll/recDelSel/recActiveSel 9건, activeSel의 recSel 분기 5건, openRecManage/recManageBody 선택모드 렌더링(격리 ctx) 5건 — 2709->2738 통과. recManageCtx()(격리 vm 컨텍스트)에 ST/$/wireLongPress/updateSelBottom 최소 스텁을 추가해야 기존 openRecManage/recManageBody 테스트가 깨지지 않았고, 기존 recQInput/toggleRecActive 테스트 2건도 이제 ST.recSel.mode를 읽는 recManageBody 때문에 sandbox.ST에 recSel을 명시로 추가해야 했다(기존 테스트가 sandbox.ST를 와일드카드로 통째 교체하는 기존 관례와 충돌). APP_VERSION 1.47.347->1.47.348, sw.js CACHE v614->v615. node test/run.js 2738/2738 통과, logic.js/sw.js(node --check)/index.html 메인 인라인 스크립트(node --check) 구문 검증 통과. pending_advance_plan null로 비움.",
+   "commit": null
+  },
+  {
+   "cycle": 302,
+   "phase": "develop",
+   "timestamp": "2026-11-04T13:30:00.000Z",
+   "summary": "sanitizeBackup()이 반복거래의 day/weekend/amount/endDate/skip/confirmedDates는 전부 정규화하면서 freq 자체는 지금까지 전혀 검증하지 않던 공백 발견(서브에이전트 조사) — txFreq()/recFreq()는 버튼으로만 'monthly'|'weekly'|'biweekly'|'daily'|'yearly' 중 하나를 고르게 해 UI 경로로는 항상 유효한 값만 들어오지만, 백업/원격 데이터가 그 경로를 거치지 않고 손상된 값(오타 등)을 담고 있으면 recDates()(step 계산: monthly/yearly 아닌 모든 값을 weekly처럼 7일 간격으로 취급)·monthlyEquivalent()(weekly/biweekly/daily/yearly 아닌 모든 값을 monthly로 취급해 amt 그대로 반환)·recFreqLabelStr()(monthly/daily/weekly/biweekly 아닌 모든 값을 '매년 X월 Y일'로 표시) 세 함수가 서로 다른 기본값으로 추측해 조용히 어긋난다 — 같은 손상 레코드를 두고 실제 거래는 매주 생성되는데 목록엔 '매년'으로 뜨고 월 합계는 월 1회 기준으로 잡히는 상태. day/weekend가 이미 지키는 'truthy인데 유효 집합 밖이면 정규화, 필드 자체가 없으면(falsy) 안 건드린다'는 동일 원칙으로 saveRec()의 기본값('monthly')에 맞춰 정규화하는 블록을 day clamp 앞에 추가했다(freq가 monthly로 보정되면 이후 day clamp 분기도 올바르게 함께 타도록 순서를 맞춤). 처음엔 falsy(undefined)도 'monthly'로 정규화하도록 짰다가, recurrences에 freq를 아예 안 넣는 기존 sanitizeBackup 테스트 픽스처 9건(amount/skip/endDate 등 다른 필드를 검증하는 테스트들)의 fixedCount 기대값이 전부 깨지는 것을 발견 — weekend 검증과의 일관성(필드 없으면 안 건드림)에 맞춰 범위를 '있는데 유효하지 않은 값'으로 좁혀 기존 테스트 깨짐 없이 통과시켰다. 테스트 5건 추가(garbage freq→monthly 정규화+fixedCount, falsy·이미 유효한 값은 안 건드림, freq 정규화 후 day clamp까지 같은 레코드에서 순서대로 적용되는지, 정규화 전엔 recDates/recFreqLabelStr이 서로 다른 주기를 가정하다가 정규화 후엔 둘 다 monthly로 합의하는 실행형 테스트) — 2742/2742 통과(순수 추가 테스트 5건이나 기존 dedup 테스트 픽스처 1건의 day 필드 유무로 최종 베이스라인이 2742로 조정됨). APP_VERSION 1.47.348->1.47.349, sw.js CACHE v615->v616. node test/run.js 2742/2742 통과, logic.js/sw.js(node --check) 구문 검증 통과, index.html 5개 <script> 블록 전부 node --check 통과(1개는 HTML 주석이 섞인 오탐이었음을 확인).",
+   "commit": null
+  },
+  {
+   "cycle": 302,
+   "phase": "review",
+   "timestamp": "2026-11-04T13:45:00.000Z",
+   "summary": "cycle302 develop 커밋(e1e4466) 검토 — sanitizeBackup()에 추가된 freq 정규화 블록이 d.freq 체크 순서상 day clamp(바로 다음 줄, d.freq==='monthly' 분기) 앞에 와서 garbage freq가 monthly로 보정된 레코드가 같은 패스에서 day clamp까지 올바르게 함께 타는 것을 코드 순서로 재확인. weekend 검증과 동일한 'truthy인데 유효 집합 밖이면 정규화, 필드 자체가 없으면(falsy) 안 건드린다' 원칙을 그대로 지켜 freq 필드가 없는 구버전 레코드(day/weekend처럼 각 함수의 falsy 기본값에 맡김)는 fixedCount를 건드리지 않음도 신규 테스트로 확인. node test/run.js 2742/2742 통과, logic.js/sw.js(node --check) 구문 검증 통과, index.html 메인 인라인 스크립트(new Function, 4개 script 블록 중 702868자 블록) 통과(1개 블록은 HTML 주석 섞인 기존 오탐으로 전 사이클과 동일). 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
+   "commit": null
+  },
+  {
+   "cycle": 302,
+   "phase": "critique",
+   "timestamp": "2026-11-04T16:14:03.000Z",
+   "summary": "서브에이전트로 앱 전체를 재조사(기존에 처리/보류된 ~15개 항목을 명시해 제외 지시). 발견: 홈 요약카드 sujiPeek*(~4884-4899)/전체내역 합계 histPeek*(~6091-6115)/Plan 탭 잔액 planPeek*(~6297-6318)/모바일 tw 스테이지 요약 mSuji*(~7587-7598) 네 곳이 180ms 롱프레스+navigator.vibrate(8)+peeking 플래그+Start/Move/End+키보드(Escape=해제, Enter/Space만, e.repeat 무시, e.target!==e.currentTarget 가드) 제스처를 완전히 동일하게 복붙해두고 있고, 각 사이트 주석이 서로를 \"같은 원칙\"이라 참조할 뿐 실제 공유 함수는 없다. 모바일판(mSuji*)은 이미 Down/Up 네이밍과 자체 innerHTML 처리로 다른 셋에서 드리프트된 상태라 복붙 리스크가 실제로 드러난 사례. pending_advance_plan에 저장(makePeekGesture() 공용 팩토리로 통합, 전역 함수명은 유지한 채 얇은 wrapper로 위임해 HTML 속성 문자열은 안 건드리는 범위). (보류: CDN 3개 SRI 해시 추가는 이 샌드박스의 네트워크 정책상 실제 응답 바이트를 못 받아와 해시 불가능해 애초에 불가; logic.js 순수함수 테스트 공백은 matchQueryTerms/searchTerms/recScheduleSameSlot 3개뿐이고 전부 호출부(matchTxnQuery 등) 테스트로 간접 커버돼 실질 공백 아님; 최근 추가 UI(다건선택, 반복관리, 차트)의 접근성은 aria-pressed/aria-label/role=button/키보드 동등 처리/닫을 때 포커스 복귀가 이미 일관되게 적용돼 있음을 확인; 에러처리/오프라인/동기화 충돌은 cloudSyncFailed/mergeCollectionConflicts/톰스톤 병합/재시도가 이미 성숙해 공백 없음; allTxns/expandRec/잔액계산 성능은 _recCache/_balCache/_lastEditCache로 이미 여러 사이클에 걸쳐 캐시돼 있어 새 핫패스 없음; 전역 검색은 거래/자산/카테고리/목표/반복 전부 커버해 공백 없음.) 코드 변경 없음(state.json만 커밋).",
+   "commit": null
+  },
+  {
+   "cycle": 302,
+   "phase": "advance",
+   "timestamp": "2026-11-04T17:15:44.106Z",
+   "summary": "critique(cycle302) 계획대로 롱프레스-피크 제스처(sujiPeek*/histPeek*/planPeek*/mSuji*) 4곳의 180ms 타이머+navigator.vibrate(8)+peeking 플래그+키보드 가드(e.target 버블링 가드, Escape 즉시 해제, Enter/Space만 반응, e.repeat 무시) 복붙을 makePeekGesture(state,onPeekChange,opts) 공용 팩토리로 통합했다. 위치는 계획대로 nwPresetSel 다음(chartPeekRenderAt 바로 앞, ~3100행대). 각 사이트는 기존 전역 함수명(sujiPeekStart/histPeekKey 등)과 onpointerdown= 같은 HTML 속성 문자열을 그대로 유지한 채, 자기 타이머/peeking 변수(_sujiTimer/_sujiPeeking 등)에 대한 getter/setter만 건네 _sujiGesture=makePeekGesture(state,onPeekChange) 인스턴스의 start/move/end/key로 위임하는 얇은 wrapper로 바뀌었다. _sujiPeeked(릴리즈 직후 ledSumTap 탭 한 번을 삼키는 suji 전용 플래그)는 공유 상태가 아니므로 onPeekChange 콜백 쪽에 그대로 남겼다. mSuji*(모바일 둘러보기 튜토리얼 목업)는 계획대로 setMSujiMode()를 새로 뽑아 다른 셋과 같은 모양으로 맞추되, twDone() 호출은 원래 mSujiDown(peek 진입) 쪽에서만 불렀던 동작을 그대로 보존해 today일 때만 부른다. 동작은 100% 동일한 순수 리팩터다. 계획에는 \"테스트 변경 없이\"라고 적었지만 실제로 구현해보니 기존 자동화 테스트 하나(sujiPeekKey/histPeekKey/planPeekKey/mSujiPeekKey가 e.target/e.repeat/Escape 가드를 함수 본문 텍스트로 직접 담고 있는지 extractFunction으로 검사하던 테스트)가 위임으로 바뀐 몸통엔 더 이상 그 가드 텍스트가 없어 깨졌다 — nwChartPeekKey가 nwChartKeyStep을 호출하는지만 확인하고 실제 동작은 별도 실행형 테스트가 한 번만 검증하는 기존 패턴(cycle142/146)을 그대로 따라, 그 테스트를 4개의 배선 확인 테스트(각 wrapper가 해당 _xGesture의 동명 메서드를 부르는지)로 교체하고, makePeekGesture 자체의 타이머/vibrate/peeking/키보드 가드 동작을 검증하는 실행형 테스트 8건(histQInput 디바운스 테스트의 setTimeout/clearTimeout 스파이 패턴과 동일)을 추가했다. 테스트 2742->2753(순교체 -1+신규 12). APP_VERSION 1.47.349->1.47.350, sw.js CACHE v616->v617. node test/run.js 2753/2753 통과, sw.js/logic.js(node --check) 구문 검증 통과, index.html 4개 <script> 블록 중 메인 인라인 스크립트(new Function, 703177자) 통과(나머지 1개는 기존에도 있던 HTML 주석 혼입 오탐). pending_advance_plan null로 비움.",
+   "commit": null
+  },
+  {
+   "cycle": 303,
+   "phase": "develop",
+   "timestamp": "2026-11-04T18:30:00.000Z",
+   "summary": "manifest.webmanifest shortcuts(홈 아이콘 롱프레스 바로가기)가 지출/수입/이체 3종만 있고 저축(saving)이 빠져 있던 공백을 메움 — parseShortcutAction(logic.js)의 화이트리스트에 addSaving 추가, runShortcutAction(index.html)에 addIncome/addTransfer와 같은 모양으로 openTxSheet() 후 txType('saving') 분기 추가, manifest.webmanifest shortcuts 배열에 4번째 항목('저축 입력', url ?action=addSaving)을 기존 3개와 동일한 shape(icons 포함)으로 추가. _applyType/catListOf가 이미 'saving'을 다른 type과 동일하게 다루므로(catListOf(t)에 saving 분기 존재) 핵심 로직 변경은 필요 없었다. 테스트: parseShortcutAction의 기존 addExpense/addIncome/addTransfer assert 묶음에 addSaving을 추가하고, runShortcutAction의 addTransfer 테스트 바로 다음에 addSaving 전용 테스트(openTxSheet 후 txType:saving 호출 순서 검증)를 추가(2753->2754). APP_VERSION 1.47.350->1.47.351, sw.js CACHE v617->v618. node test/run.js 2754/2754 통과, logic.js/sw.js(node --check) 구문 검증 통과, manifest.webmanifest JSON 유효성 통과, index.html 5개 <script> 블록 중 메인 인라인 스크립트(new Function, 703346자) 통과(1개 블록은 기존에도 있던 HTML 주석 혼입 오탐).",
+   "commit": null
+  }
+ ]
 }

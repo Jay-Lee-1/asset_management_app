@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.350';
+const APP_VERSION='1.47.351';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5120,11 +5120,13 @@ function openTxSheet(){window._recCtx=null;_formScroll=0;_txFocusAmt=true;txDraf
  * openTxSheet()의 기본 type은 이미 'expense'라 addExpense는 추가 전환이 필요 없다
  * (app-evolve cycle254 advance). shareReceipt는 OS 공유 시트(카메라/갤러리/은행앱)에서 "공유"로
  * 넘어온 영수증 사진을 곧장 지출 시트에 붙여준다 — 로드는 비동기라 loadSharedReceiptPhoto()로
- * 분리한다(app-evolve cycle264 advance). */
+ * 분리한다(app-evolve cycle264 advance). addSaving은 addIncome/addTransfer와 같은 모양으로
+ * manifest에 4번째 숏컷으로 추가된 저축 입력이다(app-evolve cycle303 develop). */
 function runShortcutAction(action){
  if(action==='addExpense')openTxSheet();
  else if(action==='addIncome'){openTxSheet();txType('income')}
  else if(action==='addTransfer'){openTxSheet();txType('transfer')}
+ else if(action==='addSaving'){openTxSheet();txType('saving')}
  else if(action==='shareReceipt'){openTxSheet();loadSharedReceiptPhoto()}
 }
 function firstCash(excludeId){const a=DB.assets.find(x=>isCashLike(x)&&x.id!==excludeId);return a?a.id:null}

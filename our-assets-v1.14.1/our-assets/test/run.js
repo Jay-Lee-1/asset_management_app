@@ -30467,10 +30467,11 @@ test('parseShortcutAction: 쿼리스트링이 없으면 null이다', () => {
   assert.strictEqual(sandbox.parseShortcutAction(null), null);
   assert.strictEqual(sandbox.parseShortcutAction(undefined), null);
 });
-test('parseShortcutAction: action=addExpense/addIncome/addTransfer를 그대로 돌려준다', () => {
+test('parseShortcutAction: action=addExpense/addIncome/addTransfer/addSaving를 그대로 돌려준다', () => {
   assert.strictEqual(sandbox.parseShortcutAction('?action=addExpense'), 'addExpense');
   assert.strictEqual(sandbox.parseShortcutAction('?action=addIncome'), 'addIncome');
   assert.strictEqual(sandbox.parseShortcutAction('?action=addTransfer'), 'addTransfer');
+  assert.strictEqual(sandbox.parseShortcutAction('?action=addSaving'), 'addSaving');
 });
 test('parseShortcutAction: action=shareReceipt(Web Share Target → sw.js 리다이렉트)도 그대로 돌려준다', () => {
   assert.strictEqual(sandbox.parseShortcutAction('?action=shareReceipt'), 'shareReceipt');
@@ -30516,6 +30517,11 @@ test('runShortcutAction: addTransfer는 openTxSheet() 후 txType("transfer")으�
   const ctx = shortcutActionCtx();
   ctx.runShortcutAction('addTransfer');
   assert.deepStrictEqual(ctx.calls, ['openTxSheet', 'txType:transfer']);
+});
+test('runShortcutAction: addSaving은 openTxSheet() 후 txType("saving")으로 전환한다', () => {
+  const ctx = shortcutActionCtx();
+  ctx.runShortcutAction('addSaving');
+  assert.deepStrictEqual(ctx.calls, ['openTxSheet', 'txType:saving']);
 });
 test('runShortcutAction: shareReceipt는 openTxSheet() 후 loadSharedReceiptPhoto()로 공유받은 사진을 비동기로 불러온다', () => {
   const ctx = shortcutActionCtx();
