@@ -838,6 +838,24 @@ function goalPct(cur,target){
  * (신규 사용자 등) 전체 이력으로 폴백해 기존 동작을 그대로 유지한다. cur/pct/achieved는 창과 무관하게
  * 항상 최신 스냅샷 기준. 이력이 1개 이하거나 증가세가 0 이하(정체·감소)면 목표 도달 시점을 예측할 수
  * 없으므로 null — '못 간다'를 추측으로 단정하지 않고 모른다고 말하는 쪽을 택함. */
+/* 목표일(targetDate)까지 남은 금액을 균등 분할한 "필요 월 저축액" — goalProgress의 projectedDate(최근
+ * 90일 추세 기반 투사)와는 독립적인 역산값이다. amortizationPayoffMonths(위)·debtPayoffWhatIf 등 날짜가
+ * 있는 다른 기능은 모두 "그 날짜까지 얼마/언제"를 역산해 보여주는데, 목표만 입력받은 targetDate를
+ * goalIsOverdue의 지남 여부 판정에만 쓰고 있던 공백을 메운다(app-evolve cycle303 critique).
+ * 이미 달성(remaining<=0)했거나 targetDate가 없거나 이미 지났으면(지난 날짜를 기준으로 나누면 음수/
+ * 무한대로 왜곡되므로) null — goalProgress의 projectedDate와 같은 "모르면 추측하지 않는다" 원칙.
+ * 달 수는 캘린더 월 차이(day 보정 포함)로 계산하고 최소 1로 clamp해 targetDate가 이번 달 안이어도
+ * 0으로 나누지 않는다. */
+function requiredMonthlyPace(cur,target,targetDate,today){
+ const remaining=target-cur;
+ if(!(remaining>0))return null;
+ if(!targetDate||targetDate<today)return null;
+ const da=new Date(today+'T00:00:00'),db=new Date(targetDate+'T00:00:00');
+ let months=(db.getFullYear()-da.getFullYear())*12+(db.getMonth()-da.getMonth());
+ if(db.getDate()<da.getDate())months--;
+ months=Math.max(1,months);
+ return remaining/months;
+}
 function goalProgress(goal,nwHistory,today,trendWindowDays){
  trendWindowDays=trendWindowDays||90;
  const hist=(nwHistory||[]).filter(h=>h.date<=today);
@@ -856,7 +874,8 @@ function goalProgress(goal,nwHistory,today,trendWindowDays){
   const rate=days>0?(last.nw-first.nw)/days:0;
   if(rate>0)projectedDate=addDays(last.date,Math.ceil(remaining/rate));
  }
- return {cur,target,pct,remaining,achieved,projectedDate};
+ const requiredMonthly=requiredMonthlyPace(cur,target,goal&&goal.targetDate,today);
+ return {cur,target,pct,remaining,achieved,projectedDate,requiredMonthly};
 }
 
 /* 목표일이 지났는데도 아직 달성하지 못한 목표인지 — homeAlerts()의 goalBehind 알림은 hist.length>=2(이력

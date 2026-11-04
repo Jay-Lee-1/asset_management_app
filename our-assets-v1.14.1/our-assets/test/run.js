@@ -2124,6 +2124,47 @@ test('goalProgress: 최근 90일 구간에 스냅샷이 1개뿐이면(데이터�
   assert.strictEqual(p.cur, 90000);
   assert.notStrictEqual(p.projectedDate, null, '창 안에 2점 미만이면 전체 이력으로 폴백해야 함(투사 자체가 사라지면 안 됨)');
 });
+test('goalProgress: targetDate가 설정돼 있으면 requiredMonthly(필요 월 저축액)를 함께 반환한다(app-evolve cycle303 advance)', () => {
+  const hist = [{ date: '2026-01-01', nw: 400000 }];
+  const p = sandbox.goalProgress({ targetAmount: 1000000, targetDate: '2026-07-01' }, hist, '2026-01-01');
+  assert.strictEqual(p.remaining, 600000);
+  assert.strictEqual(p.requiredMonthly, 100000, '2026-01-01~2026-07-01은 정확히 6개월');
+});
+test('goalProgress: targetDate가 없으면 requiredMonthly도 null(projectedDate와 독립적으로 둘 다 평가)', () => {
+  const hist = [{ date: '2026-01-01', nw: 400000 }];
+  const p = sandbox.goalProgress({ targetAmount: 1000000 }, hist, '2026-01-01');
+  assert.strictEqual(p.requiredMonthly, null);
+});
+test('goalProgress: 이미 달성했으면 targetDate가 있어도 requiredMonthly는 null', () => {
+  const hist = [{ date: '2026-01-01', nw: 1000000 }];
+  const p = sandbox.goalProgress({ targetAmount: 1000000, targetDate: '2026-07-01' }, hist, '2026-01-01');
+  assert.strictEqual(p.requiredMonthly, null);
+});
+
+/* ---------- requiredMonthlyPace: targetDate 기반 필요 월 저축액 역산 (app-evolve cycle303 advance) ----------
+ * goalProgress의 projectedDate(최근 90일 추세 기반 투사)와 독립적인 역산값 — amortizationPayoffMonths와
+ * 같은 "모르면 추측하지 않는다" 원칙으로 달성/미설정/지난 targetDate 세 경계에서 null을 돌려준다. */
+test('requiredMonthlyPace: 이미 달성했으면(remaining<=0) targetDate 유무와 무관하게 null', () => {
+  assert.strictEqual(sandbox.requiredMonthlyPace(1000000, 1000000, '2026-12-01', '2026-06-01'), null);
+  assert.strictEqual(sandbox.requiredMonthlyPace(1200000, 1000000, '2026-12-01', '2026-06-01'), null);
+});
+test('requiredMonthlyPace: targetDate가 없으면(falsy) null', () => {
+  assert.strictEqual(sandbox.requiredMonthlyPace(0, 1000000, null, '2026-06-01'), null);
+  assert.strictEqual(sandbox.requiredMonthlyPace(0, 1000000, '', '2026-06-01'), null);
+});
+test('requiredMonthlyPace: targetDate가 이미 지났으면 추측하지 않고 null', () => {
+  assert.strictEqual(sandbox.requiredMonthlyPace(0, 1000000, '2026-05-01', '2026-06-01'), null);
+});
+test('requiredMonthlyPace: targetDate가 오늘이면(아직 안 지남) 최소 1개월로 clamp해 남은 금액 전부를 돌려준다', () => {
+  assert.strictEqual(sandbox.requiredMonthlyPace(0, 1000000, '2026-06-01', '2026-06-01'), 1000000);
+});
+test('requiredMonthlyPace: 캘린더 월 차이를 균등 분할한다', () => {
+  assert.strictEqual(sandbox.requiredMonthlyPace(400000, 1000000, '2026-12-01', '2026-06-01'), 100000, '2026-06-01~2026-12-01은 정확히 6개월');
+});
+test('requiredMonthlyPace: targetDate의 day가 today의 day보다 작으면 달 수에서 1을 보정한다(day 경계)', () => {
+  // 2026-06-15 -> 2026-12-01: 달력상 (12-6)=6개월이지만 day(1)<day(15)라 아직 6개월째가 안 찼으므로 5개월
+  assert.strictEqual(sandbox.requiredMonthlyPace(400000, 1000000, '2026-12-01', '2026-06-15'), 120000);
+});
 
 /* ---------- goalIsOverdue: 목표일이 지났는데 아직 달성 못한 목표 판정 (app-evolve cycle195 develop) ----------
  * homeAlerts()의 goalBehind 알림(hist.length>=2 && !goalHasUnknown 요구)과 달리, 목표 화면 자체의
@@ -4783,6 +4824,36 @@ test('goalRowHTML: 목표일이 오늘이거나 미래면(아직 안 지남) 미
   sandbox.TODAY = '2026-06-01'; // targetDate===today → 아직 지나지 않음
   const html = sandbox.goalRowHTML(sandbox.DB.goals[0]);
   assert.ok(!html.includes('목표일 지남'), '목표일이 오늘이면 아직 지나지 않았으므로 배지가 없어야 함');
+});
+/* goalRowHTML의 "목표일까지 매달 약 OOO원 필요해요" 캡션(requiredMonthlyPace, app-evolve cycle303
+ * advance)도 바로 위 "목표일 지남" 배지들과 같은 이유로 실행형으로 검증한다 — goalProgress()가
+ * 돌려주는 requiredMonthly를 실제로 렌더에 배선했는지 확인한다. */
+test('goalRowHTML: targetDate가 설정된 미달성 목표는 "매달 약 OOO원 필요해요" 캡션을 보여준다', () => {
+  sandbox.DB = {
+    goals: [{ id: 'g1', name: '내 집 마련', targetAmount: 1000000, targetDate: '2026-07-01', owner: 'all' }],
+    nwHistory: [{ date: '2026-01-01', nw: 400000 }],
+  };
+  sandbox.TODAY = '2026-01-01';
+  const html = sandbox.goalRowHTML(sandbox.DB.goals[0]);
+  assert.ok(html.includes('목표일까지 매달 약 100,000원 필요해요'), html);
+});
+test('goalRowHTML: targetDate가 없으면 필요 월 저축액 캡션이 없다', () => {
+  sandbox.DB = {
+    goals: [{ id: 'g1', name: '내 집 마련', targetAmount: 1000000, owner: 'all' }],
+    nwHistory: [{ date: '2026-01-01', nw: 400000 }],
+  };
+  sandbox.TODAY = '2026-01-01';
+  const html = sandbox.goalRowHTML(sandbox.DB.goals[0]);
+  assert.ok(!html.includes('필요해요'));
+});
+test('goalRowHTML: 이미 달성한 목표는 targetDate가 있어도 필요 월 저축액 캡션이 없다', () => {
+  sandbox.DB = {
+    goals: [{ id: 'g1', name: '내 집 마련', targetAmount: 1000000, targetDate: '2026-07-01', owner: 'all' }],
+    nwHistory: [{ date: '2026-01-01', nw: 1000000 }],
+  };
+  sandbox.TODAY = '2026-01-01';
+  const html = sandbox.goalRowHTML(sandbox.DB.goals[0]);
+  assert.ok(!html.includes('필요해요'));
 });
 test('openGoalsList: 목표일이 지난 목표의 행에만 "지남" 배지가 붙는다(다른 목표엔 안 붙음)', () => {
   sandbox.DB = {

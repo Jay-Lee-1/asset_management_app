@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.351';
+const APP_VERSION='1.47.352';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3508,6 +3508,7 @@ function goalRowHTML(g){
      <span class="pg-nums"><b class="num">${comma(p.cur)}</b><span class="pg-of num"> / ${comma(p.target)}원</span></span></div>
    <div class="pg-bar"><i style="width:${p.pct}%;background:${color}"></i></div>
    ${!p.achieved&&p.projectedDate?`<div class="msub2" style="margin-top:4px">이대로면 ${shortDate2(p.projectedDate)}쯤 달성 예상</div>`:''}
+   ${!p.achieved&&p.requiredMonthly?`<div class="msub2" style="margin-top:4px">목표일까지 매달 약 ${comma(Math.round(p.requiredMonthly))}원 필요해요</div>`:''}
  </div>`;
 }
 /* 자산관리 탭 순자산 추이 카드 아래에 꽂는 요약 — 지금 캐러셀에서 보고 있는 귀속(owner)의 목표만 보여준다(nwHistoryCard와
