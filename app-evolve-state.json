@@ -1,15 +1,8 @@
 {
   "cycle": 299,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 294,
-      "phase": "develop",
-      "timestamp": "2026-11-03T08:40:00.000Z",
-      "summary": "목표 관리(openGoalsList)에 검색창이 전혀 없던 공백 발견 — openRecManage(recQ, cycle291 advance)와 같은 패턴으로 인라인 검색(goalQ)을 추가했다. 기존에 이미 있던 matchGoalQuery(통합검색용, 이름+금액 비교/범위 지원)를 그대로 재사용. 다만 목표는 보통 몇 개뿐이라 openCatPicker의 CAT_PICKER_SEARCH_THRESHOLD와 같은 이유로 GOAL_LIST_SEARCH_THRESHOLD(8)를 넘을 때만 검색창을 보여주고, 이하면 기존처럼 검색창 없이 전체를 그대로 보여준다. 본문을 goalsManageBody(q)로 분리해 #goalBody innerHTML만 220ms 디바운스로 교체(goalQInput), 시트 전체를 다시 열지 않는다. 테스트 9건 추가(2591->2600 통과). APP_VERSION 1.47.332->1.47.333, sw.js CACHE v599->v600. node test/run.js 2600/2600 통과.",
-      "commit": "8fa42af"
-    },
     {
       "cycle": 294,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-11-04T00:16:41.622Z",
       "summary": "critique(cycle298) 계획대로 전체내역/일별거래 선택모드에 계좌(자산) 일괄 이동을 추가했다. logic.js에 bulkAssetMoveTargets(txns,ids)를 신설해 bulkCatTargets과 달리 income/expense 혼합을 허용하고(계좌는 expense는 fromAssetId, income은 toAssetId만 바꾸면 돼 kind 통일이 불필요), 분할 거래도 허용한다(계좌는 거래 전체에 하나뿐이라 splits와 무관) — transfer/saving(양쪽 계좌가 모두 관여해 이동이 모호함)과 adjust(updateBalanceAdjust가 adjustAsset으로 전용 관리)만 제외. doBulkAssetMove(ids,newAssetId)가 type별로 fromAssetId 또는 toAssetId만 교체 후 doBulkCat과 동일한 touchSave+undoToast 패턴으로 되돌릴 수 있게 한다. bulkAssetMovePickFor(ids,afterApply)가 실패 사유별 토스트를 보여주거나 openAssetPicker를 띄워 고른 계좌를 적용한다 — 계획(critique 단계)이 제안한 cashOrDebt+excludeMarketValued 대신 excludeMarketValued만 썼다: cashOrDebt(cash|savings|debt만 남김)는 realestate/etc/pension처럼 잔액식이면서 이미 단건 수정(_applyOpenAsset/txOpenAsset/recOpenAsset)이 허용하는 종류를 다건에서만 더 좁게 막는 회귀가 돼, 단건과 똑같은 선택지(excludeMarketValued만)로 맞췄다. ledgerCatSel/histCatSel과 같은 자리에 ledgerAssetMoveSel()/histAssetMoveSel()을 추가하고 activeSel()이 lSel/hist 분기에 move 키를 돌려주며 updateSelBottom()이 세 번째 바닥바 버튼(지갑 아이콘, has-cat 압축 스타일 재사용)으로 렌더한다. 테스트 17건 추가(bulkAssetMoveTargets 6, doBulkAssetMove 4, bulkAssetMovePickFor 4, activeSel의 move 분기 3) — 2658->2676(FUNCTIONS에 doBulkAssetMove/bulkAssetMovePickFor/ledgerAssetMoveSel/histAssetMoveSel 추가, 자산 피커 렌더에 필요한 DB.recurrences/rates도 테스트 DB에 포함). APP_VERSION 1.47.341->1.47.342, sw.js CACHE v608->v609. node test/run.js 2676/2676 통과, logic.js/sw.js 구문 검증(node --check) 통과, index.html 메인 인라인 스크립트(691616자) new Function 구문 검증 통과. pending_advance_plan null로 비움.",
       "commit": null
+    },
+    {
+      "cycle": 299,
+      "phase": "develop",
+      "timestamp": "2026-11-04T01:10:12.163Z",
+      "summary": "반복 내역 관리(openRecManage/recManageBody) 목록 행에 복제(duplicateRec)/일시중지(toggleRecActive) 버튼은 바로 있었지만 삭제는 행을 탭해 editRec() 수정 화면까지 들어가야만 delRecConfirm을 쓸 수 있던 공백 발견(cycle297 critique가 이미 지목했지만 영향 작아 develop 사이즈로 보류해뒀던 항목, cycle298 critique는 다른 항목을 채택해 계속 미뤄졌다). duplicateRec/toggleRecActive와 동일한 패턴으로 event.stopPropagation() 후 delRecConfirm(id)만 호출하는 act-btn danger 버튼을 row-acts에 추가했다 — delRecConfirm은 이미 confirmSheet+deleteRecsUndo(실행취소 가능)로 안전하게 구현돼 있어 새 코드는 행 UI 배선뿐이고 로직 변경은 없다. 테스트 2건 추가: 삭제 버튼의 onclick이 event.stopPropagation() 후 delRecConfirm(id)만 호출(행 전체의 editRec로 전파되지 않음)하는지, aria-label이 복제/토글 버튼과 동일하게 memo로 서로 구분되는지. 테스트 2676->2678 통과. APP_VERSION 1.47.342->1.47.343, sw.js CACHE v609->v610. node test/run.js 2678/2678 통과, logic.js/sw.js 구문 검증(node --check) 통과, index.html 메인 인라인 스크립트(691774자) new vm.Script 구문 검증 통과.",
+      "commit": "ff296754964cc1b55b4aed6e9348deeaa93e5998"
     }
   ]
 }
