@@ -28678,20 +28678,149 @@ test('swUpdateBar: tabindex와 키보드 핸들러(onkeydown)가 있다', () => 
   assert.ok(tag.includes('role="button"'), 'swUpdateBar div에 role="button"이 없음');
   assert.ok(tag.includes('onkeydown="rowKeydown(event,reloadForUpdate)"'), 'swUpdateBar div에 onkeydown이 없음 — 키보드 접근 경로가 빠짐');
 });
-/* sujiPeekKey/histPeekKey/planPeekKey 공통 가드 — extractFunction으로 몸통만 잘라 검사한다.
- * 1) e.target!==e.currentTarget: 카드 안의 다른 버튼(수입/지출/가장 낮을 때 등)에서 버블된
- *    keydown까지 처리하면 그 버튼의 네이티브 Enter/Space 클릭 활성화를 preventDefault가
- *    막아버린다(nc-fix가 겪은 버블링 함정과 동일 원인) — 이걸 보장하는 게 핵심이라 소스에
- *    그 가드가 남아있는지를 지킨다.
- * 2) e.repeat 무시: 키를 누르고 있으면 브라우저가 keydown을 반복 발생시키는데, 매번
- *    Start()를 다시 부르면 안 된다(포인터는 pointerdown이 1회뿐이라 대응 사례가 없음). */
-test('sujiPeekKey/histPeekKey/planPeekKey/mSujiPeekKey가 버블링 가드(e.target)와 반복 가드(e.repeat)를 둔다', () => {
-  for (const fn of ['sujiPeekKey', 'histPeekKey', 'planPeekKey', 'mSujiPeekKey']) {
-    const body = extractFunction(fn);
-    assert.ok(body.includes('e.target!==e.currentTarget'), `${fn}에 e.target!==e.currentTarget 버블링 가드가 없음`);
-    assert.ok(body.includes('e.repeat'), `${fn}에 e.repeat 가드가 없음 — 키를 누르고 있으면 Start()가 반복 호출됨`);
-    assert.ok(body.includes(`if(e.key==='Escape'){${fn.replace('Key','End')}()`) || body.includes("e.key==='Escape'"), `${fn}에 Escape 처리가 없음`);
-  }
+/* sujiPeekStart/Move/End/Key, histPeek*, planPeek*, mSujiDown/Up/PeekKey는 모두 공용 팩토리
+ * makePeekGesture()가 만든 인스턴스(_sujiGesture 등)로 180ms 타이머+navigator.vibrate(8)+
+ * 버블링 가드(e.target)+반복 가드(e.repeat)+Escape 처리를 위임한다(app-evolve cycle302
+ * critique/advance, 네 사이트가 완전히 동일한 가드를 복붙해두던 것을 하나로 묶음). 각 wrapper는
+ * nwChartPeekKey가 nwChartKeyStep을 호출하는지만 확인하는 패턴과 같은 이유로 배선(어느 인스턴스의
+ * 메서드를 부르는지)만 확인하고, 그 인스턴스의 실제 동작(타이머·가드)은 바로 아래 makePeekGesture
+ * 전용 실행형 테스트가 한 번만 검증한다 — 4곳에 중복 재검증하지 않는다. */
+test('sujiPeekStart/Move/End/Key가 _sujiGesture의 동명 메서드로 위임한다', () => {
+  assert.ok(extractFunction('sujiPeekStart').includes('_sujiGesture.start()'), 'sujiPeekStart가 _sujiGesture.start()를 부르지 않음');
+  assert.ok(extractFunction('sujiPeekMove').includes('_sujiGesture.move()'), 'sujiPeekMove가 _sujiGesture.move()를 부르지 않음');
+  assert.ok(extractFunction('sujiPeekEnd').includes('_sujiGesture.end()'), 'sujiPeekEnd가 _sujiGesture.end()를 부르지 않음');
+  assert.ok(extractFunction('sujiPeekKey').includes('_sujiGesture.key(e)'), 'sujiPeekKey가 _sujiGesture.key(e)를 부르지 않음');
+});
+test('histPeekStart/Move/End/Key가 _histGesture의 동명 메서드로 위임한다', () => {
+  assert.ok(extractFunction('histPeekStart').includes('_histGesture.start()'), 'histPeekStart가 _histGesture.start()를 부르지 않음');
+  assert.ok(extractFunction('histPeekMove').includes('_histGesture.move()'), 'histPeekMove가 _histGesture.move()를 부르지 않음');
+  assert.ok(extractFunction('histPeekEnd').includes('_histGesture.end()'), 'histPeekEnd가 _histGesture.end()를 부르지 않음');
+  assert.ok(extractFunction('histPeekKey').includes('_histGesture.key(e)'), 'histPeekKey가 _histGesture.key(e)를 부르지 않음');
+});
+test('planPeekStart/Move/End/Key가 _planGesture의 동명 메서드로 위임한다', () => {
+  assert.ok(extractFunction('planPeekStart').includes('_planGesture.start()'), 'planPeekStart가 _planGesture.start()를 부르지 않음');
+  assert.ok(extractFunction('planPeekMove').includes('_planGesture.move()'), 'planPeekMove가 _planGesture.move()를 부르지 않음');
+  assert.ok(extractFunction('planPeekEnd').includes('_planGesture.end()'), 'planPeekEnd가 _planGesture.end()를 부르지 않음');
+  assert.ok(extractFunction('planPeekKey').includes('_planGesture.key(e)'), 'planPeekKey가 _planGesture.key(e)를 부르지 않음');
+});
+test('mSujiDown/Up/PeekKey가 _mSujiGesture의 동명 메서드로 위임한다(네이밍만 Down/Up으로 드리프트됐을 뿐 동작은 동일)', () => {
+  assert.ok(extractFunction('mSujiDown').includes('_mSujiGesture.start()'), 'mSujiDown이 _mSujiGesture.start()를 부르지 않음');
+  assert.ok(extractFunction('mSujiUp').includes('_mSujiGesture.end()'), 'mSujiUp이 _mSujiGesture.end()를 부르지 않음');
+  assert.ok(extractFunction('mSujiPeekKey').includes('_mSujiGesture.key(e)'), 'mSujiPeekKey가 _mSujiGesture.key(e)를 부르지 않음');
+});
+/* ---------- makePeekGesture 실행형 테스트: 위 배선 테스트들은 각 사이트가 공용 인스턴스의
+ * 메서드를 부르는지만 보므로, 그 인스턴스 자체의 타이머·가드 동작은 여기서 한 번만 vm으로
+ * 실제 실행해 검증한다(histQInput 디바운스 테스트의 setTimeout/clearTimeout 스파이 패턴과 동일). */
+function makePeekGestureCtx() {
+  const ctx = { navigator: { vibrate: () => {} } };
+  vm.createContext(ctx);
+  vm.runInContext(extractFunction('makePeekGesture'), ctx, { filename: 'makePeekGesture-real' });
+  return ctx;
+}
+function fakeGestureState() {
+  let timer = null, peeking = false;
+  return { getTimer: () => timer, setTimer: v => { timer = v; }, getPeeking: () => peeking, setPeeking: v => { peeking = v; }, _get: () => ({ timer, peeking }) };
+}
+test('[실행형] makePeekGesture: start()는 delay(ms) 후에야 onPeekChange(true)+vibrate(8)을 부르고, 그 전엔 peeking이 그대로다', () => {
+  const ctx = makePeekGestureCtx();
+  let capturedFn = null, capturedMs = null, vibrated = null;
+  ctx.setTimeout = (fn, ms) => { capturedFn = fn; capturedMs = ms; return 'timer1'; };
+  ctx.clearTimeout = () => {};
+  ctx.navigator.vibrate = ms => { vibrated = ms; };
+  const state = fakeGestureState();
+  const changes = [];
+  const g = ctx.makePeekGesture(state, today => changes.push(today));
+  g.start();
+  assert.strictEqual(capturedMs, 180, '기본 delay는 180ms여야 함');
+  assert.strictEqual(state._get().peeking, false, '타이머가 실제로 실행되기 전에는 peeking이 true가 되면 안 됨');
+  assert.strictEqual(changes.length, 0, '타이머가 실제로 실행되기 전에는 onPeekChange가 불리면 안 됨');
+  capturedFn();
+  assert.strictEqual(state._get().peeking, true, '타이머가 실행되면 peeking이 true가 돼야 함');
+  assert.deepStrictEqual(changes, [true], 'onPeekChange(true)가 정확히 한 번 불려야 함');
+  assert.strictEqual(vibrated, 8, 'navigator.vibrate(8)이 불려야 함');
+});
+test('[실행형] makePeekGesture: delay 옵션으로 지연시간을 바꿀 수 있다(기본값 180과 다른 값도 그대로 전달)', () => {
+  const ctx = makePeekGestureCtx();
+  let capturedMs = null;
+  ctx.setTimeout = (fn, ms) => { capturedMs = ms; return 't'; };
+  ctx.clearTimeout = () => {};
+  const g = ctx.makePeekGesture(fakeGestureState(), () => {}, { delay: 450 });
+  g.start();
+  assert.strictEqual(capturedMs, 450, 'opts.delay가 180 대신 쓰여야 함(histTotDown의 450ms 같은 다른 지연도 수용 가능해야 함)');
+});
+test('[실행형] makePeekGesture: start()는 이전 타이머를 먼저 clearTimeout한다(연속 눌림 시 타이머가 겹치지 않도록)', () => {
+  const ctx = makePeekGestureCtx();
+  let cleared = [];
+  ctx.setTimeout = () => 'new-timer';
+  ctx.clearTimeout = id => cleared.push(id);
+  const state = fakeGestureState();
+  state.setTimer('old-timer');
+  const g = ctx.makePeekGesture(state, () => {});
+  g.start();
+  assert.deepStrictEqual(cleared, ['old-timer'], 'start()가 기존 타이머를 지우지 않음');
+  assert.strictEqual(state._get().timer, 'new-timer', 'start()가 새 타이머 id로 교체해야 함');
+});
+test('[실행형] makePeekGesture: move()는 아직 peeking이 아닐 때만(= 롱프레스 확정 전 스와이프) 타이머를 지워 피크를 취소한다', () => {
+  const ctx = makePeekGestureCtx();
+  let cleared = 0;
+  ctx.clearTimeout = () => { cleared++; };
+  const state = fakeGestureState();
+  const g = ctx.makePeekGesture(state, () => {});
+  g.move();
+  assert.strictEqual(cleared, 1, 'peeking이 false일 때는 move()가 타이머를 지워야 함');
+  state.setPeeking(true);
+  cleared = 0;
+  g.move();
+  assert.strictEqual(cleared, 0, '이미 peeking 중이면 move()가 타이머를 지우면 안 됨(스크러빙 중 취소 방지)');
+});
+test('[실행형] makePeekGesture: end()는 peeking이었을 때만 onPeekChange(false)를 부르고 peeking을 되돌린다', () => {
+  const ctx = makePeekGestureCtx();
+  ctx.clearTimeout = () => {};
+  const state = fakeGestureState();
+  const changes = [];
+  const g = ctx.makePeekGesture(state, today => changes.push(today));
+  g.end();
+  assert.deepStrictEqual(changes, [], 'peeking이 아니었으면(짧게 눌렀다 뗀 경우) onPeekChange가 불리면 안 됨');
+  state.setPeeking(true);
+  g.end();
+  assert.deepStrictEqual(changes, [false], 'peeking이었으면 onPeekChange(false)가 불려야 함');
+  assert.strictEqual(state._get().peeking, false, 'end() 후에는 peeking이 false로 돌아와야 함');
+});
+test('[실행형] makePeekGesture: key()는 e.target!==e.currentTarget이면(버블링) 아무 것도 하지 않는다', () => {
+  const ctx = makePeekGestureCtx();
+  let started = false;
+  ctx.setTimeout = () => { started = true; return 't'; };
+  const g = ctx.makePeekGesture(fakeGestureState(), () => {});
+  g.key({ target: {}, currentTarget: {}, key: 'Enter', preventDefault: () => {} });
+  assert.strictEqual(started, false, '버블된(target!==currentTarget) keydown은 start()를 부르면 안 됨');
+});
+test('[실행형] makePeekGesture: key()의 Escape는 즉시 end()로 해제한다', () => {
+  const ctx = makePeekGestureCtx();
+  ctx.clearTimeout = () => {};
+  const state = fakeGestureState();
+  state.setPeeking(true);
+  const changes = [];
+  const g = ctx.makePeekGesture(state, today => changes.push(today));
+  const target = {};
+  g.key({ target, currentTarget: target, key: 'Escape' });
+  assert.deepStrictEqual(changes, [false], 'Escape는 peeking 중이던 피크를 즉시 해제해야 함');
+});
+test('[실행형] makePeekGesture: key()는 Enter/Space에만 반응하고 preventDefault 후 start()를 부르며, e.repeat면 다시 부르지 않는다', () => {
+  const ctx = makePeekGestureCtx();
+  let startCalls = 0;
+  ctx.setTimeout = () => { startCalls++; return 't' + startCalls; };
+  ctx.clearTimeout = () => {};
+  const g = ctx.makePeekGesture(fakeGestureState(), () => {});
+  const target = {};
+  let prevented = false;
+  g.key({ target, currentTarget: target, key: 'a', preventDefault: () => { prevented = true; } });
+  assert.strictEqual(startCalls, 0, 'Enter/Space/Escape가 아닌 키는 무시해야 함');
+  assert.strictEqual(prevented, false);
+  g.key({ target, currentTarget: target, key: 'Enter', preventDefault: () => { prevented = true; } });
+  assert.strictEqual(startCalls, 1, 'Enter는 start()를 불러야 함');
+  assert.ok(prevented, 'Enter/Space는 preventDefault()를 호출해야 함');
+  g.key({ target, currentTarget: target, key: ' ', repeat: true, preventDefault: () => {} });
+  assert.strictEqual(startCalls, 1, 'e.repeat(키를 누르고 있는 동안의 반복 keydown)은 start()를 다시 부르면 안 됨');
 });
 /* histTotDown(롱프레스 450ms)과 키보드(Enter/Space 즉시)가 같은 토글 로직(histTotToggle)을
  * 공유하는지 확인 — 둘이 각자 ST.hist.avgMode를 따로 뒤집으면 한쪽만 고치고 다른 쪽을 잊어버리는

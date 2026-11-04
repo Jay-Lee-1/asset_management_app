@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.349';
+const APP_VERSION='1.47.350';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3124,6 +3124,34 @@ function nwPresetSel(p){
  if(ST.nwPreset===p)return;
  ST.nwPreset=p;
  refreshNwHistoryCard();
+}
+/* 롱프레스로 "오늘까지" 값을 미리보기하는 제스처 — 홈 요약카드(sujiPeek*)/전체내역 합계(histPeek*)/
+ * Plan 탭 잔액(planPeek*)/모바일 둘러보기 스테이지 요약(mSuji*) 네 곳이 180ms 타이머+
+ * navigator.vibrate(8)+peeking 플래그+키보드(Escape=즉시 해제, Enter/Space만 반응, e.repeat
+ * 무시, e.target!==e.currentTarget 버블링 가드) 제스처를 완전히 동일하게 복붙해두고 있던 것을
+ * 하나로 묶었다(app-evolve cycle302 critique/advance). 각 사이트는 자기 타이머·peeking 변수
+ * (_sujiTimer/_sujiPeeking 등)는 그대로 두고, 그 변수를 읽고 쓰는 접근자(state)만 건네 start/
+ * move/end/key 로직을 이 인스턴스에 맡기는 얇은 wrapper로 바뀐다 — 전역 함수명과
+ * onpointerdown= 같은 HTML 속성 문자열은 전혀 건드리지 않는다. */
+function makePeekGesture(state,onPeekChange,opts){
+ const delay=(opts&&opts.delay)!=null?opts.delay:180;
+ const g={
+  start(){
+   clearTimeout(state.getTimer());
+   state.setTimer(setTimeout(()=>{state.setPeeking(true);onPeekChange(true);if(navigator.vibrate)navigator.vibrate(8)},delay));
+  },
+  move(){if(!state.getPeeking())clearTimeout(state.getTimer())},
+  end(){clearTimeout(state.getTimer());if(state.getPeeking()){state.setPeeking(false);onPeekChange(false)}},
+  key(e){
+   if(e.target!==e.currentTarget)return;
+   if(e.key==='Escape'){g.end();return}
+   if(e.key!=='Enter'&&e.key!==' ')return;
+   e.preventDefault();
+   if(e.repeat)return;
+   g.start();
+  }
+ };
+ return g;
 }
 /* nwhChart/assetBalChart(두 차트 모두 {date,nw} 모양의 pts 배열을 공유)의 스크러버 라인+라벨을
  * idx 위치로 그린다 — 포인터로 짚었을 때(nwChartPeekMove/assetBalPeekMove)와 키보드로 이동했을 때
@@ -4882,23 +4910,16 @@ function ledSumBox(y,m,live){
  return `<div class="card ledsum" id="ledsumLive" data-y="${y}" data-m="${m}" tabindex="0" role="button" aria-label="이번 달 수지, 엔터나 스페이스를 누르고 있으면 오늘까지 금액 보기" onpointerdown="sujiPeekStart()" onpointermove="sujiPeekMove()" onpointerup="sujiPeekEnd()" onpointercancel="sujiPeekEnd()" onpointerleave="sujiPeekEnd()" onkeydown="sujiPeekKey(event)" onkeyup="sujiPeekEnd()" onblur="sujiPeekEnd()">${ledSumInner(a,sc,false,true)}</div>`;
 }
 let _sujiTimer=null,_sujiPeeking=false,_sujiPeeked=false;
-function sujiPeekStart(){clearTimeout(_sujiTimer);_sujiPeeked=false;_sujiTimer=setTimeout(()=>{_sujiPeeking=true;_sujiPeeked=true;setSujiMode(true);if(navigator.vibrate)navigator.vibrate(8)},180)}
-function sujiPeekMove(){if(!_sujiPeeking)clearTimeout(_sujiTimer)} /* 스와이프면 피크 취소 */
-function sujiPeekEnd(){clearTimeout(_sujiTimer);if(_sujiPeeking){_sujiPeeking=false;setSujiMode(false)}}
-/* 카드 안의 수입/지출/저축 버튼(ledSumTap)으로 키보드 포커스가 있을 때 Enter/Space를 누르면
- * 그 keydown이 카드 div까지 버블되는데, e.target!==e.currentTarget으로 걸러 "카드 자체"가 포커스일
- * 때만 피크를 시작한다 — 안 그러면 preventDefault가 버블 중에도 적용돼 안쪽 버튼의 네이티브
- * Enter/Space 클릭 활성화까지 막아버린다(nc-fix가 겪은 것과 같은 버블링 함정). Escape는
- * nwChartPeekKey와 동일하게 즉시 종료, e.repeat는 키를 누르고 있는 동안 반복 발생하는
- * keydown이라 무시해야 pointerdown 1회와 동등하게 동작한다. */
-function sujiPeekKey(e){
- if(e.target!==e.currentTarget)return;
- if(e.key==='Escape'){sujiPeekEnd();return}
- if(e.key!=='Enter'&&e.key!==' ')return;
- e.preventDefault();
- if(e.repeat)return;
- sujiPeekStart();
-}
+/* makePeekGesture(nwPresetSel 다음, chartPeekRenderAt 바로 앞)로 위임한다 — _sujiPeeked만
+ * 이 사이트 전용(릴리즈 직후 ledSumTap 탭 한 번을 삼키는 플래그, 4번째 줄 참고)이라 그대로 둔다. */
+const _sujiGesture=makePeekGesture(
+ {getTimer:()=>_sujiTimer,setTimer:v=>_sujiTimer=v,getPeeking:()=>_sujiPeeking,setPeeking:v=>_sujiPeeking=v},
+ today=>{if(today)_sujiPeeked=true;setSujiMode(today)}
+);
+function sujiPeekStart(){_sujiPeeked=false;_sujiGesture.start()}
+function sujiPeekMove(){_sujiGesture.move()} /* 스와이프면 피크 취소 */
+function sujiPeekEnd(){_sujiGesture.end()}
+function sujiPeekKey(e){_sujiGesture.key(e)}
 /* 버튼 onclick(ledSumTap)은 롱프레스 릴리즈 시에도 pointerup 뒤 click이 그대로 발생해 호출된다 —
  * _sujiPeeked로 '방금 꾹 눌러 오늘까지 미리보기를 했을 뿐인' 릴리즈 한 번만 삼키고(전체내역 이동
  * 방지), 다음 진짜 탭부터는 sujiPeekStart()가 매 누름 시작마다 다시 false로 되돌려 정상 동작한다. */
@@ -6101,18 +6122,15 @@ function histQInput(v){
  if(v.trim()===''){histInvalidate();updateHist();return}
  _histQT=setTimeout(()=>{histInvalidate();updateHist()},220);
 }
-function histPeekStart(){clearTimeout(_histTimer);_histTimer=setTimeout(()=>{_histPeeking=true;setHistMode(true);if(navigator.vibrate)navigator.vibrate(8)},180)}
-function histPeekMove(){if(!_histPeeking)clearTimeout(_histTimer)}
-function histPeekEnd(){clearTimeout(_histTimer);if(_histPeeking){_histPeeking=false;setHistMode(false)}}
-/* sujiPeekKey(3683행 부근)와 동일한 원칙 — 버블링 방지용 e.target 가드, Escape 즉시 종료, e.repeat 무시. */
-function histPeekKey(e){
- if(e.target!==e.currentTarget)return;
- if(e.key==='Escape'){histPeekEnd();return}
- if(e.key!=='Enter'&&e.key!==' ')return;
- e.preventDefault();
- if(e.repeat)return;
- histPeekStart();
-}
+/* makePeekGesture로 위임 — sujiPeek*(3100행대)와 동일한 패턴. */
+const _histGesture=makePeekGesture(
+ {getTimer:()=>_histTimer,setTimer:v=>_histTimer=v,getPeeking:()=>_histPeeking,setPeeking:v=>_histPeeking=v},
+ setHistMode
+);
+function histPeekStart(){_histGesture.start()}
+function histPeekMove(){_histGesture.move()}
+function histPeekEnd(){_histGesture.end()}
+function histPeekKey(e){_histGesture.key(e)}
 function setHistMode(today){const c=$('histTotLive');if(!c||!_histLive)return;const L=_histLive;c.innerHTML=ledSumInner(L.a,L.sc,today);c.classList.toggle('peek',today);requestAnimationFrame(fitAll)}
 /* 전체내역 귀속 세그먼트 전환 — spendOwnerSel/incomeOwnerSel과 같은 패턴이지만, 그 둘은 시트(openSheet)라
  * 시트를 통째로 다시 열지만 전체내역은 탭 화면이라 renderHistory()로 그 자리를 다시 그린다. */
@@ -6302,20 +6320,16 @@ function planBalCard(y,m,a,live){
  _planLive={y,m,a};
  return `<div class="balance-head mc-pane ${bal<0?'neg':''}" id="planBalLive" tabindex="0" role="button" aria-label="이번 달 말일 잔액, 엔터나 스페이스를 누르고 있으면 오늘까지 잔액 보기" onpointerdown="planPeekStart()" onpointermove="planPeekMove()" onpointerup="planPeekEnd()" onpointercancel="planPeekEnd()" onpointerleave="planPeekEnd()" onkeydown="planPeekKey(event)" onkeyup="planPeekEnd()" onblur="planPeekEnd()">${planBalInner(y,m,a,false)}</div>`;
 }
-function planPeekStart(){clearTimeout(_planT);_planT=setTimeout(()=>{_planPeek=true;setPlanMode(true);if(navigator.vibrate)navigator.vibrate(8)},180)}
-function planPeekMove(){if(!_planPeek)clearTimeout(_planT)}
-function planPeekEnd(){clearTimeout(_planT);if(_planPeek){_planPeek=false;setPlanMode(false)}}
-/* sujiPeekKey(3683행 부근)와 동일한 원칙 — planBalInner 안의 "가장 낮을 때"(.bh-low) 버튼에서
- * 버블된 keydown은 e.target!==e.currentTarget으로 걸러 preventDefault가 그 버튼의 네이티브
- * Enter/Space 클릭까지 막지 않게 한다. */
-function planPeekKey(e){
- if(e.target!==e.currentTarget)return;
- if(e.key==='Escape'){planPeekEnd();return}
- if(e.key!=='Enter'&&e.key!==' ')return;
- e.preventDefault();
- if(e.repeat)return;
- planPeekStart();
-}
+/* makePeekGesture로 위임 — sujiPeek*(3100행대)와 동일한 패턴. planBalInner 안의 "가장 낮을 때"
+ * (.bh-low) 버튼에서 버블된 keydown도 key()의 e.target 가드로 걸러진다. */
+const _planGesture=makePeekGesture(
+ {getTimer:()=>_planT,setTimer:v=>_planT=v,getPeeking:()=>_planPeek,setPeeking:v=>_planPeek=v},
+ setPlanMode
+);
+function planPeekStart(){_planGesture.start()}
+function planPeekMove(){_planGesture.move()}
+function planPeekEnd(){_planGesture.end()}
+function planPeekKey(e){_planGesture.key(e)}
 function setPlanMode(today){const c=$('planBalLive');if(!c||!_planLive)return;const L=_planLive;
  c.innerHTML=planBalInner(L.y,L.m,L.a,today);c.classList.toggle('peek',today);requestAnimationFrame(fitAll)}
 function scrollToPlanDay(date){
@@ -7585,17 +7599,17 @@ function mSujiInner(today){
    <button><span class="k">지출</span><span class="v num minus">${v[2]}</span></button>
    <button><span class="k">저축</span><span class="v num save">${v[3]}</span></button></div>`}
 let _mT=null,_mPeek=false;
-function mSujiDown(){clearTimeout(_mT);_mT=setTimeout(()=>{_mPeek=true;const c=$('m-suji');if(c){c.innerHTML=mSujiInner(true);c.classList.add('peek')}if(navigator.vibrate)navigator.vibrate(8);twDone()},180)}
-function mSujiUp(){clearTimeout(_mT);if(_mPeek){_mPeek=false;const c=$('m-suji');if(c){c.innerHTML=mSujiInner(false);c.classList.remove('peek')}}}
-/* sujiPeekKey(3696행 부근)와 동일한 원칙 — 버블링 방지용 e.target 가드, Escape 즉시 종료, e.repeat 무시. */
-function mSujiPeekKey(e){
- if(e.target!==e.currentTarget)return;
- if(e.key==='Escape'){mSujiUp();return}
- if(e.key!=='Enter'&&e.key!==' ')return;
- e.preventDefault();
- if(e.repeat)return;
- mSujiDown();
-}
+/* 다른 셋과 달리 네이밍이 Down/Up으로 드리프트돼 있었지만(critique cycle302 발견) 동작은 100%
+ * 동일하게 유지한다 — setMSujiMode()로 뽑아 makePeekGesture(3100행대)에 위임한다. twDone()은
+ * 원래 mSujiDown 쪽(peek 진입)에서만 불렀으므로 today일 때만 호출한다. */
+function setMSujiMode(today){const c=$('m-suji');if(c){c.innerHTML=mSujiInner(today);c.classList.toggle('peek',today)}if(today)twDone()}
+const _mSujiGesture=makePeekGesture(
+ {getTimer:()=>_mT,setTimer:v=>_mT=v,getPeeking:()=>_mPeek,setPeeking:v=>_mPeek=v},
+ setMSujiMode
+);
+function mSujiDown(){_mSujiGesture.start()}
+function mSujiUp(){_mSujiGesture.end()}
+function mSujiPeekKey(e){_mSujiGesture.key(e)}
 function mSeg(mode){const sg=$('twStage');if(!sg||sg.dataset.scr===mode)return;sg.dataset.scr=mode;sg.innerHTML=twScreen(mode);twDone()}
 function mFab(){const pop=$('m-pop'),f=$('m-fab');if(!pop)return;const on=pop.style.display==='none';
  pop.style.display=on?'':'none';if(f)f.style.transform=on?'rotate(45deg)':'';if(navigator.vibrate)navigator.vibrate(6);twDone();

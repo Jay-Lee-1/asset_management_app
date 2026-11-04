@@ -1,19 +1,8 @@
 {
-  "cycle": 302,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "long-press-to-peek 제스처(sujiPeek/histPeek/planPeek/mSuji) 공용 makePeekGesture() 헬퍼로 통합",
-    "why": "홈 요약카드(sujiPeek*, ~4884-4899), 전체내역 합계(histPeek*, ~6091-6115), Plan 탭 잔액(planPeek*, ~6297-6318), 모바일 tw 스테이지 요약(mSuji*/mSujiPeekKey, ~7587-7598) 네 곳이 180ms 롱프레스 타이머+navigator.vibrate(8)+peeking 플래그+Start/Move/End+키보드(Escape=해제, Enter/Space만 반응, e.repeat 무시, e.target!==e.currentTarget 가드)를 동일하게 복붙해두고 있다. 각 사이트 주석 자체가 \"sujiPeekKey와 동일 원칙\"이라고 적어둘 정도로 중복이 명시적이며, 모바일판(mSuji*)은 이미 네이밍이 Down/Up으로 드리프트되고 setXMode() 재렌더 델리게이션 없이 자체 innerHTML/classList를 인라인으로 처리해 다른 셋과 어긋나 있다. 이 패턴에 버그가 하나 생기면(과거 사이클들이 고친 종류의 버그처럼) 4곳 중 하나를 빠뜨리기 쉬운 전형적인 복붙 드리프트 리스크.",
-    "approach": "nwChart/assetBalChart 쪽 chartPeekRenderAt이 있는 자리(~3100대) 근처에 순수 팩토리 makePeekGesture(onModeChange,opts)를 추가해 {start,move,end,key,get peeking()} 묶음을 반환하게 한다(delay 기본 180ms, vibrate 플래그는 opts로). 기존 전역 함수명(sujiPeekStart/sujiPeekKey 등)은 그대로 유지하고 각각 _sujiPeek=makePeekGesture(setSujiMode) 같은 객체로 위임하는 얇은 wrapper 한 줄로 바꿔, onpointerdown=/onkeydown= 같은 HTML 속성 문자열(4884, 6104, 6305, 7588)은 전혀 건드리지 않는다. mSuji*는 이번에 setMSujiMode()를 새로 뽑아 다른 셋과 같은 모양으로 맞춘다. _sujiPeeked(peek 해제 직후 다음 탭을 무시하는 ledSumTap 전용 플래그, ~4905)는 공유 상태가 아니므로 팩토리 밖 wrapper 변수로 남긴다. 동작은 100% 동일해야 하는 순수 리팩터이므로 logic.js/테스트 변경 없이, 4개 화면(홈/전체내역/Plan/모바일 스테이지) 수동 스모크 테스트로 확인한다. histTotToggle의 평균모드 토글(histTotLive, 별도 id)은 이 패밀리가 아니므로 손대지 않는다."
-  },
+  "cycle": 303,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 297,
-      "phase": "advance",
-      "timestamp": "2026-11-03T20:17:26.500Z",
-      "summary": "critique(cycle297) 계획대로 자산 관리에 '다른 자산에 합치기' 기능을 추가했다. mergeCatInto()와 같은 골격(참조 이동+톰스톤+undoToast)으로 mergeAssetInto(fromId,toId)를 신설: assetMergeCounts(id)로 영향받는 거래/반복거래(활성·비활성 모두)를 센 뒤 confirmAssetMerge()의 confirmSheet로 안내 → DB.txns/DB.recurrences의 fromAssetId/toAssetId(조정 내역의 adjustAsset 포함)를 toId로 일괄 치환 → 같은 '잔액식' 종류(cash/savings/realestate/etc/pension/debt, BAL_ASSET_TYPES)일 때만 saveAsset()과 동일한 balKey(baseAmount/amountKRW) 규칙으로 두 자산의 잔액을 합산 → fromId를 deleteAssetsUndo와 동일한 DB.deletedIds 톰스톤과 함께 DB.assets에서 제거 → undoToast로 자산 목록·잔액·참조·톰스톤을 전부 되돌릴 수 있게 했다. 시세평가형(fx/gold/stock/crypto)은 수량·시세를 합치는 별도 규칙이 필요해 1차 범위에서 제외(안내 토스트로 거부). openAssetPicker에 onlyType 옵션을 추가해 openAssetMergePicker()가 같은 종류의 자산만, 자기 자신은 제외하고 보여준다. renderAssetSheet()의 '이 자산 삭제' 링크 위에 '다른 자산에 합치기' 링크를 추가(잔액식 자산을 수정할 때만 노출). 테스트 21건 추가(2634->2655 통과, 기존 cycle296 state의 2636도 중간에 2634로 집계됐으나 최종은 2655). APP_VERSION 1.47.339->1.47.340, sw.js CACHE v606->v607. node test/run.js 2655/2655 통과, index.html 메인 인라인 스크립트/logic.js/sw.js 구문 검증(node --check 및 new Function) 통과. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 298,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-04T16:14:03.000Z",
       "summary": "서브에이전트로 앱 전체를 재조사(기존에 처리/보류된 ~15개 항목을 명시해 제외 지시). 발견: 홈 요약카드 sujiPeek*(~4884-4899)/전체내역 합계 histPeek*(~6091-6115)/Plan 탭 잔액 planPeek*(~6297-6318)/모바일 tw 스테이지 요약 mSuji*(~7587-7598) 네 곳이 180ms 롱프레스+navigator.vibrate(8)+peeking 플래그+Start/Move/End+키보드(Escape=해제, Enter/Space만, e.repeat 무시, e.target!==e.currentTarget 가드) 제스처를 완전히 동일하게 복붙해두고 있고, 각 사이트 주석이 서로를 \"같은 원칙\"이라 참조할 뿐 실제 공유 함수는 없다. 모바일판(mSuji*)은 이미 Down/Up 네이밍과 자체 innerHTML 처리로 다른 셋에서 드리프트된 상태라 복붙 리스크가 실제로 드러난 사례. pending_advance_plan에 저장(makePeekGesture() 공용 팩토리로 통합, 전역 함수명은 유지한 채 얇은 wrapper로 위임해 HTML 속성 문자열은 안 건드리는 범위). (보류: CDN 3개 SRI 해시 추가는 이 샌드박스의 네트워크 정책상 실제 응답 바이트를 못 받아와 해시 불가능해 애초에 불가; logic.js 순수함수 테스트 공백은 matchQueryTerms/searchTerms/recScheduleSameSlot 3개뿐이고 전부 호출부(matchTxnQuery 등) 테스트로 간접 커버돼 실질 공백 아님; 최근 추가 UI(다건선택, 반복관리, 차트)의 접근성은 aria-pressed/aria-label/role=button/키보드 동등 처리/닫을 때 포커스 복귀가 이미 일관되게 적용돼 있음을 확인; 에러처리/오프라인/동기화 충돌은 cloudSyncFailed/mergeCollectionConflicts/톰스톤 병합/재시도가 이미 성숙해 공백 없음; allTxns/expandRec/잔액계산 성능은 _recCache/_balCache/_lastEditCache로 이미 여러 사이클에 걸쳐 캐시돼 있어 새 핫패스 없음; 전역 검색은 거래/자산/카테고리/목표/반복 전부 커버해 공백 없음.) 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 302,
+      "phase": "advance",
+      "timestamp": "2026-11-04T17:15:44.106Z",
+      "summary": "critique(cycle302) 계획대로 롱프레스-피크 제스처(sujiPeek*/histPeek*/planPeek*/mSuji*) 4곳의 180ms 타이머+navigator.vibrate(8)+peeking 플래그+키보드 가드(e.target 버블링 가드, Escape 즉시 해제, Enter/Space만 반응, e.repeat 무시) 복붙을 makePeekGesture(state,onPeekChange,opts) 공용 팩토리로 통합했다. 위치는 계획대로 nwPresetSel 다음(chartPeekRenderAt 바로 앞, ~3100행대). 각 사이트는 기존 전역 함수명(sujiPeekStart/histPeekKey 등)과 onpointerdown= 같은 HTML 속성 문자열을 그대로 유지한 채, 자기 타이머/peeking 변수(_sujiTimer/_sujiPeeking 등)에 대한 getter/setter만 건네 _sujiGesture=makePeekGesture(state,onPeekChange) 인스턴스의 start/move/end/key로 위임하는 얇은 wrapper로 바뀌었다. _sujiPeeked(릴리즈 직후 ledSumTap 탭 한 번을 삼키는 suji 전용 플래그)는 공유 상태가 아니므로 onPeekChange 콜백 쪽에 그대로 남겼다. mSuji*(모바일 둘러보기 튜토리얼 목업)는 계획대로 setMSujiMode()를 새로 뽑아 다른 셋과 같은 모양으로 맞추되, twDone() 호출은 원래 mSujiDown(peek 진입) 쪽에서만 불렀던 동작을 그대로 보존해 today일 때만 부른다. 동작은 100% 동일한 순수 리팩터다. 계획에는 \"테스트 변경 없이\"라고 적었지만 실제로 구현해보니 기존 자동화 테스트 하나(sujiPeekKey/histPeekKey/planPeekKey/mSujiPeekKey가 e.target/e.repeat/Escape 가드를 함수 본문 텍스트로 직접 담고 있는지 extractFunction으로 검사하던 테스트)가 위임으로 바뀐 몸통엔 더 이상 그 가드 텍스트가 없어 깨졌다 — nwChartPeekKey가 nwChartKeyStep을 호출하는지만 확인하고 실제 동작은 별도 실행형 테스트가 한 번만 검증하는 기존 패턴(cycle142/146)을 그대로 따라, 그 테스트를 4개의 배선 확인 테스트(각 wrapper가 해당 _xGesture의 동명 메서드를 부르는지)로 교체하고, makePeekGesture 자체의 타이머/vibrate/peeking/키보드 가드 동작을 검증하는 실행형 테스트 8건(histQInput 디바운스 테스트의 setTimeout/clearTimeout 스파이 패턴과 동일)을 추가했다. 테스트 2742->2753(순교체 -1+신규 12). APP_VERSION 1.47.349->1.47.350, sw.js CACHE v616->v617. node test/run.js 2753/2753 통과, sw.js/logic.js(node --check) 구문 검증 통과, index.html 4개 <script> 블록 중 메인 인라인 스크립트(new Function, 703177자) 통과(나머지 1개는 기존에도 있던 HTML 주석 혼입 오탐). pending_advance_plan null로 비움.",
       "commit": null
     }
   ]
