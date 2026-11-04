@@ -1343,6 +1343,19 @@ function assetInclTargets(assets,ids){
  const allExcluded=items.every(a=>!a.includeInTotal);
  return{ok:true,items,mixed:!allIncluded&&!allExcluded,allIncluded};
 }
+/* 자산 선택모드(ST.aSel)의 세 번째 일괄동작 — 귀속(owner) 일괄 변경 대상을 검증한다.
+ * assetInclTargets와 같은 모양의 {ok,...}를 돌려주되, cycle296 critique가 짚어둔 대로
+ * 자산엔 includeInTotal(불리언)과 달리 "현재 상태가 섞였는지"로 버튼을 고를 필요가 없다 —
+ * owner는 피커로 매번 새 값을 직접 고르므로(assetOwnerMovePickFor) mixed 판정 없이
+ * "선택이 비었거나 실제 자산과 하나도 안 맞으면 실패"만 본다(app-evolve cycle301 develop,
+ * cycle296 critique가 이번엔 보류했던 항목). */
+function assetOwnerTargets(assets,ids){
+ const idSet=ids instanceof Set?ids:new Set(ids||[]);
+ if(!idSet.size)return{ok:false,reason:'empty'};
+ const items=(assets||[]).filter(a=>idSet.has(a.id));
+ if(!items.length)return{ok:false,reason:'empty'};
+ return{ok:true,items};
+}
 
 /* ================= CAROUSEL INDEX (순수) ================= */
 /* wireNwCarousel()의 클론-루프 스크롤 스냅과 동일한 경계 규칙으로, 화살표 키/점 클릭이 요청한

@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.346';
+const APP_VERSION='1.47.347';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -10688,6 +10688,27 @@ function doBulkInclToggle(ids,next){if(twGuard())return;
  undoToast(`${items.length}개 자산을 총자산에 ${next?'포함':'제외'}했어요`,()=>{
   items.forEach((a,i)=>{a.includeInTotal=prev[i]});
   touchSave(...items);renderCurrent();toast('되돌렸어요')})}
+/* 자산 선택모드(ST.aSel)의 '귀속' 바닥바 버튼이 피커에서 고른 귀속을 실제로 적용하는 지점
+ * (app-evolve cycle301 develop, cycle296 critique가 짚어두고 보류했던 공백). assetOwnerMovePickFor가
+ * 이미 assetOwnerTargets()로 검증해 넘긴 ids/newOwner만 다루므로 여기선 재검증 없이 바로 적용한다.
+ * saveAsset()이 자산 하나의 owner가 바뀔 때 그 자산에 연결된 asset형 목표(goal.linkedAssetId)의
+ * owner를 같이 맞추는 가드(4712행 부근)와 mergeAssetInto가 합치기 경로에도 똑같이 적용한 것(cycle300
+ * develop)과 동일한 불변식을 일괄 변경에도 지킨다 — 안 그러면 목표는 실제 자산을 계속 추적하면서도
+ * 옛 귀속 캐러셀에만 보이는 어긋남이 다건 경로에서도 재현된다. doBulkCat/doBulkInclToggle과 동일하게
+ * touchSave(...)로 한 번에 touch+save한 뒤 undoToast로 자산·목표 owner를 모두 되돌릴 수 있게 한다. */
+function doBulkOwnerMove(ids,newOwner){if(twGuard())return;
+ const r=assetOwnerTargets(DB.assets,ids);if(!r.ok)return;
+ const items=r.items,prevOwner=items.map(a=>a.owner);
+ const goalItems=[];
+ items.forEach(a=>{
+  a.owner=newOwner;
+  (DB.goals||[]).forEach(g=>{if(g.type==='asset'&&g.linkedAssetId===a.id&&g.owner!==newOwner){goalItems.push({g,prevOwner:g.owner});g.owner=newOwner}});
+ });
+ touchSave(...items,...goalItems.map(x=>x.g));renderCurrent();
+ undoToast(`${items.length}개 자산의 귀속을 옮겼어요`,()=>{
+  items.forEach((a,i)=>{a.owner=prevOwner[i]});
+  goalItems.forEach(x=>{x.g.owner=x.prevOwner});
+  touchSave(...items,...goalItems.map(x=>x.g));renderCurrent();toast('되돌렸어요')})}
 function deleteRecsUndo(ids){if(twGuard())return;const removed=DB.recurrences.filter(r=>ids.has(r.id));
  DB.recurrences=DB.recurrences.filter(r=>!ids.has(r.id));
  DB.deletedIds=DB.deletedIds||{};const now=Date.now();ids.forEach(id=>DB.deletedIds[id]=now);
@@ -10899,6 +10920,16 @@ function bulkAssetMovePickFor(ids,afterApply){
  if(!r.ok){toast(r.reason==='transfer'?'이체·저축 내역은 계좌를 한번에 옮길 수 없어요':r.reason==='adjust'?'잔액 조정 내역은 계좌를 옮길 수 없어요':'선택된 내역이 없어요');return}
  openAssetPicker({excludeMarketValued:true,title:'옮길 계좌 선택',onPick:id=>{closeSheet();doBulkAssetMove(ids,id);if(afterApply)afterApply()}});
 }
+/* assetOwnerSel()이 선택바의 '귀속' 버튼에서 호출 — assetOwnerTargets()로 먼저 검증해 선택이
+ * 비었으면 안내 토스트를 보여주거나, 통과하면 asOpenOwner()(건당 자산 수정)와 같은 openOwnerPicker()를
+ * 띄워 고른 귀속으로 doBulkOwnerMove()를 적용한다(app-evolve cycle301 develop). bulkCatPickFor/
+ * bulkAssetMovePickFor와 동일하게 되돌아갈 이전 시트가 없는 단독 호출이라 onPick에서 직접
+ * closeSheet()로 닫아야 한다. */
+function assetOwnerMovePickFor(ids,afterApply){
+ const r=assetOwnerTargets(DB.assets,ids);
+ if(!r.ok){toast('선택된 자산이 없어요');return}
+ openOwnerPicker({current:null,onPick:o=>{closeSheet();doBulkOwnerMove(ids,o);if(afterApply)afterApply()}});
+}
 /* 자산 선택모드(ST.aSel) 바닥바의 '포함'/'제외' 버튼이 호출 — activeSel()이 assetInclTargets()로
  * 이미 섞임 여부를 판단해 ['incl'], ['excl'], ['incl','excl'] 중 하나로 버튼을 결정해 뒀으므로
  * (updateSelBottom 참고) 여기선 재검증 없이 doBulkInclToggle만 호출한다. ledgerCatSel/histCatSel과
@@ -10908,6 +10939,13 @@ function assetInclSel(next){
  if(!ST.aSel.ids.size){toast('선택된 자산이 없어요');return}
  const ids=new Set(ST.aSel.ids);ST.aSel.mode=false;ST.aSel.ids.clear();
  doBulkInclToggle(ids,next);
+}
+/* 자산 선택모드(ST.aSel) 바닥바의 '귀속' 버튼이 호출 — ledgerAssetMoveSel/histAssetMoveSel과
+ * 동일하게 피커를 거치는 동작이라 assetInclSel과 달리 선택모드를 바로 끝내지 않고, 피커에서
+ * 실제로 고른 뒤(afterApply)에야 끝낸다(app-evolve cycle301 develop). */
+function assetOwnerSel(){
+ if(!ST.aSel.ids.size){toast('선택된 자산이 없어요');return}
+ assetOwnerMovePickFor(new Set(ST.aSel.ids),()=>{ST.aSel.mode=false;ST.aSel.ids.clear();renderAssets()});
 }
 
 /* ================= ROUTER ================= */
@@ -10933,14 +10971,18 @@ function activeSel(){
     (계좌 일괄 이동)도 거래 전용이라 같은 두 분기에만 둔다 — bulkAssetMoveTargets(logic.js)가
     아니라 activeSel()은 버튼을 보여줄지만 결정하므로(incl과 달리 상태에 따라 라벨이 바뀌지
     않아 항상 고정 문자열) 검증은 bulkAssetMovePickFor() 호출 시점에 한다(app-evolve cycle298
-    critique → advance). */
+    critique → advance). ownerMove(귀속 일괄 변경)는 반대로 자산 전용이다 — 귀속은 모든 자산
+    종류가 공통으로 갖는 필드라(incl처럼 특정 용도로만 쓰이는 플래그가 아님) mixed 판정 없이
+    항상 같은 버튼 하나만 보여주고(라벨도 고정), 검증은 assetOwnerMovePickFor() 호출 시점에
+    assetOwnerTargets(logic.js)로 한다 — move와 동일한 이유(app-evolve cycle296 critique가
+    짚어두고 보류했던 공백, cycle301 develop이 뒤늦게 메움). */
  if(ST.aSel.mode){
   let incl=null;
   if(ST.aSel.ids.size){
    const r=assetInclTargets(DB.assets,ST.aSel.ids);
    if(r.ok)incl=r.mixed?['incl','excl']:(r.allIncluded?['excl']:['incl']);
   }
-  return{all:'assetSelAll()',del:'assetDelSel()',incl,size:ST.aSel.ids.size,total:visibleAssetsForSel().length};
+  return{all:'assetSelAll()',del:'assetDelSel()',incl,ownerMove:'assetOwnerSel()',size:ST.aSel.ids.size,total:visibleAssetsForSel().length};
  }
  if(ST.lSel.mode)return{all:'ledgerSelAll()',del:'ledgerDelSel()',cat:'ledgerCatSel()',move:'ledgerAssetMoveSel()',size:ST.lSel.ids.size,total:dayTxns(ST.ledger.sel).filter(visibleTx).filter(t=>!t.isRec).length};
  if(ST.hist.selMode)return{all:'histSelAll()',del:'histDelSel()',cat:'histCatSel()',move:'histAssetMoveSel()',size:ST.hist.sel.size,total:filteredHist().filter(t=>!t.isRec).length};
@@ -10954,10 +10996,11 @@ function updateSelBottom(){const el=$('selBarBottom');if(!el)return;const s=acti
     선택이 비었으면 null — activeSel()이 이미 판단해 뒀으므로 여기선 버튼 라벨만 뽑는다
     (app-evolve cycle296 advance) */
  const inclBtns=(s.incl||[]).map(k=>k==='incl'?`<button class="sbb sbb-incl" onclick="assetInclSel(true)">${svg('eye')} 포함</button>`:`<button class="sbb sbb-incl" onclick="assetInclSel(false)">${svg('eyeOff')} 제외</button>`).join('');
- el.classList.toggle('has-cat',!!s.cat||!!s.move||!!(s.incl&&s.incl.length));
+ el.classList.toggle('has-cat',!!s.cat||!!s.move||!!s.ownerMove||!!(s.incl&&s.incl.length));
  el.innerHTML=`<button class="sbb sbb-all" onclick="${s.all}">${allOn?'전체 해제':'전체 선택'}</button>`
   +(s.cat?`<button class="sbb sbb-cat" onclick="${s.cat}">${svg('tag')} 카테고리</button>`:'')
   +(s.move?`<button class="sbb sbb-move" onclick="${s.move}">${svg('wallet')} 계좌</button>`:'')
+  +(s.ownerMove?`<button class="sbb sbb-move" onclick="${s.ownerMove}">${svg('users')} 귀속</button>`:'')
   +inclBtns
   +`<button class="sbb-x" onclick="exitSelMode()" aria-label="선택 취소">${svg('x')}</button>`
   +`<button class="sbb sbb-del" onclick="${s.del}">${svg('trash')} 삭제${s.size?' '+s.size:''}</button>`;

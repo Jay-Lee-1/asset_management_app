@@ -1,15 +1,8 @@
 {
   "cycle": 301,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 296,
-      "phase": "develop",
-      "timestamp": "2026-11-03T13:18:13.597Z",
-      "summary": "duplicateAsset()이 연금(pension) 자산을 복제할 때 _pensionAutoExcl 플래그를 세팅하지 않던 공백 발견 — openAssetSheet(editing)은 기존 연금 자산을 열 때 이 플래그를 세팅해 asOpenType()이 종류 전환 시 includeInTotal을 복원할 수 있게 하지만(cycle52), duplicateAsset()은 openAssetSheet를 거치지 않고 asDraft를 직접 구성해 플래그가 빠졌다. 연금을 복제한 뒤 종류를 다른 걸로 바꾸면 includeInTotal:false(총자산 제외)가 고착돼, 더 이상 연금이 아닌데도 조용히 순자산 집계에서 빠지는 실데이터 버그였다. duplicateAsset()에 openAssetSheet와 동일한 d.type==='pension' 체크를 추가해 수정. 테스트 2건 추가(연금 복제 시 플래그 세팅+종류전환 복원 확인, 비연금 복제 시 플래그 미생성 확인). 2617->2619 통과. APP_VERSION 1.47.336->1.47.337, sw.js CACHE v603->v604. node test/run.js 2619/2619 통과, sw.js/logic.js 구문 검증(node --check) 통과.",
-      "commit": "9c19c91"
-    },
     {
       "cycle": 296,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-04T08:11:45.213Z",
       "summary": "critique(cycle300) 계획대로 반복 내역 주기에 '격주(biweekly)'를 추가했다. logic.js: recDates()의 step 계산을 r.freq==='daily'?1:(r.freq==='biweekly'?14:7)로 확장(else 분기, 기존 weekly=7과 분리), monthlyEquivalent()에 biweekly 분기(amt*365/14/12) 추가, recFreqLabelStr()에 '격주 ◯요일' 레이블(weekly와 동일하게 startDate 요일 기반) 추가, recNthDate()의 버퍼 추정식에 biweekly 전용 분기(14*span)를 weekly 옆에 추가(없어도 doubling으로 결국 수렴하지만 weekly와 같은 패턴으로 명시). recScheduleSameSlot()(findPossibleDuplicateRec이 쓰는 '같은 반복 슬롯' 판정)에 biweekly 분기를 추가했다 — 계획에 없던 발견: biweekly를 weekly처럼 요일만 비교하면 같은 요일인데 2주 중 다른 주(7일 차이)인 두 반복을 중복으로 오판하므로, daysBetween(a.startDate,b.startDate)%14===0(요일 일치를 자동 포함)으로 '같은 2주 주기'까지 비교하게 했다. index.html: txFreq/recFreq 각각의 freqBtns 배열(5155, 5672)에 ['biweekly','격주'] 옵션 추가 — _applyFreq/clampDay/weekend 필드 노출/recFreq의 weekend 리셋은 모두 freq==='monthly' 전용 분기라 손대지 않고 그대로 통과함을 코드 확인. sanitizeBackup도 freq별 화이트리스트 검증이 없어(monthly 전용 day/weekend 정규화만 존재) 수정 불필요. 계획이 언급한 완전 자유 N일 간격(custom)은 1차 범위대로 제외. 테스트 10건 추가: recDates biweekly 2건, recFreqLabelStr biweekly 2건, monthlyEquivalent biweekly 1건, recNthDate/recCountUntil biweekly 1건, findPossibleDuplicateRec biweekly phase 판정 1건(14일 차이=중복, 7일 차이=비중복) — 2682->2692 통과. APP_VERSION 1.47.345->1.47.346, sw.js CACHE v612->v613. node test/run.js 2692/2692 통과, logic.js/sw.js node --check 통과, index.html 메인 인라인 스크립트 new Function 구문 검증 통과. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 301,
+      "phase": "develop",
+      "timestamp": "2026-11-04T09:12:00.000Z",
+      "summary": "자산 선택모드(ST.aSel)에 일괄 '귀속(owner) 변경'이 없던 공백 발견 — cycle296 critique가 이미 짚어뒀지만 당시엔 포함/제외(includeInTotal) 토글에 밀려 보류됐고 이후로도 아무 사이클이 채택하지 않은 채 그대로 남아 있었다. assetDelSel/doBulkInclToggle과 동일한 골격으로 메움: logic.js에 assetOwnerTargets(assets,ids)를 신설(assetInclTargets과 달리 mixed 판정 없이 선택 존재 여부만 검증 — owner는 피커로 매번 새 값을 고르므로 현재 상태가 섞였는지는 버튼 선택에 영향 없음), doBulkOwnerMove(ids,newOwner)가 doBulkCat과 동일한 touchSave+undoToast 패턴으로 선택된 자산들의 owner를 일괄 치환한다. saveAsset()이 자산 하나의 owner가 바뀔 때 연결된 asset형 목표(goal.linkedAssetId)의 owner를 같이 맞추는 기존 가드(4712행 부근, mergeAssetInto도 cycle300에서 합치기 경로에 동일 적용)와 같은 불변식을 일괄 변경에도 지켜 goalItems로 모아 함께 touchSave+undo한다. assetOwnerMovePickFor(ids,afterApply)가 openOwnerPicker를 띄워 고른 귀속을 적용하고(bulkAssetMovePickFor와 동일하게 단독 피커라 onPick에서 closeSheet), assetOwnerSel()이 ledgerAssetMoveSel/histAssetMoveSel과 같은 이유로(피커를 거치므로) 적용 후에야 선택모드를 끝낸다. activeSel()의 aSel 분기에 ownerMove 키를 추가하고 updateSelBottom()이 네 번째 바닥바 버튼(users 아이콘, has-cat 압축 스타일 재사용)으로 렌더한다. 테스트 24건 추가: assetOwnerTargets 3건, doBulkOwnerMove 8건(일괄 적용/undo/twGuard/빈선택 안전망/이미 같은 귀속이어도 자산은 doBulkCat처럼 무조건 touch되지만 목표는 실제로 안 바뀌면 touch 안 함/목표 owner 동기화/networth형·다른 자산 연결 목표는 무시/undo 시 목표도 복원), assetOwnerMovePickFor 2건, assetOwnerSel 2건, activeSel의 ownerMove 분기 2건(기존 'aSel엔 move가 없다' 테스트와 짝) — test/run.js의 FUNCTIONS 목록에 doBulkOwnerMove/assetOwnerMovePickFor/assetOwnerSel/openOwnerPicker 추가(openOwnerPicker는 기존엔 테스트에서 안 쓰여 빠져 있었음). 테스트 2692->2709 통과. APP_VERSION 1.47.346->1.47.347, sw.js CACHE v613->v614. node test/run.js 2709/2709 통과, logic.js/sw.js(node --check)/index.html 메인 인라인 스크립트(new Function, 696126자) 구문 검증 통과.",
       "commit": null
     }
   ]

@@ -203,7 +203,7 @@ const FUNCTIONS = [
   'buildGenericImportPreview', 'csvColSample', 'csvMapFieldHtml', 'openCsvColumnMap', 'renderCsvColumnMap',
   'csvMapSetMode', 'csvMapSetCatKind', 'csvMapColChosen', 'csvMapPickCol', 'csvMapPickAsset', 'csvMapPickCategory', 'csvMapApply',
   'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo', 'delAsset', 'assetDelSel', 'unsnapshotAssetName', 'doBulkCat', 'bulkCatPickFor', 'doBulkInclToggle', 'assetInclSel',
-  'doBulkAssetMove', 'bulkAssetMovePickFor', 'ledgerAssetMoveSel', 'histAssetMoveSel',
+  'doBulkAssetMove', 'bulkAssetMovePickFor', 'ledgerAssetMoveSel', 'histAssetMoveSel', 'doBulkOwnerMove', 'assetOwnerMovePickFor', 'assetOwnerSel',
   'assetMergeCounts', 'openAssetMergePicker', 'confirmAssetMerge', 'mergeAssetInto',
   // archiveTxnsBefore/archiveMonthPicked/openArchiveOld는 app-evolve cycle222 advance('오래된
   // 데이터 정리' 메뉴 — cycle221 critique/advance가 준비해 둔 archiveBaselines()를 처음 실제로
@@ -225,7 +225,7 @@ const FUNCTIONS = [
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
   'clampDay', 'saveTx', 'commitTx', 'duplicateTx', 'editTx', 'assetBase', 'balancesUpTo', 'balanceAt', 'balancesAtDates', 'balanceAtFromMap',
   'addBalanceAdjust', 'updateBalanceAdjust', 'toggleConfirmTransfers', 'rollPendingTransfers',
-  'assetEval', 'assetGainLoss', 'assetGainLossBadge', 'costBasisField', 'interestRateField', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'pkFilteredAssets', 'pkEmptyHtml', 'pkAssetQInput', 'refreshPkAssetList', 'movePkBlob', 'pkBack', 'pkChoose', 'pkPickAsset', 'sheetSlideBack', 'delOwner', 'doMaturity', 'openMaturity', 'firstCash',
+  'assetEval', 'assetGainLoss', 'assetGainLossBadge', 'costBasisField', 'interestRateField', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'pkFilteredAssets', 'pkEmptyHtml', 'pkAssetQInput', 'refreshPkAssetList', 'movePkBlob', 'pkBack', 'pkChoose', 'pkPickAsset', 'openOwnerPicker', 'sheetSlideBack', 'delOwner', 'doMaturity', 'openMaturity', 'firstCash',
   'detectStaleMarketValuedTxns', 'delBudget', 'saveBudget', 'openBudgetPrompt', 'openBigMinSheet',
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards', 'openTidyAsset', 'openTidyList', 'tidyListSnooze',
   'debtsBehind', 'openDebtBehindList', 'debtsPaidOff', 'openDebtPaidOffList', 'ackDebtPayoff',
@@ -9769,6 +9769,164 @@ test('assetInclSel: 적용 후 선택모드를 끝낸다(assetDelSel과 동일�
   assert.strictEqual(sandbox.ST.aSel.ids.size, 0, '적용 후 선택 id도 비워져 있어야 함');
 });
 
+/* ---------- assetOwnerTargets(logic.js)/doBulkOwnerMove/assetOwnerMovePickFor/assetOwnerSel:
+   자산 선택모드(ST.aSel)의 세 번째 일괄동작 — 귀속(owner) 일괄 변경 (app-evolve cycle296 critique가
+   짚어두고 보류했던 공백, cycle301 develop이 메움) ---------- */
+test('assetOwnerTargets: 선택이 비었으면 reason:empty', () => {
+  const r = sandbox.assetOwnerTargets([{ id: 'a', owner: '나' }], new Set());
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.reason, 'empty');
+});
+test('assetOwnerTargets: ids가 실제 자산과 하나도 안 맞아도 reason:empty', () => {
+  const r = sandbox.assetOwnerTargets([{ id: 'a', owner: '나' }], new Set(['없는id']));
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.reason, 'empty');
+});
+test('assetOwnerTargets: 선택되지 않은 자산은 items에 포함되지 않는다', () => {
+  const a = { id: 'a', owner: '나' };
+  const b = { id: 'b', owner: '나' };
+  const c = { id: 'c', owner: '나' }; // 선택 안 됨
+  const r = sandbox.assetOwnerTargets([a, b, c], new Set(['a', 'b']));
+  assert.strictEqual(r.ok, true);
+  assert.deepStrictEqual(r.items, [a, b]);
+});
+
+test('doBulkOwnerMove: 선택한 자산들의 귀속을 일괄로 바꾼다', () => {
+  sandbox.TWi = -1;
+  const a1 = { id: 'a1', owner: '아빠', updatedAt: 1 };
+  const a2 = { id: 'a2', owner: '엄마', updatedAt: 1 };
+  sandbox.DB = { assets: [a1, a2], goals: [] };
+  sandbox.lastUndo = null;
+  sandbox.doBulkOwnerMove(new Set(['a1', 'a2']), '아이');
+  assert.strictEqual(a1.owner, '아이');
+  assert.strictEqual(a2.owner, '아이');
+  assert.strictEqual(a1.updatedAt, 'test-updatedAt', 'touchSave로 touch()가 호출되어야 함(mergeCollection 동기화 불변식)');
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함');
+});
+test('doBulkOwnerMove: undo 콜백을 부르면 각 자산의 원래 귀속으로 정확히 복원한다(섞여 있던 선택도)', () => {
+  sandbox.TWi = -1;
+  const a1 = { id: 'a1', owner: '아빠', updatedAt: 1 };
+  const a2 = { id: 'a2', owner: '엄마', updatedAt: 1 };
+  sandbox.DB = { assets: [a1, a2], goals: [] };
+  sandbox.lastUndo = null;
+  sandbox.doBulkOwnerMove(new Set(['a1', 'a2']), '아이');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(a1.owner, '아빠', '원래 아빠였던 자산은 아빠로 돌아와야 함');
+  assert.strictEqual(a2.owner, '엄마', '원래 엄마였던 자산은 엄마로 돌아와야 함');
+});
+test('doBulkOwnerMove: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 바뀌지 않는다', () => {
+  sandbox.TWi = 0;
+  const a1 = { id: 'a1', owner: '아빠' };
+  sandbox.DB = { assets: [a1], goals: [] };
+  sandbox.doBulkOwnerMove(new Set(['a1']), '아이');
+  assert.strictEqual(a1.owner, '아빠');
+  sandbox.TWi = -1;
+});
+test('doBulkOwnerMove: assetOwnerTargets이 실패(빈 선택)로 판정하면 아무 것도 바꾸지 않는다(assetOwnerMovePickFor가 먼저 걸러내므로 여기선 안전망)', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { assets: [], goals: [] };
+  sandbox.lastUndo = null;
+  sandbox.doBulkOwnerMove(new Set(['없는id']), '아이');
+  assert.strictEqual(sandbox.lastUndo, null, 'undoToast도 호출되지 않아야 함');
+});
+test('doBulkOwnerMove: 이미 대상 귀속인 자산은 doBulkCat/doBulkInclToggle과 동일하게 그대로 touch되지만(무조건 적용), 이미 같은 귀속인 연결 목표는 건드리지 않는다', () => {
+  sandbox.TWi = -1;
+  const a1 = { id: 'a1', owner: '아이', updatedAt: 1 };
+  const g1 = { id: 'g1', type: 'asset', linkedAssetId: 'a1', owner: '아이', updatedAt: 1 };
+  sandbox.DB = { assets: [a1], goals: [g1] };
+  sandbox.doBulkOwnerMove(new Set(['a1']), '아이');
+  assert.strictEqual(a1.owner, '아이');
+  assert.strictEqual(a1.updatedAt, 'test-updatedAt', 'doBulkCat/doBulkInclToggle처럼 선택된 항목은 무조건 touchSave된다');
+  assert.strictEqual(g1.owner, '아이');
+  assert.strictEqual(g1.updatedAt, 1, '목표는 owner가 실제로 안 바뀌었으니 touch되지 않아야 함');
+});
+/* saveAsset()이 자산 하나의 owner가 바뀔 때 연결된 asset형 목표의 owner를 같이 맞추는 가드,
+   mergeAssetInto가 합치기 경로에도 적용한 것(cycle300 develop)과 동일한 불변식을 일괄 변경에도
+   지키는지 검증 — mergeAssetInto의 owner 재배선 테스트와 같은 모양(app-evolve cycle301 develop). */
+test('doBulkOwnerMove: 연결된 목표(goal.linkedAssetId)의 owner도 자산을 따라 같이 바뀐다', () => {
+  sandbox.TWi = -1;
+  const a1 = { id: 'a1', owner: '아빠', updatedAt: 1 };
+  const g1 = { id: 'g1', type: 'asset', linkedAssetId: 'a1', owner: '아빠', updatedAt: 1 };
+  sandbox.DB = { assets: [a1], goals: [g1] };
+  sandbox.doBulkOwnerMove(new Set(['a1']), '엄마');
+  assert.strictEqual(g1.owner, '엄마', '목표의 귀속이 자산의 새 귀속으로 바뀌어야 함');
+  assert.strictEqual(g1.updatedAt, 'test-updatedAt', '목표도 touchSave에 포함되어야 함');
+});
+test('doBulkOwnerMove: networth형 목표나 다른 자산을 가리키는 목표는 건드리지 않는다', () => {
+  sandbox.TWi = -1;
+  const a1 = { id: 'a1', owner: '아빠', updatedAt: 1 };
+  const a2 = { id: 'a2', owner: '아빠', updatedAt: 1 };
+  const g1 = { id: 'g1', type: 'networth', owner: '아빠', updatedAt: 1 };
+  const g2 = { id: 'g2', type: 'asset', linkedAssetId: 'a2', owner: '아빠', updatedAt: 1 };
+  sandbox.DB = { assets: [a1, a2], goals: [g1, g2] };
+  sandbox.doBulkOwnerMove(new Set(['a1']), '엄마');
+  assert.strictEqual(g1.owner, '아빠', 'networth형 목표는 특정 자산에 안 묶여 있어 건드리지 않아야 함');
+  assert.strictEqual(g2.owner, '아빠', '다른 자산(a2)을 가리키는 목표는 건드리지 않아야 함');
+});
+test('doBulkOwnerMove: undo 콜백을 부르면 연결된 목표의 owner도 원래대로 복원된다', () => {
+  sandbox.TWi = -1;
+  const a1 = { id: 'a1', owner: '아빠', updatedAt: 1 };
+  const g1 = { id: 'g1', type: 'asset', linkedAssetId: 'a1', owner: '아빠', updatedAt: 1 };
+  sandbox.DB = { assets: [a1], goals: [g1] };
+  sandbox.lastUndo = null;
+  sandbox.doBulkOwnerMove(new Set(['a1']), '엄마');
+  assert.strictEqual(g1.owner, '엄마');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(g1.owner, '아빠', '되돌리면 목표의 귀속도 원래대로 복원되어야 함');
+});
+
+test('assetOwnerMovePickFor: 선택이 비어 있으면 안내 토스트만 띄우고 귀속 피커를 열지 않는다', () => {
+  sandbox.DB = { assets: [] };
+  sandbox.lastPickerHtml = null;
+  sandbox.assetOwnerMovePickFor(new Set(), () => {});
+  assert.strictEqual(sandbox.lastToast, '선택된 자산이 없어요');
+  assert.strictEqual(sandbox.lastPickerHtml, null, '피커를 열지 않아야 함');
+});
+test('assetOwnerMovePickFor: 유효한 선택이면 귀속 피커를 열고, 고르면 적용→시트 닫기→afterApply까지 이어진다', () => {
+  sandbox.TWi = -1;
+  const a1 = { id: 'a1', owner: '아빠', updatedAt: 1 };
+  sandbox.DB = { assets: [a1], owners: ['아빠', '엄마'], goals: [] };
+  sandbox.lastPickerHtml = null;
+  sandbox.closeSheetCalls = 0;
+  sandbox.lastUndo = null;
+  let afterApplyCalled = false;
+  sandbox.assetOwnerMovePickFor(new Set(['a1']), () => { afterApplyCalled = true; });
+  assert.ok(sandbox.lastPickerHtml, '귀속 피커(openOwnerPicker)가 열려야 함');
+  assert.ok(sandbox.lastPickerHtml.includes('data-val="엄마"'), '다른 귀속이 후보에 있어야 함');
+  assert.strictEqual(typeof sandbox.window._pkPick, 'function', 'onPick 콜백이 피커에 전달되어야 함');
+  sandbox.window._pkPick('엄마'); // 사용자가 피커에서 '엄마'를 고른 상황을 흉내냄
+  assert.strictEqual(a1.owner, '엄마', '고른 귀속이 실제로 적용되어야 함');
+  assert.strictEqual(sandbox.closeSheetCalls, 1, '되돌아갈 이전 시트가 없는 단독 피커이므로 onPick이 직접 closeSheet를 불러야 함');
+  assert.ok(afterApplyCalled, 'afterApply(선택모드 종료)가 호출되어야 함');
+  assert.ok(sandbox.lastUndo, 'doBulkOwnerMove의 undoToast까지 그대로 이어져야 함');
+});
+
+test('assetOwnerSel: 선택이 비어 있으면 안내 토스트만 띄우고 아무 것도 바꾸지 않는다', () => {
+  const a1 = { id: 'a1', owner: '아빠' };
+  sandbox.DB = { assets: [a1], owners: ['아빠', '엄마'], goals: [] };
+  sandbox.ST.aSel = { mode: true, ids: new Set() };
+  sandbox.lastUndo = null;
+  sandbox.assetOwnerSel();
+  assert.strictEqual(sandbox.lastToast, '선택된 자산이 없어요');
+  assert.strictEqual(a1.owner, '아빠');
+  assert.strictEqual(sandbox.lastUndo, null);
+});
+test('assetOwnerSel: assetInclSel과 달리 피커를 거치므로, 고르기 전엔 선택모드가 그대로 유지된다', () => {
+  setupAssetsDB(); // afterApply가 실제 renderAssets()까지 호출하므로(assetInclSel과 달리 picker 경로), 최소 DB.settings가 있어야 함
+  sandbox.TWi = -1;
+  const a1 = { id: 'a1', owner: '아빠', updatedAt: 1 };
+  sandbox.DB.assets = [a1];
+  sandbox.DB.owners = ['아빠', '엄마'];
+  sandbox.ST.aSel = { mode: true, ids: new Set(['a1']) };
+  sandbox.assetOwnerSel();
+  assert.strictEqual(sandbox.ST.aSel.mode, true, '피커가 열려 있는 동안엔 선택모드가 꺼지면 안 됨');
+  assert.strictEqual(sandbox.ST.aSel.ids.size, 1);
+  sandbox.window._pkPick('엄마');
+  assert.strictEqual(a1.owner, '엄마');
+  assert.strictEqual(sandbox.ST.aSel.mode, false, '적용 후에야 선택모드가 꺼져야 함');
+  assert.strictEqual(sandbox.ST.aSel.ids.size, 0);
+});
+
 test('doBulkCat: 선택한 거래들의 카테고리를 바꾸고, 메모가 이전 카테고리명과 같았다면(자동 채움) 메모도 함께 옮긴다', () => {
   sandbox.TWi = -1;
   const t1 = { id: 'x1', type: 'expense', category: '식비', memo: '식비', updatedAt: 1 };
@@ -10028,6 +10186,25 @@ test('activeSel: 자산 선택모드(aSel)엔 move가 없다(자산 자체의 �
   sandbox.ST.aSel = { mode: true, ids: new Set() };
   const s = sandbox.activeSel();
   assert.strictEqual(s.move, undefined);
+});
+test('activeSel: 자산 선택모드(aSel)엔 귀속 일괄 변경 버튼(ownerMove)이 있다(app-evolve cycle301 develop)', () => {
+  setupAssetsDB();
+  sandbox.ST.aSel = { mode: true, ids: new Set() };
+  const s = sandbox.activeSel();
+  assert.strictEqual(s.ownerMove, 'assetOwnerSel()');
+});
+test('activeSel: 일별거래/전체내역 선택모드(lSel/hist)엔 ownerMove가 없다(자산 전용 액션)', () => {
+  setupLedgerDB();
+  sandbox.ST.aSel = { mode: false, ids: new Set() };
+  sandbox.ST.lSel = { mode: true, ids: new Set() };
+  let s = sandbox.activeSel();
+  assert.strictEqual(s.ownerMove, undefined);
+  setupHistoryDB();
+  sandbox.ST.aSel = { mode: false, ids: new Set() };
+  sandbox.ST.lSel = { mode: false, ids: new Set() };
+  sandbox.ST.hist.selMode = true;
+  s = sandbox.activeSel();
+  assert.strictEqual(s.ownerMove, undefined);
 });
 
 /* ---------- deleteRecsUndo: 반복 삭제(전체) 공용 되돌리기 인프라 (delRecConfirm/recApply 'all' scope) ---------- */
