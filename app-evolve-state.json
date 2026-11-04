@@ -1,6 +1,6 @@
 {
   "cycle": 304,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
@@ -134,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-04T21:20:00.000Z",
       "summary": "critique(cycle303) 계획대로 목표(goals)에 targetDate 기반 '월 저축 필요액' 캡션을 추가했다. logic.js에 순수 함수 requiredMonthlyPace(cur,target,targetDate,today)를 goalProgress 바로 위에 신설 — remaining=target-cur, 캘린더 월 차이(day 보정 포함, 최소 1로 clamp)로 나눠 필요 월 저축액을 반환하고 이미 달성/targetDate 없음/이미 지남이면 null(amortizationPayoffMonths·debtPayoffProjection과 같은 '모르면 추측하지 않는다' 원칙). goalProgress()의 반환 객체에 requiredMonthly 필드를 추가(기존 projectedDate와 나란히 독립 평가). index.html의 goalRowHTML()에서 projectedDate 캡션 아래에 p.requiredMonthly 있을 때 '목표일까지 매달 약 OOO원 필요해요' 캡션을 추가(comma(Math.round(...))로 포맷, 기존 고정비 캡션과 동일 패턴). 계획대로 자동 저축 추천/다수 목표 우선순위/홈 알림 연동은 범위 밖으로 제외. 테스트 12건 추가: requiredMonthlyPace 6건(달성/targetDate 없음/지남/오늘=1개월 clamp/정상 계산/day 보정), goalProgress의 requiredMonthly 필드 3건, goalRowHTML 캡션 렌더링 3건(노출/targetDate 없으면 숨김/달성하면 숨김) — 2754->2766 통과. APP_VERSION 1.47.351->1.47.352, sw.js CACHE v618->v619. node test/run.js 2766/2766 통과, logic.js/sw.js(node --check) 구문 검증 통과, manifest.webmanifest JSON 유효성 통과, index.html 메인 인라인 스크립트(new Function) 통과(1개 블록은 기존에도 있던 HTML 주석 혼입 오탐, 전 사이클과 동일). pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 304,
+      "phase": "develop",
+      "timestamp": "2026-11-04T22:20:00.000Z",
+      "summary": "sanitizeBackup()이 반복거래의 amount/day/freq/weekend/endDate는 검증하면서 count(횟수 조건, endDate와 양방향 자동계산되는 짝)만 전혀 검증하지 않던 공백 발견 — editRec()이 레코드를 그대로 복제하므로 손상된 count(문자열/NaN/음수/소수/1000 이상)가 endCondFields()의 횟수 입력창에 그대로 보이고, recalcEndCond()가 recNthDate로 넘길 때는 내부 클램프가 조용히 다른 값으로 바꿔 두 필드가 애초에 어긋나 있었다. _applyCount()(5347줄)와 동일한 공식(Math.min(999,Math.max(0,Math.floor(Number(d.count))||0))||null)으로 정규화하는 블록을 endDate 검증 바로 뒤에 추가 — truthy 여부가 아니라 null 여부로 가드해(d.count!=null) 0/NaN처럼 falsy인 손상값도 놓치지 않는다. 테스트 8케이스(문자열/음수/소수/상한초과/0/정상값/null/필드없음) 1건으로 추가, fixedCount 집계도 함께 검증. 테스트 2766->2767 통과. node --check logic.js/sw.js, manifest.webmanifest JSON 유효성 통과, index.html 인라인 스크립트 추출검사도 기존과 동일한 1건의 기존 오탐만 재확인(새 회귀 없음). APP_VERSION 1.47.352->1.47.353, sw.js CACHE v619->v620.",
       "commit": null
     }
   ]

@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.352';
+const APP_VERSION='1.47.353';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -8538,6 +8538,18 @@ function sanitizeBackup(obj){
    * end가 Invalid Date가 되면 cur>endd/cd>end 비교가 항상 false라 루프를 못 벗어난다.
    * 무기한 반복과 동일하게 null로 떨어뜨려 안전한 상태로 정규화한다. */
   if(d.endDate&&!csvDateValid(d.endDate)){d.endDate=null;fixedCount++}
+  /* count(횟수 조건, endDate와 양방향 자동 계산되는 종료조건 짝)도 endDate처럼 비어있는 게 정상(무기한
+   * 반복)이라 레코드를 버리진 않지만, 지금까지 이 함수가 amount/day/freq/weekend/endDate와 달리 전혀
+   * 검증하지 않던 필드였다 — _applyCount()(5347줄)는 입력창에서 항상 Math.min(999,Math.max(0,...))로
+   * 정수만 만들어내지만, 백업/원격 데이터는 그 경로를 거치지 않는다. 손상된 count(문자열·NaN·음수·
+   * 소수·1000 이상)가 그대로 남으면 editRec()이 그 레코드를 손대지 않고 그대로 recDraft에 복제해
+   * endCondFields()의 입력창(`${cnt||''}`)이 "NaN"/"-5"/"1.5" 같은 값을 그대로 보여주고(amount/day와
+   * 동일한 '검증 분기 누락' 버그 클래스), 사용자가 주기를 바꿔 recalcEndCond()가 recNthDate(base,
+   * d.count)를 부르면 내부 클램프(Math.min(999,Math.max(0,Number(n)||0)))가 조용히 다른 값으로
+   * 바꿔버려 두 필드가 수정 화면에 들어오기 전부터 이미 서로 어긋나 있다. _applyCount와 동일한 공식으로
+   * 정수 1~999로 클램프하고(0 이하가 되면 '설정 안 함'인 null로, _applyCount의 `n||null`과 동일),
+   * amount와 같은 이유로 null은 그대로 둔다. */
+  if(d.count!=null){const n=Math.min(999,Math.max(0,Math.floor(Number(d.count))||0))||null;if(n!==d.count){d.count=n;fixedCount++}}
   /* freq 자체는 지금까지 이 함수가 전혀 검증하지 않던 필드였다 — txFreq()/recFreq()는 버튼으로만
    * 'monthly'|'weekly'|'biweekly'|'daily'|'yearly' 중 하나를 고르게 해 UI 경로로는 항상 유효한
    * 값만 들어오지만, 백업/원격 데이터가 그 경로를 거치지 않고 손상된 값(오타, 구버전에만 있던

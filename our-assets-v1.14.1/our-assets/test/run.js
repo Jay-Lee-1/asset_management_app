@@ -12859,6 +12859,30 @@ test('sanitizeBackup: endDate가 형식/달력상 무효하면 레코드는 유�
   assert.strictEqual(data.recurrences[3].endDate, null, '이미 null인 endDate는 그대로 유지되어야 함');
   assert.strictEqual(fixedCount, 2);
 });
+test('sanitizeBackup: count(횟수 조건)가 정수 1~999 범위를 벗어나거나 숫자가 아니면 _applyCount와 동일한 공식으로 정규화한다(editRec()이 그대로 복제하는 count가 손상돼 있으면 횟수 입력창에 "NaN"/"-5"/"1.5"가 그대로 보이는 것을 방지)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    recurrences: [
+      { id: 'r1', startDate: '2026-01-01', amount: 1000, count: 'abc' }, // 숫자가 아닌 문자열 → Number()가 NaN
+      { id: 'r2', startDate: '2026-01-01', amount: 1000, count: -5 }, // 음수 → 0 → null(설정 안 함)
+      { id: 'r3', startDate: '2026-01-01', amount: 1000, count: 1.5 }, // 소수 → 정수로 clamp
+      { id: 'r4', startDate: '2026-01-01', amount: 1000, count: 2000 }, // 999 초과 → 999로 clamp
+      { id: 'r5', startDate: '2026-01-01', amount: 1000, count: 0 }, // 0 → null(설정 안 함, _applyCount의 n||null과 동일)
+      { id: 'r6', startDate: '2026-01-01', amount: 1000, count: 12 }, // 정상 값은 그대로
+      { id: 'r7', startDate: '2026-01-01', amount: 1000, count: null }, // 없음(무기한 반복)은 그대로 null
+      { id: 'r8', startDate: '2026-01-01', amount: 1000 }, // count 필드 자체가 없는 구버전 데이터
+    ],
+  });
+  assert.strictEqual(data.recurrences[0].count, null);
+  assert.strictEqual(data.recurrences[1].count, null);
+  assert.strictEqual(data.recurrences[2].count, 1);
+  assert.strictEqual(data.recurrences[3].count, 999);
+  assert.strictEqual(data.recurrences[4].count, null);
+  assert.strictEqual(data.recurrences[5].count, 12, '정상 범위 값은 그대로 유지되어야 함');
+  assert.strictEqual(data.recurrences[6].count, null, '이미 null인 count는 그대로 유지되어야 함');
+  assert.strictEqual('count' in data.recurrences[7], false, 'count 필드 자체가 없으면 새로 만들지 않아야 함');
+  assert.strictEqual(fixedCount, 5, 'r1/r2/r3/r4/r5 다섯 건만 실제로 바뀌어야 함');
+});
 test('sanitizeBackup: 매월 반복의 day가 숫자가 아니거나 범위를 벗어나면 clampDay와 동일하게 보정한다(recDates()의 "2024-01-NaN" 같은 깨진 날짜 생성을 방지)', () => {
   const { data, fixedCount } = sandbox.sanitizeBackup({
     txns: [], assets: [],
