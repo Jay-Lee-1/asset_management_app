@@ -1,15 +1,12 @@
 {
   "cycle": 299,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "homeAlerts()/openSpendAnalysis()의 예산 이월(budgetCarryFor) 재계산을 캐시로 공유",
+    "why": "cycle294가 고친 spendTrend/incomeTrend 중복 재계산은 지출/수입 분석 화면을 열 때만 비용이 드는 반면, homeAlerts()(index.html:10136)는 updateAlerts()를 통해 renderCurrent()(10893)가 불릴 때마다—즉 거래/자산/목표 저장 거의 전부와 탭 전환마다—호출된다. 그 안에서 spendByCategory(TM.y,TM.m)를 _bo(10182)와 _bpw(10196) 두 번 처음부터 다시 스캔하고, budgetForMonthWithCarry(6779)를 예산 카테고리마다 필터 콜백과 alert 객체 생성에서 또 호출해(10182/10186, 10196/10201) 그 안의 budgetCarryFor(6764)가 매번 과거 최대 24개월치 재귀 체인을 다시 타게 만든다. openSpendAnalysis()의 totalBudgetSummary(6785)/행 루프(7007)도 서로 다른 캐시로 같은 이월 체인을 또 계산한다. 분석 화면 1회보다 훨씬 더 자주(앱 전체의 거의 모든 저장 동작마다) 반복되는 비용이라 cycle294보다 레버리지가 크다.",
+    "approach": "budgetForMonthWithCarry(c,y,m,depth=0,cache=null)(6779)와 budgetCarryFor(c,y,m,depth=0,cache=null)(6764)에 선택적 cache(Map) 인자를 추가해 `${c}:${y}-${m}` 키로 조회/저장하고 재귀 호출(6770,6780)에도 그대로 넘긴다 — cache 생략 시 기존과 100% 동일 동작(spendTrend/incomeTrend가 6703에서 쓰는 것과 같은 하위호환 패턴). homeAlerts()에서 spendByCategory(TM.y,TM.m) 결과를 한 번만 변수에 담아 _bo/_bpw 필터 양쪝에 재사용하고, 함수 시작부에 const _bwc=new Map()을 만들어 10182/10186/10196/10201의 모든 budgetForMonthWithCarry 호출에 넘긴다. totalBudgetSummary(rows,y,m,cache=null)(6785, budgetCarryFor 호출 6788)와 openSpendAnalysis 행 루프의 budgetForMonthWithCarry 호출(7007)에도 같은 cache 인자를 추가해 화면 하나에서 만든 Map 하나를 공유한다. cycle294 패턴처럼 cache 유무 동일 결과 테스트 + spendByCategory/budgetCarryFor가 카테고리 수와 무관하게 달마다 정확히 한 번만 불리는지 spy 테스트를 추가한다."
+  },
   "history": [
-    {
-      "cycle": 294,
-      "phase": "critique",
-      "timestamp": "2026-11-03T10:50:00.000Z",
-      "summary": "서브에이전트로 앱 전체를 재조사. openSpendAnalysis()/수입 분석 화면이 spendTrend/incomeTrend를 카테고리 행마다 호출하는데, 그 안에서 현재 달+이전 3개월 spendByCategory/incomeByCategory를 다시 처음부터 전체 스캔해 재계산함을 발견 — rows/totalAvg용으로 이미 계산한 같은 달 데이터를 행마다 또 계산해 N개 카테고리면 렌더 1회당 4+4N번의 전체 월 스캔이 발생하는 성능 문제(cycle293 critique에서 후보로 지목됐다 보류된 항목, 이번엔 채택). PIN 활성 시에도 localStorage 저장/로드가 평문인 문제(index.html:2276-2294 주석)는 여전히 진짜 보안 공백이지만, 이전 cycle252/289가 이미 '저장 아키텍처 재작성에 가깝다'고 분석해 무인 사이클 범위를 벗어난다고 두 번 판단한 바 있어 이번에도 보류. 예산 목록 검색 부재는 develop 사이즈라 판단해 보류. pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 294,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-04T02:15:00.000Z",
       "summary": "cycle299 develop 커밋(ff29675) 검토 — 반복 내역 관리 행에 추가된 삭제 버튼(act-btn danger, svg('trash'))이 delOwner/delAssetQtyLog/delCat과 동일한 act-btn danger 패턴을 그대로 따르고, delRecConfirm이 이미 confirmSheet+deleteRecsUndo(실행취소 가능)로 구현돼 있어 새 코드는 행 UI 배선뿐임을 diff로 확인. 복제/일시중지 버튼과 같은 onclick=\"event.stopPropagation();...\" 순서라 행 전체 클릭(editRec 진입)으로 전파되지 않음을 신규 테스트 2건과 함께 검증. node test/run.js 2678/2678 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 299,
+      "phase": "critique",
+      "timestamp": "2026-11-04T03:12:24.000Z",
+      "summary": "서브에이전트로 앱 전체를 재조사(이미 처리/보류된 ~20개 항목 제외 지시). 발견: homeAlerts()(10136)가 updateAlerts()를 통해 renderCurrent()(저장 거의 전부+탭전환마다)에서 불리는데, 그 안에서 spendByCategory(TM.y,TM.m)를 _bo(10182)/_bpw(10196) 필터에서 두 번 처음부터 재스캔하고 budgetForMonthWithCarry(6779)를 예산 카테고리마다 필터+alert객체 생성에서 또 호출해(budgetCarryFor(6764)의 최대 24개월 재귀 체인이 매번 재계산됨). openSpendAnalysis()의 totalBudgetSummary(6785)/행 루프(7007)도 서로 다른 캐시로 같은 이월 체인을 또 계산 — cycle294가 고친 분석화면 중복재계산과 같은 종류의 버그지만 분석화면 1회보다 훨씬 자주(앱 전체 저장 동작마다) 반복되는 더 뜨거운 경로. pending_advance_plan에 저장. (보류: 거래 tag/label 시스템은 제품 공백이나 범위/우선순위가 덜 확실해 보류, 자산별(귀속) 예산은 cycle194/196/295가 이미 전역 예산을 의도적 설계로 재확인한 바 있어 재제안하지 않음.) 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
