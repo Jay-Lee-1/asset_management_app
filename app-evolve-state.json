@@ -1,15 +1,8 @@
 {
   "cycle": 300,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 295,
-      "phase": "review",
-      "timestamp": "2026-11-03T13:35:00.000Z",
-      "summary": "cycle295 develop 커밋(6295ac9) 검토 — archivedThrough 체크가 budgetCarryFor 재귀의 매 depth마다 자기 전달을 다시 확인해 여러 달 연속 정리돼도 올바르게 0으로 끊김을 확인. cutoffDate/archivedThroughDate가 항상 archiveMonthPicked()의 monthEndStr(y,m)로만 생성돼(다른 호출부 없음) budgetCarryFor의 monthEndStr(py,pm)<=archivedThrough 비교가 항상 월 경계에 맞게 정렬됨을 검증. DB.settings는 이미 DB 스키마 완전성 가드 테스트의 LOCAL_ONLY_DB_FIELDS에 포함돼 있어 mergeRemoteDataIntoLocal 배선 누락 경고에 걸리지 않음도 확인. node test/run.js 2611/2611 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 295,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-04T05:13:08.001Z",
       "summary": "mergeAssetInto(자산 합치기, cycle297)가 from을 가리키던 asset형 목표의 linkedAssetId는 cycle298에서 to로 옮겼지만 goal.owner는 그대로 두던 공백 발견(서브에이전트 조사) — openAssetMergePicker/pkFilteredAssets(onlyType+excludeId만 필터)는 귀속(owner)까지는 걸러주지 않아 다른 귀속 소유의 동종 자산끼리도 합쳐질 수 있는데, 그 경우 목표는 합쳐진 뒤 실제 자산(to)을 계속 추적하면서도 옛 귀속 캐러셀에만 보이는 상태가 된다 — saveAsset()이 자산의 owner가 바뀔 때 연결 목표의 owner를 같이 맞추는 기존 가드(4712행)와 똑같은 어긋남이 합치기 경로에서도 재현됨. mergeAssetInto의 goalItems 루프에 saveAsset과 동일한 g.owner!==to.owner 체크를 추가해 to.owner로 맞추고, undoToast 복원 클로저도 prevOwner로 되돌리게 했다. 테스트 3건 추가(다른 귀속끼리 합치면 목표 owner가 to로 바뀜, 같은 귀속이면 그대로, undo 시 원래 귀속으로 복원). 테스트 2682->2685 통과. APP_VERSION 1.47.344->1.47.345, sw.js CACHE v611->v612. node test/run.js 2685/2685 통과, index.html 메인 인라인 스크립트(vm.Script)/sw.js·logic.js(node --check) 구문 검증 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 300,
+      "phase": "review",
+      "timestamp": "2026-11-04T06:09:10.006Z",
+      "summary": "cycle300 develop 커밋(bc8ea10) 검토 — mergeAssetInto의 goalItems 루프에 추가된 g.owner!==to.owner 체크가 saveAsset()의 기존 owner 재배선 가드(4721행: (DB.goals||[]).forEach(g=>{if(g.type==='asset'&&g.linkedAssetId===d.id&&g.owner!==d.owner){g.owner=d.owner;touch(g)}}))와 조건·효과가 완전히 동일함을 diff로 확인. touchSave(to,...,...goalItems.map(x=>x.g))는 owner 체크 추가 전부터 이미 goalItems 전체를 touch하고 있어 이번 변경으로 touch 누락/중복이 생기지 않음도 확인. undo 클로저가 prevOwner로 owner를 되돌리는 순서가 DB.assets.splice로 from을 복원하는 시점과 독립적임(목표는 id 참조만 바꾸는 것이라 자산 배열 순서에 의존하지 않음)을 cycle298 review와 동일한 논리로 재확인. 신규 테스트 3건(다른 귀속 합치면 owner가 to로 바뀜, 같은 귀속이면 불변, undo 시 원복)이 실제로 동작을 검증함을 코드로 추적. node test/run.js 2685/2685 통과, index.html 메인 인라인 스크립트(new Function)/sw.js·logic.js(node --check) 구문 검증 통과. 실제 버그 없음(코드 변경 없음, state.json만 커밋).",
       "commit": null
     }
   ]
