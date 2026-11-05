@@ -1,15 +1,8 @@
 {
   "cycle": 309,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 304,
-      "phase": "review",
-      "timestamp": "2026-11-04T23:08:01.579Z",
-      "summary": "cycle304 develop 커밋(13ff45d) 검토 — count 정규화 공식이 _applyCount()(Math.min(999,Math.max(0,Math.floor(Number(n))||0))||null)와 완전히 동일함을 diff로 확인, d.count!=null 가드 덕분에 count 필드 자체가 없는 구버전 레코드(r8)는 새로 만들지 않고 그대로 둠을 재확인. endDate/freq/weekend 체크와 독립적으로 삽입돼 있어 순서 영향 없음. node test/run.js 2767/2767 통과, node --check logic.js/sw.js, manifest.webmanifest JSON 유효성 통과. 실제 버그 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 304,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-05T18:11:14.247Z",
       "summary": "카테고리(카테고리) 관리의 addCat/doDeleteCat/doRenameCat/mergeCatInto 네 함수가 DB.categories를 실제로 저장/삭제/이름변경/합치는데도 twGuard()가 전혀 없던 공백 발견 — saveGoal/delGoal/deleteGoalsUndo(cycle307), addOwner/delOwner/doRenameOwner(cycle308) 등 다른 모든 저장 경로는 이미 twGuard를 거치는데, 카테고리 핵심 CRUD만 빠져 있어 튜토리얼 샌드박스 약속('튜토리얼 중에는 실제로 저장되지 않아요')이 카테고리 기능 전체에서 깨져 있었다. 네 함수 각각 맨 앞에 if(twGuard())return; 한 줄씩 추가(다른 가드 함수들과 동일 위치·패턴). delCat/confirmCatMerge(확인시트만 띄우는 래퍼)는 그대로 두고 실제 변이가 일어나는 doDeleteCat/mergeCatInto에 가드를 둬 delOwner처럼 확인시트 자체를 막지는 않지만 영구 변이는 완전히 차단함 — moveCat(순서 변경)은 moveAsset도 동일하게 twGuard가 없는 기존 관례와 일치해 범위에서 제외. 회귀 테스트 4건 추가(addCat/doDeleteCat/doRenameCat/mergeCatInto 각각 튜토리얼 중 호출해도 DB.categories/관련 필드가 그대로임을 확인) — addOwner/delOwner/doRenameOwner의 기존 twGuard 테스트와 동일 패턴. 테스트 2835->2839 통과. node --check logic.js/sw.js, manifest.webmanifest JSON 유효성, index.html 인라인 스크립트 추출검사(기존과 동일한 1건의 기존 오탐만 재확인, 새 회귀 없음) 모두 통과. APP_VERSION 1.47.363->1.47.364, sw.js CACHE v630->v631.",
+      "commit": null
+    },
+    {
+      "cycle": 309,
+      "phase": "review",
+      "timestamp": "2026-11-05T19:05:00.000Z",
+      "summary": "cycle309 develop 커밋(662eaaa) 검토 — addCat/doDeleteCat/doRenameCat/mergeCatInto에 추가된 if(twGuard())return; 가드가 saveGoal/delGoal/deleteGoalsUndo(cycle307), addOwner/delOwner/doRenameOwner(cycle308) 등 기존 가드 함수들과 완전히 동일한 위치(함수 맨 앞)·형태임을 diff로 재확인. delCat/confirmCatMerge(확인시트 래퍼)는 그대로 두고 실제 변이 함수(doDeleteCat/mergeCatInto)에만 가드를 둔 선택이 delOwner류 패턴과 일치함을 확인(delOwner는 자체가 확인 없이 바로 변이하는 함수라 그 자체에 가드가 있고, 카테고리 쪽은 delCat이 확인시트만 띄우는 별도 래퍼라 doDeleteCat에 가드를 둔 것 — 둘 다 \"실제 변이 지점에 가드\" 원칙에 부합). moveCat을 범위에서 제외한 것도 moveAsset에 twGuard가 없는 기존 관례와 일치. node test/run.js 2839/2839 통과, node --check logic.js/sw.js, manifest.webmanifest JSON 유효성 통과. 실제 버그 없음(state.json만 커밋).",
       "commit": null
     }
   ]
