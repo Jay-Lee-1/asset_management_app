@@ -1,15 +1,18 @@
 {
   "cycle": 308,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "자산 합치기(merge)를 시세형 자산(fx/gold/stock/crypto)까지 확장",
+    "why": "cycle297이 추가한 자산 합치기(중복/오타로 등록된 자산을 합치는 기능)는 BAL_ASSET_TYPES=['cash','savings','realestate','etc','pension','debt']로만 범위를 제한해(index.html:4239), 시세형 자산(fx/gold/stock/crypto)에는 합치기 버튼 자체가 안 보인다(index.html:4687 BAL_ASSET_TYPES.includes(d.type) 가드, mergeAssetInto()도 index.html:4269에서 동일 가드로 재차 차단). 그런데 바로 이 '오타로 중복 등록' 문제는 주식/코인/금처럼 같은 종목을 두 번 등록하거나 추가매수를 새 자산으로 등록하는 경우에 오히려 더 자주 발생하고, 합치지 못하면 assetQtyLog(매수/매도 기록)와 portfolioGainLoss/assetGainLoss(수익률)가 쪼개진 채로 남는다. index.html:4237-4238 주석이 '수량·시세를 합치는 별도 규칙이 필요해 1차 범위에서 제외한다'고 명시해, 닫힌 결정이 아니라 보류된 범위 확장임을 자인하고 있다.",
+    "approach": "1) assetMergeSubKey(a) 헬퍼 신설(fx=a.currency, stock=a.stockCode, crypto=a.cryptoCode, gold=상수)해 openAssetMergePicker/pkFilteredAssets(index.html:4250, 10936-10953)가 같은 종목/통화끼리만 합치기 후보로 보이게 필터링(다른 통화·다른 종목 합치기는 명시적으로 차단). 2) mergeAssetInto()(index.html:4265-4318)에 isMarketValued(from) 분기를 BAL_ASSET_TYPES 분기와 병렬로 추가: 수량 필드(fxAmount/goldDon/stockQty/cryptoQty) 합산, costBasis는 기존 balance 합산과 동일 방식으로 합산(logic.js:987 근처 — costBasis가 누적 총액이라 가중평균 계산 불필요), acquiredAt은 블렌딩하지 않고 비움(cycle277의 '틀린 지표보다 미표시가 안전' 선례와 동일, index.html:4596 근처), assetQtyLog에 saveAsset()과 동일 모양({id:uid(),assetId,date:TODAY,prevQty,newQty,field}, index.html:4742-4746)으로 합치기 이벤트 기록 + 기존 assetId===fromId 로그를 toId로 재연결(바로 위 tx/rec/goal 참조 이동 루프와 동일 패턴, index.html:4271-4296). tombstone/undoToast/touchSave 등 나머지는 타입 무관이라 그대로 재사용. 3) 테스트는 기존 BAL_ASSET_TYPES 합치기 테스트 모양을 그대로 본떠(수량합산/costBasis합산/acquiredAt비움/assetQtyLog 이동+신규기록/undo 복원/타입 다른 서브키 필터링) 추가. 범위 제외: 가중평균 인수일/lot 회계 금지, 다른 통화·다른 종목 간 합치기 금지(통화변환 문제로 분리), pension 등 기존 BAL_ASSET_TYPES 변경 금지, assetQtyLogToCSV는 DB.assetQtyLog를 그대로 소비하므로 수정 불필요. 참고 줄번호: index.html 2881, 3780-3782, 4239, 4250, 4254, 4265-4318, 4592-4596, 4687, 4730-4746, 10936-10953 / logic.js 987 근처(costBasis 시맨틱).",
+    "rejected": [
+      "알림 종류별(confirm/mat/budgetOver 등) OS 푸시 개별 on/off — notifyAlertInfo(index.html:10418)는 cycle303/307이 방금 건드린 표면이라 보류",
+      "카테고리 관리(openCatManage)에 선택모드/일괄삭제 없음 — 카테고리는 보통 수가 적고 이미 개별 병합/이름변경/삭제가 있어 goals/assets 대비 실사용 빈도가 낮음",
+      "월간 반복거래가 토/일만 피하고 한국 공휴일은 안 피함(recOpenWeekend/shiftWeekend) — 매년 바뀌는 공휴일 달력을 유지보수해야 해 일회성 코드 변경이 아니라 데이터 유지 부담, 영향도 연 며칠로 작음",
+      "데스크톱/태블릭 반응형 레이아웃 없음(#app max-width:560px 고정) — 모바일 PWA로 의도된 디자인이라 결함 아님"
+    ]
+  },
   "history": [
-    {
-      "cycle": 303,
-      "phase": "critique",
-      "timestamp": "2026-11-04T20:13:02.021Z",
-      "summary": "서브에이전트로 앱 전체를 재조사(~25개 항목 제외). 발견: 목표(goals)에 targetDate를 입력받지만 goalIsOverdue의 지남 판정 외엔 전혀 안 쓰임 — goalProgress()의 유일한 전망인 projectedDate는 최근 90일 추세 기반이라 targetDate와 무관. 예산/부채상환/만기 등 다른 모든 날짜 기반 기능은 역산 전망을 주는데 목표만 절반만 씀. pending_advance_plan에 저장(targetDate 설정된 목표에 한해 월 저축 필요액만 goalRowHTML 캡션으로 노출). 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 303,
       "phase": "advance",
@@ -141,6 +144,13 @@
       "phase": "review",
       "timestamp": "2026-11-05T15:08:03.190Z",
       "summary": "cycle308 develop 커밋(914f9de)을 검토 — addOwner/delOwner/doRenameOwner에 추가된 if(twGuard())return; 가드가 saveGoal/delGoal/deleteGoalsUndo(cycle307), doBulkGoalOwnerMove(cycle305) 등 기존 가드 함수들과 완전히 동일한 위치(함수 맨 앞)·형태임을 diff로 재확인. delOwner는 delGoal과 동일하게 confirmSheet를 띄우기 전에 가드가 먼저 실행돼 튜토리얼 중엔 확인 시트조차 안 뜸을 테스트로 재확인. 테스트 3건(addOwner/delOwner/doRenameOwner)이 기존 newOwnerValue/renameOwnerValue sandbox mock 패턴을 그대로 재사용해 일관성 있음. node test/run.js 2829/2829 통과, node --check logic.js/sw.js, manifest.webmanifest JSON 유효성 통과. 실제 버그 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 308,
+      "phase": "critique",
+      "timestamp": "2026-11-05T16:12:00.000Z",
+      "summary": "서브에이전트로 앱 전체를 재조사(cycle300-308 처리/보류 항목 전부 제외 지시). 발견: 자산 합치기(mergeAssetInto, cycle297)가 BAL_ASSET_TYPES=['cash','savings','realestate','etc','pension','debt']로만 범위를 제한해(index.html:4239,4269,4687) 시세형 자산(fx/gold/stock/crypto)은 합치기 버튼 자체가 안 보임 — 같은 종목 중복등록·추가매수를 새 자산으로 등록하는 실수가 오히려 이 자산군에서 더 흔한데 assetQtyLog/수익률 계산이 쪼개진 채 남음. index.html:4237-4238 주석이 '수량·시세를 합치는 별도 규칙이 필요해 1차 범위에서 제외'라고 명시해 보류된 확장임을 자인. 기각한 후보 4개(알림별 OS푸시 on/off-최근 건드린 표면, 카테고리 선택모드-빈도 낮음, 공휴일 반영-데이터 유지부담, 반응형 레이아웃-의도된 디자인). pending_advance_plan에 구체 구현 계획 저장(assetMergeSubKey로 같은 종목/통화만 필터링, isMarketValued 분기로 수량합산+acquiredAt 비움+assetQtyLog 재연결, 통화/종목 다른 합치기와 가중평균 인수일은 범위 밖). 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
