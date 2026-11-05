@@ -1,15 +1,12 @@
 {
   "cycle": 304,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "목표(goals) 관리 목록에 직접 삭제 버튼 추가",
+    "why": "자산/반복거래/귀속/카테고리/자산수량로그/문의 등 다른 모든 관리 목록은 row-acts에 trash 버튼으로 즉시 삭제가 가능한데(delRecConfirm 등과 동일 패턴), goalsManageBody()(index.html:3541)만 duplicateGoal 버튼만 있고 삭제가 없어 전체 수정 폼(openGoalForm)을 열고 맨 아래 del-link까지 스크롤해야 한다. duplicateGoal로 목표를 복제해 변형하는 패턴이 이미 있어 과다 생성된 목표를 정리할 일이 흔한데, 그때마다 4번 이상의 탭이 필요하다.",
+    "approach": "goalsManageBody()의 row-acts div(3563행)에 recManageBody의 delRecConfirm 버튼과 동일한 패턴으로 <button class='act-btn danger' aria-label='...'  onclick=\"event.stopPropagation();delGoal('id')\">trash</button>를 추가한다. delGoal()(3690행)은 이미 confirmSheet+톰스톤+undoToast+renderCurrent()를 갖추고 있고, deleteRecsUndo도 동일하게 plain renderCurrent()만 호출해 열린 시트(#recBody)를 정상 갱신하는 것으로 이미 검증돼 있으므로(recManageBody의 trash 버튼이 바로 그 선례) delGoal 자체나 refresh 로직은 수정할 필요가 없다 — row-acts 버튼 한 줄 추가와 테스트만으로 충분하다. 테스트: row-acts 마크업에 delGoal 와이어링 확인, 클릭 시 ackGoalAchieved가 같이 안 불리는지(stopPropagation) 확인, 삭제 후 목록 갱신/undo 확인 — recManageBody delRecConfirm 테스트와 동일 패턴."
+  },
   "history": [
-    {
-      "cycle": 299,
-      "phase": "critique",
-      "timestamp": "2026-11-04T03:12:24.000Z",
-      "summary": "서브에이전트로 앱 전체를 재조사(이미 처리/보류된 ~20개 항목 제외 지시). 발견: homeAlerts()(10136)가 updateAlerts()를 통해 renderCurrent()(저장 거의 전부+탭전환마다)에서 불리는데, 그 안에서 spendByCategory(TM.y,TM.m)를 _bo(10182)/_bpw(10196) 필터에서 두 번 처음부터 재스캔하고 budgetForMonthWithCarry(6779)를 예산 카테고리마다 필터+alert객체 생성에서 또 호출해(budgetCarryFor(6764)의 최대 24개월 재귀 체인이 매번 재계산됨). openSpendAnalysis()의 totalBudgetSummary(6785)/행 루프(7007)도 서로 다른 캐시로 같은 이월 체인을 또 계산 — cycle294가 고친 분석화면 중복재계산과 같은 종류의 버그지만 분석화면 1회보다 훨씬 자주(앱 전체 저장 동작마다) 반복되는 더 뜨거운 경로. pending_advance_plan에 저장. (보류: 거래 tag/label 시스템은 제품 공백이나 범위/우선순위가 덜 확실해 보류, 자산별(귀속) 예산은 cycle194/196/295가 이미 전역 예산을 의도적 설계로 재확인한 바 있어 재제안하지 않음.) 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 299,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-04T23:08:01.579Z",
       "summary": "cycle304 develop 커밋(13ff45d) 검토 — count 정규화 공식이 _applyCount()(Math.min(999,Math.max(0,Math.floor(Number(n))||0))||null)와 완전히 동일함을 diff로 확인, d.count!=null 가드 덕분에 count 필드 자체가 없는 구버전 레코드(r8)는 새로 만들지 않고 그대로 둠을 재확인. endDate/freq/weekend 체크와 독립적으로 삽입돼 있어 순서 영향 없음. node test/run.js 2767/2767 통과, node --check logic.js/sw.js, manifest.webmanifest JSON 유효성 통과. 실제 버그 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 304,
+      "phase": "critique",
+      "timestamp": "2026-11-05T00:12:32.773Z",
+      "summary": "서브에이전트로 앱 전체를 재조사(최근 처리/보류된 항목 전부 제외 지시). 발견: 목표(goals) 관리 목록(goalsManageBody, 3541행)만 유일하게 row-acts에 직접 삭제 버튼이 없음 — 자산/반복거래/귀속/카테고리/자산수량로그/문의 등 다른 모든 관리 목록은 trash 버튼으로 즉시 삭제 가능(delRecConfirm 등과 동일 패턴). 삭제하려면 전체 수정 폼을 열고 맨 아래 del-link까지 가야 함. delGoal()은 이미 올바른 삭제 로직을 갖추고 있어 순수 UI 와이어링 공백. pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
