@@ -1,15 +1,8 @@
 {
   "cycle": 307,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 302,
-      "phase": "review",
-      "timestamp": "2026-11-04T13:45:00.000Z",
-      "summary": "cycle302 develop 커밋(e1e4466) 검토 — freq 정규화 블록이 day clamp 앞에 와 같은 패스에서 함께 적용됨을 코드 순서로 재확인, falsy 필드는 안 건드림도 신규 테스트로 확인. node test/run.js 2742/2742 통과. 실제 버그 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 302,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-05T10:13:41.521Z",
       "summary": "saveGoal/delGoal/deleteGoalsUndo 세 함수가 목표(goals)를 실제로 저장/삭제하는데도 twGuard()가 전혀 없던 공백 발견 — saveAsset/recSave/deleteRecsUndo/deleteAssetsUndo/doBulkGoalOwnerMove(cycle305) 등 DB를 바꾸는 다른 모든 진입점은 튜토리얼 중(TWi>=0) 실저장을 막는 twGuard()를 거치는데, 목표의 핵심 CRUD 세 함수만 빠져 있어 튜토리얼 샌드박스 약속(\"튜토리얼 중에는 실제로 저장되지 않아요\")이 목표 기능 전체에서 깨져 있었다. 세 함수 각각 맨 앞에 if(twGuard())return; 한 줄씩 추가(다른 가드 함수들과 동일 위치·패턴). 회귀 테스트 3건 추가(saveGoal/delGoal/deleteGoalsUndo 각각 튜토리얼 중 호출해도 DB.goals가 그대로이고 delGoal은 확인 시트조차 안 띄움을 확인) — deleteAssetsUndo/doBulkGoalOwnerMove의 기존 twGuard 테스트와 동일 패턴. 테스트 2820->2823 통과. node --check sw.js, manifest.webmanifest JSON 유효성, index.html 인라인 스크립트 추출검사(기존과 동일한 1건의 기존 오탐만 재확인, 새 회귀 없음) 모두 통과. APP_VERSION 1.47.359->1.47.360, sw.js CACHE v626->v627.",
+      "commit": null
+    },
+    {
+      "cycle": 307,
+      "phase": "review",
+      "timestamp": "2026-11-05T11:09:41.445Z",
+      "summary": "cycle307 develop 커밋(ad9bbee) 검토 — saveGoal/delGoal/deleteGoalsUndo에 추가된 if(twGuard())return; 가드가 deleteRecsUndo/deleteAssetsUndo/doBulkGoalOwnerMove 등 기존 패턴과 완전히 동일한 위치(함수 맨 앞)·형태임을 diff로 재확인. twGuard()/twActive() 정의도 함께 확인해 시맨틱이 맞음을 검증(튜토리얼 중엔 toast만 띄우고 true 반환, 아니면 false). saveGoal은 가드가 유효성 검사(이름/금액 등)보다 먼저 실행돼도 다른 가드 함수들과 동일한 순서라 문제 없음. node test/run.js 2823/2823 통과, node --check logic.js/sw.js, manifest.webmanifest JSON 유효성 통과. 실제 버그 없음(state.json만 커밋).",
       "commit": null
     }
   ]
