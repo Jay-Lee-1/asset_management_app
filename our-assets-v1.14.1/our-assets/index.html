@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.357';
+const APP_VERSION='1.47.358';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -8524,8 +8524,19 @@ function sanitizeBackup(obj){
   * 경로(sanitizeBackup)에서 자산만 그 검증이 빠져 있었다(app-evolve cycle236 develop). 'all'로는
   * clamp할 수 없으므로(자산에는 유효한 값이 아님) 이 백업이 아는 첫 번째 실제 귀속으로 떨어뜨린다
   * — delOwner()가 "쓰는 자산이 있으면 귀속을 못 지운다"로 지키는 "모든 자산은 실존하는 귀속을
-  * 가진다" 불변식과 같은 방향이다. */
- const validOwners=Array.isArray(obj&&obj.owners)?obj.owners:(DB.owners||[]);
+  * 가진다" 불변식과 같은 방향이다. validOwners는 obj.owners를 normName() 근접중복까지 제거한
+  * 뒤의 모습이어야 한다 — 그러지 않으면 "용돈"/"용돈 "처럼 근접중복인 owner를 가진 자산이 이
+  * 중복제거(dedupeNames, DB.owners로 저장될 최종 목록) 이전의 원본 목록을 기준으로 통과해버리고,
+  * 뒤에서 DB.owners가 실제로 중복제거된 뒤엔 그 자산만 결국 존재하지 않는 owner를 들고 남아
+  * 바로 위와 똑같이 "모든 귀속별 탭·카드에서 조용히 사라진 것처럼" 보인다(dedupeNames를 owners에
+  * 추가한 app-evolve cycle306 develop 커밋이 이 순서를 놓쳤었다 — review에서 발견해 바로잡음).
+  * 그래서 DB.owners 정리(원래 이 함수 끝부분에 있던 블록)를 여기로 끌어올려 먼저 계산한다. */
+ const srcOwnersRaw=obj&&obj.owners;
+ const ownersArr=Array.isArray(srcOwnersRaw)?srcOwnersRaw:[];
+ const ownersCleaned=ownersArr.filter(o=>typeof o==='string'&&o.trim());
+ if(srcOwnersRaw!=null&&(!Array.isArray(srcOwnersRaw)||ownersCleaned.length!==ownersArr.length))fixedCount++;
+ const owners=dedupeNames(ownersCleaned);
+ const validOwners=Array.isArray(obj&&obj.owners)?owners:(DB.owners||[]);
  const srcAssets=Array.isArray(obj&&obj.assets)?obj.assets:[];
  let assets=[];
  srcAssets.forEach(a=>{
@@ -8774,11 +8785,8 @@ function sanitizeBackup(obj){
   if(raw!=null&&(!Array.isArray(raw)||cleaned.length!==arr.length))fixedCount++; /* null/undefined 둘 다 migrate()가 ||[default]로 조용히 메우는 '미설정'이라 fixedCount에 넣지 않는다 */
   categories[k]=dedupeNames(cleaned);
  });
- const srcOwnersRaw=obj&&obj.owners;
- const ownersArr=Array.isArray(srcOwnersRaw)?srcOwnersRaw:[];
- const ownersCleaned=ownersArr.filter(o=>typeof o==='string'&&o.trim());
- if(srcOwnersRaw!=null&&(!Array.isArray(srcOwnersRaw)||ownersCleaned.length!==ownersArr.length))fixedCount++;
- const owners=dedupeNames(ownersCleaned);
+ /* DB.owners는 위 assets 블록(validOwners) 바로 앞에서 이미 정리·중복제거해뒀다 — 여기선 그
+  * 결과를 그대로 재사용한다(이름 재선언 금지라 여기서 다시 계산하지 않음). */
  /* DB.budgetHistory(카테고리→[{from:"YYYY-MM",amount}] 시점별 예산 이력)도 같은 이유로 검증이
   * 없었다 — from이 "YYYY-MM" 형식이 아니면 budgetForMonth()의 문자열 비교(h[i].from<=key)가
   * 엉뚱한 항목을 집어내고, amount는 txns.amount와 동일한 크기 필드라 음수·NaN이면

@@ -13707,6 +13707,28 @@ test('sanitizeBackup: owners 배열 안의 normName() 근접중복도 첫 등장
   assert.deepStrictEqual(Array.from(data.owners), ['나', '배우자']);
   assert.strictEqual(fixedCount, 1);
 });
+/* ---------- sanitizeBackup: owners의 normName() 근접중복 제거(dedupeNames, 위)는 자산/목표의
+ * owner 유효성 검증(validOwners, app-evolve cycle236/124)보다 먼저 계산돼야 한다 — 그러지 않으면
+ * "나"/"나 "처럼 근접중복인 owner를 가진 자산·목표가 중복제거 이전의 원본 obj.owners를 기준으로
+ * "유효하다"고 통과해버리고, DB.owners엔 결국 "나"만 남아 그 자산·목표는 존재하지 않는 owner를
+ * 들고 "모든 귀속별 탭·카드에서 조용히 사라진" 상태가 된다(app-evolve cycle306 review에서 발견한
+ * 순서 버그 — cycle306 develop이 dedupeNames를 owners에 추가하면서 이 순서를 놓쳤었다). ---------- */
+test('sanitizeBackup: 자산의 owner가 owners 안의 근접중복(제거될 변형)이면 중복제거 후에도 남는 실제 귀속으로 떨어뜨린다', () => {
+  const r = sandbox.sanitizeBackup({
+    txns: [], owners: ['나', '나 ', '배우자'],
+    assets: [{ id: 'a1', type: 'cash', owner: '나 ' }],
+  });
+  assert.deepStrictEqual(Array.from(r.data.owners), ['나', '배우자']);
+  assert.strictEqual(r.data.assets[0].owner, '나', '근접중복으로 제거될 owner 변형에 머물러 있으면 안 됨');
+});
+test('sanitizeBackup: 목표의 owner가 owners 안의 근접중복(제거될 변형)이면 중복제거 후 "all"로 clamp한다', () => {
+  const r = sandbox.sanitizeBackup({
+    txns: [], owners: ['나', '나 '],
+    goals: [{ id: 'g1', type: 'networth', owner: '나 ' }],
+  });
+  assert.deepStrictEqual(Array.from(r.data.owners), ['나']);
+  assert.strictEqual(r.data.goals[0].owner, 'all', '근접중복으로 제거될 owner 변형에 머물러 있으면 안 됨');
+});
 
 /* ---------- sanitizeBackup: DB.budgetHistory(카테고리→[{from:"YYYY-MM",amount}])도 같은 이유로
  * 검증이 없었다 — from이 깨지면 budgetForMonth()가, amount가 음수/NaN이면 budgetProgress()·
