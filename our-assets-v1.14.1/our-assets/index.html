@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.359';
+const APP_VERSION='1.47.360';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3661,6 +3661,7 @@ function renderGoalForm(editing){
  setTimeout(()=>{const n=$('goalName');if(n&&!editing)n.focus()},300);
 }
 function saveGoal(editing){
+ if(twGuard())return;
  syncGoalInputs();const d=goalDraft;if(!d)return;
  d.name=(d.name||'').trim();
  if(!d.name){toast('목표 이름을 입력해 주세요');return}
@@ -3706,6 +3707,7 @@ function ackDebtPayoff(assetId){
  openAssetHistory(assetId);
 }
 function delGoal(id){
+ if(twGuard())return;
  const g=(DB.goals||[]).find(x=>x.id===id);if(!g)return;
  confirmSheet('목표를 삭제할까요?',`'${esc(g.name)}' 목표를 더 이상 추적하지 않아요.`,'삭제',()=>{
   DB.goals=(DB.goals||[]).filter(x=>x.id!==id);
@@ -10893,6 +10895,7 @@ function deleteAssetsUndo(ids){if(twGuard())return;
  * deleteRecsUndo의 fromDate 보존 같은 추가 처리가 필요 없다(app-evolve cycle305 critique →
  * advance). */
 function deleteGoalsUndo(ids){
+ if(twGuard())return;
  const removed=(DB.goals||[]).filter(g=>ids.has(g.id));
  DB.goals=(DB.goals||[]).filter(g=>!ids.has(g.id));
  DB.deletedIds=DB.deletedIds||{};const now=Date.now();ids.forEach(id=>DB.deletedIds[id]=now);

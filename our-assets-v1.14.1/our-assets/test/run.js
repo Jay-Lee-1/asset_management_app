@@ -4765,6 +4765,19 @@ test('deleteGoalsUndo: undo 콜백을 부르면 삭제된 목표들이 모두 �
   assert.strictEqual(sandbox.DB.goals[0].updatedAt, 'test-updatedAt', '되살린 레코드는 다시 touch()되어야 mergeCollection에서 안 탈락함');
   assert.strictEqual('g1' in sandbox.DB.deletedIds, false, '되돌리면 톰스톤도 지워져야 함');
 });
+/* app-evolve cycle307 develop가 발견한 공백의 회귀 테스트: deleteRecsUndo/deleteAssetsUndo/
+ * doBulkGoalOwnerMove는 모두 twGuard()로 튜토리얼 중 실저장을 막는데, 목표를 실제로 지우는
+ * saveGoal/delGoal/deleteGoalsUndo 세 함수만 그 가드가 전혀 없어 튜토리얼 샌드박스 약속을 깼었다. */
+test('deleteGoalsUndo: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 삭제되지 않는다', () => {
+  sandbox.TWi = 0;
+  const g1 = { id: 'g1', name: '비상금', targetAmount: 5000000, targetDate: null };
+  sandbox.DB = { goals: [g1], deletedIds: {} };
+  sandbox.lastUndo = null;
+  sandbox.deleteGoalsUndo(new Set(['g1']));
+  assert.strictEqual(sandbox.DB.goals.length, 1, '튜토리얼 중에는 삭제가 막혀야 함');
+  assert.strictEqual(sandbox.lastUndo, null, 'undoToast도 호출되지 않아야 함');
+  sandbox.TWi = -1;
+});
 
 /* ---------- goalOwnerTargets(logic.js)/doBulkGoalOwnerMove/goalOwnerMovePickFor/goalOwnerMoveSel:
    목표 관리 선택모드(ST.goalSel)의 일괄 '귀속(owner)' 변경 — doBulkOwnerMove(자산 선택모드)와
@@ -5019,6 +5032,18 @@ test('saveGoal: 기존 목표를 수정하면(id 일치) 같은 자리에서 교
   assert.strictEqual(sandbox.DB.goals[0].name, '여행자금(유럽)');
   assert.strictEqual(sandbox.DB.goals[0].targetAmount, 5000000);
 });
+/* app-evolve cycle307 develop: saveAsset/recSave 등 다른 모든 저장 경로와 달리 saveGoal만
+ * twGuard가 없어 튜토리얼 중에도 실제로 DB.goals에 저장됐었다. */
+test('saveGoal: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 저장되지 않는다', () => {
+  sandbox.TWi = 0;
+  sandbox.DB = { goals: [] };
+  sandbox.goalDraft = { id: 'test-uid', name: '', type: 'networth', targetAmount: 0, targetDate: null };
+  sandbox.goalNameValue = '내 집 마련';
+  sandbox.goalAmtValue = '1,000,000';
+  sandbox.saveGoal(false);
+  assert.strictEqual(sandbox.DB.goals.length, 0, '튜토리얼 중에는 저장이 막혀야 함');
+  sandbox.TWi = -1;
+});
 test('delGoal: 바로 지우지 않고 확인 시트를 띄우며, 확인해야 DB.goals에서 제거된다', () => {
   sandbox.DB = { goals: [{ id: 'g1', name: '여행자금', type: 'networth', targetAmount: 3000000, targetDate: null }] };
   sandbox.confirmSheetCalls = [];
@@ -5034,6 +5059,15 @@ test('delGoal: 존재하지 않는 id를 넘기면 확인 시트조차 띄우지
   sandbox.delGoal('없는id');
   assert.strictEqual(sandbox.confirmSheetCalls.length, 0);
   assert.strictEqual(sandbox.DB.goals.length, 1);
+});
+test('delGoal: 튜토리얼 모드 중에는 twGuard가 막아서 확인 시트조차 띄우지 않는다(deleteRecsUndo/deleteAssetsUndo와 동일 패턴)', () => {
+  sandbox.TWi = 0;
+  sandbox.DB = { goals: [{ id: 'g1', name: '여행자금', type: 'networth', targetAmount: 3000000, targetDate: null }] };
+  sandbox.confirmSheetCalls = [];
+  sandbox.delGoal('g1');
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0, '튜토리얼 중에는 확인 시트도 안 띄워야 함');
+  assert.strictEqual(sandbox.DB.goals.length, 1);
+  sandbox.TWi = -1;
 });
 /* app-evolve cycle123 critique가 발견한 버그의 회귀 테스트: DB.goals(cycle122 신설)가 saveGoal에
  * touch()가 없어 updatedAt을 안 찍고, delGoal도 DB.deletedIds 톰스톤을 안 남겨 mergeRemoteDataIntoLocal

@@ -1,15 +1,8 @@
 {
   "cycle": 307,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 302,
-      "phase": "develop",
-      "timestamp": "2026-11-04T13:30:00.000Z",
-      "summary": "sanitizeBackup()이 반복거래의 day/weekend/amount 등은 정규화하면서 freq 자체는 검증하지 않던 공백 발견 — recDates/monthlyEquivalent/recFreqLabelStr이 손상된 freq 값을 서로 다른 기본값으로 추측해 어긋나는 문제. weekend 검증과 동일한 'truthy인데 유효 집합 밖이면 정규화, falsy면 안 건드림' 원칙으로 saveRec() 기본값('monthly')에 맞춰 정규화하는 블록 추가. 테스트 5건 추가. 테스트 2742/2742 통과. APP_VERSION 1.47.348->1.47.349, sw.js CACHE v615->v616.",
-      "commit": null
-    },
     {
       "cycle": 302,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-05T09:14:36.384Z",
       "summary": "critique(cycle306) 계획대로 반복 내역의 개별 회차 간편 수정 시트(scope='one')에 영수증 사진 첨부를 추가했다. recApply()의 txDraft 구성에 photo:ed.photo!=null?ed.photo:null을 추가하고, renderTxSheet()의 rc 분기에 rc.scope==='one'일 때만 txPhotoFieldHTML(d)를 그리도록 추가(future/all은 recSave가 photo를 저장할 곳이 없어 제외). recSave() scope='one' 블록에 if(d.photo)edit.photo=d.photo를 추가 — edit 객체를 매번 새로 만드는 기존 구조 덕분에 splits와 동일한 '있을 때만 덮어씀' 원칙이 사진 삭제(photo falsy)에도 자연히 적용됨(별도 delete 분기 불필요). expandRec()의 가상 인스턴스에도 photo:ed.photo!=null?ed.photo:null을 추가해 txRowCore의 t.photo 체크(일반 거래와 공유하는 썸네일 렌더링 경로)가 반복 내역에서도 그대로 동작하게 함. 구현 중 발견: doExport()의 copyFallback이 '복사 경로에서 사진 제외' 분기를 열지 결정하는 photoCount가 DB.txns만 셌다 — 반복 내역 사진만 있고 일반 거래 사진이 없으면 photoCount=0이라 redactTxnPhotos(이미 키 이름만 보고 DB 전체를 재귀 redact하므로 그 자체는 올바름) 분기를 건너뛰어, 그 사진이 포함된 원본이 경고 없이 그대로 클립보드에 복사되는 공백이었다 — DB.recurrences의 모든 edits를 모아 txnPhotoCount에 더하도록 고쳤다(계획엔 없었지만 사진 필드를 recurrences에 추가하는 이 cycle의 직접적인 결과라 같은 cycle에서 수정). 테스트 13건 추가: recApply/renderTxSheet/recSave 영수증 사진 7건(scope='one' 추가/삭제/undo, future·all 제외 확인 양쪽), expandRec photo 필드 2건, doExport photoCount 소스 검증 1건, redactTxnPhotos가 recurrences.edits도 재귀적으로 redact하는지 회귀 가드 1건, scope='future'/'all' 무시 확인 1건(중복 집계) — 2809->2820 통과. node --check logic.js/sw.js, manifest.webmanifest JSON 유효성, index.html 인라인 스크립트 추출검사(기존과 동일한 1건의 기존 오탐만 재확인, 새 회귀 없음) 모두 통과. APP_VERSION 1.47.358->1.47.359, sw.js CACHE v625->v626. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 307,
+      "phase": "develop",
+      "timestamp": "2026-11-05T10:13:41.521Z",
+      "summary": "saveGoal/delGoal/deleteGoalsUndo 세 함수가 목표(goals)를 실제로 저장/삭제하는데도 twGuard()가 전혀 없던 공백 발견 — saveAsset/recSave/deleteRecsUndo/deleteAssetsUndo/doBulkGoalOwnerMove(cycle305) 등 DB를 바꾸는 다른 모든 진입점은 튜토리얼 중(TWi>=0) 실저장을 막는 twGuard()를 거치는데, 목표의 핵심 CRUD 세 함수만 빠져 있어 튜토리얼 샌드박스 약속(\"튜토리얼 중에는 실제로 저장되지 않아요\")이 목표 기능 전체에서 깨져 있었다. 세 함수 각각 맨 앞에 if(twGuard())return; 한 줄씩 추가(다른 가드 함수들과 동일 위치·패턴). 회귀 테스트 3건 추가(saveGoal/delGoal/deleteGoalsUndo 각각 튜토리얼 중 호출해도 DB.goals가 그대로이고 delGoal은 확인 시트조차 안 띄움을 확인) — deleteAssetsUndo/doBulkGoalOwnerMove의 기존 twGuard 테스트와 동일 패턴. 테스트 2820->2823 통과. node --check sw.js, manifest.webmanifest JSON 유효성, index.html 인라인 스크립트 추출검사(기존과 동일한 1건의 기존 오탐만 재확인, 새 회귀 없음) 모두 통과. APP_VERSION 1.47.359->1.47.360, sw.js CACHE v626->v627.",
       "commit": null
     }
   ]
