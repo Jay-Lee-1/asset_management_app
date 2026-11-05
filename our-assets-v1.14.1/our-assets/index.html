@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.364';
+const APP_VERSION='1.47.365';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4861,7 +4861,7 @@ function openOwnerManage(){
   <div>${DB.owners.map((o,i)=>{const used=DB.assets.filter(a=>a.owner===o).length;
    return `<div class="manage-row"><div class="avatar" style="width:36px;height:36px;border-radius:11px;background:var(--sunken);color:var(--text-2)">${svg('users',18)}</div>
     <div style="flex:1"><div class="mn">${esc(o)}</div><div class="msub">${used}개 자산</div></div>
-    <div class="row-acts"><button class="act-btn" aria-label="${esc(o)} 수정" onclick="renameOwnerSheet(${i})">${svg('edit')}</button><button class="act-btn danger" aria-label="${esc(o)} 삭제" onclick="delOwner(${i})">${svg('trash')}</button></div></div>`}).join('')}</div>
+    <div class="row-acts">${DB.owners.length>1?`<button class="act-btn" aria-label="${esc(o)} 다른 귀속으로 합치기" onclick="openOwnerMergePicker(${i})">${svg('merge')}</button>`:''}<button class="act-btn" aria-label="${esc(o)} 수정" onclick="renameOwnerSheet(${i})">${svg('edit')}</button><button class="act-btn danger" aria-label="${esc(o)} 삭제" onclick="delOwner(${i})">${svg('trash')}</button></div></div>`}).join('')}</div>
   <div class="add-inline"><div class="field-clear"><input id="newOwner" placeholder="새 귀속 (예: 아이)" onkeydown="if(event.key==='Enter'&&!event.isComposing)addOwner()"><button type="button" class="fc-x" aria-label="귀속 이름 지우기" onclick="clrInput('newOwner')">✕</button></div><button onclick="addOwner()" aria-label="귀속 추가">${svg('plus')}</button></div>
   <div style="height:14px"></div><button class="btn btn-primary" onclick="closeSheet()">완료</button>`);
 }
@@ -4910,6 +4910,66 @@ function doRenameOwner(i){if(twGuard())return;const v=$('renameOwner').value.tri
  (DB.nwHistory||[]).forEach(h=>{if(h.byOwner&&old in h.byOwner){h.byOwner[v]=h.byOwner[old];delete h.byOwner[old]}}); /* 과거 추이 스냅샷의 귀속별 키도 새 이름으로 이동 */
  DB.deletedIds=DB.deletedIds||{};DB.deletedIds[ownerTombKey(old)]=Date.now();delete DB.deletedIds[ownerTombKey(v)]; /* old 이름도 delOwner처럼 톰스톤해야 함 — 안 그러면 mergeNameListWithTombstones가 old를 '살아있다'고 보고 아직 이 이름변경을 모르는 다른 기기의 사본이 old를 되살림(app-evolve cycle180, doRenameCat과 동일). v가 과거에 삭제됐던 이름이면 그 톰스톤은 지워 되살림을 허용 */
  save();openOwnerManage();toast('귀속을 수정했어요')}
+
+/* openOwnerManage 각 행의 합치기(merge) 버튼 → 대상 귀속 피커. openCatMergePicker(카테고리 합치기,
+ * cycle263)와 동일한 패턴으로 자기 자신을 대상 목록에서 뺀다(app-evolve cycle309 critique →
+ * advance). */
+function openOwnerMergePicker(i){
+ const from=DB.owners[i];
+ openOwnerPicker({current:null,exclude:[from],back:()=>openOwnerManage(),onPick:to=>confirmOwnerMerge(i,to)});
+}
+function confirmOwnerMerge(i,to){
+ const from=DB.owners[i];
+ const used=DB.assets.filter(a=>a.owner===from).length;
+ const usedGoals=(DB.goals||[]).filter(g=>g.owner===from).length;
+ const parts=[];if(used)parts.push(`자산 ${used}개`);if(usedGoals)parts.push(`목표 ${usedGoals}개`);
+ const impact=parts.length?` ${parts.join('·')}가 '${esc(to)}'로 옮겨가요.`:' 연결된 자산·목표가 없어요.';
+ confirmSheet('귀속 합치기',`'${esc(from)}' 귀속을 '${esc(to)}'에 합칠까요?`+impact,'합치기',()=>mergeOwnerInto(i,to));
+}
+/* 귀속 합치기 — doRenameOwner의 마이그레이션(DB.assets/DB.goals owner 재할당, ST.assetOwner/
+ * plan.owner/spendOwner/hist.owner, DB.nwHistory[].byOwner)을 거의 그대로 재사용하지만 대상(toName)이
+ * 새 이름이 아니라 이미 존재하는 다른 귀속이라는 점이 다르다(app-evolve cycle309 critique →
+ * advance). DB.nwHistory[].byOwner[owner]는 doRenameOwner처럼 키만 옮기면 안 된다 — mergeCatInto의
+ * budgetHistory처럼 같은 날짜에 양쪽 다 실데이터가 있을 수 있는데, byOwner의 ta/td는 totalAssets/
+ * ownerAssets와 같은 단위의 금액 총계라서 "두 귀속이 하나로 합쳐진 날짜의 결합 총액"은 양쪽을
+ * 더한 값이 맞다(mergeAssetInto가 balance형 자산 금액을 그냥 더하는 것과 같은 이유 — 카테고리
+ * 예산 한도처럼 "값 중 하나를 고르는" 설정이 아니라 자산 금액이라 둘 다 버리면 안 되고 합쳐야
+ * 한다). */
+function mergeOwnerInto(i,toName){if(twGuard())return;
+ const from=DB.owners[i];
+ if(from==null||from===toName||!DB.owners.includes(toName))return;
+ if(DB.owners.length<=1){toast('귀속은 최소 1개가 필요해요');return}
+ const assetItems=[];DB.assets.forEach(a=>{if(a.owner===from){assetItems.push(a);a.owner=toName}});
+ const goalItems=[];(DB.goals||[]).forEach(g=>{if(g.owner===from){goalItems.push(g);g.owner=toName}});
+ const hadAssetOwner=ST.assetOwner===from;if(hadAssetOwner)ST.assetOwner=toName;
+ const hadPlanOwner=ST.plan.owner===from;if(hadPlanOwner)ST.plan.owner=toName;
+ const hadSpendOwner=ST.spendOwner===from;if(hadSpendOwner)ST.spendOwner=toName;
+ const hadHistOwner=ST.hist&&ST.hist.owner===from;if(hadHistOwner)ST.hist.owner=toName;
+ const nwChanges=[];
+ (DB.nwHistory||[]).forEach(h=>{
+  if(h.byOwner&&from in h.byOwner){
+   const fromVal=h.byOwner[from];const hadTo=toName in h.byOwner;const toBefore=hadTo?h.byOwner[toName]:undefined;
+   nwChanges.push({h,fromVal,hadTo,toBefore});
+   h.byOwner[toName]=hadTo?{ta:toBefore.ta+fromVal.ta,td:toBefore.td+fromVal.td}:fromVal;
+   delete h.byOwner[from];
+  }
+ });
+ DB.owners.splice(i,1);
+ DB.deletedIds=DB.deletedIds||{};DB.deletedIds[ownerTombKey(from)]=Date.now(); /* delOwner/doRenameOwner와 동일한 톰스톤 — 없으면 아직 이 합치기를 모르는 다른 기기의 사본이 from을 되살림 */
+ touchSave(...assetItems,...goalItems);renderCurrent();openOwnerManage();
+ undoToast(`'${from}' 귀속을 '${toName}'에 합쳤어요`+(assetItems.length||goalItems.length?` · 자산 ${assetItems.length}개·목표 ${goalItems.length}개 복원`:''),()=>{
+  assetItems.forEach(a=>{a.owner=from});
+  goalItems.forEach(g=>{g.owner=from});
+  if(hadAssetOwner)ST.assetOwner=from;
+  if(hadPlanOwner)ST.plan.owner=from;
+  if(hadSpendOwner)ST.spendOwner=from;
+  if(hadHistOwner)ST.hist.owner=from;
+  nwChanges.forEach(({h,fromVal,hadTo,toBefore})=>{h.byOwner=h.byOwner||{};h.byOwner[from]=fromVal;if(hadTo)h.byOwner[toName]=toBefore;else delete h.byOwner[toName]});
+  DB.owners.splice(i,0,from);
+  delete DB.deletedIds[ownerTombKey(from)];
+  touchSave(...assetItems,...goalItems);renderCurrent();openOwnerManage();toast('되돌렸어요')
+ });
+}
 
 /* ================= LEDGER ================= */
 /* 달력 하루 칸 합계: monthStats2와 동일하게 잔액 조정(기본 제외) 규칙을 적용해야
@@ -11048,7 +11108,8 @@ function openTypePicker(o){const html=DEFAULT_GROUP_ORDER.map(k=>{const ty=ASSET
  window._pkPick=o.onPick;openPicker('자산 종류','<div class="pk-group" id="pkGroup"><div class="pk-blob" id="pkBlob"></div>'+html+'</div>',o.back);
  requestAnimationFrame(()=>requestAnimationFrame(()=>movePkBlob(false)));}
 function pkPickType(k){pkChoose(k)}
-function openOwnerPicker(o){let html=DB.owners.map((ow,i)=>`<button class="pk-item ${ow===o.current?'on':''}" data-val="${esc(ow)}" onclick="pkPickOwner(${i})"><div class="pav" style="background:var(--sunken);color:var(--text-2)">${svg('users')}</div><div class="pbody"><div class="pn">${esc(ow)}</div></div></button>`).join('');
+function openOwnerPicker(o){const exclude=o.exclude||[]; /* 귀속 합치기 피커(openOwnerMergePicker)가 합칠 귀속 자신을 대상 목록에서 빼기 위해 씀(app-evolve cycle309 advance) — catFilteredGrid의 exclude와 동일한 역할이지만 인덱스 기반 pkPickOwner(i)를 그대로 쓰므로 필터링은 렌더링만 건너뛰고 인덱스는 원래 DB.owners 위치를 그대로 쓴다 */
+ let html=DB.owners.map((ow,i)=>exclude.includes(ow)?'':`<button class="pk-item ${ow===o.current?'on':''}" data-val="${esc(ow)}" onclick="pkPickOwner(${i})"><div class="pav" style="background:var(--sunken);color:var(--text-2)">${svg('users')}</div><div class="pbody"><div class="pn">${esc(ow)}</div></div></button>`).join('');
  html+=`<button class="pk-item" onclick="openOwnerManage()"><div class="pav" style="background:var(--brand-tint);color:var(--brand-ink)">${svg('gear')}</div><div class="pbody"><div class="pn" style="color:var(--brand-ink)">귀속 추가·관리</div></div></button>`;
  window._pkPick=o.onPick;openPicker('귀속 선택','<div class="pk-group" id="pkGroup"><div class="pk-blob" id="pkBlob"></div>'+html+'</div>',o.back);
  requestAnimationFrame(()=>requestAnimationFrame(()=>movePkBlob(false)));}

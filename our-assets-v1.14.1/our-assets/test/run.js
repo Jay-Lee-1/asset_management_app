@@ -281,6 +281,7 @@ const FUNCTIONS = [
   'heldCurrencies', 'heldStockCodes', 'heldCryptoCodes', 'needFx', 'needStock', 'needCrypto', 'hasRateAssets', 'autoSyncRates',
   'nextBigOutflow', 'dday', 'balanceOn', 'nextOutflowCard', 'monthOutflowCard', 'planGaugeCard', 'homeAlertCard', 'renderHome',
   'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwPresetSegHTML', 'nwHistoryCard', 'allocationCard', 'investGainLossCard', 'doRenameOwner', 'addOwner', 'ownerChipClass',
+  'openOwnerMergePicker', 'confirmOwnerMerge', 'mergeOwnerInto',
   // ownerSegHtml(app-evolve cycle255 advance)은 spendOwnerSel/incomeOwnerSel/histOwnerSel/
   // yearOwnerSel/goalOwnerSel 5곳이 각자 베껴 쓰던 귀속 선택 세그먼트 마크업을 모은 공유 헬퍼 —
   // 그 5곳을 부르는 openSpendAnalysis/openIncomeAnalysis/renderHistory/openYearReview/
@@ -22428,6 +22429,118 @@ test('doRenameOwner: "전체"로 이름을 바꾸는 시도는 막는다', () =>
   assert.ok(sandbox.lastToast, '안내 토스트가 떴어야 함');
 });
 
+/* ---------- mergeOwnerInto: 귀속 합치기(app-evolve cycle309 critique → advance) ---------- */
+test('mergeOwnerInto: 자산/목표의 owner가 대상 이름으로 옮겨가고, 합쳐진 귀속은 목록에서 빠진다', () => {
+  sandbox.DB = {
+    owners: ['나', '아빠'],
+    assets: [{ id: 'a1', owner: '아빠' }, { id: 'a2', owner: '나' }],
+    goals: [{ id: 'g1', owner: '아빠' }],
+  };
+  sandbox.mergeOwnerInto(1, '나');
+  assert.deepStrictEqual(sandbox.DB.owners, ['나'], '합쳐진 귀속은 목록에서 빠져야 함');
+  assert.strictEqual(sandbox.DB.assets[0].owner, '나');
+  assert.strictEqual(sandbox.DB.assets[1].owner, '나', '원래 대상 귀속의 자산은 그대로여야 함');
+  assert.strictEqual(sandbox.DB.goals[0].owner, '나');
+});
+test('mergeOwnerInto: 활성 귀속 필터(ST.assetOwner/plan.owner/spendOwner/hist.owner)가 from을 보고 있었다면 toName으로 함께 옮겨간다(doRenameOwner와 동일한 규칙)', () => {
+  sandbox.DB = { owners: ['나', '아빠'], assets: [], goals: [] };
+  sandbox.ST = { assetOwner: '아빠', plan: { owner: '아빠' }, spendOwner: '아빠', hist: { owner: '아빠' } };
+  sandbox.mergeOwnerInto(1, '나');
+  assert.strictEqual(sandbox.ST.assetOwner, '나');
+  assert.strictEqual(sandbox.ST.plan.owner, '나');
+  assert.strictEqual(sandbox.ST.spendOwner, '나');
+  assert.strictEqual(sandbox.ST.hist.owner, '나');
+});
+test('mergeOwnerInto: DB.nwHistory의 byOwner는 같은 날짜에 양쪽 다 있으면 ta/td를 합산하고, 한쪽에만 있으면 그대로 옮긴다', () => {
+  sandbox.DB = {
+    owners: ['나', '아빠'], assets: [], goals: [],
+    nwHistory: [
+      { date: '2026-01-01', byOwner: { 나: { ta: 200, td: 10 }, 아빠: { ta: 100, td: 5 } } },
+      { date: '2026-01-02', byOwner: { 아빠: { ta: 50, td: 0 } } },
+      { date: '2026-01-03', byOwner: { 나: { ta: 300, td: 20 } } },
+      { date: '2026-01-04' }, // byOwner 없는 항목(마이그레이션 이전)도 예외 없이 넘어가야 함
+    ],
+  };
+  sandbox.mergeOwnerInto(1, '나');
+  // mergeOwnerInto가 양쪽 합산 케이스에서 vm 컨텍스트 안에 새 객체 리터럴을 만들기 때문에
+  // (sandbox 쪽 Object.prototype과 다른 realm) deepStrictEqual이 내용은 같아도 프로토타입
+  // 차이로 실패한다 — mergeCatInto의 budgetHistory 테스트와 동일하게 JSON 라운드트립으로
+  // realm을 벗겨내고 비교한다(app-evolve cycle309 advance).
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.DB.nwHistory[0].byOwner)), { 나: { ta: 300, td: 15 } }, '양쪽 다 있으면 ta/td를 더해야 함');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.DB.nwHistory[1].byOwner)), { 나: { ta: 50, td: 0 } }, 'from만 있으면 그대로 toName 키로 옮겨야 함');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.DB.nwHistory[2].byOwner)), { 나: { ta: 300, td: 20 } }, 'toName만 있으면 건드리지 않아야 함');
+  assert.strictEqual(sandbox.DB.nwHistory[3].byOwner, undefined);
+});
+test('mergeOwnerInto: from을 톰스톤해 다른 기기가 되살리지 못하게 한다', () => {
+  sandbox.DB = { owners: ['나', '아빠'], assets: [], goals: [], deletedIds: {} };
+  sandbox.mergeOwnerInto(1, '나');
+  assert.ok(sandbox.ownerTombKey('아빠') in sandbox.DB.deletedIds);
+});
+test('mergeOwnerInto: 귀속이 1개뿐이면 합칠 수 없다(안전장치)', () => {
+  sandbox.DB = { owners: ['나'], assets: [], goals: [] };
+  sandbox.mergeOwnerInto(0, '아빠'); // toName도 목록에 없으므로(자기 자신 제외 시 없음) 어차피 no-op
+  assert.deepStrictEqual(sandbox.DB.owners, ['나']);
+});
+test('mergeOwnerInto: undoToast로 되돌리면 귀속/자산/목표/필터/nwHistory byOwner/톰스톤이 모두 합치기 전 상태로 복원된다', () => {
+  sandbox.DB = {
+    owners: ['나', '아빠'],
+    assets: [{ id: 'a1', owner: '아빠' }],
+    goals: [{ id: 'g1', owner: '아빠' }],
+    deletedIds: {},
+    nwHistory: [{ date: '2026-01-01', byOwner: { 나: { ta: 200, td: 10 }, 아빠: { ta: 100, td: 5 } } }],
+  };
+  sandbox.ST = { assetOwner: '아빠', plan: { owner: '아빠' }, spendOwner: '아빠', hist: { owner: '아빠' } };
+  sandbox.mergeOwnerInto(1, '나');
+  sandbox.lastUndo.undoFn();
+  assert.deepStrictEqual(sandbox.DB.owners, ['나', '아빠'], '원래 순서(index)로 복원돼야 함');
+  assert.strictEqual(sandbox.DB.assets[0].owner, '아빠');
+  assert.strictEqual(sandbox.DB.goals[0].owner, '아빠');
+  assert.strictEqual(sandbox.ST.assetOwner, '아빠');
+  assert.strictEqual(sandbox.ST.plan.owner, '아빠');
+  assert.strictEqual(sandbox.ST.spendOwner, '아빠');
+  assert.strictEqual(sandbox.ST.hist.owner, '아빠');
+  assert.deepStrictEqual(sandbox.DB.nwHistory[0].byOwner, { 나: { ta: 200, td: 10 }, 아빠: { ta: 100, td: 5 } }, '대상의 byOwner도 합치기 전 상태로 되돌아가야 함');
+  assert.strictEqual(sandbox.ownerTombKey('아빠') in sandbox.DB.deletedIds, false);
+});
+test('mergeOwnerInto: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 합쳐지지 않는다', () => {
+  sandbox.TWi = 0;
+  sandbox.DB = { owners: ['나', '아빠'], assets: [{ id: 'a1', owner: '아빠' }], goals: [] };
+  sandbox.mergeOwnerInto(1, '나');
+  assert.deepStrictEqual(sandbox.DB.owners, ['나', '아빠'], '튜토리얼 중에는 합치기가 막혀야 함');
+  assert.strictEqual(sandbox.DB.assets[0].owner, '아빠');
+  sandbox.TWi = -1;
+});
+
+/* ---------- confirmOwnerMerge/openOwnerMergePicker: 귀속 합치기 진입점 와이어링 ---------- */
+test('confirmOwnerMerge: confirmSheet에 영향받는 자산/목표 건수를 안내하고, 확인을 누르면 mergeOwnerInto가 실행된다', () => {
+  sandbox.DB = {
+    owners: ['나', '아빠'],
+    assets: [{ id: 'a1', owner: '아빠' }],
+    goals: [{ id: 'g1', owner: '아빠' }],
+  };
+  sandbox.confirmSheetCalls = [];
+  sandbox.confirmOwnerMerge(1, '나');
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 1);
+  assert.ok(/자산 1개/.test(sandbox.confirmSheetCalls[0].msg) && /목표 1개/.test(sandbox.confirmSheetCalls[0].msg));
+  assert.deepStrictEqual(sandbox.DB.owners, ['나', '아빠'], '확인 전에는 아직 합쳐지면 안 됨');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.deepStrictEqual(sandbox.DB.owners, ['나'], '확인을 누르면 실제로 합쳐져야 함');
+});
+test('confirmOwnerMerge: 연결된 자산·목표가 없으면 그 사실을 안내한다', () => {
+  sandbox.DB = { owners: ['나', '아빠'], assets: [], goals: [] };
+  sandbox.confirmSheetCalls = [];
+  sandbox.confirmOwnerMerge(1, '나');
+  assert.ok(/연결된 자산·목표가 없어요/.test(sandbox.confirmSheetCalls[0].msg));
+});
+test('openOwnerMergePicker: 자기 자신을 대상 목록에서 빼고 귀속 피커를 연다', () => {
+  sandbox.DB = { owners: ['나', '아빠', '아이'] };
+  sandbox.lastPickerHtml = null;
+  sandbox.openOwnerMergePicker(1);
+  const html = sandbox.lastPickerHtml;
+  assert.ok(!html.includes('data-val="아빠"'), '자기 자신은 대상 목록에서 빠져야 함');
+  assert.ok(html.includes('data-val="나"') && html.includes('data-val="아이"'), '다른 귀속은 대상으로 보여야 함');
+});
+
 test('renderMenu: 메뉴 탭 계정 진입점(acct-card)에 키보드/스크린리더 접근 패턴이 있다', () => {
   const body = extractFunction('renderMenu');
   assert.ok(/class="card acct-card"[^>]*role="button"/.test(body), 'acct-card에 role="button"이 없음');
@@ -22913,6 +23026,23 @@ test('[실행형] openOwnerManage: 귀속별 자산 개수를 "N개 자산"으�
   assert.ok(html.includes('<div class="mn">배우자</div><div class="msub">1개 자산</div>'), '배우자 귀속은 자산 1개로 집계되어야 함');
   assert.ok(html.includes('aria-label="나 수정" onclick="renameOwnerSheet(0)"'), '나(인덱스 0) 수정 버튼의 aria-label/onclick 연결이 틀림');
   assert.ok(html.includes('aria-label="배우자 삭제" onclick="delOwner(1)"'), '배우자(인덱스 1) 삭제 버튼의 aria-label/onclick 연결이 틀림');
+});
+/* [실행형] openOwnerManage: 합치기(merge) 버튼 — mergeCatInto(카테고리 합치기, cycle263)의 canMerge와
+ * 동일한 이유로, 합칠 대상이 하나도 없으면(귀속이 1개뿐이면) 버튼 자체를 숨긴다(app-evolve
+ * cycle309 critique → advance). */
+test('[실행형] openOwnerManage: 귀속이 2개 이상이면 각 행에 합치기 버튼이 있고 openOwnerMergePicker(i)로 연결된다', () => {
+  const ctx = ownerManageCtx();
+  ctx.DB = { owners: ['나', '배우자'], assets: [] };
+  ctx.openOwnerManage();
+  const html = ctx.lastSheetHtml;
+  assert.ok(html.includes('aria-label="나 다른 귀속으로 합치기" onclick="openOwnerMergePicker(0)"'), '나(인덱스 0) 합치기 버튼의 aria-label/onclick 연결이 틀림');
+  assert.ok(html.includes('aria-label="배우자 다른 귀속으로 합치기" onclick="openOwnerMergePicker(1)"'), '배우자(인덱스 1) 합치기 버튼의 aria-label/onclick 연결이 틀림');
+});
+test('[실행형] openOwnerManage: 귀속이 1개뿐이면 합칠 대상이 없으므로 합치기 버튼을 숨긴다', () => {
+  const ctx = ownerManageCtx();
+  ctx.DB = { owners: ['나'], assets: [] };
+  ctx.openOwnerManage();
+  assert.ok(!ctx.lastSheetHtml.includes('openOwnerMergePicker'), '귀속이 1개뿐이면 합치기 버튼이 없어야 함');
 });
 test('[실행형] openOwnerManage: 자산이 하나도 없는 귀속은 "0개 자산"으로 뜬다(회귀 가드 — used 계산이 비어도 죽지 않아야 함)', () => {
   const ctx = ownerManageCtx();

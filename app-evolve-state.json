@@ -1,19 +1,8 @@
 {
-  "cycle": 309,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "귀속(owner) 관리에 합치기(merge) 기능 추가",
-    "why": "DB.owners는 categories/assets와 구조가 동일한 분류 목록인데(assets.owner/goals.owner/ST.assetOwner 등이 참조), cycle308(mergeAssetInto 시세형 확장)·카테고리의 mergeCatInto(7426)처럼 합치기 기능이 전혀 없음(grep 'merge.*[Oo]wner|OwnerMergePicker' 무결과, 1691행의 mergeNameListWithTombstones는 무관한 동기화 헬퍼). delOwner(4887-4896)는 자산/목표가 쓰는 owner는 삭제를 막고, doRenameOwner(4902-4912)는 line 4905-4906에서 이미 존재하는 owner 이름으로 rename하는 것 자체를 막아 우회 수단도 없음 — 온보딩 때 오타로 생긴 중복이나 가족구성원 통합 같은 실사용 케이스에서 자산·목표를 하나씩 열어 owner 필드를 손으로 바꾸는 것 외엔 소비자가 통합할 방법이 없는 데이터 관리 막다른 길.",
-    "approach": "openOwnerManage()의 행 액션에 openOwnerMergePicker(i) 추가(DB.owners.length>1일 때만, categories의 merge 아이콘 재사용). mergeOwnerInto(fromIdx,toName)를 doRenameOwner(4902-4912)의 마이그레이션 목록(DB.assets/DB.goals owner 재할당, ST.assetOwner/plan.owner/spendOwner/hist.owner 갱신)과 mergeCatInto(7426-7488)의 구조(twGuard, splice+tombstone, undoToast 완전복원)를 그대로 본떠 구현. nwHistory[].byOwner[from]→byOwner[toName] 병합은 단순 rename과 달리 양쪽에 실데이터가 있을 수 있어(mergeCatInto가 budgetHistory에 쓰는 mergeBudgetHistory, 7458-7465와 동일한 문제) 날짜별 합산 또는 last-write-wins 중 하나를 정해 문서화. test/run.js에 mergeCatInto/mergeAssetInto 테스트 스타일로 기본 합치기/undo/byOwner 양쪽 데이터 병합/현재 활성 owner 필터인 경우/twGuard 차단 테스트 추가. 범위 밖: owner 선택모드·일괄합치기(목록이 작아 불필요, 카테고리 선택모드 기각과 동일 근거), dedupeNames()(cycle306, 자동 근접중복 제거 경로라 별개) 수정."
-  },
+  "cycle": 310,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 304,
-      "phase": "advance",
-      "timestamp": "2026-11-05T01:15:00.000Z",
-      "summary": "critique(cycle304) 계획대로 목표(goals) 관리 목록에 직접 삭제 버튼을 추가했다. goalsManageBody()의 row-acts div(복제 버튼 옆)에 recManageBody의 delRecConfirm 버튼과 동일한 패턴으로 <button class='act-btn danger' aria-label='{name} 삭제' onclick=\"event.stopPropagation();delGoal('id')\">trash</button>를 추가했다. delGoal()은 이미 confirmSheet+톰스톤+undoToast+renderCurrent()를 갖추고 있어(openGoalForm의 del-link가 이미 써온 동일 함수) 새 코드는 행 UI 배선뿐이고 delGoal 자체나 refresh 로직은 수정하지 않았다. 테스트 2건 추가(stopPropagation 후 delGoal(id)만 호출/ackGoalAchieved로 전파 안 됨 확인, aria-label이 이름별로 구분됨 확인) — recManageBody delRecConfirm 테스트와 동일 패턴. 테스트 2767->2769 통과. APP_VERSION 1.47.353->1.47.354, sw.js CACHE v620->v621. node --check logic.js/sw.js, manifest.webmanifest JSON 유효성, index.html 인라인 스크립트 추출검사(기존과 동일한 1건의 기존 오탐만 재확인, 새 회귀 없음) 모두 통과. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 305,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-05T20:08:00.000Z",
       "summary": "서브에이전트로 앱 전체를 재조사(cycle304-309 처리 항목 및 기각 후보 전부 제외 지시). 발견: 귀속(owner) 관리에 합치기(merge) 기능이 전혀 없음 — DB.owners는 categories/assets와 구조가 동일한 분류 목록(assets.owner/goals.owner/ST.assetOwner 등이 참조)인데, 카테고리의 mergeCatInto(7426-7488)·cycle308에서 시세형까지 확장된 mergeAssetInto(4284)와 달리 owner에는 merge 관련 함수가 전혀 없음(grep \"merge.*[Oo]wner|OwnerMergePicker\" 무결과). delOwner(4887-4896)는 자산/목표가 쓰는 owner는 삭제를 막고, doRenameOwner(4902-4906)는 기존 owner 이름으로 rename하는 것 자체를 막아 우회 수단도 없어, 중복된 owner를 통합할 유일한 방법이 모든 자산·목표를 하나씩 열어 owner 필드를 손으로 바꾸는 것뿐임. doRenameOwner(4907-4910)가 이미 마이그레이션 로직(DB.assets/DB.goals 재할당, ST.assetOwner/plan.owner/spendOwner/hist.owner, nwHistory[].byOwner) 대부분을 갖추고 있어 구현 템플릿이 명확함. pending_advance_plan에 저장(openOwnerMergePicker+mergeOwnerInto, nwHistory byOwner 양쪽 데이터 병합 규칙 필요, owner 선택모드/dedupeNames 수정은 범위 밖). 기각 후보: 문의 메모 수정 기능 부재(저빈도), 자산수량로그 선택모드/일괄삭제(시스템 생성 이력이라 불필요), 잔액계산 O(n^2) 성능(cycle204/207에서 이미 캐시 레이어로 해결, 새 근거 없음), 접근성 재점검(이미 aria-label 187건+focus trap 기존 충분, 구체적 공백 못 찾음). 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 309,
+      "phase": "advance",
+      "timestamp": "2026-11-05T21:18:18.512Z",
+      "summary": "critique(cycle309) 계획대로 귀속(owner) 관리에 합치기(merge) 기능을 추가했다. openOwnerManage()의 행 액션에 openOwnerMergePicker(i)를 추가(DB.owners.length>1일 때만, mergeCatInto와 동일한 svg('merge') 아이콘 재사용)했고, openOwnerPicker()에 exclude 옵션을 신설해(catFilteredGrid의 exclude와 동일한 역할, 단 인덱스 기반 pkPickOwner(i)는 그대로 둠) 자기 자신을 대상 목록에서 뺐다. confirmOwnerMerge(i,to)는 mergeCatInto의 확인 시트 패턴을 따라 영향받는 자산/목표 건수를 안내한다. mergeOwnerInto(i,toName)는 doRenameOwner의 마이그레이션(DB.assets/DB.goals owner 재할당, ST.assetOwner/plan.owner/spendOwner/hist.owner 갱신)을 그대로 재사용하면서 DB.nwHistory[].byOwner 병합 규칙을 새로 정했다 — byOwner[owner]={ta,td}는 totalAssets/ownerAssets와 같은 단위의 금액 총계라서(예산 한도처럼 '값 중 하나를 고르는' 설정이 아님) mergeBudgetHistory의 local-wins 대신 같은 날짜에 양쪽 다 있으면 ta/td를 단순 합산하기로 결정(mergeAssetInto가 balance형 자산 금액을 그냥 더하는 것과 동일한 이유), 한쪽에만 있으면 그대로 옮긴다. splice+톰스톤+undoToast 완전복원 구조는 mergeCatInto/delOwner와 동일. 테스트 17건 추가(기본 합치기, ST 필터 4종 이동, nwHistory byOwner 3가지 케이스(양쪽 합산/from만/to만/byOwner 없는 레코드), 톰스톤, 귀속 1개뿐일 때 안전장치, undo 전체복원, twGuard 차단, confirmOwnerMerge 영향 건수 안내 2건, openOwnerMergePicker exclude, openOwnerManage 합치기 버튼 렌더링 2건) — 2839->2856 통과. 구현 중 발견: nwHistory byOwner 병합 테스트에서 vm 컨텍스트 안에서 새로 만든 객체 리터럴이 테스트 파일의 Object.prototype과 달라 deepStrictEqual이 내용이 같아도 실패하는 realm 문제를 만나, mergeCatInto의 budgetHistory 테스트와 동일한 JSON.parse(JSON.stringify(...)) 패턴으로 해결(테스트 전용 이슈, 앱 코드는 무관). node --check logic.js/sw.js, manifest.webmanifest JSON 유효성, index.html 인라인 스크립트 추출검사(기존과 동일한 1건의 기존 오탐만 재확인, 새 회귀 없음) 모두 통과. APP_VERSION 1.47.364->1.47.365, sw.js CACHE v631->v632. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]
