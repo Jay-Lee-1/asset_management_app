@@ -1,19 +1,8 @@
 {
-  "cycle": 305,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "목표(goals) 관리 목록에 선택모드(일괄 삭제 + 일괄 귀속(owner) 변경) 추가",
-    "why": "자산(ST.aSel)/거래내역(ST.hist.sel)/반복내역(ST.recSel) 세 관리 목록은 이미 선택모드+일괄 동작(삭제, 반복내역은 일시중지/재시작, 자산은 일괄 owner 이동)을 갖췄는데 목표(goalsManageBody, index.html:3541)만 유일하게 선택모드가 없다 — cycle304가 per-row 직접 삭제 버튼만 추가했을 뿐 ST.goalSel 같은 상태 자체가 코드에 존재하지 않는다(grep 결과 없음). 목표가 여러 개인 사용자는 하나씩 지워야 하고, delOwner()(index.html:4823-4824)는 usedGoals>0이면 귀속 삭제를 막는데 자산처럼 doBulkOwnerMove 같은 일괄 재배정 수단이 없어 목표마다 수정 폼을 열어 owner를 바꿔야 한다.",
-    "approach": "ST.recSel과 완전히 동일한 패턴으로 ST.goalSel(Set 기반 mode/ids)을 신설한다. openGoalsList()/goalsManageBody()에 '선택' 토글 버튼과 체크 가능한 행을 추가하고, activeSel()/updateSelBottom() 디스패처에 goalSel 분기를 연결한다. 일괄 삭제는 delGoal()의 톰스톤+undo 패턴을 배치로 재사용(bulkGoalDelTargets/doBulkGoalDel 같은 이름으로, doBulkRecActive와 동일 구조), 일괄 귀속 변경은 자산의 doBulkOwnerMove를 참고해 goalOwnerTargets/doBulkGoalOwnerMove 신설. go(tab)/closeSheet()의 다른 *Sel 리셋 목록에 ST.goalSel 리셋도 추가한다. recSel/aSel의 기존 bulk-action 테스트 블록과 동일한 패턴으로 테스트를 추가하고, APP_VERSION/sw.js CACHE 버전을 올린다."
-  },
+  "cycle": 306,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 300,
-      "phase": "advance",
-      "timestamp": "2026-11-04T08:11:45.213Z",
-      "summary": "critique(cycle300) 계획대로 반복 내역 주기에 '격주(biweekly)'를 추가했다. recDates/monthlyEquivalent/recFreqLabelStr/recNthDate/recScheduleSameSlot에 biweekly 분기 추가(계획에 없던 발견: recScheduleSameSlot은 요일만 비교하면 7일 차이를 중복으로 오판하므로 daysBetween%14===0으로 보강). index.html의 txFreq/recFreq 버튼 배열에 옵션 추가. 테스트 10건 추가. 테스트 2682->2692 통과. APP_VERSION 1.47.345->1.47.346, sw.js CACHE v612->v613. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 301,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-05T04:10:00.000Z",
       "summary": "서브에이전트로 앱 전체를 재조사(cycle300-305 처리/보류 항목 전부 제외 지시). 발견: 목표(goals) 관리 목록만 유일하게 선택모드가 없음 — 자산/거래내역/반복내역은 이미 ST.aSel/ST.hist.sel/ST.recSel로 선택모드+일괄동작(삭제, 반복내역은 일시중지/재시작, 자산은 일괄 owner 이동)을 갖췄는데 cycle304가 goals에 추가한 건 per-row 직접 삭제 버튼뿐이고 ST.goalSel 같은 상태는 코드에 전혀 없음(grep 무결과). delOwner()가 usedGoals>0이면 귀속 삭제를 막는데 자산의 doBulkOwnerMove 같은 일괄 재배정 수단이 목표엔 없어 목표마다 수정폼을 열어야 함. pending_advance_plan에 저장(ST.recSel과 동일 패턴으로 선택모드+일괄삭제+일괄owner변경). 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 305,
+      "phase": "advance",
+      "timestamp": "2026-11-05T05:20:00.000Z",
+      "summary": "critique(cycle305) 계획대로 목표(goals) 관리 목록에 선택모드(ST.goalSel)를 추가해 일괄 삭제+일괄 귀속(owner) 변경을 지원한다. ST.recSel과 완전히 동일한 패턴으로 goalSelPartial/goalToggleSel/goalSelAll/goalDelSel/deleteGoalsUndo를 신설하고, openGoalsList()/goalsManageBody()에 '선택' 토글 버튼과 체크 가능한 행을 추가했다(선택모드 중엔 검색창·추가 버튼 숨김, recSel과 동일). 일괄 귀속 변경은 자산의 doBulkOwnerMove/assetOwnerMovePickFor/assetOwnerSel을 그대로 본떠 logic.js에 goalOwnerTargets, index.html에 doBulkGoalOwnerMove/goalOwnerMovePickFor/goalOwnerMoveSel을 신설했다 — 계획에 없던 발견: saveGoal()이 asset형 목표(type:'asset')의 owner를 저장할 때마다 항상 연결 자산의 owner로 강제 덮어쓰므로, 일괄 귀속 변경을 asset형 목표에도 적용하면 당장은 바뀐 듯 보이다가 그 목표를 한 번만 수정·저장해도 조용히 원래 owner로 되돌아가는 '적용되지만 곧 말없이 되돌아가는' 상태가 됨 — goalOwnerTargets가 asset형 목표를 대상에서 처음부터 제외하도록 막았다(bulkAssetMoveTargets가 이체/조정 거래를 빼는 것과 동일한 이유). activeSel()/exitSelMode()/go(tab)/closeSheet()의 다른 *Sel 분기 옆에 goalSel 분기를 추가했고, updateSelBottom()은 이미 ownerMove 필드를 범용으로 렌더링해 수정 불필요. 테스트 31건 추가(선택모드 UI 렌더링, goalOwnerTargets의 asset형 제외, doBulkGoalOwnerMove/pickFor/Sel, activeSel 분기, exitSelMode/closeSheet/go(tab) 리셋 — 후자 둘은 recSel 전례와 동일하게 DOM을 직접 쓰는 함수라 extractFunction 소스 패턴으로 확인, exitSelMode는 새로 FUNCTIONS에 추가해 실행형으로 확인). 테스트 2774->2805 통과. node --check logic.js/sw.js 통과. APP_VERSION 1.47.355->1.47.356, sw.js CACHE v622->v623. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

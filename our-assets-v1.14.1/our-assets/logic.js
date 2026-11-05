@@ -1390,6 +1390,22 @@ function bulkRecActiveTargets(recs,ids){
  const allPaused=items.every(r=>!r.active);
  return{ok:true,items,mixed:!allActive&&!allPaused,allActive};
 }
+/* 목표 관리 선택모드(ST.goalSel)의 일괄 '귀속(owner)' 변경 대상을 검증한다. assetOwnerTargets와
+ * 같은 모양의 {ok,...}를 돌려주되, asset형 목표(g.type==='asset')는 대상에서 뺀다 — saveGoal()이
+ * asset형 목표의 owner를 항상 연결 자산의 owner로 강제해(저장할 때마다 linkedAsset.owner로
+ * 덮어씀) 여기서 다른 owner로 바꿔도 다음에 그 목표를 한 번만 수정·저장하면 조용히 원래 자산의
+ * owner로 되돌아간다 — bulkAssetMoveTargets가 이체/조정 거래를 애초에 대상에서 빼는 것과 같은
+ * 이유로, "적용되지만 곧 말없이 되돌아가는" 상태를 만들지 않기 위해 처음부터 제외한다
+ * (app-evolve cycle305 critique → advance). 선택된 ids가 전부 asset형 목표뿐이라도 networth형과
+ * 똑같이 reason:'empty'로 합쳐 돌려준다 — goalOwnerMovePickFor는 어차피 ok만 보고 "선택된 목표가
+ * 없어요" 한 가지 안내만 보여주므로 이유를 더 세분화할 필요가 없다. */
+function goalOwnerTargets(goals,ids){
+ const idSet=ids instanceof Set?ids:new Set(ids||[]);
+ if(!idSet.size)return{ok:false,reason:'empty'};
+ const items=(goals||[]).filter(g=>idSet.has(g.id)&&g.type!=='asset');
+ if(!items.length)return{ok:false,reason:'empty'};
+ return{ok:true,items};
+}
 
 /* ================= CAROUSEL INDEX (순수) ================= */
 /* wireNwCarousel()의 클론-루프 스크롤 스냅과 동일한 경계 규칙으로, 화살표 키/점 클릭이 요청한

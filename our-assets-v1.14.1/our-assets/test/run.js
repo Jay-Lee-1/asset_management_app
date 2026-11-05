@@ -205,6 +205,7 @@ const FUNCTIONS = [
   'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo', 'delAsset', 'assetDelSel', 'unsnapshotAssetName', 'doBulkCat', 'bulkCatPickFor', 'doBulkInclToggle', 'assetInclSel',
   'doBulkAssetMove', 'bulkAssetMovePickFor', 'ledgerAssetMoveSel', 'histAssetMoveSel', 'doBulkOwnerMove', 'assetOwnerMovePickFor', 'assetOwnerSel',
   'doBulkRecActive', 'recSelPartial', 'recToggleSel', 'recSelAll', 'recDelSel', 'recActiveSel',
+  'deleteGoalsUndo', 'goalSelPartial', 'goalToggleSel', 'goalSelAll', 'goalDelSel', 'doBulkGoalOwnerMove', 'goalOwnerMovePickFor', 'goalOwnerMoveSel',
   'assetMergeCounts', 'openAssetMergePicker', 'confirmAssetMerge', 'mergeAssetInto',
   // archiveTxnsBefore/archiveMonthPicked/openArchiveOld는 app-evolve cycle222 advance('오래된
   // 데이터 정리' 메뉴 — cycle221 critique/advance가 준비해 둔 archiveBaselines()를 처음 실제로
@@ -293,7 +294,7 @@ const FUNCTIONS = [
   'selectNwOwner', 'refreshAssetBody', 'refreshNwHistoryCard', 'refreshGoalsSummary', 'refreshAllocationCard', 'refreshInvestGainLossCard',
   'goalOwnerEff', 'goalHasUnknown', 'goalLinkedAssetGone', 'goalLinkedAssetBroken', 'goalHistoryFor', 'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'goalQInput', 'goalsManageBody', 'syncGoalInputs', 'goalClearDate', 'goalOwnerSel', 'goalTypeSel', 'goalOpenAsset', 'renderGoalForm', 'openGoalForm', 'duplicateGoal', 'saveGoal', 'delGoal', 'ackGoalAchieved',
   'openInquiry', 'sendInquiry', 'openInquiryList', 'delInquiry', 'editInquiry', 'saveInquiryEdit',
-  'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetQInput', 'assetToggleSel', 'visibleAssetsForSel', 'assetSelAll', 'activeSel',
+  'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetQInput', 'assetToggleSel', 'visibleAssetsForSel', 'assetSelAll', 'activeSel', 'exitSelMode',
   'modeSeg', 'monthNav', 'abbr', 'calCellsFor', 'ledSumInner', 'ledSumBox', 'ledSumTap', 'calPane', 'txRowCore', 'txRow', 'dayTxns',
   'ledgerRowsHtml', 'ledgerDayHeadHtml', 'renderLedger', 'selDayPartial',
   'ledgerSelPartial', 'ledgerToggleSel', 'ledgerSelAll', 'visibleTx',
@@ -4440,12 +4441,14 @@ test('goalsSummaryCard: 목표가 있으면 가장 가까운 목표의 진행률
   assert.ok(html.includes('50%'));
 });
 test('openGoalsList: 목표가 없으면 빈 상태 안내를 보여준다', () => {
+  sandbox.ST = { goalSel: { mode: false, ids: new Set() } }; // openGoalsList/goalsManageBody가 이제 ST.goalSel.mode를 읽는다(app-evolve cycle305 critique → advance)
   sandbox.DB = { goals: [], nwHistory: [] };
   sandbox.lastSheetHtml = null;
   sandbox.openGoalsList();
   assert.ok(sandbox.lastSheetHtml.includes('아직 목표가 없어요'));
 });
 test('openGoalsList: 목표가 있으면 목표별 진행률·목표일을 목록으로 보여준다', () => {
+  sandbox.ST = { goalSel: { mode: false, ids: new Set() } };
   sandbox.DB = { goals: [{ id: 'g1', name: '비상금 1000만원', targetAmount: 10000000, targetDate: '2026-12-31' }],
     nwHistory: [{ date: '2026-01-01', nw: 2000000 }] };
   sandbox.TODAY = '2026-01-01';
@@ -4464,6 +4467,7 @@ function manyGoals(n) {
   return Array.from({ length: n }, (_, i) => ({ id: 'g' + i, name: '목표' + i, targetAmount: 1000000 * (i + 1), targetDate: null }));
 }
 test('openGoalsList: 목표가 GOAL_LIST_SEARCH_THRESHOLD개 이하면 검색창(#goalQ)이 뜨지 않는다', () => {
+  sandbox.ST = { goalSel: { mode: false, ids: new Set() } };
   sandbox.DB = { goals: manyGoals(sandbox.GOAL_LIST_SEARCH_THRESHOLD), nwHistory: [] };
   sandbox.lastSheetHtml = null;
   sandbox.openGoalsList();
@@ -4471,6 +4475,7 @@ test('openGoalsList: 목표가 GOAL_LIST_SEARCH_THRESHOLD개 이하면 검색창
   assert.ok(sandbox.lastSheetHtml.includes('id="goalBody"'), '검색 결과를 담는 #goalBody 컨테이너는 검색창 유무와 무관하게 항상 떠야 함');
 });
 test('openGoalsList: 목표가 GOAL_LIST_SEARCH_THRESHOLD개를 넘으면 검색창(#goalQ)이 뜬다', () => {
+  sandbox.ST = { goalSel: { mode: false, ids: new Set() } };
   sandbox.DB = { goals: manyGoals(sandbox.GOAL_LIST_SEARCH_THRESHOLD + 1), nwHistory: [] };
   sandbox.lastSheetHtml = null;
   sandbox.openGoalsList();
@@ -4478,6 +4483,7 @@ test('openGoalsList: 목표가 GOAL_LIST_SEARCH_THRESHOLD개를 넘으면 검색
   assert.ok(sandbox.lastSheetHtml.includes('oninput="goalQInput(this.value)"'), '입력마다 goalQInput을 불러야 함');
 });
 test('[실행형] goalsManageBody: 검색어가 이름에 일치하는 목표만 남긴다', () => {
+  sandbox.ST = { goalSel: { mode: false, ids: new Set() } };
   sandbox.DB = {
     goals: [
       { id: 'g1', name: '내 집 마련', targetAmount: 100000000, targetDate: null },
@@ -4491,6 +4497,7 @@ test('[실행형] goalsManageBody: 검색어가 이름에 일치하는 목표만
   assert.ok(!html.includes('내 집 마련'), '검색어와 일치하지 않는 목표는 빠져야 함');
 });
 test('[실행형] goalsManageBody: matchGoalQuery와 동일하게 목표 금액으로도 찾을 수 있다', () => {
+  sandbox.ST = { goalSel: { mode: false, ids: new Set() } };
   sandbox.DB = {
     goals: [
       { id: 'g1', name: '내 집 마련', targetAmount: 100000000, targetDate: null },
@@ -4504,12 +4511,14 @@ test('[실행형] goalsManageBody: matchGoalQuery와 동일하게 목표 금액�
   assert.ok(!html.includes('비상금'), '범위 밖인 목표(500만)는 빠져야 함');
 });
 test('[실행형] goalsManageBody: 검색 결과가 0건이면 "일치하는 목표가 없어요" 전용 빈 상태가 뜬다(목표 자체가 없다는 문구와 달라야 함)', () => {
+  sandbox.ST = { goalSel: { mode: false, ids: new Set() } };
   sandbox.DB = { goals: [{ id: 'g1', name: '비상금', targetAmount: 5000000, targetDate: null }], nwHistory: [] };
   const html = sandbox.goalsManageBody('존재하지않는검색어');
   assert.ok(html.includes("'존재하지않는검색어'와 일치하는 목표가 없어요"), '검색어가 포함된 전용 빈 상태 문구여야 함');
   assert.ok(!html.includes('아직 목표가 없어요'), 'DB에 목표가 있는 상태이므로 "아직 없어요" 문구가 뜨면 안 됨');
 });
 test('[실행형] goalsManageBody: 빈 검색어는 전체(안 거른) 결과와 동일하다', () => {
+  sandbox.ST = { goalSel: { mode: false, ids: new Set() } };
   sandbox.DB = {
     goals: [
       { id: 'g1', name: '내 집 마련', targetAmount: 100000000, targetDate: null },
@@ -4528,6 +4537,7 @@ test('[실행형] goalsManageBody: 빈 검색어는 전체(안 거른) 결과와
  * undoToast+renderCurrent()를 갖추고 있어(recManageBody의 trash 버튼과 같은 선례) 새 코드는 행
  * UI 배선뿐이다. */
 test('[실행형] goalsManageBody: 각 행에 삭제 버튼이 있고, event.stopPropagation() 후 delGoal(id)만 호출한다(행 전체의 ackGoalAchieved로 전파되지 않음)', () => {
+  sandbox.ST = { goalSel: { mode: false, ids: new Set() } };
   sandbox.DB = { goals: [{ id: 'g1', name: '비상금', targetAmount: 5000000, targetDate: null }], nwHistory: [] };
   sandbox.TODAY = '2026-01-01';
   const html = sandbox.goalsManageBody('');
@@ -4536,6 +4546,7 @@ test('[실행형] goalsManageBody: 각 행에 삭제 버튼이 있고, event.sto
   assert.ok(html.includes('act-btn danger'), '삭제 버튼은 다른 danger 삭제 버튼(delRecConfirm 등)과 동일한 스타일(act-btn danger)을 써야 함');
 });
 test('[실행형] goalsManageBody: 같은 이름이 아닌 목표 두 건은 삭제 버튼 aria-label도 서로 구분된다', () => {
+  sandbox.ST = { goalSel: { mode: false, ids: new Set() } };
   sandbox.DB = {
     goals: [
       { id: 'g1', name: '내 집 마련', targetAmount: 100000000, targetDate: null },
@@ -4591,6 +4602,363 @@ test('[실행형] goalsManageBody: 같은 이름이 아닌 목표 두 건은 삭
     } finally { restore(); }
   });
 })();
+/* ---------- 목표 관리 선택모드(ST.goalSel) — 자산/거래/반복 관리 목록은 이미 선택→일괄동작(삭제·귀속
+ * 변경 등) 패턴을 갖췄는데 목표만 유일하게 없어(cycle304가 건당 삭제 버튼만 추가), 목표가 여러
+ * 개면 하나씩 지워야 하고 delOwner()가 usedGoals>0이면 막는 귀속 삭제도 목표마다 수정 폼을 열어
+ * owner를 바꿔야 했다 — recSel(반복 내역 관리 선택모드)과 완전히 동일한 패턴으로 메운다
+ * (app-evolve cycle305 critique → advance). ---------- */
+test('openGoalsList: 선택모드가 아니면 "선택" 토글 버튼과 "목표 추가" 버튼이 모두 뜬다', () => {
+  sandbox.ST = { goalSel: { mode: false, ids: new Set() } };
+  sandbox.DB = { goals: [{ id: 'g1', name: '비상금', targetAmount: 5000000, targetDate: null }], nwHistory: [] };
+  sandbox.lastSheetHtml = null;
+  sandbox.openGoalsList();
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('onclick="ST.goalSel.mode=true;openGoalsList()"'), '선택 토글 버튼이 떠야 함');
+  assert.ok(html.includes('목표 추가'), '선택모드가 아니면 추가 버튼이 떠야 함');
+});
+test('openGoalsList: 선택모드면 "선택" 버튼과 "목표 추가" 버튼, 검색창이 모두 숨겨진다(목표 개수가 검색 기준을 넘어도)', () => {
+  sandbox.ST = { goalSel: { mode: true, ids: new Set() } };
+  sandbox.DB = { goals: manyGoals(sandbox.GOAL_LIST_SEARCH_THRESHOLD + 1), nwHistory: [] };
+  sandbox.lastSheetHtml = null;
+  sandbox.openGoalsList();
+  const html = sandbox.lastSheetHtml;
+  assert.ok(!html.includes('id="goalQ"'), '선택모드면 검색창이 뜨면 안 됨(검색 필터 없이 전체를 선택 대상으로 삼음)');
+  assert.ok(!html.includes('onclick="ST.goalSel.mode=true;openGoalsList()"'), '선택 토글 버튼은 뜨면 안 됨');
+  assert.ok(!html.includes('목표 추가'), '선택모드면 추가 버튼도 뜨면 안 됨');
+});
+test('[실행형] goalsManageBody: 선택모드면 각 행에 체크박스(sel-check)가 뜨고 복제/삭제 버튼은 사라진다', () => {
+  sandbox.ST = { goalSel: { mode: true, ids: new Set() } };
+  sandbox.DB = { goals: [{ id: 'g1', name: '비상금', targetAmount: 5000000, targetDate: null }], nwHistory: [] };
+  const html = sandbox.goalsManageBody('');
+  assert.ok(html.includes('sel-check'), '선택모드면 체크박스(sel-check)가 떠야 함');
+  assert.ok(html.includes("onclick=\"goalToggleSel('g1')\""), '행을 탭하면 goalToggleSel을 불러야 함(ackGoalAchieved 대신)');
+  assert.ok(!html.includes('row-acts'), '선택모드면 건당 액션 버튼(복제/삭제)이 없어야 함');
+  assert.ok(!html.includes("duplicateGoal('g1')"), '복제 버튼도 없어야 함');
+  assert.ok(!html.includes("delGoal('g1')"), '삭제 버튼도 없어야 함');
+});
+test('[실행형] goalsManageBody: 선택모드에서 선택된 항목은 sel-on 클래스와 aria-pressed="true"를 갖는다', () => {
+  sandbox.ST = { goalSel: { mode: true, ids: new Set(['g1']) } };
+  sandbox.DB = {
+    goals: [
+      { id: 'g1', name: '비상금', targetAmount: 5000000, targetDate: null },
+      { id: 'g2', name: '여행자금', targetAmount: 3000000, targetDate: null },
+    ],
+    nwHistory: [],
+  };
+  const html = sandbox.goalsManageBody('');
+  assert.ok(html.includes('sel-on'), '선택된 항목(g1)은 sel-on 클래스가 있어야 함');
+  const onCount = (html.match(/sel-check on/g) || []).length;
+  assert.strictEqual(onCount, 1, '선택된 항목(g1) 하나만 체크된 상태(sel-check on)여야 함');
+  assert.ok(html.includes('aria-pressed="true"'), '선택된 항목은 aria-pressed="true"여야 함');
+  assert.ok(html.includes('aria-pressed="false"'), '선택 안 된 항목(g2)은 aria-pressed="false"여야 함');
+});
+test('[실행형] goalsManageBody: 선택모드가 아니면 여전히 기존처럼 체크박스 없이 row-acts(복제/삭제)가 뜬다(회귀 가드)', () => {
+  sandbox.ST = { goalSel: { mode: false, ids: new Set() } };
+  sandbox.DB = { goals: [{ id: 'g1', name: '비상금', targetAmount: 5000000, targetDate: null }], nwHistory: [] };
+  const html = sandbox.goalsManageBody('');
+  assert.ok(!html.includes('sel-check'), '선택모드가 아니면 체크박스가 없어야 함');
+  assert.ok(html.includes('row-acts'), '선택모드가 아니면 건당 액션 버튼은 그대로 떠야 함');
+  assert.ok(html.includes("onclick=\"ackGoalAchieved('g1')\""), '행을 탭하면 여전히 ackGoalAchieved를 불러야 함');
+});
+test('goalToggleSel: 선택한 id를 추가하고, #goalBody만 다시 그린다(openGoalsList() 전체 재오픈 없음)', () => {
+  sandbox.DB = { goals: [{ id: 'g1', name: '비상금', targetAmount: 5000000, targetDate: null }], nwHistory: [] };
+  sandbox.ST = { goalSel: { mode: true, ids: new Set() } };
+  const goalBodyEl = { innerHTML: 'old' };
+  const orig$ = sandbox.$, origOpenGoalsList = sandbox.openGoalsList;
+  let openGoalsListCalls = 0;
+  sandbox.$ = (id) => (id === 'goalBody' ? goalBodyEl : null);
+  sandbox.openGoalsList = () => { openGoalsListCalls++; };
+  try {
+    sandbox.goalToggleSel('g1');
+    assert.ok(sandbox.ST.goalSel.ids.has('g1'), 'g1이 선택 목록에 추가돼야 함');
+    assert.strictEqual(openGoalsListCalls, 0, '#goalBody가 있으면 openGoalsList() 전체를 다시 열면 안 됨');
+    assert.ok(goalBodyEl.innerHTML.includes('sel-on'), '#goalBody가 새 선택 상태(sel-on)로 갱신돼야 함');
+  } finally { sandbox.$ = orig$; sandbox.openGoalsList = origOpenGoalsList; }
+});
+test('goalToggleSel: 같은 id를 다시 호출하면 선택이 해제된다', () => {
+  sandbox.DB = { goals: [{ id: 'g1', name: '비상금', targetAmount: 5000000, targetDate: null }], nwHistory: [] };
+  sandbox.ST = { goalSel: { mode: true, ids: new Set(['g1']) } };
+  const goalBodyEl = { innerHTML: 'old' };
+  const orig$ = sandbox.$;
+  sandbox.$ = (id) => (id === 'goalBody' ? goalBodyEl : null);
+  try {
+    sandbox.goalToggleSel('g1');
+    assert.ok(!sandbox.ST.goalSel.ids.has('g1'), 'g1이 선택 목록에서 제거돼야 함');
+    assert.ok(!goalBodyEl.innerHTML.includes('sel-on'), '선택 해제 후에는 sel-on 클래스가 없어야 함');
+  } finally { sandbox.$ = orig$; }
+});
+test('goalToggleSel: #goalBody가 없으면(폴백) openGoalsList()로 전체를 다시 연다', () => {
+  sandbox.DB = { goals: [{ id: 'g1', name: '비상금', targetAmount: 5000000, targetDate: null }], nwHistory: [] };
+  sandbox.ST = { goalSel: { mode: true, ids: new Set() } };
+  const orig$ = sandbox.$, origOpenGoalsList = sandbox.openGoalsList;
+  let openGoalsListCalls = 0;
+  sandbox.$ = () => null;
+  sandbox.openGoalsList = () => { openGoalsListCalls++; };
+  try {
+    sandbox.goalToggleSel('g1');
+    assert.strictEqual(openGoalsListCalls, 1, '#goalBody가 없으면 폴백으로 openGoalsList()를 불러야 함');
+  } finally { sandbox.$ = orig$; sandbox.openGoalsList = origOpenGoalsList; }
+});
+test('goalSelAll: 전체선택되지 않은 상태에서 부르면 DB.goals 전체가 선택된다', () => {
+  sandbox.DB = {
+    goals: [
+      { id: 'g1', name: '비상금', targetAmount: 5000000, targetDate: null },
+      { id: 'g2', name: '여행자금', targetAmount: 3000000, targetDate: null },
+    ],
+    nwHistory: [],
+  };
+  sandbox.ST = { goalSel: { mode: true, ids: new Set() } };
+  const orig$ = sandbox.$, origOpenGoalsList = sandbox.openGoalsList;
+  sandbox.$ = () => null; // openGoalsList 폴백 경로로 충분 — 여기선 선택 집합만 확인
+  sandbox.openGoalsList = () => {};
+  try {
+    sandbox.goalSelAll();
+    assert.strictEqual(sandbox.ST.goalSel.ids.size, 2, '전체선택 시 두 건 모두 선택돼야 함');
+  } finally { sandbox.$ = orig$; sandbox.openGoalsList = origOpenGoalsList; }
+});
+test('goalSelAll: 이미 전체선택된 상태에서 다시 부르면 전체 해제된다', () => {
+  sandbox.DB = { goals: [{ id: 'g1', name: '비상금', targetAmount: 5000000, targetDate: null }], nwHistory: [] };
+  sandbox.ST = { goalSel: { mode: true, ids: new Set(['g1']) } };
+  const orig$ = sandbox.$, origOpenGoalsList = sandbox.openGoalsList;
+  sandbox.$ = () => null;
+  sandbox.openGoalsList = () => {};
+  try {
+    sandbox.goalSelAll();
+    assert.strictEqual(sandbox.ST.goalSel.ids.size, 0, '전체선택 상태에서 다시 부르면 선택이 모두 해제돼야 함');
+  } finally { sandbox.$ = orig$; sandbox.openGoalsList = origOpenGoalsList; }
+});
+test('goalDelSel: 선택이 비어 있으면 안내 토스트만 띄우고 confirmSheet를 부르지 않는다', () => {
+  sandbox.DB = { goals: [{ id: 'g1', name: '비상금', targetAmount: 5000000, targetDate: null }], nwHistory: [] };
+  sandbox.ST = { goalSel: { mode: true, ids: new Set() } };
+  sandbox.confirmSheetCalls = [];
+  sandbox.goalDelSel();
+  assert.strictEqual(sandbox.lastToast, '선택된 목표가 없어요');
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0);
+});
+test('goalDelSel: 확인을 누르면 선택 모드가 꺼지고 선택된 id 전체가 deleteGoalsUndo로 넘어간다', () => {
+  const g1 = { id: 'g1', name: '비상금', targetAmount: 5000000, targetDate: null };
+  const g2 = { id: 'g2', name: '여행자금', targetAmount: 3000000, targetDate: null };
+  sandbox.DB = { goals: [g1, g2], deletedIds: {}, nwHistory: [] };
+  sandbox.ST = { goalSel: { mode: true, ids: new Set(['g1', 'g2']) } };
+  sandbox.confirmSheetCalls = [];
+  sandbox.lastUndo = null;
+  sandbox.goalDelSel();
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 1);
+  assert.ok(sandbox.confirmSheetCalls[0].msg.includes('2개'), '선택 개수가 확인 메시지에 포함되어야 함');
+  assert.strictEqual(sandbox.ST.goalSel.ids.size, 2, 'confirmSheet 콜백을 부르기 전에는 선택이 아직 유지되어야 함');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.ST.goalSel.mode, false, '삭제를 확정하면 선택 모드가 꺼져야 함');
+  assert.strictEqual(sandbox.ST.goalSel.ids.size, 0, '삭제를 확정하면 선택 목록이 비워져야 함');
+  assert.deepStrictEqual(sandbox.DB.goals, [], '선택된 목표 둘 다 삭제되어야 함');
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함');
+});
+test('deleteGoalsUndo: undo 콜백을 부르면 삭제된 목표들이 모두 되살아나고 톰스톤도 지워진다', () => {
+  const g1 = { id: 'g1', name: '비상금', targetAmount: 5000000, targetDate: null, updatedAt: 1 };
+  const g2 = { id: 'g2', name: '여행자금', targetAmount: 3000000, targetDate: null, updatedAt: 1 };
+  sandbox.DB = { goals: [g1, g2], deletedIds: {}, nwHistory: [] };
+  sandbox.lastUndo = null;
+  sandbox.deleteGoalsUndo(new Set(['g1', 'g2']));
+  assert.strictEqual(sandbox.DB.goals.length, 0);
+  assert.ok(typeof sandbox.DB.deletedIds.g1 === 'number' && typeof sandbox.DB.deletedIds.g2 === 'number', '둘 다 톰스톤이 남아야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.goals.length, 2);
+  assert.strictEqual(sandbox.DB.goals[0].updatedAt, 'test-updatedAt', '되살린 레코드는 다시 touch()되어야 mergeCollection에서 안 탈락함');
+  assert.strictEqual('g1' in sandbox.DB.deletedIds, false, '되돌리면 톰스톤도 지워져야 함');
+});
+
+/* ---------- goalOwnerTargets(logic.js)/doBulkGoalOwnerMove/goalOwnerMovePickFor/goalOwnerMoveSel:
+   목표 관리 선택모드(ST.goalSel)의 일괄 '귀속(owner)' 변경 — doBulkOwnerMove(자산 선택모드)와
+   동일한 패턴이지만, asset형 목표는 saveGoal()이 owner를 항상 연결 자산의 owner로 되돌리므로
+   대상에서 뺀다(app-evolve cycle305 critique → advance) ---------- */
+test('goalOwnerTargets: 선택이 비었으면 reason:empty', () => {
+  const r = sandbox.goalOwnerTargets([{ id: 'g', type: 'networth', owner: '나' }], new Set());
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.reason, 'empty');
+});
+test('goalOwnerTargets: ids가 실제 목표와 하나도 안 맞아도 reason:empty', () => {
+  const r = sandbox.goalOwnerTargets([{ id: 'g', type: 'networth', owner: '나' }], new Set(['없는id']));
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.reason, 'empty');
+});
+test('goalOwnerTargets: asset형 목표는 대상에서 빠진다(saveGoal이 owner를 연결 자산 기준으로 강제하므로)', () => {
+  const g1 = { id: 'g1', type: 'networth', owner: '나' };
+  const g2 = { id: 'g2', type: 'asset', linkedAssetId: 'a1', owner: '나' };
+  const r = sandbox.goalOwnerTargets([g1, g2], new Set(['g1', 'g2']));
+  assert.strictEqual(r.ok, true);
+  assert.deepStrictEqual(r.items, [g1]);
+});
+test('goalOwnerTargets: 선택된 목표가 전부 asset형이면 reason:empty(바꿀 수 있는 대상이 없음)', () => {
+  const g1 = { id: 'g1', type: 'asset', linkedAssetId: 'a1', owner: '나' };
+  const r = sandbox.goalOwnerTargets([g1], new Set(['g1']));
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.reason, 'empty');
+});
+
+test('doBulkGoalOwnerMove: 선택한 목표들의 귀속을 일괄로 바꾼다', () => {
+  sandbox.TWi = -1;
+  const g1 = { id: 'g1', type: 'networth', owner: '아빠', updatedAt: 1 };
+  const g2 = { id: 'g2', type: 'networth', owner: '엄마', updatedAt: 1 };
+  sandbox.DB = { goals: [g1, g2] };
+  sandbox.lastUndo = null;
+  sandbox.doBulkGoalOwnerMove(new Set(['g1', 'g2']), '아이');
+  assert.strictEqual(g1.owner, '아이');
+  assert.strictEqual(g2.owner, '아이');
+  assert.strictEqual(g1.updatedAt, 'test-updatedAt', 'touchSave로 touch()가 호출되어야 함(mergeCollection 동기화 불변식)');
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함');
+});
+test('doBulkGoalOwnerMove: undo 콜백을 부르면 각 목표의 원래 귀속으로 정확히 복원한다(섞여 있던 선택도)', () => {
+  sandbox.TWi = -1;
+  const g1 = { id: 'g1', type: 'networth', owner: '아빠', updatedAt: 1 };
+  const g2 = { id: 'g2', type: 'networth', owner: '엄마', updatedAt: 1 };
+  sandbox.DB = { goals: [g1, g2] };
+  sandbox.lastUndo = null;
+  sandbox.doBulkGoalOwnerMove(new Set(['g1', 'g2']), '아이');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(g1.owner, '아빠', '원래 아빠였던 목표는 아빠로 돌아와야 함');
+  assert.strictEqual(g2.owner, '엄마', '원래 엄마였던 목표는 엄마로 돌아와야 함');
+});
+test('doBulkGoalOwnerMove: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 바뀌지 않는다', () => {
+  sandbox.TWi = 0;
+  const g1 = { id: 'g1', type: 'networth', owner: '아빠' };
+  sandbox.DB = { goals: [g1] };
+  sandbox.doBulkGoalOwnerMove(new Set(['g1']), '아이');
+  assert.strictEqual(g1.owner, '아빠');
+  sandbox.TWi = -1;
+});
+test('doBulkGoalOwnerMove: goalOwnerTargets이 실패(빈 선택)로 판정하면 아무 것도 바꾸지 않는다(goalOwnerMovePickFor가 먼저 걸러내므로 여기선 안전망)', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { goals: [] };
+  sandbox.lastUndo = null;
+  sandbox.doBulkGoalOwnerMove(new Set(['없는id']), '아이');
+  assert.strictEqual(sandbox.lastUndo, null, 'undoToast도 호출되지 않아야 함');
+});
+test('doBulkGoalOwnerMove: 선택에 asset형 목표가 섞여 있어도 networth형만 바뀌고 asset형은 건드리지 않는다', () => {
+  sandbox.TWi = -1;
+  const g1 = { id: 'g1', type: 'networth', owner: '아빠', updatedAt: 1 };
+  const g2 = { id: 'g2', type: 'asset', linkedAssetId: 'a1', owner: '아빠', updatedAt: 1 };
+  sandbox.DB = { goals: [g1, g2] };
+  sandbox.doBulkGoalOwnerMove(new Set(['g1', 'g2']), '엄마');
+  assert.strictEqual(g1.owner, '엄마', 'networth형 목표는 바뀌어야 함');
+  assert.strictEqual(g2.owner, '아빠', 'asset형 목표는 건드리지 않아야 함');
+  assert.strictEqual(g2.updatedAt, 1, 'asset형 목표는 touch되지도 않아야 함');
+});
+
+test('goalOwnerMovePickFor: 선택이 비어 있으면 안내 토스트만 띄우고 귀속 피커를 열지 않는다', () => {
+  sandbox.DB = { goals: [] };
+  sandbox.lastPickerHtml = null;
+  sandbox.goalOwnerMovePickFor(new Set(), () => {});
+  assert.strictEqual(sandbox.lastToast, '선택된 목표가 없어요');
+  assert.strictEqual(sandbox.lastPickerHtml, null, '피커를 열지 않아야 함');
+});
+test('goalOwnerMovePickFor: 유효한 선택이면 귀속 피커를 열고, 고르면 적용→시트 닫기→afterApply까지 이어진다', () => {
+  sandbox.TWi = -1;
+  const g1 = { id: 'g1', type: 'networth', owner: '아빠', updatedAt: 1 };
+  sandbox.DB = { goals: [g1], owners: ['아빠', '엄마'] };
+  sandbox.lastPickerHtml = null;
+  sandbox.closeSheetCalls = 0;
+  sandbox.lastUndo = null;
+  let afterApplyCalled = false;
+  sandbox.goalOwnerMovePickFor(new Set(['g1']), () => { afterApplyCalled = true; });
+  assert.ok(sandbox.lastPickerHtml, '귀속 피커(openOwnerPicker)가 열려야 함');
+  assert.ok(sandbox.lastPickerHtml.includes('data-val="엄마"'), '다른 귀속이 후보에 있어야 함');
+  assert.strictEqual(typeof sandbox.window._pkPick, 'function', 'onPick 콜백이 피커에 전달되어야 함');
+  sandbox.window._pkPick('엄마'); // 사용자가 피커에서 '엄마'를 고른 상황을 흉내냄
+  assert.strictEqual(g1.owner, '엄마', '고른 귀속이 실제로 적용되어야 함');
+  assert.strictEqual(sandbox.closeSheetCalls, 1, '되돌아갈 이전 시트가 없는 단독 피커이므로 onPick이 직접 closeSheet를 불러야 함');
+  assert.ok(afterApplyCalled, 'afterApply(선택모드 종료)가 호출되어야 함');
+  assert.ok(sandbox.lastUndo, 'doBulkGoalOwnerMove의 undoToast까지 그대로 이어져야 함');
+});
+
+test('goalOwnerMoveSel: 선택이 비어 있으면 안내 토스트만 띄우고 아무 것도 바꾸지 않는다', () => {
+  const g1 = { id: 'g1', type: 'networth', owner: '아빠' };
+  sandbox.DB = { goals: [g1], owners: ['아빠', '엄마'] };
+  sandbox.ST = { goalSel: { mode: true, ids: new Set() } };
+  sandbox.lastUndo = null;
+  sandbox.goalOwnerMoveSel();
+  assert.strictEqual(sandbox.lastToast, '선택된 목표가 없어요');
+  assert.strictEqual(g1.owner, '아빠');
+  assert.strictEqual(sandbox.lastUndo, null);
+});
+test('goalOwnerMoveSel: 피커를 거치므로, 고르기 전엔 선택모드가 그대로 유지되고 고른 뒤에야 선택모드가 꺼진다', () => {
+  sandbox.TWi = -1;
+  const g1 = { id: 'g1', type: 'networth', owner: '아빠', updatedAt: 1 };
+  sandbox.DB = { goals: [g1], owners: ['아빠', '엄마'], nwHistory: [] };
+  sandbox.ST = { goalSel: { mode: true, ids: new Set(['g1']) } };
+  const orig$ = sandbox.$, origOpenGoalsList = sandbox.openGoalsList;
+  sandbox.$ = () => null; // afterApply가 openGoalsList()를 다시 부르므로(recActiveSel과 동일 패턴), 폴백 경로로 충분
+  let openGoalsListCalls = 0;
+  sandbox.openGoalsList = () => { openGoalsListCalls++; };
+  try {
+    sandbox.goalOwnerMoveSel();
+    assert.strictEqual(sandbox.ST.goalSel.mode, true, '피커가 열려 있는 동안엔 선택모드가 꺼지면 안 됨');
+    assert.strictEqual(sandbox.ST.goalSel.ids.size, 1);
+    sandbox.window._pkPick('엄마');
+    assert.strictEqual(g1.owner, '엄마');
+    assert.strictEqual(sandbox.ST.goalSel.mode, false, '적용 후에야 선택모드가 꺼져야 함');
+    assert.strictEqual(sandbox.ST.goalSel.ids.size, 0);
+    assert.strictEqual(openGoalsListCalls, 1, 'doBulkGoalOwnerMove는 메인 탭만 갱신하므로 시트는 직접 다시 열어야 함');
+  } finally { sandbox.$ = orig$; sandbox.openGoalsList = origOpenGoalsList; }
+});
+
+/* ---------- activeSel: 목표 관리 선택모드(ST.goalSel) — aSel/lSel/hist/recSel 네 분기 모두 false여야
+ * goalSel 분기까지 떨어지므로 매번 넷 다 명시한다(app-evolve cycle305 critique → advance) ---------- */
+test('activeSel: 목표 관리 선택모드(ST.goalSel)의 all/del/ownerMove는 고정 문자열이고, total은 DB.goals 전체 개수다', () => {
+  sandbox.ST = { aSel: { mode: false, ids: new Set() }, lSel: { mode: false, ids: new Set() }, hist: { selMode: false }, recSel: { mode: false, ids: new Set() }, goalSel: { mode: true, ids: new Set(['g1']) } };
+  sandbox.DB = { goals: [{ id: 'g1' }, { id: 'g2' }, { id: 'g3' }] };
+  const s = sandbox.activeSel();
+  assert.strictEqual(s.all, 'goalSelAll()');
+  assert.strictEqual(s.del, 'goalDelSel()');
+  assert.strictEqual(s.ownerMove, 'goalOwnerMoveSel()');
+  assert.strictEqual(s.size, 1);
+  assert.strictEqual(s.total, 3);
+});
+test('activeSel: 목표 관리 선택모드(ST.goalSel)엔 incl/cat/move/recActive가 없다(자산·거래·반복 전용 액션)', () => {
+  sandbox.ST = { aSel: { mode: false, ids: new Set() }, lSel: { mode: false, ids: new Set() }, hist: { selMode: false }, recSel: { mode: false, ids: new Set() }, goalSel: { mode: true, ids: new Set() } };
+  sandbox.DB = { goals: [] };
+  const s = sandbox.activeSel();
+  assert.strictEqual(s.incl, undefined);
+  assert.strictEqual(s.cat, undefined);
+  assert.strictEqual(s.move, undefined);
+  assert.strictEqual(s.recActive, undefined);
+});
+/* updateSelBottom()의 실제 렌더링(바닥바 innerHTML)은 이 테스트 스위트에서 항상 호출 스파이로만
+ * 검증돼 왔다(updateSelBottomCalls) — s.ownerMove 필드만 있으면 aSel이든 goalSel이든 동일한
+ * 범용 마크업(sbb-move 버튼)을 그리므로, 그 범용 로직은 activeSel()이 올바른 필드를 돌려주는지로
+ * 충분히 검증된다(위 'activeSel: 목표 관리 선택모드...' 테스트, app-evolve cycle305 critique →
+ * advance). */
+
+/* ---------- exitSelMode/closeSheet/go(tab): ST.goalSel 리셋 — recSel과 동일하게 세 경로 모두
+ * 선택모드를 끄고 비워야 다음에 열 때 선택모드가 그대로 남아있지 않다(app-evolve cycle305
+ * critique → advance) ---------- */
+test('exitSelMode: 목표 관리 선택모드(ST.goalSel)에서 부르면 선택모드가 꺼지고 openGoalsList()로 시트가 다시 그려진다', () => {
+  sandbox.ST = { aSel: { mode: false, ids: new Set() }, lSel: { mode: false, ids: new Set() }, hist: { selMode: false }, recSel: { mode: false, ids: new Set() }, goalSel: { mode: true, ids: new Set(['g1']) } };
+  sandbox.DB = { goals: [{ id: 'g1', name: '비상금', targetAmount: 5000000, targetDate: null }], nwHistory: [] };
+  sandbox.lastSheetHtml = null;
+  sandbox.exitSelMode();
+  assert.strictEqual(sandbox.ST.goalSel.mode, false);
+  assert.strictEqual(sandbox.ST.goalSel.ids.size, 0);
+  assert.ok(sandbox.lastSheetHtml, 'openGoalsList()가 다시 시트를 그려야 함');
+});
+/* closeSheet()는 $('sheet')/$('scrim') 등 실 DOM을 직접 조작해 FUNCTIONS vm 실행 대상에 넣지
+ * 않으므로(recSel의 동일한 리셋도 지금까지 소스 대조 테스트가 없었음) go(tab)과 같은 방식으로
+ * 소스 패턴만 확인한다. */
+test('closeSheet: 목표 관리 선택모드(ST.goalSel) 중에 시트가 닫히면 선택모드가 꺼지고 비워진다(스와이프·스크림탭 등 openGoalsList()를 안 거치는 경로 포함)', () => {
+  const body = extractFunction('closeSheet');
+  assert.ok(
+    body.includes("if(ST.goalSel.mode){ST.goalSel.mode=false;ST.goalSel.ids.clear();updateSelBottom()}"),
+    'closeSheet()가 recSel과 동일하게 ST.goalSel도 초기화하지 않음'
+  );
+});
+/* go()는 history.pushState 등 DOM 전역을 직접 써 FUNCTIONS vm 실행 대상에 넣지 않으므로(위
+ * go(tab) 관련 테스트들과 동일한 이유) 소스 패턴으로만 확인한다. */
+test('go(tab): 탭을 이동하면 목표 관리 선택모드(ST.goalSel)도 다른 선택모드들과 함께 꺼지고 비워진다', () => {
+  const body = extractFunction('go');
+  assert.ok(
+    body.includes("if(ST.goalSel.mode){ST.goalSel.mode=false;ST.goalSel.ids.clear()}"),
+    'go(tab)이 다른 선택모드들(aSel/lSel/hist.selMode/recSel)과 함께 ST.goalSel도 초기화하지 않음'
+  );
+});
+
 test('openGoalForm: id 없이 열면 goalDraft가 빈 새 목표로 초기화된다(uid 스텁 경로)', () => {
   sandbox.DB = { goals: [] };
   sandbox.goalDraft = null;
@@ -4756,6 +5124,7 @@ test('goalOwnerEff: DB.owners가 아예 없어도(최소 테스트 DB) 예외 �
   assert.strictEqual(sandbox.goalOwnerEff({ owner: '나' }), 'all');
 });
 test('openGoalsList: owner가 지정된 목표는 전체 순자산이 아니라 그 귀속만의 byOwner 추이로 진행률을 계산한다(전체 합계와 달라야 함)', () => {
+  sandbox.ST = { goalSel: { mode: false, ids: new Set() } };
   sandbox.DB = {
     owners: ['나', '배우자'],
     goals: [{ id: 'g1', name: '내 명의 비상금', targetAmount: 200000, targetDate: null, owner: '나' }],
@@ -4800,6 +5169,7 @@ test('goalRowHTML: 목표 귀속 밖의 시세 미확인 자산은 캡션에 영
   assert.ok(!html.includes('일부 미확인'), '"배우자" 귀속엔 시세 미확인 자산이 없으므로 캡션이 없어야 함');
 });
 test('openGoalsList: 목표 귀속에 시세 미확인(rateUnknown) 자산이 있으면 그 목표 행에만 "일부 미확인" 캡션이 붙는다(다른 귀속 목표엔 안 붙음)', () => {
+  sandbox.ST = { goalSel: { mode: false, ids: new Set() } };
   sandbox.DB = {
     owners: ['나', '배우자'],
     assets: [{ id: 'a_usd', name: '달러', type: 'fx', owner: '나', currency: 'USD', fxAmount: 100, includeInTotal: true }],
@@ -4884,6 +5254,7 @@ test('goalRowHTML: 이미 달성한 목표는 targetDate가 있어도 필요 월
   assert.ok(!html.includes('필요해요'));
 });
 test('openGoalsList: 목표일이 지난 목표의 행에만 "지남" 배지가 붙는다(다른 목표엔 안 붙음)', () => {
+  sandbox.ST = { goalSel: { mode: false, ids: new Set() } };
   sandbox.DB = {
     goals: [
       { id: 'g1', name: '지난 목표', targetAmount: 1000000, targetDate: '2026-01-01', owner: 'all' },
@@ -5210,6 +5581,7 @@ test('goalHistoryFor/goalLinkedAssetBroken: 연결 후 자산 종류가 fx/gold/
   assert.strictEqual(sandbox.goalLinkedAssetBroken(networthGoal), false, 'networth형 목표는 항상 false여야 함');
 });
 test('goalRowHTML/openGoalsList: asset형 목표는 연결 자산의 잔액을 기준으로 진행률을 계산하고, 연결 자산이 삭제되면 "연결된 자산이 삭제됐어요" 캡션이 붙으며 cur를 추측하지 않고 0으로 중립 처리한다', () => {
+  sandbox.ST = { goalSel: { mode: false, ids: new Set() } };
   sandbox.TODAY = '2026-06-15';
   sandbox.DB = {
     owners: ['나'],
@@ -5236,6 +5608,7 @@ test('goalRowHTML/openGoalsList: asset형 목표는 연결 자산의 잔액을 �
   assert.ok(sandbox.lastSheetHtml.includes('연결된 자산이 삭제됐어요'), 'openGoalsList도 같은 캡션을 보여줘야 함');
 });
 test('goalRowHTML/openGoalsList: 연결 자산이 삭제되진 않았지만 종류가 바뀌어 더 이상 추적 불가능하면 "연결된 자산을 추적할 수 없어요" 캡션이 붙고 cur를 0으로 중립 처리한다', () => {
+  sandbox.ST = { goalSel: { mode: false, ids: new Set() } };
   sandbox.TODAY = '2026-06-15';
   sandbox.DB = {
     owners: ['나'],
