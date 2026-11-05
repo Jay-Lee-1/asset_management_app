@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.354';
+const APP_VERSION='1.47.355';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -8532,6 +8532,24 @@ function sanitizeBackup(obj){
   if(!r||!r.id||!csvDateValid(r.startDate)){droppedCount++;return}
   const d=Object.assign({},r);
   if('amount' in d){const n=sanitizeAmount(d.amount,0);if(n!==d.amount){d.amount=n;fixedCount++}} /* txns와 동일: 크기 필드라 음수 불가 */
+  /* d.splits(반복 분할 템플릿, app-evolve cycle282)도 saveRec()이 저장 시점에만 category/amount
+   * 전부 입력·합계 일치를 강제하고, 백업 복원/클라우드 머지가 공유하는 이 유일한 검증
+   * 체크포인트에서는 지금까지 t.splits(바로 위 txns 블록)만 재검증되고 r.splits는 전혀
+   * 재검증되지 않았다 — expandRec()(2727줄)이 ed.splits 없을 때 r.splits를 그대로 매 회차 가상
+   * 인스턴스에 실어 splitLines()가 그대로 소비하므로, 손상된 템플릿은 txns 한 건이 아니라
+   * 그 반복거래의 모든 미래 회차를 계속 오염시킨다(바로 위 amount 주석의 "한 레코드가 계속 새
+   * 거래를 만들어낸다" 논리가 splits에는 적용되지 않은 채 남아 있었다, app-evolve cycle305
+   * develop). txns와 완전히 동일한 검증(category 없는 split 제거, amount 클램프, 정리 후 2개
+   * 미만이거나 합계≠d.amount면 splits 전체 삭제)을 그대로 적용한다. */
+  if('splits' in d){
+   if(!Array.isArray(d.splits)){delete d.splits;fixedCount++}
+   else{
+    const cleaned=d.splits.filter(s=>s&&typeof s.category==='string'&&s.category).map(s=>Object.assign({},s,{amount:sanitizeAmount(s.amount,0)})).filter(s=>s.amount>0);
+    const sum=cleaned.reduce((s,x)=>s+x.amount,0);
+    if(cleaned.length<2||sum!==d.amount){delete d.splits;fixedCount++}
+    else if(cleaned.length!==d.splits.length||cleaned.some((s,i)=>s.amount!==d.splits[i].amount)){d.splits=cleaned;fixedCount++}
+   }
+  }
   /* endDate는 startDate와 달리 비어있는 게 정상(= 무기한 반복, migrate()의 기본값도 null)이라
    * 레코드를 통째로 버리진 않지만, 값이 있는데 형식/달력상 무효하면(예: "2026-01-32") 위
    * startDate와 똑같이 recDates()를 무한루프에 빠뜨린다 — monthly/daily/weekly 분기 모두
@@ -8588,6 +8606,20 @@ function sanitizeBackup(obj){
    Object.keys(d.edits).forEach(date=>{
     const e=Object.assign({},d.edits[date]);
     if('amount' in e){const n=sanitizeAmount(e.amount,0);if(n!==e.amount){e.amount=n;fixedCount++}}
+    /* e.splits(간편수정 1회분 분할 오버라이드, app-evolve cycle292)도 d.splits와 동일하게
+     * 재검증한다 — 기준 금액은 e.amount가 있으면 그 값(오버라이드가 amount만 바꾼 경우), 없으면
+     * d.amount로 떨어진다(recSave()의 ed.amount!=null?ed.amount:r.amount 폴백과 동일 패턴). e.amount는
+     * 바로 위에서 이미 정규화됐으므로 baseAmt도 항상 정규화된 값을 본다. */
+    if('splits' in e){
+     const baseAmt=e.amount!=null?e.amount:d.amount;
+     if(!Array.isArray(e.splits)){delete e.splits;fixedCount++}
+     else{
+      const cleaned=e.splits.filter(s=>s&&typeof s.category==='string'&&s.category).map(s=>Object.assign({},s,{amount:sanitizeAmount(s.amount,0)})).filter(s=>s.amount>0);
+      const sum=cleaned.reduce((s,x)=>s+x.amount,0);
+      if(cleaned.length<2||sum!==baseAmt){delete e.splits;fixedCount++}
+      else if(cleaned.length!==e.splits.length||cleaned.some((s,i)=>s.amount!==e.splits[i].amount)){e.splits=cleaned;fixedCount++}
+     }
+    }
     edits[date]=e;
    });
    d.edits=edits;

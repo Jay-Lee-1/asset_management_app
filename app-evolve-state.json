@@ -1,15 +1,8 @@
 {
   "cycle": 305,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 300,
-      "phase": "develop",
-      "timestamp": "2026-11-04T05:13:08.001Z",
-      "summary": "mergeAssetInto(자산 합치기, cycle297)가 from을 가리키던 asset형 목표의 linkedAssetId는 cycle298에서 to로 옮겼지만 goal.owner는 그대로 두던 공백 발견 — saveAsset()의 기존 owner 재배선 가드(4712행)와 똑같은 어긋남이 합치기 경로에서도 재현됨. mergeAssetInto의 goalItems 루프에 g.owner!==to.owner 체크를 추가해 to.owner로 맞추고, undoToast 복원 클로저도 prevOwner로 되돌리게 했다. 테스트 3건 추가. 테스트 2682->2685 통과. APP_VERSION 1.47.344->1.47.345, sw.js CACHE v611->v612.",
-      "commit": null
-    },
     {
       "cycle": 300,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-05T01:15:00.000Z",
       "summary": "critique(cycle304) 계획대로 목표(goals) 관리 목록에 직접 삭제 버튼을 추가했다. goalsManageBody()의 row-acts div(복제 버튼 옆)에 recManageBody의 delRecConfirm 버튼과 동일한 패턴으로 <button class='act-btn danger' aria-label='{name} 삭제' onclick=\"event.stopPropagation();delGoal('id')\">trash</button>를 추가했다. delGoal()은 이미 confirmSheet+톰스톤+undoToast+renderCurrent()를 갖추고 있어(openGoalForm의 del-link가 이미 써온 동일 함수) 새 코드는 행 UI 배선뿐이고 delGoal 자체나 refresh 로직은 수정하지 않았다. 테스트 2건 추가(stopPropagation 후 delGoal(id)만 호출/ackGoalAchieved로 전파 안 됨 확인, aria-label이 이름별로 구분됨 확인) — recManageBody delRecConfirm 테스트와 동일 패턴. 테스트 2767->2769 통과. APP_VERSION 1.47.353->1.47.354, sw.js CACHE v620->v621. node --check logic.js/sw.js, manifest.webmanifest JSON 유효성, index.html 인라인 스크립트 추출검사(기존과 동일한 1건의 기존 오탐만 재확인, 새 회귀 없음) 모두 통과. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 305,
+      "phase": "develop",
+      "timestamp": "2026-11-05T02:12:35.974Z",
+      "summary": "sanitizeBackup()이 반복거래의 splits(분할 템플릿)/edits[date].splits(간편수정 오버라이드)를 전혀 검증하지 않던 공백 발견 — 바로 위 txns 블록은 t.splits를 cycle198부터 검증하는데, cycle282/292에서 신설된 반복거래 분할 자매 필드는 빠져 있었다. expandRec()이 손상된 r.splits를 매 회차 가상 인스턴스에 그대로 실어 splitLines() 기반 예산 집계에 NaN을 반복 전파하므로(txns 1건보다 파급력이 큼), txns와 동일한 검증(category 없는 split 제거, amount 클램프, 2개 미만이거나 합계 불일치면 splits 전체 삭제)을 d.splits와 e.splits에 각각 적용. e.splits는 기준 금액을 e.amount!=null?e.amount:d.amount로(recSave()의 폴백과 동일). 테스트 5건 추가. 테스트 2769->2774 통과. node --check logic.js/sw.js, manifest.webmanifest JSON 유효성, index.html 인라인 스크립트 추출검사(기존과 동일한 1건의 기존 오탐만 재확인, 새 회귀 없음) 모두 통과. APP_VERSION 1.47.354->1.47.355, sw.js CACHE v621->v622.",
       "commit": null
     }
   ]

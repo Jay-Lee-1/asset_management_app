@@ -13056,6 +13056,67 @@ test("[실행형] sanitizeBackup으로 정규화하지 않으면 손상된 freq�
   assert.strictEqual(fixedGenerated.length, 2, '정규화 후: 1/15, 2/15 매월 생성');
   assert.strictEqual(sandbox.recFreqLabelStr(fixed.freq, fixed.day, fixed.startDate), '매월 15일', '정규화 후: 세 함수가 모두 매월로 합의');
 });
+/* ---------- sanitizeBackup: d.splits(반복 분할 템플릿, app-evolve cycle282)/e.splits(간편수정
+ * 1회분 분할 오버라이드, cycle292)는 바로 위 txns 블록의 t.splits 검증과 완전히 동일한 규칙을
+ * 반복거래에도 적용한다(app-evolve cycle305 develop) — expandRec()이 손상된 템플릿을 매 회차에
+ * 그대로 실어 반복적으로 예산 집계를 오염시키는 것을 막는다. ---------- */
+test('sanitizeBackup: 반복거래의 splits가 배열이 아니면 조용히 제거하고 fixedCount를 센다(크래시 없음)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    recurrences: [{ id: 'r1', startDate: '2026-01-01', amount: 10000, category: '식비', splits: 'oops' }],
+  });
+  assert.strictEqual('splits' in data.recurrences[0], false);
+  assert.strictEqual(data.recurrences[0].category, '식비');
+  assert.strictEqual(fixedCount, 1);
+});
+test('sanitizeBackup: 반복거래의 category 없는 split 항목을 제거한 뒤 유효 항목이 2개 미만이면 splits 전체를 지워 top-level로 fallback한다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    recurrences: [{ id: 'r1', startDate: '2026-01-01', amount: 10000, category: '식비', splits: [
+      { category: '식비', amount: 10000 },
+      { category: '', amount: 0 },
+    ] }],
+  });
+  assert.strictEqual('splits' in data.recurrences[0], false);
+  assert.strictEqual(data.recurrences[0].amount, 10000);
+  assert.strictEqual(fixedCount, 1);
+});
+test('sanitizeBackup: 반복거래의 정제 후 splits 합계가 d.amount와 다르면 splits 전체를 지워 NaN/drift 전파를 막는다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    recurrences: [{ id: 'r1', startDate: '2026-01-01', amount: 10000, category: '식비', splits: [
+      { category: '식비', amount: 6000 },
+      { category: '생활용품', amount: 3000 },
+    ] }],
+  });
+  assert.strictEqual('splits' in data.recurrences[0], false);
+  assert.strictEqual(fixedCount, 1);
+});
+test('sanitizeBackup: 유효한 반복거래 splits(2개 이상, 합계 일치)는 그대로 보존한다(정상 케이스는 회귀 없음)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    recurrences: [{ id: 'r1', startDate: '2026-01-01', amount: 10000, category: '식비', splits: [
+      { category: '식비', amount: 6000 },
+      { category: '생활용품', amount: 4000 },
+    ] }],
+  });
+  assert.strictEqual(Array.isArray(data.recurrences[0].splits), true);
+  assert.strictEqual(data.recurrences[0].splits.length, 2);
+  assert.strictEqual(fixedCount, 0);
+});
+test('sanitizeBackup: edits[date].splits(간편수정 오버라이드)도 동일하게 검증하고, 기준 금액은 e.amount가 있으면 그 값을 쓴다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    recurrences: [{ id: 'r1', startDate: '2026-01-01', amount: 10000, category: '식비', edits: {
+      '2026-02-01': { amount: 8000, splits: [{ category: '식비', amount: 6000 }, { category: '생활용품', amount: 2000 }] }, // 합계(8000)가 r.amount(10000)가 아니라 e.amount(8000)와 맞으므로 보존돼야 함
+      '2026-03-01': { splits: [{ category: '식비', amount: 6000 }, { category: '생활용품', amount: 3000 }] }, // e.amount가 없어 r.amount(10000) 기준인데 합계(9000)가 안 맞아 지워져야 함
+    } }],
+  });
+  const edits = data.recurrences[0].edits;
+  assert.strictEqual(Array.isArray(edits['2026-02-01'].splits), true, 'e.amount 기준으로는 합계가 맞으므로 보존돼야 함');
+  assert.strictEqual('splits' in edits['2026-03-01'], false, 'e.amount가 없으면 r.amount가 기준이라 합계 불일치로 지워져야 함');
+  assert.strictEqual(fixedCount, 1);
+});
 /* DB.goals(app-evolve cycle122 신설)는 sanitizeBackup에 검증 분기가 전혀 없어 손상된 백업/원격
  * payload의 targetAmount/targetDate가 그대로 통과했었다(critique cycle123이 발견). */
 test('sanitizeBackup: 목표의 NaN/문자열 목표금액을 보정하고 fixedCount를 센다', () => {
