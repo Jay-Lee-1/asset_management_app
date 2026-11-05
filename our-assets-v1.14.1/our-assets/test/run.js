@@ -206,7 +206,7 @@ const FUNCTIONS = [
   'doBulkAssetMove', 'bulkAssetMovePickFor', 'ledgerAssetMoveSel', 'histAssetMoveSel', 'doBulkOwnerMove', 'assetOwnerMovePickFor', 'assetOwnerSel',
   'doBulkRecActive', 'recSelPartial', 'recToggleSel', 'recSelAll', 'recDelSel', 'recActiveSel',
   'deleteGoalsUndo', 'goalSelPartial', 'goalToggleSel', 'goalSelAll', 'goalDelSel', 'doBulkGoalOwnerMove', 'goalOwnerMovePickFor', 'goalOwnerMoveSel',
-  'assetMergeCounts', 'openAssetMergePicker', 'confirmAssetMerge', 'mergeAssetInto',
+  'assetMergeCounts', 'assetMergeSubKey', 'openAssetMergePicker', 'confirmAssetMerge', 'mergeAssetInto',
   // archiveTxnsBefore/archiveMonthPicked/openArchiveOld는 app-evolve cycle222 advance('오래된
   // 데이터 정리' 메뉴 — cycle221 critique/advance가 준비해 둔 archiveBaselines()를 처음 실제로
   // 호출) 검증용. archiveBaselines 자체는 logic.js 전용 섹션에서 이미 검증됐으므로 여기선
@@ -11135,14 +11135,80 @@ test('mergeAssetInto: 종류가 다르면 합치지 않는다(안전장치)', ()
   sandbox.mergeAssetInto('a1', 'a2');
   assert.strictEqual(sandbox.DB.assets.length, 2, '종류가 다르면 아무 것도 바뀌면 안 됨');
 });
-test('mergeAssetInto: 시세평가형(fx/gold/stock/crypto)은 같은 종류라도 수량·시세를 합치는 규칙이 따로 필요해 1차 범위에서 제외한다', () => {
+/* 시세평가형(fx/gold/stock/crypto) 합치기 확장(app-evolve cycle308 critique/advance) — 같은
+ * 종목·통화끼리는 보유수량·매입원가를 합치고, 다르면 여전히 막는다. */
+test('assetMergeSubKey: fx는 currency, stock은 stockCode, crypto는 cryptoCode, gold·잔액식은 null을 돌려준다', () => {
+  assert.strictEqual(sandbox.assetMergeSubKey({ type: 'fx', currency: 'USD' }), 'USD');
+  assert.strictEqual(sandbox.assetMergeSubKey({ type: 'stock', stockCode: '005930' }), '005930');
+  assert.strictEqual(sandbox.assetMergeSubKey({ type: 'crypto', cryptoCode: 'BTC' }), 'BTC');
+  assert.strictEqual(sandbox.assetMergeSubKey({ type: 'gold', goldDon: 1 }), null);
+  assert.strictEqual(sandbox.assetMergeSubKey({ type: 'cash', baseAmount: 1 }), null);
+});
+test('mergeAssetInto: 시세평가형(fx)도 같은 통화끼리는 보유수량과 매입원가를 합치고, acquiredAt은 비운다', () => {
+  sandbox.TODAY = '2026-06-15';
+  const a1 = { id: 'a1', name: '달러1', type: 'fx', currency: 'USD', fxAmount: 100, costBasis: 130000, acquiredAt: '2026-01-01' };
+  const a2 = { id: 'a2', name: '달러2', type: 'fx', currency: 'USD', fxAmount: 200, costBasis: 260000, acquiredAt: '2026-03-01' };
+  sandbox.DB = { assets: [a1, a2], txns: [], recurrences: [], assetQtyLog: [] };
+  sandbox.mergeAssetInto('a1', 'a2');
+  assert.deepStrictEqual(sandbox.DB.assets, [a2], 'from은 목록에서 빠지고 to만 남아야 함');
+  assert.strictEqual(a2.fxAmount, 300, '보유 수량이 합쳐져야 함');
+  assert.strictEqual(a2.costBasis, 390000, 'costBasis는 누적 총액이라 balance처럼 그냥 더해야 함');
+  assert.strictEqual(a2.acquiredAt, undefined, '두 매입일을 블렌딩할 규칙이 없어 비워야 함');
+});
+test('mergeAssetInto: 시세평가형 합치기는 assetQtyLog에 변경 기록을 남기고, from의 기존 로그도 to로 재연결한다', () => {
+  sandbox.TODAY = '2026-06-15';
   const a1 = { id: 'a1', name: '달러1', type: 'fx', currency: 'USD', fxAmount: 100 };
   const a2 = { id: 'a2', name: '달러2', type: 'fx', currency: 'USD', fxAmount: 200 };
-  sandbox.DB = { assets: [a1, a2], txns: [], recurrences: [] };
+  const q1 = { id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 0, newQty: 100, field: 'fxAmount' };
+  sandbox.DB = { assets: [a1, a2], txns: [], recurrences: [], assetQtyLog: [q1] };
+  sandbox.mergeAssetInto('a1', 'a2');
+  assert.strictEqual(q1.assetId, 'a2', '기존 로그도 합쳐진 대상(to)으로 재연결되어야 함');
+  const mergeEntry = sandbox.DB.assetQtyLog.find((l) => l.id !== 'q1');
+  assert.ok(mergeEntry, '합치기 자체의 수량 변경 기록이 새로 생겨야 함');
+  assert.strictEqual(mergeEntry.assetId, 'a2');
+  assert.strictEqual(mergeEntry.prevQty, 200);
+  assert.strictEqual(mergeEntry.newQty, 300);
+  assert.strictEqual(mergeEntry.field, 'fxAmount');
+  assert.strictEqual(mergeEntry.updatedAt, 'test-updatedAt', '새 로그도 touchSave로 touch()되어야 함');
+});
+test('mergeAssetInto: 시세평가형은 통화·종목코드가 다르면 합치지 않는다(피커를 거치지 않은 직접 호출 대비)', () => {
+  const a1 = { id: 'a1', name: '달러', type: 'fx', currency: 'USD', fxAmount: 100 };
+  const a2 = { id: 'a2', name: '엔화', type: 'fx', currency: 'JPY', fxAmount: 200 };
+  const a3 = { id: 'a3', name: '삼성전자', type: 'stock', stockCode: '005930', stockQty: 10 };
+  const a4 = { id: 'a4', name: '카카오', type: 'stock', stockCode: '035720', stockQty: 10 };
+  sandbox.DB = { assets: [a1, a2, a3, a4], txns: [], recurrences: [] };
   sandbox.lastToast = null;
   sandbox.mergeAssetInto('a1', 'a2');
-  assert.strictEqual(sandbox.DB.assets.length, 2, '시세평가형은 아직 합칠 수 없어야 함');
-  assert.ok(/아직 합칠 수 없/.test(sandbox.lastToast));
+  assert.strictEqual(sandbox.DB.assets.length, 4, '통화가 다르면 합쳐지면 안 됨');
+  assert.ok(/같은 종목·통화끼리만/.test(sandbox.lastToast));
+  sandbox.mergeAssetInto('a3', 'a4');
+  assert.strictEqual(sandbox.DB.assets.length, 4, '종목코드가 다르면 합쳐지면 안 됨');
+});
+test('mergeAssetInto: 시세평가형 합치기를 undoToast로 되돌리면 수량·costBasis·acquiredAt·assetQtyLog가 모두 복원된다', () => {
+  sandbox.TODAY = '2026-06-15';
+  const a1 = { id: 'a1', name: '달러1', type: 'fx', currency: 'USD', fxAmount: 100, costBasis: 130000, acquiredAt: '2026-01-01' };
+  const a2 = { id: 'a2', name: '달러2', type: 'fx', currency: 'USD', fxAmount: 200, costBasis: 260000 };
+  const q1 = { id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 0, newQty: 100, field: 'fxAmount' };
+  sandbox.DB = { assets: [a1, a2], txns: [], recurrences: [], assetQtyLog: [q1] };
+  sandbox.lastUndo = null;
+  sandbox.mergeAssetInto('a1', 'a2');
+  assert.strictEqual(a2.fxAmount, 300);
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.assets.length, 2, '되돌리면 삭제됐던 자산이 복원되어야 함');
+  assert.strictEqual(a2.fxAmount, 200, '보유 수량이 원래 값으로 복원되어야 함');
+  assert.strictEqual(a2.costBasis, 260000, 'costBasis도 원래 값으로 복원되어야 함');
+  assert.strictEqual(a2.acquiredAt, undefined, '합치기 전에도 acquiredAt이 없었으면 되돌린 뒤에도 없어야 함');
+  assert.strictEqual(q1.assetId, 'a1', 'from의 기존 로그도 원래 자산으로 되돌아가야 함');
+  assert.deepStrictEqual(sandbox.DB.assetQtyLog, [q1], '합치기 자체의 수량 변경 기록은 되돌릴 때 지워져야 함');
+});
+test('mergeAssetInto: 시세평가형(gold)은 종목코드가 없어도 같은 종류끼리 합쳐진다', () => {
+  sandbox.TODAY = '2026-06-15';
+  const a1 = { id: 'a1', name: '금1', type: 'gold', goldDon: 1.5 };
+  const a2 = { id: 'a2', name: '금2', type: 'gold', goldDon: 2.5 };
+  sandbox.DB = { assets: [a1, a2], txns: [], recurrences: [], assetQtyLog: [] };
+  sandbox.mergeAssetInto('a1', 'a2');
+  assert.strictEqual(sandbox.DB.assets.length, 1);
+  assert.strictEqual(a2.goldDon, 4, '서로 다른 금 자산끼리도 수량이 합쳐져야 함');
 });
 test('mergeAssetInto: 자기 자신에게는 합칠 수 없다(안전장치)', () => {
   const a1 = { id: 'a1', name: '통장1', type: 'cash', baseAmount: 1000 };
@@ -11258,7 +11324,26 @@ test('openAssetMergePicker: 같은 종류의 자산만, 자기 자신은 제외�
   assert.ok(html.includes('data-val="a2"'), '같은 종류(cash)는 보여야 함');
   assert.ok(!html.includes('data-val="a3"'), '다른 종류(savings)는 보이면 안 됨');
 });
-test('renderAssetSheet: 잔액식 자산(cash)을 수정할 때만 "다른 자산에 합치기" 링크를 보여주고, 신규 등록·시세평가형(fx)에는 보이지 않는다', () => {
+test('openAssetMergePicker: 시세평가형(stock)은 같은 종류라도 종목코드가 다르면 후보에서 빠진다', () => {
+  sandbox.TODAY = '2026-06-15'; sandbox.RANGE_TO = '2099-12-31';
+  sandbox.DB = {
+    settings: { groupOrder: ['stock'] },
+    rates: { stocks: {} },
+    assets: [
+      { id: 'a1', name: '삼성전자', type: 'stock', owner: '나', stockCode: '005930', stockQty: 10, includeInTotal: true },
+      { id: 'a2', name: '삼성전자2', type: 'stock', owner: '나', stockCode: '005930', stockQty: 5, includeInTotal: true },
+      { id: 'a3', name: '카카오', type: 'stock', owner: '나', stockCode: '035720', stockQty: 10, includeInTotal: true },
+    ],
+    txns: [], recurrences: [],
+  };
+  sandbox._balCache.clear();
+  sandbox.lastPickerHtml = null;
+  sandbox.openAssetMergePicker('a1');
+  const html = sandbox.lastPickerHtml;
+  assert.ok(html.includes('data-val="a2"'), '같은 종목코드(005930)는 보여야 함');
+  assert.ok(!html.includes('data-val="a3"'), '다른 종목코드(035720)는 같은 종류라도 보이면 안 됨');
+});
+test('renderAssetSheet: 잔액식(cash)·시세평가형(fx) 모두 수정할 때 "다른 자산에 합치기" 링크를 보여주고, 신규 등록에는 보이지 않는다', () => {
   sandbox.asDraft = { id: 'a1', type: 'cash', owner: '나', includeInTotal: true, name: '통장1' };
   sandbox.renderAssetSheet(true);
   assert.ok(sandbox.lastSheetHtml.includes("openAssetMergePicker('a1')"), '잔액식 자산 수정 화면에는 합치기 링크가 있어야 함');
@@ -11268,7 +11353,7 @@ test('renderAssetSheet: 잔액식 자산(cash)을 수정할 때만 "다른 자�
   sandbox.DB = { rates: { fx: { USD: 1300 } } };
   sandbox.asDraft = { id: 'a2', type: 'fx', owner: '나', includeInTotal: true, name: '달러', currency: 'USD', fxAmount: 100 };
   sandbox.renderAssetSheet(true);
-  assert.ok(!sandbox.lastSheetHtml.includes('openAssetMergePicker'), '시세평가형(fx)은 1차 범위에서 제외되므로 링크가 없어야 함');
+  assert.ok(sandbox.lastSheetHtml.includes("openAssetMergePicker('a2')"), '시세평가형(fx)도 이제 합치기 링크가 있어야 함(app-evolve cycle308 advance)');
 });
 
 /* ---------- recApply(mode='delete'): 부분 삭제(scope='one'/'future')도 twGuard+undo를 쓴다 ---------- */

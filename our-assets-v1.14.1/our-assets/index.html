@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.362';
+const APP_VERSION='1.47.363';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4233,10 +4233,22 @@ function delAsset(id){const a=DB.assets.find(x=>x.id===id);
 /* openCatManage의 openCatMergePicker()/mergeCatInto()(합치기, app-evolve cycle263)에 대응하는 자산 쪽
  * 기능 부재를 메운다(app-evolve cycle297 critique 계획) — 오타로 중복 등록된 통장이나 합치고 싶은
  * 현금 자산을 삭제(history 소실)하지 않고 하나로 합칠 수 있게 한다. assetEval()이 base(기준액)+
- * 원장 재생으로 평가하는 '잔액식' 종류(cash/savings/realestate/etc/pension/debt)만 지원한다 —
- * fx/gold/stock/crypto(isMarketValued)는 수량·시세를 합치는 별도 규칙이 필요해 1차 범위에서
- * 제외한다. saveAsset()의 balTypes(4560행 부근)와 같은 목록. */
+ * 원장 재생으로 평가하는 '잔액식' 종류(cash/savings/realestate/etc/pension/debt)가 1차 범위였다 —
+ * fx/gold/stock/crypto(isMarketValued)는 수량·시세를 합치는 별도 규칙이 필요해 당시엔 제외했지만,
+ * mergeAssetInto()의 isMarketValued 분기(app-evolve cycle308 critique/advance)로 같은 종목·통화끼리는
+ * 이제 지원한다. saveAsset()의 balTypes(4560행 부근)와 같은 목록. */
 const BAL_ASSET_TYPES=['cash','savings','realestate','etc','pension','debt'];
+/* 시세평가형(fx/gold/stock/crypto) 자산을 합칠 때 같은 종목·같은 통화끼리만 후보로 보여주고
+ * 실제로도 그것들끼리만 합쳐지게 막는 기준값(app-evolve cycle308 critique/advance). gold는 종목
+ * 코드가 없고 모든 금 자산이 같은 R.goldPerG 시세를 쓰므로 null(=같은 type이면 항상 호환) — fx는
+ * 통화(currency)가 다르면 환전 문제가 생겨 섞을 수 없고, stock/crypto는 종목코드/심볼이 다르면
+ * 아예 다른 자산이므로 역시 섞지 않는다. */
+function assetMergeSubKey(a){
+ if(a.type==='fx')return a.currency;
+ if(a.type==='stock')return a.stockCode;
+ if(a.type==='crypto')return a.cryptoCode;
+ return null;
+}
 /* 합치기 전 영향 범위 집계 — catMergeCounts와 같은 이유로 활성/비활성 반복거래 모두 센다
  * (activeRecsForAssets와 달리 mergeAssetInto는 반복거래를 비활성화하지 않고 참조만 옮기므로). */
 function assetMergeCounts(id){
@@ -4249,25 +4261,33 @@ function assetMergeCounts(id){
  * 새로 추가해(위 pkFilteredAssets 참고) 같은 종류의 자산만, 자기 자신은 제외하고 보여준다. */
 function openAssetMergePicker(id){
  const from=DB.assets.find(a=>a.id===id);if(!from)return;
- openAssetPicker({title:'합칠 자산 선택',onlyType:from.type,excludeId:id,back:()=>openAssetSheet(id),onPick:to=>confirmAssetMerge(id,to)});
+ /* 시세평가형은 같은 종류(onlyType)만으로는 부족 — mergeSubKey로 같은 종목·통화끼리만 추가로
+  * 걸러낸다(pkFilteredAssets, app-evolve cycle308 advance). 잔액식은 기존처럼 undefined로 둬서
+  * 필터를 타지 않는다. */
+ openAssetPicker({title:'합칠 자산 선택',onlyType:from.type,mergeSubKey:isMarketValued(from)?assetMergeSubKey(from):undefined,excludeId:id,back:()=>openAssetSheet(id),onPick:to=>confirmAssetMerge(id,to)});
 }
 function confirmAssetMerge(fromId,toId){
  const from=DB.assets.find(a=>a.id===fromId),to=DB.assets.find(a=>a.id===toId);
  if(!from||!to||from.id===to.id)return;
  const{txCount,recCount}=assetMergeCounts(fromId);
  const impact=txCount||recCount?` 내역 ${txCount}건`+(recCount?`·반복거래 ${recCount}개`:'')+`가 '${esc(to.name)}'로 옮겨가요.`:' 연결된 내역이 없어요.';
- confirmSheet('자산 합치기',`'${esc(from.name)}' 자산을 '${esc(to.name)}'에 합칠까요? 두 자산의 잔액이 합쳐져요.`+impact,'합치기',()=>mergeAssetInto(fromId,toId));
+ const mergeDesc=isMarketValued(from)?'두 자산의 보유 수량이 합쳐져요.':'두 자산의 잔액이 합쳐져요.';
+ confirmSheet('자산 합치기',`'${esc(from.name)}' 자산을 '${esc(to.name)}'에 합칠까요? ${mergeDesc}`+impact,'합치기',()=>mergeAssetInto(fromId,toId));
 }
 /* 자산 합치기 — mergeCatInto와 같은 골격(참조 이동+톰스톤+undoToast)이지만 대상이 카테고리
  * 이름이 아니라 다른 자산 레코드라 거래/반복거래의 fromAssetId/toAssetId(및 조정 내역의
- * adjustAsset)를 옮기고, 종류가 같으므로 balKey(baseAmount 또는 amountKRW, saveAsset과 동일
- * 규칙)도 하나로 합친다. */
+ * adjustAsset)를 옮긴다. 잔액식(BAL_ASSET_TYPES)은 balKey(baseAmount 또는 amountKRW, saveAsset과
+ * 동일 규칙)를 하나로 합치고, 시세평가형(isMarketValued)은 보유수량 필드를 합산하고 costBasis
+ * (누적 총액이라 balance처럼 그냥 더하면 됨, logic.js:987 시맨틱)도 합산하며 acquiredAt은
+ * 블렌딩할 규칙이 없어 비운다(app-evolve cycle308 critique/advance) — saveAsset()과 동일하게
+ * DB.assetQtyLog에 변경 기록을 남기고, from을 가리키던 기존 로그도 to로 재연결한다. */
 function mergeAssetInto(fromId,toId){
  const fi=DB.assets.findIndex(a=>a.id===fromId);
  const from=fi===-1?null:DB.assets[fi],to=DB.assets.find(a=>a.id===toId);
  if(!from||!to||from.id===to.id||from.type!==to.type)return;
- if(!BAL_ASSET_TYPES.includes(from.type)){toast('이 종류의 자산은 아직 합칠 수 없어요');return}
- const balKey=(from.type==='cash'||from.type==='savings')?'baseAmount':'amountKRW';
+ const marketValued=isMarketValued(from);
+ if(!BAL_ASSET_TYPES.includes(from.type)&&!marketValued){toast('이 종류의 자산은 아직 합칠 수 없어요');return}
+ if(marketValued&&assetMergeSubKey(from)!==assetMergeSubKey(to)){toast('같은 종목·통화끼리만 합칠 수 있어요');return} /* openAssetMergePicker가 mergeSubKey로 이미 걸러주지만, 피커를 거치지 않은 직접 호출(테스트 등) 대비 재확인 */
  const txItems=[];
  DB.txns.forEach(t=>{
   const prevFrom=t.fromAssetId,prevTo=t.toAssetId,prevAdj=t.adjustAsset;
@@ -4301,23 +4321,49 @@ function mergeAssetInto(fromId,toId){
    if(g.owner!==to.owner)g.owner=to.owner;
   }
  });
- const toPrevBaseAmount=to.baseAmount,toPrevAmountKRW=to.amountKRW;
- to[balKey]=Math.round(assetBase(to)+assetBase(from));
- if(balKey==='baseAmount')delete to.amountKRW;else delete to.baseAmount;
+ let toPrevBaseAmount,toPrevAmountKRW,qtyField,toPrevQty,toPrevCostBasis,toPrevAcquiredAt,mergeQtyLogEntry;
+ const qtyLogItems=[]; /* from을 가리키던 기존 assetQtyLog 기록 — 재연결 대상(touchSave로 함께 touch됨) */
+ if(marketValued){
+  qtyField=from.type==='fx'?'fxAmount':from.type==='gold'?'goldDon':from.type==='crypto'?'cryptoQty':'stockQty';
+  toPrevQty=to[qtyField]||0;toPrevCostBasis=to.costBasis;toPrevAcquiredAt=to.acquiredAt;
+  const newQty=Math.round(((to[qtyField]||0)+(from[qtyField]||0))*1e8)/1e8; /* 돈/코인 수량은 소수라 부동소수 오차 방지용 라운딩 */
+  to[qtyField]=newQty;
+  const costSum=Math.round((to.costBasis||0)+(from.costBasis||0));
+  if(costSum>0)to.costBasis=costSum;else delete to.costBasis;
+  delete to.acquiredAt; /* 두 매입일을 블렌딩할 규칙이 없다 — 틀린 연환산 수익률보다 미표시가 안전(cycle277 선례) */
+  DB.assetQtyLog=DB.assetQtyLog||[];
+  DB.assetQtyLog.forEach(l=>{if(l.assetId===fromId){qtyLogItems.push(l);l.assetId=toId}}); /* relinkDeletedAsset(4341행 부근)과 동일 패턴 — 참조만 옮기고 touch는 아래 touchSave가 일괄 처리 */
+  mergeQtyLogEntry={id:uid(),assetId:toId,date:TODAY,prevQty:toPrevQty,newQty,field:qtyField};
+  DB.assetQtyLog.push(mergeQtyLogEntry);
+ }else{
+  const balKey=(from.type==='cash'||from.type==='savings')?'baseAmount':'amountKRW';
+  toPrevBaseAmount=to.baseAmount;toPrevAmountKRW=to.amountKRW;
+  to[balKey]=Math.round(assetBase(to)+assetBase(from));
+  if(balKey==='baseAmount')delete to.amountKRW;else delete to.baseAmount;
+ }
  DB.assets.splice(fi,1);
  DB.deletedIds=DB.deletedIds||{};DB.deletedIds[fromId]=Date.now(); /* deleteAssetsUndo와 동일한 톰스톤 — 없으면 mergeRemoteDataIntoLocal이 다른 기기의 사본에서 from을 되살림 */
- touchSave(to,...txItems.map(x=>x.t),...recItems.map(x=>x.r),...goalItems.map(x=>x.g));
+ const qtyLogTouch=marketValued?[mergeQtyLogEntry,...qtyLogItems]:[];
+ touchSave(to,...qtyLogTouch,...txItems.map(x=>x.t),...recItems.map(x=>x.r),...goalItems.map(x=>x.g));
  renderCurrent();
  undoToast(`'${from.name}' 자산을 '${to.name}'에 합쳤어요`+(txItems.length||recItems.length?` · 내역 ${txItems.length}건·반복거래 ${recItems.length}개 복원`:''),()=>{
   txItems.forEach(({t,prevFrom,prevTo,prevAdj})=>{t.fromAssetId=prevFrom;t.toAssetId=prevTo;if(t.adjust)t.adjustAsset=prevAdj});
   recItems.forEach(({r,prevFrom,prevTo})=>{r.fromAssetId=prevFrom;r.toAssetId=prevTo});
   goalItems.forEach(({g,prevLinked,prevOwner})=>{g.linkedAssetId=prevLinked;g.owner=prevOwner});
-  to.baseAmount=toPrevBaseAmount;to.amountKRW=toPrevAmountKRW;
-  if(to.baseAmount===undefined)delete to.baseAmount;
-  if(to.amountKRW===undefined)delete to.amountKRW;
+  if(marketValued){
+   to[qtyField]=toPrevQty;
+   if(toPrevCostBasis!=null)to.costBasis=toPrevCostBasis;else delete to.costBasis;
+   if(toPrevAcquiredAt!=null)to.acquiredAt=toPrevAcquiredAt;else delete to.acquiredAt;
+   DB.assetQtyLog=DB.assetQtyLog.filter(l=>l.id!==mergeQtyLogEntry.id);
+   qtyLogItems.forEach(l=>{l.assetId=fromId});
+  }else{
+   to.baseAmount=toPrevBaseAmount;to.amountKRW=toPrevAmountKRW;
+   if(to.baseAmount===undefined)delete to.baseAmount;
+   if(to.amountKRW===undefined)delete to.amountKRW;
+  }
   DB.assets.splice(fi,0,from);
   delete DB.deletedIds[fromId];
-  touchSave(to,from,...txItems.map(x=>x.t),...recItems.map(x=>x.r),...goalItems.map(x=>x.g));
+  touchSave(to,from,...qtyLogItems,...txItems.map(x=>x.t),...recItems.map(x=>x.r),...goalItems.map(x=>x.g));
   renderCurrent();toast('되돌렸어요')
  });
 }
@@ -4684,7 +4730,7 @@ function renderAssetSheet(editing){
     <button type="button" class="switch ${d.includeInTotal?'on':''}" role="switch" aria-checked="${d.includeInTotal?'true':'false'}" aria-label="총자산에 포함" onclick="asDraft.includeInTotal=!asDraft.includeInTotal;this.classList.toggle('on');this.setAttribute('aria-checked',this.classList.contains('on'))"><i></i></button></div></div>
   <div class="two-btn"><button class="btn btn-soft cancel" onclick="closeSheet()">취소</button>
     <button class="btn btn-primary" onclick="saveAsset(${editing})">${editing?'수정하기':'등록하기'}</button></div>
-  ${editing&&BAL_ASSET_TYPES.includes(d.type)?`<button class="merge-link" onclick="openAssetMergePicker('${d.id}')">${svg('merge')} 다른 자산에 합치기</button>`:''}
+  ${editing&&(BAL_ASSET_TYPES.includes(d.type)||isMarketValued(d))?`<button class="merge-link" onclick="openAssetMergePicker('${d.id}')">${svg('merge')} 다른 자산에 합치기</button>`:''}
   ${editing?`<button class="del-link" onclick="delAsset('${d.id}')">${svg('trash')} 이 자산 삭제</button>`:''}`);
  setTimeout(()=>{const n=$('asName');if(n&&!editing)n.focus()},300);
 }
@@ -10943,6 +10989,7 @@ function pkFilteredAssets(o,q){
    if(o.excludeDebt)items=items.filter(a=>a.type!=='debt');
    if(o.excludeId)items=items.filter(a=>a.id!==o.excludeId);
    if(o.onlyType)items=items.filter(a=>a.type===o.onlyType); /* openAssetMergePicker가 합칠 자산과 같은 종류만 보이게 쓴다(app-evolve cycle297 advance) */
+   if(o.mergeSubKey!==undefined)items=items.filter(a=>assetMergeSubKey(a)===o.mergeSubKey); /* openAssetMergePicker가 시세평가형은 같은 종목·통화끼리만 보이게 쓴다(app-evolve cycle308 advance) */
    if(!items.length)return;
    any=true;
    if(q)items=items.filter(a=>matchAssetQuery(a,q));
