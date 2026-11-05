@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.365';
+const APP_VERSION='1.47.366';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4280,8 +4280,12 @@ function confirmAssetMerge(fromId,toId){
  * 동일 규칙)를 하나로 합치고, 시세평가형(isMarketValued)은 보유수량 필드를 합산하고 costBasis
  * (누적 총액이라 balance처럼 그냥 더하면 됨, logic.js:987 시맨틱)도 합산하며 acquiredAt은
  * 블렌딩할 규칙이 없어 비운다(app-evolve cycle308 critique/advance) — saveAsset()과 동일하게
- * DB.assetQtyLog에 변경 기록을 남기고, from을 가리키던 기존 로그도 to로 재연결한다. */
-function mergeAssetInto(fromId,toId){
+ * DB.assetQtyLog에 변경 기록을 남기고, from을 가리키던 기존 로그도 to로 재연결한다. 저장이 실제로
+ * 일어나는 다른 모든 진입점(saveAsset/mergeCatInto/mergeOwnerInto 등)과 달리 이 함수만 twGuard가
+ * 없어 튜토리얼 샌드박스 약속("튜토리얼 중에는 실제로 저장되지 않아요")이 자산 합치기에서만 깨져
+ * 있었다(app-evolve cycle310 develop — mergeCatInto/mergeOwnerInto에 twGuard를 추가한 cycle309/
+ * cycle308 당시엔 둘 다 범위 안이었는데 더 먼저 생긴 mergeAssetInto(cycle297)만 놓쳤다). */
+function mergeAssetInto(fromId,toId){if(twGuard())return;
  const fi=DB.assets.findIndex(a=>a.id===fromId);
  const from=fi===-1?null:DB.assets[fi],to=DB.assets.find(a=>a.id===toId);
  if(!from||!to||from.id===to.id||from.type!==to.type)return;

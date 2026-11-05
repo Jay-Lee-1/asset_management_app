@@ -11257,6 +11257,19 @@ test('mergeAssetInto: 자기 자신에게는 합칠 수 없다(안전장치)', (
   assert.strictEqual(sandbox.DB.assets.length, 1);
   assert.strictEqual(a1.baseAmount, 1000, '잔액이 스스로 더해지면 안 됨');
 });
+/* mergeCatInto(cycle309)/mergeOwnerInto(cycle309)의 twGuard 테스트와 동일한 패턴 — 더 먼저 생긴
+ * mergeAssetInto(cycle297)만 twGuard가 없던 공백의 회귀 테스트(app-evolve cycle310 develop). */
+test('mergeAssetInto: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 합쳐지지 않는다', () => {
+  sandbox.TWi = 0;
+  const a1 = { id: 'a1', name: '통장1', type: 'cash', baseAmount: 1000 };
+  const a2 = { id: 'a2', name: '통장2', type: 'cash', baseAmount: 2000 };
+  sandbox.DB = { assets: [a1, a2], txns: [], recurrences: [] };
+  sandbox.mergeAssetInto('a1', 'a2');
+  assert.strictEqual(sandbox.DB.assets.length, 2, '튜토리얼 중에는 합치기가 막혀야 함');
+  assert.strictEqual(a1.baseAmount, 1000);
+  assert.strictEqual(a2.baseAmount, 2000);
+  sandbox.TWi = -1;
+});
 test('mergeAssetInto: undoToast로 되돌리면 자산 목록/잔액/거래·반복거래 참조/톰스톤이 모두 합치기 전 상태로 복원된다', () => {
   const a1 = { id: 'a1', name: '통장1', type: 'cash', baseAmount: 1000 };
   const a2 = { id: 'a2', name: '통장2', type: 'cash', baseAmount: 2000 };
