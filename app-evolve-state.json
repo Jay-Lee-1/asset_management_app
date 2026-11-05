@@ -1,19 +1,8 @@
 {
-  "cycle": 304,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "목표(goals) 관리 목록에 직접 삭제 버튼 추가",
-    "why": "자산/반복거래/귀속/카테고리/자산수량로그/문의 등 다른 모든 관리 목록은 row-acts에 trash 버튼으로 즉시 삭제가 가능한데(delRecConfirm 등과 동일 패턴), goalsManageBody()(index.html:3541)만 duplicateGoal 버튼만 있고 삭제가 없어 전체 수정 폼(openGoalForm)을 열고 맨 아래 del-link까지 스크롤해야 한다. duplicateGoal로 목표를 복제해 변형하는 패턴이 이미 있어 과다 생성된 목표를 정리할 일이 흔한데, 그때마다 4번 이상의 탭이 필요하다.",
-    "approach": "goalsManageBody()의 row-acts div(3563행)에 recManageBody의 delRecConfirm 버튼과 동일한 패턴으로 <button class='act-btn danger' aria-label='...'  onclick=\"event.stopPropagation();delGoal('id')\">trash</button>를 추가한다. delGoal()(3690행)은 이미 confirmSheet+톰스톤+undoToast+renderCurrent()를 갖추고 있고, deleteRecsUndo도 동일하게 plain renderCurrent()만 호출해 열린 시트(#recBody)를 정상 갱신하는 것으로 이미 검증돼 있으므로(recManageBody의 trash 버튼이 바로 그 선례) delGoal 자체나 refresh 로직은 수정할 필요가 없다 — row-acts 버튼 한 줄 추가와 테스트만으로 충분하다. 테스트: row-acts 마크업에 delGoal 와이어링 확인, 클릭 시 ackGoalAchieved가 같이 안 불리는지(stopPropagation) 확인, 삭제 후 목록 갱신/undo 확인 — recManageBody delRecConfirm 테스트와 동일 패턴."
-  },
+  "cycle": 305,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 299,
-      "phase": "advance",
-      "timestamp": "2026-11-04T04:15:17.316Z",
-      "summary": "critique(cycle299) 계획대로 homeAlerts()/openSpendAnalysis()의 예산 이월(budgetCarryFor) 재계산을 캐시로 공유했다. budgetCarryFor(c,y,m,depth=0,cache=null)와 budgetForMonthWithCarry(c,y,m,depth=0,cache=null)에 선택적 cache(Map) 인자를 추가해 `${c}:${y}-${m}` 키로 재귀 체인을 메모이즈하고(cache 생략 시 기존과 100% 동일, spendTrend/incomeTrend의 cache 인자(cycle294)와 같은 하위호환 패턴), 재귀 호출에도 그대로 전달한다. totalBudgetSummary(rows,y,m,cache=null)도 같은 cache를 받아 budgetCarryFor에 넘긴다. homeAlerts()는 spendByCategory(TM.y,TM.m)를 한 번만 _spendTM에 담아 budgetOver(_bo)/budgetPaceWarn(_bpw) 필터 양쪽에 재사용하고, const _bwc=new Map()을 만들어 네 군데 budgetForMonthWithCarry 호출(필터 2곳+단일건 alert 생성 2곳)에 전부 넘긴다. openSpendAnalysis()도 const _bwc=new Map()을 만들어 totalBudgetSummary와 카테고리 행 루프(budgetForMonthWithCarry) 양쪽에 공유한다. 테스트 4건 추가(동등성, 캐시 재사용 시 중복호출 안 함, homeAlerts/openSpendAnalysis spy). 테스트 2678->2682 통과. APP_VERSION 1.47.343->1.47.344, sw.js CACHE v610->v611. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 300,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-05T00:12:32.773Z",
       "summary": "서브에이전트로 앱 전체를 재조사(최근 처리/보류된 항목 전부 제외 지시). 발견: 목표(goals) 관리 목록(goalsManageBody, 3541행)만 유일하게 row-acts에 직접 삭제 버튼이 없음 — 자산/반복거래/귀속/카테고리/자산수량로그/문의 등 다른 모든 관리 목록은 trash 버튼으로 즉시 삭제 가능(delRecConfirm 등과 동일 패턴). 삭제하려면 전체 수정 폼을 열고 맨 아래 del-link까지 가야 함. delGoal()은 이미 올바른 삭제 로직을 갖추고 있어 순수 UI 와이어링 공백. pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 304,
+      "phase": "advance",
+      "timestamp": "2026-11-05T01:15:00.000Z",
+      "summary": "critique(cycle304) 계획대로 목표(goals) 관리 목록에 직접 삭제 버튼을 추가했다. goalsManageBody()의 row-acts div(복제 버튼 옆)에 recManageBody의 delRecConfirm 버튼과 동일한 패턴으로 <button class='act-btn danger' aria-label='{name} 삭제' onclick=\"event.stopPropagation();delGoal('id')\">trash</button>를 추가했다. delGoal()은 이미 confirmSheet+톰스톤+undoToast+renderCurrent()를 갖추고 있어(openGoalForm의 del-link가 이미 써온 동일 함수) 새 코드는 행 UI 배선뿐이고 delGoal 자체나 refresh 로직은 수정하지 않았다. 테스트 2건 추가(stopPropagation 후 delGoal(id)만 호출/ackGoalAchieved로 전파 안 됨 확인, aria-label이 이름별로 구분됨 확인) — recManageBody delRecConfirm 테스트와 동일 패턴. 테스트 2767->2769 통과. APP_VERSION 1.47.353->1.47.354, sw.js CACHE v620->v621. node --check logic.js/sw.js, manifest.webmanifest JSON 유효성, index.html 인라인 스크립트 추출검사(기존과 동일한 1건의 기존 오탐만 재확인, 새 회귀 없음) 모두 통과. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

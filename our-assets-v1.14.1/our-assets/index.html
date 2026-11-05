@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.353';
+const APP_VERSION='1.47.354';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3560,7 +3560,7 @@ function goalsManageBody(qRaw){
      <div class="msub">${comma(p.cur)} / ${comma(p.target)}원 · ${p.pct}%${ownerBadge}</div>
      ${assetGone?'<div class="mini warn" style="margin-top:2px">연결된 자산이 삭제됐어요</div>':assetBroken?'<div class="mini warn" style="margin-top:2px">연결된 자산을 추적할 수 없어요</div>':hasUnknown?'<div class="mini warn" style="margin-top:2px">일부 미확인</div>':''}
      ${g.targetDate?`<div class="msub2">목표일 ${fmtDateFull(g.targetDate)}${overdue?' <span class="mini warn">지남</span>':''}</div>`:''}</div>
-    <div class="row-acts"><button type="button" class="act-btn" aria-label="${esc(g.name)} 복제" onclick="event.stopPropagation();duplicateGoal('${g.id}')">${svg('copy')}</button></div>
+    <div class="row-acts"><button type="button" class="act-btn" aria-label="${esc(g.name)} 복제" onclick="event.stopPropagation();duplicateGoal('${g.id}')">${svg('copy')}</button><button type="button" class="act-btn danger" aria-label="${esc(g.name)} 삭제" onclick="event.stopPropagation();delGoal('${g.id}')">${svg('trash')}</button></div>
     <div class="mc">${svg('chev')}</div></div>`;
  }).join('')}</div>`;
 }

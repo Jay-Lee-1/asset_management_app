@@ -4520,6 +4520,34 @@ test('[실행형] goalsManageBody: 빈 검색어는 전체(안 거른) 결과와
   sandbox.TODAY = '2026-01-01';
   assert.strictEqual(sandbox.goalsManageBody(''), sandbox.goalsManageBody('   '), '공백만 입력해도(trim 결과 빈 문자열) 빈 검색어와 동일하게 전체를 보여줘야 함');
 });
+/* 목표 관리 목록은 복제(duplicateGoal) 버튼은 행에 바로 있었지만 삭제는 행을 탭해 openGoalForm()
+ * 수정 화면까지 들어가 맨 아래 del-link를 눌러야만 할 수 있었다 — 자산/반복거래/귀속/카테고리 등
+ * 다른 모든 관리 목록은 row-acts에 trash 버튼으로 즉시 삭제가 가능한데 목표만 유일하게 없던 공백
+ * (app-evolve cycle304 critique → advance). delRecConfirm과 동일하게 event.stopPropagation() 후
+ * delGoal(id)만 부르는 act-btn을 복제 버튼 옆에 추가한다. delGoal()은 이미 confirmSheet+톰스톤+
+ * undoToast+renderCurrent()를 갖추고 있어(recManageBody의 trash 버튼과 같은 선례) 새 코드는 행
+ * UI 배선뿐이다. */
+test('[실행형] goalsManageBody: 각 행에 삭제 버튼이 있고, event.stopPropagation() 후 delGoal(id)만 호출한다(행 전체의 ackGoalAchieved로 전파되지 않음)', () => {
+  sandbox.DB = { goals: [{ id: 'g1', name: '비상금', targetAmount: 5000000, targetDate: null }], nwHistory: [] };
+  sandbox.TODAY = '2026-01-01';
+  const html = sandbox.goalsManageBody('');
+  assert.ok(html.includes(`onclick="event.stopPropagation();delGoal('g1')"`), '삭제 버튼은 stopPropagation 후 delGoal(id)만 호출해야 함(행 클릭의 ackGoalAchieved로 전파되면 안 됨)');
+  assert.ok(html.includes('aria-label="비상금 삭제"'), '삭제 버튼 aria-label도 복제 버튼과 동일하게 이름으로 구분돼야 함');
+  assert.ok(html.includes('act-btn danger'), '삭제 버튼은 다른 danger 삭제 버튼(delRecConfirm 등)과 동일한 스타일(act-btn danger)을 써야 함');
+});
+test('[실행형] goalsManageBody: 같은 이름이 아닌 목표 두 건은 삭제 버튼 aria-label도 서로 구분된다', () => {
+  sandbox.DB = {
+    goals: [
+      { id: 'g1', name: '내 집 마련', targetAmount: 100000000, targetDate: null },
+      { id: 'g2', name: '비상금', targetAmount: 5000000, targetDate: null },
+    ],
+    nwHistory: [],
+  };
+  sandbox.TODAY = '2026-01-01';
+  const html = sandbox.goalsManageBody('');
+  assert.ok(html.includes('aria-label="내 집 마련 삭제"'));
+  assert.ok(html.includes('aria-label="비상금 삭제"'));
+});
 (() => {
   const origSetTimeout = sandbox.setTimeout, origClearTimeout = sandbox.clearTimeout, orig$ = sandbox.$;
   function restore() { sandbox.setTimeout = origSetTimeout; sandbox.clearTimeout = origClearTimeout; sandbox.$ = orig$; }
