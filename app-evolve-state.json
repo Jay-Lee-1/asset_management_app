@@ -1,15 +1,8 @@
 {
   "cycle": 308,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 303,
-      "phase": "review",
-      "timestamp": "2026-11-04T19:08:06.000Z",
-      "summary": "cycle303 develop 커밋(4b0691f) 검토 — addSaving 배선이 addIncome/addTransfer와 완전히 같은 패턴임을 diff로 확인, catListOf('saving')이 기존 분기라 추가 로직 불필요함도 재확인. node test/run.js 2754/2754 통과. 실제 버그 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 303,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-05T14:14:20.526Z",
       "summary": "하단 네비(#nav)가 twStage 오버레이 밖의 실제 DOM이라 튜토리얼 중에도 늘 클릭 가능해, 메뉴→귀속 관리로 들어가면 saveAsset/recSave/saveGoal(cycle307) 등 다른 모든 저장 경로와 달리 addOwner/delOwner/doRenameOwner에만 twGuard가 없음을 발견 — delOwner/doRenameOwner는 goal.owner까지 건드리는 더 무거운 변이인데도 가드가 없었다. 세 함수 맨 앞에 if(twGuard())return; 한 줄씩 추가(다른 가드 함수들과 동일 위치·패턴, delOwner는 confirmSheet를 띄우기 전에 막아 delGoal과 동일하게 동작). 회귀 테스트 3건 추가(addOwner/delOwner/doRenameOwner 각각 튜토리얼 중 호출해도 DB.owners가 그대로이고 delOwner는 확인 시트조차 안 띄움을 확인) — delGoal의 기존 twGuard 테스트와 동일 패턴. 테스트 2826->2829 통과. node --check logic.js/sw.js, manifest.webmanifest JSON 유효성, index.html 인라인 스크립트 추출검사(기존과 동일한 1건의 기존 오탐만 재확인, 새 회귀 없음) 모두 통과. APP_VERSION 1.47.361->1.47.362, sw.js CACHE v628->v629.",
+      "commit": null
+    },
+    {
+      "cycle": 308,
+      "phase": "review",
+      "timestamp": "2026-11-05T15:08:03.190Z",
+      "summary": "cycle308 develop 커밋(914f9de)을 검토 — addOwner/delOwner/doRenameOwner에 추가된 if(twGuard())return; 가드가 saveGoal/delGoal/deleteGoalsUndo(cycle307), doBulkGoalOwnerMove(cycle305) 등 기존 가드 함수들과 완전히 동일한 위치(함수 맨 앞)·형태임을 diff로 재확인. delOwner는 delGoal과 동일하게 confirmSheet를 띄우기 전에 가드가 먼저 실행돼 튜토리얼 중엔 확인 시트조차 안 뜸을 테스트로 재확인. 테스트 3건(addOwner/delOwner/doRenameOwner)이 기존 newOwnerValue/renameOwnerValue sandbox mock 패턴을 그대로 재사용해 일관성 있음. node test/run.js 2829/2829 통과, node --check logic.js/sw.js, manifest.webmanifest JSON 유효성 통과. 실제 버그 없음(state.json만 커밋).",
       "commit": null
     }
   ]
