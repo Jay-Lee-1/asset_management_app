@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.363';
+const APP_VERSION='1.47.364';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -7290,7 +7290,7 @@ function openCatManage(kind,keep){
   <div class="add-inline"><button class="emo-pick ${avCls}" onclick="pickCatAddIcon('${k}')" aria-label="아이콘 선택">${svg(trigIcon,20)}</button><div class="field-clear"><input id="newCat" placeholder="새 ${CAT_LABEL[k]} 카테고리" value="${catAddDraft.name.replace(/"/g,'&quot;')}" oninput="catAddDraft.name=this.value" onkeydown="if(event.key==='Enter'&&!event.isComposing)addCat('${k}')"><button type="button" class="fc-x" aria-label="카테고리 이름 지우기" onclick="clrInput('newCat')">✕</button></div><button onclick="addCat('${k}')" aria-label="${CAT_LABEL[k]} 카테고리 추가">${svg('plus')}</button></div>
   <div style="height:14px"></div><button class="btn btn-primary" onclick="closeSheet()">완료</button>`);
 }
-function addCat(k){const v=(($('newCat')&&$('newCat').value)||catAddDraft.name||'').trim().normalize('NFC');if(!v)return;
+function addCat(k){if(twGuard())return;const v=(($('newCat')&&$('newCat').value)||catAddDraft.name||'').trim().normalize('NFC');if(!v)return;
  const dup=DB.categories[k].find(c=>normName(c)===normName(v));
  if(dup){toast(dup===v?'이미 있는 카테고리예요':`비슷한 카테고리가 있어요: ${dup}`);return}
  DB.catIcon=DB.catIcon||{};DB.catVar=DB.catVar||{};DB.budgetHistory=DB.budgetHistory||{};DB.catBudgetRollover=DB.catBudgetRollover||{};
@@ -7319,7 +7319,7 @@ function delCat(k,i){const c=DB.categories[k][i];
  const recs=activeRecsForCat(k,c);
  const msg=`'${esc(c)}' 카테고리를 삭제할까요? 기존 내역의 카테고리명은 그대로 남아요.`+(recs.length?` 연결된 반복거래 ${recs.length}개도 함께 비활성화돼요.`:'');
  confirmSheet('카테고리 삭제',msg,'삭제',()=>{doDeleteCat(k,i)});}
-function doDeleteCat(k,i){const c=DB.categories[k][i];
+function doDeleteCat(k,i){if(twGuard())return;const c=DB.categories[k][i];
  if(k==='income'&&c===ADJUST_CAT){toast('자동으로 생성되는 카테고리라 삭제할 수 없어요');return}
  if(DB.categories[k].length<=1){toast('카테고리는 최소 1개가 필요해요');return} /* 마지막 카테고리 삭제 방지 (delOwner와 동일 패턴): 비면 openTxSheet/saveTx가 undefined 카테고리로 거래를 만들 수 있음 */
  DB.catIcon=DB.catIcon||{};DB.catVar=DB.catVar||{};DB.budgetHistory=DB.budgetHistory||{};DB.catBudgetRollover=DB.catBudgetRollover||{};
@@ -7351,7 +7351,7 @@ function renameCatSheet(k,i,keep){const cur=DB.categories[k][i];
   <div class="cat-edit-row"><button class="emo-pick lg ${avCls}" onclick="pickCatRenameIcon('${k}',${i})" aria-label="아이콘 선택">${svg(catRenameDraft.icon||'tag',24)}</button><div class="field-clear"><input id="renameCat" value="${catRenameDraft.name.replace(/"/g,'&quot;')}" oninput="catRenameDraft.name=this.value" placeholder="카테고리 이름" onkeydown="if(event.key==='Enter'&&!event.isComposing)doRenameCat('${k}',${i})"><button type="button" class="fc-x" aria-label="카테고리 이름 지우기" onclick="clrInput('renameCat')">✕</button></div></div>
   <div class="two-btn"><button class="btn btn-soft cancel" onclick="openCatManage('${k}')">취소</button><button class="btn btn-primary" onclick="doRenameCat('${k}',${i})">저장</button></div>`);
  setTimeout(()=>{const el=$('renameCat');el&&el.focus()},300)}
-function doRenameCat(k,i){const v=((catRenameDraft.name!=null?catRenameDraft.name:($('renameCat')&&$('renameCat').value))||'').trim().normalize('NFC');if(!v){toast('이름을 입력해 주세요');return}
+function doRenameCat(k,i){if(twGuard())return;const v=((catRenameDraft.name!=null?catRenameDraft.name:($('renameCat')&&$('renameCat').value))||'').trim().normalize('NFC');if(!v){toast('이름을 입력해 주세요');return}
  const old=DB.categories[k][i];
  if(k==='income'&&old===ADJUST_CAT){toast('자동으로 생성되는 카테고리라 이름을 바꿀 수 없어요');return}
  if(v!==old){const dup=DB.categories[k].find(c=>c!==old&&normName(c)===normName(v));if(dup){toast(dup===v?'이미 있는 카테고리예요':`비슷한 카테고리가 있어요: ${dup}`);return}}
@@ -7423,7 +7423,7 @@ function confirmCatMerge(k,i,to){
  * 안 되므로 logic.js의 mergeBudgetHistory를 같은 key(toName)로 재사용해 from 월(from)/toName의
  * from(월) 키 유니온으로 합치고, 같은 달에 둘 다 있으면 mergeBudgetHistory의 "local 우선" 규칙을
  * 그대로 써 대상(toName) 쪽 값이 이긴다. */
-function mergeCatInto(k,i,toName){
+function mergeCatInto(k,i,toName){if(twGuard())return;
  const from=DB.categories[k][i];
  if(from==null||from===toName||!DB.categories[k].includes(toName))return;
  if(k==='income'&&(from===ADJUST_CAT||toName===ADJUST_CAT)){toast('자동으로 생성되는 카테고리는 합칠 수 없어요');return}

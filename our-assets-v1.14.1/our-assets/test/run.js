@@ -3302,6 +3302,45 @@ test('doRenameOwner: 튜토리얼 모드 중에는 twGuard가 막아서 실제�
   assert.deepStrictEqual(sandbox.DB.owners, ['나', '아내'], '튜토리얼 중에는 이름 변경이 막혀야 함');
   sandbox.TWi = -1;
 });
+/* app-evolve cycle309 develop가 발견한 공백의 회귀 테스트: addOwner/delOwner/doRenameOwner(cycle308),
+ * saveGoal/delGoal/deleteGoalsUndo(cycle307) 등 다른 모든 저장 경로와 달리 카테고리 관리의
+ * addCat/doDeleteCat/doRenameCat/mergeCatInto만 twGuard가 없어 튜토리얼 샌드박스 약속이
+ * 카테고리 기능 전체에서 깨져 있었다. */
+test('addCat: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 추가되지 않는다', () => {
+  sandbox.TWi = 0;
+  sandbox.DB = { categories: { expense: ['식비'] }, catIcon: {}, catVar: {}, txns: [], recurrences: [] };
+  sandbox.catAddDraft = { name: '커피', icon: '' };
+  sandbox.addCat('expense');
+  assert.deepStrictEqual(sandbox.DB.categories.expense, ['식비'], '튜토리얼 중에는 추가가 막혀야 함');
+  sandbox.TWi = -1;
+});
+test('doDeleteCat: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 삭제되지 않는다', () => {
+  sandbox.TWi = 0;
+  sandbox.DB = { categories: { expense: ['식비', '외식비'] }, catIcon: {}, catVar: {}, txns: [], recurrences: [] };
+  sandbox.doDeleteCat('expense', 1);
+  assert.deepStrictEqual(sandbox.DB.categories.expense, ['식비', '외식비'], '튜토리얼 중에는 삭제가 막혀야 함');
+  sandbox.TWi = -1;
+});
+test('doRenameCat: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 이름이 바뀌지 않는다', () => {
+  sandbox.TWi = 0;
+  sandbox.DB = { categories: { expense: ['식비'] }, catIcon: {}, catVar: {}, txns: [], recurrences: [] };
+  sandbox.catRenameDraft = { name: '외식비', icon: '' };
+  sandbox.doRenameCat('expense', 0);
+  assert.deepStrictEqual(sandbox.DB.categories.expense, ['식비'], '튜토리얼 중에는 이름 변경이 막혀야 함');
+  sandbox.TWi = -1;
+});
+test('mergeCatInto: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 합쳐지지 않는다', () => {
+  sandbox.TWi = 0;
+  sandbox.DB = {
+    categories: { expense: ['커피', '식비'] }, catIcon: {}, catVar: {}, budgetHistory: {}, catBudgetRollover: {},
+    txns: [{ id: 't1', type: 'expense', category: '커피', memo: '커피' }],
+    recurrences: [],
+  };
+  sandbox.mergeCatInto('expense', 0, '식비');
+  assert.deepStrictEqual(sandbox.DB.categories.expense, ['커피', '식비'], '튜토리얼 중에는 합치기가 막혀야 함');
+  assert.strictEqual(sandbox.DB.txns[0].category, '커피', '튜토리얼 중에는 거래의 category도 그대로여야 함');
+  sandbox.TWi = -1;
+});
 
 /* ---------- ownerChipClass: 귀속 칩(chipmini) 색 클래스는 이름이 아니라 DB.owners 안 위치로 정해진다
  * (app-evolve cycle190 develop) — 예전엔 CSS가 .own-나/.own-배우자/.own-공용처럼 기본 3귀속
