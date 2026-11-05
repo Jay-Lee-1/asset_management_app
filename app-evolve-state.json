@@ -1,15 +1,8 @@
 {
   "cycle": 308,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 303,
-      "phase": "develop",
-      "timestamp": "2026-11-04T18:30:00.000Z",
-      "summary": "manifest.webmanifest shortcuts가 지출/수입/이체 3종만 있고 저축(saving)이 빠져 있던 공백을 메움 — parseShortcutAction 화이트리스트에 addSaving 추가, runShortcutAction에 openTxSheet()+txType('saving') 분기 추가, manifest shortcuts에 4번째 항목 추가. 테스트 2건 추가(2753->2754). APP_VERSION 1.47.350->1.47.351, sw.js CACHE v617->v618.",
-      "commit": null
-    },
     {
       "cycle": 303,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-05T13:10:00.000Z",
       "summary": "critique(cycle307) 계획대로 notifyAlertInfo()에 quick/quickMulti case 2개를 confirm/confirmMulti 바로 아래 추가했다. quick은 confirm과 동일하게 key에 TODAY를 넣어(`quick:${TODAY}:${al.recId}:${al.date}`) 날이 바뀌면 다시 알리고, quickMulti도 confirmMulti와 동일하게 `quickMulti:${TODAY}:${al.count}`로 날짜+건수 기반 재알림(월 단위가 아니라 매일 재알림 패턴 확정 — confirmMulti와 동일 성격이라 판단). title은 '실제 금액 입력이 필요해요'로 통일, quick의 body는 al.name을 그대로 노출. notifyAlertInfo 상단 설계 의도 주석에 '변동금액 입력 대기(quick)'를 포함 목록에 명시적으로 추가해 문서화했다. test/run.js에 confirm/confirmMulti의 기존 dedupe-key 테스트와 동일한 패턴으로 quick/quickMulti 테스트 3건 추가(즉시 알림 대상 확인, TODAY 재알림, 건수 변화 재알림+pickNotifyAlerts 통합 검증) — 2823->2826 통과. node --check logic.js/sw.js, manifest.webmanifest JSON 유효성, index.html 인라인 스크립트 추출검사(기존과 동일한 1건의 기존 오탐만 재확인, 새 회귀 없음) 모두 통과. APP_VERSION 1.47.360->1.47.361, sw.js CACHE v627->v628. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 308,
+      "phase": "develop",
+      "timestamp": "2026-11-05T14:14:20.526Z",
+      "summary": "하단 네비(#nav)가 twStage 오버레이 밖의 실제 DOM이라 튜토리얼 중에도 늘 클릭 가능해, 메뉴→귀속 관리로 들어가면 saveAsset/recSave/saveGoal(cycle307) 등 다른 모든 저장 경로와 달리 addOwner/delOwner/doRenameOwner에만 twGuard가 없음을 발견 — delOwner/doRenameOwner는 goal.owner까지 건드리는 더 무거운 변이인데도 가드가 없었다. 세 함수 맨 앞에 if(twGuard())return; 한 줄씩 추가(다른 가드 함수들과 동일 위치·패턴, delOwner는 confirmSheet를 띄우기 전에 막아 delGoal과 동일하게 동작). 회귀 테스트 3건 추가(addOwner/delOwner/doRenameOwner 각각 튜토리얼 중 호출해도 DB.owners가 그대로이고 delOwner는 확인 시트조차 안 띄움을 확인) — delGoal의 기존 twGuard 테스트와 동일 패턴. 테스트 2826->2829 통과. node --check logic.js/sw.js, manifest.webmanifest JSON 유효성, index.html 인라인 스크립트 추출검사(기존과 동일한 1건의 기존 오탐만 재확인, 새 회귀 없음) 모두 통과. APP_VERSION 1.47.361->1.47.362, sw.js CACHE v628->v629.",
       "commit": null
     }
   ]

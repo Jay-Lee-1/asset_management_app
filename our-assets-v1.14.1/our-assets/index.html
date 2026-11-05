@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.361';
+const APP_VERSION='1.47.362';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -4835,10 +4835,10 @@ function ownerChipClass(owner){
  const idx=(DB.owners||[]).indexOf(owner);
  return 'own-'+(idx>=0?idx%5:0);
 }
-function addOwner(){const v=$('newOwner').value.trim().normalize('NFC');if(!v)return;
+function addOwner(){if(twGuard())return;const v=$('newOwner').value.trim().normalize('NFC');if(!v)return;
  if(isReservedOwnerName(v)){toast("'전체'는 모든 귀속을 보는 이름이라 귀속 이름으로 쓸 수 없어요");return} /* '전체'/'all' 센티넬 보호(logic.js isReservedOwnerName 주석 참고) */
  const dup=DB.owners.find(o=>normName(o)===normName(v));if(dup){toast(dup===v?'이미 있는 귀속이에요':`비슷한 귀속이 있어요: ${dup}`);return}DB.owners.push(v);DB.deletedIds=DB.deletedIds||{};delete DB.deletedIds[ownerTombKey(v)];save();openOwnerManage();}
-function delOwner(i){const o=DB.owners[i];if(DB.owners.length<=1){toast('귀속은 최소 1개가 필요해요');return}
+function delOwner(i){if(twGuard())return;const o=DB.owners[i];if(DB.owners.length<=1){toast('귀속은 최소 1개가 필요해요');return}
  const used=DB.assets.filter(a=>a.owner===o).length;
  const usedGoals=(DB.goals||[]).filter(g=>g.owner===o).length; /* goalOwnerEff()는 사라진 owner를 'all'로 조용히 대체해 크래시는 막지만, 자산이 0개라 used=0인 채로 goal.owner만 남아있는 귀속은 그대로 삭제가 돼 목표가 말없이 전체 목표로 바뀌던 문제(index.html:3011 주석 참고) — doRenameOwner가 goal.owner를 따라가며 보존하는 것과 달리 delOwner엔 이 가드가 없었음 */
  if(used||usedGoals){const parts=[];if(used)parts.push(`자산 ${used}개`);if(usedGoals)parts.push(`목표 ${usedGoals}개`);toast(`'${o}' 귀속을 쓰는 ${parts.join(', ')}가 있어요`);return}
@@ -4853,7 +4853,7 @@ function renameOwnerSheet(i){const cur=DB.owners[i];
   <div class="field"><div class="field-clear"><input id="renameOwner" aria-label="귀속 이름" value="${esc(cur)}" onkeydown="if(event.key==='Enter'&&!event.isComposing)doRenameOwner(${i})"><button type="button" class="fc-x" aria-label="이름 지우기" onclick="clrInput('renameOwner')">✕</button></div></div>
   <div class="two-btn"><button class="btn btn-soft cancel" onclick="openOwnerManage()">취소</button><button class="btn btn-primary" onclick="doRenameOwner(${i})">저장</button></div>`);
  setTimeout(()=>{const el=$('renameOwner');el&&el.focus()},300)}
-function doRenameOwner(i){const v=$('renameOwner').value.trim().normalize('NFC');if(!v){toast('이름을 입력해 주세요');return}
+function doRenameOwner(i){if(twGuard())return;const v=$('renameOwner').value.trim().normalize('NFC');if(!v){toast('이름을 입력해 주세요');return}
  const old=DB.owners[i];if(v===old){openOwnerManage();return}
  if(isReservedOwnerName(v)){toast("'전체'는 모든 귀속을 보는 이름이라 귀속 이름으로 쓸 수 없어요");return} /* addOwner와 동일한 '전체'/'all' 센티넬 보호 */
  const dup=DB.owners.find((o,oi)=>oi!==i&&normName(o)===normName(v));

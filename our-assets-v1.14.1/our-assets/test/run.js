@@ -3273,6 +3273,35 @@ test('addOwner: 이미 톰스톤된(지워진) 이름을 다시 추가하면 톰
   assert.deepStrictEqual(sandbox.DB.owners, ['나', '아내']);
   assert.strictEqual(sandbox.ownerTombKey('아내') in sandbox.DB.deletedIds, false, '재추가한 이름의 톰스톤은 지워져야 다음 병합에서 되살아남');
 });
+/* app-evolve cycle308 develop가 발견한 공백의 회귀 테스트: 하단 네비(#nav)는 twStage 오버레이 밖의
+ * 실제 DOM이라 튜토리얼 중에도 항상 클릭 가능해, 메뉴 → 귀속 관리로 들어가면 saveAsset/recSave/
+ * saveGoal(cycle307) 등 다른 모든 저장 경로와 달리 addOwner/delOwner/doRenameOwner만 twGuard가
+ * 없어 튜토리얼 샌드박스 약속이 깨져 있었다. */
+test('addOwner: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 추가되지 않는다', () => {
+  sandbox.TWi = 0;
+  sandbox.DB = { owners: ['나'] };
+  sandbox.newOwnerValue = '아내';
+  sandbox.addOwner();
+  assert.deepStrictEqual(sandbox.DB.owners, ['나'], '튜토리얼 중에는 추가가 막혀야 함');
+  sandbox.TWi = -1;
+});
+test('delOwner: 튜토리얼 모드 중에는 twGuard가 막아서 확인 시트조차 띄우지 않는다(delGoal과 동일 패턴)', () => {
+  sandbox.TWi = 0;
+  sandbox.DB = { owners: ['나', '아내'], assets: [] };
+  sandbox.confirmSheetCalls = [];
+  sandbox.delOwner(1);
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0, '튜토리얼 중에는 확인 시트도 안 띄워야 함');
+  assert.deepStrictEqual(sandbox.DB.owners, ['나', '아내']);
+  sandbox.TWi = -1;
+});
+test('doRenameOwner: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 이름이 바뀌지 않는다', () => {
+  sandbox.TWi = 0;
+  sandbox.DB = { owners: ['나', '아내'], assets: [], goals: [] };
+  sandbox.renameOwnerValue = '아내2';
+  sandbox.doRenameOwner(1);
+  assert.deepStrictEqual(sandbox.DB.owners, ['나', '아내'], '튜토리얼 중에는 이름 변경이 막혀야 함');
+  sandbox.TWi = -1;
+});
 
 /* ---------- ownerChipClass: 귀속 칩(chipmini) 색 클래스는 이름이 아니라 DB.owners 안 위치로 정해진다
  * (app-evolve cycle190 develop) — 예전엔 CSS가 .own-나/.own-배우자/.own-공용처럼 기본 3귀속
