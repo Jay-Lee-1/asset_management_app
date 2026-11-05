@@ -1,15 +1,8 @@
 {
   "cycle": 310,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 305,
-      "phase": "develop",
-      "timestamp": "2026-11-05T02:12:35.974Z",
-      "summary": "sanitizeBackup()이 반복거래의 splits(분할 템플릿)/edits[date].splits(간편수정 오버라이드)를 전혀 검증하지 않던 공백 발견 — 바로 위 txns 블록은 t.splits를 cycle198부터 검증하는데, cycle282/292에서 신설된 반복거래 분할 자매 필드는 빠져 있었다. expandRec()이 손상된 r.splits를 매 회차 가상 인스턴스에 그대로 실어 splitLines() 기반 예산 집계에 NaN을 반복 전파하므로(txns 1건보다 파급력이 큼), txns와 동일한 검증(category 없는 split 제거, amount 클램프, 2개 미만이거나 합계 불일치면 splits 전체 삭제)을 d.splits와 e.splits에 각각 적용. e.splits는 기준 금액을 e.amount!=null?e.amount:d.amount로(recSave()의 폴백과 동일). 테스트 5건 추가. 테스트 2769->2774 통과. node --check logic.js/sw.js, manifest.webmanifest JSON 유효성, index.html 인라인 스크립트 추출검사(기존과 동일한 1건의 기존 오탐만 재확인, 새 회귀 없음) 모두 통과. APP_VERSION 1.47.354->1.47.355, sw.js CACHE v621->v622.",
-      "commit": null
-    },
     {
       "cycle": 305,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-11-05T21:18:18.512Z",
       "summary": "critique(cycle309) 계획대로 귀속(owner) 관리에 합치기(merge) 기능을 추가했다. openOwnerManage()의 행 액션에 openOwnerMergePicker(i)를 추가(DB.owners.length>1일 때만, mergeCatInto와 동일한 svg('merge') 아이콘 재사용)했고, openOwnerPicker()에 exclude 옵션을 신설해(catFilteredGrid의 exclude와 동일한 역할, 단 인덱스 기반 pkPickOwner(i)는 그대로 둠) 자기 자신을 대상 목록에서 뺐다. confirmOwnerMerge(i,to)는 mergeCatInto의 확인 시트 패턴을 따라 영향받는 자산/목표 건수를 안내한다. mergeOwnerInto(i,toName)는 doRenameOwner의 마이그레이션(DB.assets/DB.goals owner 재할당, ST.assetOwner/plan.owner/spendOwner/hist.owner 갱신)을 그대로 재사용하면서 DB.nwHistory[].byOwner 병합 규칙을 새로 정했다 — byOwner[owner]={ta,td}는 totalAssets/ownerAssets와 같은 단위의 금액 총계라서(예산 한도처럼 '값 중 하나를 고르는' 설정이 아님) mergeBudgetHistory의 local-wins 대신 같은 날짜에 양쪽 다 있으면 ta/td를 단순 합산하기로 결정(mergeAssetInto가 balance형 자산 금액을 그냥 더하는 것과 동일한 이유), 한쪽에만 있으면 그대로 옮긴다. splice+톰스톤+undoToast 완전복원 구조는 mergeCatInto/delOwner와 동일. 테스트 17건 추가(기본 합치기, ST 필터 4종 이동, nwHistory byOwner 3가지 케이스(양쪽 합산/from만/to만/byOwner 없는 레코드), 톰스톤, 귀속 1개뿐일 때 안전장치, undo 전체복원, twGuard 차단, confirmOwnerMerge 영향 건수 안내 2건, openOwnerMergePicker exclude, openOwnerManage 합치기 버튼 렌더링 2건) — 2839->2856 통과. 구현 중 발견: nwHistory byOwner 병합 테스트에서 vm 컨텍스트 안에서 새로 만든 객체 리터럴이 테스트 파일의 Object.prototype과 달라 deepStrictEqual이 내용이 같아도 실패하는 realm 문제를 만나, mergeCatInto의 budgetHistory 테스트와 동일한 JSON.parse(JSON.stringify(...)) 패턴으로 해결(테스트 전용 이슈, 앱 코드는 무관). node --check logic.js/sw.js, manifest.webmanifest JSON 유효성, index.html 인라인 스크립트 추출검사(기존과 동일한 1건의 기존 오탐만 재확인, 새 회귀 없음) 모두 통과. APP_VERSION 1.47.364->1.47.365, sw.js CACHE v631->v632. pending_advance_plan null로 비움.",
       "commit": null
+    },
+    {
+      "cycle": 310,
+      "phase": "develop",
+      "timestamp": "2026-11-05T22:12:33.000Z",
+      "summary": "mergeAssetInto()(cycle297 자산 합치기)가 실제로 자산/거래/반복거래를 저장·변경하는데도 saveGoal/addOwner/mergeOwnerInto(cycle307-309)·mergeCatInto(cycle309) 등 다른 모든 저장 경로와 달리 twGuard()가 없던 공백 발견 — 함수 맨 앞에 if(twGuard())return; 한 줄 추가, mergeOwnerInto의 기존 twGuard 테스트와 동일 패턴으로 회귀 테스트 1건 추가. 테스트 2851->2852 통과. node --check logic.js/sw.js, manifest.webmanifest JSON 유효성 통과. APP_VERSION 1.47.365->1.47.366, sw.js CACHE v632->v633.",
+      "commit": "6b5d9dd60c43e7f17d66b3bd2833a80280525c6e"
     }
   ]
 }
