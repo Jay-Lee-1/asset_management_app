@@ -1,19 +1,8 @@
 {
-  "cycle": 306,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "반복 내역의 개별 회차 간편 수정 시트에 영수증 사진 첨부 기능 추가(scope='one' 한정)",
-    "why": "일반 거래(txDraft)는 txPhotoFieldHTML(index.html:5386)·txPhotoPick/txPhotoRemove로 영수증 사진 첨부·리사이즈·압축·미리보기까지 완결된 파이프라인을 갖고 있다. 반면 반복 내역의 '이 내역만/이후 모두/전체' 간편 수정 시트(renderTxSheet의 window._recCtx 분기, 약 5161-5176행)는 금액과(분할이 있으면) 분할만 입력받고 txPhotoFieldHTML 호출 자체가 없다. recSave()(5573-5615)도 scope='one'일 때 edits[date]에 amount/memo/splits만 담고 photo 필드는 edit 객체·txDraft 초기화(5566) 어디에도 없다. 템플릿 생성 단계에서 반복(rpt) 켜짐이면 사진 필드를 숨기는 것(5216)과는 별개로, 이미 존재하는 반복 내역의 특정 회차를 간편 수정하는 시트에는 애초에 사진 필드가 작성된 적이 없다. 월세·공과금·구독처럼 매달 반복되면서 영수증/고지서를 보관할 실익이 가장 큰 항목들만 영수증 사진을 못 붙이는 비대칭이 생긴다.",
-    "approach": "범위를 scope='one'(이 회차만 수정)으로 한정한다. ① recCtx로 진입할 때(5563-5569 근방) ed.photo!=null이면 txDraft.photo에 실어 폼에 기존 사진이 보이게 하고 없으면 null. ② renderTxSheet의 recCtx 분기(5162-5176 근방)에 txPhotoFieldHTML(d)를 추가해 기존 txPhotoPick/txPhotoRemove(이미 txDraft를 그대로 다루므로 재사용만 하면 됨)를 그대로 쓴다. ③ recSave() scope='one' 블록(5592-5594 근방)에서 d.photo가 있으면 edit.photo=d.photo, 사용자가 기존 사진을 지웠다면(이전 ed.photo가 있었는데 d.photo가 falsy) edit에서 photo를 제거하도록 splits와 같은 '있을 때만 덮어씀' 원칙을 photo의 추가/삭제 두 경우 모두에 맞게 적용한다. 'future'/'all' 스코프는 영수증이 회차마다 다른 문서라는 성격상 이번 범위에서 제외(향후 필요하면 별도 검토). CSV/백업 내보내기는 이미 r.edits 전체를 그대로 싣는 구조라 별도 배선 불필요."
-  },
+  "cycle": 307,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 301,
-      "phase": "advance",
-      "timestamp": "2026-11-04T12:29:02.527Z",
-      "summary": "critique(cycle301) 계획대로 반복 내역 관리 목록에 선택모드(ST.recSel)를 추가해 일괄 삭제+일괄 일시중지/재시작을 지원한다. bulkRecActiveTargets/doBulkRecActive/recToggleSel/recSelAll/recDelSel/recActiveSel을 자산 선택모드와 동일 패턴으로 신설, activeSel/updateSelBottom에 recSel 분기 추가. go(tab)/closeSheet() 양쪽에 ST.recSel 리셋 추가(구현 중 필요해 추가). 테스트 29건 추가. 테스트 2709->2738 통과. APP_VERSION 1.47.347->1.47.348, sw.js CACHE v614->v615. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 302,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-05T08:30:00.000Z",
       "summary": "서브에이전트로 앱 전체를 재조사(cycle301-306 처리/보류 항목 전부 제외 지시). 발견: 반복 내역의 개별 회차 간편 수정(scope='one') 시트에만 영수증 사진 첨부 기능이 완전히 빠져 있음 — 일반 거래는 txPhotoFieldHTML/txPhotoPick/txPhotoRemove로 완결된 파이프라인을 갖췄는데(5386행), renderTxSheet의 recCtx 분기(5162-5176)엔 호출 자체가 없고 recSave()도 photo 필드를 전혀 다루지 않음. 실제 코드 줄번호(5161,5216,5386,5568,5573)를 grep으로 재확인함. 월세·공과금·구독처럼 반복되면서 영수증 보관 실익이 큰 항목만 사진을 못 붙이는 비대칭. pending_advance_plan에 저장(scope='one' 한정, future/all은 범위 밖). 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 306,
+      "phase": "advance",
+      "timestamp": "2026-11-05T09:14:36.384Z",
+      "summary": "critique(cycle306) 계획대로 반복 내역의 개별 회차 간편 수정 시트(scope='one')에 영수증 사진 첨부를 추가했다. recApply()의 txDraft 구성에 photo:ed.photo!=null?ed.photo:null을 추가하고, renderTxSheet()의 rc 분기에 rc.scope==='one'일 때만 txPhotoFieldHTML(d)를 그리도록 추가(future/all은 recSave가 photo를 저장할 곳이 없어 제외). recSave() scope='one' 블록에 if(d.photo)edit.photo=d.photo를 추가 — edit 객체를 매번 새로 만드는 기존 구조 덕분에 splits와 동일한 '있을 때만 덮어씀' 원칙이 사진 삭제(photo falsy)에도 자연히 적용됨(별도 delete 분기 불필요). expandRec()의 가상 인스턴스에도 photo:ed.photo!=null?ed.photo:null을 추가해 txRowCore의 t.photo 체크(일반 거래와 공유하는 썸네일 렌더링 경로)가 반복 내역에서도 그대로 동작하게 함. 구현 중 발견: doExport()의 copyFallback이 '복사 경로에서 사진 제외' 분기를 열지 결정하는 photoCount가 DB.txns만 셌다 — 반복 내역 사진만 있고 일반 거래 사진이 없으면 photoCount=0이라 redactTxnPhotos(이미 키 이름만 보고 DB 전체를 재귀 redact하므로 그 자체는 올바름) 분기를 건너뛰어, 그 사진이 포함된 원본이 경고 없이 그대로 클립보드에 복사되는 공백이었다 — DB.recurrences의 모든 edits를 모아 txnPhotoCount에 더하도록 고쳤다(계획엔 없었지만 사진 필드를 recurrences에 추가하는 이 cycle의 직접적인 결과라 같은 cycle에서 수정). 테스트 13건 추가: recApply/renderTxSheet/recSave 영수증 사진 7건(scope='one' 추가/삭제/undo, future·all 제외 확인 양쪽), expandRec photo 필드 2건, doExport photoCount 소스 검증 1건, redactTxnPhotos가 recurrences.edits도 재귀적으로 redact하는지 회귀 가드 1건, scope='future'/'all' 무시 확인 1건(중복 집계) — 2809->2820 통과. node --check logic.js/sw.js, manifest.webmanifest JSON 유효성, index.html 인라인 스크립트 추출검사(기존과 동일한 1건의 기존 오탐만 재확인, 새 회귀 없음) 모두 통과. APP_VERSION 1.47.358->1.47.359, sw.js CACHE v625->v626. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

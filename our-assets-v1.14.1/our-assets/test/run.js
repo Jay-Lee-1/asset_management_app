@@ -11459,6 +11459,85 @@ test("recApply: splits가 없는 회차를 열면 txDraft.splits는 undefined로
   sandbox.recApply('r1', '2026-02-05', 'edit', 'one');
   assert.strictEqual(sandbox.txDraft.splits, undefined);
 });
+/* ---------- recApply/renderTxSheet/recSave: 반복 내역 간편 수정(scope='one')에 영수증 사진 첨부
+ * (app-evolve cycle306 critique → advance) ----------
+ * 일반 거래는 txPhotoFieldHTML/txPhotoPick/txPhotoRemove로 완결된 영수증 사진 파이프라인을 갖췄는데,
+ * 반복 내역의 특정 회차만 고치는 간편 수정 시트엔 애초에 그 필드 자체가 없었다(recApply가 txDraft에
+ * photo를 싣지 않고, renderTxSheet의 rc 분기도 txPhotoFieldHTML을 부르지 않고, recSave도 photo를
+ * 전혀 다루지 않음). 월세·공과금·구독처럼 매달 반복되면서 영수증 보관 실익이 가장 큰 항목만 사진을
+ * 못 붙이는 비대칭을 메운다. 범위는 scope='one'으로 한정한다(future/all은 회차마다 다른 영수증
+ * 문서라는 성격상 제외) — splits와 달리 recSave future/all 분기는 d.photo를 아예 참조하지 않는다. */
+test("recApply: scope='one' edits에 photo가 있으면 txDraft.photo에 실린다(기존 사진이 폼에 보여야 함)", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', type: 'expense', category: '월세', amount: 500000, fromAssetId: 'a1', toAssetId: null, edits: { '2026-02-05': { photo: 'data:image/jpeg;base64,AAAA' } } };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.recApply('r1', '2026-02-05', 'edit', 'one');
+  assert.strictEqual(sandbox.txDraft.photo, 'data:image/jpeg;base64,AAAA');
+});
+test("recApply: edits에 photo가 없으면 txDraft.photo는 null이다(undefined가 아니라 null이어야 txPhotoFieldHTML의 '사진 추가' 분기가 뜸)", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', type: 'expense', category: '식비', amount: 10000, fromAssetId: 'a1', toAssetId: null };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.recApply('r1', '2026-02-05', 'edit', 'one');
+  assert.strictEqual(sandbox.txDraft.photo, null);
+});
+test("renderTxSheet: rc 분기가 scope='one'이면 txPhotoFieldHTML(d)를 그려 영수증 사진 필드가 보인다", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', type: 'expense', category: '월세', memo: '월세', amount: 500000, fromAssetId: 'a1', toAssetId: null };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.recApply('r1', '2026-02-05', 'edit', 'one');
+  assert.ok(sandbox.lastSheetHtml.includes('영수증 사진 (선택)'), "scope='one' 간편 수정 시트에 영수증 사진 필드가 없음");
+  assert.ok(sandbox.lastSheetHtml.includes('tx-photo-pick'), "scope='one' 간편 수정 시트에 사진 추가 버튼이 없음(txPhotoFieldHTML 미호출)");
+});
+test("renderTxSheet: rc 분기가 scope='future'/'all'이면 영수증 사진 필드를 그리지 않는다(recSave가 그 두 scope에서 photo를 저장하지 않으므로, 입력받아도 저장될 곳이 없음)", () => {
+  sandbox.TWi = -1;
+  const r1 = { id: 'r1', type: 'expense', category: '월세', memo: '월세', amount: 500000, fromAssetId: 'a1', toAssetId: null, endDate: null, skip: [], edits: {} };
+  sandbox.DB = { recurrences: [r1] };
+  sandbox.recApply('r1', '2026-02-05', 'edit', 'future');
+  assert.ok(!sandbox.lastSheetHtml.includes('영수증 사진 (선택)'), "scope='future'에 영수증 사진 필드가 그려지면 안 됨(저장될 곳이 없음)");
+  const r2 = { id: 'r2', type: 'expense', category: '월세', memo: '월세', amount: 500000, fromAssetId: 'a1', toAssetId: null };
+  sandbox.DB = { recurrences: [r2] };
+  sandbox.recApply('r2', '2026-02-05', 'edit', 'all');
+  assert.ok(!sandbox.lastSheetHtml.includes('영수증 사진 (선택)'), "scope='all'에 영수증 사진 필드가 그려지면 안 됨(저장될 곳이 없음)");
+});
+test("recSave: scope='one'에서 사진을 추가하면 edits[date].photo에 기록되고, undo하면 사라진다", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', amount: 50000, category: '월세', edits: {} };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.window._recCtx = { recId: 'r1', date: '2026-02-05', scope: 'one' };
+  sandbox.txDraft = { amount: 50000, photo: 'data:image/jpeg;base64,AAAA' };
+  sandbox.recSave();
+  assert.strictEqual(r.edits['2026-02-05'].photo, 'data:image/jpeg;base64,AAAA', '추가한 사진이 edits[date].photo에 기록되어야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(r.edits['2026-02-05'], undefined, '되돌리면 해당 날짜의 edits가 통째로 제거되어야 함(이전에 없던 날짜였으므로)');
+});
+test("recSave: scope='one'에서 기존 사진을 지우면(d.photo가 falsy) 새 edits[date]에 photo 키가 남지 않는다(splits와 동일한 '있을 때만 덮어씀' 원칙)", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', amount: 50000, category: '월세', edits: { '2026-02-05': { amount: 50000, memo: '월세', photo: 'data:image/jpeg;base64,OLD' } } };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.window._recCtx = { recId: 'r1', date: '2026-02-05', scope: 'one' };
+  sandbox.txDraft = { amount: 50000, photo: null }; // 사진 삭제(txPhotoRemove) 후 저장
+  sandbox.recSave();
+  assert.ok(!('photo' in r.edits['2026-02-05']), '사진을 지운 뒤 저장했는데도 photo 필드가 남아있음');
+});
+test("recSave: scope='future'/'all'은 txDraft.photo가 있어도 무시한다(렌더 단계에서 입력 자체를 막지만, 저장 로직도 photo를 참조하지 않는지 직접 확인)", () => {
+  sandbox.TWi = -1;
+  const rFuture = { id: 'r1', amount: 50000, endDate: null, skip: [], edits: {} };
+  sandbox.DB = { recurrences: [rFuture] };
+  sandbox.window._recCtx = { recId: 'r1', date: '2026-03-01', scope: 'future' };
+  sandbox.txDraft = { amount: 50000, photo: 'data:image/jpeg;base64,AAAA' };
+  sandbox.recSave();
+  const newRec = sandbox.DB.recurrences.find(x => x.id !== 'r1');
+  assert.strictEqual(newRec.photo, undefined, "scope='future'로 분리된 새 레코드에 photo가 실리면 안 됨(스키마에 자리가 없음)");
+
+  sandbox.TWi = -1;
+  const rAll = { id: 'r2', amount: 50000 };
+  sandbox.DB = { recurrences: [rAll] };
+  sandbox.window._recCtx = { recId: 'r2', date: '2026-02-05', scope: 'all' };
+  sandbox.txDraft = { amount: 50000, photo: 'data:image/jpeg;base64,AAAA' };
+  sandbox.recSave();
+  assert.strictEqual(rAll.photo, undefined, "scope='all'로 바뀐 템플릿 r에 photo가 실리면 안 됨(스키마에 자리가 없음)");
+});
 test("recSave: scope='one'에서 분할 금액을 수정하면 edits[date].splits에 기록되고, undo하면 사라진다", () => {
   sandbox.TWi = -1;
   const r = { id: 'r1', amount: 50000, category: '통신', splits: [{ category: '통신', amount: 30000 }, { category: 'OTT', amount: 20000 }], edits: {} };
@@ -20019,6 +20098,29 @@ test('expandRec: r.splits가 없으면(하위호환) 가상 인스턴스의 spli
   };
   const out = sandbox.expandRec('2026-06-01', '2026-06-01');
   assert.strictEqual(out[0].splits, undefined);
+});
+/* 반복 내역 간편 수정(scope='one')이 r.edits[date].photo로 회차별 영수증 사진을 지원하게 되면서
+ * (app-evolve cycle306 advance), memo/amount/splits와 동일한 오버라이드 패턴으로 expandRec()의
+ * 가상 인스턴스에도 photo를 실어야 txRowCore의 t.photo 체크(일반 거래와 공유하는 썸네일 렌더링)가
+ * 반복 내역에서도 동작한다. r(템플릿) 자체는 사진 필드가 없어 기본값은 항상 null — splits처럼
+ * undefined로 두면 txRowCore의 `${t.photo?...}` 삼항이 "undefined 문자열"을 만들 위험은 없지만
+ * (truthy 체크뿐이라 둘 다 안전) sanitizeBackup 등 다른 코드가 photo!=null을 가정할 수 있어
+ * null로 통일한다. */
+test('expandRec: edits[date].photo가 있으면 그 회차의 가상 인스턴스 photo에 실린다', () => {
+  sandbox._recCache.clear();
+  sandbox.DB = {
+    recurrences: [{ id: 'r1', active: true, freq: 'monthly', day: 1, startDate: '2026-01-01', endDate: null, weekend: 'none', type: 'expense', category: '식비', memo: '', amount: 10000, skip: [], edits: { '2026-06-01': { photo: 'data:image/jpeg;base64,AAAA' } } }],
+  };
+  const out = sandbox.expandRec('2026-06-01', '2026-06-01');
+  assert.strictEqual(out[0].photo, 'data:image/jpeg;base64,AAAA', 'edits[date].photo가 가상 인스턴스에 실리지 않음');
+});
+test('expandRec: edits[date].photo가 없으면(일반적인 경우) 가상 인스턴스의 photo는 null이다(undefined가 아님)', () => {
+  sandbox._recCache.clear();
+  sandbox.DB = {
+    recurrences: [{ id: 'r1', active: true, freq: 'monthly', day: 1, startDate: '2026-01-01', endDate: null, weekend: 'none', type: 'expense', category: '식비', memo: '', amount: 10000, skip: [], edits: {} }],
+  };
+  const out = sandbox.expandRec('2026-06-01', '2026-06-01');
+  assert.strictEqual(out[0].photo, null, 'r(템플릿)엔 사진 필드가 없으므로 기본값이 null이어야 함');
 });
 
 /* ---------- updateBalanceAdjust: 자산 수정 화면에서 채워진 잔액 캐시가 조정 내역
@@ -29871,6 +29973,18 @@ test('doExport 소스: exportPin이 있으면 내보낼 text를 encryptDbBlob으
   assert.ok(fnSrc.includes('if(exportPin)text=JSON.stringify(await encryptDbBlob(text,exportPin));'), '본문 text 암호화가 없음');
   assert.ok(fnSrc.includes('if(exportPin)redacted=JSON.stringify(await encryptDbBlob(redacted,exportPin));'), 'copyFallback 사진-제외 분기가 다시 암호화하지 않음 — PIN 보호가 폴백에서 조용히 사라짐');
 });
+/* 반복 내역 간편 수정(scope='one')이 r.edits[date].photo를 지원하게 되면서(app-evolve cycle306
+ * advance) copyFallback의 photoCount(=photoCount>0일 때만 redactTxnPhotos로 재직렬화하고 안내
+ * 문구를 띄움)가 DB.txns만 세던 게 공백이 됐다 — 반복 내역 사진만 있고 일반 거래 사진은 없으면
+ * photoCount가 0으로 나와, redactTxnPhotos 분기를 건너뛰고 그 사진이 포함된 원본 text가 경고 없이
+ * 그대로 클립보드에 복사된다(redactTxnPhotos 자체는 키 이름만 보는 JSON.stringify replacer라 전체
+ * DB를 재귀 순회해 이미 올바르게 redact하지만, 그 분기를 열어주는 photoCount 계산이 DB.txns로
+ * 한정돼 있던 게 문제). DB.recurrences의 모든 edits를 모아 txnPhotoCount에 더해 집계하도록 고쳤다. */
+test('doExport 소스: copyFallback의 photoCount가 DB.txns뿐 아니라 DB.recurrences의 edits[date].photo도 함께 센다(반복 내역 사진만 있어도 재직렬화/안내 분기를 타야 함)', () => {
+  const fnSrc = extractFunction('doExport');
+  assert.ok(fnSrc.includes("const recEditPhotos=(DB.recurrences||[]).flatMap(r=>Object.values(r.edits||{}));"), 'DB.recurrences의 edits를 모으는 코드가 없음');
+  assert.ok(fnSrc.includes('const photoCount=txnPhotoCount(DB.txns)+txnPhotoCount(recEditPhotos);'), 'photoCount가 DB.txns만 세고 있음(반복 내역 사진 누락)');
+});
 test('doExportPinSubmit 소스: PIN이 틀리면 doUnlock()과 같은 패턴으로 exportPinIn을 비우고 focus()하며, 맞으면 시트를 닫고 Promise를 그 PIN으로 resolve한다', () => {
   const fnSrc = extractFunction('doExportPinSubmit');
   assert.match(fnSrc, /if\(r\.err\)\{if\(errEl\)\{errEl\.textContent=r\.err;errEl\.style\.display='block'\}const inp=\$\('exportPinIn'\);if\(inp\)\{inp\.value='';inp\.focus\(\)\}return\}/, 'PIN 오류 분기가 exportPinIn을 비우고 focus()하지 않음');
@@ -30087,6 +30201,15 @@ test('redactTxnPhotos: txns의 photo 필드만 null로 바꾸고 나머지 값�
   assert.strictEqual(out.txns[0].amount, 1000, '사진 제거 중 다른 필드까지 바뀜');
   assert.strictEqual(out.txns[1].amount, 2000, '사진 없는 거래가 영향받음');
   assert.strictEqual(out.settings.a, 1, 'txns 밖의 필드까지 영향받음');
+});
+/* redactTxnPhotos는 키 이름(photo)만 보는 JSON.stringify replacer라 DB 전체를 재귀 순회한다 —
+ * DB.recurrences[].edits[date].photo(반복 내역 간편 수정의 회차별 사진, app-evolve cycle306
+ * advance)도 txns와 마찬가지로 별도 배선 없이 이미 redact되는지 확인한다(회귀 가드). */
+test('redactTxnPhotos: DB.recurrences의 edits[date].photo도 별도 배선 없이 재귀적으로 redact된다', () => {
+  const db = { recurrences: [{ id: 'r1', amount: 500000, edits: { '2026-02-05': { amount: 500000, memo: '월세', photo: 'data:image/jpeg;base64,AAAA' } } }] };
+  const out = JSON.parse(sandbox.redactTxnPhotos(db));
+  assert.strictEqual(out.recurrences[0].edits['2026-02-05'].photo, null, '반복 내역 간편 수정의 사진이 redact되지 않음');
+  assert.strictEqual(out.recurrences[0].edits['2026-02-05'].amount, 500000, '사진 제거 중 다른 필드까지 바뀜');
 });
 
 test('isRlsPolicyError: Postgres 42501 코드와 policy/RLS 메시지를 네트워크·인증 에러와 구분한다', () => {
