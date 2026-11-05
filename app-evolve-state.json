@@ -1,15 +1,8 @@
 {
   "cycle": 306,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 301,
-      "phase": "develop",
-      "timestamp": "2026-11-04T09:12:00.000Z",
-      "summary": "자산 선택모드(ST.aSel)에 일괄 '귀속(owner) 변경'이 없던 공백(cycle296 critique가 이미 짚었던 항목) 발견 — assetOwnerTargets/doBulkOwnerMove/assetOwnerMovePickFor/assetOwnerSel을 doBulkCat/mergeAssetInto와 동일한 패턴(연결 목표 owner 동기화 포함)으로 신설, activeSel/updateSelBottom에 ownerMove 분기 추가. 테스트 24건 추가. 테스트 2692->2709 통과. APP_VERSION 1.47.346->1.47.347, sw.js CACHE v613->v614.",
-      "commit": null
-    },
     {
       "cycle": 301,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-05T05:20:00.000Z",
       "summary": "critique(cycle305) 계획대로 목표(goals) 관리 목록에 선택모드(ST.goalSel)를 추가해 일괄 삭제+일괄 귀속(owner) 변경을 지원한다. ST.recSel과 완전히 동일한 패턴으로 goalSelPartial/goalToggleSel/goalSelAll/goalDelSel/deleteGoalsUndo를 신설하고, openGoalsList()/goalsManageBody()에 '선택' 토글 버튼과 체크 가능한 행을 추가했다(선택모드 중엔 검색창·추가 버튼 숨김, recSel과 동일). 일괄 귀속 변경은 자산의 doBulkOwnerMove/assetOwnerMovePickFor/assetOwnerSel을 그대로 본떠 logic.js에 goalOwnerTargets, index.html에 doBulkGoalOwnerMove/goalOwnerMovePickFor/goalOwnerMoveSel을 신설했다 — 계획에 없던 발견: saveGoal()이 asset형 목표(type:'asset')의 owner를 저장할 때마다 항상 연결 자산의 owner로 강제 덮어쓰므로, 일괄 귀속 변경을 asset형 목표에도 적용하면 당장은 바뀐 듯 보이다가 그 목표를 한 번만 수정·저장해도 조용히 원래 owner로 되돌아가는 '적용되지만 곧 말없이 되돌아가는' 상태가 됨 — goalOwnerTargets가 asset형 목표를 대상에서 처음부터 제외하도록 막았다(bulkAssetMoveTargets가 이체/조정 거래를 빼는 것과 동일한 이유). activeSel()/exitSelMode()/go(tab)/closeSheet()의 다른 *Sel 분기 옆에 goalSel 분기를 추가했고, updateSelBottom()은 이미 ownerMove 필드를 범용으로 렌더링해 수정 불필요. 테스트 31건 추가(선택모드 UI 렌더링, goalOwnerTargets의 asset형 제외, doBulkGoalOwnerMove/pickFor/Sel, activeSel 분기, exitSelMode/closeSheet/go(tab) 리셋 — 후자 둘은 recSel 전례와 동일하게 DOM을 직접 쓰는 함수라 extractFunction 소스 패턴으로 확인, exitSelMode는 새로 FUNCTIONS에 추가해 실행형으로 확인). 테스트 2774->2805 통과. node --check logic.js/sw.js 통과. APP_VERSION 1.47.355->1.47.356, sw.js CACHE v622->v623. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 306,
+      "phase": "develop",
+      "timestamp": "2026-11-05T06:13:56.332Z",
+      "summary": "sanitizeBackup()의 categories[k]/owners가 빈 문자열만 걸러내고 normName() 근접중복(대소문자·공백만 다름, 예: \"용돈\"과 \"용돈 \")은 전혀 걸러내지 않던 공백 발견 — addCat/addOwner(즉시 추가)와 mergeNameList/mergeNameListWithTombstones(logic.js, 클라우드 병합)는 이미 normName() 기준 근접중복을 막는데, 파일 복원/클라우드 풀이 공통으로 거치는 이 sanitizeBackup()만 비어 있었다. dedupeIds와 동일한 \"첫 등장만 남긴다\" 원칙을 normName() 기준으로 적용하는 dedupeNames() 헬퍼를 신설해 categories[k]/owners에 각각 적용(빈 문자열 필터링 다음 단계). 테스트 2건 추가(categories/owners 각각 대소문자·공백만 다른 중복이 첫 등장만 남고 fixedCount가 세어짐). 테스트 2805->2807 통과. node --check logic.js/sw.js 통과. APP_VERSION 1.47.356->1.47.357, sw.js CACHE v623->v624.",
       "commit": null
     }
   ]

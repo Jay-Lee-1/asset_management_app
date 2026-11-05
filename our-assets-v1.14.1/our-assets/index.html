@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.356';
+const APP_VERSION='1.47.357';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -8447,6 +8447,23 @@ function sanitizeBackup(obj){
    seen.add(d.id);return d;
   });
  };
+ /* 카테고리/귀속(DB.categories[k], DB.owners)은 id가 아니라 이름 자체가 키라서 dedupeIds와는
+  * 다른 기준으로 유일성을 복구해야 한다 — addCat/addOwner(즉시 추가)와 mergeNameList/
+  * mergeNameListWithTombstones(logic.js, 클라우드 병합)는 둘 다 normName()(대소문자·좌우/연속
+  * 공백 무시)으로 근접중복을 막는데, 이 sanitizeBackup()의 카테고리/owners 블록만 빈 문자열만
+  * 걸러내고 normName() 중복은 그대로 통과시키고 있었다. 손으로 편집했거나 레거시 포맷이 섞인
+  * 백업/클라우드 문서에 "용돈"과 "용돈 "처럼 normName 기준 같은 이름이 두 번 들어있으면, 카테고리
+  * 선택 목록(openCatManage 등)·귀속 선택 목록(histOwnerSel 등)에 같은 이름이 두 줄로 보여 사용자가
+  * 서로 다른 카테고리/귀속으로 착각하게 된다. dedupeIds와 같은 "첫 등장만 남긴다" 원칙을
+  * normName() 기준으로 적용한다. */
+ const dedupeNames=arr=>{
+  const seen=new Set();
+  return arr.filter(c=>{
+   const key=normName(c);
+   if(seen.has(key)){fixedCount++;return false}
+   seen.add(key);return true;
+  });
+ };
  const srcTxns=Array.isArray(obj&&obj.txns)?obj.txns:[];
  let txns=[];
  srcTxns.forEach(t=>{
@@ -8755,12 +8772,13 @@ function sanitizeBackup(obj){
   const arr=Array.isArray(raw)?raw:[];
   const cleaned=arr.filter(c=>typeof c==='string'&&c.trim());
   if(raw!=null&&(!Array.isArray(raw)||cleaned.length!==arr.length))fixedCount++; /* null/undefined 둘 다 migrate()가 ||[default]로 조용히 메우는 '미설정'이라 fixedCount에 넣지 않는다 */
-  categories[k]=cleaned;
+  categories[k]=dedupeNames(cleaned);
  });
  const srcOwnersRaw=obj&&obj.owners;
  const ownersArr=Array.isArray(srcOwnersRaw)?srcOwnersRaw:[];
- const owners=ownersArr.filter(o=>typeof o==='string'&&o.trim());
- if(srcOwnersRaw!=null&&(!Array.isArray(srcOwnersRaw)||owners.length!==ownersArr.length))fixedCount++;
+ const ownersCleaned=ownersArr.filter(o=>typeof o==='string'&&o.trim());
+ if(srcOwnersRaw!=null&&(!Array.isArray(srcOwnersRaw)||ownersCleaned.length!==ownersArr.length))fixedCount++;
+ const owners=dedupeNames(ownersCleaned);
  /* DB.budgetHistory(카테고리→[{from:"YYYY-MM",amount}] 시점별 예산 이력)도 같은 이유로 검증이
   * 없었다 — from이 "YYYY-MM" 형식이 아니면 budgetForMonth()의 문자열 비교(h[i].from<=key)가
   * 엉뚱한 항목을 집어내고, amount는 txns.amount와 동일한 크기 필드라 음수·NaN이면

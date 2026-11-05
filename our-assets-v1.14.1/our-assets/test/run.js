@@ -13688,6 +13688,25 @@ test('sanitizeBackup: 정상적인 owners는 그대로 둔다(정상 케이스�
   assert.deepStrictEqual(Array.from(data.owners), ['나', '배우자']);
   assert.strictEqual(fixedCount, 0);
 });
+/* ---------- sanitizeBackup: categories/owners도 addCat/addOwner(즉시 추가)·mergeNameList류(클라우드
+ * 병합)와 동일하게 normName() 근접중복을 걸러내야 한다 — 손으로 편집했거나 레거시 포맷이 섞인 백업/
+ * 클라우드 문서에 "용돈"과 "용돈 "(공백만 다름) 또는 "Food"/"food"(대소문자만 다름)처럼 normName
+ * 기준 같은 이름이 중복으로 들어있으면, 이전엔 걸러지지 않고 그대로 통과돼 선택 목록에 같은 이름이
+ * 두 줄로 보였다. ---------- */
+test('sanitizeBackup: categories 배열 안의 normName() 근접중복(대소문자·공백만 다름)은 첫 등장만 남기고 걸러내며 fixedCount를 센다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    categories: { expense: ['식비', '식비 ', '교통', '교통'], income: ['Food', 'food'], saving: [] },
+  });
+  assert.deepStrictEqual(Array.from(data.categories.expense), ['식비', '교통']);
+  assert.deepStrictEqual(Array.from(data.categories.income), ['Food']);
+  assert.strictEqual(fixedCount, 3);
+});
+test('sanitizeBackup: owners 배열 안의 normName() 근접중복도 첫 등장만 남기고 걸러내며 fixedCount를 센다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({ txns: [], assets: [], owners: ['나', '나 ', '배우자'] });
+  assert.deepStrictEqual(Array.from(data.owners), ['나', '배우자']);
+  assert.strictEqual(fixedCount, 1);
+});
 
 /* ---------- sanitizeBackup: DB.budgetHistory(카테고리→[{from:"YYYY-MM",amount}])도 같은 이유로
  * 검증이 없었다 — from이 깨지면 budgetForMonth()가, amount가 음수/NaN이면 budgetProgress()·
