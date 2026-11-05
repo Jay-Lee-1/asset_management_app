@@ -25277,6 +25277,39 @@ test('pruneNotifiedIds: 30일 이내 항목은 남기고, 30일 지난 항목은
   const out = sandbox.pruneNotifiedIds(notifiedIds, now);
   assert.deepStrictEqual(Object.keys(out), ['fresh']);
 });
+/* quick/quickMulti(변동금액 반복거래 실제금액 입력 대기)는 confirm/confirmMulti와 완전히 같은
+ * 구조(RANGE_FROM~TODAY 스캔, 단일/복수 collapsing)인데 notifyAlertInfo의 OS 푸시 대상에서만
+ * 빠져 있었다(app-evolve cycle307 critique/advance) — confirm/confirmMulti 테스트와 동일한
+ * 패턴으로 커버한다. */
+test('notifyAlertInfo: quick/quickMulti도 confirm/confirmMulti처럼 즉시 알림 대상이 된다(app-evolve cycle307)', () => {
+  sandbox.TODAY = '2026-06-15';
+  const quick = sandbox.notifyAlertInfo({ kind: 'quick', recId: 'r1', date: '2026-06-15', name: '전기요금', rtype: 'expense' });
+  assert.ok(quick && quick.key === 'quick:2026-06-15:r1:2026-06-15', '변동금액 입력 대기 알림은 오늘날짜+반복id+날짜로 키가 잡혀야 함(confirm과 동일 패턴)');
+  assert.ok(quick.body.includes('전기요금'));
+  const quickMulti = sandbox.notifyAlertInfo({ kind: 'quickMulti', count: 2 });
+  assert.ok(quickMulti && quickMulti.key === 'quickMulti:2026-06-15:2', '날짜+건수로 키가 잡혀야 함(confirmMulti와 동일 패턴)');
+  assert.ok(quickMulti.body.includes('2건'));
+});
+test('notifyAlertInfo: quick(단일)도 confirm처럼 키에 TODAY가 들어가, 같은 변동 항목도 날이 바뀌면 다른 key를 받는다(app-evolve cycle307)', () => {
+  const al = { kind: 'quick', recId: 'r1', date: '2026-06-10', name: '전기요금', rtype: 'expense' };
+  sandbox.TODAY = '2026-06-15';
+  const day1 = sandbox.notifyAlertInfo(al);
+  sandbox.TODAY = '2026-06-16';
+  const day2 = sandbox.notifyAlertInfo(al);
+  assert.notStrictEqual(day1.key, day2.key, '같은 변동 항목(recId/날짜 동일)이라도 알림을 보내는 날이 다르면 키가 달라져야 confirm과 동일하게 매일 재알림된다');
+});
+test('notifyAlertInfo: quickMulti도 confirmMulti처럼 건수가 바뀌면 같은 날이어도 다시 알림 대상이 된다(app-evolve cycle307)', () => {
+  sandbox.TODAY = '2026-06-15';
+  const q2 = sandbox.notifyAlertInfo({ kind: 'quickMulti', count: 2 });
+  const q3 = sandbox.notifyAlertInfo({ kind: 'quickMulti', count: 3 });
+  assert.notStrictEqual(q3.key, q2.key, '건수가 2→3으로 늘면 키도 바뀌어 다시 알려야 함');
+  let picked = sandbox.pickNotifyAlerts([{ kind: 'quickMulti', count: 2 }], {});
+  assert.strictEqual(picked.toNotify.length, 1);
+  picked = sandbox.pickNotifyAlerts([{ kind: 'quickMulti', count: 2 }], picked.notifiedIds);
+  assert.strictEqual(picked.toNotify.length, 0, '같은 건수로 다시 호출하면 억제돼야 함');
+  picked = sandbox.pickNotifyAlerts([{ kind: 'quickMulti', count: 3 }], picked.notifiedIds);
+  assert.strictEqual(picked.toNotify.length, 1, '건수가 늘면 같은 날이어도 다시 알림 대상이 돼야 함');
+});
 test('updateAlerts: neg를 생략하면 planNegatives()를 다시 계산해서 배지 개수/on 상태에 반영한다', () => {
   sandbox.TODAY = '2026-06-15';
   sandbox.RANGE_TO = '2099-12-31';

@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.360';
+const APP_VERSION='1.47.361';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -10412,9 +10412,9 @@ function homeAlerts(neg){
  else if(_dp.length>1)arr.push({kind:'debtPaidOffMulti',count:_dp.length});
  return arr;
 }
-/* homeAlerts()가 계산한 알림 중 "오늘 확정 대기 이체 / 임박한 저축 만기(1~2일 이내) / 예산 초과"처럼
- * 앱을 열지 않으면 그날 놓치는 긴급 알림만 골라 OS 알림 문구로 바꾼다. 나머지 kind(backup/persist/neg 등)는
- * 급하지 않거나 홈 카드로 충분해 대상에서 뺀다. */
+/* homeAlerts()가 계산한 알림 중 "오늘 확정 대기 이체 / 임박한 저축 만기(1~2일 이내) / 예산 초과 /
+ * 변동금액 입력 대기(quick)"처럼 앱을 열지 않으면 그날 놓치는 긴급 알림만 골라 OS 알림 문구로 바꾼다.
+ * 나머지 kind(backup/persist/neg 등)는 급하지 않거나 홈 카드로 충분해 대상에서 뺀다. */
 function notifyAlertInfo(al){
  /* confirm/mat(단일 항목) 키에는 원래 TODAY가 없어 '그 거래/그 만기' 하나당 평생 단 한 번만 알렸다 —
   * 바로 아래 confirmMulti/matMulti(2건 이상 묶였을 때)는 똑같은 상황인데도 키에 TODAY를 넣어 매일
@@ -10428,6 +10428,14 @@ function notifyAlertInfo(al){
   * notifiedIds로 억제됨 — 날짜만 추가했을 뿐 그 안의 dedupe 자체는 그대로). */
  if(al.kind==='confirm')return{key:`confirm:${TODAY}:${al.id}:${al.date}`,title:'이체 확인이 필요해요',body:`${al.from} → ${al.to} · ${comma(al.amount)}원 이체하셨나요?`};
  if(al.kind==='confirmMulti')return{key:`confirmMulti:${TODAY}:${al.count}`,title:'이체 확인이 필요해요',body:`미확인 이체 ${al.count}건이 있어요`};
+ /* quick/quickMulti(변동금액 반복거래 실제금액 입력 대기, varyingRecs())는 confirm/confirmMulti와
+  * 구조가 완전히 동일한데(같은 RANGE_FROM~TODAY 스캔, 같은 단일/복수 collapsing) 이 함수의
+  * OS 푸시 대상에서만 빠져 있었다 — expandRec()이 미입력 회차를 계속 템플릿 금액으로 채우므로
+  * 앱을 안 열면 예산/잔액 계산이 조용히 틀어지는데도 알릴 방법이 없었다. confirm/confirmMulti와
+  * 동일하게 key에 TODAY를 넣어 날이 바뀌면(또는 건수가 바뀌면) 다시 알린다(app-evolve cycle307
+  * critique/advance). */
+ if(al.kind==='quick')return{key:`quick:${TODAY}:${al.recId}:${al.date}`,title:'실제 금액 입력이 필요해요',body:`${al.name} · 실제 금액을 입력해 주세요`};
+ if(al.kind==='quickMulti')return{key:`quickMulti:${TODAY}:${al.count}`,title:'실제 금액 입력이 필요해요',body:`입력할 항목 ${al.count}건이 있어요`};
  if(al.kind==='mat'&&al.date<=addDays(TODAY,1)){ /* date<TODAY(아직 doMaturity()로 처리 안 된 지난 만기)까지 포함되므로 '내일'로 잘못 말하지 않게 분기 */
   const overdue=al.date<TODAY;
   const when=overdue?'만기가 지났어요':(al.date===TODAY?'오늘':'내일');

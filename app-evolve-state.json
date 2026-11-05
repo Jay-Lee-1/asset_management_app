@@ -1,26 +1,8 @@
 {
-  "cycle": 307,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "변동금액 입력 대기(quick/quickMulti) 알림에 OS 푸시 추가",
-    "why": "notifyAlertInfo()(index.html:10418) 바로 위 주석은 '오늘 확정 대기 이체(confirm) / 임박한 저축 만기(mat) / 예산 초과(budgetOver) — 앱을 열지 않으면 그날 놓치는 긴급 알림만 OS 푸시 대상'이라고 명시한다. confirm/confirmMulti/mat/matMulti/budgetOver(Multi) 등은 모두 case가 있고, neg/negMulti 같은 kind는 다른 주석에서 명시적으로 제외 대상이라고 적혀 있다. 그런데 quick/quickMulti(변동금액 반복거래 입력 대기, homeAlerts()의 varyingRecs() 경로, index.html:10341-10342, 홈 카드는 10595/10600에 이미 존재)는 포함 목록에도 제외 목록에도 없이 그냥 case가 없어 조용히 null을 반환한다 — confirm과 구조가 동일(같은 RANGE_FROM~TODAY 스캔, 같은 단일/복수 collapsing, 같은 openQuickList/openConfirmTransferList 패턴)한데 confirm만 푸시를 받고 quick은 못 받는 비대칭. 변동금액 반복거래(전기요금 등)가 입력되지 않으면 expandRec()이 계속 템플릿 금액을 쓰므로 예산/잔액 계산이 조용히 틀어지는데, 앱을 열지 않으면 알 방법이 OS 푸시 없이는 없다. test/run.js에 quick/quickMulti의 notify 동작을 검증하는 테스트가 전혀 없음(neg는 '제외됨'을 검증하는 전용 테스트가 있는 것과 대조) — 의도적 제외가 아니라 단순히 고려되지 않은 공백이라는 근거.",
-    "approach": "notifyAlertInfo()에 quick/quickMulti case 2개를 confirm/confirmMulti case 바로 아래 추가. quick: key는 confirm과 동일하게 TODAY를 포함한 `quick:${TODAY}:${al.recId}:${al.date}`(cycle232가 confirm/mat에 적용한 '날짜가 바뀌면 다시 알린다' 원칙 — 평생 1회만 알리는 구키 패턴을 쓰면 안 됨), title '입력할 항목이 있어요', body는 al.name 사용. quickMulti: key는 budgetOverMulti류와 동일하게 `quickMulti:${TODAY.slice(0,7)}:${al.count}` 대신 confirmMulti/matMulti와 동일한 매일 재알림 패턴을 따라 `quickMulti:${TODAY}:${al.count}`(quick 쪽 성격이 confirmMulti와 더 가까우므로 월 단위가 아니라 TODAY 단위가 맞는지 구현 시 homeAlerts()의 실제 refresh 주기와 비교해 확정), title '입력할 항목 N건이 있어요'. notifyAlertInfo 상단의 설계 의도 주석(10415-10417)에 '변동금액 입력 대기(quick)'를 포함 목록에 명시적으로 추가해 문서화한다. test/run.js에 confirm/confirmMulti의 기존 dedupe-key 테스트와 동일한 패턴으로 quick/quickMulti 테스트를 추가한다. 범위 제외: neg/negMulti 및 그 외 이미 의도적으로 제외된 kind(backup/persist/storageSize/staleRates/cloudConflict/cloudSyncError/clockSkew/mergeDataLoss/rateUnknownTotal)는 그대로 둔다."
-  },
+  "cycle": 308,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 302,
-      "phase": "critique",
-      "timestamp": "2026-11-04T16:14:03.000Z",
-      "summary": "서브에이전트로 앱 전체를 재조사(~15개 항목 제외). 발견: 홈/전체내역/Plan/모바일 네 곳의 롱프레스-피크 제스처가 180ms+vibrate+peeking+키보드가드를 완전히 복붙해두고 있고 실제 공유 함수가 없음(모바일판은 이미 드리프트된 상태로 리스크가 드러난 사례). pending_advance_plan에 저장(makePeekGesture() 공용 팩토리, 전역 함수명 유지한 채 wrapper로 위임). 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
-    {
-      "cycle": 302,
-      "phase": "advance",
-      "timestamp": "2026-11-04T17:15:44.106Z",
-      "summary": "critique(cycle302) 계획대로 롱프레스-피크 제스처 4곳을 makePeekGesture(state,onPeekChange,opts) 공용 팩토리로 통합했다. 각 사이트는 전역 함수명/HTML 속성 문자열을 유지한 채 얇은 wrapper로 위임. 기존 가드-텍스트 검사 테스트 1건을 배선 확인 테스트 4건으로 교체하고 makePeekGesture 자체 실행형 테스트 8건 추가. 테스트 2742->2753. APP_VERSION 1.47.349->1.47.350, sw.js CACHE v616->v617. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 303,
       "phase": "develop",
@@ -152,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-05T12:05:00.000Z",
       "summary": "서브에이전트로 앱 전체를 재조사(cycle300-307 처리/보류 항목 전부 제외 지시). 발견: notifyAlertInfo()(10418줄) 상단 주석이 명시하는 OS 푸시 대상(confirm/mat/budgetOver 등 '앱을 열지 않으면 그날 놓치는 긴급 알림')에 quick/quickMulti(변동금액 반복거래 입력 대기, varyingRecs() 경로, 10341-10342)만 포함 목록에도 명시적 제외 목록(neg/negMulti 등)에도 없이 case 자체가 없어 조용히 null 반환. confirm과 구조가 완전히 동일(동일 스캔·collapsing·리스트시트 패턴)한데 푸시만 못 받음. test/run.js에 quick의 notify 동작 검증 테스트가 전혀 없음(neg는 '제외됨'을 검증하는 전용 테스트가 있어 대조적) — 의도적 제외가 아니라 단순 공백이라는 근거. 직접 grep으로 재확인(10418/10341-10342/10595/10600). pending_advance_plan에 저장(quick/quickMulti case 2개 추가 + 설계주석 갱신 + 테스트). 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 307,
+      "phase": "advance",
+      "timestamp": "2026-11-05T13:10:00.000Z",
+      "summary": "critique(cycle307) 계획대로 notifyAlertInfo()에 quick/quickMulti case 2개를 confirm/confirmMulti 바로 아래 추가했다. quick은 confirm과 동일하게 key에 TODAY를 넣어(`quick:${TODAY}:${al.recId}:${al.date}`) 날이 바뀌면 다시 알리고, quickMulti도 confirmMulti와 동일하게 `quickMulti:${TODAY}:${al.count}`로 날짜+건수 기반 재알림(월 단위가 아니라 매일 재알림 패턴 확정 — confirmMulti와 동일 성격이라 판단). title은 '실제 금액 입력이 필요해요'로 통일, quick의 body는 al.name을 그대로 노출. notifyAlertInfo 상단 설계 의도 주석에 '변동금액 입력 대기(quick)'를 포함 목록에 명시적으로 추가해 문서화했다. test/run.js에 confirm/confirmMulti의 기존 dedupe-key 테스트와 동일한 패턴으로 quick/quickMulti 테스트 3건 추가(즉시 알림 대상 확인, TODAY 재알림, 건수 변화 재알림+pickNotifyAlerts 통합 검증) — 2823->2826 통과. node --check logic.js/sw.js, manifest.webmanifest JSON 유효성, index.html 인라인 스크립트 추출검사(기존과 동일한 1건의 기존 오탐만 재확인, 새 회귀 없음) 모두 통과. APP_VERSION 1.47.360->1.47.361, sw.js CACHE v627->v628. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]
