@@ -1,15 +1,8 @@
 {
   "cycle": 312,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 307,
-      "phase": "develop",
-      "timestamp": "2026-11-05T10:13:41.521Z",
-      "summary": "saveGoal/delGoal/deleteGoalsUndo 세 함수가 목표(goals)를 실제로 저장/삭제하는데도 twGuard()가 전혀 없던 공백 발견 — saveAsset/recSave/deleteRecsUndo/deleteAssetsUndo/doBulkGoalOwnerMove(cycle305) 등 DB를 바꾸는 다른 모든 진입점은 튜토리얼 중(TWi>=0) 실저장을 막는 twGuard()를 거치는데, 목표의 핵심 CRUD 세 함수만 빠져 있어 튜토리얼 샌드박스 약속(\"튜토리얼 중에는 실제로 저장되지 않아요\")이 목표 기능 전체에서 깨져 있었다. 세 함수 각각 맨 앞에 if(twGuard())return; 한 줄씩 추가(다른 가드 함수들과 동일 위치·패턴). 회귀 테스트 3건 추가(saveGoal/delGoal/deleteGoalsUndo 각각 튜토리얼 중 호출해도 DB.goals가 그대로이고 delGoal은 확인 시트조차 안 띄움을 확인) — deleteAssetsUndo/doBulkGoalOwnerMove의 기존 twGuard 테스트와 동일 패턴. 테스트 2820->2823 통과. node --check sw.js, manifest.webmanifest JSON 유효성, index.html 인라인 스크립트 추출검사(기존과 동일한 1건의 기존 오탐만 재확인, 새 회귀 없음) 모두 통과. APP_VERSION 1.47.359->1.47.360, sw.js CACHE v626->v627.",
-      "commit": null
-    },
     {
       "cycle": 307,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-06T05:20:00.000Z",
       "summary": "critique(cycle311) 계획대로 nwHistory의 byType 스냅샷(가구 전체 기준)에서 기간 전체의 추이를 보여주는 \"자산배분 추이\" 카드를 추가했다 — 단, 전체 계획 중 CSV 확장/귀속별 세분화/피크 제스처는 1차 범위에서 제외(기존 계획도 동일하게 명시). logic.js에 assetAllocationSeries(hist,preset,today) 순수함수를 신설: nwHistoryRange로 기간을 자르고 byType이 있는 스냅샷만 남긴 뒤(allocationHistoryDelta와 동일한 '2개 미만이면 null' 원칙), 가장 최근 스냅샷 기준 상위 4개 유형을 고정하고 나머지는 ALLOC_OTHER_TYPE('other')이라는 별도 키 한 밴드로 묶어 각 날짜에 assetAllocation()을 재사용해 {date,segs:[{type,pct}]} 배열을 만든다 — 실제 'etc'(기타) 자산유형과 겹치면(둘 다 '기타'로 묶으면) 한 날짜에 segs가 중복 type을 갖게 돼 차트/범례가 깨지므로 일부러 다른 키를 썼다. index.html에는 nwChartPath 옆에 stacked-area 전용 좌표 빌더 allocSeriesChartPath(pts,types,W,H)를 추가(바닥 0%부터 types 순서대로 pct를 누적해 유형별 band polygon을 만듦). 새 렌더 함수 allocationHistoryCard(owner,preset)은 nwHistoryCard/allocationCard와 같은 시그니처로 owner!=='all'이면 빈 문자열(byType이 가구 전체 기준이라 allocationCard의 trendCaption과 동일 제약), 데이터 부족시도 빈 문자열, 있으면 allocPresetSegHTML(preset)(신규 상태 ST.allocPreset 기본 'm3')+stacked SVG+기존에 미사용 상태로 죽어 있던 .legend/.li/.sw/.nm/.pc CSS를 되살려 범례를 그린다(allocationCard의 TYPE_COLOR, 'other' 밴드만 새 상수 ALLOC_OTHER_COLOR='var(--text-2)' 사용). allocBody 바로 아래 <div id=\"allocHistBody\">를 삽입하고, allocPresetSel(p)/refreshAllocationHistoryCard()를 nwPresetSel/refreshNwHistoryCard와 동일 패턴으로 추가해 selectNwOwner()의 귀속 전환 갱신 목록에도 끼워 넣었다(owner가 'all' 밖으로 바뀌면 카드가 바로 숨겨져야 함). 구현 중 발견: vm 샌드박스에서 logic.js의 최상위 const는(index.html의 CONSTS 추출 방식과 달리) 컨텍스트 프로퍼티로 안 붙는다는 기존 제약(테스트 파일 상단 주석)을 깜빡하고 테스트에서 sandbox.ALLOC_OTHER_TYPE을 직접 참조했다가 실패 — 리터럴 'other'로 바꿔 고쳤다(테스트 전용 이슈, 앱 코드는 무관). 테스트 12건 추가: assetAllocationSeries(2개 미만 null, 레거시 스킵, preset 윈도우 필터링, 4개 이하면 묶음 없음, 4개 초과시 상위4+other 묶기, 실제 etc 유형과 other 밴드 비충돌) 6건, allocSeriesChartPath(2개 미만 빈 배열, 바닥부터 누적되어 마지막 밴드 위쪽 경계가 100%/y=0에 닿음) 2건, allocationHistoryCard(owner!=='all' 숨김, 과거 비교 불가시 숨김, 정상 렌더에 제목/세그/범례/path 포함) 3건, allocPresetSegHTML(on 클래스+aria-pressed) 1건 — 2868->2880 통과. node --check logic.js/sw.js, manifest.webmanifest JSON 유효성, index.html 인라인 스크립트 추출검사(기존과 동일한 1건의 기존 오탐만 재확인, 새 회귀 없음) 모두 통과. APP_VERSION 1.47.367->1.47.368, sw.js CACHE v634->v635. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 312,
+      "phase": "develop",
+      "timestamp": "2026-11-06T06:20:00.000Z",
+      "summary": "cycle311 critique가 기각 후보로 남긴 findPossibleDuplicateTx(saveTx 수동 입력 중복 경고, cycle284)의 이체(transfer) 제외를 재검토해 실제 버그를 발견 — 함수 주석과 cycle284 당시 판단은 '이체는 카테고리가 없어 비교 불가'였지만, _applyType(index.html:5543, saveTx/saveRec 공통)이 유형을 transfer로 바꾸는 순간 draft.category를 항상 고정값 '이체'로 채워 넣는다는 걸 놓쳤다 — 즉 이체도 category 필드 자체는 항상 존재한다(식별력만 없을 뿐). 그 결과 지출/수입/저축은 똑같은 날짜·금액·자산으로 두 번 입력하면 confirmSheet로 한 번 더 확인시키는데, 이체만 유일하게 안전망 없이 조용히 두 번 저장됐다(실수로 같은 계좌이동을 두 번 탭해도 전혀 경고 없음). draft.type==='transfer' 조기 return을 제거하고, saving과 완전히 같은 식(거래 성격상 두 자산을 모두 쓰므로 fromAssetId·toAssetId 둘 다 같아야 중복) 분기에 transfer를 합류시켰다(saving과 동일한 한 줄). category가 비어 있는 레거시 이체 데이터는 기존 !draft.category 가드에 그대로 걸려 안전하게 비교 제외된다. 함수 상단 주석을 이 판단 변경 이유(변경 전/후 근거)로 갱신. 회귀 테스트: findPossibleDuplicateTx 레벨 2건(이체도 category·fromAssetId·toAssetId 모두 같으면 중복 판정+toAssetId 다르면 아님, 카테고리 없는 레거시 이체는 여전히 제외), saveTx 통합 레벨 기존 '이체는 confirmSheet 제외' 테스트를 '이체도 confirmSheet로 확인(확인 후 저장까지 재확인)'으로 교체하고 'toAssetId 다르면 바로 저장' 케이스 1건 추가 — 2880->2882 통과. node --check logic.js/sw.js, manifest.webmanifest JSON 유효성, index.html 인라인 스크립트 추출검사(기존과 동일한 1건의 기존 오탐만 재확인, 새 회귀 없음) 모두 통과. APP_VERSION 1.47.368->1.47.369, sw.js CACHE v635->v636.",
       "commit": null
     }
   ]

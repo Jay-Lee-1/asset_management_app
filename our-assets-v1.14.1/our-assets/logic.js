@@ -1200,21 +1200,25 @@ function csvDedupeKey(t){
  * 가장 흔한 수동 입력 경로(saveTx)에는 안전망이 없었다 — 커피/점심처럼 매일 비슷한 금액을 넣는
  * 습관 때문에 화면 전환 중 두 번 탭하거나 방금 입력한 걸 깜빡하고 다시 입력해도 조용히 통과된다.
  * 저장을 막지 않고 호출부(index.html saveTx)가 확인창을 띄울지 판단하는 데 쓰는 "가능한 중복"
- * 탐지기라, 오탐을 줄이려 완전 일치(날짜·금액·카테고리 모두 동일)만 잡는다. 1차 범위라
- * 이체(transfer, 카테고리가 없어 비교 불가)와 분할(splits, 상위 category가 첫 항목 fallback일
- * 뿐이라 자칫 전혀 다른 분할 내역을 같다고 오판할 수 있음) 거래는 대상에서 제외하고, 잔액 조정
- * 내역(adjust)도 수동 입력이 아니라 비교 대상에서 뺀다. 자산 비교는 type에 따라 의미가 다른
- * 칸을 본다 — expense는 fromAssetId, income은 toAssetId, saving은 거래 성격상(이체처럼 두 자산을
- * 모두 씀) fromAssetId·toAssetId 둘 다 같아야 같은 내역으로 본다(app-evolve cycle284 advance). */
+ * 탐지기라, 오탐을 줄이려 완전 일치(날짜·금액·카테고리 모두 동일)만 잡는다. 분할(splits, 상위
+ * category가 첫 항목 fallback일 뿐이라 자칫 전혀 다른 분할 내역을 같다고 오판할 수 있음) 거래는
+ * 1차 범위에서 제외하고, 잔액 조정 내역(adjust)도 수동 입력이 아니라 비교 대상에서 뺀다. 이체
+ * (transfer)는 애초에 "카테고리가 없어 비교 불가"라고 보고 제외했었지만, _applyType(index.html)이
+ * 유형을 transfer로 바꾸는 순간 category를 항상 고정값 '이체'로 채워 넣는다는 걸 놓친 판단이었다
+ * — category는 식별력이 없을 뿐 존재는 하므로, saving처럼 fromAssetId·toAssetId 둘 다 같은지로
+ * 비교하면 된다(app-evolve cycle312 develop). 레거시 데이터처럼 category가 비어 있는 이체는 위
+ * category 가드에 걸려 그대로 비교 대상에서 빠진다. 자산 비교는 type에 따라 의미가 다른 칸을
+ * 본다 — expense는 fromAssetId, income은 toAssetId, saving·transfer는 거래 성격상 두 자산을 모두
+ * 쓰므로 fromAssetId·toAssetId 둘 다 같아야 같은 내역으로 본다(app-evolve cycle284 advance). */
 function findPossibleDuplicateTx(txns,draft){
- if(!draft||draft.type==='transfer')return null;
+ if(!draft)return null;
  if(Array.isArray(draft.splits)&&draft.splits.length)return null;
  if(!draft.date||!draft.amount||!draft.category)return null;
  return (txns||[]).find(t=>{
   if(!t||t.id===draft.id||t.adjust)return false;
   if(t.date!==draft.date||t.type!==draft.type||t.amount!==draft.amount||t.category!==draft.category)return false;
   if(draft.type==='income')return t.toAssetId===draft.toAssetId;
-  if(draft.type==='saving')return t.fromAssetId===draft.fromAssetId&&t.toAssetId===draft.toAssetId;
+  if(draft.type==='saving'||draft.type==='transfer')return t.fromAssetId===draft.fromAssetId&&t.toAssetId===draft.toAssetId;
   return t.fromAssetId===draft.fromAssetId;
  })||null;
 }

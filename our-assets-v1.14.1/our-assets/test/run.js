@@ -7284,7 +7284,14 @@ test('findPossibleDuplicateTx: 저축은 fromAssetId·toAssetId 둘 다 같아�
   assert.strictEqual(sandbox.findPossibleDuplicateTx([existing], same), existing);
   assert.strictEqual(sandbox.findPossibleDuplicateTx([existing], diffFrom), null);
 });
-test('findPossibleDuplicateTx: 이체(transfer)는 카테고리가 없어 비교 대상에서 제외한다(항상 null)', () => {
+test('findPossibleDuplicateTx: 이체(transfer)도 category(항상 "이체")·fromAssetId·toAssetId가 모두 같으면 중복으로 본다', () => {
+  const existing = { id: 't1', date: '2026-06-15', type: 'transfer', amount: 10000, category: '이체', fromAssetId: 'a1', toAssetId: 'a2' };
+  const same = { id: null, date: '2026-06-15', type: 'transfer', amount: 10000, category: '이체', fromAssetId: 'a1', toAssetId: 'a2' };
+  const diffTo = { id: null, date: '2026-06-15', type: 'transfer', amount: 10000, category: '이체', fromAssetId: 'a1', toAssetId: 'a3' };
+  assert.strictEqual(sandbox.findPossibleDuplicateTx([existing], same), existing);
+  assert.strictEqual(sandbox.findPossibleDuplicateTx([existing], diffTo), null);
+});
+test('findPossibleDuplicateTx: 이체에 category가 없는 레거시 데이터는 category 가드에 걸려 비교 대상에서 빠진다(항상 null)', () => {
   const existing = { id: 't1', date: '2026-06-15', type: 'transfer', amount: 10000, fromAssetId: 'a1', toAssetId: 'a2' };
   const draft = { id: null, date: '2026-06-15', type: 'transfer', amount: 10000, fromAssetId: 'a1', toAssetId: 'a2' };
   assert.strictEqual(sandbox.findPossibleDuplicateTx([existing], draft), null);
@@ -18946,13 +18953,24 @@ test('saveTx: 기존 거래를 수정(d.id 있음)할 때는 다른 거래와 �
   assert.strictEqual(sandbox.confirmSheetCalls.length, 0, '수정 경로는 중복 확인 대상이 아님');
   assert.strictEqual(sandbox.DB.txns.find((t) => t.id === 'e2').amount, 9000, '수정이 그대로 반영되어야 함');
 });
-test('saveTx: 이체(transfer)는 같은 날짜/금액/자산 거래가 있어도 confirmSheet 없이 바로 저장된다', () => {
+test('saveTx: 이체(transfer)도 같은 날짜/금액/자산의 기존 이체가 있으면 confirmSheet로 확인한다(category는 _applyType이 항상 "이체"로 채움)', () => {
   sandbox.TWi = -1;
-  sandbox.DB = { txns: [{ id: 'e1', date: '2026-01-15', type: 'transfer', amount: 10000, fromAssetId: 'a1', toAssetId: 'a2', confirmed: true }], settings: {} };
-  sandbox.txDraft = { id: null, type: 'transfer', date: '2026-01-15', memo: '', amount: 10000, fromAssetId: 'a1', toAssetId: 'a2', repeat: false };
+  sandbox.DB = { txns: [{ id: 'e1', date: '2026-01-15', type: 'transfer', amount: 10000, category: '이체', fromAssetId: 'a1', toAssetId: 'a2', confirmed: true }], settings: {} };
+  sandbox.txDraft = { id: null, type: 'transfer', date: '2026-01-15', category: '이체', memo: '', amount: 10000, fromAssetId: 'a1', toAssetId: 'a2', repeat: false };
   sandbox.confirmSheetCalls = [];
   sandbox.saveTx();
-  assert.strictEqual(sandbox.confirmSheetCalls.length, 0, '이체는 중복 확인 대상에서 제외됨(findPossibleDuplicateTx 주석 참고)');
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 1, '이체도 다른 유형과 동일하게 중복 확인 대상임');
+  assert.strictEqual(sandbox.DB.txns.length, 1, '확인하기 전까지는 저장되면 안 됨');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.txns.length, 2);
+});
+test('saveTx: 이체(transfer)라도 받는 자산(toAssetId)이 다르면 confirmSheet 없이 바로 저장된다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { txns: [{ id: 'e1', date: '2026-01-15', type: 'transfer', amount: 10000, category: '이체', fromAssetId: 'a1', toAssetId: 'a2', confirmed: true }], settings: {} };
+  sandbox.txDraft = { id: null, type: 'transfer', date: '2026-01-15', category: '이체', memo: '', amount: 10000, fromAssetId: 'a1', toAssetId: 'a3', repeat: false };
+  sandbox.confirmSheetCalls = [];
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0);
   assert.strictEqual(sandbox.DB.txns.length, 2);
 });
 
