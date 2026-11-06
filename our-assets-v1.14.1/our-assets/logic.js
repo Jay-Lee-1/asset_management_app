@@ -182,6 +182,31 @@ function filterTxnsByOwner(txns,assets,owner){
  });
 }
 
+/* ================= SETTLEMENT (공동지출 정산) ================= */
+/* 2인 귀속(ownerA/ownerB) 간 "같이 냈어요"로 표시한 지출(t.shared===true, t.type==='expense')을 누가
+ * 얼마 냈는지 합산하고, ratioA(ownerA의 분담 비율 %) 기준 기대 분담액과의 차액을 계산한다. 결제 자산
+ * (fromAssetId)의 owner를 filterTxnsByOwner와 동일한 방식(ownerOf)으로 찾되, ownerA/ownerB 둘 다
+ * 아니면(예: '공용' 자산이나 제3 owner가 결제) 어느 쪽에도 더하지 않고 그냥 제외한다 — 억지로 한쪽에
+ * 합치면 분담 계산 자체가 틀어지므로, 이 한계는 호출부(openSettlement)가 UI 안내로 문서화한다.
+ * total이 0이면(공동지출 없음) diffAmount=0·oweOwner=null로 "정산할 것 없음"을 나타낸다. */
+function settlementSummary(txns,assets,ownerA,ownerB,ratioA){
+ const ownerOf=id=>{if(!id)return null;const a=(assets||[]).find(x=>x.id===id);return a?a.owner:null};
+ let paidA=0,paidB=0;
+ (txns||[]).forEach(t=>{
+  if(t.type!=='expense'||!t.shared)return;
+  const o=ownerOf(t.fromAssetId);
+  if(o===ownerA)paidA+=t.amount;
+  else if(o===ownerB)paidB+=t.amount;
+ });
+ const total=paidA+paidB;
+ const ra=(ratioA==null?50:ratioA);
+ const expectedA=total?Math.round(total*ra/100):0;
+ const expectedB=total-expectedA;
+ const diffAmount=Math.abs(paidA-expectedA);
+ const oweOwner=diffAmount===0?null:(paidA>expectedA?ownerB:ownerA);
+ return {paidA,paidB,total,expectedA,expectedB,diffAmount,oweOwner};
+}
+
 /* ================= CLOUD MERGE / TOMBSTONE ================= */
 /* localArr/remoteArr(둘 다 {id,...,updatedAt?} 배열)를 id 단위로 3-way 병합하는 순수 함수.
  * DB/전역 상태를 전혀 읽지 않아 afterCloudAuth() 밖에서도 그대로 단위 테스트할 수 있다.

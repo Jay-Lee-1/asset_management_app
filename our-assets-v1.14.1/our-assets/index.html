@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.372';
+const APP_VERSION='1.47.373';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2560,7 +2560,7 @@ function load(){
 function writeThemeCache(){try{localStorage.setItem('asset_app_theme_cache',JSON.stringify(themeCachePayload(DB.settings)))}catch(e){}}
 function migrate(){
  DB.rates=DB.rates||{};DB.rates.fx=DB.rates.fx||{};DB.rates.stocks=DB.rates.stocks||{};DB.rates.crypto=DB.rates.crypto||{}; /* crypto 자산 종류 신설(app-evolve cycle219) — 기존 계정엔 rates.crypto 버킷이 없어 assetEval()/rateUnknown()의 R.crypto[code] 접근이 터짐 */
- DB.settings=Object.assign({themeMode:'system',includeScheduled:false,assetSort:'custom',histSortAsc:true,confirmTransfers:true,autoRates:true,bigMin:100000,dismissedStaleMvIds:[],persistWarnDismissed:false,storageSizeWarnDismissed:false,clockSkewWarnDismissed:false,mergeDataLossCount:0,mergeDataLossFields:[],notifyMute:{},targetAllocation:{}},DB.settings||{});
+ DB.settings=Object.assign({themeMode:'system',includeScheduled:false,assetSort:'custom',histSortAsc:true,confirmTransfers:true,autoRates:true,bigMin:100000,dismissedStaleMvIds:[],persistWarnDismissed:false,storageSizeWarnDismissed:false,clockSkewWarnDismissed:false,mergeDataLossCount:0,mergeDataLossFields:[],notifyMute:{},targetAllocation:{},settle:null,settledThrough:null},DB.settings||{});
  if(!Array.isArray(DB.settings.groupOrder)||!DB.settings.groupOrder.length)DB.settings.groupOrder=[...DEFAULT_GROUP_ORDER];
  DEFAULT_GROUP_ORDER.forEach(t=>{if(!DB.settings.groupOrder.includes(t))DB.settings.groupOrder.push(t)});
  delete DB.settings.showScheduled; /* 예정 표시는 홈 '예정 포함'으로 통합 */
@@ -5112,6 +5112,7 @@ function doRenameOwner(i){if(twGuard())return;const v=$('renameOwner').value.tri
  DB.owners[i]=v;DB.assets.forEach(a=>{if(a.owner===old){a.owner=v;touch(a)}}); /* touch() 누락 시 mergeCollection()이 updatedAt만 보고 병합하다 다른 기기의 동기화 안 된 자산이 이 이름변경을 조용히 되돌릴 수 있음(saveAsset/askRelinkDeleted와 동일한 불변식) */
  (DB.goals||[]).forEach(g=>{if(g.owner===old){g.owner=v;touch(g)}}); /* assets와 동일한 이유 — 목표(goal)도 owner가 생긴 뒤로 이름변경을 따라가야 함(app-evolve cycle124) */
  if(ST.assetOwner===old)ST.assetOwner=v; if(ST.plan.owner===old)ST.plan.owner=v; if(ST.spendOwner===old)ST.spendOwner=v; if(ST.hist&&ST.hist.owner===old)ST.hist.owner=v; /* 활성 귀속 필터가 이름 변경을 따라가도록 — ST.hist.owner(전체내역 탭, 지출분석 카테고리 드릴다운이 세팅)까지 빠지면 이름 바꾼 뒤 그 필터가 사라진 옛 이름 그대로 남아 filterTxnsByOwner가 매칭되는 자산을 못 찾아 내역이 조용히 전부 사라져 보인다 */
+ if(DB.settings&&DB.settings.settle){if(DB.settings.settle.ownerA===old)DB.settings.settle.ownerA=v;if(DB.settings.settle.ownerB===old)DB.settings.settle.ownerB=v;} /* 정산(settlementSummary) 설정도 같은 이유로 이름변경을 따라가야 함 — 안 그러면 openSettlement()의 owner 존재 검증에 걸려 재설정을 요구받는다(app-evolve cycle314 advance) */
  (DB.nwHistory||[]).forEach(h=>{if(h.byOwner&&old in h.byOwner){h.byOwner[v]=h.byOwner[old];delete h.byOwner[old]}}); /* 과거 추이 스냅샷의 귀속별 키도 새 이름으로 이동 */
  DB.deletedIds=DB.deletedIds||{};DB.deletedIds[ownerTombKey(old)]=Date.now();delete DB.deletedIds[ownerTombKey(v)]; /* old 이름도 delOwner처럼 톰스톤해야 함 — 안 그러면 mergeNameListWithTombstones가 old를 '살아있다'고 보고 아직 이 이름변경을 모르는 다른 기기의 사본이 old를 되살림(app-evolve cycle180, doRenameCat과 동일). v가 과거에 삭제됐던 이름이면 그 톰스톤은 지워 되살림을 허용 */
  save();openOwnerManage();toast('귀속을 수정했어요')}
@@ -5174,6 +5175,101 @@ function mergeOwnerInto(i,toName){if(twGuard())return;
   delete DB.deletedIds[ownerTombKey(from)];
   touchSave(...assetItems,...goalItems);renderCurrent();openOwnerManage();toast('되돌렸어요')
  });
+}
+
+/* ================= SETTLEMENT (공동지출 정산) ================= */
+/* 2인 가구용 귀속 구조(DB.owners 기본값 '나'/'배우자'/'공용')인데도 "이번 달 같이 쓴 돈, 누가 더
+ * 냈고 누구한테 얼마 보내면 되지?"에 답할 방법이 전혀 없던 공백을 메운다(app-evolve cycle314
+ * critique). 집계(settlementSummary)는 logic.js 순수 함수, 여기선 DB.settings.settle(정산용 두
+ * 귀속·ownerA 분담 비율)로 범위를 좁혀 계산하고 화면/정산완료 처리를 맡는다. */
+let settleDraft=null;
+/* 정산 설정 시트 — openTargetAllocationForm과 동일한 draft 패턴(열 때 복사, 저장할 때만 반영).
+ * 두 귀속은 openOwnerPicker(merge 피커가 쓰는 exclude 옵션 재사용)로 고르고, 서로 같은 귀속을
+ * 고르지 못하게 상대쪽을 exclude에 넣는다. */
+function openSettleConfigForm(){
+ const cur=DB.settings.settle;
+ settleDraft={ownerA:cur?cur.ownerA:null,ownerB:cur?cur.ownerB:null,ratioA:cur&&cur.ratioA!=null?cur.ratioA:50};
+ renderSettleConfigForm();
+}
+function settleConfigPickA(){openOwnerPicker({current:settleDraft.ownerA,exclude:settleDraft.ownerB?[settleDraft.ownerB]:[],back:renderSettleConfigForm,onPick:v=>{settleDraft.ownerA=v;renderSettleConfigForm()}})}
+function settleConfigPickB(){openOwnerPicker({current:settleDraft.ownerB,exclude:settleDraft.ownerA?[settleDraft.ownerA]:[],back:renderSettleConfigForm,onPick:v=>{settleDraft.ownerB=v;renderSettleConfigForm()}})}
+function settleRatioInput(el){
+ let v=parseFloat((el.value||'').replace(/,/g,''));
+ if(!(v>=0))v=0;if(v>100)v=100;
+ settleDraft.ratioA=v;
+ const h=$('settleRatioHint');if(h)h.textContent=`${settleDraft.ownerB||'상대방'}: ${100-v}%`;
+}
+function renderSettleConfigForm(){
+ const ratio=settleDraft.ratioA==null?50:settleDraft.ratioA;
+ const ownerBtn=(v,onclick)=>`<button class="pick ${v?'':'placeholder'}" onclick="${onclick}"><div class="pav" style="background:var(--sunken);color:var(--text-2)">${svg('users')}</div><div class="pbody"><div class="pn">${v?esc(v):'선택하세요'}</div></div><div class="pc">${svg('chevR')}</div></button>`;
+ openSheet(`<h3>정산 설정</h3><div class="desc">공동지출을 나눠 낼 두 귀속과 분담 비율을 정하세요. 지출 입력 시 '같이 냈어요'를 켠 내역만 집계돼요.</div>
+  <div class="field"><label>귀속 A</label>${ownerBtn(settleDraft.ownerA,'settleConfigPickA()')}</div>
+  <div class="field"><label>귀속 B</label>${ownerBtn(settleDraft.ownerB,'settleConfigPickB()')}</div>
+  <div class="field"><label for="settleRatio">${settleDraft.ownerA?esc(settleDraft.ownerA):'귀속 A'}의 분담 비율</label><div class="with-unit"><div class="field-clear"><input id="settleRatio" class="num" inputmode="decimal" value="${ratio}" oninput="settleRatioInput(this)"><button type="button" class="fc-x" aria-label="비율 지우기" onclick="clrInput('settleRatio')">✕</button></div><span class="unit">%</span></div></div>
+  <div class="mini" id="settleRatioHint" style="margin:4px 2px 14px">${esc(settleDraft.ownerB||'상대방')}: ${100-ratio}%</div>
+  <div class="two-btn"><button class="btn btn-soft cancel" onclick="closeSheet()">취소</button>
+    <button class="btn btn-primary" onclick="saveSettleConfig()">저장</button></div>
+  ${DB.settings.settle?`<button class="del-link" onclick="clearSettleConfig()">${svg('trash')} 정산 끄기</button>`:''}`);
+}
+function saveSettleConfig(){
+ if(twGuard())return;
+ if(!settleDraft.ownerA||!settleDraft.ownerB){toast('두 귀속을 모두 선택해 주세요');return}
+ if(settleDraft.ownerA===settleDraft.ownerB){toast('서로 다른 귀속을 선택해 주세요');return}
+ const ratioA=Math.max(0,Math.min(100,settleDraft.ratioA==null?50:settleDraft.ratioA));
+ DB.settings.settle={ownerA:settleDraft.ownerA,ownerB:settleDraft.ownerB,ratioA};
+ save();closeSheet();renderCurrent();toast('정산 설정을 저장했어요');
+}
+function clearSettleConfig(){
+ if(twGuard())return;
+ DB.settings.settle=null;save();closeSheet();renderCurrent();toast('정산을 껐어요');
+}
+/* 정산 화면 — settledThrough(마지막 정산 완료일) 다음 날부터 오늘까지(미정산 누적 구간) '같이
+ * 냈어요'로 표시한 지출만 모아 settlementSummary로 집계한다. 달력 월 단위가 아니라 "마지막
+ * 정산 이후 누적"으로 범위를 잡는 이유는, 정산을 몇 달 걸러 하더라도 그 사이 쌓인 공동지출을
+ * 전부 한 번에 보여줘야 하기 때문(월 단위면 지난달 치를 놓치고 지나감). */
+function openSettlement(){
+ const cfg=settleConfigured();
+ if(!cfg){
+  openSheet(`<h3>정산</h3><div class="desc">공동지출을 나눠 낸 두 귀속과 분담 비율을 먼저 정해주세요.</div>
+   <div class="empty"><div class="ei">${svg('users')}</div><div class="et">정산 설정이 필요해요</div><div class="es">두 귀속을 정하면 누가 얼마 보낼지 알려드려요</div></div>
+   <button class="btn btn-primary" onclick="openSettleConfigForm()">정산 설정하기</button>
+   <div style="height:10px"></div><button class="btn btn-soft" onclick="closeSheet()">닫기</button>`);
+  return;
+ }
+ const from=DB.settings.settledThrough?addDays(DB.settings.settledThrough,1):RANGE_FROM;
+ const txns=allTxns(from,TODAY).filter(t=>t.type==='expense'&&t.shared&&!(t.adjust&&!t.inSurplus));
+ const s=settlementSummary(txns,DB.assets,cfg.ownerA,cfg.ownerB,cfg.ratioA);
+ const body=s.total?`<div class="card" style="text-align:center;padding:16px;margin-bottom:12px">
+    <div style="font-size:12.5px;color:var(--text-3);font-weight:700">공동지출 합계</div>
+    <div class="num" style="font-size:22px;font-weight:700;margin-top:2px">${comma(s.total)}원</div>
+    <div style="font-size:12.5px;color:var(--text-3);margin-top:6px">${esc(cfg.ownerA)} ${comma(s.paidA)}원 · ${esc(cfg.ownerB)} ${comma(s.paidB)}원</div>
+    ${s.diffAmount?`<div class="num" style="font-size:17px;font-weight:700;margin-top:10px">${esc(s.oweOwner)}님이 ${esc(s.oweOwner===cfg.ownerA?cfg.ownerB:cfg.ownerA)}님에게<br>${comma(s.diffAmount)}원 보내면 돼요</div>`:`<div style="font-size:14px;font-weight:700;margin-top:10px;color:var(--text-2)">이미 딱 맞게 나눠 냈어요 🎉</div>`}
+  </div>`:`<div class="empty"><div class="ei">${svg('users')}</div><div class="et">아직 같이 낸 지출이 없어요</div><div class="es">지출 입력에서 '같이 냈어요'를 켜 보세요</div></div>`;
+ openSheet(`<h3>정산</h3><div class="desc">${fmtDateFull(from)}부터 오늘까지 · ${esc(cfg.ownerA)} ${cfg.ratioA}% · ${esc(cfg.ownerB)} ${100-cfg.ratioA}% <span class="link" role="button" tabindex="0" aria-label="정산 설정" onclick="openSettleConfigForm()" onkeydown="rowKeydown(event,()=>openSettleConfigForm())">설정 ${svg('chev')}</span></div>
+  ${body}
+  ${s.diffAmount?`<button class="btn btn-primary" style="margin-bottom:8px" onclick="confirmSettlement()">정산 완료로 표시</button>`:''}
+  <button class="btn btn-soft" onclick="closeSheet()">닫기</button>`);
+}
+/* '정산 완료로 표시' — 실제로 갚아야 할 쪽(oweOwner)의 현금 자산에서 받는 쪽 현금 자산으로
+ * 이체 내역을 남겨(기록상으로도 "실제 정산했다"가 남게) settledThrough를 오늘로 당긴다. 다음에
+ * openSettlement을 열면 이 날짜 다음부터로 범위가 좁혀져 같은 지출을 중복 정산하지 않는다. */
+function confirmSettlement(){
+ const cfg=settleConfigured();if(!cfg)return;
+ const from=DB.settings.settledThrough?addDays(DB.settings.settledThrough,1):RANGE_FROM;
+ const txns=allTxns(from,TODAY).filter(t=>t.type==='expense'&&t.shared&&!(t.adjust&&!t.inSurplus));
+ const s=settlementSummary(txns,DB.assets,cfg.ownerA,cfg.ownerB,cfg.ratioA);
+ if(!s.diffAmount)return;
+ const payer=s.oweOwner,receiver=payer===cfg.ownerA?cfg.ownerB:cfg.ownerA;
+ confirmSheet('정산 완료로 표시',`${esc(payer)}님이 ${esc(receiver)}님에게 ${comma(s.diffAmount)}원을 보낸 걸로 이체 내역을 남기고, 오늘까지 정산 완료로 표시할까요?`,'완료로 표시',()=>doSettle(payer,receiver,s.diffAmount));
+}
+function doSettle(payer,receiver,amount){
+ if(twGuard())return;
+ const fromId=firstCashForOwner(payer),toId=firstCashForOwner(receiver);
+ if(!fromId||!toId){toast(`${fromId?receiver:payer}의 현금성 자산이 없어요`);return}
+ DB.txns.push(touch({id:uid(),type:'transfer',category:'이체',memo:'정산',amount,fromAssetId:fromId,toAssetId:toId,date:TODAY,confirmed:true}));
+ DB.settings.settledThrough=TODAY;
+ save({recsChanged:false});invalidateBalances(null,{recsChanged:false});closeSheet();renderCurrent();
+ toast('정산 완료로 표시했어요');
 }
 
 /* ================= LEDGER ================= */
@@ -5447,7 +5543,7 @@ document.addEventListener('click',e=>{
  e.preventDefault();e.stopPropagation(); /* 외부 클릭은 '취소'만 — 하부 요소 선택 방지 */
  closeFabPop();
 },true);
-function openTxSheet(){window._recCtx=null;_formScroll=0;_txFocusAmt=true;txDraft={id:null,type:'expense',date:ST.ledger.sel,category:DB.categories.expense[0],memo:'',amount:0,fromAssetId:firstCash(),toAssetId:null,repeat:false,freq:'monthly',day:null,endDate:null,count:null,photo:null};_txCatSuggAnnounced=null;snapDraft('tx');renderTxSheet()}
+function openTxSheet(){window._recCtx=null;_formScroll=0;_txFocusAmt=true;txDraft={id:null,type:'expense',date:ST.ledger.sel,category:DB.categories.expense[0],memo:'',amount:0,fromAssetId:firstCash(),toAssetId:null,repeat:false,freq:'monthly',day:null,endDate:null,count:null,photo:null,shared:false};_txCatSuggAnnounced=null;snapDraft('tx');renderTxSheet()}
 /* manifest.webmanifest shortcuts(아이콘 롱프레스)/?action= 딥링크가 공통으로 쓰는 디스패처.
  * openTxSheet()의 기본 type은 이미 'expense'라 addExpense는 추가 전환이 필요 없다
  * (app-evolve cycle254 advance). shareReceipt는 OS 공유 시트(카메라/갤러리/은행앱)에서 "공유"로
@@ -5462,6 +5558,16 @@ function runShortcutAction(action){
  else if(action==='shareReceipt'){openTxSheet();loadSharedReceiptPhoto()}
 }
 function firstCash(excludeId){const a=DB.assets.find(x=>isCashLike(x)&&x.id!==excludeId);return a?a.id:null}
+/* firstCash와 동일하지만 특정 귀속(owner)의 현금성 자산만 찾는다 — 정산 완료(doSettle)가 실제
+ * 이체 트랜잭션을 만들 때 "보내는 쪽 귀속의 현금 자산 → 받는 쪽 귀속의 현금 자산"을 자동으로
+ * 골라야 해서 owner 필터가 필요하다(app-evolve cycle314 advance). */
+function firstCashForOwner(owner){const a=DB.assets.find(x=>isCashLike(x)&&x.owner===owner);return a?a.id:null}
+/* DB.settings.settle(정산용 두 귀속·비율)가 설정돼 있고 두 귀속 모두 아직 DB.owners에 실재할 때만
+ * 유효한 설정으로 본다 — doRenameOwner는 이름변경을 따라가지만(위 가드) owner가 통째로 삭제/합쳐지는
+ * 경로(delOwner/mergeOwnerInto)는 settle까지 따라가지 않으므로, 쓰는 쪽(renderTxSheet/openSettlement)
+ * 모두 이 헬퍼로 매번 존재를 재확인해 사라진 귀속을 가리키며 조용히 오작동하지 않게 한다
+ * (app-evolve cycle314 advance). */
+function settleConfigured(){const s=DB.settings&&DB.settings.settle;return (s&&DB.owners.includes(s.ownerA)&&DB.owners.includes(s.ownerB))?s:null}
 function catListOf(type){return type==='income'?DB.categories.income:type==='saving'?DB.categories.saving:type==='expense'?DB.categories.expense:[]}
 /* tx(내역 입력)/rec(반복 설정) 폼이 공유하는 '반복일' 선택 UI. pfx='tx' 또는 'rec' */
 function dayPickerHTML(d,pfx){
@@ -5506,6 +5612,10 @@ function renderTxSheet(){
  else if(d.type==='income')assetFields=`<div class="field"><label>입금 자산</label>${assetPickBtn(d.toAssetId,"txOpenAsset('to')")}</div>`;
  else assetFields=`<div class="field"><label>보내는 자산</label>${assetPickBtn(d.fromAssetId,"txOpenAsset('from')")}</div><div class="field"><label>받는 자산</label>${assetPickBtn(d.toAssetId,"txOpenAsset('to')")}</div>`;
  const repeatChip=showRepeat?`<button class="sch-chip ${d.repeat?'on':''}" onclick="txToggleRepeat()"><span class="dot"></span>반복</button>`:'';
+ /* '같이 냈어요' 토글 — 정산(openSettlement)이 '같이 낸 지출'을 집계하는 기준 플래그(t.shared)를
+  * 켠다. 지출일 때만, 그리고 정산용 두 귀속이 설정돼 있을 때만 보여준다(설정이 없으면 토글을
+  * 켜도 어차피 정산 화면에서 집계할 상대가 없어 의미가 없다, app-evolve cycle314 advance). */
+ const sharedChip=(d.type==='expense'&&settleConfigured())?`<button class="sch-chip ${d.shared?'on':''}" onclick="txToggleShared()"><span class="dot"></span>같이 냈어요</button>`:'';
  let repeatFields='';
  if(rpt){
   const freqBtns=[['monthly','매월'],['weekly','매주'],['biweekly','격주'],['daily','매일'],['yearly','매년']].map(([v,l])=>`<button class="${d.freq===v?'on':''}" onclick="txFreq('${v}')">${l}</button>`).join('');
@@ -5519,7 +5629,7 @@ function renderTxSheet(){
  const dateLabel=rpt?'시작일':'날짜';
  const datePsub=rpt?'':(d.date===TODAY?'오늘':(isFuture(d.date)?'예정':''));
  const memoEnterSubmit=rpt?'':` onkeydown="if(event.key==='Enter'&&!event.isComposing)saveTx()"`; /* 반복 켜짐이면 뒤에 주기/종료조건 필드가 더 있어 제외 */
- openFormSheet(`<div class="tx-head"><h3>${editing?'내역 수정':'내역 입력'}</h3>${repeatChip}</div>
+ openFormSheet(`<div class="tx-head"><h3>${editing?'내역 수정':'내역 입력'}</h3>${repeatChip}${sharedChip}</div>
   <div class="seg" role="group" aria-label="구분 선택"><div class="seg-blob"></div>${typeSeg}</div>
   <div class="field"><label for="txAmt">${splitOn?'전체 금액':'금액'}</label><div class="field-clear"><input id="txAmt" class="amount-in num" inputmode="numeric" value="${d.amount?comma(d.amount):''}" placeholder="0" oninput="txAmtInput(this)"><button type="button" class="fc-x" aria-label="금액 지우기" onclick="clrInput('txAmt')">✕</button></div></div>
   <div class="field"><label>${dateLabel}</label><button class="pick" onclick="syncTxInputs();openFieldDatePicker(txDraft.date,ds=>{txDraft.date=ds;recalcEndCond(txDraft,ds);renderTxSheet()})">
@@ -5638,6 +5748,7 @@ function txSplitMemo(i,el){txDraft.splits[i].memo=el.value}
 function _applyOpenCat(draft,syncFn,renderFn){syncFn();openCatPicker({kind:draft.type,current:draft.category,back:renderFn,onPick:c=>{draft.category=c;draft._catUserTouched=true;renderFn()}})}
 function _applyOpenAsset(draft,which,syncFn,renderFn){syncFn();const isTransferLike=draft.type==='transfer'||draft.type==='saving';openAssetPicker({current:which==='to'?draft.toAssetId:draft.fromAssetId,title:which==='to'?'받는 자산':'보내는 자산',excludeMarketValued:true,excludeId:isTransferLike?(which==='to'?draft.fromAssetId:draft.toAssetId):null,back:renderFn,onPick:id=>{if(which==='to')draft.toAssetId=id;else draft.fromAssetId=id;renderFn()}})}
 function _applyType(draft,t){draft.type=t;draft.category=t==='transfer'?'이체':catListOf(t)[0]||'기타';delete draft.splits;delete draft._catUserTouched; /* 유형이 바뀌면 카테고리 목록 자체가 바뀌므로 이전 유형 기준으로 고른 분할 항목들과 '직접 선택' 표시 모두 더 이상 유효하지 않음 */
+ if(t!=='expense')draft.shared=false; /* '같이 냈어요'는 지출 전용 — 다른 유형으로 바꾸면 꺼야 숨겨진 상태로 조용히 정산에 집계되지 않는다(app-evolve cycle314 advance) */
  if((t==='income'||t==='transfer'||t==='saving')&&!draft.toAssetId)draft.toAssetId=firstCash()}
 function _applyFreq(draft,start,v){draft.freq=v;if(v==='monthly'&&!draft.day)draft.day=Number(String(start).slice(8,10))||1}
 function _applyDay(draft,start,v){if(v==='last'){draft.day='last';draft._custom=false}else if(v==='custom'){draft._custom=true;if([1,5,15,25].includes(draft.day)||draft.day==='last'||!draft.day)draft.day=Number(String(start).slice(8,10))||10}else{draft.day=Number(v);draft._custom=false}}
@@ -5648,6 +5759,7 @@ function txToggleRepeat(){syncTxInputs();txDraft.repeat=!txDraft.repeat;
  if(txDraft.repeat&&(txDraft.freq==='monthly'||!txDraft.freq)&&!txDraft.day)txDraft.day=Number(String(txDraft.date).slice(8,10))||1;
  if(txDraft.repeat){if(txDraft.splits&&txDraft.splits.length)txDraft.category=txDraft.splits[0].category||txDraft.category;delete txDraft.splits} /* DB.recurrences 자체는 이제 반복 관리 화면(openRecManage/saveRec)에서 분할을 지원하지만(app-evolve cycle282 advance), 거래 입력 중 반복을 켜는 이 간단 경로는 범위를 좁혀 분할을 되돌린다 — 필요하면 저장 후 반복 관리에서 분할을 추가할 수 있다 */
  renderTxSheet()}
+function txToggleShared(){syncTxInputs();txDraft.shared=!txDraft.shared;renderTxSheet()}
 function txFreq(v){syncTxInputs();_applyFreq(txDraft,txDraft.date,v);recalcEndCond(txDraft,txDraft.date);renderTxSheet()}
 function txDayInput(el){const v=(el.value||'').replace(/[^0-9]/g,'').slice(0,2);if(el.value!==v)el.value=v;txDraft.day=v===''?'':Number(v);dayWarn('tx',v);if(v!=='')recalcEndCond(txDraft,txDraft.date)}
 function txDay(v){syncTxInputs();_applyDay(txDraft,txDraft.date,v);recalcEndCond(txDraft,txDraft.date);renderTxSheet();if(v==='custom')focusDayIn('txDayIn')}
@@ -6915,6 +7027,7 @@ function renderMenu(){
    {ic:'target',l:'목표 관리',v:DB.goals.length+'개',a:"openGoalsList()"},
    {ic:'chart',l:'목표 자산배분',v:Object.keys(DB.settings.targetAllocation||{}).length?'설정됨':'미설정',a:"openTargetAllocationForm()"},
    {ic:'calendar',l:'연간 결산',a:"openYearReview(TM.y)"},
+   {ic:'users',l:'정산',v:settleConfigured()?'설정됨':'미설정',a:"openSettlement()"},
   ]},
   {cap:'알림 · 기준',items:[
    {ic:'check',l:'이체 확인',sw:!!DB.settings.confirmTransfers,a:"toggleConfirmTransfers()"},

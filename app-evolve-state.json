@@ -1,19 +1,8 @@
 {
-  "cycle": 314,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "귀속(owner) 간 공동지출 정산(settlement) 기능 추가",
-    "why": "앱은 명시적으로 2인 가구용 도구다 — DB.owners 기본값이 ['나','배우자','공용'](index.html:2567, seed() 1845)이고 자산목록/지출분석/소득분석/연말결산/목표 거의 모든 화면이 이미 filterTxnsByOwner(logic.js:173)와 ST.spendOwner/ownerSegHtml(예: index.html:7378 openSpendAnalysis, 7319 yearOwnerSel, 6372 incomeOwnerSel)로 귀속별 필터를 제공한다. 그런데도 2인 가구 재무앱에 가장 흔한 질문 '이번 달 공동지출, 누가 더 냈고 누구한테 얼마 보내면 되지?'에 답할 방법이 전혀 없다. 정산/더치/분담/차액/반반/기여율 전수 grep 결과 0건 — 기존에 제외된 연말결산(보고용 뷰일 뿐 정산 계산 아님)이나 owner/category/asset merge(정체성 통합, 무관)와는 다른 공백이다. 모든 지출은 결제한 자산에만 귀속되고 '내가 냈지만 배우자와 나눠야 함' 개념이 없어, 사용자가 앱 밖에서 수동 계산해야 하는 핵심 제품 공백이다.",
-    "approach": "데이터 모델: 지출 트랜잭션에 t.shared:boolean 추가(txDraft/recDraft가 임의 추가 필드를 그대로 통과시키므로 t.splits처럼 추가적/하위호환). DB.settings.settle={ownerA,ownerB,ratioA}(ratioB=100-ratioA, 기본 50/50, DB.owners 중에서 선택) + DB.settings.settledThrough(날짜, 중복 정산 방지) — archiveBaselines/catBudgetRollover와 같은 opt-in 패턴으로 migrate()에 추가. logic.js(순수, 테스트 가능): settlementSummary(txns, assets, ownerA, ownerB, ratioA) — t.shared && t.type==='expense'만 필터, 각 거래의 결제 자산 owner를 fromAssetId로 조회해 paidA/paidB 합산(A/B 둘 다 아닌 자산, 예: '공용'이나 제3 owner가 결제한 건은 명시적 제외/limitation으로 문서화), ratioA로 기대 분담액 계산, {paidA,paidB,total,expectedA,expectedB,diffAmount,oweOwner} 반환(홀수 총액/ratioA=0,100/거래 0건 등 라운딩 케이스 포함). index.html UI: (1) renderTxSheet의 지출 입력/수정 화면에 '둘이 나눠요' 토글(정산용 owner 2명이 설정돼 있고 d.type==='expense'일 때만 노출), (2) openSpendAnalysis와 같은 월-네비 패턴을 재사용하는 새 '정산' 메뉴 화면(결제액/비율/결과 문구 \"배우자님이 나에게 32,000원 보내면 돼요\" + '정산 완료로 표시' 버튼 — twGuard() 가드 후 각 owner의 기본 현금자산 간 실제 이체 트랜잭션 생성 + settledThrough 갱신), (3) 정산용 owner 2명·비율 선택 설정 하위시트, (4) owner 2명 미설정/기간 내 공동지출 0건 빈 상태 처리. 테스트(test/run.js): settlementSummary에 동률 분담, 비대칭 비율(60/40), 공동지출 0건, 한쪽만 결제, 제3/공용 owner 결제건 제외, 홀수 금액 라운딩 케이스 추가. 기각된 후보(재제안 금지): 배당/이자 추적(cost-basis 건드릴 필요 없이 이미 소득으로 기록 가능, 낮은 가치), 할부(installment) 명시적 추적(recurring의 count 종료조건이 이미 대체 가능), 귀속별(per-owner) 예산(카테고리 기반 예산 관례와 충돌 + 최근 예산이월 작업과 개념 중복)."
-  },
+  "cycle": 315,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 309,
-      "phase": "critique",
-      "timestamp": "2026-11-05T20:08:00.000Z",
-      "summary": "서브에이전트로 앱 전체를 재조사(cycle304-309 처리 항목 및 기각 후보 전부 제외 지시). 발견: 귀속(owner) 관리에 합치기(merge) 기능이 전혀 없음 — DB.owners는 categories/assets와 구조가 동일한 분류 목록(assets.owner/goals.owner/ST.assetOwner 등이 참조)인데, 카테고리의 mergeCatInto(7426-7488)·cycle308에서 시세형까지 확장된 mergeAssetInto(4284)와 달리 owner에는 merge 관련 함수가 전혀 없음(grep \"merge.*[Oo]wner|OwnerMergePicker\" 무결과). delOwner(4887-4896)는 자산/목표가 쓰는 owner는 삭제를 막고, doRenameOwner(4902-4906)는 기존 owner 이름으로 rename하는 것 자체를 막아 우회 수단도 없어, 중복된 owner를 통합할 유일한 방법이 모든 자산·목표를 하나씩 열어 owner 필드를 손으로 바꾸는 것뿐임. doRenameOwner(4907-4910)가 이미 마이그레이션 로직(DB.assets/DB.goals 재할당, ST.assetOwner/plan.owner/spendOwner/hist.owner, nwHistory[].byOwner) 대부분을 갖추고 있어 구현 템플릿이 명확함. pending_advance_plan에 저장(openOwnerMergePicker+mergeOwnerInto, nwHistory byOwner 양쪽 데이터 병합 규칙 필요, owner 선택모드/dedupeNames 수정은 범위 밖). 기각 후보: 문의 메모 수정 기능 부재(저빈도), 자산수량로그 선택모드/일괄삭제(시스템 생성 이력이라 불필요), 잔액계산 O(n^2) 성능(cycle204/207에서 이미 캐시 레이어로 해결, 새 근거 없음), 접근성 재점검(이미 aria-label 187건+focus trap 기존 충분, 구체적 공백 못 찾음). 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 309,
       "phase": "advance",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-06T15:16:00.000Z",
       "summary": "서브에이전트로 앱 전체를 재조사(cycle300-314 처리/보류/기각 항목 전부 제외 지시, twGuard 스윕·전역검색·예산이월·연말결산·owner/category/asset merge 전부·nwHistory byType/자산배분추이 카드·목표자산배분+리밸런싱·CSV날짜·이체 및 반복 중복감지(saveTx 경로 포함)·카테고리별 알림뮤트는 명시적으로 제외). 발견: 앱은 명시적 2인 가구용(DB.owners 기본값 ['나','배우자','공용'], index.html:2567/1845)이고 거의 모든 분석 화면이 이미 귀속별 필터(filterTxnsByOwner, logic.js:173)를 제공하는데, 공동지출을 누가 더 냈고 얼마를 보내야 하는지 계산해주는 정산(settlement) 기능이 전혀 없음(정산/더치/분담/차액/반반/기여율 전수 grep 0건) — 연말결산(보고용 뷰)·owner/category/asset merge(정체성 통합)와는 다른, 사용자가 수동으로 계산해야 하는 핵심 제품 공백. pending_advance_plan에 구체 계획 저장(t.shared 플래그 + DB.settings.settle{ownerA,ownerB,ratioA}/settledThrough + logic.js의 settlementSummary 순수함수 + 지출입력 '둘이 나눠요' 토글 + '정산' 메뉴 화면 + 정산완료시 실제 이체 트랜잭션 생성 + 테스트 계획). 기각 후보 3개(배당/이자 추적-낮은 가치, 할부 명시적 추적-recurring count로 이미 대체, 귀속별 예산-카테고리 기반 관례와 충돌+예산이월 작업과 개념 중복). 코드 변경 없음(state.json만 커밋, pending_advance_plan 신설에 따라 phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 314,
+      "phase": "advance",
+      "timestamp": "2026-11-06T16:30:00.000Z",
+      "summary": "critique(cycle314) 계획대로 귀속(owner) 간 공동지출 정산(settlement) 기능을 구현했다. 데이터 모델: DB.settings.settle={ownerA,ownerB,ratioA}(기본 null, 미설정)+settledThrough(기본 null) migrate() 추가. 지출 트랜잭션에 t.shared:boolean(txDraft가 임의 필드를 그대로 통과시키므로 추가적/하위호환). logic.js에 순수함수 settlementSummary(txns,assets,ownerA,ownerB,ratioA) 신설 — t.shared&&type==='expense'만 필터, fromAssetId의 owner를 filterTxnsByOwner와 동일한 방식으로 조회해 ownerA/ownerB별 paidA/paidB 합산(둘 다 아닌 자산, 예: '공용'이나 제3 owner 결제건은 명시적으로 제외), ratioA 기준 기대분담액/차액/oweOwner 계산(ratioA 0·100, 공동지출 0건, 홀수 총액 라운딩 케이스 포함). UI: renderTxSheet의 지출 입력에 '같이 냈어요' 토글(sharedChip, settleConfigured()가 유효할 때만 노출, _applyType이 지출 아닌 유형으로 바뀌면 자동으로 끔), 정산 설정 시트(openSettleConfigForm — openOwnerPicker exclude로 서로 다른 두 귀속 선택+ratioA 입력+끄기), '정산' 메뉴 화면(openSettlement — settledThrough 다음날부터 오늘까지 누적 집계, 결과 문구+'정산 완료로 표시' 버튼), confirmSettlement/doSettle(twGuard 가드, 갚는 쪽→받는 쪽 현금자산 간 실제 이체 트랜잭션 생성+settledThrough 갱신, 현금자산 없으면 안내만). firstCashForOwner/settleConfigured 헬퍼 신설. doRenameOwner에 settle.ownerA/ownerB 이름변경 추적 추가(ST.assetOwner 등과 동일한 기존 관례) — delOwner/mergeOwnerInto는 settle까지 따라가지 않지만 settleConfigured()가 매번 두 귀속의 실재 여부를 재확인해 사라진 귀속을 가리키며 조용히 오작동하지 않고 '설정 필요' 상태로 우아하게 폴백한다(ST.spendOwner류와 동일한 등급의 완화책, 하드 삭제-차단 가드는 범위 밖으로 보류). renderMenu 가계부 그룹에 '정산' 진입점 추가. 구현 중 발견: doRenameOwner/settleConfigured 양쪽에 DB.settings가 아예 없는 기존 테스트 DB 스텁이 많아 'Cannot read properties of undefined'로 기존 테스트 20건이 깨짐 — DB.settings&&DB.settings.settle로 방어해 수정(새 기능이 구버전/최소 스텁 DB에서도 안전해야 한다는 걸 직접 검증). 테스트: settlementSummary 10건(기본 필터·반반·비대칭 비율·ratioA 0/100·0건·제3 owner 제외·라운딩), doRenameOwner settle 추적 2건, firstCashForOwner/settleConfigured 6건, _applyType shared 리셋 2건, renderTxSheet sharedChip 4건+txToggleShared 1건, 정산 설정 폼 7건(saveSettleConfig 1건은 vm realm 문제로 JSON.stringify 비교), openSettlement/confirmSettlement/doSettle 9건(설정없음/빈상태/정확히맞음/차액있음/중복정산방지/twGuard/현금자산없음), renderMenu 소스패턴 1건 — 2916->2960 통과. node --check logic.js/sw.js, 메인 인라인 스크립트 new Function 구문검사, manifest.webmanifest JSON 유효성 모두 통과. APP_VERSION 1.47.372->1.47.373, sw.js CACHE v639->v640. 범위를 좁힌 부분(다음 critique가 필요시 재검토): mergeOwnerInto/delOwner의 settle 추적은 생략(설정 재안내 폴백으로 충분하다고 판단), 정산 내역 자체의 CSV 내보내기나 과거 정산 이력 보관은 미포함.",
       "commit": null
     }
   ]

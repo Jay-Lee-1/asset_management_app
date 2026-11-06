@@ -228,6 +228,10 @@ const FUNCTIONS = [
   'clampDay', 'saveTx', 'commitTx', 'commitTxAsRec', 'duplicateTx', 'editTx', 'assetBase', 'balancesUpTo', 'balanceAt', 'balancesAtDates', 'balanceAtFromMap',
   'addBalanceAdjust', 'updateBalanceAdjust', 'toggleConfirmTransfers', 'rollPendingTransfers',
   'assetEval', 'assetGainLoss', 'assetGainLossBadge', 'costBasisField', 'interestRateField', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'pkFilteredAssets', 'pkEmptyHtml', 'pkAssetQInput', 'refreshPkAssetList', 'movePkBlob', 'pkBack', 'pkChoose', 'pkPickAsset', 'openOwnerPicker', 'sheetSlideBack', 'delOwner', 'doMaturity', 'openMaturity', 'firstCash',
+  // 정산(settlement, app-evolve cycle314 critique/advance): settlementSummary(logic.js)를 둘러싼
+  // 설정 폼/화면/완료처리. firstCashForOwner/settleConfigured는 doSettle/renderTxSheet/renderMenu가
+  // 공유하는 작은 헬퍼라 그 호출부들과 같은 sandbox에 항상 함께 올라가야 한다.
+  'firstCashForOwner', 'settleConfigured', 'openSettleConfigForm', 'settleConfigPickA', 'settleConfigPickB', 'settleRatioInput', 'renderSettleConfigForm', 'saveSettleConfig', 'clearSettleConfig', 'openSettlement', 'confirmSettlement', 'doSettle',
   'detectStaleMarketValuedTxns', 'delBudget', 'saveBudget', 'openBudgetPrompt', 'openBigMinSheet',
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards', 'openTidyAsset', 'openTidyList', 'tidyListSnooze',
   'debtsBehind', 'openDebtBehindList', 'debtsPaidOff', 'openDebtPaidOffList', 'ackDebtPayoff',
@@ -256,7 +260,7 @@ const FUNCTIONS = [
  'notifyAlertInfo', 'pickNotifyAlerts', 'pruneNotifiedIds', 'syncNotifyPermission', 'toggleNotifyMuteGroup',
   'catIconOf', 'catGlyph', 'openCatManage', 'openCatPicker', 'catFilteredGrid', 'catEmptyHtml', 'pkCatQInput', 'refreshPkCatList', 'moveCatBlob', 'pkPickCat',
   'openIconPicker', 'pickCatIcon',
-  'catListOf', 'catAv', 'assetPickBtn', 'endCondFields', 'dayPickerHTML', 'openFormSheet', 'renderTxSheet', '_applyType', '_applyFreq', '_applyDay', '_applyCount', '_applyOpenCat', '_applyOpenAsset', 'txType', 'txToggleRepeat',
+  'catListOf', 'catAv', 'assetPickBtn', 'endCondFields', 'dayPickerHTML', 'openFormSheet', 'renderTxSheet', '_applyType', '_applyFreq', '_applyDay', '_applyCount', '_applyOpenCat', '_applyOpenAsset', 'txType', 'txToggleRepeat', 'txToggleShared',
   // txMemoInput/txCatSuggestUpdate/txApplyCatSuggest·recMemoInput/recCatSuggestUpdate/
   // recApplyCatSuggest는 메모 기반 카테고리 추천 칩(app-evolve cycle270 advance)의 입력
   // 디바운스·렌더·적용 핸들러 — openTxSheet/openRecSheet가 매번 $('txCatSuggest')/
@@ -1570,6 +1574,22 @@ test("_applyType: 'expense'로 바뀌면 toAssetId는 건드리지 않는다(출
   const d = { type: 'income', category: '급여', toAssetId: null };
   sandbox._applyType(d, 'expense');
   assert.strictEqual(d.toAssetId, null);
+});
+/* _applyType: '같이 냈어요'(d.shared)는 지출 전용 플래그라, 다른 유형으로 바꾸면 꺼야 한다 — 안
+ * 그러면 예전에 지출로 입력하다 shared를 켠 뒤 유형을 수입/이체로 바꿔도 플래그가 숨겨진 채로
+ * 남아 정산 집계 쪽 settlementSummary가 보지도 못하는 상태로 조용히 걸려있게 된다(app-evolve
+ * cycle314 advance). */
+test("_applyType: expense 외의 유형으로 바뀌면 d.shared를 false로 끈다", () => {
+  sandbox.DB = { categories: { expense: ['식비'], income: ['급여'], saving: ['저축'] }, assets: [] };
+  const d = { type: 'expense', category: '식비', shared: true };
+  sandbox._applyType(d, 'income');
+  assert.strictEqual(d.shared, false);
+});
+test("_applyType: expense로 그대로 있거나 expense로 바뀌면 d.shared를 건드리지 않는다", () => {
+  sandbox.DB = { categories: { expense: ['식비', '교통비'], income: ['급여'] }, assets: [] };
+  const d = { type: 'income', category: '급여', shared: true };
+  sandbox._applyType(d, 'expense');
+  assert.strictEqual(d.shared, true, 'expense로 바뀌는 중엔 shared를 끄면 안 됨');
 });
 
 test("_applyDay: v='last'면 day='last', _custom=false로 고정된다", () => {
@@ -16806,6 +16826,112 @@ test('filterTxnsByOwner: txns/assets가 없어도(undefined) 터지지 않는다
   assert.strictEqual(sandbox.filterTxnsByOwner(undefined, undefined, '나').length, 0);
 });
 
+/* ---------- settlementSummary: 2인 귀속 간 공동지출(t.shared===true인 지출) 정산 집계(app-evolve
+ * cycle314 critique/advance). 결제 자산(fromAssetId)의 owner를 filterTxnsByOwner와 동일한 방식으로
+ * 찾아 ownerA/ownerB별로 합산하고, ratioA(ownerA의 분담 비율 %) 기준 기대 분담액과의 차액을 낸다. */
+test('settlementSummary: shared가 아니거나 expense가 아닌 거래는 집계에서 빠진다', () => {
+  const assets = [{ id: 'a1', owner: '나' }, { id: 'a2', owner: '배우자' }];
+  const txns = [
+    { type: 'expense', fromAssetId: 'a1', amount: 10000 }, // shared 없음 -> 제외
+    { type: 'expense', fromAssetId: 'a2', amount: 20000, shared: false }, // shared=false -> 제외
+    { type: 'income', fromAssetId: 'a1', amount: 30000, shared: true }, // expense 아님 -> 제외
+    { type: 'expense', fromAssetId: 'a1', amount: 5000, shared: true },
+  ];
+  const s = sandbox.settlementSummary(txns, assets, '나', '배우자', 50);
+  assert.strictEqual(s.total, 5000, '공유로 표시된 지출 1건만 집계되어야 함');
+  assert.strictEqual(s.paidA, 5000);
+  assert.strictEqual(s.paidB, 0);
+});
+test('settlementSummary: 똑같이 반반 부담(50/50)했으면 diffAmount=0, oweOwner=null', () => {
+  const assets = [{ id: 'a1', owner: '나' }, { id: 'a2', owner: '배우자' }];
+  const txns = [
+    { type: 'expense', fromAssetId: 'a1', amount: 10000, shared: true },
+    { type: 'expense', fromAssetId: 'a2', amount: 10000, shared: true },
+  ];
+  const s = sandbox.settlementSummary(txns, assets, '나', '배우자', 50);
+  assert.strictEqual(s.total, 20000);
+  assert.strictEqual(s.paidA, 10000);
+  assert.strictEqual(s.paidB, 10000);
+  assert.strictEqual(s.expectedA, 10000);
+  assert.strictEqual(s.diffAmount, 0);
+  assert.strictEqual(s.oweOwner, null);
+});
+test('settlementSummary: ownerA가 더 많이 냈으면(50/50 기준) ownerB가 그 차액을 갚아야 한다', () => {
+  const assets = [{ id: 'a1', owner: '나' }, { id: 'a2', owner: '배우자' }];
+  const txns = [
+    { type: 'expense', fromAssetId: 'a1', amount: 30000, shared: true },
+    { type: 'expense', fromAssetId: 'a2', amount: 10000, shared: true },
+  ];
+  const s = sandbox.settlementSummary(txns, assets, '나', '배우자', 50);
+  assert.strictEqual(s.total, 40000);
+  assert.strictEqual(s.expectedA, 20000);
+  assert.strictEqual(s.diffAmount, 10000, '나가 20000원 더 냄 -> 배우자가 10000원 갚아야 함');
+  assert.strictEqual(s.oweOwner, '배우자');
+});
+test('settlementSummary: ownerB가 더 많이 냈으면 반대로 ownerA가 oweOwner가 된다', () => {
+  const assets = [{ id: 'a1', owner: '나' }, { id: 'a2', owner: '배우자' }];
+  const txns = [
+    { type: 'expense', fromAssetId: 'a1', amount: 10000, shared: true },
+    { type: 'expense', fromAssetId: 'a2', amount: 30000, shared: true },
+  ];
+  const s = sandbox.settlementSummary(txns, assets, '나', '배우자', 50);
+  assert.strictEqual(s.diffAmount, 10000);
+  assert.strictEqual(s.oweOwner, '나');
+});
+test('settlementSummary: 비대칭 분담 비율(60/40)로 기대 분담액이 바뀐다', () => {
+  const assets = [{ id: 'a1', owner: '나' }, { id: 'a2', owner: '배우자' }];
+  const txns = [
+    { type: 'expense', fromAssetId: 'a1', amount: 60000, shared: true },
+    { type: 'expense', fromAssetId: 'a2', amount: 40000, shared: true },
+  ];
+  const s = sandbox.settlementSummary(txns, assets, '나', '배우자', 60);
+  assert.strictEqual(s.expectedA, 60000, '총 10만원의 60%를 나가 부담하기로 했으므로 실제로 낸 6만원과 정확히 일치');
+  assert.strictEqual(s.diffAmount, 0);
+  assert.strictEqual(s.oweOwner, null);
+});
+test('settlementSummary: ratioA가 0이면(ownerB 전액 부담) ownerA가 조금이라도 냈으면 그만큼 돌려받아야 한다', () => {
+  const assets = [{ id: 'a1', owner: '나' }, { id: 'a2', owner: '배우자' }];
+  const txns = [{ type: 'expense', fromAssetId: 'a1', amount: 10000, shared: true }];
+  const s = sandbox.settlementSummary(txns, assets, '나', '배우자', 0);
+  assert.strictEqual(s.expectedA, 0);
+  assert.strictEqual(s.diffAmount, 10000);
+  assert.strictEqual(s.oweOwner, '배우자');
+});
+test('settlementSummary: ratioA가 100이면(ownerA 전액 부담) ownerB가 낸 돈을 전부 돌려줘야 한다', () => {
+  const assets = [{ id: 'a1', owner: '나' }, { id: 'a2', owner: '배우자' }];
+  const txns = [{ type: 'expense', fromAssetId: 'a2', amount: 10000, shared: true }];
+  const s = sandbox.settlementSummary(txns, assets, '나', '배우자', 100);
+  assert.strictEqual(s.expectedA, 10000);
+  assert.strictEqual(s.diffAmount, 10000);
+  assert.strictEqual(s.oweOwner, '나');
+});
+test('settlementSummary: 공동지출이 0건이면 total=0, diffAmount=0, oweOwner=null (정산할 것 없음)', () => {
+  const s = sandbox.settlementSummary([], [{ id: 'a1', owner: '나' }], '나', '배우자', 50);
+  assert.strictEqual(s.total, 0);
+  assert.strictEqual(s.diffAmount, 0);
+  assert.strictEqual(s.oweOwner, null);
+});
+test('settlementSummary: 결제 자산이 ownerA/ownerB 둘 다 아니면("공용" 등 제3 owner) 어느 쪽에도 더하지 않고 제외한다', () => {
+  const assets = [{ id: 'a1', owner: '나' }, { id: 'a2', owner: '배우자' }, { id: 'a3', owner: '공용' }];
+  const txns = [
+    { type: 'expense', fromAssetId: 'a1', amount: 10000, shared: true },
+    { type: 'expense', fromAssetId: 'a3', amount: 99999, shared: true }, // 공용 결제 -> 집계에서 빠짐
+  ];
+  const s = sandbox.settlementSummary(txns, assets, '나', '배우자', 50);
+  assert.strictEqual(s.total, 10000, '공용 자산 결제건은 total에도 포함되면 안 됨');
+  assert.strictEqual(s.paidA, 10000);
+  assert.strictEqual(s.paidB, 0);
+});
+test('settlementSummary: 홀수 총액으로 50/50이 딱 안 나눠지면 Math.round로 반올림한 기대액을 쓴다', () => {
+  const assets = [{ id: 'a1', owner: '나' }, { id: 'a2', owner: '배우자' }];
+  const txns = [{ type: 'expense', fromAssetId: 'a1', amount: 101, shared: true }];
+  const s = sandbox.settlementSummary(txns, assets, '나', '배우자', 50);
+  assert.strictEqual(s.expectedA, 51, '101*0.5=50.5 -> Math.round로 51');
+  assert.strictEqual(s.expectedB, 50, 'expectedB는 total-expectedA로 나머지를 그대로 가져야 함');
+  assert.strictEqual(s.diffAmount, 50);
+  assert.strictEqual(s.oweOwner, '배우자');
+});
+
 /* ---------- mergeCollection: afterCloudAuth()의 localUnsynced 충돌 분기가 DB.txns를 문서 전체
  * 교체 대신 레코드 단위로 합치는 데 쓰는 순수 3-way 병합 함수(app-evolve cycle90 critique/advance).
  * 두 기기가 서로 무관한 거래만 각자 편집·삭제해도 전체 충돌로 취급돼 한쪽 편집이 통째로 사라지던
@@ -22305,6 +22431,40 @@ test('firstCash: excludeId 없이 부르는 기존 호출부(openTxSheet)는 회
   assert.strictEqual(sandbox.firstCash(), 'a_cash1');
 });
 
+/* ---------- firstCashForOwner/settleConfigured: 정산 완료 처리(doSettle)가 이체 트랜잭션을 만들 때
+ * 쓰는 "그 귀속의 현금 자산"을 찾는 헬퍼와, 정산 설정이 아직 유효한지(두 귀속 모두 실재하는지)
+ * 확인하는 헬퍼(app-evolve cycle314 advance). ---------- */
+test('firstCashForOwner: 해당 귀속의 첫 현금성 자산 id를 반환한다', () => {
+  sandbox.DB = { assets: [
+    { id: 'a1', type: 'cash', owner: '나' },
+    { id: 'a2', type: 'cash', owner: '배우자' },
+    { id: 'a3', type: 'gold', owner: '나' },
+  ] };
+  assert.strictEqual(sandbox.firstCashForOwner('나'), 'a1');
+  assert.strictEqual(sandbox.firstCashForOwner('배우자'), 'a2');
+});
+test('firstCashForOwner: 그 귀속에 현금성 자산이 없으면 null을 반환한다', () => {
+  sandbox.DB = { assets: [{ id: 'a1', type: 'gold', owner: '나' }] };
+  assert.strictEqual(sandbox.firstCashForOwner('나'), null);
+});
+test('settleConfigured: DB.settings.settle이 없으면(미사용) null을 반환한다', () => {
+  sandbox.DB = { owners: ['나', '아내'], settings: {} };
+  assert.strictEqual(sandbox.settleConfigured(), null);
+});
+test('settleConfigured: DB.settings 자체가 없어도 터지지 않고 null을 반환한다', () => {
+  sandbox.DB = { owners: ['나', '아내'] };
+  assert.strictEqual(sandbox.settleConfigured(), null);
+});
+test('settleConfigured: 두 귀속이 모두 DB.owners에 실재하면 settle 객체를 그대로 반환한다', () => {
+  const settle = { ownerA: '나', ownerB: '아내', ratioA: 50 };
+  sandbox.DB = { owners: ['나', '아내'], settings: { settle } };
+  assert.strictEqual(sandbox.settleConfigured(), settle);
+});
+test('settleConfigured: ownerA/ownerB 중 하나라도 DB.owners에서 사라졌으면(삭제·합치기 등) null을 반환한다', () => {
+  sandbox.DB = { owners: ['나'], settings: { settle: { ownerA: '나', ownerB: '아내', ratioA: 50 } } };
+  assert.strictEqual(sandbox.settleConfigured(), null, '아내가 삭제/합쳐져 DB.owners에 없으면 무효');
+});
+
 /* ---------- doMaturity: 저축 통장 자신을 '만기 시 이체할 통장'으로 골라둔 채 만기 이체를 실행하면
  * fromAssetId===toAssetId인 자기 자신 이체 거래가 조용히 생기던 버그(app-evolve cycle34 develop).
  * saveTx()/saveRec()는 저장 시점에 `fromAssetId===toAssetId` 가드가 있는데(3052, 3233),
@@ -22921,6 +23081,37 @@ test('doRenameOwner: DB.nwHistory의 byOwner 키도 옛 이름에서 새 이름�
   assert.strictEqual('아빠' in sandbox.DB.nwHistory[0].byOwner, false);
   assert.strictEqual(sandbox.DB.nwHistory[1].byOwner, undefined, 'byOwner가 없던 항목은 그대로 없어야 함');
 });
+/* ---------- doRenameOwner: 정산(settle) 설정의 ownerA/ownerB도 이름변경을 따라가야 함(app-evolve
+ * cycle314 advance) — 안 그러면 openSettlement()의 owner 존재 검증(settleConfigured)에 걸려
+ * 이름만 바꿨을 뿐인데 정산 설정이 통째로 무효화된 것처럼 보인다. ---------- */
+test('doRenameOwner: 정산 설정의 ownerA/ownerB가 옛 이름을 가리키고 있었다면 새 이름으로 함께 옮겨간다', () => {
+  sandbox.DB = {
+    owners: ['나', '아빠'], assets: [],
+    settings: { settle: { ownerA: '아빠', ownerB: '나', ratioA: 50 } },
+  };
+  sandbox.ST = { plan: {} };
+  const $orig = sandbox.$;
+  sandbox.$ = (id) => (id === 'renameOwner' ? { value: '아버지' } : $orig(id));
+  try {
+    sandbox.doRenameOwner(1);
+  } finally {
+    sandbox.$ = $orig;
+  }
+  assert.strictEqual(sandbox.DB.settings.settle.ownerA, '아버지', 'ownerA가 옛 이름(아빠)이었으면 새 이름으로 옮겨가야 함');
+  assert.strictEqual(sandbox.DB.settings.settle.ownerB, '나', '옛 이름과 무관한 ownerB는 그대로 둬야 함');
+});
+test('doRenameOwner: DB.settings 자체가 없거나 정산 설정이 없으면(미사용) 에러 없이 조용히 넘어간다', () => {
+  sandbox.DB = { owners: ['나', '아빠'], assets: [] };
+  sandbox.ST = { plan: {} };
+  const $orig = sandbox.$;
+  sandbox.$ = (id) => (id === 'renameOwner' ? { value: '아버지' } : $orig(id));
+  try {
+    assert.doesNotThrow(() => sandbox.doRenameOwner(1));
+  } finally {
+    sandbox.$ = $orig;
+  }
+  assert.strictEqual(sandbox.DB.owners[1], '아버지');
+});
 
 /* ---------- addOwner/doRenameOwner: 대소문자·공백만 다른 근접 중복 귀속명 방지 (app-evolve cycle85 advance) ----------
  * addCat/doRenameCat과 동일한 이유로, 귀속명도 완전 일치만 보면 "나"와 "Na"가 아니라 "아빠"/"아 빠"처럼
@@ -23140,6 +23331,204 @@ test('openOwnerMergePicker: 자기 자신을 대상 목록에서 빼고 귀속 �
   const html = sandbox.lastPickerHtml;
   assert.ok(!html.includes('data-val="아빠"'), '자기 자신은 대상 목록에서 빠져야 함');
   assert.ok(html.includes('data-val="나"') && html.includes('data-val="아이"'), '다른 귀속은 대상으로 보여야 함');
+});
+
+/* ---------- 정산(settlement) 설정 폼/화면/완료처리 — settlementSummary(logic.js)를 둘러싼
+ * openSettleConfigForm/renderSettleConfigForm/saveSettleConfig/clearSettleConfig와 openSettlement/
+ * confirmSettlement/doSettle(app-evolve cycle314 critique/advance). ---------- */
+test('openSettleConfigForm/renderSettleConfigForm: 미설정 상태로 열면 두 피커 모두 placeholder이고 비율 기본값은 50, "끄기" 링크는 없다', () => {
+  sandbox.DB = { owners: ['나', '배우자'], settings: {} };
+  sandbox.lastSheetHtml = null;
+  sandbox.openSettleConfigForm();
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('placeholder') && (html.match(/placeholder/g) || []).length >= 2, '귀속 A/B 둘 다 placeholder여야 함');
+  assert.ok(html.includes('value="50"'), '비율 기본값은 50이어야 함');
+  assert.ok(!html.includes('정산 끄기'), '아직 설정이 없으면 끄기 링크가 없어야 함');
+});
+test('openSettleConfigForm: 이미 설정돼 있으면 그 값을 그대로 불러오고 "끄기" 링크가 보인다', () => {
+  sandbox.DB = { owners: ['나', '배우자'], settings: { settle: { ownerA: '나', ownerB: '배우자', ratioA: 70 } } };
+  sandbox.lastSheetHtml = null;
+  sandbox.openSettleConfigForm();
+  const html = sandbox.lastSheetHtml;
+  assert.strictEqual(sandbox.settleDraft.ratioA, 70);
+  assert.ok(html.includes('value="70"'));
+  assert.ok(html.includes('정산 끄기'));
+});
+test('settleConfigPickA/settleConfigPickB: 상대쪽에 고른 귀속을 서로의 선택 목록에서 뺀다', () => {
+  sandbox.DB = { owners: ['나', '배우자', '아이'] };
+  sandbox.settleDraft = { ownerA: null, ownerB: '배우자', ratioA: 50 };
+  sandbox.lastPickerHtml = null;
+  sandbox.settleConfigPickA();
+  assert.ok(!sandbox.lastPickerHtml.includes('data-val="배우자"'), 'A를 고를 때 이미 B로 고른 귀속은 제외돼야 함');
+  assert.ok(sandbox.lastPickerHtml.includes('data-val="나"') && sandbox.lastPickerHtml.includes('data-val="아이"'));
+
+  sandbox.settleDraft = { ownerA: '나', ownerB: null, ratioA: 50 };
+  sandbox.lastPickerHtml = null;
+  sandbox.settleConfigPickB();
+  assert.ok(!sandbox.lastPickerHtml.includes('data-val="나"'), 'B를 고를 때 이미 A로 고른 귀속은 제외돼야 함');
+});
+test('settleRatioInput: 0~100으로 clamp하고 상대쪽 비율 힌트를 갱신한다', () => {
+  sandbox.settleDraft = { ownerA: '나', ownerB: '배우자', ratioA: 50 };
+  sandbox.domstub = sandbox.domstub || domstub;
+  const hintEl = { textContent: '' };
+  const $orig = sandbox.$;
+  sandbox.$ = (id) => (id === 'settleRatioHint' ? hintEl : $orig(id));
+  try {
+    sandbox.settleRatioInput({ value: '130' });
+    assert.strictEqual(sandbox.settleDraft.ratioA, 100, '100을 넘으면 100으로 clamp');
+    assert.strictEqual(hintEl.textContent, '배우자: 0%');
+    sandbox.settleRatioInput({ value: '-10' });
+    assert.strictEqual(sandbox.settleDraft.ratioA, 0, '음수는 0으로 clamp');
+  } finally {
+    sandbox.$ = $orig;
+  }
+});
+test('saveSettleConfig: 두 귀속을 모두 고르지 않았거나 서로 같으면 저장을 막고 토스트만 띄운다', () => {
+  sandbox.DB = { owners: ['나', '배우자'], settings: {} };
+  sandbox.settleDraft = { ownerA: '나', ownerB: null, ratioA: 50 };
+  sandbox.lastToast = null;
+  sandbox.saveSettleConfig();
+  assert.strictEqual(sandbox.DB.settings.settle, undefined);
+  assert.ok(sandbox.lastToast.includes('모두 선택'));
+
+  sandbox.settleDraft = { ownerA: '나', ownerB: '나', ratioA: 50 };
+  sandbox.lastToast = null;
+  sandbox.saveSettleConfig();
+  assert.strictEqual(sandbox.DB.settings.settle, undefined);
+  assert.ok(sandbox.lastToast.includes('다른 귀속'));
+});
+test('saveSettleConfig: 유효하면 DB.settings.settle에 저장하고 시트를 닫는다', () => {
+  sandbox.DB = { owners: ['나', '배우자'], settings: {} };
+  sandbox.settleDraft = { ownerA: '나', ownerB: '배우자', ratioA: 65 };
+  sandbox.closeSheetCalls = 0;
+  sandbox.saveSettleConfig();
+  // vm 샌드박스 realm 문제로 deepStrictEqual({...}, {...})가 내용이 같아도 실패하는 기존 이슈
+  // (cycle309/313 로그와 동일 클래스) — JSON.stringify 비교로 피해간다(테스트 전용 이슈, 앱 코드는 무관).
+  assert.strictEqual(JSON.stringify(sandbox.DB.settings.settle), JSON.stringify({ ownerA: '나', ownerB: '배우자', ratioA: 65 }));
+  assert.strictEqual(sandbox.closeSheetCalls, 1);
+});
+test('saveSettleConfig: 튜토리얼 모드 중에는 twGuard가 막아서 저장되지 않는다(addOwner 등과 동일 패턴)', () => {
+  sandbox.TWi = 0;
+  sandbox.DB = { owners: ['나', '배우자'], settings: {} };
+  sandbox.settleDraft = { ownerA: '나', ownerB: '배우자', ratioA: 50 };
+  sandbox.saveSettleConfig();
+  assert.strictEqual(sandbox.DB.settings.settle, undefined);
+  sandbox.TWi = -1;
+});
+test('clearSettleConfig: settle을 null로 비우고 시트를 닫는다', () => {
+  sandbox.DB = { owners: ['나', '배우자'], settings: { settle: { ownerA: '나', ownerB: '배우자', ratioA: 50 } } };
+  sandbox.closeSheetCalls = 0;
+  sandbox.clearSettleConfig();
+  assert.strictEqual(sandbox.DB.settings.settle, null);
+  assert.strictEqual(sandbox.closeSheetCalls, 1);
+});
+function setupSettlementDB(extra) {
+  sandbox.DB = Object.assign({
+    owners: ['나', '배우자'],
+    settings: { settle: { ownerA: '나', ownerB: '배우자', ratioA: 50 }, settledThrough: null },
+    assets: [{ id: 'a1', type: 'cash', owner: '나' }, { id: 'a2', type: 'cash', owner: '배우자' }],
+    txns: [],
+    recurrences: [],
+  }, extra || {});
+  sandbox.lastSheetHtml = null;
+}
+test('openSettlement: 정산 설정이 없으면 설정을 유도하는 빈 상태를 보여준다', () => {
+  sandbox.DB = { owners: ['나', '배우자'], settings: {} };
+  sandbox.openSettlement();
+  assert.ok(sandbox.lastSheetHtml.includes('정산 설정이 필요해요'));
+  assert.ok(sandbox.lastSheetHtml.includes('openSettleConfigForm()'));
+});
+test('openSettlement: 같이 낸 지출이 없으면 빈 상태를 보여주고 "정산 완료로 표시" 버튼이 없다', () => {
+  setupSettlementDB();
+  sandbox.openSettlement();
+  assert.ok(sandbox.lastSheetHtml.includes('아직 같이 낸 지출이 없어요'));
+  assert.ok(!sandbox.lastSheetHtml.includes('confirmSettlement()'));
+});
+test('openSettlement: 딱 맞게 나눠 냈으면(diffAmount=0) 완료 문구만 보이고 "정산 완료로 표시" 버튼이 없다', () => {
+  setupSettlementDB({ txns: [
+    { type: 'expense', fromAssetId: 'a1', amount: 10000, shared: true, date: '2026-01-01' },
+    { type: 'expense', fromAssetId: 'a2', amount: 10000, shared: true, date: '2026-01-02' },
+  ] });
+  sandbox.TODAY = '2026-01-10';
+  sandbox.openSettlement();
+  assert.ok(sandbox.lastSheetHtml.includes('이미 딱 맞게 나눠 냈어요'));
+  assert.ok(!sandbox.lastSheetHtml.includes('confirmSettlement()'));
+});
+test('openSettlement: 한쪽이 더 많이 냈으면 금액·상대 이름과 "정산 완료로 표시" 버튼을 보여준다', () => {
+  setupSettlementDB({ txns: [
+    { type: 'expense', fromAssetId: 'a1', amount: 30000, shared: true, date: '2026-01-01' },
+    { type: 'expense', fromAssetId: 'a2', amount: 10000, shared: true, date: '2026-01-02' },
+  ] });
+  sandbox.TODAY = '2026-01-10';
+  sandbox.openSettlement();
+  assert.ok(sandbox.lastSheetHtml.includes('10,000원 보내면 돼요'));
+  assert.ok(sandbox.lastSheetHtml.includes('confirmSettlement()'));
+});
+test('openSettlement: settledThrough 다음 날부터만 집계하므로, 그 이전의 공동지출은 다시 집계되지 않는다(중복 정산 방지)', () => {
+  setupSettlementDB({
+    settings: { settle: { ownerA: '나', ownerB: '배우자', ratioA: 50 }, settledThrough: '2026-01-05' },
+    txns: [
+      { type: 'expense', fromAssetId: 'a1', amount: 30000, shared: true, date: '2026-01-01' }, // 이미 정산된 구간 -> 제외
+      { type: 'expense', fromAssetId: 'a2', amount: 10000, shared: true, date: '2026-01-06' }, // 정산 이후 -> 포함
+    ],
+  });
+  sandbox.TODAY = '2026-01-10';
+  sandbox.openSettlement();
+  assert.ok(sandbox.lastSheetHtml.includes('10,000원')); // 2026-01-06 지출(1만원)만 total
+  assert.ok(!sandbox.lastSheetHtml.includes('40,000') && !sandbox.lastSheetHtml.includes('30,000'));
+});
+test('confirmSettlement: 차액이 0이면(정산할 것 없음) 확인 시트를 띄우지 않는다', () => {
+  setupSettlementDB();
+  sandbox.confirmSheetCalls = [];
+  sandbox.TODAY = '2026-01-10';
+  sandbox.confirmSettlement();
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0);
+});
+test('confirmSettlement: 차액이 있으면 갚을 쪽/받을 쪽과 금액을 안내하는 확인 시트를 띄우고, 확인하면 doSettle이 실행된다', () => {
+  setupSettlementDB({ txns: [
+    { type: 'expense', fromAssetId: 'a1', amount: 30000, shared: true, date: '2026-01-01' },
+    { type: 'expense', fromAssetId: 'a2', amount: 10000, shared: true, date: '2026-01-02' },
+  ] });
+  sandbox.TODAY = '2026-01-10';
+  sandbox.confirmSheetCalls = [];
+  sandbox.confirmSettlement();
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 1);
+  assert.ok(sandbox.confirmSheetCalls[0].msg.includes('배우자') && sandbox.confirmSheetCalls[0].msg.includes('10,000원'));
+  assert.strictEqual(sandbox.DB.txns.length, 2, '확인 전엔 아직 이체 내역이 생기면 안 됨');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.txns.length, 3, '확인하면 doSettle이 실행돼 이체 내역이 하나 더 생겨야 함');
+});
+test('doSettle: 갚는 쪽 현금자산 -> 받는 쪽 현금자산으로 이체 내역을 남기고 settledThrough를 오늘로 당긴다', () => {
+  setupSettlementDB();
+  sandbox.TODAY = '2026-01-10';
+  sandbox.doSettle('배우자', '나', 10000);
+  const t = sandbox.DB.txns[sandbox.DB.txns.length - 1];
+  assert.strictEqual(t.type, 'transfer');
+  assert.strictEqual(t.fromAssetId, 'a2', "갚는 쪽('배우자')의 현금 자산에서 나가야 함");
+  assert.strictEqual(t.toAssetId, 'a1', "받는 쪽('나')의 현금 자산으로 들어가야 함");
+  assert.strictEqual(t.amount, 10000);
+  assert.strictEqual(t.confirmed, true);
+  assert.strictEqual(sandbox.DB.settings.settledThrough, '2026-01-10');
+});
+test('doSettle: 어느 한쪽이라도 현금성 자산이 없으면 이체를 만들지 않고 안내 토스트만 띄운다', () => {
+  setupSettlementDB({ assets: [{ id: 'a1', type: 'cash', owner: '나' }] }); // 배우자의 현금 자산 없음
+  sandbox.TODAY = '2026-01-10';
+  sandbox.lastToast = null;
+  sandbox.doSettle('배우자', '나', 10000);
+  assert.strictEqual(sandbox.DB.txns.length, 0);
+  assert.ok(sandbox.lastToast.includes('배우자') && sandbox.lastToast.includes('현금성 자산이 없어요'));
+});
+test('doSettle: 튜토리얼 모드 중에는 twGuard가 막아서 이체 내역이 생기지 않는다', () => {
+  sandbox.TWi = 0;
+  setupSettlementDB();
+  sandbox.TODAY = '2026-01-10';
+  sandbox.doSettle('배우자', '나', 10000);
+  assert.strictEqual(sandbox.DB.txns.length, 0);
+  sandbox.TWi = -1;
+});
+test('renderMenu: "가계부" 그룹에 정산(openSettlement) 진입점이 있고, 설정 여부에 따라 값 라벨이 바뀐다(소스 패턴 검증)', () => {
+  const body = extractFunction('renderMenu');
+  assert.ok(body.includes("{ic:'users',l:'정산',v:settleConfigured()?'설정됨':'미설정',a:\"openSettlement()\"}"), 'renderMenu에 정산 진입점이 정확히 연결돼 있지 않음');
 });
 
 test('renderMenu: 메뉴 탭 계정 진입점(acct-card)에 키보드/스크린리더 접근 패턴이 있다', () => {
@@ -26766,6 +27155,50 @@ test('renderTxSheet: 신규 생성(d.id 없음) 시에만 반복 토글이 보�
   sandbox.txDraft = { id: 't1', type: 'expense', category: '식비', date: '2026-01-01', amount: 1000, fromAssetId: 'a1', repeat: false };
   sandbox.renderTxSheet();
   assert.ok(!sandbox.lastSheetHtml.includes('txToggleRepeat()'), '편집 중(d.id 있음)엔 반복 토글이 보이면 안 됨');
+});
+/* ---------- renderTxSheet: '같이 냈어요'(sharedChip) 토글 — 지출일 때, 그리고 정산용 두 귀속이
+ * 유효하게 설정돼 있을 때만 보여준다(app-evolve cycle314 advance). ---------- */
+test("renderTxSheet: 정산 설정이 돼 있고 지출(expense)일 때만 '같이 냈어요' 토글이 보인다", () => {
+  setupTxSheetDB();
+  sandbox.DB.owners = ['나', '배우자'];
+  sandbox.DB.settings = { settle: { ownerA: '나', ownerB: '배우자', ratioA: 50 } };
+  sandbox.txDraft = { type: 'expense', category: '식비', date: '2026-01-01', amount: 1000, fromAssetId: 'a1', repeat: false, shared: false };
+  sandbox.renderTxSheet();
+  assert.ok(sandbox.lastSheetHtml.includes('txToggleShared()'), '정산 설정 + 지출이면 토글이 보여야 함');
+
+  sandbox.txDraft = { type: 'income', category: '급여', date: '2026-01-01', amount: 1000, toAssetId: 'a1', repeat: false };
+  sandbox.renderTxSheet();
+  assert.ok(!sandbox.lastSheetHtml.includes('txToggleShared()'), '지출이 아니면 토글이 보이면 안 됨');
+});
+test("renderTxSheet: 정산 설정이 없으면(미사용) 지출이어도 '같이 냈어요' 토글이 보이지 않는다", () => {
+  setupTxSheetDB();
+  sandbox.txDraft = { type: 'expense', category: '식비', date: '2026-01-01', amount: 1000, fromAssetId: 'a1', repeat: false };
+  sandbox.renderTxSheet();
+  assert.ok(!sandbox.lastSheetHtml.includes('txToggleShared()'));
+});
+test("renderTxSheet: d.shared=true면 토글에 'on' 클래스가 붙는다", () => {
+  setupTxSheetDB();
+  sandbox.DB.owners = ['나', '배우자'];
+  sandbox.DB.settings = { settle: { ownerA: '나', ownerB: '배우자', ratioA: 50 } };
+  sandbox.txDraft = { type: 'expense', category: '식비', date: '2026-01-01', amount: 1000, fromAssetId: 'a1', repeat: false, shared: true };
+  sandbox.renderTxSheet();
+  assert.ok(/class="sch-chip on"[^>]*onclick="txToggleShared\(\)"/.test(sandbox.lastSheetHtml), 'shared=true면 on 클래스가 붙어야 함');
+});
+test('renderTxSheet: 정산용 귀속 중 하나라도 삭제·합쳐져 DB.owners에 없으면(settleConfigured가 null) 토글을 숨긴다', () => {
+  setupTxSheetDB();
+  sandbox.DB.owners = ['나']; // 배우자가 사라짐
+  sandbox.DB.settings = { settle: { ownerA: '나', ownerB: '배우자', ratioA: 50 } };
+  sandbox.txDraft = { type: 'expense', category: '식비', date: '2026-01-01', amount: 1000, fromAssetId: 'a1', repeat: false };
+  sandbox.renderTxSheet();
+  assert.ok(!sandbox.lastSheetHtml.includes('txToggleShared()'));
+});
+test('txToggleShared: d.shared를 토글하고 재렌더한다', () => {
+  setupTxSheetDB();
+  sandbox.txDraft = { type: 'expense', category: '식비', date: '2026-01-01', amount: 1000, fromAssetId: 'a1', repeat: false, shared: false };
+  sandbox.txToggleShared();
+  assert.strictEqual(sandbox.txDraft.shared, true);
+  sandbox.txToggleShared();
+  assert.strictEqual(sandbox.txDraft.shared, false);
 });
 test('renderTxSheet: 반복 on + 매월, day가 1/5/15/25 프리셋에 없으면 직접 입력 필드가 뜬다', () => {
   setupTxSheetDB();
