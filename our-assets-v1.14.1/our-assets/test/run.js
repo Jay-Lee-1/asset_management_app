@@ -24169,6 +24169,28 @@ test('renderRecSheet: 구분 세그먼트 버튼에 aria-pressed, 래퍼에 role
   );
   assert.ok(/<div class="seg" role="group" aria-label="구분 선택">/.test(body), '구분 세그먼트 래퍼에 role="group"/aria-label이 없음');
 });
+/* ---------- renderRecSheet: '같이 냈어요'(sharedChip) 토글 — renderTxSheet의 sharedChip과 동일한
+ * 조건(지출+정산 설정됨)으로 반복 관리 화면에도 똑같이 노출한다(app-evolve cycle315 advance).
+ * renderRecSheet는 vm 실행 스모크 테스트 fixture가 없어(24161줄 주석 참고) 위 aria-pressed
+ * 테스트와 동일하게 extractFunction 소스 패턴으로 검증한다. */
+test("renderRecSheet: renderTxSheet의 sharedChip과 동일한 조건·마크업으로 '같이 냈어요' 토글을 연결한다", () => {
+  const body = extractFunction('renderRecSheet');
+  assert.ok(
+    body.includes(`const sharedChip=(d.type==='expense'&&settleConfigured())?\`<button class="sch-chip \${d.shared?'on':''}" onclick="recToggleShared()"><span class="dot"></span>같이 냈어요</button>\`:'';`),
+    "renderRecSheet에 sharedChip 변수(조건: 지출+settleConfigured, onclick=recToggleShared)가 renderTxSheet와 동일하게 없음"
+  );
+  assert.ok(body.includes('<div class="tx-head"><h3>${editing?\'반복 수정\':\'반복 설정\'}</h3>${sharedChip}</div>'), 'renderRecSheet의 h3가 sharedChip과 함께 tx-head로 감싸져 있지 않음');
+});
+test('recToggleShared: txToggleShared와 동일한 패턴으로 recDraft.shared를 토글하고 재렌더한다', () => {
+  const body = extractFunction('recToggleShared');
+  assert.strictEqual(body.replace(/\s+/g, ''), "function recToggleShared(){syncRecInputs();recDraft.shared=!recDraft.shared;renderRecSheet()}".replace(/\s+/g, ''));
+});
+test('recType: 지출이 아닌 유형으로 바꾸면 _applyType이 recDraft.shared를 꺼서 sharedChip이 사라진다(txType과 동일한 공유 리셋이 recDraft에도 적용되는지 직접 확인, _applyType은 공용 헬퍼이므로 회귀 위험은 낮지만 renderRecSheet 쪽에서 실제로 조건이 맞물리는지 명시적으로 검증)', () => {
+  sandbox.DB = { categories: { income: ['급여'], expense: ['구독'], saving: ['저축'] }, assets: [] };
+  sandbox.recDraft = { type: 'expense', category: '구독', shared: true };
+  sandbox._applyType(sandbox.recDraft, 'income');
+  assert.strictEqual(sandbox.recDraft.shared, false, '지출→수입 전환 시 recDraft.shared가 꺼져야 함');
+});
 test('renderGoalForm: goalAmt(목표 금액)에 Enter-제출이 있다(saveGoal()의 유일한 필수 수치 입력이고, 목표일은 선택 항목이라 그 뒤에 이어지지 않음)', () => {
   const body = extractFunction('renderGoalForm');
   assert.ok(

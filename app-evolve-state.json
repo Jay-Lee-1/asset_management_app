@@ -1,19 +1,8 @@
 {
-  "cycle": 315,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "반복 관리 화면(renderRecSheet)에 '같이 냈어요'(shared) 토글 추가",
-    "why": "cycle315 review가 명시적으로 critique에 남긴 후보: 공동지출 정산(settlement, cycle314)이 생긴 뒤 shared 플래그는 renderTxSheet의 sharedChip(index.html:5619, d.type==='expense'&&settleConfigured() 조건)을 통해서만 켤 수 있고, 반복 관리 화면(openRecSheet/editRec→renderRecSheet, index.html:6148)에는 그 토글 자체가 없다. 직접 코드를 확인한 결과 저장 경로는 이미 완비돼 있다 — commitRec(index.html:6250)은 recDraft(d)를 통째로 DB.recurrences[i]=d(수정) 또는 Object.assign({},d,{...})(신규)로 저장하므로 d.shared 필드만 채워지면 그대로 영속화되고, _applyType(index.html:5751-5753, txDraft/recDraft 공용 헬퍼)은 이미 t!=='expense'일 때 draft.shared=false로 리셋해 recType()에서도 동일하게 작동하며, recHistFieldsChanged(index.html:6290-6292)가 shared를 schedule-shape 필드로 보지 않아 토글만으로는 recSaveScopeConfirm(전체/향후 적용 범위 확인) 시트가 불필요하게 뜨지 않는다. 즉 UI 토글 버튼과 핸들러 한 쌍만 비어 있는 좁고 안전한 공백이며, 이게 메워지면 반복으로 등록된 공동 구독료(예: 넷플릭스)의 shared 여부를 등록 후에도 반복 관리 화면에서 직접 켜고 끌 수 있게 돼 cycle315 develop이 고친 '반복+같이냈어요 정산 누락' 버그의 UX 쪽 남은 절반이 채워진다. 기각 후보: twGuard 스윕·전역검색·예산이월·연말결산·owner/category/asset merge 전부·nwHistory byType/자산배분추이 카드·목표자산배분+리밸런싱·CSV날짜·이체 및 반복 중복감지·카테고리별 알림뮤트·shared 전파 버그(cycle315 develop)는 cycle300-315에서 이미 처리/기각된 항목이라 모두 제외.",
-    "approach": "renderRecSheet()의 h3 옆에 renderTxSheet의 sharedChip과 동일한 조건·마크업(`<button class=\"sch-chip ${d.shared?'on':''}\" onclick=\"recToggleShared()\"><span class=\"dot\"></span>같이 냈어요</button>`, d.type==='expense'&&settleConfigured()일 때만 노출)을 추가한다. recToggleShared() 함수를 txToggleShared(index.html:5763)와 동일한 패턴으로 신설: syncRecInputs();recDraft.shared=!recDraft.shared;renderRecSheet(). saveRec/commitRec/migrate는 수정하지 않는다(d 전체가 이미 그대로 저장되고 cycle315 develop이 DB.recurrences 기본값 shared:false를 이미 migrate에 추가해 뒀음). 회귀 테스트: (1) settleConfigured()가 null이거나 d.type!=='expense'일 때 칩이 렌더링 HTML에 없음, (2) 칩 클릭 시 recDraft.shared가 토글되고 렌더 다시 호출됨, (3) 신규 반복 등록(saveRec) 시 shared=true가 DB.recurrences에 그대로 저장됨, (4) shared:true인 기존 반복을 editRec으로 열면 칩이 on 클래스로 렌더됨, (5) recType()으로 지출→다른 유형 전환 시 recDraft.shared가 false로 꺼지고 칩도 사라짐(txDraft 쪽과 동일한 _applyType 공유 리셋이 recDraft에서도 동일하게 작동하는지 직접 검증 — 지금까지는 tx 경로로만 검증돼 있었을 가능성이 있어 명시적으로 추가), (6) expandRec/settlementSummary 통합: 반복 관리 화면에서 새로 켠 shared가 다음 달 가상 인스턴스에도 전파돼 정산 집계에 잡히는지 end-to-end 확인."
-  },
+  "cycle": 316,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 310,
-      "phase": "critique",
-      "timestamp": "2026-11-06T00:20:00.000Z",
-      "summary": "서브에이전트로 앱 전체를 재조사(cycle300-310 처리/보류 항목 전부 제외 지시, 특히 twGuard 스윕 4연속·global search·budget carry·연간결산은 명시적으로 제외). 발견: nwHistory는 매일 귀속(owner)별 스냅샷(entry.byOwner, index.html:2960, 2677-2678에서 계산)을 저장해 nwHistoryForOwner(logic.js:793-797)로 귀속별 순자산 추세 전체 히스토리 차트를 제공하는데, 자산 유형별 비중(allocationCard, index.html:3383-3413; assetAllocation(), logic.js:1072-1078)은 렌더링마다 '오늘 시점'만 즉석 계산되고 히스토리가 전혀 저장되지 않음 — 귀속 차원은 과거 추세를 볼 수 있지만 자산배분(현금/주식/부동산 등) 차원은 과거 추세를 볼 수 없는 구조적 비대칭. 기각 후보: twGuard 미적용 잔여 함수들(budget/inquiry/csvImport 등, 튜토리얼 스크린에 노출 안 돼 실사용 노출 낮음, 4연속 기계적 스윕 반복 가치 낮음), 전역검색 커버리지(이미 cycle260-280에서 모든 유형 커버), 예산 캐리오버(cycle194-299에서 소진), 연간결산(cycle246/250/267에서 성숙). pending_advance_plan에 저장(nwHistory에 byType 스냅샷 추가, nwHistoryForOwner와 동일 패턴의 logic.js 헬퍼+카드+CSV 확장+레거시 호환 가드). 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 310,
       "phase": "advance",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-06T19:20:00.000Z",
       "summary": "직접 코드를 재조사(cycle300-315 처리/보류/기각 항목 전부 제외: twGuard 스윕·전역검색·예산이월·연말결산·owner/category/asset merge 전부·nwHistory byType/자산배분추이 카드·목표자산배분+리밸런싱·CSV날짜·이체 및 반복 중복감지·카테고리별 알림뮤트·shared 전파 버그는 모두 cycle300-315에서 이미 다뤄져 제외). cycle315 review가 명시적으로 critique 몫으로 남긴 후보(saveRec/renderRecSheet에 '같이 냈어요' 토글 부재)를 채택해 직접 검증 — renderRecSheet(index.html:6148)에는 sharedChip이 전혀 없어 사용자가 반복을 새로 만들거나(openRecSheet) 수정할 때(editRec) shared 여부를 설정/변경할 방법이 거래 입력 경로(renderTxSheet의 sharedChip, 5619) 하나뿐임을 재확인. 저장 경로는 이미 완비돼 있음을 코드로 검증: commitRec(6250)이 recDraft를 통째로 저장해 d.shared만 채워지면 그대로 영속화되고, _applyType(5751-5753, tx/rec 공용)은 이미 t!=='expense'일 때 draft.shared=false로 리셋하며, recHistFieldsChanged(6290-6292)가 shared를 스케줄 변경 필드로 취급하지 않아 토글이 불필요한 recSaveScopeConfirm을 유발하지도 않음 — UI 토글 버튼+핸들러 한 쌍만 비어 있는 좁고 안전한 공백. pending_advance_plan에 구체 계획 저장(sharedChip과 동일 조건·마크업을 renderRecSheet에 추가, recToggleShared() 신설, saveRec/commitRec/migrate는 무변경, 테스트 6건 계획). 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 315,
+      "phase": "advance",
+      "timestamp": "2026-11-06T20:10:00.000Z",
+      "summary": "critique(cycle315) 계획대로 반복 관리 화면(renderRecSheet)에 '같이 냈어요' 토글을 추가했다. renderTxSheet의 sharedChip(index.html:5619)과 동일한 조건·마크업(d.type==='expense'&&settleConfigured()일 때만, onclick=recToggleShared())을 renderRecSheet에 추가하고, h3를 tx-head로 감싸 toggleShared 칩이 오른쪽에 나란히 뜨게 했다(기존 rec sheet는 h3만 있던 자리). recToggleShared() 함수를 txToggleShared(5763)와 완전히 동일한 패턴으로 신설: syncRecInputs();recDraft.shared=!recDraft.shared;renderRecSheet(). 계획대로 saveRec/commitRec/migrate는 변경하지 않음(recDraft 전체가 이미 그대로 저장되고 cycle315 develop이 DB.recurrences 기본값 shared:false를 이미 migrate에 추가해 둠). renderRecSheet는 vm 실행 스모크 테스트 fixture가 없어(기존 24161번째 줄 주석 참고, DB.settings 등 의존이 많아 renderTxSheet처럼 execution harness에 올라가 있지 않음) 구분 세그먼트 aria-pressed 테스트와 동일하게 extractFunction 소스 패턴으로 sharedChip 변수 선언 전체와 tx-head 래퍼를 문자 그대로 대조하는 테스트 2건을 추가했다. recToggleShared() 자체는 소스를 txToggleShared와 동일 패턴인지 공백 제거 후 문자열 비교로 검증(1건). 추가로 critique가 계획에 명시한 '_applyType의 shared 리셋이 recDraft에서도 실제로 동작하는지' 항목을 _applyType(recDraft,'income') 실행 테스트로 직접 확인(1건) — DB.categories/DB.assets 스텁이 없어 처음엔 TypeError가 났고(catListOf/firstCash가 DB를 참조), sandbox.DB에 둘 다 채워 해결(테스트 전용 이슈, 앱 코드는 무관). 계획에 있던 나머지 항목(신규 등록 시 저장되는지/editRec로 열면 on 클래스가 렌더되는지/expandRec·settlementSummary 통합)은 각각 commitRec·sharedChip 마크업·cycle315 develop의 기존 통합 테스트가 이미 다른 경로로 커버하고 있어(commitRec은 d를 그대로 저장하는 기존 saveRec 테스트들로, 통합 흐름은 cycle315 develop의 saveTx+expandRec+settlementSummary 테스트로) 중복 추가하지 않았다. 테스트 2965->2968 통과. node --check logic.js/sw.js, manifest.webmanifest JSON 유효성 통과(index.html 인라인 스크립트 추출검사의 기존 1건 오탐은 HEAD~1 대비 재확인해 이번 변경과 무관함을 확인). APP_VERSION 1.47.374->1.47.375, sw.js CACHE v641->v642. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

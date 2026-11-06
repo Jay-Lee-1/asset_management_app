@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.374';
+const APP_VERSION='1.47.375';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6161,7 +6161,13 @@ function renderRecSheet(){
  if(d.type==='expense')assetFields=`<div class="field"><label>출금 자산</label>${assetPickBtn(d.fromAssetId,"recOpenAsset('from')")}</div>`;
  else if(d.type==='income')assetFields=`<div class="field"><label>입금 자산</label>${assetPickBtn(d.toAssetId,"recOpenAsset('to')")}</div>`;
  else assetFields=`<div class="field"><label>보내는 자산</label>${assetPickBtn(d.fromAssetId,"recOpenAsset('from')")}</div><div class="field"><label>받는 자산</label>${assetPickBtn(d.toAssetId,"recOpenAsset('to')")}</div>`;
- openFormSheet(`<h3>${editing?'반복 수정':'반복 설정'}</h3><div class="desc">고정지출·정기수입·이체·저축을 자동 기록해요</div>
+ /* '같이 냈어요' 토글 — renderTxSheet의 sharedChip(index.html:5619)과 동일한 조건·마크업을 반복
+  * 관리 화면에도 똑같이 노출한다. 저장 경로(commitRec)는 recDraft를 통째로 저장하므로 d.shared만
+  * 채워지면 그대로 영속화되고, _applyType이 이미 지출 아닌 유형 전환 시 꺼 주며, recHistFieldsChanged가
+  * shared를 스케줄 변경 필드로 보지 않아 토글만으로 recSaveScopeConfirm이 불필요하게 뜨지도 않는다
+  * (app-evolve cycle315 advance). */
+ const sharedChip=(d.type==='expense'&&settleConfigured())?`<button class="sch-chip ${d.shared?'on':''}" onclick="recToggleShared()"><span class="dot"></span>같이 냈어요</button>`:'';
+ openFormSheet(`<div class="tx-head"><h3>${editing?'반복 수정':'반복 설정'}</h3>${sharedChip}</div><div class="desc">고정지출·정기수입·이체·저축을 자동 기록해요</div>
   <div class="seg" role="group" aria-label="구분 선택"><div class="seg-blob"></div>${typeSeg}</div>
   ${catField}
   <div class="field"><label for="rMemo">메모 <span style="color:var(--text-3);font-weight:600">(선택)</span></label><div class="field-clear"><input id="rMemo" value="${(d.memo&&d.memo!==d.category)?d.memo.replace(/"/g,'&quot;'):''}" placeholder="예: 넷플릭스 구독" oninput="recMemoInput(this)"><button type="button" class="fc-x" aria-label="메모 지우기" onclick="clrInput('rMemo')">✕</button></div></div>
@@ -6183,6 +6189,7 @@ function renderRecSheet(){
   ${editing?`<div class="two-btn"><button class="btn btn-danger cancel" onclick="delRecConfirm('${d.id}')">${svg('trash')} 삭제</button><button class="btn btn-primary" onclick="saveRec()">저장하기</button></div>`:`<div class="two-btn"><button class="btn btn-soft cancel" onclick="closeSheet()">취소</button><button class="btn btn-primary" onclick="saveRec()">저장하기</button></div>`}`);
 }
 function recType(t){if(navigator.vibrate)navigator.vibrate(6);syncRecInputs();_applyType(recDraft,t);renderRecSheet()}
+function recToggleShared(){syncRecInputs();recDraft.shared=!recDraft.shared;renderRecSheet()}
 function recFreq(v){syncRecInputs();_applyFreq(recDraft,recDraft.startDate,v);if(v!=='monthly')recDraft.weekend='none';recalcEndCond(recDraft,recDraft.startDate);renderRecSheet()}
 function recDayInput(el){const v=(el.value||'').replace(/[^0-9]/g,'').slice(0,2);if(el.value!==v)el.value=v;recDraft.day=v===''?'':Number(v);dayWarn('rec',v);if(v!=='')recalcEndCond(recDraft,recDraft.startDate)}
 function dayWarn(pfx,v){const w=$(pfx+'DayWarn');if(!w)return;
