@@ -19543,6 +19543,69 @@ test('saveTx: 반복 켜고 저장 시 이미 중지한(active:false) 반복과 
   assert.strictEqual(sandbox.DB.recurrences.length, 2);
 });
 
+/* ---------- saveTx/expandRec: "반복"+"같이 냈어요"를 함께 켜고 저장하면 정산에도 반영돼야 한다
+ * (app-evolve cycle315 develop) ----------
+ * 거래 입력 중 반복을 켜는 분기(saveTx)는 d.shared를 반복 레코드에 옮겨 담지 않았고,
+ * expandRec()이 매 회차 펼치는 가상 인스턴스도 그 필드를 전혀 싣지 않았다. 그래서 공동 구독료처럼
+ * "반복"과 "같이 냈어요"를 둘 다 켠 지출은 매달 발생하면서도 settlementSummary(정산 집계)에서
+ * 영원히 조용히 빠졌다. */
+test('saveTx: 반복+같이 냈어요를 함께 켜고 저장하면 생성된 반복 레코드에 shared:true가 남는다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { recurrences: [], settings: {} };
+  sandbox.txDraft = {
+    id: null, type: 'expense', date: '2026-07-05', category: '구독', memo: '넷플릭스',
+    amount: 15900, fromAssetId: 'a1', toAssetId: null, shared: true,
+    repeat: true, freq: 'monthly', day: 5, endDate: null, count: null,
+  };
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.DB.recurrences.length, 1);
+  assert.strictEqual(sandbox.DB.recurrences[0].shared, true, '거래 입력 중 켠 shared가 반복 레코드에도 저장되어야 함');
+});
+test('saveTx: 반복만 켜고(같이 냈어요는 끈 채) 저장하면 반복 레코드의 shared는 false다(회귀 없음)', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { recurrences: [], settings: {} };
+  sandbox.txDraft = {
+    id: null, type: 'expense', date: '2026-07-05', category: '구독', memo: '넷플릭스',
+    amount: 15900, fromAssetId: 'a1', toAssetId: null, shared: false,
+    repeat: true, freq: 'monthly', day: 5, endDate: null, count: null,
+  };
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.DB.recurrences[0].shared, false);
+});
+test('expandRec: 반복의 shared:true가 매 회차 가상 인스턴스에도 그대로 실린다', () => {
+  sandbox._recCache.clear();
+  sandbox.DB = {
+    recurrences: [{ id: 'r1', active: true, type: 'expense', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, count: null, amount: 15900, category: '구독', memo: '넷플릭스', fromAssetId: 'a1', toAssetId: null, skip: [], edits: {}, shared: true }],
+  };
+  const out = sandbox.expandRec('2026-07-01', '2026-07-31');
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].shared, true, 'expandRec이 만드는 가상 인스턴스도 r.shared를 그대로 실어야 settlementSummary가 집계할 수 있음');
+});
+test('expandRec: shared 필드가 없는 기존(마이그레이션 전) 반복도 false로 안전하게 펼쳐진다', () => {
+  sandbox._recCache.clear();
+  sandbox.DB = {
+    recurrences: [{ id: 'r1', active: true, type: 'expense', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, count: null, amount: 15900, category: '구독', memo: '넷플릭스', fromAssetId: 'a1', toAssetId: null, skip: [], edits: {} }],
+  };
+  const out = sandbox.expandRec('2026-07-01', '2026-07-31');
+  assert.strictEqual(out[0].shared, false);
+});
+test('settlementSummary: expandRec이 펼친 반복 지출도 shared:true면 정산 집계에 포함된다(saveTx+expandRec 통합)', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { recurrences: [], settings: {} };
+  sandbox.txDraft = {
+    id: null, type: 'expense', date: '2026-07-05', category: '구독', memo: '넷플릭스',
+    amount: 15900, fromAssetId: 'a1', toAssetId: null, shared: true,
+    repeat: true, freq: 'monthly', day: 5, endDate: null, count: null,
+  };
+  sandbox.saveTx();
+  sandbox._recCache.clear();
+  const txns = sandbox.expandRec('2026-07-01', '2026-07-31');
+  const assets = [{ id: 'a1', owner: '나' }];
+  const s = sandbox.settlementSummary(txns, assets, '나', '배우자', 50);
+  assert.strictEqual(s.total, 15900, '반복으로 등록한 공동 구독료가 정산 합계에 포함되어야 함(수정 전엔 0이었음)');
+  assert.strictEqual(s.paidA, 15900);
+});
+
 /* ---------- saveTx: 더블탭 중복 저장 가드 (app-evolve cycle79 critique/advance) ----------
  * saveRec()과 같은 이유(closeSheet()가 innerHTML을 지우지 않아 저장 버튼이 트랜지션 동안
  * DOM에 남아있음)로, saveTx()도 반복 등록 분기(DB.recurrences.push)와 일회성 내역 분기

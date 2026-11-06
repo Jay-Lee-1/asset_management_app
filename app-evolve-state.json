@@ -1,15 +1,8 @@
 {
   "cycle": 315,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 309,
-      "phase": "advance",
-      "timestamp": "2026-11-05T21:18:18.512Z",
-      "summary": "critique(cycle309) 계획대로 귀속(owner) 관리에 합치기(merge) 기능을 추가했다. openOwnerManage()의 행 액션에 openOwnerMergePicker(i)를 추가(DB.owners.length>1일 때만, mergeCatInto와 동일한 svg('merge') 아이콘 재사용)했고, openOwnerPicker()에 exclude 옵션을 신설해(catFilteredGrid의 exclude와 동일한 역할, 단 인덱스 기반 pkPickOwner(i)는 그대로 둠) 자기 자신을 대상 목록에서 뺐다. confirmOwnerMerge(i,to)는 mergeCatInto의 확인 시트 패턴을 따라 영향받는 자산/목표 건수를 안내한다. mergeOwnerInto(i,toName)는 doRenameOwner의 마이그레이션(DB.assets/DB.goals owner 재할당, ST.assetOwner/plan.owner/spendOwner/hist.owner 갱신)을 그대로 재사용하면서 DB.nwHistory[].byOwner 병합 규칙을 새로 정했다 — byOwner[owner]={ta,td}는 totalAssets/ownerAssets와 같은 단위의 금액 총계라서(예산 한도처럼 '값 중 하나를 고르는' 설정이 아님) mergeBudgetHistory의 local-wins 대신 같은 날짜에 양쪽 다 있으면 ta/td를 단순 합산하기로 결정(mergeAssetInto가 balance형 자산 금액을 그냥 더하는 것과 동일한 이유), 한쪽에만 있으면 그대로 옮긴다. splice+톰스톤+undoToast 완전복원 구조는 mergeCatInto/delOwner와 동일. 테스트 17건 추가(기본 합치기, ST 필터 4종 이동, nwHistory byOwner 3가지 케이스(양쪽 합산/from만/to만/byOwner 없는 레코드), 톰스톤, 귀속 1개뿐일 때 안전장치, undo 전체복원, twGuard 차단, confirmOwnerMerge 영향 건수 안내 2건, openOwnerMergePicker exclude, openOwnerManage 합치기 버튼 렌더링 2건) — 2839->2856 통과. 구현 중 발견: nwHistory byOwner 병합 테스트에서 vm 컨텍스트 안에서 새로 만든 객체 리터럴이 테스트 파일의 Object.prototype과 달라 deepStrictEqual이 내용이 같아도 실패하는 realm 문제를 만나, mergeCatInto의 budgetHistory 테스트와 동일한 JSON.parse(JSON.stringify(...)) 패턴으로 해결(테스트 전용 이슈, 앱 코드는 무관). node --check logic.js/sw.js, manifest.webmanifest JSON 유효성, index.html 인라인 스크립트 추출검사(기존과 동일한 1건의 기존 오탐만 재확인, 새 회귀 없음) 모두 통과. APP_VERSION 1.47.364->1.47.365, sw.js CACHE v631->v632. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 310,
       "phase": "develop",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-06T16:30:00.000Z",
       "summary": "critique(cycle314) 계획대로 귀속(owner) 간 공동지출 정산(settlement) 기능을 구현했다. 데이터 모델: DB.settings.settle={ownerA,ownerB,ratioA}(기본 null, 미설정)+settledThrough(기본 null) migrate() 추가. 지출 트랜잭션에 t.shared:boolean(txDraft가 임의 필드를 그대로 통과시키므로 추가적/하위호환). logic.js에 순수함수 settlementSummary(txns,assets,ownerA,ownerB,ratioA) 신설 — t.shared&&type==='expense'만 필터, fromAssetId의 owner를 filterTxnsByOwner와 동일한 방식으로 조회해 ownerA/ownerB별 paidA/paidB 합산(둘 다 아닌 자산, 예: '공용'이나 제3 owner 결제건은 명시적으로 제외), ratioA 기준 기대분담액/차액/oweOwner 계산(ratioA 0·100, 공동지출 0건, 홀수 총액 라운딩 케이스 포함). UI: renderTxSheet의 지출 입력에 '같이 냈어요' 토글(sharedChip, settleConfigured()가 유효할 때만 노출, _applyType이 지출 아닌 유형으로 바뀌면 자동으로 끔), 정산 설정 시트(openSettleConfigForm — openOwnerPicker exclude로 서로 다른 두 귀속 선택+ratioA 입력+끄기), '정산' 메뉴 화면(openSettlement — settledThrough 다음날부터 오늘까지 누적 집계, 결과 문구+'정산 완료로 표시' 버튼), confirmSettlement/doSettle(twGuard 가드, 갚는 쪽→받는 쪽 현금자산 간 실제 이체 트랜잭션 생성+settledThrough 갱신, 현금자산 없으면 안내만). firstCashForOwner/settleConfigured 헬퍼 신설. doRenameOwner에 settle.ownerA/ownerB 이름변경 추적 추가(ST.assetOwner 등과 동일한 기존 관례) — delOwner/mergeOwnerInto는 settle까지 따라가지 않지만 settleConfigured()가 매번 두 귀속의 실재 여부를 재확인해 사라진 귀속을 가리키며 조용히 오작동하지 않고 '설정 필요' 상태로 우아하게 폴백한다(ST.spendOwner류와 동일한 등급의 완화책, 하드 삭제-차단 가드는 범위 밖으로 보류). renderMenu 가계부 그룹에 '정산' 진입점 추가. 구현 중 발견: doRenameOwner/settleConfigured 양쪽에 DB.settings가 아예 없는 기존 테스트 DB 스텁이 많아 'Cannot read properties of undefined'로 기존 테스트 20건이 깨짐 — DB.settings&&DB.settings.settle로 방어해 수정(새 기능이 구버전/최소 스텁 DB에서도 안전해야 한다는 걸 직접 검증). 테스트: settlementSummary 10건(기본 필터·반반·비대칭 비율·ratioA 0/100·0건·제3 owner 제외·라운딩), doRenameOwner settle 추적 2건, firstCashForOwner/settleConfigured 6건, _applyType shared 리셋 2건, renderTxSheet sharedChip 4건+txToggleShared 1건, 정산 설정 폼 7건(saveSettleConfig 1건은 vm realm 문제로 JSON.stringify 비교), openSettlement/confirmSettlement/doSettle 9건(설정없음/빈상태/정확히맞음/차액있음/중복정산방지/twGuard/현금자산없음), renderMenu 소스패턴 1건 — 2916->2960 통과. node --check logic.js/sw.js, 메인 인라인 스크립트 new Function 구문검사, manifest.webmanifest JSON 유효성 모두 통과. APP_VERSION 1.47.372->1.47.373, sw.js CACHE v639->v640. 범위를 좁힌 부분(다음 critique가 필요시 재검토): mergeOwnerInto/delOwner의 settle 추적은 생략(설정 재안내 폴백으로 충분하다고 판단), 정산 내역 자체의 CSV 내보내기나 과거 정산 이력 보관은 미포함.",
+      "commit": null
+    },
+    {
+      "cycle": 315,
+      "phase": "develop",
+      "timestamp": "2026-11-06T17:40:00.000Z",
+      "summary": "saveTx()의 반복(repeat) 전환 분기가 거래 입력 중 켠 \"같이 냈어요\"(d.shared)를 생성되는 DB.recurrences 레코드에 옮겨 담지 않고(index.html saveTx rec 리터럴), expandRec()이 매 회차 펼치는 가상 인스턴스도 그 필드를 전혀 싣지 않아서, \"반복\"+\"같이 냈어요\"를 함께 켠 공동 구독료 같은 지출이 매달 발생하면서도 settlementSummary(정산 집계, cycle314)에서 영원히 조용히 빠지는 버그를 고쳤다. saveTx()의 rec 리터럴에 shared:!!d.shared 추가, expandRec()의 가상 인스턴스 push에 shared:!!r.shared 추가, migrate()의 DB.recurrences 기본값에 shared:false 추가(하위호환). 회귀 테스트 5건 추가(반복+같이냈어요 켜고 저장 시 rec.shared=true, 같이냈어요 꺼진 채 반복만 켜면 false, expandRec이 r.shared를 그대로 전파, shared 필드 없는 기존 반복은 false로 안전하게 펼쳐짐, saveTx+expandRec+settlementSummary 통합 시나리오로 공동 구독료가 정산 합계에 잡히는지 확인) — 2960->2965 통과. node --check logic.js 통과, index.html 인라인 스크립트 4개 모두 node Function 파싱 통과(HTML 주석 안의 \"<script>\" 텍스트를 매칭하는 기존 오탐 1건은 주석 제외 후 재확인해 해소). APP_VERSION 1.47.373->1.47.374, sw.js CACHE v640->v641.",
       "commit": null
     }
   ]
