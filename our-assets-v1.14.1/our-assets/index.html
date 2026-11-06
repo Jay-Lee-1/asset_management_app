@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.366';
+const APP_VERSION='1.47.367';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2568,7 +2568,7 @@ function migrate(){
   Object.keys(DB.budgets).forEach(c=>{if(!DB.budgetHistory[c])DB.budgetHistory[c]=[{from:BUDGET_EPOCH,amount:DB.budgets[c]}]});
   DB._budgetHistV1=true;
  }
- DB.nwHistory=DB.nwHistory||[]; /* 순자산 추이: {date,ta,td,nw,byOwner?} 일별 스냅샷 (updateNwHistory). byOwner는 {owner:{ta,td}} — 이전 항목엔 없을 수 있음(하위호환) */
+ DB.nwHistory=DB.nwHistory||[]; /* 순자산 추이: {date,ta,td,nw,byOwner?,byType?} 일별 스냅샷 (updateNwHistory). byOwner는 {owner:{ta,td}}, byType은 {type:amount}(가구 전체 기준, byOwner처럼 귀속별로는 아직 안 쪼갬 — app-evolve cycle310 critique/advance) — 둘 다 이전 항목엔 없을 수 있음(하위호환) */
  DB.recurrences=(DB.recurrences||[]).map(r=>Object.assign({skip:[],edits:{},endDate:null,autoConfirm:true,confirmedDates:[]},r,{id:r.id||uid(),active:r.active!==false}));
  DB.categories=DB.categories||{};
  DB.catIcon=DB.catIcon||{}; /* '타입:이름' → 아이콘 키 (선택). 없으면 기본 아이콘 */
@@ -2675,7 +2675,14 @@ function _saveCore(opts){invalidateBalances(opts&&opts.fromDate,opts);
   * updateNwHistory는 같은 날짜 항목을 덮어쓰는 멱등 함수라 save() 호출마다 매번 갱신해도 안전하고,
   * localStorage에 쓰기 직전에 반영해야 이번 저장분에 최신 스냅샷이 함께 기록된다. */
  const byOwner={};DB.owners.forEach(o=>{byOwner[o]={ta:ownerAssets(o),td:ownerDebt(o)}});
- DB.nwHistory=updateNwHistory(DB.nwHistory,TODAY,totalAssets(),totalDebt(),byOwner);
+ /* allocationCard(index.html)가 매 렌더마다 즉석 계산하는 자산유형별 비중을 byOwner와 같은 자리에
+  * 함께 스냅샷해둔다 — totalAssets()와 동일한 필터(includeInTotal, 부채 제외)로 type별 평가액을
+  * 합산한다. assetAllocation()의 "amount<=0 제외"는 여기서 하지 않고 원값을 그대로 저장한 뒤
+  * 소비 쪽(allocationHistoryDelta, logic.js)이 assetAllocation()을 그대로 재사용해 걸러낸다
+  * (app-evolve cycle310 critique/advance — nwHistory가 귀속별 순자산 추이는 쌓는데 자산배분
+  * 추이는 전혀 못 보여주던 공백). */
+ const byType={};DB.assets.filter(a=>a.includeInTotal&&a.type!=='debt').forEach(a=>{const v=assetEval(a);byType[a.type]=(byType[a.type]||0)+v});
+ DB.nwHistory=updateNwHistory(DB.nwHistory,TODAY,totalAssets(),totalDebt(),byOwner,byType);
  let ok,json;try{json=JSON.stringify(DB);localStorage.setItem(dataKey(),json);ok=true}catch(e){ok=false}
  if(ok){DB_JSON_LEN=json.length;const at=Date.now();try{localStorage.setItem(dataKey()+'__savedAt',String(at))}catch(e){}TAB_SAVED_AT=at}
  const notice=storageOutcomeMsg(ok,STORAGE_OK);STORAGE_OK=ok;
@@ -2954,10 +2961,11 @@ function totalAssets(){return DB.assets.filter(a=>a.includeInTotal&&a.type!=='de
 function totalDebt(){return DB.assets.filter(a=>a.includeInTotal&&a.type==='debt').reduce((s,a)=>s+assetEval(a),0)}
 /* 순자산 추이: 하루 1개 스냅샷을 append/갱신 (DB.rates는 현재가만 보관해 과거를 재계산할 수 없으므로,
    호출 시점에 이미 평가된 ta/td를 그대로 저장한다). 오래된 기록은 월 1개로 압축해 localStorage 크기를 제한. */
-function updateNwHistory(hist,dateStr,ta,td,byOwner){
+function updateNwHistory(hist,dateStr,ta,td,byOwner,byType){
  hist=(hist||[]).slice();
  const entry={date:dateStr,ta,td,nw:ta-td};
  if(byOwner)entry.byOwner=byOwner;
+ if(byType)entry.byType=byType;
  if(hist.length&&hist[hist.length-1].date===dateStr)hist[hist.length-1]=entry;
  else hist.push(entry);
  return pruneNwHistory(hist);
@@ -3379,7 +3387,9 @@ function assetBalPeekEnd(){
 /* 자산관리 탭 순자산 추이 카드 아래에 꽂는 자산유형별 비중(allocation) 카드 — expenseBreakdownCard와
  * 같은 스택형 가로 막대+범례(eb-* 클래스)를 재사용한다. 집계 자체(assetAllocation)는 logic.js 순수
  * 함수이고, 여기선 owner/includeInTotal/부채 제외 필터링과 assetEval 평가(DB.rates 의존)만 맡는다
- * (app-evolve cycle125 critique/advance — TYPE_COLOR 상수가 정의된 채 미사용으로 남아있던 공백). */
+ * (app-evolve cycle125 critique/advance — TYPE_COLOR 상수가 정의된 채 미사용으로 남아있던 공백).
+ * owner='all'일 때는 nwHistory의 byType 스냅샷과 비교한 "30일 전 대비" 변화 캡션도 붙는다
+ * (allocationHistoryDelta, logic.js — app-evolve cycle310 critique/advance). */
 function allocationCard(owner){
  owner=owner||'all';
  let items=DB.assets.filter(a=>a.includeInTotal&&a.type!=='debt');
@@ -3407,8 +3417,28 @@ function allocationCard(owner){
   * app-evolve cycle187 advance) — 위 "일부 미확인" 캡션과 같은 이유로, 그 자산유형 자체가 왜 이
   * 카드에 안 보이는지 설명 없이는 사용자가 알 길이 없다. */
  const hasNeg=items.some(a=>assetEval(a)<0);
+ /* nwHistory의 byType 스냅샷(_saveCore, 가구 전체 기준이라 owner='all'일 때만 비교가 성립)에서
+  * 약 30일 전 비중과 지금을 비교해 가장 많이 움직인 유형 하나를 캡션으로 보여준다 —
+  * allocationHistoryDelta(logic.js)가 과거 시점의 {type,pct}를 뽑아주고, 여기선 지금 alloc과
+  * 짝지어 변화량(%p)만 계산한다. 1%p 미만의 움직임은 반올림 잡음과 구분이 안 돼 보여주지 않는다.
+  * owner로 좁혀 보는 중이거나 비교할 과거 스냅샷이 아직 없으면(레거시 데이터뿐이거나 오늘 처음
+  * 기록) 조용히 생략한다 — hasUnknown/hasNeg 캡션과 같은 "모르면 추측하지 않는다" 원칙(app-evolve
+  * cycle310 critique/advance, 1차 범위는 전체 기준만 — 귀속별 비중 추이는 범위 밖). */
+ let trendCaption='';
+ if(owner==='all'){
+  const delta=allocationHistoryDelta(DB.nwHistory||[],TODAY,30);
+  if(delta){
+   const moves=alloc.map(x=>{const p=delta.pastAlloc.find(y=>y.type===x.type);return {type:x.type,diff:x.pct-(p?p.pct:0)}})
+     .sort((a,b)=>Math.abs(b.diff)-Math.abs(a.diff));
+   const top=moves[0];
+   if(top&&Math.abs(top.diff)>=1){
+    const up=top.diff>0;
+    trendCaption=` <span class="mini" style="color:var(--${up?'income':'expense'})">${shortDate2(delta.pastDate)} 대비 ${esc(ASSET_TYPES[top.type].label)} ${up?'▲':'▼'}${Math.abs(top.diff).toFixed(1)}%p</span>`;
+   }
+  }
+ }
  const captions=[hasUnknown?'일부 미확인':null,hasNeg?'마이너스 잔액 자산 제외':null].filter(Boolean)
-   .map(c=>` <span class="mini warn">${c}</span>`).join('');
+   .map(c=>` <span class="mini warn">${c}</span>`).join('')+trendCaption;
  return `<div class="section-title">자산 비중${captions}</div>
    <div class="card eb-card"><div class="eb-bar">${seg}</div><div class="eb-list">${rows}</div></div>`;
 }
@@ -8038,10 +8068,11 @@ function assetsToCSV(items){
  ].map(esc).join(','));
  return '\ufeff'+[header,...rows].join('\r\n');
 }
-/* 순자산 추이 CSV — 순수 함수. DB.nwHistory 항목({date,ta,td,nw,byOwner?}, updateNwHistory 참고)을
+/* 순자산 추이 CSV — 순수 함수. DB.nwHistory 항목({date,ta,td,nw,byOwner?,byType?}, updateNwHistory 참고)을
    그대로 받아 날짜/총자산/총부채/순자산 4컬럼으로 펼친다. byOwner(귀속별 세부값)는 귀속 집합이
    계정마다 달라 고정 컬럼으로 담을 수 없어 내보내지 않는다 — 귀속별 추이는 화면(목표/귀속별 보기)에서
-   확인하는 걸 알려진 범위로 둔다. */
+   확인하는 걸 알려진 범위로 둔다. byType(자산유형별 세부값, app-evolve cycle310 critique/advance로
+   추가)도 화면(자산 비중 카드의 변화 캡션)에서 보는 걸로 두고 같은 이유로 내보내지 않는다. */
 function nwHistoryToCSV(hist){
  const esc=v=>{const s=String(v==null?'':v);return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s};
  const header=['날짜','총자산','총부채','순자산'].map(esc).join(',');
@@ -9043,7 +9074,7 @@ function sanitizeBackup(obj){
    settings.groupOrder=cleaned;
   }
  }
- /* DB.nwHistory(순자산 추이 일별 스냅샷 [{date,ta,td,nw,byOwner?}])는 txns/assets/recurrences/goals/
+ /* DB.nwHistory(순자산 추이 일별 스냅샷 [{date,ta,td,nw,byOwner?,byType?}])는 txns/assets/recurrences/goals/
   * inquiries/assetQtyLog/categories/owners/budgetHistory와 달리 지금까지 여기서 전혀 검증되지 않던
   * 유일한 배열 컬렉션이었다. mergeRemoteDataIntoLocal()은 "기기별 로컬 스냅샷"이라며 의도적으로
   * nwHistory를 병합 대상에서 빼고, afterCloudAuth()의 미동기화 없음 분기와 resolveCloudPullRemote()는
@@ -9084,6 +9115,18 @@ function sanitizeBackup(obj){
    });
    d.byOwner=byOwner;
   }else if(h.byOwner!=null)fixedCount++;
+  /* byType[type]=amount(allocationHistoryDelta가 소비, logic.js)도 byOwner의 ta/td와 같은 이유로
+   * 검증이 필요하다 — 단, byType의 amount는 마이너스통장처럼 음수가 유효한 값이라(allocationCard와
+   * 동일한 전제) sanitizeAmount에 min을 주지 않는다(app-evolve cycle310 critique/advance). */
+  if(h.byType&&typeof h.byType==='object'&&!Array.isArray(h.byType)){
+   const byType={};
+   Object.keys(h.byType).forEach(t=>{
+    const v=sanitizeAmount(h.byType[t]);
+    if(v!==h.byType[t])fixedCount++;
+    byType[t]=v;
+   });
+   d.byType=byType;
+  }else if(h.byType!=null)fixedCount++;
   nwHistory.push(d);
  });
  txns=dedupeIds(txns);assets=dedupeIds(assets);recurrences=dedupeIds(recurrences);

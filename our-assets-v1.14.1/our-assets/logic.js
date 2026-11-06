@@ -1077,6 +1077,26 @@ function assetAllocation(items){
  items.forEach(it=>{if(!(it.amount>0))return;map.set(it.type,(map.get(it.type)||0)+it.amount)});
  return [...map.entries()].map(([type,amount])=>({type,amount,pct:amount/total*100})).sort((a,b)=>b.amount-a.amount);
 }
+/* nwHistory(일별 {date,ta,td,nw,byOwner?,byType?} 스냅샷)에 저장된 byType(가구 전체 기준 유형별
+ * 평가액, _saveCore가 매 저장마다 기록)에서 오늘보다 days일 전에 가장 가까운(그 날짜 이하 중 가장
+ * 늦은) 스냅샷을 찾아 assetAllocation()과 똑같은 {type,amount,pct} 비중으로 돌려준다 —
+ * nwHistoryForOwner가 byOwner를 소비하듯, 여기선 byType을 소비해 allocationCard(index.html)가
+ * "지금"과 "days일 전"의 비중을 비교할 수 있게 한다(app-evolve cycle310 critique/advance — nwHistory가
+ * 귀속별 순자산 추이는 쌓는데 자산유형별 비중은 추이를 전혀 못 보여주던 공백). byType이 있는 스냅샷이
+ * 2개 미만이면(이 기능 추가 이전 레거시 데이터뿐이거나 오늘 막 처음 기록된 경우) 비교할 과거 시점이
+ * 없으므로 null — nwHistoryForOwner의 byOwner 레거시 가드와 동일한 "모르면 비교하지 않는다" 원칙.
+ * hist는 updateNwHistory가 항상 날짜 오름차순으로 push하므로 그 순서를 그대로 가정한다. */
+function allocationHistoryDelta(hist,today,days){
+ const withType=(hist||[]).filter(h=>h.byType&&typeof h.byType==='object');
+ if(withType.length<2)return null;
+ const cutoff=addDays(today,-(days||30));
+ let past=withType[0];
+ for(let i=0;i<withType.length;i++){if(withType[i].date<=cutoff)past=withType[i];else break}
+ const latest=withType[withType.length-1];
+ if(past===latest)return null;
+ const pastAlloc=assetAllocation(Object.keys(past.byType).map(t=>({type:t,amount:past.byType[t]})));
+ return {pastDate:past.date,pastAlloc};
+}
 
 /* ================= PORTFOLIO GAIN/LOSS (투자자산 전체 손익, 순수) ================= */
 /* items: [{evalValue,costBasis}] — 호출부(investGainLossCard)가 owner/includeInTotal 필터링과

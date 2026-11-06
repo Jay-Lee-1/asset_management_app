@@ -3855,6 +3855,16 @@ test('updateNwHistory: byOwner를 넘기지 않으면(하위호환) 항목에 by
   const hist = sandbox.updateNwHistory([], '2026-01-01', 300, 20);
   assert.strictEqual('byOwner' in hist[0], false);
 });
+/* byOwner와 동일한 자리에 자산유형별 비중 스냅샷(byType)도 함께 기록한다 — allocationCard가
+ * "지금"만 즉석 계산하고 과거 추이를 전혀 못 보여주던 공백(app-evolve cycle310 critique/advance). */
+test('updateNwHistory: byType 인자를 넘기면 스냅샷에 유형별 평가액이 함께 저장된다(allocationHistoryDelta의 과거 비중 비교용)', () => {
+  const hist = sandbox.updateNwHistory([], '2026-01-01', 300, 20, { 나: { ta: 200, td: 10 } }, { cash: 100, stock: 200 });
+  assert.deepStrictEqual(hist[0].byType, { cash: 100, stock: 200 });
+});
+test('updateNwHistory: byType을 넘기지 않으면(하위호환) 항목에 byType 필드가 아예 생기지 않는다', () => {
+  const hist = sandbox.updateNwHistory([], '2026-01-01', 300, 20);
+  assert.strictEqual('byType' in hist[0], false);
+});
 test('pruneNwHistory: 120개 이하는 그대로 둔다', () => {
   const hist = Array.from({ length: 120 }, (_, i) => ({ date: `2026-01-${String(i % 28 + 1).padStart(2, '0')}`, ta: i, td: 0, nw: i }));
   assert.strictEqual(sandbox.pruneNwHistory(hist).length, 120);
@@ -14239,6 +14249,37 @@ test('sanitizeBackup: 정상적인 nwHistory는 그대로 두고, 없어도 터�
   assert.deepStrictEqual(Array.from(missing.data.nwHistory), []);
   assert.strictEqual(missing.fixedCount, 0);
 });
+/* byType(가구 전체 기준 유형별 평가액, app-evolve cycle310 critique/advance)도 byOwner와 동일한
+ * 이유로 검증이 필요하다 — allocationHistoryDelta(logic.js)가 byType[type]을 그대로 숫자로 계산에
+ * 쓴다. byOwner의 ta/td와 달리 음수도 유효한 값(마이너스통장 등)이라 sanitizeAmount에 min을 주지
+ * 않는다(allocationCard/assetAllocation과 동일한 전제). */
+test('sanitizeBackup: nwHistory의 byType이 일반 객체가 아니면(배열 등) 그 필드만 떨어뜨리고 fixedCount를 센다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    nwHistory: [{ date: '2026-06-01', ta: 100, td: 10, nw: 90, byType: ['oops'] }],
+  });
+  assert.strictEqual(data.nwHistory[0].byType, undefined);
+  assert.strictEqual(fixedCount, 1);
+});
+test('sanitizeBackup: nwHistory의 byType은 객체라도 내부 값이 NaN/문자열이면 0으로 클램프하고, 음수는 유효한 값이라 그대로 둔다(마이너스통장 등)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    nwHistory: [{ date: '2026-06-01', ta: 100, td: 10, nw: 90, byType: { cash: 'oops', savings: -5000 } }],
+  });
+  assert.deepStrictEqual(Object.keys(data.nwHistory[0].byType), ['cash', 'savings']);
+  assert.strictEqual(data.nwHistory[0].byType.cash, 0);
+  assert.strictEqual(data.nwHistory[0].byType.savings, -5000, '음수는 마이너스통장 등 유효한 값이라 클램프하면 안 됨');
+  assert.strictEqual(fixedCount, 1); /* cash 클램프 1건 */
+});
+test('sanitizeBackup: 정상적인 byType은 그대로 두고, 없어도 터지지 않는다(정상 케이스는 회귀 없음)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    nwHistory: [{ date: '2026-06-01', ta: 300, td: 20, nw: 280, byType: { cash: 300000, stock: 200000 } }],
+  });
+  assert.deepStrictEqual(Object.keys(data.nwHistory[0].byType), ['cash', 'stock']);
+  assert.strictEqual(data.nwHistory[0].byType.stock, 200000);
+  assert.strictEqual(fixedCount, 0);
+});
 
 /* ---------- sanitizeBackup: DB.deletedIds({id:삭제시각(ms)} 톰스톤 맵)도 검증돼야 한다 — catIcon/
  * catVar/deletedType/deletedBal과 같은 평평한 맵이지만, 그쪽의 sanitizeFlatMap은 객체 형태만
@@ -18547,11 +18588,12 @@ function makeSaveCtx(opts) {
     totalDebt: () => 0,
     ownerAssets: () => 0,
     ownerDebt: () => 0,
+    assetEval: () => 0,
     TODAY: '2026-01-01',
     STORAGE_OK: true,
     TAB_SAVED_AT: 0,
     TAB_SYNC_PENDING: null,
-    DB: { owners: [], nwHistory: [], txns: [] },
+    DB: { owners: [], nwHistory: [], txns: [], assets: [] },
   }, opts);
   vm.createContext(ctx);
   vm.runInContext([extractFunction('save'), extractFunction('_saveCore'), extractFunction('foreignSaveIsNewer')].join('\n'), ctx);
@@ -18623,7 +18665,7 @@ test('[실행형] save(): 동일 계정 멀티탭에서 거의 동시에 save()�
       navigator: { locks: lockManager },
       dataKey: () => 'shared-k',
       localStorage: sharedLocalStorage,
-      DB: { owners: [], nwHistory: [], txns: [{ id: txnId }] },
+      DB: { owners: [], nwHistory: [], txns: [{ id: txnId }], assets: [] },
       mergeRemoteDataIntoLocal: (foreign) => {
         const seen = new Set(ctx.DB.txns.map(t => t.id));
         (foreign.txns || []).forEach(t => { if (!seen.has(t.id)) ctx.DB.txns.push(t); });
@@ -21267,6 +21309,50 @@ test('assetAllocation: amount===0(시세 미확인)만 있던 기존 동작은 �
   assert.strictEqual(r[0].type, 'cash');
   assert.strictEqual(r[0].pct, 100, 'amount=0 항목들은 여전히 분모에 기여하지 않아야 함(회귀 없음)');
 });
+/* ---------- allocationHistoryDelta(logic.js): nwHistory의 byType 스냅샷에서 과거 비중을 뽑아
+ * allocationCard가 "지금 대비 N일 전" 변화를 비교할 수 있게 한다(app-evolve cycle310 critique/advance
+ * — nwHistory가 귀속별 순자산 추이는 쌓는데 자산유형별 비중은 추이를 전혀 못 보여주던 공백) ---------- */
+test('allocationHistoryDelta: byType이 있는 스냅샷이 2개 미만이면(레거시 데이터뿐이거나 오늘 처음 기록) 비교할 과거 시점이 없으므로 null', () => {
+  assert.strictEqual(sandbox.allocationHistoryDelta([], '2026-06-15', 30), null);
+  assert.strictEqual(sandbox.allocationHistoryDelta([{ date: '2026-06-15', ta: 100, td: 0, nw: 100 }], '2026-06-15', 30), null, 'byType 없는 레거시 항목뿐이면 null');
+  assert.strictEqual(sandbox.allocationHistoryDelta([{ date: '2026-06-15', ta: 100, td: 0, nw: 100, byType: { cash: 100 } }], '2026-06-15', 30), null, 'byType 있는 스냅샷이 1개뿐이면 비교 대상이 없어 null');
+});
+test('allocationHistoryDelta: days일 전(cutoff) 이하인 스냅샷들 중 가장 늦은 것을 과거 시점으로 고른다(가장 오래된 게 아니라)', () => {
+  // today='2026-06-15', days=30 → cutoff='2026-05-16'
+  const hist = [
+    { date: '2026-04-01', ta: 100, td: 0, nw: 100, byType: { cash: 90, stock: 10 } }, // cutoff보다 훨씬 과거
+    { date: '2026-05-16', ta: 100, td: 0, nw: 100, byType: { cash: 70, stock: 30 } }, // cutoff와 같은 날 — cutoff 이하 중 가장 늦음, 이게 선택돼야 함
+    { date: '2026-05-20', ta: 100, td: 0, nw: 100, byType: { cash: 60, stock: 40 } }, // cutoff 이후라 제외
+    { date: '2026-06-15', ta: 100, td: 0, nw: 100, byType: { cash: 50, stock: 50 } }, // 오늘(latest)
+  ];
+  const r = sandbox.allocationHistoryDelta(hist, '2026-06-15', 30);
+  assert.strictEqual(r.pastDate, '2026-05-16', '가장 오래된(04-01) 스냅샷이 아니라 cutoff 이하 중 가장 늦은 스냅샷이 선택되어야 함');
+  assert.strictEqual(r.pastAlloc.find(x => x.type === 'cash').pct, 70);
+  assert.strictEqual(r.pastAlloc.find(x => x.type === 'stock').pct, 30);
+});
+test('allocationHistoryDelta: days일 전 이하인 스냅샷이 하나도 없으면(이력이 아직 짧음) 가장 오래된 스냅샷으로 폴백한다(goalProgress의 윈도 부족 폴백과 동일 원칙)', () => {
+  const hist = [
+    { date: '2026-06-10', ta: 100, td: 0, nw: 100, byType: { cash: 100 } }, // 5일 전뿐 — 30일 전 스냅샷이 없음
+    { date: '2026-06-15', ta: 100, td: 0, nw: 100, byType: { cash: 50, stock: 50 } },
+  ];
+  const r = sandbox.allocationHistoryDelta(hist, '2026-06-15', 30);
+  assert.strictEqual(r.pastDate, '2026-06-10');
+  assert.strictEqual(r.pastAlloc.length, 1);
+  assert.strictEqual(r.pastAlloc[0].type, 'cash');
+});
+test('allocationHistoryDelta: 과거 시점으로 고른 스냅샷이 가장 최근 스냅샷과 같으면(이력 전부가 오늘 하루뿐) 비교가 성립하지 않으므로 null', () => {
+  const hist = [{ date: '2026-06-15', ta: 100, td: 0, nw: 100, byType: { cash: 100 } }];
+  assert.strictEqual(sandbox.allocationHistoryDelta(hist, '2026-06-15', 30), null);
+});
+test('allocationHistoryDelta: byType 없는(레거시) 항목은 과거 시점 탐색에서 건너뛴다', () => {
+  const hist = [
+    { date: '2026-05-01', ta: 100, td: 0, nw: 100 }, // 레거시, byType 없음
+    { date: '2026-05-20', ta: 100, td: 0, nw: 100, byType: { cash: 100 } },
+    { date: '2026-06-15', ta: 100, td: 0, nw: 100, byType: { cash: 40, stock: 60 } },
+  ];
+  const r = sandbox.allocationHistoryDelta(hist, '2026-06-15', 30);
+  assert.strictEqual(r.pastDate, '2026-05-20');
+});
 test('allocationCard: owner="all"(기본)이면 includeInTotal 자산 중 부채를 뺀 나머지를 유형별로 보여준다(배우자 포함 가구 전체)', () => {
   setupNetWorthDB();
   const html = sandbox.allocationCard();
@@ -21330,6 +21416,53 @@ test('allocationCard: 음수 평가액(마이너스통장) 자산이 있으면 "
   sandbox._balCache.clear();
   html = sandbox.allocationCard();
   assert.ok(!html.includes('마이너스 잔액 자산 제외'), '양수로 돌아오면 캡션이 사라져야 함');
+});
+/* allocationCard가 allocationHistoryDelta(logic.js)로 nwHistory의 byType 스냅샷과 "지금"을 비교해
+ * 가장 많이 움직인 유형을 캡션으로 보여준다(app-evolve cycle310 critique/advance). setupNetWorthDB()의
+ * owner='all' 비중은 현금 2.07%/적금 1.04%/외화 26.94%/금 69.95%(총 482500) — 과거 스냅샷을 금 비중이
+ * 크게 낮았던 때로 두면 "금 ▲"가 가장 큰 변화로 뽑혀야 한다. */
+test('allocationCard: owner="all"일 때 nwHistory의 byType 스냅샷과 비교해 가장 크게 움직인 유형이 "N일 전 대비" 캡션으로 뜬다', () => {
+  setupNetWorthDB();
+  sandbox.DB.nwHistory = [
+    { date: '2026-04-01', ta: 482500, td: 3000, nw: 479500, byType: { cash: 200000, fx: 130000, savings: 5000, gold: 147500 } },
+    { date: '2026-06-15', ta: 482500, td: 3000, nw: 479500, byType: { cash: 10000, fx: 130000, savings: 5000, gold: 337500 } },
+  ];
+  sandbox._balCache.clear();
+  const html = sandbox.allocationCard();
+  assert.ok(html.includes('대비'), '비교할 과거 스냅샷이 있으면 캡션이 보여야 함');
+  assert.ok(html.includes('금'), '가장 많이 움직인 유형(금)의 라벨이 캡션에 있어야 함');
+  assert.ok(html.includes('▲'), '금 비중이 늘었으므로(30.57%→69.95%) 상승 화살표여야 함');
+});
+test('allocationCard: owner를 "all"이 아닌 값으로 넘기면 nwHistory의 byType은 아직 귀속별로 쪼개 기록하지 않으므로(1차 범위 밖) 추이 캡션을 보여주지 않는다', () => {
+  setupNetWorthDB();
+  sandbox.DB.nwHistory = [
+    { date: '2026-04-01', ta: 482500, td: 3000, nw: 479500, byType: { cash: 200000, fx: 130000, savings: 5000, gold: 147500 } },
+    { date: '2026-06-15', ta: 482500, td: 3000, nw: 479500, byType: { cash: 10000, fx: 130000, savings: 5000, gold: 337500 } },
+  ];
+  sandbox._balCache.clear();
+  const html = sandbox.allocationCard('나');
+  assert.ok(!html.includes('대비'), 'owner 스코프 보기에서는 전체(all) 기준 추이 캡션이 섞여 보이면 안 됨');
+});
+test('allocationCard: byType이 있는 과거 스냅샷이 없으면(레거시 데이터뿐이거나 기록이 막 시작됨) 추이 캡션 없이 조용히 생략한다', () => {
+  setupNetWorthDB();
+  sandbox.DB.nwHistory = [{ date: '2026-06-15', ta: 482500, td: 3000, nw: 479500 }]; // byType 없는 레거시 1건뿐
+  sandbox._balCache.clear();
+  let html = sandbox.allocationCard();
+  assert.ok(!html.includes('대비'), '비교할 과거 비중이 없으면 캡션이 없어야 함');
+
+  sandbox.DB.nwHistory = []; // nwHistory 자체가 비어도 동일
+  html = sandbox.allocationCard();
+  assert.ok(!html.includes('대비'));
+});
+test('allocationCard: 가장 크게 움직인 유형의 변화가 1%p 미만이면(반올림 잡음) 캡션을 보여주지 않는다', () => {
+  setupNetWorthDB();
+  sandbox.DB.nwHistory = [
+    { date: '2026-04-01', ta: 482500, td: 3000, nw: 479500, byType: { cash: 10500, fx: 130000, savings: 5000, gold: 337000 } }, // 지금과 거의 같은 비중
+    { date: '2026-06-15', ta: 482500, td: 3000, nw: 479500, byType: { cash: 10000, fx: 130000, savings: 5000, gold: 337500 } },
+  ];
+  sandbox._balCache.clear();
+  const html = sandbox.allocationCard();
+  assert.ok(!html.includes('대비'), '모든 유형의 변화가 1%p 미만이면 캡션이 없어야 함');
 });
 /* ---------- portfolioGainLoss(logic.js)/investGainLossCard: 투자자산 전체 손익 카드
  * (app-evolve cycle226 critique/advance — assetGainLoss(a)/assetGainLossBadge가 자산 1건씩만

@@ -1,19 +1,8 @@
 {
-  "cycle": 310,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "자산 유형별 비중(allocation) 히스토리 추가 — nwHistory에 byType 스냅샷 기록",
-    "why": "nwHistory already stores a daily byOwner breakdown (index.html:2677-2678, 2960) that feeds a full historical chart via nwHistoryForOwner (logic.js:793-797) and nwHistoryCard, but the analogous asset-type mix (allocationCard, index.html:3383) is recomputed fresh every render with zero history — users can see net worth trend per owner but never see how their cash/stock/real-estate/debt mix drifted over time, a plausible high-value gap for investors rebalancing.",
-    "approach": "Mirror the byOwner pattern exactly. 1) In _saveCore (index.html ~2677), alongside the existing `byOwner` computation, build `byType` by reusing allocationCard's filter+group logic (assets where includeInTotal && type!=='debt', grouped by type, summed via assetEval) — call assetAllocation() (logic.js:1072) or inline the same grouping, then pass it as a new 5th arg to updateNwHistory, storing it as `entry.byType` the same way byOwner is stored at index.html:2960 (`if(byOwner)entry.byOwner=byOwner` → add `if(byType)entry.byType=byType`). 2) Add a pure logic.js helper analogous to nwHistoryForOwner (logic.js:793-797) that extracts a {date, breakdown} series from hist, defensively skipping/flagging entries that predate this change (no byType field) exactly like nwHistoryForOwner's `p.byOwner&&p.byOwner[owner]` guard — needed for backward compat since old users' history won't have it. 3) Add a new card next to allocationCard (near index.html:3412), e.g. a stacked bar or small-multiples chart using existing TYPE_COLOR constants, reusing nwPreset period segments (nwHistoryRange, logic.js:804) and wiring a refresh function into selectNwOwner's existing refresh list (index.html:4059-4078, alongside refreshAllocationCard/refreshNwHistoryCard) so it updates on owner-carousel swipe. 4) Extend nwHistoryToCSV (index.html:8045) to optionally emit per-type columns, and add regression tests in test/run.js mirroring the existing updateNwHistory/nwHistoryForOwner test cases, including one entry with byType and one legacy entry without it."
-  },
+  "cycle": 311,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 305,
-      "phase": "advance",
-      "timestamp": "2026-11-05T05:20:00.000Z",
-      "summary": "critique(cycle305) 계획대로 목표(goals) 관리 목록에 선택모드(ST.goalSel)를 추가해 일괄 삭제+일괄 귀속(owner) 변경을 지원한다. ST.recSel과 완전히 동일한 패턴으로 goalSelPartial/goalToggleSel/goalSelAll/goalDelSel/deleteGoalsUndo를 신설하고, openGoalsList()/goalsManageBody()에 '선택' 토글 버튼과 체크 가능한 행을 추가했다(선택모드 중엔 검색창·추가 버튼 숨김, recSel과 동일). 일괄 귀속 변경은 자산의 doBulkOwnerMove/assetOwnerMovePickFor/assetOwnerSel을 그대로 본떠 logic.js에 goalOwnerTargets, index.html에 doBulkGoalOwnerMove/goalOwnerMovePickFor/goalOwnerMoveSel을 신설했다 — 계획에 없던 발견: saveGoal()이 asset형 목표(type:'asset')의 owner를 저장할 때마다 항상 연결 자산의 owner로 강제 덮어쓰므로, 일괄 귀속 변경을 asset형 목표에도 적용하면 당장은 바뀐 듯 보이다가 그 목표를 한 번만 수정·저장해도 조용히 원래 owner로 되돌아가는 '적용되지만 곧 말없이 되돌아가는' 상태가 됨 — goalOwnerTargets가 asset형 목표를 대상에서 처음부터 제외하도록 막았다(bulkAssetMoveTargets가 이체/조정 거래를 빼는 것과 동일한 이유). activeSel()/exitSelMode()/go(tab)/closeSheet()의 다른 *Sel 분기 옆에 goalSel 분기를 추가했고, updateSelBottom()은 이미 ownerMove 필드를 범용으로 렌더링해 수정 불필요. 테스트 31건 추가(선택모드 UI 렌더링, goalOwnerTargets의 asset형 제외, doBulkGoalOwnerMove/pickFor/Sel, activeSel 분기, exitSelMode/closeSheet/go(tab) 리셋 — 후자 둘은 recSel 전례와 동일하게 DOM을 직접 쓰는 함수라 extractFunction 소스 패턴으로 확인, exitSelMode는 새로 FUNCTIONS에 추가해 실행형으로 확인). 테스트 2774->2805 통과. node --check logic.js/sw.js 통과. APP_VERSION 1.47.355->1.47.356, sw.js CACHE v622->v623. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 306,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-06T00:20:00.000Z",
       "summary": "서브에이전트로 앱 전체를 재조사(cycle300-310 처리/보류 항목 전부 제외 지시, 특히 twGuard 스윕 4연속·global search·budget carry·연간결산은 명시적으로 제외). 발견: nwHistory는 매일 귀속(owner)별 스냅샷(entry.byOwner, index.html:2960, 2677-2678에서 계산)을 저장해 nwHistoryForOwner(logic.js:793-797)로 귀속별 순자산 추세 전체 히스토리 차트를 제공하는데, 자산 유형별 비중(allocationCard, index.html:3383-3413; assetAllocation(), logic.js:1072-1078)은 렌더링마다 '오늘 시점'만 즉석 계산되고 히스토리가 전혀 저장되지 않음 — 귀속 차원은 과거 추세를 볼 수 있지만 자산배분(현금/주식/부동산 등) 차원은 과거 추세를 볼 수 없는 구조적 비대칭. 기각 후보: twGuard 미적용 잔여 함수들(budget/inquiry/csvImport 등, 튜토리얼 스크린에 노출 안 돼 실사용 노출 낮음, 4연속 기계적 스윕 반복 가치 낮음), 전역검색 커버리지(이미 cycle260-280에서 모든 유형 커버), 예산 캐리오버(cycle194-299에서 소진), 연간결산(cycle246/250/267에서 성숙). pending_advance_plan에 저장(nwHistory에 byType 스냅샷 추가, nwHistoryForOwner와 동일 패턴의 logic.js 헬퍼+카드+CSV 확장+레거시 호환 가드). 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 310,
+      "phase": "advance",
+      "timestamp": "2026-11-06T01:15:00.000Z",
+      "summary": "critique(cycle310) 계획대로 nwHistory에 자산유형별(byType) 비중 스냅샷을 추가했다 — 단, 전체 계획(귀속별 세부+전용 차트 카드+CSV 확장)은 리뷰 가능한 diff 크기를 위해 1차 범위를 좁혔다: byType은 byOwner처럼 귀속별로 쪼개지 않고 totalAssets()와 동일한 가구 전체 기준(includeInTotal && type!=='debt')으로만 기록하고(_saveCore), 전용 SVG 차트 카드 대신 allocationCard에 이미 있는 hasUnknown/hasNeg '산술은 그대로 두고 캡션만 붙인다' 패턴을 그대로 재사용해 \"30일 전 대비 OO유형 ▲/▼N%p\" 캡션 한 줄만 추가했다(가장 많이 움직인 유형 1개만, 1%p 미만은 잡음으로 보고 생략). updateNwHistory에 byType을 6번째 인자로 추가(byOwner와 동일하게 없으면 필드 자체가 안 생기는 하위호환). logic.js에 nwHistoryForOwner와 동일한 '레거시 가드+2개 미만이면 null' 원칙의 allocationHistoryDelta(hist,today,days)를 신설 — days일 전 이하 중 가장 늦은 byType 스냅샷을 찾아 assetAllocation()을 그대로 재사용해 과거 비중을 계산한다(과거 데이터가 없으면 가장 오래된 것으로 폴백, goalProgress의 윈도 부족 폴백과 동일 원칙). sanitizeBackup()에 byOwner와 동일한 자리에 byType 검증을 추가했는데, byOwner의 ta/td와 달리 byType의 값은 마이너스통장처럼 음수가 유효해 sanitizeAmount에 min을 주지 않았다. nwHistoryToCSV 주석에 byType도 byOwner와 같은 이유로 내보내지 않는다고 문서화(CSV 확장은 범위 밖으로 보류). 구현 중 발견: save()/_saveCore 전용 테스트 컨텍스트(makeSaveCtx)의 기본 DB 스텁에 assets 필드가 없어 새 byType 계산(DB.assets.filter)이 TypeError로 터짐 — makeSaveCtx 기본값과 멀티탭 레이스 테스트의 DB 오버라이드 둘 다에 assets:[]와 assetEval 스텁을 추가해 고쳤다(앱 버그 아니라 테스트 하네스 공백). 테스트 14건 추가: updateNwHistory byType 저장/하위호환 2건, sanitizeBackup byType 검증(배열이면 제거/NaN클램프+음수유지/정상케이스) 3건, allocationHistoryDelta(레거시뿐·2개미만 null, 가장 늦은 과거시점 선택, 이력부족 폴백, latest와 같으면 null, 레거시 항목 스킵) 5건, allocationCard 캡션(표시/owner스코프 억제/레거시 생략/1%p 미만 억제) 4건 — 2852->2866 통과. node --check logic.js/sw.js 통과. APP_VERSION 1.47.366->1.47.367, sw.js CACHE v633->v634. pending_advance_plan null로 비움(전용 차트 카드+귀속별 세부+CSV 확장은 다음 critique가 필요시 다시 제안).",
       "commit": null
     }
   ]
