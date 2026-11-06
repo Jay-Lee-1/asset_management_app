@@ -1,15 +1,12 @@
 {
   "cycle": 312,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "카테고리별 OS 푸시 알림 세분화 (알림 그룹 뮤트 토글)",
+    "why": "DB.settings.osNotify(index.html:6815, toggleOsNotify 10754-10765) 하나가 notifyAlertInfo()(10645-10706)가 다루는 18종 알림(confirm/confirmMulti, quick/quickMulti, mat/matMulti, budgetOver/budgetOverMulti/budgetPaceWarn/budgetPaceWarnMulti, goalBehind/goalBehindMulti/goalAchieved/goalAchievedMulti, debtBehind/debtBehindMulti/debtPaidOff/debtPaidOffMulti)를 전부 켜거나 전부 끄는 올오어나싱 스위치뿐이다. 이체 확인 알림은 받고 싶지만 예산/목표 알림은 시끄럽다고 느끼는 사용자가 선택할 방법이 없다(renderMenu 6813-6821/6846에 보조 UI 전혀 없음, checkNotifyAlerts/pickNotifyAlerts 10710-10753도 하위 분류 필터 개념이 없음). notifyAlertInfo 자체가 주석으로 이미 5개 그룹(confirm/quick 10656-10665, mat 10666-10671, budget 10672-10689, goal 10690-10697, debt 10698-10705)으로 조직돼 있어 새 분류체계를 발명할 필요 없이 그 경계를 그대로 재사용하면 된다. cycle300-312에서 다룬 twGuard 스윕·검색·예산이월·연말결산·merge류·nwHistory/자산배분·CSV날짜·이체중복 어느 것과도 겹치지 않는 새로운 공백.",
+    "approach": "index.html만 수정(logic.js 변경 없음). 1) 설정 기본값(index.html:2563 Object.assign 기본값)에 notifyMute:{} 추가(기존 사용자는 빈 객체=변화 없음, dismissedStaleMvIds:[] 패턴과 동일). 2) notifyAlertInfo()(10645-10706)가 반환하는 모든 {key,title,body} 리터럴에 group 필드 추가: confirm/confirmMulti/quick/quickMulti→'confirm', mat/matMulti→'mat', budgetOver/budgetOverMulti/budgetPaceWarn/budgetPaceWarnMulti→'budget', goalBehind/goalBehindMulti/goalAchieved/goalAchievedMulti→'goal', debtBehind/debtBehindMulti/debtPaidOff/debtPaidOffMulti→'debt'. 기존 테스트는 .key/.body만 개별 assert하므로 group 추가는 안전(test/run.js 25696-25750, 24900-25080 확인됨). 3) pickNotifyAlerts(alerts, notifiedIds, muted)(10710-10718)에 3번째 선택 인자 추가: info.group이 muted에서 true면 toNotify/newIds 모두에서 제외(뮤트된 알림은 notifiedIds에 넣지 않아야 나중에 뮤트 해제 시 다시 알림 가능). 인자 생략 시 기존 동작 100% 유지. 4) checkNotifyAlerts()(10739-10753)가 DB.settings.notifyMute를 3번째 인자로 전달. 5) toggleNotifyMuteGroup(g) 함수 신설(DB.settings.notifyMute=DB.settings.notifyMute||{}; 토글; save(); renderMenu()). 6) renderMenu()(6805-6821)의 '알림 · 기준' 그룹, 기존 OS 알림 스위치 행 바로 아래에 DB.settings.osNotify가 true일 때만 보이는 5개 하위 토글 행 추가(이체·입력 확인/저축 만기/예산 초과/목표 지연·달성/부채, 기존 제네릭 스위치 행 렌더링 재사용 — 6844-6845 sw!==undefined 처리 그대로 사용, 새 CSS/마크업 불필요). 7) sanitizeBackup(9115-9150)은 변경하지 않음(다른 평면 플래그 설정들과 동일하게 비검증 정책 유지, 코드도 항상 muted&&... 가드로 읽음). 8) test/run.js(25692+ 근처)에 추가: notifyAlertInfo가 5개 그룹 대표 케이스(confirm/quick/mat/budgetOver/budgetPaceWarnMulti/goalBehind/goalAchieved/debtBehind/debtPaidOffMulti)에 올바른 group을 반환하는지, pickNotifyAlerts가 muted={budget:true}일 때 budget 알림만 걸러내고 confirm은 통과시키는지, 뮤트된 알림이 notifiedIds에 안 들어가 뮤트 해제 후 재알림되는지(두 번 호출로 검증), 3번째 인자 생략 시 기존 동작 그대로인지, toggleNotifyMuteGroup이 토글+save 호출하는지, DB 마이그레이션 시 notifyMute 기본값이 {}로 채워지는지. 9) APP_VERSION(현재 1.47.369)과 sw.js CACHE(현재 ourassets-v636) 각각 1 증가."
+  },
   "history": [
-    {
-      "cycle": 307,
-      "phase": "critique",
-      "timestamp": "2026-11-05T12:05:00.000Z",
-      "summary": "서브에이전트로 앱 전체를 재조사(cycle300-307 처리/보류 항목 전부 제외 지시). 발견: notifyAlertInfo()(10418줄) 상단 주석이 명시하는 OS 푸시 대상(confirm/mat/budgetOver 등 '앱을 열지 않으면 그날 놓치는 긴급 알림')에 quick/quickMulti(변동금액 반복거래 입력 대기, varyingRecs() 경로, 10341-10342)만 포함 목록에도 명시적 제외 목록(neg/negMulti 등)에도 없이 case 자체가 없어 조용히 null 반환. confirm과 구조가 완전히 동일(동일 스캔·collapsing·리스트시트 패턴)한데 푸시만 못 받음. test/run.js에 quick의 notify 동작 검증 테스트가 전혀 없음(neg는 '제외됨'을 검증하는 전용 테스트가 있어 대조적) — 의도적 제외가 아니라 단순 공백이라는 근거. 직접 grep으로 재확인(10418/10341-10342/10595/10600). pending_advance_plan에 저장(quick/quickMulti case 2개 추가 + 설계주석 갱신 + 테스트). 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 307,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-06T07:08:28.000Z",
       "summary": "cycle312 develop 커밋(0a96a69)을 검토 — findPossibleDuplicateTx의 transfer early-return 제거 근거(_applyType이 transfer 전환 시 draft.category를 항상 '이체'로 고정)를 index.html:5543에서 직접 확인해 커밋 메시지·주석과 실제 코드가 일치함을 검증. 병렬 비교 대상인 findPossibleDuplicateRec(logic.js:1261, 반복 중복 감지)도 이미 transfer를 saving과 같은 분기로 처리하고 있어 이번 변경이 두 함수 간 기존 비대칭(tx는 transfer 제외, rec는 포함)을 해소하는 방향과도 일치. saveTx(index.html:5664-5682)에서 transfer 타입 draft는 _applyType을 거치지 않고는 생성될 수 없고(txType이 유일한 경로), CSV import(mapGenericCsvRow)는 income/expense만 만들어 transfer 경로에 영향 없음을 확인 — category가 비어 있는 레거시 이체 데이터는 기존 !draft.category 가드로 안전하게 계속 제외됨. node test/run.js 2882/2882 통과, node --check logic.js/sw.js 통과(index.html 인라인 스크립트 추출검사의 기존 1건 오탐은 cycle311부터 이어진 것으로 이번 변경과 무관함을 재확인). 실제 버그 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 312,
+      "phase": "critique",
+      "timestamp": "2026-11-06T08:30:00.000Z",
+      "summary": "서브에이전트로 앱 전체를 재조사(cycle300-312 처리/보류/기각 항목 전부 제외 지시, 특히 twGuard 스윕 4연속·검색·예산이월·연말결산·owner/category/asset merge 전부·nwHistory byType/자산배분추이 카드·CSV날짜·이체중복감지는 명시적으로 제외). 발견: DB.settings.osNotify(알림 메뉴의 'OS 알림' 스위치, index.html:6815)가 notifyAlertInfo()(10645-10706)의 18종 알림(confirm/quick/mat/budget*/goal*/debt* 5개 그룹)을 전부 켜거나 전부 끄는 올오어나싱 토글뿐이고, 그룹별로 끄는 보조 UI나 pickNotifyAlerts의 하위 필터 개념이 전혀 없음. notifyAlertInfo 자체 주석이 이미 5개 그룹으로 조직돼 있어(10656-10705) 새 분류 발명 없이 그 경계를 그대로 쓸 수 있는, 범위가 자연스럽게 제한된 기능 공백. pending_advance_plan에 저장(settings.notifyMute 추가 + notifyAlertInfo group 필드 + pickNotifyAlerts 뮤트 필터 + renderMenu 5개 하위 토글 행 + 회귀 테스트). 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
