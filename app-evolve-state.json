@@ -1,15 +1,8 @@
 {
   "cycle": 313,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 308,
-      "phase": "develop",
-      "timestamp": "2026-11-05T14:14:20.526Z",
-      "summary": "하단 네비(#nav)가 twStage 오버레이 밖의 실제 DOM이라 튜토리얼 중에도 늘 클릭 가능해, 메뉴→귀속 관리로 들어가면 saveAsset/recSave/saveGoal(cycle307) 등 다른 모든 저장 경로와 달리 addOwner/delOwner/doRenameOwner에만 twGuard가 없음을 발견 — delOwner/doRenameOwner는 goal.owner까지 건드리는 더 무거운 변이인데도 가드가 없었다. 세 함수 맨 앞에 if(twGuard())return; 한 줄씩 추가(다른 가드 함수들과 동일 위치·패턴, delOwner는 confirmSheet를 띄우기 전에 막아 delGoal과 동일하게 동작). 회귀 테스트 3건 추가(addOwner/delOwner/doRenameOwner 각각 튜토리얼 중 호출해도 DB.owners가 그대로이고 delOwner는 확인 시트조차 안 띄움을 확인) — delGoal의 기존 twGuard 테스트와 동일 패턴. 테스트 2826->2829 통과. node --check logic.js/sw.js, manifest.webmanifest JSON 유효성, index.html 인라인 스크립트 추출검사(기존과 동일한 1건의 기존 오탐만 재확인, 새 회귀 없음) 모두 통과. APP_VERSION 1.47.361->1.47.362, sw.js CACHE v628->v629.",
-      "commit": null
-    },
     {
       "cycle": 308,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-06T09:20:00.000Z",
       "summary": "critique(cycle312) 계획대로 카테고리별(그룹별) OS 푸시 알림 뮤트를 구현했다. migrate()의 settings 기본값(index.html:2563)에 notifyMute:{} 추가. notifyAlertInfo()(10645-10706)가 반환하는 18종 알림 리터럴 전부에 group 필드를 추가(confirm/confirmMulti/quick/quickMulti→'confirm', mat/matMulti→'mat', budgetOver/budgetOverMulti/budgetPaceWarn/budgetPaceWarnMulti→'budget', goalBehind/goalBehindMulti/goalAchieved/goalAchievedMulti→'goal', debtBehind/debtBehindMulti/debtPaidOff/debtPaidOffMulti→'debt'). pickNotifyAlerts(alerts,notifiedIds,muted)에 3번째 선택 인자를 추가해 muted[info.group]이 true면 toNotify뿐 아니라 notifiedIds에도 기록하지 않음(뮤트 해제 시 바로 재알림되게). checkNotifyAlerts()가 DB.settings.notifyMute를 3번째 인자로 전달. toggleOsNotify() 바로 뒤에 toggleNotifyMuteGroup(g) 함수를 신설(토글+save+renderMenu). renderMenu()의 '알림 · 기준' 그룹에서 OS 알림 스위치 바로 아래, DB.settings.osNotify가 true일 때만 보이는 5개 하위 토글 행(이체·입력 확인/저축 만기/예산/목표/부채, 기존 제네릭 switch 행 렌더링 재사용)을 추가했다. sanitizeBackup은 계획대로 변경하지 않음(다른 평면 플래그와 동일하게 비검증 정책 유지). 테스트: notifyAlertInfo 5개 그룹 대표 케이스의 group 필드 검증 1건, pickNotifyAlerts가 muted={budget:true}일 때 budget만 걸러내고 confirm은 통과 1건, 뮤트된 알림이 notifiedIds에 안 쌓여 뮤트 해제 후 재알림됨 1건, 3번째 인자 생략 시 기존 동작 동일 1건, toggleNotifyMuteGroup 토글+save 검증(그룹 간 비간섭 포함) 1건, migrate() notifyMute 기본값/보존 검증 1건, renderMenu 소스 패턴(osNotify 조건+5개 toggleNotifyMuteGroup 호출) 1건 — 2882->2889 통과. 구현 중 발견: vm 샌드박스 realm 문제로 deepStrictEqual({}, {})가 실패(cycle309 advance 로그와 동일 클래스의 이슈) — notifyMute/notifiedIds 빈 객체 검증을 Object.keys(...).length===0 비교로 바꿔 해결(테스트 전용 이슈, 앱 코드는 무관). node --check sw.js, manifest.webmanifest JSON 유효성, index.html 인라인 스크립트 추출검사(기존과 동일한 1건의 기존 오탐만 재확인, 새 회귀 없음) 모두 통과. APP_VERSION 1.47.369->1.47.370, sw.js CACHE v636->v637. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 313,
+      "phase": "review",
+      "timestamp": "2026-11-06T10:14:00.000Z",
+      "summary": "cycle313 advance 커밋(ff8ecd1, 카테고리별 OS 알림 뮤트)을 검토 — notifyAlertInfo()의 18종 알림 전부가 group 필드를 받았는지 직접 대조(confirm/confirmMulti/quick/quickMulti→confirm, mat/matMulti→mat, budgetOver/budgetOverMulti/budgetPaceWarn/budgetPaceWarnMulti→budget, goalBehind/goalBehindMulti/goalAchieved/goalAchievedMulti→goal, debtBehind/debtBehindMulti/debtPaidOff/debtPaidOffMulti→debt) — 빠진 kind 없음. pickNotifyAlerts(alerts,notifiedIds,muted)가 muted[info.group]일 때 toNotify와 notifiedIds 양쪽에서 모두 제외해 뮤트 해제 시 즉시 재알림되는 설계가 커밋 메시지와 일치함을 재확인. renderMenu의 5개 하위 토글 행이 쓰는 아이콘(check/bell/chart/target/debt)이 모두 svg()의 기존 I 딕셔너리에 있어 렌더링 깨짐 없음을 grep으로 확인. toggleOsNotify/toggleConfirmTransfers 등 기존 설정 토글들도 twGuard가 없는 것과 동일하게 toggleNotifyMuteGroup도 twGuard 없이 일관됨(튜토리얼 화면에 노출되는 경로가 아니라 범위 밖) — 새로운 비대칭 아님. node test/run.js 2889/2889 통과, node --check sw.js, manifest.webmanifest JSON 유효성 통과. 실제 버그 없음(state.json만 커밋).",
       "commit": null
     }
   ]
