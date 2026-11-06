@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.370';
+const APP_VERSION='1.47.371';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2560,7 +2560,7 @@ function load(){
 function writeThemeCache(){try{localStorage.setItem('asset_app_theme_cache',JSON.stringify(themeCachePayload(DB.settings)))}catch(e){}}
 function migrate(){
  DB.rates=DB.rates||{};DB.rates.fx=DB.rates.fx||{};DB.rates.stocks=DB.rates.stocks||{};DB.rates.crypto=DB.rates.crypto||{}; /* crypto 자산 종류 신설(app-evolve cycle219) — 기존 계정엔 rates.crypto 버킷이 없어 assetEval()/rateUnknown()의 R.crypto[code] 접근이 터짐 */
- DB.settings=Object.assign({themeMode:'system',includeScheduled:false,assetSort:'custom',histSortAsc:true,confirmTransfers:true,autoRates:true,bigMin:100000,dismissedStaleMvIds:[],persistWarnDismissed:false,storageSizeWarnDismissed:false,clockSkewWarnDismissed:false,mergeDataLossCount:0,mergeDataLossFields:[],notifyMute:{}},DB.settings||{});
+ DB.settings=Object.assign({themeMode:'system',includeScheduled:false,assetSort:'custom',histSortAsc:true,confirmTransfers:true,autoRates:true,bigMin:100000,dismissedStaleMvIds:[],persistWarnDismissed:false,storageSizeWarnDismissed:false,clockSkewWarnDismissed:false,mergeDataLossCount:0,mergeDataLossFields:[],notifyMute:{},targetAllocation:{}},DB.settings||{});
  if(!Array.isArray(DB.settings.groupOrder)||!DB.settings.groupOrder.length)DB.settings.groupOrder=[...DEFAULT_GROUP_ORDER];
  DEFAULT_GROUP_ORDER.forEach(t=>{if(!DB.settings.groupOrder.includes(t))DB.settings.groupOrder.push(t)});
  delete DB.settings.showScheduled; /* 예정 표시는 홈 '예정 포함'으로 통합 */
@@ -3511,6 +3511,97 @@ function allocPresetSel(p){
  refreshAllocationHistoryCard();
 }
 
+/* 자산배분 추이 카드 바로 아래에 꽂는 "목표 자산배분" 카드 — allocationCard/allocationHistoryCard가
+ * "지금"과 "추이"는 보여주는데 "목표 대비 얼마나 벌어졌는지"는 전혀 없던 공백을 메운다(app-evolve
+ * cycle313 critique/advance). 집계(allocationDrift/rebalanceAmount)는 logic.js 순수 함수, 여기선
+ * allocationCard와 동일하게 owner='all'·includeInTotal·debt 제외 필터링과 assetEval/rateUnknown
+ * 평가만 맡는다. DB.settings.targetAllocation이 비어있으면(기능 미사용, openTargetAllocationForm으로
+ * 설정 전 기본 상태) 완전히 숨긴다(allocationHistoryCard의 owner!=='all'→'' 과 동일한 조기 반환 관례).
+ * allocationHistoryCard와 같은 이유로 owner='all'일 때만 보여준다 — 목표 자체가 가구 전체 기준으로
+ * 설정되는 단일 값이라 귀속별로 쪼갤 근거가 없다. */
+function targetAllocationCard(owner){
+ owner=owner||'all';
+ const targetMap=DB.settings.targetAllocation||{};
+ if(owner!=='all'||!Object.keys(targetMap).length)return '';
+ const items=DB.assets.filter(a=>a.includeInTotal&&a.type!=='debt');
+ const byType={};
+ items.forEach(a=>{const v=assetEval(a);byType[a.type]=(byType[a.type]||0)+(v>0?v:0)});
+ const total=Object.keys(byType).reduce((s,t)=>s+byType[t],0);
+ const unknownTypes=[...new Set(items.filter(rateUnknown).map(a=>a.type))];
+ const drift=allocationDrift(byType,targetMap,unknownTypes);
+ if(!drift.length)return '';
+ const THRESH=1; /* 1%p 미만 차이는 반올림 잡음과 구분 안 돼 '목표에 가까워요'로 묶는다(allocationCard trendCaption의 1%p 컷과 동일 기준) */
+ const rows=drift.map(x=>{
+  const label=esc(ASSET_TYPES[x.type].label);
+  const dot=`<span class="eb-dot" style="background:${TYPE_COLOR[x.type]}"></span>`;
+  if(x.actualPct==null){
+   return `<div style="display:flex;align-items:center;gap:9px;padding:2px 0">${dot}<span class="eb-cat">${label}</span><span class="mini warn">목표 ${x.targetPct}% · 시세 미확인</span></div>`;
+  }
+  const amt=rebalanceAmount(total,x.diffPct);
+  const near=Math.abs(x.diffPct)<THRESH;
+  const over=x.diffPct>0;
+  const actionText=near?'목표에 가까워요':`${over?'▼ 매도':'▲ 매수'} 약 ${comma(Math.abs(amt))}원`;
+  return `<div style="padding:4px 0">
+    <div style="display:flex;align-items:center;gap:9px">${dot}<span class="eb-cat">${label}</span><span style="font-size:12px;color:var(--text-3)">${x.actualPct.toFixed(1)}% / 목표 ${x.targetPct}%</span></div>
+    <div style="font-size:12.5px;color:${near?'var(--text-3)':'var(--text-2)'};padding-left:18px;margin-top:1px">${actionText}</div>
+  </div>`;
+ }).join('');
+ return `<div class="section-title">목표 자산배분 <span class="link" role="button" tabindex="0" aria-label="목표 비중 설정" onclick="openTargetAllocationForm()" onkeydown="rowKeydown(event,()=>openTargetAllocationForm())">설정 ${svg('chev')}</span></div>
+   <div class="card eb-card"><div class="eb-list">${rows}</div></div>`;
+}
+let targetAllocDraft=null;
+/* 목표 비중 설정 시트 — ASSET_TYPES(debt 제외) 각각에 % 입력 칸을 두고, splitHintUpdate(분할 거래 합계
+ * 힌트, 5493행대)와 동일하게 입력마다 DOM을 직접 건드려 합계를 보여준다(renderTargetAllocationForm을
+ * 매 입력마다 다시 부르면 포커스/커서 위치를 잃음). 합계가 100%를 넘어도 저장을 막지 않는다 — 기존
+ * 입력 검증들(예산/목표 금액)과 같은 "경고만 하고 막지 않는" 톤을 따른다. */
+function openTargetAllocationForm(){
+ targetAllocDraft={...(DB.settings.targetAllocation||{})};
+ renderTargetAllocationForm();
+}
+function targetAllocSumPct(){
+ return Object.keys(ASSET_TYPES).filter(t=>t!=='debt').reduce((s,t)=>s+(Number(targetAllocDraft[t])||0),0);
+}
+function taSumLabel(sum){return `합계 ${sum%1===0?sum:sum.toFixed(1)}%`}
+function taHintUpdate(){
+ const el=$('taSumHint');if(!el)return;
+ const sum=targetAllocSumPct();
+ el.textContent=taSumLabel(sum);
+ el.style.color=sum>100?'var(--expense)':'';
+}
+function taPctInput(type,el){
+ fmtQty(el);
+ targetAllocDraft[type]=Math.max(0,parseFloat((el.value||'0').replace(/,/g,''))||0);
+ taHintUpdate();
+}
+function renderTargetAllocationForm(){
+ const rows=Object.keys(ASSET_TYPES).filter(t=>t!=='debt').map(t=>{
+  const ty=ASSET_TYPES[t];
+  const v=targetAllocDraft[t];
+  return `<div class="field" style="margin-bottom:8px"><label for="ta_${t}">${esc(ty.label)}</label><div class="with-unit"><div class="field-clear"><input id="ta_${t}" class="num" inputmode="decimal" value="${v||''}" placeholder="0" oninput="taPctInput('${t}',this)"><button type="button" class="fc-x" aria-label="${esc(ty.label)} 비중 지우기" onclick="clrInput('ta_${t}')">✕</button></div><span class="unit">%</span></div></div>`;
+ }).join('');
+ const sum=targetAllocSumPct();
+ openSheet(`<h3>목표 자산배분</h3><div class="desc">자산 유형별 목표 비중을 정해두면, 지금 비중과 얼마나 차이 나는지와 리밸런싱에 필요한 금액을 보여드려요. 0으로 두거나 비워두면 그 유형은 추적하지 않아요.</div>
+  ${rows}
+  <div class="mini" id="taSumHint" style="margin:4px 2px 14px;color:${sum>100?'var(--expense)':''}">${taSumLabel(sum)}</div>
+  <div class="two-btn"><button class="btn btn-soft cancel" onclick="closeSheet()">취소</button>
+    <button class="btn btn-primary" onclick="saveTargetAllocation()">저장</button></div>
+  ${Object.keys(DB.settings.targetAllocation||{}).length?`<button class="del-link" onclick="clearTargetAllocation()">${svg('trash')} 목표 비중 끄기</button>`:''}`);
+}
+function clearTargetAllocation(){
+ DB.settings.targetAllocation={};save();closeSheet();renderCurrent();toast('목표 비중을 껐어요');
+}
+function saveTargetAllocation(){
+ const map={};let sum=0;
+ Object.keys(ASSET_TYPES).filter(t=>t!=='debt').forEach(t=>{
+  const v=Number(targetAllocDraft[t])||0;
+  if(v>0){map[t]=v;sum+=v}
+ });
+ DB.settings.targetAllocation=map;save();closeSheet();renderCurrent();
+ if(!Object.keys(map).length)toast('목표 비중을 껐어요');
+ else if(sum>100)toast(`목표 비중을 저장했어요 · 합계가 100%를 넘어요(${sum%1===0?sum:sum.toFixed(1)}%)`);
+ else toast('목표 비중을 저장했어요');
+}
+
 /* 자산 비중 카드 바로 아래에 꽂는 투자자산 전체 손익 카드 — assetGainLoss(a)/assetGainLossBadge가
  * 자산 1건씩만 행 배지로 보여주던 걸(assetSubline, 3479행대) 전체 합산 관점으로 보완한다
  * (app-evolve cycle226 critique/advance — 총자산/비중/순자산추이/목표는 전체 합산 카드가 있는데
@@ -4158,6 +4249,10 @@ function refreshInvestGainLossCard(){ /* 캐러셀 귀속 전환 시 투자 손�
  const el=$('investGlBody');if(!el)return;
  el.innerHTML=investGainLossCard(ST.assetOwner);
 }
+function refreshTargetAllocationCard(){ /* 캐러셀 귀속 전환 시(owner!=='all'이면 숨김) 목표 자산배분 카드도 함께 갱신 — allocationHistoryCard와 동일한 이유 */
+ const el=$('targetAllocBody');if(!el)return;
+ el.innerHTML=targetAllocationCard(ST.assetOwner);
+}
 function selectNwOwner(r){ /* 캐러셀 스크롤 정착/점 클릭/키보드 세 경로가 공유하는 귀속 전환 로직 */
  const owner=ownerListArr()[r]||'all';
  if(owner!==ST.assetOwner){
@@ -4177,6 +4272,7 @@ function selectNwOwner(r){ /* 캐러셀 스크롤 정착/점 클릭/키보드 �
    refreshAllocationCard();
    refreshAllocationHistoryCard();
    refreshInvestGainLossCard();
+   refreshTargetAllocationCard();
  }
 }
 function gotoNwOwner(i){ /* 점 클릭/화살표 키 경로 — nwClampIdx로 스크롤 경계와 동일하게 clamp/wrap */
@@ -4296,6 +4392,7 @@ function renderAssets(){
  <div id="nwHistBody">${nwHistoryCard(ST.assetOwner,ST.nwPreset)}</div>
  <div id="allocBody">${allocationCard(ST.assetOwner)}</div>
  <div id="allocHistBody">${allocationHistoryCard(ST.assetOwner,ST.allocPreset)}</div>
+ <div id="targetAllocBody">${targetAllocationCard(ST.assetOwner)}</div>
  <div id="investGlBody">${investGainLossCard(ST.assetOwner)}</div>
  <div id="goalsSummaryBody">${goalsSummaryCard(ST.assetOwner)}</div>
  ${(!ST.editAssets&&!ST.aSel.mode)?`<div class="searchbar" style="margin-bottom:14px">${svg('search')}<div class="field-clear"><input id="assetQ" aria-label="자산 검색" placeholder="자산 이름 검색" value="${esc(ST.assetQ)}" oninput="assetQInput(this.value)"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('assetQ')">✕</button></div></div>`:''}
@@ -6808,6 +6905,7 @@ function renderMenu(){
    {ic:'users',l:'귀속 관리',v:DB.owners.length+'개',a:"asDraft=null;openOwnerSheet()"},
    {ic:'repeat',l:'반복 내역 관리',v:DB.recurrences.length+'개',a:"openRecManage()"},
    {ic:'target',l:'목표 관리',v:DB.goals.length+'개',a:"openGoalsList()"},
+   {ic:'chart',l:'목표 자산배분',v:Object.keys(DB.settings.targetAllocation||{}).length?'설정됨':'미설정',a:"openTargetAllocationForm()"},
    {ic:'calendar',l:'연간 결산',a:"openYearReview(TM.y)"},
   ]},
   {cap:'알림 · 기준',items:[
@@ -10647,6 +10745,24 @@ function homeAlerts(neg){
  const _dp=debtsPaidOff();
  if(_dp.length===1){const d=_dp[0];arr.push({kind:'debtPaidOff',assetId:d.id,name:d.name,amount:d.amount});}
  else if(_dp.length>1)arr.push({kind:'debtPaidOffMulti',count:_dp.length});
+ /* 목표 자산배분과 실제 비중이 많이 벌어진 유형: targetAllocationCard(3514행대)와 동일한 집계
+  * (allocationDrift, logic.js)를 홈 알림에도 반영해, 자산 탭을 직접 열지 않아도 리밸런싱이 필요한 걸
+  * 알 수 있게 한다(app-evolve cycle313 critique/advance — nwHistory byType 추이 카드만 있고 목표 대비
+  * 알림은 없던 공백). DB.settings.targetAllocation이 비어있으면(기능 미사용) 아예 계산하지 않는다.
+  * rateUnknown으로 actualPct를 모르는 유형(allocationDrift가 null로 돌려줌)은 "모르면 추측하지
+  * 않는다" 원칙으로 제외 — targetAllocationCard가 그 유형을 숫자 대신 '미확인'으로만 보여주는 것과
+  * 같은 이유. |diffPct|가 8%p 이상 벌어진 유형만 budgetOver/budgetOverMulti와 동일한 단일/복수
+  * collapsing 패턴으로 묶는다(월+반올림 diff 버킷으로 재알림 스팸을 막는 건 notifyAlertInfo가 맡음). */
+ const _tgtMap=DB.settings.targetAllocation||{};
+ if(Object.keys(_tgtMap).length){
+  const _taItems=DB.assets.filter(a=>a.includeInTotal&&a.type!=='debt');
+  const _taByType={};
+  _taItems.forEach(a=>{const v=assetEval(a);_taByType[a.type]=(_taByType[a.type]||0)+(v>0?v:0)});
+  const _taUnknown=[...new Set(_taItems.filter(rateUnknown).map(a=>a.type))];
+  const _ad=allocationDrift(_taByType,_tgtMap,_taUnknown).filter(x=>x.actualPct!=null&&Math.abs(x.diffPct)>=8);
+  if(_ad.length===1){const x=_ad[0];arr.push({kind:'allocationDrift',type:x.type,actualPct:x.actualPct,targetPct:x.targetPct,diffPct:x.diffPct});}
+  else if(_ad.length>1)arr.push({kind:'allocationDriftMulti',count:_ad.length});
+ }
  return arr;
 }
 /* homeAlerts()가 계산한 알림 중 "오늘 확정 대기 이체 / 임박한 저축 만기(1~2일 이내) / 예산 초과 /
@@ -10713,6 +10829,17 @@ function notifyAlertInfo(al){
   * 정리될 때까지 매일 다시 알리지 않는다(app-evolve cycle257 advance). */
  if(al.kind==='debtPaidOff')return{key:`debtPaidOff:${al.assetId}`,title:'빚을 다 갚았어요 🎉',body:`${al.name} · ${comma(al.amount)}원`,group:'debt'};
  if(al.kind==='debtPaidOffMulti')return{key:`debtPaidOffMulti:${al.count}`,title:'빚을 다 갚았어요 🎉',body:`부채 ${al.count}건을 다 갚았어요`,group:'debt'};
+ /* allocationDrift(Multi)는 budgetPace와 동일한 이유(시세가 틱마다 바뀌어도 매번 다시 알리면 스팸)로
+  * 월 단위로 key를 묶는데, cat/goalId처럼 "항상 같은 대상"이 아니라 diffPct가 시세 변동마다 계속
+  * 움직이는 값이라 월만으로 묶으면 "8%p로 한 번 알린 뒤 20%p로 더 벌어져도" 재알림이 안 되는 반대
+  * 문제가 생긴다 — budgetOverMulti/goalBehindMulti가 count를 키에 더해 "건수가 바뀌면 다시 알린다"로
+  * 푼 것과 같은 원칙으로, diffPct를 5%p 단위로 반올림한 버킷을 키에 더해 "벌어진 정도가 눈에 띄게
+  * 바뀌면" 다시 알리게 한다(미세한 시세 등락만으론 버킷이 안 바뀌어 스팸이 나지 않음). 이 두 kind는
+  * 아직 renderMenu의 5개 그룹별 뮤트 토글(confirm/mat/budget/goal/debt, app-evolve cycle312/313)에
+  * 포함되지 않는 새 group('alloc')이라 뮤트 UI는 없지만, notifyMute[info.group] 조회 자체는 undefined로
+  * 안전하게 통과한다(뮤트 UI 추가는 범위 밖, 다음 critique가 판단할 몫). */
+ if(al.kind==='allocationDrift')return{key:`allocDrift:${al.type}:${TODAY.slice(0,7)}:${Math.round(al.diffPct/5)*5}`,title:'목표 비중과 차이가 커요',body:`${ASSET_TYPES[al.type].label} · 지금 ${al.actualPct.toFixed(1)}% / 목표 ${al.targetPct}%`,group:'alloc'};
+ if(al.kind==='allocationDriftMulti')return{key:`allocDriftMulti:${TODAY.slice(0,7)}:${al.count}`,title:'목표 비중과 차이가 커요',body:`${al.count}개 유형이 목표 비중과 많이 벌어졌어요`,group:'alloc'};
  return null;
 }
 /* 같은 항목(key)은 상태가 유지되는 한 다시 알리지 않는다 — checkNotifyAlerts가 동기화 주기(수 분)마다
@@ -10933,6 +11060,16 @@ function homeAlertCard(al){
    <div class="ha-ic">${svg('debt')}</div>
    <div class="ha-b"><div class="ha-t">부채를 다 갚았어요 🎉 ${al.count}건</div>
      <div class="ha-s">눌러서 한 번에 확인</div></div>
+   <div class="ha-c">${svg('chev')}</div></button>`;
+ if(al.kind==='allocationDrift')return `<button class="home-alert mat" onclick="openTargetAllocationForm()">
+   <div class="ha-ic">${svg('alert')}</div>
+   <div class="ha-b"><div class="ha-t">${esc(ASSET_TYPES[al.type].label)} 비중이 목표와 많이 달라요</div>
+     <div class="ha-s">지금 ${al.actualPct.toFixed(1)}% · 목표 ${al.targetPct}% · 눌러서 확인하세요</div></div>
+   <div class="ha-c">${svg('chev')}</div></button>`;
+ if(al.kind==='allocationDriftMulti')return `<button class="home-alert mat" onclick="openTargetAllocationForm()">
+   <div class="ha-ic">${svg('alert')}</div>
+   <div class="ha-b"><div class="ha-t">목표 비중과 차이가 큰 유형 ${al.count}개</div>
+     <div class="ha-s">눌러서 확인하세요</div></div>
    <div class="ha-c">${svg('chev')}</div></button>`;
  if(al.kind==='negMulti')return `<button class="home-alert" onclick="openNegList()">
    <div class="ha-ic">${svg('bell')}</div>

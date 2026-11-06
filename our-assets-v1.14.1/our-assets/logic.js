@@ -1125,6 +1125,52 @@ function assetAllocationSeries(hist,preset,today){
  return {points,types};
 }
 
+/* ================= TARGET ALLOCATION / REBALANCING (목표 자산배분 · 리밸런싱, 순수) ================= */
+/* byTypeTotals: {type:amount} — 호출부(targetAllocationCard/homeAlerts)가 assetAllocation과 동일하게
+ * owner='all'·includeInTotal·debt 제외 필터링과 assetEval 평가를 이미 끝내 type별로 합산해 넘긴다.
+ * targetMap: DB.settings.targetAllocation({type:percent} 희소 맵, 비어있으면 기능 자체가 꺼져 있음).
+ * unknownTypes(선택, 배열 또는 Set): rateUnknown 자산이 섞여 byTypeTotals[type]가 실제보다 낮게(또는 0으로)
+ * 잡혔을 수 있는 type들 — assetGainLoss의 null-vs-0 가드와 동일한 이유로, 그런 type은 actualPct/diffPct를
+ * 숫자로 단정하지 않고 둘 다 null로 돌려줘 호출부가 숫자 대신 '미확인'으로 보여주게 한다(0으로 잘못
+ * 단정하면 "그 유형을 전혀 안 가지고 있다"는 거짓 결론이 되어 리밸런싱 금액이 실제보다 크게 부풀 수 있음).
+ * targetMap에 없는 type은 결과에 전혀 나타나지 않는다 — 사용자가 그 유형엔 목표를 안 세운 것뿐이지
+ * "목표가 0%"라고 단정할 근거가 없다(assetAllocation이 amount<=0 항목을 집계에서 빼는 것과 같은 "모르면
+ * 추측하지 않는다" 원칙). 반대로 targetMap에 있지만 실제로 전혀 들고 있지 않은 type(byTypeTotals에 없거나
+ * amount<=0)은 actualPct=0으로 명확히 안다(단순히 안 가진 것과 "시세를 몰라서 못 계산"은 다른 상태라
+ * null로 뭉뚱그리지 않음). targetMap의 percent 합이 100을 넘어도 그대로 각 type별 산술만 돌려준다(합계
+ * 검증/경고는 입력 UI(openTargetAllocationForm)의 몫 — assetAllocation이 이미 pct 정규화를 전혀 하지
+ * 않는 것과 같은 "산술은 그대로 두고 캡션/경고만 호출부가 붙인다" 원칙). total<=0(자산이 전혀 없거나
+ * 전부 0/음수)이면 비중 자체가 무의미하므로 빈 배열(assetAllocation과 동일한 계약 — 호출부가 카드/
+ * 알림을 숨김). */
+function allocationDrift(byTypeTotals,targetMap,unknownTypes){
+ byTypeTotals=byTypeTotals||{};targetMap=targetMap||{};
+ const types=Object.keys(targetMap);
+ if(!types.length)return [];
+ const total=Object.keys(byTypeTotals).reduce((s,t)=>s+(byTypeTotals[t]>0?byTypeTotals[t]:0),0);
+ if(!(total>0))return [];
+ const unknown=unknownTypes instanceof Set?unknownTypes:new Set(unknownTypes||[]);
+ return types.map(type=>{
+  const targetPct=targetMap[type];
+  if(unknown.has(type))return {type,targetPct,actualPct:null,diffPct:null};
+  const amount=byTypeTotals[type]>0?byTypeTotals[type]:0;
+  const actualPct=amount/total*100;
+  return {type,targetPct,actualPct,diffPct:actualPct-targetPct};
+ });
+}
+/* allocationDrift가 돌려준 한 항목의 diffPct(실제%-목표%)를 그 유형의 목표 비중을 맞추는 데 필요한
+ * 금액(원)으로 바꾼다. totalAssets는 allocationDrift가 쓴 것과 같은 total(전체 평가액)이어야 의미가
+ * 맞다. 양수면 목표보다 많이 들고 있다는 뜻(줄여야 함), 음수면 모자란다는 뜻(늘려야 함) — 부호를
+ * "매도/매수"로 풀어 보여주는 건 호출부(targetAllocationCard)가 맡는다. diffPct가 null이면(allocationDrift가
+ * rateUnknown으로 판정한 type) 금액도 알 수 없으므로 null을 그대로 돌려준다 — "모르면 추측하지 않는다"
+ * 원칙을 그대로 이어받는다. totalAssets<=0이면 리밸런싱 자체가 무의미하므로 0을 돌려준다(allocationDrift가
+ * 이미 total<=0일 때 빈 배열을 돌려줘 실제로는 이 가지가 호출될 일이 거의 없지만, 순수 함수 단독
+ * 호출에도 안전하게 한다). */
+function rebalanceAmount(totalAssets,diffPct){
+ if(diffPct==null)return null;
+ if(!(totalAssets>0))return 0;
+ return Math.round(totalAssets*diffPct/100);
+}
+
 /* ================= PORTFOLIO GAIN/LOSS (투자자산 전체 손익, 순수) ================= */
 /* items: [{evalValue,costBasis}] — 호출부(investGainLossCard)가 owner/includeInTotal 필터링과
  * assetEval/rateUnknown 평가(DB.rates에 의존하는 index.html 쪽 함수)를 이미 끝낸 뒤 넘긴다

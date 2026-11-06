@@ -1,33 +1,8 @@
 {
-  "cycle": 313,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "목표 자산배분(target allocation) + 리밸런싱 가이드",
-    "why": "cycle310-311에서 '실제 자산배분 추이'(allocationHistoryCard, byType 스냅샷)는 구현됐지만, 목표 비중을 설정하고 현재와 얼마나 벌어졌는지 보여주는 '목표 대비' 절반은 전혀 없음 — index.html/logic.js/test 전체에 targetAllocation/rebalan/allocationDrift grep 0건으로 확인된 명확한 비대칭. saveGoal은 goal.type이 'asset'(단일 자산) 또는 'networth'(전체 순자산)만 지원하고 배분형 목표가 없음. 막 손댄 코드(allocationCard/TYPE_COLOR/ASSET_TYPES/nwHistory byType)라 통합 지점이 신선하고, budgetOver/budgetOverMulti 같은 기존 single/multi 알림 collapsing 패턴을 그대로 재사용할 수 있어 한 cycle 범위에 맞음.",
-    "approach": "데이터 모델: DB.settings.targetAllocation = {[assetType]: percent} 희소 맵(없으면 기능 꺼짐, migrate() 기본값은 빈 값 — 기존 사용자에게 임의 기본 비중을 강제하지 않음). logic.js에 순수함수 2개: allocationDrift(byTypeTotals, targetMap) → 양쪽에 존재하는 각 type에 대해 {type, actualPct, targetPct, diffPct}, target이 없는 type은 null/skip(0으로 가정하지 않음); rateUnknown(시세 미확인) type은 숫자 대신 '미확인'으로 표시(assetGainLoss의 null-vs-0 가드, index.html:2903-2916과 동일 원칙). rebalanceAmount(totalAssets, diffPct) → totalAssets*diffPct/100 라운딩. 설정 UI: openTargetAllocationForm()/saveTargetAllocation() 신규 시트 — ASSET_TYPES 각각에 % 입력, 합계 실시간 표시, 합계>100이면 경고(하드블록 아님, 기존 입력 검증 톤과 동일). 카드: allocationHistoryCard(index.html:3474-3505) 범례 옆에 목표 마커 + diffPct/리밸런싱 금액 텍스트 추가하거나 형제 카드 신설, targetAllocation이 비어있으면 완전히 숨김(owner!=='all'→'' 과 동일한 조기 반환 관례). 홈 알림: homeAlerts()에 allocationDrift/allocationDriftMulti 신규 kind(budgetOver/budgetOverMulti의 single/multi collapsing 패턴 그대로 복사, index.html:10588-10699 부근), |diffPct|가 임계치(예: 8%p) 넘을 때 발생, budgetPace의 월별 키와 같은 이유로 월+라운딩된 diff 버킷으로 키를 잡아 매 시세 변동마다 스팸 안 되게 함. 테스트: allocationDrift(target 없음, actual type 없음, rateUnknown type, 합계>100) 및 rebalanceAmount(0/음수 total, 라운딩) 순수함수 테스트, budgetOverMulti류 알림 키 안정성 테스트와 동일한 패턴의 알림 키 테스트 추가.",
-    "rejected_candidates": [
-      "CSV 재가져오기 시 분할거래(split) 미지원 — cycle198에서 이미 '알려진 제약'으로 명시적 결정, 새 공백 아님",
-      "빠른입력 흐름의 반복거래 분할 — cycle282에서 반복 관리 화면을 통해 이미 해결됨",
-      "진짜 백그라운드/오프라인 푸시 알림 — sw.js에 Push API/periodic sync 없음, 별도 푸시 서버 필요(이 앱은 Netlify functions로 시세만 중계) — notifyReliabilityMsg/Tier로 이미 사용자에게 알려진 아키텍처 제약",
-      "카테고리 계층/하위카테고리 — 실제 공백이지만 예산 키·CSV 가져오기/내보내기·분할·반복거래 템플릿 전역에 영향, 한 cycle에 비해 과대·고위험, 보류 근거 코드 주석도 없어 추측성에 가까움",
-      "다인 소유자 간 지출 분담/정산('누가 누구에게') — 커플용 앱에 그럴듯하지만 계획된 근거 코드 없음, owner는 현재 자산 소유로만 추론되고 정산 원장 설계는 한 advance cycle이 독단적으로 결정하기엔 너무 큰 제품 의사결정"
-    ]
-  },
+  "cycle": 314,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 308,
-      "phase": "review",
-      "timestamp": "2026-11-05T15:08:03.190Z",
-      "summary": "cycle308 develop 커밋(914f9de)을 검토 — addOwner/delOwner/doRenameOwner에 추가된 if(twGuard())return; 가드가 saveGoal/delGoal/deleteGoalsUndo(cycle307), doBulkGoalOwnerMove(cycle305) 등 기존 가드 함수들과 완전히 동일한 위치(함수 맨 앞)·형태임을 diff로 재확인. delOwner는 delGoal과 동일하게 confirmSheet를 띄우기 전에 가드가 먼저 실행돼 튜토리얼 중엔 확인 시트조차 안 뜸을 테스트로 재확인. 테스트 3건(addOwner/delOwner/doRenameOwner)이 기존 newOwnerValue/renameOwnerValue sandbox mock 패턴을 그대로 재사용해 일관성 있음. node test/run.js 2829/2829 통과, node --check logic.js/sw.js, manifest.webmanifest JSON 유효성 통과. 실제 버그 없음(state.json만 커밋).",
-      "commit": null
-    },
-    {
-      "cycle": 308,
-      "phase": "critique",
-      "timestamp": "2026-11-05T16:12:00.000Z",
-      "summary": "서브에이전트로 앱 전체를 재조사(cycle300-308 처리/보류 항목 전부 제외 지시). 발견: 자산 합치기(mergeAssetInto, cycle297)가 BAL_ASSET_TYPES=['cash','savings','realestate','etc','pension','debt']로만 범위를 제한해(index.html:4239,4269,4687) 시세형 자산(fx/gold/stock/crypto)은 합치기 버튼 자체가 안 보임 — 같은 종목 중복등록·추가매수를 새 자산으로 등록하는 실수가 오히려 이 자산군에서 더 흔한데 assetQtyLog/수익률 계산이 쪼개진 채 남음. index.html:4237-4238 주석이 '수량·시세를 합치는 별도 규칙이 필요해 1차 범위에서 제외'라고 명시해 보류된 확장임을 자인. 기각한 후보 4개(알림별 OS푸시 on/off-최근 건드린 표면, 카테고리 선택모드-빈도 낮음, 공휴일 반영-데이터 유지부담, 반응형 레이아웃-의도된 디자인). pending_advance_plan에 구체 구현 계획 저장(assetMergeSubKey로 같은 종목/통화만 필터링, isMarketValued 분기로 수량합산+acquiredAt 비움+assetQtyLog 재연결, 통화/종목 다른 합치기와 가중평균 인수일은 범위 밖). 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 308,
       "phase": "advance",
@@ -159,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-06T11:10:00.000Z",
       "summary": "서브에이전트로 앱 전체를 재조사(cycle300-313 처리/보류/기각 항목 전부 제외 지시, twGuard 스윕·전역검색·예산이월·연말결산·owner/category/asset merge 전부·nwHistory byType/자산배분추이 카드·CSV날짜·이체중복감지·카테고리별 알림뮤트는 명시적으로 제외). 발견: nwHistory byType 스냅샷+allocationHistoryCard(cycle310-311)로 '실제 자산배분 추이'는 완결됐지만, 목표 비중을 설정하고 현재와의 차이·리밸런싱 금액을 보여주는 '목표 대비' 절반이 전혀 없음 — targetAllocation/rebalan/allocationDrift grep 전체 0건. saveGoal은 goal.type이 'asset'/'networth'만 지원해 배분형 목표가 아예 없음. 막 손댄 코드라 통합 지점이 신선하고 budgetOver/budgetOverMulti 같은 기존 single/multi collapsing 알림 패턴을 재사용할 수 있어 적절한 cycle 범위. pending_advance_plan에 구체 계획 저장(DB.settings.targetAllocation 희소맵, logic.js의 allocationDrift/rebalanceAmount 순수함수, 설정 시트, allocationHistoryCard 확장 또는 형제 카드, homeAlerts에 allocationDrift/Multi 신규 kind, 테스트 계획 포함). 기각 후보 5개(CSV 재가져오기 분할거래 미지원-cycle198 기결정, 반복거래 분할-cycle282 해결됨, 진짜 백그라운드 푸시-아키텍처 제약으로 이미 안내됨, 카테고리 계층-과대 범위, 다인 소유자 정산-근거 없는 추측성). 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 313,
+      "phase": "advance",
+      "timestamp": "2026-11-06T12:26:52.732Z",
+      "summary": "critique(cycle313) 계획대로 목표 자산배분(target allocation)+리밸런싱 가이드를 구현했다. 데이터 모델: DB.settings.targetAllocation={type:percent} 희소맵(기본 {}, migrate() 보존). logic.js에 순수함수 2개 추가 — allocationDrift(byTypeTotals,targetMap,unknownTypes): targetMap에 있는 type만 반환(없는 type은 결과에서 제외), rateUnknown type은 actualPct/diffPct를 null로(0 단정 금지), 나머지는 total 대비 actualPct-targetPct를 그대로 계산(target 합이 100%를 넘어도 정규화 없음). rebalanceAmount(totalAssets,diffPct)=round(totalAssets*diffPct/100), diffPct null이면 null, totalAssets<=0이면 0. UI: openTargetAllocationForm/renderTargetAllocationForm(ASSET_TYPES 9종 % 입력, splitHintUpdate와 동일한 DOM 직접 갱신 합계 힌트, 100% 초과는 경고만), saveTargetAllocation(0 이하 값 제외하고 저장, 전부 0이면 꺼짐)/clearTargetAllocation, renderMenu 가계부 그룹에 진입점 추가. 카드: targetAllocationCard(owner) — allocationHistoryCard 바로 아래, owner=all 전용, targetAllocation 비면 완전히 숨김, 유형별 지금%/목표%/매도·매수 리밸런싱 금액(또는 rateUnknown이면 시세 미확인 캡션) 표시. 홈 알림: homeAlerts에 allocationDrift/allocationDriftMulti 추가(|diffPct|>=8%p, budgetOver(Multi)와 동일한 단일/복수 collapsing), notifyAlertInfo는 월+5%p 반올림 diff 버킷으로 키를 잡아 틱마다 스팸 없이 벌어짐이 커지면 재알림, group:alloc(아직 뮤트 UI 없음, 범위 밖). homeAlertCard에도 두 kind 추가(openTargetAllocationForm 연결). 테스트: allocationDrift(target 없음/actual 없음→0/rateUnknown→null/target 합>100 비정규화) 6건, rebalanceAmount(0·음수 total/null diff/라운딩) 3건, targetAllocationCard 4건, 폼 입력/저장/끄기 3건, migrate 1건, renderMenu 소스패턴 1건, homeAlerts 통합 3건(rateUnknown은 그 유형 자신만 빠지고 가격을 아는 다른 유형은 그대로 판정됨을 명시적으로 검증 — allocationCard의 hasUnknown 캡션과 동일 원칙), notifyAlertInfo 키 버킷 1건, homeAlertCard 1건 — 2889->2913 통과. 구현 중 발견: vm 샌드박스 realm 문제로 deepStrictEqual({},{})가 실패하는 기존 이슈(cycle309/313 로그와 동일 클래스)가 새 테스트에도 그대로 나타나 Object.keys/JSON.stringify 비교로 피해감. 100% 초과 경고 토스트 문구를 처음엔 실제 합계값만 적었다가 테스트로 \"100%를 넘어요\" 고정 문구가 있어야 명확히 검증된다는 걸 깨닫고 수정. node test/run.js 2913/2913 통과, node --check logic.js/sw.js, 메인 인라인 스크립트 new Function 구문검사, manifest.webmanifest JSON 유효성 모두 통과(기존 1건의 오탐은 cycle311부터 이어진 것으로 이번 변경과 무관함을 HEAD 대비 재확인). APP_VERSION 1.47.370->1.47.371, sw.js CACHE v637->v638. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

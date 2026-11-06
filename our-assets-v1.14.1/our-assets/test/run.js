@@ -281,6 +281,11 @@ const FUNCTIONS = [
   'heldCurrencies', 'heldStockCodes', 'heldCryptoCodes', 'needFx', 'needStock', 'needCrypto', 'hasRateAssets', 'autoSyncRates',
   'nextBigOutflow', 'dday', 'balanceOn', 'nextOutflowCard', 'monthOutflowCard', 'planGaugeCard', 'homeAlertCard', 'renderHome',
   'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwPresetSegHTML', 'nwHistoryCard', 'allocationCard', 'allocPresetSegHTML', 'allocationHistoryCard', 'investGainLossCard', 'doRenameOwner', 'addOwner', 'ownerChipClass',
+  // targetAllocationCard/refreshTargetAllocationCard(목표 자산배분, app-evolve cycle313 advance)는
+  // allocationHistoryCard 바로 아래 자리에 꽂는 새 카드 — assetBodyHTML/renderAssets/selectNwOwner가
+  // 항상 함께 참조하므로(allocationCard/investGainLossCard와 같은 이유) FUNCTIONS에 반드시 함께
+  // 올라가야 한다. openTargetAllocationForm 이하는 그 설정 시트 전체(열기/렌더/입력/저장/끄기).
+  'targetAllocationCard', 'refreshTargetAllocationCard', 'openTargetAllocationForm', 'renderTargetAllocationForm', 'targetAllocSumPct', 'taSumLabel', 'taHintUpdate', 'taPctInput', 'saveTargetAllocation', 'clearTargetAllocation',
   'openOwnerMergePicker', 'confirmOwnerMerge', 'mergeOwnerInto',
   // ownerSegHtml(app-evolve cycle255 advance)은 spendOwnerSel/incomeOwnerSel/histOwnerSel/
   // yearOwnerSel/goalOwnerSel 5곳이 각자 베껴 쓰던 귀속 선택 세그먼트 마크업을 모은 공유 헬퍼 —
@@ -21604,6 +21609,268 @@ test('allocPresetSegHTML: preset에 맞는 버튼에 on 클래스와 aria-presse
   const html = sandbox.allocPresetSegHTML('y1');
   assert.ok(/class="on" aria-pressed="true"[^>]*>1년/.test(html));
   assert.ok(html.includes("onclick=\"allocPresetSel('m1')\""));
+});
+/* ---------- allocationDrift/rebalanceAmount(logic.js)/targetAllocationCard: 목표 자산배분 · 리밸런싱
+ * (app-evolve cycle313 critique/advance — nwHistory byType 추이 카드(allocationHistoryCard)는 '실제'
+ * 비중만 보여주고, 목표 비중을 세워 지금과 얼마나 벌어졌는지 보여주는 절반이 전혀 없던 공백) ---------- */
+test('allocationDrift: targetMap이 비어있으면(목표 미설정) 빈 배열을 돌려준다', () => {
+  assert.strictEqual(sandbox.allocationDrift({ cash: 100000 }, {}).length, 0);
+  assert.strictEqual(sandbox.allocationDrift({ cash: 100000 }, null).length, 0);
+});
+test('allocationDrift: 목표를 세운 유형을 실제로 전혀 들고 있지 않으면(actual type 없음) actualPct는 null이 아니라 0이다 — "모름"과 "안 가짐"은 다른 상태', () => {
+  const r = sandbox.allocationDrift({ cash: 100000 }, { stock: 30 });
+  assert.strictEqual(r.length, 1);
+  assert.strictEqual(r[0].type, 'stock');
+  assert.strictEqual(r[0].actualPct, 0, '실제로 0원 들고 있는 걸 아는 것이므로 null이 아니라 0이어야 함');
+  assert.strictEqual(r[0].targetPct, 30);
+  assert.strictEqual(r[0].diffPct, -30, '0% - 목표 30% = -30%p(매수 방향)');
+});
+test('allocationDrift: rateUnknown으로 표시된 type은 actualPct/diffPct 둘 다 null이다("미확인" — 0으로 단정하지 않음)', () => {
+  const r = sandbox.allocationDrift({ cash: 100000, stock: 0 }, { cash: 50, stock: 30 }, ['stock']);
+  const cash = r.find(x => x.type === 'cash'), stock = r.find(x => x.type === 'stock');
+  assert.strictEqual(cash.actualPct, 100, 'cash는 unknown이 아니므로 정상 계산(분모엔 stock의 0이 기여하지 않아 100%)');
+  assert.strictEqual(cash.diffPct, 50);
+  assert.strictEqual(stock.actualPct, null, 'unknownTypes에 있는 type은 actualPct를 숫자로 단정하면 안 됨');
+  assert.strictEqual(stock.diffPct, null);
+  assert.strictEqual(stock.targetPct, 30, 'targetPct 자체는 unknown 여부와 무관하게 그대로 돌려줘야 함');
+});
+test('allocationDrift: targetMap에 없는 type은 결과에 전혀 나타나지 않는다(0%가 목표라고 단정하지 않음)', () => {
+  const r = sandbox.allocationDrift({ cash: 70000, stock: 30000 }, { cash: 80 });
+  assert.strictEqual(r.length, 1, 'stock은 목표가 없으므로 결과에서 완전히 빠져야 함');
+  assert.strictEqual(r[0].type, 'cash');
+});
+test('allocationDrift: target 비중 합이 100%를 넘어도 각 type별 산술은 그대로 독립적으로 계산한다(정규화/클램프 없음)', () => {
+  const r = sandbox.allocationDrift({ cash: 50000, stock: 50000 }, { cash: 70, stock: 60 }); // 합계 130%
+  const cash = r.find(x => x.type === 'cash'), stock = r.find(x => x.type === 'stock');
+  assert.strictEqual(cash.actualPct, 50);
+  assert.strictEqual(cash.diffPct, -20, '50% - 목표 70% = -20%p');
+  assert.strictEqual(stock.actualPct, 50);
+  assert.strictEqual(stock.diffPct, -10, '50% - 목표 60% = -10%p — 합계가 100을 넘어도 자기 몫만 그대로 계산되어야 함');
+});
+test('allocationDrift: 전체 total이 0 이하(자산 없음/전부 0 또는 음수)면 target이 있어도 빈 배열을 돌려준다(assetAllocation과 동일 계약)', () => {
+  assert.strictEqual(sandbox.allocationDrift({ cash: 0 }, { cash: 50 }).length, 0);
+  assert.strictEqual(sandbox.allocationDrift({ cash: -10000 }, { cash: 50 }).length, 0);
+  assert.strictEqual(sandbox.allocationDrift({}, { cash: 50 }).length, 0);
+});
+test('allocationDrift: 정상 케이스 — 목표보다 많이 든 유형은 diffPct가 양수(매도 방향), 모자란 유형은 음수(매수 방향)', () => {
+  const r = sandbox.allocationDrift({ cash: 30000, stock: 70000 }, { cash: 50, stock: 50 });
+  assert.strictEqual(r.find(x => x.type === 'cash').diffPct, -20, 'cash는 30%인데 목표가 50%라 20%p 모자람');
+  assert.strictEqual(r.find(x => x.type === 'stock').diffPct, 20, 'stock은 70%인데 목표가 50%라 20%p 초과');
+});
+test('rebalanceAmount: diffPct가 null이면(allocationDrift의 rateUnknown 케이스) 금액도 알 수 없으므로 null이다', () => {
+  assert.strictEqual(sandbox.rebalanceAmount(1000000, null), null);
+});
+test('rebalanceAmount: totalAssets가 0 이하(0 또는 음수)면 리밸런싱 자체가 무의미하므로 0이다', () => {
+  assert.strictEqual(sandbox.rebalanceAmount(0, 20), 0);
+  assert.strictEqual(sandbox.rebalanceAmount(-500000, 20), 0);
+});
+test('rebalanceAmount: totalAssets*diffPct/100을 반올림해서 돌려준다', () => {
+  assert.strictEqual(sandbox.rebalanceAmount(1000000, 2.345), 23450);
+  assert.strictEqual(sandbox.rebalanceAmount(333333, 3), 10000, '333333*0.03=9999.99 → 반올림해서 10000');
+  assert.strictEqual(sandbox.rebalanceAmount(1000000, -20), -200000, '음수 diffPct(모자람)는 음수 금액(매수 방향)으로 그대로 나와야 함');
+});
+test('targetAllocationCard: DB.settings.targetAllocation이 비어있으면(기능 미사용) 완전히 숨긴다', () => {
+  sandbox.DB = { settings: { targetAllocation: {} }, assets: [] };
+  assert.strictEqual(sandbox.targetAllocationCard('all'), '');
+  sandbox.DB = { settings: {}, assets: [] }; // targetAllocation 필드 자체가 없는 레거시 상태도 안전해야 함
+  assert.strictEqual(sandbox.targetAllocationCard('all'), '');
+});
+test('targetAllocationCard: owner!=="all"이면 숨긴다(목표 비중은 가구 전체 기준 단일 값이라 귀속별로 쪼갤 수 없음, allocationHistoryCard와 동일한 제약)', () => {
+  sandbox.DB = {
+    settings: { targetAllocation: { cash: 50, stock: 50 } },
+    assets: [
+      { id: 'a1', name: '통장', owner: '나', type: 'cash', includeInTotal: true, baseAmount: 300000 },
+      { id: 'a2', name: '주식', owner: '나', type: 'stock', includeInTotal: true, stockQty: 1, stockCode: 'X' },
+    ],
+    rates: { stocks: { X: 700000 }, fx: {}, crypto: {} },
+    txns: [], recurrences: [],
+  };
+  sandbox._balCache.clear();
+  assert.strictEqual(sandbox.targetAllocationCard('배우자'), '');
+});
+test('targetAllocationCard: 목표가 설정돼 있으면 유형별로 지금 비중/목표 비중/리밸런싱 방향을 보여준다', () => {
+  sandbox.DB = {
+    settings: { targetAllocation: { cash: 50, stock: 50 } },
+    assets: [
+      { id: 'a1', name: '통장', owner: '나', type: 'cash', includeInTotal: true, baseAmount: 300000 },
+      { id: 'a2', name: '주식', owner: '나', type: 'stock', includeInTotal: true, stockQty: 1, stockCode: 'X' },
+    ],
+    rates: { stocks: { X: 700000 }, fx: {}, crypto: {} },
+    txns: [], recurrences: [],
+  };
+  sandbox._balCache.clear();
+  const html = sandbox.targetAllocationCard('all');
+  assert.ok(html.includes('목표 자산배분'));
+  assert.ok(html.includes('현금예금'), 'cash 유형 라벨(현금예금)이 보여야 함');
+  assert.ok(html.includes('주식'), 'stock 유형 라벨이 보여야 함');
+  assert.ok(html.includes('매도'), 'cash(30%)는 목표(50%)보다 모자라고 stock(70%)은 목표보다 넘치므로 매도 문구가 있어야 함');
+  assert.ok(html.includes('매수'), 'cash는 목표보다 모자라므로 매수 문구가 있어야 함');
+  assert.ok(html.includes("onclick=\"openTargetAllocationForm()\""), '설정 링크가 열기 함수를 가리켜야 함');
+});
+test('targetAllocationCard: rateUnknown인 유형은 비중 숫자 대신 "미확인" 캡션을 보여준다(0으로 단정하지 않음)', () => {
+  sandbox.DB = {
+    settings: { targetAllocation: { cash: 50, stock: 50 } },
+    assets: [
+      { id: 'a1', name: '통장', owner: '나', type: 'cash', includeInTotal: true, baseAmount: 300000 },
+      { id: 'a2', name: '주식', owner: '나', type: 'stock', includeInTotal: true, stockQty: 1, stockCode: 'UNKNOWN' }, // rates에 없는 코드 → rateUnknown
+    ],
+    rates: { stocks: {}, fx: {}, crypto: {} },
+    txns: [], recurrences: [],
+  };
+  sandbox._balCache.clear();
+  const html = sandbox.targetAllocationCard('all');
+  assert.ok(html.includes('시세 미확인'), 'rateUnknown인 stock은 숫자 대신 미확인 캡션을 보여야 함');
+});
+test('openTargetAllocationForm/taPctInput/saveTargetAllocation: 입력값을 draft에 반영하고, 0보다 큰 값만 모아 저장한다(기존 입력 검증 톤과 동일하게 100% 초과도 막지 않음)', () => {
+  const origOpenSheet = sandbox.openSheet, origSave = sandbox.save, origRenderCurrent = sandbox.renderCurrent, origCloseSheet = sandbox.closeSheet, origToast = sandbox.toast;
+  let toasts = [];
+  sandbox.openSheet = () => {};
+  sandbox.save = () => {};
+  sandbox.renderCurrent = () => {};
+  sandbox.closeSheet = () => {};
+  sandbox.toast = (msg) => toasts.push(msg);
+  try {
+    sandbox.DB = { settings: { targetAllocation: {} } };
+    sandbox.openTargetAllocationForm();
+    // vm 샌드박스(다른 realm)에서 만들어진 객체라 deepStrictEqual({},{})가 프로토타입 불일치로
+    // 거짓 실패한다(cycle121/309 advance에서 겪은 것과 동일한 cross-realm 문제) — Object.keys 길이로 비교.
+    assert.strictEqual(Object.keys(sandbox.targetAllocDraft).length, 0, '기존 설정이 없으면 빈 draft로 시작해야 함');
+    sandbox.taPctInput('cash', { value: '70' });
+    sandbox.taPctInput('stock', { value: '0' }); // 0은 저장 시 제외되어야 함
+    sandbox.taPctInput('gold', { value: '50' });
+    assert.strictEqual(sandbox.targetAllocDraft.cash, 70);
+    assert.strictEqual(sandbox.targetAllocDraft.stock, 0);
+    assert.strictEqual(sandbox.targetAllocDraft.gold, 50);
+    assert.strictEqual(sandbox.targetAllocSumPct(), 120, '합계는 70+0+50=120(검증은 경고만, 막지 않음)');
+    sandbox.saveTargetAllocation();
+    assert.strictEqual(JSON.stringify(sandbox.DB.settings.targetAllocation), JSON.stringify({ cash: 70, gold: 50 }), 'stock은 0이라 제외되고, 나머지는 그대로 저장되어야 함');
+    assert.ok(toasts.some(t => t.includes('100%')), '합계가 100%를 넘으면 그 사실을 토스트로 알려야 함(저장은 막지 않음)');
+  } finally {
+    sandbox.openSheet = origOpenSheet; sandbox.save = origSave; sandbox.renderCurrent = origRenderCurrent; sandbox.closeSheet = origCloseSheet; sandbox.toast = origToast;
+  }
+});
+test('saveTargetAllocation: 모든 입력이 0/빈 값이면 targetAllocation을 {}로 저장해 기능이 꺼진다', () => {
+  const origOpenSheet = sandbox.openSheet, origSave = sandbox.save, origRenderCurrent = sandbox.renderCurrent, origCloseSheet = sandbox.closeSheet, origToast = sandbox.toast;
+  let toasts = [];
+  sandbox.openSheet = () => {};
+  sandbox.save = () => {};
+  sandbox.renderCurrent = () => {};
+  sandbox.closeSheet = () => {};
+  sandbox.toast = (msg) => toasts.push(msg);
+  try {
+    sandbox.DB = { settings: { targetAllocation: { cash: 80 } } };
+    sandbox.openTargetAllocationForm();
+    sandbox.taPctInput('cash', { value: '0' });
+    sandbox.saveTargetAllocation();
+    assert.strictEqual(Object.keys(sandbox.DB.settings.targetAllocation).length, 0);
+    assert.ok(toasts.some(t => t.includes('껐어요')));
+  } finally {
+    sandbox.openSheet = origOpenSheet; sandbox.save = origSave; sandbox.renderCurrent = origRenderCurrent; sandbox.closeSheet = origCloseSheet; sandbox.toast = origToast;
+  }
+});
+test('clearTargetAllocation: targetAllocation을 {}로 비우고 저장·닫기·토스트까지 처리한다', () => {
+  const origSave = sandbox.save, origRenderCurrent = sandbox.renderCurrent, origCloseSheet = sandbox.closeSheet, origToast = sandbox.toast;
+  let saveCalls = 0, toasts = [];
+  sandbox.save = () => { saveCalls++; };
+  sandbox.renderCurrent = () => {};
+  sandbox.closeSheet = () => {};
+  sandbox.toast = (msg) => toasts.push(msg);
+  try {
+    sandbox.DB = { settings: { targetAllocation: { cash: 50, stock: 50 } } };
+    sandbox.clearTargetAllocation();
+    assert.strictEqual(Object.keys(sandbox.DB.settings.targetAllocation).length, 0);
+    assert.strictEqual(saveCalls, 1);
+    assert.ok(toasts.some(t => t.includes('껐어요')));
+  } finally {
+    sandbox.save = origSave; sandbox.renderCurrent = origRenderCurrent; sandbox.closeSheet = origCloseSheet; sandbox.toast = origToast;
+  }
+});
+test('migrate: DB.settings.targetAllocation이 없으면 {}로 채워지고, 기존 값이 있으면 그대로 보존된다', () => {
+  sandbox.DB = {
+    version: 5, catsV2: true,
+    settings: { themeMode: 'system', includeScheduled: false, assetSort: 'custom', groupOrder: [...sandbox.DEFAULT_GROUP_ORDER] },
+    owners: ['나', '배우자', '공용'],
+    assets: [], txns: [], recurrences: [], inquiries: [],
+    categories: { expense: [...sandbox.EXP_CATS_DEFAULT], income: [...sandbox.INC_CATS_DEFAULT], saving: [...sandbox.SAV_CATS_DEFAULT] },
+  };
+  sandbox.migrate();
+  assert.strictEqual(Object.keys(sandbox.DB.settings.targetAllocation).length, 0, '기존 계정엔 targetAllocation이 없었으므로 마이그레이션 시 빈 객체로 채워져야 함');
+
+  sandbox.DB.settings.targetAllocation = { cash: 60 };
+  sandbox.migrate();
+  assert.strictEqual(sandbox.DB.settings.targetAllocation.cash, 60, '이미 설정된 목표 비중은 재마이그레이션해도 보존돼야 함');
+});
+test('renderMenu: "가계부" 그룹에 목표 자산배분 행이 있고, 설정 여부에 따라 값 라벨이 바뀐다(소스 패턴 검증)', () => {
+  const body = extractFunction('renderMenu');
+  assert.ok(body.includes("openTargetAllocationForm()"), '메뉴에 openTargetAllocationForm 진입점이 있어야 함');
+  assert.ok(body.includes("'설정됨':'미설정'") || body.includes('"설정됨":"미설정"'), '설정 여부에 따라 값 라벨이 달라져야 함');
+});
+/* ---------- homeAlerts()/notifyAlertInfo()/homeAlertCard()의 allocationDrift(Multi) 통합 ----------
+ * (app-evolve cycle313 critique/advance) — targetAllocationCard와 동일한 집계를 홈 알림에도 반영해,
+ * 자산 탭을 열지 않아도 리밸런싱이 필요한 걸 알 수 있게 한다. budgetOver(Multi)와 동일한 단일/복수
+ * collapsing 패턴, |diffPct|>=8%p만 대상, rateUnknown 유형은 제외. ---------- */
+function setupAllocationDriftDB(targetAllocation) {
+  setupHomeAlertsDB();
+  sandbox.DB.settings.targetAllocation = targetAllocation;
+  sandbox.DB.rates = { stocks: {}, fx: {}, crypto: {} };
+}
+test('homeAlerts: targetAllocation이 비어있으면 allocationDrift(Multi)는 전혀 계산되지 않는다', () => {
+  setupAllocationDriftDB({});
+  sandbox.DB.assets.push({ id: 'a1', name: '통장', owner: '나', type: 'cash', includeInTotal: true, baseAmount: 1000000 });
+  const alerts = sandbox.homeAlerts([]);
+  assert.strictEqual(alerts.filter(a => a.kind === 'allocationDrift' || a.kind === 'allocationDriftMulti').length, 0);
+});
+test('homeAlerts: 목표와 8%p 이상 벌어진 유형이 정확히 1건이면 allocationDrift, 2건이면 allocationDriftMulti로 묶인다', () => {
+  setupAllocationDriftDB({ cash: 50, stock: 50 });
+  sandbox.DB.assets.push({ id: 'a1', name: '통장', owner: '나', type: 'cash', includeInTotal: true, baseAmount: 900000 });
+  sandbox.DB.assets.push({ id: 'a2', name: '주식', owner: '나', type: 'stock', includeInTotal: true, stockQty: 1, stockCode: 'X' });
+  sandbox.DB.rates.stocks.X = 100000; // cash 90% / stock 10% → cash diff +40%p, stock diff -40%p(둘 다 임계값 초과)
+  let alerts = sandbox.homeAlerts([]);
+  let ad = alerts.filter(a => a.kind === 'allocationDrift' || a.kind === 'allocationDriftMulti');
+  assert.strictEqual(ad.length, 1);
+  assert.strictEqual(ad[0].kind, 'allocationDriftMulti', 'cash/stock 둘 다 8%p 이상 벌어졌으므로 Multi로 묶여야 함');
+  assert.strictEqual(ad[0].count, 2);
+
+  // stock 비중을 목표에 가깝게 맞추면(45%) 1건만 남아야 함
+  sandbox.DB.rates.stocks.X = 818181.8181818182; // cash 900000 / (900000+818181.82)=52.3%, stock≈47.7% → 둘 다 임계값(8%p) 밑
+  alerts = sandbox.homeAlerts([]);
+  ad = alerts.filter(a => a.kind === 'allocationDrift' || a.kind === 'allocationDriftMulti');
+  assert.strictEqual(ad.length, 0, '두 유형 모두 목표와 8%p 미만이면 아무 알림도 없어야 함');
+});
+/* rateUnknown인 유형 자신은 allocationDrift가 actualPct/diffPct를 null로 돌려줘 대상에서 빠지지만,
+ * 가격을 아는 다른 유형(cash)은 그대로 자기 자신의 drift로 판정된다 — allocationCard의 hasUnknown
+ * 캡션(index.html, app-evolve cycle183)이 "모르는 유형만 가리고, 아는 유형의 pct는 그대로 보여주되
+ * 캡션으로 안내"하는 것과 같은 원칙: "모르면 추측하지 않는다"는 모르는 대상 자신에게만 적용되고,
+ * 아는 값까지 보수적으로 함께 숨기지는 않는다(그렇게 하면 포트폴리오에 시세 미확인 자산이 하나라도
+ * 섞이는 순간 리밸런싱 알림 전체가 영구히 죽어버림). */
+test('homeAlerts: rateUnknown인 유형 자신은 allocationDrift 대상에서 빠지지만, 가격을 아는 다른 유형은 그대로 자기 drift로 판정된다("모르면 추측하지 않는다"는 모르는 대상에게만)', () => {
+  setupAllocationDriftDB({ cash: 50, stock: 50 });
+  sandbox.DB.assets.push({ id: 'a1', name: '통장', owner: '나', type: 'cash', includeInTotal: true, baseAmount: 1000000 });
+  sandbox.DB.assets.push({ id: 'a2', name: '주식', owner: '나', type: 'stock', includeInTotal: true, stockQty: 1, stockCode: 'UNKNOWN' }); // rates에 없음 → rateUnknown, 집계에서 빠져 cash가 "보이는 전체"의 100%가 됨
+  const alerts = sandbox.homeAlerts([]);
+  const ad = alerts.filter(a => a.kind === 'allocationDrift' || a.kind === 'allocationDriftMulti');
+  assert.strictEqual(ad.length, 1, 'cash는 가격을 알고 목표(50%)보다 실제 100%로 50%p 벌어져 있으므로 알려야 함');
+  assert.strictEqual(ad[0].kind, 'allocationDrift');
+  assert.strictEqual(ad[0].type, 'cash', 'stock은 rateUnknown이라 대상에서 빠지고 cash만 남아야 함');
+});
+test('notifyAlertInfo: allocationDrift(Multi)는 월+5%p 단위로 반올림한 diff 버킷으로 키가 잡혀, diffPct가 크게 바뀌면 다시 알리지만 미세한 변동엔 그대로 dedupe된다', () => {
+  sandbox.TODAY = '2026-06-15';
+  const a1 = sandbox.notifyAlertInfo({ kind: 'allocationDrift', type: 'stock', actualPct: 70.2, targetPct: 50, diffPct: 20.2 });
+  assert.ok(a1.key.includes('2026-06'));
+  assert.strictEqual(a1.group, 'alloc');
+  const a2 = sandbox.notifyAlertInfo({ kind: 'allocationDrift', type: 'stock', actualPct: 71, targetPct: 50, diffPct: 21 }); // 같은 5%p 버킷(20)
+  assert.strictEqual(a2.key, a1.key, '버킷이 안 바뀌는 미세한 변동은 같은 키로 dedupe되어야 함');
+  const a3 = sandbox.notifyAlertInfo({ kind: 'allocationDrift', type: 'stock', actualPct: 85, targetPct: 50, diffPct: 35 }); // 다른 버킷(35)
+  assert.notStrictEqual(a3.key, a1.key, 'diff가 눈에 띄게 더 벌어지면 버킷이 바뀌어 다시 알려야 함');
+  const multi = sandbox.notifyAlertInfo({ kind: 'allocationDriftMulti', count: 2 });
+  assert.ok(multi.key.includes('2026-06') && multi.key.includes('2'));
+  assert.strictEqual(multi.group, 'alloc');
+});
+test('homeAlertCard: allocationDrift(Multi)는 openTargetAllocationForm()으로 연결된다', () => {
+  const single = sandbox.homeAlertCard({ kind: 'allocationDrift', type: 'stock', actualPct: 70, targetPct: 50, diffPct: 20 });
+  assert.ok(single.includes("onclick=\"openTargetAllocationForm()\""));
+  const multi = sandbox.homeAlertCard({ kind: 'allocationDriftMulti', count: 2 });
+  assert.ok(multi.includes("onclick=\"openTargetAllocationForm()\""));
 });
 /* ---------- portfolioGainLoss(logic.js)/investGainLossCard: 투자자산 전체 손익 카드
  * (app-evolve cycle226 critique/advance — assetGainLoss(a)/assetGainLossBadge가 자산 1건씩만
