@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.375';
+const APP_VERSION='1.47.376';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -5481,6 +5481,12 @@ function txRowCore(t,sel){
  const faN=assetNm(t.fromAssetId,t.fromAssetName),taN=assetNm(t.toAssetId,t.toAssetName);
  const asset=t.type==='income'?(taN!=='—'?taN:''):(t.type==='transfer'||t.type==='saving')?`${faN==='—'?'':faN}→${taN==='—'?'':taN}`:(faN!=='—'?faN:'');
  const catLabel=txCatLabel(t),isSplit=splitLines(t).length>1; /* 분할 거래(t.splits)는 "카테고리 N개"로 뭉뚱그린 라벨을 쓴다(app-evolve cycle198 advance) */
+ /* '같이 냈어요'(t.shared, cycle314~315) 배지 — 지금까지는 txSheet/recSheet를 직접 열어야만 어느
+  * 지출이 공동지출로 표시돼 있는지 알 수 있었다(목록에는 아무 표시도 없음). isRec과 같은 자리·같은
+  * rec-ic 클래스를 재사용해 목록만 훑어도 바로 보이게 한다(app-evolve cycle316 develop). expandRec이
+  * shared를 가상 인스턴스에도 그대로 싣고(cycle315), 애초에 shared는 expense에서만 true가 될 수
+  * 있으므로(_applyType) 여기서 t.type을 따로 또 확인할 필요는 없다. */
+ const sharedIc=t.shared?`<span class="rec-ic" title="같이 냈어요">${svg('users')}</span>`:'';
  /* dup-btn의 aria-label이 거래 내용과 무관하게 모든 행에서 "복제" 하나뿐이면, 스크린리더로 전체내역을
   * 훑는 사용자는 목록 안의 복제 버튼들을 서로 구분할 수 없다 — duplicateAsset/duplicateRec의
   * act-btn은 이미 대상 이름을 aria-label에 포함하므로(예: "학자금 대출 복제"), 같은 원칙으로 거래
@@ -5489,10 +5495,10 @@ function txRowCore(t,sel){
   return `<div class="swipe" data-id="${t.id}"><div class="swipe-content${on?' sel-on':''}" ${selectable?`onclick="${sel.onToggle}('${t.id}')" tabindex="0" role="button" aria-pressed="${on}" aria-label="${esc(t.memo||catLabel)} ${sign}${comma(t.amount)}원" onkeydown="rowKeydown(event,()=>${sel.onToggle}('${t.id}'))"`:''} style="${selectable?'':'opacity:.45'}">
    <div class="sel-check ${on?'on':''}">${svg('check')}</div>
    <div class="avatar ${av}" style="width:40px;height:40px">${glyph}</div>
-   <div style="flex:1;min-width:0"><div class="nm-row"><span class="nm">${esc(t.memo||catLabel)}</span>${t.isRec?`<span class="rec-ic" title="반복">${svg('repeat')}</span>`:''}</div>${(t.memo&&t.memo!==catLabel)?`<div class="flow-sub"><span class="fl">${esc(catLabel)}</span></div>`:''}</div>
+   <div style="flex:1;min-width:0"><div class="nm-row"><span class="nm">${esc(t.memo||catLabel)}</span>${sharedIc}${t.isRec?`<span class="rec-ic" title="반복">${svg('repeat')}</span>`:''}</div>${(t.memo&&t.memo!==catLabel)?`<div class="flow-sub"><span class="fl">${esc(catLabel)}</span></div>`:''}</div>
    <div class="amt num ${cls}">${sign}${comma(t.amount)}원</div></div></div>`;}
  return `<div class="swipe" data-id="${t.id}" data-rec="${t.isRec?t.recId:''}" data-date="${t.date}" ${t.isRec?'':'data-lp="1"'}>  <div class="swipe-content" tabindex="0" role="button" aria-label="${esc(t.memo||catLabel)} ${sign}${comma(t.amount)}원" onclick="rowTap(this)" onkeydown="rowKeydown(event,()=>rowTap(this))"><div class="avatar ${av}" style="width:40px;height:40px">${glyph}</div>
-   <div style="flex:1;min-width:0"><div class="nm-row"><span class="nm">${esc(t.memo||catLabel)}</span>${isSplit?`<span class="mini" title="분할 거래">${esc(catLabel)}</span>`:''}${t.isRec?`<span class="rec-ic" title="반복">${svg('repeat')}</span>`:''}</div>
+   <div style="flex:1;min-width:0"><div class="nm-row"><span class="nm">${esc(t.memo||catLabel)}</span>${isSplit?`<span class="mini" title="분할 거래">${esc(catLabel)}</span>`:''}${sharedIc}${t.isRec?`<span class="rec-ic" title="반복">${svg('repeat')}</span>`:''}</div>
     ${asset?`<div class="flow-sub"><span class="fl">${esc(asset)}</span>${txScheduled(t)?'<span class="sch-dot"></span>':''}</div>`:(txScheduled(t)?`<div class="flow-sub"><span class="sch-dot"></span><span class="fl">예정</span></div>`:'')}</div>
    <div class="amt num ${cls}">${sign}${comma(t.amount)}원</div>${t.photo?`<img src="${t.photo}" class="tx-photo-mini" alt="영수증" onclick="event.stopPropagation();openPhotoViewer(this.src)">`:''}${(!t.isRec&&!t.adjust&&!isDuePending(t))?`<button class="dup-btn" onclick="event.stopPropagation();duplicateTx('${t.id}')" aria-label="${esc(t.memo||catLabel)} 복제">${svg('copy',16)}</button>`:''}${isDuePending(t)?`<button class="confirm-btn" onclick="event.stopPropagation();${t.isRec?`confirmRecTransfer('${t.recId}','${t.date}')`:`openConfirmTransfer('${t.id}')`}">확인</button>`:''}</div></div>`;
 }

@@ -1,15 +1,8 @@
 {
   "cycle": 316,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 310,
-      "phase": "advance",
-      "timestamp": "2026-11-06T01:15:00.000Z",
-      "summary": "critique(cycle310) 계획대로 nwHistory에 자산유형별(byType) 비중 스냅샷을 추가했다 — 단, 전체 계획(귀속별 세부+전용 차트 카드+CSV 확장)은 리뷰 가능한 diff 크기를 위해 1차 범위를 좁혔다: byType은 byOwner처럼 귀속별로 쪼개지 않고 totalAssets()와 동일한 가구 전체 기준(includeInTotal && type!=='debt')으로만 기록하고(_saveCore), 전용 SVG 차트 카드 대신 allocationCard에 이미 있는 hasUnknown/hasNeg '산술은 그대로 두고 캡션만 붙인다' 패턴을 그대로 재사용해 \"30일 전 대비 OO유형 ▲/▼N%p\" 캡션 한 줄만 추가했다(가장 많이 움직인 유형 1개만, 1%p 미만은 잡음으로 보고 생략). updateNwHistory에 byType을 6번째 인자로 추가(byOwner와 동일하게 없으면 필드 자체가 안 생기는 하위호환). logic.js에 nwHistoryForOwner와 동일한 '레거시 가드+2개 미만이면 null' 원칙의 allocationHistoryDelta(hist,today,days)를 신설 — days일 전 이하 중 가장 늦은 byType 스냅샷을 찾아 assetAllocation()을 그대로 재사용해 과거 비중을 계산한다(과거 데이터가 없으면 가장 오래된 것으로 폴백, goalProgress의 윈도 부족 폴백과 동일 원칙). sanitizeBackup()에 byOwner와 동일한 자리에 byType 검증을 추가했는데, byOwner의 ta/td와 달리 byType의 값은 마이너스통장처럼 음수가 유효해 sanitizeAmount에 min을 주지 않았다. nwHistoryToCSV 주석에 byType도 byOwner와 같은 이유로 내보내지 않는다고 문서화(CSV 확장은 범위 밖으로 보류). 구현 중 발견: save()/_saveCore 전용 테스트 컨텍스트(makeSaveCtx)의 기본 DB 스텁에 assets 필드가 없어 새 byType 계산(DB.assets.filter)이 TypeError로 터짐 — makeSaveCtx 기본값과 멀티탭 레이스 테스트의 DB 오버라이드 둘 다에 assets:[]와 assetEval 스텁을 추가해 고쳤다(앱 버그 아니라 테스트 하네스 공백). 테스트 14건 추가: updateNwHistory byType 저장/하위호환 2건, sanitizeBackup byType 검증(배열이면 제거/NaN클램프+음수유지/정상케이스) 3건, allocationHistoryDelta(레거시뿐·2개미만 null, 가장 늦은 과거시점 선택, 이력부족 폴백, latest와 같으면 null, 레거시 항목 스킵) 5건, allocationCard 캡션(표시/owner스코프 억제/레거시 생략/1%p 미만 억제) 4건 — 2852->2866 통과. node --check logic.js/sw.js 통과. APP_VERSION 1.47.366->1.47.367, sw.js CACHE v633->v634. pending_advance_plan null로 비움(전용 차트 카드+귀속별 세부+CSV 확장은 다음 critique가 필요시 다시 제안).",
-      "commit": null
-    },
     {
       "cycle": 311,
       "phase": "develop",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-06T20:10:00.000Z",
       "summary": "critique(cycle315) 계획대로 반복 관리 화면(renderRecSheet)에 '같이 냈어요' 토글을 추가했다. renderTxSheet의 sharedChip(index.html:5619)과 동일한 조건·마크업(d.type==='expense'&&settleConfigured()일 때만, onclick=recToggleShared())을 renderRecSheet에 추가하고, h3를 tx-head로 감싸 toggleShared 칩이 오른쪽에 나란히 뜨게 했다(기존 rec sheet는 h3만 있던 자리). recToggleShared() 함수를 txToggleShared(5763)와 완전히 동일한 패턴으로 신설: syncRecInputs();recDraft.shared=!recDraft.shared;renderRecSheet(). 계획대로 saveRec/commitRec/migrate는 변경하지 않음(recDraft 전체가 이미 그대로 저장되고 cycle315 develop이 DB.recurrences 기본값 shared:false를 이미 migrate에 추가해 둠). renderRecSheet는 vm 실행 스모크 테스트 fixture가 없어(기존 24161번째 줄 주석 참고, DB.settings 등 의존이 많아 renderTxSheet처럼 execution harness에 올라가 있지 않음) 구분 세그먼트 aria-pressed 테스트와 동일하게 extractFunction 소스 패턴으로 sharedChip 변수 선언 전체와 tx-head 래퍼를 문자 그대로 대조하는 테스트 2건을 추가했다. recToggleShared() 자체는 소스를 txToggleShared와 동일 패턴인지 공백 제거 후 문자열 비교로 검증(1건). 추가로 critique가 계획에 명시한 '_applyType의 shared 리셋이 recDraft에서도 실제로 동작하는지' 항목을 _applyType(recDraft,'income') 실행 테스트로 직접 확인(1건) — DB.categories/DB.assets 스텁이 없어 처음엔 TypeError가 났고(catListOf/firstCash가 DB를 참조), sandbox.DB에 둘 다 채워 해결(테스트 전용 이슈, 앱 코드는 무관). 계획에 있던 나머지 항목(신규 등록 시 저장되는지/editRec로 열면 on 클래스가 렌더되는지/expandRec·settlementSummary 통합)은 각각 commitRec·sharedChip 마크업·cycle315 develop의 기존 통합 테스트가 이미 다른 경로로 커버하고 있어(commitRec은 d를 그대로 저장하는 기존 saveRec 테스트들로, 통합 흐름은 cycle315 develop의 saveTx+expandRec+settlementSummary 테스트로) 중복 추가하지 않았다. 테스트 2965->2968 통과. node --check logic.js/sw.js, manifest.webmanifest JSON 유효성 통과(index.html 인라인 스크립트 추출검사의 기존 1건 오탐은 HEAD~1 대비 재확인해 이번 변경과 무관함을 확인). APP_VERSION 1.47.374->1.47.375, sw.js CACHE v641->v642. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 316,
+      "phase": "develop",
+      "timestamp": "2026-11-06T21:12:12.000Z",
+      "summary": "거래/반복 목록(원장·전체내역 공용 txRowCore)에 '같이 냈어요'(t.shared, cycle314~315) 상태를 보여주는 배지가 전혀 없어서, 공동지출로 표시된 지출인지 알려면 매번 그 거래를 열어 편집 시트를 확인해야 했다. txRowCore(index.html)에 isRec('반복') 배지와 같은 .rec-ic 클래스로 svg('users') 아이콘 배지를 추가했다 — 일반 모드·선택 모드 nm-row 양쪽, 그리고 isSplit('분할') 배지와 함께 공존하도록 두 자리 모두에 넣었다. expandRec()이 이미 shared를 가상(반복 파생) 인스턴스에도 그대로 싣고 있어(cycle315 develop) 반복 목록에도 같은 배지가 자동으로 뜬다. shared는 _applyType이 지출 외 유형에서 항상 false로 꺼두므로 t.type을 별도로 재확인할 필요가 없었다. test/run.js에 txRowCore 테스트 5건 추가(일반 모드 배지 표시, shared 없음/false일 때 배지 없음(회귀), 선택 모드에서도 배지 표시, 분할+shared 동시 표시, isRec+shared 가상 인스턴스에 두 배지 동시 표시) — 2968->2973 통과. node --check로 변경이 포함된 메인 <script> 블록(txRowCore가 들어있는 블록) 문법 확인 통과 (index.html의 다른 한 블록은 HTML 주석 안에 예시로 적힌 '<script>' 텍스트를 추출 regex가 같이 집어서 원래부터 node --check가 실패하는 기존 아티팩트이며 이번 변경과 무관함을 확인). APP_VERSION 1.47.375->1.47.376, sw.js CACHE v642->v643.",
       "commit": null
     }
   ]

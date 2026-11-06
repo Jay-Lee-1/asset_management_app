@@ -29098,6 +29098,49 @@ test('txRowCore: 반복/확인대기/조정 거래는 dup-btn 자체가 없다(�
   assert.ok(!sandbox.txRow(t).includes('dup-btn'), 'isRec이면 dup-btn이 없어야 함');
 });
 
+/* ---------- txRowCore: '같이 냈어요'(t.shared) 배지 (app-evolve cycle316 develop) ----------
+ * cycle314~315가 txSheet/recSheet 안에만 토글을 넣어, 어느 지출이 공동지출로 표시돼 있는지 목록에서는
+ * 전혀 알 수 없었다. isRec과 같은 rec-ic 클래스로 nm-row에 사용자 아이콘(svg('users')) 배지를
+ * 추가했다 — 일반/선택 모드 양쪽, 그리고 expandRec이 shared를 그대로 싣는 반복 파생 인스턴스에도
+ * 같이 적용된다. */
+test('txRowCore: 일반 모드에서 t.shared가 true면 "같이 냈어요" 배지가 붙는다', () => {
+  const t = makeTxRowFixture();
+  t.shared = true;
+  sandbox.ST = { lSel: { mode: false, ids: new Set() } };
+  const html = sandbox.txRow(t);
+  assert.ok(html.includes('title="같이 냈어요"'), '배지가 붙어야 함');
+});
+test('txRowCore: t.shared가 false/없으면 배지가 없다(회귀 없음)', () => {
+  const t = makeTxRowFixture();
+  sandbox.ST = { lSel: { mode: false, ids: new Set() } };
+  assert.ok(!sandbox.txRow(t).includes('같이 냈어요'), 'shared가 아니면 배지가 없어야 함');
+  t.shared = false;
+  assert.ok(!sandbox.txRow(t).includes('같이 냈어요'), 'shared:false도 배지가 없어야 함');
+});
+test('txRowCore: 선택 모드에서도 t.shared 배지가 붙는다', () => {
+  const t = makeTxRowFixture();
+  t.shared = true;
+  sandbox.ST = { lSel: { mode: true, ids: new Set() } };
+  const html = sandbox.txRow(t);
+  assert.ok(html.includes('title="같이 냈어요"'), '선택 모드에서도 배지가 붙어야 함');
+});
+test('txRowCore: 분할 거래이면서 t.shared도 true면 분할 배지와 공유 배지가 둘 다 붙는다', () => {
+  const t = { id: 't1', date: '2026-06-10', type: 'expense', category: '식비', memo: '마트', amount: 10000, fromAssetId: 'a1', shared: true, splits: [{ category: '식비', amount: 7000 }, { category: '생활용품', amount: 3000 }] };
+  sandbox.ST = { lSel: { mode: false, ids: new Set() } };
+  const html = sandbox.txRow(t);
+  assert.ok(html.includes('카테고리 2개'), '분할 배지도 그대로 유지돼야 함');
+  assert.ok(html.includes('title="같이 냈어요"'), '공유 배지도 같이 붙어야 함');
+});
+test('txRowCore: 반복에서 파생된 가상 인스턴스(isRec+shared)도 "같이 냈어요"와 "반복" 배지가 함께 붙는다', () => {
+  const t = makeTxRowFixture();
+  t.shared = true;
+  t.isRec = true;
+  t.recId = 'r1';
+  sandbox.ST = { lSel: { mode: false, ids: new Set() } };
+  const html = sandbox.txRow(t);
+  assert.ok(html.includes('title="같이 냈어요"') && html.includes('title="반복"'), '두 배지 모두 떠야 함');
+});
+
 /* ---------- renderPlan: 렌더 함수 스모크 테스트 (app-evolve cycle57 critique/advance) ----------
  * render* 함수 중 실행 커버리지가 전혀 없던 유이한 함수(다른 하나는 정적 템플릿인 renderMenu)였다.
  * 지금까지 renderPlan 테스트(위쪽의 esc/접근성/owner 가드 테스트들)는 전부 extractFunction()으로
