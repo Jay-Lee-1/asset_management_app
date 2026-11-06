@@ -1,15 +1,12 @@
 {
   "cycle": 310,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "자산 유형별 비중(allocation) 히스토리 추가 — nwHistory에 byType 스냅샷 기록",
+    "why": "nwHistory already stores a daily byOwner breakdown (index.html:2677-2678, 2960) that feeds a full historical chart via nwHistoryForOwner (logic.js:793-797) and nwHistoryCard, but the analogous asset-type mix (allocationCard, index.html:3383) is recomputed fresh every render with zero history — users can see net worth trend per owner but never see how their cash/stock/real-estate/debt mix drifted over time, a plausible high-value gap for investors rebalancing.",
+    "approach": "Mirror the byOwner pattern exactly. 1) In _saveCore (index.html ~2677), alongside the existing `byOwner` computation, build `byType` by reusing allocationCard's filter+group logic (assets where includeInTotal && type!=='debt', grouped by type, summed via assetEval) — call assetAllocation() (logic.js:1072) or inline the same grouping, then pass it as a new 5th arg to updateNwHistory, storing it as `entry.byType` the same way byOwner is stored at index.html:2960 (`if(byOwner)entry.byOwner=byOwner` → add `if(byType)entry.byType=byType`). 2) Add a pure logic.js helper analogous to nwHistoryForOwner (logic.js:793-797) that extracts a {date, breakdown} series from hist, defensively skipping/flagging entries that predate this change (no byType field) exactly like nwHistoryForOwner's `p.byOwner&&p.byOwner[owner]` guard — needed for backward compat since old users' history won't have it. 3) Add a new card next to allocationCard (near index.html:3412), e.g. a stacked bar or small-multiples chart using existing TYPE_COLOR constants, reusing nwPreset period segments (nwHistoryRange, logic.js:804) and wiring a refresh function into selectNwOwner's existing refresh list (index.html:4059-4078, alongside refreshAllocationCard/refreshNwHistoryCard) so it updates on owner-carousel swipe. 4) Extend nwHistoryToCSV (index.html:8045) to optionally emit per-type columns, and add regression tests in test/run.js mirroring the existing updateNwHistory/nwHistoryForOwner test cases, including one entry with byType and one legacy entry without it."
+  },
   "history": [
-    {
-      "cycle": 305,
-      "phase": "critique",
-      "timestamp": "2026-11-05T04:10:00.000Z",
-      "summary": "서브에이전트로 앱 전체를 재조사(cycle300-305 처리/보류 항목 전부 제외 지시). 발견: 목표(goals) 관리 목록만 유일하게 선택모드가 없음 — 자산/거래내역/반복내역은 이미 ST.aSel/ST.hist.sel/ST.recSel로 선택모드+일괄동작(삭제, 반복내역은 일시중지/재시작, 자산은 일괄 owner 이동)을 갖췄는데 cycle304가 goals에 추가한 건 per-row 직접 삭제 버튼뿐이고 ST.goalSel 같은 상태는 코드에 전혀 없음(grep 무결과). delOwner()가 usedGoals>0이면 귀속 삭제를 막는데 자산의 doBulkOwnerMove 같은 일괄 재배정 수단이 목표엔 없어 목표마다 수정폼을 열어야 함. pending_advance_plan에 저장(ST.recSel과 동일 패턴으로 선택모드+일괄삭제+일괄owner변경). 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 305,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-05T23:15:00.000Z",
       "summary": "cycle310 develop 커밋(6b5d9dd)을 검토 — mergeAssetInto()에 추가된 if(twGuard())return; 가드가 mergeOwnerInto/mergeCatInto(cycle308-309)의 기존 twGuard 가드와 완전히 동일한 위치(함수 맨 앞)·형태임을 diff로 재확인. 가드가 유효성 검사(from/to 존재, 타입 일치 등) 이전에 실행돼도 다른 merge 함수들과 순서가 동일해 문제 없음. twGuard()/twActive() 정의도 재확인(튜토리얼 중엔 toast만 띄우고 true 반환). node test/run.js 2852/2852 통과, node --check logic.js/sw.js 통과. 실제 버그 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 310,
+      "phase": "critique",
+      "timestamp": "2026-11-06T00:20:00.000Z",
+      "summary": "서브에이전트로 앱 전체를 재조사(cycle300-310 처리/보류 항목 전부 제외 지시, 특히 twGuard 스윕 4연속·global search·budget carry·연간결산은 명시적으로 제외). 발견: nwHistory는 매일 귀속(owner)별 스냅샷(entry.byOwner, index.html:2960, 2677-2678에서 계산)을 저장해 nwHistoryForOwner(logic.js:793-797)로 귀속별 순자산 추세 전체 히스토리 차트를 제공하는데, 자산 유형별 비중(allocationCard, index.html:3383-3413; assetAllocation(), logic.js:1072-1078)은 렌더링마다 '오늘 시점'만 즉석 계산되고 히스토리가 전혀 저장되지 않음 — 귀속 차원은 과거 추세를 볼 수 있지만 자산배분(현금/주식/부동산 등) 차원은 과거 추세를 볼 수 없는 구조적 비대칭. 기각 후보: twGuard 미적용 잔여 함수들(budget/inquiry/csvImport 등, 튜토리얼 스크린에 노출 안 돼 실사용 노출 낮음, 4연속 기계적 스윕 반복 가치 낮음), 전역검색 커버리지(이미 cycle260-280에서 모든 유형 커버), 예산 캐리오버(cycle194-299에서 소진), 연간결산(cycle246/250/267에서 성숙). pending_advance_plan에 저장(nwHistory에 byType 스냅샷 추가, nwHistoryForOwner와 동일 패턴의 logic.js 헬퍼+카드+CSV 확장+레거시 호환 가드). 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
