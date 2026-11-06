@@ -225,7 +225,7 @@ const FUNCTIONS = [
   'shouldPullCloud', 'pullCloudIfStale', 'appIsOpen',
   'bytesToBase64', 'base64ToBytes', 'encodeCloudPayload', 'decodeCloudPayload',
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
-  'clampDay', 'saveTx', 'commitTx', 'duplicateTx', 'editTx', 'assetBase', 'balancesUpTo', 'balanceAt', 'balancesAtDates', 'balanceAtFromMap',
+  'clampDay', 'saveTx', 'commitTx', 'commitTxAsRec', 'duplicateTx', 'editTx', 'assetBase', 'balancesUpTo', 'balanceAt', 'balancesAtDates', 'balanceAtFromMap',
   'addBalanceAdjust', 'updateBalanceAdjust', 'toggleConfirmTransfers', 'rollPendingTransfers',
   'assetEval', 'assetGainLoss', 'assetGainLossBadge', 'costBasisField', 'interestRateField', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'pkFilteredAssets', 'pkEmptyHtml', 'pkAssetQInput', 'refreshPkAssetList', 'movePkBlob', 'pkBack', 'pkChoose', 'pkPickAsset', 'openOwnerPicker', 'sheetSlideBack', 'delOwner', 'doMaturity', 'openMaturity', 'firstCash',
   'detectStaleMarketValuedTxns', 'delBudget', 'saveBudget', 'openBudgetPrompt', 'openBigMinSheet',
@@ -19368,6 +19368,53 @@ test('deleteTxnsUndo: 실제로 삭제된 건이 있으면 save()에 recsChanged
   } finally { sandbox.save = saveOrig; sandbox.undoToast = undoToastOrig; }
   assert.strictEqual(saveCalls.length, 1);
   assert.strictEqual(saveCalls[0] && saveCalls[0].recsChanged, false);
+});
+
+/* ---------- saveTx: 반복 켜고 저장(신규 반복 등록)도 findPossibleDuplicateRec로 중복을
+ * 경고한다 (app-evolve cycle314 develop) ----------
+ * saveRec()(반복 관리 화면)은 cycle285부터 findPossibleDuplicateRec으로 신규 등록 시 중복을
+ * 경고하는데, 거래 입력 중 "반복" 토글로 DB.recurrences를 만드는 이 경로는 같은 모양의
+ * 레코드를 만들면서도 그 가드가 전혀 없었다. */
+test('saveTx: 반복 켜고 저장 시 기존 활성 반복과 완전히 겹치면 바로 저장하지 않고 confirmSheet로 확인한다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { recurrences: [{ id: 'r1', active: true, type: 'expense', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, count: null, amount: 15000, category: '구독', memo: '넷플릭스', fromAssetId: 'a1', toAssetId: null, skip: [], edits: {} }], settings: {} };
+  sandbox.txDraft = {
+    id: null, type: 'expense', date: '2026-07-05', category: '구독', memo: '넷플릭스',
+    amount: 15000, fromAssetId: 'a1', toAssetId: null,
+    repeat: true, freq: 'monthly', day: 5, endDate: null, count: null,
+  };
+  sandbox.confirmSheetCalls = [];
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 1, '중복 가능성이 있으면 confirmSheet가 떠야 함');
+  assert.strictEqual(sandbox.DB.recurrences.length, 1, '확인하기 전까지는 저장되면 안 됨');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.recurrences.length, 2, '확인(그래도 등록)을 누르면 저장되어야 함');
+});
+test('saveTx: 반복 켜고 저장 시 비슷한 반복이 없으면 confirmSheet 없이 바로 저장된다(정상 케이스는 회귀 없음)', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { recurrences: [], settings: {} };
+  sandbox.txDraft = {
+    id: null, type: 'expense', date: '2026-07-05', category: '구독', memo: '넷플릭스',
+    amount: 15000, fromAssetId: 'a1', toAssetId: null,
+    repeat: true, freq: 'monthly', day: 5, endDate: null, count: null,
+  };
+  sandbox.confirmSheetCalls = [];
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0);
+  assert.strictEqual(sandbox.DB.recurrences.length, 1);
+});
+test('saveTx: 반복 켜고 저장 시 이미 중지한(active:false) 반복과 값이 겹쳐도 confirmSheet 없이 바로 저장된다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { recurrences: [{ id: 'r1', active: false, type: 'expense', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, count: null, amount: 15000, category: '구독', memo: '넷플릭스(해지)', fromAssetId: 'a1', toAssetId: null, skip: [], edits: {} }], settings: {} };
+  sandbox.txDraft = {
+    id: null, type: 'expense', date: '2026-07-05', category: '구독', memo: '넷플릭스',
+    amount: 15000, fromAssetId: 'a1', toAssetId: null,
+    repeat: true, freq: 'monthly', day: 5, endDate: null, count: null,
+  };
+  sandbox.confirmSheetCalls = [];
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0, '중지된 구독을 참고해 새로 등록하는 정상 사용은 막지 않아야 함');
+  assert.strictEqual(sandbox.DB.recurrences.length, 2);
 });
 
 /* ---------- saveTx: 더블탭 중복 저장 가드 (app-evolve cycle79 critique/advance) ----------
