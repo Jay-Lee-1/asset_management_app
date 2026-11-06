@@ -7548,6 +7548,12 @@ test('normalizeCsvDateCell: 날짜+시간이 한 칸에 붙어 있으면(이용�
   assert.strictEqual(sandbox.normalizeCsvDateCell('2026-01-05 13:25:33'), '2026-01-05');
   assert.strictEqual(sandbox.normalizeCsvDateCell('2026.01.05 13:25'), '2026-01-05');
 });
+test('normalizeCsvDateCell: ISO 8601처럼 날짜·시간이 공백 없이 대문자 T로 붙어 있어도(스프레드시트/일부 핀테크 내보내기 흔함) 시간 부분을 떼어낸다(app-evolve cycle311 develop)', () => {
+  assert.strictEqual(sandbox.normalizeCsvDateCell('2026-01-05T13:25:33'), '2026-01-05');
+  assert.strictEqual(sandbox.normalizeCsvDateCell('2026-01-05T13:25:33.000Z'), '2026-01-05');
+  assert.strictEqual(sandbox.normalizeCsvDateCell('2026.1.5T13:25'), '2026-01-05');
+  assert.strictEqual(sandbox.normalizeCsvDateCell('20260105T132533'), '2026-01-05');
+});
 test('normalizeCsvDateCell: 이미 YYYY-MM-DD이거나 알 수 없는 표기는 그대로 돌려줘(연도가 뒤에 오는 MM/DD/YYYY 등은 추측하지 않음) csvDateValid가 최종 판정하게 한다', () => {
   assert.strictEqual(sandbox.normalizeCsvDateCell('2026-01-05'), '2026-01-05');
   assert.strictEqual(sandbox.normalizeCsvDateCell('01/05/2026'), '01/05/2026');
@@ -7568,6 +7574,10 @@ test("mapGenericCsvRow: 점/슬래시/구분자 없음 날짜 표기(은행 CSV 
   assert.strictEqual(compact.ok, true); assert.strictEqual(compact.txn.date, '2026-01-05');
   const withTime = sandbox.mapGenericCsvRow(['2026-01-05 13:25:33', '5000'], { dateCol: 0, amountCol: 1, mode: 'signed', category: '식비' }, 'a1');
   assert.strictEqual(withTime.ok, true); assert.strictEqual(withTime.txn.date, '2026-01-05');
+});
+test("mapGenericCsvRow: ISO 8601 'T' 구분(공백 없는 날짜+시간) 표기도 정상적으로 가져온다(app-evolve cycle311 develop)", () => {
+  const isoT = sandbox.mapGenericCsvRow(['2026-01-05T13:25:33', '5000'], { dateCol: 0, amountCol: 1, mode: 'signed', category: '식비' }, 'a1');
+  assert.strictEqual(isoT.ok, true); assert.strictEqual(isoT.txn.date, '2026-01-05');
 });
 test("mapGenericCsvRow: 달력상 존재하지 않는 날짜는 구분자를 바꿔도 여전히 error:'date'(csvDateValid 최종 판정 보존)", () => {
   const badDot = sandbox.mapGenericCsvRow(['2026.2.30', '1000'], { dateCol: 0, amountCol: 1, mode: 'signed', category: '식비' }, 'a1');

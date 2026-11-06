@@ -1,15 +1,8 @@
 {
   "cycle": 311,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 306,
-      "phase": "develop",
-      "timestamp": "2026-11-05T06:13:56.332Z",
-      "summary": "sanitizeBackup()의 categories[k]/owners가 빈 문자열만 걸러내고 normName() 근접중복(대소문자·공백만 다름, 예: \"용돈\"과 \"용돈 \")은 전혀 걸러내지 않던 공백 발견 — addCat/addOwner(즉시 추가)와 mergeNameList/mergeNameListWithTombstones(logic.js, 클라우드 병합)는 이미 normName() 기준 근접중복을 막는데, 파일 복원/클라우드 풀이 공통으로 거치는 이 sanitizeBackup()만 비어 있었다. dedupeIds와 동일한 \"첫 등장만 남긴다\" 원칙을 normName() 기준으로 적용하는 dedupeNames() 헬퍼를 신설해 categories[k]/owners에 각각 적용(빈 문자열 필터링 다음 단계). 테스트 2건 추가(categories/owners 각각 대소문자·공백만 다른 중복이 첫 등장만 남고 fixedCount가 세어짐). 테스트 2805->2807 통과. node --check logic.js/sw.js 통과. APP_VERSION 1.47.356->1.47.357, sw.js CACHE v623->v624.",
-      "commit": null
-    },
     {
       "cycle": 306,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-06T01:15:00.000Z",
       "summary": "critique(cycle310) 계획대로 nwHistory에 자산유형별(byType) 비중 스냅샷을 추가했다 — 단, 전체 계획(귀속별 세부+전용 차트 카드+CSV 확장)은 리뷰 가능한 diff 크기를 위해 1차 범위를 좁혔다: byType은 byOwner처럼 귀속별로 쪼개지 않고 totalAssets()와 동일한 가구 전체 기준(includeInTotal && type!=='debt')으로만 기록하고(_saveCore), 전용 SVG 차트 카드 대신 allocationCard에 이미 있는 hasUnknown/hasNeg '산술은 그대로 두고 캡션만 붙인다' 패턴을 그대로 재사용해 \"30일 전 대비 OO유형 ▲/▼N%p\" 캡션 한 줄만 추가했다(가장 많이 움직인 유형 1개만, 1%p 미만은 잡음으로 보고 생략). updateNwHistory에 byType을 6번째 인자로 추가(byOwner와 동일하게 없으면 필드 자체가 안 생기는 하위호환). logic.js에 nwHistoryForOwner와 동일한 '레거시 가드+2개 미만이면 null' 원칙의 allocationHistoryDelta(hist,today,days)를 신설 — days일 전 이하 중 가장 늦은 byType 스냅샷을 찾아 assetAllocation()을 그대로 재사용해 과거 비중을 계산한다(과거 데이터가 없으면 가장 오래된 것으로 폴백, goalProgress의 윈도 부족 폴백과 동일 원칙). sanitizeBackup()에 byOwner와 동일한 자리에 byType 검증을 추가했는데, byOwner의 ta/td와 달리 byType의 값은 마이너스통장처럼 음수가 유효해 sanitizeAmount에 min을 주지 않았다. nwHistoryToCSV 주석에 byType도 byOwner와 같은 이유로 내보내지 않는다고 문서화(CSV 확장은 범위 밖으로 보류). 구현 중 발견: save()/_saveCore 전용 테스트 컨텍스트(makeSaveCtx)의 기본 DB 스텁에 assets 필드가 없어 새 byType 계산(DB.assets.filter)이 TypeError로 터짐 — makeSaveCtx 기본값과 멀티탭 레이스 테스트의 DB 오버라이드 둘 다에 assets:[]와 assetEval 스텁을 추가해 고쳤다(앱 버그 아니라 테스트 하네스 공백). 테스트 14건 추가: updateNwHistory byType 저장/하위호환 2건, sanitizeBackup byType 검증(배열이면 제거/NaN클램프+음수유지/정상케이스) 3건, allocationHistoryDelta(레거시뿐·2개미만 null, 가장 늦은 과거시점 선택, 이력부족 폴백, latest와 같으면 null, 레거시 항목 스킵) 5건, allocationCard 캡션(표시/owner스코프 억제/레거시 생략/1%p 미만 억제) 4건 — 2852->2866 통과. node --check logic.js/sw.js 통과. APP_VERSION 1.47.366->1.47.367, sw.js CACHE v633->v634. pending_advance_plan null로 비움(전용 차트 카드+귀속별 세부+CSV 확장은 다음 critique가 필요시 다시 제안).",
+      "commit": null
+    },
+    {
+      "cycle": 311,
+      "phase": "develop",
+      "timestamp": "2026-11-06T02:30:00.000Z",
+      "summary": "범용(은행/카드사) CSV 가져오기의 normalizeCsvDateCell()(logic.js:1271, cycle251/288)이 \"날짜+시간이 한 칸에 붙은\" 케이스를 공백(' ')으로만 떼어내, 공백 대신 ISO 8601 표준 구분자인 대문자 'T'를 쓰는 \"YYYY-MM-DDTHH:MM:SS\"류(일부 스프레드시트·핀테크 앱 내보내기에서 흔함)는 datePart가 시간까지 통째로 남아 두 날짜 패턴(점/슬래시/하이픈 구분, YYYYMMDD 8자리) 모두 매치 실패 → csvDateValid()에서 거부되어 error:'date'로 조용히 빠지는 공백 발견 — 공백 구분 \"이용일시\" 케이스를 메운 것과 정확히 같은 버그 클래스. datePart 추출 정규식을 공백 전용(/\\s+/)에서 공백+'T'(/[\\sT]/)로 넓혀 고쳤다 — YYYY-MM-DD 날짜 부분 자체에는 'T'가 올 수 없으므로 기존 공백 케이스 동작은 전혀 바뀌지 않는다(점/슬래시/하이픈/8자리 패턴과 독립적으로만 datePart 경계를 넓히는 변경). 회귀 테스트 5건 추가: normalizeCsvDateCell 레벨 4건(순수 ISO-T, 밀리초+Z 붙은 전체 타임스탬프, 점 구분+T, 8자리 구분자없음+T), mapGenericCsvRow 통합 레벨 1건(열 매핑을 거쳐도 동일하게 동작하는지, cycle288의 공백 버전 테스트와 동일한 패턴). 테스트 2866->2868 통과. node --check logic.js/sw.js 통과. index.html/sw.js는 건드리지 않아 APP_VERSION/CACHE 버전은 그대로(1.47.367/v634).",
       "commit": null
     }
   ]

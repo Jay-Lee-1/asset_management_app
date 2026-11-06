@@ -1267,10 +1267,17 @@ function detectOwnCsvFormat(headerRow){
  * 표기만 다룬다 — MM/DD/YYYY처럼 연도가 뒤에 오는 표기는 월/일 순서가 로케일마다 반대라(미국
  * MM/DD vs 유럽 DD/MM) 추측하면 조용히 틀린 날짜를 만들 위험이 있어 이번 범위에서 뺀다(그런
  * 열은 지금처럼 error:'date'로 걸러져 가져오기 미리보기에서 사용자가 눈치챌 수 있다 — 틀리게
- * 가져와지는 것보다 안전). csvDateValid()가 최종 달력 유효성(2026-02-30 등)은 그대로 걸러준다. */
+ * 가져와지는 것보다 안전). csvDateValid()가 최종 달력 유효성(2026-02-30 등)은 그대로 걸러준다.
+ * "날짜+시간이 한 칸에" 케이스는 애초에 공백으로만 떼어냈는데, 엑셀/회계 프로그램이 내보내는
+ * "YYYY-MM-DD 13:25:33"류는 걸러지지만 스프레드시트나 일부 핀테크 앱이 그대로 쓰는 ISO 8601
+ * "YYYY-MM-DDTHH:MM:SS" 표기(날짜·시간 사이가 공백이 아니라 대문자 T)는 공백split으로는 전혀
+ * 안 떼어져 datePart 전체가 그대로 남아 두 패턴 다 매치 실패 → error:'date'로 조용히 빠졌다
+ * (공백 구분 케이스를 메운 것과 같은 클래스의 공백, app-evolve cycle311 develop). 구분자를
+ * 공백과 'T' 둘 다로 넓혀 같은 방식으로 시간 부분을 떼어낸다 — 날짜 부분 안에는 'T'가 올 수
+ * 없으므로(YYYY-MM-DD에 'T'가 포함된 적 없음) 기존 공백 케이스의 동작은 전혀 바뀌지 않는다. */
 function normalizeCsvDateCell(s){
  s=String(s==null?'':s).trim();
- const datePart=s.split(/\s+/)[0]||'';
+ const datePart=s.split(/[\sT]/)[0]||'';
  let m=datePart.match(/^(\d{4})[.\/-](\d{1,2})[.\/-](\d{1,2})$/);
  if(m)return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
  m=datePart.match(/^(\d{4})(\d{2})(\d{2})$/);
