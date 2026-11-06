@@ -1,15 +1,12 @@
 {
   "cycle": 311,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "nwHistory byType 스냅샷 기반 자산배분 추이 차트 카드 추가",
+    "why": "_saveCore(index.html:2677-2685)가 byOwner/byType을 같은 날 같은 방식으로 스냅샷하는데, byOwner는 nwHistoryForOwner(logic.js:793-797)+nwHistoryCard(index.html:3101)+nwChartPath(index.html:2982)로 완결된 시계열 차트 UX를 갖춘 반면 byType은 allocationHistoryDelta(logic.js:1089-1098)로 '오늘 vs 30일 전' 한 점 비교 캡션(index.html:3420-3438)만 있을 뿐 추세 차트가 없다. index.html:3420-3426 주석과 app-evolve-state.json cycle310 advance 로그가 '전용 차트 카드'를 명시적으로 다음 단계 과제로 남겨뒀다.",
+    "approach": "1) logic.js에 순수함수 assetAllocationSeries(hist,preset,today) 추가: nwHistoryRange(hist,preset,today)(logic.js:804-811)로 기간을 자르고 byType이 있는 스냅샷만 남긴 뒤, 가장 최근 스냅샷 기준 상위 4개 유형을 고정하고 나머지는 '기타'로 묶어(색상·순서를 날짜마다 안정시키기 위함) 각 날짜에 assetAllocation()(logic.js:1072-1078)을 재사용해 pct를 구해 [{date,segs:[{type,pct}]}]로 반환, 유효 스냅샷 2개 미만이면 null(allocationHistoryDelta의 '모르면 비교 안 함' 원칙 그대로). 2) index.html에 nwChartPath(2982)와 나란히 stacked-area 전용 path 빌더(각 유형의 pct를 누적해 band 위/아래 경계를 잇는 polygon 생성)를 추가. 3) 새 렌더 함수 allocationHistoryCard(preset) — owner==='all'일 때만 동작(byType이 가구 전체 기준이라 allocationCard의 trendCaption과 동일하게 owner 스코프에서는 숨김), 데이터 부족시 ''(카드 자체 숨김), 있으면 nwPresetSegHTML(3097-3099)과 동일한 패턴의 세그 선택 UI(신규 상태 ST.allocPreset 기본 'm3')+stacked SVG+TYPE_COLOR 범례를 그린다. 4) index.html:4224 allocBody 바로 아래에 <div id=\"allocHistBody\">...</div> 삽입, allocPresetSel(p){ST.allocPreset=p;renderAssets()} 핸들러를 nwPresetSel과 동일 패턴으로 추가. 5) 테스트: assetAllocationSeries(상위4+기타 묶기, 2개 미만 null, preset 윈도우 필터링, byType 없는 레거시 스냅샷 스킵) + allocationHistoryCard 렌더(owner!=='all' 숨김, 데이터 부족시 빈 문자열, 프리셋 전환) — 기존 nwHistoryCard/nwHistoryRange 테스트와 동일 패턴 재사용. 범위 밖(다음 cycle로 보류): 귀속별 세분화, CSV 내보내기 확장, 롱프레스 피크 제스처(nwChartPeekStart류)는 1차 구현에 넣지 않음."
+  },
   "history": [
-    {
-      "cycle": 306,
-      "phase": "critique",
-      "timestamp": "2026-11-05T08:30:00.000Z",
-      "summary": "서브에이전트로 앱 전체를 재조사(cycle301-306 처리/보류 항목 전부 제외 지시). 발견: 반복 내역의 개별 회차 간편 수정(scope='one') 시트에만 영수증 사진 첨부 기능이 완전히 빠져 있음 — 일반 거래는 txPhotoFieldHTML/txPhotoPick/txPhotoRemove로 완결된 파이프라인을 갖췄는데(5386행), renderTxSheet의 recCtx 분기(5162-5176)엔 호출 자체가 없고 recSave()도 photo 필드를 전혀 다루지 않음. 실제 코드 줄번호(5161,5216,5386,5568,5573)를 grep으로 재확인함. 월세·공과금·구독처럼 반복되면서 영수증 보관 실익이 큰 항목만 사진을 못 붙이는 비대칭. pending_advance_plan에 저장(scope='one' 한정, future/all은 범위 밖). 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 306,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-06T03:20:00.000Z",
       "summary": "cycle311 develop 커밋(588d4a7)을 검토 — normalizeCsvDateCell의 datePart 구분자를 공백 전용(/\\s+/)에서 공백+'T'(/[\\sT]/)로 넓힌 변경이 안전함을 확인: YYYY-MM-DD 표기에는 'T'가 올 수 없어 기존 공백 구분 날짜+시간 케이스(cycle 이전 수정분)의 동작은 전혀 바뀌지 않고, ISO 8601 'T' 구분 표기('2026-01-05T13:25:33', '2026-01-05T13:25:33.000Z', '2026.1.5T13:25', '20260105T132533')만 새로 datePart가 올바르게 분리됨을 함수 본문(logic.js:1278-1286)과 추가된 회귀 테스트 5건으로 직접 재확인. csvDateValid가 여전히 최종 달력 유효성을 검증하는 안전장치로 남아있음도 확인. node test/run.js 2868/2868 통과, node --check logic.js/sw.js 통과. 실제 버그 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 311,
+      "phase": "critique",
+      "timestamp": "2026-11-06T04:20:00.000Z",
+      "summary": "서브에이전트로 앱 전체를 재조사(cycle300-311 처리/보류/기각 항목 전부 제외 지시). 발견: nwHistory는 byOwner/byType 두 차원을 _saveCore(index.html:2677-2685)에서 같은 날 같은 방식으로 나란히 스냅샷하는데, byOwner는 nwHistoryForOwner(logic.js:793-797)+nwHistoryCard(index.html:3101)+nwChartPath(index.html:2982)+롱프레스 피크(3182-3208)까지 완결된 시계열 차트 UX를 갖춘 반면, byType(cycle310 신규)은 allocationHistoryDelta(logic.js:1089-1098)로 '오늘 vs 30일 전' 한 점 비교 캡션 한 줄(index.html:3420-3438)만 있을 뿐 과거 추세를 보는 차트가 전혀 없는 구조적 비대칭. index.html:3420-3426 주석과 cycle310 advance 로그가 '전용 차트 카드는 다음 critique가 필요시 다시 제안'이라고 이미 다음 단계로 명시해뒀고, 삽입 지점(index.html:4223-4226 allocBody 바로 아래)과 색상(TYPE_COLOR)도 기존 레이아웃에 자연스럽게 맞음을 확인. pending_advance_plan에 구체 계획 저장(assetAllocationSeries 순수함수+stacked-area 차트+allocationHistoryCard, owner==='all' 한정, 상위4+기타 묶기; 귀속별 세분화·CSV 확장·피크 제스처는 범위 밖). 기각 후보: byType 귀속별 세분화(데이터 모델 확장 과대, 차트 카드 먼저 자리잡은 뒤로 미룸), nwHistoryToCSV byType 내보내기(index.html:8076 의도적 보류, 너무 작아 develop류), findPossibleDuplicateTx의 transfer 타입 제외(logic.js:1182-1192, 실공백이나 one-line 보강 수준), CDN SRI 해시(이 작업 환경 egress 차단으로 실행 불가). 부가 확인: cycle309 critique가 남긴 '문의 메모 수정 기능 부재' 후보는 이미 cycle245에서 editInquiry/saveInquiryEdit(index.html:7729-7741)로 구현 완료된 낡은 기록임을 재확인. 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
