@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.369';
+const APP_VERSION='1.47.370';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -2560,7 +2560,7 @@ function load(){
 function writeThemeCache(){try{localStorage.setItem('asset_app_theme_cache',JSON.stringify(themeCachePayload(DB.settings)))}catch(e){}}
 function migrate(){
  DB.rates=DB.rates||{};DB.rates.fx=DB.rates.fx||{};DB.rates.stocks=DB.rates.stocks||{};DB.rates.crypto=DB.rates.crypto||{}; /* crypto 자산 종류 신설(app-evolve cycle219) — 기존 계정엔 rates.crypto 버킷이 없어 assetEval()/rateUnknown()의 R.crypto[code] 접근이 터짐 */
- DB.settings=Object.assign({themeMode:'system',includeScheduled:false,assetSort:'custom',histSortAsc:true,confirmTransfers:true,autoRates:true,bigMin:100000,dismissedStaleMvIds:[],persistWarnDismissed:false,storageSizeWarnDismissed:false,clockSkewWarnDismissed:false,mergeDataLossCount:0,mergeDataLossFields:[]},DB.settings||{});
+ DB.settings=Object.assign({themeMode:'system',includeScheduled:false,assetSort:'custom',histSortAsc:true,confirmTransfers:true,autoRates:true,bigMin:100000,dismissedStaleMvIds:[],persistWarnDismissed:false,storageSizeWarnDismissed:false,clockSkewWarnDismissed:false,mergeDataLossCount:0,mergeDataLossFields:[],notifyMute:{}},DB.settings||{});
  if(!Array.isArray(DB.settings.groupOrder)||!DB.settings.groupOrder.length)DB.settings.groupOrder=[...DEFAULT_GROUP_ORDER];
  DEFAULT_GROUP_ORDER.forEach(t=>{if(!DB.settings.groupOrder.includes(t))DB.settings.groupOrder.push(t)});
  delete DB.settings.showScheduled; /* 예정 표시는 홈 '예정 포함'으로 통합 */
@@ -6813,6 +6813,16 @@ function renderMenu(){
   {cap:'알림 · 기준',items:[
    {ic:'check',l:'이체 확인',sw:!!DB.settings.confirmTransfers,a:"toggleConfirmTransfers()"},
    {ic:'bell',l:(typeof Notification!=='undefined'&&Notification.permission==='denied')?'OS 알림 · 차단됨':'OS 알림',sw:!!DB.settings.osNotify,a:"toggleOsNotify()"},
+   /* OS 알림이 켜져 있을 때만 보이는 그룹별 세부 토글 — notifyAlertInfo()의 group 분류(confirm/mat/
+    * budget/goal/debt)를 그대로 재사용한다(app-evolve cycle312 critique/advance). sw는 "이 그룹
+    * 알림을 받는다"는 뜻이라 notifyMute(뮤트 여부)의 반대로 보여준다. */
+   ...(DB.settings.osNotify?[
+    {ic:'check',l:'· 이체·입력 확인 알림',sw:!DB.settings.notifyMute?.confirm,a:"toggleNotifyMuteGroup('confirm')"},
+    {ic:'bell',l:'· 저축 만기 알림',sw:!DB.settings.notifyMute?.mat,a:"toggleNotifyMuteGroup('mat')"},
+    {ic:'chart',l:'· 예산 알림',sw:!DB.settings.notifyMute?.budget,a:"toggleNotifyMuteGroup('budget')"},
+    {ic:'target',l:'· 목표 알림',sw:!DB.settings.notifyMute?.goal,a:"toggleNotifyMuteGroup('goal')"},
+    {ic:'debt',l:'· 부채 알림',sw:!DB.settings.notifyMute?.debt,a:"toggleNotifyMuteGroup('debt')"},
+   ]:[]),
    {ic:'lock',l:'앱 잠금(PIN)',sw:APPLOCK.enabled(),a:"toggleAppLock()"},
    ...(APPLOCK.enabled()?[{ic:'lock',l:'PIN 변경',a:"openChangePinSheet()"},{ic:'lock',l:'재잠금 시점',v:graceLabel(),a:"openAppLockGraceSheet()"}]:[]),
    ...(APPLOCK.enabled()&&BIOUNLOCK_AVAILABLE?[{ic:'lock',l:'Face ID·지문으로 잠금 해제',sw:BIOUNLOCK.enabled(),a:"toggleBioUnlock()"}]:[]),
@@ -10653,23 +10663,23 @@ function notifyAlertInfo(al){
   * 메시지가 달리 말할 상태로 바뀌었는데 같은 key로 묶이는 건 '상태 유지'가 아니다. Multi 쪽과
   * 동일하게 TODAY를 키 맨 앞에 넣어 하루가 바뀌면 다시 알리게 맞춘다(같은 날 중복 호출은 여전히
   * notifiedIds로 억제됨 — 날짜만 추가했을 뿐 그 안의 dedupe 자체는 그대로). */
- if(al.kind==='confirm')return{key:`confirm:${TODAY}:${al.id}:${al.date}`,title:'이체 확인이 필요해요',body:`${al.from} → ${al.to} · ${comma(al.amount)}원 이체하셨나요?`};
- if(al.kind==='confirmMulti')return{key:`confirmMulti:${TODAY}:${al.count}`,title:'이체 확인이 필요해요',body:`미확인 이체 ${al.count}건이 있어요`};
+ if(al.kind==='confirm')return{key:`confirm:${TODAY}:${al.id}:${al.date}`,title:'이체 확인이 필요해요',body:`${al.from} → ${al.to} · ${comma(al.amount)}원 이체하셨나요?`,group:'confirm'};
+ if(al.kind==='confirmMulti')return{key:`confirmMulti:${TODAY}:${al.count}`,title:'이체 확인이 필요해요',body:`미확인 이체 ${al.count}건이 있어요`,group:'confirm'};
  /* quick/quickMulti(변동금액 반복거래 실제금액 입력 대기, varyingRecs())는 confirm/confirmMulti와
   * 구조가 완전히 동일한데(같은 RANGE_FROM~TODAY 스캔, 같은 단일/복수 collapsing) 이 함수의
   * OS 푸시 대상에서만 빠져 있었다 — expandRec()이 미입력 회차를 계속 템플릿 금액으로 채우므로
   * 앱을 안 열면 예산/잔액 계산이 조용히 틀어지는데도 알릴 방법이 없었다. confirm/confirmMulti와
   * 동일하게 key에 TODAY를 넣어 날이 바뀌면(또는 건수가 바뀌면) 다시 알린다(app-evolve cycle307
   * critique/advance). */
- if(al.kind==='quick')return{key:`quick:${TODAY}:${al.recId}:${al.date}`,title:'실제 금액 입력이 필요해요',body:`${al.name} · 실제 금액을 입력해 주세요`};
- if(al.kind==='quickMulti')return{key:`quickMulti:${TODAY}:${al.count}`,title:'실제 금액 입력이 필요해요',body:`입력할 항목 ${al.count}건이 있어요`};
+ if(al.kind==='quick')return{key:`quick:${TODAY}:${al.recId}:${al.date}`,title:'실제 금액 입력이 필요해요',body:`${al.name} · 실제 금액을 입력해 주세요`,group:'confirm'};
+ if(al.kind==='quickMulti')return{key:`quickMulti:${TODAY}:${al.count}`,title:'실제 금액 입력이 필요해요',body:`입력할 항목 ${al.count}건이 있어요`,group:'confirm'};
  if(al.kind==='mat'&&al.date<=addDays(TODAY,1)){ /* date<TODAY(아직 doMaturity()로 처리 안 된 지난 만기)까지 포함되므로 '내일'로 잘못 말하지 않게 분기 */
   const overdue=al.date<TODAY;
   const when=overdue?'만기가 지났어요':(al.date===TODAY?'오늘':'내일');
-  return{key:`mat:${TODAY}:${al.assetId}:${al.date}`,title:overdue?'저축 만기가 지났어요':'저축 만기가 임박했어요',body:overdue?`${al.name} · ${when} · ${comma(al.amount)}원`:`${al.name} · ${when} 만기 · ${comma(al.amount)}원`};
+  return{key:`mat:${TODAY}:${al.assetId}:${al.date}`,title:overdue?'저축 만기가 지났어요':'저축 만기가 임박했어요',body:overdue?`${al.name} · ${when} · ${comma(al.amount)}원`:`${al.name} · ${when} 만기 · ${comma(al.amount)}원`,group:'mat'};
  }
- if(al.kind==='matMulti'&&al.dueCount>0)return{key:`matMulti:${TODAY}:${al.count}`,title:'저축 만기가 임박했어요',body:`저축 만기 ${al.count}건이 있어요`};
- if(al.kind==='budgetOver')return{key:`budget:${al.cat}:${TODAY.slice(0,7)}`,title:'예산을 초과했어요',body:`${al.cat} · ${comma(al.spent)}원 / ${comma(al.budget)}원`};
+ if(al.kind==='matMulti'&&al.dueCount>0)return{key:`matMulti:${TODAY}:${al.count}`,title:'저축 만기가 임박했어요',body:`저축 만기 ${al.count}건이 있어요`,group:'mat'};
+ if(al.kind==='budgetOver')return{key:`budget:${al.cat}:${TODAY.slice(0,7)}`,title:'예산을 초과했어요',body:`${al.cat} · ${comma(al.spent)}원 / ${comma(al.budget)}원`,group:'budget'};
  /* budgetOverMulti/goalBehindMulti/debtBehindMulti(바로 아래 3개)는 반복 알림을 막기 위해 월 단위로
   * key를 묶는데(TODAY.slice(0,7)), 지금까지 그 안에 count를 넣지 않아 "이번 달에 이미 한 번 알린
   * 뒤 묶인 건수가 더 늘어도"(예: 예산 초과 카테고리 2개→3개, 목표 지연 2건→3건, 정체된 부채
@@ -10681,37 +10691,40 @@ function notifyAlertInfo(al){
   * confirmMulti/matMulti와 동일하게 count를 key 끝에 추가해, 월 단위 dedupe(같은 상황을 반복
   * 알리지 않는다는 취지)는 그대로 둔 채 "상황이 바뀌면"(건수 증가뿐 아니라 일부 해소돼 줄어도)
   * 다시 알리게 한다. */
- if(al.kind==='budgetOverMulti')return{key:`budgetMulti:${TODAY.slice(0,7)}:${al.count}`,title:'예산을 초과했어요',body:`${al.count}개 카테고리가 이번 달 예산을 넘었어요`};
+ if(al.kind==='budgetOverMulti')return{key:`budgetMulti:${TODAY.slice(0,7)}:${al.count}`,title:'예산을 초과했어요',body:`${al.count}개 카테고리가 이번 달 예산을 넘었어요`,group:'budget'};
  /* budgetPaceWarn(Multi)도 budgetOver(Multi)와 동일하게 월 단위로 key를 묶어, 같은 달엔 반복
   * 알리지 않되(이미 넘은 뒤라 상태가 바뀌는 budgetOver로 전환되면 key 접두사가 달라 별도로
   * 알려짐) 건수가 바뀌면(budgetOverMulti처럼 count를 key에 포함) 다시 알린다. */
- if(al.kind==='budgetPaceWarn')return{key:`budgetPace:${al.cat}:${TODAY.slice(0,7)}`,title:'예산 초과가 예상돼요',body:`${al.cat} · 이대로면 월말 ${comma(al.projected)}원 / ${comma(al.budget)}원`};
- if(al.kind==='budgetPaceWarnMulti')return{key:`budgetPaceMulti:${TODAY.slice(0,7)}:${al.count}`,title:'예산 초과가 예상돼요',body:`${al.count}개 카테고리가 이대로면 이번 달 예산을 넘을 것 같아요`};
- if(al.kind==='goalBehind')return{key:`goalBehind:${al.goalId}:${TODAY.slice(0,7)}`,title:'목표가 늦어지고 있어요',body:`${al.name} · 목표일 ${fmtDateFull(al.targetDate)}까지 어려울 것 같아요`};
- if(al.kind==='goalBehindMulti')return{key:`goalBehindMulti:${TODAY.slice(0,7)}:${al.count}`,title:'목표가 늦어지고 있어요',body:`목표 ${al.count}건이 목표일보다 늦어지고 있어요`};
+ if(al.kind==='budgetPaceWarn')return{key:`budgetPace:${al.cat}:${TODAY.slice(0,7)}`,title:'예산 초과가 예상돼요',body:`${al.cat} · 이대로면 월말 ${comma(al.projected)}원 / ${comma(al.budget)}원`,group:'budget'};
+ if(al.kind==='budgetPaceWarnMulti')return{key:`budgetPaceMulti:${TODAY.slice(0,7)}:${al.count}`,title:'예산 초과가 예상돼요',body:`${al.count}개 카테고리가 이대로면 이번 달 예산을 넘을 것 같아요`,group:'budget'};
+ if(al.kind==='goalBehind')return{key:`goalBehind:${al.goalId}:${TODAY.slice(0,7)}`,title:'목표가 늦어지고 있어요',body:`${al.name} · 목표일 ${fmtDateFull(al.targetDate)}까지 어려울 것 같아요`,group:'goal'};
+ if(al.kind==='goalBehindMulti')return{key:`goalBehindMulti:${TODAY.slice(0,7)}:${al.count}`,title:'목표가 늦어지고 있어요',body:`목표 ${al.count}건이 목표일보다 늦어지고 있어요`,group:'goal'};
  /* goalAchieved(Multi)는 goalBehindMulti 등과 달리 월 단위로 자연 해소되지 않는 '영구' 상태라(ack 전까지
   * achievedAckAt이 계속 비어 있음) key에 월(TODAY.slice(0,7))을 넣지 않는다 — 한 번 보내고 나면 ack하거나
   * (achievedAckAt 기록 → 이 kind가 더는 homeAlerts()에서 안 나와 재호출 자체가 없음) 30일 지나 notifiedIds가
   * pruneNotifiedIds로 정리될 때까지 매일 다시 알리지 않는다(app-evolve cycle256 advance). */
- if(al.kind==='goalAchieved')return{key:`goalAchieved:${al.goalId}`,title:'목표를 달성했어요 🎉',body:`${al.name} · ${comma(al.amount)}원`};
- if(al.kind==='goalAchievedMulti')return{key:`goalAchievedMulti:${al.count}`,title:'목표를 달성했어요 🎉',body:`목표 ${al.count}건을 달성했어요`};
- if(al.kind==='debtBehind')return{key:`debtBehind:${al.assetId}:${TODAY.slice(0,7)}`,title:'부채가 줄지 않고 있어요',body:`${al.name} · 최근엔 ${comma(al.amount)}원에서 줄어들고 있지 않아요`};
- if(al.kind==='debtBehindMulti')return{key:`debtBehindMulti:${TODAY.slice(0,7)}:${al.count}`,title:'부채가 줄지 않고 있어요',body:`부채 ${al.count}건이 최근 줄어들고 있지 않아요`};
+ if(al.kind==='goalAchieved')return{key:`goalAchieved:${al.goalId}`,title:'목표를 달성했어요 🎉',body:`${al.name} · ${comma(al.amount)}원`,group:'goal'};
+ if(al.kind==='goalAchievedMulti')return{key:`goalAchievedMulti:${al.count}`,title:'목표를 달성했어요 🎉',body:`목표 ${al.count}건을 달성했어요`,group:'goal'};
+ if(al.kind==='debtBehind')return{key:`debtBehind:${al.assetId}:${TODAY.slice(0,7)}`,title:'부채가 줄지 않고 있어요',body:`${al.name} · 최근엔 ${comma(al.amount)}원에서 줄어들고 있지 않아요`,group:'debt'};
+ if(al.kind==='debtBehindMulti')return{key:`debtBehindMulti:${TODAY.slice(0,7)}:${al.count}`,title:'부채가 줄지 않고 있어요',body:`부채 ${al.count}건이 최근 줄어들고 있지 않아요`,group:'debt'};
  /* debtPaidOff(Multi)는 goalAchieved(Multi)와 동일하게 월 단위로 자연 해소되지 않는 '영구' 상태라
   * key에 월을 넣지 않는다 — 한 번 보내고 나면 ack하거나(payoffAckAt 기록 → 이 kind가 더는
   * homeAlerts()에서 안 나와 재호출 자체가 없음) 30일 지나 notifiedIds가 pruneNotifiedIds로
   * 정리될 때까지 매일 다시 알리지 않는다(app-evolve cycle257 advance). */
- if(al.kind==='debtPaidOff')return{key:`debtPaidOff:${al.assetId}`,title:'빚을 다 갚았어요 🎉',body:`${al.name} · ${comma(al.amount)}원`};
- if(al.kind==='debtPaidOffMulti')return{key:`debtPaidOffMulti:${al.count}`,title:'빚을 다 갚았어요 🎉',body:`부채 ${al.count}건을 다 갚았어요`};
+ if(al.kind==='debtPaidOff')return{key:`debtPaidOff:${al.assetId}`,title:'빚을 다 갚았어요 🎉',body:`${al.name} · ${comma(al.amount)}원`,group:'debt'};
+ if(al.kind==='debtPaidOffMulti')return{key:`debtPaidOffMulti:${al.count}`,title:'빚을 다 갚았어요 🎉',body:`부채 ${al.count}건을 다 갚았어요`,group:'debt'};
  return null;
 }
 /* 같은 항목(key)은 상태가 유지되는 한 다시 알리지 않는다 — checkNotifyAlerts가 동기화 주기(수 분)마다
- * 반복 호출돼도 이미 보낸 이체/만기/예산 알림을 중복 발송하지 않기 위한 dedupe. */
-function pickNotifyAlerts(alerts,notifiedIds){
+ * 반복 호출돼도 이미 보낸 이체/만기/예산 알림을 중복 발송하지 않기 위한 dedupe.
+ * muted(DB.settings.notifyMute, {group:true})가 주어지면 그 그룹(notifyAlertInfo의 group 필드,
+ * app-evolve cycle312 critique/advance)에 속한 알림은 뮤트가 풀릴 때 바로 다시 알릴 수 있어야 하므로
+ * toNotify뿐 아니라 notifiedIds에도 기록하지 않는다 — 생략하면(기존 호출부) 이전과 동일하게 동작한다. */
+function pickNotifyAlerts(alerts,notifiedIds,muted){
  const toNotify=[],newIds={...notifiedIds};
  alerts.forEach(al=>{
   const info=notifyAlertInfo(al);
-  if(!info||newIds[info.key])return;
+  if(!info||(muted&&muted[info.group])||newIds[info.key])return;
   toNotify.push(info);newIds[info.key]=Date.now();
  });
  return{toNotify,notifiedIds:newIds};
@@ -10743,7 +10756,7 @@ function checkNotifyAlerts(){
  if(!(typeof Notification!=='undefined'&&Notification.permission==='granted'))return;
  if(!(navigator.serviceWorker&&navigator.serviceWorker.ready))return;
  const alerts=homeAlerts(planNegatives());
- const{toNotify,notifiedIds}=pickNotifyAlerts(alerts,DB.settings.notifiedAlertIds||{});
+ const{toNotify,notifiedIds}=pickNotifyAlerts(alerts,DB.settings.notifiedAlertIds||{},DB.settings.notifyMute);
  if(!toNotify.length)return;
  DB.settings.notifiedAlertIds=pruneNotifiedIds(notifiedIds,Date.now());
  save();
@@ -10762,6 +10775,15 @@ function toggleOsNotify(){
  }).catch(()=>toast('알림 권한 요청에 실패했어요')); /* 권한 정책 차단 등으로 이 Promise가 reject되면(.then만 있던 과거엔
    unhandled rejection으로 콘솔에만 남고) 토글을 눌러도 화면이 그대로라 사용자는 버튼이 멈췄다고 오인했다 — 실패도
    명시적으로 알려준다(app-evolve cycle151 develop) */
+}
+/* OS 알림을 켠 상태에서도 그룹(confirm/mat/budget/goal/debt, notifyAlertInfo의 group 필드) 단위로
+ * 끄고 켤 수 있게 한다 — osNotify 하나가 18종 알림을 전부 켜거나 전부 끄는 올오어나싱이라, 이체
+ * 확인은 받고 싶지만 예산/목표 알림은 시끄럽다고 느끼는 사람이 선택할 방법이 없었다(app-evolve
+ * cycle312 critique/advance). */
+function toggleNotifyMuteGroup(g){
+ DB.settings.notifyMute=DB.settings.notifyMute||{};
+ DB.settings.notifyMute[g]=!DB.settings.notifyMute[g];
+ save();renderMenu();
 }
 function homeAlertCard(al){
  if(al.kind==='cloudConflict')return `<button class="home-alert" onclick="openAccountSheet()">

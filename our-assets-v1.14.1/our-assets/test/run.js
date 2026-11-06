@@ -253,7 +253,7 @@ const FUNCTIONS = [
   'recIsVarying', 'varyingRecs', 'fixShortfallDefaultDate', 'openFixShortfall', 'lastActualAmount', 'openQuickAmount', 'openQuickList',
   'backupDue', 'planNegatives', 'homeAlerts', 'updateAlerts', 'goPlanTo', 'openNegList',
   'openStaleMvReview', 'dismissStaleMv', 'pruneDismissedStaleMvIds',
- 'notifyAlertInfo', 'pickNotifyAlerts', 'pruneNotifiedIds', 'syncNotifyPermission',
+ 'notifyAlertInfo', 'pickNotifyAlerts', 'pruneNotifiedIds', 'syncNotifyPermission', 'toggleNotifyMuteGroup',
   'catIconOf', 'catGlyph', 'openCatManage', 'openCatPicker', 'catFilteredGrid', 'catEmptyHtml', 'pkCatQInput', 'refreshPkCatList', 'moveCatBlob', 'pkPickCat',
   'openIconPicker', 'pickCatIcon',
   'catListOf', 'catAv', 'assetPickBtn', 'endCondFields', 'dayPickerHTML', 'openFormSheet', 'renderTxSheet', '_applyType', '_applyFreq', '_applyDay', '_applyCount', '_applyOpenCat', '_applyOpenAsset', 'txType', 'txToggleRepeat',
@@ -25915,6 +25915,93 @@ test('updateAlerts: neg를 미리 넘기면 planNegatives()를 다시 계산하�
   assert.deepStrictEqual(neg, [], '넘겨준 neg를 그대로 반환해야 함(재계산 없음)');
   assert.strictEqual(sandbox.planBadgeEl.textContent, '0');
   assert.strictEqual(sandbox.planBadgeEl.classList.contains('on'), false);
+});
+
+/* ---------- notifyAlertInfo/pickNotifyAlerts: 그룹별 OS 알림 뮤트 (app-evolve cycle312 critique/advance)
+ * ----------
+ * osNotify 하나가 18종 알림을 전부 켜거나 전부 끄는 올오어나싱이라 이체 확인은 받고 싶지만 예산/목표
+ * 알림은 끄고 싶은 경우를 다룰 수 없었다. notifyAlertInfo가 이미 5개 그룹(confirm/mat/budget/goal/debt)
+ * 으로 조직돼 있어, 각 리턴 객체에 group 필드를 추가하고 pickNotifyAlerts가 그 그룹을 뮤트 맵으로
+ * 걸러내게 한다. ---------- */
+test('notifyAlertInfo: 5개 그룹(confirm/mat/budget/goal/debt) 대표 케이스가 올바른 group을 반환한다', () => {
+  sandbox.TODAY = '2026-06-15';
+  assert.strictEqual(sandbox.notifyAlertInfo({ kind: 'confirm', id: 't1', date: '2026-06-15', from: 'A', to: 'B', amount: 1000 }).group, 'confirm');
+  assert.strictEqual(sandbox.notifyAlertInfo({ kind: 'quick', recId: 'r1', date: '2026-06-15', name: '넷플릭스' }).group, 'confirm');
+  assert.strictEqual(sandbox.notifyAlertInfo({ kind: 'mat', assetId: 's1', name: '적금', date: '2026-06-15', amount: 1000 }).group, 'mat');
+  assert.strictEqual(sandbox.notifyAlertInfo({ kind: 'matMulti', count: 2, dueCount: 1 }).group, 'mat');
+  assert.strictEqual(sandbox.notifyAlertInfo({ kind: 'budgetOver', cat: '식비', spent: 150000, budget: 100000 }).group, 'budget');
+  assert.strictEqual(sandbox.notifyAlertInfo({ kind: 'budgetPaceWarnMulti', count: 2 }).group, 'budget');
+  assert.strictEqual(sandbox.notifyAlertInfo({ kind: 'goalBehind', goalId: 'g1', name: '내 집 마련', targetDate: '2026-07-01' }).group, 'goal');
+  assert.strictEqual(sandbox.notifyAlertInfo({ kind: 'goalAchieved', goalId: 'g1', name: '비상금', amount: 2000000 }).group, 'goal');
+  assert.strictEqual(sandbox.notifyAlertInfo({ kind: 'debtBehind', assetId: 'd1', name: '마이너스통장', amount: 550000 }).group, 'debt');
+  assert.strictEqual(sandbox.notifyAlertInfo({ kind: 'debtPaidOffMulti', count: 2 }).group, 'debt');
+});
+test('pickNotifyAlerts: muted 맵에서 true인 그룹의 알림은 toNotify에서 제외되고, 다른 그룹은 그대로 통과한다', () => {
+  sandbox.TODAY = '2026-06-15';
+  const alerts = [
+    { kind: 'confirm', id: 't1', date: '2026-06-15', from: 'A', to: 'B', amount: 1000 },
+    { kind: 'budgetOver', cat: '식비', spent: 150000, budget: 100000 },
+  ];
+  const picked = sandbox.pickNotifyAlerts(alerts, {}, { budget: true });
+  assert.strictEqual(picked.toNotify.length, 1, '뮤트된 budget은 빼고 confirm 1건만 통과해야 함');
+  assert.strictEqual(picked.toNotify[0].group, 'confirm');
+});
+test('pickNotifyAlerts: 뮤트된 알림은 notifiedIds에도 기록되지 않아, 뮤트를 풀면 바로 다시 알림 대상이 된다', () => {
+  sandbox.TODAY = '2026-06-15';
+  const alerts = [{ kind: 'budgetOver', cat: '식비', spent: 150000, budget: 100000 }];
+  let picked = sandbox.pickNotifyAlerts(alerts, {}, { budget: true });
+  assert.strictEqual(picked.toNotify.length, 0);
+  assert.strictEqual(Object.keys(picked.notifiedIds).length, 0, '뮤트 중엔 notifiedIds에 키가 쌓이면 안 됨(나중에 뮤트 해제 시 재알림 막힘)');
+  // 뮤트를 풀고 같은 notifiedIds로 다시 호출하면 이번엔 바로 알림 대상이 돼야 한다
+  picked = sandbox.pickNotifyAlerts(alerts, picked.notifiedIds, {});
+  assert.strictEqual(picked.toNotify.length, 1, '뮤트 해제 후엔 이전에 억제됐던 알림도 바로 통과해야 함');
+});
+test('pickNotifyAlerts: 3번째 인자(muted)를 생략하면 기존 동작(필터링 없음)과 완전히 동일하다', () => {
+  sandbox.TODAY = '2026-06-15';
+  const alerts = [{ kind: 'budgetOver', cat: '식비', spent: 150000, budget: 100000 }];
+  const picked = sandbox.pickNotifyAlerts(alerts, {});
+  assert.strictEqual(picked.toNotify.length, 1, '3번째 인자를 생략하면 뮤트 필터링이 전혀 없어야 함');
+});
+test('toggleNotifyMuteGroup: 그룹 뮤트를 토글하고 save()를 호출한다', () => {
+  let saveCalls = 0;
+  const origSave = sandbox.save, origRenderMenu = sandbox.renderMenu;
+  sandbox.save = () => { saveCalls++; };
+  sandbox.renderMenu = () => {};
+  try {
+    sandbox.DB = { settings: {} };
+    sandbox.toggleNotifyMuteGroup('budget');
+    assert.strictEqual(sandbox.DB.settings.notifyMute.budget, true, '처음 토글하면 뮤트 on이어야 함');
+    assert.strictEqual(saveCalls, 1);
+    sandbox.toggleNotifyMuteGroup('budget');
+    assert.strictEqual(sandbox.DB.settings.notifyMute.budget, false, '두 번째 토글하면 다시 off여야 함');
+    assert.strictEqual(saveCalls, 2);
+    // 다른 그룹은 영향받지 않아야 함
+    sandbox.toggleNotifyMuteGroup('goal');
+    assert.strictEqual(sandbox.DB.settings.notifyMute.goal, true);
+    assert.strictEqual(sandbox.DB.settings.notifyMute.budget, false, '다른 그룹을 토글해도 budget 상태는 그대로여야 함');
+  } finally { sandbox.save = origSave; sandbox.renderMenu = origRenderMenu; }
+});
+test('migrate: DB.settings.notifyMute가 없으면 {}로 채워지고, 기존 값이 있으면 그대로 보존된다', () => {
+  sandbox.DB = {
+    version: 5, catsV2: true,
+    settings: { themeMode: 'system', includeScheduled: false, assetSort: 'custom', groupOrder: [...sandbox.DEFAULT_GROUP_ORDER] },
+    owners: ['나', '배우자', '공용'],
+    assets: [], txns: [], recurrences: [], inquiries: [],
+    categories: { expense: [...sandbox.EXP_CATS_DEFAULT], income: [...sandbox.INC_CATS_DEFAULT], saving: [...sandbox.SAV_CATS_DEFAULT] },
+  };
+  sandbox.migrate();
+  assert.strictEqual(Object.keys(sandbox.DB.settings.notifyMute).length, 0, '기존 계정엔 notifyMute가 없었으므로 마이그레이션 시 빈 객체로 채워져야 함');
+
+  sandbox.DB.settings.notifyMute = { budget: true };
+  sandbox.migrate();
+  assert.strictEqual(sandbox.DB.settings.notifyMute.budget, true, '이미 설정된 뮤트 값은 재마이그레이션해도 보존돼야 함');
+});
+test('renderMenu: OS 알림이 켜져 있을 때만 5개 그룹별 뮤트 토글 행(confirm/mat/budget/goal/debt)이 보이고, 각각 toggleNotifyMuteGroup을 가리킨다(소스 패턴 검증)', () => {
+  const body = extractFunction('renderMenu');
+  assert.ok(body.includes('DB.settings.osNotify?[') || body.includes('DB.settings.osNotify ?['), 'OS 알림이 꺼져 있으면 그룹별 토글 행이 렌더되지 않아야 함');
+  ['confirm', 'mat', 'budget', 'goal', 'debt'].forEach(g => {
+    assert.ok(body.includes(`toggleNotifyMuteGroup('${g}')`), `${g} 그룹 토글 행이 없음`);
+  });
 });
 
 /* ---------- openCatManage: 렌더 함수 스모크 테스트 ----------
