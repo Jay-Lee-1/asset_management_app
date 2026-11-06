@@ -195,7 +195,7 @@ const FUNCTIONS = [
   'dateBelowRangeFloor', 'dateAboveRangeCeil', 'recalcEndCond', 'isVarCat', 'setCatVar', 'toggleCatVarUI', 'activeRecsForAssets', 'activeRecsForCat',
   'num', 'doRenameCat', 'doDeleteCat', 'catMergeCounts', 'openCatMergePicker', 'confirmCatMerge', 'mergeCatInto', 'totalBudgetSummary', 'budgetForMonth', 'setBudgetFrom', 'addCat', 'movedCatOrder', 'moveCat',
   'isBudgetRolloverCat', 'setBudgetRolloverCat', 'toggleBudgetRolloverUI', 'budgetCarryFor', 'budgetForMonthWithCarry',
-  'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'txnsToCSV', 'assetsToCSV', 'nwHistoryToCSV', 'assetQtyLogToCSV', 'recurrencesToCSV', 'goalsToCSV', 'budgetHistoryToCSV',
+  'updateNwHistory', 'pruneNwHistory', 'nwChartPath', 'allocSeriesChartPath', 'txnsToCSV', 'assetsToCSV', 'nwHistoryToCSV', 'assetQtyLogToCSV', 'recurrencesToCSV', 'goalsToCSV', 'budgetHistoryToCSV',
   'unguardCsv', 'csvRowToImportTxn', 'buildImportPreview', 'doCsvImport',
   // openCsvColumnMap/buildGenericImportPreview 등은 app-evolve cycle251 advance(은행/카드사 CSV
   // 열 매핑 가져오기) 구현 검증용 — detectOwnCsvFormat/mapGenericCsvRow는 logic.js 전용(전체 로드돼
@@ -280,7 +280,7 @@ const FUNCTIONS = [
   // 스파이로 대체한다(migrateLegacy/startApp 등과 같은 패턴).
   'heldCurrencies', 'heldStockCodes', 'heldCryptoCodes', 'needFx', 'needStock', 'needCrypto', 'hasRateAssets', 'autoSyncRates',
   'nextBigOutflow', 'dday', 'balanceOn', 'nextOutflowCard', 'monthOutflowCard', 'planGaugeCard', 'homeAlertCard', 'renderHome',
-  'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwPresetSegHTML', 'nwHistoryCard', 'allocationCard', 'investGainLossCard', 'doRenameOwner', 'addOwner', 'ownerChipClass',
+  'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwPresetSegHTML', 'nwHistoryCard', 'allocationCard', 'allocPresetSegHTML', 'allocationHistoryCard', 'investGainLossCard', 'doRenameOwner', 'addOwner', 'ownerChipClass',
   'openOwnerMergePicker', 'confirmOwnerMerge', 'mergeOwnerInto',
   // ownerSegHtml(app-evolve cycle255 advance)은 spendOwnerSel/incomeOwnerSel/histOwnerSel/
   // yearOwnerSel/goalOwnerSel 5곳이 각자 베껴 쓰던 귀속 선택 세그먼트 마크업을 모은 공유 헬퍼 —
@@ -292,7 +292,7 @@ const FUNCTIONS = [
   // 선택해둔 id가 새 귀속에서 안 보이는 채로 ST.aSel.ids에 남는 버그) 검증용 — 넷 다
   // $(...)가 없으면 바로 return하는 얕은 래퍼라(기본 $ 스텁은 'assetBody' 등을 세팅하지 않는 한
   // null을 돌려줌) 기존 공유 스텁만으로 selectNwOwner를 실행형으로 검증할 수 있다.
-  'selectNwOwner', 'refreshAssetBody', 'refreshNwHistoryCard', 'refreshGoalsSummary', 'refreshAllocationCard', 'refreshInvestGainLossCard',
+  'selectNwOwner', 'refreshAssetBody', 'refreshNwHistoryCard', 'refreshGoalsSummary', 'refreshAllocationCard', 'refreshAllocationHistoryCard', 'refreshInvestGainLossCard',
   'goalOwnerEff', 'goalHasUnknown', 'goalLinkedAssetGone', 'goalLinkedAssetBroken', 'goalHistoryFor', 'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'goalQInput', 'goalsManageBody', 'syncGoalInputs', 'goalClearDate', 'goalOwnerSel', 'goalTypeSel', 'goalOpenAsset', 'renderGoalForm', 'openGoalForm', 'duplicateGoal', 'saveGoal', 'delGoal', 'ackGoalAchieved',
   'openInquiry', 'sendInquiry', 'openInquiryList', 'delInquiry', 'editInquiry', 'saveInquiryEdit',
   'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetQInput', 'assetToggleSel', 'visibleAssetsForSel', 'assetSelAll', 'activeSel', 'exitSelMode',
@@ -383,7 +383,7 @@ const FUNCTIONS = [
 // 목록과, 그 키를 읽어주는 한글 aria-label 매핑이다(app-evolve cycle281 advance) — 둘 다 내부에
 // ";"가 없는 단순 object literal이라 extractConstBlock 없이 extractConst로도 끝까지 끌어온다
 // (CAT_LABEL과 같은 패턴).
-const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'emailKey', 'CAT_PICKER_SEARCH_THRESHOLD', 'GOAL_LIST_SEARCH_THRESHOLD', 'GS_CAP', 'CAT_ICON_SET', 'ICON_LABEL_KO', 'BAL_ASSET_TYPES'];
+const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'emailKey', 'CAT_PICKER_SEARCH_THRESHOLD', 'GOAL_LIST_SEARCH_THRESHOLD', 'GS_CAP', 'CAT_ICON_SET', 'ICON_LABEL_KO', 'BAL_ASSET_TYPES', 'ALLOC_OTHER_COLOR'];
 // _histCache는 filteredHist()가 재대입(={key,list})하는 let 선언이라 CONSTS(extractConst)로는
 // 못 끌어오므로 별도의 LETS 목록으로 extractLet을 통해 가져온다.
 // _copyIsCsv도 같은 이유(openCopyBackup()이 재대입)로 LETS를 통해 가져온다.
@@ -21473,6 +21473,119 @@ test('allocationCard: 가장 크게 움직인 유형의 변화가 1%p 미만이�
   sandbox._balCache.clear();
   const html = sandbox.allocationCard();
   assert.ok(!html.includes('대비'), '모든 유형의 변화가 1%p 미만이면 캡션이 없어야 함');
+});
+/* ---------- assetAllocationSeries(logic.js)/allocationHistoryCard: 자산배분 추이 카드
+ * (app-evolve cycle311 critique/advance — byOwner는 nwHistoryCard로 추이 차트가 있는데 byType은
+ * allocationHistoryDelta의 "오늘 vs N일 전" 한 점 캡션뿐이던 비대칭 해소) ---------- */
+test('assetAllocationSeries: byType이 있는 스냅샷이 2개 미만이면(레거시 데이터뿐이거나 오늘 처음 기록) null', () => {
+  assert.strictEqual(sandbox.assetAllocationSeries([], 'm3', '2026-06-15'), null);
+  assert.strictEqual(sandbox.assetAllocationSeries([{ date: '2026-06-15', ta: 100, td: 0, nw: 100 }], 'm3', '2026-06-15'), null, 'byType 없는 레거시 항목뿐이면 null');
+  assert.strictEqual(sandbox.assetAllocationSeries([{ date: '2026-06-15', ta: 100, td: 0, nw: 100, byType: { cash: 100 } }], 'm3', '2026-06-15'), null, 'byType 있는 스냅샷이 1개뿐이면 null');
+});
+test('assetAllocationSeries: byType이 있는 스냅샷만 남기고 레거시(byType 없음) 항목은 건너뛴다', () => {
+  const hist = [
+    { date: '2026-05-01', ta: 100, td: 0, nw: 100 }, // 레거시
+    { date: '2026-05-20', ta: 100, td: 0, nw: 100, byType: { cash: 40, stock: 60 } },
+    { date: '2026-06-15', ta: 100, td: 0, nw: 100, byType: { cash: 50, stock: 50 } },
+  ];
+  const r = sandbox.assetAllocationSeries(hist, 'm3', '2026-06-15');
+  assert.strictEqual(r.points.length, 2, '레거시 항목은 빼고 byType이 있는 2건만 남아야 함');
+  assert.strictEqual(r.points[0].date, '2026-05-20');
+});
+test('assetAllocationSeries: preset으로 기간을 자르면(nwHistoryRange 재사용) 그 윈도 밖의 오래된 스냅샷은 제외된다', () => {
+  const hist = [
+    { date: '2026-01-01', ta: 100, td: 0, nw: 100, byType: { cash: 100 } }, // m1 윈도 밖
+    { date: '2026-06-01', ta: 100, td: 0, nw: 100, byType: { cash: 40, stock: 60 } },
+    { date: '2026-06-15', ta: 100, td: 0, nw: 100, byType: { cash: 50, stock: 50 } },
+  ];
+  const r = sandbox.assetAllocationSeries(hist, 'm1', '2026-06-15');
+  assert.strictEqual(r.points.length, 2, '최근 30일 안쪽 2건만 남아야 함');
+  assert.strictEqual(r.points[0].date, '2026-06-01');
+});
+test('assetAllocationSeries: 유형이 4개 이하면 "기타" 묶음(ALLOC_OTHER_TYPE) 없이 그대로 두고, pct 합은 100에 근접한다', () => {
+  const hist = [
+    { date: '2026-05-20', ta: 100, td: 0, nw: 100, byType: { cash: 40, stock: 60 } },
+    { date: '2026-06-15', ta: 100, td: 0, nw: 100, byType: { cash: 30, stock: 70 } },
+  ];
+  const r = sandbox.assetAllocationSeries(hist, 'm3', '2026-06-15');
+  assert.strictEqual(JSON.stringify(r.types), JSON.stringify(['stock', 'cash']), '최근 스냅샷(2026-06-15) 기준 금액 내림차순이어야 함');
+  const last = r.points[r.points.length - 1];
+  const pctSum = last.segs.reduce((s, x) => s + x.pct, 0);
+  assert.ok(Math.abs(pctSum - 100) < 1e-9);
+});
+test('assetAllocationSeries: 유형이 4개를 넘으면 가장 최근 스냅샷 기준 상위 4개만 남기고 나머지는 ALLOC_OTHER_TYPE 한 밴드로 묶는다', () => {
+  const hist = [
+    { date: '2026-05-20', ta: 100, td: 0, nw: 100, byType: { cash: 50, stock: 20, gold: 10, fx: 10, crypto: 10 } },
+    { date: '2026-06-15', ta: 100, td: 0, nw: 100, byType: { cash: 40, stock: 20, gold: 15, fx: 15, crypto: 10 } }, // 최근 상위4: cash,stock,gold,fx(crypto 10%가 5위라 기타로 묶임)
+  ];
+  const r = sandbox.assetAllocationSeries(hist, 'm3', '2026-06-15');
+  assert.strictEqual(r.types.length, 5, '상위 4개 + 기타 1개 = 5개 밴드');
+  assert.ok(r.types.includes('other'));
+  assert.ok(!r.types.includes('crypto'), '상위 4위 밖인 crypto는 개별 밴드로 남지 않아야 함');
+  const last = r.points[r.points.length - 1];
+  const other = last.segs.find(s => s.type === 'other');
+  assert.ok(Math.abs(other.pct - 10) < 1e-9, 'crypto(10%) 하나뿐이므로 기타 밴드는 그 pct와 같아야 함');
+  const first = r.points[0];
+  const pctSum = first.segs.reduce((s, x) => s + x.pct, 0);
+  assert.ok(Math.abs(pctSum - 100) < 1e-9, '과거 시점도 모든 밴드(상위4+기타)를 합치면 100%여야 함');
+});
+test('assetAllocationSeries: ALLOC_OTHER_TYPE("other")은 실제 "etc"(기타) 자산유형과 다른 키라 둘이 동시에 있어도 섞이지 않는다', () => {
+  const hist = [
+    { date: '2026-05-20', ta: 100, td: 0, nw: 100, byType: { cash: 30, stock: 25, gold: 20, etc: 15, fx: 10 } },
+    { date: '2026-06-15', ta: 100, td: 0, nw: 100, byType: { cash: 30, stock: 25, gold: 20, etc: 15, fx: 10 } },
+  ];
+  const r = sandbox.assetAllocationSeries(hist, 'm3', '2026-06-15');
+  assert.ok(r.types.includes('etc'), '실제 etc 유형이 상위 4위 안에 들면 그대로 남아야 함');
+  assert.ok(r.types.includes('other'), '5위인 fx는 별도 기타 밴드(other)로 묶여야 함');
+  const last = r.points[r.points.length - 1];
+  assert.strictEqual(last.segs.filter(s => s.type === 'etc').length, 1, 'etc 밴드는 하나뿐이어야 함(other와 합쳐지면 안 됨)');
+});
+test('allocSeriesChartPath: 포인트가 2개 미만이면 빈 배열을 돌려준다', () => {
+  assert.strictEqual(sandbox.allocSeriesChartPath([], ['cash'], 300, 80).length, 0);
+  assert.strictEqual(sandbox.allocSeriesChartPath([{ date: '2026-06-15', segs: [{ type: 'cash', pct: 100 }] }], ['cash'], 300, 80).length, 0);
+});
+test('allocSeriesChartPath: 밴드가 바닥(0%)부터 types 순서대로 누적되어, 마지막 밴드의 위쪽 경계가 전체 100%(y=0)에 닿는다', () => {
+  const pts = [
+    { date: '2026-06-01', segs: [{ type: 'cash', pct: 40 }, { type: 'stock', pct: 60 }] },
+    { date: '2026-06-15', segs: [{ type: 'cash', pct: 40 }, { type: 'stock', pct: 60 }] },
+  ];
+  const bands = sandbox.allocSeriesChartPath(pts, ['cash', 'stock'], 300, 80);
+  assert.strictEqual(bands.length, 2);
+  assert.strictEqual(bands[0].type, 'cash');
+  assert.ok(bands[0].path.startsWith('M0.0,48.0'), `cash(40%)는 바닥(y=80)에서 40% 높이인 y=48(80*(1-0.4))에서 시작해야 함(실제 ${bands[0].path.slice(0, 20)})`);
+  assert.ok(bands[1].path.includes('M0.0,0.0'), `stock은 cash 위에 쌓여 맨 위(cash+stock=100%, y=0)에서 시작해야 함(실제 ${bands[1].path})`);
+});
+test('allocationHistoryCard: owner가 "all"이 아니면 byType이 귀속별로 쪼개져 기록되지 않으므로(1차 범위 밖) 빈 문자열을 반환한다', () => {
+  setupNetWorthDB();
+  sandbox.DB.nwHistory = [
+    { date: '2026-05-20', ta: 482500, td: 3000, nw: 479500, byType: { cash: 200000, fx: 130000, savings: 5000, gold: 147500 } },
+    { date: '2026-06-15', ta: 482500, td: 3000, nw: 479500, byType: { cash: 10000, fx: 130000, savings: 5000, gold: 337500 } },
+  ];
+  assert.strictEqual(sandbox.allocationHistoryCard('나', 'm3'), '');
+});
+test('allocationHistoryCard: 비교할 과거 비중이 없으면(레거시뿐이거나 기록이 막 시작됨) 카드를 숨긴다(빈 문자열)', () => {
+  setupNetWorthDB();
+  sandbox.DB.nwHistory = [{ date: '2026-06-15', ta: 482500, td: 3000, nw: 479500 }];
+  assert.strictEqual(sandbox.allocationHistoryCard('all', 'm3'), '');
+  sandbox.DB.nwHistory = [];
+  assert.strictEqual(sandbox.allocationHistoryCard(), '', 'owner/preset을 생략해도(기본값 all/m3) 빈 문자열이어야 함');
+});
+test('allocationHistoryCard: owner="all"이고 byType 스냅샷이 2개 이상이면 제목/기간 세그먼트/범례가 포함된 카드를 그린다', () => {
+  setupNetWorthDB();
+  sandbox.DB.nwHistory = [
+    { date: '2026-05-20', ta: 482500, td: 3000, nw: 479500, byType: { cash: 200000, fx: 130000, savings: 5000, gold: 147500 } },
+    { date: '2026-06-15', ta: 482500, td: 3000, nw: 479500, byType: { cash: 10000, fx: 130000, savings: 5000, gold: 337500 } },
+  ];
+  const html = sandbox.allocationHistoryCard('all', 'm3');
+  assert.ok(html.includes('자산배분 추이'));
+  assert.ok(html.includes('금'), '최근 스냅샷 기준 상위 유형(금) 범례가 보여야 함');
+  assert.ok(html.includes("onclick=\"allocPresetSel('y1')\""), '기간 선택 세그먼트가 있어야 함');
+  assert.ok(html.includes('<path'), 'stacked-area 밴드가 svg path로 그려져야 함');
+});
+test('allocPresetSegHTML: preset에 맞는 버튼에 on 클래스와 aria-pressed=true가 붙는다(nwPresetSegHTML과 동일 패턴)', () => {
+  const html = sandbox.allocPresetSegHTML('y1');
+  assert.ok(/class="on" aria-pressed="true"[^>]*>1년/.test(html));
+  assert.ok(html.includes("onclick=\"allocPresetSel('m1')\""));
 });
 /* ---------- portfolioGainLoss(logic.js)/investGainLossCard: 투자자산 전체 손익 카드
  * (app-evolve cycle226 critique/advance — assetGainLoss(a)/assetGainLossBadge가 자산 1건씩만

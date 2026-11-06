@@ -1097,6 +1097,33 @@ function allocationHistoryDelta(hist,today,days){
  const pastAlloc=assetAllocation(Object.keys(past.byType).map(t=>({type:t,amount:past.byType[t]})));
  return {pastDate:past.date,pastAlloc};
 }
+/* allocationHistoryDelta가 "오늘 vs days일 전" 한 점만 비교하는 것과 달리, allocationHistoryCard
+ * (index.html)가 그릴 stacked-area 차트용으로 preset 기간 전체의 비중 추이를 뽑는다. nwHistoryRange로
+ * 기간을 자르고(byOwner 추이 카드와 동일한 윈도 규칙) byType이 있는 스냅샷만 남기는데, 이것 역시
+ * 2개 미만이면(레거시뿐이거나 막 기록 시작) 추이를 그릴 수 없으므로 null — allocationHistoryDelta와
+ * 같은 "모르면 비교하지 않는다" 원칙. assetAllocation()은 날짜마다 그 시점의 금액 내림차순으로 다시
+ * 정렬하므로, 색상·순서를 날짜마다 흔들리지 않게 고정하려고 가장 최근 스냅샷 기준 상위 4개 유형만
+ * 그대로 두고 나머지는 모두 한 밴드로 묶는다. 이 묶음은 실제 'etc'(기타) 자산유형과 혼동되지 않도록
+ * 별도 키('other')를 쓴다 — 'etc' 유형 자체가 상위 4개 안에 들면서 동시에 다른 유형들이 묶여야 하는
+ * 경우, 같은 'etc' 키를 쓰면 한 날짜에 segs가 두 개의 'etc' 항목을 갖게 돼 차트/범례가 깨진다. */
+const ALLOC_OTHER_TYPE='other';
+function assetAllocationSeries(hist,preset,today){
+ const ranged=nwHistoryRange(hist,preset,today);
+ const withType=ranged.filter(h=>h.byType&&typeof h.byType==='object');
+ if(withType.length<2)return null;
+ const latest=withType[withType.length-1];
+ const latestAlloc=assetAllocation(Object.keys(latest.byType).map(t=>({type:t,amount:latest.byType[t]})));
+ const topTypes=latestAlloc.slice(0,4).map(x=>x.type);
+ const hasOther=latestAlloc.length>topTypes.length;
+ const types=hasOther?topTypes.concat(ALLOC_OTHER_TYPE):topTypes;
+ const points=withType.map(h=>{
+  const alloc=assetAllocation(Object.keys(h.byType).map(t=>({type:t,amount:h.byType[t]})));
+  const segs=topTypes.map(type=>({type,pct:(alloc.find(a=>a.type===type)||{pct:0}).pct}));
+  if(hasOther)segs.push({type:ALLOC_OTHER_TYPE,pct:alloc.filter(a=>!topTypes.includes(a.type)).reduce((s,a)=>s+a.pct,0)});
+  return {date:h.date,segs};
+ });
+ return {points,types};
+}
 
 /* ================= PORTFOLIO GAIN/LOSS (투자자산 전체 손익, 순수) ================= */
 /* items: [{evalValue,costBasis}] — 호출부(investGainLossCard)가 owner/includeInTotal 필터링과

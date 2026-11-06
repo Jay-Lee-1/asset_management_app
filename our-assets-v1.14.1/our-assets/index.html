@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.367';
+const APP_VERSION='1.47.368';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1817,6 +1817,9 @@ const ASSET_TYPES={
  * (goalDraft와 달리 필드 나열로 재구성하지 않음) 기본값 백필이 필요 없다(app-evolve cycle257 advance). */
 const DEFAULT_GROUP_ORDER=Object.keys(ASSET_TYPES);
 const TYPE_COLOR={cash:'var(--brand)',savings:'var(--save)',stock:'var(--stock)',realestate:'var(--gold)',debt:'var(--expense)',pension:'var(--income)',fx:'#7CC7B8',gold:'#C9A227',crypto:'var(--crypto)',etc:'var(--text-3)'};
+/* allocationHistoryCard(아래)가 상위 4개 밖 유형을 묶는 ALLOC_OTHER_TYPE('other', logic.js)의
+ * 범례/차트 색 — 실제 'etc'(기타) 유형의 TYPE_COLOR와 겹치지 않게 별도 색을 쓴다. */
+const ALLOC_OTHER_COLOR='var(--text-2)';
 /* netlify/functions/rates.js는 임의의 ISO 3자리 통화코드를 폴백 체인으로 처리할 수 있지만,
    자산 등록 시트에서 고를 수 있는 통화는 이 큐레이션 목록으로 제한한다(무제한 자유입력은
    오타·미지원 통화로 이어지기 쉬움). 새 통화가 필요하면 이 배열에 코드/라벨만 추가하면 된다 —
@@ -2990,6 +2993,28 @@ function nwChartPath(pts,W,H){
  const area=line+` L${coords[coords.length-1][0].toFixed(1)},${H} L0,${H} Z`;
  return {line,area};
 }
+/* allocationHistoryCard가 그리는 stacked-area 차트 좌표 계산 — nwChartPath와 같은 '날짜 간격 비례'
+ * x축 매핑을 쓰지만, y축은 types 순서대로 각 포인트의 segs[].pct를 바닥(0%)부터 누적해 유형별
+ * band(위/아래 경계를 잇는 polygon)를 만든다. pts[i].segs는 assetAllocationSeries(logic.js)가
+ * types와 같은 순서·구성으로 이미 만들어 둔 것을 그대로 가정한다. */
+function allocSeriesChartPath(pts,types,W,H){
+ if(!pts||pts.length<2)return [];
+ const totalDays=Math.max(1,daysBetween(pts[0].date,pts[pts.length-1].date));
+ const xs=pts.map(p=>daysBetween(pts[0].date,p.date)/totalDays*W);
+ const cumBefore=pts.map(()=>0);
+ return types.map(type=>{
+  const band=pts.map((p,i)=>{
+   const seg=p.segs.find(s=>s.type===type);
+   const pct=seg?seg.pct:0;
+   const bottom=cumBefore[i],top=bottom+pct;
+   cumBefore[i]=top;
+   return {x:xs[i],yTop:H-top/100*H,yBot:H-bottom/100*H};
+  });
+  const top=band.map((b,i)=>(i===0?'M':'L')+b.x.toFixed(1)+','+b.yTop.toFixed(1)).join(' ');
+  const bottom=band.slice().reverse().map(b=>'L'+b.x.toFixed(1)+','+b.yBot.toFixed(1)).join(' ');
+  return {type,path:top+' '+bottom+' Z'};
+ });
+}
 function monthStats(y,m){
  const inc=DB.settings.includeScheduled;let income=0,expense=0,saving=0,transfer=0;
  allTxns(monthStartStr(y,m),monthEndStr(y,m)).forEach(t=>{
@@ -3015,7 +3040,7 @@ function visibleTx(t){return DB.settings.includeScheduled||!txScheduled(t)}
 
 /* ================= STATE ================= */
 let TM=ym(TODAY);TM.d=+TODAY.slice(8,10);
-let ST={tab:'home',ledgerMode:'cal',assetOwner:'all',assetQ:'',nwPreset:'m3',ledger:{y:TM.y,m:TM.m,sel:TODAY},home:{y:TM.y,m:TM.m},
+let ST={tab:'home',ledgerMode:'cal',assetOwner:'all',assetQ:'',nwPreset:'m3',allocPreset:'m3',ledger:{y:TM.y,m:TM.m,sel:TODAY},home:{y:TM.y,m:TM.m},
  hist:{cat:'전체',q:'',assetId:null,catExact:null,catExactType:null,owner:'전체',selMode:false,sel:new Set(),sortAsc:false,
    range:{from:`${TM.y}-01-01`,to:`${TM.y}-12-31`},preset:'year',page:1,avgMode:false,balPreset:'m3',debtWhatIfExtra:0},
  plan:{owner:'전체',assetId:null,y:TM.y,m:TM.m},spendOwner:'전체',yearReview:{y:TM.y},editAssets:false,aSel:{mode:false,ids:new Set()},lSel:{mode:false,ids:new Set()},recSel:{mode:false,ids:new Set()},goalSel:{mode:false,ids:new Set()}};
@@ -3441,6 +3466,49 @@ function allocationCard(owner){
    .map(c=>` <span class="mini warn">${c}</span>`).join('')+trendCaption;
  return `<div class="section-title">자산 비중${captions}</div>
    <div class="card eb-card"><div class="eb-bar">${seg}</div><div class="eb-list">${rows}</div></div>`;
+}
+function allocPresetSegHTML(preset){
+ const presets=[['m1','1개월'],['m3','3개월'],['y1','1년'],['all','전체']];
+ return `<div class="seg nwh-seg" role="group" aria-label="기간 선택"><div class="seg-blob"></div>${presets.map(([p,l])=>`<button type="button" class="${preset===p?'on':''}" aria-pressed="${preset===p}" onclick="allocPresetSel('${p}')">${l}</button>`).join('')}</div>`;
+}
+/* 자산 비중 카드 바로 아래에 꽂는 "자산배분 추이" 카드 — allocationCard의 trendCaption이 "오늘 vs
+ * N일 전" 한 점만 비교하는 것과 달리, nwHistoryCard(2399행대)와 같은 기간 세그먼트(1개월/3개월/
+ * 1년/전체)로 stacked-area 차트를 그려 추이 전체를 보여준다(app-evolve cycle311 critique/advance —
+ * byOwner는 nwHistoryCard로 추이 차트가 있는데 byType은 한 점 캡션뿐이던 비대칭 해소). byType은
+ * _saveCore가 가구 전체 기준으로만 기록해(allocationCard의 trendCaption과 동일 제약) owner별로
+ * 쪼갤 수 없으므로, owner!=='all'이면 조용히 숨긴다(nwHistoryCard가 owner별 빈 상태를 안내 문구로
+ * 보여주는 것과 달리, 이 카드는 "이 귀속에서는 원래 의미가 없는" 경우라 그냥 생략). */
+function allocationHistoryCard(owner,preset){
+ owner=owner||'all';preset=preset||'m3';
+ if(owner!=='all')return '';
+ const series=assetAllocationSeries(DB.nwHistory||[],preset,TODAY);
+ if(!series)return '';
+ const {points,types}=series;
+ const bands=allocSeriesChartPath(points,types,300,80);
+ const first=points[0],last=points[points.length-1];
+ const lastSegs=last.segs;
+ const legend=types.map(t=>{
+   const color=t===ALLOC_OTHER_TYPE?ALLOC_OTHER_COLOR:TYPE_COLOR[t];
+   const label=t===ALLOC_OTHER_TYPE?'기타 유형':esc(ASSET_TYPES[t].label);
+   const pct=Math.round((lastSegs.find(s=>s.type===t)||{pct:0}).pct);
+   return `<div class="li"><i class="sw" style="background:${color}"></i><span class="nm">${label}</span><span class="pc num">${pct}%</span></div>`;
+ }).join('');
+ return `<div class="card nwh-card">
+   <div class="section-title" style="margin-top:0">자산배분 추이</div>
+   ${allocPresetSegHTML(preset)}
+   <div class="nwh-range">${shortDate2(first.date)} ~ ${shortDate2(last.date)}</div>
+   <div class="nwh-chart" role="img" aria-label="자산배분 추이 차트">
+     <svg viewBox="0 0 300 80" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+       ${bands.map(b=>`<path d="${b.path}" fill="${b.type===ALLOC_OTHER_TYPE?ALLOC_OTHER_COLOR:TYPE_COLOR[b.type]}" opacity="0.85" stroke="none"/>`).join('')}
+     </svg>
+   </div>
+   <div class="legend">${legend}</div>
+ </div>`;
+}
+function allocPresetSel(p){
+ if(ST.allocPreset===p)return;
+ ST.allocPreset=p;
+ refreshAllocationHistoryCard();
 }
 
 /* 자산 비중 카드 바로 아래에 꽂는 투자자산 전체 손익 카드 — assetGainLoss(a)/assetGainLossBadge가
@@ -4082,6 +4150,10 @@ function refreshAllocationCard(){ /* 캐러셀 귀속 전환 시 자산 비중 �
  const el=$('allocBody');if(!el)return;
  el.innerHTML=allocationCard(ST.assetOwner);
 }
+function refreshAllocationHistoryCard(){ /* 캐러셀 귀속 전환 시(owner!=='all'이면 숨김), 또는 기간 세그먼트 전환 시 자산배분 추이 카드만 갱신 */
+ const el=$('allocHistBody');if(!el)return;
+ el.innerHTML=allocationHistoryCard(ST.assetOwner,ST.allocPreset);
+}
 function refreshInvestGainLossCard(){ /* 캐러셀 귀속 전환 시 투자 손익 카드도 함께 갱신 — allocationCard와 같은 귀속을 보여줘야 함 */
  const el=$('investGlBody');if(!el)return;
  el.innerHTML=investGainLossCard(ST.assetOwner);
@@ -4103,6 +4175,7 @@ function selectNwOwner(r){ /* 캐러셀 스크롤 정착/점 클릭/키보드 �
    refreshNwHistoryCard();
    refreshGoalsSummary();
    refreshAllocationCard();
+   refreshAllocationHistoryCard();
    refreshInvestGainLossCard();
  }
 }
@@ -4222,6 +4295,7 @@ function renderAssets(){
  ${_ol.length>1?`<div class="nw-dots">${_ol.map((o,i)=>`<button type="button" class="${i===actIdx?'on':''}" aria-label="${esc(o==='all'?'전체':o)} 보기" aria-current="${i===actIdx?'true':'false'}" onclick="gotoNwOwner(${i})"></button>`).join('')}</div>`:''}
  <div id="nwHistBody">${nwHistoryCard(ST.assetOwner,ST.nwPreset)}</div>
  <div id="allocBody">${allocationCard(ST.assetOwner)}</div>
+ <div id="allocHistBody">${allocationHistoryCard(ST.assetOwner,ST.allocPreset)}</div>
  <div id="investGlBody">${investGainLossCard(ST.assetOwner)}</div>
  <div id="goalsSummaryBody">${goalsSummaryCard(ST.assetOwner)}</div>
  ${(!ST.editAssets&&!ST.aSel.mode)?`<div class="searchbar" style="margin-bottom:14px">${svg('search')}<div class="field-clear"><input id="assetQ" aria-label="자산 검색" placeholder="자산 이름 검색" value="${esc(ST.assetQ)}" oninput="assetQInput(this.value)"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('assetQ')">✕</button></div></div>`:''}
