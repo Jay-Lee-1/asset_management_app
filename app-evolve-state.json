@@ -1,22 +1,12 @@
 {
   "cycle": 314,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "귀속(owner) 간 공동지출 정산(settlement) 기능 추가",
+    "why": "앱은 명시적으로 2인 가구용 도구다 — DB.owners 기본값이 ['나','배우자','공용'](index.html:2567, seed() 1845)이고 자산목록/지출분석/소득분석/연말결산/목표 거의 모든 화면이 이미 filterTxnsByOwner(logic.js:173)와 ST.spendOwner/ownerSegHtml(예: index.html:7378 openSpendAnalysis, 7319 yearOwnerSel, 6372 incomeOwnerSel)로 귀속별 필터를 제공한다. 그런데도 2인 가구 재무앱에 가장 흔한 질문 '이번 달 공동지출, 누가 더 냈고 누구한테 얼마 보내면 되지?'에 답할 방법이 전혀 없다. 정산/더치/분담/차액/반반/기여율 전수 grep 결과 0건 — 기존에 제외된 연말결산(보고용 뷰일 뿐 정산 계산 아님)이나 owner/category/asset merge(정체성 통합, 무관)와는 다른 공백이다. 모든 지출은 결제한 자산에만 귀속되고 '내가 냈지만 배우자와 나눠야 함' 개념이 없어, 사용자가 앱 밖에서 수동 계산해야 하는 핵심 제품 공백이다.",
+    "approach": "데이터 모델: 지출 트랜잭션에 t.shared:boolean 추가(txDraft/recDraft가 임의 추가 필드를 그대로 통과시키므로 t.splits처럼 추가적/하위호환). DB.settings.settle={ownerA,ownerB,ratioA}(ratioB=100-ratioA, 기본 50/50, DB.owners 중에서 선택) + DB.settings.settledThrough(날짜, 중복 정산 방지) — archiveBaselines/catBudgetRollover와 같은 opt-in 패턴으로 migrate()에 추가. logic.js(순수, 테스트 가능): settlementSummary(txns, assets, ownerA, ownerB, ratioA) — t.shared && t.type==='expense'만 필터, 각 거래의 결제 자산 owner를 fromAssetId로 조회해 paidA/paidB 합산(A/B 둘 다 아닌 자산, 예: '공용'이나 제3 owner가 결제한 건은 명시적 제외/limitation으로 문서화), ratioA로 기대 분담액 계산, {paidA,paidB,total,expectedA,expectedB,diffAmount,oweOwner} 반환(홀수 총액/ratioA=0,100/거래 0건 등 라운딩 케이스 포함). index.html UI: (1) renderTxSheet의 지출 입력/수정 화면에 '둘이 나눠요' 토글(정산용 owner 2명이 설정돼 있고 d.type==='expense'일 때만 노출), (2) openSpendAnalysis와 같은 월-네비 패턴을 재사용하는 새 '정산' 메뉴 화면(결제액/비율/결과 문구 \"배우자님이 나에게 32,000원 보내면 돼요\" + '정산 완료로 표시' 버튼 — twGuard() 가드 후 각 owner의 기본 현금자산 간 실제 이체 트랜잭션 생성 + settledThrough 갱신), (3) 정산용 owner 2명·비율 선택 설정 하위시트, (4) owner 2명 미설정/기간 내 공동지출 0건 빈 상태 처리. 테스트(test/run.js): settlementSummary에 동률 분담, 비대칭 비율(60/40), 공동지출 0건, 한쪽만 결제, 제3/공용 owner 결제건 제외, 홀수 금액 라운딩 케이스 추가. 기각된 후보(재제안 금지): 배당/이자 추적(cost-basis 건드릴 필요 없이 이미 소득으로 기록 가능, 낮은 가치), 할부(installment) 명시적 추적(recurring의 count 종료조건이 이미 대체 가능), 귀속별(per-owner) 예산(카테고리 기반 예산 관례와 충돌 + 최근 예산이월 작업과 개념 중복)."
+  },
   "history": [
-    {
-      "cycle": 309,
-      "phase": "develop",
-      "timestamp": "2026-11-05T18:11:14.247Z",
-      "summary": "카테고리(카테고리) 관리의 addCat/doDeleteCat/doRenameCat/mergeCatInto 네 함수가 DB.categories를 실제로 저장/삭제/이름변경/합치는데도 twGuard()가 전혀 없던 공백 발견 — saveGoal/delGoal/deleteGoalsUndo(cycle307), addOwner/delOwner/doRenameOwner(cycle308) 등 다른 모든 저장 경로는 이미 twGuard를 거치는데, 카테고리 핵심 CRUD만 빠져 있어 튜토리얼 샌드박스 약속('튜토리얼 중에는 실제로 저장되지 않아요')이 카테고리 기능 전체에서 깨져 있었다. 네 함수 각각 맨 앞에 if(twGuard())return; 한 줄씩 추가(다른 가드 함수들과 동일 위치·패턴). delCat/confirmCatMerge(확인시트만 띄우는 래퍼)는 그대로 두고 실제 변이가 일어나는 doDeleteCat/mergeCatInto에 가드를 둬 delOwner처럼 확인시트 자체를 막지는 않지만 영구 변이는 완전히 차단함 — moveCat(순서 변경)은 moveAsset도 동일하게 twGuard가 없는 기존 관례와 일치해 범위에서 제외. 회귀 테스트 4건 추가(addCat/doDeleteCat/doRenameCat/mergeCatInto 각각 튜토리얼 중 호출해도 DB.categories/관련 필드가 그대로임을 확인) — addOwner/delOwner/doRenameOwner의 기존 twGuard 테스트와 동일 패턴. 테스트 2835->2839 통과. node --check logic.js/sw.js, manifest.webmanifest JSON 유효성, index.html 인라인 스크립트 추출검사(기존과 동일한 1건의 기존 오탐만 재확인, 새 회귀 없음) 모두 통과. APP_VERSION 1.47.363->1.47.364, sw.js CACHE v630->v631.",
-      "commit": null
-    },
-    {
-      "cycle": 309,
-      "phase": "review",
-      "timestamp": "2026-11-05T19:05:00.000Z",
-      "summary": "cycle309 develop 커밋(662eaaa) 검토 — addCat/doDeleteCat/doRenameCat/mergeCatInto에 추가된 if(twGuard())return; 가드가 saveGoal/delGoal/deleteGoalsUndo(cycle307), addOwner/delOwner/doRenameOwner(cycle308) 등 기존 가드 함수들과 완전히 동일한 위치(함수 맨 앞)·형태임을 diff로 재확인. delCat/confirmCatMerge(확인시트 래퍼)는 그대로 두고 실제 변이 함수(doDeleteCat/mergeCatInto)에만 가드를 둔 선택이 delOwner류 패턴과 일치함을 확인(delOwner는 자체가 확인 없이 바로 변이하는 함수라 그 자체에 가드가 있고, 카테고리 쪽은 delCat이 확인시트만 띄우는 별도 래퍼라 doDeleteCat에 가드를 둔 것 — 둘 다 \"실제 변이 지점에 가드\" 원칙에 부합). moveCat을 범위에서 제외한 것도 moveAsset에 twGuard가 없는 기존 관례와 일치. node test/run.js 2839/2839 통과, node --check logic.js/sw.js, manifest.webmanifest JSON 유효성 통과. 실제 버그 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 309,
       "phase": "critique",
@@ -148,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-06T13:40:00.000Z",
       "summary": "cycle314 develop 커밋(d88280b)을 검토 — saveTx 반복 분기에 추가된 findPossibleDuplicateRec(DB.recurrences,rec) 호출이 saveRec/commitRec(6127-6131)과 완전히 동일한 패턴(id 없는 후보 객체로 조회→겹치면 confirmSheet→commit 헬퍼)임을 diff로 재확인. findPossibleDuplicateRec(logic.js:1299)이 `draft.id`가 falsy일 때만 비교하는데 saveTx의 rec 후보는 id를 아직 부여하지 않은 채(commitTxAsRec에서 uid() 부여) 넘겨 조건을 정확히 만족함을 확인. rec 객체에 splits 필드가 없는 것도 의도적 일치 — saveTx가 반복 분기 진입 직전 delete d.splits로 분할을 이미 제거하므로 findPossibleDuplicateRec의 JSON.stringify(r.splits||null) 비교가 null===null로 항상 통과해 분할 미지원 경로에서 오탐이 나지 않음을 로직으로 검증. commitTxAsRec으로의 분리가 _savedDrafts.add(d) 호출 시점을 '후보 생성 시'에서 '실제 커밋 시'로 옮긴 것도 commitTx/commitRec의 기존 더블탭 가드 관례와 일치(확인 시트가 떠 있는 동안 더블탭 가드가 걸리면 안 되므로). node test/run.js 2916/2916 통과(이 검토 중 재실행으로 확인), node --check logic.js/sw.js 통과, 메인 인라인 스크립트 new Function 구문검사(기존과 동일한 1건의 기존 오탐만 재확인, cycle311부터 이어진 것으로 이번 변경과 무관, 새 회귀 없음), manifest.webmanifest JSON 유효성 통과. 실제 버그 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 314,
+      "phase": "critique",
+      "timestamp": "2026-11-06T15:16:00.000Z",
+      "summary": "서브에이전트로 앱 전체를 재조사(cycle300-314 처리/보류/기각 항목 전부 제외 지시, twGuard 스윕·전역검색·예산이월·연말결산·owner/category/asset merge 전부·nwHistory byType/자산배분추이 카드·목표자산배분+리밸런싱·CSV날짜·이체 및 반복 중복감지(saveTx 경로 포함)·카테고리별 알림뮤트는 명시적으로 제외). 발견: 앱은 명시적 2인 가구용(DB.owners 기본값 ['나','배우자','공용'], index.html:2567/1845)이고 거의 모든 분석 화면이 이미 귀속별 필터(filterTxnsByOwner, logic.js:173)를 제공하는데, 공동지출을 누가 더 냈고 얼마를 보내야 하는지 계산해주는 정산(settlement) 기능이 전혀 없음(정산/더치/분담/차액/반반/기여율 전수 grep 0건) — 연말결산(보고용 뷰)·owner/category/asset merge(정체성 통합)와는 다른, 사용자가 수동으로 계산해야 하는 핵심 제품 공백. pending_advance_plan에 구체 계획 저장(t.shared 플래그 + DB.settings.settle{ownerA,ownerB,ratioA}/settledThrough + logic.js의 settlementSummary 순수함수 + 지출입력 '둘이 나눠요' 토글 + '정산' 메뉴 화면 + 정산완료시 실제 이체 트랜잭션 생성 + 테스트 계획). 기각 후보 3개(배당/이자 추적-낮은 가치, 할부 명시적 추적-recurring count로 이미 대체, 귀속별 예산-카테고리 기반 관례와 충돌+예산이월 작업과 개념 중복). 코드 변경 없음(state.json만 커밋, pending_advance_plan 신설에 따라 phase를 advance로 회전).",
       "commit": null
     }
   ]
