@@ -140,8 +140,8 @@
       "cycle": 316,
       "phase": "develop",
       "timestamp": "2026-11-06T21:12:12.000Z",
-      "summary": "거래/반복 목록(원장·전체내역 공용 txRowCore)에 '같이 냈어요'(t.shared, cycle314~315) 상태를 보여주는 배지가 전혀 없어서, 공동지출로 표시된 지출인지 알려면 매번 그 거래를 열어 편집 시트를 확인해야 했다. txRowCore(index.html)에 isRec('반복') 배지와 같은 .rec-ic 클래스로 svg('users') 아이콘 배지를 추가했다 — 일반 모드·선택 모드 nm-row 양쪽, 그리고 isSplit('분할') 배지와 함께 공존하도록 두 자리 모두에 넣었다. expandRec()이 이미 shared를 가상(반복 파생) 인스턴스에도 그대로 싣고 있어(cycle315 develop) 반복 목록에도 같은 배지가 자동으로 뜬다. shared는 _applyType이 지출 외 유형에서 항상 false로 꺼두므로 t.type을 별도로 재확인할 필요가 없었다. test/run.js에 txRowCore 테스트 5건 추가(일반 모드 배지 표시, shared 없음/false일 때 배지 없음(회귀), 선택 모드에서도 배지 표시, 분할+shared 동시 표시, isRec+shared 가상 인스턴스에 두 배지 동시 표시) — 2968->2973 통과. node --check로 변경이 포함된 메인 <script> 블록(txRowCore가 들어있는 블록) 문법 확인 통과 (index.html의 다른 한 블록은 HTML 주석 안에 예시로 적힌 '<script>' 텍스트를 추출 regex가 같이 집어서 원래부터 node --check가 실패하는 기존 아티팩트이며 이번 변경과 무관함을 확인). APP_VERSION 1.47.375->1.47.376, sw.js CACHE v642->v643.",
-      "commit": null
+      "summary": "거래/반복 목록(원장·전체내역 공용 txRowCore)에 '같이 냈어요'(t.shared, cycle314~315) 상태를 보여주는 배지가 전혀 없어서, 공동지출로 표시된 지출인지 알려면 매번 그 거래를 열어 편집 시트를 확인해야 했다. txRowCore(index.html)에 isRec('반복') 배지와 같은 .rec-ic 클래스로 svg('users') 아이콘 배지를 추가했다 — 일반 모드·선택 모드 nm-row 양쪽, 그리고 isSplit('분할') 배지와 함께 공존하도록 두 자리 모두에 넣었다. expandRec()이 이미 shared를 가상(반복 파생) 인스턴스에도 그대로 싣고 있어(cycle315 develop) 반복 목록에도 같은 배지가 자동으로 뜬다. shared는 _applyType이 지출 외 유형에서 항상 false로 꺼두므로 t.type을 별도로 재확인할 필요가 없었다. test/run.js에 txRowCore 테스트 5건 추가(일반 모드 배지 표시, shared 없음/false일 때 배지 없음(회귀), 선택 모드에서도 배지 표시, 분할+shared 동시 표시, isRec+shared 가상 인스턴스에 두 배지 동시 표시) — 2968->2973 통과. node --check로 변경이 포함된 메인 <script> 블록(txRowCore가 들어있는 블록) 문법 확인 통과 (index.html의 다른 한 블록은 HTML 주석 안에 예시로 적힌 '<script>' 텍스트를 추출 regex가 같이 집어서 원래부터 node --check가 실패하는 기존 아티팩트이며 이번 변경과 무관함을 확인). APP_VERSION 1.47.375->1.47.376, sw.js CACHE v642->v643. (참고: 커밋 당시 local main 추적 ref가 origin보다 뒤쳐져 있어 detached HEAD로 커밋했다가 fetch 후 main을 그 커밋으로 맞추고 push — origin/main이 이미 7091558까지 와 있었던 것으로 확인돼 데이터 손실 없이 fast-forward됨.)",
+      "commit": "7277fc8955532612920707148024f0e3d8988e24"
     }
   ]
 }
