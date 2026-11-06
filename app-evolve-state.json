@@ -1,15 +1,8 @@
 {
   "cycle": 311,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 306,
-      "phase": "review",
-      "timestamp": "2026-11-05T07:20:00.000Z",
-      "summary": "cycle306 develop 커밋(7e04fb3)을 검토해 실제 버그를 발견·수정함 — 자산/목표의 owner 유효성 검증(validOwners, cycle236/124)이 obj.owners의 '정리 전' 원본 배열을 기준으로 계산되는데, dedupeNames로 만드는 최종 DB.owners는 함수 끝부분에서 그 원본을 normName() 근접중복 제거까지 거쳐 따로 계산되고 있었다 — 그래서 owners에 \"나\"/\"나 \" 같은 근접중복이 있고 자산·목표의 owner가 그 중 나중에 제거될 변형(\"나 \")이면, validOwners엔 아직 그 변형이 남아있어 통과(clamp 안 됨)하지만 DB.owners엔 결국 \"나\"만 남아 그 자산·목표는 실존하지 않는 owner를 들고 '모든 귀속별 탭·카드에서 조용히 사라진 것처럼 보이는' 상태가 됨(sanitizeBackup 자신의 주석이 명시하는 '모든 자산은 실존하는 귀속을 가진다' 불변식 위반). owners 정리(cleaned+dedupeNames) 블록을 함수 끝에서 validOwners 계산 직전으로 끌어올려, validOwners가 obj.owners가 배열일 때는 그 정리된(중복제거 완료) 결과를 쓰게 고쳤다(배열이 아니면 기존처럼 DB.owners로 폴백, 동작 그대로). 회귀 테스트 2건 추가(자산/목표 각각 owners 근접중복 중 제거될 변형을 owner로 가진 경우 — 수정 전 코드로는 실제로 FAIL함을 직접 확인). 테스트 2807->2809 통과, node --check logic.js/sw.js 통과. APP_VERSION 1.47.357->1.47.358, sw.js CACHE v624->v625.",
-      "commit": null
-    },
     {
       "cycle": 306,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-06T02:30:00.000Z",
       "summary": "범용(은행/카드사) CSV 가져오기의 normalizeCsvDateCell()(logic.js:1271, cycle251/288)이 \"날짜+시간이 한 칸에 붙은\" 케이스를 공백(' ')으로만 떼어내, 공백 대신 ISO 8601 표준 구분자인 대문자 'T'를 쓰는 \"YYYY-MM-DDTHH:MM:SS\"류(일부 스프레드시트·핀테크 앱 내보내기에서 흔함)는 datePart가 시간까지 통째로 남아 두 날짜 패턴(점/슬래시/하이픈 구분, YYYYMMDD 8자리) 모두 매치 실패 → csvDateValid()에서 거부되어 error:'date'로 조용히 빠지는 공백 발견 — 공백 구분 \"이용일시\" 케이스를 메운 것과 정확히 같은 버그 클래스. datePart 추출 정규식을 공백 전용(/\\s+/)에서 공백+'T'(/[\\sT]/)로 넓혀 고쳤다 — YYYY-MM-DD 날짜 부분 자체에는 'T'가 올 수 없으므로 기존 공백 케이스 동작은 전혀 바뀌지 않는다(점/슬래시/하이픈/8자리 패턴과 독립적으로만 datePart 경계를 넓히는 변경). 회귀 테스트 5건 추가: normalizeCsvDateCell 레벨 4건(순수 ISO-T, 밀리초+Z 붙은 전체 타임스탬프, 점 구분+T, 8자리 구분자없음+T), mapGenericCsvRow 통합 레벨 1건(열 매핑을 거쳐도 동일하게 동작하는지, cycle288의 공백 버전 테스트와 동일한 패턴). 테스트 2866->2868 통과. node --check logic.js/sw.js 통과. index.html/sw.js는 건드리지 않아 APP_VERSION/CACHE 버전은 그대로(1.47.367/v634).",
+      "commit": null
+    },
+    {
+      "cycle": 311,
+      "phase": "review",
+      "timestamp": "2026-11-06T03:20:00.000Z",
+      "summary": "cycle311 develop 커밋(588d4a7)을 검토 — normalizeCsvDateCell의 datePart 구분자를 공백 전용(/\\s+/)에서 공백+'T'(/[\\sT]/)로 넓힌 변경이 안전함을 확인: YYYY-MM-DD 표기에는 'T'가 올 수 없어 기존 공백 구분 날짜+시간 케이스(cycle 이전 수정분)의 동작은 전혀 바뀌지 않고, ISO 8601 'T' 구분 표기('2026-01-05T13:25:33', '2026-01-05T13:25:33.000Z', '2026.1.5T13:25', '20260105T132533')만 새로 datePart가 올바르게 분리됨을 함수 본문(logic.js:1278-1286)과 추가된 회귀 테스트 5건으로 직접 재확인. csvDateValid가 여전히 최종 달력 유효성을 검증하는 안전장치로 남아있음도 확인. node test/run.js 2868/2868 통과, node --check logic.js/sw.js 통과. 실제 버그 없음(state.json만 커밋).",
       "commit": null
     }
   ]
