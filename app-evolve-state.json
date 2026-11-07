@@ -1,15 +1,8 @@
 {
   "cycle": 317,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 312,
-      "phase": "develop",
-      "timestamp": "2026-11-06T06:20:00.000Z",
-      "summary": "cycle311 critique가 기각 후보로 남긴 findPossibleDuplicateTx(saveTx 수동 입력 중복 경고, cycle284)의 이체(transfer) 제외를 재검토해 실제 버그를 발견 — 함수 주석과 cycle284 당시 판단은 '이체는 카테고리가 없어 비교 불가'였지만, _applyType(index.html:5543, saveTx/saveRec 공통)이 유형을 transfer로 바꾸는 순간 draft.category를 항상 고정값 '이체'로 채워 넣는다는 걸 놓쳤다 — 즉 이체도 category 필드 자체는 항상 존재한다(식별력만 없을 뿐). 그 결과 지출/수입/저축은 똑같은 날짜·금액·자산으로 두 번 입력하면 confirmSheet로 한 번 더 확인시키는데, 이체만 유일하게 안전망 없이 조용히 두 번 저장됐다(실수로 같은 계좌이동을 두 번 탭해도 전혀 경고 없음). draft.type==='transfer' 조기 return을 제거하고, saving과 완전히 같은 식(거래 성격상 두 자산을 모두 쓰므로 fromAssetId·toAssetId 둘 다 같아야 중복) 분기에 transfer를 합류시켰다(saving과 동일한 한 줄). category가 비어 있는 레거시 이체 데이터는 기존 !draft.category 가드에 그대로 걸려 안전하게 비교 제외된다. 함수 상단 주석을 이 판단 변경 이유(변경 전/후 근거)로 갱신. 회귀 테스트: findPossibleDuplicateTx 레벨 2건(이체도 category·fromAssetId·toAssetId 모두 같으면 중복 판정+toAssetId 다르면 아님, 카테고리 없는 레거시 이체는 여전히 제외), saveTx 통합 레벨 기존 '이체는 confirmSheet 제외' 테스트를 '이체도 confirmSheet로 확인(확인 후 저장까지 재확인)'으로 교체하고 'toAssetId 다르면 바로 저장' 케이스 1건 추가 — 2880->2882 통과. node --check logic.js/sw.js, manifest.webmanifest JSON 유효성, index.html 인라인 스크립트 추출검사(기존과 동일한 1건의 기존 오탐만 재확인, 새 회귀 없음) 모두 통과. APP_VERSION 1.47.368->1.47.369, sw.js CACHE v635->v636.",
-      "commit": null
-    },
     {
       "cycle": 312,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-07T01:13:00.159Z",
       "summary": "목표 관리(goalQInput)·반복 내역 관리(recQInput) 검색창에 histQInput/assetQInput(cycle216/243 advance)이 이미 가진 \"검색어 지우면 디바운스 없이 즉시 반영\" 가드가 빠져 있던 공백을 발견 — clrInput(×버튼)으로 검색어를 지워도 220ms 동안 이전 필터링된 목록이 그대로 남아 있었다. index.html의 goalQInput/recQInput 둘 다에 histQInput과 동일한 v.trim()===\"\" 즉시실행 분기를 추가하고 설명 주석도 맞춰 갱신. 사용자 체감 변화라 APP_VERSION 1.47.377→1.47.378, sw.js CACHE ourassets-v644→v645 올림. test/run.js에 histQInput/assetQInput의 기존 \"지우면 즉시 반영\" 테스트와 동일한 패턴으로 goalQInput/recQInput 각 2건(지우기, 공백만 입력) 추가 — 첫 시도에서 goalQInput 테스트 하나가 목표가 1개뿐이라(\"비상금\") 지운 뒤에도 그 이름이 포함된다는 잘못된 단언으로 실패해 innerHTML이 old에서 바뀌었는지로 단언을 고쳐 통과시킴. node our-assets-v1.14.1/our-assets/test/run.js 2984/2984 통과(exit 0), 두 함수 모두 node --check로 문법 확인.",
+      "commit": null
+    },
+    {
+      "cycle": 317,
+      "phase": "review",
+      "timestamp": "2026-11-07T02:05:00.000Z",
+      "summary": "cycle317 develop 커밋(3193f7b, goalQInput/recQInput 디바운스 즉시반영 가드)을 검토 — 두 함수 모두 histQInput/assetQInput(cycle216/243 advance)과 글자 그대로 동일한 v.trim()===''' 조기분기 패턴임을 diff로 확인(assetQInput: index.html:4731-4736과 나란히 대조). clrInput이 호출하는 el.dispatchEvent(new Event('input'))이 goalQInput(v)/recQInput(v)에 el.value(빈 문자열)를 그대로 넘기므로 트리거 경로도 기존 두 함수와 동일함을 확인. node our-assets-v1.14.1/our-assets/test/run.js 2984/2984 통과(재실행으로 재확인), node --check logic.js/sw.js 통과, index.html 인라인 스크립트 추출검사의 기존 1건 오탐(HTML 주석 안 텍스트를 regex가 <script>로 오인하는 cycle311부터의 기존 아티팩트)은 이번 변경과 무관함을 HEAD~1 대비 재확인. 실제 버그 없음(state.json만 커밋).",
       "commit": null
     }
   ]
