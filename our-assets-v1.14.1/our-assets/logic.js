@@ -456,7 +456,9 @@ function gcTombstones(deletedIds,now,maxAgeMs){
  * gcTombstones와 같은 패턴이지만 트래시는 톰스톤(id+시각)보다 훨씬 무거운 데이터(거래 전체
  * 필드)라 기본 보존기간을 400일이 아니라 30일로 짧게 잡는다(app-evolve cycle319 critique/advance).
  * _deletedAt이 없거나 숫자가 아닌 항목은 gcTombstones가 시각 없는 tombstone을 다루는 것과 동일하게
- * (now-undefined=NaN, NaN<=maxAgeMs는 항상 false) 걸러낸다. */
+ * (now-undefined=NaN, NaN<=maxAgeMs는 항상 false) 걸러낸다. {id,_deletedAt} 형태만 가정할 뿐 거래
+ * 전용 필드는 참조하지 않아, DB.trashAssets(자산 삭제 '최근 삭제함', app-evolve cycle320
+ * critique/advance)도 새 함수 없이 이 함수를 그대로 재사용한다. */
 function gcTrashTxns(trashTxns,now,maxAgeMs){
  maxAgeMs=maxAgeMs==null?1000*60*60*24*30:maxAgeMs;
  return (Array.isArray(trashTxns)?trashTxns:[]).filter(t=>t&&now-t._deletedAt<=maxAgeMs);
@@ -466,7 +468,8 @@ function gcTrashTxns(trashTxns,now,maxAgeMs){
  * 아니라 전용 병합이 필요하다(goals/inquiries/assetQtyLog가 겪은 '신설 컬렉션 병합 배선 누락'
  * 버그 클래스를 트래시도 똑같이 겪지 않도록 신설 시점에 바로 배선, app-evolve cycle319). 같은
  * id가 양쪽에 있으면(정상 흐름에선 한쪽이 복구 후 재삭제했을 때만 가능) 더 최근에 삭제된(= _deletedAt이
- * 더 큰) 사본을 남긴다. */
+ * 더 큰) 사본을 남긴다. gcTrashTxns와 동일한 이유로 거래 전용 필드를 참조하지 않아 DB.trashAssets도
+ * 그대로 재사용한다(app-evolve cycle320 critique/advance). */
 function mergeTrashTxns(localArr,remoteArr){
  const map=new Map();
  (localArr||[]).forEach(t=>{if(t&&t.id)map.set(t.id,t)});

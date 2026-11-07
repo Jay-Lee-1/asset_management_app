@@ -202,7 +202,7 @@ const FUNCTIONS = [
   // 자동으로 끌어와지므로 FUNCTIONS에 올릴 필요 없음), 이 목록엔 index.html에 남아있는 쪽만 올린다.
   'buildGenericImportPreview', 'csvColSample', 'csvMapFieldHtml', 'openCsvColumnMap', 'renderCsvColumnMap',
   'csvMapSetMode', 'csvMapSetCatKind', 'csvMapColChosen', 'csvMapPickCol', 'csvMapPickAsset', 'csvMapPickCategory', 'csvMapApply',
-  'twActive', 'twGuard', 'deleteTxnsUndo', 'openTrashList', 'restoreTrashTxn', 'deleteRecsUndo', 'deleteAssetsUndo', 'delAsset', 'assetDelSel', 'unsnapshotAssetName', 'doBulkCat', 'bulkCatPickFor', 'doBulkInclToggle', 'assetInclSel',
+  'twActive', 'twGuard', 'deleteTxnsUndo', 'openTrashList', 'restoreTrashTxn', 'deleteRecsUndo', 'deleteAssetsUndo', 'openAssetTrashList', 'restoreTrashAsset', 'delAsset', 'assetDelSel', 'unsnapshotAssetName', 'doBulkCat', 'bulkCatPickFor', 'doBulkInclToggle', 'assetInclSel',
   'doBulkAssetMove', 'bulkAssetMovePickFor', 'ledgerAssetMoveSel', 'histAssetMoveSel', 'doBulkOwnerMove', 'assetOwnerMovePickFor', 'assetOwnerSel',
   'doBulkRecActive', 'recSelPartial', 'recToggleSel', 'recSelAll', 'recDelSel', 'recActiveSel',
   'deleteGoalsUndo', 'goalSelPartial', 'goalToggleSel', 'goalSelAll', 'goalDelSel', 'doBulkGoalOwnerMove', 'goalOwnerMovePickFor', 'goalOwnerMoveSel',
@@ -6367,6 +6367,32 @@ test('mergeRemoteDataIntoLocal: 이미 DB.txns로 되살아난(병합 결과 liv
   assert.ok(sandbox.DB.txns.some(t => t.id === 't1'), '살아있는 거래는 그대로 유지되어야 함');
   assert.strictEqual(sandbox.DB.trashTxns.find(t => t.id === 't1'), undefined, 'live인 거래가 트래시에 중복으로 남으면 안 됨');
 });
+test('mergeRemoteDataIntoLocal: DB.trashAssets도 DB.trashTxns와 동일하게 신설 시점부터 병합 배선이 돼 있다(두 기기가 각자 지운 자산이 소실 없이 합쳐짐, app-evolve cycle320 critique/advance)', () => {
+  const now = Date.now();
+  sandbox.DB = minimalMergeDB({
+    trashAssets: [{ id: 'local-only', type: 'cash', _deletedAt: now }],
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    trashAssets: [{ id: 'remote-only', type: 'savings', _deletedAt: now }],
+    deletedIds: {},
+  });
+  const ids = sandbox.DB.trashAssets.map(a => a.id).sort();
+  assert.strictEqual(ids.length, 2);
+  assert.ok(ids.includes('local-only') && ids.includes('remote-only'));
+});
+test('mergeRemoteDataIntoLocal: 이미 DB.assets로 되살아난(병합 결과 live인) 자산은 상대 기기의 트래시 사본과 합쳐져도 트래시에 남지 않는다', () => {
+  sandbox.DB = minimalMergeDB({
+    assets: [{ id: 'a1', type: 'cash', name: '통장1', updatedAt: 200 }], // 로컬이 복구해 살아있음
+    trashAssets: [],
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    assets: [],
+    trashAssets: [{ id: 'a1', type: 'cash', _deletedAt: Date.now() }], // 원격은 아직 트래시에 들고 있음
+    deletedIds: {},
+  });
+  assert.ok(sandbox.DB.assets.some(a => a.id === 'a1'), '살아있는 자산은 그대로 유지되어야 함');
+  assert.strictEqual(sandbox.DB.trashAssets.find(a => a.id === 'a1'), undefined, 'live인 자산이 트래시에 중복으로 남으면 안 됨');
+});
 
 /* ---------- txnsToCSV: 거래 내역 CSV 내보내기 ---------- */
 test('txnsToCSV: 빈 배열이면 BOM과 헤더만 있는 한 줄을 반환한다', () => {
@@ -11403,6 +11429,132 @@ test('deleteAssetsUndo: undo로 되살린 자산에는 touch()가 호출되어 u
   sandbox.TWi = -1;
 });
 
+/* ---------- deleteAssetsUndo → DB.trashAssets('최근 삭제함'): deleteTxnsUndo→DB.trashTxns(cycle319)와
+ * 동일하게, undoToast의 6초 창을 넘기거나 앱을 닫았다 다시 열어도 삭제한 자산을 복구할 수 있도록
+ * 자산 전체 내용을 보관한다(app-evolve cycle320 critique/advance). ---------- */
+test('deleteAssetsUndo: 삭제한 자산 전체 내용을 _deletedAt과 함께 DB.trashAssets에 담는다', () => {
+  sandbox.TWi = -1;
+  const a1 = { id: 'a1', name: '통장1', type: 'cash', baseAmount: 5000 };
+  sandbox.DB = { assets: [a1], recurrences: [] };
+  sandbox.snapshotCalls = [];
+  const before = Date.now();
+  sandbox.deleteAssetsUndo(new Set(['a1']));
+  assert.strictEqual(sandbox.DB.trashAssets.length, 1);
+  const trashed = sandbox.DB.trashAssets[0];
+  assert.strictEqual(trashed.id, 'a1');
+  assert.strictEqual(trashed.name, '통장1');
+  assert.strictEqual(trashed.baseAmount, 5000);
+  assert.ok(typeof trashed._deletedAt === 'number' && trashed._deletedAt >= before, '삭제 시각이 함께 기록되어야 함');
+});
+test('deleteAssetsUndo: undo 콜백을 부르면 DB.trashAssets에서도 해당 항목이 빠진다', () => {
+  sandbox.TWi = -1;
+  const a1 = { id: 'a1', name: '통장1', type: 'cash' };
+  sandbox.DB = { assets: [a1], recurrences: [] };
+  sandbox.lastUndo = null;
+  sandbox.snapshotCalls = [];
+  sandbox.deleteAssetsUndo(new Set(['a1']));
+  assert.strictEqual(sandbox.DB.trashAssets.length, 1);
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.trashAssets.length, 0, '되돌리면 트래시에서도 제거되어야 함(복구된 자산이 트래시에 중복으로 남으면 안 됨)');
+});
+test('deleteAssetsUndo: 지정한 id가 하나도 안 걸려 삭제된 게 없으면 DB.trashAssets를 건드리지 않는다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { assets: [{ id: 'a1', name: '통장1', type: 'cash' }], recurrences: [] };
+  sandbox.snapshotCalls = [];
+  sandbox.deleteAssetsUndo(new Set(['없는id']));
+  assert.strictEqual(sandbox.DB.trashAssets, undefined, '아무것도 안 지워졌으면 trashAssets 모양도 바뀌면 안 됨(deleteTxnsUndo의 동일한 opts 회귀 가드와 같은 원칙)');
+});
+test('deleteAssetsUndo: 여러 건을 한 번에 지우면 모두 DB.trashAssets에 담긴다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { assets: [{ id: 'a1', name: '통장1', type: 'cash' }, { id: 'a2', name: '통장2', type: 'savings' }], recurrences: [] };
+  sandbox.snapshotCalls = [];
+  sandbox.deleteAssetsUndo(new Set(['a1', 'a2']));
+  const ids = sandbox.DB.trashAssets.map(a => a.id).sort();
+  assert.strictEqual(ids.length, 2);
+  assert.ok(ids.includes('a1') && ids.includes('a2'));
+});
+
+/* ---------- openAssetTrashList/restoreTrashAsset: 메뉴 › '삭제한 자산' — openTrashList/
+ * restoreTrashTxn(거래 쪽, cycle319)과 동일한 패턴으로 DB.trashAssets를 보여주고 복구한다
+ * (app-evolve cycle320 critique/advance). ---------- */
+test('openAssetTrashList: DB.trashAssets를 최근 삭제 순으로 보여준다', () => {
+  sandbox.DB = { trashAssets: [
+    { id: 'a1', name: '통장1', type: 'cash', _deletedAt: 100 },
+    { id: 'a2', name: '통장2', type: 'savings', _deletedAt: 200 },
+  ] };
+  sandbox.lastSheetHtml = null;
+  sandbox.openAssetTrashList();
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.indexOf('통장2') < html.indexOf('통장1'), '더 최근에 삭제된 자산이 먼저 나와야 함');
+});
+test('openAssetTrashList: 삭제한 자산이 없으면 빈 상태를 보여준다', () => {
+  sandbox.DB = { trashAssets: [] };
+  sandbox.lastSheetHtml = null;
+  sandbox.openAssetTrashList();
+  assert.ok(sandbox.lastSheetHtml.includes('삭제한 자산이 없어요'));
+});
+test('restoreTrashAsset: 트래시 항목을 DB.assets로 되돌리고 트래시·톰스톤에서 제거한다', () => {
+  const a = { id: 'a1', name: '통장1', type: 'cash', baseAmount: 5000, _deletedAt: 123 };
+  sandbox.DB = { assets: [], recurrences: [], txns: [], trashAssets: [a], deletedIds: { a1: 123 } };
+  sandbox.restoreTrashAsset('a1');
+  assert.strictEqual(sandbox.DB.trashAssets.length, 0, '복구하면 트래시에서 빠져야 함');
+  assert.strictEqual(sandbox.DB.deletedIds.a1, undefined, '복구하면 톰스톤도 지워져야 함');
+  const restored = sandbox.DB.assets.find(x => x.id === 'a1');
+  assert.ok(restored, '원래 id 그대로 DB.assets에 복구되어야 함');
+  assert.strictEqual(restored.baseAmount, 5000);
+  assert.strictEqual(restored._deletedAt, undefined, '복구된 자산에는 트래시 전용 필드가 남으면 안 됨');
+  assert.strictEqual(restored.updatedAt, 'test-updatedAt', '복구된 자산은 touch()되어야 함(mergeCollection 병합 불변식)');
+});
+test('restoreTrashAsset: 존재하지 않는 id면 아무것도 바꾸지 않는다', () => {
+  sandbox.DB = { assets: [], recurrences: [], txns: [], trashAssets: [{ id: 'a1', name: '통장1', type: 'cash' }], deletedIds: {} };
+  sandbox.restoreTrashAsset('없는id');
+  assert.strictEqual(sandbox.DB.assets.length, 0);
+  assert.strictEqual(sandbox.DB.trashAssets.length, 1);
+});
+test('restoreTrashAsset: 튜토리얼 모드 중에는 twGuard가 막아서 복구되지 않는다', () => {
+  sandbox.TWi = 0;
+  sandbox.DB = { assets: [], recurrences: [], txns: [], trashAssets: [{ id: 'a1', name: '통장1', type: 'cash' }], deletedIds: { a1: 1 } };
+  sandbox.restoreTrashAsset('a1');
+  assert.strictEqual(sandbox.DB.assets.length, 0);
+  assert.strictEqual(sandbox.DB.trashAssets.length, 1);
+  sandbox.TWi = -1;
+});
+test('restoreTrashAsset: unsnapshotAssetName이 남은 fromAssetName/toAssetName 스냅샷을 지운다(deleteAssetsUndo의 즉시 undo와 동일한 불변식)', () => {
+  const a = { id: 'a1', name: '통장1', type: 'cash', _deletedAt: 1 };
+  const t = { date: '2026-01-01', type: 'expense', amount: 1000, category: '', memo: '',
+    fromAssetId: 'a1', fromAssetName: '통장1', toAssetId: null };
+  sandbox.DB = { assets: [], recurrences: [], txns: [t], trashAssets: [a], deletedIds: { a1: 1 } };
+  sandbox.restoreTrashAsset('a1');
+  assert.strictEqual(t.fromAssetName, undefined, '복구 후에는 fromAssetId가 다시 살아있는 자산을 가리키므로 스냅샷 이름이 남아있으면 안 됨');
+});
+// app-evolve cycle320 critique 계획의 핵심 엣지케이스: 이체 반복거래처럼 fromAssetId/toAssetId 양쪽이
+// 걸린 반복거래는, 두 자산이 모두 복구됐을 때만 다시 활성화해야 한다(relinkDeletedAsset 4616행과
+// 동일한 가드) — 한쪽만 복구된 상태에서 되살리면 존재하지 않는 계좌로 영원히 '발생'하는 유령
+// 반복거래가 된다.
+test('restoreTrashAsset: 일반(단일 자산) 반복거래는 그 자산만 복구되면 바로 재활성화된다', () => {
+  const a = { id: 'a1', name: '통장1', type: 'cash', _deletedAt: 1 };
+  const rec = { id: 'r1', active: false, _autoDeactivatedByAssetDelete: true, fromAssetId: 'a1', toAssetId: null, updatedAt: 1 };
+  sandbox.DB = { assets: [], recurrences: [rec], txns: [], trashAssets: [a], deletedIds: { a1: 1 } };
+  sandbox.restoreTrashAsset('a1');
+  assert.strictEqual(rec.active, true, '단일 자산 참조 반복거래는 그 자산만 복구되면 되살려야 함');
+  assert.strictEqual(rec._autoDeactivatedByAssetDelete, undefined, '되살렸으면 원인 플래그도 지워야 함');
+  assert.strictEqual(rec.updatedAt, 'test-updatedAt', '되살린 반복거래는 touch()되어야 함');
+});
+test('restoreTrashAsset: 이체 반복거래는 양쪽 자산이 모두 복구되기 전까지는 재활성화하지 않는다', () => {
+  const a1 = { id: 'a1', name: '통장1', type: 'cash', _deletedAt: 1 };
+  // toAssetId('b1')가 가리키는 자산은 아직 살아있지 않다(trashAssets에만 있고 DB.assets에는 없음) —
+  // 둘 다 함께 지워졌지만 a1만 먼저 복구하는 상황을 흉내낸다.
+  const rec = { id: 'r1', active: false, _autoDeactivatedByAssetDelete: true, fromAssetId: 'a1', toAssetId: 'b1', updatedAt: 1 };
+  sandbox.DB = { assets: [], recurrences: [rec], txns: [], trashAssets: [a1, { id: 'b1', name: '통장2', type: 'cash', _deletedAt: 1 }], deletedIds: { a1: 1, b1: 1 } };
+  sandbox.restoreTrashAsset('a1');
+  assert.strictEqual(rec.active, false, '반대편 자산(b1)이 아직 복구되지 않았으면 재활성화하면 안 됨');
+  assert.strictEqual(rec._autoDeactivatedByAssetDelete, true, '아직 복구 안 됐으니 원인 플래그도 남아있어야 함');
+  // 이제 반대편(b1)도 복구하면, 이 시점엔 a1이 이미 DB.assets에 살아있으므로 비로소 재활성화된다.
+  sandbox.restoreTrashAsset('b1');
+  assert.strictEqual(rec.active, true, '양쪽 자산이 모두 복구되면 그제서야 재활성화해야 함');
+  assert.strictEqual(rec._autoDeactivatedByAssetDelete, undefined);
+});
+
 /* ---------- delAsset/assetDelSel: 단일/다중선택 삭제 모두 연결된 반복거래 비활성화 경고를
  * confirmSheet 메시지에 보여줘야 한다(app-evolve cycle205) — assetDelSel()이 delAsset()과
  * 달리 activeRecsForAssets()를 호출하지 않아, 자산관리에서 여러 계좌를 한꺼번에 길게눌러
@@ -14325,6 +14477,69 @@ test('sanitizeBackup: 트래시 항목도 txns/assets와 동일하게 id 중복�
     trashTxns: [{ id: 'dup', date: '2026-01-01', amount: 1000, _deletedAt: 1 }, { id: 'dup', date: '2026-01-02', amount: 500, _deletedAt: 2 }],
   });
   const ids = data.trashTxns.map(t => t.id);
+  assert.strictEqual(new Set(ids).size, 2, '중복 id는 새 id로 갈라져야 함');
+  assert.ok(fixedCount >= 1);
+});
+
+/* ---------- sanitizeBackup: DB.trashAssets(자산 삭제 '최근 삭제함', app-evolve cycle320
+ * critique/advance)도 위 trashTxns와 동일한 이유로 검증돼야 한다. 다만 보관 형태가 자산 전체라
+ * date 대신 위 srcAssets 블록과 동일한 기준(id&&type)으로 걸러내고, 같은 금액성 필드
+ * (SANITIZE_FREE_FIELDS/QTY_FIELDS)·날짜 필드(maturityDate/acquiredAt) 검증을 그대로 적용한다. ---------- */
+test('sanitizeBackup: id나 type 없는 트래시 자산 항목은 통째로 제거하고, trashAssets가 없거나 배열이 아니어도 터지지 않는다', () => {
+  const droppedNoId = sandbox.sanitizeBackup({ txns: [], assets: [], trashAssets: [{ type: 'cash', name: '통장' }] });
+  assert.strictEqual(droppedNoId.data.trashAssets.length, 0);
+  assert.strictEqual(droppedNoId.droppedCount, 1);
+  const droppedNoType = sandbox.sanitizeBackup({ txns: [], assets: [], trashAssets: [{ id: 'a1', name: '통장' }] });
+  assert.strictEqual(droppedNoType.data.trashAssets.length, 0);
+  assert.strictEqual(droppedNoType.droppedCount, 1);
+  const missing = sandbox.sanitizeBackup({ txns: [], assets: [] });
+  assert.strictEqual(missing.data.trashAssets.length, 0);
+  const notArray = sandbox.sanitizeBackup({ txns: [], assets: [], trashAssets: { oops: true } });
+  assert.strictEqual(notArray.data.trashAssets.length, 0);
+});
+test('sanitizeBackup: 트래시 자산의 baseAmount/costBasis 같은 금액 필드는 자산(assets)과 동일한 규칙으로 클램프된다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    trashAssets: [{ id: 'a1', type: 'cash', baseAmount: -5000, costBasis: -100, _deletedAt: 100 }],
+  });
+  assert.strictEqual(data.trashAssets[0].baseAmount, -5000, 'baseAmount는 마이너스통장처럼 음수도 유효한 자유 필드라 그대로 둬야 함');
+  assert.strictEqual(data.trashAssets[0].costBasis, 0, 'costBasis는 수량성 필드라 음수 불가로 클램프');
+  assert.strictEqual(fixedCount, 1);
+});
+test('sanitizeBackup: 트래시 자산의 maturityDate/acquiredAt이 달력상 무효하면 assets와 동일하게 보정한다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    trashAssets: [{ id: 'a1', type: 'savings', maturityDate: '2026-02-30', acquiredAt: '2026-13-01', _deletedAt: 1 }],
+  });
+  assert.strictEqual(data.trashAssets[0].maturityDate, null, 'maturityDate는 무효하면 null로(assets와 동일)');
+  assert.strictEqual(data.trashAssets[0].acquiredAt, undefined, 'acquiredAt은 무효하면 삭제(assets와 동일)');
+  assert.strictEqual(fixedCount, 2);
+});
+test('sanitizeBackup: 트래시 자산의 _deletedAt이 없거나 숫자가 아니면 now로 채우고 fixedCount를 센다(바로 버리지 않음)', () => {
+  const before = Date.now();
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    trashAssets: [{ id: 'a1', type: 'cash' }, { id: 'a2', type: 'cash', _deletedAt: 'oops' }],
+  });
+  assert.strictEqual(data.trashAssets.length, 2, '유효한 복구 대상을 _deletedAt 손상만으로 통째로 버리면 안 됨');
+  assert.ok(data.trashAssets.every(a => typeof a._deletedAt === 'number' && a._deletedAt >= before));
+  assert.strictEqual(fixedCount, 2);
+});
+test('sanitizeBackup: 정상적인 트래시 자산은 그대로 둔다(정상 케이스는 회귀 없음)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    trashAssets: [{ id: 'a1', type: 'cash', name: '통장1', baseAmount: 5000, _deletedAt: 123 }],
+  });
+  assert.strictEqual(data.trashAssets[0].baseAmount, 5000);
+  assert.strictEqual(data.trashAssets[0]._deletedAt, 123);
+  assert.strictEqual(fixedCount, 0);
+});
+test('sanitizeBackup: 트래시 자산도 trashTxns와 동일하게 id 중복이면 새 id를 부여해 복구한다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    trashAssets: [{ id: 'dup', type: 'cash', _deletedAt: 1 }, { id: 'dup', type: 'savings', _deletedAt: 2 }],
+  });
+  const ids = data.trashAssets.map(a => a.id);
   assert.strictEqual(new Set(ids).size, 2, '중복 id는 새 id로 갈라져야 함');
   assert.ok(fixedCount >= 1);
 });
@@ -18041,6 +18256,21 @@ test('mergeTrashTxns: id 없는 항목이나 undefined 배열은 안전하게 �
   assert.strictEqual(out.length, 1);
   assert.strictEqual(out[0].id, 't1');
 });
+// app-evolve cycle320 critique/advance: DB.trashAssets(자산 삭제 '최근 삭제함')가 gcTrashTxns/
+// mergeTrashTxns를 새 함수 없이 그대로 재사용한다는 전제를 거래 모양이 아닌 자산 모양 데이터로도
+// 직접 확인 — 두 함수 모두 {id,_deletedAt}만 가정할 뿐 거래 전용 필드(date/amount 등)를 전혀
+// 참조하지 않으므로 자산 전체 필드(type/costBasis/owner 등)를 가진 객체에도 동일하게 동작해야 한다.
+test('gcTrashTxns/mergeTrashTxns: 자산 모양(type/costBasis 등 거래와 다른 필드) 데이터에도 그대로 동작한다(DB.trashAssets 재사용 전제)', () => {
+  const now = 10_000;
+  const asset = { id: 'a1', type: 'cash', name: '통장1', costBasis: 10000, _deletedAt: now - 100 };
+  const oldAsset = { id: 'a2', type: 'stock', name: '주식', costBasis: 5000, _deletedAt: now - 1000 };
+  const gcOut = sandbox.gcTrashTxns([asset, oldAsset], now, 500);
+  assert.deepStrictEqual(gcOut, [asset], '자산 모양 데이터도 _deletedAt 기준으로 동일하게 GC되어야 함');
+  const mergeOut = sandbox.mergeTrashTxns([asset], [oldAsset]);
+  const ids = mergeOut.map(a => a.id).sort();
+  assert.strictEqual(ids.length, 2);
+  assert.ok(ids.includes('a1') && ids.includes('a2'), '자산 모양 데이터도 id 기준으로 동일하게 병합되어야 함');
+});
 
 test('migrate: DB.deletedIds의 오래된(400일 초과) tombstone은 sanitize되어 사라지고, 그 이내인 것은 유지된다(app-evolve cycle95 advance 통합 테스트)', () => {
   const now = Date.now();
@@ -18106,6 +18336,48 @@ test('migrate: DB.trashTxns에 이미 DB.txns로 복구돼 살아있는 id가 �
   };
   sandbox.migrate();
   assert.deepStrictEqual(sandbox.DB.trashTxns.map(t => t.id), ['t2'], 'DB.txns에 살아있는 t1은 트래시에서 빠지고, 실제로 삭제된 t2만 남아야 함');
+});
+
+/* ---------- migrate: DB.trashAssets(자산 삭제 '최근 삭제함', app-evolve cycle320 critique/advance)도
+ * 위 DB.trashTxns와 동일한 초기화/GC/live-id 필터를 받는다. ---------- */
+test('migrate: DB.trashAssets이 없으면(migrate 이전 상태) 빈 배열로 채워진다', () => {
+  sandbox.DB = {
+    version: 5, catsV2: true,
+    settings: { themeMode: 'system', includeScheduled: false, assetSort: 'custom', groupOrder: [...sandbox.DEFAULT_GROUP_ORDER] },
+    owners: ['나', '배우자', '공용'],
+    assets: [], txns: [], recurrences: [], inquiries: [],
+    categories: { expense: [...sandbox.EXP_CATS_DEFAULT], income: [...sandbox.INC_CATS_DEFAULT], saving: [...sandbox.SAV_CATS_DEFAULT] },
+  };
+  assert.doesNotThrow(() => sandbox.migrate());
+  assert.strictEqual(sandbox.DB.trashAssets.length, 0);
+});
+test('migrate: DB.trashAssets의 오래된(30일 초과) 항목은 GC되어 사라지고, 그 이내인 것은 유지된다(app-evolve cycle320 critique/advance 통합 테스트)', () => {
+  const now = Date.now();
+  const DAY = 1000 * 60 * 60 * 24;
+  const old = { id: 'old', type: 'cash', _deletedAt: now - 31 * DAY };
+  const recent = { id: 'recent', type: 'savings', _deletedAt: now - 10 * DAY };
+  sandbox.DB = {
+    version: 5, catsV2: true,
+    settings: { themeMode: 'system', includeScheduled: false, assetSort: 'custom', groupOrder: [...sandbox.DEFAULT_GROUP_ORDER] },
+    owners: ['나', '배우자', '공용'],
+    assets: [], txns: [], recurrences: [], inquiries: [],
+    categories: { expense: [...sandbox.EXP_CATS_DEFAULT], income: [...sandbox.INC_CATS_DEFAULT], saving: [...sandbox.SAV_CATS_DEFAULT] },
+    trashAssets: [old, recent],
+  };
+  sandbox.migrate();
+  assert.deepStrictEqual(sandbox.DB.trashAssets.map(a => a.id), ['recent']);
+});
+test('migrate: DB.trashAssets에 이미 DB.assets로 복구돼 살아있는 id가 남아있으면(온전치 못한 복구 등) 중복으로 보이지 않게 제거한다', () => {
+  sandbox.DB = {
+    version: 5, catsV2: true,
+    settings: { themeMode: 'system', includeScheduled: false, assetSort: 'custom', groupOrder: [...sandbox.DEFAULT_GROUP_ORDER] },
+    owners: ['나', '배우자', '공용'],
+    assets: [{ id: 'a1', type: 'cash', name: '통장1' }], txns: [], recurrences: [], inquiries: [],
+    categories: { expense: [...sandbox.EXP_CATS_DEFAULT], income: [...sandbox.INC_CATS_DEFAULT], saving: [...sandbox.SAV_CATS_DEFAULT] },
+    trashAssets: [{ id: 'a1', type: 'cash', _deletedAt: Date.now() }, { id: 'a2', type: 'savings', _deletedAt: Date.now() }],
+  };
+  sandbox.migrate();
+  assert.deepStrictEqual(sandbox.DB.trashAssets.map(a => a.id), ['a2'], 'DB.assets에 살아있는 a1은 트래시에서 빠지고, 실제로 삭제된 a2만 남아야 함');
 });
 
 /* ---------- themeCachePayload/writeThemeCache: 첫 페인트 FOUC 방지 캐시(app-evolve cycle181 advance) ----------

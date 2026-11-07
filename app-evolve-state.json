@@ -1,19 +1,8 @@
 {
-  "cycle": 320,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "자산 삭제(deleteAssetsUndo) '최근 삭제함' 복구 — DB.trashAssets 신설",
-    "why": "deleteAssetsUndo(index.html:11500-11508)가 6초짜리 undoToast 메모리 클로저에만 의존해 복구 가능하다. DB.deletedIds는 {id:timestamp} 톰스톤일 뿐 자산 내용(name/type/costBasis/acquiredAt/owner)과 연결된 반복거래 비활성화 상태(_autoDeactivatedByAssetDelete, 11503)를 담지 않아, 6초가 지나거나 앱을 닫으면 영구 소실된다. cycle319가 거래(DB.trashTxns)에서 이미 고친 것과 같은 클래스의 버그를 자산(가장 가치 높은 데이터: 매입원가·수량 이력·연동 반복거래)에서 고친다.",
-    "approach": "DB.trashAssets[] 신설, GC/병합은 새 함수 없이 이미 범용인 gcTrashTxns/mergeTrashTxns(logic.js:460,470 — {id,_deletedAt} 형태만 가정, txn 전용 필드 참조 없음)를 그대로 재사용. migrate()(2613-2615 패턴)에 trashAssets 초기화+GC+live-id 필터 추가. mergeRemoteDataIntoLocal(1673 패턴)에 trashAssets 배선. sanitizeBackup(9294 패턴)에 trashAssets 검증 추가. deleteAssetsUndo가 삭제 즉시 asset 전체+_deletedAt을 DB.trashAssets에 저장(snapshotAssetName/recs 비활성화 로직은 그대로 유지). 메뉴에 '삭제한 자산'(7107 아래) 행 + openAssetTrashList()/restoreTrashAsset(id) 신설(openTrashList/restoreTrashTxn과 동일 패턴). 핵심 엣지케이스: restoreTrashAsset은 원래 id로 복구하므로 unsnapshotAssetName(id)만 사용하고, 이체 반복거래처럼 fromAssetId/toAssetId 양쪽이 걸린 rec은 두 자산이 모두 복구됐을 때만(DB.assets.some 확인) active=true로 되돌리는 가드(relinkDeletedAsset 4616행 패턴 재사용)를 넣는다. 테스트: gcTrashTxns/mergeTrashTxns를 자산 데이터로도 호출하는 회귀, migrate 배선, mergeRemoteDataIntoLocal 배선, deleteAssetsUndo→trashAssets 저장, restoreTrashAsset 단건 및 이체rec 양쪽 미복구 가드 다수. 기각: 시세 실패 표시(이미 rateUnknown 완비)/sw.js 캐시 전략(이미 견고)/다른 엔티티(목표·반복·귀속·카테고리) 삭제의 동일 취약점(자산보다 손실 폭 작아 다음 critique 후보로 보류)."
-  },
+  "cycle": 321,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 315,
-      "phase": "advance",
-      "timestamp": "2026-11-06T20:10:00.000Z",
-      "summary": "critique(cycle315) 계획대로 반복 관리 화면(renderRecSheet)에 '같이 냈어요' 토글을 추가했다. renderTxSheet의 sharedChip(index.html:5619)과 동일한 조건·마크업(d.type==='expense'&&settleConfigured()일 때만, onclick=recToggleShared())을 renderRecSheet에 추가하고, h3를 tx-head로 감싸 toggleShared 칩이 오른쪽에 나란히 뜨게 했다(기존 rec sheet는 h3만 있던 자리). recToggleShared() 함수를 txToggleShared(5763)와 완전히 동일한 패턴으로 신설: syncRecInputs();recDraft.shared=!recDraft.shared;renderRecSheet(). 계획대로 saveRec/commitRec/migrate는 변경하지 않음(recDraft 전체가 이미 그대로 저장되고 cycle315 develop이 DB.recurrences 기본값 shared:false를 이미 migrate에 추가해 둠). renderRecSheet는 vm 실행 스모크 테스트 fixture가 없어(기존 24161번째 줄 주석 참고, DB.settings 등 의존이 많아 renderTxSheet처럼 execution harness에 올라가 있지 않음) 구분 세그먼트 aria-pressed 테스트와 동일하게 extractFunction 소스 패턴으로 sharedChip 변수 선언 전체와 tx-head 래퍼를 문자 그대로 대조하는 테스트 2건을 추가했다. recToggleShared() 자체는 소스를 txToggleShared와 동일 패턴인지 공백 제거 후 문자열 비교로 검증(1건). 추가로 critique가 계획에 명시한 '_applyType의 shared 리셋이 recDraft에서도 실제로 동작하는지' 항목을 _applyType(recDraft,'income') 실행 테스트로 직접 확인(1건) — DB.categories/DB.assets 스텁이 없어 처음엔 TypeError가 났고(catListOf/firstCash가 DB를 참조), sandbox.DB에 둘 다 채워 해결(테스트 전용 이슈, 앱 코드는 무관). 계획에 있던 나머지 항목(신규 등록 시 저장되는지/editRec로 열면 on 클래스가 렌더되는지/expandRec·settlementSummary 통합)은 각각 commitRec·sharedChip 마크업·cycle315 develop의 기존 통합 테스트가 이미 다른 경로로 커버하고 있어(commitRec은 d를 그대로 저장하는 기존 saveRec 테스트들로, 통합 흐름은 cycle315 develop의 saveTx+expandRec+settlementSummary 테스트로) 중복 추가하지 않았다. 테스트 2965->2968 통과. node --check logic.js/sw.js, manifest.webmanifest JSON 유효성 통과(index.html 인라인 스크립트 추출검사의 기존 1건 오탐은 HEAD~1 대비 재확인해 이번 변경과 무관함을 확인). APP_VERSION 1.47.374->1.47.375, sw.js CACHE v641->v642. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 316,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-07T14:00:00.000Z",
       "summary": "서브에이전트로 앱 전체를 재조사(cycle300-320 처리/보류/기각 항목 전부 제외 지시: twGuard 스윕·전역검색·예산이월·연말결산·owner/category/asset merge 전부·nwHistory byType/자산배분추이 카드·목표자산배분+리밸런싱·CSV날짜·이체 및 반복 중복감지·카테고리별 알림뮤트·공동지출 정산(shared/settle) 전체와 배지·토글 전파·investGainLossCard 유형별 분해·목표/반복/통합검색 검색창 디바운스·PIN 화면잠금 고지·목표비중 알림뮤트 토글·saveGoal targetDate 범위가드·거래 삭제 trash 복구·searchTerms/matchQueryTerms 단위테스트는 명시적으로 제외; FX 환차익 분리·투자손익 추이차트·CSV shared/photo 필드·배당/이자/할부/귀속별 예산/다인 정산/CSV·반복 분할거래·실시간 저장소 암호화·반복 건별 skip·백업 리마인더·CDN SRI 해시·홈 대시보드 카드 순서변경/숨기기·CSV import 견고성·부채/대출 추적·백그라운드 푸시 한계는 기각 이력으로 재확인). 발견: 자산 삭제(deleteAssetsUndo, index.html:11500-11508)가 거래 삭제와 달리 6초짜리 undoToast 메모리 클로저 하나에만 의존해 복구 가능하다 — DB.deletedIds는 {id:timestamp} 톰스톤일 뿐 자산 내용(name/type/costBasis/acquiredAt/owner)과 연결된 반복거래 비활성화 상태(_autoDeactivatedByAssetDelete, 11503)를 담지 않아, 6초가 지나거나 앱을 닫으면 영구 소실됨을 grep으로 재확인. cycle319가 거래(DB.trashTxns)에서 이미 고친 것과 같은 버그 클래스를 자산(매입원가·수량 이력·연동 반복거래라는 가장 가치 높은 데이터)에서 고치는 것으로, 엔티티가 달라 재제안이 아님. pending_advance_plan에 구체 계획 저장(DB.trashAssets 신설, GC/병합은 새 함수 없이 이미 범용인 gcTrashTxns/mergeTrashTxns 재사용, migrate/mergeRemoteDataIntoLocal/sanitizeBackup 배선, openAssetTrashList/restoreTrashAsset 신설, 이체rec 양쪽 미복구 가드 포함 테스트 계획). 기각 후보 3개(시세 실패 표시-이미 rateUnknown 완비, sw.js 캐시 전략-이미 견고, 다른 엔티티(목표·반복·귀속·카테고리) 삭제의 동일 취약점-자산보다 손실 폭 작아 다음 critique 후보로 보류). 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 320,
+      "phase": "advance",
+      "timestamp": "2026-11-07T15:05:00.000Z",
+      "summary": "critique(cycle320) 계획대로 자산 삭제 '최근 삭제함(trashAssets)' 복구 기능을 구현했다. logic.js는 새 함수 없이 gcTrashTxns/mergeTrashTxns를 그대로 재사용(둘 다 {id,_deletedAt}만 가정해 거래 전용 필드를 참조하지 않음, 주석만 재사용 사실을 명시). index.html: DB.trashAssets 신설(migrate 초기화+GC+live-id 필터, mergeRemoteDataIntoLocal에 DB.assets 병합 직후 배선, sanitizeBackup에 id&&type 기준 검증+SANITIZE_FREE/QTY_FIELDS·maturityDate/acquiredAt·_deletedAt 보정 추가), deleteAssetsUndo가 삭제 즉시 asset 전체+_deletedAt을 DB.trashAssets에 저장(즉시 undo 콜백에서도 제거), 메뉴 '백업·데이터'에 '삭제한 자산' 행 추가, openAssetTrashList()/restoreTrashAsset(id) 신설(openTrashList/restoreTrashTxn과 동일 manage-row 패턴). 핵심 엣지케이스(이체 반복거래 양쪽 미복구 가드): restoreTrashAsset은 원래 id로 복구해 unsnapshotAssetName(id)만 부르고, _autoDeactivatedByAssetDelete가 찍힌 반복거래 중 fromAssetId/toAssetId 양쪽이 모두(있다면) DB.assets에 살아있을 때만 재활성화하도록 relinkDeletedAsset(4616행) 패턴과 동일한 가드를 적용 — 테스트로 '한쪽만 복구 시 그대로 비활성' → '반대쪽도 복구되면 그제서야 재활성화'를 직접 검증. 테스트: deleteAssetsUndo→trashAssets 저장/undo제거/무변경/다건(4) + openAssetTrashList/restoreTrashAsset(정상복구/존재안함/twGuard/snapshot해제/단일rec재활성/이체rec가드, 8) + sanitizeBackup trashAssets 검증(6) + migrate trashAssets 초기화/GC/live-id필터(3) + mergeRemoteDataIntoLocal trashAssets 배선(2) + gcTrashTxns/mergeTrashTxns 재사용 확인(자산 모양 데이터, 1) = 24건 추가 — node test/run.js 3032->3056/3056 통과. 테스트 작성 중 mergeTrashTxns 반환 배열에 대한 assert.deepStrictEqual이 vm cross-realm 배열 이슈(cycle309/313/316과 동일 클래스)로 실패해 기존 관례대로 ids.includes() 패턴으로 교체해 해결(테스트 전용, 앱 코드는 무관). node --check logic.js/sw.js 통과, manifest.webmanifest JSON 유효성 통과, index.html 인라인 스크립트 추출검사는 기존과 동일한 1건의 기존 오탐(block0=head FOUC 스크립트, HTML 주석 텍스트 오인, cycle311부터 이어짐; 내 변경은 그보다 훨씬 아래의 다른 script 블록에 있어 무관함을 블록별 node --check로 확인)만 재확인됨. 사용자 체감 기능 추가라 APP_VERSION 1.47.383->1.47.384, sw.js CACHE v650->v651. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]
