@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.378';
+const APP_VERSION='1.47.379';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -7110,7 +7110,7 @@ function renderMenu(){
  ${groups.map(g=>`<div class="menu-group"><div class="menu-cap">${g.cap}</div><div class="card">
    ${g.items.map(it=>it.sw!==undefined
      ?`<button class="menu-item" onclick="${it.a}" aria-pressed="${it.sw?'true':'false'}"><span class="mi">${svg(it.ic)}</span><span class="ml">${it.l}</span><span class="switch ${it.sw?'on':''}" aria-hidden="true"><i></i></span></button>`
-     :`<button class="menu-item" onclick="${it.a}"><span class="mi">${svg(it.ic)}</span><span class="ml">${it.l}</span>${it.v?`<span class="mv">${it.v}</span>`:''}<span class="mc">${svg('chev')}</span></button>`).join('')}</div>${(g.cap==='알림 · 기준'&&DB.settings.osNotify)?`<p style="font-size:12px;color:var(--text-3);margin:6px 4px 0">OS 알림 · ${esc(notifyReliabilityMsg(notifyReliabilityTier(IS_IOS)))}</p>`:''}</div>`).join('')}
+     :`<button class="menu-item" onclick="${it.a}"><span class="mi">${svg(it.ic)}</span><span class="ml">${it.l}</span>${it.v?`<span class="mv">${it.v}</span>`:''}<span class="mc">${svg('chev')}</span></button>`).join('')}</div>${(g.cap==='알림 · 기준'&&DB.settings.osNotify)?`<p style="font-size:12px;color:var(--text-3);margin:6px 4px 0">OS 알림 · ${esc(notifyReliabilityMsg(notifyReliabilityTier(IS_IOS)))}</p>`:''}${(g.cap==='알림 · 기준'&&APPLOCK.enabled())?`<p style="font-size:12px;color:var(--text-3);margin:6px 4px 0">앱 잠금은 화면만 가려요 — 데이터 자체는 암호화되지 않고 기기에 그대로 저장돼요. 기기를 분실했거나 공유 중이면 '데이터 내보내기'로 암호화된 백업을 만들어 두세요.</p>`:''}</div>`).join('')}
  <div style="text-align:center;color:var(--text-3);font-size:12px;margin-top:22px;font-weight:500">우리의 자산 · v${APP_VERSION}${SW_UPDATE_AVAILABLE?`<br><span style="color:var(--brand)">🆕 새 버전이 있어요 · <a href="javascript:location.reload()" style="text-decoration:underline;font-weight:700">지금 새로고침</a></span>`:''}${STORAGE_OK?'':`<br><span style="color:var(--expense)">⚠ 자동저장이 안 되고 있어요. 내보내기로 백업하세요.</span>`}</div>
  <div class="menu-foot-actions">
    <button class="mfa" onclick="${kind==='guest'?'showAuth()':'doLogout()'}">${svg(kind==='guest'?'users':'restore')} ${kind==='guest'?'로그인':'로그아웃'}</button>
@@ -12139,7 +12139,7 @@ async function doUnlock(){
 }
 function openSetPinSheet(){
  openSheet(`<h3>앱 잠금 PIN 설정</h3>
-  <div class="desc">앱을 열 때마다 입력할 4~6자리 숫자 PIN을 설정해요. 이 PIN은 이 기기에만 저장되고 클라우드로 동기화되지 않아요.</div>
+  <div class="desc">앱을 열 때마다 입력할 4~6자리 숫자 PIN을 설정해요. 이 PIN은 이 기기에만 저장되고 클라우드로 동기화되지 않아요. 단, 화면만 가릴 뿐 데이터 자체는 암호화되지 않으니, 기기를 분실했거나 공유 중이면 '데이터 내보내기'로 암호화된 백업을 만들어 두세요.</div>
   <div class="field"><label for="pinNewIn">새 PIN</label><div class="pw-wrap"><input id="pinNewIn" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="4~6자리 숫자"><button type="button" class="pw-x" aria-label="PIN 표시" onclick="togglePwVis('pinNewIn')">${svg('eye',18)}</button></div></div>
   <div class="field"><label for="pinNewIn2">PIN 확인</label><div class="pw-wrap"><input id="pinNewIn2" type="password" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="다시 입력" onkeydown="if(event.key==='Enter')doSetPin()"><button type="button" class="pw-x" aria-label="PIN 표시" onclick="togglePwVis('pinNewIn2')">${svg('eye',18)}</button></div></div>
   <div id="pinSetErr" class="auth-err" style="display:none"></div>

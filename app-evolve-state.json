@@ -1,19 +1,8 @@
 {
-  "cycle": 317,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "'앱 잠금(PIN)' 설정·메뉴 문구에 '화면만 가림, 데이터는 암호화되지 않음' 명시 고지 추가",
-    "why": "index.html:2284-2302의 cycle252/289 주석이 이미 스스로 진단한 격차 — APPLOCK.enabled()를 켜도 lockApp()/unlockApp()(12086-12099)은 #app/#lockView display 토글뿐이고 _saveCore()/load()(2689, 2537-2554)는 APPLOCK 상태와 무관하게 평문 JSON.stringify(DB)를 localStorage에 그대로 읽고 쓴다. encryptDbBlob/decryptDbBlob(cycle252)은 수동 JSON 내보내기/가져오기(8804,8826,9531)에서만 쓰이고 실시간 저장에는 전혀 연결되지 않았다. 그런데 PIN 설정 시트 문구(12142 '이 PIN은 이 기기에만 저장되고 클라우드로 동기화되지 않아요')는 데이터가 암호화되지 않는다는 사실을 전혀 밝히지 않아, 공유 PC·분실 기기 위협을 막으려 PIN을 켠 사용자가 잔액·메모·영수증 사진이 실제로는 평문 그대로 기기에 남는다는 걸 모른다 — 가계부 앱의 보안 기능이 실제 보호 범위를 오도하는 정확성 문제. 실제 저장소 암호화 배선은 cycle252 주석이 이미 '~70곳의 save() 호출을 비동기로 바꾸고 cross-tab 병합/cloud pull 병합 경로까지 재작성해야 하는, 무인 사이클에 과한 저장 아키텍처 재작성'이라고 평가해 기각한 범위이므로 이번에도 재시도하지 않는다. 문구만 고치는 안전하고 좁은 슬라이스.",
-    "approach": "코드 로직·데이터모델 변경 없음, 문구+테스트만 추가. 1) openSetPinSheet(~12140-12142)의 desc 문단에 '이 PIN은 화면만 가려요 — 데이터 자체는 암호화되지 않고 기기에 그대로 저장돼요. 기기를 분실했거나 공유 중이면 설정>백업>암호화 내보내기를 쓰세요' 같은 고지 문장 추가. 2) renderMenu(~7083)의 '앱 잠금(PIN)' 행이 APPLOCK.enabled()일 때 msub(보조 설명) 줄로 같은 취지의 짧은 문구를 보여주도록 추가(기존 다른 메뉴 행의 msub 패턴 재사용). 3) 도움말/안내 화면에 PIN 관련 안내가 있다면 같은 문구로 맞춤(grep으로 위치 확인 후 있으면만 수정, 없으면 생략). 4) test/run.js에 sw.js/netlify.toml 검사와 같은 문자열-존재 패턴으로 openSetPinSheet와 renderMenu 추출 소스에 새 고지 문구(또는 핵심 키워드)가 포함되는지 회귀 테스트 추가 — 향후 cycle이 문구를 조용히 지우지 못하게. logic.js/pure function 변경 없으므로 관련 round-trip 테스트는 불필요. APP_VERSION/sw.js CACHE는 사용자 체감 문구 변경이므로 올린다."
-  },
+  "cycle": 318,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 312,
-      "phase": "critique",
-      "timestamp": "2026-11-06T08:30:00.000Z",
-      "summary": "서브에이전트로 앱 전체를 재조사(cycle300-312 처리/보류/기각 항목 전부 제외 지시, 특히 twGuard 스윕 4연속·검색·예산이월·연말결산·owner/category/asset merge 전부·nwHistory byType/자산배분추이 카드·CSV날짜·이체중복감지는 명시적으로 제외). 발견: DB.settings.osNotify(알림 메뉴의 'OS 알림' 스위치, index.html:6815)가 notifyAlertInfo()(10645-10706)의 18종 알림(confirm/quick/mat/budget*/goal*/debt* 5개 그룹)을 전부 켜거나 전부 끄는 올오어나싱 토글뿐이고, 그룹별로 끄는 보조 UI나 pickNotifyAlerts의 하위 필터 개념이 전혀 없음. notifyAlertInfo 자체 주석이 이미 5개 그룹으로 조직돼 있어(10656-10705) 새 분류 발명 없이 그 경계를 그대로 쓸 수 있는, 범위가 자연스럽게 제한된 기능 공백. pending_advance_plan에 저장(settings.notifyMute 추가 + notifyAlertInfo group 필드 + pickNotifyAlerts 뮤트 필터 + renderMenu 5개 하위 토글 행 + 회귀 테스트). 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 313,
       "phase": "advance",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-07T03:10:00.000Z",
       "summary": "서브에이전트로 앱 전체를 재조사(cycle300-317 처리/보류/기각 항목 전부 제외 지시: twGuard 스윕·전역검색·예산이월·연말결산·owner/category/asset merge 전부·nwHistory byType/자산배분추이 카드·목표자산배분+리밸런싱·CSV날짜·이체 및 반복 중복감지·카테고리별 알림뮤트·공동지출 정산(shared/settle) 전체와 배지·토글 전파·investGainLossCard 유형별 분해·목표/반복 검색창 디바운스는 명시적으로 제외; FX 환차익 분리·투자손익 추이차트·CSV shared/photo 필드·배당/이자 추적·할부 추적·귀속별 예산·다인 정산·CSV 분할거래·반복거래 분할은 기각 이력으로 재확인). 발견을 직접 코드로 재검증: '앱 잠금(PIN)'이 실제로는 화면만 가리는 UI 오버레이(lockApp/unlockApp, index.html:12086-12099, #app/#lockView display 토글뿐)이고 _saveCore()/load()(2689, 2537-2554)는 APPLOCK 상태와 무관하게 평문 JSON.stringify(DB)를 그대로 localStorage에 read/write함을 확인 — 이는 사실 cycle252/289 주석(2284-2302)이 이미 자체 진단하고 '저장 아키텍처 재작성급이라 무인 사이클엔 과함'으로 명시 기각해 둔 격차. encryptDbBlob/decryptDbBlob(cycle252)은 수동 JSON 백업 내보내기/가져오기(8804,8826,9531)에만 연결돼 있고 실시간 저장과는 무관함도 재확인. 그런데 PIN 설정 시트 문구(openSetPinSheet, 12142)는 '이 PIN은 이 기기에만 저장되고 클라우드로 동기화되지 않아요'라고만 말할 뿐 데이터 자체는 암호화되지 않는다는 사실을 전혀 밝히지 않아 — 공유 PC·분실 기기 위협을 막으려 PIN을 켠 사용자가 보호 범위를 오해하게 되는 정확성 문제. 실제 암호화 배선(재작성급)은 또 기각하고, 문구 고지만 좁게 고치는 안전한 슬라이스로 pending_advance_plan에 저장(openSetPinSheet desc 고지문 추가 + renderMenu PIN 행 msub 고지 + 문자열-존재 회귀 테스트, 로직/데이터모델 변경 없음). 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 317,
+      "phase": "advance",
+      "timestamp": "2026-11-07T04:20:00.000Z",
+      "summary": "critique(cycle317) 계획대로 '앱 잠금(PIN)'이 화면만 가릴 뿐 데이터는 암호화되지 않는다는 고지를 추가했다. 코드 로직·데이터모델 변경 없이 문구+테스트만 추가(계획대로). 1) openSetPinSheet(12140-12146)의 desc 문단에 \"단, 화면만 가릴 뿐 데이터 자체는 암호화되지 않으니, 기기를 분실했거나 공유 중이면 '데이터 내보내기'로 암호화된 백업을 만들어 두세요\"를 추가 — 계획의 '설정>백업>암호화 내보내기' 문구는 실제로 존재하지 않는 별도 메뉴라 그대로 쓰지 않고, doExport()(8764-8774)가 APPLOCK.enabled() 상태에서 JSON 전체 백업을 내보낼 때 이미 자동으로 PIN 암호화를 거는 실제 동작(exportData()의 '바로 저장'/'파일 열기')에 맞춰 '데이터 내보내기'로 정확하게 고쳐 썼다. 2) renderMenu(7057-7119)는 메뉴 항목 자체에 msub(보조설명) 줄을 지원하지 않는 단순 구조([mi][ml][mv][chev])라 계획의 'PIN 행에 msub 추가'는 실제 구조와 안 맞아, 대신 같은 그룹('알림 · 기준')에 이미 있던 OS 알림용 카드-하단 캡션 패턴(cycle161, osNotify 조건)을 그대로 재사용해 APPLOCK.enabled() 조건의 두 번째 캡션 <p>를 추가했다 — 기존 OS 알림 캡션의 조건/문구는 한 글자도 건드리지 않고 그 뒤에 독립된 삼항식으로 이어붙여 회귀 위험을 없앴다. 3) 도움말(openHelp)엔 PIN 관련 안내 자체가 없어(grep 0건) 계획대로 생략. 4) test/run.js에 renderMenu 캡션 조건/문구 포함 여부 + 기존 OS 알림 캡션 조건이 그대로인지 + openSetPinSheet 새 문구/기존 문구 보존 여부를 문자열-존재 패턴으로 검증하는 테스트 4건 추가(extractFunction 패턴, 기존 cycle161 OS 알림 캡션 테스트와 동일한 스타일) — 2982->2986 통과. node test/run.js 2986/2986 통과, node --check sw.js/logic.js 통과, index.html 인라인 스크립트 추출검사의 기존 1건 오탐(HTML 주석 텍스트 오인, cycle311부터의 기존 아티팩트)은 git stash로 변경 전 상태와 대조해 이번 변경과 무관함을 재확인, manifest.webmanifest JSON 유효성 통과. 사용자 체감 문구 변경이므로 APP_VERSION 1.47.378->1.47.379, sw.js CACHE v645->v646. pending_advance_plan null로 비움. 범위를 좁힌 부분(critique가 필요시 재검토): 실제 저장소 암호화(실시간 _saveCore/load 배선)는 cycle252/289가 이미 재작성급으로 평가해 기각한 범위라 이번에도 손대지 않음 — 이번 사이클은 오직 기존 보호 범위를 정확히 알리는 고지 문구.",
       "commit": null
     }
   ]

@@ -24696,6 +24696,23 @@ test('renderMenu: APPLOCK이 켜져 있고(기기가 지원해) BIOUNLOCK_AVAILA
   assert.ok(body.includes('APPLOCK.enabled()&&BIOUNLOCK_AVAILABLE'), 'renderMenu가 PIN 활성 상태와 기기 지원 여부를 함께 조건으로 걸지 않음');
   assert.ok(body.includes(`l:'Face ID·지문으로 잠금 해제',sw:BIOUNLOCK.enabled(),a:"toggleBioUnlock()"`), 'renderMenu의 생체 인증 토글 행이 BIOUNLOCK.enabled()/toggleBioUnlock()에 연결돼 있지 않음');
 });
+/* APPLOCK.enabled()를 켜도 lockApp()/unlockApp()은 화면만 가리는 UI 오버레이일 뿐 저장소는
+ * 평문 그대로라는 사실(위 2284행 주석)을 PIN 설정 문구/메뉴 어디에도 밝히지 않아, 공유 PC·분실
+ * 기기 위협을 막으려 PIN을 켠 사용자가 데이터가 실제로는 암호화되지 않는다는 걸 모르던 격차의
+ * 회귀 테스트(app-evolve cycle317 advance, cycle317 critique의 계획). */
+test('renderMenu: 앱 잠금(PIN)이 켜져 있으면 "알림 · 기준" 그룹 아래 "화면만 가릴 뿐 암호화되지 않는다"는 고지 캡션이 상시 노출된다', () => {
+  const body = extractFunction('renderMenu');
+  assert.ok(body.includes("g.cap==='알림 · 기준'&&APPLOCK.enabled()"), 'renderMenu가 APPLOCK 고지 캡션을 조건부로 렌더하지 않음');
+  assert.ok(body.includes('화면만 가려요'), 'renderMenu의 APPLOCK 고지 캡션에 "화면만 가려요" 문구가 없음');
+  assert.ok(body.includes('암호화되지 않고'), 'renderMenu의 APPLOCK 고지 캡션에 암호화되지 않는다는 문구가 없음');
+  // OS 알림 캡션(기존 cycle161)이 이번 변경으로 조건·내용이 바뀌면 안 됨 — 그대로 남아있는지 확인.
+  assert.ok(body.includes("g.cap==='알림 · 기준'&&DB.settings.osNotify"), 'renderMenu가 기존 OS 알림 캡션 조건을 건드렸음');
+});
+test('openSetPinSheet: PIN 설정 문구가 "화면만 가릴 뿐 데이터는 암호화되지 않는다"는 사실을 명시한다', () => {
+  const body = extractFunction('openSetPinSheet');
+  assert.ok(body.includes('데이터 자체는 암호화되지 않으니'), 'openSetPinSheet의 설명에 데이터가 암호화되지 않는다는 고지가 없음');
+  assert.ok(body.includes('이 PIN은 이 기기에만 저장되고 클라우드로 동기화되지 않아요'), 'openSetPinSheet의 기존 문구(기기 전용 저장)가 사라짐');
+});
 test('renderLockView: BIOUNLOCK.enabled()가 true면 Face ID·지문 버튼을 보여주고, 최초 렌더에서 1회만 자동으로 tryBioUnlock()을 트리거한다(재렌더에선 다시 트리거하지 않음)', () => {
   const $orig = sandbox.$;
   const bioOrig = sandbox.BIOUNLOCK;
