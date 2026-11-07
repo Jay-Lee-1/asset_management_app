@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.381';
+const APP_VERSION='1.47.382';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3876,6 +3876,8 @@ function saveGoal(editing){
  d.name=(d.name||'').trim();
  if(!d.name){toast('목표 이름을 입력해 주세요');return}
  if(!(d.targetAmount>0)){toast('목표 금액을 입력해 주세요');return}
+ if(d.targetDate&&dateBelowRangeFloor(d.targetDate)){toast(`${RANGE_FROM} 이전 날짜는 저장할 수 없어요`);return}
+ if(d.targetDate&&dateAboveRangeCeil(d.targetDate)){toast(`${RANGE_TO} 이후 날짜는 저장할 수 없어요`);return} /* saveAsset(maturityDate)·saveTx/saveRec(date/startDate)과 동일한 가드 — targetDate만 빠져 있어 날짜피커(무한 스크롤, min/max 없음)로 2200년 같은 비정상 날짜를 저장하면 goalIsOverdue/fmtDateFull/CSV 내보내기가 조용히 그 값을 그대로 쓰게 됐었다(app-evolve cycle319 develop) */
  const isAsset=d.type==='asset';
  if(isAsset&&!d.linkedAssetId){toast('연결할 자산을 선택해 주세요');return}
  const linkedAsset=isAsset?(DB.assets||[]).find(x=>x.id===d.linkedAssetId):null;

@@ -5164,6 +5164,41 @@ test('saveGoal: 새 목표는 천단위 콤마가 섞인 입력(num() 파서 경
   assert.strictEqual(sandbox.DB.goals[0].targetDate, '2026-12-31');
   assert.strictEqual(sandbox.goalDraft, null, '저장 후 draft는 비워야 함');
 });
+/* app-evolve cycle319 develop: saveAsset(maturityDate)·saveTx/saveRec(date/startDate)은 모두
+ * dateBelowRangeFloor/dateAboveRangeCeil로 날짜피커(무한 스크롤, min/max 없음)가 만들어낼 수 있는
+ * 비정상 날짜를 저장 시점에 막는데, saveGoal의 targetDate만 그 가드가 빠져 있었다. */
+test('saveGoal: targetDate가 RANGE_FROM 이전이면 저장하지 않고 안내 토스트만 띄운다', () => {
+  sandbox.DB = { goals: [] };
+  sandbox.goalDraft = { id: 'test-uid', name: '', type: 'networth', targetAmount: 0, targetDate: '2022-12-31' };
+  sandbox.goalNameValue = '내 집 마련';
+  sandbox.goalAmtValue = '1,000,000';
+  sandbox.lastToast = null;
+  sandbox.saveGoal(false);
+  assert.strictEqual(sandbox.DB.goals.length, 0, 'RANGE_FROM 이전 날짜는 저장되면 안 됨');
+  assert.ok(sandbox.lastToast.includes('2023-01-01'), '하한 날짜를 알려주는 토스트가 떠야 함');
+});
+test('saveGoal: targetDate가 RANGE_TO 이후면 저장하지 않고 안내 토스트만 띄운다', () => {
+  sandbox.DB = { goals: [] };
+  sandbox.RANGE_TO = '2028-06-15';
+  sandbox.goalDraft = { id: 'test-uid', name: '', type: 'networth', targetAmount: 0, targetDate: '2028-06-16' };
+  sandbox.goalNameValue = '내 집 마련';
+  sandbox.goalAmtValue = '1,000,000';
+  sandbox.lastToast = null;
+  sandbox.saveGoal(false);
+  assert.strictEqual(sandbox.DB.goals.length, 0, 'RANGE_TO 이후 날짜는 저장되면 안 됨');
+  assert.ok(sandbox.lastToast.includes('2028-06-15'), '상한 날짜를 알려주는 토스트가 떠야 함');
+  sandbox.RANGE_TO = null; /* saveTx의 동일 테스트(19809)와 달리 뒤이어 더 먼 targetDate(2030-01-01 등)를
+   쓰는 saveGoal 테스트가 바로 이어지므로, 여기서 명시적으로 되돌려 순서에 취약해지지 않게 함 */
+});
+test('saveGoal: targetDate가 없으면(선택 안 함) 범위 가드와 무관하게 정상 저장된다(정상 케이스는 회귀 없음)', () => {
+  sandbox.DB = { goals: [] };
+  sandbox.goalDraft = { id: 'test-uid', name: '', type: 'networth', targetAmount: 0, targetDate: null };
+  sandbox.goalNameValue = '내 집 마련';
+  sandbox.goalAmtValue = '1,000,000';
+  sandbox.saveGoal(false);
+  assert.strictEqual(sandbox.DB.goals.length, 1, 'targetDate 없는 목표는 그대로 저장되어야 함');
+  assert.strictEqual(sandbox.DB.goals[0].targetDate, null);
+});
 test('saveGoal: 기존 목표를 수정하면(id 일치) 같은 자리에서 교체되고 새 항목이 추가되지 않는다', () => {
   sandbox.DB = { goals: [{ id: 'g1', name: '여행자금', type: 'networth', targetAmount: 3000000, targetDate: null }] };
   sandbox.goalDraft = { id: 'g1', name: '', type: 'networth', targetAmount: 0, targetDate: null };

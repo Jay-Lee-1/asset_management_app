@@ -1,15 +1,8 @@
 {
   "cycle": 319,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 314,
-      "phase": "develop",
-      "timestamp": "2026-11-06T13:30:00.000Z",
-      "summary": "saveRec(반복 관리)은 cycle285부터 findPossibleDuplicateRec으로 신규 등록 시 중복(예: 넷플릭스 15,900원 매달 5일)을 confirmSheet로 경고하는데, 거래 입력 중 \"반복\" 토글로 DB.recurrences를 만드는 saveTx()의 평행 경로(index.html:5780)는 같은 모양의 레코드를 만들면서도 그 가드가 전혀 없었다 — 구독을 실수로 두 번 등록하면 매달 조용히 이중 집계된다. saveTx의 반복 분기를 saveRec/commitRec과 같은 패턴으로 분리: DB.recurrences.push 직전에 rec 후보 객체를 만들어 findPossibleDuplicateRec(DB.recurrences,rec)를 호출하고, 중복이면 confirmSheet('비슷한 반복이 있어요',...)로 확인 후 새 commitTxAsRec(d,rec) 헬퍼(id 부여+push+save+closeSheet+toast)를 호출, 중복이 없으면 바로 commitTxAsRec을 호출하도록 고쳤다. test/run.js의 FUNCTIONS 추출 목록에 'commitTxAsRec' 추가(없으면 vm sandbox에 안 잡혀 saveTx 반복 테스트 6건이 'commitTxAsRec is not defined'로 깨짐 — 직접 발견/수정). 회귀 테스트 3건 추가: 겹치면 confirmSheet 뜨고 확인 전엔 저장 안 됨+확인하면 저장, 안 겹치면 바로 저장(회귀 없음), 중지된(active:false) 반복과 겹쳐도 바로 저장(회귀 없음) — saveRec의 동일 cycle285 테스트와 같은 패턴. 테스트 2913->2916 통과. node --check logic.js/sw.js 통과. APP_VERSION 1.47.371->1.47.372, sw.js CACHE v638->v639.",
-      "commit": null
-    },
     {
       "cycle": 314,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-07T08:05:00.000Z",
       "summary": "critique(cycle318) 계획대로 목표 비중(allocationDrift/Multi) 알림 그룹에 뮤트 토글을 추가했다. 데이터모델/로직 변경 없음(notifyMute는 이미 자유형 맵, toggleNotifyMuteGroup(g)/pickNotifyAlerts/notifyAlertInfo는 이미 g를 범용 처리). renderMenu의 osNotify 조건부 배열(7083-7089)에 다른 5개(confirm/mat/budget/goal/debt)와 동일한 모양으로 {ic:'chart',l:'· 목표 비중 알림',sw:!DB.settings.notifyMute?.alloc,a:\"toggleNotifyMuteGroup('alloc')\"} 한 행 추가('chart' 아이콘은 7073의 '목표 자산배분' 메뉴 항목과 동일 아이콘 재사용). notifyAlertInfo() 바로 위 주석(11006-11016)도 '아직 포함되지 않는다'는 문구를 'cycle318 advance에서 포함됐다'로 갱신. 테스트: test/run.js:27055 renderMenu 소스패턴 테스트의 그룹 목록을 5개→6개(alloc 추가)로 갱신, toggleNotifyMuteGroup('alloc')이 DB.settings.notifyMute.alloc을 켜고/끄고 save()를 호출하는지 기존 budget/goal 테스트(27021)와 동일 패턴으로 1건 추가 — 2992->2993 통과. node test/run.js 2993/2993 통과, node --check logic.js/sw.js 통과, manifest.webmanifest JSON 유효성 통과, index.html 인라인 스크립트 추출검사는 기존과 동일한 1건의 기존 오탐(HTML 주석 텍스트 오인, cycle311부터 이어짐; git stash로 변경 전 상태와 대조해 이번 변경과 무관함을 재확인)만 재확인됨. APP_VERSION 1.47.380->1.47.381, sw.js CACHE v647->v648. pending_advance_plan null로 비움. (참고: 커밋 전 local main 추적 ref가 origin보다 2커밋 뒤쳐져 detached HEAD 상태였음을 발견 — git fetch로 origin/main이 이미 이 detached HEAD를 포함함을 확인(merge-base --is-ancestor로 검증)하고 main을 origin/main으로 맞춘 뒤 그 위에 이번 커밋을 쌓아 데이터 손실 없이 처리.)",
+      "commit": null
+    },
+    {
+      "cycle": 319,
+      "phase": "develop",
+      "timestamp": "2026-11-07T09:15:34.316Z",
+      "summary": "saveGoal()이 name/targetAmount는 검증하면서도 targetDate(목표일)에는 saveAsset(maturityDate, 4973-4974)·saveTx/saveRec(date/startDate)과 동일한 dateBelowRangeFloor/dateAboveRangeCeil 범위 가드가 전혀 없던 공백을 발견(서브에이전트 조사로 발견, cycle300-319 처리 항목과 무관한 신규 항목). 목표일 선택용 openFieldDatePicker/dpConfirm(10105-10290대)은 무한 스크롤 달력으로 min/max가 없어 2200년 같은 값도 그대로 선택·저장될 수 있었고, 그 값은 goalIsOverdue/fmtDateFull/CSV 내보내기/homeAlerts의 goalBehind 등에서 검증 없이 그대로 쓰인다. (주말 조정(weekend) 필드를 반복거래 유형별로 넓히는 candidate도 함께 검토했으나, 9150-9161의 \"daily/weekly/yearly엔 weekend!=='none'이 절대 안 남는다\" 불변식과 정규화 로직이 이미 의도적으로 존재해 더 큰 변경이 필요해 보류.) saveGoal()의 targetAmount 검증 직후에 saveAsset과 동일한 두 줄 가드(RANGE_FROM 이전/RANGE_TO 이후 토스트 후 return)를 추가. 회귀 테스트 3건 추가(test/run.js, saveGoal 블록): RANGE_FROM 이전 targetDate 저장 차단, RANGE_TO 이후 targetDate 저장 차단, targetDate 없는 정상 케이스는 회귀 없음 — saveTx의 동일 RANGE_TO 테스트가 sandbox.RANGE_TO를 리셋 안 해 뒤에 2030년대 targetDate를 쓰는 duplicateGoal→saveGoal 테스트와 충돌한 걸 직접 발견해 테스트 끝에 sandbox.RANGE_TO=null 복원을 추가해 수정. 테스트 2993->2996 통과. node --check logic.js 통과(index.html 4개 스크립트 블록 중 saveGoal이 속한 블록도 개별 --check 통과). APP_VERSION 1.47.381->1.47.382, sw.js CACHE v648->v649.",
       "commit": null
     }
   ]
