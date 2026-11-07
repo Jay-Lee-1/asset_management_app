@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.380';
+const APP_VERSION='1.47.381';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -7086,6 +7086,7 @@ function renderMenu(){
     {ic:'chart',l:'· 예산 알림',sw:!DB.settings.notifyMute?.budget,a:"toggleNotifyMuteGroup('budget')"},
     {ic:'target',l:'· 목표 알림',sw:!DB.settings.notifyMute?.goal,a:"toggleNotifyMuteGroup('goal')"},
     {ic:'debt',l:'· 부채 알림',sw:!DB.settings.notifyMute?.debt,a:"toggleNotifyMuteGroup('debt')"},
+    {ic:'chart',l:'· 목표 비중 알림',sw:!DB.settings.notifyMute?.alloc,a:"toggleNotifyMuteGroup('alloc')"},
    ]:[]),
    {ic:'lock',l:'앱 잠금(PIN)',sw:APPLOCK.enabled(),a:"toggleAppLock()"},
    ...(APPLOCK.enabled()?[{ic:'lock',l:'PIN 변경',a:"openChangePinSheet()"},{ic:'lock',l:'재잠금 시점',v:graceLabel(),a:"openAppLockGraceSheet()"}]:[]),
@@ -11008,10 +11009,9 @@ function notifyAlertInfo(al){
   * 움직이는 값이라 월만으로 묶으면 "8%p로 한 번 알린 뒤 20%p로 더 벌어져도" 재알림이 안 되는 반대
   * 문제가 생긴다 — budgetOverMulti/goalBehindMulti가 count를 키에 더해 "건수가 바뀌면 다시 알린다"로
   * 푼 것과 같은 원칙으로, diffPct를 5%p 단위로 반올림한 버킷을 키에 더해 "벌어진 정도가 눈에 띄게
-  * 바뀌면" 다시 알리게 한다(미세한 시세 등락만으론 버킷이 안 바뀌어 스팸이 나지 않음). 이 두 kind는
-  * 아직 renderMenu의 5개 그룹별 뮤트 토글(confirm/mat/budget/goal/debt, app-evolve cycle312/313)에
-  * 포함되지 않는 새 group('alloc')이라 뮤트 UI는 없지만, notifyMute[info.group] 조회 자체는 undefined로
-  * 안전하게 통과한다(뮤트 UI 추가는 범위 밖, 다음 critique가 판단할 몫). */
+  * 바뀌면" 다시 알리게 한다(미세한 시세 등락만으론 버킷이 안 바뀌어 스팸이 나지 않음). 이 두 kind의
+  * group('alloc')도 renderMenu의 그룹별 뮤트 토글(confirm/mat/budget/goal/debt에 이어, app-evolve
+  * cycle318 advance)에 포함돼 있다. */
  if(al.kind==='allocationDrift')return{key:`allocDrift:${al.type}:${TODAY.slice(0,7)}:${Math.round(al.diffPct/5)*5}`,title:'목표 비중과 차이가 커요',body:`${ASSET_TYPES[al.type].label} · 지금 ${al.actualPct.toFixed(1)}% / 목표 ${al.targetPct}%`,group:'alloc'};
  if(al.kind==='allocationDriftMulti')return{key:`allocDriftMulti:${TODAY.slice(0,7)}:${al.count}`,title:'목표 비중과 차이가 커요',body:`${al.count}개 유형이 목표 비중과 많이 벌어졌어요`,group:'alloc'};
  return null;

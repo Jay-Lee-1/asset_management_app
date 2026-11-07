@@ -1,26 +1,8 @@
 {
-  "cycle": 318,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "목표 비중(allocationDrift/Multi) 알림 그룹에 뮤트 토글 추가",
-    "why": "notifyAlertInfo()(index.html:11006-11016)의 주석이 스스로 명시하는 공백: allocationDrift/allocationDriftMulti는 cycle313에서 group:'alloc'으로 새로 추가됐지만, renderMenu의 그룹별 뮤트 토글 목록(index.html:7083-7089)은 여전히 confirm/mat/budget/goal/debt 5개뿐이라 alloc이 빠져 있다. 목표 비중 알림이 거북한 사용자(예: 의도적으로 한 유형을 과체중으로 유지)가 이 그룹만 끌 방법이 없고 OS 알림 전체 스위치가 유일한 탈출구라, cycle312/313이 만든 '그룹별 선택적 뮤트'의 취지를 이 그룹만 비켜간다.",
-    "approach": "데이터모델/로직 변경 없음 — notifyMute는 이미 자유형 {group:bool} 맵이고 toggleNotifyMuteGroup(g)(index.html:11084-11088)/pickNotifyAlerts/notifyAlertInfo는 이미 g를 범용으로 처리한다. index.html:7083-7089의 osNotify 조건부 배열에 다른 5개와 동일한 모양으로 한 행만 추가: {ic:'chart',l:'· 목표 비중 알림',sw:!DB.settings.notifyMute?.alloc,a:\"toggleNotifyMuteGroup('alloc')\"} (아이콘 'chart'는 7073의 '목표 자산배분' 메뉴 항목과 동일 아이콘 재사용). 주석(11006-11016)도 '아직 포함되지 않는다'는 문구를 갱신. 테스트: test/run.js:27055의 5개 그룹 목록 단언을 6개(alloc 추가)로 갱신, toggleNotifyMuteGroup('alloc')이 DB.settings.notifyMute.alloc을 왕복하는지 27021의 기존 budget/goal 테스트와 동일 패턴으로 1건 추가, osNotify=true일 때만 이 행이 렌더되는지 소스패턴 검증 1건 추가."
-  },
+  "cycle": 319,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 313,
-      "phase": "critique",
-      "timestamp": "2026-11-06T11:10:00.000Z",
-      "summary": "서브에이전트로 앱 전체를 재조사(cycle300-313 처리/보류/기각 항목 전부 제외 지시, twGuard 스윕·전역검색·예산이월·연말결산·owner/category/asset merge 전부·nwHistory byType/자산배분추이 카드·CSV날짜·이체중복감지·카테고리별 알림뮤트는 명시적으로 제외). 발견: nwHistory byType 스냅샷+allocationHistoryCard(cycle310-311)로 '실제 자산배분 추이'는 완결됐지만, 목표 비중을 설정하고 현재와의 차이·리밸런싱 금액을 보여주는 '목표 대비' 절반이 전혀 없음 — targetAllocation/rebalan/allocationDrift grep 전체 0건. saveGoal은 goal.type이 'asset'/'networth'만 지원해 배분형 목표가 아예 없음. 막 손댄 코드라 통합 지점이 신선하고 budgetOver/budgetOverMulti 같은 기존 single/multi collapsing 알림 패턴을 재사용할 수 있어 적절한 cycle 범위. pending_advance_plan에 구체 계획 저장(DB.settings.targetAllocation 희소맵, logic.js의 allocationDrift/rebalanceAmount 순수함수, 설정 시트, allocationHistoryCard 확장 또는 형제 카드, homeAlerts에 allocationDrift/Multi 신규 kind, 테스트 계획 포함). 기각 후보 5개(CSV 재가져오기 분할거래 미지원-cycle198 기결정, 반복거래 분할-cycle282 해결됨, 진짜 백그라운드 푸시-아키텍처 제약으로 이미 안내됨, 카테고리 계층-과대 범위, 다인 소유자 정산-근거 없는 추측성). 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
-    {
-      "cycle": 313,
-      "phase": "advance",
-      "timestamp": "2026-11-06T12:26:52.732Z",
-      "summary": "critique(cycle313) 계획대로 목표 자산배분(target allocation)+리밸런싱 가이드를 구현했다. 데이터 모델: DB.settings.targetAllocation={type:percent} 희소맵(기본 {}, migrate() 보존). logic.js에 순수함수 2개 추가 — allocationDrift(byTypeTotals,targetMap,unknownTypes): targetMap에 있는 type만 반환(없는 type은 결과에서 제외), rateUnknown type은 actualPct/diffPct를 null로(0 단정 금지), 나머지는 total 대비 actualPct-targetPct를 그대로 계산(target 합이 100%를 넘어도 정규화 없음). rebalanceAmount(totalAssets,diffPct)=round(totalAssets*diffPct/100), diffPct null이면 null, totalAssets<=0이면 0. UI: openTargetAllocationForm/renderTargetAllocationForm(ASSET_TYPES 9종 % 입력, splitHintUpdate와 동일한 DOM 직접 갱신 합계 힌트, 100% 초과는 경고만), saveTargetAllocation(0 이하 값 제외하고 저장, 전부 0이면 꺼짐)/clearTargetAllocation, renderMenu 가계부 그룹에 진입점 추가. 카드: targetAllocationCard(owner) — allocationHistoryCard 바로 아래, owner=all 전용, targetAllocation 비면 완전히 숨김, 유형별 지금%/목표%/매도·매수 리밸런싱 금액(또는 rateUnknown이면 시세 미확인 캡션) 표시. 홈 알림: homeAlerts에 allocationDrift/allocationDriftMulti 추가(|diffPct|>=8%p, budgetOver(Multi)와 동일한 단일/복수 collapsing), notifyAlertInfo는 월+5%p 반올림 diff 버킷으로 키를 잡아 틱마다 스팸 없이 벌어짐이 커지면 재알림, group:alloc(아직 뮤트 UI 없음, 범위 밖). homeAlertCard에도 두 kind 추가(openTargetAllocationForm 연결). 테스트: allocationDrift(target 없음/actual 없음→0/rateUnknown→null/target 합>100 비정규화) 6건, rebalanceAmount(0·음수 total/null diff/라운딩) 3건, targetAllocationCard 4건, 폼 입력/저장/끄기 3건, migrate 1건, renderMenu 소스패턴 1건, homeAlerts 통합 3건(rateUnknown은 그 유형 자신만 빠지고 가격을 아는 다른 유형은 그대로 판정됨을 명시적으로 검증 — allocationCard의 hasUnknown 캡션과 동일 원칙), notifyAlertInfo 키 버킷 1건, homeAlertCard 1건 — 2889->2913 통과. 구현 중 발견: vm 샌드박스 realm 문제로 deepStrictEqual({},{})가 실패하는 기존 이슈(cycle309/313 로그와 동일 클래스)가 새 테스트에도 그대로 나타나 Object.keys/JSON.stringify 비교로 피해감. 100% 초과 경고 토스트 문구를 처음엔 실제 합계값만 적었다가 테스트로 \"100%를 넘어요\" 고정 문구가 있어야 명확히 검증된다는 걸 깨닫고 수정. node test/run.js 2913/2913 통과, node --check logic.js/sw.js, 메인 인라인 스크립트 new Function 구문검사, manifest.webmanifest JSON 유효성 모두 통과(기존 1건의 오탐은 cycle311부터 이어진 것으로 이번 변경과 무관함을 HEAD 대비 재확인). APP_VERSION 1.47.370->1.47.371, sw.js CACHE v637->v638. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 314,
       "phase": "develop",
@@ -152,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-07T07:00:00.000Z",
       "summary": "서브에이전트로 앱 전체를 재조사(cycle300-318 처리/보류/기각 항목 전부 제외 지시: twGuard 스윕·전역검색·예산이월·연말결산·owner/category/asset merge 전부·nwHistory byType/자산배분추이 카드·목표자산배분+리밸런싱·CSV날짜·이체 및 반복 중복감지·카테고리별 알림뮤트·공동지출 정산(shared/settle) 전체와 배지·토글 전파·investGainLossCard 유형별 분해·목표/반복/통합검색 검색창 디바운스·PIN 화면잠금 고지는 명시적으로 제외; FX 환차익 분리·투자손익 추이차트·CSV shared/photo 필드·배당/이자 추적·할부 추적·귀속별 예산·다인 정산·CSV 분할거래·반복거래 분할·실시간 저장소 암호화는 기각 이력으로 재확인). 발견: notifyAlertInfo()(index.html:11006-11016) 자체 주석이 명시하는 공백 — allocationDrift/allocationDriftMulti(cycle313, group:'alloc')가 renderMenu의 그룹별 뮤트 토글 목록(7083-7089, confirm/mat/budget/goal/debt 5개)에 아직 없음. toggleNotifyMuteGroup(g)(11084-11088)은 이미 g에 범용이라 로직/데이터모델 변경 없이 UI 행 한 줄만 필요한, 범위가 극히 좁고 안전한 공백(목표 비중 알림이 거북한 사용자가 끌 방법이 OS 알림 전체 스위치뿐). pending_advance_plan에 구체 계획 저장(renderMenu osNotify 배열에 'chart' 아이콘 재사용한 alloc 행 1개 추가, 주석 갱신, test/run.js:27055의 5개→6개 그룹 단언 갱신+toggleNotifyMuteGroup('alloc') 왕복 테스트+osNotify 조건 렌더 테스트). 기각 후보 3개(반복 건별 skip-이미 완비됨, 백업 리마인더-이미 완비됨(backupDue/8346 스누즈), CDN SRI 해시-TODO 그대로지만 이 컨테이너 egress 프록시가 cdn.jsdelivr.net/t1.kakaocdn.net을 여전히 차단해 무인 사이클에서 계산 불가능한 환경적 제약, 재확인만 하고 미착수). 코드 변경 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 318,
+      "phase": "advance",
+      "timestamp": "2026-11-07T08:05:00.000Z",
+      "summary": "critique(cycle318) 계획대로 목표 비중(allocationDrift/Multi) 알림 그룹에 뮤트 토글을 추가했다. 데이터모델/로직 변경 없음(notifyMute는 이미 자유형 맵, toggleNotifyMuteGroup(g)/pickNotifyAlerts/notifyAlertInfo는 이미 g를 범용 처리). renderMenu의 osNotify 조건부 배열(7083-7089)에 다른 5개(confirm/mat/budget/goal/debt)와 동일한 모양으로 {ic:'chart',l:'· 목표 비중 알림',sw:!DB.settings.notifyMute?.alloc,a:\"toggleNotifyMuteGroup('alloc')\"} 한 행 추가('chart' 아이콘은 7073의 '목표 자산배분' 메뉴 항목과 동일 아이콘 재사용). notifyAlertInfo() 바로 위 주석(11006-11016)도 '아직 포함되지 않는다'는 문구를 'cycle318 advance에서 포함됐다'로 갱신. 테스트: test/run.js:27055 renderMenu 소스패턴 테스트의 그룹 목록을 5개→6개(alloc 추가)로 갱신, toggleNotifyMuteGroup('alloc')이 DB.settings.notifyMute.alloc을 켜고/끄고 save()를 호출하는지 기존 budget/goal 테스트(27021)와 동일 패턴으로 1건 추가 — 2992->2993 통과. node test/run.js 2993/2993 통과, node --check logic.js/sw.js 통과, manifest.webmanifest JSON 유효성 통과, index.html 인라인 스크립트 추출검사는 기존과 동일한 1건의 기존 오탐(HTML 주석 텍스트 오인, cycle311부터 이어짐; git stash로 변경 전 상태와 대조해 이번 변경과 무관함을 재확인)만 재확인됨. APP_VERSION 1.47.380->1.47.381, sw.js CACHE v647->v648. pending_advance_plan null로 비움. (참고: 커밋 전 local main 추적 ref가 origin보다 2커밋 뒤쳐져 detached HEAD 상태였음을 발견 — git fetch로 origin/main이 이미 이 detached HEAD를 포함함을 확인(merge-base --is-ancestor로 검증)하고 main을 origin/main으로 맞춘 뒤 그 위에 이번 커밋을 쌓아 데이터 손실 없이 처리.)",
       "commit": null
     }
   ]

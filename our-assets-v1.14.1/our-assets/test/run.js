@@ -27037,6 +27037,21 @@ test('toggleNotifyMuteGroup: 그룹 뮤트를 토글하고 save()를 호출한�
     assert.strictEqual(sandbox.DB.settings.notifyMute.budget, false, '다른 그룹을 토글해도 budget 상태는 그대로여야 함');
   } finally { sandbox.save = origSave; sandbox.renderMenu = origRenderMenu; }
 });
+test("toggleNotifyMuteGroup: 'alloc'(목표 비중, app-evolve cycle318) 그룹도 다른 그룹과 동일하게 토글된다", () => {
+  let saveCalls = 0;
+  const origSave = sandbox.save, origRenderMenu = sandbox.renderMenu;
+  sandbox.save = () => { saveCalls++; };
+  sandbox.renderMenu = () => {};
+  try {
+    sandbox.DB = { settings: {} };
+    sandbox.toggleNotifyMuteGroup('alloc');
+    assert.strictEqual(sandbox.DB.settings.notifyMute.alloc, true, '처음 토글하면 뮤트 on이어야 함');
+    assert.strictEqual(saveCalls, 1);
+    sandbox.toggleNotifyMuteGroup('alloc');
+    assert.strictEqual(sandbox.DB.settings.notifyMute.alloc, false, '두 번째 토글하면 다시 off여야 함');
+    assert.strictEqual(saveCalls, 2);
+  } finally { sandbox.save = origSave; sandbox.renderMenu = origRenderMenu; }
+});
 test('migrate: DB.settings.notifyMute가 없으면 {}로 채워지고, 기존 값이 있으면 그대로 보존된다', () => {
   sandbox.DB = {
     version: 5, catsV2: true,
@@ -27052,10 +27067,10 @@ test('migrate: DB.settings.notifyMute가 없으면 {}로 채워지고, 기존 �
   sandbox.migrate();
   assert.strictEqual(sandbox.DB.settings.notifyMute.budget, true, '이미 설정된 뮤트 값은 재마이그레이션해도 보존돼야 함');
 });
-test('renderMenu: OS 알림이 켜져 있을 때만 5개 그룹별 뮤트 토글 행(confirm/mat/budget/goal/debt)이 보이고, 각각 toggleNotifyMuteGroup을 가리킨다(소스 패턴 검증)', () => {
+test('renderMenu: OS 알림이 켜져 있을 때만 6개 그룹별 뮤트 토글 행(confirm/mat/budget/goal/debt/alloc)이 보이고, 각각 toggleNotifyMuteGroup을 가리킨다(소스 패턴 검증)', () => {
   const body = extractFunction('renderMenu');
   assert.ok(body.includes('DB.settings.osNotify?[') || body.includes('DB.settings.osNotify ?['), 'OS 알림이 꺼져 있으면 그룹별 토글 행이 렌더되지 않아야 함');
-  ['confirm', 'mat', 'budget', 'goal', 'debt'].forEach(g => {
+  ['confirm', 'mat', 'budget', 'goal', 'debt', 'alloc'].forEach(g => {
     assert.ok(body.includes(`toggleNotifyMuteGroup('${g}')`), `${g} 그룹 토글 행이 없음`);
   });
 });
