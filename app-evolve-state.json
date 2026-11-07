@@ -1,15 +1,12 @@
 {
   "cycle": 320,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "자산 삭제(deleteAssetsUndo) '최근 삭제함' 복구 — DB.trashAssets 신설",
+    "why": "deleteAssetsUndo(index.html:11500-11508)가 6초짜리 undoToast 메모리 클로저에만 의존해 복구 가능하다. DB.deletedIds는 {id:timestamp} 톰스톤일 뿐 자산 내용(name/type/costBasis/acquiredAt/owner)과 연결된 반복거래 비활성화 상태(_autoDeactivatedByAssetDelete, 11503)를 담지 않아, 6초가 지나거나 앱을 닫으면 영구 소실된다. cycle319가 거래(DB.trashTxns)에서 이미 고친 것과 같은 클래스의 버그를 자산(가장 가치 높은 데이터: 매입원가·수량 이력·연동 반복거래)에서 고친다.",
+    "approach": "DB.trashAssets[] 신설, GC/병합은 새 함수 없이 이미 범용인 gcTrashTxns/mergeTrashTxns(logic.js:460,470 — {id,_deletedAt} 형태만 가정, txn 전용 필드 참조 없음)를 그대로 재사용. migrate()(2613-2615 패턴)에 trashAssets 초기화+GC+live-id 필터 추가. mergeRemoteDataIntoLocal(1673 패턴)에 trashAssets 배선. sanitizeBackup(9294 패턴)에 trashAssets 검증 추가. deleteAssetsUndo가 삭제 즉시 asset 전체+_deletedAt을 DB.trashAssets에 저장(snapshotAssetName/recs 비활성화 로직은 그대로 유지). 메뉴에 '삭제한 자산'(7107 아래) 행 + openAssetTrashList()/restoreTrashAsset(id) 신설(openTrashList/restoreTrashTxn과 동일 패턴). 핵심 엣지케이스: restoreTrashAsset은 원래 id로 복구하므로 unsnapshotAssetName(id)만 사용하고, 이체 반복거래처럼 fromAssetId/toAssetId 양쪽이 걸린 rec은 두 자산이 모두 복구됐을 때만(DB.assets.some 확인) active=true로 되돌리는 가드(relinkDeletedAsset 4616행 패턴 재사용)를 넣는다. 테스트: gcTrashTxns/mergeTrashTxns를 자산 데이터로도 호출하는 회귀, migrate 배선, mergeRemoteDataIntoLocal 배선, deleteAssetsUndo→trashAssets 저장, restoreTrashAsset 단건 및 이체rec 양쪽 미복구 가드 다수. 기각: 시세 실패 표시(이미 rateUnknown 완비)/sw.js 캐시 전략(이미 견고)/다른 엔티티(목표·반복·귀속·카테고리) 삭제의 동일 취약점(자산보다 손실 폭 작아 다음 critique 후보로 보류)."
+  },
   "history": [
-    {
-      "cycle": 315,
-      "phase": "critique",
-      "timestamp": "2026-11-06T19:20:00.000Z",
-      "summary": "직접 코드를 재조사(cycle300-315 처리/보류/기각 항목 전부 제외: twGuard 스윕·전역검색·예산이월·연말결산·owner/category/asset merge 전부·nwHistory byType/자산배분추이 카드·목표자산배분+리밸런싱·CSV날짜·이체 및 반복 중복감지·카테고리별 알림뮤트·shared 전파 버그는 모두 cycle300-315에서 이미 다뤄져 제외). cycle315 review가 명시적으로 critique 몫으로 남긴 후보(saveRec/renderRecSheet에 '같이 냈어요' 토글 부재)를 채택해 직접 검증 — renderRecSheet(index.html:6148)에는 sharedChip이 전혀 없어 사용자가 반복을 새로 만들거나(openRecSheet) 수정할 때(editRec) shared 여부를 설정/변경할 방법이 거래 입력 경로(renderTxSheet의 sharedChip, 5619) 하나뿐임을 재확인. 저장 경로는 이미 완비돼 있음을 코드로 검증: commitRec(6250)이 recDraft를 통째로 저장해 d.shared만 채워지면 그대로 영속화되고, _applyType(5751-5753, tx/rec 공용)은 이미 t!=='expense'일 때 draft.shared=false로 리셋하며, recHistFieldsChanged(6290-6292)가 shared를 스케줄 변경 필드로 취급하지 않아 토글이 불필요한 recSaveScopeConfirm을 유발하지도 않음 — UI 토글 버튼+핸들러 한 쌍만 비어 있는 좁고 안전한 공백. pending_advance_plan에 구체 계획 저장(sharedChip과 동일 조건·마크업을 renderRecSheet에 추가, recToggleShared() 신설, saveRec/commitRec/migrate는 무변경, 테스트 6건 계획). 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 315,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-07T13:08:02.397Z",
       "summary": "cycle320 develop 커밋(3aa5f40, searchTerms/matchQueryTerms 직접 단위 테스트 추가)을 검토 — logic.js:564(searchTerms)·670(matchQueryTerms) 구현을 직접 대조. searchTerms는 String(q||'').trim().split(/\\s+/).filter(Boolean)로, 추가된 세 테스트(공백/탭 혼합 분리, 트림, 빈값→빈배열) 모두 구현과 정확히 일치. matchQueryTerms는 terms.every(parseAmountToken 파싱되면 amountCandidates.some(amountMatchesToken) 아니면 normHay.includes)로, 추가된 다섯 테스트(평문 substring, 금액 연산자/범위, null/undefined 후보 스킵, AND 결합, 빈 terms→true) 모두 일치. node test/run.js 재실행 3032/3032 통과. 실제 버그 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 320,
+      "phase": "critique",
+      "timestamp": "2026-11-07T14:00:00.000Z",
+      "summary": "서브에이전트로 앱 전체를 재조사(cycle300-320 처리/보류/기각 항목 전부 제외 지시: twGuard 스윕·전역검색·예산이월·연말결산·owner/category/asset merge 전부·nwHistory byType/자산배분추이 카드·목표자산배분+리밸런싱·CSV날짜·이체 및 반복 중복감지·카테고리별 알림뮤트·공동지출 정산(shared/settle) 전체와 배지·토글 전파·investGainLossCard 유형별 분해·목표/반복/통합검색 검색창 디바운스·PIN 화면잠금 고지·목표비중 알림뮤트 토글·saveGoal targetDate 범위가드·거래 삭제 trash 복구·searchTerms/matchQueryTerms 단위테스트는 명시적으로 제외; FX 환차익 분리·투자손익 추이차트·CSV shared/photo 필드·배당/이자/할부/귀속별 예산/다인 정산/CSV·반복 분할거래·실시간 저장소 암호화·반복 건별 skip·백업 리마인더·CDN SRI 해시·홈 대시보드 카드 순서변경/숨기기·CSV import 견고성·부채/대출 추적·백그라운드 푸시 한계는 기각 이력으로 재확인). 발견: 자산 삭제(deleteAssetsUndo, index.html:11500-11508)가 거래 삭제와 달리 6초짜리 undoToast 메모리 클로저 하나에만 의존해 복구 가능하다 — DB.deletedIds는 {id:timestamp} 톰스톤일 뿐 자산 내용(name/type/costBasis/acquiredAt/owner)과 연결된 반복거래 비활성화 상태(_autoDeactivatedByAssetDelete, 11503)를 담지 않아, 6초가 지나거나 앱을 닫으면 영구 소실됨을 grep으로 재확인. cycle319가 거래(DB.trashTxns)에서 이미 고친 것과 같은 버그 클래스를 자산(매입원가·수량 이력·연동 반복거래라는 가장 가치 높은 데이터)에서 고치는 것으로, 엔티티가 달라 재제안이 아님. pending_advance_plan에 구체 계획 저장(DB.trashAssets 신설, GC/병합은 새 함수 없이 이미 범용인 gcTrashTxns/mergeTrashTxns 재사용, migrate/mergeRemoteDataIntoLocal/sanitizeBackup 배선, openAssetTrashList/restoreTrashAsset 신설, 이체rec 양쪽 미복구 가드 포함 테스트 계획). 기각 후보 3개(시세 실패 표시-이미 rateUnknown 완비, sw.js 캐시 전략-이미 견고, 다른 엔티티(목표·반복·귀속·카테고리) 삭제의 동일 취약점-자산보다 손실 폭 작아 다음 critique 후보로 보류). 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
