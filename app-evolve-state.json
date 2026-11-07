@@ -1,15 +1,12 @@
 {
   "cycle": 322,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "목표(goals) 삭제 '최근 삭제함(trashGoals)' 복구 기능 추가",
+    "why": "deleteGoalsUndo(index.html:11624-11630)가 undoToast의 6초짜리 메모리 클로저 하나에만 의존하는 걸 재확인했다. DB.deletedIds는 병합용 id-시각 톰스톤일 뿐 목표 내용(name/targetAmount/targetDate)을 담지 않아 6초가 지나거나 앱을 닫으면 영구 소실된다. 이미 같은 버그 클래스를 거래(cycle319 trashTxns)·자산(cycle320 trashAssets)·반복거래(cycle321 trashRecs)에서 고쳤고, cycle320/321 critique가 '목표는 데이터가 얕아 우선순위 낮음, 다음 critique 후보로 보류'라고 명시적으로 남겨둔 다음 차례다. 귀속(owners)/카테고리(categories) 삭제는 실체가 이름 문자열뿐이라(연결된 자산/거래는 남고 unassigned로만 재배정됨) 유실 비용이 낮아 이번에도 보류한다.",
+    "approach": "logic.js는 새 함수 없이 gcTrashTxns/mergeTrashTxns를 그대로 재사용({id,_deletedAt}만 가정하므로 목표 전용 필드 참조 없음, 주석으로 재사용 사실 명시). index.html: DB.trashGoals 신설(migrate()에 초기화+GC+live-id 필터 배선, 1673-1678행 trashTxns/trashAssets/trashRecs 병합과 동일한 패턴으로 mergeRemoteDataIntoLocal에도 배선, sanitizeBackup에 id&&name 기준 검증+targetAmount/targetDate 보정+_deletedAt 보정 추가). deleteGoalsUndo(11624-11630)가 삭제 즉시 목표 전체+_deletedAt을 DB.trashGoals에 저장하고 undo 콜백에서는 즉시 제거하도록 수정. renderMenu(7113-7115 옆)에 '삭제한 목표' 행 추가. openGoalTrashList()/restoreTrashGoal(id) 신설 — openTrashList/openAssetTrashList/openRecTrashList와 동일한 manage-row 패턴, 요약은 targetAmount/targetDate 표시. 테스트: deleteGoalsUndo→trashGoals 저장/undo제거/무변경/다건 + openGoalTrashList/restoreTrashGoal(정상복구/존재안함/twGuard/목록순서/빈상태) + sanitizeBackup trashGoals 검증 + migrate trashGoals 초기화/GC/live-id필터 + mergeRemoteDataIntoLocal trashGoals 배선 + gcTrashTxns/mergeTrashTxns 재사용 확인(목표 모양 데이터) — trashRecs(cycle321)가 추가한 테스트 그룹과 동일한 구성을 목표에 맞춰 재사용. TRASH_MAX_AGE_DAYS 공용 상수 그대로 사용. 사용자 체감 기능 추가이므로 APP_VERSION/sw.js CACHE 버전업 포함."
+  },
   "history": [
-    {
-      "cycle": 317,
-      "phase": "critique",
-      "timestamp": "2026-11-07T03:10:00.000Z",
-      "summary": "서브에이전트로 앱 전체를 재조사(cycle300-317 처리/보류/기각 항목 전부 제외 지시: twGuard 스윕·전역검색·예산이월·연말결산·owner/category/asset merge 전부·nwHistory byType/자산배분추이 카드·목표자산배분+리밸런싱·CSV날짜·이체 및 반복 중복감지·카테고리별 알림뮤트·공동지출 정산(shared/settle) 전체와 배지·토글 전파·investGainLossCard 유형별 분해·목표/반복 검색창 디바운스는 명시적으로 제외; FX 환차익 분리·투자손익 추이차트·CSV shared/photo 필드·배당/이자 추적·할부 추적·귀속별 예산·다인 정산·CSV 분할거래·반복거래 분할은 기각 이력으로 재확인). 발견을 직접 코드로 재검증: '앱 잠금(PIN)'이 실제로는 화면만 가리는 UI 오버레이(lockApp/unlockApp, index.html:12086-12099, #app/#lockView display 토글뿐)이고 _saveCore()/load()(2689, 2537-2554)는 APPLOCK 상태와 무관하게 평문 JSON.stringify(DB)를 그대로 localStorage에 read/write함을 확인 — 이는 사실 cycle252/289 주석(2284-2302)이 이미 자체 진단하고 '저장 아키텍처 재작성급이라 무인 사이클엔 과함'으로 명시 기각해 둔 격차. encryptDbBlob/decryptDbBlob(cycle252)은 수동 JSON 백업 내보내기/가져오기(8804,8826,9531)에만 연결돼 있고 실시간 저장과는 무관함도 재확인. 그런데 PIN 설정 시트 문구(openSetPinSheet, 12142)는 '이 PIN은 이 기기에만 저장되고 클라우드로 동기화되지 않아요'라고만 말할 뿐 데이터 자체는 암호화되지 않는다는 사실을 전혀 밝히지 않아 — 공유 PC·분실 기기 위협을 막으려 PIN을 켠 사용자가 보호 범위를 오해하게 되는 정확성 문제. 실제 암호화 배선(재작성급)은 또 기각하고, 문구 고지만 좁게 고치는 안전한 슬라이스로 pending_advance_plan에 저장(openSetPinSheet desc 고지문 추가 + renderMenu PIN 행 msub 고지 + 문자열-존재 회귀 테스트, 로직/데이터모델 변경 없음). 코드 변경 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 317,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-07T21:10:00.000Z",
       "summary": "cycle322 develop 커밋(af459ad, openTrashList 분할거래 카테고리 라벨을 txCatLabel로 통일)을 검토 — logic.js:533 txCatLabel(t)(n=splitLines(t).length>1?'카테고리 N개':t.category) 구현을 diff와 대조해 교체가 정확함을 확인. 다른 모든 거래 표시 경로(장부 행, flow, 통합검색 등)와 동일한 패턴 재사용이며 새 로직 없음. restoreTrashTxn은 t.splits를 그대로 복구하므로 라벨 변경이 복구 데이터에 영향 없음을 grep으로 재확인. 추가된 테스트 2건(분할 거래 '카테고리 2개' 노출+첫 분할 카테고리 단독 노출 없음, 비분할 거래는 기존처럼 t.category 그대로)이 변경을 정확히 커버함을 확인. node test/run.js 재실행 3084/3084 통과, node --check logic.js/sw.js 통과. 실제 버그 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 322,
+      "phase": "critique",
+      "timestamp": "2026-11-07T22:05:00.000Z",
+      "summary": "직접 grep으로 cycle320/321 critique가 '보류'로 남겨둔 후보(목표/귀속/카테고리 삭제의 trash 미보호)를 재검증(cycle300-322 처리/보류/기각 항목 전부 제외 지시: twGuard 스윕·전역검색·예산이월·연말결산·owner/category/asset merge 전부·nwHistory byType/자산배분추이 카드·목표자산배분+리밸런싱·CSV날짜·이체 및 반복 중복감지·카테고리별 알림뮤트·공동지출 정산(shared/settle) 전체와 배지·토글 전파·investGainLossCard 유형별 분해·목표/반복/통합검색 검색창 디바운스·PIN 화면잠금 고지·목표비중 알림뮤트 토글·saveGoal targetDate 범위가드·거래/자산/반복 삭제 trash 복구·searchTerms/matchQueryTerms·shiftWeekend 단위테스트·openTrashList 분할거래 카테고리 라벨은 명시적으로 제외; FX 환차익 분리·투자손익 추이차트·CSV shared/photo 필드·배당/이자/할부/귀속별 예산/다인 정산/CSV·반복 분할거래·실시간 저장소 암호화·반복 건별 skip·백업 리마인더·CDN SRI 해시·홈 대시보드 카드 순서변경/숨기기·CSV import 견고성·부채/대출 추적·백그라운드 푸시 한계는 기각 이력으로 재확인). 발견: deleteGoalsUndo(index.html:11624-11630)가 거래/자산/반복과 동일하게 여전히 undoToast의 6초짜리 메모리 클로저 하나에만 의존 — DB.deletedIds는 id-시각 톰스톤일 뿐 목표 내용(name/targetAmount/targetDate)을 담지 않아 6초가 지나거나 앱을 닫으면 영구 소실됨을 재확인. cycle319(trashTxns)/320(trashAssets)/321(trashRecs)와 같은 엔티티 확장(재제안 아님)으로, 두 critique가 이미 '다음 후보'로 명시해 둔 항목. pending_advance_plan에 구체 계획 저장(DB.trashGoals 신설, GC/병합은 새 함수 없이 gcTrashTxns/mergeTrashTxns 재사용, migrate/mergeRemoteDataIntoLocal/sanitizeBackup 배선, deleteGoalsUndo가 removed를 trashGoals에도 push, renderMenu에 '삭제한 목표' 행, openGoalTrashList/restoreTrashGoal 신설, 테스트 계획은 trashRecs 구성을 재사용). 보류 유지: 귀속(owners)/카테고리(categories) 삭제는 실체가 이름 문자열뿐이라(연결 데이터는 남고 unassigned로만 재배정) 유실 비용이 낮아 이번에도 보류. 코드 변경 없음(state.json만 커밋, pending_advance_plan 신설에 따라 phase를 advance로 회전).",
       "commit": null
     }
   ]
