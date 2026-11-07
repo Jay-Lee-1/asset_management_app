@@ -1420,7 +1420,8 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.382';
+const APP_VERSION='1.47.383';
+const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns('최근 삭제함') 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -1669,6 +1670,7 @@ function mergeRemoteDataIntoLocal(remoteData){
   DB.settings.mergeDataLossFields=[..._fieldSet].sort();
  }
  DB.txns=mergeCollection(DB.txns,remoteData.txns,DB.deletedIds,remoteData.deletedIds);
+ {const _liveTxnIds=new Set(DB.txns.map(t=>t.id));DB.trashTxns=mergeTrashTxns(DB.trashTxns,remoteData.trashTxns).filter(t=>!_liveTxnIds.has(t.id));} /* app-evolve cycle319: 신설 컬렉션이니 처음부터 배선 — goals/inquiries/assetQtyLog가 겪은 '병합 배선 누락' 버그 클래스를 피한다. DB.deletedIds 톰스톤 체계로는 다루지 않는 전용 병합(logic.js mergeTrashTxns 주석 참고)이고, 병합 후에도 이미 되살아나 live인 거래가 트래시에 중복으로 남지 않게 거른다. 맨 끝에서 이 함수가 부르는 migrate()가 gcTrashTxns로 한 번 더 GC하므로, _deletedAt이 보존기간(TRASH_MAX_AGE_DAYS)보다 오래된 사본은 여기서 합쳐져도 결국 걸러진다 */
  DB.recurrences=mergeRecurrences(DB.recurrences,remoteData.recurrences,DB.deletedIds,remoteData.deletedIds); /* mergeCollection과 달리 skip/edits/confirmedDates는 합집합으로 보존(logic.js mergeRecurrences 주석 참고) */
  DB.recurrences.forEach(pruneOrphanRecOverrides); /* 병합이 다른 스케줄을 가진 쪽을 base로 고르면 합쳐진 skip/edits/confirmedDates 중 일부가 그 새 스케줄과 안 맞을 수 있어, saveRec 계열과 동일하게 병합 직후에도 정리한다(스케줄·skip/edits/confirmedDates가 그대로면 0건 정리) */
  DB.assets=mergeCollection(DB.assets,remoteData.assets,DB.deletedIds,remoteData.deletedIds);
@@ -2608,7 +2610,9 @@ function migrate(){
  DB.goals=DB.goals||[]; /* 목표: [{id,name,type:'networth'|'asset',linkedAssetId,targetAmount,targetDate,owner,createdAt,achievedAckAt}] — linkedAssetId는 type:'asset'일 때만 쓰며(cycle214), 'networth'는 항상 null/없음. achievedAckAt: 목표 달성 축하 알림을 확인(ack)한 시각(ms) 또는 null(cycle256, saveGoal이 명시적으로 이어주지 않으면 수정할 때마다 사라짐) */
  DB.goals.forEach(g=>{if(!g.owner)g.owner='all'}); /* owner는 cycle124에 추가된 필드라 그 전에 생긴 목표엔 없음 — 'all'(전체)로 채워야 goalOwnerEff/nwHistoryForOwner가 가구 전체 추이로 올바르게 처리함 */
  DB.assetQtyLog=DB.assetQtyLog||[]; /* fx/gold/stock/crypto 보유수량 변경 기록: [{id,assetId,date,prevQty,newQty,field}] — field는 'fxAmount'|'goldDon'|'stockQty'|'cryptoQty' (app-evolve cycle138) */
+ DB.trashTxns=DB.trashTxns||[]; /* 거래 삭제 '최근 삭제함' — deleteTxnsUndo가 지운 거래 전체 내용(+_deletedAt)을 담아 undoToast의 6초 창이 지난 뒤에도 복구할 수 있게 한다(app-evolve cycle319 critique/advance). DB.deletedIds는 병합용 id-시각 톰스톤일 뿐 내용을 담지 않아 그것만으로는 복구가 불가능했다 */
  DB.deletedIds=gcTombstones(DB.deletedIds||{},Date.now()); /* 부팅 때마다 오래된 tombstone 정리(GC) */
+ {const _liveTxnIds=new Set((DB.txns||[]).map(t=>t.id));DB.trashTxns=gcTrashTxns(DB.trashTxns,Date.now(),1000*60*60*24*TRASH_MAX_AGE_DAYS).filter(t=>!_liveTxnIds.has(t.id));} /* 부팅 때마다 보존기간 지난 항목 정리(GC) + 이미 복구돼 살아있는 거래가 트래시에 중복으로 남지 않게 정리. DB.txns는 이 시점에 아직 정규화 전이라(migrate()는 DB.txns 자체를 초기화하지 않음) 없을 수 있어 방어한다 */
  DB.settings.dismissedStaleMvIds=pruneDismissedStaleMvIds(DB.settings.dismissedStaleMvIds,DB.txns,DB.recurrences); /* 부팅 때마다 삭제된 거래/반복거래를 가리키는 키 정리(GC) */
 }
 /* storageOutcomeMsg: localStorage 쓰기 시도 결과(ok)와 직전 상태(wasOk)를 놓고 어떤 토스트를
@@ -7100,6 +7104,7 @@ function renderMenu(){
    {ic:'download',l:'데이터 내보내기',v:'iCloud·파일',a:"exportData()"},
    {ic:'restore',l:'데이터 복원',a:"importData()"},
    {ic:'bell',l:'저축 만기 알림',v:maturitySoon()+'건',a:"openMaturity()"},
+   {ic:'restore',l:'최근 삭제함',v:(DB.trashTxns&&DB.trashTxns.length)?DB.trashTxns.length+'건':'',a:"openTrashList()"},
    {ic:'trash',l:'오래된 데이터 정리',a:"openArchiveOld()"},
   ]},
   {cap:'화면 · 지원',items:[
@@ -9280,6 +9285,21 @@ function sanitizeBackup(obj){
   if('newQty' in d){const n=sanitizeAmount(d.newQty,0);if(n!==d.newQty){d.newQty=n;fixedCount++}}
   assetQtyLog.push(d);
  });
+ /* DB.trashTxns(거래 삭제 '최근 삭제함', app-evolve cycle319 critique/advance)도 txns/assets/.../
+  * assetQtyLog와 동일하게 백업 복원·클라우드 풀 경로에서 검증해야 한다. id/date 없는 항목은
+  * openTrashList가 표시·정렬할 수 없으므로(위 txns 블록과 동일한 이유) 통째로 제거한다. amount는
+  * txns와 동일하게 크기(magnitude) 필드라 min 0으로 클램프한다. _deletedAt(삭제 시각 — gcTrashTxns가
+  * 이걸로 보존기간을 잰다)이 유한수가 아니면 지금 이 순간부터 보존기간이 시작한 것으로 보고 now를
+  * 채운다 — 바로 버리면 정상 복구 가능한 항목을 백업 복원 시점의 사소한 타입 손상만으로 영구히 잃는다. */
+ const srcTrashTxns=Array.isArray(obj&&obj.trashTxns)?obj.trashTxns:[];
+ let trashTxns=[];
+ srcTrashTxns.forEach(t=>{
+  if(!t||!t.id||!csvDateValid(t.date)){droppedCount++;return}
+  const d=Object.assign({},t);
+  if('amount' in d){const n=sanitizeAmount(d.amount,0);if(n!==d.amount){d.amount=n;fixedCount++}}
+  if(!Number.isFinite(d._deletedAt)){d._deletedAt=Date.now();fixedCount++}
+  trashTxns.push(d);
+ });
  /* DB.categories/DB.owners(카테고리·귀속 이름 목록)도 txns/assets/recurrences/goals/inquiries/
   * assetQtyLog와 동일하게 백업 복원·클라우드 풀 경로에서 전혀 검증되지 않고 있었다. 파일 복원
   * 경로(restoreBackup, 5591줄 부근)는 migrate()를 try/catch로 감싸 실패해도 DB를 되돌리지만,
@@ -9489,8 +9509,8 @@ function sanitizeBackup(obj){
   nwHistory.push(d);
  });
  txns=dedupeIds(txns);assets=dedupeIds(assets);recurrences=dedupeIds(recurrences);
- goals=dedupeIds(goals);inquiries=dedupeIds(inquiries);assetQtyLog=dedupeIds(assetQtyLog);
- return {data:Object.assign({},obj,{txns,assets,recurrences,goals,inquiries,assetQtyLog,categories,owners,budgetHistory,budgets,catIcon,catVar,catBudgetRollover,deletedType,deletedBal,deletedIds,nwHistory,settings,rates}),fixedCount,droppedCount,rangeCount};
+ goals=dedupeIds(goals);inquiries=dedupeIds(inquiries);assetQtyLog=dedupeIds(assetQtyLog);trashTxns=dedupeIds(trashTxns);
+ return {data:Object.assign({},obj,{txns,assets,recurrences,goals,inquiries,assetQtyLog,trashTxns,categories,owners,budgetHistory,budgets,catIcon,catVar,catBudgetRollover,deletedType,deletedBal,deletedIds,nwHistory,settings,rates}),fixedCount,droppedCount,rangeCount};
 }
 /* obj.assets/obj.txns가 배열인지까지 검증한 뒤 DB를 통째로 교체한다. migrate()가 손상된
  * obj 때문에 중간에 throw해도 DB가 절반만 마이그레이션된 채로 남지 않도록, 실패 시 교체 전
@@ -11313,8 +11333,36 @@ function deleteTxnsUndo(ids){if(twGuard())return;const removed=DB.txns.filter(t=
   * DB.txns에 없어 여기서 걸러지지 않음) — DB.recurrences는 전혀 안 바뀌므로 _recCache 보존
   * (app-evolve cycle207 advance). 삭제된 게 없으면(ids 불일치) 기존 회귀 가드(opts 없이 호출)를
   * 그대로 유지한다 — 아무것도 안 바뀌었으니 opts 모양을 바꿀 이유가 없다. */
+ if(removed.length)DB.trashTxns=(DB.trashTxns||[]).concat(removed.map(t=>Object.assign({},t,{_deletedAt:now}))); /* '최근 삭제함' — undoToast의 6초가 지나도(또는 앱을 닫았다 다시 열어도) gcTrashTxns 보존기간까지는 복구 가능(app-evolve cycle319 critique/advance) */
  save(removed.length?{fromDate:removed.reduce((m,t)=>t.date<m?t.date:m,removed[0].date),recsChanged:false}:undefined);renderCurrent();
- undoToast(`${removed.length}개 내역을 삭제했어요`,()=>{DB.txns.push(...removed);ids.forEach(id=>delete DB.deletedIds[id]);touchSave(...removed);renderCurrent();toast('되돌렸어요')})}
+ undoToast(`${removed.length}개 내역을 삭제했어요`,()=>{DB.txns.push(...removed);ids.forEach(id=>delete DB.deletedIds[id]);DB.trashTxns=(DB.trashTxns||[]).filter(t=>!ids.has(t.id));touchSave(...removed);renderCurrent();toast('되돌렸어요')})}
+/* 메뉴 › '최근 삭제함' — deleteTxnsUndo가 DB.trashTxns에 담아둔 삭제된 거래를 보여주고 복구할 수 있는
+ * 화면. undoToast의 6초 창을 넘기거나 앱을 완전히 닫았다 다시 열어도 TRASH_MAX_AGE_DAYS만큼은
+ * 복구할 수 있다(app-evolve cycle319 critique/advance) — openInquiryList/openAssetQtyLog와 같은
+ * manage-row 목록 패턴을 그대로 따른다. */
+function openTrashList(){
+ const items=[...(DB.trashTxns||[])].sort((a,b)=>(b._deletedAt||0)-(a._deletedAt||0));
+ const row=t=>{
+  const daysLeft=Math.max(0,TRASH_MAX_AGE_DAYS-Math.floor((Date.now()-(t._deletedAt||0))/86400000));
+  const sign=t.type==='income'?'plus':(t.type==='expense'?'minus':'');
+  const signTxt=t.type==='income'?'+':(t.type==='expense'?'-':'');
+  return `<div class="manage-row" style="align-items:flex-start"><div style="flex:1;min-width:0">
+    <div class="mn num ${sign}">${signTxt}${comma(t.amount||0)}원</div>
+    <div class="msub">${t.date||''}${t.category?' · '+esc(t.category):''}${t.memo?' · '+esc(t.memo):''} · ${daysLeft}일 후 자동삭제</div></div>
+   <div class="row-acts"><button class="act-btn" aria-label="거래 복구" onclick="restoreTrashTxn('${t.id}')">${svg('restore')}</button></div></div>`;
+ };
+ openSheet(`<h3>최근 삭제함</h3><div class="desc">삭제한 거래예요. ${TRASH_MAX_AGE_DAYS}일이 지나면 자동으로 사라져요</div>
+  ${items.length?items.map(row).join(''):`<div class="empty"><div class="ei">${svg('trash')}</div><div class="et">삭제한 거래가 없어요</div></div>`}
+  <div style="height:12px"></div><button class="btn btn-primary" onclick="closeSheet()">닫기</button>`);
+}
+function restoreTrashTxn(id){
+ if(twGuard())return;
+ const t=(DB.trashTxns||[]).find(x=>x.id===id);if(!t)return;
+ DB.trashTxns=(DB.trashTxns||[]).filter(x=>x.id!==id);
+ DB.deletedIds=DB.deletedIds||{};delete DB.deletedIds[id];
+ const txn=Object.assign({},t);delete txn._deletedAt;
+ DB.txns.push(txn);touchSave(txn);openTrashList();renderCurrent();toast('되돌렸어요');
+}
 /* 오래된 데이터 정리(archiveMonthPicked) 실행부. deleteTxnsUndo()와 달리 cutoffDate 이전 거래를
  * 지우기 전에 archiveBaselines()(logic.js, cycle221 critique/advance)로 cutoffDate 시점 잔액을
  * 계산해 각 자산의 새 baseAmount/amountKRW로 앉힌다 — balancesUpTo()/assetBase()가 '기준값 +

@@ -202,7 +202,7 @@ const FUNCTIONS = [
   // 자동으로 끌어와지므로 FUNCTIONS에 올릴 필요 없음), 이 목록엔 index.html에 남아있는 쪽만 올린다.
   'buildGenericImportPreview', 'csvColSample', 'csvMapFieldHtml', 'openCsvColumnMap', 'renderCsvColumnMap',
   'csvMapSetMode', 'csvMapSetCatKind', 'csvMapColChosen', 'csvMapPickCol', 'csvMapPickAsset', 'csvMapPickCategory', 'csvMapApply',
-  'twActive', 'twGuard', 'deleteTxnsUndo', 'deleteRecsUndo', 'deleteAssetsUndo', 'delAsset', 'assetDelSel', 'unsnapshotAssetName', 'doBulkCat', 'bulkCatPickFor', 'doBulkInclToggle', 'assetInclSel',
+  'twActive', 'twGuard', 'deleteTxnsUndo', 'openTrashList', 'restoreTrashTxn', 'deleteRecsUndo', 'deleteAssetsUndo', 'delAsset', 'assetDelSel', 'unsnapshotAssetName', 'doBulkCat', 'bulkCatPickFor', 'doBulkInclToggle', 'assetInclSel',
   'doBulkAssetMove', 'bulkAssetMovePickFor', 'ledgerAssetMoveSel', 'histAssetMoveSel', 'doBulkOwnerMove', 'assetOwnerMovePickFor', 'assetOwnerSel',
   'doBulkRecActive', 'recSelPartial', 'recToggleSel', 'recSelAll', 'recDelSel', 'recActiveSel',
   'deleteGoalsUndo', 'goalSelPartial', 'goalToggleSel', 'goalSelAll', 'goalDelSel', 'doBulkGoalOwnerMove', 'goalOwnerMovePickFor', 'goalOwnerMoveSel',
@@ -396,7 +396,7 @@ const FUNCTIONS = [
 // 목록과, 그 키를 읽어주는 한글 aria-label 매핑이다(app-evolve cycle281 advance) — 둘 다 내부에
 // ";"가 없는 단순 object literal이라 extractConstBlock 없이 extractConst로도 끝까지 끌어온다
 // (CAT_LABEL과 같은 패턴).
-const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'emailKey', 'CAT_PICKER_SEARCH_THRESHOLD', 'GOAL_LIST_SEARCH_THRESHOLD', 'GS_CAP', 'CAT_ICON_SET', 'ICON_LABEL_KO', 'BAL_ASSET_TYPES', 'ALLOC_OTHER_COLOR'];
+const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'emailKey', 'CAT_PICKER_SEARCH_THRESHOLD', 'GOAL_LIST_SEARCH_THRESHOLD', 'GS_CAP', 'CAT_ICON_SET', 'ICON_LABEL_KO', 'BAL_ASSET_TYPES', 'ALLOC_OTHER_COLOR', 'TRASH_MAX_AGE_DAYS'];
 // _histCache는 filteredHist()가 재대입(={key,list})하는 let 선언이라 CONSTS(extractConst)로는
 // 못 끌어오므로 별도의 LETS 목록으로 extractLet을 통해 가져온다.
 // _copyIsCsv도 같은 이유(openCopyBackup()이 재대입)로 LETS를 통해 가져온다.
@@ -6338,6 +6338,35 @@ test('mergeRemoteDataIntoLocal: 로컬에서 삭제한(톰스톤) 수량 변경 
   });
   assert.strictEqual(sandbox.DB.assetQtyLog.find(q => q.id === 'q1'), undefined, '삭제 이후 원격이 손대지 않은 사본은 되살리면 안 됨');
 });
+test('mergeRemoteDataIntoLocal: DB.trashTxns도 goals/inquiries/assetQtyLog와 동일하게 신설 시점부터 병합 배선이 돼 있다(두 기기가 각자 지운 거래가 소실 없이 합쳐짐)', () => {
+  // mergeRemoteDataIntoLocal()은 끝에서 migrate()를 호출하고, migrate()는 매번 gcTrashTxns로
+  // TRASH_MAX_AGE_DAYS(30일)보다 오래된 트래시를 정리한다 — _deletedAt을 now 근처로 줘야 이
+  // GC를 통과해 '병합이 소실 없이 합쳤는지'만 검증할 수 있다(GC 자체는 위 migrate 통합 테스트가 따로 검증).
+  const now = Date.now();
+  sandbox.DB = minimalMergeDB({
+    trashTxns: [{ id: 'local-only', amount: 1000, date: '2026-01-01', _deletedAt: now }],
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    trashTxns: [{ id: 'remote-only', amount: 2000, date: '2026-01-02', _deletedAt: now }],
+    deletedIds: {},
+  });
+  const ids = sandbox.DB.trashTxns.map(t => t.id).sort();
+  assert.strictEqual(ids.length, 2);
+  assert.ok(ids.includes('local-only') && ids.includes('remote-only'));
+});
+test('mergeRemoteDataIntoLocal: 이미 DB.txns로 되살아난(병합 결과 live인) 거래는 상대 기기의 트래시 사본과 합쳐져도 트래시에 남지 않는다', () => {
+  sandbox.DB = minimalMergeDB({
+    txns: [{ id: 't1', date: '2026-01-01', amount: 1000, updatedAt: 200 }], // 로컬이 복구해 살아있음
+    trashTxns: [],
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    txns: [],
+    trashTxns: [{ id: 't1', amount: 1000, date: '2026-01-01', _deletedAt: Date.now() }], // 원격은 아직 트래시에 들고 있음
+    deletedIds: {},
+  });
+  assert.ok(sandbox.DB.txns.some(t => t.id === 't1'), '살아있는 거래는 그대로 유지되어야 함');
+  assert.strictEqual(sandbox.DB.trashTxns.find(t => t.id === 't1'), undefined, 'live인 거래가 트래시에 중복으로 남으면 안 됨');
+});
 
 /* ---------- txnsToCSV: 거래 내역 CSV 내보내기 ---------- */
 test('txnsToCSV: 빈 배열이면 BOM과 헤더만 있는 한 줄을 반환한다', () => {
@@ -10161,6 +10190,95 @@ test('deleteTxnsUndo: 지정한 id가 하나도 안 걸려 삭제된 게 없으�
   assert.strictEqual(saveCalls.length, 1);
   assert.strictEqual(saveCalls[0], undefined, '삭제된 게 없으면 fromDate 없이(기존과 동일하게 전체 clear) save()를 호출해야 함');
   assert.strictEqual(sandbox.DB.txns.length, 1, '매칭되는 id가 없으면 아무것도 삭제되지 않아야 함');
+});
+
+/* ---------- deleteTxnsUndo → DB.trashTxns('최근 삭제함'): undoToast의 6초 창을 넘겨도 복구할 수 있도록
+ * 삭제된 거래 전체 내용을 보관한다(app-evolve cycle319 critique/advance). ---------- */
+test('deleteTxnsUndo: 삭제한 거래 전체 내용을 _deletedAt과 함께 DB.trashTxns에 담는다', () => {
+  sandbox.TWi = -1;
+  const t1 = { id: 'x1', date: '2026-03-10', amount: 1000, category: '식비' };
+  sandbox.DB = { txns: [t1] };
+  const before = Date.now();
+  sandbox.deleteTxnsUndo(new Set(['x1']));
+  assert.strictEqual(sandbox.DB.trashTxns.length, 1);
+  const trashed = sandbox.DB.trashTxns[0];
+  assert.strictEqual(trashed.id, 'x1');
+  assert.strictEqual(trashed.amount, 1000);
+  assert.strictEqual(trashed.category, '식비');
+  assert.ok(typeof trashed._deletedAt === 'number' && trashed._deletedAt >= before, '삭제 시각이 함께 기록되어야 함');
+});
+test('deleteTxnsUndo: undo 콜백을 부르면 DB.trashTxns에서도 해당 항목이 빠진다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { txns: [{ id: 'x1', date: '2026-03-10', amount: 1000 }] };
+  sandbox.lastUndo = null;
+  sandbox.deleteTxnsUndo(new Set(['x1']));
+  assert.strictEqual(sandbox.DB.trashTxns.length, 1);
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.trashTxns.length, 0, '되돌리면 트래시에서도 제거되어야 함(복구된 거래가 트래시에 중복으로 남으면 안 됨)');
+});
+test('deleteTxnsUndo: 지정한 id가 하나도 안 걸려 삭제된 게 없으면 DB.trashTxns를 건드리지 않는다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { txns: [{ id: 'x1', date: '2026-03-10', amount: 1000 }] };
+  sandbox.deleteTxnsUndo(new Set(['없는id']));
+  assert.strictEqual(sandbox.DB.trashTxns, undefined, '아무것도 안 지워졌으면 trashTxns 모양도 바뀌면 안 됨(기존 opts 회귀 가드와 동일한 원칙)');
+});
+test('deleteTxnsUndo: 여러 건을 한 번에 지우면 모두 DB.trashTxns에 담긴다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { txns: [{ id: 'x1', date: '2026-01-01', amount: 100 }, { id: 'x2', date: '2026-01-02', amount: 200 }] };
+  sandbox.deleteTxnsUndo(new Set(['x1', 'x2']));
+  const ids = sandbox.DB.trashTxns.map(t => t.id).sort();
+  assert.strictEqual(ids.length, 2);
+  assert.ok(ids.includes('x1') && ids.includes('x2'));
+});
+
+/* ---------- openTrashList/restoreTrashTxn: 메뉴 › '최근 삭제함' — DB.trashTxns를 보여주고
+ * 복구하는 화면(app-evolve cycle319 critique/advance). ---------- */
+test('openTrashList: DB.trashTxns를 최근 삭제 순으로 보여준다', () => {
+  sandbox.DB = { trashTxns: [
+    { id: 't1', amount: 1000, date: '2026-01-01', category: '식비', _deletedAt: 100 },
+    { id: 't2', amount: 2000, date: '2026-01-02', category: '교통', _deletedAt: 200 },
+  ] };
+  sandbox.lastSheetHtml = null;
+  sandbox.openTrashList();
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.indexOf('교통') < html.indexOf('식비'), '더 최근에 삭제된(_deletedAt이 큰) 항목이 먼저 보여야 함');
+  assert.ok(html.includes(sandbox.comma(1000)));
+  assert.ok(html.includes(sandbox.comma(2000)));
+});
+test('openTrashList: 삭제한 거래가 없으면 빈 상태를 보여준다', () => {
+  sandbox.DB = { trashTxns: [] };
+  sandbox.lastSheetHtml = null;
+  sandbox.openTrashList();
+  assert.ok(sandbox.lastSheetHtml.includes('삭제한 거래가 없어요'));
+});
+test('restoreTrashTxn: 트래시 항목을 DB.txns로 되돌리고 트래시·톰스톤에서 제거한다', () => {
+  sandbox.TWi = -1;
+  const t = { id: 't1', amount: 1000, date: '2026-01-01', category: '식비', _deletedAt: 123 };
+  sandbox.DB = { txns: [], trashTxns: [t], deletedIds: { t1: 123 } };
+  sandbox.restoreTrashTxn('t1');
+  assert.strictEqual(sandbox.DB.trashTxns.length, 0, '복구하면 트래시에서 빠져야 함');
+  assert.strictEqual(sandbox.DB.deletedIds.t1, undefined, '복구하면 병합용 톰스톤도 지워져야 함');
+  assert.strictEqual(sandbox.DB.txns.length, 1);
+  const restored = sandbox.DB.txns[0];
+  assert.strictEqual(restored.id, 't1');
+  assert.strictEqual(restored.amount, 1000);
+  assert.strictEqual('_deletedAt' in restored, false, '복구된 거래에는 트래시 전용 필드(_deletedAt)가 남아있으면 안 됨');
+  assert.strictEqual(restored.updatedAt, 'test-updatedAt', '복구된 거래는 touch()되어야 함(병합 시 탈락 방지)');
+});
+test('restoreTrashTxn: 존재하지 않는 id면 아무것도 바꾸지 않는다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { txns: [], trashTxns: [{ id: 't1', amount: 1000, date: '2026-01-01' }], deletedIds: {} };
+  sandbox.restoreTrashTxn('없는id');
+  assert.strictEqual(sandbox.DB.txns.length, 0);
+  assert.strictEqual(sandbox.DB.trashTxns.length, 1);
+});
+test('restoreTrashTxn: 튜토리얼 모드 중에는 twGuard가 막아서 복구되지 않는다', () => {
+  sandbox.TWi = 0;
+  sandbox.DB = { txns: [], trashTxns: [{ id: 't1', amount: 1000, date: '2026-01-01' }], deletedIds: { t1: 1 } };
+  sandbox.restoreTrashTxn('t1');
+  assert.strictEqual(sandbox.DB.txns.length, 0, '튜토리얼 중에는 복구가 막혀야 함');
+  assert.strictEqual(sandbox.DB.trashTxns.length, 1);
+  sandbox.TWi = -1;
 });
 
 /* ---------- archiveTxnsBefore/archiveMonthPicked/openArchiveOld: '오래된 데이터 정리'
@@ -14115,6 +14233,62 @@ test('sanitizeBackup: 정상적인 수량 변경 기록은 그대로 둔다(정�
   assert.strictEqual(fixedCount, 0);
 });
 
+/* ---------- sanitizeBackup: DB.trashTxns(거래 삭제 '최근 삭제함', app-evolve cycle319 critique/advance)도
+ * txns/assets/.../assetQtyLog와 동일하게 백업 복원·클라우드 풀 경로에서 검증돼야 한다 — id/date 없는
+ * 항목은 openTrashList가 표시·정렬할 수 없으므로 통째로 제거하고, amount는 txns와 동일한 크기
+ * (magnitude) 필드라 min 0으로 클램프하며, _deletedAt이 유한수가 아니면(gcTrashTxns가 여기로 나이를
+ * 잰다) 지금 이 순간부터 보존기간이 시작한 것으로 보고 now로 채운다. ---------- */
+test('sanitizeBackup: id나 date 없는/날짜가 무효한 트래시 항목은 통째로 제거하고, trashTxns가 없거나 배열이 아니어도 터지지 않는다', () => {
+  const droppedNoId = sandbox.sanitizeBackup({ txns: [], assets: [], trashTxns: [{ date: '2026-01-01', amount: 1000 }] });
+  assert.strictEqual(droppedNoId.data.trashTxns.length, 0);
+  assert.strictEqual(droppedNoId.droppedCount, 1);
+  const droppedNoDate = sandbox.sanitizeBackup({ txns: [], assets: [], trashTxns: [{ id: 't1', amount: 1000 }] });
+  assert.strictEqual(droppedNoDate.data.trashTxns.length, 0);
+  assert.strictEqual(droppedNoDate.droppedCount, 1);
+  const droppedBadDate = sandbox.sanitizeBackup({ txns: [], assets: [], trashTxns: [{ id: 't1', date: '2026-02-30', amount: 1000 }] });
+  assert.strictEqual(droppedBadDate.data.trashTxns.length, 0);
+  const missing = sandbox.sanitizeBackup({ txns: [], assets: [] });
+  assert.strictEqual(missing.data.trashTxns.length, 0);
+  const notArray = sandbox.sanitizeBackup({ txns: [], assets: [], trashTxns: { oops: true } });
+  assert.strictEqual(notArray.data.trashTxns.length, 0);
+});
+test('sanitizeBackup: 트래시 항목의 amount가 음수·비정상이면 0으로 클램프하고 fixedCount를 센다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    trashTxns: [{ id: 't1', date: '2026-01-01', amount: -500, _deletedAt: 100 }],
+  });
+  assert.strictEqual(data.trashTxns[0].amount, 0);
+  assert.strictEqual(fixedCount, 1);
+});
+test('sanitizeBackup: _deletedAt이 없거나 숫자가 아니면 now로 채우고 fixedCount를 센다(바로 버리지 않음)', () => {
+  const before = Date.now();
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    trashTxns: [{ id: 't1', date: '2026-01-01', amount: 1000 }, { id: 't2', date: '2026-01-02', amount: 500, _deletedAt: 'oops' }],
+  });
+  assert.strictEqual(data.trashTxns.length, 2, '유효한 복구 대상을 _deletedAt 손상만으로 통째로 버리면 안 됨');
+  assert.ok(data.trashTxns.every(t => typeof t._deletedAt === 'number' && t._deletedAt >= before));
+  assert.strictEqual(fixedCount, 2);
+});
+test('sanitizeBackup: 정상적인 트래시 항목은 그대로 둔다(정상 케이스는 회귀 없음)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    trashTxns: [{ id: 't1', date: '2026-01-01', amount: 1000, _deletedAt: 123 }],
+  });
+  assert.strictEqual(data.trashTxns[0].amount, 1000);
+  assert.strictEqual(data.trashTxns[0]._deletedAt, 123);
+  assert.strictEqual(fixedCount, 0);
+});
+test('sanitizeBackup: 트래시 항목도 txns/assets와 동일하게 id 중복이면 새 id를 부여해 복구한다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    trashTxns: [{ id: 'dup', date: '2026-01-01', amount: 1000, _deletedAt: 1 }, { id: 'dup', date: '2026-01-02', amount: 500, _deletedAt: 2 }],
+  });
+  const ids = data.trashTxns.map(t => t.id);
+  assert.strictEqual(new Set(ids).size, 2, '중복 id는 새 id로 갈라져야 함');
+  assert.ok(fixedCount >= 1);
+});
+
 /* ---------- sanitizeBackup: DB.categories/DB.owners(카테고리·귀속 이름 목록)도 txns/assets/
  * recurrences/goals/inquiries/assetQtyLog와 동일하게 검증돼야 한다 — 이전에는 이 블록이 아예
  * 없어서, obj.categories.income/expense/saving나 obj.owners가 배열이 아니면(손상된 백업·레거시
@@ -17758,6 +17932,76 @@ test('gcTombstones: maxAgeMs를 생략하면 기본값(400일)이 적용된다',
   assert.strictEqual(Object.keys(out).length, 1);
   assert.strictEqual(out.recent, now - 399 * DAY);
 });
+
+/* ---------- gcTrashTxns/mergeTrashTxns: DB.trashTxns('최근 삭제함', deleteTxnsUndo가 지운 거래
+ * 전체 내용을 담는 보관함)를 지원하는 순수 함수(app-evolve cycle319 critique/advance). gcTombstones와
+ * 같은 "오래된 것은 걸러낸다" 패턴이지만 보존기간이 400일이 아니라 30일(TRASH_MAX_AGE_DAYS)이고,
+ * 톰스톤처럼 id-시각 맵이 아니라 거래 전체를 담은 배열이라는 점이 다르다. ---------- */
+test('gcTrashTxns: maxAgeMs보다 오래된 항목은 제거된다', () => {
+  const now = 10_000;
+  const out = sandbox.gcTrashTxns([{ id: 'old', _deletedAt: now - 500 - 1 }], now, 500);
+  assert.strictEqual(out.length, 0);
+});
+test('gcTrashTxns: maxAgeMs 이내인 항목은 유지된다', () => {
+  const now = 10_000;
+  const t = { id: 'recent', _deletedAt: now - 100 };
+  const out = sandbox.gcTrashTxns([t], now, 500);
+  assert.deepStrictEqual(out, [t]);
+});
+test('gcTrashTxns: 경계값(정확히 maxAgeMs만큼 지난 항목)은 유지 쪽으로 처리된다(<=, gcTombstones와 동일)', () => {
+  const now = 10_000;
+  const t = { id: 'boundary', _deletedAt: now - 500 };
+  const out = sandbox.gcTrashTxns([t], now, 500);
+  assert.deepStrictEqual(out, [t]);
+});
+test('gcTrashTxns: _deletedAt이 없거나 숫자가 아니면(손상된 데이터) gcTombstones가 시각 없는 tombstone을 거르는 것과 동일하게 제거한다', () => {
+  const now = 10_000;
+  const out = sandbox.gcTrashTxns([{ id: 'no-ts' }, { id: 'bad-ts', _deletedAt: 'oops' }], now, 500);
+  assert.strictEqual(out.length, 0);
+});
+test('gcTrashTxns: 배열이 아니거나 undefined여도 안전하게 빈 배열을 돌려준다', () => {
+  // vm 샌드박스 안에서 만들어진 빈 배열은 호스트 realm의 []와 "같은 구조지만 참조가 다름"으로
+  // deepStrictEqual이 실패한다(위 themeCachePayload 섹션의 normTc 주석과 동일한 realm 경계 문제) —
+  // length만 비교한다.
+  assert.strictEqual(sandbox.gcTrashTxns(undefined, Date.now(), 500).length, 0);
+  assert.strictEqual(sandbox.gcTrashTxns(null, Date.now(), 500).length, 0);
+  assert.strictEqual(sandbox.gcTrashTxns('oops', Date.now(), 500).length, 0);
+});
+test('gcTrashTxns: maxAgeMs를 생략하면 기본값(30일)이 적용된다', () => {
+  const now = Date.now();
+  const DAY = 1000 * 60 * 60 * 24;
+  const old = { id: 'old', _deletedAt: now - 31 * DAY };
+  const recent = { id: 'recent', _deletedAt: now - 29 * DAY };
+  const out = sandbox.gcTrashTxns([old, recent], now);
+  assert.deepStrictEqual(out, [recent]);
+});
+test('mergeTrashTxns: local/remote 양쪽의 항목을 id 기준으로 합친다', () => {
+  const l = { id: 't1', amount: 1000, _deletedAt: 100 };
+  const r = { id: 't2', amount: 500, _deletedAt: 200 };
+  const out = sandbox.mergeTrashTxns([l], [r]);
+  assert.strictEqual(out.length, 2);
+  assert.ok(out.includes(l) && out.includes(r));
+});
+test('mergeTrashTxns: 같은 id가 양쪽에 있으면 _deletedAt이 더 큰(더 최근에 삭제된) 쪽을 남긴다', () => {
+  // mergeTrashTxns은 항상 함수 내부에서 새로 만든 배열([...map.values()])을 반환하므로(vm realm),
+  // 전체 배열을 호스트 리터럴과 deepStrictEqual로 비교하면 입력 realm과 무관하게 항상 realm
+  // 경계 문제가 난다 — length+원소 참조로 검증한다.
+  const lOlder = { id: 't1', _deletedAt: 100 };
+  const rNewer = { id: 't1', _deletedAt: 200 };
+  const out1 = sandbox.mergeTrashTxns([lOlder], [rNewer]);
+  assert.strictEqual(out1.length, 1);
+  assert.strictEqual(out1[0], rNewer, '더 최근(더 큰 _deletedAt) 쪽이 남아야 함');
+  const out2 = sandbox.mergeTrashTxns([rNewer], [lOlder]);
+  assert.strictEqual(out2.length, 1);
+  assert.strictEqual(out2[0], rNewer, '인자 순서를 바꿔도 더 최근 쪽이 남아야 함');
+});
+test('mergeTrashTxns: id 없는 항목이나 undefined 배열은 안전하게 무시된다', () => {
+  assert.strictEqual(sandbox.mergeTrashTxns(undefined, undefined).length, 0);
+  const out = sandbox.mergeTrashTxns([{ amount: 1 }], [null, { id: 't1' }]);
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].id, 't1');
+});
+
 test('migrate: DB.deletedIds의 오래된(400일 초과) tombstone은 sanitize되어 사라지고, 그 이내인 것은 유지된다(app-evolve cycle95 advance 통합 테스트)', () => {
   const now = Date.now();
   const DAY = 1000 * 60 * 60 * 24;
@@ -17783,6 +18027,45 @@ test('migrate: DB.deletedIds가 아예 없어도(migrate 이전 상태) 예외 �
   };
   assert.doesNotThrow(() => sandbox.migrate());
   assert.strictEqual(Object.keys(sandbox.DB.deletedIds).length, 0);
+});
+test('migrate: DB.trashTxns이 없으면(migrate 이전 상태) 빈 배열로 채워진다', () => {
+  sandbox.DB = {
+    version: 5, catsV2: true,
+    settings: { themeMode: 'system', includeScheduled: false, assetSort: 'custom', groupOrder: [...sandbox.DEFAULT_GROUP_ORDER] },
+    owners: ['나', '배우자', '공용'],
+    assets: [], txns: [], recurrences: [], inquiries: [],
+    categories: { expense: [...sandbox.EXP_CATS_DEFAULT], income: [...sandbox.INC_CATS_DEFAULT], saving: [...sandbox.SAV_CATS_DEFAULT] },
+  };
+  assert.doesNotThrow(() => sandbox.migrate());
+  assert.strictEqual(sandbox.DB.trashTxns.length, 0);
+});
+test('migrate: DB.trashTxns의 오래된(30일 초과) 항목은 GC되어 사라지고, 그 이내인 것은 유지된다(app-evolve cycle319 critique/advance 통합 테스트)', () => {
+  const now = Date.now();
+  const DAY = 1000 * 60 * 60 * 24;
+  const old = { id: 'old', amount: 1000, date: '2026-01-01', _deletedAt: now - 31 * DAY };
+  const recent = { id: 'recent', amount: 500, date: '2026-02-01', _deletedAt: now - 10 * DAY };
+  sandbox.DB = {
+    version: 5, catsV2: true,
+    settings: { themeMode: 'system', includeScheduled: false, assetSort: 'custom', groupOrder: [...sandbox.DEFAULT_GROUP_ORDER] },
+    owners: ['나', '배우자', '공용'],
+    assets: [], txns: [], recurrences: [], inquiries: [],
+    categories: { expense: [...sandbox.EXP_CATS_DEFAULT], income: [...sandbox.INC_CATS_DEFAULT], saving: [...sandbox.SAV_CATS_DEFAULT] },
+    trashTxns: [old, recent],
+  };
+  sandbox.migrate();
+  assert.deepStrictEqual(sandbox.DB.trashTxns.map(t => t.id), ['recent']);
+});
+test('migrate: DB.trashTxns에 이미 DB.txns로 복구돼 살아있는 id가 남아있으면(온전치 못한 복구 등) 중복으로 보이지 않게 제거한다', () => {
+  sandbox.DB = {
+    version: 5, catsV2: true,
+    settings: { themeMode: 'system', includeScheduled: false, assetSort: 'custom', groupOrder: [...sandbox.DEFAULT_GROUP_ORDER] },
+    owners: ['나', '배우자', '공용'],
+    assets: [], txns: [{ id: 't1', date: '2026-01-01', amount: 1000 }], recurrences: [], inquiries: [],
+    categories: { expense: [...sandbox.EXP_CATS_DEFAULT], income: [...sandbox.INC_CATS_DEFAULT], saving: [...sandbox.SAV_CATS_DEFAULT] },
+    trashTxns: [{ id: 't1', amount: 1000, date: '2026-01-01', _deletedAt: Date.now() }, { id: 't2', amount: 500, date: '2026-01-02', _deletedAt: Date.now() }],
+  };
+  sandbox.migrate();
+  assert.deepStrictEqual(sandbox.DB.trashTxns.map(t => t.id), ['t2'], 'DB.txns에 살아있는 t1은 트래시에서 빠지고, 실제로 삭제된 t2만 남아야 함');
 });
 
 /* ---------- themeCachePayload/writeThemeCache: 첫 페인트 FOUC 방지 캐시(app-evolve cycle181 advance) ----------

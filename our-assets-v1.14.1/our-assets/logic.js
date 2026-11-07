@@ -452,6 +452,31 @@ function gcTombstones(deletedIds,now,maxAgeMs){
  Object.keys(deletedIds||{}).forEach(id=>{if(now-deletedIds[id]<=maxAgeMs)out[id]=deletedIds[id]});
  return out;
 }
+/* DB.trashTxns('최근 삭제함', deleteTxnsUndo가 지운 거래 전체 내용+_deletedAt을 보관)의 GC —
+ * gcTombstones와 같은 패턴이지만 트래시는 톰스톤(id+시각)보다 훨씬 무거운 데이터(거래 전체
+ * 필드)라 기본 보존기간을 400일이 아니라 30일로 짧게 잡는다(app-evolve cycle319 critique/advance).
+ * _deletedAt이 없거나 숫자가 아닌 항목은 gcTombstones가 시각 없는 tombstone을 다루는 것과 동일하게
+ * (now-undefined=NaN, NaN<=maxAgeMs는 항상 false) 걸러낸다. */
+function gcTrashTxns(trashTxns,now,maxAgeMs){
+ maxAgeMs=maxAgeMs==null?1000*60*60*24*30:maxAgeMs;
+ return (Array.isArray(trashTxns)?trashTxns:[]).filter(t=>t&&now-t._deletedAt<=maxAgeMs);
+}
+/* DB.trashTxns는 txns/assets처럼 id로 식별되지만, 그 자체가 이미 "삭제됨"을 뜻하는 아카이브라
+ * DB.deletedIds 톰스톤 체계(살았는지/죽었는지 판정)를 적용할 대상이 아니다 — mergeCollection이
+ * 아니라 전용 병합이 필요하다(goals/inquiries/assetQtyLog가 겪은 '신설 컬렉션 병합 배선 누락'
+ * 버그 클래스를 트래시도 똑같이 겪지 않도록 신설 시점에 바로 배선, app-evolve cycle319). 같은
+ * id가 양쪽에 있으면(정상 흐름에선 한쪽이 복구 후 재삭제했을 때만 가능) 더 최근에 삭제된(= _deletedAt이
+ * 더 큰) 사본을 남긴다. */
+function mergeTrashTxns(localArr,remoteArr){
+ const map=new Map();
+ (localArr||[]).forEach(t=>{if(t&&t.id)map.set(t.id,t)});
+ (remoteArr||[]).forEach(t=>{
+  if(!t||!t.id)return;
+  const cur=map.get(t.id);
+  if(!cur||(t._deletedAt||0)>(cur._deletedAt||0))map.set(t.id,t);
+ });
+ return [...map.values()];
+}
 /* pushCloud()의 조건부 UPDATE(.eq('updated_at',CLOUD_LAST_SYNCED_AT)) 결과를 어떻게 처리할지 판정하는 순수 로직.
  * matchedRowCount>0: 우리가 마지막으로 본 updated_at 그대로였다는 뜻이므로 그대로 진행(proceed).
  * matchedRowCount===0인데 행 자체가 아직 없으면(첫 push 등) upsert로 폴백(fallback).

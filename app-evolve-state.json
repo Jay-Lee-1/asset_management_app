@@ -1,19 +1,8 @@
 {
-  "cycle": 319,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "거래(transaction) 삭제에 대한 '최근 삭제함(trash)' 복구 기능 추가",
-    "why": "현재 모든 삭제 경로(단일 스와이프 삭제 delTx/deleteTxnsUndo index.html:11309, 다중선택 삭제 ledgerDelSel 5486 등)는 undoToast()가 6000ms(11306) 동안만 보여주는 실행취소 버튼에 전부 의존하고, 타이머가 끝나면 그 데이터를 들고 있던 클로저가 사라진다. DB.deletedIds는 클라우드 병합 충돌용 id-타임스탬프 툼스톤일 뿐 실제 거래 내용(날짜/금액/카테고리/메모/자산/사진)을 보관하지 않으므로, 6초가 지나면 영구적으로 복구 불가능하다. 자산관리 앱에서 매일 빈번하게 발생하는 거래 삭제가 이런 좁은 창에서만 되돌릴 수 있다는 건 금융 데이터 손실 위험이 큰 공백이며, goals/owners/categories 등 다른 모든 삭제 경로도 동일 패턴이라 가장 빈도·가치가 높은 거래(txns)부터 범위를 좁혀 다룰 가치가 있다.",
-    "approach": "1) migrate()(index.html:2561)에서 DB.deletedIds 초기화 옆에 DB.trashTxns=[] 추가(각 항목은 전체 거래 필드 + _deletedAt 타임스탬프). 2) deleteTxnsUndo(ids)(11309)가 이미 계산해 둔 removed 배열을 DB.trashTxns에도 push하도록 수정(기존 DB.deletedIds 툼스톤 기록은 그대로 유지). 3) logic.js에 gcTombstones/pruneDismissedStaleMvIds와 같은 스타일의 순수 GC 헬퍼를 추가해 _deletedAt이 N일(예: 30일)보다 오래된 DB.trashTxns 항목을 정리하고, migrate()/boot 시 gcTombstones(2611-2612) 곁에서 호출. 4) UI: 메뉴의 '오래된 데이터 정리'(7103) 근처에 '최근 삭제함' 진입점 추가, openTrashList() 화면에서 삭제된 거래를 날짜/메모/카테고리/금액/남은 복구일수와 함께 나열하고 각 항목에 '복구' 버튼(DB.txns로 되돌리고 DB.trashTxns/DB.deletedIds에서 제거 후 save()+renderCurrent()), 빈 상태와 메뉴 행의 개수 배지도 포함. 5) 테스트: 삭제 시 trashTxns에 담기는지, 복구 왕복이 정확한지, 날짜 기준 GC 가지치기가 동작하는지 기존 gcTombstones/pruneDismissedStaleMvIds 테스트 패턴을 따라 추가. 범위는 거래(txns)만으로 한정(goals/owners/categories 등 다른 엔티티 확장은 후속 cycle 후보로 남김). 예상 diff 규모: index.html +150~250줄(migrate 초기화, deleteTxnsUndo 수정, 신규 화면+메뉴 행), logic.js +20~30줄(GC 헬퍼), 테스트 수건."
-  },
+  "cycle": 320,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 314,
-      "phase": "advance",
-      "timestamp": "2026-11-06T16:30:00.000Z",
-      "summary": "critique(cycle314) 계획대로 귀속(owner) 간 공동지출 정산(settlement) 기능을 구현했다. 데이터 모델: DB.settings.settle={ownerA,ownerB,ratioA}(기본 null, 미설정)+settledThrough(기본 null) migrate() 추가. 지출 트랜잭션에 t.shared:boolean(txDraft가 임의 필드를 그대로 통과시키므로 추가적/하위호환). logic.js에 순수함수 settlementSummary(txns,assets,ownerA,ownerB,ratioA) 신설 — t.shared&&type==='expense'만 필터, fromAssetId의 owner를 filterTxnsByOwner와 동일한 방식으로 조회해 ownerA/ownerB별 paidA/paidB 합산(둘 다 아닌 자산, 예: '공용'이나 제3 owner 결제건은 명시적으로 제외), ratioA 기준 기대분담액/차액/oweOwner 계산(ratioA 0·100, 공동지출 0건, 홀수 총액 라운딩 케이스 포함). UI: renderTxSheet의 지출 입력에 '같이 냈어요' 토글(sharedChip, settleConfigured()가 유효할 때만 노출, _applyType이 지출 아닌 유형으로 바뀌면 자동으로 끔), 정산 설정 시트(openSettleConfigForm — openOwnerPicker exclude로 서로 다른 두 귀속 선택+ratioA 입력+끄기), '정산' 메뉴 화면(openSettlement — settledThrough 다음날부터 오늘까지 누적 집계, 결과 문구+'정산 완료로 표시' 버튼), confirmSettlement/doSettle(twGuard 가드, 갚는 쪽→받는 쪽 현금자산 간 실제 이체 트랜잭션 생성+settledThrough 갱신, 현금자산 없으면 안내만). firstCashForOwner/settleConfigured 헬퍼 신설. doRenameOwner에 settle.ownerA/ownerB 이름변경 추적 추가(ST.assetOwner 등과 동일한 기존 관례) — delOwner/mergeOwnerInto는 settle까지 따라가지 않지만 settleConfigured()가 매번 두 귀속의 실재 여부를 재확인해 사라진 귀속을 가리키며 조용히 오작동하지 않고 '설정 필요' 상태로 우아하게 폴백한다(ST.spendOwner류와 동일한 등급의 완화책, 하드 삭제-차단 가드는 범위 밖으로 보류). renderMenu 가계부 그룹에 '정산' 진입점 추가. 구현 중 발견: doRenameOwner/settleConfigured 양쪽에 DB.settings가 아예 없는 기존 테스트 DB 스텁이 많아 'Cannot read properties of undefined'로 기존 테스트 20건이 깨짐 — DB.settings&&DB.settings.settle로 방어해 수정(새 기능이 구버전/최소 스텁 DB에서도 안전해야 한다는 걸 직접 검증). 테스트: settlementSummary 10건(기본 필터·반반·비대칭 비율·ratioA 0/100·0건·제3 owner 제외·라운딩), doRenameOwner settle 추적 2건, firstCashForOwner/settleConfigured 6건, _applyType shared 리셋 2건, renderTxSheet sharedChip 4건+txToggleShared 1건, 정산 설정 폼 7건(saveSettleConfig 1건은 vm realm 문제로 JSON.stringify 비교), openSettlement/confirmSettlement/doSettle 9건(설정없음/빈상태/정확히맞음/차액있음/중복정산방지/twGuard/현금자산없음), renderMenu 소스패턴 1건 — 2916->2960 통과. node --check logic.js/sw.js, 메인 인라인 스크립트 new Function 구문검사, manifest.webmanifest JSON 유효성 모두 통과. APP_VERSION 1.47.372->1.47.373, sw.js CACHE v639->v640. 범위를 좁힌 부분(다음 critique가 필요시 재검토): mergeOwnerInto/delOwner의 settle 추적은 생략(설정 재안내 폴백으로 충분하다고 판단), 정산 내역 자체의 CSV 내보내기나 과거 정산 이력 보관은 미포함.",
-      "commit": null
-    },
     {
       "cycle": 315,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-07T10:05:00.000Z",
       "summary": "서브에이전트로 앱 전체를 재조사(cycle300-319 처리/보류/기각 항목 전부 제외 지시: twGuard 스윕·전역검색·예산이월·연말결산·owner/category/asset merge 전부·nwHistory byType/자산배분추이 카드·목표자산배분+리밸런싱·CSV날짜·이체 및 반복 중복감지·카테고리별 알림뮤트·공동지출 정산(shared/settle) 전체와 배지·토글 전파·investGainLossCard 유형별 분해·목표/반복/통합검색 검색창 디바운스·PIN 화면잠금 고지·목표비중 알림뮤트 토글·saveGoal targetDate 범위가드는 명시적으로 제외; FX 환차익 분리·투자손익 추이차트·CSV shared/photo 필드·배당/이자 추적·할부 추적·귀속별 예산·다인 정산·CSV 분할거래·반복거래 분할·실시간 저장소 암호화·반복 건별 skip·백업 리마인더·CDN SRI 해시는 기각 이력으로 재확인). 발견: 모든 삭제 경로(단일 스와이프 삭제 delTx/deleteTxnsUndo index.html:11309, 다중선택 삭제 ledgerDelSel 5486 등)가 undoToast()의 6000ms(11306) 실행취소 버튼 하나에만 의존하고, 타이머가 끝나면 그 데이터를 들고 있던 클로저가 사라진다. DB.deletedIds는 클라우드 병합용 id-타임스탬프 툼스톤일 뿐 실제 거래 내용(날짜/금액/카테고리/메모/자산/사진)을 보관하지 않아, 6초가 지나면 영구적으로 복구 불가능함을 확인(goals/owners/categories 등 다른 삭제 경로도 동일 패턴이나 거래가 가장 빈도·가치 높음). pending_advance_plan에 구체 계획 저장(DB.trashTxns[] 신설+migrate 초기화, deleteTxnsUndo가 removed를 trashTxns에도 push, logic.js에 gcTombstones 스타일 날짜기반 GC 헬퍼, '최근 삭제함' 메뉴+openTrashList 화면+복구 버튼, 테스트 계획). 기각 후보 4개(홈 대시보드 카드 순서변경/숨기기-실데이터손실보다 저위험이라 우선순위 낮음, CSV import 견고성-이미 광범위하게 보강됨(EUC-KR/CP949 자동재시도·사유별 무효건수·중복키), 부채/대출 추적-이미 what-if상환projection·이자조정상환·지연알림까지 완비, 알림 전달 아키텍처의 백그라운드 푸시 한계-서버리스 PWA 고유 제약으로 실시간 저장소 암호화와 동급의 재작성급 범위). 코드 변경 없음(state.json만 커밋, pending_advance_plan 신설에 따라 phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 319,
+      "phase": "advance",
+      "timestamp": "2026-11-07T11:22:23.493Z",
+      "summary": "거래 삭제 '최근 삭제함(trash)' 복구 기능 구현: DB.trashTxns 신설(migrate 초기화+GC, mergeRemoteDataIntoLocal 병합 배선, sanitizeBackup 검증), deleteTxnsUndo가 삭제 거래 전체 내용을 _deletedAt과 함께 보관하도록 수정, 메뉴 '백업 · 데이터'에 '최근 삭제함' 진입점+openTrashList/restoreTrashTxn 화면 추가(복구 시 트래시/톰스톤에서 모두 제거). 보존기간은 TRASH_MAX_AGE_DAYS=30(logic.js gcTrashTxns 기본값과 동기화). 회귀 테스트 다수 추가(gcTrashTxns/mergeTrashTxns 순수함수, migrate 통합, deleteTxnsUndo, openTrashList/restoreTrashTxn, mergeRemoteDataIntoLocal 배선, sanitizeBackup 검증) — node test/run.js 3024/3024 통과.",
       "commit": null
     }
   ]
