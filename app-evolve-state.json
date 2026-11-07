@@ -1,15 +1,8 @@
 {
   "cycle": 322,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 317,
-      "phase": "develop",
-      "timestamp": "2026-11-07T01:13:00.159Z",
-      "summary": "목표 관리(goalQInput)·반복 내역 관리(recQInput) 검색창에 histQInput/assetQInput(cycle216/243 advance)이 이미 가진 \"검색어 지우면 디바운스 없이 즉시 반영\" 가드가 빠져 있던 공백을 발견 — clrInput(×버튼)으로 검색어를 지워도 220ms 동안 이전 필터링된 목록이 그대로 남아 있었다. index.html의 goalQInput/recQInput 둘 다에 histQInput과 동일한 v.trim()===\"\" 즉시실행 분기를 추가하고 설명 주석도 맞춰 갱신. 사용자 체감 변화라 APP_VERSION 1.47.377→1.47.378, sw.js CACHE ourassets-v644→v645 올림. test/run.js에 histQInput/assetQInput의 기존 \"지우면 즉시 반영\" 테스트와 동일한 패턴으로 goalQInput/recQInput 각 2건(지우기, 공백만 입력) 추가 — 첫 시도에서 goalQInput 테스트 하나가 목표가 1개뿐이라(\"비상금\") 지운 뒤에도 그 이름이 포함된다는 잘못된 단언으로 실패해 innerHTML이 old에서 바뀌었는지로 단언을 고쳐 통과시킴. node our-assets-v1.14.1/our-assets/test/run.js 2984/2984 통과(exit 0), 두 함수 모두 node --check로 문법 확인.",
-      "commit": null
-    },
     {
       "cycle": 317,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-07T19:30:00.000Z",
       "summary": "critique(cycle321) 계획대로 반복거래(recurrences) 삭제 '최근 삭제함(trashRecs)' 복구 기능을 구현했다. logic.js는 새 함수 없이 gcTrashTxns/mergeTrashTxns를 그대로 재사용(둘 다 {id,_deletedAt}만 가정해 반복거래 전용 필드를 참조하지 않음). index.html: DB.trashRecs 신설(migrate 초기화+GC+live-id 필터, mergeRemoteDataIntoLocal에 DB.recurrences 병합/pruneOrphanRecOverrides 직후 배선, sanitizeBackup에 id&&csvDateValid(startDate) 기준 검증+amount 클램프+_deletedAt 보정 추가 — splits/skip/edits/freq/day/weekend 등은 이미 saveRec이 정규화해 둔 아카이브라는 전제로 재검증하지 않음), deleteRecsUndo가 삭제 즉시 반복거래 전체+_deletedAt을 DB.trashRecs에 저장(즉시 undo 콜백에서도 제거), 메뉴 '백업·데이터'에 '삭제한 반복' 행 추가, openRecTrashList()/restoreTrashRec(id) 신설(openTrashList/openAssetTrashList와 동일 manage-row 패턴, 요약은 openRecManage()와 동일하게 memo/category+recFreqLabel+amount). 테스트: deleteRecsUndo→trashRecs 저장/undo제거/무변경/다건(4) + openRecTrashList/restoreTrashRec(목록순서/빈상태/정상복구/존재안함/twGuard, 5) + sanitizeBackup trashRecs 검증(id/startDate 없음·무효 통째 제거, amount 클램프, _deletedAt 보정, 비검증 필드 보존, 중복id, 5) + migrate trashRecs 초기화/GC/live-id필터(3) + mergeRemoteDataIntoLocal trashRecs 배선(2) + gcTrashTxns/mergeTrashTxns 재사용 확인(반복거래 모양 데이터, 1) = 20건 추가 — node test/run.js 3062->3082/3082 통과. node --check logic.js/sw.js/test/run.js 통과, manifest.webmanifest JSON 유효성 통과, index.html 인라인 스크립트 추출검사는 기존과 동일한 1건의 기존 오탐(block1=head FOUC 스크립트, HTML 주석 텍스트 오인, cycle311부터 이어짐; git stash로 변경 전 상태와 대조해 이번 변경과 무관함을 재확인, 내 변경은 openRecTrashList가 있는 전혀 다른 block3에 있음을 확인)만 재확인됨. 사용자 체감 기능 추가라 APP_VERSION 1.47.384->1.47.385, sw.js CACHE v651->v652. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 322,
+      "phase": "develop",
+      "timestamp": "2026-11-07T20:30:00.000Z",
+      "summary": "openTrashList()(index.html, '최근 삭제함' 화면, cycle319)가 다른 모든 거래 목록(장부 행, flow 아이템, 알림 카드, 통합검색 등)과 달리 분할 거래(t.splits.length>1)에서 카테고리를 txCatLabel(t)(logic.js:533, cycle198)로 뭉뚱그리지 않고 t.category(첫 분할의 카테고리)를 그대로 보여주는 공백을 서브에이전트 조사로 발견 — openTrashList가 cycle319에 추가될 때 분할 거래 지원(cycle198) 이전 패턴을 그대로 썼던 것으로 보인다. 삭제된 분할 거래를 '최근 삭제함'에서 보면 실제로는 여러 카테고리로 나뉜 거래가 마치 첫 분할 카테고리 하나뿐인 거래처럼 보여 오해를 살 수 있다. restoreTrashTxn은 t.splits를 그대로 복구하므로 데이터 자체는 멀쩍하고 이 화면의 라벨링만 문제. index.html의 openTrashList() row 템플릿에서 t.category 직접 참조를 txCatLabel(t) 결과(catLbl)로 교체(한 줄 변경, txCatLabel/splitLines는 이미 테스트된 순수함수 재사용, 새 로직 없음). test/run.js에 분할 거래는 '카테고리 2개'로 보이고 첫 분할 카테고리 단독 노출(· 식비)은 없어야 한다는 테스트 1건 + 비분할 거래는 기존처럼 t.category 그대로 보이는 회귀 방지 테스트 1건 추가 — 3082->3084 통과. node --check logic.js/sw.js 통과, index.html 인라인 스크립트 추출검사는 기존과 동일한 1건의 기존 오탐(block0=head 쪽 HTML 주석 텍스트 오인, cycle311부터 이어짐; 내 변경이 있는 block3는 개별 node --check 통과)만 재확인, manifest.webmanifest JSON 유효성 통과. 사용자 체감 라벨 수정이라 APP_VERSION 1.47.385->1.47.386, sw.js CACHE v652->v653.",
       "commit": null
     }
   ]

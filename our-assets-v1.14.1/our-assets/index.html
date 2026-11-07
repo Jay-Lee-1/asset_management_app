@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.385';
+const APP_VERSION='1.47.386';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -11389,9 +11389,10 @@ function openTrashList(){
   const daysLeft=Math.max(0,TRASH_MAX_AGE_DAYS-Math.floor((Date.now()-(t._deletedAt||0))/86400000));
   const sign=t.type==='income'?'plus':(t.type==='expense'?'minus':'');
   const signTxt=t.type==='income'?'+':(t.type==='expense'?'-':'');
+  const catLbl=txCatLabel(t);
   return `<div class="manage-row" style="align-items:flex-start"><div style="flex:1;min-width:0">
     <div class="mn num ${sign}">${signTxt}${comma(t.amount||0)}원</div>
-    <div class="msub">${t.date||''}${t.category?' · '+esc(t.category):''}${t.memo?' · '+esc(t.memo):''} · ${daysLeft}일 후 자동삭제</div></div>
+    <div class="msub">${t.date||''}${catLbl?' · '+esc(catLbl):''}${t.memo?' · '+esc(t.memo):''} · ${daysLeft}일 후 자동삭제</div></div>
    <div class="row-acts"><button class="act-btn" aria-label="거래 복구" onclick="restoreTrashTxn('${t.id}')">${svg('restore')}</button></div></div>`;
  };
  openSheet(`<h3>최근 삭제함</h3><div class="desc">삭제한 거래예요. ${TRASH_MAX_AGE_DAYS}일이 지나면 자동으로 사라져요</div>

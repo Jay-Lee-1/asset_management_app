@@ -10379,6 +10379,24 @@ test('openTrashList: 삭제한 거래가 없으면 빈 상태를 보여준다', 
   sandbox.openTrashList();
   assert.ok(sandbox.lastSheetHtml.includes('삭제한 거래가 없어요'));
 });
+test('openTrashList: 분할 거래는 txCatLabel과 똑같이 "카테고리 N개"로 보여준다(첫 분할 카테고리만 보이면 나머지가 안 보여 오해를 살 수 있음)', () => {
+  sandbox.DB = { trashTxns: [
+    { id: 't1', amount: 3000, date: '2026-01-01', category: '식비', splits: [{ category: '식비', amount: 1000 }, { category: '교통', amount: 2000 }], _deletedAt: 100 },
+  ] };
+  sandbox.lastSheetHtml = null;
+  sandbox.openTrashList();
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('카테고리 2개'), '다른 거래 목록들(txCatLabel 사용)과 동일하게 분할 건수로 뭉뚱그려 보여야 함');
+  assert.ok(!html.includes('· 식비'), '분할 거래는 첫 분할 카테고리(식비)만 단독으로 노출돼선 안 됨');
+});
+test('openTrashList: 분할이 아닌(splits 없는) 거래는 기존처럼 t.category를 그대로 보여준다', () => {
+  sandbox.DB = { trashTxns: [
+    { id: 't1', amount: 1000, date: '2026-01-01', category: '식비', _deletedAt: 100 },
+  ] };
+  sandbox.lastSheetHtml = null;
+  sandbox.openTrashList();
+  assert.ok(sandbox.lastSheetHtml.includes('· 식비'), '분할이 없으면 회귀 없이 기존처럼 단일 카테고리가 그대로 보여야 함');
+});
 test('restoreTrashTxn: 트래시 항목을 DB.txns로 되돌리고 트래시·톰스톤에서 제거한다', () => {
   sandbox.TWi = -1;
   const t = { id: 't1', amount: 1000, date: '2026-01-01', category: '식비', _deletedAt: 123 };
