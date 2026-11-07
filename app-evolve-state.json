@@ -1,15 +1,8 @@
 {
   "cycle": 321,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 316,
-      "phase": "review",
-      "timestamp": "2026-11-06T22:08:33.072Z",
-      "summary": "cycle316 develop 커밋(7277fc8, 원장/전체내역 목록 '같이 냈어요' 배지 추가)을 검토 — txRowCore의 selectable/일반 두 렌더 분기 모두에 sharedIc가 삽입돼 isSplit·isRec 배지와 함께 nm-row 안에 공존함을 diff로 확인. svg('users') 아이콘이 I 딕셔너리(index.html:1543)에 이미 존재해 렌더링 깨짐 없음을 grep으로 확인. shared는 _applyType이 지출 외 유형에서 항상 false로 리셋해두므로(cycle314) 배지 조건에서 t.type을 별도로 또 확인할 필요가 없다는 커밋 메시지의 판단이 맞음을 코드로 재확인. expandRec이 shared를 가상 인스턴스에도 그대로 싣는 기존 동작(cycle315)과 결합해 반복 파생 인스턴스에도 배지가 자동으로 뜨는지 테스트 5건(일반/선택 모드, shared 없음·false 회귀, 분할+공유 동시, isRec+shared 동시)으로 실제 검증됨을 확인. node test/run.js 2973/2973 통과, node --check logic.js/sw.js 통과, APP_VERSION 1.47.376/CACHE v643 일관성 확인. 실제 버그 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 316,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-07T00:00:00.000Z",
       "summary": "logic.js의 118개 순수 함수 중 shiftWeekend(mode별 주말 조정)만 test/run.js에서 직접 호출된 적이 없었다(지금까지 recDates() 테스트를 통해서만 간접 커버) — cycle320이 searchTerms/matchQueryTerms에 적용한 것과 동일한 논리의 공백. test/run.js에 shiftWeekend() 직접 단위 테스트 6건 추가: mode 없음/falsy/'none' 패스스루(평일·주말 둘 다), earlier(토→전날, 일→이틀전, 평일 불변), later(토→+2일, 일→+1일, 평일 불변), 그리고 recDates()의 자체 주석(logic.js:33-37)이 문서화한 월/연 경계를 넘는 조정 케이스(2024-06-01 토요일 1일 earlier→전달 말일, 2023-01-01 일요일 earlier→전년 12/30, 2026-05-31 later→6/1 월경계, 2022-12-31 later→2023-01-02 연경계)를 shiftWeekend() 단독 단위에서 직접 고정. 프로덕션 코드 변경 없음(테스트 전용 추가) — 3056->3062 통과. APP_VERSION/sw.js CACHE 변경 없음(cycle320 선례와 동일하게 테스트 전용 추가는 캐시 버전을 올리지 않음).",
+      "commit": null
+    },
+    {
+      "cycle": 321,
+      "phase": "review",
+      "timestamp": "2026-11-07T16:30:00.000Z",
+      "summary": "cycle321 develop 커밋(f14fafb, shiftWeekend() 직접 단위 테스트 추가)을 검토 — logic.js:23-28 구현(earlier: 토요일 dow===6→-1일, 일요일 dow===0→-2일; later: 토요일→+2일, 일요일→+1일; 그 외 평일/mode falsy/'none'은 그대로 반환)과 추가된 6개 테스트를 한 줄씩 대조해 전부 일치함을 확인. 테스트에 쓰인 모든 날짜(2026-06-13/14, 2024-06-01, 2023-01-01, 2026-05-31, 2022-12-31)의 실제 요일을 node의 Date.getDay()로 독립적으로 재계산해 커밋이 가정한 요일(토/일)과 정확히 일치함을 검증(주석의 요일 서술을 그대로 믿지 않고 재확인). node test/run.js 재실행 3062/3062 통과, node --check logic.js/sw.js 통과, APP_VERSION 1.47.384/CACHE v651 변경 없음(테스트 전용 추가이므로 cycle320 선례와 일치) 확인. 실제 버그 없음(state.json만 커밋).",
       "commit": null
     }
   ]
