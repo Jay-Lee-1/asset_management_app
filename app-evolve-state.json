@@ -1,15 +1,8 @@
 {
   "cycle": 320,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 315,
-      "phase": "develop",
-      "timestamp": "2026-11-06T17:40:00.000Z",
-      "summary": "saveTx()의 반복(repeat) 전환 분기가 거래 입력 중 켠 \"같이 냈어요\"(d.shared)를 생성되는 DB.recurrences 레코드에 옮겨 담지 않고(index.html saveTx rec 리터럴), expandRec()이 매 회차 펼치는 가상 인스턴스도 그 필드를 전혀 싣지 않아서, \"반복\"+\"같이 냈어요\"를 함께 켠 공동 구독료 같은 지출이 매달 발생하면서도 settlementSummary(정산 집계, cycle314)에서 영원히 조용히 빠지는 버그를 고쳤다. saveTx()의 rec 리터럴에 shared:!!d.shared 추가, expandRec()의 가상 인스턴스 push에 shared:!!r.shared 추가, migrate()의 DB.recurrences 기본값에 shared:false 추가(하위호환). 회귀 테스트 5건 추가(반복+같이냈어요 켜고 저장 시 rec.shared=true, 같이냈어요 꺼진 채 반복만 켜면 false, expandRec이 r.shared를 그대로 전파, shared 필드 없는 기존 반복은 false로 안전하게 펼쳐짐, saveTx+expandRec+settlementSummary 통합 시나리오로 공동 구독료가 정산 합계에 잡히는지 확인) — 2960->2965 통과. node --check logic.js 통과, index.html 인라인 스크립트 4개 모두 node Function 파싱 통과(HTML 주석 안의 \"<script>\" 텍스트를 매칭하는 기존 오탐 1건은 주석 제외 후 재확인해 해소). APP_VERSION 1.47.373->1.47.374, sw.js CACHE v640->v641.",
-      "commit": null
-    },
     {
       "cycle": 315,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-07T11:22:23.493Z",
       "summary": "거래 삭제 '최근 삭제함(trash)' 복구 기능 구현: DB.trashTxns 신설(migrate 초기화+GC, mergeRemoteDataIntoLocal 병합 배선, sanitizeBackup 검증), deleteTxnsUndo가 삭제 거래 전체 내용을 _deletedAt과 함께 보관하도록 수정, 메뉴 '백업 · 데이터'에 '최근 삭제함' 진입점+openTrashList/restoreTrashTxn 화면 추가(복구 시 트래시/톰스톤에서 모두 제거). 보존기간은 TRASH_MAX_AGE_DAYS=30(logic.js gcTrashTxns 기본값과 동기화). 회귀 테스트 다수 추가(gcTrashTxns/mergeTrashTxns 순수함수, migrate 통합, deleteTxnsUndo, openTrashList/restoreTrashTxn, mergeRemoteDataIntoLocal 배선, sanitizeBackup 검증) — node test/run.js 3024/3024 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 320,
+      "phase": "develop",
+      "timestamp": "2026-11-07T12:12:54.518Z",
+      "summary": "logic.js의 118개 순수 함수 중 searchTerms/matchQueryTerms(app-evolve cycle287 advance가 matchTxnQuery/matchRecQuery/matchGoalQuery의 중복 토큰화·매칭 로직을 뽑아 만든 공유 코어)만 직접 호출하는 테스트가 전혀 없었다 — parseAmountUnit/amountMatchesToken이 cycle282 develop에서 정확히 같은 이유로(간접 호출 몇 개만으로 경계값을 우연히 통과했을 위험) 직접 테스트를 받았는데 그 뒤에 추가된 이 두 함수만 빠져 있던 공백이다. test/run.js에 8개 테스트 추가: searchTerms의 공백(여러 개/탭) 분리·빈 토큰 제거·앞뒤 트림·빈/null/undefined 입력 시 빈 배열, matchQueryTerms의 평문 토큰 substring 매칭·금액 토큰(>/~) 파싱 시 haystack을 보지 않고 amountCandidates만 보는 분기·후보 중 하나라도 맞으면 참(분할 등 다중 후보)·null/undefined 후보 무시·여러 토큰의 AND(every) 의미론·빈 terms 배열이면 항상 참(matchTxnQuery가 q가 비면 호출 자체를 건너뛰는 전제를 문서화). 코드 로직 변경 없음(테스트 전용 추가), index.html/sw.js 미변경이라 APP_VERSION/CACHE 버전업 불필요. node --check test/run.js 통과, node test/run.js 3024->3032/3032 통과.",
       "commit": null
     }
   ]

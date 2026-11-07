@@ -8367,6 +8367,46 @@ test('amountMatchesToken: 음수로 저장된 금액도 절대값으로 비교�
   assert.strictEqual(sandbox.amountMatchesToken(-30000, { op: 'range', v1: 10000, v2: 50000 }), true);
 });
 
+/* ---------- searchTerms/matchQueryTerms: matchTxnQuery/matchRecQuery/matchGoalQuery(app-evolve
+ * cycle287 advance)가 공유하는 토큰화·매칭 코어 ----------
+ * parseAmountUnit/amountMatchesToken은 cycle282 develop에서 이미 직접 테스트를 받았지만(바로 위
+ * 블록), 그 뒤 cycle287 advance가 세 함수의 중복 로직을 뽑아 만든 searchTerms/matchQueryTerms는
+ * 지금까지 matchTxnQuery류의 통합 테스트를 통해서만 간접 호출됐을 뿐 직접 호출하는 테스트가
+ * 전혀 없었다 — cycle282가 막으려던 것과 똑같은 공백("경계값을 직접 겪어보지 않고 간접 호출
+ * 몇 개만으로 우연히 통과")이 이 두 함수에도 그대로 남아 있었다(app-evolve cycle320 develop). */
+test('searchTerms: 공백(여러 개/탭 섞임)으로 나누고 빈 토큰은 버린다', () => {
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.searchTerms('스타벅스   10만\t카페'))), ['스타벅스', '10만', '카페']);
+});
+test('searchTerms: 앞뒤 공백을 먼저 트림한다(트림 안 하면 split이 맨 앞/뒤에 빈 토큰을 만듦)', () => {
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.searchTerms('  스타벅스  '))), ['스타벅스']);
+});
+test('searchTerms: 빈 문자열/null/undefined는 빈 배열이다(matchQueryTerms의 every가 공집합에서 항상 true가 되는 전제)', () => {
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.searchTerms(''))), []);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.searchTerms(null))), []);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.searchTerms(undefined))), []);
+});
+test('matchQueryTerms: 평문 토큰은 정규화된 haystack에 대한 substring 매칭이다', () => {
+  assert.strictEqual(sandbox.matchQueryTerms('스타벅스 아메리카노', ['스타벅스'], []), true);
+  assert.strictEqual(sandbox.matchQueryTerms('스타벅스 아메리카노', ['빽다방'], []), false);
+});
+test('matchQueryTerms: 금액 연산자/범위로 파싱되는 토큰은 amountCandidates 중 하나라도 맞으면 참이다(haystack의 substring은 보지 않음)', () => {
+  assert.strictEqual(sandbox.matchQueryTerms('스타벅스 10000', ['>5000'], [10000]), true);
+  assert.strictEqual(sandbox.matchQueryTerms('스타벅스 10000', ['>50000'], [10000]), false);
+  assert.strictEqual(sandbox.matchQueryTerms('스타벅스 10000', ['1만~5만'], [3000, 30000]), true, '분할(splits) 등 후보가 여러 개면 하나라도 맞으면 참');
+});
+test('matchQueryTerms: amountCandidates의 null/undefined 항목은 조용히 건너뛴다', () => {
+  assert.strictEqual(sandbox.matchQueryTerms('스타벅스 10000', ['>5000'], [null, undefined, 10000]), true);
+  assert.strictEqual(sandbox.matchQueryTerms('스타벅스', ['>5000'], [null, undefined]), false);
+});
+test('matchQueryTerms: 여러 토큰이면 전부(AND) 맞아야 참이다 — 평문·금액 토큰이 섞여도 동일', () => {
+  assert.strictEqual(sandbox.matchQueryTerms('스타벅스 10000', ['스타벅스', '>5000'], [10000]), true);
+  assert.strictEqual(sandbox.matchQueryTerms('스타벅스 10000', ['스타벅스', '>50000'], [10000]), false);
+  assert.strictEqual(sandbox.matchQueryTerms('스타벅스 10000', ['빽다방', '>5000'], [10000]), false);
+});
+test('matchQueryTerms: 검색어가 없으면(terms가 빈 배열) every가 공집합에서 항상 참이라 무조건 매칭된다', () => {
+  assert.strictEqual(sandbox.matchQueryTerms('아무 내용', [], []), true);
+});
+
 /* ---------- parseAmountToken: histQ 검색어의 금액 비교/범위 연산자 파싱(app-evolve cycle278) ----------
  * vm 크로스 realm 객체는 deepStrictEqual로 통째로 비교하면 프로토타입이 달라 실패한다(history의
  * duplicateRec 테스트가 배열에서 겪은 것과 동일한 이유) — 필드별로 strictEqual한다. */
