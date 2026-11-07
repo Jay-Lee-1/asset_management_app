@@ -1,15 +1,12 @@
 {
   "cycle": 319,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "거래(transaction) 삭제에 대한 '최근 삭제함(trash)' 복구 기능 추가",
+    "why": "현재 모든 삭제 경로(단일 스와이프 삭제 delTx/deleteTxnsUndo index.html:11309, 다중선택 삭제 ledgerDelSel 5486 등)는 undoToast()가 6000ms(11306) 동안만 보여주는 실행취소 버튼에 전부 의존하고, 타이머가 끝나면 그 데이터를 들고 있던 클로저가 사라진다. DB.deletedIds는 클라우드 병합 충돌용 id-타임스탬프 툼스톤일 뿐 실제 거래 내용(날짜/금액/카테고리/메모/자산/사진)을 보관하지 않으므로, 6초가 지나면 영구적으로 복구 불가능하다. 자산관리 앱에서 매일 빈번하게 발생하는 거래 삭제가 이런 좁은 창에서만 되돌릴 수 있다는 건 금융 데이터 손실 위험이 큰 공백이며, goals/owners/categories 등 다른 모든 삭제 경로도 동일 패턴이라 가장 빈도·가치가 높은 거래(txns)부터 범위를 좁혀 다룰 가치가 있다.",
+    "approach": "1) migrate()(index.html:2561)에서 DB.deletedIds 초기화 옆에 DB.trashTxns=[] 추가(각 항목은 전체 거래 필드 + _deletedAt 타임스탬프). 2) deleteTxnsUndo(ids)(11309)가 이미 계산해 둔 removed 배열을 DB.trashTxns에도 push하도록 수정(기존 DB.deletedIds 툼스톤 기록은 그대로 유지). 3) logic.js에 gcTombstones/pruneDismissedStaleMvIds와 같은 스타일의 순수 GC 헬퍼를 추가해 _deletedAt이 N일(예: 30일)보다 오래된 DB.trashTxns 항목을 정리하고, migrate()/boot 시 gcTombstones(2611-2612) 곁에서 호출. 4) UI: 메뉴의 '오래된 데이터 정리'(7103) 근처에 '최근 삭제함' 진입점 추가, openTrashList() 화면에서 삭제된 거래를 날짜/메모/카테고리/금액/남은 복구일수와 함께 나열하고 각 항목에 '복구' 버튼(DB.txns로 되돌리고 DB.trashTxns/DB.deletedIds에서 제거 후 save()+renderCurrent()), 빈 상태와 메뉴 행의 개수 배지도 포함. 5) 테스트: 삭제 시 trashTxns에 담기는지, 복구 왕복이 정확한지, 날짜 기준 GC 가지치기가 동작하는지 기존 gcTombstones/pruneDismissedStaleMvIds 테스트 패턴을 따라 추가. 범위는 거래(txns)만으로 한정(goals/owners/categories 등 다른 엔티티 확장은 후속 cycle 후보로 남김). 예상 diff 규모: index.html +150~250줄(migrate 초기화, deleteTxnsUndo 수정, 신규 화면+메뉴 행), logic.js +20~30줄(GC 헬퍼), 테스트 수건."
+  },
   "history": [
-    {
-      "cycle": 314,
-      "phase": "critique",
-      "timestamp": "2026-11-06T15:16:00.000Z",
-      "summary": "서브에이전트로 앱 전체를 재조사(cycle300-314 처리/보류/기각 항목 전부 제외 지시, twGuard 스윕·전역검색·예산이월·연말결산·owner/category/asset merge 전부·nwHistory byType/자산배분추이 카드·목표자산배분+리밸런싱·CSV날짜·이체 및 반복 중복감지(saveTx 경로 포함)·카테고리별 알림뮤트는 명시적으로 제외). 발견: 앱은 명시적 2인 가구용(DB.owners 기본값 ['나','배우자','공용'], index.html:2567/1845)이고 거의 모든 분석 화면이 이미 귀속별 필터(filterTxnsByOwner, logic.js:173)를 제공하는데, 공동지출을 누가 더 냈고 얼마를 보내야 하는지 계산해주는 정산(settlement) 기능이 전혀 없음(정산/더치/분담/차액/반반/기여율 전수 grep 0건) — 연말결산(보고용 뷰)·owner/category/asset merge(정체성 통합)와는 다른, 사용자가 수동으로 계산해야 하는 핵심 제품 공백. pending_advance_plan에 구체 계획 저장(t.shared 플래그 + DB.settings.settle{ownerA,ownerB,ratioA}/settledThrough + logic.js의 settlementSummary 순수함수 + 지출입력 '둘이 나눠요' 토글 + '정산' 메뉴 화면 + 정산완료시 실제 이체 트랜잭션 생성 + 테스트 계획). 기각 후보 3개(배당/이자 추적-낮은 가치, 할부 명시적 추적-recurring count로 이미 대체, 귀속별 예산-카테고리 기반 관례와 충돌+예산이월 작업과 개념 중복). 코드 변경 없음(state.json만 커밋, pending_advance_plan 신설에 따라 phase를 advance로 회전).",
-      "commit": null
-    },
     {
       "cycle": 314,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-07T09:17:12.815Z",
       "summary": "cycle319 develop 커밋(db818d8, saveGoal targetDate RANGE_FROM/RANGE_TO 가드 추가)을 검토 — saveAsset(maturityDate, 4973-4974)·saveTx/saveRec(date/startDate)과 글자 그대로 동일한 dateBelowRangeFloor/dateAboveRangeCeil 가드 패턴임을 diff로 확인. targetDate가 빈 문자열(goalClearDate로 지운 경우)이면 d.targetDate&& 조건이 falsy라 가드를 건너뛰어 정상 저장되는지 확인(기존 goalClearDate(3833)·saveGoal의 targetDate:d.targetDate||null 처리와 일치). DB.goals에 쓰는 경로가 saveGoal()과 delGoal의 undo-restore(DB.goals.push, 이미 유효했던 데이터 복원)뿐임을 grep으로 확인해 가드 배치 위치가 saveAsset과 동일하게 충분함을 검증. 회귀 테스트 3건(RANGE_FROM 이전 차단/RANGE_TO 이후 차단/targetDate 없음 정상)이 saveTx의 동일 테스트와 달리 sandbox.RANGE_TO=null로 명시적으로 복원해 뒤따르는 duplicateGoal→saveGoal(targetDate 2030-01-01) 테스트와 충돌하지 않게 한 점도 직접 재현해 확인(원래 복원 없이 두면 테스트 2995/2996로 실패했던 걸 develop 단계에서 이미 고쳤음을 재확인). 코드 변경 없음(이상 없음) — 테스트 2996/2996 통과 재확인.",
+      "commit": null
+    },
+    {
+      "cycle": 319,
+      "phase": "critique",
+      "timestamp": "2026-11-07T10:05:00.000Z",
+      "summary": "서브에이전트로 앱 전체를 재조사(cycle300-319 처리/보류/기각 항목 전부 제외 지시: twGuard 스윕·전역검색·예산이월·연말결산·owner/category/asset merge 전부·nwHistory byType/자산배분추이 카드·목표자산배분+리밸런싱·CSV날짜·이체 및 반복 중복감지·카테고리별 알림뮤트·공동지출 정산(shared/settle) 전체와 배지·토글 전파·investGainLossCard 유형별 분해·목표/반복/통합검색 검색창 디바운스·PIN 화면잠금 고지·목표비중 알림뮤트 토글·saveGoal targetDate 범위가드는 명시적으로 제외; FX 환차익 분리·투자손익 추이차트·CSV shared/photo 필드·배당/이자 추적·할부 추적·귀속별 예산·다인 정산·CSV 분할거래·반복거래 분할·실시간 저장소 암호화·반복 건별 skip·백업 리마인더·CDN SRI 해시는 기각 이력으로 재확인). 발견: 모든 삭제 경로(단일 스와이프 삭제 delTx/deleteTxnsUndo index.html:11309, 다중선택 삭제 ledgerDelSel 5486 등)가 undoToast()의 6000ms(11306) 실행취소 버튼 하나에만 의존하고, 타이머가 끝나면 그 데이터를 들고 있던 클로저가 사라진다. DB.deletedIds는 클라우드 병합용 id-타임스탬프 툼스톤일 뿐 실제 거래 내용(날짜/금액/카테고리/메모/자산/사진)을 보관하지 않아, 6초가 지나면 영구적으로 복구 불가능함을 확인(goals/owners/categories 등 다른 삭제 경로도 동일 패턴이나 거래가 가장 빈도·가치 높음). pending_advance_plan에 구체 계획 저장(DB.trashTxns[] 신설+migrate 초기화, deleteTxnsUndo가 removed를 trashTxns에도 push, logic.js에 gcTombstones 스타일 날짜기반 GC 헬퍼, '최근 삭제함' 메뉴+openTrashList 화면+복구 버튼, 테스트 계획). 기각 후보 4개(홈 대시보드 카드 순서변경/숨기기-실데이터손실보다 저위험이라 우선순위 낮음, CSV import 견고성-이미 광범위하게 보강됨(EUC-KR/CP949 자동재시도·사유별 무효건수·중복키), 부채/대출 추적-이미 what-if상환projection·이자조정상환·지연알림까지 완비, 알림 전달 아키텍처의 백그라운드 푸시 한계-서버리스 PWA 고유 제약으로 실시간 저장소 암호화와 동급의 재작성급 범위). 코드 변경 없음(state.json만 커밋, pending_advance_plan 신설에 따라 phase를 advance로 회전).",
       "commit": null
     }
   ]
