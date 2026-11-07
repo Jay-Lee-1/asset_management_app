@@ -1,7 +1,11 @@
 {
   "cycle": 318,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "목표 비중(allocationDrift/Multi) 알림 그룹에 뮤트 토글 추가",
+    "why": "notifyAlertInfo()(index.html:11006-11016)의 주석이 스스로 명시하는 공백: allocationDrift/allocationDriftMulti는 cycle313에서 group:'alloc'으로 새로 추가됐지만, renderMenu의 그룹별 뮤트 토글 목록(index.html:7083-7089)은 여전히 confirm/mat/budget/goal/debt 5개뿐이라 alloc이 빠져 있다. 목표 비중 알림이 거북한 사용자(예: 의도적으로 한 유형을 과체중으로 유지)가 이 그룹만 끌 방법이 없고 OS 알림 전체 스위치가 유일한 탈출구라, cycle312/313이 만든 '그룹별 선택적 뮤트'의 취지를 이 그룹만 비켜간다.",
+    "approach": "데이터모델/로직 변경 없음 — notifyMute는 이미 자유형 {group:bool} 맵이고 toggleNotifyMuteGroup(g)(index.html:11084-11088)/pickNotifyAlerts/notifyAlertInfo는 이미 g를 범용으로 처리한다. index.html:7083-7089의 osNotify 조건부 배열에 다른 5개와 동일한 모양으로 한 행만 추가: {ic:'chart',l:'· 목표 비중 알림',sw:!DB.settings.notifyMute?.alloc,a:\"toggleNotifyMuteGroup('alloc')\"} (아이콘 'chart'는 7073의 '목표 자산배분' 메뉴 항목과 동일 아이콘 재사용). 주석(11006-11016)도 '아직 포함되지 않는다'는 문구를 갱신. 테스트: test/run.js:27055의 5개 그룹 목록 단언을 6개(alloc 추가)로 갱신, toggleNotifyMuteGroup('alloc')이 DB.settings.notifyMute.alloc을 왕복하는지 27021의 기존 budget/goal 테스트와 동일 패턴으로 1건 추가, osNotify=true일 때만 이 행이 렌더되는지 소스패턴 검증 1건 추가."
+  },
   "history": [
     {
       "cycle": 313,
@@ -141,6 +145,13 @@
       "phase": "review",
       "timestamp": "2026-11-07T06:07:44.000Z",
       "summary": "cycle318 develop 커밋(4b1fac9, 통합검색 gsQInput 디바운스 즉시반영 가드 추가)을 검토 — histQInput/assetQInput/goalQInput/recQInput(cycle216/243/317)과 글자 그대로 동일한 v.trim()==='' 패턴으로 clrInput('gsQ') 빈 문자열 입력을 즉시 반영하고 GS_EXPAND도 동일하게 리셋함을 diff로 확인. 새 테스트 6개(디바운스 지연/타이머 교체/#gsBody 없음 가드/빈문자열 즉시실행/공백trim/GS_EXPAND 리셋)가 기존 가드들의 테스트 구조를 그대로 재사용해 커버리지도 충분. APP_VERSION 1.47.380, sw.js CACHE v647로 함께 올라감. 전체 테스트 2992/2992 통과. 버그 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 318,
+      "phase": "critique",
+      "timestamp": "2026-11-07T07:00:00.000Z",
+      "summary": "서브에이전트로 앱 전체를 재조사(cycle300-318 처리/보류/기각 항목 전부 제외 지시: twGuard 스윕·전역검색·예산이월·연말결산·owner/category/asset merge 전부·nwHistory byType/자산배분추이 카드·목표자산배분+리밸런싱·CSV날짜·이체 및 반복 중복감지·카테고리별 알림뮤트·공동지출 정산(shared/settle) 전체와 배지·토글 전파·investGainLossCard 유형별 분해·목표/반복/통합검색 검색창 디바운스·PIN 화면잠금 고지는 명시적으로 제외; FX 환차익 분리·투자손익 추이차트·CSV shared/photo 필드·배당/이자 추적·할부 추적·귀속별 예산·다인 정산·CSV 분할거래·반복거래 분할·실시간 저장소 암호화는 기각 이력으로 재확인). 발견: notifyAlertInfo()(index.html:11006-11016) 자체 주석이 명시하는 공백 — allocationDrift/allocationDriftMulti(cycle313, group:'alloc')가 renderMenu의 그룹별 뮤트 토글 목록(7083-7089, confirm/mat/budget/goal/debt 5개)에 아직 없음. toggleNotifyMuteGroup(g)(11084-11088)은 이미 g에 범용이라 로직/데이터모델 변경 없이 UI 행 한 줄만 필요한, 범위가 극히 좁고 안전한 공백(목표 비중 알림이 거북한 사용자가 끌 방법이 OS 알림 전체 스위치뿐). pending_advance_plan에 구체 계획 저장(renderMenu osNotify 배열에 'chart' 아이콘 재사용한 alloc 행 1개 추가, 주석 갱신, test/run.js:27055의 5개→6개 그룹 단언 갱신+toggleNotifyMuteGroup('alloc') 왕복 테스트+osNotify 조건 렌더 테스트). 기각 후보 3개(반복 건별 skip-이미 완비됨, 백업 리마인더-이미 완비됨(backupDue/8346 스누즈), CDN SRI 해시-TODO 그대로지만 이 컨테이너 egress 프록시가 cdn.jsdelivr.net/t1.kakaocdn.net을 여전히 차단해 무인 사이클에서 계산 불가능한 환경적 제약, 재확인만 하고 미착수). 코드 변경 없음(state.json만 커밋).",
       "commit": null
     }
   ]
