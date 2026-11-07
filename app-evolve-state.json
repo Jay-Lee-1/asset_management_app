@@ -1,15 +1,8 @@
 {
   "cycle": 318,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 313,
-      "phase": "advance",
-      "timestamp": "2026-11-06T09:20:00.000Z",
-      "summary": "critique(cycle312) 계획대로 카테고리별(그룹별) OS 푸시 알림 뮤트를 구현했다. migrate()의 settings 기본값(index.html:2563)에 notifyMute:{} 추가. notifyAlertInfo()(10645-10706)가 반환하는 18종 알림 리터럴 전부에 group 필드를 추가(confirm/confirmMulti/quick/quickMulti→'confirm', mat/matMulti→'mat', budgetOver/budgetOverMulti/budgetPaceWarn/budgetPaceWarnMulti→'budget', goalBehind/goalBehindMulti/goalAchieved/goalAchievedMulti→'goal', debtBehind/debtBehindMulti/debtPaidOff/debtPaidOffMulti→'debt'). pickNotifyAlerts(alerts,notifiedIds,muted)에 3번째 선택 인자를 추가해 muted[info.group]이 true면 toNotify뿐 아니라 notifiedIds에도 기록하지 않음(뮤트 해제 시 바로 재알림되게). checkNotifyAlerts()가 DB.settings.notifyMute를 3번째 인자로 전달. toggleOsNotify() 바로 뒤에 toggleNotifyMuteGroup(g) 함수를 신설(토글+save+renderMenu). renderMenu()의 '알림 · 기준' 그룹에서 OS 알림 스위치 바로 아래, DB.settings.osNotify가 true일 때만 보이는 5개 하위 토글 행(이체·입력 확인/저축 만기/예산/목표/부채, 기존 제네릭 switch 행 렌더링 재사용)을 추가했다. sanitizeBackup은 계획대로 변경하지 않음(다른 평면 플래그와 동일하게 비검증 정책 유지). 테스트: notifyAlertInfo 5개 그룹 대표 케이스의 group 필드 검증 1건, pickNotifyAlerts가 muted={budget:true}일 때 budget만 걸러내고 confirm은 통과 1건, 뮤트된 알림이 notifiedIds에 안 쌓여 뮤트 해제 후 재알림됨 1건, 3번째 인자 생략 시 기존 동작 동일 1건, toggleNotifyMuteGroup 토글+save 검증(그룹 간 비간섭 포함) 1건, migrate() notifyMute 기본값/보존 검증 1건, renderMenu 소스 패턴(osNotify 조건+5개 toggleNotifyMuteGroup 호출) 1건 — 2882->2889 통과. 구현 중 발견: vm 샌드박스 realm 문제로 deepStrictEqual({}, {})가 실패(cycle309 advance 로그와 동일 클래스의 이슈) — notifyMute/notifiedIds 빈 객체 검증을 Object.keys(...).length===0 비교로 바꿔 해결(테스트 전용 이슈, 앱 코드는 무관). node --check sw.js, manifest.webmanifest JSON 유효성, index.html 인라인 스크립트 추출검사(기존과 동일한 1건의 기존 오탐만 재확인, 새 회귀 없음) 모두 통과. APP_VERSION 1.47.369->1.47.370, sw.js CACHE v636->v637. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 313,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-07T04:20:00.000Z",
       "summary": "critique(cycle317) 계획대로 '앱 잠금(PIN)'이 화면만 가릴 뿐 데이터는 암호화되지 않는다는 고지를 추가했다. 코드 로직·데이터모델 변경 없이 문구+테스트만 추가(계획대로). 1) openSetPinSheet(12140-12146)의 desc 문단에 \"단, 화면만 가릴 뿐 데이터 자체는 암호화되지 않으니, 기기를 분실했거나 공유 중이면 '데이터 내보내기'로 암호화된 백업을 만들어 두세요\"를 추가 — 계획의 '설정>백업>암호화 내보내기' 문구는 실제로 존재하지 않는 별도 메뉴라 그대로 쓰지 않고, doExport()(8764-8774)가 APPLOCK.enabled() 상태에서 JSON 전체 백업을 내보낼 때 이미 자동으로 PIN 암호화를 거는 실제 동작(exportData()의 '바로 저장'/'파일 열기')에 맞춰 '데이터 내보내기'로 정확하게 고쳐 썼다. 2) renderMenu(7057-7119)는 메뉴 항목 자체에 msub(보조설명) 줄을 지원하지 않는 단순 구조([mi][ml][mv][chev])라 계획의 'PIN 행에 msub 추가'는 실제 구조와 안 맞아, 대신 같은 그룹('알림 · 기준')에 이미 있던 OS 알림용 카드-하단 캡션 패턴(cycle161, osNotify 조건)을 그대로 재사용해 APPLOCK.enabled() 조건의 두 번째 캡션 <p>를 추가했다 — 기존 OS 알림 캡션의 조건/문구는 한 글자도 건드리지 않고 그 뒤에 독립된 삼항식으로 이어붙여 회귀 위험을 없앴다. 3) 도움말(openHelp)엔 PIN 관련 안내 자체가 없어(grep 0건) 계획대로 생략. 4) test/run.js에 renderMenu 캡션 조건/문구 포함 여부 + 기존 OS 알림 캡션 조건이 그대로인지 + openSetPinSheet 새 문구/기존 문구 보존 여부를 문자열-존재 패턴으로 검증하는 테스트 4건 추가(extractFunction 패턴, 기존 cycle161 OS 알림 캡션 테스트와 동일한 스타일) — 2982->2986 통과. node test/run.js 2986/2986 통과, node --check sw.js/logic.js 통과, index.html 인라인 스크립트 추출검사의 기존 1건 오탐(HTML 주석 텍스트 오인, cycle311부터의 기존 아티팩트)은 git stash로 변경 전 상태와 대조해 이번 변경과 무관함을 재확인, manifest.webmanifest JSON 유효성 통과. 사용자 체감 문구 변경이므로 APP_VERSION 1.47.378->1.47.379, sw.js CACHE v645->v646. pending_advance_plan null로 비움. 범위를 좁힌 부분(critique가 필요시 재검토): 실제 저장소 암호화(실시간 _saveCore/load 배선)는 cycle252/289가 이미 재작성급으로 평가해 기각한 범위라 이번에도 손대지 않음 — 이번 사이클은 오직 기존 보호 범위를 정확히 알리는 고지 문구.",
+      "commit": null
+    },
+    {
+      "cycle": 318,
+      "phase": "develop",
+      "timestamp": "2026-11-07T05:30:00.000Z",
+      "summary": "통합 검색(openGlobalSearch) 입력창 gsQInput이 histQInput/assetQInput/goalQInput/recQInput(cycle216/243/317)이 전부 갖춘 \"지우면(clrInput) 디바운스 없이 즉시 반영\" 가드를 혼자만 빠뜨려서, 통합검색에서 'x'로 검색어를 지워도 220ms 동안 이전 결과 목록이 그대로 남아 있던 공백을 발견해 고쳤다. gsQInput(v)에 v.trim()==='' 조기분기(GS_EXPAND={} 리셋+#gsBody.innerHTML=globalSearchBody(v) 즉시 실행)를 추가, 디바운스 경로는 그대로 유지. test/run.js FUNCTIONS에 gsQInput 추가(이전엔 실행형 테스트 대상이 아니었음), LETS에 _gsQT 추가(_fixWhen/_fixCtx와 동일하게 한 let 문에 묶인 GS_EXPAND까지 같이 끌려옴, 기존 sandbox.GS_EXPAND={} 기본값과 동일해 문제없음). 테스트 6건 추가(디바운스 후 교체, 연속입력 타이머 교체, #gsBody 없을 때 안전, 지우면 즉시 반영, 공백만 입력해도 즉시 반영, 즉시실행 경로도 GS_EXPAND 리셋) — 2986->2992 통과. 테스트 작성 중 두 가지를 직접 발견/수정: (1) globalSearchBody가 DB.categories/owners/settings.confirmTransfers/nwHistory를 참조해 최소 DB 스텁만 쓰면 \"Cannot read properties of undefined (reading 'expense')\"로 깨짐 — setupGlobalSearchGoalDB와 동일한 형태의 DB로 보완, (2) GS_EXPAND 리셋 검증에 쓴 assert.deepStrictEqual({},{})가 vm 샌드박스 realm 문제(cycle309/313 로그와 동일 클래스)로 실패해 Object.keys(...).length===0 비교로 교체. node test/run.js 2992/2992 통과, node --check logic.js/sw.js 통과, index.html 인라인 스크립트 추출검사는 기존과 동일한 1건의 기존 오탐(HTML 주석 텍스트 오인, cycle311부터 이어짐)만 재확인되고 이번 변경과 무관함을 확인, manifest.webmanifest JSON 유효성 통과. APP_VERSION 1.47.379->1.47.380, sw.js CACHE v646->v647.",
       "commit": null
     }
   ]

@@ -369,6 +369,10 @@ const FUNCTIONS = [
   // 충분하다. 이미 FUNCTIONS에 있는 txRowCore/ownerChipClass/assetSubline/catAv/catGlyph/
   // goalLinkedAssetGone/goalLinkedAssetBroken/goalHasUnknown/ackGoalAchieved를 그대로 재사용한다.
   'globalSearchBody',
+  // gsQInput(통합검색 입력 디바운스)은 histQInput/assetQInput/goalQInput/recQInput과 동일한 패턴
+  // 검증용(app-evolve cycle318 develop) — clrInput('gsQ')가 만드는 빈 문자열 입력을 디바운스 없이
+  // 즉시 반영하는 가드가 빠져 있던 공백을 메웠다.
+  'gsQInput',
 ];
 // ASSET_TYPES는 DEFAULT_GROUP_ORDER(=Object.keys(ASSET_TYPES))가 참조하므로 먼저 와야 함 —
 // CONSTS는 순서대로 실행되는 평범한 대입문으로 변환되기 때문(위 extractConst 주석 참고).
@@ -396,6 +400,10 @@ const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'AS
 // _histCache는 filteredHist()가 재대입(={key,list})하는 let 선언이라 CONSTS(extractConst)로는
 // 못 끌어오므로 별도의 LETS 목록으로 extractLet을 통해 가져온다.
 // _copyIsCsv도 같은 이유(openCopyBackup()이 재대입)로 LETS를 통해 가져온다.
+// _gsQT는 gsQInput()이 참조하는 #gsQ 통합검색 디바운스 타이머(histQInput/assetQInput과 동일한
+// 패턴, app-evolve cycle318 develop) — 소스에서 `let _gsQT=null,GS_EXPAND={};` 한 줄로 선언돼
+// 있어 "_gsQT"만 추출해도 GS_EXPAND까지 같이 딸려오지만(_fixWhen/_fixCtx와 같은 패턴), 이미
+// 사전 선언된 sandbox.GS_EXPAND={}와 같은 기본값으로 재대입될 뿐이라 문제없다.
 // _fixWhen/_fixCtx는 openFixShortfall()이 재대입하는 "부족해요" 시트의 이체일 선택 상태라
 // 같은 이유(let 선언, realm에 안 붙음)로 LETS를 통해 가져온다. 소스에서 두 변수가 한 줄
 // `let _fixWhen=null,_fixCtx=null;`로 선언돼 있어 "_fixWhen"만 추출해도 둘 다 딸려온다.
@@ -433,7 +441,7 @@ const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'AS
 // _importPinRaw는 openImportPinSheet()가 세팅하고 doImportPinSubmit()이 소비하는 "PIN 입력을
 // 기다리는 암호화 백업 원본" 상태라(let 선언, realm에 안 붙음) 같은 이유로 LETS를 통해 가져온다
 // (app-evolve cycle289 advance).
-const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer', '_histTimer', '_assetQT', '_pkQ', '_bioAutoTried', '_csvMap', '_debtWhatIfAnnT', '_txCatSuggT', '_recCatSuggT', '_importPinRaw', '_recQT', '_goalQT'];
+const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer', '_histTimer', '_assetQT', '_pkQ', '_bioAutoTried', '_csvMap', '_debtWhatIfAnnT', '_txCatSuggT', '_recCatSuggT', '_importPinRaw', '_recQT', '_goalQT', '_gsQT'];
 
 const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(extractConst).join('\n') + '\n' + LETS.map(extractLet).join('\n');
 
@@ -8992,6 +9000,96 @@ test('전역 통합검색 거래 소스: DB.txns.filter(matchTxnQuery)만 쓰면
   const found = sandbox.DB.txns.filter(t => sandbox.matchTxnQuery(t, '넷플릭스', sandbox.DB.assets));
   assert.strictEqual(found.length, 0, 'DB.txns에는 반복거래 실물이 없으므로 수정 전 globalSearchBody() 방식으로는 아무것도 찾지 못함(이 버그를 고친 동작이 바로 위 테스트)');
 });
+
+/* ---------- gsQInput(통합검색 입력 디바운스): histQInput/assetQInput/goalQInput/recQInput
+ * (cycle216/243/317 advance)과 동일한 패턴이어야 하는데, clrInput('gsQ')가 만드는 빈 문자열
+ * 입력을 디바운스 없이 즉시 반영하는 가드가 gsQInput에만 빠져 있었다(app-evolve cycle318
+ * develop) — '×'로 지운 뒤에도 220ms 동안 이전 통합검색 결과가 그대로 남아 있던 공백. */
+(() => {
+  const origSetTimeout = sandbox.setTimeout, origClearTimeout = sandbox.clearTimeout, orig$ = sandbox.$;
+  function restore() { sandbox.setTimeout = origSetTimeout; sandbox.clearTimeout = origClearTimeout; sandbox.$ = orig$; }
+  test('gsQInput: 디바운스(220ms) 후에야 #gsBody.innerHTML을 globalSearchBody(검색어)로 교체한다', () => {
+    sandbox.DB = { owners: ['나'], txns: [], recurrences: [], assets: [], goals: [], categories: { expense: [], income: [], saving: [] }, settings: { confirmTransfers: false }, nwHistory: [] };
+    sandbox._recCache.clear();
+    const gsBodyEl = { innerHTML: 'old' };
+    let capturedMs = null, timerFn = null;
+    sandbox.setTimeout = (fn, ms) => { capturedMs = ms; timerFn = fn; return 'timer'; };
+    sandbox.clearTimeout = () => {};
+    sandbox.$ = (id) => (id === 'gsBody' ? gsBodyEl : null);
+    try {
+      sandbox.gsQInput('넷플릭스');
+      assert.strictEqual(capturedMs, 220, '디바운스 지연은 다른 검색창(goalQ 등)과 동일하게 220ms여야 함');
+      assert.strictEqual(gsBodyEl.innerHTML, 'old', '타이머가 실행되기 전에는 #gsBody가 바뀌면 안 됨');
+      timerFn();
+      assert.notStrictEqual(gsBodyEl.innerHTML, 'old', '타이머 실행 후 #gsBody.innerHTML이 검색 결과로 교체되어야 함');
+    } finally { restore(); }
+  });
+  test('gsQInput: 연속 입력마다 이전 타이머를 지우고 새로 하나만 건다', () => {
+    sandbox.DB = { owners: ['나'], txns: [], recurrences: [], assets: [], goals: [], categories: { expense: [], income: [], saving: [] }, settings: { confirmTransfers: false }, nwHistory: [] };
+    let setCalls = 0, clearCalls = 0;
+    sandbox.setTimeout = () => { setCalls++; return 'timer' + setCalls; };
+    sandbox.clearTimeout = () => { clearCalls++; };
+    sandbox.$ = () => null;
+    try {
+      sandbox.gsQInput('넷');
+      sandbox.gsQInput('넷플릭스');
+      assert.strictEqual(setCalls, 2);
+      assert.strictEqual(clearCalls, 2, '매 입력이 이전 타이머를 지워야 함(여러 번 겹쳐 재계산되는 걸 방지)');
+    } finally { restore(); }
+  });
+  test('gsQInput: #gsBody가 화면에 없으면(시트가 이미 닫힌 뒤 늦게 실행된 타이머 등) 조용히 아무 것도 하지 않는다', () => {
+    sandbox.DB = { owners: ['나'], txns: [], recurrences: [], assets: [], goals: [], categories: { expense: [], income: [], saving: [] }, settings: { confirmTransfers: false }, nwHistory: [] };
+    let timerFn = null;
+    sandbox.setTimeout = (fn) => { timerFn = fn; return 'timer'; };
+    sandbox.clearTimeout = () => {};
+    sandbox.$ = () => null;
+    try {
+      sandbox.gsQInput('아무거나');
+      assert.doesNotThrow(() => timerFn(), '#gsBody가 없을 때도 타이머 콜백이 에러 없이 끝나야 함(goalQInput/recQInput과 동일한 null 가드)');
+    } finally { restore(); }
+  });
+  test('gsQInput: 검색어를 지우면(clrInput → 빈 문자열) 디바운스 없이 즉시 #gsBody.innerHTML을 교체한다', () => {
+    sandbox.DB = { owners: ['나'], txns: [], recurrences: [], assets: [], goals: [{ id: 'g1', name: '비상금', targetAmount: 5000000, targetDate: null }], categories: { expense: [], income: [], saving: [] }, settings: { confirmTransfers: false }, nwHistory: [] };
+    sandbox._recCache.clear();
+    const gsBodyEl = { innerHTML: 'old' };
+    let setCalls = 0, clearCalls = 0;
+    sandbox.setTimeout = () => { setCalls++; return 'timer'; };
+    sandbox.clearTimeout = () => { clearCalls++; };
+    sandbox.$ = (id) => (id === 'gsBody' ? gsBodyEl : null);
+    try {
+      sandbox.gsQInput('');
+      assert.strictEqual(setCalls, 0, '빈 문자열이면 디바운스 타이머를 걸지 않고 즉시 실행해야 함(지우기 버튼 지연 체감 방지)');
+      assert.strictEqual(clearCalls, 1, '혹시 남아있던 이전 타이머는 지워야 함');
+      assert.notStrictEqual(gsBodyEl.innerHTML, 'old', '즉시 실행되어 #gsBody가 갱신되어야 함');
+    } finally { restore(); }
+  });
+  test('gsQInput: 공백만 입력해도(trim 결과 빈 문자열) 지우기와 동일하게 즉시 실행된다', () => {
+    sandbox.DB = { txns: [], recurrences: [], assets: [], goals: [] };
+    const gsBodyEl = { innerHTML: 'old' };
+    let setCalls = 0;
+    sandbox.setTimeout = () => { setCalls++; return 'timer'; };
+    sandbox.clearTimeout = () => {};
+    sandbox.$ = (id) => (id === 'gsBody' ? gsBodyEl : null);
+    try {
+      sandbox.gsQInput('   ');
+      assert.strictEqual(setCalls, 0, '공백뿐인 입력도 디바운스 없이 즉시 실행해야 함');
+      assert.notStrictEqual(gsBodyEl.innerHTML, 'old', '즉시 실행되어 #gsBody가 갱신되어야 함');
+    } finally { restore(); }
+  });
+  test('gsQInput: 검색어를 지워 즉시 실행될 때도 GS_EXPAND(더보기 펼침 상태)를 초기화한다(디바운스 경로와 동일)', () => {
+    sandbox.DB = { txns: [], recurrences: [], assets: [], goals: [] };
+    sandbox.GS_EXPAND = { txn: true };
+    sandbox.setTimeout = () => 'timer';
+    sandbox.clearTimeout = () => {};
+    sandbox.$ = () => null;
+    try {
+      sandbox.gsQInput('');
+      // vm 샌드박스 realm 문제로 deepStrictEqual({},{})가 실패하는 기존 이슈(cycle309/313 로그와
+      // 동일 클래스)라 Object.keys 비교로 피해간다.
+      assert.strictEqual(Object.keys(sandbox.GS_EXPAND).length, 0, '빈 문자열 즉시실행 경로도 디바운스 경로(gsMore)와 동일하게 GS_EXPAND를 리셋해야 함');
+    } finally { restore(); sandbox.GS_EXPAND = {}; }
+  });
+})();
 
 /* ---------- matchesAssetId: 자산 행 '내역' 버튼(openAssetHistory)이 쓰는 계좌 필터 ---------- */
 test('matchesAssetId: assetId가 없으면(전체) 항상 매칭된다', () => {

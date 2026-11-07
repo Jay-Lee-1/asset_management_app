@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.379';
+const APP_VERSION='1.47.380';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -6999,7 +6999,14 @@ function openGlobalSearch(){
   <div class="searchbar" style="margin-bottom:14px">${svg('search')}<div class="field-clear"><input id="gsQ" aria-label="통합 검색" placeholder="거래·자산·카테고리·목표 검색" value="" oninput="gsQInput(this.value)"><button type="button" class="fc-x" aria-label="검색어 지우기" onclick="clrInput('gsQ')">✕</button></div></div>
   <div id="gsBody">${globalSearchBody('')}</div>`);
 }
-function gsQInput(v){clearTimeout(_gsQT);_gsQT=setTimeout(()=>{GS_EXPAND={};const b=$('gsBody');if(b)b.innerHTML=globalSearchBody(v)},220);}
+/* clrInput('gsQ')가 만드는 빈 문자열 입력은 histQInput/assetQInput/goalQInput/recQInput
+ * (cycle216/243/317 advance)과 동일하게 디바운스 없이 즉시 반영한다 — 이 가드가 없으면
+ * '×'로 지운 뒤에도 220ms 동안 이전 통합검색 결과가 그대로 남아 있었다(app-evolve cycle318 develop). */
+function gsQInput(v){
+ clearTimeout(_gsQT);
+ if(v.trim()===''){GS_EXPAND={};const b=$('gsBody');if(b)b.innerHTML=globalSearchBody(v);return}
+ _gsQT=setTimeout(()=>{GS_EXPAND={};const b=$('gsBody');if(b)b.innerHTML=globalSearchBody(v)},220);
+}
 function gsMore(kind){GS_EXPAND[kind]=true;const b=$('gsBody');if(b)b.innerHTML=globalSearchBody($('gsQ')?$('gsQ').value:'');}
 function globalSearchBody(qRaw){
  const q=(qRaw||'').trim();
