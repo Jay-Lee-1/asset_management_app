@@ -4705,6 +4705,37 @@ test('[실행형] goalsManageBody: 같은 이름이 아닌 목표 두 건은 삭
       assert.doesNotThrow(() => timerFn(), '#goalBody가 없을 때도 타이머 콜백이 에러 없이 끝나야 함(recQInput과 동일한 null 가드)');
     } finally { restore(); }
   });
+  // histQInput/assetQInput(cycle216/243 advance)과 동일하게, 검색어를 지우면 디바운스 없이
+  // 즉시 #goalBody를 교체해야 한다 — 이 가드가 빠져 있던 공백을 app-evolve cycle317 develop이
+  // 발견하고 메웠다.
+  test('goalQInput: 검색어를 지우면(clrInput → 빈 문자열) 디바운스 없이 즉시 #goalBody.innerHTML을 교체한다', () => {
+    sandbox.DB = { goals: [{ id: 'g1', name: '비상금', targetAmount: 5000000, targetDate: null }], nwHistory: [] };
+    const goalBodyEl = { innerHTML: 'old' };
+    let setCalls = 0, clearCalls = 0;
+    sandbox.setTimeout = () => { setCalls++; return 'timer'; };
+    sandbox.clearTimeout = () => { clearCalls++; };
+    sandbox.$ = (id) => (id === 'goalBody' ? goalBodyEl : null);
+    try {
+      sandbox.goalQInput('');
+      assert.strictEqual(setCalls, 0, '빈 문자열이면 디바운스 타이머를 걸지 않고 즉시 실행해야 함(지우기 버튼 지연 체감 방지)');
+      assert.strictEqual(clearCalls, 1, '혹시 남아있던 이전 타이머는 지워야 함');
+      assert.notStrictEqual(goalBodyEl.innerHTML, 'old', '즉시 실행되어 #goalBody가 갱신되어야 함');
+      assert.ok(goalBodyEl.innerHTML.includes('비상금'), '검색어를 지웠으니 전체 목록(비상금 포함)으로 즉시 교체되어야 함');
+    } finally { restore(); }
+  });
+  test('goalQInput: 공백만 입력해도(trim 결과 빈 문자열) 지우기와 동일하게 즉시 실행된다', () => {
+    sandbox.DB = { goals: [] };
+    const goalBodyEl = { innerHTML: 'old' };
+    let setCalls = 0;
+    sandbox.setTimeout = () => { setCalls++; return 'timer'; };
+    sandbox.clearTimeout = () => {};
+    sandbox.$ = (id) => (id === 'goalBody' ? goalBodyEl : null);
+    try {
+      sandbox.goalQInput('   ');
+      assert.strictEqual(setCalls, 0, '공백뿐인 입력도 디바운스 없이 즉시 실행해야 함');
+      assert.notStrictEqual(goalBodyEl.innerHTML, 'old', '즉시 실행되어 #goalBody가 갱신되어야 함');
+    } finally { restore(); }
+  });
 })();
 /* ---------- 목표 관리 선택모드(ST.goalSel) — 자산/거래/반복 관리 목록은 이미 선택→일괄동작(삭제·귀속
  * 변경 등) 패턴을 갖췄는데 목표만 유일하게 없어(cycle304가 건당 삭제 버튼만 추가), 목표가 여러
@@ -21106,6 +21137,38 @@ test('[실행형] recManageBody: 선택모드가 아니면 여전히 기존처�
     try {
       sandbox.recQInput('아무거나');
       assert.doesNotThrow(() => timerFn(), '#recBody가 없을 때도 타이머 콜백이 에러 없이 끝나야 함(gsQInput과 동일한 null 가드)');
+    } finally { restore(); }
+  });
+  // histQInput/assetQInput(cycle216/243 advance)과 동일하게, 검색어를 지우면 디바운스 없이
+  // 즉시 #recBody를 교체해야 한다 — 이 가드가 빠져 있던 공백을 app-evolve cycle317 develop이
+  // 발견하고 메웠다(goalQInput도 같은 공백이라 함께 고쳤다).
+  test('recQInput: 검색어를 지우면(clrInput → 빈 문자열) 디바운스 없이 즉시 #recBody.innerHTML을 교체한다', () => {
+    sandbox.DB = { recurrences: [{ id: 'r1', type: 'expense', category: '월세', amount: 500000, freq: 'monthly', day: 1, startDate: '2026-01-01', active: true }] };
+    sandbox.ST = { recSel: { mode: false, ids: new Set() } };
+    const recBodyEl = { innerHTML: 'old' };
+    let setCalls = 0, clearCalls = 0;
+    sandbox.setTimeout = () => { setCalls++; return 'timer'; };
+    sandbox.clearTimeout = () => { clearCalls++; };
+    sandbox.$ = (id) => (id === 'recBody' ? recBodyEl : null);
+    try {
+      sandbox.recQInput('');
+      assert.strictEqual(setCalls, 0, '빈 문자열이면 디바운스 타이머를 걸지 않고 즉시 실행해야 함(지우기 버튼 지연 체감 방지)');
+      assert.strictEqual(clearCalls, 1, '혹시 남아있던 이전 타이머는 지워야 함');
+      assert.ok(recBodyEl.innerHTML.includes('<div class="mn">월세 '), '검색어를 지웠으니 전체 목록으로 즉시 교체되어야 함');
+    } finally { restore(); }
+  });
+  test('recQInput: 공백만 입력해도(trim 결과 빈 문자열) 지우기와 동일하게 즉시 실행된다', () => {
+    sandbox.DB = { recurrences: [] };
+    sandbox.ST = { recSel: { mode: false, ids: new Set() } };
+    const recBodyEl = { innerHTML: 'old' };
+    let setCalls = 0;
+    sandbox.setTimeout = () => { setCalls++; return 'timer'; };
+    sandbox.clearTimeout = () => {};
+    sandbox.$ = (id) => (id === 'recBody' ? recBodyEl : null);
+    try {
+      sandbox.recQInput('   ');
+      assert.strictEqual(setCalls, 0, '공백뿐인 입력도 디바운스 없이 즉시 실행해야 함');
+      assert.notStrictEqual(recBodyEl.innerHTML, 'old', '즉시 실행되어 #recBody가 갱신되어야 함');
     } finally { restore(); }
   });
 })();

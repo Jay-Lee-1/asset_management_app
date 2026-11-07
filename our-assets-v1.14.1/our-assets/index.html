@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.377';
+const APP_VERSION='1.47.378';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3748,8 +3748,16 @@ function openGoalsList(){ /* 관리 목록은 캐러셀 귀속과 무관하게 �
 }
 /* recQInput/recManageBody(openRecManage)와 동일한 220ms 디바운스 — #goalBody만 다시 그려 시트
  * 전체(검색창 포함)를 다시 열지 않는다. 금액 검색은 matchGoalQuery(통합검색이 이미 쓰는 순수
- * 함수, cycle284 advance가 targetAmount 비교/범위까지 지원하게 해뒀다)를 그대로 재사용한다. */
-function goalQInput(v){clearTimeout(_goalQT);_goalQT=setTimeout(()=>{const b=$('goalBody');if(b)b.innerHTML=goalsManageBody(v)},220);}
+ * 함수, cycle284 advance가 targetAmount 비교/범위까지 지원하게 해뒀다)를 그대로 재사용한다.
+ * clrInput('goalQ')가 만드는 빈 문자열 입력은 histQInput/assetQInput(cycle216/243 advance)과
+ * 동일하게 디바운스 없이 즉시 반영한다 — 이 가드가 없으면 '×'로 지운 뒤에도 220ms 동안 이전
+ * 검색 결과 목록이 그대로 남아 있었다(app-evolve cycle317 develop, recQInput도 같은 공백이라
+ * 함께 고쳤다). */
+function goalQInput(v){
+ clearTimeout(_goalQT);
+ if(v.trim()===''){const b=$('goalBody');if(b)b.innerHTML=goalsManageBody(v);return}
+ _goalQT=setTimeout(()=>{const b=$('goalBody');if(b)b.innerHTML=goalsManageBody(v)},220);
+}
 function goalsManageBody(qRaw){
  const q=(qRaw||'').trim();
  const all=DB.goals||[];
@@ -7925,7 +7933,15 @@ function openRecManage(){
  if(!ST.recSel.mode)wireLongPress($('recBody'),id=>{ST.recSel.mode=true;ST.recSel.ids.add(id);openRecManage()});
  updateSelBottom();
 }
-function recQInput(v){clearTimeout(_recQT);_recQT=setTimeout(()=>{const b=$('recBody');if(b)b.innerHTML=recManageBody(v)},220);}
+/* histQInput/assetQInput(cycle216/243 advance)·goalQInput(cycle317 develop, 위)과 동일하게,
+ * clrInput('recQ')가 만드는 빈 문자열 입력은 디바운스 없이 즉시 반영한다 — 이 가드가 없으면
+ * '×'로 지운 뒤에도 220ms 동안 이전 검색 결과 목록이 그대로 남아 있었다(app-evolve cycle317
+ * develop). */
+function recQInput(v){
+ clearTimeout(_recQT);
+ if(v.trim()===''){const b=$('recBody');if(b)b.innerHTML=recManageBody(v);return}
+ _recQT=setTimeout(()=>{const b=$('recBody');if(b)b.innerHTML=recManageBody(v)},220);
+}
 function recManageBody(qRaw){
  const q=(qRaw||'').trim();
  const groups=[['expense','지출','a-food'],['income','수입','a-in'],['saving','저축','a-save'],['transfer','내부이체','a-etc']];
