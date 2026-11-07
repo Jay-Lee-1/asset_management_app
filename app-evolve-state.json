@@ -1,15 +1,8 @@
 {
   "cycle": 318,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 313,
-      "phase": "review",
-      "timestamp": "2026-11-06T10:14:00.000Z",
-      "summary": "cycle313 advance 커밋(ff8ecd1, 카테고리별 OS 알림 뮤트)을 검토 — notifyAlertInfo()의 18종 알림 전부가 group 필드를 받았는지 직접 대조(confirm/confirmMulti/quick/quickMulti→confirm, mat/matMulti→mat, budgetOver/budgetOverMulti/budgetPaceWarn/budgetPaceWarnMulti→budget, goalBehind/goalBehindMulti/goalAchieved/goalAchievedMulti→goal, debtBehind/debtBehindMulti/debtPaidOff/debtPaidOffMulti→debt) — 빠진 kind 없음. pickNotifyAlerts(alerts,notifiedIds,muted)가 muted[info.group]일 때 toNotify와 notifiedIds 양쪽에서 모두 제외해 뮤트 해제 시 즉시 재알림되는 설계가 커밋 메시지와 일치함을 재확인. renderMenu의 5개 하위 토글 행이 쓰는 아이콘(check/bell/chart/target/debt)이 모두 svg()의 기존 I 딕셔너리에 있어 렌더링 깨짐 없음을 grep으로 확인. toggleOsNotify/toggleConfirmTransfers 등 기존 설정 토글들도 twGuard가 없는 것과 동일하게 toggleNotifyMuteGroup도 twGuard 없이 일관됨(튜토리얼 화면에 노출되는 경로가 아니라 범위 밖) — 새로운 비대칭 아님. node test/run.js 2889/2889 통과, node --check sw.js, manifest.webmanifest JSON 유효성 통과. 실제 버그 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 313,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-07T05:30:00.000Z",
       "summary": "통합 검색(openGlobalSearch) 입력창 gsQInput이 histQInput/assetQInput/goalQInput/recQInput(cycle216/243/317)이 전부 갖춘 \"지우면(clrInput) 디바운스 없이 즉시 반영\" 가드를 혼자만 빠뜨려서, 통합검색에서 'x'로 검색어를 지워도 220ms 동안 이전 결과 목록이 그대로 남아 있던 공백을 발견해 고쳤다. gsQInput(v)에 v.trim()==='' 조기분기(GS_EXPAND={} 리셋+#gsBody.innerHTML=globalSearchBody(v) 즉시 실행)를 추가, 디바운스 경로는 그대로 유지. test/run.js FUNCTIONS에 gsQInput 추가(이전엔 실행형 테스트 대상이 아니었음), LETS에 _gsQT 추가(_fixWhen/_fixCtx와 동일하게 한 let 문에 묶인 GS_EXPAND까지 같이 끌려옴, 기존 sandbox.GS_EXPAND={} 기본값과 동일해 문제없음). 테스트 6건 추가(디바운스 후 교체, 연속입력 타이머 교체, #gsBody 없을 때 안전, 지우면 즉시 반영, 공백만 입력해도 즉시 반영, 즉시실행 경로도 GS_EXPAND 리셋) — 2986->2992 통과. 테스트 작성 중 두 가지를 직접 발견/수정: (1) globalSearchBody가 DB.categories/owners/settings.confirmTransfers/nwHistory를 참조해 최소 DB 스텁만 쓰면 \"Cannot read properties of undefined (reading 'expense')\"로 깨짐 — setupGlobalSearchGoalDB와 동일한 형태의 DB로 보완, (2) GS_EXPAND 리셋 검증에 쓴 assert.deepStrictEqual({},{})가 vm 샌드박스 realm 문제(cycle309/313 로그와 동일 클래스)로 실패해 Object.keys(...).length===0 비교로 교체. node test/run.js 2992/2992 통과, node --check logic.js/sw.js 통과, index.html 인라인 스크립트 추출검사는 기존과 동일한 1건의 기존 오탐(HTML 주석 텍스트 오인, cycle311부터 이어짐)만 재확인되고 이번 변경과 무관함을 확인, manifest.webmanifest JSON 유효성 통과. APP_VERSION 1.47.379->1.47.380, sw.js CACHE v646->v647.",
+      "commit": null
+    },
+    {
+      "cycle": 318,
+      "phase": "review",
+      "timestamp": "2026-11-07T06:07:44.000Z",
+      "summary": "cycle318 develop 커밋(4b1fac9, 통합검색 gsQInput 디바운스 즉시반영 가드 추가)을 검토 — histQInput/assetQInput/goalQInput/recQInput(cycle216/243/317)과 글자 그대로 동일한 v.trim()==='' 패턴으로 clrInput('gsQ') 빈 문자열 입력을 즉시 반영하고 GS_EXPAND도 동일하게 리셋함을 diff로 확인. 새 테스트 6개(디바운스 지연/타이머 교체/#gsBody 없음 가드/빈문자열 즉시실행/공백trim/GS_EXPAND 리셋)가 기존 가드들의 테스트 구조를 그대로 재사용해 커버리지도 충분. APP_VERSION 1.47.380, sw.js CACHE v647로 함께 올라감. 전체 테스트 2992/2992 통과. 버그 없음.",
       "commit": null
     }
   ]
