@@ -1791,6 +1791,42 @@ test('recDates: daily+weekend later에서 토/일 조정이 월요일로 겹쳐�
   assert.deepStrictEqual(dates, ['2026-06-01', '2026-06-02', '2026-06-03', '2026-06-04', '2026-06-05', '2026-06-08']);
 });
 
+/* ---------- shiftWeekend(): 직접 단위 테스트 (app-evolve cycle321 develop)
+ * logic.js의 118개 순수 함수 중 shiftWeekend()만 테스트에서 직접 호출된 적이 없었다 — 위
+ * recDates() 테스트들을 통해서만 간접적으로 거쳐 갔다. recDates()의 자체 주석(logic.js:33-37)이
+ * 문서화한 "월요일/금요일로 당겨지며 월/연 경계를 넘는" 바로 그 케이스를 shiftWeekend() 단위에서도
+ * 직접 고정해둔다 — recDates()를 건드리지 않는 shiftWeekend() 단독 리팩터링이 일어나도 이 테스트가
+ * 그 회귀를 바로 잡아낸다(cycle320 develop이 searchTerms/matchQueryTerms에 적용한 것과 동일한 논리). */
+test('shiftWeekend(): mode가 없거나 falsy거나 "none"이면 평일/주말 모두 원래 날짜 그대로 반환한다', () => {
+  assert.strictEqual(sandbox.shiftWeekend('2026-06-10'), '2026-06-10'); // 수요일, mode 인자 없음
+  assert.strictEqual(sandbox.shiftWeekend('2026-06-13', ''), '2026-06-13'); // 토요일, falsy
+  assert.strictEqual(sandbox.shiftWeekend('2026-06-14', 'none'), '2026-06-14'); // 일요일, 'none'
+});
+test('shiftWeekend(): mode="earlier"는 토요일을 하루 전(금요일), 일요일을 이틀 전(금요일)로 당긴다', () => {
+  assert.strictEqual(sandbox.shiftWeekend('2026-06-13', 'earlier'), '2026-06-12'); // 토→금
+  assert.strictEqual(sandbox.shiftWeekend('2026-06-14', 'earlier'), '2026-06-12'); // 일→금
+  assert.strictEqual(sandbox.shiftWeekend('2026-06-10', 'earlier'), '2026-06-10'); // 평일은 그대로
+});
+test('shiftWeekend(): mode="later"는 토요일을 이틀 뒤(월요일), 일요일을 하루 뒤(월요일)로 미룬다', () => {
+  assert.strictEqual(sandbox.shiftWeekend('2026-06-13', 'later'), '2026-06-15'); // 토→월
+  assert.strictEqual(sandbox.shiftWeekend('2026-06-14', 'later'), '2026-06-15'); // 일→월
+  assert.strictEqual(sandbox.shiftWeekend('2026-06-10', 'later'), '2026-06-10'); // 평일은 그대로
+});
+test('shiftWeekend(): earlier 조정이 월 경계를 넘을 수 있다(매월 1일이 토요일인 경우 전달 말일로)', () => {
+  // 2024-06-01은 토요일 — recDates()의 자체 주석(logic.js:33-37)이 문서화한 바로 그 케이스.
+  assert.strictEqual(sandbox.shiftWeekend('2024-06-01', 'earlier'), '2024-05-31');
+});
+test('shiftWeekend(): earlier 조정이 연 경계를 넘을 수 있다(1월 1일이 일요일인 경우 전년 12월 30일로)', () => {
+  // 2023-01-01은 일요일 → earlier는 이틀 전인 2022-12-30.
+  assert.strictEqual(sandbox.shiftWeekend('2023-01-01', 'earlier'), '2022-12-30');
+});
+test('shiftWeekend(): later 조정이 월/연 경계를 넘을 수 있다(말일이 토/일요일인 경우 다음 달/해 월요일로)', () => {
+  // 2026-05-31은 일요일 → later는 하루 뒤인 2026-06-01(월, 월 경계).
+  assert.strictEqual(sandbox.shiftWeekend('2026-05-31', 'later'), '2026-06-01');
+  // 2022-12-31은 토요일 → later는 이틀 뒤인 2023-01-02(월, 연 경계).
+  assert.strictEqual(sandbox.shiftWeekend('2022-12-31', 'later'), '2023-01-02');
+});
+
 /* ---------- num()/fmtAmt(): 음수 입력 처리 (app-evolve cycle56 develop, cycle56 review에서 num() 수정)
  * 자산 "현재 금액" 필드(asAmt)는 마이너스통장(오버드래프트)처럼 잔액이 음수일 수 있는데,
  * fmtAmt()가 매 키 입력마다 '-' 문자까지 통째로 제거해 사용자가 애초에 음수를 입력할 수 없었다.
