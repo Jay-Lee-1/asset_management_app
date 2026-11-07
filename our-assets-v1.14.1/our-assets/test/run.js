@@ -22140,6 +22140,48 @@ test('portfolioGainLoss: 빈 배열/대상 없음이면 null(카드를 숨기도
   assert.strictEqual(sandbox.portfolioGainLoss(null), null);
   assert.strictEqual(sandbox.portfolioGainLoss([{ evalValue: 100, costBasis: 0 }]), null, 'costBasis 입력된 항목이 하나도 없으면 null');
 });
+/* ---------- portfolioGainLossByType(logic.js): investGainLossCard의 유형별 분해
+ * (app-evolve cycle316 critique/advance — allocationCard만 유형별로 쪼개 보여주고
+ * investGainLossCard는 단일 블렌딩 숫자만 보여주던 비대칭을 메운다) ---------- */
+test('portfolioGainLossByType: 유형 2개가 섞이면(이익+손실) 유형별로 쪼개 각각의 손익을 반환한다', () => {
+  const r = sandbox.portfolioGainLossByType([
+    { type: 'fx', evalValue: 130000, costBasis: 120000 },
+    { type: 'gold', evalValue: 280000, costBasis: 300000 },
+  ]);
+  assert.strictEqual(r.length, 2);
+  const fx = r.find(x => x.type === 'fx'), gold = r.find(x => x.type === 'gold');
+  assert.strictEqual(fx.amount, 10000);
+  assert.strictEqual(gold.amount, -20000);
+  assert.ok(Math.abs(fx.pct - 10000 / 120000 * 100) < 1e-9);
+  assert.ok(Math.abs(gold.pct - (-20000) / 300000 * 100) < 1e-9);
+});
+test('portfolioGainLossByType: 같은 유형이 여러 건이면 그 유형 안에서 합산한다(portfolioGainLoss에 위임)', () => {
+  const r = sandbox.portfolioGainLossByType([
+    { type: 'stock', evalValue: 1500000, costBasis: 1000000 },
+    { type: 'stock', evalValue: 300000, costBasis: 500000 },
+  ]);
+  assert.strictEqual(r.length, 1);
+  assert.strictEqual(r[0].totalEval, 1800000);
+  assert.strictEqual(r[0].totalCost, 1500000);
+  assert.strictEqual(r[0].amount, 300000);
+  assert.strictEqual(r[0].count, 2);
+});
+test('portfolioGainLossByType: costBasis<=0/미입력 항목은 제외되고, totalEval 내림차순으로 정렬된다', () => {
+  const r = sandbox.portfolioGainLossByType([
+    { type: 'fx', evalValue: 100000, costBasis: 90000 },
+    { type: 'gold', evalValue: 500000, costBasis: 400000 },
+    { type: 'crypto', evalValue: 999999, costBasis: 0 },
+    { type: 'stock', evalValue: 1, costBasis: undefined },
+  ]);
+  assert.strictEqual(r.length, 2);
+  // vm 샌드박스 배열은 host realm과 달라 deepStrictEqual이 값이 같아도 실패하므로 Array.from으로 정규화(recDates 테스트와 동일한 이유)
+  assert.deepStrictEqual(Array.from(r.map(x => x.type)), ['gold', 'fx'], 'totalEval이 큰 gold가 먼저 와야 함');
+});
+test('portfolioGainLossByType: 빈 배열/대상 없음이면 빈 배열(portfolioGainLoss의 null과 달리 "표시할 분해 행 없음")', () => {
+  assert.deepStrictEqual(Array.from(sandbox.portfolioGainLossByType([])), []);
+  assert.deepStrictEqual(Array.from(sandbox.portfolioGainLossByType(null)), []);
+  assert.deepStrictEqual(Array.from(sandbox.portfolioGainLossByType([{ type: 'fx', evalValue: 100, costBasis: 0 }])), []);
+});
 function setupInvestGlDB() {
   sandbox.TODAY = '2026-06-15';
   sandbox.RANGE_TO = '2099-12-31';
@@ -22205,6 +22247,54 @@ test('investGainLossCard: 평가손익이 음수면 손실(expense) 색상으로
   const html = sandbox.investGainLossCard('나');
   assert.ok(html.includes('var(--expense)'), '손실이면 --expense 색상이어야 함');
   assert.ok(!html.includes('var(--income)'));
+});
+/* investGainLossCard의 자산유형별 분해(portfolioGainLossByType 재사용) — 기존 setupInvestGlDB는
+ * 'all' 기준으로 이미 fx+gold 2개 유형이라 전용 픽스처 없이도 재사용 가능하지만, 금 손익까지
+ * 함께 섞인 3유형(fx/gold/stock) 케이스를 명확히 보려고 stock 하나를 더한 전용 픽스처를 쓴다
+ * (app-evolve cycle316 critique/advance). */
+function setupInvestGlByTypeDB() {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.RANGE_TO = '2099-12-31';
+  sandbox.DB = {
+    settings: {},
+    assets: [
+      { id: 'a_usd', name: '달러', type: 'fx', owner: '나', currency: 'USD', fxAmount: 100, costBasis: 120000, includeInTotal: true },
+      { id: 'a_gold', name: '금', type: 'gold', owner: '나', goldDon: 1, costBasis: 300000, includeInTotal: true },
+      { id: 'a_stock', name: '삼성전자', type: 'stock', owner: '나', stockCode: '005930', stockQty: 10, costBasis: 500000, includeInTotal: true },
+    ],
+    txns: [],
+    recurrences: [],
+    rates: { fx: { USD: 1300 }, goldPerG: 90000, stocks: { '005930': 60000 } },
+  };
+  sandbox._balCache.clear();
+}
+test('investGainLossCard: 투자자산 유형이 2개 이상이면 유형별(fx/gold/stock) 손익 분해 행을 함께 보여준다', () => {
+  setupInvestGlByTypeDB();
+  const html = sandbox.investGainLossCard();
+  // fx: 130000-120000=+10000, gold: 90000*GOLD_G_PER_DON-300000(=손실/이익 중 하나), stock: 600000-500000=+100000
+  const goldEval = 1 * sandbox.GOLD_G_PER_DON * 90000;
+  const goldAmount = goldEval - 300000;
+  assert.ok(html.includes(sandbox.ASSET_TYPES.fx.label), 'fx 유형 라벨이 분해 행에 보여야 함');
+  assert.ok(html.includes(sandbox.ASSET_TYPES.gold.label));
+  assert.ok(html.includes(sandbox.ASSET_TYPES.stock.label));
+  assert.ok(html.includes(sandbox.comma(10000) + '원'), 'fx 손익 금액(+10000원)이 보여야 함');
+  assert.ok(html.includes(sandbox.comma(100000) + '원'), 'stock 손익 금액(+100000원)이 보여야 함');
+  assert.ok(html.includes(sandbox.comma(Math.abs(goldAmount)) + '원'));
+  assert.ok(html.includes(`background:${sandbox.TYPE_COLOR.fx}`), 'allocationCard와 동일한 eb-dot 색상 마크업을 재사용해야 함');
+});
+test('investGainLossCard: 투자자산 유형이 1개뿐이면 분해 행 없이 기존 단일 집계만 보인다(회귀)', () => {
+  setupInvestGlDB();
+  const html = sandbox.investGainLossCard('나'); // '나'는 달러(fx) 하나뿐
+  assert.ok(!html.includes(sandbox.ASSET_TYPES.fx.label), '유형이 1개뿐이면 기존 "평가손익" 행과 중복이라 분해 섹션을 보이면 안 됨');
+});
+test('investGainLossCard: owner로 필터링하면 유형별 분해도 그 귀속의 자산만 반영한다', () => {
+  setupInvestGlByTypeDB();
+  sandbox.DB.assets.find(a => a.id === 'a_gold').owner = '배우자'; // 금만 배우자 소유로 변경
+  sandbox._balCache.clear();
+  const html = sandbox.investGainLossCard('나'); // '나'는 fx+stock 2유형만 남음
+  assert.ok(html.includes(sandbox.ASSET_TYPES.fx.label));
+  assert.ok(html.includes(sandbox.ASSET_TYPES.stock.label));
+  assert.ok(!html.includes(sandbox.ASSET_TYPES.gold.label), '배우자 소유로 바뀐 금은 "나" 분해에 섞이면 안 됨');
 });
 test('openAssetPicker: excludeId(만기이체 picker에서 자기 자신 제외)를 넘기면 그 자산은 목록에서 빠지고 나머지는 그대로 남는다', () => {
   setupAssetPickerDB();

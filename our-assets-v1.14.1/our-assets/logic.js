@@ -1213,6 +1213,23 @@ function portfolioGainLoss(items){
  return {totalEval,totalCost,amount,pct:amount/totalCost*100,count:items.length};
 }
 
+/* items: [{type,evalValue,costBasis}] — portfolioGainLoss와 동일한 필터링 전제(costBasis>0인
+ * 항목만), type별로 묶어 각 그룹을 portfolioGainLoss()에 그대로 위임한다(assetAllocationSeries가
+ * assetAllocation을 재사용하는 패턴과 동일 — 새 산식을 만들지 않고 이미 검증된 합산 로직을 재사용).
+ * allocationCard(비중)만 유형별로 쪼개 보여주고 investGainLossCard(손익)는 단일 블렌딩 숫자만
+ * 보여주던 비대칭(app-evolve cycle316 critique)을 메운다. totalEval 내림차순으로 반환해 가장 큰
+ * 유형이 먼저 보이게 한다(allocationCard의 assetAllocation 정렬과 동일한 관례). */
+function portfolioGainLossByType(items){
+ items=(items||[]).filter(it=>it.costBasis>0);
+ if(!items.length)return [];
+ const byType={};
+ items.forEach(it=>{(byType[it.type]=byType[it.type]||[]).push(it)});
+ return Object.keys(byType).map(type=>{
+  const gl=portfolioGainLoss(byType[type]);
+  return {type,totalEval:gl.totalEval,totalCost:gl.totalCost,amount:gl.amount,pct:gl.pct,count:gl.count};
+ }).sort((a,b)=>b.totalEval-a.totalEval);
+}
+
 /* ================= CSV IMPORT (순수) ================= */
 /* CSV 파일 바이트를 문자열로 디코딩한다 — 이 앱이 내보낸 CSV는 항상 UTF-8이지만, 국내 은행/
  * 카드사가 흔히 내려주는 CSV는 EUC-KR/CP949라 FileReader.readAsText(기본 UTF-8)로 그대로 읽으면

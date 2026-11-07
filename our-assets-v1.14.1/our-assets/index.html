@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.376';
+const APP_VERSION='1.47.377';
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
 /* 서비스워커가 새 버전을 이미 장악했지만(controllerchange) 이 탭의 JS는 아직 구버전을 실행 중일 때 true.
@@ -3623,12 +3623,24 @@ function investGainLossCard(owner){
  const hasUnknown=items.some(a=>a.costBasis>0&&rateUnknown(a));
  const captions=[hasNoCostBasis?'매입가 미입력 자산 제외':null,hasUnknown?'시세 미확인 자산 제외':null].filter(Boolean)
    .map(c=>` <span class="mini warn">${c}</span>`).join('');
+ /* allocationCard는 자산유형별로 비중을 쪼개 보여주는데 이 손익 카드만 단일 블렌딩 숫자였던
+  * 비대칭(app-evolve cycle316 critique/advance)을 메운다 — 유형이 2개 이상일 때만 분해 행을
+  * 보여준다(1개면 위 "평가손익" 행과 완전히 중복). allocationCard의 eb-row/eb-dot/eb-cat 마크업과
+  * TYPE_COLOR/ASSET_TYPES를 그대로 재사용한다. */
+ const byType=portfolioGainLossByType(usable.map(a=>({type:a.type,evalValue:assetEval(a),costBasis:a.costBasis})));
+ const byTypeRows=byType.length<2?'':byType.map(x=>{
+   const tUp=x.amount>=0;
+   return `<div class="eb-row"><span class="eb-dot" style="background:${TYPE_COLOR[x.type]}"></span>
+     <span class="eb-cat">${esc(ASSET_TYPES[x.type].label)}</span>
+     <span class="eb-v num" style="color:var(--${tUp?'income':'expense'})">${tUp?'+':''}${x.pct.toFixed(1)}% · ${tUp?'+':''}${comma(x.amount)}원</span></div>`;
+ }).join('');
  return `<div class="section-title">투자 손익${captions}</div>
    <div class="card eb-card"><div class="eb-list">
      <div class="eb-row"><span class="eb-cat">평가손익</span>
        <span class="eb-v num" style="color:var(--${up?'income':'expense'})">${up?'+':''}${gl.pct.toFixed(1)}% · ${up?'+':''}${comma(gl.amount)}원</span></div>
      <div class="eb-row"><span class="eb-cat">총매입</span><span class="eb-v num">${comma(gl.totalCost)}원</span></div>
      <div class="eb-row"><span class="eb-cat">총평가</span><span class="eb-v num">${comma(gl.totalEval)}원</span></div>
+     ${byTypeRows}
    </div></div>`;
 }
 
