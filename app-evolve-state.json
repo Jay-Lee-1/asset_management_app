@@ -1,15 +1,8 @@
 {
   "cycle": 322,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 317,
-      "phase": "review",
-      "timestamp": "2026-11-07T02:05:00.000Z",
-      "summary": "cycle317 develop 커밋(3193f7b, goalQInput/recQInput 디바운스 즉시반영 가드)을 검토 — 두 함수 모두 histQInput/assetQInput(cycle216/243 advance)과 글자 그대로 동일한 v.trim()===''' 조기분기 패턴임을 diff로 확인(assetQInput: index.html:4731-4736과 나란히 대조). clrInput이 호출하는 el.dispatchEvent(new Event('input'))이 goalQInput(v)/recQInput(v)에 el.value(빈 문자열)를 그대로 넘기므로 트리거 경로도 기존 두 함수와 동일함을 확인. node our-assets-v1.14.1/our-assets/test/run.js 2984/2984 통과(재실행으로 재확인), node --check logic.js/sw.js 통과, index.html 인라인 스크립트 추출검사의 기존 1건 오탐(HTML 주석 안 텍스트를 regex가 <script>로 오인하는 cycle311부터의 기존 아티팩트)은 이번 변경과 무관함을 HEAD~1 대비 재확인. 실제 버그 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 317,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-07T20:30:00.000Z",
       "summary": "openTrashList()(index.html, '최근 삭제함' 화면, cycle319)가 다른 모든 거래 목록(장부 행, flow 아이템, 알림 카드, 통합검색 등)과 달리 분할 거래(t.splits.length>1)에서 카테고리를 txCatLabel(t)(logic.js:533, cycle198)로 뭉뚱그리지 않고 t.category(첫 분할의 카테고리)를 그대로 보여주는 공백을 서브에이전트 조사로 발견 — openTrashList가 cycle319에 추가될 때 분할 거래 지원(cycle198) 이전 패턴을 그대로 썼던 것으로 보인다. 삭제된 분할 거래를 '최근 삭제함'에서 보면 실제로는 여러 카테고리로 나뉜 거래가 마치 첫 분할 카테고리 하나뿐인 거래처럼 보여 오해를 살 수 있다. restoreTrashTxn은 t.splits를 그대로 복구하므로 데이터 자체는 멀쩍하고 이 화면의 라벨링만 문제. index.html의 openTrashList() row 템플릿에서 t.category 직접 참조를 txCatLabel(t) 결과(catLbl)로 교체(한 줄 변경, txCatLabel/splitLines는 이미 테스트된 순수함수 재사용, 새 로직 없음). test/run.js에 분할 거래는 '카테고리 2개'로 보이고 첫 분할 카테고리 단독 노출(· 식비)은 없어야 한다는 테스트 1건 + 비분할 거래는 기존처럼 t.category 그대로 보이는 회귀 방지 테스트 1건 추가 — 3082->3084 통과. node --check logic.js/sw.js 통과, index.html 인라인 스크립트 추출검사는 기존과 동일한 1건의 기존 오탐(block0=head 쪽 HTML 주석 텍스트 오인, cycle311부터 이어짐; 내 변경이 있는 block3는 개별 node --check 통과)만 재확인, manifest.webmanifest JSON 유효성 통과. 사용자 체감 라벨 수정이라 APP_VERSION 1.47.385->1.47.386, sw.js CACHE v652->v653.",
+      "commit": null
+    },
+    {
+      "cycle": 322,
+      "phase": "review",
+      "timestamp": "2026-11-07T21:10:00.000Z",
+      "summary": "cycle322 develop 커밋(af459ad, openTrashList 분할거래 카테고리 라벨을 txCatLabel로 통일)을 검토 — logic.js:533 txCatLabel(t)(n=splitLines(t).length>1?'카테고리 N개':t.category) 구현을 diff와 대조해 교체가 정확함을 확인. 다른 모든 거래 표시 경로(장부 행, flow, 통합검색 등)와 동일한 패턴 재사용이며 새 로직 없음. restoreTrashTxn은 t.splits를 그대로 복구하므로 라벨 변경이 복구 데이터에 영향 없음을 grep으로 재확인. 추가된 테스트 2건(분할 거래 '카테고리 2개' 노출+첫 분할 카테고리 단독 노출 없음, 비분할 거래는 기존처럼 t.category 그대로)이 변경을 정확히 커버함을 확인. node test/run.js 재실행 3084/3084 통과, node --check logic.js/sw.js 통과. 실제 버그 없음(state.json만 커밋).",
       "commit": null
     }
   ]
