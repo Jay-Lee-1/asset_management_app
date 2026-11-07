@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.386';
+const APP_VERSION='1.47.387';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -1677,6 +1677,7 @@ function mergeRemoteDataIntoLocal(remoteData){
  DB.assets=mergeCollection(DB.assets,remoteData.assets,DB.deletedIds,remoteData.deletedIds);
  {const _liveAssetIds=new Set(DB.assets.map(a=>a.id));DB.trashAssets=mergeTrashTxns(DB.trashAssets,remoteData.trashAssets).filter(a=>!_liveAssetIds.has(a.id));} /* app-evolve cycle320: DB.trashTxns(1673행)와 동일한 신설 컬렉션 병합 배선 — mergeTrashTxns도 {id,_deletedAt} 형태만 가정해 그대로 재사용. 맨 끝에서 호출되는 migrate()가 gcTrashTxns로 한 번 더 GC하므로 보존기간 지난 사본도 결국 걸러진다 */
  DB.goals=mergeCollection(DB.goals,remoteData.goals,DB.deletedIds,remoteData.deletedIds); /* app-evolve cycle123: 신설(cycle122) 당시 여기 누락돼 두 기기가 오프라인에서 각자 목표를 고치면 한쪽이 조용히 소실/복원되던 버그 */
+ {const _liveGoalIds=new Set(DB.goals.map(g=>g.id));DB.trashGoals=mergeTrashTxns(DB.trashGoals,remoteData.trashGoals).filter(g=>!_liveGoalIds.has(g.id));} /* app-evolve cycle322: DB.trashTxns(1673행)/DB.trashRecs(1676행)/DB.trashAssets(1678행)와 동일한 신설 컬렉션 병합 배선 — mergeTrashTxns도 {id,_deletedAt} 형태만 가정해 그대로 재사용. 맨 끝에서 호출되는 migrate()가 gcTrashTxns로 한 번 더 GC하므로 보존기간 지난 사본도 결국 걸러진다 */
  DB.inquiries=mergeCollection(DB.inquiries,remoteData.inquiries,DB.deletedIds,remoteData.deletedIds); /* app-evolve cycle133: goals와 동일한 누락 — 문의 메모에 id/updatedAt이 없을 때부터 여기서 전혀 병합되지 않고 있었음 */
  DB.assetQtyLog=mergeCollection(DB.assetQtyLog,remoteData.assetQtyLog,DB.deletedIds,remoteData.deletedIds); /* app-evolve cycle138: goals/inquiries와 동일한 '신설 컬렉션 병합 배선 누락' 버그 클래스가 처음부터 반복되지 않도록 신설 시점에 바로 추가 */
  /* categories/owners/budgetHistory는 id 기반이 아니라 mergeCollection을 쓸 수 없어 전용 순수
@@ -2615,10 +2616,12 @@ function migrate(){
  DB.trashTxns=DB.trashTxns||[]; /* 거래 삭제 '최근 삭제함' — deleteTxnsUndo가 지운 거래 전체 내용(+_deletedAt)을 담아 undoToast의 6초 창이 지난 뒤에도 복구할 수 있게 한다(app-evolve cycle319 critique/advance). DB.deletedIds는 병합용 id-시각 톰스톤일 뿐 내용을 담지 않아 그것만으로는 복구가 불가능했다 */
  DB.trashAssets=DB.trashAssets||[]; /* 자산 삭제 '최근 삭제함' — DB.trashTxns와 동일한 공백(undoToast의 6초짜리 메모리 클로저 하나에만 의존해 그 창을 넘기면 매입원가·수량이력·연동 반복거래 내용까지 영구 소실)을 자산에서도 메운다(app-evolve cycle320 critique/advance) */
  DB.trashRecs=DB.trashRecs||[]; /* 반복거래 삭제 '최근 삭제함' — DB.trashTxns/DB.trashAssets와 동일한 공백(undoToast의 6초짜리 메모리 클로저 하나에만 의존해 그 창을 넘기면 startDate/interval/amount/category/skip/edits/confirmedDates/연동 asset 등 손으로 재입력 불가능한 반복거래 설정이 영구 소실)을 반복거래에서도 메운다(app-evolve cycle321 critique/advance) */
+ DB.trashGoals=DB.trashGoals||[]; /* 목표 삭제 '최근 삭제함' — DB.trashTxns/DB.trashAssets/DB.trashRecs와 동일한 공백(undoToast의 6초짜리 메모리 클로저 하나에만 의존해 그 창을 넘기면 name/targetAmount/targetDate가 영구 소실)을 목표에서도 메운다(app-evolve cycle322 critique/advance) */
  DB.deletedIds=gcTombstones(DB.deletedIds||{},Date.now()); /* 부팅 때마다 오래된 tombstone 정리(GC) */
  {const _liveTxnIds=new Set((DB.txns||[]).map(t=>t.id));DB.trashTxns=gcTrashTxns(DB.trashTxns,Date.now(),1000*60*60*24*TRASH_MAX_AGE_DAYS).filter(t=>!_liveTxnIds.has(t.id));} /* 부팅 때마다 보존기간 지난 항목 정리(GC) + 이미 복구돼 살아있는 거래가 트래시에 중복으로 남지 않게 정리. DB.txns는 이 시점에 아직 정규화 전이라(migrate()는 DB.txns 자체를 초기화하지 않음) 없을 수 있어 방어한다 */
  {const _liveAssetIds=new Set((DB.assets||[]).map(a=>a.id));DB.trashAssets=gcTrashTxns(DB.trashAssets,Date.now(),1000*60*60*24*TRASH_MAX_AGE_DAYS).filter(a=>!_liveAssetIds.has(a.id));} /* 위 trashTxns GC와 동일한 패턴 — gcTrashTxns는 {id,_deletedAt} 형태만 가정해 새 함수 없이 그대로 재사용(app-evolve cycle320 critique/advance) */
  {const _liveRecIds=new Set((DB.recurrences||[]).map(r=>r.id));DB.trashRecs=gcTrashTxns(DB.trashRecs,Date.now(),1000*60*60*24*TRASH_MAX_AGE_DAYS).filter(r=>!_liveRecIds.has(r.id));} /* 위 trashTxns/trashAssets GC와 동일한 패턴(app-evolve cycle321 critique/advance) */
+ {const _liveGoalIds=new Set((DB.goals||[]).map(g=>g.id));DB.trashGoals=gcTrashTxns(DB.trashGoals,Date.now(),1000*60*60*24*TRASH_MAX_AGE_DAYS).filter(g=>!_liveGoalIds.has(g.id));} /* 위 trashTxns/trashAssets/trashRecs GC와 동일한 패턴(app-evolve cycle322 critique/advance) */
  DB.settings.dismissedStaleMvIds=pruneDismissedStaleMvIds(DB.settings.dismissedStaleMvIds,DB.txns,DB.recurrences); /* 부팅 때마다 삭제된 거래/반복거래를 가리키는 키 정리(GC) */
 }
 /* storageOutcomeMsg: localStorage 쓰기 시도 결과(ok)와 직전 상태(wasOk)를 놓고 어떤 토스트를
@@ -7113,6 +7116,7 @@ function renderMenu(){
    {ic:'restore',l:'최근 삭제함',v:(DB.trashTxns&&DB.trashTxns.length)?DB.trashTxns.length+'건':'',a:"openTrashList()"},
    {ic:'restore',l:'삭제한 자산',v:(DB.trashAssets&&DB.trashAssets.length)?DB.trashAssets.length+'건':'',a:"openAssetTrashList()"},
    {ic:'restore',l:'삭제한 반복',v:(DB.trashRecs&&DB.trashRecs.length)?DB.trashRecs.length+'건':'',a:"openRecTrashList()"},
+   {ic:'restore',l:'삭제한 목표',v:(DB.trashGoals&&DB.trashGoals.length)?DB.trashGoals.length+'건':'',a:"openGoalTrashList()"},
    {ic:'trash',l:'오래된 데이터 정리',a:"openArchiveOld()"},
   ]},
   {cap:'화면 · 지원',items:[
@@ -9343,6 +9347,22 @@ function sanitizeBackup(obj){
   if(!Number.isFinite(d._deletedAt)){d._deletedAt=Date.now();fixedCount++}
   trashRecs.push(d);
  });
+ /* DB.trashGoals(목표 삭제 '최근 삭제함', app-evolve cycle322 critique/advance)도 바로 위
+  * trashTxns/trashAssets/trashRecs와 동일한 이유로 백업 복원·클라우드 풀 경로에서 검증한다.
+  * openGoalTrashList가 표시할 수 없는(id/name 없는) 항목은 통째로 제거하고, targetAmount/targetDate는
+  * 위 srcGoals 블록과 동일한 기준(amount류 클램프, csvDateValid 검증)으로 보정한다. owner/type/
+  * linkedAssetId 등 나머지 필드는 삭제되기 전 saveGoal()이 이미 정규화해 둔 아카이브라는 전제로
+  * (트래시 전용 항목들의 공통 전제, trashRecs 주석 참고) 여기서 다시 검증하지 않는다. */
+ const srcTrashGoals=Array.isArray(obj&&obj.trashGoals)?obj.trashGoals:[];
+ let trashGoals=[];
+ srcTrashGoals.forEach(g=>{
+  if(!g||!g.id||!g.name){droppedCount++;return}
+  const d=Object.assign({},g);
+  if('targetAmount' in d){const n=sanitizeAmount(d.targetAmount,0);if(n!==d.targetAmount){d.targetAmount=n;fixedCount++}}
+  if(d.targetDate&&!csvDateValid(d.targetDate)){d.targetDate=null;fixedCount++}
+  if(!Number.isFinite(d._deletedAt)){d._deletedAt=Date.now();fixedCount++}
+  trashGoals.push(d);
+ });
  /* DB.categories/DB.owners(카테고리·귀속 이름 목록)도 txns/assets/recurrences/goals/inquiries/
   * assetQtyLog와 동일하게 백업 복원·클라우드 풀 경로에서 전혀 검증되지 않고 있었다. 파일 복원
   * 경로(restoreBackup, 5591줄 부근)는 migrate()를 try/catch로 감싸 실패해도 DB를 되돌리지만,
@@ -9552,8 +9572,8 @@ function sanitizeBackup(obj){
   nwHistory.push(d);
  });
  txns=dedupeIds(txns);assets=dedupeIds(assets);recurrences=dedupeIds(recurrences);
- goals=dedupeIds(goals);inquiries=dedupeIds(inquiries);assetQtyLog=dedupeIds(assetQtyLog);trashTxns=dedupeIds(trashTxns);trashAssets=dedupeIds(trashAssets);trashRecs=dedupeIds(trashRecs);
- return {data:Object.assign({},obj,{txns,assets,recurrences,goals,inquiries,assetQtyLog,trashTxns,trashAssets,trashRecs,categories,owners,budgetHistory,budgets,catIcon,catVar,catBudgetRollover,deletedType,deletedBal,deletedIds,nwHistory,settings,rates}),fixedCount,droppedCount,rangeCount};
+ goals=dedupeIds(goals);inquiries=dedupeIds(inquiries);assetQtyLog=dedupeIds(assetQtyLog);trashTxns=dedupeIds(trashTxns);trashAssets=dedupeIds(trashAssets);trashRecs=dedupeIds(trashRecs);trashGoals=dedupeIds(trashGoals);
+ return {data:Object.assign({},obj,{txns,assets,recurrences,goals,inquiries,assetQtyLog,trashTxns,trashAssets,trashRecs,trashGoals,categories,owners,budgetHistory,budgets,catIcon,catVar,catBudgetRollover,deletedType,deletedBal,deletedIds,nwHistory,settings,rates}),fixedCount,droppedCount,rangeCount};
 }
 /* obj.assets/obj.txns가 배열인지까지 검증한 뒤 DB를 통째로 교체한다. migrate()가 손상된
  * obj 때문에 중간에 throw해도 DB가 절반만 마이그레이션된 채로 남지 않도록, 실패 시 교체 전
@@ -11626,8 +11646,34 @@ function deleteGoalsUndo(ids){
  const removed=(DB.goals||[]).filter(g=>ids.has(g.id));
  DB.goals=(DB.goals||[]).filter(g=>!ids.has(g.id));
  DB.deletedIds=DB.deletedIds||{};const now=Date.now();ids.forEach(id=>DB.deletedIds[id]=now);
+ if(removed.length)DB.trashGoals=(DB.trashGoals||[]).concat(removed.map(g=>Object.assign({},g,{_deletedAt:now}))); /* '최근 삭제함' — undoToast의 6초가 지나도(또는 앱을 닫았다 다시 열어도) gcTrashTxns 보존기간까지는 복구 가능(app-evolve cycle322 critique/advance, DB.trashTxns/DB.trashAssets/DB.trashRecs와 동일 패턴) */
  goalDraft=null;save();renderCurrent();
- undoToast(`${removed.length}개 목표를 삭제했어요`,()=>{DB.goals.push(...removed);ids.forEach(id=>delete DB.deletedIds[id]);touchSave(...removed);renderCurrent();toast('되돌렸어요')})}
+ undoToast(`${removed.length}개 목표를 삭제했어요`,()=>{DB.goals.push(...removed);ids.forEach(id=>delete DB.deletedIds[id]);DB.trashGoals=(DB.trashGoals||[]).filter(g=>!ids.has(g.id));touchSave(...removed);renderCurrent();toast('되돌렸어요')})}
+/* 메뉴 › '삭제한 목표' — deleteGoalsUndo가 DB.trashGoals에 담아둔 삭제된 목표를 보여주고 복구할 수
+ * 있는 화면. openRecTrashList/restoreTrashRec과 동일한 manage-row 목록 패턴(app-evolve cycle322
+ * critique/advance). 요약은 목표 유형(자산연동/순자산)과 목표액·목표일을 보여준다. */
+function openGoalTrashList(){
+ const items=[...(DB.trashGoals||[])].sort((a,b)=>(b._deletedAt||0)-(a._deletedAt||0));
+ const row=g=>{
+  const daysLeft=Math.max(0,TRASH_MAX_AGE_DAYS-Math.floor((Date.now()-(g._deletedAt||0))/86400000));
+  const sub=[g.type==='asset'?'자산 연동':'순자산',g.targetAmount?comma(g.targetAmount)+'원':null,g.targetDate?fmtDateFull(g.targetDate):null].filter(Boolean).join(' · ');
+  return `<div class="manage-row" style="align-items:flex-start"><div style="flex:1;min-width:0">
+    <div class="mn">${esc(g.name||'')}</div>
+    <div class="msub">${sub}${sub?' · ':''}${daysLeft}일 후 자동삭제</div></div>
+   <div class="row-acts"><button class="act-btn" aria-label="목표 복구" onclick="restoreTrashGoal('${g.id}')">${svg('restore')}</button></div></div>`;
+ };
+ openSheet(`<h3>삭제한 목표</h3><div class="desc">삭제한 목표예요. ${TRASH_MAX_AGE_DAYS}일이 지나면 자동으로 사라져요</div>
+  ${items.length?items.map(row).join(''):`<div class="empty"><div class="ei">${svg('trash')}</div><div class="et">삭제한 목표가 없어요</div></div>`}
+  <div style="height:12px"></div><button class="btn btn-primary" onclick="closeSheet()">닫기</button>`);
+}
+function restoreTrashGoal(id){
+ if(twGuard())return;
+ const g=(DB.trashGoals||[]).find(x=>x.id===id);if(!g)return;
+ DB.trashGoals=(DB.trashGoals||[]).filter(x=>x.id!==id);
+ DB.deletedIds=DB.deletedIds||{};delete DB.deletedIds[id];
+ const goal=Object.assign({},g);delete goal._deletedAt;
+ DB.goals.push(goal);touchSave(goal);openGoalTrashList();renderCurrent();toast('되돌렸어요');
+}
 window.addEventListener('resize',()=>requestAnimationFrame(fitAll));
 
 /* ================= PICKERS (탭하면 열리는 선택창) ================= */

@@ -1,19 +1,8 @@
 {
-  "cycle": 322,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "목표(goals) 삭제 '최근 삭제함(trashGoals)' 복구 기능 추가",
-    "why": "deleteGoalsUndo(index.html:11624-11630)가 undoToast의 6초짜리 메모리 클로저 하나에만 의존하는 걸 재확인했다. DB.deletedIds는 병합용 id-시각 톰스톤일 뿐 목표 내용(name/targetAmount/targetDate)을 담지 않아 6초가 지나거나 앱을 닫으면 영구 소실된다. 이미 같은 버그 클래스를 거래(cycle319 trashTxns)·자산(cycle320 trashAssets)·반복거래(cycle321 trashRecs)에서 고쳤고, cycle320/321 critique가 '목표는 데이터가 얕아 우선순위 낮음, 다음 critique 후보로 보류'라고 명시적으로 남겨둔 다음 차례다. 귀속(owners)/카테고리(categories) 삭제는 실체가 이름 문자열뿐이라(연결된 자산/거래는 남고 unassigned로만 재배정됨) 유실 비용이 낮아 이번에도 보류한다.",
-    "approach": "logic.js는 새 함수 없이 gcTrashTxns/mergeTrashTxns를 그대로 재사용({id,_deletedAt}만 가정하므로 목표 전용 필드 참조 없음, 주석으로 재사용 사실 명시). index.html: DB.trashGoals 신설(migrate()에 초기화+GC+live-id 필터 배선, 1673-1678행 trashTxns/trashAssets/trashRecs 병합과 동일한 패턴으로 mergeRemoteDataIntoLocal에도 배선, sanitizeBackup에 id&&name 기준 검증+targetAmount/targetDate 보정+_deletedAt 보정 추가). deleteGoalsUndo(11624-11630)가 삭제 즉시 목표 전체+_deletedAt을 DB.trashGoals에 저장하고 undo 콜백에서는 즉시 제거하도록 수정. renderMenu(7113-7115 옆)에 '삭제한 목표' 행 추가. openGoalTrashList()/restoreTrashGoal(id) 신설 — openTrashList/openAssetTrashList/openRecTrashList와 동일한 manage-row 패턴, 요약은 targetAmount/targetDate 표시. 테스트: deleteGoalsUndo→trashGoals 저장/undo제거/무변경/다건 + openGoalTrashList/restoreTrashGoal(정상복구/존재안함/twGuard/목록순서/빈상태) + sanitizeBackup trashGoals 검증 + migrate trashGoals 초기화/GC/live-id필터 + mergeRemoteDataIntoLocal trashGoals 배선 + gcTrashTxns/mergeTrashTxns 재사용 확인(목표 모양 데이터) — trashRecs(cycle321)가 추가한 테스트 그룹과 동일한 구성을 목표에 맞춰 재사용. TRASH_MAX_AGE_DAYS 공용 상수 그대로 사용. 사용자 체감 기능 추가이므로 APP_VERSION/sw.js CACHE 버전업 포함."
-  },
+  "cycle": 323,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 317,
-      "phase": "advance",
-      "timestamp": "2026-11-07T04:20:00.000Z",
-      "summary": "critique(cycle317) 계획대로 '앱 잠금(PIN)'이 화면만 가릴 뿐 데이터는 암호화되지 않는다는 고지를 추가했다. 코드 로직·데이터모델 변경 없이 문구+테스트만 추가(계획대로). 1) openSetPinSheet(12140-12146)의 desc 문단에 \"단, 화면만 가릴 뿐 데이터 자체는 암호화되지 않으니, 기기를 분실했거나 공유 중이면 '데이터 내보내기'로 암호화된 백업을 만들어 두세요\"를 추가 — 계획의 '설정>백업>암호화 내보내기' 문구는 실제로 존재하지 않는 별도 메뉴라 그대로 쓰지 않고, doExport()(8764-8774)가 APPLOCK.enabled() 상태에서 JSON 전체 백업을 내보낼 때 이미 자동으로 PIN 암호화를 거는 실제 동작(exportData()의 '바로 저장'/'파일 열기')에 맞춰 '데이터 내보내기'로 정확하게 고쳐 썼다. 2) renderMenu(7057-7119)는 메뉴 항목 자체에 msub(보조설명) 줄을 지원하지 않는 단순 구조([mi][ml][mv][chev])라 계획의 'PIN 행에 msub 추가'는 실제 구조와 안 맞아, 대신 같은 그룹('알림 · 기준')에 이미 있던 OS 알림용 카드-하단 캡션 패턴(cycle161, osNotify 조건)을 그대로 재사용해 APPLOCK.enabled() 조건의 두 번째 캡션 <p>를 추가했다 — 기존 OS 알림 캡션의 조건/문구는 한 글자도 건드리지 않고 그 뒤에 독립된 삼항식으로 이어붙여 회귀 위험을 없앴다. 3) 도움말(openHelp)엔 PIN 관련 안내 자체가 없어(grep 0건) 계획대로 생략. 4) test/run.js에 renderMenu 캡션 조건/문구 포함 여부 + 기존 OS 알림 캡션 조건이 그대로인지 + openSetPinSheet 새 문구/기존 문구 보존 여부를 문자열-존재 패턴으로 검증하는 테스트 4건 추가(extractFunction 패턴, 기존 cycle161 OS 알림 캡션 테스트와 동일한 스타일) — 2982->2986 통과. node test/run.js 2986/2986 통과, node --check sw.js/logic.js 통과, index.html 인라인 스크립트 추출검사의 기존 1건 오탐(HTML 주석 텍스트 오인, cycle311부터의 기존 아티팩트)은 git stash로 변경 전 상태와 대조해 이번 변경과 무관함을 재확인, manifest.webmanifest JSON 유효성 통과. 사용자 체감 문구 변경이므로 APP_VERSION 1.47.378->1.47.379, sw.js CACHE v645->v646. pending_advance_plan null로 비움. 범위를 좁힌 부분(critique가 필요시 재검토): 실제 저장소 암호화(실시간 _saveCore/load 배선)는 cycle252/289가 이미 재작성급으로 평가해 기각한 범위라 이번에도 손대지 않음 — 이번 사이클은 오직 기존 보호 범위를 정확히 알리는 고지 문구.",
-      "commit": null
-    },
     {
       "cycle": 318,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-07T22:05:00.000Z",
       "summary": "직접 grep으로 cycle320/321 critique가 '보류'로 남겨둔 후보(목표/귀속/카테고리 삭제의 trash 미보호)를 재검증(cycle300-322 처리/보류/기각 항목 전부 제외 지시: twGuard 스윕·전역검색·예산이월·연말결산·owner/category/asset merge 전부·nwHistory byType/자산배분추이 카드·목표자산배분+리밸런싱·CSV날짜·이체 및 반복 중복감지·카테고리별 알림뮤트·공동지출 정산(shared/settle) 전체와 배지·토글 전파·investGainLossCard 유형별 분해·목표/반복/통합검색 검색창 디바운스·PIN 화면잠금 고지·목표비중 알림뮤트 토글·saveGoal targetDate 범위가드·거래/자산/반복 삭제 trash 복구·searchTerms/matchQueryTerms·shiftWeekend 단위테스트·openTrashList 분할거래 카테고리 라벨은 명시적으로 제외; FX 환차익 분리·투자손익 추이차트·CSV shared/photo 필드·배당/이자/할부/귀속별 예산/다인 정산/CSV·반복 분할거래·실시간 저장소 암호화·반복 건별 skip·백업 리마인더·CDN SRI 해시·홈 대시보드 카드 순서변경/숨기기·CSV import 견고성·부채/대출 추적·백그라운드 푸시 한계는 기각 이력으로 재확인). 발견: deleteGoalsUndo(index.html:11624-11630)가 거래/자산/반복과 동일하게 여전히 undoToast의 6초짜리 메모리 클로저 하나에만 의존 — DB.deletedIds는 id-시각 톰스톤일 뿐 목표 내용(name/targetAmount/targetDate)을 담지 않아 6초가 지나거나 앱을 닫으면 영구 소실됨을 재확인. cycle319(trashTxns)/320(trashAssets)/321(trashRecs)와 같은 엔티티 확장(재제안 아님)으로, 두 critique가 이미 '다음 후보'로 명시해 둔 항목. pending_advance_plan에 구체 계획 저장(DB.trashGoals 신설, GC/병합은 새 함수 없이 gcTrashTxns/mergeTrashTxns 재사용, migrate/mergeRemoteDataIntoLocal/sanitizeBackup 배선, deleteGoalsUndo가 removed를 trashGoals에도 push, renderMenu에 '삭제한 목표' 행, openGoalTrashList/restoreTrashGoal 신설, 테스트 계획은 trashRecs 구성을 재사용). 보류 유지: 귀속(owners)/카테고리(categories) 삭제는 실체가 이름 문자열뿐이라(연결 데이터는 남고 unassigned로만 재배정) 유실 비용이 낮아 이번에도 보류. 코드 변경 없음(state.json만 커밋, pending_advance_plan 신설에 따라 phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 322,
+      "phase": "advance",
+      "timestamp": "2026-11-07T23:10:00.000Z",
+      "summary": "critique(cycle322) 계획대로 목표(goals) 삭제 '최근 삭제함(trashGoals)' 복구 기능을 구현했다. logic.js는 새 함수 없이 gcTrashTxns/mergeTrashTxns를 그대로 재사용(둘 다 {id,_deletedAt}만 가정해 목표 전용 필드를 참조하지 않음). index.html: DB.trashGoals 신설(migrate()에 초기화+GC+live-id 필터, mergeRemoteDataIntoLocal의 DB.goals 병합 직후에 trashTxns/trashAssets/trashRecs와 동일한 패턴으로 배선, sanitizeBackup에 id&&name 기준 검증+targetAmount 클램프+targetDate csvDateValid 보정+_deletedAt 보정 추가 — owner/type/linkedAssetId는 이미 saveGoal이 정규화해 둔 아카이브라는 전제로 재검증하지 않음, 위 srcGoals 블록과 달리 goalOwnerEff 불변식 동기화도 적용하지 않음), deleteGoalsUndo가 삭제 즉시 목표 전체+_deletedAt을 DB.trashGoals에 저장(즉시 undo 콜백에서도 제거), 메뉴 '백업·데이터'에 '삭제한 목표' 행 추가, openGoalTrashList()/restoreTrashGoal(id) 신설(openRecTrashList/restoreTrashRec과 동일 manage-row 패턴, 요약은 type(자산연동/순자산)·targetAmount·targetDate). 테스트: deleteGoalsUndo→trashGoals 저장/undo제거/무변경/다건(4) + openGoalTrashList/restoreTrashGoal(목록순서/빈상태/정상복구/존재안함/twGuard, 5) + sanitizeBackup trashGoals 검증(id/name 없음·무효 통째 제거, targetAmount 클램프, targetDate 보정, _deletedAt 보정, owner/type/linkedAssetId 비검증 보존, 중복id, 6) + migrate trashGoals 초기화/GC/live-id필터(3) + mergeRemoteDataIntoLocal trashGoals 배선(2) + gcTrashTxns/mergeTrashTxns 재사용 확인(목표 모양 데이터, 1) = 21건 추가, 거기에 FUNCTIONS 목록에 openGoalTrashList/restoreTrashGoal 추가 — node test/run.js 3084->3104/3104 통과(DB 스키마 완전성 가드 테스트도 trashGoals 배선이 실제로 걸렸음을 자동 확인). node --check logic.js/sw.js/test/run.js 통과, manifest.webmanifest JSON 유효성 통과, index.html 인라인 스크립트 추출검사는 기존과 동일한 1건의 기존 오탐(block1=head FOUC 스크립트, HTML 주석 텍스트 오인, cycle311부터 이어짐; git stash로 변경 전 상태와 대조해 이번 변경과 무관함을 재확인, 내 변경이 있는 block3/4는 개별 node --check 통과)만 재확인됨. 사용자 체감 기능 추가라 APP_VERSION 1.47.386->1.47.387, sw.js CACHE v653->v654. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]
