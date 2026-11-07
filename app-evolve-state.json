@@ -1,19 +1,8 @@
 {
-  "cycle": 321,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "반복거래(recurrences) 삭제 '최근 삭제함'(DB.trashRecs) 복구 기능 추가",
-    "why": "deleteRecsUndo(index.html:11512-11521)가 undoToast의 6초짜리 메모리 클로저 하나에만 의존해, 그 창을 넘기거나 앱을 닫으면 startDate/interval/amount/category/skip/edits/confirmedDates/연동 asset 등 손으로 재입력 불가능한 반복거래 설정이 영구 소실된다. cycle319(DB.trashTxns)/cycle320(DB.trashAssets)와 동일한 버그 클래스를 반복거래 엔티티로 확장.",
-    "approach": "1) DB.trashRecs=DB.trashRecs||[] 를 migrate()에 DB.trashTxns/DB.trashAssets 바로 옆에 추가하고 동일한 GC 호출(gcTrashTxns 재사용, 새 함수 불필요, {id,_deletedAt}만 가정하므로 rec 객체에도 그대로 동작)을 배선한다. 2) mergeRemoteDataIntoLocal()에 DB.trashTxns/DB.trashAssets 병합 블록(1673/1677행) 바로 아래 동일 패턴으로 DB.trashRecs 병합(mergeTrashTxns 재사용, live recurrences id로 필터)을 추가한다. 3) sanitizeBackup()에 trashRecs 필드를 trashTxns/trashAssets와 같은 방식으로 포함시킨다. 4) deleteRecsUndo(11512)가 DB.recurrences에서 제거하는 removed를 DB.trashRecs에도 _deletedAt과 함께 push하도록 수정하고, undoToast의 undoFn에서는 DB.trashRecs에서도 해당 id를 제거한다(deleteTxnsUndo/deleteAssetsUndo와 동일 패턴). 5) renderMenu(7110 부근)에 '삭제한 반복' 행을 추가해 openRecTrashList()를 연결한다. 6) openTrashList/restoreTrashTxn(11361-11385)을 본떠 openRecTrashList()/restoreTrashRec(id)를 신설한다 — 요약 표시는 category/amount/interval(또는 반복 주기 라벨)과 daysLeft. 7) test/run.js에 gcTrashTxns/mergeTrashTxns가 rec 형태 객체에도 동작함을 확인하는 케이스와, deleteRecsUndo → DB.trashRecs push → restoreTrashRec 왕복 테스트, DB 스키마 완전성 가드(LOCAL_ONLY_DB_FIELDS 등)에 trashRecs 등록을 추가한다. sw.js CACHE 버전과 index.html APP_VERSION을 올린다."
-  },
+  "cycle": 322,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 316,
-      "phase": "advance",
-      "timestamp": "2026-11-07T00:00:00.000Z",
-      "summary": "critique(cycle316)가 세운 계획대로 logic.js에 portfolioGainLossByType(items) 순수함수를 추가(기존 portfolioGainLoss에 type별 그룹 위임, totalEval 내림차순 정렬, costBasis<=0 제외). index.html investGainLossCard(owner)에서 usable 자산에 type을 함께 넘겨 유형이 2개 이상일 때만 allocationCard와 동일한 eb-row/eb-dot 마크업+TYPE_COLOR로 유형별(fx/gold/stock 등) 손익 분해 행을 기존 평가손익/총매입/총평가 아래에 추가(1개뿐이면 중복이라 생략). test/run.js에 portfolioGainLossByType 단위 테스트(혼합 이익/손실, 동일유형 합산, costBasis 제외+정렬, 빈 입력) 및 investGainLossCard 통합 테스트(2유형 이상 분해 표시, 1유형 회귀 미표시, owner 필터링 반영) 추가 — vm 샌드박스 배열 cross-realm deepStrictEqual 이슈는 Array.from으로 정규화해 해결. 전체 회귀 테스트 2980/2980 통과. APP_VERSION 1.47.377, sw.js CACHE v644로 갱신.",
-      "commit": null
-    },
     {
       "cycle": 317,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-07T18:10:00.000Z",
       "summary": "서브에이전트 없이 직접 grep으로 cycle320 critique가 '보류'로 남겨둔 후보(목표·반복·귀속·카테고리 삭제의 동일 취약점)를 재검증(cycle300-321 처리/보류/기각 항목 전부 제외 지시: twGuard 스윕·전역검색·예산이월·연말결산·owner/category/asset merge 전부·nwHistory byType/자산배분추이 카드·목표자산배분+리밸런싱·CSV날짜·이체 및 반복 중복감지·카테고리별 알림뮤트·공동지출 정산(shared/settle) 전체와 배지·토글 전파·investGainLossCard 유형별 분해·목표/반복/통합검색 검색창 디바운스·PIN 화면잠금 고지·목표비중 알림뮤트 토글·saveGoal targetDate 범위가드·거래/자산 삭제 trash 복구·searchTerms/matchQueryTerms·shiftWeekend 단위테스트는 명시적으로 제외; FX 환차익 분리·투자손익 추이차트·CSV shared/photo 필드·배당/이자/할부/귀속별 예산/다인 정산/CSV·반복 분할거래·실시간 저장소 암호화·반복 건별 skip·백업 리마인더·CDN SRI 해시·홈 대시보드 카드 순서변경/숨기기·CSV import 견고성·부채/대출 추적·백그라운드 푸시 한계는 기각 이력으로 재확인). 발견: deleteRecsUndo(index.html:11512-11521)가 deleteGoalsUndo(11575-11581)와 함께 여전히 undoToast의 6초짜리 메모리 클로저 하나에만 의존 — DB.deletedIds는 병합용 id-시각 톰스톤일 뿐 반복거래 내용(startDate/interval/amount/category/skip/edits/confirmedDates/연동 asset)을 담지 않아 6초가 지나거나 앱을 닫으면 영구 소실됨을 재확인. 목표(goals)도 같은 패턴이지만 데이터가 name/targetAmount/targetDate 정도로 얕고, 반복은 skip·edits·confirmedDates 등 손으로 재입력하기 사실상 불가능한 이력을 담고 있어 유실 비용이 더 크다 — cycle319(trashTxns)/cycle320(trashAssets)와 같은 엔티티 확장(재제안 아님), 목표는 다음 critique 후보로 다시 보류. pending_advance_plan에 구체 계획 저장(DB.trashRecs 신설, GC/병합은 새 함수 없이 이미 범용인 gcTrashTxns/mergeTrashTxns 재사용, migrate()에 초기화+GC 배선, mergeRemoteDataIntoLocal에 trashTxns/trashAssets 바로 아래 동일 패턴 추가, sanitizeBackup에 trashRecs 필드 추가, deleteRecsUndo가 removed를 trashRecs에도 push, renderMenu에 '삭제한 반복' 행 추가, openRecTrashList/restoreTrashRec 신설(openTrashList/restoreTrashTxn과 동일한 manage-row 패턴, interval/amount/category 요약 표시), 테스트 계획: mergeTrashTxns/gcTrashTxns가 rec 형태에도 동일하게 동작하는지, deleteRecsUndo→trashRecs push→restoreTrashRec 왕복, 복구 시 _autoDeactivatedByAssetDelete 등 부가 필드 보존). 기각/보류 후보: 목표(goals) 삭제 trash(데이터가 얕아 우선순위 낮음, 다음 critique 후보로 보류), 귀속(owners)/카테고리(categories) 삭제 trash(실체가 이름 문자열뿐이라 — 삭제해도 연결된 자산/거래는 남고 그냥 unassigned로 재배정될 뿐 — 반복/목표만큼 유실 비용이 크지 않아 보류). 코드 변경 없음(state.json만 커밋, pending_advance_plan 신설에 따라 phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 321,
+      "phase": "advance",
+      "timestamp": "2026-11-07T19:30:00.000Z",
+      "summary": "critique(cycle321) 계획대로 반복거래(recurrences) 삭제 '최근 삭제함(trashRecs)' 복구 기능을 구현했다. logic.js는 새 함수 없이 gcTrashTxns/mergeTrashTxns를 그대로 재사용(둘 다 {id,_deletedAt}만 가정해 반복거래 전용 필드를 참조하지 않음). index.html: DB.trashRecs 신설(migrate 초기화+GC+live-id 필터, mergeRemoteDataIntoLocal에 DB.recurrences 병합/pruneOrphanRecOverrides 직후 배선, sanitizeBackup에 id&&csvDateValid(startDate) 기준 검증+amount 클램프+_deletedAt 보정 추가 — splits/skip/edits/freq/day/weekend 등은 이미 saveRec이 정규화해 둔 아카이브라는 전제로 재검증하지 않음), deleteRecsUndo가 삭제 즉시 반복거래 전체+_deletedAt을 DB.trashRecs에 저장(즉시 undo 콜백에서도 제거), 메뉴 '백업·데이터'에 '삭제한 반복' 행 추가, openRecTrashList()/restoreTrashRec(id) 신설(openTrashList/openAssetTrashList와 동일 manage-row 패턴, 요약은 openRecManage()와 동일하게 memo/category+recFreqLabel+amount). 테스트: deleteRecsUndo→trashRecs 저장/undo제거/무변경/다건(4) + openRecTrashList/restoreTrashRec(목록순서/빈상태/정상복구/존재안함/twGuard, 5) + sanitizeBackup trashRecs 검증(id/startDate 없음·무효 통째 제거, amount 클램프, _deletedAt 보정, 비검증 필드 보존, 중복id, 5) + migrate trashRecs 초기화/GC/live-id필터(3) + mergeRemoteDataIntoLocal trashRecs 배선(2) + gcTrashTxns/mergeTrashTxns 재사용 확인(반복거래 모양 데이터, 1) = 20건 추가 — node test/run.js 3062->3082/3082 통과. node --check logic.js/sw.js/test/run.js 통과, manifest.webmanifest JSON 유효성 통과, index.html 인라인 스크립트 추출검사는 기존과 동일한 1건의 기존 오탐(block1=head FOUC 스크립트, HTML 주석 텍스트 오인, cycle311부터 이어짐; git stash로 변경 전 상태와 대조해 이번 변경과 무관함을 재확인, 내 변경은 openRecTrashList가 있는 전혀 다른 block3에 있음을 확인)만 재확인됨. 사용자 체감 기능 추가라 APP_VERSION 1.47.384->1.47.385, sw.js CACHE v651->v652. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]
