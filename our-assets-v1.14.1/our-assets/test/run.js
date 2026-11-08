@@ -7803,6 +7803,39 @@ test('findPossibleDuplicateRec: weekly/yearly인데 startDate가 없거나 잘�
   const sameDay = { id: null, type: 'expense', freq: 'weekly', day: 1, startDate: undefined, amount: 10000, category: '구독', fromAssetId: 'a1', toAssetId: null };
   assert.strictEqual(sandbox.findPossibleDuplicateRec([existing], sameDay), existing);
 });
+/* ---------- recScheduleSameSlot 직접 단위 테스트 ---------- */
+/* findPossibleDuplicateRec을 거친 테스트들(위)은 freq별 분기 하나당 한 경로씩만 지나가고,
+ * !a.startDate||!b.startDate(널/undefined)과 isNaN(da)||isNaN(db)(파싱은 되지만 유효하지 않은 날짜
+ * 문자열)은 서로 다른 코드 경로인데도 위 테스트는 널 쪽만 커버하고 있었다 — app-evolve cycle321/322/
+ * 323/324 critique가 반복해서 저위험 보류로 남겨둔 공백(cycle325 develop). 직접 호출해 모든 분기를
+ * 한 번씩 고정한다. 프로덕션 로직 변경 없음(테스트 전용 추가). */
+test('recScheduleSameSlot: monthly는 day만 비교한다', () => {
+  assert.strictEqual(sandbox.recScheduleSameSlot('monthly', { day: 5 }, { day: 5 }), true);
+  assert.strictEqual(sandbox.recScheduleSameSlot('monthly', { day: 5 }, { day: 6 }), false);
+});
+test('recScheduleSameSlot: daily는 day/startDate와 무관하게 항상 같은 슬롯이다', () => {
+  assert.strictEqual(sandbox.recScheduleSameSlot('daily', { day: 1, startDate: '2026-01-01' }, { day: 9, startDate: '2026-12-31' }), true);
+});
+test('recScheduleSameSlot: weekly는 startDate의 요일을 비교한다', () => {
+  assert.strictEqual(sandbox.recScheduleSameSlot('weekly', { startDate: '2026-01-05' }, { startDate: '2026-02-02' }), true, '둘 다 월요일');
+  assert.strictEqual(sandbox.recScheduleSameSlot('weekly', { startDate: '2026-01-05' }, { startDate: '2026-01-09' }), false, '월요일 vs 금요일');
+});
+test('recScheduleSameSlot: biweekly는 14일 배수 차이인지(phase)를 비교한다', () => {
+  assert.strictEqual(sandbox.recScheduleSameSlot('biweekly', { startDate: '2026-01-05' }, { startDate: '2026-01-19' }), true, '14일 뒤=같은 주기');
+  assert.strictEqual(sandbox.recScheduleSameSlot('biweekly', { startDate: '2026-01-05' }, { startDate: '2026-01-12' }), false, '7일 뒤=반대 주기');
+});
+test('recScheduleSameSlot: yearly는 startDate의 월/일을 비교한다', () => {
+  assert.strictEqual(sandbox.recScheduleSameSlot('yearly', { startDate: '2026-03-05' }, { startDate: '2027-03-05' }), true);
+  assert.strictEqual(sandbox.recScheduleSameSlot('yearly', { startDate: '2026-03-05' }, { startDate: '2026-11-05' }), false);
+});
+test('recScheduleSameSlot: startDate가 null/undefined면 day 비교로 폴백한다(비정상 데이터 방어)', () => {
+  assert.strictEqual(sandbox.recScheduleSameSlot('weekly', { day: 1, startDate: null }, { day: 1, startDate: undefined }), true);
+  assert.strictEqual(sandbox.recScheduleSameSlot('yearly', { day: 1, startDate: null }, { day: 2, startDate: null }), false);
+});
+test('recScheduleSameSlot: startDate가 있어도 파싱 불가능한 문자열(Invalid Date)이면 day 비교로 폴백한다 — 널 체크와는 다른 분기(isNaN)', () => {
+  assert.strictEqual(sandbox.recScheduleSameSlot('weekly', { day: 1, startDate: 'not-a-date' }, { day: 1, startDate: '2026-01-05' }), true, '한쪽만 깨져도 day가 같으면 폴백에서 같은 슬롯');
+  assert.strictEqual(sandbox.recScheduleSameSlot('yearly', { day: 1, startDate: 'not-a-date' }, { day: 2, startDate: 'also-invalid' }), false, '양쪽 다 깨지고 day가 다르면 폴백에서도 다른 슬롯');
+});
 test('buildImportPreview: doExport가 내보낸 CSV를 그대로 다시 가져오려 하면 전부 중복으로 건너뛴다', () => {
   const assets = [{ id: 'a1', name: '주계좌' }];
   const txns = [{ id: 't1', date: '2026-01-01', type: 'expense', category: '식비', amount: 5000, fromAssetId: 'a1', toAssetId: null, memo: '점심' }];

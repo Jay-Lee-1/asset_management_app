@@ -1,15 +1,8 @@
 {
   "cycle": 325,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 320,
-      "phase": "develop",
-      "timestamp": "2026-11-07T12:12:54.518Z",
-      "summary": "logic.js의 118개 순수 함수 중 searchTerms/matchQueryTerms(app-evolve cycle287 advance가 matchTxnQuery/matchRecQuery/matchGoalQuery의 중복 토큰화·매칭 로직을 뽑아 만든 공유 코어)만 직접 호출하는 테스트가 전혀 없었다 — parseAmountUnit/amountMatchesToken이 cycle282 develop에서 정확히 같은 이유로(간접 호출 몇 개만으로 경계값을 우연히 통과했을 위험) 직접 테스트를 받았는데 그 뒤에 추가된 이 두 함수만 빠져 있던 공백이다. test/run.js에 8개 테스트 추가: searchTerms의 공백(여러 개/탭) 분리·빈 토큰 제거·앞뒤 트림·빈/null/undefined 입력 시 빈 배열, matchQueryTerms의 평문 토큰 substring 매칭·금액 토큰(>/~) 파싱 시 haystack을 보지 않고 amountCandidates만 보는 분기·후보 중 하나라도 맞으면 참(분할 등 다중 후보)·null/undefined 후보 무시·여러 토큰의 AND(every) 의미론·빈 terms 배열이면 항상 참(matchTxnQuery가 q가 비면 호출 자체를 건너뛰는 전제를 문서화). 코드 로직 변경 없음(테스트 전용 추가), index.html/sw.js 미변경이라 APP_VERSION/CACHE 버전업 불필요. node --check test/run.js 통과, node test/run.js 3024->3032/3032 통과.",
-      "commit": null
-    },
     {
       "cycle": 320,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-08T07:13:23.883Z",
       "summary": "critique(cycle324) 계획대로 자산 수량 변경/매도 기록(assetQtyLog) 삭제 '삭제한 수량기록(trashQtyLog)' 복구 기능을 구현했다. logic.js는 새 함수 없이 gcTrashTxns/mergeTrashTxns를 그대로 재사용(둘 다 {id,_deletedAt}만 가정해 qtyLog 전용 필드를 참조하지 않음). index.html: DB.trashQtyLog 신설(migrate 초기화+GC+live-id(DB.assetQtyLog 기준) 필터, mergeRemoteDataIntoLocal에 DB.assetQtyLog 병합 직후 trashTxns/trashAssets/trashRecs/trashGoals와 동일 패턴으로 배선, sanitizeBackup에 id&&assetId 기준 검증+prevQty/newQty/addedAmount/saleProceeds 클램프(min 0)+realizedGain 클램프(손실 음수 보존, min 없음)+_deletedAt 보정 추가), delAssetQtyLog가 삭제 즉시 기록 전체+_deletedAt을 DB.trashQtyLog에 저장(즉시 undo 콜백에서도 제거), 메뉴 '백업·데이터'에 '삭제한 수량기록' 행 추가, openAssetQtyLogTrashList()/restoreTrashQtyLog(id) 신설(openGoalTrashList/restoreTrashGoal과 동일 manage-row 패턴이지만, 자산별 화면이 아니라 모든 자산에 걸친 독립 메뉴 목록으로 구현 — 자산이 이미 영구 삭제됐어도 assetName 스냅샷/\"삭제된 자산\" 폴백으로 표시). restoreTrashQtyLog는 active 플래그가 없는 단순 레코드라 restoreTrashRec류의 재활성 가드는 불필요함을 확인, snapshotAssetName/unsnapshotAssetName/relinkDeletedAsset이 DB.trashQtyLog는 순회하지 않는 공백(표시전용·저위험)은 trashTxns/trashRecs와 동일하게 보류 확정. 테스트: delAssetQtyLog→trashQtyLog 저장/undo제거(2) + openAssetQtyLogTrashList/restoreTrashQtyLog(정렬+자산명/폴백/빈상태/정상복구/존재안함/twGuard, 6) + sanitizeBackup trashQtyLog 검증(id/assetId 없음·무효 통째 제거, qty류 클램프+realizedGain 손실보존, _deletedAt 보정, 비검증 필드 보존, 중복id, 5) + migrate trashQtyLog 초기화/GC/live-id필터(3) + mergeRemoteDataIntoLocal trashQtyLog 배선(2) + gcTrashTxns/mergeTrashTxns 재사용 확인(수량기록 모양 데이터, 1) = 19건 추가 — node test/run.js 3118->3137/3137 통과(DB 스키마 완전성 가드 테스트도 trashQtyLog 배선이 실제로 걸렸음을 자동 확인). node --check logic.js/sw.js/test/run.js 통과, manifest.webmanifest JSON 유효성 통과. 사용자 체감 기능 추가라 APP_VERSION 1.47.390->1.47.391, sw.js CACHE v657->v658. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 325,
+      "phase": "develop",
+      "timestamp": "2026-11-08T08:00:00.000Z",
+      "summary": "recScheduleSameSlot(logic.js:1359, 반복거래 중복 탐지 slot 비교)에 직접 단위 테스트가 전혀 없던 공백을 발견해 고쳤다 — 지금까지는 findPossibleDuplicateRec을 거친 간접 테스트만 있었는데, 그 테스트들은 freq별 분기 하나당 한 경로씩만 지나고 !a.startDate||!b.startDate(널/undefined, line 1362)와 isNaN(da)||isNaN(db)(파싱되지만 유효하지 않은 날짜 문자열, line 1364)라는 서로 다른 두 폴백 분기 중 널 쪽만 커버했다 — cycle321/322/323/324 critique가 반복해서 저위험 보류로 남겨둔 항목. test/run.js에 recScheduleSameSlot()을 직접 호출하는 테스트 7건 추가: monthly day 일치/불일치, daily 항상 true, weekly 같은/다른 요일, biweekly 같은/다른 phase(14일 배수), yearly 같은/다른 월일, startDate null/undefined 폴백(기존 간접 테스트와 중복이지만 직접 호출로 재고정), 그리고 기존에 전혀 없던 파싱 불가 문자열('not-a-date') 폴백 2건(한쪽만 깨짐/양쪽 다 깨짐). 코드 로직 변경 없음(테스트 전용 추가, isNaN 분기가 이미 올바르게 day 비교로 폴백함을 직접 확인), index.html/sw.js 미변경이라 APP_VERSION/CACHE 버전업 불필요(cycle320/321 선례와 동일). node --check test/run.js 통과, node test/run.js 3137->3144/3144 통과, node --check logic.js/sw.js 통과.",
       "commit": null
     }
   ]
