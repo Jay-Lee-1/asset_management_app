@@ -1,22 +1,8 @@
 {
   "cycle": 324,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 318,
-      "phase": "advance",
-      "timestamp": "2026-11-07T08:05:00.000Z",
-      "summary": "critique(cycle318) 계획대로 목표 비중(allocationDrift/Multi) 알림 그룹에 뮤트 토글을 추가했다. 데이터모델/로직 변경 없음(notifyMute는 이미 자유형 맵, toggleNotifyMuteGroup(g)/pickNotifyAlerts/notifyAlertInfo는 이미 g를 범용 처리). renderMenu의 osNotify 조건부 배열(7083-7089)에 다른 5개(confirm/mat/budget/goal/debt)와 동일한 모양으로 {ic:'chart',l:'· 목표 비중 알림',sw:!DB.settings.notifyMute?.alloc,a:\"toggleNotifyMuteGroup('alloc')\"} 한 행 추가('chart' 아이콘은 7073의 '목표 자산배분' 메뉴 항목과 동일 아이콘 재사용). notifyAlertInfo() 바로 위 주석(11006-11016)도 '아직 포함되지 않는다'는 문구를 'cycle318 advance에서 포함됐다'로 갱신. 테스트: test/run.js:27055 renderMenu 소스패턴 테스트의 그룹 목록을 5개→6개(alloc 추가)로 갱신, toggleNotifyMuteGroup('alloc')이 DB.settings.notifyMute.alloc을 켜고/끄고 save()를 호출하는지 기존 budget/goal 테스트(27021)와 동일 패턴으로 1건 추가 — 2992->2993 통과. node test/run.js 2993/2993 통과, node --check logic.js/sw.js 통과, manifest.webmanifest JSON 유효성 통과, index.html 인라인 스크립트 추출검사는 기존과 동일한 1건의 기존 오탐(HTML 주석 텍스트 오인, cycle311부터 이어짐; git stash로 변경 전 상태와 대조해 이번 변경과 무관함을 재확인)만 재확인됨. APP_VERSION 1.47.380->1.47.381, sw.js CACHE v647->v648. pending_advance_plan null로 비움. (참고: 커밋 전 local main 추적 ref가 origin보다 2커밋 뒤쳐져 detached HEAD 상태였음을 발견 — git fetch로 origin/main이 이미 이 detached HEAD를 포함함을 확인(merge-base --is-ancestor로 검증)하고 main을 origin/main으로 맞춘 뒤 그 위에 이번 커밋을 쌓아 데이터 손실 없이 처리.)",
-      "commit": null
-    },
-    {
-      "cycle": 319,
-      "phase": "develop",
-      "timestamp": "2026-11-07T09:15:34.316Z",
-      "summary": "saveGoal()이 name/targetAmount는 검증하면서도 targetDate(목표일)에는 saveAsset(maturityDate, 4973-4974)·saveTx/saveRec(date/startDate)과 동일한 dateBelowRangeFloor/dateAboveRangeCeil 범위 가드가 전혀 없던 공백을 발견(서브에이전트 조사로 발견, cycle300-319 처리 항목과 무관한 신규 항목). 목표일 선택용 openFieldDatePicker/dpConfirm(10105-10290대)은 무한 스크롤 달력으로 min/max가 없어 2200년 같은 값도 그대로 선택·저장될 수 있었고, 그 값은 goalIsOverdue/fmtDateFull/CSV 내보내기/homeAlerts의 goalBehind 등에서 검증 없이 그대로 쓰인다. (주말 조정(weekend) 필드를 반복거래 유형별로 넓히는 candidate도 함께 검토했으나, 9150-9161의 \"daily/weekly/yearly엔 weekend!=='none'이 절대 안 남는다\" 불변식과 정규화 로직이 이미 의도적으로 존재해 더 큰 변경이 필요해 보류.) saveGoal()의 targetAmount 검증 직후에 saveAsset과 동일한 두 줄 가드(RANGE_FROM 이전/RANGE_TO 이후 토스트 후 return)를 추가. 회귀 테스트 3건 추가(test/run.js, saveGoal 블록): RANGE_FROM 이전 targetDate 저장 차단, RANGE_TO 이후 targetDate 저장 차단, targetDate 없는 정상 케이스는 회귀 없음 — saveTx의 동일 RANGE_TO 테스트가 sandbox.RANGE_TO를 리셋 안 해 뒤에 2030년대 targetDate를 쓰는 duplicateGoal→saveGoal 테스트와 충돌한 걸 직접 발견해 테스트 끝에 sandbox.RANGE_TO=null 복원을 추가해 수정. 테스트 2993->2996 통과. node --check logic.js 통과(index.html 4개 스크립트 블록 중 saveGoal이 속한 블록도 개별 --check 통과). APP_VERSION 1.47.381->1.47.382, sw.js CACHE v648->v649.",
-      "commit": null
-    },
     {
       "cycle": 319,
       "phase": "review",
@@ -149,6 +135,13 @@
       "timestamp": "2026-11-08T03:15:00.000Z",
       "summary": "critique(cycle323) 계획대로 손상된 데이터 복구용 __corrupt_* 백업 블롭을 홈 알림으로 노출하는 기능을 구현했다. logic.js에 순수 함수 2개 추가: findCorruptBackupKeys(allKeys,dataKeyPrefix)(dataKeyPrefix+'__corrupt_' 패턴 키를 {key,ts}로 추출해 ts 내림차순 정렬), pruneOldCorruptKeys(keys,now,maxAgeMs)(오래된 키 걸러냄). index.html: 전역 CORRUPT_BACKUP_KEYS([]) 추가, scanCorruptBackupKeys()(두 순수함수로 localStorage를 스캔해 CORRUPT_BACKUP_KEYS를 채우고 CORRUPT_BACKUP_MAX_AGE_MS=90일보다 오래된 키는 removeItem으로 정리) 신설 후 startApp()의 load() 직후(매 부팅마다)에 배선. homeAlerts()에 CORRUPT_BACKUP_KEYS.length 기반 'corruptBackup' 알림(persist/storageSize 알림 바로 아래) 추가, homeAlertCard()에 해당 카드 렌더링 추가(클릭 시 downloadCorruptBackup(), 별도 버튼으로 dismissCorruptBackup()). downloadCorruptBackup()은 doExport()의 공유→다운로드→복사 3단 폴백과 동일한 패턴(backupFile/canShareFiles/IS_IOS/openCopyBackup 재사용)으로 가장 최근 백업 1개를 파일로 내보내고, dismissCorruptBackup()은 CORRUPT_BACKUP_KEYS에 남은 모든 __corrupt_ 키를 한 번에 localStorage에서 지운다. 테스트: test/run.js 메인 sandbox에 CORRUPT_BACKUP_KEYS:[] 기본값 추가(안 그러면 homeAlerts() 추출 테스트 전체가 'CORRUPT_BACKUP_KEYS is not defined'로 깨짐을 먼저 발견해 수정), findCorruptBackupKeys(필터링/정렬/빈입력/불일치, 3) + pruneOldCorruptKeys(경계값/빈입력, 2) + homeAlerts의 corruptBackup 알림 노출/비노출(1) = 6건 추가 — node test/run.js 3109->3115/3115 통과(vm cross-realm 배열 비교 이슈는 기존 관례대로 JSON.parse(JSON.stringify(...)) 패턴으로 회피). node --check logic.js/sw.js 통과. 저장소 손상이라는 가장 치명적인 장애 경로의 유일한 복구 수단을 처음으로 사용자에게 노출하는 기능 추가라 APP_VERSION 1.47.388->1.47.389, sw.js CACHE v655->v656. pending_advance_plan null로 비움.",
       "commit": null
+    },
+    {
+      "cycle": 324,
+      "phase": "develop",
+      "timestamp": "2026-11-08T04:09:23.000Z",
+      "summary": "restoreTrashGoal(index.html, '삭제한 목표' 복구, cycle322)이 asset형 목표의 owner를 복구 시점에 재검증하지 않는 공백을 발견해 고쳤다. 코드베이스에는 \"asset형 목표의 owner는 항상 연결 자산(linkedAssetId)의 owner와 같다\"는 명시적 불변식이 있고(goalOwnerTargets 테스트: \"asset형 목표는 대상에서 빠진다(saveGoal이 owner를 연결 자산 기준으로 강제하므로)\"), saveGoal(3948행)/saveAsset(5108행 owner 변경 시 연쇄 동기화)/doBulkOwnerMove(11595행)/mergeAssetInto(4609행)가 모두 이 불변식을 지킨다 — 단 셋 다 DB.goals만 훑고 DB.trashGoals는 건드리지 않는다(트래시에 있는 동안은 화면에 안 보이므로 당장 맞출 필요가 없는 의도된 생략). 그래서 목표가 트래시에 있는 동안 연결 자산의 owner가 바뀌면(doBulkOwnerMove로 일괄 이전 등) 트래시에 저장된 owner는 낡은 값으로 남고, restoreTrashGoal이 그 스냅샷을 검증 없이 그대로 DB.goals에 되돌리면 불변식이 깨진 상태로 복구된다 — 연결 자산은 이미 다른 귀속인데 목표만 옛 귀속 캐러셀에 남는 어긋남. restoreTrashRec(cycle323)이 복구 시점에 연결 자산 생존을 재확인하는 것과 같은 '복구 시점 재검증' 원칙을 owner 필드에 적용: restoreTrashGoal에 goal.type==='asset'이면 연결 자산을 찾아 현재 owner로 재동기화하는 한 줄 추가(saveGoal의 owner 계산식과 동일). 연결 자산이 이미 영구 삭제됐으면(goalLinkedAssetGone 경로와 동일하게 중립 처리) 저장된 owner를 그대로 둔다 — 억지로 끼워맞출 자산이 없으므로. test/run.js에 restoreTrashGoal 블록에 3건 추가(연결 자산 owner 변경 시 재동기화, 자산이 영구 삭제됐으면 저장값 유지, networth형은 영향 없음) — 3115->3118 통과. node --check logic.js 통과, index.html 인라인 스크립트 추출검사는 기존과 동일한 1건의 기존 오탐(HTML 주석 텍스트 오인, cycle311부터 이어짐; git stash로 변경 전 상태와 대조해 이번 변경과 무관함을 재확인)만 재확인됨, manifest.webmanifest JSON 유효성 통과. 사용자 체감 데이터 정합성 버그 수정이라 APP_VERSION 1.47.389->1.47.390, sw.js CACHE v656->v657. (참고: 커밋 전 local main이 origin보다 뒤쳐진 detached HEAD 상태였음 — git fetch로 origin/main이 이 detached HEAD의 베이스(851f872)를 이미 포함함을 merge-base --is-ancestor로 확인하고 main을 origin/main으로 맞춘 뒤 커밋을 cherry-pick, origin에 push 완료(65231c6).)",
+      "commit": "65231c6"
     }
   ]
 }
