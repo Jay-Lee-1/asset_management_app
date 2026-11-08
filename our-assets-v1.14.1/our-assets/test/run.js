@@ -7370,6 +7370,38 @@ test('deletedAssetHistoryExists: DB.deletedType에 기록이 없는(마이그레
   };
   assert.strictEqual(sandbox.deletedAssetHistoryExists('카카오뱅크', 'cash'), false);
 });
+// app-evolve cycle326: live DB.txns/DB.recurrences에는 매치가 전혀 없고 '최근 삭제함'
+// (trashTxns/trashRecs)에만 이름 스냅샷이 남은 경우도 재연동 프롬프트(askRelinkDeleted)가
+// 떠야 한다 — 트래시에 있는 기록은 아직 영구 삭제된 게 아니라 복구 가능한 과거 내역이다.
+test('deletedAssetHistoryExists: 트래시(trashTxns)에만 매치가 있어도 true를 반환한다', () => {
+  sandbox.DB = {
+    deletedType: { '카카오뱅크': 'cash' },
+    txns: [], recurrences: [],
+    trashTxns: [{ id: 't1', fromAssetId: 'gone', fromAssetName: '카카오뱅크', toAssetId: null, _deletedAt: Date.now() }],
+    trashRecs: [],
+    assets: [],
+  };
+  assert.strictEqual(sandbox.deletedAssetHistoryExists('카카오뱅크', 'cash'), true);
+});
+test('deletedAssetHistoryExists: 트래시(trashRecs)에만 매치가 있어도 true를 반환한다', () => {
+  sandbox.DB = {
+    deletedType: { '카카오뱅크': 'cash' },
+    txns: [], recurrences: [],
+    trashTxns: [],
+    trashRecs: [{ id: 'r1', fromAssetId: null, toAssetId: 'gone', toAssetName: '카카오뱅크', active: false, _deletedAt: Date.now() }],
+    assets: [],
+  };
+  assert.strictEqual(sandbox.deletedAssetHistoryExists('카카오뱅크', 'cash'), true);
+});
+test('deletedAssetHistoryExists: trashTxns/trashRecs가 undefined(구버전 데이터)여도 안 터지고 live 매치만으로 판정한다', () => {
+  sandbox.DB = {
+    deletedType: { '카카오뱅크': 'cash' },
+    txns: [{ fromAssetId: 'gone', fromAssetName: '카카오뱅크', toAssetId: null }],
+    recurrences: [],
+    assets: [],
+  };
+  assert.strictEqual(sandbox.deletedAssetHistoryExists('카카오뱅크', 'cash'), true);
+});
 test('relinkDeletedAsset: type이 같을 때만 과거 내역을 새 자산에 재연결한다', () => {
   // q1(assetQtyLog)은 snapshotAssetName이 남겼을 이름 스냅샷(app-evolve cycle273 develop) —
   // txns/recurrences와 동일하게 재연결되고 스냅샷은 지워져야 한다.
@@ -7476,6 +7508,68 @@ test('relinkDeletedAsset: _autoDeactivatedByAssetDelete가 없는(사용자가 �
   assert.strictEqual(r.fromAssetId, 'new1', '재연결 자체는 평소처럼 일어나야 함');
   assert.strictEqual(r.active, false, '자산 삭제가 원인이 아니었다면(플래그 없음) 재연동돼도 active를 되돌리면 안 됨');
 });
+// app-evolve cycle326: relinkDeletedAsset은 지금까지 DB.txns/DB.recurrences/DB.assetQtyLog(live)만
+// 순회해, 트래시(trashTxns/trashRecs/trashQtyLog, cycle319/321/324)에 있는 동안 참조 자산이 삭제된
+// 기록은 동명 자산을 재등록해 '이전 자산과 연동'을 선택해도 재연결되지 않고 영구 orphan으로 남았다.
+// live 배열과 동일한 필드 로직을 트래시 3종에도 적용했는지 직접 실행으로 검증한다.
+test('relinkDeletedAsset: 트래시(trashTxns)에 남은 이름 스냅샷도 재연결하고 touch한다', () => {
+  const trashedTxn = { id: 'tt1', fromAssetId: 'gone', fromAssetName: '카카오뱅크', toAssetId: null, _deletedAt: Date.now() };
+  sandbox.DB = {
+    deletedType: { '카카오뱅크': 'cash' },
+    txns: [], recurrences: [], assetQtyLog: [],
+    trashTxns: [trashedTxn], trashRecs: [], trashQtyLog: [],
+    assets: [],
+  };
+  const newCash = { id: 'new1', name: '카카오뱅크', type: 'cash' };
+  sandbox.relinkDeletedAsset(newCash);
+  assert.strictEqual(trashedTxn.fromAssetId, 'new1', '트래시에 있는 거래도 재연결되어야 함');
+  assert.strictEqual(trashedTxn.fromAssetName, undefined, '재연결되면 이름 스냅샷은 지워져야 함');
+  assert.strictEqual(trashedTxn.updatedAt, 'test-updatedAt', '트래시 항목도 touch()되어야 mergeCollection 병합 불변식을 지킴');
+});
+test('relinkDeletedAsset: 트래시(trashQtyLog)에 남은 이름 스냅샷도 재연결하고 touch한다', () => {
+  const trashedQ = { id: 'tq1', assetId: 'gone', assetName: '카카오뱅크', date: '2026-01-01', prevQty: 10, newQty: 5, _deletedAt: Date.now() };
+  sandbox.DB = {
+    deletedType: { '카카오뱅크': 'cash' },
+    txns: [], recurrences: [], assetQtyLog: [],
+    trashTxns: [], trashRecs: [], trashQtyLog: [trashedQ],
+    assets: [],
+  };
+  const newCash = { id: 'new1', name: '카카오뱅크', type: 'cash' };
+  sandbox.relinkDeletedAsset(newCash);
+  assert.strictEqual(trashedQ.assetId, 'new1', '트래시에 있는 수량기록도 재연결되어야 함');
+  assert.strictEqual(trashedQ.assetName, undefined, '재연결되면 이름 스냅샷은 지워져야 함');
+  assert.strictEqual(trashedQ.updatedAt, 'test-updatedAt', '트래시 항목도 touch()되어야 함');
+});
+test('relinkDeletedAsset: 트래시(trashRecs)에 남은 반복거래도 재연결하고, _autoDeactivatedByAssetDelete가 양쪽 재연결되면 트래시 안에서도 자동 재활성화한다', () => {
+  const trashedRec = { id: 'tr1', fromAssetId: 'gone', fromAssetName: '카카오뱅크', toAssetId: null,
+    active: false, _autoDeactivatedByAssetDelete: true, _deletedAt: Date.now() };
+  sandbox.DB = {
+    deletedType: { '카카오뱅크': 'cash' },
+    txns: [], recurrences: [], assetQtyLog: [],
+    trashTxns: [], trashRecs: [trashedRec], trashQtyLog: [],
+    assets: [],
+  };
+  const newCash = { id: 'new1', name: '카카오뱅크', type: 'cash' };
+  sandbox.relinkDeletedAsset(newCash);
+  assert.strictEqual(trashedRec.fromAssetId, 'new1', '트래시에 있는 반복거래도 재연결되어야 함');
+  assert.strictEqual(trashedRec.active, true, '양쪽 참조가 모두 재연결됐으니 트래시에 있는 동안에도 미리 재활성화되어야 함(나중에 restoreTrashRec의 자산생존가드도 자연히 통과)');
+  assert.strictEqual(trashedRec._autoDeactivatedByAssetDelete, undefined, '복원 후에는 원인 플래그를 지워야 함');
+});
+test('relinkDeletedAsset: 트래시(trashRecs)의 이체형 반복거래는 한쪽만 재연결됐을 땐 아직 활성화하지 않는다', () => {
+  const trashedRec = { id: 'tr1', fromAssetId: 'gone1', fromAssetName: '카카오뱅크', toAssetId: 'gone2', toAssetName: '저축은행',
+    active: false, _autoDeactivatedByAssetDelete: true, _deletedAt: Date.now() };
+  sandbox.DB = {
+    deletedType: { '카카오뱅크': 'cash', '저축은행': 'cash' },
+    txns: [], recurrences: [], assetQtyLog: [],
+    trashTxns: [], trashRecs: [trashedRec], trashQtyLog: [],
+    assets: [],
+  };
+  const newCash = { id: 'new1', name: '카카오뱅크', type: 'cash' };
+  sandbox.relinkDeletedAsset(newCash);
+  assert.strictEqual(trashedRec.fromAssetId, 'new1', '카카오뱅크 쪽은 재연결되어야 함');
+  assert.strictEqual(trashedRec.toAssetName, '저축은행', '저축은행 쪽은 아직 재연결 전이라 스냅샷 이름이 남아있어야 함');
+  assert.strictEqual(trashedRec.active, false, '한쪽만 재연결됐을 땐 트래시 안에서도 아직 활성화하면 안 됨');
+});
 // askRelinkDeleted 자체는 saveAsset()의 재연동 분기 테스트(아래)가 스파이 스텁(sandbox.askRelinkDeleted)에
 // 의존하고 있어(FUNCTIONS로 실제 구현을 끌어오면 그 스텁을 덮어써 해당 테스트가 깨짐) 여기선 단위 테스트를
 // 추가하지 않는다 — index.html의 _amLink/_amFresh 내부 DB.assets.push(d) 두 곳에 touch(d)를 적용한 것은
@@ -7535,6 +7629,18 @@ test('snapshotAssetName: DB.assetQtyLog에도 fromAssetName/toAssetName과 동�
   const body = extractFunction('snapshotAssetName');
   assert.ok(/DB\.assetQtyLog\s*\|\|\s*\[\]\s*\)\.forEach/.test(body), 'DB.assetQtyLog를 순회하는 코드가 빠짐');
   assert.ok(/q\.assetId===id\)\{q\.assetName=nm;touch\(q\);\}/.test(body), 'q.assetName=nm 대입(또는 touch(q))이 빠짐');
+});
+// snapshotAssetName도 (위와 동일한 이유로) 직접 실행 테스트를 못 하므로, '최근 삭제함'
+// (trashTxns/trashRecs/trashQtyLog)에도 live 배열과 동일하게 이름 스냅샷을 남기는 forEach가
+// 소스에서 빠지지 않았는지 텍스트 수준에서 가드한다 — 이게 빠지면 자산이 트래시에 있는 동안
+// 참조하는 다른 자산이 삭제될 때 트래시 목록의 이름 표시가 '—'로 영구히 빠진다(app-evolve cycle326).
+test('snapshotAssetName: DB.trashTxns/DB.trashRecs/DB.trashQtyLog에도 동일한 이름 스냅샷을 남긴다', () => {
+  const body = extractFunction('snapshotAssetName');
+  assert.ok(/DB\.trashTxns\s*\|\|\s*\[\]\s*\)\.forEach/.test(body), 'DB.trashTxns를 순회하는 코드가 빠짐');
+  assert.ok(/DB\.trashRecs\s*\|\|\s*\[\]\s*\)\.forEach/.test(body), 'DB.trashRecs를 순회하는 코드가 빠짐');
+  assert.ok(/DB\.trashQtyLog\s*\|\|\s*\[\]\s*\)\.forEach/.test(body), 'DB.trashQtyLog를 순회하는 코드가 빠짐');
+  assert.ok(/t\.fromAssetId===id\)\{t\.fromAssetName=nm;touch\(t\);\}/.test(body), 'trashTxns의 fromAssetName=nm 대입이 빠짐');
+  assert.ok(/r\.fromAssetId===id\)\{r\.fromAssetName=nm;touch\(r\);\}/.test(body), 'trashRecs의 fromAssetName=nm 대입이 빠짐');
 });
 test('saveAsset: 새 자산 등록 시 삭제된 동명 자산의 type까지 같아야 재연동 시트를 띄운다', () => {
   sandbox.DB = {
@@ -12127,6 +12233,27 @@ test('unsnapshotAssetName: assetQtyLog에 남은 이름 스냅샷도 txns/recurr
   assert.strictEqual(q1.updatedAt, 'test-updatedAt', 'touch()로 updatedAt이 갱신되어야 함(mergeCollection 병합 불변식)');
   assert.strictEqual(q2.assetName, '다른자산', 'assetId가 다른 기록은 건드리면 안 됨');
   assert.strictEqual(q2.updatedAt, undefined, 'assetId가 다른 기록은 touch()되면 안 됨');
+});
+// app-evolve cycle326: snapshotAssetName의 새 트래시 forEach(위 텍스트 가드 테스트)와 대칭으로,
+// unsnapshotAssetName도 '최근 삭제함'(trashTxns/trashRecs/trashQtyLog)에 남은 이름 스냅샷을
+// live 배열과 동일하게 지워야 한다 — 삭제 undo나 restoreTrashAsset으로 자산 id가 다시 살아나면
+// 트래시에 남아있던 스냅샷 이름도 함께 지워야 id/name 이중상태가 생기지 않는다.
+test('unsnapshotAssetName: 트래시(trashTxns/trashRecs/trashQtyLog)에 남은 이름 스냅샷도 지우고 touch한다', () => {
+  const tt = { id: 'tt1', fromAssetId: 'a1', fromAssetName: '통장1', toAssetId: null, _deletedAt: Date.now() };
+  const trOther = { id: 'tr0', fromAssetId: 'other', fromAssetName: '다른자산', toAssetId: null, _deletedAt: Date.now() };
+  const tr = { id: 'tr1', fromAssetId: null, toAssetId: 'a1', toAssetName: '통장1', active: false, _deletedAt: Date.now() };
+  const tq = { id: 'tq1', assetId: 'a1', assetName: '통장1', date: '2026-01-01', prevQty: 10, newQty: 5, _deletedAt: Date.now() };
+  sandbox.DB = { txns: [], recurrences: [], assetQtyLog: [],
+    trashTxns: [tt], trashRecs: [trOther, tr], trashQtyLog: [tq] };
+  sandbox.unsnapshotAssetName('a1');
+  assert.strictEqual(tt.fromAssetName, undefined, '트래시 거래의 이름 스냅샷을 지워야 함');
+  assert.strictEqual(tt.updatedAt, 'test-updatedAt', '트래시 거래도 touch()되어야 함');
+  assert.strictEqual(tr.toAssetName, undefined, '트래시 반복거래의 이름 스냅샷을 지워야 함');
+  assert.strictEqual(tr.updatedAt, 'test-updatedAt', '트래시 반복거래도 touch()되어야 함');
+  assert.strictEqual(trOther.fromAssetName, '다른자산', 'assetId가 다른 트래시 반복거래는 건드리면 안 됨');
+  assert.strictEqual(trOther.updatedAt, undefined, 'assetId가 다른 트래시 반복거래는 touch()되면 안 됨');
+  assert.strictEqual(tq.assetName, undefined, '트래시 수량기록의 이름 스냅샷을 지워야 함');
+  assert.strictEqual(tq.updatedAt, 'test-updatedAt', '트래시 수량기록도 touch()되어야 함');
 });
 test('deleteAssetsUndo: 삭제 시 DB.deletedIds에 시각을 남기고, undo하면 정확히 지운다(app-evolve cycle89)', () => {
   sandbox.TWi = -1;
