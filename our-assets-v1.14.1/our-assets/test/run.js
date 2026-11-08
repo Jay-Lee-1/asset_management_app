@@ -10110,6 +10110,39 @@ test('restoreTrashCat: 같은 이름의 카테고리가 트래시 복구 전에 
   assert.strictEqual(sandbox.DB.catIcon[sandbox.catKey('expense', '커피')], 'coffee');
   assert.strictEqual(rec.active, true);
 });
+// restoreTrashRec(11956-11965행)과 동일한 버그 클래스: activeRecsForCat도 activeRecsForAssets처럼
+// r.active인 반복거래만 찾으므로, 카테고리 삭제로 이미 비활성화된 반복거래의 연결 자산이 트래시
+// 기간 중 삭제돼도 deleteAssetsUndo는 그 사실을 전혀 모른다 — restoreTrashCat이 자체적으로 자산
+// 생존을 재검증해야 한다(app-evolve cycle326 develop).
+test('restoreTrashCat: 플래그 남은 반복거래의 연결 자산(fromAssetId)이 더 이상 없으면 비활성 상태로 복구하고 _autoDeactivatedByAssetDelete를 남긴다', () => {
+  const rec = { id: 'r1', type: 'expense', category: '커피', amount: 1000, active: false, fromAssetId: 'gone', toAssetId: null, _autoDeactivatedByCatDelete: true };
+  const g = { id: 'cat:expense:커피', type: 'expense', name: '커피', deactivatedRecIds: ['r1'], _deletedAt: 1 };
+  sandbox.DB = {
+    categories: { expense: ['식비'] }, catIcon: {}, catVar: {}, budgetHistory: {}, catBudgetRollover: {}, assets: [],
+    recurrences: [rec], trashCats: [g], deletedIds: {},
+  };
+  sandbox.lastToast = null;
+  sandbox.restoreTrashCat('cat:expense:커피');
+  assert.strictEqual(rec.active, false, '존재하지 않는 자산을 가리키면 활성 복구하면 안 됨(유령 반복거래 생성 방지)');
+  assert.strictEqual(rec._autoDeactivatedByCatDelete, undefined, '원인 플래그는 자산삭제 쪽으로 넘어가야 함');
+  assert.strictEqual(rec._autoDeactivatedByAssetDelete, true, 'restoreTrashAsset이 그 자산이 나중에 돌아오면 자동으로 되살릴 수 있게 원인을 남겨야 함');
+  assert.ok(sandbox.lastToast.includes('연결된 자산이 없어'), '비활성으로 남았음을 토스트로 알려야 함');
+});
+test('restoreTrashCat: toAssetId(이체·입금 쪽) 자산이 없어도 비활성 복구하고, 살아있는 반복거래는 정상 재활성화해 둘을 토스트에서 구분한다', () => {
+  const gone = { id: 'r1', type: 'saving', category: '저축', amount: 1000, active: false, fromAssetId: 'a1', toAssetId: 'gone', _autoDeactivatedByCatDelete: true };
+  const alive = { id: 'r2', type: 'saving', category: '저축', amount: 2000, active: false, fromAssetId: 'a1', toAssetId: null, _autoDeactivatedByCatDelete: true };
+  const g = { id: 'cat:saving:저축', type: 'saving', name: '저축', deactivatedRecIds: ['r1', 'r2'], _deletedAt: 1 };
+  sandbox.DB = {
+    categories: { saving: ['비상금'] }, catIcon: {}, catVar: {}, budgetHistory: {}, catBudgetRollover: {}, assets: [{ id: 'a1', name: '통장1' }],
+    recurrences: [gone, alive], trashCats: [g], deletedIds: {},
+  };
+  sandbox.restoreTrashCat('cat:saving:저축');
+  assert.strictEqual(gone.active, false);
+  assert.strictEqual(gone._autoDeactivatedByAssetDelete, true);
+  assert.strictEqual(alive.active, true, '연결 자산이 모두 살아있는 반복거래는 그대로 재활성화되어야 함');
+  assert.strictEqual(alive._autoDeactivatedByCatDelete, undefined);
+  assert.ok(sandbox.lastToast.includes('반복거래 1개 재활성화') && sandbox.lastToast.includes('1개는 연결된 자산이 없어'), '재활성화 개수와 중지 유지 개수를 모두 알려야 함');
+});
 test('restoreTrashCat: 존재하지 않는 id면 아무것도 바꾸지 않는다', () => {
   sandbox.DB = { categories: { expense: ['식비'] }, recurrences: [], trashCats: [{ id: 'cat:expense:커피', type: 'expense', name: '커피', deactivatedRecIds: [] }] };
   sandbox.restoreTrashCat('없는id');

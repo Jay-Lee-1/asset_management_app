@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.392';
+const APP_VERSION='1.47.393';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -11884,8 +11884,13 @@ function openCatTrashList(){
  * 건너뛰되, 아이콘/변동비/예산/이월설정과 반복거래 재활성화는 doDeleteCat의 즉시 undo 콜백과
  * 동일하게 그대로 적용한다(이미 doDeleteCat/addCat이 이 이름의 이전 catIcon/catVar를 지워뒀으므로
  * 덮어써도 유령 설정이 남진 않음). 반복거래는 지금도 _autoDeactivatedByCatDelete 플래그가 남아있는
- * 것만 재활성화해, 트래시 기간 중 사용자가 직접 멈춰둔 반복거래를 덮어쓰지 않는다(app-evolve
- * cycle325 critique/advance, restoreTrashRec의 자산생존가드와 동일한 '복구 시점 재검증' 원칙). */
+ * 것만 재활성화해, 트래시 기간 중 사용자가 직접 멈춰둔 반복거래를 덮어쓰지 않는다. activeRecsForCat/
+ * activeRecsForAssets 둘 다 r.active인 반복거래만 찾으므로, 카테고리 삭제로 이미 비활성화된(=이
+ * 함수가 다루는) 반복거래는 그 사이에 fromAssetId/toAssetId 자산이 삭제돼도 activeRecsForAssets에
+ * 걸리지 않아 deleteAssetsUndo가 전혀 모르고 지나간다 — restoreTrashRec(11805-11807행)이 반복거래
+ * 자체를 트래시에서 복구할 때 쓰는 것과 동일한 자산생존가드를 여기서도 적용해, 죽은 자산을 가리키는
+ * 채로 재활성화되는 걸 막는다(app-evolve cycle326 develop; cycle325 critique/advance가 "동일한 원칙"
+ * 이라고만 적어뒀을 뿐 실제로는 재검증하지 않던 공백). */
 function restoreTrashCat(id){
  if(twGuard())return;
  const g=(DB.trashCats||[]).find(x=>x.id===id);if(!g)return;
@@ -11901,8 +11906,20 @@ function restoreTrashCat(id){
  if(g.wasRollover)DB.catBudgetRollover[catKey('expense',c)]=true;
  const recIds=new Set(g.deactivatedRecIds||[]);
  const recs=DB.recurrences.filter(r=>r._autoDeactivatedByCatDelete&&recIds.has(r.id));
- recs.forEach(r=>{r.active=true;delete r._autoDeactivatedByCatDelete});
- touchSave(...recs);openCatTrashList();renderCurrent();toast('되돌렸어요'+(recs.length?` · 반복거래 ${recs.length}개 재활성화`:''));
+ const live=aid=>DB.assets.some(x=>x.id===aid);
+ let assetBlocked=0;
+ recs.forEach(r=>{
+  const assetsGone=(r.fromAssetId&&!live(r.fromAssetId))||(r.toAssetId&&!live(r.toAssetId));
+  delete r._autoDeactivatedByCatDelete;
+  if(assetsGone){r.active=false;r._autoDeactivatedByAssetDelete=true;assetBlocked++}
+  else r.active=true;
+ });
+ touchSave(...recs);openCatTrashList();renderCurrent();
+ const reactivated=recs.length-assetBlocked;
+ let msg='되돌렸어요';
+ if(reactivated)msg+=` · 반복거래 ${reactivated}개 재활성화`;
+ if(assetBlocked)msg+=` · ${assetBlocked}개는 연결된 자산이 없어 계속 중지`;
+ toast(msg);
 }
 window.addEventListener('resize',()=>requestAnimationFrame(fitAll));
 
