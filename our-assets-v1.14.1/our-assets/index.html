@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.389';
+const APP_VERSION='1.47.390';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -11740,12 +11740,23 @@ function openGoalTrashList(){
   ${items.length?items.map(row).join(''):`<div class="empty"><div class="ei">${svg('trash')}</div><div class="et">삭제한 목표가 없어요</div></div>`}
   <div style="height:12px"></div><button class="btn btn-primary" onclick="closeSheet()">닫기</button>`);
 }
+/* asset형 목표는 "owner는 항상 연결 자산의 owner와 같다"는 불변식을 doBulkOwnerMove(11595행)·
+ * saveAsset(5108행)·mergeAssetInto(4609행)가 지키는데, 이 세 군데 모두 DB.goals만 훑고 DB.trashGoals는
+ * 건드리지 않는다(트래시에 있는 동안은 화면에 보이지 않아 당장 맞출 필요가 없으므로 의도된 생략).
+ * 그 사이 연결 자산의 owner가 바뀌면 트래시에 보관된 owner는 그대로 낡은 값으로 남고,
+ * restoreTrashGoal이 그 스냅샷을 검증 없이 되돌리면 복구된 목표가 saveGoal(3948행)/
+ * goalOwnerTargets(logic.js, "asset형은 대상에서 뺀다")가 전제하는 불변식을 깨고 돌아온다 —
+ * 연결 자산은 이미 다른 귀속인데 목표만 옛 귀속 캐러셀에 남는 어긋남이 생긴다. 자산이 여전히
+ * 있으면 saveGoal과 동일하게 그 자산의 현재 owner로 다시 맞추고, 자산이 이미 사라졌으면
+ * goalLinkedAssetGone()이 일반 경로에서처럼 중립 처리하므로 저장된 owner를 그대로 둔다
+ * (app-evolve cycle324 develop). */
 function restoreTrashGoal(id){
  if(twGuard())return;
  const g=(DB.trashGoals||[]).find(x=>x.id===id);if(!g)return;
  DB.trashGoals=(DB.trashGoals||[]).filter(x=>x.id!==id);
  DB.deletedIds=DB.deletedIds||{};delete DB.deletedIds[id];
  const goal=Object.assign({},g);delete goal._deletedAt;
+ if(goal.type==='asset'){const a=(DB.assets||[]).find(x=>x.id===goal.linkedAssetId);if(a)goal.owner=a.owner;}
  DB.goals.push(goal);touchSave(goal);openGoalTrashList();renderCurrent();toast('되돌렸어요');
 }
 window.addEventListener('resize',()=>requestAnimationFrame(fitAll));

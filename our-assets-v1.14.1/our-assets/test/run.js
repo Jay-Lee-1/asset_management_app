@@ -5039,6 +5039,27 @@ test('restoreTrashGoal: 트래시 항목을 DB.goals로 되돌리고 트래시·
   assert.strictEqual(restored._deletedAt, undefined, '복구된 목표에는 트래시 전용 필드가 남으면 안 됨');
   assert.strictEqual(restored.updatedAt, 'test-updatedAt', '복구된 목표는 touch()되어야 함(mergeCollection 병합 불변식)');
 });
+test('restoreTrashGoal: asset형 목표는 트래시에 있는 동안 연결 자산의 owner가 바뀌었으면 복구 시점의 현재 owner로 다시 맞춘다', () => {
+  const g = { id: 'g1', name: '내 차', type: 'asset', linkedAssetId: 'a1', owner: '아빠', _deletedAt: 1 };
+  sandbox.DB = { goals: [], trashGoals: [g], assets: [{ id: 'a1', owner: '엄마' }], deletedIds: { g1: 1 } };
+  sandbox.restoreTrashGoal('g1');
+  const restored = sandbox.DB.goals.find(x => x.id === 'g1');
+  assert.strictEqual(restored.owner, '엄마', 'doBulkOwnerMove/saveAsset가 트래시에 있는 동안 못 맞춘 owner를 복구 시점에 연결 자산 기준으로 다시 맞춰야 함');
+});
+test('restoreTrashGoal: 연결 자산이 이미 영구 삭제됐으면(goalLinkedAssetGone) 트래시에 저장된 owner를 그대로 둔다', () => {
+  const g = { id: 'g1', name: '내 차', type: 'asset', linkedAssetId: '없는자산', owner: '아빠', _deletedAt: 1 };
+  sandbox.DB = { goals: [], trashGoals: [g], assets: [], deletedIds: { g1: 1 } };
+  sandbox.restoreTrashGoal('g1');
+  const restored = sandbox.DB.goals.find(x => x.id === 'g1');
+  assert.strictEqual(restored.owner, '아빠', '맞춰줄 자산이 없으니 기존 owner를 건드리지 않아야 함');
+});
+test('restoreTrashGoal: networth형 목표는 연결 자산이 없으니 owner를 건드리지 않는다', () => {
+  const g = { id: 'g1', name: '비상금', type: 'networth', owner: '아빠', _deletedAt: 1 };
+  sandbox.DB = { goals: [], trashGoals: [g], assets: [{ id: 'a1', owner: '엄마' }], deletedIds: { g1: 1 } };
+  sandbox.restoreTrashGoal('g1');
+  const restored = sandbox.DB.goals.find(x => x.id === 'g1');
+  assert.strictEqual(restored.owner, '아빠');
+});
 test('restoreTrashGoal: 존재하지 않는 id면 아무것도 바꾸지 않는다', () => {
   sandbox.DB = { goals: [], trashGoals: [{ id: 'g1', name: '비상금', targetAmount: 5000000, targetDate: null }], deletedIds: {} };
   sandbox.restoreTrashGoal('없는id');
