@@ -1885,9 +1885,13 @@ function parseShortcutAction(search){
  * 사용자에게 보여주는 코드가 전혀 없어 devtools 없이는 접근 자체가 불가능했다 — 저장소 손상이라는
  * 가장 치명적인 장애 경로에서 유일한 복구 수단이 조용히 묻혀 있던 공백이다(app-evolve cycle323
  * critique/advance). 이 두 함수는 localStorage 키 나열(Object.keys(localStorage) 등)을 index.html
- * 쪽에서 받아 판정만 순수하게 한다 — localStorage 자체를 여기서 직접 읽지 않아야 테스트 가능하다. */
-function findCorruptBackupKeys(allKeys,dataKeyPrefix){
- const prefix=dataKeyPrefix+'__corrupt_';
+ * 쪽에서 받아 판정만 순수하게 한다 — localStorage 자체를 여기서 직접 읽지 않아야 테스트 가능하다.
+ * suffix(기본 '__corrupt_')는 doResetAll()/doDeleteAccount()가 wipe 직전에 남기는
+ * '__preReset_'/'__preDeleteAccount_' 백업 키도 같은 판정 로직으로 찾을 수 있도록 일반화한
+ * 것(app-evolve cycle328 critique/advance) — 기존 두 호출 인자 호출은 그대로 '__corrupt_'로
+ * 동작해 하위호환된다. */
+function findCorruptBackupKeys(allKeys,dataKeyPrefix,suffix){
+ const prefix=dataKeyPrefix+(suffix||'__corrupt_');
  return (allKeys||[])
   .filter(k=>typeof k==='string'&&k.startsWith(prefix))
   .map(k=>({key:k,ts:+k.slice(prefix.length)||0}))

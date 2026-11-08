@@ -1,19 +1,8 @@
 {
-  "cycle": 328,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "전체초기화/계정탈퇴가 DB wipe를 localStorage에 먼저 쓰고 메모리 클로저 6초에만 의존 — 탭 종료 시 전체 데이터 영구 소실",
-    "why": "doResetAll(index.html:13015-13018)/doDeleteAccount(13026-13045)가 emptyDB()를 즉시 save()로 localStorage에 커밋한 뒤 복구를 in-memory snapshot 변수 하나와 6초 undoToast에만 맡긴다. 그 사이 탭 종료/크래시/백그라운드 강제종료가 나면 __corrupt_*(cycle323)처럼 persisted backup조차 없이 계정 전체 데이터(모든 자산·거래·반복·목표·설정)가 완전히 사라진다 — 지금까지 고친 트래시 7종(단일 레코드 보호)보다 훨씬 큰 blast radius를 가진, 사용자 자신의 두 번의 탭(확인→6초 창)으로 트리거되는 전체 계정 소실 경로.",
-    "approach": "doResetAll/doDeleteAccount가 wipe 직전(DB=emptyDB() 이전) 원본 DB를 dataKey()+'__preReset_'+Date.now() / '__preDeleteAccount_'+Date.now() localStorage 키로 저장(cycle323의 __corrupt_* 패턴 그대로 재사용). scanCorruptBackupKeys류를 이 두 접두사도 함께 스캔하도록 확장(또는 findCorruptBackupKeys의 prefix 매칭을 일반화)해 homeAlerts()/homeAlertCard() 같은 알림 카드 패밀리로 노출, downloadCorruptBackup()과 동일한 내보내기/닫기 흐름 재사용. grace 타이머(resetPushT/deleteT)가 성공적으로 끝나면(되돌리지 않았을 때) 그 백업 키를 자동 삭제(의도된 초기화가 끝난 뒤에는 유령 백업으로 남기지 않음), undoToast로 되돌리면 즉시 삭제. 테스트는 __corrupt_* 테스트 블록을 미러링: wipe 시 백업 블롭이 동기적으로 쓰여지는지, grace 완료 시 삭제되는지, undo 시 삭제되는지, 스캔 함수가 인식하는지."
-  },
+  "cycle": 329,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 323,
-      "phase": "critique",
-      "timestamp": "2026-11-08T02:10:00.000Z",
-      "summary": "서브에이전트로 앱 전체를 재조사(cycle300-323 처리/보류/기각 항목 전부 제외 지시: twGuard 스윕·전역검색·예산이월·연말결산·owner/category/asset merge 전부·nwHistory byType/자산배분추이 카드·목표자산배분+리밸런싱·CSV날짜·이체 및 반복 중복감지·카테고리별 알림뮤트·공동지출 정산(shared/settle) 전체와 배지·토글 전파·investGainLossCard 유형별 분해·목표/반복/통합검색 검색창 디바운스·PIN 화면잠금 고지·목표비중 알림뮤트 토글·saveGoal targetDate 범위가드·거래/자산/반복/목표 삭제 trash 복구 4종 전체·restoreTrashRec 자산생존가드·searchTerms/matchQueryTerms·shiftWeekend 단위테스트·openTrashList 분할거래 카테고리 라벨은 명시적으로 제외; FX 환차익 분리·투자손익 추이차트·CSV shared/photo 필드·배당/이자/할부/귀속별 예산/다인 정산/CSV·반복 분할거래·실시간 저장소 암호화·반복 건별 skip·백업 리마인더·CDN SRI 해시·홈 대시보드 카드 순서변경/숨기기·CSV import 견고성·부채/대출 추적·백그라운드 푸시 한계·owners/categories 삭제 trash(보류 유지)는 기각/보류 이력으로 재확인). 발견: load() 부팅 시 JSON.parse/migrate() 실패로 DB가 손상되면 원본 손상 문자열을 dataKey()+'__corrupt_'+Date.now() 키로 localStorage에 보관만 해두고(index.html) 그 키를 읽거나 나열하거나 다운로드시키는 코드가 전체 코드베이스(index.html+test/run.js)에 단 하나도 없음을 grep으로 확인 — 최근 수동 백업이 없는 사용자에게는 devtools 없이는 접근 불가능한, 가장 치명적인 장애 경로(저장소 손상)에서의 사실상 영구적·조용한 전체 데이터 소실. pending_advance_plan에 구체 계획 저장(logic.js에 findCorruptBackupKeys/pruneOldCorruptKeys 순수함수 추가, load()/boot()에서 매 부팅마다 감지해 homeAlerts()의 기존 persist/cloudSyncError 알림 패턴으로 '손상된 데이터 발견·다운로드' 카드 노출, backupFile() 내보내기 경로 재사용해 다운로드+닫기(키 삭제) 제공, 자동 부분복구는 범위 제외, 테스트는 두 순수함수 직접 단위테스트). 기각/보류 후보 3개(recScheduleSameSlot 직접 단위테스트-malformed-startDate 분기만 미커버라 저위험·보류, 클라우드 동기화 push 실패 UX-이미 토스트+영구 알림+낙관적 동시성 재시도 완비, 차트/시각화 접근성-nwHistoryCard 등 이미 role=img+키보드 피크 내비게이션과 바코드 카드류의 텍스트 행 노출 완비). 코드 변경 없음(state.json만 커밋, pending_advance_plan 신설에 따라 phase를 advance로 회전).",
-      "commit": null
-    },
     {
       "cycle": 323,
       "phase": "advance",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-08T22:09:37.005Z",
       "summary": "서브에이전트로 앱 전체를 재조사(cycle300-328 처리/보류/기각 항목 전부 제외 지시: twGuard 스윕·전역검색·예산이월·연말결산·owner/category/asset merge 전부·nwHistory byType/자산배분추이 카드·목표자산배분+리밸런싱·CSV날짜·이체 및 반복 중복감지·카테고리별 알림뮤트·공동지출 정산(shared/settle) 전체와 배지·토글 전파·investGainLossCard 유형별 분해·목표/반복/통합검색 검색창 디바운스·PIN 화면잠금 고지·목표비중 알림뮤트 토글·saveGoal targetDate 범위가드·searchTerms/matchQueryTerms·shiftWeekend·recScheduleSameSlot 단위테스트·openTrashList 분할거래 카테고리 라벨·__corrupt_* 손상백업 노출·거래/자산/반복/목표/수량기록/카테고리/문의메모 삭제 trash 7종 전체와 그 복구시점 재검증 가드들(자산생존가드·owner재동기화·트래시 순회하는 snapshotAssetName류)·귀속(owners) 삭제 trash 보류·6개 트래시 화면 공통 헬퍼 리팩터링 보류·git 원격 브랜치 정리 제외·차트접근성/XSS이스케이핑/포커스트랩 완비 확인은 전부 제외; FX 환차익 분리·투자손익 추이차트·CSV shared/photo 필드·배당/이자/할부/귀속별 예산/다인 정산/CSV·반복 분할거래·실시간 저장소 암호화·반복 건별 skip·백업 리마인더·CDN SRI 해시·홈 대시보드 카드 순서변경/숨기기·CSV import 견고성·부채/대출 추적·백그라운드 푸시 한계는 기각 이력으로 재확인). 발견: doResetAll(13015-13018행)/doDeleteAccount(13026-13045행)가 wipe 직전 백업을 전혀 남기지 않고 emptyDB()를 즉시 save()로 localStorage에 커밋한 뒤, 복구를 const snapshot=DB 메모리 클로저 변수 하나와 6초짜리 undoToast grace window에만 맡기는 것을 직접 라인 단위로 확인 — 그 사이 탭 종료/크래시/OS가 백그라운드 탭을 강제종료하면 __corrupt_*(cycle323)조차 남기지 않고 계정 전체(모든 자산·거래·반복·목표·카테고리·설정)가 흔적 없이 영구 소실된다. 지금까지 완성한 트래시 7종(단일 레코드 보호)보다 blast radius가 훨씬 큰, 사용자 자신의 의도된 두 번의 탭(확인→6초)으로 트리거되는 전체 계정 데이터 소실 경로이며 cycle323 critique가 지적한 \"저장소 손상이라는 가장 치명적인 장애 경로\"와 동급 또는 그 이상의 심각도. 기각/보류 후보: delBudget(7776-7788행, 예산액 재입력이 trivial해 저위험)·owner/category/asset merge 계열 undoToast(이미 전체 스냅샷을 closure에 담아 복구하는 merge 전용 패턴이라 새 엔티티 아님)·git 원격 브랜치 정리(여전히 파괴적 작업이라 제외). pending_advance_plan에 cycle323 __corrupt_* 패턴을 재사용하는 구체 계획 저장(wipe 직전 __preReset_*/__preDeleteAccount_* localStorage 키로 DB 백업, 홈 알림 카드·다운로드/닫기 흐름 재사용, grace 성공 완료 시 자동삭제·undo 시 즉시삭제). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 328,
+      "phase": "advance",
+      "timestamp": "2026-11-08T23:20:44.427Z",
+      "summary": "critique(cycle328) 계획대로 doResetAll()/doDeleteAccount()의 wipe 직전 전체 계정 데이터 소실 경로를 막았다. __corrupt_*(cycle323)와 동일한 최선노력 백업 패턴을 재사용: wipe 직전(emptyDB() 이전) DB 전체를 dataKey()+\"__preReset_\"+Date.now() / \"__preDeleteAccount_\"+Date.now() localStorage 키로 저장(try/catch 최선노력). logic.js의 findCorruptBackupKeys에 suffix 파라미터를 추가해 일반화(기본값 \"__corrupt_\"로 하위호환, suffix 지정 시 __preReset_/__preDeleteAccount_도 동일 판정 로직으로 탐지) — pruneOldCorruptKeys는 {key,ts} 모양만 가정해 이미 범용이라 그대로 재사용. index.html: 전역 WIPE_BACKUP_KEYS([]) 추가, scanWipeBackupKeys()(두 suffix를 각각 findCorruptBackupKeys로 찾아 kind 태그 후 합쳐 정렬, CORRUPT_BACKUP_MAX_AGE_MS로 오래된 키 자동 정리) 신설 후 startApp()의 scanCorruptBackupKeys() 바로 뒤에 배선. homeAlerts()에 WIPE_BACKUP_KEYS 기반 wipeBackup 알림(count+mostRecentKind) 추가, homeAlertCard()에 해당 카드(초기화/탈퇴 구분 문구) 추가. 백업이 이미 유효한 전체 DB JSON이라는 점을 살려 download가 아니라 1클릭 복구를 제공: restoreWipeBackup()이 proceedWithBackupObj()(일반 백업파일 복원과 동일한 확인시트+6초 undo 경로)를 재사용하도록 onDone 콜백 파라미터를 proceedWithBackupObj에 추가(복원이 실제로 확정된 뒤에만 호출 — 확인 시트를 취소하면 백업 유지, 기존 두 호출부(doImportPinSubmit/importFile)는 인자 그대로 1개만 넘겨 영향 없음). doResetAll/doDeleteAccount는 grace 타이머(resetPushT/deleteT)가 되돌림 없이 끝나거나 undoToast로 되돌리면(둘 다 더 필요 없어진 시점) 즉시 백업 키를 지운다 — 정상 흐름에서는 WIPE_BACKUP_KEYS가 거의 항상 비어있고, 탭 종료/크래시로 grace가 못 끝난 경우에만 다음 부팅에서 노출된다. 테스트: findCorruptBackupKeys suffix 확장(신규 suffix 필터링+정렬, suffix 생략 시 하위호환, 2건) + homeAlerts wipeBackup 카드(count/mostRecentKind, 1건) + proceedWithBackupObj onDone(복원 확정 후 호출/취소 시 미호출, onDone 없이 호출해도 안전, 2건) + doResetAll 실행형(백업 쓰기+grace 완료 시 삭제, 되돌리기 시 즉시 삭제, 2건) + doDeleteAccount 실행형(백업 쓰기+grace 완료 시 삭제, 되돌리기 시 즉시 삭제, 2건) = 9건 추가 — node test/run.js 3199->3208/3208 통과(과정에서 WIPE_BACKUP_KEYS 기본값을 sandbox에 깜빡 빠뜨려 homeAlerts 관련 기존 테스트 68건이 한꺼번에 ReferenceError로 깨지는 걸 발견해 CORRUPT_BACKUP_KEYS 옆에 추가해 해결, sanitizeBackup이 id&&type 없는 자산을 통째로 버린다는 점을 놓쳐 proceedWithBackupObj 테스트가 실패한 것도 자산에 type을 채워 해결). node --check logic.js/sw.js/test/run.js 통과, index.html은 <script> 블록 추출 후 개별 vm.Script 파싱으로 확인(기존과 동일한 1건의 사전 존재 오탐(block0, HTML 주석 텍스트 오인, cycle311부터 이어짐, git stash로 변경 전과 동일함을 대조)만 재확인). cycle323 critique가 지적한 \"저장소 손상과 동급 또는 그 이상\"의 심각도였던 전체 계정 데이터 소실 경로(사용자 자신의 두 번의 탭으로 트리거)를 해소하는 수정이라 APP_VERSION 1.47.397->1.47.398, sw.js CACHE v664->v665. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]
