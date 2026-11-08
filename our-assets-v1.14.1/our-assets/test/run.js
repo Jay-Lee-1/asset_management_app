@@ -242,7 +242,7 @@ const FUNCTIONS = [
   // app-evolve cycle273 advance) — assetBalCard/debtWhatIfUpdate 둘 다 debtWhatIfText 바로 뒤에
   // 이어붙여 호출하므로 같은 이유로 함께 올라가야 한다.
   'debtPayoffPtsFor', 'debtWhatIfText', 'debtAmortSuffix', 'debtWhatIfUpdate',
-  'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate', 'histQInput', 'histOwnerSel', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'openCatHistory', 'openIncomeCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter', 'histClearTypeFilter',
+  'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate', 'histQInput', 'histOwnerSel', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'openAssetQtyLogTrashList', 'restoreTrashQtyLog', 'openCatHistory', 'openIncomeCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter', 'histClearTypeFilter',
   'genSalt', 'pbkdf2Hash', 'dbEncryptKey', 'encryptDbBlob', 'decryptDbBlob', 'genRecoveryCode', 'normRecoveryCode', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer', 'openConfirmTransfer',
   // proceedWithBackupObj/openImportPinSheet는 PIN으로 암호화된 JSON 백업 복원(app-evolve
   // cycle289 advance)이 추가한 분기 — importFile 'change' 최상위 statement(아래 extractStatement로
@@ -6598,6 +6598,32 @@ test('mergeRemoteDataIntoLocal: 이미 DB.goals로 되살아난(병합 결과 li
   assert.ok(sandbox.DB.goals.some(g => g.id === 'g1'), '살아있는 목표는 그대로 유지되어야 함');
   assert.strictEqual(sandbox.DB.trashGoals.find(g => g.id === 'g1'), undefined, 'live인 목표가 트래시에 중복으로 남으면 안 됨');
 });
+test('mergeRemoteDataIntoLocal: DB.trashQtyLog도 DB.trashTxns/DB.trashAssets/DB.trashRecs/DB.trashGoals와 동일하게 신설 시점부터 병합 배선이 돼 있다(두 기기가 각자 지운 수량기록이 소실 없이 합쳐짐, app-evolve cycle324 critique/advance)', () => {
+  const now = Date.now();
+  sandbox.DB = minimalMergeDB({
+    trashQtyLog: [{ id: 'local-only', assetId: 'a1', prevQty: 5, newQty: 10, _deletedAt: now }],
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    trashQtyLog: [{ id: 'remote-only', assetId: 'a2', prevQty: 1, newQty: 2, _deletedAt: now }],
+    deletedIds: {},
+  });
+  const ids = sandbox.DB.trashQtyLog.map(q => q.id).sort();
+  assert.strictEqual(ids.length, 2);
+  assert.ok(ids.includes('local-only') && ids.includes('remote-only'));
+});
+test('mergeRemoteDataIntoLocal: 이미 DB.assetQtyLog로 되살아난(병합 결과 live인) 기록은 상대 기기의 트래시 사본과 합쳐져도 트래시에 남지 않는다', () => {
+  sandbox.DB = minimalMergeDB({
+    assetQtyLog: [{ id: 'q1', assetId: 'a1', prevQty: 5, newQty: 10, updatedAt: 200 }], // 로컬이 복구해 살아있음
+    trashQtyLog: [],
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    assetQtyLog: [],
+    trashQtyLog: [{ id: 'q1', assetId: 'a1', prevQty: 5, newQty: 10, _deletedAt: Date.now() }], // 원격은 아직 트래시에 들고 있음
+    deletedIds: {},
+  });
+  assert.ok(sandbox.DB.assetQtyLog.some(q => q.id === 'q1'), '살아있는 기록은 그대로 유지되어야 함');
+  assert.strictEqual(sandbox.DB.trashQtyLog.find(q => q.id === 'q1'), undefined, 'live인 기록이 트래시에 중복으로 남으면 안 됨');
+});
 
 /* ---------- txnsToCSV: 거래 내역 CSV 내보내기 ---------- */
 test('txnsToCSV: 빈 배열이면 BOM과 헤더만 있는 한 줄을 반환한다', () => {
@@ -9796,6 +9822,102 @@ test('delAssetQtyLog: undoToast의 되돌리기를 누르면 기록이 되살아
   assert.strictEqual(sandbox.DB.assetQtyLog[0].id, 'q1');
   assert.strictEqual(sandbox.DB.assetQtyLog[0].updatedAt, 'test-updatedAt');
   assert.strictEqual(sandbox.DB.deletedIds.q1, undefined, '되돌리면 톰스톤도 지워져야 함');
+});
+
+/* ---------- delAssetQtyLog → DB.trashQtyLog('최근 삭제함'): deleteTxnsUndo→DB.trashTxns(cycle319)/
+ * deleteAssetsUndo→DB.trashAssets(cycle320)/deleteRecsUndo→DB.trashRecs(cycle321)/
+ * deleteGoalsUndo→DB.trashGoals(cycle322)와 동일하게, undoToast의 6초 창을 넘기거나 앱을 닫았다
+ * 다시 열어도 삭제한 수량 변경/매도 기록을 복구할 수 있도록 전체 내용을 보관한다
+ * (app-evolve cycle324 critique/advance). ---------- */
+test('delAssetQtyLog: 확인을 누르면 삭제한 기록 전체 내용을 _deletedAt과 함께 DB.trashQtyLog에 담는다', () => {
+  sandbox.DB = { assets: [{ id: 'a1', type: 'stock', name: '삼성전자', stockCode: '005930', stockQty: 10 }],
+    assetQtyLog: [{ id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 5, newQty: 10, field: 'stockQty', updatedAt: 1, saleProceeds: 100000, realizedGain: 20000 }], deletedIds: {} };
+  sandbox.confirmSheetCalls = [];
+  const before = Date.now();
+  sandbox.delAssetQtyLog('q1');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.trashQtyLog.length, 1);
+  const trashed = sandbox.DB.trashQtyLog[0];
+  assert.strictEqual(trashed.id, 'q1');
+  assert.strictEqual(trashed.assetId, 'a1');
+  assert.strictEqual(trashed.saleProceeds, 100000);
+  assert.strictEqual(trashed.realizedGain, 20000);
+  assert.ok(typeof trashed._deletedAt === 'number' && trashed._deletedAt >= before, '삭제 시각이 함께 기록되어야 함');
+});
+test('delAssetQtyLog: undo 콜백을 부르면 DB.trashQtyLog에서도 해당 항목이 빠진다', () => {
+  sandbox.DB = { assets: [{ id: 'a1', type: 'stock', name: '삼성전자', stockCode: '005930', stockQty: 10 }],
+    assetQtyLog: [{ id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 5, newQty: 10, field: 'stockQty', updatedAt: 1 }], deletedIds: {} };
+  sandbox.confirmSheetCalls = [];
+  sandbox.lastUndo = null;
+  sandbox.delAssetQtyLog('q1');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.trashQtyLog.length, 1);
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.trashQtyLog.length, 0, '되돌리면 트래시에서도 제거되어야 함(복구된 기록이 트래시에 중복으로 남으면 안 됨)');
+});
+
+/* ---------- openAssetQtyLogTrashList/restoreTrashQtyLog: 메뉴 › '삭제한 수량기록' —
+ * openGoalTrashList/restoreTrashGoal(목표 쪽, cycle322)과 동일한 패턴으로 DB.trashQtyLog를
+ * 모든 자산에 걸쳐 보여주고 복구한다(app-evolve cycle324 critique/advance). ---------- */
+test('openAssetQtyLogTrashList: DB.trashQtyLog를 최근 삭제 순으로, 자산 이름과 함께 보여준다', () => {
+  sandbox.DB = {
+    assets: [{ id: 'a1', type: 'stock', name: '삼성전자', stockCode: '005930', stockQty: 10 }],
+    trashQtyLog: [
+      { id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 5, newQty: 10, field: 'stockQty', _deletedAt: 100 },
+      { id: 'q2', assetId: 'a1', date: '2026-02-01', prevQty: 10, newQty: 8, field: 'stockQty', _deletedAt: 200 },
+    ],
+  };
+  sandbox.lastSheetHtml = null;
+  sandbox.openAssetQtyLogTrashList();
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('삼성전자'));
+  assert.ok(html.indexOf('-2') < html.indexOf('+5'), '더 최근에 삭제된 기록(q2)이 먼저 나와야 함');
+});
+test('openAssetQtyLogTrashList: 자산이 이미 영구 삭제됐으면 assetName 스냅샷으로, 그마저 없으면 "삭제된 자산"으로 보여준다', () => {
+  sandbox.DB = {
+    assets: [],
+    trashQtyLog: [
+      { id: 'q1', assetId: '없는자산', assetName: '옛날계좌', date: '2026-01-01', prevQty: 5, newQty: 10, field: 'stockQty', _deletedAt: 100 },
+      { id: 'q2', assetId: '없는자산2', date: '2026-01-02', prevQty: 1, newQty: 2, field: 'stockQty', _deletedAt: 200 },
+    ],
+  };
+  sandbox.lastSheetHtml = null;
+  sandbox.openAssetQtyLogTrashList();
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.includes('옛날계좌'));
+  assert.ok(html.includes('삭제된 자산'));
+});
+test('openAssetQtyLogTrashList: 삭제한 기록이 없으면 빈 상태를 보여준다', () => {
+  sandbox.DB = { assets: [], trashQtyLog: [] };
+  sandbox.lastSheetHtml = null;
+  sandbox.openAssetQtyLogTrashList();
+  assert.ok(sandbox.lastSheetHtml.includes('삭제한 기록이 없어요'));
+});
+test('restoreTrashQtyLog: 트래시 항목을 DB.assetQtyLog로 되돌리고 트래시·톰스톤에서 제거한다', () => {
+  const q = { id: 'q1', assetId: 'a1', date: '2026-01-01', prevQty: 5, newQty: 10, field: 'stockQty', _deletedAt: 123 };
+  sandbox.DB = { assetQtyLog: [], trashQtyLog: [q], deletedIds: { q1: 123 } };
+  sandbox.restoreTrashQtyLog('q1');
+  assert.strictEqual(sandbox.DB.trashQtyLog.length, 0, '복구하면 트래시에서 빠져야 함');
+  assert.strictEqual(sandbox.DB.deletedIds.q1, undefined, '복구하면 톰스톤도 지워져야 함');
+  const restored = sandbox.DB.assetQtyLog.find(x => x.id === 'q1');
+  assert.ok(restored, '원래 id 그대로 DB.assetQtyLog에 복구되어야 함');
+  assert.strictEqual(restored.newQty, 10);
+  assert.strictEqual(restored._deletedAt, undefined, '복구된 기록에는 트래시 전용 필드가 남으면 안 됨');
+  assert.strictEqual(restored.updatedAt, 'test-updatedAt', '복구된 기록은 touch()되어야 함(mergeCollection 병합 불변식)');
+});
+test('restoreTrashQtyLog: 존재하지 않는 id면 아무것도 바꾸지 않는다', () => {
+  sandbox.DB = { assetQtyLog: [], trashQtyLog: [{ id: 'q1', assetId: 'a1', prevQty: 5, newQty: 10 }], deletedIds: {} };
+  sandbox.restoreTrashQtyLog('없는id');
+  assert.strictEqual(sandbox.DB.assetQtyLog.length, 0);
+  assert.strictEqual(sandbox.DB.trashQtyLog.length, 1);
+});
+test('restoreTrashQtyLog: 튜토리얼 모드 중에는 twGuard가 막아서 복구되지 않는다', () => {
+  sandbox.TWi = 0;
+  sandbox.DB = { assetQtyLog: [], trashQtyLog: [{ id: 'q1', assetId: 'a1', prevQty: 5, newQty: 10 }], deletedIds: { q1: 1 } };
+  sandbox.restoreTrashQtyLog('q1');
+  assert.strictEqual(sandbox.DB.assetQtyLog.length, 0);
+  assert.strictEqual(sandbox.DB.trashQtyLog.length, 1);
+  sandbox.TWi = -1;
 });
 
 /* ---------- esc: 저장형 XSS 방지 (asset/memo/category 등 사용자 입력값을 innerHTML에 넣기 전 이스케이프) ---------- */
@@ -15021,6 +15143,62 @@ test('sanitizeBackup: 트래시 목표도 trashTxns/trashAssets/trashRecs와 동
   assert.ok(fixedCount >= 1);
 });
 
+/* ---------- sanitizeBackup: DB.trashQtyLog(자산 수량 변경/매도 기록 삭제 '최근 삭제함', app-evolve
+ * cycle324 critique/advance)도 위 trashTxns/trashAssets/trashRecs/trashGoals와 동일한 이유로
+ * 검증돼야 한다. 다만 보관 형태가 assetQtyLog 레코드라, id&&assetId로 걸러내는 건 위 srcQtyLog
+ * 블록(9343행)과 동일한 전제(assetId 없는 레코드는 어느 자산의 기록인지 알 수 없어 무의미)다. ---------- */
+test('sanitizeBackup: id나 assetId 없는 트래시 수량기록 항목은 통째로 제거하고, trashQtyLog가 없거나 배열이 아니어도 터지지 않는다', () => {
+  const droppedNoId = sandbox.sanitizeBackup({ txns: [], assets: [], trashQtyLog: [{ assetId: 'a1', prevQty: 5, newQty: 10 }] });
+  assert.strictEqual(droppedNoId.data.trashQtyLog.length, 0);
+
+  const droppedNoAssetId = sandbox.sanitizeBackup({ txns: [], assets: [], trashQtyLog: [{ id: 'q1', prevQty: 5, newQty: 10 }] });
+  assert.strictEqual(droppedNoAssetId.data.trashQtyLog.length, 0);
+
+  const missing = sandbox.sanitizeBackup({ txns: [], assets: [] });
+  assert.strictEqual(missing.data.trashQtyLog.length, 0);
+  const notArray = sandbox.sanitizeBackup({ txns: [], assets: [], trashQtyLog: { oops: true } });
+  assert.strictEqual(notArray.data.trashQtyLog.length, 0);
+});
+test('sanitizeBackup: 트래시 수량기록의 prevQty/newQty/addedAmount/saleProceeds는 음수면 0으로 클램프하고, realizedGain은 손실(음수)을 그대로 보존한다', () => {
+  const { data } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    trashQtyLog: [{ id: 'q1', assetId: 'a1', prevQty: -5, newQty: -10, addedAmount: -1000, saleProceeds: -2000, realizedGain: -30000, _deletedAt: 100 }],
+  });
+  assert.strictEqual(data.trashQtyLog[0].prevQty, 0);
+  assert.strictEqual(data.trashQtyLog[0].newQty, 0);
+  assert.strictEqual(data.trashQtyLog[0].addedAmount, 0);
+  assert.strictEqual(data.trashQtyLog[0].saleProceeds, 0);
+  assert.strictEqual(data.trashQtyLog[0].realizedGain, -30000, '실현손익은 손실(음수)이 유효한 값이라 클램프하면 안 됨');
+});
+test('sanitizeBackup: 트래시 수량기록의 _deletedAt이 손상돼도(숫자가 아님) 통째로 버리지 않고 now로 되돌린다', () => {
+  const before = Date.now();
+  const { data } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    trashQtyLog: [{ id: 'q1', assetId: 'a1', prevQty: 5, newQty: 10 }, { id: 'q2', assetId: 'a2', prevQty: 1, newQty: 2, _deletedAt: 'oops' }],
+  });
+  assert.strictEqual(data.trashQtyLog.length, 2, '유효한 복구 대상을 _deletedAt 손상만으로 통째로 버리면 안 됨');
+  assert.ok(data.trashQtyLog.every(q => typeof q._deletedAt === 'number' && q._deletedAt >= before));
+});
+test('sanitizeBackup: 트래시 수량기록은 field/date/assetName 등은 재검증하지 않고 그대로 보존한다(이미 유효했던 값이라는 전제)', () => {
+  const { data } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    trashQtyLog: [{ id: 'q1', assetId: '없는자산', assetName: '옛날계좌', date: '2026-01-01', field: 'stockQty', prevQty: 5, newQty: 10, _deletedAt: 123 }],
+  });
+  assert.strictEqual(data.trashQtyLog[0].assetId, '없는자산');
+  assert.strictEqual(data.trashQtyLog[0].assetName, '옛날계좌');
+  assert.strictEqual(data.trashQtyLog[0].field, 'stockQty');
+  assert.strictEqual(data.trashQtyLog[0]._deletedAt, 123);
+});
+test('sanitizeBackup: 트래시 수량기록도 trashTxns/trashAssets/trashRecs/trashGoals와 동일하게 id 중복이면 새 id를 부여해 복구한다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    trashQtyLog: [{ id: 'dup', assetId: 'a1', prevQty: 5, newQty: 10, _deletedAt: 1 }, { id: 'dup', assetId: 'a2', prevQty: 1, newQty: 2, _deletedAt: 2 }],
+  });
+  const ids = data.trashQtyLog.map(q => q.id);
+  assert.strictEqual(new Set(ids).size, 2, '중복 id는 새 id로 갈라져야 함');
+  assert.ok(fixedCount >= 1);
+});
+
 /* ---------- sanitizeBackup: DB.categories/DB.owners(카테고리·귀속 이름 목록)도 txns/assets/
  * recurrences/goals/inquiries/assetQtyLog와 동일하게 검증돼야 한다 — 이전에는 이 블록이 아예
  * 없어서, obj.categories.income/expense/saving나 obj.owners가 배열이 아니면(손상된 백업·레거시
@@ -18774,6 +18952,19 @@ test('gcTrashTxns/mergeTrashTxns: 목표 모양(name/targetAmount/targetDate 등
   assert.strictEqual(ids.length, 2);
   assert.ok(ids.includes('g1') && ids.includes('g2'), '목표 모양 데이터도 id 기준으로 동일하게 병합되어야 함');
 });
+// app-evolve cycle324 critique/advance: DB.trashQtyLog(자산 수량 변경/매도 기록 삭제 '최근 삭제함')도
+// gcTrashTxns/mergeTrashTxns를 새 함수 없이 그대로 재사용한다는 전제를 수량기록 모양 데이터로도 직접 확인.
+test('gcTrashTxns/mergeTrashTxns: 수량기록 모양(assetId/prevQty/newQty/realizedGain 등 거래와 다른 필드) 데이터에도 그대로 동작한다(DB.trashQtyLog 재사용 전제)', () => {
+  const now = 10_000;
+  const qlog = { id: 'q1', assetId: 'a1', prevQty: 5, newQty: 10, realizedGain: -1000, _deletedAt: now - 100 };
+  const oldQlog = { id: 'q2', assetId: 'a2', prevQty: 1, newQty: 2, _deletedAt: now - 1000 };
+  const gcOut = sandbox.gcTrashTxns([qlog, oldQlog], now, 500);
+  assert.deepStrictEqual(gcOut, [qlog], '수량기록 모양 데이터도 _deletedAt 기준으로 동일하게 GC되어야 함');
+  const mergeOut = sandbox.mergeTrashTxns([qlog], [oldQlog]);
+  const ids = mergeOut.map(q => q.id).sort();
+  assert.strictEqual(ids.length, 2);
+  assert.ok(ids.includes('q1') && ids.includes('q2'), '수량기록 모양 데이터도 id 기준으로 동일하게 병합되어야 함');
+});
 
 test('migrate: DB.deletedIds의 오래된(400일 초과) tombstone은 sanitize되어 사라지고, 그 이내인 것은 유지된다(app-evolve cycle95 advance 통합 테스트)', () => {
   const now = Date.now();
@@ -18966,6 +19157,50 @@ test('migrate: DB.trashGoals에 이미 DB.goals로 복구돼 살아있는 id가 
   };
   sandbox.migrate();
   assert.deepStrictEqual(sandbox.DB.trashGoals.map(g => g.id), ['g2'], 'DB.goals에 살아있는 g1은 트래시에서 빠지고, 실제로 삭제된 g2만 남아야 함');
+});
+
+/* ---------- migrate: DB.trashQtyLog(자산 수량 변경/매도 기록 삭제 '최근 삭제함', app-evolve cycle324
+ * critique/advance)도 위 DB.trashTxns/DB.trashAssets/DB.trashRecs/DB.trashGoals와 동일한
+ * 초기화/GC/live-id 필터를 받는다. ---------- */
+test('migrate: DB.trashQtyLog이 없으면(migrate 이전 상태) 빈 배열로 채워진다', () => {
+  sandbox.DB = {
+    version: 5, catsV2: true,
+    settings: { themeMode: 'system', includeScheduled: false, assetSort: 'custom', groupOrder: [...sandbox.DEFAULT_GROUP_ORDER] },
+    owners: ['나', '배우자', '공용'],
+    assets: [], txns: [], recurrences: [], inquiries: [],
+    categories: { expense: [...sandbox.EXP_CATS_DEFAULT], income: [...sandbox.INC_CATS_DEFAULT], saving: [...sandbox.SAV_CATS_DEFAULT] },
+  };
+  assert.doesNotThrow(() => sandbox.migrate());
+  assert.strictEqual(sandbox.DB.trashQtyLog.length, 0);
+});
+test('migrate: DB.trashQtyLog의 오래된(30일 초과) 항목은 GC되어 사라지고, 그 이내인 것은 유지된다(app-evolve cycle324 critique/advance 통합 테스트)', () => {
+  const now = Date.now();
+  const DAY = 1000 * 60 * 60 * 24;
+  const old = { id: 'old', assetId: 'a1', prevQty: 5, newQty: 10, _deletedAt: now - 31 * DAY };
+  const recent = { id: 'recent', assetId: 'a2', prevQty: 1, newQty: 2, _deletedAt: now - 10 * DAY };
+  sandbox.DB = {
+    version: 5, catsV2: true,
+    settings: { themeMode: 'system', includeScheduled: false, assetSort: 'custom', groupOrder: [...sandbox.DEFAULT_GROUP_ORDER] },
+    owners: ['나', '배우자', '공용'],
+    assets: [], txns: [], recurrences: [], inquiries: [],
+    categories: { expense: [...sandbox.EXP_CATS_DEFAULT], income: [...sandbox.INC_CATS_DEFAULT], saving: [...sandbox.SAV_CATS_DEFAULT] },
+    trashQtyLog: [old, recent],
+  };
+  sandbox.migrate();
+  assert.deepStrictEqual(sandbox.DB.trashQtyLog.map(q => q.id), ['recent']);
+});
+test('migrate: DB.trashQtyLog에 이미 DB.assetQtyLog로 복구돼 살아있는 id가 남아있으면(온전치 못한 복구 등) 중복으로 보이지 않게 제거한다', () => {
+  sandbox.DB = {
+    version: 5, catsV2: true,
+    settings: { themeMode: 'system', includeScheduled: false, assetSort: 'custom', groupOrder: [...sandbox.DEFAULT_GROUP_ORDER] },
+    owners: ['나', '배우자', '공용'],
+    assets: [{ id: 'a1', type: 'stock', name: '삼성전자' }], txns: [], recurrences: [], inquiries: [],
+    assetQtyLog: [{ id: 'q1', assetId: 'a1', prevQty: 5, newQty: 10 }],
+    categories: { expense: [...sandbox.EXP_CATS_DEFAULT], income: [...sandbox.INC_CATS_DEFAULT], saving: [...sandbox.SAV_CATS_DEFAULT] },
+    trashQtyLog: [{ id: 'q1', assetId: 'a1', prevQty: 5, newQty: 10, _deletedAt: Date.now() }, { id: 'q2', assetId: 'a1', prevQty: 10, newQty: 8, _deletedAt: Date.now() }],
+  };
+  sandbox.migrate();
+  assert.deepStrictEqual(sandbox.DB.trashQtyLog.map(q => q.id), ['q2'], 'DB.assetQtyLog에 살아있는 q1은 트래시에서 빠지고, 실제로 삭제된 q2만 남아야 함');
 });
 
 /* ---------- themeCachePayload/writeThemeCache: 첫 페인트 FOUC 방지 캐시(app-evolve cycle181 advance) ----------

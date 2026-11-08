@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.390';
+const APP_VERSION='1.47.391';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -1680,6 +1680,7 @@ function mergeRemoteDataIntoLocal(remoteData){
  {const _liveGoalIds=new Set(DB.goals.map(g=>g.id));DB.trashGoals=mergeTrashTxns(DB.trashGoals,remoteData.trashGoals).filter(g=>!_liveGoalIds.has(g.id));} /* app-evolve cycle322: DB.trashTxns(1673행)/DB.trashRecs(1676행)/DB.trashAssets(1678행)와 동일한 신설 컬렉션 병합 배선 — mergeTrashTxns도 {id,_deletedAt} 형태만 가정해 그대로 재사용. 맨 끝에서 호출되는 migrate()가 gcTrashTxns로 한 번 더 GC하므로 보존기간 지난 사본도 결국 걸러진다 */
  DB.inquiries=mergeCollection(DB.inquiries,remoteData.inquiries,DB.deletedIds,remoteData.deletedIds); /* app-evolve cycle133: goals와 동일한 누락 — 문의 메모에 id/updatedAt이 없을 때부터 여기서 전혀 병합되지 않고 있었음 */
  DB.assetQtyLog=mergeCollection(DB.assetQtyLog,remoteData.assetQtyLog,DB.deletedIds,remoteData.deletedIds); /* app-evolve cycle138: goals/inquiries와 동일한 '신설 컬렉션 병합 배선 누락' 버그 클래스가 처음부터 반복되지 않도록 신설 시점에 바로 추가 */
+ {const _liveQtyLogIds=new Set(DB.assetQtyLog.map(q=>q.id));DB.trashQtyLog=mergeTrashTxns(DB.trashQtyLog,remoteData.trashQtyLog).filter(q=>!_liveQtyLogIds.has(q.id));} /* app-evolve cycle324: DB.trashTxns(1673행)/DB.trashRecs(1676행)/DB.trashAssets(1678행)/DB.trashGoals(1680행)와 동일한 신설 컬렉션 병합 배선 — mergeTrashTxns도 {id,_deletedAt} 형태만 가정해 그대로 재사용. 맨 끝에서 호출되는 migrate()가 gcTrashTxns로 한 번 더 GC하므로 보존기간 지난 사본도 결국 걸러진다 */
  /* categories/owners/budgetHistory는 id 기반이 아니라 mergeCollection을 쓸 수 없어 전용 순수
   * 함수로 병합한다 — 이전엔 여기서 전혀 병합되지 않아, 두 기기가 오프라인 상태에서 각자
   * 카테고리/귀속/예산을 고치면 로컬 값이 조용히 이기고 이어지는 push가 상대 기기의 편집을
@@ -2668,11 +2669,13 @@ function migrate(){
  DB.trashAssets=DB.trashAssets||[]; /* 자산 삭제 '최근 삭제함' — DB.trashTxns와 동일한 공백(undoToast의 6초짜리 메모리 클로저 하나에만 의존해 그 창을 넘기면 매입원가·수량이력·연동 반복거래 내용까지 영구 소실)을 자산에서도 메운다(app-evolve cycle320 critique/advance) */
  DB.trashRecs=DB.trashRecs||[]; /* 반복거래 삭제 '최근 삭제함' — DB.trashTxns/DB.trashAssets와 동일한 공백(undoToast의 6초짜리 메모리 클로저 하나에만 의존해 그 창을 넘기면 startDate/interval/amount/category/skip/edits/confirmedDates/연동 asset 등 손으로 재입력 불가능한 반복거래 설정이 영구 소실)을 반복거래에서도 메운다(app-evolve cycle321 critique/advance) */
  DB.trashGoals=DB.trashGoals||[]; /* 목표 삭제 '최근 삭제함' — DB.trashTxns/DB.trashAssets/DB.trashRecs와 동일한 공백(undoToast의 6초짜리 메모리 클로저 하나에만 의존해 그 창을 넘기면 name/targetAmount/targetDate가 영구 소실)을 목표에서도 메운다(app-evolve cycle322 critique/advance) */
+ DB.trashQtyLog=DB.trashQtyLog||[]; /* 자산 수량 변경/매도 기록 삭제 '최근 삭제함' — DB.trashTxns/DB.trashAssets/DB.trashRecs/DB.trashGoals와 동일한 공백(undoToast의 6초짜리 메모리 클로저 하나에만 의존해 그 창을 넘기면 date/prevQty/newQty/addedAmount/saleProceeds/realizedGain이 영구 소실)을 5번째 엔티티(assetQtyLog)에서도 메운다 — 매도로 생기는 realizedGain/saleProceeds는 특히 손으로 재입력이 사실상 불가능하다(app-evolve cycle324 critique/advance) */
  DB.deletedIds=gcTombstones(DB.deletedIds||{},Date.now()); /* 부팅 때마다 오래된 tombstone 정리(GC) */
  {const _liveTxnIds=new Set((DB.txns||[]).map(t=>t.id));DB.trashTxns=gcTrashTxns(DB.trashTxns,Date.now(),1000*60*60*24*TRASH_MAX_AGE_DAYS).filter(t=>!_liveTxnIds.has(t.id));} /* 부팅 때마다 보존기간 지난 항목 정리(GC) + 이미 복구돼 살아있는 거래가 트래시에 중복으로 남지 않게 정리. DB.txns는 이 시점에 아직 정규화 전이라(migrate()는 DB.txns 자체를 초기화하지 않음) 없을 수 있어 방어한다 */
  {const _liveAssetIds=new Set((DB.assets||[]).map(a=>a.id));DB.trashAssets=gcTrashTxns(DB.trashAssets,Date.now(),1000*60*60*24*TRASH_MAX_AGE_DAYS).filter(a=>!_liveAssetIds.has(a.id));} /* 위 trashTxns GC와 동일한 패턴 — gcTrashTxns는 {id,_deletedAt} 형태만 가정해 새 함수 없이 그대로 재사용(app-evolve cycle320 critique/advance) */
  {const _liveRecIds=new Set((DB.recurrences||[]).map(r=>r.id));DB.trashRecs=gcTrashTxns(DB.trashRecs,Date.now(),1000*60*60*24*TRASH_MAX_AGE_DAYS).filter(r=>!_liveRecIds.has(r.id));} /* 위 trashTxns/trashAssets GC와 동일한 패턴(app-evolve cycle321 critique/advance) */
  {const _liveGoalIds=new Set((DB.goals||[]).map(g=>g.id));DB.trashGoals=gcTrashTxns(DB.trashGoals,Date.now(),1000*60*60*24*TRASH_MAX_AGE_DAYS).filter(g=>!_liveGoalIds.has(g.id));} /* 위 trashTxns/trashAssets/trashRecs GC와 동일한 패턴(app-evolve cycle322 critique/advance) */
+ {const _liveQtyLogIds=new Set((DB.assetQtyLog||[]).map(q=>q.id));DB.trashQtyLog=gcTrashTxns(DB.trashQtyLog,Date.now(),1000*60*60*24*TRASH_MAX_AGE_DAYS).filter(q=>!_liveQtyLogIds.has(q.id));} /* 위 trashTxns/trashAssets/trashRecs/trashGoals GC와 동일한 패턴(app-evolve cycle324 critique/advance) */
  DB.settings.dismissedStaleMvIds=pruneDismissedStaleMvIds(DB.settings.dismissedStaleMvIds,DB.txns,DB.recurrences); /* 부팅 때마다 삭제된 거래/반복거래를 가리키는 키 정리(GC) */
 }
 /* storageOutcomeMsg: localStorage 쓰기 시도 결과(ok)와 직전 상태(wasOk)를 놓고 어떤 토스트를
@@ -6544,9 +6547,42 @@ function delAssetQtyLog(id){
  confirmSheet('기록을 삭제할까요?','이 수량 변경 기록만 지워요. 자산의 현재 보유 수량은 바뀌지 않아요.','삭제',()=>{
   DB.assetQtyLog=(DB.assetQtyLog||[]).filter(x=>x.id!==id);
   DB.deletedIds=DB.deletedIds||{};DB.deletedIds[id]=Date.now(); /* delGoal/delInquiry와 동일한 톰스톤 — 없으면 mergeRemoteDataIntoLocal이 이 삭제를 모르고 다른 기기의 사본을 되살림 */
+  const now=Date.now();DB.trashQtyLog=(DB.trashQtyLog||[]).concat([Object.assign({},q,{_deletedAt:now})]); /* '최근 삭제함' — undoToast의 6초가 지나도(또는 앱을 닫았다 다시 열어도) gcTrashTxns 보존기간까지는 복구 가능(app-evolve cycle324 critique/advance, DB.trashTxns/DB.trashAssets/DB.trashRecs/DB.trashGoals와 동일 패턴) */
   save();openAssetQtyLog(q.assetId);
-  undoToast('기록을 삭제했어요',()=>{DB.assetQtyLog.push(q);delete DB.deletedIds[id];touchSave(q);openAssetQtyLog(q.assetId);toast('되돌렸어요')});
+  undoToast('기록을 삭제했어요',()=>{DB.assetQtyLog.push(q);delete DB.deletedIds[id];DB.trashQtyLog=(DB.trashQtyLog||[]).filter(x=>x.id!==id);touchSave(q);openAssetQtyLog(q.assetId);toast('되돌렸어요')});
  });
+}
+/* 메뉴 › '삭제한 수량기록' — delAssetQtyLog가 DB.trashQtyLog에 담아둔 삭제된 수량 변경/매도 기록을
+ * 모든 자산에 걸쳐 보여주고 복구할 수 있는 화면. openGoalTrashList/restoreTrashGoal과 동일한
+ * manage-row 목록 패턴(app-evolve cycle324 critique/advance). 자산이 이미 영구 삭제됐어도(기록
+ * 자체는 assetId만 보존하는 의도된 동작, openAssetQtyLog 바로 위 주석 참고) 목록에선 보여줘야
+ * 하므로 assetName 스냅샷으로 폴백한다. */
+function openAssetQtyLogTrashList(){
+ const items=[...(DB.trashQtyLog||[])].sort((a,b)=>(b._deletedAt||0)-(a._deletedAt||0));
+ const row=q=>{
+  const a=(DB.assets||[]).find(x=>x.id===q.assetId);
+  const unit=a?(a.type==='fx'?a.currency:(a.type==='gold'?'돈':(a.type==='crypto'?'개':'주'))):'';
+  const assetLabel=a?a.name:(q.assetName||'삭제된 자산');
+  const delta=q.newQty-q.prevQty;const sign=delta>0?'+':'';
+  const gainTxt=q.realizedGain!=null?` · 실현손익 ${q.realizedGain>0?'+':''}${comma(q.realizedGain)}원`:'';
+  const daysLeft=Math.max(0,TRASH_MAX_AGE_DAYS-Math.floor((Date.now()-(q._deletedAt||0))/86400000));
+  return `<div class="manage-row" style="align-items:flex-start"><div style="flex:1;min-width:0">
+    <div class="mn">${esc(assetLabel)} <span class="num">${sign}${commaQty(delta)}${unit?' '+esc(unit):''}</span></div>
+    <div class="msub">${q.date||''} · ${commaQty(q.prevQty)} → ${commaQty(q.newQty)}${unit?' '+esc(unit):''}${q.addedAmount>0?` · 투입 ${comma(q.addedAmount)}원`:''}${q.saleProceeds>0?` · 매도 ${comma(q.saleProceeds)}원${gainTxt}`:''} · ${daysLeft}일 후 자동삭제</div></div>
+   <div class="row-acts"><button class="act-btn" aria-label="기록 복구" onclick="restoreTrashQtyLog('${q.id}')">${svg('restore')}</button></div></div>`;
+ };
+ openSheet(`<h3>삭제한 수량기록</h3><div class="desc">삭제한 보유수량 변경/매도 기록이에요. ${TRASH_MAX_AGE_DAYS}일이 지나면 자동으로 사라져요</div>
+  ${items.length?items.map(row).join(''):`<div class="empty"><div class="ei">${svg('trash')}</div><div class="et">삭제한 기록이 없어요</div></div>`}
+  <div style="height:12px"></div><button class="btn btn-primary" onclick="closeSheet()">닫기</button>`);
+}
+function restoreTrashQtyLog(id){
+ if(twGuard())return;
+ const q=(DB.trashQtyLog||[]).find(x=>x.id===id);if(!q)return;
+ DB.trashQtyLog=(DB.trashQtyLog||[]).filter(x=>x.id!==id);
+ DB.deletedIds=DB.deletedIds||{};delete DB.deletedIds[id];
+ const item=Object.assign({},q);delete item._deletedAt;
+ DB.assetQtyLog=DB.assetQtyLog||[];DB.assetQtyLog.push(item);
+ touchSave(item);openAssetQtyLogTrashList();toast('되돌렸어요');
 }
 /* 지출 분석 카테고리 행의 '내역' 버튼 → 전체내역을 해당 카테고리(지출)+이번 달+해당 귀속으로 필터해서 연다.
    openAssetHistory와 같은 관례지만, 지출 분석은 늘 ST.ledger의 달과 ST.spendOwner 기준으로 집계하므로
@@ -7168,6 +7204,7 @@ function renderMenu(){
    {ic:'restore',l:'삭제한 자산',v:(DB.trashAssets&&DB.trashAssets.length)?DB.trashAssets.length+'건':'',a:"openAssetTrashList()"},
    {ic:'restore',l:'삭제한 반복',v:(DB.trashRecs&&DB.trashRecs.length)?DB.trashRecs.length+'건':'',a:"openRecTrashList()"},
    {ic:'restore',l:'삭제한 목표',v:(DB.trashGoals&&DB.trashGoals.length)?DB.trashGoals.length+'건':'',a:"openGoalTrashList()"},
+   {ic:'restore',l:'삭제한 수량기록',v:(DB.trashQtyLog&&DB.trashQtyLog.length)?DB.trashQtyLog.length+'건':'',a:"openAssetQtyLogTrashList()"},
    {ic:'trash',l:'오래된 데이터 정리',a:"openArchiveOld()"},
   ]},
   {cap:'화면 · 지원',items:[
@@ -9414,6 +9451,27 @@ function sanitizeBackup(obj){
   if(!Number.isFinite(d._deletedAt)){d._deletedAt=Date.now();fixedCount++}
   trashGoals.push(d);
  });
+ /* DB.trashQtyLog(자산 수량 변경/매도 기록 삭제 '최근 삭제함', app-evolve cycle324 critique/advance)도
+  * 바로 위 trashTxns/trashAssets/trashRecs/trashGoals와 동일한 이유로 백업 복원·클라우드 풀 경로에서
+  * 검증한다. 보관 형태가 assetQtyLog 레코드라, id&&assetId 기준(위 srcQtyLog 블록과 동일 — assetId
+  * 없으면 openAssetQtyLogTrashList가 어느 자산의 기록인지 알 수 없어 무의미)으로 걸러내고,
+  * prevQty/newQty는 srcQtyLog와 동일하게, addedAmount/saleProceeds/realizedGain은 위 srcQtyLog
+  * 블록엔 없지만 금액성 필드이므로 동일한 sanitizeAmount로 클램프한다. field/date 등 나머지는 삭제되기
+  * 전 이미 유효했던 값이라는 전제(트래시 전용 항목들의 공통 전제, trashRecs 주석 참고)로 재검증하지
+  * 않는다. */
+ const srcTrashQtyLog=Array.isArray(obj&&obj.trashQtyLog)?obj.trashQtyLog:[];
+ let trashQtyLog=[];
+ srcTrashQtyLog.forEach(q=>{
+  if(!q||!q.id||!q.assetId){droppedCount++;return}
+  const d=Object.assign({},q);
+  if('prevQty' in d){const n=sanitizeAmount(d.prevQty,0);if(n!==d.prevQty){d.prevQty=n;fixedCount++}}
+  if('newQty' in d){const n=sanitizeAmount(d.newQty,0);if(n!==d.newQty){d.newQty=n;fixedCount++}}
+  if('addedAmount' in d){const n=sanitizeAmount(d.addedAmount,0);if(n!==d.addedAmount){d.addedAmount=n;fixedCount++}}
+  if('saleProceeds' in d){const n=sanitizeAmount(d.saleProceeds,0);if(n!==d.saleProceeds){d.saleProceeds=n;fixedCount++}}
+  if('realizedGain' in d){const n=sanitizeAmount(d.realizedGain);if(n!==d.realizedGain){d.realizedGain=n;fixedCount++}}
+  if(!Number.isFinite(d._deletedAt)){d._deletedAt=Date.now();fixedCount++}
+  trashQtyLog.push(d);
+ });
  /* DB.categories/DB.owners(카테고리·귀속 이름 목록)도 txns/assets/recurrences/goals/inquiries/
   * assetQtyLog와 동일하게 백업 복원·클라우드 풀 경로에서 전혀 검증되지 않고 있었다. 파일 복원
   * 경로(restoreBackup, 5591줄 부근)는 migrate()를 try/catch로 감싸 실패해도 DB를 되돌리지만,
@@ -9623,8 +9681,8 @@ function sanitizeBackup(obj){
   nwHistory.push(d);
  });
  txns=dedupeIds(txns);assets=dedupeIds(assets);recurrences=dedupeIds(recurrences);
- goals=dedupeIds(goals);inquiries=dedupeIds(inquiries);assetQtyLog=dedupeIds(assetQtyLog);trashTxns=dedupeIds(trashTxns);trashAssets=dedupeIds(trashAssets);trashRecs=dedupeIds(trashRecs);trashGoals=dedupeIds(trashGoals);
- return {data:Object.assign({},obj,{txns,assets,recurrences,goals,inquiries,assetQtyLog,trashTxns,trashAssets,trashRecs,trashGoals,categories,owners,budgetHistory,budgets,catIcon,catVar,catBudgetRollover,deletedType,deletedBal,deletedIds,nwHistory,settings,rates}),fixedCount,droppedCount,rangeCount};
+ goals=dedupeIds(goals);inquiries=dedupeIds(inquiries);assetQtyLog=dedupeIds(assetQtyLog);trashTxns=dedupeIds(trashTxns);trashAssets=dedupeIds(trashAssets);trashRecs=dedupeIds(trashRecs);trashGoals=dedupeIds(trashGoals);trashQtyLog=dedupeIds(trashQtyLog);
+ return {data:Object.assign({},obj,{txns,assets,recurrences,goals,inquiries,assetQtyLog,trashTxns,trashAssets,trashRecs,trashGoals,trashQtyLog,categories,owners,budgetHistory,budgets,catIcon,catVar,catBudgetRollover,deletedType,deletedBal,deletedIds,nwHistory,settings,rates}),fixedCount,droppedCount,rangeCount};
 }
 /* obj.assets/obj.txns가 배열인지까지 검증한 뒤 DB를 통째로 교체한다. migrate()가 손상된
  * obj 때문에 중간에 throw해도 DB가 절반만 마이그레이션된 채로 남지 않도록, 실패 시 교체 전
