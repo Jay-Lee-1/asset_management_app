@@ -1,19 +1,8 @@
 {
-  "cycle": 327,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "문의 메모(inquiries) 삭제 '삭제한 메모(trashInquiries)' 복구 기능 추가",
-    "why": "delInquiry(index.html:8261-8270)가 trashTxns/trashAssets/trashRecs/trashGoals/trashQtyLog/trashCats와 동일한 '6초 undoToast 메모리 클로저 하나에만 의존' 패턴이라, 토스트가 사라지거나 앱을 닫으면 메모 text가 영구 소실된다. DB.deletedIds는 id-시각 톰스톤일 뿐 내용을 담지 않는다(1681행 mergeCollection 참고). 7개 엔티티 중 active 플래그·자산연동이 전혀 없는 가장 단순한 구조({id,date,text})라 기존 패턴을 거의 그대로 재사용할 수 있다.",
-    "approach": "logic.js는 새 함수 없이 gcTrashTxns/mergeTrashTxns 재사용(둘 다 {id,_deletedAt}만 가정). index.html: DB.trashInquiries 신설 — migrate()에 초기화+GC(live-id는 DB.inquiries 기준)+trashQtyLog와 동일한 위치 패턴으로 mergeRemoteDataIntoLocal에 DB.inquiries 병합 직후 배선. delInquiry가 confirmSheet 콜백 안에서 스플라이스 전에 q 전체+_deletedAt을 DB.trashInquiries에 push하고 즉시 undo 콜백에서도 trashInquiries 항목 제거(deleteGoalsUndo/delAssetQtyLog와 동일 패턴). sanitizeBackup은 index.html:9420-9427 inquiries 검증 블록 바로 아래, trashQtyLog 블록(9443행 근처) 패턴을 미러링해 id&&text(문자열 정규화) 기준으로 추가. 메뉴 '백업·데이터'에 '삭제한 메모' 행 추가, openInquiryTrashList()/restoreTrashInquiry(id) 신설(openGoalTrashList/restoreTrashGoal과 동일 manage-row 패턴, 요약은 date+text 미리보기 40자). restoreTrashInquiry는 active 플래그나 자산 생존가드가 불필요한 가장 단순한 복구이므로 추가 재검증 로직 없이 DB.inquiries.push+trashInquiries에서 제거만 하면 됨. 테스트는 trashQtyLog/trashGoals 테스트 블록 구성을 미러링(delInquiry→trashInquiries 저장/undo제거, openInquiryTrashList/restoreTrashInquiry 정상복구/빈상태/존재안함/twGuard, sanitizeBackup 검증(id없음 drop/text 정규화/_deletedAt 보정), migrate 초기화/GC/live-id필터, mergeRemoteDataIntoLocal 배선) 약 15-18건. 사용자 체감 기능 추가이므로 APP_VERSION/sw.js CACHE 버전업 필요. node test/run.js로 회귀 확인 필수."
-  },
+  "cycle": 328,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 322,
-      "phase": "critique",
-      "timestamp": "2026-11-07T22:05:00.000Z",
-      "summary": "직접 grep으로 cycle320/321 critique가 '보류'로 남겨둔 후보(목표/귀속/카테고리 삭제의 trash 미보호)를 재검증(cycle300-322 처리/보류/기각 항목 전부 제외 지시: twGuard 스윕·전역검색·예산이월·연말결산·owner/category/asset merge 전부·nwHistory byType/자산배분추이 카드·목표자산배분+리밸런싱·CSV날짜·이체 및 반복 중복감지·카테고리별 알림뮤트·공동지출 정산(shared/settle) 전체와 배지·토글 전파·investGainLossCard 유형별 분해·목표/반복/통합검색 검색창 디바운스·PIN 화면잠금 고지·목표비중 알림뮤트 토글·saveGoal targetDate 범위가드·거래/자산/반복 삭제 trash 복구·searchTerms/matchQueryTerms·shiftWeekend 단위테스트·openTrashList 분할거래 카테고리 라벨은 명시적으로 제외; FX 환차익 분리·투자손익 추이차트·CSV shared/photo 필드·배당/이자/할부/귀속별 예산/다인 정산/CSV·반복 분할거래·실시간 저장소 암호화·반복 건별 skip·백업 리마인더·CDN SRI 해시·홈 대시보드 카드 순서변경/숨기기·CSV import 견고성·부채/대출 추적·백그라운드 푸시 한계는 기각 이력으로 재확인). 발견: deleteGoalsUndo(index.html:11624-11630)가 거래/자산/반복과 동일하게 여전히 undoToast의 6초짜리 메모리 클로저 하나에만 의존 — DB.deletedIds는 id-시각 톰스톤일 뿐 목표 내용(name/targetAmount/targetDate)을 담지 않아 6초가 지나거나 앱을 닫으면 영구 소실됨을 재확인. cycle319(trashTxns)/320(trashAssets)/321(trashRecs)와 같은 엔티티 확장(재제안 아님)으로, 두 critique가 이미 '다음 후보'로 명시해 둔 항목. pending_advance_plan에 구체 계획 저장(DB.trashGoals 신설, GC/병합은 새 함수 없이 gcTrashTxns/mergeTrashTxns 재사용, migrate/mergeRemoteDataIntoLocal/sanitizeBackup 배선, deleteGoalsUndo가 removed를 trashGoals에도 push, renderMenu에 '삭제한 목표' 행, openGoalTrashList/restoreTrashGoal 신설, 테스트 계획은 trashRecs 구성을 재사용). 보류 유지: 귀속(owners)/카테고리(categories) 삭제는 실체가 이름 문자열뿐이라(연결 데이터는 남고 unassigned로만 재배정) 유실 비용이 낮아 이번에도 보류. 코드 변경 없음(state.json만 커밋, pending_advance_plan 신설에 따라 phase를 advance로 회전).",
-      "commit": null
-    },
     {
       "cycle": 322,
       "phase": "advance",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-08T18:09:32.000Z",
       "summary": "cycle321-326이 거래/자산/반복/목표/수량기록/카테고리(trashTxns/trashAssets/trashRecs/trashGoals/trashQtyLog/trashCats) 6종에 대해 반복 해소해 온 '삭제가 undoToast 6초짜리 메모리 클로저 하나에만 의존해 toast가 사라지거나 앱을 닫으면 영구 소실된다'는 버그 클래스가, 문의 메모(DB.inquiries) 삭제 경로인 delInquiry(index.html:8261-8270)에는 아직 적용되지 않았음을 코드로 직접 확인했다. DB.deletedIds는 mergeCollection이 기기 간 동기화 충돌만 판정하는 id-시각 톰스톤일 뿐 메모 내용(text)을 담지 않으므로(1681행에서 DB.inquiries가 이미 mergeCollection으로 배선돼 있음을 확인), delInquiry가 지우고 6초가 지나면 그 메모 text는 완전히 사라진다. DB.inquiries는 {id,date,text} 세 필드뿐이고 active 플래그나 자산/귀속 연동이 전혀 없어(8231행 push 구문으로 확인) 지금까지 구현한 7개 엔티티(트래시 6종) 중 가장 단순한 구조이며, sanitizeBackup에는 이미 바로 다음(trashQtyLog) 블록이 참고할 수 있는 inquiries 검증 블록(9420-9427행, id 없으면 drop·text 타입 정규화)이 있어 그 옆에 같은 패턴을 이어붙이면 된다. 대안으로 검토한 후보 중 XSS/이스케이핑은 esc()(logic.js:499)가 toast/undoToast를 포함해 모든 동적 삽입 지점에 일관되게 적용돼 있음을 직접 확인해 기각, 포커스 트랩/접근성은 _ovFocusStack/sheetFocusables 기반으로 이미 충분히 갖춰져 있어 기각, cycle327 develop이 남긴 git 저장소 위생 이슈(origin에 app-evolve-backup/checkpoint/orphaned/recovered류 브랜치 18개가 실제로 남아있음을 git ls-remote로 확인)는 실재하지만 원격 브랜치 삭제는 사용자 명시적 승인 없이는 이 스킬의 안전 규칙상 자동화된 advance로 처리할 수 없는 파괴적 작업이라 이번 후보에서 제외했다. pending_advance_plan에 구체 계획 저장(DB.trashInquiries 신설, trashQtyLog와 동일 패턴으로 migrate/mergeRemoteDataIntoLocal/sanitizeBackup 배선, delInquiry가 삭제 즉시 q+_deletedAt을 push, '삭제한 메모' 메뉴 행, openInquiryTrashList/restoreTrashInquiry 신설). 코드 변경 없음(state.json만 커밋, pending_advance_plan 신설에 따라 phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 327,
+      "phase": "advance",
+      "timestamp": "2026-11-08T19:12:45.813Z",
+      "summary": "critique(cycle327) 계획대로 문의 메모(inquiries) 삭제 '삭제한 메모(trashInquiries)' 복구 기능을 구현했다. logic.js는 새 함수 없이 gcTrashTxns/mergeTrashTxns를 그대로 재사용(둘 다 {id,_deletedAt}만 가정해 메모 전용 필드를 참조하지 않음). index.html: DB.trashInquiries 신설(migrate()에 초기화+GC(live-id는 DB.inquiries 기준)+trashCats 바로 뒤에 동일 패턴으로 배선, mergeRemoteDataIntoLocal의 DB.inquiries 병합(mergeCollection) 직후에 trashTxns/trashRecs/trashAssets/trashGoals/trashQtyLog/trashCats와 동일 패턴으로 배선), delInquiry가 confirmSheet 콜백 안에서 스플라이스 전에 메모 전체+_deletedAt을 DB.trashInquiries에 push하고 즉시 undo 콜백에서도 trashInquiries 항목 제거. 메뉴 '백업·데이터'에 '삭제한 메모' 행 추가, openInquiryTrashList()/restoreTrashInquiry(id) 신설(openGoalTrashList/openAssetQtyLogTrashList와 동일 manage-row 패턴, 요약은 40자 미리보기+date). inquiries는 active 플래그·자산연동이 전혀 없는 가장 단순한 {id,date,text} 구조라 restoreTrashRec/restoreTrashCat류의 재활성화 가드가 전혀 필요 없음을 확인 — 추가 재검증 로직 없이 DB.inquiries.push+트래시/톰스톤 제거만으로 복구 완료. sanitizeBackup은 기존 srcInquiries 검증 블록(id&&text 정규화) 바로 아래에 trashQtyLog 패턴과 동일하게 id 기준 drop+text 정규화+_deletedAt 보정 추가. 테스트: delInquiry→trashInquiries 저장/undo제거(2) + openInquiryTrashList(정렬/빈상태, 2) + restoreTrashInquiry(정상복구/존재안함/twGuard, 3) + sanitizeBackup trashInquiries 검증(id없음 drop·notArray·missing, text정규화, _deletedAt보정, 비검증필드보존, 중복id, 5) + migrate trashInquiries 초기화/GC/live-id필터(3) + mergeRemoteDataIntoLocal trashInquiries 배선+live필터(2) = 17건 추가, FUNCTIONS 목록에 openInquiryTrashList/restoreTrashInquiry 추가 — node test/run.js 3180->3197/3197 통과(DB 스키마 완전성 가드 테스트도 trashInquiries 배선이 실제로 걸렸음을 자동 확인). node --check logic.js/sw.js/test/run.js 통과, manifest.webmanifest JSON 유효성 통과, index.html 인라인 스크립트 추출검사는 기존과 동일한 1건의 기존 오탐(block1=head FOUC 스크립트, HTML 주석 텍스트 오인, cycle311부터 이어짐)만 재확인됨 — 내 변경이 있는 block3는 개별 node --check 통과. 사용자 체감 기능 추가라 APP_VERSION 1.47.395->1.47.396, sw.js CACHE v662->v663. pending_advance_plan null로 비움. 7개 트래시 엔티티(txns/assets/recs/goals/qtyLog/cats/inquiries) 전체가 'undoToast 6초 메모리 클로저' 버그 클래스를 모두 해소.",
       "commit": null
     }
   ]

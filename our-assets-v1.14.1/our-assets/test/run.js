@@ -303,7 +303,7 @@ const FUNCTIONS = [
   // null을 돌려줌) 기존 공유 스텁만으로 selectNwOwner를 실행형으로 검증할 수 있다.
   'selectNwOwner', 'refreshAssetBody', 'refreshNwHistoryCard', 'refreshGoalsSummary', 'refreshAllocationCard', 'refreshAllocationHistoryCard', 'refreshInvestGainLossCard',
   'goalOwnerEff', 'goalHasUnknown', 'goalLinkedAssetGone', 'goalLinkedAssetBroken', 'goalHistoryFor', 'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'goalQInput', 'goalsManageBody', 'syncGoalInputs', 'goalClearDate', 'goalOwnerSel', 'goalTypeSel', 'goalOpenAsset', 'renderGoalForm', 'openGoalForm', 'duplicateGoal', 'saveGoal', 'delGoal', 'ackGoalAchieved',
-  'openInquiry', 'sendInquiry', 'openInquiryList', 'delInquiry', 'editInquiry', 'saveInquiryEdit',
+  'openInquiry', 'sendInquiry', 'openInquiryList', 'delInquiry', 'editInquiry', 'saveInquiryEdit', 'openInquiryTrashList', 'restoreTrashInquiry',
   'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetQInput', 'assetToggleSel', 'visibleAssetsForSel', 'assetSelAll', 'activeSel', 'exitSelMode',
   'modeSeg', 'monthNav', 'abbr', 'calCellsFor', 'ledSumInner', 'ledSumBox', 'ledSumTap', 'calPane', 'txRowCore', 'txRow', 'dayTxns',
   'ledgerRowsHtml', 'ledgerDayHeadHtml', 'renderLedger', 'selDayPartial',
@@ -6424,6 +6424,83 @@ test('delInquiry: undoToast의 되돌리기를 누르면 메모가 되살아나�
   assert.strictEqual(sandbox.DB.deletedIds.q1, undefined, '되돌리면 톰스톤도 지워져야 함');
 });
 
+/* ---------- delInquiry → DB.trashInquiries('삭제한 메모'): deleteTxnsUndo→DB.trashTxns(cycle319)/
+ * .../delAssetQtyLog→DB.trashQtyLog(cycle324)/doDeleteCat→DB.trashCats(cycle325)와 동일하게,
+ * undoToast의 6초 창을 넘기거나 앱을 닫았다 다시 열어도 메모 text를 복구할 수 있게 한다
+ * (app-evolve cycle327 critique/advance). ---------- */
+test('delInquiry: 확인을 누르면 삭제한 메모 전체 내용을 _deletedAt과 함께 DB.trashInquiries에 담는다', () => {
+  sandbox.DB = { inquiries: [{ id: 'q1', text: '메모', date: '2026-01-01', updatedAt: 1 }], deletedIds: {} };
+  sandbox.confirmSheetCalls = [];
+  sandbox.delInquiry('q1');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.trashInquiries.length, 1);
+  const trashed = sandbox.DB.trashInquiries[0];
+  assert.strictEqual(trashed.id, 'q1');
+  assert.strictEqual(trashed.text, '메모');
+  assert.strictEqual(trashed.date, '2026-01-01');
+  assert.ok(typeof trashed._deletedAt === 'number');
+});
+test('delInquiry: undo 콜백을 부르면 DB.trashInquiries에서도 해당 항목이 빠진다', () => {
+  sandbox.DB = { inquiries: [{ id: 'q1', text: '메모', updatedAt: 1 }], deletedIds: {} };
+  sandbox.confirmSheetCalls = [];
+  sandbox.lastUndo = null;
+  sandbox.delInquiry('q1');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.trashInquiries.length, 1);
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.trashInquiries.length, 0, '되돌리면 트래시에서도 제거되어야 함(복구된 메모가 트래시에 중복으로 남으면 안 됨)');
+});
+
+/* ---------- openInquiryTrashList/restoreTrashInquiry: 메뉴 › '삭제한 메모' —
+ * openGoalTrashList/restoreTrashGoal·openAssetQtyLogTrashList/restoreTrashQtyLog와 동일한 패턴으로
+ * DB.trashInquiries를 보여주고 복구한다(app-evolve cycle327 critique/advance). inquiries는 active
+ * 플래그나 자산/귀속 연동이 없는 가장 단순한 구조라 restoreTrashRec/restoreTrashCat류의
+ * 재활성화 가드가 전혀 필요 없다. ---------- */
+test('openInquiryTrashList: DB.trashInquiries를 최근 삭제 순으로 보여준다', () => {
+  sandbox.DB = {
+    trashInquiries: [
+      { id: 'q1', text: '오래된메모', date: '2026-01-01', _deletedAt: 100 },
+      { id: 'q2', text: '최신메모', date: '2026-02-01', _deletedAt: 200 },
+    ],
+  };
+  sandbox.lastSheetHtml = null;
+  sandbox.openInquiryTrashList();
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.indexOf('최신메모') < html.indexOf('오래된메모'), '더 최근에 삭제된 메모(q2)가 먼저 나와야 함');
+});
+test('openInquiryTrashList: 삭제한 메모가 없으면 빈 상태를 보여준다', () => {
+  sandbox.DB = { trashInquiries: [] };
+  sandbox.lastSheetHtml = null;
+  sandbox.openInquiryTrashList();
+  assert.ok(sandbox.lastSheetHtml.includes('삭제한 메모가 없어요'));
+});
+test('restoreTrashInquiry: 트래시 항목을 DB.inquiries로 되돌리고 트래시·톰스톤에서 제거한다', () => {
+  const q = { id: 'q1', text: '메모', date: '2026-01-01', _deletedAt: 123 };
+  sandbox.DB = { inquiries: [], trashInquiries: [q], deletedIds: { q1: 123 } };
+  sandbox.restoreTrashInquiry('q1');
+  assert.strictEqual(sandbox.DB.trashInquiries.length, 0, '복구하면 트래시에서 빠져야 함');
+  assert.strictEqual(sandbox.DB.deletedIds.q1, undefined, '복구하면 톰스톤도 지워져야 함');
+  const restored = sandbox.DB.inquiries.find(x => x.id === 'q1');
+  assert.ok(restored, '원래 id 그대로 DB.inquiries에 복구되어야 함');
+  assert.strictEqual(restored.text, '메모');
+  assert.strictEqual(restored._deletedAt, undefined, '복구된 메모에는 트래시 전용 필드가 남으면 안 됨');
+  assert.strictEqual(restored.updatedAt, 'test-updatedAt', '복구된 메모는 touch()되어야 함(mergeCollection 병합 불변식)');
+});
+test('restoreTrashInquiry: 존재하지 않는 id면 아무것도 바꾸지 않는다', () => {
+  sandbox.DB = { inquiries: [], trashInquiries: [{ id: 'q1', text: '메모' }], deletedIds: {} };
+  sandbox.restoreTrashInquiry('없는id');
+  assert.strictEqual(sandbox.DB.inquiries.length, 0);
+  assert.strictEqual(sandbox.DB.trashInquiries.length, 1);
+});
+test('restoreTrashInquiry: 튜토리얼 모드 중에는 twGuard가 막아서 복구되지 않는다', () => {
+  sandbox.TWi = 0;
+  sandbox.DB = { inquiries: [], trashInquiries: [{ id: 'q1', text: '메모' }], deletedIds: { q1: 1 } };
+  sandbox.restoreTrashInquiry('q1');
+  assert.strictEqual(sandbox.DB.inquiries.length, 0);
+  assert.strictEqual(sandbox.DB.trashInquiries.length, 1);
+  sandbox.TWi = -1;
+});
+
 /* ---------- editInquiry/saveInquiryEdit: 저장한 메모 수정 (app-evolve cycle245 develop) ----------
  * 지금까지 저장한 메모는 추가(sendInquiry)·삭제(delInquiry)만 가능했고, 오타를 고치거나 내용을
  * 보강하려면 지우고 새로 쓰는 수밖에 없었다(그러면 작성일(date)도 오늘로 바뀌어 원래 적어둔
@@ -6504,6 +6581,32 @@ test('mergeRemoteDataIntoLocal: 로컬에서 삭제한(톰스톤) 메모는 원�
     deletedIds: {},
   });
   assert.strictEqual(sandbox.DB.inquiries.find(q => q.id === 'q1'), undefined, '삭제 이후 원격이 손대지 않은 사본은 되살리면 안 됨');
+});
+test('mergeRemoteDataIntoLocal: DB.trashInquiries도 DB.trashTxns/DB.trashAssets/DB.trashRecs/DB.trashGoals/DB.trashQtyLog/DB.trashCats와 동일하게 신설 시점부터 병합 배선이 돼 있다(두 기기가 각자 지운 메모가 소실 없이 합쳐짐, app-evolve cycle327 critique/advance)', () => {
+  const now = Date.now();
+  sandbox.DB = minimalMergeDB({
+    trashInquiries: [{ id: 'local-only', text: '로컬 메모', _deletedAt: now }],
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    trashInquiries: [{ id: 'remote-only', text: '원격 메모', _deletedAt: now }],
+    deletedIds: {},
+  });
+  const ids = sandbox.DB.trashInquiries.map(q => q.id).sort();
+  assert.strictEqual(ids.length, 2);
+  assert.ok(ids.includes('local-only') && ids.includes('remote-only'));
+});
+test('mergeRemoteDataIntoLocal: 이미 DB.inquiries로 되살아난(병합 결과 live인) 메모는 상대 기기의 트래시 사본과 합쳐져도 트래시에 남지 않는다', () => {
+  sandbox.DB = minimalMergeDB({
+    inquiries: [{ id: 'q1', text: '메모', updatedAt: 200 }], // 로컬이 복구해 살아있음
+    trashInquiries: [],
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    inquiries: [],
+    trashInquiries: [{ id: 'q1', text: '메모', _deletedAt: Date.now() }], // 원격은 아직 트래시에 들고 있음
+    deletedIds: {},
+  });
+  assert.ok(sandbox.DB.inquiries.some(q => q.id === 'q1'), '살아있는 메모는 그대로 유지되어야 함');
+  assert.strictEqual(sandbox.DB.trashInquiries.find(q => q.id === 'q1'), undefined, 'live인 메모가 트래시에 중복으로 남으면 안 됨');
 });
 
 /* mergeRemoteDataIntoLocal이 DB.goals/DB.inquiries와 동일하게 DB.assetQtyLog도 mergeCollection으로
@@ -15681,6 +15784,53 @@ test('sanitizeBackup: 트래시 카테고리도 trashTxns/trashAssets/trashRecs/
   assert.ok(fixedCount >= 1);
 });
 
+/* ---------- sanitizeBackup: DB.trashInquiries(문의 메모 삭제 '삭제한 메모', app-evolve cycle327
+ * critique/advance)도 위 trashTxns/trashAssets/trashRecs/trashGoals/trashQtyLog/trashCats와
+ * 동일한 이유로 백업 복원·클라우드 풀 경로에서 검증한다. ---------- */
+test('sanitizeBackup: id 없는 트래시 메모 항목은 통째로 제거하고, trashInquiries가 없거나 배열이 아니어도 터지지 않는다', () => {
+  const droppedNoId = sandbox.sanitizeBackup({ txns: [], assets: [], trashInquiries: [{ text: '메모' }] });
+  assert.strictEqual(droppedNoId.data.trashInquiries.length, 0);
+
+  const missing = sandbox.sanitizeBackup({ txns: [], assets: [] });
+  assert.strictEqual(missing.data.trashInquiries.length, 0);
+  const notArray = sandbox.sanitizeBackup({ txns: [], assets: [], trashInquiries: { oops: true } });
+  assert.strictEqual(notArray.data.trashInquiries.length, 0);
+});
+test('sanitizeBackup: 트래시 메모의 text가 문자열이 아니면 문자열로 정규화한다(위 srcInquiries 블록과 동일)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    trashInquiries: [{ id: 'q1', text: null, _deletedAt: 100 }],
+  });
+  assert.strictEqual(data.trashInquiries[0].text, '');
+  assert.ok(fixedCount >= 1);
+});
+test('sanitizeBackup: 트래시 메모의 _deletedAt이 유한수가 아니면 now로 보정하되, 정상 복구 대상을 통째로 버리지 않는다', () => {
+  const before = Date.now();
+  const { data } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    trashInquiries: [{ id: 'q1', text: '메모' }, { id: 'q2', text: '메모2', _deletedAt: 'oops' }],
+  });
+  assert.strictEqual(data.trashInquiries.length, 2, '유효한 복구 대상을 _deletedAt 손상만으로 통째로 버리면 안 됨');
+  assert.ok(data.trashInquiries.every(q => typeof q._deletedAt === 'number' && q._deletedAt >= before));
+});
+test('sanitizeBackup: 트래시 메모의 date 등 나머지 필드는 재검증하지 않고 그대로 보존한다(트래시 전용 항목들의 공통 전제)', () => {
+  const { data } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    trashInquiries: [{ id: 'q1', text: '메모', date: '2026-01-01', _deletedAt: 123 }],
+  });
+  assert.strictEqual(data.trashInquiries[0].date, '2026-01-01');
+  assert.strictEqual(data.trashInquiries[0]._deletedAt, 123);
+});
+test('sanitizeBackup: 트래시 메모도 trashTxns/trashAssets/trashRecs/trashGoals/trashQtyLog/trashCats와 동일하게 id 중복이면 새 id를 부여해 복구한다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    trashInquiries: [{ id: 'dup', text: '메모A', _deletedAt: 1 }, { id: 'dup', text: '메모B', _deletedAt: 2 }],
+  });
+  const ids = data.trashInquiries.map(q => q.id);
+  assert.strictEqual(new Set(ids).size, 2, '중복 id는 새 id로 갈라져야 함');
+  assert.ok(fixedCount >= 1);
+});
+
 /* ---------- sanitizeBackup: DB.categories/DB.owners(카테고리·귀속 이름 목록)도 txns/assets/
  * recurrences/goals/inquiries/assetQtyLog와 동일하게 검증돼야 한다 — 이전에는 이 블록이 아예
  * 없어서, obj.categories.income/expense/saving나 obj.owners가 배열이 아니면(손상된 백업·레거시
@@ -19730,6 +19880,50 @@ test('migrate: DB.trashCats에 이미 DB.categories로 복구돼(또는 동명�
   };
   sandbox.migrate();
   assert.deepStrictEqual(sandbox.DB.trashCats.map(c => c.id), [sandbox.catTombKey('expense', '정말삭제됨')], 'DB.categories에 살아있는 고정비는 트래시에서 빠지고, 실제로 삭제된 정말삭제됨만 남아야 함');
+});
+
+/* ---------- migrate: DB.trashInquiries(문의 메모 삭제 '삭제한 메모', app-evolve cycle327
+ * critique/advance)도 위 DB.trashTxns/DB.trashAssets/DB.trashRecs/DB.trashGoals/DB.trashQtyLog/
+ * DB.trashCats와 동일한 초기화/GC/live-id 필터를 받는다. ---------- */
+test('migrate: DB.trashInquiries가 없으면(migrate 이전 상태) 빈 배열로 채워진다', () => {
+  sandbox.DB = {
+    version: 5, catsV2: true,
+    settings: { themeMode: 'system', includeScheduled: false, assetSort: 'custom', groupOrder: [...sandbox.DEFAULT_GROUP_ORDER] },
+    owners: ['나', '배우자', '공용'],
+    assets: [], txns: [], recurrences: [], inquiries: [],
+    categories: { expense: [...sandbox.EXP_CATS_DEFAULT], income: [...sandbox.INC_CATS_DEFAULT], saving: [...sandbox.SAV_CATS_DEFAULT] },
+  };
+  assert.doesNotThrow(() => sandbox.migrate());
+  assert.strictEqual(sandbox.DB.trashInquiries.length, 0);
+});
+test('migrate: DB.trashInquiries의 오래된(30일 초과) 항목은 GC되어 사라지고, 그 이내인 것은 유지된다(app-evolve cycle327 critique/advance 통합 테스트)', () => {
+  const now = Date.now();
+  const DAY = 1000 * 60 * 60 * 24;
+  const old = { id: 'old', text: '오래된메모', _deletedAt: now - 31 * DAY };
+  const recent = { id: 'recent', text: '최근메모', _deletedAt: now - 10 * DAY };
+  sandbox.DB = {
+    version: 5, catsV2: true,
+    settings: { themeMode: 'system', includeScheduled: false, assetSort: 'custom', groupOrder: [...sandbox.DEFAULT_GROUP_ORDER] },
+    owners: ['나', '배우자', '공용'],
+    assets: [], txns: [], recurrences: [], inquiries: [],
+    categories: { expense: [...sandbox.EXP_CATS_DEFAULT], income: [...sandbox.INC_CATS_DEFAULT], saving: [...sandbox.SAV_CATS_DEFAULT] },
+    trashInquiries: [old, recent],
+  };
+  sandbox.migrate();
+  assert.deepStrictEqual(sandbox.DB.trashInquiries.map(q => q.id), ['recent']);
+});
+test('migrate: DB.trashInquiries에 이미 DB.inquiries로 복구돼 살아있는 id가 남아있으면(온전치 못한 복구 등) 중복으로 보이지 않게 제거한다', () => {
+  sandbox.DB = {
+    version: 5, catsV2: true,
+    settings: { themeMode: 'system', includeScheduled: false, assetSort: 'custom', groupOrder: [...sandbox.DEFAULT_GROUP_ORDER] },
+    owners: ['나', '배우자', '공용'],
+    assets: [], txns: [], recurrences: [],
+    inquiries: [{ id: 'q1', text: '복구된메모', updatedAt: Date.now() }],
+    categories: { expense: [...sandbox.EXP_CATS_DEFAULT], income: [...sandbox.INC_CATS_DEFAULT], saving: [...sandbox.SAV_CATS_DEFAULT] },
+    trashInquiries: [{ id: 'q1', text: '복구된메모', _deletedAt: Date.now() }, { id: 'q2', text: '진짜삭제됨', _deletedAt: Date.now() }],
+  };
+  sandbox.migrate();
+  assert.deepStrictEqual(sandbox.DB.trashInquiries.map(q => q.id), ['q2'], 'DB.inquiries에 살아있는 q1은 트래시에서 빠지고, 실제로 삭제된 q2만 남아야 함');
 });
 
 /* ---------- themeCachePayload/writeThemeCache: 첫 페인트 FOUC 방지 캐시(app-evolve cycle181 advance) ----------
