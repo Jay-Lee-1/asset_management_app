@@ -1,15 +1,8 @@
 {
   "cycle": 328,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 323,
-      "phase": "develop",
-      "timestamp": "2026-11-08T00:00:00.000Z",
-      "summary": "restoreTrashRec(index.html, '삭제한 반복' 복구, cycle321)이 복구 시 연결 자산의 생존 여부를 전혀 확인하지 않는 공백을 발견해 고쳤다. 반복거래가 먼저 DB.trashRecs에 들어간(=DB.recurrences에서 빠진) 뒤에 연결된 자산이 삭제되면, deleteAssetsUndo의 activeRecsForAssets(ids)는 지금 DB.recurrences에 있는 반복거래만 훑으므로 이 트래시된 반복거래는 비활성화 기회를 아예 얻지 못한다. 그 상태로 나중에 restoreTrashRec을 부르면 active:true 그대로 DB.recurrences에 되돌아가고, expandRec()은 r.active만 보고 매번 새 가상 회차를 만들어내므로(4459행 activeRecsForAssets 주석이 직접 경고하는 바로 그 위험) 존재하지 않는 자산으로 영원히 '발생'하는 유령 반복거래가 생긴다. restoreTrashAsset(cycle320)이 이체 반복거래를 양쪽 자산이 모두 살아있을 때까지 재활성화하지 않는 것과 대칭으로, restoreTrashRec이 복구 직전에 fromAssetId/toAssetId 생존을 직접 확인해 하나라도 없으면 active:false로 복구하고 _autoDeactivatedByAssetDelete를 남기도록 수정(한 줄 로직, 새 함수 없이 restoreTrashAsset과 동일한 live-id 체크 재사용) — 이 플래그를 남겨두면 그 자산이 나중에 restoreTrashAsset으로 복구될 때 기존 로직이 자동으로 재활성화해준다(실제로 양방향 왕복 테스트로 확인). 트래시에 들어가기 전부터 사용자가 직접 멈춰둔(active:false) 반복거래는 자산이 없어도 원래 상태 그대로 유지해 '자산 삭제 때문에 멈췄다'는 원인 표시를 잘못 남기지 않는다. 비활성 복구 시에는 '되돌렸어요 · 연결된 자산이 없어 일시중지됐어요' 토스트로 구분해 알린다. test/run.js에 restoreTrashRec 블록에 5건 추가(fromAssetId 없음→비활성+플래그, toAssetId만 없는 이체형도 동일, 양쪽 다 살아있으면 원래 active 그대로, 원래부터 비활성이던 건 플래그 안 남김, restoreTrashRec→restoreTrashAsset 순서로 자동 재활성화 왕복) — 3104->3109 통과. node test/run.js 3109/3109 통과. 사용자 체감 버그 수정이라 APP_VERSION 1.47.387->1.47.388, sw.js CACHE v654->v655.",
-      "commit": null
-    },
     {
       "cycle": 323,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-08T00:00:00.000Z",
       "summary": "delGoal(단건 목표 삭제, index.html:3994)이 deleteGoalsUndo(일괄삭제, cycle322)와 달리 DB.trashGoals에 담지 않고 undoToast의 6초짜리 메모리 클로저에만 의존해, 토스트가 사라지거나 앱을 닫으면 목표가 영구 소실되는 공백을 발견해 고쳤다. deleteGoalsUndo와 동일한 패턴으로 확인 시 DB.trashGoals에 {...g,_deletedAt}을 push하고(새 함수 없이 Object.assign 재사용), undoToast의 되돌리기 콜백에서도 DB.trashGoals에서 제거하도록 맞췄다 — '삭제한 목표' 화면(openGoalTrashList/restoreTrashGoal)은 이미 DB.trashGoals를 보므로 이제 단건 삭제도 그 화면에서 복구 가능. 테스트: delGoal이 DB.trashGoals에 담기고(_deletedAt 포함) 되돌리면 다시 빠지는지 2건 추가 — node test/run.js 3197->3199/3199 통과. node --check(sw.js, test/run.js) 통과, index.html은 <script> 블록 추출 후 개별 node --check로 확인 (delGoal이 속한 block3 포함 — 기존과 동일한 1건의 사전 존재 오탐(block0, HTML 주석 텍스트 오인)만 재확인, git stash로 변경 전과 동일함을 대조). 사용자 체감 버그 수정이라 APP_VERSION 1.47.396->1.47.397, sw.js CACHE v663->v664.",
+      "commit": null
+    },
+    {
+      "cycle": 328,
+      "phase": "review",
+      "timestamp": "2026-11-08T21:07:50.825Z",
+      "summary": "cycle328 develop 커밋(70ee4fd, delGoal이 DB.trashGoals에 담기지 않아 undoToast 토스트 소실 시 목표가 영구 삭제되던 공백 수정)을 검토. git show로 diff를 라인 단위 대조 — delGoal이 deleteGoalsUndo(11921행, 일괄삭제)와 정확히 동일한 패턴(DB.trashGoals에 Object.assign({},g,{_deletedAt:now}) push, undoToast 콜백에서 filter로 제거)을 따르는지 확인. restoreTrashGoal(11956행)의 asset형 owner 재동기화 로직은 undoToast의 즉시-되돌리기 경로에는 없지만, 이는 deleteGoalsUndo의 undo 콜백도 동일하게 생략하는 기존 관례와 일치함(6초 내 되돌리기라 owner가 바뀔 시간이 거의 없다고 보는 기존 설계 그대로) — 새로 도입된 불일치 아님. 트래시 목록에 있는 동안 undoToast로도 동시에 되돌릴 수 있어 이론상 중복 push 경합이 있을 수 있으나, 이는 trashTxns/trashAssets/trashRecs/trashGoals(배치) 전체에 걸쳐 app-evolve 이전부터 존재하는 동일 패턴이라 이번 diff가 새로 만든 문제가 아니므로 이번 리뷰 범위에서 별도 수정하지 않음(필요하면 critique가 별도로 다룰 사안). 추가된 테스트 2건(trashGoals에 담김+_deletedAt 확인, undo 시 trashGoals에서 제거)이 구현과 정확히 대응함을 확인. node test/run.js 재실행 3199/3199 통과, node --check sw.js/test/run.js 통과, index.html은 스크립트 블록 추출 검사 기존과 동일(신규 오탐 없음), APP_VERSION 1.47.397/CACHE v664 일치 재확인. 실제 버그 없음(state.json만 커밋).",
       "commit": null
     }
   ]
