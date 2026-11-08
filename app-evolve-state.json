@@ -1,15 +1,8 @@
 {
   "cycle": 327,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 322,
-      "phase": "develop",
-      "timestamp": "2026-11-07T20:30:00.000Z",
-      "summary": "openTrashList()(index.html, '최근 삭제함' 화면, cycle319)가 다른 모든 거래 목록(장부 행, flow 아이템, 알림 카드, 통합검색 등)과 달리 분할 거래(t.splits.length>1)에서 카테고리를 txCatLabel(t)(logic.js:533, cycle198)로 뭉뚱그리지 않고 t.category(첫 분할의 카테고리)를 그대로 보여주는 공백을 서브에이전트 조사로 발견 — openTrashList가 cycle319에 추가될 때 분할 거래 지원(cycle198) 이전 패턴을 그대로 썼던 것으로 보인다. 삭제된 분할 거래를 '최근 삭제함'에서 보면 실제로는 여러 카테고리로 나뉜 거래가 마치 첫 분할 카테고리 하나뿐인 거래처럼 보여 오해를 살 수 있다. restoreTrashTxn은 t.splits를 그대로 복구하므로 데이터 자체는 멀쩍하고 이 화면의 라벨링만 문제. index.html의 openTrashList() row 템플릿에서 t.category 직접 참조를 txCatLabel(t) 결과(catLbl)로 교체(한 줄 변경, txCatLabel/splitLines는 이미 테스트된 순수함수 재사용, 새 로직 없음). test/run.js에 분할 거래는 '카테고리 2개'로 보이고 첫 분할 카테고리 단독 노출(· 식비)은 없어야 한다는 테스트 1건 + 비분할 거래는 기존처럼 t.category 그대로 보이는 회귀 방지 테스트 1건 추가 — 3082->3084 통과. node --check logic.js/sw.js 통과, index.html 인라인 스크립트 추출검사는 기존과 동일한 1건의 기존 오탐(block0=head 쪽 HTML 주석 텍스트 오인, cycle311부터 이어짐; 내 변경이 있는 block3는 개별 node --check 통과)만 재확인, manifest.webmanifest JSON 유효성 통과. 사용자 체감 라벨 수정이라 APP_VERSION 1.47.385->1.47.386, sw.js CACHE v652->v653.",
-      "commit": null
-    },
     {
       "cycle": 322,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-08T16:15:00.000Z",
       "summary": "restoreTrashAsset(index.html, 11805행)이 DB.recurrences만 훑고 DB.trashRecs는 보지 않는 공백을 발견해 고쳤다. deleteRecsUndo(11760행)는 반복거래를 트래시로 옮길 때 그 시점의 active/_autoDeactivatedByAssetDelete 값을 그대로 복사해 넣는다 — 그래서 '자산 삭제로 비활성화된 반복거래를 그 뒤에 또 삭제'하면 이 플래그가 DB.recurrences가 아니라 DB.trashRecs 안에 찍힌 채로 남는다. 그 상태로 자산만 먼저 복구하면 restoreTrashAsset이 DB.trashRecs는 안 봐서 플래그를 영원히 못 지우고, 나중에 restoreTrashRec이 그 반복거래를 복구할 때도 rec.active가 이미 false라 자산생존가드(cycle323, assetsGone=rec.active&&...)가 전혀 평가되지 않아 active:false로만 복구돼 버린다 — 자산·반복 둘 다 복구했는데 반복거래만 영원히 멈춘 채로 남는 결과. restoreTrashAsset(cycle320)이 이체 반복거래 재활성화 가드로 쓰던 조건을 canRevive 헬퍼로 추출해 DB.recurrences와 DB.trashRecs 양쪽에 동일하게 적용(트래시 안에 있는 동안은 active=true로 플래그만 지워두고, 실제로 live 배열로 돌아오는 건 그 뒤 restoreTrashRec이 하도록 둠 — cycle326 advance가 relinkDeletedAsset에 쓴 것과 같은 '트래시 안에서 미리 되살려두기' 패턴). 테스트: 단일 자산 참조 반복거래가 트래시 안에서도 되살려지는지(1) + 이체 반복거래는 양쪽 자산이 모두 복구되기 전까지 플래그가 안 지워지는지(1) + restoreTrashAsset→restoreTrashRec 왕복 시나리오로 최종적으로 active:true에 수렴하는지(1) = 3건 추가 — node test/run.js 3177->3180/3180 통과. node --check logic.js/sw.js/test/run.js 통과, manifest.webmanifest JSON 유효성 통과, index.html 인라인 스크립트 추출검사는 기존과 동일한 1건의 기존 오탐(block1=head FOUC 스크립트, HTML 주석 텍스트 오인, cycle311부터 이어짐)만 재확인됨 — 내 변경은 restoreTrashAsset이 있는 다른 block임을 확인. 사용자 체감 데이터 정합성 버그 수정이라 APP_VERSION 1.47.394->1.47.395, sw.js CACHE v661->v662. (참고: 세션 시작 시 로컬 main이 origin/main보다 40커밋 뒤처진 detached HEAD 상태였음 — git fetch로 origin/main이 이미 그 지점을 포함함을 확인하고 git merge --ff-only origin/main으로 맞춤. 이런 상태가 반복되는 듯해 다음 critique/advance에서 원인 조사를 고려할 만함 — origin에 app-evolve-backup/checkpoint/orphaned/recovered 등 이름의 과거 복구용 브랜치가 다수 남아있는 것도 확인됨, 실제 삭제는 사용자 명시적 요청 없이 하지 않음.)",
+      "commit": null
+    },
+    {
+      "cycle": 327,
+      "phase": "review",
+      "timestamp": "2026-11-08T17:07:50.554Z",
+      "summary": "cycle327 develop 커밋(12d9e74, restoreTrashAsset이 DB.trashRecs에 남은 _autoDeactivatedByAssetDelete 플래그를 지우지 않던 공백 수정)을 검토. 기존 재활성화 조건(DB.recurrences 대상)을 canRevive 헬퍼로 추출해 DB.trashRecs에도 동일하게 적용하고, 양쪽 모두 touchSave 대상에 포함시킨 diff를 라인 단위로 확인 — 이체처럼 fromAssetId/toAssetId 양쪁이 걸린 경우 한쪽만 복구되면 플래그를 지우지 않는 기존 가드가 trashRecs 쪽에도 그대로 적용됨을 확인. restoreTrashRec(cycle323)의 자산생존가드(assetsGone=rec.active&&...)가 rec.active를 보는데, 이 수정 전에는 트래시 안에서 active가 계속 false로 남아 가드가 평가되지 않아 복구 후에도 영원히 비활성 상태로 남는 버그였음을 재확인 — 수정 후에는 트래시 안에서 미리 active:true로 되살려두어(cycle326 advance의 relinkDeletedAsset과 동일한 패턴) restoreTrashRec이 정상적으로 active:true로 복구함. 추가된 테스트 3건(단일 참조 trashRecs 되살림, 이체형은 양쪽 복구 전까지 보류, restoreTrashAsset→restoreTrashRec 왕복 시나리오)이 구현과 정확히 대응함을 확인. node test/run.js 재실행 3180/3180 통과, node --check logic.js/sw.js/test/run.js 통과, APP_VERSION 1.47.395/CACHE v662 일치. 실제 버그 없음(state.json만 커밋).",
       "commit": null
     }
   ]
