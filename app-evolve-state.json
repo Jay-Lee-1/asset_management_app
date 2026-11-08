@@ -1,15 +1,8 @@
 {
   "cycle": 328,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 322,
-      "phase": "advance",
-      "timestamp": "2026-11-07T23:10:00.000Z",
-      "summary": "critique(cycle322) 계획대로 목표(goals) 삭제 '최근 삭제함(trashGoals)' 복구 기능을 구현했다. logic.js는 새 함수 없이 gcTrashTxns/mergeTrashTxns를 그대로 재사용(둘 다 {id,_deletedAt}만 가정해 목표 전용 필드를 참조하지 않음). index.html: DB.trashGoals 신설(migrate()에 초기화+GC+live-id 필터, mergeRemoteDataIntoLocal의 DB.goals 병합 직후에 trashTxns/trashAssets/trashRecs와 동일한 패턴으로 배선, sanitizeBackup에 id&&name 기준 검증+targetAmount 클램프+targetDate csvDateValid 보정+_deletedAt 보정 추가 — owner/type/linkedAssetId는 이미 saveGoal이 정규화해 둔 아카이브라는 전제로 재검증하지 않음, 위 srcGoals 블록과 달리 goalOwnerEff 불변식 동기화도 적용하지 않음), deleteGoalsUndo가 삭제 즉시 목표 전체+_deletedAt을 DB.trashGoals에 저장(즉시 undo 콜백에서도 제거), 메뉴 '백업·데이터'에 '삭제한 목표' 행 추가, openGoalTrashList()/restoreTrashGoal(id) 신설(openRecTrashList/restoreTrashRec과 동일 manage-row 패턴, 요약은 type(자산연동/순자산)·targetAmount·targetDate). 테스트: deleteGoalsUndo→trashGoals 저장/undo제거/무변경/다건(4) + openGoalTrashList/restoreTrashGoal(목록순서/빈상태/정상복구/존재안함/twGuard, 5) + sanitizeBackup trashGoals 검증(id/name 없음·무효 통째 제거, targetAmount 클램프, targetDate 보정, _deletedAt 보정, owner/type/linkedAssetId 비검증 보존, 중복id, 6) + migrate trashGoals 초기화/GC/live-id필터(3) + mergeRemoteDataIntoLocal trashGoals 배선(2) + gcTrashTxns/mergeTrashTxns 재사용 확인(목표 모양 데이터, 1) = 21건 추가, 거기에 FUNCTIONS 목록에 openGoalTrashList/restoreTrashGoal 추가 — node test/run.js 3084->3104/3104 통과(DB 스키마 완전성 가드 테스트도 trashGoals 배선이 실제로 걸렸음을 자동 확인). node --check logic.js/sw.js/test/run.js 통과, manifest.webmanifest JSON 유효성 통과, index.html 인라인 스크립트 추출검사는 기존과 동일한 1건의 기존 오탐(block1=head FOUC 스크립트, HTML 주석 텍스트 오인, cycle311부터 이어짐; git stash로 변경 전 상태와 대조해 이번 변경과 무관함을 재확인, 내 변경이 있는 block3/4는 개별 node --check 통과)만 재확인됨. 사용자 체감 기능 추가라 APP_VERSION 1.47.386->1.47.387, sw.js CACHE v653->v654. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 323,
       "phase": "develop",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-08T19:12:45.813Z",
       "summary": "critique(cycle327) 계획대로 문의 메모(inquiries) 삭제 '삭제한 메모(trashInquiries)' 복구 기능을 구현했다. logic.js는 새 함수 없이 gcTrashTxns/mergeTrashTxns를 그대로 재사용(둘 다 {id,_deletedAt}만 가정해 메모 전용 필드를 참조하지 않음). index.html: DB.trashInquiries 신설(migrate()에 초기화+GC(live-id는 DB.inquiries 기준)+trashCats 바로 뒤에 동일 패턴으로 배선, mergeRemoteDataIntoLocal의 DB.inquiries 병합(mergeCollection) 직후에 trashTxns/trashRecs/trashAssets/trashGoals/trashQtyLog/trashCats와 동일 패턴으로 배선), delInquiry가 confirmSheet 콜백 안에서 스플라이스 전에 메모 전체+_deletedAt을 DB.trashInquiries에 push하고 즉시 undo 콜백에서도 trashInquiries 항목 제거. 메뉴 '백업·데이터'에 '삭제한 메모' 행 추가, openInquiryTrashList()/restoreTrashInquiry(id) 신설(openGoalTrashList/openAssetQtyLogTrashList와 동일 manage-row 패턴, 요약은 40자 미리보기+date). inquiries는 active 플래그·자산연동이 전혀 없는 가장 단순한 {id,date,text} 구조라 restoreTrashRec/restoreTrashCat류의 재활성화 가드가 전혀 필요 없음을 확인 — 추가 재검증 로직 없이 DB.inquiries.push+트래시/톰스톤 제거만으로 복구 완료. sanitizeBackup은 기존 srcInquiries 검증 블록(id&&text 정규화) 바로 아래에 trashQtyLog 패턴과 동일하게 id 기준 drop+text 정규화+_deletedAt 보정 추가. 테스트: delInquiry→trashInquiries 저장/undo제거(2) + openInquiryTrashList(정렬/빈상태, 2) + restoreTrashInquiry(정상복구/존재안함/twGuard, 3) + sanitizeBackup trashInquiries 검증(id없음 drop·notArray·missing, text정규화, _deletedAt보정, 비검증필드보존, 중복id, 5) + migrate trashInquiries 초기화/GC/live-id필터(3) + mergeRemoteDataIntoLocal trashInquiries 배선+live필터(2) = 17건 추가, FUNCTIONS 목록에 openInquiryTrashList/restoreTrashInquiry 추가 — node test/run.js 3180->3197/3197 통과(DB 스키마 완전성 가드 테스트도 trashInquiries 배선이 실제로 걸렸음을 자동 확인). node --check logic.js/sw.js/test/run.js 통과, manifest.webmanifest JSON 유효성 통과, index.html 인라인 스크립트 추출검사는 기존과 동일한 1건의 기존 오탐(block1=head FOUC 스크립트, HTML 주석 텍스트 오인, cycle311부터 이어짐)만 재확인됨 — 내 변경이 있는 block3는 개별 node --check 통과. 사용자 체감 기능 추가라 APP_VERSION 1.47.395->1.47.396, sw.js CACHE v662->v663. pending_advance_plan null로 비움. 7개 트래시 엔티티(txns/assets/recs/goals/qtyLog/cats/inquiries) 전체가 'undoToast 6초 메모리 클로저' 버그 클래스를 모두 해소.",
+      "commit": null
+    },
+    {
+      "cycle": 328,
+      "phase": "develop",
+      "timestamp": "2026-11-08T00:00:00.000Z",
+      "summary": "delGoal(단건 목표 삭제, index.html:3994)이 deleteGoalsUndo(일괄삭제, cycle322)와 달리 DB.trashGoals에 담지 않고 undoToast의 6초짜리 메모리 클로저에만 의존해, 토스트가 사라지거나 앱을 닫으면 목표가 영구 소실되는 공백을 발견해 고쳤다. deleteGoalsUndo와 동일한 패턴으로 확인 시 DB.trashGoals에 {...g,_deletedAt}을 push하고(새 함수 없이 Object.assign 재사용), undoToast의 되돌리기 콜백에서도 DB.trashGoals에서 제거하도록 맞췄다 — '삭제한 목표' 화면(openGoalTrashList/restoreTrashGoal)은 이미 DB.trashGoals를 보므로 이제 단건 삭제도 그 화면에서 복구 가능. 테스트: delGoal이 DB.trashGoals에 담기고(_deletedAt 포함) 되돌리면 다시 빠지는지 2건 추가 — node test/run.js 3197->3199/3199 통과. node --check(sw.js, test/run.js) 통과, index.html은 <script> 블록 추출 후 개별 node --check로 확인 (delGoal이 속한 block3 포함 — 기존과 동일한 1건의 사전 존재 오탐(block0, HTML 주석 텍스트 오인)만 재확인, git stash로 변경 전과 동일함을 대조). 사용자 체감 버그 수정이라 APP_VERSION 1.47.396->1.47.397, sw.js CACHE v663->v664.",
       "commit": null
     }
   ]

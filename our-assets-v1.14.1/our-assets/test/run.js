@@ -5487,6 +5487,30 @@ test('delGoal: undoToast의 되돌리기를 누르면 목표가 되살아나고(
   assert.strictEqual(sandbox.DB.goals[0].updatedAt, 'test-updatedAt', '되살린 레코드는 다시 touch()되어야 mergeCollection에서 안 탈락함');
   assert.strictEqual('g1' in sandbox.DB.deletedIds, false, '되돌리면 톰스톤도 지워져야 함');
 });
+/* app-evolve cycle328 develop가 발견한 공백의 회귀 테스트: 일괄삭제(deleteGoalsUndo, cycle322)는
+ * DB.trashGoals에 담아 undoToast의 6초가 지나거나 앱을 닫아도 '삭제한 목표' 화면에서 복구할 수 있지만,
+ * 건당삭제(delGoal)는 그 메모리 클로저에만 의존해 토스트가 사라지면 영구 소실됐다. */
+test('delGoal: 확인하면 DB.trashGoals에도 담겨 undoToast가 사라져도 "삭제한 목표" 화면에서 복구할 수 있다(deleteGoalsUndo와 동일 패턴)', () => {
+  sandbox.DB = { goals: [{ id: 'g1', name: '여행자금', type: 'networth', targetAmount: 3000000, targetDate: null }], deletedIds: {}, trashGoals: [] };
+  sandbox.confirmSheetCalls = [];
+  sandbox.delGoal('g1');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.trashGoals.length, 1, 'DB.trashGoals에 삭제된 목표가 담겨야 함');
+  assert.strictEqual(sandbox.DB.trashGoals[0].id, 'g1');
+  assert.strictEqual(sandbox.DB.trashGoals[0].name, '여행자금');
+  assert.ok(typeof sandbox.DB.trashGoals[0]._deletedAt === 'number', '_deletedAt이 찍혀야 gcTrashTxns가 보존기간을 계산할 수 있음');
+});
+test('delGoal: undoToast의 되돌리기를 누르면 DB.trashGoals에서도 제거된다(남아있으면 "삭제한 목표" 화면에 복구된 목표가 중복으로 보임)', () => {
+  sandbox.DB = { goals: [{ id: 'g1', name: '여행자금', type: 'networth', targetAmount: 3000000, targetDate: null, updatedAt: 1 }], deletedIds: {}, trashGoals: [] };
+  sandbox.confirmSheetCalls = [];
+  sandbox.lastUndo = null;
+  sandbox.delGoal('g1');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.trashGoals.length, 1);
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.trashGoals.length, 0, '되돌리면 DB.trashGoals에서도 빠져야 함');
+  assert.strictEqual(sandbox.DB.goals.length, 1);
+});
 /* app-evolve cycle124 develop가 발견한 버그의 회귀 테스트: 목표일 지우기(✕) 버튼이 txClearEnd/recClearEnd와
  * 달리 syncGoalInputs()를 안 부르고 바로 goalDraft.targetDate를 지운 뒤 renderGoalForm을 다시 그렸다.
  * renderGoalForm은 입력칸 value를 goalDraft에서 그대로 읽으므로, 이름/금액을 고친 뒤 날짜만 지우면
