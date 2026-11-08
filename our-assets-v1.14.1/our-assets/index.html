@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.388';
+const APP_VERSION='1.47.389';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -1936,6 +1936,7 @@ function importGuestDataInto(guestRaw){
 }
 
 let DB, STORAGE_OK=true, STORAGE_PERSISTED=null, TAB_SAVED_AT=0, TAB_SYNC_PENDING=null, DB_JSON_LEN=0;
+let CORRUPT_BACKUP_KEYS=[]; /* scanCorruptBackupKeys()가 채움 — load()의 __corrupt_ 백업 키 중 아직 남아있는 것(최근 순) */
 /* localStorage는 오리진당 보통 5~10MB로 quota가 걸려 있다(브라우저마다 다름). save()가 매번 DB
  * 전체를 재직렬화하는 구조라 txns/recurrences가 상한 없이 누적되면 quota 실패에 조금씩 다가갈 수
  * 있는데, storageOutcomeMsg는 실제로 쓰기가 실패한 "이후"에만 반응한다(증상 완화). 여기 두 문턱은
@@ -2556,6 +2557,56 @@ function load(){
   }
  }
  DB=(SESSION?emptyDB():seed());migrate();save(); /* 게스트 첫 실행=샘플 체험 · 새 계정=빈 상태 */
+}
+const CORRUPT_BACKUP_MAX_AGE_MS=90*24*60*60*1000; /* 알림도 없이 devtools로만 접근 가능했던 __corrupt_ 백업 키(load() 2553행)를 매 부팅마다 찾아 홈에 노출한다 — 이 기간보다 오래된 건 더 알리지 않고 지운다(무한정 쌓임 방지, app-evolve cycle323 critique/advance) */
+function scanCorruptBackupKeys(){
+ CORRUPT_BACKUP_KEYS=[];
+ if(!STORAGE_OK)return;
+ try{
+  const all=findCorruptBackupKeys(Object.keys(localStorage),dataKey());
+  const kept=pruneOldCorruptKeys(all,Date.now(),CORRUPT_BACKUP_MAX_AGE_MS);
+  all.filter(k=>!kept.includes(k)).forEach(k=>{try{localStorage.removeItem(k.key)}catch(e){}});
+  CORRUPT_BACKUP_KEYS=kept;
+ }catch(e){}
+}
+/* 홈 알림(homeAlertCard 'corruptBackup')에서 '다운로드' 눌렀을 때 — 가장 최근 백업 1개만 파일로
+ * 내보낸다(여러 개 쌓였어도 최신 것이 가장 쓸모 있고, 나머지도 같은 계정의 손상 이력이라 지금
+ * 복구에 필요한 건 보통 하나). doExport()의 공유→다운로드→복사 3단 폴백과 동일한 패턴을 그대로
+ * 재사용한다(backupFile/canShareFiles/IS_IOS/openCopyBackup, 모두 기존 내보내기 경로). */
+async function downloadCorruptBackup(){
+ const k=CORRUPT_BACKUP_KEYS[0];if(!k)return;
+ let raw=null;try{raw=localStorage.getItem(k.key)}catch(e){}
+ if(raw==null){toast('이미 지워졌어요');scanCorruptBackupKeys();renderCurrent();return}
+ const d=new Date(k.ts||Date.now());const pad=n=>String(n).padStart(2,'0');
+ const name=`corrupt_backup_${String(d.getFullYear()).slice(2)}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}.json`;
+ if(canShareFiles()){
+  try{
+   await navigator.share({files:[backupFile(name,raw)],title:'손상된 데이터 백업'});
+   toast('손상된 데이터를 파일로 저장했어요');
+   return;
+  }catch(e){if(e&&e.name==='AbortError')return;} /* 취소면 그대로 두고, 그 외엔 아래 다운로드/복사로 계속 */
+ }
+ const blob=new Blob([raw],{type:'application/json'});
+ const url=URL.createObjectURL(blob);
+ try{
+  if(IS_IOS){
+   const w=window.open(url,'_blank');
+   if(!w||w.closed||typeof w.closed==='undefined'){URL.revokeObjectURL(url);openCopyBackup(raw,'파일 열기가 차단됐어요.');return}
+   toast('파일이 열렸어요 · 공유 버튼으로 저장하세요');
+  }else{
+   const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
+   toast(`${name} 으로 내보냈어요`);
+  }
+  setTimeout(()=>URL.revokeObjectURL(url),20000);
+ }catch(e){
+  URL.revokeObjectURL(url);
+  openCopyBackup(raw,'파일로 저장할 수 없어요.');
+ }
+}
+function dismissCorruptBackup(){
+ CORRUPT_BACKUP_KEYS.forEach(k=>{try{localStorage.removeItem(k.key)}catch(e){}});
+ CORRUPT_BACKUP_KEYS=[];
+ renderCurrent();toast('지웠어요');
 }
 /* head 최상단 동기 인라인 스크립트가 다음 boot 전에 읽어 첫 페인트의 테마/강조색 FOUC를 막는
  * 캐시(app-evolve cycle181 advance) — 세션/계정과 무관한 고정 키라 계정 전환 시 한 프레임만
@@ -10921,6 +10972,10 @@ function homeAlerts(neg){
  if(backupDue()&&DB.txns.length)arr.push({kind:'backup'});
  if(shouldWarnUnpersisted(STORAGE_PERSISTED,!!CLOUD_UID)&&!DB.settings.persistWarnDismissed)arr.push({kind:'persist'});
  if(shouldWarnStorageSize(DB_JSON_LEN,DB.settings.storageSizeWarnDismissed,STORAGE_SIZE_WARN_LEN,STORAGE_SIZE_CRIT_LEN))arr.push({kind:'storageSize'});
+ /* 저장소 손상으로 load()가 빈 DB로 초기화하기 전에 최선 노력으로 남겨둔 __corrupt_ 원본 백업 —
+  * 지금까지 devtools 없이는 존재 자체를 알 방법이 없던 유일한 복구 경로였다(scanCorruptBackupKeys,
+  * app-evolve cycle323 critique/advance) */
+ if(CORRUPT_BACKUP_KEYS.length)arr.push({kind:'corruptBackup',count:CORRUPT_BACKUP_KEYS.length});
  const _pend=allTxns(RANGE_FROM,TODAY).filter(t=>isDuePending(t)).sort((a,b)=>a.date<b.date?-1:1); /* 미확인 이체: 1건이면 그대로, 여러 건이면 하나로 묶음(quick/quickMulti, budgetOver/budgetOverMulti와 동일 패턴) */
  if(_pend.length===1){const t=_pend[0];arr.push({kind:'confirm',id:t.id,recId:t.recId,isRec:!!t.isRec,from:assetNm(t.fromAssetId,t.fromAssetName),to:assetNm(t.toAssetId,t.toAssetName),amount:t.amount,date:t.date});}
  else if(_pend.length>1)arr.push({kind:'confirmMulti',count:_pend.length});
@@ -11197,6 +11252,11 @@ function homeAlertCard(al){
    <div class="ha-b" tabindex="0" role="button" aria-label="저장 용량이 많이 찼어요 · 눌러서 백업" onclick="exportData()" onkeydown="rowKeydown(event,()=>exportData())"><div class="ha-t">저장 용량이 많이 찼어요</div>
      <div class="ha-s">이 기기의 저장 공간 한도에 가까워지고 있어요 · 백업해 두면 안전해요</div></div>
    <button class="txt-btn" style="flex-shrink:0;padding:6px 10px" onclick="event.stopPropagation();dismissStorageSizeWarn()">확인</button></div>`;
+ if(al.kind==='corruptBackup')return `<div class="home-alert mat">
+   <div class="ha-ic">${svg('alert')}</div>
+   <div class="ha-b" tabindex="0" role="button" aria-label="손상된 데이터 백업을 찾았어요 · 눌러서 다운로드" onclick="downloadCorruptBackup()" onkeydown="rowKeydown(event,downloadCorruptBackup)"><div class="ha-t">손상된 데이터 백업을 찾았어요${al.count>1?` (${al.count}개)`:''}</div>
+     <div class="ha-s">예전에 저장이 깨졌을 때 남은 원본이에요 · 눌러서 파일로 받아보세요</div></div>
+   <button class="txt-btn" style="flex-shrink:0;padding:6px 10px" onclick="event.stopPropagation();dismissCorruptBackup()">지우기</button></div>`;
  if(al.kind==='clockSkew')return `<div class="home-alert mat">
    <div class="ha-ic">${svg('alert')}</div>
    <div class="ha-b" tabindex="0" role="button" aria-label="기기 시간을 확인해 주세요 · 눌러서 동기화 상태 보기" onclick="openAccountSheet()" onkeydown="rowKeydown(event,openAccountSheet)"><div class="ha-t">${al.severity==='severe'?'기기 시간이 많이 틀려요':'기기 시간을 확인해 주세요'}</div>
@@ -12222,6 +12282,7 @@ function hideBootSplash(){const el=$('bootSplash');if(el)el.remove()}
 function showApp(){hideBootSplash();$('authView').style.display='none';$('app').style.display=''}
 function startApp(){
  load();
+ scanCorruptBackupKeys();
  bumpInstallVisitCount();
  syncNotifyPermission();
  try{localStorage.removeItem('ourassets_snapshots')}catch(e){} /* 구 자동백업 저장소 정리 */

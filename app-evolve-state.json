@@ -1,11 +1,7 @@
 {
-  "cycle": 323,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "손상된 로컬 데이터 복구용 __corrupt_* 블롭이 쓰기 전용으로만 존재하고 사용자에게 전혀 노출되지 않음",
-    "why": "load() 부팅 시 JSON.parse/migrate()가 실패하면 원본 손상 문자열을 dataKey()+'__corrupt_'+Date.now() 키로 localStorage에 저장한 뒤 DB를 seed()/emptyDB()로 초기화하고 '백업 파일에서 복원하세요' 토스트만 띄운다. 하지만 index.html/test/run.js 전체에서 __corrupt_ 키를 쓰는 곳은 그 한 줄뿐이고 읽거나 나열하거나 다운로드시키는 코드가 전혀 없다(grep으로 확인). 최근 수동 백업 파일이 없는 사용자(백업 리마인더가 있어도 매번 내보냈다는 보장은 없음)에게는 이 블롭이 유일한 복구 경로인데, devtools 없이는 접근 자체가 불가능해 앱의 가장 치명적인 장애 경로(저장소 손상)에서 사실상 조용히 전체 데이터가 영구 소실된다.",
-    "approach": "logic.js에 순수 함수 2개 추가: findCorruptBackupKeys(allKeys, dataKeyPrefix) - dataKeyPrefix+'__corrupt_' 패턴에 맞는 키를 {key, ts} 형태로 추출해 ts 내림차순 정렬해 반환, pruneOldCorruptKeys(keys, now, maxAgeMs) - 오래된 키를 걸러내 무한정 쌓이지 않게 한다. index.html의 load()/boot()에서 정상 부팅 시마다(손상 직후뿐 아니라 재시작 후에도 키가 남아있으므로 매 부팅) 이 두 함수로 남은 __corrupt_* 키를 감지하고, 있으면 homeAlerts()/homeAlertCard()의 기존 persist/cloudSyncError 알림과 동일한 패턴으로 '손상된 데이터 발견 · 다운로드' 홈 알림 카드를 띄운다. 클릭 시 backupFile()/기존 내보내기 공유 경로를 재사용해 원본 블롭을 파일로 저장할 수 있게 하고, 별도의 닫기(dismiss) 액션으로 해당 키를 삭제할 수 있게 한다. 자동 부분 JSON 복구 같은 위험한 시도는 하지 않고 노출+다운로드까지만 범위를 제한한다. 테스트는 test/run.js에 findCorruptBackupKeys/pruneOldCorruptKeys 두 순수함수를 다른 helper들과 동일한 직접 단위 테스트 패턴으로 추가(키 필터링/정렬, 기간 기준 pruning)."
-  },
+  "cycle": 324,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
     {
       "cycle": 318,
@@ -145,6 +141,13 @@
       "phase": "critique",
       "timestamp": "2026-11-08T02:10:00.000Z",
       "summary": "서브에이전트로 앱 전체를 재조사(cycle300-323 처리/보류/기각 항목 전부 제외 지시: twGuard 스윕·전역검색·예산이월·연말결산·owner/category/asset merge 전부·nwHistory byType/자산배분추이 카드·목표자산배분+리밸런싱·CSV날짜·이체 및 반복 중복감지·카테고리별 알림뮤트·공동지출 정산(shared/settle) 전체와 배지·토글 전파·investGainLossCard 유형별 분해·목표/반복/통합검색 검색창 디바운스·PIN 화면잠금 고지·목표비중 알림뮤트 토글·saveGoal targetDate 범위가드·거래/자산/반복/목표 삭제 trash 복구 4종 전체·restoreTrashRec 자산생존가드·searchTerms/matchQueryTerms·shiftWeekend 단위테스트·openTrashList 분할거래 카테고리 라벨은 명시적으로 제외; FX 환차익 분리·투자손익 추이차트·CSV shared/photo 필드·배당/이자/할부/귀속별 예산/다인 정산/CSV·반복 분할거래·실시간 저장소 암호화·반복 건별 skip·백업 리마인더·CDN SRI 해시·홈 대시보드 카드 순서변경/숨기기·CSV import 견고성·부채/대출 추적·백그라운드 푸시 한계·owners/categories 삭제 trash(보류 유지)는 기각/보류 이력으로 재확인). 발견: load() 부팅 시 JSON.parse/migrate() 실패로 DB가 손상되면 원본 손상 문자열을 dataKey()+'__corrupt_'+Date.now() 키로 localStorage에 보관만 해두고(index.html) 그 키를 읽거나 나열하거나 다운로드시키는 코드가 전체 코드베이스(index.html+test/run.js)에 단 하나도 없음을 grep으로 확인 — 최근 수동 백업이 없는 사용자에게는 devtools 없이는 접근 불가능한, 가장 치명적인 장애 경로(저장소 손상)에서의 사실상 영구적·조용한 전체 데이터 소실. pending_advance_plan에 구체 계획 저장(logic.js에 findCorruptBackupKeys/pruneOldCorruptKeys 순수함수 추가, load()/boot()에서 매 부팅마다 감지해 homeAlerts()의 기존 persist/cloudSyncError 알림 패턴으로 '손상된 데이터 발견·다운로드' 카드 노출, backupFile() 내보내기 경로 재사용해 다운로드+닫기(키 삭제) 제공, 자동 부분복구는 범위 제외, 테스트는 두 순수함수 직접 단위테스트). 기각/보류 후보 3개(recScheduleSameSlot 직접 단위테스트-malformed-startDate 분기만 미커버라 저위험·보류, 클라우드 동기화 push 실패 UX-이미 토스트+영구 알림+낙관적 동시성 재시도 완비, 차트/시각화 접근성-nwHistoryCard 등 이미 role=img+키보드 피크 내비게이션과 바코드 카드류의 텍스트 행 노출 완비). 코드 변경 없음(state.json만 커밋, pending_advance_plan 신설에 따라 phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 323,
+      "phase": "advance",
+      "timestamp": "2026-11-08T03:15:00.000Z",
+      "summary": "critique(cycle323) 계획대로 손상된 데이터 복구용 __corrupt_* 백업 블롭을 홈 알림으로 노출하는 기능을 구현했다. logic.js에 순수 함수 2개 추가: findCorruptBackupKeys(allKeys,dataKeyPrefix)(dataKeyPrefix+'__corrupt_' 패턴 키를 {key,ts}로 추출해 ts 내림차순 정렬), pruneOldCorruptKeys(keys,now,maxAgeMs)(오래된 키 걸러냄). index.html: 전역 CORRUPT_BACKUP_KEYS([]) 추가, scanCorruptBackupKeys()(두 순수함수로 localStorage를 스캔해 CORRUPT_BACKUP_KEYS를 채우고 CORRUPT_BACKUP_MAX_AGE_MS=90일보다 오래된 키는 removeItem으로 정리) 신설 후 startApp()의 load() 직후(매 부팅마다)에 배선. homeAlerts()에 CORRUPT_BACKUP_KEYS.length 기반 'corruptBackup' 알림(persist/storageSize 알림 바로 아래) 추가, homeAlertCard()에 해당 카드 렌더링 추가(클릭 시 downloadCorruptBackup(), 별도 버튼으로 dismissCorruptBackup()). downloadCorruptBackup()은 doExport()의 공유→다운로드→복사 3단 폴백과 동일한 패턴(backupFile/canShareFiles/IS_IOS/openCopyBackup 재사용)으로 가장 최근 백업 1개를 파일로 내보내고, dismissCorruptBackup()은 CORRUPT_BACKUP_KEYS에 남은 모든 __corrupt_ 키를 한 번에 localStorage에서 지운다. 테스트: test/run.js 메인 sandbox에 CORRUPT_BACKUP_KEYS:[] 기본값 추가(안 그러면 homeAlerts() 추출 테스트 전체가 'CORRUPT_BACKUP_KEYS is not defined'로 깨짐을 먼저 발견해 수정), findCorruptBackupKeys(필터링/정렬/빈입력/불일치, 3) + pruneOldCorruptKeys(경계값/빈입력, 2) + homeAlerts의 corruptBackup 알림 노출/비노출(1) = 6건 추가 — node test/run.js 3109->3115/3115 통과(vm cross-realm 배열 비교 이슈는 기존 관례대로 JSON.parse(JSON.stringify(...)) 패턴으로 회피). node --check logic.js/sw.js 통과. 저장소 손상이라는 가장 치명적인 장애 경로의 유일한 복구 수단을 처음으로 사용자에게 노출하는 기능 추가라 APP_VERSION 1.47.388->1.47.389, sw.js CACHE v655->v656. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

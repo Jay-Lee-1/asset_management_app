@@ -1878,3 +1878,25 @@ function parseShortcutAction(search){
  const a=m[1];
  return(a==='addExpense'||a==='addIncome'||a==='addTransfer'||a==='addSaving'||a==='shareReceipt')?a:null;
 }
+
+/* ================= 손상 데이터 복구 백업 (순수) ================= */
+/* load()(index.html)가 JSON.parse/migrate 실패 시 dataKey()+'__corrupt_'+Date.now() 키로 원본
+ * raw 문자열을 localStorage에 최선 노력으로 남겨두지만(위 load() 주석), 지금까지 이 키를 읽거나
+ * 사용자에게 보여주는 코드가 전혀 없어 devtools 없이는 접근 자체가 불가능했다 — 저장소 손상이라는
+ * 가장 치명적인 장애 경로에서 유일한 복구 수단이 조용히 묻혀 있던 공백이다(app-evolve cycle323
+ * critique/advance). 이 두 함수는 localStorage 키 나열(Object.keys(localStorage) 등)을 index.html
+ * 쪽에서 받아 판정만 순수하게 한다 — localStorage 자체를 여기서 직접 읽지 않아야 테스트 가능하다. */
+function findCorruptBackupKeys(allKeys,dataKeyPrefix){
+ const prefix=dataKeyPrefix+'__corrupt_';
+ return (allKeys||[])
+  .filter(k=>typeof k==='string'&&k.startsWith(prefix))
+  .map(k=>({key:k,ts:+k.slice(prefix.length)||0}))
+  .sort((a,b)=>b.ts-a.ts);
+}
+/* 복구 알림을 눌러보지 않고 방치하면 손상될 때마다 키가 하나씩 계속 쌓이므로(매번 load() 실패마다
+ * 새 타임스탬프 키 생성), 너무 오래된 것은 더는 알리지 않고 자동으로 정리 대상에서 뺀다. 삭제
+ * 자체(localStorage.removeItem)는 index.html이 하고, 이 함수는 어떤 키가 "오래됐는지"만 순수하게
+ * 판정한다. */
+function pruneOldCorruptKeys(keys,now,maxAgeMs){
+ return (keys||[]).filter(k=>k&&now-k.ts<=maxAgeMs);
+}

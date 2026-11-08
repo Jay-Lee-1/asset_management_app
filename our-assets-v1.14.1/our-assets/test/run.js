@@ -529,6 +529,10 @@ const sandbox = {
   DB_JSON_LEN: 0,
   STORAGE_SIZE_WARN_LEN: 3000000,
   STORAGE_SIZE_CRIT_LEN: 4500000,
+  // CORRUPT_BACKUP_KEYS는 scanCorruptBackupKeys()(index.html)가 매 부팅마다 localStorage를 스캔해
+  // 채우는 파생 상태(app-evolve cycle323 critique/advance)라, DB_JSON_LEN과 같은 이유로 homeAlerts()
+  // 테스트에서 직접 세팅한다. 기본값은 빈 배열=손상 백업 없음(평소엔 알림이 안 뜸).
+  CORRUPT_BACKUP_KEYS: [],
   // CLOCK_SKEW_MS는 measureCloudClockSkew()(index.html)가 Supabase REST 응답의 Date 헤더로 채우는
   // 파생 상태(기본값 null=측정 전/실패)라 CLOUD_UID/STORAGE_PERSISTED와 같은 이유로 테스트에서
   // 직접 세팅한다. CLOCK_SKEW_WARN_MS/CRIT_MS는 그 문턱 상수(app-evolve cycle165 advance).
@@ -34349,6 +34353,55 @@ test('unlockApp()이 PENDING_SHORTCUT_ACTION을 실행 후 비운다 — doUnloc
   assert.ok(body.includes('if(PENDING_SHORTCUT_ACTION)'), 'unlockApp()이 PENDING_SHORTCUT_ACTION을 확인하지 않음');
   assert.ok(body.includes('runShortcutAction(a)'), 'unlockApp()이 보관된 액션으로 runShortcutAction()을 호출하지 않음');
   assert.ok(body.includes('PENDING_SHORTCUT_ACTION=null'), 'unlockApp()이 실행 후 PENDING_SHORTCUT_ACTION을 비우지 않아, 다음 백그라운드→잠금→해제 때 같은 액션이 중복 실행될 위험');
+});
+
+/* ---------- findCorruptBackupKeys/pruneOldCorruptKeys(logic.js): load()가 JSON.parse/migrate 실패
+ * 시 dataKey()+'__corrupt_'+Date.now() 키로 남겨두는 원본 백업을 scanCorruptBackupKeys()(index.html)가
+ * 매 부팅마다 찾아 homeAlerts()의 'corruptBackup' 카드로 노출한다(app-evolve cycle323 critique/advance)
+ * ---------- */
+test('findCorruptBackupKeys: dataKeyPrefix+__corrupt_ 로 시작하는 키만 걸러 {key,ts}로 뽑고 최신순으로 정렬한다', () => {
+  const keys = [
+    'asset_app_db_v3__guest__corrupt_100',
+    'asset_app_db_v3__guest__corrupt_300',
+    'asset_app_db_v3__guest__corrupt_200',
+    'asset_app_db_v3__guest__savedAt', // 다른 보조 키는 걸러져야 함
+    'asset_app_db_v3__other__corrupt_999', // 다른 계정의 키도 걸러져야 함
+  ];
+  const r = sandbox.findCorruptBackupKeys(keys, 'asset_app_db_v3__guest');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(r)), [
+    { key: 'asset_app_db_v3__guest__corrupt_300', ts: 300 },
+    { key: 'asset_app_db_v3__guest__corrupt_200', ts: 200 },
+    { key: 'asset_app_db_v3__guest__corrupt_100', ts: 100 },
+  ], '필터링/정렬이 틀림');
+});
+test('findCorruptBackupKeys: 빈 배열/undefined 입력도 안 터지고 빈 배열을 돌려준다', () => {
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.findCorruptBackupKeys([], 'asset_app_db_v3__guest'))), []);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.findCorruptBackupKeys(undefined, 'asset_app_db_v3__guest'))), []);
+});
+test('findCorruptBackupKeys: 일치하는 키가 없으면 빈 배열이다', () => {
+  const r = sandbox.findCorruptBackupKeys(['asset_app_db_v3__guest__savedAt', 'other_key'], 'asset_app_db_v3__guest');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(r)), []);
+});
+test('pruneOldCorruptKeys: maxAgeMs보다 오래된 항목만 걸러낸다(경계값 포함은 유지)', () => {
+  const keys = [{ key: 'a', ts: 1000 }, { key: 'b', ts: 500 }, { key: 'c', ts: 0 }];
+  const r = sandbox.pruneOldCorruptKeys(keys, 1000, 500);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(r)), [{ key: 'a', ts: 1000 }, { key: 'b', ts: 500 }], 'now-ts<=maxAgeMs 경계 처리가 틀림');
+});
+test('pruneOldCorruptKeys: 빈 배열/undefined 입력도 안 터지고 빈 배열을 돌려준다', () => {
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.pruneOldCorruptKeys([], Date.now(), 1000))), []);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.pruneOldCorruptKeys(undefined, Date.now(), 1000))), []);
+});
+
+/* ---------- homeAlerts()의 'corruptBackup' 카드 — CORRUPT_BACKUP_KEYS(scanCorruptBackupKeys가
+ * 채우는 전역)가 비어있지 않을 때만 뜨고, 개수를 count로 그대로 전달한다. ---------- */
+test('homeAlerts: CORRUPT_BACKUP_KEYS가 있으면 corruptBackup 알림을 count와 함께 띄우고, 없으면 안 뜬다', () => {
+  setupHomeAlertsDB();
+  sandbox.CORRUPT_BACKUP_KEYS = [{ key: 'a__corrupt_1', ts: 1 }, { key: 'a__corrupt_2', ts: 2 }];
+  let alerts = sandbox.homeAlerts([]);
+  assert.ok(alerts.some(a => a.kind === 'corruptBackup' && a.count === 2), 'CORRUPT_BACKUP_KEYS가 있는데도 corruptBackup 알림이 안 뜸');
+  sandbox.CORRUPT_BACKUP_KEYS = [];
+  alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some(a => a.kind === 'corruptBackup'), 'CORRUPT_BACKUP_KEYS가 비어있는데도 corruptBackup 알림이 뜸');
 });
 
 /* ---------- 실행 ---------- */
