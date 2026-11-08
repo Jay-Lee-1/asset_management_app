@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.391';
+const APP_VERSION='1.47.392';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -1715,6 +1715,7 @@ function mergeRemoteDataIntoLocal(remoteData){
   * 신설 컬렉션 병합 배선을 깜빡했다가 나중에야 발견되는 버그 클래스(cycle122/133/138/192)를
   * 처음부터 피한다. */
  DB.catBudgetRollover=mergeFlatMap(DB.catBudgetRollover,remoteData.catBudgetRollover,DB.deletedIds,catFlatTombKey);
+ {const _liveCatKeys=new Set(['expense','income','saving'].flatMap(k=>(DB.categories[k]||[]).map(c=>catTombKey(k,c))));DB.trashCats=mergeTrashTxns(DB.trashCats,remoteData.trashCats).filter(c=>!_liveCatKeys.has(c.id));} /* app-evolve cycle325: DB.trashTxns(1673행)/DB.trashRecs(1676행)/DB.trashAssets(1678행)/DB.trashGoals(1680행)/DB.trashQtyLog(1683행)와 동일한 신설 컬렉션 병합 배선 — mergeTrashTxns도 {id,_deletedAt} 형태만 가정해 그대로 재사용. DB.categories가 바로 위(1696행)에서 이미 병합됐으므로 live 카테고리 집합을 여기서 바로 만들 수 있다. 맨 끝에서 호출되는 migrate()가 gcTrashTxns로 한 번 더 GC하므로 보존기간 지난 사본도 결국 걸러진다 */
  /* deletedType/deletedBal(삭제한 자산의 재연동용 타입·잔액 기억, snapshotAssetName)도 catIcon/catVar와
   * 같은 flat map인데 여기서 전혀 병합되지 않고 있었다(app-evolve cycle135) — 한쪽 기기가 삭제한 자산의
   * 기록이 병합 후에도 반영되지 않아 재연동 안내가 뜨지 않고, 그대로 push하면 상대 기기 기록을 덮어썼다. */
@@ -2670,12 +2671,14 @@ function migrate(){
  DB.trashRecs=DB.trashRecs||[]; /* 반복거래 삭제 '최근 삭제함' — DB.trashTxns/DB.trashAssets와 동일한 공백(undoToast의 6초짜리 메모리 클로저 하나에만 의존해 그 창을 넘기면 startDate/interval/amount/category/skip/edits/confirmedDates/연동 asset 등 손으로 재입력 불가능한 반복거래 설정이 영구 소실)을 반복거래에서도 메운다(app-evolve cycle321 critique/advance) */
  DB.trashGoals=DB.trashGoals||[]; /* 목표 삭제 '최근 삭제함' — DB.trashTxns/DB.trashAssets/DB.trashRecs와 동일한 공백(undoToast의 6초짜리 메모리 클로저 하나에만 의존해 그 창을 넘기면 name/targetAmount/targetDate가 영구 소실)을 목표에서도 메운다(app-evolve cycle322 critique/advance) */
  DB.trashQtyLog=DB.trashQtyLog||[]; /* 자산 수량 변경/매도 기록 삭제 '최근 삭제함' — DB.trashTxns/DB.trashAssets/DB.trashRecs/DB.trashGoals와 동일한 공백(undoToast의 6초짜리 메모리 클로저 하나에만 의존해 그 창을 넘기면 date/prevQty/newQty/addedAmount/saleProceeds/realizedGain이 영구 소실)을 5번째 엔티티(assetQtyLog)에서도 메운다 — 매도로 생기는 realizedGain/saleProceeds는 특히 손으로 재입력이 사실상 불가능하다(app-evolve cycle324 critique/advance) */
+ DB.trashCats=DB.trashCats||[]; /* 카테고리 삭제 '최근 삭제함' — doDeleteCat은 아이콘/변동비 플래그/예산액/이월설정을 지우고 연결된 반복거래를 비활성화하는데, 이 전체가 undoToast의 6초짜리 메모리 클로저 하나에만 의존해 그 창을 넘기면 영구 소실되고 비활성화된 반복거래는 영원히 멈춘 채로 남는다 — trashTxns/trashAssets/trashRecs/trashGoals/trashQtyLog와 동일한 버그 클래스의 6번째 엔티티(app-evolve cycle325 critique/advance). id는 카테고리가 이름 식별이라 catTombKey(type,name)을 재사용한다 */
  DB.deletedIds=gcTombstones(DB.deletedIds||{},Date.now()); /* 부팅 때마다 오래된 tombstone 정리(GC) */
  {const _liveTxnIds=new Set((DB.txns||[]).map(t=>t.id));DB.trashTxns=gcTrashTxns(DB.trashTxns,Date.now(),1000*60*60*24*TRASH_MAX_AGE_DAYS).filter(t=>!_liveTxnIds.has(t.id));} /* 부팅 때마다 보존기간 지난 항목 정리(GC) + 이미 복구돼 살아있는 거래가 트래시에 중복으로 남지 않게 정리. DB.txns는 이 시점에 아직 정규화 전이라(migrate()는 DB.txns 자체를 초기화하지 않음) 없을 수 있어 방어한다 */
  {const _liveAssetIds=new Set((DB.assets||[]).map(a=>a.id));DB.trashAssets=gcTrashTxns(DB.trashAssets,Date.now(),1000*60*60*24*TRASH_MAX_AGE_DAYS).filter(a=>!_liveAssetIds.has(a.id));} /* 위 trashTxns GC와 동일한 패턴 — gcTrashTxns는 {id,_deletedAt} 형태만 가정해 새 함수 없이 그대로 재사용(app-evolve cycle320 critique/advance) */
  {const _liveRecIds=new Set((DB.recurrences||[]).map(r=>r.id));DB.trashRecs=gcTrashTxns(DB.trashRecs,Date.now(),1000*60*60*24*TRASH_MAX_AGE_DAYS).filter(r=>!_liveRecIds.has(r.id));} /* 위 trashTxns/trashAssets GC와 동일한 패턴(app-evolve cycle321 critique/advance) */
  {const _liveGoalIds=new Set((DB.goals||[]).map(g=>g.id));DB.trashGoals=gcTrashTxns(DB.trashGoals,Date.now(),1000*60*60*24*TRASH_MAX_AGE_DAYS).filter(g=>!_liveGoalIds.has(g.id));} /* 위 trashTxns/trashAssets/trashRecs GC와 동일한 패턴(app-evolve cycle322 critique/advance) */
  {const _liveQtyLogIds=new Set((DB.assetQtyLog||[]).map(q=>q.id));DB.trashQtyLog=gcTrashTxns(DB.trashQtyLog,Date.now(),1000*60*60*24*TRASH_MAX_AGE_DAYS).filter(q=>!_liveQtyLogIds.has(q.id));} /* 위 trashTxns/trashAssets/trashRecs/trashGoals GC와 동일한 패턴(app-evolve cycle324 critique/advance) */
+ {const _liveCatKeys=new Set(['expense','income','saving'].flatMap(k=>(DB.categories[k]||[]).map(c=>catTombKey(k,c))));DB.trashCats=gcTrashTxns(DB.trashCats,Date.now(),1000*60*60*24*TRASH_MAX_AGE_DAYS).filter(c=>!_liveCatKeys.has(c.id));} /* 위 trashTxns/trashAssets/trashRecs/trashGoals/trashQtyLog GC와 동일한 패턴(app-evolve cycle325 critique/advance). DB.categories는 이 지점에서 이미 기본값·마이그레이션이 끝난 뒤라 live 집합을 바로 만들 수 있다 */
  DB.settings.dismissedStaleMvIds=pruneDismissedStaleMvIds(DB.settings.dismissedStaleMvIds,DB.txns,DB.recurrences); /* 부팅 때마다 삭제된 거래/반복거래를 가리키는 키 정리(GC) */
 }
 /* storageOutcomeMsg: localStorage 쓰기 시도 결과(ok)와 직전 상태(wasOk)를 놓고 어떤 토스트를
@@ -7205,6 +7208,7 @@ function renderMenu(){
    {ic:'restore',l:'삭제한 반복',v:(DB.trashRecs&&DB.trashRecs.length)?DB.trashRecs.length+'건':'',a:"openRecTrashList()"},
    {ic:'restore',l:'삭제한 목표',v:(DB.trashGoals&&DB.trashGoals.length)?DB.trashGoals.length+'건':'',a:"openGoalTrashList()"},
    {ic:'restore',l:'삭제한 수량기록',v:(DB.trashQtyLog&&DB.trashQtyLog.length)?DB.trashQtyLog.length+'건':'',a:"openAssetQtyLogTrashList()"},
+   {ic:'restore',l:'삭제한 카테고리',v:(DB.trashCats&&DB.trashCats.length)?DB.trashCats.length+'건':'',a:"openCatTrashList()"},
    {ic:'trash',l:'오래된 데이터 정리',a:"openArchiveOld()"},
   ]},
   {cap:'화면 · 지원',items:[
@@ -7877,7 +7881,10 @@ function doDeleteCat(k,i){if(twGuard())return;const c=DB.categories[k][i];
  const icon=DB.catIcon[catKey(k,c)];const wasVar=isVarCat(k,c);
  const hadBudget=k==='expense'&&DB.budgetHistory&&c in DB.budgetHistory;const budgetVal=hadBudget?DB.budgetHistory[c]:undefined;
  const wasRollover=k==='expense'&&isBudgetRolloverCat(c); /* catVar와 동일하게 삭제·되돌리기에서 함께 이동시켜야 유령으로 남거나 끊기지 않음(app-evolve cycle194 advance) */
- recs.forEach(r=>{r.active=false});
+ recs.forEach(r=>{r.active=false;r._autoDeactivatedByCatDelete=true}); /* deleteAssetsUndo의 _autoDeactivatedByAssetDelete(11686행)와 동일한 원인 표시 — restoreTrashCat이 나중에 이 플래그가 남아있는 레코드만 재활성화해, 트래시 기간 중 사용자가 직접 멈춰둔 반복거래를 덮어쓰지 않는다(app-evolve cycle325 critique/advance) */
+ const trashId=catTombKey(k,c);
+ const trashCat={id:trashId,type:k,name:c,icon:icon||null,catVar:wasVar,hadBudget,budgetVal,wasRollover,deactivatedRecIds:recs.map(r=>r.id),_deletedAt:Date.now()}; /* '최근 삭제함' — undoToast의 6초가 지나도(또는 앱을 닫았다 다시 열어도) gcTrashTxns 보존기간까지는 복구 가능(app-evolve cycle325 critique/advance, DB.trashTxns/DB.trashAssets/DB.trashRecs/DB.trashGoals/DB.trashQtyLog와 동일 패턴) */
+ DB.trashCats=(DB.trashCats||[]).concat([trashCat]);
  DB.categories[k].splice(i,1);
  delete DB.catIcon[catKey(k,c)];              /* 삭제 시 아이콘/변동/예산/이월설정도 함께 정리 (동명 카테고리 재생성 시 이전 설정이 남지 않도록) */
  delete DB.catVar[catKey(k,c)];
@@ -7891,8 +7898,9 @@ function doDeleteCat(k,i){if(twGuard())return;const c=DB.categories[k][i];
   if(wasVar)DB.catVar[catKey(k,c)]=true;
   if(hadBudget){DB.budgetHistory=DB.budgetHistory||{};DB.budgetHistory[c]=budgetVal}
   if(wasRollover)DB.catBudgetRollover[catKey('expense',c)]=true;
-  recs.forEach(r=>{r.active=true});
+  recs.forEach(r=>{r.active=true;delete r._autoDeactivatedByCatDelete});
   delete DB.deletedIds[catTombKey(k,c)];
+  DB.trashCats=(DB.trashCats||[]).filter(x=>x.id!==trashId);
   touchSave(...recs);renderCurrent();openCatManage(k);toast('되돌렸어요')})}
 function renameCatSheet(k,i,keep){const cur=DB.categories[k][i];
  if(!keep)catRenameDraft={name:cur,icon:catIconOf(k,cur)||CATICON[cur]||'tag'};
@@ -9492,6 +9500,39 @@ function sanitizeBackup(obj){
   if(raw!=null&&(!Array.isArray(raw)||cleaned.length!==arr.length))fixedCount++; /* null/undefined 둘 다 migrate()가 ||[default]로 조용히 메우는 '미설정'이라 fixedCount에 넣지 않는다 */
   categories[k]=dedupeNames(cleaned);
  });
+ /* DB.trashCats(카테고리 삭제 '최근 삭제함', app-evolve cycle325 critique/advance)도 위 trashTxns/
+  * trashAssets/trashRecs/trashGoals/trashQtyLog와 동일한 이유로 백업 복원·클라우드 풀 경로에서
+  * 검증한다. openCatTrashList가 보여줄 수 없는(id/type/name 없는, type이 카테고리 종류가 아닌)
+  * 항목은 통째로 제거한다. budgetVal은 doDeleteCat이 그대로 옮긴 DB.budgetHistory[c] 자체 — 즉
+  * 금액 하나가 아니라 바로 위 budgetHistory 블록과 동일한 [{from:"YYYY-MM",amount}] 배열이라
+  * (budgetVal을 금액으로 보고 sanitizeAmount를 바로 씌우면 배열이 통째로 0으로 깨짐) 그 블록과
+  * 동일한 from/amount 검증을 그대로 적용한다. deactivatedRecIds는 restoreTrashCat이
+  * DB.recurrences.find(id)로만 조회해 문자열이 아닌 항목이 섞여도 터지지 않지만(find가 그냥 못
+  * 찾을 뿐) 깨끗하게 문자열만 남긴다. icon/catVar/hadBudget/wasRollover 등 나머지는 삭제되기 전
+  * doDeleteCat이 이미 정규화해 둔 아카이브라는 전제로(트래시 전용 항목들의 공통 전제, trashRecs
+  * 주석 참고) 여기서 다시 검증하지 않는다. */
+ const srcTrashCats=Array.isArray(obj&&obj.trashCats)?obj.trashCats:[];
+ let trashCats=[];
+ srcTrashCats.forEach(g=>{
+  if(!g||!g.id||typeof g.name!=='string'||!g.name||!catTypes.includes(g.type)){droppedCount++;return}
+  const d=Object.assign({},g);
+  if(d.hadBudget){
+   const rawArr=d.budgetVal;const arr=Array.isArray(rawArr)?rawArr:[];
+   if(!Array.isArray(rawArr))fixedCount++;
+   const cleaned=[];
+   arr.forEach(e=>{
+    if(!e||typeof e.from!=='string'||!/^\d{4}-(0[1-9]|1[0-2])$/.test(e.from)){fixedCount++;return}
+    const amt=sanitizeAmount(e.amount,0);if(amt!==e.amount)fixedCount++;
+    cleaned.push({from:e.from,amount:amt});
+   });
+   cleaned.sort((a,b)=>a.from<b.from?-1:a.from>b.from?1:0);
+   d.budgetVal=cleaned;
+  }
+  if(!Array.isArray(d.deactivatedRecIds))d.deactivatedRecIds=[];
+  else{const cleaned=d.deactivatedRecIds.filter(x=>typeof x==='string');if(cleaned.length!==d.deactivatedRecIds.length)fixedCount++;d.deactivatedRecIds=cleaned;}
+  if(!Number.isFinite(d._deletedAt)){d._deletedAt=Date.now();fixedCount++}
+  trashCats.push(d);
+ });
  /* DB.owners는 위 assets 블록(validOwners) 바로 앞에서 이미 정리·중복제거해뒀다 — 여기선 그
   * 결과를 그대로 재사용한다(이름 재선언 금지라 여기서 다시 계산하지 않음). */
  /* DB.budgetHistory(카테고리→[{from:"YYYY-MM",amount}] 시점별 예산 이력)도 같은 이유로 검증이
@@ -9681,8 +9722,8 @@ function sanitizeBackup(obj){
   nwHistory.push(d);
  });
  txns=dedupeIds(txns);assets=dedupeIds(assets);recurrences=dedupeIds(recurrences);
- goals=dedupeIds(goals);inquiries=dedupeIds(inquiries);assetQtyLog=dedupeIds(assetQtyLog);trashTxns=dedupeIds(trashTxns);trashAssets=dedupeIds(trashAssets);trashRecs=dedupeIds(trashRecs);trashGoals=dedupeIds(trashGoals);trashQtyLog=dedupeIds(trashQtyLog);
- return {data:Object.assign({},obj,{txns,assets,recurrences,goals,inquiries,assetQtyLog,trashTxns,trashAssets,trashRecs,trashGoals,trashQtyLog,categories,owners,budgetHistory,budgets,catIcon,catVar,catBudgetRollover,deletedType,deletedBal,deletedIds,nwHistory,settings,rates}),fixedCount,droppedCount,rangeCount};
+ goals=dedupeIds(goals);inquiries=dedupeIds(inquiries);assetQtyLog=dedupeIds(assetQtyLog);trashTxns=dedupeIds(trashTxns);trashAssets=dedupeIds(trashAssets);trashRecs=dedupeIds(trashRecs);trashGoals=dedupeIds(trashGoals);trashQtyLog=dedupeIds(trashQtyLog);trashCats=dedupeIds(trashCats);
+ return {data:Object.assign({},obj,{txns,assets,recurrences,goals,inquiries,assetQtyLog,trashTxns,trashAssets,trashRecs,trashGoals,trashQtyLog,trashCats,categories,owners,budgetHistory,budgets,catIcon,catVar,catBudgetRollover,deletedType,deletedBal,deletedIds,nwHistory,settings,rates}),fixedCount,droppedCount,rangeCount};
 }
 /* obj.assets/obj.txns가 배열인지까지 검증한 뒤 DB를 통째로 교체한다. migrate()가 손상된
  * obj 때문에 중간에 throw해도 DB가 절반만 마이그레이션된 채로 남지 않도록, 실패 시 교체 전
@@ -11816,6 +11857,52 @@ function restoreTrashGoal(id){
  const goal=Object.assign({},g);delete goal._deletedAt;
  if(goal.type==='asset'){const a=(DB.assets||[]).find(x=>x.id===goal.linkedAssetId);if(a)goal.owner=a.owner;}
  DB.goals.push(goal);touchSave(goal);openGoalTrashList();renderCurrent();toast('되돌렸어요');
+}
+/* 메뉴 › '삭제한 카테고리' — doDeleteCat이 DB.trashCats에 담아둔 삭제된 카테고리(아이콘·변동비·예산·
+ * 이월설정·비활성화된 반복거래 id 스냅샷)를 보여주고 복구할 수 있는 화면. openGoalTrashList/
+ * openAssetQtyLogTrashList와 동일한 manage-row 목록 패턴(app-evolve cycle325 critique/advance).
+ * 요약은 유형(지출/수입/저축)과, 트래시 기간 중 사용자가 직접 손대지 않아 지금도 _autoDeactivatedByCatDelete
+ * 플래그가 남아있는(=복구 시 함께 재활성화될) 반복거래 개수만 센다 — 사용자가 트래시에 있는 동안
+ * 그 반복거래를 직접 다시 켠 경우는 플래그가 이미 지워져 있어 중복으로 세지 않는다. */
+function openCatTrashList(){
+ const items=[...(DB.trashCats||[])].sort((a,b)=>(b._deletedAt||0)-(a._deletedAt||0));
+ const row=g=>{
+  const daysLeft=Math.max(0,TRASH_MAX_AGE_DAYS-Math.floor((Date.now()-(g._deletedAt||0))/86400000));
+  const pendingRecs=(g.deactivatedRecIds||[]).filter(id=>{const r=DB.recurrences.find(x=>x.id===id);return r&&r._autoDeactivatedByCatDelete}).length;
+  const sub=[CAT_LABEL[g.type]||g.type,pendingRecs?`반복거래 ${pendingRecs}개 비활성화`:null].filter(Boolean).join(' · ');
+  return `<div class="manage-row" style="align-items:flex-start"><div style="flex:1;min-width:0">
+    <div class="mn">${esc(g.name||'')}</div>
+    <div class="msub">${sub}${sub?' · ':''}${daysLeft}일 후 자동삭제</div></div>
+   <div class="row-acts"><button class="act-btn" aria-label="카테고리 복구" onclick="restoreTrashCat('${g.id}')">${svg('restore')}</button></div></div>`;
+ };
+ openSheet(`<h3>삭제한 카테고리</h3><div class="desc">삭제한 카테고리예요. ${TRASH_MAX_AGE_DAYS}일이 지나면 자동으로 사라져요</div>
+  ${items.length?items.map(row).join(''):`<div class="empty"><div class="ei">${svg('trash')}</div><div class="et">삭제한 카테고리가 없어요</div></div>`}
+  <div style="height:12px"></div><button class="btn btn-primary" onclick="closeSheet()">닫기</button>`);
+}
+/* 복구 시 같은 이름의 카테고리가 이미 재생성돼 있을 수 있다(사용자가 트래시 복구 전에 직접 같은
+ * 이름으로 새로 만든 경우) — 그 경우 DB.categories[k]에 이름을 중복 추가하지 않고 카테고리 자체는
+ * 건너뛰되, 아이콘/변동비/예산/이월설정과 반복거래 재활성화는 doDeleteCat의 즉시 undo 콜백과
+ * 동일하게 그대로 적용한다(이미 doDeleteCat/addCat이 이 이름의 이전 catIcon/catVar를 지워뒀으므로
+ * 덮어써도 유령 설정이 남진 않음). 반복거래는 지금도 _autoDeactivatedByCatDelete 플래그가 남아있는
+ * 것만 재활성화해, 트래시 기간 중 사용자가 직접 멈춰둔 반복거래를 덮어쓰지 않는다(app-evolve
+ * cycle325 critique/advance, restoreTrashRec의 자산생존가드와 동일한 '복구 시점 재검증' 원칙). */
+function restoreTrashCat(id){
+ if(twGuard())return;
+ const g=(DB.trashCats||[]).find(x=>x.id===id);if(!g)return;
+ DB.trashCats=(DB.trashCats||[]).filter(x=>x.id!==id);
+ DB.deletedIds=DB.deletedIds||{};delete DB.deletedIds[id];
+ const k=g.type,c=g.name;
+ DB.categories[k]=DB.categories[k]||[];
+ if(!DB.categories[k].includes(c))DB.categories[k].push(c);
+ DB.catIcon=DB.catIcon||{};DB.catVar=DB.catVar||{};DB.budgetHistory=DB.budgetHistory||{};DB.catBudgetRollover=DB.catBudgetRollover||{};
+ if(g.icon)DB.catIcon[catKey(k,c)]=g.icon;
+ if(g.catVar)DB.catVar[catKey(k,c)]=true;
+ if(g.hadBudget)DB.budgetHistory[c]=g.budgetVal;
+ if(g.wasRollover)DB.catBudgetRollover[catKey('expense',c)]=true;
+ const recIds=new Set(g.deactivatedRecIds||[]);
+ const recs=DB.recurrences.filter(r=>r._autoDeactivatedByCatDelete&&recIds.has(r.id));
+ recs.forEach(r=>{r.active=true;delete r._autoDeactivatedByCatDelete});
+ touchSave(...recs);openCatTrashList();renderCurrent();toast('되돌렸어요'+(recs.length?` · 반복거래 ${recs.length}개 재활성화`:''));
 }
 window.addEventListener('resize',()=>requestAnimationFrame(fitAll));
 

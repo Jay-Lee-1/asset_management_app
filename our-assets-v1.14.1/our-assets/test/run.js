@@ -242,7 +242,7 @@ const FUNCTIONS = [
   // app-evolve cycle273 advance) — assetBalCard/debtWhatIfUpdate 둘 다 debtWhatIfText 바로 뒤에
   // 이어붙여 호출하므로 같은 이유로 함께 올라가야 한다.
   'debtPayoffPtsFor', 'debtWhatIfText', 'debtAmortSuffix', 'debtWhatIfUpdate',
-  'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate', 'histQInput', 'histOwnerSel', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'openAssetQtyLogTrashList', 'restoreTrashQtyLog', 'openCatHistory', 'openIncomeCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter', 'histClearTypeFilter',
+  'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate', 'histQInput', 'histOwnerSel', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'openAssetQtyLogTrashList', 'restoreTrashQtyLog', 'openCatTrashList', 'restoreTrashCat', 'openCatHistory', 'openIncomeCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter', 'histClearTypeFilter',
   'genSalt', 'pbkdf2Hash', 'dbEncryptKey', 'encryptDbBlob', 'decryptDbBlob', 'genRecoveryCode', 'normRecoveryCode', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer', 'openConfirmTransfer',
   // proceedWithBackupObj/openImportPinSheet는 PIN으로 암호화된 JSON 백업 복원(app-evolve
   // cycle289 advance)이 추가한 분기 — importFile 'change' 최상위 statement(아래 extractStatement로
@@ -2996,6 +2996,53 @@ test('doDeleteCat: 삭제하면 DB.deletedIds에 catTombKey가 남고, undo하�
   sandbox.lastUndo.undoFn();
   assert.strictEqual(sandbox.catTombKey('expense', '커피') in sandbox.DB.deletedIds, false, '되돌리면 톰스톤도 지워져야 함');
 });
+/* ---------- doDeleteCat → DB.trashCats('최근 삭제함'): deleteGoalsUndo→DB.trashGoals(cycle322)/
+ * delAssetQtyLog→DB.trashQtyLog(cycle324)와 동일하게, undoToast의 6초 창을 넘기거나 앱을 닫았다
+ * 다시 열어도 삭제한 카테고리(아이콘·변동비·예산·이월설정)와 그때 함께 비활성화된 반복거래 id
+ * 목록을 복구할 수 있도록 전체 내용을 보관한다(app-evolve cycle325 critique/advance). ---------- */
+test('doDeleteCat: 아이콘·변동비·예산·이월설정·비활성화된 반복거래 id까지 전체 스냅샷을 _deletedAt과 함께 DB.trashCats에 담는다', () => {
+  const rec = { id: 'r1', type: 'expense', category: '커피', active: true };
+  sandbox.DB = {
+    categories: { expense: ['커피', '식비'] },
+    catIcon: { [sandbox.catKey('expense', '커피')]: 'coffee' },
+    catVar: { [sandbox.catKey('expense', '커피')]: true },
+    budgetHistory: { '커피': [{ from: '2020-01', amount: 50000 }] },
+    catBudgetRollover: { [sandbox.catKey('expense', '커피')]: true },
+    txns: [], recurrences: [rec],
+  };
+  const before = Date.now();
+  sandbox.doDeleteCat('expense', 0);
+  assert.strictEqual(sandbox.DB.trashCats.length, 1);
+  const trashed = sandbox.DB.trashCats[0];
+  assert.strictEqual(trashed.id, sandbox.catTombKey('expense', '커피'));
+  assert.strictEqual(trashed.type, 'expense');
+  assert.strictEqual(trashed.name, '커피');
+  assert.strictEqual(trashed.icon, 'coffee');
+  assert.strictEqual(trashed.catVar, true);
+  assert.strictEqual(trashed.hadBudget, true);
+  assert.deepStrictEqual(Array.from(trashed.budgetVal), [{ from: '2020-01', amount: 50000 }]);
+  assert.strictEqual(trashed.wasRollover, true);
+  assert.deepStrictEqual(Array.from(trashed.deactivatedRecIds), ['r1']);
+  assert.ok(typeof trashed._deletedAt === 'number' && trashed._deletedAt >= before, '삭제 시각이 함께 기록되어야 함');
+  assert.strictEqual(rec.active, false);
+  assert.strictEqual(rec._autoDeactivatedByCatDelete, true, 'restoreTrashCat이 나중에 이 플래그로 자동 비활성화 여부를 구분한다');
+});
+test('doDeleteCat: undoToast의 즉시 undo 콜백을 부르면 DB.trashCats에서도 해당 항목이 빠지고 반복거래 플래그도 지워진다', () => {
+  const rec = { id: 'r1', type: 'expense', category: '커피', active: true };
+  sandbox.DB = {
+    categories: { expense: ['커피', '식비'] },
+    catIcon: {}, catVar: {}, budgetHistory: {}, catBudgetRollover: {},
+    txns: [], recurrences: [rec],
+  };
+  sandbox.lastUndo = null;
+  sandbox.doDeleteCat('expense', 0);
+  assert.strictEqual(sandbox.DB.trashCats.length, 1);
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.trashCats.length, 0, '되돌리면 트래시에서도 제거되어야 함(복구된 카테고리가 트래시에 중복으로 남으면 안 됨)');
+  assert.strictEqual(rec.active, true);
+  assert.strictEqual(rec._autoDeactivatedByCatDelete, undefined, '즉시 undo로 되돌아왔으면 플래그도 함께 지워져야 함');
+});
+
 test('addCat: 이미 톰스톤된(지워진) 이름을 다시 추가하면 톰스톤이 지워진다', () => {
   sandbox.DB = {
     categories: { expense: ['식비'] },
@@ -6624,6 +6671,36 @@ test('mergeRemoteDataIntoLocal: 이미 DB.assetQtyLog로 되살아난(병합 결
   assert.ok(sandbox.DB.assetQtyLog.some(q => q.id === 'q1'), '살아있는 기록은 그대로 유지되어야 함');
   assert.strictEqual(sandbox.DB.trashQtyLog.find(q => q.id === 'q1'), undefined, 'live인 기록이 트래시에 중복으로 남으면 안 됨');
 });
+test('mergeRemoteDataIntoLocal: DB.trashCats도 DB.trashTxns/DB.trashAssets/DB.trashRecs/DB.trashGoals/DB.trashQtyLog와 동일하게 신설 시점부터 병합 배선이 돼 있다(두 기기가 각자 지운 카테고리가 소실 없이 합쳐짐, app-evolve cycle325 critique/advance)', () => {
+  const now = Date.now();
+  sandbox.DB = minimalMergeDB({
+    trashCats: [{ id: sandbox.catTombKey('expense', '커피'), type: 'expense', name: '커피', deactivatedRecIds: [], _deletedAt: now }],
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    trashCats: [{ id: sandbox.catTombKey('expense', '식비'), type: 'expense', name: '식비', deactivatedRecIds: [], _deletedAt: now }],
+    deletedIds: {},
+  });
+  const ids = sandbox.DB.trashCats.map(c => c.id).sort();
+  assert.strictEqual(ids.length, 2);
+  assert.ok(ids.includes(sandbox.catTombKey('expense', '커피')) && ids.includes(sandbox.catTombKey('expense', '식비')));
+});
+test('mergeRemoteDataIntoLocal: 이미 DB.categories로 되살아난(병합 결과 live인) 카테고리는 상대 기기의 트래시 사본과 합쳐져도 트래시에 남지 않는다', () => {
+  // 맨 끝에서 호출되는 migrate()가 catsV2 마이그레이션(최초 1회 지출 카테고리를 EXP_CATS_DEFAULT로
+  // 강제 교체)을 다시 타지 않도록 catsV2:true를 미리 세팅해야, 병합된 '커피'가 그 자리에서 다시
+  // 지워지지 않고 살아남는다(다른 migrate 테스트들이 이미 쓰는 관례와 동일).
+  sandbox.DB = minimalMergeDB({
+    catsV2: true,
+    categories: { expense: ['커피'] }, // 로컬이 재생성해 살아있음
+    trashCats: [],
+  });
+  sandbox.mergeRemoteDataIntoLocal({
+    categories: {},
+    trashCats: [{ id: sandbox.catTombKey('expense', '커피'), type: 'expense', name: '커피', deactivatedRecIds: [], _deletedAt: Date.now() }], // 원격은 아직 트래시에 들고 있음
+    deletedIds: {},
+  });
+  assert.ok(sandbox.DB.categories.expense.includes('커피'), '살아있는 카테고리는 그대로 유지되어야 함');
+  assert.strictEqual(sandbox.DB.trashCats.find(c => c.id === sandbox.catTombKey('expense', '커피')), undefined, 'live인 카테고리가 트래시에 중복으로 남으면 안 됨');
+});
 
 /* ---------- txnsToCSV: 거래 내역 CSV 내보내기 ---------- */
 test('txnsToCSV: 빈 배열이면 BOM과 헤더만 있는 한 줄을 반환한다', () => {
@@ -9950,6 +10027,101 @@ test('restoreTrashQtyLog: 튜토리얼 모드 중에는 twGuard가 막아서 복
   sandbox.restoreTrashQtyLog('q1');
   assert.strictEqual(sandbox.DB.assetQtyLog.length, 0);
   assert.strictEqual(sandbox.DB.trashQtyLog.length, 1);
+  sandbox.TWi = -1;
+});
+
+/* ---------- openCatTrashList/restoreTrashCat: 메뉴 › '삭제한 카테고리' — openGoalTrashList/
+ * restoreTrashGoal(목표 쪽, cycle322)/openAssetQtyLogTrashList/restoreTrashQtyLog(수량기록 쪽,
+ * cycle324)와 동일한 패턴으로 DB.trashCats를 보여주고 복구한다. restoreTrashRec의 자산생존가드
+ * (cycle323)와 동일한 '복구 시점 재검증' 원칙으로, 트래시 기간 중 사용자가 직접 다시 켜둔
+ * 반복거래(플래그가 이미 지워진 것)는 덮어쓰지 않는다(app-evolve cycle325 critique/advance). ---------- */
+test('openCatTrashList: DB.trashCats를 최근 삭제 순으로 보여준다', () => {
+  sandbox.DB = { recurrences: [], trashCats: [
+    { id: 'cat:expense:커피', type: 'expense', name: '커피', deactivatedRecIds: [], _deletedAt: 100 },
+    { id: 'cat:expense:식비', type: 'expense', name: '식비', deactivatedRecIds: [], _deletedAt: 200 },
+  ] };
+  sandbox.lastSheetHtml = null;
+  sandbox.openCatTrashList();
+  const html = sandbox.lastSheetHtml;
+  assert.ok(html.indexOf('식비') < html.indexOf('커피'), '더 최근에 삭제된 카테고리가 먼저 나와야 함');
+});
+test('openCatTrashList: 지금도 _autoDeactivatedByCatDelete 플래그가 남아있는 반복거래 개수만 보조줄에 센다(사용자가 직접 다시 켠 것은 빼고)', () => {
+  sandbox.DB = {
+    recurrences: [
+      { id: 'r1', active: false, _autoDeactivatedByCatDelete: true },
+      { id: 'r2', active: true }, // 사용자가 트래시 기간 중 직접 다시 켜서 플래그가 이미 지워짐
+    ],
+    trashCats: [{ id: 'cat:expense:커피', type: 'expense', name: '커피', deactivatedRecIds: ['r1', 'r2'], _deletedAt: 100 }],
+  };
+  sandbox.lastSheetHtml = null;
+  sandbox.openCatTrashList();
+  assert.ok(sandbox.lastSheetHtml.includes('반복거래 1개 비활성화'));
+});
+test('openCatTrashList: 삭제한 카테고리가 없으면 빈 상태를 보여준다', () => {
+  sandbox.DB = { recurrences: [], trashCats: [] };
+  sandbox.lastSheetHtml = null;
+  sandbox.openCatTrashList();
+  assert.ok(sandbox.lastSheetHtml.includes('삭제한 카테고리가 없어요'));
+});
+test('restoreTrashCat: 카테고리를 DB.categories에 되돌리고 아이콘·변동비·예산·이월설정을 복원하며, 플래그 남은 반복거래만 재활성화한다', () => {
+  const rec = { id: 'r1', type: 'expense', category: '커피', active: false, _autoDeactivatedByCatDelete: true };
+  const g = {
+    id: 'cat:expense:커피', type: 'expense', name: '커피', icon: 'coffee', catVar: true,
+    hadBudget: true, budgetVal: [{ from: '2020-01', amount: 50000 }], wasRollover: true,
+    deactivatedRecIds: ['r1'], _deletedAt: 123,
+  };
+  sandbox.DB = {
+    categories: { expense: ['식비'] }, catIcon: {}, catVar: {}, budgetHistory: {}, catBudgetRollover: {},
+    recurrences: [rec], trashCats: [g], deletedIds: { 'cat:expense:커피': 123 },
+  };
+  sandbox.restoreTrashCat('cat:expense:커피');
+  assert.strictEqual(sandbox.DB.trashCats.length, 0, '복구하면 트래시에서 빠져야 함');
+  assert.strictEqual(sandbox.DB.deletedIds['cat:expense:커피'], undefined, '복구하면 톰스톤도 지워져야 함');
+  assert.deepStrictEqual(Array.from(sandbox.DB.categories.expense), ['식비', '커피']);
+  assert.strictEqual(sandbox.DB.catIcon[sandbox.catKey('expense', '커피')], 'coffee');
+  assert.strictEqual(sandbox.DB.catVar[sandbox.catKey('expense', '커피')], true);
+  assert.deepStrictEqual(Array.from(sandbox.DB.budgetHistory['커피']), [{ from: '2020-01', amount: 50000 }]);
+  assert.strictEqual(sandbox.DB.catBudgetRollover[sandbox.catKey('expense', '커피')], true);
+  assert.strictEqual(rec.active, true, '플래그가 남아있던 반복거래는 재활성화되어야 함');
+  assert.strictEqual(rec._autoDeactivatedByCatDelete, undefined);
+  assert.strictEqual(rec.updatedAt, 'test-updatedAt', '재활성화된 반복거래는 touch()되어야 함(mergeCollection 병합 불변식)');
+});
+test('restoreTrashCat: 트래시 기간 중 사용자가 직접 다시 켜둔(플래그 없는) 반복거래는 건드리지 않는다', () => {
+  const rec = { id: 'r1', type: 'expense', category: '커피', active: true }; // 플래그 없음 = 사용자가 직접 켬
+  const g = { id: 'cat:expense:커피', type: 'expense', name: '커피', deactivatedRecIds: ['r1'], _deletedAt: 1 };
+  sandbox.DB = {
+    categories: { expense: ['식비'] }, catIcon: {}, catVar: {}, budgetHistory: {}, catBudgetRollover: {},
+    recurrences: [rec], trashCats: [g], deletedIds: {},
+  };
+  sandbox.restoreTrashCat('cat:expense:커피');
+  assert.strictEqual(rec.active, true);
+  assert.strictEqual(rec.updatedAt, undefined, '플래그가 이미 없으면(사용자가 직접 켠 것) touch()되면 안 됨');
+});
+test('restoreTrashCat: 같은 이름의 카테고리가 트래시 복구 전에 이미 재생성돼 있으면 중복 추가하지 않지만, 아이콘·반복거래 재활성화는 그대로 적용한다', () => {
+  const rec = { id: 'r1', type: 'expense', category: '커피', active: false, _autoDeactivatedByCatDelete: true };
+  const g = { id: 'cat:expense:커피', type: 'expense', name: '커피', icon: 'coffee', deactivatedRecIds: ['r1'], _deletedAt: 1 };
+  sandbox.DB = {
+    categories: { expense: ['커피', '식비'] }, // 사용자가 트래시 복구 전에 직접 재생성
+    catIcon: {}, catVar: {}, budgetHistory: {}, catBudgetRollover: {},
+    recurrences: [rec], trashCats: [g], deletedIds: {},
+  };
+  sandbox.restoreTrashCat('cat:expense:커피');
+  assert.deepStrictEqual(Array.from(sandbox.DB.categories.expense), ['커피', '식비'], '이미 있는 이름을 중복 추가하면 안 됨');
+  assert.strictEqual(sandbox.DB.catIcon[sandbox.catKey('expense', '커피')], 'coffee');
+  assert.strictEqual(rec.active, true);
+});
+test('restoreTrashCat: 존재하지 않는 id면 아무것도 바꾸지 않는다', () => {
+  sandbox.DB = { categories: { expense: ['식비'] }, recurrences: [], trashCats: [{ id: 'cat:expense:커피', type: 'expense', name: '커피', deactivatedRecIds: [] }] };
+  sandbox.restoreTrashCat('없는id');
+  assert.deepStrictEqual(Array.from(sandbox.DB.categories.expense), ['식비']);
+  assert.strictEqual(sandbox.DB.trashCats.length, 1);
+});
+test('restoreTrashCat: 튜토리얼 모드 중에는 twGuard가 막아서 복구되지 않는다', () => {
+  sandbox.TWi = 0;
+  sandbox.DB = { categories: { expense: ['식비'] }, recurrences: [], trashCats: [{ id: 'cat:expense:커피', type: 'expense', name: '커피', deactivatedRecIds: [] }] };
+  sandbox.restoreTrashCat('cat:expense:커피');
+  assert.deepStrictEqual(Array.from(sandbox.DB.categories.expense), ['식비']);
+  assert.strictEqual(sandbox.DB.trashCats.length, 1);
   sandbox.TWi = -1;
 });
 
@@ -15232,6 +15404,88 @@ test('sanitizeBackup: 트래시 수량기록도 trashTxns/trashAssets/trashRecs/
   assert.ok(fixedCount >= 1);
 });
 
+/* ---------- sanitizeBackup: DB.trashCats(카테고리 삭제 '최근 삭제함', app-evolve cycle325
+ * critique/advance)도 위 trashTxns/trashAssets/trashRecs/trashGoals/trashQtyLog와 동일한 이유로
+ * 검증돼야 한다. id&&name&&type(카테고리 종류) 기준으로 걸러내고, budgetVal은 doDeleteCat이
+ * DB.budgetHistory[c]를 그대로 옮긴 [{from,amount}] 배열이라(금액 하나가 아님) 위 budgetHistory
+ * 블록과 동일한 from/amount 검증을 받는다. ---------- */
+test('sanitizeBackup: id/name 없거나 type이 카테고리 종류가 아닌 트래시 카테고리 항목은 통째로 제거하고, trashCats가 없거나 배열이 아니어도 터지지 않는다', () => {
+  const droppedNoId = sandbox.sanitizeBackup({ txns: [], assets: [], trashCats: [{ type: 'expense', name: '커피' }] });
+  assert.strictEqual(droppedNoId.data.trashCats.length, 0);
+
+  const droppedNoName = sandbox.sanitizeBackup({ txns: [], assets: [], trashCats: [{ id: 'cat:expense:커피', type: 'expense' }] });
+  assert.strictEqual(droppedNoName.data.trashCats.length, 0);
+
+  const droppedBadType = sandbox.sanitizeBackup({ txns: [], assets: [], trashCats: [{ id: 'cat:oops:커피', type: 'oops', name: '커피' }] });
+  assert.strictEqual(droppedBadType.data.trashCats.length, 0);
+
+  const missing = sandbox.sanitizeBackup({ txns: [], assets: [] });
+  assert.strictEqual(missing.data.trashCats.length, 0);
+  const notArray = sandbox.sanitizeBackup({ txns: [], assets: [], trashCats: { oops: true } });
+  assert.strictEqual(notArray.data.trashCats.length, 0);
+});
+test('sanitizeBackup: 트래시 카테고리의 budgetVal(hadBudget인 경우만)은 budgetHistory와 동일한 from/amount 검증을 받는다', () => {
+  const { data } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    trashCats: [{
+      id: 'cat:expense:커피', type: 'expense', name: '커피', hadBudget: true,
+      budgetVal: [{ from: '2026-13', amount: 5000 }, { from: '2026-02', amount: -3000 }, { from: '2026-01', amount: 10000 }],
+      _deletedAt: 100,
+    }],
+  });
+  assert.strictEqual(data.trashCats[0].budgetVal.length, 2, '형식이 맞지 않는 from("2026-13")은 걸러져야 함');
+  assert.strictEqual(data.trashCats[0].budgetVal[0].from, '2026-01', 'from 오름차순으로 정렬되어야 함');
+  assert.strictEqual(data.trashCats[0].budgetVal[0].amount, 10000);
+  assert.strictEqual(data.trashCats[0].budgetVal[1].from, '2026-02');
+  assert.strictEqual(data.trashCats[0].budgetVal[1].amount, 0, '음수 amount는 0으로 클램프되어야 함');
+});
+test('sanitizeBackup: 트래시 카테고리의 hadBudget이 false면 budgetVal을 검증하지 않고 그대로 둔다', () => {
+  const { data } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    trashCats: [{ id: 'cat:expense:커피', type: 'expense', name: '커피', hadBudget: false, _deletedAt: 100 }],
+  });
+  assert.strictEqual(data.trashCats[0].budgetVal, undefined);
+});
+test('sanitizeBackup: 트래시 카테고리의 deactivatedRecIds는 문자열이 아닌 항목을 걸러내고, 배열이 아니면 빈 배열로 되돌린다', () => {
+  const { data } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    trashCats: [
+      { id: 'cat:expense:커피', type: 'expense', name: '커피', deactivatedRecIds: ['r1', 123, null, 'r2'], _deletedAt: 100 },
+      { id: 'cat:expense:식비', type: 'expense', name: '식비', deactivatedRecIds: '손상됨', _deletedAt: 100 },
+    ],
+  });
+  assert.deepStrictEqual(Array.from(data.trashCats[0].deactivatedRecIds), ['r1', 'r2']);
+  assert.deepStrictEqual(Array.from(data.trashCats[1].deactivatedRecIds), []);
+});
+test('sanitizeBackup: 트래시 카테고리의 _deletedAt이 손상돼도(숫자가 아님) 통째로 버리지 않고 now로 되돌린다', () => {
+  const before = Date.now();
+  const { data } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    trashCats: [{ id: 'cat:expense:커피', type: 'expense', name: '커피' }, { id: 'cat:expense:식비', type: 'expense', name: '식비', _deletedAt: 'oops' }],
+  });
+  assert.strictEqual(data.trashCats.length, 2, '유효한 복구 대상을 _deletedAt 손상만으로 통째로 버리면 안 됨');
+  assert.ok(data.trashCats.every(c => typeof c._deletedAt === 'number' && c._deletedAt >= before));
+});
+test('sanitizeBackup: 트래시 카테고리는 icon/catVar/wasRollover 등은 재검증하지 않고 그대로 보존한다(이미 유효했던 값이라는 전제)', () => {
+  const { data } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    trashCats: [{ id: 'cat:expense:커피', type: 'expense', name: '커피', icon: 'coffee', catVar: true, wasRollover: true, _deletedAt: 123 }],
+  });
+  assert.strictEqual(data.trashCats[0].icon, 'coffee');
+  assert.strictEqual(data.trashCats[0].catVar, true);
+  assert.strictEqual(data.trashCats[0].wasRollover, true);
+  assert.strictEqual(data.trashCats[0]._deletedAt, 123);
+});
+test('sanitizeBackup: 트래시 카테고리도 trashTxns/trashAssets/trashRecs/trashGoals/trashQtyLog와 동일하게 id 중복이면 새 id를 부여해 복구한다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    trashCats: [{ id: 'dup', type: 'expense', name: '커피', _deletedAt: 1 }, { id: 'dup', type: 'expense', name: '식비', _deletedAt: 2 }],
+  });
+  const ids = data.trashCats.map(c => c.id);
+  assert.strictEqual(new Set(ids).size, 2, '중복 id는 새 id로 갈라져야 함');
+  assert.ok(fixedCount >= 1);
+});
+
 /* ---------- sanitizeBackup: DB.categories/DB.owners(카테고리·귀속 이름 목록)도 txns/assets/
  * recurrences/goals/inquiries/assetQtyLog와 동일하게 검증돼야 한다 — 이전에는 이 블록이 아예
  * 없어서, obj.categories.income/expense/saving나 obj.owners가 배열이 아니면(손상된 백업·레거시
@@ -19234,6 +19488,53 @@ test('migrate: DB.trashQtyLog에 이미 DB.assetQtyLog로 복구돼 살아있는
   };
   sandbox.migrate();
   assert.deepStrictEqual(sandbox.DB.trashQtyLog.map(q => q.id), ['q2'], 'DB.assetQtyLog에 살아있는 q1은 트래시에서 빠지고, 실제로 삭제된 q2만 남아야 함');
+});
+
+/* ---------- migrate: DB.trashCats(카테고리 삭제 '최근 삭제함', app-evolve cycle325 critique/advance)도
+ * 위 DB.trashTxns/DB.trashAssets/DB.trashRecs/DB.trashGoals/DB.trashQtyLog와 동일한 초기화/GC/
+ * live-id 필터를 받는다. 다만 live 판정은 id(=catTombKey(type,name))가 지금 DB.categories[type]에
+ * 있는 이름을 가리키는지로 한다(다른 트래시들의 id 기반 판정과 달리 카테고리는 이름 식별). ---------- */
+test('migrate: DB.trashCats이 없으면(migrate 이전 상태) 빈 배열로 채워진다', () => {
+  sandbox.DB = {
+    version: 5, catsV2: true,
+    settings: { themeMode: 'system', includeScheduled: false, assetSort: 'custom', groupOrder: [...sandbox.DEFAULT_GROUP_ORDER] },
+    owners: ['나', '배우자', '공용'],
+    assets: [], txns: [], recurrences: [], inquiries: [],
+    categories: { expense: [...sandbox.EXP_CATS_DEFAULT], income: [...sandbox.INC_CATS_DEFAULT], saving: [...sandbox.SAV_CATS_DEFAULT] },
+  };
+  assert.doesNotThrow(() => sandbox.migrate());
+  assert.strictEqual(sandbox.DB.trashCats.length, 0);
+});
+test('migrate: DB.trashCats의 오래된(30일 초과) 항목은 GC되어 사라지고, 그 이내인 것은 유지된다(app-evolve cycle325 critique/advance 통합 테스트)', () => {
+  const now = Date.now();
+  const DAY = 1000 * 60 * 60 * 24;
+  const old = { id: 'cat:expense:옛카테고리', type: 'expense', name: '옛카테고리', deactivatedRecIds: [], _deletedAt: now - 31 * DAY };
+  const recent = { id: 'cat:expense:최근카테고리', type: 'expense', name: '최근카테고리', deactivatedRecIds: [], _deletedAt: now - 10 * DAY };
+  sandbox.DB = {
+    version: 5, catsV2: true,
+    settings: { themeMode: 'system', includeScheduled: false, assetSort: 'custom', groupOrder: [...sandbox.DEFAULT_GROUP_ORDER] },
+    owners: ['나', '배우자', '공용'],
+    assets: [], txns: [], recurrences: [], inquiries: [],
+    categories: { expense: [...sandbox.EXP_CATS_DEFAULT], income: [...sandbox.INC_CATS_DEFAULT], saving: [...sandbox.SAV_CATS_DEFAULT] },
+    trashCats: [old, recent],
+  };
+  sandbox.migrate();
+  assert.deepStrictEqual(sandbox.DB.trashCats.map(c => c.id), ['cat:expense:최근카테고리']);
+});
+test('migrate: DB.trashCats에 이미 DB.categories로 복구돼(또는 동명으로 재생성돼) 살아있는 id가 남아있으면 중복으로 보이지 않게 제거한다', () => {
+  sandbox.DB = {
+    version: 5, catsV2: true,
+    settings: { themeMode: 'system', includeScheduled: false, assetSort: 'custom', groupOrder: [...sandbox.DEFAULT_GROUP_ORDER] },
+    owners: ['나', '배우자', '공용'],
+    assets: [], txns: [], recurrences: [], inquiries: [],
+    categories: { expense: [...sandbox.EXP_CATS_DEFAULT], income: [...sandbox.INC_CATS_DEFAULT], saving: [...sandbox.SAV_CATS_DEFAULT] }, // '고정비' 포함(live)
+    trashCats: [
+      { id: sandbox.catTombKey('expense', '고정비'), type: 'expense', name: '고정비', deactivatedRecIds: [], _deletedAt: Date.now() },
+      { id: sandbox.catTombKey('expense', '정말삭제됨'), type: 'expense', name: '정말삭제됨', deactivatedRecIds: [], _deletedAt: Date.now() },
+    ],
+  };
+  sandbox.migrate();
+  assert.deepStrictEqual(sandbox.DB.trashCats.map(c => c.id), [sandbox.catTombKey('expense', '정말삭제됨')], 'DB.categories에 살아있는 고정비는 트래시에서 빠지고, 실제로 삭제된 정말삭제됨만 남아야 함');
 });
 
 /* ---------- themeCachePayload/writeThemeCache: 첫 페인트 FOUC 방지 캐시(app-evolve cycle181 advance) ----------
