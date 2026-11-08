@@ -1,15 +1,8 @@
 {
   "cycle": 325,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 320,
-      "phase": "review",
-      "timestamp": "2026-11-07T13:08:02.397Z",
-      "summary": "cycle320 develop 커밋(3aa5f40, searchTerms/matchQueryTerms 직접 단위 테스트 추가)을 검토 — logic.js:564(searchTerms)·670(matchQueryTerms) 구현을 직접 대조. searchTerms는 String(q||'').trim().split(/\\s+/).filter(Boolean)로, 추가된 세 테스트(공백/탭 혼합 분리, 트림, 빈값→빈배열) 모두 구현과 정확히 일치. matchQueryTerms는 terms.every(parseAmountToken 파싱되면 amountCandidates.some(amountMatchesToken) 아니면 normHay.includes)로, 추가된 다섯 테스트(평문 substring, 금액 연산자/범위, null/undefined 후보 스킵, AND 결합, 빈 terms→true) 모두 일치. node test/run.js 재실행 3032/3032 통과. 실제 버그 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 320,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-08T08:00:00.000Z",
       "summary": "recScheduleSameSlot(logic.js:1359, 반복거래 중복 탐지 slot 비교)에 직접 단위 테스트가 전혀 없던 공백을 발견해 고쳤다 — 지금까지는 findPossibleDuplicateRec을 거친 간접 테스트만 있었는데, 그 테스트들은 freq별 분기 하나당 한 경로씩만 지나고 !a.startDate||!b.startDate(널/undefined, line 1362)와 isNaN(da)||isNaN(db)(파싱되지만 유효하지 않은 날짜 문자열, line 1364)라는 서로 다른 두 폴백 분기 중 널 쪽만 커버했다 — cycle321/322/323/324 critique가 반복해서 저위험 보류로 남겨둔 항목. test/run.js에 recScheduleSameSlot()을 직접 호출하는 테스트 7건 추가: monthly day 일치/불일치, daily 항상 true, weekly 같은/다른 요일, biweekly 같은/다른 phase(14일 배수), yearly 같은/다른 월일, startDate null/undefined 폴백(기존 간접 테스트와 중복이지만 직접 호출로 재고정), 그리고 기존에 전혀 없던 파싱 불가 문자열('not-a-date') 폴백 2건(한쪽만 깨짐/양쪽 다 깨짐). 코드 로직 변경 없음(테스트 전용 추가, isNaN 분기가 이미 올바르게 day 비교로 폴백함을 직접 확인), index.html/sw.js 미변경이라 APP_VERSION/CACHE 버전업 불필요(cycle320/321 선례와 동일). node --check test/run.js 통과, node test/run.js 3137->3144/3144 통과, node --check logic.js/sw.js 통과.",
+      "commit": null
+    },
+    {
+      "cycle": 325,
+      "phase": "critique",
+      "timestamp": "2026-11-08T09:10:00.000Z",
+      "summary": "cycle325 develop 커밋(77edb37, recScheduleSameSlot 직접 단위 테스트 7건 추가)을 검토 — logic.js:1359-1368 구현을 한 줄씩 대조: monthly(day만 비교)/daily(항상 true)/!a.startDate||!b.startDate 널 폴백(day 비교)/isNaN(da)||isNaN(db) 파싱실패 폴백(day 비교)/weekly(getDay)/biweekly(daysBetween%14===0)/yearly(getMonth+getDate 동시 일치) 7개 분기 모두 테스트와 정확히 일치. 테스트가 가정한 요일(2026-01-05/2026-02-02=월요일, 2026-01-09=금요일)을 node Date.getDay()로 독립 재계산해 확인, daysBetween(a,b)=Math.round((b-a)/86400000) 구현도 14일/7일 사례와 대조 확인, new Date(a.startDate+'T00:00:00')에 'not-a-date'를 이어붙이면 Invalid Date(isNaN)가 됨을 node로 직접 확인. node test/run.js 재실행 3144/3144 통과, node --check logic.js/sw.js/test/run.js 통과. 실제 버그 없음(state.json만 커밋).",
       "commit": null
     }
   ]
