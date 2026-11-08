@@ -1,15 +1,8 @@
 {
   "cycle": 327,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 321,
-      "phase": "advance",
-      "timestamp": "2026-11-07T19:30:00.000Z",
-      "summary": "critique(cycle321) 계획대로 반복거래(recurrences) 삭제 '최근 삭제함(trashRecs)' 복구 기능을 구현했다. logic.js는 새 함수 없이 gcTrashTxns/mergeTrashTxns를 그대로 재사용(둘 다 {id,_deletedAt}만 가정해 반복거래 전용 필드를 참조하지 않음). index.html: DB.trashRecs 신설(migrate 초기화+GC+live-id 필터, mergeRemoteDataIntoLocal에 DB.recurrences 병합/pruneOrphanRecOverrides 직후 배선, sanitizeBackup에 id&&csvDateValid(startDate) 기준 검증+amount 클램프+_deletedAt 보정 추가 — splits/skip/edits/freq/day/weekend 등은 이미 saveRec이 정규화해 둔 아카이브라는 전제로 재검증하지 않음), deleteRecsUndo가 삭제 즉시 반복거래 전체+_deletedAt을 DB.trashRecs에 저장(즉시 undo 콜백에서도 제거), 메뉴 '백업·데이터'에 '삭제한 반복' 행 추가, openRecTrashList()/restoreTrashRec(id) 신설(openTrashList/openAssetTrashList와 동일 manage-row 패턴, 요약은 openRecManage()와 동일하게 memo/category+recFreqLabel+amount). 테스트: deleteRecsUndo→trashRecs 저장/undo제거/무변경/다건(4) + openRecTrashList/restoreTrashRec(목록순서/빈상태/정상복구/존재안함/twGuard, 5) + sanitizeBackup trashRecs 검증(id/startDate 없음·무효 통째 제거, amount 클램프, _deletedAt 보정, 비검증 필드 보존, 중복id, 5) + migrate trashRecs 초기화/GC/live-id필터(3) + mergeRemoteDataIntoLocal trashRecs 배선(2) + gcTrashTxns/mergeTrashTxns 재사용 확인(반복거래 모양 데이터, 1) = 20건 추가 — node test/run.js 3062->3082/3082 통과. node --check logic.js/sw.js/test/run.js 통과, manifest.webmanifest JSON 유효성 통과, index.html 인라인 스크립트 추출검사는 기존과 동일한 1건의 기존 오탐(block1=head FOUC 스크립트, HTML 주석 텍스트 오인, cycle311부터 이어짐; git stash로 변경 전 상태와 대조해 이번 변경과 무관함을 재확인, 내 변경은 openRecTrashList가 있는 전혀 다른 block3에 있음을 확인)만 재확인됨. 사용자 체감 기능 추가라 APP_VERSION 1.47.384->1.47.385, sw.js CACHE v651->v652. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 322,
       "phase": "develop",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-08T15:11:31.021Z",
       "summary": "critique(cycle326) 계획대로 snapshotAssetName/unsnapshotAssetName/relinkDeletedAsset/deletedAssetHistoryExists(index.html:4669-4850대)가 트래시(DB.trashTxns/DB.trashRecs/DB.trashQtyLog)를 순회하지 않던 공백을 해소했다. snapshotAssetName/unsnapshotAssetName에 기존 live 배열(txns/recurrences/assetQtyLog) forEach와 동일한 필드 로직(fromAssetName/toAssetName/assetName 설정·삭제+touch)을 트래시 3종에도 추가. relinkDeletedAsset에도 동일 3개 트래시 배열을 순회해 재연결하고, 트래시 rec의 _autoDeactivatedByAssetDelete가 양쪽 재연결되면(live와 동일 규칙) 트래시에 있는 동안에도 active=true로 미리 되살려 나중에 restoreTrashRec의 자산생존가드(cycle323)에 걸리지 않게 함. deletedAssetHistoryExists는 inTx/inRec 판정에 DB.trashTxns/DB.trashRecs도 OR로 포함(트래시에만 매치가 있어도 재연동 프롬프트가 뜨도록) — qtyLog는 원래 이 함수의 판정 대상이 아니었으므로(live조차 보지 않음) 범위 밖으로 유지. 테스트: deletedAssetHistoryExists 트래시 전용 매치(trashTxns/trashRecs 각각 true, trashTxns/trashRecs undefined여도 안 터짐, 3건) + relinkDeletedAsset 트래시 3종 재연결(trashTxns/trashQtyLog 단순 재연결 2건, trashRecs의 자동 재활성화/한쪽만 재연결 시 미활성화 2건, 4건) + snapshotAssetName 트래시 3종 forEach 텍스트가드(1건, 함수가 스텁이라 extractFunction 방식) + unsnapshotAssetName 트래시 3종 실행 테스트(1건) = 9건 추가 — node test/run.js 3168->3177/3177 통과. node --check logic.js/sw.js/test/run.js 통과, manifest.webmanifest JSON 유효성 통과. 표시전용 버그를 넘어 relinkDeletedAsset의 트래시 orphan 문제까지 고치는 사용자 체감 데이터 정합성 수정이라 APP_VERSION 1.47.393->1.47.394, sw.js CACHE v660->v661. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 327,
+      "phase": "develop",
+      "timestamp": "2026-11-08T16:15:00.000Z",
+      "summary": "restoreTrashAsset(index.html, 11805행)이 DB.recurrences만 훑고 DB.trashRecs는 보지 않는 공백을 발견해 고쳤다. deleteRecsUndo(11760행)는 반복거래를 트래시로 옮길 때 그 시점의 active/_autoDeactivatedByAssetDelete 값을 그대로 복사해 넣는다 — 그래서 '자산 삭제로 비활성화된 반복거래를 그 뒤에 또 삭제'하면 이 플래그가 DB.recurrences가 아니라 DB.trashRecs 안에 찍힌 채로 남는다. 그 상태로 자산만 먼저 복구하면 restoreTrashAsset이 DB.trashRecs는 안 봐서 플래그를 영원히 못 지우고, 나중에 restoreTrashRec이 그 반복거래를 복구할 때도 rec.active가 이미 false라 자산생존가드(cycle323, assetsGone=rec.active&&...)가 전혀 평가되지 않아 active:false로만 복구돼 버린다 — 자산·반복 둘 다 복구했는데 반복거래만 영원히 멈춘 채로 남는 결과. restoreTrashAsset(cycle320)이 이체 반복거래 재활성화 가드로 쓰던 조건을 canRevive 헬퍼로 추출해 DB.recurrences와 DB.trashRecs 양쪽에 동일하게 적용(트래시 안에 있는 동안은 active=true로 플래그만 지워두고, 실제로 live 배열로 돌아오는 건 그 뒤 restoreTrashRec이 하도록 둠 — cycle326 advance가 relinkDeletedAsset에 쓴 것과 같은 '트래시 안에서 미리 되살려두기' 패턴). 테스트: 단일 자산 참조 반복거래가 트래시 안에서도 되살려지는지(1) + 이체 반복거래는 양쪽 자산이 모두 복구되기 전까지 플래그가 안 지워지는지(1) + restoreTrashAsset→restoreTrashRec 왕복 시나리오로 최종적으로 active:true에 수렴하는지(1) = 3건 추가 — node test/run.js 3177->3180/3180 통과. node --check logic.js/sw.js/test/run.js 통과, manifest.webmanifest JSON 유효성 통과, index.html 인라인 스크립트 추출검사는 기존과 동일한 1건의 기존 오탐(block1=head FOUC 스크립트, HTML 주석 텍스트 오인, cycle311부터 이어짐)만 재확인됨 — 내 변경은 restoreTrashAsset이 있는 다른 block임을 확인. 사용자 체감 데이터 정합성 버그 수정이라 APP_VERSION 1.47.394->1.47.395, sw.js CACHE v661->v662. (참고: 세션 시작 시 로컬 main이 origin/main보다 40커밋 뒤처진 detached HEAD 상태였음 — git fetch로 origin/main이 이미 그 지점을 포함함을 확인하고 git merge --ff-only origin/main으로 맞춤. 이런 상태가 반복되는 듯해 다음 critique/advance에서 원인 조사를 고려할 만함 — origin에 app-evolve-backup/checkpoint/orphaned/recovered 등 이름의 과거 복구용 브랜치가 다수 남아있는 것도 확인됨, 실제 삭제는 사용자 명시적 요청 없이 하지 않음.)",
       "commit": null
     }
   ]

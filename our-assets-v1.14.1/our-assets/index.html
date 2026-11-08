@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.394';
+const APP_VERSION='1.47.395';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -11801,7 +11801,16 @@ function openAssetTrashList(){
  * 찍힌 반복거래 중 이 자산을 참조하는 것을 다시 찾아야 한다 — 이체처럼 fromAssetId/toAssetId
  * 양쪽이 걸린 반복거래는 두 자산이 모두 살아있을 때만 되살려야 하므로(한쪽만 복구된 상태에서
  * 되살리면 존재하지 않는 계좌로 계속 거래가 '발생'함, activeRecsForAssets 주석과 동일한 이유)
- * relinkDeletedAsset(4616행)과 동일한 가드를 쓴다(app-evolve cycle320 critique/advance). */
+ * relinkDeletedAsset(4616행)과 동일한 가드를 쓴다(app-evolve cycle320 critique/advance).
+ * DB.recurrences만 훑어서는 안 되는 공백이 있었다: deleteRecsUndo(11760행)는 반복거래를 트래시로
+ * 옮길 때 그 시점의 active/_autoDeactivatedByAssetDelete 값을 그대로 복사해 넣으므로, "자산 삭제로
+ * 비활성화된 반복거래를 그 뒤에 또 삭제"하면 이 플래그가 찍힌 채로 DB.trashRecs에 들어가 버린다.
+ * 그 상태에서 자산만 먼저 복구하면 이 함수가 DB.trashRecs는 보지 않아 플래그가 영원히 안 지워지고,
+ * 나중에 restoreTrashRec이 그 반복거래를 복구할 때도 rec.active가 이미 false라 자산생존가드(11853행)의
+ * assetsGone 조건(rec.active&&...)이 전혀 평가되지 않아 active:false로만 복구되어 버린다 — 자산·반복
+ * 둘 다 되돌렸는데 반복거래만 영원히 멈춘 채로 남는다. DB.trashRecs도 동일한 가드로 함께 훑어
+ * 플래그를 지워두면, 나중에 restoreTrashRec이 복구할 때 이미 active:true인 상태로 넘어온다
+ * (app-evolve cycle327 develop). */
 function restoreTrashAsset(id){
  if(twGuard())return;
  const a=(DB.trashAssets||[]).find(x=>x.id===id);if(!a)return;
@@ -11811,9 +11820,12 @@ function restoreTrashAsset(id){
  DB.assets.push(asset);
  unsnapshotAssetName(id);
  const live=aid=>DB.assets.some(x=>x.id===aid);
- const recs=DB.recurrences.filter(r=>r._autoDeactivatedByAssetDelete&&(r.fromAssetId===id||r.toAssetId===id)&&(!r.fromAssetId||live(r.fromAssetId))&&(!r.toAssetId||live(r.toAssetId)));
+ const canRevive=r=>r._autoDeactivatedByAssetDelete&&(r.fromAssetId===id||r.toAssetId===id)&&(!r.fromAssetId||live(r.fromAssetId))&&(!r.toAssetId||live(r.toAssetId));
+ const recs=DB.recurrences.filter(canRevive);
  recs.forEach(r=>{r.active=true;delete r._autoDeactivatedByAssetDelete});
- touchSave(asset,...recs);openAssetTrashList();renderCurrent();toast('되돌렸어요');
+ const trashRecs=(DB.trashRecs||[]).filter(canRevive);
+ trashRecs.forEach(r=>{r.active=true;delete r._autoDeactivatedByAssetDelete});
+ touchSave(asset,...recs,...trashRecs);openAssetTrashList();renderCurrent();toast('되돌렸어요');
 }
 /* 메뉴 › '삭제한 반복' — deleteRecsUndo가 DB.trashRecs에 담아둔 삭제된 반복거래를 보여주고 복구할 수
  * 있는 화면. openTrashList/restoreTrashTxn(거래 쪽, cycle319)과 동일한 manage-row 목록 패턴

@@ -12409,6 +12409,41 @@ test('restoreTrashAsset: 이체 반복거래는 양쪽 자산이 모두 복구�
   assert.strictEqual(rec.active, true, '양쪽 자산이 모두 복구되면 그제서야 재활성화해야 함');
   assert.strictEqual(rec._autoDeactivatedByAssetDelete, undefined);
 });
+// deleteRecsUndo(11760행)는 반복거래를 트래시로 옮길 때 그 시점의 active/_autoDeactivatedByAssetDelete
+// 값을 그대로 복사하므로, "자산 삭제로 비활성화된 반복거래를 그 뒤에 또 삭제"하면 이 플래그가
+// DB.recurrences가 아니라 DB.trashRecs 안에 찍힌 채로 남는다 — restoreTrashAsset이 DB.recurrences만
+// 훑으면 이 경우를 영원히 놓친다(app-evolve cycle327 develop).
+test('restoreTrashAsset: DB.trashRecs 안에 _autoDeactivatedByAssetDelete가 찍힌 반복거래도 자산이 복구되면 플래그를 지운다', () => {
+  const a = { id: 'a1', name: '통장1', type: 'cash', _deletedAt: 1 };
+  const trashedRec = { id: 'r1', active: false, _autoDeactivatedByAssetDelete: true, fromAssetId: 'a1', toAssetId: null, updatedAt: 1, _deletedAt: 1 };
+  sandbox.DB = { assets: [], recurrences: [], txns: [], trashAssets: [a], trashRecs: [trashedRec], deletedIds: { a1: 1 } };
+  sandbox.restoreTrashAsset('a1');
+  assert.strictEqual(trashedRec.active, true, '자산이 복구됐으니 트래시 안에 있어도 되살려야 함');
+  assert.strictEqual(trashedRec._autoDeactivatedByAssetDelete, undefined, '되살렸으면 원인 플래그도 지워야 함');
+  assert.strictEqual(trashedRec.updatedAt, 'test-updatedAt', '트래시 안에서 되살린 반복거래도 touch()되어야 함');
+});
+test('restoreTrashAsset: DB.trashRecs의 이체 반복거래는 양쪽 자산이 모두 복구되기 전까지는 플래그를 지우지 않는다', () => {
+  const a1 = { id: 'a1', name: '통장1', type: 'cash', _deletedAt: 1 };
+  const b1 = { id: 'b1', name: '통장2', type: 'cash', _deletedAt: 1 };
+  const trashedRec = { id: 'r1', active: false, _autoDeactivatedByAssetDelete: true, fromAssetId: 'a1', toAssetId: 'b1', updatedAt: 1, _deletedAt: 1 };
+  sandbox.DB = { assets: [], recurrences: [], txns: [], trashAssets: [a1, b1], trashRecs: [trashedRec], deletedIds: { a1: 1, b1: 1 } };
+  sandbox.restoreTrashAsset('a1');
+  assert.strictEqual(trashedRec._autoDeactivatedByAssetDelete, true, '반대편(b1)이 아직 복구되지 않았으면 플래그를 지우면 안 됨');
+  sandbox.restoreTrashAsset('b1');
+  assert.strictEqual(trashedRec.active, true, '양쪽 자산이 모두 복구되면 그제서야 되살려야 함');
+  assert.strictEqual(trashedRec._autoDeactivatedByAssetDelete, undefined);
+});
+test('restoreTrashAsset → restoreTrashRec: 자산과 반복거래를 둘 다 복구하면(어느 순서든) 반복거래가 끝내 정상(active) 상태로 돌아온다', () => {
+  const a = { id: 'a1', name: '통장1', type: 'cash', _deletedAt: 1 };
+  const trashedRec = { id: 'r1', active: false, _autoDeactivatedByAssetDelete: true, fromAssetId: 'a1', toAssetId: null, updatedAt: 1, _deletedAt: 1 };
+  sandbox.DB = { assets: [], recurrences: [], txns: [], trashAssets: [a], trashRecs: [trashedRec], deletedIds: { a1: 1 } };
+  sandbox.restoreTrashAsset('a1'); // 자산을 먼저 복구 — 트래시 안의 반복거래 플래그가 지워짐
+  sandbox.restoreTrashRec('r1');   // 그다음 반복거래를 복구 — 자산생존가드(assetsGone)에 걸리지 않고 active 그대로 돌아와야 함
+  const restored = sandbox.DB.recurrences.find(r => r.id === 'r1');
+  assert.ok(restored, 'DB.recurrences로 복구되어야 함');
+  assert.strictEqual(restored.active, true, '자산이 이미 살아있으므로 반복거래도 active:true로 끝나야 함(수정 전에는 영원히 멈춰 있었음)');
+  assert.strictEqual(restored._autoDeactivatedByAssetDelete, undefined);
+});
 
 /* ---------- delAsset/assetDelSel: 단일/다중선택 삭제 모두 연결된 반복거래 비활성화 경고를
  * confirmSheet 메시지에 보여줘야 한다(app-evolve cycle205) — assetDelSel()이 delAsset()과
