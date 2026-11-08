@@ -1,15 +1,8 @@
 {
   "cycle": 323,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 318,
-      "phase": "review",
-      "timestamp": "2026-11-07T06:07:44.000Z",
-      "summary": "cycle318 develop 커밋(4b1fac9, 통합검색 gsQInput 디바운스 즉시반영 가드 추가)을 검토 — histQInput/assetQInput/goalQInput/recQInput(cycle216/243/317)과 글자 그대로 동일한 v.trim()==='' 패턴으로 clrInput('gsQ') 빈 문자열 입력을 즉시 반영하고 GS_EXPAND도 동일하게 리셋함을 diff로 확인. 새 테스트 6개(디바운스 지연/타이머 교체/#gsBody 없음 가드/빈문자열 즉시실행/공백trim/GS_EXPAND 리셋)가 기존 가드들의 테스트 구조를 그대로 재사용해 커버리지도 충분. APP_VERSION 1.47.380, sw.js CACHE v647로 함께 올라감. 전체 테스트 2992/2992 통과. 버그 없음.",
-      "commit": null
-    },
     {
       "cycle": 318,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-08T00:00:00.000Z",
       "summary": "restoreTrashRec(index.html, '삭제한 반복' 복구, cycle321)이 복구 시 연결 자산의 생존 여부를 전혀 확인하지 않는 공백을 발견해 고쳤다. 반복거래가 먼저 DB.trashRecs에 들어간(=DB.recurrences에서 빠진) 뒤에 연결된 자산이 삭제되면, deleteAssetsUndo의 activeRecsForAssets(ids)는 지금 DB.recurrences에 있는 반복거래만 훑으므로 이 트래시된 반복거래는 비활성화 기회를 아예 얻지 못한다. 그 상태로 나중에 restoreTrashRec을 부르면 active:true 그대로 DB.recurrences에 되돌아가고, expandRec()은 r.active만 보고 매번 새 가상 회차를 만들어내므로(4459행 activeRecsForAssets 주석이 직접 경고하는 바로 그 위험) 존재하지 않는 자산으로 영원히 '발생'하는 유령 반복거래가 생긴다. restoreTrashAsset(cycle320)이 이체 반복거래를 양쪽 자산이 모두 살아있을 때까지 재활성화하지 않는 것과 대칭으로, restoreTrashRec이 복구 직전에 fromAssetId/toAssetId 생존을 직접 확인해 하나라도 없으면 active:false로 복구하고 _autoDeactivatedByAssetDelete를 남기도록 수정(한 줄 로직, 새 함수 없이 restoreTrashAsset과 동일한 live-id 체크 재사용) — 이 플래그를 남겨두면 그 자산이 나중에 restoreTrashAsset으로 복구될 때 기존 로직이 자동으로 재활성화해준다(실제로 양방향 왕복 테스트로 확인). 트래시에 들어가기 전부터 사용자가 직접 멈춰둔(active:false) 반복거래는 자산이 없어도 원래 상태 그대로 유지해 '자산 삭제 때문에 멈췄다'는 원인 표시를 잘못 남기지 않는다. 비활성 복구 시에는 '되돌렸어요 · 연결된 자산이 없어 일시중지됐어요' 토스트로 구분해 알린다. test/run.js에 restoreTrashRec 블록에 5건 추가(fromAssetId 없음→비활성+플래그, toAssetId만 없는 이체형도 동일, 양쪽 다 살아있으면 원래 active 그대로, 원래부터 비활성이던 건 플래그 안 남김, restoreTrashRec→restoreTrashAsset 순서로 자동 재활성화 왕복) — 3104->3109 통과. node test/run.js 3109/3109 통과. 사용자 체감 버그 수정이라 APP_VERSION 1.47.387->1.47.388, sw.js CACHE v654->v655.",
+      "commit": null
+    },
+    {
+      "cycle": 323,
+      "phase": "review",
+      "timestamp": "2026-11-08T01:08:08.121Z",
+      "summary": "cycle323 develop 커밋(fc7e700, restoreTrashRec이 연결 자산 생존 확인 없이 active:true로 복구하던 공백 수정)을 검토. diff로 로직 확인: live(aid)=DB.assets.some(x=>x.id===aid) 체크 후 fromAssetId/toAssetId 중 하나라도 죽어있으면 active:false+_autoDeactivatedByAssetDelete로 복구, 둘 다 살아있으면 원래 active 유지, 원래부터 비활성(active:false)이던 레코드는 플래그를 새로 남기지 않음 — 전부 의도대로 동작. restoreTrashAsset(11599행)의 재활성화 가드(_autoDeactivatedByAssetDelete && 양쪽 자산 생존 시에만 재활성화)와 완전히 대칭이라 왕복 시나리오(restoreTrashRec→비활성 복구→restoreTrashAsset→자동 재활성화)도 성립함을 코드로 재확인. fromAssetId/toAssetId가 둘 다 없는(자산 미연동) 반복거래는 assetsGone이 항상 false라 기존 동작 그대로 유지됨도 확인. node test/run.js 3109/3109 통과 재확인(직접 재실행). 버그 없음.",
       "commit": null
     }
   ]
