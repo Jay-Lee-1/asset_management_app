@@ -1,7 +1,11 @@
 {
   "cycle": 324,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "자산 수량 변경 기록(assetQtyLog) 삭제 '최근 삭제함(trashQtyLog)' 복구 기능",
+    "why": "delAssetQtyLog(index.html:6542-6549)가 매도/수량조정 로그 1건을 삭제할 때 undoToast 6초짜리 메모리 클로저 하나에만 의존하고, DB.deletedIds는 {id:timestamp} 톰스톤일 뿐 실제 내용(date/prevQty/newQty/addedAmount/saleProceeds/realizedGain/assetId)을 담지 않는다. 바로 위 주석(index.html:4744-4748 부근, openAssetQtyLog 주석)이 '거래로 남지 않는 수량 덮어쓰기 기록'이라고 명시하듯, 특히 realizedGain/saleProceeds가 들어간 매도 로그는 손으로 재입력이 실질적으로 불가능하다. cycle319(trashTxns)/320(trashAssets)/321(trashRecs)/322(trashGoals)와 완전히 동일한 버그 클래스가 5번째 엔티티(assetQtyLog)에서만 아직 방치되어 있었다.",
+    "approach": "1) index.html: DB.trashQtyLog 신설. logic.js 새 함수 불필요 — gcTrashTxns/mergeTrashTxns을 그대로 재사용({id,_deletedAt}만 가정). 2) migrate()에서 DB.trashQtyLog 초기화+gcTrashTxns GC+live-id(DB.assetQtyLog 기준) 필터 배선(trashGoals와 동일 패턴). 3) mergeRemoteDataIntoLocal()에서 DB.assetQtyLog 병합 직후 mergeTrashTxns로 trashQtyLog 배선. 4) sanitizeBackup()에 trashQtyLog 검증 추가(id 필수, assetId 보존, qty/addedAmount/saleProceeds/realizedGain 숫자 클램프, _deletedAt 보정), dedupeIds 목록에도 포함. 5) delAssetQtyLog가 필터 직전에 {...q,_deletedAt:now}를 DB.trashQtyLog에 push, undo 콜백에서 trashQtyLog에서도 제거. 6) openAssetQtyLogTrashList()/restoreTrashQtyLog(id) 신설 — openGoalTrashList/restoreTrashGoal과 동일한 manage-row 패턴. UX 배치는 openAssetQtyLog(assetId) 화면 안에 자산별로 보이게 하는 쪽을 우선 검토(수량기록 자체가 이미 자산 스코프이므로), 안 되면 독립 메뉴 행으로. 7) 복구 시 assetId가 이미 영구 삭제된 자산을 가리키면: qty log는 active 플래그가 없어 restoreTrashRec류의 재활성 가드는 불필요하지만, snapshotAssetName/unsnapshotAssetName/relinkDeletedAsset(index.html:4749-4778 부근)이 이미 DB.assetQtyLog를 순회하는지 확인하고, 트래시에 있는 동안 자산명 스냅샷 처리가 누락되지 않는지 점검. 8) 테스트: trashGoals 테스트 블록을 그대로 미러링 — delAssetQtyLog→trashQtyLog 저장/undo제거/무변경/다건, list/restore 정상·not-found·twGuard, sanitizeBackup 검증, migrate 초기화/GC/live-id필터, mergeRemoteDataIntoLocal 배선, gcTrashTxns/mergeTrashTxns 재사용 확인 (약 18-20건). 9) 사용자체감 기능 추가이므로 APP_VERSION/sw.js CACHE 버전업."
+  },
   "history": [
     {
       "cycle": 319,
@@ -141,6 +145,13 @@
       "phase": "review",
       "timestamp": "2026-11-08T05:07:33.597Z",
       "summary": "cycle324 develop 커밋(65231c6, restoreTrashGoal이 asset형 목표 owner를 연결 자산의 현재 owner로 다시 맞추도록 수정)을 검토 — doBulkOwnerMove/saveAsset/mergeAssetInto가 DB.goals만 훑고 DB.trashGoals를 건드리지 않아 트래시에 있는 동안 연결 자산 owner가 바뀌면 복구 시 낡은 owner가 그대로 돌아오던 불변식 위반을 saveGoal(3948행)과 동일한 재동기화로 막은 것을 diff로 확인. 연결 자산이 이미 영구 삭제된 경우(goalLinkedAssetGone) saveGoal의 owner:isAsset?(linkedAsset?linkedAsset.owner:(d.owner||'all')):... 폴백과 비교해, restoreTrashGoal이 자산을 못 찾으면 아무것도 안 하고 트래시에 저장된 owner를 그대로 두는 것이 saveGoal에서 d.owner가 이미 기존 owner로 채워져 있는 것과 동등한 동작임을 확인. openGoalTrashList의 트래시 행 렌더링은 owner를 표시하지 않아 이번 수정과 별개 영역임도 확인. 새 테스트 3건(owner 재동기화/자산 없을 때 유지/networth형 미영향) 포함 3118/3118 통과 재확인. 코드 변경 없음(이상 없음).",
+      "commit": null
+    },
+    {
+      "cycle": 324,
+      "phase": "critique",
+      "timestamp": "2026-11-08T06:20:00.000Z",
+      "summary": "서브에이전트로 앱 전체를 재조사(cycle300-324 처리/보류/기각 항목 전부 제외 지시: twGuard 스윕·전역검색·예산이월·연말결산·owner/category/asset merge 전부·nwHistory byType/자산배분추이 카드·목표자산배분+리밸런싱·CSV날짜·이체 및 반복 중복감지·카테고리별 알림뮤트·공동지출 정산(shared/settle) 전체와 배지·토글 전파·investGainLossCard 유형별 분해·목표/반복/통합검색 검색창 디바운스·PIN 화면잠금 고지·목표비중 알림뮤트 토글·saveGoal targetDate 범위가드·거래/자산/반복/목표 삭제 trash 복구 4종 전체와 그 복구시점 재검증 가드들(자산생존가드·owner재동기화)·searchTerms/matchQueryTerms·shiftWeekend 단위테스트·openTrashList 분할거래 카테고리 라벨·__corrupt_* 손상백업 노출은 명시적으로 제외; FX 환차익 분리·투자손익 추이차트·CSV shared/photo 필드·배당/이자/할부/귀속별 예산/다인 정산/CSV·반복 분할거래·실시간 저장소 암호화·반복 건별 skip·백업 리마인더·CDN SRI 해시·홈 대시보드 카드 순서변경/숨기기·CSV import 견고성·부채/대출 추적·백그라운드 푸시 한계·owners/categories 삭제 trash(보류 유지)·recScheduleSameSlot malformed-startDate 단위테스트(보류 유지)는 기각/보류 이력으로 재확인). 발견: delAssetQtyLog(index.html:6542-6549, 자산별 수량변경/매도 기록 삭제)가 거래/자산/반복/목표와 동일하게 여전히 undoToast의 6초짜리 메모리 클로저 하나에만 의존 — DB.deletedIds는 id-시각 톰스톤일 뿐 기록 내용(date/prevQty/newQty/addedAmount/saleProceeds/realizedGain/assetId)을 담지 않아 6초가 지나거나 앱을 닫으면 영구 소실됨을 직접 코드로 재확인. openAssetQtyLog 바로 위 주석(index.html:6523-6525)이 이 기록을 '거래로 남지 않는 수량 덮어쓰기'라고 명시하는 데다, 특히 매도로 생기는 realizedGain/saleProceeds는 손으로 재입력이 사실상 불가능해 cycle319(trashTxns)/320(trashAssets)/321(trashRecs)/322(trashGoals)와 같은 버그 클래스 중 아직 커버 안 된 5번째 엔티티임을 확인(재제안 아님, 엔티티 확장). pending_advance_plan에 구체 계획 저장(DB.trashQtyLog 신설, GC/병합은 새 함수 없이 gcTrashTxns/mergeTrashTxns 재사용, migrate/mergeRemoteDataIntoLocal/sanitizeBackup 배선, delAssetQtyLog가 removed를 trashQtyLog에도 push, openAssetQtyLogTrashList/restoreTrashQtyLog 신설(배치는 openAssetQtyLog 화면 내부 자산별 노출을 우선 검토), snapshotAssetName류가 트래시 상태의 assetQtyLog도 이름 스냅샷 처리하는지 점검, 테스트는 trashGoals 블록 미러링 18-20건). 기각 후보 3개(snapshotAssetName/unsnapshotAssetName/relinkDeletedAsset이 DB.trashTxns/trashRecs를 순회하지 않아 트래시에 있는 동안 자산이 삭제되면 복구 후 이름표시가 '—' 폴백으로 보일 수 있음-표시전용·저위험이라 다음 critique 후보로 보류, 4개 트래시 화면 공통 '전체 복구' 버튼-UX 편의일 뿐 데이터손실 버그가 아니라 저위험 패턴에 비해 후순위, 귀속/카테고리 삭제 trash 미보호-cycle321/322에서 이미 보류 확정 재확인). 코드 변경 없음(state.json만 커밋, pending_advance_plan 신설에 따라 phase를 advance로 회전).",
       "commit": null
     }
   ]
