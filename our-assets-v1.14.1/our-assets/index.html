@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.387';
+const APP_VERSION='1.47.388';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -11627,13 +11627,27 @@ function openRecTrashList(){
   ${items.length?items.map(row).join(''):`<div class="empty"><div class="ei">${svg('trash')}</div><div class="et">삭제한 반복거래가 없어요</div></div>`}
   <div style="height:12px"></div><button class="btn btn-primary" onclick="closeSheet()">닫기</button>`);
 }
+/* restoreTrashRec: deleteAssetsUndo(11566행 activeRecsForAssets)는 '지금 DB.recurrences에 있는'
+ * 활성 반복거래만 찾아 자산 삭제 시 비활성화하므로, 이 반복거래가 먼저 트래시에 들어간(DB.recurrences에서
+ * 이미 빠진) 뒤에 연결된 자산이 지워지는 경우는 그 가드를 타지 않는다 — 트래시에 보관된 fromAssetId/
+ * toAssetId는 삭제 당시 그대로라, 그 사이 자산이 영구 삭제(트래시 보존기간 만료 등)됐다면 복구 시점에
+ * 존재하지 않는 계좌를 가리키게 된다. expandRec()은 r.active만 보고 매번 새 가상 회차를 만들어내므로
+ * (4459행 activeRecsForAssets 주석과 동일한 위험), 그대로 활성 복구하면 존재하지 않는 자산으로 영원히
+ * '발생'하는 유령 반복거래가 생긴다. restoreTrashAsset(11599행)이 이체 반복거래를 양쪽 자산이 모두
+ * 살아있을 때까지 재활성화하지 않는 것과 대칭으로, 참조하는 자산이 하나라도 없으면 비활성 상태로
+ * 복구하고 _autoDeactivatedByAssetDelete를 남겨 그 자산이 나중에 복구되면 restoreTrashAsset이 자동으로
+ * 되살리게 한다(app-evolve cycle323 develop). */
 function restoreTrashRec(id){
  if(twGuard())return;
  const r=(DB.trashRecs||[]).find(x=>x.id===id);if(!r)return;
  DB.trashRecs=(DB.trashRecs||[]).filter(x=>x.id!==id);
  DB.deletedIds=DB.deletedIds||{};delete DB.deletedIds[id];
  const rec=Object.assign({},r);delete rec._deletedAt;
- DB.recurrences.push(rec);touchSave(rec);openRecTrashList();renderCurrent();toast('되돌렸어요');
+ const live=aid=>DB.assets.some(x=>x.id===aid);
+ const assetsGone=rec.active&&((rec.fromAssetId&&!live(rec.fromAssetId))||(rec.toAssetId&&!live(rec.toAssetId)));
+ if(assetsGone){rec.active=false;rec._autoDeactivatedByAssetDelete=true;}
+ DB.recurrences.push(rec);touchSave(rec);openRecTrashList();renderCurrent();
+ toast(assetsGone?'되돌렸어요 · 연결된 자산이 없어 일시중지됐어요':'되돌렸어요');
 }
 /* 목표 관리 선택모드(ST.goalSel)의 '삭제' 바닥바 버튼이 호출 — deleteRecsUndo/deleteAssetsUndo와
  * 동일한 패턴으로 한 번에 여러 목표를 지우고 하나의 undoToast로 되돌릴 수 있게 한다. delGoal(건당

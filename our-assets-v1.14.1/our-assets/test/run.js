@@ -11597,6 +11597,60 @@ test('restoreTrashRec: 튜토리얼 모드 중에는 twGuard가 막아서 복구
   assert.strictEqual(sandbox.DB.trashRecs.length, 1);
   sandbox.TWi = -1;
 });
+// app-evolve cycle323: 반복거래가 먼저 트래시(DB.trashRecs)에 들어간 뒤 연결된 자산이 지워지면(또는
+// 트래시 보존기간이 지나 영구 삭제되면), activeRecsForAssets(지금 DB.recurrences에 있는 반복거래만 봄)가
+// 이 반복거래를 전혀 모르므로 비활성화 기회를 놓친다. 그대로 되살리면 expandRec()이 존재하지 않는
+// 자산으로 영원히 '발생'하는 유령 반복거래가 생기므로, restoreTrashRec이 자체적으로 자산 생존을 확인해야 한다.
+test('restoreTrashRec: 연결된 자산(fromAssetId)이 더 이상 없으면 비활성 상태로 복구하고 _autoDeactivatedByAssetDelete를 남긴다', () => {
+  const r = { id: 'r1', category: '식비', amount: 1000, startDate: '2026-01-01', active: true, fromAssetId: 'gone', toAssetId: null };
+  sandbox.DB = { assets: [], recurrences: [], trashRecs: [r], deletedIds: { r1: 1 } };
+  sandbox.lastToast = null;
+  sandbox.restoreTrashRec('r1');
+  const restored = sandbox.DB.recurrences.find(x => x.id === 'r1');
+  assert.ok(restored, 'DB.recurrences로는 복구되어야 함(트래시에 영구히 남기면 안 됨)');
+  assert.strictEqual(restored.active, false, '존재하지 않는 자산을 가리키면 활성 복구하면 안 됨(유령 반복거래 생성 방지)');
+  assert.strictEqual(restored._autoDeactivatedByAssetDelete, true, 'relinkDeletedAsset/restoreTrashAsset이 그 자산이 나중에 돌아오면 자동으로 되살릴 수 있게 원인을 남겨야 함');
+  assert.ok(sandbox.lastToast.includes('일시중지'), '비활성으로 복구됐음을 토스트로 알려야 함');
+});
+test('restoreTrashRec: 이체 반복거래는 toAssetId가 없어도 비활성 복구된다', () => {
+  const r = { id: 'r1', category: '이동', amount: 1000, startDate: '2026-01-01', active: true, fromAssetId: 'a1', toAssetId: 'gone' };
+  sandbox.DB = { assets: [{ id: 'a1', name: '통장1' }], recurrences: [], trashRecs: [r], deletedIds: { r1: 1 } };
+  sandbox.restoreTrashRec('r1');
+  const restored = sandbox.DB.recurrences.find(x => x.id === 'r1');
+  assert.strictEqual(restored.active, false, 'fromAssetId만 살아있어도 toAssetId가 없으면(이체 반대쪽) 비활성 복구해야 함');
+  assert.strictEqual(restored._autoDeactivatedByAssetDelete, true);
+});
+test('restoreTrashRec: 연결된 자산이 모두 살아있으면 원래 active 상태 그대로 복구한다', () => {
+  const r1 = { id: 'r1', category: '식비', amount: 1000, startDate: '2026-01-01', active: true, fromAssetId: 'a1', toAssetId: null };
+  sandbox.DB = { assets: [{ id: 'a1', name: '통장1' }], recurrences: [], trashRecs: [r1], deletedIds: { r1: 1 } };
+  sandbox.lastToast = null;
+  sandbox.restoreTrashRec('r1');
+  const restored = sandbox.DB.recurrences.find(x => x.id === 'r1');
+  assert.strictEqual(restored.active, true, '연결 자산이 모두 살아있으면 그대로 활성 복구되어야 함');
+  assert.strictEqual(restored._autoDeactivatedByAssetDelete, undefined);
+  assert.strictEqual(sandbox.lastToast, '되돌렸어요', '정상 복구는 평범한 토스트여야 함');
+});
+test('restoreTrashRec: 트래시에 들어가기 전부터 사용자가 직접 일시중지해둔(active:false) 반복거래는 자산이 없어도 그 상태를 그대로 유지한다', () => {
+  const r = { id: 'r1', category: '식비', amount: 1000, startDate: '2026-01-01', active: false, fromAssetId: 'gone', toAssetId: null };
+  sandbox.DB = { assets: [], recurrences: [], trashRecs: [r], deletedIds: { r1: 1 } };
+  sandbox.lastToast = null;
+  sandbox.restoreTrashRec('r1');
+  const restored = sandbox.DB.recurrences.find(x => x.id === 'r1');
+  assert.strictEqual(restored.active, false);
+  assert.strictEqual(restored._autoDeactivatedByAssetDelete, undefined, '이미 비활성이던 반복거래는 "자산 삭제 때문에 비활성화됐다"는 원인 표시를 새로 남기면 안 됨(사용자가 직접 멈춘 것과 구분)');
+  assert.strictEqual(sandbox.lastToast, '되돌렸어요', '원래도 비활성이라 새로 멈춘 게 아니므로 평범한 토스트여야 함');
+});
+test('restoreTrashRec: _autoDeactivatedByAssetDelete로 비활성 복구된 반복거래는, 그 자산이 나중에 복구되면 restoreTrashAsset이 자동으로 재활성화한다', () => {
+  const r = { id: 'r1', category: '식비', amount: 1000, startDate: '2026-01-01', active: true, fromAssetId: 'a1', toAssetId: null };
+  const a = { id: 'a1', name: '통장1', type: 'cash', _deletedAt: 1 };
+  sandbox.DB = { assets: [], recurrences: [], txns: [], trashRecs: [r], trashAssets: [a], deletedIds: { r1: 1, a1: 1 } };
+  sandbox.restoreTrashRec('r1');
+  assert.strictEqual(sandbox.DB.recurrences.find(x => x.id === 'r1').active, false, '자산이 아직 없으니 일단은 비활성 복구');
+  sandbox.restoreTrashAsset('a1');
+  const restored = sandbox.DB.recurrences.find(x => x.id === 'r1');
+  assert.strictEqual(restored.active, true, '자산이 돌아왔으니 restoreTrashAsset이 자동으로 재활성화해야 함(복구 순서와 무관하게 끝에는 정상 상태로 수렴)');
+  assert.strictEqual(restored._autoDeactivatedByAssetDelete, undefined);
+});
 
 /* ---------- deleteAssetsUndo: 자산 삭제(단일/대량) 공용 되돌리기 인프라 (delAsset도 여기 합류) ---------- */
 test('deleteAssetsUndo: 지정한 id의 자산을 삭제하고, undo 콜백을 부르면 정확히 복원한다', () => {

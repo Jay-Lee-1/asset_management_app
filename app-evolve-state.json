@@ -1,15 +1,8 @@
 {
   "cycle": 323,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 318,
-      "phase": "develop",
-      "timestamp": "2026-11-07T05:30:00.000Z",
-      "summary": "통합 검색(openGlobalSearch) 입력창 gsQInput이 histQInput/assetQInput/goalQInput/recQInput(cycle216/243/317)이 전부 갖춘 \"지우면(clrInput) 디바운스 없이 즉시 반영\" 가드를 혼자만 빠뜨려서, 통합검색에서 'x'로 검색어를 지워도 220ms 동안 이전 결과 목록이 그대로 남아 있던 공백을 발견해 고쳤다. gsQInput(v)에 v.trim()==='' 조기분기(GS_EXPAND={} 리셋+#gsBody.innerHTML=globalSearchBody(v) 즉시 실행)를 추가, 디바운스 경로는 그대로 유지. test/run.js FUNCTIONS에 gsQInput 추가(이전엔 실행형 테스트 대상이 아니었음), LETS에 _gsQT 추가(_fixWhen/_fixCtx와 동일하게 한 let 문에 묶인 GS_EXPAND까지 같이 끌려옴, 기존 sandbox.GS_EXPAND={} 기본값과 동일해 문제없음). 테스트 6건 추가(디바운스 후 교체, 연속입력 타이머 교체, #gsBody 없을 때 안전, 지우면 즉시 반영, 공백만 입력해도 즉시 반영, 즉시실행 경로도 GS_EXPAND 리셋) — 2986->2992 통과. 테스트 작성 중 두 가지를 직접 발견/수정: (1) globalSearchBody가 DB.categories/owners/settings.confirmTransfers/nwHistory를 참조해 최소 DB 스텁만 쓰면 \"Cannot read properties of undefined (reading 'expense')\"로 깨짐 — setupGlobalSearchGoalDB와 동일한 형태의 DB로 보완, (2) GS_EXPAND 리셋 검증에 쓴 assert.deepStrictEqual({},{})가 vm 샌드박스 realm 문제(cycle309/313 로그와 동일 클래스)로 실패해 Object.keys(...).length===0 비교로 교체. node test/run.js 2992/2992 통과, node --check logic.js/sw.js 통과, index.html 인라인 스크립트 추출검사는 기존과 동일한 1건의 기존 오탐(HTML 주석 텍스트 오인, cycle311부터 이어짐)만 재확인되고 이번 변경과 무관함을 확인, manifest.webmanifest JSON 유효성 통과. APP_VERSION 1.47.379->1.47.380, sw.js CACHE v646->v647.",
-      "commit": null
-    },
     {
       "cycle": 318,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-07T23:10:00.000Z",
       "summary": "critique(cycle322) 계획대로 목표(goals) 삭제 '최근 삭제함(trashGoals)' 복구 기능을 구현했다. logic.js는 새 함수 없이 gcTrashTxns/mergeTrashTxns를 그대로 재사용(둘 다 {id,_deletedAt}만 가정해 목표 전용 필드를 참조하지 않음). index.html: DB.trashGoals 신설(migrate()에 초기화+GC+live-id 필터, mergeRemoteDataIntoLocal의 DB.goals 병합 직후에 trashTxns/trashAssets/trashRecs와 동일한 패턴으로 배선, sanitizeBackup에 id&&name 기준 검증+targetAmount 클램프+targetDate csvDateValid 보정+_deletedAt 보정 추가 — owner/type/linkedAssetId는 이미 saveGoal이 정규화해 둔 아카이브라는 전제로 재검증하지 않음, 위 srcGoals 블록과 달리 goalOwnerEff 불변식 동기화도 적용하지 않음), deleteGoalsUndo가 삭제 즉시 목표 전체+_deletedAt을 DB.trashGoals에 저장(즉시 undo 콜백에서도 제거), 메뉴 '백업·데이터'에 '삭제한 목표' 행 추가, openGoalTrashList()/restoreTrashGoal(id) 신설(openRecTrashList/restoreTrashRec과 동일 manage-row 패턴, 요약은 type(자산연동/순자산)·targetAmount·targetDate). 테스트: deleteGoalsUndo→trashGoals 저장/undo제거/무변경/다건(4) + openGoalTrashList/restoreTrashGoal(목록순서/빈상태/정상복구/존재안함/twGuard, 5) + sanitizeBackup trashGoals 검증(id/name 없음·무효 통째 제거, targetAmount 클램프, targetDate 보정, _deletedAt 보정, owner/type/linkedAssetId 비검증 보존, 중복id, 6) + migrate trashGoals 초기화/GC/live-id필터(3) + mergeRemoteDataIntoLocal trashGoals 배선(2) + gcTrashTxns/mergeTrashTxns 재사용 확인(목표 모양 데이터, 1) = 21건 추가, 거기에 FUNCTIONS 목록에 openGoalTrashList/restoreTrashGoal 추가 — node test/run.js 3084->3104/3104 통과(DB 스키마 완전성 가드 테스트도 trashGoals 배선이 실제로 걸렸음을 자동 확인). node --check logic.js/sw.js/test/run.js 통과, manifest.webmanifest JSON 유효성 통과, index.html 인라인 스크립트 추출검사는 기존과 동일한 1건의 기존 오탐(block1=head FOUC 스크립트, HTML 주석 텍스트 오인, cycle311부터 이어짐; git stash로 변경 전 상태와 대조해 이번 변경과 무관함을 재확인, 내 변경이 있는 block3/4는 개별 node --check 통과)만 재확인됨. 사용자 체감 기능 추가라 APP_VERSION 1.47.386->1.47.387, sw.js CACHE v653->v654. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 323,
+      "phase": "develop",
+      "timestamp": "2026-11-08T00:00:00.000Z",
+      "summary": "restoreTrashRec(index.html, '삭제한 반복' 복구, cycle321)이 복구 시 연결 자산의 생존 여부를 전혀 확인하지 않는 공백을 발견해 고쳤다. 반복거래가 먼저 DB.trashRecs에 들어간(=DB.recurrences에서 빠진) 뒤에 연결된 자산이 삭제되면, deleteAssetsUndo의 activeRecsForAssets(ids)는 지금 DB.recurrences에 있는 반복거래만 훑으므로 이 트래시된 반복거래는 비활성화 기회를 아예 얻지 못한다. 그 상태로 나중에 restoreTrashRec을 부르면 active:true 그대로 DB.recurrences에 되돌아가고, expandRec()은 r.active만 보고 매번 새 가상 회차를 만들어내므로(4459행 activeRecsForAssets 주석이 직접 경고하는 바로 그 위험) 존재하지 않는 자산으로 영원히 '발생'하는 유령 반복거래가 생긴다. restoreTrashAsset(cycle320)이 이체 반복거래를 양쪽 자산이 모두 살아있을 때까지 재활성화하지 않는 것과 대칭으로, restoreTrashRec이 복구 직전에 fromAssetId/toAssetId 생존을 직접 확인해 하나라도 없으면 active:false로 복구하고 _autoDeactivatedByAssetDelete를 남기도록 수정(한 줄 로직, 새 함수 없이 restoreTrashAsset과 동일한 live-id 체크 재사용) — 이 플래그를 남겨두면 그 자산이 나중에 restoreTrashAsset으로 복구될 때 기존 로직이 자동으로 재활성화해준다(실제로 양방향 왕복 테스트로 확인). 트래시에 들어가기 전부터 사용자가 직접 멈춰둔(active:false) 반복거래는 자산이 없어도 원래 상태 그대로 유지해 '자산 삭제 때문에 멈췄다'는 원인 표시를 잘못 남기지 않는다. 비활성 복구 시에는 '되돌렸어요 · 연결된 자산이 없어 일시중지됐어요' 토스트로 구분해 알린다. test/run.js에 restoreTrashRec 블록에 5건 추가(fromAssetId 없음→비활성+플래그, toAssetId만 없는 이체형도 동일, 양쪽 다 살아있으면 원래 active 그대로, 원래부터 비활성이던 건 플래그 안 남김, restoreTrashRec→restoreTrashAsset 순서로 자동 재활성화 왕복) — 3104->3109 통과. node test/run.js 3109/3109 통과. 사용자 체감 버그 수정이라 APP_VERSION 1.47.387->1.47.388, sw.js CACHE v654->v655.",
       "commit": null
     }
   ]
