@@ -1,15 +1,8 @@
 {
   "cycle": 329,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 324,
-      "phase": "develop",
-      "timestamp": "2026-11-08T04:09:23.000Z",
-      "summary": "restoreTrashGoal(index.html, '삭제한 목표' 복구, cycle322)이 asset형 목표의 owner를 복구 시점에 재검증하지 않는 공백을 발견해 고쳤다. 코드베이스에는 \"asset형 목표의 owner는 항상 연결 자산(linkedAssetId)의 owner와 같다\"는 명시적 불변식이 있고(goalOwnerTargets 테스트: \"asset형 목표는 대상에서 빠진다(saveGoal이 owner를 연결 자산 기준으로 강제하므로)\"), saveGoal(3948행)/saveAsset(5108행 owner 변경 시 연쇄 동기화)/doBulkOwnerMove(11595행)/mergeAssetInto(4609행)가 모두 이 불변식을 지킨다 — 단 셋 다 DB.goals만 훑고 DB.trashGoals는 건드리지 않는다(트래시에 있는 동안은 화면에 안 보이므로 당장 맞출 필요가 없는 의도된 생략). 그래서 목표가 트래시에 있는 동안 연결 자산의 owner가 바뀌면(doBulkOwnerMove로 일괄 이전 등) 트래시에 저장된 owner는 낡은 값으로 남고, restoreTrashGoal이 그 스냅샷을 검증 없이 그대로 DB.goals에 되돌리면 불변식이 깨진 상태로 복구된다 — 연결 자산은 이미 다른 귀속인데 목표만 옛 귀속 캐러셀에 남는 어긋남. restoreTrashRec(cycle323)이 복구 시점에 연결 자산 생존을 재확인하는 것과 같은 '복구 시점 재검증' 원칙을 owner 필드에 적용: restoreTrashGoal에 goal.type==='asset'이면 연결 자산을 찾아 현재 owner로 재동기화하는 한 줄 추가(saveGoal의 owner 계산식과 동일). 연결 자산이 이미 영구 삭제됐으면(goalLinkedAssetGone 경로와 동일하게 중립 처리) 저장된 owner를 그대로 둔다 — 억지로 끼워맞출 자산이 없으므로. test/run.js에 restoreTrashGoal 블록에 3건 추가(연결 자산 owner 변경 시 재동기화, 자산이 영구 삭제됐으면 저장값 유지, networth형은 영향 없음) — 3115->3118 통과. node --check logic.js 통과, index.html 인라인 스크립트 추출검사는 기존과 동일한 1건의 기존 오탐(HTML 주석 텍스트 오인, cycle311부터 이어짐; git stash로 변경 전 상태와 대조해 이번 변경과 무관함을 재확인)만 재확인됨, manifest.webmanifest JSON 유효성 통과. 사용자 체감 데이터 정합성 버그 수정이라 APP_VERSION 1.47.389->1.47.390, sw.js CACHE v656->v657. (참고: 커밋 전 local main이 origin보다 뒤쳐진 detached HEAD 상태였음 — git fetch로 origin/main이 이 detached HEAD의 베이스(851f872)를 이미 포함함을 merge-base --is-ancestor로 확인하고 main을 origin/main으로 맞춘 뒤 커밋을 cherry-pick, origin에 push 완료(65231c6).)",
-      "commit": "65231c6"
-    },
     {
       "cycle": 324,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-09T00:00:00.000Z",
       "summary": "onInstallBarClick(index.html, PWA 설치 유도 배너)이 네이티브 beforeinstallprompt 대화상자의 userChoice를 무시하고 항상 그냥 바를 숨기기만 하던 공백을 발견해 고쳤다. '나중에' 버튼(dismissInstallBar)은 asset_app_install_dismiss_ts에 14일 뒤 타임스탬프를 찍어 installSnoozed()가 그 기간 동안 installBarVisible()을 false로 묶는데, 사용자가 네이티브 설치 대화상자에서 직접 '취소'를 눌러도(userChoice.outcome==='dismissed') 똑같이 설치를 미루겠다는 의사표시인데 지금까지는 스누즈가 전혀 걸리지 않아 브라우저가 beforeinstallprompt를 다시 캡처해주는 순간 같은 사용자에게 또 바로 들이밀 수 있었다. 공유 타임스탬프 설정 로직을 snoozeInstallBar() 헬퍼로 뽑아 dismissInstallBar()와 onInstallBarClick()의 userChoice.then(choice=>{...}) 분기 양쪽에서 재사용(outcome==='accepted'면 appinstalled 리스너가 asset_app_installed를 영구 저장해 installBarVisible()이 어차피 항상 false가 되므로 스누즈 불필요, 그래서 'dismissed'일 때만 스누즈). 코드 변경 없이 새 top-level 함수만 추가한 거라 index.html 수정이지만 로직 자체는 작음. 테스트: test/run.js의 install-bar 전용 sandbox 컨텍스트(installBarCtx())가 extractFunction으로 개별 함수 소스를 뽑아 격리 실행하는 방식이라, snoozeInstallBar를 추가 extract 안 하면 dismissInstallBar가 'snoozeInstallBar is not defined'로 깨짐을 먼저 발견해 extractFunction 목록에 추가. onInstallBarClick에 대해 outcome='dismissed'면 스누즈됨/outcome='accepted'면 스누즈 안 됨 2건 추가(node test/run.js 3208->3210/3210 통과). node --check(sw.js, 추출한 메인 inline script) 통과. index.html의 <script> 블록 기능 변경이라 APP_VERSION 1.47.398->1.47.399, sw.js CACHE v665->v666.",
+      "commit": null
+    },
+    {
+      "cycle": 329,
+      "phase": "review",
+      "timestamp": "2026-11-09T00:30:00.000Z",
+      "summary": "cycle329 develop 커밋(23f3a39, onInstallBarClick이 네이티브 설치창 '취소'를 '나중에'와 동일하게 14일 스누즈하도록 수정)을 검토. diff를 라인 단위 대조 — snoozeInstallBar() 헬퍼가 dismissInstallBar()의 기존 localStorage.setItem 한 줄을 그대로 옮긴 것이고, onInstallBarClick()의 userChoice.then(choice=>{...}) 분기가 choice.outcome==='dismissed'일 때만 호출하도록 조건이 정확한지 확인(outcome이 'accepted'거나 choice 자체가 undefined/null이어도 안전하게 스킵됨 — choice&&choice.outcome==='dismissed' 가드). appinstalled 리스너가 asset_app_installed를 영구 저장해 installBarVisible()이 그 뒤로 항상 false를 돌려준다는 전제(installSnoozed()와 별개 가드)도 코드로 재확인해 accepted 경로에서 스누즈를 생략한 설계가 타당함을 검증. 추가된 테스트 2건(dismissed→스누즈/accepted→스누즈 안 함)이 구현과 정확히 대응함을 확인, test/run.js의 extractFunction 목록에 snoozeInstallBar 추가가 빠졌으면 dismissInstallBar 자체가 터지므로 가드 역할도 겸함을 확인. node test/run.js 재실행 3210/3210 통과, node --check sw.js 통과, index.html <script> 블록 추출검사는 기존과 동일한 1건의 기존 오탐(HTML 주석 텍스트 오인, cycle311부터 이어짐 — git stash로 변경 전과 동일함을 대조해 이번 변경과 무관함을 재확인)만 재확인됨, APP_VERSION 1.47.399/CACHE v666 일치 재확인. 실제 버그 없음(state.json만 커밋).",
       "commit": null
     }
   ]
