@@ -1,15 +1,12 @@
 {
   "cycle": 329,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "백업 파일 복원(proceedWithBackupObj/restoreBackup)도 wipe와 동일한 6초 grace 메모리 소실 패턴",
+    "why": "cycle328이 doResetAll()/doDeleteAccount()의 wipe 직전 데이터 소실을 __preReset_/__preDeleteAccount_ localStorage 백업(wipe 직전 best-effort 저장 + 다음 부팅 시 홈 알림으로 1클릭 복구)으로 고쳤지만, index.html:9872-9898의 restoreBackup()/proceedWithBackupObj()는 구조적으로 완전히 동일한 패턴(DB를 새 데이터로 즉시 교체+save() 커밋한 뒤, 교체 전 데이터는 prev라는 메모리 클로저 변수 하나와 6초짜리 undoToast grace에만 의존, restorePushT가 6초 뒤 scheduleCloudPush만 하고 prev는 그냥 버려짐)를 그대로 갖고 있다. 백업 파일로 복원하는 플로우는 기기 교체·재설치·클라우드 복구 시 거의 항상 쓰이는 경로라 reset/deleteAccount보다 오히려 더 자주 트리거되고, 복원 확인 직후(실제 DB 교체+저장이 끝난 뒤) 6초 안에 탭이 닫히거나 OS가 백그라운드 탭을 강제종료하면 복원 전까지 쌓아온 데이터 전체가 __corrupt_*/__preReset_ 같은 흔적도 없이 영구 소실된다 — cycle328이 막은 것과 같은 급의 전체 데이터 소실 경로가 가장 흔한 입구 하나에 그대로 남아있다.",
+    "approach": "doResetAll()의 backupKey 패턴(13088-13094행)을 restoreBackup()/proceedWithBackupObj()(9872-9898행)에 그대로 적용한다. (1) proceedWithBackupObj의 confirmSheet 콜백 안, restoreBackup(obj) 호출 직전에 현재 DB를 dataKey()+'__preRestore_'+Date.now() 키로 best-effort 저장(try/catch). (2) 기존 restorePushT=setTimeout(scheduleCloudPush,6000)를 doResetAll의 resetPushT와 동일하게 '6초 뒤 scheduleCloudPush()+backupKey 제거'로 확장. (3) undoToast 되돌리기 콜백에서도 clearTimeout 직후 backupKey 즉시 제거(cycle328과 동일 '복구가 더 필요없어진 시점엔 바로 지운다' 원칙). (4) scanWipeBackupKeys()(2636-2648행)에 findCorruptBackupKeys(keys,dataKey(),'__preRestore_').map(k=>Object.assign({},k,{kind:'preRestore'}))를 preReset/preDeleteAccount와 같은 배열에 합쳐 정렬·GC(함수 자체는 suffix 파라미터가 이미 있어 변경 불필요). (5) homeAlertCard()의 wipeBackup 카드 문구(11513행 부근, 지금은 isDelete?'탈퇴':'초기화' 두 갈래뿐)에 kind==='preRestore'면 '복원' 문구('복원 직전 데이터를 찾았어요')를 보여주는 세 번째 분기 추가. (6) restoreWipeBackup()은 kind와 무관하게 이미 proceedWithBackupObj(obj,onDone)을 그대로 재사용하므로 코드 변경 없이 그대로 동작 확인 — 복구 자체도 '복원'이라 또 새 __preRestore_ 백업을 남기는 것은 안전하며 다음 grace가 끝나면 그 키도 정리된다. 테스트(cycle328 블록과 동일 구성): proceedWithBackupObj가 restoreBackup 호출 전 __preRestore_ 키를 쓰는지(1) + grace 타이머 종료 시 키 제거(1) + undo 시 즉시 키 제거(1) + scanWipeBackupKeys가 preRestore kind도 합쳐 정렬·GC하는지(1) + homeAlertCard의 preRestore 문구 분기(1) = 5건 전후 추가."
+  },
   "history": [
-    {
-      "cycle": 324,
-      "phase": "review",
-      "timestamp": "2026-11-08T05:07:33.597Z",
-      "summary": "cycle324 develop 커밋(65231c6, restoreTrashGoal이 asset형 목표 owner를 연결 자산의 현재 owner로 다시 맞추도록 수정)을 검토 — doBulkOwnerMove/saveAsset/mergeAssetInto가 DB.goals만 훑고 DB.trashGoals를 건드리지 않아 트래시에 있는 동안 연결 자산 owner가 바뀌면 복구 시 낡은 owner가 그대로 돌아오던 불변식 위반을 saveGoal(3948행)과 동일한 재동기화로 막은 것을 diff로 확인. 연결 자산이 이미 영구 삭제된 경우(goalLinkedAssetGone) saveGoal의 owner:isAsset?(linkedAsset?linkedAsset.owner:(d.owner||'all')):... 폴백과 비교해, restoreTrashGoal이 자산을 못 찾으면 아무것도 안 하고 트래시에 저장된 owner를 그대로 두는 것이 saveGoal에서 d.owner가 이미 기존 owner로 채워져 있는 것과 동등한 동작임을 확인. openGoalTrashList의 트래시 행 렌더링은 owner를 표시하지 않아 이번 수정과 별개 영역임도 확인. 새 테스트 3건(owner 재동기화/자산 없을 때 유지/networth형 미영향) 포함 3118/3118 통과 재확인. 코드 변경 없음(이상 없음).",
-      "commit": null
-    },
     {
       "cycle": 324,
       "phase": "critique",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-09T00:30:00.000Z",
       "summary": "cycle329 develop 커밋(23f3a39, onInstallBarClick이 네이티브 설치창 '취소'를 '나중에'와 동일하게 14일 스누즈하도록 수정)을 검토. diff를 라인 단위 대조 — snoozeInstallBar() 헬퍼가 dismissInstallBar()의 기존 localStorage.setItem 한 줄을 그대로 옮긴 것이고, onInstallBarClick()의 userChoice.then(choice=>{...}) 분기가 choice.outcome==='dismissed'일 때만 호출하도록 조건이 정확한지 확인(outcome이 'accepted'거나 choice 자체가 undefined/null이어도 안전하게 스킵됨 — choice&&choice.outcome==='dismissed' 가드). appinstalled 리스너가 asset_app_installed를 영구 저장해 installBarVisible()이 그 뒤로 항상 false를 돌려준다는 전제(installSnoozed()와 별개 가드)도 코드로 재확인해 accepted 경로에서 스누즈를 생략한 설계가 타당함을 검증. 추가된 테스트 2건(dismissed→스누즈/accepted→스누즈 안 함)이 구현과 정확히 대응함을 확인, test/run.js의 extractFunction 목록에 snoozeInstallBar 추가가 빠졌으면 dismissInstallBar 자체가 터지므로 가드 역할도 겸함을 확인. node test/run.js 재실행 3210/3210 통과, node --check sw.js 통과, index.html <script> 블록 추출검사는 기존과 동일한 1건의 기존 오탐(HTML 주석 텍스트 오인, cycle311부터 이어짐 — git stash로 변경 전과 동일함을 대조해 이번 변경과 무관함을 재확인)만 재확인됨, APP_VERSION 1.47.399/CACHE v666 일치 재확인. 실제 버그 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 329,
+      "phase": "critique",
+      "timestamp": "2026-11-09T02:11:00.000Z",
+      "summary": "서브에이전트 호출 없이 직접 코드를 다시 훑어 비평했다(cycle300-329 처리/보류/기각 항목 전부 제외 지시는 이전 critique들과 동일 — twGuard 스윕·전역검색·예산이월·연말결산·owner/category/asset merge 전부·nwHistory byType/자산배분추이 카드·목표자산배분+리밸런싱·CSV날짜·이체 및 반복 중복감지·카테고리별 알림뮤트·공동지출 정산 전체와 배지/토글 전파·investGainLossCard 유형별 분해·검색창 디바운스·PIN 화면잠금 고지·목표비중 알림뮤트 토글·saveGoal targetDate 범위가드·searchTerms/matchQueryTerms·shiftWeekend·recScheduleSameSlot 단위테스트·openTrashList 분할거래 카테고리 라벨·__corrupt_* 손상백업 노출·거래/자산/반복/목표/수량기록/카테고리/문의메모 삭제 trash 7종과 그 복구시점 재검증 가드들·귀속 삭제 trash 보류·6개 트래시 화면 공통 헬퍼 리팩터링 보류·git 원격 브랜치 정리 제외·차트접근성/XSS이스케이핑/포커스트랩/CSV 인젝션 방어(모든 CSV export가 guard+esc로 이미 완비 확인) 완비·CDN SRI·doResetAll/doDeleteAccount wipe-직전 백업(cycle328)·onInstallBarClick 스누즈(cycle329)는 전부 제외). 발견: cycle328이 '교체 직전 데이터가 메모리 클로저 하나와 6초짜리 undoToast grace에만 의존해 탭 종료 시 영구 소실'되는 버그 클래스를 doResetAll()/doDeleteAccount()에서만 고쳤는데, 완전히 같은 모양의 코드인 restoreBackup()/proceedWithBackupObj()(index.html:9872-9898, 백업 파일로 데이터 복원하는 '가장 흔히 쓰이는' 플로우)는 그대로 남아있음을 직접 라인 단위로 재확인했다 — restorePushT가 6초 뒤 scheduleCloudPush()만 하고 prev(복원 전 전체 DB)는 그냥 버려지며, undoToast 콜백 외에는 prev를 저장할 곳이 없다. 복원은 기기 교체·재설치 시 거의 항상 거치는 경로라 reset/deleteAccount보다 발생 빈도가 더 높고 blast radius도 동급(전체 계정 데이터)이라 cycle328이 썼던 __preReset_/__preDeleteAccount_ 인프라(scanWipeBackupKeys/WIPE_BACKUP_KEYS/homeAlerts wipeBackup 카드)를 __preRestore_ 세 번째 kind로 그대로 확장하면 끝나는, 이미 완성된 안전장치의 자연스러운 다음 걸음임을 확인(재작성 아님). pending_advance_plan에 구체 계획 저장(위 참고). 코드 변경 없음(state.json만 커밋, pending_advance_plan 신설에 따라 phase를 advance로 회전).",
       "commit": null
     }
   ]
