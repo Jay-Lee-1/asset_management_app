@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.398';
+const APP_VERSION='1.47.399';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -1473,16 +1473,29 @@ function maybeShowInstallBar(){
  el.classList.add('show');
 }
 function hideInstallBar(){const el=$('installBar');if(el)el.classList.remove('show')}
+function snoozeInstallBar(){try{localStorage.setItem('asset_app_install_dismiss_ts',String(Date.now()+14*24*60*60*1000))}catch(e){}}
 function dismissInstallBar(){
- try{localStorage.setItem('asset_app_install_dismiss_ts',String(Date.now()+14*24*60*60*1000))}catch(e){}
+ snoozeInstallBar();
  hideInstallBar();
  toast('14일 뒤에 다시 알려드릴게요');
 }
+/* beforeinstallprompt는 한 번 prompt()하면 그 이벤트가 소모돼 다시 안 뜨지만, 브라우저가 나중에
+ * 새 이벤트를 또 캡처해주면 installBarVisible()은 그걸 그대로 "설치 가능"으로 다시 보여준다.
+ * '나중에' 버튼(dismissInstallBar)은 14일 스누즈를 거는데, 사용자가 네이티브 설치 대화상자에서
+ * 직접 '취소'를 눌러도 똑같이 설치를 미루겠다는 의사표시인데도 지금까지는 그냥 바를 숨기기만 해서
+ * 스누즈가 걸리지 않았다 — 다음에 beforeinstallprompt가 다시 뜨면 '취소'를 눌렀던 사용자에게도
+ * 바로 또 들이미는 공백(app-evolve cycle329 develop). userChoice.outcome==='dismissed'일 때도
+ * 동일하게 스누즈한다. outcome이 'accepted'면 appinstalled 이벤트가 asset_app_installed를 영구히
+ * 저장해 installBarVisible()이 어차피 항상 false를 돌려주므로 스누즈가 필요 없다. */
 function onInstallBarClick(){
  if(IS_IOS){toast('공유 버튼을 눌러 "홈 화면에 추가"를 선택하세요');return}
  const p=window._deferredInstallPrompt;if(!p)return;
  p.prompt();
- p.userChoice.then(()=>{window._deferredInstallPrompt=null;hideInstallBar()}).catch(()=>{});
+ p.userChoice.then(choice=>{
+  window._deferredInstallPrompt=null;
+  if(choice&&choice.outcome==='dismissed')snoozeInstallBar();
+  hideInstallBar();
+ }).catch(()=>{});
 }
 /* beforeinstallprompt는 로드당 한 번만 뜨고, 리스너가 미리 붙어 있어야 잡히므로 가능한 한 일찍
  * 최상위 스코프에서 등록한다(boot()/startApp() 뒤로 미루지 않음). */

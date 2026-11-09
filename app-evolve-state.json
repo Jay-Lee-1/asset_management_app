@@ -1,15 +1,8 @@
 {
   "cycle": 329,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 323,
-      "phase": "advance",
-      "timestamp": "2026-11-08T03:15:00.000Z",
-      "summary": "critique(cycle323) 계획대로 손상된 데이터 복구용 __corrupt_* 백업 블롭을 홈 알림으로 노출하는 기능을 구현했다. logic.js에 순수 함수 2개 추가: findCorruptBackupKeys(allKeys,dataKeyPrefix)(dataKeyPrefix+'__corrupt_' 패턴 키를 {key,ts}로 추출해 ts 내림차순 정렬), pruneOldCorruptKeys(keys,now,maxAgeMs)(오래된 키 걸러냄). index.html: 전역 CORRUPT_BACKUP_KEYS([]) 추가, scanCorruptBackupKeys()(두 순수함수로 localStorage를 스캔해 CORRUPT_BACKUP_KEYS를 채우고 CORRUPT_BACKUP_MAX_AGE_MS=90일보다 오래된 키는 removeItem으로 정리) 신설 후 startApp()의 load() 직후(매 부팅마다)에 배선. homeAlerts()에 CORRUPT_BACKUP_KEYS.length 기반 'corruptBackup' 알림(persist/storageSize 알림 바로 아래) 추가, homeAlertCard()에 해당 카드 렌더링 추가(클릭 시 downloadCorruptBackup(), 별도 버튼으로 dismissCorruptBackup()). downloadCorruptBackup()은 doExport()의 공유→다운로드→복사 3단 폴백과 동일한 패턴(backupFile/canShareFiles/IS_IOS/openCopyBackup 재사용)으로 가장 최근 백업 1개를 파일로 내보내고, dismissCorruptBackup()은 CORRUPT_BACKUP_KEYS에 남은 모든 __corrupt_ 키를 한 번에 localStorage에서 지운다. 테스트: test/run.js 메인 sandbox에 CORRUPT_BACKUP_KEYS:[] 기본값 추가(안 그러면 homeAlerts() 추출 테스트 전체가 'CORRUPT_BACKUP_KEYS is not defined'로 깨짐을 먼저 발견해 수정), findCorruptBackupKeys(필터링/정렬/빈입력/불일치, 3) + pruneOldCorruptKeys(경계값/빈입력, 2) + homeAlerts의 corruptBackup 알림 노출/비노출(1) = 6건 추가 — node test/run.js 3109->3115/3115 통과(vm cross-realm 배열 비교 이슈는 기존 관례대로 JSON.parse(JSON.stringify(...)) 패턴으로 회피). node --check logic.js/sw.js 통과. 저장소 손상이라는 가장 치명적인 장애 경로의 유일한 복구 수단을 처음으로 사용자에게 노출하는 기능 추가라 APP_VERSION 1.47.388->1.47.389, sw.js CACHE v655->v656. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 324,
       "phase": "develop",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-08T23:20:44.427Z",
       "summary": "critique(cycle328) 계획대로 doResetAll()/doDeleteAccount()의 wipe 직전 전체 계정 데이터 소실 경로를 막았다. __corrupt_*(cycle323)와 동일한 최선노력 백업 패턴을 재사용: wipe 직전(emptyDB() 이전) DB 전체를 dataKey()+\"__preReset_\"+Date.now() / \"__preDeleteAccount_\"+Date.now() localStorage 키로 저장(try/catch 최선노력). logic.js의 findCorruptBackupKeys에 suffix 파라미터를 추가해 일반화(기본값 \"__corrupt_\"로 하위호환, suffix 지정 시 __preReset_/__preDeleteAccount_도 동일 판정 로직으로 탐지) — pruneOldCorruptKeys는 {key,ts} 모양만 가정해 이미 범용이라 그대로 재사용. index.html: 전역 WIPE_BACKUP_KEYS([]) 추가, scanWipeBackupKeys()(두 suffix를 각각 findCorruptBackupKeys로 찾아 kind 태그 후 합쳐 정렬, CORRUPT_BACKUP_MAX_AGE_MS로 오래된 키 자동 정리) 신설 후 startApp()의 scanCorruptBackupKeys() 바로 뒤에 배선. homeAlerts()에 WIPE_BACKUP_KEYS 기반 wipeBackup 알림(count+mostRecentKind) 추가, homeAlertCard()에 해당 카드(초기화/탈퇴 구분 문구) 추가. 백업이 이미 유효한 전체 DB JSON이라는 점을 살려 download가 아니라 1클릭 복구를 제공: restoreWipeBackup()이 proceedWithBackupObj()(일반 백업파일 복원과 동일한 확인시트+6초 undo 경로)를 재사용하도록 onDone 콜백 파라미터를 proceedWithBackupObj에 추가(복원이 실제로 확정된 뒤에만 호출 — 확인 시트를 취소하면 백업 유지, 기존 두 호출부(doImportPinSubmit/importFile)는 인자 그대로 1개만 넘겨 영향 없음). doResetAll/doDeleteAccount는 grace 타이머(resetPushT/deleteT)가 되돌림 없이 끝나거나 undoToast로 되돌리면(둘 다 더 필요 없어진 시점) 즉시 백업 키를 지운다 — 정상 흐름에서는 WIPE_BACKUP_KEYS가 거의 항상 비어있고, 탭 종료/크래시로 grace가 못 끝난 경우에만 다음 부팅에서 노출된다. 테스트: findCorruptBackupKeys suffix 확장(신규 suffix 필터링+정렬, suffix 생략 시 하위호환, 2건) + homeAlerts wipeBackup 카드(count/mostRecentKind, 1건) + proceedWithBackupObj onDone(복원 확정 후 호출/취소 시 미호출, onDone 없이 호출해도 안전, 2건) + doResetAll 실행형(백업 쓰기+grace 완료 시 삭제, 되돌리기 시 즉시 삭제, 2건) + doDeleteAccount 실행형(백업 쓰기+grace 완료 시 삭제, 되돌리기 시 즉시 삭제, 2건) = 9건 추가 — node test/run.js 3199->3208/3208 통과(과정에서 WIPE_BACKUP_KEYS 기본값을 sandbox에 깜빡 빠뜨려 homeAlerts 관련 기존 테스트 68건이 한꺼번에 ReferenceError로 깨지는 걸 발견해 CORRUPT_BACKUP_KEYS 옆에 추가해 해결, sanitizeBackup이 id&&type 없는 자산을 통째로 버린다는 점을 놓쳐 proceedWithBackupObj 테스트가 실패한 것도 자산에 type을 채워 해결). node --check logic.js/sw.js/test/run.js 통과, index.html은 <script> 블록 추출 후 개별 vm.Script 파싱으로 확인(기존과 동일한 1건의 사전 존재 오탐(block0, HTML 주석 텍스트 오인, cycle311부터 이어짐, git stash로 변경 전과 동일함을 대조)만 재확인). cycle323 critique가 지적한 \"저장소 손상과 동급 또는 그 이상\"의 심각도였던 전체 계정 데이터 소실 경로(사용자 자신의 두 번의 탭으로 트리거)를 해소하는 수정이라 APP_VERSION 1.47.397->1.47.398, sw.js CACHE v664->v665. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 329,
+      "phase": "develop",
+      "timestamp": "2026-11-09T00:00:00.000Z",
+      "summary": "onInstallBarClick(index.html, PWA 설치 유도 배너)이 네이티브 beforeinstallprompt 대화상자의 userChoice를 무시하고 항상 그냥 바를 숨기기만 하던 공백을 발견해 고쳤다. '나중에' 버튼(dismissInstallBar)은 asset_app_install_dismiss_ts에 14일 뒤 타임스탬프를 찍어 installSnoozed()가 그 기간 동안 installBarVisible()을 false로 묶는데, 사용자가 네이티브 설치 대화상자에서 직접 '취소'를 눌러도(userChoice.outcome==='dismissed') 똑같이 설치를 미루겠다는 의사표시인데 지금까지는 스누즈가 전혀 걸리지 않아 브라우저가 beforeinstallprompt를 다시 캡처해주는 순간 같은 사용자에게 또 바로 들이밀 수 있었다. 공유 타임스탬프 설정 로직을 snoozeInstallBar() 헬퍼로 뽑아 dismissInstallBar()와 onInstallBarClick()의 userChoice.then(choice=>{...}) 분기 양쪽에서 재사용(outcome==='accepted'면 appinstalled 리스너가 asset_app_installed를 영구 저장해 installBarVisible()이 어차피 항상 false가 되므로 스누즈 불필요, 그래서 'dismissed'일 때만 스누즈). 코드 변경 없이 새 top-level 함수만 추가한 거라 index.html 수정이지만 로직 자체는 작음. 테스트: test/run.js의 install-bar 전용 sandbox 컨텍스트(installBarCtx())가 extractFunction으로 개별 함수 소스를 뽑아 격리 실행하는 방식이라, snoozeInstallBar를 추가 extract 안 하면 dismissInstallBar가 'snoozeInstallBar is not defined'로 깨짐을 먼저 발견해 extractFunction 목록에 추가. onInstallBarClick에 대해 outcome='dismissed'면 스누즈됨/outcome='accepted'면 스누즈 안 됨 2건 추가(node test/run.js 3208->3210/3210 통과). node --check(sw.js, 추출한 메인 inline script) 통과. index.html의 <script> 블록 기능 변경이라 APP_VERSION 1.47.398->1.47.399, sw.js CACHE v665->v666.",
       "commit": null
     }
   ]

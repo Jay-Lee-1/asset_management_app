@@ -20119,6 +20119,7 @@ function installBarCtx() {
     extractFunction('installBarVisible'),
     extractFunction('maybeShowInstallBar'),
     extractFunction('hideInstallBar'),
+    extractFunction('snoozeInstallBar'),
     extractFunction('dismissInstallBar'),
     extractFunction('onInstallBarClick'),
   ].join('\n'), ctx, { filename: 'install-bar-real' });
@@ -20255,6 +20256,33 @@ test('[실행형] onInstallBarClick: Android에서 캡처해둔 deferredInstallP
   resolveChoice('accepted');
   await Promise.resolve().then(() => {}).then(() => {});
   assert.strictEqual(ctx.window._deferredInstallPrompt, null, '응답 후 deferredInstallPrompt를 비우지 않아 다음 탭에서 오래된 프롬프트를 재사용하려 함');
+});
+test('[실행형] onInstallBarClick: 네이티브 설치창에서 "취소"(outcome=dismissed)하면 "나중에"와 동일하게 14일 스누즈한다', async () => {
+  const ctx = installBarCtx();
+  let resolveChoice;
+  ctx.window._deferredInstallPrompt = {
+    prompt: () => {},
+    userChoice: new Promise((res) => { resolveChoice = res; }),
+  };
+  const before = Date.now();
+  ctx.onInstallBarClick();
+  resolveChoice({ outcome: 'dismissed', platform: 'web' });
+  await Promise.resolve().then(() => {}).then(() => {});
+  assert.strictEqual(ctx.installSnoozed(), true, '네이티브 취소인데 스누즈가 안 걸림(바로 다음 beforeinstallprompt에 또 들이밀게 됨)');
+  const ts = +ctx._store['asset_app_install_dismiss_ts'];
+  assert.ok(ts >= before + 14 * 24 * 60 * 60 * 1000 - 1000 && ts <= before + 14 * 24 * 60 * 60 * 1000 + 1000, '스누즈 기간이 14일이 아님');
+});
+test('[실행형] onInstallBarClick: 네이티브 설치창에서 "설치"(outcome=accepted)하면 스누즈하지 않는다(appinstalled가 영구히 막아줄 몫)', async () => {
+  const ctx = installBarCtx();
+  let resolveChoice;
+  ctx.window._deferredInstallPrompt = {
+    prompt: () => {},
+    userChoice: new Promise((res) => { resolveChoice = res; }),
+  };
+  ctx.onInstallBarClick();
+  resolveChoice({ outcome: 'accepted', platform: 'web' });
+  await Promise.resolve().then(() => {}).then(() => {});
+  assert.strictEqual(ctx.installSnoozed(), false, '설치를 수락했는데 불필요하게 스누즈를 걺');
 });
 test('[실행형] onInstallBarClick: iOS에서는 prompt()가 없으므로 캡처된 이벤트를 건드리지 않고 안내 토스트만 띄운다', () => {
   const ctx = installBarCtx();
