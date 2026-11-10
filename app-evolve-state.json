@@ -1,29 +1,8 @@
 {
   "cycle": 332,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 327,
-      "phase": "review",
-      "timestamp": "2026-11-08T17:07:50.554Z",
-      "summary": "cycle327 develop 커밋(12d9e74, restoreTrashAsset이 DB.trashRecs에 남은 _autoDeactivatedByAssetDelete 플래그를 지우지 않던 공백 수정)을 검토. 구현과 테스트가 정확히 대응함을 확인. node test/run.js 재실행 3180/3180 통과. 실제 버그 없음(state.json만 커밋).",
-      "commit": null
-    },
-    {
-      "cycle": 327,
-      "phase": "critique",
-      "timestamp": "2026-11-08T18:09:32.000Z",
-      "summary": "문의 메모(DB.inquiries) 삭제 경로(delInquiry)가 undoToast 6초짜리 메모리 클로저 하나에만 의존해 toast가 사라지거나 앱을 닫으면 메모 text가 영구 소실됨을 확인했다. pending_advance_plan에 구체 계획 저장(DB.trashInquiries 신설, trashQtyLog와 동일 패턴으로 migrate/mergeRemoteDataIntoLocal/sanitizeBackup 배선). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
-    {
-      "cycle": 327,
-      "phase": "advance",
-      "timestamp": "2026-11-08T19:12:45.813Z",
-      "summary": "critique(cycle327) 계획대로 문의 메모(inquiries) 삭제 '삭제한 메모(trashInquiries)' 복구 기능을 구현했다. DB.trashInquiries 신설(migrate 초기화+GC+mergeRemoteDataIntoLocal 병합 배선), delInquiry가 삭제 시 트래시에 push, openInquiryTrashList()/restoreTrashInquiry(id) 신설. 테스트 17건 추가 — node test/run.js 3180->3197/3197 통과. APP_VERSION 1.47.395->1.47.396, sw.js CACHE v662->v663. 7개 트래시 엔티티 전체가 'undoToast 6초 메모리 클로저' 버그 클래스를 모두 해소.",
-      "commit": null
-    },
     {
       "cycle": 328,
       "phase": "develop",
@@ -141,6 +120,13 @@
       "phase": "develop",
       "timestamp": "2026-11-10T14:18:11.784Z",
       "summary": "goalsToCSV(index.html, 목표 CSV 내보내기)의 \"생성일\"(createdAt) 컬럼이 toISOString()으로 UTC 날짜를 쓰고 있어, 기기 로컬 시간대 기준 자정~UTC 자정 사이(KST라면 00:00~08:59)에 생성한 목표는 실제보다 하루 전 날짜로 내보내지던 공백을 고쳤다. todayStr()/fmtDateFull() 등 이 파일의 다른 모든 epoch->날짜 표시 함수가 쓰는 기기 로컬 getFullYear/getMonth/getDate 패턴으로 통일(localDateStr 헬퍼를 goalsToCSV 안에 추가). America/New_York(UTC-5) 시간대로 withTZ 전환해 UTC 자정을 넘나드는 instant(2026-01-01T03:00:00Z -> 로컬 2025-12-31)로 회귀 테스트 1건 추가 — node test/run.js 3239->3240/3240 통과. APP_VERSION 1.47.404->1.47.405, sw.js CACHE v671->v672.",
+      "commit": null
+    },
+    {
+      "cycle": 332,
+      "phase": "review",
+      "timestamp": "2026-11-10T15:05:00.000Z",
+      "summary": "cycle332 develop 커밋(5cb0e40, goalsToCSV 생성일 UTC->로컬 날짜 수정)을 검토. localDateStr 헬퍼가 todayStr()과 동일한 getFullYear/getMonth/getDate 패턴을 쓰고 goalsToCSV 내부에 스코프돼 이름 충돌이 없음을 확인. 반올림/타임존 경계(America/New_York, UTC 자정을 넘나드는 instant) 테스트가 실제 버그를 정확히 재현함을 확인. node test/run.js 재실행 3240/3240 통과. 실제 버그 없음(state.json만 커밋).",
       "commit": null
     }
   ]
