@@ -1,15 +1,8 @@
 {
   "cycle": 334,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 329,
-      "phase": "develop",
-      "timestamp": "2026-11-09T00:00:00.000Z",
-      "summary": "onInstallBarClick이 네이티브 beforeinstallprompt 대화상자에서 '취소'를 눌러도 '나중에'와 달리 14일 스누즈가 걸리지 않던 공백을 고쳤다. snoozeInstallBar() 헬퍼로 추출해 dismissInstallBar()와 onInstallBarClick()의 dismissed 분기 양쪽에서 재사용. 테스트 2건 추가 — node test/run.js 3208->3210/3210 통과. APP_VERSION 1.47.398->1.47.399, sw.js CACHE v665->v666.",
-      "commit": null
-    },
     {
       "cycle": 329,
       "phase": "review",
@@ -148,6 +141,13 @@
       "phase": "develop",
       "timestamp": "2026-11-10T22:10:00.000Z",
       "summary": "doRenameOwner(5335행)는 귀속 이름변경 시 DB.settings.settle(정산 당사자 설정)의 ownerA/ownerB도 따라가게 하는데, 같은 패턴을 재사용하는 mergeOwnerInto(귀속 합치기)만 이 줄을 빠뜨리고 있던 공백을 고쳤다 — 정산의 두 당사자 중 한쪽을 다른 귀속에 합치면 settleConfigured()가 사라진 from을 DB.owners에서 못 찾아 정산 설정이 조용히 통째로 꺼지고, 쌓아둔 ownerA/ownerB/ratioA를 다시 입력해야 했다. ownerA/ownerB를 서로 합쳐 같은 이름이 되는 경우(정산 당사자끼리 합침)는 '내 돈 vs 상대 돈' 구분 자체가 사라지므로 settle을 null로 꺼버리도록 가드도 추가, undoToast 되돌리기에서 settle도 원래 상태로 복원. 테스트 8건 추가(ownerA/ownerB 각각 from인 경우, 양쪽 합쳐 null로 꺼지는 경우, settle과 무관한 합치기는 참조까지 그대로 유지, DB.settings 없음, undo 복원 2건) — node test/run.js 3248->3255/3255 통과. node --check logic.js/sw.js 통과. APP_VERSION 1.47.408->1.47.409, sw.js CACHE v675->v676.",
+      "commit": null
+    },
+    {
+      "cycle": 334,
+      "phase": "review",
+      "timestamp": "2026-11-10T23:05:00.000Z",
+      "summary": "cycle334 develop 커밋(4ca3316, mergeOwnerInto가 DB.settings.settle의 ownerA/ownerB를 안 따라가던 공백 수정)을 검토. doRenameOwner(5335행)의 기존 settle 이동 로직과 정확히 동일한 조건을 재사용함을 라인 단위로 대조해 확인, ownerA===ownerB가 되는 merge 케이스에서 settle을 null로 끄는 가드도 settleConfigured()의 두 owner 존재 검증과 일관됨을 확인(같은 이름끼리 정산하는 무의미한 상태를 남기지 않음). undoToast 복원 경로도 prevSettle 스냅샷으로 정확히 되돌림. node test/run.js 재실행 3255/3255 통과. 실제 버그 없음(state.json만 커밋).",
       "commit": null
     }
   ]
