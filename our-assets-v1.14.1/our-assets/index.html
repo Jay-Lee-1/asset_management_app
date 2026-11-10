@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.407';
+const APP_VERSION='1.47.408';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -1953,7 +1953,7 @@ function importGuestDataInto(guestRaw){
 
 let DB, STORAGE_OK=true, STORAGE_PERSISTED=null, TAB_SAVED_AT=0, TAB_SYNC_PENDING=null, DB_JSON_LEN=0;
 let CORRUPT_BACKUP_KEYS=[]; /* scanCorruptBackupKeys()가 채움 — load()의 __corrupt_ 백업 키 중 아직 남아있는 것(최근 순) */
-let WIPE_BACKUP_KEYS=[]; /* scanWipeBackupKeys()가 채움 — doResetAll()/doDeleteAccount()/proceedWithBackupObj()/archiveTxnsBefore()/mergeAssetInto()가 wipe·복원·정리·합치기 직전에 남긴 __preReset_/__preDeleteAccount_/__preRestore_/__preArchive_/__preMergeAsset_ 백업 중 grace 타이머가 못 끝나 아직 남아있는 것(최근 순, app-evolve cycle328 critique/advance, __preRestore_는 cycle329, __preArchive_는 cycle330, __preMergeAsset_는 cycle332) */
+let WIPE_BACKUP_KEYS=[]; /* scanWipeBackupKeys()가 채움 — doResetAll()/doDeleteAccount()/proceedWithBackupObj()/archiveTxnsBefore()/mergeAssetInto()/mergeCatInto()/mergeOwnerInto()가 wipe·복원·정리·합치기 직전에 남긴 __preReset_/__preDeleteAccount_/__preRestore_/__preArchive_/__preMergeAsset_/__preMergeCat_/__preMergeOwner_ 백업 중 grace 타이머가 못 끝나 아직 남아있는 것(최근 순, app-evolve cycle328 critique/advance, __preRestore_는 cycle329, __preArchive_는 cycle330, __preMergeAsset_는 cycle332, __preMergeCat_/__preMergeOwner_는 cycle333) */
 /* localStorage는 오리진당 보통 5~10MB로 quota가 걸려 있다(브라우저마다 다름). save()가 매번 DB
  * 전체를 재직렬화하는 구조라 txns/recurrences가 상한 없이 누적되면 quota 실패에 조금씩 다가갈 수
  * 있는데, storageOutcomeMsg는 실제로 쓰기가 실패한 "이후"에만 반응한다(증상 완화). 여기 두 문턱은
@@ -2625,16 +2625,18 @@ function dismissCorruptBackup(){
  CORRUPT_BACKUP_KEYS=[];
  renderCurrent();toast('지웠어요');
 }
-/* doResetAll()/doDeleteAccount()/proceedWithBackupObj()/archiveTxnsBefore()/mergeAssetInto()가
- * wipe·복원·정리·합치기 직전(실제 DB 교체 이전)에 남겨두는 __preReset_ / __preDeleteAccount_ /
- * __preRestore_ / __preArchive_ / __preMergeAsset_ 백업의 스캔 — __corrupt_*와 같은
- * CORRUPT_BACKUP_MAX_AGE_MS 보존기간을 재사용한다. 다섯 함수 모두 grace 타이머가 끝날 때(되돌리지
+/* doResetAll()/doDeleteAccount()/proceedWithBackupObj()/archiveTxnsBefore()/mergeAssetInto()/
+ * mergeCatInto()/mergeOwnerInto()가 wipe·복원·정리·합치기 직전(실제 DB 교체 이전)에 남겨두는
+ * __preReset_ / __preDeleteAccount_ / __preRestore_ / __preArchive_ / __preMergeAsset_ /
+ * __preMergeCat_ / __preMergeOwner_ 백업의 스캔 — __corrupt_*와 같은 CORRUPT_BACKUP_MAX_AGE_MS
+ * 보존기간을 재사용한다. 일곱 함수 모두 grace 타이머가 끝날 때(되돌리지
  * 않았을 때)나 undoToast로 되돌릴 때 이미 자기 백업 키를 지우므로, 여기서 걸리는 건 '탭 종료/
  * 크래시로 grace 타이머 자체가 못 끝난' 경우뿐이다 — __corrupt_*(cycle323)보다도 더 치명적인(단일
  * 레코드가 아니라 계정 전체 또는 대량 과거 내역) 장애 경로의 복구 수단이라, 백업이 이미 유효한
  * 전체 DB JSON이라는 점을 살려 download가 아니라 proceedWithBackupObj()(일반 백업 파일 복원과
  * 동일한 확인+6초 undo 경로)로 1클릭 복구를 제공한다 (app-evolve cycle328 critique/advance,
- * __preRestore_는 cycle329, __preArchive_는 cycle330, __preMergeAsset_는 cycle332). */
+ * __preRestore_는 cycle329, __preArchive_는 cycle330, __preMergeAsset_는 cycle332,
+ * __preMergeCat_/__preMergeOwner_는 cycle333). */
 function scanWipeBackupKeys(){
  WIPE_BACKUP_KEYS=[];
  if(!STORAGE_OK)return;
@@ -2646,6 +2648,8 @@ function scanWipeBackupKeys(){
    ...findCorruptBackupKeys(keys,dataKey(),'__preRestore_').map(k=>Object.assign({},k,{kind:'preRestore'})),
    ...findCorruptBackupKeys(keys,dataKey(),'__preArchive_').map(k=>Object.assign({},k,{kind:'preArchive'})),
    ...findCorruptBackupKeys(keys,dataKey(),'__preMergeAsset_').map(k=>Object.assign({},k,{kind:'preMergeAsset'})),
+   ...findCorruptBackupKeys(keys,dataKey(),'__preMergeCat_').map(k=>Object.assign({},k,{kind:'preMergeCat'})),
+   ...findCorruptBackupKeys(keys,dataKey(),'__preMergeOwner_').map(k=>Object.assign({},k,{kind:'preMergeOwner'})),
   ].sort((a,b)=>b.ts-a.ts);
   const kept=pruneOldCorruptKeys(all,Date.now(),CORRUPT_BACKUP_MAX_AGE_MS);
   all.filter(k=>!kept.includes(k)).forEach(k=>{try{localStorage.removeItem(k.key)}catch(e){}});
@@ -5361,6 +5365,12 @@ function mergeOwnerInto(i,toName){if(twGuard())return;
  const from=DB.owners[i];
  if(from==null||from===toName||!DB.owners.includes(toName))return;
  if(DB.owners.length<=1){toast('귀속은 최소 1개가 필요해요');return}
+ /* mergeAssetInto()와 동일한 "전체 DB best-effort 스냅샷" 패턴 — 귀속 합치기는 자산·목표의 owner와
+  * nwHistory.byOwner를 재배선하는 전체 DB 변경인데도 지금까지 undoToast 6초짜리 메모리 클로저
+  * 하나에만 복구를 맡기고 있었다(app-evolve cycle333 critique/advance, __preMergeOwner_ 일곱 번째
+  * kind로 확장). */
+ const backupKey=dataKey()+'__preMergeOwner_'+Date.now();
+ try{localStorage.setItem(backupKey,JSON.stringify(DB))}catch(e){}
  const assetItems=[];DB.assets.forEach(a=>{if(a.owner===from){assetItems.push(a);a.owner=toName}});
  const goalItems=[];(DB.goals||[]).forEach(g=>{if(g.owner===from){goalItems.push(g);g.owner=toName}});
  const hadAssetOwner=ST.assetOwner===from;if(hadAssetOwner)ST.assetOwner=toName;
@@ -5379,7 +5389,9 @@ function mergeOwnerInto(i,toName){if(twGuard())return;
  DB.owners.splice(i,1);
  DB.deletedIds=DB.deletedIds||{};DB.deletedIds[ownerTombKey(from)]=Date.now(); /* delOwner/doRenameOwner와 동일한 톰스톤 — 없으면 아직 이 합치기를 모르는 다른 기기의 사본이 from을 되살림 */
  touchSave(...assetItems,...goalItems);renderCurrent();openOwnerManage();
+ const mergeOwnerPushT=setTimeout(()=>{try{localStorage.removeItem(backupKey)}catch(e){}},6000);
  undoToast(`'${from}' 귀속을 '${toName}'에 합쳤어요`+(assetItems.length||goalItems.length?` · 자산 ${assetItems.length}개·목표 ${goalItems.length}개 복원`:''),()=>{
+  clearTimeout(mergeOwnerPushT);try{localStorage.removeItem(backupKey)}catch(e){}
   assetItems.forEach(a=>{a.owner=from});
   goalItems.forEach(g=>{g.owner=from});
   if(hadAssetOwner)ST.assetOwner=from;
@@ -8117,6 +8129,12 @@ function mergeCatInto(k,i,toName){if(twGuard())return;
  if(from==null||from===toName||!DB.categories[k].includes(toName))return;
  if(k==='income'&&(from===ADJUST_CAT||toName===ADJUST_CAT)){toast('자동으로 생성되는 카테고리는 합칠 수 없어요');return}
  if(DB.categories[k].length<=1){toast('카테고리는 최소 1개가 필요해요');return}
+ /* mergeAssetInto()/mergeOwnerInto()와 동일한 "전체 DB best-effort 스냅샷" 패턴 — 카테고리
+  * 합치기는 수백 건의 거래/반복거래 category와 예산 히스토리를 재할당하는 전체 DB 변경인데도
+  * 지금까지 undoToast 6초짜리 메모리 클로저 하나에만 복구를 맡기고 있었다(app-evolve cycle333
+  * critique/advance, __preMergeCat_ 여섯 번째 kind로 확장). */
+ const backupKey=dataKey()+'__preMergeCat_'+Date.now();
+ try{localStorage.setItem(backupKey,JSON.stringify(DB))}catch(e){}
  DB.catIcon=DB.catIcon||{};DB.catVar=DB.catVar||{};DB.budgetHistory=DB.budgetHistory||{};DB.catBudgetRollover=DB.catBudgetRollover||{};
  const icon=DB.catIcon[catKey(k,from)];const wasVar=isVarCat(k,from);
  const hadBudget=k==='expense'&&from in DB.budgetHistory;const fromBudget=hadBudget?DB.budgetHistory[from]:undefined;
@@ -8159,7 +8177,9 @@ function mergeCatInto(k,i,toName){if(twGuard())return;
  const hadExactFilter=ST.hist&&ST.hist.catExact===from&&(ST.hist.catExactType||'expense')===k; /* doRenameCat과 동일한 전체내역 드릴다운 필터 보정(app-evolve cycle182) */
  if(hadExactFilter)ST.hist.catExact=toName;
  touchSave(...txItems.map(x=>x.t),...recItems.map(x=>x.r));renderCurrent();openCatManage(k);
+ const mergeCatPushT=setTimeout(()=>{try{localStorage.removeItem(backupKey)}catch(e){}},6000);
  undoToast(`'${from}' 카테고리를 '${toName}'에 합쳤어요`+(txItems.length||recItems.length?` · 내역 ${txItems.length}건·반복거래 ${recItems.length}개 복원`:''),()=>{
+  clearTimeout(mergeCatPushT);try{localStorage.removeItem(backupKey)}catch(e){}
   txItems.forEach(({t,prevCat,prevMemo,prevSplits})=>{t.category=prevCat;t.memo=prevMemo;if(prevSplits)t.splits.forEach((s,idx)=>{s.category=prevSplits[idx]})});
   recItems.forEach(({r,prevCat,prevMemo,prevSplits})=>{r.category=prevCat;r.memo=prevMemo;if(prevSplits)r.splits.forEach((s,idx)=>{s.category=prevSplits[idx]})});
   DB.categories[k].splice(i,0,from);

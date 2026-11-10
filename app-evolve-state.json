@@ -1,19 +1,8 @@
 {
-  "cycle": 333,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "카테고리 합치기(mergeCatInto)·귀속 합치기(mergeOwnerInto)에 wipe-직전 백업 확장 (__preMergeCat_/__preMergeOwner_)",
-    "why": "cycle332 critique에서 지적한 대로, doMergeAssets(mergeAssetInto)에는 cycle332 advance가 __preMergeAsset_ 백업을 이미 붙였지만 같은 '전체 DB 변경이 undoToast 6초 메모리 클로저 하나에만 의존' 버그 클래스가 카테고리 합치기(mergeCatInto, index.html:8115)와 귀속 합치기(mergeOwnerInto, index.html:5360)에는 그대로 남아있다. 카테고리 합치기는 수백 건의 거래/반복거래 category와 예산 히스토리를 재할당하고, 귀속 합치기는 자산 owner·목표 owner·순자산 히스토리(byOwner)를 재배선한다 — 둘 다 탭 종료·크래시로 6초 grace를 놓치면 흔적 없이 되돌릴 수 없다. 두 함수 모두 asset merge보다 다루는 상태가 단순해(acquiredAt 블렌딩이나 assetQtyLog 재연결 없음) 같은 사이클에 함께 처리할 수 있는 규모다.",
-    "approach": "mergeAssetInto(index.html:4648)가 쓰는 패턴을 그대로 복붙: 각 함수 맨 앞(DB 변경 직전)에 backupKey=dataKey()+'__preMergeCat_'+Date.now() / '__preMergeOwner_'+Date.now()로 try{localStorage.setItem(backupKey,JSON.stringify(DB))}catch(e){}, touchSave 이후 6초 setTimeout으로 removeItem, undoToast 콜백 맨 앞에서 clearTimeout+removeItem. logic.js의 scanWipeBackupKeys()(index.html:2638 부근)에 findCorruptBackupKeys(keys,dataKey(),'__preMergeCat_')→kind:'preMergeCat', '__preMergeOwner_'→kind:'preMergeOwner' 두 줄 추가. wipeBackupKindLabel(logic.js:1929)에 preMergeCat/preMergeOwner를 '합치기'로 매핑(기존 preMergeAsset과 동일 라벨 재사용, homeAlertCard/restoreWipeBackup/dismissWipeBackup은 kind 분기가 이미 범용이라 추가 변경 불필요). WIPE_BACKUP_KEYS 주석(index.html:1956 부근)과 scanWipeBackupKeys 주석(index.html:2629 부근)에 새 kind 두 개 추가. 테스트는 cycle332 advance와 동일하게 실행형 백업 생성/grace-취소 테스트 각 2건(카테고리·귀속 합쳐 4건) + findCorruptBackupKeys/wipeBackupKindLabel 기존 테스트에 새 kind 케이스 추가. node test/run.js로 회귀 확인, node --check logic.js/sw.js/test/run.js, APP_VERSION과 sw.js CACHE 버전 올리기."
-  },
+  "cycle": 334,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 328,
-      "phase": "advance",
-      "timestamp": "2026-11-08T23:20:44.427Z",
-      "summary": "critique(cycle328) 계획대로 doResetAll()/doDeleteAccount()의 wipe 직전 전체 계정 데이터 소실 경로를 막았다. __corrupt_*(cycle323)와 동일한 최선노력 백업 패턴을 재사용해 wipe 직전 DB 전체를 __preReset_/__preDeleteAccount_ localStorage 키로 저장, findCorruptBackupKeys에 suffix 파라미터 추가, homeAlerts에 wipeBackup 알림 카드 추가, restoreWipeBackup()으로 1클릭 복구 제공. 테스트 9건 추가 — node test/run.js 3199->3208/3208 통과. APP_VERSION 1.47.397->1.47.398, sw.js CACHE v664->v665.",
-      "commit": null
-    },
     {
       "cycle": 329,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-10T20:05:00.000Z",
       "summary": "cycle332 critique가 발견한 '전체 DB 변경이 undoToast 6초 메모리 클로저 하나에만 의존' 버그 클래스의 나머지 두 경로(카테고리 합치기 mergeCatInto:8115, 귀속 합치기 mergeOwnerInto:5360)를 확인했다 — cycle332 advance는 자산 합치기(mergeAssetInto)만 __preMergeAsset_로 막고 둘은 다음 critique로 미뤄뒀는데, grep으로 재확인한 결과 두 함수 모두 여전히 백업 없이 즉시 DB를 변경한다. 둘 다 asset merge보다 다루는 상태가 단순해 한 사이클에 같이 처리 가능하다고 판단, pending_advance_plan에 __preMergeCat_/__preMergeOwner_ 두 kind로 확장하는 구체 계획(파일·라인·헬퍼 배선까지) 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 333,
+      "phase": "advance",
+      "timestamp": "2026-11-10T21:11:26.172Z",
+      "summary": "critique(cycle333) 계획대로 카테고리 합치기(mergeCatInto)·귀속 합치기(mergeOwnerInto)의 wipe-직전 데이터 소실 경로를 막았다. mergeAssetInto(cycle332)와 동일한 패턴을 복붙 — 각 함수 맨 앞에서 __preMergeCat_/__preMergeOwner_ localStorage 키로 전체 DB를 백업, touchSave 이후 6초 grace 타이머로 정리, undoToast 콜백에서 즉시 clearTimeout+removeItem. logic.js의 wipeBackupKindLabel에 두 kind를 '합치기'로 매핑, index.html의 scanWipeBackupKeys/WIPE_BACKUP_KEYS 주석에 여섯·일곱 번째 kind로 확장(homeAlertCard/restoreWipeBackup/dismissWipeBackup은 kind 분기가 이미 범용이라 추가 변경 불필요). 테스트: 실행형 백업 생성/grace-취소 테스트 2건씩(카테고리·귀속 합쳐 4건) + findCorruptBackupKeys/wipeBackupKindLabel 기존 테스트에 새 kind 케이스 추가 — node test/run.js 3244->3248/3248 통과. node --check logic.js/sw.js/test/run.js 통과. APP_VERSION 1.47.407->1.47.408, sw.js CACHE v674->v675. cycle332 critique가 발견한 \"전체 DB 변경이 undoToast 6초 메모리 클로저 하나에만 의존\" 버그 클래스(merge 경로)를 모두 마저 닫았다.",
       "commit": null
     }
   ]
