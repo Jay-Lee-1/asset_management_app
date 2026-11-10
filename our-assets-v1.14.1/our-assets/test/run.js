@@ -202,10 +202,10 @@ const FUNCTIONS = [
   // 자동으로 끌어와지므로 FUNCTIONS에 올릴 필요 없음), 이 목록엔 index.html에 남아있는 쪽만 올린다.
   'buildGenericImportPreview', 'csvColSample', 'csvMapFieldHtml', 'openCsvColumnMap', 'renderCsvColumnMap',
   'csvMapSetMode', 'csvMapSetCatKind', 'csvMapColChosen', 'csvMapPickCol', 'csvMapPickAsset', 'csvMapPickCategory', 'csvMapApply',
-  'twActive', 'twGuard', 'deleteTxnsUndo', 'openTrashList', 'restoreTrashTxn', 'deleteRecsUndo', 'openRecTrashList', 'restoreTrashRec', 'deleteAssetsUndo', 'openAssetTrashList', 'restoreTrashAsset', 'delAsset', 'assetDelSel', 'unsnapshotAssetName', 'doBulkCat', 'bulkCatPickFor', 'doBulkInclToggle', 'assetInclSel',
+  'twActive', 'twGuard', 'deleteTxnsUndo', 'openTrashList', 'restoreTrashTxn', 'purgeTrashTxn', 'deleteRecsUndo', 'openRecTrashList', 'restoreTrashRec', 'purgeTrashRec', 'deleteAssetsUndo', 'openAssetTrashList', 'restoreTrashAsset', 'purgeTrashAsset', 'delAsset', 'assetDelSel', 'unsnapshotAssetName', 'doBulkCat', 'bulkCatPickFor', 'doBulkInclToggle', 'assetInclSel',
   'doBulkAssetMove', 'bulkAssetMovePickFor', 'ledgerAssetMoveSel', 'histAssetMoveSel', 'doBulkOwnerMove', 'assetOwnerMovePickFor', 'assetOwnerSel',
   'doBulkRecActive', 'recSelPartial', 'recToggleSel', 'recSelAll', 'recDelSel', 'recActiveSel',
-  'deleteGoalsUndo', 'openGoalTrashList', 'restoreTrashGoal', 'goalSelPartial', 'goalToggleSel', 'goalSelAll', 'goalDelSel', 'doBulkGoalOwnerMove', 'goalOwnerMovePickFor', 'goalOwnerMoveSel',
+  'deleteGoalsUndo', 'openGoalTrashList', 'restoreTrashGoal', 'purgeTrashGoal', 'goalSelPartial', 'goalToggleSel', 'goalSelAll', 'goalDelSel', 'doBulkGoalOwnerMove', 'goalOwnerMovePickFor', 'goalOwnerMoveSel',
   'assetMergeCounts', 'assetMergeSubKey', 'openAssetMergePicker', 'confirmAssetMerge', 'mergeAssetInto',
   // archiveTxnsBefore/archiveMonthPicked/openArchiveOld는 app-evolve cycle222 advance('오래된
   // 데이터 정리' 메뉴 — cycle221 critique/advance가 준비해 둔 archiveBaselines()를 처음 실제로
@@ -242,7 +242,7 @@ const FUNCTIONS = [
   // app-evolve cycle273 advance) — assetBalCard/debtWhatIfUpdate 둘 다 debtWhatIfText 바로 뒤에
   // 이어붙여 호출하므로 같은 이유로 함께 올라가야 한다.
   'debtPayoffPtsFor', 'debtWhatIfText', 'debtAmortSuffix', 'debtWhatIfUpdate',
-  'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate', 'histQInput', 'histOwnerSel', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'openAssetQtyLogTrashList', 'restoreTrashQtyLog', 'openCatTrashList', 'restoreTrashCat', 'openCatHistory', 'openIncomeCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter', 'histClearTypeFilter',
+  'rateUnknown', 'setRate', 'filteredHist', 'histInvalidate', 'histQInput', 'histOwnerSel', 'openAssetHistory', 'openAssetQtyLog', 'delAssetQtyLog', 'openAssetQtyLogTrashList', 'restoreTrashQtyLog', 'purgeTrashQtyLog', 'openCatTrashList', 'restoreTrashCat', 'purgeTrashCat', 'openCatHistory', 'openIncomeCatHistory', 'histClearFilter', 'histClearAssetFilter', 'histClearCatFilter', 'histClearTypeFilter',
   'genSalt', 'pbkdf2Hash', 'dbEncryptKey', 'encryptDbBlob', 'decryptDbBlob', 'genRecoveryCode', 'normRecoveryCode', 'assetNm', 'confirmRecTransfer', 'postponeRecTransfer', 'openConfirmTransfer',
   // proceedWithBackupObj/openImportPinSheet는 PIN으로 암호화된 JSON 백업 복원(app-evolve
   // cycle289 advance)이 추가한 분기 — importFile 'change' 최상위 statement(아래 extractStatement로
@@ -307,7 +307,7 @@ const FUNCTIONS = [
   // null을 돌려줌) 기존 공유 스텁만으로 selectNwOwner를 실행형으로 검증할 수 있다.
   'selectNwOwner', 'refreshAssetBody', 'refreshNwHistoryCard', 'refreshGoalsSummary', 'refreshAllocationCard', 'refreshAllocationHistoryCard', 'refreshInvestGainLossCard',
   'goalOwnerEff', 'goalHasUnknown', 'goalLinkedAssetGone', 'goalLinkedAssetBroken', 'goalHistoryFor', 'nearestGoal', 'goalRowHTML', 'goalsSummaryCard', 'openGoalsList', 'goalQInput', 'goalsManageBody', 'syncGoalInputs', 'goalClearDate', 'goalOwnerSel', 'goalTypeSel', 'goalOpenAsset', 'renderGoalForm', 'openGoalForm', 'duplicateGoal', 'saveGoal', 'delGoal', 'ackGoalAchieved',
-  'openInquiry', 'sendInquiry', 'openInquiryList', 'delInquiry', 'editInquiry', 'saveInquiryEdit', 'openInquiryTrashList', 'restoreTrashInquiry',
+  'openInquiry', 'sendInquiry', 'openInquiryList', 'delInquiry', 'editInquiry', 'saveInquiryEdit', 'openInquiryTrashList', 'restoreTrashInquiry', 'purgeTrashInquiry',
   'pageHead', 'assetSubline', 'assetBodyHTML', 'renderAssets', 'assetSelPartial', 'assetQInput', 'assetToggleSel', 'visibleAssetsForSel', 'assetSelAll', 'activeSel', 'exitSelMode',
   'modeSeg', 'monthNav', 'abbr', 'calCellsFor', 'ledSumInner', 'ledSumBox', 'ledSumTap', 'calPane', 'txRowCore', 'txRow', 'dayTxns',
   'ledgerRowsHtml', 'ledgerDayHeadHtml', 'renderLedger', 'selDayPartial',
@@ -5147,6 +5147,26 @@ test('restoreTrashGoal: 튜토리얼 모드 중에는 twGuard가 막아서 복�
   assert.strictEqual(sandbox.DB.trashGoals.length, 1);
   sandbox.TWi = -1;
 });
+// purgeTrashGoal: restoreTrashGoal 옆의 '영구 삭제' 버튼(app-evolve cycle331 critique/advance).
+test('purgeTrashGoal: 확인하면 트래시에서 지워지지만 톰스톤은 남겨둔다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { trashGoals: [{ id: 'g1', name: '비상금', _deletedAt: 100 }], deletedIds: { g1: 100 } };
+  sandbox.confirmSheetCalls = [];
+  sandbox.purgeTrashGoal('g1');
+  assert.strictEqual(sandbox.DB.trashGoals.length, 1, '확인 전에는 지워지면 안 됨');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.trashGoals.length, 0);
+  assert.strictEqual(sandbox.DB.deletedIds.g1, 100);
+});
+test('purgeTrashGoal: 튜토리얼 모드 중에는 twGuard가 막아 확인 시트조차 띄우지 않는다', () => {
+  sandbox.TWi = 0;
+  sandbox.DB = { trashGoals: [{ id: 'g1', _deletedAt: 100 }], deletedIds: { g1: 100 } };
+  sandbox.confirmSheetCalls = [];
+  sandbox.purgeTrashGoal('g1');
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0);
+  assert.strictEqual(sandbox.DB.trashGoals.length, 1);
+  sandbox.TWi = -1;
+});
 
 /* ---------- goalOwnerTargets(logic.js)/doBulkGoalOwnerMove/goalOwnerMovePickFor/goalOwnerMoveSel:
    목표 관리 선택모드(ST.goalSel)의 일괄 '귀속(owner)' 변경 — doBulkOwnerMove(자산 선택모드)와
@@ -6547,6 +6567,26 @@ test('restoreTrashInquiry: 튜토리얼 모드 중에는 twGuard가 막아서 �
   sandbox.DB = { inquiries: [], trashInquiries: [{ id: 'q1', text: '메모' }], deletedIds: { q1: 1 } };
   sandbox.restoreTrashInquiry('q1');
   assert.strictEqual(sandbox.DB.inquiries.length, 0);
+  assert.strictEqual(sandbox.DB.trashInquiries.length, 1);
+  sandbox.TWi = -1;
+});
+// purgeTrashInquiry: restoreTrashInquiry 옆의 '영구 삭제' 버튼(app-evolve cycle331 critique/advance).
+test('purgeTrashInquiry: 확인하면 트래시에서 지워지지만 톰스톤은 남겨둔다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { trashInquiries: [{ id: 'q1', text: '메모', _deletedAt: 100 }], deletedIds: { q1: 100 } };
+  sandbox.confirmSheetCalls = [];
+  sandbox.purgeTrashInquiry('q1');
+  assert.strictEqual(sandbox.DB.trashInquiries.length, 1, '확인 전에는 지워지면 안 됨');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.trashInquiries.length, 0);
+  assert.strictEqual(sandbox.DB.deletedIds.q1, 100);
+});
+test('purgeTrashInquiry: 튜토리얼 모드 중에는 twGuard가 막아 확인 시트조차 띄우지 않는다', () => {
+  sandbox.TWi = 0;
+  sandbox.DB = { trashInquiries: [{ id: 'q1', _deletedAt: 100 }], deletedIds: { q1: 100 } };
+  sandbox.confirmSheetCalls = [];
+  sandbox.purgeTrashInquiry('q1');
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0);
   assert.strictEqual(sandbox.DB.trashInquiries.length, 1);
   sandbox.TWi = -1;
 });
@@ -10288,6 +10328,26 @@ test('restoreTrashQtyLog: 튜토리얼 모드 중에는 twGuard가 막아서 복
   assert.strictEqual(sandbox.DB.trashQtyLog.length, 1);
   sandbox.TWi = -1;
 });
+// purgeTrashQtyLog: restoreTrashQtyLog 옆의 '영구 삭제' 버튼(app-evolve cycle331 critique/advance).
+test('purgeTrashQtyLog: 확인하면 트래시에서 지워지지만 톰스톤은 남겨둔다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { trashQtyLog: [{ id: 'q1', assetId: 'a1', prevQty: 5, newQty: 10, _deletedAt: 100 }], deletedIds: { q1: 100 } };
+  sandbox.confirmSheetCalls = [];
+  sandbox.purgeTrashQtyLog('q1');
+  assert.strictEqual(sandbox.DB.trashQtyLog.length, 1, '확인 전에는 지워지면 안 됨');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.trashQtyLog.length, 0);
+  assert.strictEqual(sandbox.DB.deletedIds.q1, 100);
+});
+test('purgeTrashQtyLog: 튜토리얼 모드 중에는 twGuard가 막아 확인 시트조차 띄우지 않는다', () => {
+  sandbox.TWi = 0;
+  sandbox.DB = { trashQtyLog: [{ id: 'q1', _deletedAt: 100 }], deletedIds: { q1: 100 } };
+  sandbox.confirmSheetCalls = [];
+  sandbox.purgeTrashQtyLog('q1');
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0);
+  assert.strictEqual(sandbox.DB.trashQtyLog.length, 1);
+  sandbox.TWi = -1;
+});
 
 /* ---------- openCatTrashList/restoreTrashCat: 메뉴 › '삭제한 카테고리' — openGoalTrashList/
  * restoreTrashGoal(목표 쪽, cycle322)/openAssetQtyLogTrashList/restoreTrashQtyLog(수량기록 쪽,
@@ -10413,6 +10473,26 @@ test('restoreTrashCat: 튜토리얼 모드 중에는 twGuard가 막아서 복구
   sandbox.DB = { categories: { expense: ['식비'] }, recurrences: [], trashCats: [{ id: 'cat:expense:커피', type: 'expense', name: '커피', deactivatedRecIds: [] }] };
   sandbox.restoreTrashCat('cat:expense:커피');
   assert.deepStrictEqual(Array.from(sandbox.DB.categories.expense), ['식비']);
+  assert.strictEqual(sandbox.DB.trashCats.length, 1);
+  sandbox.TWi = -1;
+});
+// purgeTrashCat: restoreTrashCat 옆의 '영구 삭제' 버튼(app-evolve cycle331 critique/advance).
+test('purgeTrashCat: 확인하면 트래시에서 지워지지만 톰스톤은 남겨둔다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { trashCats: [{ id: 'cat:expense:커피', type: 'expense', name: '커피', _deletedAt: 100 }], deletedIds: { 'cat:expense:커피': 100 } };
+  sandbox.confirmSheetCalls = [];
+  sandbox.purgeTrashCat('cat:expense:커피');
+  assert.strictEqual(sandbox.DB.trashCats.length, 1, '확인 전에는 지워지면 안 됨');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.trashCats.length, 0);
+  assert.strictEqual(sandbox.DB.deletedIds['cat:expense:커피'], 100);
+});
+test('purgeTrashCat: 튜토리얼 모드 중에는 twGuard가 막아 확인 시트조차 띄우지 않는다', () => {
+  sandbox.TWi = 0;
+  sandbox.DB = { trashCats: [{ id: 'cat:expense:커피', _deletedAt: 100 }], deletedIds: {} };
+  sandbox.confirmSheetCalls = [];
+  sandbox.purgeTrashCat('cat:expense:커피');
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0);
   assert.strictEqual(sandbox.DB.trashCats.length, 1);
   sandbox.TWi = -1;
 });
@@ -11185,6 +11265,30 @@ test('restoreTrashTxn: 튜토리얼 모드 중에는 twGuard가 막아서 복구
   sandbox.DB = { txns: [], trashTxns: [{ id: 't1', amount: 1000, date: '2026-01-01' }], deletedIds: { t1: 1 } };
   sandbox.restoreTrashTxn('t1');
   assert.strictEqual(sandbox.DB.txns.length, 0, '튜토리얼 중에는 복구가 막혀야 함');
+  assert.strictEqual(sandbox.DB.trashTxns.length, 1);
+  sandbox.TWi = -1;
+});
+// purgeTrashTxn: restoreTrashTxn 옆의 '영구 삭제' 버튼 — 보존기간(TRASH_MAX_AGE_DAYS)을 기다리지
+// 않고 사용자가 바로 완전히 지울 수 있게 한다(app-evolve cycle331 critique/advance). confirmSheet
+// 확인을 거치므로, delAdjust 등과 동일하게 confirmSheetCalls에 쌓인 cb를 직접 호출해 검증한다.
+test('purgeTrashTxn: 확인하면 트래시에서 지워지지만 톰스톤(deletedIds)은 남겨둔다(동기화 전파용)', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { trashTxns: [{ id: 't1', amount: 1000, _deletedAt: 100 }], deletedIds: { t1: 100 } };
+  sandbox.confirmSheetCalls = [];
+  sandbox.purgeTrashTxn('t1');
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 1, '바로 지우지 않고 확인 시트를 띄워야 함');
+  assert.strictEqual(sandbox.DB.trashTxns.length, 1, '확인 전에는 지워지면 안 됨');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.trashTxns.length, 0, '확인하면 트래시에서 지워져야 함');
+  assert.strictEqual(sandbox.DB.deletedIds.t1, 100, 'restoreTrashTxn과 달리 톰스톤은 지우면 안 됨(다른 기기로 삭제 전파)');
+  assert.ok(sandbox.lastToast);
+});
+test('purgeTrashTxn: 튜토리얼 모드 중에는 twGuard가 막아 확인 시트조차 띄우지 않는다', () => {
+  sandbox.TWi = 0;
+  sandbox.DB = { trashTxns: [{ id: 't1', amount: 1000, _deletedAt: 100 }], deletedIds: { t1: 100 } };
+  sandbox.confirmSheetCalls = [];
+  sandbox.purgeTrashTxn('t1');
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0);
   assert.strictEqual(sandbox.DB.trashTxns.length, 1);
   sandbox.TWi = -1;
 });
@@ -12304,6 +12408,26 @@ test('restoreTrashRec: 튜토리얼 모드 중에는 twGuard가 막아서 복구
   assert.strictEqual(sandbox.DB.trashRecs.length, 1);
   sandbox.TWi = -1;
 });
+// purgeTrashRec: restoreTrashRec 옆의 '영구 삭제' 버튼(app-evolve cycle331 critique/advance).
+test('purgeTrashRec: 확인하면 트래시에서 지워지지만 톰스톤은 남겨둔다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { trashRecs: [{ id: 'r1', category: '식비', amount: 1000, _deletedAt: 100 }], deletedIds: { r1: 100 } };
+  sandbox.confirmSheetCalls = [];
+  sandbox.purgeTrashRec('r1');
+  assert.strictEqual(sandbox.DB.trashRecs.length, 1, '확인 전에는 지워지면 안 됨');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.trashRecs.length, 0);
+  assert.strictEqual(sandbox.DB.deletedIds.r1, 100);
+});
+test('purgeTrashRec: 튜토리얼 모드 중에는 twGuard가 막아 확인 시트조차 띄우지 않는다', () => {
+  sandbox.TWi = 0;
+  sandbox.DB = { trashRecs: [{ id: 'r1', _deletedAt: 100 }], deletedIds: { r1: 100 } };
+  sandbox.confirmSheetCalls = [];
+  sandbox.purgeTrashRec('r1');
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0);
+  assert.strictEqual(sandbox.DB.trashRecs.length, 1);
+  sandbox.TWi = -1;
+});
 // app-evolve cycle323: 반복거래가 먼저 트래시(DB.trashRecs)에 들어간 뒤 연결된 자산이 지워지면(또는
 // 트래시 보존기간이 지나 영구 삭제되면), activeRecsForAssets(지금 DB.recurrences에 있는 반복거래만 봄)가
 // 이 반복거래를 전혀 모르므로 비활성화 기회를 놓친다. 그대로 되살리면 expandRec()이 존재하지 않는
@@ -12587,6 +12711,26 @@ test('restoreTrashAsset: 튜토리얼 모드 중에는 twGuard가 막아서 복�
   sandbox.DB = { assets: [], recurrences: [], txns: [], trashAssets: [{ id: 'a1', name: '통장1', type: 'cash' }], deletedIds: { a1: 1 } };
   sandbox.restoreTrashAsset('a1');
   assert.strictEqual(sandbox.DB.assets.length, 0);
+  assert.strictEqual(sandbox.DB.trashAssets.length, 1);
+  sandbox.TWi = -1;
+});
+// purgeTrashAsset: restoreTrashAsset 옆의 '영구 삭제' 버튼(app-evolve cycle331 critique/advance).
+test('purgeTrashAsset: 확인하면 트래시에서 지워지지만 톰스톤은 남겨둔다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { trashAssets: [{ id: 'a1', name: '통장1', _deletedAt: 100 }], deletedIds: { a1: 100 } };
+  sandbox.confirmSheetCalls = [];
+  sandbox.purgeTrashAsset('a1');
+  assert.strictEqual(sandbox.DB.trashAssets.length, 1, '확인 전에는 지워지면 안 됨');
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.trashAssets.length, 0);
+  assert.strictEqual(sandbox.DB.deletedIds.a1, 100);
+});
+test('purgeTrashAsset: 튜토리얼 모드 중에는 twGuard가 막아 확인 시트조차 띄우지 않는다', () => {
+  sandbox.TWi = 0;
+  sandbox.DB = { trashAssets: [{ id: 'a1', _deletedAt: 100 }], deletedIds: { a1: 100 } };
+  sandbox.confirmSheetCalls = [];
+  sandbox.purgeTrashAsset('a1');
+  assert.strictEqual(sandbox.confirmSheetCalls.length, 0);
   assert.strictEqual(sandbox.DB.trashAssets.length, 1);
   sandbox.TWi = -1;
 });
@@ -19655,6 +19799,34 @@ test('mergeTrashTxns: id 없는 항목이나 undefined 배열은 안전하게 �
   const out = sandbox.mergeTrashTxns([{ amount: 1 }], [null, { id: 't1' }]);
   assert.strictEqual(out.length, 1);
   assert.strictEqual(out[0].id, 't1');
+});
+// removeTrashItem: 트래시 화면의 '영구 삭제' 버튼(보존기간을 기다리지 않고 즉시 완전 삭제,
+// app-evolve cycle331 critique/advance)이 쓰는 순수 헬퍼 — gcTrashTxns/mergeTrashTxns와 동일하게
+// {id} 형태만 가정해 7개 트래시 컬렉션 전부가 새 함수 없이 재사용한다.
+test('removeTrashItem: id가 일치하는 항목 하나만 제거하고 나머지는 그대로 둔다', () => {
+  const a = { id: 't1', amount: 1000 };
+  const b = { id: 't2', amount: 2000 };
+  const out = sandbox.removeTrashItem([a, b], 't1');
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0], b);
+});
+test('removeTrashItem: 존재하지 않는 id면 아무것도 지우지 않는다', () => {
+  const a = { id: 't1' };
+  const out = sandbox.removeTrashItem([a], '없는id');
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0], a);
+});
+test('removeTrashItem: 빈 배열/배열이 아닌 값은 안전하게 빈 배열을 돌려준다', () => {
+  assert.strictEqual(sandbox.removeTrashItem([], 't1').length, 0);
+  assert.strictEqual(sandbox.removeTrashItem(undefined, 't1').length, 0);
+  assert.strictEqual(sandbox.removeTrashItem(null, 't1').length, 0);
+});
+test('removeTrashItem: {id,_deletedAt} 외의 필드도 그대로 보존한다', () => {
+  const a = { id: 't1', amount: 500, category: '식비', _deletedAt: 100 };
+  const b = { id: 't2', amount: 900 };
+  const out = sandbox.removeTrashItem([a, b], 't2');
+  assert.strictEqual(out.length, 1);
+  assert.deepStrictEqual(out[0], a, '남은 항목의 필드가 하나도 손상되면 안 됨');
 });
 // app-evolve cycle320 critique/advance: DB.trashAssets(자산 삭제 '최근 삭제함')가 gcTrashTxns/
 // mergeTrashTxns를 새 함수 없이 그대로 재사용한다는 전제를 거래 모양이 아닌 자산 모양 데이터로도

@@ -463,6 +463,15 @@ function gcTrashTxns(trashTxns,now,maxAgeMs){
  maxAgeMs=maxAgeMs==null?1000*60*60*24*30:maxAgeMs;
  return (Array.isArray(trashTxns)?trashTxns:[]).filter(t=>t&&now-t._deletedAt<=maxAgeMs);
 }
+/* 트래시 화면의 '영구 삭제' 버튼(복구 외에 사용자가 직접 즉시 지울 방법이 없던 공백, app-evolve
+ * cycle331 critique/advance)이 지정한 id 하나를 트래시 배열에서 제거한다 — gcTrashTxns와 동일하게
+ * {id} 형태만 가정해 7개 트래시 컬렉션(trashTxns/trashAssets/trashRecs/trashGoals/trashCats/
+ * trashInquiries/trashQtyLog) 모두에서 새 함수 없이 그대로 재사용한다. gcTrashTxns(보존기간 경과로
+ * 자동 제거)와 달리 호출자가 DB.deletedIds 톰스톤은 그대로 둔다 — purge는 "항목을 계속 삭제 상태로
+ * 유지"하는 것이라, 톰스톤까지 지우면 다른 기기와의 동기화에서 이 삭제가 전파되지 않는다. */
+function removeTrashItem(trashArr,id){
+ return (Array.isArray(trashArr)?trashArr:[]).filter(x=>x&&x.id!==id);
+}
 /* DB.trashTxns는 txns/assets처럼 id로 식별되지만, 그 자체가 이미 "삭제됨"을 뜻하는 아카이브라
  * DB.deletedIds 톰스톤 체계(살았는지/죽었는지 판정)를 적용할 대상이 아니다 — mergeCollection이
  * 아니라 전용 병합이 필요하다(goals/inquiries/assetQtyLog가 겪은 '신설 컬렉션 병합 배선 누락'
