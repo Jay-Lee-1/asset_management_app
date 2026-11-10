@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.404';
+const APP_VERSION='1.47.405';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -8768,11 +8768,12 @@ function goalsToCSV(items,assets){
  const nm=id=>{const a=(assets||[]).find(x=>x.id===id);return a?a.name:''};
  const guard=v=>{const s=String(v==null?'':v);return /^['=+\-@\t\r]/.test(s)?"'"+s:s};
  const esc=v=>{const s=String(v==null?'':v);return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s};
+ const localDateStr=ts=>{const d=new Date(ts);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`};
  const header=['목표 이름','유형','연결 자산','목표 금액','현재 진행 금액','달성률(%)','목표일','귀속','달성 여부','생성일'].map(esc).join(',');
  const rows=(items||[]).slice().sort((a,b)=>(a.createdAt||0)-(b.createdAt||0)).map(g=>[
   guard(g.name||''),typeLabel[g.type]||g.type||'',guard(g.type==='asset'?nm(g.linkedAssetId):''),
   g.targetAmount||0,g.cur!=null?g.cur:'',g.pct!=null?g.pct:'',g.targetDate||'',guard(g.owner||''),
-  g.achieved?'Y':'N',g.createdAt?new Date(g.createdAt).toISOString().slice(0,10):''
+  g.achieved?'Y':'N',g.createdAt?localDateStr(g.createdAt):''
  ].map(esc).join(','));
  return '﻿'+[header,...rows].join('\r\n');
 }

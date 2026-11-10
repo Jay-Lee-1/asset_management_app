@@ -7389,6 +7389,15 @@ test('goalsToCSV: 생성일(createdAt, epoch ms) 오름차순으로 정렬하고
   assert.strictEqual(rows[1][9], '2026-01-01');
   assert.strictEqual(rows[2][9], '2026-03-01');
 });
+test('goalsToCSV: 생성일은 기기 로컬 날짜 기준이다(UTC 날짜로 새지 않는다, app-evolve cycle332 develop) — createdAt이 UTC 자정을 넘나드는 음수 오프셋 시간대에서도 todayStr()과 같은 로컬 날짜가 나와야 한다', () => {
+  withTZ('America/New_York', () => {
+    const csv = sandbox.goalsToCSV([
+      { name: '자정 직후 생성', type: 'networth', targetAmount: 1, owner: 'all', createdAt: Date.parse('2026-01-01T03:00:00.000Z'), cur: 0, pct: 0, achieved: false },
+    ], []);
+    const rows = sandbox.parseCSV(csv);
+    assert.strictEqual(rows[1][9], '2025-12-31', 'UTC로는 01-01이지만 America/New_York 로컬 날짜는 전날(12-31)이어야 함');
+  });
+});
 test('goalsToCSV: 달성한 목표는 달성 여부 컬럼이 Y다', () => {
   const csv = sandbox.goalsToCSV([
     { name: '다 모았다', type: 'networth', targetAmount: 1000, owner: 'all', createdAt: Date.now(), cur: 1000, pct: 100, achieved: true },

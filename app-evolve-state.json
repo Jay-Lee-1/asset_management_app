@@ -1,15 +1,8 @@
 {
   "cycle": 332,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 327,
-      "phase": "develop",
-      "timestamp": "2026-11-08T16:15:00.000Z",
-      "summary": "restoreTrashAsset(index.html, 11805행)이 DB.recurrences만 훑고 DB.trashRecs는 보지 않는 공백을 발견해 고쳤다. deleteRecsUndo(11760행)는 반복거래를 트래시로 옮길 때 그 시점의 active/_autoDeactivatedByAssetDelete 값을 그대로 복사해 넣는다 — 그래서 '자산 삭제로 비활성화된 반복거래를 그 뒤에 또 삭제'하면 이 플래그가 DB.recurrences가 아니라 DB.trashRecs 안에 찍힌 채로 남는다. 그 상태로 자산만 먼저 복구하면 restoreTrashAsset이 DB.trashRecs는 안 봐서 플래그를 영원히 못 지우고, 나중에 restoreTrashRec이 그 반복거래를 복구할 때도 rec.active가 이미 false라 자산생존가드(cycle323, assetsGone=rec.active&&...)가 전혀 평가되지 않아 active:false로만 복구돼 버린다 — 자산·반복 둘 다 복구했는데 반복거래만 영원히 멈춘 채로 남는 결과. restoreTrashAsset(cycle320)이 이체 반복거래 재활성화 가드로 쓰던 조건을 canRevive 헬퍼로 추출해 DB.recurrences와 DB.trashRecs 양쪽에 동일하게 적용(트래시 안에 있는 동안은 active=true로 플래그만 지워두고, 실제로 live 배열로 돌아오는 건 그 뒤 restoreTrashRec이 하도록 둠). node test/run.js 3177->3180/3180 통과. APP_VERSION 1.47.394->1.47.395, sw.js CACHE v661->v662.",
-      "commit": null
-    },
     {
       "cycle": 327,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-10T12:30:00.000Z",
       "summary": "critique(cycle331) 계획대로 7개 트래시 화면(거래/자산/반복/목표/카테고리/문의메모/수량기록)에 '영구 삭제' 버튼을 추가했다. logic.js에 순수 헬퍼 removeTrashItem(trashArr,id) 추가(gcTrashTxns 옆, {id} 형태만 가정해 7개 컬렉션 전부 재사용). 7개 restoreTrashX 옆에 purgeTrashX 짝 함수 신설(confirmSheet 확인 필수, twGuard 가드, DB.deletedIds 톰스톤은 보존 — restore와 달리 purge는 '계속 삭제 상태 유지'가 목적이라 다른 기기 동기화 전파를 위해 남겨둠) — purgeTrashTxn/purgeTrashAsset/purgeTrashRec/purgeTrashGoal/purgeTrashCat/purgeTrashInquiry/purgeTrashQtyLog. 각 open*TrashList() row-acts에 복구 버튼 옆 svg('trash') 아이콘의 두 번째 버튼 추가. 테스트: removeTrashItem 순수 단위테스트 4건(정상 제거/존재안함/빈배열·비배열/필드보존) + 7개 purge 함수 각각 실행형 테스트 2건(확인 후 제거+톰스톤 보존, twGuard 차단) = 18건 추가, test/run.js FUNCTIONS 목록에 7개 purge 함수명 추가 — node test/run.js 3221->3239/3239 통과. node --check logic.js/sw.js/test/run.js 통과. 사용자 체감 기능 추가(민감한 삭제 내역 즉시 완전 삭제 제어권)라 APP_VERSION 1.47.403->1.47.404, sw.js CACHE v670->v671. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 332,
+      "phase": "develop",
+      "timestamp": "2026-11-10T14:18:11.784Z",
+      "summary": "goalsToCSV(index.html, 목표 CSV 내보내기)의 \"생성일\"(createdAt) 컬럼이 toISOString()으로 UTC 날짜를 쓰고 있어, 기기 로컬 시간대 기준 자정~UTC 자정 사이(KST라면 00:00~08:59)에 생성한 목표는 실제보다 하루 전 날짜로 내보내지던 공백을 고쳤다. todayStr()/fmtDateFull() 등 이 파일의 다른 모든 epoch->날짜 표시 함수가 쓰는 기기 로컬 getFullYear/getMonth/getDate 패턴으로 통일(localDateStr 헬퍼를 goalsToCSV 안에 추가). America/New_York(UTC-5) 시간대로 withTZ 전환해 UTC 자정을 넘나드는 instant(2026-01-01T03:00:00Z -> 로컬 2025-12-31)로 회귀 테스트 1건 추가 — node test/run.js 3239->3240/3240 통과. APP_VERSION 1.47.404->1.47.405, sw.js CACHE v671->v672.",
       "commit": null
     }
   ]
