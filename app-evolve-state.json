@@ -1,6 +1,6 @@
 {
   "cycle": 333,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
@@ -134,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-10T17:05:00.000Z",
       "summary": "critique(cycle332) 계획대로 자산 합치기(mergeAssetInto)의 wipe-직전 데이터 소실 경로를 막았다 — 범위가 커서 계획이 제안한 대로 doMergeAssets(mergeAssetInto) 하나만 먼저 적용하고 카테고리/소유자 합치기는 다음 critique가 재발견하도록 남겼다. __preReset_/__preRestore_/__preArchive_ 패턴을 __preMergeAsset_ 다섯 번째 kind로 확장(mergeAssetInto 안 DB 변경 직전 전체 DB를 localStorage에 백업, touchSave 이후 6초 grace 타이머로 정리, undoToast 콜백에서 즉시 clearTimeout+removeItem), scanWipeBackupKeys/wipeBackupKindLabel('합치기')에 새 kind 배선 — homeAlertCard/restoreWipeBackup/dismissWipeBackup은 이미 kind 분기가 범용이라 변경 불필요. 테스트 8건 추가(실행형 백업/grace-취소 2건 + findCorruptBackupKeys/homeAlertCard/wipeBackupKindLabel 기존 테스트 확장) — node test/run.js 3240->3242/3242 통과. node --check logic.js/sw.js/test/run.js 통과. APP_VERSION 1.47.405->1.47.406, sw.js CACHE v672->v673. pending_advance_plan null로 비움(카테고리/소유자 합치기는 critique가 다시 집어야 함).",
+      "commit": null
+    },
+    {
+      "cycle": 333,
+      "phase": "develop",
+      "timestamp": "2026-11-10T18:05:00.000Z",
+      "summary": "normalizeCsvDateCell(CSV 가져오기 날짜 정규화, logic.js)이 점 뒤에 공백이 들어간 한국식 표기(\"2026. 1. 5\", 엑셀 ko-KR 짧은 날짜 형식에서 흔함)를 처리하지 못하던 공백을 고쳤다 — 기존 로직은 날짜/시간을 떼어내려고 공백으로 먼저 split했는데, 이 표기는 날짜 자체에 공백이 들어있어 \"2026.\"에서 바로 잘려 월/일을 통째로 잃고 매치 실패 → error:'date'로 조용히 빠졌다(cycle288/cycle311과 같은 버그 클래스, 날짜 안에 공백이 섞인 경우는 지금까지 비어 있었음). 공백split 전에 점 구분자 사이 공백을 허용하는 패턴을 전체 문자열에 먼저 시도하도록 수정(끝에 붙는 마침표도 선택적으로 허용), 매치 안 되면 기존 로직으로 그대로 폴백해 기존 동작은 전혀 바뀌지 않는다. 테스트 2건 추가(순수 함수 단위테스트 + mapGenericCsvRow 종단 테스트, 달력상 존재하지 않는 날짜는 여전히 걸러짐도 확인) — node test/run.js 3242->3244/3244 통과. node --check logic.js/sw.js/test/run.js 통과. APP_VERSION 1.47.406->1.47.407, sw.js CACHE v673->v674.",
       "commit": null
     }
   ]

@@ -1430,11 +1430,19 @@ function detectOwnCsvFormat(headerRow){
  * 안 떼어져 datePart 전체가 그대로 남아 두 패턴 다 매치 실패 → error:'date'로 조용히 빠졌다
  * (공백 구분 케이스를 메운 것과 같은 클래스의 공백, app-evolve cycle311 develop). 구분자를
  * 공백과 'T' 둘 다로 넓혀 같은 방식으로 시간 부분을 떼어낸다 — 날짜 부분 안에는 'T'가 올 수
- * 없으므로(YYYY-MM-DD에 'T'가 포함된 적 없음) 기존 공백 케이스의 동작은 전혀 바뀌지 않는다. */
+ * 없으므로(YYYY-MM-DD에 'T'가 포함된 적 없음) 기존 공백 케이스의 동작은 전혀 바뀌지 않는다.
+ * 한국 금융권/엑셀이 흔히 쓰는 "2026. 1. 5"처럼 점 뒤에 공백이 들어간 표기는 위 공백split이
+ * 날짜 자체를 "2026."에서 바로 잘라버려(날짜/시간 구분자로 오인) 나머지 월/일을 통째로
+ * 잃고 매치 실패 → error:'date'로 빠졌다. 이 표기는 셀 전체가 곧 날짜이고 뒤에 시간이 붙는
+ * 경우가 없으므로, 공백split보다 먼저 전체 문자열을 대상으로 점 구분자 사이 공백을 허용하는
+ * 패턴을 한 번 더 시도한다(끝에 마침표가 붙는 로케일 표기도 선택적으로 허용). 매치하면 바로
+ * 돌려주고, 안 맞으면 기존 로직(공백/T split 이후 처리)으로 그대로 넘어간다. */
 function normalizeCsvDateCell(s){
  s=String(s==null?'':s).trim();
+ let m=s.match(/^(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.?$/);
+ if(m)return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
  const datePart=s.split(/[\sT]/)[0]||'';
- let m=datePart.match(/^(\d{4})[.\/-](\d{1,2})[.\/-](\d{1,2})$/);
+ m=datePart.match(/^(\d{4})[.\/-](\d{1,2})[.\/-](\d{1,2})$/);
  if(m)return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
  m=datePart.match(/^(\d{4})(\d{2})(\d{2})$/);
  if(m)return `${m[1]}-${m[2]}-${m[3]}`;

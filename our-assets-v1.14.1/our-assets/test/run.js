@@ -8375,6 +8375,12 @@ test("normalizeCsvDateCell: 하이픈 구분이지만 월/일이 0패딩 안 된
   assert.strictEqual(sandbox.normalizeCsvDateCell('2026-01-5'), '2026-01-05');
   assert.strictEqual(sandbox.normalizeCsvDateCell('2026-01-05'), '2026-01-05');
 });
+test("normalizeCsvDateCell: 점 뒤에 공백이 들어간 한국식 표기(\"2026. 1. 5\", 엑셀 ko-KR 짧은 날짜 형식 흔함)도 YYYY-MM-DD로 바꾼다 — 기존엔 공백split이 날짜를 '2026.'에서 잘라버려 error:'date'로 빠졌다(app-evolve cycle333 develop)", () => {
+  assert.strictEqual(sandbox.normalizeCsvDateCell('2026. 1. 5'), '2026-01-05');
+  assert.strictEqual(sandbox.normalizeCsvDateCell('2026. 01. 05'), '2026-01-05');
+  assert.strictEqual(sandbox.normalizeCsvDateCell('2026. 1. 5.'), '2026-01-05'); // 끝에 마침표가 붙는 표기도 허용
+  assert.strictEqual(sandbox.normalizeCsvDateCell(' 2026.  1.  5 '), '2026-01-05'); // 양끝 공백/중복 공백도 견딘다
+});
 test("mapGenericCsvRow: 점/슬래시/구분자 없음 날짜 표기(은행 CSV 실무 포맷)도 정상적으로 가져온다(app-evolve cycle288 develop)", () => {
   const dot = sandbox.mapGenericCsvRow(['2026.1.5', '5000'], { dateCol: 0, amountCol: 1, mode: 'signed', category: '식비' }, 'a1');
   assert.strictEqual(dot.ok, true); assert.strictEqual(dot.txn.date, '2026-01-05');
@@ -8388,6 +8394,12 @@ test("mapGenericCsvRow: 점/슬래시/구분자 없음 날짜 표기(은행 CSV 
 test("mapGenericCsvRow: ISO 8601 'T' 구분(공백 없는 날짜+시간) 표기도 정상적으로 가져온다(app-evolve cycle311 develop)", () => {
   const isoT = sandbox.mapGenericCsvRow(['2026-01-05T13:25:33', '5000'], { dateCol: 0, amountCol: 1, mode: 'signed', category: '식비' }, 'a1');
   assert.strictEqual(isoT.ok, true); assert.strictEqual(isoT.txn.date, '2026-01-05');
+});
+test("mapGenericCsvRow: 점 뒤 공백이 들어간 한국식 표기(\"2026. 1. 5\")도 정상적으로 가져온다(app-evolve cycle333 develop)", () => {
+  const spaced = sandbox.mapGenericCsvRow(['2026. 1. 5', '5000'], { dateCol: 0, amountCol: 1, mode: 'signed', category: '식비' }, 'a1');
+  assert.strictEqual(spaced.ok, true); assert.strictEqual(spaced.txn.date, '2026-01-05');
+  const badSpacedCalendar = sandbox.mapGenericCsvRow(['2026. 2. 30', '5000'], { dateCol: 0, amountCol: 1, mode: 'signed', category: '식비' }, 'a1');
+  assert.strictEqual(badSpacedCalendar.ok, false); assert.strictEqual(badSpacedCalendar.error, 'date'); // csvDateValid 최종 판정은 그대로 보존
 });
 test("mapGenericCsvRow: 달력상 존재하지 않는 날짜는 구분자를 바꿔도 여전히 error:'date'(csvDateValid 최종 판정 보존)", () => {
   const badDot = sandbox.mapGenericCsvRow(['2026.2.30', '1000'], { dateCol: 0, amountCol: 1, mode: 'signed', category: '식비' }, 'a1');
