@@ -34679,11 +34679,12 @@ test('[실행형] doDeleteAccount: 6초 안에 되돌리면 wipe 직전 백업 �
  * 남기는 __preReset_ / __preDeleteAccount_ 백업도 같은 판정 로직으로 찾을 수 있도록 suffix
  * 파라미터를 일반화했다(app-evolve cycle328 critique/advance) — 기존 2-인자 호출(위 '__corrupt_'
  * 전용 테스트들)은 하위호환으로 그대로 통과해야 한다. ---------- */
-test('findCorruptBackupKeys: suffix를 넘기면 그 접두사로 찾는다(__preReset_/__preDeleteAccount_ 등)', () => {
+test('findCorruptBackupKeys: suffix를 넘기면 그 접두사로 찾는다(__preReset_/__preDeleteAccount_/__preRestore_ 등)', () => {
   const keys = [
     'acct__preReset_300',
     'acct__preReset_100',
     'acct__preDeleteAccount_200', // 다른 suffix는 걸러져야 함
+    'acct__preRestore_400', // proceedWithBackupObj()가 복원 직전에 남기는 백업(app-evolve cycle329)
     'acct__corrupt_999', // 기본 suffix와도 섞이지 않아야 함
   ];
   const r1 = sandbox.findCorruptBackupKeys(keys, 'acct', '__preReset_');
@@ -34693,6 +34694,8 @@ test('findCorruptBackupKeys: suffix를 넘기면 그 접두사로 찾는다(__pr
   ], '__preReset_ suffix 필터링/정렬이 틀림');
   const r2 = sandbox.findCorruptBackupKeys(keys, 'acct', '__preDeleteAccount_');
   assert.deepStrictEqual(JSON.parse(JSON.stringify(r2)), [{ key: 'acct__preDeleteAccount_200', ts: 200 }], '__preDeleteAccount_ suffix 필터링이 틀림');
+  const r3 = sandbox.findCorruptBackupKeys(keys, 'acct', '__preRestore_');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(r3)), [{ key: 'acct__preRestore_400', ts: 400 }], '__preRestore_ suffix 필터링이 틀림');
 });
 test('findCorruptBackupKeys: suffix를 생략하면 기존과 동일하게 __corrupt_ 접두사를 쓴다(하위호환)', () => {
   const keys = ['acct__corrupt_100', 'acct__preReset_200'];
@@ -34714,6 +34717,22 @@ test('homeAlerts: WIPE_BACKUP_KEYS가 있으면 wipeBackup 알림을 count/mostR
   sandbox.WIPE_BACKUP_KEYS = [];
   alerts = sandbox.homeAlerts([]);
   assert.ok(!alerts.some(a => a.kind === 'wipeBackup'), 'WIPE_BACKUP_KEYS가 비어있는데도 wipeBackup 알림이 뜸');
+});
+
+/* ---------- homeAlertCard()의 'wipeBackup' 카드 문구 — mostRecentKind별로 '초기화'/'탈퇴'/
+ * '복원' 세 갈래 중 하나를 보여준다. proceedWithBackupObj()가 복원 직전에도 같은 __preRestore_
+ * 백업을 남기게 되면서(app-evolve cycle329 critique/advance) preReset/preDeleteAccount 둘뿐이던
+ * 분기에 preRestore가 추가됐다. ---------- */
+test("homeAlertCard: wipeBackup 카드가 mostRecentKind에 따라 '초기화'/'탈퇴'/'복원' 문구를 구분해서 보여주고, 모두 restoreWipeBackup()으로 연결된다", () => {
+  const resetHtml = sandbox.homeAlertCard({ kind: 'wipeBackup', count: 1, mostRecentKind: 'preReset' });
+  assert.ok(resetHtml.includes('초기화 직전 데이터를 찾았어요'), 'preReset이면 초기화 문구가 아님');
+  const deleteHtml = sandbox.homeAlertCard({ kind: 'wipeBackup', count: 1, mostRecentKind: 'preDeleteAccount' });
+  assert.ok(deleteHtml.includes('탈퇴 직전 데이터를 찾았어요'), 'preDeleteAccount면 탈퇴 문구가 아님');
+  const restoreHtml = sandbox.homeAlertCard({ kind: 'wipeBackup', count: 1, mostRecentKind: 'preRestore' });
+  assert.ok(restoreHtml.includes('복원 직전 데이터를 찾았어요'), 'preRestore면 복원 문구를 보여주지 않음(여전히 초기화/탈퇴로 잘못 표시될 위험)');
+  [resetHtml, deleteHtml, restoreHtml].forEach(html => {
+    assert.ok(html.includes('onclick="restoreWipeBackup()"'), 'wipeBackup 카드가 restoreWipeBackup()으로 연결되지 않음');
+  });
 });
 
 /* ---------- proceedWithBackupObj(onDone): restoreWipeBackup()(index.html)이 wipe 직전 백업
@@ -34756,6 +34775,79 @@ test('[실행형] proceedWithBackupObj: onDone 없이 호출해도(기존 호출
     assert.doesNotThrow(() => sandbox.confirmSheetCalls[0].cb());
   } finally {
     sandbox.DB = dbOrig; sandbox.save = saveOrig; sandbox.invalidateBalances = invalidateOrig; sandbox.renderCurrent = renderOrig; sandbox.setTimeout = setTimeoutOrig;
+  }
+});
+
+/* ---------- proceedWithBackupObj: 복원 직전(__preRestore_) 백업 — doResetAll()/doDeleteAccount()와
+ * 동일하게, restoreBackup()이 DB를 즉시 교체하기 전의 데이터를 prev 메모리 클로저 하나와 6초짜리
+ * undoToast grace에만 맡기지 않고 dataKey()+'__preRestore_'+타임스탬프 localStorage 키로도 최선
+ * 노력 백업해 둔다 — 복원은 기기 교체·재설치 시 거의 항상 거치는 경로라 reset/deleteAccount보다
+ * 발생 빈도가 더 높다(app-evolve cycle329 critique/advance). ---------- */
+test('[실행형] proceedWithBackupObj: 복원 직전 DB를 dataKey()+__preRestore_+타임스탬프 키로 백업하고, grace가 되돌림 없이 끝나면 지운다', () => {
+  const dbOrig = sandbox.DB, dataKeyOrig = sandbox.dataKey, lsOrig = sandbox.localStorage;
+  const saveOrig = sandbox.save, invalidateOrig = sandbox.invalidateBalances, renderOrig = sandbox.renderCurrent;
+  const setTimeoutOrig = sandbox.setTimeout, scheduleCloudPushOrig = sandbox.scheduleCloudPush;
+  const originalDb = { owners: ['나'], assets: [{ id: 'old' }], txns: [], categories: { expense: [], income: [], saving: [] } };
+  sandbox.DB = originalDb;
+  sandbox.dataKey = () => 'acct3';
+  const setCalls = [], removeCalls = [];
+  sandbox.localStorage = { getItem: () => null, setItem: (k, v) => setCalls.push([k, v]), removeItem: (k) => removeCalls.push(k) };
+  sandbox.save = () => {}; sandbox.invalidateBalances = () => {}; sandbox.renderCurrent = () => {};
+  let capturedFn = null;
+  sandbox.setTimeout = (fn) => { capturedFn = fn; return 'restore-push-timer'; };
+  let pushCalls = 0;
+  sandbox.scheduleCloudPush = () => { pushCalls++; };
+  sandbox.confirmSheetCalls = [];
+  sandbox.lastUndo = null;
+  try {
+    sandbox.proceedWithBackupObj({ assets: [{ id: 'new1', type: 'cash' }], txns: [] });
+    assert.strictEqual(sandbox.confirmSheetCalls.length, 1, '복원 전 확인 시트를 띄우지 않음');
+    sandbox.confirmSheetCalls[0].cb(); // "복원" 확인 버튼을 누른 상태를 흉내냄
+    assert.ok(setCalls.length >= 1, '복원 직전 DB를 localStorage에 백업하지 않음');
+    const [backupKey, backupVal] = setCalls[0];
+    assert.match(backupKey, /^acct3__preRestore_\d+$/, '백업 키가 dataKey()+__preRestore_+타임스탬프 모양이 아님');
+    assert.deepStrictEqual(JSON.parse(backupVal), JSON.parse(JSON.stringify(originalDb)), '백업된 값이 복원 직전(교체 전) DB와 다름 — 이미 교체된 새 데이터를 백업했을 위험');
+    assert.strictEqual(sandbox.DB.assets[0].id, 'new1', '복원이 실제로 적용되지 않음');
+    assert.strictEqual(removeCalls.length, 0, 'grace가 끝나기도 전에 백업을 지움');
+    capturedFn(); // 되돌리지 않은 채 6초 grace가 끝난 상황을 흉내냄
+    assert.strictEqual(pushCalls, 1, 'grace가 끝나도 클라우드 재푸시를 예약하지 않음');
+    assert.deepStrictEqual(removeCalls, [backupKey], 'grace가 끝났는데도 백업 키를 지우지 않아 유령 백업으로 남음');
+  } finally {
+    sandbox.DB = dbOrig; sandbox.dataKey = dataKeyOrig; sandbox.localStorage = lsOrig;
+    sandbox.save = saveOrig; sandbox.invalidateBalances = invalidateOrig; sandbox.renderCurrent = renderOrig;
+    sandbox.setTimeout = setTimeoutOrig; sandbox.scheduleCloudPush = scheduleCloudPushOrig;
+  }
+});
+test('[실행형] proceedWithBackupObj: 6초 안에 되돌리면 __preRestore_ 백업 키를 즉시 지우고, grace 완료 시의 클라우드 재푸시는 실행되지 않는다', () => {
+  const dbOrig = sandbox.DB, dataKeyOrig = sandbox.dataKey, lsOrig = sandbox.localStorage;
+  const saveOrig = sandbox.save, invalidateOrig = sandbox.invalidateBalances, renderOrig = sandbox.renderCurrent;
+  const setTimeoutOrig = sandbox.setTimeout, clearTimeoutOrig = sandbox.clearTimeout, scheduleCloudPushOrig = sandbox.scheduleCloudPush;
+  const originalDb = { owners: ['나'], assets: [{ id: 'old' }], txns: [], categories: { expense: [], income: [], saving: [] } };
+  sandbox.DB = originalDb;
+  sandbox.dataKey = () => 'acct3';
+  const setCalls = [], removeCalls = [];
+  sandbox.localStorage = { getItem: () => null, setItem: (k, v) => setCalls.push([k, v]), removeItem: (k) => removeCalls.push(k) };
+  sandbox.save = () => {}; sandbox.invalidateBalances = () => {}; sandbox.renderCurrent = () => {};
+  sandbox.setTimeout = () => 'restore-push-timer';
+  const clearTimeoutCalls = [];
+  sandbox.clearTimeout = (id) => { clearTimeoutCalls.push(id); };
+  let pushCalls = 0;
+  sandbox.scheduleCloudPush = () => { pushCalls++; };
+  sandbox.confirmSheetCalls = [];
+  sandbox.lastUndo = null;
+  try {
+    sandbox.proceedWithBackupObj({ assets: [{ id: 'new1', type: 'cash' }], txns: [] });
+    sandbox.confirmSheetCalls[0].cb();
+    const [backupKey] = setCalls[0];
+    sandbox.lastUndo.undoFn(); // "되돌리기"를 누른 상태를 흉내냄
+    assert.deepStrictEqual(clearTimeoutCalls, ['restore-push-timer'], '되돌리기를 눌러도 예약된 push 타이머를 취소하지 않음');
+    assert.deepStrictEqual(removeCalls, [backupKey], '되돌리기를 눌렀는데도 백업 키를 지우지 않아 유령 백업으로 남음');
+    assert.strictEqual(pushCalls, 0, '되돌렸는데도 클라우드 재푸시가 실행됨');
+    assert.strictEqual(sandbox.DB.assets[0].id, 'old', '되돌리기가 실제로 이전 DB로 복원하지 않음');
+  } finally {
+    sandbox.DB = dbOrig; sandbox.dataKey = dataKeyOrig; sandbox.localStorage = lsOrig;
+    sandbox.save = saveOrig; sandbox.invalidateBalances = invalidateOrig; sandbox.renderCurrent = renderOrig;
+    sandbox.setTimeout = setTimeoutOrig; sandbox.clearTimeout = clearTimeoutOrig; sandbox.scheduleCloudPush = scheduleCloudPushOrig;
   }
 });
 

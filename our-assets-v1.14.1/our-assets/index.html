@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.399';
+const APP_VERSION='1.47.400';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -1953,7 +1953,7 @@ function importGuestDataInto(guestRaw){
 
 let DB, STORAGE_OK=true, STORAGE_PERSISTED=null, TAB_SAVED_AT=0, TAB_SYNC_PENDING=null, DB_JSON_LEN=0;
 let CORRUPT_BACKUP_KEYS=[]; /* scanCorruptBackupKeys()가 채움 — load()의 __corrupt_ 백업 키 중 아직 남아있는 것(최근 순) */
-let WIPE_BACKUP_KEYS=[]; /* scanWipeBackupKeys()가 채움 — doResetAll()/doDeleteAccount()가 wipe 직전에 남긴 __preReset_/__preDeleteAccount_ 백업 중 grace 타이머가 못 끝나 아직 남아있는 것(최근 순, app-evolve cycle328 critique/advance) */
+let WIPE_BACKUP_KEYS=[]; /* scanWipeBackupKeys()가 채움 — doResetAll()/doDeleteAccount()/proceedWithBackupObj()가 wipe·복원 직전에 남긴 __preReset_/__preDeleteAccount_/__preRestore_ 백업 중 grace 타이머가 못 끝나 아직 남아있는 것(최근 순, app-evolve cycle328 critique/advance, __preRestore_는 cycle329) */
 /* localStorage는 오리진당 보통 5~10MB로 quota가 걸려 있다(브라우저마다 다름). save()가 매번 DB
  * 전체를 재직렬화하는 구조라 txns/recurrences가 상한 없이 누적되면 quota 실패에 조금씩 다가갈 수
  * 있는데, storageOutcomeMsg는 실제로 쓰기가 실패한 "이후"에만 반응한다(증상 완화). 여기 두 문턱은
@@ -2625,14 +2625,14 @@ function dismissCorruptBackup(){
  CORRUPT_BACKUP_KEYS=[];
  renderCurrent();toast('지웠어요');
 }
-/* doResetAll()/doDeleteAccount()가 wipe 직전(emptyDB() 이전)에 남겨두는 __preReset_ /
- * __preDeleteAccount_ 백업의 스캔 — __corrupt_*와 같은 CORRUPT_BACKUP_MAX_AGE_MS 보존기간을
- * 재사용한다. 두 wipe 함수가 grace 타이머가 끝날 때(되돌리지 않았을 때)나 undoToast로 되돌릴 때
- * 이미 자기 백업 키를 지우므로, 여기서 걸리는 건 '탭 종료/크래시로 grace 타이머 자체가 못 끝난'
- * 경우뿐이다 — __corrupt_*(cycle323)보다도 더 치명적인(단일 레코드가 아니라 계정 전체) 장애
- * 경로의 복구 수단이라, 백업이 이미 유효한 전체 DB JSON이라는 점을 살려 download가 아니라
- * proceedWithBackupObj()(일반 백업 파일 복원과 동일한 확인+6초 undo 경로)로 1클릭 복구를
- * 제공한다(app-evolve cycle328 critique/advance). */
+/* doResetAll()/doDeleteAccount()/proceedWithBackupObj()가 wipe·복원 직전(실제 DB 교체 이전)에
+ * 남겨두는 __preReset_ / __preDeleteAccount_ / __preRestore_ 백업의 스캔 — __corrupt_*와 같은
+ * CORRUPT_BACKUP_MAX_AGE_MS 보존기간을 재사용한다. 세 함수 모두 grace 타이머가 끝날 때(되돌리지
+ * 않았을 때)나 undoToast로 되돌릴 때 이미 자기 백업 키를 지우므로, 여기서 걸리는 건 '탭 종료/크래시로
+ * grace 타이머 자체가 못 끝난' 경우뿐이다 — __corrupt_*(cycle323)보다도 더 치명적인(단일 레코드가
+ * 아니라 계정 전체) 장애 경로의 복구 수단이라, 백업이 이미 유효한 전체 DB JSON이라는 점을 살려
+ * download가 아니라 proceedWithBackupObj()(일반 백업 파일 복원과 동일한 확인+6초 undo 경로)로
+ * 1클릭 복구를 제공한다(app-evolve cycle328 critique/advance, __preRestore_는 cycle329). */
 function scanWipeBackupKeys(){
  WIPE_BACKUP_KEYS=[];
  if(!STORAGE_OK)return;
@@ -2641,6 +2641,7 @@ function scanWipeBackupKeys(){
   const all=[
    ...findCorruptBackupKeys(keys,dataKey(),'__preReset_').map(k=>Object.assign({},k,{kind:'preReset'})),
    ...findCorruptBackupKeys(keys,dataKey(),'__preDeleteAccount_').map(k=>Object.assign({},k,{kind:'preDeleteAccount'})),
+   ...findCorruptBackupKeys(keys,dataKey(),'__preRestore_').map(k=>Object.assign({},k,{kind:'preRestore'})),
   ].sort((a,b)=>b.ts-a.ts);
   const kept=pruneOldCorruptKeys(all,Date.now(),CORRUPT_BACKUP_MAX_AGE_MS);
   all.filter(k=>!kept.includes(k)).forEach(k=>{try{localStorage.removeItem(k.key)}catch(e){}});
@@ -9882,7 +9883,14 @@ function restoreBackup(obj){
 function proceedWithBackupObj(raw,onDone){
  const{data:obj,fixedCount,droppedCount,rangeCount}=sanitizeBackup(raw);
  confirmSheet('데이터 복원','현재 데이터를 백업 파일로 교체할까요?<br><span style="color:var(--text-2);font-size:13px">복원 후 6초 안에는 되돌릴 수 있어요.</span>','복원',()=>{
-  let prev;try{prev=restoreBackup(obj)}catch(err){toast('손상된 백업 파일이라 복원할 수 없어요');return}
+  /* doResetAll/doDeleteAccount와 동일한 wipe-직전 백업 패턴(app-evolve cycle328) — restoreBackup()이
+   * DB를 즉시 교체하므로, 교체 전 데이터를 prev 메모리 클로저 하나와 6초짜리 undoToast grace에만
+   * 맡기지 않고 __preRestore_ localStorage 키로도 최선 노력 저장해 둔다. 복원은 기기 교체·재설치
+   * 시 거의 항상 거치는 경로라 reset/deleteAccount보다 발생 빈도가 더 높다(app-evolve cycle329
+   * critique/advance). */
+  const backupKey=dataKey()+'__preRestore_'+Date.now();
+  try{localStorage.setItem(backupKey,JSON.stringify(DB))}catch(e){}
+  let prev;try{prev=restoreBackup(obj)}catch(err){try{localStorage.removeItem(backupKey)}catch(e){}toast('손상된 백업 파일이라 복원할 수 없어요');return}
   /* doResetAll과 동일: 안내한 6초 되돌리기 창이 끝나기 전엔 클라우드에 push하지 않는다 */
   save({deferCloudPush:true});invalidateBalances();renderCurrent();
   /* restoreWipeBackup()이 wipe 직전 백업(__preReset_ / __preDeleteAccount_) localStorage 키를
@@ -9890,11 +9898,11 @@ function proceedWithBackupObj(raw,onDone){
    * 남는다(app-evolve cycle328 critique/advance). 평문 백업 파일 가져오기(doImportPinSubmit 등)는
    * 넘기지 않아 기존 동작과 동일하다. */
   if(typeof onDone==='function')onDone();
-  const restorePushT=setTimeout(scheduleCloudPush,6000);
+  const restorePushT=setTimeout(()=>{scheduleCloudPush();try{localStorage.removeItem(backupKey)}catch(e){}},6000);
   const notes=[];if(fixedCount)notes.push(`값 ${fixedCount}건 보정`);if(droppedCount)notes.push(`${droppedCount}건 제외`);
   if(rangeCount)notes.push(`날짜 범위를 벗어난 ${rangeCount}건은 내역엔 남지만 잔액엔 반영 안 돼요`);
   const msg=notes.length?`데이터를 복원했어요 · ${notes.join(', ')}`:'데이터를 복원했어요';
-  undoToast(msg,()=>{clearTimeout(restorePushT);DB=prev;save();invalidateBalances();renderCurrent();toast('되돌렸어요')});
+  undoToast(msg,()=>{clearTimeout(restorePushT);try{localStorage.removeItem(backupKey)}catch(e){}DB=prev;save();invalidateBalances();renderCurrent();toast('되돌렸어요')});
  });
 }
 /* doExport()가 만든 {v:1,salt,iv,ct} 암호화 백업을 복원할 때 PIN을 받는 시트(app-evolve cycle289
@@ -11507,10 +11515,10 @@ function homeAlertCard(al){
      <div class="ha-s">예전에 저장이 깨졌을 때 남은 원본이에요 · 눌러서 파일로 받아보세요</div></div>
    <button class="txt-btn" style="flex-shrink:0;padding:6px 10px" onclick="event.stopPropagation();dismissCorruptBackup()">지우기</button></div>`;
  if(al.kind==='wipeBackup'){
-  const isDelete=al.mostRecentKind==='preDeleteAccount';
+  const label=al.mostRecentKind==='preDeleteAccount'?'탈퇴':al.mostRecentKind==='preRestore'?'복원':'초기화';
   return `<div class="home-alert mat">
    <div class="ha-ic">${svg('alert')}</div>
-   <div class="ha-b" tabindex="0" role="button" aria-label="${isDelete?'계정 탈퇴':'전체 초기화'} 직전 데이터를 찾았어요 · 눌러서 복구" onclick="restoreWipeBackup()" onkeydown="rowKeydown(event,restoreWipeBackup)"><div class="ha-t">${isDelete?'탈퇴':'초기화'} 직전 데이터를 찾았어요${al.count>1?` (${al.count}개)`:''}</div>
+   <div class="ha-b" tabindex="0" role="button" aria-label="${label} 직전 데이터를 찾았어요 · 눌러서 복구" onclick="restoreWipeBackup()" onkeydown="rowKeydown(event,restoreWipeBackup)"><div class="ha-t">${label} 직전 데이터를 찾았어요${al.count>1?` (${al.count}개)`:''}</div>
      <div class="ha-s">앱을 닫아서 되돌리기 창을 놓쳤나봐요 · 눌러서 복구하세요</div></div>
    <button class="txt-btn" style="flex-shrink:0;padding:6px 10px" onclick="event.stopPropagation();dismissWipeBackup()">지우기</button></div>`;
  }
