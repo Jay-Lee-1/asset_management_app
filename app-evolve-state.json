@@ -1,15 +1,8 @@
 {
   "cycle": 333,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 328,
-      "phase": "review",
-      "timestamp": "2026-11-08T21:07:50.825Z",
-      "summary": "cycle328 develop 커밋(70ee4fd, delGoal이 DB.trashGoals에 담기지 않던 공백 수정)을 검토. 구현이 deleteGoalsUndo와 정확히 동일한 패턴임을 확인. node test/run.js 재실행 3199/3199 통과. 실제 버그 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 328,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-10T18:05:00.000Z",
       "summary": "normalizeCsvDateCell(CSV 가져오기 날짜 정규화, logic.js)이 점 뒤에 공백이 들어간 한국식 표기(\"2026. 1. 5\", 엑셀 ko-KR 짧은 날짜 형식에서 흔함)를 처리하지 못하던 공백을 고쳤다 — 기존 로직은 날짜/시간을 떼어내려고 공백으로 먼저 split했는데, 이 표기는 날짜 자체에 공백이 들어있어 \"2026.\"에서 바로 잘려 월/일을 통째로 잃고 매치 실패 → error:'date'로 조용히 빠졌다(cycle288/cycle311과 같은 버그 클래스, 날짜 안에 공백이 섞인 경우는 지금까지 비어 있었음). 공백split 전에 점 구분자 사이 공백을 허용하는 패턴을 전체 문자열에 먼저 시도하도록 수정(끝에 붙는 마침표도 선택적으로 허용), 매치 안 되면 기존 로직으로 그대로 폴백해 기존 동작은 전혀 바뀌지 않는다. 테스트 2건 추가(순수 함수 단위테스트 + mapGenericCsvRow 종단 테스트, 달력상 존재하지 않는 날짜는 여전히 걸러짐도 확인) — node test/run.js 3242->3244/3244 통과. node --check logic.js/sw.js/test/run.js 통과. APP_VERSION 1.47.406->1.47.407, sw.js CACHE v673->v674.",
+      "commit": null
+    },
+    {
+      "cycle": 333,
+      "phase": "review",
+      "timestamp": "2026-11-10T19:10:18.875Z",
+      "summary": "cycle333 develop 커밋(493fbb1, normalizeCsvDateCell 한국식 점+공백 날짜 표기 수정)을 검토. 새 정규식이 csvDateValid의 최종 캘린더 검증을 우회하지 않음을 확인(여전히 new Date() 라운드트립으로 걸러짐, 2026. 2. 30 케이스 테스트로 커버됨). 공백 없는 기존 포맷(\"2026.1.5\")도 \\\\s*가 0개 공백을 허용해 동일하게 매치되어 회귀 없음. node test/run.js 재실행 3244/3244 통과. 실제 버그 없음(state.json만 커밋).",
       "commit": null
     }
   ]
