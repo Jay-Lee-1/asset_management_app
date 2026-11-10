@@ -26242,6 +26242,54 @@ test('mergeOwnerInto: 튜토리얼 모드 중에는 twGuard가 막아서 실제�
   assert.strictEqual(sandbox.DB.assets[0].owner, '아빠');
   sandbox.TWi = -1;
 });
+/* doRenameOwner(5335행)는 이름변경 시 DB.settings.settle(정산 당사자 설정)의 ownerA/ownerB도
+ * 따라가게 하는데, mergeOwnerInto는 ST.assetOwner 등 다른 모든 '귀속 이름을 들고 있는 필드'는
+ * from->toName으로 옮기면서도 이 줄만 빠뜨리고 있었다 — 정산의 두 당사자 중 한쪽을 다른 귀속에
+ * 합치면 settleConfigured()가 사라진 from을 DB.owners에서 못 찾아 정산 설정이 조용히 통째로
+ * 꺼지던 버그였다(app-evolve cycle334 develop). */
+test('mergeOwnerInto: DB.settings.settle의 ownerA/ownerB가 from을 보고 있었다면 toName으로 함께 옮겨간다(doRenameOwner와 동일한 규칙)', () => {
+  sandbox.DB = { owners: ['나', '아빠', '배우자'], assets: [], goals: [], settings: { settle: { ownerA: '아빠', ownerB: '배우자', ratioA: 60 } } };
+  sandbox.mergeOwnerInto(1, '나');
+  assert.deepStrictEqual(sandbox.DB.settings.settle, { ownerA: '나', ownerB: '배우자', ratioA: 60 }, 'ownerA가 from이면 toName으로, ratioA는 그대로 보존돼야 함');
+});
+test('mergeOwnerInto: settle.ownerB가 from이어도 동일하게 toName으로 옮겨간다', () => {
+  sandbox.DB = { owners: ['나', '아빠', '배우자'], assets: [], goals: [], settings: { settle: { ownerA: '배우자', ownerB: '아빠', ratioA: 40 } } };
+  sandbox.mergeOwnerInto(1, '나');
+  assert.deepStrictEqual(sandbox.DB.settings.settle, { ownerA: '배우자', ownerB: '나', ratioA: 40 });
+});
+test('mergeOwnerInto: 정산의 두 당사자(ownerA/ownerB)를 서로 합치면 ownerA===ownerB가 되어 정산 자체가 무의미해지므로 settle을 꺼버린다', () => {
+  sandbox.DB = { owners: ['아빠', '배우자'], assets: [], goals: [], settings: { settle: { ownerA: '아빠', ownerB: '배우자', ratioA: 50 } } };
+  sandbox.mergeOwnerInto(0, '배우자'); // '아빠'(settle.ownerA)를 '배우자'(settle.ownerB)에 합침
+  assert.strictEqual(sandbox.DB.settings.settle, null);
+});
+test('mergeOwnerInto: settle이 설정돼 있어도 양쪽 모두 합치기 당사자(from)와 무관하면 손대지 않는다', () => {
+  const settle = { ownerA: '나', ownerB: '엄마', ratioA: 50 };
+  sandbox.DB = { owners: ['나', '엄마', '아빠', '배우자'], assets: [], goals: [], settings: { settle } };
+  sandbox.mergeOwnerInto(3, '아빠'); // '배우자'를 '아빠'에 합침 — settle과 무관
+  assert.strictEqual(sandbox.DB.settings.settle, settle, '참조 그대로 유지(새 객체로 바뀌지도 않아야 함)');
+});
+test('mergeOwnerInto: DB.settings가 아예 없으면(정산 미사용) settle 관련 로직을 건드리지 않고 그대로 통과한다', () => {
+  sandbox.DB = { owners: ['나', '아빠'], assets: [], goals: [] };
+  assert.doesNotThrow(() => sandbox.mergeOwnerInto(1, '나'));
+  assert.strictEqual(sandbox.DB.settings, undefined);
+});
+test('mergeOwnerInto: undoToast로 되돌리면 DB.settings.settle도 합치기 전(ownerA가 from이던) 상태로 복원된다', () => {
+  sandbox.DB = { owners: ['나', '아빠', '배우자'], assets: [], goals: [], settings: { settle: { ownerA: '아빠', ownerB: '배우자', ratioA: 60 } } };
+  sandbox.mergeOwnerInto(1, '나');
+  assert.deepStrictEqual(sandbox.DB.settings.settle, { ownerA: '나', ownerB: '배우자', ratioA: 60 });
+  sandbox.lastUndo.undoFn();
+  // prevSettle이 vm 컨텍스트 안에서 Object.assign으로 만들어지는 새 객체라(mergeOwnerInto의 nwHistory
+  // 합산 케이스와 동일한 realm 차이, 위 "DB.nwHistory의 byOwner는..." 테스트 주석 참고) deepStrictEqual이
+  // 내용은 같아도 프로토타입 차이로 실패한다 — JSON 라운드트립으로 realm을 벗겨내고 비교한다.
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.DB.settings.settle)), { ownerA: '아빠', ownerB: '배우자', ratioA: 60 }, '되돌리면 settle도 원래 ownerA(아빠)로 복원돼야 함');
+});
+test('mergeOwnerInto: 정산 당사자를 서로 합쳐 settle이 null로 꺼진 뒤 undoToast로 되돌리면 원래 settle 설정이 되살아난다', () => {
+  sandbox.DB = { owners: ['아빠', '배우자'], assets: [], goals: [], settings: { settle: { ownerA: '아빠', ownerB: '배우자', ratioA: 50 } } };
+  sandbox.mergeOwnerInto(0, '배우자');
+  assert.strictEqual(sandbox.DB.settings.settle, null);
+  sandbox.lastUndo.undoFn();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.DB.settings.settle)), { ownerA: '아빠', ownerB: '배우자', ratioA: 50 });
+});
 
 /* ---------- mergeOwnerInto의 wipe-직전 백업(__preMergeOwner_): mergeAssetInto/mergeCatInto와
  * 동일한 "전체 DB best-effort 스냅샷" 패턴 — 귀속 합치기는 자산·목표의 owner와 nwHistory.byOwner를

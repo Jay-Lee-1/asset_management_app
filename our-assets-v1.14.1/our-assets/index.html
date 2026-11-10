@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.408';
+const APP_VERSION='1.47.409';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -5377,6 +5377,23 @@ function mergeOwnerInto(i,toName){if(twGuard())return;
  const hadPlanOwner=ST.plan.owner===from;if(hadPlanOwner)ST.plan.owner=toName;
  const hadSpendOwner=ST.spendOwner===from;if(hadSpendOwner)ST.spendOwner=toName;
  const hadHistOwner=ST.hist&&ST.hist.owner===from;if(hadHistOwner)ST.hist.owner=toName;
+ /* doRenameOwner(5335행)는 이름변경 시 DB.settings.settle(정산 설정)의 ownerA/ownerB도 따라가게
+  * 하는데, 합치기(mergeOwnerInto)는 그 사연을 그대로 갖고 있으면서도(둘 다 '귀속 이름이 바뀌면
+  * 정산 설정도 따라가야 한다') 지금까지 이 줄만 빠뜨리고 있었다 — 정산의 두 당사자 중 한 쪽을
+  * 다른 귀속에 합치면 settleConfigured()가 사라진 from을 DB.owners에서 찾지 못해 정산 자체가
+  * 조용히 꺼져버리고(화면엔 '정산 설정하기'만 다시 뜸), 그동안 쌓아온 ownerA/ownerB/ratioA 설정을
+  * 사용자가 다시 입력해야 했다(app-evolve cycle334 develop). ownerA/ownerB가 합치기로 똑같은
+  * 이름이 되는 경우(정산의 두 당사자를 서로 합친 경우)는 '내 돈 vs 상대 돈' 구분 자체가
+  * 사라지므로 정산을 그대로 끈다(settle=null) — ratioA만 남기면 같은 사람을 상대로 정산하라는
+  * 뜻이 되어 의미가 없다. */
+ const settle=DB.settings&&DB.settings.settle;
+ const settleTouched=!!(settle&&(settle.ownerA===from||settle.ownerB===from));
+ const prevSettle=settleTouched?Object.assign({},settle):null;
+ if(settleTouched){
+  if(settle.ownerA===from)settle.ownerA=toName;
+  if(settle.ownerB===from)settle.ownerB=toName;
+  if(settle.ownerA===settle.ownerB)DB.settings.settle=null;
+ }
  const nwChanges=[];
  (DB.nwHistory||[]).forEach(h=>{
   if(h.byOwner&&from in h.byOwner){
@@ -5398,6 +5415,7 @@ function mergeOwnerInto(i,toName){if(twGuard())return;
   if(hadPlanOwner)ST.plan.owner=from;
   if(hadSpendOwner)ST.spendOwner=from;
   if(hadHistOwner)ST.hist.owner=from;
+  if(settleTouched){DB.settings=DB.settings||{};DB.settings.settle=prevSettle}
   nwChanges.forEach(({h,fromVal,hadTo,toBefore})=>{h.byOwner=h.byOwner||{};h.byOwner[from]=fromVal;if(hadTo)h.byOwner[toName]=toBefore;else delete h.byOwner[toName]});
   DB.owners.splice(i,0,from);
   delete DB.deletedIds[ownerTombKey(from)];

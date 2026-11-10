@@ -1,6 +1,6 @@
 {
   "cycle": 334,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
@@ -141,6 +141,13 @@
       "phase": "advance",
       "timestamp": "2026-11-10T21:11:26.172Z",
       "summary": "critique(cycle333) 계획대로 카테고리 합치기(mergeCatInto)·귀속 합치기(mergeOwnerInto)의 wipe-직전 데이터 소실 경로를 막았다. mergeAssetInto(cycle332)와 동일한 패턴을 복붙 — 각 함수 맨 앞에서 __preMergeCat_/__preMergeOwner_ localStorage 키로 전체 DB를 백업, touchSave 이후 6초 grace 타이머로 정리, undoToast 콜백에서 즉시 clearTimeout+removeItem. logic.js의 wipeBackupKindLabel에 두 kind를 '합치기'로 매핑, index.html의 scanWipeBackupKeys/WIPE_BACKUP_KEYS 주석에 여섯·일곱 번째 kind로 확장(homeAlertCard/restoreWipeBackup/dismissWipeBackup은 kind 분기가 이미 범용이라 추가 변경 불필요). 테스트: 실행형 백업 생성/grace-취소 테스트 2건씩(카테고리·귀속 합쳐 4건) + findCorruptBackupKeys/wipeBackupKindLabel 기존 테스트에 새 kind 케이스 추가 — node test/run.js 3244->3248/3248 통과. node --check logic.js/sw.js/test/run.js 통과. APP_VERSION 1.47.407->1.47.408, sw.js CACHE v674->v675. cycle332 critique가 발견한 \"전체 DB 변경이 undoToast 6초 메모리 클로저 하나에만 의존\" 버그 클래스(merge 경로)를 모두 마저 닫았다.",
+      "commit": null
+    },
+    {
+      "cycle": 334,
+      "phase": "develop",
+      "timestamp": "2026-11-10T22:10:00.000Z",
+      "summary": "doRenameOwner(5335행)는 귀속 이름변경 시 DB.settings.settle(정산 당사자 설정)의 ownerA/ownerB도 따라가게 하는데, 같은 패턴을 재사용하는 mergeOwnerInto(귀속 합치기)만 이 줄을 빠뜨리고 있던 공백을 고쳤다 — 정산의 두 당사자 중 한쪽을 다른 귀속에 합치면 settleConfigured()가 사라진 from을 DB.owners에서 못 찾아 정산 설정이 조용히 통째로 꺼지고, 쌓아둔 ownerA/ownerB/ratioA를 다시 입력해야 했다. ownerA/ownerB를 서로 합쳐 같은 이름이 되는 경우(정산 당사자끼리 합침)는 '내 돈 vs 상대 돈' 구분 자체가 사라지므로 settle을 null로 꺼버리도록 가드도 추가, undoToast 되돌리기에서 settle도 원래 상태로 복원. 테스트 8건 추가(ownerA/ownerB 각각 from인 경우, 양쪽 합쳐 null로 꺼지는 경우, settle과 무관한 합치기는 참조까지 그대로 유지, DB.settings 없음, undo 복원 2건) — node test/run.js 3248->3255/3255 통과. node --check logic.js/sw.js 통과. APP_VERSION 1.47.408->1.47.409, sw.js CACHE v675->v676.",
       "commit": null
     }
   ]
