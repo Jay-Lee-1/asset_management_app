@@ -1,7 +1,11 @@
 {
   "cycle": 332,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "자산/카테고리/소유자 합치기(merge)가 undoToast 6초 메모리 클로저에만 의존해 되돌릴 수단이 없는 공백 — wipe-직전 백업 패턴을 merge에도 적용",
+    "why": "doMergeAssets(index.html ~4640-4730), 카테고리 합치기(~8014-8161), 소유자 합치기(~5304-5420) 세 함수 모두 'from' 레코드를 즉시 splice/삭제하고 qty/costBasis를 비가역적으로 합산한 뒤(자산 merge는 to.acquiredAt을 아예 버림), 복구를 6초 undoToast 클로저 하나에만 맡긴다. cycle328-330이 이미 고친 doResetAll/doDeleteAccount/restoreBackup/archiveTxnsBefore와 정확히 같은 버그 클래스(전체 DB 변경이 메모리 클로저 하나에만 의존)인데, merge 세 경로는 아직 __preXxx_ 백업이 없다. 사용자가 토스트 6초 내에 반응 못 하면(앱 백그라운드 전환, 화면 잠금 등) 자산/카테고리/소유자 데이터가 흔적 없이 영구 합쳐진다 — 특히 카테고리 합치기는 수백 건의 거래/반복거래 category 필드를 일괄 재할당하므로 피해 범위가 크다.",
+    "approach": "cycle328-330이 쓴 __preReset_/__preDeleteAccount_/__preRestore_/__preArchive_ 패턴을 그대로 재사용해 __preMergeAsset_/__preMergeCat_/__preMergeOwner_ 세 번째~다섯 번째 kind로 확장한다. 각 merge 함수 안의 DB 변경 직전에 영향받는 데이터(from 레코드 전체, to의 변경 전 필드, 재할당된 txn/rec id와 원래 category/owner 값)를 JSON으로 localStorage에 먼저 쓴 뒤 merge를 수행한다. wipeBackupKindLabel(kind) 헬퍼(cycle330에서 logic.js에 추출)에 세 kind 라벨을 추가하고, homeAlertCard/restoreWipeBackup/dismissWipeBackup이 이미 kind 분기로 돼 있으므로 그 삼항에 새 kind를 끼워 넣는 식으로 재사용한다. findCorruptBackupKeys의 suffix 파라미터도 이미 범용화돼 있으니 그대로 쓴다. 범위가 크면 이번 사이클은 자산 merge(doMergeAssets) 하나만 먼저 적용하고 카테고리/소유자 merge는 다음 critique가 재발견하도록 남겨도 된다(develop처럼 안전하게 끝낼 수 있는 범위로 축소). 테스트는 merge 백업 생성/kind 라벨/restore 함수를 node test/run.js에 추가."
+  },
   "history": [
     {
       "cycle": 328,
@@ -127,6 +131,13 @@
       "phase": "review",
       "timestamp": "2026-11-10T15:05:00.000Z",
       "summary": "cycle332 develop 커밋(5cb0e40, goalsToCSV 생성일 UTC->로컬 날짜 수정)을 검토. localDateStr 헬퍼가 todayStr()과 동일한 getFullYear/getMonth/getDate 패턴을 쓰고 goalsToCSV 내부에 스코프돼 이름 충돌이 없음을 확인. 반올림/타임존 경계(America/New_York, UTC 자정을 넘나드는 instant) 테스트가 실제 버그를 정확히 재현함을 확인. node test/run.js 재실행 3240/3240 통과. 실제 버그 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 332,
+      "phase": "critique",
+      "timestamp": "2026-11-10T16:08:00.000Z",
+      "summary": "cycle328-330이 고친 '전체 DB 변경이 undoToast 6초 메모리 클로저 하나에만 의존' 버그 클래스가 doMergeAssets(자산 합치기, ~4640-4730), 카테고리 합치기(~8014-8161), 소유자 합치기(~5304-5420) 세 merge 경로에는 아직 남아있음을 확인했다(자산 merge는 to.acquiredAt을 아예 버리고, 카테고리 merge는 수백 건의 거래 category를 재할당하는데도 __preXxx_ 백업이 전혀 없음). pending_advance_plan에 __preReset_/__preRestore_/__preArchive_ 패턴을 __preMergeAsset_/__preMergeCat_/__preMergeOwner_로 확장하는 구체 계획 저장(범위가 크면 이번 사이클은 doMergeAssets 하나만 먼저). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
