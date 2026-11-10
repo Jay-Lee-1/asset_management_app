@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.402';
+const APP_VERSION='1.47.403';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -1758,7 +1758,7 @@ const comma=n=>Math.round(n||0).toLocaleString('ko-KR');
  * 없어졌다"고 오해할 수 있었다. fx/stock은 보통 이보다 더 적은 소수 자릿수만 쓰므로(예: 0.1주,
  * 123.45달러) 8자리로 늘려도 trailing zero가 늘어나진 않는다(toLocaleString은 불필요한 끝자리
  * 0은 어차피 붙이지 않음) — 기존 동작과 호환되면서 crypto만 실제로 이득을 본다. */
-const commaQty=n=>Number.isInteger(n)?comma(n):(n||0).toLocaleString('ko-KR',{maximumFractionDigits:8}); /* 소수 보유수량(주식/외화/코인)은 반올림하지 않고 그대로 표시 */
+const commaQty=n=>Number.isInteger(n)?comma(n):(v=>v&&(s=>s==='0'||s==='-0'?(v<0?'-':'')+'0.00000001':s)(v.toLocaleString('ko-KR',{maximumFractionDigits:8}))||'0')(n||0); /* 소수 보유수량(주식/외화/코인)은 반올림하지 않고 그대로 표시. 단, 사토시(1e-8) 미만의 '더스트' 보유수량은 8자리 반올림으로도 "0"/"-0"이 되어 cycle219/222가 막았던 "코인이 없어졌다" 오인 버그가 8자리 경계에서 재발하므로, 0으로 보이지 않게 표시 가능한 최소 단위(0.00000001)로 대신 보여준다(app-evolve cycle331 develop) */
 const won=n=>(n<0?'-':'')+comma(Math.abs(n))+'원';
 const wonS=n=>(n>0?'+':n<0?'-':'')+comma(Math.abs(n))+'원';
 /* onclick만 있던 div 기반 행(자산/내역/반복거래 목록)에 키보드 접근성을 붙이는 공용 핸들러 — Enter/Space를 클릭과 동일하게 처리 */

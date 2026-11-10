@@ -2102,6 +2102,23 @@ test('commaQty: fx/stock처럼 소수 자릿수가 적은 값은 늘어난 정�
   assert.strictEqual(sandbox.commaQty(1.5), '1.5');
   assert.strictEqual(sandbox.commaQty(6.8), '6.8');
 });
+test('commaQty: 사토시(1e-8) 미만의 "더스트" 보유수량은 8자리 반올림으로 "0"이 되지 않고 최소 단위로 표시한다(app-evolve cycle331)', () => {
+  // maximumFractionDigits:8은 "반올림"이라 1e-8의 절반(5e-9) 미만인 더스트는 toLocaleString이
+  // "0.00000000"으로 반올림해 trailing zero를 뗀 "0"을 돌려준다 — cycle219/222가 4자리->8자리로
+  // 막았던 "보유수량이 사라진 것처럼 보이는" 오인이 8자리 경계에서 그대로 재발한다. assetEval은
+  // 원본 값을 그대로 곱해 평가액 자체는 틀리지 않으므로, 화면 표시만 0이 아닌 최소 표시 단위로 보정한다.
+  assert.strictEqual(sandbox.commaQty(0.000000004), '0.00000001');
+  assert.strictEqual(sandbox.commaQty(-0.000000004), '-0.00000001');
+});
+test('commaQty: 정확히 1e-8(사토시 1개)은 더스트 보정 없이 그대로 표시된다(경계값, 회귀 방지)', () => {
+  assert.strictEqual(sandbox.commaQty(0.00000001), '0.00000001');
+  assert.strictEqual(sandbox.commaQty(-0.00000001), '-0.00000001');
+});
+test('commaQty: 진짜 0/NaN/null은 더스트로 오인되어 가짜 "0.00000001"로 바뀌지 않는다(회귀 방지)', () => {
+  assert.strictEqual(sandbox.commaQty(0), '0');
+  assert.strictEqual(sandbox.commaQty(null), '0');
+  assert.strictEqual(sandbox.commaQty(NaN), '0');
+});
 
 /* ---------- budgetProgress: 카테고리별 예산 대비 지출 진행률 계산 ---------- */
 test('budgetProgress: 예산 미설정(0)이면 진행률은 항상 0이고 초과가 아니다', () => {
