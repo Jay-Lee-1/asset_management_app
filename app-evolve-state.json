@@ -1,15 +1,8 @@
 {
   "cycle": 330,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 325,
-      "phase": "develop",
-      "timestamp": "2026-11-08T08:00:00.000Z",
-      "summary": "recScheduleSameSlot(logic.js:1359, 반복거래 중복 탐지 slot 비교)에 직접 단위 테스트가 전혀 없던 공백을 발견해 고쳤다 — 지금까지는 findPossibleDuplicateRec을 거친 간접 테스트만 있었는데, 그 테스트들은 freq별 분기 하나당 한 경로씩만 지나고 !a.startDate||!b.startDate(널/undefined, line 1362)와 isNaN(da)||isNaN(db)(파싱되지만 유효하지 않은 날짜 문자열, line 1364)라는 서로 다른 두 폴백 분기 중 널 쪽만 커버했다 — cycle321/322/323/324 critique가 반복해서 저위험 보류로 남겨둔 항목. test/run.js에 recScheduleSameSlot()을 직접 호출하는 테스트 7건 추가: monthly day 일치/불일치, daily 항상 true, weekly 같은/다른 요일, biweekly 같은/다른 phase(14일 배수), yearly 같은/다른 월일, startDate null/undefined 폴백(기존 간접 테스트와 중복이지만 직접 호출로 재고정), 그리고 기존에 전혀 없던 파싱 불가 문자열('not-a-date') 폴백 2건(한쪽만 깨짐/양쪽 다 깨짐). 코드 로직 변경 없음(테스트 전용 추가, isNaN 분기가 이미 올바르게 day 비교로 폴백함을 직접 확인), index.html/sw.js 미변경이라 APP_VERSION/CACHE 버전업 불필요(cycle320/321 선례와 동일). node --check test/run.js 통과, node test/run.js 3137->3144/3144 통과, node --check logic.js/sw.js 통과.",
-      "commit": null
-    },
     {
       "cycle": 325,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-10T06:17:09.069Z",
       "summary": "dismissWipeBackup()의 '지우기' 버튼이 wipeBackup 홈 알림 카드(doResetAll/doDeleteAccount/proceedWithBackupObj가 wipe·복원 직전에 남긴 __preReset_/__preDeleteAccount_/__preRestore_ 전체 계정 백업, cycle328-329)의 유일한 복구 수단을 확인 없이 즉시 영구 삭제하던 공백을 발견해 고쳤다 — 코드를 직접 재확인: dismissCorruptBackup()은 단일 손상 레코드를 대상으로 하고 주 행동이 이미 '다운로드'라(지우기는 보조적) 확인 없이 지워도 손실이 적지만, dismissWipeBackup()이 지우는 백업은 자산·내역·반복·목표·카테고리·설정을 포함한 전체 계정 스냅샷의 유일한 남은 사본이라(앱을 닫아 undoToast 6초 grace도 놓친 뒤의 마지막 안전망) 한 번 지우면 doResetAll/doLogout류와 달리 되돌릴 방법이 전혀 없는데도 dismissPersistWarn처럼 플래그만 끄는 저위험 확인과 똑같이 바로 삭제했다. doResetAll/doLogout/proceedWithBackupObj가 쓰는 confirmSheet 패턴을 그대로 적용: WIPE_BACKUP_KEYS[0]가 없으면 조용히 return, 있으면 restoreWipeBackup()/homeAlertCard와 동일한 label 분기(preDeleteAccount→'탈퇴', preRestore→'복원', 그 외→'초기화')로 '{label} 백업 지우기' 확인 시트를 띄우고, '지우기'를 눌러야 실제로 localStorage.removeItem + WIPE_BACKUP_KEYS 비우기 + toast가 실행된다. dismissWipeBackup을 test/run.js의 FUNCTIONS에 새로 추가(기존엔 restoreWipeBackup/scanWipeBackupKeys와 함께 미등록 상태였음 — confirmSheet/renderCurrent/toast 기존 공유 스텁과 이미 선언된 WIPE_BACKUP_KEYS 전역만으로 로드 가능함을 확인). 테스트: [실행형] 확인 전엔 WIPE_BACKUP_KEYS/localStorage를 건드리지 않고 확인 시트만 띄우며, cb() 실행 후에야 모든 키를 removeItem하고 WIPE_BACKUP_KEYS를 비우는지(2) + 확인 시트 문구가 mostRecentKind별 label을 정확히 반영하고 WIPE_BACKUP_KEYS가 비어있으면 안 터지고 확인 시트도 안 띄우는지(1) = 2건 추가 — node test/run.js 3213->3215/3215 통과. node --check logic.js/sw.js/test/run.js 통과, index.html <script> 블록 추출검사는 기존과 동일한 1건의 기존 오탐(block1, HTML 주석 텍스트 오인, cycle311부터 이어짐, 내 변경이 있는 block3는 개별 파싱 통과)만 재확인됨, manifest.webmanifest JSON 유효성 통과. 사용자 체감 안전성 버그 수정이라 APP_VERSION 1.47.400->1.47.401, sw.js CACHE v667->v668.",
+      "commit": null
+    },
+    {
+      "cycle": 330,
+      "phase": "review",
+      "timestamp": "2026-11-10T07:05:00.000Z",
+      "summary": "cycle330 develop 커밋(e57bc0d, dismissWipeBackup이 confirmSheet 확인을 거치도록 수정)을 검토. diff를 라인 단위로 대조 — confirmSheet(title,msg,ok,cb) 시그니처와 호출부가 정확히 일치함을 index.html:10414의 실제 정의로 재확인, label 분기(preDeleteAccount→'탈퇴', preRestore→'복원', 그 외→'초기화')가 restoreWipeBackup/homeAlertCard가 쓰는 동일 분기와 문구까지 일치함을 대조. WIPE_BACKUP_KEYS[0]가 없을 때 조용히 return하는 가드, 확인 전에는 localStorage.removeItem/WIPE_BACKUP_KEYS 비우기가 전혀 일어나지 않고 cb() 실행 후에만 일어나는지 코드와 테스트 양쪽 확인. 유일한 호출부(index.html:11531, 홈 알림 카드 '지우기' 버튼)가 인자 없이 onclick=\"dismissWipeBackup()\"으로 호출되므로 시그니처 변경(인자 없음 유지)과 호환됨을 확인 — 다른 호출부 없음(grep 재확인). 추가된 테스트 2건이 구현과 정확히 대응함을 확인. node test/run.js 재실행 3215/3215 통과, node --check logic.js/sw.js/test/run.js 통과, APP_VERSION 1.47.401/CACHE v668 일치 재확인. 실제 버그 없음(state.json만 커밋).",
       "commit": null
     }
   ]
