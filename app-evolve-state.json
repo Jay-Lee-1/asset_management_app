@@ -1,15 +1,8 @@
 {
   "cycle": 330,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 324,
-      "phase": "advance",
-      "timestamp": "2026-11-08T07:13:23.883Z",
-      "summary": "critique(cycle324) 계획대로 자산 수량 변경/매도 기록(assetQtyLog) 삭제 '삭제한 수량기록(trashQtyLog)' 복구 기능을 구현했다. logic.js는 새 함수 없이 gcTrashTxns/mergeTrashTxns를 그대로 재사용(둘 다 {id,_deletedAt}만 가정해 qtyLog 전용 필드를 참조하지 않음). index.html: DB.trashQtyLog 신설(migrate 초기화+GC+live-id(DB.assetQtyLog 기준) 필터, mergeRemoteDataIntoLocal에 DB.assetQtyLog 병합 직후 trashTxns/trashAssets/trashRecs/trashGoals와 동일 패턴으로 배선, sanitizeBackup에 id&&assetId 기준 검증+prevQty/newQty/addedAmount/saleProceeds 클램프(min 0)+realizedGain 클램프(손실 음수 보존, min 없음)+_deletedAt 보정 추가), delAssetQtyLog가 삭제 즉시 기록 전체+_deletedAt을 DB.trashQtyLog에 저장(즉시 undo 콜백에서도 제거), 메뉴 '백업·데이터'에 '삭제한 수량기록' 행 추가, openAssetQtyLogTrashList()/restoreTrashQtyLog(id) 신설(openGoalTrashList/restoreTrashGoal과 동일 manage-row 패턴이지만, 자산별 화면이 아니라 모든 자산에 걸친 독립 메뉴 목록으로 구현 — 자산이 이미 영구 삭제됐어도 assetName 스냅샷/\"삭제된 자산\" 폴백으로 표시). restoreTrashQtyLog는 active 플래그가 없는 단순 레코드라 restoreTrashRec류의 재활성 가드는 불필요함을 확인, snapshotAssetName/unsnapshotAssetName/relinkDeletedAsset이 DB.trashQtyLog는 순회하지 않는 공백(표시전용·저위험)은 trashTxns/trashRecs와 동일하게 보류 확정. 테스트: delAssetQtyLog→trashQtyLog 저장/undo제거(2) + openAssetQtyLogTrashList/restoreTrashQtyLog(정렬+자산명/폴백/빈상태/정상복구/존재안함/twGuard, 6) + sanitizeBackup trashQtyLog 검증(id/assetId 없음·무효 통째 제거, qty류 클램프+realizedGain 손실보존, _deletedAt 보정, 비검증 필드 보존, 중복id, 5) + migrate trashQtyLog 초기화/GC/live-id필터(3) + mergeRemoteDataIntoLocal trashQtyLog 배선(2) + gcTrashTxns/mergeTrashTxns 재사용 확인(수량기록 모양 데이터, 1) = 19건 추가 — node test/run.js 3118->3137/3137 통과(DB 스키마 완전성 가드 테스트도 trashQtyLog 배선이 실제로 걸렸음을 자동 확인). node --check logic.js/sw.js/test/run.js 통과, manifest.webmanifest JSON 유효성 통과. 사용자 체감 기능 추가라 APP_VERSION 1.47.390->1.47.391, sw.js CACHE v657->v658. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 325,
       "phase": "develop",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-10T05:13:08.225Z",
       "summary": "critique(cycle329) 계획대로 백업 파일 복원(restoreBackup/proceedWithBackupObj)의 wipe-직전 데이터 소실 경로를 막았다. doResetAll/doDeleteAccount(cycle328)와 동일한 __preReset_/__preDeleteAccount_ 패턴을 __preRestore_ 세 번째 kind로 확장: proceedWithBackupObj의 confirmSheet 콜백 안, restoreBackup(obj) 호출 직전에 현재 DB를 dataKey()+'__preRestore_'+Date.now() 키로 best-effort 저장(try/catch, restoreBackup이 던지면 그 자리에서 바로 지움)하고, 기존 restorePushT=setTimeout(scheduleCloudPush,6000)를 '6초 뒤 scheduleCloudPush()+backupKey 제거'로 확장, undoToast 되돌리기 콜백에서도 clearTimeout 직후 backupKey 즉시 제거. scanWipeBackupKeys()의 배열에 findCorruptBackupKeys(keys,dataKey(),'__preRestore_')를 kind:'preRestore'로 합쳐 기존 정렬·GC 로직(함수 자체는 cycle328이 이미 suffix 파라미터화해 변경 불필요)에 자연히 포함되게 했다. homeAlertCard()의 wipeBackup 카드 문구를 isDelete?'탈퇴':'초기화' 두 갈래 삼항에서 mostRecentKind 기준 '탈퇴'/'복원'/'초기화' 세 갈래 삼항(label 변수)으로 바꿔 preRestore일 때 '복원 직전 데이터를 찾았어요'를 보여준다. restoreWipeBackup()은 kind와 무관하게 이미 proceedWithBackupObj(obj,onDone)을 그대로 재사용하므로 코드 변경 없이 그대로 동작(복구 자체도 '복원'이라 또 새 __preRestore_ 백업을 남기는 것은 안전하며 다음 grace가 끝나면 그 키도 정리됨). 테스트: findCorruptBackupKeys suffix 확장 기존 테스트에 __preRestore_ 케이스 추가(1) + homeAlertCard wipeBackup 카드 preReset/preDeleteAccount/preRestore 세 문구 전부(1) + proceedWithBackupObj 실행형(백업 쓰기+grace 완료 시 제거/클라우드 재푸시, 되돌리기 시 즉시 제거+재푸시 안 됨, 2) = 4건 추가 — node test/run.js 3210->3213/3213 통과(scanWipeBackupKeys/restoreWipeBackup 자체는 cycle323/328이 세운 기존 관례대로(scanCorruptBackupKeys와 동일하게 FUNCTIONS 추출·직접 단위테스트 대상이 아님) 하위 빌딩블록(findCorruptBackupKeys)과 소비자(homeAlertCard)만 검증). node --check logic.js/sw.js/test/run.js 통과, index.html <script> 블록 추출검사는 기존과 동일한 1건의 기존 오탐(block1, HTML 주석 텍스트 오인, cycle311부터 이어짐 — git stash로 변경 전과 동일함을 대조해 무관함을 재확인)만 재확인됨, manifest.webmanifest JSON 유효성 통과. cycle328이 전체 계정 wipe(초기화/탈퇴) 경로에 깐 안전장치를 복원(기기 교체·재설치 시 더 자주 쓰이는 경로) 경로까지 넓히는 사용자 체감 데이터 안전성 수정이라 APP_VERSION 1.47.399->1.47.400, sw.js CACHE v666->v667. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 330,
+      "phase": "develop",
+      "timestamp": "2026-11-10T06:17:09.069Z",
+      "summary": "dismissWipeBackup()의 '지우기' 버튼이 wipeBackup 홈 알림 카드(doResetAll/doDeleteAccount/proceedWithBackupObj가 wipe·복원 직전에 남긴 __preReset_/__preDeleteAccount_/__preRestore_ 전체 계정 백업, cycle328-329)의 유일한 복구 수단을 확인 없이 즉시 영구 삭제하던 공백을 발견해 고쳤다 — 코드를 직접 재확인: dismissCorruptBackup()은 단일 손상 레코드를 대상으로 하고 주 행동이 이미 '다운로드'라(지우기는 보조적) 확인 없이 지워도 손실이 적지만, dismissWipeBackup()이 지우는 백업은 자산·내역·반복·목표·카테고리·설정을 포함한 전체 계정 스냅샷의 유일한 남은 사본이라(앱을 닫아 undoToast 6초 grace도 놓친 뒤의 마지막 안전망) 한 번 지우면 doResetAll/doLogout류와 달리 되돌릴 방법이 전혀 없는데도 dismissPersistWarn처럼 플래그만 끄는 저위험 확인과 똑같이 바로 삭제했다. doResetAll/doLogout/proceedWithBackupObj가 쓰는 confirmSheet 패턴을 그대로 적용: WIPE_BACKUP_KEYS[0]가 없으면 조용히 return, 있으면 restoreWipeBackup()/homeAlertCard와 동일한 label 분기(preDeleteAccount→'탈퇴', preRestore→'복원', 그 외→'초기화')로 '{label} 백업 지우기' 확인 시트를 띄우고, '지우기'를 눌러야 실제로 localStorage.removeItem + WIPE_BACKUP_KEYS 비우기 + toast가 실행된다. dismissWipeBackup을 test/run.js의 FUNCTIONS에 새로 추가(기존엔 restoreWipeBackup/scanWipeBackupKeys와 함께 미등록 상태였음 — confirmSheet/renderCurrent/toast 기존 공유 스텁과 이미 선언된 WIPE_BACKUP_KEYS 전역만으로 로드 가능함을 확인). 테스트: [실행형] 확인 전엔 WIPE_BACKUP_KEYS/localStorage를 건드리지 않고 확인 시트만 띄우며, cb() 실행 후에야 모든 키를 removeItem하고 WIPE_BACKUP_KEYS를 비우는지(2) + 확인 시트 문구가 mostRecentKind별 label을 정확히 반영하고 WIPE_BACKUP_KEYS가 비어있으면 안 터지고 확인 시트도 안 띄우는지(1) = 2건 추가 — node test/run.js 3213->3215/3215 통과. node --check logic.js/sw.js/test/run.js 통과, index.html <script> 블록 추출검사는 기존과 동일한 1건의 기존 오탐(block1, HTML 주석 텍스트 오인, cycle311부터 이어짐, 내 변경이 있는 block3는 개별 파싱 통과)만 재확인됨, manifest.webmanifest JSON 유효성 통과. 사용자 체감 안전성 버그 수정이라 APP_VERSION 1.47.400->1.47.401, sw.js CACHE v667->v668.",
       "commit": null
     }
   ]

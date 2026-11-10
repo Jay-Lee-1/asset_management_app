@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.400';
+const APP_VERSION='1.47.401';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -2656,10 +2656,18 @@ function restoreWipeBackup(){
  if(!obj){toast('백업을 읽을 수 없어요');return}
  proceedWithBackupObj(obj,()=>{try{localStorage.removeItem(k.key)}catch(e){}scanWipeBackupKeys()});
 }
+/* dismissCorruptBackup()과 달리(단일 레코드, 주 행동이 '다운로드'라 지우기는 보조적) 이 카드가 지우는
+ * 백업은 복구 수단이 사라진 전체 계정 데이터(자산·내역·반복·목표·설정 전부)의 유일한 남은 사본이라
+ * 되돌릴 방법이 없다 — dismissPersistWarn류(플래그만 끄는 저위험 확인)와도 다르다. 그래서 바로
+ * 지우지 않고 confirmSheet로 한 번 더 확인한다(app-evolve cycle330 develop). */
 function dismissWipeBackup(){
- WIPE_BACKUP_KEYS.forEach(k=>{try{localStorage.removeItem(k.key)}catch(e){}});
- WIPE_BACKUP_KEYS=[];
- renderCurrent();toast('지웠어요');
+ const k=WIPE_BACKUP_KEYS[0];if(!k)return;
+ const label=k.kind==='preDeleteAccount'?'탈퇴':k.kind==='preRestore'?'복원':'초기화';
+ confirmSheet(`${label} 백업 지우기`,`${label} 직전 데이터 백업을 지우면 더 이상 되돌릴 방법이 없어요. 정말 지울까요?`,'지우기',()=>{
+  WIPE_BACKUP_KEYS.forEach(x=>{try{localStorage.removeItem(x.key)}catch(e){}});
+  WIPE_BACKUP_KEYS=[];
+  renderCurrent();toast('지웠어요');
+ });
 }
 /* head 최상단 동기 인라인 스크립트가 다음 boot 전에 읽어 첫 페인트의 테마/강조색 FOUC를 막는
  * 캐시(app-evolve cycle181 advance) — 세션/계정과 무관한 고정 키라 계정 전환 시 한 프레임만

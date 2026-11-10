@@ -257,6 +257,10 @@ const FUNCTIONS = [
   'recIsVarying', 'varyingRecs', 'fixShortfallDefaultDate', 'openFixShortfall', 'lastActualAmount', 'openQuickAmount', 'openQuickList',
   'backupDue', 'planNegatives', 'homeAlerts', 'updateAlerts', 'goPlanTo', 'openNegList',
   'openStaleMvReview', 'dismissStaleMv', 'pruneDismissedStaleMvIds',
+  // dismissWipeBackup(app-evolve cycle330 develop)에 confirmSheet 확인을 추가한 걸 실행형으로
+  // 검증하려면 로드가 필요하다 — confirmSheet/renderCurrent/toast 기존 공유 스텁만으로 충분하고,
+  // WIPE_BACKUP_KEYS는 위에서 이미 선언된 전역이라 추가 스텁이 필요 없다.
+  'dismissWipeBackup',
  'notifyAlertInfo', 'pickNotifyAlerts', 'pruneNotifiedIds', 'syncNotifyPermission', 'toggleNotifyMuteGroup',
   'catIconOf', 'catGlyph', 'openCatManage', 'openCatPicker', 'catFilteredGrid', 'catEmptyHtml', 'pkCatQInput', 'refreshPkCatList', 'moveCatBlob', 'pkPickCat',
   'openIconPicker', 'pickCatIcon',
@@ -34733,6 +34737,50 @@ test("homeAlertCard: wipeBackup 카드가 mostRecentKind에 따라 '초기화'/'
   [resetHtml, deleteHtml, restoreHtml].forEach(html => {
     assert.ok(html.includes('onclick="restoreWipeBackup()"'), 'wipeBackup 카드가 restoreWipeBackup()으로 연결되지 않음');
   });
+});
+
+/* ---------- dismissWipeBackup(): '지우기' 버튼이 wipeBackup 카드의 유일한 복구 수단(전체
+ * 계정 백업)을 바로 지워버리던 공백 — dismissCorruptBackup()(단일 레코드, 주 행동이 '다운로드')과
+ * 달리 이 백업은 지우면 영영 못 되돌리므로 doResetAll/doLogout 등과 같은 confirmSheet 확인을
+ * 한 번 거치게 한다(app-evolve cycle330 develop). ---------- */
+test('[실행형] dismissWipeBackup: 바로 지우지 않고 확인 시트를 띄우며, 확인을 눌러야 WIPE_BACKUP_KEYS를 비우고 지운다', () => {
+  const removeCalls = [];
+  sandbox.WIPE_BACKUP_KEYS = [{ key: 'acct__preReset_1', ts: 1, kind: 'preReset' }, { key: 'acct__preReset_0', ts: 0, kind: 'preReset' }];
+  sandbox.localStorage = { removeItem: (k) => removeCalls.push(k) };
+  sandbox.confirmSheetCalls = [];
+  sandbox.toastCalls = [];
+  try {
+    sandbox.dismissWipeBackup();
+    assert.strictEqual(sandbox.confirmSheetCalls.length, 1, '지우기 전 확인 시트를 띄우지 않음');
+    assert.strictEqual(removeCalls.length, 0, '확인 전에 벌써 백업을 지워버림(확인 없이 바로 실행)');
+    assert.strictEqual(sandbox.WIPE_BACKUP_KEYS.length, 2, '확인 전에 벌써 WIPE_BACKUP_KEYS를 비워버림');
+    sandbox.confirmSheetCalls[0].cb(); // '지우기' 확인 버튼을 누른 상태를 흉내냄
+    assert.deepStrictEqual(removeCalls, ['acct__preReset_1', 'acct__preReset_0'], '확인 후 WIPE_BACKUP_KEYS의 키를 전부 지우지 않음');
+    assert.strictEqual(sandbox.WIPE_BACKUP_KEYS.length, 0, '확인 후 WIPE_BACKUP_KEYS를 비우지 않음');
+  } finally {
+    sandbox.WIPE_BACKUP_KEYS = [];
+  }
+});
+test("[실행형] dismissWipeBackup: 확인 시트 문구가 mostRecentKind(WIPE_BACKUP_KEYS[0])에 따라 '초기화'/'탈퇴'/'복원'을 구분하고, 비어있으면 그냥 return한다", () => {
+  sandbox.localStorage = { removeItem: () => {} };
+  sandbox.confirmSheetCalls = [];
+  try {
+    sandbox.WIPE_BACKUP_KEYS = [{ key: 'acct__preDeleteAccount_1', ts: 1, kind: 'preDeleteAccount' }];
+    sandbox.dismissWipeBackup();
+    assert.match(sandbox.confirmSheetCalls[0].msg, /탈퇴 직전/, 'preDeleteAccount면 탈퇴 문구를 보여주지 않음');
+
+    sandbox.confirmSheetCalls = [];
+    sandbox.WIPE_BACKUP_KEYS = [{ key: 'acct__preRestore_1', ts: 1, kind: 'preRestore' }];
+    sandbox.dismissWipeBackup();
+    assert.match(sandbox.confirmSheetCalls[0].msg, /복원 직전/, 'preRestore면 복원 문구를 보여주지 않음');
+
+    sandbox.confirmSheetCalls = [];
+    sandbox.WIPE_BACKUP_KEYS = [];
+    assert.doesNotThrow(() => sandbox.dismissWipeBackup(), 'WIPE_BACKUP_KEYS가 비어있으면 터지지 않아야 함');
+    assert.strictEqual(sandbox.confirmSheetCalls.length, 0, '비어있는데도 확인 시트를 띄움');
+  } finally {
+    sandbox.WIPE_BACKUP_KEYS = [];
+  }
 });
 
 /* ---------- proceedWithBackupObj(onDone): restoreWipeBackup()(index.html)이 wipe 직전 백업
