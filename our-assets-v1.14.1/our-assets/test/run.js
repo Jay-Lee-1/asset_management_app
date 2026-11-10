@@ -13072,6 +13072,66 @@ test('mergeAssetInto: undoToast로 되돌리면 자산 목록/잔액/거래·반
   assert.strictEqual(r1.toAssetId, 'a1', '반복거래 참조도 원래 자산으로 복원되어야 함');
   assert.strictEqual(sandbox.DB.deletedIds.a1, undefined, '되돌리면 톰스톤도 지워져야 함');
 });
+/* ---------- mergeAssetInto의 wipe-직전 백업(__preMergeAsset_): doResetAll/doDeleteAccount/
+ * proceedWithBackupObj/archiveTxnsBefore(app-evolve cycle328-330)가 고친 것과 완전히 같은 모양으로
+ * 자산 합치기(특히 to.acquiredAt을 지우고 수량·costBasis를 비가역적으로 합산)를 undoToast 6초짜리
+ * 메모리 클로저 하나에만 맡기고 있었다 — 탭 종료/크래시로 grace를 놓치면 흔적 없이 영구 소실된다.
+ * __preMergeAsset_ localStorage 키로도 최선 노력 백업해 두고, grace가 되돌림 없이 끝나거나
+ * undoToast로 되돌리면(둘 다 더 필요 없어진 시점) 바로 지운다(app-evolve cycle332 critique/advance). ---------- */
+test('[실행형] mergeAssetInto: 합치기 직전 DB를 dataKey()+__preMergeAsset_+타임스탬프 키로 백업하고, grace가 되돌림 없이 끝나면 지운다', () => {
+  const dbOrig = sandbox.DB, dataKeyOrig = sandbox.dataKey, lsOrig = sandbox.localStorage;
+  const setTimeoutOrig = sandbox.setTimeout;
+  sandbox.TWi = -1;
+  const a1 = { id: 'a1', name: '통장1', type: 'cash', baseAmount: 1000 };
+  const a2 = { id: 'a2', name: '통장2', type: 'cash', baseAmount: 2000 };
+  const originalDb = { assets: [a1, a2], txns: [], recurrences: [] };
+  const originalDbSnapshot = JSON.parse(JSON.stringify(originalDb)); // mergeAssetInto가 DB.assets를 그 자리에서(in-place) 고치므로, 비교 기준은 호출 전에 미리 떠 둬야 한다
+  sandbox.DB = originalDb;
+  sandbox.dataKey = () => 'acct4';
+  const setCalls = [], removeCalls = [];
+  sandbox.localStorage = { getItem: () => null, setItem: (k, v) => setCalls.push([k, v]), removeItem: (k) => removeCalls.push(k) };
+  let capturedFn = null;
+  sandbox.setTimeout = (fn) => { capturedFn = fn; return 'merge-asset-timer'; };
+  sandbox.lastUndo = null;
+  try {
+    sandbox.mergeAssetInto('a1', 'a2');
+    assert.ok(setCalls.length >= 1, '합치기 직전 DB를 localStorage에 백업하지 않음');
+    const [backupKey, backupVal] = setCalls[0];
+    assert.match(backupKey, /^acct4__preMergeAsset_\d+$/, '백업 키가 dataKey()+__preMergeAsset_+타임스탬프 모양이 아님');
+    assert.deepStrictEqual(JSON.parse(backupVal), originalDbSnapshot, '백업된 값이 합치기 직전 DB와 다름');
+    assert.strictEqual(removeCalls.length, 0, 'grace가 끝나기도 전에 백업을 지움');
+    assert.ok(typeof capturedFn === 'function', '6초 뒤 백업을 지우는 타이머를 예약하지 않음');
+    capturedFn(); // 되돌리지 않은 채 6초 grace가 끝난 상황을 흉내냄
+    assert.deepStrictEqual(removeCalls, [backupKey], 'grace가 끝났는데도 백업 키를 지우지 않아 유령 백업으로 남음');
+  } finally {
+    sandbox.DB = dbOrig; sandbox.dataKey = dataKeyOrig; sandbox.localStorage = lsOrig; sandbox.setTimeout = setTimeoutOrig;
+  }
+});
+test('[실행형] mergeAssetInto: 6초 안에 되돌리면 __preMergeAsset_ 백업 키를 즉시 지우고 예약된 삭제 타이머를 취소한다', () => {
+  const dbOrig = sandbox.DB, dataKeyOrig = sandbox.dataKey, lsOrig = sandbox.localStorage;
+  const setTimeoutOrig = sandbox.setTimeout, clearTimeoutOrig = sandbox.clearTimeout;
+  sandbox.TWi = -1;
+  const a1 = { id: 'a1', name: '통장1', type: 'cash', baseAmount: 1000 };
+  const a2 = { id: 'a2', name: '통장2', type: 'cash', baseAmount: 2000 };
+  sandbox.DB = { assets: [a1, a2], txns: [], recurrences: [] };
+  sandbox.dataKey = () => 'acct4';
+  const setCalls = [], removeCalls = [];
+  sandbox.localStorage = { getItem: () => null, setItem: (k, v) => setCalls.push([k, v]), removeItem: (k) => removeCalls.push(k) };
+  sandbox.setTimeout = () => 'merge-asset-timer';
+  const clearTimeoutCalls = [];
+  sandbox.clearTimeout = (id) => { clearTimeoutCalls.push(id); };
+  sandbox.lastUndo = null;
+  try {
+    sandbox.mergeAssetInto('a1', 'a2');
+    const [backupKey] = setCalls[0];
+    sandbox.lastUndo.undoFn(); // '되돌리기'를 누른 상태를 흉내냄
+    assert.deepStrictEqual(clearTimeoutCalls, ['merge-asset-timer'], '되돌리기를 눌러도 예약된 백업 삭제 타이머를 취소하지 않음');
+    assert.deepStrictEqual(removeCalls, [backupKey], '되돌리기를 눌렀는데도 백업 키를 지우지 않아 유령 백업으로 남음');
+    assert.strictEqual(a2.baseAmount, 2000, '되돌리기는 기존 동작대로 baseAmount도 원래 값으로 복원해야 함');
+  } finally {
+    sandbox.DB = dbOrig; sandbox.dataKey = dataKeyOrig; sandbox.localStorage = lsOrig; sandbox.setTimeout = setTimeoutOrig; sandbox.clearTimeout = clearTimeoutOrig;
+  }
+});
 test('mergeAssetInto: undo하면 amountKRW를 쓰는 종류도 원래 amountKRW 값으로 정확히 복원된다', () => {
   const a1 = { id: 'a1', name: '집1', type: 'realestate', amountKRW: 100000000 };
   const a2 = { id: 'a2', name: '집2', type: 'realestate', amountKRW: 200000000 };
@@ -34944,13 +35004,14 @@ test('[실행형] doDeleteAccount: 6초 안에 되돌리면 wipe 직전 백업 �
  * 남기는 __preReset_ / __preDeleteAccount_ 백업도 같은 판정 로직으로 찾을 수 있도록 suffix
  * 파라미터를 일반화했다(app-evolve cycle328 critique/advance) — 기존 2-인자 호출(위 '__corrupt_'
  * 전용 테스트들)은 하위호환으로 그대로 통과해야 한다. ---------- */
-test('findCorruptBackupKeys: suffix를 넘기면 그 접두사로 찾는다(__preReset_/__preDeleteAccount_/__preRestore_/__preArchive_ 등)', () => {
+test('findCorruptBackupKeys: suffix를 넘기면 그 접두사로 찾는다(__preReset_/__preDeleteAccount_/__preRestore_/__preArchive_/__preMergeAsset_ 등)', () => {
   const keys = [
     'acct__preReset_300',
     'acct__preReset_100',
     'acct__preDeleteAccount_200', // 다른 suffix는 걸러져야 함
     'acct__preRestore_400', // proceedWithBackupObj()가 복원 직전에 남기는 백업(app-evolve cycle329)
     'acct__preArchive_500', // archiveTxnsBefore()가 정리 직전에 남기는 백업(app-evolve cycle330)
+    'acct__preMergeAsset_600', // mergeAssetInto()가 합치기 직전에 남기는 백업(app-evolve cycle332)
     'acct__corrupt_999', // 기본 suffix와도 섞이지 않아야 함
   ];
   const r1 = sandbox.findCorruptBackupKeys(keys, 'acct', '__preReset_');
@@ -34964,6 +35025,8 @@ test('findCorruptBackupKeys: suffix를 넘기면 그 접두사로 찾는다(__pr
   assert.deepStrictEqual(JSON.parse(JSON.stringify(r3)), [{ key: 'acct__preRestore_400', ts: 400 }], '__preRestore_ suffix 필터링이 틀림');
   const r4 = sandbox.findCorruptBackupKeys(keys, 'acct', '__preArchive_');
   assert.deepStrictEqual(JSON.parse(JSON.stringify(r4)), [{ key: 'acct__preArchive_500', ts: 500 }], '__preArchive_ suffix 필터링이 틀림');
+  const r5 = sandbox.findCorruptBackupKeys(keys, 'acct', '__preMergeAsset_');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(r5)), [{ key: 'acct__preMergeAsset_600', ts: 600 }], '__preMergeAsset_ suffix 필터링이 틀림');
 });
 test('findCorruptBackupKeys: suffix를 생략하면 기존과 동일하게 __corrupt_ 접두사를 쓴다(하위호환)', () => {
   const keys = ['acct__corrupt_100', 'acct__preReset_200'];
@@ -35002,15 +35065,18 @@ test("homeAlertCard: wipeBackup 카드가 mostRecentKind에 따라 '초기화'/'
   assert.ok(restoreHtml.includes('복원 직전 데이터를 찾았어요'), 'preRestore면 복원 문구를 보여주지 않음(여전히 초기화/탈퇴로 잘못 표시될 위험)');
   const archiveHtml = sandbox.homeAlertCard({ kind: 'wipeBackup', count: 1, mostRecentKind: 'preArchive' });
   assert.ok(archiveHtml.includes('정리 직전 데이터를 찾았어요'), "preArchive면 '정리' 문구를 보여주지 않음(엉뚱하게 '초기화'로 표시될 위험)");
-  [resetHtml, deleteHtml, restoreHtml, archiveHtml].forEach(html => {
+  const mergeAssetHtml = sandbox.homeAlertCard({ kind: 'wipeBackup', count: 1, mostRecentKind: 'preMergeAsset' });
+  assert.ok(mergeAssetHtml.includes('합치기 직전 데이터를 찾았어요'), "preMergeAsset이면 '합치기' 문구를 보여주지 않음(엉뚱하게 '초기화'로 표시될 위험)");
+  [resetHtml, deleteHtml, restoreHtml, archiveHtml, mergeAssetHtml].forEach(html => {
     assert.ok(html.includes('onclick="restoreWipeBackup()"'), 'wipeBackup 카드가 restoreWipeBackup()으로 연결되지 않음');
   });
 });
-test("wipeBackupKindLabel: kind별로 '초기화'/'탈퇴'/'복원'/'정리'를 돌려주고, 모르는 kind는 '초기화'로 떨어진다(기존 하위호환)", () => {
+test("wipeBackupKindLabel: kind별로 '초기화'/'탈퇴'/'복원'/'정리'/'합치기'를 돌려주고, 모르는 kind는 '초기화'로 떨어진다(기존 하위호환)", () => {
   assert.strictEqual(sandbox.wipeBackupKindLabel('preReset'), '초기화');
   assert.strictEqual(sandbox.wipeBackupKindLabel('preDeleteAccount'), '탈퇴');
   assert.strictEqual(sandbox.wipeBackupKindLabel('preRestore'), '복원');
   assert.strictEqual(sandbox.wipeBackupKindLabel('preArchive'), '정리');
+  assert.strictEqual(sandbox.wipeBackupKindLabel('preMergeAsset'), '합치기');
   assert.strictEqual(sandbox.wipeBackupKindLabel(undefined), '초기화');
   assert.strictEqual(sandbox.wipeBackupKindLabel('unknown-kind'), '초기화');
 });
