@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.401';
+const APP_VERSION='1.47.402';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -2625,14 +2625,15 @@ function dismissCorruptBackup(){
  CORRUPT_BACKUP_KEYS=[];
  renderCurrent();toast('지웠어요');
 }
-/* doResetAll()/doDeleteAccount()/proceedWithBackupObj()가 wipe·복원 직전(실제 DB 교체 이전)에
- * 남겨두는 __preReset_ / __preDeleteAccount_ / __preRestore_ 백업의 스캔 — __corrupt_*와 같은
- * CORRUPT_BACKUP_MAX_AGE_MS 보존기간을 재사용한다. 세 함수 모두 grace 타이머가 끝날 때(되돌리지
- * 않았을 때)나 undoToast로 되돌릴 때 이미 자기 백업 키를 지우므로, 여기서 걸리는 건 '탭 종료/크래시로
- * grace 타이머 자체가 못 끝난' 경우뿐이다 — __corrupt_*(cycle323)보다도 더 치명적인(단일 레코드가
- * 아니라 계정 전체) 장애 경로의 복구 수단이라, 백업이 이미 유효한 전체 DB JSON이라는 점을 살려
- * download가 아니라 proceedWithBackupObj()(일반 백업 파일 복원과 동일한 확인+6초 undo 경로)로
- * 1클릭 복구를 제공한다(app-evolve cycle328 critique/advance, __preRestore_는 cycle329). */
+/* doResetAll()/doDeleteAccount()/proceedWithBackupObj()/archiveTxnsBefore()가 wipe·복원·정리
+ * 직전(실제 DB 교체 이전)에 남겨두는 __preReset_ / __preDeleteAccount_ / __preRestore_ /
+ * __preArchive_ 백업의 스캔 — __corrupt_*와 같은 CORRUPT_BACKUP_MAX_AGE_MS 보존기간을 재사용한다.
+ * 네 함수 모두 grace 타이머가 끝날 때(되돌리지 않았을 때)나 undoToast로 되돌릴 때 이미 자기 백업
+ * 키를 지우므로, 여기서 걸리는 건 '탭 종료/크래시로 grace 타이머 자체가 못 끝난' 경우뿐이다 —
+ * __corrupt_*(cycle323)보다도 더 치명적인(단일 레코드가 아니라 계정 전체 또는 대량 과거 내역) 장애
+ * 경로의 복구 수단이라, 백업이 이미 유효한 전체 DB JSON이라는 점을 살려 download가 아니라
+ * proceedWithBackupObj()(일반 백업 파일 복원과 동일한 확인+6초 undo 경로)로 1클릭 복구를 제공한다
+ * (app-evolve cycle328 critique/advance, __preRestore_는 cycle329, __preArchive_는 cycle330). */
 function scanWipeBackupKeys(){
  WIPE_BACKUP_KEYS=[];
  if(!STORAGE_OK)return;
@@ -2642,6 +2643,7 @@ function scanWipeBackupKeys(){
    ...findCorruptBackupKeys(keys,dataKey(),'__preReset_').map(k=>Object.assign({},k,{kind:'preReset'})),
    ...findCorruptBackupKeys(keys,dataKey(),'__preDeleteAccount_').map(k=>Object.assign({},k,{kind:'preDeleteAccount'})),
    ...findCorruptBackupKeys(keys,dataKey(),'__preRestore_').map(k=>Object.assign({},k,{kind:'preRestore'})),
+   ...findCorruptBackupKeys(keys,dataKey(),'__preArchive_').map(k=>Object.assign({},k,{kind:'preArchive'})),
   ].sort((a,b)=>b.ts-a.ts);
   const kept=pruneOldCorruptKeys(all,Date.now(),CORRUPT_BACKUP_MAX_AGE_MS);
   all.filter(k=>!kept.includes(k)).forEach(k=>{try{localStorage.removeItem(k.key)}catch(e){}});
@@ -2662,7 +2664,7 @@ function restoreWipeBackup(){
  * 지우지 않고 confirmSheet로 한 번 더 확인한다(app-evolve cycle330 develop). */
 function dismissWipeBackup(){
  const k=WIPE_BACKUP_KEYS[0];if(!k)return;
- const label=k.kind==='preDeleteAccount'?'탈퇴':k.kind==='preRestore'?'복원':'초기화';
+ const label=wipeBackupKindLabel(k.kind);
  confirmSheet(`${label} 백업 지우기`,`${label} 직전 데이터 백업을 지우면 더 이상 되돌릴 방법이 없어요. 정말 지울까요?`,'지우기',()=>{
   WIPE_BACKUP_KEYS.forEach(x=>{try{localStorage.removeItem(x.key)}catch(e){}});
   WIPE_BACKUP_KEYS=[];
@@ -11523,7 +11525,7 @@ function homeAlertCard(al){
      <div class="ha-s">예전에 저장이 깨졌을 때 남은 원본이에요 · 눌러서 파일로 받아보세요</div></div>
    <button class="txt-btn" style="flex-shrink:0;padding:6px 10px" onclick="event.stopPropagation();dismissCorruptBackup()">지우기</button></div>`;
  if(al.kind==='wipeBackup'){
-  const label=al.mostRecentKind==='preDeleteAccount'?'탈퇴':al.mostRecentKind==='preRestore'?'복원':'초기화';
+  const label=wipeBackupKindLabel(al.mostRecentKind);
   return `<div class="home-alert mat">
    <div class="ha-ic">${svg('alert')}</div>
    <div class="ha-b" tabindex="0" role="button" aria-label="${label} 직전 데이터를 찾았어요 · 눌러서 복구" onclick="restoreWipeBackup()" onkeydown="rowKeydown(event,restoreWipeBackup)"><div class="ha-t">${label} 직전 데이터를 찾았어요${al.count>1?` (${al.count}개)`:''}</div>
@@ -11770,8 +11772,19 @@ function restoreTrashTxn(id){
  * baselines[a.id]가 현재 assetBase(a)와 같은(=실제로 안 바뀌는) 자산은 건드리지 않는다 — 특히
  * fx/stock/gold/crypto처럼 baseAmount/amountKRW를 안 쓰는 시세평가 자산에 쓸모없는 0 필드가
  * 새로 생기는 걸 막는다. */
+/* cutoffDate 이전 거래 전체를 지우고 그 금액을 자산 베이스라인에 흡수하는 복합 변경(아래)을 지금까지
+ * undoToast 6초짜리 메모리 클로저(removed/prevBase/prevRec/prevArchivedThrough) 하나에만 맡겼다 —
+ * doResetAll()/doDeleteAccount()/proceedWithBackupObj()가 고친 것과 완전히 같은 모양의 "탭 종료/
+ * 크래시 시 grace를 놓치면 영구 소실" 버그였다. 이 함수만 trashTxns류 재사용 트래시로 되돌리지 않는
+ * 이유: 되돌릴 땐 baseAmount/amountKRW도 cutoffDate 이전으로 되감아야 하는데(위 prevBase), 일반
+ * 거래 트래시(복원 시 거래만 되돌리고 베이스라인은 그대로 둠)로 복구하면 흡수됐던 금액이 또
+ * 더해지는 이중 계산 함정에 빠진다(app-evolve cycle230 critique 주석 참고) — 그래서 doResetAll류와
+ * 동일한 "전체 DB best-effort 스냅샷"을 __preArchive_ kind로 확장했다(app-evolve cycle330
+ * critique/advance). */
 function archiveTxnsBefore(cutoffDate){
  if(twGuard())return;
+ const backupKey=dataKey()+'__preArchive_'+Date.now();
+ try{localStorage.setItem(backupKey,JSON.stringify(DB))}catch(e){}
  const expanded=DB.txns.concat(expandRec(RANGE_FROM,cutoffDate));
  const baselines=archiveBaselines(DB.assets,expanded,cutoffDate,isPending);
  const removed=DB.txns.filter(t=>t.date<=cutoffDate);
@@ -11805,7 +11818,9 @@ function archiveTxnsBefore(cutoffDate){
   적이 있다면(여러 번 정리) 더 뒤(최신) cutoffDate만 유지한다 */
  if(!prevArchivedThrough||cutoffDate>prevArchivedThrough)DB.settings.archivedThroughDate=cutoffDate;
  save();renderCurrent();
+ const archivePushT=setTimeout(()=>{try{localStorage.removeItem(backupKey)}catch(e){}},6000);
  undoToast(`${removed.length}개의 오래된 내역을 정리했어요`,()=>{
+  clearTimeout(archivePushT);try{localStorage.removeItem(backupKey)}catch(e){}
   DB.assets.forEach(a=>{const p=prevBase[a.id];if(!p)return;a.baseAmount=p.baseAmount;a.amountKRW=p.amountKRW;touch(a)});
   (DB.recurrences||[]).forEach(r=>{const p=prevRec[r.id];if(!p)return;r.startDate=p.startDate;r.skip=p.skip;r.edits=p.edits;r.confirmedDates=p.confirmedDates;touch(r)});
   DB.txns.push(...removed);removed.forEach(t=>delete DB.deletedIds[t.id]);

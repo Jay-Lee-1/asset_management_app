@@ -11263,6 +11263,69 @@ test('archiveTxnsBefore: 튜토리얼 중에는 twGuard가 막아 아무것도 �
   assert.strictEqual(sandbox.lastUndo, null, 'undoToast도 호출되면 안 됨');
   sandbox.TWi = -1;
 });
+/* ---------- archiveTxnsBefore의 wipe-직전 백업(__preArchive_): cutoffDate 이전 거래 전체를
+ * 지우고 그 금액을 베이스라인에 흡수하는 복합 변경을, doResetAll/doDeleteAccount/
+ * proceedWithBackupObj(app-evolve cycle328-329)가 고친 것과 완전히 같은 모양으로 undoToast
+ * 6초짜리 메모리 클로저 하나에만 맡기고 있었다 — 탭 종료/크래시로 grace를 놓치면 흔적 없이
+ * 영구 소실된다. __preArchive_ localStorage 키로도 최선 노력 백업해 두고, grace가 되돌림 없이
+ * 끝나거나 undoToast로 되돌리면(둘 다 더 필요 없어진 시점) 바로 지운다(app-evolve cycle330
+ * critique/advance). ---------- */
+test('[실행형] archiveTxnsBefore: 정리 직전 DB를 dataKey()+__preArchive_+타임스탬프 키로 백업하고, grace가 되돌림 없이 끝나면 지운다', () => {
+  const dbOrig = sandbox.DB, dataKeyOrig = sandbox.dataKey, lsOrig = sandbox.localStorage;
+  const setTimeoutOrig = sandbox.setTimeout;
+  sandbox.TWi = -1;
+  const a1 = { id: 'a1', type: 'cash', baseAmount: 0 };
+  const t1 = { id: 't1', date: '2023-02-01', type: 'income', toAssetId: 'a1', amount: 500000 };
+  const originalDb = { assets: [a1], txns: [t1], recurrences: [], settings: {}, deletedIds: {} };
+  const originalDbSnapshot = JSON.parse(JSON.stringify(originalDb)); // archiveTxnsBefore가 a1/DB.txns를 그 자리에서(in-place) 고치므로, 비교 기준은 호출 전에 미리 떠 둬야 한다
+  sandbox.DB = originalDb;
+  sandbox.dataKey = () => 'acct2';
+  const setCalls = [], removeCalls = [];
+  sandbox.localStorage = { getItem: () => null, setItem: (k, v) => setCalls.push([k, v]), removeItem: (k) => removeCalls.push(k) };
+  let capturedFn = null;
+  sandbox.setTimeout = (fn) => { capturedFn = fn; return 'archive-timer'; };
+  sandbox.lastUndo = null;
+  try {
+    sandbox.archiveTxnsBefore('2024-12-31');
+    // setCalls는 백업 쓰기 뒤에 이어지는 save()(DB/__savedAt 등)도 같은 localStorage 목업을 거쳐
+    // 함께 기록되므로, 백업이 항상 가장 먼저 쓰인다는 순서만 확인한다.
+    assert.ok(setCalls.length >= 1, '정리 직전 DB를 localStorage에 백업하지 않음');
+    const [backupKey, backupVal] = setCalls[0];
+    assert.match(backupKey, /^acct2__preArchive_\d+$/, '백업 키가 dataKey()+__preArchive_+타임스탬프 모양이 아님');
+    assert.deepStrictEqual(JSON.parse(backupVal), originalDbSnapshot, '백업된 값이 정리 직전 DB와 다름');
+    assert.strictEqual(removeCalls.length, 0, 'grace가 끝나기도 전에 백업을 지움');
+    assert.ok(typeof capturedFn === 'function', '6초 뒤 백업을 지우는 타이머를 예약하지 않음');
+    capturedFn(); // 되돌리지 않은 채 6초 grace가 끝난 상황을 흉내냄
+    assert.deepStrictEqual(removeCalls, [backupKey], 'grace가 끝났는데도 백업 키를 지우지 않아 유령 백업으로 남음');
+  } finally {
+    sandbox.DB = dbOrig; sandbox.dataKey = dataKeyOrig; sandbox.localStorage = lsOrig; sandbox.setTimeout = setTimeoutOrig;
+  }
+});
+test('[실행형] archiveTxnsBefore: 6초 안에 되돌리면 __preArchive_ 백업 키를 즉시 지우고 예약된 삭제 타이머를 취소한다', () => {
+  const dbOrig = sandbox.DB, dataKeyOrig = sandbox.dataKey, lsOrig = sandbox.localStorage;
+  const setTimeoutOrig = sandbox.setTimeout, clearTimeoutOrig = sandbox.clearTimeout;
+  sandbox.TWi = -1;
+  const a1 = { id: 'a1', type: 'cash', baseAmount: 0 };
+  const t1 = { id: 't1', date: '2023-02-01', type: 'income', toAssetId: 'a1', amount: 500000 };
+  sandbox.DB = { assets: [a1], txns: [t1], recurrences: [], settings: {}, deletedIds: {} };
+  sandbox.dataKey = () => 'acct2';
+  const setCalls = [], removeCalls = [];
+  sandbox.localStorage = { getItem: () => null, setItem: (k, v) => setCalls.push([k, v]), removeItem: (k) => removeCalls.push(k) };
+  sandbox.setTimeout = () => 'archive-timer';
+  const clearTimeoutCalls = [];
+  sandbox.clearTimeout = (id) => { clearTimeoutCalls.push(id); };
+  sandbox.lastUndo = null;
+  try {
+    sandbox.archiveTxnsBefore('2024-12-31');
+    const [backupKey] = setCalls[0];
+    sandbox.lastUndo.undoFn(); // '되돌리기'를 누른 상태를 흉내냄
+    assert.deepStrictEqual(clearTimeoutCalls, ['archive-timer'], '되돌리기를 눌러도 예약된 백업 삭제 타이머를 취소하지 않음');
+    assert.deepStrictEqual(removeCalls, [backupKey], '되돌리기를 눌렀는데도 백업 키를 지우지 않아 유령 백업으로 남음');
+    assert.strictEqual(a1.baseAmount, 0, '되돌리기는 기존 동작대로 baseAmount도 원래 값으로 복원해야 함');
+  } finally {
+    sandbox.DB = dbOrig; sandbox.dataKey = dataKeyOrig; sandbox.localStorage = lsOrig; sandbox.setTimeout = setTimeoutOrig; sandbox.clearTimeout = clearTimeoutOrig;
+  }
+});
 test('archiveMonthPicked: 지워질 거래가 있으면 월말을 cutoffDate로 confirmSheet를 띄우고, 확인을 누르면 archiveTxnsBefore가 그 cutoffDate로 실행된다', () => {
   const a1 = { id: 'a1', type: 'cash', baseAmount: 0 };
   const t1 = { id: 't1', date: '2024-05-10', type: 'income', toAssetId: 'a1', amount: 1000 };
@@ -34683,12 +34746,13 @@ test('[실행형] doDeleteAccount: 6초 안에 되돌리면 wipe 직전 백업 �
  * 남기는 __preReset_ / __preDeleteAccount_ 백업도 같은 판정 로직으로 찾을 수 있도록 suffix
  * 파라미터를 일반화했다(app-evolve cycle328 critique/advance) — 기존 2-인자 호출(위 '__corrupt_'
  * 전용 테스트들)은 하위호환으로 그대로 통과해야 한다. ---------- */
-test('findCorruptBackupKeys: suffix를 넘기면 그 접두사로 찾는다(__preReset_/__preDeleteAccount_/__preRestore_ 등)', () => {
+test('findCorruptBackupKeys: suffix를 넘기면 그 접두사로 찾는다(__preReset_/__preDeleteAccount_/__preRestore_/__preArchive_ 등)', () => {
   const keys = [
     'acct__preReset_300',
     'acct__preReset_100',
     'acct__preDeleteAccount_200', // 다른 suffix는 걸러져야 함
     'acct__preRestore_400', // proceedWithBackupObj()가 복원 직전에 남기는 백업(app-evolve cycle329)
+    'acct__preArchive_500', // archiveTxnsBefore()가 정리 직전에 남기는 백업(app-evolve cycle330)
     'acct__corrupt_999', // 기본 suffix와도 섞이지 않아야 함
   ];
   const r1 = sandbox.findCorruptBackupKeys(keys, 'acct', '__preReset_');
@@ -34700,6 +34764,8 @@ test('findCorruptBackupKeys: suffix를 넘기면 그 접두사로 찾는다(__pr
   assert.deepStrictEqual(JSON.parse(JSON.stringify(r2)), [{ key: 'acct__preDeleteAccount_200', ts: 200 }], '__preDeleteAccount_ suffix 필터링이 틀림');
   const r3 = sandbox.findCorruptBackupKeys(keys, 'acct', '__preRestore_');
   assert.deepStrictEqual(JSON.parse(JSON.stringify(r3)), [{ key: 'acct__preRestore_400', ts: 400 }], '__preRestore_ suffix 필터링이 틀림');
+  const r4 = sandbox.findCorruptBackupKeys(keys, 'acct', '__preArchive_');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(r4)), [{ key: 'acct__preArchive_500', ts: 500 }], '__preArchive_ suffix 필터링이 틀림');
 });
 test('findCorruptBackupKeys: suffix를 생략하면 기존과 동일하게 __corrupt_ 접두사를 쓴다(하위호환)', () => {
   const keys = ['acct__corrupt_100', 'acct__preReset_200'];
@@ -34724,19 +34790,31 @@ test('homeAlerts: WIPE_BACKUP_KEYS가 있으면 wipeBackup 알림을 count/mostR
 });
 
 /* ---------- homeAlertCard()의 'wipeBackup' 카드 문구 — mostRecentKind별로 '초기화'/'탈퇴'/
- * '복원' 세 갈래 중 하나를 보여준다. proceedWithBackupObj()가 복원 직전에도 같은 __preRestore_
- * 백업을 남기게 되면서(app-evolve cycle329 critique/advance) preReset/preDeleteAccount 둘뿐이던
- * 분기에 preRestore가 추가됐다. ---------- */
-test("homeAlertCard: wipeBackup 카드가 mostRecentKind에 따라 '초기화'/'탈퇴'/'복원' 문구를 구분해서 보여주고, 모두 restoreWipeBackup()으로 연결된다", () => {
+ * '복원'/'정리' 네 갈래 중 하나를 보여준다. proceedWithBackupObj()가 복원 직전에도 같은
+ * __preRestore_ 백업을 남기게 되면서(app-evolve cycle329 critique/advance) preReset/
+ * preDeleteAccount 둘뿐이던 분기에 preRestore가 추가됐고, archiveTxnsBefore()의 __preArchive_
+ * 백업(app-evolve cycle330 critique/advance)으로 preArchive(label='정리')가 더해지면서 이 분기와
+ * dismissWipeBackup()의 동일한 분기를 logic.js의 wipeBackupKindLabel(kind) 헬퍼로 합쳤다. ---------- */
+test("homeAlertCard: wipeBackup 카드가 mostRecentKind에 따라 '초기화'/'탈퇴'/'복원'/'정리' 문구를 구분해서 보여주고, 모두 restoreWipeBackup()으로 연결된다", () => {
   const resetHtml = sandbox.homeAlertCard({ kind: 'wipeBackup', count: 1, mostRecentKind: 'preReset' });
   assert.ok(resetHtml.includes('초기화 직전 데이터를 찾았어요'), 'preReset이면 초기화 문구가 아님');
   const deleteHtml = sandbox.homeAlertCard({ kind: 'wipeBackup', count: 1, mostRecentKind: 'preDeleteAccount' });
   assert.ok(deleteHtml.includes('탈퇴 직전 데이터를 찾았어요'), 'preDeleteAccount면 탈퇴 문구가 아님');
   const restoreHtml = sandbox.homeAlertCard({ kind: 'wipeBackup', count: 1, mostRecentKind: 'preRestore' });
   assert.ok(restoreHtml.includes('복원 직전 데이터를 찾았어요'), 'preRestore면 복원 문구를 보여주지 않음(여전히 초기화/탈퇴로 잘못 표시될 위험)');
-  [resetHtml, deleteHtml, restoreHtml].forEach(html => {
+  const archiveHtml = sandbox.homeAlertCard({ kind: 'wipeBackup', count: 1, mostRecentKind: 'preArchive' });
+  assert.ok(archiveHtml.includes('정리 직전 데이터를 찾았어요'), "preArchive면 '정리' 문구를 보여주지 않음(엉뚱하게 '초기화'로 표시될 위험)");
+  [resetHtml, deleteHtml, restoreHtml, archiveHtml].forEach(html => {
     assert.ok(html.includes('onclick="restoreWipeBackup()"'), 'wipeBackup 카드가 restoreWipeBackup()으로 연결되지 않음');
   });
+});
+test("wipeBackupKindLabel: kind별로 '초기화'/'탈퇴'/'복원'/'정리'를 돌려주고, 모르는 kind는 '초기화'로 떨어진다(기존 하위호환)", () => {
+  assert.strictEqual(sandbox.wipeBackupKindLabel('preReset'), '초기화');
+  assert.strictEqual(sandbox.wipeBackupKindLabel('preDeleteAccount'), '탈퇴');
+  assert.strictEqual(sandbox.wipeBackupKindLabel('preRestore'), '복원');
+  assert.strictEqual(sandbox.wipeBackupKindLabel('preArchive'), '정리');
+  assert.strictEqual(sandbox.wipeBackupKindLabel(undefined), '초기화');
+  assert.strictEqual(sandbox.wipeBackupKindLabel('unknown-kind'), '초기화');
 });
 
 /* ---------- dismissWipeBackup(): '지우기' 버튼이 wipeBackup 카드의 유일한 복구 수단(전체
@@ -34773,6 +34851,11 @@ test("[실행형] dismissWipeBackup: 확인 시트 문구가 mostRecentKind(WIPE
     sandbox.WIPE_BACKUP_KEYS = [{ key: 'acct__preRestore_1', ts: 1, kind: 'preRestore' }];
     sandbox.dismissWipeBackup();
     assert.match(sandbox.confirmSheetCalls[0].msg, /복원 직전/, 'preRestore면 복원 문구를 보여주지 않음');
+
+    sandbox.confirmSheetCalls = [];
+    sandbox.WIPE_BACKUP_KEYS = [{ key: 'acct__preArchive_1', ts: 1, kind: 'preArchive' }];
+    sandbox.dismissWipeBackup();
+    assert.match(sandbox.confirmSheetCalls[0].msg, /정리 직전/, "preArchive면 '정리' 문구를 보여주지 않음");
 
     sandbox.confirmSheetCalls = [];
     sandbox.WIPE_BACKUP_KEYS = [];

@@ -1904,3 +1904,13 @@ function findCorruptBackupKeys(allKeys,dataKeyPrefix,suffix){
 function pruneOldCorruptKeys(keys,now,maxAgeMs){
  return (keys||[]).filter(k=>k&&now-k.ts<=maxAgeMs);
 }
+/* dismissWipeBackup()과 homeAlertCard()의 'wipeBackup' 카드가 각각 따로 들고 있던 kind→한글 라벨
+ * 삼항을 하나로 합친 것 — wipe-직전 백업 kind가 늘어날 때마다(preReset/preDeleteAccount/preRestore/
+ * preArchive, app-evolve cycle328-330) 두 곳을 똑같이 고쳐야 하는 중복과, 한쪽만 고치고 깜빡하면
+ * 엉뚱한 kind가 '초기화'로 떨어지는 공백을 없앤다(app-evolve cycle330 advance). */
+function wipeBackupKindLabel(kind){
+ if(kind==='preDeleteAccount')return '탈퇴';
+ if(kind==='preRestore')return '복원';
+ if(kind==='preArchive')return '정리';
+ return '초기화';
+}
