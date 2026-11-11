@@ -1,15 +1,8 @@
 {
   "cycle": 336,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 331,
-      "phase": "review",
-      "timestamp": "2026-11-10T10:00:00.000Z",
-      "summary": "cycle331 develop 커밋(c79ecf7, commaQty 사토시 미만 더스트 보정)을 검토. 반올림 경계를 직접 재현해 테스트 기대값과 정확히 일치함을 확인. node test/run.js 재실행 3221/3221 통과. 실제 버그 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 331,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-11T09:00:00.000Z",
       "summary": "shortDate2(index.html:3267, 투사일/차트 캡션 포맷터)가 연도 없이 항상 MM/DD만 돌려줘, 목표 달성 예상일(goalRowHTML)·부채 상환 예상일(debtPayoffProjection/debtPayoffWhatIf 투사)처럼 TODAY로부터 멀게(수개월~수년) 투사될 수 있는 날짜가 해를 넘겨도 사용자가 몇 년도인지 알 길이 없던 공백을 고쳤다 — TODAY와 연도가 같을 때만 기존처럼 MM/DD, 다르면 두 자리 연도를 앞에 붙임(예: 27.03/15). 실전 거의 모든 호출부(nwh-range 차트 캡션 등)는 같은 해 안이라 보이는 문구가 바뀌지 않고, 연도가 넘어가는 투사일에만 연도가 드러난다. TODAY가 문자열이 아닐 때(비교 기준 없음)는 안전하게 기존 MM/DD로 폴백(테스트 환경에서 TODAY를 세팅하지 않는 일부 fixture까지 전부 바꾸지 않으려는 방어적 설계). 테스트: shortDate2 직접 단위 테스트 3건(같은 해/다른 해/TODAY 없음 폴백) 신설, assetBalCard 투사 문구 정규식 테스트 1건을 연도 접두가 붙을 수 있는 경우까지 허용하도록 보강 — node test/run.js 3269->3272/3272 통과. node --check(스크립트 블록 추출) 통과. APP_VERSION 1.47.411->1.47.412, sw.js CACHE v678->v679.",
+      "commit": null
+    },
+    {
+      "cycle": 336,
+      "phase": "review",
+      "timestamp": "2026-11-11T07:08:26.389Z",
+      "summary": "cycle336 develop 커밋(d88146e, shortDate2 투사일 연도 누락 수정)을 검토. (typeof TODAY==='string'&&ds.slice(0,4)!==TODAY.slice(0,4)) 가드가 프로덕션에서는 TODAY=let TODAY=todayStr()(index.html:1767)로 항상 문자열이라 실사용 경로에는 영향 없고, 테스트 fixture에서 TODAY 미설정 시에만 안전하게 MM/DD로 폴백함을 확인. shortDate2의 9개 호출부(nwh-range 캡션, 차트 peek 라벨, 목표/부채 투사일)를 모두 grep으로 대조해 연도 접두가 필요한 곳(투사일)과 불필요한 곳(같은 해 범위인 차트 캡션) 구분이 TODAY 연도 비교로 자연히 처리됨을 확인. node test/run.js 재실행 3272/3272 통과. 실제 버그 없음(state.json만 커밋).",
       "commit": null
     }
   ]
