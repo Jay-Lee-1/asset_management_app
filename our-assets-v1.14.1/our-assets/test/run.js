@@ -35905,7 +35905,7 @@ test('[실행형] _sheetGuardCancel: "계속 편집"을 누르면 확인 시트 
   assert.strictEqual(ctx._sheetGuardSnapshot, null, '복원 후엔 스냅샷을 비워야 함(다음 open에 재사용되면 안 됨)');
   assert.strictEqual(ctx.closeSheetCalls, 0, '"계속 편집"이면 closeSheet()를 부르면 안 됨');
 });
-test('closeSheetGuarded 와이어링: 스크림탭/스와이프다운 닫기/뒤로가기(popstate)가 모두 closeSheet() 대신 closeSheetGuarded()를 거친다', () => {
+test('closeSheetGuarded 와이어링: 스크림탭/스와이프다운 닫기/뒤로가기(popstate)/기본 X버튼/Escape가 모두 closeSheet() 대신 closeSheetGuarded()를 거친다', () => {
   assert.ok(
     extractFunction('wireSheetGestures').includes('if(dy>120)closeSheetGuarded();'),
     '스와이프다운 닫기 완료 지점이 closeSheetGuarded()를 거치지 않음'
@@ -35921,6 +35921,20 @@ test('closeSheetGuarded 와이어링: 스크림탭/스와이프다운 닫기/뒤
   assert.ok(
     extractFunction('closeSheet').includes('_draftSnap=null'),
     'closeSheet()가 실제로 닫힐 때 _draftSnap을 비우지 않음(다음 시트에 이전 스냅샷이 새어나갈 수 있음)'
+  );
+  // app-evolve cycle335 advance: 기본 X 버튼/Escape만 가드 없는 closeSheet()를 직접 불러
+  // 작성 중인 폼이 경고 없이 즉시 사라지던 비대칭을 막음(스크림탭/스와이프다운/뒤로가기와 통일).
+  assert.ok(
+    extractFunction('openSheet').includes(`onclick="closeSheetGuarded()"`),
+    '시트 기본 X 버튼(topBtn 미지정 시)이 closeSheetGuarded()를 거치지 않음'
+  );
+  assert.ok(
+    !extractFunction('openSheet').includes(`onclick="closeSheet()"`),
+    '시트 기본 X 버튼이 가드 없는 closeSheet()를 직접 호출함(closeSheetGuarded()로 바뀌지 않았음)'
+  );
+  assert.ok(
+    /else closeSheetGuarded\(\);/.test(extractFunction('onSheetKeydown')),
+    'Escape 키로 시트를 닫는 경로가 closeSheetGuarded()를 거치지 않음'
   );
 });
 

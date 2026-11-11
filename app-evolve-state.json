@@ -1,19 +1,8 @@
 {
-  "cycle": 335,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "시트 닫기 경로 중 X 버튼/Escape만 초안 보호 가드(closeSheetGuarded)를 건너뛰는 공백 수정",
-    "why": "스크림 탭(index.html:10507)/스와이프다운(10411)/뒤로가기(10321)는 모두 closeSheetGuarded()를 거쳐 isDraftDirty()가 true면 '변경사항을 버릴까요?' 확인을 받지만, 시트의 기본 X 버튼(openSheet의 기본 topBtn, 10382행: onclick=\"closeSheet()\")과 Escape 키(onSheetKeydown, 10363-10366행: else closeSheet())만 가드 없는 closeSheet()를 직접 호출한다. 거래/자산/목표/반복거래 작성 폼(renderTxSheet/renderAssetSheet/renderGoalForm/renderRecSheet 등, openFormSheet/openSheet를 커스텀 topBtn 없이 쓰는 모든 폼)에서 X나 Escape를 누르면 입력 중인 내용이 경고 없이 즉시 사라진다 — 같은 폼에서 스크림을 탭하거나 뒤로가기를 누르면 확인을 받는 것과 비교해 일관성이 없고, X/Escape는 스크림 탭만큼이나 실수로 누르기 쉬운 경로라 데이터 손실 위험이 실재한다.",
-    "approach": "index.html:10382의 기본 topBtn 템플릿에서 onclick=\"closeSheet()\"를 onclick=\"closeSheetGuarded()\"로 변경. index.html:10363-10366의 Escape 분기(else closeSheet();)를 else closeSheetGuarded();로 변경. isDraftDirty()(10482행)는 _draftSnap이 없는(초안 개념이 없는) 모든 일반 시트(목록/설정 등)에서 즉시 false를 반환하므로 폼이 아닌 시트의 동작은 바뀌지 않음 — 이를 테스트로 함께 확인할 것. 13212행 근처 closeRecoverySheet 전용 X 버튼처럼 topBtn을 커스텀으로 넘기는 시트는 이 변경의 영향을 받지 않으므로 별도 검토해 그대로 둘지 결정. 테스트: test/run.js에 (a) tx/asset/goal/rec 초안이 dirty한 상태에서 X버튼·Escape 경로가 확인(confirmSheet 등)을 띄우는지, (b) 초안 없는 일반 시트에서는 두 경로 모두 여전히 즉시 닫히는지(회귀 없음) 검증하는 테스트 추가. node our-assets-v1.14.1/our-assets/test/run.js로 확인 후 통과하면 APP_VERSION/sw.js CACHE 버전업."
-  },
+  "cycle": 336,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 330,
-      "phase": "advance",
-      "timestamp": "2026-11-10T09:13:40.769Z",
-      "summary": "critique(cycle330) 계획대로 archiveTxnsBefore(\"오래된 데이터 정리\")의 wipe-직전 데이터 소실 경로를 막았다. __preArchive_ 네 번째 kind로 확장, homeAlertCard/dismissWipeBackup의 중복 label 삼항을 logic.js의 wipeBackupKindLabel(kind) 헬퍼로 추출해 통합. 테스트 6건 추가 — node test/run.js 3215->3218/3218 통과. APP_VERSION 1.47.401->1.47.402, sw.js CACHE v668->v669. \"전체 DB 변경이 undoToast 6초 메모리 클로저 하나에만 의존\" 버그 클래스의 마지막 남은 경로를 마저 닫았다.",
-      "commit": null
-    },
     {
       "cycle": 331,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-11T04:09:05.000Z",
       "summary": "시트 닫기 경로 5개 중 스크림 탭(10507행)/스와이프다운(10411행)/뒤로가기(10321행) 3개는 closeSheetGuarded()를 거쳐 isDraftDirty()가 true면 확인을 받지만, 시트 기본 X 버튼(openSheet 기본 topBtn, 10382행)과 Escape 키(onSheetKeydown, 10363-10366행) 2개는 가드 없는 closeSheet()를 직접 호출해 거래/자산/목표/반복거래 작성 폼에서 입력 중 내용이 경고 없이 즉시 사라지는 비대칭을 발견했다. pending_advance_plan에 두 호출부를 closeSheetGuarded()로 바꾸는 구체 계획(파일·라인, isDraftDirty()가 비폼 시트에서 false 반환해 회귀 없음을 테스트로 확인하는 방법까지) 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 335,
+      "phase": "advance",
+      "timestamp": "2026-11-11T08:05:00.000Z",
+      "summary": "critique(cycle335) 계획대로 시트 닫기 경로의 비대칭을 없앴다 — 시트 기본 X 버튼(openSheet의 기본 topBtn, index.html:10382)의 onclick=\"closeSheet()\"를 onclick=\"closeSheetGuarded()\"로, Escape 키(onSheetKeydown, 10366행)의 else closeSheet();를 else closeSheetGuarded();로 교체. 두 경로 모두 스크림탭/스와이프다운/뒤로가기와 동일하게 isDraftDirty()가 true일 때만 '변경사항을 버릴까요?' 확인을 받고, 초안 개념이 없는 일반 시트(목록/설정 등)에서는 isDraftDirty()가 그대로 false를 반환해 즉시 닫히는 동작이 유지된다(회귀 없음). closeRecoverySheet처럼 커스텀 topBtn을 넘기는 시트는 영향 없음(계획대로 범위 밖으로 확인만 하고 그대로 둠). 테스트: 기존 'closeSheetGuarded 와이어링' 테스트에 두 호출부가 closeSheetGuarded()를 거치는지 보는 어서션 3건 추가(새 isDraftDirty/closeSheetGuarded 동작 자체는 이미 기존 테스트가 다 커버하므로 새 call-site 와이어링만 확인) — node test/run.js 3269/3269 통과(새 test() 블록 없이 기존 블록 확장). node --check(스크립트 블록 추출) 통과. APP_VERSION 1.47.410->1.47.411, sw.js CACHE v677->v678. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]
