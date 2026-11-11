@@ -8083,6 +8083,17 @@ test('csvRowToImportTxn: 소수 금액은 무효 처리하고, 정수로 떨어�
   assert.strictEqual(whole.ok, true);
   assert.strictEqual(whole.txn.amount, 5000);
 });
+// app-evolve cycle339 advance: 수동 입력(fmtAmt)·백업복원/클라우드동기화(sanitizeAmount)·
+// 자산 시트 직접입력(syncAssetInputs)은 이미 AMOUNT_MAX(999,999,999,999,999)로 상한을 클램프하는데
+// CSV 가져오기만 Number.isFinite/isInteger만 보고 상한이 없어 그보다 큰 정수가 그대로 통과하면
+// balanceAt/assetEval/nwHistory 합산을 정밀도 손상으로 오염시킬 수 있던 비대칭을 막는다.
+test("csvRowToImportTxn: AMOUNT_MAX를 넘는 금액은 유한한 정수여도 error:'amount'로 걸러진다", () => {
+  const over = sandbox.csvRowToImportTxn(['2026-01-01', '지출', '식비', String(sandbox.AMOUNT_MAX + 1), '', '', ''], []);
+  assert.strictEqual(over.ok, false); assert.strictEqual(over.error, 'amount');
+  const atMax = sandbox.csvRowToImportTxn(['2026-01-01', '지출', '식비', String(sandbox.AMOUNT_MAX), '주계좌', '', ''], []);
+  assert.strictEqual(atMax.ok, true, 'AMOUNT_MAX 당일은 상한선에 포함되어야 함');
+  assert.strictEqual(atMax.txn.amount, sandbox.AMOUNT_MAX);
+});
 // RANGE_FROM(2023-01-01) 이전 날짜는 balancesUpTo 등 allTxns(RANGE_FROM,*) 기반 집계에서
 // 조용히 빠지므로, 형식은 유효해도 별도의 'range' 에러로 구분해 걸러낸다(형식 오류 'date'와 다름).
 test("csvRowToImportTxn: RANGE_FROM 이전 날짜는 형식은 유효해도 error:'range'로 걸러진다", () => {
