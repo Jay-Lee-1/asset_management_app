@@ -1139,17 +1139,29 @@ function assetAllocation(items){
  items.forEach(it=>{if(!(it.amount>0))return;map.set(it.type,(map.get(it.type)||0)+it.amount)});
  return [...map.entries()].map(([type,amount])=>({type,amount,pct:amount/total*100})).sort((a,b)=>b.amount-a.amount);
 }
-/* nwHistory(일별 {date,ta,td,nw,byOwner?,byType?} 스냅샷)에 저장된 byType(가구 전체 기준 유형별
- * 평가액, _saveCore가 매 저장마다 기록)에서 오늘보다 days일 전에 가장 가까운(그 날짜 이하 중 가장
- * 늦은) 스냅샷을 찾아 assetAllocation()과 똑같은 {type,amount,pct} 비중으로 돌려준다 —
- * nwHistoryForOwner가 byOwner를 소비하듯, 여기선 byType을 소비해 allocationCard(index.html)가
- * "지금"과 "days일 전"의 비중을 비교할 수 있게 한다(app-evolve cycle310 critique/advance — nwHistory가
- * 귀속별 순자산 추이는 쌓는데 자산유형별 비중은 추이를 전혀 못 보여주던 공백). byType이 있는 스냅샷이
- * 2개 미만이면(이 기능 추가 이전 레거시 데이터뿐이거나 오늘 막 처음 기록된 경우) 비교할 과거 시점이
- * 없으므로 null — nwHistoryForOwner의 byOwner 레거시 가드와 동일한 "모르면 비교하지 않는다" 원칙.
- * hist는 updateNwHistory가 항상 날짜 오름차순으로 push하므로 그 순서를 그대로 가정한다. */
-function allocationHistoryDelta(hist,today,days){
- const withType=(hist||[]).filter(h=>h.byType&&typeof h.byType==='object');
+/* nwHistory 항목(h) 하나에서 owner 기준 byType을 뽑는다 — owner가 'all'(또는 생략)이면 가구
+ * 전체 byType(h.byType)을, 아니면 byOwner[owner].byType을 쓴다. _saveCore가 byOwner[owner]에도
+ * byType을 중첩해 저장하기 시작하면서(app-evolve cycle334 critique/advance) allocationHistoryDelta/
+ * assetAllocationSeries 양쪽이 공유하는 조회 헬퍼로 뽑았다 — nwHistoryForOwner가 byOwner의 ta/td를
+ * 소비하는 것과 같은 자리의 byType 버전. owner에 그 시점 byOwner[owner]가 없거나(레거시 스냅샷, 또는
+ * 그 귀속이 그 날짜엔 아직 없었음) byType이 없으면 undefined를 돌려줘 호출부의 "byType이 있는
+ * 스냅샷만" 필터에서 자연히 걸러지게 한다("모르면 비교하지 않는다" 원칙). */
+function nwHistoryByType(h,owner){
+ if(!owner||owner==='all')return h.byType;
+ return h.byOwner&&h.byOwner[owner]&&h.byOwner[owner].byType;
+}
+/* nwHistory(일별 {date,ta,td,nw,byOwner?,byType?} 스냅샷)에 저장된 byType(유형별 평가액, _saveCore가
+ * 매 저장마다 기록 — owner가 'all'이면 가구 전체, 아니면 byOwner[owner].byType)에서 오늘보다 days일
+ * 전에 가장 가까운(그 날짜 이하 중 가장 늦은) 스냅샷을 찾아 assetAllocation()과 똑같은
+ * {type,amount,pct} 비중으로 돌려준다 — nwHistoryForOwner가 byOwner를 소비하듯, 여기선 nwHistoryByType으로
+ * byType을 소비해 allocationCard(index.html)가 "지금"과 "days일 전"의 비중을 비교할 수 있게 한다
+ * (app-evolve cycle310 critique/advance로 전체 기준 도입, cycle334 critique/advance로 귀속별 owner
+ * 지원 확장). byType이 있는 스냅샷이 2개 미만이면(이 기능 추가 이전 레거시 데이터뿐이거나, 그 owner로는
+ * 아직 기록이 없거나, 오늘 막 처음 기록된 경우) 비교할 과거 시점이 없으므로 null — nwHistoryForOwner의
+ * byOwner 레거시 가드와 동일한 "모르면 비교하지 않는다" 원칙. hist는 updateNwHistory가 항상 날짜
+ * 오름차순으로 push하므로 그 순서를 그대로 가정한다. */
+function allocationHistoryDelta(hist,today,days,owner){
+ const withType=(hist||[]).map(h=>({date:h.date,byType:nwHistoryByType(h,owner)})).filter(h=>h.byType&&typeof h.byType==='object');
  if(withType.length<2)return null;
  const cutoff=addDays(today,-(days||30));
  let past=withType[0];
@@ -1161,17 +1173,19 @@ function allocationHistoryDelta(hist,today,days){
 }
 /* allocationHistoryDelta가 "오늘 vs days일 전" 한 점만 비교하는 것과 달리, allocationHistoryCard
  * (index.html)가 그릴 stacked-area 차트용으로 preset 기간 전체의 비중 추이를 뽑는다. nwHistoryRange로
- * 기간을 자르고(byOwner 추이 카드와 동일한 윈도 규칙) byType이 있는 스냅샷만 남기는데, 이것 역시
- * 2개 미만이면(레거시뿐이거나 막 기록 시작) 추이를 그릴 수 없으므로 null — allocationHistoryDelta와
- * 같은 "모르면 비교하지 않는다" 원칙. assetAllocation()은 날짜마다 그 시점의 금액 내림차순으로 다시
- * 정렬하므로, 색상·순서를 날짜마다 흔들리지 않게 고정하려고 가장 최근 스냅샷 기준 상위 4개 유형만
- * 그대로 두고 나머지는 모두 한 밴드로 묶는다. 이 묶음은 실제 'etc'(기타) 자산유형과 혼동되지 않도록
- * 별도 키('other')를 쓴다 — 'etc' 유형 자체가 상위 4개 안에 들면서 동시에 다른 유형들이 묶여야 하는
- * 경우, 같은 'etc' 키를 쓰면 한 날짜에 segs가 두 개의 'etc' 항목을 갖게 돼 차트/범례가 깨진다. */
+ * 기간을 자르고(byOwner 추이 카드와 동일한 윈도 규칙) nwHistoryByType(owner)이 있는 스냅샷만 남기는데,
+ * 이것 역시 2개 미만이면(레거시뿐이거나 그 owner로는 아직 기록이 없거나 막 기록 시작) 추이를 그릴 수
+ * 없으므로 null — allocationHistoryDelta와 같은 "모르면 비교하지 않는다" 원칙(app-evolve cycle311
+ * critique/advance로 전체 기준 도입, cycle334 critique/advance로 귀속별 owner 지원 확장). assetAllocation()은
+ * 날짜마다 그 시점의 금액 내림차순으로 다시 정렬하므로, 색상·순서를 날짜마다 흔들리지 않게 고정하려고
+ * 가장 최근 스냅샷 기준 상위 4개 유형만 그대로 두고 나머지는 모두 한 밴드로 묶는다. 이 묶음은 실제
+ * 'etc'(기타) 자산유형과 혼동되지 않도록 별도 키('other')를 쓴다 — 'etc' 유형 자체가 상위 4개 안에
+ * 들면서 동시에 다른 유형들이 묶여야 하는 경우, 같은 'etc' 키를 쓰면 한 날짜에 segs가 두 개의 'etc'
+ * 항목을 갖게 돼 차트/범례가 깨진다. */
 const ALLOC_OTHER_TYPE='other';
-function assetAllocationSeries(hist,preset,today){
+function assetAllocationSeries(hist,preset,today,owner){
  const ranged=nwHistoryRange(hist,preset,today);
- const withType=ranged.filter(h=>h.byType&&typeof h.byType==='object');
+ const withType=ranged.map(h=>({date:h.date,byType:nwHistoryByType(h,owner)})).filter(h=>h.byType&&typeof h.byType==='object');
  if(withType.length<2)return null;
  const latest=withType[withType.length-1];
  const latestAlloc=assetAllocation(Object.keys(latest.byType).map(t=>({type:t,amount:latest.byType[t]})));

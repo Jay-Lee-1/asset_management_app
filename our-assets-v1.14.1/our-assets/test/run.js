@@ -16596,6 +16596,41 @@ test('sanitizeBackup: 정상적인 byType은 그대로 두고, 없어도 터지�
   assert.strictEqual(data.nwHistory[0].byType.stock, 200000);
   assert.strictEqual(fixedCount, 0);
 });
+/* byOwner[owner].byType(귀속별 유형 비중, app-evolve cycle334 critique/advance — allocationHistoryDelta/
+ * assetAllocationSeries가 owner!=='all'일 때 소비)도 top-level byType과 동일한 규칙(일반 객체 아니면
+ * 통째로 떨어뜨리고, 값은 음수도 유효해 min 없이 클램프)으로 검증돼야 한다. */
+test('sanitizeBackup: nwHistory의 byOwner[owner].byType이 일반 객체가 아니면 그 귀속의 byType만 떨어뜨리고(ta/td는 유지) fixedCount를 센다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    nwHistory: [{ date: '2026-06-01', ta: 100, td: 10, nw: 90, byOwner: { 나: { ta: 100, td: 10, byType: ['oops'] } } }],
+  });
+  assert.strictEqual(data.nwHistory[0].byOwner.나.ta, 100);
+  assert.strictEqual(data.nwHistory[0].byOwner.나.byType, undefined);
+  assert.strictEqual(fixedCount, 1);
+});
+test('sanitizeBackup: nwHistory의 byOwner[owner].byType은 객체라도 내부 값이 NaN/문자열이면 0으로 클램프하고, 음수는 유효한 값이라 그대로 둔다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    nwHistory: [{ date: '2026-06-01', ta: 100, td: 10, nw: 90, byOwner: { 나: { ta: 100, td: 10, byType: { cash: 'oops', savings: -5000 } } } }],
+  });
+  assert.deepStrictEqual(Object.keys(data.nwHistory[0].byOwner.나.byType), ['cash', 'savings']);
+  assert.strictEqual(data.nwHistory[0].byOwner.나.byType.cash, 0);
+  assert.strictEqual(data.nwHistory[0].byOwner.나.byType.savings, -5000, '음수는 마이너스통장 등 유효한 값이라 클램프하면 안 됨');
+  assert.strictEqual(fixedCount, 1);
+});
+test('sanitizeBackup: 정상적인 byOwner[owner].byType은 그대로 두고, 없어도(레거시 byOwner) 터지지 않는다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    nwHistory: [
+      { date: '2026-06-01', ta: 300, td: 20, nw: 280, byOwner: { 나: { ta: 300, td: 20, byType: { cash: 300000 } } } },
+      { date: '2026-06-02', ta: 300, td: 20, nw: 280, byOwner: { 나: { ta: 300, td: 20 } } }, // byType 없는 레거시 byOwner
+    ],
+  });
+  assert.deepStrictEqual(Object.keys(data.nwHistory[0].byOwner.나.byType), ['cash']);
+  assert.strictEqual(data.nwHistory[0].byOwner.나.byType.cash, 300000);
+  assert.strictEqual(data.nwHistory[1].byOwner.나.byType, undefined);
+  assert.strictEqual(fixedCount, 0);
+});
 
 /* ---------- sanitizeBackup: DB.deletedIds({id:삭제시각(ms)} 톰스톤 맵)도 검증돼야 한다 — catIcon/
  * catVar/deletedType/deletedBal과 같은 평평한 맵이지만, 그쪽의 sanitizeFlatMap은 객체 형태만
@@ -24409,6 +24444,32 @@ test('allocationHistoryDelta: byType 없는(레거시) 항목은 과거 시점 �
   const r = sandbox.allocationHistoryDelta(hist, '2026-06-15', 30);
   assert.strictEqual(r.pastDate, '2026-05-20');
 });
+/* owner 파라미터(app-evolve cycle334 critique/advance — _saveCore가 byOwner[owner]에도 byType을
+ * 중첩해 저장하기 시작하면서, 귀속별 보기에서도 비중 추이 비교가 성립하게 함). */
+test('allocationHistoryDelta: owner를 넘기면 byOwner[owner].byType을 기준으로 비교한다(가구 전체 byType과는 무관)', () => {
+  const hist = [
+    { date: '2026-05-01', ta: 100, td: 0, nw: 100, byType: { cash: 90, stock: 10 }, byOwner: { 나: { ta: 40, td: 0, byType: { cash: 10, stock: 30 } } } },
+    { date: '2026-06-15', ta: 100, td: 0, nw: 100, byType: { cash: 50, stock: 50 }, byOwner: { 나: { ta: 40, td: 0, byType: { cash: 20, stock: 20 } } } },
+  ];
+  const r = sandbox.allocationHistoryDelta(hist, '2026-06-15', 30, '나');
+  assert.strictEqual(r.pastAlloc.find(x => x.type === 'cash').pct, 25, "가구 전체(10%)가 아니라 '나'의 과거 비중(10/40=25%)이어야 함");
+  assert.strictEqual(r.pastAlloc.find(x => x.type === 'stock').pct, 75);
+});
+test('allocationHistoryDelta: owner를 넘겼는데 그 귀속의 byOwner[owner].byType이 없는 스냅샷뿐이면(레거시이거나 그 귀속으로는 기록이 없음) null', () => {
+  const hist = [
+    { date: '2026-05-01', ta: 100, td: 0, nw: 100, byType: { cash: 90, stock: 10 } }, // byOwner 자체가 없음
+    { date: '2026-06-15', ta: 100, td: 0, nw: 100, byType: { cash: 50, stock: 50 }, byOwner: { 나: { ta: 40, td: 0 } } }, // byOwner는 있지만 byType 없음(레거시)
+  ];
+  assert.strictEqual(sandbox.allocationHistoryDelta(hist, '2026-06-15', 30, '나'), null);
+});
+test('allocationHistoryDelta: owner를 생략하거나 "all"이면 지금까지와 동일하게 가구 전체 byType을 쓴다(회귀 없음)', () => {
+  const hist = [
+    { date: '2026-05-01', ta: 100, td: 0, nw: 100, byType: { cash: 90, stock: 10 } },
+    { date: '2026-06-15', ta: 100, td: 0, nw: 100, byType: { cash: 50, stock: 50 } },
+  ];
+  assert.strictEqual(sandbox.allocationHistoryDelta(hist, '2026-06-15', 30).pastAlloc.find(x => x.type === 'cash').pct, 90);
+  assert.strictEqual(sandbox.allocationHistoryDelta(hist, '2026-06-15', 30, 'all').pastAlloc.find(x => x.type === 'cash').pct, 90);
+});
 test('allocationCard: owner="all"(기본)이면 includeInTotal 자산 중 부채를 뺀 나머지를 유형별로 보여준다(배우자 포함 가구 전체)', () => {
   setupNetWorthDB();
   const html = sandbox.allocationCard();
@@ -24489,7 +24550,7 @@ test('allocationCard: owner="all"일 때 nwHistory의 byType 스냅샷과 비교
   assert.ok(html.includes('금'), '가장 많이 움직인 유형(금)의 라벨이 캡션에 있어야 함');
   assert.ok(html.includes('▲'), '금 비중이 늘었으므로(30.57%→69.95%) 상승 화살표여야 함');
 });
-test('allocationCard: owner를 "all"이 아닌 값으로 넘기면 nwHistory의 byType은 아직 귀속별로 쪼개 기록하지 않으므로(1차 범위 밖) 추이 캡션을 보여주지 않는다', () => {
+test('allocationCard: owner를 "all"이 아닌 값으로 넘겼을 때 그 귀속의 byOwner[owner].byType 기록이 없으면(가구 전체 byType뿐인 레거시 스냅샷) 추이 캡션을 보여주지 않는다', () => {
   setupNetWorthDB();
   sandbox.DB.nwHistory = [
     { date: '2026-04-01', ta: 482500, td: 3000, nw: 479500, byType: { cash: 200000, fx: 130000, savings: 5000, gold: 147500 } },
@@ -24497,7 +24558,21 @@ test('allocationCard: owner를 "all"이 아닌 값으로 넘기면 nwHistory의 
   ];
   sandbox._balCache.clear();
   const html = sandbox.allocationCard('나');
-  assert.ok(!html.includes('대비'), 'owner 스코프 보기에서는 전체(all) 기준 추이 캡션이 섞여 보이면 안 됨');
+  assert.ok(!html.includes('대비'), '가구 전체 byType만 있고 이 귀속의 byOwner[owner].byType이 없으면 캡션이 섞여 보이면 안 됨');
+});
+/* app-evolve cycle334 critique/advance — _saveCore가 byOwner[owner]에도 byType을 중첩해 저장하기
+ * 시작하면서, owner!=='all'로 좁혀 보는 중에도 추이 캡션이 나와야 한다('나'=현금10000+달러130000). */
+test('allocationCard: owner를 "all"이 아닌 값으로 넘겨도 byOwner[owner].byType 기록이 있으면 그 귀속 기준 추이 캡션을 보여준다', () => {
+  setupNetWorthDB();
+  sandbox.DB.nwHistory = [
+    { date: '2026-04-01', ta: 482500, td: 3000, nw: 479500, byOwner: { 나: { ta: 140000, td: 0, byType: { cash: 130000, fx: 10000 } } } },
+    { date: '2026-06-15', ta: 482500, td: 3000, nw: 479500, byOwner: { 나: { ta: 140000, td: 0, byType: { cash: 10000, fx: 130000 } } } },
+  ];
+  sandbox._balCache.clear();
+  const html = sandbox.allocationCard('나');
+  assert.ok(html.includes('대비'), "'나'의 byOwner[owner].byType 기록이 있으면 캡션이 보여야 함");
+  assert.ok(html.includes('외화'), '가장 크게 움직인 유형(fx=외화, 7.1%→92.9%)의 라벨이어야 함');
+  assert.ok(html.includes('▲'));
 });
 test('allocationCard: byType이 있는 과거 스냅샷이 없으면(레거시 데이터뿐이거나 기록이 막 시작됨) 추이 캡션 없이 조용히 생략한다', () => {
   setupNetWorthDB();
@@ -24575,6 +24650,26 @@ test('assetAllocationSeries: 유형이 4개를 넘으면 가장 최근 스냅샷
   const pctSum = first.segs.reduce((s, x) => s + x.pct, 0);
   assert.ok(Math.abs(pctSum - 100) < 1e-9, '과거 시점도 모든 밴드(상위4+기타)를 합치면 100%여야 함');
 });
+/* owner 파라미터(app-evolve cycle334 critique/advance — _saveCore가 byOwner[owner]에도 byType을
+ * 중첩해 저장하기 시작하면서, 귀속별 보기에서도 자산배분 추이 차트가 성립하게 함). */
+test('assetAllocationSeries: owner를 넘기면 byOwner[owner].byType 시계열로 차트를 그린다(가구 전체 byType과는 무관)', () => {
+  const hist = [
+    { date: '2026-05-20', ta: 100, td: 0, nw: 100, byType: { cash: 90, stock: 10 }, byOwner: { 나: { ta: 40, td: 0, byType: { cash: 10, stock: 30 } } } },
+    { date: '2026-06-15', ta: 100, td: 0, nw: 100, byType: { cash: 50, stock: 50 }, byOwner: { 나: { ta: 40, td: 0, byType: { cash: 20, stock: 20 } } } },
+  ];
+  const r = sandbox.assetAllocationSeries(hist, 'm3', '2026-06-15', '나');
+  assert.strictEqual(r.points.length, 2);
+  const last = r.points[r.points.length - 1];
+  assert.strictEqual(last.segs.find(s => s.type === 'cash').pct, 50, "가구 전체(50%)와 우연히 같아도 '나' 기준(20/40)으로 독립 계산되어야 함");
+  assert.strictEqual(last.segs.find(s => s.type === 'stock').pct, 50);
+});
+test('assetAllocationSeries: owner를 넘겼는데 byOwner[owner].byType이 있는 스냅샷이 2개 미만이면(레거시이거나 그 귀속으로는 기록이 없음) null', () => {
+  const hist = [
+    { date: '2026-05-20', ta: 100, td: 0, nw: 100, byType: { cash: 90, stock: 10 } }, // byOwner 없음
+    { date: '2026-06-15', ta: 100, td: 0, nw: 100, byType: { cash: 50, stock: 50 }, byOwner: { 나: { ta: 40, td: 0 } } }, // byType 없는 레거시 byOwner
+  ];
+  assert.strictEqual(sandbox.assetAllocationSeries(hist, 'm3', '2026-06-15', '나'), null);
+});
 test('assetAllocationSeries: ALLOC_OTHER_TYPE("other")은 실제 "etc"(기타) 자산유형과 다른 키라 둘이 동시에 있어도 섞이지 않는다', () => {
   const hist = [
     { date: '2026-05-20', ta: 100, td: 0, nw: 100, byType: { cash: 30, stock: 25, gold: 20, etc: 15, fx: 10 } },
@@ -24601,13 +24696,25 @@ test('allocSeriesChartPath: 밴드가 바닥(0%)부터 types 순서대로 누적
   assert.ok(bands[0].path.startsWith('M0.0,48.0'), `cash(40%)는 바닥(y=80)에서 40% 높이인 y=48(80*(1-0.4))에서 시작해야 함(실제 ${bands[0].path.slice(0, 20)})`);
   assert.ok(bands[1].path.includes('M0.0,0.0'), `stock은 cash 위에 쌓여 맨 위(cash+stock=100%, y=0)에서 시작해야 함(실제 ${bands[1].path})`);
 });
-test('allocationHistoryCard: owner가 "all"이 아니면 byType이 귀속별로 쪼개져 기록되지 않으므로(1차 범위 밖) 빈 문자열을 반환한다', () => {
+test('allocationHistoryCard: owner가 "all"이 아니고 그 귀속의 byOwner[owner].byType 기록이 없으면(가구 전체 byType뿐인 레거시 스냅샷) 빈 문자열을 반환한다', () => {
   setupNetWorthDB();
   sandbox.DB.nwHistory = [
     { date: '2026-05-20', ta: 482500, td: 3000, nw: 479500, byType: { cash: 200000, fx: 130000, savings: 5000, gold: 147500 } },
     { date: '2026-06-15', ta: 482500, td: 3000, nw: 479500, byType: { cash: 10000, fx: 130000, savings: 5000, gold: 337500 } },
   ];
   assert.strictEqual(sandbox.allocationHistoryCard('나', 'm3'), '');
+});
+/* app-evolve cycle334 critique/advance — _saveCore가 byOwner[owner]에도 byType을 중첩해 저장하기
+ * 시작하면서, owner!=='all'로 좁혀 보는 중에도 이 카드가 그려져야 한다. */
+test('allocationHistoryCard: owner가 "all"이 아니어도 byOwner[owner].byType 기록이 2개 이상이면 그 귀속 기준 카드를 그린다', () => {
+  setupNetWorthDB();
+  sandbox.DB.nwHistory = [
+    { date: '2026-05-20', ta: 482500, td: 3000, nw: 479500, byOwner: { 나: { ta: 140000, td: 0, byType: { cash: 130000, fx: 10000 } } } },
+    { date: '2026-06-15', ta: 482500, td: 3000, nw: 479500, byOwner: { 나: { ta: 140000, td: 0, byType: { cash: 10000, fx: 130000 } } } },
+  ];
+  const html = sandbox.allocationHistoryCard('나', 'm3');
+  assert.ok(html.includes('자산배분 추이'));
+  assert.ok(html.includes('외화'), "'나'의 최근 스냅샷 기준 상위 유형(외화) 범례가 보여야 함");
 });
 test('allocationHistoryCard: 비교할 과거 비중이 없으면(레거시뿐이거나 기록이 막 시작됨) 카드를 숨긴다(빈 문자열)', () => {
   setupNetWorthDB();
@@ -26203,6 +26310,23 @@ test('mergeOwnerInto: DB.nwHistory의 byOwner는 같은 날짜에 양쪽 다 있
   assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.DB.nwHistory[2].byOwner)), { 나: { ta: 300, td: 20 } }, 'toName만 있으면 건드리지 않아야 함');
   assert.strictEqual(sandbox.DB.nwHistory[3].byOwner, undefined);
 });
+/* byOwner[owner].byType(귀속별 유형 비중, app-evolve cycle334 critique/advance)도 ta/td와 같은
+ * "둘 다 버리면 안 되고 합쳐야 하는 금액 총계"라 merge 시 키별로 더해야 한다. */
+test('mergeOwnerInto: DB.nwHistory의 byOwner[owner].byType도 같은 날짜에 양쪽 다 있으면 유형별로 합산하고, 한쪽에만 있으면 그대로 옮긴다', () => {
+  sandbox.DB = {
+    owners: ['나', '아빠'], assets: [], goals: [],
+    nwHistory: [
+      { date: '2026-01-01', byOwner: { 나: { ta: 200, td: 10, byType: { cash: 150, stock: 50 } }, 아빠: { ta: 100, td: 5, byType: { cash: 60, gold: 40 } } } },
+      { date: '2026-01-02', byOwner: { 아빠: { ta: 50, td: 0, byType: { cash: 50 } } } }, // from만 있음
+      { date: '2026-01-03', byOwner: { 나: { ta: 300, td: 20 } } }, // toName만 있고 byType 없는 레거시
+    ],
+  };
+  sandbox.mergeOwnerInto(1, '나');
+  const merged = JSON.parse(JSON.stringify(sandbox.DB.nwHistory[0].byOwner));
+  assert.deepStrictEqual(merged.나.byType, { cash: 210, stock: 50, gold: 40 }, '겹치는 유형(cash)은 더하고, 한쪽에만 있는 유형(stock/gold)은 그대로 합산 결과에 남아야 함');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.DB.nwHistory[1].byOwner)), { 나: { ta: 50, td: 0, byType: { cash: 50 } } }, 'from만 있으면 byType도 그대로 옮겨야 함');
+  assert.strictEqual(sandbox.DB.nwHistory[2].byOwner.나.byType, undefined, 'toName만 있고 byType이 원래 없었으면(레거시) 건드리지 않아야 함');
+});
 test('mergeOwnerInto: from을 톰스톤해 다른 기기가 되살리지 못하게 한다', () => {
   sandbox.DB = { owners: ['나', '아빠'], assets: [], goals: [], deletedIds: {} };
   sandbox.mergeOwnerInto(1, '나');
@@ -26233,6 +26357,16 @@ test('mergeOwnerInto: undoToast로 되돌리면 귀속/자산/목표/필터/nwHi
   assert.strictEqual(sandbox.ST.hist.owner, '아빠');
   assert.deepStrictEqual(sandbox.DB.nwHistory[0].byOwner, { 나: { ta: 200, td: 10 }, 아빠: { ta: 100, td: 5 } }, '대상의 byOwner도 합치기 전 상태로 되돌아가야 함');
   assert.strictEqual(sandbox.ownerTombKey('아빠') in sandbox.DB.deletedIds, false);
+});
+test('mergeOwnerInto: byType이 합산된 뒤 undoToast로 되돌리면 양쪽의 byType도 합치기 전 원래 값으로 복원된다(합산 결과가 아니라 각자의 원본으로)', () => {
+  sandbox.DB = {
+    owners: ['나', '아빠'], assets: [], goals: [], deletedIds: {},
+    nwHistory: [{ date: '2026-01-01', byOwner: { 나: { ta: 200, td: 10, byType: { cash: 150, stock: 50 } }, 아빠: { ta: 100, td: 5, byType: { cash: 60, gold: 40 } } } }],
+  };
+  sandbox.mergeOwnerInto(1, '나');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.DB.nwHistory[0].byOwner.나.byType)), { cash: 210, stock: 50, gold: 40 }, '합치기 직후엔 합산된 값이어야 함');
+  sandbox.lastUndo.undoFn();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.DB.nwHistory[0].byOwner)), { 나: { ta: 200, td: 10, byType: { cash: 150, stock: 50 } }, 아빠: { ta: 100, td: 5, byType: { cash: 60, gold: 40 } } }, '되돌리면 각자 원래 byType으로 복원돼야 함(합산 결과가 아님)');
 });
 test('mergeOwnerInto: 튜토리얼 모드 중에는 twGuard가 막아서 실제로 합쳐지지 않는다', () => {
   sandbox.TWi = 0;
