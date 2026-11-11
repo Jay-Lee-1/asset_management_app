@@ -4612,6 +4612,26 @@ test('nwChartPath: 날짜가 늘어날수록 x좌표는 단조 비감소이며 d
   });
 });
 
+/* ---------- shortDate2: 투사일(목표 달성/부채 상환 예상일)이 올해를 넘길 수도 있으므로 연도
+ * 비교가 필요한 포맷터 (app-evolve cycle336 develop) ---------- */
+test('shortDate2: TODAY와 연도가 같으면 기존처럼 MM/DD만 돌려준다(연도 접두 없음)', () => {
+  sandbox.TODAY = '2026-06-15';
+  assert.strictEqual(sandbox.shortDate2('2026-01-01'), '01/01');
+  assert.strictEqual(sandbox.shortDate2('2026-12-31'), '12/31');
+});
+test('shortDate2: TODAY와 연도가 다르면 두 자리 연도를 앞에 붙인다(예: 27.03/15) — 투사일이 내년 이상으로 넘어가도 몇 년도인지 알 수 있어야 함', () => {
+  sandbox.TODAY = '2026-06-15';
+  assert.strictEqual(sandbox.shortDate2('2027-03-15'), '27.03/15');
+  assert.strictEqual(sandbox.shortDate2('2024-11-02'), '24.11/02');
+});
+test('shortDate2: TODAY가 설정돼 있지 않으면(비교 기준 없음) 에러 없이 기존 MM/DD 포맷으로 안전하게 폴백한다', () => {
+  sandbox.TODAY = null;
+  assert.strictEqual(sandbox.shortDate2('2030-07-04'), '07/04');
+  sandbox.TODAY = undefined;
+  assert.strictEqual(sandbox.shortDate2('2030-07-04'), '07/04');
+  sandbox.TODAY = null;
+});
+
 /* ---------- nwHistoryCard: 순자산 추이 카드가 자산 캐러셀의 귀속 전환을 따라가는지 (app-evolve cycle71 critique/advance) ----------
  * nwCarousel은 owner별 순자산을 스와이프로 보여주는데, nwHistoryCard는 항상 DB.nwHistory의 전체
  * 합계(ta/td/nw)만 그려 캐러셀에서 보고 있는 귀속과 무관하게 동일한 추이만 보여주던 불일치를 수정.
@@ -34430,7 +34450,7 @@ test('[실행형] assetBalCard: debt 자산이 꾸준히 갚히는 추세면 "�
   }));
   ctx.DB = assetBalCardFixtureDB([{ id: 'd1', type: 'debt', baseAmount: 900000 }], txns);
   const html = ctx.assetBalCard('d1', 'm3');
-  assert.ok(/이 속도로 갚으면 \d{2}\/\d{2}쯤 다 갚아요/.test(html), '270,000원을 갚고도 아직 630,000원이 남았으면(미완납) shortDate2 포맷의 투사일 문구가 떠야 함');
+  assert.ok(/이 속도로 갚으면 (?:\d{2}\.)?\d{2}\/\d{2}쯤 다 갚아요/.test(html), '270,000원을 갚고도 아직 630,000원이 남았으면(미완납) shortDate2 포맷의 투사일 문구가 떠야 함(투사일이 해를 넘기면 연도 접두가 붙을 수 있음)');
   assert.ok(html.includes('id="debtWhatIfExtra"'), '미완납 debt에는 what-if 추가 납입 입력 필드가 있어야 함');
   assert.ok(html.includes('id="debtWhatIfResult"'), '미완납 debt에는 what-if 결과 영역이 있어야 함');
   assert.ok(html.includes('매달 이만큼 더 갚으면'), 'ST.hist.debtWhatIfExtra 기본값(0)에서도 베이스라인과 같은 투사일 문구가(아직 추가 납입 없음) 떠야 함');

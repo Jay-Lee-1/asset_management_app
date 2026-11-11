@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.411';
+const APP_VERSION='1.47.412';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -3264,7 +3264,11 @@ function planGaugeCard(S,y,m){
 /* 순자산 추이 카드 (일별 스냅샷 스파크라인). preset(m1/m3/y1/all)으로 보이는 기간을 바꿀 수 있고
  * (app-evolve cycle135 critique/advance — 전엔 항상 최근 60일만 보여줬음), 차트를 누르고 있으면
  * nwChartPeekStart/Move/End가 가장 가까운 날짜·금액을 보여준다(histPeekStart류와 동일한 원칙). */
-function shortDate2(ds){return ds.slice(5,7)+'/'+ds.slice(8,10)}
+/* 투사일(목표 달성/부채 상환 예상일) 등 올해를 넘길 수도 있는 날짜에 쓰일 때 연도가 통째로
+ * 빠지면 "03/15가 몇 년 뒤인지" 알 길이 없다(app-evolve cycle336 develop) — TODAY와 연도가 같을
+ * 때만 기존처럼 MM/DD만, 다르면 두 자리 연도를 앞에 붙인다(예: 26.03/15). TODAY가 문자열이
+ * 아닌 경우(비교 기준이 없음)는 안전하게 기존 MM/DD 그대로 돌려준다. */
+function shortDate2(ds){return (typeof TODAY==='string'&&ds.slice(0,4)!==TODAY.slice(0,4)?ds.slice(2,4)+'.':'')+ds.slice(5,7)+'/'+ds.slice(8,10)}
 function nwPresetSegHTML(preset){
  const presets=[['m1','1개월'],['m3','3개월'],['y1','1년'],['all','전체']];
  return `<div class="seg nwh-seg" role="group" aria-label="기간 선택"><div class="seg-blob"></div>${presets.map(([p,l])=>`<button type="button" class="${preset===p?'on':''}" aria-pressed="${preset===p}" onclick="nwPresetSel('${p}')">${l}</button>`).join('')}</div>`;

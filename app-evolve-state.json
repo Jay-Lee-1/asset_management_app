@@ -1,15 +1,8 @@
 {
   "cycle": 336,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 331,
-      "phase": "develop",
-      "timestamp": "2026-11-10T00:00:00.000Z",
-      "summary": "commaQty()(자산 목록/수량기록 보유수량 표시)가 사토시(1e-8) 미만의 \"더스트\" 보유수량을 8자리 반올림으로 \"0\"/\"-0\"으로 뭉개 보여주던 공백을 고쳤다 — 반올림 결과가 \"0\"/\"-0\"이면서 원래 값이 참(진짜 0/NaN/null 아님)일 때만 표시 가능한 최소 단위(0.00000001, 부호 유지)로 대체. 테스트 7건 추가 — node test/run.js 3218->3221/3221 통과. APP_VERSION 1.47.402->1.47.403, sw.js CACHE v669->v670.",
-      "commit": null
-    },
     {
       "cycle": 331,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-11T08:05:00.000Z",
       "summary": "critique(cycle335) 계획대로 시트 닫기 경로의 비대칭을 없앴다 — 시트 기본 X 버튼(openSheet의 기본 topBtn, index.html:10382)의 onclick=\"closeSheet()\"를 onclick=\"closeSheetGuarded()\"로, Escape 키(onSheetKeydown, 10366행)의 else closeSheet();를 else closeSheetGuarded();로 교체. 두 경로 모두 스크림탭/스와이프다운/뒤로가기와 동일하게 isDraftDirty()가 true일 때만 '변경사항을 버릴까요?' 확인을 받고, 초안 개념이 없는 일반 시트(목록/설정 등)에서는 isDraftDirty()가 그대로 false를 반환해 즉시 닫히는 동작이 유지된다(회귀 없음). closeRecoverySheet처럼 커스텀 topBtn을 넘기는 시트는 영향 없음(계획대로 범위 밖으로 확인만 하고 그대로 둠). 테스트: 기존 'closeSheetGuarded 와이어링' 테스트에 두 호출부가 closeSheetGuarded()를 거치는지 보는 어서션 3건 추가(새 isDraftDirty/closeSheetGuarded 동작 자체는 이미 기존 테스트가 다 커버하므로 새 call-site 와이어링만 확인) — node test/run.js 3269/3269 통과(새 test() 블록 없이 기존 블록 확장). node --check(스크립트 블록 추출) 통과. APP_VERSION 1.47.410->1.47.411, sw.js CACHE v677->v678. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 336,
+      "phase": "develop",
+      "timestamp": "2026-11-11T09:00:00.000Z",
+      "summary": "shortDate2(index.html:3267, 투사일/차트 캡션 포맷터)가 연도 없이 항상 MM/DD만 돌려줘, 목표 달성 예상일(goalRowHTML)·부채 상환 예상일(debtPayoffProjection/debtPayoffWhatIf 투사)처럼 TODAY로부터 멀게(수개월~수년) 투사될 수 있는 날짜가 해를 넘겨도 사용자가 몇 년도인지 알 길이 없던 공백을 고쳤다 — TODAY와 연도가 같을 때만 기존처럼 MM/DD, 다르면 두 자리 연도를 앞에 붙임(예: 27.03/15). 실전 거의 모든 호출부(nwh-range 차트 캡션 등)는 같은 해 안이라 보이는 문구가 바뀌지 않고, 연도가 넘어가는 투사일에만 연도가 드러난다. TODAY가 문자열이 아닐 때(비교 기준 없음)는 안전하게 기존 MM/DD로 폴백(테스트 환경에서 TODAY를 세팅하지 않는 일부 fixture까지 전부 바꾸지 않으려는 방어적 설계). 테스트: shortDate2 직접 단위 테스트 3건(같은 해/다른 해/TODAY 없음 폴백) 신설, assetBalCard 투사 문구 정규식 테스트 1건을 연도 접두가 붙을 수 있는 경우까지 허용하도록 보강 — node test/run.js 3269->3272/3272 통과. node --check(스크립트 블록 추출) 통과. APP_VERSION 1.47.411->1.47.412, sw.js CACHE v678->v679.",
       "commit": null
     }
   ]
