@@ -265,6 +265,10 @@ const FUNCTIONS = [
   'catIconOf', 'catGlyph', 'openCatManage', 'openCatPicker', 'catFilteredGrid', 'catEmptyHtml', 'pkCatQInput', 'refreshPkCatList', 'moveCatBlob', 'pkPickCat',
   'openIconPicker', 'pickCatIcon',
   'catListOf', 'catAv', 'assetPickBtn', 'endCondFields', 'dayPickerHTML', 'openFormSheet', 'renderTxSheet', '_applyType', '_applyFreq', '_applyDay', '_applyCount', '_applyOpenCat', '_applyOpenAsset', 'txType', 'txToggleRepeat', 'txToggleShared',
+  // txOpenEnd/recOpenEnd(종료일 피커 콜백)는 cycle338 develop이 dateBelowRangeFloor/
+  // dateAboveRangeCeil 가드를 추가한 대상 — openFieldDatePicker 스텁(아래)이 캡처한 onPick을
+  // 테스트가 직접 호출해 가드를 검증한다.
+  'txOpenEnd', 'recOpenEnd',
   // txMemoInput/txCatSuggestUpdate/txApplyCatSuggest·recMemoInput/recCatSuggestUpdate/
   // recApplyCatSuggest는 메모 기반 카테고리 추천 칩(app-evolve cycle270 advance)의 입력
   // 디바운스·렌더·적용 핸들러 — openTxSheet/openRecSheet가 매번 $('txCatSuggest')/
@@ -840,6 +844,12 @@ const sandbox = {
   lastCurrencyPickerCurrent: null,
   lastCurrencyPickerOnPick: null,
   openCurrencyPicker: (o) => { sandbox.lastCurrencyPickerCurrent = o.current; sandbox.lastCurrencyPickerOnPick = o.onPick; },
+  // txOpenEnd/recOpenEnd가 여는 종료일 날짜 피커 — 실제 달력 DOM(openFieldDatePicker/dpConfirm) 대신
+  // openTypePicker/openCurrencyPicker와 같은 이유(화면 전용)로 넘겨받은 cur/onPick만 캡처해,
+  // 테스트가 "날짜를 골라 확인을 눌렀다"는 것을 onPick(ds) 직접 호출로 재현할 수 있게 한다.
+  lastFieldPickerCur: null,
+  lastFieldPickerOnPick: null,
+  openFieldDatePicker: (cur, onPick) => { sandbox.lastFieldPickerCur = cur; sandbox.lastFieldPickerOnPick = onPick; },
   // renderAssets()가 부수효과로 부르는 실 DOM/드래그/스크롤/애니메이션 와이어링 여섯 개 —
   // fitAll처럼 화면 전용이라 순수 로직 테스트 대상이 아니므로 전부 no-op으로 흉내낸다
   // (renderAssets 자체와 그 안의 문자열 빌더 헬퍼들만 실제 소스로 검증하면 충분).
@@ -22629,6 +22639,36 @@ test('saveTx: RANGE_TO 당일은 상한선에 포함되어 정상 저장된다(�
   assert.strictEqual(sandbox.DB.txns.length, 1, 'RANGE_TO 당일은 저장되어야 함');
 });
 
+/* ---------- saveTx: 반복 종료일(endDate)이 RANGE_TO 이후면 저장을 막는다 (app-evolve cycle338
+ * develop) — "횟수" 입력(_applyCount→recNthDate)으로 파생된 endDate는 txOpenEnd 피커 가드를
+ * 거치지 않고 곧장 saveTx로 들어오므로, 저장 시점에도 d.date/d.startDate와 동일하게 거른다. */
+test('saveTx: 반복 종료일이 RANGE_TO 이후면 토스트만 뜨고 저장되지 않는다', () => {
+  sandbox.TWi = -1;
+  sandbox.RANGE_TO = '2028-06-15';
+  sandbox.DB = { recurrences: [], settings: {} };
+  sandbox.txDraft = {
+    id: null, type: 'expense', date: '2026-01-15', category: '월세', memo: '',
+    amount: 500000, fromAssetId: 'a1', toAssetId: null,
+    repeat: true, freq: 'monthly', day: 15, endDate: '2028-06-16', count: null,
+  };
+  sandbox.toastCalls = [];
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.DB.recurrences.length, 0, 'RANGE_TO 이후 종료일은 저장되면 안 됨');
+  assert.ok(sandbox.toastCalls.some(m => m.includes('2028-06-15')), '상한 날짜를 알려주는 토스트가 떠야 함');
+});
+test('saveTx: 반복 종료일이 RANGE_TO 당일이면 상한선에 포함되어 정상 저장된다(정상 케이스는 회귀 없음)', () => {
+  sandbox.TWi = -1;
+  sandbox.RANGE_TO = '2028-06-15';
+  sandbox.DB = { recurrences: [], settings: {} };
+  sandbox.txDraft = {
+    id: null, type: 'expense', date: '2026-01-15', category: '월세', memo: '',
+    amount: 500000, fromAssetId: 'a1', toAssetId: null,
+    repeat: true, freq: 'monthly', day: 15, endDate: '2028-06-15', count: null,
+  };
+  sandbox.saveTx();
+  assert.strictEqual(sandbox.DB.recurrences.length, 1, 'RANGE_TO 당일 종료일은 저장되어야 함');
+});
+
 /* ---------- saveTx: 카테고리가 비어있으면(예: doDeleteCat 가드를 뚫고 마지막 카테고리가
  * 지워졌거나, migrate 이전 데이터 등) undefined 카테고리로 저장되지 않게 막는다 (cycle69) ---------- */
 test('saveTx: category가 없으면(undefined) 토스트만 뜨고 저장되지 않는다', () => {
@@ -23229,6 +23269,35 @@ test('saveRec: 시작일이 RANGE_TO 이후이면 토스트만 뜨고 저장되�
   sandbox.saveRec();
   assert.strictEqual(sandbox.DB.recurrences.length, 0, 'RANGE_TO 이후 시작일은 저장되면 안 됨');
   assert.ok(sandbox.toastCalls.some(m => m.includes('2028-06-15')), '상한 날짜를 알려주는 토스트가 떠야 함');
+});
+/* app-evolve cycle338 develop: 종료일(endDate)도 시작일과 대칭으로 RANGE_TO 이후면 저장을
+ * 막는다 — "횟수" 입력(_applyCount→recNthDate)으로 파생된 endDate는 recOpenEnd 피커 가드를
+ * 거치지 않고 곧장 saveRec으로 들어온다. */
+test('saveRec: 종료일이 RANGE_TO 이후이면 토스트만 뜨고 저장되지 않는다', () => {
+  sandbox.TWi = -1;
+  sandbox.RANGE_TO = '2028-06-15';
+  sandbox.DB = { recurrences: [], settings: {} };
+  sandbox.recDraft = {
+    id: null, type: 'expense', category: '식비', memo: '', amount: 9000,
+    fromAssetId: 'a1', toAssetId: null, freq: 'monthly', day: 10,
+    startDate: '2026-01-15', endDate: '2028-06-16', count: null, weekend: 'onDay',
+  };
+  sandbox.toastCalls = [];
+  sandbox.saveRec();
+  assert.strictEqual(sandbox.DB.recurrences.length, 0, 'RANGE_TO 이후 종료일은 저장되면 안 됨');
+  assert.ok(sandbox.toastCalls.some(m => m.includes('2028-06-15')), '상한 날짜를 알려주는 토스트가 떠야 함');
+});
+test('saveRec: 종료일이 RANGE_TO 당일이면 상한선에 포함되어 정상 저장된다(정상 케이스는 회귀 없음)', () => {
+  sandbox.TWi = -1;
+  sandbox.RANGE_TO = '2028-06-15';
+  sandbox.DB = { recurrences: [], settings: {} };
+  sandbox.recDraft = {
+    id: null, type: 'expense', category: '식비', memo: '', amount: 9000,
+    fromAssetId: 'a1', toAssetId: null, freq: 'monthly', day: 10,
+    startDate: '2026-01-15', endDate: '2028-06-15', count: null, weekend: 'onDay',
+  };
+  sandbox.saveRec();
+  assert.strictEqual(sandbox.DB.recurrences.length, 1, 'RANGE_TO 당일 종료일은 저장되어야 함');
 });
 
 /* ---------- saveRec: 분할 입력(여러 카테고리로 나누기) 검증 (app-evolve cycle282 advance) ----------
@@ -27411,6 +27480,63 @@ test('renderRecSheet: rAmt(금액)에 Enter-제출이 있다(saveRec()가 요구
     body.includes(`id="rAmt" class="num" inputmode="numeric" value="${'${d.amount?comma(d.amount):\'\'}'}" placeholder="0" oninput="recAmtInput(this)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveRec()"`),
     'rAmt에 Enter→saveRec() 연결이 없음'
   );
+});
+/* ---------- txOpenEnd/recOpenEnd: 종료일 피커(무한 스크롤, min/max 없음)가 RANGE_TO 한참 뒤의
+ * 날짜를 돌려주면, 콜백이 저장 전에 곧바로 recCountUntil(시작일~종료일 1일/1주 단위 순회)을 불러
+ * 그 자리에서 멈출 수 있었다 — saveTx/saveRec의 저장 시점 가드보다 먼저다. 날짜를 "고른 뒤"에도
+ * 범위 밖이면 토스트만 뜨고 draft(endDate/count)가 전혀 바뀌지 않아야 한다(app-evolve
+ * cycle338 develop). */
+test('txOpenEnd: 범위 밖(RANGE_TO 이후) 날짜를 고르면 토스트만 뜨고 endDate/count가 바뀌지 않는다(recCountUntil도 불리지 않음)', () => {
+  sandbox.TODAY = '2026-01-15';
+  sandbox.RANGE_TO = '2028-06-15';
+  sandbox.txDraft = { date: '2026-01-15', freq: 'daily', day: null, weekend: 'none', endDate: null, count: null };
+  sandbox.toastCalls = [];
+  sandbox.txOpenEnd();
+  assert.strictEqual(typeof sandbox.lastFieldPickerOnPick, 'function', '피커 콜백이 등록되어야 함');
+  sandbox.lastFieldPickerOnPick('2028-06-16');
+  assert.strictEqual(sandbox.txDraft.endDate, null, '범위 밖 날짜는 endDate에 반영되면 안 됨');
+  assert.strictEqual(sandbox.txDraft.count, null, '범위 밖 날짜는 count도 계산되면 안 됨(recCountUntil 호출 전에 막혀야 함)');
+  assert.ok(sandbox.toastCalls.some(m => m.includes('2028-06-15')), '상한 날짜를 알려주는 토스트가 떠야 함');
+});
+test('txOpenEnd: 범위 밖(RANGE_FROM 이전) 날짜를 고르면 토스트만 뜨고 endDate/count가 바뀌지 않는다', () => {
+  sandbox.TODAY = '2026-01-15';
+  sandbox.RANGE_TO = '2028-06-15';
+  sandbox.txDraft = { date: '2026-01-15', freq: 'daily', day: null, weekend: 'none', endDate: null, count: null };
+  sandbox.toastCalls = [];
+  sandbox.txOpenEnd();
+  sandbox.lastFieldPickerOnPick('2022-12-31');
+  assert.strictEqual(sandbox.txDraft.endDate, null, '범위 밖 날짜는 endDate에 반영되면 안 됨');
+  assert.ok(sandbox.toastCalls.some(m => m.includes('2023-01-01')), '하한 날짜를 알려주는 토스트가 떠야 함');
+});
+test('txOpenEnd: 범위 안 날짜를 고르면 그대로 endDate/count가 반영된다(정상 케이스는 회귀 없음)', () => {
+  sandbox.TODAY = '2026-01-15';
+  sandbox.RANGE_TO = '2028-06-15';
+  sandbox.txDraft = { date: '2026-01-15', freq: 'daily', day: null, weekend: 'none', endDate: null, count: null };
+  sandbox.txOpenEnd();
+  sandbox.lastFieldPickerOnPick('2026-01-20');
+  assert.strictEqual(sandbox.txDraft.endDate, '2026-01-20', '범위 안 날짜는 그대로 반영되어야 함');
+  assert.strictEqual(sandbox.txDraft.count, 6, 'daily 2026-01-15~2026-01-20은 6회(recCountUntil과 일치)여야 함');
+});
+test('recOpenEnd: 범위 밖(RANGE_TO 이후) 날짜를 고르면 토스트만 뜨고 endDate/count가 바뀌지 않는다(recCountUntil도 불리지 않음)', () => {
+  sandbox.TODAY = '2026-01-15';
+  sandbox.RANGE_TO = '2028-06-15';
+  sandbox.recDraft = { startDate: '2026-01-15', freq: 'weekly', day: null, weekend: 'none', endDate: null, count: null };
+  sandbox.toastCalls = [];
+  sandbox.recOpenEnd();
+  assert.strictEqual(typeof sandbox.lastFieldPickerOnPick, 'function', '피커 콜백이 등록되어야 함');
+  sandbox.lastFieldPickerOnPick('2028-06-16');
+  assert.strictEqual(sandbox.recDraft.endDate, null, '범위 밖 날짜는 endDate에 반영되면 안 됨');
+  assert.strictEqual(sandbox.recDraft.count, null, '범위 밖 날짜는 count도 계산되면 안 됨(recCountUntil 호출 전에 막혀야 함)');
+  assert.ok(sandbox.toastCalls.some(m => m.includes('2028-06-15')), '상한 날짜를 알려주는 토스트가 떠야 함');
+});
+test('recOpenEnd: 범위 안 날짜를 고르면 그대로 endDate/count가 반영된다(정상 케이스는 회귀 없음)', () => {
+  sandbox.TODAY = '2026-01-15';
+  sandbox.RANGE_TO = '2028-06-15';
+  sandbox.recDraft = { startDate: '2026-01-15', freq: 'weekly', day: null, weekend: 'none', endDate: null, count: null };
+  sandbox.recOpenEnd();
+  sandbox.lastFieldPickerOnPick('2026-02-05');
+  assert.strictEqual(sandbox.recDraft.endDate, '2026-02-05', '범위 안 날짜는 그대로 반영되어야 함');
+  assert.strictEqual(sandbox.recDraft.count, 4, 'weekly 2026-01-15~2026-02-05은 4회(recCountUntil과 일치)여야 함');
 });
 /* renderRecSheet는 renderTxSheet와 달리 vm 실행 스모크 테스트 fixture가 없어(DB.settings 등
  * 의존이 더 많음) extractFunction 소스 패턴으로 구분 세그먼트의 aria-pressed/role을 확인한다
