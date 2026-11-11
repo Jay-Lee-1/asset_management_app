@@ -25127,6 +25127,47 @@ test('openTargetAllocationForm/taPctInput/saveTargetAllocation: 입력값을 dra
     sandbox.openSheet = origOpenSheet; sandbox.save = origSave; sandbox.renderCurrent = origRenderCurrent; sandbox.closeSheet = origCloseSheet; sandbox.toast = origToast;
   }
 });
+/* app-evolve cycle340 develop: taPctInput이 Math.max(0,parseFloat(v)||0) 패턴을 쓸 때
+ * 아주 긴 숫자문자열이 parseFloat로 Infinity가 되면(Infinity는 truthy라 ||0에 안 걸림)
+ * targetAllocDraft/DB.settings.targetAllocation에 Infinity가 그대로 저장되던 공백을
+ * syncAssetInputs(cycle337)와 동일하게 sanitizeAmount(v,0) 재사용으로 막았다. sanitizeAmount는
+ * 비유한수(Infinity/NaN)는 0으로, 유한하지만 AMOUNT_MAX를 넘는 값은 AMOUNT_MAX로 클램프한다. */
+test('taPctInput: 아주 긴 숫자문자열(Infinity로 파싱됨)은 0으로 클램프되어 draft/저장값에 Infinity가 새지 않는다', () => {
+  const origOpenSheet = sandbox.openSheet, origSave = sandbox.save, origRenderCurrent = sandbox.renderCurrent, origCloseSheet = sandbox.closeSheet, origToast = sandbox.toast;
+  sandbox.openSheet = () => {};
+  sandbox.save = () => {};
+  sandbox.renderCurrent = () => {};
+  sandbox.closeSheet = () => {};
+  sandbox.toast = () => {};
+  try {
+    sandbox.DB = { settings: { targetAllocation: {} } };
+    sandbox.openTargetAllocationForm();
+    sandbox.taPctInput('cash', { value: '9'.repeat(400) });
+    assert.strictEqual(sandbox.targetAllocDraft.cash, 0, 'Infinity로 파싱되는 긴 입력은 0으로 걸러져야 함(Infinity가 draft에 남으면 안 됨)');
+    sandbox.saveTargetAllocation();
+    assert.strictEqual(Object.keys(sandbox.DB.settings.targetAllocation).length, 0, '0이라 저장 시 제외되어야 함');
+  } finally {
+    sandbox.openSheet = origOpenSheet; sandbox.save = origSave; sandbox.renderCurrent = origRenderCurrent; sandbox.closeSheet = origCloseSheet; sandbox.toast = origToast;
+  }
+});
+test('taPctInput: AMOUNT_MAX를 넘지만 유한한 값은 AMOUNT_MAX로 클램프되어 저장된다', () => {
+  const origOpenSheet = sandbox.openSheet, origSave = sandbox.save, origRenderCurrent = sandbox.renderCurrent, origCloseSheet = sandbox.closeSheet, origToast = sandbox.toast;
+  sandbox.openSheet = () => {};
+  sandbox.save = () => {};
+  sandbox.renderCurrent = () => {};
+  sandbox.closeSheet = () => {};
+  sandbox.toast = () => {};
+  try {
+    sandbox.DB = { settings: { targetAllocation: {} } };
+    sandbox.openTargetAllocationForm();
+    sandbox.taPctInput('cash', { value: String(sandbox.AMOUNT_MAX + 1000) });
+    assert.strictEqual(sandbox.targetAllocDraft.cash, sandbox.AMOUNT_MAX, 'AMOUNT_MAX를 넘는 유한수는 AMOUNT_MAX로 클램프돼야 함');
+    sandbox.saveTargetAllocation();
+    assert.strictEqual(sandbox.DB.settings.targetAllocation.cash, sandbox.AMOUNT_MAX, '저장값도 AMOUNT_MAX로 클램프된 채 유지되어야 함');
+  } finally {
+    sandbox.openSheet = origOpenSheet; sandbox.save = origSave; sandbox.renderCurrent = origRenderCurrent; sandbox.closeSheet = origCloseSheet; sandbox.toast = origToast;
+  }
+});
 test('saveTargetAllocation: 모든 입력이 0/빈 값이면 targetAllocation을 {}로 저장해 기능이 꺼진다', () => {
   const origOpenSheet = sandbox.openSheet, origSave = sandbox.save, origRenderCurrent = sandbox.renderCurrent, origCloseSheet = sandbox.closeSheet, origToast = sandbox.toast;
   let toasts = [];

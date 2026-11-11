@@ -1,15 +1,8 @@
 {
   "cycle": 340,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 335,
-      "phase": "develop",
-      "timestamp": "2026-11-11T02:14:08.775Z",
-      "summary": "nwHistoryByType(cycle334 advance가 추가한 헬퍼, byOwner[owner].byType 소비)이 allocationHistoryDelta/assetAllocationSeries를 통한 간접 테스트만 있고 직접 테스트가 없던 공백을 메웠다 — owner 생략/\"all\"이면 top-level byType, owner 지정 시 byOwner[owner].byType, byOwner 자체가 없는 레거시 스냅샷이나 그 귀속 기록이 없으면 undefined 세 분기를 nwHistoryForOwner 테스트 옆에 직접 겨냥한 테스트로 추가. 다른 영역(반복거래 recDates/recNthDate/recCountUntil, 정산 settlementSummary, 자산배분 allocationDrift/rebalanceAmount, 부채상환 amortizationPayoffMonths, 예산이월 budgetCarry, 벌크액션 bulk*Targets, CSV 내보내기 전반, cycle334 advance의 _saveCore/sanitizeBackup/mergeOwnerInto 변경분)를 두루 검토했으나 이미 여러 사이클에 걸쳐 두텁게 방어돼 있어 새 버그를 찾지 못했다. 코드 변경 없음(테스트만 추가) — node test/run.js 3267->3269/3269 통과. APP_VERSION/sw.js CACHE는 올리지 않음(cycle243 선례와 동일, 앱 동작 변경 없음).",
-      "commit": "0d814bd"
-    },
     {
       "cycle": 335,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-11T22:05:00.000Z",
       "summary": "critique(cycle339) 계획대로 CSV 가져오기 금액 검증(csvRowToImportTxn, index.html:8999)에 다른 세 금액 입력 경로(fmtAmt/sanitizeAmount/syncAssetInputs)와 동일한 AMOUNT_MAX(999999999999999) 상한 가드를 추가했다 — 기존 'if(!Number.isFinite(amount)||amount<=0||!Number.isInteger(amount))' 조건에 '||amount>AMOUNT_MAX'를 더해 한 줄로 해결(새 상수 불필요, AMOUNT_MAX는 이미 전역). error:'amount'는 기존 음수/0/비정수 케이스와 완전히 같은 경로이므로 buildImportPreview/CSV_INVALID_REASON_LABEL(10270행, '금액 오류')까지 추가 UI 변경 없이 그대로 적용됨을 확인(grep으로 error==='amount' 소비처가 CSV_INVALID_REASON_LABEL 하나뿐임을 대조). 테스트 1건 추가(AMOUNT_MAX+1은 유한한 정수여도 error:'amount'로 거부, AMOUNT_MAX 당일은 그대로 허용되는 경계값 확인) — node test/run.js 3301->3302/3302 통과. node --check sw.js/test/run.js 통과(index.html은 cycle339 develop 노트와 동일한 이유로 extractMainScript 대신 전체 테스트 스위트로 대체 검증). 사용자 체감 동작 변화(CSV로 비정상적으로 큰 금액을 가져오던 경로가 막힘)라 APP_VERSION 1.47.418->1.47.419, sw.js CACHE v685->v686. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 340,
+      "phase": "develop",
+      "timestamp": "2026-11-11T23:05:00.000Z",
+      "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — 목표 자산배분 시트의 % 입력(taPctInput, index.html:3787-3790)이 cycle336/337에서 이미 고쳐진 다른 금액/수치 입력들(fmtAmt/sanitizeAmount/syncAssetInputs)과 달리 여전히 옛 패턴 Math.max(0,parseFloat(v)||0)을 쓰고 있어, 아주 긴 숫자문자열을 입력하면 parseFloat가 Infinity를 돌려주고(Infinity는 truthy라 ||0에 안 걸림) targetAllocDraft[type]/DB.settings.targetAllocation에 Infinity가 그대로 저장될 수 있었다(저장되면 targetAllocationCard/홈 알림의 rebalanceAmount 계산이 '목표 Infinity%'·'▲ 매수 약 ∞원'으로 깨짐). syncAssetInputs(cycle337)와 완전히 같은 방식으로 Math.max(0,parseFloat(v)||0)을 sanitizeAmount(parseFloat(v),0) 재사용으로 교체(새 상수/헬퍼 불필요, sanitizeAmount는 비유한수는 0으로 걸러내고 유한하지만 AMOUNT_MAX 초과면 AMOUNT_MAX로 클램프). 테스트 2건 추가(아주 긴 숫자문자열이 0으로 걸러짐/AMOUNT_MAX+1000처럼 유한하지만 상한 초과인 값은 AMOUNT_MAX로 클램프됨, 둘 다 draft와 saveTargetAllocation 저장값까지 확인) — node test/run.js 3302->3304/3304 통과(처음엔 Infinity 케이스를 AMOUNT_MAX로 클램프된다고 잘못 기대해 1건 실패, sanitizeAmount가 비유한수는 0을 반환함을 재확인해 기대값 수정). node --check sw.js/test/run.js 통과, index.html 주 스크립트 블록(819KB, <script> 2번째 블록) 추출 후 node --check 통과. 사용자 체감 동작 변화(긴 숫자 입력 시 Infinity/∞ 노출이 막히고 0 또는 AMOUNT_MAX로 클램프)라 APP_VERSION 1.47.419->1.47.420, sw.js CACHE v686->v687.",
       "commit": null
     }
   ]
