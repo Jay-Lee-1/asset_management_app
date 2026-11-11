@@ -221,7 +221,7 @@ const FUNCTIONS = [
   'dayTypeTotals', 'isPending', 'isDuePending', 'pendingTransferCount', 'buildExpenseBarHtml', 'expenseBreakdownCard', 'incomeBreakdownCard',
   'bigMin', 'upcomingOutflows', 'monthOutflows', 'syncAssetInputs', 'asOpenType', 'asOpenCur', 'asCur', 'asToggleNeg', 'openAssetSheet', 'duplicateAsset', 'saveAsset', 'groupItems', 'clampRecurringToMaturity', 'mergeRemoteDataIntoLocal', 'snapshotLocalDeviceFields', 'restoreLocalDeviceFields', 'fmtAmt', 'fmtQty',
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges', 'shouldRetryCloudSync',
-  'pullCloud', 'afterCloudAuth', 'resolveCloudPullRemote', 'pushCloud', 'measureCloudClockSkew',
+  'pullCloud', 'afterCloudAuth', 'resolveCloudPullRemote', 'confirmCloudPullRemote', 'pushCloud', 'measureCloudClockSkew',
   'shouldPullCloud', 'pullCloudIfStale', 'appIsOpen',
   'bytesToBase64', 'base64ToBytes', 'encodeCloudPayload', 'decodeCloudPayload',
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
@@ -21281,6 +21281,28 @@ test('resolveCloudPullRemote(사용자가 명시적으로 누르는 "가져오�
     sandbox.renderCurrent = origRenderCurrent;
   }
   assert.ok(sandbox.DB.assets.some(a => a.id === 'remote2'));
+  assert.strictEqual(sandbox.markCloudSyncedCalls, 1);
+});
+/* confirmCloudPullRemote: 충돌 화면의 "최신 데이터 가져오기" 버튼이 resolveCloudPullRemote()를
+ * 곧장 실행하는 대신 confirmSheet로 한 번 더 확인받게 한 와이어링(app-evolve cycle337 develop) —
+ * confirmCloudForcePush()가 이미 같은 방식으로 "내 데이터로 덮어쓰기"를 보호하는 것과 대칭을 맞춤. */
+test('confirmCloudPullRemote: 곧장 가져오지 않고 confirmSheet로 확인받는다 — 확인을 누르면 resolveCloudPullRemote가 실행된다', async () => {
+  sandbox.DB = { assets: [{ id: 'local-old' }], txns: [] };
+  sandbox.CLOUD_UID = 'u1';
+  sandbox.markCloudSyncedCalls = 0;
+  sandbox.confirmSheetCalls = [];
+  sandbox._sbMaybeSingleResult = { data: { data: { assets: [{ id: 'remote3', type: 'cash' }], txns: [] }, updated_at: '2026-01-04T00:00:00.000Z' }, error: null };
+  const origRenderCurrent = sandbox.renderCurrent;
+  sandbox.renderCurrent = () => {};
+  try {
+    sandbox.confirmCloudPullRemote();
+    assert.strictEqual(sandbox.confirmSheetCalls.length, 1, '곧장 가져오지 않고 확인 시트를 띄워야 함');
+    assert.ok(sandbox.DB.assets.every(a => a.id !== 'remote3'), '확인 전에는 DB가 바뀌면 안 됨');
+    await sandbox.confirmSheetCalls[0].cb();
+  } finally {
+    sandbox.renderCurrent = origRenderCurrent;
+  }
+  assert.ok(sandbox.DB.assets.some(a => a.id === 'remote3'), '확인을 누르면 resolveCloudPullRemote가 실행돼야 함');
   assert.strictEqual(sandbox.markCloudSyncedCalls, 1);
 });
 /* ---------- snapshotLocalDeviceFields/restoreLocalDeviceFields: afterCloudAuth()의 무충돌
