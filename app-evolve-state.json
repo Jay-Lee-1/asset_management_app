@@ -1,15 +1,8 @@
 {
   "cycle": 335,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 330,
-      "phase": "develop",
-      "timestamp": "2026-11-10T06:17:09.069Z",
-      "summary": "dismissWipeBackup()의 '지우기' 버튼이 전체 계정 백업의 유일한 복구 수단을 확인 없이 즉시 영구 삭제하던 공백을 고쳤다 — confirmSheet 확인을 거치도록 수정, label 분기(탈퇴/복원/초기화)로 문구 표시. 테스트 2건 추가 — node test/run.js 3213->3215/3215 통과. APP_VERSION 1.47.400->1.47.401, sw.js CACHE v667->v668.",
-      "commit": null
-    },
     {
       "cycle": 330,
       "phase": "review",
@@ -142,6 +135,13 @@
       "timestamp": "2026-11-11T07:00:00.000Z",
       "summary": "critique(cycle334) 계획대로 nwHistory의 byType(자산유형별 비중)을 byOwner[owner]에도 중첩해 저장하기 시작해, '전체'에서만 보이던 자산배분 추이 카드/캡션을 귀속별 보기에서도 보이게 했다. _saveCore가 byOwner[o] 생성 시 owner===o로 좁힌 자산 평가액을 type별로 합산해 byOwner[o].byType에 저장, sanitizeBackup이 그 중첩 byType도 top-level byType과 동일한 규칙(객체 아니면 통째로 떨어뜨림, 음수 허용)으로 검증, mergeOwnerInto의 nwHistory 병합이 byType도 키별로 합산(undo 복원은 원본 fromVal/toBefore 참조를 그대로 되돌리므로 추가 변경 불필요). logic.js에 nwHistoryByType(h,owner) 헬퍼를 추가해 allocationHistoryDelta/assetAllocationSeries가 owner 파라미터를 받아 owner==='all'이면 가구 전체 byType, 아니면 byOwner[owner].byType을 쓰도록 확장(레거시/미기록 스냅샷은 여전히 '모르면 비교하지 않는다'로 null). index.html의 allocationCard trendCaption과 allocationHistoryCard의 owner==='all' 가드를 제거하고 owner를 그대로 넘기도록 수정. targetAllocationCard(가구 전체 단일 목표 설정)는 계획대로 범위 밖으로 남겼다. 테스트 16건 추가(sanitizeBackup byOwner.byType 3건, mergeOwnerInto byType 합산/undo 2건, allocationHistoryDelta/assetAllocationSeries owner 파라미터 6건, allocationCard/allocationHistoryCard owner별 캡션/카드 노출 4건 + 기존 '1차 범위 밖' 테스트 2건을 새 동작에 맞게 갱신) — node test/run.js 3255->3267/3267 통과. node --check logic.js/sw.js/test/run.js 통과. APP_VERSION 1.47.409->1.47.410, sw.js CACHE v676->v677. pending_advance_plan null로 비움.",
       "commit": null
+    },
+    {
+      "cycle": 335,
+      "phase": "develop",
+      "timestamp": "2026-11-11T02:14:08.775Z",
+      "summary": "nwHistoryByType(cycle334 advance가 추가한 헬퍼, byOwner[owner].byType 소비)이 allocationHistoryDelta/assetAllocationSeries를 통한 간접 테스트만 있고 직접 테스트가 없던 공백을 메웠다 — owner 생략/\"all\"이면 top-level byType, owner 지정 시 byOwner[owner].byType, byOwner 자체가 없는 레거시 스냅샷이나 그 귀속 기록이 없으면 undefined 세 분기를 nwHistoryForOwner 테스트 옆에 직접 겨냥한 테스트로 추가. 다른 영역(반복거래 recDates/recNthDate/recCountUntil, 정산 settlementSummary, 자산배분 allocationDrift/rebalanceAmount, 부채상환 amortizationPayoffMonths, 예산이월 budgetCarry, 벌크액션 bulk*Targets, CSV 내보내기 전반, cycle334 advance의 _saveCore/sanitizeBackup/mergeOwnerInto 변경분)를 두루 검토했으나 이미 여러 사이클에 걸쳐 두텁게 방어돼 있어 새 버그를 찾지 못했다. 코드 변경 없음(테스트만 추가) — node test/run.js 3267->3269/3269 통과. APP_VERSION/sw.js CACHE는 올리지 않음(cycle243 선례와 동일, 앱 동작 변경 없음).",
+      "commit": "0d814bd"
     }
   ]
 }
