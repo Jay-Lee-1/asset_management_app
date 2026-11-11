@@ -5647,6 +5647,22 @@ test('nwHistoryForOwner: owner를 지정하면 그 귀속의 byOwner 스냅샷(t
   assert.strictEqual(out.length, 1);
   assert.strictEqual(out[0].nw, 190);
 });
+/* nwHistoryForOwner가 byOwner[owner]의 ta/td를 소비하는 것과 짝을 이루는 byType 쪽 소비 헬퍼
+ * (app-evolve cycle334 critique/advance로 신설) — allocationHistoryDelta/assetAllocationSeries가
+ * owner!=='all'일 때 이 헬퍼를 거쳐 byOwner[owner].byType을 읽는데, 지금까지 그 두 소비 함수를
+ * 통한 간접 테스트만 있었고 헬퍼 자체의 분기(owner 생략/레거시 byOwner 없음/그 귀속 기록 없음)를
+ * 직접 겨냥한 테스트는 없었다(app-evolve cycle335 develop). */
+test('nwHistoryByType: owner가 생략되거나 "all"이면 top-level byType을 그대로 돌려준다', () => {
+  const h = { date: '2026-01-01', ta: 300, td: 20, byType: { cash: 300 }, byOwner: { 나: { ta: 200, td: 10, byType: { cash: 200 } } } };
+  assert.strictEqual(sandbox.nwHistoryByType(h, 'all'), h.byType);
+  assert.strictEqual(sandbox.nwHistoryByType(h), h.byType);
+});
+test('nwHistoryByType: owner를 지정하면 byOwner[owner].byType을 돌려주고, byOwner 자체가 없거나(레거시) 그 귀속 기록이 없으면 undefined', () => {
+  const h = { date: '2026-01-01', ta: 300, td: 20, byType: { cash: 300 }, byOwner: { 나: { ta: 200, td: 10, byType: { cash: 200 } } } };
+  assert.deepStrictEqual(sandbox.nwHistoryByType(h, '나'), { cash: 200 });
+  assert.strictEqual(sandbox.nwHistoryByType(h, '배우자'), undefined, '그 귀속으로는 기록이 없는 스냅샷');
+  assert.strictEqual(sandbox.nwHistoryByType({ date: '2026-01-01', ta: 300, td: 20 }, '나'), undefined, 'byOwner 자체가 없는 레거시 항목');
+});
 test('goalOwnerEff: owner가 없거나 "all"이면 "all"(전체)로 본다', () => {
   sandbox.DB = { owners: ['나', '배우자'] };
   assert.strictEqual(sandbox.goalOwnerEff({}), 'all');
