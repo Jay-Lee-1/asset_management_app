@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.412';
+const APP_VERSION='1.47.413';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -1963,6 +1963,11 @@ const STORAGE_SIZE_WARN_LEN=3000000, STORAGE_SIZE_CRIT_LEN=4500000;
 /* clockSkewSeverity(logic.js)의 문턱: 5분 이상은 흔한 시계 오차를 넘어 mergeCollection()의
  * LWW 승자 판정에 영향을 줄 수 있는 수준으로 보고 'warn', 1일 이상은 명백히 틀린 시계로 'severe'. */
 const CLOCK_SKEW_WARN_MS=5*60*1000, CLOCK_SKEW_CRIT_MS=24*60*60*1000;
+/* fmtAmt(금액 입력 실시간 포맷)와 sanitizeAmount(백업 복원/클라우드 동기화 숫자 필드 검증)가
+ * 공유하는 금액 상한. Number.MAX_SAFE_INTEGER(9007199254740991, 16자리)를 넘으면 정밀도가
+ * 깨진 값이 그대로 잔액 합산(assetEval/balancesUpTo 등)으로 전파될 수 있어, 그보다 한 자리
+ * 작은 15자리(999,999,999,999,999 — 현실적인 원화 금액보다는 넉넉함)에서 클램프한다. */
+const AMOUNT_MAX=999999999999999;
 const SKEY='asset_app_db_v3';
 /* ===== 계정 · 세션 (이메일 로그인) =====
    ▸ Supabase가 설정되지 않으면 이 기기(localStorage)에만 저장됩니다(계정별로 분리).
@@ -9275,6 +9280,7 @@ function openCsvImportInfo(){
 function sanitizeAmount(v,min){
  const n=Number(v);
  if(!Number.isFinite(n))return 0;
+ if(n>AMOUNT_MAX)return AMOUNT_MAX;
  return (min!=null&&n<min)?min:n;
 }
 const SANITIZE_QTY_FIELDS=['fxAmount','goldDon','stockQty','cryptoQty','costBasis','interestRate']; /* 보유수량 — 음수 불가 */
@@ -10517,7 +10523,7 @@ function confirmSheet(title,msg,ok,cb){window._cf=cb;
  openSheet(`<h3>${title}</h3><div class="desc" style="margin-bottom:22px">${msg}</div>
   <div class="two-btn"><button class="btn btn-soft cancel" onclick="closeSheet()">취소</button>
    <button class="btn btn-danger" onclick="closeSheet();_cf&&_cf()">${ok}</button></div>`);}
-function fmtAmt(inp,allowNeg){const neg=allowNeg&&/^-/.test(inp.value);let v=inp.value.replace(/[^0-9]/g,'');inp.value=v?(neg?'-':'')+Number(v).toLocaleString('ko-KR'):(neg?'-':'')}
+function fmtAmt(inp,allowNeg){const neg=allowNeg&&/^-/.test(inp.value);let v=inp.value.replace(/[^0-9]/g,'');const n=v?Math.min(Number(v),AMOUNT_MAX):0;inp.value=v?(neg?'-':'')+n.toLocaleString('ko-KR'):(neg?'-':'')}
 function fmtQty(inp){let v=inp.value.replace(/[^0-9.]/g,'');const dot=v.indexOf('.');if(dot!==-1)v=v.slice(0,dot+1)+v.slice(dot+1).replace(/\./g,'');inp.value=v}
 
 function wireLongPress(root,onLong){

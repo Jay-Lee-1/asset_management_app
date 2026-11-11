@@ -400,7 +400,7 @@ const FUNCTIONS = [
 // 목록과, 그 키를 읽어주는 한글 aria-label 매핑이다(app-evolve cycle281 advance) — 둘 다 내부에
 // ";"가 없는 단순 object literal이라 extractConstBlock 없이 extractConst로도 끝까지 끌어온다
 // (CAT_LABEL과 같은 패턴).
-const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'emailKey', 'CAT_PICKER_SEARCH_THRESHOLD', 'GOAL_LIST_SEARCH_THRESHOLD', 'GS_CAP', 'CAT_ICON_SET', 'ICON_LABEL_KO', 'BAL_ASSET_TYPES', 'ALLOC_OTHER_COLOR', 'TRASH_MAX_AGE_DAYS'];
+const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'emailKey', 'CAT_PICKER_SEARCH_THRESHOLD', 'GOAL_LIST_SEARCH_THRESHOLD', 'GS_CAP', 'CAT_ICON_SET', 'ICON_LABEL_KO', 'BAL_ASSET_TYPES', 'ALLOC_OTHER_COLOR', 'TRASH_MAX_AGE_DAYS', 'AMOUNT_MAX'];
 // _histCache는 filteredHist()가 재대입(={key,list})하는 let 선언이라 CONSTS(extractConst)로는
 // 못 끌어오므로 별도의 LETS 목록으로 extractLet을 통해 가져온다.
 // _copyIsCsv도 같은 이유(openCopyBackup()이 재대입)로 LETS를 통해 가져온다.
@@ -1893,6 +1893,24 @@ test('fmtAmt(): 숫자를 모두 지우면 allowNeg 여부와 관계없이 빈 �
   const inp2 = { value: '' };
   sandbox.fmtAmt(inp2);
   assert.strictEqual(inp2.value, '');
+});
+/* fmtAmt()/sanitizeAmount()가 공유하는 AMOUNT_MAX 상한 (app-evolve cycle336 critique/advance)
+ * — 16자리 이상 입력하면 Number.MAX_SAFE_INTEGER를 넘어 정밀도가 깨진 값이 그대로
+ * txDraft.amount 등에 들어가던 공백을 AMOUNT_MAX(15자리)로 클램프해 막는다. */
+test('fmtAmt(): AMOUNT_MAX(15자리)를 넘는 입력은 AMOUNT_MAX로 잘려서 표시된다', () => {
+  const inp = { value: '9999999999999999' }; // 16자리
+  sandbox.fmtAmt(inp);
+  assert.strictEqual(inp.value, sandbox.AMOUNT_MAX.toLocaleString('ko-KR'));
+});
+test('fmtAmt(): allowNeg=true여도 AMOUNT_MAX 상한은 그대로 적용되고 부호는 유지된다', () => {
+  const inp = { value: '-9999999999999999' };
+  sandbox.fmtAmt(inp, true);
+  assert.strictEqual(inp.value, '-' + sandbox.AMOUNT_MAX.toLocaleString('ko-KR'));
+});
+test('fmtAmt(): AMOUNT_MAX 이하 입력은 상한에 영향받지 않고 그대로 포맷된다', () => {
+  const inp = { value: '500000' };
+  sandbox.fmtAmt(inp);
+  assert.strictEqual(inp.value, '500,000');
 });
 
 /* ---------- fmtQty(): FX/금/주식 보유 수량 입력란 실시간 정제 (app-evolve cycle119 advance)
@@ -14990,6 +15008,17 @@ test('sanitizeAmount: min이 주어지면 그 아래로 클램프한다(수량�
   assert.strictEqual(sandbox.sanitizeAmount(-500, 0), 0);
   assert.strictEqual(sandbox.sanitizeAmount(3, 0), 3);
 });
+/* AMOUNT_MAX 상한 (app-evolve cycle336 critique/advance) — 손상되거나 조작된 백업 파일의
+ * 비정상적으로 큰 숫자가 상한 없이 그대로 DB에 들어가던 공백을 fmtAmt()와 같은 AMOUNT_MAX로
+ * 막는다. min 클램프와 독립적으로 적용되어야 하므로 min 유무 양쪽을 다 확인한다. */
+test('sanitizeAmount: AMOUNT_MAX를 넘으면 min 유무와 관계없이 AMOUNT_MAX로 클램프한다', () => {
+  assert.strictEqual(sandbox.sanitizeAmount(sandbox.AMOUNT_MAX + 1), sandbox.AMOUNT_MAX);
+  assert.strictEqual(sandbox.sanitizeAmount(sandbox.AMOUNT_MAX + 1, 0), sandbox.AMOUNT_MAX);
+});
+test('sanitizeAmount: AMOUNT_MAX 이하 값은 상한에 영향받지 않는다', () => {
+  assert.strictEqual(sandbox.sanitizeAmount(sandbox.AMOUNT_MAX), sandbox.AMOUNT_MAX);
+  assert.strictEqual(sandbox.sanitizeAmount(500), 500);
+});
 test('sanitizeBackup: 거래의 NaN/문자열 금액을 보정하고 fixedCount를 센다', () => {
   const { data, fixedCount, droppedCount } = sandbox.sanitizeBackup({
     assets: [],
@@ -22895,7 +22924,7 @@ test('[실행형] recSplitAmt: 금액을 반영한 뒤 splitHintUpdate를 호출
   };
   vm.createContext(ctx);
   vm.runInContext(
-    [extractFunction('num'), extractFunction('fmtAmt'), extractFunction('splitHintUpdate'), extractFunction('recSplitAmt')].join('\n'),
+    [extractFunction('num'), extractConst('AMOUNT_MAX'), extractFunction('fmtAmt'), extractFunction('splitHintUpdate'), extractFunction('recSplitAmt')].join('\n'),
     ctx, { filename: 'recSplitAmt-real' }
   );
   const hintEl = { textContent: '', style: { color: '' } };
@@ -22955,7 +22984,7 @@ test('[실행형] txSplitAmt: 금액을 반영한 뒤 splitHintUpdate를 호출�
   };
   vm.createContext(ctx);
   vm.runInContext(
-    [extractFunction('num'), extractFunction('fmtAmt'), extractFunction('splitHintUpdate'), extractFunction('txSplitAmt')].join('\n'),
+    [extractFunction('num'), extractConst('AMOUNT_MAX'), extractFunction('fmtAmt'), extractFunction('splitHintUpdate'), extractFunction('txSplitAmt')].join('\n'),
     ctx, { filename: 'txSplitAmt-real' }
   );
   const hintEl = { textContent: '', style: { color: '' } };
@@ -22980,7 +23009,7 @@ test('[실행형] txAmtInput: 전체 금액을 txDraft.amount에 반영하고, �
   };
   vm.createContext(ctx);
   vm.runInContext(
-    [extractFunction('num'), extractFunction('fmtAmt'), extractFunction('splitHintUpdate'), extractFunction('txAmtInput')].join('\n'),
+    [extractFunction('num'), extractConst('AMOUNT_MAX'), extractFunction('fmtAmt'), extractFunction('splitHintUpdate'), extractFunction('txAmtInput')].join('\n'),
     ctx, { filename: 'txAmtInput-real' }
   );
   const hintEl = { textContent: '', style: { color: '' } };
@@ -22995,7 +23024,7 @@ test('[실행형] txAmtInput: 분할이 꺼져 있으면(splits 없음) splitHin
   const ctx = { $: () => { throw new Error('분할 없을 땐 splitHintUpdate가 $()를 조회하면 안 됨') }, txDraft: { amount: 5000 } };
   vm.createContext(ctx);
   vm.runInContext(
-    [extractFunction('num'), extractFunction('fmtAmt'), extractFunction('splitHintUpdate'), extractFunction('txAmtInput')].join('\n'),
+    [extractFunction('num'), extractConst('AMOUNT_MAX'), extractFunction('fmtAmt'), extractFunction('splitHintUpdate'), extractFunction('txAmtInput')].join('\n'),
     ctx, { filename: 'txAmtInput-nosplit-real' }
   );
   assert.doesNotThrow(() => ctx.txAmtInput({ value: '7,000' }), '분할 없이 전체 금액만 입력해도 조용히 끝나야 함');
@@ -23010,7 +23039,7 @@ test('[실행형] recAmtInput: 전체 금액을 recDraft.amount에 반영하고,
   };
   vm.createContext(ctx);
   vm.runInContext(
-    [extractFunction('num'), extractFunction('fmtAmt'), extractFunction('splitHintUpdate'), extractFunction('recAmtInput')].join('\n'),
+    [extractFunction('num'), extractConst('AMOUNT_MAX'), extractFunction('fmtAmt'), extractFunction('splitHintUpdate'), extractFunction('recAmtInput')].join('\n'),
     ctx, { filename: 'recAmtInput-real' }
   );
   const hintEl = { textContent: '', style: { color: '' } };
@@ -23024,7 +23053,7 @@ test('[실행형] recAmtInput: 분할이 꺼져 있으면(splits 없음) splitHi
   const ctx = { $: () => { throw new Error('분할 없을 땐 splitHintUpdate가 $()를 조회하면 안 됨') }, recDraft: { amount: 5000 } };
   vm.createContext(ctx);
   vm.runInContext(
-    [extractFunction('num'), extractFunction('fmtAmt'), extractFunction('splitHintUpdate'), extractFunction('recAmtInput')].join('\n'),
+    [extractFunction('num'), extractConst('AMOUNT_MAX'), extractFunction('fmtAmt'), extractFunction('splitHintUpdate'), extractFunction('recAmtInput')].join('\n'),
     ctx, { filename: 'recAmtInput-nosplit-real' }
   );
   assert.doesNotThrow(() => ctx.recAmtInput({ value: '9,000' }), '분할 없이 전체 금액만 입력해도 조용히 끝나야 함');
