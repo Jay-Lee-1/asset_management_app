@@ -1,6 +1,6 @@
 {
   "cycle": 339,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
     {
@@ -141,6 +141,13 @@
       "phase": "develop",
       "timestamp": "2026-11-11T19:14:15.264933Z",
       "summary": "develop(cycle339): Explore 서브에이전트가 발견한 공백을 고쳤다 — mergeAssetInto(index.html:4728)가 txns/recurrences/goals.linkedAssetId/assetQtyLog는 모두 from→to로 옮기면서, 저축성 자산의 \"만기 시 이체할 통장\"(maturityTargetId, asOpenMat/doMaturity가 쓰는 필드)로 from을 가리키던 다른 자산은 빠뜨리고 있었다. from이 병합 후 영구히 사라지면(6초 grace 지나면 톰스톤만 남음) 해당 자산의 자동이체 대상이 조용히 끊겨, doMaturity()가 '이체할 통장을 먼저 지정하세요'로 degrade — 사용자 설정이 알림 없이 사라지는 goalItems(cycle333 전후로 이미 고친 것)와 같은 버그 클래스. goalItems 블록과 동일한 패턴으로 matItems를 추가: maturityTargetId===fromId인 다른 자산을 모아 toId로 옮기고, 성공 시 touchSave에 포함, undoToast 콜백에서 prevTarget으로 복원. 테스트: mergeAssetInto 관련 블록에 maturityTargetId 이동/undo복원/무관한 자산 불변 3건 추가 — node test/run.js 3298->3301/3301 통과. node --check sw.js/test/run.js 통과(index.html은 <script> 블록 추출 방식이 HTML 주석 내 리터럴 텍스트에 오탐해 전체 테스트 스위트 통과로 대체 검증). APP_VERSION 1.47.417->1.47.418, sw.js CACHE v684->v685.",
+      "commit": null
+    },
+    {
+      "cycle": 339,
+      "phase": "review",
+      "timestamp": "2026-11-11T20:05:00.000Z",
+      "summary": "cycle339 develop 커밋(f71f61a, mergeAssetInto의 maturityTargetId 미이전 공백 수정)을 검토. matItems 블록이 goalItems와 글자 단위로 같은 구조(수집→이동→touchSave 포함→undoToast에서 prevTarget 복원)임을 라인 대조로 확인. 엣지케이스로 'to' 자신이 이미 from을 maturityTargetId로 가리키던 경우(a.id!==fromId 조건은 to도 포함하므로)를 검토 — 이 경우 to.maturityTargetId가 toId(자기 자신)로 재배선되는데, asOpenMat의 excludeId:asDraft.id가 평소엔 막는 상태지만 doMaturity(8026행)에 이미 'if(target.id===a.id)자기 자신으로는 이체할 수 없어요' 가드(cycle34, firstCash 자기참조 버그 때 추가)가 있어 조용한 실패 없이 명확한 안내로 이어짐을 확인(이 패치가 만드는 새 버그가 아니라 기존에 이미 방어된 상태). node test/run.js 재실행 3301/3301 통과. 실제 버그 없음(state.json만 커밋).",
       "commit": null
     }
   ]
