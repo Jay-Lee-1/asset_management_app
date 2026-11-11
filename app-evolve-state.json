@@ -1,15 +1,8 @@
 {
   "cycle": 335,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 330,
-      "phase": "review",
-      "timestamp": "2026-11-10T07:05:00.000Z",
-      "summary": "cycle330 develop 커밋(e57bc0d, dismissWipeBackup이 confirmSheet 확인을 거치도록 수정)을 검토. 구현이 restoreWipeBackup/homeAlertCard와 동일한 label 분기를 정확히 따름을 확인. node test/run.js 재실행 3215/3215 통과. 실제 버그 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 330,
       "phase": "critique",
@@ -142,6 +135,13 @@
       "timestamp": "2026-11-11T02:14:08.775Z",
       "summary": "nwHistoryByType(cycle334 advance가 추가한 헬퍼, byOwner[owner].byType 소비)이 allocationHistoryDelta/assetAllocationSeries를 통한 간접 테스트만 있고 직접 테스트가 없던 공백을 메웠다 — owner 생략/\"all\"이면 top-level byType, owner 지정 시 byOwner[owner].byType, byOwner 자체가 없는 레거시 스냅샷이나 그 귀속 기록이 없으면 undefined 세 분기를 nwHistoryForOwner 테스트 옆에 직접 겨냥한 테스트로 추가. 다른 영역(반복거래 recDates/recNthDate/recCountUntil, 정산 settlementSummary, 자산배분 allocationDrift/rebalanceAmount, 부채상환 amortizationPayoffMonths, 예산이월 budgetCarry, 벌크액션 bulk*Targets, CSV 내보내기 전반, cycle334 advance의 _saveCore/sanitizeBackup/mergeOwnerInto 변경분)를 두루 검토했으나 이미 여러 사이클에 걸쳐 두텁게 방어돼 있어 새 버그를 찾지 못했다. 코드 변경 없음(테스트만 추가) — node test/run.js 3267->3269/3269 통과. APP_VERSION/sw.js CACHE는 올리지 않음(cycle243 선례와 동일, 앱 동작 변경 없음).",
       "commit": "0d814bd"
+    },
+    {
+      "cycle": 335,
+      "phase": "review",
+      "timestamp": "2026-11-11T03:10:00.000Z",
+      "summary": "cycle335 develop 커밋(0d814bd, nwHistoryByType 직접 단위 테스트 추가)을 검토. 테스트가 구현(logic.js:1149-1152, owner 생략/\"all\"이면 h.byType, 아니면 h.byOwner&&h.byOwner[owner]&&byType)과 라인 단위로 정확히 일치함을 확인(세 분기 모두 커버). node test/run.js 재실행 3269/3269 통과. 실제 버그 없음(state.json만 커밋).",
+      "commit": null
     }
   ]
 }
