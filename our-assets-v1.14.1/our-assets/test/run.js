@@ -18924,6 +18924,58 @@ test('syncAssetInputs: 연 이자율 입력을 interestRate로 저장하고(소�
     sandbox.$ = $orig;
   }
 });
+/* ---------- syncAssetInputs: asFx/asGold/asQty(stock/crypto)/asInterestRate 직접입력 경로가
+ * sanitizeBackup/pullCloud과 같은 sanitizeAmount 가드를 공유하는지(app-evolve cycle337 critique/advance)
+ * — 기존 Math.max(0,parseFloat(v)||0) 패턴은 parseFloat가 매우 긴 숫자문자열에 Infinity를 돌려줘도
+ * (Infinity는 truthy라 ||0에 안 걸림, Math.max(0,Infinity)도 Infinity) 그대로 asDraft에 저장했다.
+ * sanitizeAmount(parseFloat(...),0) 재사용 후에는 isFinite 가드로 Infinity가 0으로, 유한하지만
+ * AMOUNT_MAX를 넘는 값은 AMOUNT_MAX로 클램프되어 asDraft/DB.assets[i]를 오염시키지 못한다. */
+test('syncAssetInputs: 매우 긴 숫자문자열(Infinity로 파싱됨)을 asFx/asGold에 넣어도 유한수(0)로 보정된다', () => {
+  const $orig = sandbox.$;
+  const huge = '1' + '0'.repeat(400);
+  const fxInput = { value: huge }, goldInput = { value: huge };
+  sandbox.$ = (id) => (id === 'asFx' ? fxInput : (id === 'asGold' ? goldInput : null));
+  try {
+    sandbox.asDraft = { type: 'fx' };
+    sandbox.syncAssetInputs();
+    assert.strictEqual(sandbox.asDraft.fxAmount, 0, 'Infinity로 파싱되는 입력은 sanitizeAmount가 0으로 보정해야 함');
+    assert.strictEqual(sandbox.asDraft.goldDon, 0, 'Infinity로 파싱되는 입력은 sanitizeAmount가 0으로 보정해야 함');
+  } finally {
+    sandbox.$ = $orig;
+  }
+});
+test('syncAssetInputs: AMOUNT_MAX를 넘지만 유한한 asQty(주식/코인)/asInterestRate 입력은 AMOUNT_MAX로 클램프된다', () => {
+  const $orig = sandbox.$;
+  const over = String(sandbox.AMOUNT_MAX + 1000);
+  const qtyInput = { value: over }, rateInput = { value: over };
+  sandbox.$ = (id) => (id === 'asQty' ? qtyInput : (id === 'asInterestRate' ? rateInput : null));
+  try {
+    sandbox.asDraft = { type: 'stock' };
+    sandbox.syncAssetInputs();
+    assert.strictEqual(sandbox.asDraft.stockQty, sandbox.AMOUNT_MAX, 'AMOUNT_MAX를 넘는 유한수는 AMOUNT_MAX로 클램프돼야 함');
+    sandbox.asDraft = { type: 'crypto' };
+    sandbox.syncAssetInputs();
+    assert.strictEqual(sandbox.asDraft.cryptoQty, sandbox.AMOUNT_MAX, 'crypto 분기도 동일하게 클램프돼야 함');
+    assert.strictEqual(sandbox.asDraft.interestRate, sandbox.AMOUNT_MAX, 'interestRate도 동일하게 클램프돼야 함');
+  } finally {
+    sandbox.$ = $orig;
+  }
+});
+test('syncAssetInputs: 정상 범위의 소수 입력(asFx/asGold/asQty/asInterestRate)은 sanitizeAmount 적용 후에도 그대로 저장된다(회귀 방지)', () => {
+  const $orig = sandbox.$;
+  const fxInput = { value: '1,234.5' }, goldInput = { value: '2.75' }, qtyInput = { value: '10.5' }, rateInput = { value: '3.5' };
+  sandbox.$ = (id) => ({ asFx: fxInput, asGold: goldInput, asQty: qtyInput, asInterestRate: rateInput }[id] || null);
+  try {
+    sandbox.asDraft = { type: 'debt' };
+    sandbox.syncAssetInputs();
+    assert.strictEqual(sandbox.asDraft.fxAmount, 1234.5);
+    assert.strictEqual(sandbox.asDraft.goldDon, 2.75);
+    assert.strictEqual(sandbox.asDraft.stockQty, 10.5);
+    assert.strictEqual(sandbox.asDraft.interestRate, 3.5);
+  } finally {
+    sandbox.$ = $orig;
+  }
+});
 /* ---------- syncAssetInputs: 매입 금액(costBasis)을 처음 입력하는 순간에만 최초 매입일
  * (acquiredAt)을 오늘로 찍는다(annualizedReturn의 보유기간 기준, app-evolve cycle276 advance) ---------- */
 test('syncAssetInputs: 매입 금액을 처음 입력하면 acquiredAt이 오늘 날짜로 찍히지만, 이미 있으면 덮어쓰지 않는다', () => {

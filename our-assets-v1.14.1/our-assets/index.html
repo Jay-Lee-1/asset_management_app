@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.414';
+const APP_VERSION='1.47.415';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -5079,16 +5079,16 @@ function syncAssetInputs(){const d=asDraft;const g=id=>$(id);
  if(g('asName'))d.name=(g('asName').value||'').trim().normalize('NFC');
  if(g('asAmt'))d._dispAmt=num(g('asAmt'),d.type!=='debt');
  if(g('asMat'))d.maturityDate=g('asMat').value;
- if(g('asFx'))d.fxAmount=Math.max(0,parseFloat((g('asFx').value||'0').replace(/,/g,''))||0);
- if(g('asGold'))d.goldDon=Math.max(0,parseFloat((g('asGold').value||'0').replace(/,/g,''))||0);
+ if(g('asFx'))d.fxAmount=sanitizeAmount(parseFloat((g('asFx').value||'0').replace(/,/g,'')),0);
+ if(g('asGold'))d.goldDon=sanitizeAmount(parseFloat((g('asGold').value||'0').replace(/,/g,'')),0);
  if(g('asCode')){const v=g('asCode').value.trim().toUpperCase();if(d.type==='crypto')d.cryptoCode=v;else d.stockCode=v;}
- if(g('asQty')){const v=Math.max(0,parseFloat((g('asQty').value||'0').replace(/,/g,''))||0);if(d.type==='crypto')d.cryptoQty=v;else d.stockQty=v;}
+ if(g('asQty')){const v=sanitizeAmount(parseFloat((g('asQty').value||'0').replace(/,/g,'')),0);if(d.type==='crypto')d.cryptoQty=v;else d.stockQty=v;}
  if(g('asAcquiredAt')){const v=g('asAcquiredAt').value;if(v)d.acquiredAt=v;} /* 사용자가 매입일 pick 필드로 직접 고른 날짜가 있으면 먼저 반영 — 비어 있으면(아직 안 고름) 건드리지 않아 아래 자동 TODAY 스탬프 로직이 그대로 동작한다(app-evolve cycle281 advance) */
  if(g('asCostBasis')){const n=num(g('asCostBasis'),false);if(n>0)d.costBasis=n;else delete d.costBasis;
    if(d.costBasis>0){if(!d.acquiredAt&&!d._hadCostBasis)d.acquiredAt=TODAY;}else delete d.acquiredAt;} /* 매입 금액을 처음 입력하는 순간에만 최초 매입일(acquiredAt)을 오늘로 찍는다(annualizedReturn의 보유기간 기준) — 추가매수로 액수만 바뀌는 addCostBasisForBuy 경로는 이미 acquiredAt이 있는 상태에서만 열리므로 건드리지 않음(app-evolve cycle276 critique/advance). cycle276 이전부터 costBasis가 있던 기존 자산(_hadCostBasis)은 acquiredAt이 없어도 무관한 필드만 바꿔 저장할 때 오늘 날짜로 잘못 채워지지 않도록 비워 둔다 — 틀린 연환산 수익률보다 미표시가 안전(app-evolve cycle277 critique/advance) */
  if(g('asAddedCost'))d._addedCost=num(g('asAddedCost'),false);
  if(g('asSaleProceeds'))d._saleProceeds=num(g('asSaleProceeds'),false);
- if(g('asInterestRate')){const v=Math.max(0,parseFloat((g('asInterestRate').value||'0').replace(/,/g,''))||0);if(v>0)d.interestRate=v;else delete d.interestRate;}}
+ if(g('asInterestRate')){const v=sanitizeAmount(parseFloat((g('asInterestRate').value||'0').replace(/,/g,'')),0);if(v>0)d.interestRate=v;else delete d.interestRate;}}
 function asOpenType(){syncAssetInputs();openTypePicker({current:asDraft.type,back:()=>renderAssetSheet(!!asDraft.id),onPick:k=>{if(k==='pension'){if(!asDraft._pensionAutoExcl)asDraft._pensionPrevIncl=asDraft.includeInTotal; /* 이미 연금 상태(재선택)면 덮어쓰지 않음 — 그 전에 기억해둔 원래 값을 지켜야 함 */
  asDraft.includeInTotal=false;asDraft._pensionAutoExcl=true}else if(asDraft._pensionAutoExcl){asDraft.includeInTotal=asDraft._pensionPrevIncl!==undefined?asDraft._pensionPrevIncl:true; /* 연금으로 들어오기 전 값(수동으로 순자산 제외했던 자산 포함)을 복원 — 기존 연금 자산을 열 때(openAssetSheet)처럼 _pensionPrevIncl이 없으면 기존처럼 true로 복원 */
  delete asDraft._pensionPrevIncl;asDraft._pensionAutoExcl=false}asDraft.type=k;if(k==='savings'&&!asDraft.maturityTargetId)asDraft.maturityTargetId=firstCash(asDraft.id);renderAssetSheet(!!asDraft.id)}})}
