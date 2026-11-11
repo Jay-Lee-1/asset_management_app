@@ -1,15 +1,12 @@
 {
   "cycle": 337,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "syncAssetInputs(자산 추가/수정 직접입력)가 asFx/asGold/asQty/interestRate에 Infinity·과도한 값을 그대로 저장",
+    "why": "cycle336이 금액 입력(fmtAmt)과 백업복원/클라우드풀 숫자 필드 검증(sanitizeAmount)에 AMOUNT_MAX 상한+Number.isFinite 가드를 추가했지만, 같은 필드를 다루는 '자산 추가/수정 시트'의 직접입력 경로(syncAssetInputs, index.html:5082-5091: asFx→fxAmount, asGold→goldDon, asQty→stockQty/cryptoQty, asInterestRate→interestRate)는 여전히 Math.max(0,parseFloat(v.replace(/,/g,''))||0) 패턴만 쓴다. 긴 숫자문자열을 입력하면 parseFloat가 Infinity를 돌려주는데 Infinity는 truthy라 '||0' 폴백이 걸리지 않고(Infinity||0===Infinity), Math.max(0,Infinity)도 Infinity라 그대로 asDraft/DB.assets[i]에 저장된다(fmtQty, index.html:10533,은 숫자가 아닌 문자만 걸러낼 뿐 상한이나 Infinity 가드가 전혀 없어 입력 단계에서도 못 막는다). 반면 같은 필드를 쓰는 sanitizeAmount+SANITIZE_QTY_FIELDS(index.html:9286-9292, fxAmount/goldDon/stockQty/cryptoQty/costBasis/interestRate)는 백업 복원·클라우드 풀 경로에서는 이미 Number.isFinite+AMOUNT_MAX 클램프를 적용한다 — 즉 '직접 입력'과 '복원/동기화' 두 경로가 같은 필드에 서로 다른 신뢰 수준을 적용하는 비대칭이다. 오염된 Infinity 값은 assetEval()을 거쳐 assetTotal/nwHistory/카테고리·귀속 집계 전체로 조용히 전파되고 scheduleCloudPush()로 다른 기기까지 번질 수 있다.",
+    "approach": "index.html:5082-5091의 asFx/asGold/asQty(stockQty·cryptoQty 분기)/asInterestRate 네 줄을 Math.max(0,parseFloat(...)||0) 대신 기존 공유 헬퍼 sanitizeAmount(parseFloat(...),0)을 재사용하도록 바꾼다(같은 파일 안 함수라 추가 wiring 불필요, sanitizeAmount가 이미 Number.isFinite 아니면 0, AMOUNT_MAX 초과면 AMOUNT_MAX로 클램프). 이렇게 하면 직접입력 경로와 sanitizeBackup/pullCloud 경로가 완전히 같은 불변식을 공유하게 된다. 새 전역 QTY_MAX 상수는 만들지 않고 기존 AMOUNT_MAX를 그대로 재사용(코인 수량 등 큰 값도 15자리면 현실적으로 충분하고, cycle336이 이미 같은 결정을 금액 필드에 내렸다). 테스트: 매우 긴 숫자문자열('1'+'0'.repeat(300) 등, parseFloat가 Infinity를 돌려주는 입력)을 asFx/asGold/asQty(주식·코인 각각)/asInterestRate 각각에 넣고 syncAssetInputs() 이후 asDraft 값이 유한수이고 AMOUNT_MAX 이하임을 확인하는 4~6건, 기존 정상 범위 값(소수점 포함)은 그대로 저장되어 회귀가 없음을 확인하는 케이스 포함. fmtQty(10533행, 타이핑 중 실시간 포맷)는 문자 필터링만 하는 표시단 함수라 이번 범위는 syncAssetInputs의 저장단 값 검증까지만으로 한정하고, 표시 중 과도한 자릿수를 보기 흉하게 보이는 것 자체의 UX 개선은 필요하면 다음 critique가 별도로 다룬다."
+  },
   "history": [
-    {
-      "cycle": 332,
-      "phase": "critique",
-      "timestamp": "2026-11-10T16:08:00.000Z",
-      "summary": "cycle328-330이 고친 '전체 DB 변경이 undoToast 6초 메모리 클로저 하나에만 의존' 버그 클래스가 doMergeAssets(자산 합치기, ~4640-4730), 카테고리 합치기(~8014-8161), 소유자 합치기(~5304-5420) 세 merge 경로에는 아직 남아있음을 확인했다(자산 merge는 to.acquiredAt을 아예 버리고, 카테고리 merge는 수백 건의 거래 category를 재할당하는데도 __preXxx_ 백업이 전혀 없음). pending_advance_plan에 __preReset_/__preRestore_/__preArchive_ 패턴을 __preMergeAsset_/__preMergeCat_/__preMergeOwner_로 확장하는 구체 계획 저장(범위가 크면 이번 사이클은 doMergeAssets 하나만 먼저). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
     {
       "cycle": 332,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-11T12:10:00.000Z",
       "summary": "cycle337 develop 커밋(de1324e, 클라우드 동기화 충돌화면 \"최신 데이터 가져오기\" 버튼에 확인창 추가)을 검토. 새로 추가된 confirmCloudPullRemote()가 confirmCloudForcePush(index.html:2284-2286)와 글자 단위로 같은 패턴(confirmSheet(title,msg,ok,cb) 호출 후 confirmSheet 내부에서 closeSheet();_cf&&_cf() 순서로 cb 실행)임을 확인, openAccountSheet의 onclick이 confirmCloudPullRemote()로 정확히 바뀌었고 confirmCloudForcePush 버튼은 그대로임을 라인 대조로 확인. cb가 ()=>resolveCloudPullRemote()로 async 함수를 그대로 반환하므로 confirmSheet의 cb&&cb() 호출이 await 없이도 내부 Promise 체인이 정상 진행됨(기존 confirmCloudForcePush도 동일 구조). node test/run.js 재실행 3278/3278 통과. 실제 버그 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 337,
+      "phase": "critique",
+      "timestamp": "2026-11-11T13:05:00.000Z",
+      "summary": "cycle336이 금액 입력(fmtAmt)/백업복원·클라우드풀 검증(sanitizeAmount)에 추가한 AMOUNT_MAX+Number.isFinite 가드가, 같은 필드를 쓰는 자산 추가/수정 시트의 직접입력 경로(syncAssetInputs, index.html:5082-5091: asFx/asGold/asQty/asInterestRate)에는 전혀 적용 안 돼 있음을 발견했다 — Math.max(0,parseFloat(v)||0) 패턴은 parseFloat가 긴 숫자문자열에 Infinity를 돌려줘도(Infinity는 truthy라 ||0에 안 걸림) 그대로 통과시켜 asDraft/DB.assets[i]에 Infinity가 저장될 수 있고, fmtQty(10533행)도 문자 필터링만 해 입력 단계에서도 못 막는다. 반면 sanitizeAmount+SANITIZE_QTY_FIELDS는 같은 필드(fxAmount/goldDon/stockQty/cryptoQty/interestRate)를 백업/클라우드 경로에서는 이미 클램프한다 — '직접 입력'과 '복원/동기화' 두 경로가 같은 데이터에 다른 신뢰 수준을 적용하는 비대칭. Explore 서브에이전트가 발견하고 syncAssetInputs:5082-5091/sanitizeAmount:9286-9292/fmtQty:10533을 직접 재확인해 검증. pending_advance_plan에 네 줄을 기존 sanitizeAmount(v,0) 재사용으로 바꾸는 구체 계획(새 상수 불필요, 테스트 포인트까지) 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
