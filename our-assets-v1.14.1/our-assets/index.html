@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.417';
+const APP_VERSION='1.47.418';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -4773,6 +4773,16 @@ function mergeAssetInto(fromId,toId){if(twGuard())return;
    if(g.owner!==to.owner)g.owner=to.owner;
   }
  });
+ /* maturityTargetId로 from을 "만기 시 이체할 통장"으로 가리키던 다른 자산 — 옮기지 않으면
+  * from이 영구히 사라진 뒤 doMaturity()가 target을 못 찾아 사용자가 설정해둔 자동이체 대상이
+  * 조용히 빈 값이 된다(goalItems와 같은 이유로 자산 식별자가 바뀔 때 같이 옮김). */
+ const matItems=[];
+ DB.assets.forEach(a=>{
+  if(a.id!==fromId&&a.maturityTargetId===fromId){
+   matItems.push({a,prevTarget:a.maturityTargetId});
+   a.maturityTargetId=toId;
+  }
+ });
  let toPrevBaseAmount,toPrevAmountKRW,qtyField,toPrevQty,toPrevCostBasis,toPrevAcquiredAt,mergeQtyLogEntry;
  const qtyLogItems=[]; /* from을 가리키던 기존 assetQtyLog 기록 — 재연결 대상(touchSave로 함께 touch됨) */
  if(marketValued){
@@ -4796,7 +4806,7 @@ function mergeAssetInto(fromId,toId){if(twGuard())return;
  DB.assets.splice(fi,1);
  DB.deletedIds=DB.deletedIds||{};DB.deletedIds[fromId]=Date.now(); /* deleteAssetsUndo와 동일한 톰스톤 — 없으면 mergeRemoteDataIntoLocal이 다른 기기의 사본에서 from을 되살림 */
  const qtyLogTouch=marketValued?[mergeQtyLogEntry,...qtyLogItems]:[];
- touchSave(to,...qtyLogTouch,...txItems.map(x=>x.t),...recItems.map(x=>x.r),...goalItems.map(x=>x.g));
+ touchSave(to,...qtyLogTouch,...txItems.map(x=>x.t),...recItems.map(x=>x.r),...goalItems.map(x=>x.g),...matItems.map(x=>x.a));
  renderCurrent();
  const mergeAssetPushT=setTimeout(()=>{try{localStorage.removeItem(backupKey)}catch(e){}},6000);
  undoToast(`'${from.name}' 자산을 '${to.name}'에 합쳤어요`+(txItems.length||recItems.length?` · 내역 ${txItems.length}건·반복거래 ${recItems.length}개 복원`:''),()=>{
@@ -4804,6 +4814,7 @@ function mergeAssetInto(fromId,toId){if(twGuard())return;
   txItems.forEach(({t,prevFrom,prevTo,prevAdj})=>{t.fromAssetId=prevFrom;t.toAssetId=prevTo;if(t.adjust)t.adjustAsset=prevAdj});
   recItems.forEach(({r,prevFrom,prevTo})=>{r.fromAssetId=prevFrom;r.toAssetId=prevTo});
   goalItems.forEach(({g,prevLinked,prevOwner})=>{g.linkedAssetId=prevLinked;g.owner=prevOwner});
+  matItems.forEach(({a,prevTarget})=>{a.maturityTargetId=prevTarget});
   if(marketValued){
    to[qtyField]=toPrevQty;
    if(toPrevCostBasis!=null)to.costBasis=toPrevCostBasis;else delete to.costBasis;
@@ -4817,7 +4828,7 @@ function mergeAssetInto(fromId,toId){if(twGuard())return;
   }
   DB.assets.splice(fi,0,from);
   delete DB.deletedIds[fromId];
-  touchSave(to,from,...qtyLogItems,...txItems.map(x=>x.t),...recItems.map(x=>x.r),...goalItems.map(x=>x.g));
+  touchSave(to,from,...qtyLogItems,...txItems.map(x=>x.t),...recItems.map(x=>x.r),...goalItems.map(x=>x.g),...matItems.map(x=>x.a));
   renderCurrent();toast('되돌렸어요')
  });
 }

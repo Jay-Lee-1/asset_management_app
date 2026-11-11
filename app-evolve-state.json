@@ -1,22 +1,8 @@
 {
   "cycle": 339,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 333,
-      "phase": "advance",
-      "timestamp": "2026-11-10T21:11:26.172Z",
-      "summary": "critique(cycle333) 계획대로 카테고리 합치기(mergeCatInto)·귀속 합치기(mergeOwnerInto)의 wipe-직전 데이터 소실 경로를 막았다. mergeAssetInto(cycle332)와 동일한 패턴을 복붙 — 각 함수 맨 앞에서 __preMergeCat_/__preMergeOwner_ localStorage 키로 전체 DB를 백업, touchSave 이후 6초 grace 타이머로 정리, undoToast 콜백에서 즉시 clearTimeout+removeItem. logic.js의 wipeBackupKindLabel에 두 kind를 '합치기'로 매핑, index.html의 scanWipeBackupKeys/WIPE_BACKUP_KEYS 주석에 여섯·일곱 번째 kind로 확장(homeAlertCard/restoreWipeBackup/dismissWipeBackup은 kind 분기가 이미 범용이라 추가 변경 불필요). 테스트: 실행형 백업 생성/grace-취소 테스트 2건씩(카테고리·귀속 합쳐 4건) + findCorruptBackupKeys/wipeBackupKindLabel 기존 테스트에 새 kind 케이스 추가 — node test/run.js 3244->3248/3248 통과. node --check logic.js/sw.js/test/run.js 통과. APP_VERSION 1.47.407->1.47.408, sw.js CACHE v674->v675. cycle332 critique가 발견한 \"전체 DB 변경이 undoToast 6초 메모리 클로저 하나에만 의존\" 버그 클래스(merge 경로)를 모두 마저 닫았다.",
-      "commit": null
-    },
-    {
-      "cycle": 334,
-      "phase": "develop",
-      "timestamp": "2026-11-10T22:10:00.000Z",
-      "summary": "doRenameOwner(5335행)는 귀속 이름변경 시 DB.settings.settle(정산 설정)의 ownerA/ownerB도 따라가게 하는데, 같은 패턴을 재사용하는 mergeOwnerInto(귀속 합치기)만 이 줄을 빠뜨리고 있던 공백을 고쳤다 — 정산의 두 당사자 중 한쪽을 다른 귀속에 합치면 settleConfigured()가 사라진 from을 DB.owners에서 못 찾아 정산 설정이 조용히 통째로 꺼지고, 쌓아둔 ownerA/ownerB/ratioA를 다시 입력해야 했다. ownerA/ownerB를 서로 합쳐 같은 이름이 되는 경우(정산 당사자끼리 합침)는 '내 돈 vs 상대 돈' 구분 자체가 사라지므로 settle을 null로 꺼버리도록 가드도 추가, undoToast 되돌리기에서 settle도 원래 상태로 복원. 테스트 8건 추가(ownerA/ownerB 각각 from인 경우, 양쪽 합쳐 null로 꺼지는 경우, settle과 무관한 합치기는 참조까지 그대로 유지, DB.settings 없음, undo 복원 2건) — node test/run.js 3248->3255/3255 통과. node --check logic.js/sw.js 통과. APP_VERSION 1.47.408->1.47.409, sw.js CACHE v675->v676.",
-      "commit": null
-    },
     {
       "cycle": 334,
       "phase": "review",
@@ -148,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-11T18:10:00.000Z",
       "summary": "critique(cycle338) 계획대로 자산배분 추이 차트(allocationHistoryCard, #allocHistChart)에 nwhChart/assetBalChart와 동일한 포인터+키보드 peek(스크러빙) 상호작용을 추가했다 — allocationHistoryCard가 assetAllocationSeries의 points를 전역 _allocHistPts에 저장(기존 _nwChartPts/_assetBalChartPts 패턴)하고, 차트 div에 id=\"allocHistChart\" tabindex=\"0\"과 onpointerdown/move/up/cancel/leave→allocHistPeekStart/Move/End, onkeydown→allocHistPeekKey, onblur→allocHistPeekEnd를 와이어링(nwChartPeekStart류와 완전히 동일한 구조, nwNearestPointIndex/nwChartKeyStep을 그대로 재사용). chartPeekRenderAt은 p.nw 단일값 전제라 재사용할 수 없어, segs(유형별 비중) 배열을 상위 2개 pct 내림차순으로 요약하는 전용 포맷터 allocHistPeekLabel과 렌더러 allocHistPeekRenderAt을 신설(예: \"06/15 · 주식 42% · 현금예금 31%\"), peek-line/peek-label DOM(#allocHistPeekLine, #allocHistPeekLabel)과 announceLive 공지도 형제 차트와 동일하게 추가. CSS는 .nwh-chart/.nwh-peek-label을 그대로 재사용해 추가 불필요. refreshAllocationHistoryCard는 이미 allocationHistoryCard를 통째로 다시 그리므로 _allocHistPts도 자연히 새로고침됨(별도 배선 불필요, 확인함). 테스트 9건 추가(allocHistChart 마크업의 tabindex/role/onpointer*/onkeydown/onblur 1건, allocHistPeekKey가 nwChartKeyStep을 호출하는 소스패턴 1건, allocHistPeekLabel 순수 포맷터 3건(상위2 요약/ALLOC_OTHER_TYPE+0% 제외/전부 0%면 날짜만), 완전 실행형 vm 컨텍스트 3건(ArrowRight/Left/Escape 키 이동+라인/라벨/announceLive, 포인터 좌표로 가장 가까운 포인트 선택, _allocHistPts가 null/1개뿐일 때 전부 no-op)) — node test/run.js 3290->3298/3298 통과. node --check(extractMainScript)/logic.js/sw.js/test/run.js 통과. 사용자 체감 상호작용 추가라 APP_VERSION 1.47.416->1.47.417, sw.js CACHE v683->v684. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 339,
+      "phase": "develop",
+      "timestamp": "2026-11-11T19:14:15.264933Z",
+      "summary": "develop(cycle339): Explore 서브에이전트가 발견한 공백을 고쳤다 — mergeAssetInto(index.html:4728)가 txns/recurrences/goals.linkedAssetId/assetQtyLog는 모두 from→to로 옮기면서, 저축성 자산의 \"만기 시 이체할 통장\"(maturityTargetId, asOpenMat/doMaturity가 쓰는 필드)로 from을 가리키던 다른 자산은 빠뜨리고 있었다. from이 병합 후 영구히 사라지면(6초 grace 지나면 톰스톤만 남음) 해당 자산의 자동이체 대상이 조용히 끊겨, doMaturity()가 '이체할 통장을 먼저 지정하세요'로 degrade — 사용자 설정이 알림 없이 사라지는 goalItems(cycle333 전후로 이미 고친 것)와 같은 버그 클래스. goalItems 블록과 동일한 패턴으로 matItems를 추가: maturityTargetId===fromId인 다른 자산을 모아 toId로 옮기고, 성공 시 touchSave에 포함, undoToast 콜백에서 prevTarget으로 복원. 테스트: mergeAssetInto 관련 블록에 maturityTargetId 이동/undo복원/무관한 자산 불변 3건 추가 — node test/run.js 3298->3301/3301 통과. node --check sw.js/test/run.js 통과(index.html은 <script> 블록 추출 방식이 HTML 주석 내 리터럴 텍스트에 오탐해 전체 테스트 스위트 통과로 대체 검증). APP_VERSION 1.47.417->1.47.418, sw.js CACHE v684->v685.",
       "commit": null
     }
   ]

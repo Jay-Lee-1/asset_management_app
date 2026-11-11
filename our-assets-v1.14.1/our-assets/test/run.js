@@ -13335,6 +13335,35 @@ test('mergeAssetInto: from을 가리키지 않는 목표(다른 자산 연결·n
   assert.strictEqual(g2.linkedAssetId, null);
   assert.strictEqual(g2.updatedAt, 1);
 });
+test('mergeAssetInto: from을 "만기 시 이체할 통장"(maturityTargetId)으로 가리키던 다른 자산도 to로 옮겨가 doMaturity가 대상을 잃지 않는다', () => {
+  const a1 = { id: 'a1', name: '통장1', type: 'cash', baseAmount: 1000 };
+  const a2 = { id: 'a2', name: '통장2', type: 'cash', baseAmount: 2000 };
+  const a3 = { id: 'a3', name: '적금', type: 'savings', baseAmount: 5000, maturityDate: '2026-07-01', maturityTargetId: 'a1', updatedAt: 1 };
+  sandbox.DB = { assets: [a1, a2, a3], txns: [], recurrences: [] };
+  sandbox.mergeAssetInto('a1', 'a2');
+  assert.strictEqual(a3.maturityTargetId, 'a2', '만기 이체 대상이 합쳐진 자산(to)으로 옮겨가야 함');
+  assert.strictEqual(a3.updatedAt, 'test-updatedAt', '대상이 옮겨간 자산도 touch()되어야 함');
+});
+test('mergeAssetInto: undoToast로 되돌리면 maturityTargetId도 원래 자산(from)으로 복원된다', () => {
+  const a1 = { id: 'a1', name: '통장1', type: 'cash', baseAmount: 1000 };
+  const a2 = { id: 'a2', name: '통장2', type: 'cash', baseAmount: 2000 };
+  const a3 = { id: 'a3', name: '적금', type: 'savings', baseAmount: 5000, maturityDate: '2026-07-01', maturityTargetId: 'a1' };
+  sandbox.DB = { assets: [a1, a2, a3], txns: [], recurrences: [] };
+  sandbox.lastUndo = null;
+  sandbox.mergeAssetInto('a1', 'a2');
+  assert.strictEqual(a3.maturityTargetId, 'a2');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(a3.maturityTargetId, 'a1', '되돌리면 만기 이체 대상도 원래대로 복원되어야 함');
+});
+test('mergeAssetInto: from을 가리키지 않는 다른 자산의 maturityTargetId는 건드리지 않는다', () => {
+  const a1 = { id: 'a1', name: '통장1', type: 'cash', baseAmount: 1000 };
+  const a2 = { id: 'a2', name: '통장2', type: 'cash', baseAmount: 2000 };
+  const a3 = { id: 'a3', name: '적금', type: 'savings', baseAmount: 5000, maturityDate: '2026-07-01', maturityTargetId: 'a2', updatedAt: 1 };
+  sandbox.DB = { assets: [a1, a2, a3], txns: [], recurrences: [] };
+  sandbox.mergeAssetInto('a1', 'a2');
+  assert.strictEqual(a3.maturityTargetId, 'a2', '이미 to를 가리키던 자산은 그대로여야 함');
+  assert.strictEqual(a3.updatedAt, 1, '대상이 아닌 자산은 touch()되면 안 됨');
+});
 test('openAssetMergePicker: 같은 종류의 자산만, 자기 자신은 제외하고 피커를 연다', () => {
   sandbox.TODAY = '2026-06-15'; sandbox.RANGE_TO = '2099-12-31';
   sandbox.DB = {
