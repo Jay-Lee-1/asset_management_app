@@ -1,15 +1,8 @@
 {
   "cycle": 337,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 332,
-      "phase": "review",
-      "timestamp": "2026-11-10T15:05:00.000Z",
-      "summary": "cycle332 develop 커밋(5cb0e40, goalsToCSV 생성일 UTC->로컬 날짜 수정)을 검토. localDateStr 헬퍼가 todayStr()과 동일한 getFullYear/getMonth/getDate 패턴을 쓰고 goalsToCSV 내부에 스코프돼 이름 충돌이 없음을 확인. 반올림/타임존 경계(America/New_York, UTC 자정을 넘나드는 instant) 테스트가 실제 버그를 정확히 재현함을 확인. node test/run.js 재실행 3240/3240 통과. 실제 버그 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 332,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-11T11:28:34.252Z",
       "summary": "충돌 화면(openAccountSheet, index.html:7438)의 \"최신 데이터 가져오기\" 버튼이 confirmCloudForcePush(\"내 데이터로 덮어쓰기\")와 달리 확인 없이 즉시 resolveCloudPullRemote()를 실행해, 이 기기의 아직 동기화 안 된 편집이 경고 한 번 없이 영구히 사라질 수 있던 비대칭을 고쳤다(Explore 서브에이전트가 발견). confirmCloudForcePush와 동일한 패턴으로 confirmCloudPullRemote() 래퍼를 추가해 confirmSheet(\"최신 데이터 가져오기\"/\"이 작업은 되돌릴 수 없어요\")로 한 번 더 확인받은 뒤에만 resolveCloudPullRemote()를 실행하도록 버튼 onclick을 교체(cb가 async 함수를 그대로 return하도록 화살표 함수를 중괄호 없는 형태로 작성). wipe-전 백업/undoToast까지 확장하는 건(8번째 __preXxx_ kind) 범위가 더 크므로 이번 develop에서는 확인창 추가까지만 하고, 필요하면 critique가 다시 집어 advance로 넘기도록 남겨둠. 테스트 1건 추가(confirmSheet 호출 검증 + cb 실행 시 resolveCloudPullRemote가 실제로 돈다는 것까지 실행형으로 확인) — node test/run.js 3277->3278/3278 통과. node --check(메인 스크립트 블록 추출)/sw.js/test/run.js 통과. 사용자 체감 동작 변화(확인창 추가)라 APP_VERSION 1.47.413->1.47.414, sw.js CACHE v680->v681.",
+      "commit": null
+    },
+    {
+      "cycle": 337,
+      "phase": "review",
+      "timestamp": "2026-11-11T12:10:00.000Z",
+      "summary": "cycle337 develop 커밋(de1324e, 클라우드 동기화 충돌화면 \"최신 데이터 가져오기\" 버튼에 확인창 추가)을 검토. 새로 추가된 confirmCloudPullRemote()가 confirmCloudForcePush(index.html:2284-2286)와 글자 단위로 같은 패턴(confirmSheet(title,msg,ok,cb) 호출 후 confirmSheet 내부에서 closeSheet();_cf&&_cf() 순서로 cb 실행)임을 확인, openAccountSheet의 onclick이 confirmCloudPullRemote()로 정확히 바뀌었고 confirmCloudForcePush 버튼은 그대로임을 라인 대조로 확인. cb가 ()=>resolveCloudPullRemote()로 async 함수를 그대로 반환하므로 confirmSheet의 cb&&cb() 호출이 await 없이도 내부 Promise 체인이 정상 진행됨(기존 confirmCloudForcePush도 동일 구조). node test/run.js 재실행 3278/3278 통과. 실제 버그 없음(state.json만 커밋).",
       "commit": null
     }
   ]
