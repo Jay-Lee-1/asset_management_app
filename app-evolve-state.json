@@ -1,15 +1,12 @@
 {
   "cycle": 336,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "doMaturity(만기 이체)에 undoToast 추가",
+    "why": "mergeAssetInto/mergeCatInto/mergeOwnerInto, doBulkCat류, doDeleteCat, doCsvImport 등 DB를 바꾸는 모든 사용자 액션이 undoToast로 되돌릴 수 있는데, doMaturity(index.html:7934)만 유일하게 toast만 띄우고 되돌릴 방법이 없다. 만기 알림 화면의 버튼 한 번으로 거래가 생성되고 maturityDate(만기 알림의 근거)가 영구히 지워지는데, 실수로 눌러도 수동으로 거래를 찾아 지우고 만기일을 다시 입력하는 수밖에 없다.",
+    "approach": "doMaturity(index.html:7934-7951)에서 mutate 전에 prevMaturity=a.maturityDate 저장. 7946행 DB.txns.push(...)가 반환한 거래 객체를 변수로 잡아 id를 기억. 7950행 toast(...) 호출 두 분기(clamped/일반) 모두 undoToast(동일 메시지, ()=>{...})로 교체. undo 콜백: DB.txns에서 그 id의 거래를 제거하고 DB.deletedIds[txnId]=Date.now() 톰스톤(5429행 mergeOwnerInto, 8216행 mergeCatInto 등과 동일 패턴 — 없으면 mergeRemoteDataIntoLocal이 다른 기기 사본에서 되살림), a.maturityDate=prevMaturity 복원, touchSave(a), invalidateBalances(), renderCurrent(), toast('되돌렸어요'). 테스트: test/run.js의 mergeAssetInto류 '실행형 테스트' 패턴으로 fake DOM+DB 하네스에 doMaturity를 실행해 (1)실행 시 거래 생성+maturityDate 비워짐 (2)undo 시 거래 제거+톰스톤+maturityDate 복원 (3)clamped 날짜 분기도 undo 가능 (4)twGuard 차단을 각각 assert. APP_VERSION/sw.js CACHE 버전 올림."
+  },
   "history": [
-    {
-      "cycle": 331,
-      "phase": "critique",
-      "timestamp": "2026-11-10T11:30:00.000Z",
-      "summary": "7개 트래시 화면 모두 복구 버튼만 제공하고 보존기간(30일)을 기다리지 않고 즉시 영구 삭제할 방법이 없음을 확인했다(grep \"영구 삭제|완전 삭제|지금 삭제|purgeTrash\" 0건). at-rest 암호화는 이미 재작성급으로 거절됐으므로 즉시 삭제 제어권을 주는 것이 다음 걸음. pending_advance_plan에 구체 계획 저장(logic.js removeTrashItem 헬퍼 + 7개 purgeTrashX 짝 함수, deletedIds 톰스톤은 보존). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
     {
       "cycle": 331,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-11T07:08:26.389Z",
       "summary": "cycle336 develop 커밋(d88146e, shortDate2 투사일 연도 누락 수정)을 검토. (typeof TODAY==='string'&&ds.slice(0,4)!==TODAY.slice(0,4)) 가드가 프로덕션에서는 TODAY=let TODAY=todayStr()(index.html:1767)로 항상 문자열이라 실사용 경로에는 영향 없고, 테스트 fixture에서 TODAY 미설정 시에만 안전하게 MM/DD로 폴백함을 확인. shortDate2의 9개 호출부(nwh-range 캡션, 차트 peek 라벨, 목표/부채 투사일)를 모두 grep으로 대조해 연도 접두가 필요한 곳(투사일)과 불필요한 곳(같은 해 범위인 차트 캡션) 구분이 TODAY 연도 비교로 자연히 처리됨을 확인. node test/run.js 재실행 3272/3272 통과. 실제 버그 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 336,
+      "phase": "critique",
+      "timestamp": "2026-11-11T11:00:00.000Z",
+      "summary": "DB를 바꾸는 사용자 액션 전체를 훑어 undoToast 커버리지를 확인한 결과, mergeAssetInto/mergeCatInto/mergeOwnerInto·doBulkCat류·doDeleteCat·doCsvImport 등은 모두 undoToast로 되돌릴 수 있는데 doMaturity(만기 이체, index.html:7934-7951)만 유일하게 되돌릴 방법 없는 plain toast(7950행)로 남아있음을 확인했다(grep으로 undoToast 호출부 전부 대조). 저축 만기 알림 화면의 버튼 한 번으로 거래가 생성되고 maturityDate가 영구히 지워지는데 실수로 눌러도 수동 복구밖에 없다. pending_advance_plan에 구체 계획 저장(prevMaturity 캡처, undoToast로 교체, 생성된 거래를 id로 제거+deletedIds 톰스톤, maturityDate 복원 — mergeOwnerInto/mergeCatInto의 톰스톤 패턴 재사용). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
