@@ -1,22 +1,16 @@
 {
   "cycle": 338,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "자산배분 추이 차트(allocationHistoryCard)에 순자산/잔액 추이 차트와 동일한 peek(스크러빙) 상호작용 추가",
+    "why": "nwHistoryCard의 #nwhChart(index.html:3308)와 assetBalCard의 #assetBalChart(index.html:3516)는 둘 다 tabindex=0 + onpointerdown/move/up/cancel/leave + onkeydown(ArrowLeft/Right/Home/End/Escape)로 날짜별 값을 누르거나 화살표 키로 탐색할 수 있고 announceLive()로 스크린리더에도 읽어준다. 반면 바로 아래 allocationHistoryCard의 차트(index.html:3661, '자산배분 추이')는 role=\"img\" aria-label만 있고 tabindex/포인터/키보드 핸들러가 전혀 없어, 최종일 범례 비율만 보일 뿐 과거 특정 날짜의 유형별 비중은 전혀 확인할 수 없다. 두 형제 차트와 같은 '형제에겐 있는데 이것만 없다' 패턴(history의 settle 동기화/시트닫기 가드/byType in byOwner와 동일 클래스)이자 선언된 role=\"img\"에 비해 실제 키보드 접근성이 빠진 a11y 공백이기도 하다.",
+    "approach": "1) assetAllocationSeries(logic.js:1186)가 돌려주는 points(각 {date,segs:[{type,pct}...]})를 allocationHistoryCard(index.html:3643)에서 렌더 시 전역 _allocHistPts에 저장(기존 _nwChartPts/_assetBalChartPts와 동일 패턴). 2) chartPeekRenderAt(index.html:3355)은 p.nw 전제라 재사용 불가하므로, 같은 파일에 allocHistPeekRenderAt(pts,idx) 신설: top 타입들을 segs pct 내림차순(또는 types 순서, legend와 동일 순서) 2~3개로 요약해 `${shortDate2(p.date)} · 주식 42% · 예금 31%` 형태 라벨 문자열을 만들어 announceLive()로 읽고, 새 peek-line/peek-label DOM(#allocHistPeekLine, #allocHistPeekLabel)에 반영. x좌표 계산은 chartPeekRenderAt의 daysBetween 비례 로직을 그대로 재사용(공유 가능하면 chartPeekRenderAt을 라벨 생성 콜백을 받는 형태로 일반화하는 것도 고려, 단 기존 두 호출부 시그니처를 깨지 않아야 함). 3) allocationHistoryCard의 차트 div(3661행)에 id=\"allocHistChart\" tabindex=\"0\" 추가하고 onpointerdown/move/up/cancel/leave→allocHistPeekStart/Move/End, onkeydown→allocHistPeekKey, onblur→allocHistPeekEnd 와이어링(nwChartPeekStart류와 완전히 동일한 구조, nwNearestPointIndex/nwChartKeyStep는 logic.js의 범용 {date,...} 헬퍼라 그대로 재사용 가능 — 확인됨). peek-line/peek-label을 svg 옆에 추가(nwhPeekLine/nwhPeekLabel과 동일한 마크업). 4) allocPresetSel(3669행)이 카드를 다시 그릴 때 _allocHistPts도 새로고침되는지 확인(refreshAllocationHistoryCard 경로). 5) 테스트: test/run.js에서 nwChartPeekKey/assetBalPeekKey를 커버하는 기존 테스트 블록을 찾아 같은 패턴으로 allocHistPeekKey/allocHistPeekStart에 대해 ArrowLeft/Right/Home/End/Escape 각각의 인덱스 이동 + 라벨 텍스트에 상위 타입 비중이 포함되는지 확인하는 케이스를 추가, 그리고 _allocHistPts가 비거나 1개뿐일 때 핸들러가 안전하게 no-op인지도 기존 가드 테스트와 동일하게 추가. node --check(extractMainScript)/logic.js/sw.js/test/run.js 통과 확인 후 사용자 체감 상호작용 추가이므로 APP_VERSION/sw.js CACHE 올림.",
+    "rejected": [
+      "nwHistory/allocationSeries 재계산 성능(메모이제이션) 감사 — DB.nwHistory는 매일 한 번 증분 기록되는 스냅샷 배열이고 렌더마다 거래 원본에서 재계산하는 구조가 아니라 실제 성능 문제 근거가 없어 범위 밖으로 둠.",
+      "wipe/merge 경로 전수 재검사(백업+undo 누락 탐색) — doDeleteCat/벌크삭제/CSV 임포트/자산·목표 삭제 경로를 모두 확인했으나 이미 트래시-톰스톤 또는 undoToast 스냅샷 패턴이 적용돼 있어 새 공백을 찾지 못함."
+    ]
+  },
   "history": [
-    {
-      "cycle": 333,
-      "phase": "review",
-      "timestamp": "2026-11-10T19:10:18.875Z",
-      "summary": "cycle333 develop 커밋(493fbb1, normalizeCsvDateCell 한국식 점+공백 날짜 표기 수정)을 검토. 새 정규식이 csvDateValid의 최종 캘린더 검증을 우회하지 않음을 확인(여전히 new Date() 라운드트립으로 걸러짐, 2026. 2. 30 케이스 테스트로 커버됨). 공백 없는 기존 포맷(\"2026.1.5\")도 \\\\s*가 0개 공백을 허용해 동일하게 매치되어 회귀 없음. node test/run.js 재실행 3244/3244 통과. 실제 버그 없음(state.json만 커밋).",
-      "commit": null
-    },
-    {
-      "cycle": 333,
-      "phase": "critique",
-      "timestamp": "2026-11-10T20:05:00.000Z",
-      "summary": "cycle332 critique가 발견한 '전체 DB 변경이 undoToast 6초 메모리 클로저 하나에만 의존' 버그 클래스의 나머지 두 경로(카테고리 합치기 mergeCatInto:8115, 귀속 합치기 mergeOwnerInto:5360)를 확인했다 — cycle332 advance는 자산 합치기(mergeAssetInto)만 __preMergeAsset_로 막고 둘은 다음 critique로 미뤄뒀는데, grep으로 재확인한 결과 두 함수 모두 여전히 백업 없이 즉시 DB를 변경한다. 둘 다 asset merge보다 다루는 상태가 단순해 한 사이클에 같이 처리 가능하다고 판단, pending_advance_plan에 __preMergeCat_/__preMergeOwner_ 두 kind로 확장하는 구체 계획(파일·라인·헬퍼 배선까지) 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
     {
       "cycle": 333,
       "phase": "advance",
@@ -148,6 +142,13 @@
       "phase": "review",
       "timestamp": "2026-11-11T16:05:00.000Z",
       "summary": "cycle338 develop 커밋(af3aa92, 종료일 피커가 RANGE_TO 한참 뒤 날짜에서 저장 전에 멈추던 공백 수정)을 검토. recDates(logic.js:30)가 daily/weekly는 하루/일주일씩, monthly/yearly는 한 달/한 해씩 시작일부터 end까지 직접 순회하는 구조임을 확인해(버퍼나 상한 없음), RANGE_TO 없이 종료일 피커가 임의의 먼 미래 날짜를 그대로 recCountUntil에 넘기면 실제로 UI 스레드가 그 자리에서 멈출 수 있다는 develop 단계의 근거가 타당함을 재확인. openFieldDatePicker(10629행)가 실제로 min/max 없이 연/월 자유 스크롤임도 직접 확인. txOpenEnd/recOpenEnd 새 가드가 dateBelowRangeFloor/dateAboveRangeCeil 체크에서 하나라도 걸리면 draft를 전혀 건드리지 않고 return하는 것을 라인 단위로 확인(연쇄 재렌더 없음, 토스트만). saveTx/saveRec에 나란히 추가된 dateAboveRangeCeil(endDate) 체크는 '횟수' 입력(_applyCount, count<=999로 이미 상한이 있어 이 경로 자체는 원래도 안전)으로 derive된 endDate뿐 아니라 외부 유입(백업 복원 등)으로 생긴 비정상 endDate까지 대칭으로 막아 saveTx/saveRec의 기존 '시작일 범위' 가드와 일관된 방어선을 이룸. RANGE_FROM 하한 체크는 startDate가 이미 RANGE_FROM 이상으로 저장 시점에 검증되므로 endDate>=startDate인 한 이론상 불필요하지만, 피커가 임의 콜백이라는 점에서 대칭적으로 넣어둔 것은 방어적으로 합리적이며 해도 없음. 테스트 9건을 각각 실행해 가드가 recCountUntil 호출 전에 막음(count/endDate 불변)을 직접 확인. node test/run.js 재실행 3290/3290 통과. 실제 버그 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 338,
+      "phase": "critique",
+      "timestamp": "2026-11-11T17:10:42.253Z",
+      "summary": "앱 전체를 한 걸음 물러나 훑어본 결과, 순자산 추이 차트(#nwhChart, index.html:3308)와 잔액 추이 차트(#assetBalChart, index.html:3516)는 둘 다 tabindex=0+포인터/키보드 peek 상호작용(nwChartPeekStart/Key, assetBalPeekStart/Key)이 있어 과거 특정 날짜의 값을 눌러보거나 화살표 키로 탐색할 수 있는데, 바로 아래 자산배분 추이 차트(allocationHistoryCard, index.html:3661)는 role=\"img\" aria-label만 있고 그런 상호작용이 전혀 없어 최종일 범례 비율 외엔 과거 특정 시점의 유형별 비중을 확인할 길이 없음을 발견했다(Explore 서브에이전트가 발견, chartPeekRenderAt/nwNearestPointIndex/nwChartKeyStep 등 재사용 가능한 범용 헬퍼를 직접 코드로 확인). history가 반복적으로 짚어온 '형제 함수엔 있는 가드/기능이 이것만 빠짐' 패턴의 새 사례이자, 선언된 role=\"img\"에 비해 실제 키보드 접근성이 없는 a11y 공백. 대안으로 nwHistory 재계산 성능 감사와 wipe/merge 경로 전수 재검사를 검토했으나 둘 다 근거 부족(전자는 증분 스냅샷 구조라 실성능 문제 없음, 후자는 grep 결과 이미 백업/undo 패턴 적용됨)으로 기각. pending_advance_plan에 allocHistPeekStart/Move/End/Key 신설 및 와이어링, 라벨 포맷(상위 타입별 비중), 테스트 확장 지점까지 구체 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
