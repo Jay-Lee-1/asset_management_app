@@ -1,22 +1,12 @@
 {
   "cycle": 334,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "자산배분 추이 카드/오늘-대비-N일전 캡션이 귀속별 보기(owner!=='all')에서는 전부 비어있음 — byOwner에 byType 중첩 추가",
+    "why": "nwHistory는 가구 전체 순자산 추이는 byOwner[owner]={ta,td}로 귀속별로도 쌓아(nwHistoryForOwner, logic.js:855) '귀속' 캐러셀에서 바로 보여주는데, 자산유형별 비중(byType)은 top-level에만 있어(index.html:2826 _saveCore) 같은 캐러셀에서 특정 귀속을 고르면 allocationHistoryCard(index.html:3621-3624)가 owner!=='all'이면 즉시 ''을 반환해 '자산배분 추이' 카드 자체가 사라지고, allocationCard의 trendCaption(index.html:3592-3601)도 owner==='all' 조건에서만 계산된다. '전체'에서는 보이던 정보가 귀속을 고르는 순간 통째로 사라지는 비대칭이라 cycle310이 scope를 전체 기준으로만 좁혀둔 이후 아직 메워지지 않은 공백.",
+    "approach": "1) index.html:2819 _saveCore의 byOwner={} 생성부에서 각 owner별로도 DB.assets.filter(a=>a.owner===o&&a.includeInTotal&&a.type!=='debt')를 type별로 합산해 byOwner[o].byType={type:amount}로 중첩(line 2826의 top-level byType 합산과 같은 필터를 owner로 한 번 더 좁힌 것). 2) index.html:9916-9926 sanitizeBackup의 byOwner 검증 루프 안에 byType도 검증 추가 — top-level byType 검증(9927행 근처, 음수 허용·min 없음)과 동일한 규칙을 b.byType에도 적용해 byOwner[o]={ta,td,byType}로 채움. 3) index.html:5400-5403 mergeOwnerInto의 nwHistory 병합 분기 — 현재 ta/td만 더하는데 byType도 두 맵을 키별로 합산해 병합하고, hadTo/toBefore 캡처에 byType도 포함해 undoToast 복원이 그대로 되돌리게 함(toBefore가 없으면 fromVal을 그대로 쓰는 기존 분기도 byType 포함해서 동일). 4) logic.js:1151 allocationHistoryDelta, logic.js:1172 assetAllocationSeries에 owner 파라미터를 추가 — owner==='all'(또는 생략)이면 지금처럼 h.byType을 쓰고, 아니면 h.byOwner&&h.byOwner[owner]&&h.byOwner[owner].byType을 쓰도록 withType 필터 조건만 바꾼다(레거시 스냅샷은 byType이 없으니 자동으로 withType.length<2→null, '모르면 비교하지 않는다' 원칙 그대로 유지). 5) index.html:3594 allocationCard가 owner==='all' 가드를 지우고 allocationHistoryDelta(DB.nwHistory||[],TODAY,30,owner)로 호출. 6) index.html:3621-3624 allocationHistoryCard의 `if(owner!=='all')return ''`를 지우고 assetAllocationSeries(DB.nwHistory||[],preset,TODAY,owner)로 호출. 7) targetAllocationCard(목표 자산배분, index.html:3654 근처)는 가구 전체 단일 설정값(DB.settings.targetAllocation)이라 귀속별 목표라는 전혀 다른 기능이 필요해 이번 범위 밖으로 명시적으로 남긴다. 8) 테스트: allocationHistoryDelta/assetAllocationSeries owner 인자 케이스(전체 vs 특정 귀속, 레거시 스냅샷 혼재), mergeOwnerInto의 byType 합산 + undo 복원 테스트, sanitizeBackup의 byOwner[o].byType 검증 테스트. 범위가 크면(merge 배선까지 한 사이클에 다 안 들어가면) cycle332/333처럼 쪼개도 됨 — 소비 쪽(4,5,6)만 먼저 하고 merge 배선(3)은 다음 critique가 재발견해 잇게 두는 것도 안전한 분할."
+  },
   "history": [
-    {
-      "cycle": 329,
-      "phase": "review",
-      "timestamp": "2026-11-09T00:30:00.000Z",
-      "summary": "cycle329 develop 커밋(23f3a39, onInstallBarClick 스누즈 수정)을 검토. 구현과 테스트가 정확히 대응함을 확인. node test/run.js 재실행 3210/3210 통과. 실제 버그 없음(state.json만 커밋).",
-      "commit": null
-    },
-    {
-      "cycle": 329,
-      "phase": "critique",
-      "timestamp": "2026-11-09T02:11:00.000Z",
-      "summary": "cycle328이 고친 '전체 계정 wipe 직전 메모리 클로저 의존' 버그 클래스가 가장 흔히 쓰이는 경로인 restoreBackup()/proceedWithBackupObj()(백업 파일 복원)에는 아직 남아있음을 확인했다. pending_advance_plan에 __preRestore_ 세 번째 kind로 확장하는 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
     {
       "cycle": 329,
       "phase": "advance",
@@ -148,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-10T23:05:00.000Z",
       "summary": "cycle334 develop 커밋(4ca3316, mergeOwnerInto가 DB.settings.settle의 ownerA/ownerB를 안 따라가던 공백 수정)을 검토. doRenameOwner(5335행)의 기존 settle 이동 로직과 정확히 동일한 조건을 재사용함을 라인 단위로 대조해 확인, ownerA===ownerB가 되는 merge 케이스에서 settle을 null로 끄는 가드도 settleConfigured()의 두 owner 존재 검증과 일관됨을 확인(같은 이름끼리 정산하는 무의미한 상태를 남기지 않음). undoToast 복원 경로도 prevSettle 스냅샷으로 정확히 되돌림. node test/run.js 재실행 3255/3255 통과. 실제 버그 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 334,
+      "phase": "critique",
+      "timestamp": "2026-11-11T00:00:00.000Z",
+      "summary": "nwHistory가 귀속별 순자산 추이는 byOwner[owner]={ta,td}로 이미 쌓는데(nwHistoryForOwner), 자산유형별 비중 추이(byType, cycle310이 추가)는 top-level(가구 전체)에만 있어 귀속 캐러셀에서 특정 귀속을 고르면 allocationHistoryCard(index.html:3621-3624)가 owner!=='all'이면 즉시 ''을 반환해 '자산배분 추이' 카드가 통째로 사라지고 allocationCard의 trendCaption(3592-3601)도 안 뜨는 비대칭을 발견했다 — cycle310이 '1차 범위는 전체 기준만'으로 명시적으로 남겨둔 공백. pending_advance_plan에 byOwner[o].byType 중첩 추가(_saveCore 생성, sanitizeBackup 검증, mergeOwnerInto 병합 배선) + allocationHistoryDelta/assetAllocationSeries owner 파라미터 + allocationCard/allocationHistoryCard의 owner==='all' 가드 제거까지 구체 계획(파일·라인 포함) 저장. targetAllocationCard(가구 전체 단일 목표 설정)는 범위 밖으로 명시. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
