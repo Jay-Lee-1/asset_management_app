@@ -1,15 +1,12 @@
 {
   "cycle": 336,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "금액 입력(fmtAmt)과 백업 복원 검증(sanitizeAmount) 양쪽에 상한이 없어 과도하게 큰 숫자가 Number 정밀도를 깨고 잔액 합산을 오염시킬 수 있음",
+    "why": "index.html:10520 fmtAmt(inp,allowNeg)는 입력값에서 숫자만 남긴 문자열 v를 그대로 Number(v).toLocaleString으로 표시하고, index.html:5291 num(el,allowNeg)는 그 표시값을 그대로 Number()로 파싱한다 — 둘 다 자릿수 상한이 없다. txAmt/asAmt/goalAmt/budgetIn/qAmt/debtWhatIfExtra/asCostBasis/asAddedCost/asSaleProceeds/bigMinInput/txSplitAmt/recSplitAmt 등 금액류 입력 14곳 전부가 fmtAmt 하나를 공유하므로(grep 확인), 그중 하나라도 16자리 이상을 입력하면 Number.MAX_SAFE_INTEGER(9007199254740991)를 넘어 정밀도가 깨진 값이 txDraft.amount/asDraft._dispAmt 등에 그대로 들어간다. PIN 입력 필드들(lockPinIn 등)은 이미 maxlength=6으로 막아두면서 금액 필드만 빠진 비대칭이다. 같은 클래스의 공백이 index.html:9275 sanitizeAmount(v,min)에도 있다 — Number.isFinite 체크와 min 하한 클램프만 있고 상한이 없어, 백업 파일 복원(restoreBackup)이나 클라우드 동기화(mergeRemoteDataIntoLocal이 거쳐가는 sanitizeBackup)로 들어오는 비정상적으로 큰 숫자(손상된 파일, 악의적으로 조작된 백업 등)가 그대로 DB.txns/DB.assets의 baseAmount/amountKRW/costBasis 등에 앉아 이후 assetEval/balancesUpTo/won() 표시까지 조용히 오염시킬 수 있다. 두 경로가 같은 '상한 없음' 공백을 공유하므로 한 번에 막는다.",
+    "approach": "1) 전역 상수 AMOUNT_MAX=999999999999999(15자리, 999조원 — 현실적인 금액보다 넉넉하면서 Number.MAX_SAFE_INTEGER(16자리)보다 한 자리 작게 둬 안전 마진 확보)를 TX_PHOTO_MAX_SIDE 등 다른 전역 설정 상수 근처에 추가. 2) index.html:10520 fmtAmt에서 v(숫자만 남긴 문자열)를 Number(v)로 변환하기 전에, 결과가 AMOUNT_MAX를 넘으면 AMOUNT_MAX로 clamp(Math.min(Number(v),AMOUNT_MAX))한 뒤 그 값으로 다시 표시 문자열을 만든다 — 기존 neg(음수부호) 처리는 그대로 두고 자릿수 제한만 추가. 3) index.html:9275 sanitizeAmount(v,min)에 symmetric한 상한 클램프 추가: 'if(n>AMOUNT_MAX)return AMOUNT_MAX;' — min 클램프와 같은 자리에 둔다. 4) 테스트: test/run.js의 기존 fmtAmt 테스트 블록(1874~1894행 부근)에 '16자리 이상 입력 시 AMOUNT_MAX로 잘린다' 케이스 추가, sanitizeAmount 테스트 블록(14977~14990행 부근)에 '상한을 넘으면 AMOUNT_MAX로 클램프한다' 케이스 추가. 5) node test/run.js로 전체 회귀 확인, node --check(스크립트 블록 추출)로 구문 확인, 사용자 체감 동작 변화이므로 APP_VERSION/sw.js CACHE 버전을 올린다. 범위 밖: num()/comma() 등 다른 숫자 포맷 함수(수량 qty 등 SANITIZE_QTY_FIELDS)는 금액이 아니라 수량이라 별도 스케일을 가지므로 이번 계획에 포함하지 않는다."
+  },
   "history": [
-    {
-      "cycle": 331,
-      "phase": "critique",
-      "timestamp": "2026-11-10T11:30:00.000Z",
-      "summary": "7개 트래시 화면 모두 복구 버튼만 제공하고 보존기간(30일)을 기다리지 않고 즉시 영구 삭제할 방법이 없음을 확인했다(grep \"영구 삭제|완전 삭제|지금 삭제|purgeTrash\" 0건). at-rest 암호화는 이미 재작성급으로 거절됐으므로 즉시 삭제 제어권을 주는 것이 다음 걸음. pending_advance_plan에 구체 계획 저장(logic.js removeTrashItem 헬퍼 + 7개 purgeTrashX 짝 함수, deletedIds 톰스톤은 보존). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
     {
       "cycle": 331,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-11T07:08:26.389Z",
       "summary": "cycle336 develop 커밋(d88146e, shortDate2 투사일 연도 누락 수정)을 검토. (typeof TODAY==='string'&&ds.slice(0,4)!==TODAY.slice(0,4)) 가드가 프로덕션에서는 TODAY=let TODAY=todayStr()(index.html:1767)로 항상 문자열이라 실사용 경로에는 영향 없고, 테스트 fixture에서 TODAY 미설정 시에만 안전하게 MM/DD로 폴백함을 확인. shortDate2의 9개 호출부(nwh-range 캡션, 차트 peek 라벨, 목표/부채 투사일)를 모두 grep으로 대조해 연도 접두가 필요한 곳(투사일)과 불필요한 곳(같은 해 범위인 차트 캡션) 구분이 TODAY 연도 비교로 자연히 처리됨을 확인. node test/run.js 재실행 3272/3272 통과. 실제 버그 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 336,
+      "phase": "critique",
+      "timestamp": "2026-11-11T09:12:16.000Z",
+      "summary": "txAmt/asAmt/goalAmt/budgetIn/qAmt/debtWhatIfExtra/asCostBasis/asAddedCost/asSaleProceeds/bigMinInput/분할금액 등 모든 금액 입력이 공용 fmtAmt(index.html:10520)로 포맷되는데, PIN 필드(maxlength=6)와 달리 자릿수 상한이 전혀 없음을 발견했다 — 16자리 이상 입력하면 Number.MAX_SAFE_INTEGER(9007199254740991, 16자리)를 넘어 정밀도가 깨진 값이 그대로 txDraft.amount/asDraft 등에 들어가 assetEval/balancesUpTo 등 합산 로직을 조용히 오염시킬 수 있다. 백업 복원·클라우드 동기화 경로의 sanitizeAmount(index.html:9275)도 min 하한만 클램프하고 상한이 전혀 없어, 손상되거나 조작된 백업 파일의 비정상적으로 큰 숫자가 그대로 통과한다. 둘 다 '상한 없음'이라는 같은 공백을 공유하므로 한 사이클에 같이 막을 수 있다고 판단. pending_advance_plan에 전역 상수 AMOUNT_MAX(15자리, 999,999,999,999,999 — Number.MAX_SAFE_INTEGER보다 안전하게 작고 현실적인 원화 금액보다는 넉넉함) 하나를 fmtAmt와 sanitizeAmount 양쪽에서 공유해 클램프하는 구체 계획(파일·라인, 테스트 확장 위치까지) 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
