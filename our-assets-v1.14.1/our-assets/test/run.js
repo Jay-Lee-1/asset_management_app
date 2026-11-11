@@ -292,7 +292,7 @@ const FUNCTIONS = [
   // 스파이로 대체한다(migrateLegacy/startApp 등과 같은 패턴).
   'heldCurrencies', 'heldStockCodes', 'heldCryptoCodes', 'needFx', 'needStock', 'needCrypto', 'hasRateAssets', 'autoSyncRates',
   'nextBigOutflow', 'dday', 'balanceOn', 'nextOutflowCard', 'monthOutflowCard', 'planGaugeCard', 'homeAlertCard', 'renderHome',
-  'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwPresetSegHTML', 'nwHistoryCard', 'allocationCard', 'allocPresetSegHTML', 'allocationHistoryCard', 'investGainLossCard', 'doRenameOwner', 'addOwner', 'ownerChipClass',
+  'totalAssets', 'totalDebt', 'ownerAssets', 'ownerDebt', 'ownerListArr', 'nwPane', 'shortDate2', 'nwPresetSegHTML', 'nwHistoryCard', 'allocationCard', 'allocPresetSegHTML', 'allocationHistoryCard', 'allocHistPeekLabel', 'investGainLossCard', 'doRenameOwner', 'addOwner', 'ownerChipClass',
   // targetAllocationCard/refreshTargetAllocationCard(목표 자산배분, app-evolve cycle313 advance)는
   // allocationHistoryCard 바로 아래 자리에 꽂는 새 카드 — assetBodyHTML/renderAssets/selectNwOwner가
   // 항상 함께 참조하므로(allocationCard/investGainLossCard와 같은 이유) FUNCTIONS에 반드시 함께
@@ -34321,6 +34321,116 @@ test('assetBalChart: tabindex와 키보드 핸들러(onkeydown)가 있다', () =
   assert.ok(tag.includes('tabindex="0"'), 'assetBalChart div에 tabindex="0"이 없음 — 키보드 접근 경로가 빠짐');
   assert.ok(tag.includes('role="img"'), 'assetBalChart div에 role="img"가 없음');
   assert.ok(tag.includes('onkeydown="assetBalPeekKey(event)"'), 'assetBalChart div에 onkeydown이 없음 — 키보드 접근 경로가 빠짐');
+});
+/* ---------- allocHistChart 마크업: nwhChart/assetBalChart(바로 위)는 둘 다 포인터+키보드 peek
+ * 상호작용이 있는데, 자산배분 추이 차트(allocationHistoryCard)만 role="img" aria-label뿐이고
+ * tabindex/핸들러가 전혀 없어 과거 특정 날짜의 유형별 비중을 전혀 확인할 수 없던 공백을
+ * app-evolve cycle338 critique/advance에서 메웠다 — 두 형제 차트와 동일한 마크업 패턴(id+
+ * tabindex+onpointer*+onkeydown+onblur)이 다시 빠지면 조용히 재발할 수 있어 지킨다. */
+test('allocHistChart: tabindex와 포인터+키보드 핸들러가 있다', () => {
+  const tag = extractTag('allocHistChart');
+  assert.ok(tag.includes('tabindex="0"'), 'allocHistChart div에 tabindex="0"이 없음 — 키보드 접근 경로가 빠짐');
+  assert.ok(tag.includes('role="img"'), 'allocHistChart div에 role="img"가 없음');
+  assert.ok(tag.includes('onpointerdown="allocHistPeekStart(event)"'), 'allocHistChart div에 onpointerdown이 없음');
+  assert.ok(tag.includes('onpointermove="allocHistPeekMove(event)"'), 'allocHistChart div에 onpointermove가 없음');
+  assert.ok(tag.includes('onpointerup="allocHistPeekEnd()"'), 'allocHistChart div에 onpointerup이 없음');
+  assert.ok(tag.includes('onpointercancel="allocHistPeekEnd()"'), 'allocHistChart div에 onpointercancel이 없음');
+  assert.ok(tag.includes('onpointerleave="allocHistPeekEnd()"'), 'allocHistChart div에 onpointerleave가 없음');
+  assert.ok(tag.includes('onkeydown="allocHistPeekKey(event)"'), 'allocHistChart div에 onkeydown이 없음 — 키보드 접근 경로가 빠짐');
+  assert.ok(tag.includes('onblur="allocHistPeekEnd()"'), 'allocHistChart div에 onblur가 없음');
+});
+/* allocHistPeekKey도 nwChartPeekKey/assetBalPeekKey와 동일하게 nwChartKeyStep을 호출해 다음
+ * 인덱스를 고르는지 소스 패턴으로 확인한다(위 '34798행대' 테스트와 같은 이유). */
+test('allocHistPeekKey가 nwChartKeyStep을 호출해 다음 인덱스를 고른다', () => {
+  assert.ok(extractFunction('allocHistPeekKey').includes('nwChartKeyStep(_allocHistPeekIdx,e.key,_allocHistPts.length)'), 'allocHistPeekKey가 nwChartKeyStep을 호출하지 않음');
+});
+/* ---------- allocHistPeekLabel(순수 포맷터): 날짜 + 상위 유형 2개를 pct 내림차순으로 요약한다.
+ * chartPeekRenderAt의 "날짜 · 금액" 한 값과 달리 이 차트의 포인트는 segs(유형별 비중) 배열이라
+ * 별도 포맷터가 필요하다(app-evolve cycle338 advance). */
+test('allocHistPeekLabel: 상위 유형 2개를 pct 내림차순으로 "날짜 · 유형 pct% · 유형 pct%" 형태로 요약한다', () => {
+  sandbox.TODAY = '2026-06-15'; // shortDate2가 연도 접두를 붙이지 않도록 같은 해로 고정
+  const label = sandbox.allocHistPeekLabel({ date: '2026-06-15', segs: [{ type: 'cash', pct: 31.4 }, { type: 'stock', pct: 42.1 }, { type: 'gold', pct: 26.5 }] });
+  assert.strictEqual(label, '06/15 · 주식 42% · 현금예금 31%');
+});
+test('allocHistPeekLabel: ALLOC_OTHER_TYPE("other")은 "기타 유형"으로 표시되고, pct가 0인 유형은 요약에서 빠진다', () => {
+  sandbox.TODAY = '2026-06-15';
+  const label = sandbox.allocHistPeekLabel({ date: '2026-06-15', segs: [{ type: 'cash', pct: 0 }, { type: 'other', pct: 60 }, { type: 'stock', pct: 40 }] });
+  assert.strictEqual(label, '06/15 · 기타 유형 60% · 주식 40%');
+});
+test('allocHistPeekLabel: 비중이 있는 유형이 없으면(모두 0%) 날짜만 돌려준다', () => {
+  sandbox.TODAY = '2026-06-15';
+  const label = sandbox.allocHistPeekLabel({ date: '2026-06-15', segs: [{ type: 'cash', pct: 0 }] });
+  assert.strictEqual(label, '06/15');
+});
+/* ---------- allocHistPeekStart/Move/Key/End 완전 실행형: nwChartPeekKey 파일럿(위, 34806행대)과
+ * 동일한 패턴 — _allocHistPts/allocHistPeekLabel/allocHistPeekRenderAt을 격리된 vm 컨텍스트에
+ * 함께 태워 실제 포인터/키 이벤트로 _allocHistPeekIdx가 움직이고 라벨·라인·announceLive가 모두
+ * 반영되는지 끝까지 확인한다. */
+function allocHistPeekCtx(pts) {
+  const line = { style: {}, setAttribute() {} };
+  const label = { style: {}, classList: { add() { this.on = true }, remove() { this.on = false } }, textContent: '' };
+  const announced = [];
+  const ctx = {
+    $: (id) => (id === 'allocHistChart' ? { setPointerCapture: () => {}, getBoundingClientRect: () => ({ left: 0, width: 300 }) } : id === 'allocHistPeekLine' ? line : id === 'allocHistPeekLabel' ? label : null),
+    announceLive: (msg) => announced.push(msg),
+    // sandbox.shortDate2는 가변 전역 sandbox.TODAY를 참조해(shortDate2 자신의 클로저가 sandbox
+    // 리얼름에 묶여 있음) 다른 테스트가 TODAY를 바꿔두면 흔들릴 수 있다 — 이 테스트는 shortDate2
+    // 자체를 검증하지 않으므로, 같은 해 안이라고 가정하는 결정적인 자체 구현으로 대체한다.
+    shortDate2: (ds) => ds.slice(5, 7) + '/' + ds.slice(8, 10),
+    ASSET_TYPES: sandbox.ASSET_TYPES,
+    ALLOC_OTHER_TYPE: sandbox.ALLOC_OTHER_TYPE,
+    daysBetween: sandbox.daysBetween,
+    nwNearestPointIndex: sandbox.nwNearestPointIndex,
+    nwChartKeyStep: sandbox.nwChartKeyStep,
+    _allocHistPts: pts,
+    _allocHistPeekIdx: null,
+  };
+  vm.createContext(ctx);
+  vm.runInContext([extractFunction('allocHistPeekLabel'), extractFunction('allocHistPeekRenderAt'), extractFunction('allocHistPeekStart'), extractFunction('allocHistPeekMove'), extractFunction('allocHistPeekKey'), extractFunction('allocHistPeekEnd')].join('\n'), ctx);
+  return { ctx, line, label, announced };
+}
+test('[실행형] allocHistPeekKey(ArrowRight/ArrowLeft)는 _allocHistPeekIdx를 옮기고 라인·라벨·announceLive를 갱신한다', () => {
+  const pts = [
+    { date: '2026-06-01', segs: [{ type: 'cash', pct: 60 }, { type: 'stock', pct: 40 }] },
+    { date: '2026-06-15', segs: [{ type: 'cash', pct: 50 }, { type: 'stock', pct: 50 }] },
+  ];
+  const { ctx, line, label, announced } = allocHistPeekCtx(pts);
+  let prevented = false;
+  ctx.allocHistPeekKey({ key: 'ArrowRight', preventDefault: () => { prevented = true; } });
+  assert.strictEqual(ctx._allocHistPeekIdx, 1, 'curIdx가 null인 상태에서 ArrowRight면 마지막 포인트(인덱스 1)로 가야 함');
+  assert.ok(prevented, 'ArrowRight는 e.preventDefault()를 호출해야 함');
+  assert.strictEqual(line.style.display, '', '라인이 보여야 함');
+  assert.ok(label.classList.on, '라벨이 on 클래스를 받아야 함');
+  assert.ok(label.textContent.includes('예금 50%') && label.textContent.includes('주식 50%'), `라벨에 상위 유형 비중이 포함돼야 함(실제: ${label.textContent})`);
+  assert.ok(announced[announced.length - 1].includes('예금 50%'), 'announceLive가 같은 정보를 공지해야 함');
+  ctx.allocHistPeekKey({ key: 'ArrowLeft', preventDefault: () => {} });
+  assert.strictEqual(ctx._allocHistPeekIdx, 0, '이어서 ArrowLeft면 한 칸 앞(인덱스 0)으로 이동해야 함');
+  ctx.allocHistPeekKey({ key: 'Escape', preventDefault: () => {} });
+  assert.strictEqual(ctx._allocHistPeekIdx, null, 'Escape는 피크를 끝내야 함');
+  assert.strictEqual(line.style.display, 'none', 'Escape 후 라인이 숨겨져야 함');
+  assert.strictEqual(label.classList.on, false, 'Escape 후 라벨의 on 클래스가 빠져야 함');
+});
+test('[실행형] allocHistPeekMove(포인터)는 x좌표 비율로 가장 가까운 포인트를 고른다', () => {
+  const pts = [
+    { date: '2026-06-01', segs: [{ type: 'cash', pct: 60 }, { type: 'stock', pct: 40 }] },
+    { date: '2026-06-08', segs: [{ type: 'cash', pct: 55 }, { type: 'stock', pct: 45 }] },
+    { date: '2026-06-15', segs: [{ type: 'cash', pct: 50 }, { type: 'stock', pct: 50 }] },
+  ];
+  const { ctx, label } = allocHistPeekCtx(pts);
+  ctx.allocHistPeekStart({ clientX: 290, pointerId: 1 });
+  assert.strictEqual(ctx._allocHistPeekIdx, 2, '오른쪽 끝 근처를 누르면 마지막 포인트가 선택돼야 함');
+  assert.ok(label.textContent.startsWith('06/15'), `라벨이 선택된 날짜로 시작해야 함(실제: ${label.textContent})`);
+});
+test('[실행형] _allocHistPts가 비거나 1개뿐이면 allocHistPeekStart/Move/Key가 안전하게 no-op한다', () => {
+  const { ctx, line } = allocHistPeekCtx(null);
+  ctx.allocHistPeekStart({ clientX: 100, pointerId: 1 });
+  ctx.allocHistPeekMove({ clientX: 100 });
+  ctx.allocHistPeekKey({ key: 'ArrowRight', preventDefault: () => {} });
+  assert.strictEqual(ctx._allocHistPeekIdx, null, '_allocHistPts가 null이면 아무 것도 바뀌지 않아야 함');
+  assert.strictEqual(line.style.display, undefined, '라인이 건드려지지 않아야 함');
+  const one = allocHistPeekCtx([{ date: '2026-06-15', segs: [{ type: 'cash', pct: 100 }] }]);
+  one.ctx.allocHistPeekKey({ key: 'Home', preventDefault: () => {} });
+  assert.strictEqual(one.ctx._allocHistPeekIdx, null, '포인트가 1개뿐이면 길이<2 가드로 아무 것도 바뀌지 않아야 함');
 });
 /* ---------- ledsumLive/histTotLive/histTotals/planBalLive 마크업: nwhChart/assetBalChart와
  * 똑같이 "롱프레스로 다른 값 미리보기" UX를 쓰면서도 onpointer*만 있고 키보드 경로가 전혀 없던

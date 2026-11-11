@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.416';
+const APP_VERSION='1.47.417';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -3654,14 +3654,17 @@ function allocationHistoryCard(owner,preset){
    const pct=Math.round((lastSegs.find(s=>s.type===t)||{pct:0}).pct);
    return `<div class="li"><i class="sw" style="background:${color}"></i><span class="nm">${label}</span><span class="pc num">${pct}%</span></div>`;
  }).join('');
+ _allocHistPts=points;
  return `<div class="card nwh-card">
    <div class="section-title" style="margin-top:0">자산배분 추이</div>
    ${allocPresetSegHTML(preset)}
    <div class="nwh-range">${shortDate2(first.date)} ~ ${shortDate2(last.date)}</div>
-   <div class="nwh-chart" role="img" aria-label="자산배분 추이 차트">
+   <div class="nwh-chart" id="allocHistChart" tabindex="0" role="img" aria-label="자산배분 추이 차트, 화살표 키로 날짜별 비중 탐색" onpointerdown="allocHistPeekStart(event)" onpointermove="allocHistPeekMove(event)" onpointerup="allocHistPeekEnd()" onpointercancel="allocHistPeekEnd()" onpointerleave="allocHistPeekEnd()" onkeydown="allocHistPeekKey(event)" onblur="allocHistPeekEnd()">
      <svg viewBox="0 0 300 80" preserveAspectRatio="none" aria-hidden="true" focusable="false">
        ${bands.map(b=>`<path d="${b.path}" fill="${b.type===ALLOC_OTHER_TYPE?ALLOC_OTHER_COLOR:TYPE_COLOR[b.type]}" opacity="0.85" stroke="none"/>`).join('')}
+       <line id="allocHistPeekLine" x1="0" x2="0" y1="0" y2="80" stroke="var(--text-3)" stroke-dasharray="2,2" style="display:none"/>
      </svg>
+     <div class="nwh-peek-label" id="allocHistPeekLabel" aria-hidden="true"></div>
    </div>
    <div class="legend">${legend}</div>
  </div>`;
@@ -3670,6 +3673,58 @@ function allocPresetSel(p){
  if(ST.allocPreset===p)return;
  ST.allocPreset=p;
  refreshAllocationHistoryCard();
+}
+let _allocHistPts=null,_allocHistPeekIdx=null;
+/* nwChartPeekStart/Move/End/Key·assetBalPeekStart/Move/End/Key(위)와 동일한 포인터+키보드 peek
+ * 상호작용을 자산배분 추이 차트(allocationHistoryCard)에도 추가한다(app-evolve cycle338
+ * critique/advance — 형제 차트 둘은 있는데 이 차트만 role="img"뿐이라 최종일 범례 비율 외엔
+ * 과거 특정 날짜의 유형별 비중을 전혀 확인할 수 없던 공백 해소). 좌표 매핑(nwNearestPointIndex)과
+ * 키 이동(nwChartKeyStep)은 {date,...} 모양이면 무엇이든 받는 범용 헬퍼라 그대로 재사용한다.
+ * chartPeekRenderAt은 p.nw 단일 금액을 전제해 그대로 쓸 수 없으므로(이 차트의 포인트는
+ * {date,segs:[{type,pct}]}), 상위 유형 비중을 요약하는 전용 렌더러(allocHistPeekRenderAt)를 둔다. */
+function allocHistPeekLabel(p){
+ const label=t=>t===ALLOC_OTHER_TYPE?'기타 유형':ASSET_TYPES[t].label;
+ const top=p.segs.filter(s=>s.pct>0).slice().sort((a,b)=>b.pct-a.pct).slice(0,2);
+ return shortDate2(p.date)+(top.length?' · '+top.map(s=>`${label(s.type)} ${Math.round(s.pct)}%`).join(' · '):'');
+}
+function allocHistPeekRenderAt(idx){
+ const p=_allocHistPts[idx];
+ const totalDays=Math.max(1,daysBetween(_allocHistPts[0].date,_allocHistPts[_allocHistPts.length-1].date));
+ const x=daysBetween(_allocHistPts[0].date,p.date)/totalDays*300;
+ const line=$('allocHistPeekLine');if(line){line.setAttribute('x1',x.toFixed(1));line.setAttribute('x2',x.toFixed(1));line.style.display='';}
+ const text=allocHistPeekLabel(p);
+ const label=$('allocHistPeekLabel');if(label){label.textContent=text;label.style.left=Math.max(4,Math.min(96,x/300*100))+'%';label.classList.add('on');}
+ announceLive(text);
+}
+function allocHistPeekStart(e){
+ const el=$('allocHistChart');if(!el||!_allocHistPts||_allocHistPts.length<2)return;
+ if(el.setPointerCapture&&e.pointerId!=null)try{el.setPointerCapture(e.pointerId)}catch(err){}
+ allocHistPeekMove(e);
+}
+function allocHistPeekMove(e){
+ const el=$('allocHistChart');if(!el||!_allocHistPts||_allocHistPts.length<2)return;
+ const rect=el.getBoundingClientRect();if(!rect.width)return;
+ const ratio=(e.clientX-rect.left)/rect.width;
+ const idx=nwNearestPointIndex(_allocHistPts,ratio);
+ if(idx<0||idx===_allocHistPeekIdx)return;
+ _allocHistPeekIdx=idx;
+ allocHistPeekRenderAt(idx);
+}
+/* allocHistPeekMove(포인터)와 짝이 되는 키보드 경로 — nwChartPeekKey/assetBalPeekKey와 동일한 패턴. */
+function allocHistPeekKey(e){
+ if(!_allocHistPts||_allocHistPts.length<2)return;
+ if(e.key==='Escape'){allocHistPeekEnd();return;}
+ if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;
+ e.preventDefault();
+ const idx=nwChartKeyStep(_allocHistPeekIdx,e.key,_allocHistPts.length);
+ if(idx<0||idx===_allocHistPeekIdx)return;
+ _allocHistPeekIdx=idx;
+ allocHistPeekRenderAt(idx);
+}
+function allocHistPeekEnd(){
+ _allocHistPeekIdx=null;
+ const line=$('allocHistPeekLine');if(line)line.style.display='none';
+ const label=$('allocHistPeekLabel');if(label)label.classList.remove('on');
 }
 
 /* 자산배분 추이 카드 바로 아래에 꽂는 "목표 자산배분" 카드 — allocationCard/allocationHistoryCard가
