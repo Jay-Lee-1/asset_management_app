@@ -1,15 +1,8 @@
 {
   "cycle": 341,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 336,
-      "phase": "review",
-      "timestamp": "2026-11-11T07:08:26.389Z",
-      "summary": "cycle336 develop 커밋(d88146e, shortDate2 투사일 연도 누락 수정)을 검토. (typeof TODAY==='string'&&ds.slice(0,4)!==TODAY.slice(0,4)) 가드가 프로덕션에서는 TODAY=let TODAY=todayStr()(index.html:1767)로 항상 문자열이라 실사용 경로에는 영향 없고, 테스트 fixture에서 TODAY 미설정 시에만 안전하게 MM/DD로 폴백함을 확인. shortDate2의 9개 호출부(nwh-range 캡션, 차트 peek 라벨, 목표/부채 투사일)를 모두 grep으로 대조해 연도 접두가 필요한 곳(투사일)과 불필요한 곳(같은 해 범위인 차트 캡션) 구분이 TODAY 연도 비교로 자연히 처리됨을 확인. node test/run.js 재실행 3272/3272 통과. 실제 버그 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 336,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-12T03:05:00.000Z",
       "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — 통합검색(globalSearchBody)/자산 목록 검색(ST.assetQ)/자산 피커(openAssetPicker)가 모두 쓰는 matchAssetQuery(logic.js:717)만, 같은 matchQueryTerms 공유 헬퍼를 쓰는 형제 함수(matchTxnQuery/matchGoalQuery/matchRecQuery, cycle279/283/284에서 차례로 금액 검색이 들어감)와 달리 평가금액으로 검색할 수 없었다. globalSearchBody의 빈 상태 안내문이 \"메모·카테고리·자산명·금액·목표명·반복명으로 검색해 보세요\"라고 금액 검색을 자산에도 명시해 놓고도, 실제로는 500만원짜리 통장을 \"5000000\"으로 찾을 수 없는 비대칭이었다. matchAssetQuery는 logic.js의 순수 함수라 DB.rates 없이는 assetEval(a)을 스스로 계산할 수 없으므로(assetsToCSV/goalsToCSV와 같은 제약), 다른 세 함수처럼 amount 필드를 직접 읽는 대신 evalValue를 세 번째 인자로 받아 matchQueryTerms에 넘기도록 바꾸고, 이미 각 호출부가 화면 표시용으로 계산해 쓰는 a.type==='debt'?-assetEval(a):assetEval(a)을 그대로 전달하도록 호출부 3곳(index.html:4600 자산 목록, 7399 통합검색, 12402 자산 피커)을 수정. 검색어 쉼표 제거/연산자 공백 보정(normalizeAmountSpacing)도 형제 함수와 동일하게 추가해 \">500만\"/\"400만~600만\"/\"5,000,000\" 모두 지원. 테스트 9건 추가(evalValue로 부분일치/쉼표/비교·범위 연산자 매칭 5건, debt 자산의 음수 evalValue도 절대값 비교로 동작 1건, evalValue를 안 넘긴 호출부는 기존 이름/통화/코드/귀속 substring 매칭만 하위호환으로 동작 1건, 기존 매칭 없음/귀속 테스트 보강) — node test/run.js 3320->3327/3327 통과. node --check logic.js/sw.js/test/run.js 통과, index.html 주 스크립트 블록(820KB, 4번째 <script> 블록) 추출 후 node --check 통과. 사용자 체감 동작 변화(자산도 금액으로 검색 가능해짐)라 APP_VERSION 1.47.421->1.47.422, sw.js CACHE v688->v689.",
+      "commit": null
+    },
+    {
+      "cycle": 341,
+      "phase": "review",
+      "timestamp": "2026-11-12T04:07:47.185Z",
+      "summary": "cycle341 develop 커밋(5e754e8, matchAssetQuery에 평가금액 비교/범위 검색 추가)을 검토. matchTxnQuery/matchGoalQuery/matchRecQuery와 글자 단위로 같은 matchQueryTerms(normHay,terms,amountCandidates) 호출 패턴임을 라인 대조로 확인하고, matchAssetQuery(a,q,evalValue)가 evalValue==null일 때 amt=''로 haystack에 아무것도 추가하지 않고 amountCandidates=[evalValue]=[null]이 되어 parseAmountToken이 걸리는 숫자 검색어는 매칭되지 않지만(테스트로 이미 확인됨) 이름/통화/코드/귀속 substring 매칭은 하위호환되어 그대로 동작함을 코드로 재확인. 호출부 3곳(ST.assetQ 필터 index.html:4600, globalSearchBody:7399, pkFilteredAssets:12402) 모두 a.type==='debt'?-assetEval(a):assetEval(a)로 화면 표시값(음수 부채 포함)과 동일한 부호 규칙을 쓰는지 확인 — 자산 목록 합계(sum)·피커 bal 표시와 같은 공식이라 디버트 음수금액도 테스트(>1000만/<1000만 vs -5000000)대로 일관됨. pkFilteredAssets의 forEach가 q로 필터링 후 bal을 다시 assetEval로 계산해 검색 중엔 assetEval이 아이템당 최대 2번 불리는 점은 비용 증가가 있으나, 자산 목록(line 4601 sum)도 이미 동일하게 필터와 합계 계산에서 assetEval을 별도로 재계산하는 기존 관례와 같아 새로 만든 문제는 아님(실제 버그 아님, 개인 자산 앱 규모상 체감 영향 없음). node test/run.js 재실행 3327/3327 통과. 실제 버그 없음(state.json만 커밋).",
       "commit": null
     }
   ]
