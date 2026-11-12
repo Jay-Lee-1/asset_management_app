@@ -404,7 +404,7 @@ const FUNCTIONS = [
 // 목록과, 그 키를 읽어주는 한글 aria-label 매핑이다(app-evolve cycle281 advance) — 둘 다 내부에
 // ";"가 없는 단순 object literal이라 extractConstBlock 없이 extractConst로도 끝까지 끌어온다
 // (CAT_LABEL과 같은 패턴).
-const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'emailKey', 'CAT_PICKER_SEARCH_THRESHOLD', 'GOAL_LIST_SEARCH_THRESHOLD', 'GS_CAP', 'CAT_ICON_SET', 'ICON_LABEL_KO', 'BAL_ASSET_TYPES', 'ALLOC_OTHER_COLOR', 'TRASH_MAX_AGE_DAYS', 'AMOUNT_MAX'];
+const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'emailKey', 'CAT_PICKER_SEARCH_THRESHOLD', 'GOAL_LIST_SEARCH_THRESHOLD', 'GS_CAP', 'CAT_ICON_SET', 'ICON_LABEL_KO', 'BAL_ASSET_TYPES', 'ALLOC_OTHER_COLOR', 'TRASH_MAX_AGE_DAYS', 'AMOUNT_MAX', 'NAME_MAX', 'cleanName'];
 // _histCache는 filteredHist()가 재대입(={key,list})하는 let 선언이라 CONSTS(extractConst)로는
 // 못 끌어오므로 별도의 LETS 목록으로 extractLet을 통해 가져온다.
 // _copyIsCsv도 같은 이유(openCopyBackup()이 재대입)로 LETS를 통해 가져온다.
@@ -1923,6 +1923,31 @@ test('fmtAmt(): AMOUNT_MAX 이하 입력은 상한에 영향받지 않고 그대
   assert.strictEqual(inp.value, '500,000');
 });
 
+/* cleanName()은 AMOUNT_MAX(숫자 입력 상한)의 텍스트 대응판 — 자산/소유자/카테고리/목표 이름
+ * 입력이 trim+NFC 정규화만 하고 길이 상한이 전혀 없던 공백을 막는다(app-evolve cycle340
+ * critique/advance). 거부가 아니라 clamp(자르기) 방식이라 AMOUNT_MAX와 동일한 철학을 공유한다. */
+test('cleanName(): 빈 문자열/공백만 있는 입력은 빈 문자열이다', () => {
+  assert.strictEqual(sandbox.cleanName(''), '');
+  assert.strictEqual(sandbox.cleanName('   '), '');
+  assert.strictEqual(sandbox.cleanName(undefined), '');
+  assert.strictEqual(sandbox.cleanName(null), '');
+});
+test('cleanName(): NAME_MAX 이하 입력은 trim만 되고 그대로 유지된다', () => {
+  assert.strictEqual(sandbox.cleanName('  우리은행 통장  '), '우리은행 통장');
+  assert.strictEqual(sandbox.cleanName('가'.repeat(sandbox.NAME_MAX)), '가'.repeat(sandbox.NAME_MAX));
+});
+test('cleanName(): NAME_MAX를 넘는 입력은 뒷부분이 잘려 정확히 NAME_MAX 길이가 된다', () => {
+  const over = '가'.repeat(sandbox.NAME_MAX + 20);
+  const out = sandbox.cleanName(over);
+  assert.strictEqual(out.length, sandbox.NAME_MAX);
+  assert.strictEqual(out, '가'.repeat(sandbox.NAME_MAX));
+});
+test('cleanName(): NFC 정규화를 유지한다(trim/slice 전에 정규화)', () => {
+  const nfd = '가'.normalize('NFD'); // '가'를 NFD로 분해
+  assert.strictEqual(sandbox.cleanName(nfd), '가');
+  assert.strictEqual(sandbox.cleanName(nfd).normalize('NFC'), sandbox.cleanName(nfd));
+});
+
 /* ---------- fmtQty(): FX/금/주식 보유 수량 입력란 실시간 정제 (app-evolve cycle119 advance)
  * fmtAmt는 콤마 포맷용이라 소수점을 아예 지워버려 보유 수량(소수 가능)엔 못 쓴다. 문자/기호는
  * 제거하되 소수점은 하나까지만 허용 — syncAssetInputs()가 이미 콤마 제거 후 parseFloat하므로
@@ -3108,6 +3133,12 @@ test('addCat: 이미 톰스톤된(지워진) 이름을 다시 추가하면 톰�
   assert.deepStrictEqual(sandbox.DB.categories.expense, ['식비', '커피']);
   assert.strictEqual(sandbox.catTombKey('expense', '커피') in sandbox.DB.deletedIds, false, '재추가한 이름의 톰스톤은 지워져야 다음 병합에서 되살아남');
 });
+test('addCat: NAME_MAX를 넘는 긴 이름은 잘려서 저장된다(거부 아님, app-evolve cycle340 advance)', () => {
+  sandbox.DB = { categories: { expense: ['식비'] }, catIcon: {}, catVar: {}, txns: [], recurrences: [], deletedIds: {} };
+  sandbox.catAddDraft = { name: '커'.repeat(sandbox.NAME_MAX + 30), icon: '' };
+  sandbox.addCat('expense');
+  assert.strictEqual(sandbox.DB.categories.expense[1], '커'.repeat(sandbox.NAME_MAX));
+});
 
 /* ---------- doRenameCat: 이름변경도 doDeleteCat과 동일하게 옛 이름을 톰스톤해야 한다(app-evolve cycle180) ----------
  * doRenameCat은 txns/recurrences/budgetHistory의 old를 v로 옮기지만 DB.categories에서 old 자체를
@@ -3129,6 +3160,12 @@ test('doRenameCat: 과거에 지워졌던(톰스톤된) 이름으로 되돌아�
   sandbox.catRenameDraft = { name: '외식비', icon: '' };
   sandbox.doRenameCat('expense', 0);
   assert.strictEqual(sandbox.catTombKey('expense', '외식비') in sandbox.DB.deletedIds, false, '되돌아온 이름의 톰스톤은 지워져야 다음 병합에서 되살아남');
+});
+test('doRenameCat: NAME_MAX를 넘는 긴 이름은 잘려서 저장된다(거부 아님)', () => {
+  sandbox.DB = { categories: { expense: ['식비'] }, catIcon: {}, catVar: {}, txns: [], recurrences: [] };
+  sandbox.catRenameDraft = { name: '외'.repeat(sandbox.NAME_MAX + 30), icon: '' };
+  sandbox.doRenameCat('expense', 0);
+  assert.strictEqual(sandbox.DB.categories.expense[0], '외'.repeat(sandbox.NAME_MAX));
 });
 test('doRenameCat → mergeNameListWithTombstones: 이름변경 전으로 동기화가 안 된 다른 기기의 사본이 옛 이름을 되살리지 못한다', () => {
   sandbox.DB = { categories: { expense: ['식비'] }, catIcon: {}, catVar: {}, txns: [], recurrences: [] };
@@ -3504,6 +3541,14 @@ test('addOwner: 이미 톰스톤된(지워진) 이름을 다시 추가하면 톰
   assert.deepStrictEqual(sandbox.DB.owners, ['나', '아내']);
   assert.strictEqual(sandbox.ownerTombKey('아내') in sandbox.DB.deletedIds, false, '재추가한 이름의 톰스톤은 지워져야 다음 병합에서 되살아남');
 });
+/* cleanName() 와이어링(app-evolve cycle340 advance) — NAME_MAX를 넘는 긴 이름을 넣어도 거부하지
+ * 않고 잘라서 저장한다(AMOUNT_MAX와 동일한 "거부가 아니라 clamp" 철학). */
+test('addOwner: NAME_MAX를 넘는 긴 이름은 잘려서 저장된다', () => {
+  sandbox.DB = { owners: ['나'], deletedIds: {} };
+  sandbox.newOwnerValue = '아'.repeat(sandbox.NAME_MAX + 30);
+  sandbox.addOwner();
+  assert.strictEqual(sandbox.DB.owners[1], '아'.repeat(sandbox.NAME_MAX));
+});
 /* app-evolve cycle308 develop가 발견한 공백의 회귀 테스트: 하단 네비(#nav)는 twStage 오버레이 밖의
  * 실제 DOM이라 튜토리얼 중에도 항상 클릭 가능해, 메뉴 → 귀속 관리로 들어가면 saveAsset/recSave/
  * saveGoal(cycle307) 등 다른 모든 저장 경로와 달리 addOwner/delOwner/doRenameOwner만 twGuard가
@@ -3662,6 +3707,13 @@ test('doRenameOwner: 이름변경 시 옛 이름에 ownerTombKey 톰스톤이 �
     sandbox.$ = $orig;
   }
   assert.strictEqual(sandbox.DB.deletedIds[sandbox.ownerTombKey('아빠')] > 0, true, '이름변경으로 사라진 옛 이름도 톰스톤이 남아야 함');
+});
+test('doRenameOwner: NAME_MAX를 넘는 긴 이름은 잘려서 저장된다(거부 아님)', () => {
+  sandbox.DB = { owners: ['나', '아빠'], assets: [], goals: [] };
+  sandbox.ST = { plan: {} };
+  sandbox.renameOwnerValue = '아'.repeat(sandbox.NAME_MAX + 30);
+  sandbox.doRenameOwner(1);
+  assert.strictEqual(sandbox.DB.owners[1], '아'.repeat(sandbox.NAME_MAX));
 });
 test('doRenameOwner: 과거에 지워졌던(톰스톤된) 이름으로 되돌아가면 그 톰스톤은 지워진다', () => {
   sandbox.DB = { owners: ['나', '아빠'], assets: [], deletedIds: { [sandbox.ownerTombKey('아버지')]: 1000 } };
@@ -5513,6 +5565,14 @@ test('saveGoal: 새 목표는 천단위 콤마가 섞인 입력(num() 파서 경
   assert.strictEqual(sandbox.DB.goals[0].targetAmount, 1000000);
   assert.strictEqual(sandbox.DB.goals[0].targetDate, '2026-12-31');
   assert.strictEqual(sandbox.goalDraft, null, '저장 후 draft는 비워야 함');
+});
+test('saveGoal: NAME_MAX를 넘는 긴 목표 이름은 잘려서 저장된다(거부 아님, app-evolve cycle340 advance)', () => {
+  sandbox.DB = { goals: [] };
+  sandbox.goalDraft = { id: 'test-uid', name: '', type: 'networth', targetAmount: 1000000, targetDate: null };
+  sandbox.goalNameValue = '목'.repeat(sandbox.NAME_MAX + 30);
+  sandbox.goalAmtValue = '1,000,000';
+  sandbox.saveGoal(false);
+  assert.strictEqual(sandbox.DB.goals[0].name, '목'.repeat(sandbox.NAME_MAX));
 });
 /* app-evolve cycle319 develop: saveAsset(maturityDate)·saveTx/saveRec(date/startDate)은 모두
  * dateBelowRangeFloor/dateAboveRangeCeil로 날짜피커(무한 스크롤, min/max 없음)가 만들어낼 수 있는
@@ -8094,6 +8154,33 @@ test("csvRowToImportTxn: AMOUNT_MAX를 넘는 금액은 유한한 정수여도 e
   assert.strictEqual(atMax.ok, true, 'AMOUNT_MAX 당일은 상한선에 포함되어야 함');
   assert.strictEqual(atMax.txn.amount, sandbox.AMOUNT_MAX);
 });
+// app-evolve cycle340 advance: amount(숫자)는 cycle339가 이미 AMOUNT_MAX로 막았지만,
+// category/memo/fromName/toName(자유텍스트) 셀은 길이 상한이 전혀 없어 손상된 CSV의 과도하게
+// 긴 셀이 DB.txns에 그대로 영구 저장될 수 있었다 — amount와 동일한 "거부가 아니라 clamp" 방식으로
+// NAME_MAX/MEMO_MAX를 적용한다(거부가 아니므로 ok:true가 유지돼야 함).
+test("csvRowToImportTxn: NAME_MAX를 넘는 category 셀은 거부되지 않고 잘려서 통과한다", () => {
+  const longCat = '식'.repeat(sandbox.NAME_MAX + 20);
+  const r = sandbox.csvRowToImportTxn(['2026-01-01', '지출', longCat, '1000', '주계좌', '', ''], []);
+  assert.strictEqual(r.ok, true, '길이 초과는 거부가 아니라 clamp여야 함');
+  assert.strictEqual(r.txn.category, '식'.repeat(sandbox.NAME_MAX));
+});
+test("csvRowToImportTxn: MEMO_MAX를 넘는 memo 셀은 거부되지 않고 잘려서 통과한다", () => {
+  const longMemo = '메'.repeat(sandbox.MEMO_MAX + 20);
+  const r = sandbox.csvRowToImportTxn(['2026-01-01', '지출', '식비', '1000', '주계좌', '', longMemo], []);
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.txn.memo, '메'.repeat(sandbox.MEMO_MAX));
+});
+test("csvRowToImportTxn: NAME_MAX를 넘는 fromName/toName 셀은 거부되지 않고 잘려서 통과한다(매칭 안 되면 unmatched로 clamp된 이름이 남음)", () => {
+  const longFrom = '계'.repeat(sandbox.NAME_MAX + 20);
+  const longTo = '통'.repeat(sandbox.NAME_MAX + 20);
+  const r = sandbox.csvRowToImportTxn(['2026-01-01', '이체', '', '1000', longFrom, longTo, ''], []);
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.txn.fromAssetName, '계'.repeat(sandbox.NAME_MAX));
+  assert.strictEqual(r.txn.toAssetName, '통'.repeat(sandbox.NAME_MAX));
+  assert.strictEqual(r.unmatched.length, 2);
+  assert.strictEqual(r.unmatched[0], '계'.repeat(sandbox.NAME_MAX));
+  assert.strictEqual(r.unmatched[1], '통'.repeat(sandbox.NAME_MAX));
+});
 // RANGE_FROM(2023-01-01) 이전 날짜는 balancesUpTo 등 allTxns(RANGE_FROM,*) 기반 집계에서
 // 조용히 빠지므로, 형식은 유효해도 별도의 'range' 에러로 구분해 걸러낸다(형식 오류 'date'와 다름).
 test("csvRowToImportTxn: RANGE_FROM 이전 날짜는 형식은 유효해도 error:'range'로 걸러진다", () => {
@@ -9714,6 +9801,32 @@ test('matchRecQuery: 주기 레이블과 카테고리/메모를 함께 띄어 �
 test('matchRecQuery: freq/startDate가 없어도(방어적 기본값) 안전하게 처리한다(회귀 방지)', () => {
   assert.strictEqual(sandbox.matchRecQuery({ category: '구독', memo: '넷플릭스' }, '넷플릭스'), true);
   assert.strictEqual(sandbox.matchRecQuery({}, '구독'), false);
+});
+
+/* txMemoInput/recMemoInput: MEMO_MAX 상한 clamp(app-evolve cycle340 advance) — NAME_MAX(이름)와
+ * 별도로 메모는 더 넉넉한 MEMO_MAX(200자)로 자른다. 거부가 아니라 clamp이며, 매 keystroke마다
+ * 불리는 입력 핸들러라 trim/normalize는 하지 않고 길이만 자른다(IME 조합 중 정규화로 인한
+ * 부작용을 피함). */
+test('txMemoInput: MEMO_MAX를 넘는 메모는 입력칸 값과 txDraft.memo 모두 잘린다', () => {
+  sandbox.txDraft = { memo: '' };
+  const el = { value: '메'.repeat(sandbox.MEMO_MAX + 50) };
+  sandbox.txMemoInput(el);
+  assert.strictEqual(el.value, '메'.repeat(sandbox.MEMO_MAX));
+  assert.strictEqual(sandbox.txDraft.memo, '메'.repeat(sandbox.MEMO_MAX));
+});
+test('txMemoInput: MEMO_MAX 이하 메모는 그대로 유지된다(회귀 없음)', () => {
+  sandbox.txDraft = { memo: '' };
+  const el = { value: '점심 김밥' };
+  sandbox.txMemoInput(el);
+  assert.strictEqual(el.value, '점심 김밥');
+  assert.strictEqual(sandbox.txDraft.memo, '점심 김밥');
+});
+test('recMemoInput: MEMO_MAX를 넘는 메모는 입력칸 값과 recDraft.memo 모두 잘린다', () => {
+  sandbox.recDraft = { memo: '' };
+  const el = { value: '메'.repeat(sandbox.MEMO_MAX + 50) };
+  sandbox.recMemoInput(el);
+  assert.strictEqual(el.value, '메'.repeat(sandbox.MEMO_MAX));
+  assert.strictEqual(sandbox.recDraft.memo, '메'.repeat(sandbox.MEMO_MAX));
 });
 
 /* ---------- suggestCategoryForMemo: 거래/반복거래 입력(index.html txMemoInput/recMemoInput)의
@@ -17939,6 +18052,13 @@ test('syncAssetInputs: 이름 입력값의 앞뒤 공백을 제거한다', () =>
   sandbox.asNameValue = '  우리은행 통장  ';
   sandbox.syncAssetInputs();
   assert.strictEqual(sandbox.asDraft.name, '우리은행 통장', '이름 앞뒤 공백이 제거돼야 함');
+  sandbox.asNameValue = undefined;
+});
+test('syncAssetInputs: NAME_MAX를 넘는 긴 이름은 잘려서 저장된다(거부 아님, app-evolve cycle340 advance)', () => {
+  sandbox.asDraft = { type: 'cash', owner: '나', includeInTotal: true };
+  sandbox.asNameValue = '우'.repeat(sandbox.NAME_MAX + 30);
+  sandbox.syncAssetInputs();
+  assert.strictEqual(sandbox.asDraft.name, '우'.repeat(sandbox.NAME_MAX));
   sandbox.asNameValue = undefined;
 });
 test('saveAsset: 공백만 입력한 이름은 trim 후 빈 문자열이 되어 기본 라벨로 대체된다', () => {
@@ -27463,6 +27583,7 @@ function ownerManageCtx() {
   };
   vm.createContext(ctx);
   vm.runInContext(logicSrc, ctx, { filename: 'logic.js' });
+  vm.runInContext(extractConst('NAME_MAX'), ctx, { filename: 'NAME_MAX' }); // openOwnerManage의 newOwner 입력이 maxlength="${NAME_MAX}"를 참조(app-evolve cycle340 advance)
   vm.runInContext(extractFunction('openOwnerManage'), ctx, { filename: 'openOwnerManage-real' });
   _ownerManageCtx = ctx;
   return ctx;
@@ -36258,7 +36379,8 @@ test('[실행형] isDraftDirty: as/goal/rec 세 종류 모두 snapDraft 직후 c
   };
   vm.createContext(ctx);
   vm.runInContext(
-    [extractFunction('num'), extractFunction('syncTxInputs'), extractFunction('syncAssetInputs'),
+    [extractConst('NAME_MAX'), extractConst('cleanName'),
+     extractFunction('num'), extractFunction('syncTxInputs'), extractFunction('syncAssetInputs'),
      extractFunction('syncGoalInputs'), extractFunction('syncRecInputs'),
      extractFunction('snapDraft'), extractFunction('isDraftDirty')].join('\n'),
     ctx, { filename: 'isDraftDirty-real(as/goal/rec)' }

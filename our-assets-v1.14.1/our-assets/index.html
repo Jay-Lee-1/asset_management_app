@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.420';
+const APP_VERSION='1.47.421';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -1968,6 +1968,13 @@ const CLOCK_SKEW_WARN_MS=5*60*1000, CLOCK_SKEW_CRIT_MS=24*60*60*1000;
  * 깨진 값이 그대로 잔액 합산(assetEval/balancesUpTo 등)으로 전파될 수 있어, 그보다 한 자리
  * 작은 15자리(999,999,999,999,999 — 현실적인 원화 금액보다는 넉넉함)에서 클램프한다. */
 const AMOUNT_MAX=999999999999999;
+/* AMOUNT_MAX는 숫자 입력(fmtAmt/sanitizeAmount/syncAssetInputs/csvRowToImportTxn/taPctInput)
+ * 전 경로를 상한으로 막는데, 자산/소유자/카테고리/목표 이름과 거래 메모 같은 자유텍스트
+ * 입력에는 그런 길이 상한이 전혀 없었다(app-evolve cycle340 critique). 클립보드로 긴 텍스트를
+ * 붙여넣거나 손상된 CSV를 가져오면 esc() 렌더·localStorage 직렬화·pushCloud 페이로드까지
+ * 그대로 번지므로, 숫자 쪽과 같은 "거부가 아니라 clamp" 방식으로 상한을 둔다. */
+const NAME_MAX=60, MEMO_MAX=200;
+const cleanName=v=>(v||'').trim().normalize('NFC').slice(0,NAME_MAX);
 const SKEY='asset_app_db_v3';
 /* ===== 계정 · 세션 (이메일 로그인) =====
    ▸ Supabase가 설정되지 않으면 이 기기(localStorage)에만 저장됩니다(계정별로 분리).
@@ -4074,7 +4081,7 @@ function renderGoalForm(editing){
  const ownerOrAssetField=isAsset?`<div class="field"><label>연결할 자산</label>${assetPickBtn(d.linkedAssetId,`goalOpenAsset(${editing})`)}</div>`
   :(goalOwnerSeg?`<div class="field"><label>귀속</label>${goalOwnerSeg}</div>`:'');
  openSheet(`<h3>${editing?'목표 수정':'목표 추가'}</h3><div class="desc">${isAsset?'연결한 자산의 잔액이 이 금액에 도달하는 걸 목표로 추적해요':'순자산이 이 금액에 도달하는 걸 목표로 추적해요'}</div>
-  <div class="field"><label for="goalName">목표 이름</label><div class="field-clear"><input id="goalName" value="${esc(d.name||'')}" placeholder="예: 내 집 마련 자금"><button type="button" class="fc-x" aria-label="이름 지우기" onclick="clrInput('goalName')">✕</button></div></div>
+  <div class="field"><label for="goalName">목표 이름</label><div class="field-clear"><input id="goalName" maxlength="${NAME_MAX}" value="${esc(d.name||'')}" placeholder="예: 내 집 마련 자금"><button type="button" class="fc-x" aria-label="이름 지우기" onclick="clrInput('goalName')">✕</button></div></div>
   ${typeSeg}
   ${ownerOrAssetField}
   <div class="field"><label for="goalAmt">${isAsset?'목표 금액 (원)':'목표 순자산 (원)'}</label><div class="field-clear"><input id="goalAmt" class="num" inputmode="numeric" value="${d.targetAmount?comma(d.targetAmount):''}" placeholder="0" oninput="fmtAmt(this)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveGoal(${editing})"><button type="button" class="fc-x" aria-label="목표 금액 지우기" onclick="clrInput('goalAmt')">✕</button></div></div>
@@ -4088,7 +4095,7 @@ function renderGoalForm(editing){
 function saveGoal(editing){
  if(twGuard())return;
  syncGoalInputs();const d=goalDraft;if(!d)return;
- d.name=(d.name||'').trim();
+ d.name=cleanName(d.name);
  if(!d.name){toast('목표 이름을 입력해 주세요');return}
  if(!(d.targetAmount>0)){toast('목표 금액을 입력해 주세요');return}
  if(d.targetDate&&dateBelowRangeFloor(d.targetDate)){toast(`${RANGE_FROM} 이전 날짜는 저장할 수 없어요`);return}
@@ -5142,7 +5149,7 @@ function duplicateAsset(id){
  setTimeout(()=>{const n=$('asName');if(n){n.focus();n.select()}},300);
 }
 function syncAssetInputs(){const d=asDraft;const g=id=>$(id);
- if(g('asName'))d.name=(g('asName').value||'').trim().normalize('NFC');
+ if(g('asName'))d.name=cleanName(g('asName').value);
  if(g('asAmt'))d._dispAmt=num(g('asAmt'),d.type!=='debt');
  if(g('asMat'))d.maturityDate=g('asMat').value;
  if(g('asFx'))d.fxAmount=sanitizeAmount(parseFloat((g('asFx').value||'0').replace(/,/g,'')),0);
@@ -5195,7 +5202,7 @@ function renderAssetSheet(editing){
  const typePick=`<div class="field"><label>자산 종류</label><button class="pick" onclick="asOpenType()"><div class="pav ${ty.cls}">${svg(ty.icon)}</div><div class="pbody"><div class="pn">${ty.label}</div></div><div class="pc">${svg('chevR')}</div></button></div>`;
  const ownerPick=`<div class="field"><label>귀속</label><button class="pick" onclick="asOpenOwner()"><div class="pav" style="background:var(--sunken);color:var(--text-2)">${svg('users')}</div><div class="pbody"><div class="pn">${esc(d.owner)}</div></div><div class="pc">${svg('chevR')}</div></button></div>`;
  let fields='';
- const nameField=`<div class="field"><label for="asName">이름</label><div class="field-clear"><input id="asName" value="${esc(d.name||'')}" placeholder="예: 우리은행 통장"><button type="button" class="fc-x" aria-label="이름 지우기" onclick="clrInput('asName')">✕</button></div></div>`;
+ const nameField=`<div class="field"><label for="asName">이름</label><div class="field-clear"><input id="asName" maxlength="${NAME_MAX}" value="${esc(d.name||'')}" placeholder="예: 우리은행 통장"><button type="button" class="fc-x" aria-label="이름 지우기" onclick="clrInput('asName')">✕</button></div></div>`;
  if(['cash','savings','realestate','etc','pension','debt'].includes(d.type)){
    const lbl=d.type==='debt'?'부채 금액':(d.type==='cash'||d.type==='savings')?'현재 금액':d.type==='realestate'?'현재 평가액':'현재 금액';
    const key=(d.type==='cash'||d.type==='savings')?'baseAmount':'amountKRW';
@@ -5222,14 +5229,14 @@ function renderAssetSheet(editing){
      <p style="font-size:12.5px;color:var(--text-2);margin:-4px 0 14px">금 시세 ${comma(DB.rates.goldPerG)}원/g × 3.75g 기준으로 자동 계산돼요.</p>
      ${costBasisField(d,editing)}`;
  }else if(d.type==='stock'){
-   fields=`<div class="field"><label for="asName">종목명</label><div class="field-clear"><input id="asName" value="${esc(d.name||'')}" placeholder="예: 삼성전자"><button type="button" class="fc-x" aria-label="종목명 지우기" onclick="clrInput('asName')">✕</button></div></div>
+   fields=`<div class="field"><label for="asName">종목명</label><div class="field-clear"><input id="asName" maxlength="${NAME_MAX}" value="${esc(d.name||'')}" placeholder="예: 삼성전자"><button type="button" class="fc-x" aria-label="종목명 지우기" onclick="clrInput('asName')">✕</button></div></div>
      <div class="field"><label for="asCode">종목코드</label><div class="field-clear"><input id="asCode" value="${esc(d.stockCode||'')}" placeholder="국내 005930 · 해외 AAPL" autocapitalize="characters" oninput="this.value=this.value.toUpperCase()"><button type="button" class="fc-x" aria-label="종목코드 지우기" onclick="clrInput('asCode')">✕</button></div>
       <p style="font-size:12px;color:var(--text-3);margin-top:6px">국내는 6자리 숫자, 해외는 티커(AAPL·TSLA·NVDA)를 넣어주세요. 해외는 원화로 환산돼요.</p></div>
      <div class="field"><label for="asQty">보유 주식 수</label><div class="with-unit"><div class="field-clear"><input id="asQty" class="num" inputmode="decimal" value="${d.stockQty||''}" placeholder="0" oninput="fmtQty(this);qtyBasisWarn(this)"><button type="button" class="fc-x" aria-label="보유 주식 수 지우기" onclick="clrInput('asQty')">✕</button></div><span class="unit">주</span></div></div>
      <p style="font-size:12.5px;color:var(--text-2);margin:-4px 0 14px">평가액 = 현재가 × 보유수량 (현재가는 시세 연동 관리에서 입력).</p>
      ${costBasisField(d,editing)}`;
  }else if(d.type==='crypto'){
-   fields=`<div class="field"><label for="asName">코인명</label><div class="field-clear"><input id="asName" value="${esc(d.name||'')}" placeholder="예: 비트코인"><button type="button" class="fc-x" aria-label="코인명 지우기" onclick="clrInput('asName')">✕</button></div></div>
+   fields=`<div class="field"><label for="asName">코인명</label><div class="field-clear"><input id="asName" maxlength="${NAME_MAX}" value="${esc(d.name||'')}" placeholder="예: 비트코인"><button type="button" class="fc-x" aria-label="코인명 지우기" onclick="clrInput('asName')">✕</button></div></div>
      <div class="field"><label for="asCode">심볼</label><div class="field-clear"><input id="asCode" value="${esc(d.cryptoCode||'')}" placeholder="예: BTC, ETH" autocapitalize="characters" oninput="this.value=this.value.toUpperCase()"><button type="button" class="fc-x" aria-label="심볼 지우기" onclick="clrInput('asCode')">✕</button></div>
       <p style="font-size:12px;color:var(--text-3);margin-top:6px">업비트 KRW 마켓에 있는 심볼을 넣어주세요(BTC·ETH·XRP 등).</p></div>
      <div class="field"><label for="asQty">보유 수량</label><div class="with-unit"><div class="field-clear"><input id="asQty" class="num" inputmode="decimal" value="${d.cryptoQty||''}" placeholder="0" oninput="fmtQty(this);qtyBasisWarn(this)"><button type="button" class="fc-x" aria-label="보유 수량 지우기" onclick="clrInput('asQty')">✕</button></div><span class="unit">개</span></div></div>
@@ -5374,7 +5381,7 @@ function openOwnerManage(){
    return `<div class="manage-row"><div class="avatar" style="width:36px;height:36px;border-radius:11px;background:var(--sunken);color:var(--text-2)">${svg('users',18)}</div>
     <div style="flex:1"><div class="mn">${esc(o)}</div><div class="msub">${used}개 자산</div></div>
     <div class="row-acts">${DB.owners.length>1?`<button class="act-btn" aria-label="${esc(o)} 다른 귀속으로 합치기" onclick="openOwnerMergePicker(${i})">${svg('merge')}</button>`:''}<button class="act-btn" aria-label="${esc(o)} 수정" onclick="renameOwnerSheet(${i})">${svg('edit')}</button><button class="act-btn danger" aria-label="${esc(o)} 삭제" onclick="delOwner(${i})">${svg('trash')}</button></div></div>`}).join('')}</div>
-  <div class="add-inline"><div class="field-clear"><input id="newOwner" placeholder="새 귀속 (예: 아이)" onkeydown="if(event.key==='Enter'&&!event.isComposing)addOwner()"><button type="button" class="fc-x" aria-label="귀속 이름 지우기" onclick="clrInput('newOwner')">✕</button></div><button onclick="addOwner()" aria-label="귀속 추가">${svg('plus')}</button></div>
+  <div class="add-inline"><div class="field-clear"><input id="newOwner" maxlength="${NAME_MAX}" placeholder="새 귀속 (예: 아이)" onkeydown="if(event.key==='Enter'&&!event.isComposing)addOwner()"><button type="button" class="fc-x" aria-label="귀속 이름 지우기" onclick="clrInput('newOwner')">✕</button></div><button onclick="addOwner()" aria-label="귀속 추가">${svg('plus')}</button></div>
   <div style="height:14px"></div><button class="btn btn-primary" onclick="closeSheet()">완료</button>`);
 }
 function openOwnerSheet(){openOwnerManage()}
@@ -5393,7 +5400,7 @@ function ownerChipClass(owner){
  const idx=(DB.owners||[]).indexOf(owner);
  return 'own-'+(idx>=0?idx%5:0);
 }
-function addOwner(){if(twGuard())return;const v=$('newOwner').value.trim().normalize('NFC');if(!v)return;
+function addOwner(){if(twGuard())return;const v=cleanName($('newOwner').value);if(!v)return;
  if(isReservedOwnerName(v)){toast("'전체'는 모든 귀속을 보는 이름이라 귀속 이름으로 쓸 수 없어요");return} /* '전체'/'all' 센티넬 보호(logic.js isReservedOwnerName 주석 참고) */
  const dup=DB.owners.find(o=>normName(o)===normName(v));if(dup){toast(dup===v?'이미 있는 귀속이에요':`비슷한 귀속이 있어요: ${dup}`);return}DB.owners.push(v);DB.deletedIds=DB.deletedIds||{};delete DB.deletedIds[ownerTombKey(v)];save();openOwnerManage();}
 function delOwner(i){if(twGuard())return;const o=DB.owners[i];if(DB.owners.length<=1){toast('귀속은 최소 1개가 필요해요');return}
@@ -5408,10 +5415,10 @@ function delOwner(i){if(twGuard())return;const o=DB.owners[i];if(DB.owners.lengt
  });}
 function renameOwnerSheet(i){const cur=DB.owners[i];
  openSheet(`<h3>귀속 이름 수정</h3><div class="desc">'${esc(cur)}'의 이름을 바꾸면 이 귀속의 자산도 함께 바뀌어요.</div>
-  <div class="field"><div class="field-clear"><input id="renameOwner" aria-label="귀속 이름" value="${esc(cur)}" onkeydown="if(event.key==='Enter'&&!event.isComposing)doRenameOwner(${i})"><button type="button" class="fc-x" aria-label="이름 지우기" onclick="clrInput('renameOwner')">✕</button></div></div>
+  <div class="field"><div class="field-clear"><input id="renameOwner" aria-label="귀속 이름" maxlength="${NAME_MAX}" value="${esc(cur)}" onkeydown="if(event.key==='Enter'&&!event.isComposing)doRenameOwner(${i})"><button type="button" class="fc-x" aria-label="이름 지우기" onclick="clrInput('renameOwner')">✕</button></div></div>
   <div class="two-btn"><button class="btn btn-soft cancel" onclick="openOwnerManage()">취소</button><button class="btn btn-primary" onclick="doRenameOwner(${i})">저장</button></div>`);
  setTimeout(()=>{const el=$('renameOwner');el&&el.focus()},300)}
-function doRenameOwner(i){if(twGuard())return;const v=$('renameOwner').value.trim().normalize('NFC');if(!v){toast('이름을 입력해 주세요');return}
+function doRenameOwner(i){if(twGuard())return;const v=cleanName($('renameOwner').value);if(!v){toast('이름을 입력해 주세요');return}
  const old=DB.owners[i];if(v===old){openOwnerManage();return}
  if(isReservedOwnerName(v)){toast("'전체'는 모든 귀속을 보는 이름이라 귀속 이름으로 쓸 수 없어요");return} /* addOwner와 동일한 '전체'/'all' 센티넬 보호 */
  const dup=DB.owners.find((o,oi)=>oi!==i&&normName(o)===normName(v));
@@ -5987,7 +5994,7 @@ function renderTxSheet(){
     <div class="pav a-etc">${svg('ledger')}</div><div class="pbody"><div class="pn">${fmtDateFull(d.date)}</div><div class="psub">${datePsub}</div></div><div class="pc">${svg('chev')}</div></button>
     <input id="txDate" type="hidden" value="${d.date}"></div>
   ${catField}${assetFields}
-  <div class="field"><label for="txMemo">메모</label><div class="field-clear"><input id="txMemo" value="${esc(d.memo||'')}" placeholder="${rpt?'예: 넷플릭스 구독':'예: 점심 김밥'}" oninput="txMemoInput(this)"${memoEnterSubmit}><button type="button" class="fc-x" aria-label="메모 지우기" onclick="clrInput('txMemo')">✕</button></div></div>
+  <div class="field"><label for="txMemo">메모</label><div class="field-clear"><input id="txMemo" maxlength="${MEMO_MAX}" value="${esc(d.memo||'')}" placeholder="${rpt?'예: 넷플릭스 구독':'예: 점심 김밥'}" oninput="txMemoInput(this)"${memoEnterSubmit}><button type="button" class="fc-x" aria-label="메모 지우기" onclick="clrInput('txMemo')">✕</button></div></div>
   <div id="txCatSuggest" style="display:none;margin:-4px 0 14px;text-align:right"></div>
   ${rpt?'':txPhotoFieldHTML(d)}
   ${repeatFields}
@@ -6009,7 +6016,7 @@ function syncTxInputs(){const sh=$('sheetScroll');if(sh)_formScroll=sh.scrollTop
  * 입력하는 동안 동일한 추천이 뜰 때마다 매번 다시 읽어주는 소음은 내지 않는다(추천이 바뀌거나
  * 칩이 숨겨졌다가 다시 뜰 때만 공지). */
 let _txCatSuggT=null,_txCatSuggAnnounced=null;
-function txMemoInput(el){txDraft.memo=el.value;clearTimeout(_txCatSuggT);_txCatSuggT=setTimeout(txCatSuggestUpdate,220)}
+function txMemoInput(el){if(el.value.length>MEMO_MAX)el.value=el.value.slice(0,MEMO_MAX);txDraft.memo=el.value;clearTimeout(_txCatSuggT);_txCatSuggT=setTimeout(txCatSuggestUpdate,220)}
 function txCatSuggestUpdate(){
  const box=$('txCatSuggest');if(!box)return;
  const d=txDraft;
@@ -6446,7 +6453,7 @@ function recOpenCat(){_applyOpenCat(recDraft,syncRecInputs,renderRecSheet)}
  * _recCatSuggAnnounced도 txCatSuggestUpdate와 동일한 이유로 추천이 바뀔 때만 announceLive()를
  * 부른다(app-evolve cycle272 develop). */
 let _recCatSuggT=null,_recCatSuggAnnounced=null;
-function recMemoInput(el){recDraft.memo=el.value;clearTimeout(_recCatSuggT);_recCatSuggT=setTimeout(recCatSuggestUpdate,220)}
+function recMemoInput(el){if(el.value.length>MEMO_MAX)el.value=el.value.slice(0,MEMO_MAX);recDraft.memo=el.value;clearTimeout(_recCatSuggT);_recCatSuggT=setTimeout(recCatSuggestUpdate,220)}
 function recCatSuggestUpdate(){
  const box=$('recCatSuggest');if(!box)return;
  const d=recDraft;
@@ -6532,7 +6539,7 @@ function renderRecSheet(){
  openFormSheet(`<div class="tx-head"><h3>${editing?'반복 수정':'반복 설정'}</h3>${sharedChip}</div><div class="desc">고정지출·정기수입·이체·저축을 자동 기록해요</div>
   <div class="seg" role="group" aria-label="구분 선택"><div class="seg-blob"></div>${typeSeg}</div>
   ${catField}
-  <div class="field"><label for="rMemo">메모 <span style="color:var(--text-3);font-weight:600">(선택)</span></label><div class="field-clear"><input id="rMemo" value="${(d.memo&&d.memo!==d.category)?d.memo.replace(/"/g,'&quot;'):''}" placeholder="예: 넷플릭스 구독" oninput="recMemoInput(this)"><button type="button" class="fc-x" aria-label="메모 지우기" onclick="clrInput('rMemo')">✕</button></div></div>
+  <div class="field"><label for="rMemo">메모 <span style="color:var(--text-3);font-weight:600">(선택)</span></label><div class="field-clear"><input id="rMemo" maxlength="${MEMO_MAX}" value="${(d.memo&&d.memo!==d.category)?d.memo.replace(/"/g,'&quot;'):''}" placeholder="예: 넷플릭스 구독" oninput="recMemoInput(this)"><button type="button" class="fc-x" aria-label="메모 지우기" onclick="clrInput('rMemo')">✕</button></div></div>
   <div id="recCatSuggest" style="display:none;margin:-4px 0 14px;text-align:right"></div>
   <div class="field"><label for="rAmt">${splitOn?'전체 금액':'금액'}</label><div class="field-clear"><input id="rAmt" class="num" inputmode="numeric" value="${d.amount?comma(d.amount):''}" placeholder="0" oninput="recAmtInput(this)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveRec()"><button type="button" class="fc-x" aria-label="금액 지우기" onclick="clrInput('rAmt')">✕</button></div></div>
   ${assetFields}
@@ -8114,10 +8121,10 @@ function openCatManage(kind,keep){
     const moveBtns=isSysAdjust?'':`<div class="grp-move"><button type="button" class="grp-move-btn" aria-label="${esc(c)} 위로 이동" onclick="moveCat('${k}',${i},-1)"${i===0?' disabled':''}>${svg('arrowUp')}</button><button type="button" class="grp-move-btn" aria-label="${esc(c)} 아래로 이동" onclick="moveCat('${k}',${i},1)"${i===DB.categories[k].length-1?' disabled':''}>${svg('arrowDn')}</button></div>`;
     return `<div class="manage-row"><div class="avatar ${avCls}" style="width:36px;height:36px;border-radius:11px">${catGlyph(k,c,18,'tag')}</div><div class="mn">${esc(c)}</div>${isSysAdjust?'':varPill}${rollPill}${moveBtns}${acts}</div>`;
    }).join('')}</div>
-  <div class="add-inline"><button class="emo-pick ${avCls}" onclick="pickCatAddIcon('${k}')" aria-label="아이콘 선택">${svg(trigIcon,20)}</button><div class="field-clear"><input id="newCat" placeholder="새 ${CAT_LABEL[k]} 카테고리" value="${catAddDraft.name.replace(/"/g,'&quot;')}" oninput="catAddDraft.name=this.value" onkeydown="if(event.key==='Enter'&&!event.isComposing)addCat('${k}')"><button type="button" class="fc-x" aria-label="카테고리 이름 지우기" onclick="clrInput('newCat')">✕</button></div><button onclick="addCat('${k}')" aria-label="${CAT_LABEL[k]} 카테고리 추가">${svg('plus')}</button></div>
+  <div class="add-inline"><button class="emo-pick ${avCls}" onclick="pickCatAddIcon('${k}')" aria-label="아이콘 선택">${svg(trigIcon,20)}</button><div class="field-clear"><input id="newCat" maxlength="${NAME_MAX}" placeholder="새 ${CAT_LABEL[k]} 카테고리" value="${catAddDraft.name.replace(/"/g,'&quot;')}" oninput="catAddDraft.name=this.value" onkeydown="if(event.key==='Enter'&&!event.isComposing)addCat('${k}')"><button type="button" class="fc-x" aria-label="카테고리 이름 지우기" onclick="clrInput('newCat')">✕</button></div><button onclick="addCat('${k}')" aria-label="${CAT_LABEL[k]} 카테고리 추가">${svg('plus')}</button></div>
   <div style="height:14px"></div><button class="btn btn-primary" onclick="closeSheet()">완료</button>`);
 }
-function addCat(k){if(twGuard())return;const v=(($('newCat')&&$('newCat').value)||catAddDraft.name||'').trim().normalize('NFC');if(!v)return;
+function addCat(k){if(twGuard())return;const v=cleanName(($('newCat')&&$('newCat').value)||catAddDraft.name);if(!v)return;
  const dup=DB.categories[k].find(c=>normName(c)===normName(v));
  if(dup){toast(dup===v?'이미 있는 카테고리예요':`비슷한 카테고리가 있어요: ${dup}`);return}
  DB.catIcon=DB.catIcon||{};DB.catVar=DB.catVar||{};DB.budgetHistory=DB.budgetHistory||{};DB.catBudgetRollover=DB.catBudgetRollover||{};
@@ -8179,10 +8186,10 @@ function renameCatSheet(k,i,keep){const cur=DB.categories[k][i];
  if(!keep)catRenameDraft={name:cur,icon:catIconOf(k,cur)||CATICON[cur]||'tag'};
  const avCls=k==='income'?'a-in':k==='saving'?'a-save':'a-food';
  openSheet(`<h3>카테고리 수정</h3><div class="desc">아이콘과 이름을 바꿀 수 있어요. 이 카테고리로 저장된 기존 내역도 함께 반영돼요.</div>
-  <div class="cat-edit-row"><button class="emo-pick lg ${avCls}" onclick="pickCatRenameIcon('${k}',${i})" aria-label="아이콘 선택">${svg(catRenameDraft.icon||'tag',24)}</button><div class="field-clear"><input id="renameCat" value="${catRenameDraft.name.replace(/"/g,'&quot;')}" oninput="catRenameDraft.name=this.value" placeholder="카테고리 이름" onkeydown="if(event.key==='Enter'&&!event.isComposing)doRenameCat('${k}',${i})"><button type="button" class="fc-x" aria-label="카테고리 이름 지우기" onclick="clrInput('renameCat')">✕</button></div></div>
+  <div class="cat-edit-row"><button class="emo-pick lg ${avCls}" onclick="pickCatRenameIcon('${k}',${i})" aria-label="아이콘 선택">${svg(catRenameDraft.icon||'tag',24)}</button><div class="field-clear"><input id="renameCat" maxlength="${NAME_MAX}" value="${catRenameDraft.name.replace(/"/g,'&quot;')}" oninput="catRenameDraft.name=this.value" placeholder="카테고리 이름" onkeydown="if(event.key==='Enter'&&!event.isComposing)doRenameCat('${k}',${i})"><button type="button" class="fc-x" aria-label="카테고리 이름 지우기" onclick="clrInput('renameCat')">✕</button></div></div>
   <div class="two-btn"><button class="btn btn-soft cancel" onclick="openCatManage('${k}')">취소</button><button class="btn btn-primary" onclick="doRenameCat('${k}',${i})">저장</button></div>`);
  setTimeout(()=>{const el=$('renameCat');el&&el.focus()},300)}
-function doRenameCat(k,i){if(twGuard())return;const v=((catRenameDraft.name!=null?catRenameDraft.name:($('renameCat')&&$('renameCat').value))||'').trim().normalize('NFC');if(!v){toast('이름을 입력해 주세요');return}
+function doRenameCat(k,i){if(twGuard())return;const v=cleanName(catRenameDraft.name!=null?catRenameDraft.name:($('renameCat')&&$('renameCat').value));if(!v){toast('이름을 입력해 주세요');return}
  const old=DB.categories[k][i];
  if(k==='income'&&old===ADJUST_CAT){toast('자동으로 생성되는 카테고리라 이름을 바꿀 수 없어요');return}
  if(v!==old){const dup=DB.categories[k].find(c=>c!==old&&normName(c)===normName(v));if(dup){toast(dup===v?'이미 있는 카테고리예요':`비슷한 카테고리가 있어요: ${dup}`);return}}
@@ -8980,11 +8987,11 @@ function unguardCsv(v){return typeof v==='string'&&v[0]==="'"?v.slice(1):v}
 function csvRowToImportTxn(cells,assets){
  const date=(cells[0]||'').trim();
  const typeLabel=(cells[1]||'').trim();
- const category=unguardCsv((cells[2]||'').trim());
+ const category=unguardCsv((cells[2]||'').trim()).slice(0,NAME_MAX);
  const amountRaw=(cells[3]||'').trim().replace(/,/g,'');
- const fromName=unguardCsv((cells[4]||'').trim());
- const toName=unguardCsv((cells[5]||'').trim());
- const memo=unguardCsv((cells[6]||'').trim());
+ const fromName=unguardCsv((cells[4]||'').trim()).slice(0,NAME_MAX);
+ const toName=unguardCsv((cells[5]||'').trim()).slice(0,NAME_MAX);
+ const memo=unguardCsv((cells[6]||'').trim()).slice(0,MEMO_MAX); /* category/fromName/toName/memo 모두 AMOUNT_MAX와 같은 "거부가 아니라 clamp" 방식(app-evolve cycle340 advance) — 손상된 CSV의 과도하게 긴 셀이 DB.txns/DB.assets에 그대로 영구 저장되지 않게 한다 */
  if(!csvDateValid(date))return{ok:false,error:'date'};
  if(dateBelowRangeFloor(date)||dateAboveRangeCeil(date))return{ok:false,error:'range'};
  /* doExport가 이제 CSV를 만들 때 date<=TODAY로 미리 걸러내지만(app-evolve cycle216 advance),

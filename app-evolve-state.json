@@ -1,19 +1,8 @@
 {
-  "cycle": 340,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "이름/메모 자유텍스트 입력에 길이 상한 없음 (AMOUNT_MAX의 텍스트 대응판 부재)",
-    "why": "AMOUNT_MAX(index.html:1970, 999999999999999)는 fmtAmt/sanitizeAmount/syncAssetInputs/csvRowToImportTxn/taPctInput 등 숫자 입력 전 경로에 이미 적용돼 있지만, 자산/소유자/카테고리/목표 이름과 거래 메모 같은 자유텍스트 입력에는 그 대응이 전혀 없다. addOwner(5396)/doRenameOwner(5414)/addCat(8120)/doRenameCat(8185)/syncAssetInputs의 이름 캡처(5145)/saveGoal(4088)/txMemoInput(6012)이 모두 .trim().normalize('NFC')만 하고 길이 제한이 없으며, 대응 input(asName 5198/5225/5232, newOwner, renameOwner, newCat, renameCat, txMemo 5990)에도 maxlength가 없다. csvRowToImportTxn(8983-8987)은 CSV 셀의 category/memo/fromName/toName을 길이 검증 없이 그대로 받아 DB.txns/DB.assets에 영구 저장하고, esc(a.name)/esc(r.c) 렌더 경로·localStorage.setItem JSON 직렬화(이미 STORAGE_OK 경고가 있는 용량 제한 근처)·pushCloud의 Supabase 페이로드·delBudget/mergeCatInto의 confirmSheet 문구(말줄임 처리 없음)까지 그대로 번진다. 클립보드로 긴 텍스트를 이름/메모 필드에 붙여넣거나 손상된 CSV를 가져오면 숫자 쪽에서 이미 막은 것과 같은 종류의 데이터 오염/저장공간 리스크가 텍스트 쪽에만 남아있는 비대칭.",
-    "approach": "AMOUNT_MAX 근처(~1970행)에 공유 헬퍼 const NAME_MAX=60; function cleanName(v){return (v||'').trim().normalize('NFC').slice(0,NAME_MAX)} 를 추가하고, addOwner(5396)/doRenameOwner(5414)/addCat(8120)/doRenameCat(8185)/syncAssetInputs 이름 캡처(5145)/saveGoal(4088)의 .trim().normalize('NFC') 호출을 cleanName(...)으로 교체한다. 메모는 별도 MEMO_MAX(예:200)로 txMemoInput(6012)과 csvRowToImportTxn의 memo/category/fromName/toName 추출(8983-8987)에서 자르기(거부가 아니라 clamp, AMOUNT_MAX 패턴과 동일하게). asName/newOwner/renameOwner/newCat/renameCat/goal 이름 input/txMemo에 maxlength 속성도 추가해 즉각적인 UX 피드백을 준다(PIN input의 maxlength 패턴 재사용). test/run.js에 cleanName 단위 테스트(빈 문자열/정확히 상한/상한 초과 잘림/NFC 정규화 유지)와 addOwner/addCat/doRenameCat/saveAsset/saveGoal가 긴 이름을 저장 전에 자르는지 확인하는 통합형 테스트, csvRowToImportTxn의 memo/category 과도한 길이 셀이 거부 대신 잘려서 통과하는지 확인하는 테스트(기존 amount 상한 CSV 테스트와 같은 스타일)를 추가한다."
-  },
+  "cycle": 341,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 335,
-      "phase": "advance",
-      "timestamp": "2026-11-11T08:05:00.000Z",
-      "summary": "critique(cycle335) 계획대로 시트 닫기 경로의 비대칭을 없앴다 — 시트 기본 X 버튼(openSheet의 기본 topBtn, index.html:10382)의 onclick=\"closeSheet()\"를 onclick=\"closeSheetGuarded()\"로, Escape 키(onSheetKeydown, 10366행)의 else closeSheet();를 else closeSheetGuarded();로 교체. 두 경로 모두 스크림탭/스와이프다운/뒤로가기와 동일하게 isDraftDirty()가 true일 때만 '변경사항을 버릴까요?' 확인을 받고, 초안 개념이 없는 일반 시트(목록/설정 등)에서는 isDraftDirty()가 그대로 false를 반환해 즉시 닫히는 동작이 유지된다(회귀 없음). closeRecoverySheet처럼 커스텀 topBtn을 넘기는 시트는 영향 없음(계획대로 범위 밖으로 확인만 하고 그대로 둠). 테스트: 기존 'closeSheetGuarded 와이어링' 테스트에 두 호출부가 closeSheetGuarded()를 거치는지 보는 어서션 3건 추가(새 isDraftDirty/closeSheetGuarded 동작 자체는 이미 기존 테스트가 다 커버하므로 새 call-site 와이어링만 확인) — node test/run.js 3269/3269 통과(새 test() 블록 없이 기존 블록 확장). node --check(스크립트 블록 추출) 통과. APP_VERSION 1.47.410->1.47.411, sw.js CACHE v677->v678. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 336,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-12T01:18:06.964Z",
       "summary": "앱 전체를 한 걸음 물러나 훑어본 결과(Explore 서브에이전트가 발견), AMOUNT_MAX(index.html:1970)가 fmtAmt/sanitizeAmount/syncAssetInputs/csvRowToImportTxn/taPctInput 등 모든 숫자 입력 경로에 이미 적용돼 있는 것과 달리, 자산/소유자/카테고리/목표 이름과 거래 메모 같은 자유텍스트 입력에는 대응하는 길이 상한이 전혀 없음을 발견했다 — addOwner(5396)/doRenameOwner(5414)/addCat(8120)/doRenameCat(8185)/syncAssetInputs 이름 캡처(5145)/saveGoal(4088)/txMemoInput(6012)이 모두 trim+normalize만 하고 길이 제한이 없고, 대응 input들(asName/newOwner/renameOwner/newCat/renameCat/txMemo)에도 maxlength가 없다. csvRowToImportTxn(8983-8987)은 CSV 셀의 category/memo/fromName/toName을 길이 검증 없이 그대로 받아 DB.txns/DB.assets에 영구 저장하고, esc() 렌더·localStorage.setItem 직렬화(STORAGE_OK 경고가 있는 용량 제한과 연결)·pushCloud 페이로드·confirmSheet 문구(말줄임 없음)까지 그대로 번진다. 긴 클립보드 텍스트 붙여넣기나 손상된 CSV 가져오기 시 숫자 쪽에서 이미 막은 것과 같은 종류의 데이터 오염/저장공간 리스크가 텍스트 쪽에만 남아있는 비대칭. 대안으로 allocationCard(스냅샷이라 peek 상호작용 부적합)/CDN SRI 해시 누락(네트워크 접근 불가로 의도적 보류, 새로운 공백 아님)/delBudget의 트래시·복원 화면 부재(이미 undoToast로 작동 중이라 데이터손실 아닌 기능 일관성 문제, 우선도 낮음)를 검토했으나 기각. pending_advance_plan에 공유 헬퍼 cleanName(NAME_MAX=60)/MEMO_MAX 추가, 해당 호출부 교체, maxlength 속성 추가, 테스트 포인트까지 구체 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 340,
+      "phase": "advance",
+      "timestamp": "2026-11-12T02:15:56.086Z",
+      "summary": "critique(cycle340) 계획대로 이름/메모 자유텍스트 입력에 AMOUNT_MAX의 텍스트 대응판을 추가했다 — 공유 헬퍼 NAME_MAX=60/MEMO_MAX=200/cleanName(trim+NFC+slice)을 AMOUNT_MAX 옆에 신설하고, saveGoal(d.name)/syncAssetInputs(asName)/addOwner/doRenameOwner/addCat/doRenameCat의 trim+normalize 호출을 모두 cleanName(...)으로 교체(거부가 아니라 clamp, AMOUNT_MAX와 동일 철학). txMemoInput/recMemoInput은 매 keystroke마다 불리는 핸들러라 IME 조합 중 정규화 부작용을 피하려 trim/normalize 없이 길이만 MEMO_MAX로 자르도록 했고, csvRowToImportTxn의 category/fromName/toName/memo 추출에도 각각 .slice(0,NAME_MAX)/.slice(0,MEMO_MAX)를 추가(거부 아님 — ok:true 유지, amount 쪽 cycle339 fix와 같은 패턴). asName(3곳)/goalName/newOwner/renameOwner/newCat/renameCat/txMemo/rMemo input에 maxlength 속성도 추가해 즉각적인 UX 피드백을 줌. 테스트 18건 추가(cleanName 순수 단위 4건(빈 문자열/상한 이하/상한 초과 잘림/NFC 정규화), addOwner/doRenameOwner/addCat/doRenameCat/saveGoal/syncAssetInputs가 긴 이름을 잘라 저장하는 통합 테스트 6건, txMemoInput/recMemoInput 입력칸·draft 모두 잘리는 테스트 3건(+회귀 1건), csvRowToImportTxn의 category/memo/fromName+toName이 거부 대신 잘려서 통과하는 테스트 3건), 기존 openOwnerManage/isDraftDirty 격리 vm 컨텍스트 2곳에 NAME_MAX(+cleanName) extractConst 로딩을 추가해 템플릿/syncAssetInputs가 새로 참조하는 전역을 공급(ReferenceError 회귀 수정) — node test/run.js 3304->3320/3320 통과. node --check sw.js/test/run.js 통과, index.html 주 스크립트 블록(<script> 3번째 블록) 추출 후 node --check 통과. 사용자 체감 동작 변화(이름/메모 입력에 길이 상한 생김, 손상된 CSV의 과도하게 긴 셀이 거부 대신 잘려서 가져와짐)라 APP_VERSION 1.47.420->1.47.421, sw.js CACHE v687->v688. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]
