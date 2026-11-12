@@ -9531,8 +9531,10 @@ function sanitizeBackup(obj){
   /* d.name도 stockCode/cryptoCode와 같은 이유로 여기서 정제해야 한다 — syncAssetInputs는
    * cleanName()(NAME_MAX=60)으로 이미 막혀 있지만, 백업 파일/클라우드 풀은 그 입력 경로를
    * 거치지 않고 obj.assets를 그대로 받는다(app-evolve cycle341이 stockCode/cryptoCode에만
-   * 적용하고 name은 놓친 비대칭, cycle344 develop). */
-  if(d.name){const n=cleanName(d.name);if(n!==d.name){d.name=n;fixedCount++}}
+   * 적용하고 name은 놓친 비대칭, cycle344 develop). cleanName()은 문자열 전용(.trim())이라
+   * 손상된 백업의 name이 숫자/객체처럼 문자열이 아니면 그대로 넘기면 throw해 sanitizeBackup()
+   * 전체가 중단된다 — category/memo 클램프와 동일하게 typeof 가드로 막는다(cycle344 review). */
+  if(typeof d.name==='string'&&d.name){const n=cleanName(d.name);if(n!==d.name){d.name=n;fixedCount++}}
   /* stockCode/cryptoCode는 syncAssetInputs에서는 cleanCode()로 막혀 있지만, 백업 파일은
    * 사용자가 직접 수정해 복원할 수 있는 경로라 여기서도 같은 정제를 거쳐야 한다 — 그러지
    * 않으면 조작된 백업으로 복원 즉시 openRateSheet의 id/onchange 렌더(해당 함수는 esc()도
@@ -9701,8 +9703,10 @@ function sanitizeBackup(obj){
   if(!g||!g.id){droppedCount++;return}
   const d=Object.assign({},g);
   /* d.name도 saveGoal()의 cleanName() 입력 경로를 거치지 않는 백업/클라우드 풀에서는 길이
-   * 제한이 전혀 없었다 — assets 블록에 추가한 것과 같은 비대칭(cycle344 develop). */
-  if(d.name){const n=cleanName(d.name);if(n!==d.name){d.name=n;fixedCount++}}
+   * 제한이 전혀 없었다 — assets 블록에 추가한 것과 같은 비대칭(cycle344 develop). assets
+   * 블록과 동일하게 typeof 가드로 문자열이 아닌 name이 cleanName()의 .trim()에서 throw해
+   * sanitizeBackup() 전체를 중단시키는 걸 막는다(cycle344 review). */
+  if(typeof d.name==='string'&&d.name){const n=cleanName(d.name);if(n!==d.name){d.name=n;fixedCount++}}
   if('targetAmount' in d){const n=sanitizeAmount(d.targetAmount,0);if(n!==d.targetAmount){d.targetAmount=n;fixedCount++}}
   if(d.targetDate&&!csvDateValid(d.targetDate)){d.targetDate=null;fixedCount++} /* 형식만 보던 정규식은 "2026-13-45"처럼 모양은 맞지만 달력상 존재하지 않는 날짜를 그대로 통과시켜 fmtDateFull()이 자바스크립트의 월/일 롤오버 때문에 전혀 엉뚱한 날짜(예: 2027년 2월 14일)를 보여줬다 — startDate/endDate/maturityDate와 동일하게 csvDateValid()로 달력 유효성까지 검증 */
   if(!d.owner){d.owner='all'}

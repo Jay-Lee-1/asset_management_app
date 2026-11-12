@@ -15665,6 +15665,19 @@ test('sanitizeBackup: 자산/목표 이름이 NAME_MAX 이하면 그대로 두�
   assert.strictEqual(r.data.goals[0].name, '내 집 마련 자금');
   assert.strictEqual(r.fixedCount, 0);
 });
+/* cleanName()은 .trim()을 바로 호출하는 문자열 전용 함수라, 손상된 백업의 name이 문자열이
+ * 아니면(숫자 등) 가드 없이 넘기면 throw해 sanitizeBackup() 전체가 중단된다 — category/memo
+ * 클램프와 동일한 typeof 가드가 빠졌던 회귀를 막는다(app-evolve cycle344 review). */
+test('sanitizeBackup: 자산/목표 이름이 문자열이 아니면(숫자 등) throw하지 않고 그대로 둔다', () => {
+  sandbox.DB = { owners: ['나'] };
+  const r = sandbox.sanitizeBackup({
+    txns: [], owners: ['나'],
+    assets: [{ id: 'a1', type: 'cash', owner: '나', name: 12345 }],
+    goals: [{ id: 'g1', name: 67890 }],
+  });
+  assert.strictEqual(r.data.assets[0].name, 12345);
+  assert.strictEqual(r.data.goals[0].name, 67890);
+});
 /* 거래/반복거래의 category/memo도 csvRowToImportTxn(cycle340)이 CSV 가져오기 경로에서 이미
  * 적용한 "거부가 아니라 clamp" 방식을 백업 복원/클라우드 풀에도 동일하게 적용한다(cycle344 develop). */
 test('sanitizeBackup: 거래/반복거래의 category/memo가 각각 NAME_MAX/MEMO_MAX를 넘으면 잘리고 fixedCount를 센다', () => {

@@ -1,8 +1,15 @@
 {
   "cycle": 344,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 344,
+      "phase": "review",
+      "timestamp": "2026-11-12T16:12:00.000Z",
+      "summary": "develop(cycle344, 32be05d: sanitizeBackup()의 이름/메모 필드에 NAME_MAX/MEMO_MAX 클램프 추가)을 검토해 실제 버그를 발견하고 그 자리에서 고쳤다 — 새로 추가된 d.name 클램프 두 곳(자산 블록 index.html:9535, 목표 블록 9705)이 바로 위/아래의 category/memo 클램프와 달리 'if(typeof d.category===\"string\"&&...)' 같은 typeof 가드 없이 'if(d.name){const n=cleanName(d.name);...}'로만 작성돼 있었다. cleanName=v=>(v||'').trim()...은 문자열 전용 함수라, 손상되거나 손으로 편집한 백업/클라우드 payload의 자산·목표 name이 숫자처럼 truthy한 비문자열이면 cleanName 내부의 .trim() 호출에서 TypeError('(v||\"\").trim is not a function')로 throw함을 node -e로 직접 재현해 확인했다. sanitizeBackup()의 실제 호출부(proceedWithBackupObj, index.html:10145 'const{data:obj,...}=sanitizeBackup(raw);')는 이 호출을 try/catch로 감싸지 않고(복원 확정 콜백 안의 restoreBackup(obj) 호출만 try/catch로 보호됨) 바로 뒤 confirmSheet 콜백에서 obj를 쓰므로, sanitizeBackup 단계에서 throw하면 백업 파일 복원이 통째로 깨진다 — cloud pull 경로(resolveCloudPullRemote 등)도 전부 같은 무방비 호출 패턴이라 동일하게 영향받는다. 두 곳 모두 'if(typeof d.name===\"string\"&&d.name){...}'로 고쳐 category/memo 가드와 통일했다(동작 비교: 문자열이면 기존과 동일하게 clamp, 숫자 등 비문자열이면 이제 손대지 않고 그대로 통과 — throw 대신 no-op이 더 안전한 기존 전체 패턴, 예: sanitizeAmount가 비유한수를 그냥 걸러내는 것과 같은 방향). 회귀 테스트 1건 추가(자산/목표 name이 숫자일 때 sanitizeBackup이 throw하지 않고 그대로 통과하는지) — node test/run.js 3349->3350/3350 통과. node --check sw.js/test/run.js 통과, index.html 주 스크립트 블록(3번째 <script>, 824KB) new Function()으로 구문 확인 통과(1번째 블록은 기존 cycle339/343/344 노트와 동일한 HTML 주석 내 리터럴 텍스트로 인한 기존 오탐). APP_VERSION/sw.js CACHE는 develop 커밋(1.47.428/v695)에서 이미 올렸고 이번 수정은 그 범위 내 버그 수정이라 추가로 올리지 않았다.",
+      "commit": null
+    },
     {
       "cycle": 339,
       "phase": "critique",
