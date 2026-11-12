@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.422';
+const APP_VERSION='1.47.423';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -1975,6 +1975,13 @@ const AMOUNT_MAX=999999999999999;
  * 그대로 번지므로, 숫자 쪽과 같은 "거부가 아니라 clamp" 방식으로 상한을 둔다. */
 const NAME_MAX=60, MEMO_MAX=200;
 const cleanName=v=>(v||'').trim().normalize('NFC').slice(0,NAME_MAX);
+/* 종목코드(stockCode/cryptoCode)는 이름/메모와 달리 길이 제한이 전혀 없었고, openRateSheet가
+ * 이 값을 id=/onchange= 속성에 esc() 없이 그대로 꽂아 openSheet의 innerHTML 렌더로 흘려보내
+ * 인용부호가 포함되면 저장형 HTML/JS 인젝션으로 이어질 수 있었다(app-evolve cycle341 critique).
+ * 실제 티커 패턴(005930/AAPL/BRK.B/BTC)과 호환되는 [A-Z0-9.]만 허용해 소스에서 위험 문자를
+ * 원천 차단한다. */
+const CODE_MAX=20;
+const cleanCode=v=>(v||'').trim().toUpperCase().replace(/[^A-Z0-9.]/g,'').slice(0,CODE_MAX);
 const SKEY='asset_app_db_v3';
 /* ===== 계정 · 세션 (이메일 로그인) =====
    ▸ Supabase가 설정되지 않으면 이 기기(localStorage)에만 저장됩니다(계정별로 분리).
@@ -5154,7 +5161,7 @@ function syncAssetInputs(){const d=asDraft;const g=id=>$(id);
  if(g('asMat'))d.maturityDate=g('asMat').value;
  if(g('asFx'))d.fxAmount=sanitizeAmount(parseFloat((g('asFx').value||'0').replace(/,/g,'')),0);
  if(g('asGold'))d.goldDon=sanitizeAmount(parseFloat((g('asGold').value||'0').replace(/,/g,'')),0);
- if(g('asCode')){const v=g('asCode').value.trim().toUpperCase();if(d.type==='crypto')d.cryptoCode=v;else d.stockCode=v;}
+ if(g('asCode')){const v=cleanCode(g('asCode').value);if(d.type==='crypto')d.cryptoCode=v;else d.stockCode=v;}
  if(g('asQty')){const v=sanitizeAmount(parseFloat((g('asQty').value||'0').replace(/,/g,'')),0);if(d.type==='crypto')d.cryptoQty=v;else d.stockQty=v;}
  if(g('asAcquiredAt')){const v=g('asAcquiredAt').value;if(v)d.acquiredAt=v;} /* 사용자가 매입일 pick 필드로 직접 고른 날짜가 있으면 먼저 반영 — 비어 있으면(아직 안 고름) 건드리지 않아 아래 자동 TODAY 스탬프 로직이 그대로 동작한다(app-evolve cycle281 advance) */
  if(g('asCostBasis')){const n=num(g('asCostBasis'),false);if(n>0)d.costBasis=n;else delete d.costBasis;
@@ -5230,14 +5237,14 @@ function renderAssetSheet(editing){
      ${costBasisField(d,editing)}`;
  }else if(d.type==='stock'){
    fields=`<div class="field"><label for="asName">종목명</label><div class="field-clear"><input id="asName" maxlength="${NAME_MAX}" value="${esc(d.name||'')}" placeholder="예: 삼성전자"><button type="button" class="fc-x" aria-label="종목명 지우기" onclick="clrInput('asName')">✕</button></div></div>
-     <div class="field"><label for="asCode">종목코드</label><div class="field-clear"><input id="asCode" value="${esc(d.stockCode||'')}" placeholder="국내 005930 · 해외 AAPL" autocapitalize="characters" oninput="this.value=this.value.toUpperCase()"><button type="button" class="fc-x" aria-label="종목코드 지우기" onclick="clrInput('asCode')">✕</button></div>
+     <div class="field"><label for="asCode">종목코드</label><div class="field-clear"><input id="asCode" maxlength="${CODE_MAX}" value="${esc(d.stockCode||'')}" placeholder="국내 005930 · 해외 AAPL" autocapitalize="characters" oninput="this.value=this.value.toUpperCase()"><button type="button" class="fc-x" aria-label="종목코드 지우기" onclick="clrInput('asCode')">✕</button></div>
       <p style="font-size:12px;color:var(--text-3);margin-top:6px">국내는 6자리 숫자, 해외는 티커(AAPL·TSLA·NVDA)를 넣어주세요. 해외는 원화로 환산돼요.</p></div>
      <div class="field"><label for="asQty">보유 주식 수</label><div class="with-unit"><div class="field-clear"><input id="asQty" class="num" inputmode="decimal" value="${d.stockQty||''}" placeholder="0" oninput="fmtQty(this);qtyBasisWarn(this)"><button type="button" class="fc-x" aria-label="보유 주식 수 지우기" onclick="clrInput('asQty')">✕</button></div><span class="unit">주</span></div></div>
      <p style="font-size:12.5px;color:var(--text-2);margin:-4px 0 14px">평가액 = 현재가 × 보유수량 (현재가는 시세 연동 관리에서 입력).</p>
      ${costBasisField(d,editing)}`;
  }else if(d.type==='crypto'){
    fields=`<div class="field"><label for="asName">코인명</label><div class="field-clear"><input id="asName" maxlength="${NAME_MAX}" value="${esc(d.name||'')}" placeholder="예: 비트코인"><button type="button" class="fc-x" aria-label="코인명 지우기" onclick="clrInput('asName')">✕</button></div></div>
-     <div class="field"><label for="asCode">심볼</label><div class="field-clear"><input id="asCode" value="${esc(d.cryptoCode||'')}" placeholder="예: BTC, ETH" autocapitalize="characters" oninput="this.value=this.value.toUpperCase()"><button type="button" class="fc-x" aria-label="심볼 지우기" onclick="clrInput('asCode')">✕</button></div>
+     <div class="field"><label for="asCode">심볼</label><div class="field-clear"><input id="asCode" maxlength="${CODE_MAX}" value="${esc(d.cryptoCode||'')}" placeholder="예: BTC, ETH" autocapitalize="characters" oninput="this.value=this.value.toUpperCase()"><button type="button" class="fc-x" aria-label="심볼 지우기" onclick="clrInput('asCode')">✕</button></div>
       <p style="font-size:12px;color:var(--text-3);margin-top:6px">업비트 KRW 마켓에 있는 심볼을 넣어주세요(BTC·ETH·XRP 등).</p></div>
      <div class="field"><label for="asQty">보유 수량</label><div class="with-unit"><div class="field-clear"><input id="asQty" class="num" inputmode="decimal" value="${d.cryptoQty||''}" placeholder="0" oninput="fmtQty(this);qtyBasisWarn(this)"><button type="button" class="fc-x" aria-label="보유 수량 지우기" onclick="clrInput('asQty')">✕</button></div><span class="unit">개</span></div></div>
      <p style="font-size:12.5px;color:var(--text-2);margin:-4px 0 14px">평가액 = 현재가 × 보유수량 (현재가는 시세 연동 관리에서 입력).</p>
@@ -8417,8 +8424,8 @@ function rateAutoLabel(){
 function openRateSheet(){
  const R=DB.rates;
  const fxCur=[...new Set(DB.assets.filter(a=>a.type==='fx').map(a=>a.currency))];
- const stockRows=DB.assets.filter(a=>a.type==='stock').map(a=>{const id=`rateStock_${a.stockCode}`;return `<div class="rate-row"><div style="flex:1"><div class="rn">${esc(a.name)}</div><div class="rsub">${esc(a.stockCode)} 현재가${rateUnknown(a)?' · 미확인':''}</div></div><div class="field-clear"><input id="${id}" class="num" inputmode="numeric" value="${comma(R.stocks[a.stockCode]||0)}" aria-label="${esc(a.name)} 현재가" onchange="setRate('stock','${a.stockCode}',this.value)"><button type="button" class="fc-x" aria-label="${esc(a.name)} 현재가 지우기" onclick="clrInput('${id}')">✕</button></div></div>`}).join('');
- const cryptoRows=DB.assets.filter(a=>a.type==='crypto').map(a=>{const id=`rateCrypto_${a.cryptoCode}`;return `<div class="rate-row"><div style="flex:1"><div class="rn">${esc(a.name)}</div><div class="rsub">${esc(a.cryptoCode)} 현재가${rateUnknown(a)?' · 미확인':''}</div></div><div class="field-clear"><input id="${id}" class="num" inputmode="numeric" value="${comma(R.crypto[a.cryptoCode]||0)}" aria-label="${esc(a.name)} 현재가" onchange="setRate('crypto','${a.cryptoCode}',this.value)"><button type="button" class="fc-x" aria-label="${esc(a.name)} 현재가 지우기" onclick="clrInput('${id}')">✕</button></div></div>`}).join('');
+ const stockRows=DB.assets.filter(a=>a.type==='stock').map(a=>{const id=`rateStock_${a.stockCode}`;return `<div class="rate-row"><div style="flex:1"><div class="rn">${esc(a.name)}</div><div class="rsub">${esc(a.stockCode)} 현재가${rateUnknown(a)?' · 미확인':''}</div></div><div class="field-clear"><input id="${esc(id)}" class="num" inputmode="numeric" value="${comma(R.stocks[a.stockCode]||0)}" aria-label="${esc(a.name)} 현재가" onchange="setRate('stock','${esc(a.stockCode)}',this.value)"><button type="button" class="fc-x" aria-label="${esc(a.name)} 현재가 지우기" onclick="clrInput('${esc(id)}')">✕</button></div></div>`}).join('');
+ const cryptoRows=DB.assets.filter(a=>a.type==='crypto').map(a=>{const id=`rateCrypto_${a.cryptoCode}`;return `<div class="rate-row"><div style="flex:1"><div class="rn">${esc(a.name)}</div><div class="rsub">${esc(a.cryptoCode)} 현재가${rateUnknown(a)?' · 미확인':''}</div></div><div class="field-clear"><input id="${esc(id)}" class="num" inputmode="numeric" value="${comma(R.crypto[a.cryptoCode]||0)}" aria-label="${esc(a.name)} 현재가" onchange="setRate('crypto','${esc(a.cryptoCode)}',this.value)"><button type="button" class="fc-x" aria-label="${esc(a.name)} 현재가 지우기" onclick="clrInput('${esc(id)}')">✕</button></div></div>`}).join('');
  const fxRows=fxCur.map(c=>{const id=`rateFx_${c}`;return `<div class="rate-row"><div style="flex:1"><div class="rn">${c}</div><div class="rsub">원/${c}${rateUnknown({type:'fx',currency:c})?' · 미확인':''}</div></div><div class="field-clear"><input id="${id}" class="num" inputmode="numeric" value="${comma(R.fx[c]||0)}" aria-label="${c} 환율" onchange="setRate('fx','${c}',this.value)"><button type="button" class="fc-x" aria-label="${c} 환율 지우기" onclick="clrInput('${id}')">✕</button></div></div>`}).join('');
  const active=rateAutoLabel();
  const none=active==='해당 없음';
@@ -9494,6 +9501,12 @@ function sanitizeBackup(obj){
   const d=Object.assign({},a);
   SANITIZE_FREE_FIELDS.forEach(f=>{if(f in d){const n=sanitizeAmount(d[f]);if(n!==d[f]){d[f]=n;fixedCount++}}});
   SANITIZE_QTY_FIELDS.forEach(f=>{if(f in d){const n=sanitizeAmount(d[f],0);if(n!==d[f]){d[f]=n;fixedCount++}}});
+  /* stockCode/cryptoCode는 syncAssetInputs에서는 cleanCode()로 막혀 있지만, 백업 파일은
+   * 사용자가 직접 수정해 복원할 수 있는 경로라 여기서도 같은 정제를 거쳐야 한다 — 그러지
+   * 않으면 조작된 백업으로 복원 즉시 openRateSheet의 id/onchange 렌더(해당 함수는 esc()도
+   * 이중으로 걸려 있지만, 저장되는 값 자체도 깨끗해야 heldStockCodes/setRate 등 다른 소비처와
+   * 일관된다)가 오염된다(app-evolve cycle341 critique). */
+  ['stockCode','cryptoCode'].forEach(f=>{if(f in d&&d[f]){const n=cleanCode(d[f]);if(n!==d[f]){d[f]=n;fixedCount++}}});
   /* maturityDate는 저축 자산에 없는 게 정상 상태라(만기 미설정) 레코드를 버리지 않고,
    * startDate/endDate와 동일하게 csvDateValid()로 형식/달력 유효성만 검증해 깨졌으면 null로
    * 정규화한다 — 그대로 두면 doMaturity/openMaturity의 날짜 비교가 깨진 문자열을 그대로 쓴다. */

@@ -404,7 +404,7 @@ const FUNCTIONS = [
 // 목록과, 그 키를 읽어주는 한글 aria-label 매핑이다(app-evolve cycle281 advance) — 둘 다 내부에
 // ";"가 없는 단순 object literal이라 extractConstBlock 없이 extractConst로도 끝까지 끌어온다
 // (CAT_LABEL과 같은 패턴).
-const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'emailKey', 'CAT_PICKER_SEARCH_THRESHOLD', 'GOAL_LIST_SEARCH_THRESHOLD', 'GS_CAP', 'CAT_ICON_SET', 'ICON_LABEL_KO', 'BAL_ASSET_TYPES', 'ALLOC_OTHER_COLOR', 'TRASH_MAX_AGE_DAYS', 'AMOUNT_MAX', 'NAME_MAX', 'cleanName'];
+const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'emailKey', 'CAT_PICKER_SEARCH_THRESHOLD', 'GOAL_LIST_SEARCH_THRESHOLD', 'GS_CAP', 'CAT_ICON_SET', 'ICON_LABEL_KO', 'BAL_ASSET_TYPES', 'ALLOC_OTHER_COLOR', 'TRASH_MAX_AGE_DAYS', 'AMOUNT_MAX', 'NAME_MAX', 'cleanName', 'CODE_MAX', 'cleanCode'];
 // _histCache는 filteredHist()가 재대입(={key,list})하는 let 선언이라 CONSTS(extractConst)로는
 // 못 끌어오므로 별도의 LETS 목록으로 extractLet을 통해 가져온다.
 // _copyIsCsv도 같은 이유(openCopyBackup()이 재대입)로 LETS를 통해 가져온다.
@@ -1946,6 +1946,34 @@ test('cleanName(): NFC 정규화를 유지한다(trim/slice 전에 정규화)', 
   const nfd = '가'.normalize('NFD'); // '가'를 NFD로 분해
   assert.strictEqual(sandbox.cleanName(nfd), '가');
   assert.strictEqual(sandbox.cleanName(nfd).normalize('NFC'), sandbox.cleanName(nfd));
+});
+/* cleanCode()는 종목코드/심볼(stockCode/cryptoCode)에 적용하는 cleanName()의 변형이다 —
+ * 이름과 달리 실제 티커 패턴(005930/AAPL/BRK.B/BTC)만 허용하면 되므로 거부 대신 clamp하는
+ * 철학은 같지만 [A-Z0-9.] 바깥 문자는 전부 제거한다(allow-list). 종목코드가 인용부호를
+ * 포함하면 openRateSheet의 id=/onchange= 속성 템플릿 보간에 escape 없이 흘러들어가 저장형
+ * HTML/JS 인젝션으로 이어질 수 있었다(app-evolve cycle341 critique/advance). */
+test('cleanCode(): 빈 문자열/공백만 있는 입력은 빈 문자열이다', () => {
+  assert.strictEqual(sandbox.cleanCode(''), '');
+  assert.strictEqual(sandbox.cleanCode('   '), '');
+  assert.strictEqual(sandbox.cleanCode(undefined), '');
+  assert.strictEqual(sandbox.cleanCode(null), '');
+});
+test('cleanCode(): 소문자는 대문자로 바뀌고, 영문/숫자/점은 그대로 유지된다(실제 티커 패턴)', () => {
+  assert.strictEqual(sandbox.cleanCode('aapl'), 'AAPL');
+  assert.strictEqual(sandbox.cleanCode('005930'), '005930');
+  assert.strictEqual(sandbox.cleanCode('brk.b'), 'BRK.B');
+  assert.strictEqual(sandbox.cleanCode('  btc  '), 'BTC');
+});
+test('cleanCode(): 인용부호/꺽쇠 등 [A-Z0-9.] 밖의 문자는 전부 제거된다(저장형 인젝션 차단)', () => {
+  assert.strictEqual(sandbox.cleanCode('AAPL"onchange="alert(1)'), 'AAPLONCHANGEALERT1');
+  assert.strictEqual(sandbox.cleanCode(`BTC'><script>`), 'BTCSCRIPT');
+  assert.strictEqual(sandbox.cleanCode('005 930'), '005930');
+});
+test('cleanCode(): CODE_MAX를 넘는 입력은 뒷부분이 잘려 정확히 CODE_MAX 길이가 된다', () => {
+  const over = 'A'.repeat(sandbox.CODE_MAX + 20);
+  const out = sandbox.cleanCode(over);
+  assert.strictEqual(out.length, sandbox.CODE_MAX);
+  assert.strictEqual(out, 'A'.repeat(sandbox.CODE_MAX));
 });
 
 /* ---------- fmtQty(): FX/금/주식 보유 수량 입력란 실시간 정제 (app-evolve cycle119 advance)
@@ -15530,6 +15558,33 @@ test('sanitizeBackup: 이 백업에도 obj.owners가 없고 이 기기의 DB.own
   assert.strictEqual(r.data.assets[0].owner, '아무이름', '검증 기준 자체가 없으면 근거 없이 임의 문자열을 지어내지 않아야 함');
   assert.strictEqual(r.fixedCount, 0);
 });
+/* syncAssetInputs는 cleanCode()로 stockCode/cryptoCode를 이미 막지만, 백업 파일은 사용자가
+ * 직접 편집해 복원할 수 있는 경로라 sanitizeBackup()에서도 같은 정제를 거쳐야 한다 — 그러지
+ * 않으면 조작된 백업으로 복원하는 즉시 openRateSheet의 id=/onchange= 템플릿 보간이 오염된다
+ * (app-evolve cycle341 critique/advance). */
+test('sanitizeBackup: 자산의 stockCode/cryptoCode에 인용부호가 섞여 있으면 cleanCode()로 정제돼 [A-Z0-9.]만 남고 fixedCount를 센다', () => {
+  sandbox.DB = { owners: ['나'] };
+  const r = sandbox.sanitizeBackup({
+    txns: [], owners: ['나'],
+    assets: [
+      { id: 'a1', type: 'stock', owner: '나', stockCode: `005930"><script>` },
+      { id: 'a2', type: 'crypto', owner: '나', cryptoCode: `btc'onchange='x` },
+    ],
+  });
+  assert.strictEqual(r.data.assets[0].stockCode, sandbox.cleanCode(`005930"><script>`));
+  assert.ok(!r.data.assets[0].stockCode.includes('"'), '정제된 stockCode에 인용부호가 남으면 안 됨');
+  assert.strictEqual(r.data.assets[1].cryptoCode, 'BTCONCHANGEX');
+  assert.ok(r.fixedCount >= 2, 'stockCode/cryptoCode 정제도 fixedCount에 반영돼야 함');
+});
+test('sanitizeBackup: 자산의 stockCode/cryptoCode가 이미 [A-Z0-9.] 범위면 그대로 두고 fixedCount를 늘리지 않는다(정상 케이스는 회귀 없음)', () => {
+  sandbox.DB = { owners: ['나'] };
+  const r = sandbox.sanitizeBackup({
+    txns: [], owners: ['나'],
+    assets: [{ id: 'a1', type: 'stock', owner: '나', stockCode: '005930' }],
+  });
+  assert.strictEqual(r.data.assets[0].stockCode, '005930');
+  assert.strictEqual(r.fixedCount, 0);
+});
 test('sanitizeBackup: id/date 등 필수 필드가 없는 레코드는 통째로 제거하고 droppedCount로 센다', () => {
   const { data, droppedCount } = sandbox.sanitizeBackup({
     txns: [{ id: 't1', date: '2026-01-01', amount: 100 }, { id: 't2', amount: 200 }, { date: '2026-01-03', amount: 300 }],
@@ -19094,6 +19149,22 @@ test('syncAssetInputs: type이 stock이면 asCode/asQty 값을 여전히 stockCo
     assert.strictEqual(sandbox.asDraft.stockQty, 10);
     assert.strictEqual(sandbox.asDraft.cryptoCode, undefined);
     assert.strictEqual(sandbox.asDraft.cryptoQty, undefined);
+  } finally {
+    sandbox.$ = $orig;
+  }
+});
+/* syncAssetInputs가 asCode를 cleanCode()로 정제하는지(거부가 아니라 clamp, app-evolve cycle341
+ * critique/advance) — 인용부호가 섞인 종목코드가 저장되면 openRateSheet의 id=/onchange= 속성
+ * 템플릿 보간에 그대로 흘러들어가는 저장형 인젝션 공백이었다. */
+test('syncAssetInputs: 인용부호가 섞인 종목코드를 넣어도 cleanCode()로 정제돼 [A-Z0-9.]만 저장된다(저장형 인젝션 차단)', () => {
+  const $orig = sandbox.$;
+  const codeInput = { value: `005930"><script>alert(1)</script>` };
+  sandbox.$ = (id) => (id === 'asCode' ? codeInput : null);
+  try {
+    sandbox.asDraft = { type: 'stock' };
+    sandbox.syncAssetInputs();
+    assert.strictEqual(sandbox.asDraft.stockCode, '005930SCRIPTALERT1SC');
+    assert.ok(!sandbox.asDraft.stockCode.includes('"'), '정제된 종목코드에 인용부호가 남으면 안 됨');
   } finally {
     sandbox.$ = $orig;
   }
@@ -27556,7 +27627,7 @@ test('renderAssetSheet: fx/gold/stock의 보유 수량 입력(asFx/asGold/asQty)
  * 변환 oninput은 유지하면서 다른 텍스트 입력과 동일한 .field-clear+fc-x 구조로 감쌌다. */
 test('renderAssetSheet: stock 타입의 asCode(종목코드)도 asName/asQty와 동일하게 field-clear(×) 버튼이 있다', () => {
   const html = renderAsset({ type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 10 });
-  assert.ok(html.includes('<div class="field-clear"><input id="asCode"'), 'asCode 입력이 field-clear로 감싸져 있지 않음');
+  assert.ok(html.includes('<div class="field-clear"><input id="asCode" maxlength="20"'), 'asCode 입력이 field-clear로 감싸져 있지 않음(또는 CODE_MAX maxlength가 없음)');
   assert.ok(html.includes(`<button type="button" class="fc-x" aria-label="종목코드 지우기" onclick="clrInput('asCode')">`), 'asCode에 fc-x 지우기 버튼의 clrInput 연결이 없음');
   assert.ok(html.includes(`oninput="this.value=this.value.toUpperCase()"`), 'asCode의 대문자 변환 oninput이 유지되지 않음');
 });
@@ -27576,7 +27647,7 @@ test('renderAssetSheet: crypto 타입의 asQty(보유 수량)에는 Enter-제출
 });
 test('renderAssetSheet: crypto 타입의 asCode(심볼)도 stock의 asCode와 동일하게 field-clear(×)·대문자 변환이 있다', () => {
   const html = renderAsset({ type: 'crypto', owner: '나', includeInTotal: true, name: '비트코인', cryptoCode: 'BTC', cryptoQty: 0.5 });
-  assert.ok(html.includes('<div class="field-clear"><input id="asCode" value="BTC"'), 'asCode 입력에 cryptoCode 값이 들어가지 않음');
+  assert.ok(html.includes('<div class="field-clear"><input id="asCode" maxlength="20" value="BTC"'), 'asCode 입력에 cryptoCode 값이 들어가지 않음(또는 CODE_MAX maxlength가 없음)');
   assert.ok(html.includes(`<button type="button" class="fc-x" aria-label="심볼 지우기" onclick="clrInput('asCode')">`), 'asCode에 fc-x 지우기 버튼의 clrInput 연결이 없음');
   assert.ok(html.includes(`oninput="this.value=this.value.toUpperCase()"`), 'asCode의 대문자 변환 oninput이 유지되지 않음');
 });
@@ -36270,19 +36341,26 @@ test('openRateSheet: 외화(fx) 시세 입력에 통화별 aria-label과 field-c
   assert.ok(body.includes('<div class="field-clear"><input id="${id}" class="num" inputmode="numeric" value="${comma(R.fx[c]||0)}" aria-label="${c} 환율"'), 'fx 시세 입력이 통화별 aria-label과 함께 field-clear로 감싸져 있지 않음');
   assert.ok(body.includes(`<button type="button" class="fc-x" aria-label="${'$'}{c} 환율 지우기" onclick="clrInput('${'$'}{id}')">`), 'fx 시세 입력에 fc-x 지우기 버튼의 clrInput 연결이 없음');
 });
+/* id/onchange 보간에 esc()가 둘 다 감싸져 있는지도 함께 검증한다(app-evolve cycle341 critique/
+ * advance) — stockCode/cryptoCode는 syncAssetInputs(cleanCode)/sanitizeBackup 양쪽에서 이미
+ * [A-Z0-9.]만 허용하도록 소스에서 막혔지만, 레거시 데이터(정제 이전에 저장된 값)까지 이중으로
+ * 방어하기 위해 템플릿 보간 자체에도 esc()를 추가했다 — 인접한 표시용 rsub 텍스트는 이미
+ * esc()로 감싸져 있는데 id/onchange 두 속성만 빠져 있던 비대칭이었다. */
 test('openRateSheet: 주식(stock) 시세 입력에 종목별 aria-label과 field-clear(×) 버튼이 있다', () => {
   const body = extractFunction('openRateSheet');
   assert.ok(/const id=`rateStock_\$\{a\.stockCode\}`/.test(body), 'stock 시세 입력에 종목별 고유 id(rateStock_종목코드)가 없음');
-  assert.ok(body.includes('<div class="field-clear"><input id="${id}" class="num" inputmode="numeric" value="${comma(R.stocks[a.stockCode]||0)}" aria-label="${esc(a.name)} 현재가"'), 'stock 시세 입력이 종목별 aria-label과 함께 field-clear로 감싸져 있지 않음');
-  assert.ok(body.includes(`<button type="button" class="fc-x" aria-label="${'$'}{esc(a.name)} 현재가 지우기" onclick="clrInput('${'$'}{id}')">`), 'stock 시세 입력에 fc-x 지우기 버튼의 clrInput 연결이 없음');
+  assert.ok(body.includes('<div class="field-clear"><input id="${esc(id)}" class="num" inputmode="numeric" value="${comma(R.stocks[a.stockCode]||0)}" aria-label="${esc(a.name)} 현재가"'), 'stock 시세 입력이 종목별 aria-label과 함께 field-clear로 감싸져 있지 않음');
+  assert.ok(body.includes(`<button type="button" class="fc-x" aria-label="${'$'}{esc(a.name)} 현재가 지우기" onclick="clrInput('${'$'}{esc(id)}')">`), 'stock 시세 입력에 fc-x 지우기 버튼의 clrInput 연결이 없음');
+  assert.ok(body.includes(`onchange="setRate('stock','${'$'}{esc(a.stockCode)}',this.value)"`), 'stock 시세 입력의 onchange(setRate 호출)에 종목코드 esc()가 없음');
 });
 /* crypto(코인, app-evolve cycle219 advance)도 stock과 동일한 field-clear/aria-label 관례로
  * 추가됐는지 같은 방식(소스 문자열 검사)으로 확인한다. */
 test('openRateSheet: 코인(crypto) 시세 입력에 심볼별 aria-label과 field-clear(×) 버튼이 있다', () => {
   const body = extractFunction('openRateSheet');
   assert.ok(/const id=`rateCrypto_\$\{a\.cryptoCode\}`/.test(body), 'crypto 시세 입력에 심볼별 고유 id(rateCrypto_심볼)가 없음');
-  assert.ok(body.includes('<div class="field-clear"><input id="${id}" class="num" inputmode="numeric" value="${comma(R.crypto[a.cryptoCode]||0)}" aria-label="${esc(a.name)} 현재가"'), 'crypto 시세 입력이 심볼별 aria-label과 함께 field-clear로 감싸져 있지 않음');
-  assert.ok(body.includes(`<button type="button" class="fc-x" aria-label="${'$'}{esc(a.name)} 현재가 지우기" onclick="clrInput('${'$'}{id}')">`), 'crypto 시세 입력에 fc-x 지우기 버튼의 clrInput 연결이 없음');
+  assert.ok(body.includes('<div class="field-clear"><input id="${esc(id)}" class="num" inputmode="numeric" value="${comma(R.crypto[a.cryptoCode]||0)}" aria-label="${esc(a.name)} 현재가"'), 'crypto 시세 입력이 심볼별 aria-label과 함께 field-clear로 감싸져 있지 않음');
+  assert.ok(body.includes(`<button type="button" class="fc-x" aria-label="${'$'}{esc(a.name)} 현재가 지우기" onclick="clrInput('${'$'}{esc(id)}')">`), 'crypto 시세 입력에 fc-x 지우기 버튼의 clrInput 연결이 없음');
+  assert.ok(body.includes(`onchange="setRate('crypto','${'$'}{esc(a.cryptoCode)}',this.value)"`), 'crypto 시세 입력의 onchange(setRate 호출)에 심볼 esc()가 없음');
 });
 
 /* ---------- openSheet()의 #sheet 다이얼로그에 aria-labelledby가 없던 공백 ----------
