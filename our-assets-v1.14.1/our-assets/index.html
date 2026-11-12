@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.429';
+const APP_VERSION='1.47.430';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -5441,13 +5441,39 @@ function doRenameOwner(i){if(twGuard())return;const v=cleanName($('renameOwner')
  if(isReservedOwnerName(v)){toast("'전체'는 모든 귀속을 보는 이름이라 귀속 이름으로 쓸 수 없어요");return} /* addOwner와 동일한 '전체'/'all' 센티넬 보호 */
  const dup=DB.owners.find((o,oi)=>oi!==i&&normName(o)===normName(v));
  if(dup){toast(dup===v?'이미 있는 귀속이에요':`비슷한 귀속이 있어요: ${dup}`);return}
- DB.owners[i]=v;DB.assets.forEach(a=>{if(a.owner===old){a.owner=v;touch(a)}}); /* touch() 누락 시 mergeCollection()이 updatedAt만 보고 병합하다 다른 기기의 동기화 안 된 자산이 이 이름변경을 조용히 되돌릴 수 있음(saveAsset/askRelinkDeleted와 동일한 불변식) */
- (DB.goals||[]).forEach(g=>{if(g.owner===old){g.owner=v;touch(g)}}); /* assets와 동일한 이유 — 목표(goal)도 owner가 생긴 뒤로 이름변경을 따라가야 함(app-evolve cycle124) */
- if(ST.assetOwner===old)ST.assetOwner=v; if(ST.plan.owner===old)ST.plan.owner=v; if(ST.spendOwner===old)ST.spendOwner=v; if(ST.hist&&ST.hist.owner===old)ST.hist.owner=v; /* 활성 귀속 필터가 이름 변경을 따라가도록 — ST.hist.owner(전체내역 탭, 지출분석 카테고리 드릴다운이 세팅)까지 빠지면 이름 바꾼 뒤 그 필터가 사라진 옛 이름 그대로 남아 filterTxnsByOwner가 매칭되는 자산을 못 찾아 내역이 조용히 전부 사라져 보인다 */
- if(DB.settings&&DB.settings.settle){if(DB.settings.settle.ownerA===old)DB.settings.settle.ownerA=v;if(DB.settings.settle.ownerB===old)DB.settings.settle.ownerB=v;} /* 정산(settlementSummary) 설정도 같은 이유로 이름변경을 따라가야 함 — 안 그러면 openSettlement()의 owner 존재 검증에 걸려 재설정을 요구받는다(app-evolve cycle314 advance) */
- (DB.nwHistory||[]).forEach(h=>{if(h.byOwner&&old in h.byOwner){h.byOwner[v]=h.byOwner[old];delete h.byOwner[old]}}); /* 과거 추이 스냅샷의 귀속별 키도 새 이름으로 이동 */
+ DB.owners[i]=v;
+ const assetItems=[];DB.assets.forEach(a=>{if(a.owner===old){assetItems.push(a);a.owner=v;touch(a)}}); /* touch() 누락 시 mergeCollection()이 updatedAt만 보고 병합하다 다른 기기의 동기화 안 된 자산이 이 이름변경을 조용히 되돌릴 수 있음(saveAsset/askRelinkDeleted와 동일한 불변식). assetItems는 아래 undoToast가 되돌릴 자산 목록으로도 재사용(mergeOwnerInto와 동일 패턴) */
+ const goalItems=[];(DB.goals||[]).forEach(g=>{if(g.owner===old){goalItems.push(g);g.owner=v;touch(g)}}); /* assets와 동일한 이유 — 목표(goal)도 owner가 생긴 뒤로 이름변경을 따라가야 함(app-evolve cycle124) */
+ const hadAssetOwner=ST.assetOwner===old;if(hadAssetOwner)ST.assetOwner=v;
+ const hadPlanOwner=ST.plan.owner===old;if(hadPlanOwner)ST.plan.owner=v;
+ const hadSpendOwner=ST.spendOwner===old;if(hadSpendOwner)ST.spendOwner=v;
+ const hadHistOwner=!!(ST.hist&&ST.hist.owner===old);if(hadHistOwner)ST.hist.owner=v; /* 활성 귀속 필터가 이름 변경을 따라가도록 — ST.hist.owner(전체내역 탭, 지출분석 카테고리 드릴다운이 세팅)까지 빠지면 이름 바꾼 뒤 그 필터가 사라진 옛 이름 그대로 남아 filterTxnsByOwner가 매칭되는 자산을 못 찾아 내역이 조용히 전부 사라져 보인다 */
+ const settle=DB.settings&&DB.settings.settle;
+ const settleTouched=!!(settle&&(settle.ownerA===old||settle.ownerB===old));
+ const prevSettle=settleTouched?Object.assign({},settle):null;
+ if(settleTouched){if(settle.ownerA===old)settle.ownerA=v;if(settle.ownerB===old)settle.ownerB=v;} /* 정산(settlementSummary) 설정도 같은 이유로 이름변경을 따라가야 함 — 안 그러면 openSettlement()의 owner 존재 검증에 걸려 재설정을 요구받는다(app-evolve cycle314 advance) */
+ const nwChanges=[];(DB.nwHistory||[]).forEach(h=>{if(h.byOwner&&old in h.byOwner){nwChanges.push(h);h.byOwner[v]=h.byOwner[old];delete h.byOwner[old]}}); /* 과거 추이 스냅샷의 귀속별 키도 새 이름으로 이동 */
+ const prevVTomb=DB.deletedIds?DB.deletedIds[ownerTombKey(v)]:undefined;
  DB.deletedIds=DB.deletedIds||{};DB.deletedIds[ownerTombKey(old)]=Date.now();delete DB.deletedIds[ownerTombKey(v)]; /* old 이름도 delOwner처럼 톰스톤해야 함 — 안 그러면 mergeNameListWithTombstones가 old를 '살아있다'고 보고 아직 이 이름변경을 모르는 다른 기기의 사본이 old를 되살림(app-evolve cycle180, doRenameCat과 동일). v가 과거에 삭제됐던 이름이면 그 톰스톤은 지워 되살림을 허용 */
- save();openOwnerManage();toast('귀속을 수정했어요')}
+ save();openOwnerManage();
+ /* delOwner(5432행)/mergeOwnerInto(5534행)는 각각 undoToast로 되돌릴 수 있는데 doRenameOwner만 빠져
+  * 있었다(app-evolve cycle345 develop). 합치기와 달리 이름변경은 두 귀속이 합쳐지는 게 아니라 단순
+  * 1:1 재배선이라 mergeOwnerInto의 localStorage 백업·충돌 병합 로직 없이, 위에서 건드린 필드들을
+  * old/v를 바꿔 그대로 반복하면 복구된다. */
+ undoToast('귀속을 수정했어요',()=>{
+  DB.owners[i]=old;
+  assetItems.forEach(a=>{a.owner=old});
+  goalItems.forEach(g=>{g.owner=old});
+  if(hadAssetOwner)ST.assetOwner=old;
+  if(hadPlanOwner)ST.plan.owner=old;
+  if(hadSpendOwner)ST.spendOwner=old;
+  if(hadHistOwner)ST.hist.owner=old;
+  if(settleTouched){DB.settings=DB.settings||{};DB.settings.settle=prevSettle}
+  nwChanges.forEach(h=>{h.byOwner[old]=h.byOwner[v];delete h.byOwner[v]});
+  delete DB.deletedIds[ownerTombKey(old)];
+  if(prevVTomb!==undefined)DB.deletedIds[ownerTombKey(v)]=prevVTomb;else delete DB.deletedIds[ownerTombKey(v)];
+  touchSave(...assetItems,...goalItems);openOwnerManage();toast('되돌렸어요')
+ });}
 
 /* openOwnerManage 각 행의 합치기(merge) 버튼 → 대상 귀속 피커. openCatMergePicker(카테고리 합치기,
  * cycle263)와 동일한 패턴으로 자기 자신을 대상 목록에서 뺀다(app-evolve cycle309 critique →

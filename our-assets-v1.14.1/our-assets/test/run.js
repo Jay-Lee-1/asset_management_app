@@ -26835,6 +26835,57 @@ test('doRenameOwner: DB.settings 자체가 없거나 정산 설정이 없으면(
   assert.strictEqual(sandbox.DB.owners[1], '아버지');
 });
 
+/* ---------- doRenameOwner: delOwner(5432행)/mergeOwnerInto(5534행)는 undoToast로 되돌릴 수 있는데
+ * doRenameOwner만 빠져 있었다(app-evolve cycle345 develop). 합치기와 달리 이름변경은 두 귀속이
+ * 합쳐지는 게 아니라 단순 1:1 재배선이므로, mergeOwnerInto의 localStorage 백업 없이 위에서 옮긴
+ * 필드들(자산/목표 owner, ST 필터 4곳, settle, nwHistory byOwner, 톰스톤)을 그대로 반대로 되돌리면
+ * 복원된다. ---------- */
+test('doRenameOwner: undoToast로 되돌리면 귀속/자산/목표/필터/정산/nwHistory byOwner/톰스톤이 모두 이름변경 전 상태로 복원된다', () => {
+  sandbox.DB = {
+    owners: ['나', '아빠'],
+    assets: [{ id: 'a1', owner: '아빠', updatedAt: 1 }],
+    goals: [{ id: 'g1', owner: '아빠', updatedAt: 1 }],
+    settings: { settle: { ownerA: '아빠', ownerB: '나', ratioA: 50 } },
+    nwHistory: [{ date: '2026-01-01', byOwner: { 나: { ta: 200, td: 10 }, 아빠: { ta: 100, td: 5 } } }],
+    deletedIds: {},
+  };
+  sandbox.ST = { assetOwner: '아빠', plan: { owner: '아빠' }, spendOwner: '아빠', hist: { owner: '아빠' } };
+  sandbox.renameOwnerValue = '아버지';
+  sandbox.doRenameOwner(1);
+  assert.strictEqual(sandbox.DB.owners[1], '아버지');
+  sandbox.lastUndo.undoFn();
+  assert.deepStrictEqual(sandbox.DB.owners, ['나', '아빠'], '이름변경 전 이름으로 복원돼야 함');
+  assert.strictEqual(sandbox.DB.assets[0].owner, '아빠');
+  assert.strictEqual(sandbox.DB.goals[0].owner, '아빠');
+  assert.strictEqual(sandbox.ST.assetOwner, '아빠');
+  assert.strictEqual(sandbox.ST.plan.owner, '아빠');
+  assert.strictEqual(sandbox.ST.spendOwner, '아빠');
+  assert.strictEqual(sandbox.ST.hist.owner, '아빠');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.DB.settings.settle)), { ownerA: '아빠', ownerB: '나', ratioA: 50 }, '정산 설정도 옛 이름(아빠)으로 복원돼야 함');
+  assert.deepStrictEqual(sandbox.DB.nwHistory[0].byOwner, { 나: { ta: 200, td: 10 }, 아빠: { ta: 100, td: 5 } }, 'nwHistory byOwner 키도 옛 이름으로 되돌아가야 함');
+  assert.strictEqual(sandbox.ownerTombKey('아빠') in sandbox.DB.deletedIds, false, '되돌리면 옛 이름(아빠)의 톰스톤은 지워져야 함(다시 살아있으므로)');
+  assert.strictEqual(sandbox.ownerTombKey('아버지') in sandbox.DB.deletedIds, false, '새 이름(아버지)은 되돌리기 전에 톰스톤이 없었으므로 되돌린 뒤에도 없어야 함');
+});
+test('doRenameOwner: 톰스톤된 이름으로 바꿨다가 undoToast로 되돌리면 그 톰스톤이 복원된다(좀비 재생 방지 유지)', () => {
+  sandbox.DB = { owners: ['나', '아빠'], assets: [], deletedIds: { [sandbox.ownerTombKey('아버지')]: 1000 } };
+  sandbox.ST = { plan: {} };
+  sandbox.renameOwnerValue = '아버지';
+  sandbox.doRenameOwner(1);
+  assert.strictEqual(sandbox.ownerTombKey('아버지') in sandbox.DB.deletedIds, false, '이름변경 직후엔 되살아난 이름의 톰스톤이 지워져야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.deletedIds[sandbox.ownerTombKey('아버지')], 1000, '되돌리면 원래 있던 톰스톤(아버지)이 복원돼야 다른 기기가 다시 좀비로 되살리지 못함');
+  assert.strictEqual(sandbox.ownerTombKey('아빠') in sandbox.DB.deletedIds, false, '되돌린 이름(아빠)은 다시 살아있으므로 톰스톤이 없어야 함');
+});
+test('doRenameOwner: undoToast로 되돌리면 자산/목표가 touch()로 다시 찍혀 병합 시 보존된다', () => {
+  sandbox.DB = { owners: ['나', '아빠'], assets: [{ id: 'a1', owner: '아빠', updatedAt: 1 }], goals: [{ id: 'g1', owner: '아빠', updatedAt: 1 }] };
+  sandbox.ST = { plan: {} };
+  sandbox.renameOwnerValue = '아버지';
+  sandbox.doRenameOwner(1);
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.assets[0].updatedAt, 'test-updatedAt', 'undo도 touch() 없이 owner만 되돌리면 mergeCollection이 다른 기기의 변경을 되돌릴 수 있음(saveAsset/mergeOwnerInto와 동일한 불변식)');
+  assert.strictEqual(sandbox.DB.goals[0].updatedAt, 'test-updatedAt');
+});
+
 /* ---------- addOwner/doRenameOwner: 대소문자·공백만 다른 근접 중복 귀속명 방지 (app-evolve cycle85 advance) ----------
  * addCat/doRenameCat과 동일한 이유로, 귀속명도 완전 일치만 보면 "나"와 "Na"가 아니라 "아빠"/"아 빠"처럼
  * 공백만 다른 이름이 별개 귀속으로 생겨 ownerAssets/ownerDebt 집계가 조용히 쪼개진다. */
