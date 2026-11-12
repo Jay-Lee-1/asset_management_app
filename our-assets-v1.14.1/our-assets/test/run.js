@@ -9560,6 +9560,44 @@ test('matchAssetQuery: 이름+귀속처럼 서로 다른 필드에 나뉜 단어
   assert.strictEqual(sandbox.matchAssetQuery({ name: '우리은행', owner: '배우자' }, '우리 배우자'), true);
   assert.strictEqual(sandbox.matchAssetQuery({ name: '우리은행', owner: '배우자' }, '우리 본인'), false);
 });
+/* 평가금액 검색 — matchTxnQuery/matchGoalQuery/matchRecQuery는 이미 지원하지만 matchAssetQuery는
+ * evalValue를 전혀 받지 않아 빠져 있었다(app-evolve cycle341 develop). matchAssetQuery는 순수
+ * 함수라 assetEval(DB.rates 필요)을 스스로 계산할 수 없으므로, 호출부가 화면에 쓰는 값과 동일한
+ * a.type==='debt'?-assetEval(a):assetEval(a)을 세 번째 인자로 넘기는 계약을 검증한다. */
+test('matchAssetQuery: evalValue를 넘기면 평가금액으로도 검색할 수 있다(쉼표 없이 입력)', () => {
+  const a = { name: '카카오뱅크' };
+  assert.strictEqual(sandbox.matchAssetQuery(a, '5000000', 5000000), true);
+});
+test('matchAssetQuery: 검색어에 쉼표가 있어도("5,000,000") 쉼표 없는 evalValue와 매칭된다', () => {
+  const a = { name: '카카오뱅크' };
+  assert.strictEqual(sandbox.matchAssetQuery(a, '5,000,000', 5000000), true);
+});
+test('matchAssetQuery: evalValue의 일부 숫자만 넣어도 부분일치로 찾을 수 있다(기존 텍스트 검색과 동일한 includes 규칙)', () => {
+  const a = { name: '카카오뱅크' };
+  assert.strictEqual(sandbox.matchAssetQuery(a, '5000', 5000000), true);
+});
+test('matchAssetQuery: evalValue가 일치하지 않고 이름에도 없으면 매칭되지 않는다', () => {
+  const a = { name: '카카오뱅크' };
+  assert.strictEqual(sandbox.matchAssetQuery(a, '9999999', 5000000), false);
+});
+test('matchAssetQuery: ">N"/"<N"/"N~M" 연산자로 평가금액을 비교·범위 검색할 수 있다(기존 substring과 달리 오탐이 없다)', () => {
+  const a = { name: '카카오뱅크' };
+  assert.strictEqual(sandbox.matchAssetQuery(a, '>1000만', 5000000), false);
+  assert.strictEqual(sandbox.matchAssetQuery(a, '<1000만', 5000000), true);
+  assert.strictEqual(sandbox.matchAssetQuery(a, '>=500만', 5000000), true);
+  assert.strictEqual(sandbox.matchAssetQuery(a, '400만~600만', 5000000), true);
+  assert.strictEqual(sandbox.matchAssetQuery(a, '600만~700만', 5000000), false);
+});
+test('matchAssetQuery: 부채(debt) 자산은 호출부가 음수로 뒤집어 넘긴 evalValue 그대로도 비교 연산자가 절대값으로 동작한다(amountMatchesToken과 동일 규칙)', () => {
+  const a = { name: '마이너스통장', type: 'debt' };
+  assert.strictEqual(sandbox.matchAssetQuery(a, '>1000만', -5000000), false);
+  assert.strictEqual(sandbox.matchAssetQuery(a, '<1000만', -5000000), true);
+});
+test('matchAssetQuery: evalValue를 넘기지 않으면(호출부 생략) 금액 검색 없이 기존 이름/통화/코드/귀속 substring 매칭만 그대로 동작한다(하위호환)', () => {
+  const a = { name: '우리은행', currency: 'KRW' };
+  assert.strictEqual(sandbox.matchAssetQuery(a, '우리'), true);
+  assert.strictEqual(sandbox.matchAssetQuery(a, '5000000'), false, 'evalValue가 없으니 숫자 검색어는 이름/통화 어디에도 없어 매칭되지 않아야 함');
+});
 
 /* ---------- matchCatQuery: 카테고리명 검색도 matchAssetQuery와 동일한 규칙(대소문자 무시
  * includes + NFC 정규화) ---------- (app-evolve cycle253 critique → cycle254 advance) */

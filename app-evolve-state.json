@@ -1,15 +1,8 @@
 {
   "cycle": 341,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 336,
-      "phase": "develop",
-      "timestamp": "2026-11-11T09:00:00.000Z",
-      "summary": "shortDate2(index.html:3267, 투사일/차트 캡션 포맷터)가 연도 없이 항상 MM/DD만 돌려줘, 목표 달성 예상일(goalRowHTML)·부채 상환 예상일(debtPayoffProjection/debtPayoffWhatIf 투사)처럼 TODAY로부터 멀게(수개월~수년) 투사될 수 있는 날짜가 해를 넘겨도 사용자가 몇 년도인지 알 길이 없던 공백을 고쳤다 — TODAY와 연도가 같을 때만 기존처럼 MM/DD, 다르면 두 자리 연도를 앞에 붙임(예: 27.03/15). 실전 거의 모든 호출부(nwh-range 차트 캡션 등)는 같은 해 안이라 보이는 문구가 바뀌지 않고, 연도가 넘어가는 투사일에만 연도가 드러난다. TODAY가 문자열이 아닐 때(비교 기준 없음)는 안전하게 기존 MM/DD로 폴백(테스트 환경에서 TODAY를 세팅하지 않는 일부 fixture까지 전부 바꾸지 않으려는 방어적 설계). 테스트: shortDate2 직접 단위 테스트 3건(같은 해/다른 해/TODAY 없음 폴백) 신설, assetBalCard 투사 문구 정규식 테스트 1건을 연도 접두가 붙을 수 있는 경우까지 허용하도록 보강 — node test/run.js 3269->3272/3272 통과. node --check(스크립트 블록 추출) 통과. APP_VERSION 1.47.411->1.47.412, sw.js CACHE v678->v679.",
-      "commit": null
-    },
     {
       "cycle": 336,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-12T02:15:56.086Z",
       "summary": "critique(cycle340) 계획대로 이름/메모 자유텍스트 입력에 AMOUNT_MAX의 텍스트 대응판을 추가했다 — 공유 헬퍼 NAME_MAX=60/MEMO_MAX=200/cleanName(trim+NFC+slice)을 AMOUNT_MAX 옆에 신설하고, saveGoal(d.name)/syncAssetInputs(asName)/addOwner/doRenameOwner/addCat/doRenameCat의 trim+normalize 호출을 모두 cleanName(...)으로 교체(거부가 아니라 clamp, AMOUNT_MAX와 동일 철학). txMemoInput/recMemoInput은 매 keystroke마다 불리는 핸들러라 IME 조합 중 정규화 부작용을 피하려 trim/normalize 없이 길이만 MEMO_MAX로 자르도록 했고, csvRowToImportTxn의 category/fromName/toName/memo 추출에도 각각 .slice(0,NAME_MAX)/.slice(0,MEMO_MAX)를 추가(거부 아님 — ok:true 유지, amount 쪽 cycle339 fix와 같은 패턴). asName(3곳)/goalName/newOwner/renameOwner/newCat/renameCat/txMemo/rMemo input에 maxlength 속성도 추가해 즉각적인 UX 피드백을 줌. 테스트 18건 추가(cleanName 순수 단위 4건(빈 문자열/상한 이하/상한 초과 잘림/NFC 정규화), addOwner/doRenameOwner/addCat/doRenameCat/saveGoal/syncAssetInputs가 긴 이름을 잘라 저장하는 통합 테스트 6건, txMemoInput/recMemoInput 입력칸·draft 모두 잘리는 테스트 3건(+회귀 1건), csvRowToImportTxn의 category/memo/fromName+toName이 거부 대신 잘려서 통과하는 테스트 3건), 기존 openOwnerManage/isDraftDirty 격리 vm 컨텍스트 2곳에 NAME_MAX(+cleanName) extractConst 로딩을 추가해 템플릿/syncAssetInputs가 새로 참조하는 전역을 공급(ReferenceError 회귀 수정) — node test/run.js 3304->3320/3320 통과. node --check sw.js/test/run.js 통과, index.html 주 스크립트 블록(<script> 3번째 블록) 추출 후 node --check 통과. 사용자 체감 동작 변화(이름/메모 입력에 길이 상한 생김, 손상된 CSV의 과도하게 긴 셀이 거부 대신 잘려서 가져와짐)라 APP_VERSION 1.47.420->1.47.421, sw.js CACHE v687->v688. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 341,
+      "phase": "develop",
+      "timestamp": "2026-11-12T03:05:00.000Z",
+      "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — 통합검색(globalSearchBody)/자산 목록 검색(ST.assetQ)/자산 피커(openAssetPicker)가 모두 쓰는 matchAssetQuery(logic.js:717)만, 같은 matchQueryTerms 공유 헬퍼를 쓰는 형제 함수(matchTxnQuery/matchGoalQuery/matchRecQuery, cycle279/283/284에서 차례로 금액 검색이 들어감)와 달리 평가금액으로 검색할 수 없었다. globalSearchBody의 빈 상태 안내문이 \"메모·카테고리·자산명·금액·목표명·반복명으로 검색해 보세요\"라고 금액 검색을 자산에도 명시해 놓고도, 실제로는 500만원짜리 통장을 \"5000000\"으로 찾을 수 없는 비대칭이었다. matchAssetQuery는 logic.js의 순수 함수라 DB.rates 없이는 assetEval(a)을 스스로 계산할 수 없으므로(assetsToCSV/goalsToCSV와 같은 제약), 다른 세 함수처럼 amount 필드를 직접 읽는 대신 evalValue를 세 번째 인자로 받아 matchQueryTerms에 넘기도록 바꾸고, 이미 각 호출부가 화면 표시용으로 계산해 쓰는 a.type==='debt'?-assetEval(a):assetEval(a)을 그대로 전달하도록 호출부 3곳(index.html:4600 자산 목록, 7399 통합검색, 12402 자산 피커)을 수정. 검색어 쉼표 제거/연산자 공백 보정(normalizeAmountSpacing)도 형제 함수와 동일하게 추가해 \">500만\"/\"400만~600만\"/\"5,000,000\" 모두 지원. 테스트 9건 추가(evalValue로 부분일치/쉼표/비교·범위 연산자 매칭 5건, debt 자산의 음수 evalValue도 절대값 비교로 동작 1건, evalValue를 안 넘긴 호출부는 기존 이름/통화/코드/귀속 substring 매칭만 하위호환으로 동작 1건, 기존 매칭 없음/귀속 테스트 보강) — node test/run.js 3320->3327/3327 통과. node --check logic.js/sw.js/test/run.js 통과, index.html 주 스크립트 블록(820KB, 4번째 <script> 블록) 추출 후 node --check 통과. 사용자 체감 동작 변화(자산도 금액으로 검색 가능해짐)라 APP_VERSION 1.47.421->1.47.422, sw.js CACHE v688->v689.",
       "commit": null
     }
   ]

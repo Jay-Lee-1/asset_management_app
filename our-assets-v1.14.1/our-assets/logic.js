@@ -713,14 +713,26 @@ function matchTxnQuery(t,q,assets){
  * 계좌가 여러 개) "배우자"로 좁혀 찾을 방법이 없었다(app-evolve cycle291 develop) — ST.assetOwner
  * 세그먼트 필터가 이미 있지만 통합검색(globalSearchBody)·자산 피커(openAssetPicker)에는 귀속
  * 세그먼트가 없어 이름 검색이 유일한 길이다. currency/stockCode/cryptoCode와 동일한 방식으로
- * 이어 붙인다. */
-function matchAssetQuery(a,q){
+ * 이어 붙인다.
+ * 금액(평가금액) 매칭은 matchTxnQuery/matchGoalQuery/matchRecQuery에 cycle279/283/284에서
+ * 차례로 들어갔지만 matchAssetQuery만 끝까지 빠져 있었다(app-evolve cycle341 develop) —
+ * globalSearchBody의 빈 상태 안내문이 "메모·카테고리·자산명·금액·목표명·반복명으로 검색해
+ * 보세요"라고 금액 검색을 자산에도 명시해 놓고도, 실제로는 평가금액이 haystack에 전혀 들어가지
+ * 않아 500만원짜리 통장을 "5000000"으로 찾을 수 없었다. 다만 matchAssetQuery는 logic.js의 순수
+ * 함수라 환율/시세(DB.rates)에 접근할 수 없어 assetEval(a)을 스스로 계산할 수 없다(assetsToCSV/
+ * goalsToCSV가 이미 같은 이유로 평가값을 호출부에서 받는 것과 동일한 제약, 각 주석 참고) — 그래서
+ * 다른 세 함수처럼 amount 필드를 직접 읽는 대신, 호출부가 화면에 이미 표시 중인 값과 같은
+ * a.type==='debt'?-assetEval(a):assetEval(a)을 evalValue로 받아 matchQueryTerms에 그대로
+ * 넘긴다(>, >=, <, <=, 범위 비교와 '원' 접미사까지 다른 세 함수와 동일하게 지원, evalValue를 안
+ * 넘기는 호출부가 있어도 기존처럼 이름/통화/코드/귀속 substring 매칭은 그대로 동작해 하위호환). */
+function matchAssetQuery(a,q,evalValue){
  if(!q)return true;
- const hay=(a.name||'')+' '+(a.currency||'')+' '+(a.stockCode||'')+' '+(a.cryptoCode||'')+' '+(a.owner||'');
+ const amt=evalValue!=null?String(evalValue):'';
+ const hay=(a.name||'')+' '+(a.currency||'')+' '+(a.stockCode||'')+' '+(a.cryptoCode||'')+' '+(a.owner||'')+' '+amt;
  const normHay=hay.normalize('NFC').toLowerCase();
- const terms=searchTerms(q.normalize('NFC').toLowerCase());
+ const terms=searchTerms(normalizeAmountSpacing(q.normalize('NFC').toLowerCase().replace(/,/g,'')));
  if(!terms.length)return true;
- return terms.every(term=>normHay.includes(term));
+ return matchQueryTerms(normHay,terms,[evalValue]);
 }
 /* 카테고리명 검색 — matchAssetQuery와 동일한 규칙(대소문자 무시 includes + NFC 정규화)을 카테고리
  * 피커(openCatPicker, index.html)에 적용한다(app-evolve cycle253 critique → cycle254 advance).

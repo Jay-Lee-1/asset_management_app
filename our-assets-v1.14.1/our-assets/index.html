@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.421';
+const APP_VERSION='1.47.422';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -4597,7 +4597,7 @@ function assetBodyHTML(){
       * 귀속 필터만 보고 검색어는 모르므로, 여기서까지 걸러버리면 화면엔 안 보이는 자산이
       * "전체 선택"에는 들어가는 불일치가 생긴다(과거 귀속 필터에서 이미 겪은 것과 같은 종류의
       * 버그이므로 재현하지 않는다, app-evolve cycle189 advance) */
-     if(ST.assetQ&&!ST.aSel.mode)items=items.filter(a=>matchAssetQuery(a,ST.assetQ));
+     if(ST.assetQ&&!ST.aSel.mode)items=items.filter(a=>matchAssetQuery(a,ST.assetQ,a.type==='debt'?-assetEval(a):assetEval(a)));
      if(!items.length)return;
      const incl=items.filter(a=>a.includeInTotal);
      const sum=incl.reduce((s,a)=>s+(a.type==='debt'?-assetEval(a):assetEval(a)),0);
@@ -7396,7 +7396,7 @@ function globalSearchBody(qRaw){
  const q=(qRaw||'').trim();
  if(!q)return `<div class="empty"><div class="ei">${svg('search')}</div><div class="et">거래·자산·카테고리·목표·반복을 한 번에 찾아요</div><div class="es">메모·카테고리·자산명·금액·목표명·반복명으로 검색해 보세요</div></div>`;
  const txnsAll=allTxns(RANGE_FROM,RANGE_TO).filter(t=>matchTxnQuery(t,q,DB.assets)).sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:0); /* DB.txns만 보면 반복거래(expandRec 가상 전개분)를 놓친다 — filteredHist와 같은 소스로 통일(app-evolve cycle260 advance) */
- const assetsAll=DB.assets.filter(a=>matchAssetQuery(a,q));
+ const assetsAll=DB.assets.filter(a=>matchAssetQuery(a,q,a.type==='debt'?-assetEval(a):assetEval(a)));
  const catsAll=[];
  ['expense','income','saving'].forEach(k=>DB.categories[k].filter(c=>matchCatQuery(c,q)).forEach(c=>catsAll.push({kind:k,name:c})));
  const goalsAll=(DB.goals||[]).filter(g=>matchGoalQuery(g,q)); /* 통합검색이 거래·자산·카테고리까지만 가로질러 찾고 목표는 빠져 있던 공백을 메움(app-evolve cycle269 develop) */
@@ -12399,7 +12399,7 @@ function pkFilteredAssets(o,q){
    if(o.mergeSubKey!==undefined)items=items.filter(a=>assetMergeSubKey(a)===o.mergeSubKey); /* openAssetMergePicker가 시세평가형은 같은 종목·통화끼리만 보이게 쓴다(app-evolve cycle308 advance) */
    if(!items.length)return;
    any=true;
-   if(q)items=items.filter(a=>matchAssetQuery(a,q));
+   if(q)items=items.filter(a=>matchAssetQuery(a,q,a.type==='debt'?-assetEval(a):assetEval(a)));
    if(!items.length)return;
    html+=`<div class="pk-cap">${ASSET_TYPES[t].label}</div>`;
    items.forEach(a=>{const ty=ASSET_TYPES[a.type];const bal=a.type==='debt'?-assetEval(a):assetEval(a);
