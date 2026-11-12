@@ -1,7 +1,11 @@
 {
   "cycle": 344,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "shiftWeekend()(logic.js:23-29)가 토/일만 조정하고 한국 고정일 공휴일은 전혀 반영하지 않아, '급여/카드값 주말 조정' UI 문구와 실제 동작이 불일치",
+    "why": "recOpenWeekend UI(index.html:6531-6540)는 earlier를 '주말이면 하루 앞 금요일에 (급여)', later를 '주말이면 다음 월요일에 (카드값·적금)'이라고 설명해 실제 은행 영업일 기준 이체일을 모델링한다고 약속하지만, shiftWeekend는 new Date(ds).getDay()만 보고 토(6)/일(0)만 옮기며 신정(1/1)·삼일절(3/1)·어린이날(5/5)·현충일(6/6)·광복절(8/15)·개천절(10/3)·한글날(10/9)·성탄절(12/25) 같은 고정일 공휴일이 평일에 걸리는 경우를 전혀 보지 않는다. 예: '매월 15일 급여, 주말이면 앞당겨'를 설정한 사용자가 8/15(광복절, 평일)를 그대로 급여일로 쓰게 되어 openUpcoming 알림/assetBalCard 예상 잔액/예산 pacing이 실제로는 발생하지 않을 입금을 평일 영업일로 전제한다. git log 전체(344 사이클)와 app-evolve-state.json 히스토리에 '공휴일'/'holiday' 키워드가 전무함을 grep으로 확인한 완전히 새로운 공백이며, 접근성/비동기 에러처리/CSV 경로/정산 등 이미 두텁게 다뤄진 영역과 겹치지 않는다.",
+    "approach": "1) logic.js의 shiftWeekend 근처에 고정일만 담는 KR_FIXED_HOLIDAYS = new Set(['01-01','03-01','05-05','06-06','08-15','10-03','10-09','12-25']) (연도 독립, 음력 설날/추석은 매년 바뀌는 날짜라 이번 범위에서 명시적으로 제외 — 후속 과제로 남김)와 isKrNonBusinessDay(ds) = dow===0||dow===6||KR_FIXED_HOLIDAYS.has(ds.slice(5)) 헬퍼를 추가한다. 2) shiftWeekend를 한 번에 ±1/2일 점프하는 대신 isKrNonBusinessDay를 만족하는 동안 하루씩(earlier는 -1, later는 +1) 반복 이동하도록 바꾸고 무한루프 방지로 최대 10회 반복 상한을 둔다(공휴일이 주말에 바로 붙어있는 경우까지 커버). 3) recDates()(logic.js:38)가 이미 모든 후보 날짜를 shiftWeekend에 통과시키므로 다른 호출부(recOpenWeekend/WK UI, recNthDate/recCountUntil) 수정은 불필요 — 자동으로 적용됨. 4) 테스트(test/run.js)에 (a) 평일에 걸린 고정 공휴일이 earlier/later로 각각 올바르게 옮겨지는지, (b) 공휴일이 주말에 바로 붙어 있어 두 번 이상 이동이 필요한 경우, (c) 공휴일과 무관한 기존 토/일 전용 케이스가 회귀 없이 그대로 동작하는지, (d) mode==='none'은 그대로 ds를 반환하는지 4건을 추가한다. 5) 사용자 체감 동작이 바뀌므로(공휴일이 끼는 반복거래의 실제 발생일이 달라짐) APP_VERSION(1.47.428)과 sw.js CACHE(v695)를 올린다. 선택: WK 라벨의 psub 문구에 '공휴일 포함'을 덧붙여 문구와 범위를 일치시킨다(필수는 아님)."
+  },
   "history": [
     {
       "cycle": 344,
