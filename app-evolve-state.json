@@ -1,15 +1,8 @@
 {
   "cycle": 345,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 339,
-      "phase": "advance",
-      "timestamp": "2026-11-11T22:05:00.000Z",
-      "summary": "critique(cycle339) 계획대로 CSV 가져오기 금액 검증(csvRowToImportTxn, index.html:8999)에 다른 세 금액 입력 경로(fmtAmt/sanitizeAmount/syncAssetInputs)와 동일한 AMOUNT_MAX(999999999999999) 상한 가드를 추가했다 — 기존 'if(!Number.isFinite(amount)||amount<=0||!Number.isInteger(amount))' 조건에 '||amount>AMOUNT_MAX'를 더해 한 줄로 해결(새 상수 불필요, AMOUNT_MAX는 이미 전역). error:'amount'는 기존 음수/0/비정수 케이스와 완전히 같은 경로이므로 buildImportPreview/CSV_INVALID_REASON_LABEL(10270행, '금액 오류')까지 추가 UI 변경 없이 그대로 적용됨을 확인(grep으로 error==='amount' 소비처가 CSV_INVALID_REASON_LABEL 하나뿐임을 대조). 테스트 1건 추가(AMOUNT_MAX+1은 유한한 정수여도 error:'amount'로 거부, AMOUNT_MAX 당일은 그대로 허용되는 경계값 확인) — node test/run.js 3301->3302/3302 통과. node --check sw.js/test/run.js 통과(index.html은 cycle339 develop 노트와 동일한 이유로 extractMainScript 대신 전체 테스트 스위트로 대체 검증). 사용자 체감 동작 변화(CSV로 비정상적으로 큰 금액을 가져오던 경로가 막힘)라 APP_VERSION 1.47.418->1.47.419, sw.js CACHE v685->v686. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 340,
       "phase": "develop",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-12T19:15:13.548Z",
       "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — doRenameOwner()(index.html:5439)가 귀속 이름을 바꾸는 완결 동작인데도, 같은 owner 3형제 함수인 delOwner(삭제, 5432행)와 mergeOwnerInto(합치기, 5534행)는 모두 undoToast로 되돌릴 수 있는 반면 doRenameOwner만 plain toast()로 끝나 되돌릴 방법이 전혀 없었다. 이름을 잘못 입력하고 저장을 눌러도(흔한 실수) 되돌리려면 renameOwnerSheet를 다시 열어 옛 이름을 손으로 다시 타이핑해야 했는데, 그마저도 그 사이 ST 필터가 다른 귀속으로 바뀌었으면 복원이 안 맞는다. mergeOwnerInto가 이미 복원하던 필드(DB.assets/DB.goals owner, ST.assetOwner/plan.owner/spendOwner/hist.owner, DB.settings.settle.ownerA/ownerB, DB.nwHistory[].byOwner 키, ownerTombKey 톰스톤)를 doRenameOwner에도 그대로 거울처럼 추가했다 — 단, 이름변경은 두 귀속이 합쳐지는 게 아니라 1:1 재배선이라 mergeOwnerInto의 localStorage 백업·byType 합산 로직은 필요 없어 더 단순하다. 톰스톤은 \"새 이름(v)이 과거에 지워졌던 이름이면 그 톰스톤을 지워 되살림을 허용\"하는 기존 동작까지 undo가 정확히 뒤집도록 prevVTomb로 되돌리기 전 값을 캡처했다. 테스트 3건 추가(전체 필드 복원/톰스톤이 있던 이름으로 변경 후 undo 시 그 톰스톤 복원/undo 시 touch() 재적용으로 mergeCollection 병합 불변식 유지) — node test/run.js 3354->3357/3357 통과. node --check sw.js/test/run.js 통과, index.html은 test/run.js의 extractMainScript 기반 전체 스위트 실행 자체가 구문 검증을 겸함(cycle339/343/344 노트와 동일한 이유로 단순 <script> 정규식 추출 대체). 사용자 체감 동작 변화(귀속 이름변경을 실수로 저장해도 6초 안에 되돌릴 수 있음)라 APP_VERSION 1.47.429->1.47.430, sw.js CACHE v696->v697. doRenameCat()(index.html:8216)도 동일한 undo 공백이 있음을 Explore가 함께 확인했으나 범위가 더 커(txn/반복거래 split, budgetHistory, catVar, rollover, catIcon까지 포함) 이번 사이클 범위 밖으로 남겨 다음 critique 후보로 적합.",
+      "commit": null
+    },
+    {
+      "cycle": 345,
+      "phase": "review",
+      "timestamp": "2026-11-12T19:35:00.000Z",
+      "summary": "develop(cycle345, 89e9f75: doRenameOwner에 undoToast 추가)를 검토. mergeOwnerInto(5534행)의 복원 패턴(자산/목표 owner, ST 필터 4곳, settle.ownerA/ownerB, nwHistory byOwner 키, 톰스톤)과 doRenameOwner의 새 undo 클로저를 필드별로 직접 대조해 1:1로 거울 대응함을 확인. v===old는 함수 맨 앞(5440행)에서 이미 조기 return돼 undo 로직이 그 케이스를 다룰 필요가 없음을 확인. prevVTomb 캡처가 DB.deletedIds[ownerTombKey(old)]=Date.now() 쓰기 전에 이루어져 old/v 톰스톤을 혼동하지 않음을 라인 순서로 확인. nwHistory undo(h.byOwner[old]=h.byOwner[v])가 forward(h.byOwner[v]=h.byOwner[old])와 대칭이며, v가 과거 삭제된 다른 소유자의 byOwner 데이터를 들고 있었을 경우 덮어씀은 forward 로직 자체가 이미 가진 기존 동작(이번 커밋이 건드리지 않은 부분)이라 새로 생긴 회귀가 아님을 확인. 추가된 테스트 3건(전체 필드 복원/톰스톤 복원/touch() 재적용)이 실제로 바뀐 경로를 정확히 겨냥함을 확인. node test/run.js 재실행 3357/3357 통과, node --check sw.js/test/run.js 통과. 실제 버그 없음(state.json만 커밋).",
       "commit": null
     }
   ]
