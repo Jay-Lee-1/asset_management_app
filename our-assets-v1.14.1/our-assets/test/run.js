@@ -8594,6 +8594,18 @@ test("mapGenericCsvRow: 날짜가 유효하지 않으면 error:'date', 금액이
   const nan = sandbox.mapGenericCsvRow(['2026-01-01', '안녕'], { dateCol: 0, amountCol: 1, mode: 'signed', category: '식비' }, 'a1');
   assert.strictEqual(nan.ok, false); assert.strictEqual(nan.error, 'amount');
 });
+test("mapGenericCsvRow: MEMO_MAX를 넘는 memo 셀은 거부되지 않고 잘려서 통과한다(csvRowToImportTxn과 동일한 clamp, app-evolve cycle343 develop)", () => {
+  const longMemo = '메'.repeat(sandbox.MEMO_MAX + 20);
+  const r = sandbox.mapGenericCsvRow(['2026-01-01', '-5000', longMemo], { dateCol: 0, amountCol: 1, memoCol: 2, mode: 'signed', category: '식비' }, 'a1');
+  assert.strictEqual(r.ok, true, '길이 초과는 거부가 아니라 clamp여야 함');
+  assert.strictEqual(r.txn.memo, '메'.repeat(sandbox.MEMO_MAX));
+});
+test('mapGenericCsvRow: MEMO_MAX 이하 memo 셀은 그대로 유지된다(회귀 없음)', () => {
+  const memo = '메'.repeat(sandbox.MEMO_MAX);
+  const r = sandbox.mapGenericCsvRow(['2026-01-01', '-5000', memo], { dateCol: 0, amountCol: 1, memoCol: 2, mode: 'signed', category: '식비' }, 'a1');
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.txn.memo, memo);
+});
 test('normalizeCsvDateCell: 점/슬래시/구분자 없음(연도 맨 앞) 표기를 YYYY-MM-DD로 바꾼다(app-evolve cycle288)', () => {
   assert.strictEqual(sandbox.normalizeCsvDateCell('2026.1.5'), '2026-01-05');
   assert.strictEqual(sandbox.normalizeCsvDateCell('2026.01.05'), '2026-01-05');

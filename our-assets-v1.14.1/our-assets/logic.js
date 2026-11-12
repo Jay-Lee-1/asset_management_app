@@ -1477,7 +1477,7 @@ function normalizeCsvDateCell(s){
 function mapGenericCsvRow(cells,mapping,targetAssetId){
  const date=normalizeCsvDateCell((cells&&cells[mapping.dateCol])||'');
  if(!csvDateValid(date))return{ok:false,error:'date'};
- const memo=mapping.memoCol!=null?String((cells&&cells[mapping.memoCol])||'').trim():'';
+ const memo=mapping.memoCol!=null?String((cells&&cells[mapping.memoCol])||'').trim().slice(0,MEMO_MAX):'';
  /* 일부 은행/카드사(특히 해외카드 이용내역) CSV는 음수를 '-5000' 대신 회계 표기 괄호
   * '(5,000)'로 적는다 — 쉼표만 벗겨내던 기존 parseNum은 이런 행을 Number('(5000)')=NaN으로
   * 떨어뜨려 signed 모드 지출 행 전체가 error:'amount'로 가져오기에서 통째로 빠졌다. 괄호를
