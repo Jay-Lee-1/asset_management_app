@@ -1,15 +1,8 @@
 {
   "cycle": 342,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 337,
-      "phase": "review",
-      "timestamp": "2026-11-11T12:10:00.000Z",
-      "summary": "cycle337 develop 커밋(de1324e, 클라우드 동기화 충돌화면 \"최신 데이터 가져오기\" 버튼에 확인창 추가)을 검토. 새로 추가된 confirmCloudPullRemote()가 confirmCloudForcePush(index.html:2284-2286)와 글자 단위로 같은 패턴(confirmSheet(title,msg,ok,cb) 호출 후 confirmSheet 내부에서 closeSheet();_cf&&_cf() 순서로 cb 실행)임을 확인, openAccountSheet의 onclick이 confirmCloudPullRemote()로 정확히 바뀌었고 confirmCloudForcePush 버튼은 그대로임을 라인 대조로 확인. cb가 ()=>resolveCloudPullRemote()로 async 함수를 그대로 반환하므로 confirmSheet의 cb&&cb() 호출이 await 없이도 내부 Promise 체인이 정상 진행됨(기존 confirmCloudForcePush도 동일 구조). node test/run.js 재실행 3278/3278 통과. 실제 버그 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 337,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-12T07:30:00.000Z",
       "summary": "sanitizeAmount(index.html:9379, 백업 복원/클라우드 동기화 숫자 필드 검증)가 AMOUNT_MAX 상한은 min 유무와 관계없이 걸지만 하한은 min이 주어진 수량성 필드만 클램프하고, min 없이 호출되는 잔액성 필드(baseAmount/amountKRW — 마이너스통장처럼 음수도 유효)는 Number.isFinite만 보고 하한이 전혀 없던 비대칭을 Explore 서브에이전트가 발견했다. 손상된 백업 파일/가져오기/클라우드 풀 payload에 -1e16처럼 -AMOUNT_MAX보다 절댓값이 큰 값이 들어오면 정밀도가 깨진 채 그대로 통과해 assetEval/잔액 합산으로 전파될 수 있었다(상한 쪽은 cycle336에서 이미 막혔던 것과 같은 클래스의 문제가 하한에만 남아있던 것). min이 주어진 호출(수량성 필드, min>=0)은 그대로 min으로 클램프하고, min이 없을 때만 대칭으로 -AMOUNT_MAX 하한을 추가(if(min!=null)return n<min?min:n; 그 뒤에만 n<-AMOUNT_MAX?-AMOUNT_MAX:n) — 분기 순서를 min 우선으로 둬서 수량성 필드가 실수로 -AMOUNT_MAX까지 통과하는 회귀를 피했다. 테스트 3건 추가(대칭 하한 클램프, -AMOUNT_MAX 경계값 통과 확인, min 있는 호출의 기존 동작 회귀 방지) — node test/run.js 3334->3337/3337 통과. sw.js 문법 확인 통과. 사용자 체감 동작 변화는 아니지만(평소 입력 경로가 아니라 백업/동기화 전용) 컨벤션대로 APP_VERSION 1.47.423->1.47.424, sw.js CACHE v690->v691.",
+      "commit": null
+    },
+    {
+      "cycle": 342,
+      "phase": "review",
+      "timestamp": "2026-11-12T08:08:58.000Z",
+      "summary": "cycle342 develop 커밋(c427c0f, sanitizeAmount가 min 없는 잔액성 필드에 -AMOUNT_MAX 하한을 안 걸던 비대칭 수정)을 검토. min!=null 분기는 기존 동작(min으로 클램프)을 그대로 보존하고, min==null일 때만 n<-AMOUNT_MAX?-AMOUNT_MAX:n으로 대칭 하한을 추가한 4줄 diff를 라인 대조로 확인. SANITIZE_FREE_FIELDS(baseAmount/amountKRW, index.html:9775/9505)와 realizedGain(9832) 등 min 없이 호출되는 모든 호출부가 영향을 받고, SANITIZE_QTY_FIELDS 등 min=0으로 호출되는 모든 호출부(수량성 필드)는 min!=null 분기를 그대로 타서 회귀 없음을 호출부 전수 grep으로 확인. 추가된 테스트 3건(대칭 클램프, 경계값 -AMOUNT_MAX 자체는 영향 없음, min 있는 호출의 회귀 방지)이 실제로 변경된 분기를 정확히 겨냥함을 확인. node test/run.js 재실행 3337/3337 통과, APP_VERSION 1.47.424/sw.js CACHE v691 일치 확인. 실제 버그 없음(state.json만 커밋).",
       "commit": null
     }
   ]
