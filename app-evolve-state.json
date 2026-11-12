@@ -1,15 +1,12 @@
 {
   "cycle": 345,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "doRenameCat()(index.html:8242-8279)에 undoToast + localStorage 전체 DB 백업 스냅샷 추가",
+    "why": "카테고리 3형제 함수(삭제/합치기/이름변경) 중 doRenameCat만 되돌리기가 전혀 없다. doDeleteCat(8216행 trashCat+undoToast)과 mergeCatInto(8323-8373행, __preMergeCat_ localStorage 전체 DB 스냅샷 + undoToast로 txItems/recItems/catIcon/catVar/catBudgetRollover/budgetHistory/deletedIds/ST.hist.catExact까지 복원)는 이미 cycle325/333에서 이 안전망을 갖췄는데, doRenameCat은 DB.categories[k][i]=v, DB.catIcon/DB.catVar/DB.catBudgetRollover 키 이동, DB.txns/DB.recurrences 전체를 순회하며 category(+splits)와 memo 자동동행까지 재할당, DB.budgetHistory 이동, DB.deletedIds 톰스톤 두 개(old 설정/v 되살림), ST.hist.catExact 드릴다운 필터 보정까지 똑같이 큰 규모의 변경을 하면서(8242-8279행) 끝에 plain toast('카테고리를 수정했어요')만 있다(8279행) — 즉 이름을 잘못 입력해 저장하면 수백 건의 거래/반복거래 category가 조용히 재배선된 채 복구 방법이 전혀 없다. mergeCatInto가 바로 옆(8314행부터)에 거의 동일한 로직을 이미 undo 가능하게 구현해 둬서 재사용할 패턴이 명확하다.",
+    "approach": "mergeCatInto(8314-8373행 부근)의 패턴을 doRenameCat에 거울 적용한다: (1) 함수 맨 앞에서 backupKey=dataKey()+'__preRenameCat_'+Date.now()로 localStorage.setItem(backupKey,JSON.stringify(DB)) try/catch 스냅샷(mergeCatInto 8323-8324행과 동일). (2) DB.txns/DB.recurrences forEach 루프를 mergeCatInto의 txItems/recItems 패턴으로 바꿔 변경되는 레코드마다 {t,prevCat,prevMemo,prevSplits}를 모아둔다(지금처럼 touch()만 하고 끝내지 않음). (3) icon/wasVar/wasRollover/hadBudget+fromBudget(expense일 때 old의 budgetHistory 배열)·deletedIds의 old/v 톰스톤 이전 상태(존재 여부)를 변경 전에 캡처. (4) 변경 이후 touchSave(...txItems.map(x=>x.t),...recItems.map(x=>x.r)) 호출 뒤, setTimeout으로 6초 후 backupKey 제거를 예약(mergeCatInto 8367행과 동일), 마지막 toast를 undoToast로 교체해 txItems/recItems 복원 + DB.categories[k][i]=old 복원 + catIcon/catVar/catBudgetRollover/budgetHistory를 캡처한 이전 값으로 되돌리기 + deletedIds[catTombKey(k,old)] 삭제 및 v 톰스톤 복원(삭제했었다면 재설정) + ST.hist.catExact 복원까지 mergeCatInto의 undo 클로저를 그대로 본떠 작성. (5) 테스트: 전체 필드 복원(아이콘/변동비/이월/예산이력/거래·반복거래 category+splits+memo/톰스톤)을 한 번에 확인하는 통합 테스트 1~2건 + mergeCatInto의 기존 undo 테스트가 쓰는 JSON.parse(JSON.stringify(...)) deepStrictEqual 관례를 그대로 따를 것. node test/run.js로 회귀 확인, APP_VERSION/sw.js CACHE 올리기."
+  },
   "history": [
-    {
-      "cycle": 340,
-      "phase": "develop",
-      "timestamp": "2026-11-11T23:05:00.000Z",
-      "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — 목표 자산배분 시트의 % 입력(taPctInput, index.html:3787-3790)이 cycle336/337에서 이미 고쳐진 다른 금액/수치 입력들(fmtAmt/sanitizeAmount/syncAssetInputs)과 달리 여전히 옛 패턴 Math.max(0,parseFloat(v)||0)을 쓰고 있어, 아주 긴 숫자문자열을 입력하면 parseFloat가 Infinity를 돌려주고(Infinity는 truthy라 ||0에 안 걸림) targetAllocDraft[type]/DB.settings.targetAllocation에 Infinity가 그대로 저장될 수 있었다(저장되면 targetAllocationCard/홈 알림의 rebalanceAmount 계산이 '목표 Infinity%'·'▲ 매수 약 ∞원'으로 깨짐). syncAssetInputs(cycle337)와 완전히 같은 방식으로 Math.max(0,parseFloat(v)||0)을 sanitizeAmount(parseFloat(v),0) 재사용으로 교체(새 상수/헬퍼 불필요, sanitizeAmount는 비유한수는 0으로 걸러내고 유한하지만 AMOUNT_MAX 초과면 AMOUNT_MAX로 클램프). 테스트 2건 추가(아주 긴 숫자문자열이 0으로 걸러짐/AMOUNT_MAX+1000처럼 유한하지만 상한 초과인 값은 AMOUNT_MAX로 클램프됨, 둘 다 draft와 saveTargetAllocation 저장값까지 확인) — node test/run.js 3302->3304/3304 통과(처음엔 Infinity 케이스를 AMOUNT_MAX로 클램프된다고 잘못 기대해 1건 실패, sanitizeAmount가 비유한수는 0을 반환함을 재확인해 기대값 수정). node --check sw.js/test/run.js 통과, index.html 주 스크립트 블록(819KB, <script> 2번째 블록) 추출 후 node --check 통과. 사용자 체감 동작 변화(긴 숫자 입력 시 Infinity/∞ 노출이 막히고 0 또는 AMOUNT_MAX로 클램프)라 APP_VERSION 1.47.419->1.47.420, sw.js CACHE v686->v687.",
-      "commit": null
-    },
     {
       "cycle": 340,
       "phase": "review",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-12T19:35:00.000Z",
       "summary": "develop(cycle345, 89e9f75: doRenameOwner에 undoToast 추가)를 검토. mergeOwnerInto(5534행)의 복원 패턴(자산/목표 owner, ST 필터 4곳, settle.ownerA/ownerB, nwHistory byOwner 키, 톰스톤)과 doRenameOwner의 새 undo 클로저를 필드별로 직접 대조해 1:1로 거울 대응함을 확인. v===old는 함수 맨 앞(5440행)에서 이미 조기 return돼 undo 로직이 그 케이스를 다룰 필요가 없음을 확인. prevVTomb 캡처가 DB.deletedIds[ownerTombKey(old)]=Date.now() 쓰기 전에 이루어져 old/v 톰스톤을 혼동하지 않음을 라인 순서로 확인. nwHistory undo(h.byOwner[old]=h.byOwner[v])가 forward(h.byOwner[v]=h.byOwner[old])와 대칭이며, v가 과거 삭제된 다른 소유자의 byOwner 데이터를 들고 있었을 경우 덮어씀은 forward 로직 자체가 이미 가진 기존 동작(이번 커밋이 건드리지 않은 부분)이라 새로 생긴 회귀가 아님을 확인. 추가된 테스트 3건(전체 필드 복원/톰스톤 복원/touch() 재적용)이 실제로 바뀐 경로를 정확히 겨냥함을 확인. node test/run.js 재실행 3357/3357 통과, node --check sw.js/test/run.js 통과. 실제 버그 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 345,
+      "phase": "critique",
+      "timestamp": "2026-11-12T20:05:00.000Z",
+      "summary": "앱 전체를 한 걸음 물러나 훑어본 결과, cycle345 develop이 직접 제안한 다음 후보(doRenameCat의 undo 공백)를 코드로 검증해 이번 critique의 우선순위로 확정했다. 카테고리 3형제 함수(삭제/합치기/이름변경) 중 doDeleteCat(index.html:8216, trashCat+undoToast, cycle325)과 mergeCatInto(8314-8373, __preMergeCat_ localStorage 전체 DB 스냅샷+undoToast로 txItems/recItems/catIcon/catVar/catBudgetRollover/budgetHistory/deletedIds/ST.hist.catExact까지 복원, cycle333)는 이미 되돌리기가 있는데, doRenameCat(8242-8279)만 거래/반복거래 category+splits+memo 대량 재할당, catIcon/catVar/catBudgetRollover 키 이동, budgetHistory 이동, deletedIds 톰스톤 2개, ST.hist.catExact 보정까지 똑같이 큰 규모의 변경을 하고도 끝에 plain toast()만 있어(8279행) 이름을 잘못 입력해 저장하면 복구가 전혀 불가능함을 라인 단위로 확인했다. mergeCatInto가 바로 옆에 거의 동일한 로직을 이미 undo 가능하게 구현해둬 재사용할 패턴이 명확하다. 대안으로 clearSettleConfig의 settledThrough 미연동(cycle342 critique가 이미 deprioritize)과 CDN SRI 해시 누락(네트워크 접근 불가로 과거부터 보류)을 재확인했으나 새 근거 없음. pending_advance_plan에 mergeCatInto 패턴(localStorage 백업 스냅샷+txItems/recItems+필드별 캡처/복원)을 doRenameCat에 거울 적용하는 구체 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
