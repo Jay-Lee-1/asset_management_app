@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.426';
+const APP_VERSION='1.47.427';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -5415,10 +5415,21 @@ function delOwner(i){if(twGuard())return;const o=DB.owners[i];if(DB.owners.lengt
  const usedGoals=(DB.goals||[]).filter(g=>g.owner===o).length; /* goalOwnerEff()는 사라진 owner를 'all'로 조용히 대체해 크래시는 막지만, 자산이 0개라 used=0인 채로 goal.owner만 남아있는 귀속은 그대로 삭제가 돼 목표가 말없이 전체 목표로 바뀌던 문제(index.html:3011 주석 참고) — doRenameOwner가 goal.owner를 따라가며 보존하는 것과 달리 delOwner엔 이 가드가 없었음 */
  if(used||usedGoals){const parts=[];if(used)parts.push(`자산 ${used}개`);if(usedGoals)parts.push(`목표 ${usedGoals}개`);toast(`'${o}' 귀속을 쓰는 ${parts.join(', ')}가 있어요`);return}
  confirmSheet('귀속 삭제',`'${esc(o)}' 귀속을 삭제할까요?`,'삭제',()=>{
+  /* doRenameOwner(5436행)/mergeOwnerInto(5490-5497행)는 정산(DB.settings.settle) 당사자의
+   * ownerA/ownerB가 바뀌면 함께 따라가게 하는데, delOwner만 이 가드가 없었다(app-evolve
+   * cycle343 critique → advance). settleConfigured()(5941행)는 ownerA/ownerB가 둘 다
+   * DB.owners에 남아있어야 유효하다고 보므로, 둘 중 하나를 삭제하면 settle 설정이 조용히
+   * 영구적으로 무효화돼 openSettlement()가 아무 설명 없이 '정산 설정하기'로 되돌아간다.
+   * mergeOwnerInto와 달리 옮겨갈 대상 귀속이 없으므로(삭제라서) ownerA===ownerB collapse
+   * 분기와 동일하게 단순히 꺼버린다(settle=null). */
+  const settle=DB.settings&&DB.settings.settle;
+  const settleTouched=!!(settle&&(settle.ownerA===o||settle.ownerB===o));
+  const prevSettle=settleTouched?Object.assign({},settle):null;
+  if(settleTouched)DB.settings.settle=null;
   DB.owners=DB.owners.filter(x=>x!==o);
   DB.deletedIds=DB.deletedIds||{};DB.deletedIds[ownerTombKey(o)]=Date.now(); /* delGoal 등과 동일한 톰스톤 — 없으면 mergeRemoteDataIntoLocal이 이 삭제를 모르고 아직 안 지운 기기의 사본을 되살림(app-evolve cycle179) */
   save();openOwnerManage();
-  undoToast(`'${o}' 귀속을 삭제했어요`,()=>{DB.owners.splice(i,0,o);delete DB.deletedIds[ownerTombKey(o)];save();openOwnerManage();toast('되돌렸어요')});
+  undoToast(`'${o}' 귀속을 삭제했어요`,()=>{DB.owners.splice(i,0,o);delete DB.deletedIds[ownerTombKey(o)];if(settleTouched)DB.settings.settle=prevSettle;save();openOwnerManage();toast('되돌렸어요')});
  });}
 function renameOwnerSheet(i){const cur=DB.owners[i];
  openSheet(`<h3>귀속 이름 수정</h3><div class="desc">'${esc(cur)}'의 이름을 바꾸면 이 귀속의 자산도 함께 바뀌어요.</div>

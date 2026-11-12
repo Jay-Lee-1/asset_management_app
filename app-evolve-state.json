@@ -1,33 +1,8 @@
 {
-  "cycle": 343,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "delOwner()가 DB.settings.settle(정산 설정)의 ownerA/ownerB를 가드/정리하지 않는 비대칭 수정",
-    "why": "같은 영역의 형제 함수 doRenameOwner(index.html:5428-5437, 5436행에서 settle.ownerA/ownerB 이름변경 추적)와 mergeOwnerInto(index.html:5465-5497, 5481-5497행에서 settle.ownerA/ownerB를 병합대상으로 옮기거나 둘이 같아지면 settle=null)는 이미 cycle314/334에서 고쳐졌는데, delOwner(index.html:5413-5422)만 DB.settings.settle을 전혀 건드리지 않는다. settleConfigured()(index.html:5941)는 s.ownerA/s.ownerB가 둘 다 DB.owners에 남아있어야 유효하다고 보므로, 정산을 설정해둔 두 소유자 중 하나를 (자산/목표를 모두 다른 소유자로 재배정한 뒤) 삭제하면 settleConfigured가 조용히 영구적으로 null을 반환 — openSettlement가 아무 설명 없이 '정산 설정이 필요해요' 빈 상태로 떨어지고, 사용자가 이미 정해둔 ownerA/ownerB/ratioA는 DB.settings.settle에 죽은 채로 남아 수동으로 백업 JSON을 보지 않는 한 원인을 알 수 없다. cycle334가 고친 것과 완전히 같은 버그 클래스가 delOwner 하나만 비껴간 사례.",
-    "approach": "delOwner(index.html:5413-5422)의 confirmSheet 콜백에서 DB.owners를 filter하기 전에 const settle=DB.settings&&DB.settings.settle; const settleTouched=!!(settle&&(settle.ownerA===o||settle.ownerB===o)); const prevSettle=settleTouched?Object.assign({},settle):null; 를 캡처. settleTouched면 DB.settings.settle=null로 끈다(머지와 달리 옮겨갈 대상 소유자가 없으므로 mergeOwnerInto의 ownerA===ownerB collapse 분기와 동일하게 단순 해제). 기존 undoToast 복원 클로저(5421행 근처)에 if(settleTouched)DB.settings.settle=prevSettle; 를 save() 호출 전에 추가해 되돌리기 시 정산 설정도 복원되게 한다. 테스트는 mergeOwnerInto의 settle.ownerA/ownerB 관련 테스트 패턴을 참고해 delOwner가 (1) settle이 걸린 소유자를 지우면 DB.settings.settle이 null이 되는지, (2) undo하면 원래 settle 객체(ownerA/ownerB/ratioA 등)가 그대로 복원되는지, (3) settle과 무관한 소유자를 지울 때는 DB.settings.settle이 영향받지 않는지 3건 추가. node test/run.js로 회귀 확인, node --check로 문법 확인, 사용자 체감 동작 변화이므로 APP_VERSION/sw.js CACHE 버전업까지 cycle340대 advance 커밋들과 동일한 패턴으로 진행."
-  },
+  "cycle": 344,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 338,
-      "phase": "critique",
-      "timestamp": "2026-11-11T17:10:42.253Z",
-      "summary": "앱 전체를 한 걸음 물러나 훑어본 결과, 순자산 추이 차트(#nwhChart, index.html:3308)와 잔액 추이 차트(#assetBalChart, index.html:3516)는 둘 다 tabindex=0+포인터/키보드 peek 상호작용(nwChartPeekStart/Key, assetBalPeekStart/Key)이 있어 과거 특정 날짜의 값을 눌러보거나 화살표 키로 탐색할 수 있는데, 바로 아래 자산배분 추이 차트(allocationHistoryCard, index.html:3661)는 role=\"img\" aria-label만 있고 그런 상호작용이 전혀 없어 최종일 범례 비율 외엔 과거 특정 시점의 유형별 비중을 확인할 길이 없음을 발견했다(Explore 서브에이전트가 발견, chartPeekRenderAt/nwNearestPointIndex/nwChartKeyStep 등 재사용 가능한 범용 헬퍼를 직접 코드로 확인). history가 반복적으로 짚어온 '형제 함수엔 있는 가드/기능이 이것만 빠짐' 패턴의 새 사례이자, 선언된 role=\"img\"에 비해 실제 키보드 접근성이 없는 a11y 공백. 대안으로 nwHistory 재계산 성능 감사와 wipe/merge 경로 전수 재검사를 검토했으나 둘 다 근거 부족(전자는 증분 스냅샷 구조라 실성능 문제 없음, 후자는 grep 결과 이미 백업/undo 패턴 적용됨)으로 기각. pending_advance_plan에 allocHistPeekStart/Move/End/Key 신설 및 와이어링, 라벨 포맷(상위 타입별 비중), 테스트 확장 지점까지 구체 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
-    {
-      "cycle": 338,
-      "phase": "advance",
-      "timestamp": "2026-11-11T18:10:00.000Z",
-      "summary": "critique(cycle338) 계획대로 자산배분 추이 차트(allocationHistoryCard, #allocHistChart)에 nwhChart/assetBalChart와 동일한 포인터+키보드 peek(스크러빙) 상호작용을 추가했다 — allocationHistoryCard가 assetAllocationSeries의 points를 전역 _allocHistPts에 저장(기존 _nwChartPts/_assetBalChartPts 패턴)하고, 차트 div에 id=\"allocHistChart\" tabindex=\"0\"과 onpointerdown/move/up/cancel/leave→allocHistPeekStart/Move/End, onkeydown→allocHistPeekKey, onblur→allocHistPeekEnd를 와이어링(nwChartPeekStart류와 완전히 동일한 구조, nwNearestPointIndex/nwChartKeyStep을 그대로 재사용). chartPeekRenderAt은 p.nw 단일값 전제라 재사용할 수 없어, segs(유형별 비중) 배열을 상위 2개 pct 내림차순으로 요약하는 전용 포맷터 allocHistPeekLabel과 렌더러 allocHistPeekRenderAt을 신설(예: \"06/15 · 주식 42% · 현금예금 31%\"), peek-line/peek-label DOM(#allocHistPeekLine, #allocHistPeekLabel)과 announceLive 공지도 형제 차트와 동일하게 추가. CSS는 .nwh-chart/.nwh-peek-label을 그대로 재사용해 추가 불필요. refreshAllocationHistoryCard는 이미 allocationHistoryCard를 통째로 다시 그리므로 _allocHistPts도 자연히 새로고침됨(별도 배선 불필요, 확인함). 테스트 9건 추가(allocHistChart 마크업의 tabindex/role/onpointer*/onkeydown/onblur 1건, allocHistPeekKey가 nwChartKeyStep을 호출하는 소스패턴 1건, allocHistPeekLabel 순수 포맷터 3건(상위2 요약/ALLOC_OTHER_TYPE+0% 제외/전부 0%면 날짜만), 완전 실행형 vm 컨텍스트 3건(ArrowRight/Left/Escape 키 이동+라인/라벨/announceLive, 포인터 좌표로 가장 가까운 포인트 선택, _allocHistPts가 null/1개뿐일 때 전부 no-op)) — node test/run.js 3290->3298/3298 통과. node --check(extractMainScript)/logic.js/sw.js/test/run.js 통과. 사용자 체감 상호작용 추가라 APP_VERSION 1.47.416->1.47.417, sw.js CACHE v683->v684. pending_advance_plan null로 비움.",
-      "commit": null
-    },
-    {
-      "cycle": 339,
-      "phase": "develop",
-      "timestamp": "2026-11-11T19:14:15.264933Z",
-      "summary": "develop(cycle339): Explore 서브에이전트가 발견한 공백을 고쳤다 — mergeAssetInto(index.html:4728)가 txns/recurrences/goals.linkedAssetId/assetQtyLog는 모두 from→to로 옮기면서, 저축성 자산의 \"만기 시 이체할 통장\"(maturityTargetId, asOpenMat/doMaturity가 쓰는 필드)로 from을 가리키던 다른 자산은 빠뜨리고 있었다. from이 병합 후 영구히 사라지면(6초 grace 지나면 톰스톤만 남음) 해당 자산의 자동이체 대상이 조용히 끊겨, doMaturity()가 '이체할 통장을 먼저 지정하세요'로 degrade — 사용자 설정이 알림 없이 사라지는 goalItems(cycle333 전후로 이미 고친 것)와 같은 버그 클래스. goalItems 블록과 동일한 패턴으로 matItems를 추가: maturityTargetId===fromId인 다른 자산을 모아 toId로 옮기고, 성공 시 touchSave에 포함, undoToast 콜백에서 prevTarget으로 복원. 테스트: mergeAssetInto 관련 블록에 maturityTargetId 이동/undo복원/무관한 자산 불변 3건 추가 — node test/run.js 3298->3301/3301 통과. node --check sw.js/test/run.js 통과(index.html은 <script> 블록 추출 방식이 HTML 주석 내 리터럴 텍스트에 오탐해 전체 테스트 스위트 통과로 대체 검증). APP_VERSION 1.47.417->1.47.418, sw.js CACHE v684->v685.",
-      "commit": null
-    },
     {
       "cycle": 339,
       "phase": "review",
@@ -152,6 +127,13 @@
       "phase": "critique",
       "timestamp": "2026-11-12T13:09:00.000Z",
       "summary": "앱 전체를 한 걸음 물러나 훑어본 결과(Explore 서브에이전트가 발견 및 검증), 소유자 관리 3형제 함수 중 delOwner(index.html:5413-5422)만 DB.settings.settle(공동지출 정산 설정의 ownerA/ownerB)을 가드/정리하지 않음을 발견했다. doRenameOwner(5428-5437, cycle314에서 settle.ownerA/ownerB 이름변경 추적 추가)와 mergeOwnerInto(5465-5497, cycle334에서 settle을 병합대상으로 옮기거나 둘이 같아지면 null로 끄도록 수정)는 이미 고쳐졌는데 delOwner만 비껴갔다. settleConfigured()(5941행)는 ownerA/ownerB가 둘 다 DB.owners에 남아있어야 유효하다고 보므로, 정산을 설정해둔 두 소유자 중 한쪽을(자산/목표를 모두 다른 소유자로 재배정한 뒤) 삭제하면 openSettlement가 아무 설명 없이 '정산 설정이 필요해요' 빈 상태로 떨어지고 사용자가 이미 정한 ownerA/ownerB/ratioA는 DB.settings.settle에 죽은 채로 남아 백업 JSON을 직접 보지 않는 한 원인을 알 수 없다 — cycle334가 고친 것과 완전히 같은 버그 클래스가 delOwner 하나만 비껴간 사례. 테스트로도 확인(delOwner를 settle이 걸린 소유자에 호출하는 테스트가 전무). 대안으로 clearSettleConfig의 settledThrough 미연동(이전 cycle342 critique가 이미 deprioritize), 단일파일 모놀리식 아키텍처(baseline 상태라 한 사이클 범위 밖), CDN SRI 해시(네트워크 접근 불가로 과거부터 보류), save()의 JSON.stringify 전체 직렬화/트랜잭션 리스트 성능(이미 storage-quota 경고와 PAGE=20 페이지네이션으로 모니터링/완화됨)을 검토했으나 모두 새 근거 없거나 이미 다뤄짐. pending_advance_plan에 delOwner에 settleTouched 감지+settle=null 전환+undoToast 복원 로직 추가 및 테스트 3건 계획까지 구체적으로 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 343,
+      "phase": "advance",
+      "timestamp": "2026-11-12T14:10:00.000Z",
+      "summary": "critique(cycle343) 계획대로 delOwner(index.html:5413-5422)에 doRenameOwner/mergeOwnerInto와 동일한 DB.settings.settle 가드를 추가했다 — confirmSheet 콜백 맨 앞에서 settle/settleTouched/prevSettle을 캡처하고, settleTouched면 (삭제라 옮겨갈 대상이 없으므로 mergeOwnerInto의 ownerA===ownerB collapse 분기와 동일하게) DB.settings.settle=null로 끈다. 기존 undoToast 복원 클로저에 if(settleTouched)DB.settings.settle=prevSettle;을 save() 호출 전에 추가해 되돌리면 정산 설정도 함께 복원되게 했다. 테스트 3건 추가(settle 당사자 삭제 시 null로 꺼짐/undo 시 ownerA·ownerB·ratioA 그대로 복원/settle과 무관한 귀속 삭제는 참조까지 그대로 유지) — undo 복원 테스트는 vm 샌드박스 객체를 리터럴과 직접 deepStrictEqual하면 프로토타입이 달라 거짓 실패가 나서, 이 스위트의 mergeOwnerInto undo 테스트와 동일하게 JSON.parse(JSON.stringify(...))로 감싸는 기존 관례를 그대로 따랐다. node test/run.js 3342->3345/3345 통과. node --check sw.js/test/run.js 통과(index.html 본문 스크립트는 HTML 주석 내 리터럴 텍스트 때문에 단순 <script> 정규식 추출로는 오탐이 나는 것으로 확인돼, 기존 cycle339/343 노트와 동일하게 전체 테스트 스위트 통과로 대체 검증). 사용자 체감 동작 변화(정산 당사자를 삭제해도 더 이상 조용히 깨지지 않고 명확히 꺼지며, undo로 되돌릴 수 있음)라 APP_VERSION 1.47.426->1.47.427, sw.js CACHE v693->v694. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

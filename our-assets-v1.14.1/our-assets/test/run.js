@@ -3562,6 +3562,33 @@ test('delOwner: 삭제하면 DB.deletedIds에 ownerTombKey가 남고, undo하면
   sandbox.lastUndo.undoFn();
   assert.strictEqual(sandbox.ownerTombKey('아내') in sandbox.DB.deletedIds, false, '되돌리면 톰스톤도 지워져야 함');
 });
+/* ---------- delOwner: doRenameOwner/mergeOwnerInto와 동일하게 정산(DB.settings.settle) 당사자가
+ * 삭제되면 settle을 꺼야 한다(app-evolve cycle343 critique → advance) — 안 그러면
+ * settleConfigured()가 사라진 owner를 DB.owners에서 못 찾아 정산이 조용히 영구 무효화된다. ---------- */
+test('delOwner: settle 당사자인 귀속을 삭제하면 DB.settings.settle이 null이 된다', () => {
+  sandbox.DB = { owners: ['나', '아내', '아이'], assets: [], goals: [], settings: { settle: { ownerA: '나', ownerB: '아내', ratioA: 50 } } };
+  sandbox.confirmSheetCalls = [];
+  sandbox.delOwner(1);
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.settings.settle, null, 'settle.ownerB(아내)가 삭제됐으면 settle을 꺼야 함');
+});
+test('delOwner: undoToast로 되돌리면 삭제 전 settle 설정이 그대로 복원된다', () => {
+  sandbox.DB = { owners: ['나', '아내', '아이'], assets: [], goals: [], settings: { settle: { ownerA: '나', ownerB: '아내', ratioA: 50 } } };
+  sandbox.confirmSheetCalls = [];
+  sandbox.lastUndo = null;
+  sandbox.delOwner(1);
+  sandbox.confirmSheetCalls[0].cb();
+  sandbox.lastUndo.undoFn();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.DB.settings.settle)), { ownerA: '나', ownerB: '아내', ratioA: 50 }, '되돌리면 settle도 삭제 전 값(ownerA/ownerB/ratioA)으로 복원돼야 함');
+});
+test('delOwner: settle과 무관한 귀속을 삭제할 때는 DB.settings.settle을 건드리지 않는다', () => {
+  const settle = { ownerA: '나', ownerB: '아내', ratioA: 50 };
+  sandbox.DB = { owners: ['나', '아내', '아이'], assets: [], goals: [], settings: { settle } };
+  sandbox.confirmSheetCalls = [];
+  sandbox.delOwner(2); // settle과 무관한 '아이'를 삭제
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.settings.settle, settle, '참조 그대로 유지(새 객체로 바뀌지도 않아야 함)');
+});
 test('addOwner: 이미 톰스톤된(지워진) 이름을 다시 추가하면 톰스톤이 지워진다', () => {
   sandbox.DB = { owners: ['나'], deletedIds: { [sandbox.ownerTombKey('아내')]: 1000 } };
   sandbox.newOwnerValue = '아내';
