@@ -1,15 +1,8 @@
 {
   "cycle": 344,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 339,
-      "phase": "review",
-      "timestamp": "2026-11-11T20:05:00.000Z",
-      "summary": "cycle339 develop 커밋(f71f61a, mergeAssetInto의 maturityTargetId 미이전 공백 수정)을 검토. matItems 블록이 goalItems와 글자 단위로 같은 구조(수집→이동→touchSave 포함→undoToast에서 prevTarget 복원)임을 라인 대조로 확인. 엣지케이스로 'to' 자신이 이미 from을 maturityTargetId로 가리키던 경우(a.id!==fromId 조건은 to도 포함하므로)를 검토 — 이 경우 to.maturityTargetId가 toId(자기 자신)로 재배선되는데, asOpenMat의 excludeId:asDraft.id가 평소엔 막는 상태지만 doMaturity(8026행)에 이미 'if(target.id===a.id)자기 자신으로는 이체할 수 없어요' 가드(cycle34, firstCash 자기참조 버그 때 추가)가 있어 조용한 실패 없이 명확한 안내로 이어짐을 확인(이 패치가 만드는 새 버그가 아니라 기존에 이미 방어된 상태). node test/run.js 재실행 3301/3301 통과. 실제 버그 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 339,
       "phase": "critique",
@@ -134,6 +127,13 @@
       "phase": "advance",
       "timestamp": "2026-11-12T14:10:00.000Z",
       "summary": "critique(cycle343) 계획대로 delOwner(index.html:5413-5422)에 doRenameOwner/mergeOwnerInto와 동일한 DB.settings.settle 가드를 추가했다 — confirmSheet 콜백 맨 앞에서 settle/settleTouched/prevSettle을 캡처하고, settleTouched면 (삭제라 옮겨갈 대상이 없으므로 mergeOwnerInto의 ownerA===ownerB collapse 분기와 동일하게) DB.settings.settle=null로 끈다. 기존 undoToast 복원 클로저에 if(settleTouched)DB.settings.settle=prevSettle;을 save() 호출 전에 추가해 되돌리면 정산 설정도 함께 복원되게 했다. 테스트 3건 추가(settle 당사자 삭제 시 null로 꺼짐/undo 시 ownerA·ownerB·ratioA 그대로 복원/settle과 무관한 귀속 삭제는 참조까지 그대로 유지) — undo 복원 테스트는 vm 샌드박스 객체를 리터럴과 직접 deepStrictEqual하면 프로토타입이 달라 거짓 실패가 나서, 이 스위트의 mergeOwnerInto undo 테스트와 동일하게 JSON.parse(JSON.stringify(...))로 감싸는 기존 관례를 그대로 따랐다. node test/run.js 3342->3345/3345 통과. node --check sw.js/test/run.js 통과(index.html 본문 스크립트는 HTML 주석 내 리터럴 텍스트 때문에 단순 <script> 정규식 추출로는 오탐이 나는 것으로 확인돼, 기존 cycle339/343 노트와 동일하게 전체 테스트 스위트 통과로 대체 검증). 사용자 체감 동작 변화(정산 당사자를 삭제해도 더 이상 조용히 깨지지 않고 명확히 꺼지며, undo로 되돌릴 수 있음)라 APP_VERSION 1.47.426->1.47.427, sw.js CACHE v693->v694. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 344,
+      "phase": "develop",
+      "timestamp": "2026-11-12T15:10:00.000Z",
+      "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — sanitizeBackup()(index.html:9410, 백업 복원/클라우드 풀이 공유하는 유일한 검증 체크포인트)이 cycle341에서 stockCode/cryptoCode에만 적용했던 '백업은 사용자가 직접 수정해 복원할 수 있는 경로라 UI 입력 경로의 정제를 여기서도 거쳐야 한다'는 원칙을, 자산/목표 이름(NAME_MAX+cleanName)과 거래/반복거래의 category/memo(NAME_MAX/MEMO_MAX)에는 적용하지 않고 있었다. syncAssetInputs/saveGoal/addOwner 등 모든 실시간 입력 경로와 csvRowToImportTxn(cycle340)/mapGenericCsvRow(cycle343) CSV 가져오기 경로는 이미 막혀 있는데, 백업 파일을 손으로 편집해 복원하거나 조작된 클라우드 payload를 당겨오는 경로만 길이 제한이 전혀 없이 남아있던 비대칭. srcAssets.forEach/srcGoals.forEach에 각각 d.name=cleanName(d.name) 클램프를, srcTxns.forEach/srcRecs.forEach에 각각 category/memo를 NAME_MAX/MEMO_MAX로 slice하는 클램프를 추가했다(CSV 가져오기와 동일한 '거부가 아니라 clamp' 방식, 새 상수/헬퍼 불필요 — NAME_MAX/MEMO_MAX/cleanName은 이미 전역이고 sanitizeBackup 테스트 sandbox에도 이미 로드돼 있어 추가 배선 불필요). 테스트 4건 추가(자산/목표 이름이 NAME_MAX 초과 시 클램프/이하면 회귀 없음, 거래·반복거래 category·memo가 각각 NAME_MAX/MEMO_MAX 초과 시 클램프/이하면 회귀 없음) — 추가 과정에서 반복거래 fixture에 day 필드를 빠뜨려 clampDay()가 무관하게 fixedCount를 1 올리는 거짓 실패를 발견해 day:1을 채워 바로잡았다(실제 버그 아님, 테스트 fixture 누락). node test/run.js 3345->3349/3349 통과. node --check sw.js/test/run.js 통과, index.html 주 스크립트 블록(3번째 <script>, 824KB) 추출 후 new Function()으로 구문 확인 통과(1번째 블록은 기존 cycle339/343 노트와 동일한 HTML 주석 내 리터럴 텍스트로 인한 기존 오탐). 사용자 체감 동작 변화는 아니지만(평소 입력 경로가 아니라 백업/동기화 전용) 컨벤션대로 APP_VERSION 1.47.427->1.47.428, sw.js CACHE v694->v695.",
       "commit": null
     }
   ]

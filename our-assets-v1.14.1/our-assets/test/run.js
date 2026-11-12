@@ -15638,6 +15638,61 @@ test('sanitizeBackup: 자산의 stockCode/cryptoCode가 이미 [A-Z0-9.] 범위�
   assert.strictEqual(r.data.assets[0].stockCode, '005930');
   assert.strictEqual(r.fixedCount, 0);
 });
+/* syncAssetInputs/saveGoal은 cleanName()(NAME_MAX)으로 자산/목표 이름을 이미 막지만, 백업
+ * 파일/클라우드 풀은 그 입력 경로를 거치지 않는다 — stockCode/cryptoCode(cycle341)와 같은
+ * 비대칭이 name 필드에도 남아 있던 것을 sanitizeBackup()에서 막는다(app-evolve cycle344 develop). */
+test('sanitizeBackup: 자산/목표 이름이 NAME_MAX를 넘으면 cleanName()으로 잘리고 fixedCount를 센다', () => {
+  const longName = '가'.repeat(100);
+  sandbox.DB = { owners: ['나'] };
+  const r = sandbox.sanitizeBackup({
+    txns: [], owners: ['나'],
+    assets: [{ id: 'a1', type: 'cash', owner: '나', name: longName }],
+    goals: [{ id: 'g1', name: longName }],
+  });
+  assert.strictEqual(r.data.assets[0].name, sandbox.cleanName(longName));
+  assert.strictEqual(r.data.assets[0].name.length, sandbox.NAME_MAX);
+  assert.strictEqual(r.data.goals[0].name, sandbox.cleanName(longName));
+  assert.ok(r.fixedCount >= 2, '자산/목표 이름 클램프 모두 fixedCount에 반영돼야 함');
+});
+test('sanitizeBackup: 자산/목표 이름이 NAME_MAX 이하면 그대로 두고 fixedCount를 늘리지 않는다(정상 케이스는 회귀 없음)', () => {
+  sandbox.DB = { owners: ['나'] };
+  const r = sandbox.sanitizeBackup({
+    txns: [], owners: ['나'],
+    assets: [{ id: 'a1', type: 'cash', owner: '나', name: '우리은행 통장' }],
+    goals: [{ id: 'g1', name: '내 집 마련 자금' }],
+  });
+  assert.strictEqual(r.data.assets[0].name, '우리은행 통장');
+  assert.strictEqual(r.data.goals[0].name, '내 집 마련 자금');
+  assert.strictEqual(r.fixedCount, 0);
+});
+/* 거래/반복거래의 category/memo도 csvRowToImportTxn(cycle340)이 CSV 가져오기 경로에서 이미
+ * 적용한 "거부가 아니라 clamp" 방식을 백업 복원/클라우드 풀에도 동일하게 적용한다(cycle344 develop). */
+test('sanitizeBackup: 거래/반복거래의 category/memo가 각각 NAME_MAX/MEMO_MAX를 넘으면 잘리고 fixedCount를 센다', () => {
+  const longCat = '카'.repeat(100);
+  const longMemo = '메'.repeat(300);
+  const r = sandbox.sanitizeBackup({
+    txns: [{ id: 't1', date: '2026-01-01', amount: 100, category: longCat, memo: longMemo }],
+    recurrences: [{ id: 'r1', startDate: '2026-01-01', freq: 'monthly', amount: 100, category: longCat, memo: longMemo }],
+    assets: [],
+  });
+  assert.strictEqual(r.data.txns[0].category.length, sandbox.NAME_MAX);
+  assert.strictEqual(r.data.txns[0].memo.length, sandbox.MEMO_MAX);
+  assert.strictEqual(r.data.recurrences[0].category.length, sandbox.NAME_MAX);
+  assert.strictEqual(r.data.recurrences[0].memo.length, sandbox.MEMO_MAX);
+  assert.ok(r.fixedCount >= 4, '거래/반복거래 category+memo 클램프 4건 모두 fixedCount에 반영돼야 함');
+});
+test('sanitizeBackup: 거래/반복거래의 category/memo가 상한 이하면 그대로 두고 fixedCount를 늘리지 않는다(정상 케이스는 회귀 없음)', () => {
+  const r = sandbox.sanitizeBackup({
+    txns: [{ id: 't1', date: '2026-01-01', amount: 100, category: '식비', memo: '점심 김밥' }],
+    recurrences: [{ id: 'r1', startDate: '2026-01-01', freq: 'monthly', day: 1, amount: 100, category: '고정비', memo: '넷플릭스 구독' }],
+    assets: [],
+  });
+  assert.strictEqual(r.data.txns[0].category, '식비');
+  assert.strictEqual(r.data.txns[0].memo, '점심 김밥');
+  assert.strictEqual(r.data.recurrences[0].category, '고정비');
+  assert.strictEqual(r.data.recurrences[0].memo, '넷플릭스 구독');
+  assert.strictEqual(r.fixedCount, 0);
+});
 test('sanitizeBackup: id/date 등 필수 필드가 없는 레코드는 통째로 제거하고 droppedCount로 센다', () => {
   const { data, droppedCount } = sandbox.sanitizeBackup({
     txns: [{ id: 't1', date: '2026-01-01', amount: 100 }, { id: 't2', amount: 200 }, { date: '2026-01-03', amount: 300 }],
