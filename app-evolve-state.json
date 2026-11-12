@@ -1,15 +1,8 @@
 {
   "cycle": 342,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 337,
-      "phase": "develop",
-      "timestamp": "2026-11-11T11:28:34.252Z",
-      "summary": "충돌 화면(openAccountSheet, index.html:7438)의 \"최신 데이터 가져오기\" 버튼이 confirmCloudForcePush(\"내 데이터로 덮어쓰기\")와 달리 확인 없이 즉시 resolveCloudPullRemote()를 실행해, 이 기기의 아직 동기화 안 된 편집이 경고 한 번 없이 영구히 사라질 수 있던 비대칭을 고쳤다(Explore 서브에이전트가 발견). confirmCloudForcePush와 동일한 패턴으로 confirmCloudPullRemote() 래퍼를 추가해 confirmSheet(\"최신 데이터 가져오기\"/\"이 작업은 되돌릴 수 없어요\")로 한 번 더 확인받은 뒤에만 resolveCloudPullRemote()를 실행하도록 버튼 onclick을 교체(cb가 async 함수를 그대로 return하도록 화살표 함수를 중괄호 없는 형태로 작성). wipe-전 백업/undoToast까지 확장하는 건(8번째 __preXxx_ kind) 범위가 더 크므로 이번 develop에서는 확인창 추가까지만 하고, 필요하면 critique가 다시 집어 advance로 넘기도록 남겨둠. 테스트 1건 추가(confirmSheet 호출 검증 + cb 실행 시 resolveCloudPullRemote가 실제로 돈다는 것까지 실행형으로 확인) — node test/run.js 3277->3278/3278 통과. node --check(메인 스크립트 블록 추출)/sw.js/test/run.js 통과. 사용자 체감 동작 변화(확인창 추가)라 APP_VERSION 1.47.413->1.47.414, sw.js CACHE v680->v681.",
-      "commit": null
-    },
     {
       "cycle": 337,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-12T06:05:00.000Z",
       "summary": "critique(cycle341) 계획대로 종목코드/심볼(stockCode/cryptoCode)의 저장형 인젝션 공백을 막았다 — index.html:1976 NAME_MAX/MEMO_MAX 옆에 CODE_MAX=20과 cleanCode=v=>(v||'').trim().toUpperCase().replace(/[^A-Z0-9.]/g,'').slice(0,CODE_MAX)를 신설(allow-list 방식, 실제 티커 패턴 005930/AAPL/BRK.B/BTC와 호환). syncAssetInputs(asCode 캡처)를 trim().toUpperCase() 대신 cleanCode()로 교체하고, asCode input 2곳(종목코드/심볼)에 maxlength=\"${CODE_MAX}\" 추가. 방어적으로 openRateSheet의 id=/onchange= 템플릿 보간(stockRows/cryptoRows 양쪽)에도 esc()를 추가해 레거시 데이터까지 이중 방어. 계획에 없던 것까지 점검한 결과 cloud sync/백업 복원 경로(resolveCloudPullRemote 등)는 전부 sanitizeBackup()을 거치므로(코드로 호출부 확인), 거기에도 stockCode/cryptoCode 정제를 추가(SANITIZE_QTY_FIELDS forEach 옆에 ['stockCode','cryptoCode'].forEach(f=>cleanCode)) — CSV 가져오기(csvRowToImportTxn)는 거래만 만들고 자산 필드를 설정하지 않아 해당 없음을 확인. 테스트 7건 추가(cleanCode 순수 단위 4건: 빈값/대문자화+허용문자 유지/인용부호·꺽쇠 제거/CODE_MAX 클램프, syncAssetInputs가 인용부호 섞인 종목코드를 정제해 저장하는 실행형 1건, sanitizeBackup이 자산의 stockCode/cryptoCode를 정제하고 fixedCount를 세는 2건) + 기존 openRateSheet/renderAssetSheet 테스트 3건을 새 소스(esc(id)/maxlength)에 맞게 갱신, test/run.js의 공유 sandbox CONSTS 목록에 CODE_MAX/cleanCode를 추가하지 않아 처음엔 'cleanCode is not defined'로 syncAssetInputs 관련 테스트 14건이 연쇄 실패했다가 CONSTS 추가 후 전체 통과(3327->3334/3334) — node test/run.js 통과. node --check logic.js/sw.js/test/run.js 통과, index.html 주 스크립트 블록(3번째 <script>, 821KB) 추출 후 new Function()으로 구문 확인 통과. 사용자 체감 동작 변화(종목코드/심볼 입력에 20자 상한과 허용 문자 제한 생김, 백업 복원 시 비정상 종목코드가 정제됨)라 APP_VERSION 1.47.422->1.47.423, sw.js CACHE v689->v690. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 342,
+      "phase": "develop",
+      "timestamp": "2026-11-12T07:30:00.000Z",
+      "summary": "sanitizeAmount(index.html:9379, 백업 복원/클라우드 동기화 숫자 필드 검증)가 AMOUNT_MAX 상한은 min 유무와 관계없이 걸지만 하한은 min이 주어진 수량성 필드만 클램프하고, min 없이 호출되는 잔액성 필드(baseAmount/amountKRW — 마이너스통장처럼 음수도 유효)는 Number.isFinite만 보고 하한이 전혀 없던 비대칭을 Explore 서브에이전트가 발견했다. 손상된 백업 파일/가져오기/클라우드 풀 payload에 -1e16처럼 -AMOUNT_MAX보다 절댓값이 큰 값이 들어오면 정밀도가 깨진 채 그대로 통과해 assetEval/잔액 합산으로 전파될 수 있었다(상한 쪽은 cycle336에서 이미 막혔던 것과 같은 클래스의 문제가 하한에만 남아있던 것). min이 주어진 호출(수량성 필드, min>=0)은 그대로 min으로 클램프하고, min이 없을 때만 대칭으로 -AMOUNT_MAX 하한을 추가(if(min!=null)return n<min?min:n; 그 뒤에만 n<-AMOUNT_MAX?-AMOUNT_MAX:n) — 분기 순서를 min 우선으로 둬서 수량성 필드가 실수로 -AMOUNT_MAX까지 통과하는 회귀를 피했다. 테스트 3건 추가(대칭 하한 클램프, -AMOUNT_MAX 경계값 통과 확인, min 있는 호출의 기존 동작 회귀 방지) — node test/run.js 3334->3337/3337 통과. sw.js 문법 확인 통과. 사용자 체감 동작 변화는 아니지만(평소 입력 경로가 아니라 백업/동기화 전용) 컨벤션대로 APP_VERSION 1.47.423->1.47.424, sw.js CACHE v690->v691.",
       "commit": null
     }
   ]

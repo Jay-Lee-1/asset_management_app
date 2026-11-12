@@ -15248,6 +15248,20 @@ test('sanitizeAmount: AMOUNT_MAX 이하 값은 상한에 영향받지 않는다'
   assert.strictEqual(sandbox.sanitizeAmount(sandbox.AMOUNT_MAX), sandbox.AMOUNT_MAX);
   assert.strictEqual(sandbox.sanitizeAmount(500), 500);
 });
+/* app-evolve cycle342 develop: min 없이 호출되는 잔액성 필드(baseAmount/amountKRW 등, 마이너스통장처럼
+ * 음수도 유효)는 AMOUNT_MAX 상한이 양수 쪽만 걸려 있어 손상된 백업/클라우드 payload의 -AMOUNT_MAX보다
+ * 더 작은(절댓값이 더 큰) 값이 정밀도가 깨진 채 그대로 통과할 수 있었다. 상한과 대칭으로 하한도 막는다. */
+test('sanitizeAmount: min이 없으면 -AMOUNT_MAX보다 작은 값도 -AMOUNT_MAX로 대칭 클램프한다(잔액성 필드)', () => {
+  assert.strictEqual(sandbox.sanitizeAmount(-(sandbox.AMOUNT_MAX + 1)), -sandbox.AMOUNT_MAX);
+  assert.strictEqual(sandbox.sanitizeAmount(-1e16), -sandbox.AMOUNT_MAX);
+});
+test('sanitizeAmount: -AMOUNT_MAX 이상인 음수 값은 대칭 클램프에 영향받지 않는다(회귀 방지)', () => {
+  assert.strictEqual(sandbox.sanitizeAmount(-sandbox.AMOUNT_MAX), -sandbox.AMOUNT_MAX);
+  assert.strictEqual(sandbox.sanitizeAmount(-500), -500);
+});
+test('sanitizeAmount: min이 주어진 경우(수량성 필드)는 -AMOUNT_MAX보다 작은 값도 여전히 min으로 클램프한다(회귀 방지)', () => {
+  assert.strictEqual(sandbox.sanitizeAmount(-(sandbox.AMOUNT_MAX + 1), 0), 0);
+});
 test('sanitizeBackup: 거래의 NaN/문자열 금액을 보정하고 fixedCount를 센다', () => {
   const { data, fixedCount, droppedCount } = sandbox.sanitizeBackup({
     assets: [],
