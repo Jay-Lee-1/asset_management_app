@@ -27220,6 +27220,46 @@ test('doSettle: 갚는 쪽 현금자산 -> 받는 쪽 현금자산으로 이체 
   assert.strictEqual(t.confirmed, true);
   assert.strictEqual(sandbox.DB.settings.settledThrough, '2026-01-10');
 });
+test('doSettle: undoToast로 되돌리면 생성된 이체 내역이 사라지고 settledThrough도 호출 전 값으로 복원된다', () => {
+  setupSettlementDB({ settings: { settle: { ownerA: '나', ownerB: '배우자', ratioA: 50 }, settledThrough: '2026-01-02' } });
+  sandbox.TODAY = '2026-01-10';
+  sandbox.lastUndo = null;
+  sandbox.doSettle('배우자', '나', 10000);
+  const txCountAfterSettle = sandbox.DB.txns.length;
+  const tx = sandbox.DB.txns[txCountAfterSettle - 1];
+  assert.strictEqual(sandbox.DB.settings.settledThrough, '2026-01-10');
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.txns.length, txCountAfterSettle - 1, '되돌리면 생성된 이체 내역이 제거돼야 함');
+  assert.ok(!sandbox.DB.txns.some(t => t.id === tx.id));
+  assert.strictEqual(sandbox.DB.settings.settledThrough, '2026-01-02', '되돌리면 호출 전 settledThrough로 복원돼야 함');
+});
+test('doSettle: 첫 정산(호출 전 settledThrough가 null)이었던 경우 되돌리면 TODAY가 아니라 null로 복원된다', () => {
+  setupSettlementDB({ settings: { settle: { ownerA: '나', ownerB: '배우자', ratioA: 50 }, settledThrough: null } });
+  sandbox.TODAY = '2026-01-10';
+  sandbox.lastUndo = null;
+  sandbox.doSettle('배우자', '나', 10000);
+  assert.strictEqual(sandbox.DB.settings.settledThrough, '2026-01-10');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.settings.settledThrough, null, '첫 정산을 되돌리면 TODAY로 잘못 남지 않고 null로 복원돼야 함');
+});
+test('doSettle: 되돌린 뒤 같은 공동지출 범위로 다시 정산을 열면 정산 전과 동일한 집계가 나온다(반쪽 undo 방지)', () => {
+  setupSettlementDB({
+    settings: { settle: { ownerA: '나', ownerB: '배우자', ratioA: 50 }, settledThrough: null },
+    txns: [
+      { type: 'expense', fromAssetId: 'a1', amount: 30000, shared: true, date: '2026-01-01' },
+      { type: 'expense', fromAssetId: 'a2', amount: 10000, shared: true, date: '2026-01-02' },
+    ],
+  });
+  sandbox.TODAY = '2026-01-10';
+  sandbox.lastUndo = null;
+  sandbox.doSettle('배우자', '나', 10000);
+  sandbox.lastUndo.undoFn();
+  sandbox.lastSheetHtml = '';
+  sandbox.openSettlement();
+  assert.ok(sandbox.lastSheetHtml.includes('40,000원'), '되돌린 뒤 다시 열면 정산 전과 같은 공동지출 합계(4만원)가 그대로 나와야 함');
+  assert.ok(sandbox.lastSheetHtml.includes('정산 완료로 표시'), '되돌렸으니 다시 정산할 수 있는 버튼이 보여야 함');
+});
 test('doSettle: 어느 한쪽이라도 현금성 자산이 없으면 이체를 만들지 않고 안내 토스트만 띄운다', () => {
   setupSettlementDB({ assets: [{ id: 'a1', type: 'cash', owner: '나' }] }); // 배우자의 현금 자산 없음
   sandbox.TODAY = '2026-01-10';

@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.424';
+const APP_VERSION='1.47.425';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -5625,10 +5625,16 @@ function doSettle(payer,receiver,amount){
  if(twGuard())return;
  const fromId=firstCashForOwner(payer),toId=firstCashForOwner(receiver);
  if(!fromId||!toId){toast(`${fromId?receiver:payer}의 현금성 자산이 없어요`);return}
- DB.txns.push(touch({id:uid(),type:'transfer',category:'이체',memo:'정산',amount,fromAssetId:fromId,toAssetId:toId,date:TODAY,confirmed:true}));
+ const prevSettledThrough=DB.settings.settledThrough;
+ const tx=touch({id:uid(),type:'transfer',category:'이체',memo:'정산',amount,fromAssetId:fromId,toAssetId:toId,date:TODAY,confirmed:true});
+ DB.txns.push(tx);
  DB.settings.settledThrough=TODAY;
  save({recsChanged:false});invalidateBalances(null,{recsChanged:false});closeSheet();renderCurrent();
- toast('정산 완료로 표시했어요');
+ undoToast('정산 완료로 표시했어요',()=>{
+  DB.txns=DB.txns.filter(t=>t.id!==tx.id);
+  DB.settings.settledThrough=prevSettledThrough;
+  save({recsChanged:false});invalidateBalances(null,{recsChanged:false});renderCurrent();toast('되돌렸어요');
+ });
 }
 
 /* ================= LEDGER ================= */
