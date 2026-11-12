@@ -1,7 +1,18 @@
 {
   "cycle": 342,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "doSettle()에 undoToast 추가 — 정산 완료 표시가 유일하게 되돌릴 수 없는 '확인 시트 한 번'짜리 액션",
+    "why": "Explore 서브에이전트가 발견하고 index.html 코드를 직접 대조해 검증: doSettle(5624-5632행)은 confirmSettlement의 confirmSheet 한 번(delTx와 동일한 확인 마찰 수준)으로 호출되는데, (a) confirmed:true인 실제 이체 거래를 DB.txns에 즉시 push하고 (b) DB.settings.settledThrough를 TODAY로 되돌릴 수 없이 전진시킨다. grep으로 확인: settledThrough를 쓰는 유일한 쓰기 지점이 doSettle이고, clearSettleConfig(5581-5584행, 정산 끄기)조차 settledThrough는 그대로 둔다 — 즉 되돌릴 UI가 앱 안에 전혀 없다. 반면 같은 확인 시트 한 번짜리 액션인 delTx→deleteTxnsUndo(6352/11941행), recApply의 'one' 삭제(6365행 이하), delOwner(5413-5422행)는 모두 undoToast로 6초 되돌리기를 제공한다. 실패 시나리오: 공동가계부를 쓰는 사용자가 '정산 완료로 표시'를 오탭하거나 제안 금액을 미리 확인하지 못하고 누르면, 그 시점 이전의 모든 공동지출이 향후 정산에서 영구히 빠지고(기록상 되돌릴 설정 UI가 없음) 복구하려면 생성된 '이체/정산' 거래를 수동으로 찾아 지우는 것은 가능하지만 settledThrough 자체는 백업 JSON을 직접 편집하지 않는 한 되돌릴 방법이 없다. mergeOwnerInto류의 전체 DB 스냅샷(__preMergeOwner_ 패턴)까지는 과하다 — doSettle은 txns 배열에 항목 하나를 push하고 settings 필드 하나만 바꾸므로 delOwner/recApply와 같은 가벼운 클로저 기반 undoToast가 적절한 규모다.",
+    "approach": "doSettle(payer,receiver,amount) 안에서: (1) 현재 DB.settings.settledThrough 값을 호출 맨 앞에서 prevSettledThrough로 저장(null일 수 있음 — 첫 정산이면 null로 복원해야 함). (2) 기존 'const tx=touch({...})' 형태로 변수에 담아 DB.txns.push(tx) (현재는 push 인자에서 바로 touch 호출 — tx.id로 나중에 제거할 수 있게 참조를 먼저 확보). (3) DB.settings.settledThrough=TODAY, save({recsChanged:false}), invalidateBalances(null,{recsChanged:false}), closeSheet(), renderCurrent()은 그대로 유지. (4) 마지막의 'toast(...)' 한 줄만 'undoToast(...)'로 교체 — undoToast(msg,undoFn) 시그니처(11935행)를 따라 메시지는 그대로 '정산 완료로 표시했어요', undoFn 안에서: DB.txns=DB.txns.filter(t=>t.id!==tx.id) (deleteTxnsUndo와 동일하게 id로 제거), DB.settings.settledThrough=prevSettledThrough, save({recsChanged:false}), invalidateBalances(null,{recsChanged:false}), renderCurrent(), toast('되돌렸어요') — delOwner(5421행)/recApply(6370행)와 동일한 클로저 패턴, 전체 DB 스냅샷(backupKey) 불필요. clearSettleConfig는 이번 범위 밖(별도 비대칭이지만 이번 critique가 고른 1건에 집중).",
+    "test_points": [
+      "회귀: doSettle 호출 시 기존처럼 confirmed:true 이체 거래가 push되고 DB.settings.settledThrough가 TODAY로 바뀌는지(기존 테스트 유지).",
+      "undo 신규: doSettle 직후 undoToast의 undoFn을 호출하면 push된 거래(tx.id)가 DB.txns에서 사라지고 DB.settings.settledThrough가 호출 전 값으로 복원되는지.",
+      "경계값: settledThrough가 최초 호출 전 null(첫 정산)이었던 경우 undo 후 null로 복원되는지(TODAY나 다른 값으로 잘못 남지 않는지).",
+      "회귀: undo 후 같은 공동지출 범위로 다시 openSettlement/confirmSettlement를 호출하면 정산 전 상태와 동일한 summary(from=RANGE_FROM 또는 이전 settledThrough+1)가 나오는지 — 즉 undo가 반쪽만 되돌리지 않는지.",
+      "다른 settledThrough 참조 지점(openSettlement/confirmSettlement의 from 계산)이 undo 이후에도 계속 정상 동작하는지 기존 테스트로 커버되는지 확인."
+    ]
+  },
   "history": [
     {
       "cycle": 337,
@@ -141,6 +152,13 @@
       "phase": "review",
       "timestamp": "2026-11-12T08:08:58.000Z",
       "summary": "cycle342 develop 커밋(c427c0f, sanitizeAmount가 min 없는 잔액성 필드에 -AMOUNT_MAX 하한을 안 걸던 비대칭 수정)을 검토. min!=null 분기는 기존 동작(min으로 클램프)을 그대로 보존하고, min==null일 때만 n<-AMOUNT_MAX?-AMOUNT_MAX:n으로 대칭 하한을 추가한 4줄 diff를 라인 대조로 확인. SANITIZE_FREE_FIELDS(baseAmount/amountKRW, index.html:9775/9505)와 realizedGain(9832) 등 min 없이 호출되는 모든 호출부가 영향을 받고, SANITIZE_QTY_FIELDS 등 min=0으로 호출되는 모든 호출부(수량성 필드)는 min!=null 분기를 그대로 타서 회귀 없음을 호출부 전수 grep으로 확인. 추가된 테스트 3건(대칭 클램프, 경계값 -AMOUNT_MAX 자체는 영향 없음, min 있는 호출의 회귀 방지)이 실제로 변경된 분기를 정확히 겨냥함을 확인. node test/run.js 재실행 3337/3337 통과, APP_VERSION 1.47.424/sw.js CACHE v691 일치 확인. 실제 버그 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 342,
+      "phase": "critique",
+      "timestamp": "2026-11-12T09:05:00.000Z",
+      "summary": "앱 전체를 한 걸음 물러나 훑어본 결과(Explore 서브에이전트가 발견, doSettle:5624-5632/clearSettleConfig:5581-5584/delTx→deleteTxnsUndo:6352,11941/recApply 'one' 삭제:6365 이하/delOwner:5413-5422/undoToast 시그니처:11935를 직접 코드로 대조해 검증), 정산(settlement) 기능이 '안전망 없는 유일한 영역'임을 발견했다. doSettle은 delTx/recApply/delOwner와 똑같이 confirmSheet 한 번의 확인 마찰로 호출되면서도, (a) confirmed:true 이체 거래를 즉시 생성하고 (b) DB.settings.settledThrough를 되돌릴 수 없이 전진시킨다 — grep으로 settledThrough의 유일한 쓰기 지점이 doSettle임을 확인했고, 정산을 끄는 clearSettleConfig조차 이 값을 그대로 둔다. 오탭하면 그 이전 공동지출이 모두 향후 정산에서 영구히 빠지고, UI로 되돌릴 방법이 전혀 없다(생성된 거래는 수동 삭제 가능하지만 settledThrough는 백업 JSON 직접 편집 없이는 복구 불가). 같은 조사에서 delOwner가 DB.settings.settle(정산 설정)을 전혀 가드/마이그레이션하지 않는 비대칭(doRenameOwner/mergeOwnerInto는 이미 settle.ownerA/ownerB를 따라가게 고쳐졌는데 delOwner만 빠짐, index.html:5930-5934 주석도 이제 mergeOwnerInto를 '아직 못 고친 것'으로 잘못 적은 채 낡음)도 발견했으나, doSettle 쪽이 실제 금전 이동+전역 상태를 되돌릴 UI 자체가 없다는 점에서 더 심각해 이번 사이클의 단일 우선순위로 doSettle 쪽을 골랐다(delOwner/settle 비대칭과 낡은 주석은 다음 critique 후보로 남김). 대안으로 CDN SRI/트래시UI/nwHistory 성능(모두 과거 cycle에서 이미 기각)도 재확인했으나 새로운 근거 없음. pending_advance_plan에 doSettle의 클로저 기반 undoToast 추가(delOwner/recApply와 동일 규모, mergeOwnerInto류 전체 DB 스냅샷은 과함) 계획을 구체적으로 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
