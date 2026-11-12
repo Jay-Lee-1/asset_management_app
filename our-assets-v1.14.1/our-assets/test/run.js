@@ -26322,11 +26322,30 @@ test('doMaturity: RANGE_FROM 이전 레거시 만기일은 거래 날짜를 RANG
   setupMaturityDB();
   sandbox.DB.assets.find(a => a.id === 'a_sav').maturityTargetId = 'a_cash';
   sandbox.DB.assets.find(a => a.id === 'a_sav').maturityDate = '2020-01-01';
-  sandbox.toastCalls = [];
+  sandbox.lastUndo = null;
   sandbox.doMaturity('a_sav');
   const t = sandbox.DB.txns[sandbox.DB.txns.length - 1];
   assert.strictEqual(t.date, sandbox.RANGE_FROM, 'RANGE_FROM 이전 만기일은 RANGE_FROM으로 보정되어야 함');
-  assert.ok(sandbox.toastCalls.some(m => m.includes(sandbox.RANGE_FROM)), '보정했다는 안내가 떠야 함');
+  assert.ok(sandbox.lastUndo && sandbox.lastUndo.msg.includes(sandbox.RANGE_FROM), '보정했다는 안내가 undoToast로 떠야 함');
+});
+/* ---------- doMaturity: 만기 이체는 계좌 전체 잔액을 한 번 탭으로 옮기는 동작인데도 되돌릴 방법이
+ * 전혀 없었다(app-evolve cycle346 develop) — doSettle(5661행)처럼 같은 "홈 알림 버튼 한 번 탭 →
+ * 즉시 실행 + 6초 되돌리기" 패턴을 따르는 다른 money-moving 액션과 달리 toast()만 띄우고 끝났다.
+ * 생성한 거래를 지우고 maturityDate를 이체 전 값으로 복원하는 undoToast를 추가했다. ---------- */
+test('doMaturity: undoToast로 되돌리면 생성된 이체 거래가 지워지고 maturityDate가 이체 전 값으로 복원된다', () => {
+  setupMaturityDB();
+  sandbox.DB.assets.find(a => a.id === 'a_sav').maturityTargetId = 'a_cash';
+  sandbox.lastUndo = null;
+  const before = sandbox.DB.txns.length;
+  sandbox.doMaturity('a_sav');
+  assert.strictEqual(sandbox.DB.txns.length, before + 1, '이체 거래가 생겨야 함');
+  assert.strictEqual(sandbox.DB.assets.find(a => a.id === 'a_sav').maturityDate, null, '만기일이 지워져야 함');
+  assert.ok(sandbox.lastUndo, 'undoToast가 호출되어야 함');
+  const txId = sandbox.DB.txns[sandbox.DB.txns.length - 1].id;
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.txns.length, before, '되돌리면 만든 이체 거래가 제거돼야 함');
+  assert.ok(!sandbox.DB.txns.some(t => t.id === txId), '제거된 거래가 다른 id로 남아있으면 안 됨');
+  assert.strictEqual(sandbox.DB.assets.find(a => a.id === 'a_sav').maturityDate, '2026-06-10', '되돌리면 만기일이 이체 전 값으로 복원돼야 함');
 });
 test('doMaturity: 정상 범위 안 만기일은 클램프 없이 그대로 이체 날짜로 쓰인다(정상 케이스는 회귀 없음)', () => {
   setupMaturityDB();

@@ -1,15 +1,8 @@
 {
   "cycle": 346,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 340,
-      "phase": "critique",
-      "timestamp": "2026-11-12T01:18:06.964Z",
-      "summary": "앱 전체를 한 걸음 물러나 훑어본 결과(Explore 서브에이전트가 발견), AMOUNT_MAX(index.html:1970)가 fmtAmt/sanitizeAmount/syncAssetInputs/csvRowToImportTxn/taPctInput 등 모든 숫자 입력 경로에 이미 적용돼 있는 것과 달리, 자산/소유자/카테고리/목표 이름과 거래 메모 같은 자유텍스트 입력에는 대응하는 길이 상한이 전혀 없음을 발견했다 — addOwner(5396)/doRenameOwner(5414)/addCat(8120)/doRenameCat(8185)/syncAssetInputs 이름 캡처(5145)/saveGoal(4088)/txMemoInput(6012)이 모두 trim+normalize만 하고 길이 제한이 없고, 대응 input들(asName/newOwner/renameOwner/newCat/renameCat/txMemo)에도 maxlength가 없다. csvRowToImportTxn(8983-8987)은 CSV 셀의 category/memo/fromName/toName을 길이 검증 없이 그대로 받아 DB.txns/DB.assets에 영구 저장하고, esc() 렌더·localStorage.setItem 직렬화(STORAGE_OK 경고가 있는 용량 제한과 연결)·pushCloud 페이로드·confirmSheet 문구(말줄임 없음)까지 그대로 번진다. 긴 클립보드 텍스트 붙여넣기나 손상된 CSV 가져오기 시 숫자 쪽에서 이미 막은 것과 같은 종류의 데이터 오염/저장공간 리스크가 텍스트 쪽에만 남아있는 비대칭. 대안으로 allocationCard(스냅샷이라 peek 상호작용 부적합)/CDN SRI 해시 누락(네트워크 접근 불가로 의도적 보류, 새로운 공백 아님)/delBudget의 트래시·복원 화면 부재(이미 undoToast로 작동 중이라 데이터손실 아닌 기능 일관성 문제, 우선도 낮음)를 검토했으나 기각. pending_advance_plan에 공유 헬퍼 cleanName(NAME_MAX=60)/MEMO_MAX 추가, 해당 호출부 교체, maxlength 속성 추가, 테스트 포인트까지 구체 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
     {
       "cycle": 340,
       "phase": "advance",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-12T21:10:00.000Z",
       "summary": "critique(cycle345) 계획대로 doRenameCat(index.html:8242)에 undo를 추가했다. 단, 계획이 제안한 mergeCatInto식 localStorage 전체 DB 백업 대신 doRenameOwner(cycle345 develop)와 동일한 가벼운 \"필드별 이전 값 캡처\" 패턴을 택했다 — 이름변경은 합치기처럼 두 카테고리가 하나로 합쳐지는 게 아니라 1:1 재배선이라 전체 DB 스냅샷은 과하다고 판단. 아이콘/catVar/catBudgetRollover는 v===old(이름은 그대로 두고 아이콘만 바꾸는 catRenameDraft.icon 경로)에도 이동하므로, old 키와 v 키 양쪽의 변경 전 값을 모두 캡처(oldKey/vKey/sameKey)해 두 경우(이름 변경, 아이콘만 변경) 모두 정확히 복원되게 했다. DB.txns/DB.recurrences forEach에서 변경된 레코드만 {prevCat,prevMemo,prevSplits}로 모아두고(txItems/recItems, mergeCatInto와 동일 패턴), budgetHistory 이동 전 값(prevOldBudget/prevVBudget)과 deletedIds의 v 톰스톤 이전 상태(prevVTomb)도 변경 전에 캡처. 마지막 toast()를 undoToast로 교체해 카테고리명/txItems·recItems category+memo+splits/catIcon/catVar/catBudgetRollover/budgetHistory/deletedIds 톰스톤/ST.hist.catExact까지 전부 복원하고 touchSave로 재적용. 테스트 3건 추가(전체 필드 복원 통합 테스트 1건 — 아이콘/변동/이월/예산이력/거래·반복거래 category+memo/톰스톤/catExact 모두 확인, 톰스톤된 이름으로 변경 후 undo 시 그 톰스톤 복원 1건, v===old 아이콘만 바꾼 경우의 undo 복원 1건) — 처음엔 변동 플래그 복원 어서션을 잘못 써서(fixture에 이미 catVar:true로 설정해 뒀는데 undo 후 false를 기대) 실패해, 어서션을 true로 바로잡음(구현 버그 아님, 테스트 작성 실수). node test/run.js 3357->3360/3360 통과. node --check sw.js/test/run.js 통과(index.html은 전체 테스트 스위트의 vm 샌드박스 로드 자체가 구문 검증을 겸함, cycle339/343/344/345 노트와 동일한 이유). 사용자 체감 동작 변화(카테고리 이름을 잘못 입력해 저장해도 6초 안에 되돌릴 수 있음)라 APP_VERSION 1.47.430->1.47.431, sw.js CACHE v697->v698. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 346,
+      "phase": "develop",
+      "timestamp": "2026-11-12T23:14:08.426Z",
+      "summary": "doMaturity()(index.html:8081)가 홈 알림/설정 메뉴의 '이체' 버튼 한 번 탭으로 계좌 전체 잔액을 즉시 옮기는데도, 같은 일회성 money-moving 버튼인 doSettle(5661, '정산 완료로 표시했어요' undoToast)과 달리 되돌릴 방법이 전혀 없었다(Explore 서브에이전트가 발견 및 검증, 다른 후보들은 톰스톤 영구백업 없는 delOwner undo, bulk 액션들의 confirm 여부 미확인으로 덜 명확해 보류). doSettle과 동일한 패턴으로 고쳤다 — 거래 push 전에 prevMaturityDate(이체 전 maturityDate)를 캡처하고, 끝의 toast()를 undoToast로 교체해 생성한 거래(tx.id로 특정)를 제거하고 maturityDate를 prevMaturityDate로 복원하는 콜백을 건다. 클램프/예정입금 등 기존 분기(RANGE_FROM 보정, confirmTransfers 설정에 따른 문구)는 그대로 undoToast의 메시지로만 이동했다. test/run.js의 기존 클램프 테스트가 toast()만 확인하던 걸 lastUndo.msg로 바꾸고(undoToast 스텁은 toastCalls에 안 쌓여 실패), 새 되돌리기 복원(거래 제거+maturityDate 복원) 통합 테스트 1건 추가. node test/run.js 3360->3361/3361 통과. node --check sw.js/test/run.js 통과(index.html 자체는 전체 테스트 스위트의 vm 샌드박스 로드가 구문 검증을 겸함). 사용자 체감 동작 변화(만기 이체 실수 시 6초 안에 되돌릴 수 있음)라 APP_VERSION 1.47.431->1.47.432, sw.js CACHE v698->v699.",
       "commit": null
     }
   ]

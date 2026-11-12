@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.431';
+const APP_VERSION='1.47.432';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -8090,11 +8090,18 @@ function doMaturity(id){if(twGuard())return;const a=DB.assets.find(x=>x.id===id)
  if(clamped)date=RANGE_FROM;
  const amt=balanceAt(a.id,date); /* assetEval()의 schHorizon 투영(예정 포함 시 이번 달 말까지)은 만기 이체 시점의 실제 잔액과 다를 수 있어 사용하지 않음 */
  if(!(amt>0)){toast('만기 이체할 잔액이 없어요. 잔액을 확인해 주세요');return} /* 저축 자산은 overdraft 가드가 없어 잔액이 0 이하로 내려갈 수 있는데, 그 상태로 만기를 맞으면 amount<=0인 transfer가 생겨 amount는 항상 양수(방향은 from/to로만 표현)라는 앱 전체의 불변식을 깬다 */
- DB.txns.push(touch({id:uid(),type:'transfer',date,category:'이체',memo:`${a.name} 만기 이체`,amount:amt,
+ const prevMaturityDate=a.maturityDate;
+ const tx=touch({id:uid(),type:'transfer',date,category:'이체',memo:`${a.name} 만기 이체`,amount:amt,
   fromAssetId:a.id,toAssetId:target.id,
-  confirmed:DB.settings.confirmTransfers?false:true})); /* 실제로 옮겼는지 확인받음 */
+  confirmed:DB.settings.confirmTransfers?false:true}); /* 실제로 옮겼는지 확인받음 */
+ DB.txns.push(tx);
  a.maturityDate=null;touchSave(a);invalidateBalances();closeSheet();renderCurrent();
- toast(clamped?`만기일이 오래돼 ${RANGE_FROM}로 보정해 이체했어요`:(DB.settings.confirmTransfers?`${target.name}(으)로 이체 예정을 남겼어요`:`${target.name}(으)로 만기 이체했어요`));
+ undoToast(clamped?`만기일이 오래돼 ${RANGE_FROM}로 보정해 이체했어요`:(DB.settings.confirmTransfers?`${target.name}(으)로 이체 예정을 남겼어요`:`${target.name}(으)로 만기 이체했어요`),()=>{
+  /* 전체 자산목록 화면의 1회성 배너 버튼이라 doSettle(5661행)과 같은 '한 번 탭하면 즉시 실행, 대신 되돌리기로 안전망'
+   * 패턴을 따른다 — 이 액션은 push뿐이라 삭제 톰스톤(DB.deletedIds)이 생기지 않으므로 되돌릴 때도 건드릴 필요가 없다. */
+  DB.txns=DB.txns.filter(t=>t.id!==tx.id);
+  a.maturityDate=prevMaturityDate;touchSave(a);invalidateBalances();renderCurrent();toast('되돌렸어요');
+ });
 }
 
 /* 카테고리 관리 — 지출/수입/저축 */
