@@ -1721,12 +1721,15 @@ test('endCondFields: rec 종료조건의 횟수 입력에 aria-label이 있다',
 
 /* ---------- recDates: weekend 조정이 달/연도 경계를 넘어 앞당겨지는 회차 누락 버그 ---------- */
 test('recDates: 매월 1일+earlier 반복에서 다음달 1일이 일요일이면 이번달 말일로 당겨진 회차가 이번달 조회에 나온다', () => {
-  // 2026-02-01은 일요일이라 2026-01-30(금)으로 당겨짐 — 이 회차는 1월 조회에서 나와야 함
-  const r = { freq: 'monthly', day: 1, startDate: '2025-01-01', endDate: null, weekend: 'earlier' };
-  const jan = Array.from(sandbox.recDates(r, '2026-01-01', '2026-01-31'));
-  assert.deepStrictEqual(jan, ['2026-01-01', '2026-01-30'], '1월 자체 회차와 2월분이 당겨진 회차가 모두 나와야 함');
-  const feb = Array.from(sandbox.recDates(r, '2026-02-01', '2026-02-28'));
-  assert.ok(!feb.includes('2026-01-30'), '당겨진 회차가 2월 조회에 중복으로 나오면 안 됨');
+  // 2024-09-01은 일요일이라 2024-08-30(금)으로 당겨짐 — 이 회차는 8월 조회에서 나와야 함
+  // (1월을 쓰지 않는 이유: app-evolve cycle344가 shiftWeekend에 추가한 KR_FIXED_HOLIDAYS 때문에
+  // 매월 1일 반복은 1월 1일(신정, 평일이어도 비영업일) 자체가 당겨져 이 테스트의 '이번달 자체 회차'
+  // 전제가 깨진다 — 8월 1일(목, 공휴일 아님)로 바꿔 순수하게 주말 조정만 검증한다)
+  const r = { freq: 'monthly', day: 1, startDate: '2023-01-01', endDate: null, weekend: 'earlier' };
+  const aug = Array.from(sandbox.recDates(r, '2024-08-01', '2024-08-31'));
+  assert.deepStrictEqual(aug, ['2024-08-01', '2024-08-30'], '8월 자체 회차와 9월분이 당겨진 회차가 모두 나와야 함');
+  const sep = Array.from(sandbox.recDates(r, '2024-09-01', '2024-09-30'));
+  assert.ok(!sep.includes('2024-08-30'), '당겨진 회차가 9월 조회에 중복으로 나오면 안 됨');
 });
 test('recDates: 매년 1/1+earlier 반복에서 1/1이 일요일이면 전년도 말일로 당겨진 회차가 전년도 조회에 나온다', () => {
   // 2027-01-01은 금요일이라 shift 없음 예시 대신, 실제로 일요일인 해를 찾아 검증
@@ -1848,6 +1851,34 @@ test('shiftWeekend(): later 조정이 월/연 경계를 넘을 수 있다(말일
   assert.strictEqual(sandbox.shiftWeekend('2026-05-31', 'later'), '2026-06-01');
   // 2022-12-31은 토요일 → later는 이틀 뒤인 2023-01-02(월, 연 경계).
   assert.strictEqual(sandbox.shiftWeekend('2022-12-31', 'later'), '2023-01-02');
+});
+
+/* ---------- shiftWeekend(): 한국 고정일 공휴일 반영 (app-evolve cycle344 critique/advance)
+ * recOpenWeekend UI(index.html WK 어휘)는 '주말이면 하루 앞 금요일에 (급여)'/'주말이면 다음 월요일에
+ * (카드값·적금)'이라고 실제 은행 영업일 기준 이체일을 모델링한다고 약속하는데, 기존 shiftWeekend는
+ * dow만 보고 토/일만 조정해 신정·삼일절 같은 평일 고정 공휴일을 전혀 보지 않았다. KR_FIXED_HOLIDAYS+
+ * isKrNonBusinessDay를 추가해 하루씩(최대 10회) 반복 이동하도록 바꿔 공휴일도 주말과 동일하게
+ * 다루게 했다 — 음력 설날/추석처럼 매년 날짜가 바뀌는 공휴일은 이번 범위에서 명시적으로 제외. */
+test('shiftWeekend(): 평일에 걸린 고정 공휴일도 주말처럼 하루 당기거나/미룬다', () => {
+  // 2026-01-01(신정)은 목요일 — earlier는 하루 전인 2025-12-31(수, 공휴일 아님)에서 멈춘다.
+  assert.strictEqual(sandbox.shiftWeekend('2026-01-01', 'earlier'), '2025-12-31');
+  // 2026-05-05(어린이날)은 화요일 — later는 하루 뒤인 2026-05-06(수, 공휴일 아님)에서 멈춘다.
+  assert.strictEqual(sandbox.shiftWeekend('2026-05-05', 'later'), '2026-05-06');
+});
+test('shiftWeekend(): 공휴일이 주말에 바로 붙어 있으면 영업일까지 여러 날 반복 이동한다', () => {
+  // 2024-01-01(신정)은 월요일 — earlier는 일(2023-12-31)·토(2023-12-30)를 건너 금(2023-12-29)까지 3일 이동.
+  assert.strictEqual(sandbox.shiftWeekend('2024-01-01', 'earlier'), '2023-12-29');
+  // 2026-12-25(성탄절)는 금요일 — later는 토(12/26)·일(12/27)을 건너 월(12/28)까지 3일 이동.
+  assert.strictEqual(sandbox.shiftWeekend('2026-12-25', 'later'), '2026-12-28');
+});
+test('shiftWeekend(): 고정 공휴일이 토요일에 겹치면(현충일 등) 기존 순수 주말 조정과 동일하게 동작한다(회귀 없음)', () => {
+  // 2026-06-06(현충일)은 토요일 — 공휴일이면서 이미 주말이라 조정 결과는 평범한 토요일 케이스와 같다.
+  assert.strictEqual(sandbox.shiftWeekend('2026-06-06', 'earlier'), '2026-06-05');
+  assert.strictEqual(sandbox.shiftWeekend('2026-06-06', 'later'), '2026-06-08');
+});
+test('shiftWeekend(): mode="none"이면 고정 공휴일이어도 전혀 조정하지 않고 그대로 반환한다', () => {
+  assert.strictEqual(sandbox.shiftWeekend('2026-01-01', 'none'), '2026-01-01'); // 신정, 목요일
+  assert.strictEqual(sandbox.shiftWeekend('2026-12-25'), '2026-12-25'); // 성탄절, mode 인자 없음
 });
 
 /* ---------- num()/fmtAmt(): 음수 입력 처리 (app-evolve cycle56 develop, cycle56 review에서 num() 수정)
@@ -4491,9 +4522,11 @@ test('recArchiveStartDate: endDate가 cutoff 이전이라 더 생성될 회차�
 });
 test('recArchiveStartDate: weekend 조정(earlier)까지 거친 실제 생성값을 그대로 돌려준다(패턴 재가공 없이 recDates의 결과를 그대로 재사용)', () => {
   const r = { freq: 'monthly', day: 1, startDate: '2023-01-01', endDate: null, weekend: 'earlier' };
-  // 2024-12-01은 일요일이라 earlier 조정으로 2024-11-29(금)로 당겨지는데, cutoff(2024-11-30) 이후만
-  // 찾으므로 그 회차는 제외되고 다음(2025-01-01, 수요일·조정 없음)이 나와야 함
-  assert.strictEqual(sandbox.recArchiveStartDate(r, '2024-11-30'), '2025-01-01');
+  // 2024-09-01은 일요일이라 earlier 조정으로 2024-08-30(금)로 당겨지는데, cutoff(2024-08-31) 이후만
+  // 찾으므로 그 회차는 제외되고 다음(2024-10-01, 화요일·조정 없음)이 나와야 함
+  // (12월/1월 경계를 안 쓰는 이유: 위 recDates 1월 테스트와 동일 — 1월 1일은 신정이라 그 자체가
+  // 당겨져 '조정 없는 다음 회차'라는 전제가 깨진다)
+  assert.strictEqual(sandbox.recArchiveStartDate(r, '2024-08-31'), '2024-10-01');
 });
 
 /* ---------- contrastRatio: WCAG 명도대비 (logic.js, app-evolve cycle224 critique/advance) ----------
@@ -15996,17 +16029,20 @@ test("sanitizeBackup: weekend 필드가 없거나(falsy) monthly+유효값이면
   assert.strictEqual(fixedCount, 0);
 });
 test("[실행형] sanitizeBackup으로 정규화하지 않으면 freq가 monthly가 아닌데 weekend가 'earlier'로 남아, 금/토/일 daily 회차가 같은 날짜로 겹쳐 recDates()가 회차를 조용히 삼킨다(정규화 후에는 매일 생성됨)", () => {
-  // 2026-01-01은 목요일 — 1/2(금) 정상, 1/3(토)는 'earlier'로 1/2로 당겨져 1/2과 겹치고, 1/4(일)도
-  // 'earlier'로 이틀 당겨져 역시 1/2과 겹친다 — push()의 인접 중복 제거가 1/3·1/4 회차를 삼켜버림.
-  const corrupted = { freq: 'daily', startDate: '2026-01-01', endDate: null, weekend: 'earlier' };
-  const collapsed = sandbox.recDates(corrupted, '2026-01-01', '2026-01-04');
-  assert.strictEqual(collapsed.length, 2, '정규화 없이는 1/3·1/4 회차가 1/2에 겹쳐 사라짐(버그 상태 재현)');
+  // 2026-01-08은 목요일 — 1/9(금) 정상, 1/10(토)는 'earlier'로 1/9로 당겨져 1/9과 겹치고, 1/11(일)도
+  // 'earlier'로 이틀 당겨져 역시 1/9과 겹친다 — push()의 인접 중복 제거가 1/10·1/11 회차를 삼켜버림.
+  // (1/1을 안 쓰는 이유: app-evolve cycle344가 추가한 KR_FIXED_HOLIDAYS 때문에 1/1 자체가 신정으로
+  // 당겨져 'from'보다 앞으로 밀려 사라지므로, 순수하게 주말 중복 붕괴만 보려면 공휴일이 없는 주로
+  // 옮겨야 한다)
+  const corrupted = { freq: 'daily', startDate: '2026-01-08', endDate: null, weekend: 'earlier' };
+  const collapsed = sandbox.recDates(corrupted, '2026-01-08', '2026-01-11');
+  assert.strictEqual(collapsed.length, 2, '정규화 없이는 1/10·1/11 회차가 1/9에 겹쳐 사라짐(버그 상태 재현)');
   const { data } = sandbox.sanitizeBackup({
     txns: [], assets: [],
     recurrences: [{ id: 'r1', ...corrupted, amount: 1000 }],
   });
-  const fixed = sandbox.recDates(data.recurrences[0], '2026-01-01', '2026-01-04');
-  assert.strictEqual(fixed.length, 4, 'sanitizeBackup이 weekend를 none으로 되돌린 뒤에는 1/1~1/4 매일 정상 생성되어야 함');
+  const fixed = sandbox.recDates(data.recurrences[0], '2026-01-08', '2026-01-11');
+  assert.strictEqual(fixed.length, 4, 'sanitizeBackup이 weekend를 none으로 되돌린 뒤에는 1/8~1/11 매일 정상 생성되어야 함');
 });
 /* freq는 지금까지 sanitizeBackup이 전혀 검증하지 않은 필드였다 — day/weekend와 동일하게, 값이
  * 있는데(truthy) 'monthly'|'weekly'|'biweekly'|'daily'|'yearly'가 아니면 recDates()/

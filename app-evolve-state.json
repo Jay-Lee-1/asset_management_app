@@ -1,19 +1,8 @@
 {
-  "cycle": 344,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "shiftWeekend()(logic.js:23-29)가 토/일만 조정하고 한국 고정일 공휴일은 전혀 반영하지 않아, '급여/카드값 주말 조정' UI 문구와 실제 동작이 불일치",
-    "why": "recOpenWeekend UI(index.html:6531-6540)는 earlier를 '주말이면 하루 앞 금요일에 (급여)', later를 '주말이면 다음 월요일에 (카드값·적금)'이라고 설명해 실제 은행 영업일 기준 이체일을 모델링한다고 약속하지만, shiftWeekend는 new Date(ds).getDay()만 보고 토(6)/일(0)만 옮기며 신정(1/1)·삼일절(3/1)·어린이날(5/5)·현충일(6/6)·광복절(8/15)·개천절(10/3)·한글날(10/9)·성탄절(12/25) 같은 고정일 공휴일이 평일에 걸리는 경우를 전혀 보지 않는다. 예: '매월 15일 급여, 주말이면 앞당겨'를 설정한 사용자가 8/15(광복절, 평일)를 그대로 급여일로 쓰게 되어 openUpcoming 알림/assetBalCard 예상 잔액/예산 pacing이 실제로는 발생하지 않을 입금을 평일 영업일로 전제한다. git log 전체(344 사이클)와 app-evolve-state.json 히스토리에 '공휴일'/'holiday' 키워드가 전무함을 grep으로 확인한 완전히 새로운 공백이며, 접근성/비동기 에러처리/CSV 경로/정산 등 이미 두텁게 다뤄진 영역과 겹치지 않는다.",
-    "approach": "1) logic.js의 shiftWeekend 근처에 고정일만 담는 KR_FIXED_HOLIDAYS = new Set(['01-01','03-01','05-05','06-06','08-15','10-03','10-09','12-25']) (연도 독립, 음력 설날/추석은 매년 바뀌는 날짜라 이번 범위에서 명시적으로 제외 — 후속 과제로 남김)와 isKrNonBusinessDay(ds) = dow===0||dow===6||KR_FIXED_HOLIDAYS.has(ds.slice(5)) 헬퍼를 추가한다. 2) shiftWeekend를 한 번에 ±1/2일 점프하는 대신 isKrNonBusinessDay를 만족하는 동안 하루씩(earlier는 -1, later는 +1) 반복 이동하도록 바꾸고 무한루프 방지로 최대 10회 반복 상한을 둔다(공휴일이 주말에 바로 붙어있는 경우까지 커버). 3) recDates()(logic.js:38)가 이미 모든 후보 날짜를 shiftWeekend에 통과시키므로 다른 호출부(recOpenWeekend/WK UI, recNthDate/recCountUntil) 수정은 불필요 — 자동으로 적용됨. 4) 테스트(test/run.js)에 (a) 평일에 걸린 고정 공휴일이 earlier/later로 각각 올바르게 옮겨지는지, (b) 공휴일이 주말에 바로 붙어 있어 두 번 이상 이동이 필요한 경우, (c) 공휴일과 무관한 기존 토/일 전용 케이스가 회귀 없이 그대로 동작하는지, (d) mode==='none'은 그대로 ds를 반환하는지 4건을 추가한다. 5) 사용자 체감 동작이 바뀌므로(공휴일이 끼는 반복거래의 실제 발생일이 달라짐) APP_VERSION(1.47.428)과 sw.js CACHE(v695)를 올린다. 선택: WK 라벨의 psub 문구에 '공휴일 포함'을 덧붙여 문구와 범위를 일치시킨다(필수는 아님)."
-  },
+  "cycle": 345,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 344,
-      "phase": "review",
-      "timestamp": "2026-11-12T16:12:00.000Z",
-      "summary": "develop(cycle344, 32be05d: sanitizeBackup()의 이름/메모 필드에 NAME_MAX/MEMO_MAX 클램프 추가)을 검토해 실제 버그를 발견하고 그 자리에서 고쳤다 — 새로 추가된 d.name 클램프 두 곳(자산 블록 index.html:9535, 목표 블록 9705)이 바로 위/아래의 category/memo 클램프와 달리 'if(typeof d.category===\"string\"&&...)' 같은 typeof 가드 없이 'if(d.name){const n=cleanName(d.name);...}'로만 작성돼 있었다. cleanName=v=>(v||'').trim()...은 문자열 전용 함수라, 손상되거나 손으로 편집한 백업/클라우드 payload의 자산·목표 name이 숫자처럼 truthy한 비문자열이면 cleanName 내부의 .trim() 호출에서 TypeError('(v||\"\").trim is not a function')로 throw함을 node -e로 직접 재현해 확인했다. sanitizeBackup()의 실제 호출부(proceedWithBackupObj, index.html:10145 'const{data:obj,...}=sanitizeBackup(raw);')는 이 호출을 try/catch로 감싸지 않고(복원 확정 콜백 안의 restoreBackup(obj) 호출만 try/catch로 보호됨) 바로 뒤 confirmSheet 콜백에서 obj를 쓰므로, sanitizeBackup 단계에서 throw하면 백업 파일 복원이 통째로 깨진다 — cloud pull 경로(resolveCloudPullRemote 등)도 전부 같은 무방비 호출 패턴이라 동일하게 영향받는다. 두 곳 모두 'if(typeof d.name===\"string\"&&d.name){...}'로 고쳐 category/memo 가드와 통일했다(동작 비교: 문자열이면 기존과 동일하게 clamp, 숫자 등 비문자열이면 이제 손대지 않고 그대로 통과 — throw 대신 no-op이 더 안전한 기존 전체 패턴, 예: sanitizeAmount가 비유한수를 그냥 걸러내는 것과 같은 방향). 회귀 테스트 1건 추가(자산/목표 name이 숫자일 때 sanitizeBackup이 throw하지 않고 그대로 통과하는지) — node test/run.js 3349->3350/3350 통과. node --check sw.js/test/run.js 통과, index.html 주 스크립트 블록(3번째 <script>, 824KB) new Function()으로 구문 확인 통과(1번째 블록은 기존 cycle339/343/344 노트와 동일한 HTML 주석 내 리터럴 텍스트로 인한 기존 오탐). APP_VERSION/sw.js CACHE는 develop 커밋(1.47.428/v695)에서 이미 올렸고 이번 수정은 그 범위 내 버그 수정이라 추가로 올리지 않았다.",
-      "commit": null
-    },
     {
       "cycle": 339,
       "phase": "critique",
@@ -145,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-12T15:10:00.000Z",
       "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — sanitizeBackup()(index.html:9410, 백업 복원/클라우드 풀이 공유하는 유일한 검증 체크포인트)이 cycle341에서 stockCode/cryptoCode에만 적용했던 '백업은 사용자가 직접 수정해 복원할 수 있는 경로라 UI 입력 경로의 정제를 여기서도 거쳐야 한다'는 원칙을, 자산/목표 이름(NAME_MAX+cleanName)과 거래/반복거래의 category/memo(NAME_MAX/MEMO_MAX)에는 적용하지 않고 있었다. syncAssetInputs/saveGoal/addOwner 등 모든 실시간 입력 경로와 csvRowToImportTxn(cycle340)/mapGenericCsvRow(cycle343) CSV 가져오기 경로는 이미 막혀 있는데, 백업 파일을 손으로 편집해 복원하거나 조작된 클라우드 payload를 당겨오는 경로만 길이 제한이 전혀 없이 남아있던 비대칭. srcAssets.forEach/srcGoals.forEach에 각각 d.name=cleanName(d.name) 클램프를, srcTxns.forEach/srcRecs.forEach에 각각 category/memo를 NAME_MAX/MEMO_MAX로 slice하는 클램프를 추가했다(CSV 가져오기와 동일한 '거부가 아니라 clamp' 방식, 새 상수/헬퍼 불필요 — NAME_MAX/MEMO_MAX/cleanName은 이미 전역이고 sanitizeBackup 테스트 sandbox에도 이미 로드돼 있어 추가 배선 불필요). 테스트 4건 추가(자산/목표 이름이 NAME_MAX 초과 시 클램프/이하면 회귀 없음, 거래·반복거래 category·memo가 각각 NAME_MAX/MEMO_MAX 초과 시 클램프/이하면 회귀 없음) — 추가 과정에서 반복거래 fixture에 day 필드를 빠뜨려 clampDay()가 무관하게 fixedCount를 1 올리는 거짓 실패를 발견해 day:1을 채워 바로잡았다(실제 버그 아님, 테스트 fixture 누락). node test/run.js 3345->3349/3349 통과. node --check sw.js/test/run.js 통과, index.html 주 스크립트 블록(3번째 <script>, 824KB) 추출 후 new Function()으로 구문 확인 통과(1번째 블록은 기존 cycle339/343 노트와 동일한 HTML 주석 내 리터럴 텍스트로 인한 기존 오탐). 사용자 체감 동작 변화는 아니지만(평소 입력 경로가 아니라 백업/동기화 전용) 컨벤션대로 APP_VERSION 1.47.427->1.47.428, sw.js CACHE v694->v695.",
+      "commit": null
+    },
+    {
+      "cycle": 344,
+      "phase": "advance",
+      "timestamp": "2026-11-12T18:13:51.333Z",
+      "summary": "critique(cycle344) 계획대로 shiftWeekend()(logic.js)에 한국 고정일 공휴일 반영을 추가했다 — KR_FIXED_HOLIDAYS=Set([신정/삼일절/어린이날/현충일/광복절/개천절/한글날/성탄절의 MM-DD], 연도 독립, 음력 설날·추석은 명시적으로 범위 밖)과 isKrNonBusinessDay(ds)=주말이거나 이 Set에 속함 헬퍼를 추가하고, shiftWeekend를 ±1/±2일 한 번에 점프하던 방식에서 isKrNonBusinessDay를 만족하는 동안 하루씩(earlier=-1,later=+1) 반복 이동(최대 10회 상한)하는 방식으로 바꿨다. recDates()가 이미 모든 후보를 shiftWeekend에 통과시키므로 recOpenWeekend/WK UI·recNthDate/recCountUntil 등 다른 호출부는 수정 없이 자동 적용됨을 확인(계획대로). 테스트 4건 추가(평일 고정 공휴일 earlier/later 단일 이동, 공휴일이 주말에 바로 붙어 3일까지 반복 이동, 공휴일이 토요일에 겹쳐도 기존 순수 주말 조정과 동일, mode=none은 공휴일이어도 그대로 반환) — 이 과정에서 기존 테스트 3건(recDates 매월1일+earlier 월경계, recArchiveStartDate weekend조정, sanitizeBackup daily+weekend 겹침 재현)이 모두 day=1/startDate=1월1일을 써서 새 신정 공휴일 조정과 우연히 충돌해 실패하는 것을 발견 — 각 테스트의 핵심 검증 대상(주말 조정 자체)과 무관한 신정 충돌을 피하려 날짜만 공휴일 없는 달(8~9월/1월 둘째 주)로 옮기고 기대값을 재계산해 수정(테스트가 틀렸던 게 아니라 날짜 선택이 새 공휴일 규칙과 우연히 겹친 것). node test/run.js 3345->3354/3354 통과(처음엔 위 3건이 실패해 원인을 추적한 뒤 날짜를 옮겨 전체 통과). node --check logic.js/sw.js/test/run.js 통과. WK 라벨 문구에 \"공휴일 포함\"을 덧붙이는 선택 항목은 UI 문구 범위 확장이라 이번 사이클 범위 밖으로 남김(계획에서도 필수 아님으로 표시됨). 사용자 체감 동작 변화(공휴일이 끼는 반복거래의 실제 발생일이 달라짐)라 APP_VERSION 1.47.428->1.47.429, sw.js CACHE v695->v696. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

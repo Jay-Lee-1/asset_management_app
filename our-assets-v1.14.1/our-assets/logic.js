@@ -20,12 +20,21 @@ function kstTodayStr(d){
 }
 function addDays(s,n){const d=new Date(s+'T00:00:00');d.setDate(d.getDate()+n);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
 function daysBetween(a,b){return Math.round((new Date(b+'T00:00:00')-new Date(a+'T00:00:00'))/86400000)}
-function shiftWeekend(ds,mode){ /* 주말 조정: earlier=금요일로 당김, later=월요일로 미룸 */
- if(!mode||mode==='none')return ds;
+/* 한국 고정일 공휴일(연도 독립, 'MM-DD'). 음력 설날/추석처럼 매년 날짜가 바뀌는 공휴일은
+ * 이 범위에서 명시적으로 제외한다(후속 과제로 남김) — app-evolve cycle344 critique/advance. */
+const KR_FIXED_HOLIDAYS=new Set(['01-01','03-01','05-05','06-06','08-15','10-03','10-09','12-25']);
+function isKrNonBusinessDay(ds){
  const dow=new Date(ds+'T00:00:00').getDay();
- if(mode==='earlier'){if(dow===6)return addDays(ds,-1);if(dow===0)return addDays(ds,-2);}
- else if(mode==='later'){if(dow===6)return addDays(ds,2);if(dow===0)return addDays(ds,1);}
- return ds;
+ return dow===0||dow===6||KR_FIXED_HOLIDAYS.has(ds.slice(5));
+}
+function shiftWeekend(ds,mode){ /* 영업일 조정: earlier=하루 앞(토·일·고정 공휴일 모두), later=하루 뒤.
+ * 공휴일이 주말에 바로 붙어 있으면 여러 날 이동해야 하므로, 하루씩(earlier=-1, later=+1) 반복
+ * 이동하고 최대 10회로 상한을 둔다(app-evolve cycle344 critique/advance) */
+ if(!mode||mode==='none')return ds;
+ const step=mode==='earlier'?-1:1;
+ let d=ds,n=0;
+ while(isKrNonBusinessDay(d)&&n<10){d=addDays(d,step);n++;}
+ return d;
 }
 function recDates(r,from,to){
  const out=[];const end=new Date(((r.endDate&&r.endDate<to)?r.endDate:to)+'T00:00:00');
