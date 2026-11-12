@@ -3281,6 +3281,67 @@ test("doRenameCat: ST.hist.catExactType이 'income'이면 수입 카테고리 �
   assert.strictEqual(sandbox.ST.hist.catExact, '용돈', "catExactType이 'income'이면 수입 카테고리 이름변경도 따라가야 함");
 });
 
+/* ---------- doRenameCat: doDeleteCat/mergeCatInto는 undoToast로 되돌릴 수 있는데 doRenameCat만
+ * 빠져 있었다(app-evolve cycle345 critique/advance). mergeCatInto처럼 두 카테고리가 합쳐지는 게
+ * 아니라 1:1 재배선이라, doRenameOwner와 동일하게 건드린 필드마다 이전 값을 캡처해 두고 undo에서
+ * 그대로 되돌리는 가벼운 패턴을 썼다. ---------- */
+test('doRenameCat: undoToast로 되돌리면 이름/거래·반복거래 category+memo/아이콘/변동·이월 플래그/예산이력/톰스톤/catExact 필터가 모두 이름변경 전 상태로 복원된다', () => {
+  sandbox.DB = {
+    categories: { expense: ['식비'] },
+    catIcon: { 'expense:식비': 'coffee' },
+    catVar: { 'expense:식비': true },
+    catBudgetRollover: { 'expense:식비': true },
+    budgetHistory: { 식비: [{ from: '2026-01', amount: 300000 }] },
+    txns: [{ id: 't1', type: 'expense', category: '식비', memo: '식비' }],
+    recurrences: [{ id: 'r1', type: 'expense', category: '식비', memo: '식비' }],
+    deletedIds: {},
+  };
+  sandbox.ST = { hist: { catExact: '식비', owner: '전체' } };
+  sandbox.catRenameDraft = { name: '외식비', icon: '' };
+  sandbox.doRenameCat('expense', 0);
+  assert.strictEqual(sandbox.DB.categories.expense[0], '외식비');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.categories.expense[0], '식비', '카테고리 이름이 복원돼야 함');
+  assert.strictEqual(sandbox.DB.txns[0].category, '식비');
+  assert.strictEqual(sandbox.DB.txns[0].memo, '식비');
+  assert.strictEqual(sandbox.DB.recurrences[0].category, '식비');
+  assert.strictEqual(sandbox.DB.recurrences[0].memo, '식비');
+  assert.strictEqual(sandbox.isVarCat('expense', '식비'), true, '변동 플래그가 옛 이름으로 복원돼야 함');
+  assert.strictEqual(sandbox.isVarCat('expense', '외식비'), false, '사라진 새 이름에는 변동 플래그가 남으면 안 됨');
+  assert.strictEqual(sandbox.isBudgetRolloverCat('식비'), true, '이월 토글이 옛 이름으로 복원돼야 함');
+  assert.strictEqual(sandbox.DB.catIcon['expense:식비'], 'coffee', '아이콘이 옛 이름으로 복원돼야 함');
+  assert.strictEqual('expense:외식비' in sandbox.DB.catIcon, false, '사라진 새 이름의 아이콘 키는 남으면 안 됨');
+  assert.strictEqual(sandbox.budgetForMonth('식비', 2026, 6), 300000, '예산 이력이 옛 이름으로 복원돼야 함');
+  assert.strictEqual('외식비' in sandbox.DB.budgetHistory, false);
+  assert.strictEqual(sandbox.catTombKey('expense', '식비') in sandbox.DB.deletedIds, false, '되돌리면 옛 이름(식비)의 톰스톤은 지워져야 함(다시 살아있으므로)');
+  assert.strictEqual(sandbox.ST.hist.catExact, '식비', 'catExact 드릴다운 필터도 옛 이름으로 복원돼야 함');
+  assert.strictEqual(sandbox.DB.txns[0].updatedAt, 'test-updatedAt', '되돌린 거래/반복거래도 touch()로 다시 찍혀야 mergeCollection 병합 시 보존됨');
+  assert.strictEqual(sandbox.DB.recurrences[0].updatedAt, 'test-updatedAt');
+});
+test('doRenameCat: 톰스톤된 이름으로 바꿨다가 undoToast로 되돌리면 그 톰스톤이 복원된다(좀비 재생 방지 유지)', () => {
+  sandbox.DB = {
+    categories: { expense: ['식비'] }, catIcon: {}, catVar: {}, txns: [], recurrences: [],
+    deletedIds: { [sandbox.catTombKey('expense', '외식비')]: 1000 },
+  };
+  sandbox.catRenameDraft = { name: '외식비', icon: '' };
+  sandbox.doRenameCat('expense', 0);
+  assert.strictEqual(sandbox.catTombKey('expense', '외식비') in sandbox.DB.deletedIds, false, '이름변경 직후엔 되살아난 이름(외식비)의 톰스톤이 지워져야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.deletedIds[sandbox.catTombKey('expense', '외식비')], 1000, '되돌리면 원래 있던 톰스톤(외식비)이 복원돼야 다른 기기가 다시 좀비로 되살리지 못함');
+  assert.strictEqual(sandbox.catTombKey('expense', '식비') in sandbox.DB.deletedIds, false, '되돌린 이름(식비)은 다시 살아있으므로 톰스톤이 없어야 함');
+});
+test('doRenameCat: 이름은 그대로 두고 아이콘만 바꾼 경우(v===old)에도 undoToast로 아이콘이 복원된다', () => {
+  sandbox.DB = {
+    categories: { expense: ['식비'] }, catIcon: { 'expense:식비': 'coffee' }, catVar: {}, txns: [], recurrences: [],
+  };
+  sandbox.catRenameDraft = { name: '식비', icon: 'bus' };
+  sandbox.doRenameCat('expense', 0);
+  assert.strictEqual(sandbox.DB.categories.expense[0], '식비', '이름은 바뀌지 않아야 함');
+  assert.strictEqual(sandbox.DB.catIcon['expense:식비'], 'bus', '아이콘만 바뀌어야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.catIcon['expense:식비'], 'coffee', '아이콘만 바꾼 변경도 되돌리면 원래 아이콘으로 복원돼야 함');
+});
+
 /* ---------- mergeCatInto: 카테고리 합치기(app-evolve cycle263 advance) ---------- */
 test('mergeCatInto: 거래/반복거래의 category가 대상 이름으로 옮겨가고, 반복거래는 doDeleteCat과 달리 비활성화되지 않는다', () => {
   sandbox.DB = {
