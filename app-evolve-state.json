@@ -1,15 +1,12 @@
 {
   "cycle": 341,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "종목코드(stockCode/cryptoCode)에 길이/문자 제한이 없어 openRateSheet의 innerHTML 렌더에서 id/onchange 속성이 escape 없이 그대로 삽입되는 저장형 HTML/JS 인젝션 공백 차단",
+    "why": "syncAssetInputs(index.html:5157)가 asCode 입력을 trim().toUpperCase()만 하고 cleanName/NAME_MAX 같은 길이·문자 클램프를 전혀 거치지 않은 채 d.stockCode/d.cryptoCode에 저장한다(asCode input 자체도 maxlength 없음, 5233/5240행). openRateSheet(8420-8421행)가 이 값을 `id=\"rateStock_${a.stockCode}\"`와 `onchange=\"setRate('stock','${a.stockCode}',this.value)\"`로 템플릿 문자열에 직접 꽂아 openSheet(10485행)의 sh.innerHTML=... 에 그대로 흘려보낸다 — 인접한 표시용 텍스트(rsub, 8420행)는 esc()로 감싸져 있는데 id/onchange 두 속성만 빠진 비대칭. 종목코드에 '나 \" 를 포함시키면(수동 입력, 또는 조작된 백업파일/클라우드 동기화 데이터로) 시세 연동 관리 시트를 열 때 바로 임의 속성/스크립트가 주입된다. 다른 모든 자유텍스트(이름/메모)는 cycle340에서 NAME_MAX/MEMO_MAX+cleanName으로 이미 막혔는데 종목코드만 비대칭으로 빠져 있던 것.",
+    "approach": "1) index.html:1976 NAME_MAX/MEMO_MAX 옆에 CODE_MAX=20 상수 추가. 2) syncAssetInputs(5157행)에서 asCode 값을 v.replace(/[^A-Z0-9.]/g,'').slice(0,CODE_MAX)로 정제해 stockCode/cryptoCode에 저장(문자는 알파넘+점만 허용 — 005930/AAPL/BRK.B/BTC 등 실제 티커 패턴과 호환, 인용부호·꺽쇠 등 위험문자는 소스에서 원천 차단). 3) asCode input 2곳(5233, 5240행)에 maxlength=\"${CODE_MAX}\" 추가(UX 피드백, 다른 필드와 동일 패턴). 4) 방어적으로 openRateSheet(8420-8421행)의 id/onchange 템플릿 보간에도 esc()를 추가해 레거시 데이터(이미 저장된 비정상 문자)까지 이중 방어. 5) CSV 가져오기/백업복원 경로에서 stockCode/cryptoCode를 설정하는 지점(csvRowToImportTxn류, 백업 복원 asset 필드 처리)도 같은 정제 함수를 거치는지 확인하고 빠졌으면 적용. 테스트: test/run.js의 기존 syncAssetInputs/asCode 테스트 근처(약 8044행)에 종목코드에 '\"'/'<'/긴 문자열이 들어갔을 때 [A-Z0-9.]만 남고 CODE_MAX로 잘리는 케이스, extractFunction('openRateSheet')로 렌더링한 결과 문자열에 깨지지 않은 id/onchange 속성(인용부호 breakout 없음)을 확인하는 실행형 테스트 추가."
+  },
   "history": [
-    {
-      "cycle": 336,
-      "phase": "critique",
-      "timestamp": "2026-11-11T09:12:16.000Z",
-      "summary": "txAmt/asAmt/goalAmt/budgetIn/qAmt/debtWhatIfExtra/asCostBasis/asAddedCost/asSaleProceeds/bigMinInput/분할금액 등 모든 금액 입력이 공용 fmtAmt(index.html:10520)로 포맷되는데, PIN 필드(maxlength=6)와 달리 자릿수 상한이 전혀 없음을 발견했다 — 16자리 이상 입력하면 Number.MAX_SAFE_INTEGER(9007199254740991, 16자리)를 넘어 정밀도가 깨진 값이 그대로 txDraft.amount/asDraft 등에 들어가 assetEval/balancesUpTo 등 합산 로직을 조용히 오염시킬 수 있다. 백업 복원·클라우드 동기화 경로의 sanitizeAmount(index.html:9275)도 min 하한만 클램프하고 상한이 전혀 없어, 손상되거나 조작된 백업 파일의 비정상적으로 큰 숫자가 그대로 통과한다. 둘 다 '상한 없음'이라는 같은 공백을 공유하므로 한 사이클에 같이 막을 수 있다고 판단. pending_advance_plan에 전역 상수 AMOUNT_MAX(15자리, 999,999,999,999,999 — Number.MAX_SAFE_INTEGER보다 안전하게 작고 현실적인 원화 금액보다는 넉넉함) 하나를 fmtAmt와 sanitizeAmount 양쪽에서 공유해 클램프하는 구체 계획(파일·라인, 테스트 확장 위치까지) 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
     {
       "cycle": 336,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-12T04:07:47.185Z",
       "summary": "cycle341 develop 커밋(5e754e8, matchAssetQuery에 평가금액 비교/범위 검색 추가)을 검토. matchTxnQuery/matchGoalQuery/matchRecQuery와 글자 단위로 같은 matchQueryTerms(normHay,terms,amountCandidates) 호출 패턴임을 라인 대조로 확인하고, matchAssetQuery(a,q,evalValue)가 evalValue==null일 때 amt=''로 haystack에 아무것도 추가하지 않고 amountCandidates=[evalValue]=[null]이 되어 parseAmountToken이 걸리는 숫자 검색어는 매칭되지 않지만(테스트로 이미 확인됨) 이름/통화/코드/귀속 substring 매칭은 하위호환되어 그대로 동작함을 코드로 재확인. 호출부 3곳(ST.assetQ 필터 index.html:4600, globalSearchBody:7399, pkFilteredAssets:12402) 모두 a.type==='debt'?-assetEval(a):assetEval(a)로 화면 표시값(음수 부채 포함)과 동일한 부호 규칙을 쓰는지 확인 — 자산 목록 합계(sum)·피커 bal 표시와 같은 공식이라 디버트 음수금액도 테스트(>1000만/<1000만 vs -5000000)대로 일관됨. pkFilteredAssets의 forEach가 q로 필터링 후 bal을 다시 assetEval로 계산해 검색 중엔 assetEval이 아이템당 최대 2번 불리는 점은 비용 증가가 있으나, 자산 목록(line 4601 sum)도 이미 동일하게 필터와 합계 계산에서 assetEval을 별도로 재계산하는 기존 관례와 같아 새로 만든 문제는 아님(실제 버그 아님, 개인 자산 앱 규모상 체감 영향 없음). node test/run.js 재실행 3327/3327 통과. 실제 버그 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 341,
+      "phase": "critique",
+      "timestamp": "2026-11-12T05:10:00.000Z",
+      "summary": "앱 전체를 한 걸음 물러나 훑어본 결과(Explore 서브에이전트가 발견), 다른 모든 자유텍스트 입력(이름/메모)이 cycle340에서 NAME_MAX/MEMO_MAX+cleanName으로 클램프된 것과 달리, 종목코드(stockCode/cryptoCode, syncAssetInputs index.html:5157)는 trim().toUpperCase()만 거치고 길이/문자 제한이 전혀 없음을 발견했다. 더 심각하게는 openRateSheet(8420-8421행)가 이 값을 id=\"rateStock_${a.stockCode}\"/onchange=\"setRate('stock','${a.stockCode}',this.value)\" 템플릿 문자열에 escape 없이 그대로 꽂아 openSheet(10485행)의 sh.innerHTML=...에 흘려보낸다 — 인접한 표시용 rsub 텍스트는 esc()로 감싸져 있는데 id/onchange 두 속성만 빠진 비대칭. 종목코드에 인용부호를 포함시키면(수동 입력, 또는 조작된 백업/클라우드 동기화 데이터) 시세 연동 관리 시트를 여는 순간 임의 속성/스크립트가 주입되는 저장형 HTML/JS 인젝션 경로다. 직접 grep/코드 읽기로 stockCode 소스(syncAssetInputs:5157)부터 렌더 싱크(openRateSheet:8420-8421, openSheet innerHTML:10485)까지 데이터 흐름을 재확인해 검증. 대안으로 allocation/budget 트래시 UI 일관성(저위험, 데이터손실 아님)과 CDN SRI 해시 누락(네트워크 접근 불가로 이전부터 보류, 새 발견 아님)을 검토했으나 기각. pending_advance_plan에 CODE_MAX=20 상수 신설 + syncAssetInputs 정제(allow-list [A-Z0-9.]+clamp) + asCode maxlength 추가 + openRateSheet id/onchange esc() 방어 + CSV/백업 경로 점검 + 테스트 포인트까지 구체 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
