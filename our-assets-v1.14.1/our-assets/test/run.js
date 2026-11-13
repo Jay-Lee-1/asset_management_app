@@ -31684,7 +31684,26 @@ test('kakaoLogin: 성공 콜백이 doLogin()과 같은 패턴으로 dbIsEmpty(DB
   // sanitizeBackup() 검증을 거치지 않고 통째로 DB를 바꿔치기했다 — 이제는 doLogin()/doSignup()과
   // 동일하게 restoreBackup()과 같은 경로(sanitizeBackup→DB 교체→migrate, 실패 시 롤백)를 쓰는
   // importGuestDataInto(guestRaw) 공용 헬퍼를 호출해야 한다.
-  assert.ok(/toast\(importGuestDataInto\(guestRaw\)\?'데이터를 가져왔어요':'가져오기에 실패했어요'\)/.test(body), 'confirmSheet 콜백이 doLogin()과 같은 방식(importGuestDataInto)으로 게스트 DB를 가져오지 않음');
+  assert.ok(body.includes('const r=importGuestDataInto(guestRaw)'), 'confirmSheet 콜백이 doLogin()과 같은 방식(importGuestDataInto)으로 게스트 DB를 가져오지 않음');
+});
+/* ---------- kakaoLogin/doLogin/doSignup: 게스트 데이터 가져오기도 되돌릴 수 있어야 한다
+ * (app-evolve cycle346 critique/advance) ----------
+ * importGuestDataInto()는 restoreBackup()을 그대로 호출하는 '전체 DB 교체' 경로라 백업 파일
+ * 복원(proceedWithBackupObj)과 동일한 되돌리기 안전장치가 필요한데도, 세 호출부가 모두
+ * `toast(importGuestDataInto(guestRaw)?...)`로 성공 여부만 보고 끝냈다 — 되돌릴 UI가 없었다.
+ * 이제 importGuestDataInto는 성공 시 {prev,cancelPush}를, 실패 시 null을 반환하고, 세 호출부는
+ * 그 결과로 undoToast를 띄워 r.cancelPush()로 예약된 push를 취소하고 DB=r.prev로 복원한다. */
+test('kakaoLogin/doLogin/doSignup: 세 호출부 모두 importGuestDataInto() 성공 시 undoToast로 DB=r.prev 복원 콜백을 건다(형제 하나만 빠지는 회귀 방지)', () => {
+  const kakaoLoginBody = extractFunction('kakaoLogin');
+  const doLoginBody = extractFunction('doLogin');
+  const doSignupBody = extractFunction('doSignup');
+  for (const [name, body] of [['kakaoLogin', kakaoLoginBody], ['doLogin', doLoginBody], ['doSignup', doSignupBody]]) {
+    assert.ok(body.includes('const r=importGuestDataInto(guestRaw)'), `${name}이 importGuestDataInto(guestRaw)의 결과를 r로 받지 않음`);
+    assert.ok(body.includes("if(r)undoToast('데이터를 가져왔어요'"), `${name}이 성공 시 undoToast로 되돌리기를 제안하지 않음`);
+    assert.ok(body.includes('r.cancelPush()'), `${name}의 되돌리기 콜백이 예약된 push 타이머(r.cancelPush)를 취소하지 않음`);
+    assert.ok(body.includes('DB=r.prev'), `${name}의 되돌리기 콜백이 DB를 r.prev(가져오기 전 DB)로 복원하지 않음`);
+    assert.ok(body.includes("else toast('가져오기에 실패했어요')"), `${name}이 실패 시(r이 null) 실패 토스트를 띄우지 않음`);
+  }
 });
 test('kakaoLogin: 게스트 데이터가 있지만 이 계정이 비어있지 않으면 doLogin()과 같은 "합쳐지지 않았어요" 안내 토스트를 띄운다', () => {
   const body = extractFunction('kakaoLogin');
@@ -31712,22 +31731,51 @@ test('doLogin/doSignup도 kakaoLogin과 동일하게 importGuestDataInto(guestRa
  * 이 앱 자신의 save()가 쓴 것이라 보통은 깨끗하지만, sanitizeBackup의 검증 항목 중 상당수(예:
  * cycle234가 고친 txn.date 형식/달력 유효성 검사)는 그 검증이 생기기 전 버전에서 저장된 뒤
  * migrate()만으로는 못 고쳐지는 값으로 localStorage에 그대로 남아있을 수 있다. */
-test('importGuestDataInto: 유효한 게스트 백업은 restoreBackup()과 동일한 경로로 DB를 교체하고 save()/renderCurrent()를 호출한 뒤 true를 반환한다', () => {
+/* app-evolve cycle346 critique/advance: importGuestDataInto는 proceedWithBackupObj와 동일한
+ * '전체 DB 교체' 경로라, 이제 성공 시 되돌리기에 쓸 {prev,cancelPush}를(이전엔 true), 실패 시
+ * null을(이전엔 false) 반환한다 — prev는 restoreBackup()이 돌려주는 교체 전 DB의 깊은 복사. */
+test('importGuestDataInto: 유효한 게스트 백업은 restoreBackup()과 동일한 경로로 DB를 교체하고 save({deferCloudPush:true})/renderCurrent()를 호출한 뒤 {prev,cancelPush}를 반환한다', () => {
   sandbox.DB = { assets: [{ id: 'acct-old' }], txns: [], categories: {}, catIcon: {}, catVar: {}, budgets: {}, owners: ['나'], recurrences: [] };
   const saveOrig = sandbox.save, renderOrig = sandbox.renderCurrent;
-  let saveCalled = 0, renderCalled = 0;
-  sandbox.save = () => { saveCalled++; };
+  const saveCalls = [];
+  let renderCalled = 0;
+  sandbox.save = (opts) => { saveCalls.push(opts); };
   sandbox.renderCurrent = () => { renderCalled++; };
   try {
     const guestRaw = JSON.stringify({ assets: [{ id: 'guest-a1', type: 'cash' }], txns: [{ id: 'guest-t1', date: '2026-03-10' }] });
-    const ok = sandbox.importGuestDataInto(guestRaw);
-    assert.strictEqual(ok, true, '정상 게스트 백업이면 true를 반환해야 함');
+    const r = sandbox.importGuestDataInto(guestRaw);
+    assert.ok(r && typeof r === 'object', '정상 게스트 백업이면 {prev,cancelPush} 객체를 반환해야 함(이전엔 true)');
+    assert.strictEqual(r.prev.assets[0].id, 'acct-old', '반환된 prev가 교체되기 전 DB(acct-old)를 담고 있지 않음 — 되돌리기가 교체 전 상태로 못 돌아감');
+    assert.strictEqual(typeof r.cancelPush, 'function', '반환값에 예약된 push를 취소할 cancelPush 함수가 없음');
     assert.ok(sandbox.DB.assets.some(a => a.id === 'guest-a1'), 'DB가 게스트 자산으로 교체되어야 함');
     assert.ok(sandbox.DB.txns.some(t => t.id === 'guest-t1'), 'DB가 게스트 거래로 교체되어야 함');
-    assert.strictEqual(saveCalled, 1, 'save()가 정확히 한 번 호출되어야 함');
+    assert.strictEqual(saveCalls.length, 1, 'save()가 정확히 한 번 호출되어야 함');
+    assert.strictEqual(saveCalls[0] && saveCalls[0].deferCloudPush, true, 'proceedWithBackupObj와 동일하게 되돌리기 grace(6초) 동안은 save({deferCloudPush:true})로 즉시 push를 미뤄야 함');
     assert.strictEqual(renderCalled, 1, 'renderCurrent()가 정확히 한 번 호출되어야 함');
   } finally {
     sandbox.save = saveOrig; sandbox.renderCurrent = renderOrig;
+  }
+});
+test('importGuestDataInto: save({deferCloudPush:true}) 후 6초 뒤에야 scheduleCloudPush를 예약하고, 반환된 cancelPush()를 부르면 그 타이머가 취소된다', () => {
+  sandbox.DB = { assets: [{ id: 'acct-old' }], txns: [], categories: {}, catIcon: {}, catVar: {}, budgets: {}, owners: ['나'], recurrences: [] };
+  const saveOrig = sandbox.save, renderOrig = sandbox.renderCurrent, setTimeoutOrig = sandbox.setTimeout, clearTimeoutOrig = sandbox.clearTimeout, scheduleCloudPushOrig = sandbox.scheduleCloudPush;
+  sandbox.save = () => {}; sandbox.renderCurrent = () => {};
+  let capturedFn = null, capturedMs = null, timerId = 0;
+  sandbox.setTimeout = (fn, ms) => { capturedFn = fn; capturedMs = ms; timerId += 1; return timerId; };
+  const clearTimeoutCalls = [];
+  sandbox.clearTimeout = (id) => { clearTimeoutCalls.push(id); };
+  let scheduleCloudPushCalls = 0;
+  sandbox.scheduleCloudPush = () => { scheduleCloudPushCalls++; };
+  try {
+    const guestRaw = JSON.stringify({ assets: [{ id: 'guest-a1', type: 'cash' }], txns: [] });
+    const r = sandbox.importGuestDataInto(guestRaw);
+    assert.strictEqual(capturedMs, 6000, '복원 안내 문구("6초 안에는 되돌릴 수 있어요")와 다르게 push 지연 시간이 6000ms가 아님');
+    r.cancelPush();
+    assert.deepStrictEqual(clearTimeoutCalls, [1], 'cancelPush()가 예약된 push 타이머를 clearTimeout으로 취소하지 않음');
+    capturedFn(); // 취소됐어야 할 타이머가 그래도 발화한 상황을 흉내냄
+    assert.strictEqual(scheduleCloudPushCalls, 1, '취소된 타이머라도 fn 자체는 scheduleCloudPush를 부르는 함수여야 함(취소 여부는 clearTimeout이 맡음)');
+  } finally {
+    sandbox.save = saveOrig; sandbox.renderCurrent = renderOrig; sandbox.setTimeout = setTimeoutOrig; sandbox.clearTimeout = clearTimeoutOrig; sandbox.scheduleCloudPush = scheduleCloudPushOrig;
   }
 });
 test('importGuestDataInto: 손상된 게스트 거래(달력에 없는 날짜)는 sanitizeBackup()이 걸러내 DB에 들어가지 않는다 — 수정 전에는 검증 없이 그대로 들어갔음', () => {
@@ -31740,21 +31788,21 @@ test('importGuestDataInto: 손상된 게스트 거래(달력에 없는 날짜)�
       { id: 'guest-bad', date: '2026-02-30' } /* 달력상 존재하지 않는 날짜 — csvDateValid()가 false */
     ]
   });
-  const ok = sandbox.importGuestDataInto(guestRaw);
-  assert.strictEqual(ok, true);
+  const r = sandbox.importGuestDataInto(guestRaw);
+  assert.ok(r && typeof r === 'object');
   assert.ok(sandbox.DB.txns.some(t => t.id === 'guest-ok'), '유효한 거래는 그대로 남아야 함');
   assert.ok(!sandbox.DB.txns.some(t => t.id === 'guest-bad'), '달력에 없는 날짜의 거래는 sanitizeBackup()이 제거해야 함 — 수정 전엔 검증 없이 그대로 DB.txns에 들어갔음');
 });
-test('importGuestDataInto: JSON 파싱 실패나 최소 스키마(assets/txns 배열) 불일치면 DB를 건드리지 않고 false를 반환한다', () => {
+test('importGuestDataInto: JSON 파싱 실패나 최소 스키마(assets/txns 배열) 불일치면 DB를 건드리지 않고 null을 반환한다', () => {
   const orig = { assets: [{ id: 'safe' }], txns: [], categories: {}, catIcon: {}, catVar: {}, budgets: {}, owners: ['나'], recurrences: [] };
   sandbox.DB = orig;
-  assert.strictEqual(sandbox.importGuestDataInto('이것은 JSON이 아님{{{'), false, '깨진 JSON이면 false를 반환해야 함');
+  assert.strictEqual(sandbox.importGuestDataInto('이것은 JSON이 아님{{{'), null, '깨진 JSON이면 null을 반환해야 함(이전엔 false)');
   assert.strictEqual(sandbox.DB, orig, '깨진 JSON이면 DB를 건드리지 않아야 함');
-  assert.strictEqual(sandbox.importGuestDataInto(JSON.stringify({ assets: 'not-an-array', txns: [] })), false, 'assets가 배열이 아니면 false를 반환해야 함');
+  assert.strictEqual(sandbox.importGuestDataInto(JSON.stringify({ assets: 'not-an-array', txns: [] })), null, 'assets가 배열이 아니면 null을 반환해야 함');
   assert.strictEqual(sandbox.DB, orig, 'assets가 배열이 아니면 DB를 건드리지 않아야 함');
-  assert.strictEqual(sandbox.importGuestDataInto(JSON.stringify({ assets: [], txns: {} })), false, 'txns가 배열이 아니면 false를 반환해야 함');
+  assert.strictEqual(sandbox.importGuestDataInto(JSON.stringify({ assets: [], txns: {} })), null, 'txns가 배열이 아니면 null을 반환해야 함');
   assert.strictEqual(sandbox.DB, orig, 'txns가 배열이 아니면 DB를 건드리지 않아야 함');
-  assert.strictEqual(sandbox.importGuestDataInto(null), false, 'null 입력이면 false를 반환해야 함(JSON.parse(null)은 예외 없이 null을 돌려줌)');
+  assert.strictEqual(sandbox.importGuestDataInto(null), null, 'null 입력이면 null을 반환해야 함(JSON.parse(null)은 예외 없이 null을 돌려줌)');
   assert.strictEqual(sandbox.DB, orig, 'null 입력이면 DB를 건드리지 않아야 함');
 });
 

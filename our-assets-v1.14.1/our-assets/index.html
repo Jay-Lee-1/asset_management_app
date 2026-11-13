@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.432';
+const APP_VERSION='1.47.433';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -1940,15 +1940,21 @@ function guestHasData(){try{const g=JSON.parse(localStorage.getItem('asset_app_d
  * restoreBackup()과 완전히 동일한 경로(sanitizeBackup→DB 교체→migrate, migrate 실패 시 자동
  * 롤백)를 그대로 재사용한다. 성공하면 true, 실패(JSON 파싱 오류·최소 스키마 불일치·migrate
  * 예외)면 DB를 건드리지 않고 false를 돌려준다. */
+/* proceedWithBackupObj(10214)와 똑같이 restoreBackup()을 거치는 '전체 DB 교체' 경로인데도
+ * 되돌리기가 없던 비대칭을 고친다(app-evolve cycle346 critique/advance). 성공하면 되돌리기에
+ * 쓸 {prev,cancelPush}를, 실패하면 null을 반환한다(이전엔 true/false). 로그인 직후라 보통 DB가
+ * 비어있어 __preRestore_ 같은 localStorage 스냅샷은 생략했다 — prev 메모리 클로저만으로도 이
+ * 경로의 되돌리기엔 충분하다고 판단. */
 function importGuestDataInto(guestRaw){
  try{
   const raw=JSON.parse(guestRaw);
-  if(!raw||!Array.isArray(raw.assets)||!Array.isArray(raw.txns))return false;
+  if(!raw||!Array.isArray(raw.assets)||!Array.isArray(raw.txns))return null;
   const{data:obj}=sanitizeBackup(raw);
-  restoreBackup(obj);
-  save();renderCurrent();
-  return true;
- }catch(e){return false}
+  const prev=restoreBackup(obj);
+  save({deferCloudPush:true});invalidateBalances();renderCurrent();
+  const pushT=setTimeout(scheduleCloudPush,6000);
+  return{prev,cancelPush:()=>clearTimeout(pushT)};
+ }catch(e){return null}
 }
 
 let DB, STORAGE_OK=true, STORAGE_PERSISTED=null, TAB_SAVED_AT=0, TAB_SYNC_PENDING=null, DB_JSON_LEN=0;
@@ -13331,7 +13337,7 @@ function kakaoLogin(){
      const id='kakao:'+res.id;const nick=(res.kakao_account&&res.kakao_account.profile&&res.kakao_account.profile.nickname)||'카카오 사용자';
      AUTH.kakaoUpsert(id,nick);GUEST=false;localStorage.setItem('asset_app_guest','0');AUTH.setSession(id);startApp();
      const guestRaw=localStorage.getItem('asset_app_db_v3__guest');
-     if(dbIsEmpty(DB)&&guestHasData())confirmSheet('데이터 가져오기','방금까지 게스트로 입력한 자산·내역이 있어요. 이 계정으로 가져올까요?','가져오기',()=>{toast(importGuestDataInto(guestRaw)?'데이터를 가져왔어요':'가져오기에 실패했어요')});
+     if(dbIsEmpty(DB)&&guestHasData())confirmSheet('데이터 가져오기','방금까지 게스트로 입력한 자산·내역이 있어요. 이 계정으로 가져올까요?','가져오기',()=>{const r=importGuestDataInto(guestRaw);if(r)undoToast('데이터를 가져왔어요',()=>{r.cancelPush();DB=r.prev;save();invalidateBalances();renderCurrent();toast('되돌렸어요')});else toast('가져오기에 실패했어요')});
      else if(!dbIsEmpty(DB)&&guestHasData())toast('카카오 로그인 완료 · '+nick+' · 게스트로 입력한 데이터는 이 계정에 합쳐지지 않았어요');
      else toast('카카오 로그인 완료 · '+nick);
    },fail(){authErr('카카오 사용자 정보를 가져오지 못했어요.')}})},
@@ -13358,7 +13364,7 @@ async function doLogin(){
  if(r.cloud)cloudAuthResult=await afterCloudAuth(r.uid);
  startApp();
  const guestRaw=localStorage.getItem('asset_app_db_v3__guest');
- if(dbIsEmpty(DB)&&guestHasData())confirmSheet('데이터 가져오기','방금까지 게스트로 입력한 자산·내역이 있어요. 이 계정으로 가져올까요?','가져오기',()=>{toast(importGuestDataInto(guestRaw)?'데이터를 가져왔어요':'가져오기에 실패했어요')});
+ if(dbIsEmpty(DB)&&guestHasData())confirmSheet('데이터 가져오기','방금까지 게스트로 입력한 자산·내역이 있어요. 이 계정으로 가져올까요?','가져오기',()=>{const r=importGuestDataInto(guestRaw);if(r)undoToast('데이터를 가져왔어요',()=>{r.cancelPush();DB=r.prev;save();invalidateBalances();renderCurrent();toast('되돌렸어요')});else toast('가져오기에 실패했어요')});
  else if(cloudAuthResult&&cloudAuthResult.status==='guestMerged')toast('로그인했어요 · '+r.email+' · 게스트로 입력한 데이터를 이 계정으로 가져왔어요');
  else{if(!dbIsEmpty(DB)&&guestHasData())toast('로그인했어요 · '+r.email+' · 게스트로 입력한 데이터는 이 계정에 합쳐지지 않았어요');else toast('로그인했어요 · '+r.email)}
 }
@@ -13377,7 +13383,7 @@ async function doSignup(){
  const guestRaw=localStorage.getItem('asset_app_db_v3__guest');
  startApp();
  const afterSignupFlow=()=>{
-  if(guestHasData())confirmSheet('데이터 가져오기','방금까지 게스트로 입력한 자산·내역이 있어요. 새 계정으로 가져올까요?','가져오기',()=>{toast(importGuestDataInto(guestRaw)?'데이터를 가져왔어요':'가져오기에 실패했어요')});
+  if(guestHasData())confirmSheet('데이터 가져오기','방금까지 게스트로 입력한 자산·내역이 있어요. 새 계정으로 가져올까요?','가져오기',()=>{const r=importGuestDataInto(guestRaw);if(r)undoToast('데이터를 가져왔어요',()=>{r.cancelPush();DB=r.prev;save();invalidateBalances();renderCurrent();toast('되돌렸어요')});else toast('가져오기에 실패했어요')});
   else toast('가입 완료 · '+r.email);
  };
  if(r.recoveryCode)showRecoveryCode(r.recoveryCode,'비밀번호를 잊으면 이 코드로만 복구할 수 있어요. 지금 안전한 곳에 적어 두세요 — 다시 보여드리지 않아요.',afterSignupFlow);
