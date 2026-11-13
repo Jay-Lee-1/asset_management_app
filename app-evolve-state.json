@@ -1,15 +1,12 @@
 {
   "cycle": 348,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "afterCloudAuth()의 '리모트 없음(empty)' 게스트 데이터 자동 병합에 dbIsEmpty 가드와 undo가 없음",
+    "why": "afterCloudAuth(uid)(index.html:2241-2275)의 empty-remote 분기(2270-2272)가 guestHasData()면 DB=JSON.parse(localStorage guest)로 즉시 통째 교체하는데, 이는 kakaoLogin/doLogin/doSignup의 비클라우드 게스트 가져오기 분기와 똑같은 '전체 DB 교체'인데도 cycle346이 그 세 곳에만 입혀준 importGuestDataInto()의 confirmSheet+undoToast+dbIsEmpty(DB) 가드를 전혀 받지 못한다. 같은 안전장치 패밀리에서 형제 하나(클라우드 경로)만 빠진 cycle328-334/346과 동일한 버그 클래스: (1) confirmSheet 없이 자동/무음 실행, (2) dbIsEmpty(DB) 체크가 없어 해당 계정의 로컬 DB에 이미 실제 데이터가 있어도(이전 부분 세션 등) 백업 없이 덮어씀, (3) doLogin(13378-13384)/doSignup(13395-13397) 모두 cloudAuthResult.status==='guestMerged'를 plain toast()로만 처리해 되돌릴 방법이 전혀 없음.",
+    "approach": "afterCloudAuth의 empty-remote 분기에서 직접 DB=JSON.parse(...) 하는 대신, dbIsEmpty(DB) 가드로 감싼 뒤 importGuestDataInto(guestRaw)를 호출해 kakaoLogin/doLogin의 비클라우드 분기와 동일한 패턴을 따른다. afterCloudAuth의 반환 계약을 바꿔 이 분기에서 {status:'guestMerged', prev, cancelPush} 형태(또는 동등한 구조)를 돌려주도록 하고, doLogin/doSignup의 status==='guestMerged' 처리를 cloudAuthResult.prev/cancelPush를 쓰는 undoToast(...)로 교체(r.cancelPush();DB=r.prev;save();invalidateBalances();renderCurrent();toast('되돌렸어요') 패턴, cycle346과 동일). afterCloudAuth의 다른 분기(localUnsynced/merged/remote, cycle211/212/337이 의도적으로 undo 불가로 남긴 충돌 해결 경로)는 건드리지 않는다. 테스트: (a) empty remote+게스트 데이터+dbIsEmpty(DB)=true → 병합되고 undo 가능한 계약 반환, (b) empty remote+게스트 데이터+DB가 이미 비어있지 않음 → 덮어쓰지 않음, (c) undo가 병합 전 DB를 정확히 복원(cycle346의 importGuestDataInto 테스트 픽스처/샌드박스 배선 재사용)."
+  },
   "history": [
-    {
-      "cycle": 343,
-      "phase": "develop",
-      "timestamp": "2026-11-12T11:05:00.000Z",
-      "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — 은행/카드 범용 CSV 가져오기(mapGenericCsvRow, logic.js:1477-1480)의 memo 필드가 cycle340에서 자체 포맷 CSV 재가져오기(csvRowToImportTxn, index.html)에 적용된 MEMO_MAX clamp를 받지 않고 .trim()만 거친 채 그대로 DB.txns에 영구 저장되고 있었다(category는 openCatPicker로 고른 기존 카테고리라 이미 길이가 제한돼 있어 영향 없음, memo만 raw CSV 셀을 직접 읽음). 손상되거나 열 매핑이 잘못된 은행 CSV(병합된 상세내역 칸 등)에 수만 자 길이의 셀이 들어오면 cycle340이 다른 모든 메모/이름 입력 경로에서 막으려던 것과 똑같은 저장공간 오염이 이 경로에만 남아 있던 비대칭. logic.js:1480의 memo 추출에 .slice(0,MEMO_MAX)를 추가해 csvRowToImportTxn과 동일한 '거부가 아니라 clamp' 방식으로 통일(새 상수/헬퍼 불필요, MEMO_MAX는 이미 전역이고 test/run.js sandbox에도 이미 로드돼 있어 추가 배선 불필요). 테스트 2건 추가(MEMO_MAX를 넘는 memo 셀이 거부되지 않고 정확히 MEMO_MAX 길이로 잘려 ok:true로 통과/MEMO_MAX 이하 memo는 그대로 유지되는 회귀 방지) — node test/run.js 3340->3342/3342 통과. node --check logic.js/sw.js/test/run.js 통과(index.html은 변경 없음, 기존 extractMainScript 기반 전체 테스트 스위트로 영향 없음 확인). logic.js는 sw.js 캐시 목록에 포함돼 서비스워커가 캐싱하므로 사용자에게 갱신된 파일이 전달되도록 APP_VERSION 1.47.425->1.47.426, sw.js CACHE v692->v693.",
-      "commit": null
-    },
     {
       "cycle": 343,
       "phase": "review",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-13T09:40:00.000Z",
       "summary": "develop(cycle348, 1a2d863: recScheduleSameSlot이 day:31↔'last'를 같은 슬롯으로 정규화)를 검토. recDates()(logic.js:52)의 day=r.day==='last'?lastDay(y,m):Math.min(r.day,lastDay(y,m)) 계산을 직접 대조해, 31보다 긴 달이 없어 Math.min(31,lastDay(y,m))이 항상 lastDay(y,m)과 같음을 재확인(day:31과 day:'last'가 모든 달에서 완전히 동일한 날짜를 만든다는 전제가 맞음). norm=d=>d===31?'last':d가 31만 'last'로 접고 다른 값은 그대로 두므로 norm(31)===norm('last')→true, norm(30)===norm('last')→30!=='last'→false로 정규화 범위가 정확히 그 두 값 쌍에만 한정됨을 확인. daily/weekly/biweekly/yearly 분기와 !a.startDate||!b.startDate 폴백 가드는 수정되지 않고 그대로임을 diff로 확인. index.html/sw.js 변경은 APP_VERSION 1.47.435->436, CACHE v702->v703 버전 범프 2줄뿐임을 git show로 확인(로직 변경 없음). node test/run.js 3375/3375 통과, node --check logic.js/sw.js/test/run.js 통과. 실제 버그 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 348,
+      "phase": "critique",
+      "timestamp": "2026-11-13T10:40:00.000Z",
+      "summary": "앱 전체를 한 걸음 물러나 훑어본 결과(Explore 서브에이전트가 발견 및 코드로 직접 검증), afterCloudAuth(uid)(index.html:2241-2275)의 'empty-remote'(클라우드에 아직 아무 행도 없음) 분기(2270-2272)가 guestHasData()면 DB=JSON.parse(localStorage guest)로 즉시 통째 교체하는데, 이는 kakaoLogin/doLogin/doSignup의 비클라우드 게스트 가져오기 분기와 완전히 같은 '전체 DB 교체'인데도 cycle346이 그 세 곳에만 입혀준 importGuestDataInto()의 confirmSheet+undoToast+dbIsEmpty(DB) 가드를 전혀 받지 못함을 확인했다 — 같은 안전장치 패밀리에서 형제 하나(클라우드 경로)만 빠진, cycle328-334/346과 동일한 버그 클래스. doLogin(13378-13384)/doSignup(13395-13397) 모두 cloudAuthResult.status==='guestMerged'를 plain toast()로만 처리해 되돌릴 방법이 없고, dbIsEmpty(DB) 체크도 없어 해당 계정의 로컬 DB에 이미 실제 데이터가 있어도 백업 없이 덮어씌워질 수 있다. 재검토한 후보들(doSignup의 비클라우드 분기에 dbIsEmpty 가드가 없는 건 가입 직후 DB가 항상 비어있어 실제 트리거 없음/mergeAssetInto의 '아직 합칠 수 없어요' 분기는 ASSET_TYPES 10종이 BAL_ASSET_TYPES∪isMarketValued로 전부 커버돼 도달 불가능한 의도된 방어 코드/정산·벌크액션 undo 커버리지는 재확인 결과 이미 전부 완비)는 새 근거 없어 기각. pending_advance_plan에 afterCloudAuth의 empty-remote 분기를 dbIsEmpty 가드+importGuestDataInto 재사용으로 바꾸고 반환 계약에 prev/cancelPush를 실어 doLogin/doSignup이 undoToast로 되돌릴 수 있게 하는 구체 계획 저장. node test/run.js 3375/3375 통과 확인(베이스라인 깨짐 없음). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
