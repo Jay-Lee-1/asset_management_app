@@ -8764,6 +8764,17 @@ test('mapGenericCsvRow: MEMO_MAX 이하 memo 셀은 그대로 유지된다(회�
   assert.strictEqual(r.ok, true);
   assert.strictEqual(r.txn.memo, memo);
 });
+test("mapGenericCsvRow: signed 모드에서 AMOUNT_MAX를 넘는 금액은 유한한 정수여도 error:'amount'로 걸러진다(csvRowToImportTxn과 동일한 상한, app-evolve cycle350 develop)", () => {
+  const over = sandbox.mapGenericCsvRow(['2026-01-01', String(sandbox.AMOUNT_MAX + 1)], { dateCol: 0, amountCol: 1, mode: 'signed', category: '식비' }, 'a1');
+  assert.strictEqual(over.ok, false); assert.strictEqual(over.error, 'amount');
+  const atMax = sandbox.mapGenericCsvRow(['2026-01-01', String(sandbox.AMOUNT_MAX)], { dateCol: 0, amountCol: 1, mode: 'signed', category: '식비' }, 'a1');
+  assert.strictEqual(atMax.ok, true, 'AMOUNT_MAX 당일은 상한선에 포함되어야 함');
+  assert.strictEqual(atMax.txn.amount, sandbox.AMOUNT_MAX);
+});
+test("mapGenericCsvRow: split 모드(입금/출금 분리 열)에서도 AMOUNT_MAX 상한이 동일하게 적용된다", () => {
+  const over = sandbox.mapGenericCsvRow(['2026-01-01', '', String(sandbox.AMOUNT_MAX + 1)], { dateCol: 0, inCol: 1, outCol: 2, mode: 'split', category: '식비' }, 'a1');
+  assert.strictEqual(over.ok, false); assert.strictEqual(over.error, 'amount');
+});
 test('normalizeCsvDateCell: 점/슬래시/구분자 없음(연도 맨 앞) 표기를 YYYY-MM-DD로 바꾼다(app-evolve cycle288)', () => {
   assert.strictEqual(sandbox.normalizeCsvDateCell('2026.1.5'), '2026-01-05');
   assert.strictEqual(sandbox.normalizeCsvDateCell('2026.01.05'), '2026-01-05');

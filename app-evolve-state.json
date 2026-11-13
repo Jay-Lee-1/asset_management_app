@@ -1,13 +1,13 @@
 {
   "cycle": 350,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
-      "cycle": 345,
+      "cycle": 350,
       "phase": "develop",
-      "timestamp": "2026-11-12T19:15:13.548Z",
-      "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — doRenameOwner()(index.html:5439)가 귀속 이름을 바꾸는 완결 동작인데도, 같은 owner 3형제 함수인 delOwner(삭제, 5432행)와 mergeOwnerInto(합치기, 5534행)는 모두 undoToast로 되돌릴 수 있는 반면 doRenameOwner만 plain toast()로 끝나 되돌릴 방법이 전혀 없었다. 이름을 잘못 입력하고 저장을 눌러도(흔한 실수) 되돌리려면 renameOwnerSheet를 다시 열어 옛 이름을 손으로 다시 타이핑해야 했는데, 그마저도 그 사이 ST 필터가 다른 귀속으로 바뀌었으면 복원이 안 맞는다. mergeOwnerInto가 이미 복원하던 필드(DB.assets/DB.goals owner, ST.assetOwner/plan.owner/spendOwner/hist.owner, DB.settings.settle.ownerA/ownerB, DB.nwHistory[].byOwner 키, ownerTombKey 톰스톤)를 doRenameOwner에도 그대로 거울처럼 추가했다 — 단, 이름변경은 두 귀속이 합쳐지는 게 아니라 1:1 재배선이라 mergeOwnerInto의 localStorage 백업·byType 합산 로직은 필요 없어 더 단순하다. 톰스톤은 \"새 이름(v)이 과거에 지워졌던 이름이면 그 톰스톤을 지워 되살림을 허용\"하는 기존 동작까지 undo가 정확히 뒤집도록 prevVTomb로 되돌리기 전 값을 캡처했다. 테스트 3건 추가(전체 필드 복원/톰스톤이 있던 이름으로 변경 후 undo 시 그 톰스톤 복원/undo 시 touch() 재적용으로 mergeCollection 병합 불변식 유지) — node test/run.js 3354->3357/3357 통과. node --check sw.js/test/run.js 통과, index.html은 test/run.js의 extractMainScript 기반 전체 스위트 실행 자체가 구문 검증을 겸함(cycle339/343/344 노트와 동일한 이유로 단순 <script> 정규식 추출 대체). 사용자 체감 동작 변화(귀속 이름변경을 실수로 저장해도 6초 안에 되돌릴 수 있음)라 APP_VERSION 1.47.429->1.47.430, sw.js CACHE v696->v697. doRenameCat()(index.html:8216)도 동일한 undo 공백이 있음을 Explore가 함께 확인했으나 범위가 더 커(txn/반복거래 split, budgetHistory, catVar, rollover, catIcon까지 포함) 이번 사이클 범위 밖으로 남겨 다음 critique 후보로 적합.",
+      "timestamp": "2026-11-13T15:10:00.000Z",
+      "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — mapGenericCsvRow(logic.js:1491, 은행/카드 CSV 열매핑 가져오기)가 csvRowToImportTxn(index.html:8999, 이 앱 자체 포맷 CSV 가져오기)과 완전히 같은 {ok,unmatched,txn} 결과 모양을 돌려주는 직접 형제 함수인데도, cycle339가 csvRowToImportTxn에 추가한 amount>AMOUNT_MAX 상한 가드를 받지 못해 signed/split 두 모드 모두 유한한 정수이기만 하면(예: 금액 열에 '9999999999999999999' → Number('9999999999999999999')=1e19, Number.isFinite/Number.isInteger 둘 다 true) AMOUNT_MAX(999,999,999,999,999)를 훌쩍 넘는 값이 그대로 DB.txns에 들어가 balanceAt/assetEval/nwHistory 정밀도를 깨뜨릴 수 있었음을 직접 계산으로 검증했다. 최종 amount 검증 줄(logic.js:1522, 원래 !Number.isInteger(amount)||amount<=0)에 ||amount>AMOUNT_MAX를 추가해 csvRowToImportTxn과 동일한 상한을 걸었다(AMOUNT_MAX는 index.html 전역 상수라 logic.js가 이미 MEMO_MAX를 같은 방식으로 참조하던 것과 동일하게 안전). 테스트 2건 추가(signed 모드: AMOUNT_MAX+1은 error:'amount', AMOUNT_MAX 당일은 통과·amount 보존 / split 모드: 입금 열이 AMOUNT_MAX를 넘으면 동일하게 걸러짐) — csvRowToImportTxn의 기존 AMOUNT_MAX 테스트(test/run.js:8318)와 같은 패턴. node test/run.js 3387->3389/3389 통과. node --check logic.js/sw.js/test/run.js 통과, index.html은 test/run.js의 전체 스위트 실행(vm 샌드박스 로드) 자체가 구문 검증을 겸함(cycle339 이후 관례와 동일). 사용자 체감 동작 변화(손상되거나 비정상적으로 큰 금액 열을 가진 은행/카드 CSV 행이 더 이상 조용히 가져와지지 않고 매칭 실패로 걸러짐)라 APP_VERSION 1.47.439->1.47.440, sw.js CACHE v706->v707.",
       "commit": null
     },
     {

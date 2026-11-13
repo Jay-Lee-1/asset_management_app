@@ -1519,7 +1519,10 @@ function mapGenericCsvRow(cells,mapping,targetAssetId){
   type=raw>0?'income':'expense';
   amount=Math.round(Math.abs(raw));
  }
- if(!Number.isInteger(amount)||amount<=0)return{ok:false,error:'amount'};
+ /* amount>AMOUNT_MAX: csvRowToImportTxn(index.html, 이 앱 자체 포맷 CSV 가져오기)이 cycle339에서
+  * 받은 상한과 같은 가드. 은행/카드 CSV의 손상되거나 깨진 금액 열이 유한한 정수로 파싱돼도
+  * 그대로 DB.txns에 들어가 balanceAt/nwHistory 정밀도를 깨지 않게 막는다(app-evolve cycle350 develop). */
+ if(!Number.isInteger(amount)||amount<=0||amount>AMOUNT_MAX)return{ok:false,error:'amount'};
  const txn={type,date,category:mapping.category,amount,memo};
  txn.fromAssetId=type==='expense'?targetAssetId:null;
  txn.toAssetId=type==='income'?targetAssetId:null;
