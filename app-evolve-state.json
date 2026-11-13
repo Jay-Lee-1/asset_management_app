@@ -1,15 +1,12 @@
 {
   "cycle": 349,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "분할입력(splits) 메모 필드에 MEMO_MAX 클램프 누락",
+    "why": "txMemo(index.html:6088)/rMemo(6633)는 HTML maxlength=MEMO_MAX와 input 핸들러(txMemoInput:6110/recMemoInput:6547) 2중으로 길이를 제한하지만, '여러 카테고리로 나누기' 분할 라인의 메모 입력(splitMemo${i})은 maxlength 속성이 없고 txSplitMemo(6192)/recSplitMemo(6597)도 el.value를 그대로 대입해 길이 검증이 전혀 없다. 분할 카테고리는 openCatPicker로 고정 목록에서만 골라 안전하지만 메모는 완전 자유 텍스트라 DB.txns[].splits/DB.recurrences[].splits/.edits[date].splits에 무제한 길이로 영구 저장된다. sanitizeBackup()의 분할 재검증 블록(9586/9696/9771, 3곳 동일 코드 복제)도 amount만 클램프하고 s.memo 길이는 그대로 둬 백업/클라우드 복원 경로도 같은 공백을 공유한다. cycle340/341/344가 'UI 입력 경로는 거부 대신 clamp' 원칙을 top-level category/memo·stockCode/cryptoCode·name에 이미 적용했는데, 분할입력 UI 경로만 지금까지 빠져 있던 사례. localStorage quota/fetch 타임아웃/3-way 병합/캐시 성능은 이미 성숙했고 SRI 해시 TODO는 cycle345가 네트워크 접근 불가로 deprioritize한 바 있어 함께 재확인 후 기각.",
+    "approach": "① splitMemo${i} input(6136/6633 인근)에 maxlength=\"${MEMO_MAX}\" 추가. ② txSplitMemo/recSplitMemo를 txMemoInput/recMemoInput과 동일한 1줄 클램프(el.value.length>MEMO_MAX이면 slice)로 교체. ③ sanitizeBackup()의 3곳(9586/9696/9771) splits map 블록에 amount 클램프와 같은 자리에 memo 클램프(typeof s.memo==='string'&&s.memo.length>MEMO_MAX일 때 slice)를 추가. 기존 NAME_MAX/MEMO_MAX 상수와 clamp 패턴 재사용, 신규 상수/헬퍼 불필요. 커밋 전 node test/run.js로 회귀 확인하고 관련 케이스 테스트 추가."
+  },
   "history": [
-    {
-      "cycle": 344,
-      "phase": "develop",
-      "timestamp": "2026-11-12T15:10:00.000Z",
-      "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — sanitizeBackup()(index.html:9410, 백업 복원/클라우드 풀이 공유하는 유일한 검증 체크포인트)이 cycle341에서 stockCode/cryptoCode에만 적용했던 '백업은 사용자가 직접 수정해 복원할 수 있는 경로라 UI 입력 경로의 정제를 여기서도 거쳐야 한다'는 원칙을, 자산/목표 이름(NAME_MAX+cleanName)과 거래/반복거래의 category/memo(NAME_MAX/MEMO_MAX)에는 적용하지 않고 있었다. syncAssetInputs/saveGoal/addOwner 등 모든 실시간 입력 경로와 csvRowToImportTxn(cycle340)/mapGenericCsvRow(cycle343) CSV 가져오기 경로는 이미 막혀 있는데, 백업 파일을 손으로 편집해 복원하거나 조작된 클라우드 payload를 당겨오는 경로만 길이 제한이 전혀 없이 남아있던 비대칭. srcAssets.forEach/srcGoals.forEach에 각각 d.name=cleanName(d.name) 클램프를, srcTxns.forEach/srcRecs.forEach에 각각 category/memo를 NAME_MAX/MEMO_MAX로 slice하는 클램프를 추가했다(CSV 가져오기와 동일한 '거부가 아니라 clamp' 방식, 새 상수/헬퍼 불필요 — NAME_MAX/MEMO_MAX/cleanName은 이미 전역이고 sanitizeBackup 테스트 sandbox에도 이미 로드돼 있어 추가 배선 불필요). 테스트 4건 추가(자산/목표 이름이 NAME_MAX 초과 시 클램프/이하면 회귀 없음, 거래·반복거래 category·memo가 각각 NAME_MAX/MEMO_MAX 초과 시 클램프/이하면 회귀 없음) — 추가 과정에서 반복거래 fixture에 day 필드를 빠뜨려 clampDay()가 무관하게 fixedCount를 1 올리는 거짓 실패를 발견해 day:1을 채워 바로잡았다(실제 버그 아님, 테스트 fixture 누락). node test/run.js 3345->3349/3349 통과. node --check sw.js/test/run.js 통과, index.html 주 스크립트 블록(3번째 <script>, 824KB) 추출 후 new Function()으로 구문 확인 통과(1번째 블록은 기존 cycle339/343 노트와 동일한 HTML 주석 내 리터럴 텍스트로 인한 기존 오탐). 사용자 체감 동작 변화는 아니지만(평소 입력 경로가 아니라 백업/동기화 전용) 컨벤션대로 APP_VERSION 1.47.427->1.47.428, sw.js CACHE v694->v695.",
-      "commit": null
-    },
     {
       "cycle": 344,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-13T12:15:00.000Z",
       "summary": "develop(cycle349, 3b8a9ec: toggleConfirmTransfers 끄기에 undoToast 추가)를 검토. prevOne=pendingOneOff.map(t=>t.confirmed) 캡처가 confirmed=true 대입 전에 이루어지는 순서, recIds=[...new Set(pendingRecList.map(t=>t.recId))]로 같은 반복의 여러 도래 날짜를 한 recId로 중복 제거한 뒤 prevRecDates Map에 r.confirmedDates.slice()(얕은 복사, push 전 원본 배열과 분리된 참조)로 캡처하는 순서를 라인 대조로 확인. undo 복원 시 recIds.forEach로 Map에 저장된 슬라이스를 그대로 r.confirmedDates에 재대입해, 같은 반복에 여러 날짜가 push됐어도 한 번에 원상복구됨을 확인(배열 참조를 교체하므로 push로 늘어난 원소까지 모두 제거됨). r이 삭제돼 찾을 수 없는 경우 mutate 루프와 undo 루프 모두 if(r) 가드로 동일하게 방어됨을 확인. DB.settings.confirmTransfers 복원은 끄기 액션 자체가 '켜져 있던 것을 끈다'는 전제라 항상 true로 복원해도 안전함을 확인(이 함수에 진입하려면 이미 true였어야 함). 추가 테스트 2건(전체 복원 통합 1건, 기존 confirmedDates 보존 1건)이 바뀐 경로를 정확히 겨냥함을 확인. node test/run.js 재실행 3381/3381 통과, node --check sw.js/test/run.js 통과. 실제 버그 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 349,
+      "phase": "critique",
+      "timestamp": "2026-11-13T13:10:00.000Z",
+      "summary": "최근 cycle345~348 critique가 전부 '되돌리기(undo) 공백' 패턴에 집중돼 있었기 때문에, 이번엔 그 류를 배제하고 Explore 서브에이전트에게 다른 종류(아키텍처/성능/UX/접근성/에러처리/데이터 정합성/DRY)의 약점을 조사시켰다. txMemo(index.html:6088)/rMemo(6633)는 HTML maxlength=MEMO_MAX와 입력 핸들러(txMemoInput:6110/recMemoInput:6547) 2중으로 길이를 제한하는데, '여러 카테고리로 나누기' 분할 라인의 메모 입력(splitMemo${i})은 maxlength 속성이 없고 txSplitMemo(6192)/recSplitMemo(6597)도 el.value를 그대로 대입해 길이 검증이 전혀 없음을 확인했다. 분할 카테고리는 openCatPicker 고정 목록이라 안전하지만 메모는 자유 텍스트라 DB.txns[].splits/DB.recurrences[].splits/.edits[date].splits에 무제한 길이로 저장되고, sanitizeBackup()의 분할 재검증 블록(9586/9696/9771, 3곳 동일 코드 복제)도 amount만 클램프하고 s.memo는 그대로 둬 백업/클라우드 복원 경로도 같은 공백을 공유함을 확인했다. cycle340/341/344가 'UI 입력 경로는 거부 대신 clamp' 원칙을 top-level category/memo·stockCode/cryptoCode·name에 이미 적용했는데 분할입력 UI 경로만 지금까지 빠져 있던 사례라 우선순위로 선정했다. 대안으로 localStorage quota/fetch 타임아웃/3-way 병합/캐시 성능(이미 성숙)과 SRI 해시 TODO(cycle345가 네트워크 접근 불가로 이미 deprioritize)를 재검토했으나 새 근거 없어 기각. pending_advance_plan에 ①splitMemo input에 maxlength 추가 ②txSplitMemo/recSplitMemo에 txMemoInput과 동일한 clamp 추가 ③sanitizeBackup 3곳에 splits memo 클램프 추가하는 구체 계획 저장. node test/run.js 3381/3381 통과 확인(베이스라인 깨짐 없음). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
