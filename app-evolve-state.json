@@ -1,26 +1,8 @@
 {
-  "cycle": 350,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "클라우드 동기화 실패 메시지가 RLS 정책 오류를 네트워크 오류와 구분하지 못함",
-    "why": "index.html:2018-2024에 이미 sbErrMsg()/isRlsPolicyError(e)가 있어 Supabase 42501(insufficient_privilege)/policy/RLS 오류를 정확히 구분할 수 있는데도, cloudSyncFailed()(2029, 인자 없음)와 그 호출부인 pullCloud()(2103,2111)/pushCloud()(2204,2236,2238) 전부 error/e 객체를 그냥 버리고 '인터넷 연결을 확인해 주세요'라는 고정 문구만 띄운다. cloudSyncLabel()(2030-2037)도 CLOUD_SYNC_STATE==='error'에 대해 같은 '인터넷 연결 확인' 문구뿐이고, 홈 알림 카드(11864-11868)는 '자동으로 다시 시도하고 있어요'라고 적극적으로 안내해, 재시도로는 절대 해결되지 않는 오류 클래스에 대해 오히려 사용자를 오도한다. README.txt가 멀티기기 사용자에게 Supabase를 셀프호스팅하고 SQL을 1회 직접 실행하도록 안내하는데(비개발자가 실수하기 쉬운 지점), RLS insert/update 정책이 빠지거나 잘못되면 scheduleCloudPush()가 매 편집마다 영구히 실패하면서도 사용자는 와이파이만 보게 되고 실제 원인을 알 방법이 전혀 없다. 바로 옆 deleteCloudAccountData()(2142)는 이미 isRlsPolicyError로 구체적이고 실행 가능한 안내('Supabase에 데이터 삭제 권한이 없어요 · 안내 SQL을 다시 실행해 주세요')를 주고 있어, pull/push 경로만 이 패턴을 못 받은 비대칭이다(cycle328-334/346처럼 '같은 안전장치 패밀리에서 형제 하나만 빠짐' 클래스).",
-    "approach": "① isRlsPolicyError(e)를 재사용해 pullCloud(index.html:2103,2111)/pushCloud(2204,2236,2238) 각 호출부가 실제 error/e 객체를 cloudSyncFailed(e)에 넘기도록 cloudSyncFailed의 시그니처를 확장한다. ② CLOUD_SYNC_STATE 옆에 새 전역 CLOUD_SYNC_ERR_KIND('network'|'rls')를 두고 cloudSyncFailed(e) 안에서 isRlsPolicyError(e)로 분류해 저장한다. ③ cloudSyncLabel()(2030-2037)에서 CLOUD_SYNC_STATE==='error'일 때 CLOUD_SYNC_ERR_KIND==='rls'면 deleteCloudAccountData의 문구를 모델로 한 구체적 안내(예: '⚠ Supabase 접근 권한 설정이 필요해요 · 안내 SQL을 다시 확인하세요')를, 아니면 기존 '인터넷 연결 확인' 문구를 그대로 반환한다(네트워크 케이스는 동작 불변). ④ homeAlertCard()의 cloudSyncError 분기(11864-11868)도 같은 분기를 타게 하고, RLS 케이스의 onclick을 openAccountSheet() 대신 SQL 안내가 있는 openHelpCloud()(7646)로 보낸다('자동으로 다시 시도하고 있어요' 문구는 RLS 케이스에서 제거). ⑤ test/run.js에 {code:'42501'} 또는 policy 메시지를 담은 mock 에러를 pushCloud/pullCloud 경로에 주입해 CLOUD_SYNC_ERR_KIND==='rls'와 cloudSyncLabel()의 RLS 전용 문구를 확인하는 테스트, 그리고 일반 네트워크 에러는 기존 문구가 그대로 나오는 회귀 테스트를 추가한다."
-  },
+  "cycle": 351,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 350,
-      "phase": "review",
-      "timestamp": "2026-11-13T15:45:00.000Z",
-      "summary": "develop(cycle350, ab4a2d8: mapGenericCsvRow에 AMOUNT_MAX 상한 가드 추가)를 검토. 변경된 검증 줄(logic.js:1522, !Number.isInteger(amount)||amount<=0||amount>AMOUNT_MAX)이 형제 함수 csvRowToImportTxn(index.html:9137)의 동일 조건과 글자 그대로 같은 상한을 거는지 대조해 확인. AMOUNT_MAX가 index.html의 전역 const(1976행, 메인 인라인 스크립트)로 선언되고 logic.js는 <script src=\"logic.js\">로 더 먼저 로드되지만, mapGenericCsvRow가 호출되는 시점(사용자가 실제로 CSV를 가져오는 시점)은 항상 전체 페이지 로드 이후라 AMOUNT_MAX가 이미 정의된 뒤라서 안전함을 확인했다(logic.js가 이미 MEMO_MAX를 똑같은 방식으로 참조하던 기존 패턴과 동일, grep으로 재확인). 추가된 테스트 2건(signed 모드 AMOUNT_MAX+1/AMOUNT_MAX 경계값, split 모드 입금 열 초과)이 바뀐 경로를 정확히 겨냥하고 경계값(AMOUNT_MAX 당일은 통과)까지 확인함을 확인. node test/run.js 재실행 3389/3389 통과, node --check sw.js/test/run.js 통과. 실제 버그 없음(state.json만 커밋).",
-      "commit": null
-    },
-    {
-      "cycle": 350,
-      "phase": "develop",
-      "timestamp": "2026-11-13T15:10:00.000Z",
-      "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — mapGenericCsvRow(logic.js:1491, 은행/카드 CSV 열매핑 가져오기)가 csvRowToImportTxn(index.html:8999, 이 앱 자체 포맷 CSV 가져오기)과 완전히 같은 {ok,unmatched,txn} 결과 모양을 돌려주는 직접 형제 함수인데도, cycle339가 csvRowToImportTxn에 추가한 amount>AMOUNT_MAX 상한 가드를 받지 못해 signed/split 두 모드 모두 유한한 정수이기만 하면(예: 금액 열에 '9999999999999999999' → Number('9999999999999999999')=1e19, Number.isFinite/Number.isInteger 둘 다 true) AMOUNT_MAX(999,999,999,999,999)를 훌쩍 넘는 값이 그대로 DB.txns에 들어가 balanceAt/assetEval/nwHistory 정밀도를 깨뜨릴 수 있었음을 직접 계산으로 검증했다. 최종 amount 검증 줄(logic.js:1522, 원래 !Number.isInteger(amount)||amount<=0)에 ||amount>AMOUNT_MAX를 추가해 csvRowToImportTxn과 동일한 상한을 걸었다(AMOUNT_MAX는 index.html 전역 상수라 logic.js가 이미 MEMO_MAX를 같은 방식으로 참조하던 것과 동일하게 안전). 테스트 2건 추가(signed 모드: AMOUNT_MAX+1은 error:'amount', AMOUNT_MAX 당일은 통과·amount 보존 / split 모드: 입금 열이 AMOUNT_MAX를 넘으면 동일하게 걸러짐) — csvRowToImportTxn의 기존 AMOUNT_MAX 테스트(test/run.js:8318)와 같은 패턴. node test/run.js 3387->3389/3389 통과. node --check logic.js/sw.js/test/run.js 통과, index.html은 test/run.js의 전체 스위트 실행(vm 샌드박스 로드) 자체가 구문 검증을 겸함(cycle339 이후 관례와 동일). 사용자 체감 동작 변화(손상되거나 비정상적으로 큰 금액 열을 가진 은행/카드 CSV 행이 더 이상 조용히 가져와지지 않고 매칭 실패로 걸러짐)라 APP_VERSION 1.47.439->1.47.440, sw.js CACHE v706->v707.",
-      "commit": null
-    },
     {
       "cycle": 345,
       "phase": "critique",
@@ -152,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-13T17:35:00.000Z",
       "summary": "앱 전체를 한 걸음 물러나 훑어본 결과(Explore 서브에이전트가 발견 및 라인 단위로 직접 재검증), 클라우드 동기화 실패 시 보여주는 메시지가 Supabase RLS 정책 오류와 단순 네트워크 오류를 전혀 구분하지 못함을 확인했다. index.html:2018-2024에 이미 sbErrMsg()/isRlsPolicyError(e)가 있어 42501(insufficient_privilege)/policy/RLS 메시지를 정확히 분류할 수 있는데, cloudSyncFailed()(2029, 인자 없이 호출)와 그 호출부 5곳(pullCloud:2103,2111 / pushCloud:2204,2236,2238) 모두 error/e 객체를 버리고 '인터넷 연결을 확인해 주세요' 고정 문구만 띄움을 grep+라인 대조로 확인. cloudSyncLabel()(2030-2037)도 CLOUD_SYNC_STATE==='error'에 같은 문구뿐이고, 홈 알림 카드(11864-11868)는 '자동으로 다시 시도하고 있어요'라고 적극적으로 안내해, README.txt가 셀프호스팅 Supabase SQL 1회 설정을 요구하는 멀티기기 사용자가 RLS insert/update 정책을 빠뜨리면 매 편집마다 영구히 실패하면서도 재시도로는 절대 해결 안 되는 상황에서 와이파이만 보라는 오도된 안내를 받게 됨을 확인. 바로 옆 deleteCloudAccountData()(2142)는 이미 같은 isRlsPolicyError로 구체적 SQL 안내 문구를 주고 있어 pull/push 경로만 비껴간 비대칭(cycle328-334/346과 동일 클래스)임을 재확인. 대안으로 검토한 후보: (1) 접근성(포커스 트랩/키보드 선택모드/차트 스크린리더) — openSheet/closeSheet 포커스 복원, syncOverlayInert, wireLongPress 대응 키보드 버튼, nwHistory 차트 role=img+키보드 peek(cycle142/302) 모두 이미 견고해 기각. (2) 대량 거래 내역 성능 — balancesAtDates/balanceAt 캐싱(cycle149/204/207)과 updateHist() 20개 페이지네이션 이미 성숙해 기각. (3) CSV 재가져오기가 분할거래를 지원하지 않는 공백 — cycle198이 의도적으로 남긴 '알려진 제한'이라 오버사이트 아니라 기각. pending_advance_plan에 isRlsPolicyError 재사용+CLOUD_SYNC_ERR_KIND 전역 추가+cloudSyncLabel/homeAlertCard RLS 분기+openHelpCloud로 라우팅하는 구체 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 350,
+      "phase": "advance",
+      "timestamp": "2026-11-13T00:00:00Z",
+      "summary": "pullCloud/pushCloud의 error/e 객체를 cloudSyncFailed(e)에 전달하고 isRlsPolicyError로 분류해 CLOUD_SYNC_ERR_KIND('network'|'rls')를 두었다. cloudSyncLabel()과 homeAlertCard()의 cloudSyncError 카드가 RLS 케이스에선 '자동으로 다시 시도' 대신 구체적 권한 안내(Supabase 접근 권한/정책)를 보여주고 openAccountSheet() 대신 openHelpCloud()(안내 SQL)로 연결되게 했다. 네트워크 케이스는 기존 문구/동작 그대로 유지.",
       "commit": null
     }
   ]

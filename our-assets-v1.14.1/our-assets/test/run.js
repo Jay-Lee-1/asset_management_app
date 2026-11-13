@@ -449,7 +449,7 @@ const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'AS
 // _importPinRaw는 openImportPinSheet()가 세팅하고 doImportPinSubmit()이 소비하는 "PIN 입력을
 // 기다리는 암호화 백업 원본" 상태라(let 선언, realm에 안 붙음) 같은 이유로 LETS를 통해 가져온다
 // (app-evolve cycle289 advance).
-const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer', '_histTimer', '_assetQT', '_pkQ', '_bioAutoTried', '_csvMap', '_debtWhatIfAnnT', '_txCatSuggT', '_recCatSuggT', '_importPinRaw', '_recQT', '_goalQT', '_gsQT'];
+const LETS = ['_histCache', '_copyIsCsv', '_fixWhen', '_lastNwOwner', '_lastLedYM', '_planLive', '_sujiTimer', '_histTimer', '_assetQT', '_pkQ', '_bioAutoTried', '_csvMap', '_debtWhatIfAnnT', '_txCatSuggT', '_recCatSuggT', '_importPinRaw', '_recQT', '_goalQT', '_gsQT', 'CLOUD_SYNC_ERR_KIND'];
 
 const extracted = FUNCTIONS.map(extractFunction).join('\n') + '\n' + CONSTS.map(extractConst).join('\n') + '\n' + LETS.map(extractLet).join('\n');
 
@@ -30566,11 +30566,24 @@ test('homeAlerts: conflict와 error는 같은 CLOUD_SYNC_STATE 값을 두고 배
   assert.ok(alerts.some((a) => a.kind === 'cloudConflict'));
   assert.ok(!alerts.some((a) => a.kind === 'cloudSyncError'));
 });
-test('homeAlertCard: cloudSyncError는 openAccountSheet()로 열리고 재시도 중임을 알린다', () => {
+test('homeAlertCard: cloudSyncError는 네트워크 오류(CLOUD_SYNC_ERR_KIND==="network")면 openAccountSheet()로 열리고 재시도 중임을 알린다', () => {
+  sandbox.CLOUD_SYNC_ERR_KIND = 'network';
   const html = sandbox.homeAlertCard({ kind: 'cloudSyncError' });
   assert.ok(html.includes('클라우드 동기화에 실패했어요'), '실패 문구가 보여야 함');
   assert.ok(html.includes('onclick="openAccountSheet()"'), '눌러서 동기화 상태(계정 화면)로 가야 함');
   assert.ok(html.includes('자동으로 다시 시도'), '자동 재시도 중임을 안내해야 함');
+});
+/* RLS 정책 오류(CLOUD_SYNC_ERR_KIND==='rls')는 재시도로 절대 해결되지 않으므로, 위 네트워크 케이스와
+ * 달리 "자동으로 다시 시도" 문구 대신 구체적인 원인·해결책(안내 SQL)으로 안내하고, 계정 화면이 아니라
+ * 바로 그 SQL이 있는 openHelpCloud()로 보낸다(app-evolve cycle350 advance). */
+test('homeAlertCard: cloudSyncError는 RLS 정책 오류(CLOUD_SYNC_ERR_KIND==="rls")면 openHelpCloud()로 열리고 권한 설정이 필요함을 구체적으로 알린다', () => {
+  sandbox.CLOUD_SYNC_ERR_KIND = 'rls';
+  const html = sandbox.homeAlertCard({ kind: 'cloudSyncError' });
+  assert.ok(html.includes('클라우드 동기화에 실패했어요'), '실패 문구가 보여야 함');
+  assert.ok(html.includes('onclick="openHelpCloud()"'), '재시도로 안 풀리므로 계정 화면이 아니라 안내 SQL이 있는 openHelpCloud()로 가야 함');
+  assert.ok(html.includes('Supabase 접근 권한'), '권한(정책) 문제임을 구체적으로 알려야 함');
+  assert.ok(!html.includes('자동으로 다시 시도'), 'RLS 오류는 재시도로 안 풀리므로 재시도 중이라고 오도하면 안 됨');
+  sandbox.CLOUD_SYNC_ERR_KIND = 'network'; // 이후 테스트에 영향 주지 않도록 기본값으로 되돌림
 });
 test('homeAlertCard: confirmMulti는 openConfirmTransferList()로 열리고 건수가 보인다(app-evolve cycle156)', () => {
   const html = sandbox.homeAlertCard({ kind: 'confirmMulti', count: 3 });
@@ -36300,6 +36313,62 @@ test('isRlsPolicyError: Postgres 42501 코드와 policy/RLS 메시지를 네트�
   assert.strictEqual(sandbox.isRlsPolicyError({ code: 'PGRST301', message: 'JWT expired' }), false, '인증 만료 에러를 RLS 정책 문제로 오판함');
   assert.strictEqual(sandbox.isRlsPolicyError(null), false, 'null 입력에 안전하지 않음');
   assert.strictEqual(sandbox.isRlsPolicyError(undefined), false, 'undefined 입력에 안전하지 않음');
+});
+
+/* cloudSyncFailed/cloudSyncLabel은 메인 sandbox에서 cloudSyncFailed가 부작용 방지용 no-op
+ * 스텁(위 505행)으로 영구히 덮여 있어 실제 분류 로직을 못 본다 — isRlsPolicyError와 마찬가지로
+ * 별도 vm 컨텍스트에서 진짜 함수를 추출해 실행형으로 검증한다(themeColorMetaCtx와 같은 패턴).
+ * pullCloud()/pushCloud()가 catch(e){cloudSyncFailed(e)}로 넘기는 실제 error/e 객체가
+ * CLOUD_SYNC_ERR_KIND='network'|'rls' 분류와 cloudSyncLabel()/toast 문구까지 제대로 이어지는지
+ * 확인한다(app-evolve cycle350 advance — 이전엔 인자 없이 호출되어 항상 'network'로 뭉개졌음). */
+let _cloudSyncErrCtx = null;
+function cloudSyncErrCtx() {
+  if (_cloudSyncErrCtx) return _cloudSyncErrCtx;
+  const ctx = { toastCalls: [], toast: (msg) => { ctx.toastCalls.push(msg); }, CLOUD_UID: 'u1' };
+  vm.createContext(ctx);
+  vm.runInContext(
+    [extractFunction('isRlsPolicyError'), extractLet('CLOUD_SYNC_STATE'), extractLet('CLOUD_LAST_OK'),
+      extractLet('CLOUD_ERR_TOASTED'), extractLet('CLOUD_CONFLICT_TOASTED'), extractLet('CLOUD_SYNC_ERR_KIND'),
+      extractFunction('cloudSyncOk'), extractFunction('cloudSyncFailed'), extractFunction('cloudSyncLabel')].join('\n'),
+    ctx,
+    { filename: 'cloudSyncFailed-cloudSyncLabel-real' }
+  );
+  _cloudSyncErrCtx = ctx;
+  return ctx;
+}
+test('[실행형] cloudSyncFailed: RLS 정책 에러(42501/policy 메시지)를 넘기면 CLOUD_SYNC_ERR_KIND="rls"로 분류하고 권한 설정을 구체적으로 안내한다', () => {
+  const ctx = cloudSyncErrCtx();
+  ctx.CLOUD_SYNC_STATE = 'idle'; ctx.CLOUD_ERR_TOASTED = false; ctx.toastCalls = [];
+  ctx.cloudSyncFailed({ code: '42501', message: 'permission denied for table user_data' });
+  assert.strictEqual(ctx.CLOUD_SYNC_STATE, 'error');
+  assert.strictEqual(ctx.CLOUD_SYNC_ERR_KIND, 'rls', 'RLS 에러를 network로 오분류함');
+  assert.ok(ctx.toastCalls.some((m) => m.includes('권한')), '토스트가 권한(정책) 문제임을 구체적으로 알려야 함');
+  assert.ok(!ctx.toastCalls.some((m) => m.includes('인터넷 연결')), 'RLS 에러인데 인터넷 연결 확인 문구가 뜨면 재시도로 오해하게 됨');
+  assert.strictEqual(ctx.cloudSyncLabel(), '⚠ 동기화 실패 · Supabase 권한(정책) 확인 필요', 'cloudSyncLabel()도 RLS 전용 문구를 돌려줘야 함');
+});
+test('[실행형] cloudSyncFailed: 일반 네트워크 에러(Failed to fetch)는 CLOUD_SYNC_ERR_KIND="network"로 남아 기존 "인터넷 연결 확인" 문구가 그대로 나온다(회귀 가드)', () => {
+  const ctx = cloudSyncErrCtx();
+  ctx.CLOUD_SYNC_STATE = 'idle'; ctx.CLOUD_ERR_TOASTED = false; ctx.toastCalls = [];
+  ctx.cloudSyncFailed(new Error('Failed to fetch'));
+  assert.strictEqual(ctx.CLOUD_SYNC_STATE, 'error');
+  assert.strictEqual(ctx.CLOUD_SYNC_ERR_KIND, 'network', '일반 네트워크 에러를 RLS로 오분류함');
+  assert.ok(ctx.toastCalls.some((m) => m.includes('인터넷 연결을 확인')), '네트워크 에러는 기존 문구가 그대로 나와야 함');
+  assert.strictEqual(ctx.cloudSyncLabel(), '⚠ 동기화 실패 · 인터넷 연결 확인', 'cloudSyncLabel()도 기존 네트워크 문구를 그대로 돌려줘야 함');
+});
+test('[실행형] cloudSyncFailed: 에러 객체 없이 불러도(인자 undefined) 안전하게 network로 분류한다', () => {
+  const ctx = cloudSyncErrCtx();
+  ctx.CLOUD_SYNC_STATE = 'idle'; ctx.CLOUD_ERR_TOASTED = false; ctx.toastCalls = [];
+  ctx.cloudSyncFailed();
+  assert.strictEqual(ctx.CLOUD_SYNC_ERR_KIND, 'network');
+});
+test('[실행형] cloudSyncOk: 동기화가 다시 성공하면 CLOUD_SYNC_ERR_KIND를 "network"로 되돌려(다음 번 분류 전까지의 잔존값이 안 남게) 한다', () => {
+  const ctx = cloudSyncErrCtx();
+  ctx.CLOUD_SYNC_STATE = 'idle'; ctx.CLOUD_ERR_TOASTED = false; ctx.toastCalls = [];
+  ctx.cloudSyncFailed({ code: '42501' });
+  assert.strictEqual(ctx.CLOUD_SYNC_ERR_KIND, 'rls');
+  ctx.cloudSyncOk();
+  assert.strictEqual(ctx.CLOUD_SYNC_STATE, 'ok');
+  assert.strictEqual(ctx.CLOUD_SYNC_ERR_KIND, 'network', '복구 후에도 이전 rls 분류가 남아있으면 다음 실패가 분류 전에 잠깐 잘못된 라벨을 보일 수 있음');
 });
 
 test('[실행형] deleteCloudAccountData: 클라우드 계정이 아니면(CLOUD_UID 없음) SB를 부르지 않고 에러를 돌려준다', async () => {
