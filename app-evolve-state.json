@@ -1,7 +1,11 @@
 {
   "cycle": 346,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "importGuestDataInto(index.html:1943)에 되돌리기(undoToast) 추가 — kakaoLogin/doLogin/doSignup 3곳 모두",
+    "why": "게스트로 쓰던 데이터를 로그인/가입 계정으로 가져오는 importGuestDataInto(index.html:1943)는 restoreBackup(obj)(10204, DB=obj 전체 교체)을 그대로 호출하는, 백업 파일 복원(proceedWithBackupObj, 10214)과 완전히 동일한 '전체 DB 교체' 경로다. proceedWithBackupObj는 이 교체를 __preRestore_ localStorage 백업 + 6초 undoToast로 감싸는데(cycle328/329에서 doResetAll/doDeleteAccount와 함께 이 wipe-직전 백업 패밀리에 들어감 — index.html:1956 주석이 그 멤버를 doResetAll/doDeleteAccount/proceedWithBackupObj/archiveTxnsBefore/mergeAssetInto/mergeCatInto/mergeOwnerInto로 명시적으로 나열), importGuestDataInto는 이 패밀리에서 빠진 채 세 호출부(kakaoLogin:13334, doLogin:13361, doSignup:13380) 모두 plain toast()로 끝난다. 사용자 눈에는 proceedWithBackupObj와 똑같이 생긴 confirmSheet('데이터 가져오기', '가져오기' 버튼)를 누르는 것인데, 실제로는 그 순간 현재 계정 DB가 게스트 데이터로 영구 교체되고 되돌릴 UI가 전혀 없다 — 로그인 직후라 보통 계정 DB가 비어있어 체감 손실이 적어 보이지만, dbIsEmpty 가드를 우회하는 레이스(동시 탭 등)나 사용자가 실수로 다른 계정에 로그인해 가져오기를 누른 경우 그 계정의 기존 데이터를 복구할 방법이 없다. 이전 사이클들이 반복적으로 고쳐온 '같은 wipe-직전 백업 패밀리에서 형제 하나만 빠진' 비대칭과 동일한 클래스.",
+    "approach": "1) restoreBackup()은 이미 교체 전 DB를 JSON.stringify/parse로 깊은 복사한 prev를 return하므로(10206-10209), importGuestDataInto(1943-1952)가 이 return값을 버리지 말고 그대로 돌려주도록 계약을 바꾼다: 성공 시 prev(교체 전 DB 객체, 실패 아님을 구분하려면 {} 아닌 truthy 객체라 OK)를, 실패(JSON 파싱 오류/스키마 불일치/migrate 예외) 시 null을 반환하도록 수정(현재 true/false 대신). try 블록의 'restoreBackup(obj);save();renderCurrent();return true'를 'const prev=restoreBackup(obj);save({deferCloudPush:true});renderCurrent();return prev'로, catch는 'return null'로. 2) proceedWithBackupObj와 동일하게 6초 grace 동안 클라우드 push를 미루고(deferCloudPush:true) undo 시점에만 scheduleCloudPush 타이머를 취소하도록, 이 함수가 setTimeout을 직접 들고 있지 않으므로 호출부(3곳)에서 undoToast 콜백과 함께 처리하거나, importGuestDataInto가 {prev, cancelPush} 형태로 타이머까지 함께 반환하는 두 방식 중 호출부 3곳이 거의 동일한 코드를 중복하지 않는 쪽(가능하면 함수 내부에서 setTimeout도 걸고 {prev,cancelPush} 반환)을 택한다. 3) 호출부 3곳(kakaoLogin:13334, doLogin:13361, doSignup:13380)의 'toast(importGuestDataInto(guestRaw)?...)' 한 줄을 각각 'const r=importGuestDataInto(guestRaw);if(r)undoToast(\"데이터를 가져왔어요\",()=>{...DB=r.prev(or r);save();invalidateBalances();renderCurrent();toast(\"되돌렸어요\")});else toast(\"가져오기에 실패했어요\")' 패턴으로 교체(세 곳 모두 메시지 문구는 각자 기존 그대로 유지, kakaoLogin/doLogin은 '데이터를 가져왔어요', doSignup은 '새 계정으로 가져올까요' confirm 문구에 맞는 완료 메시지). 4) __preGuestImport_ 같은 localStorage 백업 키까지 추가할지는 advance 단계에서 범위를 보고 판단(restoreBackup 패밀리 전원이 받는 처리라 일관성 있지만, 로그인 직후 DB가 거의 항상 비어있어 prev가 작다는 점에서 생략해도 메모리 클로저만으로 충분히 안전할 수 있음 — 생략 시 그 이유를 커밋 메시지에 남긴다). 5) 테스트: importGuestDataInto가 성공 시 prev(또는 {prev,...})를 반환하고 실패 시 null을 반환하는지 단위테스트, 세 호출부 중 최소 1곳(코드 중복이라 셋 다 로직 동일) 통합 테스트로 undo 시 DB가 import 전 상태로 복원되는지 확인. node test/run.js로 회귀 확인 후 커밋. 사용자 체감 동작 변화이므로 APP_VERSION/sw.js CACHE 버전업 포함. 부차적으로 발견된 doSignup(13380)의 dbIsEmpty 가드 누락(kakaoLogin/doLogin은 dbIsEmpty(DB)&&guestHasData()를 가드로 쓰는데 doSignup은 guestHasData()만 확인)은 이번 계획의 핵심이 아니면 범위 밖으로 남기고 다음 critique 후보로 남겨도 된다."
+  },
   "history": [
     {
       "cycle": 341,
@@ -141,6 +145,13 @@
       "phase": "review",
       "timestamp": "2026-11-13T00:10:00.000Z",
       "summary": "develop(cycle346, cdb6409: doMaturity에 undoToast 추가)를 검토. tx를 push 전에 const tx=touch({...})로 먼저 만들어 id를 확보한 뒤 push하는 순서, prevMaturityDate 캡처가 a.maturityDate=null 대입 전에 이루어지는 순서를 라인 대조로 확인(doSettle/doRenameOwner와 동일한 캡처-먼저 원칙). undoFn이 DB.txns=DB.txns.filter(t=>t.id!==tx.id)로 생성된 거래만 제거하고 a.maturityDate=prevMaturityDate로 복원 후 touchSave+invalidateBalances+renderCurrent+toast('되돌렸어요') 순서가 다른 undo 경로와 동일함을 확인. invalidateBalances()를 인자 없이 호출하는 것은 이 커밋이 바꾼 부분이 아니라 기존 코드 그대로(원래도 인자 없이 호출)임을 diff로 확인해 회귀 아님. 이 액션은 push만 하고 deletedIds 톰스톤을 만들지 않으므로(주석에도 명시) undo가 톰스톤을 되돌릴 필요가 없다는 설명도 코드와 일치. 클램프(RANGE_FROM 보정)/confirmTransfers 분기 모두 메시지 인자로만 이동했고 로직 분기 자체는 변경 없음을 확인. 테스트 2건(기존 클램프 테스트의 lastUndo.msg 전환, 새 되돌리기 복원 통합 테스트)이 바뀐 경로를 정확히 겨냥함을 확인. node test/run.js 재실행 3361/3361 통과. 실제 버그 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 346,
+      "phase": "critique",
+      "timestamp": "2026-11-13T01:05:00.000Z",
+      "summary": "앱 전체를 한 걸음 물러나 훑어본 결과(Explore 서브에이전트가 발견 및 코드로 직접 재검증), importGuestDataInto(index.html:1943, 게스트 데이터를 로그인/가입 계정으로 가져오는 공용 헬퍼)가 restoreBackup(obj)(10204, DB=obj 전체 교체)를 그대로 호출하는 완전히 동일한 '전체 DB 교체' 경로인데도, 같은 restoreBackup을 쓰는 proceedWithBackupObj(백업 파일 복원, 10214)가 받는 __preRestore_ localStorage 백업+6초 undoToast를 전혀 받지 못하고 세 호출부(kakaoLogin:13334, doLogin:13361, doSignup:13380) 모두 plain toast()로 끝남을 확인했다. index.html:1956 주석이 이 'wipe-직전 백업' 패밀리 멤버를 doResetAll/doDeleteAccount/proceedWithBackupObj/archiveTxnsBefore/mergeAssetInto/mergeCatInto/mergeOwnerInto로 명시적으로 나열하는데, 사용자에게는 proceedWithBackupObj와 똑같이 보이는 confirmSheet('가져오기' 버튼)를 누르는 importGuestDataInto만 이 목록에서 빠져 있다 — 이전 cycle328/329/330/332/333이 반복적으로 고쳐온 '같은 안전장치 패밀리에서 형제 하나만 빠짐' 비대칭과 동일한 클래스. restoreBackup이 이미 교체 전 DB를 깊은 복사한 prev를 return하므로 재사용이 쉽다는 점도 확인. 부차적으로 doSignup(13380)만 kakaoLogin/doLogin과 달리 dbIsEmpty(DB) 가드 없이 guestHasData()만 확인하는 작은 비대칭도 발견했으나, 이번 계획의 핵심(되돌리기 부재)보다 영향이 작아 범위 밖으로 남겼다. 대안으로 resolveCloudPullRemote/confirmCloudForcePush(이미 cycle337이 '되돌릴 수 없음' 경고+사유를 의식적으로 남겨둔 상태라 오버사이트 아님)와 moveCat/toggleCatVarUI 등 1탭 토글류(비파괴적, 즉시 재토글 가능해 심각도 낮음)를 검토했으나 기각. pending_advance_plan에 importGuestDataInto가 prev(또는 null)를 반환하도록 계약 변경 + 3개 호출부를 undoToast로 교체 + deferCloudPush 6초 유예까지 구체 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
