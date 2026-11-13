@@ -1,20 +1,20 @@
 {
   "cycle": 350,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
+    {
+      "cycle": 350,
+      "phase": "review",
+      "timestamp": "2026-11-13T15:45:00.000Z",
+      "summary": "develop(cycle350, ab4a2d8: mapGenericCsvRow에 AMOUNT_MAX 상한 가드 추가)를 검토. 변경된 검증 줄(logic.js:1522, !Number.isInteger(amount)||amount<=0||amount>AMOUNT_MAX)이 형제 함수 csvRowToImportTxn(index.html:9137)의 동일 조건과 글자 그대로 같은 상한을 거는지 대조해 확인. AMOUNT_MAX가 index.html의 전역 const(1976행, 메인 인라인 스크립트)로 선언되고 logic.js는 <script src=\"logic.js\">로 더 먼저 로드되지만, mapGenericCsvRow가 호출되는 시점(사용자가 실제로 CSV를 가져오는 시점)은 항상 전체 페이지 로드 이후라 AMOUNT_MAX가 이미 정의된 뒤라서 안전함을 확인했다(logic.js가 이미 MEMO_MAX를 똑같은 방식으로 참조하던 기존 패턴과 동일, grep으로 재확인). 추가된 테스트 2건(signed 모드 AMOUNT_MAX+1/AMOUNT_MAX 경계값, split 모드 입금 열 초과)이 바뀐 경로를 정확히 겨냥하고 경계값(AMOUNT_MAX 당일은 통과)까지 확인함을 확인. node test/run.js 재실행 3389/3389 통과, node --check sw.js/test/run.js 통과. 실제 버그 없음(state.json만 커밋).",
+      "commit": null
+    },
     {
       "cycle": 350,
       "phase": "develop",
       "timestamp": "2026-11-13T15:10:00.000Z",
       "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — mapGenericCsvRow(logic.js:1491, 은행/카드 CSV 열매핑 가져오기)가 csvRowToImportTxn(index.html:8999, 이 앱 자체 포맷 CSV 가져오기)과 완전히 같은 {ok,unmatched,txn} 결과 모양을 돌려주는 직접 형제 함수인데도, cycle339가 csvRowToImportTxn에 추가한 amount>AMOUNT_MAX 상한 가드를 받지 못해 signed/split 두 모드 모두 유한한 정수이기만 하면(예: 금액 열에 '9999999999999999999' → Number('9999999999999999999')=1e19, Number.isFinite/Number.isInteger 둘 다 true) AMOUNT_MAX(999,999,999,999,999)를 훌쩍 넘는 값이 그대로 DB.txns에 들어가 balanceAt/assetEval/nwHistory 정밀도를 깨뜨릴 수 있었음을 직접 계산으로 검증했다. 최종 amount 검증 줄(logic.js:1522, 원래 !Number.isInteger(amount)||amount<=0)에 ||amount>AMOUNT_MAX를 추가해 csvRowToImportTxn과 동일한 상한을 걸었다(AMOUNT_MAX는 index.html 전역 상수라 logic.js가 이미 MEMO_MAX를 같은 방식으로 참조하던 것과 동일하게 안전). 테스트 2건 추가(signed 모드: AMOUNT_MAX+1은 error:'amount', AMOUNT_MAX 당일은 통과·amount 보존 / split 모드: 입금 열이 AMOUNT_MAX를 넘으면 동일하게 걸러짐) — csvRowToImportTxn의 기존 AMOUNT_MAX 테스트(test/run.js:8318)와 같은 패턴. node test/run.js 3387->3389/3389 통과. node --check logic.js/sw.js/test/run.js 통과, index.html은 test/run.js의 전체 스위트 실행(vm 샌드박스 로드) 자체가 구문 검증을 겸함(cycle339 이후 관례와 동일). 사용자 체감 동작 변화(손상되거나 비정상적으로 큰 금액 열을 가진 은행/카드 CSV 행이 더 이상 조용히 가져와지지 않고 매칭 실패로 걸러짐)라 APP_VERSION 1.47.439->1.47.440, sw.js CACHE v706->v707.",
-      "commit": null
-    },
-    {
-      "cycle": 345,
-      "phase": "review",
-      "timestamp": "2026-11-12T19:35:00.000Z",
-      "summary": "develop(cycle345, 89e9f75: doRenameOwner에 undoToast 추가)를 검토. mergeOwnerInto(5534행)의 복원 패턴(자산/목표 owner, ST 필터 4곳, settle.ownerA/ownerB, nwHistory byOwner 키, 톰스톤)과 doRenameOwner의 새 undo 클로저를 필드별로 직접 대조해 1:1로 거울 대응함을 확인. v===old는 함수 맨 앞(5440행)에서 이미 조기 return돼 undo 로직이 그 케이스를 다룰 필요가 없음을 확인. prevVTomb 캡처가 DB.deletedIds[ownerTombKey(old)]=Date.now() 쓰기 전에 이루어져 old/v 톰스톤을 혼동하지 않음을 라인 순서로 확인. nwHistory undo(h.byOwner[old]=h.byOwner[v])가 forward(h.byOwner[v]=h.byOwner[old])와 대칭이며, v가 과거 삭제된 다른 소유자의 byOwner 데이터를 들고 있었을 경우 덮어씀은 forward 로직 자체가 이미 가진 기존 동작(이번 커밋이 건드리지 않은 부분)이라 새로 생긴 회귀가 아님을 확인. 추가된 테스트 3건(전체 필드 복원/톰스톤 복원/touch() 재적용)이 실제로 바뀐 경로를 정확히 겨냥함을 확인. node test/run.js 재실행 3357/3357 통과, node --check sw.js/test/run.js 통과. 실제 버그 없음(state.json만 커밋).",
       "commit": null
     },
     {
