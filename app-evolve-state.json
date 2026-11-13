@@ -1,15 +1,8 @@
 {
   "cycle": 349,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 343,
-      "phase": "advance",
-      "timestamp": "2026-11-12T14:10:00.000Z",
-      "summary": "critique(cycle343) 계획대로 delOwner(index.html:5413-5422)에 doRenameOwner/mergeOwnerInto와 동일한 DB.settings.settle 가드를 추가했다 — confirmSheet 콜백 맨 앞에서 settle/settleTouched/prevSettle을 캡처하고, settleTouched면 (삭제라 옮겨갈 대상이 없으므로 mergeOwnerInto의 ownerA===ownerB collapse 분기와 동일하게) DB.settings.settle=null로 끈다. 기존 undoToast 복원 클로저에 if(settleTouched)DB.settings.settle=prevSettle;을 save() 호출 전에 추가해 되돌리면 정산 설정도 함께 복원되게 했다. 테스트 3건 추가(settle 당사자 삭제 시 null로 꺼짐/undo 시 ownerA·ownerB·ratioA 그대로 복원/settle과 무관한 귀속 삭제는 참조까지 그대로 유지) — undo 복원 테스트는 vm 샌드박스 객체를 리터럴과 직접 deepStrictEqual하면 프로토타입이 달라 거짓 실패가 나서, 이 스위트의 mergeOwnerInto undo 테스트와 동일하게 JSON.parse(JSON.stringify(...))로 감싸는 기존 관례를 그대로 따랐다. node test/run.js 3342->3345/3345 통과. node --check sw.js/test/run.js 통과(index.html 본문 스크립트는 HTML 주석 내 리터럴 텍스트 때문에 단순 <script> 정규식 추출로는 오탐이 나는 것으로 확인돼, 기존 cycle339/343 노트와 동일하게 전체 테스트 스위트 통과로 대체 검증). 사용자 체감 동작 변화(정산 당사자를 삭제해도 더 이상 조용히 깨지지 않고 명확히 꺼지며, undo로 되돌릴 수 있음)라 APP_VERSION 1.47.426->1.47.427, sw.js CACHE v693->v694. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 344,
       "phase": "develop",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-13T11:20:00.000Z",
       "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — toggleConfirmTransfers()(index.html:4418)의 '이체 확인 끄기' confirmSheet 콜백이 pendingOneOff/pendingRecList를 일괄로 completed 처리하는데도(각각 confirmed=true, confirmedDates.push), 같은 패턴의 다른 모든 bulk confirmSheet 액션(doBulkRecActive/doBulkCat/deleteTxnsUndo 등)이 받는 6초 undoToast가 전혀 없이 plain toast()로 끝났다 — 사용자가 설정 토글을 잘못 눌러 '끄기'를 확인하면 대기 중이던 이체 N건이 모두 조용히 완료 처리되고, 되돌릴 방법이 전혀 없었다(설정을 다시 켜도 rollPendingTransfers는 과거에 이미 완료 처리된 건을 되돌리지 않음). doBulkRecActive와 동일한 'prev 캡처 → mutate → undoToast로 복원' 패턴을 그대로 적용 — 콜백 맨 앞에서 pendingOneOff 각 항목의 이전 confirmed 값(prevOne)과, pendingRecList가 가리키는 반복거래들의 이전 confirmedDates(recId별로 한 번만, prevRecDates Map — 한 반복이 범위 내 여러 도래 날짜를 가질 수 있어 recId 중복 제거)를 캡처한 뒤, 끝의 toast()를 undoToast로 교체해 되돌리면 각 oneOff.confirmed/각 rec.confirmedDates를 캡처값으로 복원하고 DB.settings.confirmTransfers=true로 되돌린다(둘 다 touch() 호출로 cloud sync merge 불변식 유지, 이미 다른 날짜로 confirmedDates를 갖고 있던 반복거래는 그 값까지 보존됨을 테스트로 확인). 테스트 2건 추가(끄기 후 undoToast가 뜨고 되돌리면 confirmed/confirmedDates/설정이 전부 원복/기존에 다른 날짜의 confirmedDates가 있던 반복거래는 되돌릴 때 그 값까지 보존). node test/run.js 3379->3381/3381 통과. node --check sw.js/logic.js/test/run.js 통과, index.html 주 스크립트 블록(833KB) 추출 후 new Function()으로 구문 확인 통과. 사용자 체감 동작 변화(이체 확인을 끌 때 일괄 완료 처리된 건을 6초 안에 되돌릴 수 있음)라 APP_VERSION 1.47.437->1.47.438, sw.js CACHE v704->v705.",
+      "commit": null
+    },
+    {
+      "cycle": 349,
+      "phase": "review",
+      "timestamp": "2026-11-13T12:15:00.000Z",
+      "summary": "develop(cycle349, 3b8a9ec: toggleConfirmTransfers 끄기에 undoToast 추가)를 검토. prevOne=pendingOneOff.map(t=>t.confirmed) 캡처가 confirmed=true 대입 전에 이루어지는 순서, recIds=[...new Set(pendingRecList.map(t=>t.recId))]로 같은 반복의 여러 도래 날짜를 한 recId로 중복 제거한 뒤 prevRecDates Map에 r.confirmedDates.slice()(얕은 복사, push 전 원본 배열과 분리된 참조)로 캡처하는 순서를 라인 대조로 확인. undo 복원 시 recIds.forEach로 Map에 저장된 슬라이스를 그대로 r.confirmedDates에 재대입해, 같은 반복에 여러 날짜가 push됐어도 한 번에 원상복구됨을 확인(배열 참조를 교체하므로 push로 늘어난 원소까지 모두 제거됨). r이 삭제돼 찾을 수 없는 경우 mutate 루프와 undo 루프 모두 if(r) 가드로 동일하게 방어됨을 확인. DB.settings.confirmTransfers 복원은 끄기 액션 자체가 '켜져 있던 것을 끈다'는 전제라 항상 true로 복원해도 안전함을 확인(이 함수에 진입하려면 이미 true였어야 함). 추가 테스트 2건(전체 복원 통합 1건, 기존 confirmedDates 보존 1건)이 바뀐 경로를 정확히 겨냥함을 확인. node test/run.js 재실행 3381/3381 통과, node --check sw.js/test/run.js 통과. 실제 버그 없음(state.json만 커밋).",
       "commit": null
     }
   ]
