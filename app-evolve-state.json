@@ -1,15 +1,8 @@
 {
   "cycle": 346,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 340,
-      "phase": "advance",
-      "timestamp": "2026-11-12T02:15:56.086Z",
-      "summary": "critique(cycle340) 계획대로 이름/메모 자유텍스트 입력에 AMOUNT_MAX의 텍스트 대응판을 추가했다 — 공유 헬퍼 NAME_MAX=60/MEMO_MAX=200/cleanName(trim+NFC+slice)을 AMOUNT_MAX 옆에 신설하고, saveGoal(d.name)/syncAssetInputs(asName)/addOwner/doRenameOwner/addCat/doRenameCat의 trim+normalize 호출을 모두 cleanName(...)으로 교체(거부가 아니라 clamp, AMOUNT_MAX와 동일 철학). txMemoInput/recMemoInput은 매 keystroke마다 불리는 핸들러라 IME 조합 중 정규화 부작용을 피하려 trim/normalize 없이 길이만 MEMO_MAX로 자르도록 했고, csvRowToImportTxn의 category/fromName/toName/memo 추출에도 각각 .slice(0,NAME_MAX)/.slice(0,MEMO_MAX)를 추가(거부 아님 — ok:true 유지, amount 쪽 cycle339 fix와 같은 패턴). asName(3곳)/goalName/newOwner/renameOwner/newCat/renameCat/txMemo/rMemo input에 maxlength 속성도 추가해 즉각적인 UX 피드백을 줌. 테스트 18건 추가(cleanName 순수 단위 4건(빈 문자열/상한 이하/상한 초과 잘림/NFC 정규화), addOwner/doRenameOwner/addCat/doRenameCat/saveGoal/syncAssetInputs가 긴 이름을 잘라 저장하는 통합 테스트 6건, txMemoInput/recMemoInput 입력칸·draft 모두 잘리는 테스트 3건(+회귀 1건), csvRowToImportTxn의 category/memo/fromName+toName이 거부 대신 잘려서 통과하는 테스트 3건), 기존 openOwnerManage/isDraftDirty 격리 vm 컨텍스트 2곳에 NAME_MAX(+cleanName) extractConst 로딩을 추가해 템플릿/syncAssetInputs가 새로 참조하는 전역을 공급(ReferenceError 회귀 수정) — node test/run.js 3304->3320/3320 통과. node --check sw.js/test/run.js 통과, index.html 주 스크립트 블록(<script> 3번째 블록) 추출 후 node --check 통과. 사용자 체감 동작 변화(이름/메모 입력에 길이 상한 생김, 손상된 CSV의 과도하게 긴 셀이 거부 대신 잘려서 가져와짐)라 APP_VERSION 1.47.420->1.47.421, sw.js CACHE v687->v688. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 341,
       "phase": "develop",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-12T23:14:08.426Z",
       "summary": "doMaturity()(index.html:8081)가 홈 알림/설정 메뉴의 '이체' 버튼 한 번 탭으로 계좌 전체 잔액을 즉시 옮기는데도, 같은 일회성 money-moving 버튼인 doSettle(5661, '정산 완료로 표시했어요' undoToast)과 달리 되돌릴 방법이 전혀 없었다(Explore 서브에이전트가 발견 및 검증, 다른 후보들은 톰스톤 영구백업 없는 delOwner undo, bulk 액션들의 confirm 여부 미확인으로 덜 명확해 보류). doSettle과 동일한 패턴으로 고쳤다 — 거래 push 전에 prevMaturityDate(이체 전 maturityDate)를 캡처하고, 끝의 toast()를 undoToast로 교체해 생성한 거래(tx.id로 특정)를 제거하고 maturityDate를 prevMaturityDate로 복원하는 콜백을 건다. 클램프/예정입금 등 기존 분기(RANGE_FROM 보정, confirmTransfers 설정에 따른 문구)는 그대로 undoToast의 메시지로만 이동했다. test/run.js의 기존 클램프 테스트가 toast()만 확인하던 걸 lastUndo.msg로 바꾸고(undoToast 스텁은 toastCalls에 안 쌓여 실패), 새 되돌리기 복원(거래 제거+maturityDate 복원) 통합 테스트 1건 추가. node test/run.js 3360->3361/3361 통과. node --check sw.js/test/run.js 통과(index.html 자체는 전체 테스트 스위트의 vm 샌드박스 로드가 구문 검증을 겸함). 사용자 체감 동작 변화(만기 이체 실수 시 6초 안에 되돌릴 수 있음)라 APP_VERSION 1.47.431->1.47.432, sw.js CACHE v698->v699.",
+      "commit": null
+    },
+    {
+      "cycle": 346,
+      "phase": "review",
+      "timestamp": "2026-11-13T00:10:00.000Z",
+      "summary": "develop(cycle346, cdb6409: doMaturity에 undoToast 추가)를 검토. tx를 push 전에 const tx=touch({...})로 먼저 만들어 id를 확보한 뒤 push하는 순서, prevMaturityDate 캡처가 a.maturityDate=null 대입 전에 이루어지는 순서를 라인 대조로 확인(doSettle/doRenameOwner와 동일한 캡처-먼저 원칙). undoFn이 DB.txns=DB.txns.filter(t=>t.id!==tx.id)로 생성된 거래만 제거하고 a.maturityDate=prevMaturityDate로 복원 후 touchSave+invalidateBalances+renderCurrent+toast('되돌렸어요') 순서가 다른 undo 경로와 동일함을 확인. invalidateBalances()를 인자 없이 호출하는 것은 이 커밋이 바꾼 부분이 아니라 기존 코드 그대로(원래도 인자 없이 호출)임을 diff로 확인해 회귀 아님. 이 액션은 push만 하고 deletedIds 톰스톤을 만들지 않으므로(주석에도 명시) undo가 톰스톤을 되돌릴 필요가 없다는 설명도 코드와 일치. 클램프(RANGE_FROM 보정)/confirmTransfers 분기 모두 메시지 인자로만 이동했고 로직 분기 자체는 변경 없음을 확인. 테스트 2건(기존 클램프 테스트의 lastUndo.msg 전환, 새 되돌리기 복원 통합 테스트)이 바뀐 경로를 정확히 겨냥함을 확인. node test/run.js 재실행 3361/3361 통과. 실제 버그 없음(state.json만 커밋).",
       "commit": null
     }
   ]
