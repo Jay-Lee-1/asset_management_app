@@ -18277,6 +18277,39 @@ test('toggleConfirmTransfers: "끄기"를 누르면 일괄 확인 처리된 일�
   assert.strictEqual(oneOff.updatedAt, 'test-updatedAt', '일괄 확인된 일반 이체에도 touch()가 호출되어야 함');
   assert.strictEqual(rec.updatedAt, 'test-updatedAt', '도래 회차가 기록된 반복거래에도 touch()가 호출되어야 함');
 }));
+/* ---------- toggleConfirmTransfers: "끄기" 콜백이 일반 이체/반복거래를 일괄로 완료 처리하는데도
+ * 되돌리기(undoToast)가 전혀 없었다(다른 모든 bulk confirmSheet 액션은 6초 undo를 준다 — app-evolve
+ * cycle349 develop). ---------- */
+test('toggleConfirmTransfers: "끄기"를 누르면 undoToast가 뜨고, 되돌리면 confirmed/confirmedDates/설정이 모두 원래대로 복원된다', () => withFakeToday('2026-06-15', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.confirmSheetCalls = [];
+  sandbox.lastUndo = null;
+  const rec = pendingRec();
+  const oneOff = { id: 't1', type: 'transfer', date: '2026-06-10', confirmed: false, amount: 5000 };
+  sandbox.DB = { settings: { confirmTransfers: true }, txns: [oneOff], recurrences: [rec] };
+  sandbox.toggleConfirmTransfers();
+  sandbox.confirmSheetCalls[0].cb();
+  assert.ok(sandbox.lastUndo, '끄기 후 undoToast가 떠야 함');
+  assert.strictEqual(oneOff.confirmed, true);
+  assert.deepStrictEqual(rec.confirmedDates, ['2026-06-15']);
+  assert.strictEqual(sandbox.DB.settings.confirmTransfers, false);
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(oneOff.confirmed, false, '되돌리면 일반 이체의 confirmed가 원래대로 복원돼야 함');
+  assert.deepStrictEqual(rec.confirmedDates, [], '되돌리면 반복거래의 confirmedDates가 끄기 전 상태로 복원돼야 함');
+  assert.strictEqual(sandbox.DB.settings.confirmTransfers, true, '되돌리면 설정도 다시 켜져야 함');
+}));
+test('toggleConfirmTransfers: 반복거래가 이미 다른 날짜로 confirmedDates를 갖고 있었으면 되돌릴 때 그 기존 값까지 보존된다', () => withFakeToday('2026-06-15', () => {
+  sandbox.TODAY = '2026-06-15';
+  sandbox.confirmSheetCalls = [];
+  sandbox.lastUndo = null;
+  const rec = pendingRec({ confirmedDates: ['2026-05-15'] });
+  sandbox.DB = { settings: { confirmTransfers: true }, txns: [], recurrences: [rec] };
+  sandbox.toggleConfirmTransfers();
+  sandbox.confirmSheetCalls[0].cb();
+  assert.deepStrictEqual(rec.confirmedDates, ['2026-05-15', '2026-06-15']);
+  sandbox.lastUndo.undoFn();
+  assert.deepStrictEqual(rec.confirmedDates, ['2026-05-15'], '되돌리면 이전에 이미 있던 confirmedDates는 남고 새로 추가된 날짜만 빠져야 함');
+}));
 
 /* ---------- rollPendingTransfers: 이체 확인이 켜진 상태에서 기한이 지난(과거 날짜) 미확인 이체를 오늘로 당긴다 ---------- */
 test('rollPendingTransfers: 이체 확인이 꺼져 있으면 아무것도 하지 않는다', () => {

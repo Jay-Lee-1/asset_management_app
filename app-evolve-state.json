@@ -1,15 +1,8 @@
 {
   "cycle": 349,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 343,
-      "phase": "critique",
-      "timestamp": "2026-11-12T13:09:00.000Z",
-      "summary": "앱 전체를 한 걸음 물러나 훑어본 결과(Explore 서브에이전트가 발견 및 검증), 소유자 관리 3형제 함수 중 delOwner(index.html:5413-5422)만 DB.settings.settle(공동지출 정산 설정의 ownerA/ownerB)을 가드/정리하지 않음을 발견했다. doRenameOwner(5428-5437, cycle314에서 settle.ownerA/ownerB 이름변경 추적 추가)와 mergeOwnerInto(5465-5497, cycle334에서 settle을 병합대상으로 옮기거나 둘이 같아지면 null로 끄도록 수정)는 이미 고쳐졌는데 delOwner만 비껴갔다. settleConfigured()(5941행)는 ownerA/ownerB가 둘 다 DB.owners에 남아있어야 유효하다고 보므로, 정산을 설정해둔 두 소유자 중 한쪽을(자산/목표를 모두 다른 소유자로 재배정한 뒤) 삭제하면 openSettlement가 아무 설명 없이 '정산 설정이 필요해요' 빈 상태로 떨어지고 사용자가 이미 정한 ownerA/ownerB/ratioA는 DB.settings.settle에 죽은 채로 남아 백업 JSON을 직접 보지 않는 한 원인을 알 수 없다 — cycle334가 고친 것과 완전히 같은 버그 클래스가 delOwner 하나만 비껴간 사례. 테스트로도 확인(delOwner를 settle이 걸린 소유자에 호출하는 테스트가 전무). 대안으로 clearSettleConfig의 settledThrough 미연동(이전 cycle342 critique가 이미 deprioritize), 단일파일 모놀리식 아키텍처(baseline 상태라 한 사이클 범위 밖), CDN SRI 해시(네트워크 접근 불가로 과거부터 보류), save()의 JSON.stringify 전체 직렬화/트랜잭션 리스트 성능(이미 storage-quota 경고와 PAGE=20 페이지네이션으로 모니터링/완화됨)을 검토했으나 모두 새 근거 없거나 이미 다뤄짐. pending_advance_plan에 delOwner에 settleTouched 감지+settle=null 전환+undoToast 복원 로직 추가 및 테스트 3건 계획까지 구체적으로 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
     {
       "cycle": 343,
       "phase": "advance",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-13T10:20:00.000Z",
       "summary": "critique(cycle348) 계획대로 afterCloudAuth()(index.html:2241)의 empty-remote 게스트 병합 분기를 고쳤다 — 예전엔 guestHasData()만 보고 DB=JSON.parse(localStorage guest)로 검증 없이 통째 교체해, 해당 계정의 로컬 DB에 이미 실제 데이터가 있어도 백업 없이 덮어쓰고 되돌릴 방법도 없었다(cycle346이 kakaoLogin/doLogin/doSignup의 비클라우드 분기 세 곳에만 importGuestDataInto()의 dbIsEmpty 가드+sanitizeBackup+undo를 입혀준 뒤 클라우드 경로 하나만 비껴간 비대칭). 이제 dbIsEmpty(DB)&&guestHasData()일 때만 importGuestDataInto(localStorage.getItem('asset_app_db_v3__guest'))를 그대로 재사용하고, 성공 시 {status:'guestMerged',prev,cancelPush}를, 그 외엔 기존처럼 {status}를 반환하도록 계약을 넓혔다(guestMerged일 때는 importGuestDataInto가 이미 save({deferCloudPush:true})를 했으므로 말미의 save()를 건너뛰어 6초 push 유예를 깨지 않는다; 실패해 null이면 기존 catch 폴백과 동일하게 emptyDB()+migrate()+save()로 떨어진다). doLogin(13391 부근)/doSignup(13407 부근)의 status==='guestMerged' 처리를 plain toast에서 undoToast로 교체해 cloudAuthResult.cancelPush()+DB=cloudAuthResult.prev+save()+invalidateBalances()+renderCurrent()+toast('되돌렸어요') 순서로 비클라우드 분기와 동일하게 되돌릴 수 있게 했다. 비밀번호 재설정 복구 경로(13501)는 예전에도 afterCloudAuth의 status를 전혀 쓰지 않던 호출부라 계획대로 건드리지 않았다. 테스트 4건 추가/1건 갱신: 기존 'guestMerged 반환' 테스트의 게스트 픽스처가 자산에 type이 없어 sanitizeBackup이 정당하게 드롭하던 것을 현실적인 {id,type:'cash'}로 바로잡고(검증을 거치지 않던 옛 경로에서만 통하던 픽스처, 구현 버그 아님) prev/cancelPush 반환 어서션을 추가, 신규로 (b) 로컬 DB가 비어있지 않으면 게스트 데이터로 덮어쓰지 않고 status:'empty', (c) cancelPush()+prev로 병합 전 상태 복원, (d) doLogin/doSignup의 undoToast 배선 소스 패턴, (e) afterCloudAuth가 raw JSON.parse 대신 dbIsEmpty 가드+importGuestDataInto를 쓰는지 소스 패턴. vm 샌드박스 배열을 호스트 리터럴과 직접 deepStrictEqual하면 프로토타입이 달라 거짓 실패가 나는 기존 함정(cycle343/345 노트)을 또 만나 JSON 라운드트립 관례로 맞췄다. node test/run.js 3375->3379/3379 통과. node --check sw.js/logic.js/test/run.js 통과, index.html 주 스크립트 블록(832KB) 추출 후 new Function()으로 구문 확인 통과. 사용자 체감 동작 변화(클라우드 로그인/가입 시 게스트 데이터 자동 병합을 6초 안에 되돌릴 수 있고, 이미 데이터가 있는 계정은 더 이상 조용히 덮어쓰이지 않음)라 APP_VERSION 1.47.436->1.47.437, sw.js CACHE v703->v704. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 349,
+      "phase": "develop",
+      "timestamp": "2026-11-13T11:20:00.000Z",
+      "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — toggleConfirmTransfers()(index.html:4418)의 '이체 확인 끄기' confirmSheet 콜백이 pendingOneOff/pendingRecList를 일괄로 completed 처리하는데도(각각 confirmed=true, confirmedDates.push), 같은 패턴의 다른 모든 bulk confirmSheet 액션(doBulkRecActive/doBulkCat/deleteTxnsUndo 등)이 받는 6초 undoToast가 전혀 없이 plain toast()로 끝났다 — 사용자가 설정 토글을 잘못 눌러 '끄기'를 확인하면 대기 중이던 이체 N건이 모두 조용히 완료 처리되고, 되돌릴 방법이 전혀 없었다(설정을 다시 켜도 rollPendingTransfers는 과거에 이미 완료 처리된 건을 되돌리지 않음). doBulkRecActive와 동일한 'prev 캡처 → mutate → undoToast로 복원' 패턴을 그대로 적용 — 콜백 맨 앞에서 pendingOneOff 각 항목의 이전 confirmed 값(prevOne)과, pendingRecList가 가리키는 반복거래들의 이전 confirmedDates(recId별로 한 번만, prevRecDates Map — 한 반복이 범위 내 여러 도래 날짜를 가질 수 있어 recId 중복 제거)를 캡처한 뒤, 끝의 toast()를 undoToast로 교체해 되돌리면 각 oneOff.confirmed/각 rec.confirmedDates를 캡처값으로 복원하고 DB.settings.confirmTransfers=true로 되돌린다(둘 다 touch() 호출로 cloud sync merge 불변식 유지, 이미 다른 날짜로 confirmedDates를 갖고 있던 반복거래는 그 값까지 보존됨을 테스트로 확인). 테스트 2건 추가(끄기 후 undoToast가 뜨고 되돌리면 confirmed/confirmedDates/설정이 전부 원복/기존에 다른 날짜의 confirmedDates가 있던 반복거래는 되돌릴 때 그 값까지 보존). node test/run.js 3379->3381/3381 통과. node --check sw.js/logic.js/test/run.js 통과, index.html 주 스크립트 블록(833KB) 추출 후 new Function()으로 구문 확인 통과. 사용자 체감 동작 변화(이체 확인을 끌 때 일괄 완료 처리된 건을 6초 안에 되돌릴 수 있음)라 APP_VERSION 1.47.437->1.47.438, sw.js CACHE v704->v705.",
       "commit": null
     }
   ]
