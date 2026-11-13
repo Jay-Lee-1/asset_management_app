@@ -1,15 +1,8 @@
 {
   "cycle": 348,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 342,
-      "phase": "critique",
-      "timestamp": "2026-11-12T09:05:00.000Z",
-      "summary": "앱 전체를 한 걸음 물러나 훑어본 결과(Explore 서브에이전트가 발견, doSettle:5624-5632/clearSettleConfig:5581-5584/delTx→deleteTxnsUndo:6352,11941/recApply 'one' 삭제:6365 이하/delOwner:5413-5422/undoToast 시그니처:11935를 직접 코드로 대조해 검증), 정산(settlement) 기능이 '안전망 없는 유일한 영역'임을 발견했다. doSettle은 delTx/recApply/delOwner와 똑같이 confirmSheet 한 번의 확인 마찰로 호출되면서도, (a) confirmed:true 이체 거래를 즉시 생성하고 (b) DB.settings.settledThrough를 되돌릴 수 없이 전진시킨다 — grep으로 settledThrough의 유일한 쓰기 지점이 doSettle임을 확인했고, 정산을 끄는 clearSettleConfig조차 이 값을 그대로 둔다. 오탭하면 그 이전 공동지출이 모두 향후 정산에서 영구히 빠지고, UI로 되돌릴 방법이 전혀 없다(생성된 거래는 수동 삭제 가능하지만 settledThrough는 백업 JSON 직접 편집 없이는 복구 불가). 같은 조사에서 delOwner가 DB.settings.settle(정산 설정)을 전혀 가드/마이그레이션하지 않는 비대칭(doRenameOwner/mergeOwnerInto는 이미 settle.ownerA/ownerB를 따라가게 고쳐졌는데 delOwner만 빠짐, index.html:5930-5934 주석도 이제 mergeOwnerInto를 '아직 못 고친 것'으로 잘못 적은 채 낡음)도 발견했으나, doSettle 쪽이 실제 금전 이동+전역 상태를 되돌릴 UI 자체가 없다는 점에서 더 심각해 이번 사이클의 단일 우선순위로 doSettle 쪽을 골랐다(delOwner/settle 비대칭과 낡은 주석은 다음 critique 후보로 남김). 대안으로 CDN SRI/트래시UI/nwHistory 성능(모두 과거 cycle에서 이미 기각)도 재확인했으나 새로운 근거 없음. pending_advance_plan에 doSettle의 클로저 기반 undoToast 추가(delOwner/recApply와 동일 규모, mergeOwnerInto류 전체 DB 스냅샷은 과함) 계획을 구체적으로 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
     {
       "cycle": 342,
       "phase": "advance",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-13T06:10:53.836Z",
       "summary": "critique(cycle347) 계획대로 정산(settlement) 귀속쌍 변경/해제 시 settledThrough(정산 완료 하한선)가 초기화되지 않던 금전 정확성 버그를 고쳤다. saveSettleConfig(index.html)에서 이전 settle과 새로 저장할 ownerA/ownerB의 귀속 집합을 비교(A/B 역할만 뒤바뀐 경우는 같은 쌍으로 취급)해 쌍이 바뀌면(신규 설정 포함) settledThrough를 null로 리셋하고, 같은 쌍으로 비율만 바꾸는 흔한 재조정은 유지하도록 했다. clearSettleConfig는 settle=null과 함께 settledThrough=null도 리셋. delOwner의 기존 settleTouched 분기에도 settledThrough=null 리셋을 추가. 세 함수 모두 리셋 전 prevSettle/prevSettledThrough를 캡처해 두고 toast()를 undoToast로 교체(saveSettleConfig/clearSettleConfig는 이번에 처음 undo가 생겼고, delOwner는 기존 undo 복원 로직에 settledThrough 필드만 추가)해 되돌릴 수 있게 했다. 테스트 9건 추가(saveSettleConfig: 신규 설정/다른 쌍으로 변경/같은 쌍 비율만 변경/A·B 역할만 뒤바뀜/undo 복원 각 1건, clearSettleConfig: 리셋/undo 복원 각 1건, delOwner: settledThrough 리셋/undo 복원 각 1건) — node test/run.js 3363->3372/3372 통과. node --check sw.js/logic.js/test/run.js 통과, index.html 주 스크립트 블록(3번째 <script>, 832KB) 추출 후 new Function()으로 구문 확인 통과. 사용자 체감 동작 변화(정산 귀속쌍을 바꾸거나 끄면 더 이상 과거 하한이 조용히 남지 않고, 저장/끄기 모두 6초 안에 되돌릴 수 있음)라 APP_VERSION 1.47.434->1.47.435, sw.js CACHE v701->v702. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 348,
+      "phase": "develop",
+      "timestamp": "2026-11-13T09:05:00.000Z",
+      "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — recScheduleSameSlot(logic.js:1403)의 monthly 분기가 a.day===b.day로 엄격 비교하는데, recDates()(logic.js:52, const day=r.day==='last'?lastDay(y,m):Math.min(r.day,lastDay(y,m)))는 day:31과 day:'last'를 모든 달에서 완전히 같은 날짜로 계산한다(31보다 긴 달이 없으므로 Math.min(31,lastDay)는 항상 lastDay와 같음) — node vm으로 2026년 전체에 대해 두 입력의 recDates() 출력이 바이트 단위로 동일함을 직접 확인. 그런데 clampDay()(index.html:6652, 저장 시 day 보정)는 31을 'last'로 접지 않고 별개의 유효한 숫자로 그대로 허용하므로, 사용자가 '말일' 퀵버튼으로 day:'last' 구독을 등록해두고 나중에 같은 구독을 직접 '31'을 타이핑해 다시 등록하면(둘 다 매달 실제로 같은 날 청구) findPossibleDuplicateRec이 31!=='last'로 오판해 중복 경고를 띄우지 못하고 saveRec이 중복을 그대로 저장 — 지출/예산/순자산 집계가 매달 조용히 이중 집계되는 버그(cycle285 주석이 경고하던 바로 그 실패 모드, 단 day:31/'last' 조합만 비껴감). recScheduleSameSlot의 monthly 분기만 const norm=d=>d===31?'last':d로 양쪽을 정규화해 비교하도록 수정(daily/weekly/biweekly/yearly 분기, startDate 폴백 가드는 그대로 둠). 테스트 3건 추가(recScheduleSameSlot 직접: day:31↔'last' 양방향+'last'↔'last'는 true, day:30↔'last'/day:30↔31처럼 정규화 대상이 아닌 조합은 그대로 false / findPossibleDuplicateRec 통합: day:'last' 기존 반복에 day:31 draft를 넣으면 실제로 경고해야 할 중복으로 탐지) — node test/run.js 3372->3375/3375 통과. node --check logic.js/sw.js/test/run.js 통과, index.html 주 스크립트 블록(4번째 <script>, 832KB) 추출 후 new Function()으로 구문 확인 통과. 사용자 체감 동작 변화(day:31/'last' 조합의 반복 등록 시 중복 경고가 정확해짐, 과거에 이미 이 조합으로 중복 저장된 기존 반복은 이번 수정 범위 밖 — 새 등록 시점의 경고만 고침)라 APP_VERSION 1.47.435->1.47.436, sw.js CACHE v702->v703.",
       "commit": null
     }
   ]

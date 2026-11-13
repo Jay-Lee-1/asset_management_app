@@ -8574,6 +8574,11 @@ test('findPossibleDuplicateRec: weekly/yearly인데 startDate가 없거나 잘�
   const sameDay = { id: null, type: 'expense', freq: 'weekly', day: 1, startDate: undefined, amount: 10000, category: '구독', fromAssetId: 'a1', toAssetId: null };
   assert.strictEqual(sandbox.findPossibleDuplicateRec([existing], sameDay), existing);
 });
+test('findPossibleDuplicateRec: 매월 말일(day:\'last\')로 등록한 반복이 있는데 day:31로 새로 등록하면 실제로 매달 같은 날 청구되는 진짜 중복이라 경고한다', () => {
+  const existing = { id: 'r1', active: true, type: 'expense', freq: 'monthly', day: 'last', amount: 15000, category: '구독', fromAssetId: 'a1', toAssetId: null };
+  const draft = { id: null, type: 'expense', freq: 'monthly', day: 31, amount: 15000, category: '구독', fromAssetId: 'a1', toAssetId: null };
+  assert.strictEqual(sandbox.findPossibleDuplicateRec([existing], draft), existing);
+});
 /* ---------- recScheduleSameSlot 직접 단위 테스트 ---------- */
 /* findPossibleDuplicateRec을 거친 테스트들(위)은 freq별 분기 하나당 한 경로씩만 지나가고,
  * !a.startDate||!b.startDate(널/undefined)과 isNaN(da)||isNaN(db)(파싱은 되지만 유효하지 않은 날짜
@@ -8583,6 +8588,19 @@ test('findPossibleDuplicateRec: weekly/yearly인데 startDate가 없거나 잘�
 test('recScheduleSameSlot: monthly는 day만 비교한다', () => {
   assert.strictEqual(sandbox.recScheduleSameSlot('monthly', { day: 5 }, { day: 5 }), true);
   assert.strictEqual(sandbox.recScheduleSameSlot('monthly', { day: 5 }, { day: 6 }), false);
+});
+/* day:31과 day:'last'는 recDates()가 Math.min(day,lastDay(y,m))로 계산해 모든 달에서
+ * 완전히 같은 날짜를 만들어내는데(31보다 긴 달이 없음), clampDay()는 31을 'last'로 접지 않고
+ * 별개 값으로 허용한다 — 엄격한 ===만 쓰면 이 둘을 다른 슬롯으로 오판해 매달 똑같이 청구되는
+ * 진짜 중복 반복을 findPossibleDuplicateRec이 놓친다(app-evolve cycle348 develop). */
+test('recScheduleSameSlot: monthly의 day:31과 day:\'last\'는 실제로 매달 같은 날짜라 같은 슬롯으로 본다', () => {
+  assert.strictEqual(sandbox.recScheduleSameSlot('monthly', { day: 31 }, { day: 'last' }), true);
+  assert.strictEqual(sandbox.recScheduleSameSlot('monthly', { day: 'last' }, { day: 31 }), true);
+  assert.strictEqual(sandbox.recScheduleSameSlot('monthly', { day: 'last' }, { day: 'last' }), true);
+});
+test('recScheduleSameSlot: day:31/\'last\'가 아닌 다른 날짜끼리는 정규화 없이 그대로 다른 슬롯이다', () => {
+  assert.strictEqual(sandbox.recScheduleSameSlot('monthly', { day: 30 }, { day: 'last' }), false);
+  assert.strictEqual(sandbox.recScheduleSameSlot('monthly', { day: 30 }, { day: 31 }), false);
 });
 test('recScheduleSameSlot: daily는 day/startDate와 무관하게 항상 같은 슬롯이다', () => {
   assert.strictEqual(sandbox.recScheduleSameSlot('daily', { day: 1, startDate: '2026-01-01' }, { day: 9, startDate: '2026-12-31' }), true);

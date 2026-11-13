@@ -1400,8 +1400,13 @@ function findPossibleDuplicateTx(txns,draft){
  * 그대로 남는다. 그래서 요일이 다른 두 매주 반복(예: 매주 월요일 용돈 vs 매주 금요일 장보기)이
  * 같은 카테고리/금액이면 둘 다 day:1이라 중복으로 오판되고, 월/일이 다른 두 매년 반복도 같은
  * 이유로 오판된다(app-evolve cycle292 develop). */
+/* monthly의 day:31과 day:'last'는 recDates()가 둘 다 Math.min(day,lastDay(y,m))로 계산해
+ * 모든 달에서 완전히 같은 날짜를 만들어내므로(31보다 긴 달이 없음) 사실상 같은 슬롯인데,
+ * clampDay()는 31을 'last'로 접지 않고 별개의 숫자로 허용해 saveRec()을 두 번 거치면
+ * day:31과 day:'last'인 두 반복이 저장될 수 있다. 엄격한 ===만 쓰면 이 둘을 다른 슬롯으로
+ * 오판해 매달 똑같이 청구되는 진짜 중복을 놓친다(app-evolve cycle348 develop). */
 function recScheduleSameSlot(freq,a,b){
- if(freq==='monthly')return a.day===b.day;
+ if(freq==='monthly'){const norm=d=>d===31?'last':d;return norm(a.day)===norm(b.day)}
  if(freq==='daily')return true;
  if(!a.startDate||!b.startDate)return a.day===b.day; /* 비정상 데이터 방어: day 비교로 폴백 */
  const da=new Date(a.startDate+'T00:00:00'),db=new Date(b.startDate+'T00:00:00');
