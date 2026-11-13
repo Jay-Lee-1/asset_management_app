@@ -3681,6 +3681,25 @@ test('delOwner: settle과 무관한 귀속을 삭제할 때는 DB.settings.settl
   sandbox.confirmSheetCalls[0].cb();
   assert.strictEqual(sandbox.DB.settings.settle, settle, '참조 그대로 유지(새 객체로 바뀌지도 않아야 함)');
 });
+/* settleTouched로 settle이 꺼질 때 settledThrough(정산 하한)도 함께 초기화해야 한다 — 안 그러면
+ * 나중에 다른 쌍으로 재설정해도 죽은 하한이 조용히 남아 그 쌍의 과거 공동지출을 누락시킨다
+ * (app-evolve cycle347 critique → advance). */
+test('delOwner: settle 당사자인 귀속을 삭제하면 settledThrough도 null로 초기화된다', () => {
+  sandbox.DB = { owners: ['나', '아내', '아이'], assets: [], goals: [], settings: { settle: { ownerA: '나', ownerB: '아내', ratioA: 50 }, settledThrough: '2026-01-05' } };
+  sandbox.confirmSheetCalls = [];
+  sandbox.delOwner(1);
+  sandbox.confirmSheetCalls[0].cb();
+  assert.strictEqual(sandbox.DB.settings.settledThrough, null, 'settle이 꺼졌으면 settledThrough도 함께 초기화돼야 함');
+});
+test('delOwner: undoToast로 되돌리면 settledThrough도 삭제 전 값으로 복원된다', () => {
+  sandbox.DB = { owners: ['나', '아내', '아이'], assets: [], goals: [], settings: { settle: { ownerA: '나', ownerB: '아내', ratioA: 50 }, settledThrough: '2026-01-05' } };
+  sandbox.confirmSheetCalls = [];
+  sandbox.lastUndo = null;
+  sandbox.delOwner(1);
+  sandbox.confirmSheetCalls[0].cb();
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(sandbox.DB.settings.settledThrough, '2026-01-05', '되돌리면 settledThrough도 삭제 전 값으로 복원돼야 함');
+});
 test('addOwner: 이미 톰스톤된(지워진) 이름을 다시 추가하면 톰스톤이 지워진다', () => {
   sandbox.DB = { owners: ['나'], deletedIds: { [sandbox.ownerTombKey('아내')]: 1000 } };
   sandbox.newOwnerValue = '아내';
@@ -27391,6 +27410,43 @@ test('saveSettleConfig: 유효하면 DB.settings.settle에 저장하고 시트�
   assert.strictEqual(JSON.stringify(sandbox.DB.settings.settle), JSON.stringify({ ownerA: '나', ownerB: '배우자', ratioA: 65 }));
   assert.strictEqual(sandbox.closeSheetCalls, 1);
 });
+/* settledThrough(정산 하한)는 openSettlement/confirmSettlement의 유일한 집계 기준이라, 귀속쌍이
+ * 바뀌면 이전 쌍의 하한을 물려받지 않아야 한다 — 같은 쌍으로 비율만 바꾸는 흔한 재조정은 하한을
+ * 유지해야 하고, 역할(A/B)만 뒤바뀐 경우도 '같은 쌍'으로 봐야 한다(app-evolve cycle347). */
+test('saveSettleConfig: 처음 설정하면(이전 settle 없음) settledThrough가 null로 초기화된다', () => {
+  sandbox.DB = { owners: ['나', '배우자'], settings: { settledThrough: '2026-01-05' } };
+  sandbox.settleDraft = { ownerA: '나', ownerB: '배우자', ratioA: 50 };
+  sandbox.saveSettleConfig();
+  assert.strictEqual(sandbox.DB.settings.settledThrough, null, '이전 settle이 없었다면 이전 하한이 무엇이었든 새 쌍에 물려주면 안 됨');
+});
+test('saveSettleConfig: 전혀 다른 귀속쌍으로 바꾸면 settledThrough가 null로 초기화된다', () => {
+  sandbox.DB = { owners: ['나', '배우자', '아이'], settings: { settle: { ownerA: '나', ownerB: '배우자', ratioA: 50 }, settledThrough: '2026-01-05' } };
+  sandbox.settleDraft = { ownerA: '나', ownerB: '아이', ratioA: 50 };
+  sandbox.saveSettleConfig();
+  assert.strictEqual(sandbox.DB.settings.settledThrough, null, '귀속쌍이 바뀌면 이전 쌍의 하한이 새 쌍의 과거 공동지출을 조용히 누락시키므로 리셋해야 함');
+});
+test('saveSettleConfig: 같은 쌍으로 비율만 바꾸면 settledThrough를 그대로 유지한다', () => {
+  sandbox.DB = { owners: ['나', '배우자'], settings: { settle: { ownerA: '나', ownerB: '배우자', ratioA: 50 }, settledThrough: '2026-01-05' } };
+  sandbox.settleDraft = { ownerA: '나', ownerB: '배우자', ratioA: 70 };
+  sandbox.saveSettleConfig();
+  assert.strictEqual(sandbox.DB.settings.settledThrough, '2026-01-05', '같은 쌍이면 비율만 바꾸는 흔한 재조정이라 하한을 리셋하면 안 됨');
+});
+test('saveSettleConfig: 같은 두 귀속의 A/B 역할만 뒤바뀌어도 같은 쌍으로 보고 settledThrough를 유지한다', () => {
+  sandbox.DB = { owners: ['나', '배우자'], settings: { settle: { ownerA: '나', ownerB: '배우자', ratioA: 50 }, settledThrough: '2026-01-05' } };
+  sandbox.settleDraft = { ownerA: '배우자', ownerB: '나', ratioA: 30 };
+  sandbox.saveSettleConfig();
+  assert.strictEqual(sandbox.DB.settings.settledThrough, '2026-01-05', 'A/B 역할만 뒤바뀐 것은 귀속 집합이 같으므로 쌍 변경이 아님');
+});
+test('saveSettleConfig: undoToast로 되돌리면 settle과 settledThrough 모두 호출 전 값으로 복원된다', () => {
+  sandbox.DB = { owners: ['나', '배우자', '아이'], settings: { settle: { ownerA: '나', ownerB: '배우자', ratioA: 50 }, settledThrough: '2026-01-05' } };
+  sandbox.settleDraft = { ownerA: '나', ownerB: '아이', ratioA: 50 };
+  sandbox.lastUndo = null;
+  sandbox.saveSettleConfig();
+  assert.strictEqual(sandbox.DB.settings.settledThrough, null);
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(JSON.stringify(sandbox.DB.settings.settle), JSON.stringify({ ownerA: '나', ownerB: '배우자', ratioA: 50 }));
+  assert.strictEqual(sandbox.DB.settings.settledThrough, '2026-01-05');
+});
 test('saveSettleConfig: 튜토리얼 모드 중에는 twGuard가 막아서 저장되지 않는다(addOwner 등과 동일 패턴)', () => {
   sandbox.TWi = 0;
   sandbox.DB = { owners: ['나', '배우자'], settings: {} };
@@ -27405,6 +27461,22 @@ test('clearSettleConfig: settle을 null로 비우고 시트를 닫는다', () =>
   sandbox.clearSettleConfig();
   assert.strictEqual(sandbox.DB.settings.settle, null);
   assert.strictEqual(sandbox.closeSheetCalls, 1);
+});
+/* 정산을 끄면 settledThrough(정산 하한)도 함께 초기화해야 한다 — 안 그러면 꺼진 상태에서도
+ * 죽은 하한이 남아, 나중에 다른 쌍으로 다시 켰을 때 saveSettleConfig의 판정과 무관하게 과거
+ * 하한이 뜻하지 않게 남아있을 위험이 생긴다(app-evolve cycle347). */
+test('clearSettleConfig: settledThrough도 null로 초기화된다', () => {
+  sandbox.DB = { owners: ['나', '배우자'], settings: { settle: { ownerA: '나', ownerB: '배우자', ratioA: 50 }, settledThrough: '2026-01-05' } };
+  sandbox.clearSettleConfig();
+  assert.strictEqual(sandbox.DB.settings.settledThrough, null, '정산을 끄면 하한도 함께 초기화돼야 함');
+});
+test('clearSettleConfig: undoToast로 되돌리면 settle과 settledThrough 모두 호출 전 값으로 복원된다', () => {
+  sandbox.DB = { owners: ['나', '배우자'], settings: { settle: { ownerA: '나', ownerB: '배우자', ratioA: 50 }, settledThrough: '2026-01-05' } };
+  sandbox.lastUndo = null;
+  sandbox.clearSettleConfig();
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(JSON.stringify(sandbox.DB.settings.settle), JSON.stringify({ ownerA: '나', ownerB: '배우자', ratioA: 50 }));
+  assert.strictEqual(sandbox.DB.settings.settledThrough, '2026-01-05');
 });
 function setupSettlementDB(extra) {
   sandbox.DB = Object.assign({
