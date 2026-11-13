@@ -1,15 +1,8 @@
 {
   "cycle": 347,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 341,
-      "phase": "critique",
-      "timestamp": "2026-11-12T05:10:00.000Z",
-      "summary": "앱 전체를 한 걸음 물러나 훑어본 결과(Explore 서브에이전트가 발견), 다른 모든 자유텍스트 입력(이름/메모)이 cycle340에서 NAME_MAX/MEMO_MAX+cleanName으로 클램프된 것과 달리, 종목코드(stockCode/cryptoCode, syncAssetInputs index.html:5157)는 trim().toUpperCase()만 거치고 길이/문자 제한이 전혀 없음을 발견했다. 더 심각하게는 openRateSheet(8420-8421행)가 이 값을 id=\"rateStock_${a.stockCode}\"/onchange=\"setRate('stock','${a.stockCode}',this.value)\" 템플릿 문자열에 escape 없이 그대로 꽂아 openSheet(10485행)의 sh.innerHTML=...에 흘려보낸다 — 인접한 표시용 rsub 텍스트는 esc()로 감싸져 있는데 id/onchange 두 속성만 빠진 비대칭. 종목코드에 인용부호를 포함시키면(수동 입력, 또는 조작된 백업/클라우드 동기화 데이터) 시세 연동 관리 시트를 여는 순간 임의 속성/스크립트가 주입되는 저장형 HTML/JS 인젝션 경로다. 직접 grep/코드 읽기로 stockCode 소스(syncAssetInputs:5157)부터 렌더 싱크(openRateSheet:8420-8421, openSheet innerHTML:10485)까지 데이터 흐름을 재확인해 검증. 대안으로 allocation/budget 트래시 UI 일관성(저위험, 데이터손실 아님)과 CDN SRI 해시 누락(네트워크 접근 불가로 이전부터 보류, 새 발견 아님)을 검토했으나 기각. pending_advance_plan에 CODE_MAX=20 상수 신설 + syncAssetInputs 정제(allow-list [A-Z0-9.]+clamp) + asCode maxlength 추가 + openRateSheet id/onchange esc() 방어 + CSV/백업 경로 점검 + 테스트 포인트까지 구체 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
     {
       "cycle": 341,
       "phase": "advance",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-13T02:11:46.500Z",
       "summary": "critique(cycle346) 계획대로 importGuestDataInto(index.html:1943)에 proceedWithBackupObj와 동일한 되돌리기를 추가했다. restoreBackup()이 이미 돌려주는 교체 전 DB 깊은 복사(prev)를 그대로 반환하도록 계약을 바꿔(성공 시 {prev,cancelPush}, 실패 시 null — 이전엔 true/false) save({deferCloudPush:true})로 6초 grace 동안 클라우드 push를 미루고, 그 타이머를 함수 내부에서 직접 들고 있다가 cancelPush()로 취소할 수 있게 반환해 호출부 3곳이 타이머 관리 코드를 중복하지 않게 했다. 호출부 3곳(kakaoLogin:13334, doLogin:13361, doSignup:13380) 모두 'const r=importGuestDataInto(guestRaw);if(r)undoToast(...)' 패턴으로 동일하게 교체해 성공 메시지는 각자 기존 문구('데이터를 가져왔어요')를 그대로 두고, 되돌리면 r.cancelPush()+DB=r.prev+save()+invalidateBalances()+renderCurrent()+토스트('되돌렸어요')로 proceedWithBackupObj의 undo와 동일한 순서를 따른다. 계획에서 제안했던 __preGuestImport_ localStorage 스냅샷은 생략했다 — 로그인/가입 직후라 교체 전 DB가 거의 항상 비어 있어(dbIsEmpty 가드를 통과해야 이 경로를 타므로) prev 메모리 클로저만으로 충분히 안전하다고 판단, 이유를 커밋 메시지에 남긴다. kakaoLogin/doLogin/doSignup은 window.Kakao SDK 콜백 중첩 등으로 실행형 테스트 비용이 커 기존 관례(cycle238)대로 소스 패턴 검증을 유지하고, importGuestDataInto 자체(순수 로직)는 실행형으로 테스트했다 — 테스트 변경(기존 3건을 새 반환 계약에 맞게 갱신: {prev,cancelPush} 반환/null 반환, 신규 1건: save({deferCloudPush:true}) 호출과 6초 뒤 scheduleCloudPush 예약+cancelPush()의 clearTimeout 취소 확인) + 호출부 3곳의 undoToast 와이어링 소스 패턴 테스트 1건 추가. node test/run.js 3360->3363/3363 통과. node --check sw.js/test/run.js/logic.js 통과, index.html 주 스크립트 블록(3번째 <script>, 830KB) 추출 후 new Function()으로 구문 확인 통과. 부차 발견(doSignup만 dbIsEmpty 가드 없이 guestHasData()만 확인하는 비대칭)은 계획대로 범위 밖으로 남겨 다음 critique 후보로 적합. 사용자 체감 동작 변화(게스트 데이터 가져오기를 실수로 눌러도 6초 안에 되돌릴 수 있음)라 APP_VERSION 1.47.432->1.47.433, sw.js CACHE v699->v700. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 347,
+      "phase": "develop",
+      "timestamp": "2026-11-13T05:10:00.000Z",
+      "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — txnsToCSV(index.html:8911, 이 앱 자신의 CSV 내보내기)가 헤더를 ['날짜','구분','카테고리','금액','보내는 자산','받는 자산','메모'] 리터럴로 직접 들고 있었는데, logic.js의 OWN_CSV_HEADER(1429행) 바로 위 주석이 '원래 txnsToCSV 안에 리터럴로만 있었음'을 cycle251 advance에서 공유 상수로 뽑아냈다고 설명하면서도, detectOwnCsvFormat(logic.js:1435)만 그 상수를 쓰고 txnsToCSV 자신은 추출 이후에도 여전히 독립된 리터럴 사본을 들고 있는 반쪽 추출 상태였다(grep으로 OWN_CSV_HEADER가 index.html에서 전혀 참조되지 않음을 확인). 두 파일에 같은 7칸 헤더가 손으로 맞춰야 하는 중복 불변식으로 남아있어, 향후 누군가 OWN_CSV_HEADER만 고치고(예: 컬럼명 변경) txnsToCSV의 리터럴은 놓치면 내보낸 CSV의 헤더가 옛 문구로 조용히 남고, detectOwnCsvFormat은 새 문구를 기대해 재가져오기 시 자기-포맷을 인식하지 못하고 범용 은행 CSV 열매핑 경로로 잘못 빠지는 조용한 드리프트 버그가 될 수 있었다. index.html:8911의 리터럴을 OWN_CSV_HEADER.map(esc).join(',')로 교체해 단일 소스로 통일(logic.js가 <script src=\"logic.js\">로 메인 인라인 스크립트보다 먼저 로드되므로 전역 참조 안전함을 로드 순서로 확인). test/run.js:8661의 기존 테스트('doExport(txnsToCSV)가 실제로 내보낸 CSV의 첫 행을 그대로 넣어도 true')가 이미 txnsToCSV의 실제 출력을 detectOwnCsvFormat으로 되돌려 검증하는 행동 테스트라 이 불변식을 이미 구조적으로 잠그고 있음을 확인해 중복 테스트는 추가하지 않았다. node test/run.js 3363/3363 통과(테스트 개수 변화 없음, 리터럴→상수 교체는 출력값 자체를 바꾸지 않아 기존 테스트 전부 그대로 통과). node --check sw.js/logic.js/test/run.js 통과. index.html은 test/run.js의 extractMainScript 기반 전체 스위트 실행 자체가 구문 검증을 겸함(cycle339/343/344/345/346 노트와 동일한 이유). 사용자 체감 동작 변화는 아니지만(내보낸 CSV의 실제 헤더 문구는 동일하게 유지됨, 코드 중복만 제거) 컨벤션대로 APP_VERSION 1.47.433->1.47.434, sw.js CACHE v700->v701.",
       "commit": null
     }
   ]

@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.433';
+const APP_VERSION='1.47.434';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -8908,7 +8908,7 @@ function txnsToCSV(txns,assets){
     뒤에는 구분할 수 없어, unguardCsv가 재가져오기 때 원본에 있던 '까지 지워버린다(아래 주석). */
  const guard=v=>{const s=String(v==null?'':v);return /^['=+\-@\t\r]/.test(s)?"'"+s:s};
  const esc=v=>{const s=String(v==null?'':v);return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s};
- const header=['날짜','구분','카테고리','금액','보내는 자산','받는 자산','메모'].map(esc).join(',');
+ const header=OWN_CSV_HEADER.map(esc).join(','); /* logic.js의 OWN_CSV_HEADER를 그대로 써 detectOwnCsvFormat과 한 쌍으로 유지(app-evolve cycle251이 상수를 뽑아냈지만 여기 리터럴은 그대로 남아있던 공백, app-evolve cycle347 develop) */
  /* 분할 거래(t.splits)는 항목별로 한 행씩 내보낸다(날짜/구분/자산은 그대로 반복, 카테고리·금액·메모만
     각 항목 기준) — CSV는 한 행=한 카테고리 구조라 분할을 그대로 담을 별도 컬럼이 없고, 가져오기(v1)도
     분할을 지원하지 않는 걸 알려진 제한으로 둔다(app-evolve cycle198 critique 계획, 재가져오기 시
