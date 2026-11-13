@@ -1,19 +1,8 @@
 {
-  "cycle": 349,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "분할입력(splits) 메모 필드에 MEMO_MAX 클램프 누락",
-    "why": "txMemo(index.html:6088)/rMemo(6633)는 HTML maxlength=MEMO_MAX와 input 핸들러(txMemoInput:6110/recMemoInput:6547) 2중으로 길이를 제한하지만, '여러 카테고리로 나누기' 분할 라인의 메모 입력(splitMemo${i})은 maxlength 속성이 없고 txSplitMemo(6192)/recSplitMemo(6597)도 el.value를 그대로 대입해 길이 검증이 전혀 없다. 분할 카테고리는 openCatPicker로 고정 목록에서만 골라 안전하지만 메모는 완전 자유 텍스트라 DB.txns[].splits/DB.recurrences[].splits/.edits[date].splits에 무제한 길이로 영구 저장된다. sanitizeBackup()의 분할 재검증 블록(9586/9696/9771, 3곳 동일 코드 복제)도 amount만 클램프하고 s.memo 길이는 그대로 둬 백업/클라우드 복원 경로도 같은 공백을 공유한다. cycle340/341/344가 'UI 입력 경로는 거부 대신 clamp' 원칙을 top-level category/memo·stockCode/cryptoCode·name에 이미 적용했는데, 분할입력 UI 경로만 지금까지 빠져 있던 사례. localStorage quota/fetch 타임아웃/3-way 병합/캐시 성능은 이미 성숙했고 SRI 해시 TODO는 cycle345가 네트워크 접근 불가로 deprioritize한 바 있어 함께 재확인 후 기각.",
-    "approach": "① splitMemo${i} input(6136/6633 인근)에 maxlength=\"${MEMO_MAX}\" 추가. ② txSplitMemo/recSplitMemo를 txMemoInput/recMemoInput과 동일한 1줄 클램프(el.value.length>MEMO_MAX이면 slice)로 교체. ③ sanitizeBackup()의 3곳(9586/9696/9771) splits map 블록에 amount 클램프와 같은 자리에 memo 클램프(typeof s.memo==='string'&&s.memo.length>MEMO_MAX일 때 slice)를 추가. 기존 NAME_MAX/MEMO_MAX 상수와 clamp 패턴 재사용, 신규 상수/헬퍼 불필요. 커밋 전 node test/run.js로 회귀 확인하고 관련 케이스 테스트 추가."
-  },
+  "cycle": 350,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 344,
-      "phase": "advance",
-      "timestamp": "2026-11-12T18:13:51.333Z",
-      "summary": "critique(cycle344) 계획대로 shiftWeekend()(logic.js)에 한국 고정일 공휴일 반영을 추가했다 — KR_FIXED_HOLIDAYS=Set([신정/삼일절/어린이날/현충일/광복절/개천절/한글날/성탄절의 MM-DD], 연도 독립, 음력 설날·추석은 명시적으로 범위 밖)과 isKrNonBusinessDay(ds)=주말이거나 이 Set에 속함 헬퍼를 추가하고, shiftWeekend를 ±1/±2일 한 번에 점프하던 방식에서 isKrNonBusinessDay를 만족하는 동안 하루씩(earlier=-1,later=+1) 반복 이동(최대 10회 상한)하는 방식으로 바꿨다. recDates()가 이미 모든 후보를 shiftWeekend에 통과시키므로 recOpenWeekend/WK UI·recNthDate/recCountUntil 등 다른 호출부는 수정 없이 자동 적용됨을 확인(계획대로). 테스트 4건 추가(평일 고정 공휴일 earlier/later 단일 이동, 공휴일이 주말에 바로 붙어 3일까지 반복 이동, 공휴일이 토요일에 겹쳐도 기존 순수 주말 조정과 동일, mode=none은 공휴일이어도 그대로 반환) — 이 과정에서 기존 테스트 3건(recDates 매월1일+earlier 월경계, recArchiveStartDate weekend조정, sanitizeBackup daily+weekend 겹침 재현)이 모두 day=1/startDate=1월1일을 써서 새 신정 공휴일 조정과 우연히 충돌해 실패하는 것을 발견 — 각 테스트의 핵심 검증 대상(주말 조정 자체)과 무관한 신정 충돌을 피하려 날짜만 공휴일 없는 달(8~9월/1월 둘째 주)로 옮기고 기대값을 재계산해 수정(테스트가 틀렸던 게 아니라 날짜 선택이 새 공휴일 규칙과 우연히 겹친 것). node test/run.js 3345->3354/3354 통과(처음엔 위 3건이 실패해 원인을 추적한 뒤 날짜를 옮겨 전체 통과). node --check logic.js/sw.js/test/run.js 통과. WK 라벨 문구에 \"공휴일 포함\"을 덧붙이는 선택 항목은 UI 문구 범위 확장이라 이번 사이클 범위 밖으로 남김(계획에서도 필수 아님으로 표시됨). 사용자 체감 동작 변화(공휴일이 끼는 반복거래의 실제 발생일이 달라짐)라 APP_VERSION 1.47.428->1.47.429, sw.js CACHE v695->v696. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 345,
       "phase": "develop",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-13T13:10:00.000Z",
       "summary": "최근 cycle345~348 critique가 전부 '되돌리기(undo) 공백' 패턴에 집중돼 있었기 때문에, 이번엔 그 류를 배제하고 Explore 서브에이전트에게 다른 종류(아키텍처/성능/UX/접근성/에러처리/데이터 정합성/DRY)의 약점을 조사시켰다. txMemo(index.html:6088)/rMemo(6633)는 HTML maxlength=MEMO_MAX와 입력 핸들러(txMemoInput:6110/recMemoInput:6547) 2중으로 길이를 제한하는데, '여러 카테고리로 나누기' 분할 라인의 메모 입력(splitMemo${i})은 maxlength 속성이 없고 txSplitMemo(6192)/recSplitMemo(6597)도 el.value를 그대로 대입해 길이 검증이 전혀 없음을 확인했다. 분할 카테고리는 openCatPicker 고정 목록이라 안전하지만 메모는 자유 텍스트라 DB.txns[].splits/DB.recurrences[].splits/.edits[date].splits에 무제한 길이로 저장되고, sanitizeBackup()의 분할 재검증 블록(9586/9696/9771, 3곳 동일 코드 복제)도 amount만 클램프하고 s.memo는 그대로 둬 백업/클라우드 복원 경로도 같은 공백을 공유함을 확인했다. cycle340/341/344가 'UI 입력 경로는 거부 대신 clamp' 원칙을 top-level category/memo·stockCode/cryptoCode·name에 이미 적용했는데 분할입력 UI 경로만 지금까지 빠져 있던 사례라 우선순위로 선정했다. 대안으로 localStorage quota/fetch 타임아웃/3-way 병합/캐시 성능(이미 성숙)과 SRI 해시 TODO(cycle345가 네트워크 접근 불가로 이미 deprioritize)를 재검토했으나 새 근거 없어 기각. pending_advance_plan에 ①splitMemo input에 maxlength 추가 ②txSplitMemo/recSplitMemo에 txMemoInput과 동일한 clamp 추가 ③sanitizeBackup 3곳에 splits memo 클램프 추가하는 구체 계획 저장. node test/run.js 3381/3381 통과 확인(베이스라인 깨짐 없음). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 349,
+      "phase": "advance",
+      "timestamp": "2026-11-13T14:10:00.000Z",
+      "summary": "critique(cycle349) 계획대로 분할입력(splits) 메모 필드의 MEMO_MAX 클램프 누락을 고쳤다. ① splitFieldHTML()의 splitMemo${i} input(index.html:6136)에 maxlength=\"${MEMO_MAX}\" 추가. ② txSplitMemo(6192)/recSplitMemo(6597)를 txMemoInput/recMemoInput과 동일한 1줄 클램프(el.value.length>MEMO_MAX이면 slice(0,MEMO_MAX))로 교체. ③ sanitizeBackup()의 분할 재검증 3곳(txns d.splits/recurrences d.splits/edits[date].e.splits, 완전히 동일한 코드가 복제돼 있던 자리)의 cleaned map에 amount 클램프와 같은 자리에 memo:typeof s.memo==='string'&&s.memo.length>MEMO_MAX?s.memo.slice(0,MEMO_MAX):s.memo를 추가하고, 드리프트 감지(cleaned.some(...))에도 ||s.memo!==d.splits[i].memo를 더해 memo만 바뀐 경우도 fixedCount를 세고 d.splits/e.splits를 갱신하게 했다. 테스트: txSplitMemo/recSplitMemo clamp 실행형 테스트 2건을 새로 추가했는데, 두 함수가 이제 전역 MEMO_MAX를 참조하므로 vm.createContext 기반 기존 isolated 테스트(txSplitMemo/recSplitMemo 기본 동작 테스트, splitFieldHTML 테스트 3건)가 전부 'MEMO_MAX is not defined'로 깨지는 것을 발견해 해당 ctx 객체들에 MEMO_MAX: sandbox.MEMO_MAX를 함께 넘기도록 고쳤다(구현 버그가 아니라, 기존 isolated 테스트 ctx가 새로 생긴 전역 의존성을 안 들고 있었던 것). sanitizeBackup 쪽에도 txns/recurrences/edits[date] 세 경로 각각 메모 클램프+정상 케이스 보존 테스트를 추가. node test/run.js 3381->3387/3387 통과. node --check sw.js/logic.js/test/run.js 통과, index.html은 test/run.js의 전체 스위트 실행(vm 샌드박스 로드) 자체가 구문 검증을 겸함(cycle339 이후 관례와 동일). 사용자 체감 동작 변화(분할 항목 메모도 이제 200자에서 자동으로 잘리고, 거부되지 않음; 과거에 이미 200자를 넘겨 저장된 분할 메모가 있었다면 다음 백업 복원/클라우드 동기화 시 잘림)라 APP_VERSION 1.47.438->1.47.439, sw.js CACHE v705->v706. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

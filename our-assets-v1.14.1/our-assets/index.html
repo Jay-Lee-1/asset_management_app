@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.438';
+const APP_VERSION='1.47.439';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -6133,7 +6133,7 @@ function splitFieldHTML(d,pfx,noToggle){
  const rows=d.splits.map((s,i)=>`<div class="field" style="margin-bottom:8px"><label>항목 ${i+1}${d.splits.length>2?` <button type="button" class="txt-btn" style="padding:2px 6px" onclick="${pfx}SplitRemove(${i})" aria-label="항목 ${i+1} 삭제">${svg('trash',14)} 삭제</button>`:''}</label>
    <button class="pick" onclick="${pfx}SplitOpenCat(${i})"><div class="pav ${catAv(d.type)}">${catGlyph(d.type,s.category,null,'tag')}</div><div class="pbody"><div class="pn">${esc(s.category||'카테고리 선택')}</div></div><div class="pc">${svg('chevR')}</div></button>
    <div class="field-clear" style="margin-top:6px"><input id="splitAmt${i}" class="amount-in num" inputmode="numeric" value="${s.amount?comma(s.amount):''}" placeholder="0" aria-label="항목 ${i+1} 금액" oninput="${pfx}SplitAmt(${i},this)"><button type="button" class="fc-x" aria-label="항목 ${i+1} 금액 지우기" onclick="clrInput('splitAmt${i}')">✕</button></div>
-   <div class="field-clear" style="margin-top:6px"><input id="splitMemo${i}" value="${esc(s.memo||'')}" placeholder="항목 ${i+1} 메모(선택)" aria-label="항목 ${i+1} 메모" oninput="${pfx}SplitMemo(${i},this)"><button type="button" class="fc-x" aria-label="항목 ${i+1} 메모 지우기" onclick="clrInput('splitMemo${i}')">✕</button></div>
+   <div class="field-clear" style="margin-top:6px"><input id="splitMemo${i}" maxlength="${MEMO_MAX}" value="${esc(s.memo||'')}" placeholder="항목 ${i+1} 메모(선택)" aria-label="항목 ${i+1} 메모" oninput="${pfx}SplitMemo(${i},this)"><button type="button" class="fc-x" aria-label="항목 ${i+1} 메모 지우기" onclick="clrInput('splitMemo${i}')">✕</button></div>
   </div>`).join('');
  const hint=diff===0?'합계가 전체 금액과 일치해요':`합계가 전체 금액과 ${comma(Math.abs(diff))}원 ${diff>0?'모자라요':'많아요'}`;
  /* noToggle: 반복 내역 '간편 수정'(rc) 화면에서 쓴다 — 거기는 category 오버라이드를 저장할
@@ -6189,7 +6189,7 @@ function txSplitAmt(i,el){fmtAmt(el);txDraft.splits[i].amount=num(el);splitHintU
  * 합계를 보여줬다 — 저장 시 saveTx()의 sum!==amount 가드가 막아 데이터는 안전했지만 입력 중
  * 피드백이 거짓이었다(app-evolve cycle297 develop). */
 function txAmtInput(el){fmtAmt(el);txDraft.amount=num(el);if(Array.isArray(txDraft.splits)&&txDraft.splits.length)splitHintUpdate(txDraft)}
-function txSplitMemo(i,el){txDraft.splits[i].memo=el.value}
+function txSplitMemo(i,el){if(el.value.length>MEMO_MAX)el.value=el.value.slice(0,MEMO_MAX);txDraft.splits[i].memo=el.value}
 /* tx/rec 폼이 공유하는 카테고리/자산/유형/주기/반복일 변경 로직. draft만 다르고 나머지는 동일해 헬퍼로 통합 */
 /* 피커로 카테고리를 직접 고르면(=메모 추천이 아니라 사용자 본인의 명시적 선택) _catUserTouched를
  * 세워 이후 메모를 더 입력해도 추천 칩(txCatSuggestUpdate/recCatSuggestUpdate)이 그 선택을 다시
@@ -6594,7 +6594,7 @@ function recSplitAmt(i,el){fmtAmt(el);recDraft.splits[i].amount=num(el);splitHin
 /* txAmtInput과 동일한 공백 — #rAmt(전체 금액)도 fmtAmt(this)만 걸려 있어 분할 중엔 힌트가
  * 전체 금액 변경에 반응하지 않았다(app-evolve cycle297 develop). */
 function recAmtInput(el){fmtAmt(el);recDraft.amount=num(el);if(Array.isArray(recDraft.splits)&&recDraft.splits.length)splitHintUpdate(recDraft)}
-function recSplitMemo(i,el){recDraft.splits[i].memo=el.value}
+function recSplitMemo(i,el){if(el.value.length>MEMO_MAX)el.value=el.value.slice(0,MEMO_MAX);recDraft.splits[i].memo=el.value}
 const WK={ /* 주말 조정 어휘 */
  none:['당일 유지','주말이어도 그 날짜에'],
  earlier:['앞당겨 금요일','주말이면 하루 앞 금요일에 (급여)'],
@@ -9583,10 +9583,10 @@ function sanitizeBackup(obj){
   if('splits' in d){
    if(!Array.isArray(d.splits)){delete d.splits;fixedCount++}
    else{
-    const cleaned=d.splits.filter(s=>s&&typeof s.category==='string'&&s.category).map(s=>Object.assign({},s,{amount:sanitizeAmount(s.amount,0)})).filter(s=>s.amount>0);
+    const cleaned=d.splits.filter(s=>s&&typeof s.category==='string'&&s.category).map(s=>Object.assign({},s,{amount:sanitizeAmount(s.amount,0),memo:typeof s.memo==='string'&&s.memo.length>MEMO_MAX?s.memo.slice(0,MEMO_MAX):s.memo})).filter(s=>s.amount>0);
     const sum=cleaned.reduce((s,x)=>s+x.amount,0);
     if(cleaned.length<2||sum!==d.amount){delete d.splits;fixedCount++}
-    else if(cleaned.length!==d.splits.length||cleaned.some((s,i)=>s.amount!==d.splits[i].amount)){d.splits=cleaned;fixedCount++}
+    else if(cleaned.length!==d.splits.length||cleaned.some((s,i)=>s.amount!==d.splits[i].amount||s.memo!==d.splits[i].memo)){d.splits=cleaned;fixedCount++}
    }
   }
   /* category/memo도 csvRowToImportTxn(9014-9018행, app-evolve cycle340)이 CSV 가져오기 경로에서
@@ -9693,10 +9693,10 @@ function sanitizeBackup(obj){
   if('splits' in d){
    if(!Array.isArray(d.splits)){delete d.splits;fixedCount++}
    else{
-    const cleaned=d.splits.filter(s=>s&&typeof s.category==='string'&&s.category).map(s=>Object.assign({},s,{amount:sanitizeAmount(s.amount,0)})).filter(s=>s.amount>0);
+    const cleaned=d.splits.filter(s=>s&&typeof s.category==='string'&&s.category).map(s=>Object.assign({},s,{amount:sanitizeAmount(s.amount,0),memo:typeof s.memo==='string'&&s.memo.length>MEMO_MAX?s.memo.slice(0,MEMO_MAX):s.memo})).filter(s=>s.amount>0);
     const sum=cleaned.reduce((s,x)=>s+x.amount,0);
     if(cleaned.length<2||sum!==d.amount){delete d.splits;fixedCount++}
-    else if(cleaned.length!==d.splits.length||cleaned.some((s,i)=>s.amount!==d.splits[i].amount)){d.splits=cleaned;fixedCount++}
+    else if(cleaned.length!==d.splits.length||cleaned.some((s,i)=>s.amount!==d.splits[i].amount||s.memo!==d.splits[i].memo)){d.splits=cleaned;fixedCount++}
    }
   }
   /* category/memo도 바로 위 txns 블록과 동일한 이유로 여기서 클램프한다 — 반복거래는
@@ -9768,10 +9768,10 @@ function sanitizeBackup(obj){
      const baseAmt=e.amount!=null?e.amount:d.amount;
      if(!Array.isArray(e.splits)){delete e.splits;fixedCount++}
      else{
-      const cleaned=e.splits.filter(s=>s&&typeof s.category==='string'&&s.category).map(s=>Object.assign({},s,{amount:sanitizeAmount(s.amount,0)})).filter(s=>s.amount>0);
+      const cleaned=e.splits.filter(s=>s&&typeof s.category==='string'&&s.category).map(s=>Object.assign({},s,{amount:sanitizeAmount(s.amount,0),memo:typeof s.memo==='string'&&s.memo.length>MEMO_MAX?s.memo.slice(0,MEMO_MAX):s.memo})).filter(s=>s.amount>0);
       const sum=cleaned.reduce((s,x)=>s+x.amount,0);
       if(cleaned.length<2||sum!==baseAmt){delete e.splits;fixedCount++}
-      else if(cleaned.length!==e.splits.length||cleaned.some((s,i)=>s.amount!==e.splits[i].amount)){e.splits=cleaned;fixedCount++}
+      else if(cleaned.length!==e.splits.length||cleaned.some((s,i)=>s.amount!==e.splits[i].amount||s.memo!==e.splits[i].memo)){e.splits=cleaned;fixedCount++}
      }
     }
     edits[date]=e;

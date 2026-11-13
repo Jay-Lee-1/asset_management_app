@@ -15556,6 +15556,36 @@ test('sanitizeBackup: 유효한 split(2개 이상, 합계 일치)은 그대로 �
   assert.strictEqual(data.txns[0].splits[1].amount, 4000);
   assert.strictEqual(fixedCount, 0);
 });
+/* 분할 항목별 메모(splits[].memo)는 txSplitMemo/recSplitMemo(index.html) UI 입력 경로에만
+ * MEMO_MAX clamp가 있고, 저장 시점을 모두 공유하는 이 백업 복원/클라우드 풀 재검증 체크포인트는
+ * amount만 클램프해 memo 길이는 그대로 두고 있었다(app-evolve cycle349 advance) — top-level
+ * memo(9598행 부근)에 이미 적용된 "거부가 아니라 clamp" 원칙을 분할 항목에도 거울 적용한다. */
+test('sanitizeBackup: 분할 항목의 메모(splits[].memo)가 MEMO_MAX를 넘으면 잘라내고 fixedCount를 센다', () => {
+  const over = '메'.repeat(sandbox.MEMO_MAX + 50);
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    assets: [],
+    txns: [{ id: 't1', date: '2026-01-01', amount: 10000, category: '식비', splits: [
+      { category: '식비', amount: 6000, memo: over },
+      { category: '생활용품', amount: 4000 },
+    ] }],
+  });
+  assert.strictEqual(Array.isArray(data.txns[0].splits), true, '메모만 잘렸을 뿐 splits 자체는 유효하므로 보존돼야 함');
+  assert.strictEqual(data.txns[0].splits[0].memo, '메'.repeat(sandbox.MEMO_MAX));
+  assert.strictEqual(data.txns[0].splits[1].amount, 4000, '다른 항목은 그대로 둬야 함');
+  assert.strictEqual(fixedCount, 1);
+});
+test('sanitizeBackup: 분할 항목의 메모가 MEMO_MAX 이하이면 그대로 둔다(정상 케이스는 회귀 없음)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    assets: [],
+    txns: [{ id: 't1', date: '2026-01-01', amount: 10000, category: '식비', splits: [
+      { category: '식비', amount: 6000, memo: '마트' },
+      { category: '생활용품', amount: 4000, memo: '' },
+    ] }],
+  });
+  assert.strictEqual(data.txns[0].splits[0].memo, '마트');
+  assert.strictEqual(data.txns[0].splits[1].memo, '');
+  assert.strictEqual(fixedCount, 0);
+});
 test('sanitizeBackup: 자산의 보유수량 필드(fxAmount/goldDon/stockQty)는 음수면 0으로 클램프한다', () => {
   const { data, fixedCount } = sandbox.sanitizeBackup({
     txns: [],
@@ -16246,6 +16276,19 @@ test('sanitizeBackup: 유효한 반복거래 splits(2개 이상, 합계 일치)�
   assert.strictEqual(data.recurrences[0].splits.length, 2);
   assert.strictEqual(fixedCount, 0);
 });
+test('sanitizeBackup: 반복거래 분할 항목의 메모(splits[].memo)도 MEMO_MAX를 넘으면 잘라낸다(app-evolve cycle349 advance)', () => {
+  const over = '메'.repeat(sandbox.MEMO_MAX + 50);
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    recurrences: [{ id: 'r1', startDate: '2026-01-01', amount: 10000, category: '식비', splits: [
+      { category: '식비', amount: 6000, memo: over },
+      { category: '생활용품', amount: 4000, memo: '' },
+    ] }],
+  });
+  assert.strictEqual(Array.isArray(data.recurrences[0].splits), true, '메모만 잘렸을 뿐 splits 자체는 유효하므로 보존돼야 함');
+  assert.strictEqual(data.recurrences[0].splits[0].memo, '메'.repeat(sandbox.MEMO_MAX));
+  assert.strictEqual(fixedCount, 1);
+});
 test('sanitizeBackup: edits[date].splits(간편수정 오버라이드)도 동일하게 검증하고, 기준 금액은 e.amount가 있으면 그 값을 쓴다', () => {
   const { data, fixedCount } = sandbox.sanitizeBackup({
     txns: [], assets: [],
@@ -16257,6 +16300,19 @@ test('sanitizeBackup: edits[date].splits(간편수정 오버라이드)도 동일
   const edits = data.recurrences[0].edits;
   assert.strictEqual(Array.isArray(edits['2026-02-01'].splits), true, 'e.amount 기준으로는 합계가 맞으므로 보존돼야 함');
   assert.strictEqual('splits' in edits['2026-03-01'], false, 'e.amount가 없으면 r.amount가 기준이라 합계 불일치로 지워져야 함');
+  assert.strictEqual(fixedCount, 1);
+});
+test('sanitizeBackup: edits[date].splits의 분할 항목 메모도 MEMO_MAX를 넘으면 잘라낸다(app-evolve cycle349 advance)', () => {
+  const over = '메'.repeat(sandbox.MEMO_MAX + 50);
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    recurrences: [{ id: 'r1', startDate: '2026-01-01', amount: 10000, category: '식비', edits: {
+      '2026-02-01': { amount: 8000, splits: [{ category: '식비', amount: 6000, memo: over }, { category: '생활용품', amount: 2000 }] },
+    } }],
+  });
+  const edits = data.recurrences[0].edits;
+  assert.strictEqual(Array.isArray(edits['2026-02-01'].splits), true);
+  assert.strictEqual(edits['2026-02-01'].splits[0].memo, '메'.repeat(sandbox.MEMO_MAX));
   assert.strictEqual(fixedCount, 1);
 });
 /* DB.goals(app-evolve cycle122 신설)는 sanitizeBackup에 검증 분기가 전혀 없어 손상된 백업/원격
@@ -23435,6 +23491,7 @@ test('[실행형] txSplitRemove: 분할이 2개뿐이면 기존 가드로 삭제
  * splitFieldHTML에 항목별 메모 input을 추가하고 txSplitMemo(i,el)을 신설해 이 공백을 메웠다. */
 test('[실행형] txSplitMemo: 항목별 메모 입력값을 해당 split의 memo 필드에 반영한다', () => {
   const ctx = {
+    MEMO_MAX: sandbox.MEMO_MAX,
     txDraft: {
       type: 'expense', category: '식비', amount: 5000, memo: '',
       splits: [{ category: '식비', amount: 3000, memo: '' }, { category: '생활용품', amount: 2000, memo: '' }],
@@ -23446,8 +23503,25 @@ test('[실행형] txSplitMemo: 항목별 메모 입력값을 해당 split의 mem
   assert.strictEqual(ctx.txDraft.splits[1].memo, '세제', 'txSplitMemo가 해당 인덱스 split의 memo를 갱신해야 함');
   assert.strictEqual(ctx.txDraft.splits[0].memo, '', '다른 split의 memo는 건드리지 않아야 함');
 });
+/* txSplitMemo/recSplitMemo: MEMO_MAX 상한 clamp(app-evolve cycle349 advance) — txMemo/rMemo는
+ * HTML maxlength와 txMemoInput/recMemoInput 2중으로 길이를 제한하는데, 분할 항목별 메모만
+ * 지금까지 길이 제한이 전혀 없어 DB.txns[].splits/DB.recurrences[].splits에 무제한 길이로
+ * 영구 저장될 수 있었다. txMemoInput과 동일한 clamp(거부가 아니라 자름)를 적용한다. */
+test('[실행형] txSplitMemo: MEMO_MAX를 넘는 메모는 입력칸 값과 split.memo 모두 잘린다(app-evolve cycle349 advance)', () => {
+  const ctx = {
+    MEMO_MAX: sandbox.MEMO_MAX,
+    txDraft: { splits: [{ category: '식비', amount: 3000, memo: '' }, { category: '생활용품', amount: 2000, memo: '' }] },
+  };
+  vm.createContext(ctx);
+  vm.runInContext(extractFunction('txSplitMemo'), ctx, { filename: 'txSplitMemo-clamp-real' });
+  const el = { value: '메'.repeat(ctx.MEMO_MAX + 50) };
+  ctx.txSplitMemo(1, el);
+  assert.strictEqual(el.value, '메'.repeat(ctx.MEMO_MAX), '입력칸 값도 잘려야 함');
+  assert.strictEqual(ctx.txDraft.splits[1].memo, '메'.repeat(ctx.MEMO_MAX), 'split.memo도 잘려야 함');
+});
 test('[실행형] splitFieldHTML: 각 분할 항목마다 메모 입력(id=splitMemo{i}, oninput=txSplitMemo)을 그려낸다', () => {
   const ctx = {
+    MEMO_MAX: sandbox.MEMO_MAX,
     esc: (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])),
     comma: (n) => String(n),
     svg: () => '',
@@ -23471,6 +23545,7 @@ test('[실행형] splitFieldHTML: 각 분할 항목마다 메모 입력(id=split
  * splitFieldHTML(d,'rec')을 그대로 호출한다. */
 test('[실행형] splitFieldHTML: pfx="rec"를 넘기면 onclick/oninput이 rec* 핸들러로 배선된다', () => {
   const ctx = {
+    MEMO_MAX: sandbox.MEMO_MAX,
     esc: (s) => String(s == null ? '' : s),
     comma: (n) => String(n),
     svg: () => '',
@@ -23495,6 +23570,7 @@ test('[실행형] splitFieldHTML: pfx="rec"를 넘기면 onclick/oninput이 rec*
  * 안전하므로 그대로 남긴다. */
 test('[실행형] splitFieldHTML: noToggle=true를 넘기면 "일반 입력으로" 버튼만 숨기고 나머지는 그대로다', () => {
   const ctx = {
+    MEMO_MAX: sandbox.MEMO_MAX,
     esc: (s) => String(s == null ? '' : s),
     comma: (n) => String(n),
     svg: () => '',
@@ -23637,11 +23713,23 @@ test('[실행형] recSplitAmt: 금액을 반영한 뒤 splitHintUpdate를 호출
   assert.strictEqual(hintEl.textContent, '합계가 전체 금액과 일치해요', 'renderRecSheet를 다시 부르지 않고도 힌트가 최신 합계로 갱신돼야 함');
 });
 test('[실행형] recSplitMemo: 입력값을 해당 split의 memo에 반영한다', () => {
-  const ctx = { recDraft: { splits: [{ category: '통신', amount: 30000, memo: '' }, { category: 'OTT', amount: 20000, memo: '' }] } };
+  const ctx = { MEMO_MAX: sandbox.MEMO_MAX, recDraft: { splits: [{ category: '통신', amount: 30000, memo: '' }, { category: 'OTT', amount: 20000, memo: '' }] } };
   vm.createContext(ctx);
   vm.runInContext(extractFunction('recSplitMemo'), ctx, { filename: 'recSplitMemo-real' });
   ctx.recSplitMemo(1, { value: '넷플릭스' });
   assert.strictEqual(ctx.recDraft.splits[1].memo, '넷플릭스');
+});
+test('[실행형] recSplitMemo: MEMO_MAX를 넘는 메모는 입력칸 값과 split.memo 모두 잘린다(app-evolve cycle349 advance)', () => {
+  const ctx = {
+    MEMO_MAX: sandbox.MEMO_MAX,
+    recDraft: { splits: [{ category: '통신', amount: 30000, memo: '' }, { category: 'OTT', amount: 20000, memo: '' }] },
+  };
+  vm.createContext(ctx);
+  vm.runInContext(extractFunction('recSplitMemo'), ctx, { filename: 'recSplitMemo-clamp-real' });
+  const el = { value: '메'.repeat(ctx.MEMO_MAX + 50) };
+  ctx.recSplitMemo(1, el);
+  assert.strictEqual(el.value, '메'.repeat(ctx.MEMO_MAX), '입력칸 값도 잘려야 함');
+  assert.strictEqual(ctx.recDraft.splits[1].memo, '메'.repeat(ctx.MEMO_MAX), 'split.memo도 잘려야 함');
 });
 /* ---------- splitHintUpdate/txSplitAmt: 분할 금액 입력 중 합계 힌트가 실시간으로 갱신되지 않던 공백
  * (app-evolve cycle274 critique/advance) — txSplitAmt(i,el)는 커서 위치를 지키려고 renderTxSheet()를
