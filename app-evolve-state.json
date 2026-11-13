@@ -1,15 +1,8 @@
 {
   "cycle": 351,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 345,
-      "phase": "critique",
-      "timestamp": "2026-11-12T20:05:00.000Z",
-      "summary": "앱 전체를 한 걸음 물러나 훑어본 결과, cycle345 develop이 직접 제안한 다음 후보(doRenameCat의 undo 공백)를 코드로 검증해 이번 critique의 우선순위로 확정했다. 카테고리 3형제 함수(삭제/합치기/이름변경) 중 doDeleteCat(index.html:8216, trashCat+undoToast, cycle325)과 mergeCatInto(8314-8373, __preMergeCat_ localStorage 전체 DB 스냅샷+undoToast로 txItems/recItems/catIcon/catVar/catBudgetRollover/budgetHistory/deletedIds/ST.hist.catExact까지 복원, cycle333)는 이미 되돌리기가 있는데, doRenameCat(8242-8279)만 거래/반복거래 category+splits+memo 대량 재할당, catIcon/catVar/catBudgetRollover 키 이동, budgetHistory 이동, deletedIds 톰스톤 2개, ST.hist.catExact 보정까지 똑같이 큰 규모의 변경을 하고도 끝에 plain toast()만 있어(8279행) 이름을 잘못 입력해 저장하면 복구가 전혀 불가능함을 라인 단위로 확인했다. mergeCatInto가 바로 옆에 거의 동일한 로직을 이미 undo 가능하게 구현해둬 재사용할 패턴이 명확하다. 대안으로 clearSettleConfig의 settledThrough 미연동(cycle342 critique가 이미 deprioritize)과 CDN SRI 해시 누락(네트워크 접근 불가로 과거부터 보류)을 재확인했으나 새 근거 없음. pending_advance_plan에 mergeCatInto 패턴(localStorage 백업 스냅샷+txItems/recItems+필드별 캡처/복원)을 doRenameCat에 거울 적용하는 구체 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
     {
       "cycle": 345,
       "phase": "advance",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-13T00:00:00Z",
       "summary": "pullCloud/pushCloud의 error/e 객체를 cloudSyncFailed(e)에 전달하고 isRlsPolicyError로 분류해 CLOUD_SYNC_ERR_KIND('network'|'rls')를 두었다. cloudSyncLabel()과 homeAlertCard()의 cloudSyncError 카드가 RLS 케이스에선 '자동으로 다시 시도' 대신 구체적 권한 안내(Supabase 접근 권한/정책)를 보여주고 openAccountSheet() 대신 openHelpCloud()(안내 SQL)로 연결되게 했다. 네트워크 케이스는 기존 문구/동작 그대로 유지.",
+      "commit": null
+    },
+    {
+      "cycle": 351,
+      "phase": "develop",
+      "timestamp": "2026-11-13T21:10:00.000Z",
+      "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — sanitizeBackup()의 sanitizeRateMap(index.html:10116, DB.rates.fx/stocks/crypto 검증)이 컨테이너가 평범한 객체인지만 보고 그 안의 코드별 시세 leaf 값(예: fx.USD, stocks['005930'])은 전혀 검증 없이 그대로 통과시키고 있었다 — goldPerG/syncedAt/ratesUpdatedAt/failStreak는 바로 아래서 sanitizeAmount(v,0)로 클램프하는데 fx/stocks/crypto의 값만 빠져 있던 비대칭. 이 rates 객체는 백업 파일 복원과 pullCloudIfStale()의 mergeRemoteDataIntoLocal() 양쪽에서 DB.rates에 그대로 들어가고, assetEval()의 (a.stockQty||0)*(R.stocks[a.stockCode]||0)에 검증 없이 곱해지며 rateUnknown()은 ==null만 확인해 문자열/객체/NaN도 '알고 있는 시세'로 취급한다 — 손상된 백업이나 다른 기기에서 온 손상된 클라우드 문서가 순자산 합계/nwHistory/목표진행률/내보내기 전체에 NaN을 조용히 전파할 수 있는 경로였다. sanitizeRateMap이 객체일 때 Object.keys로 각 코드값을 sanitizeAmount(v,0)로 클램프(수량성이라 min=0, goldPerG와 동일 철학)하도록 고쳤다. 테스트 2건 추가(fx/stocks/crypto leaf가 문자열/객체/음수면 0으로 클램프하고 fixedCount를 셈, AMOUNT_MAX를 넘는 leaf는 상한으로 클램프) — 기존 정상 케이스 테스트(fx.USD:1384.5 그대로 유지)는 그대로 통과해 회귀 없음을 확인. node test/run.js 3394->3396/3396 통과. node --check sw.js/logic.js/test/run.js 통과, index.html은 test/run.js의 전체 스위트 실행(vm 샌드박스 로드) 자체가 구문 검증을 겸함(cycle339 이후 관례와 동일). 사용자 체감 동작 변화(클라우드 동기화/백업 복원으로 손상된 시세 데이터가 들어와도 더 이상 순자산 계산이 조용히 깨지지 않음, 평소 정상 동작에는 영향 없음)라 APP_VERSION 1.47.441->1.47.442, sw.js CACHE v708->v709.",
       "commit": null
     }
   ]

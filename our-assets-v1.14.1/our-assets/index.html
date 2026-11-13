@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.441';
+const APP_VERSION='1.47.442';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -10109,13 +10109,25 @@ function sanitizeBackup(obj){
   * !R.fx[...] 판정 모두 그 값이 객체임을 가정하고 바로 속성 접근한다(배열·문자열이 들어오면
   * TypeError는 안 나도 괄호 접근이 undefined만 돌려주거나, 숫자/null이면 R.fx[cur] 접근 자체가
   * 터진다). goldPerG/syncedAt/ratesUpdatedAt/failStreak는 숫자여야 fmtSynced()의 Date.now()-ts,
-  * mergeRates()의 >비교가 NaN으로 새지 않는다. */
+  * mergeRates()의 >비교가 NaN으로 새지 않는다. sanitizeRateMap은 컨테이너가 객체인지만 보고
+  * 그 안의 코드별 시세 값은 그대로 통과시켰었는데(app-evolve cycle351 발견), 그 leaf 값이
+  * assetEval()의 (a.stockQty||0)*(R.stocks[a.stockCode]||0)에 검증 없이 곱해져 손상된
+  * 문자열/NaN이 순자산·목표진행률·내보내기 전체로 조용히 퍼질 수 있었다 — 이제 각 코드값도
+  * goldPerG와 동일하게 sanitizeAmount(v,0)으로 클램프한다. */
  const srcRatesRaw=obj&&obj.rates;
  const srcRates=(srcRatesRaw&&typeof srcRatesRaw==='object'&&!Array.isArray(srcRatesRaw))?srcRatesRaw:{};
  if(srcRatesRaw!=null&&srcRates!==srcRatesRaw)fixedCount++;
  const sanitizeRateMap=v=>{
   if(v==null)return {};
-  if(typeof v==='object'&&!Array.isArray(v))return v;
+  if(typeof v==='object'&&!Array.isArray(v)){
+   const out={};
+   Object.keys(v).forEach(code=>{
+    const n=sanitizeAmount(v[code],0);
+    if(n!==v[code])fixedCount++;
+    out[code]=n;
+   });
+   return out;
+  }
   fixedCount++;
   return {};
  };

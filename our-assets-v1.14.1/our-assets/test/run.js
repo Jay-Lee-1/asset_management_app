@@ -17131,6 +17131,28 @@ test('sanitizeBackup: 정상적인 rates는 그대로 두고, 없어도 빈 맵�
   const missing = sandbox.sanitizeBackup({ txns: [], assets: [] });
   assert.deepStrictEqual(j(missing.data.rates), { fx: {}, stocks: {}, crypto: {} });
 });
+/* app-evolve cycle351 develop: sanitizeRateMap이 컨테이너(fx/stocks/crypto 객체)만 보고
+ * 내부 코드별 leaf 값은 검증 없이 그대로 통과시켜, 손상된 문자열/NaN 시세가 assetEval()의
+ * 곱셈에 그대로 들어가 순자산 전체로 전파될 수 있었다. goldPerG와 같은 clamp(sanitizeAmount(v,0))를
+ * leaf 값에도 적용했는지 검증한다. */
+test('sanitizeBackup: rates.stocks/fx/crypto의 코드별 leaf 값이 숫자가 아니면 goldPerG와 동일하게 0으로 클램프하고 fixedCount를 센다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    rates: { fx: { USD: 'not-a-number' }, stocks: { '005930': { nested: true } }, crypto: { BTC: -5 } },
+  });
+  assert.strictEqual(data.rates.fx.USD, 0);
+  assert.strictEqual(data.rates.stocks['005930'], 0);
+  assert.strictEqual(data.rates.crypto.BTC, 0); // 음수 시세는 유효하지 않은 상태라 goldPerG처럼 0으로 클램프(min=0)
+  assert.ok(fixedCount >= 3);
+});
+test('sanitizeBackup: rates.stocks/fx/crypto의 코드별 leaf 값이 AMOUNT_MAX를 넘으면 상한으로 클램프한다', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    rates: { fx: { USD: sandbox.AMOUNT_MAX + 1000 } },
+  });
+  assert.strictEqual(data.rates.fx.USD, sandbox.AMOUNT_MAX);
+  assert.ok(fixedCount >= 1);
+});
 
 /* ---------- sanitizeBackup: DB.nwHistory(순자산 추이 일별 스냅샷)도 txns/assets/recurrences/goals/
  * inquiries/assetQtyLog/categories/owners/budgetHistory와 동일하게 검증돼야 한다 — afterCloudAuth()의
