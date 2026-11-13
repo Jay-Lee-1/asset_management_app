@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.436';
+const APP_VERSION='1.47.437';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -2267,11 +2267,23 @@ async function afterCloudAuth(uid){
   const _devSnap=snapshotLocalDeviceFields();
   DB=sanitizeBackup(remote).data;restoreLocalDeviceFields(_devSnap);migrate();invalidateBalances();try{localStorage.setItem(dataKey(),JSON.stringify(DB))}catch(e){}markCloudSynced();return{status:'remote'};
  }
- let status='empty';
- if(guestHasData()){try{DB=JSON.parse(localStorage.getItem('asset_app_db_v3__guest'));migrate();status='guestMerged'}catch(e){if(!DB||!Array.isArray(DB.assets)){DB=emptyDB();migrate()}}}
- else if(!DB||!Array.isArray(DB.assets)){DB=emptyDB();migrate()}
- save();
- return{status};
+ /* 예전엔 guestHasData()만 보고 DB=JSON.parse(guest)로 곧장 통째 교체해, 이 계정의 로컬 DB에
+  * 이미 실제 데이터가 있어도(예: 이전 부분 세션) 백업 없이 덮어쓰고 되돌릴 방법도 없었다 —
+  * kakaoLogin/doLogin/doSignup의 비클라우드 게스트 가져오기 분기만 cycle346에서
+  * importGuestDataInto()의 dbIsEmpty(DB) 가드+undo를 받고 이 클라우드 경로는 비껴간 비대칭
+  * (app-evolve cycle348 critique/advance). dbIsEmpty(DB)일 때만 importGuestDataInto()를 그대로
+  * 재사용해 같은 안전장치를 받고, 호출부(doLogin/doSignup)가 되돌릴 수 있도록 prev/cancelPush를
+  * 함께 반환한다. */
+ let status='empty', guestR=null;
+ if(dbIsEmpty(DB)&&guestHasData()){
+  guestR=importGuestDataInto(localStorage.getItem('asset_app_db_v3__guest'));
+  if(guestR)status='guestMerged';
+ }
+ if(status!=='guestMerged'){
+  if(!DB||!Array.isArray(DB.assets)){DB=emptyDB();migrate()}
+  save();
+ }
+ return guestR?{status,prev:guestR.prev,cancelPush:guestR.cancelPush}:{status};
 }
 async function resolveCloudPullRemote(){
  closeSheet();toast('불러오는 중…');
@@ -13380,7 +13392,7 @@ async function doLogin(){
  startApp();
  const guestRaw=localStorage.getItem('asset_app_db_v3__guest');
  if(dbIsEmpty(DB)&&guestHasData())confirmSheet('데이터 가져오기','방금까지 게스트로 입력한 자산·내역이 있어요. 이 계정으로 가져올까요?','가져오기',()=>{const r=importGuestDataInto(guestRaw);if(r)undoToast('데이터를 가져왔어요',()=>{r.cancelPush();DB=r.prev;save();invalidateBalances();renderCurrent();toast('되돌렸어요')});else toast('가져오기에 실패했어요')});
- else if(cloudAuthResult&&cloudAuthResult.status==='guestMerged')toast('로그인했어요 · '+r.email+' · 게스트로 입력한 데이터를 이 계정으로 가져왔어요');
+ else if(cloudAuthResult&&cloudAuthResult.status==='guestMerged')undoToast('로그인했어요 · '+r.email+' · 게스트로 입력한 데이터를 이 계정으로 가져왔어요',()=>{cloudAuthResult.cancelPush();DB=cloudAuthResult.prev;save();invalidateBalances();renderCurrent();toast('되돌렸어요')});
  else{if(!dbIsEmpty(DB)&&guestHasData())toast('로그인했어요 · '+r.email+' · 게스트로 입력한 데이터는 이 계정에 합쳐지지 않았어요');else toast('로그인했어요 · '+r.email)}
 }
 async function doSignup(){
@@ -13393,7 +13405,8 @@ async function doSignup(){
  if(r.needsConfirm){openSheet(`<h3>이메일 인증이 필요해요</h3><div class="desc">${r.email} 로 인증 메일을 보냈어요. 메일함에서 인증 링크를 누른 뒤 로그인해 주세요.</div><div class="two-btn" style="margin-top:14px"><button class="btn btn-primary" onclick="closeSheet()" style="width:100%">확인</button></div>`);return}
  GUEST=false;localStorage.setItem('asset_app_guest','0');AUTH.setSession(r.email);
  if(r.cloud){const cloudAuthResult=await afterCloudAuth(r.uid);startApp();
-  toast(cloudAuthResult&&cloudAuthResult.status==='guestMerged'?'가입 완료 · '+r.email+' · 게스트로 입력한 데이터를 이 계정으로 가져왔어요':'가입 완료 · '+r.email);
+  if(cloudAuthResult&&cloudAuthResult.status==='guestMerged')undoToast('가입 완료 · '+r.email+' · 게스트로 입력한 데이터를 이 계정으로 가져왔어요',()=>{cloudAuthResult.cancelPush();DB=cloudAuthResult.prev;save();invalidateBalances();renderCurrent();toast('되돌렸어요')});
+  else toast('가입 완료 · '+r.email);
   return}
  const guestRaw=localStorage.getItem('asset_app_db_v3__guest');
  startApp();

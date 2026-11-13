@@ -1,19 +1,8 @@
 {
-  "cycle": 348,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "afterCloudAuth()의 '리모트 없음(empty)' 게스트 데이터 자동 병합에 dbIsEmpty 가드와 undo가 없음",
-    "why": "afterCloudAuth(uid)(index.html:2241-2275)의 empty-remote 분기(2270-2272)가 guestHasData()면 DB=JSON.parse(localStorage guest)로 즉시 통째 교체하는데, 이는 kakaoLogin/doLogin/doSignup의 비클라우드 게스트 가져오기 분기와 똑같은 '전체 DB 교체'인데도 cycle346이 그 세 곳에만 입혀준 importGuestDataInto()의 confirmSheet+undoToast+dbIsEmpty(DB) 가드를 전혀 받지 못한다. 같은 안전장치 패밀리에서 형제 하나(클라우드 경로)만 빠진 cycle328-334/346과 동일한 버그 클래스: (1) confirmSheet 없이 자동/무음 실행, (2) dbIsEmpty(DB) 체크가 없어 해당 계정의 로컬 DB에 이미 실제 데이터가 있어도(이전 부분 세션 등) 백업 없이 덮어씀, (3) doLogin(13378-13384)/doSignup(13395-13397) 모두 cloudAuthResult.status==='guestMerged'를 plain toast()로만 처리해 되돌릴 방법이 전혀 없음.",
-    "approach": "afterCloudAuth의 empty-remote 분기에서 직접 DB=JSON.parse(...) 하는 대신, dbIsEmpty(DB) 가드로 감싼 뒤 importGuestDataInto(guestRaw)를 호출해 kakaoLogin/doLogin의 비클라우드 분기와 동일한 패턴을 따른다. afterCloudAuth의 반환 계약을 바꿔 이 분기에서 {status:'guestMerged', prev, cancelPush} 형태(또는 동등한 구조)를 돌려주도록 하고, doLogin/doSignup의 status==='guestMerged' 처리를 cloudAuthResult.prev/cancelPush를 쓰는 undoToast(...)로 교체(r.cancelPush();DB=r.prev;save();invalidateBalances();renderCurrent();toast('되돌렸어요') 패턴, cycle346과 동일). afterCloudAuth의 다른 분기(localUnsynced/merged/remote, cycle211/212/337이 의도적으로 undo 불가로 남긴 충돌 해결 경로)는 건드리지 않는다. 테스트: (a) empty remote+게스트 데이터+dbIsEmpty(DB)=true → 병합되고 undo 가능한 계약 반환, (b) empty remote+게스트 데이터+DB가 이미 비어있지 않음 → 덮어쓰지 않음, (c) undo가 병합 전 DB를 정확히 복원(cycle346의 importGuestDataInto 테스트 픽스처/샌드박스 배선 재사용)."
-  },
+  "cycle": 349,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 343,
-      "phase": "review",
-      "timestamp": "2026-11-12T12:05:00.000Z",
-      "summary": "develop(cycle343, 6b73a98: mapGenericCsvRow memo에 MEMO_MAX clamp 추가)를 검토. csvRowToImportTxn(index.html:9007)과 같은 \"거부 대신 clamp\" 패턴을 그대로 따름을 확인: String(...).trim().slice(0,MEMO_MAX), MEMO_MAX=200은 index.html 전역에서 정의되고 logic.js의 함수는 호출 시점에 전역을 참조하므로 스크립트 로드 순서(logic.js가 먼저 로드되고 MEMO_MAX 정의보다 먼저 파싱됨) 문제 없음(함수 바디는 호출될 때 평가됨). csvRowToImportTxn의 memo는 unguardCsv()로 앱 자체 CSV 재가져오기 시 선행 따옴표를 벗기지만, mapGenericCsvRow는 외부 은행/카드 CSV를 대상으로 해 그 따옴표 규약이 없으므로 unguardCsv 생략은 의도된 차이이며 버그 아님. category는 mapping.category(피커로 고른 기존 카테고리)라 별도 clamp 불필요. 테스트 2건(초과 시 clamp/이하 시 유지)도 타당. node test/run.js 3342/3342 통과, node --check logic.js/sw.js/test/run.js 통과. 코드 변경 없음 — 이상 없음.",
-      "commit": null
-    },
     {
       "cycle": 343,
       "phase": "critique",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-13T10:40:00.000Z",
       "summary": "앱 전체를 한 걸음 물러나 훑어본 결과(Explore 서브에이전트가 발견 및 코드로 직접 검증), afterCloudAuth(uid)(index.html:2241-2275)의 'empty-remote'(클라우드에 아직 아무 행도 없음) 분기(2270-2272)가 guestHasData()면 DB=JSON.parse(localStorage guest)로 즉시 통째 교체하는데, 이는 kakaoLogin/doLogin/doSignup의 비클라우드 게스트 가져오기 분기와 완전히 같은 '전체 DB 교체'인데도 cycle346이 그 세 곳에만 입혀준 importGuestDataInto()의 confirmSheet+undoToast+dbIsEmpty(DB) 가드를 전혀 받지 못함을 확인했다 — 같은 안전장치 패밀리에서 형제 하나(클라우드 경로)만 빠진, cycle328-334/346과 동일한 버그 클래스. doLogin(13378-13384)/doSignup(13395-13397) 모두 cloudAuthResult.status==='guestMerged'를 plain toast()로만 처리해 되돌릴 방법이 없고, dbIsEmpty(DB) 체크도 없어 해당 계정의 로컬 DB에 이미 실제 데이터가 있어도 백업 없이 덮어씌워질 수 있다. 재검토한 후보들(doSignup의 비클라우드 분기에 dbIsEmpty 가드가 없는 건 가입 직후 DB가 항상 비어있어 실제 트리거 없음/mergeAssetInto의 '아직 합칠 수 없어요' 분기는 ASSET_TYPES 10종이 BAL_ASSET_TYPES∪isMarketValued로 전부 커버돼 도달 불가능한 의도된 방어 코드/정산·벌크액션 undo 커버리지는 재확인 결과 이미 전부 완비)는 새 근거 없어 기각. pending_advance_plan에 afterCloudAuth의 empty-remote 분기를 dbIsEmpty 가드+importGuestDataInto 재사용으로 바꾸고 반환 계약에 prev/cancelPush를 실어 doLogin/doSignup이 undoToast로 되돌릴 수 있게 하는 구체 계획 저장. node test/run.js 3375/3375 통과 확인(베이스라인 깨짐 없음). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 348,
+      "phase": "advance",
+      "timestamp": "2026-11-13T10:20:00.000Z",
+      "summary": "critique(cycle348) 계획대로 afterCloudAuth()(index.html:2241)의 empty-remote 게스트 병합 분기를 고쳤다 — 예전엔 guestHasData()만 보고 DB=JSON.parse(localStorage guest)로 검증 없이 통째 교체해, 해당 계정의 로컬 DB에 이미 실제 데이터가 있어도 백업 없이 덮어쓰고 되돌릴 방법도 없었다(cycle346이 kakaoLogin/doLogin/doSignup의 비클라우드 분기 세 곳에만 importGuestDataInto()의 dbIsEmpty 가드+sanitizeBackup+undo를 입혀준 뒤 클라우드 경로 하나만 비껴간 비대칭). 이제 dbIsEmpty(DB)&&guestHasData()일 때만 importGuestDataInto(localStorage.getItem('asset_app_db_v3__guest'))를 그대로 재사용하고, 성공 시 {status:'guestMerged',prev,cancelPush}를, 그 외엔 기존처럼 {status}를 반환하도록 계약을 넓혔다(guestMerged일 때는 importGuestDataInto가 이미 save({deferCloudPush:true})를 했으므로 말미의 save()를 건너뛰어 6초 push 유예를 깨지 않는다; 실패해 null이면 기존 catch 폴백과 동일하게 emptyDB()+migrate()+save()로 떨어진다). doLogin(13391 부근)/doSignup(13407 부근)의 status==='guestMerged' 처리를 plain toast에서 undoToast로 교체해 cloudAuthResult.cancelPush()+DB=cloudAuthResult.prev+save()+invalidateBalances()+renderCurrent()+toast('되돌렸어요') 순서로 비클라우드 분기와 동일하게 되돌릴 수 있게 했다. 비밀번호 재설정 복구 경로(13501)는 예전에도 afterCloudAuth의 status를 전혀 쓰지 않던 호출부라 계획대로 건드리지 않았다. 테스트 4건 추가/1건 갱신: 기존 'guestMerged 반환' 테스트의 게스트 픽스처가 자산에 type이 없어 sanitizeBackup이 정당하게 드롭하던 것을 현실적인 {id,type:'cash'}로 바로잡고(검증을 거치지 않던 옛 경로에서만 통하던 픽스처, 구현 버그 아님) prev/cancelPush 반환 어서션을 추가, 신규로 (b) 로컬 DB가 비어있지 않으면 게스트 데이터로 덮어쓰지 않고 status:'empty', (c) cancelPush()+prev로 병합 전 상태 복원, (d) doLogin/doSignup의 undoToast 배선 소스 패턴, (e) afterCloudAuth가 raw JSON.parse 대신 dbIsEmpty 가드+importGuestDataInto를 쓰는지 소스 패턴. vm 샌드박스 배열을 호스트 리터럴과 직접 deepStrictEqual하면 프로토타입이 달라 거짓 실패가 나는 기존 함정(cycle343/345 노트)을 또 만나 JSON 라운드트립 관례로 맞췄다. node test/run.js 3375->3379/3379 통과. node --check sw.js/logic.js/test/run.js 통과, index.html 주 스크립트 블록(832KB) 추출 후 new Function()으로 구문 확인 통과. 사용자 체감 동작 변화(클라우드 로그인/가입 시 게스트 데이터 자동 병합을 6초 안에 되돌릴 수 있고, 이미 데이터가 있는 계정은 더 이상 조용히 덮어쓰이지 않음)라 APP_VERSION 1.47.436->1.47.437, sw.js CACHE v703->v704. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

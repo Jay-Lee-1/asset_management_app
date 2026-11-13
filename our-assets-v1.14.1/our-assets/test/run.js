@@ -21833,16 +21833,47 @@ test('afterCloudAuth: 로컬에 미동기화 편집이 없으면 remote를 그�
  * 데이터가 조용히 병합되는 경우)를 status로 알려주지 않아, doLogin()이 dbIsEmpty(DB)만 보고
  * "게스트 데이터가 합쳐지지 않았어요"라는 사실과 반대되는 메시지를 띄우던 버그
  * (app-evolve cycle84 critique/advance) 재발 방지. */
-test('afterCloudAuth: remote가 없고(신규 계정) 게스트 데이터가 있으면 게스트 DB를 채택하고 status:"guestMerged"를 반환한다', async () => {
-  sandbox.DB = { assets: [], txns: [] };
+test('afterCloudAuth: remote가 없고(신규 계정) 게스트 데이터가 있으면 게스트 DB를 채택하고 status:"guestMerged"와 되돌리기용 prev/cancelPush를 반환한다(app-evolve cycle348 critique/advance — importGuestDataInto() 재사용으로 dbIsEmpty 가드+undo를 받기 전엔 raw JSON.parse를 검증 없이 그대로 얹었다)', async () => {
+  sandbox.DB = { assets: [], txns: [], categories: {}, catIcon: {}, catVar: {}, budgets: {}, owners: ['나'], recurrences: [] };
   sandbox.CLOUD_UID = null;
   sandbox.CLOUD_SYNC_STATE = 'idle';
   sandbox._sbMaybeSingleResult = { data: null, error: null }; // remote 없음
-  const guestDb = { assets: [{ id: 'guest-1' }], txns: [] };
+  const guestDb = { assets: [{ id: 'guest-1', type: 'cash' }], txns: [] };
   sandbox._lsMap = { 'asset_app_db_v3__guest': JSON.stringify(guestDb) };
   const result = await sandbox.afterCloudAuth('u1');
   assert.strictEqual(result.status, 'guestMerged');
   assert.ok(sandbox.DB.assets.some(a => a.id === 'guest-1'), '게스트 DB를 그대로 채택해야 함');
+  assert.strictEqual(typeof result.cancelPush, 'function', 'importGuestDataInto()처럼 되돌릴 push 취소 함수를 반환해야 함');
+  // vm 샌드박스에서 만들어진 배열은 호스트의 Array.prototype과 달라 리터럴과 직접
+  // deepStrictEqual하면 거짓 실패가 난다(cycle343/345 노트와 동일한 이유) — JSON 라운드트립으로 맞춘다.
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(result.prev.assets)), [], '되돌릴 교체 전 DB(prev)가 함께 반환되어야 함');
+  sandbox._lsMap = null;
+});
+test('afterCloudAuth: remote가 없어도 로컬 DB에 이미 실제 데이터가 있으면(dbIsEmpty(DB)===false) 게스트 데이터로 덮어쓰지 않는다(안전장치 패밀리 cycle328-334/346과 동일한 dbIsEmpty 가드)', async () => {
+  sandbox.DB = { assets: [{ id: 'acct-real', type: 'cash' }], txns: [], categories: {}, catIcon: {}, catVar: {}, budgets: {}, owners: ['나'], recurrences: [] };
+  sandbox.CLOUD_UID = null;
+  sandbox.CLOUD_SYNC_STATE = 'idle';
+  sandbox._sbMaybeSingleResult = { data: null, error: null };
+  const guestDb = { assets: [{ id: 'guest-1', type: 'cash' }], txns: [] };
+  sandbox._lsMap = { 'asset_app_db_v3__guest': JSON.stringify(guestDb) };
+  const result = await sandbox.afterCloudAuth('u1');
+  assert.strictEqual(result.status, 'empty', '로컬 DB가 비어있지 않으면 게스트 병합을 시도하지 않아야 함');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.DB.assets)), [{ id: 'acct-real', type: 'cash' }], '기존 로컬 DB를 게스트 데이터로 덮어쓰면 안 됨');
+  sandbox._lsMap = null;
+});
+test('afterCloudAuth: guestMerged 결과의 cancelPush()+prev로 되돌리면 병합 전 DB로 정확히 복원된다', async () => {
+  sandbox.DB = { assets: [], txns: [], categories: {}, catIcon: {}, catVar: {}, budgets: {}, owners: ['나'], recurrences: [] };
+  sandbox.CLOUD_UID = null;
+  sandbox.CLOUD_SYNC_STATE = 'idle';
+  sandbox._sbMaybeSingleResult = { data: null, error: null };
+  const guestDb = { assets: [{ id: 'guest-1', type: 'cash' }], txns: [] };
+  sandbox._lsMap = { 'asset_app_db_v3__guest': JSON.stringify(guestDb) };
+  const result = await sandbox.afterCloudAuth('u1');
+  assert.strictEqual(result.status, 'guestMerged');
+  // doLogin/doSignup의 undoToast 콜백과 동일한 복원 순서
+  result.cancelPush();
+  sandbox.DB = result.prev;
+  assert.strictEqual(sandbox.DB.assets.length, 0, '되돌리면 게스트 병합 전(빈 자산) 상태로 복원되어야 함');
   sandbox._lsMap = null;
 });
 test('afterCloudAuth: remote도 없고 게스트 데이터도 없으면(완전 신규 계정) status:"empty"를 반환한다', async () => {
@@ -31802,6 +31833,25 @@ test('kakaoLogin: 게스트 데이터가 있지만 이 계정이 비어있지 �
 test('kakaoLogin: 게스트 데이터가 없으면 기존처럼 평범한 로그인 완료 토스트만 띄운다(else 분기)', () => {
   const body = extractFunction('kakaoLogin');
   assert.ok(body.includes("else toast('카카오 로그인 완료 · '+nick)"), 'kakaoLogin의 else 분기에 기존 로그인 완료 토스트가 없음(guestHasData가 false일 때의 기본 동작)');
+});
+/* 위 세 호출부(비클라우드 분기)와 달리 클라우드 로그인/가입은 afterCloudAuth()가 게스트 데이터를
+ * 대신 가져오는데(empty-remote 분기), 그 결과를 doLogin/doSignup이 plain toast로만 처리해 되돌릴
+ * 방법이 없었다(app-evolve cycle348 critique/advance). 이제 afterCloudAuth가 prev/cancelPush를
+ * 함께 돌려주므로 두 호출부도 비클라우드 분기와 동일하게 undoToast로 되돌릴 수 있어야 한다. */
+test('doLogin/doSignup: afterCloudAuth()가 status:"guestMerged"를 돌려주면(클라우드 경로의 게스트 병합) 비클라우드 분기와 동일하게 undoToast로 cloudAuthResult.prev 복원 콜백을 건다', () => {
+  for (const name of ['doLogin', 'doSignup']) {
+    const body = extractFunction(name);
+    assert.ok(body.includes("cloudAuthResult.status==='guestMerged'"), `${name}이 afterCloudAuth의 guestMerged 상태를 보지 않음`);
+    assert.ok(/guestMerged'\)undoToast\(/.test(body), `${name}이 클라우드 경로의 게스트 병합을 plain toast로만 알리고 되돌리기를 제안하지 않음`);
+    assert.ok(body.includes('cloudAuthResult.cancelPush()'), `${name}의 되돌리기 콜백이 예약된 push 타이머(cancelPush)를 취소하지 않음`);
+    assert.ok(body.includes('DB=cloudAuthResult.prev'), `${name}의 되돌리기 콜백이 DB를 병합 전(prev)으로 복원하지 않음`);
+  }
+});
+test('afterCloudAuth: empty-remote 게스트 병합도 dbIsEmpty(DB) 가드를 거쳐 importGuestDataInto()를 재사용한다(raw JSON.parse 직접 교체 회귀 방지)', () => {
+  const body = extractFunction('afterCloudAuth');
+  assert.ok(body.includes('dbIsEmpty(DB)&&guestHasData()'), 'afterCloudAuth가 게스트 병합 전에 dbIsEmpty(DB) 가드를 두지 않음 — 이미 데이터가 있는 계정 DB를 백업 없이 덮어쓸 수 있음');
+  assert.ok(body.includes("importGuestDataInto(localStorage.getItem('asset_app_db_v3__guest'))"), 'afterCloudAuth가 공용 헬퍼(importGuestDataInto) 대신 다시 raw JSON.parse로 DB를 직접 교체하고 있음');
+  assert.ok(!/DB=JSON\.parse\(localStorage\.getItem\('asset_app_db_v3__guest'\)\)/.test(body), 'afterCloudAuth에 sanitizeBackup/undo를 건너뛰는 raw 교체가 남아있음');
 });
 test('doLogin/doSignup도 kakaoLogin과 동일하게 importGuestDataInto(guestRaw)를 호출한다(세 로그인 경로 중 하나만 고치고 나머지를 깜빡하는 "배선 누락" 회귀 방지)', () => {
   const doLoginBody = extractFunction('doLogin');
