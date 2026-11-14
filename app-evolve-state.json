@@ -1,15 +1,12 @@
 {
   "cycle": 356,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "클라우드 동기화가 영수증 사진까지 포함한 전체 DB를 매번 재업로드함 — 사진을 별도 저장소로 분리",
+    "why": "pushCloud()(index.html:2223)는 encodeCloudPayload(DB)(2113-2123)로 DB 전체를 gzip+base64해 한 번에 upsert/update하고, scheduleCloudPush()(2168)는 설정 토글 하나 같은 무관한 save()에도 동일한 전체 push를 1.2초 디바운스로 트리거한다. 영수증 사진(txn.photo, ~6394-6460)은 이미 JPEG dataURL로 사실상 최대 압축된 바이너리라 gzip이 거의 효과가 없고(base64 33% 오버헤드만 회수), 사진을 자주 첨부하는 사용자는 300장*80KB≈24MB처럼 DB 크기가 사진 수에 비례해 선형으로 커진다. 그 결과 거래 1건을 고치는 사소한 편집마다 전체 블롭을 매번 재업로드/재다운로드하게 되어 모바일 데이터 비용·지연이 커지고, 느린 네트워크에서 withTimeout/조건부 UPDATE 재시도 경합(2238-2280) 위험이 늘고, STORAGE_SIZE_WARN_LEN/CRIT_LEN(1992, 3MB/4.5MB)을 실제 재무 데이터량과 무관하게 사진 누적만으로 넘기게 된다. 이미 index.html:2091-2099에 작성자 자신이 cycle214 critique로 남긴 self-critique 주석이 '압축만 적용했고 delta sync는 아직'이라고 명시하고 있다.",
+    "approach": "① DB.txns[*].photo의 dataURL을 Supabase에 별도 테이블/버킷(예: user_photos(user_id, txn_id, data, updated_at))로 분리해 pushCloud()/pullCloud()와 독립적으로 업/다운로드한다. ② 동기화된 뒤에는 DB.txns 쪽 레코드엔 inline dataURL 대신 참조 플래그만 남기고(예: photoRef:true), openPhotoViewer()(6462)에서 실제 바이트를 지연 로딩한다. ③ pushCloud()가 사진이 실제로 바뀐 txn만 사진 테이블에 쓰도록(해시 또는 touch() 타임스탬프 비교) 해서, 사진과 무관한 편집은 메인 payload 변경량도 줄인다. ④ sanitizeBackup()/doExport()/pullCloud()의 mergeRemoteDataIntoLocal()은 로컬 JSON 백업은 여전히 inline 사진을 유지하도록(로컬 내보내기는 이 비용이 없음) 클라우드 인코드/디코드 경로에서만 사진을 분리하는 이중 포맷을 신중히 처리해야 한다 — 이 부분이 가장 까다로운 지점."
+  },
   "history": [
-    {
-      "cycle": 351,
-      "phase": "develop",
-      "timestamp": "2026-11-13T21:10:00.000Z",
-      "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — sanitizeBackup()의 sanitizeRateMap(index.html:10116, DB.rates.fx/stocks/crypto 검증)이 컨테이너가 평범한 객체인지만 보고 그 안의 코드별 시세 leaf 값(예: fx.USD, stocks['005930'])은 전혀 검증 없이 그대로 통과시키고 있었다 — goldPerG/syncedAt/ratesUpdatedAt/failStreak는 바로 아래서 sanitizeAmount(v,0)로 클램프하는데 fx/stocks/crypto의 값만 빠져 있던 비대칭. 이 rates 객체는 백업 파일 복원과 pullCloudIfStale()의 mergeRemoteDataIntoLocal() 양쪽에서 DB.rates에 그대로 들어가고, assetEval()의 (a.stockQty||0)*(R.stocks[a.stockCode]||0)에 검증 없이 곱해지며 rateUnknown()은 ==null만 확인해 문자열/객체/NaN도 '알고 있는 시세'로 취급한다 — 손상된 백업이나 다른 기기에서 온 손상된 클라우드 문서가 순자산 합계/nwHistory/목표진행률/내보내기 전체에 NaN을 조용히 전파할 수 있는 경로였다. sanitizeRateMap이 객체일 때 Object.keys로 각 코드값을 sanitizeAmount(v,0)로 클램프(수량성이라 min=0, goldPerG와 동일 철학)하도록 고쳤다. 테스트 2건 추가. node test/run.js 3394->3396/3396 통과. APP_VERSION 1.47.441->1.47.442, sw.js CACHE v708->v709.",
-      "commit": null
-    },
     {
       "cycle": 351,
       "phase": "review",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-14T18:05:00.000Z",
       "summary": "develop(cycle356, 0838ee7: recHistFieldsChanged에 shared 비교 추가)을 검토했다. 변경이 작고 명확 — !!로 정규화해 legacy undefined와 명시적 false를 같게 다루는 처리가 orig/d 양쪽에 대칭적으로 적용됨을 확인. fromAssetId/toAssetId 등 나머지 비교 배열이 그대로 보존됐는지, scope='one'(recSave 6633행)이 edit.shared=!!d.shared를 amount와 동일하게 항시 스냅샷하는 기존 cycle352 설계와 충돌하지 않는지 확인 — recHistFieldsChanged는 base 저장(전체 편집) 경로에서만 호출되고 scope='one' 경로와는 무관해 충돌 없음. node test/run.js 3437/3437 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 356,
+      "phase": "critique",
+      "timestamp": "2026-11-14T19:10:00.000Z",
+      "summary": "Explore 서브에이전트에게 지난 cycle340-356의 모든 주제(반복거래 scope-confirm/edits[date] override류 전부 포함)를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: pushCloud()(index.html:2223)가 encodeCloudPayload(DB)(2113-2123)로 매번 DB 전체를 gzip+base64해 올리는데, 영수증 사진(txn.photo, dataURL)은 이미 JPEG라 gzip 효과가 거의 없어 사진이 쌓일수록(예 300장*80KB≈24MB) 설정 토글 같은 무관한 편집에도 전체 블롭을 매번 재업로드/재다운로드하는 비용이 계정 나이에 비례해 커진다 — index.html:2091-2099에 작성자 자신이 cycle214 critique로 남긴 self-critique 주석이 '압축만 적용, delta sync는 미해결'이라 명시한 지점의 후속. 후보로 카테고리 rename 엣지케이스(doRenameCat/mergeCatInto)와 검색어 파싱(matchTxnQuery/parseAmountUnit)도 조사했으나 이미 성숙해 공백 없음으로 기각. pending_advance_plan에 사진을 별도 Supabase 테이블로 분리해 pushCloud/pullCloud와 독립적으로 동기화하고 DB.txns엔 참조만 남기는 계획 저장(로컬 JSON 백업은 inline 유지, 클라우드 인코드/디코드 경로만 이중 포맷 처리). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
