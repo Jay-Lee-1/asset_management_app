@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.452';
+const APP_VERSION='1.47.453';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -6890,9 +6890,13 @@ function commitRec(d,wasEditing){
    splits도 amount/category와 동일하게 과거 회차의 집계(expenseByCat 등)에 그대로 반영되는 값이라
    포함해야 한다(app-evolve cycle282 advance) — 배열이라 !==로는 항상 true가 나오므로(참조 비교)
    JSON.stringify로 내용을 비교한다(snapDraft가 쓰는 것과 동일한 방식, editRec의 JSON 클론 때문에
-   orig/d의 splits는 매번 다른 배열 객체다). */
+   orig/d의 splits는 매번 다른 배열 객체다). shared('같이 냈어요')도 expandRec()이 자기 override
+   (edits[date].shared)가 없는 모든 회차(과거 포함)에 r.shared를 그대로 흘려보내 settlementSummary의
+   과거 정산 합계를 바꾸므로 amount/splits와 동일하게 포함해야 한다 — undefined(레거시 레코드)와
+   명시적 false를 같게 보기 위해 !!로 정규화 후 비교한다(app-evolve cycle356 develop). */
 function recHistFieldsChanged(orig,d){
  if(['fromAssetId','toAssetId','amount','category','day','freq','startDate','weekend'].some(k=>orig[k]!==d[k]))return true;
+ if(!!orig.shared!==!!d.shared)return true;
  return JSON.stringify(orig.splits||null)!==JSON.stringify(d.splits||null);
 }
 /* recHistFieldsChanged의 부분집합: day/freq/startDate/weekend만 — 이 넷은 recDates()가 생성하는

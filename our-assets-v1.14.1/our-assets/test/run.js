@@ -14575,6 +14575,16 @@ test('recHistFieldsChanged: 메모만 바뀌면 false (이력 비영향 필드)'
   const orig = { fromAssetId: 'a1', toAssetId: 'a2', amount: 1000, category: '식비', day: 5, freq: 'monthly', startDate: '2026-01-05', memo: 'm', weekend: 'none' };
   assert.strictEqual(sandbox.recHistFieldsChanged(orig, { ...orig, memo: '다른 메모' }), false);
 });
+/* shared('같이 냈어요')도 amount/splits와 동일하게 expandRec()이 override 없는 모든 과거 회차에
+ * r.shared를 그대로 흘려보내 settlementSummary의 과거 정산 합계를 바꾼다 — 빠져 있으면 scope-confirm
+ * 시트 없이 과거 회차까지 조용히 소급 변경된다(app-evolve cycle356 develop). undefined(레거시)와
+ * 명시적 false는 같은 것으로 본다. */
+test('recHistFieldsChanged: shared가 바뀌면 true (과거 정산 합계에 영향)', () => {
+  const orig = { fromAssetId: 'a1', toAssetId: 'a2', amount: 1000, category: '식비', day: 5, freq: 'monthly', startDate: '2026-01-05', memo: 'm', weekend: 'none', shared: true };
+  assert.strictEqual(sandbox.recHistFieldsChanged(orig, { ...orig, shared: false }), true);
+  assert.strictEqual(sandbox.recHistFieldsChanged({ ...orig, shared: false }, { ...orig, shared: undefined }), false, 'undefined(레거시)와 명시적 false는 같은 것으로 봄');
+  assert.strictEqual(sandbox.recHistFieldsChanged({ ...orig, shared: undefined }, { ...orig, shared: true }), true);
+});
 /* splits도 amount/category와 동일하게 과거 회차의 집계에 그대로 반영되므로 포함해야 한다
  * (app-evolve cycle282 advance). editRec()은 JSON.parse(JSON.stringify(r))로 orig와 완전히 다른
  * 배열 객체를 만들므로 !==(참조 비교)로는 항상 true가 나와 JSON.stringify로 내용을 비교한다. */
