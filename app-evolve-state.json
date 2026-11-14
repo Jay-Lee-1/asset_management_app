@@ -1,7 +1,11 @@
 {
   "cycle": 352,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "반복거래의 shared(같이 냈어요) 플래그에 occurrence 단위 override가 없어 정산 금액이 조용히 틀려지는 버그 수정",
+    "why": "expandRec()(index.html:2928-2941)은 memo/amount/splits/photo는 모두 ed.field!=null?ed.field:r.field 패턴으로 edits[date] occurrence override를 지원하는데, shared만 line 2941에서 shared:!!r.shared로 하드코딩돼 occurrence별 override를 전혀 보지 않는다. recApply()(6462-6486, 'this one/future' 단건 편집 draft 빌더)도 shared를 전혀 읽거나 seed하지 않고, renderTxSheet()의 recurring-occurrence(rc) 분기(6042-6059)는 sharedChip 토글 UI 자체가 없어(sharedChip은 non-recurring 분기에만 렌더, 6080) 애초에 사용자가 단건에서 shared를 바꿀 방법이 없다. recSave()(6490-6529)가 쓰는 edit 객체(6510)도 amount/memo/splits/photo만 담고 shared는 넣지 않는다. 결과: 매달 반복되는 공동 구독료(shared:true)를 어느 달에 한 번 한 사람이 혼자 냈을 때(또는 반대로 평소엔 안 나누는 반복거래를 어느 달만 나눴을 때) 그 달만 shared를 끄거나 켤 방법이 없고, settlementSummary()(logic.js:201)는 템플릿의 shared 값을 그대로 모든 occurrence에 적용해 '누가 누구에게 얼마를 줘야 하는지' 금액이 조용히 틀려진다 — 외형이 아니라 돈 계산 버그. test/run.js:23243-23270은 템플릿 shared가 모든 occurrence에 균일 전파되는 것만 테스트하고, splits에는 이미 있는 override 테스트 패턴(14031)이 shared에는 아예 없어 이 공백이 테스트로도 드러나지 않고 있었다.",
+    "approach": "① expandRec() line 2941을 shared: ed.shared!=null ? ed.shared : !!r.shared로 교체(기존 amount/memo/splits/photo override 패턴과 동일). ② recApply()(6483 부근)에서 txDraft.shared = ed.shared!=null?ed.shared:!!r.shared로 실제 유효값을 draft에 seed. ③ renderTxSheet()의 rc(recurring-occurrence) 분기에 sharedChip/txToggleShared() 컨트롤을 추가(r.type==='expense'&&settleConfigured() 가드는 기존과 동일하게 재사용)해 '이번만/앞으로' 단건 편집에서 실제로 shared를 토글할 UI를 제공. ④ recSave()의 edit 객체(6510 부근)에 edit.shared=!!d.shared를 다른 필드처럼 무조건 기록(boolean이라 false로 override할 때도 명시적으로 저장해야 하므로 amount/memo와 동일하게 무조건 포함). ⑤ splits override 테스트 패턴(test/run.js:14031, 23243)을 본떠 shared의 occurrence override 테스트(단건 끄기/단건 켜기/미래 scope 적용) 추가, 기존 23243-23270 템플릿 균일 전파 테스트가 깨지지 않는지 함께 확인. 범위가 develop보다 다소 넓지만(UI+데이터+저장 3곳) 여전히 '같은 패턴을 shared에도 적용'하는 국소적 변경이라 advance 단계에 적합."
+  },
   "history": [
     {
       "cycle": 346,
@@ -141,6 +145,13 @@
       "phase": "review",
       "timestamp": "2026-11-14T01:30:00.000Z",
       "summary": "develop(cycle352)의 rollPendingTransfers 수정(457f470)을 리뷰하며, 같은 파일의 자매 호출부들을 함께 점검해 실제 버그를 발견했다 — isDuePending()은 kstTodayStr()(KST 고정)로 도래를 판정하도록 이미 고쳐졌지만(cycle237), 이를 쓰는 4곳(pendingTransferCount 11242, openConfirmTransferList의 list 11285, homeAlerts의 _pend 11649, toggleConfirmTransfers의 pendingRecList 4440)이 모두 'allTxns(RANGE_FROM,TODAY).filter(t=>isDuePending(t))' 형태로, isDuePending()이 보기도 전에 allTxns()의 범위 상한 자체가 기기 로컬 TODAY라 걸러지는 문제가 있었다 — 한국보다 시계가 느린 시간대(미국 등)에서 KST 기준으로는 이미 도래한(t.date<=kstTodayStr()) 오늘 날짜 이체도 t.date>TODAY(기기 로컬)라 allTxns 범위 밖으로 잘려 isDuePending() 호출 자체가 일어나지 않고, 미확인 이체 카운트/배지/알림/확인시트 목록에서 통째로 빠진다(테스트 코드 주석 18296-18298이 이미 'TODAY와 withFakeToday를 맞춰줘야 결정적'이라고 이 어긋남의 존재를 암묵적으로 알고 있었으나 프로덕션 코드는 고치지 않은 채 테스트로만 우회해온 상태였음). 4곳 모두 allTxns()의 상한을 TODAY에서 kstTodayStr()로 교체(isDuePending이 어차피 t.date<=kstTodayStr()로 추가 필터링하므로 상한을 kstTodayStr()로 좁혀도 안전하고, 기기 로컬이 KST보다 빠른 경우도 isDuePending이 걸러내 과다 포함되지 않음). 회귀 테스트 2건 추가(pendingTransferCount, homeAlerts 각각 기기 로컬 TODAY가 KST보다 하루 느린 조건에서 오늘 도래 이체가 빠지지 않는지) — 수정 전 코드로 되돌려 재현 확인(실제로 FAIL 확인 후 복구). openConfirmTransferList/toggleConfirmTransfers의 pendingRecList는 pendingTransferCount와 완전히 동일한 패턴이라 별도 테스트 없이 같은 수정으로 커버. node test/run.js 3399->3401/3401 통과. node --check sw.js/logic.js/test/run.js 통과. 사용자 체감 동작 변화(한국보다 시계가 느린 시간대 사용자가 KST 기준 오늘 도래한 미확인 이체를 홈 알림/배지/확인 목록에서 놓치지 않게 됨)라 APP_VERSION 1.47.444->1.47.445, sw.js CACHE v711->v712.",
+      "commit": null
+    },
+    {
+      "cycle": 352,
+      "phase": "critique",
+      "timestamp": "2026-11-14T02:30:00.000Z",
+      "summary": "최근 critique들이 '되돌리기(undo) 공백' 패턴에 쏠려 있었기 때문에 Explore 서브에이전트에게 그 류를 배제하고 아키텍처/UX/데이터정합성/일관성 전반에서 새 영역을 조사시켰다. 발견: 반복거래의 shared('같이 냈어요', 정산 대상 표시) 플래그가 occurrence 단위 override를 전혀 지원하지 않는다 — expandRec()(index.html:2928-2941)은 memo/amount/splits/photo는 모두 ed.field!=null?ed.field:r.field 패턴으로 edits[date] override를 반영하는데 shared만 line 2941에서 shared:!!r.shared로 하드코딩돼 있고, recApply()(6462-6486, 단건 편집 draft 빌더)도 shared를 읽거나 seed하지 않으며, renderTxSheet()의 recurring-occurrence 분기(6042-6059)는 sharedChip 토글 UI 자체가 없어(sharedChip은 non-recurring 분기에만 렌더, 6080) 사용자가 애초에 단건에서 shared를 바꿀 방법이 없고, recSave()가 쓰는 edit 객체(6510)도 shared를 담지 않는다. 결과: 매달 나누는 공동 구독료를 어느 달 한 사람이 혼자 냈을 때(또는 반대로 평소 안 나누는 반복거래를 어느 달만 나눴을 때) 그 달만 shared를 끄거나 켤 방법이 없어 settlementSummary()(logic.js:201)가 템플릿 shared 값을 모든 occurrence에 균일 적용, 정산 금액이 조용히 틀려지는 금전 정확성 버그 — splits에는 이미 있는 override 테스트 패턴(test/run.js:14031)이 shared에는 없어(23243-23270은 템플릿 균일 전파만 테스트) 이 공백이 테스트로도 드러나지 않고 있었다. 재검토한 다른 후보: (1) KR_FIXED_HOLIDAYS가 음력 설날/추석을 반복거래 주말-이동 로직에서 못 다루는 것 — 코드 내 주석이 이미 의도된 future work로 명시해 숨은 버그 아님. (2) rateUnknown()/assetEval()의 ₩0 폴백 — 홈 알림/배분 카드/목표 진행률/CSV 내보내기 전부에 이미 충분히 전파돼 있어 공백 없음. (3) 범용 은행 CSV 가져오기(mapGenericCsvRow)가 range/future-date 체크를 건너뛰는 비대칭 — 호출부 buildGenericImportPreview가 csvRowToImportTxn과 동일한 체크를 이미 재적용함을 확인해 비대칭 없음. pending_advance_plan에 shared occurrence override를 expandRec/recApply/renderTxSheet(sharedChip UI)/recSave 4곳에 splits override 패턴을 그대로 적용하는 구체 계획 저장. node test/run.js 3401/3401 통과 확인(베이스라인 깨짐 없음). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
