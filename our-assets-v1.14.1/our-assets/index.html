@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.446';
+const APP_VERSION='1.47.447';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -1787,6 +1787,25 @@ function rollPendingTransfers(){ /* 확인 못 한 이체는 다음 날로(밀�
  let changed=false;
  const kToday=kstTodayStr();
  DB.txns.forEach(t=>{if(t.type==='transfer'&&t.confirmed===false&&t.date<kToday){t.date=kToday;touch(t);changed=true}}); /* touch() 누락 시 mergeCollection()이 updatedAt만 보고 병합하다 다른 기기의 동기화 안 된 내역이 이 날짜 이동을 조용히 되돌릴 수 있음(doRenameOwner/doRenameCat과 동일한 불변식) */
+ if(changed)save();
+}
+/* 완납 후 다시 빚이 생기면 payoffAckAt(완납 ack, debtNewlyPaidOff/ackDebtPayoff 참고)을 리셋해
+ * 다음 완납 때 다시 축하 알림이 뜨게 한다 — DB.goals의 achievedAckAt 리셋(saveGoal, cycle256)과
+ * 같은 역할이지만, 부채 잔액은 saveAsset이 아니라 평범한 거래(거래 추가/삭제/가져오기 등 수많은
+ * 경로)로 바뀌므로 매 변경 지점을 다 쫓는 대신 rollPendingTransfers와 동일한 render-refresh
+ * 경계(앱 기동/날짜 변경)에서 한 번씩 검사한다. 신용카드처럼 완납→재사용→완납을 반복하는 부채가
+ * 없으면(payoffAckAt이 없는 대부분의 부채) debtPayoffProjection 계산 자체를 건너뛰어 비용이
+ * 거의 없다(app-evolve cycle353 develop). */
+function resetStaleDebtPayoffAcks(){
+ const acked=(DB.assets||[]).filter(a=>a.type==='debt'&&a.payoffAckAt);
+ if(!acked.length)return;
+ const txns=allTxns(RANGE_FROM,TODAY).filter(t=>!isPending(t));
+ const dates=assetBalSampleDates(RANGE_FROM,TODAY,60);
+ let changed=false;
+ acked.forEach(a=>{
+  const pts=assetBalanceSeries(txns,a.id,assetBase(a),-1,dates);
+  if(!debtPayoffProjection(pts,TODAY).achieved){a.payoffAckAt=null;touch(a);changed=true}
+ });
  if(changed)save();
 }
 function assetNm(id,snap){const a=DB.assets.find(x=>x.id===id);return a?a.name:(snap||'—')}
@@ -13114,6 +13133,7 @@ function startApp(){
  syncNotifyPermission();
  try{localStorage.removeItem('ourassets_snapshots')}catch(e){} /* 구 자동백업 저장소 정리 */
  rollPendingTransfers();
+ resetStaleDebtPayoffAcks();
  save(); /* save()가 오늘 날짜 nwHistory 스냅샷을 항상 갱신한다 */
  ST.hist.sortAsc=!!DB.settings.histSortAsc;
  document.documentElement.setAttribute('data-theme',DB.settings.themeMode);
@@ -13615,7 +13635,7 @@ function refreshToday(){
  const t=todayStr();
  if(t===TODAY)return false;
  TODAY=t;TM=ym(TODAY);TM.d=+TODAY.slice(8,10);RANGE_TO=addDays(TODAY,760);DISP_TO=addDays(TODAY,92); /* TM.d를 안 갱신하면 날짜가 넘어간 뒤 yearSummary의 YTD 비교(위 2999행과 동일 공식)가 깨진다(app-evolve cycle283 advance) */
- invalidateBalances();rollPendingTransfers();
+ invalidateBalances();rollPendingTransfers();resetStaleDebtPayoffAcks();
  save(); /* save()가 오늘 날짜 nwHistory 스냅샷을 항상 갱신한다 */
  return true;
 }

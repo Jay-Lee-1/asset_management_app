@@ -1,6 +1,6 @@
 {
   "cycle": 353,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
@@ -148,6 +148,13 @@
       "phase": "advance",
       "timestamp": "2026-11-14T03:40:00.000Z",
       "summary": "critique(cycle352) 계획대로 반복거래 shared('같이 냈어요') 플래그에 occurrence 단위 override를 추가했다. ① expandRec()(index.html:2941)을 shared:ed.shared!=null?ed.shared:!!r.shared로 교체(memo/amount/splits/photo와 동일한 edits[date] 오버라이드 패턴). ② recApply()(6483)가 txDraft.shared를 동일한 폴백으로 seed해, 간편 수정 폼이 지금 보여주는 값과 저장될 값이 항상 일치하게 했다. ③ renderTxSheet()의 rc(recurring-occurrence) 분기(6049 부근)에 non-rc 분기(6080)와 동일한 가드(d.type==='expense'&&settleConfigured())의 sharedChip을 추가해(tx-head 래퍼로 h3와 함께 감쌈) '이 내역만/이후 모두/전체' 어느 scope를 고르든 간편 수정 시트에서 실제로 shared를 토글할 수 있게 했다. ④ recSave()는 photo(scope='one'만 지원)와 달리 amount/memo처럼 세 scope 모두에서 shared를 반영하도록 넓게 고쳤다 — scope='one'은 edit.shared=!!d.shared를 boolean이라 항상 명시적으로 기록(splits처럼 '있을 때만'이 아니라 amount/memo처럼 항상, false로 끄는 override도 저장에 남아야 하므로), scope='future'는 분리되는 newRec에 shared:!!d.shared를 실어 과거 분리본(r)은 그대로 두고, scope='all'(else 분기)은 prevShared를 캡처한 뒤 r.shared=!!d.shared로 템플릿 자체를 바꾸고 undo에서 복원하도록 추가했다. 테스트 9건 추가/1건 갱신: recApply의 ed.shared 폴백 2건, renderTxSheet rc 분기의 sharedChip 가시성/on 클래스 2건, recSave 세 scope(one/future/all) 각 저장+undo 3건, settlementSummary 통합 테스트(매달 나누던 반복 지출을 7월만 occurrence override로 꺼서 저장하면 6월만 집계되고 7월은 빠짐) 1건, 기존 recSave scope='one' 메모 테스트의 edits[date] 전체 모양 비교에 shared:false를 추가해 갱신(amount/memo만 담던 edit 객체에 shared가 항상 같이 들어가게 됐으므로). 수정 전 index.html로 되돌려 재현 확인(새 테스트 9건 중 8건이 실제로 FAIL함을 직접 확인한 뒤 복구). node test/run.js 3401->3409/3409 통과. node --check sw.js/logic.js/test/run.js 통과, index.html은 test/run.js의 vm 샌드박스 전체 스위트 실행 자체가 구문 검증을 겸함(cycle339 이후 관례와 동일). 사용자 체감 동작 변화(반복되는 공동 지출을 어느 달만 혼자 내거나, 평소 안 나누던 반복거래를 어느 달만 나눴을 때 그 달의 간편 수정 화면에서 '같이 냈어요'를 켜고 끌 수 있고, 정산 집계도 그 occurrence만 정확히 반영함)라 APP_VERSION 1.47.445->1.47.446, sw.js CACHE v712->v713. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 353,
+      "phase": "develop",
+      "timestamp": "2026-11-14T05:20:00.000Z",
+      "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — debtNewlyPaidOff(logic.js:1065, achieved인데 아직 ack 안 된 완납 부채 판정)는 asset.payoffAckAt이 한 번 설정되면 영원히 false를 돌려주는데, payoffAckAt을 null로 되돌리는 경로가 지금까지 전혀 없었다(grep으로 index.html 전체에서 payoffAckAt= 대입이 ackDebtPayoff 4177행 단 한 곳뿐임을 확인). DB.goals의 achievedAckAt은 saveGoal(4145행, cycle256)이 '더는 achieved가 아니게 되면 ack도 리셋'하는 대응 로직을 갖고 있는데, debt쪽만 그 대응이 비대칭으로 빠져 있었다. 신용카드/한도대출처럼 완납→재사용을 반복하는 부채에서 한 번 완납 축하를 받고 나면, 나중에 다시 빚을 지고 다시 완납해도 debtsPaidOff()/homeAlerts()의 debtPaidOff 카드가 두 번째부터 영구히 다시 뜨지 않는 버그였다. 다만 부채 잔액은 saveAsset이 아니라 평범한 거래(저장/삭제/가져오기 등 수많은 경로)로 바뀌므로 goal처럼 '저장 시점에 리셋'할 단일 지점이 없어, rollPendingTransfers와 동일한 render-refresh 경계(앱 기동 startApp()/날짜 변경 refreshToday())에서 한 번씩 검사하는 새 함수 resetStaleDebtPayoffAcks()를 추가했다 — payoffAckAt이 있는 부채만(대부분의 부채는 없으므로 흔한 경로에서는 비용이 거의 없음) debtPayoffProjection을 다시 계산해 achieved가 아니면 payoffAckAt=null로 리셋하고 touch()+save()한다(둘 다 rollPendingTransfers와 동일하게 touch() 호출로 cloud sync merge 불변식 유지). 테스트 5건 추가(리셋 케이스/여전히 achieved면 유지/payoffAckAt 없으면 애초에 건드리지 않음/touch() 호출 유무/리셋 후 재완납 시 debtNewlyPaidOff가 다시 true가 되는 통합 확인) — 구현을 임시로 no-op 처리해 재현 확인(5건 중 3건이 실제로 FAIL함을 직접 확인한 뒤 복구, 나머지 2건은 '건드리지 않아야 하는' 음성 케이스라 구현 유무와 무관하게 통과하는 게 맞음). node test/run.js 3409->3414/3414 통과. node --check sw.js/logic.js/test/run.js 통과, index.html은 test/run.js의 vm 샌드박스 전체 스위트 실행 자체가 구문 검증을 겸함(cycle339 이후 관례와 동일). 사용자 체감 동작 변화(신용카드성 부채를 완납→재사용→재완납해도 두 번째부터는 '축하' 알림이 다시 뜸, 평소 한 번만 완납하는 부채는 영향 없음)라 APP_VERSION 1.47.446->1.47.447, sw.js CACHE v713->v714.",
       "commit": null
     }
   ]

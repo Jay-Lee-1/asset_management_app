@@ -226,7 +226,7 @@ const FUNCTIONS = [
   'bytesToBase64', 'base64ToBytes', 'encodeCloudPayload', 'decodeCloudPayload',
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
   'clampDay', 'saveTx', 'commitTx', 'commitTxAsRec', 'duplicateTx', 'editTx', 'assetBase', 'balancesUpTo', 'balanceAt', 'balancesAtDates', 'balanceAtFromMap',
-  'addBalanceAdjust', 'updateBalanceAdjust', 'toggleConfirmTransfers', 'rollPendingTransfers',
+  'addBalanceAdjust', 'updateBalanceAdjust', 'toggleConfirmTransfers', 'rollPendingTransfers', 'resetStaleDebtPayoffAcks',
   'assetEval', 'assetGainLoss', 'assetGainLossBadge', 'costBasisField', 'interestRateField', 'assetBalance', 'schHorizon', 'ym', 'openAssetPicker', 'pkFilteredAssets', 'pkEmptyHtml', 'pkAssetQInput', 'refreshPkAssetList', 'movePkBlob', 'pkBack', 'pkChoose', 'pkPickAsset', 'openOwnerPicker', 'sheetSlideBack', 'delOwner', 'doMaturity', 'openMaturity', 'firstCash',
   // 정산(settlement, app-evolve cycle314 critique/advance): settlementSummary(logic.js)를 둘러싼
   // 설정 폼/화면/완료처리. firstCashForOwner/settleConfigured는 doSettle/renderTxSheet/renderMenu가
@@ -18589,6 +18589,64 @@ test('rollPendingTransfers: 실제로 기한이 지난 이체는 기기 로컬 T
   sandbox.rollPendingTransfers();
   assert.strictEqual(overdue.date, '2026-10-03', '당겨진 날짜는 기기 로컬 TODAY(2026-10-02)가 아니라 KST 오늘(2026-10-03)이어야 함');
 }));
+
+/* ---------- resetStaleDebtPayoffAcks: 완납 후 다시 빚이 생긴 부채는 payoffAckAt을 리셋해 다음 완납 때
+ * 다시 축하 알림이 뜨게 한다 — debtNewlyPaidOff(asset,payoff)는 achieved인데 payoffAckAt이 이미 있으면
+ * 영원히 false를 돌려주는데, 과거엔 payoffAckAt을 null로 되돌리는 경로가 전혀 없어 신용카드처럼
+ * 완납→재사용을 반복하는 부채는 두 번째 완납부터 영구히 축하 알림이 안 떴다(app-evolve cycle353
+ * develop, DB.goals의 achievedAckAt 리셋(saveGoal, cycle256)과 대응되는 debt쪽 공백). ---------- */
+function debtAsset(over) {
+  return Object.assign({ id: 'd1', name: '카드', type: 'debt', includeInTotal: true, baseAmount: 0, payoffAckAt: 1700000000000 }, over);
+}
+test('resetStaleDebtPayoffAcks: 완납 후 다시 빚이 생긴(achieved=false) 부채는 payoffAckAt이 null로 리셋된다', () => {
+  sandbox.TODAY = '2026-06-15';
+  const d = debtAsset();
+  sandbox.DB = { settings: {}, assets: [d], txns: [{ id: 't1', date: '2026-01-10', type: 'expense', fromAssetId: 'd1', amount: 50000 }], recurrences: [] };
+  sandbox.resetStaleDebtPayoffAcks();
+  assert.strictEqual(d.payoffAckAt, null, '다시 빚이 생겼으면 ack이 리셋돼야 함');
+});
+test('resetStaleDebtPayoffAcks: 아직 완납 상태를 유지 중인(achieved=true) 부채는 payoffAckAt을 건드리지 않는다', () => {
+  sandbox.TODAY = '2026-06-15';
+  const d = debtAsset();
+  sandbox.DB = { settings: {}, assets: [d], txns: [{ id: 't1', date: '2026-01-10', type: 'income', toAssetId: 'd1', amount: 0 }], recurrences: [] };
+  sandbox.resetStaleDebtPayoffAcks();
+  assert.strictEqual(d.payoffAckAt, 1700000000000, '여전히 다 갚은 상태면 기존 ack을 그대로 둬야 함');
+});
+test('resetStaleDebtPayoffAcks: payoffAckAt이 아예 없는 부채는 애초에 검사하지 않는다(건드릴 것이 없으면 조용히 통과)', () => {
+  sandbox.TODAY = '2026-06-15';
+  const d = debtAsset({ payoffAckAt: null });
+  sandbox.DB = { settings: {}, assets: [d], txns: [{ id: 't1', date: '2026-01-10', type: 'expense', fromAssetId: 'd1', amount: 50000 }], recurrences: [] };
+  sandbox.resetStaleDebtPayoffAcks();
+  assert.strictEqual(d.payoffAckAt, null);
+});
+test('resetStaleDebtPayoffAcks: 리셋된 부채에는 touch()가 호출돼 updatedAt이 갱신되고, 건드리지 않은 부채는 호출되지 않는다', () => {
+  sandbox.TODAY = '2026-06-15';
+  const reset = debtAsset({ id: 'd1' });
+  const kept = debtAsset({ id: 'd2' });
+  sandbox.DB = {
+    settings: {},
+    assets: [reset, kept],
+    txns: [
+      { id: 't1', date: '2026-01-10', type: 'expense', fromAssetId: 'd1', amount: 50000 }, // d1: 다시 빚 생김
+      { id: 't2', date: '2026-01-10', type: 'income', toAssetId: 'd2', amount: 0 }, // d2: 여전히 완납 상태
+    ],
+    recurrences: [],
+  };
+  sandbox.resetStaleDebtPayoffAcks();
+  assert.strictEqual(reset.updatedAt, 'test-updatedAt', '리셋된 부채엔 touch()가 호출돼야 함');
+  assert.strictEqual(kept.updatedAt, undefined, '건드리지 않은 부채엔 touch()가 호출되면 안 됨');
+});
+test('resetStaleDebtPayoffAcks: 리셋 후 다시 완납하면 debtNewlyPaidOff가 다시 true가 돼 축하 알림이 재발한다(통합 확인)', () => {
+  sandbox.TODAY = '2026-06-15';
+  const d = debtAsset();
+  sandbox.DB = { settings: {}, assets: [d], txns: [{ id: 't1', date: '2026-01-10', type: 'expense', fromAssetId: 'd1', amount: 50000 }], recurrences: [] };
+  sandbox.resetStaleDebtPayoffAcks();
+  assert.strictEqual(d.payoffAckAt, null);
+  sandbox.DB.txns.push({ id: 't2', date: '2026-02-10', type: 'income', toAssetId: 'd1', amount: 50000 }); // 다시 완납
+  const pts = sandbox.assetBalanceSeries(sandbox.DB.txns, 'd1', sandbox.assetBase(d), -1, sandbox.assetBalSampleDates(sandbox.RANGE_FROM, sandbox.TODAY, 60));
+  const p = sandbox.debtPayoffProjection(pts, sandbox.TODAY);
+  assert.strictEqual(sandbox.debtNewlyPaidOff(d, p), true, '리셋됐던 ack 덕분에 재완납이 다시 새 완납으로 인정돼야 함');
+});
 
 /* ---------- saveAsset: 동명·동종 자산 중복 차단이 수정(edit)에도 적용되는지 (자산 등록 때만 막고 수정 때는 안 막던 버그) ---------- */
 test('saveAsset: 다른 자산을 이미 있는 자산과 같은 이름·종류로 수정하면 차단된다', () => {
