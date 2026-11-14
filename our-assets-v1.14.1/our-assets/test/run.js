@@ -14124,6 +14124,36 @@ test("recSave: scope='future'/'all'은 txDraft.photo가 있어도 무시한다(�
   sandbox.recSave();
   assert.strictEqual(rAll.photo, undefined, "scope='all'로 바뀐 템플릿 r에 photo가 실리면 안 됨(스키마에 자리가 없음)");
 });
+/* ---------- recSave: scope='one'에서 메모를 건드리지 않았으면 edits[date]에 memo를 스냅샷하지 않는다
+ * (app-evolve cycle354 develop) ----------
+ * 간편 수정 시트엔 메모 입력란이 없어 txDraft.memo는 항상 r.memo를 그대로 재대입한 값일 뿐인데,
+ * 예전엔 splits/photo와 달리 memo가 무조건 edit.memo에 스냅샷돼 있었다. recHistFieldsChanged의
+ * "메모는 소급 적용돼도 무해하다"는 전제가 이미 edits[date]가 있는 날짜엔 성립하지 않아, 이후
+ * 반복 자체의 메모를 고쳐도(scope 확인 없이 즉시 적용되는 경로) 그 회차만 영원히 옛 메모에 박혀
+ * 있었다. splits/photo와 동일한 '있을 때만 덮어씀' 원칙으로 고쳤다. */
+test("recSave: scope='one'에서 shared만 바꾸고 메모는 그대로면(txDraft.memo===r.memo) edits[date]에 memo 키가 생기지 않는다", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', amount: 1000, category: '구독', memo: '넷플릭스', shared: false, edits: {} };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.window._recCtx = { recId: 'r1', date: '2026-02-05', scope: 'one' };
+  sandbox.txDraft = { amount: 1000, memo: '넷플릭스', shared: true };
+  sandbox.recSave();
+  assert.ok(!('memo' in r.edits['2026-02-05']), '메모를 바꾸지 않았는데도 edits[date]에 memo 키가 남아있음');
+  assert.strictEqual(r.edits['2026-02-05'].shared, true, '실제로 바꾼 shared는 여전히 기록되어야 함');
+});
+test("recSave: scope='one'에서 메모를 그대로 두면, 이후 반복 자체의 memo를 고쳤을 때 그 회차에도 새 메모가 보인다(expandRec)", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', type: 'expense', category: '구독', memo: '넷플렉스', amount: 1000, fromAssetId: 'a1', toAssetId: null, shared: false, edits: {}, active: true, startDate: '2026-01-05', freq: 'monthly', day: 5, skip: [] };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.window._recCtx = { recId: 'r1', date: '2026-02-05', scope: 'one' };
+  sandbox.txDraft = { amount: 1000, memo: '넷플렉스', shared: true }; // shared만 바꾸고 메모는 안 건드림
+  sandbox._recCache.clear(); // 다른 테스트가 먼저 채워둔 같은 구간 캐시가 이 테스트의 recurrences를 무시하고 새지 않도록 비운다.
+  sandbox.recSave();
+  r.memo = '넷플릭스'; // 나중에 오타를 고침(recHistFieldsChanged는 memo만 바뀐 건 소급 적용 가능하다고 봄)
+  sandbox._recCache.clear(); // recSave 이후에도 캐시가 남아있으면 위에서 고친 r.memo를 무시하고 새므로 다시 비운다.
+  const occ = sandbox.expandRec('2026-02-01', '2026-02-28').find(o => o.date === '2026-02-05');
+  assert.strictEqual(occ.memo, '넷플릭스', '메모를 건드리지 않은 회차는 고쳐진 새 메모를 그대로 봐야 함(옛 메모에 영원히 박혀있으면 안 됨)');
+});
 /* ---------- recApply/renderTxSheet/recSave: shared('같이 냈어요')의 occurrence 단위 override
  * (app-evolve cycle352 critique → advance) ----------
  * 전엔 expandRec()이 shared:!!r.shared로 하드코딩돼 있어 memo/amount/splits/photo와 달리 occurrence
@@ -14364,7 +14394,7 @@ test("recSave: scope='one' 수정은 메모 편집도 r.edits[date].memo에 함�
   sandbox.recSave();
   // vm 샌드박스 안에서 만들어진 edits[date] 객체는 host Object와 realm이 달라 deepStrictEqual이
   // (값은 같아도) 실패하므로, JSON.stringify로 정규화해 비교한다(위 future 분할 테스트와 같은 이유).
-  assert.strictEqual(JSON.stringify(r.edits['2026-02-05']), JSON.stringify({ amount: 1000, memo: '2월 월세 (관리비 포함)', shared: false }), '해당 날짜 edits에 금액과 메모가 함께 기록되어야 함(shared도 amount/memo와 동일하게 항상 기록)');
+  assert.strictEqual(JSON.stringify(r.edits['2026-02-05']), JSON.stringify({ amount: 1000, shared: false, memo: '2월 월세 (관리비 포함)' }), '해당 날짜 edits에 금액과 메모가 함께 기록되어야 함(memo는 app-evolve cycle354부터 r.memo와 실제로 다를 때만 끝에 추가됨)');
   sandbox.lastUndo.undoFn();
   assert.strictEqual(r.edits['2026-02-05'], undefined, '되돌리면 이전에 없던 날짜의 edits는 제거되어야 함');
 });

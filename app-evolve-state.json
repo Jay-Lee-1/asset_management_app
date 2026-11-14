@@ -1,15 +1,8 @@
 {
   "cycle": 354,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 348,
-      "phase": "review",
-      "timestamp": "2026-11-13T09:40:00.000Z",
-      "summary": "develop(cycle348, 1a2d863: recScheduleSameSlot이 day:31↔'last'를 같은 슬롯으로 정규화)를 검토. recDates()(logic.js:52)의 day=r.day==='last'?lastDay(y,m):Math.min(r.day,lastDay(y,m)) 계산을 직접 대조해, 31보다 긴 달이 없어 Math.min(31,lastDay(y,m))이 항상 lastDay(y,m)과 같음을 재확인(day:31과 day:'last'가 모든 달에서 완전히 동일한 날짜를 만든다는 전제가 맞음). norm=d=>d===31?'last':d가 31만 'last'로 접고 다른 값은 그대로 두므로 norm(31)===norm('last')→true, norm(30)===norm('last')→30!=='last'→false로 정규화 범위가 정확히 그 두 값 쌍에만 한정됨을 확인. daily/weekly/biweekly/yearly 분기와 !a.startDate||!b.startDate 폴백 가드는 수정되지 않고 그대로임을 diff로 확인. index.html/sw.js 변경은 APP_VERSION 1.47.435->436, CACHE v702->v703 버전 범프 2줄뿐임을 git show로 확인(로직 변경 없음). node test/run.js 3375/3375 통과, node --check logic.js/sw.js/test/run.js 통과. 실제 버그 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 348,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-14T08:20:00.000Z",
       "summary": "critique(cycle353) 계획대로 pushCloud() 충돌-자동병합 경로가 열려 있는 편집 시트를 보호하지 않던 공백을 고쳤다. ① pushCloud()의 outcome==='conflict' 분기(index.html)에서 mergeRemoteDataIntoLocal(remoteData)+save()를 즉시 적용하던 것을, pullCloudIfStale()과 동일한 $('sheet')&&$('sheet').classList.contains('show') 가드로 감싸 시트가 열려 있으면 curRow를 새 전역 CLOUD_CONFLICT_PENDING(TAB_SYNC_PENDING과 동일한 '편집 중엔 건드리지 않는다' 패턴)에 보류하고, 기존처럼 CLOUD_SYNC_STATE='conflict'+1회 토스트로 떨어뜨렸다(시트 열림 중엔 자동 재시도도 건너뜀). ② 그 보류를 소비하는 applyPendingCloudConflictMerge()를 새로 추가해(병합→save({deferCloudPush:true})→pushCloud(true) 재시도, 실패 시 기존 수동 폴백) closeSheet()의 TAB_SYNC_PENDING 처리 바로 뒤에서 호출하도록 배선했다 — 시트를 닫는 순간(스와이프·스크림탭 등 모든 경로 포함) 보류됐던 원격 데이터가 안전하게 병합된다. ③ 독립적인 방어선으로 commitTx()(DB.txns.findIndex(...)===-1인데도 가드 없이 DB.txns[-1]=d를 실행해 배열이 안 바뀌는데도 '저장했어요' 토스트가 뜨던 거짓 성공 경로)를 고쳐, i<0이면 DB.txns.push(d)로 편집을 되살리도록 했다 — 이제 두 경로가 겹쳐도(백그라운드 전환 중 push-conflict가 레코드를 지운 뒤 사용자가 복귀해 저장) 편집이 실제로 저장되어 토스트가 거짓이 되지 않는다. 테스트 6건 추가: pushCloud가 시트 열림 중 충돌 시 즉시 병합하지 않고 CLOUD_CONFLICT_PENDING에 보류(수정 전 코드로 되돌려 실제 FAIL 확인 후 복구), applyPendingCloudConflictMerge가 보류를 소비해 병합+재시도 성공(양쪽 txns 생존)/보류가 없으면 no-op, closeSheet 소스 패턴이 CLOUD_CONFLICT_PENDING을 소비하는지, commitTx가 사라진 레코드를 되살려 저장하는지(수정 전 코드로 되돌려 실제 FAIL 확인 후 복구)+성공 토스트가 더 이상 거짓이 아님을 확인. node test/run.js 3414->3419/3419 통과. node --check logic.js/sw.js/test/run.js 통과, index.html은 test/run.js의 vm 샌드박스 전체 스위트 실행 자체가 구문 검증을 겸함(cycle339 이후 관례와 동일). 사용자 체감 동작 변화(거래 편집 시트를 연 채 백그라운드로 전환했다가 돌아와 저장해도, 다른 기기의 변경과 충돌한 경우 더 이상 조용히 사라지지 않음; 평소 충돌 없는 정상 동기화에는 영향 없음)라 APP_VERSION 1.47.447->1.47.448, sw.js CACHE v714->v715. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 354,
+      "phase": "develop",
+      "timestamp": "2026-11-14T09:30:00.000Z",
+      "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — recSave()의 scope='one' 간편수정(index.html:6573)이 r.edits[date]={amount,memo,shared}를 만들 때 memo를 항상 무조건 스냅샷하고 있었다(splits/photo는 '있을 때만 덮어씀' 원칙을 쓰는데 memo만 비대칭). 간편수정 시트엔 메모 입력란 자체가 없어(txPhotoFieldHTML 옆 sharedChip만 있고 메모칸은 non-rc 분기에만 존재) 이 memo 값은 사용자가 고른 게 아니라 항상 r.memo를 그대로 재대입한 스냅샷일 뿐인데, 한 번 edits[date]에 박히고 나면 이후 반복 자체의 memo를 고쳐도(recHistFieldsChanged가 '메모만 바뀐 건 소급 적용 가능'이라 보고 확인 시트 없이 즉시 적용하는 경로, index.html:6830 주석) 이미 edits가 있는 날짜만 영원히 옛 메모에 박혀 있는 비대칭 버그였다(예: 'Netflex' 오타를 'Netflix'로 고쳐도 예전에 shared만 토글했던 회차는 계속 'Netflex'로 보임). recSave()를 splits/photo와 동일한 패턴으로 바꿔 memo!==r.memo일 때만 edit.memo를 기록하도록 고쳤다. 테스트 2건 추가: ①shared만 바꾸고 메모는 그대로면 edits[date]에 memo 키가 생기지 않음(+실제로 바꾼 shared는 여전히 기록) ②메모를 건드리지 않은 회차는 이후 r.memo를 고쳤을 때 expandRec()에서 새 메모를 그대로 보여줌(수정 전 코드로 되돌려 2건+기존 memo 테스트의 JSON.stringify 키 순서 비교 1건까지 총 3건이 실제로 FAIL함을 직접 확인한 뒤 복구). 기존 'scope=one 메모 편집' 테스트(memo가 r.memo와 실제로 달라지는 케이스)는 JSON.stringify 기대값의 키 순서만 {amount,memo,shared}->{amount,shared,memo}로 보정(동작은 그대로, edit 객체 생성 순서가 바뀐 결과일 뿐). node test/run.js 3419->3421/3421 통과. node --check logic.js/sw.js/test/run.js 통과, index.html은 test/run.js의 vm 샌드박스 전체 스위트 실행 자체가 구문 검증을 겸함(cycle339 이후 관례와 동일). 사용자 체감 동작 변화(반복거래 간편수정에서 메모를 안 건드리고 금액/공유/사진만 바꿔도, 이후 반복 자체의 메모 오타를 고치면 그 회차에도 새 메모가 보임; 실제로 그 회차만 다른 메모를 쓰려던 경우는 영향 없음)라 APP_VERSION 1.47.448->1.47.449, sw.js CACHE v715->v716.",
       "commit": null
     }
   ]

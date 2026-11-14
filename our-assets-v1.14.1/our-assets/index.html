@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.448';
+const APP_VERSION='1.47.449';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -6570,7 +6570,7 @@ function recSave(){
  }
  let undoFn;
  if(ctx.scope==='one'){
-  const edits=(r.edits=r.edits||{});const prevEdit=edits[ctx.date];const edit={amount:amt,memo,shared:!!d.shared};if(splits)edit.splits=splits;if(d.photo)edit.photo=d.photo;edits[ctx.date]=edit;touch(r);
+  const edits=(r.edits=r.edits||{});const prevEdit=edits[ctx.date];const edit={amount:amt,shared:!!d.shared};if(memo!==r.memo)edit.memo=memo;if(splits)edit.splits=splits;if(d.photo)edit.photo=d.photo;edits[ctx.date]=edit;touch(r); /* memo는 splits/photo와 동일한 '있을 때만 덮어씀' 원칙 — 간편수정 시트엔 메모 입력란이 없어 memo는 항상 r.memo를 그대로 재대입한 값일 뿐인데, 예전엔 무조건 edit.memo에 스냅샷돼 이후 r.memo를 고쳐도(recHistFieldsChanged가 메모만 바뀐 건 소급 적용 가능하다고 보는 전제, 아래 주석) 이 회차만 영원히 옛 메모에 박혀 있었다(app-evolve cycle354 develop) */
   undoFn=()=>{if(prevEdit===undefined)delete edits[ctx.date];else edits[ctx.date]=prevEdit;touchSave(r);renderCurrent();toast('되돌렸어요')};
  }
  else if(ctx.scope==='future'){
