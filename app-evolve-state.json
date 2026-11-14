@@ -1,15 +1,8 @@
 {
   "cycle": 357,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 351,
-      "phase": "advance",
-      "timestamp": "2026-11-14T00:14:41.405Z",
-      "summary": "critique(cycle351) 계획대로 sanitizeBackup()의 trashRecs 블록이 recurrences와 달리 필드들을 재검증하지 않던 공백을 고쳤다. 정규화 블록 전체를 공용 클로저 const sanitizeRecFields=(d)=>{...}로 추출해 recurrences forEach와 trashRecs forEach 양쪽에서 재사용(DRY 위반도 함께 해소). 테스트 추가(적대적 입력으로 trashRecs 복구 시 크래시 방지 확인). node test/run.js 3396->3397/3397 통과. APP_VERSION 1.47.442->1.47.443, sw.js CACHE v709->v710. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 352,
       "phase": "review",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-14T21:15:48.342Z",
       "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — homeAlertCard()의 goalBehind 카드(홈 화면 상시 노출 알림)가 목표일/예상 달성일을 shortDate()로 표시해 연도를 전혀 보여주지 않는데, 같은 알림 객체를 쓰는 notifyAlertInfo()의 OS 푸시 알림은 fmtDateFull()로 연도까지 보여줌 — 목표(targetDate)는 1~10년 이상 멀리 잡는 게 흔하고 goalProgress()의 선형 투사(projectedDate)도 느린 저축 속도면 수년 뒤로 나올 수 있어, 3년 뒤 목표를 \"목표일 03.15\"로만 보여주면 \"다음달/올해 안\"처럼 보이는 오인 소지가 있었다(cycle278 nwHistory류와 동일한 연도 누락 패턴). 이미 goalProgress 카드(4026행)/부채 상환 계획(5823행 등)에서 투사일에 쓰고 있는 연도인식 포맷터 shortDate2()(올해와 연도가 다를 때만 YY. 접두)로 교체해 포맷을 통일했다. 테스트 1건 추가(같은 해는 연도 없이, 다른 해는 두 자리 연도가 붙는지 targetDate/projectedDate 양쪽 확인). node test/run.js 3441->3442/3442 통과. node --check sw.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.454->1.47.455, sw.js CACHE v721->v722.",
+      "commit": null
+    },
+    {
+      "cycle": 357,
+      "phase": "review",
+      "timestamp": "2026-11-14T22:05:00.000Z",
+      "summary": "develop(cycle357, 4136f18: homeAlertCard goalBehind에 shortDate2 적용)을 검토했다. shortDate2()가 goalProgress 카드(4026행)/부채 상환 계획(5823/5827행)/순자산 히스토리 등 9곳에서 이미 쓰이는 연도인식 포맷터와 동일해 포맷 통일이 맞고, goalBehindMulti는 개별 날짜를 보여주지 않아(count만) 영향 범위 밖임을 확인. 바뀐 두 호출부(targetDate/projectedDate) 모두 shortDate(요일 포함, MM.DD)에서 shortDate2(연도조건부, MM/DD)로 포맷 구분자만 바뀌는 것이라 레이아웃이나 다른 소비처를 깨뜰 여지 없음. node test/run.js 3442/3442 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
       "commit": null
     }
   ]
