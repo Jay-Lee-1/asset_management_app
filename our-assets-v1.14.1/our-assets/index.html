@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.451';
+const APP_VERSION='1.47.452';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -3297,7 +3297,7 @@ function visibleTx(t){return DB.settings.includeScheduled||!txScheduled(t)}
 let TM=ym(TODAY);TM.d=+TODAY.slice(8,10);
 let ST={tab:'home',ledgerMode:'cal',assetOwner:'all',assetQ:'',nwPreset:'m3',allocPreset:'m3',ledger:{y:TM.y,m:TM.m,sel:TODAY},home:{y:TM.y,m:TM.m},
  hist:{cat:'전체',q:'',assetId:null,catExact:null,catExactType:null,owner:'전체',selMode:false,sel:new Set(),sortAsc:false,
-   range:{from:`${TM.y}-01-01`,to:`${TM.y}-12-31`},preset:'year',page:1,avgMode:false,balPreset:'m3',debtWhatIfExtra:0},
+   range:{from:`${TM.y}-01-01`,to:`${TM.y}-12-31`},preset:'year',page:1,avgMode:false,balPreset:'m3',debtWhatIfExtra:0,debtPlanStrategy:'avalanche',debtPlanExtra:0},
  plan:{owner:'전체',assetId:null,y:TM.y,m:TM.m},spendOwner:'전체',yearReview:{y:TM.y},editAssets:false,aSel:{mode:false,ids:new Set()},lSel:{mode:false,ids:new Set()},recSel:{mode:false,ids:new Set()},goalSel:{mode:false,ids:new Set()}};
 const TABS=[{id:'home',label:'홈',icon:'home'},{id:'assets',label:'자산관리',icon:'wallet'},{id:'ledger',label:'가계부',icon:'ledger'},{id:'plan',label:'한달 플랜',icon:'plan'},{id:'menu',label:'메뉴',icon:'menu'}];
 
@@ -5783,6 +5783,64 @@ function doSettle(payer,receiver,amount){
  });
 }
 
+/* 여러 부채를 동시에 다 갚는 '부채 상환 계획'(아바란체/스노우볼) — assetBalCard의 debtWhatIfExtra는
+ * 부채 하나의 상세 시트 안에서만 "매달 추가로 얼마씩 더 갚으면?"을 보여줘, 부채가 여러 개인
+ * 사용자는 어느 빚을 먼저 갚아야 유리한지 각 시트를 일일이 열어 암산해야 했다(app-evolve cycle355
+ * critique/advance). multiDebtPlan/debtPayoffOrder(logic.js)는 순수 정렬·계산만 하고, 여기서는
+ * DB.assets에서 debt 목록을 모아 debtPayoffPtsFor(위, assetBalCard와 동일한 고정 90일 추세 샘플)로
+ * pts를 채워 넘긴다 — 새 계산식 없이 기존 투사 로직을 그대로 재사용한다. */
+function debtPlanDebts(){
+ return DB.assets.filter(a=>a.includeInTotal&&a.type==='debt').map(a=>{
+  const pts=debtPayoffPtsFor(a);
+  return {id:a.id,name:a.name,balance:pts.length?pts[pts.length-1].bal:0,interestRate:a.interestRate,pts};
+ });
+}
+/* debtPlanStrategySel/debtPlanUpdate가 공유하는 본문 렌더 — assetBalCard의 nwPresetSegHTML
+ * 세그먼트 패턴을 그대로 쓰고, 맨 위 헤드라인은 goalRowHTML의 '이대로면 YYYY쯤 달성 예상' 어조를
+ * 부채 쪽으로 맞춘다(payoffHTML과 동일 원칙). */
+function debtPlanBodyHTML(strategy,extra){
+ const debts=debtPlanDebts();
+ if(!debts.length)return `<div class="empty"><div class="ei">${svg('debt')}</div><div class="et">부채가 없어요</div><div class="es">부채를 추가하면 상환 계획을 보여드려요</div></div>`;
+ const plan=multiDebtPlan(debts,extra,strategy,TODAY);
+ const allDone=plan.order.every(r=>r.achieved);
+ const headline=plan.allDebtFreeDate?`<div class="card" style="text-align:center;padding:14px;margin-bottom:12px"><div style="font-size:12.5px;color:var(--text-3);font-weight:700">전체 부채 상환 완료</div><div class="num" style="font-size:20px;font-weight:700;margin-top:2px">${shortDate2(plan.allDebtFreeDate)}쯤</div></div>`
+  :allDone?`<div class="card" style="text-align:center;padding:14px;margin-bottom:12px"><div style="font-size:14px;font-weight:700;color:var(--text-2)">이미 모든 부채를 다 갚았어요 🎉</div></div>`
+  :`<div class="card" style="text-align:center;padding:14px;margin-bottom:12px"><div style="font-size:13px;color:var(--text-3)">최근 추세로는 전체 완납일을 가늠하기 어려워요</div></div>`;
+ const rows=plan.order.map((r,i)=>{
+  const sub=r.achieved?'이미 다 갚았어요':r.projectedDate?`${shortDate2(r.projectedDate)}쯤 다 갚아요`:'최근 추세로는 가늠하기 어려워요';
+  return `<div class="manage-row"><div class="avatar a-etc" style="width:32px;height:32px;border-radius:10px;font-size:12.5px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">${i+1}</div><div style="flex:1;min-width:0"><div class="mn">${esc(r.name)}${r.interestRate>0?` · 연 ${r.interestRate}%`:''}</div><div class="msub">${comma(r.balance)}원 · ${sub}</div></div></div>`;
+ }).join('');
+ return headline+`<div class="card">${rows}</div>`;
+}
+function openDebtPlan(){
+ const strategy=ST.hist.debtPlanStrategy||'avalanche',extra=ST.hist.debtPlanExtra||0;
+ const segHTML=`<div class="seg nwh-seg" role="group" aria-label="상환 전략"><div class="seg-blob"></div>${[['avalanche','이자 높은 빚 먼저'],['snowball','잔액 적은 빚 먼저']].map(([s,l])=>`<button type="button" class="${strategy===s?'on':''}" aria-pressed="${strategy===s}" onclick="debtPlanStrategySel('${s}')">${l}</button>`).join('')}</div>`;
+ const hasDebts=debtPlanDebts().length>0;
+ openSheet(`<h3>부채 상환 계획</h3><div class="desc">매달 추가로 갚을 돈을 어느 빚에 먼저 넣으면 전체를 가장 빨리 끝낼 수 있는지 보여드려요.</div>
+  ${hasDebts?`${segHTML}<div class="field" style="margin-top:10px"><label for="debtPlanExtra">매달 추가로 얼마씩 더 갚으면?</label><div class="field-clear"><input id="debtPlanExtra" class="num" inputmode="numeric" value="${extra?comma(extra):''}" placeholder="0" oninput="fmtAmt(this);debtPlanUpdate()"><button type="button" class="fc-x" aria-label="추가 납입액 지우기" onclick="clrInput('debtPlanExtra');debtPlanUpdate()">✕</button></div></div>`:''}
+  <div id="debtPlanBody" style="margin-top:12px">${debtPlanBodyHTML(strategy,extra)}</div>
+  <button class="btn btn-soft" onclick="closeSheet()">닫기</button>`);
+ if(hasDebts)requestAnimationFrame(()=>{try{moveSegBlobs()}catch(e){}});
+}
+function debtPlanStrategySel(strategy){
+ if(ST.hist.debtPlanStrategy===strategy)return;
+ ST.hist.debtPlanStrategy=strategy;
+ const el=$('debtPlanBody');if(!el)return;
+ el.innerHTML=debtPlanBodyHTML(strategy,ST.hist.debtPlanExtra||0);
+ requestAnimationFrame(()=>{try{moveSegBlobs()}catch(e){}});
+}
+/* debtWhatIfUpdate(위)와 동일한 220ms 디바운스 announceLive — 숫자를 한 자리씩 입력할 때마다
+ * 스크린리더가 문장 전체를 끊어 읽지 않게 한다(app-evolve cycle267 원칙 재사용). */
+let _debtPlanAnnT=null;
+function debtPlanUpdate(){
+ const extra=num($('debtPlanExtra'));
+ ST.hist.debtPlanExtra=extra;
+ const el=$('debtPlanBody');if(!el)return;
+ el.innerHTML=debtPlanBodyHTML(ST.hist.debtPlanStrategy||'avalanche',extra);
+ clearTimeout(_debtPlanAnnT);
+ _debtPlanAnnT=setTimeout(()=>announceLive(el.textContent),220);
+}
+
 /* ================= LEDGER ================= */
 /* 달력 하루 칸 합계: monthStats2와 동일하게 잔액 조정(기본 제외) 규칙을 적용해야
    월 수지 카드(수입/지출/저축)와 날짜별 칸에 찍히는 숫자가 어긋나지 않는다 */
@@ -7626,6 +7684,7 @@ function renderMenu(){
    {ic:'chart',l:'목표 자산배분',v:Object.keys(DB.settings.targetAllocation||{}).length?'설정됨':'미설정',a:"openTargetAllocationForm()"},
    {ic:'calendar',l:'연간 결산',a:"openYearReview(TM.y)"},
    {ic:'users',l:'정산',v:settleConfigured()?'설정됨':'미설정',a:"openSettlement()"},
+   {ic:'debt',l:'부채 상환 계획',v:DB.assets.filter(a=>a.includeInTotal&&a.type==='debt').length+'개',a:"openDebtPlan()"},
   ]},
   {cap:'알림 · 기준',items:[
    {ic:'check',l:'이체 확인',sw:!!DB.settings.confirmTransfers,a:"toggleConfirmTransfers()"},

@@ -2560,6 +2560,110 @@ test('amortizationPayoffMonths: 월 상환액이 클수록 걸리는 개월수�
   const fast = sandbox.amortizationPayoffMonths(1000000, 200000, 12);
   assert.ok(fast < slow, '월 상환액이 크면 더 빨리 갚아야 함');
 });
+/* ---------- debtPayoffOrder/multiDebtPlan: 여러 부채 동시 상환 계획(아바란체/스노우볼) (app-evolve
+ * cycle355 critique/advance) ---------- debtPayoffOrder는 정렬만 하는 순수 함수. */
+test('debtPayoffOrder: 빈 배열/undefined 입력도 안 터지고 빈 배열을 돌려준다', () => {
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.debtPayoffOrder([], 'avalanche'))), []);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(sandbox.debtPayoffOrder(undefined, 'avalanche'))), []);
+});
+test('debtPayoffOrder: 아바란체는 이자율이 높은 순으로 정렬한다', () => {
+  const debts = [
+    { id: 'low', balance: 100000, interestRate: 3 },
+    { id: 'high', balance: 500000, interestRate: 18 },
+    { id: 'mid', balance: 200000, interestRate: 7 },
+  ];
+  const order = sandbox.debtPayoffOrder(debts, 'avalanche').map((d) => d.id);
+  assert.deepStrictEqual(order, ['high', 'mid', 'low']);
+});
+test('debtPayoffOrder: 아바란체에서 이자율이 없거나 0인 부채는 입력이 있는 부채보다 항상 뒤로 간다', () => {
+  const debts = [
+    { id: 'noRate', balance: 100000, interestRate: null },
+    { id: 'zero', balance: 100000, interestRate: 0 },
+    { id: 'hasRate', balance: 100000, interestRate: 1 }, // 이자율 1%도 "모름"보다는 우선
+  ];
+  const order = sandbox.debtPayoffOrder(debts, 'avalanche').map((d) => d.id);
+  assert.strictEqual(order[0], 'hasRate');
+  assert.ok(order.indexOf('noRate') > 0 && order.indexOf('zero') > 0);
+});
+test('debtPayoffOrder: 스노우볼은 잔액이 적은 순으로 정렬한다(이자율과 무관)', () => {
+  const debts = [
+    { id: 'big', balance: 900000, interestRate: 20 }, // 이자율은 가장 높지만 스노우볼에서는 안 중요
+    { id: 'small', balance: 50000, interestRate: 2 },
+    { id: 'mid', balance: 300000, interestRate: 10 },
+  ];
+  const order = sandbox.debtPayoffOrder(debts, 'snowball').map((d) => d.id);
+  assert.deepStrictEqual(order, ['small', 'mid', 'big']);
+});
+test('debtPayoffOrder: strategy가 avalanche/snowball 외의 값(또는 미지정)이면 아바란체로 폴백한다', () => {
+  const debts = [{ id: 'a', balance: 1, interestRate: 3 }, { id: 'b', balance: 1, interestRate: 9 }];
+  assert.deepStrictEqual(sandbox.debtPayoffOrder(debts, undefined).map((d) => d.id), ['b', 'a']);
+  assert.deepStrictEqual(sandbox.debtPayoffOrder(debts, 'unknown').map((d) => d.id), ['b', 'a']);
+});
+/* multiDebtPlan: debtPayoffOrder로 정한 우선순위대로 추가 납입액 전액을 맨 앞 부채 하나에만
+ * 몰아주고(debtPayoffWhatIf 재사용), 나머지는 베이스라인(debtPayoffProjection)으로 계산한다. */
+test('multiDebtPlan: 빈 배열 입력이면 order도 빈 배열이고 allDebtFreeDate도 null이다', () => {
+  const plan = sandbox.multiDebtPlan([], 50000, 'avalanche', '2026-01-11');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(plan.order)), []);
+  assert.strictEqual(plan.allDebtFreeDate, null);
+});
+test('multiDebtPlan: 부채가 하나뿐이면 debtWhatIfUpdate가 단일 부채에 하는 것과 정확히 같은 결과(debtPayoffWhatIf 그대로)를 돌려준다', () => {
+  const pts = [{ date: '2026-01-01', bal: 300000 }, { date: '2026-01-11', bal: 200000 }];
+  const expected = sandbox.debtPayoffWhatIf(pts, '2026-01-11', 50000);
+  const plan = sandbox.multiDebtPlan([{ id: 'x', balance: 200000, interestRate: 5, pts }], 50000, 'avalanche', '2026-01-11');
+  assert.strictEqual(plan.order.length, 1);
+  assert.strictEqual(plan.order[0].id, 'x');
+  assert.strictEqual(plan.order[0].achieved, expected.achieved);
+  assert.strictEqual(plan.order[0].projectedDate, expected.projectedDate);
+  assert.strictEqual(plan.allDebtFreeDate, expected.projectedDate);
+});
+test('multiDebtPlan: 이미 완납된 부채가 아바란체 1순위(이자율이 더 높음)여도 추가 납입은 아직 안 끝난 다음 부채로 간다', () => {
+  const paidOff = { id: 'b', balance: 0, interestRate: 20, pts: [{ date: '2026-01-01', bal: 100000 }, { date: '2026-01-11', bal: 0 }] };
+  const stillOwed = { id: 'a', balance: 200000, interestRate: 5, pts: [{ date: '2026-01-01', bal: 300000 }, { date: '2026-01-11', bal: 200000 }] };
+  const plan = sandbox.multiDebtPlan([stillOwed, paidOff], 50000, 'avalanche', '2026-01-11');
+  assert.strictEqual(plan.order[0].id, 'b', '정렬 자체는 이자율 순서를 그대로 유지해야 함');
+  assert.strictEqual(plan.order[0].achieved, true);
+  const expectedA = sandbox.debtPayoffWhatIf(stillOwed.pts, '2026-01-11', 50000);
+  const planA = plan.order.find((r) => r.id === 'a');
+  assert.strictEqual(planA.achieved, expectedA.achieved);
+  assert.strictEqual(planA.projectedDate, expectedA.projectedDate, '추가 납입이 완납된 b가 아니라 아직 안 끝난 a에 전액 반영돼야 함');
+});
+test('multiDebtPlan: 추가 납입이 없는(baseline) 부채는 debtPayoffProjection과 정확히 같은 투사일을 돌려준다', () => {
+  const top = { id: 'top', balance: 200000, interestRate: 20, pts: [{ date: '2026-01-01', bal: 300000 }, { date: '2026-01-11', bal: 200000 }] };
+  const second = { id: 'second', balance: 90000, interestRate: 10, pts: [{ date: '2026-01-01', bal: 100000 }, { date: '2026-01-11', bal: 90000 }] };
+  const plan = sandbox.multiDebtPlan([second, top], 50000, 'avalanche', '2026-01-11');
+  assert.strictEqual(plan.order[0].id, 'top');
+  assert.strictEqual(plan.order[1].id, 'second');
+  const baseline = sandbox.debtPayoffProjection(second.pts, '2026-01-11');
+  assert.strictEqual(plan.order[1].achieved, baseline.achieved);
+  assert.strictEqual(plan.order[1].projectedDate, baseline.projectedDate, '1순위가 아닌 부채는 추가 납입 없이 베이스라인 그대로여야 함');
+});
+test('multiDebtPlan: allDebtFreeDate는 아직 안 끝난 부채들의 투사일 중 가장 늦은 날짜다', () => {
+  const top = { id: 'top', balance: 200000, interestRate: 20, pts: [{ date: '2026-01-01', bal: 300000 }, { date: '2026-01-11', bal: 200000 }] };
+  const second = { id: 'second', balance: 90000, interestRate: 10, pts: [{ date: '2026-01-01', bal: 100000 }, { date: '2026-01-11', bal: 90000 }] };
+  const plan = sandbox.multiDebtPlan([second, top], 50000, 'avalanche', '2026-01-11');
+  const expectedTop = sandbox.debtPayoffWhatIf(top.pts, '2026-01-11', 50000).projectedDate;
+  const expectedSecond = sandbox.debtPayoffProjection(second.pts, '2026-01-11').projectedDate;
+  assert.ok(expectedSecond > expectedTop, '이번 시나리오에서는 추가 납입을 못 받는 2순위가 더 늦게 끝나야 함(전제 확인)');
+  assert.strictEqual(plan.allDebtFreeDate, expectedSecond);
+});
+test('multiDebtPlan: 모든 부채가 이미 완납이면 allDebtFreeDate는 null이다(추측 금지)', () => {
+  const debts = [
+    { id: 'a', balance: 0, interestRate: 5, pts: [{ date: '2026-01-01', bal: 100000 }, { date: '2026-01-11', bal: 0 }] },
+    { id: 'b', balance: 0, interestRate: 10, pts: [{ date: '2026-01-01', bal: 50000 }, { date: '2026-01-11', bal: 0 }] },
+  ];
+  const plan = sandbox.multiDebtPlan(debts, 50000, 'avalanche', '2026-01-11');
+  assert.ok(plan.order.every((r) => r.achieved === true));
+  assert.strictEqual(plan.allDebtFreeDate, null);
+});
+test('multiDebtPlan: 추가 납입을 못 받는 부채의 추세가 증가 중이라 투사일을 모르면(null) allDebtFreeDate 전체가 null이다(일부만 안다고 추측하지 않음)', () => {
+  const top = { id: 'top', balance: 200000, interestRate: 20, pts: [{ date: '2026-01-01', bal: 300000 }, { date: '2026-01-11', bal: 200000 }] };
+  const worsening = { id: 'worsening', balance: 500000, interestRate: 10, pts: [{ date: '2026-01-01', bal: 400000 }, { date: '2026-02-01', bal: 500000 }] }; // 오히려 늘어남
+  const plan = sandbox.multiDebtPlan([worsening, top], 50000, 'avalanche', '2026-02-01');
+  const worseningResult = plan.order.find((r) => r.id === 'worsening');
+  assert.strictEqual(worseningResult.achieved, false);
+  assert.strictEqual(worseningResult.projectedDate, null, '추가 납입을 못 받고 추세가 악화 중이면 베이스라인처럼 투사 불가');
+  assert.strictEqual(plan.allDebtFreeDate, null);
+});
 /* ---------- debtNewlyPaidOff: 완납했지만 아직 ack(payoffAckAt) 안 된 부채 판정 (app-evolve cycle257 advance) ----------
  * goalNewlyAchieved와 정확히 같은 모양 — achieved는 debtPayoffProjection()의 반환값을 그대로 받는다. */
 test('debtNewlyPaidOff: achieved=false면 payoffAckAt 유무와 무관하게 항상 false', () => {

@@ -1057,6 +1057,43 @@ function amortizationPayoffMonths(balance,monthlyPayment,annualRatePct){
  return Math.ceil(n);
 }
 
+/* debtPayoffProjection/debtPayoffWhatIf/amortizationPayoffMonths(위)는 전부 부채 하나만 받는다 —
+ * 부채가 여러 개(전세자금대출+신용대출+카드론 등)인 사용자는 어느 빚을 먼저 갚아야 유리한지, 전체를
+ * 언제 다 갚는지를 각 부채 시트를 일일이 열어 암산해야 했다(app-evolve cycle355 critique/advance).
+ * debtPayoffOrder는 정렬만 하는 순수 함수 — 아바란체(이자가 가장 비싼 빚부터, interestRate가
+ * 없거나 0인 부채는 우선순위를 매길 입력이 없으므로 맨 뒤)와 스노우볼(잔액이 가장 적은 빚부터,
+ * 가장 빨리 '승리'를 만들어 동기를 주는 전통적 방식) 두 전략만 고른다. */
+function debtPayoffOrder(debts,strategy){
+ const list=(debts||[]).slice();
+ if(strategy==='snowball')return list.sort((a,b)=>(a.balance||0)-(b.balance||0));
+ return list.sort((a,b)=>{
+  const ra=a.interestRate>0?a.interestRate:-1,rb=b.interestRate>0?b.interestRate:-1;
+  return rb-ra;
+ });
+}
+/* debtPayoffOrder로 정한 우선순위대로 추가 납입액(extraPerMonth) 전액을 가장 우선순위 높은(아직
+ * 안 끝난) 부채 하나에만 몰아주고, 나머지는 베이스라인(추가 납입 없음)으로 계산한다 —
+ * debtWhatIfUpdate가 부채 하나에 하는 전액-집중 계산과 같은 원칙이라 debtPayoffProjection/
+ * debtPayoffWhatIf를 그대로 재사용한다(새 계산식 없음). 완납된 부채가 풀어주는 최소상환금을
+ * 다음 부채로 넘기는 '진짜 스노우볼 롤링'은 이 앱에 고정 월 납입액 필드가 없어 추정할 입력이
+ * 없으므로 범위에서 뺀다(모르면 추측하지 않는다는 기존 원칙, app-evolve cycle355). debts의 각
+ * 항목은 {id,balance,interestRate,pts}를 받는다 — pts는 debtPayoffPtsFor와 같은 모양({date,bal}[])
+ * 의 상환 추세 샘플이고 achieved/projectedDate는 이 pts로만 계산한다(balance는 정렬·표시용). */
+function multiDebtPlan(debts,extraPerMonth,strategy,today){
+ const order=debtPayoffOrder(debts,strategy);
+ let assigned=false;
+ const result=order.map(d=>{
+  const baseline=debtPayoffProjection(d.pts,today);
+  const giveExtra=!assigned&&!baseline.achieved;
+  if(giveExtra)assigned=true;
+  const proj=giveExtra?debtPayoffWhatIf(d.pts,today,extraPerMonth||0):baseline;
+  return {id:d.id,balance:d.balance,interestRate:d.interestRate,achieved:proj.achieved,projectedDate:proj.projectedDate};
+ });
+ const pending=result.filter(r=>!r.achieved).map(r=>r.projectedDate);
+ const allDebtFreeDate=pending.length&&pending.every(d=>d)?pending.reduce((a,b)=>a>b?a:b):null;
+ return {order:result,allDebtFreeDate};
+}
+
 /* debt 자산의 완납 축하 알림 판정 — goalNewlyAchieved(위)와 정확히 같은 모양. payoff는
  * debtPayoffProjection()의 반환값을 그대로 받는다: achieved(최신 잔액<=0)인데 아직
  * ack(asset.payoffAckAt)가 안 됐으면 true. goal과 달리 debt는 asDraft가 saveAsset에서 항상
