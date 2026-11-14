@@ -1,15 +1,8 @@
 {
   "cycle": 355,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 349,
-      "phase": "review",
-      "timestamp": "2026-11-13T12:15:00.000Z",
-      "summary": "develop(cycle349, 3b8a9ec: toggleConfirmTransfers 끄기에 undoToast 추가)를 검토. prevOne=pendingOneOff.map(t=>t.confirmed) 캡처가 confirmed=true 대입 전에 이루어지는 순서, recIds=[...new Set(pendingRecList.map(t=>t.recId))]로 같은 반복의 여러 도래 날짜를 한 recId로 중복 제거한 뒤 prevRecDates Map에 r.confirmedDates.slice()(얕은 복사, push 전 원본 배열과 분리된 참조)로 캡처하는 순서를 라인 대조로 확인. undo 복원 시 recIds.forEach로 Map에 저장된 슬라이스를 그대로 r.confirmedDates에 재대입해, 같은 반복에 여러 날짜가 push됐어도 한 번에 원상복구됨을 확인(배열 참조를 교체하므로 push로 늘어난 원소까지 모두 제거됨). r이 삭제돼 찾을 수 없는 경우 mutate 루프와 undo 루프 모두 if(r) 가드로 동일하게 방어됨을 확인. DB.settings.confirmTransfers 복원은 끄기 액션 자체가 '켜져 있던 것을 끈다'는 전제라 항상 true로 복원해도 안전함을 확인(이 함수에 진입하려면 이미 true였어야 함). 추가 테스트 2건(전체 복원 통합 1건, 기존 confirmedDates 보존 1건)이 바뀐 경로를 정확히 겨냥함을 확인. node test/run.js 재실행 3381/3381 통과, node --check sw.js/test/run.js 통과. 실제 버그 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 349,
       "phase": "critique",
@@ -141,6 +134,13 @@
       "phase": "advance",
       "timestamp": "2026-11-14T12:15:46.905Z",
       "summary": "critique(cycle354) 계획대로 undoToast()의 6초 자동소멸이 마우스 hover나 키보드 focus로도 멈추지 않던 WCAG 2.2.1(타이밍 조정 가능) 공백을 고쳤다. 단일 함수(index.html:12190-12201, ~80개 호출부가 공유하는 구현)만 수정 — 하나뿐이던 const tm=setTimeout(...)을 let tm 변수 + const dismiss()/arm()으로 분리하고 생성 시 arm()을 한 번 호출, t에 mouseenter(pause)/mouseleave(arm), btn에 focus(pause)/blur(arm) 리스너를 10905행 롱프레스 취소와 동일한 패턴으로 추가했다. btn.onclick은 그대로 clearTimeout(tm)을 쓰되 재할당 가능한 tm을 참조해 가장 최근에 걸린 타이머를 정확히 취소한다. 테스트는 domstub(실제 addEventListener/dispatchEvent를 갖는 DOM shim)으로 undoToast를 격리된 vm 컨텍스트에 직접 태우고 mouseenter/mouseleave/focus/blur 합성 이벤트를 순서대로 흘려 매번 clearTimeout/setTimeout이 정확히 호출되는지, 되돌리기 클릭이 그 시점의 최신 타이머를 취소하며 undoFn을 정확히 1회만 호출하는지(두 번째 클릭은 무시) 검증하는 신규 실행형 테스트 1건을 추가했다 — 수정 전 코드로 되돌려 실제로 FAIL함을 직접 확인한 뒤 복구. node test/run.js 3421->3422/3422 통과. node --check sw.js/logic.js/test/run.js 통과, index.html은 test/run.js의 vm 샌드박스 전체 스위트 실행 자체가 구문 검증을 겸함(cycle339 이후 관례와 동일). 사용자 체감 동작 변화(되돌리기 토스트에 마우스를 올리거나 되돌리기 버튼에 키보드 포커스를 두면 6초 자동소멸이 멈추고, 포인터/포커스를 떼면 다시 6초가 시작됨; saveSettleConfig/clearSettleConfig/doSettle/mergeOwnerInto처럼 trash bin이 없어 이 6초가 유일한 되돌릴 기회인 호출부들의 영향이 가장 큼)라 APP_VERSION 1.47.449->1.47.450, sw.js CACHE v716->v717. pending_advance_plan null로 비움.",
+      "commit": null
+    },
+    {
+      "cycle": 355,
+      "phase": "review",
+      "timestamp": "2026-11-14T13:30:00.000Z",
+      "summary": "develop(cycle355, 7af99cc: fmtSynced()가 하루 넘은 갱신 시각도 날짜 없이 시:분만 보여주던 공백 수정)을 검토했다. 변경이 작고 명확 — min<60 분기는 그대로 두고, 그 이후 Date 분기에서 d.toDateString()===now.toDateString()로 같은 날이면 기존처럼 시:분만, 다른 날이면 M.D 시:분으로 보여줌. 두 호출부(index.html:2071 클라우드 동기화 상태줄, 8639 시세 갱신 푸터) 모두 짧은 상태 텍스트라 길이가 늘어나도 레이아웃 깨짐 없음을 확인. 새 테스트 2건(같은 날 90분 전은 날짜 없이, 전날 20시간 전은 M.D 붙음)이 의도한 경로를 정확히 겨냥함을 확인. node test/run.js 3424/3424 재실행 통과(베이스라인 포함 전체 통과, 새 2건 포함), node --check sw.js/logic.js/test/run.js 통과. 참고: 직전 develop 커밋(7af99cc)이 state.json의 phase만 develop->review로 바꾸고 history에 cycle355 develop 항목을 append하지 않은 채 넘어간 사소한 누락을 발견 — 블로킹 사유는 아니라 이번 review 커밋에서 그대로 진행하고 기록만 남김. 실제 버그 없음(state.json만 커밋, phase를 critique로 회전).",
       "commit": null
     }
   ]
