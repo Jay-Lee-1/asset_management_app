@@ -1,15 +1,12 @@
 {
   "cycle": 355,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "여러 부채를 동시에 다 갚는 '부채 상환 계획'(아바란체/스노우볼) 추가 — 지금은 부채 하나씩만 what-if 가능",
+    "why": "totalDebt()(index.html:3219)는 모든 부채를 하나의 합계로 묶지만, 상환 계획 관련 로직(debtPayoffPtsFor/debtPayoffProjection/debtPayoffWhatIf/amortizationPayoffMonths, index.html:3512-3567·logic.js:1008-1058)은 전부 부채 하나만 입력받는다. debtWhatIfExtra(index.html:3599-3609, '매달 추가로 얼마씩 더 갚으면?')도 assetBalCard 안, 즉 부채 하나의 상세 시트 안에만 존재. 부채가 여러 개(예: 전세자금대출+신용대출+카드론)인 사용자는 어느 빚을 먼저 갚아야 이자를 덜 내는지, 추가로 넣을 돈을 어디에 넣으면 전체가 가장 빨리 끝나는지, '모든 부채를 다 갚는 날'이 언제인지를 각 부채 시트를 일일이 열어 암산으로 합산해야 한다. 이자율(interestRate, index.html:5292-5299)도 이미 자산별로 저장되는 데이터라 우선순위 계산에 필요한 입력은 다 있고, grep으로 snowball/avalanche/스노우볼/아바란체 전무함을 확인(완전히 새 영역, 과거 cycle에서 다룬 적 없음).",
+    "approach": "1) logic.js에 순수 함수 2개 추가: debtPayoffOrder(debts, strategy) — strategy='avalanche'면 interestRate 내림차순(0/null은 맨 뒤), 'snowball'이면 balance 오름차순으로 정렬만 하는 순수 함수. multiDebtPlan(debts, extraPerMonth, strategy, today) — debtPayoffOrder로 정렬 후 extraPerMonth 전액을 최우선 부채 하나에만 몰아주고(기존 debtWhatIfUpdate가 단일 부채에 하는 것과 동일하게 debtPayoffWhatIf/amortizationPayoffMonths 재사용) 나머지는 기존 debtPayoffProjection(추가 납입 없음) 기준으로 계산, {order:[{id,balance,interestRate,projectedDate}], allDebtFreeDate}를 반환. 상환 완료된 부채가 풀린 최소납입금을 다음 부채로 넘기는 '진짜 스노우볼 롤링'은 앱에 고정 월 납입액 필드가 없어 구현하지 않음(데이터 없이 추정하지 않는다는 기존 철학 유지) — 이 단순화는 계획에 명시. 2) index.html: '가계부' 메뉴(7621-7629 부근)에 '부채 상환 계획' 항목 추가(DB.assets.some(a=>a.includeInTotal&&a.type==='debt')일 때만 노출, 없으면 openSettlement 스타일 빈 상태 안내), openDebtPlan() 시트를 새로 만들어 아바란체/스노우볼 세그 토글(nwPresetSegHTML 패턴), 공용 추가 납입 입력(debtWhatIfExtra 마크업 재사용), 우선순위 순서로 부채 목록+각자 예상 완납일, 맨 위에 '전체 부채 상환 완료: ~YYYY.MM' 헤드라인 표시. 3) test/run.js에 debtPayoffOrder/multiDebtPlan 순수 함수 테스트 추가: 빈 목록/부채 1개(기존 debtWhatIfUpdate 결과와 일치해야 함)/interestRate 없거나 0인 경우 트렌드 기반으로 폴백/동점 정렬 케이스. 4) 변경 완료 후 node test/run.js 통과 확인, APP_VERSION과 sw.js CACHE 버전 범프."
+  },
   "history": [
-    {
-      "cycle": 349,
-      "phase": "critique",
-      "timestamp": "2026-11-13T13:10:00.000Z",
-      "summary": "최근 cycle345~348 critique가 전부 '되돌리기(undo) 공백' 패턴에 집중돼 있었기 때문에, 이번엔 그 류를 배제하고 Explore 서브에이전트에게 다른 종류(아키텍처/성능/UX/접근성/에러처리/데이터 정합성/DRY)의 약점을 조사시켰다. txMemo(index.html:6088)/rMemo(6633)는 HTML maxlength=MEMO_MAX와 입력 핸들러(txMemoInput:6110/recMemoInput:6547) 2중으로 길이를 제한하는데, '여러 카테고리로 나누기' 분할 라인의 메모 입력(splitMemo${i})은 maxlength 속성이 없고 txSplitMemo(6192)/recSplitMemo(6597)도 el.value를 그대로 대입해 길이 검증이 전혀 없음을 확인했다. 분할 카테고리는 openCatPicker 고정 목록이라 안전하지만 메모는 자유 텍스트라 DB.txns[].splits/DB.recurrences[].splits/.edits[date].splits에 무제한 길이로 저장되고, sanitizeBackup()의 분할 재검증 블록(9586/9696/9771, 3곳 동일 코드 복제)도 amount만 클램프하고 s.memo는 그대로 둬 백업/클라우드 복원 경로도 같은 공백을 공유함을 확인했다. cycle340/341/344가 'UI 입력 경로는 거부 대신 clamp' 원칙을 top-level category/memo·stockCode/cryptoCode·name에 이미 적용했는데 분할입력 UI 경로만 지금까지 빠져 있던 사례라 우선순위로 선정했다. 대안으로 localStorage quota/fetch 타임아웃/3-way 병합/캐시 성능(이미 성숙)과 SRI 해시 TODO(cycle345가 네트워크 접근 불가로 이미 deprioritize)를 재검토했으나 새 근거 없어 기각. pending_advance_plan에 ①splitMemo input에 maxlength 추가 ②txSplitMemo/recSplitMemo에 txMemoInput과 동일한 clamp 추가 ③sanitizeBackup 3곳에 splits memo 클램프 추가하는 구체 계획 저장. node test/run.js 3381/3381 통과 확인(베이스라인 깨짐 없음). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
     {
       "cycle": 349,
       "phase": "advance",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-14T13:30:00.000Z",
       "summary": "develop(cycle355, 7af99cc: fmtSynced()가 하루 넘은 갱신 시각도 날짜 없이 시:분만 보여주던 공백 수정)을 검토했다. 변경이 작고 명확 — min<60 분기는 그대로 두고, 그 이후 Date 분기에서 d.toDateString()===now.toDateString()로 같은 날이면 기존처럼 시:분만, 다른 날이면 M.D 시:분으로 보여줌. 두 호출부(index.html:2071 클라우드 동기화 상태줄, 8639 시세 갱신 푸터) 모두 짧은 상태 텍스트라 길이가 늘어나도 레이아웃 깨짐 없음을 확인. 새 테스트 2건(같은 날 90분 전은 날짜 없이, 전날 20시간 전은 M.D 붙음)이 의도한 경로를 정확히 겨냥함을 확인. node test/run.js 3424/3424 재실행 통과(베이스라인 포함 전체 통과, 새 2건 포함), node --check sw.js/logic.js/test/run.js 통과. 참고: 직전 develop 커밋(7af99cc)이 state.json의 phase만 develop->review로 바꾸고 history에 cycle355 develop 항목을 append하지 않은 채 넘어간 사소한 누락을 발견 — 블로킹 사유는 아니라 이번 review 커밋에서 그대로 진행하고 기록만 남김. 실제 버그 없음(state.json만 커밋, phase를 critique로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 355,
+      "phase": "critique",
+      "timestamp": "2026-11-14T15:15:11.000Z",
+      "summary": "Explore 서브에이전트에게 cycle340-354에서 다룬 모든 주제(undo/clamp/RLS/trashRecs/shared override/push-conflict/commitTx/recSave memo/sanitizeRateMap/isDuePending/CSV/서비스워커/임시백업키/App Lock 암호화/undoToast 타이밍/fmtSynced/부채 ack 리셋/목표 ack/카테고리 롤오버/자산배분 라운딩/음력 공휴일/rateUnknown 폴백/targetAllocation 비동기화/splits 검증 중복)를 배제 목록으로 주고 완전히 새 영역을 조사시킨 뒤 직접 라인 대조로 재검증했다. 발견: totalDebt()(index.html:3219)는 모든 부채를 하나의 합계로 묶지만 상환 계획 로직(debtPayoffPtsFor/debtPayoffProjection/debtPayoffWhatIf/amortizationPayoffMonths, index.html:3512-3567·logic.js:1008-1058)과 '매달 추가로 얼마씩 더 갚으면?' 입력(debtWhatIfExtra, index.html:3599-3609)은 전부 부채 하나에 대해서만 동작하며 assetBalCard(부채 하나의 상세 시트) 안에만 존재함을 확인. 이자율(interestRate, index.html:5292-5299)이 이미 자산별로 저장돼 있어 우선순위 계산에 필요한 입력은 다 있는데도, 여러 부채를 가진 사용자는 어느 빚을 먼저 갚아야 유리한지, 전체 부채를 언제 다 갚을 수 있는지를 알 방법이 없어 각 부채 시트를 일일이 열어 암산해야 함. grep으로 snowball/avalanche/스노우볼/아바란체가 코드 전체에 전무함을 확인(완전히 새 영역). 재검토해 기각한 후보 3개: (1) 전체내역 검색의 금액 범위 필터 UI 칩 부재 — logic.js:618-697(parseAmountToken 등)이 이미 '>10만/1만~5만원' 같은 범위 구문을 검색창에서 완전히 지원해(cycle278-293) 겉보기보다 공백이 작음. (2) 주식 분할/배당 미반영 — grep으로 실제 전무함 확인했으나 수량변경기록(openAssetQtyLog)으로 이미 우회 가능하고 영향 범위가 좁아 부채 계획보다 저순위. (3) index.html 13,764줄 단일파일 구조에서 정규식으로 함수를 추출해 테스트하는 test/run.js 아키텍처 — test/run.js 자체 주석이 의도된 트레이드오프로 명시, App Lock 암호화(cycle252/289)와 같은 급의 '무인 사이클에 과한 재작성'이라 기각. pending_advance_plan에 logic.js에 debtPayoffOrder(avalanche/snowball 정렬)+multiDebtPlan(추가 납입을 최우선 부채에 집중) 순수 함수 2개 추가 + index.html에 '부채 상환 계획' 시트 신설(기존 debtWhatIfExtra/nwPresetSegHTML 마크업 재사용) + 관련 pure-function 테스트 추가하는 구체 계획 저장(진짜 롤링 스노우볼은 고정 월납입액 필드가 없어 명시적으로 범위 제외). node test/run.js 3424/3424 통과 확인(베이스라인 깨짐 없음). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
