@@ -1,15 +1,13 @@
 {
   "cycle": 357,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "fx/gold/stock/crypto 추가매수·매도 시 결제 통장 현금이 조용히 움직이지 않아 순자산이 왜곡됨",
+    "why": "costBasisField()(index.html:5273)의 '이번에 추가로 투입한 금액'/'이번에 받은 매도 금액' 입력은 결제 통장을 전혀 고르지 않는다. saveAsset()(index.html:5375-5406)은 addedCost/saleProceeds로 costBasis만 조정하고 DB.assetQtyLog에 기록할 뿐, 어떤 현금성 자산의 금액도 바꾸지 않고 거래(DB.txns) 기록도 만들지 않는다. isMarketValued 자산은 거래 입력의 fromAssetId/toAssetId로도 쓸 수 없게 막혀 있어(3146행 주석: '거래 입력의 통장으로 쓰면 순자산이 조용히 어긋남') 수동 보완 경로조차 없다. 결과: 주식 100만원을 '추가 투입'으로 기록하면 주식 자산은 +100만원 되지만 결제한 현금 통장은 그대로라 순자산(홈 히어로 숫자, nwHistory, 목표 추적, 배분 드리프트 알림이 전부 의존)이 매수/매도 금액만큼 매번 조용히 틀어진다.",
+    "approach": "1) costBasisField()에 결제 통장을 고르는 선택 입력 추가 — asOpenMat()(만기 시 이체할 통장, 같은 파일)이 쓰는 openAssetPicker({cashOnly:true,...}) 패턴을 그대로 재사용, 레이블 '결제한 통장 (선택)'. 2) saveAsset()에서 그 통장이 선택되고 addedCost>0(매수) 또는 saleProceeds>0(매도)일 때 doSettle()/doMaturity()가 이미 만드는 것과 같은 방식으로 transfer 성격의 DB.txns 레코드를 만들거나, 최소한 선택된 현금 자산의 baseAmount를 -addedCost/+saleProceeds로 조정한다. touchSave()+undoToast()로 다른 변경과 동일하게 되돌릴 수 있게 한다. 3) 통장 선택은 기본적으로 비워둘 수 있게(선택 입력) 해서 기존 동작과 데이터를 그대로 보존 — 이번엔 정확한 복식부기를 '선택'할 수 있는 경로를 추가하는 것뿐, 과거 기록을 소급 변경하지 않는다. 4) logic.js에 테스트 추가: 통장 선택 시 현금 자산 금액이 정확히 증감하는지, 통장 미선택 시 기존 동작(costBasis만 변경)이 그대로인지, 매도 시 realizedGain 계산과 충돌 없는지.",
+    "source": "critique cycle357 — Explore 서브에이전트 조사"
+  },
   "history": [
-    {
-      "cycle": 352,
-      "phase": "review",
-      "timestamp": "2026-11-14T01:30:00.000Z",
-      "summary": "develop(cycle352)의 rollPendingTransfers 수정(457f470)을 리뷰하며, 같은 파일의 자매 호출부들을 함께 점검해 실제 버그를 발견했다 — isDuePending()은 kstTodayStr()(KST 고정)로 도래를 판정하도록 이미 고쳐졌지만(cycle237), 이를 쓰는 4곳 모두 allTxns(RANGE_FROM,TODAY)의 상한이 기기 로컬 TODAY라, 한국보다 시계가 느린 시간대에서 KST 기준 이미 도래한 오늘 이체도 범위 밖으로 잘려 isDuePending() 호출 자체가 일어나지 않았다. 4곳 모두 allTxns()의 상한을 kstTodayStr()로 교체. 회귀 테스트 2건 추가. node test/run.js 3399->3401/3401 통과. APP_VERSION 1.47.444->1.47.445, sw.js CACHE v711->v712.",
-      "commit": null
-    },
     {
       "cycle": 352,
       "phase": "critique",
@@ -141,6 +139,13 @@
       "phase": "review",
       "timestamp": "2026-11-14T22:05:00.000Z",
       "summary": "develop(cycle357, 4136f18: homeAlertCard goalBehind에 shortDate2 적용)을 검토했다. shortDate2()가 goalProgress 카드(4026행)/부채 상환 계획(5823/5827행)/순자산 히스토리 등 9곳에서 이미 쓰이는 연도인식 포맷터와 동일해 포맷 통일이 맞고, goalBehindMulti는 개별 날짜를 보여주지 않아(count만) 영향 범위 밖임을 확인. 바뀐 두 호출부(targetDate/projectedDate) 모두 shortDate(요일 포함, MM.DD)에서 shortDate2(연도조건부, MM/DD)로 포맷 구분자만 바뀌는 것이라 레이아웃이나 다른 소비처를 깨뜰 여지 없음. node test/run.js 3442/3442 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 357,
+      "phase": "critique",
+      "timestamp": "2026-11-14T22:50:00.000Z",
+      "summary": "Explore 서브에이전트에게 cycle340-357의 모든 주제(반복거래 override, 부채 상환, 정산 내역, 클라우드 동기화 페이로드, undoToast WCAG, 날짜 포맷 등)를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: fx/gold/stock/crypto 자산의 추가매수·매도 시 costBasisField()(5273행)의 '추가로 투입한 금액'/'받은 매도 금액' 입력에 결제 통장을 고르는 수단이 전혀 없고, saveAsset()(5375-5406행)도 costBasis만 조정할 뿐 어떤 현금 자산의 금액도 바꾸지 않으며 거래 기록도 만들지 않는다. isMarketValued 자산은 거래 입력의 통장으로도 못 써서(3146행 주석) 수동 보완조차 불가능 — 주식 매수 시 주식 자산은 늘지만 결제한 현금은 그대로라 순자산(홈 히어로/목표추적/배분드리프트 전부 의존)이 매번 조용히 틀어지는 핵심 원장 정합성 공백. pending_advance_plan에 costBasisField에 asOpenMat()과 같은 cashOnly 통장 선택 입력(선택 사항, 기존 동작 보존) 추가 + saveAsset()에서 선택 시 현금 자산 금액 조정/거래 기록 생성 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
