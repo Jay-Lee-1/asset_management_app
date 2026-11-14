@@ -18418,55 +18418,76 @@ test('toggleConfirmTransfers: 반복거래가 이미 다른 날짜로 confirmedD
   assert.deepStrictEqual(rec.confirmedDates, ['2026-05-15'], '되돌리면 이전에 이미 있던 confirmedDates는 남고 새로 추가된 날짜만 빠져야 함');
 }));
 
-/* ---------- rollPendingTransfers: 이체 확인이 켜진 상태에서 기한이 지난(과거 날짜) 미확인 이체를 오늘로 당긴다 ---------- */
-test('rollPendingTransfers: 이체 확인이 꺼져 있으면 아무것도 하지 않는다', () => {
+/* ---------- rollPendingTransfers: 이체 확인이 켜진 상태에서 기한이 지난(과거 날짜) 미확인 이체를 오늘로 당긴다
+ * isDuePending()(cycle237)과 동일하게 기기 로컬 TODAY가 아니라 kstTodayStr()로 판정해야 하므로(app-evolve
+ * cycle352 develop), withFakeToday로 "KST 지금"을 고정해 결정적으로 만든다. ---------- */
+test('rollPendingTransfers: 이체 확인이 꺼져 있으면 아무것도 하지 않는다', () => withFakeToday('2026-06-15', () => {
   sandbox.TODAY = '2026-06-15';
   const overdue = { id: 't1', type: 'transfer', date: '2026-06-10', confirmed: false, amount: 5000 };
   sandbox.DB = { settings: { confirmTransfers: false }, txns: [overdue] };
   sandbox.rollPendingTransfers();
   assert.strictEqual(overdue.date, '2026-06-10');
-});
-test('rollPendingTransfers: 기한이 지난 미확인 일반 이체는 오늘 날짜로 당겨진다', () => {
+}));
+test('rollPendingTransfers: 기한이 지난 미확인 일반 이체는 오늘 날짜로 당겨진다', () => withFakeToday('2026-06-15', () => {
   sandbox.TODAY = '2026-06-15';
   const overdue = { id: 't1', type: 'transfer', date: '2026-06-10', confirmed: false, amount: 5000 };
   sandbox.DB = { settings: { confirmTransfers: true }, txns: [overdue] };
   sandbox.rollPendingTransfers();
   assert.strictEqual(overdue.date, '2026-06-15');
-});
-test('rollPendingTransfers: 아직 도래하지 않은(미래) 미확인 이체는 건드리지 않는다', () => {
+}));
+test('rollPendingTransfers: 아직 도래하지 않은(미래) 미확인 이체는 건드리지 않는다', () => withFakeToday('2026-06-15', () => {
   sandbox.TODAY = '2026-06-15';
   const future = { id: 't1', type: 'transfer', date: '2026-06-20', confirmed: false, amount: 5000 };
   sandbox.DB = { settings: { confirmTransfers: true }, txns: [future] };
   sandbox.rollPendingTransfers();
   assert.strictEqual(future.date, '2026-06-20', '미래 이체는 앞당겨지면 안 됨');
-});
-test('rollPendingTransfers: 이미 확정된(confirmed:true) 이체는 날짜와 무관하게 건드리지 않는다', () => {
+}));
+test('rollPendingTransfers: 이미 확정된(confirmed:true) 이체는 날짜와 무관하게 건드리지 않는다', () => withFakeToday('2026-06-15', () => {
   sandbox.TODAY = '2026-06-15';
   const confirmed = { id: 't1', type: 'transfer', date: '2026-06-10', confirmed: true, amount: 5000 };
   sandbox.DB = { settings: { confirmTransfers: true }, txns: [confirmed] };
   sandbox.rollPendingTransfers();
   assert.strictEqual(confirmed.date, '2026-06-10');
-});
+}));
 /* ---------- rollPendingTransfers: 날짜를 오늘로 당긴 이체에도 touch()로 updatedAt이 갱신돼야 함 (app-evolve cycle93 develop) ----------
  * doRenameOwner/doRenameCat과 동일한 이유로, mergeCollection()의 3-way 병합은 updatedAt만 보고 승자를
  * 고른다. rollPendingTransfers()는 앱 로드 시(및 confirmTransfers 설정 토글 시) 기한이 지난 미확인
  * 이체의 date를 오늘로 밀지만 touch()를 부르지 않아, 다른 기기가 오프라인 중 같은 이체의 다른 필드만
  * 더 나중에 고쳤다면(그래서 그 기기의 updatedAt이 더 최신이라면) 병합 시 옛 날짜가 실린 원격 사본이
  * 이겨 방금 앞당긴 날짜가 조용히 되돌아갈 수 있었다. */
-test('rollPendingTransfers: 날짜가 앞당겨진 이체에는 touch()가 호출돼 updatedAt이 갱신된다', () => {
+test('rollPendingTransfers: 날짜가 앞당겨진 이체에는 touch()가 호출돼 updatedAt이 갱신된다', () => withFakeToday('2026-06-15', () => {
   sandbox.TODAY = '2026-06-15';
   const overdue = { id: 't1', type: 'transfer', date: '2026-06-10', confirmed: false, amount: 5000 };
   sandbox.DB = { settings: { confirmTransfers: true }, txns: [overdue] };
   sandbox.rollPendingTransfers();
   assert.strictEqual(overdue.updatedAt, 'test-updatedAt', '날짜가 앞당겨진 이체에는 touch()가 호출되어야 함');
-});
-test('rollPendingTransfers: 건드리지 않는(미래·확정·기능꺼짐) 이체는 touch()도 호출되지 않는다', () => {
+}));
+test('rollPendingTransfers: 건드리지 않는(미래·확정·기능꺼짐) 이체는 touch()도 호출되지 않는다', () => withFakeToday('2026-06-15', () => {
   sandbox.TODAY = '2026-06-15';
   const future = { id: 't1', type: 'transfer', date: '2026-06-20', confirmed: false, amount: 5000 };
   sandbox.DB = { settings: { confirmTransfers: true }, txns: [future] };
   sandbox.rollPendingTransfers();
   assert.strictEqual(future.updatedAt, undefined, '건드리지 않은 이체의 updatedAt은 그대로여야 함');
-});
+}));
+/* ---------- rollPendingTransfers: isDuePending()과 마찬가지로 기기 로컬 TODAY가 아니라 kstTodayStr()
+ * (KST 고정)로 판정해야 한다(app-evolve cycle352 develop) — 고치기 전 코드(t.date<TODAY, t.date=TODAY)는
+ * TODAY가 device-local이라, 한국보다 시계가 빠른 시간대(호주/뉴질랜드 등)에서 기기 날짜가 자정을 넘어
+ * KST보다 하루 앞선 몇 시간 동안, KST 기준으로는 아직 오늘인(아직 안 지난) 회차를 섣불리 "내일"로
+ * 밀어버려 isDuePending()이 즉시 false가 되고 확인 배지가 KST 자정까지 조용히 사라졌다. ---------- */
+test('rollPendingTransfers: 기기 로컬 TODAY가 KST보다 하루 앞서 있어도(예: 호주) KST로 아직 지나지 않은(오늘) 회차는 밀지 않는다', () => withFakeToday('2026-10-02', () => {
+  sandbox.TODAY = '2026-10-03'; // 기기 로컬은 이미 다음날(KST보다 하루 빠른 시간대를 흉내)
+  const dueToday = { id: 't1', type: 'transfer', date: '2026-10-02', confirmed: false, amount: 5000 };
+  sandbox.DB = { settings: { confirmTransfers: true }, txns: [dueToday] };
+  sandbox.rollPendingTransfers();
+  assert.strictEqual(dueToday.date, '2026-10-02', 'KST 기준 오늘(아직 안 지난) 회차를 기기 로컬 날짜로 섣불리 밀면 안 됨');
+}));
+test('rollPendingTransfers: 실제로 기한이 지난 이체는 기기 로컬 TODAY가 KST보다 느려도(예: 미국) KST 오늘 날짜로 당겨진다', () => withFakeToday('2026-10-03', () => {
+  sandbox.TODAY = '2026-10-02'; // 기기 로컬은 아직 전날(KST보다 느린 시간대를 흉내)
+  const overdue = { id: 't1', type: 'transfer', date: '2026-10-01', confirmed: false, amount: 5000 };
+  sandbox.DB = { settings: { confirmTransfers: true }, txns: [overdue] };
+  sandbox.rollPendingTransfers();
+  assert.strictEqual(overdue.date, '2026-10-03', '당겨진 날짜는 기기 로컬 TODAY(2026-10-02)가 아니라 KST 오늘(2026-10-03)이어야 함');
+}));
 
 /* ---------- saveAsset: 동명·동종 자산 중복 차단이 수정(edit)에도 적용되는지 (자산 등록 때만 막고 수정 때는 안 막던 버그) ---------- */
 test('saveAsset: 다른 자산을 이미 있는 자산과 같은 이름·종류로 수정하면 차단된다', () => {

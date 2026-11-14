@@ -1,13 +1,13 @@
 {
   "cycle": 352,
-  "phase": "develop",
+  "phase": "review",
   "pending_advance_plan": null,
   "history": [
     {
-      "cycle": 346,
-      "phase": "critique",
-      "timestamp": "2026-11-13T01:05:00.000Z",
-      "summary": "앱 전체를 한 걸음 물러나 훑어본 결과(Explore 서브에이전트가 발견 및 코드로 직접 재검증), importGuestDataInto(index.html:1943, 게스트 데이터를 로그인/가입 계정으로 가져오는 공용 헬퍼)가 restoreBackup(obj)(10204, DB=obj 전체 교체)를 그대로 호출하는 완전히 동일한 '전체 DB 교체' 경로인데도, 같은 restoreBackup을 쓰는 proceedWithBackupObj(백업 파일 복원, 10214)가 받는 __preRestore_ localStorage 백업+6초 undoToast를 전혀 받지 못하고 세 호출부(kakaoLogin:13334, doLogin:13361, doSignup:13380) 모두 plain toast()로 끝남을 확인했다. index.html:1956 주석이 이 'wipe-직전 백업' 패밀리 멤버를 doResetAll/doDeleteAccount/proceedWithBackupObj/archiveTxnsBefore/mergeAssetInto/mergeCatInto/mergeOwnerInto로 명시적으로 나열하는데, 사용자에게는 proceedWithBackupObj와 똑같이 보이는 confirmSheet('가져오기' 버튼)를 누르는 importGuestDataInto만 이 목록에서 빠져 있다 — 이전 cycle328/329/330/332/333이 반복적으로 고쳐온 '같은 안전장치 패밀리에서 형제 하나만 빠짐' 비대칭과 동일한 클래스. restoreBackup이 이미 교체 전 DB를 깊은 복사한 prev를 return하므로 재사용이 쉽다는 점도 확인. 부차적으로 doSignup(13380)만 kakaoLogin/doLogin과 달리 dbIsEmpty(DB) 가드 없이 guestHasData()만 확인하는 작은 비대칭도 발견했으나, 이번 계획의 핵심(되돌리기 부재)보다 영향이 작아 범위 밖으로 남겼다. 대안으로 resolveCloudPullRemote/confirmCloudForcePush(이미 cycle337이 '되돌릴 수 없음' 경고+사유를 의식적으로 남겨둔 상태라 오버사이트 아님)와 moveCat/toggleCatVarUI 등 1탭 토글류(비파괴적, 즉시 재토글 가능해 심각도 낮음)를 검토했으나 기각. pending_advance_plan에 importGuestDataInto가 prev(또는 null)를 반환하도록 계약 변경 + 3개 호출부를 undoToast로 교체 + deferCloudPush 6초 유예까지 구체 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "cycle": 352,
+      "phase": "develop",
+      "timestamp": "2026-11-14T00:30:00.000Z",
+      "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — rollPendingTransfers()(index.html:1785)가 바로 위 isDuePending()(1784)과 그 주석(1781-1783, app-evolve cycle237이 '도래 판정은 기기 로컬 TODAY가 아니라 kstTodayStr()(KST 고정)로'라고 명시)과 달리, 기한이 지난 미확인 이체를 오늘로 당길 때 여전히 기기 로컬 TODAY로 비교/대입하고 있었다(t.date<TODAY, t.date=TODAY) — cycle237이 isDuePending만 고치고 바로 옆 자매 함수인 rollPendingTransfers는 비껴간, 같은 안전장치 패밀리에서 형제 하나만 빠진 비대칭(cycle328-351이 반복적으로 고쳐온 클래스). 구체적 실패: 한국보다 시계가 빠른 시간대(호주/뉴질랜드 등)에서 기기 날짜가 자정을 넘어 KST보다 하루 앞선 몇 시간 동안, refreshToday()(13609-13613, 기기 로컬 날짜 변경 시 매분/포커스마다 호출)가 TODAY를 D+1로 올리고 rollPendingTransfers()를 호출 — KST로는 아직 D(오늘, 이미 도래해 isDuePending()이 true인 회차)인 미확인 이체를 '기기 로컬로는 과거(D<D+1)'라고 오판해 날짜를 D+1로 밀어버리면, 곧바로 isDuePending()이 D+1<=kstTodayStr()(D)=false로 뒤집혀 확인 배지/pendingTransferCount가 KST 자정까지 몇 시간 동안 조용히 사라진다(node로 실제 kstTodayStr()을 호출해 2026-11-14 KST/2026-11-15 기기로컬 조합에서 재현 확인). rollPendingTransfers()의 TODAY 비교/대입을 const kToday=kstTodayStr()로 교체(isDuePending과 동일 산술 공유). 테스트: 기존 5건에 withFakeToday를 씌워 kstTodayStr()을 결정적으로 고정(기존 동작 그대로 유지하는 회귀 가드)하고, 신규 2건 추가(기기 로컬이 KST보다 하루 빠른 경우 KST로 아직 안 지난 오늘 회차를 밀지 않음 / 기기 로컬이 KST보다 느려도 실제 기한이 지난 회차는 KST 오늘로 당겨짐 — isDuePending의 cycle237 테스트와 동일한 withFakeToday+sandbox.TODAY 분리 패턴). node test/run.js 3397->3399/3399 통과. node --check sw.js/logic.js/test/run.js 통과, index.html은 test/run.js의 전체 스위트 실행(vm 샌드박스 로드) 자체가 구문 검증을 겸함(cycle339 이후 관례와 동일). 사용자 체감 동작 변화(한국보다 시계가 빠른 시간대 사용자가 겪던, 이체 확인 배지가 하루 중 몇 시간 동안 근거 없이 사라지는 현상이 사라짐)라 APP_VERSION 1.47.443->1.47.444, sw.js CACHE v710->v711.",
       "commit": null
     },
     {

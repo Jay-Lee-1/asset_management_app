@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.443';
+const APP_VERSION='1.47.444';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -1782,10 +1782,11 @@ function txScheduled(t){return isFuture(t.date)||isPending(t)}
  * 같은 이유: 한국 은행업무일 기준 이벤트라 기기 시간대에 따라 최대 하루 어긋나면 안 된다
  * (app-evolve cycle237 critique/advance) */
 function isDuePending(t){return isPending(t)&&t.date<=kstTodayStr()}
-function rollPendingTransfers(){ /* 확인 못 한 이체는 다음 날로(밀린 건 오늘로) 이동 */
+function rollPendingTransfers(){ /* 확인 못 한 이체는 다음 날로(밀린 건 오늘로) 이동 — isDuePending()과 동일하게 기기 로컬 TODAY가 아니라 kstTodayStr()로 판정해야(위 1781행 주석과 같은 이유) KST 기준 아직 도래 전인 회차를 기기 시간대 때문에 섣불리 다음날로 밀어 isDuePending을 조용히 꺼뜨리지 않는다(app-evolve cycle352 develop) */
  if(!DB.settings.confirmTransfers)return;
  let changed=false;
- DB.txns.forEach(t=>{if(t.type==='transfer'&&t.confirmed===false&&t.date<TODAY){t.date=TODAY;touch(t);changed=true}}); /* touch() 누락 시 mergeCollection()이 updatedAt만 보고 병합하다 다른 기기의 동기화 안 된 내역이 이 날짜 이동을 조용히 되돌릴 수 있음(doRenameOwner/doRenameCat과 동일한 불변식) */
+ const kToday=kstTodayStr();
+ DB.txns.forEach(t=>{if(t.type==='transfer'&&t.confirmed===false&&t.date<kToday){t.date=kToday;touch(t);changed=true}}); /* touch() 누락 시 mergeCollection()이 updatedAt만 보고 병합하다 다른 기기의 동기화 안 된 내역이 이 날짜 이동을 조용히 되돌릴 수 있음(doRenameOwner/doRenameCat과 동일한 불변식) */
  if(changed)save();
 }
 function assetNm(id,snap){const a=DB.assets.find(x=>x.id===id);return a?a.name:(snap||'—')}
