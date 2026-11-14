@@ -1,19 +1,8 @@
 {
-  "cycle": 352,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "반복거래의 shared(같이 냈어요) 플래그에 occurrence 단위 override가 없어 정산 금액이 조용히 틀려지는 버그 수정",
-    "why": "expandRec()(index.html:2928-2941)은 memo/amount/splits/photo는 모두 ed.field!=null?ed.field:r.field 패턴으로 edits[date] occurrence override를 지원하는데, shared만 line 2941에서 shared:!!r.shared로 하드코딩돼 occurrence별 override를 전혀 보지 않는다. recApply()(6462-6486, 'this one/future' 단건 편집 draft 빌더)도 shared를 전혀 읽거나 seed하지 않고, renderTxSheet()의 recurring-occurrence(rc) 분기(6042-6059)는 sharedChip 토글 UI 자체가 없어(sharedChip은 non-recurring 분기에만 렌더, 6080) 애초에 사용자가 단건에서 shared를 바꿀 방법이 없다. recSave()(6490-6529)가 쓰는 edit 객체(6510)도 amount/memo/splits/photo만 담고 shared는 넣지 않는다. 결과: 매달 반복되는 공동 구독료(shared:true)를 어느 달에 한 번 한 사람이 혼자 냈을 때(또는 반대로 평소엔 안 나누는 반복거래를 어느 달만 나눴을 때) 그 달만 shared를 끄거나 켤 방법이 없고, settlementSummary()(logic.js:201)는 템플릿의 shared 값을 그대로 모든 occurrence에 적용해 '누가 누구에게 얼마를 줘야 하는지' 금액이 조용히 틀려진다 — 외형이 아니라 돈 계산 버그. test/run.js:23243-23270은 템플릿 shared가 모든 occurrence에 균일 전파되는 것만 테스트하고, splits에는 이미 있는 override 테스트 패턴(14031)이 shared에는 아예 없어 이 공백이 테스트로도 드러나지 않고 있었다.",
-    "approach": "① expandRec() line 2941을 shared: ed.shared!=null ? ed.shared : !!r.shared로 교체(기존 amount/memo/splits/photo override 패턴과 동일). ② recApply()(6483 부근)에서 txDraft.shared = ed.shared!=null?ed.shared:!!r.shared로 실제 유효값을 draft에 seed. ③ renderTxSheet()의 rc(recurring-occurrence) 분기에 sharedChip/txToggleShared() 컨트롤을 추가(r.type==='expense'&&settleConfigured() 가드는 기존과 동일하게 재사용)해 '이번만/앞으로' 단건 편집에서 실제로 shared를 토글할 UI를 제공. ④ recSave()의 edit 객체(6510 부근)에 edit.shared=!!d.shared를 다른 필드처럼 무조건 기록(boolean이라 false로 override할 때도 명시적으로 저장해야 하므로 amount/memo와 동일하게 무조건 포함). ⑤ splits override 테스트 패턴(test/run.js:14031, 23243)을 본떠 shared의 occurrence override 테스트(단건 끄기/단건 켜기/미래 scope 적용) 추가, 기존 23243-23270 템플릿 균일 전파 테스트가 깨지지 않는지 함께 확인. 범위가 develop보다 다소 넓지만(UI+데이터+저장 3곳) 여전히 '같은 패턴을 shared에도 적용'하는 국소적 변경이라 advance 단계에 적합."
-  },
+  "cycle": 353,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 346,
-      "phase": "advance",
-      "timestamp": "2026-11-13T02:11:46.500Z",
-      "summary": "critique(cycle346) 계획대로 importGuestDataInto(index.html:1943)에 proceedWithBackupObj와 동일한 되돌리기를 추가했다. restoreBackup()이 이미 돌려주는 교체 전 DB 깊은 복사(prev)를 그대로 반환하도록 계약을 바꿔(성공 시 {prev,cancelPush}, 실패 시 null — 이전엔 true/false) save({deferCloudPush:true})로 6초 grace 동안 클라우드 push를 미루고, 그 타이머를 함수 내부에서 직접 들고 있다가 cancelPush()로 취소할 수 있게 반환해 호출부 3곳이 타이머 관리 코드를 중복하지 않게 했다. 호출부 3곳(kakaoLogin:13334, doLogin:13361, doSignup:13380) 모두 'const r=importGuestDataInto(guestRaw);if(r)undoToast(...)' 패턴으로 동일하게 교체해 성공 메시지는 각자 기존 문구('데이터를 가져왔어요')를 그대로 두고, 되돌리면 r.cancelPush()+DB=r.prev+save()+invalidateBalances()+renderCurrent()+토스트('되돌렸어요')로 proceedWithBackupObj의 undo와 동일한 순서를 따른다. 계획에서 제안했던 __preGuestImport_ localStorage 스냅샷은 생략했다 — 로그인/가입 직후라 교체 전 DB가 거의 항상 비어 있어(dbIsEmpty 가드를 통과해야 이 경로를 타므로) prev 메모리 클로저만으로 충분히 안전하다고 판단, 이유를 커밋 메시지에 남긴다. kakaoLogin/doLogin/doSignup은 window.Kakao SDK 콜백 중첩 등으로 실행형 테스트 비용이 커 기존 관례(cycle238)대로 소스 패턴 검증을 유지하고, importGuestDataInto 자체(순수 로직)는 실행형으로 테스트했다 — 테스트 변경(기존 3건을 새 반환 계약에 맞게 갱신: {prev,cancelPush} 반환/null 반환, 신규 1건: save({deferCloudPush:true}) 호출과 6초 뒤 scheduleCloudPush 예약+cancelPush()의 clearTimeout 취소 확인) + 호출부 3곳의 undoToast 와이어링 소스 패턴 테스트 1건 추가. node test/run.js 3360->3363/3363 통과. node --check sw.js/test/run.js/logic.js 통과, index.html 주 스크립트 블록(3번째 <script>, 830KB) 추출 후 new Function()으로 구문 확인 통과. 부차 발견(doSignup만 dbIsEmpty 가드 없이 guestHasData()만 확인하는 비대칭)은 계획대로 범위 밖으로 남겨 다음 critique 후보로 적합. 사용자 체감 동작 변화(게스트 데이터 가져오기를 실수로 눌러도 6초 안에 되돌릴 수 있음)라 APP_VERSION 1.47.432->1.47.433, sw.js CACHE v699->v700. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 347,
       "phase": "develop",
@@ -152,6 +141,13 @@
       "phase": "critique",
       "timestamp": "2026-11-14T02:30:00.000Z",
       "summary": "최근 critique들이 '되돌리기(undo) 공백' 패턴에 쏠려 있었기 때문에 Explore 서브에이전트에게 그 류를 배제하고 아키텍처/UX/데이터정합성/일관성 전반에서 새 영역을 조사시켰다. 발견: 반복거래의 shared('같이 냈어요', 정산 대상 표시) 플래그가 occurrence 단위 override를 전혀 지원하지 않는다 — expandRec()(index.html:2928-2941)은 memo/amount/splits/photo는 모두 ed.field!=null?ed.field:r.field 패턴으로 edits[date] override를 반영하는데 shared만 line 2941에서 shared:!!r.shared로 하드코딩돼 있고, recApply()(6462-6486, 단건 편집 draft 빌더)도 shared를 읽거나 seed하지 않으며, renderTxSheet()의 recurring-occurrence 분기(6042-6059)는 sharedChip 토글 UI 자체가 없어(sharedChip은 non-recurring 분기에만 렌더, 6080) 사용자가 애초에 단건에서 shared를 바꿀 방법이 없고, recSave()가 쓰는 edit 객체(6510)도 shared를 담지 않는다. 결과: 매달 나누는 공동 구독료를 어느 달 한 사람이 혼자 냈을 때(또는 반대로 평소 안 나누는 반복거래를 어느 달만 나눴을 때) 그 달만 shared를 끄거나 켤 방법이 없어 settlementSummary()(logic.js:201)가 템플릿 shared 값을 모든 occurrence에 균일 적용, 정산 금액이 조용히 틀려지는 금전 정확성 버그 — splits에는 이미 있는 override 테스트 패턴(test/run.js:14031)이 shared에는 없어(23243-23270은 템플릿 균일 전파만 테스트) 이 공백이 테스트로도 드러나지 않고 있었다. 재검토한 다른 후보: (1) KR_FIXED_HOLIDAYS가 음력 설날/추석을 반복거래 주말-이동 로직에서 못 다루는 것 — 코드 내 주석이 이미 의도된 future work로 명시해 숨은 버그 아님. (2) rateUnknown()/assetEval()의 ₩0 폴백 — 홈 알림/배분 카드/목표 진행률/CSV 내보내기 전부에 이미 충분히 전파돼 있어 공백 없음. (3) 범용 은행 CSV 가져오기(mapGenericCsvRow)가 range/future-date 체크를 건너뛰는 비대칭 — 호출부 buildGenericImportPreview가 csvRowToImportTxn과 동일한 체크를 이미 재적용함을 확인해 비대칭 없음. pending_advance_plan에 shared occurrence override를 expandRec/recApply/renderTxSheet(sharedChip UI)/recSave 4곳에 splits override 패턴을 그대로 적용하는 구체 계획 저장. node test/run.js 3401/3401 통과 확인(베이스라인 깨짐 없음). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 352,
+      "phase": "advance",
+      "timestamp": "2026-11-14T03:40:00.000Z",
+      "summary": "critique(cycle352) 계획대로 반복거래 shared('같이 냈어요') 플래그에 occurrence 단위 override를 추가했다. ① expandRec()(index.html:2941)을 shared:ed.shared!=null?ed.shared:!!r.shared로 교체(memo/amount/splits/photo와 동일한 edits[date] 오버라이드 패턴). ② recApply()(6483)가 txDraft.shared를 동일한 폴백으로 seed해, 간편 수정 폼이 지금 보여주는 값과 저장될 값이 항상 일치하게 했다. ③ renderTxSheet()의 rc(recurring-occurrence) 분기(6049 부근)에 non-rc 분기(6080)와 동일한 가드(d.type==='expense'&&settleConfigured())의 sharedChip을 추가해(tx-head 래퍼로 h3와 함께 감쌈) '이 내역만/이후 모두/전체' 어느 scope를 고르든 간편 수정 시트에서 실제로 shared를 토글할 수 있게 했다. ④ recSave()는 photo(scope='one'만 지원)와 달리 amount/memo처럼 세 scope 모두에서 shared를 반영하도록 넓게 고쳤다 — scope='one'은 edit.shared=!!d.shared를 boolean이라 항상 명시적으로 기록(splits처럼 '있을 때만'이 아니라 amount/memo처럼 항상, false로 끄는 override도 저장에 남아야 하므로), scope='future'는 분리되는 newRec에 shared:!!d.shared를 실어 과거 분리본(r)은 그대로 두고, scope='all'(else 분기)은 prevShared를 캡처한 뒤 r.shared=!!d.shared로 템플릿 자체를 바꾸고 undo에서 복원하도록 추가했다. 테스트 9건 추가/1건 갱신: recApply의 ed.shared 폴백 2건, renderTxSheet rc 분기의 sharedChip 가시성/on 클래스 2건, recSave 세 scope(one/future/all) 각 저장+undo 3건, settlementSummary 통합 테스트(매달 나누던 반복 지출을 7월만 occurrence override로 꺼서 저장하면 6월만 집계되고 7월은 빠짐) 1건, 기존 recSave scope='one' 메모 테스트의 edits[date] 전체 모양 비교에 shared:false를 추가해 갱신(amount/memo만 담던 edit 객체에 shared가 항상 같이 들어가게 됐으므로). 수정 전 index.html로 되돌려 재현 확인(새 테스트 9건 중 8건이 실제로 FAIL함을 직접 확인한 뒤 복구). node test/run.js 3401->3409/3409 통과. node --check sw.js/logic.js/test/run.js 통과, index.html은 test/run.js의 vm 샌드박스 전체 스위트 실행 자체가 구문 검증을 겸함(cycle339 이후 관례와 동일). 사용자 체감 동작 변화(반복되는 공동 지출을 어느 달만 혼자 내거나, 평소 안 나누던 반복거래를 어느 달만 나눴을 때 그 달의 간편 수정 화면에서 '같이 냈어요'를 켜고 끌 수 있고, 정산 집계도 그 occurrence만 정확히 반영함)라 APP_VERSION 1.47.445->1.47.446, sw.js CACHE v712->v713. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

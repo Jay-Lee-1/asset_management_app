@@ -14116,6 +14116,94 @@ test("recSave: scope='future'/'all'은 txDraft.photo가 있어도 무시한다(�
   sandbox.recSave();
   assert.strictEqual(rAll.photo, undefined, "scope='all'로 바뀐 템플릿 r에 photo가 실리면 안 됨(스키마에 자리가 없음)");
 });
+/* ---------- recApply/renderTxSheet/recSave: shared('같이 냈어요')의 occurrence 단위 override
+ * (app-evolve cycle352 critique → advance) ----------
+ * 전엔 expandRec()이 shared:!!r.shared로 하드코딩돼 있어 memo/amount/splits/photo와 달리 occurrence
+ * override를 전혀 지원하지 않았고, recApply/renderTxSheet(rc 분기)/recSave도 shared를 아예 다루지
+ * 않아 반복 occurrence 하나만 shared를 켜거나 끌 UI 자체가 없었다 — 매달 나누는 공동 지출을 어느
+ * 달 한 사람이 혼자 냈을 때 그 달만 반영할 방법이 없어 정산 금액이 조용히 틀려지는 금전 정확성
+ * 버그였다. splits override 패턴(위)을 그대로 따라 ed.shared!=null?ed.shared:!!r.shared로 고쳤다. */
+test("recApply: ed.shared override가 있으면(occurrence) r.shared 대신 그 값을 txDraft.shared에 싣는다(expandRec과 동일한 폴백)", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', type: 'expense', category: '구독', amount: 15900, fromAssetId: 'a1', toAssetId: null, shared: true, edits: { '2026-02-05': { shared: false } } };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.recApply('r1', '2026-02-05', 'edit', 'one');
+  assert.strictEqual(sandbox.txDraft.shared, false, '템플릿은 shared:true지만 이 회차는 ed.shared:false로 꺼져 있어야 함');
+});
+test("recApply: ed.shared override가 없으면 r.shared를 그대로 txDraft.shared에 싣는다(회귀 가드)", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', type: 'expense', category: '구독', amount: 15900, fromAssetId: 'a1', toAssetId: null, shared: true };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.recApply('r1', '2026-02-05', 'edit', 'one');
+  assert.strictEqual(sandbox.txDraft.shared, true);
+});
+test("renderTxSheet: rc 분기도 non-rc 분기와 동일하게 지출+settleConfigured일 때만 '같이 냈어요' 토글을 보여준다", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', type: 'expense', category: '구독', memo: '넷플릭스', amount: 15900, fromAssetId: 'a1', toAssetId: null };
+  sandbox.DB = { recurrences: [r], owners: ['나', '배우자'], settings: { settle: { ownerA: '나', ownerB: '배우자', ratioA: 50 } } };
+  sandbox.recApply('r1', '2026-02-05', 'edit', 'one');
+  assert.ok(sandbox.lastSheetHtml.includes('txToggleShared()'), "scope='one' 간편 수정 시트에 '같이 냈어요' 토글이 없음(전엔 이 분기에 토글 자체가 없어 occurrence 단위로 shared를 바꿀 방법이 없었음)");
+
+  sandbox.DB = { recurrences: [r] }; // settleConfigured()가 null
+  sandbox.recApply('r1', '2026-02-05', 'edit', 'one');
+  assert.ok(!sandbox.lastSheetHtml.includes('txToggleShared()'), '정산 미설정이면 토글이 보이면 안 됨');
+});
+test("renderTxSheet: rc 분기에서 d.shared=true면 토글에 'on' 클래스가 붙는다", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', type: 'expense', category: '구독', memo: '넷플릭스', amount: 15900, fromAssetId: 'a1', toAssetId: null, shared: true };
+  sandbox.DB = { recurrences: [r], owners: ['나', '배우자'], settings: { settle: { ownerA: '나', ownerB: '배우자', ratioA: 50 } } };
+  sandbox.recApply('r1', '2026-02-05', 'edit', 'one');
+  assert.ok(/class="sch-chip on"[^>]*onclick="txToggleShared\(\)"/.test(sandbox.lastSheetHtml), 'shared=true면 on 클래스가 붙어야 함');
+});
+test("recSave: scope='one'에서 shared를 꺼서 저장하면 edits[date].shared=false로 명시적으로 기록되고(boolean이라 amount/memo처럼 항상 기록), undo하면 사라진다", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', amount: 15900, category: '구독', shared: true, edits: {} };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.window._recCtx = { recId: 'r1', date: '2026-02-05', scope: 'one' };
+  sandbox.txDraft = { amount: 15900, shared: false };
+  sandbox.recSave();
+  assert.strictEqual(r.edits['2026-02-05'].shared, false, '템플릿은 true지만 이 회차만 꺼서 저장했으니 edits에 false가 명시적으로 기록되어야 함');
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(r.edits['2026-02-05'], undefined, '되돌리면 이전에 없던 날짜의 edits는 제거되어야 함');
+});
+test("recSave: scope='future'는 새로 분리된 레코드에 shared override를 싣고, 과거 분리본(r)의 shared는 바뀌지 않는다", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', amount: 15900, shared: true, endDate: null, skip: [], edits: {} };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.window._recCtx = { recId: 'r1', date: '2026-03-01', scope: 'future' };
+  sandbox.txDraft = { amount: 15900, shared: false };
+  sandbox.recSave();
+  const newRec = sandbox.DB.recurrences.find(x => x.id !== 'r1');
+  assert.strictEqual(newRec.shared, false, "scope='future'로 분리된 새 레코드는 꺼서 저장한 값을 반영해야 함");
+  assert.strictEqual(r.shared, true, '과거 분리본(r)의 shared는 바뀌면 안 됨');
+});
+test("recSave: scope='all'은 템플릿 r.shared를 직접 바꾸고, undo하면 복원된다", () => {
+  sandbox.TWi = -1;
+  const r = { id: 'r1', amount: 15900, shared: true };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.window._recCtx = { recId: 'r1', date: '2026-02-05', scope: 'all' };
+  sandbox.txDraft = { amount: 15900, shared: false };
+  sandbox.recSave();
+  assert.strictEqual(r.shared, false, "scope='all'은 템플릿 전체의 shared를 바꿔야 함");
+  sandbox.lastUndo.undoFn();
+  assert.strictEqual(r.shared, true, '되돌리면 원래 값(true)으로 복원되어야 함');
+});
+test("settlementSummary: 반복으로 매달 나누던 공동 지출을 어느 달만 혼자 냈을 때(occurrence override로 shared를 꺼서 저장) 그 달만 정산 집계에서 빠진다", () => {
+  sandbox.TWi = -1;
+  sandbox._recCache.clear();
+  const r = { id: 'r1', active: true, type: 'expense', freq: 'monthly', day: 5, startDate: '2026-01-05', endDate: null, count: null, amount: 15900, category: '구독', memo: '넷플릭스', fromAssetId: 'a1', toAssetId: null, skip: [], shared: true, edits: {} };
+  sandbox.DB = { recurrences: [r] };
+  sandbox.window._recCtx = { recId: 'r1', date: '2026-07-05', scope: 'one' };
+  sandbox.txDraft = { amount: 15900, shared: false }; // 7월만 혼자 냄
+  sandbox.recSave();
+  sandbox._recCache.clear();
+  const txns = sandbox.expandRec('2026-06-01', '2026-07-31');
+  const assets = [{ id: 'a1', owner: '나' }];
+  const s = sandbox.settlementSummary(txns, assets, '나', '배우자', 50);
+  assert.strictEqual(s.total, 15900, '6월은 평소처럼 나눈 지출이라 집계에 포함되고, 7월(override로 shared:false)만 빠져야 함');
+  const julyOcc = txns.find(t => t.date === '2026-07-05');
+  assert.strictEqual(julyOcc.shared, false, '7월 회차만 occurrence override로 shared:false여야 함(수정 전엔 이 override가 아예 반영되지 않아 매번 true로 조용히 틀리게 집계됐음)');
+});
 test("recSave: scope='one'에서 분할 금액을 수정하면 edits[date].splits에 기록되고, undo하면 사라진다", () => {
   sandbox.TWi = -1;
   const r = { id: 'r1', amount: 50000, category: '통신', splits: [{ category: '통신', amount: 30000 }, { category: 'OTT', amount: 20000 }], edits: {} };
@@ -14268,7 +14356,7 @@ test("recSave: scope='one' 수정은 메모 편집도 r.edits[date].memo에 함�
   sandbox.recSave();
   // vm 샌드박스 안에서 만들어진 edits[date] 객체는 host Object와 realm이 달라 deepStrictEqual이
   // (값은 같아도) 실패하므로, JSON.stringify로 정규화해 비교한다(위 future 분할 테스트와 같은 이유).
-  assert.strictEqual(JSON.stringify(r.edits['2026-02-05']), JSON.stringify({ amount: 1000, memo: '2월 월세 (관리비 포함)' }), '해당 날짜 edits에 금액과 메모가 함께 기록되어야 함');
+  assert.strictEqual(JSON.stringify(r.edits['2026-02-05']), JSON.stringify({ amount: 1000, memo: '2월 월세 (관리비 포함)', shared: false }), '해당 날짜 edits에 금액과 메모가 함께 기록되어야 함(shared도 amount/memo와 동일하게 항상 기록)');
   sandbox.lastUndo.undoFn();
   assert.strictEqual(r.edits['2026-02-05'], undefined, '되돌리면 이전에 없던 날짜의 edits는 제거되어야 함');
 });

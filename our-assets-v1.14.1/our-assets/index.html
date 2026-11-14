@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.445';
+const APP_VERSION='1.47.446';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -2938,7 +2938,7 @@ function expandRec(from,to){
      splits:ed.splits!==undefined?ed.splits:r.splits, /* r.splits가 있으면 매 회차 가상 인스턴스에 그대로 실어, splitLines() 기반 집계·검색(expenseByCat/matchTxnQuery 등)이 수정 없이 분할을 인식하게 한다(app-evolve cycle282 advance). ed.splits는 memo/amount와 동일한 오버라이드 패턴으로 scope='one' 간편 수정이 실제로 쓴다(app-evolve cycle292 advance) */
      photo:ed.photo!=null?ed.photo:null, /* 반복 자체(r)엔 사진 필드가 없어(scope='one' 간편수정만 지원) 기본값이 항상 null — ed.photo만 있으면 txRowCore의 t.photo 체크(이미 일반 거래와 공유하는 렌더링 경로)가 그대로 영수증 썸네일을 보여준다(app-evolve cycle306 advance) */
      fromAssetId:r.fromAssetId,toAssetId:r.toAssetId,fromAssetName:r.fromAssetName,toAssetName:r.toAssetName,isRec:true,
-     shared:!!r.shared /* r.shared('같이 냈어요', app-evolve cycle315 develop)를 그대로 실어 settlementSummary가 반복 지출도 집계하게 한다 */});
+     shared:ed.shared!=null?ed.shared:!!r.shared /* r.shared('같이 냈어요', app-evolve cycle315 develop)를 그대로 싣되, memo/amount/splits/photo와 동일한 오버라이드 패턴으로 ed.shared가 있으면 그 회차만 우선한다(app-evolve cycle352 advance) */});
   });
  });
  _recCache.set(key,out);
@@ -6047,7 +6047,11 @@ function renderTxSheet(){
      수정하게 한다 — 금액만 받는 입력 하나로는 sum(splits)===amount 불변식을 저장 시점에
      지킬 수 없다(app-evolve cycle292 critique가 찾은 공백, advance에서 수정). */
   const splitOn=Array.isArray(d.splits)&&d.splits.length>=2;
-  openFormSheet(`<h3>반복 내역 수정</h3><div class="desc">'${esc(d.memo||d.category)}' · ${shortDate(rc.date)} · ${SCOPE[rc.scope]}</div>
+  /* 일반 거래 입력(6080)과 동일한 가드 — 지출이고 정산용 두 귀속이 설정돼 있을 때만 토글을 보여준다.
+     전엔 이 분기에 토글 자체가 없어 반복 occurrence 한 건만 shared를 켜거나 끌 방법이 없었다
+     (app-evolve cycle352 critique가 찾은 금전 정확성 공백, advance에서 수정) */
+  const sharedChip=(d.type==='expense'&&settleConfigured())?`<button class="sch-chip ${d.shared?'on':''}" onclick="txToggleShared()"><span class="dot"></span>같이 냈어요</button>`:'';
+  openFormSheet(`<div class="tx-head"><h3>반복 내역 수정</h3>${sharedChip}</div><div class="desc">'${esc(d.memo||d.category)}' · ${shortDate(rc.date)} · ${SCOPE[rc.scope]}</div>
    <div class="field"><label for="txAmt">${splitOn?'전체 금액':'금액'}</label><div class="field-clear"><input id="txAmt" class="amount-in num" inputmode="numeric" value="${d.amount?comma(d.amount):''}" placeholder="0" oninput="txAmtInput(this)" onkeydown="if(event.key==='Enter'&&!event.isComposing)recSave()"><button type="button" class="fc-x" aria-label="금액 지우기" onclick="clrInput('txAmt')">✕</button></div></div>
    ${splitOn?splitFieldHTML(d,'tx',true):''}
    ${rc.scope==='one'?txPhotoFieldHTML(d):''}
@@ -6480,7 +6484,7 @@ function recApply(recId,date,mode,scope){
  const ed=(r.edits||{})[date]||{};
  const srcSplits=ed.splits!==undefined?ed.splits:r.splits; /* expandRec()과 동일한 폴백 — 보여준 것과 똑같은 분할을 수정 폼에 싣는다. 깊은 복사라 폼에서 항목을 더하거나/빼도 r.splits/ed.splits 원본이 바로 바뀌지 않는다(app-evolve cycle292 advance) */
  _formScroll=0;
- txDraft={id:null,type:r.type,date,category:r.category,memo:ed.memo!=null?ed.memo:r.memo,amount:ed.amount!=null?ed.amount:r.amount,splits:srcSplits?JSON.parse(JSON.stringify(srcSplits)):undefined,fromAssetId:r.fromAssetId,toAssetId:r.toAssetId,photo:ed.photo!=null?ed.photo:null};
+ txDraft={id:null,type:r.type,date,category:r.category,memo:ed.memo!=null?ed.memo:r.memo,amount:ed.amount!=null?ed.amount:r.amount,splits:srcSplits?JSON.parse(JSON.stringify(srcSplits)):undefined,fromAssetId:r.fromAssetId,toAssetId:r.toAssetId,photo:ed.photo!=null?ed.photo:null,shared:ed.shared!=null?ed.shared:!!r.shared /* expandRec과 동일한 오버라이드 폴백 — sharedChip이 지금 보여준 값과 저장될 값을 일치시킨다(app-evolve cycle352 advance) */};
  snapDraft('tx');
  window._recCtx={recId,date,scope};
  renderTxSheet();
@@ -6507,7 +6511,7 @@ function recSave(){
  }
  let undoFn;
  if(ctx.scope==='one'){
-  const edits=(r.edits=r.edits||{});const prevEdit=edits[ctx.date];const edit={amount:amt,memo};if(splits)edit.splits=splits;if(d.photo)edit.photo=d.photo;edits[ctx.date]=edit;touch(r);
+  const edits=(r.edits=r.edits||{});const prevEdit=edits[ctx.date];const edit={amount:amt,memo,shared:!!d.shared};if(splits)edit.splits=splits;if(d.photo)edit.photo=d.photo;edits[ctx.date]=edit;touch(r);
   undoFn=()=>{if(prevEdit===undefined)delete edits[ctx.date];else edits[ctx.date]=prevEdit;touchSave(r);renderCurrent();toast('되돌렸어요')};
  }
  else if(ctx.scope==='future'){
@@ -6517,15 +6521,15 @@ function recSave(){
   Object.assign(r,truncateRecEnd({freq:r.freq,day:r.day,startDate:r.startDate,weekend:r.weekend},addDays(ctx.date,-1)));
   touch(r);
   const newBase={freq:r.freq,day:r.day,startDate:ctx.date,weekend:r.weekend};
-  const newRec=Object.assign({},JSON.parse(JSON.stringify(r)),{id:uid(),startDate:ctx.date,endDate:prevEnd,count:prevEnd?recCountUntil(newBase,prevEnd):null,amount:amt,memo,skip:skipFuture,edits:editsFuture,confirmedDates:confirmedFuture});
+  const newRec=Object.assign({},JSON.parse(JSON.stringify(r)),{id:uid(),startDate:ctx.date,endDate:prevEnd,count:prevEnd?recCountUntil(newBase,prevEnd):null,amount:amt,memo,shared:!!d.shared,skip:skipFuture,edits:editsFuture,confirmedDates:confirmedFuture});
   if(splits)newRec.splits=splits;
   touch(newRec);
   DB.recurrences.push(newRec);
   undoFn=()=>{r.endDate=prevEnd;r.count=prevCount;r.skip=prevSkip;r.edits=prevEdits;r.confirmedDates=prevConfirmed;DB.recurrences=DB.recurrences.filter(x=>x.id!==newRec.id);touchSave(r);renderCurrent();toast('되돌렸어요')};
  }
  else{
-  const prevAmt=r.amount,prevMemo=r.memo,prevSplits=r.splits;r.amount=amt;r.memo=memo;if(splits)r.splits=splits;touch(r);
-  undoFn=()=>{r.amount=prevAmt;r.memo=prevMemo;r.splits=prevSplits;touchSave(r);renderCurrent();toast('되돌렸어요')};
+  const prevAmt=r.amount,prevMemo=r.memo,prevSplits=r.splits,prevShared=r.shared;r.amount=amt;r.memo=memo;r.shared=!!d.shared;if(splits)r.splits=splits;touch(r);
+  undoFn=()=>{r.amount=prevAmt;r.memo=prevMemo;r.splits=prevSplits;r.shared=prevShared;touchSave(r);renderCurrent();toast('되돌렸어요')};
  }
  window._recCtx=null;save();closeSheet();renderCurrent();
  undoToast('반복 내역을 수정했어요',undoFn);
