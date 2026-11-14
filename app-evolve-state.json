@@ -1,7 +1,11 @@
 {
   "cycle": 354,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "undoToast()의 6초 자동소멸이 마우스 hover나 키보드 focus로도 멈추지 않음 (WCAG 2.2.1 타이밍 조정 불가)",
+    "why": "undoToast(msg,undoFn)(index.html:12190-12195)는 되돌리기 토스트 전체(~80개 호출부: 삭제/소유자 합치기/정산 설정 변경/카테고리 합치기/일괄 이동 등)가 공유하는 단일 구현인데, 생성 시점에 걸리는 setTimeout(...,6000) 하나로 고정돼 있고 mouseenter/mouseleave/focus/blur로 일시정지시키는 로직이 전혀 없다(grep으로 index.html 전체 재확인, 비슷한 mousedown/mouseup/mouseleave 패턴이 이미 10905행 롱프레스 취소에 쓰이고 있어 undoToast에도 그대로 적용 가능). announceLive(msg)로 스크린리더에 알리고도 그 직후 6초 타이머가 포커스된 '되돌리기' 버튼을 DOM에서 통째로 치워버릴 수 있다. cycle319-328이 추가한 trash bin들은 txns/assets/recs/goals/cats/qtyLog/inquiries의 '데이터' 보존만 다루고, saveSettleConfig/clearSettleConfig/doSettle/mergeOwnerInto(5653/5719/5727/5781) 같은 undoToast 전용 호출부는 trash bin이 전혀 없어 6초가 유일한 되돌리기 기회라 이 공백의 영향이 가장 크다. 느리게 반응하는 사용자나 스크린리더 사용자가 그 6초 안에 반응하지 못하면 되돌릴 방법이 영구히 사라진다.",
+    "approach": "undoToast() 한 함수만 수정(호출부 변경 없음). 현재 하나뿐인 const tm=setTimeout(...)을 let tm 변수 + function arm(){tm=setTimeout(dismiss,6000)} / function dismiss(){t.classList.remove('show');setTimeout(()=>t.remove(),300)}로 분리하고 생성 시 arm()을 한 번 호출. t에 mouseenter(clearTimeout(tm))/mouseleave(arm) 리스너를, btn에 focus(clearTimeout(tm))/blur(arm) 리스너를 10905행과 같은 패턴으로 추가. btn.onclick은 지금처럼 clearTimeout(tm) 그대로 두되 재할당 가능한 tm을 참조하게 함. 테스트는 test/run.js:3484-3529의 setTimeout/clearTimeout 스텁 패턴을 그대로 써서 mouseenter/mouseleave/focus/blur 합성 이벤트 디스패치 후 clearTimeout/setTimeout 호출과 되돌리기 클릭이 정확히 1회 undoFn을 호출함을 검증."
+  },
   "history": [
     {
       "cycle": 348,
@@ -141,6 +145,13 @@
       "phase": "review",
       "timestamp": "2026-11-14T10:07:22.717Z",
       "summary": "develop(cycle354)이 만든 759088b를 검토했다. diff(recSave scope='one'의 memo 처리를 splits/photo와 동일한 '있을 때만 덮어씀' 패턴으로 변경)를 라인 대조로 재검증: edits[date].memo를 소비하는 모든 지점(index.html:1837 ed.memo!=null?ed.memo:r.memo, 2990, 6546)이 이미 ed.memo 부재 시 r.memo로 폴백하는 동일 패턴을 쓰고 있어 memo 키를 생략해도 깨지지 않음을 확인. sanitizeBackup()의 d.edits 재검증 분기(index.html:9833-9849)도 'amount' in e / 'splits' in e 식으로 필드 존재를 선택적으로 다뤄 memo 부재를 전제로 깨지는 코드가 없음을 확인. edit 객체가 매 저장마다 새로 생성되므로(prevEdit을 재사용하지 않음) 이전에 memo override가 있었다가 이후 r.memo와 같아지면 override가 자연스럽게 제거되는 부수효과도 기존 splits/photo와 동일한 의도된 동작. node test/run.js 3421/3421 통과 확인(추가된 2건 포함, 베이스라인 깨짐 없음). 실제 버그 없음 — 이상 없음.",
+      "commit": null
+    },
+    {
+      "cycle": 354,
+      "phase": "critique",
+      "timestamp": "2026-11-14T11:40:00.000Z",
+      "summary": "Explore 서브에이전트에게 cycle340-354에서 다룬 모든 주제(undo 공백/clamp/RLS 메시징/trashRecs 검증/shared override/push-conflict/commitTx/recSave memo/sanitizeRateMap/isDuePending/CSV/서비스워커/임시백업키 스윕)를 배제 목록으로 주고 1차 조사를 시켰다. 1차 결과로 App Lock(PIN)이 화면만 가리고 데이터는 전혀 암호화하지 않는 진짜 공백(_saveCore/load가 APPLOCK.enabled() 여부와 무관하게 평문 JSON.stringify(DB)를 localStorage에 쓰고 읽음, boot()이 lockApp() 전에 startApp()으로 DB를 이미 완전히 채우고 렌더)을 찾아왔는데, 직접 라인 대조로 재확인하자 index.html:2416-2434의 이전 cycle(252/289) 주석이 이미 이 정확한 공백을 분석해두고 '_saveCore/load 전체 배선은 save() 호출부 약 70곳+cross-tab 병합+cloud pull 병합까지 비동기로 바꿔야 하는 저장 아키텍처 재작성에 가까워, 사람이 보기 전에 바로 origin에 push되는 무인 사이클 하나로 안전하게 끝내기엔 과하다'고 명시적으로 결론 내린 상태임을 확인했다 — 즉 이미 두 번(cycle252가 순수 암복호화 유틸만 만들고, cycle289가 백업 파일 export/import 두 곳에만 좁게 배선) 의도적으로 미뤄온 영역이라 이번 무인 사이클의 advance 대상으로 다시 꺼내는 건 그 선대 판단을 뒤집는 근거 없는 대규모 변경이 된다고 판단해 기각(코드 변경 없이 history에만 기록, pending_advance_plan에는 넣지 않음). 같은 배제 목록에 이 App Lock 암호화 건도 추가해 Explore에게 2차로 다른 영역(목표 추적/카테고리 롤오버/자산배분 라운딩/정산 수식/접근성/타임존/알림/검색/숫자 입력 검증/차트/UI 불일치)을 조사시켰고, 결과를 라인 단위로 직접 재검증했다. undoToast(msg,undoFn)(index.html:12190-12195)가 ~80개 호출부(삭제/소유자 합치기/정산 설정 변경/카테고리 합치기/일괄 이동 등)가 공유하는 단일 구현인데 생성 시 한 번 걸리는 setTimeout(...,6000)이 전부이고 mouseenter/mouseleave/focus/blur로 일시정지하는 로직이 전혀 없음을 확인(10905행 롱프레스 취소가 이미 쓰는 mousedown/mouseup/mouseleave 패턴과 비교해 undoToast만 비대칭). WCAG 2.2.1(타이밍 조정 가능)에 해당하는 실제 접근성 결함이고, cycle319-328의 trash bin들이 못 덮는 saveSettleConfig/clearSettleConfig/doSettle/mergeOwnerInto(5653/5719/5727/5781) 같은 호출부는 이 6초가 유일한 되돌리기 경로라 영향이 큼. 함수 하나(~10줄, 호출부 변경 없음)로 범위가 좁고 검증 가능해 무인 advance 사이클에 적합하다고 판단해 채택. 기각한 다른 후보 2개: (1) asInterestRate 입력에 상한 clamp 없음 — amortizationPayoffMonths(logic.js:1050-1058)가 이미 위험한 경우(monthlyPayment<=balance*이자율)를 null로 우아하게 처리하고 이 코드베이스가 '경고만 하고 막지 않는다'(index.html:3869) 철학을 명시적으로 따르고 있어 결함 아님. (2) rebalanceAmount/allocationDrift의 타입별 독립 라운딩이 정확히 0으로 합산되지 않음 — targetMap 퍼센트가 100으로 합산되지 않는 것도 설계상 허용됨이 logic.js:1237-1239에 이미 문서화돼 있어 깨지는 불변식 자체가 없음. node test/run.js 3421/3421 재실행 통과 확인(베이스라인 깨짐 없음). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
