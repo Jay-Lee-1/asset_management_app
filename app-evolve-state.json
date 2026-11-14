@@ -1,26 +1,8 @@
 {
-  "cycle": 354,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "undoToast()의 6초 자동소멸이 마우스 hover나 키보드 focus로도 멈추지 않음 (WCAG 2.2.1 타이밍 조정 불가)",
-    "why": "undoToast(msg,undoFn)(index.html:12190-12195)는 되돌리기 토스트 전체(~80개 호출부: 삭제/소유자 합치기/정산 설정 변경/카테고리 합치기/일괄 이동 등)가 공유하는 단일 구현인데, 생성 시점에 걸리는 setTimeout(...,6000) 하나로 고정돼 있고 mouseenter/mouseleave/focus/blur로 일시정지시키는 로직이 전혀 없다(grep으로 index.html 전체 재확인, 비슷한 mousedown/mouseup/mouseleave 패턴이 이미 10905행 롱프레스 취소에 쓰이고 있어 undoToast에도 그대로 적용 가능). announceLive(msg)로 스크린리더에 알리고도 그 직후 6초 타이머가 포커스된 '되돌리기' 버튼을 DOM에서 통째로 치워버릴 수 있다. cycle319-328이 추가한 trash bin들은 txns/assets/recs/goals/cats/qtyLog/inquiries의 '데이터' 보존만 다루고, saveSettleConfig/clearSettleConfig/doSettle/mergeOwnerInto(5653/5719/5727/5781) 같은 undoToast 전용 호출부는 trash bin이 전혀 없어 6초가 유일한 되돌리기 기회라 이 공백의 영향이 가장 크다. 느리게 반응하는 사용자나 스크린리더 사용자가 그 6초 안에 반응하지 못하면 되돌릴 방법이 영구히 사라진다.",
-    "approach": "undoToast() 한 함수만 수정(호출부 변경 없음). 현재 하나뿐인 const tm=setTimeout(...)을 let tm 변수 + function arm(){tm=setTimeout(dismiss,6000)} / function dismiss(){t.classList.remove('show');setTimeout(()=>t.remove(),300)}로 분리하고 생성 시 arm()을 한 번 호출. t에 mouseenter(clearTimeout(tm))/mouseleave(arm) 리스너를, btn에 focus(clearTimeout(tm))/blur(arm) 리스너를 10905행과 같은 패턴으로 추가. btn.onclick은 지금처럼 clearTimeout(tm) 그대로 두되 재할당 가능한 tm을 참조하게 함. 테스트는 test/run.js:3484-3529의 setTimeout/clearTimeout 스텁 패턴을 그대로 써서 mouseenter/mouseleave/focus/blur 합성 이벤트 디스패치 후 clearTimeout/setTimeout 호출과 되돌리기 클릭이 정확히 1회 undoFn을 호출함을 검증."
-  },
+  "cycle": 355,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 348,
-      "phase": "advance",
-      "timestamp": "2026-11-13T10:20:00.000Z",
-      "summary": "critique(cycle348) 계획대로 afterCloudAuth()(index.html:2241)의 empty-remote 게스트 병합 분기를 고쳤다 — 예전엔 guestHasData()만 보고 DB=JSON.parse(localStorage guest)로 검증 없이 통째 교체해, 해당 계정의 로컬 DB에 이미 실제 데이터가 있어도 백업 없이 덮어쓰고 되돌릴 방법도 없었다(cycle346이 kakaoLogin/doLogin/doSignup의 비클라우드 분기 세 곳에만 importGuestDataInto()의 dbIsEmpty 가드+sanitizeBackup+undo를 입혀준 뒤 클라우드 경로 하나만 비껴간 비대칭). 이제 dbIsEmpty(DB)&&guestHasData()일 때만 importGuestDataInto(localStorage.getItem('asset_app_db_v3__guest'))를 그대로 재사용하고, 성공 시 {status:'guestMerged',prev,cancelPush}를, 그 외엔 기존처럼 {status}를 반환하도록 계약을 넓혔다(guestMerged일 때는 importGuestDataInto가 이미 save({deferCloudPush:true})를 했으므로 말미의 save()를 건너뛰어 6초 push 유예를 깨지 않는다; 실패해 null이면 기존 catch 폴백과 동일하게 emptyDB()+migrate()+save()로 떨어진다). doLogin(13391 부근)/doSignup(13407 부근)의 status==='guestMerged' 처리를 plain toast에서 undoToast로 교체해 cloudAuthResult.cancelPush()+DB=cloudAuthResult.prev+save()+invalidateBalances()+renderCurrent()+toast('되돌렸어요') 순서로 비클라우드 분기와 동일하게 되돌릴 수 있게 했다. 비밀번호 재설정 복구 경로(13501)는 예전에도 afterCloudAuth의 status를 전혀 쓰지 않던 호출부라 계획대로 건드리지 않았다. 테스트 4건 추가/1건 갱신: 기존 'guestMerged 반환' 테스트의 게스트 픽스처가 자산에 type이 없어 sanitizeBackup이 정당하게 드롭하던 것을 현실적인 {id,type:'cash'}로 바로잡고(검증을 거치지 않던 옛 경로에서만 통하던 픽스처, 구현 버그 아님) prev/cancelPush 반환 어서션을 추가, 신규로 (b) 로컬 DB가 비어있지 않으면 게스트 데이터로 덮어쓰지 않고 status:'empty', (c) cancelPush()+prev로 병합 전 상태 복원, (d) doLogin/doSignup의 undoToast 배선 소스 패턴, (e) afterCloudAuth가 raw JSON.parse 대신 dbIsEmpty 가드+importGuestDataInto를 쓰는지 소스 패턴. vm 샌드박스 배열을 호스트 리터럴과 직접 deepStrictEqual하면 프로토타입이 달라 거짓 실패가 나는 기존 함정(cycle343/345 노트)을 또 만나 JSON 라운드트립 관례로 맞췄다. node test/run.js 3375->3379/3379 통과. node --check sw.js/logic.js/test/run.js 통과, index.html 주 스크립트 블록(832KB) 추출 후 new Function()으로 구문 확인 통과. 사용자 체감 동작 변화(클라우드 로그인/가입 시 게스트 데이터 자동 병합을 6초 안에 되돌릴 수 있고, 이미 데이터가 있는 계정은 더 이상 조용히 덮어쓰이지 않음)라 APP_VERSION 1.47.436->1.47.437, sw.js CACHE v703->v704. pending_advance_plan null로 비움.",
-      "commit": null
-    },
-    {
-      "cycle": 349,
-      "phase": "develop",
-      "timestamp": "2026-11-13T11:20:00.000Z",
-      "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — toggleConfirmTransfers()(index.html:4418)의 '이체 확인 끄기' confirmSheet 콜백이 pendingOneOff/pendingRecList를 일괄로 completed 처리하는데도(각각 confirmed=true, confirmedDates.push), 같은 패턴의 다른 모든 bulk confirmSheet 액션(doBulkRecActive/doBulkCat/deleteTxnsUndo 등)이 받는 6초 undoToast가 전혀 없이 plain toast()로 끝났다 — 사용자가 설정 토글을 잘못 눌러 '끄기'를 확인하면 대기 중이던 이체 N건이 모두 조용히 완료 처리되고, 되돌릴 방법이 전혀 없었다(설정을 다시 켜도 rollPendingTransfers는 과거에 이미 완료 처리된 건을 되돌리지 않음). doBulkRecActive와 동일한 'prev 캡처 → mutate → undoToast로 복원' 패턴을 그대로 적용 — 콜백 맨 앞에서 pendingOneOff 각 항목의 이전 confirmed 값(prevOne)과, pendingRecList가 가리키는 반복거래들의 이전 confirmedDates(recId별로 한 번만, prevRecDates Map — 한 반복이 범위 내 여러 도래 날짜를 가질 수 있어 recId 중복 제거)를 캡처한 뒤, 끝의 toast()를 undoToast로 교체해 되돌리면 각 oneOff.confirmed/각 rec.confirmedDates를 캡처값으로 복원하고 DB.settings.confirmTransfers=true로 되돌린다(둘 다 touch() 호출로 cloud sync merge 불변식 유지, 이미 다른 날짜로 confirmedDates를 갖고 있던 반복거래는 그 값까지 보존됨을 테스트로 확인). 테스트 2건 추가(끄기 후 undoToast가 뜨고 되돌리면 confirmed/confirmedDates/설정이 전부 원복/기존에 다른 날짜의 confirmedDates가 있던 반복거래는 되돌릴 때 그 값까지 보존). node test/run.js 3379->3381/3381 통과. node --check sw.js/logic.js/test/run.js 통과, index.html 주 스크립트 블록(833KB) 추출 후 new Function()으로 구문 확인 통과. 사용자 체감 동작 변화(이체 확인을 끌 때 일괄 완료 처리된 건을 6초 안에 되돌릴 수 있음)라 APP_VERSION 1.47.437->1.47.438, sw.js CACHE v704->v705.",
-      "commit": null
-    },
     {
       "cycle": 349,
       "phase": "review",
@@ -152,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-14T11:40:00.000Z",
       "summary": "Explore 서브에이전트에게 cycle340-354에서 다룬 모든 주제(undo 공백/clamp/RLS 메시징/trashRecs 검증/shared override/push-conflict/commitTx/recSave memo/sanitizeRateMap/isDuePending/CSV/서비스워커/임시백업키 스윕)를 배제 목록으로 주고 1차 조사를 시켰다. 1차 결과로 App Lock(PIN)이 화면만 가리고 데이터는 전혀 암호화하지 않는 진짜 공백(_saveCore/load가 APPLOCK.enabled() 여부와 무관하게 평문 JSON.stringify(DB)를 localStorage에 쓰고 읽음, boot()이 lockApp() 전에 startApp()으로 DB를 이미 완전히 채우고 렌더)을 찾아왔는데, 직접 라인 대조로 재확인하자 index.html:2416-2434의 이전 cycle(252/289) 주석이 이미 이 정확한 공백을 분석해두고 '_saveCore/load 전체 배선은 save() 호출부 약 70곳+cross-tab 병합+cloud pull 병합까지 비동기로 바꿔야 하는 저장 아키텍처 재작성에 가까워, 사람이 보기 전에 바로 origin에 push되는 무인 사이클 하나로 안전하게 끝내기엔 과하다'고 명시적으로 결론 내린 상태임을 확인했다 — 즉 이미 두 번(cycle252가 순수 암복호화 유틸만 만들고, cycle289가 백업 파일 export/import 두 곳에만 좁게 배선) 의도적으로 미뤄온 영역이라 이번 무인 사이클의 advance 대상으로 다시 꺼내는 건 그 선대 판단을 뒤집는 근거 없는 대규모 변경이 된다고 판단해 기각(코드 변경 없이 history에만 기록, pending_advance_plan에는 넣지 않음). 같은 배제 목록에 이 App Lock 암호화 건도 추가해 Explore에게 2차로 다른 영역(목표 추적/카테고리 롤오버/자산배분 라운딩/정산 수식/접근성/타임존/알림/검색/숫자 입력 검증/차트/UI 불일치)을 조사시켰고, 결과를 라인 단위로 직접 재검증했다. undoToast(msg,undoFn)(index.html:12190-12195)가 ~80개 호출부(삭제/소유자 합치기/정산 설정 변경/카테고리 합치기/일괄 이동 등)가 공유하는 단일 구현인데 생성 시 한 번 걸리는 setTimeout(...,6000)이 전부이고 mouseenter/mouseleave/focus/blur로 일시정지하는 로직이 전혀 없음을 확인(10905행 롱프레스 취소가 이미 쓰는 mousedown/mouseup/mouseleave 패턴과 비교해 undoToast만 비대칭). WCAG 2.2.1(타이밍 조정 가능)에 해당하는 실제 접근성 결함이고, cycle319-328의 trash bin들이 못 덮는 saveSettleConfig/clearSettleConfig/doSettle/mergeOwnerInto(5653/5719/5727/5781) 같은 호출부는 이 6초가 유일한 되돌리기 경로라 영향이 큼. 함수 하나(~10줄, 호출부 변경 없음)로 범위가 좁고 검증 가능해 무인 advance 사이클에 적합하다고 판단해 채택. 기각한 다른 후보 2개: (1) asInterestRate 입력에 상한 clamp 없음 — amortizationPayoffMonths(logic.js:1050-1058)가 이미 위험한 경우(monthlyPayment<=balance*이자율)를 null로 우아하게 처리하고 이 코드베이스가 '경고만 하고 막지 않는다'(index.html:3869) 철학을 명시적으로 따르고 있어 결함 아님. (2) rebalanceAmount/allocationDrift의 타입별 독립 라운딩이 정확히 0으로 합산되지 않음 — targetMap 퍼센트가 100으로 합산되지 않는 것도 설계상 허용됨이 logic.js:1237-1239에 이미 문서화돼 있어 깨지는 불변식 자체가 없음. node test/run.js 3421/3421 재실행 통과 확인(베이스라인 깨짐 없음). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 354,
+      "phase": "advance",
+      "timestamp": "2026-11-14T12:15:46.905Z",
+      "summary": "critique(cycle354) 계획대로 undoToast()의 6초 자동소멸이 마우스 hover나 키보드 focus로도 멈추지 않던 WCAG 2.2.1(타이밍 조정 가능) 공백을 고쳤다. 단일 함수(index.html:12190-12201, ~80개 호출부가 공유하는 구현)만 수정 — 하나뿐이던 const tm=setTimeout(...)을 let tm 변수 + const dismiss()/arm()으로 분리하고 생성 시 arm()을 한 번 호출, t에 mouseenter(pause)/mouseleave(arm), btn에 focus(pause)/blur(arm) 리스너를 10905행 롱프레스 취소와 동일한 패턴으로 추가했다. btn.onclick은 그대로 clearTimeout(tm)을 쓰되 재할당 가능한 tm을 참조해 가장 최근에 걸린 타이머를 정확히 취소한다. 테스트는 domstub(실제 addEventListener/dispatchEvent를 갖는 DOM shim)으로 undoToast를 격리된 vm 컨텍스트에 직접 태우고 mouseenter/mouseleave/focus/blur 합성 이벤트를 순서대로 흘려 매번 clearTimeout/setTimeout이 정확히 호출되는지, 되돌리기 클릭이 그 시점의 최신 타이머를 취소하며 undoFn을 정확히 1회만 호출하는지(두 번째 클릭은 무시) 검증하는 신규 실행형 테스트 1건을 추가했다 — 수정 전 코드로 되돌려 실제로 FAIL함을 직접 확인한 뒤 복구. node test/run.js 3421->3422/3422 통과. node --check sw.js/logic.js/test/run.js 통과, index.html은 test/run.js의 vm 샌드박스 전체 스위트 실행 자체가 구문 검증을 겸함(cycle339 이후 관례와 동일). 사용자 체감 동작 변화(되돌리기 토스트에 마우스를 올리거나 되돌리기 버튼에 키보드 포커스를 두면 6초 자동소멸이 멈추고, 포인터/포커스를 떼면 다시 6초가 시작됨; saveSettleConfig/clearSettleConfig/doSettle/mergeOwnerInto처럼 trash bin이 없어 이 6초가 유일한 되돌릴 기회인 호출부들의 영향이 가장 큼)라 APP_VERSION 1.47.449->1.47.450, sw.js CACHE v716->v717. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

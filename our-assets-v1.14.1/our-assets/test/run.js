@@ -36284,6 +36284,55 @@ test('[실행형] nwChartPeekKey(ArrowRight) 키 이벤트는 _nwPeekIdx를 다�
   assert.strictEqual(ctx._nwPeekIdx, 1, '이어서 ArrowLeft면 한 칸 앞(인덱스 1)으로 이동해야 함');
 });
 
+/* ---------- undoToast() hover/focus 일시정지: ~80개 호출부(삭제/소유자 합치기/정산 설정 변경/
+ * 카테고리 합치기/일괄 이동 등)가 공유하는 단일 구현의 6초 자동소멸 타이머가 마우스 hover나
+ * 키보드 focus로 멈추지 않던 WCAG 2.2.1(타이밍 조정 가능) 공백 수정(app-evolve cycle354 advance).
+ * 10905행 롱프레스 취소가 쓰는 mousedown/mouseup/mouseleave와 같은 결의 pause/resume을
+ * domstub(실제 addEventListener/dispatchEvent)로 직접 이벤트를 흘려 검증한다. */
+test('[실행형] undoToast(): mouseenter/focus로 6초 타이머를 멈추고 mouseleave/blur로 다시 건다', () => {
+  const timers = []; // {id, ms} — setTimeout 호출마다 쌓고, clearTimeout은 별도로 기록
+  const cleared = [];
+  let nextId = 1;
+  const ctx = {
+    document: { createElement: domstub.createElement },
+    $: (id) => (id === 'toastWrap' ? toastWrap : null),
+    svg: () => '', esc: (s) => s, announceLive: () => {},
+    requestAnimationFrame: (fn) => fn(),
+    setTimeout: (fn, ms) => { const id = nextId++; timers.push({ id, fn, ms }); return id; },
+    clearTimeout: (id) => cleared.push(id),
+  };
+  const toastWrap = domstub.createElement('div');
+  vm.createContext(ctx);
+  vm.runInContext(extractFunction('undoToast'), ctx);
+  let undone = 0;
+  ctx.undoToast('삭제했어요', () => { undone++; });
+  assert.strictEqual(toastWrap.children.length, 1, 'toastWrap에 토스트 엘리먼트를 붙이지 않음');
+  const t = toastWrap.children[0];
+  const btn = t.children[0]; // innerHTML 대입이 domstub에서 children을 비우므로, 이후 appendChild(btn)된 버튼이 유일한 자식
+  assert.ok(btn && btn.tagName === 'button', '되돌리기 버튼이 토스트 안에 없음');
+  assert.strictEqual(timers.length, 1, '생성 즉시 6초 타이머를 1개 걸어야 함(arm())');
+  const firstTm = timers[0].id;
+  assert.strictEqual(timers[0].ms, 6000);
+
+  t.dispatchEvent({ type: 'mouseenter' });
+  assert.deepStrictEqual(cleared, [firstTm], 'mouseenter는 걸려 있던 타이머를 멈춰야 함');
+  t.dispatchEvent({ type: 'mouseleave' });
+  assert.strictEqual(timers.length, 2, 'mouseleave는 타이머를 다시 걸어야 함(arm())');
+  const secondTm = timers[1].id;
+
+  btn.dispatchEvent({ type: 'focus' });
+  assert.deepStrictEqual(cleared, [firstTm, secondTm], 'focus도 hover와 동일하게 타이머를 멈춰야 함');
+  btn.dispatchEvent({ type: 'blur' });
+  assert.strictEqual(timers.length, 3, 'blur는 hover 재시작과 동일하게 타이머를 다시 걸어야 함');
+  const thirdTm = timers[2].id;
+
+  btn.onclick();
+  assert.deepStrictEqual(cleared, [firstTm, secondTm, thirdTm], '되돌리기 클릭은 그 시점의 최신 타이머를 취소해야 함(stale tm 참조 금지)');
+  assert.strictEqual(undone, 1, '되돌리기 클릭은 undoFn을 정확히 1회 호출해야 함');
+  btn.onclick();
+  assert.strictEqual(undone, 1, '이미 되돌린 뒤 다시 눌러도 undoFn이 또 호출되면 안 됨(done 가드)');
+});
+
 /* ---------- celebrate(): toast()/toastFail()/undoToast()는 모두 pointer-events:none인 시각
  * 요소라 스크린리더가 못 보는 문제를 announceLive()로 보완하는데(7968행 주석), celebrate()는
  * 그 보완이 빠져 있었다(app-evolve cycle206 develop) — 이체 전부 완료/이체 제안 수락처럼

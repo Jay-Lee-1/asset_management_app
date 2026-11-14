@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.449';
+const APP_VERSION='1.47.450';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -12189,8 +12189,16 @@ function toastFail(msg){const t=document.createElement('div');t.className='toast
  setTimeout(()=>{t.classList.remove('show');setTimeout(()=>t.remove(),300)},4500)}
 function undoToast(msg,undoFn){const t=document.createElement('div');t.className='toast undo';
  t.innerHTML=svg('check')+`<span>${esc(msg)}</span>`;announceLive(msg);
- const btn=document.createElement('button');btn.className='toast-undo';btn.textContent='되돌리기';let done=false;
- const tm=setTimeout(()=>{t.classList.remove("show");setTimeout(()=>t.remove(),300)},6000);
+ const btn=document.createElement('button');btn.className='toast-undo';btn.textContent='되돌리기';let done=false,tm;
+ const dismiss=()=>{t.classList.remove('show');setTimeout(()=>t.remove(),300)};
+ const arm=()=>{tm=setTimeout(dismiss,6000)};
+ const pause=()=>clearTimeout(tm);
+ /* 마우스 hover(10905행 롱프레스 취소와 동일 패턴)나 키보드 focus로 자동소멸을 멈춘다 —
+  * WCAG 2.2.1(타이밍 조정 가능). 되돌리기 전용 호출부(saveSettleConfig/doSettle/
+  * mergeOwnerInto 등)는 이 6초가 유일한 되돌릴 기회라 영향이 크다(app-evolve cycle354 advance). */
+ t.addEventListener('mouseenter',pause);t.addEventListener('mouseleave',arm);
+ btn.addEventListener('focus',pause);btn.addEventListener('blur',arm);
+ arm();
  btn.onclick=()=>{if(done)return;done=true;clearTimeout(tm);t.classList.remove('show');setTimeout(()=>t.remove(),300);undoFn()};
  t.appendChild(btn);$('toastWrap').appendChild(t);requestAnimationFrame(()=>t.classList.add('show'))}
 function deleteTxnsUndo(ids){if(twGuard())return;const removed=DB.txns.filter(t=>ids.has(t.id));
