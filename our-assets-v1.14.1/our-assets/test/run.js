@@ -30548,6 +30548,16 @@ test('homeAlertCard: goalBehind/goalBehindMulti가 각각 openGoalForm/openGoals
   assert.ok(html2.includes('openGoalsList()'));
   assert.ok(html2.includes('2건'));
 });
+test('homeAlertCard: goalBehind의 목표일/예상 달성일은 올해를 넘기면 연도까지 보여준다(shortDate2, notifyAlertInfo의 fmtDateFull과 동일한 정보량 — app-evolve cycle357)', () => {
+  sandbox.TODAY = '2026-06-15';
+  const sameYear = sandbox.homeAlertCard({ kind: 'goalBehind', goalId: 'g1', name: '내 집 마련', targetDate: '2026-12-01', projectedDate: '2026-11-15' });
+  assert.ok(sameYear.includes('목표일 12/01'), '같은 해면 연도 접두 없이 MM/DD만');
+  assert.ok(sameYear.includes('11/15쯤 달성 예상'));
+
+  const futureYear = sandbox.homeAlertCard({ kind: 'goalBehind', goalId: 'g2', name: '내 집 마련2', targetDate: '2028-03-15', projectedDate: '2029-07-02' });
+  assert.ok(futureYear.includes('목표일 28.03/15'), '목표일이 올해를 넘기면 두 자리 연도가 붙어야 함(기존 shortDate는 연도를 아예 보여주지 않아 몇 년도인지 알 수 없었음)');
+  assert.ok(futureYear.includes('29.07/02쯤 달성 예상'), '투사일(projectedDate)도 마찬가지로 연도를 보여줘야 함');
+});
 /* 목표 달성(goalAchieved/goalAchievedMulti) — goalBehind/goalBehindMulti(늦어짐)와 정확히 대칭되는 긍정적 사건.
  * goalNewlyAchieved(달성했지만 achievedAckAt 없음)가 정확히 1건이면 단일, 2건 이상이면 묶인다(budgetOver와
  * 동일한 collapsing 패턴, app-evolve cycle256 critique/advance). */

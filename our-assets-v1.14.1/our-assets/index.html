@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.454';
+const APP_VERSION='1.47.455';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -12169,7 +12169,7 @@ function homeAlertCard(al){
  if(al.kind==='goalBehind')return `<button class="home-alert mat" onclick="openGoalForm('${al.goalId}')">
    <div class="ha-ic">${svg('target')}</div>
    <div class="ha-b"><div class="ha-t">목표가 늦어지고 있어요 · ${esc(al.name)}</div>
-     <div class="ha-s">목표일 ${shortDate(al.targetDate)}${al.projectedDate?` · 이대로면 ${shortDate(al.projectedDate)}쯤 달성 예상`:' · 최근 추세로는 달성이 어려워요'}</div></div>
+     <div class="ha-s">목표일 ${shortDate2(al.targetDate)}${al.projectedDate?` · 이대로면 ${shortDate2(al.projectedDate)}쯤 달성 예상`:' · 최근 추세로는 달성이 어려워요'}</div></div>
    <div class="ha-c">${svg('chev')}</div></button>`;
  if(al.kind==='goalBehindMulti')return `<button class="home-alert mat" onclick="openGoalsList()">
    <div class="ha-ic">${svg('target')}</div>
