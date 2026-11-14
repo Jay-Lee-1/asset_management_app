@@ -1,29 +1,8 @@
 {
   "cycle": 353,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 347,
-      "phase": "develop",
-      "timestamp": "2026-11-13T05:10:00.000Z",
-      "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — txnsToCSV(index.html:8911, 이 앱 자신의 CSV 내보내기)가 헤더를 ['날짜','구분','카테고리','금액','보내는 자산','받는 자산','메모'] 리터럴로 직접 들고 있었는데, logic.js의 OWN_CSV_HEADER(1429행) 바로 위 주석이 '원래 txnsToCSV 안에 리터럴로만 있었음'을 cycle251 advance에서 공유 상수로 뽑아냈다고 설명하면서도, detectOwnCsvFormat(logic.js:1435)만 그 상수를 쓰고 txnsToCSV 자신은 추출 이후에도 여전히 독립된 리터럴 사본을 들고 있는 반쪽 추출 상태였다(grep으로 OWN_CSV_HEADER가 index.html에서 전혀 참조되지 않음을 확인). 두 파일에 같은 7칸 헤더가 손으로 맞춰야 하는 중복 불변식으로 남아있어, 향후 누군가 OWN_CSV_HEADER만 고치고(예: 컬럼명 변경) txnsToCSV의 리터럴은 놓치면 내보낸 CSV의 헤더가 옛 문구로 조용히 남고, detectOwnCsvFormat은 새 문구를 기대해 재가져오기 시 자기-포맷을 인식하지 못하고 범용 은행 CSV 열매핑 경로로 잘못 빠지는 조용한 드리프트 버그가 될 수 있었다. index.html:8911의 리터럴을 OWN_CSV_HEADER.map(esc).join(',')로 교체해 단일 소스로 통일(logic.js가 <script src=\"logic.js\">로 메인 인라인 스크립트보다 먼저 로드되므로 전역 참조 안전함을 로드 순서로 확인). test/run.js:8661의 기존 테스트('doExport(txnsToCSV)가 실제로 내보낸 CSV의 첫 행을 그대로 넣어도 true')가 이미 txnsToCSV의 실제 출력을 detectOwnCsvFormat으로 되돌려 검증하는 행동 테스트라 이 불변식을 이미 구조적으로 잠그고 있음을 확인해 중복 테스트는 추가하지 않았다. node test/run.js 3363/3363 통과(테스트 개수 변화 없음, 리터럴→상수 교체는 출력값 자체를 바꾸지 않아 기존 테스트 전부 그대로 통과). node --check sw.js/logic.js/test/run.js 통과. index.html은 test/run.js의 extractMainScript 기반 전체 스위트 실행 자체가 구문 검증을 겸함(cycle339/343/344/345/346 노트와 동일한 이유). 사용자 체감 동작 변화는 아니지만(내보낸 CSV의 실제 헤더 문구는 동일하게 유지됨, 코드 중복만 제거) 컨벤션대로 APP_VERSION 1.47.433->1.47.434, sw.js CACHE v700->v701.",
-      "commit": null
-    },
-    {
-      "cycle": 347,
-      "phase": "review",
-      "timestamp": "2026-11-13T06:10:00.000Z",
-      "summary": "develop(cycle347, 3c34c0a: txnsToCSV가 OWN_CSV_HEADER 재사용)를 검토. logic.js:1429의 OWN_CSV_HEADER 배열 리터럴(['날짜','구분','카테고리','금액','보내는 자산','받는 자산','메모'])이 index.html:8911에서 지우기 전 가지고 있던 독립 리터럴과 순서·문자열 모두 정확히 동일함을 grep으로 직접 대조해, 상수 치환이 출력 문구를 전혀 바꾸지 않았음을 확인(새 헤더 값으로 몰래 바뀌는 드리프트 없음). header=OWN_CSV_HEADER.map(esc).join(',')는 교체 전과 동일하게 각 셀에 esc를 적용하고(헤더 문자열엔 쉼표/따옴표/개행이 없어 두 경우 모두 변환 결과가 동일), logic.js가 <script src=\"logic.js\">로 메인 인라인 스크립트(<script> 3번째 블록)보다 앞서 로드되는 순서를 index.html 상단에서 직접 확인해 전역 참조 안전성도 재검증. node test/run.js 재실행 3363/3363 통과, APP_VERSION 1.47.434/sw.js CACHE v701 일치 확인. 실제 버그 없음(state.json만 커밋).",
-      "commit": null
-    },
-    {
-      "cycle": 347,
-      "phase": "critique",
-      "timestamp": "2026-11-13T07:30:00.000Z",
-      "summary": "앱 전체를 한 걸음 물러나 훑어본 결과(Explore 서브에이전트가 발견 및 코드로 직접 검증), DB.settings.settledThrough(정산 완료 하한선)가 doSettle(index.html:5674)만 전진시키는데 saveSettleConfig(5629-5634, 정산 귀속쌍 변경/신규 설정)와 clearSettleConfig(5635-5638, 정산 끄기)는 전혀 초기화하지 않고, delOwner(5438-5452, cycle343)의 settleTouched 분기도 settle=null로는 끄지만 settledThrough는 그대로 둠을 확인했다. openSettlement/confirmSettlement(5641/5660)의 유일한 집계 하한 기준(settledThrough?addDays(settledThrough,1):RANGE_FROM) 때문에, A/B를 특정 날짜까지 정산한 뒤 전혀 다른 귀속쌍 C/D로 정산을 새로 설정하면 C/D의 집계가 조용히 그 날짜 다음날부터 시작돼 그 이전 C/D의 실제 공동지출이 경고 없이 영구히 누락된다 — 정산 금액이 조용히 틀려지는 금전 정확성 버그. cycle342/343 critique가 '같은 쌍을 끄고 다시 켜는 좁은 경우'로만 보고 근거 부족으로 두 번 deprioritize했던 것과 달리, saveSettleConfig의 귀속쌍 변경 경로와 delOwner 경로까지 포함하면 범위가 훨씬 넓어 이번에 우선순위로 재선정한다(동일 Explore 조사가 cycle346이 '덜 명확해 보류'로 남긴 bulk/multi-select 액션의 confirm+undo 커버리지도 함께 재검증했으나 deleteTxnsUndo/deleteRecsUndo/deleteGoalsUndo/deleteAssetsUndo와 doBulkCat/doBulkAssetMove/doBulkInclToggle/doBulkOwnerMove/doBulkRecActive/doBulkGoalOwnerMove 전부 confirmSheet+undoToast를 이미 갖추고 있음을 확인해 해당 항목은 승격하지 않음, 접근성/클라우드 동기화 오류 처리/오프라인/저장공간 경고도 모두 기존에 충분히 다뤄졌음을 재확인했으나 새 근거 없음). pending_advance_plan에 clearSettleConfig/saveSettleConfig(쌍이 바뀔 때만, 비율만 바꾸는 흔한 재조정은 유지)/delOwner 세 곳에서 settledThrough를 리셋하고 각 undo 경로에 포함시키는 구체 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
     {
       "cycle": 347,
       "phase": "advance",
@@ -155,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-14T05:20:00.000Z",
       "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — debtNewlyPaidOff(logic.js:1065, achieved인데 아직 ack 안 된 완납 부채 판정)는 asset.payoffAckAt이 한 번 설정되면 영원히 false를 돌려주는데, payoffAckAt을 null로 되돌리는 경로가 지금까지 전혀 없었다(grep으로 index.html 전체에서 payoffAckAt= 대입이 ackDebtPayoff 4177행 단 한 곳뿐임을 확인). DB.goals의 achievedAckAt은 saveGoal(4145행, cycle256)이 '더는 achieved가 아니게 되면 ack도 리셋'하는 대응 로직을 갖고 있는데, debt쪽만 그 대응이 비대칭으로 빠져 있었다. 신용카드/한도대출처럼 완납→재사용을 반복하는 부채에서 한 번 완납 축하를 받고 나면, 나중에 다시 빚을 지고 다시 완납해도 debtsPaidOff()/homeAlerts()의 debtPaidOff 카드가 두 번째부터 영구히 다시 뜨지 않는 버그였다. 다만 부채 잔액은 saveAsset이 아니라 평범한 거래(저장/삭제/가져오기 등 수많은 경로)로 바뀌므로 goal처럼 '저장 시점에 리셋'할 단일 지점이 없어, rollPendingTransfers와 동일한 render-refresh 경계(앱 기동 startApp()/날짜 변경 refreshToday())에서 한 번씩 검사하는 새 함수 resetStaleDebtPayoffAcks()를 추가했다 — payoffAckAt이 있는 부채만(대부분의 부채는 없으므로 흔한 경로에서는 비용이 거의 없음) debtPayoffProjection을 다시 계산해 achieved가 아니면 payoffAckAt=null로 리셋하고 touch()+save()한다(둘 다 rollPendingTransfers와 동일하게 touch() 호출로 cloud sync merge 불변식 유지). 테스트 5건 추가(리셋 케이스/여전히 achieved면 유지/payoffAckAt 없으면 애초에 건드리지 않음/touch() 호출 유무/리셋 후 재완납 시 debtNewlyPaidOff가 다시 true가 되는 통합 확인) — 구현을 임시로 no-op 처리해 재현 확인(5건 중 3건이 실제로 FAIL함을 직접 확인한 뒤 복구, 나머지 2건은 '건드리지 않아야 하는' 음성 케이스라 구현 유무와 무관하게 통과하는 게 맞음). node test/run.js 3409->3414/3414 통과. node --check sw.js/logic.js/test/run.js 통과, index.html은 test/run.js의 vm 샌드박스 전체 스위트 실행 자체가 구문 검증을 겸함(cycle339 이후 관례와 동일). 사용자 체감 동작 변화(신용카드성 부채를 완납→재사용→재완납해도 두 번째부터는 '축하' 알림이 다시 뜸, 평소 한 번만 완납하는 부채는 영향 없음)라 APP_VERSION 1.47.446->1.47.447, sw.js CACHE v713->v714.",
+      "commit": null
+    },
+    {
+      "cycle": 353,
+      "phase": "review",
+      "timestamp": "2026-11-14T06:15:05.571Z",
+      "summary": "develop(cycle353, ab5d9ab: resetStaleDebtPayoffAcks 추가)를 검토. 새 함수가 debtsPaidOff()/ackDebtPayoff()와 완전히 동일한 패턴(txns=allTxns(RANGE_FROM,TODAY).filter(t=>!isPending(t)), dates=assetBalSampleDates(RANGE_FROM,TODAY,60), assetBalanceSeries(txns,a.id,assetBase(a),-1,dates), debtPayoffProjection(pts,TODAY).achieved)으로 payoffAckAt이 있는 부채만 재평가함을 라인 대조로 확인 — 기존 호출부들과 어긋나는 계산식 없음. startApp()/refreshToday() 양쪽에 rollPendingTransfers() 바로 뒤, save() 바로 전에 삽입돼 동일한 render-refresh 경계 불변식을 따름을 확인. touch()+save() 호출로 cloud sync merge 불변식도 유지됨. 테스트 5건(리셋/유지/payoffAckAt 없으면 skip/touch 호출 유무/재완납 통합)이 실제로 의도한 경로를 겨냥함을 확인. node test/run.js 3414/3414 재실행 통과, node --check sw.js/logic.js/test/run.js 통과, APP_VERSION 1.47.447/sw.js CACHE v714 버전 범프 확인. 실제 버그 없음(state.json만 커밋).",
       "commit": null
     }
   ]
