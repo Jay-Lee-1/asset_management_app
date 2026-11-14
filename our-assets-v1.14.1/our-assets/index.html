@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.442';
+const APP_VERSION='1.47.443';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -9680,19 +9680,18 @@ function sanitizeBackup(obj){
   if(validOwners.length&&(!d.owner||!validOwners.includes(d.owner))){d.owner=validOwners[0];fixedCount++}
   assets.push(d);
  });
- /* 반복거래는 한 레코드가 recDates()로 매달 새 거래를 계속 만들어내므로, amount가 손상되면
-  * txns 한 건이 아니라 이후 모든 회차가 조용히 오염된다(expandRec() 1923줄). edits[date].amount
-  * 오버라이드도 같은 경로로 쓰이므로 동일하게 검증한다. startDate가 없거나 형식/달력상
-  * 유효하지 않으면(예: "not-a-date", "2026-13-01") recDates()의 new Date(r.startDate) 가
-  * Invalid Date가 되어 종료 조건(cur>endd 등)이 항상 false가 되고 setMonth/setDate로도
-  * 벗어나지 못해 무한루프로 앱이 완전히 멈춘다 — csvDateValid()로 CSV 가져오기와 동일하게
-  * 엄격히 검증해 id/date 없는 txns를 제거하는 것과 같은 이유로 통째로 제거한다. */
- const srcRecs=Array.isArray(obj&&obj.recurrences)?obj.recurrences:[];
- let recurrences=[];
- srcRecs.forEach(r=>{
-  if(!r||!r.id||!csvDateValid(r.startDate)){droppedCount++;return}
-  const d=Object.assign({},r);
-  if('amount' in d){const n=sanitizeAmount(d.amount,0);if(n!==d.amount){d.amount=n;fixedCount++}} /* txns와 동일: 크기 필드라 음수 불가 */
+ /* sanitizeRecFields(d): splits/category/memo/endDate/count/freq/day/weekend/edits/skip/
+  * confirmedDates를 한 번에 정규화하는 공용 클로저(app-evolve cycle351 advance) — 원래 live
+  * recurrences의 forEach 안에 인라인으로만 있었는데, trashRecs(아래)는 "saveRec()이 이미
+  * 정규화해 둔 아카이브"라는 전제로 이 정규화를 전혀 거치지 않고 있었다. 그 전제는 이 앱이 직접
+  * 저장한 레코드에만 성립하고, 손으로 편집한 백업/구버전 백업/다른 기기의 클라우드 문서에는
+  * 성립하지 않는다 — 바로 이 전제가 깨질 수 있다는 이유로 live recurrences 블록이 애초에 존재하는
+  * 것과 같다. 손상된 weekend 값('bogus' 등)을 가진 trashRec을 restoreTrashRec()으로 복구하면
+  * DB.recurrences에 재검증 없이 그대로 들어가, 그 반복거래의 편집 시트를 열 때
+  * WK[d.weekend||'none'][0](WK는 'none'|'earlier'|'later' 키만 가짐)이 undefined[0]에서
+  * TypeError로 영구히 크래시한다. amount/_deletedAt과 마찬가지로 fixedCount 클로저를 그대로
+  * 참조한다(dedupeIds/dedupeNames와 동일한 패턴). */
+ const sanitizeRecFields=(d)=>{
   /* d.splits(반복 분할 템플릿, app-evolve cycle282)도 saveRec()이 저장 시점에만 category/amount
    * 전부 입력·합계 일치를 강제하고, 백업 복원/클라우드 머지가 공유하는 이 유일한 검증
    * 체크포인트에서는 지금까지 t.splits(바로 위 txns 블록)만 재검증되고 r.splits는 전혀
@@ -9808,6 +9807,21 @@ function sanitizeBackup(obj){
     }
    }
   });
+ };
+ /* 반복거래는 한 레코드가 recDates()로 매달 새 거래를 계속 만들어내므로, amount가 손상되면
+  * txns 한 건이 아니라 이후 모든 회차가 조용히 오염된다(expandRec() 1923줄). edits[date].amount
+  * 오버라이드도 같은 경로로 쓰이므로 동일하게 검증한다. startDate가 없거나 형식/달력상
+  * 유효하지 않으면(예: "not-a-date", "2026-13-01") recDates()의 new Date(r.startDate) 가
+  * Invalid Date가 되어 종료 조건(cur>endd 등)이 항상 false가 되고 setMonth/setDate로도
+  * 벗어나지 못해 무한루프로 앱이 완전히 멈춘다 — csvDateValid()로 CSV 가져오기와 동일하게
+  * 엄격히 검증해 id/date 없는 txns를 제거하는 것과 같은 이유로 통째로 제거한다. */
+ const srcRecs=Array.isArray(obj&&obj.recurrences)?obj.recurrences:[];
+ let recurrences=[];
+ srcRecs.forEach(r=>{
+  if(!r||!r.id||!csvDateValid(r.startDate)){droppedCount++;return}
+  const d=Object.assign({},r);
+  if('amount' in d){const n=sanitizeAmount(d.amount,0);if(n!==d.amount){d.amount=n;fixedCount++}} /* txns와 동일: 크기 필드라 음수 불가 */
+  sanitizeRecFields(d);
   recurrences.push(d);
  });
  /* DB.goals(순자산 목표, app-evolve cycle122)도 신설 당시 여기 검증 분기가 없었다 — targetAmount가
@@ -9942,17 +9956,19 @@ function sanitizeBackup(obj){
  /* DB.trashRecs(반복거래 삭제 '최근 삭제함', app-evolve cycle321 critique/advance)도 바로 위
   * trashTxns/trashAssets와 동일한 이유로 백업 복원·클라우드 풀 경로에서 검증한다. restoreTrashRec이
   * 복구 시 그대로 DB.recurrences에 되돌리므로, id가 없거나 startDate가 형식/달력상 무효하면(위
-  * srcRecs 블록과 동일한 이유로) recDates()를 무한루프에 빠뜨릴 수 있어 통째로 제거한다. amount만
-  * txns와 동일하게 크기 필드로 클램프하고, splits/skip/edits/confirmedDates/freq/day/weekend/count
-  * 등 나머지 필드는 삭제되기 전 saveRec()이 이미 정규화해 둔 값이라 여기서 다시 검증하지 않는다
-  * (트래시는 '이미 유효했던 데이터의 아카이브'라는 점이 사용자가 아직 수정 중일 수 있는 live
-  * recurrences와 다르다). */
+  * srcRecs 블록과 동일한 이유로) recDates()를 무한루프에 빠뜨릴 수 있어 통째로 제거한다. amount
+  * 클램프 뒤 splits/category/memo/endDate/count/freq/day/weekend/edits/skip/confirmedDates도 live
+  * recurrences와 동일하게 sanitizeRecFields(d)로 재검증한다 — "saveRec()이 이미 정규화해 둔
+  * 값"이라는 전제는 이 앱이 직접 쓴 레코드에만 성립하고, 손으로 편집한 백업/구버전 백업/다른
+  * 기기의 클라우드 문서에는 성립하지 않는다(app-evolve cycle351 advance, 위 sanitizeRecFields
+  * 주석 참고 — 그 전제가 깨진 trashRec을 복구하면 WK[d.weekend||'none'][0]이 영구히 크래시했다). */
  const srcTrashRecs=Array.isArray(obj&&obj.trashRecs)?obj.trashRecs:[];
  let trashRecs=[];
  srcTrashRecs.forEach(r=>{
   if(!r||!r.id||!csvDateValid(r.startDate)){droppedCount++;return}
   const d=Object.assign({},r);
   if('amount' in d){const n=sanitizeAmount(d.amount,0);if(n!==d.amount){d.amount=n;fixedCount++}}
+  sanitizeRecFields(d);
   if(!Number.isFinite(d._deletedAt)){d._deletedAt=Date.now();fixedCount++}
   trashRecs.push(d);
  });

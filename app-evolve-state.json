@@ -1,19 +1,8 @@
 {
-  "cycle": 351,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "sanitizeBackup()의 trashRecs 블록이 recurrences와 달리 freq/weekend/day/count/splits를 재검증하지 않아, 손상된 백업/클라우드 문서를 복원한 뒤 해당 트래시 반복을 복구(restoreTrashRec)하면 편집 시트가 영구히 크래시함",
-    "why": "index.html의 live recurrences 블록(약 9690-9812)은 splits/category/memo/endDate/count/freq/day/weekend/skip/confirmedDates를 전부 정규화하는데, trashRecs 블록(약 9950-9958)은 id/startDate/amount/_deletedAt만 확인하고 나머지는 그대로 통과시킨다(9942-9949 주석이 'saveRec()이 이미 정규화했으니 안전'이라는 전제로 의도적으로 뺀 것인데, 이 전제는 이 앱이 직접 쓴 레코드에만 성립하고 손으로 편집한 백업/구버전 백업/다른 기기의 클라우드 문서에는 성립하지 않음 — 바로 옆 live recurrences 블록이 존재하는 이유와 동일한 반례). restoreTrashRec()(약 12408-12419)도 trash 항목을 DB.recurrences에 재검증 없이 그대로 push한다. 구체적 실패: 백업/클라우드 문서의 trashRecs에 {id,startDate,freq:'monthly',weekend:'bogus',amount,_deletedAt}가 들어있으면 sanitizeBackup이 그대로 통과시키고, 사용자가 '삭제한 반복거래'에서 복구를 누르면 DB.recurrences에 그대로 들어가, 그 반복거래의 편집 시트를 열 때 renderRecSheet의 WK[d.weekend||'none'][0] (WK는 'none'|'earlier'|'later' 키만 가짐)가 WK['bogus'] === undefined 위에서 [0]을 접근해 TypeError로 크래시하고, 패치 전까지 그 반복거래는 열 때마다 계속 크래시한다. test/run.js:16612의 기존 테스트는 유효한 값만 입력해 '그대로 보존됨'을 확인하므로 이 실패를 전혀 커버하지 못하는 거짓 안전감만 준다(라이브 recurrences 경로엔 16142처럼 적대적 입력 테스트가 있는데 trashRecs엔 없음).",
-    "approach": "sanitizeBackup() 안에서 현재 recurrences forEach에 인라인된 splits/category/memo/endDate/count/freq/day/weekend/edits/skip/confirmedDates 정규화 블록(약 9696-9810)을 같은 함수 스코프 안의 공용 클로저 const sanitizeRecFields=(d)=>{...}로 추출한다(fixedCount/NAME_MAX/MEMO_MAX/csvDateValid/clampDay/sanitizeAmount를 그대로 클로저로 참조 — dedupeIds/dedupeNames와 같은 기존 패턴). recurrences forEach(amount 클램프 다음)와 trashRecs forEach(amount 클램프 다음, _deletedAt 처리 전) 양쪽에서 sanitizeRecFields(d)를 호출하도록 바꾼다. 이렇게 하면 동시에 recurrences/trashRecs 간의 코드 중복도 제거된다(txns의 splits 블록은 레코드 모양이 달라 별도로 둔다). test/run.js:16612의 기존 테스트는 유효한 입력만 쓰므로 결과값은 그대로 통과해야 하지만, 테스트 이름/주석이 '재검증하지 않고 보존'이라는 뒤집힌 설계 의도를 말하고 있으므로 이름을 수정한다. 16142의 적대적 recurrences 테스트를 본떠 trashRecs에도 새 테스트를 추가한다: trashRecs:[{id,startDate,amount,freq:'monthly',day:'nope',weekend:'bogus',count:'nope',_deletedAt}]를 넣고 sanitizeBackup 후 weekend==='none', day가 유효한 값으로 클램프, count===null로 정규화됐는지 확인하고, 가능하면 restoreTrashRec이 하는 것과 같은 push를 시뮬레이션해 WK[rec.weekend||'none']가 더 이상 undefined가 아님(크래시 안 남)을 확인하는 통합 테스트도 추가한다. node test/run.js로 통과 확인, node --check sw.js/logic.js/test/run.js 통과 확인, index.html 변경이면 관례대로 APP_VERSION/sw.js CACHE 버전 범프."
-  },
+  "cycle": 352,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 346,
-      "phase": "review",
-      "timestamp": "2026-11-13T00:10:00.000Z",
-      "summary": "develop(cycle346, cdb6409: doMaturity에 undoToast 추가)를 검토. tx를 push 전에 const tx=touch({...})로 먼저 만들어 id를 확보한 뒤 push하는 순서, prevMaturityDate 캡처가 a.maturityDate=null 대입 전에 이루어지는 순서를 라인 대조로 확인(doSettle/doRenameOwner와 동일한 캡처-먼저 원칙). undoFn이 DB.txns=DB.txns.filter(t=>t.id!==tx.id)로 생성된 거래만 제거하고 a.maturityDate=prevMaturityDate로 복원 후 touchSave+invalidateBalances+renderCurrent+toast('되돌렸어요') 순서가 다른 undo 경로와 동일함을 확인. invalidateBalances()를 인자 없이 호출하는 것은 이 커밋이 바꾼 부분이 아니라 기존 코드 그대로(원래도 인자 없이 호출)임을 diff로 확인해 회귀 아님. 이 액션은 push만 하고 deletedIds 톰스톤을 만들지 않으므로(주석에도 명시) undo가 톰스톤을 되돌릴 필요가 없다는 설명도 코드와 일치. 클램프(RANGE_FROM 보정)/confirmTransfers 분기 모두 메시지 인자로만 이동했고 로직 분기 자체는 변경 없음을 확인. 테스트 2건(기존 클램프 테스트의 lastUndo.msg 전환, 새 되돌리기 복원 통합 테스트)이 바뀐 경로를 정확히 겨냥함을 확인. node test/run.js 재실행 3361/3361 통과. 실제 버그 없음(state.json만 커밋).",
-      "commit": null
-    },
     {
       "cycle": 346,
       "phase": "critique",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-13T23:10:00.000Z",
       "summary": "최근 critique들이 '되돌리기 공백'류에 쏠려 있었어서 이번엔 Explore 서브에이전트에게 그 류를 배제하고 아키텍처/성능/UX/접근성/에러처리/데이터정합성/DRY 전반을 조사시켰다. 후보 3개: (1) sanitizeBackup()의 splits 검증 블록이 txns/recurrences/edits[date] 3곳에 완전히 동일한 코드로 복제돼 있음(DRY 위반이지만 현재 활성 버그 증거 없음, latent risk로만 남겨둠) (2) save()의 동기 JSON.stringify+localStorage.setItem이 대용량 거래내역에서 jank를 낼 수 있음(이미 DB_JSON_LEN+shouldWarnStorageSize 저장공간 경고와 Web Locks 멀티탭 뮤텍스로 선제 대응돼 있고 실제 오동작 증거 없어 추측성으로 기각) (3, 채택) sanitizeBackup()이 live recurrences(약 9690-9812)는 splits/category/memo/endDate/count/freq/day/weekend/skip/confirmedDates를 전부 정규화하는데 trashRecs 블록(약 9950-9958)은 id/startDate/amount/_deletedAt만 확인하고 나머지는 그대로 통과시킴(9942-9949 주석의 'saveRec()이 이미 정규화했으니 안전'이라는 전제가 이 앱이 쓴 레코드에만 성립하고 손편집/구버전/다른 기기 클라우드 문서엔 성립 안 함) — restoreTrashRec()(약 12408-12419)도 재검증 없이 DB.recurrences에 바로 push해, 손상된 weekend 값('bogus' 등)을 가진 trashRec을 복구하면 renderRecSheet의 WK[d.weekend||'none'][0] (WK는 'none'|'earlier'|'later'만 키로 가짐)가 undefined[0]으로 TypeError를 던져 그 반복거래 편집 시트가 영구히 크래시함. test/run.js:16612의 기존 테스트는 유효한 입력만 넣어 '그대로 보존'을 확인하므로 이 실패를 전혀 커버하지 못하는 거짓 안전감(라이브 recurrences엔 16142 같은 적대적 입력 테스트가 있는데 trashRecs엔 없음)임을 확인. 후보 1(splits 중복)은 채택한 수정(sanitizeRecFields 클로저 추출)에 자연히 함께 해소되도록 계획에 포함시켰다. pending_advance_plan에 sanitizeRecFields(d) 공용 클로저 추출(recurrences forEach와 trashRecs forEach 양쪽에서 재사용) + test/run.js:16612 이름 정정 + trashRecs 적대적 입력 테스트 추가(16142 패턴 차용) 구체 계획 저장. node test/run.js 3396/3396 통과 확인(베이스라인 깨짐 없음). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 351,
+      "phase": "advance",
+      "timestamp": "2026-11-14T00:14:41.405Z",
+      "summary": "critique(cycle351) 계획대로 sanitizeBackup()의 trashRecs 블록이 recurrences와 달리 splits/category/memo/endDate/count/freq/day/weekend/edits/skip/confirmedDates를 재검증하지 않던 공백을 고쳤다. 기존에 recurrences forEach 안에만 인라인돼 있던 그 정규화 블록 전체를 같은 함수 스코프의 공용 클로저 const sanitizeRecFields=(d)=>{...}로 추출해(fixedCount/NAME_MAX/MEMO_MAX/csvDateValid/clampDay/sanitizeAmount를 그대로 클로저로 참조, dedupeIds/dedupeNames와 동일 패턴) recurrences forEach(amount 클램프 다음)와 trashRecs forEach(amount 클램프 다음, _deletedAt 처리 전) 양쪽에서 sanitizeRecFields(d)를 호출하도록 했다 — 동시에 두 블록 간 코드 중복(critique가 짚은 DRY 위반)도 함께 해소됨. test/run.js:16612의 기존 테스트(\"재검증하지 않고 그대로 보존\")는 유효한 입력만 썼으므로 결과값은 그대로 통과하지만, 이름이 뒤집힌 설계 의도를 말하고 있어 \"recurrences와 동일하게 재검증한다\"로 정정했다. 16130의 적대적 recurrences 테스트를 본떠 trashRecs용 신규 테스트 1건을 추가했다: {freq:monthly, day:'nope', weekend:'bogus', count:'nope'}를 넣고 sanitizeBackup 후 weekend==='none'(복구 시 WK[d.weekend][0] TypeError 크래시 방지), day===1(clampDay와 동일), count===null로 정규화되고 fixedCount>=3임을 확인. WK 자체는 vm 샌드박스 전역 프로퍼티로 노출되지 않아(const라 host에서 sandbox.WK로 접근 불가, MEMO_MAX처럼 같은 const 문에 묶인 이름만 예외적으로 노출됨을 직접 vm으로 재확인) restoreTrashRec의 실제 push를 시뮬레이션하는 통합 테스트는 생략하고 필드 값 검증으로 대체했다. node test/run.js 3396->3397/3397 통과. node --check sw.js/logic.js/test/run.js 통과, index.html 주 스크립트 블록 추출 후 구문 검증도 테스트 스위트 실행 자체가 겸함(기존 관례와 동일). 사용자 체감 동작 변화(손으로 편집했거나 손상된 백업/다른 기기의 클라우드 문서에 있던 trashRecs를 복구해도 더 이상 반복거래 편집 시트가 영구히 크래시하지 않음, 평소 정상 동작에는 영향 없음)라 APP_VERSION 1.47.442->1.47.443, sw.js CACHE v709->v710. pending_advance_plan null로 비움.",
       "commit": null
     }
   ]

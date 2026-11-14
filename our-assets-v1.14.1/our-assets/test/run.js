@@ -16609,7 +16609,7 @@ test('sanitizeBackup: 트래시 반복의 _deletedAt이 손상돼도(숫자가 �
   assert.strictEqual(data.trashRecs.length, 2, '유효한 복구 대상을 _deletedAt 손상만으로 통째로 버리면 안 됨');
   assert.ok(data.trashRecs.every(r => typeof r._deletedAt === 'number' && r._deletedAt >= before));
 });
-test('sanitizeBackup: 트래시 반복은 recurrences와 달리 splits/skip/edits/freq/day/weekend 등은 재검증하지 않고 그대로 보존한다(이미 saveRec이 정규화해 둔 아카이브라는 전제)', () => {
+test('sanitizeBackup: 트래시 반복도 recurrences와 동일하게 splits/skip/edits/freq/day/weekend 등을 재검증한다(유효한 값은 그대로 보존됨, app-evolve cycle351 advance — 과거엔 "이미 saveRec이 정규화해 둔 아카이브"라는 전제로 이 재검증을 건너뛰었으나, 그 전제가 손편집/구버전/다른 기기 클라우드 문서에는 성립하지 않아 sanitizeRecFields로 통일)', () => {
   const { data } = sandbox.sanitizeBackup({
     txns: [], assets: [],
     trashRecs: [{ id: 'r1', startDate: '2026-01-01', amount: 1000, freq: 'monthly', day: 15, weekend: 'earlier', skip: ['2026-02-01'], _deletedAt: 123 }],
@@ -16619,6 +16619,24 @@ test('sanitizeBackup: 트래시 반복은 recurrences와 달리 splits/skip/edit
   assert.strictEqual(data.trashRecs[0].weekend, 'earlier');
   assert.deepStrictEqual(data.trashRecs[0].skip, ['2026-02-01']);
   assert.strictEqual(data.trashRecs[0]._deletedAt, 123);
+});
+/* 바로 위 테스트는 유효한 값만 입력해 "그대로 보존"만 확인하므로, live recurrences 블록이 16130/16142
+ * 줄에서 커버하는 "손상된 값이 들어오면 정규화되는가"라는 적대적 입력 케이스를 트래시 쪽은 지금까지
+ * 전혀 테스트하지 않고 있었다(사실 그 케이스를 커버할 코드 자체가 없었다, cycle351 critique/advance가
+ * 고친 버그). weekend가 'none'|'earlier'|'later'가 아닌 값으로 남으면 restoreTrashRec()으로 복구한 뒤
+ * 반복 수정 시트가 WK[d.weekend||'none'][0]에서 undefined[0] TypeError로 영구히 크래시하므로, 16130과
+ * 동일한 입력(freq:monthly인데 weekend가 유효 3값 밖)에 day/count까지 함께 손상시켜 세 필드 모두
+ * sanitizeRecFields가 clampDay/count 클램프/weekend 정규화를 똑같이 적용하는지 함께 확인한다. */
+test('sanitizeBackup: 트래시 반복도 알 수 없는 weekend/day/count 값을 recurrences와 동일하게 정규화한다(복구 시 WK[d.weekend][0] TypeError 크래시 방지, app-evolve cycle351 advance)', () => {
+  const { data, fixedCount } = sandbox.sanitizeBackup({
+    txns: [], assets: [],
+    trashRecs: [{ id: 'r1', startDate: '2026-01-01', amount: 1000, freq: 'monthly', day: 'nope', weekend: 'bogus', count: 'nope', _deletedAt: 123 }],
+  });
+  const r = data.trashRecs[0];
+  assert.strictEqual(r.weekend, 'none', "복구 시 WK[d.weekend||'none'][0]이 undefined[0]으로 크래시하지 않도록 'none'으로 정규화되어야 함");
+  assert.strictEqual(r.day, 1, "day가 숫자로 변환 불가능하면 clampDay()와 동일하게 1로 정규화되어야 함");
+  assert.strictEqual(r.count, null, "count가 숫자로 변환 불가능하면 '설정 안 함'(null)으로 정규화되어야 함");
+  assert.ok(fixedCount >= 3, 'weekend/day/count 세 필드 모두 고친 것으로 세어져야 함');
 });
 test('sanitizeBackup: 트래시 반복도 trashTxns/trashAssets와 동일하게 id 중복이면 새 id를 부여해 복구한다', () => {
   const { data, fixedCount } = sandbox.sanitizeBackup({
