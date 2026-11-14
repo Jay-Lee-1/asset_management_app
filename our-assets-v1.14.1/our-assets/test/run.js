@@ -235,7 +235,7 @@ const FUNCTIONS = [
   // 정산(settlement, app-evolve cycle314 critique/advance): settlementSummary(logic.js)를 둘러싼
   // 설정 폼/화면/완료처리. firstCashForOwner/settleConfigured는 doSettle/renderTxSheet/renderMenu가
   // 공유하는 작은 헬퍼라 그 호출부들과 같은 sandbox에 항상 함께 올라가야 한다.
-  'firstCashForOwner', 'settleConfigured', 'openSettleConfigForm', 'settleConfigPickA', 'settleConfigPickB', 'settleRatioInput', 'renderSettleConfigForm', 'saveSettleConfig', 'clearSettleConfig', 'openSettlement', 'confirmSettlement', 'doSettle',
+  'firstCashForOwner', 'settleConfigured', 'openSettleConfigForm', 'settleConfigPickA', 'settleConfigPickB', 'settleRatioInput', 'renderSettleConfigForm', 'saveSettleConfig', 'clearSettleConfig', 'openSettlement', 'settlementBreakdownHTML', 'confirmSettlement', 'doSettle',
   'detectStaleMarketValuedTxns', 'delBudget', 'saveBudget', 'openBudgetPrompt', 'openBigMinSheet',
   'hasFutureTxns', 'emptyAssets', 'tidySnoozed', 'snoozeTidy', 'emptyAssetCards', 'openTidyAsset', 'openTidyList', 'tidyListSnooze',
   'debtsBehind', 'openDebtBehindList', 'debtsPaidOff', 'openDebtPaidOffList', 'ackDebtPayoff',
@@ -20377,6 +20377,60 @@ test('settlementSummary: 홀수 총액으로 50/50이 딱 안 나눠지면 Math.
   assert.strictEqual(s.expectedB, 50, 'expectedB는 total-expectedA로 나머지를 그대로 가져야 함');
   assert.strictEqual(s.diffAmount, 50);
   assert.strictEqual(s.oweOwner, '배우자');
+});
+
+/* ---------- settlementItems: settlementSummary의 집계 총액 뒤에 숨는 "뭐가 합쳐진 건지"를
+ * 보여주는 상세 내역 분리(app-evolve cycle356 advance). 같은 ownerOf 판정을 재사용해 포함/제외
+ * 건을 날짜순으로 나눠 돌려준다. */
+test('settlementItems: shared expense가 아닌 거래는 포함/제외 어느 쪽에도 나타나지 않는다', () => {
+  const assets = [{ id: 'a1', owner: '나' }, { id: 'a2', owner: '배우자' }];
+  const txns = [
+    { id: 't1', type: 'expense', fromAssetId: 'a1', amount: 10000 }, // shared 없음
+    { id: 't2', type: 'expense', fromAssetId: 'a2', amount: 20000, shared: false },
+    { id: 't3', type: 'income', fromAssetId: 'a1', amount: 30000, shared: true }, // expense 아님
+    { id: 't4', type: 'expense', fromAssetId: 'a1', amount: 5000, shared: true, date: '2026-01-01' },
+  ];
+  const it = sandbox.settlementItems(txns, assets, '나', '배우자');
+  assert.strictEqual(it.included.length, 1);
+  assert.strictEqual(it.included[0].id, 't4');
+  assert.strictEqual(it.excluded.length, 0);
+});
+test('settlementItems: 결제 자산이 ownerA/ownerB 둘 다 아니면 excluded로 분류되고 payer 필드에 실제 owner가 실린다', () => {
+  const assets = [{ id: 'a1', owner: '나' }, { id: 'a2', owner: '배우자' }, { id: 'a3', owner: '공용' }];
+  const txns = [
+    { id: 't1', type: 'expense', fromAssetId: 'a1', amount: 10000, shared: true, date: '2026-01-02' },
+    { id: 't2', type: 'expense', fromAssetId: 'a3', amount: 99999, shared: true, date: '2026-01-01' },
+  ];
+  const it = sandbox.settlementItems(txns, assets, '나', '배우자');
+  assert.strictEqual(it.included.length, 1);
+  assert.strictEqual(it.included[0].id, 't1');
+  assert.strictEqual(it.excluded.length, 1);
+  assert.strictEqual(it.excluded[0].id, 't2');
+  assert.strictEqual(it.excluded[0].payer, '공용', '제외 이유를 보여주려면 실제 결제자 owner가 필요함');
+});
+test('settlementItems: included/excluded 모두 날짜순으로 정렬된다', () => {
+  const assets = [{ id: 'a1', owner: '나' }];
+  const txns = [
+    { id: 't1', type: 'expense', fromAssetId: 'a1', amount: 1000, shared: true, date: '2026-01-15' },
+    { id: 't2', type: 'expense', fromAssetId: 'a1', amount: 2000, shared: true, date: '2026-01-02' },
+    { id: 't3', type: 'expense', fromAssetId: 'a1', amount: 3000, shared: true, date: '2026-01-08' },
+  ];
+  const it = sandbox.settlementItems(txns, assets, '나', '배우자');
+  // vm 샌드박스 배열은 host Array와 realm이 달라 deepStrictEqual이 실패하므로 Array.from으로 정규화(위 recDates 테스트와 동일 패턴)
+  assert.deepStrictEqual(Array.from(it.included, x => x.id), ['t2', 't3', 't1']);
+});
+test('settlementItems: 반복거래가 펼친 가상 인스턴스(isRec, recId)도 id/recId/date가 그대로 실려 편집 내비게이션에 쓸 수 있다', () => {
+  const assets = [{ id: 'a1', owner: '나' }];
+  const txns = [
+    { id: 'rec_r1_2026-01-10', recId: 'r1', isRec: true, type: 'expense', fromAssetId: 'a1', amount: 7000, shared: true, date: '2026-01-10', memo: '넷플릭스' },
+  ];
+  const it = sandbox.settlementItems(txns, assets, '나', '배우자');
+  assert.strictEqual(it.included.length, 1);
+  const x = it.included[0];
+  assert.strictEqual(x.isRec, true);
+  assert.strictEqual(x.recId, 'r1');
+  assert.strictEqual(x.id, 'rec_r1_2026-01-10');
+  assert.strictEqual(x.memo, '넷플릭스');
 });
 
 /* ---------- mergeCollection: afterCloudAuth()의 localUnsynced 충돌 분기가 DB.txns를 문서 전체

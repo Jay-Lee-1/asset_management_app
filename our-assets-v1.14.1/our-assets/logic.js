@@ -215,6 +215,25 @@ function settlementSummary(txns,assets,ownerA,ownerB,ratioA){
  const oweOwner=diffAmount===0?null:(paidA>expectedA?ownerB:ownerA);
  return {paidA,paidB,total,expectedA,expectedB,diffAmount,oweOwner};
 }
+/* settlementSummary는 집계 총액만 돌려줘, openSettlement이 "얼마"는 보여줘도 "뭐가 합쳐진 건지"는
+ * 전혀 보여줄 방법이 없었다 — shared 플래그가 몇 주 전 지출에서 잘못 켜져 있어도 정산 직전까지
+ * 알아챌 길이 없고, 결제 자산이 ownerA/ownerB 둘 다 아니라 조용히 제외된 건(위 주석)도 사용자
+ * 눈엔 그냥 "총액이 예상보다 적다"로만 보였다. settlementSummary와 똑같은 입력·같은 ownerOf
+ * 판정으로 집계에 포함된/제외된 건을 각각 날짜순으로 추려 돌려준다 — 합산 공식은 그대로 두고 그
+ * 위에 상세 내역만 덧붙인다(app-evolve cycle356 advance). */
+function settlementItems(txns,assets,ownerA,ownerB){
+ const ownerOf=id=>{if(!id)return null;const a=(assets||[]).find(x=>x.id===id);return a?a.owner:null};
+ const included=[],excluded=[];
+ (txns||[]).forEach(t=>{
+  if(t.type!=='expense'||!t.shared)return;
+  const o=ownerOf(t.fromAssetId);
+  const item={id:t.id,date:t.date,memo:t.memo,category:t.category,amount:t.amount,payer:o,isRec:!!t.isRec,recId:t.recId||null};
+  (o===ownerA||o===ownerB?included:excluded).push(item);
+ });
+ const byDate=(a,b)=>a.date<b.date?-1:a.date>b.date?1:0;
+ included.sort(byDate);excluded.sort(byDate);
+ return {included,excluded};
+}
 
 /* ================= CLOUD MERGE / TOMBSTONE ================= */
 /* localArr/remoteArr(둘 다 {id,...,updatedAt?} 배열)를 id 단위로 3-way 병합하는 순수 함수.

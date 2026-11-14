@@ -1,19 +1,8 @@
 {
-  "cycle": 356,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "클라우드 동기화가 영수증 사진까지 포함한 전체 DB를 매번 재업로드함 — 사진을 별도 저장소로 분리",
-    "why": "pushCloud()(index.html:2223)는 encodeCloudPayload(DB)(2113-2123)로 DB 전체를 gzip+base64해 한 번에 upsert/update하고, scheduleCloudPush()(2168)는 설정 토글 하나 같은 무관한 save()에도 동일한 전체 push를 1.2초 디바운스로 트리거한다. 영수증 사진(txn.photo, ~6394-6460)은 이미 JPEG dataURL로 사실상 최대 압축된 바이너리라 gzip이 거의 효과가 없고(base64 33% 오버헤드만 회수), 사진을 자주 첨부하는 사용자는 300장*80KB≈24MB처럼 DB 크기가 사진 수에 비례해 선형으로 커진다. 그 결과 거래 1건을 고치는 사소한 편집마다 전체 블롭을 매번 재업로드/재다운로드하게 되어 모바일 데이터 비용·지연이 커지고, 느린 네트워크에서 withTimeout/조건부 UPDATE 재시도 경합(2238-2280) 위험이 늘고, STORAGE_SIZE_WARN_LEN/CRIT_LEN(1992, 3MB/4.5MB)을 실제 재무 데이터량과 무관하게 사진 누적만으로 넘기게 된다. 이미 index.html:2091-2099에 작성자 자신이 cycle214 critique로 남긴 self-critique 주석이 '압축만 적용했고 delta sync는 아직'이라고 명시하고 있다.",
-    "approach": "① DB.txns[*].photo의 dataURL을 Supabase에 별도 테이블/버킷(예: user_photos(user_id, txn_id, data, updated_at))로 분리해 pushCloud()/pullCloud()와 독립적으로 업/다운로드한다. ② 동기화된 뒤에는 DB.txns 쪽 레코드엔 inline dataURL 대신 참조 플래그만 남기고(예: photoRef:true), openPhotoViewer()(6462)에서 실제 바이트를 지연 로딩한다. ③ pushCloud()가 사진이 실제로 바뀐 txn만 사진 테이블에 쓰도록(해시 또는 touch() 타임스탬프 비교) 해서, 사진과 무관한 편집은 메인 payload 변경량도 줄인다. ④ sanitizeBackup()/doExport()/pullCloud()의 mergeRemoteDataIntoLocal()은 로컬 JSON 백업은 여전히 inline 사진을 유지하도록(로컬 내보내기는 이 비용이 없음) 클라우드 인코드/디코드 경로에서만 사진을 분리하는 이중 포맷을 신중히 처리해야 한다 — 이 부분이 가장 까다로운 지점."
-  },
+  "cycle": 357,
+  "phase": "develop",
+  "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 351,
-      "phase": "review",
-      "timestamp": "2026-11-13T22:10:00.000Z",
-      "summary": "cycle351 develop(404ed5b, sanitizeRateMap이 fx/stocks/crypto 코드별 leaf 값을 검증 없이 통과시키던 공백 수정)을 검토했다. sanitizeAmount(v,0)의 구현을 직접 읽고 문자열/객체/음수/상한초과 각 입력에 대한 반환값이 develop이 추가한 테스트 기대값과 정확히 일치함을 확인했다. R.stocks/R.fx/R.crypto가 코드별 숫자 외 다른 구조로 쓰이는 곳이 있는지 grep으로 전체 재확인 — 모두 순수 code->number 맵으로만 쓰여 깨지는 소비처가 없음을 확인. node test/run.js 3396/3396 전부 통과. 실제 버그를 찾지 못해 코드 변경 없음 — state.json만 담은 리뷰 커밋.",
-      "commit": null
-    },
     {
       "cycle": 351,
       "phase": "critique",
@@ -145,6 +134,13 @@
       "phase": "critique",
       "timestamp": "2026-11-14T19:10:00.000Z",
       "summary": "Explore 서브에이전트에게 지난 cycle340-356의 모든 주제(반복거래 scope-confirm/edits[date] override류 전부 포함)를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: pushCloud()(index.html:2223)가 encodeCloudPayload(DB)(2113-2123)로 매번 DB 전체를 gzip+base64해 올리는데, 영수증 사진(txn.photo, dataURL)은 이미 JPEG라 gzip 효과가 거의 없어 사진이 쌓일수록(예 300장*80KB≈24MB) 설정 토글 같은 무관한 편집에도 전체 블롭을 매번 재업로드/재다운로드하는 비용이 계정 나이에 비례해 커진다 — index.html:2091-2099에 작성자 자신이 cycle214 critique로 남긴 self-critique 주석이 '압축만 적용, delta sync는 미해결'이라 명시한 지점의 후속. 후보로 카테고리 rename 엣지케이스(doRenameCat/mergeCatInto)와 검색어 파싱(matchTxnQuery/parseAmountUnit)도 조사했으나 이미 성숙해 공백 없음으로 기각. pending_advance_plan에 사진을 별도 Supabase 테이블로 분리해 pushCloud/pullCloud와 독립적으로 동기화하고 DB.txns엔 참조만 남기는 계획 저장(로컬 JSON 백업은 inline 유지, 클라우드 인코드/디코드 경로만 이중 포맷 처리). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+      "commit": null
+    },
+    {
+      "cycle": 356,
+      "phase": "advance",
+      "timestamp": "2026-11-14T20:10:00.000Z",
+      "summary": "critique(cycle356)가 세운 계획(영수증 사진을 별도 Supabase 테이블/버킷으로 분리)은 이 자동화 세션이 실제 원격 Supabase 스키마를 만들거나 검증할 수 없어(새 테이블/버킷 존재를 보장 못 함) 그대로 구현하면 실사용자의 클라우드 동기화를 깨뜰 위험이 있다고 판단해 보류했다 — 대신 Explore 서브에이전트에게 백엔드 인프라 변경이 필요 없는 advance급 개선을 새로 찾게 했다. 채택: openSettlement()(index.html:5735)의 합계 카드가 총액만 보여줘 어느 지출이 합산됐는지, 결제 자산이 ownerA/ownerB 둘 다 아니라 조용히 제외된 지출이 있는지 확인할 방법이 없었다. logic.js에 settlementSummary 바로 아래 순수 함수 settlementItems(txns,assets,ownerA,ownerB) 추가(같은 ownerOf 판정 재사용, 집계 공식은 건드리지 않음) — 포함/제외 건을 날짜순으로 나눠 돌려준다. openSettlement()에 settlementBreakdownHTML() 추가해 포함된 건은 editRec()과 동일한 manage-row 탭-편집 패턴으로 눌러 바로 수정하러 갈 수 있게 하고, 제외된 건은 '제외됨 N건 · 이유 · 금액'으로 안내한다. 테스트 4건 추가(shared/expense 아닌 거래 제외, 제외 사유 payer 필드, 날짜순 정렬, 반복거래 가상 인스턴스의 id/recId 보존). node test/run.js 3437->3441/3441 통과. APP_VERSION 1.47.453->1.47.454, sw.js CACHE v720->v721. pending_advance_plan null로 비움(인프라가 필요한 사진 분리 계획은 폐기 — 다음 critique가 원하면 인프라 제약을 감안해 재검토).",
       "commit": null
     }
   ]

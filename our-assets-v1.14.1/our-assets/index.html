@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.453';
+const APP_VERSION='1.47.454';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -5752,8 +5752,25 @@ function openSettlement(){
   </div>`:`<div class="empty"><div class="ei">${svg('users')}</div><div class="et">아직 같이 낸 지출이 없어요</div><div class="es">지출 입력에서 '같이 냈어요'를 켜 보세요</div></div>`;
  openSheet(`<h3>정산</h3><div class="desc">${fmtDateFull(from)}부터 오늘까지 · ${esc(cfg.ownerA)} ${cfg.ratioA}% · ${esc(cfg.ownerB)} ${100-cfg.ratioA}% <span class="link" role="button" tabindex="0" aria-label="정산 설정" onclick="openSettleConfigForm()" onkeydown="rowKeydown(event,()=>openSettleConfigForm())">설정 ${svg('chev')}</span></div>
   ${body}
+  ${settlementBreakdownHTML(txns,DB.assets,cfg.ownerA,cfg.ownerB)}
   ${s.diffAmount?`<button class="btn btn-primary" style="margin-bottom:8px" onclick="confirmSettlement()">정산 완료로 표시</button>`:''}
   <button class="btn btn-soft" onclick="closeSheet()">닫기</button>`);
+}
+/* openSettlement()의 합계 카드는 "얼마"만 보여줘 사용자가 그 안에 어느 지출이 섞였는지, 결제
+ * 자산이 ownerA/ownerB 둘 다 아니라서 조용히 빠진 지출이 있는지 확인할 방법이 없었다(settlementItems
+ * 주석 참고, app-evolve cycle356 advance). settlementItems()로 포함/제외 건을 나눠, 포함된 건은
+ * editRec()이 쓰는 것과 동일한 manage-row 탭-편집 패턴으로 눌러서 바로 고칠 수 있게 하고, 제외된
+ * 건은 "제외됨 N건"으로 이유와 함께 알려준다. */
+function settlementBreakdownHTML(txns,assets,ownerA,ownerB){
+ const it=settlementItems(txns,assets,ownerA,ownerB);
+ if(!it.included.length&&!it.excluded.length)return '';
+ const row=x=>`<div class="manage-row" tabindex="0" role="button" aria-label="${esc(x.memo||x.category||'')} ${shortDate2(x.date)} -${comma(x.amount)}원" onclick="editTx('${x.id}','${x.recId||''}','${x.date}')" onkeydown="rowKeydown(event,()=>editTx('${x.id}','${x.recId||''}','${x.date}'))">
+   <div style="flex:1;min-width:0"><div class="nm-row"><span class="nm">${esc(x.memo||x.category||'')}</span></div><div class="flow-sub"><span class="fl">${shortDate2(x.date)} · ${esc(x.payer||'')}</span></div></div>
+   <div class="amt num minus">-${comma(x.amount)}원</div></div>`;
+ return `<div class="card" style="padding:4px 12px;margin-bottom:12px">
+   <div style="max-height:40dvh;overflow-y:auto">${it.included.map(row).join('')}</div>
+   ${it.excluded.length?`<div style="font-size:12px;color:var(--text-3);padding:10px 4px 6px">제외됨 ${it.excluded.length}건 · 결제 자산이 ${esc(ownerA)}/${esc(ownerB)} 둘 다 아니라 집계에서 빠졌어요 (${comma(it.excluded.reduce((a,x)=>a+x.amount,0))}원)</div>`:''}
+  </div>`;
 }
 /* '정산 완료로 표시' — 실제로 갚아야 할 쪽(oweOwner)의 현금 자산에서 받는 쪽 현금 자산으로
  * 이체 내역을 남겨(기록상으로도 "실제 정산했다"가 남게) settledThrough를 오늘로 당긴다. 다음에
