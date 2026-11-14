@@ -223,6 +223,10 @@ const FUNCTIONS = [
   'wname', 'fmtDate', 'shortDate', 'fmtDateFull', 'localHasUnsyncedChanges', 'shouldRetryCloudSync',
   'pullCloud', 'afterCloudAuth', 'resolveCloudPullRemote', 'confirmCloudPullRemote', 'pushCloud', 'measureCloudClockSkew',
   'shouldPullCloud', 'pullCloudIfStale', 'appIsOpen',
+  // applyPendingCloudConflictMerge(app-evolve cycle353 advance)는 pushCloud()의 conflict 자동병합이
+  // 시트 열림 가드로 미뤄둔 CLOUD_CONFLICT_PENDING을 closeSheet()를 대신해 직접 소비하는 경로를
+  // 실행형으로 검증하는 데 쓴다 — pushCloud/mergeRemoteDataIntoLocal과 같은 sandbox에 올라가야 한다.
+  'applyPendingCloudConflictMerge',
   'bytesToBase64', 'base64ToBytes', 'encodeCloudPayload', 'decodeCloudPayload',
   'recordError', 'showErrBanner', 'hideErrBanner', 'renderCurrent', 'rowKeydown',
   'clampDay', 'saveTx', 'commitTx', 'commitTxAsRec', 'duplicateTx', 'editTx', 'assetBase', 'balancesUpTo', 'balanceAt', 'balancesAtDates', 'balanceAtFromMap',
@@ -921,6 +925,10 @@ const sandbox = {
   },
   TAB_SAVED_AT: 0,
   TAB_SYNC_PENDING: null,
+  // CLOUD_CONFLICT_PENDING은 pushCloud()의 conflict 자동병합이 시트 열림 가드로 미뤄둔 원격 최신
+  // 행(curRow)을 담는 보류 상태(TAB_SYNC_PENDING과 같은 이유로 index.html에서 `let`으로 선언돼
+  // 재대입되므로 직접 세팅한다, app-evolve cycle353 advance).
+  CLOUD_CONFLICT_PENDING: null,
   snapshotAssetName: (id) => { sandbox.snapshotCalls.push(id); },
   // toggleConfirmTransfers()가 끄기 전 확인을 받는 confirmSheet() 스텁 — 실제 시트를 띄우는
   // 대신 호출 인자를 기록하고 콜백만 저장해서, 테스트가 "확인" 버튼을 누른 것처럼 cb를 직접 실행할 수 있게 한다.
@@ -22479,6 +22487,111 @@ test('[실행형] pushCloud: 충돌 자동 재시도 중에는 재시도 호출�
   } finally {
     sandbox.SB = origSB;
   }
+});
+
+/* ---------- pushCloud/applyPendingCloudConflictMerge: 조건부 UPDATE 충돌 자동병합이 열려 있는
+ * 편집 시트를 보호하지 않아 조용한 데이터 손실(+거짓 성공 토스트)로 이어지던 버그의 회귀 테스트
+ * (app-evolve cycle353 critique가 발견 → advance가 수정). pullCloudIfStale()/handleForeignStorage의
+ * TAB_SYNC_PENDING과 동일하게, 시트가 열려 있으면 mergeRemoteDataIntoLocal+save를 즉시 적용하지
+ * 않고 CLOUD_CONFLICT_PENDING에 보류해 closeSheet()가 닫힐 때까지 미룬다. ---------- */
+test('pushCloud: 충돌이 나도 시트가 열려 있으면(편집 중일 수 있음) 즉시 병합하지 않고 CLOUD_CONFLICT_PENDING에 보류한다', async () => {
+  sandbox.DB = {
+    txns: [{ id: 'local-only', date: '2026-01-01', updatedAt: 100 }],
+    recurrences: [], assets: [], deletedIds: {},
+  };
+  sandbox.CLOUD_UID = 'u1';
+  sandbox.CLOUD_SYNC_STATE = 'idle';
+  sandbox.CLOUD_LAST_SYNCED_AT = '2026-01-01T00:00:00.000Z';
+  sandbox.CLOUD_CONFLICT_TOASTED = false;
+  sandbox.CLOUD_CONFLICT_PENDING = null;
+  sandbox.PUSH_CLOUD_INFLIGHT = false;
+  sandbox.markCloudSyncedCalls = 0;
+  sandbox.lastToast = null; sandbox.toastCalls = [];
+  sandbox._sbUpdateResults = [{ data: [], error: null }]; // 조건부 UPDATE 충돌, 재시도는 일어나지 않아야 함
+  const remoteRow = {
+    data: { data: { txns: [{ id: 'remote-only', date: '2026-01-02', updatedAt: 100 }], recurrences: [], assets: [], deletedIds: {} }, updated_at: '2026-02-01T00:00:00.000Z' },
+    error: null,
+  };
+  sandbox._sbMaybeSingleResult = remoteRow;
+  const origDollar = sandbox.$;
+  sandbox.$ = (id) => id === 'sheet' ? { classList: { contains: () => true } } : origDollar(id);
+  try {
+    await sandbox.pushCloud();
+  } finally {
+    sandbox.$ = origDollar;
+  }
+  assert.strictEqual(sandbox.DB.txns.length, 1, '시트가 열려 있으면 원격 데이터를 지금 당장 live DB에 병합하면 안 됨(편집 중인 드래프트를 건드릴 위험)');
+  assert.ok(sandbox.DB.txns.some(t => t.id === 'local-only'), '보류 중에도 로컬 편집은 그대로 남아 있어야 함');
+  assert.ok(!sandbox.DB.txns.some(t => t.id === 'remote-only'), '원격 전용 거래는 아직 병합되면 안 됨(closeSheet 전)');
+  assert.ok(sandbox.CLOUD_CONFLICT_PENDING, 'CLOUD_CONFLICT_PENDING에 원격 최신 행을 보류해둬야 함');
+  assert.strictEqual(sandbox.CLOUD_CONFLICT_PENDING.updated_at, remoteRow.data.updated_at);
+  assert.strictEqual(sandbox.CLOUD_SYNC_STATE, 'conflict');
+  assert.strictEqual(sandbox.PUSH_CLOUD_INFLIGHT, false, '보류하고 바로 반환했으니 inflight 가드도 풀려야 함');
+});
+test('applyPendingCloudConflictMerge: 시트를 닫아 보류된 충돌을 소비하면 자동 병합+재시도가 그대로 성공해 양쪽 txns가 모두 살아남는다', async () => {
+  sandbox.DB = {
+    txns: [{ id: 'local-only', date: '2026-01-01', updatedAt: 100 }],
+    recurrences: [], assets: [], deletedIds: {},
+  };
+  sandbox.CLOUD_UID = 'u1';
+  sandbox.CLOUD_SYNC_STATE = 'conflict';
+  sandbox.CLOUD_CONFLICT_TOASTED = true; // 보류 당시 이미 1번 토스트가 떴던 상태를 재현
+  sandbox.markCloudSyncedCalls = 0;
+  sandbox.lastToast = null; sandbox.toastCalls = [];
+  sandbox._sbUpdateResults = [{ data: [{ updated_at: 'retry-ok' }], error: null }]; // pushCloud(true) 재시도가 성공
+  sandbox.CLOUD_CONFLICT_PENDING = {
+    data: { txns: [{ id: 'remote-only', date: '2026-01-02', updatedAt: 100 }], recurrences: [], assets: [], deletedIds: {} },
+    updated_at: '2026-02-01T00:00:00.000Z',
+  };
+  await sandbox.applyPendingCloudConflictMerge();
+  assert.strictEqual(sandbox.CLOUD_CONFLICT_PENDING, null, '소비한 뒤에는 보류 상태를 비워야 함(재진입·중복 적용 방지)');
+  assert.strictEqual(sandbox.DB.txns.length, 2, '시트를 닫은 뒤에는 보류했던 원격 데이터를 병합해야 함');
+  assert.ok(sandbox.DB.txns.some(t => t.id === 'local-only'));
+  assert.ok(sandbox.DB.txns.some(t => t.id === 'remote-only'));
+  assert.strictEqual(sandbox.markCloudSyncedCalls, 1, '재시도가 최종 성공했으니 markCloudSynced가 불려야 함');
+  assert.notStrictEqual(sandbox.CLOUD_SYNC_STATE, 'conflict', '재시도가 성공했으니 수동 충돌 상태로 남으면 안 됨');
+});
+test('applyPendingCloudConflictMerge: 보류된 충돌이 없으면(평범한 closeSheet) 아무 일도 하지 않는다', async () => {
+  sandbox.CLOUD_CONFLICT_PENDING = null;
+  const origPushCloud = sandbox.pushCloud;
+  let pushCalls = 0;
+  sandbox.pushCloud = () => { pushCalls++; return Promise.resolve(); };
+  try {
+    await sandbox.applyPendingCloudConflictMerge();
+  } finally {
+    sandbox.pushCloud = origPushCloud;
+  }
+  assert.strictEqual(pushCalls, 0, '보류된 것이 없으면 pushCloud(true) 재시도도 불리면 안 됨');
+});
+/* closeSheet()는 $('sheet')/$('scrim') 등 실 DOM을 직접 조작해 FUNCTIONS vm 실행 대상에 넣지
+ * 않으므로(위 ST.goalSel 리셋과 동일한 이유) 소스 패턴만 확인한다. */
+test('closeSheet: 시트를 닫을 때 보류된 클라우드 충돌 병합(CLOUD_CONFLICT_PENDING)을 소비한다', () => {
+  const body = extractFunction('closeSheet');
+  assert.ok(
+    body.includes('if(CLOUD_CONFLICT_PENDING)applyPendingCloudConflictMerge();'),
+    'closeSheet()가 TAB_SYNC_PENDING과 동일하게 CLOUD_CONFLICT_PENDING도 소비해야 함'
+  );
+});
+
+/* ---------- commitTx: d.id가 있는데 DB.txns에서 해당 레코드를 찾지 못하는 경우(findIndex===-1)의
+ * 방어 — pushCloud conflict merge 등 외부 경로가 편집 시트가 열려 있는 동안 그 레코드를 지우거나
+ * 다른 id로 바꿔치기했을 때의 경로(app-evolve cycle353 critique/advance). 예전엔 DB.txns[-1]=d를
+ * 그대로 실행해(배열 길이/내용 불변) 사용자의 편집이 흔적 없이 사라지면서도 '저장했어요' 토스트는
+ * 그대로 떴다 — 이제 i<0이면 신규 저장처럼 push해 되살리므로 편집이 실제로 저장되고 토스트도
+ * 더 이상 거짓이 아니다. ---------- */
+test('commitTx: 저장 대상 id가 DB.txns에서 사라져 있어도(백그라운드 중 외부 변경으로 소실) 조용히 무시하지 않고 다시 살려 저장한다', () => {
+  sandbox.TWi = -1;
+  sandbox.DB = { txns: [], settings: {} };
+  sandbox.txDraft = {
+    id: 'ghost-id', type: 'expense', date: '2026-01-15', category: '식비', memo: '점심 김밥',
+    amount: 9000, fromAssetId: 'a1', toAssetId: null, repeat: false,
+  };
+  sandbox.toastCalls = []; sandbox.lastToast = null;
+  sandbox.commitTx();
+  assert.strictEqual(sandbox.DB.txns.length, 1, '레코드가 사라져 있었어도 편집 내용이 실제로 저장되어야 함(DB.txns[-1]=d로 조용히 무시되면 안 됨)');
+  assert.strictEqual(sandbox.DB.txns[0].id, 'ghost-id');
+  assert.strictEqual(sandbox.DB.txns[0].memo, '점심 김밥');
+  assert.ok(sandbox.toastCalls.includes('내역을 저장했어요'), '이제 실제로 저장됐으니 성공 토스트가 거짓이 아니어야 함');
 });
 
 /* ---------- foreignSaveIsNewer: handleForeignStorage()가 다른 탭의 save()를 반영할지 판단하는 순수 로직

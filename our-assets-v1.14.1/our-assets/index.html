@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.447';
+const APP_VERSION='1.47.448';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -1978,6 +1978,10 @@ function importGuestDataInto(guestRaw){
 }
 
 let DB, STORAGE_OK=true, STORAGE_PERSISTED=null, TAB_SAVED_AT=0, TAB_SYNC_PENDING=null, DB_JSON_LEN=0;
+/* pushCloud()의 conflict 자동병합이 시트 열림 중엔 live DB를 바로 덮어쓰지 않고 미뤄두는
+ * 보류 상태(TAB_SYNC_PENDING과 같은 '편집 중엔 건드리지 않는다' 패턴) — closeSheet()가 비운다.
+ * 아래 applyPendingCloudConflictMerge() 참고(app-evolve cycle353 critique → advance). */
+let CLOUD_CONFLICT_PENDING=null;
 let CORRUPT_BACKUP_KEYS=[]; /* scanCorruptBackupKeys()가 채움 — load()의 __corrupt_ 백업 키 중 아직 남아있는 것(최근 순) */
 let WIPE_BACKUP_KEYS=[]; /* scanWipeBackupKeys()가 채움 — doResetAll()/doDeleteAccount()/proceedWithBackupObj()/archiveTxnsBefore()/mergeAssetInto()/mergeCatInto()/mergeOwnerInto()가 wipe·복원·정리·합치기 직전에 남긴 __preReset_/__preDeleteAccount_/__preRestore_/__preArchive_/__preMergeAsset_/__preMergeCat_/__preMergeOwner_ 백업 중 grace 타이머가 못 끝나 아직 남아있는 것(최근 순, app-evolve cycle328 critique/advance, __preRestore_는 cycle329, __preArchive_는 cycle330, __preMergeAsset_는 cycle332, __preMergeCat_/__preMergeOwner_는 cycle333) */
 /* localStorage는 오리진당 보통 5~10MB로 quota가 걸려 있다(브라우저마다 다름). save()가 매번 DB
@@ -2248,15 +2252,26 @@ async function pushCloud(retried){
      * 원격 최신 행(curRow)을 그대로 자동 병합해보고, 그 원격 updated_at을 기준 삼아 조건부 UPDATE를
      * 딱 1회만 재시도한다(왕복을 아끼려 curRow를 다시 조회하지 않고 재사용). 재시도에서도 충돌이면
      * (그 사이 세 번째 기기가 또 push한 극단적 경합) retried===true라 더 재귀하지 않고 기존과 동일한
-     * 수동 폴백으로 떨어진다. */
+     * 수동 폴백으로 떨어진다.
+     * 시트가 열려 있으면(편집 중인 드래프트가 있을 수 있음) pullCloudIfStale()/TAB_SYNC_PENDING과
+     * 동일한 '편집 중엔 건드리지 않는다' 가드를 적용해, mergeRemoteDataIntoLocal+save를 지금 당장
+     * live DB에 적용하지 않고 CLOUD_CONFLICT_PENDING에 curRow를 보류해둔다 — closeSheet()가
+     * applyPendingCloudConflictMerge()로 소비한다(app-evolve cycle353 critique → advance:
+     * visibilitychange가 백그라운드 전환마다 이 경로를 쏘는데도 이 가드만 빠져 있어, 시트를 연 채
+     * 전환하면 그 사이 다른 기기의 변경이 가드 없이 merge→save되고 복귀해 저장하면 commitTx의
+     * findIndex===-1 케이스로 조용히 무시되며 거짓 성공 토스트가 뜨던 데이터손실 경로였음). */
     if(!retried&&curRow){
-     try{
-      const remoteData=sanitizeBackup(await decodeCloudPayload(curRow.data)).data;
-      mergeRemoteDataIntoLocal(remoteData);
-      save({deferCloudPush:true});
-      CLOUD_LAST_SYNCED_AT=curRow.updated_at;
-      return await pushCloud(true);
-     }catch(e){/* 병합 시도 자체가 실패하면 아래 수동 폴백으로 떨어뜨려 계정 화면에서 해결할 길을 남긴다 */}
+     if($('sheet')&&$('sheet').classList.contains('show')){
+      CLOUD_CONFLICT_PENDING=curRow;
+     }else{
+      try{
+       const remoteData=sanitizeBackup(await decodeCloudPayload(curRow.data)).data;
+       mergeRemoteDataIntoLocal(remoteData);
+       save({deferCloudPush:true});
+       CLOUD_LAST_SYNCED_AT=curRow.updated_at;
+       return await pushCloud(true);
+      }catch(e){/* 병합 시도 자체가 실패하면 아래 수동 폴백으로 떨어뜨려 계정 화면에서 해결할 길을 남긴다 */}
+     }
     }
     CLOUD_SYNC_STATE='conflict';
     if(!CLOUD_CONFLICT_TOASTED){CLOUD_CONFLICT_TOASTED=true;toast('다른 기기에 더 최신 데이터가 있어요 · 메뉴 › 계정에서 확인하세요')}
@@ -2269,6 +2284,25 @@ async function pushCloud(retried){
   CLOUD_LAST_SYNCED_AT=nowIso;cloudSyncOk();markCloudSynced();
  }catch(e){cloudSyncFailed(e)}
  finally{if(!retried)PUSH_CLOUD_INFLIGHT=false}
+}
+/* pushCloud()의 conflict 분기가 시트 열림 가드로 미뤄둔 CLOUD_CONFLICT_PENDING(원격 최신 행)을
+ * closeSheet()에서 소비한다 — 시트를 닫은 지금은 더 이상 열려있는 드래프트를 덮어쓸 위험이 없으므로
+ * pushCloud()의 자동병합+재시도 로직을 그대로 재사용한다. 병합/재시도 자체가 실패해도(네트워크 등)
+ * 기존처럼 수동 충돌 폴백으로 떨어뜨려 계정 화면에서 해결할 길을 남긴다(app-evolve cycle353 advance). */
+async function applyPendingCloudConflictMerge(){
+ const curRow=CLOUD_CONFLICT_PENDING;if(!curRow)return;
+ CLOUD_CONFLICT_PENDING=null;
+ try{
+  const remoteData=sanitizeBackup(await decodeCloudPayload(curRow.data)).data;
+  mergeRemoteDataIntoLocal(remoteData);
+  save({deferCloudPush:true});
+  if(appIsOpen())renderCurrent();
+  CLOUD_LAST_SYNCED_AT=curRow.updated_at;
+  await pushCloud(true);
+ }catch(e){
+  CLOUD_SYNC_STATE='conflict';
+  if(!CLOUD_CONFLICT_TOASTED){CLOUD_CONFLICT_TOASTED=true;toast('다른 기기에 더 최신 데이터가 있어요 · 메뉴 › 계정에서 확인하세요')}
+ }
 }
 async function afterCloudAuth(uid){
  CLOUD_UID=uid;
@@ -6433,7 +6467,13 @@ function commitTx(){
   * (2427행) — 날짜를 바꿔 수정한 경우 원래 날짜와 새 날짜 중 더 이른 쪽부터 잔액이 달라질 수 있으므로
   * min(oldDate,d.date)를 넘겨야 한다(app-evolve cycle204 advance). */
  let fromDate=d.date;
- if(d.id){const i=DB.txns.findIndex(x=>x.id===d.id);if(i>=0&&DB.txns[i].date<fromDate)fromDate=DB.txns[i].date;DB.txns[i]=d}else{d.id=uid();DB.txns.push(d)}
+ /* d.id가 있는데 findIndex가 -1이면(백그라운드 중 클라우드 conflict merge 등 외부 경로가 이
+  * 레코드를 그 사이 지웠거나 다른 id로 바꿔치기한 경우) 예전엔 DB.txns[-1]=d를 실행해 배열
+  * 길이/내용에 아무 변화도 주지 않으면서 밑의 toast는 그대로 '저장했어요'를 띄워 사용자의 편집이
+  * 조용히 통째로 사라졌다(app-evolve cycle353 critique가 pushCloud conflict merge 가드 누락과
+  * 함께 발견). i<0이면 수정이 아니라 되살리는 신규 저장으로 처리해 push하면, 편집 내용이 실제로
+  * 저장되어 뒤이은 성공 토스트가 더 이상 거짓이 되지 않는다. */
+ if(d.id){const i=DB.txns.findIndex(x=>x.id===d.id);if(i>=0){if(DB.txns[i].date<fromDate)fromDate=DB.txns[i].date;DB.txns[i]=d}else{DB.txns.push(d)}}else{d.id=uid();DB.txns.push(d)}
  save({fromDate,recsChanged:false});closeSheet();renderCurrent();toast(isFuture(d.date)?'예정 내역으로 저장했어요':'내역을 저장했어요'); /* 이 분기는 반복 등록(위 4411행)과 달리 일회성 거래만 DB.txns에 저장하므로 _recCache는 보존해도 안전(app-evolve cycle207 advance) */
 }
 function editTx(id,recId,date){
@@ -10801,7 +10841,7 @@ function ensureEdgeGesture(){
    }
  }x0=null;dx=dy=0;};
  edge.addEventListener('touchend',up);edge.addEventListener('touchcancel',up);
-}function closeSheet(){_draftSnap=null;ovHistPop();if(ST.recSel.mode){ST.recSel.mode=false;ST.recSel.ids.clear();updateSelBottom()} /* recSel은 탭(go())이 아니라 시트 안에서만 쓰는 선택모드라, 시트가 닫힐 때(스와이프·스크림 탭 등 openRecManage()를 거치지 않는 경로 포함) 여기서 정리해야 다음에 열 때 선택모드가 그대로 남아있지 않음(app-evolve cycle301 critique → advance) */if(ST.goalSel.mode){ST.goalSel.mode=false;ST.goalSel.ids.clear();updateSelBottom()} /* goalSel도 recSel과 동일하게 목표 관리 시트 안에서만 쓰는 선택모드라 여기서 정리해야 함(app-evolve cycle305 critique → advance) */const sh=$('sheet');sh.style.transition='';sh.style.transform='';sh.style.height='';sh.style.maxHeight='';sh.style.overflow='';sh.classList.remove('expanded','show');$('scrim').classList.remove('show');const eg=$('sheetEdgeGlobal');if(eg)eg.remove();syncOverlayInert();const rf=_sheetReturnFocus;_sheetReturnFocus=null;if(rf&&document.contains(rf))rf.focus();if(TAB_SYNC_PENDING!=null){const at=TAB_SYNC_PENDING;TAB_SYNC_PENDING=null;applyForeignSave(at)}}
+}function closeSheet(){_draftSnap=null;ovHistPop();if(ST.recSel.mode){ST.recSel.mode=false;ST.recSel.ids.clear();updateSelBottom()} /* recSel은 탭(go())이 아니라 시트 안에서만 쓰는 선택모드라, 시트가 닫힐 때(스와이프·스크림 탭 등 openRecManage()를 거치지 않는 경로 포함) 여기서 정리해야 다음에 열 때 선택모드가 그대로 남아있지 않음(app-evolve cycle301 critique → advance) */if(ST.goalSel.mode){ST.goalSel.mode=false;ST.goalSel.ids.clear();updateSelBottom()} /* goalSel도 recSel과 동일하게 목표 관리 시트 안에서만 쓰는 선택모드라 여기서 정리해야 함(app-evolve cycle305 critique → advance) */const sh=$('sheet');sh.style.transition='';sh.style.transform='';sh.style.height='';sh.style.maxHeight='';sh.style.overflow='';sh.classList.remove('expanded','show');$('scrim').classList.remove('show');const eg=$('sheetEdgeGlobal');if(eg)eg.remove();syncOverlayInert();const rf=_sheetReturnFocus;_sheetReturnFocus=null;if(rf&&document.contains(rf))rf.focus();if(TAB_SYNC_PENDING!=null){const at=TAB_SYNC_PENDING;TAB_SYNC_PENDING=null;applyForeignSave(at)}if(CLOUD_CONFLICT_PENDING)applyPendingCloudConflictMerge(); /* pushCloud() conflict 자동병합이 시트 열림 가드로 미뤄둔 보류 병합을 여기서 소비한다(app-evolve cycle353 advance) */}
 /* 시트를 열 때(openTxSheet/editTx/duplicateTx/recApply, openAssetSheet, openGoalForm,
  * openRecSheet/editRec) snapDraft(kind)로 초안 스냅샷을 찍어두고, 암묵적 닫기 경로
  * (스크림탭/스와이프다운 닫기/뒤로가기)가 그 스냅샷과 달라진 초안을 경고 없이 버리지
