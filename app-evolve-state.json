@@ -1,15 +1,8 @@
 {
   "cycle": 356,
-  "phase": "review",
+  "phase": "critique",
   "pending_advance_plan": null,
   "history": [
-    {
-      "cycle": 350,
-      "phase": "advance",
-      "timestamp": "2026-11-13T00:00:00Z",
-      "summary": "pullCloud/pushCloud의 error/e 객체를 cloudSyncFailed(e)에 전달하고 isRlsPolicyError로 분류해 CLOUD_SYNC_ERR_KIND('network'|'rls')를 두었다. cloudSyncLabel()과 homeAlertCard()의 cloudSyncError 카드가 RLS 케이스에선 '자동으로 다시 시도' 대신 구체적 권한 안내(Supabase 접근 권한/정책)를 보여주고 openAccountSheet() 대신 openHelpCloud()(안내 SQL)로 연결되게 했다. 네트워크 케이스는 기존 문구/동작 그대로 유지.",
-      "commit": null
-    },
     {
       "cycle": 351,
       "phase": "develop",
@@ -141,6 +134,13 @@
       "phase": "develop",
       "timestamp": "2026-11-14T17:00:00.000Z",
       "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — recHistFieldsChanged(index.html:6894, 반복거래 편집 시 '오늘부터 이후 모두'/'전체 적용' scope-confirm 시트를 띄울지 판단하는 함수)가 fromAssetId/amount/category/day/freq/startDate/weekend/splits만 비교하고 shared('같이 냈어요')는 전혀 보지 않고 있었다. expandRec()(index.html:2994)은 edits[date]에 자기 override가 없는 모든 과거+미래 occurrence에 r.shared를 그대로 흘려보내 settlementSummary()의 정산 합계에 그대로 반영되는데(cycle352 advance로 amount/splits와 동급 대우를 받게 된 필드), 공유 Netflix 구독처럼 이미 과거 회차가 있는 반복거래에서 base의 shared만 토글해 저장하면 recHistFieldsChanged가 false를 돌려줘 scope-confirm 없이 DB.recurrences[i]=d로 즉시 전체 덮어써 이미 정산이 끝났을 수도 있는 과거 달들의 정산 합계까지 조용히 소급 변경되는 금전 정확성 버그였다 — amount/category/splits가 바로 이 소급 변경을 막기 위해 명시적으로 포함돼 있는데 shared만 비대칭으로 빠져 있었음(test/run.js도 다른 필드엔 전부 테스트가 있는데 shared엔 없었음). if(!!orig.shared!==!!d.shared)return true; 한 줄을 추가해 legacy undefined와 명시적 false를 같게 보도록 !!로 정규화 후 비교. 테스트 1건(3개 assertion) 추가: shared가 바뀌면 true, undefined(레거시)와 명시적 false는 같은 것으로 봄, undefined->true는 변경으로 감지. node test/run.js 3436->3437/3437 통과. node --check logic.js/sw.js/test/run.js 통과, index.html은 test/run.js의 vm 샌드박스 전체 스위트 실행 자체가 구문 검증을 겸함(cycle339 이후 관례와 동일). 사용자 체감 동작 변화(공유 반복거래의 '같이 냈어요'만 바꿔 저장하면 이제 amount/category처럼 '오늘부터 이후 모두' vs '전체 적용(과거 기록도 함께 바뀌어요)' 확인 시트가 뜸 — 지금까지는 확인 없이 과거 정산까지 조용히 바뀌었음; 과거 회차가 아직 없는 반복거래는 영향 없음)라 APP_VERSION 1.47.452->1.47.453, sw.js CACHE v719->v720.",
+      "commit": null
+    },
+    {
+      "cycle": 356,
+      "phase": "review",
+      "timestamp": "2026-11-14T18:05:00.000Z",
+      "summary": "develop(cycle356, 0838ee7: recHistFieldsChanged에 shared 비교 추가)을 검토했다. 변경이 작고 명확 — !!로 정규화해 legacy undefined와 명시적 false를 같게 다루는 처리가 orig/d 양쪽에 대칭적으로 적용됨을 확인. fromAssetId/toAssetId 등 나머지 비교 배열이 그대로 보존됐는지, scope='one'(recSave 6633행)이 edit.shared=!!d.shared를 amount와 동일하게 항시 스냅샷하는 기존 cycle352 설계와 충돌하지 않는지 확인 — recHistFieldsChanged는 base 저장(전체 편집) 경로에서만 호출되고 scope='one' 경로와는 무관해 충돌 없음. node test/run.js 3437/3437 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
       "commit": null
     }
   ]
