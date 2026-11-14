@@ -18274,6 +18274,19 @@ test('pendingTransferCount: 일반 미확인 이체(DB.txns)와 반복 미확인
   };
   assert.strictEqual(sandbox.pendingTransferCount(), 2);
 }));
+/* ---------- pendingTransferCount: isDuePending()만 KST 기준이어도, allTxns(RANGE_FROM,TODAY)의
+ * 범위 상한이 기기 로컬 TODAY면 isDuePending()이 보기도 전에 걸러진다(app-evolve cycle352 review) —
+ * 기기 로컬 TODAY가 KST보다 느린 시간대(미국 등)에서 KST 기준 이미 도래한 오늘 날짜 이체가
+ * allTxns 범위 밖으로 잘려 카운트에서 통째로 빠지던 버그. ---------- */
+test('pendingTransferCount: 기기 로컬 TODAY가 KST보다 하루 느려도(예: 미국) KST 기준 오늘 도래한 이체는 범위에서 잘리지 않고 카운트된다', () => withFakeToday('2026-10-03', () => {
+  sandbox.TODAY = '2026-10-02'; // 기기 로컬은 아직 전날
+  sandbox.DB = {
+    settings: { confirmTransfers: true },
+    txns: [{ id: 't1', type: 'transfer', date: '2026-10-03', confirmed: false, amount: 5000 }],
+    recurrences: [],
+  };
+  assert.strictEqual(sandbox.pendingTransferCount(), 1, 'allTxns 상한이 기기 로컬 TODAY(2026-10-02)면 2026-10-03 건이 범위 밖으로 잘려 0이 되는 버그가 있었음');
+}));
 
 /* ---------- isDuePending: 기기 로컬 TODAY가 아니라 kstTodayStr()(KST 고정)로 도래를 판정해야 한다
  * (app-evolve cycle237 critique/advance) — 고치기 전 코드(t.date<=TODAY)는 TODAY가 device-local이라
@@ -30474,6 +30487,19 @@ test('homeAlerts: 미확인 이체(confirm)가 정확히 1건이면 confirm, 2�
   assert.strictEqual(confirm.length, 1);
   assert.strictEqual(confirm[0].kind, 'confirmMulti', '2건이 되면 confirmMulti 하나로 묶여야 함');
   assert.strictEqual(confirm[0].count, 2);
+}));
+test('homeAlerts: 기기 로컬 TODAY가 KST보다 하루 느려도(예: 미국) KST 기준 오늘 도래한 이체는 confirm 알림에서 빠지지 않는다(app-evolve cycle352 review)', () => withFakeToday('2026-10-03', () => {
+  setupHomeAlertsDB();
+  sandbox.TODAY = '2026-10-02'; // 기기 로컬은 아직 전날 — pendingTransferCount와 동일한 재현 조건
+  sandbox.DB.settings.confirmTransfers = true;
+  sandbox.DB.assets.push({ id: 'a1', name: '통장1', owner: '나', type: 'cash', baseAmount: 1000000 });
+  sandbox.DB.assets.push({ id: 'a2', name: '통장2', owner: '나', type: 'cash', baseAmount: 0 });
+  sandbox.DB.txns.push({ id: 't1', date: '2026-10-03', type: 'transfer', amount: 50000, fromAssetId: 'a1', toAssetId: 'a2', confirmed: false });
+  const alerts = sandbox.homeAlerts([]);
+  const confirm = alerts.filter((a) => a.kind === 'confirm' || a.kind === 'confirmMulti');
+  assert.strictEqual(confirm.length, 1, 'allTxns 상한이 기기 로컬 TODAY(2026-10-02)면 2026-10-03 건이 범위 밖으로 잘려 알림이 통째로 안 뜨는 버그가 있었음');
+  assert.strictEqual(confirm[0].kind, 'confirm');
+  assert.strictEqual(confirm[0].id, 't1');
 }));
 test('notifyAlertInfo: confirmMulti도 budgetOverMulti처럼 건수가 바뀌면 다시 알리도록 키에 count가 들어간다(app-evolve cycle156)', () => {
   sandbox.TODAY = '2026-06-15';

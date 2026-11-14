@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.444';
+const APP_VERSION='1.47.445';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -4437,7 +4437,7 @@ function toggleConfirmTransfers(){
      인라인했는데(기기-로컬 TODAY 기준이라 isDuePending()과 다른 기준으로 어긋날 수 있었음),
      isDuePending()으로 통일한다(app-evolve cycle237 advance) */
   const pendingOneOff=DB.txns.filter(t=>isDuePending(t));
-  const pendingRecList=allTxns(RANGE_FROM,TODAY).filter(t=>t.isRec&&t.type==='transfer'&&isDuePending(t));
+  const pendingRecList=allTxns(RANGE_FROM,kstTodayStr()).filter(t=>t.isRec&&t.type==='transfer'&&isDuePending(t)); /* 범위 상한도 isDuePending()과 같은 kstTodayStr() 기준이어야(app-evolve cycle352 review) — 기기 로컬 TODAY가 KST보다 느린 시간대(미국 등)에서는 KST로 이미 도래한 회차가 allTxns 범위 밖으로 걸러져 isDuePending()까지 가지도 못하고 누락됨 */
   const pending=pendingOneOff.length+pendingRecList.length;
   if(pending){
    confirmSheet('이체 확인 끄기',
@@ -11239,7 +11239,7 @@ function celebrate(msg){ /* 잘 해냈을 때의 작은 보상 */
  announceLive(msg); /* pointer-events:none 시각 요소라 toast()처럼 스크린리더용 aria-live 공지 필요 */
  setTimeout(()=>{el.classList.remove('show');setTimeout(()=>el.remove(),400)},1900);
 }
-function pendingTransferCount(){return allTxns(RANGE_FROM,TODAY).filter(t=>isDuePending(t)).length}
+function pendingTransferCount(){return allTxns(RANGE_FROM,kstTodayStr()).filter(t=>isDuePending(t)).length} /* 범위 상한을 kstTodayStr()로(app-evolve cycle352 review) — TODAY(기기 로컬)를 쓰면 KST보다 느린 시간대에서 이미 도래한 회차가 isDuePending() 전에 범위 밖으로 잘림 */
 /* ===== 큰 지출 중심 분석 (카드값·월세·관리비 컨셉) ===== */
 function bigMin(){return DB.settings.bigMin||100000} /* '큰 지출' 기준 (설정) */
 function upcomingOutflows(days){ /* 앞으로 나갈 큰돈 (기본 45일) */
@@ -11282,7 +11282,7 @@ function varyingRecs(){ /* 변동 카테고리 반복 = 해당일이 되면 실�
  return out;
 }
 function openConfirmTransferList(){ /* 미확인 이체 여러 건을 한 시트에서 — openQuickList()와 동일 패턴 */
- const list=allTxns(RANGE_FROM,TODAY).filter(t=>isDuePending(t)).sort((a,b)=>a.date<b.date?-1:1);
+ const list=allTxns(RANGE_FROM,kstTodayStr()).filter(t=>isDuePending(t)).sort((a,b)=>a.date<b.date?-1:1); /* 범위 상한 kstTodayStr()로(app-evolve cycle352 review, pendingTransferCount와 동일 이유) */
  if(!list.length){toast('확인할 이체가 없어요');return}
  if(list.length===1){const t=list[0];return t.isRec?confirmRecTransfer(t.recId,t.date):openConfirmTransfer(t.id);}
  openSheet(`<h3>이체 확인</h3><div class="desc">미확인 이체 ${list.length}건이에요. 눌러서 완료를 확인하세요.</div>
@@ -11646,7 +11646,7 @@ function homeAlerts(neg){
   * corruptBackup과 같은 이유로 홈에 노출하지만, 전체 계정 데이터가 걸린 더 치명적인 경로다
   * (scanWipeBackupKeys, app-evolve cycle328 critique/advance) */
  if(WIPE_BACKUP_KEYS.length)arr.push({kind:'wipeBackup',count:WIPE_BACKUP_KEYS.length,mostRecentKind:WIPE_BACKUP_KEYS[0].kind});
- const _pend=allTxns(RANGE_FROM,TODAY).filter(t=>isDuePending(t)).sort((a,b)=>a.date<b.date?-1:1); /* 미확인 이체: 1건이면 그대로, 여러 건이면 하나로 묶음(quick/quickMulti, budgetOver/budgetOverMulti와 동일 패턴) */
+ const _pend=allTxns(RANGE_FROM,kstTodayStr()).filter(t=>isDuePending(t)).sort((a,b)=>a.date<b.date?-1:1); /* 미확인 이체: 1건이면 그대로, 여러 건이면 하나로 묶음(quick/quickMulti, budgetOver/budgetOverMulti와 동일 패턴). 범위 상한 kstTodayStr()로(app-evolve cycle352 review, pendingTransferCount와 동일 이유) */
  if(_pend.length===1){const t=_pend[0];arr.push({kind:'confirm',id:t.id,recId:t.recId,isRec:!!t.isRec,from:assetNm(t.fromAssetId,t.fromAssetName),to:assetNm(t.toAssetId,t.toAssetName),amount:t.amount,date:t.date});}
  else if(_pend.length>1)arr.push({kind:'confirmMulti',count:_pend.length});
  /* 잔액부족예상: 1건이면 그대로, 여러 건이면 하나로 묶음(quick/quickMulti와 동일 패턴) */
