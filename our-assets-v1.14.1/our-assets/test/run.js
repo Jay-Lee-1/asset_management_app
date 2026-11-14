@@ -1305,6 +1305,21 @@ test('rateStatusText: 주식만 보유하면(암호화폐 없음) 주말 휴장 
   });
 });
 
+/* ---------- fmtSynced: 1시간 넘게 지난 갱신 시각이 어제/그 이전 날짜인데도 날짜 없이
+ * 시:분만 보여줘 "방금 본 것처럼" 오인되던 공백 (app-evolve cycle355 develop) */
+test('fmtSynced: 1시간 넘게 지났지만 오늘 안이면 기존처럼 날짜 없이 시:분만 보여준다(회귀 방지)', () => {
+  const now = Date.parse('2026-10-03T02:00:00.000Z');
+  withFakeNow(now, () => {
+    assert.strictEqual(sandbox.fmtSynced(now - 90 * 60000), '00:30 갱신');
+  });
+});
+test('fmtSynced: 어제 이전 날짜면 M.D 날짜를 시:분 앞에 붙여 며칠 지난 시세인지 드러낸다', () => {
+  const now = Date.parse('2026-10-03T02:00:00.000Z');
+  withFakeNow(now, () => {
+    assert.strictEqual(sandbox.fmtSynced(now - 20 * 60 * 60 * 1000), '10.2 06:00 갱신');
+  });
+});
+
 /* ---------- recDates: 월간 day clamp ---------- */
 test('recDates: 매월 31일 반복은 짧은 달에서 그 달의 마지막 날로 clamp된다', () => {
   const r = { freq: 'monthly', day: 31, startDate: '2026-01-01', endDate: null, weekend: 'none' };

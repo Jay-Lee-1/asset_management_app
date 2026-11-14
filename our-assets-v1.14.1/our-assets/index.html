@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.450';
+const APP_VERSION='1.47.451';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -4415,8 +4415,10 @@ function fmtSynced(ts){
  const min=Math.floor((Date.now()-ts)/60000);
  if(min<1)return '방금 갱신';
  if(min<60)return min+'분 전 갱신';
- const d=new Date(ts);
- return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')} 갱신`;
+ const d=new Date(ts),now=new Date();
+ const time=`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+ if(d.toDateString()===now.toDateString())return `${time} 갱신`;
+ return `${d.getMonth()+1}.${d.getDate()} ${time} 갱신`;
 }
 function rateStatusText(){
  const R=DB.rates;
