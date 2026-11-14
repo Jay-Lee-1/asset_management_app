@@ -1,15 +1,12 @@
 {
   "cycle": 353,
-  "phase": "critique",
-  "pending_advance_plan": null,
+  "phase": "advance",
+  "pending_advance_plan": {
+    "title": "pushCloud() 충돌-자동병합 경로가 열려 있는 편집 시트를 보호하지 않아, 백그라운드 전환 중 조용한 데이터 손실(+거짓 성공 토스트)로 이어짐",
+    "why": "pushCloud()의 outcome==='conflict' 분기(index.html:2245-2258)는 mergeRemoteDataIntoLocal(remoteData)+save()를 live DB에 즉시 적용하는데, 같은 '외부/비동기 출처가 DB를 건드리는' 자매 경로인 pullCloudIfStale()(index.html:2205, $('sheet').classList.contains('show')면 return)과 handleForeignStorage()/TAB_SYNC_PENDING(2879-2935, 시트 열려있으면 적용을 closeSheet()까지 지연)은 둘 다 '편집 중엔 건드리지 않는다' 가드를 갖고 있는데 push-conflict 병합만 그 가드가 없다. visibilitychange 핸들러(index.html:13653)가 앱이 백그라운드로 갈 때마다 pushCloud()를 즉시 쏘므로 드문 경합이 아니라 흔한 경로다. 시나리오: 기기A가 거래 T 편집 시트를 연 채 백그라운드로 전환 -> pushCloud()가 conflict를 만나 그 사이 기기B가 지운(또는 수정한) T를 포함한 remoteData를 live DB.txns에 즉시 merge(logic.js:238-242 mergeCollection이 T의 오래된 updatedAt<=원격 삭제 tombstone이라 T를 조용히 drop) -> 사용자가 복귀해 저장을 누르면 commitTx()(index.html:6436, DB.txns.findIndex(...)가 -1인데도 가드 없이 DB.txns[i]=d 즉 DB.txns[-1]=d를 실행, 배열 길이/내용 변화 없음(실측 확인)) -> save()는 바뀐 것 없는 DB.txns를 그대로 저장하고 toast('내역을 저장했어요')라는 거짓 성공 메시지를 띄움 -> 사용자의 편집은 흔적 없이 사라짐. (기기B가 T를 지운 게 아니라 수정한 경우라면 findIndex가 병합된 인덱스를 찾아 DB.txns[i]=d로 기기B의 수정을 기기A의 오래된 draft가 조용히 덮어써 lost update가 됨 — touch()가 매번 새 updatedAt을 찍으므로 이후 모든 merge에서 계속 이김.)",
+    "approach": "① pushCloud()의 outcome==='conflict' 분기에서 mergeRemoteDataIntoLocal(remoteData) 호출 전에 pullCloudIfStale()과 동일한 가드($('sheet')&&$('sheet').classList.contains('show'))를 추가한다. 시트가 열려 있으면 즉시 merge하지 않고, 기존 TAB_SYNC_PENDING 패턴을 재사용해 remoteData/curRow를 보류시켜 closeSheet() 시점에 적용하거나(선호), 최소한 기존 CLOUD_SYNC_STATE='conflict' 수동 폴백으로 떨어지게 한다(retried 재귀 재시도도 건너뜀). ② 독립적인 방어선으로 commitTx()의 d.id 분기에서 findIndex(...)===-1(레코드가 그 사이 사라짐)을 DB.txns[-1]=d로 조용히 무시하지 않도록 가드한다 — i<0이면 DB.txns.push(d)로 되살리거나, 사용자에게 '이 내역이 다른 기기에서 삭제되었어요' 같은 안내 후 재확인을 받는다(현재처럼 거짓 성공 토스트를 띄우지 않는 것이 핵심). ③ 회귀 테스트: (a) id가 DB.txns에 없는 상태에서 commitTx 저장이 배열을 조용히 비파괴로 두지 않고 실제로 레코드를 포함하게 되는지(또는 명시적으로 사용자에게 알리는지) 확인하는 테스트, (b) pushCloud conflict 분기가 $('sheet')가 열려 있을 때 mergeRemoteDataIntoLocal/save를 호출하지 않는지 확인하는 테스트(pullCloudIfStale의 기존 sheet-open 테스트가 있다면 그 패턴을 그대로 차용). 범위가 pushCloud/commitTx 양쪽에 걸쳐 develop보다 크므로 advance 단계에 적합."
+  },
   "history": [
-    {
-      "cycle": 347,
-      "phase": "advance",
-      "timestamp": "2026-11-13T06:10:53.836Z",
-      "summary": "critique(cycle347) 계획대로 정산(settlement) 귀속쌍 변경/해제 시 settledThrough(정산 완료 하한선)가 초기화되지 않던 금전 정확성 버그를 고쳤다. saveSettleConfig(index.html)에서 이전 settle과 새로 저장할 ownerA/ownerB의 귀속 집합을 비교(A/B 역할만 뒤바뀐 경우는 같은 쌍으로 취급)해 쌍이 바뀌면(신규 설정 포함) settledThrough를 null로 리셋하고, 같은 쌍으로 비율만 바꾸는 흔한 재조정은 유지하도록 했다. clearSettleConfig는 settle=null과 함께 settledThrough=null도 리셋. delOwner의 기존 settleTouched 분기에도 settledThrough=null 리셋을 추가. 세 함수 모두 리셋 전 prevSettle/prevSettledThrough를 캡처해 두고 toast()를 undoToast로 교체(saveSettleConfig/clearSettleConfig는 이번에 처음 undo가 생겼고, delOwner는 기존 undo 복원 로직에 settledThrough 필드만 추가)해 되돌릴 수 있게 했다. 테스트 9건 추가(saveSettleConfig: 신규 설정/다른 쌍으로 변경/같은 쌍 비율만 변경/A·B 역할만 뒤바뀜/undo 복원 각 1건, clearSettleConfig: 리셋/undo 복원 각 1건, delOwner: settledThrough 리셋/undo 복원 각 1건) — node test/run.js 3363->3372/3372 통과. node --check sw.js/logic.js/test/run.js 통과, index.html 주 스크립트 블록(3번째 <script>, 832KB) 추출 후 new Function()으로 구문 확인 통과. 사용자 체감 동작 변화(정산 귀속쌍을 바꾸거나 끄면 더 이상 과거 하한이 조용히 남지 않고, 저장/끄기 모두 6초 안에 되돌릴 수 있음)라 APP_VERSION 1.47.434->1.47.435, sw.js CACHE v701->v702. pending_advance_plan null로 비움.",
-      "commit": null
-    },
     {
       "cycle": 348,
       "phase": "develop",
@@ -141,6 +138,13 @@
       "phase": "review",
       "timestamp": "2026-11-14T06:15:05.571Z",
       "summary": "develop(cycle353, ab5d9ab: resetStaleDebtPayoffAcks 추가)를 검토. 새 함수가 debtsPaidOff()/ackDebtPayoff()와 완전히 동일한 패턴(txns=allTxns(RANGE_FROM,TODAY).filter(t=>!isPending(t)), dates=assetBalSampleDates(RANGE_FROM,TODAY,60), assetBalanceSeries(txns,a.id,assetBase(a),-1,dates), debtPayoffProjection(pts,TODAY).achieved)으로 payoffAckAt이 있는 부채만 재평가함을 라인 대조로 확인 — 기존 호출부들과 어긋나는 계산식 없음. startApp()/refreshToday() 양쪽에 rollPendingTransfers() 바로 뒤, save() 바로 전에 삽입돼 동일한 render-refresh 경계 불변식을 따름을 확인. touch()+save() 호출로 cloud sync merge 불변식도 유지됨. 테스트 5건(리셋/유지/payoffAckAt 없으면 skip/touch 호출 유무/재완납 통합)이 실제로 의도한 경로를 겨냥함을 확인. node test/run.js 3414/3414 재실행 통과, node --check sw.js/logic.js/test/run.js 통과, APP_VERSION 1.47.447/sw.js CACHE v714 버전 범프 확인. 실제 버그 없음(state.json만 커밋).",
+      "commit": null
+    },
+    {
+      "cycle": 353,
+      "phase": "critique",
+      "timestamp": "2026-11-14T07:15:00.000Z",
+      "summary": "최근 critique들이 되돌리기/clamp/DRY/RLS 메시징 등으로 영역이 겹쳤기 때문에 Explore 서브에이전트에게 그 전부를 배제 목록으로 주고 완전히 다른 영역을 조사시킨 뒤, 보고된 후보를 직접 라인 대조로 재검증했다. 발견: pushCloud()의 충돌 자동병합 분기(index.html:2245-2258)가 mergeRemoteDataIntoLocal(remoteData)+save()를 live DB에 즉시 적용하는데, 같은 '외부 출처가 DB를 건드리는' 자매 경로인 pullCloudIfStale()(2205, $('sheet').show면 return)과 handleForeignStorage()/TAB_SYNC_PENDING(2879-2935, 시트 열려있으면 closeSheet()까지 적용 지연)은 둘 다 가진 '편집 중엔 건드리지 않는다' 가드가 이 경로에만 없음을 직접 확인(visibilitychange 핸들러 index.html:13653이 백그라운드 전환마다 즉시 pushCloud()를 쏘아 흔한 경로임도 확인). commitTx()(index.html:6436)의 if(d.id){const i=DB.txns.findIndex(...);...DB.txns[i]=d}가 i===-1(레코드가 그 사이 merge로 사라짐)일 때도 가드 없이 DB.txns[-1]=d를 실행함을 Node로 직접 재현(배열 길이/내용 불변 확인). logic.js:238-242 mergeCollection이 로컬 updatedAt<=원격 삭제 tombstone이면 조용히 레코드를 drop함도 라인 대조로 확인. 세 가지가 합쳐지면: 기기A가 거래 T 편집 시트를 연 채 백그라운드 전환 -> push-conflict가 그 사이 기기B가 지운 T를 포함한 remoteData를 가드 없이 merge해 T가 DB.txns에서 사라짐 -> 복귀해 저장하면 DB.txns[-1]=d가 조용히 무시되고 save()는 변화 없는 배열을 저장 -> 그런데도 toast('내역을 저장했어요')라는 거짓 성공 메시지가 뜨고 사용자의 편집은 흔적 없이 사라짐(기기B가 지운 게 아니라 수정한 경우는 findIndex가 병합된 인덱스를 찾아 기기A의 오래된 draft가 기기B의 수정을 lost-update로 덮어씀). 기존 '되돌리기 공백'류나 로컬 멀티탭 save-lock 경합과는 다른 메커니즘이라 지금까지 다룬 적 없음을 재확인. 재검토해 기각한 후보(서브에이전트가 이미 조사): catBudgetRollover 재귀(이미 충분히 하드닝됨), assetAllocation 라운딩(largest-remainder 이미 적용), Web Share Target 사진 흐름/sw.js 캐싱 전략(이미 하드닝됨), targetAllocation이 클라우드 동기화 안 되는 것(cycle102 명시적 설계 의도). pending_advance_plan에 ①pushCloud conflict 분기에 pullCloudIfStale과 동일한 sheet-open 가드 추가(TAB_SYNC_PENDING 패턴 재사용해 지연 적용 선호) ②commitTx의 findIndex===-1 케이스를 DB.txns[-1]=d로 조용히 무시하지 않고 push로 되살리거나 사용자에게 알리도록 방어 ③두 경로를 겨냥한 회귀 테스트 추가하는 구체 계획 저장. node test/run.js 3414/3414 통과 확인(베이스라인 깨짐 없음). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
       "commit": null
     }
   ]
