@@ -1,152 +1,147 @@
 {
-  "cycle": 357,
-  "phase": "advance",
-  "pending_advance_plan": {
-    "title": "fx/gold/stock/crypto 추가매수·매도 시 결제 통장 현금이 조용히 움직이지 않아 순자산이 왜곡됨",
-    "why": "costBasisField()(index.html:5273)의 '이번에 추가로 투입한 금액'/'이번에 받은 매도 금액' 입력은 결제 통장을 전혀 고르지 않는다. saveAsset()(index.html:5375-5406)은 addedCost/saleProceeds로 costBasis만 조정하고 DB.assetQtyLog에 기록할 뿐, 어떤 현금성 자산의 금액도 바꾸지 않고 거래(DB.txns) 기록도 만들지 않는다. isMarketValued 자산은 거래 입력의 fromAssetId/toAssetId로도 쓸 수 없게 막혀 있어(3146행 주석: '거래 입력의 통장으로 쓰면 순자산이 조용히 어긋남') 수동 보완 경로조차 없다. 결과: 주식 100만원을 '추가 투입'으로 기록하면 주식 자산은 +100만원 되지만 결제한 현금 통장은 그대로라 순자산(홈 히어로 숫자, nwHistory, 목표 추적, 배분 드리프트 알림이 전부 의존)이 매수/매도 금액만큼 매번 조용히 틀어진다.",
-    "approach": "1) costBasisField()에 결제 통장을 고르는 선택 입력 추가 — asOpenMat()(만기 시 이체할 통장, 같은 파일)이 쓰는 openAssetPicker({cashOnly:true,...}) 패턴을 그대로 재사용, 레이블 '결제한 통장 (선택)'. 2) saveAsset()에서 그 통장이 선택되고 addedCost>0(매수) 또는 saleProceeds>0(매도)일 때 doSettle()/doMaturity()가 이미 만드는 것과 같은 방식으로 transfer 성격의 DB.txns 레코드를 만들거나, 최소한 선택된 현금 자산의 baseAmount를 -addedCost/+saleProceeds로 조정한다. touchSave()+undoToast()로 다른 변경과 동일하게 되돌릴 수 있게 한다. 3) 통장 선택은 기본적으로 비워둘 수 있게(선택 입력) 해서 기존 동작과 데이터를 그대로 보존 — 이번엔 정확한 복식부기를 '선택'할 수 있는 경로를 추가하는 것뿐, 과거 기록을 소급 변경하지 않는다. 4) logic.js에 테스트 추가: 통장 선택 시 현금 자산 금액이 정확히 증감하는지, 통장 미선택 시 기존 동작(costBasis만 변경)이 그대로인지, 매도 시 realizedGain 계산과 충돌 없는지.",
-    "source": "critique cycle357 — Explore 서브에이전트 조사"
+ "cycle": 358,
+ "phase": "develop",
+ "pending_advance_plan": null,
+ "history": [
+  {
+   "cycle": 352,
+   "phase": "advance",
+   "timestamp": "2026-11-14T03:40:00.000Z",
+   "summary": "critique(cycle352) 계획대로 반복거래 shared 플래그에 occurrence 단위 override를 추가했다. expandRec/recApply/renderTxSheet(sharedChip UI)/recSave(세 scope 모두) 4곳에 splits/amount와 동일한 edits[date] 오버라이드 패턴 적용. 테스트 9건 추가/1건 갱신. node test/run.js 3401->3409/3409 통과. APP_VERSION 1.47.445->1.47.446, sw.js CACHE v712->v713. pending_advance_plan null로 비움.",
+   "commit": null
   },
-  "history": [
-    {
-      "cycle": 352,
-      "phase": "critique",
-      "timestamp": "2026-11-14T02:30:00.000Z",
-      "summary": "Explore 서브에이전트에게 '되돌리기' 류를 배제하고 조사시켜 발견: 반복거래의 shared('같이 냈어요') 플래그가 occurrence 단위 override를 전혀 지원하지 않는다 — expandRec()이 shared만 하드코딩해 매달 나누는 공동 구독료를 어느 달 혼자 냈을 때 그 달만 shared를 바꿀 방법이 없어 settlementSummary()가 틀려지는 금전 정확성 버그. pending_advance_plan에 shared occurrence override를 expandRec/recApply/renderTxSheet/recSave 4곳에 splits override 패턴 그대로 적용하는 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
-    {
-      "cycle": 352,
-      "phase": "advance",
-      "timestamp": "2026-11-14T03:40:00.000Z",
-      "summary": "critique(cycle352) 계획대로 반복거래 shared 플래그에 occurrence 단위 override를 추가했다. expandRec/recApply/renderTxSheet(sharedChip UI)/recSave(세 scope 모두) 4곳에 splits/amount와 동일한 edits[date] 오버라이드 패턴 적용. 테스트 9건 추가/1건 갱신. node test/run.js 3401->3409/3409 통과. APP_VERSION 1.47.445->1.47.446, sw.js CACHE v712->v713. pending_advance_plan null로 비움.",
-      "commit": null
-    },
-    {
-      "cycle": 353,
-      "phase": "develop",
-      "timestamp": "2026-11-14T05:20:00.000Z",
-      "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — debtNewlyPaidOff(logic.js:1065)는 asset.payoffAckAt이 한 번 설정되면 영원히 false를 돌려주는데, payoffAckAt을 null로 되돌리는 경로가 없어 신용카드처럼 완납→재사용을 반복하는 부채에서 두 번째부터는 '축하' 알림이 영구히 다시 뜨지 않는 버그였다. render-refresh 경계(startApp/refreshToday)에서 payoffAckAt이 있는 부채만 재평가하는 resetStaleDebtPayoffAcks() 추가. 테스트 5건 추가. node test/run.js 3409->3414/3414 통과. APP_VERSION 1.47.446->1.47.447, sw.js CACHE v713->v714.",
-      "commit": null
-    },
-    {
-      "cycle": 353,
-      "phase": "review",
-      "timestamp": "2026-11-14T06:15:05.571Z",
-      "summary": "develop(cycle353, ab5d9ab: resetStaleDebtPayoffAcks 추가)를 검토. 기존 debtsPaidOff()/ackDebtPayoff()와 완전히 동일한 계산 패턴을 라인 대조로 확인 — 어긋나는 계산식 없음. startApp()/refreshToday() 양쪽 배선 및 touch()+save() 호출 확인. node test/run.js 3414/3414 재실행 통과. 실제 버그 없음(state.json만 커밋).",
-      "commit": null
-    },
-    {
-      "cycle": 353,
-      "phase": "critique",
-      "timestamp": "2026-11-14T07:15:00.000Z",
-      "summary": "Explore 서브에이전트가 발견: pushCloud()의 충돌 자동병합 분기가 mergeRemoteDataIntoLocal+save()를 live DB에 즉시 적용하는데, 자매 경로인 pullCloudIfStale()/handleForeignStorage()는 둘 다 가진 '편집 중엔 건드리지 않는다' 가드가 이 경로에만 없음을 확인. commitTx()의 findIndex===-1 케이스도 가드 없이 DB.txns[-1]=d를 실행해(조용히 무시) 거짓 성공 토스트가 뜨는 경로까지 결합해 편집이 흔적 없이 사라질 수 있음을 Node로 재현 확인. pending_advance_plan에 ①pushCloud conflict 분기에 sheet-open 가드 추가 ②commitTx의 findIndex===-1을 push로 되살리는 방어 ③회귀 테스트 추가 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
-    {
-      "cycle": 353,
-      "phase": "advance",
-      "timestamp": "2026-11-14T08:20:00.000Z",
-      "summary": "critique(cycle353) 계획대로 pushCloud() 충돌-자동병합 경로가 열려 있는 편집 시트를 보호하지 않던 공백을 고쳤다. sheet-open 가드로 감싸 CLOUD_CONFLICT_PENDING에 보류하고 closeSheet()에서 applyPendingCloudConflictMerge()로 소비. commitTx()의 findIndex<0 케이스도 DB.txns.push(d)로 되살리도록 수정. 테스트 6건 추가. node test/run.js 3414->3419/3419 통과. APP_VERSION 1.47.447->1.47.448, sw.js CACHE v714->v715. pending_advance_plan null로 비움.",
-      "commit": null
-    },
-    {
-      "cycle": 354,
-      "phase": "develop",
-      "timestamp": "2026-11-14T09:30:00.000Z",
-      "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — recSave()의 scope='one' 간편수정이 r.edits[date].memo를 항상 무조건 스냅샷하고 있었다(splits/photo는 '있을 때만 덮어씀' 원칙인데 memo만 비대칭) — 간편수정 시트엔 메모 입력란이 없어 이 값은 사용자가 고른 게 아닌데, 한 번 edits[date]에 박히면 이후 반복 자체의 memo를 고쳐도 그 회차만 영원히 옛 메모에 박혀 있는 버그였다. memo!==r.memo일 때만 edit.memo를 기록하도록 고쳤다. 테스트 2건 추가. node test/run.js 3419->3421/3421 통과. APP_VERSION 1.47.448->1.47.449, sw.js CACHE v715->v716.",
-      "commit": null
-    },
-    {
-      "cycle": 354,
-      "phase": "review",
-      "timestamp": "2026-11-14T10:07:22.717Z",
-      "summary": "develop(cycle354)이 만든 759088b를 검토했다. edits[date].memo를 소비하는 모든 지점이 이미 ed.memo 부재 시 r.memo로 폴백하는 동일 패턴을 쓰고 있어 memo 키를 생략해도 깨지지 않음을 확인. sanitizeBackup()의 d.edits 재검증 분기도 필드 부재를 전제로 깨지는 코드가 없음을 확인. node test/run.js 3421/3421 통과 확인. 실제 버그 없음 — 이상 없음.",
-      "commit": null
-    },
-    {
-      "cycle": 354,
-      "phase": "critique",
-      "timestamp": "2026-11-14T11:40:00.000Z",
-      "summary": "Explore 서브에이전트에게 cycle340-354의 모든 주제를 배제 목록으로 주고 2차 조사. undoToast(msg,undoFn)(index.html:12190-12195)가 ~80개 호출부가 공유하는 단일 구현인데 setTimeout(...,6000) 생성 시 한 번뿐이고 mouseenter/mouseleave/focus/blur로 일시정지하는 로직이 전혀 없음을 확인 — WCAG 2.2.1(타이밍 조정 가능) 결함이고 trash bin이 없는 호출부(saveSettleConfig 등)는 이 6초가 유일한 되돌리기 경로라 영향이 큼. App Lock 암호화 공백은 이미 두 번(cycle252/289) 의도적으로 미뤄온 대규모 재작성이라 재기각. 채택한 undoToast hover/focus 일시정지만 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
-    {
-      "cycle": 354,
-      "phase": "advance",
-      "timestamp": "2026-11-14T12:15:46.905Z",
-      "summary": "critique(cycle354) 계획대로 undoToast()의 6초 자동소멸이 마우스 hover나 키보드 focus로도 멈추지 않던 WCAG 2.2.1 공백을 고쳤다. let tm + dismiss()/arm()으로 분리하고 mouseenter/mouseleave/focus/blur 리스너 추가(10905행 롱프레스 취소와 동일 패턴). 실행형 테스트 1건 추가(domstub으로 격리된 vm에서 합성 이벤트 순서 검증). node test/run.js 3421->3422/3422 통과. APP_VERSION 1.47.449->1.47.450, sw.js CACHE v716->v717. pending_advance_plan null로 비움.",
-      "commit": null
-    },
-    {
-      "cycle": 355,
-      "phase": "review",
-      "timestamp": "2026-11-14T13:30:00.000Z",
-      "summary": "develop(cycle355, 7af99cc: fmtSynced()가 하루 넘은 갱신 시각도 날짜 없이 시:분만 보여주던 공백 수정)을 검토했다. 변경이 작고 명확 — 같은 날이면 기존처럼 시:분만, 다른 날이면 M.D 시:분. 두 호출부 모두 레이아웃 깨짐 없음을 확인. 새 테스트 2건이 의도한 경로를 정확히 겨냥함을 확인. node test/run.js 3424/3424 재실행 통과. 실제 버그 없음(state.json만 커밋, phase를 critique로 회전).",
-      "commit": null
-    },
-    {
-      "cycle": 355,
-      "phase": "critique",
-      "timestamp": "2026-11-14T15:15:11.000Z",
-      "summary": "Explore 서브에이전트에게 cycle340-355의 모든 주제를 배제 목록으로 주고 완전히 새 영역을 조사. 발견: totalDebt()는 모든 부채를 하나의 합계로 묶지만 상환 계획 로직(debtPayoffProjection 등)은 전부 부채 하나에 대해서만 동작해, 여러 부채를 가진 사용자는 어느 빚을 먼저 갚아야 유리한지, 전체 부채를 언제 다 갚을 수 있는지 알 방법이 없음. grep으로 snowball/avalanche류가 코드 전체에 전무함을 확인. pending_advance_plan에 logic.js에 debtPayoffOrder+multiDebtPlan 순수 함수 2개 + '부채 상환 계획' 시트 신설 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
-    {
-      "cycle": 355,
-      "phase": "advance",
-      "timestamp": "2026-11-14T16:13:37.090Z",
-      "summary": "critique(cycle355) 계획대로 여러 부채를 동시에 다 갚는 '부채 상환 계획'(아바란체/스노우볼)을 추가했다. logic.js에 debtPayoffOrder/multiDebtPlan 순수 함수 2개(기존 debtPayoffProjection/debtPayoffWhatIf 재사용, 진짜 스노우볼 롤링은 범위 제외). index.html에 메뉴 '부채 상환 계획' 항목+openDebtPlan() 신설(전략 토글+추가 납입 입력+우선순위 목록+전체 완납 예상일). 테스트 14건 추가. node test/run.js 3424->3436/3436 통과. APP_VERSION 1.47.451->1.47.452, sw.js CACHE v718->v719. pending_advance_plan null로 비움.",
-      "commit": null
-    },
-    {
-      "cycle": 356,
-      "phase": "develop",
-      "timestamp": "2026-11-14T17:00:00.000Z",
-      "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — recHistFieldsChanged(index.html:6894, 반복거래 편집 시 '오늘부터 이후 모두'/'전체 적용' scope-confirm 시트를 띄울지 판단하는 함수)가 fromAssetId/amount/category/day/freq/startDate/weekend/splits만 비교하고 shared('같이 냈어요')는 전혀 보지 않고 있었다. expandRec()(index.html:2994)은 edits[date]에 자기 override가 없는 모든 과거+미래 occurrence에 r.shared를 그대로 흘려보내 settlementSummary()의 정산 합계에 그대로 반영되는데(cycle352 advance로 amount/splits와 동급 대우를 받게 된 필드), 공유 Netflix 구독처럼 이미 과거 회차가 있는 반복거래에서 base의 shared만 토글해 저장하면 recHistFieldsChanged가 false를 돌려줘 scope-confirm 없이 DB.recurrences[i]=d로 즉시 전체 덮어써 이미 정산이 끝났을 수도 있는 과거 달들의 정산 합계까지 조용히 소급 변경되는 금전 정확성 버그였다 — amount/category/splits가 바로 이 소급 변경을 막기 위해 명시적으로 포함돼 있는데 shared만 비대칭으로 빠져 있었음(test/run.js도 다른 필드엔 전부 테스트가 있는데 shared엔 없었음). if(!!orig.shared!==!!d.shared)return true; 한 줄을 추가해 legacy undefined와 명시적 false를 같게 보도록 !!로 정규화 후 비교. 테스트 1건(3개 assertion) 추가: shared가 바뀌면 true, undefined(레거시)와 명시적 false는 같은 것으로 봄, undefined->true는 변경으로 감지. node test/run.js 3436->3437/3437 통과. node --check logic.js/sw.js/test/run.js 통과, index.html은 test/run.js의 vm 샌드박스 전체 스위트 실행 자체가 구문 검증을 겸함(cycle339 이후 관례와 동일). 사용자 체감 동작 변화(공유 반복거래의 '같이 냈어요'만 바꿔 저장하면 이제 amount/category처럼 '오늘부터 이후 모두' vs '전체 적용(과거 기록도 함께 바뀌어요)' 확인 시트가 뜸 — 지금까지는 확인 없이 과거 정산까지 조용히 바뀌었음; 과거 회차가 아직 없는 반복거래는 영향 없음)라 APP_VERSION 1.47.452->1.47.453, sw.js CACHE v719->v720.",
-      "commit": null
-    },
-    {
-      "cycle": 356,
-      "phase": "review",
-      "timestamp": "2026-11-14T18:05:00.000Z",
-      "summary": "develop(cycle356, 0838ee7: recHistFieldsChanged에 shared 비교 추가)을 검토했다. 변경이 작고 명확 — !!로 정규화해 legacy undefined와 명시적 false를 같게 다루는 처리가 orig/d 양쪽에 대칭적으로 적용됨을 확인. fromAssetId/toAssetId 등 나머지 비교 배열이 그대로 보존됐는지, scope='one'(recSave 6633행)이 edit.shared=!!d.shared를 amount와 동일하게 항시 스냅샷하는 기존 cycle352 설계와 충돌하지 않는지 확인 — recHistFieldsChanged는 base 저장(전체 편집) 경로에서만 호출되고 scope='one' 경로와는 무관해 충돌 없음. node test/run.js 3437/3437 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
-      "commit": null
-    },
-    {
-      "cycle": 356,
-      "phase": "critique",
-      "timestamp": "2026-11-14T19:10:00.000Z",
-      "summary": "Explore 서브에이전트에게 지난 cycle340-356의 모든 주제(반복거래 scope-confirm/edits[date] override류 전부 포함)를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: pushCloud()(index.html:2223)가 encodeCloudPayload(DB)(2113-2123)로 매번 DB 전체를 gzip+base64해 올리는데, 영수증 사진(txn.photo, dataURL)은 이미 JPEG라 gzip 효과가 거의 없어 사진이 쌓일수록(예 300장*80KB≈24MB) 설정 토글 같은 무관한 편집에도 전체 블롭을 매번 재업로드/재다운로드하는 비용이 계정 나이에 비례해 커진다 — index.html:2091-2099에 작성자 자신이 cycle214 critique로 남긴 self-critique 주석이 '압축만 적용, delta sync는 미해결'이라 명시한 지점의 후속. 후보로 카테고리 rename 엣지케이스(doRenameCat/mergeCatInto)와 검색어 파싱(matchTxnQuery/parseAmountUnit)도 조사했으나 이미 성숙해 공백 없음으로 기각. pending_advance_plan에 사진을 별도 Supabase 테이블로 분리해 pushCloud/pullCloud와 독립적으로 동기화하고 DB.txns엔 참조만 남기는 계획 저장(로컬 JSON 백업은 inline 유지, 클라우드 인코드/디코드 경로만 이중 포맷 처리). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    },
-    {
-      "cycle": 356,
-      "phase": "advance",
-      "timestamp": "2026-11-14T20:10:00.000Z",
-      "summary": "critique(cycle356)가 세운 계획(영수증 사진을 별도 Supabase 테이블/버킷으로 분리)은 이 자동화 세션이 실제 원격 Supabase 스키마를 만들거나 검증할 수 없어(새 테이블/버킷 존재를 보장 못 함) 그대로 구현하면 실사용자의 클라우드 동기화를 깨뜰 위험이 있다고 판단해 보류했다 — 대신 Explore 서브에이전트에게 백엔드 인프라 변경이 필요 없는 advance급 개선을 새로 찾게 했다. 채택: openSettlement()(index.html:5735)의 합계 카드가 총액만 보여줘 어느 지출이 합산됐는지, 결제 자산이 ownerA/ownerB 둘 다 아니라 조용히 제외된 지출이 있는지 확인할 방법이 없었다. logic.js에 settlementSummary 바로 아래 순수 함수 settlementItems(txns,assets,ownerA,ownerB) 추가(같은 ownerOf 판정 재사용, 집계 공식은 건드리지 않음) — 포함/제외 건을 날짜순으로 나눠 돌려준다. openSettlement()에 settlementBreakdownHTML() 추가해 포함된 건은 editRec()과 동일한 manage-row 탭-편집 패턴으로 눌러 바로 수정하러 갈 수 있게 하고, 제외된 건은 '제외됨 N건 · 이유 · 금액'으로 안내한다. 테스트 4건 추가(shared/expense 아닌 거래 제외, 제외 사유 payer 필드, 날짜순 정렬, 반복거래 가상 인스턴스의 id/recId 보존). node test/run.js 3437->3441/3441 통과. APP_VERSION 1.47.453->1.47.454, sw.js CACHE v720->v721. pending_advance_plan null로 비움(인프라가 필요한 사진 분리 계획은 폐기 — 다음 critique가 원하면 인프라 제약을 감안해 재검토).",
-      "commit": null
-    },
-    {
-      "cycle": 357,
-      "phase": "develop",
-      "timestamp": "2026-11-14T21:15:48.342Z",
-      "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — homeAlertCard()의 goalBehind 카드(홈 화면 상시 노출 알림)가 목표일/예상 달성일을 shortDate()로 표시해 연도를 전혀 보여주지 않는데, 같은 알림 객체를 쓰는 notifyAlertInfo()의 OS 푸시 알림은 fmtDateFull()로 연도까지 보여줌 — 목표(targetDate)는 1~10년 이상 멀리 잡는 게 흔하고 goalProgress()의 선형 투사(projectedDate)도 느린 저축 속도면 수년 뒤로 나올 수 있어, 3년 뒤 목표를 \"목표일 03.15\"로만 보여주면 \"다음달/올해 안\"처럼 보이는 오인 소지가 있었다(cycle278 nwHistory류와 동일한 연도 누락 패턴). 이미 goalProgress 카드(4026행)/부채 상환 계획(5823행 등)에서 투사일에 쓰고 있는 연도인식 포맷터 shortDate2()(올해와 연도가 다를 때만 YY. 접두)로 교체해 포맷을 통일했다. 테스트 1건 추가(같은 해는 연도 없이, 다른 해는 두 자리 연도가 붙는지 targetDate/projectedDate 양쪽 확인). node test/run.js 3441->3442/3442 통과. node --check sw.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.454->1.47.455, sw.js CACHE v721->v722.",
-      "commit": null
-    },
-    {
-      "cycle": 357,
-      "phase": "review",
-      "timestamp": "2026-11-14T22:05:00.000Z",
-      "summary": "develop(cycle357, 4136f18: homeAlertCard goalBehind에 shortDate2 적용)을 검토했다. shortDate2()가 goalProgress 카드(4026행)/부채 상환 계획(5823/5827행)/순자산 히스토리 등 9곳에서 이미 쓰이는 연도인식 포맷터와 동일해 포맷 통일이 맞고, goalBehindMulti는 개별 날짜를 보여주지 않아(count만) 영향 범위 밖임을 확인. 바뀐 두 호출부(targetDate/projectedDate) 모두 shortDate(요일 포함, MM.DD)에서 shortDate2(연도조건부, MM/DD)로 포맷 구분자만 바뀌는 것이라 레이아웃이나 다른 소비처를 깨뜰 여지 없음. node test/run.js 3442/3442 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
-      "commit": null
-    },
-    {
-      "cycle": 357,
-      "phase": "critique",
-      "timestamp": "2026-11-14T22:50:00.000Z",
-      "summary": "Explore 서브에이전트에게 cycle340-357의 모든 주제(반복거래 override, 부채 상환, 정산 내역, 클라우드 동기화 페이로드, undoToast WCAG, 날짜 포맷 등)를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: fx/gold/stock/crypto 자산의 추가매수·매도 시 costBasisField()(5273행)의 '추가로 투입한 금액'/'받은 매도 금액' 입력에 결제 통장을 고르는 수단이 전혀 없고, saveAsset()(5375-5406행)도 costBasis만 조정할 뿐 어떤 현금 자산의 금액도 바꾸지 않으며 거래 기록도 만들지 않는다. isMarketValued 자산은 거래 입력의 통장으로도 못 써서(3146행 주석) 수동 보완조차 불가능 — 주식 매수 시 주식 자산은 늘지만 결제한 현금은 그대로라 순자산(홈 히어로/목표추적/배분드리프트 전부 의존)이 매번 조용히 틀어지는 핵심 원장 정합성 공백. pending_advance_plan에 costBasisField에 asOpenMat()과 같은 cashOnly 통장 선택 입력(선택 사항, 기존 동작 보존) 추가 + saveAsset()에서 선택 시 현금 자산 금액 조정/거래 기록 생성 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-      "commit": null
-    }
-  ]
+  {
+   "cycle": 353,
+   "phase": "develop",
+   "timestamp": "2026-11-14T05:20:00.000Z",
+   "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — debtNewlyPaidOff(logic.js:1065)는 asset.payoffAckAt이 한 번 설정되면 영원히 false를 돌려주는데, payoffAckAt을 null로 되돌리는 경로가 없어 신용카드처럼 완납→재사용을 반복하는 부채에서 두 번째부터는 '축하' 알림이 영구히 다시 뜨지 않는 버그였다. render-refresh 경계(startApp/refreshToday)에서 payoffAckAt이 있는 부채만 재평가하는 resetStaleDebtPayoffAcks() 추가. 테스트 5건 추가. node test/run.js 3409->3414/3414 통과. APP_VERSION 1.47.446->1.47.447, sw.js CACHE v713->v714.",
+   "commit": null
+  },
+  {
+   "cycle": 353,
+   "phase": "review",
+   "timestamp": "2026-11-14T06:15:05.571Z",
+   "summary": "develop(cycle353, ab5d9ab: resetStaleDebtPayoffAcks 추가)를 검토. 기존 debtsPaidOff()/ackDebtPayoff()와 완전히 동일한 계산 패턴을 라인 대조로 확인 — 어긋나는 계산식 없음. startApp()/refreshToday() 양쪽 배선 및 touch()+save() 호출 확인. node test/run.js 3414/3414 재실행 통과. 실제 버그 없음(state.json만 커밋).",
+   "commit": null
+  },
+  {
+   "cycle": 353,
+   "phase": "critique",
+   "timestamp": "2026-11-14T07:15:00.000Z",
+   "summary": "Explore 서브에이전트가 발견: pushCloud()의 충돌 자동병합 분기가 mergeRemoteDataIntoLocal+save()를 live DB에 즉시 적용하는데, 자매 경로인 pullCloudIfStale()/handleForeignStorage()는 둘 다 가진 '편집 중엔 건드리지 않는다' 가드가 이 경로에만 없음을 확인. commitTx()의 findIndex===-1 케이스도 가드 없이 DB.txns[-1]=d를 실행해(조용히 무시) 거짓 성공 토스트가 뜨는 경로까지 결합해 편집이 흔적 없이 사라질 수 있음을 Node로 재현 확인. pending_advance_plan에 ①pushCloud conflict 분기에 sheet-open 가드 추가 ②commitTx의 findIndex===-1을 push로 되살리는 방어 ③회귀 테스트 추가 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+   "commit": null
+  },
+  {
+   "cycle": 353,
+   "phase": "advance",
+   "timestamp": "2026-11-14T08:20:00.000Z",
+   "summary": "critique(cycle353) 계획대로 pushCloud() 충돌-자동병합 경로가 열려 있는 편집 시트를 보호하지 않던 공백을 고쳤다. sheet-open 가드로 감싸 CLOUD_CONFLICT_PENDING에 보류하고 closeSheet()에서 applyPendingCloudConflictMerge()로 소비. commitTx()의 findIndex<0 케이스도 DB.txns.push(d)로 되살리도록 수정. 테스트 6건 추가. node test/run.js 3414->3419/3419 통과. APP_VERSION 1.47.447->1.47.448, sw.js CACHE v714->v715. pending_advance_plan null로 비움.",
+   "commit": null
+  },
+  {
+   "cycle": 354,
+   "phase": "develop",
+   "timestamp": "2026-11-14T09:30:00.000Z",
+   "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — recSave()의 scope='one' 간편수정이 r.edits[date].memo를 항상 무조건 스냅샷하고 있었다(splits/photo는 '있을 때만 덮어씀' 원칙인데 memo만 비대칭) — 간편수정 시트엔 메모 입력란이 없어 이 값은 사용자가 고른 게 아닌데, 한 번 edits[date]에 박히면 이후 반복 자체의 memo를 고쳐도 그 회차만 영원히 옛 메모에 박혀 있는 버그였다. memo!==r.memo일 때만 edit.memo를 기록하도록 고쳤다. 테스트 2건 추가. node test/run.js 3419->3421/3421 통과. APP_VERSION 1.47.448->1.47.449, sw.js CACHE v715->v716.",
+   "commit": null
+  },
+  {
+   "cycle": 354,
+   "phase": "review",
+   "timestamp": "2026-11-14T10:07:22.717Z",
+   "summary": "develop(cycle354)이 만든 759088b를 검토했다. edits[date].memo를 소비하는 모든 지점이 이미 ed.memo 부재 시 r.memo로 폴백하는 동일 패턴을 쓰고 있어 memo 키를 생략해도 깨지지 않음을 확인. sanitizeBackup()의 d.edits 재검증 분기도 필드 부재를 전제로 깨지는 코드가 없음을 확인. node test/run.js 3421/3421 통과 확인. 실제 버그 없음 — 이상 없음.",
+   "commit": null
+  },
+  {
+   "cycle": 354,
+   "phase": "critique",
+   "timestamp": "2026-11-14T11:40:00.000Z",
+   "summary": "Explore 서브에이전트에게 cycle340-354의 모든 주제를 배제 목록으로 주고 2차 조사. undoToast(msg,undoFn)(index.html:12190-12195)가 ~80개 호출부가 공유하는 단일 구현인데 setTimeout(...,6000) 생성 시 한 번뿐이고 mouseenter/mouseleave/focus/blur로 일시정지하는 로직이 전혀 없음을 확인 — WCAG 2.2.1(타이밍 조정 가능) 결함이고 trash bin이 없는 호출부(saveSettleConfig 등)는 이 6초가 유일한 되돌리기 경로라 영향이 큼. App Lock 암호화 공백은 이미 두 번(cycle252/289) 의도적으로 미뤄온 대규모 재작성이라 재기각. 채택한 undoToast hover/focus 일시정지만 pending_advance_plan에 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+   "commit": null
+  },
+  {
+   "cycle": 354,
+   "phase": "advance",
+   "timestamp": "2026-11-14T12:15:46.905Z",
+   "summary": "critique(cycle354) 계획대로 undoToast()의 6초 자동소멸이 마우스 hover나 키보드 focus로도 멈추지 않던 WCAG 2.2.1 공백을 고쳤다. let tm + dismiss()/arm()으로 분리하고 mouseenter/mouseleave/focus/blur 리스너 추가(10905행 롱프레스 취소와 동일 패턴). 실행형 테스트 1건 추가(domstub으로 격리된 vm에서 합성 이벤트 순서 검증). node test/run.js 3421->3422/3422 통과. APP_VERSION 1.47.449->1.47.450, sw.js CACHE v716->v717. pending_advance_plan null로 비움.",
+   "commit": null
+  },
+  {
+   "cycle": 355,
+   "phase": "review",
+   "timestamp": "2026-11-14T13:30:00.000Z",
+   "summary": "develop(cycle355, 7af99cc: fmtSynced()가 하루 넘은 갱신 시각도 날짜 없이 시:분만 보여주던 공백 수정)을 검토했다. 변경이 작고 명확 — 같은 날이면 기존처럼 시:분만, 다른 날이면 M.D 시:분. 두 호출부 모두 레이아웃 깨짐 없음을 확인. 새 테스트 2건이 의도한 경로를 정확히 겨냥함을 확인. node test/run.js 3424/3424 재실행 통과. 실제 버그 없음(state.json만 커밋, phase를 critique로 회전).",
+   "commit": null
+  },
+  {
+   "cycle": 355,
+   "phase": "critique",
+   "timestamp": "2026-11-14T15:15:11.000Z",
+   "summary": "Explore 서브에이전트에게 cycle340-355의 모든 주제를 배제 목록으로 주고 완전히 새 영역을 조사. 발견: totalDebt()는 모든 부채를 하나의 합계로 묶지만 상환 계획 로직(debtPayoffProjection 등)은 전부 부채 하나에 대해서만 동작해, 여러 부채를 가진 사용자는 어느 빚을 먼저 갚아야 유리한지, 전체 부채를 언제 다 갚을 수 있는지 알 방법이 없음. grep으로 snowball/avalanche류가 코드 전체에 전무함을 확인. pending_advance_plan에 logic.js에 debtPayoffOrder+multiDebtPlan 순수 함수 2개 + '부채 상환 계획' 시트 신설 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+   "commit": null
+  },
+  {
+   "cycle": 355,
+   "phase": "advance",
+   "timestamp": "2026-11-14T16:13:37.090Z",
+   "summary": "critique(cycle355) 계획대로 여러 부채를 동시에 다 갚는 '부채 상환 계획'(아바란체/스노우볼)을 추가했다. logic.js에 debtPayoffOrder/multiDebtPlan 순수 함수 2개(기존 debtPayoffProjection/debtPayoffWhatIf 재사용, 진짜 스노우볼 롤링은 범위 제외). index.html에 메뉴 '부채 상환 계획' 항목+openDebtPlan() 신설(전략 토글+추가 납입 입력+우선순위 목록+전체 완납 예상일). 테스트 14건 추가. node test/run.js 3424->3436/3436 통과. APP_VERSION 1.47.451->1.47.452, sw.js CACHE v718->v719. pending_advance_plan null로 비움.",
+   "commit": null
+  },
+  {
+   "cycle": 356,
+   "phase": "develop",
+   "timestamp": "2026-11-14T17:00:00.000Z",
+   "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — recHistFieldsChanged(index.html:6894, 반복거래 편집 시 '오늘부터 이후 모두'/'전체 적용' scope-confirm 시트를 띄울지 판단하는 함수)가 fromAssetId/amount/category/day/freq/startDate/weekend/splits만 비교하고 shared('같이 냈어요')는 전혀 보지 않고 있었다. expandRec()(index.html:2994)은 edits[date]에 자기 override가 없는 모든 과거+미래 occurrence에 r.shared를 그대로 흘려보내 settlementSummary()의 정산 합계에 그대로 반영되는데(cycle352 advance로 amount/splits와 동급 대우를 받게 된 필드), 공유 Netflix 구독처럼 이미 과거 회차가 있는 반복거래에서 base의 shared만 토글해 저장하면 recHistFieldsChanged가 false를 돌려줘 scope-confirm 없이 DB.recurrences[i]=d로 즉시 전체 덮어써 이미 정산이 끝났을 수도 있는 과거 달들의 정산 합계까지 조용히 소급 변경되는 금전 정확성 버그였다 — amount/category/splits가 바로 이 소급 변경을 막기 위해 명시적으로 포함돼 있는데 shared만 비대칭으로 빠져 있었음(test/run.js도 다른 필드엔 전부 테스트가 있는데 shared엔 없었음). if(!!orig.shared!==!!d.shared)return true; 한 줄을 추가해 legacy undefined와 명시적 false를 같게 보도록 !!로 정규화 후 비교. 테스트 1건(3개 assertion) 추가: shared가 바뀌면 true, undefined(레거시)와 명시적 false는 같은 것으로 봄, undefined->true는 변경으로 감지. node test/run.js 3436->3437/3437 통과. node --check logic.js/sw.js/test/run.js 통과, index.html은 test/run.js의 vm 샌드박스 전체 스위트 실행 자체가 구문 검증을 겸함(cycle339 이후 관례와 동일). 사용자 체감 동작 변화(공유 반복거래의 '같이 냈어요'만 바꿔 저장하면 이제 amount/category처럼 '오늘부터 이후 모두' vs '전체 적용(과거 기록도 함께 바뀌어요)' 확인 시트가 뜸 — 지금까지는 확인 없이 과거 정산까지 조용히 바뀌었음; 과거 회차가 아직 없는 반복거래는 영향 없음)라 APP_VERSION 1.47.452->1.47.453, sw.js CACHE v719->v720.",
+   "commit": null
+  },
+  {
+   "cycle": 356,
+   "phase": "review",
+   "timestamp": "2026-11-14T18:05:00.000Z",
+   "summary": "develop(cycle356, 0838ee7: recHistFieldsChanged에 shared 비교 추가)을 검토했다. 변경이 작고 명확 — !!로 정규화해 legacy undefined와 명시적 false를 같게 다루는 처리가 orig/d 양쪽에 대칭적으로 적용됨을 확인. fromAssetId/toAssetId 등 나머지 비교 배열이 그대로 보존됐는지, scope='one'(recSave 6633행)이 edit.shared=!!d.shared를 amount와 동일하게 항시 스냅샷하는 기존 cycle352 설계와 충돌하지 않는지 확인 — recHistFieldsChanged는 base 저장(전체 편집) 경로에서만 호출되고 scope='one' 경로와는 무관해 충돌 없음. node test/run.js 3437/3437 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
+   "commit": null
+  },
+  {
+   "cycle": 356,
+   "phase": "critique",
+   "timestamp": "2026-11-14T19:10:00.000Z",
+   "summary": "Explore 서브에이전트에게 지난 cycle340-356의 모든 주제(반복거래 scope-confirm/edits[date] override류 전부 포함)를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: pushCloud()(index.html:2223)가 encodeCloudPayload(DB)(2113-2123)로 매번 DB 전체를 gzip+base64해 올리는데, 영수증 사진(txn.photo, dataURL)은 이미 JPEG라 gzip 효과가 거의 없어 사진이 쌓일수록(예 300장*80KB≈24MB) 설정 토글 같은 무관한 편집에도 전체 블롭을 매번 재업로드/재다운로드하는 비용이 계정 나이에 비례해 커진다 — index.html:2091-2099에 작성자 자신이 cycle214 critique로 남긴 self-critique 주석이 '압축만 적용, delta sync는 미해결'이라 명시한 지점의 후속. 후보로 카테고리 rename 엣지케이스(doRenameCat/mergeCatInto)와 검색어 파싱(matchTxnQuery/parseAmountUnit)도 조사했으나 이미 성숙해 공백 없음으로 기각. pending_advance_plan에 사진을 별도 Supabase 테이블로 분리해 pushCloud/pullCloud와 독립적으로 동기화하고 DB.txns엔 참조만 남기는 계획 저장(로컬 JSON 백업은 inline 유지, 클라우드 인코드/디코드 경로만 이중 포맷 처리). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+   "commit": null
+  },
+  {
+   "cycle": 356,
+   "phase": "advance",
+   "timestamp": "2026-11-14T20:10:00.000Z",
+   "summary": "critique(cycle356)가 세운 계획(영수증 사진을 별도 Supabase 테이블/버킷으로 분리)은 이 자동화 세션이 실제 원격 Supabase 스키마를 만들거나 검증할 수 없어(새 테이블/버킷 존재를 보장 못 함) 그대로 구현하면 실사용자의 클라우드 동기화를 깨뜰 위험이 있다고 판단해 보류했다 — 대신 Explore 서브에이전트에게 백엔드 인프라 변경이 필요 없는 advance급 개선을 새로 찾게 했다. 채택: openSettlement()(index.html:5735)의 합계 카드가 총액만 보여줘 어느 지출이 합산됐는지, 결제 자산이 ownerA/ownerB 둘 다 아니라 조용히 제외된 지출이 있는지 확인할 방법이 없었다. logic.js에 settlementSummary 바로 아래 순수 함수 settlementItems(txns,assets,ownerA,ownerB) 추가(같은 ownerOf 판정 재사용, 집계 공식은 건드리지 않음) — 포함/제외 건을 날짜순으로 나눠 돌려준다. openSettlement()에 settlementBreakdownHTML() 추가해 포함된 건은 editRec()과 동일한 manage-row 탭-편집 패턴으로 눌러 바로 수정하러 갈 수 있게 하고, 제외된 건은 '제외됨 N건 · 이유 · 금액'으로 안내한다. 테스트 4건 추가(shared/expense 아닌 거래 제외, 제외 사유 payer 필드, 날짜순 정렬, 반복거래 가상 인스턴스의 id/recId 보존). node test/run.js 3437->3441/3441 통과. APP_VERSION 1.47.453->1.47.454, sw.js CACHE v720->v721. pending_advance_plan null로 비움(인프라가 필요한 사진 분리 계획은 폐기 — 다음 critique가 원하면 인프라 제약을 감안해 재검토).",
+   "commit": null
+  },
+  {
+   "cycle": 357,
+   "phase": "develop",
+   "timestamp": "2026-11-14T21:15:48.342Z",
+   "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — homeAlertCard()의 goalBehind 카드(홈 화면 상시 노출 알림)가 목표일/예상 달성일을 shortDate()로 표시해 연도를 전혀 보여주지 않는데, 같은 알림 객체를 쓰는 notifyAlertInfo()의 OS 푸시 알림은 fmtDateFull()로 연도까지 보여줌 — 목표(targetDate)는 1~10년 이상 멀리 잡는 게 흔하고 goalProgress()의 선형 투사(projectedDate)도 느린 저축 속도면 수년 뒤로 나올 수 있어, 3년 뒤 목표를 \"목표일 03.15\"로만 보여주면 \"다음달/올해 안\"처럼 보이는 오인 소지가 있었다(cycle278 nwHistory류와 동일한 연도 누락 패턴). 이미 goalProgress 카드(4026행)/부채 상환 계획(5823행 등)에서 투사일에 쓰고 있는 연도인식 포맷터 shortDate2()(올해와 연도가 다를 때만 YY. 접두)로 교체해 포맷을 통일했다. 테스트 1건 추가(같은 해는 연도 없이, 다른 해는 두 자리 연도가 붙는지 targetDate/projectedDate 양쪽 확인). node test/run.js 3441->3442/3442 통과. node --check sw.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.454->1.47.455, sw.js CACHE v721->v722.",
+   "commit": null
+  },
+  {
+   "cycle": 357,
+   "phase": "review",
+   "timestamp": "2026-11-14T22:05:00.000Z",
+   "summary": "develop(cycle357, 4136f18: homeAlertCard goalBehind에 shortDate2 적용)을 검토했다. shortDate2()가 goalProgress 카드(4026행)/부채 상환 계획(5823/5827행)/순자산 히스토리 등 9곳에서 이미 쓰이는 연도인식 포맷터와 동일해 포맷 통일이 맞고, goalBehindMulti는 개별 날짜를 보여주지 않아(count만) 영향 범위 밖임을 확인. 바뀐 두 호출부(targetDate/projectedDate) 모두 shortDate(요일 포함, MM.DD)에서 shortDate2(연도조건부, MM/DD)로 포맷 구분자만 바뀌는 것이라 레이아웃이나 다른 소비처를 깨뜰 여지 없음. node test/run.js 3442/3442 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
+   "commit": null
+  },
+  {
+   "cycle": 357,
+   "phase": "critique",
+   "timestamp": "2026-11-14T22:50:00.000Z",
+   "summary": "Explore 서브에이전트에게 cycle340-357의 모든 주제(반복거래 override, 부채 상환, 정산 내역, 클라우드 동기화 페이로드, undoToast WCAG, 날짜 포맷 등)를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: fx/gold/stock/crypto 자산의 추가매수·매도 시 costBasisField()(5273행)의 '추가로 투입한 금액'/'받은 매도 금액' 입력에 결제 통장을 고르는 수단이 전혀 없고, saveAsset()(5375-5406행)도 costBasis만 조정할 뿐 어떤 현금 자산의 금액도 바꾸지 않으며 거래 기록도 만들지 않는다. isMarketValued 자산은 거래 입력의 통장으로도 못 써서(3146행 주석) 수동 보완조차 불가능 — 주식 매수 시 주식 자산은 늘지만 결제한 현금은 그대로라 순자산(홈 히어로/목표추적/배분드리프트 전부 의존)이 매번 조용히 틀어지는 핵심 원장 정합성 공백. pending_advance_plan에 costBasisField에 asOpenMat()과 같은 cashOnly 통장 선택 입력(선택 사항, 기존 동작 보존) 추가 + saveAsset()에서 선택 시 현금 자산 금액 조정/거래 기록 생성 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
+   "commit": null
+  },
+  {
+   "cycle": 357,
+   "phase": "advance",
+   "timestamp": "2026-11-15T00:30:00.000Z",
+   "summary": "critique(cycle357)가 세운 계획(fx/gold/stock/crypto 추가매수·매도 시 결제 통장이 조용히 안 바뀌어 순자산이 왜곡되는 문제)을 구현했다. logic.js에 순수 함수 settleTxnForQtyChange(prevQty,newQty,addedCost,saleProceeds,settleAssetId,assetName,today) 추가 — 결제·수령 통장을 골랐을 때만, 그 통장 쪽에서만(반대쪽은 null) 금액이 움직인 transfer 레코드를 반환한다(시세평가형 자산 자체는 거래의 fromAssetId/toAssetId로 못 쓰므로 반대쪽은 비워둠, 3146행 주석 참고). baseAmount를 직접 고치면 RANGE_FROM부터 과거 잔액이 전부 밀리는 문제(saveAsset의 setBase 역산과 달리 날짜 기준이 없음)를 피해 오늘 날짜의 DB.txns 레코드로 남기는 쪽을 택했다. index.html: costBasisField()에 asOpenMat()과 같은 cashOnly 피커 필드(결제·수령 통장, 선택 사항·d._settleAssetId는 저장 후 지워지는 임시값) 추가, qtyBasisWarn()이 추가매수/매도 경고와 함께 이 필드도 토글, saveAsset()이 settleAssetId를(존재/현금성 검증 포함) settleTxnForQtyChange에 넘겨 받은 transfer를 DB.txns에 push. 통장을 고르지 않으면 기존 동작(costBasis만 조정)이 그대로 보존된다. 테스트 중 기존 3건(renderAssetSheet 합치기 링크, asOpenCur, costBasisField Enter-제출 exact-string)이 깨진 걸 발견해 원인을 추적 — assetPickBtn()이 DB.assets.find를 가드 없이 불러, DB.assets를 채우지 않은 기존 테스트 mock들이 내 새 호출(costBasisField 안의 assetPickBtn)에서 터졌다. assetPickBtn을 (DB.assets||[]).find로 방어적으로 고쳐 2건을 고치고, 나머지 1건(exact-string 비교)은 새 필드가 포함된 출력으로 기대값을 갱신했다. settleTxnForQtyChange 단위 테스트 5건 + saveAsset 통합 테스트 4건(추가매수/매도 각각 transfer 생성, 통장 미선택 시 거래 없음, 삭제된 id 무시) 추가. node test/run.js 3442->3451/3451 통과(새 테스트 9건 포함, 기존 3건 수정). node --check sw.js/test/run.js 통과, index.html 메인 <script> 블록은 Function()으로 파싱 확인. APP_VERSION 1.47.455->1.47.456, sw.js CACHE v722->v723. pending_advance_plan null로 비움.",
+   "commit": null
+  }
+ ]
 }

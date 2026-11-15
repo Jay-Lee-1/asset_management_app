@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.455';
+const APP_VERSION='1.47.456';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -5269,6 +5269,10 @@ function asOpenType(){syncAssetInputs();openTypePicker({current:asDraft.type,bac
 function asOpenOwner(){syncAssetInputs();openOwnerPicker({current:asDraft.owner,back:()=>renderAssetSheet(!!asDraft.id),onPick:o=>{asDraft.owner=o;renderAssetSheet(!!asDraft.id)}})}
 function asOpenCur(){syncAssetInputs();openCurrencyPicker({current:asDraft.currency,back:()=>renderAssetSheet(!!asDraft.id),onPick:c=>asCur(c)})}
 function asOpenMat(){syncAssetInputs();openAssetPicker({current:asDraft.maturityTargetId,title:'만기 시 이체할 통장',cashOnly:true,excludeId:asDraft.id,back:()=>renderAssetSheet(!!asDraft.id),onPick:id=>{asDraft.maturityTargetId=id;renderAssetSheet(!!asDraft.id)}})}
+/* costBasisField의 "결제·수령 통장" 선택 — asOpenMat()과 같은 cashOnly 패턴. _settleAssetId는
+ * saveAsset()이 한 번 읽고 지우는 임시 필드라 asDraft.maturityTargetId처럼 자산에 영구 저장되지
+ * 않는다(이번 매수·매도 1회에만 적용, app-evolve cycle357 advance) */
+function asOpenSettle(){syncAssetInputs();openAssetPicker({current:asDraft._settleAssetId,title:'결제·수령 통장 선택',cashOnly:true,excludeId:asDraft.id,back:()=>renderAssetSheet(!!asDraft.id),onPick:id=>{asDraft._settleAssetId=id;renderAssetSheet(!!asDraft.id)}})}
 function asToggleNeg(editing){syncAssetInputs();asDraft._dispAmt=-(asDraft._dispAmt||0);renderAssetSheet(editing)}
 function costBasisField(d,editing){ /* fx/gold/stock 공통 — 매입 원가는 선택 입력이라 비워두면 손익을 표시하지 않는다(assetGainLoss). fx/gold/stock 폼의 마지막 입력이라 Enter로 제출
    d._origQty(편집 시 openAssetSheet가 스냅샷)보다 보유 수량이 늘면(추가매수) 기존 매입금액이 그대로
@@ -5287,7 +5291,8 @@ function costBasisField(d,editing){ /* fx/gold/stock 공통 — 매입 원가는
    <div class="pav a-save">${svg('calendar')}</div><div class="pbody"><div class="pn">${d.acquiredAt?fmtDateFull(d.acquiredAt):'모르면 비워두세요'}</div></div><div class="pc">${d.acquiredAt?`<button type="button" class="fc-x" style="display:inline-flex;position:static;transform:none" aria-label="매입일 지우기" onclick="event.stopPropagation();asDraft.acquiredAt='';renderAssetSheet(${editing})" onkeydown="event.stopPropagation()">✕</button>`:svg('chev')}</div></div>
    <input id="asAcquiredAt" type="hidden" value="${d.acquiredAt||''}"></div>
  <div class="field" id="asAddedCostField" style="display:${needsUpdate?'block':'none'}"><label for="asAddedCost">이번에 추가로 투입한 금액 (원, 선택)</label><div class="field-clear"><input id="asAddedCost" class="num" inputmode="numeric" value="${d._addedCost?comma(d._addedCost):''}" placeholder="신규 매수에 쓴 금액만 입력하면 자동으로 더해드려요" oninput="fmtAmt(this,false)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveAsset(${editing})"><button type="button" class="fc-x" aria-label="추가 투입 금액 지우기" onclick="clrInput('asAddedCost')">✕</button></div></div>
- <div class="field" id="asSaleProceedsField" style="display:${needsSale?'block':'none'}"><label for="asSaleProceeds">이번에 받은 매도 금액 (원, 선택)</label><div class="field-clear"><input id="asSaleProceeds" class="num" inputmode="numeric" value="${d._saleProceeds?comma(d._saleProceeds):''}" placeholder="이번 매도로 받은 금액만 입력하면 실현손익을 기록해요" oninput="fmtAmt(this,false)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveAsset(${editing})"><button type="button" class="fc-x" aria-label="매도 금액 지우기" onclick="clrInput('asSaleProceeds')">✕</button></div></div>`;
+ <div class="field" id="asSaleProceedsField" style="display:${needsSale?'block':'none'}"><label for="asSaleProceeds">이번에 받은 매도 금액 (원, 선택)</label><div class="field-clear"><input id="asSaleProceeds" class="num" inputmode="numeric" value="${d._saleProceeds?comma(d._saleProceeds):''}" placeholder="이번 매도로 받은 금액만 입력하면 실현손익을 기록해요" oninput="fmtAmt(this,false)" onkeydown="if(event.key==='Enter'&&!event.isComposing)saveAsset(${editing})"><button type="button" class="fc-x" aria-label="매도 금액 지우기" onclick="clrInput('asSaleProceeds')">✕</button></div></div>
+ <div class="field" id="asSettleField" style="display:${(needsUpdate||needsSale)?'block':'none'}"><label>결제·수령 통장 (선택)</label>${assetPickBtn(d._settleAssetId,'asOpenSettle()')}<p style="font-size:12px;color:var(--text-2);margin-top:6px">선택하면 위 금액만큼 통장 잔액도 같이 조정되고 거래 내역에 남아요. 비워두면 매입 금액만 바뀌어요</p></div>`;
 }
 /* 부채(debt) 자산 전용 선택 입력 — costBasisField처럼 비우면 그냥 지워진다(num 파싱이
  * 0이면 d.interestRate를 delete, syncAssetInputs 참고). fx/gold/stock의 보유수량 입력(asFx 등)과
@@ -5374,7 +5379,8 @@ function saveAsset(editing){
  const entered=balType?(d._dispAmt!=null?d._dispAmt:(d[balKey]||0)):0; /* 사용자가 입력한 '현재 금액' */
  const addedCost=d._addedCost>0?d._addedCost:0; /* costBasisField의 "이번에 추가로 투입한 금액" — 추가매수(수량 증가) 시 addCostBasisForBuy로 더해줄 몫 */
  const saleProceeds=d._saleProceeds>0?d._saleProceeds:0; /* costBasisField의 "이번에 받은 매도 금액" — 일부 매도(수량 감소) 시 realizedGainForSale로 실현손익을 계산할 몫 */
- delete d._dispAmt;delete d._pensionAutoExcl;delete d._pensionPrevIncl;delete d._origQty;delete d._addedCost;delete d._saleProceeds;delete d._hadCostBasis;
+ const settleAssetId=d._settleAssetId&&DB.assets.some(a=>a.id===d._settleAssetId&&isCashLike(a))?d._settleAssetId:null; /* costBasisField의 "결제·수령 통장" — settleTxnForQtyChange가 쓸 몫(선택 안 하면 null, 기존 동작과 동일) */
+ delete d._dispAmt;delete d._pensionAutoExcl;delete d._pensionPrevIncl;delete d._origQty;delete d._addedCost;delete d._saleProceeds;delete d._hadCostBasis;delete d._settleAssetId;
  const dup=DB.assets.find(a=>a.id!==d.id&&normName(a.name)===normName(d.name)&&a.type===d.type); /* 살아있는 동명(대소문자·연속 공백 개수 무시)·동종 (신규/수정 공통) */
  if(dup){toast(dup.name===d.name?'같은 이름·종류의 자산이 이미 있어요':`비슷한 이름의 자산이 있어요: ${dup.name}`);return;} /* 중복 차단 */
  _savedDrafts.add(d); /* 검증을 모두 통과한 뒤에만 추가 — saveTx/saveRec과 동일하게, 검증 실패 후 고쳐서 다시 저장하는 경로는 막지 않는다 */
@@ -5411,6 +5417,8 @@ function saveAsset(editing){
        if(saleResult&&saleResult.realizedGain!=null){qtyLogEntry.saleProceeds=saleProceeds;qtyLogEntry.realizedGain=saleResult.realizedGain;} /* 실현손익 이력을 openAssetQtyLog에서 재구성할 수 있도록 남김 */
        DB.assetQtyLog.push(touch(qtyLogEntry));
      }
+     const settleTxn=settleTxnForQtyChange(prevQty,newQty,addedCost,saleProceeds,settleAssetId,d.name,TODAY); /* 결제·수령 통장을 골랐을 때만 그 통장 쪽에 돈이 움직였다는 거래를 남김(app-evolve cycle357 advance) */
+     if(settleTxn)DB.txns.push(touch(Object.assign({id:uid()},settleTxn)));
    }else{
      d[balKey]=origBase; /* 원래 기준값 유지한 채 교체 */
      if(balKey==='baseAmount')delete d.amountKRW;else delete d.baseAmount;
@@ -6813,15 +6821,16 @@ function dayWarn(pfx,v){const w=$(pfx+'DayWarn');if(!w)return;
 /* asFx/asGold/asQty 입력 시 즉시 costBasisField 아래 경고 캡션 + asAddedCostField(추가 투입 금액
  * 입력창)/asSaleProceedsField(매도 금액 입력창)를 토글(전체 리렌더 없이) — dayWarn과 동일한
  * 패턴. asDraft._origQty가 없으면(신규 등록) 비교 기준이 없으므로 항상 숨긴다 */
-function qtyBasisWarn(inp){const w=$('asQtyBasisWarn');const af=$('asAddedCostField');const sf=$('asSaleProceedsField');if(!w)return;
- if(asDraft._origQty==null){w.style.display='none';if(af)af.style.display='none';if(sf)sf.style.display='none';return}
+function qtyBasisWarn(inp){const w=$('asQtyBasisWarn');const af=$('asAddedCostField');const sf=$('asSaleProceedsField');const tf=$('asSettleField');if(!w)return;
+ if(asDraft._origQty==null){w.style.display='none';if(af)af.style.display='none';if(sf)sf.style.display='none';if(tf)tf.style.display='none';return}
  const v=parseFloat((inp.value||'0').replace(/,/g,''))||0;
  const needsUpdate=costBasisNeedsUpdate(asDraft._origQty,v,asDraft.costBasis);
  const needsSale=asDraft.costBasis>0&&v<asDraft._origQty;
  const msg=needsUpdate?'보유 수량이 늘었어요 · 아래에 이번에 추가로 투입한 금액만 입력하면 자동으로 더해드려요':needsSale?'보유 수량이 줄었어요 · 아래에 이번에 받은 매도 금액을 입력하면 실현손익을 기록해요':'';
  w.textContent=msg;w.style.display=msg?'block':'none';
  if(af)af.style.display=needsUpdate?'block':'none';
- if(sf)sf.style.display=needsSale?'block':'none';}
+ if(sf)sf.style.display=needsSale?'block':'none';
+ if(tf)tf.style.display=(needsUpdate||needsSale)?'block':'none';}
 function clampDay(d){ /* 저장 시 보정 */
  if(typeof d.day!=='number'||isNaN(d.day)){d.day=1;return '1일로 맞췄어요'}
  if(d.day>31){d.day=31;return '31일로 맞췄어요'}
@@ -12727,7 +12736,7 @@ window.addEventListener('resize',()=>requestAnimationFrame(fitAll));
 
 /* ================= PICKERS (탭하면 열리는 선택창) ================= */
 function catAv(type){return type==='income'?'a-in':type==='saving'?'a-save':'a-food'}
-function assetPickBtn(id,onclick){const a=DB.assets.find(x=>x.id===id);const ty=a?ASSET_TYPES[a.type]:null;
+function assetPickBtn(id,onclick){const a=(DB.assets||[]).find(x=>x.id===id); /* costBasisField의 결제·수령 통장 필드(app-evolve cycle357 advance)가 asMat처럼 편집 중인 임시 자산(d._settleAssetId) 하나만 바뀐 상황에서도 안전하게 호출되도록 — asOpenMat()처럼 DB.assets가 항상 채워져 있다고 가정하지 않는다 */const ty=a?ASSET_TYPES[a.type]:null;
  return `<button class="pick ${a?'':'placeholder'}" onclick="${onclick}">${a?`<div class="pav ${ty.cls}">${svg(ty.icon)}</div>`:''}<div class="pbody"><div class="pn">${a?esc(a.name):'선택하세요'}</div>${a?`<div class="psub">${ty.label} · ${esc(a.owner)}</div>`:''}</div><div class="pc">${svg('chevR')}</div></button>`}
 function openPicker(title,bodyHtml,back){window._pkBack=back||null;
  const psc=$('sheetScroll');const savedTop=psc?psc.scrollTop:0; /* 들어갈 때 스크롤 위치 기억 */

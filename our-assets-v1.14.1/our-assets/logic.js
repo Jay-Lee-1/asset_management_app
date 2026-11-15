@@ -1156,6 +1156,20 @@ function realizedGainForSale(origQty,newQty,origCostBasis,saleProceeds){
  if(!(saleProceeds>0))return {costBasisRemoved,realizedGain:null};
  return {costBasisRemoved,realizedGain:saleProceeds-costBasisRemoved};
 }
+/* fx/gold/stock/crypto(isMarketValued) 추가매수·매도 시 costBasisField(index.html)의 "결제·수령
+ * 통장" 선택이 선택 사항이라(고르지 않으면 settleAssetId=null), 고른 경우에만 saveAsset()이 그
+ * 통장 쪽에도 돈이 실제로 움직였다는 거래를 남겨야 순자산이 조용히 어긋나지 않는다(app-evolve
+ * cycle357 critique). isMarketValued 자산 자체는 거래의 fromAssetId/toAssetId로 못 쓰므로(index.html
+ * isMarketValued 주석 참고) 반대쪽은 비워두고 통장 쪽만 기록하는 한쪽만 채워진 transfer를 반환한다
+ * — saveAsset()이 그대로 DB.txns에 push할 수 있는 모양(id/date는 호출부가 채움). baseAmount를
+ * 직접 고치면 날짜 구분 없이 RANGE_FROM부터 과거 잔액이 전부 밀리므로(saveAsset의 setBase 역산과
+ * 달리 "오늘부터"라는 기준이 없다) 대신 날짜 있는 거래로 남긴다. */
+function settleTxnForQtyChange(prevQty,newQty,addedCost,saleProceeds,settleAssetId,assetName,today){
+ if(!settleAssetId)return null;
+ if(newQty>prevQty&&addedCost>0)return {type:'transfer',date:today,category:'이체',memo:`${assetName} 추가매수 결제`,amount:addedCost,fromAssetId:settleAssetId,toAssetId:null,confirmed:true};
+ if(newQty<prevQty&&saleProceeds>0)return {type:'transfer',date:today,category:'이체',memo:`${assetName} 매도 수령`,amount:saleProceeds,fromAssetId:null,toAssetId:settleAssetId,confirmed:true};
+ return null;
+}
 /* openAssetQtyLog(index.html)가 한 자산의 수량 변경 기록 목록에 매도마다 realizedGain을 보여주지만,
  * 한 자산을 여러 날에 걸쳐 나눠 판 경우(부분매도 여러 번) 전체 합계를 보여줄 데가 없어 사용자가
  * 각 기록을 일일이 더해야 했다(app-evolve cycle266 develop). realizedGain!=null인 기록만 더하고,

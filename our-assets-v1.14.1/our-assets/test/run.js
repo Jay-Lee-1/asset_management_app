@@ -19551,6 +19551,78 @@ test('saveAsset: 수량이 늘 때(추가매수)는 _saleProceeds가 있어도 �
   assert.ok(!('saleProceeds' in sandbox.DB.assetQtyLog[0]));
   assert.ok(!('realizedGain' in sandbox.DB.assetQtyLog[0]));
 });
+/* ---------- settleTxnForQtyChange(logic.js, 순수): costBasisField의 "결제·수령 통장" 선택이
+ * 있을 때만, 그 통장 쪽에도 돈이 움직였다는 한쪽만 채운 transfer 거래를 만든다(app-evolve
+ * cycle357 critique/advance) ---------- */
+test('settleTxnForQtyChange: settleAssetId가 없으면 항상 null(통장을 고르지 않으면 기존 동작 그대로)', () => {
+  assert.strictEqual(sandbox.settleTxnForQtyChange(10, 20, 150000, 0, null, '삼성전자', '2026-01-01'), null);
+  assert.strictEqual(sandbox.settleTxnForQtyChange(20, 10, 0, 200000, null, '삼성전자', '2026-01-01'), null);
+});
+test('settleTxnForQtyChange: 추가매수(newQty>prevQty)+투입 금액이 있으면 결제 통장에서만 빠져나가는 transfer를 반환한다', () => {
+  const tx = sandbox.settleTxnForQtyChange(10, 20, 150000, 0, 'c1', '삼성전자', '2026-01-01');
+  assert.strictEqual(tx.type, 'transfer');
+  assert.strictEqual(tx.amount, 150000);
+  assert.strictEqual(tx.fromAssetId, 'c1');
+  assert.strictEqual(tx.toAssetId, null, '시세평가형 자산은 거래의 통장으로 못 쓰므로 반대쪽은 비워둠');
+  assert.strictEqual(tx.date, '2026-01-01');
+  assert.strictEqual(tx.confirmed, true, '이미 일어난 일이라 미확인 이체로 남기지 않음');
+});
+test('settleTxnForQtyChange: 매도(newQty<prevQty)+받은 금액이 있으면 수령 통장으로만 들어오는 transfer를 반환한다', () => {
+  const tx = sandbox.settleTxnForQtyChange(20, 10, 0, 200000, 'c1', '삼성전자', '2026-01-01');
+  assert.strictEqual(tx.fromAssetId, null);
+  assert.strictEqual(tx.toAssetId, 'c1');
+  assert.strictEqual(tx.amount, 200000);
+});
+test('settleTxnForQtyChange: 투입/매도 금액이 없으면 통장을 골랐어도 null(추측하지 않음)', () => {
+  assert.strictEqual(sandbox.settleTxnForQtyChange(10, 20, 0, 0, 'c1', '삼성전자', '2026-01-01'), null, '추가매수인데 투입 금액 없음');
+  assert.strictEqual(sandbox.settleTxnForQtyChange(20, 10, 0, 0, 'c1', '삼성전자', '2026-01-01'), null, '매도인데 받은 금액 없음');
+});
+test('settleTxnForQtyChange: 수량이 그대로면(변경 없음) null', () => {
+  assert.strictEqual(sandbox.settleTxnForQtyChange(10, 10, 150000, 200000, 'c1', '삼성전자', '2026-01-01'), null);
+});
+/* ---------- saveAsset: costBasisField의 "결제·수령 통장" 선택(_settleAssetId)을 settleTxnForQtyChange로
+ * 넘겨, 고른 경우에만 DB.txns에 transfer 거래를 실제로 남긴다(app-evolve cycle357 advance) ---------- */
+test('saveAsset: 추가매수 시 결제 통장을 고르면 그 통장에서 투입 금액만큼 빠져나가는 transfer 거래가 생긴다', () => {
+  const asset = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 10, costBasis: 100000 };
+  const cash = { id: 'c1', type: 'cash', owner: '나', includeInTotal: true, name: '우리은행', baseAmount: 500000 };
+  sandbox.DB = { assets: [asset, cash], assetQtyLog: [], txns: [], rates: { fx: {}, stocks: { '005930': 15000 }, goldPerG: 0 } };
+  sandbox.asDraft = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 20, costBasis: 100000, _addedCost: 150000, _settleAssetId: 'c1' };
+  sandbox.saveAsset(true);
+  assert.strictEqual(sandbox.DB.txns.length, 1, '결제 통장을 고르면 거래가 하나 생겨야 함');
+  const tx = sandbox.DB.txns[0];
+  assert.strictEqual(tx.type, 'transfer');
+  assert.strictEqual(tx.amount, 150000);
+  assert.strictEqual(tx.fromAssetId, 'c1');
+  assert.strictEqual(tx.toAssetId, null);
+  assert.ok(!('_settleAssetId' in sandbox.DB.assets[0]), '_settleAssetId는 임시 입력값이라 저장된 자산에 남으면 안 됨');
+});
+test('saveAsset: 매도 시 수령 통장을 고르면 그 통장으로 매도 금액만큼 들어오는 transfer 거래가 생긴다', () => {
+  const asset = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 20, costBasis: 300000 };
+  const cash = { id: 'c1', type: 'cash', owner: '나', includeInTotal: true, name: '우리은행', baseAmount: 500000 };
+  sandbox.DB = { assets: [asset, cash], assetQtyLog: [], txns: [], rates: { fx: {}, stocks: { '005930': 20000 }, goldPerG: 0 } };
+  sandbox.asDraft = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 10, costBasis: 300000, _saleProceeds: 200000, _settleAssetId: 'c1' };
+  sandbox.saveAsset(true);
+  assert.strictEqual(sandbox.DB.txns.length, 1);
+  const tx = sandbox.DB.txns[0];
+  assert.strictEqual(tx.type, 'transfer');
+  assert.strictEqual(tx.amount, 200000);
+  assert.strictEqual(tx.fromAssetId, null);
+  assert.strictEqual(tx.toAssetId, 'c1');
+});
+test('saveAsset: 결제·수령 통장을 고르지 않으면(기존 동작) 거래를 만들지 않는다', () => {
+  const asset = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 10, costBasis: 100000 };
+  sandbox.DB = { assets: [asset], assetQtyLog: [], txns: [], rates: { fx: {}, stocks: { '005930': 15000 }, goldPerG: 0 } };
+  sandbox.asDraft = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 20, costBasis: 100000, _addedCost: 150000 };
+  sandbox.saveAsset(true);
+  assert.strictEqual(sandbox.DB.txns.length, 0, '통장을 선택하지 않으면 기존처럼 costBasis만 바뀌고 거래는 생기지 않음');
+});
+test('saveAsset: 결제 통장으로 고른 id가 이미 삭제돼 더는 존재하지 않으면 무시하고 거래를 만들지 않는다', () => {
+  const asset = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 10, costBasis: 100000 };
+  sandbox.DB = { assets: [asset], assetQtyLog: [], txns: [], rates: { fx: {}, stocks: { '005930': 15000 }, goldPerG: 0 } };
+  sandbox.asDraft = { id: 'a1', type: 'stock', owner: '나', includeInTotal: true, name: '삼성전자', stockCode: '005930', stockQty: 20, costBasis: 100000, _addedCost: 150000, _settleAssetId: 'gone' };
+  sandbox.saveAsset(true);
+  assert.strictEqual(sandbox.DB.txns.length, 0);
+});
 /* ---------- addCostBasisForBuy(logic.js, 순수): 추가매수 시 "이번에 추가로 투입한 금액"만 기존
  * costBasis에 더한다 — scaleCostBasisForSale의 반대 방향 짝(app-evolve cycle191 advance) ---------- */
 test('addCostBasisForBuy: addedAmount를 기존 costBasis에 더한다', () => {
@@ -28894,7 +28966,8 @@ test("costBasisField: fx/gold/stock 공용 매입금액 입력(asCostBasis)에 E
     '   <div class="pav a-save">' + sandbox.svg('calendar') + '</div><div class="pbody"><div class="pn">모르면 비워두세요</div></div><div class="pc">' + sandbox.svg('chev') + '</div></div>\n' +
     '   <input id="asAcquiredAt" type="hidden" value=""></div>\n' +
     ' <div class="field" id="asAddedCostField" style="display:none"><label for="asAddedCost">이번에 추가로 투입한 금액 (원, 선택)</label><div class="field-clear"><input id="asAddedCost" class="num" inputmode="numeric" value="" placeholder="신규 매수에 쓴 금액만 입력하면 자동으로 더해드려요" oninput="fmtAmt(this,false)" onkeydown="if(event.key===\'Enter\'&&!event.isComposing)saveAsset(false)"><button type="button" class="fc-x" aria-label="추가 투입 금액 지우기" onclick="clrInput(\'asAddedCost\')">✕</button></div></div>\n' +
-    ' <div class="field" id="asSaleProceedsField" style="display:none"><label for="asSaleProceeds">이번에 받은 매도 금액 (원, 선택)</label><div class="field-clear"><input id="asSaleProceeds" class="num" inputmode="numeric" value="" placeholder="이번 매도로 받은 금액만 입력하면 실현손익을 기록해요" oninput="fmtAmt(this,false)" onkeydown="if(event.key===\'Enter\'&&!event.isComposing)saveAsset(false)"><button type="button" class="fc-x" aria-label="매도 금액 지우기" onclick="clrInput(\'asSaleProceeds\')">✕</button></div></div>'
+    ' <div class="field" id="asSaleProceedsField" style="display:none"><label for="asSaleProceeds">이번에 받은 매도 금액 (원, 선택)</label><div class="field-clear"><input id="asSaleProceeds" class="num" inputmode="numeric" value="" placeholder="이번 매도로 받은 금액만 입력하면 실현손익을 기록해요" oninput="fmtAmt(this,false)" onkeydown="if(event.key===\'Enter\'&&!event.isComposing)saveAsset(false)"><button type="button" class="fc-x" aria-label="매도 금액 지우기" onclick="clrInput(\'asSaleProceeds\')">✕</button></div></div>\n' +
+    ' <div class="field" id="asSettleField" style="display:none"><label>결제·수령 통장 (선택)</label><button class="pick placeholder" onclick="asOpenSettle()"><div class="pbody"><div class="pn">선택하세요</div></div><div class="pc">' + sandbox.svg('chevR') + '</div></button><p style="font-size:12px;color:var(--text-2);margin-top:6px">선택하면 위 금액만큼 통장 잔액도 같이 조정되고 거래 내역에 남아요. 비워두면 매입 금액만 바뀌어요</p></div>'
   );
   assert.ok(sandbox.costBasisField({ costBasis: 0 }, true).includes('saveAsset(true)'), 'editing=true(수정 모드)일 때 saveAsset 호출에 전달되지 않음');
 });
