@@ -1,15 +1,8 @@
 {
  "cycle": 362,
- "phase": "develop",
+ "phase": "review",
  "pending_advance_plan": null,
  "history": [
-  {
-   "cycle": 357,
-   "phase": "develop",
-   "timestamp": "2026-11-14T21:15:48.342Z",
-   "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — homeAlertCard()의 goalBehind 카드(홈 화면 상시 노출 알림)가 목표일/예상 달성일을 shortDate()로 표시해 연도를 전혀 보여주지 않는데, 같은 알림 객체를 쓰는 notifyAlertInfo()의 OS 푸시 알림은 fmtDateFull()로 연도까지 보여줌 — 목표(targetDate)는 1~10년 이상 멀리 잡는 게 흔하고 goalProgress()의 선형 투사(projectedDate)도 느린 저축 속도면 수년 뒤로 나올 수 있어, 3년 뒤 목표를 \"목표일 03.15\"로만 보여주면 \"다음달/올해 안\"처럼 보이는 오인 소지가 있었다(cycle278 nwHistory류와 동일한 연도 누락 패턴). 이미 goalProgress 카드(4026행)/부채 상환 계획(5823행 등)에서 투사일에 쓰고 있는 연도인식 포맷터 shortDate2()(올해와 연도가 다를 때만 YY. 접두)로 교체해 포맷을 통일했다. 테스트 1건 추가(같은 해는 연도 없이, 다른 해는 두 자리 연도가 붙는지 targetDate/projectedDate 양쪽 확인). node test/run.js 3441->3442/3442 통과. node --check sw.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.454->1.47.455, sw.js CACHE v721->v722.",
-   "commit": null
-  },
   {
    "cycle": 357,
    "phase": "review",
@@ -141,6 +134,13 @@
    "phase": "advance",
    "timestamp": "2026-11-15T16:05:00.000Z",
    "summary": "critique(cycle361) 계획대로 KR_FIXED_HOLIDAYS가 음력 설날/추석을 빠뜨려 반복거래 영업일 조정(shiftWeekend)이 명절 연휴를 평일로 오판하던 공백을 메웠다. 계획은 대체공휴일 규칙을 계산하는 순수 함수(expandSubstituteHolidays)를 제안했지만, 음력 날짜 자체를 수식으로 계산할 방법이 없어(천문 계산 불가) 대신 WebSearch로 관공서의 공휴일에 관한 규정·언론 보도를 근거로 2023~2028년 설날/추석 연휴(+그 해에 붙는 대체공휴일·임시공휴일, 예: 2023 추석의 10/2 임시공휴일, 2025 설날의 1/27 임시공휴일, 2027 설날의 2/9 대체공휴일)를 연도별 'YYYY-MM-DD' 상수 테이블 KR_LUNAR_HOLIDAYS로 logic.js에 추가하는 쪽을 택했다 — 계산이 틀릴 위험보다 수동 테이블의 유지보수 부담이 더 안전하다고 판단(코드 주석에 2029년 이후는 표를 벗어나 평일로 오판된다는 한계와 다음 갱신 필요성을 명시). isKrNonBusinessDay(ds)가 KR_FIXED_HOLIDAYS와 함께 이 표도 참조하도록 한 줄 추가. 다른 고정 공휴일(광복절 등)이 주말과 겹칠 때 생기는 대체공휴일은 이번 범위 밖으로 명시적으로 남겨둠(계획 범위를 벗어난 확장 방지). 테스트 5건 추가(isKrNonBusinessDay 직접 단위 2건: 추석 연휴/바로 전날, 대체공휴일 자체/다음날 — shiftWeekend 통합 3건: 2026 추석이 주말에 바로 붙어 연휴+주말을 통째로 건너는 earlier/later, 2027 설날 대체공휴일(2/9, 화요일, MM-DD 고정표에는 없는 날)도 동일하게 조정됨). git stash로 logic.js 수정을 되돌려 새 테스트 4건이 실제로 FAIL함을 확인한 뒤 복원. node test/run.js 3478->3482/3482 통과. node --check logic.js/sw.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.462->1.47.463, sw.js CACHE v729->v730. pending_advance_plan null로 비움.",
+   "commit": null
+  },
+  {
+   "cycle": 362,
+   "phase": "develop",
+   "timestamp": "2026-11-15T17:30:00.000Z",
+   "summary": "코드를 직접 탐색해 homeAlertCard()(홈 화면 상시 알림 카드)의 저축 만기('mat'/'matMulti') 렌더가 overdue(이미 지난 만기, doMaturity() 미처리)를 전혀 구분하지 않고 항상 \"저축 만기 임박\"이라고 쓰는 공백을 발견했다 — notifyAlertInfo()(OS 푸시, cycle232)와 openMaturity()(만기 목록 시트, cycle268)는 이미 al.date<TODAY를 봐서 지난 만기를 \"지났어요\"로 따로 부르는데, 매번 보이는 홈 카드만 그 구분이 안 끝나 doMaturity()로 이체 처리를 아직 안 한 지난 만기도 계속 \"곧 만기\"처럼 안내했다. 수정: 'mat' 단일 카드는 al.date<TODAY면 제목/부제를 '저축 만기가 지났어요'/'만기가 지났어요'로 바꾼다. 'matMulti'는 homeAlerts()가 이제 함께 넘기는 overdueCount(dueCount와 동일한 방식으로 _mat에서 산출)로 전부 지났으면 제목을 '저축 만기가 지났어요 N건'으로, 일부만 지났으면 기존 제목은 유지한 채 부제에 '지난 건 포함 ·'을 덧붙인다. overdueCount가 없는(undefined) 기존 호출부/테스트는 모두 0으로 취급돼 문구가 바뀌지 않아 하위호환 유지. 테스트 2건 추가(mat 단일: 미래/오늘/과거 3케이스, matMulti: overdueCount 0/일부/전부 3케이스) — 기존 matMulti 테스트(건수만 확인)도 그대로 통과함을 확인. node test/run.js 3482->3484/3484 통과. node --check sw.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.463->1.47.464, sw.js CACHE v730->v731.",
    "commit": null
   }
  ]

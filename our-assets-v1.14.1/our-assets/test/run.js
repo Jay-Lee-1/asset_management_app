@@ -31507,6 +31507,31 @@ test('homeAlertCard: matMulti는 openMaturity()로 열리고 건수가 보인다
   assert.ok(html.includes('onclick="openMaturity()"'), 'matMulti 카드가 새 시트를 만들지 않고 기존 openMaturity()를 재사용해야 함');
   assert.ok(html.includes('저축 만기 임박 3건'), '건수가 보여야 함');
 });
+/* notifyAlertInfo(OS 푸시)/openMaturity(목록 시트, cycle268)는 이미 overdue(al.date<TODAY)를 '임박'과
+ * 구분해 "지났어요"로 부르는데, 이 홈 화면 상시 카드(homeAlertCard)만 그 구분이 없어 doMaturity()를
+ * 아직 처리하지 않은 지난 만기도 매번 "임박"이라고 잘못 보여줬다(app-evolve cycle362 develop). */
+test('homeAlertCard: mat(단일)은 지난 만기(overdue)를 notifyAlertInfo/openMaturity와 동일하게 "임박"이 아니라 "지났어요"로 구분한다', () => {
+  sandbox.TODAY = '2026-06-15';
+  const soon = sandbox.homeAlertCard({ kind: 'mat', assetId: 's1', name: '적금', date: '2026-06-20', amount: 1000000 });
+  assert.ok(soon.includes('저축 만기 임박 · 적금'), '아직 안 지난 만기는 기존처럼 "임박"이어야 함');
+  assert.ok(!soon.includes('지났어요'));
+  const today = sandbox.homeAlertCard({ kind: 'mat', assetId: 's1', name: '적금', date: '2026-06-15', amount: 1000000 });
+  assert.ok(today.includes('저축 만기 임박 · 적금'), '오늘 만기는 아직 지난 게 아니므로 "임박"이어야 함(al.date<TODAY만 overdue)');
+  const overdue = sandbox.homeAlertCard({ kind: 'mat', assetId: 's1', name: '적금', date: '2026-06-10', amount: 1000000 });
+  assert.ok(overdue.includes('저축 만기가 지났어요 · 적금'), '지난 만기는 제목부터 "지났어요"로 불러야 함');
+  assert.ok(overdue.includes('만기가 지났어요'), '부제도 "만기예요"가 아니라 "만기가 지났어요"여야 함');
+  assert.ok(!overdue.includes('임박'), '지난 만기 카드에는 "임박"이 남아있으면 안 됨');
+});
+test('homeAlertCard: matMulti는 homeAlerts가 함께 넘기는 overdueCount로 전부/일부/전무 지남을 구분한다', () => {
+  const none = sandbox.homeAlertCard({ kind: 'matMulti', count: 3, overdueCount: 0 });
+  assert.ok(none.includes('저축 만기 임박 3건') && !none.includes('지난 건'), '지난 건이 없으면 기존 문구 그대로');
+  const some = sandbox.homeAlertCard({ kind: 'matMulti', count: 3, overdueCount: 1 });
+  assert.ok(some.includes('저축 만기 임박 3건'), '일부만 지났으면 제목은 그대로 "임박"');
+  assert.ok(some.includes('지난 건 포함'), '일부만 지났으면 부제에 "지난 건 포함"을 덧붙여야 함');
+  const all = sandbox.homeAlertCard({ kind: 'matMulti', count: 3, overdueCount: 3 });
+  assert.ok(all.includes('저축 만기가 지났어요 3건'), '전부 지났으면 제목도 mat 단일처럼 "지났어요"로 바뀌어야 함');
+  assert.ok(!all.includes('지난 건 포함'), '전부 지난 경우엔 부제의 "지난 건 포함" 문구가 중복으로 붙으면 안 됨');
+});
 test('openConfirmTransferList: 미확인 이체가 없으면 안내 토스트만 뜨고, 정확히 1건이면 목록 없이 바로 그 건의 개별 확인 시트로 간다(app-evolve cycle156)', () => withFakeToday('2026-06-15', () => {
   setupHomeAlertsDB();
   sandbox.DB.settings.confirmTransfers = true;
