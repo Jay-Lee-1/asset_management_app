@@ -1,15 +1,8 @@
 {
  "cycle": 361,
- "phase": "review",
+ "phase": "critique",
  "pending_advance_plan": null,
  "history": [
-  {
-   "cycle": 356,
-   "phase": "review",
-   "timestamp": "2026-11-14T18:05:00.000Z",
-   "summary": "develop(cycle356, 0838ee7: recHistFieldsChanged에 shared 비교 추가)을 검토했다. 변경이 작고 명확 — !!로 정규화해 legacy undefined와 명시적 false를 같게 다루는 처리가 orig/d 양쪽에 대칭적으로 적용됨을 확인. fromAssetId/toAssetId 등 나머지 비교 배열이 그대로 보존됐는지, scope='one'(recSave 6633행)이 edit.shared=!!d.shared를 amount와 동일하게 항시 스냅샷하는 기존 cycle352 설계와 충돌하지 않는지 확인 — recHistFieldsChanged는 base 저장(전체 편집) 경로에서만 호출되고 scope='one' 경로와는 무관해 충돌 없음. node test/run.js 3437/3437 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
-   "commit": null
-  },
   {
    "cycle": 356,
    "phase": "critique",
@@ -141,6 +134,13 @@
    "phase": "develop",
    "timestamp": "2026-11-15T13:28:05.000Z",
    "summary": "Explore 서브에이전트에게 cycle340-361의 모든 주제(반복거래 override, 부채 상환, 정산 breakdown/알림, goalBehind 연도, costBasis 통장 선택, duplicateAsset/Goal NAME_MAX, 클라우드 동기화 에러 분류, fx 폴백, buildExpenseBarHtml 팔레트, comma -0, undoToast WCAG, App Lock, 사진 페이로드, 가구 공유 인증, RANGE_FROM, visibilitychange, SRI hash, localStorage 쿼터, 카테고리 rename/merge, 검색어 파싱)를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: 은행/카드사 CSV 가져오기(mapGenericCsvRow, logic.js:1575)가 '기본 카테고리' 하나만 받아, 실제로는 입금/출금(split 모드) 또는 금액 부호(signed 모드)에 따라 행마다 type이 income/expense로 갈리는데도 type과 무관하게 같은 카테고리를 그대로 찍고 있었다 — 실제 은행 CSV는 월급 입금과 카드값 출금이 한 파일에 공존하는 게 보통이라, 사용자가 지출 카테고리를 고르면 수입 행에까지 그 지출 카테고리가 붙어버렸다(반대도 동일). 그 카테고리는 저장된 type의 카테고리 목록(DB.categories.income/expense)에 없어 카테고리 관리 화면에서 보이지도 않는 '유령 카테고리'가 돼 분석/예산 집계에 조용히 뒤섞였다. test/run.js:9016의 기존 테스트도 expense.txn.category만 단언하고 income.txn.category는 전혀 확인하지 않아 이 공백이 가려져 있었다. 수정: mapping.category(지출)와 mapping.categoryIncome(수입)을 분리해 mapGenericCsvRow가 type에 따라 올바른 카테고리를 고르게 했다(categoryIncome이 없으면 category로 대체해 옛 mapping shape과 호환 유지). index.html의 openCsvColumnMap/renderCsvColumnMap에서 catKind 3단 토글(expense/income/saving)과 단일 '기본 카테고리' 필드를 지우고 '지출 카테고리'/'수입 카테고리' 두 피커로 교체(csvMapPickCategory(kind)), 각자 DB.categories.expense/income 목록에서만 고르게 했다 — 'saving'은 이 경로가 만드는 type(income/expense)과 애초에 대응하는 목록이 아니라 같이 제거했다. canImport 가드도 두 카테고리 모두 선택해야 통과한다. 이제 안 쓰는 csvMapSetCatKind()를 지우고 test/run.js의 FUNCTIONS 목록에서도 제거. 테스트: mapGenericCsvRow 직접 단위 테스트 2건(양수/음수 각자 올바른 카테고리, categoryIncome 없을 때 구버전 호환), buildGenericImportPreview 기존 split-mode 테스트에 income.txn.category 단언 추가, csvMapPickCategory/csvMapApply/openCsvColumnMap 관련 기존 테스트 4건을 새 두-필드 shape에 맞게 갱신. logic.js를 git stash로 수정 전 상태로 되돌려 새로 추가한 단언 2건이 실제로 FAIL함을 직접 확인한 뒤 복원했다. node test/run.js 3476(수정 전, FAIL 2건)->3478/3478(수정 후) 통과. node --check logic.js/sw.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.461->1.47.462, sw.js CACHE v728->v729.",
+   "commit": null
+  },
+  {
+   "cycle": 361,
+   "phase": "review",
+   "timestamp": "2026-11-15T13:55:00.000Z",
+   "summary": "develop(cycle361, 390ac96: mapGenericCsvRow의 category/categoryIncome 분리)을 검토했다. mapping.category/categoryIncome이 모두 전달되는 두 모드(signed 부호, split 입출금열)에서 type에 따라 올바른 필드를 고르는지, categoryIncome이 없을 때(구버전 mapping shape) category로 대체되는 폴백이 올바른지 코드로 직접 확인. catKind/csvMapSetCatKind 제거가 완전한지 grep으로 index.html/logic.js/test/run.js 전체에서 잔존 참조가 0건임을 확인. mapGenericCsvRow의 type이 split/signed 두 분기 모두에서 'income'|'expense'만 산출하고 'saving'은 애초에 나올 수 없음을 로직으로 재확인해, catKind에서 'saving' 옵션을 제거한 것이 타당함을 검증. openCatPicker({kind,...})에 'income'/'expense' kind를 넘기는 패턴이 기존에도 여러 곳에서 쓰이는 표준 패턴임을 확인해 새 호출(csvMapPickCategory)이 이상 없음. node test/run.js 3478/3478 재실행 통과, node --check logic.js/sw.js/test/run.js 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
    "commit": null
   }
  ]
