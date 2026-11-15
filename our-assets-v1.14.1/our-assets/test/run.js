@@ -408,7 +408,7 @@ const FUNCTIONS = [
 // 목록과, 그 키를 읽어주는 한글 aria-label 매핑이다(app-evolve cycle281 advance) — 둘 다 내부에
 // ";"가 없는 단순 object literal이라 extractConstBlock 없이 extractConst로도 끝까지 끌어온다
 // (CAT_LABEL과 같은 패턴).
-const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'emailKey', 'CAT_PICKER_SEARCH_THRESHOLD', 'GOAL_LIST_SEARCH_THRESHOLD', 'GS_CAP', 'CAT_ICON_SET', 'ICON_LABEL_KO', 'BAL_ASSET_TYPES', 'ALLOC_OTHER_COLOR', 'TRASH_MAX_AGE_DAYS', 'AMOUNT_MAX', 'NAME_MAX', 'cleanName', 'CODE_MAX', 'cleanCode'];
+const CONSTS = ['catKey', 'catTombKey', 'ownerTombKey', 'comma', 'commaQty', 'ASSET_TYPES', 'DEFAULT_GROUP_ORDER', 'TYPE_COLOR', 'TYPE_LABEL', 'CURRENCY_LIST', 'EXP_CATS_DEFAULT', 'ADJUST_CAT', 'INC_CATS_DEFAULT', 'SAV_CATS_DEFAULT', 'RANGE_FROM', 'BUDGET_EPOCH', 'isFuture', 'BAL_CACHE_MAX', '_balCache', 'REC_CACHE_MAX', '_recCache', '_lastEditCache', 'GOLD_G_PER_DON', 'isCashLike', 'isMarketValued', 'TYPEBYLABEL', 'SANITIZE_QTY_FIELDS', 'SANITIZE_FREE_FIELDS', 'isPlanAcct', 'CAT_LABEL', 'CATICON', 'won', 'PAGE_TITLE', 'wonS', '_savedDrafts', 'APPLOCK_FAIL_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'FPIN_WAIT_SEC', 'I', 'RATE_TTL', 'emailKey', 'CAT_PICKER_SEARCH_THRESHOLD', 'GOAL_LIST_SEARCH_THRESHOLD', 'GS_CAP', 'CAT_ICON_SET', 'ICON_LABEL_KO', 'BAL_ASSET_TYPES', 'ALLOC_OTHER_COLOR', 'TRASH_MAX_AGE_DAYS', 'AMOUNT_MAX', 'NAME_MAX', 'cleanName', 'CODE_MAX', 'cleanCode', 'SETTLE_ALERT_MIN', 'SETTLE_ALERT_BUCKET'];
 // _histCache는 filteredHist()가 재대입(={key,list})하는 let 선언이라 CONSTS(extractConst)로는
 // 못 끌어오므로 별도의 LETS 목록으로 extractLet을 통해 가져온다.
 // _copyIsCsv도 같은 이유(openCopyBackup()이 재대입)로 LETS를 통해 가져온다.
@@ -20607,6 +20607,34 @@ test('settlementItems: 반복거래가 펼친 가상 인스턴스(isRec, recId)�
   assert.strictEqual(x.memo, '넷플릭스');
 });
 
+/* ---------- settleAlertBucket: homeAlerts()의 settleDue 카드/OS 푸시가 쓰는 문턱/버킷 판정
+ * (app-evolve cycle360 advance) — budgetOver/goalBehind/debtBehind/allocationDrift는 전부 홈
+ * 알림이 있는데 정산만 없던 공백을 메운다. diffAmount 자체는 settlementSummary가 이미 계산하므로
+ * 이 함수는 "알릴지/어느 버킷으로 dedupe할지"만 순수하게 판정한다. ---------- */
+test('settleAlertBucket: diffAmount가 minAmount 미만이면 null(아직 알릴 만큼 쌓이지 않음)', () => {
+  assert.strictEqual(sandbox.settleAlertBucket(50000, 100000, 100000), null);
+  assert.strictEqual(sandbox.settleAlertBucket(99999, 100000, 100000), null);
+});
+test('settleAlertBucket: diffAmount가 0이거나 음수면 null(정산할 것 없음/부호 오류 방어)', () => {
+  assert.strictEqual(sandbox.settleAlertBucket(0, 100000, 100000), null);
+  assert.strictEqual(sandbox.settleAlertBucket(-50000, 100000, 100000), null);
+});
+test('settleAlertBucket: minAmount와 정확히 같으면(경계값) 알려야 한다', () => {
+  assert.strictEqual(sandbox.settleAlertBucket(100000, 100000, 100000), 100000);
+});
+test('settleAlertBucket: minAmount 이상이면 bucketWon 단위로 내림한 값을 돌려준다', () => {
+  assert.strictEqual(sandbox.settleAlertBucket(250000, 100000, 100000), 200000);
+  assert.strictEqual(sandbox.settleAlertBucket(399999, 100000, 100000), 300000);
+  assert.strictEqual(sandbox.settleAlertBucket(400000, 100000, 100000), 400000);
+});
+test('settleAlertBucket: 같은 버킷 안에서는 diffAmount가 조금씩 늘어도(지출이 하나씩 쌓여도) 같은 값을 돌려줘 재알림 dedupe가 유지된다', () => {
+  const a = sandbox.settleAlertBucket(210000, 100000, 100000);
+  const b = sandbox.settleAlertBucket(290000, 100000, 100000);
+  assert.strictEqual(a, b, '같은 10만원대 버킷(200000)이어야 함');
+  const c = sandbox.settleAlertBucket(300001, 100000, 100000);
+  assert.notStrictEqual(c, a, '버킷을 넘어 눈에 띄게 더 쌓이면 다른 값이어야 함');
+});
+
 /* ---------- mergeCollection: afterCloudAuth()의 localUnsynced 충돌 분기가 DB.txns를 문서 전체
  * 교체 대신 레코드 단위로 합치는 데 쓰는 순수 3-way 병합 함수(app-evolve cycle90 critique/advance).
  * 두 기기가 서로 무관한 거래만 각자 편집·삭제해도 전체 충돌로 취급돼 한쪽 편집이 통째로 사라지던
@@ -26658,6 +26686,74 @@ test('homeAlertCard: allocationDrift(Multi)는 openTargetAllocationForm()으로 
   const multi = sandbox.homeAlertCard({ kind: 'allocationDriftMulti', count: 2 });
   assert.ok(multi.includes("onclick=\"openTargetAllocationForm()\""));
 });
+
+/* ---------- homeAlerts()/notifyAlertInfo()/homeAlertCard()의 settleDue(정산 알림) 통합 ----------
+ * (app-evolve cycle360 advance) — budgetOver/goalBehind/debtBehind/allocationDrift는 전부 홈 카드+
+ * OS 푸시가 있는데, 이미 구현된 2인 정산(settlement) 기능만 홈 어디에도 알림이 없어 사용자가
+ * openSettlement()을 기억해서 직접 열어야만 했던 공백을 메운다. ---------- */
+function setupSettleDueDB() {
+  setupHomeAlertsDB();
+  sandbox.DB.owners = ['나', '배우자'];
+  sandbox.DB.assets.push({ id: 'a1', owner: '나', type: 'cash', includeInTotal: true, baseAmount: 0 });
+  sandbox.DB.assets.push({ id: 'a2', owner: '배우자', type: 'cash', includeInTotal: true, baseAmount: 0 });
+  sandbox.DB.settings.settle = { ownerA: '나', ownerB: '배우자', ratioA: 50 };
+}
+test('homeAlerts: 정산 설정이 없으면(DB.settings.settle 미설정) 공동지출이 아무리 쌓여도 settleDue가 전혀 계산되지 않는다', () => {
+  setupHomeAlertsDB();
+  sandbox.DB.owners = ['나', '배우자'];
+  sandbox.DB.assets.push({ id: 'a1', owner: '나', type: 'cash', includeInTotal: true, baseAmount: 0 });
+  sandbox.DB.txns.push({ id: 't1', type: 'expense', shared: true, fromAssetId: 'a1', amount: 500000, date: sandbox.TODAY, category: '식비' });
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'settleDue'), '정산 설정이 없으면(settleConfigured()===null) 알릴 수 없음');
+});
+test('homeAlerts: 정산 차액(diffAmount)이 SETTLE_ALERT_MIN 미만이면 settleDue가 뜨지 않는다', () => {
+  setupSettleDueDB();
+  // total=150000, 50/50 기대액=75000, diffAmount=75000 < SETTLE_ALERT_MIN(100000)
+  sandbox.DB.txns.push({ id: 't1', type: 'expense', shared: true, fromAssetId: 'a1', amount: 150000, date: sandbox.TODAY, category: '식비' });
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'settleDue'), '아직 사소한 차액이면 알릴 필요 없음');
+});
+test('homeAlerts: 정산 차액이 SETTLE_ALERT_MIN 이상이면 settleDue가 뜨고, oweOwner(빚진 쪽)/otherOwner(받을 쪽)가 올바르다', () => {
+  setupSettleDueDB();
+  // '나'(a1)가 300000원을 혼자 결제, 50/50 기대액=150000 → diffAmount=150000, '나'가 더 냈으므로 '배우자'가 갚아야 함
+  sandbox.DB.txns.push({ id: 't1', type: 'expense', shared: true, fromAssetId: 'a1', amount: 300000, date: sandbox.TODAY, category: '식비' });
+  const alerts = sandbox.homeAlerts([]);
+  const sd = alerts.find((a) => a.kind === 'settleDue');
+  assert.ok(sd, 'diffAmount(150000)가 문턱(100000) 이상이면 settleDue가 떠야 함');
+  assert.strictEqual(sd.oweOwner, '배우자', '적게 낸 쪽(배우자)이 갚아야 함');
+  assert.strictEqual(sd.otherOwner, '나', '더 낸 쪽(나)이 받아야 함');
+  assert.strictEqual(sd.diffAmount, 150000);
+  assert.strictEqual(sd.bucket, 100000, 'settleAlertBucket(150000,100000,100000)=100000');
+});
+test('homeAlerts: settleDue는 openSettlement()과 동일하게 settledThrough 이전 지출은 집계에서 뺀다(중복 정산 방지)', () => {
+  setupSettleDueDB();
+  sandbox.DB.settings.settledThrough = '2026-05-01';
+  // settledThrough 이전(이미 정산됨)의 큰 공동지출 — 포함되면 diffAmount가 커지지만 빠져야 함
+  sandbox.DB.txns.push({ id: 'old1', type: 'expense', shared: true, fromAssetId: 'a1', amount: 900000, date: '2026-01-10', category: '식비' });
+  const alerts = sandbox.homeAlerts([]);
+  assert.ok(!alerts.some((a) => a.kind === 'settleDue'), 'settledThrough 이전 지출은 이미 정산된 것으로 보고 다시 세면 안 됨');
+});
+test('notifyAlertInfo: settleDue는 oweOwner와 al.bucket(10만원 단위)으로 키가 잡혀 그룹은 settle이다', () => {
+  sandbox.TODAY = '2026-06-15';
+  const a1 = sandbox.notifyAlertInfo({ kind: 'settleDue', oweOwner: '배우자', otherOwner: '나', diffAmount: 150000, bucket: 100000 });
+  assert.strictEqual(a1.group, 'settle');
+  assert.ok(a1.key.includes('배우자') && a1.key.includes('100000'));
+  const a2 = sandbox.notifyAlertInfo({ kind: 'settleDue', oweOwner: '배우자', otherOwner: '나', diffAmount: 190000, bucket: 100000 });
+  assert.strictEqual(a2.key, a1.key, '같은 버킷(100000)이면 금액이 조금 더 쌓여도 같은 키로 dedupe되어야 함');
+  const a3 = sandbox.notifyAlertInfo({ kind: 'settleDue', oweOwner: '배우자', otherOwner: '나', diffAmount: 310000, bucket: 300000 });
+  assert.notStrictEqual(a3.key, a1.key, '버킷이 바뀌면(쌓인 정도가 눈에 띄게 달라지면) 다시 알려야 함');
+});
+test('homeAlertCard: settleDue는 openSettlement()으로 연결되고 누가 누구에게 얼마를 보내야 하는지 보여준다', () => {
+  const html = sandbox.homeAlertCard({ kind: 'settleDue', oweOwner: '배우자', otherOwner: '나', diffAmount: 150000, bucket: 100000 });
+  assert.ok(html.includes('onclick="openSettlement()"'));
+  assert.ok(html.includes('배우자') && html.includes('나') && html.includes('150,000'));
+});
+test('renderMenu: OS 알림이 켜져 있으면 정산 알림 뮤트 토글(· 정산 알림)이 다른 그룹 토글과 함께 보인다', () => {
+  const body = extractFunction('renderMenu');
+  assert.ok(body.includes("'· 정산 알림'") || body.includes('"· 정산 알림"'));
+  assert.ok(body.includes("toggleNotifyMuteGroup('settle')"));
+});
+
 /* ---------- portfolioGainLoss(logic.js)/investGainLossCard: 투자자산 전체 손익 카드
  * (app-evolve cycle226 critique/advance — assetGainLoss(a)/assetGainLossBadge가 자산 1건씩만
  * 행 배지로 보여주고, 총자산/비중/순자산추이/목표와 달리 전체 합산 뷰가 없던 공백) ---------- */

@@ -234,6 +234,20 @@ function settlementItems(txns,assets,ownerA,ownerB){
  included.sort(byDate);excluded.sort(byDate);
  return {included,excluded};
 }
+/* 정산(settlement)은 budgetOver/goalBehind/debtBehind처럼 homeAlerts()의 홈 카드·OS 푸시 알림
+ * 체계에 전혀 올라가 있지 않았다 — openSettlement()을 직접 열어야만 공동지출이 얼마나 쌓였는지
+ * 알 수 있어, 두 사람이 매번 기억해서 들어가 봐야 했다(app-evolve cycle360 critique가 지적한
+ * '가구 공유' 인증 모델 문제와는 별개로, 이미 구현된 2인 정산 기능 자체의 알림 공백).
+ * settlementSummary()의 diffAmount(아직 안 정산된 차액)를 받아, minAmount 미만이면(사소해서
+ * 알릴 필요 없음) null을 돌려주고, 그 이상이면 bucketWon 단위로 내림한 값을 돌려준다 —
+ * allocationDrift()의 diffPct/5*5 버킷팅과 동일한 이유: 지출이 하나씩 쌓이며 diffAmount가 매번
+ * 미세하게 바뀌는데, 그 값 그대로 알림 키에 쓰면 거의 매번 "새로운" 금액이라 재알림 dedupe가
+ * 무력화된다. 버킷이 바뀔 만큼(=bucketWon 이상) 눈에 띄게 더 쌓였을 때만 다시 알리게 하기 위한
+ * 몫 계산만 하는 순수 함수 — DB/날짜 의존 없음. */
+function settleAlertBucket(diffAmount,minAmount,bucketWon){
+ if(!(diffAmount>0)||diffAmount<minAmount)return null;
+ return Math.floor(diffAmount/bucketWon)*bucketWon;
+}
 
 /* ================= CLOUD MERGE / TOMBSTONE ================= */
 /* localArr/remoteArr(둘 다 {id,...,updatedAt?} 배열)를 id 단위로 3-way 병합하는 순수 함수.

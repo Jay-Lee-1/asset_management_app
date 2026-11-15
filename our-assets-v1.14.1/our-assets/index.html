@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.460';
+const APP_VERSION='1.47.461';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -1993,6 +1993,12 @@ const STORAGE_SIZE_WARN_LEN=3000000, STORAGE_SIZE_CRIT_LEN=4500000;
 /* clockSkewSeverity(logic.js)의 문턱: 5분 이상은 흔한 시계 오차를 넘어 mergeCollection()의
  * LWW 승자 판정에 영향을 줄 수 있는 수준으로 보고 'warn', 1일 이상은 명백히 틀린 시계로 'severe'. */
 const CLOCK_SKEW_WARN_MS=5*60*1000, CLOCK_SKEW_CRIT_MS=24*60*60*1000;
+/* homeAlerts()의 settleDue 카드/OS 푸시 문턱 — settleAlertBucket(logic.js)에 넘긴다.
+ * SETTLE_ALERT_MIN 미만이면 아직 알릴 만큼 쌓이지 않은 것으로 보고, 그 이상이면
+ * SETTLE_ALERT_BUCKET 단위로 묶어 미세하게 쌓이는 금액마다 재알리지 않게 한다(app-evolve
+ * cycle360 advance). bigMin()(큰 지출 기준, 기본 10만원)과 같은 금액대를 기본값으로 쓴다. */
+const SETTLE_ALERT_MIN=100000;
+const SETTLE_ALERT_BUCKET=100000;
 /* fmtAmt(금액 입력 실시간 포맷)와 sanitizeAmount(백업 복원/클라우드 동기화 숫자 필드 검증)가
  * 공유하는 금액 상한. Number.MAX_SAFE_INTEGER(9007199254740991, 16자리)를 넘으면 정밀도가
  * 깨진 값이 그대로 잔액 합산(assetEval/balancesUpTo 등)으로 전파될 수 있어, 그보다 한 자리
@@ -7748,6 +7754,7 @@ function renderMenu(){
     {ic:'target',l:'· 목표 알림',sw:!DB.settings.notifyMute?.goal,a:"toggleNotifyMuteGroup('goal')"},
     {ic:'debt',l:'· 부채 알림',sw:!DB.settings.notifyMute?.debt,a:"toggleNotifyMuteGroup('debt')"},
     {ic:'chart',l:'· 목표 비중 알림',sw:!DB.settings.notifyMute?.alloc,a:"toggleNotifyMuteGroup('alloc')"},
+    {ic:'users',l:'· 정산 알림',sw:!DB.settings.notifyMute?.settle,a:"toggleNotifyMuteGroup('settle')"},
    ]:[]),
    {ic:'lock',l:'앱 잠금(PIN)',sw:APPLOCK.enabled(),a:"toggleAppLock()"},
    ...(APPLOCK.enabled()?[{ic:'lock',l:'PIN 변경',a:"openChangePinSheet()"},{ic:'lock',l:'재잠금 시점',v:graceLabel(),a:"openAppLockGraceSheet()"}]:[]),
@@ -11921,6 +11928,24 @@ function homeAlerts(neg){
   if(_ad.length===1){const x=_ad[0];arr.push({kind:'allocationDrift',type:x.type,actualPct:x.actualPct,targetPct:x.targetPct,diffPct:x.diffPct});}
   else if(_ad.length>1)arr.push({kind:'allocationDriftMulti',count:_ad.length});
  }
+ /* 정산(openSettlement, DB.settings.settle)이 얼마나 쌓였는지 지금까지 홈 어디에도 안 보였다 —
+  * budgetOver/goalBehind/debtBehind/allocationDrift는 전부 홈 카드+OS 푸시가 있는데, 정산만
+  * "직접 열어봐야 아는" 유일한 2인 공유 기능으로 남아 있었다(app-evolve cycle360 critique/advance
+  * — cycle360 critique가 지적한 '가구 공유' 인증 모델 문제와 별개로, 이미 구현된 정산 기능 자체의
+  * 알림 공백). openSettlement()과 똑같은 from(마지막 정산일 다음날, 없으면 RANGE_FROM)·필터
+  * (expense·shared·조정 제외)로 settlementSummary를 돌려 diffAmount를 구하고, settleAlertBucket
+  * (logic.js)으로 문턱/버킷 판정만 추가한다 — 집계 공식 자체는 건드리지 않는다. */
+ const _scfg=settleConfigured();
+ if(_scfg){
+  const _sfrom=DB.settings.settledThrough?addDays(DB.settings.settledThrough,1):RANGE_FROM;
+  const _stxns=allTxns(_sfrom,TODAY).filter(t=>t.type==='expense'&&t.shared&&!(t.adjust&&!t.inSurplus));
+  const _ssum=settlementSummary(_stxns,DB.assets,_scfg.ownerA,_scfg.ownerB,_scfg.ratioA);
+  const _sbucket=settleAlertBucket(_ssum.diffAmount,SETTLE_ALERT_MIN,SETTLE_ALERT_BUCKET);
+  if(_sbucket!=null){
+   const _other=_ssum.oweOwner===_scfg.ownerA?_scfg.ownerB:_scfg.ownerA;
+   arr.push({kind:'settleDue',oweOwner:_ssum.oweOwner,otherOwner:_other,diffAmount:_ssum.diffAmount,bucket:_sbucket});
+  }
+ }
  return arr;
 }
 /* homeAlerts()가 계산한 알림 중 "오늘 확정 대기 이체 / 임박한 저축 만기(1~2일 이내) / 예산 초과 /
@@ -11997,6 +12022,11 @@ function notifyAlertInfo(al){
   * cycle318 advance)에 포함돼 있다. */
  if(al.kind==='allocationDrift')return{key:`allocDrift:${al.type}:${TODAY.slice(0,7)}:${Math.round(al.diffPct/5)*5}`,title:'목표 비중과 차이가 커요',body:`${ASSET_TYPES[al.type].label} · 지금 ${al.actualPct.toFixed(1)}% / 목표 ${al.targetPct}%`,group:'alloc'};
  if(al.kind==='allocationDriftMulti')return{key:`allocDriftMulti:${TODAY.slice(0,7)}:${al.count}`,title:'목표 비중과 차이가 커요',body:`${al.count}개 유형이 목표 비중과 많이 벌어졌어요`,group:'alloc'};
+ /* settleDue는 allocationDrift와 동일한 이유로 월 단위가 아니라 al.bucket(settleAlertBucket이 돌려준
+  * 10만원 단위 버킷)으로 key를 묶는다 — diffAmount는 달과 무관하게 지출이 쌓일 때마다 계속
+  * 늘어나는 값이라, 월로만 묶으면 이번 달에 이미 한 번 알린 뒤 더 쌓여도 다음 달까지 재알림이
+  * 안 된다. oweOwner도 key에 넣어 빚진 쪽이 바뀌면(한쪽이 몰아서 내서 역전) 별도로 알린다. */
+ if(al.kind==='settleDue')return{key:`settleDue:${al.oweOwner}:${al.bucket}`,title:'정산할 금액이 쌓였어요',body:`${al.oweOwner}님이 ${al.otherOwner}님에게 ${comma(al.diffAmount)}원 정도 보내면 돼요`,group:'settle'};
  return null;
 }
 /* 같은 항목(key)은 상태가 유지되는 한 다시 알리지 않는다 — checkNotifyAlerts가 동기화 주기(수 분)마다
@@ -12244,6 +12274,11 @@ function homeAlertCard(al){
    <div class="ha-ic">${svg('alert')}</div>
    <div class="ha-b"><div class="ha-t">목표 비중과 차이가 큰 유형 ${al.count}개</div>
      <div class="ha-s">눌러서 확인하세요</div></div>
+   <div class="ha-c">${svg('chev')}</div></button>`;
+ if(al.kind==='settleDue')return `<button class="home-alert mat" onclick="openSettlement()">
+   <div class="ha-ic">${svg('users')}</div>
+   <div class="ha-b"><div class="ha-t">정산할 금액이 쌓였어요</div>
+     <div class="ha-s">${esc(al.oweOwner)}님이 ${esc(al.otherOwner)}님에게 ${comma(al.diffAmount)}원 정도 · 눌러서 확인하세요</div></div>
    <div class="ha-c">${svg('chev')}</div></button>`;
  if(al.kind==='negMulti')return `<button class="home-alert" onclick="openNegList()">
    <div class="ha-ic">${svg('bell')}</div>
