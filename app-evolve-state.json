@@ -1,15 +1,12 @@
 {
  "cycle": 359,
- "phase": "critique",
- "pending_advance_plan": null,
+ "phase": "advance",
+ "pending_advance_plan": {
+  "title": "buildExpenseBarHtml()의 고정 8색 팔레트가 9개 이상 카테고리에서 색상이 겹침(index.html:4258-4273)",
+  "why": "PAL(index.html:4261)은 길이 8의 고정 배열이고 col(i)=PAL[i%PAL.length](4262행)로 인덱스를 그대로 모듈로 순환시킨다. 호출부 5곳 중 홈 화면의 expenseBreakdownCard/incomeBreakdownCard(3349-3350행, cats=expenseByCat 전체/icats=incomeByCategory 전체)와 openSpendAnalysis/openIncomeAnalysis의 스택바(7165, 8236행, rows=catCache 전체)는 카테고리 개수를 전혀 자르지 않고 그대로 넘긴다(openYearReview의 TOP3만 8191-8192행에서 이미 3개로 제한돼 있어 영향 없음). 기본 설치는 EXP_CATS_DEFAULT(1877행) 6개뿐이라 테스트 데이터로는 전혀 드러나지 않지만, 앱이 카테고리 개수에 제한을 두지 않고(가계부>카테고리 관리에서 자유 추가, 30종 아이콘) 세분화를 유도하는 만큼 9개 이상 쓰는 실사용자는 앱에서 가장 많이 보는 화면(홈)에서 서로 다른 두 카테고리가 완전히 같은 색 점/막대 구간으로 표시돼, '색으로 어느 지출인지 구분'하는 이 위젯의 존재 목적 자체가 조용히 깨진다. test/run.js(11242-11574행 부근)는 퍼센트 보정/HTML escape/빈 상태/ARIA만 커버하고 카테고리 9개 이상·색상 중복 케이스는 전혀 없다.",
+  "approach": "buildExpenseBarHtml(cats)에 표시 행 개수 상한(예: 금액 기준 상위 7개)을 두고 나머지는 '기타'라는 합성 버킷 하나로 묶어 고정된 전용 색(예: 중립 회색, PAL과 별도)을 부여한다 — 집계 공식(퍼센트 최대잔여법 등)은 그대로 재사용하고 cats 배열을 함수 진입 시 전처리하는 정도로 범위를 좁힌다. 이미 cats를 v 내림차순으로 넘기지 않는 호출부가 있으면 buildExpenseBarHtml 내부에서 정렬 후 자르도록 한다(호출부 5곳이 전부 이 공유 함수 하나를 거치므로 수정이 자동으로 전파됨). 회귀 테스트로 9개 이상 입력 시 중복 색이 없는지, '기타' 버킷 금액이 overflow 합계와 일치하는지, 기존 ≤7개 입력은 동작/출력이 완전히 그대로인지(하위호환) 확인."
+ },
  "history": [
-  {
-   "cycle": 354,
-   "phase": "review",
-   "timestamp": "2026-11-14T10:07:22.717Z",
-   "summary": "develop(cycle354)이 만든 759088b를 검토했다. edits[date].memo를 소비하는 모든 지점이 이미 ed.memo 부재 시 r.memo로 폴백하는 동일 패턴을 쓰고 있어 memo 키를 생략해도 깨지지 않음을 확인. sanitizeBackup()의 d.edits 재검증 분기도 필드 부재를 전제로 깨지는 코드가 없음을 확인. node test/run.js 3421/3421 통과 확인. 실제 버그 없음 — 이상 없음.",
-   "commit": null
-  },
   {
    "cycle": 354,
    "phase": "critique",
@@ -141,6 +138,13 @@
    "phase": "review",
    "timestamp": "2026-11-15T05:45:00.000Z",
    "summary": "develop(cycle359, 8682576: stock.js fetchFxToKrw의 통화별 missing 폴백 수정)을 검토했다. missing=curs.filter(c=>!out[c])를 네이버 직후와 각 폴백 소스 이후 모두 재계산해 아직 못 구한 통화만 다음 소스로 넘기는 구조가 올바름을 확인 — out.USD가 이미 있을 때 폴백에서 다시 덮어쓰지 않는 보존 로직, missing이 비면 루프를 break하는 조기 종료, throw 조건이 USD 단일 기준으로 좁혀진 것 모두 자매 파일 rates.js의 fxFallbackChain 패턴과 일관됨을 확인. 유일한 호출부(handler 53행)가 try/catch로 감싸 fx 전체 실패만 처리하므로 부분 성공(JPY만 못 구함 등) 시 out에 KRW 환산 불가한 통화가 섞여도 toKrw() 쪽에서 해당 통화 자산만 건너뛸 뿐 전체가 깨지지 않음을 grep으로 확인. 새로 추가된 테스트가 수정 전 코드로 되돌리면 실제로 FAIL함을 커밋 메시지에서 이미 직접 검증했다고 기록돼 있어 재확인 생략. node test/run.js 3458/3458 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
+   "commit": null
+  },
+  {
+   "cycle": 359,
+   "phase": "critique",
+   "timestamp": "2026-11-15T07:10:00.000Z",
+   "summary": "Explore 서브에이전트에게 cycle340-359의 모든 주제(반복거래 override, 클라우드 동기화, undoToast WCAG, App Lock, 부채 상환, 정산 breakdown, goalBehind 연도, costBasis 통장 선택, duplicateAsset/Goal NAME_MAX, fx 폴백 등)를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: buildExpenseBarHtml(index.html:4258-4273, 홈 지출/수입 분석 카드와 지출·수입 분석 시트·연말 리뷰 TOP3가 공유하는 스택바+범례 렌더)의 PAL 팔레트가 8색 고정이고 col(i)=PAL[i%PAL.length]로 인덱스를 그대로 모듈로 순환시키는데, 호출부 중 홈 화면 2곳(3349-3350행)과 지출/수입 분석 시트 2곳(7165, 8236행)은 카테고리 개수를 전혀 자르지 않고 그대로 넘긴다(TOP3만 이미 3개로 제한). 기본 설치 카테고리가 6개(EXP_CATS_DEFAULT, 1877행)뿐이라 테스트 데이터로는 전혀 드러나지 않지만, 앱이 카테고리를 자유롭게 추가하도록 설계돼 있어 9개 이상 쓰는 실사용자는 가장 많이 보는 홈 화면에서 서로 다른 두 카테고리가 완전히 같은 색으로 표시돼 위젯의 존재 목적(색으로 지출 구분)이 조용히 깨진다. 후보로 checkNotifyAlerts의 visibilitychange 전용 알림 체크(코드 자체가 best-effort로 명시해 기각 가능성 높음 판단)와 RANGE_FROM='2023-01-01' 하드 플로어(아직 실사용자에게 안 걸림, 긴급성 낮음)도 검토했으나 순위를 낮게 매겼다. pending_advance_plan에 buildExpenseBarHtml 상위 N개+'기타' 버킷 합성 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
    "commit": null
   }
  ]
