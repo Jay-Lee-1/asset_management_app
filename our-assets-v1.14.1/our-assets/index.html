@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.459';
+const APP_VERSION='1.47.460';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -1750,7 +1750,7 @@ function mergeRemoteDataIntoLocal(remoteData){
  * 원격 값을 받는다. */
 function snapshotLocalDeviceFields(){return dbIsEmpty(DB)?null:{settings:DB.settings,nwHistory:DB.nwHistory}}
 function restoreLocalDeviceFields(snap){if(!snap)return;if(snap.settings)DB.settings=snap.settings;if(snap.nwHistory)DB.nwHistory=snap.nwHistory}
-const comma=n=>Math.round(n||0).toLocaleString('ko-KR');
+const comma=n=>(Math.round(n||0)||0).toLocaleString('ko-KR'); /* Math.round(-0.3) 등은 IEEE754 -0을 반환해 toLocaleString이 "-0"을 찍는다 — ||0으로 -0을 양의 0으로 정규화(cycle331 commaQty의 더스트 가드와 동일한 문제의식, app-evolve cycle360 develop) */
 /* maximumFractionDigits가 4였을 때는 암호화폐(crypto, app-evolve cycle219 신설)처럼 소수점 8자리
  * (사토시 단위)까지 정밀하게 입력하는 보유수량에서, 0.00005개 미만이면 toLocaleString이 5번째
  * 자리에서 반올림해 "0"으로 표시했다 — assetSubline/assetEval은 원본 cryptoQty를 그대로 쓰므로

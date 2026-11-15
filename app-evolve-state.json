@@ -1,15 +1,8 @@
 {
  "cycle": 360,
- "phase": "develop",
+ "phase": "review",
  "pending_advance_plan": null,
  "history": [
-  {
-   "cycle": 354,
-   "phase": "advance",
-   "timestamp": "2026-11-14T12:15:46.905Z",
-   "summary": "critique(cycle354) 계획대로 undoToast()의 6초 자동소멸이 마우스 hover나 키보드 focus로도 멈추지 않던 WCAG 2.2.1 공백을 고쳤다. let tm + dismiss()/arm()으로 분리하고 mouseenter/mouseleave/focus/blur 리스너 추가(10905행 롱프레스 취소와 동일 패턴). 실행형 테스트 1건 추가(domstub으로 격리된 vm에서 합성 이벤트 순서 검증). node test/run.js 3421->3422/3422 통과. APP_VERSION 1.47.449->1.47.450, sw.js CACHE v716->v717. pending_advance_plan null로 비움.",
-   "commit": null
-  },
   {
    "cycle": 355,
    "phase": "review",
@@ -141,6 +134,13 @@
    "phase": "advance",
    "timestamp": "2026-11-15T08:09:30.412Z",
    "summary": "critique(cycle359) 계획대로 buildExpenseBarHtml()의 PAL(8색) 고정 팔레트가 9개 이상 카테고리에서 col(i%8) 모듈로 순환으로 색이 겹치던 버그를 고쳤다. cats를 v 내림차순으로 방어적으로 재정렬한 뒤 상위 PAL.length-1(7)개까지만 PAL 색을 각자 고유하게 배정하고, 8번째부터는 금액을 합산한 '기타' 버킷 하나로 묶어 PAL에 없는 전용 중립색(var(--text-3))을 준다 — 7개는 PAL 8색 중 7개만 쓰므로 '기타'와도 절대 겹치지 않는다. 호출부 5곳(expenseBreakdownCard/incomeBreakdownCard/openSpendAnalysis/openIncomeAnalysis/openYearReview TOP3)이 전부 이 공유 함수 하나를 거쳐 수정이 자동 전파됨. 퍼센트 최대잔여법 등 기존 집계 공식은 items(정렬+기타 묶음 후 배열)에 그대로 적용. 테스트 3건 추가: 7개 이하는 기타 버킷 없이 완전히 기존과 동일(하위호환), 9개 입력 시 상위7+기타로 묶이고 8개 행의 색이 전부 서로 다름, 호출부가 비정렬로 넘겨도 내부에서 금액 내림차순 정렬함. 수정 전 index.html로 되돌려 새 테스트 2건이 실제로 FAIL함을 직접 확인(stash로 검증). node test/run.js 3458->3461/3461 통과. node --check sw.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.458->1.47.459, sw.js CACHE v725->v726. pending_advance_plan null로 비움.",
+   "commit": null
+  },
+  {
+   "cycle": 360,
+   "phase": "develop",
+   "timestamp": "2026-11-15T09:20:50.713Z",
+   "summary": "Explore 서브에이전트가 cycle340-359의 모든 주제(반복거래 override, 부채 상환, 정산 breakdown, goalBehind 연도, costBasis 통장 선택, duplicateAsset/Goal NAME_MAX, 클라우드 동기화 에러, fx 폴백, buildExpenseBarHtml 팔레트, undoToast WCAG, 사진 페이로드 등)를 배제하고 발견한 버그를 고쳤다 — comma()(index.html:1753)가 Math.round(n||0)의 결과를 바로 toLocaleString에 넘기는데, Math.round(-0.3) 등 (-0.5,0] 범위의 음수 입력은 IEEE754 -0을 돌려주고 (-0).toLocaleString('ko-KR')은 문자열 \"-0\"을 돌려준다. commaQty()(바로 다음 줄, cycle331)는 이미 같은 문제를 더스트 보유수량에 대해 가드하고 있었지만 돈 포맷터 comma()엔 적용되지 않은 채 남아 있었다. assetGainLossBadge()(4547행)/investGainLossCard()(3954/3959행)처럼 gl.amount=assetEval(a)-a.costBasis(실수 평가가+정수 매입가)를 up=amount>=0으로 부호 판단한 뒤 comma(gl.amount)를 그대로 출력하는 호출부에서, fx/gold/stock/crypto 자산이 거의 손익 0(breakeven)인데 그 잔차가 음수 쪽으로 떨어지면 \"-0원\"이 그대로 찍혀 사실상 무손익인 포지션을 \"손실\"로 오인시켰다. won()/wonS()는 Math.abs를 먼저 적용해 이 문제에 안 걸림. 수정: const comma=n=>(Math.round(n||0)||0).toLocaleString('ko-KR') — -0이 JS에서 falsy라 ||0으로 양의 0으로 정규화, 다른 모든 입력(정수/양수/음수)은 바이트 단위로 동일하게 유지됨을 확인. 테스트 2건(comma() 유닛, -0/일반 회귀) + assetGainLossBadge 통합 테스트 1건(stockQty*rate=99999.7, costBasis=100000으로 gl.amount=-0.3 유도, \"-0원\" 미포함·\"0원\" 포함 확인) 추가, 수정 전 코드로 되돌려(git stash) 새 테스트 2건이 실제로 FAIL함을 직접 확인했다. node test/run.js 3461->3464/3464 통과. node --check sw.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.459->1.47.460, sw.js CACHE v726->v727.",
    "commit": null
   }
  ]

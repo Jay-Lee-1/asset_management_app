@@ -2210,6 +2210,25 @@ test('activeRecsForAssets: Set을 넘기면 여러 자산을 한 번에 찾는�
   assert.deepStrictEqual(hit, [1, 3]);
 });
 
+/* ---------- comma: 반올림 결과가 IEEE754 -0이 되어 "-0"으로 표시되던 버그 ---------- */
+test('comma: 음수인 작은 소수를 반올림하면 "-0"이 아니라 "0"으로 표시한다(IEEE754 -0 정규화, app-evolve cycle360)', () => {
+  // Math.round(-0.3)은 -0(IEEE754 negative zero)을 돌려주고, (-0).toLocaleString('ko-KR')은
+  // 문자열 "-0"을 돌려준다 — assetGainLossBadge/investGainLossCard처럼 손익 부호를 별도 조건(up=amount>=0)으로
+  // 판단해 "+"/"-" 접두사나 빨강/초록 색을 입히는 호출부에서, 손익이 0에 아주 가까운 음수면 "-0원"이
+  // 화면에 그대로 찍혀 "손실"로 오인시켰다(사실상 0에 가까운 손익인데도).
+  assert.strictEqual(sandbox.comma(-0.3), '0');
+  assert.strictEqual(sandbox.comma(-0.49), '0');
+  assert.strictEqual(sandbox.comma(-0), '0');
+  assert.strictEqual(sandbox.comma(0), '0');
+});
+test('comma: 일반적인 정수/양수/음수 반올림은 기존과 동일하게 동작한다(회귀 방지)', () => {
+  assert.strictEqual(sandbox.comma(1250), '1,250');
+  assert.strictEqual(sandbox.comma(-1250), '-1,250');
+  assert.strictEqual(sandbox.comma(0.6), '1');
+  assert.strictEqual(sandbox.comma(-1.6), '-2');
+  assert.strictEqual(sandbox.comma(null), '0');
+});
+
 /* ---------- commaQty: 자산 목록의 소수 보유수량이 반올림되던 버그 ---------- */
 test('commaQty: 정수는 comma()와 동일하게 천단위 콤마만 붙는다', () => {
   assert.strictEqual(sandbox.commaQty(30), '30');
@@ -19974,6 +19993,15 @@ test('assetGainLossBadge: 이익이면 income 색상 배지를, 손실이면 exp
   const downBadge = sandbox.assetGainLossBadge({ type: 'stock', stockCode: '005930', stockQty: 10, costBasis: 100000 });
   assert.ok(downBadge.includes('-20.0%'), downBadge);
   assert.ok(downBadge.includes('var(--expense)'), downBadge);
+});
+test('assetGainLossBadge: 손익이 0에 아주 가까운 음수라도 "-0원"이 아니라 "0원"으로 표시한다(comma -0 정규화, app-evolve cycle360)', () => {
+  // stockQty*rate=99999.7, costBasis=100000 → gl.amount=-0.3. up=gl.amount>=0이 false라 "손실"
+  // 색(expense)에 "+" 없이 음수 그대로 넘어가는데, comma()가 고쳐지기 전엔 Math.round(-0.3)의
+  // IEEE754 -0을 그대로 toLocaleString에 넘겨 "-0원"을 찍었다 — 사실상 손익 0에 가까운데 "-0원"으로 보임.
+  sandbox.DB = { rates: { fx: {}, stocks: { '005930': 9999.97 }, goldPerG: 0 } };
+  const badge = sandbox.assetGainLossBadge({ type: 'stock', stockCode: '005930', stockQty: 10, costBasis: 100000 });
+  assert.ok(badge.includes('0원'), badge);
+  assert.ok(!badge.includes('-0원'), badge);
 });
 test('assetGainLossBadge: costBasis 미설정이면 빈 문자열(배지 없음)', () => {
   sandbox.DB = { rates: { fx: {}, stocks: { '005930': 12000 }, goldPerG: 0 } };
