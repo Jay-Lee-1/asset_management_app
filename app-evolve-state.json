@@ -1,15 +1,12 @@
 {
  "cycle": 361,
- "phase": "critique",
- "pending_advance_plan": null,
+ "phase": "advance",
+ "pending_advance_plan": {
+  "title": "KR_FIXED_HOLIDAYS가 음력 설날/추석(+대체공휴일)을 빠뜨려 반복거래 영업일 조정(shiftWeekend)이 최대 명절 연휴에 틀린 날짜를 돌려줌",
+  "why": "logic.js:23-29의 KR_FIXED_HOLIDAYS는 MM-DD 고정일 8개만 담고, 23-24행 주석이 음력 설날/추석을 명시적으로 후속 과제로 미뤄둔 채(app-evolve cycle344) 지금까지 방치돼 있었다. isKrNonBusinessDay()가 이 Set만 참조하므로 recDates()/반복거래의 영업일 조정(earlier/later)이 설날·추석 3일 연휴를 평일로 오판해 반복이체/급여입금 등의 예정일을 은행이 쉬는 날 그대로 둔다. 한국 반복거래 사용자에게 가장 흔하고 눈에 띄는 영업일 조정 실패 케이스인데도 지금까지 고쳐지지 않은 알려진 공백.",
+  "approach": "logic.js에 연도 종속 음력 공휴일 테이블(예: KR_LUNAR_HOLIDAYS, YYYY-MM-DD 키, 설날 전날/당일/다음날 + 추석 전날/당일/다음날, 앱 지원 범위에 맞춰 최근 수년~향후 수년) 추가. 대체공휴일 규칙(고정/음력 공휴일이 토/일 또는 다른 공휴일과 겹칠 때 다음 평일로 대체)을 적용하는 순수 함수(예: expandSubstituteHolidays) 추가. isKrNonBusinessDay(ds)가 KR_FIXED_HOLIDAYS와 새 음력+대체공휴일 테이블을 함께 참조하도록 수정. 유지보수 부담(매년 날짜 갱신 필요)을 코드 주석에 명시. test/run.js의 기존 shiftWeekend 단위 테스트(1843-1904행 부근) 옆에 알려진 설날/추석 날짜(예: 2026년 추석) 기준 earlier/later 이동 케이스와 대체공휴일 케이스를 추가하고, 수정 전 코드로 되돌려 새 테스트가 실제로 FAIL하는지 확인. index.html 변경은 불필요(recDates/shiftWeekend가 이미 연결돼 있음)."
+ },
  "history": [
-  {
-   "cycle": 356,
-   "phase": "critique",
-   "timestamp": "2026-11-14T19:10:00.000Z",
-   "summary": "Explore 서브에이전트에게 지난 cycle340-356의 모든 주제(반복거래 scope-confirm/edits[date] override류 전부 포함)를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: pushCloud()(index.html:2223)가 encodeCloudPayload(DB)(2113-2123)로 매번 DB 전체를 gzip+base64해 올리는데, 영수증 사진(txn.photo, dataURL)은 이미 JPEG라 gzip 효과가 거의 없어 사진이 쌓일수록(예 300장*80KB≈24MB) 설정 토글 같은 무관한 편집에도 전체 블롭을 매번 재업로드/재다운로드하는 비용이 계정 나이에 비례해 커진다 — index.html:2091-2099에 작성자 자신이 cycle214 critique로 남긴 self-critique 주석이 '압축만 적용, delta sync는 미해결'이라 명시한 지점의 후속. 후보로 카테고리 rename 엣지케이스(doRenameCat/mergeCatInto)와 검색어 파싱(matchTxnQuery/parseAmountUnit)도 조사했으나 이미 성숙해 공백 없음으로 기각. pending_advance_plan에 사진을 별도 Supabase 테이블로 분리해 pushCloud/pullCloud와 독립적으로 동기화하고 DB.txns엔 참조만 남기는 계획 저장(로컬 JSON 백업은 inline 유지, 클라우드 인코드/디코드 경로만 이중 포맷 처리). 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-   "commit": null
-  },
   {
    "cycle": 356,
    "phase": "advance",
@@ -141,6 +138,13 @@
    "phase": "review",
    "timestamp": "2026-11-15T13:55:00.000Z",
    "summary": "develop(cycle361, 390ac96: mapGenericCsvRow의 category/categoryIncome 분리)을 검토했다. mapping.category/categoryIncome이 모두 전달되는 두 모드(signed 부호, split 입출금열)에서 type에 따라 올바른 필드를 고르는지, categoryIncome이 없을 때(구버전 mapping shape) category로 대체되는 폴백이 올바른지 코드로 직접 확인. catKind/csvMapSetCatKind 제거가 완전한지 grep으로 index.html/logic.js/test/run.js 전체에서 잔존 참조가 0건임을 확인. mapGenericCsvRow의 type이 split/signed 두 분기 모두에서 'income'|'expense'만 산출하고 'saving'은 애초에 나올 수 없음을 로직으로 재확인해, catKind에서 'saving' 옵션을 제거한 것이 타당함을 검증. openCatPicker({kind,...})에 'income'/'expense' kind를 넘기는 패턴이 기존에도 여러 곳에서 쓰이는 표준 패턴임을 확인해 새 호출(csvMapPickCategory)이 이상 없음. node test/run.js 3478/3478 재실행 통과, node --check logic.js/sw.js/test/run.js 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
+   "commit": null
+  },
+  {
+   "cycle": 361,
+   "phase": "critique",
+   "timestamp": "2026-11-15T15:10:22.721Z",
+   "summary": "Explore 서브에이전트에게 cycle340-361의 모든 주제(반복거래 override, 부채 상환, 정산 breakdown/알림, goalBehind 연도, costBasis 통장 선택, duplicateAsset/Goal NAME_MAX, 클라우드 동기화 에러 분류, fx 폴백, buildExpenseBarHtml 팔레트, comma -0, undoToast WCAG, App Lock, 사진 페이로드, 가구 공유 인증, RANGE_FROM, visibilitychange, SRI hash, localStorage 쿼터, 카테고리 rename/merge, 검색어 파싱, CSV 가져오기 카테고리 분리)를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: logic.js:23-29의 KR_FIXED_HOLIDAYS(한국 고정 공휴일 8개, MM-DD)가 음력 설날/추석을 명시적으로 제외한 채(23-24행 주석, app-evolve cycle344 critique/advance에서 이미 알려진 후속 과제로 기록돼 있었음) 지금까지 방치돼 있었다. isKrNonBusinessDay()가 이 Set만으로 영업일 여부를 판정하고, 반복거래의 영업일 조정(shiftWeekend, earlier/later)이 이를 그대로 써서 설날·추석 3일 연휴를 평일로 오판 — 한국에서 가장 큰 두 명절 연휴마다 매년 두 번씩 반복이체/급여입금 예정일이 은행 휴무일 그대로 찍히는, 기능이 정확히 다루겠다고 약속한 바로 그 케이스가 조용히 틀리고 있었다. 후보로 온보딩/첫 실행 경험 부재(doSignup 직후 가이드 없음, 기능 누락이지 정확성 버그는 아님)와 updateHist()의 전체 innerHTML 재렌더(이미 PAGE=20 페이지네이션+220ms 디바운스로 완화돼 수천 건 이상에서만 체감)도 검토했으나 순위를 낮게 매겼다. pending_advance_plan에 음력 공휴일 테이블+대체공휴일 확장 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
    "commit": null
   }
  ]
