@@ -1,15 +1,8 @@
 {
  "cycle": 361,
- "phase": "develop",
+ "phase": "review",
  "pending_advance_plan": null,
  "history": [
-  {
-   "cycle": 356,
-   "phase": "develop",
-   "timestamp": "2026-11-14T17:00:00.000Z",
-   "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — recHistFieldsChanged(index.html:6894, 반복거래 편집 시 '오늘부터 이후 모두'/'전체 적용' scope-confirm 시트를 띄울지 판단하는 함수)가 fromAssetId/amount/category/day/freq/startDate/weekend/splits만 비교하고 shared('같이 냈어요')는 전혀 보지 않고 있었다. expandRec()(index.html:2994)은 edits[date]에 자기 override가 없는 모든 과거+미래 occurrence에 r.shared를 그대로 흘려보내 settlementSummary()의 정산 합계에 그대로 반영되는데(cycle352 advance로 amount/splits와 동급 대우를 받게 된 필드), 공유 Netflix 구독처럼 이미 과거 회차가 있는 반복거래에서 base의 shared만 토글해 저장하면 recHistFieldsChanged가 false를 돌려줘 scope-confirm 없이 DB.recurrences[i]=d로 즉시 전체 덮어써 이미 정산이 끝났을 수도 있는 과거 달들의 정산 합계까지 조용히 소급 변경되는 금전 정확성 버그였다 — amount/category/splits가 바로 이 소급 변경을 막기 위해 명시적으로 포함돼 있는데 shared만 비대칭으로 빠져 있었음(test/run.js도 다른 필드엔 전부 테스트가 있는데 shared엔 없었음). if(!!orig.shared!==!!d.shared)return true; 한 줄을 추가해 legacy undefined와 명시적 false를 같게 보도록 !!로 정규화 후 비교. 테스트 1건(3개 assertion) 추가: shared가 바뀌면 true, undefined(레거시)와 명시적 false는 같은 것으로 봄, undefined->true는 변경으로 감지. node test/run.js 3436->3437/3437 통과. node --check logic.js/sw.js/test/run.js 통과, index.html은 test/run.js의 vm 샌드박스 전체 스위트 실행 자체가 구문 검증을 겸함(cycle339 이후 관례와 동일). 사용자 체감 동작 변화(공유 반복거래의 '같이 냈어요'만 바꿔 저장하면 이제 amount/category처럼 '오늘부터 이후 모두' vs '전체 적용(과거 기록도 함께 바뀌어요)' 확인 시트가 뜸 — 지금까지는 확인 없이 과거 정산까지 조용히 바뀌었음; 과거 회차가 아직 없는 반복거래는 영향 없음)라 APP_VERSION 1.47.452->1.47.453, sw.js CACHE v719->v720.",
-   "commit": null
-  },
   {
    "cycle": 356,
    "phase": "review",
@@ -141,6 +134,13 @@
    "phase": "advance",
    "timestamp": "2026-11-15T12:40:00.000Z",
    "summary": "critique(cycle360)가 제안한 초대 코드 기반 가구 공유 보조 로그인은 pullCloud/pushCloud의 CLOUD_UID 조회 경로 자체와 RLS 정책을 바꿔야 하는데, 이 세션은 실제 원격 Supabase 스키마를 만들거나 검증할 수 없어(cycle356 advance와 동일한 제약) 모든 기존 사용자의 동기화 경로를 깨뜰 위험이 있다고 판단해 보류했다(계획 자체에 명시된 대체 허용 조항 적용). 대신 Explore로 새 영역을 찾아 구현: budgetOver/goalBehind/debtBehind/allocationDrift는 전부 homeAlerts() 홈 카드+OS 푸시가 있는데, 이미 구현된 2인 정산(openSettlement/settlementSummary) 기능만 알림이 전혀 없어 직접 열어봐야만 쌓인 금액을 알 수 있던 공백을 메웠다. logic.js에 순수 함수 settleAlertBucket(diffAmount,minAmount,bucketWon) 추가(allocationDrift와 동일한 버킷팅으로 재알림 스팸 방지), homeAlerts()에 settleDue 알림(openSettlement()과 동일한 settledThrough 필터 재사용), notifyAlertInfo/homeAlertCard/renderMenu 뮤트 토글까지 기존 패턴을 그대로 확장했다. 테스트 12건 추가(설정 없음/문턱 미달/문턱 이상/settledThrough 제외/알림 키 버킷팅/카드/메뉴 토글), 기능을 일시적으로 꺼서 테스트가 실제로 실패하는지 확인 후 복원. node test/run.js 3464->3476/3476 통과, node --check logic.js/sw.js/test/run.js 통과. APP_VERSION 1.47.460->1.47.461, sw.js CACHE v727->v728. pending_advance_plan null로 비움.",
+   "commit": null
+  },
+  {
+   "cycle": 361,
+   "phase": "develop",
+   "timestamp": "2026-11-15T13:28:05.000Z",
+   "summary": "Explore 서브에이전트에게 cycle340-361의 모든 주제(반복거래 override, 부채 상환, 정산 breakdown/알림, goalBehind 연도, costBasis 통장 선택, duplicateAsset/Goal NAME_MAX, 클라우드 동기화 에러 분류, fx 폴백, buildExpenseBarHtml 팔레트, comma -0, undoToast WCAG, App Lock, 사진 페이로드, 가구 공유 인증, RANGE_FROM, visibilitychange, SRI hash, localStorage 쿼터, 카테고리 rename/merge, 검색어 파싱)를 배제 목록으로 주고 완전히 새 영역을 조사시켰다. 발견: 은행/카드사 CSV 가져오기(mapGenericCsvRow, logic.js:1575)가 '기본 카테고리' 하나만 받아, 실제로는 입금/출금(split 모드) 또는 금액 부호(signed 모드)에 따라 행마다 type이 income/expense로 갈리는데도 type과 무관하게 같은 카테고리를 그대로 찍고 있었다 — 실제 은행 CSV는 월급 입금과 카드값 출금이 한 파일에 공존하는 게 보통이라, 사용자가 지출 카테고리를 고르면 수입 행에까지 그 지출 카테고리가 붙어버렸다(반대도 동일). 그 카테고리는 저장된 type의 카테고리 목록(DB.categories.income/expense)에 없어 카테고리 관리 화면에서 보이지도 않는 '유령 카테고리'가 돼 분석/예산 집계에 조용히 뒤섞였다. test/run.js:9016의 기존 테스트도 expense.txn.category만 단언하고 income.txn.category는 전혀 확인하지 않아 이 공백이 가려져 있었다. 수정: mapping.category(지출)와 mapping.categoryIncome(수입)을 분리해 mapGenericCsvRow가 type에 따라 올바른 카테고리를 고르게 했다(categoryIncome이 없으면 category로 대체해 옛 mapping shape과 호환 유지). index.html의 openCsvColumnMap/renderCsvColumnMap에서 catKind 3단 토글(expense/income/saving)과 단일 '기본 카테고리' 필드를 지우고 '지출 카테고리'/'수입 카테고리' 두 피커로 교체(csvMapPickCategory(kind)), 각자 DB.categories.expense/income 목록에서만 고르게 했다 — 'saving'은 이 경로가 만드는 type(income/expense)과 애초에 대응하는 목록이 아니라 같이 제거했다. canImport 가드도 두 카테고리 모두 선택해야 통과한다. 이제 안 쓰는 csvMapSetCatKind()를 지우고 test/run.js의 FUNCTIONS 목록에서도 제거. 테스트: mapGenericCsvRow 직접 단위 테스트 2건(양수/음수 각자 올바른 카테고리, categoryIncome 없을 때 구버전 호환), buildGenericImportPreview 기존 split-mode 테스트에 income.txn.category 단언 추가, csvMapPickCategory/csvMapApply/openCsvColumnMap 관련 기존 테스트 4건을 새 두-필드 shape에 맞게 갱신. logic.js를 git stash로 수정 전 상태로 되돌려 새로 추가한 단언 2건이 실제로 FAIL함을 직접 확인한 뒤 복원했다. node test/run.js 3476(수정 전, FAIL 2건)->3478/3478(수정 후) 통과. node --check logic.js/sw.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.461->1.47.462, sw.js CACHE v728->v729.",
    "commit": null
   }
  ]

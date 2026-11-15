@@ -1420,7 +1420,7 @@ const SDK_READY=Promise.all([
 <script src="logic.js"></script>
 <script>
 /* ================= APP VERSION (업데이트 시 마지막 자리 +1: 1.0.0 → 1.0.1) ================= */
-const APP_VERSION='1.47.461';
+const APP_VERSION='1.47.462';
 const TRASH_MAX_AGE_DAYS=30; /* DB.trashTxns/DB.trashAssets('최근 삭제함') 공용 보존기간 — migrate()의 gcTrashTxns 호출과 openTrashList/openAssetTrashList의 남은 일수 표시가 서로 다른 숫자로 어긋나지 않도록 한 곳에서만 정의(app-evolve cycle319/320 critique/advance) */
 const SHOW_AD=false; /* AD 배너 표시 여부 — true로 바꾸면 각 탭 하단 배너가 즉시 복구됨 */
 if(!SHOW_AD)document.documentElement.classList.add('no-ad');
@@ -10581,12 +10581,13 @@ function csvMapFieldHtml(label,value,onclick){
 /* 은행/카드사 CSV 가져오기 — 열 매핑 화면. detectOwnCsvFormat(logic.js)이 false를 반환한(이 앱이
  * 직접 내보낸 CSV가 아닌) 파일을 골랐을 때 importCsvFile change 핸들러가 이 화면으로 안내한다.
  * headerRow/dataRows는 parseCSV(text)가 그대로 돌려준 1행(헤더)/나머지 행이다 — 사용자가 날짜·
- * 메모 열, 금액 형식(한 열 +/- 또는 입금/출금 두 열), 이 파일 전체가 속할 단일 자산, 기본
- * 카테고리를 고르면 mapGenericCsvRow(logic.js)/buildGenericImportPreview가 csvRowToImportTxn/
+ * 메모 열, 금액 형식(한 열 +/- 또는 입금/출금 두 열), 이 파일 전체가 속할 단일 자산, 지출/수입
+ * 카테고리 각각을 고르면 mapGenericCsvRow(logic.js)/buildGenericImportPreview가 csvRowToImportTxn/
  * buildImportPreview와 같은 모양의 결과를 만들어 기존 openCsvImportPreview/doCsvImport 파이프라인을
- * 그대로 재사용한다(app-evolve cycle251 advance). */
+ * 그대로 재사용한다(app-evolve cycle251 advance). 카테고리를 지출/수입용 두 개로 나눈 이유는
+ * mapGenericCsvRow가 밑에서 설명한다(app-evolve cycle361 develop). */
 function openCsvColumnMap(headerRow,dataRows){
- _csvMap={headerRow:headerRow||[],dataRows:dataRows||[],dateCol:null,memoCol:null,mode:'signed',amountCol:null,inCol:null,outCol:null,assetId:null,catKind:'expense',category:null};
+ _csvMap={headerRow:headerRow||[],dataRows:dataRows||[],dateCol:null,memoCol:null,mode:'signed',amountCol:null,inCol:null,outCol:null,assetId:null,category:null,categoryIncome:null};
  renderCsvColumnMap();
 }
 function renderCsvColumnMap(){
@@ -10597,7 +10598,7 @@ function renderCsvColumnMap(){
   ?csvMapFieldHtml('금액 열',colLabel(m.amountCol),"csvMapPickCol('amountCol','금액 열',false)")
   :csvMapFieldHtml('입금 열',colLabel(m.inCol),"csvMapPickCol('inCol','입금 열',true)")
    +csvMapFieldHtml('출금 열',colLabel(m.outCol),"csvMapPickCol('outCol','출금 열',true)");
- const canImport=m.dateCol!=null&&(m.mode==='signed'?m.amountCol!=null:(m.inCol!=null||m.outCol!=null))&&m.assetId&&m.category;
+ const canImport=m.dateCol!=null&&(m.mode==='signed'?m.amountCol!=null:(m.inCol!=null||m.outCol!=null))&&m.assetId&&m.category&&m.categoryIncome;
  openSheet(`<h3>CSV 열 매칭</h3>
   <div class="desc">이 파일의 각 열이 무엇인지 알려주세요.<br><span style="color:var(--text-3);font-size:12.5px">선택 아래에 실제 값 예시를 보여드려요.</span></div>
   ${csvMapFieldHtml('날짜 열',colLabel(m.dateCol),"csvMapPickCol('dateCol','날짜 열',false)")}
@@ -10608,16 +10609,13 @@ function renderCsvColumnMap(){
   ${amountFieldsHtml}
   ${csvMapFieldHtml('메모 열(선택)',colLabel(m.memoCol),"csvMapPickCol('memoCol','메모 열',true)")}
   ${csvMapFieldHtml('어느 자산의 내역인가요',assetName,"csvMapPickAsset()")}
-  <div class="seg" role="group" aria-label="기본 카테고리 종류" style="margin:10px 0"><div class="seg-blob"></div>
-   ${['expense','income','saving'].map(k=>`<button class="${m.catKind===k?'on':''}" aria-pressed="${m.catKind===k}" onclick="csvMapSetCatKind('${k}')">${CAT_LABEL[k]}</button>`).join('')}
-  </div>
-  ${csvMapFieldHtml('기본 카테고리',m.category||'',"csvMapPickCategory()")}
+  ${csvMapFieldHtml('지출 카테고리',m.category||'',"csvMapPickCategory('expense')")}
+  ${csvMapFieldHtml('수입 카테고리',m.categoryIncome||'',"csvMapPickCategory('income')")}
   ${canImport?`<button class="btn btn-primary" style="margin-top:6px" onclick="csvMapApply()">${svg('ledger')} 다음</button>`
    :`<div class="desc" style="color:var(--text-3)">모든 항목을 선택해야 다음으로 넘어갈 수 있어요</div>`}`);
  requestAnimationFrame(()=>requestAnimationFrame(moveSegBlobs));
 }
 function csvMapSetMode(mode){if(!_csvMap||_csvMap.mode===mode)return;_csvMap.mode=mode;if(mode==='signed'){_csvMap.inCol=null;_csvMap.outCol=null}else _csvMap.amountCol=null;renderCsvColumnMap();}
-function csvMapSetCatKind(kind){if(!_csvMap||_csvMap.catKind===kind)return;_csvMap.catKind=kind;_csvMap.category=null;renderCsvColumnMap();}
 function csvMapColChosen(field,idx){if(!_csvMap)return;_csvMap[field]=idx;renderCsvColumnMap();}
 /* 열 선택 피커 — openPicker를 직접 재사용한 pk-item 목록(allowNone이면 '선택 안 함' 포함). 각
  * 항목 아래에 csvColSample()로 실제 데이터 값 예시를 보여준다. 다른 필드가 이미 쓰고 있는 열은
@@ -10641,15 +10639,20 @@ function csvMapPickAsset(){
  if(!_csvMap)return;
  openAssetPicker({current:_csvMap.assetId,title:'어느 자산의 내역인가요',cashOrDebt:true,back:renderCsvColumnMap,onPick:id=>{_csvMap.assetId=id;renderCsvColumnMap()}});
 }
-function csvMapPickCategory(){
+/* kind는 'expense'|'income' — 지출/수입 카테고리를 각자의 목록(DB.categories.expense/income)에서
+ * 따로 고른다(mapGenericCsvRow가 밑에서 설명하는 이유로 두 필드로 분리됨, app-evolve cycle361
+ * develop). field는 _csvMap에서 그 결과를 담는 자리로, category는 기존 필드명을 그대로 지출
+ * 쪽에 써 과거 매핑 shape(mapping.category)과 호환을 유지한다. */
+function csvMapPickCategory(kind){
  if(!_csvMap)return;
- openCatPicker({kind:_csvMap.catKind,current:_csvMap.category,back:renderCsvColumnMap,onPick:c=>{_csvMap.category=c;renderCsvColumnMap()}});
+ const field=kind==='income'?'categoryIncome':'category';
+ openCatPicker({kind,current:_csvMap[field],back:renderCsvColumnMap,onPick:c=>{_csvMap[field]=c;renderCsvColumnMap()}});
 }
 /* 매핑을 확정해 미리보기로 넘어간다 — buildGenericImportPreview가 buildImportPreview와 같은
  * shape을 돌려주므로 openCsvImportPreview/doCsvImport은 이 함수가 어느 경로로 왔는지 전혀 모른다. */
 function csvMapApply(){
  const m=_csvMap;if(!m)return;
- const mapping={dateCol:m.dateCol,memoCol:m.memoCol,mode:m.mode,amountCol:m.amountCol,inCol:m.inCol,outCol:m.outCol,category:m.category};
+ const mapping={dateCol:m.dateCol,memoCol:m.memoCol,mode:m.mode,amountCol:m.amountCol,inCol:m.inCol,outCol:m.outCol,category:m.category,categoryIncome:m.categoryIncome};
  const preview=buildGenericImportPreview(m.dataRows,mapping,m.assetId,DB.txns.concat(expandRec(RANGE_FROM,RANGE_TO)));
  _csvMap=null;
  if(!preview.totalRows){toast('가져올 내역을 찾지 못했어요');closeSheet();return}

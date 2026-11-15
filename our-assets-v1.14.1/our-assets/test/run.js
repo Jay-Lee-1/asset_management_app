@@ -201,7 +201,7 @@ const FUNCTIONS = [
   // 열 매핑 가져오기) 구현 검증용 — detectOwnCsvFormat/mapGenericCsvRow는 logic.js 전용(전체 로드돼
   // 자동으로 끌어와지므로 FUNCTIONS에 올릴 필요 없음), 이 목록엔 index.html에 남아있는 쪽만 올린다.
   'buildGenericImportPreview', 'csvColSample', 'csvMapFieldHtml', 'openCsvColumnMap', 'renderCsvColumnMap',
-  'csvMapSetMode', 'csvMapSetCatKind', 'csvMapColChosen', 'csvMapPickCol', 'csvMapPickAsset', 'csvMapPickCategory', 'csvMapApply',
+  'csvMapSetMode', 'csvMapColChosen', 'csvMapPickCol', 'csvMapPickAsset', 'csvMapPickCategory', 'csvMapApply',
   'twActive', 'twGuard', 'deleteTxnsUndo', 'openTrashList', 'restoreTrashTxn', 'purgeTrashTxn', 'deleteRecsUndo', 'openRecTrashList', 'restoreTrashRec', 'purgeTrashRec', 'deleteAssetsUndo', 'openAssetTrashList', 'restoreTrashAsset', 'purgeTrashAsset', 'delAsset', 'assetDelSel', 'unsnapshotAssetName', 'doBulkCat', 'bulkCatPickFor', 'doBulkInclToggle', 'assetInclSel',
   'doBulkAssetMove', 'bulkAssetMovePickFor', 'ledgerAssetMoveSel', 'histAssetMoveSel', 'doBulkOwnerMove', 'assetOwnerMovePickFor', 'assetOwnerSel',
   'doBulkRecActive', 'recSelPartial', 'recToggleSel', 'recSelAll', 'recDelSel', 'recActiveSel',
@@ -9013,6 +9013,18 @@ test('mapGenericCsvRow: 성공 shape의 필드 집합이 csvRowToImportTxn과 �
   assert.deepStrictEqual(Object.keys(own).sort(), Object.keys(generic).sort());
   assert.deepStrictEqual(Object.keys(own.txn).sort(), Object.keys(generic.txn).sort());
 });
+/* mapping.category/categoryIncome — '금액 한 열(+/-)' 모드는 부호 하나로 지출/수입이 갈리는데,
+ * 수정 전엔 category 하나만 받아 부호와 무관하게 그대로 찍혔다(app-evolve cycle361 develop). */
+test('mapGenericCsvRow: signed 모드에서 양수(수입) 행은 categoryIncome을, 음수(지출) 행은 category를 받는다', () => {
+  const income = sandbox.mapGenericCsvRow(['2026-01-01', '300000'], { dateCol: 0, amountCol: 1, mode: 'signed', category: '식비', categoryIncome: '급여' }, 'a1');
+  assert.strictEqual(income.txn.type, 'income'); assert.strictEqual(income.txn.category, '급여');
+  const expense = sandbox.mapGenericCsvRow(['2026-01-01', '-5000'], { dateCol: 0, amountCol: 1, mode: 'signed', category: '식비', categoryIncome: '급여' }, 'a1');
+  assert.strictEqual(expense.txn.type, 'expense'); assert.strictEqual(expense.txn.category, '식비');
+});
+test('mapGenericCsvRow: categoryIncome이 없으면(옛 mapping shape) 수입 행도 category로 대체돼 과거 동작을 보존한다', () => {
+  const income = sandbox.mapGenericCsvRow(['2026-01-01', '300000'], { dateCol: 0, amountCol: 1, mode: 'signed', category: '식비' }, 'a1');
+  assert.strictEqual(income.txn.type, 'income'); assert.strictEqual(income.txn.category, '식비');
+});
 test('buildGenericImportPreview: 합성 은행 CSV(헤더 재배열+입출금 분리)를 detectOwnCsvFormat→mapGenericCsvRow→csvDedupeKey 전체 경로로 돌리면 올바른 item 개수/shape이 나온다', () => {
   // 실제 은행 CSV는 '거래일,출금액,입금액,메모' 순서로 우리 포맷과 전혀 다른 헤더를 쓴다고 가정.
   const bankCsv = '거래일,출금액,입금액,메모\r\n' +
@@ -9023,7 +9035,7 @@ test('buildGenericImportPreview: 합성 은행 CSV(헤더 재배열+입출금 �
   const rows = sandbox.parseCSV(bankCsv);
   assert.strictEqual(sandbox.detectOwnCsvFormat(rows[0]), false, '은행 CSV는 자기-포맷으로 오인되면 안 됨');
   const dataRows = rows.slice(1);
-  const mapping = { dateCol: 0, outCol: 1, inCol: 2, memoCol: 3, mode: 'split', category: '생활비' };
+  const mapping = { dateCol: 0, outCol: 1, inCol: 2, memoCol: 3, mode: 'split', category: '생활비', categoryIncome: '월급' };
   const preview = sandbox.buildGenericImportPreview(dataRows, mapping, 'a1', []);
   assert.strictEqual(preview.totalRows, 4);
   assert.strictEqual(preview.invalidCount, 2, '무효 금액 1건 + 무효 날짜 1건');
@@ -9036,6 +9048,11 @@ test('buildGenericImportPreview: 합성 은행 CSV(헤더 재배열+입출금 �
   const income = preview.items.find(x => x.txn.type === 'income');
   assert.strictEqual(expense.txn.fromAssetId, 'a1'); assert.strictEqual(expense.txn.amount, 5000); assert.strictEqual(expense.txn.category, '생활비');
   assert.strictEqual(income.txn.toAssetId, 'a1'); assert.strictEqual(income.txn.amount, 300000);
+  /* 입출금 두 열(split) 모드는 한 파일에 지출/수입 행이 같이 들어오는 게 보통인데(이 테스트처럼
+   * 월급 입금+카드값 출금이 한 파일에 공존), 수정 전에는 category 필드 하나만 받아 양쪽 type에
+   * 그대로 찍혀 수입 행에도 지출 카테고리('생활비')가 붙었다 — 지금은 지출/수입이 각자 고른
+   * 카테고리를 받아야 한다(app-evolve cycle361 develop). */
+  assert.strictEqual(income.txn.category, '월급', '수입 행은 지출 카테고리가 아니라 수입 카테고리를 받아야 함');
 });
 test('buildGenericImportPreview: 기존 내역과 날짜/구분/금액/카테고리/자산/메모가 전부 같으면 dup으로 건너뛴다(csvDedupeKey 공유)', () => {
   const dataRows = [['2026-01-05', '5000', '', '점심']];
@@ -9090,13 +9107,19 @@ test('csvMapSetMode: signed↔split 전환 시 반대 모드의 열 선택을 �
   assert.strictEqual(sandbox._csvMap.inCol, null, 'signed로 바꾸면 split 전용 inCol/outCol이 비워져야 함');
   assert.ok(sandbox.lastSheetHtml.includes('금액 열'));
 });
-test('csvMapSetCatKind: 카테고리 종류를 바꾸면 이미 고른 기본 카테고리를 비운다(다른 종류 목록이라 더 이상 유효하지 않음)', () => {
+/* 지출/수입 카테고리를 별개 필드(category/categoryIncome)로 둔 이유는 mapGenericCsvRow(logic.js)가
+ * 설명한다 — 한 파일 안에서도 행마다 type이 입금/출금(또는 금액 부호)에 따라 갈리므로, 화면
+ * 전체에 카테고리 하나만 받으면 반대 type 행에까지 그대로 붙어버린다(app-evolve cycle361
+ * develop, 수정 전 실제 버그였음). */
+test('openCsvColumnMap: 지출/수입 카테고리를 둘 다 고르기 전엔 "다음" 버튼이 없다', () => {
   setupCsvMapDB();
   sandbox.openCsvColumnMap(['날짜', '금액'], [['2026-01-05', '5000']]);
-  sandbox._csvMap.category = '식비';
-  sandbox.csvMapSetCatKind('income');
-  assert.strictEqual(sandbox._csvMap.catKind, 'income');
-  assert.strictEqual(sandbox._csvMap.category, null);
+  Object.assign(sandbox._csvMap, { dateCol: 0, amountCol: 1, mode: 'signed', assetId: 'a_cash', category: '식비' });
+  sandbox.renderCsvColumnMap();
+  assert.ok(!sandbox.lastSheetHtml.includes('csvMapApply()'), '수입 카테고리가 아직 없으면 다음으로 못 넘어가야 함');
+  sandbox._csvMap.categoryIncome = '급여';
+  sandbox.renderCsvColumnMap();
+  assert.ok(sandbox.lastSheetHtml.includes('csvMapApply()'), '지출/수입 카테고리를 모두 고르면 다음 버튼이 보여야 함');
 });
 test('csvMapPickCol: 열 목록 피커를 열면 각 헤더 이름과 실제 데이터 값 예시가 함께 보이고, allowNone이면 "선택 안 함"이 맨 위에 있다', () => {
   setupCsvMapDB();
@@ -9151,8 +9174,12 @@ test('csvMapPickAsset/csvMapPickCategory: 피커가 cashOrDebt/kind 옵션으로
   sandbox._csvMap.assetId = 'a_cash';
   sandbox.renderCsvColumnMap();
   assert.ok(sandbox.lastSheetHtml.includes('지갑'), '고른 자산 이름이 화면에 보여야 함');
-  sandbox.csvMapPickCategory();
-  assert.ok(sandbox.lastPickerHtml.includes('식비'), 'catKind 기본값(expense) 카테고리 목록이 보여야 함');
+  sandbox.csvMapPickCategory('expense');
+  assert.ok(sandbox.lastPickerHtml.includes('식비'), '지출 카테고리 목록이 보여야 함');
+  assert.ok(!sandbox.lastPickerHtml.includes('급여'), '지출 피커엔 수입 카테고리 목록이 섞이면 안 됨');
+  sandbox.csvMapPickCategory('income');
+  assert.ok(sandbox.lastPickerHtml.includes('급여'), '수입 카테고리 목록이 보여야 함');
+  assert.ok(!sandbox.lastPickerHtml.includes('식비'), '수입 피커엔 지출 카테고리 목록이 섞이면 안 됨');
 });
 /* "은행/카드사 CSV"라는 기능 이름 그대로, 신용카드를 debt형 자산으로 등록한 사용자도 그 카드의
  * 명세서 CSV를 가져올 대상으로 고를 수 있어야 한다 — cashOnly였을 때는 debt가 통째로 빠져 있었음
@@ -9175,12 +9202,13 @@ test('csvMapApply: 모든 항목을 채우면 buildGenericImportPreview 결과�
   // shape만 캡처하는 얕은 스텁으로 흉내낸다(다른 테스트들의 renderFn 스텁과 같은 패턴).
   sandbox.openCsvImportPreview = (p) => { sandbox._lastGenericPreview = p; };
   sandbox.openCsvColumnMap(['날짜', '금액', '메모'], [['2026-01-05', '-5000', '점심']]);
-  Object.assign(sandbox._csvMap, { dateCol: 0, amountCol: 1, memoCol: 2, mode: 'signed', assetId: 'a_cash', category: '식비' });
+  Object.assign(sandbox._csvMap, { dateCol: 0, amountCol: 1, memoCol: 2, mode: 'signed', assetId: 'a_cash', category: '식비', categoryIncome: '급여' });
   sandbox.csvMapApply();
   assert.strictEqual(sandbox._csvMap, null, '적용 후 임시 매핑 상태를 비워야 함');
   assert.ok(sandbox._lastGenericPreview, 'openCsvImportPreview가 호출돼야 함');
   assert.strictEqual(sandbox._lastGenericPreview.newCount, 1);
   assert.strictEqual(sandbox._lastGenericPreview.items[0].txn.type, 'expense');
+  assert.strictEqual(sandbox._lastGenericPreview.items[0].txn.category, '식비', '지출 행엔 지출 카테고리가 붙어야 함');
 });
 /* ---------- doCsvImport: 일괄 저장되는 거래에도 touch()로 updatedAt 스탬프
  * (app-evolve cycle88 advance, doMaturity/addBalanceAdjust 쪽과 동일 목적) ---------- */

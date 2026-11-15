@@ -1607,7 +1607,19 @@ function mapGenericCsvRow(cells,mapping,targetAssetId){
   * 받은 상한과 같은 가드. 은행/카드 CSV의 손상되거나 깨진 금액 열이 유한한 정수로 파싱돼도
   * 그대로 DB.txns에 들어가 balanceAt/nwHistory 정밀도를 깨지 않게 막는다(app-evolve cycle350 develop). */
  if(!Number.isInteger(amount)||amount<=0||amount>AMOUNT_MAX)return{ok:false,error:'amount'};
- const txn={type,date,category:mapping.category,amount,memo};
+ /* mapping.category/categoryIncome: '입금·출금 두 열' 모드는 한 파일 안에서 같은 행이라도
+  * inCol/outCol 중 어느 쪽이 채워졌는지에 따라 type이 'income'/'expense'로 갈리고, '금액 한 열
+  * (+/-)' 모드도 raw 부호에 따라 똑같이 갈린다(바로 위) — 즉 이 함수가 돌려주는 type은 호출부가
+  * 미리 알 수 없다. 과거엔 openCsvColumnMap(index.html)이 파일 전체에 category 딱 하나만
+  * 받아 type과 무관하게 그대로 찍었는데, 실제 은행 CSV는 입금/출금이 한 파일에 같이 들어오는
+  * 게 보통이라(예: 월급 입금+카드값 출금) 사용자가 지출 카테고리를 골랐어도 입금 행에까지 그
+  * 지출 카테고리가 그대로 붙어버렸다(반대도 동일) — 저장된 category가 그 종류의 카테고리
+  * 목록(DB.categories.income/expense)에 없어 카테고리 관리 화면에서 보이지도 않는 채로 분석/
+  * 예산 집계에 뒤섞여 들어가는 조용한 데이터 오염이었다. categoryIncome이 없으면(기존 호출부가
+  * 그대로 들어오는 경우) category로 그대로 대체해 과거 동작을 보존한다(app-evolve cycle361
+  * develop). */
+ const category=type==='income'?(mapping.categoryIncome!=null?mapping.categoryIncome:mapping.category):mapping.category;
+ const txn={type,date,category,amount,memo};
  txn.fromAssetId=type==='expense'?targetAssetId:null;
  txn.toAssetId=type==='income'?targetAssetId:null;
  return{ok:true,unmatched:[],txn};
