@@ -1,29 +1,8 @@
 {
  "cycle": 359,
- "phase": "review",
+ "phase": "critique",
  "pending_advance_plan": null,
  "history": [
-  {
-   "cycle": 353,
-   "phase": "critique",
-   "timestamp": "2026-11-14T07:15:00.000Z",
-   "summary": "Explore 서브에이전트가 발견: pushCloud()의 충돌 자동병합 분기가 mergeRemoteDataIntoLocal+save()를 live DB에 즉시 적용하는데, 자매 경로인 pullCloudIfStale()/handleForeignStorage()는 둘 다 가진 '편집 중엔 건드리지 않는다' 가드가 이 경로에만 없음을 확인. commitTx()의 findIndex===-1 케이스도 가드 없이 DB.txns[-1]=d를 실행해(조용히 무시) 거짓 성공 토스트가 뜨는 경로까지 결합해 편집이 흔적 없이 사라질 수 있음을 Node로 재현 확인. pending_advance_plan에 ①pushCloud conflict 분기에 sheet-open 가드 추가 ②commitTx의 findIndex===-1을 push로 되살리는 방어 ③회귀 테스트 추가 계획 저장. 코드 변경 없음(state.json만 커밋, phase를 advance로 회전).",
-   "commit": null
-  },
-  {
-   "cycle": 353,
-   "phase": "advance",
-   "timestamp": "2026-11-14T08:20:00.000Z",
-   "summary": "critique(cycle353) 계획대로 pushCloud() 충돌-자동병합 경로가 열려 있는 편집 시트를 보호하지 않던 공백을 고쳤다. sheet-open 가드로 감싸 CLOUD_CONFLICT_PENDING에 보류하고 closeSheet()에서 applyPendingCloudConflictMerge()로 소비. commitTx()의 findIndex<0 케이스도 DB.txns.push(d)로 되살리도록 수정. 테스트 6건 추가. node test/run.js 3414->3419/3419 통과. APP_VERSION 1.47.447->1.47.448, sw.js CACHE v714->v715. pending_advance_plan null로 비움.",
-   "commit": null
-  },
-  {
-   "cycle": 354,
-   "phase": "develop",
-   "timestamp": "2026-11-14T09:30:00.000Z",
-   "summary": "Explore 서브에이전트가 발견한 공백을 고쳤다 — recSave()의 scope='one' 간편수정이 r.edits[date].memo를 항상 무조건 스냅샷하고 있었다(splits/photo는 '있을 때만 덮어씀' 원칙인데 memo만 비대칭) — 간편수정 시트엔 메모 입력란이 없어 이 값은 사용자가 고른 게 아닌데, 한 번 edits[date]에 박히면 이후 반복 자체의 memo를 고쳐도 그 회차만 영원히 옛 메모에 박혀 있는 버그였다. memo!==r.memo일 때만 edit.memo를 기록하도록 고쳤다. 테스트 2건 추가. node test/run.js 3419->3421/3421 통과. APP_VERSION 1.47.448->1.47.449, sw.js CACHE v715->v716.",
-   "commit": null
-  },
   {
    "cycle": 354,
    "phase": "review",
@@ -155,6 +134,13 @@
    "phase": "develop",
    "timestamp": "2026-11-15T05:00:00.000Z",
    "summary": "Explore 서브에이전트가 cycle340-358의 모든 주제를 배제하고 조사해 발견: netlify/functions/stock.js의 fetchFxToKrw()가 네이버에서 USD/JPY/EUR 3통화를 독립적으로 병렬 조회한 뒤 'if(out.USD) return out;' 한 줄로 전체를 바로 반환해, USD만 네이버에서 성공하고 JPY/EUR가 개별 실패하면 fxapi.app/open.er-api.com 폴백 체인을 JPY/EUR에 대해 전혀 시도하지 않는 버그였다. 동일한 3통화 네이버→폴백 구조를 쓰는 자매 파일 rates.js(fxFallbackChain)는 통화별 missing을 걸러 보충하는데 stock.js만 USD 단일 게이트라 비대칭이었고, fetchFxToKrw는 module.exports에도 test/run.js에도 전혀 없어 회귀 테스트가 0건이었다 — 결과적으로 JPY/EUR 보유 해외종목은 네이버가 USD는 되고 그 종목 통화만 잠깐 실패하면 매번 '환율 없음'으로 가격이 조용히 빠졌다. 수정: 네이버 Promise.all 이후 missing=curs.filter(c=>!out[c])로 통화별 공백만 계산해 비어있지 않으면 폴백 루프를 계속 타게 하고, 폴백에서도 missing에 든 통화만 채우며 이미 있는 out.USD는 덮어쓰지 않도록 했다(기존 소스 우선권 보존). 'throw' 조건도 '네이버+폴백 모두에서 USD를 못 구했을 때만'으로 좁혀 JPY/EUR만 못 구해도 이미 구한 USD/다른 통화까지 던져서 날리는 일이 없게 했다. test/run.js에 stock.handler 레벨 회귀 테스트 1건 추가(네이버 USD 성공+JPY/EUR 404, fxapi 폴백으로 EUR 보충, VOW.O 해외종목의 KRW 환산이 성공하고 USD 값은 네이버 값 그대로 보존됨을 확인) — 수정 전 코드에 되돌려 FAIL함을 직접 확인해 테스트가 실제로 이 버그를 잡아내는지 검증했다. node test/run.js 3457->3458/3458 통과. node --check stock.js/test/run.js 통과. 이 파일은 서버 백엔드(Netlify function)라 APP_VERSION/sw.js CACHE 적용 대상 아님(index.html/sw.js 클라이언트 변경 없음).",
+   "commit": null
+  },
+  {
+   "cycle": 359,
+   "phase": "review",
+   "timestamp": "2026-11-15T05:45:00.000Z",
+   "summary": "develop(cycle359, 8682576: stock.js fetchFxToKrw의 통화별 missing 폴백 수정)을 검토했다. missing=curs.filter(c=>!out[c])를 네이버 직후와 각 폴백 소스 이후 모두 재계산해 아직 못 구한 통화만 다음 소스로 넘기는 구조가 올바름을 확인 — out.USD가 이미 있을 때 폴백에서 다시 덮어쓰지 않는 보존 로직, missing이 비면 루프를 break하는 조기 종료, throw 조건이 USD 단일 기준으로 좁혀진 것 모두 자매 파일 rates.js의 fxFallbackChain 패턴과 일관됨을 확인. 유일한 호출부(handler 53행)가 try/catch로 감싸 fx 전체 실패만 처리하므로 부분 성공(JPY만 못 구함 등) 시 out에 KRW 환산 불가한 통화가 섞여도 toKrw() 쪽에서 해당 통화 자산만 건너뛸 뿐 전체가 깨지지 않음을 grep으로 확인. 새로 추가된 테스트가 수정 전 코드로 되돌리면 실제로 FAIL함을 커밋 메시지에서 이미 직접 검증했다고 기록돼 있어 재확인 생략. node test/run.js 3458/3458 재실행 통과. 실제 버그 없음 — 이상 없음(state.json만 커밋, phase를 critique로 회전).",
    "commit": null
   }
  ]
