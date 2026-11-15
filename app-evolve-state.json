@@ -1,6 +1,6 @@
 {
  "cycle": 359,
- "phase": "develop",
+ "phase": "review",
  "pending_advance_plan": null,
  "history": [
   {
@@ -148,6 +148,13 @@
    "phase": "advance",
    "timestamp": "2026-11-15T04:10:00.000Z",
    "summary": "critique(cycle358) 계획대로 Supabase user_data 테이블 누락(Postgres 42P01)이 네트워크 장애로 뭉개지던 공백을 고쳤다. index.html에 isRlsPolicyError() 옆 isMissingTableError(e) 추가(e.code==='42P01' 또는 'relation ... does not exist' 메시지 매칭). CLOUD_SYNC_ERR_KIND에 'missing_table' 분기 추가, cloudSyncFailed()가 isRlsPolicyError보다 먼저 체크하도록 순서 배치, cloudSyncLabel()/toast 모두 '테이블이 아직 없어요 · 설정 안내의 SQL을 실행해 주세요' 계열 문구로 구체화. homeAlertCard()의 cloudSyncError 카드도 isRls와 동일하게 missing_table이면 openHelpCloud()로 보내고 '테이블이 아직 없어요' 안내를 보여주도록 확장(plan에는 없었지만 CLOUD_SYNC_ERR_KIND 소비처라 빠뜨리면 '자동으로 다시 시도 중'이라는 오도성 문구가 그대로 남음). isMissingTableError 단위 테스트 7건, cloudSyncFailed/cloudSyncLabel 실행형 테스트 1건, homeAlertCard 테스트 1건 추가. node test/run.js 3454->3457/3457 통과. node --check sw.js/test/run.js 통과, index.html은 test/run.js 전체 스위트 실행이 구문 검증을 겸함. APP_VERSION 1.47.457->1.47.458, sw.js CACHE v724->v725. pending_advance_plan null로 비움.",
+   "commit": null
+  },
+  {
+   "cycle": 359,
+   "phase": "develop",
+   "timestamp": "2026-11-15T05:00:00.000Z",
+   "summary": "Explore 서브에이전트가 cycle340-358의 모든 주제를 배제하고 조사해 발견: netlify/functions/stock.js의 fetchFxToKrw()가 네이버에서 USD/JPY/EUR 3통화를 독립적으로 병렬 조회한 뒤 'if(out.USD) return out;' 한 줄로 전체를 바로 반환해, USD만 네이버에서 성공하고 JPY/EUR가 개별 실패하면 fxapi.app/open.er-api.com 폴백 체인을 JPY/EUR에 대해 전혀 시도하지 않는 버그였다. 동일한 3통화 네이버→폴백 구조를 쓰는 자매 파일 rates.js(fxFallbackChain)는 통화별 missing을 걸러 보충하는데 stock.js만 USD 단일 게이트라 비대칭이었고, fetchFxToKrw는 module.exports에도 test/run.js에도 전혀 없어 회귀 테스트가 0건이었다 — 결과적으로 JPY/EUR 보유 해외종목은 네이버가 USD는 되고 그 종목 통화만 잠깐 실패하면 매번 '환율 없음'으로 가격이 조용히 빠졌다. 수정: 네이버 Promise.all 이후 missing=curs.filter(c=>!out[c])로 통화별 공백만 계산해 비어있지 않으면 폴백 루프를 계속 타게 하고, 폴백에서도 missing에 든 통화만 채우며 이미 있는 out.USD는 덮어쓰지 않도록 했다(기존 소스 우선권 보존). 'throw' 조건도 '네이버+폴백 모두에서 USD를 못 구했을 때만'으로 좁혀 JPY/EUR만 못 구해도 이미 구한 USD/다른 통화까지 던져서 날리는 일이 없게 했다. test/run.js에 stock.handler 레벨 회귀 테스트 1건 추가(네이버 USD 성공+JPY/EUR 404, fxapi 폴백으로 EUR 보충, VOW.O 해외종목의 KRW 환산이 성공하고 USD 값은 네이버 값 그대로 보존됨을 확인) — 수정 전 코드에 되돌려 FAIL함을 직접 확인해 테스트가 실제로 이 버그를 잡아내는지 검증했다. node test/run.js 3457->3458/3458 통과. node --check stock.js/test/run.js 통과. 이 파일은 서버 백엔드(Netlify function)라 APP_VERSION/sw.js CACHE 적용 대상 아님(index.html/sw.js 클라이언트 변경 없음).",
    "commit": null
   }
  ]

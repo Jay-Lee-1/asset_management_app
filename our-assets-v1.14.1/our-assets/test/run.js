@@ -35073,6 +35073,23 @@ if (stockFns && ratesFns && cryptoFns) {
       assert.ok('_debug' in JSON.parse(res.body), 'debug=1인데 _debug가 응답에 없음');
     } finally { restoreFetch(); }
   });
+  test('stock.handler: fetchFxToKrw가 네이버에서 USD만 성공하고 EUR은 실패해도, EUR 보유 해외종목의 환산을 fxapi 폴백으로 끝까지 살려낸다(app-evolve cycle359 develop — 과거엔 out.USD 하나만 보고 전체를 반환해 EUR/JPY 폴백 시도 자체를 건너뛰던 버그)', async () => {
+    // 호출 순서: fetchFxToKrw의 네이버 3통화(USD,JPY,EUR) → (JPY/EUR 못 구했으니) fxapi 폴백 → 그 다음 VOW.O 해외종목 네이버 조회
+    installFetchQueue([
+      okJson({ result: [{ closePrice: '1385.2' }] }), // 네이버: USD 성공
+      failHttp(404),                                    // 네이버: JPY 실패
+      failHttp(404),                                    // 네이버: EUR 실패
+      okJson({ rates: { KRW: 1385, JPY: 150, EUR: 0.92 } }), // fxapi 폴백: JPY/EUR 보충(USD는 네이버 값 보존)
+      okJson({ closePrice: '100', currencyType: { code: 'EUR' } }) // VOW.O: EUR 100
+    ]);
+    try {
+      const res = await stockFns.handler({ queryStringParameters: { codes: 'VOW.O', debug: '1' } });
+      const body = JSON.parse(res.body);
+      assert.ok(!body._debug.errors['VOW.O'], 'EUR 환율을 못 구해 "환율 없음"으로 빠짐 — fxapi 폴백이 호출되지 않은 것(원래 버그)');
+      assert.strictEqual(body['VOW.O'], Math.round(100 * (1385 / 0.92)), 'EUR→KRW 환산값이 fxapi 폴백 환율(usdKrw/EUR비율)과 다름');
+      assert.strictEqual(body._debug.fx.USD, 1385.2, '네이버가 이미 구한 USD 값이 fxapi 폴백 값(1385)으로 덮어써짐 — 기존 소스 보존 원칙 위반');
+    } finally { restoreFetch(); }
+  });
   test('stock.handler: work가 deadline보다 먼저 끝나면 8초 deadline setTimeout을 clearTimeout해 이벤트 루프에 남기지 않는다(app-evolve cycle233 advance — stock.js에만 있던 clearTimeout 누락 수정 회귀 가드)', async () => {
     installFetchQueue([okJson({ closePrice: '100' })]);
     const origSetTimeout = global.setTimeout, origClearTimeout = global.clearTimeout;

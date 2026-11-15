@@ -170,23 +170,34 @@ async function fetchFxToKrw(debug) {
     } catch (e) { if (debug) debug.errors['fx_' + cur] = 'naver: ' + errText(e); }
   }));
 
-  if (out.USD) return out;
+  // 네이버가 USD만 주고 JPY/EUR는 개별 실패했을 수도 있으므로(세 호출이 독립적으로 성공/실패),
+  // out.USD 하나만 보고 전체를 반환해버리면 JPY/EUR는 fxapi/er-api가 채워줄 수 있는데도 영원히
+  // '환율 없음'으로 빠진다 — rates.js의 동일 3통화 네이버→폴백 구조는 통화별 missing을 걸러
+  // 보충하는데, stock.js만 USD 단일 게이트를 쓰고 있어 못 받은 회귀 테스트가 이 비대칭을
+  // 놓쳤다(app-evolve cycle359 develop).
+  let missing = curs.filter(c => !out[c]);
+  if (!missing.length) return out;
 
   // 2순위: fxapi.app(신형) → 3순위: open.er-api.com  (둘 다 "1 USD = ? X" 형태)
   for (const [name, url] of [['fxapi', 'https://fxapi.app/api/usd.json'], ['er-api', 'https://open.er-api.com/v6/latest/USD']]) {
+    if (!missing.length) break;
     try {
       const d = await getJSON(url);
       const rates = d && d.rates;
       if (rates && rates.KRW) {
         const usdKrw = Number(rates.KRW);
-        out.USD = usdKrw;
-        for (const c of ['JPY', 'EUR']) if (rates[c]) out[c] = usdKrw / Number(rates[c]);
-        return out;
+        if (!out.USD) out.USD = usdKrw; // 네이버가 이미 구한 값이 있으면 보존(여기 usdKrw로 덮어쓰지 않음)
+        for (const c of ['JPY', 'EUR']) if (missing.includes(c) && rates[c]) out[c] = usdKrw / Number(rates[c]);
+        missing = curs.filter(c => !out[c]);
       }
     } catch (e) { if (debug) debug.errors['fx_' + name] = errText(e); }
   }
 
-  throw new Error('fx: 모든 소스 실패');
+  // USD는 toKrw()의 모든 환산에 필요한 기준이라, 네이버+폴백 전부가 USD를 못 구했을 때만
+  // 실패로 던진다(원래 동작과 동일) — JPY/EUR만 끝까지 못 구해도 그 통화만 null 처리될 뿐,
+  // 이미 구한 USD/다른 통화까지 던져서 날리지 않는다.
+  if (!out.USD) throw new Error('fx: 모든 소스 실패');
+  return out;
 }
 
 /* ── 공통 유틸 (netlify/functions/_shared.js로 이동 — app-evolve cycle228 advance) ─────────── */
